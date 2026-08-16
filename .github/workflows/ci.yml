@@ -26,8 +26,7 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v5
-        with:
-          version: 11
+        # 版本以根 package.json 的 packageManager 字段为单一事实源（勿同时指定 version）
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
