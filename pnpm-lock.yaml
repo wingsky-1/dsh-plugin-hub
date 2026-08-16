@@ -24,6 +24,8 @@ importers:
 
   packages/dsh-notifier: {}
 
+  packages/dsh-opencode-usage: {}
+
   packages/dsh-plugins-all:
     dependencies:
       '@wingsky/dsh-gzip':
@@ -35,6 +37,9 @@ importers:
       '@wingsky/dsh-notifier':
         specifier: workspace:*
         version: link:../dsh-notifier
+      '@wingsky/dsh-opencode-usage':
+        specifier: workspace:*
+        version: link:../dsh-opencode-usage
       '@wingsky/dsh-skill-explorer':
         specifier: workspace:*
         version: link:../dsh-skill-explorer

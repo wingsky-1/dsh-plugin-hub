@@ -20,3 +20,7 @@
       name: '@wingsky/dsh-skill-explorer'
       config:
         enabled: true
+    - id: opencode-usage
+      name: '@wingsky/dsh-opencode-usage'
+      config:
+        enabled: true

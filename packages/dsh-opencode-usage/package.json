@@ -1,0 +1,58 @@
+{
+  "name": "@wingsky/dsh-opencode-usage",
+  "version": "0.4.0",
+  "description": "OpenCode Go 套餐用量悬浮框：右上角常驻三窗口消耗百分比，展开为 rolling/weekly/monthly 三张独立迷你图（各窗口独立自适应坐标轴、100% 配额参考线、重置标记线、后台采样保历史连续；官方 /v1/usage 接口，权威数据，零本地计算）",
+  "type": "module",
+  "main": "lib/index.js",
+  "scripts": {
+    "build": "node ../../scripts/clean-lib.mjs && tsc -p tsconfig.json && node ../../scripts/bundle-host.mjs .",
+    "test": "node test/smoke.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepublishOnly": "pnpm run typecheck && pnpm run build && pnpm test"
+  },
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-connection"
+      ],
+      "platform": "web"
+    }
+  },
+  "files": [
+    "lib",
+    "shared/*.d.ts",
+    "types/dsh.d.ts",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wingsky-1/dsh-plugin-hub.git",
+    "directory": "packages/dsh-opencode-usage"
+  },
+  "bugs": {
+    "url": "https://github.com/wingsky-1/dsh-plugin-hub/issues"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "opencode",
+    "usage"
+  ],
+  "author": "wingsky-1"
+}
