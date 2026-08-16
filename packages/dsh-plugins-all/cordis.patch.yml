@@ -24,3 +24,8 @@
       name: '@wingsky/dsh-opencode-usage'
       config:
         enabled: true
+    - id: mcp-manager
+      name: '@wingsky/dsh-mcp-manager'
+      config:
+        enabled: true
+        announceToAgent: true

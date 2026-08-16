@@ -12,11 +12,15 @@
     "pack:check": "node scripts/pack-check.mjs",
     "typecheck": "pnpm -r --if-present run typecheck"
   },
-  "keywords": ["dsh", "deepseek-harness", "plugin"],
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin"
+  ],
   "packageManager": "pnpm@11.21.0",
   "devDependencies": {
-    "@types/node": "^22.10.0",
-    "esbuild": "^0.28.0",
-    "typescript": "^5.7.0"
+    "@types/node": "^26.2.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
   }
 }

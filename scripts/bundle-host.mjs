@@ -82,6 +82,17 @@ if (existsSync(srcDir)) {
   }
 }
 
+// 1d. 清理游离产物：多模块 src 的 tsc 会逐个 emit lib/*.js + *.js.map，
+// 主入口已内联全部模块——删除除 index.js/client.js 外的 .js/.js.map
+// （保留 .d.ts：index.d.ts 的类型 re-export 需要）
+for (const f of readdirSync(libDir)) {
+  if (f.endsWith('.js') && f !== 'index.js' && f !== 'client.js') {
+    rmSync(join(libDir, f), { force: true })
+  } else if (f.endsWith('.js.map') || (f.endsWith('.map') && f !== 'index.js.map')) {
+    rmSync(join(libDir, f), { force: true })
+  }
+}
+
 // 2a. d.ts 路径改写（X1）：../../../shared|types → ../shared|types（兼容二级写法）
 for (const f of readdirSync(libDir).filter(f => f.endsWith('.d.ts'))) {
   const p = join(libDir, f)

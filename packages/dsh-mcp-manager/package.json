@@ -1,0 +1,58 @@
+{
+  "name": "@wingsky/dsh-mcp-manager",
+  "version": "0.1.0",
+  "description": "DSH MCP 管理器：Web 侧边栏「MCP」入口，面板按状态分级展示 MCP 服务器（运行中/连接中/已配置/失败），支持快速接入（stdio / streamable-http 表单）与粘贴 mcpServers JSON 导入。已连接服务器的工具以 mcp__<server>__<tool> 注册给模型直接调用。",
+  "type": "module",
+  "main": "lib/index.js",
+  "scripts": {
+    "build": "node ../../scripts/clean-lib.mjs && tsc -p tsconfig.json && node ../../scripts/bundle-host.mjs .",
+    "test": "node test/smoke.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepublishOnly": "pnpm run typecheck && pnpm run build && pnpm test"
+  },
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-connection"
+      ],
+      "platform": "web"
+    }
+  },
+  "files": [
+    "lib",
+    "shared/*.d.ts",
+    "types/dsh.d.ts",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wingsky-1/dsh-plugin-hub.git",
+    "directory": "packages/dsh-mcp-manager"
+  },
+  "bugs": {
+    "url": "https://github.com/wingsky-1/dsh-plugin-hub/issues"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "mcp",
+    "model-context-protocol"
+  ],
+  "author": "wingsky-1"
+}

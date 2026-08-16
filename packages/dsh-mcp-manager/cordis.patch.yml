@@ -1,0 +1,11 @@
+# dsh-mcp-manager bundle patch：向 web profile 名册插入 MCP 管理器。
+# 主机端（exports "."）在宿主进程运行，注入 tools / webServer / systemPrompt：
+# 管理 <DSH_HOME>/dsh-mcp.json 中的 MCP 服务器（stdio / streamable-http），
+# 把已连接服务器的工具注册为 mcp__<server>__<tool>，并提供 /api/dsh-mcp/* 路由；
+# 浏览器端（exports "./client"）提供侧边栏入口与分级面板。
+- insert:
+    - id: mcp-manager
+      name: '@wingsky/dsh-mcp-manager'
+      config:
+        enabled: true
+        announceToAgent: true
