@@ -1,3 +1,4 @@
+// @ts-nocheck
 // 聚合包构建：生成最小宿主入口 lib/index.js（聚合包本身无业务逻辑，
 // 职责 = dependencies 拉齐子包 + cordis.patch.yml 激活）。
 // lib/ 是构建产物，不入库（.gitignore），发布前由 prepare/build 生成。

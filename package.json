@@ -8,8 +8,8 @@
   "scripts": {
     "build": "pnpm -r build",
     "test": "pnpm -r test",
-    "contract": "node scripts/contract-check.mjs",
-    "pack:check": "node scripts/pack-check.mjs",
+    "contract": "node scripts/contract-check.ts",
+    "pack:check": "node scripts/pack-check.ts",
     "typecheck": "pnpm -r --if-present run typecheck"
   },
   "keywords": [
