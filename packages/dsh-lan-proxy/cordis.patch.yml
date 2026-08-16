@@ -4,7 +4,7 @@
 # 解析真实上游端口（默认 3080；--port 0 也适用）。
 - insert:
     - id: lan-proxy
-      name: '@wingsky/dsh-lan-proxy'
+      name: '@wingsky-1/dsh-lan-proxy'
       config:
         host: '0.0.0.0'
         port: 3081

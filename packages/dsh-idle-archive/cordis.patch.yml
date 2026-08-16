@@ -2,4 +2,4 @@
 # 并暴露同包的 dsh.client Web 半。
 - insert:
     - id: dsh-idle-archive
-      name: '@wingsky/dsh-idle-archive'
+      name: '@wingsky-1/dsh-idle-archive'

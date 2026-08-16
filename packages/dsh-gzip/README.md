@@ -1,11 +1,11 @@
-# @wingsky/dsh-gzip
+# @wingsky-1/dsh-gzip
 
 /api 响应 gzip 压缩插件：解决远程/低带宽访问时「历史加载失败：The user aborted a request.（internal）」的问题（历史页响应大且无压缩，浏览器超时）。
 
 ## 安装
 
 ```sh
-dsh plugin --profile web add @wingsky/dsh-gzip
+dsh plugin --profile web add @wingsky-1/dsh-gzip
 ```
 
 安装后**重启一次** `dsh web`。
@@ -46,7 +46,7 @@ curl -s -D - -o /dev/null -X POST http://127.0.0.1:3080/api/session.list \
 
 ```sh
 # 源码在 src/*.ts，改后必须 build（dsh 直接 import lib 产物）
-pnpm --filter @wingsky/dsh-gzip build
+pnpm --filter @wingsky-1/dsh-gzip build
 node test/smoke.mjs
 ```
 

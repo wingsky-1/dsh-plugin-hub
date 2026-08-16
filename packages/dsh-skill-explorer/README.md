@@ -1,4 +1,4 @@
-# @wingsky/dsh-skill-explorer
+# @wingsky-1/dsh-skill-explorer
 
 DSH Web GUI 的**技能中心**：侧边栏「技能中心」入口，两个 tab：
 
@@ -12,7 +12,7 @@ DSH Web GUI 的**技能中心**：侧边栏「技能中心」入口，两个 tab
 ## 安装
 
 ```sh
-dsh plugin --profile web add @wingsky/dsh-skill-explorer
+dsh plugin --profile web add @wingsky-1/dsh-skill-explorer
 ```
 
 安装后**重启一次** `dsh web`，侧边栏出现「技能中心」入口。
@@ -60,7 +60,7 @@ dsh plugin --profile web add @wingsky/dsh-skill-explorer
 curl -s http://127.0.0.1:3080/api/dsh-skill-explorer/health
 
 # 源码在 src/，改后必须 build
-pnpm --filter @wingsky/dsh-skill-explorer build
+pnpm --filter @wingsky-1/dsh-skill-explorer build
 node test/smoke.mjs
 ```
 

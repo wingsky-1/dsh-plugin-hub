@@ -1,36 +1,36 @@
 # dsh-plugins-all 聚合 patch：向 web profile 名册插入已迁入插件。
 # 安装命令：
 #
-#   dsh plugin --profile web add @wingsky/dsh-plugins-all
+#   dsh plugin --profile web add @wingsky-1/dsh-plugins-all
 #
 # （dsh plugin 在 profile 目录转发 pnpm 安装依赖，自动把声明了 dsh.bundle 的
 # 已安装包加入 dsh.profile.bundles 层栈，本文件即作为 bundle 层生效。）
 - insert:
     - id: dsh-gzip
-      name: '@wingsky/dsh-gzip'
+      name: '@wingsky-1/dsh-gzip'
       config:
         enabled: true
     - id: dsh-idle-archive
-      name: '@wingsky/dsh-idle-archive'
+      name: '@wingsky-1/dsh-idle-archive'
     - id: notifier
-      name: '@wingsky/dsh-notifier'
+      name: '@wingsky-1/dsh-notifier'
       config:
         enabled: true
     - id: skill-explorer
-      name: '@wingsky/dsh-skill-explorer'
+      name: '@wingsky-1/dsh-skill-explorer'
       config:
         enabled: true
     - id: opencode-usage
-      name: '@wingsky/dsh-opencode-usage'
+      name: '@wingsky-1/dsh-opencode-usage'
       config:
         enabled: true
     - id: mcp-manager
-      name: '@wingsky/dsh-mcp-manager'
+      name: '@wingsky-1/dsh-mcp-manager'
       config:
         enabled: true
         announceToAgent: true
     - id: lan-proxy
-      name: '@wingsky/dsh-lan-proxy'
+      name: '@wingsky-1/dsh-lan-proxy'
       config:
         host: '0.0.0.0'
         port: 3081

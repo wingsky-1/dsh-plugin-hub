@@ -1,6 +1,6 @@
 {
-  "name": "@wingsky/dsh-idle-archive",
-  "version": "0.1.0",
+  "name": "@wingsky-1/dsh-idle-archive",
+  "version": "0.1.1",
   "description": "会话闲置自动提醒：超过 X 小时未对话的会话弹窗询问是否归档，拒绝后 Y 小时不重复提示",
   "type": "module",
   "main": "lib/index.js",
@@ -63,5 +63,8 @@
     "session",
     "archive"
   ],
-  "author": "wingsky-1"
+  "author": "wingsky-1",
+  "publishConfig": {
+    "access": "public"
+  }
 }

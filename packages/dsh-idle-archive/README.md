@@ -1,4 +1,4 @@
-# @wingsky/dsh-idle-archive
+# @wingsky-1/dsh-idle-archive
 
 会话闲置归档提醒：自动扫描「超过 X 小时没进行对话」的会话，弹窗询问是否归档；
 选择「暂不归档」后，该会话 Y 小时内不再重复提示。
@@ -8,7 +8,7 @@
 ## 安装
 
 ```sh
-dsh plugin --profile web add @wingsky/dsh-idle-archive
+dsh plugin --profile web add @wingsky-1/dsh-idle-archive
 ```
 
 安装后**重启一次** `dsh web`。
@@ -58,7 +58,7 @@ GUI 修改入口：设置 → 插件 → 「会话闲置提醒」卡片（保存
 curl -s http://127.0.0.1:3080/api/dsh-idle-archive/health
 
 # 源码在 src/，改后必须 build（dsh 直接 import lib 产物）
-pnpm --filter @wingsky/dsh-idle-archive build
+pnpm --filter @wingsky-1/dsh-idle-archive build
 node test/smoke.mjs && node test/client-shim.mjs
 ```
 

@@ -36,25 +36,25 @@ importers:
 
   packages/dsh-plugins-all:
     dependencies:
-      '@wingsky/dsh-gzip':
+      '@wingsky-1/dsh-gzip':
         specifier: workspace:*
         version: link:../dsh-gzip
-      '@wingsky/dsh-idle-archive':
+      '@wingsky-1/dsh-idle-archive':
         specifier: workspace:*
         version: link:../dsh-idle-archive
-      '@wingsky/dsh-lan-proxy':
+      '@wingsky-1/dsh-lan-proxy':
         specifier: workspace:*
         version: link:../dsh-lan-proxy
-      '@wingsky/dsh-mcp-manager':
+      '@wingsky-1/dsh-mcp-manager':
         specifier: workspace:*
         version: link:../dsh-mcp-manager
-      '@wingsky/dsh-notifier':
+      '@wingsky-1/dsh-notifier':
         specifier: workspace:*
         version: link:../dsh-notifier
-      '@wingsky/dsh-opencode-usage':
+      '@wingsky-1/dsh-opencode-usage':
         specifier: workspace:*
         version: link:../dsh-opencode-usage
-      '@wingsky/dsh-skill-explorer':
+      '@wingsky-1/dsh-skill-explorer':
         specifier: workspace:*
         version: link:../dsh-skill-explorer
 

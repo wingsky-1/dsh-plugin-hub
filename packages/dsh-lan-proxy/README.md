@@ -1,4 +1,4 @@
-# @wingsky/dsh-lan-proxy
+# @wingsky-1/dsh-lan-proxy
 
 局域网访问 dsh web UI：在 `0.0.0.0:<port>` 监听，把 HTTP/HTTPS 与 WebSocket/wss
 转发到回环 web 服务器（默认 `127.0.0.1:3080`）。
@@ -10,7 +10,7 @@
 ## 安装
 
 ```sh
-dsh plugin --profile web add @wingsky/dsh-lan-proxy
+dsh plugin --profile web add @wingsky-1/dsh-lan-proxy
 ```
 
 安装后**重启一次** `dsh web`。插件注入 webServer，仅在回环服务器绑定后启动，
@@ -18,7 +18,7 @@ dsh plugin --profile web add @wingsky/dsh-lan-proxy
 
 > ⚠️ **安装即开端口**：本插件会在 `0.0.0.0:3081`（HTTP）与 `0.0.0.0:3443`
 > （HTTPS）监听，局域网内所有设备都可访问你的 dsh web。不需要时请
-> `dsh plugin --profile web remove @wingsky/dsh-lan-proxy`。
+> `dsh plugin --profile web remove @wingsky-1/dsh-lan-proxy`。
 
 ## 配置
 

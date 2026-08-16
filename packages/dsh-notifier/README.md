@@ -1,11 +1,11 @@
-# @wingsky/dsh-notifier
+# @wingsky-1/dsh-notifier
 
 审批/完成/错误事件通知：人不在浏览器前也能收到提醒。
 
 ## 安装
 
 ```sh
-dsh plugin --profile web add @wingsky/dsh-notifier
+dsh plugin --profile web add @wingsky-1/dsh-notifier
 ```
 
 安装后**重启一次** `dsh web`。
@@ -68,7 +68,7 @@ dsh plugin --profile web add @wingsky/dsh-notifier
 curl -s http://127.0.0.1:3080/api/dsh-notifier/health
 
 # 源码在 src/，改后必须 build
-pnpm --filter @wingsky/dsh-notifier build
+pnpm --filter @wingsky-1/dsh-notifier build
 node test/smoke.mjs
 ```
 

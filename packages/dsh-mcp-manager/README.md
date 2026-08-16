@@ -1,4 +1,4 @@
-# @wingsky/dsh-mcp-manager
+# @wingsky-1/dsh-mcp-manager
 
 DSH（DeepSeek Harness）的 **MCP 服务器管理插件**：会话界面右上角浮窗 + 分级面板 +
 快速接入（手工表单 + 粘贴 mcpServers JSON 导入，**不预设任何服务器**），支持
@@ -9,7 +9,7 @@ DSH（DeepSeek Harness）的 **MCP 服务器管理插件**：会话界面右上�
 ## 安装
 
 ```sh
-dsh plugin --profile web add @wingsky/dsh-mcp-manager
+dsh plugin --profile web add @wingsky-1/dsh-mcp-manager
 ```
 
 安装后**重启一次** `dsh web`：会话界面右上角出现 MCP 浮窗；Agent 提示词中
@@ -57,7 +57,7 @@ dsh plugin --profile web add @wingsky/dsh-mcp-manager
 curl -s http://127.0.0.1:3080/api/dsh-mcp/health
 
 # 源码在 src/，改后必须 build
-pnpm --filter @wingsky/dsh-mcp-manager build
+pnpm --filter @wingsky-1/dsh-mcp-manager build
 node test/smoke.mjs
 ```
 

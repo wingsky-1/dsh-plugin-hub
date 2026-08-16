@@ -1,4 +1,4 @@
-# @wingsky/dsh-opencode-usage
+# @wingsky-1/dsh-opencode-usage
 
 DSH（DeepSeek Harness）Web GUI 插件：**OpenCode Go 套餐用量悬浮框 + 三窗口迷你图**。
 
@@ -13,7 +13,7 @@ DSH（DeepSeek Harness）Web GUI 插件：**OpenCode Go 套餐用量悬浮框 + 
 ## 安装
 
 ```sh
-dsh plugin --profile web add @wingsky/dsh-opencode-usage
+dsh plugin --profile web add @wingsky-1/dsh-opencode-usage
 ```
 
 安装后**重启一次** `dsh web`。
@@ -80,7 +80,7 @@ Authorization: Bearer <OPENCODE_GO_API_KEY>
 curl -s http://127.0.0.1:3080/api/dsh-opencode-usage/health
 
 # 源码在 src/，改后必须 build
-pnpm --filter @wingsky/dsh-opencode-usage build
+pnpm --filter @wingsky-1/dsh-opencode-usage build
 node test/smoke.mjs
 ```
 

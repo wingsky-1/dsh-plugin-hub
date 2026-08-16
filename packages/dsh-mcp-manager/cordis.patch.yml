@@ -5,7 +5,7 @@
 # 浏览器端（exports "./client"）提供侧边栏入口与分级面板。
 - insert:
     - id: mcp-manager
-      name: '@wingsky/dsh-mcp-manager'
+      name: '@wingsky-1/dsh-mcp-manager'
       config:
         enabled: true
         announceToAgent: true
