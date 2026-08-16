@@ -6,7 +6,7 @@ DSH 插件全家桶**聚合包**：安装本包 = 一键装齐全部功能插件
 dsh plugin --profile web add @wingsky-1/dsh-plugins-all
 ```
 
-装完重启一次 `dsh web`。
+装完重启一次 `dsh web`。已发布到 npm（v0.1.2）。
 
 ## 包含的插件
 
