@@ -29,3 +29,8 @@
       config:
         enabled: true
         announceToAgent: true
+    - id: lan-proxy
+      name: '@wingsky/dsh-lan-proxy'
+      config:
+        host: '0.0.0.0'
+        port: 3081

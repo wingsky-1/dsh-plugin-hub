@@ -16,7 +16,7 @@ DSH（DeepSeek Harness）Web GUI 插件集，**npm 分发**：既可一键安装
 | `@wingsky/dsh-skill-explorer` | 技能中心：分级展示 + 创建/启用/删除 skill | ✅ 已迁入（待发布） |
 | `@wingsky/dsh-opencode-usage` | OpenCode Go 套餐用量悬浮框（rolling/weekly/monthly） | ✅ 已迁入（待发布） |
 | `@wingsky/dsh-mcp-manager` | MCP 服务器管理器（stdio/HTTP，工具注册给模型） | ✅ 已迁入（待发布） |
-| `@wingsky/dsh-lan-proxy` | 局域网访问 dsh web UI（HTTP/HTTPS/WS 转发 + TLS） | 🚧 待迁入 |
+| `@wingsky/dsh-lan-proxy` | 局域网访问 dsh web UI（HTTP/HTTPS/WS 转发 + TLS） | ✅ 已迁入（待发布） |
 
 
 > dsh-memory（项目长期记忆）未包含在本集合内。
@@ -36,6 +36,7 @@ dsh plugin --profile web add @wingsky/dsh-notifier
 dsh plugin --profile web add @wingsky/dsh-skill-explorer
 dsh plugin --profile web add @wingsky/dsh-opencode-usage
 dsh plugin --profile web add @wingsky/dsh-mcp-manager
+dsh plugin --profile web add @wingsky/dsh-lan-proxy
 
 # 卸载
 dsh plugin --profile web remove @wingsky/dsh-gzip
