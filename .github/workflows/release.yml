@@ -1,0 +1,71 @@
+name: Release
+
+# Tag-triggered publish：推 vX.Y.Z tag 是唯一发布开关。
+# 校验每个包版本 == tag 版本（tag 是版本唯一来源）→ 全量门禁 →
+# 按依赖序 pnpm publish（7 子包 → 聚合包）→ 生成 GitHub Release。
+# 需要仓库 secret NPM_TOKEN（@wingsky scope 的 npm automation token）。
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build, test, publish, release
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 11
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify versions（全包版本 == tag）
+        run: node scripts/verify-version.mjs
+
+      - name: Build
+        run: pnpm build
+
+      - name: Contract
+        run: pnpm contract
+
+      - name: Tests
+        run: pnpm test
+
+      - name: Pack check
+        run: pnpm pack:check
+
+      - name: Publish to npm（pnpm，依赖序）
+        run: |
+          set -e
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+          pnpm -r --filter './packages/dsh-*' publish --no-git-checks
+          pnpm --filter @wingsky/dsh-plugins-all publish --no-git-checks
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true

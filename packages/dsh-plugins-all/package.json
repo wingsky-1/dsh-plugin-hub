@@ -1,0 +1,39 @@
+{
+  "name": "@wingsky/dsh-plugins-all",
+  "version": "0.1.0",
+  "description": "DSH 插件全家桶聚合包：一键安装全部功能插件（notifier / skill-explorer / opencode-usage / lan-proxy / mcp-manager / idle-archive / gzip）。装它 = 全部子包 dependencies 拉齐 + 聚合 cordis patch 激活。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "prepare": "node build.mjs"
+  },
+  "license": "MIT",
+  "files": [
+    "lib",
+    "cordis.patch.yml"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wingsky-1/dsh-plugin-hub.git",
+    "directory": "packages/dsh-plugins-all"
+  },
+  "dependencies": {
+    "@wingsky/dsh-gzip": "workspace:*",
+    "@wingsky/dsh-idle-archive": "workspace:*",
+    "@wingsky/dsh-lan-proxy": "workspace:*",
+    "@wingsky/dsh-mcp-manager": "workspace:*",
+    "@wingsky/dsh-notifier": "workspace:*",
+    "@wingsky/dsh-opencode-usage": "workspace:*",
+    "@wingsky/dsh-skill-explorer": "workspace:*"
+  }
+}

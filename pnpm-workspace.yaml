@@ -1,0 +1,9 @@
+packages:
+  - 'packages/*'
+  - 'shared'
+
+# SDK peers 不自动安装，运行时由 DSH profile 树解析（与 dsh-web-ui 同策略）。
+autoInstallPeers: false
+
+allowBuilds:
+  esbuild: true

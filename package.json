@@ -1,0 +1,18 @@
+{
+  "name": "dsh-plugin-hub",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "DSH（DeepSeek Harness）插件集：npm 分发，可一键装全家桶（@wingsky/dsh-plugins-all）或单独安装（@wingsky/dsh-*）",
+  "license": "MIT",
+  "scripts": {
+    "build": "python3 scripts/dshx.py build",
+    "build:check": "python3 scripts/dshx.py build --check",
+    "contract": "python3 scripts/dshx.py contract",
+    "test": "python3 scripts/dshx.py test",
+    "health": "python3 scripts/dshx.py health",
+    "pack:check": "python3 scripts/dshx.py pack-check"
+  },
+  "keywords": ["dsh", "deepseek-harness", "plugin"],
+  "packageManager": "pnpm@11.21.0"
+}

@@ -1,0 +1,15 @@
+# 依赖与构建产物
+node_modules/
+.pnpm-store/
+dist/
+*.tsbuildinfo
+*.log
+
+# 构建产物（源码在 src/，lib/ 由 dshx build 生成；发布内容来自构建，不入库）
+packages/*/lib/
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
