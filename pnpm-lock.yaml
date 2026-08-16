@@ -22,6 +22,8 @@ importers:
 
   packages/dsh-idle-archive: {}
 
+  packages/dsh-notifier: {}
+
   packages/dsh-plugins-all:
     dependencies:
       '@wingsky/dsh-gzip':
@@ -30,6 +32,9 @@ importers:
       '@wingsky/dsh-idle-archive':
         specifier: workspace:*
         version: link:../dsh-idle-archive
+      '@wingsky/dsh-notifier':
+        specifier: workspace:*
+        version: link:../dsh-notifier
 
 packages:
 

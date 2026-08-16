@@ -71,6 +71,17 @@ if (existsSync(clientSrc)) {
   console.log(`[bundle-host] ${process.argv[2]}: 客户端 IIFE 构建完成`)
 }
 
+// 1c. 资源文件复制：src/ 下非 TS 文件（如 toast.ps1）→ lib/（运行时从 lib 同目录定位）
+const srcDir = join(pkgDir, 'src')
+if (existsSync(srcDir)) {
+  for (const f of readdirSync(srcDir)) {
+    if (!/\.(ts|tsx|js|mjs|cjs)$/.test(f) && existsSync(join(srcDir, f))) {
+      cpSync(join(srcDir, f), join(libDir, f))
+      console.log(`[bundle-host] ${process.argv[2]}: 资源 ${f} → lib/`)
+    }
+  }
+}
+
 // 2a. d.ts 路径改写（X1）：../../../shared|types → ../shared|types（兼容二级写法）
 for (const f of readdirSync(libDir).filter(f => f.endsWith('.d.ts'))) {
   const p = join(libDir, f)

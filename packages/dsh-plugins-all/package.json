@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "@wingsky/dsh-gzip": "workspace:*",
-    "@wingsky/dsh-idle-archive": "workspace:*"
+    "@wingsky/dsh-idle-archive": "workspace:*",
+    "@wingsky/dsh-notifier": "workspace:*"
   }
 }

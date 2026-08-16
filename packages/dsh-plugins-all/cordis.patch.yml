@@ -12,3 +12,7 @@
         enabled: true
     - id: dsh-idle-archive
       name: '@wingsky/dsh-idle-archive'
+    - id: notifier
+      name: '@wingsky/dsh-notifier'
+      config:
+        enabled: true
