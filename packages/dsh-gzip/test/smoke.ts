@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * dsh-gzip —— 宿主端冒烟测试（fake ctx + fake webServer，无网络）。
  *

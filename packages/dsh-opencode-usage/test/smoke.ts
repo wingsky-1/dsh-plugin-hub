@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * dsh-opencode-usage — 宿主端冒烟测试（fake ctx + 注入 fetch，无网络）。
  *

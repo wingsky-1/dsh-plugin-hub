@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * dsh-idle-archive — 冒烟测试（fake ctx，无网络）。
  *

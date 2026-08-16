@@ -1,3 +1,4 @@
+// @ts-nocheck
 // dsh-skill-explorer 主机端冒烟测试 —— 无外部依赖。
 //
 // 在系统临时目录搭建假技能根（项目 .dsh/skills、.agents/skills、用户

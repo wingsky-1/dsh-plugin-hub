@@ -6,7 +6,7 @@
   "main": "lib/index.js",
   "scripts": {
     "build": "node ../../scripts/clean-lib.mjs && tsc -p tsconfig.json && node ../../scripts/bundle-host.mjs .",
-    "test": "node test/smoke.mjs",
+    "test": "node test/smoke.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "prepublishOnly": "pnpm run typecheck && pnpm run build && pnpm test"
   },

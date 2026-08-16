@@ -1,3 +1,4 @@
+// @ts-nocheck
 // dsh-lan-proxy 冒烟测试 —— 无外部依赖。
 //
 // 在 127.0.0.1:19090 起一个"假 dsh web 服务器"（回显请求要素、对 WebSocket

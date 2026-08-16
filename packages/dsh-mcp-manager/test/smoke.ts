@@ -1,3 +1,4 @@
+// @ts-nocheck
 // dsh-mcp-manager 冒烟测试 —— 无外部依赖、不发起真实网络连接。
 //
 // 覆盖：

@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * dsh-notifier — 宿主端冒烟测试（fake ctx，无网络）。
  *
