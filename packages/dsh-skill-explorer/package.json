@@ -1,7 +1,7 @@
 {
-  "name": "@wingsky/dsh-notifier",
+  "name": "@wingsky/dsh-skill-explorer",
   "version": "0.1.0",
-  "description": "审批/完成/错误事件通知：浏览器 Notification + 系统原生 toast（Windows PowerShell WinRT / macOS·Linux notify-send，零依赖）；提示音可配、每条通知独立显示不互相替换、非安全上下文自动降级横幅",
+  "description": "DSH Web GUI 技能中心：侧边栏入口 + 面板，分级展示已加载 skill（系统内置/项目/用户/自定义/运行时），支持创建、启用/禁用与删除（移入 .trash）。数据以文件系统扫描为主 + ctx.skills 注册表补充。",
   "type": "module",
   "main": "lib/index.js",
   "scripts": {
@@ -42,7 +42,7 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/wingsky-1/dsh-plugin-hub.git",
-    "directory": "packages/dsh-notifier"
+    "directory": "packages/dsh-skill-explorer"
   },
   "bugs": {
     "url": "https://github.com/wingsky-1/dsh-plugin-hub/issues"
@@ -51,8 +51,7 @@
     "dsh",
     "deepseek-harness",
     "plugin",
-    "notification",
-    "toast"
+    "skill"
   ],
   "author": "wingsky-1"
 }

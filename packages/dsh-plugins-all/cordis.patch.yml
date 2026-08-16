@@ -16,3 +16,7 @@
       name: '@wingsky/dsh-notifier'
       config:
         enabled: true
+    - id: skill-explorer
+      name: '@wingsky/dsh-skill-explorer'
+      config:
+        enabled: true
