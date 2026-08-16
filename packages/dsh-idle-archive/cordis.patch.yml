@@ -1,0 +1,5 @@
+# dsh-idle-archive bundle patch：安装宿主半（RPC 通道 + health 路由），
+# 并暴露同包的 dsh.client Web 半。
+- insert:
+    - id: dsh-idle-archive
+      name: '@wingsky/dsh-idle-archive'

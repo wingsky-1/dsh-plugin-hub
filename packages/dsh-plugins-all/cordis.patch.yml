@@ -10,3 +10,5 @@
       name: '@wingsky/dsh-gzip'
       config:
         enabled: true
+    - id: dsh-idle-archive
+      name: '@wingsky/dsh-idle-archive'

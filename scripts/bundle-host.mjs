@@ -15,7 +15,7 @@
  *
  * 前置：插件已 tsc 编译（tsc -p tsconfig.json），lib/ 含 js + d.ts。
  */
-import { cpSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
@@ -53,6 +53,23 @@ renameSync(tmpBundle, join(libDir, 'index.js'))
 // tsc 的 sourcemap 在 bundle 后失效（行号已变），一并清理，避免发布失效 map
 try { rmSync(join(libDir, 'index.js.map')) } catch { /* map 不存在则跳过 */ }
 console.log(`[bundle-host] ${process.argv[2]}: shared 已内联（lib/index.js 自包含）`)
+
+// 1b. 客户端构建（有 src/client.ts 时）：tsc 产物非契约形态，用 esbuild IIFE 覆盖
+const clientSrc = join(pkgDir, 'src', 'client.ts')
+if (existsSync(clientSrc)) {
+  try {
+    execFileSync(esbuildBin, [
+      clientSrc, '--bundle', '--format=iife', '--target=es2020',
+      '--banner:js="use strict";', '--charset=utf8',
+      `--outfile=${join(libDir, 'client.js')}`, '--log-level=warning',
+    ], { stdio: 'inherit' })
+  } catch (e) {
+    console.error(`[bundle-host] 客户端构建失败: ${e.message}`)
+    process.exit(1)
+  }
+  try { rmSync(join(libDir, 'client.js.map')) } catch { /* 无 map 则跳过 */ }
+  console.log(`[bundle-host] ${process.argv[2]}: 客户端 IIFE 构建完成`)
+}
 
 // 2a. d.ts 路径改写（X1）：../../../shared|types → ../shared|types（兼容二级写法）
 for (const f of readdirSync(libDir).filter(f => f.endsWith('.d.ts'))) {

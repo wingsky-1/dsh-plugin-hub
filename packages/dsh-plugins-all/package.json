@@ -28,6 +28,7 @@
     "directory": "packages/dsh-plugins-all"
   },
   "dependencies": {
-    "@wingsky/dsh-gzip": "workspace:*"
+    "@wingsky/dsh-gzip": "workspace:*",
+    "@wingsky/dsh-idle-archive": "workspace:*"
   }
 }

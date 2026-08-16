@@ -11,12 +11,13 @@ DSH（DeepSeek Harness）Web GUI 插件集，**npm 分发**：既可一键安装
 | 包名 | 功能 | 状态 |
 |---|---|---|
 | `@wingsky/dsh-gzip` | /api 响应 gzip 压缩 | ✅ 已迁入（待发布） |
+| `@wingsky/dsh-idle-archive` | 会话闲置提醒归档 | ✅ 已迁入（待发布） |
 | `@wingsky/dsh-notifier` | 审批/完成/错误事件通知（浏览器 Notification + 系统 toast） | 🚧 待迁入 |
 | `@wingsky/dsh-skill-explorer` | 技能中心：只读展示已加载 skill，按来源分级 | 🚧 待迁入 |
 | `@wingsky/dsh-opencode-usage` | OpenCode Go 套餐用量悬浮框（rolling/weekly/monthly） | 🚧 待迁入 |
 | `@wingsky/dsh-lan-proxy` | 局域网访问 dsh web UI（HTTP/HTTPS/WS 转发 + TLS） | 🚧 待迁入 |
 | `@wingsky/dsh-mcp-manager` | MCP 服务器管理器（stdio/HTTP，工具注册给模型） | 🚧 待迁入 |
-| `@wingsky/dsh-idle-archive` | 会话闲置提醒归档 | 🚧 待迁入 |
+
 
 > dsh-memory（项目长期记忆）未包含在本集合内。
 
@@ -25,14 +26,16 @@ DSH（DeepSeek Harness）Web GUI 插件集，**npm 分发**：既可一键安装
 已安装 DeepSeek Harness 且 `dsh web` 可正常启动的前提下：
 
 ```sh
-# 一键装全家桶（推荐，当前包含 gzip）
+# 一键装全家桶（推荐，当前包含 gzip / idle-archive）
 dsh plugin --profile web add @wingsky/dsh-plugins-all
 
 # 或单独安装
 dsh plugin --profile web add @wingsky/dsh-gzip
+dsh plugin --profile web add @wingsky/dsh-idle-archive
 
 # 卸载
 dsh plugin --profile web remove @wingsky/dsh-gzip
+dsh plugin --profile web remove @wingsky/dsh-idle-archive
 ```
 
 装完**重启一次** `dsh web`（bundle 层只在启动时组合），侧边栏/设置页出现插件入口。

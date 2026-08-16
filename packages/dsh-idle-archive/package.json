@@ -1,0 +1,65 @@
+{
+  "name": "@wingsky/dsh-idle-archive",
+  "version": "0.1.0",
+  "description": "会话闲置自动提醒：超过 X 小时未对话的会话弹窗询问是否归档，拒绝后 Y 小时不重复提示",
+  "type": "module",
+  "main": "lib/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node ../../scripts/bundle-host.mjs .",
+    "test": "node test/smoke.mjs && node test/client-shim.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepublishOnly": "pnpm run typecheck && pnpm run build && pnpm test"
+  },
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-ui-slots"
+      ],
+      "platform": "web"
+    }
+  },
+  "peerDependencies": {
+    "react": "^18.2.0"
+  },
+  "peerDependenciesMeta": {
+    "react": { "optional": true }
+  },
+  "files": [
+    "lib",
+    "shared/*.d.ts",
+    "types/dsh.d.ts",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wingsky-1/dsh-plugin-hub.git",
+    "directory": "packages/dsh-idle-archive"
+  },
+  "bugs": {
+    "url": "https://github.com/wingsky-1/dsh-plugin-hub/issues"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "session",
+    "archive"
+  ],
+  "author": "wingsky-1"
+}

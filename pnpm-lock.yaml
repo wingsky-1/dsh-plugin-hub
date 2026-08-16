@@ -20,11 +20,16 @@ importers:
 
   packages/dsh-gzip: {}
 
+  packages/dsh-idle-archive: {}
+
   packages/dsh-plugins-all:
     dependencies:
       '@wingsky/dsh-gzip':
         specifier: workspace:*
         version: link:../dsh-gzip
+      '@wingsky/dsh-idle-archive':
+        specifier: workspace:*
+        version: link:../dsh-idle-archive
 
 packages:
 
