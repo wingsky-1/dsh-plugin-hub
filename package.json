@@ -6,13 +6,17 @@
   "description": "DSH（DeepSeek Harness）插件集：npm 分发，可一键装全家桶（@wingsky/dsh-plugins-all）或单独安装（@wingsky/dsh-*）",
   "license": "MIT",
   "scripts": {
-    "build": "python3 scripts/dshx.py build",
-    "build:check": "python3 scripts/dshx.py build --check",
-    "contract": "python3 scripts/dshx.py contract",
-    "test": "python3 scripts/dshx.py test",
-    "health": "python3 scripts/dshx.py health",
-    "pack:check": "python3 scripts/dshx.py pack-check"
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "contract": "node scripts/contract-check.mjs",
+    "pack:check": "node scripts/pack-check.mjs",
+    "typecheck": "pnpm -r --if-present run typecheck"
   },
   "keywords": ["dsh", "deepseek-harness", "plugin"],
-  "packageManager": "pnpm@11.21.0"
+  "packageManager": "pnpm@11.21.0",
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "esbuild": "^0.28.0",
+    "typescript": "^5.7.0"
+  }
 }

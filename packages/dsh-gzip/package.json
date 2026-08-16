@@ -1,0 +1,49 @@
+{
+  "name": "@wingsky/dsh-gzip",
+  "version": "0.2.0",
+  "description": "/api 响应 gzip 压缩插件：解决远程/低带宽访问时历史加载失败（大响应无压缩 + 浏览器超时），双分支挂点免时序依赖",
+  "type": "module",
+  "main": "lib/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node ../../scripts/bundle-host.mjs .",
+    "test": "node test/smoke.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepublishOnly": "pnpm run typecheck && pnpm run build && pnpm test"
+  },
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "lib",
+    "shared/*.d.ts",
+    "types/dsh.d.ts",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wingsky-1/dsh-plugin-hub.git",
+    "directory": "packages/dsh-gzip"
+  },
+  "bugs": {
+    "url": "https://github.com/wingsky-1/dsh-plugin-hub/issues"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "gzip"
+  ],
+  "author": "wingsky-1"
+}

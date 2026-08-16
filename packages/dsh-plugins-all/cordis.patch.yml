@@ -1,37 +1,12 @@
-# dsh-plugins-all 聚合 patch：向 web profile 名册插入全部插件（dsh-memory 搁置未含）。
-# 作为 profile 的 bundle 层应用（dsh.bundle.patch 清单字段），安装命令：
+# dsh-plugins-all 聚合 patch：向 web profile 名册插入已迁入插件。
+# 安装命令：
 #
 #   dsh plugin --profile web add @wingsky/dsh-plugins-all
 #
-# （dsh plugin 是官方插件管理入口：在 profile 目录转发 pnpm 安装依赖，之后自动把
-# 声明了 dsh.bundle 的已安装包加入 dsh.profile.bundles 层栈，本文件即作为 bundle
-# 层生效。子包的各自 cordis.patch.yml 不单独应用——聚合 patch 已含全部 insert。）
+# （dsh plugin 在 profile 目录转发 pnpm 安装依赖，自动把声明了 dsh.bundle 的
+# 已安装包加入 dsh.profile.bundles 层栈，本文件即作为 bundle 层生效。）
 - insert:
-    - id: notifier
-      name: 'dsh-notifier'
-      config:
-        enabled: true
-    - id: skill-explorer
-      name: 'dsh-skill-explorer'
-      config:
-        enabled: true
-    - id: opencode-usage
-      name: 'dsh-opencode-usage'
-      config:
-        enabled: true
-    - id: lan-proxy
-      name: 'dsh-lan-proxy'
-      config:
-        host: '0.0.0.0'
-        port: 3081
-    - id: mcp-manager
-      name: 'dsh-mcp-manager'
-      config:
-        enabled: true
-        announceToAgent: true
-    - id: idle-archive
-      name: 'dsh-idle-archive'
     - id: dsh-gzip
-      name: 'dsh-gzip'
+      name: '@wingsky/dsh-gzip'
       config:
         enabled: true
