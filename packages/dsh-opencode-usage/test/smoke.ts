@@ -461,6 +461,9 @@ function makeFakeCtx(overrides = {}) {
   assert.ok(client.includes("窗口重置点"), "重置线带悬浮提示");
   assert.ok(client.includes("5 * 36e5"), "rolling 重置周期 5h（esbuild 数字规范化）");
   assert.ok(client.includes("30 * 864e5"), "monthly 重置周期 30d 近似（esbuild 数字规范化）");
+  assert.ok(client.includes("paintCharts"), "client 含按容器实测宽度填充迷你图的函数（手机端字号补偿）");
+  assert.ok(client.includes("ResizeObserver"), "client 含迷你图容器 ResizeObserver（尺寸变化重排）");
+  assert.ok(client.includes("fontScale"), "client 含字号补偿计算（窄屏保持文字可读）");
   assert.ok(client.includes("fmtAge"), "client 含相对时间新鲜度函数");
   assert.ok(client.includes("分钟前"), "新鲜度显示 x 分钟前");
   assert.ok(client.includes("smoothPath"), "client 含平滑曲线");

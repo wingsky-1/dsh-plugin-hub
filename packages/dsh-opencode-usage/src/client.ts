@@ -211,6 +211,7 @@ declare var __DSH_PLUGIN_ID__: string;
   var lastHistory: any = null; // 最近一次 history 响应（波浪图渲染用）
   var lastHistoryAt = 0; // 上次成功拉取 history 的时刻（防刷间隔）
   var chartsBox: any; // 三窗口迷你图卡片区（renderPanel 时创建）
+  var chartsResizeObs: any = null; // 迷你图容器 ResizeObserver（手机端字号补偿重排）
   var refreshTimer: any = null;
 
   /** 会话滚动容器：聊天消息实际滚动的区域（shell 的 data-conversation-scroll）。 */
@@ -512,7 +513,7 @@ declare var __DSH_PLUGIN_ID__: string;
    * - 曲线：平滑描边 + 半透明面积填充 + 末端当前值圆点高亮（sparkline 惯例）
    * 注意：SVG presentation attribute 不解析 CSS var()，颜色一律走 style 属性。
    */
-  function miniChartSvgMarkup(samples: any, col: any, color: any, lo: any, hi: any, drawXAxis: any, resetAt: any, resetPeriodMs: any) {
+  function miniChartSvgMarkup(samples: any, col: any, color: any, lo: any, hi: any, drawXAxis: any, resetAt: any, resetPeriodMs: any, fontScale: any) {
     var t0 = samples[0][0];
     var t1 = samples[samples.length - 1][0];
     if (t1 <= t0) t1 = t0 + 60000;
@@ -525,6 +526,14 @@ declare var __DSH_PLUGIN_ID__: string;
     var PB = 16;
     var xw = W - PL - PR;
     var plotH = H - PT - PB;
+    // 手机端字号补偿：SVG 是 viewBox 等比缩放，可视字号 = 字号 × 缩放比
+    // (容器宽/320)。窄屏（如 iOS 分享成桌面 app）会缩到近 7px 难读，故按
+    // 缩放比倒数放大 viewBox 内字号，保持可视 ~9.5px 恒定。fontScale 缺省 1
+    // （桌面 320px 无感）；<=0 时回落 1。
+    var fsBase = 9.5;
+    var sf = typeof fontScale === "number" && fontScale > 0 ? fontScale : 1;
+    var fs = (fsBase / sf).toFixed(2);
+    var fs100 = (9 / sf).toFixed(2);
     function xOf(ts: any) { return PL + ((ts - t0) / spanMs) * xw; }
     function yOf(pct: any) { return PT + ((hi - pct) / (hi - lo)) * plotH; }
 
@@ -541,13 +550,13 @@ declare var __DSH_PLUGIN_ID__: string;
     for (var g = 0; g < gridVals.length; g += 1) {
       var gy = yOf(gridVals[g]);
       parts.push('<line x1="' + PL + '" y1="' + gy.toFixed(1) + '" x2="' + (W - PR) + '" y2="' + gy.toFixed(1) + '" style="stroke:var(--dsw-alias-border-l2,#e8eaf0);stroke-width:1;stroke-dasharray:3 3"/>');
-      parts.push('<text x="' + (PL - 4) + '" y="' + (gy + 3).toFixed(1) + '" text-anchor="end">' + fmtPctTick(gridVals[g]) + "</text>");
+      parts.push('<text x="' + (PL - 4) + '" y="' + (gy + 3).toFixed(1) + '" text-anchor="end" style="font-size:' + fs + 'px">' + fmtPctTick(gridVals[g]) + "</text>");
     }
     // 100% 配额上限参考线（域内含 100 时）
     if (lo <= 100 && 100 <= hi && hi - lo > 0.01) {
       var ly = yOf(100);
       parts.push('<line x1="' + PL + '" y1="' + ly.toFixed(1) + '" x2="' + (W - PR) + '" y2="' + ly.toFixed(1) + '" style="stroke:var(--dsw-alias-state-error-primary,#d64545);stroke-width:1;stroke-dasharray:4 3;stroke-opacity:.65"/>');
-      parts.push('<text x="' + (W - PR - 2) + '" y="' + (ly - 3).toFixed(1) + '" text-anchor="end" style="fill:var(--dsw-alias-state-error-primary,#d64545);font-size:9px">100%</text>');
+      parts.push('<text x="' + (W - PR - 2) + '" y="' + (ly - 3).toFixed(1) + '" text-anchor="end" style="fill:var(--dsw-alias-state-error-primary,#d64545);font-size:' + fs100 + 'px">100%</text>');
     }
     // 数据线（钳制进域内，防御越界值）
     var line: any = [];
@@ -574,7 +583,7 @@ declare var __DSH_PLUGIN_ID__: string;
       for (var k = 0; k < ticks.length; k += 1) {
         var tx = xOf(ticks[k]);
         var anchor = k === 0 ? "start" : k === ticks.length - 1 ? "end" : "middle";
-        parts.push('<text x="' + tx.toFixed(1) + '" y="' + (H - 4) + '" text-anchor="' + anchor + '">' + fmtAxisTime(ticks[k], spanMs) + "</text>");
+        parts.push('<text x="' + tx.toFixed(1) + '" y="' + (H - 4) + '" text-anchor="' + anchor + '" style="font-size:' + fs + 'px">' + fmtAxisTime(ticks[k], spanMs) + "</text>");
       }
     }
     return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + " " + H + '">' + parts.join("") + "</svg>";
@@ -614,15 +623,38 @@ declare var __DSH_PLUGIN_ID__: string;
     ]);
   }
 
+  /** 填充迷你图（DOM 已就位后调用）：据容器实测宽度算 fontScale（手机端
+   * 字号补偿），渲染 SVG。jobs 由 renderCharts 收集，RO 尺寸变化时复用。 */
+  function paintCharts(jobs: any) {
+    for (var j = 0; j < jobs.length; j += 1) {
+      var job = jobs[j];
+      var w = job.box.clientWidth || 320;
+      var fontScale = w / 320;
+      job.box.innerHTML = miniChartSvgMarkup(
+        job.winSamples, job.col, job.color, job.domain[0], job.domain[1], true,
+        job.resetsAt, job.period, fontScale
+      );
+    }
+  }
+
   /**
    * 渲染三窗口迷你图卡片区：每窗口独立 y 轴（自适应域，突出各自波动），
    * x 轴范围按窗口观察周期独立动态切片（锚定采样尾端），每图自带 x 轴
    * 时间刻度。全量采样不足 2 点 / 切片后不足 2 点 / 该窗口无采样各有占位。
+   * 先建骨架并 append 到 DOM，再据实测容器宽填充 SVG + 挂 ResizeObserver：
+   * iOS PWA（分享为桌面 app）窄屏时 SVG 文字会随 viewBox 等比缩小，故按
+   * 实际宽度补偿字号，尺寸变化时自动重排。
    */
   function renderCharts(container: any) {
+    // 断开旧 ResizeObserver（每次重建骨架前释放，防泄漏）
+    if (chartsResizeObs !== null) {
+      try { chartsResizeObs.disconnect(); } catch (e) { /* 忽略 */ }
+      chartsResizeObs = null;
+    }
     container.textContent = "";
     var samples = lastHistory !== null && Array.isArray(lastHistory.samples) ? lastHistory.samples : null;
     var allEnough = samples !== null && samples.length >= 2;
+    var jobs: any = [];
     for (var k = 0; k < CHART_SERIES.length; k += 1) {
       var s = CHART_SERIES[k];
       var win = lastData !== null && lastData.usage ? lastData.usage[s[0]] : null;
@@ -646,11 +678,16 @@ declare var __DSH_PLUGIN_ID__: string;
         }
         var box = el("div", { class: PILL_PREFIX + "miniChart" });
         if (hasPoint) {
-          var domain = niceDomain(pcts);
-          box.innerHTML = miniChartSvgMarkup(
-            winSamples, k + 1, s[2], domain[0], domain[1], true,
-            win && win.resetsAt, s[5]
-          );
+          // 骨架先行，SVG 延后填充（DOM 就位后实测宽度）
+          jobs.push({
+            box: box,
+            winSamples: winSamples,
+            col: k + 1,
+            color: s[2],
+            domain: niceDomain(pcts),
+            resetsAt: win && win.resetsAt,
+            period: s[5],
+          });
         } else {
           box.appendChild(el("p", { class: PILL_PREFIX + "chartEmpty", text: "该窗口暂无历史采样" }));
         }
@@ -665,6 +702,13 @@ declare var __DSH_PLUGIN_ID__: string;
         card.appendChild(el("p", { class: PILL_PREFIX + "chartEmpty", text: msg }));
       }
       container.appendChild(card);
+    }
+    // DOM 就位后一次性填充（此时 clientWidth 有效）
+    paintCharts(jobs);
+    // ResizeObserver：容器尺寸变化（横竖屏切换 / 分屏 / iOS PWA 宽变）时重排
+    if (typeof ResizeObserver === "function" && container.isConnected) {
+      chartsResizeObs = new ResizeObserver(function () { paintCharts(jobs); });
+      chartsResizeObs.observe(container);
     }
   }
 
@@ -855,6 +899,10 @@ declare var __DSH_PLUGIN_ID__: string;
 
     return function () {
       observer.disconnect();
+      if (chartsResizeObs !== null) {
+        try { chartsResizeObs.disconnect(); } catch (e) { /* 忽略 */ }
+        chartsResizeObs = null;
+      }
       for (var i = 0; i < listeners.length; i += 1) {
         try { listeners[i](); } catch (e) { /* 忽略 */ }
       }
