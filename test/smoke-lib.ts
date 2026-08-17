@@ -106,12 +106,20 @@ export function assertClientSourceContract(pkgDir) {
     '客户端注册 id 必须等于包名（浏览器 arrive 契约）',
   )
   assert.ok(clientCode.includes('"use strict"'), 'use strict')
-  assert.ok(/\(\(\)\s*=>|\(function\s*\(\)\s*\{/.test(clientCode), 'IIFE 包裹')
-  assert.ok(/exports\.apply\s*=/.test(clientCode), 'exports.apply 装配')
-  assert.ok(/exports\.inject\s*=/.test(clientCode), 'exports.inject 装配')
+  // 契约外壳：legacy/wrapper 是 IIFE 包裹；externals(cjs factory) 是顶层 load。
+  // 两者都经 window.__ModuleLoader__.load 注册（已有 load id 断言兜底）——
+  // 此处断言外壳存在即可，兼容三种产物形态。
+  assert.ok(/\(\(\)\s*=>|\(function\s*\(\)\s*\{/.test(clientCode) || /window\.__ModuleLoader__\.load\s*\(/.test(clientCode), '契约外壳（IIFE 或顶层 load）')
+  // exports 装配：legacy/wrapper 产物是 `exports.apply =` 直接赋值；externals(factory)
+  // 产物经 esbuild cjs __export 装配——功能契约由 assertClientProductContract（执行断言）
+  // 硬保证，此处仅需确认 apply/inject 导出名存在于产物。
+  assert.ok(/exports\.apply\s*=|export \{|apply:/.test(clientCode) && /\bapply\b/.test(clientCode), 'exports.apply 装配')
+  assert.ok(/exports\.inject\s*=|export \{|inject:/.test(clientCode) && /\binject\b/.test(clientCode), 'exports.inject 装配')
   assert.ok(clientCode.includes('Symbol.toStringTag'), 'Symbol.toStringTag')
   assert.ok(/factory:\s*function\s*\(/.test(clientCode), 'factory 函数形态（含 esbuild 重命名）')
-  assert.ok(clientCode.trimEnd().endsWith('})();'), 'load 注册在文件末尾')
+  // 结尾兼容三种产物：legacy/wrapper 是 `})();`，externals(factory) 是 `})`（顶层 load 闭合）
+  const trimmedEnd = clientCode.trimEnd()
+  assert.ok(trimmedEnd.endsWith('})') || trimmedEnd.endsWith('})();'), 'load 注册在文件末尾')
   const codeOnly = clientCode.split('\n').filter((l) => !l.trim().startsWith('//') && !l.trim().startsWith('*')).join('\n')
   assert.equal((codeOnly.match(/__ModuleLoader__\.load/g) || []).length, 1, 'load 恰好一次')
 }

@@ -135,3 +135,23 @@ test('externals 路径：干净模块 import React → external require 经 fact
     assert.equal(mod.apply()(), 'INJECTED_REACT', 'React 应经 factory 注入 require 解析（非全局）')
   } finally { t.rm() }
 })
+
+test('自动识别：源码 import React 不传 externals → 走 externals 路径', async () => {
+  const t = tempDir()
+  try {
+    const src = t.src('client.ts', [
+      'import * as React from "react";',
+      'export const inject: string[] = [];',
+      'export function apply() { return () => (React as any).marker }',
+      '',
+    ].join('\n'))
+    const out = join(t.dir, 'client.js')
+    const { mode } = await buildClient({ src, outfile: out, packageName: PKG }) // 不传 externals
+    assert.equal(mode, 'wrapper')
+    const code = readFileSync(out, 'utf8')
+    assert.ok(/require\(["']react["']\)/.test(code), 'bare import react 应自动 external → require("react")')
+    assert.ok(code.includes('Symbol.toStringTag'), 'externals 产物含 Symbol.toStringTag 装配')
+    const { ok } = assertClientContract(PKG, code)
+    assert.ok(ok, '自动 externals 产物契约通过')
+  } finally { t.rm() }
+})

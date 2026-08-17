@@ -64,10 +64,22 @@ window.__ModuleLoader__.load({
     var module = { exports: {} }
     var exports = module.exports
 ${indented}
+    Object.defineProperty(module.exports, Symbol.toStringTag, { value: 'Module' })
     return module.exports
   }
 })
 `
+}
+
+/** 提取源码顶层 bare import specifier（非相对/绝对 → 宿主注入 external；scoped 包取前两段）。 */
+function bareImports(ts) {
+  const out = new Set()
+  for (const m of ts.matchAll(/\bfrom\s*["']([^"']+)["']/g)) {
+    const spec = m[1]
+    if (spec.startsWith('.') || spec.startsWith('/')) continue
+    out.add(spec.startsWith('@') ? spec.split('/').slice(0, 2).join('/') : spec.split('/')[0])
+  }
+  return [...out]
 }
 
 /**
@@ -90,6 +102,8 @@ export async function buildClient({ src, outfile, packageName, extraDefine = {},
   // 会被误判 legacy（导致 wrapper 没用上，构建行为错误）。
   const codeOnly = sourceText.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '')
   const mode = /__ModuleLoader__\.load/.test(codeOnly) ? 'legacy' : 'wrapper'
+  // externals：显式传入优先；否则 wrapper 模式自动从源码 bare import 提取
+  const resolvedExternals = externals.length > 0 ? externals : (mode === 'wrapper' ? bareImports(sourceText) : [])
   const define = {
     __DSH_PLUGIN_ID__: JSON.stringify(packageName),
     ...Object.fromEntries(Object.entries(extraDefine).map(([k, v]) => [k, JSON.stringify(v)])),
@@ -108,9 +122,9 @@ export async function buildClient({ src, outfile, packageName, extraDefine = {},
   if (mode === 'legacy') {
     const r = await build({ ...base, format: 'iife', entryPoints: [src] })
     code = r.outputFiles[0].text
-  } else if (externals.length > 0) {
+  } else if (resolvedExternals.length > 0) {
     // externals 路径：干净模块 cjs（external 走 require）→ 内联进 factory
-    const r = await build({ ...base, format: 'cjs', platform: 'browser', external: externals, entryPoints: [src] })
+    const r = await build({ ...base, format: 'cjs', platform: 'browser', external: resolvedExternals, entryPoints: [src] })
     code = renderFactoryContract(packageName, r.outputFiles[0].text)
   } else {
     // 零依赖干净模块：iife + stdin wrapper
@@ -129,7 +143,7 @@ export async function buildClient({ src, outfile, packageName, extraDefine = {},
   if (!m || m[1] !== packageName) {
     throw new Error(`客户端契约校验失败：load id 必须等于包名 ${packageName}（实际: ${m ? m[1] : '缺失'}）——检查源码占位符 __DSH_PLUGIN_ID__ 是否被遮蔽/拼错，或 wrapper 装配错误`)
   }
-  const isFactory = mode === 'wrapper' && externals.length > 0
+  const isFactory = mode === 'wrapper' && resolvedExternals.length > 0
   const exportsOk = isFactory
     ? /apply/.test(code) && /inject/.test(code)
     : /exports\.apply\s*=/.test(code) && /exports\.inject\s*=/.test(code)

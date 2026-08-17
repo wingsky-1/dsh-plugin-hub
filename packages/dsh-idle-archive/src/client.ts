@@ -14,19 +14,10 @@
  * 扫描间隔可调、可整体禁用。
  */
 
-// ---- 浏览器端全局声明（dsh web 运行时提供）----
-declare var React: any;
-declare var module: { exports: Record<string, any> };
-declare var __DSH_PLUGIN_ID__: string; // 构建注入：bundle-host 以 --define 注入完整 npm 包名（load id 契约 = 包名）
-interface Window {
-  __ModuleLoader__: { load(entry: { id: string; factory: (require: any) => unknown }): void };
-}
-
-(function () {
-  "use strict";
-
-  /** React 由 factory 的 require("react") 注入（dsh web 不暴露全局 React）。 */
-  var React: any;
+// ---- 浏览器半区（干净模块）：React 由构建期 external 注入 ----
+// React 经 build-client externals 路径——运行时由 dsh web 的 factory require("react")
+// 注入（loader 模块表），源码不写任何 load/IIFE 外壳（外壳由构建生成）。类型 shim 见 react-shim.d.ts。
+import * as React from "react";
 
   var CHANNEL = "/dsh-idle-archive";
   var MODAL_ID = "dsh-idle-archive-modal";
@@ -530,7 +521,7 @@ interface Window {
 
   // ------------------------------------------------------------ 装配
 
-  function apply(ctx: any) {
+  export function apply(ctx: any) {
     try {
       var connection = ctx.get("connection");
       var slots = ctx.get("slots");
@@ -599,19 +590,5 @@ interface Window {
     }
   }
 
-  (window as any).__ModuleLoader__.load({
-    id: __DSH_PLUGIN_ID__,
-    factory: function (require: any) {
-      var module: { exports: Record<string, any> } = { exports: {} };
-      var exports = module.exports;
-      Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
-      // 设置卡片是 React 组件（settings.plugin.item 插槽由宿主 React 渲染）。
-      // ⚠️ 必须赋值顶层 React（SettingsCard 在 IIFE 顶层引用；局部 var 会因作用域错误而 ReferenceError）。
-      React = require("react");
-      var inject = ["slots"];
-      exports.apply = apply;
-      exports.inject = inject;
-      return module.exports;
-    },
-  });
-})();
+  // ---- 浏览器半区契约：apply/inject 由 build-client 经 factory 装配（干净模块）----
+  export const inject: string[] = ["slots"];
