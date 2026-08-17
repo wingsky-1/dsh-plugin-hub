@@ -20,6 +20,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, r
 import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
+import { buildClient, copyClientResources } from './build-client.ts'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // 插件目录相对当前工作目录解析（pnpm --filter 场景 cwd=包目录传 .；仓库根场景传 packages/dsh-*）
@@ -55,47 +56,30 @@ renameSync(tmpBundle, join(libDir, 'index.js'))
 try { rmSync(join(libDir, 'index.js.map')) } catch { /* map 不存在则跳过 */ }
 console.log(`[bundle-host] ${process.argv[2]}: shared 已内联（lib/index.js 自包含）`)
 
-// 1b. 客户端构建（有 src/client.ts 时）：tsc 产物非契约形态，用 esbuild IIFE 覆盖
-const clientSrc = join(pkgDir, 'src', 'client.ts')
-if (existsSync(clientSrc)) {
-  // 浏览器端契约：__ModuleLoader__.load 的 id 必须等于完整 npm 包名（manifest row.id = entry.name），
-  // 否则 arrive() 校验 factories.has(包名) 失败、npm 安装后 UI 半区拒载。
-  // 单一事实源：构建期读 package.json name 经 --define 注入占位符 __DSH_PLUGIN_ID__。
+// 1b. 客户端构建（有客户端源码时）：统一走共享预设 build-client
+// （注入 load id + 契约外壳生成 wrapper/legacy 双模式 + 内建「load id === 包名」校验）
+const clientSrc = existsSync(join(pkgDir, 'src', 'client.ts'))
+  ? join(pkgDir, 'src', 'client.ts')
+  : existsSync(join(pkgDir, 'src', 'client', 'index.ts'))
+    ? join(pkgDir, 'src', 'client', 'index.ts')
+    : null
+if (clientSrc) {
   const pkgName = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8')).name
   const clientOut = join(libDir, 'client.js')
   try {
-    execFileSync(esbuildBin, [
-      clientSrc, '--bundle', '--format=iife', '--target=es2020',
-      '--banner:js="use strict";', '--charset=utf8',
-      `--define:__DSH_PLUGIN_ID__=${JSON.stringify(pkgName)}`,
-      `--outfile=${clientOut}`, '--log-level=warning',
-    ], { stdio: 'inherit' })
+    const { mode } = await buildClient({ src: clientSrc, outfile: clientOut, packageName: pkgName })
+    console.log(`[bundle-host] ${process.argv[2]}: 客户端构建完成（${mode} 模式，load id=${pkgName}）`)
   } catch (e) {
     console.error(`[bundle-host] 客户端构建失败: ${e.message}`)
     process.exit(1)
   }
-  // 内建契约校验（硬依赖）：产物 load id 必须是字符串字面量且 === 包名。
-  // define 被局部同名声明遮蔽会静默失效、占位符拼错会原样泄露成自由变量（ReferenceError，
-  // 症状与 npm 安装后 client 拒载相同）——此校验是唯一兜底，构建即失败，不等发布后炸。
-  const clientCode = readFileSync(clientOut, 'utf8')
-  const loadIdMatch = clientCode.match(/__ModuleLoader__\.load\(\{\s*id:\s*"([^"]+)"/)
-  if (!loadIdMatch || loadIdMatch[1] !== pkgName) {
-    console.error(`[bundle-host] 客户端契约校验失败：__ModuleLoader__.load 的 id 必须等于包名 ${pkgName}（实际: ${loadIdMatch ? loadIdMatch[1] : '缺失'}）——检查 src/client.ts 占位符 __DSH_PLUGIN_ID__ 是否被遮蔽或拼错`)
-    process.exit(1)
-  }
   try { rmSync(join(libDir, 'client.js.map')) } catch { /* 无 map 则跳过 */ }
-  console.log(`[bundle-host] ${process.argv[2]}: 客户端 IIFE 构建完成（load id=${pkgName}）`)
 }
 
 // 1c. 资源文件复制：src/ 下非 TS 文件（如 toast.ps1）→ lib/（运行时从 lib 同目录定位）
-const srcDir = join(pkgDir, 'src')
-if (existsSync(srcDir)) {
-  for (const f of readdirSync(srcDir)) {
-    if (!/\.(ts|tsx|js|mjs|cjs)$/.test(f) && existsSync(join(srcDir, f))) {
-      cpSync(join(srcDir, f), join(libDir, f))
-      console.log(`[bundle-host] ${process.argv[2]}: 资源 ${f} → lib/`)
-    }
-  }
+const copiedResources = copyClientResources(pkgDir, libDir)
+for (const f of copiedResources) {
+  console.log(`[bundle-host] ${process.argv[2]}: 资源 ${f} → lib/`)
 }
 
 // 1d. 清理游离产物：多模块 src 的 tsc 会逐个 emit lib/*.js + *.js.map，
