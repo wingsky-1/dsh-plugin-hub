@@ -454,7 +454,7 @@ function makeFakeCtx(overrides = {}) {
   assert.ok(client.includes("niceStep"), "client 含 nice 刻度步长");
   assert.ok(client.includes("timeTicks"), "client 含时间刻度自适应");
   assert.ok(client.includes("tail - s[4]"), "client 按窗口观察周期动态切片 x 范围");
-  assert.ok(client.includes("24 * 36e5"), "rolling x 范围 = 最近 24h（5h 滑动窗口观察周期，esbuild 数字规范化）");
+  assert.ok(client.includes("12 * 36e5"), "rolling x 范围 = 最近 12h（5h 滑动窗口观察周期，esbuild 数字规范化）");
   assert.ok(client.includes("7 * 864e5"), "weekly x 范围 = 最近 7d（自然周一周期，esbuild 数字规范化）");
   assert.ok(client.includes("stroke-dasharray:4 3"), "client 含 100% 配额上限参考虚线");
   assert.ok(client.includes("resetTicks"), "client 含重置点反推");

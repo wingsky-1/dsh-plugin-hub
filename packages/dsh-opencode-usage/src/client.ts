@@ -38,13 +38,13 @@ declare var __DSH_PLUGIN_ID__: string;
   /** 三窗口图卡片配置：[key, 中文名, 颜色（主题变量 + 回退）, 展示限额,
    * x 轴观察周期（毫秒；null = 全量采样期）, 重置周期（毫秒，重置线反推用；
    * monthly 按 30d 近似，订阅日不定，图内 ≤1-2 条误差可接受）]。
-   * x 范围按窗口语义动态：rolling 是 5h 滑动窗口，看最近 24h 的使用模式
-   * （≈5 个滚动周期）；weekly 自然周一整周期看 7d；monthly 月重置，覆盖
-   * 全部采样期。 */
+   * x 范围按窗口语义动态切片：rolling 是 5h 滑动窗口，看最近 12h（约 2.4
+   * 个滚动周期）的使用模式；weekly 自然周一整周期看 7d；monthly 月重置，看
+   * 最近 30d（覆盖完整订阅月，看清月初清零→月末逼近的完整形态）。 */
   var CHART_SERIES: any[] = [
-    ["rolling", "5h 滚动", "var(--dsw-alias-state-business-primary,#3b82f6)", "$12", 24 * 3600000, 5 * 3600000],
+    ["rolling", "5h 滚动", "var(--dsw-alias-state-business-primary,#3b82f6)", "$12", 12 * 3600000, 5 * 3600000],
     ["weekly", "每周", "var(--dsw-alias-state-warn-primary,#c9820b)", "$30", 7 * 86400000, 7 * 86400000],
-    ["monthly", "每月", "var(--dsw-alias-state-success-primary,#0f9d6e)", "$60", null, 30 * 86400000],
+    ["monthly", "每月", "var(--dsw-alias-state-success-primary,#0f9d6e)", "$60", 30 * 86400000, 30 * 86400000],
   ];
 
   /** 波浪图降采样上限（约每像素一点，保证万点级秒出图）。 */
@@ -668,9 +668,19 @@ declare var __DSH_PLUGIN_ID__: string;
     }
   }
 
-  /** 拉取历史采样序列（宿主权威源）并刷新波浪图（面板开着时）。 */
+  /** 拉取历史采样序列（宿主权威源）并刷新波浪图（面板开着时）。
+   * 请求带 ?days=观察周期最大值（钳制 1..maxAgeDays），让宿主先裁一层，
+   * 渲染时再按各窗口观察周期二次切片（双层防御，语义一致）。 */
   function fetchHistory() {
-    return fetch(HISTORY_URL, { headers: { Accept: "application/json" }, cache: "no-store" })
+    var reqDays = 1;
+    for (var di = 0; di < CHART_SERIES.length; di += 1) {
+      var obs = CHART_SERIES[di][4];
+      if (typeof obs === "number" && obs > 0) {
+        var d = Math.ceil(obs / 86400000);
+        if (d > reqDays) reqDays = d;
+      }
+    }
+    return fetch(HISTORY_URL + "?days=" + reqDays, { headers: { Accept: "application/json" }, cache: "no-store" })
       .then(function (res) {
         if (!res.ok) throw new Error("HTTP " + res.status);
         return res.json();

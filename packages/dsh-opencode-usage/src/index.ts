@@ -120,8 +120,9 @@ export const DEFAULT_CONFIG: NormalizedConfig = {
   limits: { rolling: 12, weekly: 30, monthly: 60 },
   /** 显式 API Key（可选；缺省走凭据解析链）。 */
   apiKey: undefined,
-  /** 历史采样保留天数（超龄头部裁剪；波浪图时间跨度上限）。 */
-  maxAgeDays: 14,
+  /** 历史采样保留天数（超龄头部裁剪；波浪图时间跨度上限）。monthly 窗口
+   * 展示完整订阅月，需覆盖最近 30 天，故此默认值放宽到 30。 */
+  maxAgeDays: 30,
   /** 宿主后台采样间隔（默认 5 分钟；浏览器关闭时保历史连续，官方接口
    * 低频调用不构成压力，约 288 次/天）。 */
   sampleIntervalMs: 300000,
