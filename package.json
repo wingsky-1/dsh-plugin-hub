@@ -12,6 +12,7 @@
     "pack:check": "node scripts/pack-check.ts",
     "verify:npmlayout": "node scripts/verify-npm-layout.ts",
     "aggregate:check": "node scripts/aggregate.ts --check",
+    "test:scripts": "node --test scripts/*.test.ts",
     "typecheck": "pnpm -r --if-present run typecheck"
   },
   "keywords": [

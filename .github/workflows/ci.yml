@@ -54,3 +54,6 @@ jobs:
 
       - name: Aggregate check（聚合 patch 不漂移）
         run: pnpm aggregate:check
+
+      - name: Scripts self-test（维护脚本自测）
+        run: pnpm test:scripts
