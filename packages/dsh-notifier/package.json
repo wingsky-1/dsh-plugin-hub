@@ -1,6 +1,6 @@
 {
   "name": "@wingsky-1/dsh-notifier",
-  "version": "0.2.0",
+  "version": "0.1.4",
   "description": "审批/完成/错误事件通知：浏览器 Notification + 系统原生 toast（Windows PowerShell WinRT / macOS·Linux notify-send，零依赖）；提示音可配、每条通知独立显示不互相替换、非安全上下文自动降级横幅",
   "type": "module",
   "main": "lib/index.js",

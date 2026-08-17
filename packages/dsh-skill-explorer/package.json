@@ -1,6 +1,6 @@
 {
   "name": "@wingsky-1/dsh-skill-explorer",
-  "version": "0.2.0",
+  "version": "0.1.4",
   "description": "DSH Web GUI 技能中心：侧边栏入口 + 面板，分级展示已加载 skill（系统内置/项目/用户/自定义/运行时），支持创建、启用/禁用与删除（移入 .trash）。数据以文件系统扫描为主 + ctx.skills 注册表补充。",
   "type": "module",
   "main": "lib/index.js",

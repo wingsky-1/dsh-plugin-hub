@@ -1,6 +1,6 @@
 {
   "name": "@wingsky-1/dsh-plugins-all",
-  "version": "0.2.0",
+  "version": "0.1.4",
   "description": "DSH 插件全家桶聚合包：一键安装全部 7 个功能插件（gzip / idle-archive / notifier / skill-explorer / opencode-usage / mcp-manager / lan-proxy）。装它 = 子包 dependencies 拉齐 + 聚合 cordis patch 激活。",
   "type": "module",
   "main": "lib/index.js",
