@@ -57,12 +57,19 @@ jobs:
       - name: Pack check
         run: pnpm pack:check
 
-      - name: Publish to npm（pnpm，依赖序）
+      - name: Publish to npm（pnpm，依赖序，幂等：版本已存在自动跳过）
         run: |
           set -e
+          if [ -z "${{ secrets.NPM_TOKEN }}" ]; then
+            echo "::error::NPM_TOKEN secret 未配置——发布中止（仓库 Settings → Secrets and variables → Actions 配置 @wingsky-1 scope 的 npm automation token）"
+            exit 1
+          fi
           echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
-          pnpm -r --filter './packages/dsh-*' publish --no-git-checks
-          pnpm --filter @wingsky/dsh-plugins-all publish --no-git-checks
+          while read -r pkg; do
+            [ -z "$pkg" ] && continue
+            echo "==> publish $pkg"
+            pnpm --filter "$pkg" publish --no-git-checks
+          done < <(node scripts/publish-if-missing.ts)
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
