@@ -326,6 +326,17 @@ declare var __DSH_PLUGIN_ID__: string;
     return hh + ":" + mi;
   }
 
+  /** x 轴标签像素宽估算（viewBox 坐标）：按该跨度最长的标签形态 × 字号 ×
+   * 单字符约 0.62em（数字/冒号/连字符的平均比例）。用于换算相邻刻度最小
+   * 时间间隔，防标签矩形重叠。 */
+  function axisLabelWidthPx(spanMs: any, fontSizePx: any) {
+    var chars: any;
+    if (spanMs >= 7 * 86400000) chars = "MM-dd".length; // 5
+    else if (spanMs >= 86400000) chars = "MM-dd HH:mm".length; // 11
+    else chars = "HH:mm".length; // 5
+    return Math.ceil(chars * fontSizePx * 0.62) + 4; // +4 留白防贴边
+  }
+
   /** nice 刻度步长（业界标准 1/2/5 × 10^k，Grafana/matplotlib 风格）。 */
   function niceStep(raw: any) {
     if (!(raw > 0)) return 1;
@@ -398,14 +409,17 @@ declare var __DSH_PLUGIN_ID__: string;
     return 7 * 86400000;
   }
 
-  /** 时间轴刻度序列（nice 对齐；过密时步长倍增，刻度数 ≤6；不足 2 个补端点）。 */
-  function timeTicks(t0: any, t1: any) {
+  /** 时间轴刻度序列（nice 对齐；过密时步长倍增）。双约束：刻度数 ≤6，
+   * 且相邻刻度时间间隔 ≥ minGapMs（由调用方按标签宽×绘图区换算，防止长
+   * 标签如 MM-dd HH:mm 在窄图/密集刻度下矩形重叠）。不足 2 个补端点。 */
+  function timeTicks(t0: any, t1: any, minGapMs: any) {
     var step = timeTickStep(t1 - t0);
-    for (var guard = 0; guard < 6; guard += 1) {
+    var gapOk = function (s: any) { return !(minGapMs > 0) || s >= minGapMs; };
+    for (var guard = 0; guard < 8; guard += 1) {
       var first = Math.ceil(t0 / step) * step;
       var count = 0;
       for (var t = first; t <= t1 + 1; t += step) count += 1;
-      if (count <= 6) break;
+      if (count <= 6 && gapOk(step)) break;
       step *= 2;
     }
     var out: any = [];
@@ -579,7 +593,10 @@ declare var __DSH_PLUGIN_ID__: string;
     }
     // x 轴时间刻度（仅底部图绘制，三图共享同一时间域所以天然对齐）
     if (drawXAxis) {
-      var ticks = timeTicks(t0, t1);
+      // 相邻刻度最小时间间隔：标签宽(px) × (spanMs/xw) 换算成时间，防重叠
+      var labelPx = axisLabelWidthPx(spanMs, parseFloat(fs));
+      var minGapMs = (labelPx * spanMs) / xw;
+      var ticks = timeTicks(t0, t1, minGapMs);
       for (var k = 0; k < ticks.length; k += 1) {
         var tx = xOf(ticks[k]);
         var anchor = k === 0 ? "start" : k === ticks.length - 1 ? "end" : "middle";
