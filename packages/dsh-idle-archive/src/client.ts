@@ -17,6 +17,7 @@
 // ---- 浏览器端全局声明（dsh web 运行时提供）----
 declare var React: any;
 declare var module: { exports: Record<string, any> };
+declare var __DSH_PLUGIN_ID__: string; // 构建注入：bundle-host 以 --define 注入完整 npm 包名（load id 契约 = 包名）
 interface Window {
   __ModuleLoader__: { load(entry: { id: string; factory: (require: any) => unknown }): void };
 }
@@ -599,7 +600,7 @@ interface Window {
   }
 
   (window as any).__ModuleLoader__.load({
-    id: "dsh-idle-archive",
+    id: __DSH_PLUGIN_ID__,
     factory: function (require: any) {
       var module: { exports: Record<string, any> } = { exports: {} };
       var exports = module.exports;

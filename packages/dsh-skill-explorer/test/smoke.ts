@@ -165,6 +165,11 @@ const main = async () => {
       const hostPaths = [ROUTE, SET_ENABLED_ROUTE, CREATE_ROUTE, DELETE_ROUTE].sort();
       assert.deepEqual(clientPaths, hostPaths, `两端路由漂移：client=${clientPaths.join(",")} host=${hostPaths.join(",")}`);
     });
+    check("client load id === 完整包名（浏览器 arrive 契约）", () => {
+      const clientCode = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+      const loadId = clientCode.match(/__ModuleLoader__\.load\(\{\s*id:\s*"([^"]+)"/)?.[1];
+      assert.strictEqual(loadId, JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).name);
+    });
 
     console.log("collectSkills：文件系统扫描 + 注册表合并");
     const { skills, complete } = await collectSkills({

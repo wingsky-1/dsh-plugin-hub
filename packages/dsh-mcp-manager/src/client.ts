@@ -2,11 +2,13 @@
 // window.__ModuleLoader__.load 注册自身 factory（id = 包名），factory 返回
 // module.exports（导出 apply / inject）。缺少该注册会让整个插件条目
 // （含宿主端）在加载器层面失败。
+// 构建注入：bundle-host 以 esbuild --define 注入完整 npm 包名（load id 契约 = 包名）
+declare var __DSH_PLUGIN_ID__: string;
 (function () {
   "use strict";
 
 (window as any).__ModuleLoader__.load({
-	id: "dsh-mcp-manager",
+	id: __DSH_PLUGIN_ID__,
 	factory: function (require: any) {
 		var module: { exports: Record<string, any> } = { exports: {} };
 		var exports = module.exports;

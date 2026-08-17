@@ -489,6 +489,10 @@ const main = async () => {
     check("client carries Symbol.toStringTag", () => assert.ok(client.includes("Symbol.toStringTag")));
     check("client factory is function form", () => assert.ok(/factory:\s*function\s*\(/.test(client)));
     check("client load once at end", () => assert.ok(/__ModuleLoader__\.load/.test(client)) && assert.ok(client.trimEnd().endsWith("})();")));
+    check("client load id === 完整包名（浏览器 arrive 契约）", () => {
+      const loadId = client.match(/__ModuleLoader__\.load\(\{\s*id:\s*"([^"]+)"/)?.[1];
+      assert.strictEqual(loadId, JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).name);
+    });
     check("client shares CHANNEL with host", () => assert.ok(client.includes(CHANNEL)));
     check("client renders settings card fields", () => {
       assert.ok(client.includes("LAN 端口"));

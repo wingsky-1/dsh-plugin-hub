@@ -25,6 +25,8 @@
  * isConnected 短路）；下拉面板 fixed 挂 body，按胶囊 getBoundingClientRect
  * 定位，scroll/resize 重定位。全部颜色走 --dsw-alias-* 主题变量。
  */
+// 构建注入：bundle-host 以 esbuild --define 注入完整 npm 包名（load id 契约 = 包名）
+declare var __DSH_PLUGIN_ID__: string;
 (function () {
   "use strict";
 
@@ -879,7 +881,7 @@
   }
 
   (window as any).__ModuleLoader__.load({
-    id: "dsh-opencode-usage",
+    id: __DSH_PLUGIN_ID__,
     factory: function (require: any) {
       var module: { exports: Record<string, any> } = { exports: {} };
       var exports = module.exports;

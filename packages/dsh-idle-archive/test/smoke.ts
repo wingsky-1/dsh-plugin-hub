@@ -261,7 +261,8 @@ assert.ok(rec200.text.includes('"plugin":"dsh-idle-archive"'));
 // ---------------------------------------------------------------- 客户端契约
 
 const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
-assert.ok(/id: "dsh-idle-archive"/.test(client), "客户端注册 id");
+const clientLoadId = client.match(/__ModuleLoader__\.load\(\{\s*id:\s*"([^"]+)"/)?.[1];
+assert.strictEqual(clientLoadId, JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).name, "客户端注册 id 必须等于包名（浏览器 arrive 契约）");
 assert.ok(client.includes('"use strict"'), "use strict");
 assert.ok(/\(function\s*\(\)\s*\{/.test(client), "IIFE");
 assert.ok(/exports.apply = apply/.test(client), "exports.apply");

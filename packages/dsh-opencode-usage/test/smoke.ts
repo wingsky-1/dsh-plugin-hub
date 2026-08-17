@@ -414,6 +414,9 @@ function makeFakeCtx(overrides = {}) {
 
 {
   const client = readFileSync(join(here, "..", "lib", "client.js"), "utf8");
+  // client load id 契约：必须 === package.json 的 name（浏览器 arrive() 按完整包名解析 factory）
+  const loadId = client.match(/__ModuleLoader__\.load\(\{\s*id:\s*"([^"]+)"/)?.[1];
+  assert.strictEqual(loadId, JSON.parse(readFileSync(join(here, "..", "package.json"), "utf8")).name, "client load id 必须等于包名");
   const literals = new Set(client.match(/\/api\/[A-Za-z0-9_/-]+/gu) ?? []);
   const hostPaths = new Set([ROUTES.stats, ROUTES.history, ROUTES.health]);
   // client 出现的 /api/ 字面量必须都在 host ROUTES 中（防漂移）

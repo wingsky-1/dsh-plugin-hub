@@ -615,6 +615,9 @@ function agentWithTitle(id, title, opts = {}) {
 
 {
   const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+  // client load id 契约：必须 === package.json 的 name（浏览器 arrive() 按完整包名解析 factory）
+  const loadId = client.match(/__ModuleLoader__\.load\(\{\s*id:\s*"([^"]+)"/)?.[1];
+  assert.strictEqual(loadId, JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).name, "client load id 必须等于包名");
   const literals = [...client.matchAll(/\/api\/dsh-notifier\/[a-z-]+/g)].map((m) => m[0]);
   const expected = Object.values(ROUTES);
   for (const literal of literals) assert.ok(expected.includes(literal), `client 出现未知路由: ${literal}`);
