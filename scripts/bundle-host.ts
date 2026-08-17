@@ -17,8 +17,8 @@
  * 前置：插件已 tsc 编译（tsc -p tsconfig.json），lib/ 含 js + d.ts。
  */
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve, sep } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { dirname, join, relative, resolve, sep } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { execFileSync } from 'node:child_process'
 import { buildClient, copyClientResources } from './build-client.ts'
 
@@ -37,6 +37,20 @@ const packagesDir = join(ROOT, 'packages')
 if (!pkgDir.startsWith(packagesDir + sep) || pkgDir === packagesDir) {
   console.error(`[bundle-host] 插件目录须在 packages/ 下（实际: ${process.argv[2]}）`)
   process.exit(1)
+}
+
+/** 递归收集目录下满足谓词的文件（返回相对路径列表，不含目录）。 */
+function walkFiles(dir, predicate) {
+  const out = []
+  const visit = (cur) => {
+    for (const f of readdirSync(cur, { withFileTypes: true })) {
+      const abs = join(cur, f.name)
+      if (f.isDirectory()) visit(abs)
+      else if (predicate(f.name)) out.push(relative(dir, abs).split(sep).join('/'))
+    }
+  }
+  visit(dir)
+  return out
 }
 
 // 1. esbuild 内联 shared（tsc 产物 → 自包含单文件，临时文件再替换，避免占用原文件）
@@ -66,8 +80,24 @@ const clientSrc = existsSync(join(pkgDir, 'src', 'client.ts'))
 if (clientSrc) {
   const pkgName = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8')).name
   const clientOut = join(libDir, 'client.js')
+  // ROUTES 构建期注入（define 方案）：从宿主产物读取 ROUTES 单一来源，经
+  // extraDefine 注入 __DSH_ROUTES__ 供新型 client 引用——两端路由构建期强一致。
+  // 现有 client 未引用该标识符则零影响（esbuild 只替换自由变量）。
+  // 读取失败仅警告不阻断（smoke「两端路由一致性」断言兜底）。
+  let extraDefine = {}
   try {
-    const { mode } = await buildClient({ src: clientSrc, outfile: clientOut, packageName: pkgName })
+    const mod = await import(pathToFileURL(join(libDir, 'index.js')).href)
+    if (mod.ROUTES && typeof mod.ROUTES === 'object') {
+      // 传原始对象（build-client 内部做 JSON.stringify 定义为字符串字面量；
+      // 勿在此预序列化——会双重转义，注入成字符串而非对象）
+      extraDefine = { __DSH_ROUTES__: mod.ROUTES }
+      console.log(`[bundle-host] ${process.argv[2]}: ROUTES 已注入 client 构建（${Object.keys(mod.ROUTES).length} 项）`)
+    }
+  } catch (e) {
+    console.warn(`[bundle-host] ${process.argv[2]}: ROUTES 注入跳过（${String(e.message).split('\n')[0]}），由 smoke 兜底`)
+  }
+  try {
+    const { mode } = await buildClient({ src: clientSrc, outfile: clientOut, packageName: pkgName, extraDefine })
     console.log(`[bundle-host] ${process.argv[2]}: 客户端构建完成（${mode} 模式，load id=${pkgName}）`)
   } catch (e) {
     console.error(`[bundle-host] 客户端构建失败: ${e.message}`)
@@ -103,11 +133,13 @@ for (const f of readdirSync(libDir).filter(f => f.endsWith('.d.ts'))) {
     .replaceAll('../../types/', '../types/')
   writeFileSync(p, t)
 }
-// 2b. shared/types 声明副本进包
+// 2b. shared/types 声明副本进包（递归：shared/ 下所有 .d.ts，含子目录如 host/）
 mkdirSync(join(pkgDir, 'shared'), { recursive: true })
 mkdirSync(join(pkgDir, 'types'), { recursive: true })
-for (const f of readdirSync(join(ROOT, 'shared')).filter(f => f.endsWith('.d.ts'))) {
-  cpSync(join(ROOT, 'shared', f), join(pkgDir, 'shared', f))
+for (const rel of walkFiles(join(ROOT, 'shared'), (f) => f.endsWith('.d.ts'))) {
+  const dest = join(pkgDir, 'shared', rel)
+  mkdirSync(dirname(dest), { recursive: true })
+  cpSync(join(ROOT, 'shared', rel), dest)
 }
 cpSync(join(ROOT, 'types', 'dsh.d.ts'), join(pkgDir, 'types', 'dsh.d.ts'))
 console.log(`[bundle-host] ${process.argv[2]}: d.ts X1 完成（shared/、types/ 副本随包）`)

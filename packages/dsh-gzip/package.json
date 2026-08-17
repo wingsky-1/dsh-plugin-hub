@@ -21,7 +21,7 @@
   },
   "files": [
     "lib",
-    "shared/*.d.ts",
+    "shared/**/*.d.ts",
     "types/dsh.d.ts",
     "cordis.patch.yml",
     "README.md",

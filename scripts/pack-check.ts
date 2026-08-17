@@ -37,6 +37,10 @@ for (const p of plugins) {
     for (const f of ['README.md', 'LICENSE', 'cordis.patch.yml']) {
       if (!existsSync(join(pkgRoot, f))) problems.push(`缺 ${f}`)
     }
+    // shared 声明副本（bundle-host d.ts X1 递归复制，含子目录 host/）须随包发布
+    if (!existsSync(join(pkgRoot, 'shared', 'host', 'plugin-skeleton.d.ts'))) {
+      problems.push('缺 shared/host/plugin-skeleton.d.ts（shared 递归副本）')
+    }
     const idx = readFileSync(join(pkgRoot, 'lib', 'index.js'), 'utf8')
     // 只匹配 import 语句中的仓库外相对引用（esbuild 模块注释含路径文本，不算断链）
     const outsideRef = /(?:from|import)\s*["']\.\.\/\.\.\/(?:shared|types)/.test(idx)

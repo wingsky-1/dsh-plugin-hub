@@ -52,9 +52,9 @@ window.__ModuleLoader__.load({
  * @param {string} opts.src          客户端源码入口（src/client.ts 或 src/client/index.ts）
  * @param {string} opts.outfile      产物路径（lib/client.js）
  * @param {string} opts.packageName  load id 契约值 = 完整 npm 包名（含 scope）
- * @param {Record<string, string>} [opts.extraDefine] 附加注入：键为注入标识符，
- *   值即注入的「字符串字面量文本」（经 JSON.stringify 序列化；如需数组/对象字面量，
- *   请传已序列化文本，如 JSON.stringify(['a','b'])）
+ * @param {Record<string, unknown>} [opts.extraDefine] 附加注入：键为注入标识符，
+ *   值为「原始 JS 值」（对象/数组/字符串/数字/布尔），build-client 内部统一
+ *   JSON.stringify 为可注入的字面量文本（勿传已序列化字符串——会双重转义）
  * @returns {Promise<{ code: string, mode: 'wrapper' | 'legacy' }>}
  */
 export async function buildClient({ src, outfile, packageName, extraDefine = {} }) {
