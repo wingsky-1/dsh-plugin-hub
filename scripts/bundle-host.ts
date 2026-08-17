@@ -112,27 +112,41 @@ for (const f of copiedResources) {
   console.log(`[bundle-host] ${process.argv[2]}: 资源 ${f} → lib/`)
 }
 
-// 1d. 清理游离产物：多模块 src 的 tsc 会逐个 emit lib/*.js + *.js.map，
-// 主入口已内联全部模块——删除除 index.js/client.js 外的 .js/.js.map
-// （保留 .d.ts：index.d.ts 的类型 re-export 需要）
-for (const f of readdirSync(libDir)) {
-  if (f.endsWith('.js') && f !== 'index.js' && f !== 'client.js') {
-    rmSync(join(libDir, f), { force: true })
-  } else if (f.endsWith('.js.map') || (f.endsWith('.map') && f !== 'index.js.map')) {
-    rmSync(join(libDir, f), { force: true })
+// 1d. 递归清理游离产物：多模块 src（含 src/client/、src/core/ 等子目录）的 tsc 会
+// 逐个 emit lib/**/*.js + *.js.map；host 已内联为自包含 lib/index.js（client 由
+// build-client 生成 lib/client.js），其余 .js/.js.map（含子目录）均为游离物——
+// 保留顶层 index.js/client.js 与全部 .d.ts（类型 re-export 需要）。
+function cleanFreeFloatingJs(dir, isRoot) {
+  for (const f of readdirSync(dir, { withFileTypes: true })) {
+    const abs = join(dir, f.name)
+    if (f.isDirectory()) { cleanFreeFloatingJs(abs, false); continue }
+    const isTopEntry = isRoot && (f.name === 'index.js' || f.name === 'client.js')
+    if (f.name.endsWith('.js') && !isTopEntry) {
+      rmSync(abs, { force: true })
+    } else if (f.name.endsWith('.js.map') || (f.name.endsWith('.map') && !(isRoot && f.name === 'index.js.map'))) {
+      rmSync(abs, { force: true })
+    }
   }
 }
+cleanFreeFloatingJs(libDir, true)
 
-// 2a. d.ts 路径改写（X1）：../../../shared|types → ../shared|types（兼容二级写法）
-for (const f of readdirSync(libDir).filter(f => f.endsWith('.d.ts'))) {
-  const p = join(libDir, f)
-  const t = readFileSync(p, 'utf8')
-    .replaceAll('../../../shared/', '../shared/')
-    .replaceAll('../../../types/', '../types/')
-    .replaceAll('../../shared/', '../shared/')
-    .replaceAll('../../types/', '../types/')
-  writeFileSync(p, t)
+// 2a. d.ts 路径改写（X1，递归且按文件深度感知）：shared|types 相对引用 → 包内副本。
+// 顶层 lib/x.d.ts 引用包内副本为 ../shared/、../types/；
+// 子目录 lib/a/b.d.ts 引用为 ../../shared/（深度 +1 级）。
+function rewriteDtsPaths(dir, depth) {
+  const prefix = '../'.repeat(depth + 1)
+  for (const f of readdirSync(dir, { withFileTypes: true })) {
+    const abs = join(dir, f.name)
+    if (f.isDirectory()) { rewriteDtsPaths(abs, depth + 1); continue }
+    if (!f.name.endsWith('.d.ts')) continue
+    const p = join(dir, f.name)
+    const t = readFileSync(p, 'utf8')
+      .replace(/(?:\.\.\/)+shared\//g, `${prefix}shared/`)
+      .replace(/(?:\.\.\/)+types\//g, `${prefix}types/`)
+    writeFileSync(p, t)
+  }
 }
+rewriteDtsPaths(libDir, 0)
 // 2b. shared/types 声明副本进包（递归：shared/ 下所有 .d.ts，含子目录如 host/）
 mkdirSync(join(pkgDir, 'shared'), { recursive: true })
 mkdirSync(join(pkgDir, 'types'), { recursive: true })
