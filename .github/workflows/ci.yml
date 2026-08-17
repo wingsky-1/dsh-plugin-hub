@@ -48,3 +48,9 @@ jobs:
 
       - name: Pack check（防发布断链）
         run: pnpm pack:check
+
+      - name: Npm layout（解包后可加载）
+        run: pnpm verify:npmlayout
+
+      - name: Aggregate check（聚合 patch 不漂移）
+        run: pnpm aggregate:check

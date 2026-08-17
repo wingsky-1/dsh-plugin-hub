@@ -10,6 +10,8 @@
     "test": "pnpm -r test",
     "contract": "node scripts/contract-check.ts",
     "pack:check": "node scripts/pack-check.ts",
+    "verify:npmlayout": "node scripts/verify-npm-layout.ts",
+    "aggregate:check": "node scripts/aggregate.ts --check",
     "typecheck": "pnpm -r --if-present run typecheck"
   },
   "keywords": [

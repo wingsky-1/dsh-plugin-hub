@@ -79,5 +79,40 @@ for (const p of plugins) {
     rmSync(tmp, { recursive: true, force: true })
   }
 }
+// 聚合包专项：dsh-plugins-all tarball 完整性 + 聚合 patch 与子包一致（防 P6 复发）
+{
+  const AGG = 'dsh-plugins-all'
+  const tmp = mkdtempSync(join(tmpdir(), 'dsh-pack-agg-'))
+  const aggName = JSON.parse(readFileSync(join(ROOT, 'packages', AGG, 'package.json'), 'utf8')).name
+  try {
+    execFileSync('pnpm', ['--filter', aggName, 'pack', '--pack-destination', tmp], { cwd: ROOT, stdio: 'pipe' })
+    const tgz = readdirSync(tmp).find(f => f.endsWith('.tgz'))
+    execFileSync('tar', ['-xzf', join(tmp, tgz), '-C', tmp])
+    const pkgRoot = join(tmp, 'package')
+    const problems = []
+    if (!existsSync(join(pkgRoot, 'lib', 'index.js'))) problems.push('缺 lib/index.js')
+    const patch = existsSync(join(pkgRoot, 'cordis.patch.yml')) ? readFileSync(join(pkgRoot, 'cordis.patch.yml'), 'utf8') : ''
+    if (!patch) problems.push('缺 cordis.patch.yml')
+    // 聚合行 id 必须与对应子包 patch id 一致（且无 config）
+    if (patch) {
+      const aggRows = [...patch.matchAll(/^\s*- id:\s*(\S+)/gm)].map(m => m[1])
+      for (const pd of plugins) {
+        if (!aggRows.includes(`ui-${pd}`)) problems.push(`聚合行缺 ui-${pd}（与子包 id 不一致）`)
+      }
+      if (aggRows.length !== plugins.length) problems.push(`聚合行数 ${aggRows.length} != 子包数 ${plugins.length}`)
+      if (/^\s*config:/m.test(patch)) problems.push('聚合行带 config（应走 schema 默认值）')
+    }
+    // dependencies 完整（开发态为 workspace:*；发布时替换为版本——存在即认可）
+    const deps = JSON.parse(readFileSync(join(pkgRoot, 'package.json'), 'utf8')).dependencies ?? {}
+    for (const pd of plugins) if (!deps[`@wingsky-1/${pd}`]) problems.push(`依赖缺 @wingsky-1/${pd}`)
+    if (problems.length > 0) failed++
+    console.log(`${problems.length === 0 ? 'PASS' : 'FAIL'} ${aggName} | ${problems.join('; ') || '聚合 tarball 完整且与子包一致'}`)
+  } catch (e) {
+    failed++
+    console.log(`FAIL ${aggName} | ${String(e.message).split('\n')[0]}`)
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+  }
+}
 console.log(failed === 0 ? '\npack-check：全部通过' : `\npack-check：${failed} 个失败`)
 process.exit(failed === 0 ? 0 : 1)

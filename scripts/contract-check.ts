@@ -35,7 +35,9 @@ for (const p of pluginDirs) {
   const declaresClient = !!pkg.dsh?.client
 
   // 联动断言：dsh.client 声明 ⇒ exports["./client"] 必须存在（宿主 resolveMeta 缺它会整包拒载）
-  const clientExportOk = !declaresClient || (pkg.exports && typeof pkg.exports['./client'] === 'string' && pkg.exports['./client'].length > 0)
+  // exports["./client"] 支持字符串与条件导出对象（{ default, types }）两种形态
+  const clientExport = pkg.exports?.['./client']
+  const clientExportOk = !declaresClient || (clientExport && (typeof clientExport === 'string' || typeof clientExport === 'object'))
   // 联动断言：有 src/client.ts 必有构建产物
   const productOk = !hasClientSource || existsSync(clientPath)
 
