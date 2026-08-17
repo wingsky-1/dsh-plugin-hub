@@ -57,3 +57,6 @@ jobs:
 
       - name: Scripts self-test（维护脚本自测）
         run: pnpm test:scripts
+
+      - name: Docs check（README/链接/占位符）
+        run: pnpm docs:check
