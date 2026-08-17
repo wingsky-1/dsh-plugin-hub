@@ -10,10 +10,12 @@
  *   - legacy 检测：源码含 __ModuleLoader__.load → 原样构建
  *   - 注释剥离：干净模块注释提到 loader 不误判 legacy
  *   - 内建校验：load id 拼错/遮蔽时构建即失败（throw）
+ *   - externals 路径：干净模块 import React → external require 经 factory 注入解析
  * 运行：node --test scripts/build-client.test.ts（或 pnpm test:scripts）
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import vm from 'node:vm'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -103,5 +105,33 @@ test('内建校验：占位符拼错 → 构建即失败（throw）', async () =
       /客户端契约校验失败/,
       '占位符拼错应在构建期失败',
     )
+  } finally { t.rm() }
+})
+test('externals 路径：干净模块 import React → external require 经 factory 注入', async () => {
+  const t = tempDir()
+  try {
+    const src = t.src('client.ts', [
+      'import * as React from "react";',
+      'export const inject: string[] = [];',
+      'export function apply() { return () => (React as any).createToken ?? "none" }',
+      '',
+    ].join('\n'))
+    const out = join(t.dir, 'client.js')
+    await buildClient({ src, outfile: out, packageName: PKG, externals: ['react'] })
+    const code = readFileSync(out, 'utf8')
+    assert.ok(/require\(["']react["']\)/.test(code), 'external react 应编译为 require("react")')
+    const { ok } = assertClientContract(PKG, code)
+    assert.ok(ok, 'externals 产物契约通过（load id/apply/inject）')
+
+    // materialize：factory 注入 fake react → 干净模块里 React 应解析到它
+    const factories = new Map()
+    const sandbox = { window: {}, console, Symbol, Object, Array, JSON, Math, Date, Promise, __ModuleLoader__: { load: (h) => factories.set(h.id, h.factory) } }
+    sandbox.window = sandbox
+    vm.createContext(sandbox)
+    vm.runInContext(code, sandbox)
+    const factory = factories.get(PKG)
+    const fakeReact = { createToken: 'INJECTED_REACT' }
+    const mod = factory((spec) => (spec === 'react' ? fakeReact : {}))
+    assert.equal(mod.apply()(), 'INJECTED_REACT', 'React 应经 factory 注入 require 解析（非全局）')
   } finally { t.rm() }
 })
