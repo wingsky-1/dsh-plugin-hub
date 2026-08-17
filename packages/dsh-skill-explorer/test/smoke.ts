@@ -16,6 +16,10 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { assertClientProductContract, assertClientSourceContract } from "../../../test/smoke-lib.ts";
+
+const pkgDir = fileURLToPath(new URL("..", import.meta.url));
 import { apply, ROUTE, SET_ENABLED_ROUTE, CREATE_ROUTE, DELETE_ROUTE, name, inject, collectSkills, buildSkillContent } from "../lib/index.js";
 
 const failures = [];
@@ -165,11 +169,8 @@ const main = async () => {
       const hostPaths = [ROUTE, SET_ENABLED_ROUTE, CREATE_ROUTE, DELETE_ROUTE].sort();
       assert.deepEqual(clientPaths, hostPaths, `两端路由漂移：client=${clientPaths.join(",")} host=${hostPaths.join(",")}`);
     });
-    check("client load id === 完整包名（浏览器 arrive 契约）", () => {
-      const clientCode = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
-      const loadId = clientCode.match(/__ModuleLoader__\.load\(\{\s*id:\s*"([^"]+)"/)?.[1];
-      assert.strictEqual(loadId, JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).name);
-    });
+    check("client source contract（load id/IIFE/use strict/load once）", () => assertClientSourceContract(pkgDir));
+    check("client product contract（执行断言：arrive 可解析/apply/inject）", () => assertClientProductContract(pkgDir));
 
     console.log("collectSkills：文件系统扫描 + 注册表合并");
     const { skills, complete } = await collectSkills({

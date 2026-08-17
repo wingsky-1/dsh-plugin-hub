@@ -14,7 +14,11 @@
 import { readFileSync, mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
+import { assertClientProductContract, assertClientSourceContract } from "../../../test/smoke-lib.ts";
+
+const pkgDir = fileURLToPath(new URL("..", import.meta.url));
 import {
   apply,
   CHANNEL,
@@ -261,17 +265,9 @@ assert.ok(rec200.text.includes('"plugin":"dsh-idle-archive"'));
 // ---------------------------------------------------------------- 客户端契约
 
 const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
-const clientLoadId = client.match(/__ModuleLoader__\.load\(\{\s*id:\s*"([^"]+)"/)?.[1];
-assert.strictEqual(clientLoadId, JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).name, "客户端注册 id 必须等于包名（浏览器 arrive 契约）");
-assert.ok(client.includes('"use strict"'), "use strict");
-assert.ok(/\(function\s*\(\)\s*\{/.test(client), "IIFE");
-assert.ok(/exports.apply = apply/.test(client), "exports.apply");
-assert.ok(/exports.inject = inject/.test(client), "exports.inject");
-assert.ok(client.includes("Symbol.toStringTag"), "Symbol.toStringTag");
-assert.ok(/factory:\s*function\s*\(/.test(client), "factory 函数形态（含 esbuild 重命名/无空格输出）");
-assert.ok(client.trimEnd().endsWith("})();"), "load 在文件末尾");
-const codeOnly = client.split("\n").filter((l) => !l.trim().startsWith("//") && !l.trim().startsWith("*")).join("\n");
-assert.equal((codeOnly.match(/__ModuleLoader__\.load/g) || []).length, 1, "load 恰好一次");
+// 客户端契约断言（共享 smoke-lib：源形态 + 执行契约，与 contract-check 同源）
+assertClientSourceContract(pkgDir);
+assertClientProductContract(pkgDir);
 
 // CHANNEL 一致性（宿主与客户端单一来源）
 assert.ok(client.includes('"/dsh-idle-archive"'), "客户端 CHANNEL 与宿主一致");

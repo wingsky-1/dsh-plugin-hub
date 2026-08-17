@@ -20,6 +20,10 @@ import { connect } from "node:net";
 import { mkdtempSync, rmSync, existsSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { assertClientProductContract, assertClientSourceContract } from "../../../test/smoke-lib.ts";
+
+const pkgDir = fileURLToPath(new URL("..", import.meta.url));
 import { apply, loadFileConfig, writeConfigFile, sanitizeSettings, rpcHandler, ROUTES, CHANNEL,
   hostnameAllowed, formatAuthority, rewriteHeaders, createLanProxy, isLoopbackTarget, DEFAULT_OPTIONS,
   ensureSelfSignedTls, certStillValid, toSanEntry, loadTlsFromFiles, SELF_SIGNED_KEY, SELF_SIGNED_CERT } from "../lib/index.js";
@@ -481,18 +485,11 @@ const main = async () => {
     rmSync(applyHome, { recursive: true, force: true });
   }
 
-  // 客户端契约（构建产物文本断言）。
+  // 客户端契约（共享 smoke-lib：源形态 + 执行契约，与 contract-check 同源）。
   {
     const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
-    check("client exports.apply", () => assert.ok(/exports\.apply = apply/.test(client)));
-    check("client exports.inject", () => assert.ok(/exports\.inject = inject/.test(client)));
-    check("client carries Symbol.toStringTag", () => assert.ok(client.includes("Symbol.toStringTag")));
-    check("client factory is function form", () => assert.ok(/factory:\s*function\s*\(/.test(client)));
-    check("client load once at end", () => assert.ok(/__ModuleLoader__\.load/.test(client)) && assert.ok(client.trimEnd().endsWith("})();")));
-    check("client load id === 完整包名（浏览器 arrive 契约）", () => {
-      const loadId = client.match(/__ModuleLoader__\.load\(\{\s*id:\s*"([^"]+)"/)?.[1];
-      assert.strictEqual(loadId, JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).name);
-    });
+    check("client source contract（IIFE/use strict/load id/SymbolTag/factory/load once）", () => assertClientSourceContract(pkgDir));
+    check("client product contract（执行断言：arrive 可解析/apply/inject）", () => assertClientProductContract(pkgDir));
     check("client shares CHANNEL with host", () => assert.ok(client.includes(CHANNEL)));
     check("client renders settings card fields", () => {
       assert.ok(client.includes("LAN 端口"));

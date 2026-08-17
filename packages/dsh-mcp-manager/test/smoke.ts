@@ -16,7 +16,10 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
-import { pathToFileURL } from "node:url";
+import { pathToFileURL, fileURLToPath } from "node:url";
+import { assertClientProductContract, assertClientSourceContract } from "../../../test/smoke-lib.ts";
+
+const pkgDir = join(dirname(fileURLToPath(import.meta.url)), "..");
 import {
   apply,
   buildToolDefinition,
@@ -151,11 +154,8 @@ const main = async () => {
     const hostPaths = [...new Set(Object.values(ROUTES))].sort();
     assert.deepEqual(clientPaths, hostPaths, `两端路由漂移：client=${clientPaths.join(",")} host=${hostPaths.join(",")}`);
   });
-  check("client load id === 完整包名（浏览器 arrive 契约）", () => {
-    const clientCode = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
-    const loadId = clientCode.match(/__ModuleLoader__\.load\(\{\s*id:\s*"([^"]+)"/)?.[1];
-    assert.strictEqual(loadId, JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).name);
-  });
+  check("client source contract（load id/IIFE/use strict/load once）", () => assertClientSourceContract(pkgDir));
+  check("client product contract（执行断言：arrive 可解析/apply/inject）", () => assertClientProductContract(pkgDir));
 
   console.log("normalizeServer");
   check("stdio 服务器规范化", () => {
