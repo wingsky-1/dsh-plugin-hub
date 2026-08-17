@@ -466,6 +466,7 @@ function makeFakeCtx(overrides = {}) {
   assert.ok(client.includes("fontScale"), "client 含字号补偿计算（窄屏保持文字可读）");
   assert.ok(client.includes("minGapMs"), "client 含相邻刻度最小间隔约束（防长标签重叠）");
   assert.ok(client.includes("axisLabelWidthPx"), "client 含 x 轴标签像素宽估算（防重叠换算）");
+  assert.ok(client.includes("dateOnly"), "client 按窗口语义定 x 轴格式（周/月纯日期 MM-dd，rolling 时间）");
   assert.ok(client.includes("fmtAge"), "client 含相对时间新鲜度函数");
   assert.ok(client.includes("分钟前"), "新鲜度显示 x 分钟前");
   assert.ok(client.includes("smoothPath"), "client 含平滑曲线");

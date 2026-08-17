@@ -313,25 +313,28 @@ declare var __DSH_PLUGIN_ID__: string;
     return d.toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
   }
 
-  /** x 轴时间标签（跨度自适应格式）：≥7d 仅日期 MM-dd；≥24h 带日期
-   * MM-dd HH:mm；其余仅 HH:mm。 */
-  function fmtAxisTime(ts: any, spanMs: any) {
+  /** x 轴时间标签：dateOnly=true（周/月窗口）恒为纯日期 MM-dd，与窗口语义
+   * 一致且不受实际采样跨度影响；否则按跨度自适应（rolling 12h 用 HH:mm，
+   * 采样跨度 ≥7d 退化为 MM-dd、≥24h 带日期，其余 HH:mm）。 */
+  function fmtAxisTime(ts: any, spanMs: any, dateOnly: any) {
     var d = new Date(ts);
     var mm = String(d.getMonth() + 1);
     var dd = String(d.getDate()).padStart(2, "0");
     var hh = String(d.getHours()).padStart(2, "0");
     var mi = String(d.getMinutes()).padStart(2, "0");
+    if (dateOnly) return mm + "-" + dd;
     if (spanMs >= 7 * 86400000) return mm + "-" + dd;
     if (spanMs >= 86400000) return mm + "-" + dd + " " + hh + ":" + mi;
     return hh + ":" + mi;
   }
 
-  /** x 轴标签像素宽估算（viewBox 坐标）：按该跨度最长的标签形态 × 字号 ×
-   * 单字符约 0.62em（数字/冒号/连字符的平均比例）。用于换算相邻刻度最小
-   * 时间间隔，防标签矩形重叠。 */
-  function axisLabelWidthPx(spanMs: any, fontSizePx: any) {
+  /** x 轴标签像素宽估算（viewBox 坐标）：按标签形态（dateOnly 用纯日期 MM-dd
+   * 5 字符，否则按跨度取最长） × 字号 × 单字符约 0.62em。用于换算相邻刻度
+   * 最小时间间隔，防标签矩形重叠。 */
+  function axisLabelWidthPx(spanMs: any, fontSizePx: any, dateOnly: any) {
     var chars: any;
-    if (spanMs >= 7 * 86400000) chars = "MM-dd".length; // 5
+    if (dateOnly) chars = "MM-dd".length; // 5
+    else if (spanMs >= 7 * 86400000) chars = "MM-dd".length; // 5
     else if (spanMs >= 86400000) chars = "MM-dd HH:mm".length; // 11
     else chars = "HH:mm".length; // 5
     return Math.ceil(chars * fontSizePx * 0.62) + 4; // +4 留白防贴边
@@ -527,7 +530,7 @@ declare var __DSH_PLUGIN_ID__: string;
    * - 曲线：平滑描边 + 半透明面积填充 + 末端当前值圆点高亮（sparkline 惯例）
    * 注意：SVG presentation attribute 不解析 CSS var()，颜色一律走 style 属性。
    */
-  function miniChartSvgMarkup(samples: any, col: any, color: any, lo: any, hi: any, drawXAxis: any, resetAt: any, resetPeriodMs: any, fontScale: any) {
+  function miniChartSvgMarkup(samples: any, col: any, color: any, lo: any, hi: any, drawXAxis: any, resetAt: any, resetPeriodMs: any, fontScale: any, dateOnly: any) {
     var t0 = samples[0][0];
     var t1 = samples[samples.length - 1][0];
     if (t1 <= t0) t1 = t0 + 60000;
@@ -594,13 +597,13 @@ declare var __DSH_PLUGIN_ID__: string;
     // x 轴时间刻度（仅底部图绘制，三图共享同一时间域所以天然对齐）
     if (drawXAxis) {
       // 相邻刻度最小时间间隔：标签宽(px) × (spanMs/xw) 换算成时间，防重叠
-      var labelPx = axisLabelWidthPx(spanMs, parseFloat(fs));
+      var labelPx = axisLabelWidthPx(spanMs, parseFloat(fs), dateOnly);
       var minGapMs = (labelPx * spanMs) / xw;
       var ticks = timeTicks(t0, t1, minGapMs);
       for (var k = 0; k < ticks.length; k += 1) {
         var tx = xOf(ticks[k]);
         var anchor = k === 0 ? "start" : k === ticks.length - 1 ? "end" : "middle";
-        parts.push('<text x="' + tx.toFixed(1) + '" y="' + (H - 4) + '" text-anchor="' + anchor + '" style="font-size:' + fs + 'px">' + fmtAxisTime(ticks[k], spanMs) + "</text>");
+        parts.push('<text x="' + tx.toFixed(1) + '" y="' + (H - 4) + '" text-anchor="' + anchor + '" style="font-size:' + fs + 'px">' + fmtAxisTime(ticks[k], spanMs, dateOnly) + "</text>");
       }
     }
     return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + " " + H + '">' + parts.join("") + "</svg>";
@@ -649,7 +652,7 @@ declare var __DSH_PLUGIN_ID__: string;
       var fontScale = w / 320;
       job.box.innerHTML = miniChartSvgMarkup(
         job.winSamples, job.col, job.color, job.domain[0], job.domain[1], true,
-        job.resetsAt, job.period, fontScale
+        job.resetsAt, job.period, fontScale, job.dateOnly
       );
     }
   }
@@ -704,6 +707,8 @@ declare var __DSH_PLUGIN_ID__: string;
             domain: niceDomain(pcts),
             resetsAt: win && win.resetsAt,
             period: s[5],
+            // 周/月窗口 x 轴只显示日期 MM-dd（dateOnly=true），rolling 显示时间
+            dateOnly: s[0] === "weekly" || s[0] === "monthly",
           });
         } else {
           box.appendChild(el("p", { class: PILL_PREFIX + "chartEmpty", text: "该窗口暂无历史采样" }));
