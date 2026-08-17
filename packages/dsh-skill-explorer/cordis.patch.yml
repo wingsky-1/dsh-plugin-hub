@@ -1,6 +1,4 @@
 # dsh-skill-explorer bundle patch：向 web profile 名册插入技能中心。
 - insert:
-    - id: skill-explorer
+    - id: ui-dsh-skill-explorer
       name: '@wingsky-1/dsh-skill-explorer'
-      config:
-        enabled: true

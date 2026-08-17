@@ -1,10 +1,8 @@
 # dsh-lan-proxy bundle patch：向 web profile 的插件名册插入 LAN 转发器这一行。
 # 该行是按包名激活的普通 cordis 插件：主机端（exports "."）在宿主进程运行。
 # 它注入 webServer，因此只在回环服务器绑定后启动，并从 ctx.webServer.port
-# 解析真实上游端口（默认 3080；--port 0 也适用）。
+# 解析真实上游端口（默认 3080；--port 0 也适用）。配置走 schema 默认值
+# （host 0.0.0.0 / port 3081），独立/聚合行均不带 config。
 - insert:
-    - id: lan-proxy
+    - id: ui-dsh-lan-proxy
       name: '@wingsky-1/dsh-lan-proxy'
-      config:
-        host: '0.0.0.0'
-        port: 3081

@@ -12,3 +12,6 @@ export declare function unmount(name: string): void;
 
 /** 调试/断言辅助：当前是否已挂载。 */
 export declare function isMounted(name: string): boolean;
+
+/** 测试/热重载辅助：清空全部挂载占位（smoke 多次 apply 需要；生产勿用）。 */
+export declare function resetMounts(): void;

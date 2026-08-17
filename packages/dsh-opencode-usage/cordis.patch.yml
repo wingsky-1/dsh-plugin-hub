@@ -1,5 +1,3 @@
 - insert:
-    - id: opencode-usage
+    - id: ui-dsh-opencode-usage
       name: '@wingsky-1/dsh-opencode-usage'
-      config:
-        enabled: true

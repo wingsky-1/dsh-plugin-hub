@@ -1,5 +1,3 @@
 - insert:
-    - id: notifier
+    - id: ui-dsh-notifier
       name: '@wingsky-1/dsh-notifier'
-      config:
-        enabled: true

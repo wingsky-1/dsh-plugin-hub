@@ -1,6 +1,4 @@
 # dsh-gzip bundle patch：插入宿主端压缩包装层。
 - insert:
-    - id: dsh-gzip
+    - id: ui-dsh-gzip
       name: '@wingsky-1/dsh-gzip'
-      config:
-        enabled: true
