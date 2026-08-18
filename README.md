@@ -22,6 +22,7 @@ DSH（DeepSeek Harness）Web GUI 插件集，**npm 分发**：既可一键安装
 | `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理器（stdio/HTTP，工具注册给模型） | [README](packages/dsh-mcp-manager/README.md) | ✅ v0.1.x |
 | `@wingsky-1/dsh-idle-archive` | 会话闲置提醒归档 | [README](packages/dsh-idle-archive/README.md) | ✅ v0.1.x |
 | `@wingsky-1/dsh-gzip` | /api 响应 gzip 压缩 | [README](packages/dsh-gzip/README.md) | ✅ v0.1.x |
+| `@wingsky-1/dsh-web-file-preview` | 点击对话文件链接在 web 端预览（图片/文本/Markdown/代码/Diff） | [README](packages/dsh-web-file-preview/README.md) | 🚧 源码在仓 · npm 待发布 |
 
 > dsh-memory（项目长期记忆）暂未包含，规划中。
 

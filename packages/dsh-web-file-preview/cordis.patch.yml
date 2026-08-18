@@ -1,0 +1,6 @@
+# dsh-web-file-preview bundle patch：插入宿主端文件预览服务路由 + 客户端预览 Modal。
+- insert:
+    - id: ui-dsh-web-file-preview
+      name: '@wingsky-1/dsh-web-file-preview'
+      config:
+        enabled: true

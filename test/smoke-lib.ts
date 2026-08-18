@@ -117,8 +117,16 @@ export function assertClientSourceContract(pkgDir) {
   assert.ok(/exports\.inject\s*=|export \{|inject:/.test(clientCode) && /\binject\b/.test(clientCode), 'exports.inject 装配')
   assert.ok(clientCode.includes('Symbol.toStringTag'), 'Symbol.toStringTag')
   assert.ok(/factory:\s*function\s*\(/.test(clientCode), 'factory 函数形态（含 esbuild 重命名）')
-  // 结尾兼容三种产物：legacy/wrapper 是 `})();`，externals(factory) 是 `})`（顶层 load 闭合）
-  const trimmedEnd = clientCode.trimEnd()
+  // 结尾兼容三种产物：legacy/wrapper 是 `})();`，externals(factory) 是 `})`（顶层 load 闭合）。
+  // esbuild 会把第三方库的 legal 注释（如 DOMPurify 的 /*! license */）追加到文件末尾——
+  // 剥离后再校验「load 注册在文件末尾」（legal 注释是合规产物，不影响执行顺序）。
+  let trimmedEnd = clientCode.trimEnd()
+  if (trimmedEnd.endsWith('*/')) {
+    const open = trimmedEnd.lastIndexOf('/*')
+    if (open !== -1 && trimmedEnd.slice(open).startsWith('/*!')) {
+      trimmedEnd = trimmedEnd.slice(0, open).trimEnd()
+    }
+  }
   assert.ok(trimmedEnd.endsWith('})') || trimmedEnd.endsWith('})();'), 'load 注册在文件末尾')
   const codeOnly = clientCode.split('\n').filter((l) => !l.trim().startsWith('//') && !l.trim().startsWith('*')).join('\n')
   assert.equal((codeOnly.match(/__ModuleLoader__\.load/g) || []).length, 1, 'load 恰好一次')
