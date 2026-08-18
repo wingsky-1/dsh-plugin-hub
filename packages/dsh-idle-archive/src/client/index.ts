@@ -18,6 +18,8 @@
 // React 经 build-client externals 路径——运行时由 dsh web 的 factory require("react")
 // 注入（loader 模块表），源码不写任何 load/IIFE 外壳（外壳由构建生成）。类型 shim 见 react-shim.d.ts。
 import * as React from "react";
+// 样式：独立 style.css（见同目录），build-client 的 .css text-loader 构建期内联为字符串
+import STYLE from "./style.css";
 
   var CHANNEL = "/dsh-idle-archive";
   var MODAL_ID = "dsh-idle-archive-modal";
@@ -39,76 +41,13 @@ import * as React from "react";
 
   /** 注入样式（显式版本号，热更新时旧 <style> 移除重建）。 */
   function injectStyle() {
-    var css =
-      "#" + MODAL_ID + "{position:fixed;inset:0;z-index:9998;display:flex;align-items:center;justify-content:center;" +
-      "background:rgba(15,17,21,.45);backdrop-filter:blur(2px);font-family:Inter,var(--dsw-font-family),system-ui,'Segoe UI',sans-serif}" +
-      "#" + MODAL_ID + "[hidden]{display:none!important}" +
-      "#" + MODAL_ID + " .dia-card{width:min(520px,calc(100vw - 48px));max-height:min(78vh,640px);display:flex;flex-direction:column;" +
-      "background:var(--dsw-alias-bg-base,#ffffff);color:var(--dsw-alias-label-primary,#1f2329);border:1px solid var(--dsw-alias-border-l1,#e2e5ea);" +
-      "border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.28);overflow:hidden}" +
-      "#" + MODAL_ID + " .dia-head{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;" +
-      "border-bottom:1px solid var(--dsw-alias-border-l1,#e2e5ea);font-weight:700;font-size:14px}" +
-      "#" + MODAL_ID + " .dia-close{border:none;background:transparent;color:var(--dsw-alias-label-secondary,#5f6672);" +
-      "font-size:18px;line-height:1;cursor:pointer;padding:4px 8px;border-radius:6px}" +
-      "#" + MODAL_ID + " .dia-close:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.06));color:var(--dsw-alias-label-primary,#1f2329)}" +
-      "#" + MODAL_ID + " .dia-desc{padding:10px 16px;font-size:12.5px;color:var(--dsw-alias-label-secondary,#5f6672);" +
-      "border-bottom:1px solid var(--dsw-alias-border-l1,#e2e5ea);line-height:1.6}" +
-      "#" + MODAL_ID + " .dia-list{flex:1;min-height:0;overflow-y:auto;padding:8px 12px}" +
-      "#" + MODAL_ID + " .dia-row{display:flex;align-items:center;gap:10px;padding:9px 10px;border:1px solid var(--dsw-alias-border-l1,#e2e5ea);" +
-      "border-radius:9px;margin-bottom:8px;background:var(--dsw-alias-bg-layer-1,#f5f6f8)}" +
-      "#" + MODAL_ID + " .dia-row-main{flex:1;min-width:0}" +
-      "#" + MODAL_ID + " .dia-row-title{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
-      "#" + MODAL_ID + " .dia-row-time{font-size:11.5px;color:var(--dsw-alias-label-tertiary,#8a919c);margin-top:2px}" +
-      "#" + MODAL_ID + " .dia-btn{border:1px solid var(--dsw-alias-border-l1,#e2e5ea);background:var(--dsw-alias-bg-layer-1,#f5f6f8);" +
-      "color:var(--dsw-alias-label-primary,#1f2329);border-radius:7px;padding:4px 12px;font-size:12px;cursor:pointer;flex:none}" +
-      "#" + MODAL_ID + " .dia-btn:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.06))}" +
-      "#" + MODAL_ID + " .dia-btn-archive{border-color:var(--dsw-alias-state-info-primary,#3b82f6);color:var(--dsw-alias-state-info-primary,#3b82f6)}" +
-      "#" + MODAL_ID + " .dia-btn-archive:hover{background:var(--dsw-alias-state-info-tertiary,rgba(59,130,246,.08))}" +
-      "#" + MODAL_ID + " .dia-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 16px;" +
-      "border-top:1px solid var(--dsw-alias-border-l1,#e2e5ea);background:var(--dsw-alias-bg-layer-1,#f5f6f8)}" +
-      "#" + MODAL_ID + " .dia-hint{font-size:11.5px;color:var(--dsw-alias-label-tertiary,#8a919c)}" +
-      "#" + MODAL_ID + " .dia-all{border:1px solid var(--dsw-alias-border-l1,#e2e5ea);background:var(--dsw-alias-bg-base,#ffffff);" +
-      "color:var(--dsw-alias-label-primary,#1f2329);border-radius:7px;padding:5px 14px;font-size:12px;cursor:pointer}" +
-      "#" + MODAL_ID + " .dia-all:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.06))}" +
-      // 深色模式
-      "body[data-ds-dark-theme] #" + MODAL_ID + "{background:rgba(0,0,0,.55)}" +
-      "body[data-ds-dark-theme] #" + MODAL_ID + " .dia-card{background:var(--dsw-alias-bg-base,#1b1c1e);color:var(--dsw-alias-label-primary,#e8e8ea);" +
-      "border-color:var(--dsw-alias-border-l1,#33353a)}" +
-      "body[data-ds-dark-theme] #" + MODAL_ID + " .dia-row{background:var(--dsw-alias-bg-layer-1,#26272a);border-color:var(--dsw-alias-border-l1,#33353a)}" +
-      "body[data-ds-dark-theme] #" + MODAL_ID + " .dia-foot{background:var(--dsw-alias-bg-layer-1,#26272a);border-color:var(--dsw-alias-border-l1,#33353a)}" +
-      // toast
-      ".dia-toast{position:fixed;bottom:24px;right:24px;z-index:9999;padding:9px 16px;border-radius:9px;font-size:12.5px;color:#fff;" +
-      "box-shadow:0 6px 20px rgba(0,0,0,.22);max-width:min(420px,calc(100vw - 48px))}" +
-      ".dia-toast-ok{background:var(--dsw-alias-state-success-primary,#16a34a)}" +
-      ".dia-toast-err{background:var(--dsw-alias-state-error-primary,#d92d20)}" +
-      // 设置卡片（settings.plugin.item 插槽）——官方 PluginCard 同款风格（dsw-alias 变量 + 折叠头）
-      ".dia-set-card{border:1px solid var(--dsw-alias-border-l2,#e2e5ea);background:var(--dsw-alias-bg-layer-3,#fbfbfc);border-radius:12px;list-style:none;transition:border-color .16s,background .16s}" +
-      ".dia-set-card:hover{border-color:var(--dsw-alias-label-dimmed,#9ba1a6)}" +
-      ".dia-set-cardOpen{background:var(--dsw-alias-bg-layer-2,#f5f6f8);border-color:var(--dsw-alias-label-dimmed,#9ba1a6)}" +
-      ".dia-set-head{appearance:none;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:transparent;border:0;border-radius:12px;display:flex;align-items:center;gap:12px;padding:14px 16px}" +
-      ".dia-set-head:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#4f6ef7);outline-offset:-2px}" +
-      ".dia-set-headText{display:flex;flex-direction:column;flex:1;gap:4px;min-width:0}" +
-      ".dia-set-name{color:var(--dsw-alias-label-primary,#1f2329);font-size:15px;font-weight:600;line-height:1.4}" +
-      ".dia-set-description{color:var(--dsw-alias-label-tertiary,#5f6672);font-size:13px;line-height:1.5}" +
-      ".dia-set-chevron{color:var(--dsw-alias-label-tertiary,#5f6672);flex:none;transition:transform .16s;font-size:11px}" +
-      ".dia-set-chevronOpen{transform:rotate(180deg)}" +
-      ".dia-set-body{border-top:1px solid var(--dsw-alias-border-l2,#e2e5ea);margin:0 16px;padding:10px 0 8px;display:flex;flex-direction:column;gap:10px}" +
-      ".dia-set-row{display:flex;align-items:center;justify-content:space-between;gap:10px}" +
-      ".dia-set-row label{color:var(--dsw-alias-label-secondary,#5f6672);font-size:13px}" +
-      ".dia-set-input{width:92px;padding:4px 8px;border:1px solid var(--dsw-alias-border-l1,#e2e5ea);border-radius:8px;background:var(--dsw-alias-bg-base,#ffffff);color:var(--dsw-alias-label-primary,#1f2329);font-size:13px;font:inherit}" +
-      ".dia-set-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;border-top:1px solid var(--dsw-alias-border-l2,#e2e5ea);padding:10px 0 4px}" +
-      ".dia-set-save,.dia-set-check{appearance:none;font:inherit;cursor:pointer;border:1px solid transparent;border-radius:8px;padding:5px 14px;font-size:13px;line-height:1.5}" +
-      ".dia-set-check{border-color:var(--dsw-alias-border-l2,#e2e5ea);color:var(--dsw-alias-label-secondary,#5f6672);background:transparent}" +
-      ".dia-set-check:hover{color:var(--dsw-alias-label-primary,#1f2329);border-color:var(--dsw-alias-label-dimmed,#9ba1a6)}" +
-      ".dia-set-save{background:var(--dsw-alias-label-primary,#1f2329);color:var(--dsw-alias-bg-layer-3,#fbfbfc)}" +
-      ".dia-set-saved{color:var(--dsw-alias-state-success-primary,#16a34a);font-size:12px}";
     var existing = document.getElementById(STYLE_ID);
     if (existing && existing.dataset.cssVersion === CSS_VERSION) return;
     if (existing) existing.remove();
     var style = document.createElement("style");
     style.id = STYLE_ID;
     style.dataset.cssVersion = CSS_VERSION;
-    style.textContent = css;
+    style.textContent = STYLE;
     document.head.appendChild(style);
   }
 
