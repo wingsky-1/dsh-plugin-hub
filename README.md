@@ -44,7 +44,7 @@ dsh plugin --profile web remove @wingsky-1/dsh-notifier
 
 装完**重启一次** `dsh web`（bundle 层只在启动时组合），侧边栏/设置页出现插件入口。
 
-### 独立安装与全家桶：二选一（0.2.0 起）
+### 独立安装与全家桶：二选一（0.1.5 起）
 
 独立包与聚合包的 patch `id` 相同（`ui-*`）。**请只选一种安装方式**——
 同时装 `dsh-plugins-all` 与任一 `@wingsky-1/dsh-lan-proxy` 等独立包会导致同名 entry
@@ -53,7 +53,7 @@ dsh plugin --profile web remove @wingsky-1/dsh-notifier
 
 ### 从 0.1.x 升级（patch id 迁移）
 
-0.2.0 起独立包 patch `id` 由旧短名（如 `notifier`、`lan-proxy`、`dsh-gzip`）统一改为
+0.1.5 起独立包 patch `id` 由旧短名（如 `notifier`、`lan-proxy`、`dsh-gzip`）统一改为
 `ui-<name>`（如 `ui-dsh-notifier`）。若你此前单独安装过独立包，profile 中可能残留旧
 `id` 行——建议确认后通过以下命令检测，并重装对应包拉取新 patch：
 
@@ -63,7 +63,7 @@ grep -rnE '^\s*id:\s*(dsh-gzip|dsh-idle-archive|lan-proxy|mcp-manager|notifier|o
   "$DSH_HOME/cordis.patch.yml" ~/.dsh/profiles/*/cordis.patch.yml 2>/dev/null
 # 有输出 → 重装覆盖拉取新配置
 dsh plugin --profile web remove @wingsky-1/<包>
-dsh plugin --profile web add @wingsky-1/<包>@^0.2.0
+dsh plugin --profile web add @wingsky-1/<包>@^0.1.5
 ```
 
 ## 安全提醒

@@ -5,7 +5,7 @@
 /**
  * aggregate — 聚合包（dsh-plugins-all）cordis.patch.yml 生成/校验器。
  *
- * 语义（对齐 web-ui aggregate 实测做法 + 本仓 0.2.0 决策）：
+ * 语义（对齐 web-ui aggregate 实测做法 + 本仓 ui-<name> patch id 决策）：
  *   - 聚合 cordis.patch.yml = 各独立包 insert 行**原样拼接**（id + name，**不带
  *     config**——schema 默认值兜底：lan-proxy host/port、mcp-manager
  *     announceToAgent、各插件 enabled 均有默认）；
