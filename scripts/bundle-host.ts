@@ -78,8 +78,12 @@ const clientSrc = existsSync(join(pkgDir, 'src', 'client.ts'))
     ? join(pkgDir, 'src', 'client', 'index.ts')
     : null
 if (clientSrc) {
-  const pkgName = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8')).name
+  const pkgJson = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8'))
+  const pkgName = pkgJson.name
   const clientOut = join(libDir, 'client.js')
+  // inlineBareImports：包在 dsh.client 显式声明——客户端 bare import 是纯浏览器
+  // 第三方库（需内联进产物），而非宿主注入 external（如 React）。见 build-client.ts。
+  const inlineBareImports = !!(pkgJson.dsh && pkgJson.dsh.client && pkgJson.dsh.client.inlineBareImports)
   // ROUTES 构建期注入（define 方案）：从宿主产物读取 ROUTES 单一来源，经
   // extraDefine 注入 __DSH_ROUTES__ 供新型 client 引用——两端路由构建期强一致。
   // 现有 client 未引用该标识符则零影响（esbuild 只替换自由变量）。
@@ -97,7 +101,7 @@ if (clientSrc) {
     console.warn(`[bundle-host] ${process.argv[2]}: ROUTES 注入跳过（${String(e.message).split('\n')[0]}），由 smoke 兜底`)
   }
   try {
-    const { mode } = await buildClient({ src: clientSrc, outfile: clientOut, packageName: pkgName, extraDefine })
+    const { mode } = await buildClient({ src: clientSrc, outfile: clientOut, packageName: pkgName, extraDefine, inlineBareImports })
     console.log(`[bundle-host] ${process.argv[2]}: 客户端构建完成（${mode} 模式，load id=${pkgName}）`)
   } catch (e) {
     console.error(`[bundle-host] 客户端构建失败: ${e.message}`)

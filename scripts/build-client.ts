@@ -94,16 +94,29 @@ function bareImports(ts) {
  * @param {string[]} [opts.externals] 宿主注入依赖（如 ["react"]）：这些模块由
  *   loader 运行时 require 注入，不打进 bundle（干净模块 import 之）；
  *   空则走零依赖 wrapper 路径。
+ * @param {boolean} [opts.inlineBareImports] 默认 false。为 true 时干净模块的
+ *   bare import（第三方库，如 dompurify/diff2html）不按「宿主注入 external」处理，
+ *   而是由 esbuild 内联进 client.js（产物仍自包含、零运行时依赖）。适用于客户端
+ *   使用纯浏览器第三方库、无任何宿主注入 JS 模块的场景（宿主注入服务经
+ *   dsh.client.inject 声明，与 JS import 无关）。
+ *   ⚠️ 与默认语义互斥：默认「bare import = 宿主注入 external（React）」；
+ *   inlineBareImports=true 则全部内联。二者按包二选一。
  * @returns {Promise<{ code: string, mode: 'wrapper' | 'legacy' }>}
  */
-export async function buildClient({ src, outfile, packageName, extraDefine = {}, externals = [] }) {
+export async function buildClient({ src, outfile, packageName, extraDefine = {}, externals = [], inlineBareImports = false }) {
   const sourceText = readFileSync(src, 'utf8')
   // 形态检测：剥离注释后检测 __ModuleLoader__.load——干净模块注释若提到 loader
   // 会被误判 legacy（导致 wrapper 没用上，构建行为错误）。
   const codeOnly = sourceText.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '')
   const mode = /__ModuleLoader__\.load/.test(codeOnly) ? 'legacy' : 'wrapper'
-  // externals：显式传入优先；否则 wrapper 模式自动从源码 bare import 提取
-  const resolvedExternals = externals.length > 0 ? externals : (mode === 'wrapper' ? bareImports(sourceText) : [])
+  // externals：显式传入优先；否则 wrapper 且未声明 inlineBareImports 时按「bare
+  // import = 宿主注入 external」自动提取；inlineBareImports 或 legacy → 全部内联。
+  const resolvedExternals =
+    externals.length > 0
+      ? externals
+      : mode === 'wrapper' && !inlineBareImports
+        ? bareImports(sourceText)
+        : []
   const define = {
     __DSH_PLUGIN_ID__: JSON.stringify(packageName),
     ...Object.fromEntries(Object.entries(extraDefine).map(([k, v]) => [k, JSON.stringify(v)])),
@@ -116,6 +129,9 @@ export async function buildClient({ src, outfile, packageName, extraDefine = {},
     define,
     write: false,
     logLevel: 'warning',
+    // .css → import 得到字符串字面量：客户端 CSS 放独立 .css 文件（有语法高亮/可静态检查），
+    // 构建期 text-loader 原样内联进 client.js（产物仍自包含单文件、零运行时依赖、无独立请求）。
+    loader: { '.css': 'text' },
   }
 
   let code
@@ -164,8 +180,12 @@ export function copyClientResources(pkgDir, libDir) {
   const srcDir = join(pkgDir, 'src')
   if (!existsSync(srcDir)) return []
   const copied = []
-  for (const f of readdirSync(srcDir)) {
-    if (!/\.(ts|tsx|js|mjs|cjs)$/.test(f) && !f.startsWith('.') && existsSync(join(srcDir, f))) {
+  // withFileTypes：只处理文件，跳过目录（src/client/ 目录、shared 子目录等不是资源）
+  for (const ent of readdirSync(srcDir, { withFileTypes: true })) {
+    const f = ent.name
+    if (!ent.isFile()) continue
+    // .css 走客户端 text-loader 构建期内联（见 loader 配置），不再作为独立资源复制
+    if (!/\.(ts|tsx|js|mjs|cjs|css)$/.test(f) && !f.startsWith('.') && existsSync(join(srcDir, f))) {
       cpSync(join(srcDir, f), join(libDir, f))
       copied.push(f)
     }
