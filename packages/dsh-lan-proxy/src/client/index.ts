@@ -10,21 +10,14 @@
  * 持久化与生效配置在宿主（~/.dsh/lan-proxy/config.json），多标签页共享。
  */
 
-// ---- 浏览器端全局声明（dsh web 运行时提供）----
-declare var React: any;
-declare var module: { exports: Record<string, any> };
-declare var __DSH_PLUGIN_ID__: string; // 构建注入：bundle-host 以 --define 注入完整 npm 包名（load id 契约 = 包名）
-interface Window {
-  __ModuleLoader__: { load(entry: { id: string; factory: (require: any) => unknown }): void };
-}
+// 浏览器半区干净模块：只导出 apply/inject；React 由构建期 external 注入（经 factory
+// 注入的 require("react") 解析，dsh web 不暴露全局 React）。契约外壳（IIFE/load/
+// Symbol.toStringTag 装配）由 scripts/build-client.ts 统一生成——源码不写任何 loader。
+// 样式：独立 style.css（见同目录），build-client 的 .css text-loader 构建期内联为字符串
+import STYLE from "./style.css";
+import * as React from "react";
 
-(function () {
-  "use strict";
-
-  /** React 由 factory 的 require("react") 注入（dsh web 不暴露全局 React）。 */
-  var React: any;
-
-  var CHANNEL = "/dsh-lan-proxy";
+var CHANNEL = "/dsh-lan-proxy";
   var STYLE_ID = "dsh-lan-proxy-style";
   var CSS_VERSION = "1";
 
@@ -46,37 +39,13 @@ interface Window {
 
   /** 注入卡片样式（显式版本号，热更新时旧 <style> 移除重建）。 */
   function injectStyle() {
-    var css =
-      ".lp-set-card{list-style:none;border:1px solid var(--dsw-alias-border-l1,#e2e5ea);border-radius:12px;" +
-      "background:var(--dsw-alias-bg-base,#ffffff);margin-bottom:8px;overflow:hidden}" +
-      ".lp-set-head{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:11px 14px;" +
-      "border:none;background:none;cursor:pointer;text-align:left;font:inherit}" +
-      ".lp-set-head:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.04))}" +
-      ".lp-set-headText{display:flex;flex-direction:column;gap:2px;min-width:0}" +
-      ".lp-set-name{font-size:13.5px;font-weight:600;color:var(--dsw-alias-label-primary,#1f2329)}" +
-      ".lp-set-description{font-size:12px;color:var(--dsw-alias-label-tertiary,#8a919c)}" +
-      ".lp-set-chevron{color:var(--dsw-alias-label-tertiary,#5f6672);flex:none;transition:transform .16s;font-size:11px}" +
-      ".lp-set-chevronOpen{transform:rotate(180deg)}" +
-      ".lp-set-body{padding:4px 14px 14px;border-top:1px solid var(--dsw-alias-border-l1,#e2e5ea);display:flex;flex-direction:column;gap:9px}" +
-      ".lp-set-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:9px}" +
-      ".lp-set-row label{font-size:12.5px;color:var(--dsw-alias-label-secondary,#5f6672);flex:none}" +
-      ".lp-set-input{flex:1;min-width:0;max-width:280px;padding:5px 9px;font-size:12.5px;color:var(--dsw-alias-label-primary,#1f2329);" +
-      "background:var(--dsw-alias-bg-layer-1,#f5f6f8);border:1px solid var(--dsw-alias-border-l1,#e2e5ea);border-radius:7px;font-family:inherit}" +
-      ".lp-set-input:focus{outline:none;border-color:var(--dsw-alias-state-info-primary,#3b82f6)}" +
-      ".lp-set-hint{font-size:11px;color:var(--dsw-alias-label-tertiary,#8a919c);line-height:1.5}" +
-      ".lp-set-foot{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:10px}" +
-      ".lp-set-save{border:1px solid var(--dsw-alias-border-l1,#e2e5ea);background:var(--dsw-alias-bg-layer-1,#f5f6f8);" +
-      "color:var(--dsw-alias-label-primary,#1f2329);border-radius:7px;padding:5px 16px;font-size:12.5px;cursor:pointer}" +
-      ".lp-set-save:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.06))}" +
-      ".lp-set-saved{font-size:12px;color:var(--dsw-alias-state-success-primary,#16a34a)}" +
-      ".lp-set-error{font-size:12px;color:var(--dsw-alias-state-danger-primary,#dc2626)}";
     var existing = document.getElementById(STYLE_ID);
     if (existing && existing.dataset.version === CSS_VERSION) return;
     if (existing) existing.remove();
     var style = document.createElement("style");
     style.id = STYLE_ID;
     style.dataset.version = CSS_VERSION;
-    style.textContent = css;
+    style.textContent = STYLE;
     document.head.appendChild(style);
   }
 
@@ -232,7 +201,7 @@ interface Window {
 
   // ------------------------------------------------------------ 装配
 
-  function apply(ctx: any) {
+export function apply(ctx: any) {
     try {
       var connection = ctx.get("connection");
       var slots = ctx.get("slots");
@@ -270,19 +239,6 @@ interface Window {
     }
   }
 
-  (window as any).__ModuleLoader__.load({
-    id: __DSH_PLUGIN_ID__,
-    factory: function (require: any) {
-      var module: { exports: Record<string, any> } = { exports: {} };
-      var exports = module.exports;
-      Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
-      // 设置卡片是 React 组件（settings.plugin.item 插槽由宿主 React 渲染）。
-      // ⚠️ 必须赋值顶层 React（SettingsCard 在 IIFE 顶层引用；局部 var 会因作用域错误而 ReferenceError）。
-      React = require("react");
-      var inject = ["slots"];
-      exports.apply = apply;
-      exports.inject = inject;
-      return module.exports;
-    },
-  });
-})();
+// ---- 客户端契约：apply/inject 由 build-client 经 factory 装配（干净模块，React externals）----
+// 设置卡片是 React 组件（settings.plugin.item 插槽由宿主 React 渲染）。
+export const inject: string[] = ["slots"];

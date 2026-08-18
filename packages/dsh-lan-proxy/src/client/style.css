@@ -1,0 +1,74 @@
+/* dsh-lan-proxy — 客户端样式（独立 .css 文件）。
+ *
+ * 由 build-client 的 .css text-loader 构建期内联进 client.js（产物仍自包含单文件、
+ * 零运行时依赖、无独立请求）。injectStyle 注入 <style id=dsh-lan-proxy-style>。
+ * 前缀 lp-（防与 shell 冲突）；颜色一律走 --dsw-alias-* 主题变量 + 浅色回退。 */
+
+.lp-set-card {
+  list-style: none;
+  border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-base, #ffffff);
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+.lp-set-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 14px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+.lp-set-head:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.04)); }
+.lp-set-headText { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.lp-set-name { font-size: 13.5px; font-weight: 600; color: var(--dsw-alias-label-primary, #1f2329); }
+.lp-set-description { font-size: 12px; color: var(--dsw-alias-label-tertiary, #8a919c); }
+.lp-set-chevron {
+  color: var(--dsw-alias-label-tertiary, #5f6672);
+  flex: none;
+  transition: transform 0.16s;
+  font-size: 11px;
+}
+.lp-set-chevronOpen { transform: rotate(180deg); }
+.lp-set-body {
+  padding: 4px 14px 14px;
+  border-top: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.lp-set-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 9px; }
+.lp-set-row label { font-size: 12.5px; color: var(--dsw-alias-label-secondary, #5f6672); flex: none; }
+.lp-set-input {
+  flex: 1;
+  min-width: 0;
+  max-width: 280px;
+  padding: 5px 9px;
+  font-size: 12.5px;
+  color: var(--dsw-alias-label-primary, #1f2329);
+  background: var(--dsw-alias-bg-layer-1, #f5f6f8);
+  border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
+  border-radius: 7px;
+  font-family: inherit;
+}
+.lp-set-input:focus { outline: none; border-color: var(--dsw-alias-state-info-primary, #3b82f6); }
+.lp-set-hint { font-size: 11px; color: var(--dsw-alias-label-tertiary, #8a919c); line-height: 1.5; }
+.lp-set-foot { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 10px; }
+.lp-set-save {
+  border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
+  background: var(--dsw-alias-bg-layer-1, #f5f6f8);
+  color: var(--dsw-alias-label-primary, #1f2329);
+  border-radius: 7px;
+  padding: 5px 16px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.lp-set-save:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.06)); }
+.lp-set-saved { font-size: 12px; color: var(--dsw-alias-state-success-primary, #16a34a); }
+.lp-set-error { font-size: 12px; color: var(--dsw-alias-state-danger-primary, #dc2626); }
