@@ -502,11 +502,20 @@ import STYLE from "./style.css";
       document.addEventListener("visibilitychange", onVisibility);
 
       // 设置面板插件项。
+      // ⚠️ rc.7 起 settings.plugin.item 由 list(id) 改为 keyed(key)：
+      //   - 旧版（<=rc.6）只看 `id`；
+      //   - rc.7 只看 `key`，且要求与宿主 serve 的命名空间一致（dsh-idle-archive）。
+      // 社区一致范式（见 ysr666/dsh-vision-router#165/#162）：**id 与 key 双写**，
+      // 让新旧两代 slot 运行时都接受（多余字段被忽略）。key 必须等于宿主端
+      // installSettingsNamespace 注册的命名空间，才会被 configurable 面板派发。
       if (slots) {
         slots.inject("settings.plugin.item", function () {
-          return slots.register({ name: "settings.plugin.item", id: "dsh-idle-archive", order: 45 }, function () {
-            return React.createElement(SettingsCard, null);
-          });
+          return slots.register(
+            { name: "settings.plugin.item", id: "dsh-idle-archive", key: "dsh-idle-archive", order: 45 },
+            function () {
+              return React.createElement(SettingsCard, null);
+            }
+          );
         });
       }
 

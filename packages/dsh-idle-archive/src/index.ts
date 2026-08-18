@@ -17,8 +17,10 @@
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
+import z from "schemastery";
 import { isLoopbackRequest } from "../../../shared/loopback.js";
 import { writeJson } from "../../../shared/host-utils.js";
+import { installSettingsNamespace } from "../../../shared/settings-namespace.js";
 import type { PluginContext } from "../../../types/dsh.js";
 
 export { isLoopbackRequest } from "../../../shared/loopback.js";
@@ -45,6 +47,27 @@ export interface StateFile {
 export interface IdleArchiveConfig {
   [key: string]: unknown;
 }
+
+/**
+ * 插件设置面板的 schemastery schema（与 Settings/defaultSettings 同构）。
+ * rc.7 起 settings.plugin.item 为 keyed 槽，插件需把命名空间注册进宿主 settings
+ * 服务，configurable 面板才会分发本卡（宿主端经共享的 installSettingsNamespace
+ * 注册命名空间，见 apply）。
+ * 实测约束：schemastery 3.18 无 `.optional()`，不带 `.required()` 的字段默认可选；
+ * 数值上限与 LIMITS 保持一致，越界仍由 sanitizeSettings 钳制兜底。
+ */
+export const Config = z.object({
+  /** 闲置阈值：超过该小时数未对话的会话才提醒归档。 */
+  idleHours: z.natural().max(24 * 365).default(72),
+  /** 拒绝（暂不归档）后的静默小时数。 */
+  snoozeHours: z.natural().max(24 * 30).default(24),
+  /** 自动扫描间隔（分钟）。 */
+  scanMinutes: z.natural().max(24 * 60).default(60),
+  /** 总开关。 */
+  enabled: z.boolean().default(true),
+  /** 单次弹窗最多列出候选数（超出部分下次扫描再提醒）。 */
+  maxRows: z.natural().max(200).default(50),
+});
 
 /** connection 注入上下文的宽松接口（仅 RPC 通道所需的最小面，未知面 unknown 兜底）。 */
 export interface ConnectionCtx {
@@ -154,6 +177,27 @@ export async function writeState(state: StateFile): Promise<void> {
   const tmp = path + "." + process.pid + "." + Date.now() + ".tmp";
   await writeFile(tmp, JSON.stringify(state, null, 2), "utf8");
   await rename(tmp, path);
+}
+
+// ---------------------------------------------------------------- rc.7 settings 桥
+
+/**
+ * rc.7 起「设置 → 插件」面板的 settings.plugin.item 槽改为 keyed，且只分发宿主
+ * 已 serve 的命名空间。本参照 lan-proxy 的 installSettingsSection 模式注册
+ * `dsh-idle-archive` 命名空间，使 configurable 面板能分发本插件卡片。
+ * 数据仍以 RPC + 状态文件为单一事实源，此处仅做只读镜像：settings 命名空间被写入
+ * 时写回状态文件，保证两处一致且无循环回写。
+ */
+let settingsStoreRead: (() => Settings) | undefined;
+
+/** 把 settings 命名空间的当前值合并回状态文件（保留 snoozed；无变化则跳过）。 */
+async function persistSettingsFromStore(): Promise<void> {
+  if (!settingsStoreRead) return;
+  const st = await readState();
+  const settings = sanitizeSettings(settingsStoreRead());
+  if (JSON.stringify(st.settings) === JSON.stringify(settings)) return;
+  st.settings = settings;
+  await writeState(st);
 }
 
 /** agents 服务（live agents；apply 时经 ctx.inject 注入，titles 回落用）。 */
@@ -295,6 +339,20 @@ export function apply(ctx: PluginContext, config: IdleArchiveConfig = {}): void 
       if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
       if (req.method !== "GET") return writeJson(res, 405, { error: "method not allowed: " + req.method });
       writeJson(res, 200, { ok: true, plugin: "dsh-idle-archive" });
+    },
+  });
+
+  // GUI 设置面板（设置 → 插件 → dsh-idle-archive）：注册 rc.7 settings 命名空间，
+  // 使 configurable 面板 serve `dsh-idle-archive` 并分发本卡。
+  // 说明：不用官方 @deepseek-ai/dsh-settings（插件运行时解析不到，会静默失败），
+  // 改用共享的服务面注入 installSettingsNamespace，等值复刻官方 installSettingsSection。
+  // 设置值仍以 RPC/状态文件为单一事实源，命名空间做只读镜像（见 persistSettingsFromStore）。
+  installSettingsNamespace(ctx, "dsh-idle-archive", Config, config ?? {}, {
+    setSource: (source) => {
+      settingsStoreRead = source as () => Settings;
+    },
+    onChange: () => {
+      void persistSettingsFromStore();
     },
   });
 

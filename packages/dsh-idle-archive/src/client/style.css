@@ -225,3 +225,109 @@ body[data-ds-dark-theme] #dsh-idle-archive-modal .dia-foot {
 .dia-set-check:hover { color: var(--dsw-alias-label-primary, #1f2329); border-color: var(--dsw-alias-label-dimmed, #9ba1a6); }
 .dia-set-save { background: var(--dsw-alias-label-primary, #1f2329); color: var(--dsw-alias-bg-layer-3, #fbfbfc); }
 .dia-set-saved { color: var(--dsw-alias-state-success-primary, #16a34a); font-size: 12px; }
+
+/* =====================================================================
+ * 移动端适配（窄屏 / 触控友好 / 安全区）
+ * - 在 600px 及以下宽度（手机竖屏、小屏平板竖屏）重排弹窗行与底部栏；
+ * - 使用 dvh 动态视口，避免手机浏览器地址栏弹出/收起引起的抖动；
+ * - 触控目标拉大到约 44px（iOS 建议最小 44x44）；安全区 padding；
+ * - 触控设备禁用 hover“粘住”效果；字号/间距微调提升可读性。
+ * ===================================================================== */
+@media (max-width: 600px) {
+
+  /* 弹窗卡片：撑满、适配动态视口与安全区 */
+  #dsh-idle-archive-modal .dia-card {
+    width: calc(100vw - 24px);
+    max-height: min(88dvh, 640px);
+    border-radius: 12px;
+  }
+  #dsh-idle-archive-modal .dia-head {
+    padding: 14px 16px;
+    padding-top: calc(14px + env(safe-area-inset-top, 0px));
+  }
+  #dsh-idle-archive-modal .dia-close {
+    padding: 8px 14px;
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+  }
+  #dsh-idle-archive-modal .dia-desc {
+    padding: 12px 16px;
+    font-size: 13px;
+  }
+  #dsh-idle-archive-modal .dia-list { padding: 8px 12px; }
+
+  /* 行：纵向重排——信息在上，操作按钮换行到下方 */
+  #dsh-idle-archive-modal .dia-row {
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 8px 10px;
+    padding: 10px 12px;
+  }
+  #dsh-idle-archive-modal .dia-row-main { flex: 1 1 100%; }
+  #dsh-idle-archive-modal .dia-row-title {
+    white-space: normal;
+    word-break: break-word;
+    line-height: 1.4;
+  }
+  #dsh-idle-archive-modal .dia-row-time { font-size: 12px; line-height: 1.4; }
+
+  /* 行内按钮：放在第二行、右对齐、触控友好 */
+  #dsh-idle-archive-modal .dia-btn {
+    flex: 1 1 auto;
+    padding: 11px 12px;
+    font-size: 13px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* 底部栏：纵向堆叠——先提示后按钮 */
+  #dsh-idle-archive-modal .dia-foot {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px 16px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+  #dsh-idle-archive-modal .dia-hint { font-size: 12px; line-height: 1.5; }
+  #dsh-idle-archive-modal .dia-all {
+    padding: 11px 14px;
+    font-size: 13px;
+    min-height: 44px;
+    width: 100%;
+  }
+
+  /* 触控设备不保留 hover 高亮（避免“粘住”） */
+  @media (hover: none) {
+    #dsh-idle-archive-modal .dia-close:hover,
+    #dsh-idle-archive-modal .dia-btn:hover,
+    #dsh-idle-archive-modal .dia-btn-archive:hover,
+    #dsh-idle-archive-modal .dia-all:hover {
+      background: transparent;
+    }
+  }
+
+  /* toast：底部居中、撑满留白、适配安全区 */
+  .dia-toast {
+    left: 12px;
+    right: 12px;
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    max-width: none;
+    text-align: center;
+    padding: 11px 16px;
+  }
+
+  /* 设置卡片：行内换行、输入框加宽、按钮触控友好 */
+  .dia-set-body { margin: 0 12px; }
+  .dia-set-row { flex-wrap: wrap; row-gap: 6px; }
+  .dia-set-row label { flex: 1 1 auto; }
+  .dia-set-input { width: 112px; padding: 8px; min-height: 40px; }
+  .dia-set-foot { flex-wrap: wrap; }
+  .dia-set-save,
+  .dia-set-check { padding: 9px 16px; min-height: 42px; }
+}

@@ -72,5 +72,8 @@
   "author": "wingsky-1",
   "publishConfig": {
     "access": "public"
+  },
+  "devDependencies": {
+    "schemastery": "^3.18.0"
   }
 }
