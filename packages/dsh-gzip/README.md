@@ -15,7 +15,8 @@ DSH Web GUI 加载会话历史时，一页历史可能包含全部流式 chunk �
 ## 安装
 
 ```sh
-dsh plugin --profile web add @wingsky-1/dsh-gzip
+# 锁定 0.1.3 稳定版（避免解析漂移到历史/未稳定版本）
+dsh plugin --profile web add @wingsky-1/dsh-gzip@0.1.3
 ```
 
 安装后**重启一次** `dsh web`。
