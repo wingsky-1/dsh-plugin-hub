@@ -438,7 +438,10 @@ function makeFakeCtx(overrides = {}) {
   assert.ok(client.includes("[data-dsh-mcp-float]"), "client 识别 MCP 浮窗 [data-dsh-mcp-float]");
   assert.ok(client.includes("? 42 : 8"), "MCP 在场 42px（正下方）/ 不在场 8px（右上角第一行）");
   // 三窗口迷你图卡片：标题行当前值大号加粗 + Δ 趋势 + 限额/重置
-  assert.ok(client.includes("font-weight:700;font-size:14px"), "卡片当前值 14px 加粗");
+  // 样式现为独立 style.css（build-client text-loader 构建期内联），断言其 .dou-cardCur 规则
+  const styleCss = readFileSync(join(here, "..", "src", "client", "style.css"), "utf8");
+  const cardCurCss = /\.dou-cardCur\s*\{([^}]*)\}/.exec(styleCss)?.[1] ?? "";
+  assert.ok(/font-weight:\s*700/.test(cardCurCss) && /font-size:\s*14px/.test(cardCurCss), "卡片当前值 14px 加粗（style.css）");
   assert.ok(client.includes("trendOf"), "client 含区间 Δ 趋势计算");
   assert.ok(client.includes("▲ +"), "趋势上升显示 ▲+delta%");
   assert.ok(client.includes("▼ "), "趋势下降显示 ▼delta%");

@@ -25,10 +25,10 @@
  * isConnected 短路）；下拉面板 fixed 挂 body，按胶囊 getBoundingClientRect
  * 定位，scroll/resize 重定位。全部颜色走 --dsw-alias-* 主题变量。
  */
-// 构建注入：bundle-host 以 esbuild --define 注入完整 npm 包名（load id 契约 = 包名）
-declare var __DSH_PLUGIN_ID__: string;
-(function () {
-  "use strict";
+// 浏览器半区干净模块：只导出 apply/inject，契约外壳（IIFE/load/Symbol.toStringTag 装配）
+// 由 scripts/build-client.ts 统一生成——源码不写任何 loader 痕迹。
+// 样式：独立 style.css（见同目录），build-client 的 .css text-loader 构建期内联为字符串
+import STYLE from "./style.css";
 
   /** 与 host 端 ROUTES.stats 一致（单一来源，smoke 校验）。 */
   var STATS_URL = "/api/dsh-opencode-usage/stats";
@@ -53,104 +53,6 @@ declare var __DSH_PLUGIN_ID__: string;
   var REFRESH_MS = 60000; // 轮询间隔
   var HISTORY_MIN_GAP_MS = 30000; // 历史重拉最小间隔（面板开着时防刷）
   var PILL_PREFIX = "dou-"; // 样式类名前缀（防与 shell 冲突）
-
-  var styleText =
-    "[" +
-    PILL_PREFIX +
-    'conversation]{position:relative}' +
-    "." +
-    PILL_PREFIX +
-    'float{position:absolute;top:8px;right:14px;z-index:40;display:flex;align-items:center;gap:6px;padding:5px 11px;border:1px solid var(--dsw-alias-border-l1,#d7dae0);border-radius:99px;background:var(--dsw-alias-bg-base,#fdfdfd);color:var(--dsw-alias-label-primary,#1c1e26);font-size:12px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.10);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.2;white-space:nowrap}' +
-    "." +
-    PILL_PREFIX +
-    'float:hover{background:var(--dsw-alias-interactive-bg-hover,#f2f3f6)}' +
-    "." +
-    PILL_PREFIX +
-    'dot{width:7px;height:7px;border-radius:50%;flex:none}' +
-    "." +
-    PILL_PREFIX +
-    'dot-ok{background:var(--dsw-alias-state-success-primary,#0f9d6e)}' +
-    "." +
-    PILL_PREFIX +
-    'dot-warn{background:var(--dsw-alias-state-warn-primary,#c9820b)}' +
-    "." +
-    PILL_PREFIX +
-    'dot-err{background:var(--dsw-alias-state-error-primary,#d64545)}' +
-    "." +
-    PILL_PREFIX +
-    'dot-off{background:var(--dsw-alias-label-tertiary,#9aa0ab)}' +
-    "." +
-    PILL_PREFIX +
-    'panel{position:fixed;top:44px;right:14px;width:min(340px,calc(100vw - 36px));max-height:min(72vh,560px);overflow:auto;background:var(--dsw-alias-bg-base,#fdfdfd);color:var(--dsw-alias-label-primary,#1c1e26);border:1px solid var(--dsw-alias-border-l1,#e2e4ea);border-radius:10px;box-shadow:0 10px 32px rgba(0,0,0,.18);z-index:70;padding:12px 14px;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}' +
-    "." +
-    PILL_PREFIX +
-    "panel[hidden]{display:none!important}" +
-    "." +
-    PILL_PREFIX +
-    'head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px}' +
-    "." +
-    PILL_PREFIX +
-    'title{font-size:14px;font-weight:600;margin:0}' +
-    "." +
-    PILL_PREFIX +
-    'card{border:1px solid var(--dsw-alias-border-l2,#e8eaf0);background:var(--dsw-alias-bg-layer-1,#f8f9fb);border-radius:8px;padding:10px 12px;margin-bottom:8px}' +
-    "." +
-    PILL_PREFIX +
-    'cardHead{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px}' +
-    "." +
-    PILL_PREFIX +
-    'cardName{font-size:13px;font-weight:600;margin:0}' +
-    "." +
-    PILL_PREFIX +
-    'cardLimit{color:var(--dsw-alias-label-tertiary,#9aa0ab);font-size:11px;margin:0}' +
-    "." +
-    PILL_PREFIX +
-    'label{white-space:nowrap}' +
-    "." +
-    PILL_PREFIX +
-    'cardMeta{display:flex;align-items:center;gap:5px;min-width:0}' +
-    "." +
-    PILL_PREFIX +
-    'cardCur{font-weight:700;font-size:14px;color:var(--dsw-alias-label-primary,#1c1e26)}' +
-    "." +
-    PILL_PREFIX +
-    'trend-up{color:var(--dsw-alias-state-error-primary,#d64545);font-weight:600;font-size:11px}' +
-    "." +
-    PILL_PREFIX +
-    'trend-down{color:var(--dsw-alias-state-success-primary,#0f9d6e);font-weight:600;font-size:11px}' +
-    "." +
-    PILL_PREFIX +
-    'trend-flat{color:var(--dsw-alias-label-tertiary,#9aa0ab);font-size:11px}' +
-    "." +
-    PILL_PREFIX +
-    'foot{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:10px;color:var(--dsw-alias-label-tertiary,#9aa0ab);font-size:11px}' +
-    "." +
-    PILL_PREFIX +
-    'btn{border:1px solid var(--dsw-alias-border-l2,#e8eaf0);background:transparent;color:var(--dsw-alias-label-primary,#1c1e26);font:inherit;font-size:12px;border-radius:6px;padding:4px 10px;cursor:pointer}' +
-    "." +
-    PILL_PREFIX +
-    'btn:hover{background:var(--dsw-alias-interactive-bg-hover,#f2f3f6)}' +
-    "." +
-    PILL_PREFIX +
-    'error{color:var(--dsw-alias-state-error-primary,#d64545);font-size:12px;line-height:1.6;margin:4px 0 8px}' +
-    "." +
-    PILL_PREFIX +
-    'hint{color:var(--dsw-alias-label-tertiary,#9aa0ab);font-size:11px;line-height:1.6;margin:4px 0 8px}' +
-    "." +
-    PILL_PREFIX +
-    'miniChart svg{display:block;width:100%;height:auto}' +
-    "." +
-    PILL_PREFIX +
-    "miniChart svg text{font-size:9.5px;fill:var(--dsw-alias-label-tertiary,#9aa0ab)}" +
-    "." +
-    PILL_PREFIX +
-    'chartEmpty{color:var(--dsw-alias-label-tertiary,#9aa0ab);font-size:11px;line-height:1.7;padding:18px 6px;text-align:center}' +
-    "." +
-    PILL_PREFIX +
-    'legendDot{width:8px;height:8px;border-radius:50%;flex:none}' +
-    "." +
-    PILL_PREFIX +
-    'miniChart{margin-top:6px}';
 
   /**
    * el() helper（dsh-ui-dev 三坑已规避）：
@@ -200,7 +102,7 @@ declare var __DSH_PLUGIN_ID__: string;
     if (document.querySelector("style[data-dou-style]") !== null) return;
     var style = document.createElement("style");
     style.setAttribute("data-dou-style", "");
-    style.textContent = styleText;
+    style.textContent = STYLE;
     document.head.appendChild(style);
   }
 
@@ -949,7 +851,7 @@ declare var __DSH_PLUGIN_ID__: string;
    * 插件入口：注入样式 + 挂载浮窗；任何异常只 warn，绝不让 GUI 启动失败。
    * 挂载失败不重试（DOM 自愈由 MutationObserver 处理）。
    */
-  function apply(ctx: any) {
+export function apply(ctx: any) {
     try {
       injectStyle();
       if (document.body === null) return;
@@ -960,16 +862,6 @@ declare var __DSH_PLUGIN_ID__: string;
     }
   }
 
-  (window as any).__ModuleLoader__.load({
-    id: __DSH_PLUGIN_ID__,
-    factory: function (require: any) {
-      var module: { exports: Record<string, any> } = { exports: {} };
-      var exports = module.exports;
-      Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
-      var inject: any = []; // 悬浮框纯 DOM，无需 ctx 服务
-      exports.apply = apply;
-      exports.inject = inject;
-      return module.exports;
-    },
-  });
-})();
+// ---- 客户端契约：apply/inject 由 build-client 经 factory 装配（干净模块）----
+// 悬浮框纯 DOM，无需 ctx 服务。
+export const inject: string[] = [];

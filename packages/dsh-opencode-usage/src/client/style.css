@@ -1,0 +1,156 @@
+/* dsh-opencode-usage — 客户端样式（独立 .css 文件）。
+ *
+ * 由 build-client 的 .css text-loader 构建期内联进 client.js（产物仍自包含单文件、
+ * 零运行时依赖、无独立网络请求）。injectStyle 注入 <style data-dou-style>。
+ * 前缀统一 dou-（防与 shell 冲突）；颜色一律走 --dsw-alias-* 主题变量 + 浅色回退，
+ * 明暗双主题自适应。PILL_PREFIX 常量（dou-）在 JS 侧用于查询，此处已硬编码为
+ * dou-，二者须保持一致。
+ */
+
+/* 会话滚动容器（宿主挂 dou-conversation 属性）相对定位，供胶囊 absolute 定位 */
+[dou-conversation] {
+  position: relative;
+}
+
+.dou-float {
+  position: absolute;
+  top: 8px;
+  right: 14px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border: 1px solid var(--dsw-alias-border-l1, #d7dae0);
+  border-radius: 99px;
+  background: var(--dsw-alias-bg-base, #fdfdfd);
+  color: var(--dsw-alias-label-primary, #1c1e26);
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.dou-float:hover {
+  background: var(--dsw-alias-interactive-bg-hover, #f2f3f6);
+}
+
+.dou-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+.dou-dot-ok { background: var(--dsw-alias-state-success-primary, #0f9d6e); }
+.dou-dot-warn { background: var(--dsw-alias-state-warn-primary, #c9820b); }
+.dou-dot-err { background: var(--dsw-alias-state-error-primary, #d64545); }
+.dou-dot-off { background: var(--dsw-alias-label-tertiary, #9aa0ab); }
+
+.dou-panel {
+  position: fixed;
+  top: 44px;
+  right: 14px;
+  width: min(340px, calc(100vw - 36px));
+  max-height: min(72vh, 560px);
+  overflow: auto;
+  background: var(--dsw-alias-bg-base, #fdfdfd);
+  color: var(--dsw-alias-label-primary, #1c1e26);
+  border: 1px solid var(--dsw-alias-border-l1, #e2e4ea);
+  border-radius: 10px;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.18);
+  z-index: 70;
+  padding: 12px 14px;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 12px;
+}
+.dou-panel[hidden] { display: none !important; }
+
+.dou-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.dou-title { font-size: 14px; font-weight: 600; margin: 0; }
+
+.dou-card {
+  border: 1px solid var(--dsw-alias-border-l2, #e8eaf0);
+  background: var(--dsw-alias-bg-layer-1, #f8f9fb);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.dou-cardHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.dou-cardName { font-size: 13px; font-weight: 600; margin: 0; }
+.dou-cardLimit {
+  color: var(--dsw-alias-label-tertiary, #9aa0ab);
+  font-size: 11px;
+  margin: 0;
+}
+.dou-label { white-space: nowrap; }
+
+.dou-cardMeta { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.dou-cardCur {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--dsw-alias-label-primary, #1c1e26);
+}
+.dou-trend-up { color: var(--dsw-alias-state-error-primary, #d64545); font-weight: 600; font-size: 11px; }
+.dou-trend-down { color: var(--dsw-alias-state-success-primary, #0f9d6e); font-weight: 600; font-size: 11px; }
+.dou-trend-flat { color: var(--dsw-alias-label-tertiary, #9aa0ab); font-size: 11px; }
+
+.dou-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  color: var(--dsw-alias-label-tertiary, #9aa0ab);
+  font-size: 11px;
+}
+
+.dou-btn {
+  border: 1px solid var(--dsw-alias-border-l2, #e8eaf0);
+  background: transparent;
+  color: var(--dsw-alias-label-primary, #1c1e26);
+  font: inherit;
+  font-size: 12px;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.dou-btn:hover { background: var(--dsw-alias-interactive-bg-hover, #f2f3f6); }
+
+.dou-error {
+  color: var(--dsw-alias-state-error-primary, #d64545);
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 4px 0 8px;
+}
+.dou-hint {
+  color: var(--dsw-alias-label-tertiary, #9aa0ab);
+  font-size: 11px;
+  line-height: 1.6;
+  margin: 4px 0 8px;
+}
+
+.dou-miniChart svg { display: block; width: 100%; height: auto; }
+.dou-miniChart svg text { font-size: 9.5px; fill: var(--dsw-alias-label-tertiary, #9aa0ab); }
+.dou-chartEmpty {
+  color: var(--dsw-alias-label-tertiary, #9aa0ab);
+  font-size: 11px;
+  line-height: 1.7;
+  padding: 18px 6px;
+  text-align: center;
+}
+.dou-legendDot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.dou-miniChart { margin-top: 6px; }
