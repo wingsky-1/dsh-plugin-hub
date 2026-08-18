@@ -1,7 +1,9 @@
 # @wingsky-1/dsh-gzip
 
-DSH Web GUI 的 `/api` 响应 gzip 压缩插件：为远程 / 低带宽链路开启 `/api` 响应
-压缩，解决「历史加载失败：The user aborted a request.（internal）」的问题。
+DSH Web GUI 的响应 gzip 压缩插件：为远程 / 低带宽链路开启 `/api` 响应、静态
+资源（`/assets/*` 与 index.html）以及插件客户端 bundle（`/plugins/<pkg>/client.js`）
+的 gzip 压缩，解决「历史加载失败：The user aborted a request.（internal）」的
+问题并显著减小前端资源传输体积。
 
 ## 为什么需要
 
@@ -9,14 +11,15 @@ DSH Web GUI 加载会话历史时，一页历史可能包含全部流式 chunk �
 4~13MB 且服务端默认不压缩；浏览器侧 RPC 又有 30s 硬超时。在低带宽链路
 （easytier / ZeroTier / Tailscale / 移动网络）上会直接超时失败。
 
-本插件在服务端对可压缩的 `/api` 响应做 gzip 压缩：同一页历史压缩后约 1.2MB，
-实测加载时间由约 36s 降到约 3s（隔离环境）。
+本插件在服务端对可压缩的响应做 gzip 压缩：同一页历史压缩后约 1.2MB，实测加载
+时间由约 36s 降到约 3s（隔离环境）；前端主 bundle（~744KB）与各插件 client.js
+压缩后约为原体积 1/3~1/4。
 
 ## 安装
 
 ```sh
-# 锁定 0.1.3 稳定版（避免解析漂移到历史/未稳定版本）
-dsh plugin --profile web add @wingsky-1/dsh-gzip@0.1.3
+# 锁定 0.1.4（接管静态资源 / 插件 bundle、level 配置）稳定版
+dsh plugin --profile web add @wingsky-1/dsh-gzip@0.1.4
 ```
 
 安装后**重启一次** `dsh web`。
@@ -26,7 +29,7 @@ dsh plugin --profile web add @wingsky-1/dsh-gzip@0.1.3
 ```sh
 # 1. 健康检查（回环）
 curl -s http://127.0.0.1:3080/api/dsh-gzip/health
-# → {"ok":true,"plugin":"dsh-gzip","mounted":"replace",...}
+# → {"ok":true,"plugin":"dsh-gzip","mounted":"replace","handlers":{"api":"replace","plugins":"replace","fallback":"replace"},...}
 
 # 2. 响应头带 content-encoding: gzip
 curl -s -D - -o /dev/null -X POST http://127.0.0.1:3080/api/session.list \
@@ -35,31 +38,44 @@ curl -s -D - -o /dev/null -X POST http://127.0.0.1:3080/api/session.list \
   | grep -i content-encoding
 ```
 
-`mounted` 反映当前的实际接管方式（`replace` / `register-patch`），见下方
+`mounted` 反映 `/api` 的实际接管方式（`replace` / `register-patch`）；
+`handlers` 分别报告 api / plugins / fallback 三个接管面的状态，见下方
 「工作原理」。
 
 ## 工作原理
 
 - **压缩条件**：请求 `Accept-Encoding` 协商 gzip（q=0 视为拒绝）且响应
   content-type 可压缩（JSON / JSON 系 / text）且未自带 `content-encoding`。
-- **双分支挂点、无时序依赖**：优先直接替换 `webServer.prefixes` 中已注册的
-  `/api` route.handler（运行时替换立即生效）；`register` patch 仅作兜底，
-  覆盖本插件先装配或 `/api` 未来重新注册的情形。
+- **接管范围（多分支、无时序依赖）**：
+  - 已注册的 **prefix 命名路由**全量接管（含 `/api`、`/plugins` 及未来第三方
+    prefix）——直接替换 `webServer.prefixes` 中对应 route.handler（运行时替换
+    立即生效）；
+  - **fallback 席位**接管（`webServer.fallback`）——覆盖 `/assets/*` 静态资源、
+    `/` 与 SPA fallback 的 index.html；
+  - `register` / `registerFallback` patch 仅作兜底，覆盖本插件先装配或后续重新
+    注册的情形。
+- **压缩级别可配置**：默认 level 1（静态文本场景 3~6ms/文件，压缩率约 −66~−77%）；
+  配置 `level`（1..9）可调，非法值自动归一。
 - **实例级遮蔽**：writeHead / write / end 仅在本请求的 ServerResponse 实例上
   替换，不动任何 prototype，请求结束自然释放；gzip 背压与 res 的 drain 事件
   桥接。
 
 ## 安全模型
 
-- **豁免原样透传**：SSE（`text/event-stream`）、zip 导出、未协商 gzip、已自带
-  `content-encoding` 的响应——一律不压缩、原样透传，避免破坏流式或已编码语义。
-- **只作用于 /api**：路由 loopback 围栏（非回环 403 / 方法错 405）；健康检查
-  路由仅回环可访问。
-- **无全局副作用**：卸载恢复被替换的 handler 与 register（身份级恢复）；
-  `enabled: false` 时不注册任何东西。
-- **依赖非公开字段**：主挂点读取 `webServer.prefixes`（实例公开字段但非官方
-  API）。上游改结构时自动退化到备用挂点（register patch），若时序不利则表现为
-  「不压缩、不报错」——安全降级，可用 health 路由诊断 `mounted` 状态。
+- **豁免原样透传**：SSE（`text/event-stream`）、zip 导出、**HEAD 请求**（无
+  body）、**带 `Range` 的请求**（保留范围语义）、未协商 gzip、已自带
+  `content-encoding`、不可压缩 content-type（`application/octet-stream`、
+  `image/*` 等）——一律不压缩、原样透传。核心保险是 `content-type` 白名单判断，
+  与路由 is exact 还是 prefix 无关。
+- **只作用于响应体**：不做任何缓存语义（不补 Cache-Control / ETag）；健康检查
+  路由 loopback 围栏（非回环 403 / 方法错 405），仅回环可访问。
+- **无全局副作用**：卸载恢复被替换的 prefix handler、fallback 与
+  register / registerFallback（replace 场景身份级恢复）；`enabled: false` 时不
+  注册任何东西。
+- **依赖非公开字段**：主挂点读取 `webServer.prefixes` 与 `webServer.fallback`
+  （实例公开字段但非官方 API），`registerFallback` 亦非官方方法（判存在性后
+  patch）。上游改结构时自动退化到备用挂点，若时序不利则表现为「不压缩、不报
+  错」——安全降级，可用 health 路由诊断 `handlers` 状态。
 
 ## 定位
 
@@ -71,12 +87,13 @@ curl -s -D - -o /dev/null -X POST http://127.0.0.1:3080/api/session.list \
 ```sh
 # 源码在 src/*.ts，改后必须 build（dsh 直接 import lib 产物）
 pnpm --filter @wingsky-1/dsh-gzip build
-node test/smoke.mjs
+node test/smoke.ts
 ```
 
-冒烟测试覆盖：q 值解析、SSE / 已编码豁免、真实 zlib 压缩解压一致、双挂点
-（已注册 replace / 未注册 register-patch）、非 /api 路由不受影响、卸载恢复、
-health 路由（GET 200 / POST 405 / 非回环 403）、`enabled: false` 不注册。
+冒烟测试覆盖：q 值解析、SSE / 已编码 / **HEAD / Range** 豁免、真实 zlib 压缩
+解压一致、level 归一与生效、prefix 全量接管（/api、/plugins）、fallback 接管
+与 registerFallback 兜底、非 /api 路由不受影响、卸载恢复、health 路由（GET 200 /
+POST 405 / 非回环 403 且含 handlers）、`enabled: false` 不注册。
 
 ## License
 

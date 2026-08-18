@@ -14,7 +14,7 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { gunzipSync } from "node:zlib";
-import { apply, ROUTES, acceptsGzip, isCompressible, joinVary, wrapResponse, installWrappers } from "../lib/index.js";
+import { apply, ROUTES, acceptsGzip, isCompressible, joinVary, normalizeLevel, wrapResponse, installWrappers } from "../lib/index.js";
 
 // ---------------------------------------------------------------- 纯函数
 
@@ -37,6 +37,16 @@ assert.equal(isCompressible(undefined), false);
 
 assert.equal(joinVary(undefined), "accept-encoding");
 assert.equal(joinVary("origin"), "origin, accept-encoding");
+
+// normalizeLevel：非数字回退 1、clamp 1..9、截断小数
+assert.equal(normalizeLevel(undefined), 1);
+assert.equal(normalizeLevel("x"), 1);
+assert.equal(normalizeLevel(NaN), 1);
+assert.equal(normalizeLevel(0), 1);
+assert.equal(normalizeLevel(-3), 1);
+assert.equal(normalizeLevel(99), 9);
+assert.equal(normalizeLevel(5), 5);
+assert.equal(normalizeLevel(5.7), 5);
 
 // ---------------------------------------------------------------- fake 桩
 
@@ -94,11 +104,11 @@ class FakeRes extends EventEmitter {
 }
 
 /** 跑一次完整压缩流程，等待 gzip 排空（originalEnd 触发）后返回结果。 */
-async function runCompressed(contentType, bodyText, reqHeaders) {
+async function runCompressed(contentType, bodyText, reqHeaders, level) {
   const res = new FakeRes();
-  const req = { headers: reqHeaders ?? {} };
+  const req = { method: "GET", headers: reqHeaders ?? {} };
   const stats = { compressed: 0, passthrough: 0 };
-  const wrapped = wrapResponse(res, req, stats);
+  const wrapped = wrapResponse(res, req, stats, level ?? 1);
   wrapped.writeHead(200, { "content-type": contentType });
   wrapped.write(bodyText);
   wrapped.end();
@@ -181,6 +191,40 @@ function waitEnded(res, timeoutMs = 2000) {
   assert.equal(res.getHeader("vary"), "origin, accept-encoding", "vary 追加不覆盖");
 }
 
+// HEAD：不压缩透传（node 对 HEAD 无 body，压了产生误导头）
+{
+  const res = new FakeRes();
+  const req = { method: "HEAD", headers: { "accept-encoding": "gzip" } };
+  const wrapped = wrapResponse(res, req, null);
+  wrapped.writeHead(200, { "content-type": "text/html" });
+  wrapped.write("body");
+  wrapped.end();
+  assert.equal(res.getHeader("content-encoding"), undefined, "HEAD 不压缩");
+  assert.equal(Buffer.concat(res._chunks).toString("utf8"), "body", "HEAD 原样");
+}
+
+// Range：不压缩透传（保留范围语义）
+{
+  const res = new FakeRes();
+  const req = { method: "GET", headers: { "accept-encoding": "gzip", "range": "bytes=0-100" } };
+  const wrapped = wrapResponse(res, req, null);
+  wrapped.writeHead(200, { "content-type": "text/javascript" });
+  wrapped.write("code");
+  wrapped.end();
+  assert.equal(res.getHeader("content-encoding"), undefined, "Range 不压缩");
+  assert.equal(Buffer.concat(res._chunks).toString("utf8"), "code");
+}
+
+// level 9：压缩仍生效且解压一致
+{
+  const body = JSON.stringify({ big: "x".repeat(5000), n: 7 });
+  const { res, stats } = await runCompressed("application/json; charset=utf-8", body,
+    { "accept-encoding": "gzip" }, 9);
+  assert.equal(stats.compressed, 1, "level 9 压缩计数 +1");
+  assert.equal(res.getHeader("content-encoding"), "gzip");
+  assert.equal(gunzipSync(Buffer.concat(res._chunks)).toString("utf8"), body, "level 9 解压一致");
+}
+
 // ---------------------------------------------------------------- fake webServer
 
 function makeWebServer() {
@@ -189,12 +233,19 @@ function makeWebServer() {
   const ws = {
     prefixes,
     exact,
+    fallback: undefined,
     register(route) {
       const table = route.kind === "exact" ? exact : prefixes;
       if (table.has(route.path)) throw new Error("duplicate");
       table.set(route.path, route);
       return () => {
         table.delete(route.path);
+      };
+    },
+    registerFallback(handler) {
+      ws.fallback = handler;
+      return () => {
+        ws.fallback = undefined;
       };
     },
   };
@@ -291,6 +342,65 @@ async function runHandler(handler, req) {
   assert.equal(otherRes.getHeader("content-encoding"), undefined, "非 /api 不压缩");
 }
 
+// ---------------------------------------------------------------- /plugins prefix 接管
+
+{
+  const ws = makeWebServer();
+  const pluginsHandler = (req, res) => {
+    res.writeHead(200, { "content-type": "text/javascript" });
+    res.write("alert(1);");
+    res.end();
+  };
+  ws.prefixes.set("/plugins", { kind: "prefix", path: "/plugins", handler: pluginsHandler });
+  const { handlers } = installWrappers(ws, { compressed: 0, passthrough: 0 });
+  assert.equal(handlers.plugins, "replace", "/plugins 走 replace 挂点");
+  const route = ws.prefixes.get("/plugins");
+  assert.notEqual(route.handler, pluginsHandler, "/plugins handler 已替换");
+  const res = await runHandler(route.handler, makeReq({ headers: { host: "127.0.0.1:3080", "accept-encoding": "gzip" } }));
+  await waitEnded(res);
+  assert.equal(res.getHeader("content-encoding"), "gzip", "/plugins client.js 被压缩");
+  assert.equal(gunzipSync(Buffer.concat(res._chunks)).toString("utf8"), "alert(1);", "/plugins 解压一致");
+}
+
+// ---------------------------------------------------------------- fallback 席位接管
+
+{
+  const ws = makeWebServer();
+  const original = (req, res) => {
+    res.writeHead(200, { "content-type": "text/html" });
+    res.end("<h1>index</h1>");
+  };
+  ws.fallback = original;
+  const { handlers, disposers } = installWrappers(ws, { compressed: 0, passthrough: 0 });
+  assert.equal(handlers.fallback, "replace", "fallback 已占位走 replace");
+  const res = await runHandler(ws.fallback, makeReq({ headers: { host: "127.0.0.1:3080", "accept-encoding": "gzip" } }));
+  await waitEnded(res);
+  assert.equal(res.getHeader("content-encoding"), "gzip", "fallback 一次 end(body) 被压缩");
+  assert.equal(gunzipSync(Buffer.concat(res._chunks)).toString("utf8"), "<h1>index</h1>", "fallback 解压一致");
+
+  // 卸载恢复原 fallback
+  for (const dispose of [...disposers].reverse()) dispose();
+  assert.equal(ws.fallback, original, "fallback 卸载恢复");
+}
+
+// ---------------------------------------------------------------- registerFallback 兜底
+
+{
+  const ws = makeWebServer();
+  const { handlers } = installWrappers(ws, { compressed: 0, passthrough: 0 });
+  assert.equal(handlers.fallback, "register-patch", "fallback 未占位走 patch 兜底");
+  assert.equal(ws.fallback, undefined, "未占位时 patch 不误设 fallback");
+  // fallback 之后注册：registerFallback patch 立即包装
+  ws.registerFallback((req, res) => {
+    res.writeHead(200, { "content-type": "text/css" });
+    res.end("a{color:red}");
+  });
+  const res = await runHandler(ws.fallback, makeReq({ headers: { host: "127.0.0.1:3080", "accept-encoding": "gzip" } }));
+  await waitEnded(res);
+  assert.equal(res.getHeader("content-encoding"), "gzip", "registerFallback 兜底压缩");
+  assert.equal(gunzipSync(Buffer.concat(res._chunks)).toString("utf8"), "a{color:red}");
+}
+
 // ---------------------------------------------------------------- 卸载恢复
 
 {
@@ -323,6 +433,10 @@ async function runHandler(handler, req) {
   assert.equal(okBody.ok, true);
   assert.equal(okBody.plugin, "dsh-gzip");
   assert.ok(["replace", "register-patch", "replace+patch"].includes(okBody.mounted));
+  assert.ok(okBody.handlers && typeof okBody.handlers === "object", "health 含 handlers");
+  for (const v of Object.values(okBody.handlers)) {
+    assert.ok(["replace", "register-patch", "passthrough"].includes(v), `handlers 取值合法: ${v}`);
+  }
 
   // POST → 405
   const postRes = await runHandler(route.handler, makeReq({ method: "POST" }));

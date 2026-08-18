@@ -8,8 +8,9 @@
 // 与上游 040822/dsh-gzip v0.1.1 的差异（两处实测修复）：
 // 1. 补 dsh.bundle.patch 清单——原版无此声明，`dsh plugin add dsh-gzip`
 //    只装成 plain dependency（warning），永不装配，静默无效。
-// 2. 挂点改为双分支：优先直接替换 webServer.prefixes 中已注册的 /api
-//    route.handler（无时序依赖）；patch register 仅作兜底。原版只 patch
+// 2. 挂点改为多分支、无时序依赖：直接替换已注册 prefix 的 route.handler
+//    （含 /api、/plugins），并接管 fallback 席位（覆盖 /assets 静态资源与
+//    index.html）；patch register / registerFallback 仅作兜底。原版只 patch
 //    register，而 rc.6 的 dsh-client-connection 在 apply 期间即注册 /api，
 //    晚装配的 patch 落空（dump-config 条目顺序 + connection 源码 562 行
 //    ctx.effect 立即执行，实测确认）。
@@ -18,8 +19,8 @@
 // - 每请求实例级遮蔽 writeHead/write/end，不动任何 prototype；
 // - 仅压缩 Accept-Encoding 协商 gzip（q=0 拒绝）且响应未自带
 //   content-encoding 的可压缩类型；SSE（text/event-stream）、zip 导出、
-//   已编码响应原样透传；
-// - 无全局副作用：卸载恢复被替换的 handler 与 register。
+//   已编码响应、HEAD 请求、带 Range 的请求原样透传；
+// - 无全局副作用：卸载恢复被替换的 handler 与 register / registerFallback。
 
 import { createGzip } from "node:zlib";
 import type { Gzip } from "node:zlib";
@@ -37,9 +38,21 @@ export interface GzipStats {
   passthrough: number;
 }
 
+/** 各接管面的实际状态（health 诊断）。 */
+export type GzipMount = "replace" | "register-patch" | "passthrough";
+
+/** 三个接管面：api（RPC）、plugins（插件客户端 bundle）、fallback（静态资源 + index）。 */
+export interface GzipHandlers {
+  api: GzipMount;
+  plugins: GzipMount;
+  fallback: GzipMount;
+}
+
 /** apply 配置（enabled=false 时不注册任何东西）。 */
 export interface GzipConfig {
   enabled?: boolean;
+  /** gzip 压缩级别 1..9，默认 1（静态文本场景性价比最高；非数字自动归一）。 */
+  level?: number;
   [key: string]: unknown;
 }
 
@@ -90,16 +103,29 @@ export function joinVary(existing: unknown): string {
 }
 
 /**
+ * 归一化 gzip level：非有限数回退 1；clamp 到 1..9。
+ * @param value 配置里的 level（可能为 string / NaN / 越界）。
+ * @returns 有效压缩级别。
+ */
+export function normalizeLevel(value: unknown): number {
+  const level = Number(value);
+  if (!Number.isFinite(level)) return 1;
+  return Math.min(9, Math.max(1, Math.trunc(level)));
+}
+
+/**
  * 按请求包装 ServerResponse 为其输出流套 gzip。
- * 不协商 gzip / 类型不可压缩 / 已带 content-encoding 时原样返回 res。
+ * 不协商 gzip / HEAD / 带 Range / 类型不可压缩 / 已带 content-encoding 时原样返回 res。
  * 遮蔽仅在实例上（不动 prototype），请求结束后自然随 res 一起丢弃。
  * @param res node:http ServerResponse。
- * @param req 对应 IncomingMessage（读 Accept-Encoding）。
+ * @param req 对应 IncomingMessage（读 Accept-Encoding / method / Range）。
  * @param stats 可选计数。
+ * @param level gzip 压缩级别 1..9（默认 1）。
  * @returns 包装后（或原样）的 res。
  */
-export function wrapResponse(res: ServerResponse, req: IncomingMessage, stats?: GzipStats): ServerResponse {
-  if (!acceptsGzip(req.headers["accept-encoding"])) {
+export function wrapResponse(res: ServerResponse, req: IncomingMessage, stats?: GzipStats, level = 1): ServerResponse {
+  // HEAD 无 body、Range 需范围语义：均透传不压缩。
+  if (!acceptsGzip(req.headers["accept-encoding"]) || req.method === "HEAD" || req.headers.range !== undefined) {
     if (stats) stats.passthrough += 1;
     return res;
   }
@@ -126,7 +152,7 @@ export function wrapResponse(res: ServerResponse, req: IncomingMessage, stats?: 
       const contentType = headers?.["content-type"] ?? this.getHeader("content-type");
       const existingEncoding = headers?.["content-encoding"] ?? this.getHeader("content-encoding");
       if (existingEncoding === void 0 && isCompressible(contentType)) {
-        gzip = createGzip();
+        gzip = createGzip({ level });
         if (stats && !counted) {
           counted = true;
           stats.compressed += 1;
@@ -200,47 +226,91 @@ export function wrapResponse(res: ServerResponse, req: IncomingMessage, stats?: 
 }
 
 /**
- * 安装 /api 压缩包装（双分支，无时序依赖），返回恢复函数数组。
+ * 安装 gzip 压缩包装（多分支，无时序依赖），返回恢复函数数组与各接管面状态。
+ * 接管范围：已注册的 prefix 命名路由（/api、/plugins 及未来第三方 prefix）
+ * 与 fallback 席位（/assets 静态资源 + index.html）；register / registerFallback
+ * patch 作兜底（先装配或后续注册的情形）。
  * @param webServer ctx.webServer 服务实例。
  * @param stats 计数。
- * @returns 恢复函数与挂点说明。
+ * @param level gzip 级别。
+ * @returns 恢复函数、向后兼容 mounted（/api 接管方式）与各接管面状态。
  */
-export function installWrappers(webServer: DshWebServer, stats: GzipStats): { disposers: Array<() => void>; mounted: string } {
+export function installWrappers(webServer: DshWebServer, stats: GzipStats, level = 1): {
+  disposers: Array<() => void>;
+  mounted: string;
+  handlers: GzipHandlers;
+} {
   const disposers: Array<() => void> = [];
-  // register patch 兜底总是安装；mounted 描述当前 /api 的实际接管方式。
-  let mounted = "register-patch";
+  const wrap = (handler: DshRoute["handler"]) =>
+    (req: IncomingMessage, res: ServerResponse) => handler(req, wrapResponse(res, req, stats, level));
 
-  // 挂点 1：/api 已注册（本插件晚装配）——直接替换 route.handler。
-  // host-webserver 派发时每次读取 route.handler（dispatch 处
-  // `await route.handler(req, res)`），运行时替换立即生效。
-  // 依赖 prefixes 为实例公开字段（非官方 API，上游改结构则退化到挂点 2）。
-  const api = webServer.prefixes?.get("/api");
-  if (api) {
-    const original = api.handler;
-    api.handler = (req, res) => original(req, wrapResponse(res, req, stats));
-    mounted = "replace";
+  const handlers: GzipHandlers = { api: "register-patch", plugins: "register-patch", fallback: "register-patch" };
+
+  // 挂点 1：已注册 prefix 全量替换（依赖 prefixes 为实例公开字段，
+  // 非官方 API；上游改结构则退化到 register patch 兜底）。
+  const prefixes = webServer.prefixes;
+  if (prefixes && typeof (prefixes as Map<string, { handler: DshRoute["handler"] }>).forEach === "function") {
+    for (const [path, route] of prefixes) {
+      const original = route.handler;
+      route.handler = wrap(original);
+      if (path === "/api") handlers.api = "replace";
+      else if (path === "/plugins") handlers.plugins = "replace";
+      disposers.push(() => {
+        route.handler = original;
+      });
+    }
+  }
+
+  // 挂点 2：register patch 兜底（后续注册的 prefix）。register 为官方必选
+  // 方法，直接 patch；fallback/registerFallback 为非官方方法才判存在性。
+  {
+    const originalRegister = webServer.register;
+    webServer.register = function register(route: DshRoute) {
+      const dispose = originalRegister.call(webServer, route);
+      if (route.kind === "prefix" && webServer.prefixes) {
+        const stored = webServer.prefixes.get(route.path);
+        const target = stored ?? route;
+        const original = target.handler;
+        target.handler = wrap(original);
+        if (route.path === "/api") handlers.api = "register-patch";
+        else if (route.path === "/plugins") handlers.plugins = "register-patch";
+      }
+      return dispose;
+    };
     disposers.push(() => {
-      api.handler = original;
+      webServer.register = originalRegister;
     });
   }
 
-  // 挂点 2：/api 尚未注册（本插件先装配）——patch register 兜底，
-  // 连接插件注册 /api 的瞬间接管 handler。保存原始引用（不 bind），
-  // 卸载后身份级恢复，避免留下 bound 包装差异。
-  const originalRegister = webServer.register;
-  webServer.register = function register(route: DshRoute) {
-    const dispose = originalRegister.call(webServer, route);
-    if (route.kind === "prefix" && route.path === "/api") {
-      const original = route.handler;
-      route.handler = (req, res) => original(req, wrapResponse(res, req, stats));
-    }
-    return dispose;
+  // 挂点 3：fallback 席位接管（覆盖 /assets 静态资源与 index.html）。
+  // fallback / registerFallback 为非官方实例字段，运行时普通属性，可读可替。
+  const owner = webServer as unknown as {
+    fallback?: DshRoute["handler"];
+    registerFallback?: (handler: DshRoute["handler"]) => () => void;
   };
-  disposers.push(() => {
-    webServer.register = originalRegister;
-  });
+  if (typeof owner.fallback === "function") {
+    const original = owner.fallback;
+    owner.fallback = wrap(original);
+    handlers.fallback = "replace";
+    disposers.push(() => {
+      owner.fallback = original;
+    });
+  }
+  if (typeof owner.registerFallback === "function") {
+    const originalRegisterFallback = owner.registerFallback;
+    owner.registerFallback = function registerFallback(handler: DshRoute["handler"]) {
+      const dispose = originalRegisterFallback.call(webServer, wrap(handler));
+      handlers.fallback = "register-patch";
+      return dispose;
+    };
+    disposers.push(() => {
+      owner.registerFallback = originalRegisterFallback;
+    });
+  }
 
-  return { disposers, mounted };
+  // 向后兼容：mounted 反映 /api 的实际接管方式（与历史 "replace" / "register-patch" 一致）。
+  const mounted = handlers.api === "replace" ? "replace" : "register-patch";
+  return { disposers, mounted, handlers };
 }
 
 // ---------------------------------------------------------------- apply
@@ -248,11 +318,12 @@ export function installWrappers(webServer: DshWebServer, stats: GzipStats): { di
 export function apply(ctx: PluginContext, config: GzipConfig = {}): void {
   if (config.enabled === false) return;
 
+  const level = normalizeLevel(config.level);
   const stats: GzipStats = { compressed: 0, passthrough: 0 };
   const disposers: Array<() => void> = [];
 
   ctx.effect(() => {
-    const { disposers: wrapperDisposers, mounted } = installWrappers(ctx.webServer, stats);
+    const { disposers: wrapperDisposers, handlers } = installWrappers(ctx.webServer, stats, level);
     disposers.push(...wrapperDisposers);
 
     // 健康检查（exact 路由先于 /api prefix 命中，自带 loopback 围栏）。
@@ -273,7 +344,9 @@ export function apply(ctx: PluginContext, config: GzipConfig = {}): void {
         writeJson(res, 200, {
           ok: true,
           plugin: "dsh-gzip",
-          mounted,
+          // mounted 与 handlers.api 实时一致（向后兼容的 /api 接管方式）。
+          mounted: handlers.api,
+          handlers,
           compressed: stats.compressed,
           passthrough: stats.passthrough,
         });
@@ -281,7 +354,9 @@ export function apply(ctx: PluginContext, config: GzipConfig = {}): void {
     });
     disposers.push(healthDisposer);
 
-    ctx.logger.info(`dsh-gzip: /api gzip enabled (mount: ${mounted})`);
+    ctx.logger.info(
+      `dsh-gzip: gzip enabled (level ${level}, api=${handlers.api}, plugins=${handlers.plugins}, fallback=${handlers.fallback})`
+    );
 
     return () => {
       for (const dispose of disposers) {
