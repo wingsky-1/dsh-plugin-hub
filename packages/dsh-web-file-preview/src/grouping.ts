@@ -63,3 +63,22 @@ export function groupOfPath(path: string): GroupOfResult {
 export function isPreviewablePath(path: string): boolean {
   return groupOfPath(path).group !== "other";
 }
+
+/**
+ * 一个字符串是否呈现为"单个可预览文件路径"（供点击识别共用判定）。
+ *
+ * 识别"单个文件"而非"多个路径并列/拼接的展示标签"：逗号、换行、多段连续空白
+ * 都是多文件并列的形态（如上下文注入折叠摘要 `~/.dsh/AGENTS.md, AGENTS.md`），
+ * 误判会把它们当成一条路径去预览并拦截原生点击。http/#/mailto 与不可预览后缀
+ * 一并排除。权威信号（元素 title / <a href>）与非权威文本嗅探共用此判定，
+ * 保持双端一致、单一事实源。
+ */
+export function isLikelySingleFilePath(value: string): boolean {
+  if (value === undefined || value === null) return false;
+  if (/^https?:\/\//i.test(value) || value.startsWith("#") || value.startsWith("mailto:")) return false;
+  if (value.includes(",")) return false;
+  if (/[\n\r]/.test(value)) return false;
+  if (/\s{2,}/.test(value)) return false;
+  if (!isPreviewablePath(value)) return false;
+  return value.includes("/") || value.includes("\\") || !/\s/.test(value);
+}

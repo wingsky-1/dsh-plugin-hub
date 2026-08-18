@@ -19,7 +19,7 @@
 import { renderMarkdown } from "./md.js";
 import { highlightCode } from "./code.js";
 import { renderGroupFor, type GroupResult } from "./renderer.js";
-import { groupOfPath } from "../grouping.js";
+import { groupOfPath, isLikelySingleFilePath } from "../grouping.js";
 import { html as diffToHtml } from "diff2html";
 import DOMPurify from "dompurify";
 // 样式：独立 style.css（见同目录），build-client 的 .css text-loader 构建期内联为字符串
@@ -83,12 +83,9 @@ import STYLE from "./style.css";
         return groupOfPath(String(value)).group !== "other";
       }
 
-      /** 路径形如（可预览后缀 + 含路径分隔符或纯 token，且非 http/#/mailto）。 */
+      /** 路径形如（结构性判定，单一事实源 src/grouping.ts）。 */
       function isPathLike(value: string): boolean {
-        if (value === undefined || value === null) return false;
-        if (/^https?:\/\//i.test(value) || value.startsWith("#") || value.startsWith("mailto:")) return false;
-        if (!isPreviewablePath(value)) return false;
-        return value.includes("/") || value.includes("\\") || !/\s/.test(value);
+        return isLikelySingleFilePath(String(value));
       }
 
       /**

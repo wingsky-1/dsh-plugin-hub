@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import {
   ROUTES, makeRoutes, serveFileRoute, previewKindOf, computeGitDiff,
-  normalizeConfig, DEFAULT_CONFIG, groupOfPath,
+  normalizeConfig, DEFAULT_CONFIG, groupOfPath, isLikelySingleFilePath,
 } from "../lib/index.js";
 import { assertClientProductContract, assertClientSourceContract } from "../../../test/smoke-lib.ts";
 
@@ -39,6 +39,19 @@ assert.deepEqual(groupOfPath("dir/a.JPG").group, "image", "扩展名大小写不
 assert.equal(previewKindOf("a.md").group === "renderedMd", groupOfPath("a.md").group === "md", "md 双端分组一致");
 assert.equal(previewKindOf("a.js").group === "renderedCode", groupOfPath("a.js").group === "code", "code 双端分组一致");
 assert.equal(previewKindOf("a.txt").group === "text", groupOfPath("a.txt").group === "text", "text 双端分组一致");
+
+// 点击识别的"单文件路径"判定（结构化拒绝多路径拼接的展示标签；bug 回归）：
+// 上下文注入折叠摘要把两个文件用逗号拼成一个展示字符串（~/.dsh/AGENTS.md, AGENTS.md），
+// 不能把它误判成一条路径去预览；而展开视图/正文里的单个路径应正常识别。
+assert.equal(isLikelySingleFilePath("~/.dsh/AGENTS.md, AGENTS.md"), false, "逗号拼接的展示标签不是单文件路径");
+assert.equal(isLikelySingleFilePath("~/.dsh/AGENTS.md"), true, "~ 开头的单文件路径可识别");
+assert.equal(isLikelySingleFilePath("AGENTS.md"), true, "相对单文件路径可识别");
+assert.equal(isLikelySingleFilePath("src/a.md"), true, "子目录相对路径可识别");
+assert.equal(isLikelySingleFilePath("/abs/path/a.md"), true, "绝对路径可识别");
+assert.equal(isLikelySingleFilePath("a.md\nb.md"), false, "换行拼接的多文件不是单文件");
+assert.equal(isLikelySingleFilePath("a.md  b.md"), false, "多空白拼接的多文件不是单文件");
+assert.equal(isLikelySingleFilePath("https://x/a.md"), false, "http 链接不是本地文件路径");
+assert.equal(isLikelySingleFilePath("a.xyz"), false, "不可预览后缀不识别");
 
 
 // ------------------------------------------------------------ 纯函数
