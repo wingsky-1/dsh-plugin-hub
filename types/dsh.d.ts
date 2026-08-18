@@ -47,6 +47,8 @@ export interface DshWebServer {
   register(route: DshRoute): () => void;
   /** 已注册的 prefix 路由表（dsh-gzip 双挂点依赖，非官方字段）。 */
   prefixes?: Map<string, { kind: string; path: string; handler: DshRoute["handler"] }>;
+  /** 已注册的 exact 路由表（与 prefixes 同构；dsh-gzip 方案 A 覆盖 exact 依赖，非官方字段）。 */
+  exact?: Map<string, { kind: string; path: string; handler: DshRoute["handler"] }>;
   /** web 服务器实际绑定端口（--port 0 时启动后才有值；lan-proxy 依赖）。 */
   port?: number;
   /** 注入 index.html 的钩子（返回 disposer；lan-proxy polyfill 依赖）。 */
