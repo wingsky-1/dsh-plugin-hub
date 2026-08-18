@@ -44,8 +44,18 @@ node scripts/dsh-plugin-new <name>   # 脚手架（F 阶段提供）
 - **零运行时依赖**：所有插件发布物自包含，运行时零 npm 依赖（宿主注入模型）。
 - **构建预设只用 `scripts/build-client.ts`**（客户端契约外壳生成 + load id 注入 +
   内建校验），禁止在包内复制参数。
-- **客户端契约**：load id === 包名（浏览器 arrive 校验）；IIFE 闭包工厂 + factory +
-  `exports.apply`/`exports.inject`；自包含零依赖；挂载失败只 console.warn。
+- **客户端源码是「干净模块」**：只 `export function apply(ctx)` + `export const inject`，
+  源码**禁止**写 `window.__ModuleLoader__.load`、IIFE、手拼 `__DSH_PLUGIN_ID__`、
+  `declare var module`/`interface Window.__ModuleLoader__`——这些契约外壳（load 注册、
+  IIFE 闭包工厂 + factory + `Symbol.toStringTag` 装配 + load id === 包名）由
+  build-client 构建期统一生成。客户端入口统一 `src/client/index.ts`。
+- **客户端样式**：独立 `src/client/style.css`（`.css` text-loader 构建期内联），
+  源码 `import STYLE from "./style.css"`；不把 CSS 写进 ts。颜色用 `--dsw-alias-*` 等
+  实时主题变量 + 浅色回退，明暗自适应；挂载失败只 console.warn。
+- **客户端路径二选一**：默认「bare import = 宿主注入 external（React，需
+  `react-shim.d.ts`）」；纯浏览器第三方库用 `dsh.client.inlineBareImports: true`
+  内联（互斥）。契约：load id === 包名（arrive 校验） + `exports.apply/inject` 装配 +
+  自包含零依赖。
 - **全部路由强制 loopback 围栏**（非回环 403，方法不匹配 405）；health 路由必项。
 - **patch id 规范**：独立包 `ui-<name>`；聚合行由 aggregate.ts 生成（同 id，无
   config）。**独立包与聚合包禁双装**（同 id 双装 loader 报 duplicate）。改独立包

@@ -1,0 +1,112 @@
+# DEVELOPMENT — dsh-plugin-hub 开发规范
+
+> 覆盖**宿主端 / 客户端**两类代码的写法与构建契约，以及我们统一后的客户端形态
+> （干净模块 + 独立 CSS + `src/client/` 目录 + 第三方内联）。适用于本公开仓库
+> `packages/dsh-*` 的开发与维护。构建/契约/发布脚本见 `scripts/`，根 `AGENTS.md`
+> 是仓库级硬性规则（副本见下）。
+
+## 0. 构建总览
+
+每个插件包 = 独立 npm 包（`@wingsky-1/dsh-*`），发布物**零运行时 npm 依赖**、自包含。
+
+```sh
+pnpm build        # 全仓构建 = pnpm -r build（各包：clean-lib → tsc → bundle-host）
+pnpm contract     # 客户端契约（node scripts/contract-check.ts）
+pnpm test         # 全量 smoke（Node ≥23.6 原生 type stripping 直跑）
+pnpm pack:check   # tarball 完整性（含聚合包）
+pnpm typecheck    # 全仓类型检查
+```
+
+`scripts/bundle-host.ts` 编排单包构建：
+1. esbuild 内联 `shared/*` 进 `lib/index.js`（宿主端自包含单文件）。
+2. 客户端经 `scripts/build-client.ts`（唯一契约外壳/注入点）构建 `lib/client.js`。
+3. d.ts X1：改写 `../../../shared|types` → 包内副本，`shared/*.d.ts`、`types/dsh.d.ts` 随包。
+4. 拷贝资源（非 TS 文件）+ LICENSE。
+
+## 1. 宿主端（`src/index.ts`）规范
+
+- **单入口**：`src/index.ts` export 一个 cordis service；需要给客户端传路由时
+  `export const ROUTES` 作为**单一事实源**——`bundle-host` 经 `__DSH_ROUTES__`
+  define 注入给客户端（客户端不引用则零影响）。
+- **依赖纪律**：只 import `../../shared/*`（loopback / host-utils / frontmatter，构建期
+  内联）与 Node 内置模块；**任何第三方运行时依赖一律由 esbuild `--bundle` 内联**
+  （如 web-file-preview 宿主用的 `untildify`/`marked`），发布物零运行时 npm 依赖。
+- **安全**：全部路由强制 loopback 围栏（非回环 403、方法错 405），`/health` 必项；
+  RPC/端点做参数校验；密钥/凭据不入包。
+- **挂载**：`cordis.patch.yml`，patch **id 用 `ui-<name>`**；声明 `dsh.client` 时必须有
+  `exports["./client"]`（`contract-check` 联动断言，缺则整包拒载）。
+- **测试**：`test/smoke.ts` 直跑，必含 403/405 围栏用例 + 客户端契约断言
+  （`assertClientSourceContract` / `assertClientProductContract`）。
+
+## 2. 客户端（`src/client/index.ts`）规范 — 干净模块
+
+**核心：源码只写干净模块，不写任何 loader 痕迹。**
+
+```ts
+import STYLE from "./style.css";          // 样式走独立 CSS（见 §3）
+
+// ... 顶部模块体（函数、常量、DOM 渲染）...
+
+export function apply(ctx: any): void {   // 挂载入口
+  // ctx.get("connection"/"sessions"/"workspaces"/"slots") ...
+  // 卸载清理必须写在 ctx.effect(() => () => { ... }) 返回的 disposer 里
+  ctx.effect(() => () => { cleanup(); }, "dsh-<name>: ui");
+}
+
+export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务（如 ["slots"]）
+```
+
+**禁止在源码里**：`window.__ModuleLoader__.load`、手拼 `__DSH_PLUGIN_ID__`、`require(`、
+外层 IIFE `(function(){})()`、`declare var module` / `interface Window.__ModuleLoader__`。
+这些（load 注册、IIFE 闭包工厂、`Symbol.toStringTag` 装配、`exports.apply/inject`、
+**load id === 包名**）全部由 `scripts/build-client.ts` 构建期统一生成——是唯一事实源，
+内建「load id === 包名」硬校验（构建即失败）。
+
+### 2.1 三种客户端路径（build-client 自动选择，作者不用配置）
+
+| 路径 | 触发 | 说明 |
+|---|---|---|
+| 零依赖 wrapper | 干净模块、无 bare import | esbuild iife + 生成契约外壳；`apply/inject` 直出 |
+| wrapper + externals | 干净模块 `import * as React from "react"` | 干净模块 cjs 内联进 `factory(require)`，React 由 loader 的 `require("react")` 注入（dsh web **无全局 React**）。需同目录 `react-shim.d.ts`（`declare module "react"`，不引 @types/react），`peerDependencies.react` + `optional` |
+| 第三方内联 | `dsh.client.inlineBareImports: true` | 干净模块的 bare import（dompurify/diff2html/marked/highlight…）由 esbuild **内联进 client.js**，仍自包含零依赖。用于纯浏览器第三方库、无宿主注入 JS 模块的场景 |
+
+> ⚠️ **互斥**：默认「bare import = 宿主注入 external（React）」；`inlineBareImports: true`
+> 则全部内联。按包二选一，不要混用。
+
+### 2.2 目录约定
+
+- 客户端入口统一 `src/client/index.ts`（`src/client.ts` 已停用）。
+- **拆 CSS 或带多模块/React shim 的包**：客户端专属模块（`md/code/renderer` 等）、
+  `style.css`、`react-shim.d.ts`、`css.d.ts` 都归位 `src/client/`；宿主模块留 `src/` 根。
+- **宿主 & 客户端共享**的模块（如 web-file-preview 的 `grouping.ts`）留 `src/` 根，
+  客户端经 `../grouping.js` 引用——不要为"客户端专用"而把共享模块搬走。
+
+### 2.3 客户端其它要点
+
+- `inject` 语义：声明 `apply` 运行时用到的 ctx 服务；不需要则 `[]`。**这是运行时的
+  服务注入声明**，与宿主的 cordis `inject`（插槽）是两码事，别混。
+- 生命周期：所有卸载清理写进 `ctx.effect(() => () => {})` 的 disposer。
+- 样式：带插件前缀隔离 + `CSS_VERSION`/`dataset.version` 失效（热更新重建 `<style>`）；
+  颜色用 `--dsw-alias-*` / `--dsw-hljs-*` 主题变量 + 浅色回退，明暗自适应。
+- 挂载失败 `console.warn` 不 throw，绝不让 GUI 启动失败。
+- 路由引用用构建期注入的 `__DSH_ROUTES__`（或宿主 ROUTES 字面量），防两端漂移。
+
+## 3. CSS 规范（独立文件，不写进 TS）
+
+- 客户端样式放独立 `src/client/style.css`，源码 `import STYLE from "./style.css"`，
+  `injectStyle` 里 `style.textContent = STYLE`。
+- `.css` 经 `build-client` 的 **text-loader** 构建期**原样内联**成字符串打进
+  `lib/client.js`——产物仍自包含单文件、零运行时依赖、无独立网络请求。
+- `src/client/css.d.ts` 提供 `declare module "*.css"`（tsc 的 `verbatimModuleSyntax`
+  需要类型；仅类型面无运行时）。
+- 用**格式化多行**书写（区别于旧的字符串拼接）；前缀硬编码进 CSS 与 JS 常量保持一致。
+
+## 4. 契约与门禁
+
+- `pnpm contract`（contract-check）：load id === 包名、`dsh.client ⇒ exports["./client"]`、
+  `src/client/index.ts ⇒ lib/client.js` 产物、arrive 可解析、`exports.apply/inject` 装配。
+- `assertClientSourceContract`（smoke-lib）：兼容三种产物形态（零依赖 wrapper /
+  React externals / legacy），断言 `"use strict"`、契约外壳、Symbol.toStringTag、
+  `factory: function(`、load 注册。
+- **新增/修改客户端后**：`pnpm build && pnpm test && pnpm contract && pnpm pack:check`
+  全绿再提交。
