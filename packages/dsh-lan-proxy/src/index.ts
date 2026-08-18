@@ -423,6 +423,19 @@ export function apply(ctx: PluginContext, config: LanProxyConfig = {}): void {
     };
   };
 
+  /** 重建防抖：RPC 保存 / 设置变更后先把成功回执送达，再延迟重建 lan-proxy。
+   *  重建会 dispose 当前转发器、断开经 lan-proxy（3443/3081）正访问的页面连接，
+   *  过早重建会丢失 RPC 响应（保存误报「失败」）。延迟 3s 足够回执发出；
+   *  连续保存只重建最后一次。 */
+  let syncTimer: ReturnType<typeof setTimeout> | undefined;
+  const scheduleSync = () => {
+    if (syncTimer !== undefined) clearTimeout(syncTimer);
+    syncTimer = setTimeout(() => {
+      syncTimer = undefined;
+      sync();
+    }, 3000);
+  };
+
   // 转发器立即启动（不依赖任何异步解析）。
   sync();
 
@@ -464,10 +477,23 @@ export function apply(ctx: PluginContext, config: LanProxyConfig = {}): void {
   installSettingsNamespace(ctx, "dsh-lan-proxy", Config, config ?? {}, {
     setSource: (source) => {
       // 合并：GUI 命名空间的解析值优先，未覆盖的键回落文件/组合层配置。
-      current = () => ({ ...fileConfig, ...(source as () => LanProxyConfig)() });
-      sync();
+      // ⚠️ wsCompress 两个键例外：以持久化层（config.json，含 GUI 面板 rpc 保存的真实值）
+      // 优先——否则 settings 命名空间会用 Config 的 schema 默认 true 无条件覆盖
+      // config.json=false，导致「改了 false 也不生效、始终压缩」（fix）。
+      current = () => {
+        const s = (source as () => LanProxyConfig)();
+        return {
+          ...s,
+          wsCompressEnabled: fileConfig.wsCompressEnabled ?? s.wsCompressEnabled,
+          wsCompressPaths: fileConfig.wsCompressPaths ?? s.wsCompressPaths,
+        };
+      };
+      // 先更新读取来源使 resolve() 用新值；重建推迟到下一轮事件循环：
+      // sync() 会 dispose 当前转发器（含经 lan-proxy 转发到设置面板的 RPC 长连接），
+      // 若在成功回执前同步重建会丢失响应（保存误报 "load failed"）。
+      scheduleSync();
     },
-    onChange: sync,
+    onChange: scheduleSync,
   });
 
   // 插件目录 config.json 热更新（编辑保存即重建转发器，无需重启）。
@@ -496,9 +522,12 @@ export function apply(ctx: PluginContext, config: LanProxyConfig = {}): void {
     resolve,
     fileConfig: () => fileConfig,
     save: (settings) => {
-      writeConfigFile(configDir, settings);
-      fileConfig = settings; // 立即生效；watch 触发 reload 时 JSON 相等即跳过（幂等）
-      sync();
+      writeConfigFile(configDir, settings); // 先落盘
+      fileConfig = settings; // 立即更新内存生效值（watch 触发 reload 时 JSON 相等即跳过，幂等）
+      // 重建延迟（scheduleSync 防抖 3s）：sync() 会 dispose 当前转发器（含经 lan-proxy
+      // 转发到页面的 RPC 长连接），若在成功回执前重建会断掉连接、丢失回执（保存误报失败）；
+      // 延迟 3s 保证回执送达，再安全重建。
+      scheduleSync();
     },
   });
   (ctx.inject as unknown as (services: string[], fn: (c: ConnectionCtx) => void) => void)(
@@ -527,12 +556,19 @@ export function apply(ctx: PluginContext, config: LanProxyConfig = {}): void {
         httpsEnabled: v.httpsEnabled,
         httpsPort: v.httpsPort,
         listening: disposeProxy !== undefined,
+        // 运行时生效的 WS 压缩配置（诊断：磁盘配置 vs 实际生效一致性）
+        wsCompressEnabled: v.wsCompressEnabled,
+        wsCompressPaths: v.wsCompressPaths,
+        // 诊断：持久化层实际读到的值 + 插件目录（判断是否读错 config）
+        fileWsCompressEnabled: fileConfig.wsCompressEnabled,
+        configDir,
       });
     },
   });
 
   ctx.effect(() => () => {
     disposed = true;
+    if (syncTimer !== undefined) clearTimeout(syncTimer);
     if (reloadTimer !== undefined) clearTimeout(reloadTimer);
     configWatcher.close();
     try {

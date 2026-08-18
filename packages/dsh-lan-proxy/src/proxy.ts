@@ -193,15 +193,17 @@ export function bridgeCompressedWs(
       perMessageDeflate: false,
       headers: { origin: `http://${target.targetHost}:${target.targetPort}` },
     });
-    // 浏览器 → DSH（握手成功后开始转发）。
+    // 浏览器 → DSH（握手成功后开始转发）。注意保留原始帧类型 isBinary：
+    // ws 的 message 回调 data 恒为 Buffer，若不显式回传 binary 标志，send(Buffer)
+    // 会被当二进制帧发出——events 流是文本 JSON，误发 binary 会被客户端拒绝。
     upstreamWs.on("open", () => {
-      browserWs.on("message", (data) => {
-        if (upstreamWs.readyState === WsClient.OPEN) upstreamWs.send(data);
+      browserWs.on("message", (data, isBinary) => {
+        if (upstreamWs.readyState === WsClient.OPEN) upstreamWs.send(data, { binary: isBinary });
       });
     });
     // DSH → 浏览器。
-    upstreamWs.on("message", (data) => {
-      if (browserWs.readyState === browserWs.OPEN) browserWs.send(data);
+    upstreamWs.on("message", (data, isBinary) => {
+      if (browserWs.readyState === browserWs.OPEN) browserWs.send(data, { binary: isBinary });
     });
     // 任一端关闭/出错 → 对端终止。
     upstreamWs.on("close", () => browserWs.terminate());
