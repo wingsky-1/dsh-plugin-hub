@@ -50,6 +50,9 @@ curl -s -D - -o /dev/null -X POST http://127.0.0.1:3080/api/session.list \
   - 已注册的 **prefix 命名路由**全量接管（含 `/api`、`/plugins` 及未来第三方
     prefix）——直接替换 `webServer.prefixes` 中对应 route.handler（运行时替换
     立即生效）；
+  - **exact 路由同样接管**（`webServer.exact`，`DshRoute.kind:"exact"`）——与
+    prefix 一致地套用 gzip 包装，解决插件常用 exact 路由（history 大 JSON、
+    各插件 health、web-file-preview 文件预览等）不被压缩的问题；
   - **fallback 席位**接管（`webServer.fallback`）——覆盖 `/assets/*` 静态资源、
     `/` 与 SPA fallback 的 index.html；
   - `register` / `registerFallback` patch 仅作兜底，覆盖本插件先装配或后续重新
@@ -69,10 +72,11 @@ curl -s -D - -o /dev/null -X POST http://127.0.0.1:3080/api/session.list \
   与路由 is exact 还是 prefix 无关。
 - **只作用于响应体**：不做任何缓存语义（不补 Cache-Control / ETag）；健康检查
   路由 loopback 围栏（非回环 403 / 方法错 405），仅回环可访问。
-- **无全局副作用**：卸载恢复被替换的 prefix handler、fallback 与
-  register / registerFallback（replace 场景身份级恢复）；`enabled: false` 时不
-  注册任何东西。
-- **依赖非公开字段**：主挂点读取 `webServer.prefixes` 与 `webServer.fallback`
+- **无全局副作用**：卸载恢复被替换的 prefix / exact handler、fallback 与
+  register / registerFallback（replace 场景身份级恢复）；wrap 幂等（HMR 重载后
+  二次 apply 不重复包裹）；`enabled: false` 时不注册任何东西。
+- **依赖非公开字段**：主挂点读取 `webServer.prefixes`、`webServer.exact` 与
+  `webServer.fallback`
   （实例公开字段但非官方 API），`registerFallback` 亦非官方方法（判存在性后
   patch）。上游改结构时自动退化到备用挂点，若时序不利则表现为「不压缩、不报
   错」——安全降级，可用 health 路由诊断 `handlers` 状态。

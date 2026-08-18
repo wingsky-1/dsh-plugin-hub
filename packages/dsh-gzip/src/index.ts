@@ -32,6 +32,9 @@ import type { PluginContext, DshWebServer, DshRoute } from "../../../types/dsh.j
 export const name = "dsh-gzip";
 export const inject = ["webServer"];
 
+/** 幂等标记：标记已被 gzip 包装的 handler，防止 HMR 重载/重复 apply 时二次包裹。 */
+const GZIP_WRAPPED: unique symbol = Symbol("dsh-gzip.wrapped");
+
 /** 压缩/透传计数（health 摘要用）。 */
 export interface GzipStats {
   compressed: number;
@@ -149,9 +152,14 @@ export function wrapResponse(res: ServerResponse, req: IncomingMessage, stats?: 
       statusMessage = void 0;
     }
     if (gzip === null && !this.headersSent) {
+      // HTTP 语义防护：无实体状态（1xx/204/206/304）不建 gzip——方案 A 把 exact 路由也纳入
+      // 压缩面后，必须避免无 body 响应被误标 content-encoding:gzip（例如带可压 content-type
+      // 的 304/204）。仅对 2xx-5xx 且有实体的响应压缩。
+      const status = Number(statusCode) || 0;
+      const hasBody = status >= 200 && status !== 204 && status !== 206 && status !== 304;
       const contentType = headers?.["content-type"] ?? this.getHeader("content-type");
       const existingEncoding = headers?.["content-encoding"] ?? this.getHeader("content-encoding");
-      if (existingEncoding === void 0 && isCompressible(contentType)) {
+      if (existingEncoding === void 0 && isCompressible(contentType) && hasBody) {
         gzip = createGzip({ level });
         if (stats && !counted) {
           counted = true;
@@ -241,8 +249,13 @@ export function installWrappers(webServer: DshWebServer, stats: GzipStats, level
   handlers: GzipHandlers;
 } {
   const disposers: Array<() => void> = [];
-  const wrap = (handler: DshRoute["handler"]) =>
-    (req: IncomingMessage, res: ServerResponse) => handler(req, wrapResponse(res, req, stats, level));
+  // 幂等包装：已带标记的 handler 直接返回，避免重复 apply（如 HMR 重载）二次包裹。
+  const wrap = (handler: DshRoute["handler"]) => {
+    if ((handler as any)?.[GZIP_WRAPPED]) return handler;
+    const wrapped = (req: IncomingMessage, res: ServerResponse) => handler(req, wrapResponse(res, req, stats, level));
+    (wrapped as any)[GZIP_WRAPPED] = true;
+    return wrapped;
+  };
 
   const handlers: GzipHandlers = { api: "register-patch", plugins: "register-patch", fallback: "register-patch" };
 
@@ -261,19 +274,35 @@ export function installWrappers(webServer: DshWebServer, stats: GzipStats, level
     }
   }
 
-  // 挂点 2：register patch 兜底（后续注册的 prefix）。register 为官方必选
+  // 挂点 1b：已注册 exact 路由全量替换（方案 A 把 exact 纳入压缩面，顺序无关）。
+  const exacts = webServer.exact;
+  if (exacts && typeof (exacts as Map<string, { handler: DshRoute["handler"] }>).forEach === "function") {
+    for (const route of exacts.values()) {
+      const original = route.handler;
+      route.handler = wrap(original);
+      disposers.push(() => {
+        route.handler = original;
+      });
+    }
+  }
+
+  // 挂点 2：register patch 兜底（后续注册的 prefix / exact）。register 为官方必选
   // 方法，直接 patch；fallback/registerFallback 为非官方方法才判存在性。
   {
     const originalRegister = webServer.register;
     webServer.register = function register(route: DshRoute) {
       const dispose = originalRegister.call(webServer, route);
-      if (route.kind === "prefix" && webServer.prefixes) {
-        const stored = webServer.prefixes.get(route.path);
+      // prefix / exact 统一接管（方案 A：exact 路由也纳入压缩面）。
+      if ((route.kind === "prefix" || route.kind === "exact") && webServer.prefixes && webServer.exact) {
+        const table = route.kind === "exact" ? webServer.exact : webServer.prefixes;
+        const stored = table.get(route.path);
         const target = stored ?? route;
         const original = target.handler;
         target.handler = wrap(original);
-        if (route.path === "/api") handlers.api = "register-patch";
-        else if (route.path === "/plugins") handlers.plugins = "register-patch";
+        if (route.kind === "prefix") {
+          if (route.path === "/api") handlers.api = "register-patch";
+          else if (route.path === "/plugins") handlers.plugins = "register-patch";
+        }
       }
       return dispose;
     };

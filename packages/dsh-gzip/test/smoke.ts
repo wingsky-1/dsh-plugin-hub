@@ -463,4 +463,97 @@ async function runHandler(handler, req) {
 // 路由常量
 assert.equal(ROUTES.health, "/api/dsh-gzip/health");
 
+// ---------------------------------------------------------------- 方案 A：exact 路由纳入压缩面
+
+// 挂点 1b：已注册 exact 全量替换 → 其响应被 gzip
+{
+  const ws = makeWebServer();
+  const handle = (_req, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ ok: true, data: "x".repeat(200) }));
+  };
+  ws.exact.set("/api/dsh-demo/history", { kind: "exact", path: "/api/dsh-demo/history", handler: handle });
+  installWrappers(ws, { compressed: 0, passthrough: 0 });
+  const route = ws.exact.get("/api/dsh-demo/history");
+  assert.notEqual(route.handler, handle, "exact handler 已被替换");
+  const res = await runHandler(route.handler, makeReq({ headers: { host: "127.0.0.1:3080", "accept-encoding": "gzip" } }));
+  await waitEnded(res);
+  assert.equal(res.getHeader("content-encoding"), "gzip", "已注册 exact（挂点1）被压缩");
+  assert.equal(JSON.parse(gunzipSync(Buffer.concat(res._chunks)).toString("utf8")).ok, true, "解压内容一致");
+}
+
+// 挂点 2：later 注册的 exact 也被 wrap → 压缩
+{
+  const ws = makeWebServer();
+  installWrappers(ws, { compressed: 0, passthrough: 0 });
+  ws.register({
+    kind: "exact",
+    path: "/api/dsh-demo/stats",
+    handler: (_req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end('{"n":1}');
+    },
+  });
+  const route = ws.exact.get("/api/dsh-demo/stats");
+  const res = await runHandler(route.handler, makeReq({ headers: { host: "127.0.0.1:3080", "accept-encoding": "gzip" } }));
+  await waitEnded(res);
+  assert.equal(res.getHeader("content-encoding"), "gzip", "后注册 exact（挂点2）被压缩");
+}
+
+// exact SSE 仍豁免透传
+{
+  const ws = makeWebServer();
+  installWrappers(ws, { compressed: 0, passthrough: 0 });
+  ws.register({
+    kind: "exact",
+    path: "/stream",
+    handler: (_req, res) => {
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.end("data: x\n\n");
+    },
+  });
+  const route = ws.exact.get("/stream");
+  const res = await runHandler(route.handler, makeReq({ headers: { host: "127.0.0.1:3080", "accept-encoding": "gzip" } }));
+  await waitEnded(res);
+  assert.equal(res.getHeader("content-encoding"), undefined, "exact SSE 豁免透传");
+}
+
+// 幂等：重复 apply 不二次包裹
+{
+  const ws = makeWebServer();
+  ws.exact.set("/x", { kind: "exact", path: "/x", handler: (_req, res) => { res.writeHead(200, { "content-type": "application/json" }); res.end("{}"); } });
+  const first = installWrappers(ws, { compressed: 0, passthrough: 0 });
+  const firstHandler = ws.exact.get("/x").handler;
+  installWrappers(ws, { compressed: 0, passthrough: 0 });
+  assert.equal(ws.exact.get("/x").handler, firstHandler, "幂等：二次 apply 不重复包裹");
+  const res = await runHandler(ws.exact.get("/x").handler, makeReq({ headers: { host: "127.0.0.1:3080", "accept-encoding": "gzip" } }));
+  await waitEnded(res);
+  assert.equal(res.getHeader("content-encoding"), "gzip", "幂等后仍压缩（单层）");
+}
+
+// ---------------------------------------------------------------- R1：无 body 状态不误压
+
+{
+  // 304 带可压 content-type：不标 content-encoding
+  const res304 = new FakeRes();
+  const w304 = wrapResponse(res304, { method: "GET", headers: { "accept-encoding": "gzip" } }, { compressed: 0, passthrough: 0 });
+  w304.writeHead(304, { "content-type": "application/json" });
+  w304.end();
+  assert.equal(res304.getHeader("content-encoding"), undefined, "304 不误压");
+
+  // 204 同理
+  const res204 = new FakeRes();
+  const w204 = wrapResponse(res204, { method: "GET", headers: { "accept-encoding": "gzip" } }, { compressed: 0, passthrough: 0 });
+  w204.writeHead(204, { "content-type": "application/json" });
+  w204.end();
+  assert.equal(res204.getHeader("content-encoding"), undefined, "204 不误压");
+
+  // 206 同理
+  const res206 = new FakeRes();
+  const w206 = wrapResponse(res206, { method: "GET", headers: { "accept-encoding": "gzip" } }, { compressed: 0, passthrough: 0 });
+  w206.writeHead(206, { "content-type": "application/json" });
+  w206.end();
+  assert.equal(res206.getHeader("content-encoding"), undefined, "206 不误压");
+}
+
 console.log("dsh-gzip smoke: all passed");
