@@ -673,9 +673,16 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
           const ended = lastTurnEndOf(agent);
           const hasNewEnd = ended !== undefined && (state.lastEndedTurn === undefined || ended.turn > state.lastEndedTurn);
           if (ended !== undefined) state.lastEndedTurn = ended.turn;
-          // aborted：用户停止生成（agent.cancel {kind:"user"}）与中断
-          // interrupt_agent 均落此值；interrupted 为未来兼容保留。
-          if (!hasNewEnd || ended.kind === "aborted" || ended.kind === "interrupted") return;
+          // 非正常结束不判「完成」：本轮 turn/end 无新 closure（hasNewEnd）
+          // 或 kind 属于 aborted/interrupted/error/blocked 时静默——失败由
+          // agent/error 单独负责「任务出错」通知，被阻塞由对应事件负责，
+          // 避免同一轮既报异常又误报「任务完成」。
+          // - aborted：用户停止生成（agent.cancel {kind:"user"}）与中断
+          //   interrupt_agent 均落此值；interrupted 为未来兼容保留。
+          // - error：任务运行失败（dsh-agent-loop turn 的 catch 分支写入）。
+          // - blocked：本轮被阻塞（preStep reject，如等待用户问题）提前结束。
+          const NOT_COMPLETED = new Set(["aborted", "interrupted", "error", "blocked"]);
+          if (!hasNewEnd || (ended !== undefined && NOT_COMPLETED.has(ended.kind))) return;
           if (isSubagentOf(agent)) {
             if (current.notifySubagentDone) {
               notify("subagent-done", { taskTitle: sessionTitleOf(agent), durationMs });

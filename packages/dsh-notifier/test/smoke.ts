@@ -13,7 +13,8 @@
  * - agent/status：per-agent 状态机，多会话互不误报；disposed 清理；
  *   子代理分流（delegationDepth≥1 → subagent-done，独立开关默认关，
  *   notifyTaskDone=false 不拦截）；中断抑制（turn/end aborted 静默、
- *   S1 无新 turn/end closure 静默、中断后继续正常通知）
+ *   error/blocked 静默（不误报完成）、S1 无新 turn/end closure 静默、
+ *   中断/失败后继续正常通知）
  * - agent/error：通知（任务标题/轮次步骤/错误信息）；窗口内合并、窗口
  *   过期带合并计数
  * - turn-stopping：默认不通知（config 开启后通知）
@@ -408,6 +409,26 @@ function agentWithTitle(id, title, opts = {}) {
   status({ agent: agentWithTitle("int-3", "子代理中断", { depth: 1, turnEnd: 1, turnEndKind: "aborted" }), status: "running" });
   status({ agent: agentWithTitle("int-3", "子代理中断", { depth: 1, turnEnd: 1, turnEndKind: "aborted" }), status: "idle" });
   assert.equal(infos.length, 2, "子代理中断不通知");
+
+  // 任务失败（turn/end reason error）：idle 不得误报「任务完成」——
+  // 失败由 agent/error 单独负责「任务出错」，同一轮不得叠加「完成」。
+  status({ agent: agentWithTitle("err-1", "失败的任务", { turnEnd: 1, turnEndKind: "error" }), status: "running" });
+  status({ agent: agentWithTitle("err-1", "失败的任务", { turnEnd: 1, turnEndKind: "error" }), status: "idle" });
+  assert.equal(infos.length, 2, "失败（turn/end error）不通知完成");
+
+  // 任务被阻塞（turn/end reason blocked，如等待用户问题）：idle 也不得误报完成
+  status({ agent: agentWithTitle("blk-1", "被阻塞的任务", { turnEnd: 1, turnEndKind: "blocked" }), status: "running" });
+  status({ agent: agentWithTitle("blk-1", "被阻塞的任务", { turnEnd: 1, turnEndKind: "blocked" }), status: "idle" });
+  assert.equal(infos.length, 2, "阻塞（turn/end blocked）不通知完成");
+
+  // 失败后继续：新一轮 turn/end completed（turn 号递增）正常通知
+  status({ agent: agentWithTitle("err-2", "失败后继续", { turnEnd: 1, turnEndKind: "error" }), status: "running" });
+  status({ agent: agentWithTitle("err-2", "失败后继续", { turnEnd: 1, turnEndKind: "error" }), status: "idle" });
+  assert.equal(infos.length, 2, "失败静默");
+  status({ agent: agentWithTitle("err-2", "失败后继续", { turnEnd: 2 }), status: "running" });
+  status({ agent: agentWithTitle("err-2", "失败后继续", { turnEnd: 2 }), status: "idle" });
+  assert.equal(infos.length, 3, "失败后新一轮完成正常通知");
+  assert.match(infos[2], /done/);
 }
 
 // notifyAsk=false（configFile）时 approval/request 不通知、不短路
