@@ -61,9 +61,9 @@ dsh plugin --profile web remove @wingsky-1/dsh-notifier
 # 检测 profile 中是否仍引用旧 id（home 级与 profile 级）
 grep -rnE '^\s*id:\s*(dsh-gzip|dsh-idle-archive|lan-proxy|mcp-manager|notifier|opencode-usage|skill-explorer)\s*$' \
   "$DSH_HOME/cordis.patch.yml" ~/.dsh/profiles/*/cordis.patch.yml 2>/dev/null
-# 有输出 → 重装覆盖拉取新配置
+# 有输出 → 重装覆盖拉取新配置（默认装 latest，即当前最新版）
 dsh plugin --profile web remove @wingsky-1/<包>
-dsh plugin --profile web add @wingsky-1/<包>@^0.1.5
+dsh plugin --profile web add @wingsky-1/<包>@latest
 ```
 
 ## 安全提醒

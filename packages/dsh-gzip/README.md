@@ -18,8 +18,8 @@ DSH Web GUI 加载会话历史时，一页历史可能包含全部流式 chunk �
 ## 安装
 
 ```sh
-# 锁定 0.1.4（接管静态资源 / 插件 bundle、level 配置）稳定版
-dsh plugin --profile web add @wingsky-1/dsh-gzip@0.1.4
+# 默认安装 npm 的 latest（当前最新发布版，无需指定版本号）
+dsh plugin --profile web add @wingsky-1/dsh-gzip
 ```
 
 安装后**重启一次** `dsh web`。
