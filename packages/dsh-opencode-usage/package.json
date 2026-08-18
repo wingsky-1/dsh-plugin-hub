@@ -1,6 +1,6 @@
 {
   "name": "@wingsky-1/dsh-opencode-usage",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "OpenCode Go 套餐用量悬浮框：右上角常驻三窗口消耗百分比，展开为 rolling/weekly/monthly 三张独立迷你图（各窗口独立自适应坐标轴、100% 配额参考线、重置标记线、后台采样保历史连续；官方 /v1/usage 接口，权威数据，零本地计算）",
   "type": "module",
   "main": "lib/index.js",
