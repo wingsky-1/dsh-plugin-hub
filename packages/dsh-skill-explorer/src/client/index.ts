@@ -1,23 +1,8 @@
-// 客户端 bundle 注册契约：web shell 的 client-modules 要求脚本执行时通过
-// window.__ModuleLoader__.load 注册自身 factory（id = 包名），factory 返回
-// module.exports（导出 apply / inject）。缺少该注册会让整个插件条目
-// （含宿主端）在加载器层面失败。
-// ---- 浏览器端全局声明（dsh web 运行时提供）----
-declare var module: { exports: Record<string, any> };
-declare var __DSH_PLUGIN_ID__: string; // 构建注入：bundle-host 以 --define 注入完整 npm 包名（load id 契约 = 包名）
-interface Window {
-  __ModuleLoader__: { load(entry: { id: string; factory: (require: any) => unknown }): void };
-}
+// 客户端干净模块：只导出 apply/inject，契约外壳（IIFE/load/Symbol.toStringTag 装配）
+// 由 scripts/build-client.ts 统一生成——源码不写任何 loader 痕迹。
+// 样式：独立 style.css（见同目录），build-client 的 .css text-loader 构建期内联为字符串
+import STYLE from "./style.css";
 
-(function () {
-  "use strict";
-
-(window as any).__ModuleLoader__.load({
-	id: __DSH_PLUGIN_ID__,
-	factory: function (require: any) {
-		var module: { exports: Record<string, any> } = { exports: {} };
-		var exports = module.exports;
-		Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 /**
  * dsh-skill-explorer — 浏览器端。运行在 dsh web GUI 中，纯 DOM 实现
  * （无 React、无构建工具）：侧边栏注入一个"技能中心"入口按钮，点击
@@ -34,58 +19,13 @@ const ROUTE = "/api/dsh-skill-explorer/list";
 /** 启用/禁用路由（与 host 端 SET_ENABLED_ROUTE 一致）。 */
 const SET_ENABLED_ROUTE = "/api/dsh-skill-explorer/set-enabled";
 
-/** 创建/删除路由（与 host 端一致）。 */
+/** 创建路由（与 host 端一致）。客户端不提供删除 UI，删除只走宿主路由，故不声明 DELETE_ROUTE。 */
 const CREATE_ROUTE = "/api/dsh-skill-explorer/create";
-const DELETE_ROUTE = "/api/dsh-skill-explorer/delete";
 
 /** 侧边栏入口图标：技能/书本字形（16px nav-icon 风格，与 shell 一致）。 */
 const ICON = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3.2C6.6 2 4.5 2 3 2v10.5c1.5 0 3.6 0 5 1.3 1.4-1.3 3.5-1.3 5-1.3V2c-1.5 0-3.6 0-5 1.2z"/><path d="M8 3.2v10.6"/></svg>';
 
 /** 面板样式（一次性注入 <style>，dse- 前缀避免与 shell 样式冲突；颜色全部用皮肤变量 --dsw-alias-* 适配亮/暗主题，带浅色回退）。 */
-const STYLE = `
-.dse-overlay{position:fixed;inset:0;background:var(--dsw-alias-bg-mask-2,rgba(8,10,16,.45));display:flex;align-items:center;justify-content:center;z-index:9999;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
-.dse-overlay[hidden]{display:none !important}
-.dse-card{width:min(780px,92vw);max-height:84vh;display:flex;flex-direction:column;background:var(--dsw-alias-bg-base,#fdfdfd);color:var(--dsw-alias-label-primary,#1c1e26);border-radius:12px;box-shadow:0 18px 60px rgba(0,0,0,.35);overflow:hidden}
-.dse-head{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--dsw-alias-border-l1,#e5e7eb);background:var(--dsw-alias-bg-layer-1,#f7f8fa)}
-.dse-head h2{margin:0;font-size:15px;font-weight:600}
-.dse-head .dse-cwd{font-size:11px;color:var(--dsw-alias-label-secondary,#8a8f9c);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
-.dse-head button{border:1px solid var(--dsw-alias-border-l1,#d7dae0);background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#3a3f4b);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer}
-.dse-head button:hover{background:var(--dsw-alias-interactive-bg-hover,#eef1f5)}
-.dse-body{padding:12px 16px;overflow:auto}
-.dse-tabs{display:flex;gap:4px;padding:8px 16px 0;background:var(--dsw-alias-bg-layer-1,#f7f8fa)}
-.dse-tab{border:1px solid var(--dsw-alias-border-l1,#d7dae0);border-bottom:none;background:transparent;color:var(--dsw-alias-label-secondary,#8a8f9c);border-radius:8px 8px 0 0;padding:6px 14px;font-size:12px;cursor:pointer}
-.dse-tab.dse-active{background:var(--dsw-alias-bg-base,#fdfdfd);color:var(--dsw-alias-label-primary,#1c1e26);font-weight:600}
-.dse-form{display:flex;flex-direction:column;gap:8px;max-width:640px}
-.dse-form label{font-size:12px;color:var(--dsw-alias-label-secondary,#5f6672)}
-.dse-form input,.dse-form textarea,.dse-form select{background:var(--dsw-alias-bg-layer-1,#f7f8fa);color:var(--dsw-alias-label-primary,#1c1e26);border:1px solid var(--dsw-alias-border-l1,#d7dae0);border-radius:6px;padding:6px 8px;font-size:12px}
-.dse-form textarea{min-height:120px;resize:vertical;font-family:ui-monospace,monospace}
-.dse-form button{border:1px solid var(--dsw-alias-border-l1,#d7dae0);background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#3a3f4b);border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;align-self:flex-start}
-.dse-note{font-size:11px;color:var(--dsw-alias-label-tertiary,#a0a5b1);line-height:1.7;margin-top:10px}
-.dse-status{padding:18px;color:var(--dsw-alias-label-secondary,#6b7280);font-size:13px;text-align:center}
-.dse-group{margin-bottom:18px}
-.dse-group>h3{margin:0 0 2px;font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary,#2f3542)}
-.dse-group>.dse-hint{font-size:11px;color:var(--dsw-alias-label-secondary,#8a8f9c);margin:0 0 8px}
-.dse-count{font-weight:400;color:var(--dsw-alias-label-secondary,#8a8f9c);margin-left:6px}
-.dse-skill{border:1px solid var(--dsw-alias-border-l1,#e5e7eb);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:var(--dsw-alias-bg-base,#fff)}
-.dse-skill header{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.dse-skill header .dse-name{font-weight:600;font-size:13px;color:var(--dsw-alias-label-primary,#111827);font-family:ui-monospace,Consolas,monospace}
-.dse-badge{font-size:10px;padding:1px 6px;border-radius:99px;background:var(--dsw-alias-state-business-secondary,#eef2ff);color:var(--dsw-alias-state-business-primary,#4353a3);border:1px solid var(--dsw-alias-state-business-tertiary,#dde3f8)}
-.dse-badge.dse-invokable{background:var(--dsw-alias-state-success-secondary,#ecfdf5);color:var(--dsw-alias-state-success-primary,#0f7a50);border-color:var(--dsw-alias-state-success-tertiary,#c9f0dd)}
-.dse-switch{display:inline-flex;align-items:center;background:none;border:none;padding:2px;margin-left:auto;cursor:pointer;border-radius:99px}
-.dse-switch:hover .dse-switch-track{box-shadow:0 0 0 3px var(--dsw-alias-state-success-tertiary,rgba(16,185,129,.12))}
-.dse-switch-track{width:30px;height:16px;border-radius:99px;background:var(--dsw-alias-border-l2,#d1d5db);position:relative;transition:background .18s ease;flex:none}
-.dse-switch-thumb{position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:var(--dsw-alias-bg-base,#fff);transition:left .18s ease;box-shadow:0 1px 2px rgba(0,0,0,.25)}
-.dse-switch[aria-checked="true"] .dse-switch-track{background:var(--dsw-alias-state-success-primary,#10b981)}
-.dse-switch[aria-checked="true"] .dse-switch-thumb{left:16px}
-.dse-skill .dse-desc{margin:6px 0 0;font-size:12px;color:var(--dsw-alias-label-primary,#3a3f4b);line-height:1.5}
-.dse-skill .dse-when{margin:4px 0 0;font-size:11px;color:var(--dsw-alias-label-secondary,#8a8f9c)}
-.dse-skill footer{margin:6px 0 0;font-size:10px;color:var(--dsw-alias-label-tertiary,#a2a7b3);font-family:ui-monospace,Consolas,monospace;word-break:break-all}
-.dse-toggle-error{font-size:11px;color:var(--dsw-alias-state-error-primary,#b42318)}
-/* 侧边栏折叠（data-sidebar-collapsed，与 dsh-ssh 同款标记）：图标居中、隐藏文字。
-   !important 覆盖入口按钮的内联 padding（内联样式优先级高于样式表）。 */
-[data-dsh-frame][data-sidebar-collapsed] [data-dsh-skill-explorer-entry]{justify-content:center!important;width:100%!important;padding:0!important}
-[data-dsh-frame][data-sidebar-collapsed] [data-dsh-skill-explorer-entry]>span:not(:first-child){display:none!important}
-`;
 
 /** 稳定 data 属性标识注入的入口行。 */
 const ENTRY_SELECTOR = "[data-dsh-skill-explorer-entry]";
@@ -483,7 +423,7 @@ function placeEntry(root: any, entry: any) {
  * @param {import("@deepseek-ai/dsh-client-runtime/client").ClientContext} ctx
  * @returns {void}
  */
-function apply(ctx: any) {
+export function apply(ctx: any) {
   try {
     // 一次性注入样式（热更新兼容：用显式版本号检测，版本不符则移除重建）
     const existingStyle = document.querySelector<HTMLStyleElement>('style[data-dsh-skill-explorer-style]');
@@ -548,12 +488,6 @@ function apply(ctx: any) {
   }
 }
 
-		// 客户端插件声明：只使用核心 ctx.effect，不注入额外服务。
-		const inject: any[] = [];
-		exports.apply = apply;
-		exports.inject = inject;
-		return module.exports;
-	}
-});
-
-})();
+// ---- 客户端契约：apply/inject 由 build-client 经 factory 装配（干净模块）----
+// 只使用核心 ctx.effect，不注入额外服务。
+export const inject: string[] = [];

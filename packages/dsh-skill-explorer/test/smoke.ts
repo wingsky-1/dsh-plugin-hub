@@ -163,11 +163,20 @@ const main = async () => {
       assert.equal(name, "skill-explorer");
       assert.deepEqual(inject, ["skills", "webServer", "sessions"]);
     });
-    check("client bundle 的 /api/ 路径与 host 导出完全一致（防漂移）", () => {
+    check("client bundle 的 /api/ 路径与 host 导出一致（防漂移）", () => {
       const clientSrc = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
       const clientPaths = [...clientSrc.matchAll(/"(\/api\/[^"]+)"/g)].map((m) => m[1]).sort();
-      const hostPaths = [ROUTE, SET_ENABLED_ROUTE, CREATE_ROUTE, DELETE_ROUTE].sort();
-      assert.deepEqual(clientPaths, hostPaths, `两端路由漂移：client=${clientPaths.join(",")} host=${hostPaths.join(",")}`);
+      // 客户端实际只调用 list/set-enabled/create（删除是纯宿主能力，客户端无 UI 不引用 DELETE_ROUTE）
+      const hostAll = [ROUTE, SET_ENABLED_ROUTE, CREATE_ROUTE, DELETE_ROUTE].sort();
+      const clientShouldHave = [ROUTE, SET_ENABLED_ROUTE, CREATE_ROUTE].sort();
+      // 防漂移双向约束：① client 出现的路由必须都在 host；② 客户端应调用的三个路由必须出现在 bundle
+      for (const p of clientPaths) {
+        assert.ok(hostAll.includes(p), `client 出现 host 外的路由 ${p}（漂移）`);
+      }
+      for (const p of clientShouldHave) {
+        assert.ok(clientPaths.includes(p), `client bundle 缺应调用路由 ${p}`);
+      }
+      assert.ok(!clientPaths.includes(DELETE_ROUTE), "client 不应引用未使用的 DELETE_ROUTE");
     });
     check("client source contract（load id/IIFE/use strict/load once）", () => assertClientSourceContract(pkgDir));
     check("client product contract（执行断言：arrive 可解析/apply/inject）", () => assertClientProductContract(pkgDir));
