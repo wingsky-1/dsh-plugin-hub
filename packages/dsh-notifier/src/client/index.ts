@@ -4,16 +4,10 @@
  * 入口提供配置面板（事件开关/系统通知/浏览器通知/免打扰时段）。
  * 路由常量与宿主端 ROUTES 一致（smoke 断言）。
  */
-// ---- 浏览器端全局声明（dsh web 运行时提供）----
-declare var module: { exports: Record<string, any> };
-declare var __DSH_PLUGIN_ID__: string; // 构建注入：bundle-host 以 --define 注入完整 npm 包名（load id 契约 = 包名）
-interface Window {
-  __ModuleLoader__: { load(entry: { id: string; factory: (require: any) => unknown }): void };
-  webkitAudioContext?: typeof AudioContext;
-}
-
-(function () {
-  "use strict";
+// 浏览器半区干净模块：只导出 apply/inject，契约外壳（IIFE/load/Symbol.toStringTag 装配）
+// 由 scripts/build-client.ts 统一生成——源码不写任何 loader 痕迹。
+// 样式：独立 style.css（见同目录），build-client 的 .css text-loader 构建期内联为字符串
+import STYLE from "./style.css";
 
   var ROUTES = {
     config: "/api/dsh-notifier/config",
@@ -58,42 +52,6 @@ interface Window {
   };
 
   function injectStyle() {
-    var css =
-      "#" + PANEL_ID +
-      "{position:fixed;top:64px;left:12px;width:320px;max-height:70vh;display:flex;flex-direction:column;" +
-      "background:var(--dsw-alias-bg-base,#ffffff);border:1px solid var(--dsw-alias-border-l1,#e2e5ea);" +
-      "border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.18);z-index:70;overflow:hidden;font-size:12px;color:var(--dsw-alias-label-primary,#1f2329)}" +
-      "#" + PANEL_ID + "[hidden]{display:none!important}" +
-      "#" + PANEL_ID + " .dn-header{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;" +
-      "border-bottom:1px solid var(--dsw-alias-border-l1,#e2e5ea);background:var(--dsw-alias-bg-layer-1,#f5f6f8);font-weight:600;cursor:move;user-select:none}" +
-      "#" + PANEL_ID + " .dn-body{overflow:auto;padding:10px 12px;flex:1}" +
-      "#" + PANEL_ID + " .dn-section{margin-bottom:12px}" +
-      "#" + PANEL_ID + " .dn-section-title{margin:0 0 6px;font-weight:600;color:var(--dsw-alias-label-secondary,#5f6672)}" +
-      "#" + PANEL_ID + " .dn-row{display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--dsw-alias-border-l1,#e2e5ea)}" +
-      "#" + PANEL_ID + " .dn-note{color:var(--dsw-alias-label-tertiary,#8a919c);font-size:11px;margin-top:8px;line-height:1.6}" +
-      "#" + PANEL_ID + " .dn-quiet{display:flex;align-items:center;gap:6px;margin-top:8px}" +
-      "#" + PANEL_ID + " .dn-quiet input[type=time]{background:var(--dsw-alias-bg-layer-1,#f5f6f8);color:var(--dsw-alias-label-primary,#1f2329);" +
-      "border:1px solid var(--dsw-alias-border-l1,#e2e5ea);border-radius:6px;padding:3px 6px;font-size:12px}" +
-      "#" + PANEL_ID + " .dn-switch{position:relative;width:34px;height:18px;flex:none}" +
-      "#" + PANEL_ID + " .dn-switch input{opacity:0;width:0;height:0}" +
-      "#" + PANEL_ID + " .dn-switch .dn-track{position:absolute;inset:0;border-radius:9px;background:var(--dsw-alias-border-l2,#d3d8df);transition:background .15s;cursor:pointer}" +
-      "#" + PANEL_ID + " .dn-switch input:checked + .dn-track{background:var(--dsw-alias-state-success-primary,#0f9d6e)}" +
-      "#" + PANEL_ID + " .dn-switch .dn-thumb{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--dsw-alias-bg-base,#fff);transition:transform .15s}" +
-      "#" + PANEL_ID + " .dn-switch input:checked + .dn-track .dn-thumb{transform:translateX(16px)}" +
-      "#" + PANEL_ID + " .dn-toast{position:fixed;bottom:20px;right:20px;padding:8px 14px;border-radius:8px;z-index:9999;" +
-      "background:var(--dsw-alias-state-error-primary,#d92d20);color:#fff;font-size:12px;box-shadow:0 4px 16px rgba(0,0,0,.2)}" +
-      // 非安全上下文降级横幅（页面可见时）
-      ".dn-banner{position:fixed;top:16px;right:16px;width:320px;padding:10px 12px;border-radius:10px;z-index:10000;" +
-      "background:var(--dsw-alias-bg-base,#ffffff);border:1px solid var(--dsw-alias-border-l1,#e2e5ea);" +
-      "border-left:4px solid var(--dsw-alias-state-success-primary,#0f9d6e);" +
-      "box-shadow:0 8px 28px rgba(0,0,0,.18);cursor:pointer;color:var(--dsw-alias-label-primary,#1f2329);font-size:13px}" +
-      ".dn-banner[data-kind=error]{border-left-color:var(--dsw-alias-state-error-primary,#d92d20)}" +
-      ".dn-banner[data-kind=ask],.dn-banner[data-kind=question]{border-left-color:var(--dsw-alias-state-warning-primary,#f79009)}" +
-      // 侧边栏折叠（data-sidebar-collapsed，与 dsh-ssh 同款标记）：图标居中、隐藏文字。
-      // !important 覆盖入口按钮的内联 padding（内联样式优先级高于样式表）。
-      "[data-dsh-frame][data-sidebar-collapsed] [data-dsh-notifier-entry]{justify-content:center!important;width:100%!important;padding:0!important}" +
-      "[data-dsh-frame][data-sidebar-collapsed] [data-dsh-notifier-entry]>span:not(:first-child){display:none!important}";
-    // 热更新兼容：client.js 会热替换，但旧 <style> 不会自动更新——用显式版本号
     // 检测（每次改 CSS 递增），版本不符则移除重建，保证新 CSS 在热更新后生效。
     var existing = document.getElementById(STYLE_ID);
     if (existing && existing.dataset.cssVersion === "5") return;
@@ -101,7 +59,7 @@ interface Window {
     var style = document.createElement("style");
     style.id = STYLE_ID;
     style.dataset.cssVersion = "5";
-    style.textContent = css;
+    style.textContent = STYLE;
     document.head.appendChild(style);
   }
 
@@ -659,7 +617,7 @@ interface Window {
     return true;
   }
 
-  function apply(ctx: any) {
+export function apply(ctx: any) {
     var panel: any = null;
     var entry: any = null;
     var disposeEvents: any = null;
@@ -755,16 +713,5 @@ interface Window {
     else document.addEventListener("DOMContentLoaded", boot);
   }
 
-  (window as any).__ModuleLoader__.load({
-    id: __DSH_PLUGIN_ID__,
-    factory: function (require: any) {
-      var module: { exports: Record<string, any> } = { exports: {} };
-      var exports = module.exports;
-      Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
-      var inject: any = [];
-      exports.apply = apply;
-      exports.inject = inject;
-      return module.exports;
-    },
-  });
-})();
+// ---- 客户端契约：apply/inject 由 build-client 经 factory 装配（干净模块）----
+export const inject: string[] = [];

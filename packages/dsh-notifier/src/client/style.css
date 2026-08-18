@@ -1,0 +1,136 @@
+/* dsh-notifier — 客户端样式（独立 .css 文件）。
+ *
+ * 由 build-client 的 .css text-loader 构建期内联进 client.js（产物仍自包含单文件、
+ * 零运行时依赖、无独立网络请求）。injectStyle 注入 <style id=dsh-notifier-style>。
+ * 前缀 dn-（防与 shell 冲突）；颜色一律走 --dsw-alias-* 主题变量 + 浅色回退。
+ * PANEL_ID 常量（dsh-notifier-panel）在 JS 侧用于 DOM 定位，此处硬编码一致。
+ */
+
+/* 配置面板（fixed 挂 body） */
+#dsh-notifier-panel {
+  position: fixed;
+  top: 64px;
+  left: 12px;
+  width: 320px;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--dsw-alias-bg-base, #ffffff);
+  border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  z-index: 70;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary, #1f2329);
+}
+#dsh-notifier-panel[hidden] { display: none !important; }
+
+#dsh-notifier-panel .dn-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
+  background: var(--dsw-alias-bg-layer-1, #f5f6f8);
+  font-weight: 600;
+  cursor: move;
+  user-select: none;
+}
+#dsh-notifier-panel .dn-body { overflow: auto; padding: 10px 12px; flex: 1; }
+#dsh-notifier-panel .dn-section { margin-bottom: 12px; }
+#dsh-notifier-panel .dn-section-title {
+  margin: 0 0 6px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-secondary, #5f6672);
+}
+#dsh-notifier-panel .dn-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
+}
+#dsh-notifier-panel .dn-note {
+  color: var(--dsw-alias-label-tertiary, #8a919c);
+  font-size: 11px;
+  margin-top: 8px;
+  line-height: 1.6;
+}
+#dsh-notifier-panel .dn-quiet { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+#dsh-notifier-panel .dn-quiet input[type="time"] {
+  background: var(--dsw-alias-bg-layer-1, #f5f6f8);
+  color: var(--dsw-alias-label-primary, #1f2329);
+  border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
+  border-radius: 6px;
+  padding: 3px 6px;
+  font-size: 12px;
+}
+#dsh-notifier-panel .dn-switch { position: relative; width: 34px; height: 18px; flex: none; }
+#dsh-notifier-panel .dn-switch input { opacity: 0; width: 0; height: 0; }
+#dsh-notifier-panel .dn-switch .dn-track {
+  position: absolute;
+  inset: 0;
+  border-radius: 9px;
+  background: var(--dsw-alias-border-l2, #d3d8df);
+  transition: background 0.15s;
+  cursor: pointer;
+}
+#dsh-notifier-panel .dn-switch input:checked + .dn-track { background: var(--dsw-alias-state-success-primary, #0f9d6e); }
+#dsh-notifier-panel .dn-switch .dn-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--dsw-alias-bg-base, #fff);
+  transition: transform 0.15s;
+}
+#dsh-notifier-panel .dn-switch input:checked + .dn-track .dn-thumb { transform: translateX(16px); }
+
+/* 错误 toast（挂 body） */
+.dn-toast {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  z-index: 9999;
+  background: var(--dsw-alias-state-error-primary, #d92d20);
+  color: #fff;
+  font-size: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+/* 非安全上下文降级横幅（页面可见时） */
+.dn-banner {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  width: 320px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  z-index: 10000;
+  background: var(--dsw-alias-bg-base, #ffffff);
+  border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
+  border-left: 4px solid var(--dsw-alias-state-success-primary, #0f9d6e);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+  color: var(--dsw-alias-label-primary, #1f2329);
+  font-size: 13px;
+}
+.dn-banner[data-kind="error"] { border-left-color: var(--dsw-alias-state-error-primary, #d92d20); }
+.dn-banner[data-kind="ask"],
+.dn-banner[data-kind="question"] { border-left-color: var(--dsw-alias-state-warning-primary, #f79009); }
+
+/* 侧边栏折叠（data-sidebar-collapsed，与 dsh-ssh 同款标记）：图标居中、隐藏文字。
+ * !important 覆盖入口按钮的内联 padding（内联样式优先级高于样式表）。 */
+[data-dsh-frame][data-sidebar-collapsed] [data-dsh-notifier-entry] {
+  justify-content: center !important;
+  width: 100% !important;
+  padding: 0 !important;
+}
+[data-dsh-frame][data-sidebar-collapsed] [data-dsh-notifier-entry] > span:not(:first-child) {
+  display: none !important;
+}
