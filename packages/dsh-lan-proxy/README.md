@@ -43,8 +43,21 @@ dsh plugin --profile web add @wingsky-1/dsh-lan-proxy
 | `targetPort` | 自动 | 上游端口（默认取 web 服务器实际绑定端口） |
 | `httpsEnabled` | `true` | 是否并存 HTTPS |
 | `tlsCertFile` / `tlsKeyFile` | 无 | 自定义证书（mkcert 等） |
+| `wsCompressEnabled` | `true` | 是否对命中 `wsCompressPaths` 的 WebSocket 做压缩桥接 |
+| `wsCompressPaths` | `/api/events.mux, /api/events.host` | 参与 WebSocket 压缩的路径白名单 |
 
 GUI 设置入口：设置 → 插件 → 「局域网访问」卡片（保存即热更新）。
+
+## WebSocket 压缩（wss 事件流）
+
+- 对命中 `wsCompressPaths`（默认会话事件流 `/api/events.mux`、`/api/events.host`）
+  的 WebSocket 升级，lan-proxy 做**终结 + permessage-deflate**：浏览器段压缩
+  （浏览器自动协商并解压）、DSH 段明文，再双向桥接转发。
+- 收益：events.mux/events.host 是 dsh 实时事件流（会话轨迹/进度），未压缩时
+  经远程/慢链路访问流量大；permessage-deflate 实测约省 **75~79%**。
+- DSH 服务端即使未来自身开启 permessage-deflate，这里 DSH 段固定不协商压缩，
+  两段各自独立，**不会双重压缩、不冲突**。
+- 其余 WebSocket 路径保持 TCP 字节透传（不受影响）。
 
 ## HTTPS 支持
 
@@ -79,6 +92,8 @@ curl http://<本机局域网IP>:3081/api/dsh-gzip/health
 
 - HTTPS 需要系统 `openssl`（不可用且未配置证书文件时，HTTPS 通道自动降级关闭）
 - 换网段导致 IP 变化时，自签名证书需重新生成或更新 config.json
+- 命中 `wsCompressPaths` 的 WebSocket 走「终结 + 压缩桥接」（多一跳、额外压缩 CPU），
+  仅建议对 events 这类大流量路径开启；其余 WebSocket 保持透传
 
 ## License
 

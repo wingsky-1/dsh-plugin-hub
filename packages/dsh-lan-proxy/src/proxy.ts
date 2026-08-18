@@ -27,6 +27,7 @@ import { createServer as createHttpsServer } from "node:https";
 import type { Server as HttpsServer } from "node:https";
 import { connect, isIP } from "node:net";
 import type { Socket, AddressInfo } from "node:net";
+import { WebSocket as WsClient, WebSocketServer } from "ws";
 
 /** createLanProxy 的日志器最小面（console 或 ctx.logger 均兼容）。 */
 export interface LanLogger {
@@ -51,6 +52,16 @@ export interface LanProxyOptions {
   targetHost?: string;
   /** dsh web 服务器实际绑定端口（必填）。 */
   targetPort: number;
+  /**
+   * WebSocket 压缩桥接：对命中 `paths` 的 WS 升级做「终结 + permessage-deflate」，
+   * 浏览器段压缩、DSH 段明文；其余 WebSocket 继续 TCP 字节透传。默认作用于大流量
+   * 的 `events.mux` / `events.host`（会话事件流）。DSH 服务端即使未来自身开启
+   * permessage-deflate，这里 DSH 段固定不协商、浏览器段独立协商，天然避免双重压缩。
+   */
+  wsCompress?: {
+    enabled: boolean;
+    paths: readonly string[];
+  };
   logger?: LanLogger;
 }
 
@@ -141,6 +152,71 @@ export const DEFAULT_OPTIONS = Object.freeze({ host: "0.0.0.0", port: 3081, http
 
 /** 上游 keep-alive 连接池上限（并发上游连接数；超出排队）。 */
 const MAX_UPSTREAM_SOCKETS = 64;
+
+/**
+ * 判断某 WS 升级请求路径是否命中「需压缩桥接」白名单。
+ * 仅比较 pathname（忽略查询串）。导出供纯函数单测锁定行为。
+ * @param paths 压缩白名单（默认含 /api/events.mux、/api/events.host）。
+ * @param url 原始请求 URL（可能带查询串）。
+ * @returns 是否命中。
+ */
+export function compressWsPath(paths: readonly string[] | undefined, url: string | undefined): boolean {
+  if (!paths || paths.length === 0 || typeof url !== "string" || url.length === 0) return false;
+  const pathname = url.split("?")[0];
+  return paths.includes(pathname);
+}
+
+/** 桥接目标（DSH 端）。 */
+export interface WsBridgeTarget {
+  targetHost: string;
+  targetPort: number;
+  logger?: LanLogger;
+}
+
+/**
+ * WebSocket 压缩桥接：终结浏览器连接（permessage-deflate 压缩）× 明文连 DSH
+ * （不协商压缩，DSH 即使未来开启也不双重压缩）。双向转发 text/binary 帧，
+ * 任何一端关闭/出错即对端终止，避免泄漏。
+ */
+export function bridgeCompressedWs(
+  req: IncomingMessage,
+  socket: Socket,
+  head: Buffer,
+  target: WsBridgeTarget,
+): void {
+  // 浏览器段：终结 + permessage-deflate（浏览器默认协商并自动解压）。
+  const wss = new WebSocketServer({ noServer: true, perMessageDeflate: { threshold: 1024 } });
+  wss.handleUpgrade(req, socket, head, (browserWs) => {
+    // DSH 段：明文（本机/内网），固定不协商 permessage-deflate。
+    const upstreamUrl = `ws://${target.targetHost}:${target.targetPort}${req.url}`;
+    const upstreamWs = new WsClient(upstreamUrl, {
+      perMessageDeflate: false,
+      headers: { origin: `http://${target.targetHost}:${target.targetPort}` },
+    });
+    // 浏览器 → DSH（握手成功后开始转发）。
+    upstreamWs.on("open", () => {
+      browserWs.on("message", (data) => {
+        if (upstreamWs.readyState === WsClient.OPEN) upstreamWs.send(data);
+      });
+    });
+    // DSH → 浏览器。
+    upstreamWs.on("message", (data) => {
+      if (browserWs.readyState === browserWs.OPEN) browserWs.send(data);
+    });
+    // 任一端关闭/出错 → 对端终止。
+    upstreamWs.on("close", () => browserWs.terminate());
+    upstreamWs.on("error", (err) => {
+      target.logger?.warn?.(`lan-proxy: ws-bridge upstream error: ${err.message}`);
+      browserWs.terminate();
+    });
+    browserWs.on("close", () => {
+      try { upstreamWs.close(); } catch { /* 已关闭 */ }
+    });
+    browserWs.on("error", () => {
+      try { upstreamWs.close(); } catch { /* 已关闭 */ }
+    });
+  });
+}
 
 /**
  * 创建 LAN 转发器（HTTP + 可选 HTTPS 并存）。调用 {@link listen} 之前不会绑定端口。
@@ -240,6 +316,12 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
     if (!hostnameAllowed(req.headers.host)) {
       socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
       socket.destroy();
+      return;
+    }
+    // WebSocket 压缩桥接：命中白名单路径 → 终结 + permessage-deflate（浏览器段压缩、
+    // DSH 段明文）。其余 WebSocket 保持下方 TCP 字节透传。
+    if (options.wsCompress?.enabled && compressWsPath(options.wsCompress.paths, req.url)) {
+      bridgeCompressedWs(req, socket, head, { targetHost, targetPort, logger });
       return;
     }
     const upstream = connect(targetPort, targetHost, () => {

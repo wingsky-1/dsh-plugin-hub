@@ -26,6 +26,7 @@ import { assertClientProductContract, assertClientSourceContract } from "../../.
 const pkgDir = fileURLToPath(new URL("..", import.meta.url));
 import { apply, loadFileConfig, writeConfigFile, sanitizeSettings, rpcHandler, ROUTES, CHANNEL,
   hostnameAllowed, formatAuthority, rewriteHeaders, createLanProxy, isLoopbackTarget, DEFAULT_OPTIONS,
+  compressWsPath, DEFAULT_WSS_COMPRESS_PATHS,
   ensureSelfSignedTls, certStillValid, toSanEntry, loadTlsFromFiles, SELF_SIGNED_KEY, SELF_SIGNED_CERT } from "../lib/index.js";
 
 const UPSTREAM_PORT = 19090;
@@ -376,6 +377,32 @@ const main = async () => {
   check("rejects non-object payload", () => assert.equal(sanitizeSettings("nope"), null));
   check("rejects null payload", () => assert.equal(sanitizeSettings(null), null));
   check("rejects out-of-range port", () => assert.equal(sanitizeSettings({ port: 70000 }), null));
+
+  console.log("unit: WebSocket 压缩桥接配置");
+  // 默认白名单包含会话事件流两个端点。
+  check("默认压缩白名单含 events.mux / events.host", () => {
+    assert.deepEqual(DEFAULT_WSS_COMPRESS_PATHS, ["/api/events.mux", "/api/events.host"]);
+  });
+  // compressWsPath：命中 / 未命中 / 查询串忽略 / 传入 undefined 拒绝。
+  check("compressWsPath 命中默认 path 忽略查询串", () =>
+    assert.equal(compressWsPath(DEFAULT_WSS_COMPRESS_PATHS, "/api/events.mux?days=30"), true));
+  check("compressWsPath 命中非默认 path", () => {
+    assert.equal(compressWsPath(["/api/events.mux", "/api/events.host"], "/api/events.host"), true);
+    assert.equal(compressWsPath(["/custom/ws"], "/custom/ws"), true);
+  });
+  check("compressWsPath 未命中 / 空列表 / undefined", () => {
+    assert.equal(compressWsPath(DEFAULT_WSS_COMPRESS_PATHS, "/api/other"), false);
+    assert.equal(compressWsPath([], "/api/events.mux"), false);
+    assert.equal(compressWsPath(undefined, "/api/events.mux"), false);
+    assert.equal(compressWsPath(DEFAULT_WSS_COMPRESS_PATHS, undefined), false);
+  });
+  // sanitize：接受 wsCompressEnabled / wsCompressPaths（字符串数组），非法整体拒绝。
+  check("sanitize 接受 ws 压缩配置", () => {
+    const out = sanitizeSettings({ wsCompressEnabled: false, wsCompressPaths: ["/api/events.mux"] });
+    assert.deepEqual(out, { wsCompressEnabled: false, wsCompressPaths: ["/api/events.mux"] });
+  });
+  check("sanitize 拒绝非字符串数组 paths", () =>
+    assert.equal(sanitizeSettings({ wsCompressPaths: [1, 2] }), null));
 
   console.log("unit: writeConfigFile（原子写）");
   {

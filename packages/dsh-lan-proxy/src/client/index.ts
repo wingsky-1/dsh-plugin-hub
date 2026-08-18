@@ -30,6 +30,8 @@ var CHANNEL = "/dsh-lan-proxy";
     tlsCertFile: "",
     tlsKeyFile: "",
     printBanner: true,
+    wsCompressEnabled: true,
+    wsCompressPaths: ["/api/events.mux", "/api/events.host"],
   };
 
   var rpc: any = null;
@@ -188,6 +190,27 @@ var CHANNEL = "/dsh-lan-proxy";
             onChange: function (e: any) { patch({ printBanner: e.target.checked }); },
           }),
         ),
+        React.createElement("div", { className: "lp-set-row" },
+          React.createElement("label", null, "WebSocket 压缩（事件流）"),
+          React.createElement("input", {
+            type: "checkbox",
+            checked: settings.wsCompressEnabled,
+            onChange: function (e: any) { patch({ wsCompressEnabled: e.target.checked }); },
+          }),
+        ),
+        React.createElement("div", { className: "lp-set-row" },
+          React.createElement("label", null, "压缩路径（逗号分隔）"),
+          React.createElement("input", {
+            className: "lp-set-input",
+            type: "text",
+            placeholder: "/api/events.mux, /api/events.host",
+            value: (settings.wsCompressPaths || []).join(", "),
+            onChange: function (e: any) {
+              const parts = e.target.value.split(",").map((s: string) => s.trim()).filter(Boolean);
+              patch({ wsCompressPaths: parts });
+            },
+          }),
+        ),
         React.createElement("div", { className: "lp-set-hint" },
           "保存即热更新（写入 ~/.dsh/lan-proxy/config.json，无需重启 dsh web）。" +
           "修改后内网设备访问新端口，旧端口立即失效。"),
@@ -220,10 +243,19 @@ export function apply(ctx: any) {
       injectStyle();
 
       // 设置面板插件项。
+      // ⚠️ rc.7 起 settings.plugin.item 由 list(id) 改为 keyed(key)：
+      //   - 旧版（<=rc.6）只看 `id`；
+      //   - rc.7 只看 `key`，且要求与宿主 serve 的命名空间一致（dsh-lan-proxy）。
+      // 社区一致范式（见 ysr666/dsh-vision-router#165/#162）：**id 与 key 双写**，
+      // 让新旧两代 slot 运行时都接受（多余字段被忽略）。key 必须等于宿主端
+      // installSettingsNamespace 注册的命名空间，才会被 configurable 面板派发。
       slots.inject("settings.plugin.item", function () {
-        return slots.register({ name: "settings.plugin.item", id: "dsh-lan-proxy", order: 50 }, function () {
-          return React.createElement(SettingsCard, null);
-        });
+        return slots.register(
+          { name: "settings.plugin.item", id: "dsh-lan-proxy", key: "dsh-lan-proxy", order: 50 },
+          function () {
+            return React.createElement(SettingsCard, null);
+          }
+        );
       });
 
       // ⚠️ 清理必须写在 ctx.effect 返回的 disposer 里。

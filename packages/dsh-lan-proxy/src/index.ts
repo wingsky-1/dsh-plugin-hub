@@ -28,6 +28,7 @@ import type { TlsMaterials } from "./proxy.js";
 import { ensureSelfSignedTls, loadTlsFromFiles } from "./cert.js";
 import { isLoopbackRequest } from "../../../shared/loopback.js";
 import { writeJson } from "../../../shared/host-utils.js";
+import { installSettingsNamespace } from "../../../shared/settings-namespace.js";
 import type { PluginContext } from "../../../types/dsh.js";
 
 /** 稳定的 cordis 插件名。 */
@@ -43,6 +44,9 @@ export const ROUTES = {
 
 /** RPC 通道（客户端设置卡片 connection.rpc.call 同款）。 */
 export const CHANNEL = "/dsh-lan-proxy";
+
+/** WebSocket 压缩桥接默认路径白名单（会话事件流两个大流量端点）。 */
+export const DEFAULT_WSS_COMPRESS_PATHS: readonly string[] = ["/api/events.mux", "/api/events.host"];
 
 /**
  * 终端横幅输出（用户可感知信息走原生 console：cordis logger 只进内存 buffer，
@@ -71,6 +75,10 @@ export interface LanProxyConfig {
   targetPort?: number;
   /** 启动时是否向终端打印监听横幅（LAN 访问地址等；默认 true）。 */
   printBanner?: boolean;
+  /** WebSocket 压缩桥接总开关（默认 true）。 */
+  wsCompressEnabled?: boolean;
+  /** 参与 WebSocket 压缩桥接的路径白名单。 */
+  wsCompressPaths?: string[];
 }
 
 /** 插件配置，由同名 schemastery schema 校验，也用于 GUI 设置面板渲染。 */
@@ -103,6 +111,14 @@ export const Config = z.object({
   targetPort: z.natural().max(65535),
   /** 启动横幅（终端 console.log；默认开，可经 GUI 设置面板关闭）。 */
   printBanner: z.boolean().default(true),
+  /**
+   * WebSocket 压缩桥接总开关（默认开）：对 wsCompressPaths 命中的 WS 升级做
+   * 「终结 + permessage-deflate」——浏览器段压缩、DSH 段明文，大流量会话事件流
+   * （events.mux/events.host）经远程/慢链路访问时显著省流量。
+   */
+  wsCompressEnabled: z.boolean().default(true),
+  /** 参与 WebSocket 压缩桥接的路径白名单（默认：会话事件流两个端点）。 */
+  wsCompressPaths: z.array(z.string()).default(["/api/events.mux", "/api/events.host"]),
 });
 
 /** 本机非回环 IPv4 地址，用于启动时的 LAN URL 日志行。 */
@@ -133,6 +149,8 @@ const FILE_CONFIG_VALIDATORS: Record<string, (v: unknown) => boolean> = {
   targetHost: (v) => typeof v === "string" && isLoopbackTarget(v),
   targetPort: (v) => typeof v === "number" && Number.isInteger(v) && v > 0 && v <= 65535,
   printBanner: (v) => typeof v === "boolean",
+  wsCompressEnabled: (v) => typeof v === "boolean",
+  wsCompressPaths: (v) => Array.isArray(v) && v.every((s) => typeof s === "string"),
 };
 
 /**
@@ -185,6 +203,8 @@ export interface ResolvedConfig {
   targetHost: string;
   targetPort?: number;
   printBanner: boolean;
+  wsCompressEnabled: boolean;
+  wsCompressPaths: readonly string[];
 }
 
 /** RPC 通道依赖（apply 内注入；smoke 可直接构造单测）。 */
@@ -305,6 +325,8 @@ export function apply(ctx: PluginContext, config: LanProxyConfig = {}): void {
       targetHost: value.targetHost ?? DEFAULT_OPTIONS.targetHost,
       targetPort: value.targetPort,
       printBanner: value.printBanner ?? true,
+      wsCompressEnabled: value.wsCompressEnabled ?? true,
+      wsCompressPaths: value.wsCompressPaths ?? DEFAULT_WSS_COMPRESS_PATHS,
     };
   };
 
@@ -357,6 +379,10 @@ export function apply(ctx: PluginContext, config: LanProxyConfig = {}): void {
         tls,
         targetHost: value.targetHost,
         targetPort,
+        wsCompress: {
+          enabled: value.wsCompressEnabled !== false,
+          paths: value.wsCompressPaths ?? DEFAULT_WSS_COMPRESS_PATHS,
+        },
       },
       ctx.logger,
     );
@@ -430,21 +456,19 @@ export function apply(ctx: PluginContext, config: LanProxyConfig = {}): void {
     return html.replace("</head>", `${polyfill}\n</head>`);
   }), "lan-proxy: randomUUID polyfill");
 
-  // GUI 设置面板（设置 → 插件 → dsh-lan-proxy）：异步补挂，解析失败仅降级。
+  // GUI 设置面板（设置 → 插件 → dsh-lan-proxy）：注册 settings 命名空间，
+  // 使 rc.7 的 configurable 面板 serve `dsh-lan-proxy` 并分发本卡。
+  // 说明：不用官方 @deepseek-ai/dsh-settings（插件运行时解析不到，会静默失败），
+  // 改用共享的服务面注入 installSettingsNamespace，等值复刻官方 installSettingsSection。
   // 设置值优先于 config.json；设置未保存的键回落 config.json / 组合层 entry。
-  import("@deepseek-ai/dsh-settings")
-    .then(({ installSettingsSection, settingsNamespace }) => {
-      installSettingsSection(ctx, settingsNamespace("dsh-lan-proxy"), Config, config ?? {}, {
-        setSource: (source) => {
-          current = () => ({ ...fileConfig, ...(source as () => LanProxyConfig)() });
-          sync();
-        },
-        onChange: sync,
-      });
-    })
-    .catch((err) => {
-      ctx.logger.warn(`lan-proxy: @deepseek-ai/dsh-settings unavailable (${err.code ?? err.message}) — GUI settings disabled; configure via config.json or cordis.patch.yml instead`);
-    });
+  installSettingsNamespace(ctx, "dsh-lan-proxy", Config, config ?? {}, {
+    setSource: (source) => {
+      // 合并：GUI 命名空间的解析值优先，未覆盖的键回落文件/组合层配置。
+      current = () => ({ ...fileConfig, ...(source as () => LanProxyConfig)() });
+      sync();
+    },
+    onChange: sync,
+  });
 
   // 插件目录 config.json 热更新（编辑保存即重建转发器，无需重启）。
   // 防抖 150ms：编辑器原子写（tmp+rename）可能触发多次事件，合并为一次重建。
@@ -524,5 +548,5 @@ export function apply(ctx: PluginContext, config: LanProxyConfig = {}): void {
 }
 
 // 测试面 re-export（smoke 只依赖主入口，避免发布物保留内部模块）
-export { createLanProxy, hostnameAllowed, formatAuthority, rewriteHeaders, isLoopbackTarget, DEFAULT_OPTIONS } from "./proxy.js";
+export { createLanProxy, hostnameAllowed, formatAuthority, rewriteHeaders, isLoopbackTarget, DEFAULT_OPTIONS, compressWsPath } from "./proxy.js";
 export { ensureSelfSignedTls, certStillValid, toSanEntry, loadTlsFromFiles, SELF_SIGNED_KEY, SELF_SIGNED_CERT } from "./cert.js";
