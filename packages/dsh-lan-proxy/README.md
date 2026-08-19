@@ -20,18 +20,6 @@ dsh plugin --profile web add @wingsky-1/dsh-lan-proxy
 > （HTTPS）监听，局域网内所有设备都可访问你的 dsh web。不需要时请
 > `dsh plugin --profile web remove @wingsky-1/dsh-lan-proxy`。
 
-> 🔧 **内网设备的完整 settings 读写（信任开关）**：默认内网设备经 lan-proxy
-> 访问时，部分设置接口被宿主 `dsh-client-connection` 的 loopback 围栏拦截（只读）。
-> 若要内网设备获得完整读写权限，需对宿主打一次**显式信任开关**（幂等；dsh 升级
-> 重装后需重跑）。先克隆本仓库，然后：
->
-> ```sh
-> node scripts/patch-connection.ts                          # 自动探测宿主路径
-> node scripts/patch-connection.ts --bundle <绝对路径>      # 或显式指定 client.js
-> ```
->
-> 不执行则内网设备保持只读访问（更安全的缺省）。安全权衡见「安全模型」节。
-
 ## 配置
 
 | 键 | 默认 | 说明 |

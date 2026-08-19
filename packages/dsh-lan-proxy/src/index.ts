@@ -439,19 +439,15 @@ export function apply(ctx: PluginContext, config: LanProxyConfig = {}): void {
   // 转发器立即启动（不依赖任何异步解析）。
   sync();
 
-  // 局域网 HTTP 非安全上下文的 crypto.randomUUID polyfill + 显式信任开关：
-  // 1) randomUUID：浏览器只在安全上下文（HTTPS/localhost）暴露，LAN 明文
-  //    HTTP 下缺失会导致 dsh client 的 RPC（mintRpcId）全部抛错；
-  // 2) __dshTrustedLan：配合 dsh-client-connection 的 isLoopback 补丁
-  //    （scripts/patch-dsh-connection.mjs），让内网设备获得与回环一致的
-  //    settings 读写（主题等持久化）。两者都通过 webServer 官方 tapIndex
-  //    钩子注入（幂等，localhost 不受影响）。
+  // 局域网 HTTP 非安全上下文的 crypto.randomUUID polyfill：浏览器只在安全
+  // 上下文（HTTPS/localhost）暴露该 API，LAN 明文 HTTP 下缺失会导致 dsh
+  // client 的 RPC（mintRpcId）全部抛错。经 webServer 官方 tapIndex 钩子注入
+  // （幂等，localhost 不受影响）。
   ctx.effect(() => ctx.webServer.tapIndex!((html) => {
     if (html.includes("__dshRandomUuidPolyfill__")) return html;
     const polyfill = [
       "<script id=\"__dshRandomUuidPolyfill__\">",
       "(() => {",
-      "  try { window.__dshTrustedLan = true; } catch {}",
       "  if (typeof crypto.randomUUID === \"function\") return;",
       "  try {",
       "    crypto.randomUUID = () => {",
