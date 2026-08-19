@@ -39,8 +39,11 @@ dsh plugin --profile web add @wingsky-1/dsh-notifier
   - 系统通知：Windows 原生 toast（内嵌 PowerShell WinRT 脚本，零依赖）；Linux/macOS 用 `notify-send`
   - 浏览器通知：SSE 推帧 + Notification API（仅在页面隐藏时弹出）
 - **非安全上下文降级**：局域网 HTTP 访问时浏览器禁止系统级弹窗——自动降级为「页面内横幅 + 提示音 + 标题提醒」
-- **免打扰时段**：支持跨午夜（如 22:00 → 08:00）
+- **免打扰时段**：支持跨午夜（如 22:00 → 08:00）；可设**紧急例外**（`allowKinds`：免打扰期间仍提醒审批/提问/出错）
+- **审批超时二次提醒**：审批等待超 `askRemindMin` 分钟（默认 5，0 关闭）未处理时再次提醒
+- **完成风暴聚合**：多任务/子代理同时收尾自动聚合为「另有 N 个任务已完成」，避免刷屏
 - **面板诊断**：配置面板显示浏览器通知授权状态与安全上下文提示
+- **未读角标**：有通知未查看时侧边栏「通知」入口显示红点计数，打开面板即清零
 
 ## 配置（~/.dsh/dsh-notifier.json，GUI「通知」面板可改）
 
@@ -56,8 +59,9 @@ dsh plugin --profile web add @wingsky-1/dsh-notifier
   "browserNotify": true,
   "notifyWhenVisible": false,
   "notifySound": true,
-  "quietHours": { "enabled": false, "start": "22:00", "end": "08:00" },
-  "errorMergeWindowMs": 60000
+  "quietHours": { "enabled": false, "start": "22:00", "end": "08:00", "allowKinds": [] },
+  "errorMergeWindowMs": 60000,
+  "askRemindMin": 5
 }
 ```
 

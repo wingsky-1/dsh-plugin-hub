@@ -409,6 +409,26 @@ import STYLE from "./style.css";
         times.appendChild(el("span", { text: "到" }));
         times.appendChild(endInput);
         quiet.appendChild(times);
+        // 免打扰紧急例外：时段内仍放行的通知类型（宿主端 allowKinds 白名单）
+        var allowWrap = el("div", { class: "dn-quiet-allow" });
+        allowWrap.appendChild(el("span", { class: "dn-note", text: "免打扰期间仍提醒：" }));
+        var ALLOW_CHOICES = [["ask", "审批"], ["question", "提问"], ["error", "出错"]];
+        var allows = config.quietHours.allowKinds || (config.quietHours.allowKinds = []);
+        for (var k = 0; k < ALLOW_CHOICES.length; k += 1) {
+          (function (kindText, kindLabel) {
+            var item = el("label", { class: "dn-allow-item" });
+            var input = el("input", { type: "checkbox", checked: allows.indexOf(kindText) !== -1, onChange: function () {
+              var idx = allows.indexOf(kindText);
+              if (input.checked && idx === -1) allows.push(kindText);
+              else if (!input.checked && idx !== -1) allows.splice(idx, 1);
+              saveConfig(config);
+            } });
+            item.appendChild(input);
+            item.appendChild(el("span", { text: kindLabel }));
+            allowWrap.appendChild(item);
+          })(ALLOW_CHOICES[k][0], ALLOW_CHOICES[k][1]);
+        }
+        quiet.appendChild(allowWrap);
         body.appendChild(quiet);
 
         var hist = el("div", { class: "dn-section" });
@@ -614,6 +634,8 @@ import STYLE from "./style.css";
       showNotification(payload.kind, payload.title, payload.message);
       return;
     }
+    // 未读角标：收到非测试通知帧即 +1（打开面板清零）
+    bumpUnread();
     // 页面聚焦时不提醒（用户在界面中）；除非配置了「页面可见时也弹」。
     if (document.visibilityState !== "hidden" && !(configCache && configCache.notifyWhenVisible === true)) return;
     showNotification(payload.kind, payload.title, payload.message);
@@ -721,10 +743,62 @@ import STYLE from "./style.css";
     entry.dataset.dshNotifierEntry = "";
     entry.setAttribute("aria-label", "通知");
     entry.setAttribute("title", "通知：审批/完成/错误提醒设置");
-    entry.innerHTML = '<span style="display:inline-flex;vertical-align:middle">' + ICON + "</span><span style='margin-left:2px'>通知</span>";
+    entry.innerHTML = '<span style="display:inline-flex;vertical-align:middle">' + ICON + "</span><span style='margin-left:2px'>通知</span><span class='dn-badge' data-dsh-notifier-badge hidden></span>";
     entry.style.cssText =
       "display:flex;align-items:center;gap:6px;width:100%;padding:6px 10px;border:none;background:transparent;color:inherit;font-size:12px;cursor:pointer;border-radius:6px";
     return entry;
+  }
+
+  // ---- 未读角标：收到通知帧 +1，打开面板清零（localStorage lastRead 记录），
+  // 刷新页面按 history 差量恢复（跨刷新/跨标签维持）
+  var unreadCount = 0;
+  var UNREAD_KEY = "dsh-notifier:lastRead";
+  function updateBadge() {
+    var b: any = document.querySelector("[data-dsh-notifier-badge]");
+    if (!b) return;
+    if (unreadCount > 0) {
+      b.textContent = unreadCount > 99 ? "99+" : String(unreadCount);
+      b.hidden = false;
+    } else {
+      b.hidden = true;
+    }
+  }
+  function resetUnread() {
+    unreadCount = 0;
+    try {
+      localStorage.setItem(UNREAD_KEY, String(Date.now()));
+    } catch (e) {
+      // localStorage 不可用仅不持久化
+    }
+    updateBadge();
+  }
+  function bumpUnread() {
+    unreadCount += 1;
+    updateBadge();
+  }
+  function initUnread() {
+    try {
+      var lastRead = Number(localStorage.getItem(UNREAD_KEY) || 0) || 0;
+      fetch(ROUTES.history, { headers: { accept: "application/json" } })
+        .then(function (res) {
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          return res.json();
+        })
+        .then(function (data) {
+          var records = (data && data.records) || [];
+          var count = 0;
+          for (var i = 0; i < records.length; i += 1) {
+            if (records[i].ts > lastRead) count += 1;
+          }
+          unreadCount = count;
+          updateBadge();
+        })
+        .catch(function () {
+          // 失败静默：角标保持 0
+        });
+    } catch (e) {
+      // 静默
+    }
   }
 
   /** 找到侧边栏 shell 根元素（logoRow 的父容器，与 dsh-ssh / dsh-skill-explorer 同款策略）。 */
@@ -793,6 +867,7 @@ export function apply(ctx: any) {
           if (panel.hidden) {
             renderPanel(panel);
             panel.hidden = false;
+            resetUnread(); // 打开面板 = 已读，清角标
           } else {
             panel.hidden = true;
           }
@@ -814,6 +889,7 @@ export function apply(ctx: any) {
         injectStyle();
         mount();
         refreshConfig(); // 预取配置：可见性判断不依赖打开面板
+        initUnread(); // 恢复未读角标（history 差量）
         // 首次任意点击解锁音频（浏览器自动播放策略要求手势；YouTube 同款做法），
         // 之后后台通知才有提示音。侧边栏「通知」入口点击也会解锁。
         document.addEventListener("click", function onFirstClick() {

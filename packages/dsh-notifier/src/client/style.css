@@ -70,6 +70,23 @@
   line-height: 1.6;
 }
 #dsh-notifier-panel .dn-quiet { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+/* 免打扰紧急例外勾选区 */
+#dsh-notifier-panel .dn-quiet-allow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+#dsh-notifier-panel .dn-allow-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  cursor: pointer;
+  color: var(--dsw-alias-label-secondary, #5f6672);
+}
 #dsh-notifier-panel .dn-quiet input[type="time"] {
   background: var(--dsw-alias-bg-layer-1, #f5f6f8);
   color: var(--dsw-alias-label-primary, #1f2329);
@@ -154,3 +171,18 @@
 [data-dsh-frame][data-sidebar-collapsed] [data-dsh-notifier-entry] > span:not(:first-child) {
   display: none !important;
 }
+
+/* 侧边栏入口未读角标（红色圆点，收到通知 +1、打开面板清零） */
+[data-dsh-notifier-entry] .dn-badge {
+  margin-left: 6px;
+  min-width: 16px;
+  height: 16px;
+  line-height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--dsw-alias-state-error-primary, #d92d20);
+  color: #fff;
+  font-size: 10px;
+  text-align: center;
+}
+[data-dsh-notifier-entry] .dn-badge[hidden] { display: none; }
