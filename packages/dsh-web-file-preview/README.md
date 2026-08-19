@@ -17,7 +17,7 @@ DSH 自带的“可点击文件引用”在点击产出文件 chip / 行内文�
 
 ## 实现
 
-- **宿主端**：`GET /api/dsh-file-preview/file?cwd=&path=`（loopback 围栏，非回环 403 / 方法非 GET 405），按 `resolve(cwd, path)` 定位读取（`~`/`~/` 前缀用 `untildify` 展开为用户主目录）；后缀分组：图片/文本/Markdown/代码直出，其余 415。`GET /api/dsh-file-preview/diff?cwd=&path=` 计算 git diff；`GET /api/dsh-file-preview/health` 健康检查。
+- **宿主端**：`GET /api/dsh-file-preview/file?cwd=&path=`（绝对路径可省 cwd；loopback 围栏，非回环 403 / 方法非 GET 405），按 `resolve(cwd, path)` 定位读取（`~`/`~/` 前缀用 `untildify` 展开为用户主目录）；后缀分组：图片/文本/Markdown/代码直出，其余 415；文本超过 `maxTextBytes` 返回 `413`+`truncated`（先 `stat` 判大小、不整读）。`GET /api/dsh-file-preview/diff?cwd=&path=`（异步 execFile 计算 git diff）与 `GET /api/dsh-file-preview/health` 健康检查。文件响应统一 `X-Content-Type-Options: nosniff`，SVG 额外 `Content-Security-Policy: sandbox`。
 - **客户端**：双机制拦截（`workspaces.openPath` 调用点收口 + document 捕获静态拦截）+ 分组渲染（`renderGroupFor`）+ 三 tab（预览/原始/Diff，Diff 仅 git 有变更才显示）。md 用 `marked`、代码用 `highlight.js` 子集、Diff 用 `diff2html`。
 - **后缀分组单一事实源**：`src/grouping.ts` 供宿主 `mime.ts` 与客户端 `renderer.ts`/`client.ts` 共用，杜绝双端各写一份后缀表导致漂移。
 - **依赖**：`marked` / `highlight.js` / `diff2html` / `untildify` 为构建期打包依赖（宿主/客户端分别内联进 `lib/index.js` 与 `lib/client.js`），**运行时零 npm 依赖**；Content-Type 用内置小型映射（无需 mime-db 大表，避免宿主第三方依赖内联的 ESM/CJS 兼容问题）。

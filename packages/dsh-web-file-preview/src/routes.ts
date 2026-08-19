@@ -5,7 +5,7 @@
  *   - loopback 围栏（非回环 403，方法非 GET 405）；
  *   - 路径按 cwd 解析（resolve，不做“逃出 cwd”拦截）；
  *   - 图片 → 二进制直出（Content-Type: image/*，供 <img> 同源加载）；
- *   - 文本/代码/Markdown → UTF-8 全文直出（暂不截断，大文件方案归性能阶段）；
+ *   - 文本/代码/Markdown → UTF-8 直出；超过 maxTextBytes 返回 413 + truncated（文档截断，C6/W10）。
  *   - 其余类型 → 415 提示不可预览。
  *
  * GET /api/dsh-file-preview/health  健康检查。
@@ -35,7 +35,7 @@ export const ROUTES = {
 /** 宿主端配置面（apply normalizeConfig 后传入）。 */
 export interface PreviewConfig {
   enabled?: boolean;
-  /** 保留兼容旧配置；暂不实施截断（当前整读全文）。 */
+  /** 文本类预览最大字节数；超过返回 413+truncated（C6 落地，非预留）。 */
   maxTextBytes?: number;
 }
 
@@ -62,8 +62,9 @@ function readErrorText(error: unknown, path: string): string {
 /**
  * 文件预览路由的核心处理（已通过围栏校验后调用）。
  * @param res - node ServerResponse。
+ * @param req - 请求。
  * @param url - 解析后的请求 URL（含 cwd / path 查询参数）。
- * @param cfg - 配置（预留）。
+ * @param cfg - 配置（maxTextBytes 用于文本截断判定）。
  */
 export async function serveFileRoute(
   res: ServerResponse,
