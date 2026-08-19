@@ -50,6 +50,7 @@ assert.equal(isLikelySingleFilePath("src/a.md"), true, "子目录相对路径可
 assert.equal(isLikelySingleFilePath("/abs/path/a.md"), true, "绝对路径可识别");
 assert.equal(isLikelySingleFilePath("a.md\nb.md"), false, "换行拼接的多文件不是单文件");
 assert.equal(isLikelySingleFilePath("a.md  b.md"), false, "多空白拼接的多文件不是单文件");
+assert.equal(isLikelySingleFilePath("dir/a.md dir/b.md"), false, "单空格+斜杠拼接的多文件并列不是单路径（评审 U5）");
 assert.equal(isLikelySingleFilePath("https://x/a.md"), false, "http 链接不是本地文件路径");
 assert.equal(isLikelySingleFilePath("a.xyz"), false, "不可预览后缀不识别");
 

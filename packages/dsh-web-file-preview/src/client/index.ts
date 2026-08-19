@@ -83,6 +83,36 @@ import STYLE from "./style.css";
         document.head.appendChild(style);
       }
 
+      /**
+       * 复制文本到剪贴板（评审 U2）：安全上下文优先 navigator.clipboard（带 then/catch
+       * 反馈），明文 HTTP（非安全上下文）降级 textarea + execCommand，两端都给出
+       * 「已复制 / 复制失败」按钮态反馈，不再静默失败。
+       */
+      function copyPathText(text: string, btn: HTMLElement): void {
+        const flash = (label: string): void => {
+          btn.textContent = label;
+          window.setTimeout(() => { btn.textContent = "复制路径"; }, 1200);
+        };
+        try {
+          if (typeof navigator.clipboard?.writeText === "function" && window.isSecureContext === true) {
+            navigator.clipboard.writeText(text).then(() => flash("已复制"), () => flash("复制失败"));
+            return;
+          }
+          const ta = document.createElement("textarea");
+          ta.value = text;
+          ta.setAttribute("readonly", "");
+          ta.style.position = "fixed";
+          ta.style.opacity = "0";
+          document.body.appendChild(ta);
+          ta.select();
+          const copied = document.execCommand("copy");
+          ta.remove();
+          flash(copied ? "已复制" : "复制失败");
+        } catch {
+          flash("复制失败");
+        }
+      }
+
       // ------------------------------------------------------ 文件识别
 
       /** 是否属于可 web 预览的分组（A：openPath 收口判定；B：静态路径判定；单一事实源 src/grouping.ts）。 */
@@ -111,9 +141,12 @@ import STYLE from "./style.css";
             const href = (node.getAttribute("href") || "").trim();
             if (isPathLike(href)) return { path: href, node: node as Element };
           }
-          if (node.tagName === "CODE" || node.tagName === "SPAN" || node.tagName === "A") {
+          // 评审 U5：文本嗅探范围扩到 BUTTON（chip / 工具卡都是 <button>，与 A 机制双保险；
+          // 不扩 DIV——父容器 textContent 常是多段拼接，保留它防误拦）；长度上限 200→1024
+          // （monorepo 绝对路径常态超 200）。
+          if (node.tagName === "CODE" || node.tagName === "SPAN" || node.tagName === "A" || node.tagName === "BUTTON") {
             const text = (node.textContent || "").trim();
-            if (text.length > 0 && text.length <= 200 && isPathLike(text)) {
+            if (text.length > 0 && text.length <= 1024 && isPathLike(text)) {
               return { path: text, node: node as Element };
             }
           }
@@ -174,6 +207,8 @@ import STYLE from "./style.css";
         diffText = undefined;
         diffUntracked = false;
         currentGroup = undefined;
+        // 还原背景滚动（与 openPreview 的 body 锁配对，评审 U1）。
+        document.body.style.overflow = "";
       }
 
       function openPreview(path: string, cwd: string | undefined): void {
@@ -196,15 +231,8 @@ import STYLE from "./style.css";
         body.appendChild(el("div", { class: "fwp-state", text: "加载中…" }));
 
         const copyBtn = el("button", { text: "复制路径" });
-        copyBtn.addEventListener("click", () => {
-          try {
-            void navigator.clipboard.writeText(path).then(() => {
-              copyBtn.textContent = "已复制";
-              setTimeout(() => { copyBtn.textContent = "复制路径"; }, 1200);
-            });
-          } catch { /* 剪贴板不可用时静默 */ }
-        });
-        const newTabBtn = el("button", { text: "在新标签打开" });
+        copyBtn.addEventListener("click", () => copyPathText(path, copyBtn));
+        const newTabBtn = el("button", { text: "在新标签打开原文" });
         newTabBtn.addEventListener("click", () => { window.open(url, "_blank", "noopener"); });
         const closeBtn = el("button", { text: "关闭" });
         closeBtn.addEventListener("click", closeModal);
@@ -235,6 +263,19 @@ import STYLE from "./style.css";
           });
           tabs.appendChild(diffTab);
           syncTabActive();
+        };
+        // 评审 U9：探测失败不再静默——tab 栏给出「Diff 不可用」禁用态，避免用户误以为
+        // 「没有变化」；与「确实无 diff（不出现 tab）」区分开。
+        let unavailableDiffTab: any;
+        const addUnavailableDiffTab = () => {
+          if (diffTab !== undefined || unavailableDiffTab !== undefined) return;
+          unavailableDiffTab = el("button", {
+            class: "fwp-tab fwp-tab-disabled",
+            text: "Diff 不可用",
+            disabled: true,
+            title: "git diff 探测失败（网络或仓库异常），可能无法显示变更",
+          });
+          tabs.appendChild(unavailableDiffTab);
         };
         for (const def of tabDefs) {
           const b = el("button", { class: "fwp-tab", text: def.label, attrs: { "data-mode": def.mode } });
@@ -267,12 +308,15 @@ import STYLE from "./style.css";
         });
         document.addEventListener("keydown", onKeyDown);
         document.body.appendChild(ov);
+        // 锁背景滚动（评审 U1）：Modal 打开期间 iOS 触摸不会滚到背景页面，
+        // 由 closeModal 还原；配合样式表 overscroll-behavior:contain。
+        document.body.style.overflow = "hidden";
 
         if (group.group === "image") {
           renderImage(url, body, seq, abort.signal);
         } else {
           fetchText(url, body, seq, abort.signal);
-          probeDiff(path, cwd, seq, addDiffTab, abort.signal);
+          probeDiff(path, cwd, seq, addDiffTab, addUnavailableDiffTab, abort.signal);
         }
       }
 
@@ -287,7 +331,7 @@ import STYLE from "./style.css";
         body.textContent = "";
         body.appendChild(el("div", { class: "fwp-state fwp-err", text: msg }));
         if (url !== undefined) {
-          const open = el("button", { class: "fwp-err-open", text: "在新标签打开" });
+          const open = el("button", { class: "fwp-err-open", text: "在新标签打开原文" });
           open.addEventListener("click", () => { window.open(url, "_blank", "noopener"); });
           body.appendChild(open);
         }
@@ -346,12 +390,16 @@ import STYLE from "./style.css";
       }
 
       /** 探测该文件是否有 git diff；有则把 Diff tab 加到 tab 栏（否则不展示）。 */
-      function probeDiff(path: string, cwd: string | undefined, seq: number, onAvailable: () => void, signal: AbortSignal): void {
+      function probeDiff(path: string, cwd: string | undefined, seq: number, onAvailable: () => void, onUnavailable: () => void, signal: AbortSignal): void {
         const diffUrl = fileDiffUrl(path, cwd);
         void fetch(diffUrl, { signal })
           .then(async (res) => {
             if (seq !== openSeq) return;
-            if (!res.ok) return;
+            if (!res.ok) {
+              // 评审 U9：HTTP 失败（服务异常/围栏拒绝）→ 显式「不可用」而非静默
+              onUnavailable();
+              return;
+            }
             const data = await res.json().catch(() => null);
             if (seq !== openSeq) return;
             if (data && data.ok && data.hasDiff) {
@@ -360,7 +408,7 @@ import STYLE from "./style.css";
               onAvailable();
             }
           })
-          .catch(() => { /* Abort/探测失败则不展示 Diff tab */ });
+          .catch(() => { if (seq === openSeq) onUnavailable(); });
       }
 
       /** 渲染 git diff（diff2html：行号/折叠/配色。兜底用 pre 原样展示）。 */
@@ -518,6 +566,10 @@ import STYLE from "./style.css";
         if (disposed) return;
         // 命中我们自己的预览 Modal 内部时不再重复拦截（避免点标题又开一次）。
         if (overlay !== undefined && overlay.contains(event.target)) return;
+        // 页面存在文本选区（长按选择 / 鼠标划选）时不拦截，避免打断「我要复制文字」的
+        // 意图（评审 U5；移动端长按选中后松手产生的 click 不再误弹预览）。
+        const selection = window.getSelection ? window.getSelection() : null;
+        if (selection !== null && selection.toString() !== "") return;
         const hit = findFileLink(event.target);
         if (hit === null) return;
         // 命中文件链接：拦截原生打开，改走 web 预览。

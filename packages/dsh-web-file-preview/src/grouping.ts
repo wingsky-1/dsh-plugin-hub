@@ -79,6 +79,11 @@ export function isLikelySingleFilePath(value: string): boolean {
   if (value.includes(",")) return false;
   if (/[\n\r]/.test(value)) return false;
   if (/\s{2,}/.test(value)) return false;
+  // 评审 U5：单空格分隔的多文件并列（`dir/a.md dir/b.md`）——每段都带路径分隔符时
+  // 判定为拼接标签而非单路径，避免 stat 404 弹「打不开」。文件名本身含空格的
+  // （`my file.md`）其后段无分隔符，不受影响。
+  const spaceParts = value.split(" ");
+  if (spaceParts.length > 1 && spaceParts.every((p) => p.length > 0 && /[\\/]/.test(p))) return false;
   if (!isPreviewablePath(value)) return false;
   return value.includes("/") || value.includes("\\") || !/\s/.test(value);
 }

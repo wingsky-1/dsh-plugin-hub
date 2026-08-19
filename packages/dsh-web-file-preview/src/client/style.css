@@ -5,7 +5,7 @@
  * 前缀 fwp-（防与 shell / 其它插件冲突）；颜色一律走 --dsw-alias-*/--dsw-hljs-*
  * 主题变量 + 浅色回退，明暗自适应。 */
 
-.fwp-overlay{position:fixed;inset:0;background:var(--dsw-alias-bg-mask-2,rgba(8,10,16,.45));display:flex;align-items:center;justify-content:center;z-index:9999;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+.fwp-overlay{position:fixed;inset:0;background:var(--dsw-alias-bg-mask-2,rgba(8,10,16,.45));display:flex;align-items:center;justify-content:center;z-index:9999;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;overscroll-behavior:contain}
 .fwp-overlay[hidden]{display:none !important}
 .fwp-card{width:min(860px,94vw);max-width:94vw;max-height:86vh;display:flex;flex-direction:column;background:var(--dsw-alias-bg-base,#fdfdfd);color:var(--dsw-alias-label-primary,#1c1e26);border-radius:12px;box-shadow:0 18px 60px rgba(0,0,0,.35);overflow:hidden}
 .fwp-head{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--dsw-alias-border-l1,#e5e7eb);background:var(--dsw-alias-bg-layer-1,#f7f8fa);flex:none}
@@ -20,7 +20,7 @@
 .fwp-state.fwp-err{color:var(--dsw-alias-state-error-primary,#b42318)}
 .fwp-err-open{margin-top:12px;border:1px solid var(--dsw-alias-border-l1,#d7dae0);background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#3a3f4b);border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;align-self:center}
 .fwp-err-open:hover{background:var(--dsw-alias-interactive-bg-hover,#eef1f5)}
-.fwp-lbox{position:fixed;inset:0;background:rgba(0,0,0,.90);z-index:10000;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+.fwp-lbox{position:fixed;inset:0;background:rgba(0,0,0,.90);z-index:10000;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none;overscroll-behavior:contain;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
 .fwp-lbox[hidden]{display:none}
 .fwp-lbox-toolbar{position:absolute;top:12px;left:0;right:0;display:flex;justify-content:center;gap:8px;z-index:2}
 .fwp-lbox-toolbar button{background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.32);border-radius:6px;padding:4px 12px;font-size:13px;cursor:pointer;line-height:1.5}
@@ -56,6 +56,7 @@
 .fwp-tab{border:none;background:transparent;color:var(--dsw-alias-label-secondary,#6b7280);padding:8px 12px;font-size:12px;cursor:pointer;border-bottom:2px solid transparent;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.4}
 .fwp-tab:hover{color:var(--dsw-alias-label-primary,#1c1e26)}
 .fwp-tab-active{color:var(--dsw-alias-brand-primary,#4f6ef7);font-weight:600;border-bottom-color:var(--dsw-alias-brand-primary,#4f6ef7)}
+.fwp-tab[disabled]{color:var(--dsw-alias-label-tertiary,#8a8f9c);cursor:not-allowed}
 .fwp-diff{margin:0;padding:12px;overflow:auto;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;line-height:1.5;background:var(--dsw-alias-bg-layer-1,#f7f8fa);border:1px solid var(--dsw-alias-border-l1,#e5e7eb);border-radius:8px;min-width:100%;box-sizing:border-box;color:var(--dsw-alias-label-primary,#1c1e26);white-space:pre}
 .fwp-diff-add{background:rgba(34,197,94,.16);color:#15803d}
 .fwp-diff-del{background:rgba(239,68,68,.14);color:#b91c1c}
