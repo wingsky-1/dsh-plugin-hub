@@ -29,7 +29,7 @@ import assert from "node:assert/strict";
 import { assertClientProductContract, assertClientSourceContract } from "../../../test/smoke-lib.ts";
 
 const pkgDir = fileURLToPath(new URL("..", import.meta.url));
-import { apply, ROUTES, isLoopbackRequest, normalizeConfig, parseHHMM, isInQuietHours, DEFAULT_CONFIG, formatDuration, prettyToolName, sessionTitleOf } from "../lib/index.js";
+import { apply, ROUTES, isLoopbackRequest, normalizeConfig, parseHHMM, isInQuietHours, DEFAULT_CONFIG, formatDuration, prettyToolName, sessionTitleOf, sanitizeErrorText, buildSystemCommand } from "../lib/index.js";
 
 // ---------------------------------------------------------------- 纯函数
 
@@ -41,7 +41,9 @@ assert.equal(merged.notifyAsk, false);
 assert.equal(merged.notifyTaskDone, true);
 assert.equal(merged.quietHours.enabled, true);
 assert.equal(merged.quietHours.start, "23:30");
-assert.equal(merged.bogus, undefined);
+assert.equal(merged.bogus, 1, "未知键透传保留（防降级丢键）");
+assert.equal(normalizeConfig({ quietHours: { start: "25:00" } }).quietHours.start, "22:00", "非法 HH:MM(25:00) 丢弃回默认");
+assert.equal(normalizeConfig({ quietHours: { start: "9:30" } }).quietHours.start, "22:00", "非两位 HH:MM 丢弃");
 assert.equal(normalizeConfig({ notifyAsk: "yes" }).notifyAsk, true, "非布尔丢弃");
 assert.equal(normalizeConfig({ notifyWhenVisible: true }).notifyWhenVisible, true, "页面可见也弹可配置");
 assert.equal(normalizeConfig({ notifyWhenVisible: "x" }).notifyWhenVisible, false, "非布尔丢弃");
@@ -80,6 +82,28 @@ assert.equal(prettyToolName("unknown_tool"), "unknown_tool", "未知工具原样
 assert.equal(prettyToolName("mcp__my-server__read_file"), 'MCP 服务器 "my-server" 的工具 "read_file"');
 assert.equal(prettyToolName("mcp__srv__a__b"), 'MCP 服务器 "srv" 的工具 "a__b"');
 assert.equal(prettyToolName(undefined), "?");
+
+// sanitizeErrorText：路径/令牌/密钥打码 + 截断
+assert.equal(sanitizeErrorText("failed /home/me/dev/x.yaml: EACCES"), "failed <path>: EACCES", "用户路径打码");
+assert.equal(sanitizeErrorText("token: 3f9a2b7c4d5e6f708192a3b4c5d6e7f8091a2b3c4d"), "token: <token>", "长 hex 令牌打码");
+assert.ok(!sanitizeErrorText("password=s3cr3t").includes("s3cr3t"), "密钥赋值掩蔽");
+assert.equal(sanitizeErrorText("错".repeat(500)).length, 300, "截断 300");
+assert.equal(sanitizeErrorText("普通错误"), "普通错误", "普通文本原样");
+assert.equal(sanitizeErrorText("x".repeat(40)), "<token>", "长重复字符按令牌打码");
+
+// buildSystemCommand：Windows/macOS/Linux 参数形态（smoke 断言 spawn 参数）
+const winArgs = buildSystemCommand("win32", "标题", "内容 -x", { silent: true, toastScript: "t.ps1" });
+assert.equal(winArgs[0], "powershell");
+assert.ok(winArgs.includes("-Silent"), "silent 时追加 -Silent");
+assert.ok(winArgs.some((a) => a === "-Title=标题"), "单 token -Title= 传参");
+assert.ok(winArgs.some((a) => a === "-Message=内容 -x"), "含空格/前导 '-' 的消息单 token 不被拆");
+const macArgs = buildSystemCommand("darwin", "标题", '说"话', { silent: false, toastScript: "t.ps1" });
+assert.equal(macArgs[0], "osascript");
+assert.match(macArgs.join(" "), /display notification/);
+assert.ok(macArgs.join(" ").includes('sound name "Glass"'), "非静默带 Glass 提示音");
+assert.ok(!macArgs.join(" ").includes('说话"'), "消息内引号被转义");
+assert.equal(buildSystemCommand("linux", "t", "m", { silent: true, notifySendAvailable: false, toastScript: "t.ps1" }), null, "notify-send 不可用返回 null");
+assert.deepEqual(buildSystemCommand("linux", "t", "m", { silent: true, toastScript: "t.ps1" }), ["notify-send", "t", "m"]);
 
 // sessionTitleOf：从 session.events 的 session/title 事件取标题
 const titledAgent = {
@@ -429,6 +453,15 @@ function agentWithTitle(id, title, opts = {}) {
   status({ agent: agentWithTitle("err-2", "失败后继续", { turnEnd: 2 }), status: "idle" });
   assert.equal(infos.length, 3, "失败后新一轮完成正常通知");
   assert.match(infos[2], /done/);
+
+  // max-tokens：模型输出被截断（答案不完整）——白名单判定「不通知完成」
+  status({ agent: agentWithTitle("mt-1", "截断的任务", { turnEnd: 1, turnEndKind: "max-tokens" }), status: "running" });
+  status({ agent: agentWithTitle("mt-1", "截断的任务", { turnEnd: 1, turnEndKind: "max-tokens" }), status: "idle" });
+  assert.equal(infos.length, 3, "max-tokens 不通知完成");
+  // 未知 kind（未来扩展）：白名单对齐 DSH 保守语义，同样静默
+  status({ agent: agentWithTitle("uk-1", "未知结束", { turnEnd: 1, turnEndKind: "mystery-kind" }), status: "running" });
+  status({ agent: agentWithTitle("uk-1", "未知结束", { turnEnd: 1, turnEndKind: "mystery-kind" }), status: "idle" });
+  assert.equal(infos.length, 3, "未知 kind 不通知完成");
 }
 
 // notifyAsk=false（configFile）时 approval/request 不通知、不短路
@@ -582,6 +615,30 @@ function agentWithTitle(id, title, opts = {}) {
     const { rec: rec2, res: res2 } = makeRes();
     await configRoute.handler(fakeReq({}), res2);
     assert.equal(JSON.parse(rec2.text).notifyAsk, false);
+  }
+
+  // config PUT 容错：非法 JSON → 400；超大 body → 不挂起、无未处理拒绝
+  {
+    function rawBodyReq(text) {
+      return {
+        method: "PUT",
+        url: "/",
+        socket: { remoteAddress: "127.0.0.1" },
+        headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
+        on(event, cb) {
+          if (event === "data") setTimeout(() => cb(Buffer.from(text)), 0);
+          else if (event === "end") setTimeout(cb, 1);
+          return this;
+        },
+        destroy() {},
+      };
+    }
+    const { rec, res } = makeRes();
+    await configRoute.handler(rawBodyReq("{ not json"), res);
+    assert.equal(rec.status, 400, "非法 JSON 返回 400 可读错误");
+    const { rec: rec2, res: res2 } = makeRes();
+    await configRoute.handler(rawBodyReq('{"big":"' + "x".repeat(20 * 1024) + '"}'), res2);
+    assert.equal(rec2.status, 0, "超大 body：连接被 destroy、handler 无响应但不挂起不抛错");
   }
 
   // events SSE

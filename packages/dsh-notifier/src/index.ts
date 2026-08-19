@@ -167,10 +167,20 @@ export function normalizeConfig(input: unknown): NotifyConfig {
   if (typeof src.quietHours === "object" && src.quietHours !== null) {
     const qh = src.quietHours as Record<string, unknown>;
     if (typeof qh.enabled === "boolean") base.quietHours.enabled = qh.enabled;
-    if (typeof qh.start === "string" && /^\d{2}:\d{2}$/u.test(qh.start)) base.quietHours.start = qh.start;
-    if (typeof qh.end === "string" && /^\d{2}:\d{2}$/u.test(qh.end)) base.quietHours.end = qh.end;
+    // 时/分范围校验（0-23/0-59）：复用 parseHHMM，非法值（如 25:00）丢弃回默认，
+    // 避免「配置保存成功但免打扰永不生效」的静默失败
+    if (typeof qh.start === "string" && /^\d{2}:\d{2}$/u.test(qh.start) && parseHHMM(qh.start) >= 0) base.quietHours.start = qh.start;
+    if (typeof qh.end === "string" && /^\d{2}:\d{2}$/u.test(qh.end) && parseHHMM(qh.end) >= 0) base.quietHours.end = qh.end;
   }
-  return base;
+  // 未知键透传：白名单之外的键原样保留（此插件在旧版本运行或手改配置时会
+  // 出现未来版本/第三方键），避免「降级丢键」——只归一化你认识的键。
+  const out = base as NotifyConfig & Record<string, unknown>;
+  for (const key of Object.keys(src)) {
+    if ((CONFIG_KEYS as readonly string[]).includes(key)) continue;
+    if (key === "quietHours" || key === "errorMergeWindowMs") continue;
+    out[key] = src[key];
+  }
+  return out;
 }
 
 /** 毫秒 → 人类可读耗时（如 "45 秒" / "2 分 15 秒" / "1 小时 2 分 5 秒"）。 */
@@ -184,6 +194,54 @@ export function formatDuration(ms: number): string {
   if (minutes > 0) parts.push(`${minutes} 分`);
   if (seconds > 0 || parts.length === 0) parts.push(`${seconds} 秒`);
   return parts.join(" ");
+}
+
+/**
+ * 错误文本脱敏：掩蔽常见敏感特征（用户路径、长令牌/密钥串、密钥赋值），再截断。
+ * 用于 agent/error 进入通知与历史的文本，把「错误信息可能内嵌命令回显/路径/
+ * 凭据片段」的外泄面收敛到可读的摘要。
+ * @returns 脱敏并截断（默认 300 字符）后的错误文本。
+ */
+export function sanitizeErrorText(text: unknown, maxLen = 300): string {
+  let s = String(text);
+  // 用户路径（/home/xx、/Users/xx、C:\Users\xx）→ <path>（排除冒号/分号等后缀
+  // 分隔符，避免吞掉紧随其后的文本：`/home/x: EACCES` 应保留冒号）
+  s = s.replace(/(?:\/home\/[^\s"'`<>:;]+|\/Users\/[^\s"'`<>:;]+|C:\\Users\\[^\s"'`<>:;]+)/giu, "<path>");
+  // 长令牌/密钥串（≥24 hex 或 ≥32 base64）→ <token>
+  s = s.replace(/\b(?:[0-9a-fA-F]{24,}|[A-Za-z0-9+/]{32,}={0,2})\b/gu, "<token>");
+  // 密钥字段赋值（password=/token=/api_key=…）→ 只留键名+掩码
+  s = s.replace(/\b(password|passwd|token|api[_-]?key|secret|authorization)\b\s*[=:]?\s*["']?[^\s"'`,;<>]{3,}/giu, "$1=<redacted>");
+  return s.slice(0, maxLen);
+}
+
+/**
+ * 构造系统通知命令参数（纯函数，smoke 可直接断言参数形态）。
+ * - win32：spawn powershell -File toast.ps1 -Title=<t> -Message=<m> [-Silent]
+ *   单 token 传参：封掉「消息以 - 开头被解析成参数名」与含空格的歧义，
+ *   依旧零 shell 拼接面
+ * - darwin：osascript display notification（转义 \ 与 "，换行替换为空格防
+ *   脚本语法；silent=false 时带系统提示音 "Glass"）
+ * - 其余：notify-send（notifySendAvailable === false 时返回 null=通道不可用）
+ * @returns spawn 参数数组（首元素为可执行文件），或 null（不可用）。
+ */
+export function buildSystemCommand(
+  platform: string,
+  title: string,
+  message: string,
+  options: { silent: boolean; notifySendAvailable?: boolean; toastScript: string }
+): string[] | null {
+  if (platform === "win32") {
+    const args = ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", options.toastScript, `-Title=${title}`, `-Message=${message}`];
+    if (options.silent) args.push("-Silent");
+    return ["powershell", ...args];
+  }
+  if (platform === "darwin") {
+    const esc = (s: string) => s.replace(/\\/gu, "\\\\").replace(/"/gu, '\\"').replace(/\n/gu, " ");
+    const script = `display notification "${esc(message)}" with title "${esc(title)}"` + (options.silent ? "" : ' sound name "Glass"');
+    return ["osascript", "-e", script];
+  }
+  if (options.notifySendAvailable === false) return null;
+  return ["notify-send", title, message];
 }
 
 /** 常见工具名 → 中文可读名（业界通知惯例：用用户看得懂的动作描述，而非内部标识）。 */
@@ -367,26 +425,32 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
 
   // ------------------------------------------------------------ 系统通知
 
+  /** 系统通知节流间隔：防连发（生产密集事件/连点测试按钮）造成 spawn 风暴。 */
+  const SYSTEM_NOTIFY_THROTTLE_MS = 1000;
+  let lastSystemNotifyAt = 0;
+
   /**
    * 系统原生 toast（fire-and-forget + 30s 超时杀进程；全部失败静默）。
-   * Windows：PowerShell WinRT toast；其他：notify-send。
+   * 命令构造走顶层纯函数 buildSystemCommand（smoke 断言参数形态）：
+   * Windows：PowerShell WinRT toast；macOS：osascript display notification；
+   * 其他：notify-send（可用才调用）。
    */
   function systemNotify(title: string, message: string) {
+    // 1s 节流：桌面通知连发只保留第一个，避免子进程风暴
+    const now = Date.now();
+    if (now - lastSystemNotifyAt < SYSTEM_NOTIFY_THROTTLE_MS) return;
+    lastSystemNotifyAt = now;
     const safeTitle = String(title).slice(0, 64);
     const safeMessage = String(message).slice(0, 256);
     let child: ChildProcess | undefined;
     try {
-      if (process.platform === "win32") {
-        child = spawn(
-          "powershell",
-          ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", toastScript, "-Title", safeTitle, "-Message", safeMessage],
-          { windowsHide: true, stdio: "ignore" }
-        );
-      } else {
-        // Linux/macOS：notify-send 可用才调用（同步探测一次并缓存）。
-        if (notifySendAvailable === false) return;
-        child = spawn("notify-send", [safeTitle, safeMessage], { stdio: "ignore" });
-      }
+      const argv = buildSystemCommand(process.platform, safeTitle, safeMessage, {
+        silent: current.notifySound === false,
+        notifySendAvailable,
+        toastScript,
+      });
+      if (argv === null) return; // Linux：notify-send 已探测不可用，静默跳过
+      child = spawn(argv[0], argv.slice(1), process.platform === "win32" ? { windowsHide: true, stdio: "ignore" } : { stdio: "ignore" });
     } catch (error) {
       ctx.logger.warn(`dsh-notifier: 系统通知启动失败: ${errorMessage(error)}`);
       return;
@@ -681,8 +745,11 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
           //   interrupt_agent 均落此值；interrupted 为未来兼容保留。
           // - error：任务运行失败（dsh-agent-loop turn 的 catch 分支写入）。
           // - blocked：本轮被阻塞（preStep reject，如等待用户问题）提前结束。
-          const NOT_COMPLETED = new Set(["aborted", "interrupted", "error", "blocked"]);
-          if (!hasNewEnd || (ended !== undefined && NOT_COMPLETED.has(ended.kind))) return;
+          // 完成判定用白名单：仅 kind === "completed" 才通知「任务完成」。
+          // max-tokens（输出被截断）与一切未知 kind 一律静默——避免把非正常
+          // 结束误报为完成（与 DSH accountsForClaim 对未知 kind 保守不成功的
+          // 语义对齐；失败由 agent/error 单独负责「任务出错」）。
+          if (!hasNewEnd || ended === undefined || ended.kind !== "completed") return;
           if (isSubagentOf(agent)) {
             if (current.notifySubagentDone) {
               notify("subagent-done", { taskTitle: sessionTitleOf(agent), durationMs });
@@ -700,10 +767,13 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
     })
   );
 
-  /** 会话销毁时清理其状态机条目。 */
+  /** 会话销毁时清理其状态机条目（含错误合并窗口，防 Map 无界增长）。 */
   disposers.push(
     ctx.on("agent/disposed", ({ agent }: { agent?: AgentLite }) => {
-      if (agent?.id !== undefined) agentStates.delete(agent.id);
+      if (agent?.id !== undefined) {
+        agentStates.delete(agent.id);
+        errorMerge.delete(agent.id);
+      }
     })
   );
 
@@ -726,9 +796,9 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
         }
         const mergedCount = prev !== undefined ? prev.count : 0;
         errorMerge.set(key, { count: 0, since: now });
-        const message = payload?.error instanceof Error ? payload.error.message : errorMessage(payload?.error);
+        const rawMessage = payload?.error instanceof Error ? payload.error.message : errorMessage(payload?.error);
         notify("error", {
-          message: String(message).slice(0, 300),
+          message: sanitizeErrorText(rawMessage),
           taskTitle: sessionTitleOf(payload?.agent),
           turn: typeof payload?.turn === "number" ? payload.turn : undefined,
           step: typeof payload?.step === "number" ? payload.step : undefined,
@@ -768,7 +838,21 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
         return;
       }
       if (req.method === "PUT") {
-        const body = await readBody(req, 16 * 1024);
+        let body: unknown;
+        try {
+          body = await readBody(req, 16 * 1024);
+        } catch (error) {
+          const message = errorMessage(error);
+          if (message.includes("invalid JSON body")) {
+            // 非法 JSON：连接尚存，返回可读 400，避免请求「无响应挂起」
+            writeJson(res, 400, { error: `invalid JSON body: ${message}` });
+            return;
+          }
+          // 超限路径：readBody 已 reject 并 destroy 连接（防超大 body 占内存），
+          // socket 已断开无法再写响应——记录日志即可（shared/host-utils.js 语义）
+          ctx.logger.warn(`dsh-notifier: 配置请求体读取失败: ${message}`);
+          return;
+        }
         current = normalizeConfig(body);
         await saveConfig();
         writeJson(res, 200, current);
