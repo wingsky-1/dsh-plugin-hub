@@ -599,6 +599,14 @@ function agentWithTitle(id, title, opts = {}) {
   assert.ok(infos.some((t) => /turn-end/.test(t)), "notifyTurnEnd 开启后 turn-stopping 触发通知");
   assert.ok(infos.some((t) => /任务「优化 notifier 插件」第 4 轮工作已完成/.test(t)), "轮次完成通知带任务标题与轮次号");
   assert.ok(infos.some((t) => !t.includes("session-1")), "轮次完成通知不暴露会话 id");
+  const countAfterFirst = infos.filter((t) => t.includes("turn-end")).length;
+  // 同轮重复 emit（模拟事件被反复触发/热重载叠加）不重复通知——防「日志一堆」
+  await turnStop({ agent: { id: "session-1", session: { events: [{ type: "session/title", data: { title: "优化 notifier 插件" } }] } }, turn: 4 });
+  await turnStop({ agent: { id: "session-1", session: { events: [{ type: "session/title", data: { title: "优化 notifier 插件" } }] } }, turn: 4 });
+  assert.equal(infos.filter((t) => t.includes("turn-end")).length, countAfterFirst, "同一 (agent,turn) 重复 turn-stopping 只通知一次");
+  // 新的一轮（turn 5）仍正常通知
+  await turnStop({ agent: { id: "session-1", session: { events: [{ type: "session/title", data: { title: "优化 notifier 插件" } }] } }, turn: 5 });
+  assert.equal(infos.filter((t) => t.includes("turn-end")).length, countAfterFirst + 1, "新轮次仍正常通知");
 }
 
 // ---------------------------------------------------------------- 路由

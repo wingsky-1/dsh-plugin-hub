@@ -899,17 +899,19 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
     })
   );
 
-  /** 会话销毁时清理其状态机条目（含错误合并窗口，防 Map 无界增长）。 */
+  /** 会话销毁时清理其状态机条目（含错误合并窗口与 turn 去重，防 Map/Set 无界增长）。 */
   disposers.push(
     ctx.on("agent/disposed", ({ agent }: { agent?: AgentLite }) => {
       if (agent?.id !== undefined) {
         agentStates.delete(agent.id);
         errorMerge.delete(agent.id);
+        for (const key of [...turnNotified]) {
+          if (key.startsWith(agent.id + ":")) turnNotified.delete(key);
+        }
       }
     })
   );
 
-  /** 错误合并表：per-agent 滚动窗口，窗口内后续错误不单独通知。 */
   /** 合并错误表：per-agent 滚动窗口，窗口内后续错误不单独通知。 */
   const errorMerge = new Map<string, { count: number; since: number; lastMessages: string[] }>(); // agentId -> { count, since, lastMessages }
 
@@ -949,13 +951,20 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
     })
   );
 
+  /** turn-stopping 已通知的 (agentId, turn) 去重（防同轮被反复 emit 时重复记录刷屏）。 */
+  const turnNotified = new Set<string>();
+
   /** 轮结束（默认关）。cordis serial 事件签名是 cb(payload)，无 next——调用 next() 会 TypeError 且污染整轮。 */
   disposers.push(
     ctx.on("agent/turn-stopping", async (payload: { agent?: AgentLite; turn?: unknown }) => {
       try {
         if (current.notifyTurnEnd) {
+          const turn = typeof payload?.turn === "number" ? payload.turn : NaN;
+          const key = `${payload?.agent?.id ?? "?"}:${Number.isFinite(turn) ? turn : "?"}`;
+          if (turnNotified.has(key)) return; // 同一 (agent, talk) 只通知一次，防刷屏
+          turnNotified.add(key);
           notify("turn-end", {
-            turn: typeof payload?.turn === "number" ? payload.turn : undefined,
+            turn: Number.isFinite(turn) ? turn : undefined,
             taskTitle: sessionTitleOf(payload?.agent),
           });
         }
@@ -1156,6 +1165,7 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
         doneBatchTimer = null;
       }
       doneBatch = null;
+      turnNotified.clear();
       for (const dispose of disposers) {
         try {
           dispose();
