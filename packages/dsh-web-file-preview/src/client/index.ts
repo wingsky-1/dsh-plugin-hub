@@ -209,11 +209,18 @@ import STYLE from "./style.css";
         currentGroup = undefined;
         // 还原背景滚动（与 openPreview 的 body 锁配对，评审 U1）。
         document.body.style.overflow = "";
+        // a11y（评审 U11）：焦点还原到打开预览前的元素。
+        if (lastFocused !== undefined) {
+          try { if (document.contains(lastFocused)) lastFocused.focus(); } catch { /* 忽略 */ }
+          lastFocused = undefined;
+        }
       }
 
       function openPreview(path: string, cwd: string | undefined): void {
         ensureStyle();
         closeModal();
+        // a11y（评审 U11）：聚焦元素在关闭 Modal 后被还原。
+        lastFocused = (document.activeElement as HTMLElement | undefined) || undefined;
         // 本次预览的代数与取消句柄：所有 fetch 共用，落地前校验代数。
         const seq = ++openSeq;
         const abort = new AbortController();
@@ -293,6 +300,11 @@ import STYLE from "./style.css";
           el("div", { class: "fwp-actions" }, [copyBtn, newTabBtn, closeBtn]),
         ]);
         const card = el("div", { class: "fwp-card" }, [head, tabs, body]);
+        // a11y（评审 U11）：dialog 语义 + 打开聚焦 + Tab 陷阱配合 onKeyDown。
+        card.setAttribute("role", "dialog");
+        card.setAttribute("aria-modal", "true");
+        card.setAttribute("aria-label", `预览：${path}`);
+        card.setAttribute("tabindex", "-1");
         // 兜底内联：宿主环境可能不把注入样式表首部的 .fwp-overlay 规则纳入 CSSOM（position:fixed 失效，
         // Modal 会掉到对话框下方）；这里直接内联关键定位/遮罩/居中，确保任意访问形态都浮层居中弹出
         // （样式表正常解析时同值、互不冲突）。
@@ -308,6 +320,8 @@ import STYLE from "./style.css";
         });
         document.addEventListener("keydown", onKeyDown);
         document.body.appendChild(ov);
+        // a11y：焦点进入 Modal（role="dialog" 容器）。
+        card.focus();
         // 锁背景滚动（评审 U1）：Modal 打开期间 iOS 触摸不会滚到背景页面，
         // 由 closeModal 还原；配合样式表 overscroll-behavior:contain。
         document.body.style.overflow = "hidden";
@@ -320,10 +334,34 @@ import STYLE from "./style.css";
         }
       }
 
+      /** 打开预览前的聚焦元素（关闭/卸载后还原焦点，评审 U11）。 */
+      let lastFocused: HTMLElement | undefined;
+
       function onKeyDown(event: KeyboardEvent): void {
-        if (event.key !== "Escape") return;
-        if (lboxEl !== undefined) closeLightbox();
-        else closeModal();
+        if (event.key === "Escape") {
+          if (lboxEl !== undefined) closeLightbox();
+          else closeModal();
+          return;
+        }
+        // Tab 焦点陷阱（评审 U11）：焦点在灯箱/Modal 内循环，不穿到背景页面。
+        if (event.key !== "Tab") return;
+        const container = lboxEl ?? overlay;
+        if (container === undefined) return;
+        const focusables = Array.from(
+          container.querySelectorAll<HTMLElement>('button,[href],input,[tabindex]:not([tabindex="-1"])')
+        ).filter((el) => !el.hasAttribute("disabled"));
+        if (focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        const active = document.activeElement as HTMLElement | null;
+        const inside = active !== null && active !== container && container.contains(active);
+        if (event.shiftKey && (!inside || active === first)) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && (!inside || active === last)) {
+          event.preventDefault();
+          first.focus();
+        }
       }
 
       /** 统一样式错误态：文案 + 可选「在新标签打开」兜底。 */
@@ -444,14 +482,14 @@ import STYLE from "./style.css";
        * 点击图片进入灯箱（放大/平移，见 openLightbox）。
        */
       /** 把已获取的图片 blob 渲染进正文（建 objectURL + 灯箱点击）。 */
-      function renderBlobImage(blob: Blob, body: HTMLElement): void {
+      function renderBlobImage(blob: Blob, body: HTMLElement, url: string): void {
         const objectUrl = URL.createObjectURL(blob);
         trackedObjectUrl = objectUrl;
         body.textContent = "";
         const img = el("img", { class: "fwp-preview-img" });
         img.alt = "preview";
         img.title = "点击放大";
-        img.addEventListener("error", () => errorView(body, "图片解码失败（文件已获取，但无法作为图片显示）", undefined));
+        img.addEventListener("error", () => errorView(body, "图片解码失败（文件已获取，但无法作为图片显示）", url));
         img.addEventListener("click", () => openLightbox(objectUrl));
         img.src = objectUrl;
         body.appendChild(img);
@@ -469,7 +507,7 @@ import STYLE from "./style.css";
             }
             const blob = await res.blob();
             if (seq !== openSeq) return;
-            renderBlobImage(blob, body);
+            renderBlobImage(blob, body, url);
           })
           .catch(() => { if (seq === openSeq) errorView(body, "请求失败（无法访问文件预览服务）", url); });
       }
@@ -478,6 +516,11 @@ import STYLE from "./style.css";
 
       function clampy(v: number, min: number, max: number): number {
         return Math.min(max, Math.max(min, v));
+      }
+
+      /** 两点欧氏距离（双指捏合用，评审 U6）。 */
+      function distance2(a: { x: number; y: number }, b: { x: number; y: number }): number {
+        return Math.hypot(a.x - b.x, a.y - b.y);
       }
 
       let lboxEl: HTMLElement | undefined;
@@ -511,12 +554,18 @@ import STYLE from "./style.css";
         stage.appendChild(img);
 
         const zoomIn = el("button", { text: "＋" });
+        zoomIn.setAttribute("aria-label", "放大");
+        zoomIn.setAttribute("title", "放大");
         zoomIn.addEventListener("click", () => { lboxScale = clampy(lboxScale * 1.25, 0.2, 8); applyLboxTransform(); });
         const zoomOut = el("button", { text: "－" });
+        zoomOut.setAttribute("aria-label", "缩小");
+        zoomOut.setAttribute("title", "缩小");
         zoomOut.addEventListener("click", () => { lboxScale = clampy(lboxScale / 1.25, 0.2, 8); applyLboxTransform(); });
         const reset = el("button", { text: "重置" });
+        reset.setAttribute("aria-label", "重置缩放");
         reset.addEventListener("click", () => { lboxScale = 1; lboxTx = 0; lboxTy = 0; applyLboxTransform(); });
         const closeBtn = el("button", { text: "×" });
+        closeBtn.setAttribute("aria-label", "关闭灯箱");
         closeBtn.addEventListener("click", closeLightbox);
         const toolbar = el("div", { class: "fwp-lbox-toolbar" }, [zoomIn, zoomOut, reset, closeBtn]);
 
@@ -526,9 +575,14 @@ import STYLE from "./style.css";
           "style",
           "position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:10000;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none;font-family:system-ui,-apple-system,\"Segoe UI\",sans-serif",
         );
+        lbox.setAttribute("role", "dialog");
+        lbox.setAttribute("aria-modal", "true");
+        lbox.setAttribute("aria-label", "图片预览");
         lbox.appendChild(toolbar);
         lbox.appendChild(stage);
         lboxEl = lbox;
+        // 焦点移入灯箱（a11y）：默认落在关闭按钮，Esc/按钮均可退出。
+        closeBtn.focus();
 
         // 点空白/遮罩关闭
         lbox.addEventListener("click", (event: any) => {
@@ -540,22 +594,41 @@ import STYLE from "./style.css";
           lboxScale = clampy(lboxScale * (event.deltaY < 0 ? 1.12 : 0.9), 0.2, 8);
           applyLboxTransform();
         }, { passive: false });
-        // 指针拖拽平移
-        let dragging = false, startX = 0, startY = 0, origTx = 0, origTy = 0;
+        // 指针交互（评审 U6）：单指/鼠标拖拽平移 + 双指捏合缩放并存；配合
+        // touch-action:none 与 setPointerCapture。滚轮缩放保留在下文。
+        const pointers = new Map<number, { x: number; y: number }>();
+        let dragStart = { x: 0, y: 0, tx: 0, ty: 0 };
+        let pinchStart = { dist: 1, scale: 1 };
         img.addEventListener("pointerdown", (e: PointerEvent) => {
-          dragging = true; startX = e.clientX; startY = e.clientY; origTx = lboxTx; origTy = lboxTy;
+          pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
           try { img.setPointerCapture(e.pointerId); } catch { /* 兼容 */ }
-          lbox.classList.add("dragging");
+          if (pointers.size === 1) {
+            dragStart = { x: e.clientX, y: e.clientY, tx: lboxTx, ty: lboxTy };
+            lbox.classList.add("dragging");
+          } else if (pointers.size === 2) {
+            const pts = Array.from(pointers.values());
+            pinchStart = { dist: distance2(pts[0], pts[1]) || 1, scale: lboxScale };
+          }
         });
         img.addEventListener("pointermove", (e: PointerEvent) => {
-          if (!dragging) return;
-          lboxTx = origTx + (e.clientX - startX);
-          lboxTy = origTy + (e.clientY - startY);
-          applyLboxTransform();
+          if (!pointers.has(e.pointerId)) return;
+          pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          if (pointers.size === 2) {
+            const pts = Array.from(pointers.values());
+            lboxScale = clampy(pinchStart.scale * (distance2(pts[0], pts[1]) / pinchStart.dist), 0.2, 8);
+            applyLboxTransform();
+          } else if (pointers.size === 1) {
+            lboxTx = dragStart.tx + (e.clientX - dragStart.x);
+            lboxTy = dragStart.ty + (e.clientY - dragStart.y);
+            applyLboxTransform();
+          }
         });
-        const endDrag = () => { dragging = false; lbox.classList.remove("dragging"); };
-        img.addEventListener("pointerup", endDrag);
-        img.addEventListener("pointercancel", endDrag);
+        const endPointer = (e: PointerEvent) => {
+          pointers.delete(e.pointerId);
+          if (pointers.size === 0) lbox.classList.remove("dragging");
+        };
+        img.addEventListener("pointerup", endPointer);
+        img.addEventListener("pointercancel", endPointer);
 
         document.body.appendChild(lbox);
       }

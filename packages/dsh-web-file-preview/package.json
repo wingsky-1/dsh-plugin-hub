@@ -40,6 +40,7 @@
     "types/dsh.d.ts",
     "cordis.patch.yml",
     "README.md",
+    "README.zh.md",
     "LICENSE"
   ],
   "engines": {

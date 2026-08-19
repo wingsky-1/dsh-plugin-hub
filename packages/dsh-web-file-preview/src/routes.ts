@@ -206,6 +206,10 @@ export function makeRoutes(cfg: PreviewConfig): DshRoute[] {
         writeJson(res, 403, { error: "forbidden: loopback-only" });
         return;
       }
+      if (req.method !== "GET") {
+        writeJson(res, 405, { error: `method not allowed: ${req.method}` });
+        return;
+      }
       writeJson(res, 200, { ok: true, plugin: "dsh-web-file-preview" });
     },
   };

@@ -58,10 +58,6 @@
 .fwp-tab-active{color:var(--dsw-alias-brand-primary,#4f6ef7);font-weight:600;border-bottom-color:var(--dsw-alias-brand-primary,#4f6ef7)}
 .fwp-tab[disabled]{color:var(--dsw-alias-label-tertiary,#8a8f9c);cursor:not-allowed}
 .fwp-diff{margin:0;padding:12px;overflow:auto;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;line-height:1.5;background:var(--dsw-alias-bg-layer-1,#f7f8fa);border:1px solid var(--dsw-alias-border-l1,#e5e7eb);border-radius:8px;min-width:100%;box-sizing:border-box;color:var(--dsw-alias-label-primary,#1c1e26);white-space:pre}
-.fwp-diff-add{background:rgba(34,197,94,.16);color:#15803d}
-.fwp-diff-del{background:rgba(239,68,68,.14);color:#b91c1c}
-.fwp-diff-hunk{background:rgba(59,130,246,.12);color:#1d4ed8}
-.fwp-diff-meta{color:var(--dsw-alias-label-secondary,#6b7280)}
 .fwp-diff2html{max-width:100%;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;line-height:1.45;word-break:break-word;overflow-wrap:anywhere}
 .fwp-diff2html .d2h-file-wrapper{border:1px solid var(--dsw-alias-border-l1,#e5e7eb);border-radius:8px}
 .fwp-diff2html .d2h-file-header{padding:6px 10px;font-size:11px;border-bottom:1px solid var(--dsw-alias-border-l1,#e5e7eb);background:var(--dsw-alias-bg-layer-2,#eef0f3);color:var(--dsw-alias-label-secondary,#525866)}
@@ -77,3 +73,16 @@
 .fwp-diff2html .d2h-code-line-prefix{user-select:none}
 .fwp-diff2html .d2h-emptyplaceholder{display:none}
 @media (max-width:640px){.fwp-diff2html{font-size:11px;line-height:1.45}.fwp-diff2html .d2h-code-line,.fwp-diff2html .d2h-code-linenumber{font-size:11px;line-height:1.45}}
+/* 触控目标与安全区（评审 U7）：触屏设备按钮/标签加高到 ≥44px；灯箱工具栏避开
+   灵动岛/刘海（safe-area-inset-top）；底部内容不贴 Home 指示条。 */
+@media (pointer: coarse){
+  .fwp-tab{padding:12px 14px;font-size:13px}
+  .fwp-actions button{padding:8px 16px;font-size:13px;min-height:44px}
+  .fwp-err-open{padding:10px 18px;font-size:13px;min-height:44px}
+  .fwp-lbox-toolbar button{padding:8px 16px;font-size:15px;min-height:44px}
+}
+.fwp-lbox-toolbar{top:calc(12px + env(safe-area-inset-top,0px))}
+@media (max-width:640px){
+  .fwp-card{max-height:calc(100dvh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px) - 24px)}
+  .fwp-body{padding-bottom:calc(14px + env(safe-area-inset-bottom,0px))}
+}
