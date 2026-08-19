@@ -91,6 +91,12 @@ assert.equal(sanitizeErrorText("错".repeat(500)).length, 300, "截断 300");
 assert.equal(sanitizeErrorText("普通错误"), "普通错误", "普通文本原样");
 assert.equal(sanitizeErrorText("x".repeat(40)), "<token>", "长重复字符按令牌打码");
 
+// M4 配置归一化：askRemindMin / quietHours.allowKinds
+assert.equal(normalizeConfig({ askRemindMin: 3 }).askRemindMin, 3, "审批提醒分钟可配");
+assert.equal(normalizeConfig({ askRemindMin: 0 }).askRemindMin, 0, "0=关闭审批提醒");
+assert.equal(normalizeConfig({ askRemindMin: "x" }).askRemindMin, DEFAULT_CONFIG.askRemindMin, "非法提醒分钟回默认 5");
+assert.deepEqual(normalizeConfig({ quietHours: { allowKinds: ["ask", "bogus", "error"] } }).quietHours.allowKinds, ["ask", "error"], "allowKinds 白名单过滤");
+
 // buildSystemCommand：Windows/macOS/Linux 参数形态（smoke 断言 spawn 参数）
 const winArgs = buildSystemCommand("win32", "标题", "内容 -x", { silent: true, toastScript: "t.ps1" });
 assert.equal(winArgs[0], "powershell");
@@ -274,6 +280,8 @@ function agentWithTitle(id, title, opts = {}) {
   assert.match(infos[3], /任务「并行评审代码」已完成/, "完成通知带任务标题");
   assert.match(infos[3], /耗时：/, "完成通知带耗时");
   assert.ok(!infos[3].includes("session-"), "完成通知不暴露会话 id");
+  // 完成风暴聚合窗口（3s）：等上一处完成的窗口结束，保证同 agent 下一轮是独立窗口
+  await new Promise((resolve) => setTimeout(resolve, 3200));
   status({ agent: agentWithTitle("session-1", "优化 notifier 插件", { turnEnd: 1 }), status: "idle" });
   assert.equal(infos.length, 5, "session-1 完成独立通知");
   assert.match(infos[4], /任务「优化 notifier 插件」已完成/);
@@ -310,6 +318,19 @@ function agentWithTitle(id, title, opts = {}) {
   }
   assert.equal(threw, false, "serial 事件（无 next 参数）下监听器不抛错");
   assert.equal(infos.length, 7, "turn-stopping 默认不通知");
+
+  // 完成风暴聚合：窗口内第二条完成不即时，3s 后补发聚合条（防并行收尾刷屏）
+  await new Promise((resolve) => setTimeout(resolve, 3200)); // 窗口清零（error/turn 无完成窗口）
+  status({ agent: agentWithTitle("storm-1", "并行任务A", { turnEnd: 1 }), status: "running" });
+  status({ agent: agentWithTitle("storm-1", "并行任务A", { turnEnd: 1 }), status: "idle" });
+  assert.equal(infos.length, 8, "聚合窗口首条即时通知");
+  status({ agent: agentWithTitle("storm-2", "并行任务B", { turnEnd: 1 }), status: "running" });
+  status({ agent: agentWithTitle("storm-2", "并行任务B", { turnEnd: 1 }), status: "idle" });
+  assert.equal(infos.length, 8, "窗口内第二条挂起不即时发");
+  await new Promise((resolve) => setTimeout(resolve, 3200));
+  assert.equal(infos.length, 9, "窗口到点补发聚合条");
+  assert.match(infos[8], /另有 1 个任务已完成/, "聚合条文案带计数");
+  assert.match(infos[8], /并行任务B/, "聚合条带最近标题");
 }
 
 // 错误合并窗口过期后通知并携带合并计数
@@ -329,6 +350,7 @@ function agentWithTitle(id, title, opts = {}) {
   error({ agent: { id: "session-1" }, turn: 1, step: 3, error: new Error("e3") });
   assert.equal(infos.length, 2, "窗口过期后恢复通知");
   assert.match(infos[1], /另有 1 条同类错误/, "窗口过期后的通知携带合并计数");
+  assert.match(infos[1], /窗口内其他错误/, "被合并错误保留摘要（e1）");
 }
 
 // 子代理完成：独立开关 notifySubagentDone（默认关）+ 独立事件类型 subagent-done
@@ -364,6 +386,8 @@ function agentWithTitle(id, title, opts = {}) {
     assert.match(infos[0], /子任务「子任务B」已完成/, "subagent-done 文案带任务标题");
     assert.match(infos[0], /耗时：/, "subagent-done 带耗时");
     assert.ok(!infos[0].includes("sub-2"), "子代理完成通知不暴露会话 id");
+    // 等 subagent-done 的 3s 聚合窗口结束（否则主任务完成会被聚合挂起）
+    await new Promise((resolve) => setTimeout(resolve, 3200));
     status({ agent: agentWithTitle("main-2", "主任务2", { turnEnd: 1 }), status: "running" });
     status({ agent: agentWithTitle("main-2", "主任务2", { turnEnd: 1 }), status: "idle" });
     assert.equal(infos.length, 2, "主任务仍走 done 类型");
@@ -421,6 +445,8 @@ function agentWithTitle(id, title, opts = {}) {
   assert.equal(infos.length, 1, "S1：无 turn/end 静默");
 
   // 中断后继续：新一轮 turn/end completed（turn 号递增）正常通知
+  // （先等 s1-1 场景的 3s 完成聚合窗口结束，避免本轮完成被并入旧窗口挂起）
+  await new Promise((resolve) => setTimeout(resolve, 3200));
   status({ agent: agentWithTitle("int-2", "中断后继续", { turnEnd: 1, turnEndKind: "aborted" }), status: "running" });
   status({ agent: agentWithTitle("int-2", "中断后继续", { turnEnd: 1, turnEndKind: "aborted" }), status: "idle" });
   assert.equal(infos.length, 1, "中断静默");
@@ -446,6 +472,8 @@ function agentWithTitle(id, title, opts = {}) {
   assert.equal(infos.length, 2, "阻塞（turn/end blocked）不通知完成");
 
   // 失败后继续：新一轮 turn/end completed（turn 号递增）正常通知
+  // （先等 int-2 完成聚合窗口结束，避免本轮完成被并入旧窗口挂起）
+  await new Promise((resolve) => setTimeout(resolve, 3200));
   status({ agent: agentWithTitle("err-2", "失败后继续", { turnEnd: 1, turnEndKind: "error" }), status: "running" });
   status({ agent: agentWithTitle("err-2", "失败后继续", { turnEnd: 1, turnEndKind: "error" }), status: "idle" });
   assert.equal(infos.length, 2, "失败静默");
@@ -475,6 +503,28 @@ function agentWithTitle(id, title, opts = {}) {
   const outcome = await approval({ toolName: "bash", agent: { id: "session-1" } }, async () => "allowed-once");
   assert.equal(outcome, "allowed-once", "不短路");
   assert.equal(infos.length, 0, "notifyAsk=false 不通知");
+}
+
+// M4 免打扰紧急例外：allowKinds 中的 kind 在免打扰时段仍通知
+{
+  const qhCfg = join(work, "qh-allow.json");
+  const qhOn = { enabled: true, start: "00:00", end: "23:59" };
+  writeFileSync(qhCfg, JSON.stringify({ quietHours: { ...qhOn, allowKinds: ["ask"] } }));
+  const infos = [];
+  const { ctx, listeners } = makeFakeCtx({ logger: { warn: () => {}, info: (t) => infos.push(t) } });
+  await apply(ctx, { enabled: true, configFile: qhCfg, toastScript: join(work, "toast.ps1"), historyFile: join(work, "history.jsonl") });
+  const approval = listeners.get("approval/request")[0];
+  await approval({ toolName: "pwsh", agent: agentWithTitle("qh-1", "免打扰审批", { turnEnd: 1 }) }, async () => "ok");
+  assert.equal(infos.length, 1, "免打扰期间 ask 仍通知（紧急例外 allowKinds）");
+  assert.match(infos[0], /ask/);
+
+  // allowKinds 为空/不含 ask：免打扰生效则静默
+  writeFileSync(qhCfg, JSON.stringify({ quietHours: { ...qhOn, allowKinds: [] } }));
+  const infos2 = [];
+  const { ctx: ctx2, listeners: listeners2 } = makeFakeCtx({ logger: { warn: () => {}, info: (t) => infos2.push(t) } });
+  await apply(ctx2, { enabled: true, configFile: qhCfg, toastScript: join(work, "toast.ps1"), historyFile: join(work, "history.jsonl") });
+  await listeners2.get("approval/request")[0]({ toolName: "pwsh", agent: { id: "qh-2" } }, async () => "ok");
+  assert.equal(infos2.length, 0, "无 allowKinds 时免打扰静默");
 }
 
 // 用户提问通知：包装 ctx.userQuestions.ask（internal/service 事件 + 热重载解包重包）

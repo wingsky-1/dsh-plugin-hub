@@ -44,7 +44,12 @@ export interface QuietHoursConfig {
   enabled: boolean;
   start: string;
   end: string;
+  /** 免打扰期间仍放行的通知 kind（紧急例外，如审批/提问——卡着的任务需要叫醒）。 */
+  allowKinds?: string[];
 }
+
+/** 免打扰紧急例外可选 kind（面板展示与此白名单一致）。 */
+export const QUIET_ALLOW_KINDS = ["ask", "question", "error"] as const;
 
 /** 通知配置（内存单一事实源，与落盘 JSON 同构）。 */
 export interface NotifyConfig {
@@ -62,6 +67,8 @@ export interface NotifyConfig {
   notifySound: boolean;
   quietHours: QuietHoursConfig;
   errorMergeWindowMs: number;
+  /** 审批等待超时二次提醒（分钟；0 = 关闭）。 */
+  askRemindMin: number;
 }
 
 /** 布尔配置键联合（normalizeConfig 白名单与客户端渲染依赖它）。 */
@@ -86,6 +93,10 @@ export interface NotifyDetail {
   step?: number;
   message?: string;
   mergedCount?: number;
+  /** 审批超时提醒：已等待分钟数（NOTIFY_KINDS.ask 渲染）。 */
+  remindMinutes?: number;
+  /** 错误合并窗口内被吞掉的错误摘要（最近 2 条）。 */
+  mergedErrors?: string[];
   ts?: number;
 }
 
@@ -138,6 +149,8 @@ export const DEFAULT_CONFIG: NotifyConfig = {
   quietHours: { enabled: false, start: "22:00", end: "08:00" },
   /** 同类错误合并窗口（毫秒）：窗口内后续错误不再单独通知，累计到下次一并提示。 */
   errorMergeWindowMs: 60000,
+  /** 审批等待超时二次提醒（分钟，0=关闭；审批被卡是最高成本事件，值得重提醒）。 */
+  askRemindMin: 5,
 };
 
 /** 布尔配置键（单一事实源：normalizeConfig 白名单与客户端渲染依赖它）。 */
@@ -164,6 +177,9 @@ export function normalizeConfig(input: unknown): NotifyConfig {
   if (Number.isFinite(src.errorMergeWindowMs) && (src.errorMergeWindowMs as number) > 0) {
     base.errorMergeWindowMs = Math.min(Math.round(src.errorMergeWindowMs as number), 3600000);
   }
+  if (Number.isFinite(src.askRemindMin) && (src.askRemindMin as number) >= 0 && (src.askRemindMin as number) <= 600) {
+    base.askRemindMin = Math.round(src.askRemindMin as number);
+  }
   if (typeof src.quietHours === "object" && src.quietHours !== null) {
     const qh = src.quietHours as Record<string, unknown>;
     if (typeof qh.enabled === "boolean") base.quietHours.enabled = qh.enabled;
@@ -171,13 +187,18 @@ export function normalizeConfig(input: unknown): NotifyConfig {
     // 避免「配置保存成功但免打扰永不生效」的静默失败
     if (typeof qh.start === "string" && /^\d{2}:\d{2}$/u.test(qh.start) && parseHHMM(qh.start) >= 0) base.quietHours.start = qh.start;
     if (typeof qh.end === "string" && /^\d{2}:\d{2}$/u.test(qh.end) && parseHHMM(qh.end) >= 0) base.quietHours.end = qh.end;
+    // 紧急例外 kind 白名单过滤
+    if (Array.isArray(qh.allowKinds)) {
+      base.quietHours.allowKinds = qh.allowKinds.filter((k): k is string => typeof k === "string" && (QUIET_ALLOW_KINDS as readonly string[]).includes(k));
+    }
   }
   // 未知键透传：白名单之外的键原样保留（此插件在旧版本运行或手改配置时会
   // 出现未来版本/第三方键），避免「降级丢键」——只归一化你认识的键。
   const out = base as NotifyConfig & Record<string, unknown>;
   for (const key of Object.keys(src)) {
     if ((CONFIG_KEYS as readonly string[]).includes(key)) continue;
-    if (key === "quietHours" || key === "errorMergeWindowMs") continue;
+    // 已归一化过的键不再透传（否则非法值会以原样覆盖归一化结果）
+    if (key === "quietHours" || key === "errorMergeWindowMs" || key === "askRemindMin") continue;
     out[key] = src[key];
   }
   return out;
@@ -540,6 +561,7 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
         if (detail.taskTitle) lines.push(`任务「${detail.taskTitle}」等待审批（工具「${prettyToolName(detail.tool)}」）`);
         else lines.push(`工具「${prettyToolName(detail.tool)}」等待审批`);
         if (detail.reason) lines.push(`理由：${detail.reason}`);
+        if (detail.remindMinutes) lines.push(`已等待 ${detail.remindMinutes} 分钟，仍在等待你的审批`);
         lines.push("请到 DSH 界面确认或拒绝");
         return lines.join("\n");
       },
@@ -558,6 +580,9 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
     done: {
       title: "DSH：任务完成",
       message: (detail) => {
+        if (detail.mergedCount) {
+          return `另有 ${detail.mergedCount} 个任务已完成（最近：${detail.taskTitle ?? "—"}）`;
+        }
         const lines = [];
         if (detail.taskTitle) lines.push(`任务「${detail.taskTitle}」已完成`);
         else lines.push("后台任务已完成");
@@ -568,6 +593,9 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
     "subagent-done": {
       title: "DSH：子任务完成",
       message: (detail) => {
+        if (detail.mergedCount) {
+          return `另有 ${detail.mergedCount} 个子任务已完成（最近：${detail.taskTitle ?? "—"}）`;
+        }
         const lines = [];
         if (detail.taskTitle) lines.push(`子任务「${detail.taskTitle}」已完成`);
         else lines.push("子任务已完成");
@@ -584,6 +612,7 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
         if (detail.turn) lines.push(`第 ${detail.turn} 轮${detail.step ? `第 ${detail.step} 步` : ""}：${detail.message ?? ""}`);
         else if (detail.message) lines.push(`错误：${detail.message}`);
         if (detail.mergedCount) lines.push(`（窗口内另有 ${detail.mergedCount} 条同类错误）`);
+        if (detail.mergedErrors && detail.mergedErrors.length > 0) lines.push(`窗口内其他错误：${detail.mergedErrors.join(" / ")}`);
         return lines.join("\n");
       },
     },
@@ -631,7 +660,12 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
    * @param detail {tool?, taskTitle?, reason?, durationMs?, turn?, step?, message?, mergedCount?}（不含工具参数）。
    */
   function notify(kind: string, detail: NotifyDetail = {}) {
-    if (isInQuietHours(new Date(), current.quietHours)) return;
+    if (isInQuietHours(new Date(), current.quietHours)) {
+      // 免打扰紧急例外：allowKinds 中的 kind（如 ask/question——卡住的审批
+      // 需要深夜叫醒）在免打扰时段仍放行
+      const allows = current.quietHours.allowKinds ?? [];
+      if (!allows.includes(kind)) return;
+    }
     const spec = NOTIFY_KINDS[kind];
     const ts = Date.now();
     const title = spec?.title ?? "DSH 通知";
@@ -662,19 +696,49 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
    * 之前通知——next() 会阻塞到用户审批结束，这正是"等待审批"提醒的时机；
    * 不短路，返回 next() 结果。
    */
+  /** 审批超时二次提醒：per-request 定时器表；next() settle（用户已决定）即清除。 */
+  const askRemindTimers = new Map<string, NodeJS.Timeout>();
+
   disposers.push(
     ctx.on("approval/request", async (req: { toolName?: unknown; agent?: AgentLite; reason?: unknown } | undefined, next: () => unknown) => {
       if (!current.notifyAsk) return next();
+      const askDetail = () => ({
+        tool: req?.toolName as string | undefined,
+        taskTitle: sessionTitleOf(req?.agent),
+        reason: req?.reason ? String(req.reason).slice(0, 120) : undefined,
+      });
       try {
-        notify("ask", {
-          tool: req?.toolName as string | undefined,
-          taskTitle: sessionTitleOf(req?.agent),
-          reason: req?.reason ? String(req.reason).slice(0, 120) : undefined,
-        });
+        notify("ask", askDetail());
       } catch (error) {
         ctx.logger.warn(`dsh-notifier: approval/request 通知失败: ${errorMessage(error)}`);
       }
-      return next();
+      // 审批超时二次提醒（askRemindMin 分钟未响应再弹一条，正文带已等待时长）。
+      // DSH 无 "approval/decided" 的 cordis 事件可监听——审批结束的唯二信号是
+      // next() Promise 的决议/拒绝（对抗评审共识③），故定时器绑定 next() settle。
+      const askKey = req?.agent?.id ?? String(req?.toolName ?? "?");
+      if (current.askRemindMin > 0) {
+        const timer = setTimeout(() => {
+          if (askRemindTimers.get(askKey) === timer) {
+            askRemindTimers.delete(askKey);
+            try {
+              notify("ask", { ...askDetail(), remindMinutes: current.askRemindMin });
+            } catch (error) {
+              ctx.logger.warn(`dsh-notifier: 审批超时提醒失败: ${errorMessage(error)}`);
+            }
+          }
+        }, current.askRemindMin * 60000);
+        timer.unref(); // 不阻止进程退出（服务有主循环；测试环境不挂死）
+        askRemindTimers.set(askKey, timer);
+      }
+      try {
+        return await next();
+      } finally {
+        const t = askRemindTimers.get(askKey);
+        if (t !== undefined) {
+          clearTimeout(t);
+          askRemindTimers.delete(askKey);
+        }
+      }
     })
   );
 
@@ -738,6 +802,47 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
   );
 
   /**
+   * 完成通知风暴聚合（done / subagent-done）：
+   * 首条「完成」立即原样通知（单条场景零感知延迟）；同时起 3s 窗口，窗口内到达
+   * 的后续完成只累积标题与计数，窗口到点**补发一条聚合通知**（「另有 N 个任务
+   * 已完成」）——并行子代理收尾时 10 条刷屏收敛为首条 + 1 条汇总。
+   * 窗口定时器 unref（测试/空闲不挂进程），卸载时由全局 disposer 清空。
+   */
+  const DONE_MERGE_MS = 3000;
+  let doneBatch: { kind: string; count: number; titles: string[] } | null = null;
+  let doneBatchTimer: NodeJS.Timeout | null = null;
+  function enqueueDone(kind: string, title: string | undefined, durationMs: number) {
+    const label = title ?? (kind === "subagent-done" ? "子任务" : "任务");
+    if (doneBatch === null) {
+      notify(kind, { taskTitle: label, durationMs });
+      doneBatch = { kind, count: 1, titles: [label] };
+      doneBatchTimer = setTimeout(flushDoneMerge, DONE_MERGE_MS);
+      doneBatchTimer.unref();
+      return;
+    }
+    if (doneBatch.kind !== kind) {
+      flushDoneMerge();
+      enqueueDone(kind, title, durationMs);
+      return;
+    }
+    doneBatch.count += 1;
+    doneBatch.titles.push(label);
+    if (doneBatch.titles.length > 4) doneBatch.titles = doneBatch.titles.slice(-4);
+  }
+  function flushDoneMerge() {
+    if (doneBatchTimer !== null) {
+      clearTimeout(doneBatchTimer);
+      doneBatchTimer = null;
+    }
+    const batch = doneBatch;
+    doneBatch = null;
+    // 窗口内还有后续完成 → 补发聚合条（首波已单独通知，这里汇总其余）
+    if (batch !== null && batch.count > 1) {
+      notify(batch.kind, { taskTitle: batch.titles.slice(1).join("、"), mergedCount: batch.count - 1 });
+    }
+  }
+
+  /**
    * 任务完成：agent/status running → idle 跃迁（按 agent 分组）。
    * 分支不再被 notifyTaskDone 门控（否则 notifyTaskDone=false +
    * notifySubagentDone=true 时子代理完成被拦下）：进入即先取耗时并
@@ -778,12 +883,11 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
           // 结束误报为完成（与 DSH accountsForClaim 对未知 kind 保守不成功的
           // 语义对齐；失败由 agent/error 单独负责「任务出错」）。
           if (!hasNewEnd || ended === undefined || ended.kind !== "completed") return;
+          const taskTitle = sessionTitleOf(agent);
           if (isSubagentOf(agent)) {
-            if (current.notifySubagentDone) {
-              notify("subagent-done", { taskTitle: sessionTitleOf(agent), durationMs });
-            }
+            if (current.notifySubagentDone) enqueueDone("subagent-done", taskTitle, durationMs);
           } else if (current.notifyTaskDone) {
-            notify("done", { taskTitle: sessionTitleOf(agent), durationMs });
+            enqueueDone("done", taskTitle, durationMs);
           }
         } else if (status === "running") {
           state.runningSeen = true;
@@ -806,9 +910,11 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
   );
 
   /** 错误合并表：per-agent 滚动窗口，窗口内后续错误不单独通知。 */
-  const errorMerge = new Map<string, { count: number; since: number }>(); // agentId -> { count, since }
+  /** 合并错误表：per-agent 滚动窗口，窗口内后续错误不单独通知。 */
+  const errorMerge = new Map<string, { count: number; since: number; lastMessages: string[] }>(); // agentId -> { count, since, lastMessages }
 
-  /** 任务错误（60 秒滚动窗口内合并同类错误，防刷屏）。 */
+  /** 任务错误（60 秒滚动窗口内合并同类错误，防刷屏；窗口内被吞的错误保留
+   *  最近 2 条摘要，窗口过期后随通知提示「窗口内其他错误」）。 */
   disposers.push(
     ctx.on("agent/error", (payload: { agent?: AgentLite; error?: unknown; turn?: unknown; step?: unknown }) => {
       try {
@@ -816,21 +922,26 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
         const agentId = payload?.agent?.id;
         const key = agentId ?? "?";
         const now = Date.now();
+        const rawMessage = payload?.error instanceof Error ? payload.error.message : errorMessage(payload?.error);
+        const sanitized = sanitizeErrorText(rawMessage);
         const prev = errorMerge.get(key);
         if (prev !== undefined && now - prev.since < current.errorMergeWindowMs) {
           prev.count += 1;
           prev.since = now;
+          prev.lastMessages.push(sanitized.slice(0, 80));
+          if (prev.lastMessages.length > 2) prev.lastMessages.shift();
           return;
         }
         const mergedCount = prev !== undefined ? prev.count : 0;
-        errorMerge.set(key, { count: 0, since: now });
-        const rawMessage = payload?.error instanceof Error ? payload.error.message : errorMessage(payload?.error);
+        const mergedErrors = prev !== undefined ? prev.lastMessages : [];
+        errorMerge.set(key, { count: 0, since: now, lastMessages: [] });
         notify("error", {
-          message: sanitizeErrorText(rawMessage),
+          message: sanitized,
           taskTitle: sessionTitleOf(payload?.agent),
           turn: typeof payload?.turn === "number" ? payload.turn : undefined,
           step: typeof payload?.step === "number" ? payload.step : undefined,
           mergedCount,
+          mergedErrors,
         });
       } catch (error) {
         ctx.logger.warn(`dsh-notifier: agent/error 处理失败: ${errorMessage(error)}`);
@@ -1037,6 +1148,14 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
   ctx.effect(
     () => () => {
       clearInterval(heartbeatTimer);
+      // M4 定时器清理：审批提醒、完成风暴窗口
+      for (const t of askRemindTimers.values()) clearTimeout(t);
+      askRemindTimers.clear();
+      if (doneBatchTimer !== null) {
+        clearTimeout(doneBatchTimer);
+        doneBatchTimer = null;
+      }
+      doneBatch = null;
       for (const dispose of disposers) {
         try {
           dispose();
