@@ -74,6 +74,16 @@ import STYLE from "./style.css";
   }
 
   /**
+   * 403（loopback 围栏拒绝）时的可操作引导文案，供各处 catch 复用。
+   * 非 403 错误返回空串，避免给普通失败粘贴无关提示。
+   */
+  function accessHint(error: any) {
+    var text = String((error && error.message) || "");
+    if (text.indexOf("403") === -1) return "";
+    return "（若为局域网直连访问，通知服务仅允许回环调用而被拒：请用 dsh-lan-proxy 的 https://<局域网IP>:3443 或 ssh -L 3080:127.0.0.1:3080 隧道访问后刷新）";
+  }
+
+  /**
    * 请求浏览器通知权限（必须在用户手势内调用，Chrome 才接受）。
    * 完成后回调（无论结果），用于刷新面板权限状态。
    */
@@ -109,7 +119,7 @@ import STYLE from "./style.css";
         toast("测试通知已发送（在线 " + data.sseConnections + " 个连接）");
       })
       .catch(function (error) {
-        toast("发送测试通知失败：" + error.message);
+        toast("发送测试通知失败：" + error.message + accessHint(error));
       });
   }
 
@@ -216,8 +226,10 @@ import STYLE from "./style.css";
       .then(function (config) {
         configCache = config;
       })
-      .catch(function () {
-        // 失败静默：打开面板时会再次拉取
+      .catch(function (error) {
+        // 失败静默（打开面板时会再次拉取）；403（局域网直连被回环围栏拒绝）时给引导
+        console.warn("[dsh-notifier] 配置预取失败：", error);
+        if (accessHint(error) !== "") toast("通知通道不可用" + accessHint(error));
       });
   }
 
@@ -235,7 +247,7 @@ import STYLE from "./style.css";
         configCache = data;
       })
       .catch(function (error) {
-        toast("保存配置失败：" + error.message);
+        toast("保存配置失败：" + error.message + accessHint(error));
       });
   }
 
@@ -275,7 +287,7 @@ import STYLE from "./style.css";
         }
       })
       .catch(function (error) {
-        holder.appendChild(el("div", { class: "dn-note", text: "加载记录失败：" + error.message }));
+        holder.appendChild(el("div", { class: "dn-note", text: "加载记录失败：" + error.message + accessHint(error) }));
       });
   }
 
@@ -306,7 +318,7 @@ import STYLE from "./style.css";
         if ("Notification" in window) {
           if (!isSecureContext()) {
             // 非安全上下文（局域网 HTTP）：系统弹窗被浏览器禁止，降级提醒已启用
-            channels.appendChild(el("div", { class: "dn-note", text: "当前为局域网 HTTP 访问（非安全上下文），浏览器禁止系统级弹窗，已启用「页面内横幅 + 提示音 + 标题提醒」降级通道。如需系统弹窗，请改用 localhost 隧道访问（如 ssh -L 3080:127.0.0.1:3080）后刷新页面。" }));
+            channels.appendChild(el("div", { class: "dn-note", text: "当前为局域网 HTTP 访问（非安全上下文），浏览器禁止系统级弹窗，已启用「页面内横幅 + 提示音 + 标题提醒」降级通道。如需系统弹窗，请改用 dsh-lan-proxy 的 https://<局域网IP>:3443 或 localhost 隧道访问（如 ssh -L 3080:127.0.0.1:3080）后刷新页面。" }));
           } else {
             var permText = "";
             if (Notification.permission === "granted") permText = "浏览器通知权限：已授权 ✓";
@@ -327,14 +339,19 @@ import STYLE from "./style.css";
               }));
             }
           }
-          // 测试按钮：端到端验证通知链路（宿主 → SSE → 浏览器提醒）
-          channels.appendChild(el("button", {
-            type: "button",
-            text: "发送测试通知",
-            style: "margin:6px 0 0 6px;border:1px solid var(--dsw-alias-border-l1,#e2e5ea);background:var(--dsw-alias-bg-layer-1,#f5f6f8);border-radius:6px;padding:4px 10px;cursor:pointer;color:inherit",
-            onClick: sendTestNotification,
-          }));
+        } else {
+          // 无 Web Notifications API（iOS Safari 普通标签页等）：渲染设备能力说明，
+          // 避免「通知通道区整个消失」让用户误以为插件坏了。
+          channels.appendChild(el("div", { class: "dn-note", text: "当前设备不支持系统级通知（如 iOS Safari 普通标签页无 Web Notifications）。可用通道：页面可见时的横幅 + 提示音（需保持页面打开），或经 dsh-lan-proxy 的 https://<局域网IP>:3443 访问并「添加到主屏幕」后获得 PWA 级通知能力。" }));
         }
+        // 测试按钮：端到端验证通知链路（宿主 → SSE → 浏览器提醒）。
+        // 移出 Notification 门：iOS 等无 Notification API 的设备也能自测宿主链路。
+        channels.appendChild(el("button", {
+          type: "button",
+          text: "发送测试通知",
+          style: "margin:6px 0 0;border:1px solid var(--dsw-alias-border-l1,#e2e5ea);background:var(--dsw-alias-bg-layer-1,#f5f6f8);border-radius:6px;padding:4px 10px;cursor:pointer;color:inherit",
+          onClick: sendTestNotification,
+        }));
         body.appendChild(channels);
 
         var quiet = el("div", { class: "dn-section" });
@@ -381,7 +398,7 @@ import STYLE from "./style.css";
         body.appendChild(el("div", { class: "dn-note", text: "浏览器通知仅在页面隐藏时弹出（可开「页面可见时也弹」）；系统通知由宿主进程发出（Windows toast / notify-send）。点「发送测试通知」可验证链路。提示音需先点击页面任意位置一次（浏览器策略）。通知内容不含工具参数。" }));
       })
       .catch(function (error) {
-        body.appendChild(el("div", { class: "dn-note", text: "加载配置失败：" + error.message }));
+        body.appendChild(el("div", { class: "dn-note", text: "加载配置失败：" + error.message + accessHint(error) }));
       });
   }
 
