@@ -16,13 +16,17 @@ DSH（DeepSeek Harness）Web GUI 插件集，**npm 分发**：既可一键安装
 | 包名 | 功能 | 文档 | 状态 |
 |---|---|---|---|
 | `@wingsky-1/dsh-notifier` | 审批/完成/错误事件通知（浏览器 Notification + 系统 toast） | [README](packages/dsh-notifier/README.md) | ✅ 已发布 |
-| `@wingsky-1/dsh-skill-explorer` | 技能中心：分级展示 + 创建/启用/删除 skill | [README](packages/dsh-skill-explorer/README.md) | ✅ 已发布 |
 | `@wingsky-1/dsh-opencode-usage` | OpenCode Go 套餐用量悬浮框（rolling/weekly/monthly） | [README](packages/dsh-opencode-usage/README.md) | ✅ 已发布 |
 | `@wingsky-1/dsh-lan-proxy` | 局域网访问 dsh web UI（HTTP/HTTPS/WS 转发 + TLS） | [README](packages/dsh-lan-proxy/README.md) | ✅ 已发布 |
 | `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理器（stdio/HTTP，工具注册给模型） | [README](packages/dsh-mcp-manager/README.md) | ✅ 已发布 |
 | `@wingsky-1/dsh-idle-archive` | 会话闲置提醒归档 | [README](packages/dsh-idle-archive/README.md) | ✅ 已发布 |
 | `@wingsky-1/dsh-gzip` | /api 响应 gzip 压缩 | [README](packages/dsh-gzip/README.md) | ✅ 已发布 |
 | `@wingsky-1/dsh-web-file-preview` | 点击对话文件链接在 web 端预览（图片/文本/Markdown/代码/Diff） | [README](packages/dsh-web-file-preview/README.md) | ✅ 已发布 |
+
+> **已停止维护**：`@wingsky-1/dsh-skill-explorer`（技能中心/skill 管理）已**不再维护**
+> （npm 已 deprecate，插件包与聚合包均已移除）。web UI 侧已有更优实现
+> `@linxin666/dsh-client-ui-skill-explorer`（`dsh-web-ui` 仓库 `packages/dsh-skill-explorer`），
+> 支持符号链接识别、链接技能安全处理等，请直接使用 web UI 内置技能中心，勿再安装本包。
 
 > dsh-memory（项目长期记忆）暂未包含，规划中。
 
@@ -61,7 +65,7 @@ dsh plugin --profile web remove @wingsky-1/dsh-notifier
 
 ```sh
 # 检测 profile 中是否仍引用旧 id（home 级与 profile 级）
-grep -rnE '^\s*id:\s*(dsh-gzip|dsh-idle-archive|lan-proxy|mcp-manager|notifier|opencode-usage|skill-explorer)\s*$' \
+grep -rnE '^\s*id:\s*(dsh-gzip|dsh-idle-archive|lan-proxy|mcp-manager|notifier|opencode-usage)\s*$' \
   "$DSH_HOME/cordis.patch.yml" ~/.dsh/profiles/*/cordis.patch.yml 2>/dev/null
 # 有输出 → 重装覆盖拉取新配置（默认装 latest，即当前最新版）
 dsh plugin --profile web remove @wingsky-1/<包>
