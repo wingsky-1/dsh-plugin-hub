@@ -313,6 +313,10 @@ import STYLE from "./style.css";
           var head = el("div", { style: "display:flex;gap:6px;align-items:center" });
           head.appendChild(el("span", { text: fmtTime(r.ts), style: "color:var(--dsw-alias-label-tertiary,#8a919c)" }));
           head.appendChild(el("span", { text: KIND_LABELS[r.kind] || r.kind, style: "font-weight:600" }));
+          if (r.suppressed === "quiet") {
+            // 免打扰拦截未发出：标记，让用户区分「已发」与「被免打扰拦下」
+            head.appendChild(el("span", { text: "免打扰拦截未发出", style: "color:var(--dsw-alias-label-tertiary,#8a919c);font-size:10px;border:1px solid var(--dsw-alias-border-l1,#e2e5ea);border-radius:8px;padding:0 4px" }));
+          }
           row.appendChild(head);
           row.appendChild(el("div", { text: r.title + "：" + r.message, style: "color:var(--dsw-alias-label-secondary,#5f6672)" }));
           holder.appendChild(row);
@@ -386,6 +390,24 @@ import STYLE from "./style.css";
         }));
         body.appendChild(channels);
 
+        // 合并/去重：错误合并窗口与完成聚合窗口（ms，0=关闭；沿用配置面板）
+        var mergeSection = el("div", { class: "dn-section" });
+        mergeSection.appendChild(el("div", { class: "dn-section-title", text: "合并/去重" }));
+        function mergeField(objKey: any, label: any, max: number) {
+          var field = el("div", { class: "dn-row", style: "min-height:36px" });
+          field.appendChild(el("span", { style: "flex:1", text: label + "（ms，0=关）" }));
+          var input = el("input", { type: "number", min: "0", step: "1000", value: String(config[objKey] || 0), style: "width:84px;background:var(--dsw-alias-bg-layer-1,#f5f6f8);color:inherit;border:1px solid var(--dsw-alias-border-l1,#e2e5ea);border-radius:6px;padding:3px 6px;margin:6px 0", onChange: function () {
+            var v = parseInt(input.value, 10);
+            config[objKey] = Number.isFinite(v) && v >= 0 && v <= max ? v : 0;
+            saveConfig(config);
+          } });
+          field.appendChild(input);
+          mergeSection.appendChild(field);
+        }
+        mergeField("errorMergeWindowMs", "错误合并窗口", 3600000);
+        mergeField("doneMergeWindowMs", "完成聚合窗口", 60000);
+        body.appendChild(mergeSection);
+
         var quiet = el("div", { class: "dn-section" });
         quiet.appendChild(el("div", { class: "dn-section-title", text: "免打扰时段" }));
         var quietRow = el("div", { class: "dn-row" });
@@ -439,6 +461,38 @@ import STYLE from "./style.css";
           style: "float:right;border:1px solid var(--dsw-alias-border-l1,#e2e5ea);background:var(--dsw-alias-bg-layer-1,#f5f6f8);border-radius:6px;padding:1px 8px;cursor:pointer;color:inherit;font-size:11px",
           onClick: function () {
             renderHistory(histHolder);
+          },
+        }));
+        // 清空记录（二次确认：首次点击进入「确认清空？」态，3s 内再点才真正清空）
+        var clearArmed = false;
+        var clearTimer: any = null;
+        histTitle.appendChild(el("button", {
+          type: "button",
+          text: "清空",
+          style: "float:right;margin-right:6px;border:1px solid var(--dsw-alias-border-l1,#e2e5ea);background:var(--dsw-alias-bg-layer-1,#f5f6f8);border-radius:6px;padding:1px 8px;cursor:pointer;color:inherit;font-size:11px",
+          onClick: function () {
+            var btn = this;
+            if (!clearArmed) {
+              clearArmed = true;
+              btn.textContent = "确认清空？";
+              if (clearTimer !== null) clearTimeout(clearTimer);
+              clearTimer = setTimeout(function () {
+                clearArmed = false;
+                btn.textContent = "清空";
+              }, 3000);
+              return;
+            }
+            clearArmed = false;
+            if (clearTimer !== null) clearTimeout(clearTimer);
+            fetch(ROUTES.history, { method: "DELETE" })
+              .then(function (res) { if (!res.ok) throw new Error("HTTP " + res.status); return res.json(); })
+              .then(function (data) {
+                toast("已清空 " + data.removed + " 条通知记录");
+                renderHistory(histHolder);
+              })
+              .catch(function (error) {
+                toast("清空失败：" + error.message + accessHint(error));
+              });
           },
         }));
         hist.appendChild(histTitle);
@@ -788,7 +842,8 @@ import STYLE from "./style.css";
           var records = (data && data.records) || [];
           var count = 0;
           for (var i = 0; i < records.length; i += 1) {
-            if (records[i].ts > lastRead) count += 1;
+            // 被免打扰拦截（suppressed）的记录不计入未读角标（无需提醒查看）
+            if (records[i].ts > lastRead && !records[i].suppressed) count += 1;
           }
           unreadCount = count;
           updateBadge();

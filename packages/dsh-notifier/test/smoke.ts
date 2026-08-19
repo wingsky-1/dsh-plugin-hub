@@ -97,6 +97,15 @@ assert.equal(normalizeConfig({ askRemindMin: 0 }).askRemindMin, 0, "0=关闭审�
 assert.equal(normalizeConfig({ askRemindMin: "x" }).askRemindMin, DEFAULT_CONFIG.askRemindMin, "非法提醒分钟回默认 5");
 assert.deepEqual(normalizeConfig({ quietHours: { allowKinds: ["ask", "bogus", "error"] } }).quietHours.allowKinds, ["ask", "error"], "allowKinds 白名单过滤");
 
+// 合并/清理配置：doneMergeWindowMs / errorMergeWindowMs(0=关) / historyMaxAgeDays
+assert.equal(normalizeConfig({ doneMergeWindowMs: 0 }).doneMergeWindowMs, 0, "完成聚合窗口 0=关闭");
+assert.equal(normalizeConfig({ doneMergeWindowMs: 1500 }).doneMergeWindowMs, 1500, "完成聚合窗口可配");
+assert.equal(normalizeConfig({ doneMergeWindowMs: "x" }).doneMergeWindowMs, DEFAULT_CONFIG.doneMergeWindowMs, "非法完成窗口回默认");
+assert.equal(normalizeConfig({ errorMergeWindowMs: 0 }).errorMergeWindowMs, 0, "错误合并窗口 0=关闭");
+assert.equal(normalizeConfig({ errorMergeWindowMs: -1 }).errorMergeWindowMs, DEFAULT_CONFIG.errorMergeWindowMs, "负数错误窗口回默认");
+assert.equal(normalizeConfig({ historyMaxAgeDays: 30 }).historyMaxAgeDays, 30, "按天清理可配");
+assert.equal(normalizeConfig({ historyMaxAgeDays: 0 }).historyMaxAgeDays, 0, "按天清理 0=关");
+
 // buildSystemCommand：Windows/macOS/Linux 参数形态（smoke 断言 spawn 参数）
 const winArgs = buildSystemCommand("win32", "标题", "内容 -x", { silent: true, toastScript: "t.ps1" });
 assert.equal(winArgs[0], "powershell");
@@ -353,6 +362,30 @@ function agentWithTitle(id, title, opts = {}) {
   assert.match(infos[1], /窗口内其他错误/, "被合并错误保留摘要（e1）");
 }
 
+// 合并 0=关闭：错误不合并、完成不聚合（每条即时）
+{
+  const cfg0 = join(work, "merge-off.json");
+  writeFileSync(cfg0, JSON.stringify({ errorMergeWindowMs: 0, doneMergeWindowMs: 0 }));
+  const infos = [];
+  const { ctx, listeners } = makeFakeCtx({ logger: { warn: () => {}, info: (t) => infos.push(t) } });
+  await apply(ctx, { enabled: true, configFile: cfg0, toastScript: join(work, "toast.ps1"), historyFile: join(work, "history.jsonl") });
+  const error = listeners.get("agent/error")[0];
+  const status = listeners.get("agent/status")[0];
+
+  // 错误：窗口=0 → 两条都通知（不合并）
+  error({ agent: { id: "s0-1" }, turn: 1, step: 1, error: new Error("x1") });
+  error({ agent: { id: "s0-1" }, turn: 1, step: 2, error: new Error("x2") });
+  assert.equal(infos.length, 2, "errorMergeWindowMs=0：错误不合并");
+
+  // 完成：窗口=0 → 连续两条完成都即时通知（不聚合）
+  status({ agent: agentWithTitle("s0-a", "任务甲", { turnEnd: 1 }), status: "running" });
+  status({ agent: agentWithTitle("s0-a", "任务甲", { turnEnd: 2 }), status: "idle" });
+  status({ agent: agentWithTitle("s0-b", "任务乙", { turnEnd: 1 }), status: "running" });
+  status({ agent: agentWithTitle("s0-b", "任务乙", { turnEnd: 2 }), status: "idle" });
+  const doneCount = infos.filter((t) => /done/.test(t)).length;
+  assert.equal(doneCount, 2, "doneMergeWindowMs=0：完成不聚合，两条都即时");
+}
+
 // 子代理完成：独立开关 notifySubagentDone（默认关）+ 独立事件类型 subagent-done
 {
   const subCfg = join(work, "subagent.json");
@@ -524,7 +557,8 @@ function agentWithTitle(id, title, opts = {}) {
   const { ctx: ctx2, listeners: listeners2 } = makeFakeCtx({ logger: { warn: () => {}, info: (t) => infos2.push(t) } });
   await apply(ctx2, { enabled: true, configFile: qhCfg, toastScript: join(work, "toast.ps1"), historyFile: join(work, "history.jsonl") });
   await listeners2.get("approval/request")[0]({ toolName: "pwsh", agent: { id: "qh-2" } }, async () => "ok");
-  assert.equal(infos2.length, 0, "无 allowKinds 时免打扰静默");
+  assert.equal(infos2.filter((t) => !t.includes("被免打扰拦截")).length, 0, "无 allowKinds 时免打扰不产生实际通知");
+  assert.ok(infos2.some((t) => t.includes("被免打扰拦截")), "被拦截仍记录日志（可核对发没发）");
 }
 
 // 用户提问通知：包装 ctx.userQuestions.ask（internal/service 事件 + 热重载解包重包）
@@ -773,6 +807,35 @@ function agentWithTitle(id, title, opts = {}) {
     const testCount = records.filter((r) => r.kind === "test").length;
     assert.ok(testCount >= concurrent, `并发写不丢记录（test 记录 ${testCount} ≥ ${concurrent}）`);
   }
+}
+
+// history：DELETE 清空 + historyMaxAgeDays 按天清理（独立上下文，隔离其他用例）
+{
+  const hfile = join(work, "history-clean.jsonl");
+  const hcfg = join(work, "history-clean-cfg.json");
+  writeFileSync(hcfg, JSON.stringify({ historyMaxAgeDays: 7 }));
+  // 预置一条 10 天前的旧记录
+  writeFileSync(hfile, JSON.stringify({ ts: Date.now() - 10 * 86400000, kind: "done", title: "旧记录", message: "10 天前" }) + "\n");
+  const { routes } = await makeNotifier({ historyFile: hfile, configFile: hcfg });
+  const h = routes.find((r) => r.path === ROUTES.history);
+  const t = routes.find((r) => r.path === ROUTES.test);
+  // 触发一条新通知（test 路由 → 落盘；写时会按 7 天 cutoff 剔除旧行）
+  await t.handler(fakeReq({ method: "POST" }), makeRes().res);
+  await new Promise((resolve) => setTimeout(resolve, 80)); // 等写队列排空
+  const { rec: recGet, res: resGet } = makeRes();
+  await h.handler(fakeReq({}), resGet);
+  const records = JSON.parse(recGet.text).records;
+  assert.equal(records.length, 1, "historyMaxAgeDays=7：10 天前旧记录被清理，只留新记录");
+  assert.equal(records[0].kind, "test", "保留的是新记录");
+  // DELETE 清空
+  const { rec: recDel, res: resDel } = makeRes();
+  await h.handler(fakeReq({ method: "DELETE" }), resDel);
+  const del = JSON.parse(recDel.text);
+  assert.equal(del.ok, true);
+  assert.ok(del.removed >= 1, "DELETE 返回被清空条数");
+  const { rec: recEmpty, res: resEmpty } = makeRes();
+  await h.handler(fakeReq({}), resEmpty);
+  assert.equal(JSON.parse(recEmpty.text).records.length, 0, "清空后 GET 为空");
 }
 
 // ---------------------------------------------------------------- 两端路由一致性

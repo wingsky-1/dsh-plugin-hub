@@ -69,6 +69,10 @@ export interface NotifyConfig {
   errorMergeWindowMs: number;
   /** 审批等待超时二次提醒（分钟；0 = 关闭）。 */
   askRemindMin: number;
+  /** 完成风暴聚合窗口（毫秒；0 = 关闭聚合，每条完成即时通知）。 */
+  doneMergeWindowMs: number;
+  /** 通知历史按天自动清理（0 = 不按时间清理，仅行数上限滚动）。 */
+  historyMaxAgeDays: number;
 }
 
 /** 布尔配置键联合（normalizeConfig 白名单与客户端渲染依赖它）。 */
@@ -151,6 +155,11 @@ export const DEFAULT_CONFIG: NotifyConfig = {
   errorMergeWindowMs: 60000,
   /** 审批等待超时二次提醒（分钟，0=关闭；审批被卡是最高成本事件，值得重提醒）。 */
   askRemindMin: 5,
+  /** 完成风暴聚合窗口（毫秒；0=关闭——并行子代理收尾防刷屏，代价是窗口内
+   *  后续完成会延迟到窗口到点以聚合条补发）。 */
+  doneMergeWindowMs: 3000,
+  /** 通知历史按天自动清理（0=不按时间清理，仅靠行数上限滚动）。 */
+  historyMaxAgeDays: 0,
 };
 
 /** 布尔配置键（单一事实源：normalizeConfig 白名单与客户端渲染依赖它）。 */
@@ -174,11 +183,17 @@ export function normalizeConfig(input: unknown): NotifyConfig {
   for (const key of CONFIG_KEYS) {
     if (typeof src[key] === "boolean") base[key] = src[key];
   }
-  if (Number.isFinite(src.errorMergeWindowMs) && (src.errorMergeWindowMs as number) > 0) {
-    base.errorMergeWindowMs = Math.min(Math.round(src.errorMergeWindowMs as number), 3600000);
+  if (Number.isFinite(src.errorMergeWindowMs) && (src.errorMergeWindowMs as number) >= 0 && (src.errorMergeWindowMs as number) <= 3600000) {
+    base.errorMergeWindowMs = Math.round(src.errorMergeWindowMs as number);
   }
   if (Number.isFinite(src.askRemindMin) && (src.askRemindMin as number) >= 0 && (src.askRemindMin as number) <= 600) {
     base.askRemindMin = Math.round(src.askRemindMin as number);
+  }
+  if (Number.isFinite(src.doneMergeWindowMs) && (src.doneMergeWindowMs as number) >= 0 && (src.doneMergeWindowMs as number) <= 60000) {
+    base.doneMergeWindowMs = Math.round(src.doneMergeWindowMs as number);
+  }
+  if (Number.isFinite(src.historyMaxAgeDays) && (src.historyMaxAgeDays as number) >= 0 && (src.historyMaxAgeDays as number) <= 3650) {
+    base.historyMaxAgeDays = Math.round(src.historyMaxAgeDays as number);
   }
   if (typeof src.quietHours === "object" && src.quietHours !== null) {
     const qh = src.quietHours as Record<string, unknown>;
@@ -198,7 +213,7 @@ export function normalizeConfig(input: unknown): NotifyConfig {
   for (const key of Object.keys(src)) {
     if ((CONFIG_KEYS as readonly string[]).includes(key)) continue;
     // 已归一化过的键不再透传（否则非法值会以原样覆盖归一化结果）
-    if (key === "quietHours" || key === "errorMergeWindowMs" || key === "askRemindMin") continue;
+    if (key === "quietHours" || key === "errorMergeWindowMs" || key === "askRemindMin" || key === "doneMergeWindowMs" || key === "historyMaxAgeDays") continue;
     out[key] = src[key];
   }
   return out;
@@ -633,7 +648,7 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
    * 记录内容与通知文案同源（不含工具参数等敏感信息）。
    */
   let historyWriteChain: Promise<void> = Promise.resolve();
-  function appendHistory(entry: { ts: number; kind: string; title: string; message: string }) {
+  function appendHistory(entry: { ts: number; kind: string; title: string; message: string; suppressed?: string }) {
     historyWriteChain = historyWriteChain.then(async () => {
       try {
         let lines: string[] = [];
@@ -644,6 +659,18 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
           // 文件不存在：从空列表开始
         }
         lines.push(JSON.stringify(entry));
+        // 按天自动清理（historyMaxAgeDays>0）：写入时剔除超过保留期的旧记录
+        if (current.historyMaxAgeDays > 0) {
+          const cutoff = entry.ts - current.historyMaxAgeDays * 86400000;
+          lines = lines.filter((line) => {
+            try {
+              const obj = JSON.parse(line);
+              return typeof obj.ts === "number" && obj.ts >= cutoff;
+            } catch {
+              return true; // 坏行保守保留
+            }
+          });
+        }
         if (lines.length > HISTORY_LIMIT * 2) lines = lines.slice(-HISTORY_LIMIT);
         const tmp = `${historyStore}.${process.pid}.${Date.now().toString(36)}.tmp`;
         await writeFile(tmp, lines.join("\n") + "\n", "utf8");
@@ -655,21 +682,27 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
   }
 
   /**
-   * 通知入口：免打扰检查 → 系统通知 → SSE 广播 → 历史落盘。
+   * 通知入口：免打扰检查（被拦截也记录「未发出」历史）→ 系统通知 → SSE 广播 → 历史落盘。
    * @param kind ask / done / error / turn-end。
    * @param detail {tool?, taskTitle?, reason?, durationMs?, turn?, step?, message?, mergedCount?}（不含工具参数）。
    */
   function notify(kind: string, detail: NotifyDetail = {}) {
-    if (isInQuietHours(new Date(), current.quietHours)) {
-      // 免打扰紧急例外：allowKinds 中的 kind（如 ask/question——卡住的审批
-      // 需要深夜叫醒）在免打扰时段仍放行
-      const allows = current.quietHours.allowKinds ?? [];
-      if (!allows.includes(kind)) return;
-    }
     const spec = NOTIFY_KINDS[kind];
     const ts = Date.now();
     const title = spec?.title ?? "DSH 通知";
     const message = spec?.message({ ...detail, ts }) ?? detail.message ?? "";
+    const suppressedByQuiet = (() => {
+      if (!isInQuietHours(new Date(), current.quietHours)) return false;
+      // 免打扰紧急例外：allowKinds 中的 kind（如 ask/question——卡住的审批需要叫醒）仍放行
+      const allows = current.quietHours.allowKinds ?? [];
+      return !allows.includes(kind);
+    })();
+    if (suppressedByQuiet) {
+      // 免打扰拦截：**仍落一条「未发出」历史 + 日志**，让用户能核对「到底发没发」
+      ctx.logger.info(`dsh-notifier: ${kind} 被免打扰拦截（未发出）：${message.replace(/\n/g, " / ")}`);
+      appendHistory({ ts, kind, title, message, suppressed: "quiet" });
+      return;
+    }
     const payload = { type: "notify", kind, title, message, ts };
     if (current.systemNotify) systemNotify(title, message);
     if (current.browserNotify) broadcast(payload);
@@ -803,20 +836,25 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
 
   /**
    * 完成通知风暴聚合（done / subagent-done）：
-   * 首条「完成」立即原样通知（单条场景零感知延迟）；同时起 3s 窗口，窗口内到达
-   * 的后续完成只累积标题与计数，窗口到点**补发一条聚合通知**（「另有 N 个任务
-   * 已完成」）——并行子代理收尾时 10 条刷屏收敛为首条 + 1 条汇总。
-   * 窗口定时器 unref（测试/空闲不挂进程），卸载时由全局 disposer 清空。
+   * 首条「完成」立即原样通知（单条场景零感知延迟）；同时起 doneMergeWindowMs
+   * 窗口（0=关闭聚合），窗口内到达的后续完成只累积标题与计数，窗口到点**补发
+   * 一条聚合通知**（「另有 N 个任务已完成」）——并行子代理收尾时 10 条刷屏收敛
+   * 为首条 + 1 条汇总。窗口定时器 unref，卸载时由全局 disposer 清空。
    */
-  const DONE_MERGE_MS = 3000;
   let doneBatch: { kind: string; count: number; titles: string[] } | null = null;
   let doneBatchTimer: NodeJS.Timeout | null = null;
   function enqueueDone(kind: string, title: string | undefined, durationMs: number) {
     const label = title ?? (kind === "subagent-done" ? "子任务" : "任务");
+    const mergeMs = current.doneMergeWindowMs;
+    if (mergeMs <= 0) {
+      // 完成聚合已关闭：每条完成即时通知（不合并）
+      notify(kind, { taskTitle: label, durationMs });
+      return;
+    }
     if (doneBatch === null) {
       notify(kind, { taskTitle: label, durationMs });
       doneBatch = { kind, count: 1, titles: [label] };
-      doneBatchTimer = setTimeout(flushDoneMerge, DONE_MERGE_MS);
+      doneBatchTimer = setTimeout(flushDoneMerge, mergeMs);
       doneBatchTimer.unref();
       return;
     }
@@ -926,8 +964,9 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
         const now = Date.now();
         const rawMessage = payload?.error instanceof Error ? payload.error.message : errorMessage(payload?.error);
         const sanitized = sanitizeErrorText(rawMessage);
-        const prev = errorMerge.get(key);
-        if (prev !== undefined && now - prev.since < current.errorMergeWindowMs) {
+        const mergeMs = current.errorMergeWindowMs;
+        const prev = mergeMs > 0 ? errorMerge.get(key) : undefined;
+        if (prev !== undefined && now - prev.since < mergeMs) {
           prev.count += 1;
           prev.since = now;
           prev.lastMessages.push(sanitized.slice(0, 80));
@@ -1110,21 +1149,49 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
     path: ROUTES.history,
     handler: async (req, res) => {
       if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
-      if (req.method !== "GET") return writeJson(res, 405, { error: `method not allowed: ${req.method}` });
-      const records = [];
-      try {
-        const text = await readFile(historyStore, "utf8");
-        for (const line of text.split("\n").filter(Boolean).slice(-HISTORY_LIMIT)) {
-          try {
-            records.push(JSON.parse(line));
-          } catch {
-            // 损坏行跳过
+      if (req.method === "GET") {
+        const records: Array<Record<string, unknown>> = [];
+        try {
+          const text = await readFile(historyStore, "utf8");
+          const all = text.split("\n").filter(Boolean).slice(-HISTORY_LIMIT * 2);
+          const cutoff = current.historyMaxAgeDays > 0 ? Date.now() - current.historyMaxAgeDays * 86400000 : 0;
+          for (const line of all) {
+            try {
+              const obj = JSON.parse(line) as Record<string, unknown>;
+              if (cutoff > 0 && typeof obj.ts === "number" && obj.ts < cutoff) continue; // 超期过滤
+              records.push(obj);
+            } catch {
+              // 损坏行跳过
+            }
           }
+          // 保守：只返回最近 HISTORY_LIMIT 条（写时已按行数与按天截断，此处兜底）
+          records.splice(0, Math.max(0, records.length - HISTORY_LIMIT));
+        } catch {
+          // 无历史文件：返回空列表
         }
-      } catch {
-        // 无历史文件：返回空列表
+        writeJson(res, 200, { ok: true, records });
+        return;
       }
-      writeJson(res, 200, { ok: true, records });
+      if (req.method === "DELETE") {
+        // 清空通知历史（写空文件原子化；返回被清空条数）
+        let removed = 0;
+        try {
+          const text = await readFile(historyStore, "utf8");
+          removed = text.split("\n").filter(Boolean).length;
+        } catch {
+          removed = 0;
+        }
+        try {
+          const tmp = `${historyStore}.${process.pid}.${Date.now().toString(36)}.clear.tmp`;
+          await writeFile(tmp, "", "utf8");
+          await rename(tmp, historyStore);
+        } catch (error) {
+          ctx.logger.warn(`dsh-notifier: 清空历史失败: ${errorMessage(error)}`);
+        }
+        writeJson(res, 200, { ok: true, removed });
+        return;
+      }
+      writeJson(res, 405, { error: `method not allowed: ${req.method}` });
     },
   };
 
