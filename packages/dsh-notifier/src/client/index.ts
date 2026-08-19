@@ -52,13 +52,12 @@ import STYLE from "./style.css";
   };
 
   function injectStyle() {
-    // 检测（每次改 CSS 递增），版本不符则移除重建，保证新 CSS 在热更新后生效。
+    // 每次 apply 直接重建 <style>（无 cssVersion 字符串比对）：行为等价，
+    // 且消除「改 CSS 忘 bump 版本号则热更新不生效」的手动状态漂移。
     var existing = document.getElementById(STYLE_ID);
-    if (existing && existing.dataset.cssVersion === "5") return;
     if (existing) existing.remove();
     var style = document.createElement("style");
     style.id = STYLE_ID;
-    style.dataset.cssVersion = "5";
     style.textContent = STYLE;
     document.head.appendChild(style);
   }
@@ -144,53 +143,81 @@ import STYLE from "./style.css";
     return node;
   }
 
-  /** 面板拖拽：按住 header 拖动，位置持久化到 localStorage（刷新后保持）。 */
+  /** 面板拖拽：Pointer Events 重写（触屏统一——iOS Safari 兼容鼠标事件不可靠：
+   *  触摸拖动不产生持续 mousemove，旧实现触屏完全拖不动）。配 CSS
+   *  .dn-header{touch-action:none} 防滚动手势抢占；指针捕获避免移出面板丢事件；
+   *  位置 clamp 在视口内（防拖出「失踪」），持久化 localStorage。
+   */
   function attachDrag(header: any, panel: any) {
-    header.addEventListener("mousedown", function (e: any) {
-      if (e.button !== 0) return;
+    header.addEventListener("pointerdown", function (e: any) {
+      if (e.button !== undefined && e.button !== 0) return;
       if (e.target && e.target.closest("button")) return; // 按钮点击不触发拖拽
       var rect = panel.getBoundingClientRect();
       var startX = e.clientX;
       var startY = e.clientY;
       var startLeft = rect.left;
       var startTop = rect.top;
-      var dragging = true;
       var moved = false;
+      function clampPos(left: number, top: number) {
+        var pw = panel.offsetWidth || 320;
+        var ph = panel.offsetHeight || 300;
+        return {
+          left: Math.min(Math.max(0, left), Math.max(0, window.innerWidth - pw)),
+          top: Math.min(Math.max(0, top), Math.max(0, window.innerHeight - ph)),
+        };
+      }
       function onMove(ev: any) {
-        if (!dragging) return;
         var dx = ev.clientX - startX;
         var dy = ev.clientY - startY;
         if (!moved && Math.abs(dx) < 3 && Math.abs(dy) < 3) return; // 位移阈值，区分点击
         moved = true;
-        panel.style.left = Math.max(0, startLeft + dx) + "px";
-        panel.style.top = Math.max(0, startTop + dy) + "px";
+        var pos = clampPos(startLeft + dx, startTop + dy);
+        panel.style.left = pos.left + "px";
+        panel.style.top = pos.top + "px";
         panel.style.right = "auto";
       }
       function onUp() {
-        dragging = false;
-        document.removeEventListener("mousemove", onMove);
-        document.removeEventListener("mouseup", onUp);
+        panel.removeEventListener("pointermove", onMove);
+        panel.removeEventListener("pointerup", onUp);
+        panel.removeEventListener("pointercancel", onUp);
+        try {
+          panel.releasePointerCapture(e.pointerId);
+        } catch (err) {
+          // 忽略
+        }
         if (moved) {
           try {
             localStorage.setItem(PANEL_ID + ":pos", JSON.stringify({ left: panel.style.left, top: panel.style.top }));
           } catch (err) {
-            // localStorage 不可用（隐私模式等）仅不持久化，不影响拖拽
+            // localStorage 不可用（隐私模式等）仅不持久化
           }
         }
       }
-      document.addEventListener("mousemove", onMove);
-      document.addEventListener("mouseup", onUp);
+      try {
+        panel.setPointerCapture(e.pointerId);
+      } catch (err) {
+        // 不支持捕获的浏览器：移出面板时可能丢事件，可接受
+      }
+      panel.addEventListener("pointermove", onMove);
+      panel.addEventListener("pointerup", onUp);
+      panel.addEventListener("pointercancel", onUp);
       e.preventDefault();
     });
   }
 
-  /** 恢复上次拖拽位置（无则用 CSS 默认 left:12px）。 */
+  /** 恢复上次拖拽位置（无则用 CSS 默认 left:12px）；越界值 clamp 回视口内。 */
   function restorePanelPos(panel: any) {
     try {
       var saved = JSON.parse(localStorage.getItem(PANEL_ID + ":pos") || "null");
       if (saved && saved.left) {
-        panel.style.left = saved.left;
-        panel.style.top = saved.top;
+        var pw = panel.offsetWidth || 320;
+        var ph = panel.offsetHeight || 300;
+        var mw = window.innerWidth;
+        var mh = window.innerHeight;
+        var left = Math.min(Math.max(0, parseFloat(saved.left) || 12), Math.max(0, mw - pw));
+        var top = Math.min(Math.max(0, parseFloat(saved.top) || 0), Math.max(0, mh - ph));
+        panel.style.left = left + "px";
+        panel.style.top = top + "px";
         panel.style.right = "auto";
       }
     } catch (err) {
@@ -200,9 +227,14 @@ import STYLE from "./style.css";
 
   function switchEl(key: any, label: any, config: any, onToggle: any) {
     var row = el("div", { class: "dn-row" });
-    row.appendChild(el("span", { text: label }));
+    // 整行作为触控目标（≥44px 见 CSS）：文本 label 用 htmlFor 关联 input，
+    // 点文字也能切换（WCAG 2.5.5 目标尺寸）
+    var inputId = "dn-sw-" + key + "-" + Math.random().toString(36).slice(2);
+    var text = el("label", { for: inputId, class: "dn-row-text" });
+    text.appendChild(el("span", { text: label }));
+    row.appendChild(text);
     var wrap = el("label", { class: "dn-switch" });
-    var input = el("input", { type: "checkbox", checked: config[key] === true, onChange: function () {
+    var input = el("input", { type: "checkbox", id: inputId, checked: config[key] === true, onChange: function () {
       config[key] = input.checked;
       onToggle(config);
     } });
