@@ -661,6 +661,30 @@ function agentWithTitle(id, title, opts = {}) {
     assert.equal(JSON.parse(rec2.text).ok, true);
     assert.match(rec1.text, /测试通知/, "SSE 客户端收到测试通知帧");
     assert.match(rec1.text, /"kind":"test"/, "测试帧带 kind=test 标记");
+    assert.match(rec1.text, /"seq":\d+/, "通知帧带递增 seq");
+  }
+
+  // events ?since 回放（独立上下文，seq 从 1 起）：断线补拉不丢尾部事件
+  {
+    const { routes: routes2 } = await makeNotifier();
+    const eventsRoute2 = routes2.find((r) => r.path === ROUTES.events);
+    const testRoute2 = routes2.find((r) => r.path === ROUTES.test);
+    await testRoute2.handler(fakeReq({ method: "POST" }), makeRes().res); // seq=1
+    await testRoute2.handler(fakeReq({ method: "POST" }), makeRes().res); // seq=2
+    // since=1 的连接：只回放 seq=2
+    const { rec, res } = makeRes();
+    await eventsRoute2.handler(fakeReq({ url: "/api/dsh-notifier/events?since=1" }), res);
+    const notifyFrames = rec.text.split("data: ").filter((s: string) => s.includes('"type":"notify"'));
+    assert.equal(notifyFrames.length, 1, "since=1 只回放 1 条");
+    assert.match(notifyFrames[0], /"seq":2/, "回放帧带正确 seq");
+    // since 超出缓冲 → 无回放，仅 connected 注释
+    const { rec: rec3, res: res3 } = makeRes();
+    await eventsRoute2.handler(fakeReq({ url: "/api/dsh-notifier/events?since=99" }), res3);
+    assert.ok(!rec3.text.includes('"type":"notify"'), "since 超出无回放");
+    // 非法 since 静默回退为 0
+    const { rec: rec4, res: res4 } = makeRes();
+    await eventsRoute2.handler(fakeReq({ url: "/api/dsh-notifier/events?since=abc" }), res4);
+    assert.ok(!rec4.text.includes('"type":"notify"'), "非法 since 按 0 处理");
   }
 
   // history：测试通知已落盘，GET 可查

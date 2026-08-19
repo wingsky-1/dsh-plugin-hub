@@ -406,6 +406,37 @@ import STYLE from "./style.css";
 
   var notified: any = [];
 
+  // 多标签主从租约（仅「同 URL 的同浏览器多标签」有效；跨 host/IP、跨浏览器
+  // 的 storage 域互不相交，去重自然失效——已按此口径写入 README）：
+  // 收到通知帧的标签先 checkMaster：有效租约且属于自己 → 续租并展示；
+  // 属于他人 → 静默；无主/已过期 → 抢占（写自己租约）并展示。
+  // 租约 15s：主标签关闭/后台休眠后，下一个帧事件在 ≤15s 窗口内由其他标签接管。
+  // 事件驱动、不依赖后台定时器（浏览器会对后台 setInterval 节流）。
+  var TAB_ID = Math.random().toString(36).slice(2);
+  var MASTER_KEY = "dsh-notifier:master";
+  var MASTER_LEASE_MS = 15000;
+  function claimMaster() {
+    try {
+      var raw = localStorage.getItem(MASTER_KEY);
+      var lease = raw ? JSON.parse(raw) : null;
+      var now = Date.now();
+      if (lease && typeof lease.id === "string" && typeof lease.ts === "number" && now - lease.ts < MASTER_LEASE_MS) {
+        if (lease.id === TAB_ID) {
+          lease.ts = now; // 续租
+          localStorage.setItem(MASTER_KEY, JSON.stringify(lease));
+          return true;
+        }
+        return false; // 他标签持有有效租约
+      }
+      // 无主/租约已过期：抢占为当前主标签
+      localStorage.setItem(MASTER_KEY, JSON.stringify({ id: TAB_ID, ts: now }));
+      return true;
+    } catch (error) {
+      // localStorage 不可用（隐私模式等）：退化为每标签单独展示（同旧行为）
+      return true;
+    }
+  }
+
   /** 页面是否处于安全上下文（HTTPS 或 localhost）——系统级 Notification 的前提。 */
   function isSecureContext() {
     return window.isSecureContext === true;
@@ -517,6 +548,8 @@ import STYLE from "./style.css";
    * 否则降级（页面内横幅 + 提示音 + 标题提醒）。
    */
   function showNotification(kind: any, title: any, message: any) {
+    // 多标签去重：仅主标签执行展示（通知/横幅/提示音/标题），副标签静默
+    if (!claimMaster()) return;
     if (systemNotificationUsable()) {
       try {
         // tag 加时间戳+随机后缀：每条通知独立显示，同类连发也互不替换
@@ -554,35 +587,98 @@ import STYLE from "./style.css";
     showNotification(payload.kind, payload.title, payload.message);
   }
 
-  // 页面重新可见时还原标题
+  // 当前 SSE 句柄（visibilitychange 回前台重建时引用；卸载时置 null）
+  var eventsHandle: any = null;
+
+  // 页面重新可见时：还原标题 + 强制重建 SSE（iOS 后台挂起后连接可能已失效，
+  // 重建自动带 since 补拉，避免断线窗口漏通知）
   document.addEventListener("visibilitychange", function () {
-    if (document.visibilityState === "visible") restoreTitle();
+    if (document.visibilityState === "visible") {
+      restoreTitle();
+      if (eventsHandle && eventsHandle.reconnect) eventsHandle.reconnect();
+    }
   });
 
+  /** SSE 半开连接看门狗：60s 无任何帧（notify 或心跳 ping）→ 主动重建。 */
+  var WATCHDOG_MS = 60000;
   function startEvents() {
     var source: any = null;
+    var lastActivity = 0;
+    var lastSeq = 0;
+    var watchdog: any = null;
+    var lastReconnectAt = 0;
+
+    function armWatchdog() {
+      if (watchdog !== null) clearTimeout(watchdog);
+      watchdog = setTimeout(function () {
+        if (Date.now() - lastActivity > WATCHDOG_MS) {
+          // 判定半开连接：心跳 ping 也应定期触达，超时说明链路静默断掉
+          forceReconnect();
+        } else {
+          armWatchdog();
+        }
+      }, WATCHDOG_MS + 5000);
+    }
+
+    function forceReconnect() {
+      // 重连节流：网络抖动时避免快速循环
+      var now = Date.now();
+      if (now - lastReconnectAt < 5000) return;
+      lastReconnectAt = now;
+      if (source !== null) {
+        try {
+          source.close();
+        } catch (error) {
+          // 忽略
+        }
+        source = null;
+      }
+      connect();
+    }
+
     function connect() {
       try {
-        source = new EventSource(ROUTES.events);
+        // 重连带 since：服务端先回放缓冲中 seq 更大的帧（断线补拉，不丢事件）
+        var url = ROUTES.events + (lastSeq > 0 ? "?since=" + lastSeq : "");
+        source = new EventSource(url);
+        lastActivity = Date.now();
         source.onmessage = function (event: any) {
           try {
             var data = JSON.parse(event.data);
-            if (data.type === "notify") handleNotifyFrame(data);
+            lastActivity = Date.now();
+            if (data.type === "ping") return; // 心跳帧：仅更新活动时间戳
+            if (data.type === "notify") {
+              // seq 去重：已处理过的帧（重连回放竞态）跳过
+              if (typeof data.seq === "number") {
+                if (lastSeq > 0 && data.seq <= lastSeq) return;
+                lastSeq = data.seq;
+              }
+              handleNotifyFrame(data);
+            }
           } catch (error) {
             console.warn("[dsh-notifier] 帧解析失败：", error);
           }
         };
         source.onerror = function () {
-          // EventSource 自动重连；失败降级无需额外处理。
+          // 主动重建（带 since 补拉）：EventSource 自动重连不带 query，无法回放
+          forceReconnect();
         };
+        armWatchdog();
       } catch (error) {
         console.warn("[dsh-notifier] EventSource 不可用：", error);
       }
     }
+
     connect();
-    return function () {
-      if (source !== null) source.close();
+    var handle = {
+      close: function () {
+        if (watchdog !== null) clearTimeout(watchdog);
+        if (source !== null) source.close();
+      },
+      reconnect: connect,
     };
+    eventsHandle = handle;
+    return handle;
   }
 
   // ------------------------------------------------------------ 入口与挂载
@@ -705,8 +801,9 @@ export function apply(ctx: any) {
             return function () {
               observer.disconnect();
               if (disposeEvents !== null) {
-                disposeEvents();
+                disposeEvents.close();
                 disposeEvents = null;
+                eventsHandle = null;
               }
               if (entry !== null) entry.remove();
               if (panel !== null) panel.remove();

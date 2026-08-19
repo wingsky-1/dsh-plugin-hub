@@ -487,16 +487,44 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
 
   const sseConnections = new Set<ServerResponse>();
 
-  function broadcast(payload: unknown) {
-    const frame = sseData(payload);
+  /** SSE 已派发帧的滚动缓冲（断线回补用；上限 RECENT_LIMIT，独立于 /history 的
+   *  200 条截断，避免补拉时尾部事件被截掉）。 */
+  const RECENT_LIMIT = 600;
+  let notifySeq = 0;
+  const recentFrames: Array<Record<string, unknown> & { seq: number }> = [];
+
+  function broadcast(payload: Record<string, unknown>) {
+    const frame: Record<string, unknown> & { seq: number } = Object.assign({}, payload, { seq: ++notifySeq });
+    recentFrames.push(frame);
+    if (recentFrames.length > RECENT_LIMIT) recentFrames.shift();
+    const text = sseData(frame);
     for (const res of sseConnections) {
       try {
-        res.write(frame);
+        res.write(text);
       } catch {
         // 连接已断，等待 close 清理
       }
     }
   }
+
+  /**
+   * SSE 心跳：每 30s 发一条 data 型 ping 帧。必须用 data 而非注释帧——注释帧
+   * 既不触发客户端 onmessage 也不触发 onerror，半开连接（断网/合盖/NAT 静默
+   * 掐断）时客户端零事件，无法自愈；data 帧让客户端的 watchdog 能检测失活。
+   */
+  const HEARTBEAT_MS = 30000;
+  const heartbeatTimer = setInterval(() => {
+    const frame = sseData({ type: "ping" });
+    for (const res of sseConnections) {
+      try {
+        res.write(frame);
+      } catch {
+        // 等待 close 清理
+      }
+    }
+  }, HEARTBEAT_MS);
+  // unref：心跳不阻止进程退出（服务端有主循环；测试/无连接时不会被句柄吊死）
+  heartbeatTimer.unref();
 
   // ------------------------------------------------------------ 通知主入口
 
@@ -874,12 +902,33 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
         writeJson(res, 405, { error: `method not allowed: ${req.method}` });
         return;
       }
+      // ?since=<seq>：断线补拉——先回放滚动缓冲中 seq 更大的帧，再进入实时；
+      // 补拉独立于 /history（200 条截断），不丢尾部事件。
+      let since = 0;
+      try {
+        const raw = new URL(req.url ?? "/", "http://127.0.0.1").searchParams.get("since");
+        const parsed = raw === null ? 0 : Number(raw);
+        since = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 0;
+      } catch {
+        since = 0;
+      }
       res.writeHead(200, {
         "content-type": "text/event-stream",
         "cache-control": "no-cache",
         connection: "keep-alive",
       });
       res.write(": connected\n\n");
+      if (since > 0) {
+        for (const frame of recentFrames) {
+          if (frame.seq > since) {
+            try {
+              res.write(sseData(frame));
+            } catch {
+              break; // 连接已断
+            }
+          }
+        }
+      }
       sseConnections.add(res);
       res.on("close", () => {
         sseConnections.delete(res);
@@ -987,6 +1036,7 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
   // 卸载时调用。若把 disposeRoutes() 写在 fn 主体，等于注册完立刻注销。
   ctx.effect(
     () => () => {
+      clearInterval(heartbeatTimer);
       for (const dispose of disposers) {
         try {
           dispose();
