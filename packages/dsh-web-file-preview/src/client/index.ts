@@ -50,6 +50,13 @@ import STYLE from "./style.css";
       // 可靠性交给浏览器 HTTP 缓存 + 宿主 ETag（no-cache + 弱 ETag）自动协商：
       // 未变 → 304 秒回；已变 → 200 最新。
 
+      // 预览代数：每次打开/关闭自增；在途请求落地时校验代数，不匹配即丢弃，
+      // 杜绝「快速开关预览后旧文件内容覆写新文件」的串文件竞态（评审 C1）。
+      let openSeq = 0;
+      // 当前预览的在途请求取消句柄：关闭 / 重开 / 插件卸载时 abort 全部在途请求，
+      // 避免慢速网络下请求悬空继续回写被移除的 DOM（评审 C2）。
+      let activeAbort: AbortController | undefined;
+
       // -------------------------------------------------------- DOM 工具
 
       function el(tag: string, attrs: any = {}, children?: any[]): any {
@@ -152,6 +159,10 @@ import STYLE from "./style.css";
 
       function closeModal(): void {
         closeLightbox();
+        // 使所有在途请求代数失效并取消，防止旧请求覆写新打开的状态或回写被移除的 DOM。
+        openSeq++;
+        activeAbort?.abort();
+        activeAbort = undefined;
         if (overlay !== undefined && overlay.parentElement !== null) overlay.remove();
         overlay = undefined;
         if (trackedObjectUrl !== undefined) {
@@ -168,6 +179,10 @@ import STYLE from "./style.css";
       function openPreview(path: string, cwd: string | undefined): void {
         ensureStyle();
         closeModal();
+        // 本次预览的代数与取消句柄：所有 fetch 共用，落地前校验代数。
+        const seq = ++openSeq;
+        const abort = new AbortController();
+        activeAbort = abort;
 
         const url = fileUrl(path, cwd);
         const group = renderGroupFor(path);
@@ -254,10 +269,10 @@ import STYLE from "./style.css";
         document.body.appendChild(ov);
 
         if (group.group === "image") {
-          renderImage(url, body);
+          renderImage(url, body, seq, abort.signal);
         } else {
-          fetchText(url, body);
-          probeDiff(path, cwd, addDiffTab);
+          fetchText(url, body, seq, abort.signal);
+          probeDiff(path, cwd, seq, addDiffTab, abort.signal);
         }
       }
 
@@ -282,9 +297,10 @@ import STYLE from "./style.css";
        * 文本/代码/Markdown：fetch 全文后按当前「预览 / 原始」模式渲染。
        * 原文存入 rawText，切换模式不重新请求。
        */
-      function fetchText(url: string, body: HTMLElement): void {
-        void fetch(url)
+      function fetchText(url: string, body: HTMLElement, seq: number, signal: AbortSignal): void {
+        void fetch(url, { signal })
           .then(async (res) => {
+            if (seq !== openSeq) return;
             if (!res.ok) {
               let msg = `加载失败（HTTP ${res.status}）`;
               try { const data = await res.json(); if (data && data.error) msg = String(data.error); } catch { /* 忽略 */ }
@@ -292,9 +308,10 @@ import STYLE from "./style.css";
               return;
             }
             rawText = await res.text();
+            if (seq !== openSeq) return;
             renderTabBody(body);
           })
-          .catch(() => errorView(body, "请求失败（无法访问文件预览服务）", url));
+          .catch(() => { if (seq === openSeq) errorView(body, "请求失败（无法访问文件预览服务）", url); });
       }
 
       /** 按当前模式渲染文本类正文（预览=md渲染/代码高亮；原始=等宽 pre；Diff=git diff）。 */
@@ -329,19 +346,21 @@ import STYLE from "./style.css";
       }
 
       /** 探测该文件是否有 git diff；有则把 Diff tab 加到 tab 栏（否则不展示）。 */
-      function probeDiff(path: string, cwd: string | undefined, onAvailable: () => void): void {
+      function probeDiff(path: string, cwd: string | undefined, seq: number, onAvailable: () => void, signal: AbortSignal): void {
         const diffUrl = fileDiffUrl(path, cwd);
-        void fetch(diffUrl)
+        void fetch(diffUrl, { signal })
           .then(async (res) => {
+            if (seq !== openSeq) return;
             if (!res.ok) return;
             const data = await res.json().catch(() => null);
+            if (seq !== openSeq) return;
             if (data && data.ok && data.hasDiff) {
               diffText = typeof data.diff === "string" ? data.diff : undefined;
               diffUntracked = !!data.untracked;
               onAvailable();
             }
           })
-          .catch(() => { /* 探测失败则无 Diff tab */ });
+          .catch(() => { /* Abort/探测失败则不展示 Diff tab */ });
       }
 
       /** 渲染 git diff（diff2html：行号/折叠/配色。兜底用 pre 原样展示）。 */
@@ -390,9 +409,10 @@ import STYLE from "./style.css";
         body.appendChild(img);
       }
 
-      function renderImage(url: string, body: HTMLElement): void {
-        void fetch(url)
+      function renderImage(url: string, body: HTMLElement, seq: number, signal: AbortSignal): void {
+        void fetch(url, { signal })
           .then(async (res) => {
+            if (seq !== openSeq) return;
             if (!res.ok) {
               let msg = `加载失败（HTTP ${res.status}）`;
               try { const data = await res.json(); if (data && data.error) msg = String(data.error); } catch { /* 忽略 */ }
@@ -400,9 +420,10 @@ import STYLE from "./style.css";
               return;
             }
             const blob = await res.blob();
+            if (seq !== openSeq) return;
             renderBlobImage(blob, body);
           })
-          .catch(() => errorView(body, "请求失败（无法访问文件预览服务）", url));
+          .catch(() => { if (seq === openSeq) errorView(body, "请求失败（无法访问文件预览服务）", url); });
       }
 
       // ------------------------------------------------- 图片灯箱（放大/平移）

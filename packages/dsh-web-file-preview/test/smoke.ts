@@ -196,6 +196,20 @@ try {
     assert.ok(Buffer.isBuffer(res._calls.data), "图片以 Buffer 直出");
     assert.equal(res._calls.data[0], 0x89);
   }
+  // 安全响应头（评审 S2）：一律 nosniff；SVG 额外 CSP sandbox（防顶层导航执行脚本）
+  {
+    writeFileSync(join(root, "pic.svg"), '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>', "utf8");
+    const resPng = fakeRes();
+    await serveFileRoute(resPng, rawReqForFiles(), new URL(urlOf("pic.png")), {});
+    assert.equal(resPng._calls.headers["x-content-type-options"], "nosniff", "图片响应带 nosniff");
+    const resSvg = fakeRes();
+    await serveFileRoute(resSvg, rawReqForFiles(), new URL(urlOf("pic.svg")), {});
+    assert.equal(resSvg._calls.headers["x-content-type-options"], "nosniff", "SVG 响应带 nosniff");
+    assert.equal(resSvg._calls.headers["content-security-policy"], "sandbox", "SVG 响应限制脚本执行（CSP sandbox）");
+    const resMd = fakeRes();
+    await serveFileRoute(resMd, rawReqForFiles(), new URL(urlOf("hello.md")), {});
+    assert.equal(resMd._calls.headers["x-content-type-options"], "nosniff", "文本响应带 nosniff");
+  }
 
   // ~ 波浪号前缀：`~/<file>` 展开为家目录下真实文件（打不开 → 404 bug 回归）
   {
@@ -225,7 +239,29 @@ try {
     assert.ok(r2._calls.data === undefined || r2._calls.data === null || String(r2._calls.data).length === 0, "304 无 body");
   }
 
-  // git diff（F2-B）：有变化才 hasDiff；无变化/非仓库/未跟踪分别标记
+  // 绝对路径免 cwd（评审 C5）
+  {
+    const res = fakeRes();
+    await serveFileRoute(res, rawReqForFiles(), new URL(`http://localhost${ROUTES.file}?path=${encodeURIComponent(textPath)}`), {});
+    assert.equal(res._calls.status, 200, "绝对路径无需 cwd 即可预览");
+  }
+  // 文本超限 413（评审 C6）：maxTextBytes 真正生效；413 在 ETag 前、不缓存
+  {
+    writeFileSync(join(root, "big.md"), "x".repeat(40), "utf8");
+    const res = fakeRes();
+    await serveFileRoute(res, rawReqForFiles(), new URL(urlOf("big.md")), { maxTextBytes: 16 });
+    assert.equal(res._calls.status, 413, "超限 → 413");
+    assert.equal(res._calls.headers["cache-control"], "no-store", "413 不缓存");
+    const payload = JSON.parse(res._calls.data);
+    assert.equal(payload.truncated, true, "413 带 truncated 标记");
+    assert.equal(payload.max, 16);
+    // 带 If-None-Match 也不走 304（413 优先于 ETag）
+    const res2 = fakeRes();
+    await serveFileRoute(res2, rawReqForFiles({ "if-none-match": '"9-1"' }), new URL(urlOf("big.md")), { maxTextBytes: 16 });
+    assert.equal(res2._calls.status, 413, "带 If-None-Match 的超限文件仍 413");
+  }
+
+  // git diff（F2）：有变化才 hasDiff；无变化/非仓库/未跟踪分别标记
   {
     const gitRoot = join(root, "gitrepo");
     mkdirSync(gitRoot, { recursive: true });
@@ -236,17 +272,17 @@ try {
       writeFileSync(join(gitRoot, "a.txt"), "line1\n", "utf8");
       g(["add", "."]);
       g(["commit", "-m", "c1"]);
-      assert.equal(computeGitDiff(gitRoot, "a.txt").reason, "no-changes", "已提交无变化 → no-changes");
+      assert.equal((await computeGitDiff(gitRoot, "a.txt")).reason, "no-changes", "已提交无变化 → no-changes");
       writeFileSync(join(gitRoot, "a.txt"), "line1\nline2\n", "utf8");
-      const r = computeGitDiff(gitRoot, "a.txt");
+      const r = await computeGitDiff(gitRoot, "a.txt");
       assert.equal(r.hasDiff, true, "已修改 → hasDiff");
       assert.ok(r.diff !== undefined && r.diff.includes("+line2"), "diff 含新增行");
       writeFileSync(join(gitRoot, "new.txt"), "x\n", "utf8");
-      assert.equal(computeGitDiff(gitRoot, "new.txt").untracked, true, "未跟踪新文件 → untracked");
+      assert.equal((await computeGitDiff(gitRoot, "new.txt")).untracked, true, "未跟踪新文件 → untracked");
     } else {
       console.log("  (跳过 git 断言：git init 不可用)");
     }
-    assert.equal(computeGitDiff(root, "hello.md").reason, "not-git", "非 git 目录 → not-git");
+    assert.equal((await computeGitDiff(root, "hello.md")).reason, "not-git", "非 git 目录 → not-git");
   }
 
   // 客户端契约 + 与宿主 ROUTES 路由一致性

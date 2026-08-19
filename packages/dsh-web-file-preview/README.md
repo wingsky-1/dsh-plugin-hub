@@ -38,6 +38,7 @@ dsh plugin --profile web add @wingsky-1/dsh-web-file-preview
 | Key | 默认 | 说明 |
 |---|---|---|
 | `enabled` | `true` | 关闭则不注册任何路由 |
+| `maxTextBytes` | `524288` (512KB) | 文本类（text/markdown/code）预览最大字节数；超限返回 `413` + `truncated` 标记（`Cache-Control: no-store`），客户端提示「文件过大」，可在新标签打开原文 |
 
 ## 验证
 
@@ -51,11 +52,11 @@ curl http://127.0.0.1:3080/api/dsh-file-preview/health
 - **保留 loopback 围栏**：所有 `/api` 路由强制校验回环来源（跨站 / DNS 重绑定防护），与平台既有约定一致；`health` 之外的 /file、/diff 也仅允许 GET（方法不符 405）。
 - **不做重复兜底**：本插件的语义是“能打开 dsh web 页面即已持有高权限”，因此**不做**任意文件访问强校验、会话鉴权、敏感名拦截——访问控制由平台/用户负责，本插件不重复实现每一套。
 - **路径定位**：`/file` 按 `resolve(cwd, path)` 直接定位，不做“逃出 cwd”拦截（任意文件访问由平台/用户负责）。`~`/`~/` 前缀展开为用户主目录。
-- **渲染安全**：Markdown / 代码渲染输出为 HTML 呈现层，`marked` / `highlight.js` 对正文做转义；本插件不承诺对渲染结果做 XSS 消毒——预览内容来自会话已见的文件，安全边界同“能打开 dsh web 即高权限”。
+- **渲染安全**：文件响应一律带 `X-Content-Type-Options: nosniff`；SVG 额外带 `Content-Security-Policy: sandbox`（顶层导航时不执行内嵌脚本）。Markdown / 代码渲染输出为 HTML 呈现层，`marked` / `highlight.js` 对正文做转义；本插件不承诺对渲染结果做 XSS 消毒——预览内容来自会话已见的文件，安全边界同“能打开 dsh web 即高权限”。
 
 ## 已知限制
 
-- 文本类一次性整读全文（未做截断/大文件流式/虚拟滚动）。
+- 文本类超过 `maxTextBytes`（默认 512KB）返回 413+截断标记，不再整读全文（大文件流式/虚拟滚动未实现，见 W10 专项）。
 - 可点击范围较宽（凡路径 title / 本地 href / 内联路径文本都可能进预览），后续可收窄到产出引用。
 - client bundle 含 `marked` + `highlight.js` 子集 + `diff2html`，min 后约 226KB（gzip ~68KB）。
 - 多会话切换以当前活跃会话 cwd 为准。
