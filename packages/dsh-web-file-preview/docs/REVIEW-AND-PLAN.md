@@ -91,6 +91,39 @@
 - `<a href>` 仍保留 API URL（新标签是唯一正解，无需 blob）。
 - 代价：多图异步闪现（可加 loading 占位样式）；渲染后额外一轮 DOM 遍历。
 
+### U8 引用面全量分析（2026-08 归档）
+
+Markdown 中可能引用其他文件的语法面，逐一分析「渲染去向 → 是否被现有 hook 覆盖 → 处置 → 风险」：
+
+| # | 语法/标签 | marked 渲染结果 | DOMPurify 行为 | U8 hook 是否覆盖 | 处置与风险 |
+|---|---|---|---|---|---|
+| 1 | 内联链接 `[t](url)` | `<a href>` | 保留 | ✅（`afterSanitizeAttributes` 遍历 a） | 见 v2；「url 指向 .md」时的跳转语义见决策点 D1 |
+| 2 | 内联图片 `![a](url)` | `<img src>` | 保留 | ✅ | v2 blob 化（见上） |
+| 3 | 参考式链接 `[t][r]` + `[r]: url` | 最终仍是 `<a href>` | 保留 | ✅ 天然覆盖（hook 只管 DOM） | 无额外成本 |
+| 4 | 参考式图片 `![a][r]` | `<img src>` | 保留 | ✅ 同上 | 无额外成本 |
+| 5 | raw HTML `<img src>` / `<a href>` | 原样透传 | 保留 | ✅ 覆盖（选 hook 方案的核心理由） | 与其他来源行为一致 |
+| 6 | raw HTML `<iframe src>` / `<object data>` / `<embed>` | 透传 | **默认移除**（白名单不含） | 无节点可处理 | 不会渲染也不会泄露；如需嵌入类内容＝扩展白名单（不推荐，风险大），标注「不支持」 |
+| 7 | raw HTML `<video src>/<audio src>/<source>` | 透传 | **默认移除** | — | 媒体内容不渲染（显示为空）；如需支持＝扩展白名单+blob 化（决策点 D3） |
+| 8 | 协议相对 `//host/x` | `<a href>` | 保留 | 跳过不重写（v2 已定） | 指向外域，原样保留即正确 |
+| 9 | `data:`(img base64) | `<img src>` | img 的 data: 在默认 URI 白名单内保留 | 需 `uponSanitizeAttribute` 判定（不能靠 after 钩子） | 本地内联图**无需重写**（本来就是完整数据）；hook 必须避免误重写 |
+| 10 | `file:///…` | `<a href>` | 保留（非脚本协议） | 跳过不重写 | 浏览器不会导航 file:（现代浏览器 block）→ 点击无动作；可加 title 提示「本地路径在 web 端不可打开」 |
+| 11 | 绝对路径 `/etc/x` | `<a href="/etc/x">` | 保留 | 跳过（v2 定为「web 根语义」） | 若用户本意是「服务端文件」则语义不符——经当前资源体系本就不指向会话文件，可接受 |
+| 12 | `#anchor` / `?query` 尾巴 | href 原样 | 保留 | 丢弃 fragment/query 再重写（v2 已定） | 已处理；`#` 需防误入 path 参数 |
+| 13 | 嵌套在 blockquote/列表/表格里的链接 | 仍为 a/img 节点 | 保留 | ✅ hook 按节点处理，天然覆盖 | 无 |
+| 14 | `%20`/实体解码 | href 为字面编码 | 保留 | `decodeURIComponent` 后入 `path`（v2 已定） | 已处理 |
+| 15 | 文件名含空格/中文/`#`/`?` | 原样 | 保留 | `new URL` 规范化 + 编码 | v2 已覆盖；smoke 断言 |
+| 16 | md 内链接到其它 md | `<a href="02.md">` | 保留 | hook 重写为 API URL | **决策点 D1**：新标签打开原文 vs Modal 内跳转预览（后者更贴近「阅读文档」预期，需内部导航处理） |
+| 17 | 大量内嵌图（N 张） | N 个 `<img>` | 保留 | blob 化逐一 fetch | **并发上限**（决策点 D4）：如同时在途 ≤6、其余惰性加载；关闭时全部 revoke；避免 N×OOM/连接池占满 |
+| 18 | 链接到不可预览后缀（`.zip`） | `<a href>` | 保留 | 重写后仍走 file API → 415 | 点开是 415 提示；应改为「不改写，保留原 href 下载语义」或标注不可预览——v2 需按分组判定过滤（只重写可预览后缀） |
+
+**风险归纳**：① 引用面全部收敛到 `<a href>` / `<img src>` 两个 DOM 节点类型（DOMPurify 白名单的天然结果），hook 单一实现点覆盖全部语法面；② 唯一系统性风险是「不可预览后缀被重写后 415」（#18）与「大量图并发」（#17），两者都在 v2 中补规则；③ `data:`、`file://`、协议相对按保留处理，不扩大引用语义。
+
+**待用户确认的决策点（U8 v2 实施前）**：
+- D1：`a[href]` 指向可预览文件时——(a) 新标签打开原文（现状 v2）；(b) Modal 内跳转预览（更像文档阅读，需加内部导航与返回栈）。
+- D2：`a[href]` 指向不可预览/非白名单后缀——(a) 原样保留（浏览器下载/原生），(b) 直接不渲染链接「（不支持预览）」。
+- D3：raw HTML 视频/音频——(a) 保持 DOMPurify 默认移除（内容消失但安全）；(b) 加白名单+blob 化（扩展面大，不建议首版）。
+- D4：内嵌图并发上限默认 6，超出惰性排队（渲染完一批再取下一批）。
+
 ### W10（大文件）—— 方向正确，3 处修正
 
 1. 413 截断有界防 OOM（stat 判定、不 readFile、每请求 O(1)），但**必须在 ETag/304 之前**（否则带缓存标签的超限文件被 304 短路、永远不进 413）——已并入 C6 实现；`?raw=1` **砍掉**（破坏有界保证；「新标签打开」已是等价语义）。
@@ -104,7 +137,33 @@
 - U4：Ctrl/Cmd+单击与中键（auxclick）语义保持现状（桌面习惯保存）。
 - 空 `catch` 保留：现有静默分支维持到对应改动重启之后（按阶段逐项解决）。
 
-## 7. 进度记录
+## 8. 能力 × 开源对标评审（2026-08）
+
+对照「优先引入成熟开源库，实在没有才自写」纪律，把插件全部能力（**含本次评审改动引入的手写逻辑**）逐项与开源生态对标。结论先行：**现存自写未构成「重复造轮子」，仅两处有成熟库可替换（均为可选）**。
+
+| 能力（来源） | 现状 | 成熟开源库 | 结论 |
+|---|---|---|---|
+| Markdown 渲染 | ✅ 已用 `marked` | markdown-it / remark | 保持（成熟度高，无替代收益） |
+| 代码高亮 | ✅ 已用 `highlight.js` 子集 | Shiki / Prism.js | 保持（hljs 体积/性能适合；Shiki 2MB+ 过重） |
+| Diff 渲染 | ✅ 已用 `diff2html` | jsdiff+自渲染 | 保持（行号/折叠既有） |
+| 输出消毒 | ✅ 已用 `DOMPurify` | — | 保持（U8 重写复用其 hook 机制） |
+| `~` 展开 | ✅ 已用 `untildify` | — | 保持 |
+| 图片 fetch→blob 通道（含 C1/C2 的 Abort） | 浏览器原生 fetch/URL | — | 原生能力，非轮子 |
+| 竞态代数门禁（C1）、AbortController（C2） | 编程模式（自写） | — | 浏览器原语约定，非库可替代 |
+| git 调用（C3/C4：execFile+maxBuffer+error 分流） | 自写 60 行 | [simple-git](https://github.com/steveukx/git-js) | **不换**：本插件仅需 3 个精确命令（-C/--porcelain/--no-ext-diff）且需精确控 timeout/maxBuffer/输出语义；simple-git 引入又封一层，反增加适配面 |
+| ETag/304、413 截断、错误码（S2/C6/C7） | 自写（HTTP 语义） | — | 协议层实现，无需库 |
+| 路径分组/识别（grouping、U5） | 自写（~30 行） | path-browserify 等 | **不换**：client 端已用 `new URL` 规范化，宿主用 node:path；extOf/拼接判定是领域逻辑 |
+| markdown 链接/图片重写（U8 v2 待实施） | `DOMPurify` hook + 自写展开 | unified/remark/rehype（如 rehype 系列） | **不换**：重写只需 20~30 行且须接入现有 marked+DOMPurify 管线；换 unified = 改整条渲染链，收益为零 |
+| 剪贴板降级（U2） | 原生 clipboard + execCommand 降级 | clipboard-polyfill（轻量） | 保持（原生已覆盖；polyfill 主要补旧浏览器） |
+| **灯箱手势：拖拽/滚轮/双指捏合（U6）** | 自写 ~60 行（pointer 状态机） | **[panzoom](https://github.com/timmywil/panzoom) (v4.x, 活跃)** | **可选替换**：成熟、统一 touch/pen/鼠标，~3KB gzip；代价=工具栏（zoomIn/out）需改调 panzoom API、行为微调。若替换：inline 进 bundle（dsh.client.inlineBareImports 已支持） |
+| **焦点陷阱（U11）** | 自写 ~20 行（Tab 循环） | [focus-trap](https://github.com/focus-trap/focus-trap) | **保持自写**（当前仅 Modal/灯箱两个简单容器；focus-trap 增加全局 document 事件管理与插件注入的独立性冲突；20 行已可测、行为可控） |
+
+**结论**：
+- 原则「复用 > 自研」已覆盖所有大能力（渲染/高亮/diff/消毒/untildify）；本次改动引入的 C1-C7/U1-U11 全部为「浏览器/Node 原生能力 + 协议实现」，无轮子。
+- 仅 **灯箱手势（U6）** 值得评估换 [panzoom](https://github.com/timmywil/panzoom)（决策 D0，可在实施 U8 v2 时一并定）：换 → bundle 体积 +3KB gzip、手势兼容性更稳（iOS/触摸边缘）；不换 → 保持依赖面最小。倾向：**首版不换**（手势自实现已过测、可控），若后续端形适配增多再换。
+- 焦点陷阱保持自写；git 封装保持自写；md 链接重写保持自写（复用 DOMPurify 能力）。
+
+## 9. 进度记录
 
 - [x] 阶段一：S2/C1/C2/C7（提交 `446e2c3`；smoke + contract + pack:check 全通过）
 - [x] 阶段二：C3/C4/C5/C6（提交 `446e2c3`）
