@@ -75,4 +75,6 @@ export function apply(ctx: PluginContext, config?: PreviewConfig): void {
 export { ROUTES, makeRoutes, serveFileRoute, previewKindOf, computeGitDiff };
 // 预览分组判定（单一事实源，宿主/客户端共用；经此透出供 smoke 断言双端一致）。
 export { groupOfPath, isLikelySingleFilePath } from "./grouping.js";
+// Markdown 相对引用展开（U8 v2；纯函数，经此透出供 smoke 断言）。
+export { resolveRelativePath } from "./relpath.js";
 

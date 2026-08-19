@@ -20,6 +20,7 @@ import { renderMarkdown } from "./md.js";
 import { highlightCode } from "./code.js";
 import { renderGroupFor, type GroupResult } from "./renderer.js";
 import { groupOfPath, isLikelySingleFilePath } from "../grouping.js";
+import { sanitizePreview } from "./rewrite.js";
 import { html as diffToHtml } from "diff2html";
 import DOMPurify from "dompurify";
 // 样式：独立 style.css（见同目录），build-client 的 .css text-loader 构建期内联为字符串
@@ -56,6 +57,15 @@ import STYLE from "./style.css";
       // 当前预览的在途请求取消句柄：关闭 / 重开 / 插件卸载时 abort 全部在途请求，
       // 避免慢速网络下请求悬空继续回写被移除的 DOM（评审 C2）。
       let activeAbort: AbortController | undefined;
+      // U8 v2：当前预览文件路径与会话 cwd（md 相对引用重写 + Modal 内跳转用）。
+      let currentPath = "";
+      let currentCwd: string | undefined;
+      // U8 v2：md 内嵌图 blob 化的 objectURL 清单（closeModal 统一 revoke，防泄漏）。
+      let trackedBlobUrls: string[] = [];
+      // U8 v2：md 内嵌图并发取图（评审 D4：默认 6 个同时在途，超出排队惰性加载）。
+      const MAX_IMG_CONCURRENCY = 6;
+      let imgInFlight = 0;
+      const imgQueue: Array<{ img: HTMLImageElement; src: string }> = [];
 
       // -------------------------------------------------------- DOM 工具
 
@@ -202,6 +212,12 @@ import STYLE from "./style.css";
           URL.revokeObjectURL(trackedObjectUrl);
           trackedObjectUrl = undefined;
         }
+        // U8 v2：释放 md 内嵌图 blob URL 与排队任务（内存受控）。
+        for (const url of trackedBlobUrls) {
+          try { URL.revokeObjectURL(url); } catch { /* 忽略 */ }
+        }
+        trackedBlobUrls = [];
+        imgQueue.length = 0;
         previewMode = "preview";
         rawText = undefined;
         diffText = undefined;
@@ -229,6 +245,9 @@ import STYLE from "./style.css";
         const url = fileUrl(path, cwd);
         const group = renderGroupFor(path);
         currentGroup = group;
+        // U8 v2：记录当前文件与会话 cwd（md 相对引用解析基 + Modal 内跳转）。
+        currentPath = path;
+        currentCwd = cwd;
         previewMode = group.group === "md" || group.group === "code" ? "preview" : "raw";
         rawText = undefined;
         diffText = undefined;
@@ -316,6 +335,18 @@ import STYLE from "./style.css";
         overlay = ov;
         ov.appendChild(card);
         ov.addEventListener("click", (event: any) => {
+          // U8 v2（D1-b）：md 内相对链接 → Modal 内跳转预览（不新标签、不整页导航）。
+          const targetEl = event.target instanceof Element ? (event.target as Element) : null;
+          const link = targetEl === null ? null : targetEl.closest?.("a[data-fp-ref]");
+          if (link !== null && link !== undefined) {
+            const target = link.getAttribute("data-fp-ref");
+            if (target !== null && target !== "") {
+              event.preventDefault();
+              event.stopPropagation();
+              openPreview(target, link.getAttribute("data-fp-cwd") || currentCwd);
+              return;
+            }
+          }
           if (event.target === ov) closeModal();
         });
         document.addEventListener("keydown", onKeyDown);
@@ -416,7 +447,14 @@ import STYLE from "./style.css";
         }
         try {
           if (group.group === "md") {
-            body.appendChild(el("div", { class: "fwp-rendered fwp-rendered-md", html: DOMPurify.sanitize(renderMarkdown(text)) }));
+            // U8 v2：md 渲染经 sanitizePreview 重写相对引用（图片/链接），
+            // 内嵌图随后 blob 化（upgradePreviewImages），规避直连低优先级排队。
+            const rendered = el("div", {
+              class: "fwp-rendered fwp-rendered-md",
+              html: sanitizePreview(renderMarkdown(text), { cwd: currentCwd, basePath: currentPath }),
+            });
+            body.appendChild(rendered);
+            upgradePreviewImages(rendered);
           } else {
             const highlighted = `<pre><code class="hljs">${highlightCode(text, group.ext)}</code></pre>`;
             body.appendChild(el("div", { class: "fwp-rendered fwp-rendered-code", html: DOMPurify.sanitize(highlighted) }));
@@ -424,6 +462,40 @@ import STYLE from "./style.css";
         } catch {
           // 渲染失败降级原始，不静默空 HTML。
           body.appendChild(el("pre", { text }));
+        }
+      }
+
+      /** U8 v2：把重写后的 md 内嵌图转为 blob 通道——与主图同一条 fetch→blob 高优先级链路
+       *（规避 HTTP/1.1 + SSE 占满连接池时低优先级 <img> 直连排队）；受 D4 并发上限约束，
+       *objectURL 记入 trackedBlobUrls，closeModal 统一 revoke。失败保留原 src（可新标签/长按）。
+       */
+      function upgradePreviewImages(container: HTMLElement): void {
+        const imgs = Array.from(container.querySelectorAll<HTMLImageElement>("img[data-fp-ref]"));
+        if (imgs.length === 0) return;
+        const signal = activeAbort !== undefined ? activeAbort.signal : undefined;
+        for (const img of imgs) {
+          const src = img.getAttribute("src") ?? "";
+          img.removeAttribute("data-fp-ref"); // 防重复入队
+          imgQueue.push({ img, src });
+        }
+        pumpPreviewImages(signal);
+      }
+
+      function pumpPreviewImages(signal: AbortSignal | undefined): void {
+        while (imgInFlight < MAX_IMG_CONCURRENCY && imgQueue.length > 0) {
+          const job = imgQueue.shift();
+          if (job === undefined) break;
+          imgInFlight++;
+          void fetch(job.src, signal !== undefined ? { signal } : undefined)
+            .then(async (res) => {
+              if (!res.ok) throw new Error(String(res.status));
+              const blob = await res.blob();
+              const objectUrl = URL.createObjectURL(blob);
+              trackedBlobUrls.push(objectUrl);
+              if (job.img.isConnected) job.img.src = objectUrl;
+            })
+            .catch(() => { /* 内嵌图失败：保留 API 原 src，可新标签/长按查看 */ })
+            .finally(() => { imgInFlight--; pumpPreviewImages(signal); });
         }
       }
 

@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import {
   ROUTES, makeRoutes, serveFileRoute, previewKindOf, computeGitDiff,
-  normalizeConfig, DEFAULT_CONFIG, groupOfPath, isLikelySingleFilePath,
+  normalizeConfig, DEFAULT_CONFIG, groupOfPath, isLikelySingleFilePath, resolveRelativePath,
 } from "../lib/index.js";
 import { assertClientProductContract, assertClientSourceContract } from "../../../test/smoke-lib.ts";
 
@@ -53,6 +53,22 @@ assert.equal(isLikelySingleFilePath("a.md  b.md"), false, "多空白拼接的多
 assert.equal(isLikelySingleFilePath("dir/a.md dir/b.md"), false, "单空格+斜杠拼接的多文件并列不是单路径（评审 U5）");
 assert.equal(isLikelySingleFilePath("https://x/a.md"), false, "http 链接不是本地文件路径");
 assert.equal(isLikelySingleFilePath("a.xyz"), false, "不可预览后缀不识别");
+
+// ------------------------------------------------------------ 相对引用展开（relpath，U8 v2）
+
+const REL = "/home/u/work/src/a.md";
+assert.equal(resolveRelativePath(REL, "img.png"), "/home/u/work/src/img.png", "同目录相对引用");
+assert.equal(resolveRelativePath(REL, "./img.png"), "/home/u/work/src/img.png", "./ 相对引用");
+assert.equal(resolveRelativePath(REL, "../b.md"), "/home/u/work/b.md", "../ 上级目录引用");
+assert.equal(resolveRelativePath(REL, "docs/../c.md"), "/home/u/work/src/c.md", "规范化 .. / .");
+assert.equal(resolveRelativePath(REL, "a.md?x=1"), "/home/u/work/src/a.md", "query 尾巴丢弃");
+assert.equal(resolveRelativePath(REL, "a.md#sec"), "/home/u/work/src/a.md", "fragment 尾巴丢弃");
+assert.equal(resolveRelativePath(REL, "%E4%B8%AD.md"), "/home/u/work/src/中.md", "%20/UTF-8 编码解码");
+assert.equal(resolveRelativePath(REL, "/etc/passwd"), null, "绝对路径不展开（web 根语义保留）");
+assert.equal(resolveRelativePath(REL, "https://x/a.md"), null, "http 链接不展开");
+assert.equal(resolveRelativePath(REL, "//cdn/x.png"), null, "协议相对不展开");
+assert.equal(resolveRelativePath(REL, "data:image/png;base64,AA=="), null, "data URI 不展开");
+assert.equal(resolveRelativePath(REL, "#sec"), null, "纯锚点不展开");
 
 
 // ------------------------------------------------------------ 纯函数
