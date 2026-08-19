@@ -13,7 +13,6 @@ dsh plugin --profile web add @wingsky-1/dsh-plugins-all
 | 包 | 功能 |
 |---|---|
 | `@wingsky-1/dsh-notifier` | 审批/完成/错误事件通知（浏览器 Notification + 系统 toast） |
-| `@wingsky-1/dsh-skill-explorer` | 技能中心：只读展示已加载 skill |
 | `@wingsky-1/dsh-opencode-usage` | OpenCode Go 套餐用量悬浮框 |
 | `@wingsky-1/dsh-lan-proxy` | 局域网访问 dsh web UI（HTTP/HTTPS/WS + TLS） |
 | `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理器（stdio/HTTP，工具注册给模型） |

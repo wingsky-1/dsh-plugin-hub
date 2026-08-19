@@ -65,14 +65,9 @@ importers:
       '@wingsky-1/dsh-opencode-usage':
         specifier: workspace:*
         version: link:../dsh-opencode-usage
-      '@wingsky-1/dsh-skill-explorer':
-        specifier: workspace:*
-        version: link:../dsh-skill-explorer
       '@wingsky-1/dsh-web-file-preview':
         specifier: workspace:*
         version: link:../dsh-web-file-preview
-
-  packages/dsh-skill-explorer: {}
 
   packages/dsh-web-file-preview:
     devDependencies:
