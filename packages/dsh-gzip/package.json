@@ -1,6 +1,6 @@
 {
   "name": "@wingsky-1/dsh-gzip",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "DSH Web GUI 的 /api 响应 gzip 压缩插件：为远程/低带宽链路开启 /api 响应压缩，解决大响应无压缩导致的会话历史加载超时失败",
   "type": "module",
   "main": "lib/index.js",
