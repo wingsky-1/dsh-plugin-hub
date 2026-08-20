@@ -485,18 +485,24 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
     const safeTitle = String(title).slice(0, 64);
     const safeMessage = String(message).slice(0, 256);
     let child: ChildProcess | undefined;
+    let bin = "";
     try {
       const argv = buildSystemCommand(process.platform, safeTitle, safeMessage, {
         silent: current.notifySound === false,
         notifySendAvailable,
         toastScript,
       });
-      if (argv === null) return; // Linux：notify-send 已探测不可用，静默跳过
-      child = spawn(argv[0], argv.slice(1), process.platform === "win32" ? { windowsHide: true, stdio: "ignore" } : { stdio: "ignore" });
+      if (argv === null) return; // 通道不可用（如 Linux 探测到 notify-send 缺失）：静默跳过
+      bin = argv[0];
+      // 关键：原生二进制缺失/不可执行（ENOENT 等）必须被下方 error 事件接住，
+      // 绝不能冒泡成 unhandled 'error' 把宿主进程打挂——历史版本在 macOS 上因
+      // 直接 spawn powershell 失败且未挂 error 监听而崩溃（见 issue #1）。
+      child = spawn(bin, argv.slice(1), process.platform === "win32" ? { windowsHide: true, stdio: "ignore" } : { stdio: "ignore" });
     } catch (error) {
       ctx.logger.warn(`dsh-notifier: 系统通知启动失败: ${errorMessage(error)}`);
       return;
     }
+    if (!child) return; // 极端情况下 spawn 返回空（理论上不会），直接放弃，不碰 child
     const killer = setTimeout(() => {
       try {
         child!.kill();
@@ -504,22 +510,28 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
         // 忽略
       }
     }, 30000);
+    // 任何退出码都先清杀手定时器；非 0 且非被信号杀死（null）才记日志，
+    // 避免把「我们主动 30s 超时杀掉子进程」也当成异常刷屏。
     child.on("exit", (code) => {
       clearTimeout(killer);
-      if (code !== 0) {
-        ctx.logger.warn(`dsh-notifier: 系统通知失败（exit ${code}）`);
+      if (code !== 0 && code !== null) {
+        ctx.logger.warn(`dsh-notifier: 系统通知退出码异常（exit ${code}）`);
       }
     });
+    // 通道失败（二进制不在 PATH / 无桌面会话等）：非 Windows 记一次后置为不可用，
+    // 后续通知走 null 分支静默跳过；Windows 不置位（powershell 偶发失败不代表
+    // WinRT toast 通道整体失效）。无论如何只记日志、不抛、不崩。
     child.on("error", (error) => {
       clearTimeout(killer);
       if (process.platform !== "win32") notifySendAvailable = false;
-      ctx.logger.warn(`dsh-notifier: 系统通知不可用: ${errorMessage(error)}`);
+      ctx.logger.warn(`dsh-notifier: 系统通知不可用（${bin}）: ${errorMessage(error)}`);
     });
   }
 
-  /** notify-send 可用性探测（非 Windows，异步，只探一次）。 */
+  /** notify-send 可用性探测（仅 Linux 需要；macOS 走 osascript，darwin 分支
+   *  不依赖此探测，故不在 macOS 上无谓尝试缺失的 notify-send）。异步，只探一次。 */
   let notifySendAvailable: boolean | undefined = undefined;
-  if (process.platform !== "win32") {
+  if (process.platform === "linux") {
     execFile("notify-send", ["--version"], { timeout: 3000 }, (error) => {
       notifySendAvailable = error === null;
     });
