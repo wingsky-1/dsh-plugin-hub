@@ -1,31 +1,15 @@
 /**
- * dsh-opencode-usage — OpenCode Go 套餐用量悬浮框（宿主端）。
+ * dsh-opencode-usage — 按 Provider 适配的用量悬浮框（宿主端）。
  *
- * 数据源：OpenCode Go 官方用量接口（未公开文档，实测可用）：
- *   GET https://opencode.ai/zen/go/v1/usage
- *   Authorization: Bearer <OPENCODE_GO_API_KEY>
- *   → { "usage": { rolling: {status, percent, resetsAt},
- *                  weekly:  {status, percent, resetsAt},
- *                  monthly: {status, percent, resetsAt} } }
- * 权威数据来自服务商记账，插件不做任何本地计算/累加。
- *
- * API Key 解析顺序（config.apiKey 显式配置 > 环境变量 > DSH 凭据文件
- * ~/.dsh/.credentials.yaml 的 OPENCODE_GO_API_KEY > OpenCode 自身
- * ~/.local/share/opencode/auth.json 的 opencode-go/opencode 条目）。
- *
- * 历史采样（波浪图数据源）：官方接口只给当前快照，不提供历史；插件在每次
- * 实际 fetch 成功时把三个窗口的 percent 记为一个采样点（同分钟去重，只留
- * 最新），内存累积 + 防抖落盘 ~/.dsh/dsh-opencode-usage/history.json，
- * 启动时加载，超龄裁剪（history.maxAgeDays，默认 14 天）。
- * 采样触发：① GUI 轮询 /stats 路由（浏览器开着时约 60s 一次）；
- * ② 宿主低频后台定时器 sampleIntervalMs（默认 5 分钟）——浏览器关闭、
- * 无人访问路由时也持续采样，保证历史连续（OpenCode 使用不一定伴随 GUI
- * 开启；宿主进程关闭期间仍无法采样，属客观边界）。
+ * 演进：从「OpenCode Go 单 provider」变成「按 provider 名注册适配器」通用框架。
+ * 内置适配器：opencode-go（OpenCode Go 官方用量接口），行为不退化。
+ * 用户可注入自定义宿主 .mjs / 客户端 .js 适配任意中转站（M2）。
  *
  * 路由（loopback 围栏）：
- * - GET /api/dsh-opencode-usage/stats   用量统计（带 TTL 缓存）
- * - GET /api/dsh-opencode-usage/history 历史采样序列（波浪图数据源）
- * - GET /api/dsh-opencode-usage/health  健康检查
+ * - GET /api/dsh-opencode-usage/stats[?provider=<name>]  用量统计
+ * - GET /api/dsh-opencode-usage/history[?days=N]          历史采样序列
+ * - GET /api/dsh-opencode-usage/adapters.json              适配器元数据（M2）
+ * - GET /api/dsh-opencode-usage/health                     健康检查
  */
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -34,43 +18,49 @@ import { dirname, join } from "node:path";
 import { isLoopbackRequest } from "../../../shared/loopback.js";
 import { writeJson } from "../../../shared/host-utils.js";
 import type { PluginContext, DshRoute } from "../../../types/dsh.js";
+import { ADAPTER_CONTRACT_VERSION } from "./contracts.js";
+import { makeHostAdapterRegistry } from "./registry.js";
+import type { HostAdapterRegistry } from "./registry.js";
+import {
+  openCodeGoHostAdapter,
+  OPENCODE_GO_PROVIDER,
+  DEFAULT_BASE_URL,
+  OPENCODE_GO_WINDOWS,
+} from "./adapters/opencode-go.js";
+import type { ProviderUsage, UsageWindow, FetchLike } from "./contracts.js";
+
+// ------------------------------------------------------------------ 对外 re-export
+// 注意：bundle-host 会把 tsc 产物中的子模块全部内联进 lib/index.js 并清理游离 .js，
+// smoke/lint 只能从 lib/index.js 导入，故契约与注册表、内置适配器一律在此 re-export。
+export * from "./contracts.js";
+export * from "./registry.js";
+export * from "./adapters/opencode-go.js";
 
 // ------------------------------------------------------------------ 类型
 
-/** fetch 兼容签名（fetchImpl 注入点）。 */
-export type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
+/** 历史采样点 = [ts, ...colPcts]（升序紧凑数组，列语义由各 provider 声明，percent 允许 null）。 */
+export type SamplePoint = (number | null)[];
 
-/** 单个窗口的用量数据（percent 允许 null）。 */
-export interface UsageWindow {
-  status: string | null;
-  percent: number | null;
-  resetsAt: string | null;
-}
-
-/** 三窗口用量。 */
-export interface UsageWindows {
-  rolling: UsageWindow | null;
-  weekly: UsageWindow | null;
-  monthly: UsageWindow | null;
-}
-
-/** 历史采样点 = [ts, rollingPct, weeklyPct, monthlyPct]（升序紧凑数组）。 */
-export type SamplePoint = [number, number | null, number | null, number | null];
-
-/** normalizeConfig 的返回（净化后的完整配置，与 DEFAULT_CONFIG 同构）。 */
+/** normalizeConfig 的返回（净化后的完整配置）。 */
 export interface NormalizedConfig {
   baseUrl: string;
   timeoutMs: number;
   cacheTtlMs: number;
-  limits: Record<"rolling" | "weekly" | "monthly", number>;
+  limits: Record<string, number>;
   apiKey?: string;
   maxAgeDays: number;
-  /** 宿主后台采样间隔（毫秒；浏览器关闭时保历史连续）。 */
   sampleIntervalMs: number;
   persistFile?: string;
+  adapters: {
+    host: Array<{ provider: string; file: string }>;
+    client: Array<{ file: string }>;
+  };
+  providerHint: Record<string, string>;
+  /** 可选护栏：剔除疑似密钥字段（默认开）。 */
+  stripSecrets: boolean;
 }
 
-/** apply 接收的配置（宽松；业务键走 normalizeConfig 净化，另有两处只读注入点）。 */
+/** apply 接收的配置（宽松）。 */
 export interface OpenCodePluginConfig {
   enabled?: boolean;
   fetchImpl?: FetchLike;
@@ -80,69 +70,66 @@ export interface OpenCodePluginConfig {
 }
 
 /** collectStats 返回的用量统计快照。 */
-interface UsageStatsResult {
+interface StatsResult {
   ok: boolean;
   configured: boolean;
   reason: string | null;
   error: string | null;
-  usage: UsageWindows | null;
+  usage: ProviderUsage | null;
   fetchedAt: number;
+  provider: string;
+  label: string;
+  cached: boolean;
 }
 
-/** 运行时下界守卫：Array.isArray 收窄为 readonly unknown[]，避开 any[]。 */
+/** 运行时下界守卫。 */
 function isUnknownArray(v: unknown): v is readonly unknown[] {
   return Array.isArray(v);
 }
 
-/** 稳定的 cordis 插件名。 */
-export const name = "opencode-usage";
+// ------------------------------------------------------------------ 常量
 
-/** 需要的服务：webServer（路由）。 */
+export const name = "opencode-usage";
 export const inject: string[] = ["webServer"];
 
-/** 与客户端共享的路由常量（smoke 断言两端一致）。 */
-export const ROUTES: Record<"stats" | "history" | "health", string> = {
+export const ROUTES: Record<string, string> = {
   stats: "/api/dsh-opencode-usage/stats",
   history: "/api/dsh-opencode-usage/history",
+  adapters: "/api/dsh-opencode-usage/adapters.json",
   health: "/api/dsh-opencode-usage/health",
 };
 
-/** 官方用量接口默认地址（OpenCode Go，Anthropic 兼容 key）。 */
-export const DEFAULT_BASE_URL = "https://opencode.ai/zen/go/v1/usage";
-
-/** 默认配置。 */
 export const DEFAULT_CONFIG: NormalizedConfig = {
   baseUrl: DEFAULT_BASE_URL,
   timeoutMs: 15000,
-  /** 用量缓存 TTL（毫秒）：官方接口变化不频繁，窗口内复用，防刷屏。 */
   cacheTtlMs: 30000,
-  /** 展示用限额（美元/窗口）。接口不返回限额，随套餐变化，可配置覆盖。 */
   limits: { rolling: 12, weekly: 30, monthly: 60 },
-  /** 显式 API Key（可选；缺省走凭据解析链）。 */
   apiKey: undefined,
-  /** 历史采样保留天数（超龄头部裁剪；波浪图时间跨度上限）。monthly 窗口
-   * 展示完整订阅月，需覆盖最近 30 天，故此默认值放宽到 30。 */
   maxAgeDays: 30,
-  /** 宿主后台采样间隔（默认 5 分钟；浏览器关闭时保历史连续，官方接口
-   * 低频调用不构成压力，约 288 次/天）。 */
   sampleIntervalMs: 300000,
-  /** 历史采样落盘路径（默认 DSH_HOME/dsh-opencode-usage/history.json）。 */
   persistFile: undefined,
+  adapters: { host: [], client: [] },
+  providerHint: {},
+  stripSecrets: true,
 };
 
-/** 配置键白名单（单一事实源）。 */
-export const CONFIG_KEYS: string[] = ["baseUrl", "timeoutMs", "cacheTtlMs", "apiKey", "maxAgeDays", "sampleIntervalMs", "persistFile"];
+export const CONFIG_KEYS: string[] = [
+  "baseUrl", "timeoutMs", "cacheTtlMs", "apiKey", "maxAgeDays",
+  "sampleIntervalMs", "persistFile", "adapters", "providerHint", "stripSecrets",
+];
 
-/** 默认历史落盘路径（DSH_HOME 优先，退 home 下 .dsh）。 */
 export function defaultPersistFile(): string {
   return join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), "dsh-opencode-usage", "history.json");
 }
 
-/** 合并配置：未知键丢弃，非法值回退默认，防默认值被污染。 */
+// ------------------------------------------------------------------ 配置归一化
+
 export function normalizeConfig(input: unknown): NormalizedConfig {
   const base: NormalizedConfig = {
     ...DEFAULT_CONFIG,
     limits: { ...DEFAULT_CONFIG.limits },
+    adapters: { host: [], client: [] },
+    providerHint: {},
   };
   if (typeof input !== "object" || input === null) return base;
   const cfg = input as Record<string, unknown>;
@@ -157,40 +144,44 @@ export function normalizeConfig(input: unknown): NormalizedConfig {
   if (Number.isFinite(cfg.sampleIntervalMs) && (cfg.sampleIntervalMs as number) >= 30000)
     base.sampleIntervalMs = Math.min(Math.round(cfg.sampleIntervalMs as number), 3600000);
   if (typeof cfg.persistFile === "string" && cfg.persistFile.trim() !== "") base.persistFile = cfg.persistFile.trim();
+  if (typeof cfg.stripSecrets === "boolean") base.stripSecrets = cfg.stripSecrets;
   if (typeof cfg.limits === "object" && cfg.limits !== null) {
-    for (const key of ["rolling", "weekly", "monthly"] as const) {
+    for (const key of Object.keys(DEFAULT_CONFIG.limits)) {
       const lim = (cfg.limits as Record<string, unknown>)[key];
       if (Number.isFinite(lim) && (lim as number) > 0) base.limits[key] = lim as number;
+    }
+  }
+  // 适配器配置（M2 完整实现，M1 为占位解析）
+  if (typeof cfg.adapters === "object" && cfg.adapters !== null) {
+    const ad = cfg.adapters as Record<string, unknown>;
+    if (Array.isArray(ad.host)) {
+      base.adapters.host = (ad.host as Array<Record<string, unknown>>)
+        .filter((h) => typeof h === "object" && h !== null)
+        .map((h) => ({
+          provider: String(h.provider ?? ""),
+          file: String(h.file ?? ""),
+        }))
+        .filter((h) => h.provider.length > 0 && h.file.length > 0);
+    }
+    if (Array.isArray(ad.client)) {
+      base.adapters.client = (ad.client as Array<Record<string, unknown>>)
+        .filter((c) => typeof c === "object" && c !== null)
+        .map((c) => ({ file: String(c.file ?? "") }))
+        .filter((c) => c.file.length > 0);
+    }
+  }
+  if (typeof cfg.providerHint === "object" && cfg.providerHint !== null) {
+    const hint = cfg.providerHint as Record<string, unknown>;
+    base.providerHint = {};
+    for (const key of Object.keys(hint)) {
+      if (typeof hint[key] === "string") base.providerHint[key] = hint[key] as string;
     }
   }
   return base;
 }
 
-/** 防御式窗口解析：任意输入 → { status, percent, resetsAt } 或 null。 */
-export function pickWindow(w: unknown): UsageWindow | null {
-  if (typeof w !== "object" || w === null) return null;
-  const rec = w as Record<string, unknown>;
-  const percent = typeof rec.percent === "number" ? rec.percent : Number(rec.percent);
-  return {
-    status: typeof rec.status === "string" ? rec.status : null,
-    percent: Number.isFinite(percent) ? percent : null,
-    resetsAt: typeof rec.resetsAt === "string" ? rec.resetsAt : null,
-  };
-}
+// ------------------------------------------------------------------ 凭据解析（保留，与现有行为一致）
 
-/** 解析用量响应体（兼容 {usage:{...}} 与直接三键两种形状）。 */
-export function parseUsageResponse(body: unknown): UsageWindows | null {
-  if (typeof body !== "object" || body === null) return null;
-  const rec = body as Record<string, unknown>;
-  const usage = rec.usage && typeof rec.usage === "object" ? (rec.usage as Record<string, unknown>) : rec;
-  return {
-    rolling: pickWindow(usage.rolling),
-    weekly: pickWindow(usage.weekly),
-    monthly: pickWindow(usage.monthly),
-  };
-}
-
-/** 从 DSH 凭据文件文本提取 OPENCODE_GO_API_KEY（yaml 宽松解析）。 */
 export function credentialsKeyFromYaml(text: string | undefined): string | undefined {
   if (typeof text !== "string") return undefined;
   const match = text.match(/OPENCODE_GO_API_KEY\s*:\s*["']?([^"'\r\n#]+)/u);
@@ -199,7 +190,6 @@ export function credentialsKeyFromYaml(text: string | undefined): string | undef
   return key.length > 0 ? key : undefined;
 }
 
-/** 从 OpenCode auth.json 文本提取 opencode-go（回退 opencode）API key。 */
 export function opencodeKeyFromAuth(text: string | undefined): string | undefined {
   if (typeof text !== "string") return undefined;
   let data: unknown;
@@ -217,7 +207,6 @@ export function opencodeKeyFromAuth(text: string | undefined): string | undefine
   return undefined;
 }
 
-/** 凭据解析链（纯函数，输入注入便于单测）：显式 > 环境变量 > credentials.yaml > auth.json。 */
 export function resolveApiKey({
   explicit,
   env,
@@ -238,24 +227,17 @@ export function resolveApiKey({
   return undefined;
 }
 
-/** 本机凭据文件路径（可被 config 覆盖，测试用）。DSH_HOME 优先（与 defaultPersistFile 一致）。 */
 export function credentialsFile(): string {
   return join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), ".credentials.yaml");
 }
 
-/** 本机 OpenCode auth.json 路径。 */
 export function opencodeAuthFile(): string {
   return join(homedir(), ".local", "share", "opencode", "auth.json");
 }
 
-/**
- * 读取当前生效的 API Key（异步，文件可能不存在 → undefined）。
- * @param config - normalizeConfig 后的配置。
- * @param paths - 可选覆盖（测试注入）。
- */
 export async function loadApiKey(
   config: { apiKey?: string },
-  paths: { credentialsFile?: string; authFile?: string } = {}
+  paths: { credentialsFile?: string; authFile?: string } = {},
 ): Promise<string | undefined> {
   const env = process.env.OPENCODE_GO_API_KEY;
   let credentialsYaml: string | undefined;
@@ -275,116 +257,63 @@ export async function loadApiKey(
   return resolveApiKey({ explicit: config.apiKey, env, credentialsYaml, authJson });
 }
 
-/**
- * 调用官方用量接口（fetch 可注入，便于单测）。
- * @returns 成功返回 { ok: true, usage }；失败返回 { ok: false, error }，
- *   error: network | unauthorized | http-<status> | bad-json
- */
-export async function fetchUsage({
-  baseUrl,
-  apiKey,
-  timeoutMs = 15000,
-  fetchImpl = fetch,
-}: {
-  baseUrl: string;
-  apiKey: string | undefined;
-  timeoutMs?: number;
-  fetchImpl?: FetchLike;
-}): Promise<{ ok: true; usage: UsageWindows } | { ok: false; error: string }> {
-  if (typeof apiKey !== "string" || apiKey === "") return { ok: false, error: "no-api-key" };
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  let res: Response;
-  try {
-    res = await fetchImpl(baseUrl, {
-      headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
-      signal: controller.signal,
-    });
-  } catch {
-    return { ok: false, error: "network" };
-  } finally {
-    clearTimeout(timer);
-  }
-  if (res.status === 401 || res.status === 403) return { ok: false, error: "unauthorized" };
-  if (!res.ok) return { ok: false, error: `http-${res.status}` };
-  let body: unknown;
-  try {
-    body = await res.json();
-  } catch {
-    return { ok: false, error: "bad-json" };
-  }
-  const usage = parseUsageResponse(body);
-  if (usage === null) return { ok: false, error: "bad-json" };
-  return { ok: true, usage };
-}
+// ------------------------------------------------------------------ 缓存
 
-/** TTL 缓存（纯函数）：now 可注入便于单测。 */
 export function makeUsageCache<T>({ ttlMs, now = () => Date.now() }: { ttlMs: number; now?: () => number }) {
-  let entry: { ts: number; value: T } | undefined = undefined;
+  const entries = new Map<string, { ts: number; value: T }>();
   return {
-    get(): T | undefined {
+    get(key: string): T | undefined {
+      const entry = entries.get(key);
       if (entry === undefined) return undefined;
       if (now() - entry.ts >= ttlMs) {
-        entry = undefined;
+        entries.delete(key);
         return undefined;
       }
       return entry.value;
     },
-    set(value: T): void {
-      entry = { ts: now(), value };
+    set(key: string, value: T): void {
+      entries.set(key, { ts: now(), value });
     },
-    clear(): void {
-      entry = undefined;
+    clear(key?: string): void {
+      if (key === undefined) entries.clear();
+      else entries.delete(key);
     },
   };
 }
 
-/**
- * 历史采样序列（纯函数，波浪图数据源）。
- * 采样点 = [ts, rollingPct, weeklyPct, monthlyPct]（升序紧凑数组，percent
- * 允许 null）。追加规则：同分钟去重（只留该分钟最新一点），追加后超龄裁剪。
- * now 可注入便于单测。
- */
+// ------------------------------------------------------------------ 历史采样序列（v1：单 provider 兼容）
+
 export function makeHistoryStore({ maxAgeDays = 14, now = () => Date.now() }: { maxAgeDays?: number; now?: () => number } = {}) {
-  let samples: SamplePoint[] = [];
+  let samples: (number | null)[][] = [];
+  let provider: string = OPENCODE_GO_PROVIDER;
   return {
-    /** 追加采样点。返回 {appended, replaced}（appended 为实际新增数）。 */
+    /** 追加采样点（同分钟去重）。列数由适配器声明，v1 为 4 列 [ts, r, w, m]。 */
     append(point: unknown): { appended: number; replaced: number } {
-      if (!isUnknownArray(point) || point.length < 4) return { appended: 0, replaced: 0 };
+      if (!isUnknownArray(point) || point.length < 2) return { appended: 0, replaced: 0 };
       const ts = Number(point[0]);
       if (!Number.isFinite(ts)) return { appended: 0, replaced: 0 };
-      const normalized = [
-        ts,
-        ...point.slice(1, 4).map((v) => (typeof v === "number" && Number.isFinite(v) ? v : null)),
-      ] as SamplePoint;
+      const normalized = [ts, ...point.slice(1).map((v) => (typeof v === "number" && Number.isFinite(v) ? v : null))];
       let replaced = 0;
       const last = samples.length > 0 ? samples[samples.length - 1] : undefined;
-      if (last !== undefined && Math.floor(last[0] / 60000) === Math.floor(ts / 60000)) {
-        samples[samples.length - 1] = normalized; // 同分钟只留最新
+      if (last !== undefined && typeof last[0] === "number" && Math.floor(last[0] / 60000) === Math.floor(ts / 60000)) {
+        samples[samples.length - 1] = normalized;
         replaced = 1;
       } else {
         samples.push(normalized);
       }
       return { appended: replaced === 1 ? 0 : 1, replaced };
     },
-    /** 当前采样序列（升序，调用方不得修改）。 */
-    list(): SamplePoint[] {
-      return samples;
-    },
-    count(): number {
-      return samples.length;
-    },
-    /** 裁剪早于 now - maxAgeDays 的点（升序序列从头部删）。返回裁剪数。 */
+    list(): (number | null)[][] { return samples; },
+    count(): number { return samples.length; },
     trim(): number {
       const cutoff = now() - maxAgeDays * 86400000;
       let removed = 0;
-      while (samples.length > 0 && samples[0][0] < cutoff) {
+      while (samples.length > 0 && typeof samples[0][0] === "number" && samples[0][0] < cutoff) {
         samples.shift();
         removed += 1;
       }
       return removed;
     },
-    /** 从持久化文本加载（防御式：坏 JSON/坏结构丢弃，只保留合法点）。 */
     load(raw: string | undefined): number {
       if (typeof raw !== "string" || raw === "") return 0;
       let data: unknown;
@@ -393,33 +322,35 @@ export function makeHistoryStore({ maxAgeDays = 14, now = () => Date.now() }: { 
       } catch {
         return 0;
       }
-      if (typeof data !== "object" || data === null || !Array.isArray((data as Record<string, unknown>).samples)) return 0;
-      const loaded: SamplePoint[] = [];
-      for (const item of (data as Record<string, unknown>).samples as unknown[]) {
-        if (!isUnknownArray(item) || item.length < 4) continue;
-        const ts = Number(item[0]);
-        if (!Number.isFinite(ts)) continue;
-        loaded.push([
-          ts,
-          ...item.slice(1, 4).map((v) => (typeof v === "number" && Number.isFinite(v) ? v : null)),
-        ] as SamplePoint);
+      if (typeof data !== "object" || data === null) return 0;
+      // 兼容 v1（单序列）和 v2（分桶，M3 完整实现；M1 只读 v1 单序列）
+      const rec = data as Record<string, unknown>;
+      const rawSamples = rec.samples;
+      if (Array.isArray(rawSamples)) {
+        // v1 单序列
+        const loaded: (number | null)[][] = [];
+        for (const item of rawSamples) {
+          if (!isUnknownArray(item) || item.length < 2) continue;
+          const ts = Number(item[0]);
+          if (!Number.isFinite(ts)) continue;
+          loaded.push([ts, ...item.slice(1).map((v) => (typeof v === "number" && Number.isFinite(v) ? v : null))]);
+        }
+        loaded.sort((a, b) => (a[0] as number) - (b[0] as number));
+        samples = loaded;
+        this.trim();
+        return samples.length;
       }
-      loaded.sort((a, b) => a[0] - b[0]);
-      samples = loaded;
-      this.trim();
-      return samples.length;
+      // v2 分桶：M3 完整实现，M1 忽略
+      return 0;
     },
-    /** 序列化为持久化 JSON 文本。 */
     dump(): string {
-      return JSON.stringify({ version: 1, samples });
+      return JSON.stringify({ version: 1, provider, samples });
     },
-    clear(): void {
-      samples = [];
-    },
+    clear(): void { samples = []; },
   };
 }
 
-/** 原子写落盘（tmp + rename，防半截文件；0600 防他人读凭据类内容）。目录不存在则创建。 */
+/* 原子写落盘。 */
 export async function writeHistoryFile(file: string, text: string): Promise<void> {
   await mkdir(dirname(file), { recursive: true });
   const tmp = `${file}.${Date.now()}.tmp`;
@@ -427,7 +358,6 @@ export async function writeHistoryFile(file: string, text: string): Promise<void
   await rename(tmp, file);
 }
 
-/** 读取历史落盘文件文本（不存在返回 undefined；读取失败返回 undefined）。 */
 export async function readHistoryFile(file: string): Promise<string | undefined> {
   try {
     if (!existsSync(file)) return undefined;
@@ -437,38 +367,61 @@ export async function readHistoryFile(file: string): Promise<string | undefined>
   }
 }
 
-/**
- * 挂载 dsh-opencode-usage。
- * @param ctx - 宿主插件上下文。
- * @param config - 配置（enabled / baseUrl / timeoutMs / cacheTtlMs /
- *   limits / apiKey / maxAgeDays / persistFile / fetchImpl / credentialsFile / authFile）。
- */
+// ------------------------------------------------------------------ 密钥护栏（stripSecrets，默认开）
+
+/** 递归扫描疑似密钥字段并剔除（键名含 secret/token/key/apikey 且值字符串长度 ≥ 8）。 */
+function stripSensitiveKeys(obj: unknown): void {
+  if (typeof obj !== "object" || obj === null) return;
+  if (Array.isArray(obj)) {
+    for (const item of obj) stripSensitiveKeys(item);
+    return;
+  }
+  const rec = obj as Record<string, unknown>;
+  for (const key of Object.keys(rec)) {
+    const val = rec[key];
+    if (typeof val === "string" && val.length >= 8 && /secret|token|key|apikey/ui.test(key)) {
+      rec[key] = "<redacted>";
+      continue;
+    }
+    stripSensitiveKeys(val);
+  }
+}
+
+// ------------------------------------------------------------------ 插件入口
+
 export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {}): Promise<void> {
   if (config.enabled === false) return;
   const current = normalizeConfig(config);
-  /** fetch 实现注入点（smoke 全链路测试用；默认全局 fetch）。 */
-  const fetchImpl = typeof config.fetchImpl === "function" ? config.fetchImpl : fetch;
-  /** 凭据文件路径覆盖（可选；缺省用本机默认位置）。 */
+  const fetchImpl: FetchLike = typeof config.fetchImpl === "function" ? config.fetchImpl as FetchLike : fetch;
   const keyPaths: { credentialsFile?: string; authFile?: string } = {
     credentialsFile: typeof config.credentialsFile === "string" ? config.credentialsFile : undefined,
     authFile: typeof config.authFile === "string" ? config.authFile : undefined,
   };
-  const cache = makeUsageCache<UsageStatsResult>({ ttlMs: current.cacheTtlMs });
 
-  // ---------------------------------------------------------------- 历史采样
-  /** 落盘路径：config.persistFile > DSH_HOME 默认。 */
+  // -------------------------------------------------------- 适配器注册表
+  const registry = makeHostAdapterRegistry();
+  registry.register(openCodeGoHostAdapter, "builtin");
+
+  // M2: 加载用户宿主适配器（当前未实现，仅占位结构）
+  // for (const entry of current.adapters.host) {
+  //   const url = pathToFileURL(resolvePath(entry.file)).href;
+  //   const mod = await import(url);
+  //   registry.register(mod.default ?? mod, "user-file", entry.file);
+  // }
+
+  const cache = makeUsageCache<StatsResult>({ ttlMs: current.cacheTtlMs });
+
+  // -------------------------------------------------------- 历史采样
   const persistFile = current.persistFile ?? defaultPersistFile();
   const store = makeHistoryStore({ maxAgeDays: current.maxAgeDays });
-  /** 启动加载（坏文件/不存在 → 空序列，不阻断插件）。 */
   await store.load(await readHistoryFile(persistFile));
 
-  /** 落盘防抖：采样追加后合并写入，避免高频副作用写盘。 */
   let persistTimer: ReturnType<typeof setTimeout> | null = null;
   async function flushPersist(): Promise<void> {
     try {
       await writeHistoryFile(persistFile, store.dump());
     } catch {
-      // 落盘失败不阻断（内存序列仍可用，下次采样重试）
+      /* 落盘失败不阻断 */
     }
   }
   function schedulePersist(): void {
@@ -479,60 +432,91 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
     }, 1000);
   }
 
-  /** 最近一次接口状态（health 摘要用）。 */
   let lastStatus: { at: number; error: string | null; configured: boolean } = {
-    at: 0,
-    error: null,
-    configured: false,
+    at: 0, error: null, configured: false,
   };
 
-  /** 进行中的 collectStats（并发复用：后台定时器 + GUI 轮询 + 手动刷新同时
-   * 触发时只发一次真实请求，其余等待同一结果）。 */
-  let inflightStats: Promise<UsageStatsResult & { cached?: boolean }> | null = null;
+  let inflightStats: Map<string, Promise<StatsResult>> | null = new Map();
 
-  /** 用量统计核心（路由 handler 与 health 共用；并发调用复用同一进行中请求）。 */
-  function collectStats(): Promise<UsageStatsResult & { cached?: boolean }> {
-    const cached = cache.get();
+  /** 解析某 provider 的 API Key（当前仅 opencode-go 有解析链；M2 扩展）。 */
+  async function resolveKeyFor(provider: string): Promise<string | undefined> {
+    if (provider === OPENCODE_GO_PROVIDER) return loadApiKey(current, keyPaths);
+    // M2: 用户适配器可自持鉴权，或由配置提供 key
+    return undefined;
+  }
+
+  /** 用量统计核心（路由 handler 与 health 共用）。 */
+  function collectStats(provider: string = OPENCODE_GO_PROVIDER): Promise<StatsResult> {
+    const cached = cache.get(provider);
     if (cached !== undefined) return Promise.resolve({ ...cached, cached: true });
-    if (inflightStats !== null) return inflightStats;
-    inflightStats = (async (): Promise<UsageStatsResult & { cached?: boolean }> => {
+
+    if (inflightStats === null) inflightStats = new Map();
+    const inflight = inflightStats.get(provider);
+    if (inflight !== undefined) return inflight;
+
+    const promise = (async (): Promise<StatsResult> => {
       try {
-        const apiKey = await loadApiKey(current, keyPaths);
-        if (apiKey === undefined) {
-          const result: UsageStatsResult = { ok: true, configured: false, reason: "no-api-key", error: null, usage: null, fetchedAt: Date.now() };
+        // 查适配器
+        const adapter = registry.get(provider);
+        if (adapter === undefined) {
+          const result: StatsResult = {
+            ok: true, configured: false, reason: "no-adapter", error: null,
+            usage: null, fetchedAt: Date.now(), provider, label: provider, cached: false,
+          };
           lastStatus = { at: result.fetchedAt, error: null, configured: false };
           return result;
         }
-        const fetched = await fetchUsage({
-          baseUrl: current.baseUrl,
+
+        const apiKey = await resolveKeyFor(provider);
+        const fetchCtx = {
+          provider,
           apiKey,
-          timeoutMs: current.timeoutMs,
-          fetchImpl,
-        });
-        const result: UsageStatsResult = {
+          baseUrl: current.baseUrl,
+          fetch: fetchImpl,
+          signal: undefined as AbortSignal | undefined,
+        };
+        const usage = await registry.fetchUsage(provider, fetchCtx);
+
+        // 密钥护栏（默认开）
+        if (current.stripSecrets && usage.data !== undefined) {
+          try { stripSensitiveKeys(usage.data); } catch { /* 忽略 */ }
+        }
+        if (current.stripSecrets && usage.meta !== undefined) {
+          try { stripSensitiveKeys(usage.meta); } catch { /* 忽略 */ }
+        }
+
+        const result: StatsResult = {
           ok: true,
           configured: true,
           reason: null,
-          error: fetched.ok ? null : fetched.error,
-          usage: fetched.ok ? fetched.usage : null,
+          error: usage.ok ? null : (usage.error ?? null),
+          usage,
           fetchedAt: Date.now(),
+          provider,
+          label: usage.label,
+          cached: false,
         };
-        if (fetched.ok) {
-          // 采样挂点：只有权威 fetch 成功才累积历史（失败不污染波浪图）
-          const u = fetched.usage;
-          store.append([result.fetchedAt, u.rolling?.percent ?? null, u.weekly?.percent ?? null, u.monthly?.percent ?? null]);
+
+        // 采样挂点：只有权威 fetch 成功才累积历史（失败不污染波浪图）
+        if (usage.ok && usage.windows && usage.windows.length > 0) {
+          const cols = usage.windows.map((w) => w.percent);
+          store.append([result.fetchedAt, ...cols]);
           store.trim();
           schedulePersist();
-          cache.set(result);
+          cache.set(provider, result);
         }
+
         lastStatus = { at: result.fetchedAt, error: result.error, configured: true };
         return result;
       } finally {
-        inflightStats = null;
+        inflightStats?.delete(provider);
       }
     })();
-    return inflightStats;
+    inflightStats.set(provider, promise);
+    return promise;
   }
+
+  // -------------------------------------------------------- 路由注册
 
   const statsRoute: DshRoute = {
     kind: "exact",
@@ -540,27 +524,33 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
     handler: async (req, res) => {
       if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
       if (req.method !== "GET") return writeJson(res, 405, { error: `method not allowed: ${req.method}` });
-      const result = await collectStats();
-      writeJson(res, 200, { plugin: "dsh-opencode-usage", limits: current.limits, ...result });
+      const url = new URL(req.url ?? "/", "http://localhost");
+      const provider = url.searchParams.get("provider") ?? OPENCODE_GO_PROVIDER;
+      const result = await collectStats(provider);
+      const limits: Record<string, number> = {};
+      if (result.usage?.windows) {
+        for (const w of result.usage.windows) {
+          if (w.limit !== undefined) limits[w.key] = w.limit;
+        }
+      }
+      writeJson(res, 200, {
+        plugin: "dsh-opencode-usage",
+        limits: Object.keys(limits).length > 0 ? limits : current.limits,
+        ...result,
+      });
     },
   };
 
-  // --------------------------------------------------------- 后台采样定时器
-  // 浏览器关闭、无路由访问时也持续采样（保历史连续）。与 GUI 60s 轮询共用
-  // collectStats：TTL 缓存 + 同分钟去重保证不重复、不冲突。卸载时清理。
+  // 后台采样定时器（M1：仅采样默认 provider opencode-go）
   let backgroundTimer: ReturnType<typeof setInterval> | null = null;
   if (current.sampleIntervalMs > 0) {
     backgroundTimer = setInterval(() => {
-      // fire-and-forget：失败不外抛（collectStats 内部已消化为错误态）
-      void collectStats();
+      void collectStats(OPENCODE_GO_PROVIDER);
     }, current.sampleIntervalMs);
-    // unref：不阻止宿主进程退出（smoke 测试/临时进程场景）；宿主常驻时照常执行
     (backgroundTimer as { unref?: () => void }).unref?.();
-    // 启动时立即补一次（插件热重载/重启后历史缺口最小化）
-    void collectStats();
+    void collectStats(OPENCODE_GO_PROVIDER);
   }
 
-  /** 历史路由：GET /history[?days=N]，N 钳制 1..maxAgeDays，缺省全量。 */
   const historyRoute: DshRoute = {
     kind: "exact",
     path: ROUTES.history,
@@ -572,15 +562,37 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
       const days = Number(url.searchParams.get("days"));
       if (Number.isFinite(days) && days > 0) {
         const cutoff = Date.now() - Math.min(Math.round(days), current.maxAgeDays) * 86400000;
-        samples = samples.filter((s) => s[0] >= cutoff);
+        samples = samples.filter((s) => typeof s[0] === "number" && s[0] >= cutoff);
       }
       writeJson(res, 200, {
         ok: true,
         plugin: "dsh-opencode-usage",
         version: 1,
+        provider: OPENCODE_GO_PROVIDER,
         count: samples.length,
         maxAgeDays: current.maxAgeDays,
         samples,
+      });
+    },
+  };
+
+  // M2 前瞻：适配器元数据路由（供客户端查询有哪些渲染器）
+  const adaptersRoute: DshRoute = {
+    kind: "exact",
+    path: ROUTES.adapters,
+    handler: (req, res) => {
+      if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
+      if (req.method !== "GET") return writeJson(res, 405, { error: `method not allowed: ${req.method}` });
+      const snap = registry.snapshot();
+      writeJson(res, 200, {
+        version: ADAPTER_CONTRACT_VERSION,
+        host: snap.infos.filter((i) => i.status === "active").map((i) => ({
+          providers: i.providers,
+          source: i.source,
+          file: i.file ?? null,
+        })),
+        // M2: 客户端渲染器列表将在加载用户客户端 js 后填充
+        client: [] as Array<{ providers: string[]; file: string | null }>,
       });
     },
   };
@@ -591,6 +603,7 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
     handler: (req, res) => {
       if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
       if (req.method !== "GET") return writeJson(res, 405, { error: `method not allowed: ${req.method}` });
+      const snap = registry.snapshot();
       writeJson(res, 200, {
         ok: true,
         plugin: "dsh-opencode-usage",
@@ -600,30 +613,25 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
         sampleIntervalMs: current.sampleIntervalMs,
         history: { count: store.count(), maxAgeDays: current.maxAgeDays, persistFile },
         lastStatus,
+        adapters: snap.infos,
       });
     },
   };
 
-  // 路由注册必须放在 ctx.effect 内（cordis isolate 链就绪前访问服务会触发
-  // "Cyclic __proto__ value"，导致插件激活失败）；返回清理函数。
   const disposeRoutes = ctx.effect(
     () => {
-      const routeDisposers = [statsRoute, historyRoute, healthRoute].map((route) => ctx.webServer.register(route));
+      const routeDisposers = [statsRoute, historyRoute, adaptersRoute, healthRoute].map((route) =>
+        ctx.webServer.register(route),
+      );
       return () => {
         for (const dispose of routeDisposers) {
-          try {
-            dispose();
-          } catch {
-            // 忽略
-          }
+          try { dispose(); } catch { /* 忽略 */ }
         }
       };
     },
-    "dsh-opencode-usage: routes"
+    "dsh-opencode-usage: routes",
   );
 
-  // ⚠️ 清理必须写在 effect 返回的 disposer 里，不能写在 fn 主体（apply 时
-  // fn 立即同步执行，写在主体 = 注册完立刻注销 → 路由 404 且无日志）。
   ctx.effect(
     () => () => {
       disposeRoutes();
@@ -636,9 +644,8 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
         clearInterval(backgroundTimer);
         backgroundTimer = null;
       }
-      // 卸载时兜底落盘（fire-and-forget，不阻塞卸载）
       void flushPersist();
     },
-    "dsh-opencode-usage"
+    "dsh-opencode-usage",
   );
 }
