@@ -240,9 +240,15 @@ export function formatDuration(ms: number): string {
  */
 export function sanitizeErrorText(text: unknown, maxLen = 300): string {
   let s = String(text);
-  // 用户路径（/home/xx、/Users/xx、C:\Users\xx）→ <path>（排除冒号/分号等后缀
-  // 分隔符，避免吞掉紧随其后的文本：`/home/x: EACCES` 应保留冒号）
-  s = s.replace(/(?:\/home\/[^\s"'`<>:;]+|\/Users\/[^\s"'`<>:;]+|C:\\Users\\[^\s"'`<>:;]+)/giu, "<path>");
+  // 用户路径（/home/xx、/Users/xx、/root/xx、/etc/xx、C:\Users\xx）→ <path>
+  // （排除冒号/分号等后缀分隔符，避免吞掉紧随其后的文本：`/home/x: EACCES` 应保留冒号）
+  s = s.replace(/(?:\/home\/[^\s"'`<>:;]+|\/Users\/[^\s"'`<>:;]+|\/root\/[^\s"'`<>:;]+|\/etc\/[^\s"'`<>:;]+|C:\\Users\\[^\s"'`<>:;]+)/giu, "<path>");
+  // JWT（eyJ JWT：header.payload.signature 三段，base64url 字符集含 - _）→ <token>
+  // 精确匹配三段（每段 ≥1 字符，含 - _），避免误伤普通长串（对抗评审建议：勿盲目放宽
+  // 通用 base64 正则到 base64url，那会误伤 URL/长串）。
+  s = s.replace(/\beyJ[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+){2}\b/gu, "<token>");
+  // AWS 访问密钥前缀（AKIA 20 字符，不满足通用 ≥24hex/≥32base64 阈值）→ <token>
+  s = s.replace(/\bAKIA[A-Z0-9]{16}\b/gu, "<token>");
   // 长令牌/密钥串（≥24 hex 或 ≥32 base64）→ <token>
   s = s.replace(/\b(?:[0-9a-fA-F]{24,}|[A-Za-z0-9+/]{32,}={0,2})\b/gu, "<token>");
   // 密钥字段赋值（password=/token=/api_key=…）→ 只留键名+掩码

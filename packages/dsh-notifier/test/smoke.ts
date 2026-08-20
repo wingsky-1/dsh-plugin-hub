@@ -91,6 +91,18 @@ assert.equal(sanitizeErrorText("错".repeat(500)).length, 300, "截断 300");
 assert.equal(sanitizeErrorText("普通错误"), "普通错误", "普通文本原样");
 assert.equal(sanitizeErrorText("x".repeat(40)), "<token>", "长重复字符按令牌打码");
 
+// 推送前修复（P1）：脱敏漏网补充——JWT / AKIA 前缀 / /root 路径
+assert.equal(
+  sanitizeErrorText("Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"),
+  "Authorization=<redacted> <token>",
+  "Authorization 头掩蔽 + JWT（含 - _ 的 base64url）整段打码"
+);
+assert.equal(sanitizeErrorText("aws key AKIAIOSFODNN7EXAMPLE used"), "aws key <token> used", "AKIA 前缀密钥打码");
+assert.ok(!sanitizeErrorText("Cannot read /root/.ssh/id_rsa: denied").includes("/root"), "/root 路径打码");
+assert.ok(!sanitizeErrorText("open /etc/passwd denied").includes("/etc"), "/etc 路径打码");
+// 防误伤：普通含下划线/连字符的英文单词不应被 JWT/AKIA 规则误打码
+assert.equal(sanitizeErrorText("the-key_is-here and also_fine"), "the-key_is-here and also_fine", "普通文本不被 JWT 规则误伤");
+
 // M4 配置归一化：askRemindMin / quietHours.allowKinds
 assert.equal(normalizeConfig({ askRemindMin: 3 }).askRemindMin, 3, "审批提醒分钟可配");
 assert.equal(normalizeConfig({ askRemindMin: 0 }).askRemindMin, 0, "0=关闭审批提醒");
