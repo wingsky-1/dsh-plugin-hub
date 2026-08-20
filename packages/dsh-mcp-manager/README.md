@@ -8,12 +8,45 @@ DSH（DeepSeek Harness）的 **MCP 服务器管理插件**：会话界面右上�
 
 ## 安装
 
+前提：已安装 DeepSeek Harness 且 `dsh web` 可正常启动（未全局安装 dsh 见下方「未全局安装 dsh」）。
+
+### 安装插件（add）
+
 ```sh
 dsh plugin --profile web add @wingsky-1/dsh-mcp-manager
 ```
 
-安装后**重启一次** `dsh web`：会话界面右上角出现 MCP 浮窗；Agent 提示词中
-自动出现插件说明（`announceToAgent`）。
+### 卸载插件（remove）
+
+```sh
+dsh plugin --profile web remove @wingsky-1/dsh-mcp-manager
+```
+
+### 更新插件（update）
+
+```sh
+dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
+```
+
+> 安装 / 卸载 / 更新后都需**重启一次** `dsh web`（bundle 层只在启动时组合）生效。
+
+### 指定版本号（@version）
+
+registry 尚未同步到最新、或最新版在你的环境有问题时，可在包名后追加 `@版本号`：
+
+```sh
+dsh plugin --profile web add @wingsky-1/dsh-mcp-manager@0.1.8
+```
+
+### 未全局安装 dsh
+
+若本机没有全局 `dsh` 命令，用 `npx` 临时拉起（底层调用 `pnpm`，仍需本机装好 `pnpm` 与 `Node.js`）：
+
+```sh
+npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-mcp-manager
+npx @deepseek-ai/dsh plugin --profile web remove @wingsky-1/dsh-mcp-manager
+npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
+```
 
 ## 能力
 

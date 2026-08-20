@@ -37,7 +37,10 @@ install them all at once as a single bundle, or pick individual plugins as neede
 
 ## Installation
 
-Prerequisite: DeepSeek Harness installed and `dsh web` running normally.
+Prerequisite: DeepSeek Harness installed and `dsh web` running normally (for running dsh
+without a global install, see "Without a global dsh install" below).
+
+### Install plugins (add)
 
 ```sh
 # Install everything (recommended)
@@ -46,16 +49,62 @@ dsh plugin --profile web add @wingsky-1/dsh-plugins-all
 # Or install individual plugins (as needed)
 dsh plugin --profile web add @wingsky-1/dsh-notifier
 dsh plugin --profile web add @wingsky-1/dsh-lan-proxy
+```
 
-# Uninstall
+### Uninstall plugins (remove)
+
+```sh
 dsh plugin --profile web remove @wingsky-1/dsh-notifier
 ```
 
-Then **restart `dsh web` once** (bundle layers are only composed at startup); plugin entries
-appear in the sidebar / settings page.
+### Update plugins (update)
 
-If you run into issues upgrading these plugins, you can consult dsh itself; a unified upgrade
-flow is being prepared.
+```sh
+# Update a single plugin to latest
+dsh plugin --profile web update @wingsky-1/dsh-notifier
+
+# Update the bundle (aggregate + the sub-packages it pulls in) to latest
+dsh plugin --profile web update @wingsky-1/dsh-plugins-all
+
+# Update all plugins under the current profile
+dsh plugin --profile web update
+```
+
+> After install / uninstall / update, **restart `dsh web` once** (bundle layers are only
+> composed at startup) for the sidebar / settings page to reflect the change.
+
+### Pin a version (@version)
+
+If the registry has not synced the latest yet, or the latest has issues in your environment,
+append `@version` to the package name — works for both `add` and `update`:
+
+```sh
+# Install a specific version (instead of latest)
+dsh plugin --profile web add @wingsky-1/dsh-notifier@0.1.8
+
+# Update to a specific version
+dsh plugin --profile web update @wingsky-1/dsh-notifier@0.1.8
+```
+
+### Without a global dsh install
+
+If there is no global `dsh` command on the machine, use `npx` to run it on the fly (`dsh plugin`
+calls `pnpm` under the hood, so `pnpm` and `Node.js` must still be installed locally):
+
+```sh
+# Install the bundle
+npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-plugins-all
+
+# Install an individual plugin (with a version pin)
+npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-notifier@0.1.8
+
+# Uninstall / update (same shape — swap add for remove / update)
+npx @deepseek-ai/dsh plugin --profile web remove @wingsky-1/dsh-notifier
+npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
+```
+
+> `npx` fetches `@deepseek-ai/dsh` on each run. To pin it, run `pnpm add -g @deepseek-ai/dsh`
+> (or `npm i -g @deepseek-ai/dsh`) and then use `dsh` directly.
 
 ### Individual install vs. bundle: pick ONE (since 0.1.5)
 

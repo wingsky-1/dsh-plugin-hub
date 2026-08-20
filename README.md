@@ -34,7 +34,9 @@ DSH（DeepSeek Harness）Web GUI 插件集，**npm 分发**：既可一键安装
 
 ## 安装
 
-已安装 DeepSeek Harness 且 `dsh web` 可正常启动的前提下：
+前提：已安装 DeepSeek Harness 且 `dsh web` 可正常启动（未全局安装 dsh 见下方「未全局安装 dsh」）。
+
+### 安装插件（add）
 
 ```sh
 # 一键装全家桶（推荐）
@@ -43,14 +45,58 @@ dsh plugin --profile web add @wingsky-1/dsh-plugins-all
 # 或单独安装（按需）
 dsh plugin --profile web add @wingsky-1/dsh-notifier
 dsh plugin --profile web add @wingsky-1/dsh-lan-proxy
+```
 
-# 卸载
+### 卸载插件（remove）
+
+```sh
 dsh plugin --profile web remove @wingsky-1/dsh-notifier
 ```
 
-装完**重启一次** `dsh web`（bundle 层只在启动时组合），侧边栏/设置页出现插件入口。
+### 更新插件（update）
 
-本包插件的升级若遇到问题，可咨询 dsh 自行解决；后续将整理统一的升级流程。
+```sh
+# 更新单个插件到最新
+dsh plugin --profile web update @wingsky-1/dsh-notifier
+
+# 更新全家桶（聚合包 + 其拉齐的子包）到最新
+dsh plugin --profile web update @wingsky-1/dsh-plugins-all
+
+# 更新当前 profile 下全部插件
+dsh plugin --profile web update
+```
+
+> 安装 / 卸载 / 更新后都需**重启一次** `dsh web`（bundle 层只在启动时组合），侧边栏/设置页才反映变化。
+
+### 指定版本号（@version）
+
+registry 尚未同步到最新、或最新版在你的环境有问题时，可在包名后追加 `@版本号`，`add` 与 `update` 通用：
+
+```sh
+# 安装指定版本（而非 latest）
+dsh plugin --profile web add @wingsky-1/dsh-notifier@0.1.8
+
+# 更新到指定版本
+dsh plugin --profile web update @wingsky-1/dsh-notifier@0.1.8
+```
+
+### 未全局安装 dsh
+
+若本机没有全局 `dsh` 命令，用 `npx` 临时拉起（`dsh plugin` 底层调用 `pnpm`，故仍需本机事先装好 `pnpm` 与 `Node.js`）：
+
+```sh
+# 装全家桶
+npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-plugins-all
+
+# 单独安装（带版本号）
+npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-notifier@0.1.8
+
+# 卸载 / 更新（同理，把 add 换成 remove / update）
+npx @deepseek-ai/dsh plugin --profile web remove @wingsky-1/dsh-notifier
+npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
+```
+
+> `npx` 每次会临时拉取 `@deepseek-ai/dsh`；若想固定，可 `pnpm add -g @deepseek-ai/dsh`（或 `npm i -g @deepseek-ai/dsh`）后直接使用 `dsh`。
 
 ### 独立安装与全家桶：二选一（0.1.5 起）
 

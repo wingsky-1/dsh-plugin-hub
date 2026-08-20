@@ -1,4 +1,4 @@
-# dsh-web-file-preview
+# @wingsky-1/dsh-web-file-preview
 
 点击对话中的文件链接，在 **web 端**直接预览文件内容（**图片 / 文本 / Markdown / 代码 / git Diff**）。
 
@@ -25,13 +25,45 @@ DSH 自带的“可点击文件引用”在点击产出文件 chip / 行内文�
 
 ## 安装
 
-已安装 DeepSeek Harness 且 `dsh web` 可正常启动的前提下：
+前提：已安装 DeepSeek Harness 且 `dsh web` 可正常启动（未全局安装 dsh 见下方「未全局安装 dsh」）。
+
+### 安装插件（add）
 
 ```sh
 dsh plugin --profile web add @wingsky-1/dsh-web-file-preview
 ```
 
-安装后**重启一次 dsh web** 生效（客户端 bundle 需页面刷新加载）。
+### 卸载插件（remove）
+
+```sh
+dsh plugin --profile web remove @wingsky-1/dsh-web-file-preview
+```
+
+### 更新插件（update）
+
+```sh
+dsh plugin --profile web update @wingsky-1/dsh-web-file-preview
+```
+
+> 安装 / 卸载 / 更新后都需**重启一次** `dsh web`（bundle 层只在启动时组合）生效。
+
+### 指定版本号（@version）
+
+registry 尚未同步到最新、或最新版在你的环境有问题时，可在包名后追加 `@版本号`：
+
+```sh
+dsh plugin --profile web add @wingsky-1/dsh-web-file-preview@0.1.8
+```
+
+### 未全局安装 dsh
+
+若本机没有全局 `dsh` 命令，用 `npx` 临时拉起（底层调用 `pnpm`，仍需本机装好 `pnpm` 与 `Node.js`）：
+
+```sh
+npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-web-file-preview
+npx @deepseek-ai/dsh plugin --profile web remove @wingsky-1/dsh-web-file-preview
+npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-web-file-preview
+```
 
 ## 配置
 
