@@ -24,6 +24,24 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const plugins = readdirSync(join(ROOT, 'packages')).filter(d => d.startsWith('dsh-') && d !== 'dsh-plugins-all')
 
 let failed = 0
+
+// 0. 发布包禁止携带「安装期脚本」（preinstall / install / postinstall / prepare）。
+//    原因：dsh profile 启用 strictDepBuilds，带该类脚本的依赖在 pnpm 安装时会被拦截
+//    （需 allowBuilds 放行 = build allowance）。registry 安装虽不跑 prepare，但
+//    git/file/link 安装会跑，导致装不上。发布物应预构建，安装即解包；构建只在发布期
+//    由 prepublishOnly 跑（不随安装执行）。聚合包 dsh-plugins-all 已对齐此约定。
+const FORBIDDEN_INSTALL_SCRIPTS = ['preinstall', 'install', 'postinstall', 'prepare']
+const allPackages = readdirSync(join(ROOT, 'packages')).filter(d => d.startsWith('dsh-'))
+for (const p of allPackages) {
+  const pkgJson = JSON.parse(readFileSync(join(ROOT, 'packages', p, 'package.json'), 'utf8'))
+  const bad = Object.keys(pkgJson.scripts ?? {}).filter(s => FORBIDDEN_INSTALL_SCRIPTS.includes(s))
+  if (bad.length > 0) {
+    failed++
+    console.log(`FAIL ${pkgJson.name} | 发布包不得携带安装期脚本: ${bad.join(', ')}（构建改用 prepublishOnly）`)
+  }
+}
+
+
 for (const p of plugins) {
   const tmp = mkdtempSync(join(tmpdir(), 'dsh-npmlayout-'))
   const name = JSON.parse(readFileSync(join(ROOT, 'packages', p, 'package.json'), 'utf8')).name
