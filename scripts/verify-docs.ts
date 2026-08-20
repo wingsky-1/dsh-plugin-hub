@@ -9,21 +9,21 @@
  *   1. 每包 README.md 存在；
  *   2. Markdown 相对链接目标存在（判于当前文件目录）；
  *   3. package.json 的 description 无脚手架占位符（__NAME__ 等）；
- *   4. README.zh.md 配对：若存在则其同级相对链接也有效（中英配对校验）；
- *      存在性与标题镜像由 README.zh 补全后收紧（当前阶段可缺——用 --strict-zh
+ *   4. README.en.md 配对：若存在则其同级相对链接也有效（中英配对校验）；
+ *      存在性与标题镜像由 README.en 补全后收紧（当前阶段可缺——用 --strict-en
  *      强制）。
  *
  * 砍掉的 web-ui 重型项：词数预算、i18n 结构签名镜像、语言切换行、锚点存在性
  * （本仓 README 规模小，不引入预算与签名镜像）。
  *
- * 用法：node scripts/verify-docs.ts [--strict-zh]
+ * 用法：node scripts/verify-docs.ts [--strict-en]
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
-const STRICT_ZH = process.argv.includes('--strict-zh')
+const STRICT_EN = process.argv.includes('--strict-en')
 const failures = []
 
 const isRelLink = (t) => /^\.{1,2}\//.test(t)
@@ -48,16 +48,16 @@ function checkPkg(pkgDir) {
     const abs = join(dirname(readme), decodeURIComponent(target.split('#')[0]))
     if (!existsSync(abs)) failures.push(`${name}: README 相对链接目标缺失 ${target}`)
   }
-  // README.zh.md 配对
-  const zh = join(pkgDir, 'README.zh.md')
-  if (existsSync(zh)) {
-    const zmd = readFileSync(zh, 'utf8')
-    for (const target of relLinks(zmd)) {
-      const abs = join(dirname(zh), decodeURIComponent(target.split('#')[0]))
-      if (!existsSync(abs)) failures.push(`${name}: README.zh 相对链接目标缺失 ${target}`)
+  // README.en.md 配对
+  const en = join(pkgDir, 'README.en.md')
+  if (existsSync(en)) {
+    const emd = readFileSync(en, 'utf8')
+    for (const target of relLinks(emd)) {
+      const abs = join(dirname(en), decodeURIComponent(target.split('#')[0]))
+      if (!existsSync(abs)) failures.push(`${name}: README.en 相对链接目标缺失 ${target}`)
     }
-  } else if (STRICT_ZH) {
-    failures.push(`${name}: 缺 README.zh.md（--strict-zh）`)
+  } else if (STRICT_EN) {
+    failures.push(`${name}: 缺 README.en.md（--strict-en）`)
   }
   // description 无脚手架占位符
   const desc = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8')).description ?? ''
