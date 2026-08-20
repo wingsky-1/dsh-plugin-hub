@@ -86,7 +86,15 @@
   .fwp-lbox-toolbar button{padding:8px 16px;font-size:15px;min-height:44px}
 }
 .fwp-lbox-toolbar{top:calc(12px + env(safe-area-inset-top,0px))}
+@supports (bottom: env(safe-area-inset-bottom,0px)){
+  .fwp-folder-notice{bottom:calc(24px + env(safe-area-inset-bottom,0px))}
+}
 @media (max-width:640px){
   .fwp-card{max-height:calc(100dvh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px) - 24px)}
   .fwp-body{padding-bottom:calc(14px + env(safe-area-inset-bottom,0px))}
 }
+/* issue #3：folder 引用点击的轻量 toast 提示——底部居中、主题变量 + 浅色回退、
+   自动消失、可点关；不遮挡 chip，触控目标随 coarse 加高。 */
+.fwp-folder-notice{position:fixed;left:50%;transform:translateX(-50%);bottom:24px;z-index:10001;max-width:min(480px,92vw);padding:10px 18px;border-radius:10px;background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#1c1e26);border:1px solid var(--dsw-alias-border-l1,#d7dae0);box-shadow:0 8px 30px rgba(0,0,0,.22);font-size:13px;line-height:1.5;cursor:pointer;text-align:center;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+.fwp-folder-notice:hover{background:var(--dsw-alias-interactive-bg-hover,#eef1f5)}
+@media (pointer: coarse){.fwp-folder-notice{padding:12px 20px;font-size:14px;min-height:44px;box-sizing:border-box}}

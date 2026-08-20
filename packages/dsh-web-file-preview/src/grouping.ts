@@ -87,3 +87,22 @@ export function isLikelySingleFilePath(value: string): boolean {
   if (!isPreviewablePath(value)) return false;
   return value.includes("/") || value.includes("\\") || !/\s/.test(value);
 }
+
+/**
+ * 从对话渲染的 @-mention chip 标签还原干净文件路径（formatFileMention 的逆）。
+ * dsh rc8 引入 `@` 引用后，对话气泡把 `@path` 渲染成带 `data-ref-chip` 的 span，
+ * title 始终带前导 `@`（如 `@/abs/path/file.ts`）。
+ * 本函数负责去掉前导 `@` 和可选的引号，还原出干净路径供预览引擎使用。
+ *
+ * @param raw - chip 的 title 属性，如 "@/abs/path/file.ts" 或 '@"a b/c.ts"'。
+ * @param appearance - chip 的 data-ref-chip 取值。
+ * @returns 干净路径；非文件类或无法解析 → null。
+ */
+export function cleanRefChipPath(raw: string, appearance: 'file' | 'folder' | 'session' | 'skill'): string | null {
+  if (appearance === 'session' || appearance === 'skill') return null;
+  if (typeof raw !== 'string' || raw === '') return null;
+  let s = raw.startsWith('@') ? raw.slice(1) : raw;        // 去一个前导 @
+  if (s.startsWith('"') && s.endsWith('"')) s = s.slice(1, -1); // 去引号（含空格路径）
+  if (s === '') return null;
+  return s; // folder 保留尾 /；file 由 formatFileMention 保证无尾 /
+}

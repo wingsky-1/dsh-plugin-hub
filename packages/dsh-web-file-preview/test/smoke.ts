@@ -21,6 +21,7 @@ import assert from "node:assert/strict";
 import {
   ROUTES, makeRoutes, serveFileRoute, previewKindOf, computeGitDiff,
   normalizeConfig, DEFAULT_CONFIG, groupOfPath, isLikelySingleFilePath, resolveRelativePath,
+  cleanRefChipPath,
 } from "../lib/index.js";
 import { assertClientProductContract, assertClientSourceContract } from "../../../test/smoke-lib.ts";
 
@@ -53,6 +54,16 @@ assert.equal(isLikelySingleFilePath("a.md  b.md"), false, "多空白拼接的多
 assert.equal(isLikelySingleFilePath("dir/a.md dir/b.md"), false, "单空格+斜杠拼接的多文件并列不是单路径（评审 U5）");
 assert.equal(isLikelySingleFilePath("https://x/a.md"), false, "http 链接不是本地文件路径");
 assert.equal(isLikelySingleFilePath("a.xyz"), false, "不可预览后缀不识别");
+
+// cleanRefChipPath：@-mention chip 标签还原干净路径
+assert.equal(cleanRefChipPath("@/a/b.ts", "file"), "/a/b.ts", "去前导 @ 的绝对路径");
+assert.equal(cleanRefChipPath('@"a b/c.ts"', "file"), "a b/c.ts", "去引号含空格路径");
+assert.equal(cleanRefChipPath("@/a/dir/", "folder"), "/a/dir/", "folder 保留尾 /");
+assert.equal(cleanRefChipPath("node_modules/@scope/x.ts", "file"), "node_modules/@scope/x.ts", "路径内含 @ 仅去一个前导");
+assert.equal(cleanRefChipPath("", "file"), null, "空字符串 → null");
+assert.equal(cleanRefChipPath("@", "file"), null, "仅 @ 字符 → null");
+assert.equal(cleanRefChipPath("@label", "session"), null, "session → null");
+assert.equal(cleanRefChipPath("@cmd", "skill"), null, "skill → null");
 
 // ------------------------------------------------------------ 相对引用展开（relpath，U8 v2）
 
