@@ -221,42 +221,58 @@ assert.equal(resolveApiKey({ env: "sk-v", credentialsYaml: "k: sk-c", authJson: 
 assert.equal(resolveApiKey({ authJson: '{"opencode-go":{"type":"api","key":"sk-a"}}' }), "sk-a", "auth.json 兜底");
 assert.equal(resolveApiKey({}), undefined, "全缺返回 undefined");
 
-// ---------------------------------------------------------------- 历史采样序列（v1）
+// ---------------------------------------------------------------- 历史采样序列（v2 多 provider）
 
 {
   let now = 1_000_000;
   const store = makeHistoryStore({ maxAgeDays: 14, now: () => now });
-  assert.deepEqual(store.append([now, 2, 1, 0]), { appended: 1, replaced: 0 });
-  assert.deepEqual(store.append([now + 1000, 4, 5, 6]), { appended: 0, replaced: 1 }, "同分钟替换");
-  assert.equal(store.count(), 1);
-  assert.deepEqual(store.list()[0], [now + 1000, 4, 5, 6], "替换后保留最新点");
-  assert.deepEqual(store.append([now + 60000, 7, 8, 9]), { appended: 1, replaced: 0 }, "跨分钟追加");
-  assert.equal(store.count(), 2);
-  assert.deepEqual(store.append(null), { appended: 0, replaced: 0 });
-  assert.deepEqual(store.append([1]), { appended: 0, replaced: 0 }, "元素不足 2 丢弃");
-  assert.deepEqual(store.append(["x", 1, 2, 3]), { appended: 0, replaced: 0 }, "ts 非法丢弃");
-  assert.deepEqual(store.append([now + 120000, "bad", 5, null]), { appended: 1, replaced: 0 });
-  assert.equal(store.list().at(-1)[1], null, "非法 percent 归一为 null");
+  // 按 provider 追加
+  assert.deepEqual(store.append("opencode-go", [now, 2, 1, 0]), { appended: 1, replaced: 0 });
+  assert.deepEqual(store.append("opencode-go", [now + 1000, 4, 5, 6]), { appended: 0, replaced: 1 }, "同分钟替换");
+  assert.equal(store.list("opencode-go").length, 1);
+  assert.deepEqual(store.list("opencode-go")[0], [now + 1000, 4, 5, 6], "替换后保留最新点");
+  assert.deepEqual(store.append("opencode-go", [now + 60000, 7, 8, 9]), { appended: 1, replaced: 0 }, "跨分钟追加");
+  assert.equal(store.list("opencode-go").length, 2);
 
+  // 另一 provider 独立序列
+  assert.deepEqual(store.append("my-relay", [now, 50, 60]), { appended: 1, replaced: 0 });
+  assert.equal(store.list("my-relay").length, 1);
+  assert.equal(store.list("opencode-go").length, 2, "各 provider 独立序列，互不干扰");
+
+  assert.deepEqual(store.append("opencode-go", null), { appended: 0, replaced: 0 });
+  assert.deepEqual(store.append("opencode-go", [1]), { appended: 0, replaced: 0 }, "元素不足 2 丢弃");
+  assert.deepEqual(store.append("opencode-go", ["x", 1, 2, 3]), { appended: 0, replaced: 0 }, "ts 非法丢弃");
+  assert.deepEqual(store.append("opencode-go", [now + 120000, "bad", 5, null]), { appended: 1, replaced: 0 });
+  assert.equal(store.list("opencode-go").at(-1)[1], null, "非法 percent 归一为 null");
+
+  // trimAll 裁剪所有 provider
   now += 15 * 86400000;
-  const removed = store.trim();
-  assert.ok(removed >= 2, "超龄点被裁剪");
-  assert.ok(store.list().every((s) => s[0] >= now - 14 * 86400000), "剩余点都在窗口内");
-}
+  store.trimAll();
+  assert.ok(store.list("opencode-go").length === 0, "所有 provider 超龄点被裁剪");
+  assert.ok(store.list("my-relay").length === 0, "my-relay 也被裁剪");
 
-{
-  const now = Date.now();
-  const store = makeHistoryStore({ maxAgeDays: 14, now: () => now });
-  store.append([now - 3600000, 1, 2, 3]);
-  store.append([now, 4, 5, 6]);
-  const text = store.dump();
+  // v1 → v2 迁移
+  const v1Text = JSON.stringify({ version: 1, samples: [[now - 3600000, 1, 2, 3], [now, 4, 5, 6]] });
   const store2 = makeHistoryStore({ maxAgeDays: 14, now: () => now });
-  assert.equal(store2.load(text), 2, "load 返回加载点数");
-  assert.deepEqual(store2.list(), store.list(), "dump/load 往返一致");
+  assert.equal(store2.load(v1Text), 2, "v1 迁移 load 返回加载点数");
+  assert.equal(store2.list("opencode-go").length, 2, "v1 数据迁入 opencode-go 桶");
+  assert.deepEqual(store2.list("opencode-go")[0].slice(1), [1, 2, 3], "v1 迁移后列语义一致");
+
+  // v2 dump/load 往返
+  const store3 = makeHistoryStore({ maxAgeDays: 14, now: () => now });
+  store3.append("a", [now - 3600000, 1, 2]);
+  store3.append("b", [now, 3, 4]);
+  const text = store3.dump();
+  const store4 = makeHistoryStore({ maxAgeDays: 14, now: () => now });
+  assert.equal(store4.load(text), 2, "v2 load 返回加载点数");
+  assert.deepEqual(store4.list("a"), store3.list("a"), "v2 dump/load 往返一致");
+  assert.deepEqual(store4.list("b"), store3.list("b"), "多 provider 往返一致");
+
+  // 防御
   const bad = makeHistoryStore({ maxAgeDays: 14, now: () => now });
   assert.equal(bad.load("{bad json"), 0, "坏 JSON 返回 0");
-  assert.equal(bad.load(JSON.stringify({ version: 1, samples: "x" })), 0, "坏结构返回 0");
-  assert.equal(bad.load(JSON.stringify({ version: 1, samples: [[1, 2], ["x", 1, 2, 3], [now, 1, 2, 3]] })), 1, "坏元素丢弃，好元素保留");
+  assert.equal(bad.load(JSON.stringify({ version: 2, series: "x" })), 0, "坏结构返回 0");
+  assert.equal(bad.load(JSON.stringify({ version: 2, series: { a: { samples: [[1], ["x", 1, 2], [now, 1, 2]] } } })), 1, "坏元素丢弃，好元素保留");
 }
 
 {
@@ -484,8 +500,15 @@ function makeFakeCtx(overrides = {}) {
   const res2 = { writeHead: () => {}, end: (chunk) => { payload = JSON.parse(chunk); } };
   history.handler(fakeReq(), res2);
   assert.equal(payload.ok, true);
+  assert.equal(payload.version, 2, "历史数据 v2");
+  assert.equal(payload.provider, "opencode-go", "缺省 provider = opencode-go");
   assert.equal(payload.count, 0, "未采样前空历史");
   assert.deepEqual(payload.samples, []);
+
+  // 未见过 provider → 空序列（不串厂商）
+  history.handler(fakeReq({ url: `${ROUTES.history}?provider=ghost-relay` }), res2);
+  assert.equal(payload.count, 0, "未见过 provider 返回空序列");
+  assert.equal(payload.provider, "ghost-relay");
 
   const res3 = { writeHead: () => {}, end: (chunk) => { payload = JSON.parse(chunk); } };
   await stats.handler(fakeReq(), res3);

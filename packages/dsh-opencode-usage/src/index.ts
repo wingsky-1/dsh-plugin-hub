@@ -41,9 +41,6 @@ export * from "./path-resolve.js";
 
 // ------------------------------------------------------------------ 类型
 
-/** 历史采样点 = [ts, ...colPcts]（升序紧凑数组，列语义由各 provider 声明，percent 允许 null）。 */
-export type SamplePoint = (number | null)[];
-
 /** normalizeConfig 的返回（净化后的完整配置）。 */
 export interface NormalizedConfig {
   baseUrl: string;
@@ -284,73 +281,136 @@ export function makeUsageCache<T>({ ttlMs, now = () => Date.now() }: { ttlMs: nu
   };
 }
 
-// ------------------------------------------------------------------ 历史采样序列（v1：单 provider 兼容）
+// ------------------------------------------------------------------ 历史采样序列（v2：多 provider 分桶）
+
+/** 历史数据文件版本。 */
+export const HISTORY_VERSION = 2;
+
+/** 采样点 = [ts, ...colPcts]（升序紧凑数组，列语义由各 provider 声明，percent 允许 null）。 */
+export type SamplePoint = (number | null)[];
 
 export function makeHistoryStore({ maxAgeDays = 14, now = () => Date.now() }: { maxAgeDays?: number; now?: () => number } = {}) {
-  let samples: (number | null)[][] = [];
-  let provider: string = OPENCODE_GO_PROVIDER;
-  return {
-    /** 追加采样点（同分钟去重）。列数由适配器声明，v1 为 4 列 [ts, r, w, m]。 */
-    append(point: unknown): { appended: number; replaced: number } {
-      if (!isUnknownArray(point) || point.length < 2) return { appended: 0, replaced: 0 };
-      const ts = Number(point[0]);
-      if (!Number.isFinite(ts)) return { appended: 0, replaced: 0 };
-      const normalized = [ts, ...point.slice(1).map((v) => (typeof v === "number" && Number.isFinite(v) ? v : null))];
-      let replaced = 0;
-      const last = samples.length > 0 ? samples[samples.length - 1] : undefined;
-      if (last !== undefined && typeof last[0] === "number" && Math.floor(last[0] / 60000) === Math.floor(ts / 60000)) {
-        samples[samples.length - 1] = normalized;
-        replaced = 1;
-      } else {
-        samples.push(normalized);
-      }
-      return { appended: replaced === 1 ? 0 : 1, replaced };
-    },
-    list(): (number | null)[][] { return samples; },
-    count(): number { return samples.length; },
-    trim(): number {
-      const cutoff = now() - maxAgeDays * 86400000;
-      let removed = 0;
-      while (samples.length > 0 && typeof samples[0][0] === "number" && samples[0][0] < cutoff) {
-        samples.shift();
-        removed += 1;
-      }
-      return removed;
-    },
-    load(raw: string | undefined): number {
-      if (typeof raw !== "string" || raw === "") return 0;
-      let data: unknown;
-      try {
-        data = JSON.parse(raw);
-      } catch {
-        return 0;
-      }
-      if (typeof data !== "object" || data === null) return 0;
-      // 兼容 v1（单序列）和 v2（分桶，M3 完整实现；M1 只读 v1 单序列）
-      const rec = data as Record<string, unknown>;
-      const rawSamples = rec.samples;
-      if (Array.isArray(rawSamples)) {
-        // v1 单序列
-        const loaded: (number | null)[][] = [];
-        for (const item of rawSamples) {
-          if (!isUnknownArray(item) || item.length < 2) continue;
-          const ts = Number(item[0]);
-          if (!Number.isFinite(ts)) continue;
-          loaded.push([ts, ...item.slice(1).map((v) => (typeof v === "number" && Number.isFinite(v) ? v : null))]);
-        }
-        loaded.sort((a, b) => (a[0] as number) - (b[0] as number));
-        samples = loaded;
-        this.trim();
-        return samples.length;
-      }
-      // v2 分桶：M3 完整实现，M1 忽略
+  /** provider → 采样点序列（升序）。 */
+  const series = new Map<string, (number | null)[][]>();
+
+  /** 获取某 provider 的采样序列（不存在则创建空序列）。 */
+  function getSeries(provider: string): (number | null)[][] {
+    let s = series.get(provider);
+    if (s === undefined) {
+      s = [];
+      series.set(provider, s);
+    }
+    return s;
+  }
+
+  /** 追加采样点（同分钟去重）。列数由适配器声明，v1 为 4 列 [ts, r, w, m]。 */
+  function append(provider: string, point: unknown): { appended: number; replaced: number } {
+    if (!isUnknownArray(point) || point.length < 2) return { appended: 0, replaced: 0 };
+    const ts = Number(point[0]);
+    if (!Number.isFinite(ts)) return { appended: 0, replaced: 0 };
+    const normalized = [ts, ...point.slice(1).map((v) => (typeof v === "number" && Number.isFinite(v) ? v : null))];
+    const samples = getSeries(provider);
+    let replaced = 0;
+    const last = samples.length > 0 ? samples[samples.length - 1] : undefined;
+    if (last !== undefined && typeof last[0] === "number" && Math.floor(last[0] / 60000) === Math.floor(ts / 60000)) {
+      samples[samples.length - 1] = normalized;
+      replaced = 1;
+    } else {
+      samples.push(normalized);
+    }
+    return { appended: replaced === 1 ? 0 : 1, replaced };
+  }
+
+  /** 获取某 provider 的采样序列副本。 */
+  function list(provider: string): (number | null)[][] {
+    return [...getSeries(provider)];
+  }
+
+  /** 所有 provider 的计数。 */
+  function countAll(): number {
+    let total = 0;
+    for (const s of series.values()) total += s.length;
+    return total;
+  }
+
+  /** 裁剪某 provider 超龄点。 */
+  function trim(provider: string): number {
+    const cutoff = now() - maxAgeDays * 86400000;
+    const samples = getSeries(provider);
+    let removed = 0;
+    while (samples.length > 0 && typeof samples[0][0] === "number" && samples[0][0] < cutoff) {
+      samples.shift();
+      removed += 1;
+    }
+    return removed;
+  }
+
+  /** 裁剪所有 provider 超龄点。 */
+  function trimAll(): void {
+    for (const provider of series.keys()) trim(provider);
+  }
+
+  /** 从持久化文本加载（兼容 v1 单序列 + v2 分桶）。 */
+  function load(raw: string | undefined): number {
+    if (typeof raw !== "string" || raw === "") return 0;
+    let data: unknown;
+    try {
+      data = JSON.parse(raw);
+    } catch {
       return 0;
-    },
-    dump(): string {
-      return JSON.stringify({ version: 1, provider, samples });
-    },
-    clear(): void { samples = []; },
-  };
+    }
+    if (typeof data !== "object" || data === null) return 0;
+    const rec = data as Record<string, unknown>;
+    const version = rec.version === 2 ? 2 : 1;
+
+    if (version === 1) {
+      // v1 迁移：单序列 → 写入 opencode-go 桶
+      const rawSamples = rec.samples;
+      if (!Array.isArray(rawSamples)) return 0;
+      let loaded = 0;
+      for (const item of rawSamples) {
+        if (!isUnknownArray(item) || item.length < 2) continue;
+        const ts = Number(item[0]);
+        if (!Number.isFinite(ts)) continue;
+        getSeries(OPENCODE_GO_PROVIDER).push([ts, ...item.slice(1).map((v) => (typeof v === "number" && Number.isFinite(v) ? v : null))]);
+        loaded += 1;
+      }
+      return loaded;
+    }
+
+    // v2 分桶
+    const rawSeries = rec.series as Record<string, { samples: unknown[] }> | undefined;
+    if (typeof rawSeries !== "object" || rawSeries === null) return 0;
+    let loaded = 0;
+    for (const provider of Object.keys(rawSeries)) {
+      const bucket = rawSeries[provider];
+      if (!Array.isArray(bucket?.samples)) continue;
+      const samples = getSeries(provider);
+      for (const item of bucket.samples) {
+        if (!isUnknownArray(item) || item.length < 2) continue;
+        const ts = Number(item[0]);
+        if (!Number.isFinite(ts)) continue;
+        samples.push([ts, ...item.slice(1).map((v) => (typeof v === "number" && Number.isFinite(v) ? v : null))]);
+        loaded += 1;
+      }
+    }
+    return loaded;
+  }
+
+  /** 序列化为持久化 JSON 文本（v2 格式）。 */
+  function dump(): string {
+    const raw: Record<string, { samples: (number | null)[][] }> = {};
+    for (const [provider, samples] of series) {
+      if (samples.length > 0) raw[provider] = { samples };
+    }
+    return JSON.stringify({ version: HISTORY_VERSION, series: raw });
+  }
+
+  function clear(): void {
+    series.clear();
+  }
+
+  return { append, list, countAll, trim, trimAll, load, dump, clear, getSeries };
 }
 
 /* 原子写落盘。 */
@@ -521,8 +581,8 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
         // 采样挂点：只有权威 fetch 成功才累积历史（失败不污染波浪图）
         if (usage.ok && usage.windows && usage.windows.length > 0) {
           const cols = usage.windows.map((w) => w.percent);
-          store.append([result.fetchedAt, ...cols]);
-          store.trim();
+          store.append(result.provider, [result.fetchedAt, ...cols]);
+          store.trimAll();
           schedulePersist();
           cache.set(provider, result);
         }
@@ -562,14 +622,21 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
     },
   };
 
-  // 后台采样定时器（M1：仅采样默认 provider opencode-go）
+  // 后台采样定时器：采样所有已注册 provider（保持历史连续）
   let backgroundTimer: ReturnType<typeof setInterval> | null = null;
   if (current.sampleIntervalMs > 0) {
     backgroundTimer = setInterval(() => {
-      void collectStats(OPENCODE_GO_PROVIDER);
+      const snap = registry.snapshot();
+      for (const provider of snap.providers) {
+        void collectStats(provider);
+      }
     }, current.sampleIntervalMs);
     (backgroundTimer as { unref?: () => void }).unref?.();
-    void collectStats(OPENCODE_GO_PROVIDER);
+    // 启动时立即补一次所有 provider
+    const snap = registry.snapshot();
+    for (const provider of snap.providers) {
+      void collectStats(provider);
+    }
   }
 
   const historyRoute: DshRoute = {
@@ -578,8 +645,9 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
     handler: (req, res) => {
       if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
       if (req.method !== "GET") return writeJson(res, 405, { error: `method not allowed: ${req.method}` });
-      let samples = store.list();
       const url = new URL(req.url ?? "/", "http://localhost");
+      const provider = url.searchParams.get("provider") ?? OPENCODE_GO_PROVIDER;
+      let samples = store.list(provider);
       const days = Number(url.searchParams.get("days"));
       if (Number.isFinite(days) && days > 0) {
         const cutoff = Date.now() - Math.min(Math.round(days), current.maxAgeDays) * 86400000;
@@ -588,8 +656,8 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
       writeJson(res, 200, {
         ok: true,
         plugin: "dsh-opencode-usage",
-        version: 1,
-        provider: OPENCODE_GO_PROVIDER,
+        version: HISTORY_VERSION,
+        provider,
         count: samples.length,
         maxAgeDays: current.maxAgeDays,
         samples,
@@ -664,7 +732,7 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
         cacheTtlMs: current.cacheTtlMs,
         limits: current.limits,
         sampleIntervalMs: current.sampleIntervalMs,
-        history: { count: store.count(), maxAgeDays: current.maxAgeDays, persistFile },
+        history: { count: store.countAll(), maxAgeDays: current.maxAgeDays, persistFile },
         lastStatus,
         adapters: snap.infos,
       });

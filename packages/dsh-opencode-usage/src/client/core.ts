@@ -201,12 +201,14 @@ export async function fetchStats(provider: string): Promise<ProviderUsage & { ca
   };
 }
 
-/** 拉取历史采样（v1 单序列；M3 起按 provider 分桶）。days 缺省全量。 */
-export async function fetchHistory(days?: number): Promise<{ samples?: number[][] }> {
-  const url = days === undefined ? HISTORY_URL : `${HISTORY_URL}?days=${days}&provider=opencode-go`;
+/** 拉取历史采样（v2 多 provider 分桶；?provider 过滤，days 缺省全量）。 */
+export async function fetchHistory(provider: string, days?: number): Promise<{ samples?: number[][]; provider?: string }> {
+  const url = days === undefined
+    ? `${HISTORY_URL}?provider=${encodeURIComponent(provider)}`
+    : `${HISTORY_URL}?provider=${encodeURIComponent(provider)}&days=${days}`;
   const res = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return (await res.json()) as { samples?: number[][] };
+  return (await res.json()) as { samples?: number[][]; provider?: string };
 }
 
 /** 拉取适配器元数据（M2：用户客户端渲染器清单）。 */

@@ -143,7 +143,7 @@ async function refreshStats(): Promise<void> {
     lastData = data;
     renderPill();
     if (floatOpen) renderPanel();
-    if (floatOpen && currentProvider === FALLBACK_PROVIDER && Date.now() - lastHistoryAt >= HISTORY_MIN_GAP_MS) {
+    if (floatOpen && Date.now() - lastHistoryAt >= HISTORY_MIN_GAP_MS) {
       void refreshHistory();
     }
   } catch {
@@ -154,11 +154,11 @@ async function refreshStats(): Promise<void> {
   }
 }
 
-/** 拉取历史（v1 单序列，仅内置 opencode-go 有图；其余 provider 无历史显示）。 */
+/** 拉取历史（v2 多 provider 分桶，按当前 provider 过滤）。 */
 async function refreshHistory(): Promise<void> {
   const gen = renderGeneration;
   try {
-    const body = await fetchHistory(MAX_HISTORY_DAYS);
+    const body = await fetchHistory(currentProvider, MAX_HISTORY_DAYS);
     if (gen !== renderGeneration) return;
     lastHistory = body;
     lastHistoryAt = Date.now();
@@ -275,7 +275,7 @@ function onProviderChanged(): void {
   if (floatPill !== undefined) renderPill();
   if (floatOpen && floatPanel !== undefined) renderPanel();
   void refreshStats();
-  if (currentProvider === FALLBACK_PROVIDER) void refreshHistory();
+  void refreshHistory();
 }
 
 // ------------------------------------------------------------------ 挂载
@@ -289,7 +289,7 @@ function toggleFloat(force?: boolean): void {
     placePanel();
     renderPanel();
     void refreshStats();
-    if (currentProvider === FALLBACK_PROVIDER) void refreshHistory();
+    void refreshHistory();
   }
 }
 
@@ -374,7 +374,7 @@ function mountFloat(): () => void {
 
   renderPill();
   void refreshStats();
-  if (currentProvider === FALLBACK_PROVIDER) void refreshHistory();
+  void refreshHistory();
 
   refreshTimer = setInterval(() => { void refreshStats(); }, REFRESH_MS);
   const onVisible = (): void => {
