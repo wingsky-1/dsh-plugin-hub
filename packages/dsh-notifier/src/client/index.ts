@@ -737,7 +737,8 @@ import STYLE from "./style.css";
         try {
           source.close();
         } catch (error) {
-          // 忽略
+          // close() 按规范很少抛错，但失败要留痕便于排查（空 catch 会掩盖问题）
+          console.warn("[dsh-notifier] 关闭旧 SSE 连接失败：", error);
         }
         source = null;
       }
@@ -745,6 +746,18 @@ import STYLE from "./style.css";
     }
 
     function connect() {
+      // 兜底：任何路径（含未来新增触发源）在重建前都先关旧的，杜绝未关闭连接累积。
+      // 修复：0.1.8 visibilitychange 裸 reconnect 覆盖 source 引用不 close，导致
+      // 切后台/前台逐步耗尽浏览器同源并发连接、其余请求全部 pending。
+      if (source !== null) {
+        try {
+          source.close();
+        } catch (error) {
+          // close() 按规范很少抛错，但失败要留痕便于排查（空 catch 会掩盖问题）
+          console.warn("[dsh-notifier] 关闭旧 SSE 连接失败：", error);
+        }
+        source = null;
+      }
       try {
         // 重连带 since：服务端先回放缓冲中 seq 更大的帧（断线补拉，不丢事件）
         var url = ROUTES.events + (lastSeq > 0 ? "?since=" + lastSeq : "");
@@ -783,7 +796,9 @@ import STYLE from "./style.css";
         if (watchdog !== null) clearTimeout(watchdog);
         if (source !== null) source.close();
       },
-      reconnect: connect,
+      // reconnect 收敛到 forceReconnect（关旧 + 5s 节流）：visibilitychange/
+      // onerror/watchdog 三路重建共用同一受控入口，避免赤裸 connect 重复建连。
+      reconnect: forceReconnect,
     };
     eventsHandle = handle;
     return handle;
