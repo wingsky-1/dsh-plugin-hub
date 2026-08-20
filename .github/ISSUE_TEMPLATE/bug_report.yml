@@ -1,0 +1,110 @@
+name: Bug 报告
+description: 报告 dsh-plugin-hub 中任意插件的缺陷（崩溃 / 功能异常 / 平台兼容）
+title: "[bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        填得越全定位越快。本仓很多 bug 与**平台**和**版本**强相关（旧版本可能已修、升级即可解决），
+        下面带 * 的为必填。
+  - type: input
+    id: plugin
+    attributes:
+      label: 受影响插件（包名）*
+      description: 如 @wingsky-1/dsh-notifier；不确定就填「不确定」。
+      placeholder: "@wingsky-1/dsh-notifier"
+    validations:
+      required: true
+  - type: dropdown
+    id: host-os
+    attributes:
+      label: dsh web 运行的操作系统*
+      description: 插件宿主进程跑在哪台机器上（涉及原生能力/系统通知的插件按平台分支）。
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - 其他（请在「补充说明」里写清）
+    validations:
+      required: true
+  - type: dropdown
+    id: deploy
+    attributes:
+      label: 你访问 dsh web 的方式*
+      options:
+        - 本机浏览器（dsh web 跑在本机）
+        - 远程服务器 + 其他设备浏览器
+        - 手机（iOS / Android）
+    validations:
+      required: true
+  - type: input
+    id: plugin-version
+    attributes:
+      label: 插件版本*
+      description: 运行 `dsh plugin --profile web list @wingsky-1/<插件名>` 后，贴出 `@wingsky-1/<插件名>@x.y.z` 那一行（版本号最关键）。
+      placeholder: "@wingsky-1/dsh-notifier@0.1.8"
+    validations:
+      required: true
+  - type: input
+    id: dsh-version
+    attributes:
+      label: dsh / dsh web 版本
+      description: 运行 `dsh --version`。
+      placeholder: "11.21.0"
+    validations:
+      required: false
+  - type: dropdown
+    id: category
+    attributes:
+      label: 问题类型*
+      options:
+        - 崩溃 / 进程退出
+        - 功能异常（该有的行为没有）
+        - 平台兼容（某 OS 上不工作）
+        - 配置不生效
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期行为*
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为（含完整报错 / 堆栈）*
+      description: 请贴**全文**，不要只截片段。
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: 复现步骤*
+      description: 一步步列出来，越具体越好。
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志（如有）
+      description: 贴 dsh web 启动 / 运行日志里 `<插件>:` 开头的相关行。
+      render: shell
+  - type: textarea
+    id: extra
+    attributes:
+      label: 补充说明
+      description: 是否刚升级 / 改过配置 / 多设备访问 / 其他上下文。
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: 自检
+      options:
+        - label: 已贴出插件版本（plugin-version）
+        - label: 已贴出完整报错 / 堆栈（actual）

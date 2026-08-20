@@ -1,0 +1,30 @@
+name: 功能建议
+description: 对某个 dsh 插件提新功能 / 改进建议
+title: "[feature] "
+labels: [enhancement]
+body:
+  - type: input
+    id: plugin
+    attributes:
+      label: 相关插件（包名，可选）
+      description: 如 @wingsky-1/dsh-notifier；通用建议可留空。
+      placeholder: "@wingsky-1/dsh-notifier"
+    validations:
+      required: false
+  - type: textarea
+    id: problem
+    attributes:
+      label: 想解决什么问题*
+      description: 现状哪里不方便 / 缺什么能力。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 期望的方案 / 行为*
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: 补充说明 / 截图
