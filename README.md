@@ -4,6 +4,8 @@
 [![CI](https://github.com/wingsky-1/dsh-plugin-hub/actions/workflows/ci.yml/badge.svg)](https://github.com/wingsky-1/dsh-plugin-hub/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/wingsky-1/dsh-plugin-hub)](LICENSE)
 
+**简体中文** | [English](README.en.md)
+
 DSH（DeepSeek Harness）Web GUI 插件集，**npm 分发**：既可一键安装全家桶，也可单独安装单个插件。
 
 - 聚合包：`@wingsky-1/dsh-plugins-all`（一键装齐全部插件）
