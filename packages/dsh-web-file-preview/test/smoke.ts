@@ -12,7 +12,7 @@
  * - serveFileRoute：文本直出（UTF-8）、图片二进制直出、缺参 400、逃逸可读、
  *   文件不存在 404、不可预览类型 415、文本超限截断
  */
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync, readFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync, readFileSync, existsSync, renameSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join, dirname, basename } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -294,6 +294,40 @@ try {
       const r = await computeGitDiff(gitRoot, "a.txt");
       assert.equal(r.hasDiff, true, "已修改 → hasDiff");
       assert.ok(r.diff !== undefined && r.diff.includes("+line2"), "diff 含新增行");
+      // 推送前修复（P0）：git diff 必须 --no-textconv——恶意 .gitattributes+config 的
+      // textconv 可让 git 以 dsh 进程身份执行任意命令。验证：配置 textconv 指向写标记
+      // 文件的脚本，computeGitDiff 后标记文件不得存在（命令未被执行）。
+      {
+        const marker = join(gitRoot, "fwp-textconv-ran");
+        writeFileSync(join(gitRoot, ".gitattributes"), "a.txt diff=fwptc\n", "utf8");
+        if (g(["config", "diff.fwptc.textconv", `sh -c "touch ${marker}"`]).status === 0) {
+          const r2 = await computeGitDiff(gitRoot, "a.txt");
+          assert.equal(existsSync(marker), false, "textconv 不得被触发执行（--no-textconv 生效）");
+          assert.equal(r2.hasDiff, true, "加固后 diff 仍正常（不回退功能）");
+        } else {
+          console.log("  (跳过 textconv 断言：git config 不可用)");
+        }
+        rmSync(join(gitRoot, ".gitattributes"), { force: true }); // 还原，防影响 untracked 断言
+      }
+      // 推送前修复（P1）：git 级错误（非零数字退出码，如索引损坏的 fatal 128）→ reason=error，
+      // 不得误判为 no-changes（Diff「无变化」）。构造：损坏 .git/index 使 status 报错。
+      {
+        const idx = join(gitRoot, ".git", "index");
+        const indexBackup = join(gitRoot, ".git", "index.bak");
+        if (existsSync(idx) && g(["status", "--porcelain"]).status === 0) {
+          renameSync(idx, indexBackup); // 移走真索引
+          writeFileSync(idx, "CORRUPT", "utf8"); // 损坏索引
+          try {
+            const r3 = await computeGitDiff(gitRoot, "a.txt");
+            assert.equal(r3.reason, "error", "git 级错误（非零码）→ error，非 no-changes");
+          } finally {
+            rmSync(idx, { force: true });
+            renameSync(indexBackup, idx); // 还原，防影响 untracked 断言
+          }
+        } else {
+          console.log("  (跳过 runGit 非零码断言：git status 前置检查失败)");
+        }
+      }
       writeFileSync(join(gitRoot, "new.txt"), "x\n", "utf8");
       assert.equal((await computeGitDiff(gitRoot, "new.txt")).untracked, true, "未跟踪新文件 → untracked");
     } else {

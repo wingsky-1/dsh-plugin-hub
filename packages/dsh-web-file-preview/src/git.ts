@@ -44,8 +44,11 @@ const MAX_GIT_OUTPUT_BYTES = 32 * 1024 * 1024;
  * 执行 git 命令（异步、限时、限输出）。
  * @param args - git 参数。
  * @param timeoutMs - 超时毫秒。
+ * @param opts - 选项：numericExitIsError=true 时，非零数字退出码（git 级错误，如 fatal 的
+ *   128）判 failed。仅用于 status/diff 步骤——rev-parse 步骤不启用，因为「非 git 目录」
+ *   同样以 128 退出，需要保留 not-git 语义（rev-parse 调用点用 top.ok/空输出来区分）。
  */
-async function runGit(args: string[], timeoutMs = 8000): Promise<GitRun> {
+async function runGit(args: string[], timeoutMs = 8000, opts: { numericExitIsError?: boolean } = {}): Promise<GitRun> {
   try {
     const { stdout } = await execFileAsync("git", args, {
       encoding: "utf8",
@@ -55,12 +58,16 @@ async function runGit(args: string[], timeoutMs = 8000): Promise<GitRun> {
     return { ok: true, out: String(stdout ?? ""), failed: false };
   } catch (error) {
     // 超时 → error.killed；输出超限 → message 含 maxBuffer；命令缺失 → code ENOENT。
+    // 推送前修复（P1）：git 正常路径以 0 退出；status/diff 步骤的非零数字退出码
+    // （如 fatal 的 128）是 git 级错误，必须判 failed（此前漏判导致 git 报错被误当
+    // 「无变化」）。rev-parse 步骤不启用此判定（非 git 目录同样 128，保留 not-git 语义）。
     const err = error as NodeJS.ErrnoException & { killed?: boolean };
     const failed =
       err.killed === true ||
       err.code === "ENOMEM" ||
       /maxBuffer/i.test(String(err.message)) ||
-      err.code === "ETIMEDOUT";
+      err.code === "ETIMEDOUT" ||
+      (opts.numericExitIsError === true && typeof err.code === "number");
     return { ok: false, out: "", failed };
   }
 }
@@ -85,7 +92,7 @@ export async function computeGitDiff(cwd: string, path: string): Promise<GitDiff
     return { hasDiff: false, reason: "outside-repo" };
   }
 
-  const status = await runGit(["-C", root, "status", "--porcelain", "--", rel]);
+  const status = await runGit(["-C", root, "status", "--porcelain", "--", rel], 8000, { numericExitIsError: true });
   if (status.failed) {
     return { hasDiff: false, reason: "error" };
   }
@@ -98,7 +105,11 @@ export async function computeGitDiff(cwd: string, path: string): Promise<GitDiff
     return { hasDiff: true, untracked: true, path: rel };
   }
 
-  const diff = await runGit(["-C", root, "diff", "--no-ext-diff", "HEAD", "--", rel]);
+  // 评审（推送前修复 P0）：git diff 默认启用 textconv（第三方外部过滤器，由仓库内
+  // .gitattributes + git config 配置），可让 git 以 dsh 进程身份执行任意命令。
+  // `--no-ext-diff` 只关外部 diff 驱动、不关 textconv；故显式补 `--no-textconv` 封死
+  // 该命令执行面（rev-parse/status 不触发 textconv，无需处理；filter 在 checkout 时触发、非本命令）。
+  const diff = await runGit(["-C", root, "diff", "--no-ext-diff", "--no-textconv", "HEAD", "--", rel], 8000, { numericExitIsError: true });
   if (diff.failed) {
     return { hasDiff: false, reason: "error" };
   }
