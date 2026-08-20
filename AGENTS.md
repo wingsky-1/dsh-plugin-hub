@@ -80,6 +80,15 @@ type(scope): subject
 - 发布物：`pnpm pack` 后 tarball 不含 `src/`、`test/`、内部文档。
 - 只推功能代码与对外文档，不推内部治理/讨论细节。
 
+## 发布纪律（Release notes）
+
+- 发布由推 `vX.Y.Z` tag 触发（`.github/workflows/release.yml`）：管线校验全包版本 ==
+  tag 后全量门禁，再 `pnpm publish`、创建 GitHub Release。**不要**直接改包版本号绕过
+  tag 校验。
+- GitHub Release 更新说明**每版入库**为 `docs/release-notes/vX.Y.Z.md`，由发版 agent
+  从上一 tag 至今的常规提交生成、逐条译为 `EN / 中文`、随 `chore(release):` 提交；
+  管线优先引用该文件，缺失则回退 GitHub 自动 notes。**禁止 emoji**（覆盖文档与提交信息）。
+
 ## 测试纪律
 
 - smoke 全部无网络、无真实凭据，本地可直接运行。

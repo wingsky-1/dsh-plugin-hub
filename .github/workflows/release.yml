@@ -71,7 +71,24 @@ jobs:
             pnpm --filter "$pkg" publish --no-git-checks
           done < <(node scripts/publish-if-missing.ts)
 
-      - name: Create GitHub Release
+      # Release notes: prefer the agent-curated per-version file committed
+      # alongside the release (docs/release-notes/<tag>.md); fall back to
+      # GitHub's auto-generated notes only when that file is absent. The two
+      # paths are mutually exclusive (body_path vs generate_release_notes).
+      - name: Locate release notes
+        id: notes
+        run: |
+          f="docs/release-notes/${{ github.ref_name }}.md"
+          if [ -f "$f" ]; then echo "path=$f" >> "$GITHUB_OUTPUT"; else echo "path=" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Create GitHub Release (curated notes)
+        if: ${{ steps.notes.outputs.path != '' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: ${{ steps.notes.outputs.path }}
+
+      - name: Create GitHub Release (fallback auto-notes)
+        if: ${{ steps.notes.outputs.path == '' }}
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
