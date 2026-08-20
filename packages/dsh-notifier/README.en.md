@@ -75,7 +75,7 @@ Pick one of the following access forms (both the panel and the README surface a 
 - **Error reminder**: notifies when a task errors (`agent/error`), including task title, the errored turn/step, and the error message (first 300 chars); identical errors within a 60-second window are auto-merged
 - **Turn completion** (off by default): notifies on `agent/turn-stopping`
 - **Dual channels**:
-  - System notifications: native Windows toast (embedded PowerShell WinRT script, zero dependencies); Linux/macOS use `notify-send`
+  - System notifications: native Windows toast (embedded PowerShell WinRT script, zero dependencies); macOS uses `osascript` (display notification, zero dependencies); Linux uses `notify-send` (only when available)
   - Browser notifications: SSE frame push + Notification API (only pops when the page is hidden)
 - **Insecure-context fallback**: on LAN HTTP access the browser blocks system-level popups — automatically falls back to "in-page banner + sound + title reminder"
 - **Do-not-disturb window**: supports crossing midnight (e.g. 22:00 → 08:00); an **urgent exception** can be set (`allowKinds`: still remind approval / question / error during DND)
@@ -120,8 +120,10 @@ Pick one of the following access forms (both the panel and the README surface a 
 
 - Notification text only contains metadata such as task title / tool name / request reason — **never tool parameters** (prevents sensitive info leakage)
 - **Error notification text is redacted**: user paths / long tokens / key assignments are masked first (`<path>`/`<token>`/`<redacted>`) and then truncated to 300 chars, reducing the exposure surface of embedded command echo, paths, and credential fragments within error messages
-- System notification failures are silent (logs only), and do not affect the main flow
-- **System notifications are sent to the desktop of the machine DSH runs on**: if the server has no desktop session (headless), this channel is unavailable (reflected in the panel / health); macOS has no `notify-send` by default, so the system notification channel will be filled in with `osascript` in a later version
+- System notification failures are silent (logs only), and do not affect the main flow; a missing / non-executable native binary (ENOENT etc.) is caught by the `error` event and **never bubbles up as an unhandled error that crashes the host process** (see issue #1)
+- **The two channels are delivered to different machines (don't confuse them)**:
+  - **Browser notifications** are pushed to **the browser client you are actually using** (your Mac / phone both count), and pop a native notification via the browser's Notification API; they require permission and by default only pop when the page is hidden (the panel can enable "also when visible"). No matter which machine dsh web runs on, as long as browser notifications are allowed you receive them on your own Mac.
+  - **System notifications (host toast)** are popped on the desktop of **the machine dsh web runs on**: if dsh web runs on a Linux server (headless, no desktop session) or some other machine, the toast appears on **that server**, not your Mac — the panel / health reflects whether the channel is available. To also get the system toast on your Mac, run dsh web directly on your Mac (it then uses macOS `osascript`); macOS has no `notify-send`, and the system notification is already implemented via `osascript` (zero dependencies, nothing to install)
 - **iOS difference**: Safari's normal tabs have no Web Notifications API (only the "Add to Home Screen" PWA does); on iOS the available channels are "in-page banner + sound when the page is visible" and system notifications after HTTPS + A2HS
 - Browser notifications require a **secure context** (HTTPS or localhost); LAN HTTP access automatically routes through the fallback channel (banner / sound / title reminder)
 - Browser notification permission is requested within a gesture (when clicking the sidebar "Notifications" entry or a panel button)
