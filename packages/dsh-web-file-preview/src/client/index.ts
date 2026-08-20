@@ -66,6 +66,22 @@ import STYLE from "./style.css";
       const MAX_IMG_CONCURRENCY = 6;
       let imgInFlight = 0;
       const imgQueue: Array<{ img: HTMLImageElement; src: string }> = [];
+      // U8 v2（返回栈）：Modal 内跳转的历史栈，支撑「← 返回」。每项保存"上一文件"的
+      // 路径 / 会话 cwd + 预览态快照（previewMode/原文/diff），返回时可"原样还原"而不再
+      // 重新拉取。栈在「终态关闭」（关闭/ Esc / 遮罩 / 卸载）时清空；导航式重建
+      // （openPreview 内部的 closeModal）不清栈。环形上限防循环引用（A↔B 反复互跳）无界增长。
+      interface NavEntry {
+        path: string;
+        cwd: string | undefined;
+        previewMode: "preview" | "raw" | "diff";
+        rawText?: string;
+        diffText?: string;
+        diffUntracked?: boolean;
+      }
+      let backStack: NavEntry[] = [];
+      const MAX_BACK = 32;
+      /** 首次打开预览时的触发元素（a11y U11）：内跳/返回不覆盖；终态关闭时还原焦点到此。 */
+      let sessionOriginFocus: HTMLElement | undefined;
 
       // -------------------------------------------------------- DOM 工具
 
@@ -218,6 +234,10 @@ import STYLE from "./style.css";
         }
         trackedBlobUrls = [];
         imgQueue.length = 0;
+        // 评审（返回栈 S2）：导航式重建（openPreview 内调用）会把旧代在途的 md 内嵌图
+        // fetch 打断，但其 .finally 仍会 imgInFlight-- / 触发 pump；这里把计数归零，
+        // 防止旧代请求与新代泵图共用同一计数器造成并发上限错乱。
+        imgInFlight = 0;
         previewMode = "preview";
         rawText = undefined;
         diffText = undefined;
@@ -225,18 +245,54 @@ import STYLE from "./style.css";
         currentGroup = undefined;
         // 还原背景滚动（与 openPreview 的 body 锁配对，评审 U1）。
         document.body.style.overflow = "";
-        // a11y（评审 U11）：焦点还原到打开预览前的元素。
-        if (lastFocused !== undefined) {
-          try { if (document.contains(lastFocused)) lastFocused.focus(); } catch { /* 忽略 */ }
-          lastFocused = undefined;
-        }
+        // 注：焦点还原 / 返回栈清空不在此处——这是导航式重建（openPreview 内调用）与
+        // 终态关闭共用的"资源清理"函数；焦点还原与栈复位放在 finalizeSession()（终态入口）。
       }
 
-      function openPreview(path: string, cwd: string | undefined): void {
-        ensureStyle();
+      /**
+       * 终态关闭：还原焦点到首次触发元素、清空返回栈，再走 closeModal 清理资源。
+       * 只在真正的关闭语义入口调用（关闭按钮 / 遮罩 / Esc 非灯箱 / 插件卸载），
+       * 与 openPreview 内部的导航式重建（closeModal 不清栈、不动焦点）区分开来。
+       */
+      function finalizeSession(reason: "close" | "unmount"): void {
+        if (reason === "unmount") {
+          // 卸载时 overlay 仍可还原焦点到会话（若在 DOM 中）。
+          if (sessionOriginFocus !== undefined) {
+            try { if (document.contains(sessionOriginFocus)) sessionOriginFocus.focus(); } catch { /* 忽略 */ }
+          }
+          sessionOriginFocus = undefined;
+          backStack = [];
+          closeModal();
+          return;
+        }
+        if (sessionOriginFocus !== undefined) {
+          try {
+            // 仅当触发元素仍存在且当前不是刚被卸载的上下文时才还原。
+            if (document.body !== null && document.contains(sessionOriginFocus)) sessionOriginFocus.focus();
+          } catch { /* 忽略 */ }
+          sessionOriginFocus = undefined;
+        }
+        backStack = [];
         closeModal();
-        // a11y（评审 U11）：聚焦元素在关闭 Modal 后被还原。
-        lastFocused = (document.activeElement as HTMLElement | undefined) || undefined;
+      }
+
+      function openPreview(path: string, cwd: string | undefined, isBack = false, prev?: NavEntry): void {
+        ensureStyle();
+        // 返回栈：进入"新文件"（非返回触发、当前已有活跃 Modal、目标不同）→ 把当前
+        // 文件与预览态快照压栈，供「← 返回」还原。返回触发（isBack）不再重复压栈；
+        // 以 overlay !== undefined（当前是否已有打开的 Modal）判断"是否在浏览链内"，
+        // 避免重开会话时（overlay 为 undefined）把上次残留路径误压栈。
+        if (!isBack && overlay !== undefined && currentPath !== "" && currentPath !== path) {
+          backStack.push({ path: currentPath, cwd: currentCwd, previewMode, rawText, diffText, diffUntracked });
+          if (backStack.length > MAX_BACK) backStack.shift();
+        }
+        // a11y（评审 U11 / 返回栈 S3）：仅"首次打开"（当前无活跃 Modal）捕获触发元素，
+        // 内跳/返回（overlay 已存在）不覆盖——确保整条浏览链关闭后焦点回到最初的文件链接。
+        const firstOpen = overlay === undefined;
+        if (firstOpen && !isBack) {
+          sessionOriginFocus = (document.activeElement as HTMLElement | undefined) || undefined;
+        }
+        closeModal();
         // 本次预览的代数与取消句柄：所有 fetch 共用，落地前校验代数。
         const seq = ++openSeq;
         const abort = new AbortController();
@@ -256,12 +312,26 @@ import STYLE from "./style.css";
         const body = el("div", { class: "fwp-body" });
         body.appendChild(el("div", { class: "fwp-state", text: "加载中…" }));
 
+        // 返回栈：顶栏「← 返回」按钮——栈非空才显示；点击弹出上一文件，用 isBack 重开
+        // （openPreview 不再压栈），并按保存的快照还原预览态（tab/原文/diff 免重新拉取）。
+        const backBtn = el("button", {
+          class: "fwp-nav-back", text: "← 返回",
+          attrs: { "aria-label": "返回上一个预览" },
+        });
+        backBtn.style.display = backStack.length > 0 ? "" : "none";
+        backBtn.addEventListener("click", () => {
+          const prevEntry = backStack.pop();
+          if (prevEntry === undefined) { backBtn.style.display = "none"; return; }
+          backBtn.style.display = backStack.length > 0 ? "" : "none";
+          openPreview(prevEntry.path, prevEntry.cwd, true, prevEntry);
+        });
+
         const copyBtn = el("button", { text: "复制路径" });
         copyBtn.addEventListener("click", () => copyPathText(path, copyBtn));
         const newTabBtn = el("button", { text: "在新标签打开原文" });
         newTabBtn.addEventListener("click", () => { window.open(url, "_blank", "noopener"); });
         const closeBtn = el("button", { text: "关闭" });
-        closeBtn.addEventListener("click", closeModal);
+        closeBtn.addEventListener("click", () => finalizeSession("close"));
 
         // 三态 tab 栏：预览 / 原始 / Diff（Diff 仅当 git 有变化时动态追加）。
         const tabs = el("div", { class: "fwp-tabs" });
@@ -316,7 +386,7 @@ import STYLE from "./style.css";
 
         const head = el("div", { class: "fwp-head" }, [
           el("div", { class: "fwp-title", text: path, attrs: { title: path } }),
-          el("div", { class: "fwp-actions" }, [copyBtn, newTabBtn, closeBtn]),
+          el("div", { class: "fwp-actions" }, [backBtn, copyBtn, newTabBtn, closeBtn]),
         ]);
         const card = el("div", { class: "fwp-card" }, [head, tabs, body]);
         // a11y（评审 U11）：dialog 语义 + 打开聚焦 + Tab 陷阱配合 onKeyDown。
@@ -347,7 +417,7 @@ import STYLE from "./style.css";
               return;
             }
           }
-          if (event.target === ov) closeModal();
+          if (event.target === ov) finalizeSession("close");
         });
         document.addEventListener("keydown", onKeyDown);
         document.body.appendChild(ov);
@@ -359,19 +429,28 @@ import STYLE from "./style.css";
 
         if (group.group === "image") {
           renderImage(url, body, seq, abort.signal);
+        } else if (isBack && prev !== undefined) {
+          // 返回：直接用快照还原预览态（tab/原文/diff），免重新拉取、无闪烁。
+          previewMode = prev.previewMode;
+          rawText = prev.rawText;
+          diffText = prev.diffText;
+          diffUntracked = prev.diffUntracked ?? false;
+          // Diff tab 在跳转前可能已被探测/添加；返回时按其 snapshot 状态重建 tab 栏。
+          if (prev.diffText !== undefined || prev.diffUntracked) addDiffTab();
+          syncTabActive();
+          renderTabBody(body);
         } else {
           fetchText(url, body, seq, abort.signal);
           probeDiff(path, cwd, seq, addDiffTab, addUnavailableDiffTab, abort.signal);
         }
       }
 
-      /** 打开预览前的聚焦元素（关闭/卸载后还原焦点，评审 U11）。 */
-      let lastFocused: HTMLElement | undefined;
+      /** 首次打开预览前的聚焦元素由 sessionOriginFocus 负责（评审 U11 / 返回栈 S3）。 */
 
       function onKeyDown(event: KeyboardEvent): void {
         if (event.key === "Escape") {
           if (lboxEl !== undefined) closeLightbox();
-          else closeModal();
+          else finalizeSession("close");
           return;
         }
         // Tab 焦点陷阱（评审 U11）：焦点在灯箱/Modal 内循环，不穿到背景页面。
@@ -772,7 +851,7 @@ export function apply(ctx: any): void {
             disposed = true;
             document.removeEventListener("click", onClickCapture, true);
             document.removeEventListener("keydown", onKeyDown);
-            closeModal();
+            finalizeSession("unmount");
             restoreOpenPath();
             const style = document.querySelector("style[data-dsh-web-file-preview-style]");
             if (style !== null && style.parentElement !== null) style.remove();
