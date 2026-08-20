@@ -15,7 +15,7 @@
   },
   "scripts": {
     "build": "node build.ts",
-    "prepare": "node build.ts"
+    "prepublishOnly": "node build.ts"
   },
   "license": "MIT",
   "files": [
