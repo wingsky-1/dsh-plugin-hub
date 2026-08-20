@@ -75,15 +75,14 @@ dsh plugin --profile web update
 
 ### Pin a version (@version)
 
-If the registry has not synced the latest yet, or the latest has issues in your environment,
-append `@version` to the package name — works for both `add` and `update`:
+Omitting `@version` installs the default latest (recommended). Only when the registry has not synced the latest yet, or the latest has issues in your environment, append `@version` to the package name — works for both `add` and `update`:
 
 ```sh
 # Install a specific version (instead of latest)
-dsh plugin --profile web add @wingsky-1/dsh-notifier@0.1.8
+dsh plugin --profile web add @wingsky-1/dsh-notifier@<version>
 
 # Update to a specific version
-dsh plugin --profile web update @wingsky-1/dsh-notifier@0.1.8
+dsh plugin --profile web update @wingsky-1/dsh-notifier@<version>
 ```
 
 ### Without a global dsh install
@@ -96,7 +95,7 @@ calls `pnpm` under the hood, so `pnpm` and `Node.js` must still be installed loc
 npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-plugins-all
 
 # Install an individual plugin (with a version pin)
-npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-notifier@0.1.8
+npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-notifier@<version>
 
 # Uninstall / update (same shape — swap add for remove / update)
 npx @deepseek-ai/dsh plugin --profile web remove @wingsky-1/dsh-notifier

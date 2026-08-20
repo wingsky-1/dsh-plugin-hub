@@ -1,4 +1,6 @@
 # @wingsky-1/dsh-notifier
+[![npm](https://img.shields.io/npm/v/@wingsky-1/dsh-notifier)](https://www.npmjs.com/package/@wingsky-1/dsh-notifier)
+[![GitHub Releases](https://img.shields.io/github/v/release/wingsky-1/dsh-plugin-hub)](https://github.com/wingsky-1/dsh-plugin-hub/releases)
 
 审批/完成/错误事件通知：人不在浏览器前也能收到提醒。
 
@@ -28,10 +30,10 @@ dsh plugin --profile web update @wingsky-1/dsh-notifier
 
 ### 指定版本号（@version）
 
-registry 尚未同步到最新、或最新版在你的环境有问题时，可在包名后追加 `@版本号`：
+省略 `@版本号` 即安装默认 latest（推荐）。仅当 registry 尚未同步到最新、或最新版在你的环境有问题时，在包名后追加 `@版本号`：
 
 ```sh
-dsh plugin --profile web add @wingsky-1/dsh-notifier@0.1.8
+dsh plugin --profile web add @wingsky-1/dsh-notifier@<版本号>
 ```
 
 ### 未全局安装 dsh

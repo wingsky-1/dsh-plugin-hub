@@ -1,4 +1,6 @@
 # @wingsky-1/dsh-mcp-manager
+[![npm](https://img.shields.io/npm/v/@wingsky-1/dsh-mcp-manager)](https://www.npmjs.com/package/@wingsky-1/dsh-mcp-manager)
+[![GitHub Releases](https://img.shields.io/github/v/release/wingsky-1/dsh-plugin-hub)](https://github.com/wingsky-1/dsh-plugin-hub/releases)
 
 DSH（DeepSeek Harness）的 **MCP 服务器管理插件**：会话界面右上角浮窗 + 分级面板 +
 快速接入（手工表单 + 粘贴 mcpServers JSON 导入，**不预设任何服务器**），支持
@@ -32,10 +34,10 @@ dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
 
 ### 指定版本号（@version）
 
-registry 尚未同步到最新、或最新版在你的环境有问题时，可在包名后追加 `@版本号`：
+省略 `@版本号` 即安装默认 latest（推荐）。仅当 registry 尚未同步到最新、或最新版在你的环境有问题时，在包名后追加 `@版本号`：
 
 ```sh
-dsh plugin --profile web add @wingsky-1/dsh-mcp-manager@0.1.8
+dsh plugin --profile web add @wingsky-1/dsh-mcp-manager@<版本号>
 ```
 
 ### 未全局安装 dsh

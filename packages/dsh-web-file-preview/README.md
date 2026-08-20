@@ -1,4 +1,6 @@
 # @wingsky-1/dsh-web-file-preview
+[![npm](https://img.shields.io/npm/v/@wingsky-1/dsh-web-file-preview)](https://www.npmjs.com/package/@wingsky-1/dsh-web-file-preview)
+[![GitHub Releases](https://img.shields.io/github/v/release/wingsky-1/dsh-plugin-hub)](https://github.com/wingsky-1/dsh-plugin-hub/releases)
 
 点击对话中的文件链接，在 **web 端**直接预览文件内容（**图片 / 文本 / Markdown / 代码 / git Diff**）。
 
@@ -49,10 +51,10 @@ dsh plugin --profile web update @wingsky-1/dsh-web-file-preview
 
 ### 指定版本号（@version）
 
-registry 尚未同步到最新、或最新版在你的环境有问题时，可在包名后追加 `@版本号`：
+省略 `@版本号` 即安装默认 latest（推荐）。仅当 registry 尚未同步到最新、或最新版在你的环境有问题时，在包名后追加 `@版本号`：
 
 ```sh
-dsh plugin --profile web add @wingsky-1/dsh-web-file-preview@0.1.8
+dsh plugin --profile web add @wingsky-1/dsh-web-file-preview@<版本号>
 ```
 
 ### 未全局安装 dsh

@@ -1,4 +1,6 @@
 # @wingsky-1/dsh-gzip
+[![npm](https://img.shields.io/npm/v/@wingsky-1/dsh-gzip)](https://www.npmjs.com/package/@wingsky-1/dsh-gzip)
+[![GitHub Releases](https://img.shields.io/github/v/release/wingsky-1/dsh-plugin-hub)](https://github.com/wingsky-1/dsh-plugin-hub/releases)
 
 A response gzip compression plugin for the DSH Web GUI: enables gzip compression for
 `/api` responses, static assets (`/assets/*` and index.html), and plugin client bundles
@@ -46,11 +48,10 @@ dsh plugin --profile web update @wingsky-1/dsh-gzip
 
 ### Pin a version (@version)
 
-If the registry has not synced the latest yet, or the latest has issues in your environment,
-append `@version` to the package name:
+Omitting `@version` installs the default latest (recommended). Only when the registry has not synced the latest yet, or the latest has issues in your environment, append `@version` to the package name:
 
 ```sh
-dsh plugin --profile web add @wingsky-1/dsh-gzip@0.1.8
+dsh plugin --profile web add @wingsky-1/dsh-gzip@<version>
 ```
 
 ### Without a global dsh install

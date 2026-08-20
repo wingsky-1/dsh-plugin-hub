@@ -70,14 +70,14 @@ dsh plugin --profile web update
 
 ### 指定版本号（@version）
 
-registry 尚未同步到最新、或最新版在你的环境有问题时，可在包名后追加 `@版本号`，`add` 与 `update` 通用：
+省略 `@版本号` 即安装默认 latest（推荐）。仅当 registry 尚未同步到最新、或最新版在你的环境有问题时，在包名后追加 `@版本号`，`add` 与 `update` 通用：
 
 ```sh
 # 安装指定版本（而非 latest）
-dsh plugin --profile web add @wingsky-1/dsh-notifier@0.1.8
+dsh plugin --profile web add @wingsky-1/dsh-notifier@<版本号>
 
 # 更新到指定版本
-dsh plugin --profile web update @wingsky-1/dsh-notifier@0.1.8
+dsh plugin --profile web update @wingsky-1/dsh-notifier@<版本号>
 ```
 
 ### 未全局安装 dsh
@@ -89,7 +89,7 @@ dsh plugin --profile web update @wingsky-1/dsh-notifier@0.1.8
 npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-plugins-all
 
 # 单独安装（带版本号）
-npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-notifier@0.1.8
+npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-notifier@<版本号>
 
 # 卸载 / 更新（同理，把 add 换成 remove / update）
 npx @deepseek-ai/dsh plugin --profile web remove @wingsky-1/dsh-notifier
