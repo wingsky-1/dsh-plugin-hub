@@ -212,9 +212,41 @@ export async function fetchHistory(days?: number): Promise<{ samples?: number[][
 /** 拉取适配器元数据（M2：用户客户端渲染器清单）。 */
 export async function fetchAdapterMeta(): Promise<{
   version?: number;
-  client?: Array<{ providers?: string[]; file?: string | null }>;
+  client?: Array<{ file?: string | null; url?: string; resolved?: boolean }>;
 }> {
   const res = await fetch(ADAPTERS_URL, { headers: { Accept: "application/json" }, cache: "no-store" });
   if (!res.ok) return {};
-  return (await res.json()) as { version?: number; client?: Array<{ providers?: string[]; file?: string | null }> };
+  return (await res.json()) as { version?: number; client?: Array<{ file?: string | null; url?: string; resolved?: boolean }> };
+}
+
+/** 加载并执行用户客户端渲染器 js（自注册到 window.__DSH_USAGE__ 桥接）。
+ *  使用 blob import 路径（ESM 语义，模块体执行即自注册）。返回加载成功数。 */
+export async function loadUserRenderers(registry: RendererRegistry): Promise<number> {
+  const meta = await fetchAdapterMeta();
+  if (!Array.isArray(meta.client) || meta.client.length === 0) return 0;
+  let loaded = 0;
+  for (const entry of meta.client) {
+    if (!entry.url) continue;
+    try {
+      const res = await fetch(entry.url, { headers: { Accept: "application/javascript" }, cache: "no-store" });
+      if (!res.ok) {
+        console.warn(`[dsh-opencode-usage] 用户渲染器 ${entry.url} 加载失败（HTTP ${res.status}）`);
+        continue;
+      }
+      const code = await res.text();
+      // 通道 A: blob import（ESM 语义，模块体执行即自注册）
+      const blob = new Blob([code], { type: "text/javascript" });
+      const blobUrl = URL.createObjectURL(blob);
+      try {
+        await import(/* @vite-ignore */ blobUrl);
+      } finally {
+        URL.revokeObjectURL(blobUrl);
+      }
+      loaded += 1;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn(`[dsh-opencode-usage] 用户渲染器执行失败 ${entry.file ?? entry.url}: ${msg}`);
+    }
+  }
+  return loaded;
 }

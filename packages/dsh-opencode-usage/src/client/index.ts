@@ -22,6 +22,7 @@ import {
   resolveProviderFromSession,
   fetchStats,
   fetchHistory,
+  loadUserRenderers,
 } from "./core.js";
 import type { SessionsServiceLike, ConnectionHandleLike, RendererRegistry } from "./core.js";
 import { openCodeGoClientRenderer, injectStyle, el, fmtAge } from "./renderers/opencode-go.js";
@@ -419,6 +420,8 @@ export function apply(ctx: any): void {
     registry = makeRendererRegistry();
     registry.register(openCodeGoClientRenderer, "builtin");
     installGlobalBridge(registry);
+    // M2: 加载用户客户端渲染器（fire-and-forget，不阻断插件其余部分）
+    loadUserRenderers(registry).catch(() => {});
 
     const disposeFloat = mountFloat();
 

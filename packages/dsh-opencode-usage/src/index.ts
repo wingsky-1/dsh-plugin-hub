@@ -15,6 +15,7 @@ import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { isLoopbackRequest } from "../../../shared/loopback.js";
 import { writeJson } from "../../../shared/host-utils.js";
 import type { PluginContext, DshRoute } from "../../../types/dsh.js";
@@ -28,6 +29,7 @@ import {
   OPENCODE_GO_WINDOWS,
 } from "./adapters/opencode-go.js";
 import type { ProviderUsage, UsageWindow, FetchLike } from "./contracts.js";
+import { resolvePath } from "./path-resolve.js";
 
 // ------------------------------------------------------------------ 对外 re-export
 // 注意：bundle-host 会把 tsc 产物中的子模块全部内联进 lib/index.js 并清理游离 .js，
@@ -35,6 +37,7 @@ import type { ProviderUsage, UsageWindow, FetchLike } from "./contracts.js";
 export * from "./contracts.js";
 export * from "./registry.js";
 export * from "./adapters/opencode-go.js";
+export * from "./path-resolve.js";
 
 // ------------------------------------------------------------------ 类型
 
@@ -402,12 +405,30 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
   const registry = makeHostAdapterRegistry();
   registry.register(openCodeGoHostAdapter, "builtin");
 
-  // M2: 加载用户宿主适配器（当前未实现，仅占位结构）
-  // for (const entry of current.adapters.host) {
-  //   const url = pathToFileURL(resolvePath(entry.file)).href;
-  //   const mod = await import(url);
-  //   registry.register(mod.default ?? mod, "user-file", entry.file);
-  // }
+  // M2: 加载用户宿主适配器（多个文件依序加载，单个失败不阻断）
+  for (const entry of current.adapters.host) {
+    const file = resolvePath(entry.file);
+    if (file === undefined) {
+      console.warn(`[dsh-opencode-usage] 用户宿主适配器文件不存在：${entry.file}，跳过`);
+      continue;
+    }
+    try {
+      const url = pathToFileURL(file).href;
+      const mod = await import(url);
+      const adapter = (mod as Record<string, unknown>).default ?? mod;
+      registry.register(adapter, "user-file", file);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn(`[dsh-opencode-usage] 用户宿主适配器加载失败 ${entry.file}: ${msg}`);
+    }
+  }
+
+  // 解析用户客户端文件路径（用于 serve 路由，文件不存在也纳入路径列表——加载时再报错）
+  const userClientFiles: Array<{ file: string; resolvedPath: string | undefined }> = [];
+  for (const entry of current.adapters.client) {
+    const resolvedPath = resolvePath(entry.file);
+    userClientFiles.push({ file: entry.file, resolvedPath });
+  }
 
   const cache = makeUsageCache<StatsResult>({ ttlMs: current.cacheTtlMs });
 
@@ -576,7 +597,7 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
     },
   };
 
-  // M2 前瞻：适配器元数据路由（供客户端查询有哪些渲染器）
+  // M2: 适配器元数据路由（含用户客户端渲染器文件 URL）
   const adaptersRoute: DshRoute = {
     kind: "exact",
     path: ROUTES.adapters,
@@ -584,6 +605,11 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
       if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
       if (req.method !== "GET") return writeJson(res, 405, { error: `method not allowed: ${req.method}` });
       const snap = registry.snapshot();
+      const client = userClientFiles.map((entry, i) => ({
+        url: `/api/dsh-opencode-usage/user/${i}.js`,
+        file: entry.file,
+        resolved: entry.resolvedPath !== undefined,
+      }));
       writeJson(res, 200, {
         version: ADAPTER_CONTRACT_VERSION,
         host: snap.infos.filter((i) => i.status === "active").map((i) => ({
@@ -591,9 +617,36 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
           source: i.source,
           file: i.file ?? null,
         })),
-        // M2: 客户端渲染器列表将在加载用户客户端 js 后填充
-        client: [] as Array<{ providers: string[]; file: string | null }>,
+        client,
       });
+    },
+  };
+
+  // M2: 用户客户端 JS 静态服务路由（loopback 围栏，text/javascript content-type）
+  const userRoute: DshRoute = {
+    // 匹配 /api/dsh-opencode-usage/user/<n>.js
+    kind: "prefix",
+    path: "/api/dsh-opencode-usage/user/",
+    handler: async (req, res) => {
+      if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
+      if (req.method !== "GET") return writeJson(res, 405, { error: `method not allowed: ${req.method}` });
+      const url = new URL(req.url ?? "/", "http://localhost");
+      const match = url.pathname.match(/\/user\/(\d+)\.js$/u);
+      if (match === null) return writeJson(res, 404, { error: "not found" });
+      const idx = parseInt(match[1], 10);
+      const entry = userClientFiles[idx];
+      if (entry === undefined) return writeJson(res, 404, { error: "not found" });
+      if (entry.resolvedPath === undefined) return writeJson(res, 404, { error: "file not resolved" });
+      try {
+        const content = await readFile(entry.resolvedPath, "utf8");
+        res.writeHead(200, {
+          "Content-Type": "text/javascript; charset=utf-8",
+          "Cache-Control": "no-cache",
+        });
+        res.end(content);
+      } catch {
+        writeJson(res, 500, { error: "read error" });
+      }
     },
   };
 
@@ -620,7 +673,7 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
 
   const disposeRoutes = ctx.effect(
     () => {
-      const routeDisposers = [statsRoute, historyRoute, adaptersRoute, healthRoute].map((route) =>
+      const routeDisposers = [statsRoute, historyRoute, adaptersRoute, userRoute, healthRoute].map((route) =>
         ctx.webServer.register(route),
       );
       return () => {

@@ -323,16 +323,16 @@ function makeFakeCtx(overrides = {}) {
   assert.equal(routes.length, 0, "enabled:false 不注册路由");
 }
 
-// 注册 stats + history + adapters + health 四路由
+// 注册 stats + history + adapters + user + health 五路由
 {
   const { ctx, routes } = makeFakeCtx();
   await apply(ctx, {});
   assert.deepEqual(
     routes.map((r) => r.path).sort(),
-    [ROUTES.health, ROUTES.history, ROUTES.adapters, ROUTES.stats].sort(),
+    [ROUTES.health, ROUTES.history, ROUTES.adapters, ROUTES.stats, "/api/dsh-opencode-usage/user/"].sort(),
     "注册四条路由",
   );
-  assert.ok(routes.every((r) => r.kind === "exact"));
+  assert.ok(routes.every((r) => r.kind === "exact" || r.kind === "prefix"), "路由 exact 或 prefix");
 }
 
 // stats 路由：403（非回环）/ 405（非 GET）
@@ -372,7 +372,38 @@ function makeFakeCtx(overrides = {}) {
   assert.equal(payload.version, 1, "adapters.json 带契约版本");
   assert.equal(payload.host.length >= 1, true, "内置 opencode-go 在元数据中");
   assert.equal(payload.host[0].providers.includes("opencode-go"), true);
-  assert.deepEqual(payload.client, [], "M1 客户端渲染器元数据为空列表（M2 填充）");
+  assert.deepEqual(payload.client, [], "无客户端适配器时为 []");
+  // 带客户端适配器配置
+  const { ctx: ctx3, routes: routes3 } = makeFakeCtx();
+  await apply(ctx3, {
+    adapters: { client: [{ file: "/abs/my-relay-client.js" }] },
+  });
+  const adaptersRoute3 = routes3.find((r) => r.path === ROUTES.adapters);
+  let payload3;
+  const res3 = { writeHead: () => {}, end: (chunk) => { payload3 = JSON.parse(chunk); } };
+  adaptersRoute3.handler(fakeReq(), res3);
+  assert.equal(payload3.client.length, 1, "有客户端适配器时 client 非空");
+  assert.equal(payload3.client[0].file, "/abs/my-relay-client.js");
+  assert.ok(payload3.client[0].url.startsWith("/api/dsh-opencode-usage/user/"), "客户端适配器有 serve URL");
+  assert.equal(payload3.client[0].resolved, false, "文件不存在标记 resolved=false");
+}
+
+// user 路由：403 / 405 / 404
+{
+  const { ctx, routes } = makeFakeCtx();
+  await apply(ctx, {});
+  const userRoute = routes.find((r) => r.path === "/api/dsh-opencode-usage/user/");
+  assert.ok(userRoute, "user 路由存在");
+  const responses = [];
+  const res = { writeHead: () => {}, end: (chunk) => responses.push(JSON.parse(chunk)) };
+  userRoute.handler(fakeReq({ socket: { remoteAddress: "10.0.0.2" } }), res);
+  assert.equal(responses.at(-1).error, "forbidden: loopback-only", "user 非回环 403");
+  const res405 = { writeHead: (code) => { responses.push({ __code: code }); }, end: () => {} };
+  userRoute.handler(fakeReq({ method: "POST" }), res405);
+  assert.equal(responses.at(-1).__code, 405, "user 非 GET 405");
+  const res404 = { writeHead: (code) => { responses.push({ __code: code }); }, end: () => {} };
+  userRoute.handler(fakeReq({ url: "/api/dsh-opencode-usage/user/999.js" }), res404);
+  assert.equal(responses.at(-1).__code, 404, "user 不存在的索引 404");
 }
 
 // stats 200 全链路：注入 fetchImpl + apiKey（不落盘、不网络）
