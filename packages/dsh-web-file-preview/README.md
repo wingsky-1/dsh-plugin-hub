@@ -14,6 +14,7 @@ DSH 自带的“可点击文件引用”在点击产出文件 chip / 行内文�
 - **文本预览**：`txt / log / csv / conf …` 等宽展示。
 - **Diff 视图（git）**：`.md/代码/文本` 若在 git 仓库且有未提交变更，顶栏多出第 3 个 **Diff** tab，红/绿展示 `git diff HEAD -- <file>`（未跟踪新文件给提示）。
 - Modal 内动作：**预览/原始/Diff**、**复制路径**、**在新标签打开**、**关闭**（Esc / 点遮罩）。
+- **`@` 引用适配（dsh rc8）**：对话气泡里 `@` 引用渲染的 `data-ref-chip`（文件/文件夹/会话）统一识别——文件引用 `@path` / `@"…"` 点 chip 用**干净路径**（去前导 `@` 与引号）直接打开预览 Modal；文件夹引用 `@path/` 点 chip 弹轻量提示（无目录浏览能力，不开 Modal）；会话引用显式忽略（与文件预览正交）。
 - **加载错误态**：错误细分 + 「在新标签打开」兜底。
 - **缓存**：不设 JS 内存缓存（文件常被修改，永久缓存会显示陈旧内容）；改用浏览器 HTTP 缓存 + 宿主弱 ETag（`Cache-Control: no-cache` + `If-None-Match`）自动协商——未变 304 秒回、已变自动拿最新。
 
@@ -21,7 +22,8 @@ DSH 自带的“可点击文件引用”在点击产出文件 chip / 行内文�
 
 - **宿主端**：`GET /api/dsh-file-preview/file?cwd=&path=`（绝对路径可省 cwd；loopback 围栏，非回环 403 / 方法非 GET 405），按 `resolve(cwd, path)` 定位读取（`~`/`~/` 前缀用 `untildify` 展开为用户主目录）；后缀分组：图片/文本/Markdown/代码直出，其余 415；文本超过 `maxTextBytes` 返回 `413`+`truncated`（先 `stat` 判大小、不整读）。`GET /api/dsh-file-preview/diff?cwd=&path=`（异步 execFile 计算 git diff）与 `GET /api/dsh-file-preview/health` 健康检查。文件响应统一 `X-Content-Type-Options: nosniff`，SVG 额外 `Content-Security-Policy: sandbox`。
 - **客户端**：双机制拦截（`workspaces.openPath` 调用点收口 + document 捕获静态拦截）+ 分组渲染（`renderGroupFor`）+ 三 tab（预览/原始/Diff，Diff 仅 git 有变更才显示）。md 用 `marked`、代码用 `highlight.js` 子集、Diff 用 `diff2html`。
-- **后缀分组单一事实源**：`src/grouping.ts` 供宿主 `mime.ts` 与客户端 `renderer.ts`/`client.ts` 共用，杜绝双端各写一份后缀表导致漂移。
+- **后缀分组单一事实源**：`src/grouping.ts` 供宿主 `mime.ts` 与客户端 `renderer.ts`/`client.ts` 共用，杜绝双端各写一份后缀表导致漂移；`cleanRefChipPath`（@-mention chip 标签 → 干净路径的纯函数）同处，与 DSH 的 `formatFileMention` 互逆。
+- **跨包契约假设（`@` 引用）**：按 `data-ref-chip` 属性 + `title="@…"` 形态（由 DSH `ui-conversation` 产出）识别。若未来 DSH 调整该形态，`data-ref-chip` 门失效时 file chip 静默退回「点击无反应」（不会 404，属可接受降级）；若 DSH 提供干净路径属性（如 `data-ref-path`）则优先采用。
 - **依赖**：`marked` / `highlight.js` / `diff2html` / `untildify` 为构建期打包依赖（宿主/客户端分别内联进 `lib/index.js` 与 `lib/client.js`），**运行时零 npm 依赖**；Content-Type 用内置小型映射（无需 mime-db 大表，避免宿主第三方依赖内联的 ESM/CJS 兼容问题）。
 - **构建体积**：客户端 esbuild `--minify`，`client.js` min 后约 226KB（gzip ~68KB）。
 
@@ -88,10 +90,12 @@ curl http://127.0.0.1:3080/api/dsh-file-preview/health
 - **不做重复兜底**：本插件的语义是“能打开 dsh web 页面即已持有高权限”，因此**不做**任意文件访问强校验、会话鉴权、敏感名拦截——访问控制由平台/用户负责，本插件不重复实现每一套。
 - **路径定位**：`/file` 按 `resolve(cwd, path)` 直接定位，不做“逃出 cwd”拦截（任意文件访问由平台/用户负责）。`~`/`~/` 前缀展开为用户主目录。
 - **渲染安全**：文件响应一律带 `X-Content-Type-Options: nosniff`；SVG 额外带 `Content-Security-Policy: sandbox`（顶层导航时不执行内嵌脚本）。Markdown / 代码渲染输出为 HTML 呈现层，`marked` / `highlight.js` 对正文做转义；本插件不承诺对渲染结果做 XSS 消毒——预览内容来自会话已见的文件，安全边界同“能打开 dsh web 即高权限”。
+- **`@` 引用不新增安全面**：`data-ref-chip`/`title` 仅经 `getAttribute` 读取并作为路径字符串拼 `URLSearchParams`，从不 `innerHTML` 渲染；清洗后的文件路径仍走 `/file` 既有 loopback/cwd 围栏（相对路径强制 cwd、绝对路径沿用既有进程可读范围），与「deliverable chip 预览」同一安全模型。
 
 ## 已知限制
 
 - 文本类超过 `maxTextBytes`（默认 512KB）返回 413+截断标记，不再整读全文（大文件流式/虚拟滚动未实现，见 W10 专项）。
-- 可点击范围较宽（凡路径 title / 本地 href / 内联路径文本都可能进预览），后续可收窄到产出引用。
+- 可点击范围较宽（凡路径 title / 本地 href / 内联路径文本都可能进预览），`data-ref-chip` 权威分支优先于通用嗅探，避免 `@` 引用误触发。
+- 文件夹 `@` 引用不开预览（仅提示），目录浏览能力不在本插件范畴。
 - client bundle 含 `marked` + `highlight.js` 子集 + `diff2html`，min 后约 226KB（gzip ~68KB）。
 - 多会话切换以当前活跃会话 cwd 为准。
