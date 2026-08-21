@@ -45,9 +45,9 @@ export interface DshLogger {
 export interface DshWebServer {
   /** 注册路由；返回 disposer（⚠️ 非 fiber 自动管理，卸载必须显式调用）。 */
   register(route: DshRoute): () => void;
-  /** 已注册的 prefix 路由表（dsh-gzip 双挂点依赖，非官方字段）。 */
+  /** 已注册的 prefix 路由表（非官方字段，运行时普通属性）。 */
   prefixes?: Map<string, { kind: string; path: string; handler: DshRoute["handler"] }>;
-  /** 已注册的 exact 路由表（与 prefixes 同构；dsh-gzip 方案 A 覆盖 exact 依赖，非官方字段）。 */
+  /** 已注册的 exact 路由表（与 prefixes 同构，非官方字段）。 */
   exact?: Map<string, { kind: string; path: string; handler: DshRoute["handler"] }>;
   /** web 服务器实际绑定端口（--port 0 时启动后才有值；lan-proxy 依赖）。 */
   port?: number;

@@ -610,6 +610,21 @@ const main = async () => {
       assert.ok(statsOn.compressed >= 3, `compressed=${statsOn.compressed}（/big×1 + /range + /pregzip）`);
       assert.ok(statsOn.passthrough >= 1, `passthrough=${statsOn.passthrough}（SSE）`);
     });
+    // 计数防污染：本地生成的 403 围栏响应不得进入协商计数。
+    {
+      const before = proxyOn.httpCompressStats();
+      await new Promise((resolve) => {
+        const req = httpRequest({ host: "127.0.0.1", port: pxPort, path: "/big", headers: { host: "evil.example.com" } }, (res) => {
+          res.resume(); res.on("end", resolve);
+        });
+        req.on("error", () => resolve());
+        req.end();
+      });
+      const after = proxyOn.httpCompressStats();
+      check("转发层：本地 403 响应不污染协商计数", () => {
+        assert.deepEqual(after, before, `403 前后 stats 应一致，实际 ${JSON.stringify(before)} → ${JSON.stringify(after)}`);
+      });
+    }
     // 悬挂回归（评审增量发现）：上游中途断连时 pipe 不传播错误，若不监听
     // aborted/error 终止下游，客户端将无限悬挂。修复后必须在短时限内结束。
     {

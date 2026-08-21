@@ -294,6 +294,9 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
   // filter 复用 dsh-gzip 的 isCompressible 语义（SSE 豁免）；计数为「协商计数」：
   // filter 放行 ≠ 最终一定压缩（库还会按阈值/状态码二次判定），诊断口径见 README。
   const compressStats = { compressed: 0, passthrough: 0 };
+  // 本地直接生成的响应（403 围栏 / PNA 预检 / 502 网关错误）标记：不进入压缩
+  // 协商计数，避免 health 诊断数字被非转发流量污染（实测 403+预检即 +2）。
+  const LOCAL_RESPONSE = Symbol("lan-proxy.localResponse");
   let compressMiddleware: ((req: IncomingMessage, res: ServerResponse, next: () => void) => void) | undefined;
   if (options.httpCompress?.enabled) {
     // @types/compression 的中间件签名用 express Request/Response 泛型；本处只传
@@ -302,6 +305,7 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
       level: normalizeLevel(options.httpCompress.level),
       threshold: 1024,
       filter: (_req, res) => {
+        if ((res as ServerResponse & { [LOCAL_RESPONSE]?: boolean })[LOCAL_RESPONSE]) return false;
         const ok = isCompressible(res.getHeader("content-type"));
         if (ok) compressStats.compressed += 1;
         else compressStats.passthrough += 1;
@@ -310,6 +314,10 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
     }) as unknown as (req: IncomingMessage, res: ServerResponse, next: () => void) => void;
     compressMiddleware = middleware;
   }
+  /** 标记本地响应：跳过压缩协商计数。 */
+  const markLocal = (res: ServerResponse) => {
+    (res as ServerResponse & { [LOCAL_RESPONSE]?: boolean })[LOCAL_RESPONSE] = true;
+  };
   /** 压缩启用时包一层中间件，否则原样透传（零开销路径）。 */
   const withCompress = (handler: (req: IncomingMessage, res: ServerResponse) => void) =>
     compressMiddleware
@@ -329,6 +337,7 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
   /** HTTP(S) 普通请求转发（HTTP/HTTPS 两个 server 共享）。 */
   const handleRequest = (req: IncomingMessage, res: ServerResponse) => {
     if (!hostnameAllowed(req.headers.host)) {
+      markLocal(res);
       res.writeHead(403, { "content-type": "text/plain" });
       res.end("forbidden: only IP-literal or localhost Host headers are accepted");
       return;
@@ -338,6 +347,7 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
     // 服务器必须回放行头，否则预检 404 → WS 握手被拖慢/拒绝。
     // 页面与 WS 经 lan-proxy 同源，这里直接放行预检。
     if (req.method === "OPTIONS" && req.headers["access-control-request-private-network"] !== undefined) {
+      markLocal(res);
       res.writeHead(204, {
         "access-control-allow-origin": req.headers.origin ?? "*",
         "access-control-allow-methods": "GET, POST, OPTIONS",
@@ -370,7 +380,10 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
     );
     upstream.on("error", (err) => {
       logger.warn?.(`lan-proxy: upstream error: ${err.message}`);
-      if (!res.headersSent) res.writeHead(502, { "content-type": "text/plain" });
+      if (!res.headersSent) {
+        markLocal(res);
+        res.writeHead(502, { "content-type": "text/plain" });
+      }
       res.end("bad gateway");
     });
     req.on("error", (err) => {
