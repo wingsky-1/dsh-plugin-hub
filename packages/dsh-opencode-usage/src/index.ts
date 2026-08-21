@@ -11,7 +11,7 @@
  * - GET /api/dsh-opencode-usage/adapters.json              适配器元数据（M2）
  * - GET /api/dsh-opencode-usage/health                     健康检查
  */
-import { readFile, writeFile, rename, mkdir, readdir, unlink } from "node:fs/promises";
+import { readFile, writeFile, rename, mkdir, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -501,11 +501,29 @@ function bucketFilePath(historyRootDir: string, provider: string, adapterId: str
 }
 
 /**
+ * 把旧文件重命名为备份名保留（**永不删除、永不覆盖既有备份**）。
+ * 默认备份名已存在时追加时间戳后缀生成新名；rename 失败（极端）保留原文件，
+ * 下次启动重试。
+ */
+async function renamePreservingBackup(file: string, preferredBak: string): Promise<void> {
+  let target = preferredBak;
+  if (existsSync(target)) {
+    target = `${preferredBak}.${new Date().toISOString().replace(/[:.]/g, "-")}`;
+  }
+  try {
+    await rename(file, target);
+  } catch {
+    // rename 失败保留原文件（下次启动重试迁移），不抛出
+  }
+}
+
+/**
  * 割接迁移 + 全量加载：若存在旧单文件 `history.json`（v1/v2）→ 迁移为多文件 v3，
  * 再扫描 `history/` 目录加载所有桶。
  *
  * 割接保证：opencode-go 旧历史一律归内置 `opencode-go-builtin` 桶（三窗口列延续、
- * 不丢失、幂等）；先写新桶成功 → 备份旧文件 → 删旧文件；失败保留旧文件下次重试。
+ * 不丢失、幂等）；先写新桶成功 → 旧文件重命名 .bak 保留（不删除，由用户清理）；
+ * 失败保留旧文件下次重试。
  */
 export async function loadAllHistory(
   config: NormalizedConfig,
@@ -560,13 +578,12 @@ export async function loadAllHistory(
               }
             }
           }
-          // 原子写新桶，成功后备份旧文件并删除（幂等）
+          // 原子写新桶成功后，旧文件重命名为 .bak 保留（**永不删除，由用户清理**）；
+          // 同名备份已存在时用时间戳新名，绝不覆盖既有备份（幂等：旧文件移除后不再触发迁移）
           await flushAllHistory(root, store);
-          const bak = `${legacy}.v${version}.bak`;
-          if (!existsSync(bak)) await rename(legacy, bak);
-          else await unlink(legacy);
+          await renamePreservingBackup(legacy, `${legacy}.v${version}.bak`);
         } catch {
-          // 迁移失败保留旧文件 + .bak，插件照常运行（下次重试）
+          // 迁移失败保留旧文件，插件照常运行（下次重试）
         }
       }
     }

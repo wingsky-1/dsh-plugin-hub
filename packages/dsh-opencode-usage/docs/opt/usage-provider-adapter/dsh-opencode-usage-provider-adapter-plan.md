@@ -198,7 +198,8 @@ plugins:
 - 历史数据结构迁移：v1 → v2（按 provider 分桶，已实施）→ **多文件 v3**（`(provider, adapterId)` 每桶一文件）。
 - **历史 opencode-usage 数据割接**：旧版（main 0.1.9 单文件 v1 / M3a 单文件 v2）升级时，
   已有 opencode-go 历史平滑迁移到多文件 v3（归内置 `opencode-go-builtin` 桶，三窗口列
-  语义延续、不丢失、幂等），割接矩阵见 `4-usage-history-multiprovider.md`。
+  语义延续、不丢失、幂等）；旧文件重命名 `.bak` **保留不删除（由用户清理）**，
+  割接矩阵见 `4-usage-history-multiprovider.md`。
 - 新增路由 / `settings.section` / 聚合包 patch 需补门禁用例。
 
 ---

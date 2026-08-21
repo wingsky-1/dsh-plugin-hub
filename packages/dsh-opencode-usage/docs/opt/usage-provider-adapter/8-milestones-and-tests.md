@@ -34,7 +34,7 @@
 | 后台 | 定时器遍历所有启用适配器；跳过禁用候选；各自独立采样入桶 |
 | 加载 | 用户 js 文件缺失/语法错/版本不符 → warn + 该候选不注册，插件其余照常 |
 | 历史 | `(provider, adapterId)` 多文件分桶；`?provider=&adapterId=` 过滤；同分钟去重按 (provider, adapterId) 双键；列数一致性校验；并发落盘隔离（不同桶独立文件不互相覆盖） |
-| 割接 | ★ v1 单序列 → v3 多文件（opencode-go 归 builtin 桶）；★ v2 单文件分桶 → v3 多文件；opencode-go 旧历史三窗口列延续；迁移失败保留旧文件+.bak 且插件照常、下次重试（幂等）；重复启动不二次迁移；自定义适配器认领 opencode-go 时旧历史仍归 builtin 桶 |
+| 割接 | ★ v1 单序列 → v3 多文件（opencode-go 归 builtin 桶）；★ v2 单文件分桶 → v3 多文件；opencode-go 旧历史三窗口列延续；迁移失败保留旧文件原样且插件照常、下次重试（幂等）；重复启动不二次迁移；**`.bak` 备份保留不删除、同名不覆盖（追加时间戳）**；自定义适配器认领 opencode-go 时旧历史仍归 builtin 桶 |
 | 缓存 | 按 `(provider, adapterId)` 维度 TTL/inflight 复用 |
 | 护栏 | stripSecrets 覆盖 summary 全部字段 + 值模式匹配（`sk-`/`Bearer `脱敏） |
 | 客户端契约 | `exports.apply/inject` 装配、build-client 产物断言（沿用现有 smoke-lib） |
@@ -50,7 +50,7 @@
 | 旧配置（无 `adapters`） | 走内置 OpenCode Go（默认启用），行为不退化 |
 | 旧客户端 | 不读 `/stats` 响应的 `summary` 子树，只读 `windows`，零影响 |
 | 旧宿主（无 `/select` 路由） | 客户端不调用该接口，无影响 |
-| 旧 history.json（v1/v2 单文件） | 启动迁移到多文件 v3（`(provider, adapterId)` 每桶一文件），旧文件备份 `.bak` 后移除 |
+| 旧 history.json（v1/v2 单文件） | 启动迁移到多文件 v3（`(provider, adapterId)` 每桶一文件），旧文件重命名 `.bak` **保留（不删除，由用户清理）** |
 | 无 settings 服务 | 独立 tab 不注册，浮窗照常 |
 | 无 connection/sessions | 回落内置 opencode-go（M0 回落路径） |
 | 多节点 web | 各宿主独立采样落盘（沿用现状，不承诺跨机合并） |

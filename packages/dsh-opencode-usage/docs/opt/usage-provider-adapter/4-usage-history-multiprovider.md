@@ -90,7 +90,8 @@
   - `version === 2`（单文件 provider 分桶）→ 每 provider 桶搬至
     `history/<provider>/<该 provider 当前启用 adapterId>.json`；无启用适配器时搬入
     内置 adapterId（若存在）。
-  - 迁移成功后旧 `history.json` 备份为 `history.json.vN.bak` 并移除。
+  - 迁移成功后旧 `history.json` 重命名为 `history.json.vN.bak` **保留（永不删除，
+    由用户自行清理）**；同名备份已存在时追加时间戳新名，绝不覆盖。
 - 加载：启动扫描 `history/` 下所有 `*.json`，逐个读入内存 `Map<"provider/adapterId", bucket>`。
 - 采样点形状 `[ts, ...cols]`，列数由桶 `columns` 声明；`append` 校验「至少 2 元素 + ts
   合法」+ 列数一致性（桶首次写入记录列数，后续不一致 → warn + 跳过）。
@@ -103,8 +104,8 @@
 
 | 旧状态（文件） | 割接目标（多文件 v3） | 动作 | 旧文件 |
 |---|---|---|---|
-| `{version:1, samples}`（单 provider 单序列，main 0.1.9） | `history/opencode-go/opencode-go-builtin.json` | 读 samples → 写 v3 桶（columns=内置三窗口） | `history.json` → `history.json.v1.bak` → 删 |
-| `{version:2, series:{p:{samples}}}`（M3a 单文件分桶） | 每 provider 桶 → 各自 adapterId 桶 | provider p → `history/<p>/<启用adapterId>.json` | `history.json` → `history.json.v2.bak` → 删 |
+| `{version:1, samples}`（单 provider 单序列，main 0.1.9） | `history/opencode-go/opencode-go-builtin.json` | 读 samples → 写 v3 桶（columns=内置三窗口） | `history.json` → 重命名 `history.json.v1.bak` 保留 |
+| `{version:2, series:{p:{samples}}}`（M3a 单文件分桶） | 每 provider 桶 → 各自 adapterId 桶 | provider p → `history/<p>/<启用adapterId>.json` | `history.json` → 重命名 `history.json.v2.bak` 保留 |
 | `history/<provider>/<adapterId>.json`（v3 多文件） | 保持 | 无 | 无 |
 
 **割接要点**：
@@ -116,10 +117,12 @@
    下次启动重试（幂等）。
 3. **连续性**：迁移后内置采样继续向同一 `opencode-go-builtin.json` 追加（columns 一致），
    旧波浪图与新采样无缝衔接，不归零。
-4. **幂等**：检测到旧 `history.json` 存在才触发迁移；迁移成功即移除/改名旧文件，重复
-   启动不再二次迁移。
-5. **失败回退**：迁移失败保留旧文件 + `.bak`，插件照常运行（新数据写 v3 桶），历史不丢。
-6. **多节点**：各宿主独立迁移各自目录（沿用现状，不承诺跨机合并）。
+4. **幂等**：检测到旧 `history.json` 存在才触发迁移；迁移成功即把旧文件改名 `.bak`
+   （旧文件本体移除），重复启动不再二次迁移。
+5. **失败回退**：迁移失败保留旧文件原样，插件照常运行（新数据写 v3 桶），历史不丢。
+6. **备份永不删除**：`.bak` 一律保留，由用户自行清理；同名备份冲突时追加时间戳
+   新名，绝不覆盖既有备份。
+7. **多节点**：各宿主独立迁移各自目录（沿用现状，不承诺跨机合并）。
 
 ---
 

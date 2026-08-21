@@ -15,7 +15,7 @@
  *   history 采样累积与 ?days 过滤；health 摘要
  * - 客户端路由常量一致性（正则提取 client bundle /api/ 字面量 vs host ROUTES）
  */
-import { readFileSync, mkdtempSync } from "node:fs";
+import { readFileSync, mkdtempSync, writeFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertClientProductContract, assertClientSourceContract } from "../../../test/smoke-lib.ts";
@@ -46,6 +46,7 @@ import {
   makeHistoryStore,
   writeHistoryFile,
   readHistoryFile,
+  loadAllHistory,
 } from "../lib/index.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -700,6 +701,57 @@ function makeFakeCtx(overrides = {}) {
   assert.equal(payload.cached, true, "第二次命中缓存");
   history.handler(fakeReq(), res3);
   assert.equal(payload.count, 1, "缓存命中不产生新采样点");
+}
+
+// ---------------------------------------------------------------- 割接迁移（v1/v2 单文件 → 多文件 v3，.bak 保留不删）
+
+{
+  // v1 单序列 → opencode-go 内置桶；旧文件重命名 .bak 保留（用户要求：不删除）
+  const dir = mkdtempSync(join(tmpdir(), "dou-mig-"));
+  const legacy = join(dir, "history.json");
+  writeFileSync(legacy, JSON.stringify({ version: 1, samples: [[Date.now() - 60000, 1, 2, 3], [Date.now(), 4, 5, 6]] }));
+
+  const { ctx, routes } = makeFakeCtx();
+  await apply(ctx, { apiKey: "sk-test", fetchImpl: async () => fakeRes(200, OK_BODY), persistFile: join(dir, "history.json") });
+  await new Promise((r) => setTimeout(r, 1200)); // 等防抖落盘
+
+  const bucketFile = join(dir, "history", "opencode-go", "opencode-go-builtin.json");
+  assert.equal(existsSync(bucketFile), true, "v1 迁移生成多文件桶");
+  const bucket = JSON.parse(readFileSync(bucketFile, "utf8"));
+  assert.equal(bucket.version, 3, "桶文件 v3");
+  assert.equal(bucket.adapterId, "opencode-go-builtin", "opencode-go 旧历史归内置桶");
+  assert.ok(bucket.samples.length >= 2, "旧采样点迁入（不丢失）");
+  assert.deepEqual(bucket.columns.map((c) => c.key), ["rolling", "weekly", "monthly"], "columns=内置三窗口");
+
+  assert.equal(existsSync(legacy), false, "旧文件本体已移除（幂等）");
+  assert.equal(existsSync(join(dir, "history.json.v1.bak")), true, ".bak 备份保留（不删除，由用户清理）");
+
+  // 幂等：再次 apply 不重复迁移、.bak 不被覆盖
+  const bakMtime = existsSync(join(dir, "history.json.v1.bak"));
+  const { ctx: ctxB } = makeFakeCtx();
+  await apply(ctxB, { apiKey: "sk-test", fetchImpl: async () => fakeRes(200, OK_BODY), persistFile: join(dir, "history.json") });
+  assert.equal(existsSync(join(dir, "history.json.v1.bak")), bakMtime, "重复启动不二次迁移/覆盖备份");
+}
+
+{
+  // v2 单文件分桶 → 各 provider 桶；.bak 保留
+  const dir = mkdtempSync(join(tmpdir(), "dou-mig2-"));
+  const legacy = join(dir, "history.json");
+  writeFileSync(legacy, JSON.stringify({
+    version: 2,
+    series: {
+      "opencode-go": { samples: [[Date.now() - 60000, 1, 2, 3]] },
+      "my-relay": { samples: [[Date.now() - 60000, 9]] },
+    },
+  }));
+  const { ctx } = makeFakeCtx();
+  await apply(ctx, { apiKey: "sk-test", fetchImpl: async () => fakeRes(200, OK_BODY), persistFile: join(dir, "history.json") });
+  await new Promise((r) => setTimeout(r, 1200));
+
+  assert.equal(existsSync(join(dir, "history", "opencode-go", "opencode-go-builtin.json")), true, "v2 opencode-go 桶迁移");
+  assert.equal(existsSync(join(dir, "history", "my-relay", "opencode-go-builtin.json")), true, "v2 非 opencode provider 缺启用适配器时归内置 adapterId 桶");
+  assert.equal(existsSync(join(dir, "history.json.v2.bak")), true, "v2 .bak 备份保留");
+  assert.equal(existsSync(legacy), false, "v2 旧文件本体移除");
 }
 
 // stats：无 key 时 usage.error=no-api-key（不网络；路径指向不存在文件）

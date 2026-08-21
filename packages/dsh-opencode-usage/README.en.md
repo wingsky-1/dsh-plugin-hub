@@ -84,33 +84,129 @@ The response is cached with a 30-second TTL (configurable) to avoid high-frequen
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `enabled` | `true` | Plugin on/off switch |
-| `baseUrl` | `https://opencode.ai/zen/go/v1/usage` | Usage interface address (**configurable, i.e. the token-forwarding target**) |
+| `baseUrl` | `https://opencode.ai/zen/go/v1/usage` | Built-in opencode-go usage interface address (**configurable, i.e. the token-forwarding target**) |
 | `timeoutMs` | `15000` | Request timeout (ms) |
 | `cacheTtlMs` | `30000` | Usage cache TTL (ms) |
 | `limits` | `{rolling:12, weekly:30, monthly:60}` | Display limits (USD/window) |
 | `apiKey` | none | Explicit API Key (falls back to the credential resolution chain when absent) |
-| `maxAgeDays` | `14` | History sampling retention days (1–365) |
-| `sampleIntervalMs` | `300000` | Host background sampling interval (30s–1h) |
-| `persistFile` | `<DSH_HOME>/dsh-opencode-usage/history.json` | History sampling persistence path |
+| `maxAgeDays` | `30` | History sampling retention days (1–365) |
+| `sampleIntervalMs` | `300000` | Host background sampling interval (30s–1h; iterates all enabled adapters) |
+| `persistFile` | `<DSH_HOME>/dsh-opencode-usage/history.json` | History root override (its directory becomes the history root) |
+| `adapters.host[]` | none | Custom host fetch-adapter candidates (`provider`/`file`/`enabled`, see below) |
+| `adapters.client[]` | none | Custom client renderer files (`file`) |
+
+### Adapter candidates and enabling
+
+One provider may have multiple adapter candidates (built-in + user-injected); **only one is
+enabled at any moment**:
+
+- The built-in `opencode-go-builtin` is enabled by default;
+- User adapters explicitly listed in the config are enabled by default (becoming the
+  provider's current enabled adapter); `enabled: false` disables a candidate explicitly;
+- Runtime switching: the settings panel (M3b) or `POST /api/dsh-opencode-usage/adapters/select`
+  (body `{ provider, adapterId }`); that provider's cache is invalidated immediately;
+- When the current session's provider has no enabled adapter, the float widget hides and
+  reappears automatically once an adapter is enabled.
 
 ## Routes (all loopback-fenced)
 
 | Route | Description |
 | --- | --- |
-| `GET /api/dsh-opencode-usage/stats` | Usage statistics (TTL cached) |
-| `GET /api/dsh-opencode-usage/history[?days=N]` | History sampling series |
-| `GET /api/dsh-opencode-usage/health` | Health check |
+| `GET /api/dsh-opencode-usage/stats[?provider=X]` | Usage statistics + embedded `summary` subtree (pill lightweight content) + `adapterId`/`hasAdapter` |
+| `GET /api/dsh-opencode-usage/history[?provider=&adapterId=&days=N]` | History sampling series (with `columns` declaration) |
+| `GET /api/dsh-opencode-usage/adapters.json` | Adapter candidate metadata (id/label/providers/source/file/enabled) |
+| `POST /api/dsh-opencode-usage/adapters/select` | Switch the enabled adapter (body `{provider, adapterId}`) |
+| `GET /api/dsh-opencode-usage/user/<n>.js` | User client renderer static serving |
+| `GET /api/dsh-opencode-usage/health` | Health check + adapter snapshot |
+
+## Provider Adapter Development Guide
+
+Adapting a custom relay takes two files (full example in
+`docs/opt/usage-provider-adapter/examples/my-relay/`):
+
+**1. Host fetch adapter `.mjs`** (default-exported contract object):
+
+```js
+export default {
+  version: 1,
+  id: "my-relay",            // unique adapter id (shown in the settings candidates list)
+  label: "My Relay",
+  providers: ["my-relay"],   // claimed provider names
+  async fetchUsage(ctx) {    // required: fetch and normalize
+    const res = await ctx.fetch("https://relay.example.com/v1/usage");
+    const body = await res.json();
+    return { ok: true, provider: "my-relay", label: "My Relay",
+             fetchedAt: Date.now(), data: body };   // data format is yours
+  },
+  // optional summarize(ctx): custom pill text (derive from ctx.usage only, no network)
+  // optional samplePoint(usage): declare history sample columns { cols, values }
+};
+```
+
+Factory shortcut (auto-derives summarize/samplePoint):
+
+```js
+import { defineUsageAdapter } from "@wingsky-1/dsh-opencode-usage";
+export default defineUsageAdapter({
+  id: "my-relay", label: "My Relay", providers: ["my-relay"],
+  windows: [{ key: "credit", name: "Credit", limit: 100 }],
+  async fetchUsage(ctx) { /* ...return data containing windows */ },
+});
+```
+
+**2. Client renderer `.js`** (self-registers via the global bridge):
+
+```js
+window.__DSH_USAGE__?.registerRenderer({
+  version: 1,
+  providers: ["my-relay"],
+  adapterId: "my-relay",     // optional: bind to an adapter; default renderer otherwise
+  pill(summary) { return null; },  // optional: custom pill text
+  render(ctx) {              // required: draw into ctx.mount; return cleanup (optional)
+    const div = document.createElement("div");
+    div.textContent = JSON.stringify(ctx.data?.data ?? {});
+    ctx.mount.appendChild(div);
+  },
+});
+```
+
+**Wiring** (cordis.patch.yml / user patch layer):
+
+```yml
+plugins:
+  ui-dsh-opencode-usage:
+    adapters:
+      host:
+        - provider: my-relay
+          file: ~/.dsh/my-relay-host.mjs
+      client:
+        - file: ~/.dsh/my-relay-client.js
+```
+
+Paths support `~` expansion / absolute paths / DSH_HOME-relative. Load failures only warn
+and skip that candidate without blocking the rest of the plugin.
 
 ## Security and Boundaries
 
 - **Token is never written to disk, never logged, never sent to the browser side**: the API Key
-  lives only in host-process memory; the browser only fetches percentage values via `/stats`
-  (the `src/index.ts` credential resolution chain and the `stats` route never return the token)
+  lives only in host-process memory; the browser only fetches display fields via `/stats`
 - **`baseUrl` is configurable = your token is sent to that address**: only configure a trusted
   usage interface; default is the official `https://opencode.ai/zen/go/v1/usage`
-- History sampling is persisted with `0600` permissions (tmp + rename atomic write); the
-  directory defaults to `<DSH_HOME>/dsh-opencode-usage/`
-- All routes are loopback-fenced (non-loopback 403 / wrong method 405)
+- **stripSecrets guard (on by default; disable with `security.stripSecrets: false`)**: two-layer
+  redaction over normalized returns (including summary text fields) — keys matching
+  `secret/token/key/apikey` with string values (≥8 chars) are replaced with `<redacted>`;
+  values matching secret-like patterns (`Bearer xxx` / `sk-xxx` / `api_key=xxx` / long hex)
+  are redacted wholesale. Best-effort — **no absolute isolation is promised**
+- **User host js runs with full Node permissions** (network/files/env), equivalent to writing
+  your own plugin process; only load local files you trust — the plugin never pulls code from
+  the network for execution
+- **User client js** shares the trust level of other web plugins (browser sandbox); registered
+  through the versioned bridge (contract mismatch only warns and skips)
+- History sampling persists as multi-file storage (one file per `(provider, adapterId)` bucket,
+  `0600` permissions tmp+rename atomic write); when upgrading from the legacy single file it is
+  renamed to `.bak` and **kept (never deleted — cleanup is left to the user)**
+- All routes are loopback-fenced (non-loopback 403 / wrong method 405); the `select` API limits
+  parameter length to 128
 - Official interface request frequency is controlled: GUI polling ≤1 request/60s + background
   sampling ≤1 request/5min (each with an additional 30s TTL cache suppressing duplicate
   requests), so it will not hit rate limits
