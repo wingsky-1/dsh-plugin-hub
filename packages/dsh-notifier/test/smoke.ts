@@ -225,6 +225,22 @@ async function makeNotifier(config = {}) {
   return { ctx, routes, listeners };
 }
 
+// 轮询 history 路由直到满足谓词（替代固定 sleep，消除 CI 时序竞态导致的 flake）。
+// 配合路由块独立 history 文件使用：块内所有写入来自同一 apply 单写链（串行），
+// 末尾恒为 test，轮询仅兜底落盘时序，不再依赖「等够固定毫秒」。
+async function waitForHistory(historyRoute, predicate, timeoutMs = 2000) {
+  const start = Date.now();
+  for (;;) {
+    const { rec, res } = makeRes();
+    await historyRoute.handler(fakeReq({}), res);
+    let records = [];
+    try { records = JSON.parse(rec.text).records || []; } catch { /* 解析失败则下一轮重试 */ }
+    if (predicate(records)) return records;
+    if (Date.now() - start > timeoutMs) return records;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
 // 记录通知的辅助：替换 notify 不可行（闭包），改用监听 SSE 连接广播 + systemNotify 不可见。
 // 通过检查 logger.info 调用次数验证通知触发。
 function makeLoggingCtx() {
@@ -688,7 +704,9 @@ function agentWithTitle(id, title, opts = {}) {
 // ---------------------------------------------------------------- 路由
 
 {
-  const { routes } = await makeNotifier();
+  // 独立 history 文件：隔离前面测试块（question/done 等）的 fire-and-forget 异步写盘，
+  // 避免跨 apply 实例对同一 history.jsonl 的 read-modify-write 竞态把 test 挤出末尾（issue #17）。
+  const { routes } = await makeNotifier({ historyFile: join(work, "history-route.jsonl") });
   const configRoute = routes.find((r) => r.path === ROUTES.config);
   const eventsRoute = routes.find((r) => r.path === ROUTES.events);
   const testRoute = routes.find((r) => r.path === ROUTES.test);
@@ -821,14 +839,10 @@ function agentWithTitle(id, title, opts = {}) {
     assert.ok(!rec4.text.includes('"type":"notify"'), "非法 since 按 0 处理");
   }
 
-  // history：测试通知已落盘，GET 可查
+  // history：测试通知已落盘，GET 可查（独立 history 文件，无跨块串扰）
   {
-    // appendHistory 是 fire-and-forget，等一拍再查
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    const { rec, res } = makeRes();
-    await historyRoute.handler(fakeReq({}), res);
-    assert.equal(rec.status, 200);
-    const records = JSON.parse(rec.text).records;
+    // appendHistory 是 fire-and-forget；轮询直到落盘，不再依赖固定 sleep 的时序假设
+    const records = await waitForHistory(historyRoute, (rs) => rs.length >= 1 && rs[rs.length - 1]?.kind === "test");
     assert.ok(Array.isArray(records) && records.length >= 1, "历史记录非空");
     assert.equal(records[records.length - 1].kind, "test", "最近一条为测试通知");
     assert.match(records[records.length - 1].message, /通知链路工作正常/, "记录含测试文案");
@@ -842,10 +856,8 @@ function agentWithTitle(id, title, opts = {}) {
       await testRoute.handler(fakeReq({ method: "POST" }), res);
       assert.equal(rec.status, 200);
     }));
-    await new Promise((resolve) => setTimeout(resolve, 300)); // 等写队列排空
-    const { rec, res } = makeRes();
-    await historyRoute.handler(fakeReq({}), res);
-    const records = JSON.parse(rec.text).records;
+    // 轮询直到并发写入全部落盘（独立 history 文件，单写链串行，末尾恒为 test）
+    const records = await waitForHistory(historyRoute, (rs) => rs.filter((r) => r.kind === "test").length >= concurrent);
     const testCount = records.filter((r) => r.kind === "test").length;
     assert.ok(testCount >= concurrent, `并发写不丢记录（test 记录 ${testCount} ≥ ${concurrent}）`);
   }
