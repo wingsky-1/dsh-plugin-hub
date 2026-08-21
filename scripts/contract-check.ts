@@ -91,9 +91,17 @@ if (checked === 0) {
         const text = readFileSync(file, 'utf8')
         // 去掉行注释与块注释，防文档示例误报
         const code = text.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '')
+        // 主形态：静态 import（非 import type）。注意 `import { type X } from` 的
+        // inline 修饰符会被命中——这是有意 fail-closed：verbatimModuleSyntax 下该
+        // 语句仍保留副作用导入语义，应改写成整句 import type。
         for (const m of code.matchAll(/(^|\n)\s*import\s+(?!type\b)(?:[^;'"]|'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")*?from\s*['"](@deepseek-ai\/[^'"]+)['"]|(^|\n)\s*import\s+['"](@deepseek-ai\/[^'"]+)['"]/g)) {
           const spec = m[2] ?? m[4]
           if (spec) offenders.push(`${p}/src${file.slice(srcDir.length)} → ${spec}`)
+        }
+        // 补充形态：export ... from / 动态 import() / require()（同样产生运行时引用；
+        // export type ... from 为纯类型放行）
+        for (const m of code.matchAll(/(?:export\s+(?!type\b)(?:\*(?:\s+as\s+\w+)?|\{[^}]*\})\s*from\s*|import\(\s*|require\(\s*)['"](@deepseek-ai\/[^'"]+)['"]/g)) {
+          offenders.push(`${p}/src${file.slice(srcDir.length)} → ${m[1]}`)
         }
       }
     }

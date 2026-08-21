@@ -127,9 +127,10 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
   React externals / legacy），断言 `"use strict"`、契约外壳、Symbol.toStringTag、
   `factory: function(`、load 注册。
 - **插件清单单一来源**（issue #36）：某插件是否参与聚合/发布校验，唯一事实源是
-  `scripts/plugins-manifest.json`——`aggregate.ts` / `pack-check.ts` /
-  `contract-check.ts` / `verify-npm-layout.ts` 共读，并断言
-  「packages/ 目录集 == manifest.active 集」双向相等。
+  `scripts/plugins-manifest.json`。四个脚本共用 `plugins-manifest-lib.ts` 的目录
+  枚举（`isDirectory` 过滤 + 排除聚合包 + 稳定排序）；其中 `aggregate.ts` 与
+  `pack-check.ts` 另做「packages/ 目录集 == manifest.active 集」双向相等断言，
+  以及聚合 deps 键集 / patch id 集对 active 的双向相等断言。
   - **新增插件**：建目录后必须同步把目录名加入 `active`，否则全部门禁红
     （opt-in fail-closed 设计：防止半成品目录被自动卷进聚合 patch 与发布管线）；
   - **退役插件**：删除 packages/ 目录（git 历史保留），并在 `retired` 数组登记

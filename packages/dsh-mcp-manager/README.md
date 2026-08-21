@@ -103,6 +103,14 @@ node test/smoke.mjs
 - 仅桥接工具能力；MCP 的 resources 与 prompts 尚无 harness 消费接口
 - 依赖 Node ≥ 20
 
+## 类型依赖
+
+宿主端类型来自官方 `@deepseek-ai/*` 包（`cordis` / `dsh-host-webserver` / `dsh-agent` /
+`dsh-tools` / `dsh-system-prompt`，版本统一锁在仓库 `pnpm-workspace.yaml` catalog，
+随 DSH 发布节奏升级）：**仅 `import type` 编译期使用**，编译产物零官方运行时导入。
+包以 optional peerDependencies 声明这一宿主耦合；对插件做类型检查的消费者需可解析
+这些官方包（跳过类型检查则无影响）。
+
 ## License
 
 MIT

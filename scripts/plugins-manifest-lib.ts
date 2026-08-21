@@ -132,6 +132,9 @@ export function checkAggregateConsistency({ dirNames, manifest, aggDeps, aggPatc
 
   // #3 聚合 patch insert id 集 == {ui-<dir>}（双向）
   if (aggPatchIds !== undefined) {
+    // 重复行检测（Set 去重会吞掉「同 id 多行」漂移，单独比对长度闭合该缺口）
+    const dupIds = aggPatchIds.filter((id, i) => aggPatchIds.indexOf(id) !== i)
+    if (dupIds.length > 0) problems.push(`聚合 patch 存在重复 id 行: ${[...new Set(dupIds)].join(', ')}`)
     const expectedIds = new Set(manifest.active.map((d) => `ui-${d}`))
     const actualIds = new Set(aggPatchIds)
     for (const id of expectedIds) {

@@ -6,9 +6,9 @@ A **MCP server management plugin** for DSH (DeepSeek Harness): a floating window
 top-right of the session UI + a tiered panel + quick onboarding (manual form + paste
 `mcpServers` JSON import, **no servers preconfigured**), supporting **project-level MCP
 that follows session switches**. Tools from connected servers are registered for the model
-to call directly as `mcp__<serverName>__<rawName>`. **Zero runtime dependencies** (the MCP
-protocol client is implemented directly on top of `node:child_process` and the global
-`fetch`).
+to call directly as `mcp__<serverName>__<rawName>`. The MCP protocol client is
+implemented directly on top of `node:child_process` and the global `fetch` —
+nothing extra to install.
 
 ## Installation
 
@@ -111,6 +111,16 @@ node test/smoke.mjs
 - Only bridges tool capabilities; MCP resources and prompts have no harness consumption
   interface yet
 - Requires Node ≥ 20
+
+## Type dependencies
+
+Host-side types come from the official `@deepseek-ai/*` packages (`cordis`,
+`dsh-host-webserver`, `dsh-agent`, `dsh-tools`, `dsh-system-prompt`; versions are
+pinned in the repository's `pnpm-workspace.yaml` catalog and upgraded with DSH
+releases): **`import type` only, compile-time usage** — build artifacts contain zero
+official runtime imports. The package declares this host coupling as optional
+peerDependencies; consumers running type checks against the plugin must be able to
+resolve these official packages (skipping type checking is unaffected).
 
 ## License
 

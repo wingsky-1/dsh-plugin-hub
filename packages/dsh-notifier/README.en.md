@@ -117,6 +117,16 @@ Pick one of the following access forms (both the panel and the README surface a 
 | `/api/dsh-notifier/history` | GET / **DELETE** | GET recent notification records (up to 200, filtered by `historyMaxAgeDays`; entries suppressed by DND are flagged `suppressed`); **DELETE clears** |
 | `/api/dsh-notifier/health` | GET | Health check |
 
+## Type dependencies
+
+Host-side types come from the official `@deepseek-ai/*` packages (`dsh-agent`,
+`dsh-session`, `dsh-host-webserver`, ...; versions are pinned in the repository's
+`pnpm-workspace.yaml` catalog and upgraded with DSH releases): **`import type` only,
+compile-time usage** — build artifacts contain zero official runtime imports; all
+runtime objects are injected by the dsh host. The package declares this host coupling
+as optional peerDependencies; consumers running type checks against the plugin must
+be able to resolve these official packages (skipping type checking is unaffected).
+
 ## Security & boundaries
 
 - Notification text only contains metadata such as task title / tool name / request reason — **never tool parameters** (prevents sensitive info leakage)

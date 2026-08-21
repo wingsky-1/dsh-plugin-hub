@@ -87,6 +87,15 @@ test('#3b patch 多未知 id → fail-loud', () => {
   assert.deepEqual(problems, ['聚合 patch 多出未知 id ui-dsh-ghost'])
 })
 
+test('#3c patch 同 id 重复行 → fail-loud（Set 去重盲区闭合）', () => {
+  const problems = checkAggregateConsistency({
+    dirNames: ACTIVE,
+    manifest: MANIFEST,
+    aggPatchIds: ['ui-dsh-alpha', 'ui-dsh-alpha', 'ui-dsh-beta'],
+  })
+  assert.deepEqual(problems, ['聚合 patch 存在重复 id 行: ui-dsh-alpha'])
+})
+
 test('#4 目录有包但 manifest 没有 → 报「未登记」', () => {
   const problems = checkAggregateConsistency({ dirNames: [...ACTIVE, 'dsh-newkid'], manifest: MANIFEST })
   assert.equal(problems.length, 1)
