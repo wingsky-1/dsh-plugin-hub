@@ -43,7 +43,11 @@ importers:
 
   packages/dsh-notifier: {}
 
-  packages/dsh-opencode-usage: {}
+  packages/dsh-opencode-usage:
+    devDependencies:
+      schemastery:
+        specifier: ^3.18.0
+        version: 3.18.0
 
   packages/dsh-plugins-all:
     dependencies:

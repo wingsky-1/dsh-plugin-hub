@@ -18,6 +18,8 @@ import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isLoopbackRequest } from "../../../shared/loopback.js";
 import { writeJson, readJsonBody } from "../../../shared/host-utils.js";
+import { installSettingsNamespace } from "../../../shared/settings-namespace.js";
+import z from "schemastery";
 import type { PluginContext, DshRoute } from "../../../types/dsh.js";
 import { ADAPTER_CONTRACT_VERSION, summarizeTextFromWindows, levelFromWindows } from "./contracts.js";
 import { makeHostAdapterRegistry } from "./registry.js";
@@ -123,6 +125,21 @@ export const CONFIG_KEYS: string[] = [
 export function defaultPersistFile(): string {
   return join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), "dsh-opencode-usage", "history.json");
 }
+
+/**
+ * 设置面板 schemastery schema（M3b：settings 命名空间用，与 normalizeConfig 同构）。
+ * 实测约束：schemastery 3.18 无 `.optional()`；不带 `.required()` 的字段默认可选。
+ * 说明：apiKey 不进 schema（避免设置面板回显密钥）；adapters 复杂结构经 patch 层
+ * 配置管理，面板只暴露常用键。
+ */
+export const Config = z.object({
+  baseUrl: z.string().default(DEFAULT_CONFIG.baseUrl),
+  timeoutMs: z.number().default(DEFAULT_CONFIG.timeoutMs),
+  cacheTtlMs: z.number().default(DEFAULT_CONFIG.cacheTtlMs),
+  maxAgeDays: z.number().default(DEFAULT_CONFIG.maxAgeDays),
+  sampleIntervalMs: z.number().default(DEFAULT_CONFIG.sampleIntervalMs),
+  stripSecrets: z.boolean().default(true),
+});
 
 // ------------------------------------------------------------------ 配置归一化
 
@@ -672,6 +689,40 @@ export async function readHistoryFile(file: string): Promise<string | undefined>
   }
 }
 
+// ------------------------------------------------------------------ 启用选择持久化（M3b：重启保留）
+
+/** 适配器启用选择状态文件（历史根目录下）。 */
+export function adapterStateFile(current: NormalizedConfig): string {
+  return join(historyRoot(current), "adapter-state.json");
+}
+
+/** 读取持久化的 enabled 映射（provider → adapterId）；坏文件返回 {}。 */
+export async function readAdapterState(current: NormalizedConfig): Promise<Record<string, string>> {
+  const raw = await readHistoryFile(adapterStateFile(current));
+  if (typeof raw !== "string" || raw === "") return {};
+  try {
+    const data = JSON.parse(raw) as Record<string, unknown>;
+    const out: Record<string, string> = {};
+    for (const [provider, id] of Object.entries(data)) {
+      if (typeof provider === "string" && typeof id === "string" && provider.length > 0 && id.length > 0) {
+        out[provider] = id;
+      }
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+/** 原子写 enabled 映射（select 切换时调用；失败只 warn 不阻断切换）。 */
+export async function writeAdapterState(current: NormalizedConfig, enabled: Record<string, string>): Promise<void> {
+  try {
+    await writeHistoryFile(adapterStateFile(current), JSON.stringify(enabled));
+  } catch {
+    console.warn("[dsh-opencode-usage] 启用选择落盘失败（内存态仍生效）");
+  }
+}
+
 // ------------------------------------------------------------------ 密钥护栏（stripSecrets，默认开）
 
 /** 疑似密钥值模式（R1 值匹配，与键名扫描互补）。命中即整值脱敏。 */
@@ -801,6 +852,12 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
   for (const entry of current.adapters.client) {
     const resolvedPath = resolvePath(entry.file);
     userClientFiles.push({ file: entry.file, resolvedPath });
+  }
+
+  // M3b：应用持久化的启用选择（重启保留；仅覆盖仍存在的候选）
+  const savedEnabled = await readAdapterState(current);
+  for (const [provider, adapterId] of Object.entries(savedEnabled)) {
+    registry.select(provider, adapterId);
   }
 
   const cache = makeUsageCache<StatsResult>({ ttlMs: current.cacheTtlMs });
@@ -1009,6 +1066,8 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
       const ok = registry.select(provider, adapterId);
       if (!ok) return writeJson(res, 404, { error: "adapter not found" });
       cache.clear(provider); // 切换后清该 provider 缓存（下一个请求走新适配器）
+      // M3b：持久化启用选择（重启保留；fire-and-forget，失败只 warn）
+      void writeAdapterState(current, registry.snapshot().enabled);
       writeJson(res, 200, { ok: true, provider, adapterId });
     },
   };
@@ -1150,6 +1209,14 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
     },
     "dsh-opencode-usage: routes",
   );
+
+  // M3b：设置面板命名空间（settings → 插件 → dsh-opencode-usage）。
+  // settings 服务缺失时降级为空操作，不影响浮窗。设置值以 patch 层配置为单一事实源，
+  // 命名空间做只读镜像（本插件不落盘改写 patch 配置）。
+  installSettingsNamespace(ctx, "dsh-opencode-usage", Config, config, {
+    setSource: () => {},
+    onChange: () => {},
+  });
 
   ctx.effect(
     () => () => {

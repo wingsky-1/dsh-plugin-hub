@@ -807,6 +807,10 @@ function makeFakeCtx(overrides = {}) {
   assert.ok(client.includes("renderer.pill(lastSummary)"), "胶囊支持渲染器 pill 钩子");
   assert.ok(client.includes("设置面板「用量统计」"), "面板无启用适配器引导入口");
   assert.ok(client.includes("no-enabled-adapter"), "错误态含 no-enabled-adapter");
+  // M3b：settings.section 独立 tab
+  assert.ok(client.includes('"settings.section"'), "注册 settings.section 顶层 tab");
+  assert.ok(client.includes("用量统计"), "tab 标签「用量统计」");
+  assert.ok(client.includes("adapters/select"), "适配器管理走 select 接口");
 }
 
 // ---------------------------------------------------------------- 客户端路由一致性

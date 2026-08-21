@@ -23,6 +23,7 @@ declare const __DSH_ROUTES__: Record<string, string> | undefined;
 export const STATS_URL = __DSH_ROUTES__?.stats ?? "/api/dsh-opencode-usage/stats";
 export const HISTORY_URL = __DSH_ROUTES__?.history ?? "/api/dsh-opencode-usage/history";
 export const ADAPTERS_URL = __DSH_ROUTES__?.adapters ?? "/api/dsh-opencode-usage/adapters.json";
+export const SELECT_URL = __DSH_ROUTES__?.select ?? "/api/dsh-opencode-usage/adapters/select";
 
 /** 会话提供信息（sessions.currentProvideInfo 的读面，宽松类型）。 */
 export interface SessionMaybeProvide {

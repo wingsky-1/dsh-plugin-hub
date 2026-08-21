@@ -28,6 +28,9 @@ import {
 import type { SessionsServiceLike, ConnectionHandleLike, RendererRegistry } from "./core.js";
 import { openCodeGoClientRenderer, injectStyle, el, fmtAge } from "./renderers/opencode-go.js";
 import type { OpenCodeGoRenderContext } from "./renderers/opencode-go.js";
+import { SettingsPage } from "./settings.js";
+// React externals 路径（M3b settings.section）：运行时由 dsh web factory require("react") 注入
+import * as React from "react";
 import type { ProviderUsage, UsageWindow, ProviderSummary, SummaryLevel } from "../contracts.js";
 
 /** 无会话时回落 provider（内置 opencode-go，无感升级）。 */
@@ -452,6 +455,19 @@ export function apply(ctx: any): void {
     installGlobalBridge(registry);
     // M2: 加载用户客户端渲染器（fire-and-forget）
     loadUserRenderers(registry).catch(() => {});
+
+    // M3b：设置面板独立 tab「用量统计」（settings.section；slots 服务缺失时跳过）
+    const slots = ctx.get("slots");
+    if (slots && typeof slots.inject === "function") {
+      slots.inject("settings.section", function () {
+        return slots.register(
+          { name: "settings.section", id: "dsh-opencode-usage", order: 90, label: "用量统计" },
+          function () {
+            return React.createElement(SettingsPage, null);
+          },
+        );
+      });
+    }
 
     const disposeFloat = mountFloat();
 

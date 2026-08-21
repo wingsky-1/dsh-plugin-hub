@@ -41,10 +41,21 @@
     "README.md",
     "LICENSE"
   ],
+  "peerDependencies": {
+    "react": "^18.2.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
   "engines": {
     "node": ">=20.0.0"
   },
   "license": "MIT",
+  "devDependencies": {
+    "schemastery": "^3.18.0"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/wingsky-1/dsh-plugin-hub.git",
