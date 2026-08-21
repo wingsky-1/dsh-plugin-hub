@@ -92,7 +92,7 @@ GUI settings entry: Settings → Plugins → "LAN Access" card (saved changes ap
 
 ## HTTP Response Compression (gzip, merged from dsh-gzip)
 
-- Since v0.1.10, the HTTP response gzip compression capability of [dsh-gzip](../dsh-gzip)
+- Since v0.1.10, the HTTP response gzip compression capability of the standalone dsh-gzip plugin (source removed from this repository)
   has been merged into this plugin, implemented at the **forwarding layer** via the
   battle-tested [compression](https://www.npmjs.com/package/compression) middleware
   (inlined at build time; still zero runtime dependencies): for requests served through
