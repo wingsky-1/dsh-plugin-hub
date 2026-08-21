@@ -1,18 +1,19 @@
 /**
  * dsh-opencode-usage — 按 Provider 适配的用量悬浮框（客户端入口）。
  *
- * 架构（M1）：
- * - 核心层核心（core.ts）：渲染器注册表 + provider 检测 + 数据拉取。
- * - 内置 opencode-go 渲染器（renderers/opencode-go.ts）：绘制浮窗展开面板的
- *   三窗口迷你图卡片（行为与旧版一致）。
- * - 本文件 = 编排层：悬浮胶囊/面板的挂载与定位（沿用旧 DOM 挂载、MutationObserver
- *   迁移、MCP 浮窗避让）、provider 变化重渲染（渲染代 token 防竞态）、60s 轮询、
- *   可见性刷新、挂载/卸载清理。胶囊本体为**通用**展示（由 ProviderUsage.windows
- *   汇总），展开面板为**渲染器专属**（按 provider 分派）。
+ * 架构（R2）：
+ * - 核心层（core.ts）：渲染器注册表（含 adapterId 配对）+ provider 检测 + 数据拉取。
+ * - 内置 opencode-go 渲染器（renderers/opencode-go.ts）：绘制浮窗展开面板卡片。
+ * - 本文件 = 编排层：悬浮胶囊/面板挂载与定位、provider 变化与 adapterId 变化重渲染
+ *   （渲染代 token 防竞态）、60s 轮询 + 可见性刷新、无启用适配器隐藏 + 探测恢复。
  *
- * provider 检测走 M0 探针①结论路径：sessions.currentProvideInfo.sessionId →
- * connection.api.sessions.models({sessionId}) → current.provider；检测不到则
- * 回落内置 opencode-go（旧配置无感升级）。
+ * R2 语义分层（D8）：
+ * - 胶囊（按钮）内容 = 宿主 /stats 响应的 `summary` 子树（text/level/hint），可选
+ *   叠加渲染器 `pill()` 钩子自定义；不再从 windows 推导。
+ * - 面板内容 = 渲染器 `render(ctx)`（按 provider + adapterId 配对分派）。
+ *
+ * 无启用适配器（D11）：`summary.hasAdapter === false` → 浮窗隐藏，60s 轻量轮询
+ * 探测直到有启用适配器再恢复显示。
  *
  * 契约：干净模块，只导出 apply/inject；样式经 build-client 内联。
  */
@@ -27,15 +28,15 @@ import {
 import type { SessionsServiceLike, ConnectionHandleLike, RendererRegistry } from "./core.js";
 import { openCodeGoClientRenderer, injectStyle, el, fmtAge } from "./renderers/opencode-go.js";
 import type { OpenCodeGoRenderContext } from "./renderers/opencode-go.js";
-import type { ProviderUsage, UsageWindow } from "../contracts.js";
+import type { ProviderUsage, UsageWindow, ProviderSummary, SummaryLevel } from "../contracts.js";
 
-/** 旧 provider 无会话时的回落 provider（内置 opencode-go，无感升级）。 */
+/** 无会话时回落 provider（内置 opencode-go，无感升级）。 */
 const FALLBACK_PROVIDER = "opencode-go";
 
 const REFRESH_MS = 60000; // 轮询间隔
 const HISTORY_MIN_GAP_MS = 30000; // 历史重拉最小间隔
 const PILL_PREFIX = "dou-"; // 样式类名前缀
-const MAX_HISTORY_DAYS = 30; // 历史请求天数（覆盖 monthly 观察周期）
+const MAX_HISTORY_DAYS = 30; // 历史请求天数
 
 // ------------------------------------------------------------------ 状态
 
@@ -45,15 +46,21 @@ let registry: RendererRegistry | undefined;
 
 /** 当前生效 provider（检测结果，未检测到回落 opencode-go）。 */
 let currentProvider: string = FALLBACK_PROVIDER;
-/** 最近一次成功检测到的 provider（null = 未检测到会话）。 */
+/** 最近一次成功检测到的 provider（undefined = 未检测到会话）。 */
 let detectedProvider: string | undefined;
-/** 归一化用量数据。 */
+/** 归一化用量数据（面板）。 */
 let lastData: ProviderUsage | null = null;
+/** 当前启用适配器 id（来自 /stats 响应）。 */
+let lastAdapterId: string | undefined;
+/** 是否有启用适配器（summary.hasAdapter）。 */
+let hasAdapter = false;
+/** 轻量摘要（胶囊内容）。 */
+let lastSummary: ProviderSummary | null = null;
 /** 历史采样响应。 */
-let lastHistory: { samples?: number[][] } | null = null;
-/** 渲染代 token：只有最新一代渲染落地（快速切换会话防竞态）。 */
+let lastHistory: { samples?: number[][]; columns?: import("../contracts.js").SampleColumn[] } | null = null;
+/** 渲染代 token。 */
 let renderGeneration = 0;
-/** 当前渲染器 disposer（provider 切换/卸载时先调用）。 */
+/** 当前渲染器 disposer。 */
 let renderDisposer: (() => void) | null = null;
 
 // ------------------------------------------------------------------ 浮窗 chrome
@@ -73,17 +80,9 @@ function conversationHost(): HTMLElement {
   );
 }
 
-/** 通用胶囊文案：各窗口百分比并排。 */
-function pillLabel(): string {
-  if (lastData === null || !lastData.ok || !Array.isArray(lastData.windows)) return `${shortName(currentProvider)} --%`;
-  const parts: string[] = [];
-  for (const w of lastData.windows) {
-    if (typeof w.percent === "number") parts.push(`${shortName(w)} ${w.percent}%`);
-  }
-  return parts.length > 0 ? parts.join(" · ") : `${shortName(currentProvider)} --%`;
-}
+// ------------------------------------------------------------------ 胶囊（读 summary 子树 + pill 钩子）
 
-/** 窗口短名（胶囊用）：rolling→5h 滚动取前缀，weekly→周，monthly→月。 */
+/** 窗口短名（胶囊兜底用）。 */
 function shortName(w: UsageWindow | string): string {
   const name = typeof w === "string" ? w : w.name ?? w.key;
   if (name === "rolling") return "5h";
@@ -94,39 +93,57 @@ function shortName(w: UsageWindow | string): string {
   return name;
 }
 
-function levelOf(pct: number | null | undefined): string {
-  if (pct === null || pct === undefined) return "off";
-  if (pct >= 95) return "err";
-  if (pct >= 80) return "warn";
-  return "ok";
+/** 通用胶囊文案：优先渲染器 pill 钩子，回落 summary.text。 */
+function pillLabel(): string {
+  const renderer = registry?.get(currentProvider, lastAdapterId);
+  if (renderer && typeof renderer.pill === "function" && lastSummary) {
+    const custom = renderer.pill(lastSummary);
+    if (custom !== null && custom !== undefined && custom.text) return custom.text;
+  }
+  if (lastSummary && typeof lastSummary.text === "string" && lastSummary.text !== "")
+    return lastSummary.text;
+  if (lastData && lastData.ok && Array.isArray(lastData.windows)) {
+    const parts: string[] = [];
+    for (const w of lastData.windows) {
+      if (typeof w.percent === "number") parts.push(`${shortName(w)} ${w.percent}%`);
+    }
+    if (parts.length > 0) return parts.join(" · ");
+  }
+  const label = lastSummary?.label ?? lastData?.label ?? currentProvider;
+  return `${shortName(label)} --%`;
 }
 
-/** 状态点：取所有窗口消耗最高者（最保守告警）。 */
-function pillDot(): string {
-  if (lastData === null || !lastData.ok || !Array.isArray(lastData.windows)) return "off";
-  let worst: number | null = null;
-  for (const w of lastData.windows) {
-    if (typeof w.percent === "number" && (worst === null || w.percent > worst)) worst = w.percent;
+/** 状态点：优先 pill 钩子/ summary.level。 */
+function pillDot(): SummaryLevel {
+  const renderer = registry?.get(currentProvider, lastAdapterId);
+  if (renderer && typeof renderer.pill === "function" && lastSummary) {
+    const custom = renderer.pill(lastSummary);
+    if (custom !== null && custom !== undefined) return custom.level;
   }
-  return levelOf(worst);
+  if (lastSummary) return lastSummary.level ?? "off";
+  return "off";
 }
 
 function pillTitle(): string {
-  const label = lastData && lastData.label ? lastData.label : currentProvider;
+  const label = lastSummary?.label ?? lastData?.label ?? currentProvider;
+  if (!hasAdapter) return `${label} 用量：无启用适配器`;
+  if (lastSummary) {
+    const parts: string[] = [];
+    if (lastSummary.text) parts.push(lastSummary.text);
+    if (lastSummary.hint) parts.push(lastSummary.hint);
+    return parts.length > 0 ? `${label} 用量：${parts.join(" · ")}` : `${label} 用量`;
+  }
   if (lastData === null) return `${label} 用量（加载中…）`;
   if (!lastData.ok) return `${label} 用量获取失败：${lastData.error ?? "未知错误"}`;
-  if (!Array.isArray(lastData.windows) || lastData.windows.length === 0) return `${label} 用量（暂无数据）`;
-  const parts: string[] = [];
-  for (const w of lastData.windows) {
-    if (typeof w.percent === "number") parts.push(`${shortName(w)} ${w.percent}%`);
-  }
-  return `${label} 用量：${parts.join(" · ")}`;
+  return `${label} 用量`;
 }
 
 function renderPill(): void {
   if (floatPill === undefined) return;
   const labelEl = floatPill.querySelector(`.${PILL_PREFIX}label`);
   const dotEl = floatPill.querySelector(`.${PILL_PREFIX}dot`);
+  // D11：无启用适配器 → 隐藏浮窗（保留轮询探测恢复）
+  floatPill.hidden = !hasAdapter;
   floatPill.title = pillTitle();
   if (labelEl !== null) labelEl.textContent = pillLabel();
   if (dotEl !== null) dotEl.className = `${PILL_PREFIX}dot dou-dot-${pillDot()}`;
@@ -134,17 +151,30 @@ function renderPill(): void {
 
 // ------------------------------------------------------------------ 数据与渲染
 
-/** 拉取当前 provider 用量并渲染（失败落错误态 UI，不向上抛）。 */
+/** 拉取当前 provider 用量并渲染（失败落错误态，不向上抛）。 */
 async function refreshStats(): Promise<void> {
   const gen = renderGeneration;
   try {
-    const data = await fetchStats(currentProvider);
+    const r = await fetchStats(currentProvider);
     if (gen !== renderGeneration) return; // 已有新代渲染，丢弃
-    lastData = data;
+
+    // adapterId 变化（同一 provider 切换启用适配器）→ 视为数据源切换，重渲染
+    if (r.adapterId !== lastAdapterId) {
+      lastData = null;
+      lastHistory = null;
+      if (renderDisposer !== null) {
+        try { renderDisposer(); } catch { /* 忽略 */ }
+        renderDisposer = null;
+      }
+    }
+    lastAdapterId = r.adapterId ?? undefined;
+    hasAdapter = r.hasAdapter;
+    lastSummary = r.summary;
+    lastData = r.usage;
     renderPill();
-    if (floatOpen) renderPanel();
-    if (floatOpen && Date.now() - lastHistoryAt >= HISTORY_MIN_GAP_MS) {
-      void refreshHistory();
+    if (hasAdapter && floatOpen) {
+      renderPanel();
+      if (Date.now() - lastHistoryAt >= HISTORY_MIN_GAP_MS) void refreshHistory();
     }
   } catch {
     if (gen !== renderGeneration) return;
@@ -154,11 +184,12 @@ async function refreshStats(): Promise<void> {
   }
 }
 
-/** 拉取历史（v2 多 provider 分桶，按当前 provider 过滤）。 */
+/** 拉取历史（按当前 provider + adapterId）。 */
 async function refreshHistory(): Promise<void> {
   const gen = renderGeneration;
+  const adapterId = lastAdapterId;
   try {
-    const body = await fetchHistory(currentProvider, MAX_HISTORY_DAYS);
+    const body = await fetchHistory(currentProvider, adapterId ?? FALLBACK_PROVIDER, MAX_HISTORY_DAYS);
     if (gen !== renderGeneration) return;
     lastHistory = body;
     lastHistoryAt = Date.now();
@@ -177,6 +208,8 @@ function errorMessage(code: string | undefined | null, provider: string): string
     case "unauthorized": return "API Key 无效或已过期（401/403）。";
     case "timeout": return "请求超时，请重试。";
     case "network": return "网络错误，请检查连接后重试。";
+    case "no-enabled-adapter": return "该提供商有候选适配器但均未启用，请在设置面板「用量统计」启用。";
+    case "no-adapter": return "该提供商未配置适配器，请在设置面板「用量统计」配置。";
     case "bad-data":
     case "bad-json": return "数据格式异常，请检查服务商接口或适配器返回。";
     case "adapter-load-failed": return "自定义适配器加载失败，请检查文件路径与契约版本。";
@@ -191,7 +224,7 @@ function errorMessage(code: string | undefined | null, provider: string): string
 function renderPanel(): void {
   if (floatPanel === undefined) return;
   floatPanel.textContent = "";
-  const label = lastData && lastData.label ? lastData.label : currentProvider;
+  const label = lastData && lastData.label ? lastData.label : (lastSummary?.label ?? currentProvider);
   const head = el("div", { class: PILL_PREFIX + "head" }, [
     el("h3", { class: PILL_PREFIX + "title", text: `${label} 用量` }),
     el("button", { class: PILL_PREFIX + "btn", type: "button", text: "刷新", onClick: () => { void refreshStats(); } }),
@@ -201,22 +234,20 @@ function renderPanel(): void {
   chartsBox = el("div", { class: PILL_PREFIX + "charts" });
   floatPanel.appendChild(chartsBox);
 
-  // 先调用上一次渲染器 disposer，再渲染新内容（防泄漏）
   if (renderDisposer !== null) {
     try { renderDisposer(); } catch { /* 忽略 */ }
     renderDisposer = null;
   }
 
-  const renderer = registry?.get(currentProvider);
-  if (currentProvider === FALLBACK_PROVIDER && detectedProvider === undefined) {
-    // 未识别会话：回落内置展示（无感升级场景），直接渲染并提示
-    rendererCharts(renderer);
-    appendNoSessionHint();
+  // R2：渲染器按 (provider, adapterId) 配对分派
+  const renderer = registry?.get(currentProvider, lastAdapterId);
+  if (!hasAdapter) {
+    floatPanel.appendChild(el("p", { class: PILL_PREFIX + "error", text: "该提供商暂无启用的适配器。" }));
+    floatPanel.appendChild(el("p", { class: PILL_PREFIX + "hint", text: "在设置面板「用量统计」的适配器管理中启用一个候选适配器。" }));
     return;
   }
   if (renderer === undefined) {
-    floatPanel.appendChild(el("p", { class: PILL_PREFIX + "error", text: `该提供商（${currentProvider}）未配置适配器。` }));
-    floatPanel.appendChild(el("p", { class: PILL_PREFIX + "hint", text: "在配置中注入自定义适配器，或在设置面板「用量统计」中管理。" }));
+    floatPanel.appendChild(el("p", { class: PILL_PREFIX + "error", text: `该提供商（${currentProvider}/${lastAdapterId ?? "-"}）无渲染器。` }));
     return;
   }
   rendererCharts(renderer);
@@ -233,6 +264,7 @@ function rendererCharts(renderer: { render(ctx: unknown): void | (() => void) } 
   try {
     const ctx: OpenCodeGoRenderContext = {
       provider: currentProvider,
+      adapterId: lastAdapterId,
       data: lastData,
       mount: chartsBox,
       history: lastHistory ?? undefined,
@@ -245,14 +277,10 @@ function rendererCharts(renderer: { render(ctx: unknown): void | (() => void) } 
   }
 }
 
-function appendNoSessionHint(): void {
-  floatPanel?.appendChild(el("p", { class: PILL_PREFIX + "hint", text: "当前未识别选中会话，暂按内置 OpenCode Go 展示；选中会话后将按会话 provider 分派。" }));
-}
-
 function appendFoot(): void {
   if (floatPanel === undefined) return;
   const foot = el("div", { class: PILL_PREFIX + "foot" }, [
-    el("span", { text: currentProvider === FALLBACK_PROVIDER ? "数据来自 opencode.ai 官方用量接口" : `提供方：${currentProvider}` }),
+    el("span", { text: (lastSummary?.label ?? lastData?.label ?? currentProvider) }),
     el("span", {
       text: lastData && lastData.fetchedAt ? `更新于 ${fmtAge(lastData.fetchedAt)}` : "",
       title: lastData && lastData.fetchedAt ? new Date(lastData.fetchedAt).toLocaleString("zh-CN") : "",
@@ -272,10 +300,12 @@ function onProviderChanged(): void {
   }
   lastData = null;
   lastHistory = null;
+  lastSummary = null;
+  lastAdapterId = undefined;
+  hasAdapter = false;
   if (floatPill !== undefined) renderPill();
   if (floatOpen && floatPanel !== undefined) renderPanel();
   void refreshStats();
-  void refreshHistory();
 }
 
 // ------------------------------------------------------------------ 挂载
@@ -289,7 +319,6 @@ function toggleFloat(force?: boolean): void {
     placePanel();
     renderPanel();
     void refreshStats();
-    void refreshHistory();
   }
 }
 
@@ -306,6 +335,7 @@ function mountFloat(): () => void {
   injectStyle();
   const pill = el("button", { type: "button", class: PILL_PREFIX + "float", "aria-label": "用量统计" });
   pill.dataset.douFloat = "";
+  pill.hidden = true; // 初始：未知适配器前隐藏
   pill.appendChild(el("span", { class: PILL_PREFIX + "dot dou-dot-off" }));
   pill.appendChild(el("span", { class: PILL_PREFIX + "label", text: pillLabel() }));
   pill.addEventListener("click", () => { toggleFloat(); });
@@ -374,7 +404,6 @@ function mountFloat(): () => void {
 
   renderPill();
   void refreshStats();
-  void refreshHistory();
 
   refreshTimer = setInterval(() => { void refreshStats(); }, REFRESH_MS);
   const onVisible = (): void => {
@@ -401,13 +430,14 @@ function mountFloat(): () => void {
     floatOpen = false;
     lastData = null;
     lastHistory = null;
+    lastSummary = null;
   };
 }
 
 // ------------------------------------------------------------------ 插件入口
 
 /**
- * 插件入口：注入样式 + 注册渲染器 + provider 检测 + 挂载浮窗。
+ * 插件入口：注入样式 + 注册渲染器 + provider/adapter 检测 + 挂载浮窗。
  * 任何异常只 warn，绝不让 GUI 启动失败。
  */
 export function apply(ctx: any): void {
@@ -420,7 +450,7 @@ export function apply(ctx: any): void {
     registry = makeRendererRegistry();
     registry.register(openCodeGoClientRenderer, "builtin");
     installGlobalBridge(registry);
-    // M2: 加载用户客户端渲染器（fire-and-forget，不阻断插件其余部分）
+    // M2: 加载用户客户端渲染器（fire-and-forget）
     loadUserRenderers(registry).catch(() => {});
 
     const disposeFloat = mountFloat();
@@ -431,13 +461,8 @@ export function apply(ctx: any): void {
       void (async () => {
         const detected = await resolveProviderFromSession(sessions, connection);
         const next = detected ?? FALLBACK_PROVIDER;
-        // 会话消失 → detectedProvider=undefined 且回落内置，避免误判差异
-        const prevDetected = detectedProvider;
         detectedProvider = detected;
-        if (next !== currentProvider || (prevDetected !== undefined && detected === undefined)) {
-          currentProvider = next;
-          onProviderChanged();
-        } else if (prevDetected === undefined && detected !== undefined) {
+        if (next !== currentProvider) {
           currentProvider = next;
           onProviderChanged();
         }

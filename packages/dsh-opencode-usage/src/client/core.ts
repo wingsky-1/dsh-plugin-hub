@@ -12,6 +12,7 @@
 import type {
   ClientProviderRenderer,
   ProviderUsage,
+  ProviderSummary,
   RenderContext,
   DshUsageGlobal,
 } from "../contracts.js";
@@ -78,12 +79,19 @@ export function makeRendererRegistry(opts: { diag?: (msg: string) => void } = {}
       diag(`${file ?? "渲染器"} 契约校验失败（version/providers/render），不注册`);
       return;
     }
-    for (const provider of renderer.providers) byProvider.set(provider, renderer);
+    for (const provider of renderer.providers) {
+      const key = renderer.adapterId ? `${provider}/${renderer.adapterId}` : provider;
+      byProvider.set(key, renderer);
+    }
     entries.push({ providers: [...renderer.providers], source, file });
   }
 
-  /** 按 provider 查渲染器（未命中返回 undefined）。 */
-  function get(provider: string): ClientProviderRenderer | undefined {
+  /** 按 provider 查渲染器（可选 adapterId 配对：优先 provider/adapterId，回落默认渲染器）。 */
+  function get(provider: string, adapterId?: string): ClientProviderRenderer | undefined {
+    if (adapterId !== undefined) {
+      const hit = byProvider.get(`${provider}/${adapterId}`);
+      if (hit !== undefined) return hit;
+    }
     return byProvider.get(provider);
   }
 
@@ -181,34 +189,44 @@ export async function resolveProviderFromSession(
 
 // ---------------------------------------------------------------- 数据拉取
 
-/** 拉取某 provider 用量（宿主权威源，失败抛错由调用方消化）。 */
-export async function fetchStats(provider: string): Promise<ProviderUsage & { cached?: boolean }> {
+/** 拉取某 provider 用量（宿主权威源）。返回归一化数据 + summary 子树 + adapterId/hasAdapter。 */
+export async function fetchStats(
+  provider: string,
+): Promise<{
+  usage: ProviderUsage | null;
+  summary: ProviderSummary | null;
+  adapterId: string | null;
+  hasAdapter: boolean;
+  cached?: boolean;
+}> {
   const res = await fetch(`${STATS_URL}?provider=${encodeURIComponent(provider)}`, {
     headers: { Accept: "application/json" },
     cache: "no-store",
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const body: unknown = await res.json();
-  const data = body as Record<string, unknown>;
-  // 兼容：宿主响应顶层 provider/label + usage 归一化数据
-  const usage = data.usage as ProviderUsage | undefined;
-  if (!usage || typeof usage !== "object") throw new Error("bad-data");
+  const data = (await res.json()) as Record<string, unknown>;
+  const usage = (data.usage as ProviderUsage) ?? null;
+  const summary = (data.summary as ProviderSummary) ?? null;
   return {
-    ...usage,
-    provider: (data.provider as string) ?? usage.provider,
-    label: (data.label as string) ?? usage.label,
+    usage,
+    summary,
+    adapterId: typeof data.adapterId === "string" ? data.adapterId : null,
+    hasAdapter: data.hasAdapter === true,
     cached: data.cached === true,
   };
 }
 
-/** 拉取历史采样（v2 多 provider 分桶；?provider 过滤，days 缺省全量）。 */
-export async function fetchHistory(provider: string, days?: number): Promise<{ samples?: number[][]; provider?: string }> {
-  const url = days === undefined
-    ? `${HISTORY_URL}?provider=${encodeURIComponent(provider)}`
-    : `${HISTORY_URL}?provider=${encodeURIComponent(provider)}&days=${days}`;
+/** 拉取历史采样（v3 多文件，按 (provider, adapterId) 分桶；?provider&adapterId 过滤，days 缺省全量）。 */
+export async function fetchHistory(
+  provider: string,
+  adapterId: string,
+  days?: number,
+): Promise<{ samples?: number[][]; columns?: import("../contracts.js").SampleColumn[]; provider?: string; adapterId?: string }> {
+  const base = `${HISTORY_URL}?provider=${encodeURIComponent(provider)}&adapterId=${encodeURIComponent(adapterId)}`;
+  const url = days === undefined ? base : `${base}&days=${days}`;
   const res = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return (await res.json()) as { samples?: number[][]; provider?: string };
+  return (await res.json()) as { samples?: number[][]; columns?: import("../contracts.js").SampleColumn[]; provider?: string; adapterId?: string };
 }
 
 /** 拉取适配器元数据（M2：用户客户端渲染器清单）。 */

@@ -446,6 +446,8 @@ export interface OpenCodeGoRenderContext extends RenderContext {
 export const openCodeGoClientRenderer: ClientProviderRenderer & { renderOpenCodeGo(ctx: OpenCodeGoRenderContext): () => void } = {
   version: ADAPTER_CONTRACT_VERSION,
   providers: ["opencode-go", "opencode", "opencode-go"],
+  // R2：与内置适配器配对（仅该 provider 启用内置时用本渲染器）
+  adapterId: "opencode-go-builtin",
   render(ctx: RenderContext) {
     return this.renderOpenCodeGo(ctx as OpenCodeGoRenderContext);
   },

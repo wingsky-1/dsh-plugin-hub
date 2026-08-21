@@ -744,6 +744,19 @@ function makeFakeCtx(overrides = {}) {
   assert.equal(payload.error, "forbidden: loopback-only", "health 也强制 loopback");
 }
 
+// ---------------------------------------------------------------- 客户端 R2 逻辑（防回归）
+
+{
+  const client = readFileSync(join(here, "..", "lib", "client.js"), "utf8");
+  // 胶囊读 summary 子树
+  assert.ok(client.includes("lastSummary.text"), "胶囊文案来自 summary 子树 (lastSummary.text)");
+  assert.ok(client.includes("floatPill.hidden = !hasAdapter"), "无启用适配器隐藏浮窗 (D11)");
+  assert.ok(client.includes('registry?.get(currentProvider, lastAdapterId)'), "渲染器按 (provider, adapterId) 配对分派");
+  assert.ok(client.includes("renderer.pill(lastSummary)"), "胶囊支持渲染器 pill 钩子");
+  assert.ok(client.includes("设置面板「用量统计」"), "面板无启用适配器引导入口");
+  assert.ok(client.includes("no-enabled-adapter"), "错误态含 no-enabled-adapter");
+}
+
 // ---------------------------------------------------------------- 客户端路由一致性
 
 {
