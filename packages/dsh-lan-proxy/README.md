@@ -66,6 +66,8 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-lan-proxy
 | `tlsCertFile` / `tlsKeyFile` | 无 | 自定义证书（mkcert 等） |
 | `wsCompressEnabled` | `true` | 是否对命中 `wsCompressPaths` 的 WebSocket 做压缩桥接 |
 | `wsCompressPaths` | `/api/events.mux, /api/events.host` | 参与 WebSocket 压缩的路径白名单 |
+| `httpCompressEnabled` | `true` | HTTP 响应 gzip 压缩总开关（合并自 dsh-gzip） |
+| `httpCompressLevel` | `1` | gzip 压缩级别 1..9（1 对静态文本性价比最高） |
 
 GUI 设置入口：设置 → 插件 → 「局域网访问」卡片（保存即热更新）。
 
@@ -79,6 +81,28 @@ GUI 设置入口：设置 → 插件 → 「局域网访问」卡片（保存即
 - DSH 服务端即使未来自身开启 permessage-deflate，这里 DSH 段固定不协商压缩，
   两段各自独立，**不会双重压缩、不冲突**。
 - 其余 WebSocket 路径保持 TCP 字节透传（不受影响）。
+
+## HTTP 响应压缩（gzip，合并自 dsh-gzip）
+
+- v0.1.10 起，[dsh-gzip](../dsh-gzip) 的 HTTP 响应 gzip 压缩能力已合并进本插件：
+  对 `/api`（RPC）、`/plugins`（客户端 bundle）与静态资源/index.html 等
+  可压缩响应（JSON / 文本）自动协商 gzip；SSE（text/event-stream）、zip 导出、
+  已编码响应、HEAD、带 Range 的请求原样透传。
+- 收益：会话历史等大 JSON 响应（4~13MB 未压缩）经远程/慢链路访问时常触发
+  浏览器 RPC 30s 超时「历史加载失败」；gzip 后约 ~1.2MB，实测由 ~36s 降到 ~3s。
+- 安装在应用层（webServer handler），与转发核心独立：压缩安装失败仅 warn
+  降级为不压缩，**转发不受影响**；`httpCompressEnabled: false` 一键关闭。
+- **从 dsh-gzip 迁移**：升级本插件后请卸载独立 gzip 包，避免双装：
+
+  ```sh
+  dsh plugin --profile web update @wingsky-1/dsh-lan-proxy
+  dsh plugin --profile web remove @wingsky-1/dsh-gzip
+  # 重启 dsh web 生效
+  ```
+
+- dsh-gzip v0.1.10+ 会自动检测本插件的合并标记路由
+  （`/api/dsh-lan-proxy/compression`）并跳过自身安装（warn 提示卸载）；
+  更早版本与本插件双装时因幂等标记与 content-encoding 检查也只会压缩一次。
 
 ## HTTPS 支持
 
@@ -102,11 +126,14 @@ GUI 设置入口：设置 → 插件 → 「局域网访问」卡片（保存即
 ## 验证
 
 ```sh
-# 健康检查（回环）
-curl -s http://127.0.0.1:3081/api/lan-proxy/health
+# 健康检查（回环；含压缩配置与挂点状态）
+curl -s http://127.0.0.1:3081/api/dsh-lan-proxy/health
+
+# 合并版压缩标记路由（回环）
+curl -s http://127.0.0.1:3081/api/dsh-lan-proxy/compression
 
 # 局域网访问（在另一台设备上）
-curl http://<本机局域网IP>:3081/api/dsh-gzip/health
+curl http://<本机局域网IP>:3081/api/dsh-lan-proxy/health
 ```
 
 ## 已知限制

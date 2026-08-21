@@ -71,6 +71,8 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-lan-proxy
 | `tlsCertFile` / `tlsKeyFile` | none | Custom certificate (mkcert, etc.) |
 | `wsCompressEnabled` | `true` | Whether to apply compressed bridging to WebSockets matching `wsCompressPaths` |
 | `wsCompressPaths` | `/api/events.mux, /api/events.host` | Path allowlist participating in WebSocket compression |
+| `httpCompressEnabled` | `true` | Master switch for HTTP response gzip compression (merged from dsh-gzip) |
+| `httpCompressLevel` | `1` | gzip level 1..9 (1 offers the best cost/benefit for static text) |
 
 GUI settings entry: Settings → Plugins → "LAN Access" card (saved changes apply hot).
 
@@ -87,6 +89,33 @@ GUI settings entry: Settings → Plugins → "LAN Access" card (saved changes ap
   negotiates compression; the two segments are independent, so there is **no double compression
   and no conflict**.
 - All other WebSocket paths remain TCP byte passthrough (unaffected).
+
+## HTTP Response Compression (gzip, merged from dsh-gzip)
+
+- Since v0.1.10, the HTTP response gzip compression capability of [dsh-gzip](../dsh-gzip)
+  has been merged into this plugin: compressible responses (JSON / text) served by
+  `/api` (RPC), `/plugins` (client bundles), and static assets/index.html negotiate gzip
+  automatically; SSE (text/event-stream), zip exports, already-encoded responses, HEAD,
+  and Range requests pass through untouched.
+- Benefit: large JSON responses such as session history (4~13MB uncompressed) often hit
+  the browser RPC 30s timeout over remote/slow links ("history load failed"); after gzip
+  they are ~1.2MB — measured ~36s down to ~3s.
+- Installed at the application layer (webServer handler), independent from the forwarding
+  core: an installation failure only warns and degrades to no compression, **forwarding
+  is unaffected**; set `httpCompressEnabled: false` to turn it off.
+- **Migrating from dsh-gzip**: after upgrading this plugin, uninstall the standalone gzip
+  package to avoid double installation:
+
+  ```sh
+  dsh plugin --profile web update @wingsky-1/dsh-lan-proxy
+  dsh plugin --profile web remove @wingsky-1/dsh-gzip
+  # Restart dsh web to take effect
+  ```
+
+- dsh-gzip v0.1.10+ detects this plugin's merged marker route
+  (`/api/dsh-lan-proxy/compression`) and skips its own installation (warns to uninstall);
+  with earlier versions installed alongside, idempotency markers plus the
+  content-encoding check still guarantee responses are compressed at most once.
 
 ## HTTPS Support
 
@@ -113,11 +142,14 @@ GUI settings entry: Settings → Plugins → "LAN Access" card (saved changes ap
 ## Verification
 
 ```sh
-# Health check (loopback)
-curl -s http://127.0.0.1:3081/api/lan-proxy/health
+# Health check (loopback; includes compression config and mount status)
+curl -s http://127.0.0.1:3081/api/dsh-lan-proxy/health
+
+# Merged-compression marker route (loopback)
+curl -s http://127.0.0.1:3081/api/dsh-lan-proxy/compression
 
 # LAN access (from another device)
-curl http://<your-LAN-IP>:3081/api/dsh-gzip/health
+curl http://<your-LAN-IP>:3081/api/dsh-lan-proxy/health
 ```
 
 ## Known Limitations

@@ -32,6 +32,8 @@ var CHANNEL = "/dsh-lan-proxy";
     printBanner: true,
     wsCompressEnabled: true,
     wsCompressPaths: ["/api/events.mux", "/api/events.host"],
+    httpCompressEnabled: true,
+    httpCompressLevel: 1,
   };
 
   var rpc: any = null;
@@ -99,7 +101,7 @@ var CHANNEL = "/dsh-lan-proxy";
       var payload: Record<string, any> = {};
       for (var key in DEFAULTS) {
         var value = settings[key];
-        if (key === "port" || key === "httpsPort") value = Number(value);
+        if (key === "port" || key === "httpsPort" || key === "httpCompressLevel") value = Number(value);
         payload[key] = value;
       }
       rpc("config", { settings: payload }).then(function () {
@@ -119,7 +121,7 @@ var CHANNEL = "/dsh-lan-proxy";
       },
         React.createElement("span", { className: "lp-set-headText" },
           React.createElement("span", { className: "lp-set-name" }, "局域网访问（dsh-lan-proxy）"),
-          React.createElement("span", { className: "lp-set-description" }, "LAN 端口 / HTTPS / 证书 / 启动横幅"),
+          React.createElement("span", { className: "lp-set-description" }, "LAN 端口 / HTTPS / 证书 / 响应压缩 / 启动横幅"),
         ),
         React.createElement("span", { className: "lp-set-chevron" + (open ? " lp-set-chevronOpen" : "") }, "▾"),
       ),
@@ -209,6 +211,25 @@ var CHANNEL = "/dsh-lan-proxy";
               const parts = e.target.value.split(",").map((s: string) => s.trim()).filter(Boolean);
               patch({ wsCompressPaths: parts });
             },
+          }),
+        ),
+        React.createElement("div", { className: "lp-set-row" },
+          React.createElement("label", null, "HTTP 响应压缩（gzip）"),
+          React.createElement("input", {
+            type: "checkbox",
+            checked: settings.httpCompressEnabled,
+            onChange: function (e: any) { patch({ httpCompressEnabled: e.target.checked }); },
+          }),
+        ),
+        React.createElement("div", { className: "lp-set-row" },
+          React.createElement("label", null, "压缩级别（1-9）"),
+          React.createElement("input", {
+            className: "lp-set-input",
+            type: "number",
+            min: 1,
+            max: 9,
+            value: settings.httpCompressLevel,
+            onChange: function (e: any) { patch({ httpCompressLevel: e.target.value }); },
           }),
         ),
         React.createElement("div", { className: "lp-set-hint" },

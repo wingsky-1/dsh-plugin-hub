@@ -17,6 +17,12 @@ HTTPS 3443）监听，把 HTTP/HTTPS 与 WebSocket/wss 转发到回环 web 服�
   disposer；所有清理统一写在 `ctx.effect` 返回的 disposer 里）
 - `src/proxy.ts` — 转发器核心 `createLanProxy`（HTTP/HTTPS/WebSocket 桥接、
   Host 重写、DNS 重绑定防护、wss 压缩桥接）；业务逻辑导出纯函数可单测
+- `src/compress.ts` — HTTP 响应 gzip 压缩层（合并自 dsh-gzip，行为零改动）：
+  纯函数 `acceptsGzip` / `isCompressible` / `joinVary` / `normalizeLevel`、
+  实例级 `wrapResponse`、三挂点 `installWrappers`；由 `index.ts` 的
+  `syncCompress()` 安装（故障仅 warn 降级，不阻断转发），标记路由
+  `/api/dsh-lan-proxy/compression` 供 dsh-gzip v0.1.10+ 防双装检测。
+  **禁止**把压缩逻辑移入 proxy.ts（代理层压缩会破坏 Content-Length/Range 语义）
 - `src/cert.ts` — TLS 证书（配置证书加载 / 自签名生成并缓存到
   `<DSH_HOME>/lan-proxy/`，私钥落盘 0600）
 - `src/client/` — 客户端（干净模块：`index.ts` + `style.css` + `css.d.ts` +
