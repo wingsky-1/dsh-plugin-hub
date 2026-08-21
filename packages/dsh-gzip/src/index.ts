@@ -344,8 +344,32 @@ export function installWrappers(webServer: DshWebServer, stats: GzipStats, level
 
 // ---------------------------------------------------------------- apply
 
+/**
+ * 检测 lan-proxy 合并版（>=0.1.10）是否已内置 HTTP 压缩。
+ * 判据：lan-proxy 合并版在压缩启用时注册的标记路由
+ * `/api/dsh-lan-proxy/compression`（exact）。只认该标记路由，避免老版本
+ * lan-proxy 的 health 路由造成假阳性（老 lan-proxy 无内置压缩，误跳过会让
+ * 用户丢失压缩能力）。
+ * @param webServer ctx.webServer 服务实例。
+ * @returns 是否检测到合并版压缩层。
+ */
+export function detectLanProxyCompression(webServer: DshWebServer): boolean {
+  const exact = (webServer as unknown as { exact?: Map<string, unknown> } | undefined)?.exact;
+  return Boolean(exact && typeof exact.get === "function" && exact.get("/api/dsh-lan-proxy/compression"));
+}
+
 export function apply(ctx: PluginContext, config: GzipConfig = {}): void {
   if (config.enabled === false) return;
+
+  // ===== v0.1.10 兼容检测：lan-proxy ≥0.1.10 已内置 HTTP 响应压缩，本包跳过 =====
+  // （最终兼容版：功能已合并进 @wingsky-1/dsh-lan-proxy，本包进入退役流程）
+  if (detectLanProxyCompression(ctx.webServer)) {
+    console.warn(
+      "[dsh-gzip] 检测到 dsh-lan-proxy >= 0.1.10 已内置 HTTP 响应压缩，本插件不再重复安装。"
+      + " 请执行 `dsh plugin --profile web remove @wingsky-1/dsh-gzip` 卸载本包。",
+    );
+    return;
+  }
 
   const level = normalizeLevel(config.level);
   const stats: GzipStats = { compressed: 0, passthrough: 0 };

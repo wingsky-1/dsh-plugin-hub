@@ -2,6 +2,21 @@
 [![npm](https://img.shields.io/npm/v/@wingsky-1/dsh-gzip)](https://www.npmjs.com/package/@wingsky-1/dsh-gzip)
 [![GitHub Releases](https://img.shields.io/github/v/release/wingsky-1/dsh-plugin-hub)](https://github.com/wingsky-1/dsh-plugin-hub/releases)
 
+> ⚠️ **This package is being retired**: the HTTP response compression feature has been
+> merged into [@wingsky-1/dsh-lan-proxy](../dsh-lan-proxy) (>=0.1.10), which now handles
+> "forwarding + compression" in one package. Upgrade lan-proxy and uninstall this package:
+>
+> ```sh
+> dsh plugin --profile web update @wingsky-1/dsh-lan-proxy
+> dsh plugin --profile web remove @wingsky-1/dsh-gzip
+> # Restart dsh web to take effect
+> ```
+>
+> v0.1.10 is the final compatibility release: when the merged lan-proxy is detected (marker
+> route `/api/dsh-lan-proxy/compression`), it skips its own installation and warns to
+> uninstall; the npm package has been marked deprecated. The source will be removed in a
+> later release cycle.
+
 A response gzip compression plugin for the DSH Web GUI: enables gzip compression for
 `/api` responses, static assets (`/assets/*` and index.html), and plugin client bundles
 (`/plugins/<pkg>/client.js`) over remote / low-bandwidth links, fixing the

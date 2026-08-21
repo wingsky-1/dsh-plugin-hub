@@ -14,7 +14,7 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { gunzipSync } from "node:zlib";
-import { apply, ROUTES, acceptsGzip, isCompressible, joinVary, normalizeLevel, wrapResponse, installWrappers } from "../lib/index.js";
+import { apply, ROUTES, acceptsGzip, isCompressible, joinVary, normalizeLevel, wrapResponse, installWrappers, detectLanProxyCompression } from "../lib/index.js";
 
 // ---------------------------------------------------------------- 纯函数
 
@@ -529,6 +529,39 @@ assert.equal(ROUTES.health, "/api/dsh-gzip/health");
   const res = await runHandler(ws.exact.get("/x").handler, makeReq({ headers: { host: "127.0.0.1:3080", "accept-encoding": "gzip" } }));
   await waitEnded(res);
   assert.equal(res.getHeader("content-encoding"), "gzip", "幂等后仍压缩（单层）");
+}
+
+// ---------------------------------------------------------------- v0.1.10 兼容检测：lan-proxy 合并版跳过安装
+
+// detectLanProxyCompression：标记路由存在才判定合并版
+{
+  const ws = makeWebServer();
+  assert.equal(detectLanProxyCompression(ws), false, "无 exact 表 / 无标记路由 → false");
+
+  const wsWith = makeWebServer();
+  wsWith.exact.set("/api/dsh-lan-proxy/compression", { kind: "exact", path: "/api/dsh-lan-proxy/compression", handler: () => {} });
+  assert.equal(detectLanProxyCompression(wsWith), true, "标记路由存在 → true");
+
+  // 老版本 lan-proxy 的 health 路由不构成跳过依据（防假阳性丢压缩）
+  const wsOld = makeWebServer();
+  wsOld.exact.set("/api/dsh-lan-proxy/health", { kind: "exact", path: "/api/dsh-lan-proxy/health", handler: () => {} });
+  assert.equal(detectLanProxyCompression(wsOld), false, "老 lan-proxy health 路由不误判");
+}
+
+// apply：检测到合并版标记路由 → 完全跳过安装（不注册 health、不包裹任何 handler）
+{
+  const ws = makeWebServer();
+  ws.exact.set("/api/dsh-lan-proxy/compression", { kind: "exact", path: "/api/dsh-lan-proxy/compression", handler: () => {} });
+  const apiHandler = (_req, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end("{}");
+  };
+  ws.prefixes.set("/api", { kind: "prefix", path: "/api", handler: apiHandler });
+  const ctx = makeCtx(ws);
+  apply(ctx);
+  assert.equal(ws.exact.size, 1, "仅原有标记路由，未注册 gzip health");
+  assert.equal(ws.prefixes.get("/api").handler, apiHandler, "/api 未被包裹");
+  assert.equal(ctx._disposers.length, 0, "无 effect 注册");
 }
 
 // ---------------------------------------------------------------- R1：无 body 状态不误压
