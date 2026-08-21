@@ -1,17 +1,12 @@
 # dsh-opencode-usage 演进方案（主文件）：按 Provider 适配 + 用户自定义 JS 注入
 
-> 状态：**方案定稿（按源码核实 + 对抗性自查），只评审、未实施**
+> 状态：**M1 适配器框架 + M2 用户 JS 注入已实施（分支 `feature/provider-adapter`），
+> 本文件为剩余阶段 R1~R3+M3b 的设计定稿与跟进跟踪**
 > 涉及插件：`github/dsh-plugin-hub/packages/dsh-opencode-usage`（@wingsky-1/dsh-opencode-usage）
 >
-> **文档结构（总分）**：本文是主文件，只记录「分阶段做什么 + 大概方案」+ 决策 +
-> 结论；具体契约 / 数据流 / 配置 / 错误矩阵 / 里程碑验收的细化实现路径，见
+> **文档结构（总分）**：本文是主文件，只记录「阶段做什么 + 方案」+ 决策 +
+> 结论；具体契约 / 数据流 / 配置 / 错误矩阵 / 里程碑验收的细化，见
 > `docs/opt/usage-provider-adapter/` 下的子文件（见文末「子文件索引」）。
->
-> 评审说明：本轮多次尝试调用独立子 agent 做对抗性评审，但本会话子 agent /
-> dev_mode_subagent 通道异常（未返回实质结果）。对抗性评审改由作者在逐条核实真实
-> 源码（会话→provider 类型、客户端 connection/sessions 契约、tapIndex 注入先例、
-> 宿主端 import 能力、干净模块构建规范、settings.section 插槽）基础上自行完成，
-> 结论见文末「结论」。
 
 ---
 
@@ -33,45 +28,81 @@
 
 ---
 
-## 2. 阶段总览（每阶段：目标 / 大概方案 / 产出 / 验收）
+## 2. 阶段总览（R1~R3+M3b）
 
-### M0 — 技术可行性烟测（先于一切）
-- **目标**：验证两个决定架构方向的运行时事实，消除主方案最大不确定性。
-- **方案**：写最小探针代码确认——① 客户端能否拿到当前会话的
-  `SessionModels.current.provider`（或 session slot 注入的 `sessionId`）；②
-  `settings.section` 是否能注册设置面板独立 tab。二者 hub 内均**无运行时先例**。
-- **产出**：M0 结论记录；据结果确定 M1 走 slot 路径还是回落 DOM 订阅。
-- **验收**：两项事实各给出「成立 / 不符及替代取法」的明确结论。
+### M0 — 技术可行性烟测（已实施，结论：两探针全部成立）
+- **结论**：
+  - 探针① 成立：客户端经 `session.models` RPC 取 `SessionModels.current.provider`。
+  - 探针② 成立：`settings.section` 可注册独立 tab。
 - 细化见子文件 `2-session-provider-detection.md`。
 
-### M1 — 适配器框架 + 内置 OpenCode Go 迁移（不改变现有行为）
-- **目标**：建立「宿主适配器（取数）+ 客户端渲染器（呈现）按 provider 注册」框架；
-  把现有硬编码逻辑迁入内置适配器，**行为不退化**。
-- **方案**：定义契约本（见 `1-contracts.md`）；宿主端建注册表 + 分派 `fetchUsage`；
-  客户端建渲染分派；内置 OpenCode Go 双端适配器。
-- **产出**：可用的适配器注册表 + 内置适配器；旧悬浮框行为等价。
-- **验收**：旧配置无感升级；路径与 CHART 渲染结果与现状一致。
-- 细化见子文件 `1-contracts.md`。
+### M1 — 适配器框架 + 内置 OpenCode Go 迁移（已实施，分支 `feature/provider-adapter`）
+- **交付**：契约本（HostProviderAdapter / ClientProviderRenderer / ProviderUsage）、
+  HostAdapterRegistry、内置 opencode-go 适配器、RendererRegistry、内置客户端渲染器、
+  `/stats?provider=` 分派、`/adapters.json` 路由、`/user/<n>.js` 静态服务、`stripSecrets`
+  护栏、历史 v1 向后兼容、provider 检测（session.models RPC 路径）。
+- **验收**：旧配置无感升级；全门禁绿。
 
-### M2 — 用户自定义 JS 注入（本项目核心诉求）
-- **目标**：让用户注入「宿主 .mjs 取数 + 客户端 .js 渲染」，适配任意中转站。
-- **方案**：宿主端动态加载用户宿主 js；serve + tapIndex 注入用户客户端 js；配置文件
-  路径（见 `3-config-and-injection.md`）。
-- **产出**：配置入口 + 一份完整中转站示例模板；未命中 provider 时给引导。
-- **验收**：用示例中转站能端到端跑通（识别 provider → 拉数 → 渲染卡片）。
-- 细化见子文件 `3-config-and-injection.md`。
+### M2 — 用户自定义 JS 注入（已实施，分支 `feature/provider-adapter`）
+- **交付**：路径解析（`~/`/绝对/相对 DSH_HOME）、用户宿主适配器动态加载（`import()`）、
+  用户客户端渲染器 blob import 加载、`window.__DSH_USAGE__` 桥接（D4 契约版本化）、
+  示例模板文档。
+- **验收**：端到端跑通用户适配器加载链路。
 
-### M3 — 设置面板独立 tab「用量统计」+ 多 provider 历史采样
-- **目标**：设置面板独立顶层 tab；多 provider 并存时历史采样不串厂商。
+### M3a — 多 Provider 历史采样 v2（已实施，分支 `feature/provider-adapter`）
+- **交付**：历史按 provider 分桶 (`series[provider].samples`)、v1→v2 迁移、
+  `/history?provider=` 过滤、后台定时器遍历所有注册 provider。
+- **验收**：多 provider 采样不串厂商。
+
+### R1 — 契约 + 注册表 v2（候选 + 启用机制）
+- **目标**：适配器从「一对一硬覆盖」升级为「候选 + 唯一启用 + 热切换」。
+- **方案**：
+  - 注册表改为 `provider → 有序候选列表`，每条带 `{ id, label, enabled, source, file, status }`；
+    每 provider 一个 `enabledId`，`get(provider)` 只返回启用条目。
+  - `ProviderSummary` 接口（轻量按钮内容）；`HostProviderAdapter` 加 `id`/`label`/可选
+    `summarize`/`samplePoint`；`samplePoint` 结构化列声明（`{ cols, values }`）。
+  - `defineUsageAdapter` 工厂：典型用量型只需写 `fetchUsage`，自动派生 summarize/samplePoint。
+  - `stripSecrets` 护栏扩展：覆盖 ProviderSummary 全部字符串字段 + 值模式匹配
+    （`sk-`/`Bearer ` → `<redacted>`）。
+  - 默认启用策略：内置 opencode-go 默认启；配置显式列出的用户适配器默认启；
+    `enabled: false` 可显式关闭。
+- **产出**：可用候选注册表 + 启用切换准备 + 护栏扩展。
+- **验收**：同 provider 多候选注册/snapshot 返回候选详情；启用切换后 get 返回新条目；
+  smoke 绿。
+
+### R2 — 切换机制 + 语义分层 + 多会话后台
+- **目标**：
+  1. 物理切换接口 + 缓存失效；
+  2. **两个语义面**（按钮内容 vs 浮框内容）分离为**单端点内嵌**（`/stats` 响应内嵌
+     `summary` 子树 + 渲染器 `pill` 钩子，不新增路由）；
+  3. 后台定时器遍历**所有已启用适配器**（跨 provider、跨会话）；
+  4. 当前会话无启用适配器 → 浮窗隐藏 + 60s 轻量探测恢复。
+- **方案**：
+  - **切换**：`POST /api/dsh-opencode-usage/adapters/select`（body `{ provider, adapterId }`，
+    loopback 围栏）→ 清该 provider 的 stats/summary/历史缓存 → 下一个请求走新适配器。
+  - **语义分层**：`/stats` 响应内嵌 `summary` 子树 `{ text, level, hint, derived? }`；
+    胶囊读 summary 子树、面板读 `windows`/`data`。`ClientProviderRenderer` 加可选
+    `pill?(summary): { text, level, hint? }` 钩子（完全自定义按钮文案）。
+    **不新增物理路由**（评审 P1-1/P1-2 硬约束：避免双缓存不一致）。
+  - **后台**：定时器遍历 `registry.snapshot().infos` 中 `status === "active"` 且
+    `enabled === true` 的条目，各自 `collectStats` + 采样（`(provider, adapterId)` 双键桶）。
+  - **无适配器隐藏**：`/summary` 接口带 `hasAdapter` 标志；客户端收到 `hasAdapter: false`
+    → 浮窗隐藏，60s 轻量轮询 `/summary` 直到 `hasAdapter: true` 恢复。
+  - **采样/取数解耦**：缓存命中（含 `/summary` 轮询）也 append 采样点，保持 60s 分辨率。
+- **产出**：切换可用 + 胶囊/面板语义分离 + 多会话后台 + 无适配器隐藏。
+- **验收**：切换后数据/页面/历史全部跟随新启用者；无启用的 provider 前台隐藏、后台跳过；
+  capsule 文案走 `pill` 钩子或通用推导；smoke 绿。
+
+### R3 — 文档 + 示例
+- **目标**：契约本文档、完整接入清单、示例中转站模板补 `summarize/samplePoint`。
+- **方案**：更新本文档及子文件 1~8；模板与 README 安全模型。
+- **验收**：文档与代码一致。
+
+### M3b — 设置面板独立 tab「用量统计」
+- **目标**：设置面板独立顶层 tab，四区页面（总览/可视化/适配器候选单选启用/配置编辑）。
 - **方案**：宿主 `installSettingsNamespace` + 客户端 `settings.section`（见
-  `5-settings-panel-tab.md`）；history 按 provider 分桶演进（见
-  `4-usage-history-multiprovider.md`）。
-- **产出**：独立 tab 页面（总览/用量可视化/适配器管理/配置编辑）；多 provider 采样。
-- **验收**：tab 与管理区可用；两个 provider 会话各自的历史/图表不混淆。
-- 细化见子文件 `4-usage-history-multiprovider.md`、`5-settings-panel-tab.md`。
-
-贯穿各阶段的**安全与数据流、错误/降级、测试门禁**见子文件 `6-security.md`、
-`7-dataflow-and-errors.md`、`8-milestones-and-tests.md`。
+  `5-settings-panel-tab.md`）；`settings` 持久化 enabled 选择（重启保留）。
+- **验收**：tab 可用；无启用适配器的引导入口可见；切换热生效且重启保留。
 
 ---
 
@@ -79,31 +110,45 @@
 
 | # | 决策 | 说明 |
 | --- | --- | --- |
-| D1 | 会话识别走 **DSH slot 系统**（用户已选） | 标准重构；但无先例，受 M0 烟测约束，失败可回落 DOM+订阅 |
+| D1 | 会话识别走 **DSH slot 系统**（用户已选） | M0 结论成立，采用 `session.models` RPC 路径 |
 | D2 | 用户注入 js 交付形态 = **本地文件路径** | 不做 npm 包 / inline 字符串 |
 | D3 | 设置面板独立 tab 用 **`settings.section`**（不是 plugin.item） | 已核实 slot 体系，见 `5-settings-panel-tab.md` |
 | D4 | 客户端注入走 **「插件主动拉取用户 js」+ 契约版本化** | 消除 tapIndex 加载时序与全局命名空间脆弱性 |
-| D5 | 归一化数据模型**压薄** | 强制最小公约数 `{ok, provider, label, fetchedAt}`，windows 可选 |
-| D6 | 本轮**只评审，不实施** | 实施需另获确认 |
+| D5 | 归一化数据模型**压薄** | 强制最小公约数 `{ok, provider, label, fetchedAt}`，windows 可选；编排层不解读 `data`/`meta` |
+| D6 | 适配器注册表改为 **候选 + 唯一启用** | 同 provider 允许多候选，任一时刻一启用（R1） |
+| D7 | 切换启用适配器链接口 `POST /adapters/select` | 切换后清缓存，下一个请求走新适配器（R2） |
+| D8 | **按钮内容与浮框内容不分物理路由** | 单端点 `/stats` 内嵌 `summary` 子树 + 渲染器 `pill` 钩子（评审 P1-1/P1-2 硬约束，避免双缓存不一致与采样驱动断裂） |
+| D9 | 历史按 `(provider, adapterId)` 双键分桶落盘 | 单文件嵌套结构，切走保留旧桶、切回可见；`samplePoint` 结构化列声明 |
+| D10 | 后台定时器遍历**所有已启用适配器** | 跨 provider 跨会话，各自独立 `(provider, adapterId)` 历史桶；采样/取数解耦（缓存命中也可采样） |
+| D11 | 无启用适配器 → 浮窗隐藏 + 60s 轻量探测 | 不显示永久错误条；引导入设置面板 |
+| D12 | `stripSecrets` 扩展扫 summary 全部字段 + 值模式匹配 | 键名（`secret/token/key/apikey`）+ 值模式（`sk-`/`Bearer `）双重脱敏 |
 
 ---
 
-## 4. 架构总览（大概形态）
+## 4. 架构总览
 
 ```text
-┌─────────────────────────────────────────────────────────────┐
-│ dsh-opencode-usage（插件本体：编排）                          │
-│  客户端：识别当前会话 provider → 查适配器表 → 分派渲染         │
-│    · 浮窗胶囊（当前会话视角，轻量）                            │
-│    · 设置面板独立 tab（全局视角，完整统计 + 适配器管理）        │
-│  宿主端：按 provider 分派取数（内置或用户宿主适配器）           │
-│    · 历史采样按 provider 分桶落盘                              │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│ dsh-opencode-usage（插件本体：编排）                               │
+│                                                                  │
+│  客户端（当前会话视角）：                                          │
+│    · 识别会话 provider → 查该 provider 的启用适配器                 │
+│    · 有启用适配器 → 浮窗显示（胶囊=summary 子树、面板=stats+历史）  │
+│    · 无启用适配器 → 浮窗隐藏，60s 轻量探测恢复条件                  │
+│    · 设置面板独立 tab（全局视角，完整统计 + 适配器候选管理）         │
+│                                                                  │
+│  宿主端：                                                         │
+│    · /stats → 内嵌 summary 子树 + 带 adapterId/hasAdapter          │
+│    · /adapters/select → 切换启用适配器 + 清缓存                    │
+│    · /adapters.json → 候选列表（含 id/label/enabled/source/status）│
+│    · 后台定时器 → 遍历所有已启用适配器，各自取数 + 采样             │
+│    · 历史 → (provider, adapterId) 双键分桶，单文件嵌套结构          │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 - 当前会话 + provider **识别放客户端**（浏览器持有激活态）。
 - provider 取数（中转站对接、密钥）**放宿主端用户 js**。
-- 卡片渲染**放客户端用户 js**。
+- 胶囊/按钮文案走宿主 `/stats` 内嵌 summary 子树或渲染器 `pill` 钩子；面板内容走渲染器 `render`。
 - 浮窗与独立 tab **共享同一核心层**（识别 + 注册表 + 归一化），只载体不同。
 
 ---
@@ -113,14 +158,23 @@
 ```yml
 plugins:
   ui-dsh-opencode-usage:
+    # —— 既有键（不变） ——
+    enabled: true
+    baseUrl: https://opencode.ai/zen/go/v1/usage
+    # —— 适配器候选（支持多个，每个可独立启停） ——
     adapters:
-      host:   [{ provider: my-relay, file: /abs/or/~/relay-host.mjs }]
-      client: [{ file: /abs/or/~/relay-client.js }]
+      host:
+        - provider: my-relay
+          file: ~/.dsh/my-relay-host.mjs
+          enabled: false          # 可选：显式关闭，缺省 true
+        - provider: opencode-go
+          file: /abs/path/custom-opencode-go.mjs  # 与内置同 provider，覆盖内置
+      client:
+        - file: ~/.dsh/my-relay-client.js
 ```
 
-- 宿主端动态 `import` 用户宿主 js；serve + tapIndex 注入用户客户端 js。
-- 路径支持绝对 / 相对 DSH_HOME / `~` 展开；加载失败只 warn + 该 provider 回落，
-  不阻断插件。
+- 宿主端动态 `import` 用户宿主 js；serve + blob import 用户客户端 js。
+- 路径支持绝对 / 相对 DSH_HOME / `~` 展开；加载失败只 warn + 该候选不注册，不阻断插件。
 - 完整 schema、解析规则、加载降级矩阵见 `3-config-and-injection.md`。
 
 ---
@@ -128,32 +182,29 @@ plugins:
 ## 6. 安全与数据流（概要）
 
 - 宿主端用户 js = 完整 Node 权限（等同用户自己写插件），文档明示信任边界。
-- 「token 不进浏览器端」默认边界**不替用户适配器兜底**，提供可选护栏（剔除疑似密钥
-  字段）+ 文档化。
-- 全部新路由 loopback 围栏 + 方法校验。
-- 数据流时序（拉数/缓存/采样/渲染）+ 错误/降级矩阵见 `7-dataflow-and-errors.md`；
-  信任域安全模型见 `6-security.md`。
+- `stripSecrets` 护栏扩展：覆盖 ProviderSummary 全部字符串字段 + 值模式匹配
+  （`sk-`/`Bearer `脱敏），与现有键名扫描互补。
+- 全部路由 loopback 围栏 + 方法校验。
+- 数据流时序（summary 轮询 / stats 面板 / 后台多适配器采样 / 切换失效）+
+  错误/降级矩阵见 `7-dataflow-and-errors.md`；信任域安全模型见 `6-security.md`。
 
 ---
 
 ## 7. 兼容性与回归
 
-- 旧配置无 `adapters` 键 → 走内置 OpenCode Go，行为不退化。
+- 旧配置无 `adapters` 键 → 走内置 OpenCode Go（默认启用），行为不退化。
+- 单端点内嵌 summary 子树：旧客户端不读该字段，只读 windows，零影响。
+- `POST /adapters/select` 新路由：旧客户端不调用，无影响。
+- 历史数据结构迁移：v1 → v2（按 provider 分桶，已实施）→ R3 升级为 `(provider, adapterId)` 双键分桶。
 - 新增路由 / `settings.section` / 聚合包 patch 需补门禁用例。
-- 多 provider 历史采样需**数据结构迁移**（现有 history.json 为单 provider），见
-  `4-usage-history-multiprovider.md`。
 
 ---
 
-## 8. 结论（有保留可行）
+## 8. 结论（方向确认，分阶段实施）
 
-- 方向正确、分层合理；核心论断「provider 来自 SessionModels」成立；新增独立 tab 为
-  纯增量，与浮窗共享核心层，不抬高主体风险。
-- **三件先动之事**：
-  1. **M0 烟测**：会话 provider 取值 + `settings.section` 注册形态（二者无运行时先例）。
-  2. **客户端注入改为「插件主动加载用户 js」+ 契约版本化**（消除时序/脆弱性）。
-  3. **归一化模型压薄 + 安全边界文档化**。
-- 保留：单主仓先做 OpenCode Go 迁移 + 一套完整中转站样例，验证链路后再外扩。
+- M0-M3a 已实施验证（分支 `feature/provider-adapter`），全门禁绿。
+- 剩余 R1~R3+M3b 方向正确，决策已定（D6~D12）。
+- 实施按 R1→R2→R3→M3b 顺序推进，每阶段独立门禁绿 + 提交。
 
 ---
 
@@ -161,13 +212,13 @@ plugins:
 
 | 子文件 | 覆盖 |
 | --- | --- |
-| `1-contracts.md` | 宿主/客户端适配器契约、归一化模型、版本、错误码、注册表运行时 |
-| `2-session-provider-detection.md` | 会话 provider 识别（slot vs DOM 订阅）、M0 烟测方案 |
-| `3-config-and-injection.md` | 配置 schema、路径解析、用户 js 注入通道、加载降级矩阵 |
-| `4-usage-history-multiprovider.md` | 多 provider 历史采样演进与数据结构迁移 |
-| `5-settings-panel-tab.md` | 设置面板独立 tab 双端接线与页面内容 |
-| `6-security.md` | 信任域安全模型、护栏、密钥边界 |
-| `7-dataflow-and-errors.md` | 数据流时序、错误/状态机、降级矩阵 |
+| `1-contracts.md` | 宿主/客户端适配器完整契约、归一化模型、版本、错误码、注册表候选+启用、工厂 |
+| `2-session-provider-detection.md` | 会话 provider 识别（M0 结论）、slot vs DOM 订阅 |
+| `3-config-and-injection.md` | 配置 schema（含 enabled 字段）、路径解析、用户 js 注入、加载降级矩阵 |
+| `4-usage-history-multiprovider.md` | `(provider, adapterId)` 双键历史分桶、采样列声明、v2→v3 迁移 |
+| `5-settings-panel-tab.md` | 设置面板独立 tab 双端接线与页面内容（含适配器候选管理） |
+| `6-security.md` | 信任域安全模型、stripSecrets 扩展、密钥边界 |
+| `7-dataflow-and-errors.md` | 数据流时序（summary 轮询/stats 面板/后台多适配器采样/切换失效）、错误/状态机、降级矩阵 |
 | `8-milestones-and-tests.md` | 里程碑验收、测试矩阵、兼容性矩阵、风险登记 |
 
 > 路径：`github/dsh-plugin-hub/packages/dsh-opencode-usage/docs/opt/usage-provider-adapter/`

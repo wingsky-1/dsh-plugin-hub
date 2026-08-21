@@ -39,10 +39,10 @@ setSource, onChange })`（复用本插件 `shared/settings-namespace.js`，能�
 
 | 区 | 内容 |
 | --- | --- |
-| 总览 | 当前会话 provider 识别结果 + 说明（复用同一 provider 解析，与浮窗一致） |
+| 总览 | 当前会话 provider 识别结果 + 生效适配器（id/label）+ 说明（复用同一 provider 解析，与浮窗一致） |
 | 用量可视化 | 三窗口/多窗口完整图表 + 明细表格（窗口/当前%/限额/重置/趋势）；比浮窗迷你图更完整 |
-| **适配器管理** | 列出生效适配器（内置 + 用户注入 host/client）：provider 名、来源文件、加载状态；失败/缺失给配置引导。**是「用户自定义 js」的可视化配置落点** |
-| 配置编辑 | 本插件可配置键（baseUrl / limits / adapters 路径 / 采样间隔等），读写经 settings 命名空间 + `normalizeConfig` 净化，保存即生效 |
+| **适配器管理** | 按 provider 分组展示**候选列表**（内置 + 用户注入）：每条显示 `id`、`label`、来源文件、加载状态、`enabled` 标记；单选「启用」切换（走 `POST /adapters/select`）；失败/无启用给配置引导。**是「用户自定义 js」的可视化配置落点** |
+| 配置编辑 | 本插件可配置键（baseUrl / limits / adapters 路径（含 `enabled`）/ 采样间隔等），读写经 settings 命名空间 + `normalizeConfig` 净化，保存即生效 |
 
 ---
 

@@ -23,11 +23,14 @@ plugins:
     maxAgeDays: 30
     sampleIntervalMs: 300000
     persistFile: ""
-    # —— 新增：适配器（D2：本地文件路径） ——
+    # —— 新增：适配器（D2：本地文件路径；D6：候选 + 可独立启停） ——
     adapters:
-      host:                 # 宿主端取数适配器（中转站对接）
+      host:                 # 宿主端取数适配器（中转站对接，可多个候选）
         - provider: my-relay
           file: /path/to/my-relay-host.mjs
+          enabled: false    # 可选：显式关闭，缺省 true（见 3.1b 默认启用策略）
+        - provider: opencode-go
+          file: /path/to/custom-opencode-go-host.mjs  # 与内置同 provider，作为候选（非覆盖）
       client:               # 客户端渲染器（卡片）
         - file: /path/to/my-relay-client.js
     # —— 新增：provider 白名单兜底（仅当 M0 探针① 失败时使用） ——
@@ -36,6 +39,16 @@ plugins:
 ```
 
 `CONFIG_KEYS` 新增：`adapters`、`providerHint`（`provider` 属现有 baseUrl 语义，不重复）。
+
+### 3.1b 默认启用策略（D6）
+
+- 同 provider 允许多个候选（内置 + 用户若干），**任一时刻一启用**。
+- 默认启用：内置 opencode-go 适配器；配置中显式列出的用户宿主适配器（`enabled` 缺省 true）。
+- `enabled: false` 显式关闭该候选。
+- 运行时切换启用走 `POST /adapters/select`（见 `7-dataflow-and-errors.md` §7.1 切换时序），
+  M3b 设置面板持久化选择。
+- **修正 D4 语义**：用户适配器不再是「直接覆盖内置」，而是加入候选并以「启用」为准。
+  旧配置（仅列用户适配器、无 enabled）→ 默认启用，行为无感升级。
 
 ---
 
