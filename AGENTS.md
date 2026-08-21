@@ -30,7 +30,8 @@ types/dsh.d.ts        宿主端类型层
 - **绝不修改 DSH 源码**：挂载只走 `cordis.patch.yml` + profile；类型自定义在
   `types/dsh.d.ts`；禁止 tsconfig 指向任何 DSH 源码 checkout。
 - **新包一律 `dsh-` 前缀**；npm 包名 `@wingsky-1/dsh-*`；聚合包 `dsh-plugins-all`。
-- **零运行时依赖**：所有插件发布物自包含，运行时零 npm 依赖（宿主注入模型）。
+- **发布物自包含**：第三方依赖一律构建期由 esbuild 内联进产物，不以运行时 npm 依赖
+  形式发布（宿主注入模型）。
 - **客户端为干净模块**：只 `export function apply(ctx)` + `export const inject`，
   样式独立 `src/client/style.css`，构建走 `scripts/build-client.ts`，路由强制 loopback
   围栏，patch id 用 `ui-<name>`。细则与禁止项见

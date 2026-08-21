@@ -5,8 +5,8 @@
 DSH（DeepSeek Harness）的 **MCP 服务器管理插件**：会话界面右上角浮窗 + 分级面板 +
 快速接入（手工表单 + 粘贴 mcpServers JSON 导入，**不预设任何服务器**），支持
 **项目级 MCP 跟随会话切换**。已连接服务器的工具以 `mcp__<serverName>__<rawName>`
-注册给模型直接调用。**零运行时依赖**（MCP 协议客户端基于 `node:child_process`
-与全局 `fetch` 直接实现）。
+注册给模型直接调用。MCP 协议客户端基于 `node:child_process`
+与全局 `fetch` 直接实现，无需额外安装。
 
 ## 安装
 

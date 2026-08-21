@@ -25,7 +25,7 @@
 
 ## 3. 自研 vs 开源对照（防复发清单）
 
-插件已用库：`marked` / `highlight.js` / `diff2html` / `DOMPurify` / `untildify`（全部构建期内联，运行时零依赖）。
+插件已用库：`marked` / `highlight.js` / `diff2html` / `DOMPurify` / `untildify`（全部构建期内联进产物）。
 
 | 自研点 | 成熟替代 | 判定 | 备注 |
 |---|---|---|---|
@@ -38,7 +38,7 @@
 | MIME 映射（9 项手写） | mime-types / mime-db | 保持子集 | 有意为之（避宿主大表与 ESM 内联问题） |
 | 剪贴板降级 / ETag / 413 / 错误码 | 原生 API / HTTP 协议实现 | 合理自研 | 非轮子 |
 
-**规则**：新增能力先查成熟库再动手；若决定引入新依赖，必须走 `dsh.client.inlineBareImports` 内联（不破坏零运行时依赖），并跑 `pnpm contract && pnpm pack:check`。
+**规则**：新增能力先查成熟库再动手；若决定引入新依赖，必须走 `dsh.client.inlineBareImports` 构建期内联，并跑 `pnpm contract && pnpm pack:check`。
 
 ## 4. 运行注意
 

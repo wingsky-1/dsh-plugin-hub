@@ -86,7 +86,7 @@ GUI 设置入口：设置 → 插件 → 「局域网访问」卡片（保存即
 
 - v0.1.10 起，原独立插件 dsh-gzip（源码已自本仓移除）的 HTTP 响应 gzip 压缩能力已合并进本插件，
   在**转发层**实现（成熟开源库 [compression](https://www.npmjs.com/package/compression)
-  中间件，构建期内联、保持零运行时依赖）：经本插件访问时，对 `/api`（RPC）、
+  中间件，构建期内联进产物）：经本插件访问时，对 `/api`（RPC）、
   `/plugins`（客户端 bundle）与静态资源/index.html 等可压缩响应（JSON / 文本）
   自动协商 gzip；SSE（text/event-stream）、zip 导出、已编码响应、HEAD、
   带 Range 的请求、小于 1KB 的响应原样透传。
