@@ -2,8 +2,8 @@
 
 > 覆盖**宿主端 / 客户端**两类代码的写法与构建契约，以及我们统一后的客户端形态
 > （干净模块 + 独立 CSS + `src/client/` 目录 + 第三方内联）。适用于本公开仓库
-> `packages/dsh-*` 的开发与维护。构建/契约/发布脚本见 `scripts/`，根 `AGENTS.md`
-> 是仓库级硬性规则（副本见下）。
+> `packages/dsh-*` 的开发与维护。构建/契约/发布脚本见 `scripts/`；仓库级硬性规则
+> （全局约定 / 发布纪律）见根 [AGENTS.md](../AGENTS.md)。
 
 ## 0. 构建总览
 
@@ -21,6 +21,7 @@ pnpm typecheck    # 全仓类型检查
 1. esbuild 内联 `shared/*` 进 `lib/index.js`（宿主端自包含单文件）。
 2. 客户端经 `scripts/build-client.ts`（唯一契约外壳/注入点）构建 `lib/client.js`。
 3. d.ts X1：改写 `../../../shared|types` → 包内副本，`shared/*.d.ts`、`types/dsh.d.ts` 随包。
+   shared 层因此保持 **js + d.ts 双写**（tsc `rootDir` 硬约束，shared 不可 TS 化）。
 4. 拷贝资源（非 TS 文件）+ LICENSE。
 
 ## 1. 宿主端（`src/index.ts`）规范
@@ -34,7 +35,9 @@ pnpm typecheck    # 全仓类型检查
 - **安全**：全部路由强制 loopback 围栏（非回环 403、方法错 405），`/health` 必项；
   RPC/端点做参数校验；密钥/凭据不入包。
 - **挂载**：`cordis.patch.yml`，patch **id 用 `ui-<name>`**；声明 `dsh.client` 时必须有
-  `exports["./client"]`（`contract-check` 联动断言，缺则整包拒载）。
+  `exports["./client"]`（`contract-check` 联动断言，缺则整包拒载）。**独立包与聚合包
+  禁双装**（同 id 双装 loader 报 duplicate）；改独立包 patch 后必须
+  `node scripts/aggregate.ts` 重新生成聚合 patch。
 - **测试**：`test/smoke.ts` 直跑，必含 403/405 围栏用例 + 客户端契约断言
   （`assertClientSourceContract` / `assertClientProductContract`）。
 
@@ -155,7 +158,8 @@ dsh web 部署在 Linux 服务器，经局域网被多种设备 / 系统访问�
      行尾、大小写敏感路径按 OS 处理。
    - 不写死 OS 专属命令 / 二进制；若必须（如 notifier 的 Windows `toast.ps1`），按 OS
      分支并提供 mac / linux 等价实现或优雅降级，不抛错阻断。
-   - 脚本 / 构建在三种 OS 均可跑（CI 即跨平台验证）。
+   - 脚本 / 构建不得依赖 POSIX 专属行为（CI 目前仅 ubuntu-latest 单平台，跨 OS
+     兼容由本地验证保障；后续可为 CI 增加三 OS matrix）。
 
 2. **三访问形态（PC / pad / phone）**：界面响应式、触控友好、窄屏可用。
    - 布局用响应式（flex / grid + 媒体查询），不写死宽度；触控目标足够大、间距合理。
@@ -167,6 +171,6 @@ dsh web 部署在 Linux 服务器，经局域网被多种设备 / 系统访问�
      （见 §2.3 / §3），明暗自适应；不要在 CSS / TS 里写死 `#fff` / `rgb(...)` 固定色。
    - 挂载失败只 `console.warn`，绝不让 GUI 启动失败。
 
-验证：客户端交互改动须真机 / 浏览器在**双主题 + 窄屏（pad / phone）**下验证（呼应
-`dsh-plugin-hub-dev` skill §7 的浏览器 MCP 真点查 DOM）；宿主端逻辑须在三 OS 下可运行。
-构造的样例数据放工作区（如 `fwp-verify/`），不纳入发布包。
+验证：客户端交互改动须真机 / 浏览器在**双主题 + 窄屏（pad / phone）**下实测 DOM
+（浏览器 DevTools 或浏览器自动化 MCP 均可）；宿主端逻辑须在三 OS 下可运行。
+构造的样例 fixture 放仓库外工作区，不纳入发布物。
