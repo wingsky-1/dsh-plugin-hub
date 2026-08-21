@@ -26,6 +26,7 @@ import type { Server, IncomingMessage, IncomingHttpHeaders, ServerResponse } fro
 import { createServer as createHttpsServer } from "node:https";
 import type { Server as HttpsServer } from "node:https";
 import { connect, isIP } from "node:net";
+import { constants as zlibConstants } from "node:zlib";
 import type { Socket, AddressInfo } from "node:net";
 import { WebSocket as WsClient, WebSocketServer } from "ws";
 // 成熟开源压缩中间件（Express 生态事实标准）：协商 / Vary / Content-Length 删除 /
@@ -79,8 +80,8 @@ export interface LanProxyOptions {
    */
   httpCompress?: {
     enabled: boolean;
-    /** gzip 级别 1..9（调用方负责归一化；此处再 clamp 兜底）。 */
-    level: number;
+    /** 压缩档位预设：0 默认 / 1 低 / 2 中 / 3 高（对 gzip 与 Brotli 双生效）。 */
+    level?: number;
   };
   logger?: LanLogger;
 }
@@ -117,15 +118,31 @@ export function isCompressible(contentType: unknown): boolean {
     || (type.startsWith("text/") && type !== "text/event-stream");
 }
 
+/** 压缩预设档位 → compression 中间件选项（gzip 与 Brotli 双生效）。 */
+export interface CompressionOptions {
+  level?: number;
+  brotli?: { params: Record<string, number> };
+}
+
 /**
- * 归一化 gzip level：非有限数回退 1；clamp 到 1..9。
- * @param value 配置里的 level（可能为 string / NaN / 越界）。
- * @returns 有效压缩级别。
+ * 压缩档位映射（对 br 与 gzip 同时生效）：
+ *   0 默认 → 不传参（库默认：gzip Z_DEFAULT_COMPRESSION=6 / br 质量 4）
+ *   1 低   → gzip 1 / br 2（最快，静态文本性价比最高）
+ *   2 中   → gzip 5 / br 5（均衡）
+ *   3 高   → gzip 9 / br 9（最高压缩比，CPU 最贵）
+ * 非法输入（非有限数/越界）按「默认」处理。
  */
-export function normalizeLevel(value: unknown): number {
-  const level = Number(value);
-  if (!Number.isFinite(level)) return 1;
-  return Math.min(9, Math.max(1, Math.trunc(level)));
+export function resolveCompressionOptions(preset: unknown): CompressionOptions {
+  switch (preset) {
+    case 1:
+      return { level: 1, brotli: { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 2 } } };
+    case 2:
+      return { level: 5, brotli: { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 5 } } };
+    case 3:
+      return { level: 9, brotli: { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 9 } } };
+    default:
+      return {};
+  }
 }
 
 /**
@@ -304,7 +321,7 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
     // @types/compression 的中间件签名用 express Request/Response 泛型；本处只传
     // node:http 原生对象（compression 运行时仅使用其上存在的字段），做一次收窄。
     const middleware = compression({
-      level: normalizeLevel(options.httpCompress.level),
+      ...resolveCompressionOptions(options.httpCompress.level),
       threshold: 1024,
       filter: (_req, res) => {
         if ((res as ServerResponse & { [LOCAL_RESPONSE]?: boolean })[LOCAL_RESPONSE]) return false;

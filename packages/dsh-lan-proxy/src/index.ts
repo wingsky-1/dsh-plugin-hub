@@ -23,7 +23,7 @@ import { homedir, networkInterfaces } from "node:os";
 import { join } from "node:path";
 import { mkdirSync, readFileSync, renameSync, watch, writeFileSync } from "node:fs";
 import z from "schemastery";
-import { createLanProxy, DEFAULT_OPTIONS, isLoopbackTarget, normalizeLevel } from "./proxy.js";
+import { createLanProxy, DEFAULT_OPTIONS, isLoopbackTarget, resolveCompressionOptions } from "./proxy.js";
 import type { TlsMaterials, LanProxy } from "./proxy.js";
 import { ensureSelfSignedTls, loadTlsFromFiles } from "./cert.js";
 import { isLoopbackRequest } from "../../../shared/loopback.js";
@@ -79,9 +79,9 @@ export interface LanProxyConfig {
   wsCompressEnabled?: boolean;
   /** 参与 WebSocket 压缩桥接的路径白名单。 */
   wsCompressPaths?: string[];
-  /** HTTP 响应压缩总开关（默认 true；合并自 dsh-gzip）。协商经 compression 中间件：客户端 Accept-Encoding 含 br 时输出 Brotli（库固定质量 4），否则回退 gzip。 */
+  /** HTTP 响应压缩总开关（默认 true；合并自 dsh-gzip）。经 compression 中间件按 Accept-Encoding 协商，Brotli/gzip 双生效。 */
   httpCompressEnabled?: boolean;
-  /** HTTP 响应压缩级别 1..9（默认 1；仅作用于 gzip 回退路径）。 */
+  /** 压缩档位预设 0..3（默认 1 低）：0 默认 / 1 低 / 2 中 / 3 高，对 gzip 与 Brotli 同时生效。 */
   httpCompressLevel?: number;
 }
 
@@ -128,8 +128,8 @@ export const Config = z.object({
    * 静态资源等可压缩响应做应用层 gzip。安装失败仅 warn 降级，不阻断转发。
    */
   httpCompressEnabled: z.boolean().default(true),
-  /** HTTP 响应压缩级别 1..9（默认 1：静态文本场景性价比最高；仅作用于 gzip 回退路径，br 协商时由库固定质量 4）。 */
-  httpCompressLevel: z.natural().max(9).default(1),
+  /** 压缩档位预设 0..3（默认 1 低）：0 默认 / 1 低 / 2 中 / 3 高，对 gzip 与 Brotli 同时生效（见 proxy.resolveCompressionOptions 映射）。 */
+  httpCompressLevel: z.natural().max(3).default(1),
 });
 
 /** 本机非回环 IPv4 地址，用于启动时的 LAN URL 日志行。 */
@@ -163,7 +163,7 @@ const FILE_CONFIG_VALIDATORS: Record<string, (v: unknown) => boolean> = {
   wsCompressEnabled: (v) => typeof v === "boolean",
   wsCompressPaths: (v) => Array.isArray(v) && v.every((s) => typeof s === "string"),
   httpCompressEnabled: (v) => typeof v === "boolean",
-  httpCompressLevel: (v) => typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 9,
+  httpCompressLevel: (v) => typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 3,
 };
 
 /**
@@ -182,7 +182,9 @@ export function loadFileConfig(dir: string): Partial<LanProxyConfig> {
   const src = raw as Record<string, unknown>;
   const out: Partial<LanProxyConfig> = {};
   for (const key of Object.keys(FILE_CONFIG_VALIDATORS)) {
-    const value = src[key];
+    let value = src[key];
+    // 同 sanitizeSettings：旧档位整数 4..9 迁移为「高」
+    if (key === "httpCompressLevel" && typeof value === "number" && Number.isInteger(value) && value > 3 && value <= 9) value = 3;
     if (value !== undefined && FILE_CONFIG_VALIDATORS[key](value)) {
       (out as Record<string, unknown>)[key] = value;
     }
@@ -247,7 +249,9 @@ export function sanitizeSettings(raw: unknown): Partial<LanProxyConfig> | null {
   const src = raw as Record<string, unknown>;
   const out: Partial<LanProxyConfig> = {};
   for (const key of Object.keys(FILE_CONFIG_VALIDATORS)) {
-    const value = src[key];
+    let value = src[key];
+    // 旧档位（0..9）迁移：整数 4..9 视为「高」档；其余仍走校验器
+    if (key === "httpCompressLevel" && typeof value === "number" && Number.isInteger(value) && value > 3 && value <= 9) value = 3;
     if (value === undefined || value === null) continue;
     if (!FILE_CONFIG_VALIDATORS[key](value)) return null;
     if ((key === "tlsCertFile" || key === "tlsKeyFile") && value === "") continue;
@@ -410,7 +414,7 @@ export function apply(ctx: PluginContext, config: LanProxyConfig = {}): void {
         },
         httpCompress: {
           enabled: httpCompressEnabled,
-          level: normalizeLevel(value.httpCompressLevel),
+          level: value.httpCompressLevel,
         },
       },
       ctx.logger,
@@ -621,5 +625,5 @@ export function apply(ctx: PluginContext, config: LanProxyConfig = {}): void {
 }
 
 // 测试面 re-export（smoke 只依赖主入口，避免发布物保留内部模块）
-export { createLanProxy, hostnameAllowed, formatAuthority, rewriteHeaders, isLoopbackTarget, DEFAULT_OPTIONS, compressWsPath, isCompressible, normalizeLevel } from "./proxy.js";
+export { createLanProxy, hostnameAllowed, formatAuthority, rewriteHeaders, isLoopbackTarget, DEFAULT_OPTIONS, compressWsPath, isCompressible, resolveCompressionOptions } from "./proxy.js";
 export { ensureSelfSignedTls, certStillValid, toSanEntry, loadTlsFromFiles, SELF_SIGNED_KEY, SELF_SIGNED_CERT } from "./cert.js";

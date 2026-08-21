@@ -67,7 +67,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-lan-proxy
 | `wsCompressEnabled` | `true` | 是否对命中 `wsCompressPaths` 的 WebSocket 做压缩桥接 |
 | `wsCompressPaths` | `/api/events.mux, /api/events.host` | 参与 WebSocket 压缩的路径白名单 |
 | `httpCompressEnabled` | `true` | HTTP 响应压缩总开关（Brotli/gzip 自适应协商，合并自 dsh-gzip） |
-| `httpCompressLevel` | `1` | 压缩级别 1..9，仅作用于 gzip 回退路径（1 对静态文本性价比最高；客户端 Accept-Encoding 含 br 时由 compression 库以固定质量 4 输出 Brotli，本项不生效） |
+| `httpCompressLevel` | `1` | 压缩档位预设 0..3：`0` 默认 / `1` 低（gzip 1 / br 2，最快）· `2` 中（gzip 5 / br 5，均衡）/ `3` 高（gzip 9 / br 9，最高压缩比），对 gzip 与 Brotli **同时生效**；旧配置整数 4..9 自动迁移为 3 |
 
 GUI 设置入口：设置 → 插件 → 「局域网访问」卡片（保存即热更新）。
 

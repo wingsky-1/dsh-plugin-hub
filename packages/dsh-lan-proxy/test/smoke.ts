@@ -17,6 +17,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { gzipSync, gunzipSync } from "node:zlib";
 import { createServer, request as httpRequest } from "node:http";
+import { constants as zlibConstants } from "node:zlib";
 import { request as httpsRequest } from "node:https";
 import { connect } from "node:net";
 import { mkdtempSync, rmSync, existsSync, writeFileSync, readFileSync } from "node:fs";
@@ -30,7 +31,7 @@ import { apply, loadFileConfig, writeConfigFile, sanitizeSettings, rpcHandler, R
   hostnameAllowed, formatAuthority, rewriteHeaders, createLanProxy, isLoopbackTarget, DEFAULT_OPTIONS,
   compressWsPath, DEFAULT_WSS_COMPRESS_PATHS,
   ensureSelfSignedTls, certStillValid, toSanEntry, loadTlsFromFiles, SELF_SIGNED_KEY, SELF_SIGNED_CERT,
-  isCompressible, normalizeLevel } from "../lib/index.js";
+  isCompressible, resolveCompressionOptions } from "../lib/index.js";
 
 const UPSTREAM_PORT = 19090;
 const PROXY_PORT = 19091;
@@ -521,15 +522,24 @@ const main = async () => {
     assert.equal(isCompressible("application/zip"), false, "zip 豁免");
     assert.equal(isCompressible(undefined), false);
   });
-  check("normalizeLevel 非法回退 1 / clamp 1..9 / 截断小数", () => {
-    assert.equal(normalizeLevel(undefined), 1);
-    assert.equal(normalizeLevel("x"), 1);
-    assert.equal(normalizeLevel(NaN), 1);
-    assert.equal(normalizeLevel(0), 1);
-    assert.equal(normalizeLevel(-3), 1);
-    assert.equal(normalizeLevel(99), 9);
-    assert.equal(normalizeLevel(5), 5);
-    assert.equal(normalizeLevel(5.7), 5);
+  check("resolveCompressionOptions：四档位对 gzip 与 Brotli 双生效 / 非法按默认", () => {
+    const Q = zlibConstants.BROTLI_PARAM_QUALITY;
+    // 0/缺省/非法 → 空选项（库默认：gzip Z_DEFAULT_COMPRESSION=6 / br 质量 4）
+    for (const v of [undefined, "x", NaN, 0, -3, 4.5, 99]) {
+      assert.deepEqual(resolveCompressionOptions(v), {}, `preset=${String(v)}`);
+    }
+    // 1 低：gzip 1 / br 2
+    const low = resolveCompressionOptions(1);
+    assert.equal(low.level, 1);
+    assert.ok(Number(low.brotli.params[Q]) >= 0 && Number(low.brotli.params[Q]) <= 3);
+    // 2 中：gzip 5 / br 5
+    const mid = resolveCompressionOptions(2);
+    assert.equal(mid.level, 5);
+    assert.equal(mid.brotli.params[Q], 5);
+    // 3 高：gzip 9 / br 9
+    const high = resolveCompressionOptions(3);
+    assert.equal(high.level, 9);
+    assert.equal(high.brotli.params[Q], 9);
   });
 
   // ── 转发层 HTTP 压缩：真实 upstream × 真实 createLanProxy ─────────────────
@@ -663,22 +673,25 @@ const main = async () => {
 
   // ── sanitize / loadFileConfig 接受 httpCompress 新键 ─────────────────────
   console.log("unit: httpCompress 配置键");
-  check("sanitize 接受 httpCompressEnabled/httpCompressLevel", () => {
-    const out = sanitizeSettings({ httpCompressEnabled: false, httpCompressLevel: 5 });
-    assert.deepEqual(out, { httpCompressEnabled: false, httpCompressLevel: 5 });
+  check("sanitize 接受 httpCompressEnabled/httpCompressLevel 档位", () => {
+    const out = sanitizeSettings({ httpCompressEnabled: false, httpCompressLevel: 2 });
+    assert.deepEqual(out, { httpCompressEnabled: false, httpCompressLevel: 2 });
   });
-  check("sanitize 拒绝越界/非整数 level 整体拒绝", () => {
-    assert.equal(sanitizeSettings({ httpCompressLevel: 10 }), null);
-    assert.equal(sanitizeSettings({ httpCompressLevel: 0 }), null);
+  check("sanitize 档位越界/非整数整体拒绝；旧档位 4..9 迁移为高（3）；0=默认合法", () => {
     assert.equal(sanitizeSettings({ httpCompressLevel: 1.5 }), null);
     assert.equal(sanitizeSettings({ httpCompressLevel: "3" }), null);
+    assert.equal(sanitizeSettings({ httpCompressLevel: 10 }), null);
+    assert.deepEqual(sanitizeSettings({ httpCompressLevel: 0 }), { httpCompressLevel: 0 });
+    // 旧 0..9 档位迁移：整数 4..9 → 3（高）
+    assert.deepEqual(sanitizeSettings({ httpCompressLevel: 6 }), { httpCompressLevel: 3 });
+    assert.deepEqual(sanitizeSettings({ httpCompressLevel: 9 }), { httpCompressLevel: 3 });
   });
-  check("loadFileConfig 解析 httpCompress 键并丢弃非法值", () => {
+  check("loadFileConfig 解析档位键、旧值迁移并丢弃非法值", () => {
     const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-httpc-"));
     writeFileSync(join(dir, "config.json"), JSON.stringify({ httpCompressEnabled: false, httpCompressLevel: 6, httpCompressLevelBad: "x" }));
     const parsed = loadFileConfig(dir);
     assert.equal(parsed.httpCompressEnabled, false);
-    assert.equal(parsed.httpCompressLevel, 6);
+    assert.equal(parsed.httpCompressLevel, 3, "旧档位 6 → 高（3）");
     writeFileSync(join(dir, "config.json"), JSON.stringify({ httpCompressLevel: 12 }));
     assert.deepEqual(loadFileConfig(dir), {});
     rmSync(dir, { recursive: true, force: true });
@@ -959,7 +972,7 @@ const main = async () => {
       assert.ok(client.includes("证书文件"));
       assert.ok(client.includes("启动时打印访问地址"));
       assert.ok(client.includes("HTTP 响应压缩"), "HTTP 压缩开关已渲染");
-      assert.ok(client.includes("压缩级别"), "压缩级别输入已渲染");
+      assert.ok(client.includes("压缩档位") && client.includes("高（最高压缩比：gzip 9 / br 9）"), "压缩档位下拉框已渲染");
     });
   }
 

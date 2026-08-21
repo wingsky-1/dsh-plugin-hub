@@ -72,7 +72,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-lan-proxy
 | `wsCompressEnabled` | `true` | Whether to apply compressed bridging to WebSockets matching `wsCompressPaths` |
 | `wsCompressPaths` | `/api/events.mux, /api/events.host` | Path allowlist participating in WebSocket compression |
 | `httpCompressEnabled` | `true` | Master switch for HTTP response compression (Brotli/gzip negotiation, merged from dsh-gzip) |
-| `httpCompressLevel` | `1` | Level 1..9, applies to the gzip fallback path only (1 offers the best cost/benefit for static text; when the client's Accept-Encoding includes br, the compression middleware emits Brotli at a fixed quality of 4 and this option has no effect) |
+| `httpCompressLevel` | `1` | Compression preset 0..3: `0` default / `1` low (gzip 1 / br 2, fastest) · `2` medium (gzip 5 / br 5, balanced) / `3` high (gzip 9 / br 9, best ratio) — effective for **both** gzip and Brotli; legacy integer values 4..9 are migrated to 3 automatically |
 
 GUI settings entry: Settings → Plugins → "LAN Access" card (saved changes apply hot).
 
