@@ -31,7 +31,11 @@ import {
   isHostProviderAdapter,
   isClientProviderRenderer,
   OPENCODE_GO_PROVIDER,
+  OPENCODE_GO_ADAPTER_ID,
   openCodeGoHostAdapter,
+  defineUsageAdapter,
+  stripSensitiveKeys,
+  collectSamplePoint,
   pickWindow,
   parseUsageResponse,
   fetchOpenCodeGo,
@@ -73,62 +77,166 @@ assert.equal(ADAPTER_CONTRACT_VERSION, 1, "契约版本 = 1");
 {
   const c = normalizeConfig({
     adapters: {
-      host: [{ provider: "my-relay", file: "/abs/my-relay-host.mjs" }, { provider: "", file: "/x.js" }, "bad"],
+      host: [{ provider: "my-relay", file: "/abs/my-relay-host.mjs", enabled: false }, { provider: "", file: "/x.js" }, "bad"],
       client: [{ file: "/abs/my-relay-client.js" }, 42],
     },
     providerHint: { "my-relay": "/abs/my-relay-host.mjs", n: 5 },
     stripSecrets: false,
   });
-  assert.deepEqual(c.adapters.host, [{ provider: "my-relay", file: "/abs/my-relay-host.mjs" }], "host 适配器净化（空 provider/非对象丢弃）");
+  assert.deepEqual(c.adapters.host, [{ provider: "my-relay", file: "/abs/my-relay-host.mjs", enabled: false }], "host 适配器净化（含 enabled 字段）");
   assert.deepEqual(c.adapters.client, [{ file: "/abs/my-relay-client.js" }], "client 适配器净化");
   assert.deepEqual(c.providerHint, { "my-relay": "/abs/my-relay-host.mjs" }, "providerHint 只收字符串");
   assert.equal(c.stripSecrets, false, "stripSecrets 可关");
   assert.equal(normalizeConfig({ stripSecrets: "x" }).stripSecrets, true, "stripSecrets 非法值回退默认");
+  // enabled 缺省（undefined）→ 默认启用
+  const c2 = normalizeConfig({ adapters: { host: [{ provider: "p", file: "/x.js" }] } });
+  assert.equal(c2.adapters.host[0].enabled, undefined, "enabled 缺省 undefined（注册时默认启用）");
 }
 
 // ---------------------------------------------------------------- 契约校验
 
-assert.ok(isHostProviderAdapter(openCodeGoHostAdapter), "内置适配器通过契约校验");
-assert.ok(!isHostProviderAdapter({ version: 2, providers: ["x"], fetchUsage: () => {} }), "版本不符拒绝");
-assert.ok(!isHostProviderAdapter({ version: 1, providers: [], fetchUsage: () => {} }), "空 providers 拒绝");
-assert.ok(!isHostProviderAdapter({ version: 1, providers: ["x"] }), "缺 fetchUsage 拒绝");
+assert.ok(isHostProviderAdapter(openCodeGoHostAdapter), "内置适配器通过契约校验（含 id/label）");
+assert.equal(openCodeGoHostAdapter.id, "opencode-go-builtin", "内置适配器 id");
+assert.equal(openCodeGoHostAdapter.label, "OpenCode Go 官方", "内置适配器 label");
+assert.equal(typeof openCodeGoHostAdapter.summarize, "function", "工厂自动派生 summarize");
+assert.equal(typeof openCodeGoHostAdapter.samplePoint, "function", "工厂自动派生 samplePoint");
+assert.ok(!isHostProviderAdapter({ version: 2, id: "a", label: "A", providers: ["x"], fetchUsage: () => {} }), "版本不符拒绝");
+assert.ok(!isHostProviderAdapter({ version: 1, id: "a", label: "A", providers: [], fetchUsage: () => {} }), "空 providers 拒绝");
+assert.ok(!isHostProviderAdapter({ version: 1, id: "", label: "A", providers: ["x"], fetchUsage: () => {} }), "空 id 拒绝");
+assert.ok(!isHostProviderAdapter({ version: 1, id: "a", label: "A", providers: ["x"] }), "缺 fetchUsage 拒绝");
 assert.ok(!isHostProviderAdapter(null), "null 拒绝");
 assert.ok(isClientProviderRenderer({ version: 1, providers: ["x"], render: () => {} }), "合法渲染器通过");
 assert.ok(!isClientProviderRenderer({ version: 1, providers: ["x"] }), "缺 render 拒绝");
 
-// ---------------------------------------------------------------- 注册表
+// ---------------------------------------------------------------- 注册表（候选 + 唯一启用）
 
 {
   const diags = [];
   const reg = makeHostAdapterRegistry({ diag: (m) => diags.push(m) });
   assert.ok(reg.register(openCodeGoHostAdapter, "builtin"), "内置注册成功");
-  assert.equal(reg.get(OPENCODE_GO_PROVIDER), openCodeGoHostAdapter, "按 provider 查到内置");
+  assert.equal(reg.get(OPENCODE_GO_PROVIDER), openCodeGoHostAdapter, "按 provider 查到内置（默认启用）");
 
-  // 用户适配器覆盖内置（同 provider）
-  const userAdapter = { version: 1, providers: [OPENCODE_GO_PROVIDER], fetchUsage: async () => ({ ok: true, provider: OPENCODE_GO_PROVIDER, label: "用户版", fetchedAt: 1 }) };
+  // 用户适配器加入候选并成为当前启用者（同 provider，默认启）
+  const userAdapter = {
+    version: 1,
+    id: "my-opencode-go-v1",
+    label: "我的增强版",
+    providers: [OPENCODE_GO_PROVIDER],
+    fetchUsage: async () => ({ ok: true, provider: OPENCODE_GO_PROVIDER, label: "用户版", fetchedAt: 1 }),
+  };
   assert.ok(reg.register(userAdapter, "user-file", "/u.mjs"), "用户注册成功");
-  assert.equal(reg.get(OPENCODE_GO_PROVIDER), userAdapter, "用户覆盖内置");
+  assert.equal(reg.get(OPENCODE_GO_PROVIDER), userAdapter, "用户成为当前启用者");
+  assert.equal(reg.isEnabled(OPENCODE_GO_PROVIDER, userAdapter.id), true, "用户启用标记");
 
-  // 无 provider → no-adapter 错误态
-  const r = await reg.fetchUsage("ghost", { provider: "ghost", fetch });
-  assert.equal(r.ok, false);
-  assert.equal(r.error, "no-adapter");
+  // select 切回内置
+  assert.equal(reg.select(OPENCODE_GO_PROVIDER, OPENCODE_GO_ADAPTER_ID), true, "切回内置");
+  assert.equal(reg.get(OPENCODE_GO_PROVIDER), openCodeGoHostAdapter, "内置重新启用");
+  assert.equal(reg.select(OPENCODE_GO_PROVIDER, "not-exist"), false, "切换不存在的适配器失败");
+
+  // 显式 enabled:false 的用户适配器 → 禁用候选（不启用）
+  const disabledRelay = {
+    version: 1,
+    id: "my-relay",
+    label: "中转站",
+    providers: ["my-relay"],
+    fetchUsage: async () => ({ ok: true, provider: "my-relay", label: "R", fetchedAt: 1 }),
+  };
+  assert.ok(reg.register(disabledRelay, "user-file", "/r.mjs", false), "禁用候选注册成功");
+  assert.equal(reg.get("my-relay"), undefined, "禁用候选不作为启用者");
+  assert.equal(reg.hasCandidates("my-relay"), true, "有候选但未启用");
+  const r = await reg.fetchUsage("my-relay", { provider: "my-relay", fetch });
+  assert.equal(r.error, "no-enabled-adapter", "有候选但全禁用 → no-enabled-adapter");
+
+  // 无候选 provider → no-adapter
+  const r2 = await reg.fetchUsage("ghost", { provider: "ghost", fetch });
+  assert.equal(r2.error, "no-adapter");
 
   // adapter-crash：运行抛错被归一化
   const badReg = makeHostAdapterRegistry();
-  badReg.register({ version: 1, providers: ["boom"], fetchUsage: async () => { throw new Error("x"); } }, "builtin");
+  badReg.register({ version: 1, id: "boom", label: "B", providers: ["boom"], fetchUsage: async () => { throw new Error("x"); } }, "builtin");
   const crash = await badReg.fetchUsage("boom", { provider: "boom", fetch });
-  assert.equal(crash.ok, false);
   assert.equal(crash.error, "adapter-crash");
 
   // 契约校验失败的注册 → 告警且不注册
   const before = diags.length;
-  reg.register({ version: 1, providers: [], fetchUsage: () => {} }, "user-file", "/bad.mjs");
+  reg.register({ version: 1, id: "bad", label: "B", providers: [], fetchUsage: () => {} }, "user-file", "/bad.mjs");
   assert.ok(diags.length > before, "无效适配器告警");
-  assert.equal(reg.snapshot().infos.some((i) => i.status === "invalid"), true, "无效条目进快照（诊断）");
+  // id 重复拒绝
+  reg.register({ version: 1, id: "my-opencode-go-v1", label: "X", providers: ["ghost2"], fetchUsage: () => {} }, "user-file", "/dup.mjs");
+  assert.equal(reg.get("ghost2"), undefined, "id 重复的适配器被拒绝，不注册");
+
+  // snapshot：候选详情 + enabled 映射 + enabledProviders
+  const snap = reg.snapshot();
+  assert.equal(snap.enabledProviders.includes("opencode-go"), true, "enabledProviders 含 opencode-go（内置已启用）");
+  assert.equal(snap.enabled["opencode-go"], OPENCODE_GO_ADAPTER_ID, "enabled 映射 provider→adapterId");
+  const myRelayInfo = snap.infos.find((i) => i.id === "my-relay");
+  assert.equal(myRelayInfo.enabled, false, "禁用候选 enabled=false");
 }
 
-// ---------------------------------------------------------------- opencode-go 适配器
+// ---------------------------------------------------------------- 密钥护栏（stripSecrets 值模式 + 键名）
+
+{
+  const obj = {
+    ok: "fine",
+    token: "sk-secret-token-12345", // 键名命中 → 脱敏
+    authHeader: "Bearer sk-abcdefghijkl", // 值模式 Bearer → 脱敏
+    api_key: "abc", // 键名命中但值 <8 → 不脱敏（保留）
+    nested: { raw: "这里有一些文本，无密钥", deep: { k: "Bearer sk-1234567890abcdef" } },
+    list: [{ secret: "sk-bbbbbbbb" }],
+  };
+  stripSensitiveKeys(obj);
+  assert.equal(obj.token, "<redacted>", "键名 token 值脱敏");
+  assert.equal(obj.authHeader, "<redacted>", "值模式 Bearer 脱敏");
+  assert.equal(obj.api_key, "abc", "键名命中但短值保留");
+  assert.equal(obj.nested.deep.k, "<redacted>", "嵌套值 Bearer 脱敏");
+  assert.equal(obj.list[0].secret, "<redacted>", "数组内键名脱敏");
+  assert.equal(obj.nested.raw, "这里有一些文本，无密钥", "普通文本不动");
+}
+
+// ---------------------------------------------------------------- samplePoint（数据格式放开）
+
+{
+  // 无 samplePoint 但含 windows → 回落通用提取
+  const adapter = { id: "a", label: "A", providers: ["x"], fetchUsage: async () => ({ ok: true, provider: "x", label: "A", fetchedAt: 1 }) };
+  const usage = { ok: true, provider: "x", label: "A", fetchedAt: 1, windows: [{ key: "rolling", name: "5h", percent: 3 }, { key: "monthly", name: "月", percent: 0 }] };
+  const sp = collectSamplePoint(adapter, usage);
+  assert.deepEqual(sp.values, [3, 0], "回落从 windows 提取 percent 列");
+  assert.deepEqual(sp.cols.map((c) => c.key), ["rolling", "monthly"], "回落列声明 = windows key");
+
+  // 自定义 samplePoint（自定义格式）
+  const custom = {
+    id: "c", label: "C", providers: ["y"],
+    fetchUsage: async () => ({ ok: true, provider: "y", label: "C", fetchedAt: 1 }),
+    samplePoint: (u) => ({ cols: [{ key: "credit", name: "余额" }], values: [u.data.credit] }),
+  };
+  const customSp = collectSamplePoint(custom, { ok: true, provider: "y", label: "C", fetchedAt: 1, data: { credit: 42 } });
+  assert.deepEqual(customSp, { cols: [{ key: "credit", name: "余额" }], values: [42] }, "自定义 samplePoint 优先");
+
+  // 两者都没有 → 不采样
+  const plain = { id: "p", label: "P", providers: ["y"], fetchUsage: async () => ({ ok: true, provider: "y", label: "P", fetchedAt: 1 }) };
+  const none = collectSamplePoint(plain, { ok: true, provider: "y", label: "P", fetchedAt: 1, data: { a: 1 } });
+  assert.equal(none, null, "无 samplePoint 且无 windows → 不采样");
+}
+
+// ---------------------------------------------------------------- defineUsageAdapter 工厂
+
+{
+  const made = defineUsageAdapter({
+    id: "relay",
+    label: "中转站",
+    providers: ["relay"],
+    windows: [{ key: "credit", name: "额度", limit: 100, resetPeriodMs: 86400000 }],
+    fetchUsage: async () => ({ ok: true, provider: "relay", label: "中转站", fetchedAt: 1, windows: [{ key: "credit", name: "额度", percent: 30, limit: 100 }] }),
+  });
+  assert.equal(made.id, "relay");
+  assert.equal(made.version, 1, "工厂默认契约版本");
+  const sample = made.samplePoint({ ok: true, provider: "relay", label: "中转站", fetchedAt: 1, windows: [{ key: "credit", name: "额度", percent: 30, limit: 100 }] });
+  assert.deepEqual(sample.values, [30], "工厂派生 samplePoint");
+  const sum = await made.summarize({ provider: "relay", fetch, usage: { ok: true, provider: "relay", label: "中转站", fetchedAt: 1, windows: [{ key: "credit", name: "额度", percent: 30 }] } });
+  assert.equal(sum.hasAdapter, true);
+  assert.equal(typeof sum.text, "string");
+}
+
 
 assert.deepEqual(pickWindow({ status: "ok", percent: 9, resetsAt: "2026-08-15T00:00:00Z" }, "rolling", "5h 滚动", 12), { key: "rolling", name: "5h 滚动", percent: 9, resetsAt: "2026-08-15T00:00:00Z", limit: 12, raw: undefined });
 assert.deepEqual(pickWindow({ percent: "12" }, "r", "R", 1).percent, 12, "字符串 percent 转数字");

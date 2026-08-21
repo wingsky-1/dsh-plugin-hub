@@ -28,7 +28,7 @@ import {
   DEFAULT_BASE_URL,
   OPENCODE_GO_WINDOWS,
 } from "./adapters/opencode-go.js";
-import type { ProviderUsage, UsageWindow, FetchLike } from "./contracts.js";
+import type { ProviderUsage, UsageWindow, FetchLike, HostProviderAdapter, SamplePointData } from "./contracts.js";
 import { resolvePath } from "./path-resolve.js";
 
 // ------------------------------------------------------------------ 对外 re-export
@@ -52,7 +52,7 @@ export interface NormalizedConfig {
   sampleIntervalMs: number;
   persistFile?: string;
   adapters: {
-    host: Array<{ provider: string; file: string }>;
+    host: Array<{ provider: string; file: string; enabled?: boolean }>;
     client: Array<{ file: string }>;
   };
   providerHint: Record<string, string>;
@@ -151,7 +151,7 @@ export function normalizeConfig(input: unknown): NormalizedConfig {
       if (Number.isFinite(lim) && (lim as number) > 0) base.limits[key] = lim as number;
     }
   }
-  // 适配器配置（M2 完整实现，M1 为占位解析）
+  // 适配器配置（M2 完整实现 + R1 候选/enabled）
   if (typeof cfg.adapters === "object" && cfg.adapters !== null) {
     const ad = cfg.adapters as Record<string, unknown>;
     if (Array.isArray(ad.host)) {
@@ -160,6 +160,7 @@ export function normalizeConfig(input: unknown): NormalizedConfig {
         .map((h) => ({
           provider: String(h.provider ?? ""),
           file: String(h.file ?? ""),
+          ...(typeof h.enabled === "boolean" ? { enabled: h.enabled as boolean } : {}),
         }))
         .filter((h) => h.provider.length > 0 && h.file.length > 0);
     }
@@ -432,8 +433,30 @@ export async function readHistoryFile(file: string): Promise<string | undefined>
 
 // ------------------------------------------------------------------ 密钥护栏（stripSecrets，默认开）
 
-/** 递归扫描疑似密钥字段并剔除（键名含 secret/token/key/apikey 且值字符串长度 ≥ 8）。 */
-function stripSensitiveKeys(obj: unknown): void {
+/** 疑似密钥值模式（R1 值匹配，与键名扫描互补）。命中即整值脱敏。 */
+const SECRET_VALUE_PATTERNS: RegExp[] = [
+  /Bearer\s+\S+/u, // Authorization 头回显
+  /\bsk-[A-Za-z0-9_-]{8,}\b/u, // OpenAI 风格 key
+  /\bapi[_-]?key\s*[:=]\s*\S+/u, // api_key: xxx
+  /\b[0-9a-fA-F]{40,}\b/u, // 40+ hex（疑似 token）
+  /\b[0-9a-fA-F]{64}\b/u, // 64 hex（sha/token）
+];
+
+/** 单个字符串值是否命中疑似密钥模式。 */
+function isSecretValue(s: string): boolean {
+  for (const re of SECRET_VALUE_PATTERNS) {
+    if (re.test(s)) return true;
+  }
+  return false;
+}
+
+/**
+ * 递归扫描并脱敏疑似密钥（R1 扩展：键名 + 值模式双重）。
+ * - 键名含 secret/token/key/apikey 且值为字符串（长度 ≥ 8）→ 脱敏；
+ * - 任意字符串值命中 SECRET_VALUE_PATTERNS → 脱敏。
+ * 就地修改传入对象。
+ */
+export function stripSensitiveKeys(obj: unknown): void {
   if (typeof obj !== "object" || obj === null) return;
   if (Array.isArray(obj)) {
     for (const item of obj) stripSensitiveKeys(item);
@@ -442,13 +465,42 @@ function stripSensitiveKeys(obj: unknown): void {
   const rec = obj as Record<string, unknown>;
   for (const key of Object.keys(rec)) {
     const val = rec[key];
-    if (typeof val === "string" && val.length >= 8 && /secret|token|key|apikey/ui.test(key)) {
-      rec[key] = "<redacted>";
-      continue;
+    if (typeof val === "string") {
+      if ((val.length >= 8 && /secret|token|key|apikey/ui.test(key)) || isSecretValue(val)) {
+        rec[key] = "<redacted>";
+        continue;
+      }
     }
     stripSensitiveKeys(val);
   }
 }
+
+/**
+ * 收集采样点（R1：数据格式放开）。
+ * - 适配器实现 `samplePoint` → 用其结构化返回值（列声明 + 数值）；
+ * - 无 `samplePoint` 但含 `windows` → 回落通用提取（各列 percent）；
+ * - 两者都没有 → 不采样（该 provider 无历史图），返回 null。
+ */
+export function collectSamplePoint(adapter: HostProviderAdapter | undefined, usage: ProviderUsage): SamplePointData | null {
+  if (adapter !== undefined && typeof adapter.samplePoint === "function") {
+    try {
+      return adapter.samplePoint(usage);
+    } catch {
+      // samplePoint 抛错 → 回落 windows / 不采样，不阻断
+    }
+  }
+  if (!Array.isArray(usage.windows) || usage.windows.length === 0) return null;
+  return {
+    cols: usage.windows.map((w) => ({
+      key: w.key,
+      name: w.name,
+      ...(w.limit !== undefined ? { limit: w.limit } : {}),
+      ...(w.resetPeriodMs !== undefined ? { resetPeriodMs: w.resetPeriodMs } : {}),
+    })),
+    values: usage.windows.map((w) => (typeof w.percent === "number" && Number.isFinite(w.percent) ? w.percent : null)),
+  };
+}
+
 
 // ------------------------------------------------------------------ 插件入口
 
@@ -476,7 +528,7 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
       const url = pathToFileURL(file).href;
       const mod = await import(url);
       const adapter = (mod as Record<string, unknown>).default ?? mod;
-      registry.register(adapter, "user-file", file);
+      registry.register(adapter, "user-file", file, entry.enabled);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       console.warn(`[dsh-opencode-usage] 用户宿主适配器加载失败 ${entry.file}: ${msg}`);
@@ -537,11 +589,12 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
 
     const promise = (async (): Promise<StatsResult> => {
       try {
-        // 查适配器
-        const adapter = registry.get(provider);
-        if (adapter === undefined) {
+        // 查当前启用适配器
+        const entry = registry.getEntry(provider);
+        if (entry === undefined) {
+          const code = registry.hasCandidates(provider) ? "no-enabled-adapter" : "no-adapter";
           const result: StatsResult = {
-            ok: true, configured: false, reason: "no-adapter", error: null,
+            ok: true, configured: false, reason: code, error: null,
             usage: null, fetchedAt: Date.now(), provider, label: provider, cached: false,
           };
           lastStatus = { at: result.fetchedAt, error: null, configured: false };
@@ -578,12 +631,14 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
           cached: false,
         };
 
-        // 采样挂点：只有权威 fetch 成功才累积历史（失败不污染波浪图）
-        if (usage.ok && usage.windows && usage.windows.length > 0) {
-          const cols = usage.windows.map((w) => w.percent);
-          store.append(result.provider, [result.fetchedAt, ...cols]);
+        // 采样挂点（R1：优先适配器 samplePoint 结构化列，回落 windows；都在则跳过）
+        const sample = collectSamplePoint(entry.adapter, usage);
+        if (sample !== null) {
+          store.append(result.provider, [result.fetchedAt, ...sample.values]);
           store.trimAll();
           schedulePersist();
+        }
+        if (usage.ok) {
           cache.set(provider, result);
         }
 
@@ -622,19 +677,17 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
     },
   };
 
-  // 后台采样定时器：采样所有已注册 provider（保持历史连续）
+  // 后台采样定时器：采样所有**已启用**适配器的 provider（D10，保持历史连续）
   let backgroundTimer: ReturnType<typeof setInterval> | null = null;
   if (current.sampleIntervalMs > 0) {
     backgroundTimer = setInterval(() => {
-      const snap = registry.snapshot();
-      for (const provider of snap.providers) {
+      for (const provider of registry.enabledProviders()) {
         void collectStats(provider);
       }
     }, current.sampleIntervalMs);
     (backgroundTimer as { unref?: () => void }).unref?.();
-    // 启动时立即补一次所有 provider
-    const snap = registry.snapshot();
-    for (const provider of snap.providers) {
+    // 启动时立即补一次所有启用 provider
+    for (const provider of registry.enabledProviders()) {
       void collectStats(provider);
     }
   }

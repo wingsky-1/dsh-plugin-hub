@@ -1,9 +1,10 @@
 /**
- * dsh-opencode-usage — 内置 OpenCode Go 宿主适配器（M1 迁移）。
+ * dsh-opencode-usage — 内置 OpenCode Go 宿主适配器（M1 迁移 + R1 升级）。
  *
- * 把现有「loadApiKey + fetchUsage + parseUsageResponse」逻辑迁移为契约化宿主
- * 适配器：providers: ["opencode-go"]，fetchUsage 产出归一化 ProviderUsage
- * （windows: [rolling, weekly, monthly]）。
+ * 把「loadApiKey + fetchUsage + parseUsageResponse」逻辑迁移为契约化宿主适配器，
+ * 经 `defineUsageAdapter` 工厂构造（R1：自动派生 summarize 胶囊文案 +
+ * samplePoint 历史采样列），id = "opencode-go-builtin"（设置面板候选展示、历史
+ * 割接目标桶）。
  *
  * 行为保持：TTL 缓存、同分钟去重采样、落盘等**编排层**逻辑保留在插件主体
  * （src/index.ts），适配器只做「取一份归一化数据」，不搬编排。
@@ -15,10 +16,13 @@ import type {
   ProviderUsage,
   UsageWindow,
 } from "../contracts.js";
-import { ADAPTER_CONTRACT_VERSION, usageError, usageOk } from "../contracts.js";
+import { defineUsageAdapter, usageError, usageOk, summarizeTextFromWindows } from "../contracts.js";
 
 /** 内置适配器的 provider 名（如 "opencode-go"）。 */
 export const OPENCODE_GO_PROVIDER = "opencode-go";
+
+/** 内置适配器 id（设置面板候选名，历史割接目标桶）。 */
+export const OPENCODE_GO_ADAPTER_ID = "opencode-go-builtin";
 
 /** 官方用量接口默认地址（OpenCode Go，Anthropic 兼容 key）。 */
 export const DEFAULT_BASE_URL = "https://opencode.ai/zen/go/v1/usage";
@@ -34,6 +38,9 @@ export const OPENCODE_GO_WINDOWS: Array<{
   { key: "weekly", name: "每周", limit: 30, resetPeriodMs: 7 * 86400000 },
   { key: "monthly", name: "每月", limit: 60, resetPeriodMs: 30 * 86400000 },
 ];
+
+/** 默认启用状态（内置默认启，除非配置显式 enabled:false）。 */
+export const OPENCODE_GO_DEFAULT_ENABLED = true;
 
 /** 防御式窗口解析：任意输入 → { key, name, percent, raw?, resetsAt?, limit? }。 */
 export function pickWindow(w: unknown, key: string, name: string, limit: number): UsageWindow | null {
@@ -125,10 +132,18 @@ export async function fetchOpenCodeGo({
   return { ok: true, windows };
 }
 
-/** OpenCode Go 内置宿主适配器（注册表加载顺序：内置先注册，用户可覆盖）。 */
-export const openCodeGoHostAdapter: HostProviderAdapter = {
-  version: ADAPTER_CONTRACT_VERSION,
+/** 内置 OpenCode Go 宿主适配器（R1：defineUsageAdapter 工厂 + id/label + 自动 summarize/samplePoint）。 */
+export const openCodeGoHostAdapter: HostProviderAdapter = defineUsageAdapter({
+  id: OPENCODE_GO_ADAPTER_ID,
+  label: "OpenCode Go 官方",
   providers: [OPENCODE_GO_PROVIDER],
+  windows: OPENCODE_GO_WINDOWS,
+  // 保持旧胶囊文案形态（"5h 3% · 周 1% · 月 0%"），工厂缺省用窗口名，内置重申短名
+  summarizeText: (windows) =>
+    summarizeTextFromWindows(windows)
+      .replace(/5h 滚动/g, "5h")
+      .replace(/每周/g, "周")
+      .replace(/每月/g, "月"),
   async fetchUsage(ctx: HostFetchContext): Promise<ProviderUsage> {
     const fetched = await fetchOpenCodeGo({
       baseUrl: ctx.baseUrl ?? DEFAULT_BASE_URL,
@@ -142,4 +157,4 @@ export const openCodeGoHostAdapter: HostProviderAdapter = {
     }
     return usageOk(OPENCODE_GO_PROVIDER, "OpenCode Go", fetchedAt, { windows: fetched.windows });
   },
-};
+});
