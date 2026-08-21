@@ -23,11 +23,9 @@ import { homedir, networkInterfaces } from "node:os";
 import { join } from "node:path";
 import { mkdirSync, readFileSync, renameSync, watch, writeFileSync } from "node:fs";
 import z from "schemastery";
-import { createLanProxy, DEFAULT_OPTIONS, isLoopbackTarget } from "./proxy.js";
-import type { TlsMaterials } from "./proxy.js";
+import { createLanProxy, DEFAULT_OPTIONS, isLoopbackTarget, normalizeLevel } from "./proxy.js";
+import type { TlsMaterials, LanProxy } from "./proxy.js";
 import { ensureSelfSignedTls, loadTlsFromFiles } from "./cert.js";
-import { installWrappers, normalizeLevel } from "./compress.js";
-import type { CompressStats, CompressHandlers } from "./compress.js";
 import { isLoopbackRequest } from "../../../shared/loopback.js";
 import { writeJson } from "../../../shared/host-utils.js";
 import { installSettingsNamespace } from "../../../shared/settings-namespace.js";
@@ -329,6 +327,10 @@ export function apply(ctx: PluginContext, config: LanProxyConfig = {}): void {
   /** 配置实时来源：GUI 设置注册后优先，否则为组合层 entry + 插件配置文件。 */
   let current: () => LanProxyConfig = () => ({ ...config, ...fileConfig });
   let disposeProxy: (() => void) | undefined;
+  /** 合并版压缩标记路由的 disposer（随压缩开关在 sync() 内挂撤）。 */
+  let disposeMarker: (() => void) | undefined;
+  /** 当前存活转发器（health 读取压缩协商计数用）。 */
+  let activeProxy: LanProxy | undefined;
   let disposed = false;
   /** 上一次打印的横幅（防刷屏：监听结果没变化不重复打印）。 */
   let lastBanner = "";
@@ -388,13 +390,37 @@ export function apply(ctx: PluginContext, config: LanProxyConfig = {}): void {
       disposeProxy = undefined;
     }
     const value = resolve();
-    if (!value.enabled) return;
+    // HTTP 响应压缩开关（整插件关闭时标记路由一并撤下——与启动态
+    // 「enabled=false 不注册任何东西」语义一致）。
+    const httpCompressEnabled = value.enabled !== false && value.httpCompressEnabled !== false;
+    // 合并版标记路由（exact，loopback 围栏）：dsh-gzip v0.1.10+ 据此跳过自身
+    // 安装。仅压缩启用时存在——关闭压缩即撤下，gzip 兼容版会恢复接管。
+    // 纯随配置状态挂撤，不依赖转发器端口解析结果。
+    if (httpCompressEnabled && disposeMarker === undefined) {
+      disposeMarker = ctx.webServer.register({
+        kind: "exact",
+        path: ROUTES.compression,
+        handler(req, res) {
+          if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
+          if (req.method !== "GET") return writeJson(res, 405, { error: "method not allowed: " + req.method });
+          writeJson(res, 200, { merged: true, plugin: "dsh-lan-proxy" });
+        },
+      });
+    } else if (!httpCompressEnabled && disposeMarker !== undefined) {
+      disposeMarker();
+      disposeMarker = undefined;
+    }
+    if (!value.enabled) {
+      return;
+    }
     const targetPort = value.targetPort ?? ctx.webServer.port;
     if (targetPort === undefined) {
       ctx.logger.error("lan-proxy: webServer has no bound port yet — cannot start");
       return;
     }
     const tls = value.httpsEnabled === false ? undefined : prepareTls(value);
+    // HTTP 响应压缩随转发器整体重建：配置热更新（GUI 保存 / config.json watch）
+    // 走同一条 sync() 路径，无需独立拆装生命周期。
     const proxy = createLanProxy(
       {
         host: value.host,
@@ -407,9 +433,14 @@ export function apply(ctx: PluginContext, config: LanProxyConfig = {}): void {
           enabled: value.wsCompressEnabled !== false,
           paths: value.wsCompressPaths ?? DEFAULT_WSS_COMPRESS_PATHS,
         },
+        httpCompress: {
+          enabled: httpCompressEnabled,
+          level: normalizeLevel(value.httpCompressLevel),
+        },
       },
       ctx.logger,
     );
+    activeProxy = proxy;
     proxy
       .listen()
       .then(({ httpPort, httpsPort }) => {
@@ -456,67 +487,13 @@ export function apply(ctx: PluginContext, config: LanProxyConfig = {}): void {
     if (syncTimer !== undefined) clearTimeout(syncTimer);
     syncTimer = setTimeout(() => {
       syncTimer = undefined;
+      // 压缩随转发器在 sync() 内一并重建（含标记路由挂撤）。
       sync();
-      // HTTP 压缩层随配置热更新重建（幂等：先拆旧再装新；失败仅降级）。
-      syncCompress();
     }, 3000);
   };
 
   // 转发器立即启动（不依赖任何异步解析）。
   sync();
-
-  // ---- HTTP 响应 gzip 压缩（合并自 dsh-gzip）----
-  // 应用层安装（patch webServer handler），与转发器独立；压缩故障只降级不阻断。
-  const compressStats: CompressStats = { compressed: 0, passthrough: 0 };
-  let compressDisposers: Array<() => void> = [];
-  let compressHandlers: CompressHandlers | null = null;
-  let compressMounted = false;
-
-  /** 按当前配置重建压缩层：先拆旧再建新；关闭时完全卸载并撤下标记路由。 */
-  const syncCompress = () => {
-    for (const dispose of compressDisposers) {
-      try {
-        dispose();
-      } catch {
-        // 卸载失败不掩盖其他清理。
-      }
-    }
-    compressDisposers = [];
-    compressHandlers = null;
-    compressMounted = false;
-    const value = resolve();
-    // 整插件热关闭（enabled=false）时压缩层与标记路由一并卸载——与启动态
-    // 「enabled=false 不注册任何东西」语义一致，避免转发器已停而压缩残留。
-    if (value.enabled === false || value.httpCompressEnabled === false) {
-      ctx.logger.info("lan-proxy: http compression disabled");
-      return;
-    }
-    try {
-      const { disposers, handlers } = installWrappers(ctx.webServer, compressStats, normalizeLevel(value.httpCompressLevel));
-      // 合并版标记路由（exact，loopback 围栏）：dsh-gzip v0.1.10+ 据此跳过自身
-      // 安装。仅压缩启用时存在——关闭压缩即撤下，gzip 兼容版会恢复接管。
-      const markerDisposer = ctx.webServer.register({
-        kind: "exact",
-        path: ROUTES.compression,
-        handler(req, res) {
-          if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
-          if (req.method !== "GET") return writeJson(res, 405, { error: "method not allowed: " + req.method });
-          writeJson(res, 200, { merged: true, plugin: "dsh-lan-proxy" });
-        },
-      });
-      compressDisposers = [...disposers, markerDisposer];
-      compressHandlers = handlers;
-      compressMounted = true;
-      ctx.logger.info(
-        `lan-proxy: http compression enabled (level ${normalizeLevel(value.httpCompressLevel)},`
-        + ` api=${handlers.api}, plugins=${handlers.plugins}, fallback=${handlers.fallback})`,
-      );
-    } catch (err) {
-      compressMounted = false;
-      ctx.logger.warn(`lan-proxy: http compression install failed (${(err as Error).message}) — 压缩未启用，转发不受影响`);
-    }
-  };
-  syncCompress();
 
   // 局域网 HTTP 非安全上下文的 crypto.randomUUID polyfill：浏览器只在安全
   // 上下文（HTTPS/localhost）暴露该 API，LAN 明文 HTTP 下缺失会导致 dsh
@@ -586,9 +563,8 @@ export function apply(ctx: PluginContext, config: LanProxyConfig = {}): void {
       if (JSON.stringify(next) === JSON.stringify(fileConfig)) return;
       fileConfig = next;
       ctx.logger.info("lan-proxy: config.json changed — reloading");
+      // 压缩随转发器在 sync() 内一并重建（幂等）。
       sync();
-      // HTTP 压缩层随 config.json 热更新重建（幂等）。
-      syncCompress();
     }, 150);
   };
   const configWatcher = watch(configDir, (_event, filename) => {
@@ -642,12 +618,11 @@ export function apply(ctx: PluginContext, config: LanProxyConfig = {}): void {
         wsCompressPaths: v.wsCompressPaths,
         // 诊断：持久化层实际读到的值 + 插件目录（判断是否读错 config）
         fileWsCompressEnabled: fileConfig.wsCompressEnabled,
-        // —— HTTP 响应压缩（合并自 dsh-gzip）：配置 + 挂点状态 + 计数 ——
+        // —— HTTP 响应压缩（转发层 compression 中间件）：配置 + 生效状态 + 协商计数 ——
         httpCompressEnabled: v.httpCompressEnabled,
         httpCompressLevel: v.httpCompressLevel,
-        httpCompressMounted: compressMounted,
-        httpCompressHandlers: compressHandlers,
-        httpCompressStats: compressStats,
+        httpCompressMounted: v.enabled !== false && v.httpCompressEnabled !== false && disposeProxy !== undefined,
+        httpCompressStats: activeProxy?.httpCompressStats() ?? { compressed: 0, passthrough: 0 },
         configDir,
       });
     },
@@ -667,20 +642,14 @@ export function apply(ctx: PluginContext, config: LanProxyConfig = {}): void {
       disposeProxy();
       disposeProxy = undefined;
     }
-    // 释放压缩层（替换的 handler / patch 的 register / 标记路由）。
-    for (const dispose of compressDisposers) {
-      try {
-        dispose();
-      } catch {
-        // 卸载失败不掩盖其他清理。
-      }
+    // 撤下压缩标记路由（压缩随转发器重建，无独立资源需释放）。
+    if (disposeMarker) {
+      disposeMarker();
+      disposeMarker = undefined;
     }
-    compressDisposers = [];
   }, "lan-proxy: lifecycle");
 }
 
 // 测试面 re-export（smoke 只依赖主入口，避免发布物保留内部模块）
-export { createLanProxy, hostnameAllowed, formatAuthority, rewriteHeaders, isLoopbackTarget, DEFAULT_OPTIONS, compressWsPath } from "./proxy.js";
+export { createLanProxy, hostnameAllowed, formatAuthority, rewriteHeaders, isLoopbackTarget, DEFAULT_OPTIONS, compressWsPath, isCompressible, normalizeLevel } from "./proxy.js";
 export { ensureSelfSignedTls, certStillValid, toSanEntry, loadTlsFromFiles, SELF_SIGNED_KEY, SELF_SIGNED_CERT } from "./cert.js";
-export { acceptsGzip, isCompressible, joinVary, normalizeLevel, wrapResponse, installWrappers } from "./compress.js";
-export type { CompressStats, CompressMount, CompressHandlers } from "./compress.js";

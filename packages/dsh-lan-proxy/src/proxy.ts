@@ -28,6 +28,13 @@ import type { Server as HttpsServer } from "node:https";
 import { connect, isIP } from "node:net";
 import type { Socket, AddressInfo } from "node:net";
 import { WebSocket as WsClient, WebSocketServer } from "ws";
+// 成熟开源压缩中间件（Express 生态事实标准）：协商 / Vary / Content-Length 删除 /
+// 背压 / 204·304·Range 豁免全部由库承担，构建期经 esbuild 内联（零运行时依赖）。
+import compression from "compression";
+
+/** HTTP 响应压缩中间件请求对象最小面（compression 的 req 参数仅读 method/httpVersion 等）。 */
+type CompressReq = IncomingMessage;
+type CompressRes = ServerResponse;
 
 /** createLanProxy 的日志器最小面（console 或 ctx.logger 均兼容）。 */
 export interface LanLogger {
@@ -62,6 +69,17 @@ export interface LanProxyOptions {
     enabled: boolean;
     paths: readonly string[];
   };
+  /**
+   * HTTP 响应 gzip 压缩（合并自 dsh-gzip，经 compression 中间件在转发层实现）：
+   * 对可压缩响应（JSON / 文本；SSE 豁免）按 Accept-Encoding 协商 gzip。
+   * 启用后 dsh-gzip 独立包（宿主端压缩）与本层经 content-encoding 检查天然互斥，
+   * 任意组合只压一次。回环直连 web（不经本转发器）不经过此层。
+   */
+  httpCompress?: {
+    enabled: boolean;
+    /** gzip 级别 1..9（调用方负责归一化；此处再 clamp 兜底）。 */
+    level: number;
+  };
   logger?: LanLogger;
 }
 
@@ -79,6 +97,33 @@ export interface LanProxy {
   listen(): Promise<LanListenResult>;
   close(): Promise<void>;
   targetAuthority: string;
+  /** HTTP 响应压缩协商计数（未启用压缩时恒为 0）。 */
+  httpCompressStats(): { compressed: number; passthrough: number };
+}
+
+/**
+ * 判断 content-type 是否可压缩：JSON/JSON 系/文本（SSE 除外）。
+ * 自 dsh-gzip 迁移的纯函数，作为 compression 中间件的自定义 filter——
+ * 库默认 filter 会放行 text/event-stream，这里保持 dsh-gzip 的 SSE 豁免语义。
+ * @param contentType 响应 content-type。
+ * @returns 是否可压缩。
+ */
+export function isCompressible(contentType: unknown): boolean {
+  const type = String(contentType).split(";", 1)[0].trim().toLowerCase();
+  return type.startsWith("application/json")
+    || type.endsWith("+json")
+    || (type.startsWith("text/") && type !== "text/event-stream");
+}
+
+/**
+ * 归一化 gzip level：非有限数回退 1；clamp 到 1..9。
+ * @param value 配置里的 level（可能为 string / NaN / 越界）。
+ * @returns 有效压缩级别。
+ */
+export function normalizeLevel(value: unknown): number {
+  const level = Number(value);
+  if (!Number.isFinite(level)) return 1;
+  return Math.min(9, Math.max(1, Math.trunc(level)));
 }
 
 /**
@@ -244,6 +289,32 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
   const targetAuthority = formatAuthority(targetHost, targetPort);
   /** 上游连接的 keep-alive 连接池；close() 时销毁。 */
   const agent = new Agent({ keepAlive: true, maxSockets: MAX_UPSTREAM_SOCKETS });
+
+  // ---- HTTP 响应压缩（compression 中间件，转发层实现）----
+  // filter 复用 dsh-gzip 的 isCompressible 语义（SSE 豁免）；计数为「协商计数」：
+  // filter 放行 ≠ 最终一定压缩（库还会按阈值/状态码二次判定），诊断口径见 README。
+  const compressStats = { compressed: 0, passthrough: 0 };
+  let compressMiddleware: ((req: IncomingMessage, res: ServerResponse, next: () => void) => void) | undefined;
+  if (options.httpCompress?.enabled) {
+    // @types/compression 的中间件签名用 express Request/Response 泛型；本处只传
+    // node:http 原生对象（compression 运行时仅使用其上存在的字段），做一次收窄。
+    const middleware = compression({
+      level: normalizeLevel(options.httpCompress.level),
+      threshold: 1024,
+      filter: (_req, res) => {
+        const ok = isCompressible(res.getHeader("content-type"));
+        if (ok) compressStats.compressed += 1;
+        else compressStats.passthrough += 1;
+        return ok;
+      },
+    }) as unknown as (req: IncomingMessage, res: ServerResponse, next: () => void) => void;
+    compressMiddleware = middleware;
+  }
+  /** 压缩启用时包一层中间件，否则原样透传（零开销路径）。 */
+  const withCompress = (handler: (req: IncomingMessage, res: ServerResponse) => void) =>
+    compressMiddleware
+      ? (req: IncomingMessage, res: ServerResponse) => compressMiddleware!(req, res, () => handler(req, res))
+      : handler;
   /**
    * 本服务器接受过的全部 socket（含 WebSocket 升级后的 socket）。Node 的
    * closeAllConnections() 只管普通连接，升级 socket 需要显式销毁，
@@ -341,14 +412,14 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
     upstream.on("close", () => socket.destroy());
   };
 
-  const server = createServer(handleRequest);
+  const server = createServer(withCompress(handleRequest));
   server.on("upgrade", handleUpgrade);
   server.on("connection", trackSocket);
 
   /** HTTPS 监听器（仅当同时提供 httpsPort 与 tls 时创建）。 */
   let httpsServer: HttpsServer | undefined;
   if (options.httpsPort !== undefined && options.tls !== undefined) {
-    httpsServer = createHttpsServer({ key: options.tls.key, cert: options.tls.cert }, handleRequest);
+    httpsServer = createHttpsServer({ key: options.tls.key, cert: options.tls.cert }, withCompress(handleRequest));
     httpsServer.on("upgrade", handleUpgrade);
     httpsServer.on("connection", trackSocket);
   }
@@ -401,5 +472,12 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
       agent.destroy();
     });
 
-  return { server, httpsServer, listen, close, targetAuthority };
+  return {
+    server,
+    httpsServer,
+    listen,
+    close,
+    targetAuthority,
+    httpCompressStats: () => ({ ...compressStats }),
+  };
 }

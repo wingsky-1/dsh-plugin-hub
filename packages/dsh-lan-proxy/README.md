@@ -84,25 +84,31 @@ GUI 设置入口：设置 → 插件 → 「局域网访问」卡片（保存即
 
 ## HTTP 响应压缩（gzip，合并自 dsh-gzip）
 
-- v0.1.10 起，[dsh-gzip](../dsh-gzip) 的 HTTP 响应 gzip 压缩能力已合并进本插件：
-  对 `/api`（RPC）、`/plugins`（客户端 bundle）与静态资源/index.html 等
-  可压缩响应（JSON / 文本）自动协商 gzip；SSE（text/event-stream）、zip 导出、
-  已编码响应、HEAD、带 Range 的请求原样透传。
+- v0.1.10 起，[dsh-gzip](../dsh-gzip) 的 HTTP 响应 gzip 压缩能力已合并进本插件，
+  在**转发层**实现（成熟开源库 [compression](https://www.npmjs.com/package/compression)
+  中间件，构建期内联、保持零运行时依赖）：经本插件访问时，对 `/api`（RPC）、
+  `/plugins`（客户端 bundle）与静态资源/index.html 等可压缩响应（JSON / 文本）
+  自动协商 gzip；SSE（text/event-stream）、zip 导出、已编码响应、HEAD、
+  带 Range 的请求、小于 1KB 的响应原样透传。
 - 收益：会话历史等大 JSON 响应（4~13MB 未压缩）经远程/慢链路访问时常触发
-  浏览器 RPC 30s 超时「历史加载失败」；gzip 后约 ~1.2MB，实测由 ~36s 降到 ~3s。
-- 安装在应用层（webServer handler），与转发核心独立：压缩安装失败仅 warn
-  降级为不压缩，**转发不受影响**；`httpCompressEnabled: false` 一键关闭。
-- **从 dsh-gzip 迁移**：升级本插件后请卸载独立 gzip 包，避免双装：
+  浏览器 RPC 30s 超时「历史加载失败」；gzip 后约 ~1.2MB，隔离环境实测由
+  ~36s 降到 ~3s。
+- 实现位置在转发器自己的监听链上，不修改 dsh web 与任何其他插件的运行时行为；
+  `httpCompressEnabled: false` 一键关闭。注意：直连回环 web（本机浏览器访问
+  `127.0.0.1:3080`，不经本插件）的流量不在压缩面内——回环链路无需压缩。
+- **从 dsh-gzip 迁移**：先升级本插件并确认合并版已生效，再卸载独立 gzip 包：
 
   ```sh
-  dsh plugin --profile web update @wingsky-1/dsh-lan-proxy
+  dsh plugin --profile web update @wingsky-1/dsh-lan-proxy    # 需 >= 0.1.10
+  curl -s http://127.0.0.1:3081/api/dsh-lan-proxy/compression  # 回环校验：返回 {"merged":true} 再继续
   dsh plugin --profile web remove @wingsky-1/dsh-gzip
   # 重启 dsh web 生效
   ```
 
 - dsh-gzip v0.1.10+ 会自动检测本插件的合并标记路由
   （`/api/dsh-lan-proxy/compression`）并跳过自身安装（warn 提示卸载）；
-  更早版本与本插件双装时因幂等标记与 content-encoding 检查也只会压缩一次。
+  更早版本或任何宿主端压缩实现与本插件并存时，因 content-encoding 检查
+  也只会压缩一次（已实测任意装配顺序均单层）。
 
 ## HTTPS 支持
 
@@ -122,11 +128,15 @@ GUI 设置入口：设置 → 插件 → 「局域网访问」卡片（保存即
   可信，或禁用该插件
 - **私钥权限**：自动生成的自签名私钥落盘 0600
 - **开放端口提醒**：0.0.0.0 监听对局域网所有设备可见
+- **HTTP 响应压缩**：压缩在转发层完成，只作用于「本插件与局域网客户端之间」
+  的链路，不触碰 dsh web 的响应生成；不新增可达数据面，仅增加少量 CPU 开销
+  （可经 `httpCompressEnabled: false` 关闭）。health/标记路由的 loopback 围栏
+  对**直连回环 web** 的请求生效；经本插件转发的请求按设计视为受信（见凭据面）
 
 ## 验证
 
 ```sh
-# 健康检查（回环；含压缩配置与挂点状态）
+# 健康检查（回环；含压缩配置与生效状态/协商计数）
 curl -s http://127.0.0.1:3081/api/dsh-lan-proxy/health
 
 # 合并版压缩标记路由（回环）
