@@ -14,7 +14,8 @@ import type { StdioTransport, HttpTransport } from "./transport.js";
 import { SCOPE_GLOBAL, SCOPE_PROJECT } from "./scope.js";
 import { MCPClient } from "./protocol.js";
 import type { ServerConfig } from "./types.js";
-import type { DshTool, DshLogger } from "../../../types/dsh.js";
+import type { DshTool } from "../../../types/dsh.js";
+import type { Context, LoggerService } from "@deepseek-ai/cordis";
 
 /** 重连策略（解析后）。 */
 export interface ReconnectPolicy {
@@ -24,10 +25,12 @@ export interface ReconnectPolicy {
   maxAttempts: number;
 }
 
-/** McpManager 最小面（supervisor 使用；避免 index↔supervisor 循环 import）。 */
+/** McpManager 最小面（supervisor 使用；避免 index↔supervisor 循环 import）。
+ * tools 面取官方 Context（register 入参为官方 ToolDefinition），自建 DshTool
+ * 在注册点经边界收窄传入（见 registerTool 调用处）。 */
 export interface ManagerLite {
-  ctx: { tools: { register(tool: DshTool): () => void } };
-  logger: DshLogger;
+  ctx: Pick<Context, "tools">;
+  logger: LoggerService;
   enhancement: { enhanceEmptyDescriptions?: boolean; resultTruncateBytes?: number };
   emitStatus(): void;
   recordCatalogTools(serverName: string, toolMeta: Map<string, { description?: unknown }>): Promise<void>;
@@ -449,7 +452,9 @@ export class ConnectionSupervisor {
     const disposers = new Map<string, () => void>();
     try {
       for (const [publicName, definition] of definitions) {
-        disposers.set(publicName, this.manager.ctx.tools.register(definition));
+        // 边界收窄：自建 DshTool（宽松契约面）→ 官方 ToolDefinition；
+        // buildToolDefinition 构造的对象本就满足官方 register 运行时校验。
+        disposers.set(publicName, this.manager.ctx.tools.register(definition as Parameters<typeof this.manager.ctx.tools.register>[0]));
       }
     } catch (error) {
       for (const dispose of disposers.values()) dispose();

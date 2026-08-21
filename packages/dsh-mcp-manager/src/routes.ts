@@ -12,7 +12,7 @@ import { writeJson, readJsonBody } from "../../../shared/host-utils.js";
 import { parseClaudeJson } from "./import.js";
 import { SCOPE_PROJECT, normalizeScope } from "./scope.js";
 import type { ServerConfig } from "./types.js";
-import type { DshRoute } from "../../../types/dsh.js";
+import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { ServerResponse } from "node:http";
 import type { McpStore } from "./store.js";
 
@@ -56,8 +56,8 @@ function queryParam(url: URL, name: string): string | undefined {
 }
 
 /** 组装 /api/dsh-mcp/* 路由。cwd 参数仅用于兼容旧调用（不再被路由使用）。 */
-export function makeRoutes(manager: RoutesManager, cwd = process.cwd()): DshRoute[] {
-  const guard = (req: Parameters<DshRoute["handler"]>[0], res: Parameters<DshRoute["handler"]>[1], method: string): boolean => {
+export function makeRoutes(manager: RoutesManager, cwd = process.cwd()): WebRoute[] {
+  const guard = (req: Parameters<WebRoute["handler"]>[0], res: Parameters<WebRoute["handler"]>[1], method: string): boolean => {
     if (!isLoopbackRequest(req)) {
       writeJson(res, 403, { error: "forbidden: loopback-only" });
       return false;
@@ -68,7 +68,7 @@ export function makeRoutes(manager: RoutesManager, cwd = process.cwd()): DshRout
     }
     return true;
   };
-  const handleError = (res: Parameters<DshRoute["handler"]>[1], error: unknown) => {
+  const handleError = (res: Parameters<WebRoute["handler"]>[1], error: unknown) => {
     writeJson(res, 400, { error: error instanceof Error ? error.message : String(error) });
   };
   /** 解析 scope 查询参数（缺省 global）。 */
@@ -280,7 +280,7 @@ export function sseData(payload: unknown): string {
  * 连接集合挂在 manager.sseConnections 上（惰性创建），插件卸载时由
  * apply 的清理函数统一 destroy。
  */
-export function makeEventsRoute(manager: RoutesManager): DshRoute {
+export function makeEventsRoute(manager: RoutesManager): WebRoute {
   return {
     kind: "exact",
     path: ROUTES.events,
@@ -310,7 +310,7 @@ export function makeEventsRoute(manager: RoutesManager): DshRoute {
 }
 
 /** 健康检查：插件是否加载、服务器/连接/工具状态（诊断"插件没生效"的标准入口）。 */
-export function makeHealthRoute(manager: RoutesManager): DshRoute {
+export function makeHealthRoute(manager: RoutesManager): WebRoute {
   return {
     kind: "exact",
     path: ROUTES.health,

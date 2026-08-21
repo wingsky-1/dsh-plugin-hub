@@ -25,7 +25,19 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import type { ServerResponse } from "node:http";
-import type { PluginContext, DshLogger } from "../../../types/dsh.js";
+// 官方类型层（issue #16 同批，锁 0.1.1-rc.2；仅 import type，编译期擦除，
+// 禁止运行时值导入——contract-check 有门禁）。DshTool 仍取自根 types/dsh.js：
+// 与官方 ToolDefinition 的签名摩擦大于收益（评审结论），自建面保留并作为
+// 与官方工具契约的显式对齐点。
+import type { Context, LoggerService } from "@deepseek-ai/cordis";
+import type { PreStepDecision } from "@deepseek-ai/dsh-agent";
+import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
+// 类型面加载（declare module 合并）：dsh-agent 注入 agent/* 事件（含 pre-step
+// waterfall）、dsh-tools 注入 ctx.tools、dsh-system-prompt 注入 ctx.systemPrompt。
+import type {} from "@deepseek-ai/dsh-agent";
+import type {} from "@deepseek-ai/dsh-system-prompt";
+import type {} from "@deepseek-ai/dsh-tools";
+import type { DshTool } from "../../../types/dsh.js";
 import type { ServerConfig } from "./types.js";
 import type { CatalogCache, CatalogDecision, CatalogMessage, SupervisorLite, CatalogAgent } from "./catalog.js";
 
@@ -73,11 +85,11 @@ function dshHomePath() {
  * 当前会话 cwd 属于该项目时连接（跟随会话切换）。
  */
 export class McpManager {
-  ctx: PluginContext;
+  ctx: Context;
   store: McpStore;
   supervisors: Map<string, ConnectionSupervisor>;
   listeners: Set<() => void>;
-  logger: DshLogger;
+  logger: LoggerService;
   projectRoot: string | undefined;
   projectStore: McpStore | undefined;
   reconcileBusy: boolean;
@@ -87,7 +99,7 @@ export class McpManager {
   catalogCachePath: string;
   sseConnections?: Set<ServerResponse>;
 
-  constructor(ctx: PluginContext, store: McpStore) {
+  constructor(ctx: Context, store: McpStore) {
     this.ctx = ctx;
     this.store = store;
     this.supervisors = new Map();
@@ -526,7 +538,7 @@ export const MCP_GUIDANCE =
  * @param {import("@deepseek-ai/cordis").Context} ctx - 宿主插件上下文。
  * @param config 解析后的插件配置。
  */
-export async function apply(ctx: PluginContext, config: Record<string, unknown> | undefined): Promise<void> {
+export async function apply(ctx: Context, config: Record<string, unknown> | undefined): Promise<void> {
   const enabled = config?.enabled !== false;
   const announceToAgent = config?.announceToAgent !== false;
   const storePath = (config?.storePath as string | undefined) ?? defaultStorePath();
@@ -553,23 +565,24 @@ export async function apply(ctx: PluginContext, config: Record<string, unknown> 
     // L1 能力目录注入（history-based 去重，仿 dsh-tool-skill catalog）：
     // 决策逻辑在 resolveCatalogInjection（纯函数，可单测）。
     if (announceCatalog) {
-      disposeInjection = ctx.on("agent/pre-step", async (
-        { agent, messages, step, signal }: { agent?: { session?: { header?: { cwd?: string } } }; messages: unknown[]; step?: unknown; signal?: { throwIfAborted?: () => void } },
-        next: () => Promise<unknown>
-      ) => {
+      // 官方强类型 payload：PreStepDecision waterfall（{kind:'reject'}|{kind:'enter';messages}）。
+      // 目录决策逻辑在纯函数 resolveCatalogInjection（自建 CatalogDecision 宽面，
+      // 可单测），此处仅做边界收窄/放宽。
+      disposeInjection = ctx.on("agent/pre-step", async ({ agent, messages, signal }, next) => {
         const decision = await next();
-        signal?.throwIfAborted?.();
+        signal.throwIfAborted();
         // 目录数据源按会话 cwd 计算（工作区缓存），不跟随 host 的"当前工作区"
         // 实时状态——切换工作区不改变本会话目录集合，MCP 没变化就不重复注入。
         const supervisors = await manager.catalogServersFor(agent?.session?.header?.cwd);
+        // 边界放宽：纯函数吃自建宽面 CatalogDecision，返回值即本轮 PreStepDecision
         return resolveCatalogInjection(
-          decision as CatalogDecision,
+          decision as unknown as CatalogDecision,
           messages as CatalogMessage[],
           supervisors as Map<string, SupervisorLite>,
           catalogMaxEntries,
           manager.catalogCache,
-          agent as CatalogAgent | undefined
-        );
+          agent as unknown as CatalogAgent | undefined
+        ) as unknown as PreStepDecision;
       });
     }
 
@@ -602,7 +615,9 @@ export async function apply(ctx: PluginContext, config: Record<string, unknown> 
       };
     }, "dsh-mcp-manager: routes");
     if (announceToAgent) {
-      disposeSection = (ctx.systemPrompt as { section(opts: Record<string, unknown>): () => void }).section({
+      // 官方 SystemPrompt.section(opts) 签名（PromptSection）；此处传参满足其形状，
+      // 经 unknown 中转以维持局部最小面写法。
+      disposeSection = (ctx.systemPrompt as unknown as { section(opts: Record<string, unknown>): () => void }).section({
         name: "plugin:dsh-mcp-manager",
         order: 160,
         text: MCP_GUIDANCE,
