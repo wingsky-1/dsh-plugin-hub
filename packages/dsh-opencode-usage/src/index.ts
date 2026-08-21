@@ -11,24 +11,25 @@
  * - GET /api/dsh-opencode-usage/adapters.json              适配器元数据（M2）
  * - GET /api/dsh-opencode-usage/health                     健康检查
  */
-import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
+import { readFile, writeFile, rename, mkdir, readdir, unlink } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isLoopbackRequest } from "../../../shared/loopback.js";
-import { writeJson } from "../../../shared/host-utils.js";
+import { writeJson, readJsonBody } from "../../../shared/host-utils.js";
 import type { PluginContext, DshRoute } from "../../../types/dsh.js";
-import { ADAPTER_CONTRACT_VERSION } from "./contracts.js";
+import { ADAPTER_CONTRACT_VERSION, summarizeTextFromWindows, levelFromWindows } from "./contracts.js";
 import { makeHostAdapterRegistry } from "./registry.js";
 import type { HostAdapterRegistry } from "./registry.js";
 import {
   openCodeGoHostAdapter,
   OPENCODE_GO_PROVIDER,
+  OPENCODE_GO_ADAPTER_ID,
   DEFAULT_BASE_URL,
   OPENCODE_GO_WINDOWS,
 } from "./adapters/opencode-go.js";
-import type { ProviderUsage, UsageWindow, FetchLike, HostProviderAdapter, SamplePointData } from "./contracts.js";
+import type { ProviderUsage, UsageWindow, FetchLike, HostProviderAdapter, SamplePointData, ProviderSummary } from "./contracts.js";
 import { resolvePath } from "./path-resolve.js";
 
 // ------------------------------------------------------------------ 对外 re-export
@@ -96,6 +97,7 @@ export const ROUTES: Record<string, string> = {
   stats: "/api/dsh-opencode-usage/stats",
   history: "/api/dsh-opencode-usage/history",
   adapters: "/api/dsh-opencode-usage/adapters.json",
+  select: "/api/dsh-opencode-usage/adapters/select",
   health: "/api/dsh-opencode-usage/health",
 };
 
@@ -282,35 +284,78 @@ export function makeUsageCache<T>({ ttlMs, now = () => Date.now() }: { ttlMs: nu
   };
 }
 
-// ------------------------------------------------------------------ 历史采样序列（v2：多 provider 分桶）
+// ------------------------------------------------------------------ 历史采样序列（v3：多文件，按 (provider, adapterId) 一桶一文件）
 
 /** 历史数据文件版本。 */
-export const HISTORY_VERSION = 2;
+export const HISTORY_VERSION = 3;
 
-/** 采样点 = [ts, ...colPcts]（升序紧凑数组，列语义由各 provider 声明，percent 允许 null）。 */
+/** 采样点 = [ts, ...colPcts]（升序紧凑数组，列语义由适配器 samplePoint 声明的 columns 决定）。 */
 export type SamplePoint = (number | null)[];
 
-export function makeHistoryStore({ maxAgeDays = 14, now = () => Date.now() }: { maxAgeDays?: number; now?: () => number } = {}) {
-  /** provider → 采样点序列（升序）。 */
-  const series = new Map<string, (number | null)[][]>();
+/** 历史桶（每桶对应一个 (provider, adapterId) 文件）。 */
+export interface HistoryBucket {
+  provider: string;
+  adapterId: string;
+  /** 列声明（来自适配器 samplePoint，渲染器按此对齐列语义）。 */
+  columns: import("./contracts.js").SampleColumn[];
+  samples: SamplePoint[];
+}
 
-  /** 获取某 provider 的采样序列（不存在则创建空序列）。 */
-  function getSeries(provider: string): (number | null)[][] {
-    let s = series.get(provider);
-    if (s === undefined) {
-      s = [];
-      series.set(provider, s);
-    }
-    return s;
+/** 文件路径规范化：provider/adapterId 只留安全字符，防目录穿越。 */
+function safeSegment(s: string): string {
+  return s.replace(/[^A-Za-z0-9._-]/g, "_") || "unknown";
+}
+
+export function makeHistoryStore({
+  maxAgeDays = 14,
+  now = () => Date.now(),
+  diag = (m: string): void => console.warn("[dsh-opencode-usage]", m),
+}: { maxAgeDays?: number; now?: () => number; diag?: (m: string) => void } = {}) {
+  /** 桶键 "provider/adapterId" → 桶。 */
+  const buckets = new Map<string, HistoryBucket>();
+  /** 各桶已声明的列数（列一致性校验）。 */
+  const columnCount = new Map<string, number>();
+
+  function keyOf(provider: string, adapterId: string): string {
+    return `${provider}/${adapterId}`;
   }
 
-  /** 追加采样点（同分钟去重）。列数由适配器声明，v1 为 4 列 [ts, r, w, m]。 */
-  function append(provider: string, point: unknown): { appended: number; replaced: number } {
+  function getBucket(provider: string, adapterId: string): HistoryBucket {
+    const key = keyOf(provider, adapterId);
+    let b = buckets.get(key);
+    if (b === undefined) {
+      b = { provider, adapterId, columns: [], samples: [] };
+      buckets.set(key, b);
+    }
+    return b;
+  }
+
+  /**
+   * 追加采样点（同分钟去重）。列数须与桶声明的 columns 一致；首次写入记录列数。
+   * @returns {appended, replaced}。
+   */
+  function append(
+    provider: string,
+    adapterId: string,
+    columns: import("./contracts.js").SampleColumn[],
+    point: unknown,
+  ): { appended: number; replaced: number } {
     if (!isUnknownArray(point) || point.length < 2) return { appended: 0, replaced: 0 };
     const ts = Number(point[0]);
     if (!Number.isFinite(ts)) return { appended: 0, replaced: 0 };
     const normalized = [ts, ...point.slice(1).map((v) => (typeof v === "number" && Number.isFinite(v) ? v : null))];
-    const samples = getSeries(provider);
+    const size = normalized.length - 1;
+    const prevCount = columnCount.get(keyOf(provider, adapterId));
+    if (prevCount !== undefined && prevCount !== size) {
+      diag(`采样列数不一致（provider=${provider}, adapterId=${adapterId}）：声明 ${size} ≠ 已记录 ${prevCount}，跳过该点`);
+      return { appended: 0, replaced: 0 };
+    }
+    if (prevCount === undefined) {
+      columnCount.set(keyOf(provider, adapterId), size);
+    }
+    const bucket = getBucket(provider, adapterId);
+    if (bucket.columns.length === 0) bucket.columns = [...columns];
+    const samples = bucket.samples;
     let replaced = 0;
     const last = samples.length > 0 ? samples[samples.length - 1] : undefined;
     if (last !== undefined && typeof last[0] === "number" && Math.floor(last[0] / 60000) === Math.floor(ts / 60000)) {
@@ -322,22 +367,22 @@ export function makeHistoryStore({ maxAgeDays = 14, now = () => Date.now() }: { 
     return { appended: replaced === 1 ? 0 : 1, replaced };
   }
 
-  /** 获取某 provider 的采样序列副本。 */
-  function list(provider: string): (number | null)[][] {
-    return [...getSeries(provider)];
+  /** 取某桶的采样序列副本（无该桶返回空）。 */
+  function list(provider: string, adapterId: string): HistoryBucket {
+    return getBucket(provider, adapterId);
   }
 
-  /** 所有 provider 的计数。 */
+  /** 所有桶的计数。 */
   function countAll(): number {
     let total = 0;
-    for (const s of series.values()) total += s.length;
+    for (const b of buckets.values()) total += b.samples.length;
     return total;
   }
 
-  /** 裁剪某 provider 超龄点。 */
-  function trim(provider: string): number {
+  /** 裁剪某桶超龄点。 */
+  function trim(provider: string, adapterId: string): number {
     const cutoff = now() - maxAgeDays * 86400000;
-    const samples = getSeries(provider);
+    const samples = getBucket(provider, adapterId).samples;
     let removed = 0;
     while (samples.length > 0 && typeof samples[0][0] === "number" && samples[0][0] < cutoff) {
       samples.shift();
@@ -346,13 +391,37 @@ export function makeHistoryStore({ maxAgeDays = 14, now = () => Date.now() }: { 
     return removed;
   }
 
-  /** 裁剪所有 provider 超龄点。 */
   function trimAll(): void {
-    for (const provider of series.keys()) trim(provider);
+    for (const key of [...buckets.keys()]) {
+      const [provider, adapterId] = key.split("/");
+      trim(provider, adapterId);
+    }
   }
 
-  /** 从持久化文本加载（兼容 v1 单序列 + v2 分桶）。 */
-  function load(raw: string | undefined): number {
+  /** bucketKey 列表。 */
+  function keys(): string[] {
+    return [...buckets.keys()];
+  }
+
+  function clear(): void {
+    buckets.clear();
+    columnCount.clear();
+  }
+
+  /** 单桶序列化为 JSON 文本（v3 单文件格式）。 */
+  function bucketJson(provider: string, adapterId: string): string {
+    const b = getBucket(provider, adapterId);
+    return JSON.stringify({
+      version: HISTORY_VERSION,
+      provider,
+      adapterId,
+      columns: b.columns,
+      samples: b.samples,
+    });
+  }
+
+  /** 从单桶 JSON 文本加载（防御式）。 */
+  function loadBucket(provider: string, adapterId: string, raw: string | undefined): number {
     if (typeof raw !== "string" || raw === "") return 0;
     let data: unknown;
     try {
@@ -362,56 +431,211 @@ export function makeHistoryStore({ maxAgeDays = 14, now = () => Date.now() }: { 
     }
     if (typeof data !== "object" || data === null) return 0;
     const rec = data as Record<string, unknown>;
-    const version = rec.version === 2 ? 2 : 1;
-
-    if (version === 1) {
-      // v1 迁移：单序列 → 写入 opencode-go 桶
-      const rawSamples = rec.samples;
-      if (!Array.isArray(rawSamples)) return 0;
-      let loaded = 0;
-      for (const item of rawSamples) {
-        if (!isUnknownArray(item) || item.length < 2) continue;
-        const ts = Number(item[0]);
-        if (!Number.isFinite(ts)) continue;
-        getSeries(OPENCODE_GO_PROVIDER).push([ts, ...item.slice(1).map((v) => (typeof v === "number" && Number.isFinite(v) ? v : null))]);
-        loaded += 1;
-      }
-      return loaded;
-    }
-
-    // v2 分桶
-    const rawSeries = rec.series as Record<string, { samples: unknown[] }> | undefined;
-    if (typeof rawSeries !== "object" || rawSeries === null) return 0;
+    const columns = Array.isArray(rec.columns)
+      ? (rec.columns as import("./contracts.js").SampleColumn[]).filter(
+          (c) => c && typeof c.key === "string",
+        )
+      : [];
+    const rawSamples = rec.samples;
+    if (!Array.isArray(rawSamples)) return 0;
     let loaded = 0;
-    for (const provider of Object.keys(rawSeries)) {
-      const bucket = rawSeries[provider];
-      if (!Array.isArray(bucket?.samples)) continue;
-      const samples = getSeries(provider);
-      for (const item of bucket.samples) {
-        if (!isUnknownArray(item) || item.length < 2) continue;
-        const ts = Number(item[0]);
-        if (!Number.isFinite(ts)) continue;
-        samples.push([ts, ...item.slice(1).map((v) => (typeof v === "number" && Number.isFinite(v) ? v : null))]);
-        loaded += 1;
-      }
+    const bucket = getBucket(provider, adapterId);
+    if (columns.length > 0 && bucket.columns.length === 0) bucket.columns = columns;
+    for (const item of rawSamples) {
+      if (!isUnknownArray(item) || item.length < 2) continue;
+      const ts = Number(item[0]);
+      if (!Number.isFinite(ts)) continue;
+      bucket.samples.push([ts, ...item.slice(1).map((v) => (typeof v === "number" && Number.isFinite(v) ? v : null))]);
+      loaded += 1;
+    }
+    bucket.samples.sort((a, b) => (a[0] as number) - (b[0] as number));
+    if (loaded > 0 && !columnCount.has(keyOf(provider, adapterId)) && columns.length > 0) {
+      columnCount.set(keyOf(provider, adapterId), columns.length);
     }
     return loaded;
   }
 
-  /** 序列化为持久化 JSON 文本（v2 格式）。 */
-  function dump(): string {
-    const raw: Record<string, { samples: (number | null)[][] }> = {};
-    for (const [provider, samples] of series) {
-      if (samples.length > 0) raw[provider] = { samples };
+  return {
+    append,
+    list,
+    countAll,
+    trim,
+    trimAll,
+    keys,
+    clear,
+    bucketJson,
+    loadBucket,
+    getBucket,
+  };
+}
+
+/** 内置 opencode-go 默认三窗口列声明（旧 v1/v2 数据割接目标）。 */
+export function builtInColumns(): import("./contracts.js").SampleColumn[] {
+  return OPENCODE_GO_WINDOWS.map((w) => ({
+    key: w.key,
+    name: w.name,
+    ...(w.limit !== undefined ? { limit: w.limit } : {}),
+    ...(w.resetPeriodMs !== undefined ? { resetPeriodMs: w.resetPeriodMs } : {}),
+  }));
+}
+
+/** 历史根目录（persistFile 覆盖时用其目录；否则默认 DSH_HOME/dsh-opencode-usage）。 */
+function historyRoot(current: NormalizedConfig): string {
+  if (typeof current.persistFile === "string" && current.persistFile !== "") return dirname(current.persistFile);
+  return join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), "dsh-opencode-usage");
+}
+
+/** 多文件历史目录。 */
+function historyDir(current: NormalizedConfig): string {
+  return join(historyRoot(current), "history");
+}
+
+/** 旧单文件路径（割接读取用）。 */
+function legacyHistoryFile(current: NormalizedConfig): string {
+  return join(historyRoot(current), "history.json");
+}
+
+/** 历史桶文件路径（多文件）。 */
+function bucketFilePath(historyRootDir: string, provider: string, adapterId: string): string {
+  return join(historyRootDir, safeSegment(provider), `${safeSegment(adapterId)}.json`);
+}
+
+/**
+ * 割接迁移 + 全量加载：若存在旧单文件 `history.json`（v1/v2）→ 迁移为多文件 v3，
+ * 再扫描 `history/` 目录加载所有桶。
+ *
+ * 割接保证：opencode-go 旧历史一律归内置 `opencode-go-builtin` 桶（三窗口列延续、
+ * 不丢失、幂等）；先写新桶成功 → 备份旧文件 → 删旧文件；失败保留旧文件下次重试。
+ */
+export async function loadAllHistory(
+  config: NormalizedConfig,
+  store: ReturnType<typeof makeHistoryStore>,
+  registry: ReturnType<typeof makeHostAdapterRegistry>,
+): Promise<void> {
+  const root = historyRoot(config);
+  const dir = historyDir(config);
+  const legacy = legacyHistoryFile(config);
+
+  // 1. 割接迁移旧单文件
+  if (existsSync(legacy)) {
+    let legacyRaw: string | undefined;
+    try {
+      legacyRaw = await readFile(legacy, "utf8");
+    } catch {
+      legacyRaw = undefined;
     }
-    return JSON.stringify({ version: HISTORY_VERSION, series: raw });
+    if (typeof legacyRaw === "string" && legacyRaw !== "") {
+      let data: unknown;
+      try {
+        data = JSON.parse(legacyRaw);
+      } catch {
+        data = null;
+      }
+      if (typeof data === "object" && data !== null) {
+        const rec = data as Record<string, unknown>;
+        const version = rec.version === 2 ? 2 : 1;
+        try {
+          if (version === 1) {
+            // v1 单序列 → 内置 opencode-go 桶
+            const rawSamples = rec.samples;
+            if (Array.isArray(rawSamples)) {
+              for (const item of rawSamples) {
+                if (!isUnknownArray(item) || item.length < 2) continue;
+                store.append(OPENCODE_GO_PROVIDER, OPENCODE_GO_ADAPTER_ID, builtInColumns(), item);
+              }
+            }
+          } else {
+            // v2 单文件分桶 → 各 provider 桶 → 当前启用 adapterId（缺省内置）
+            const rawSeries = rec.series as Record<string, { samples: unknown[] }> | undefined;
+            if (typeof rawSeries === "object" && rawSeries !== null) {
+              for (const provider of Object.keys(rawSeries)) {
+                const bucket = rawSeries[provider];
+                if (!Array.isArray(bucket?.samples)) continue;
+                const targetId = provider === OPENCODE_GO_PROVIDER
+                  ? OPENCODE_GO_ADAPTER_ID
+                  : (registry.getEntry(provider)?.id ?? OPENCODE_GO_ADAPTER_ID);
+                for (const item of bucket.samples) {
+                  store.append(provider, targetId, builtInColumns(), item);
+                }
+              }
+            }
+          }
+          // 原子写新桶，成功后备份旧文件并删除（幂等）
+          await flushAllHistory(root, store);
+          const bak = `${legacy}.v${version}.bak`;
+          if (!existsSync(bak)) await rename(legacy, bak);
+          else await unlink(legacy);
+        } catch {
+          // 迁移失败保留旧文件 + .bak，插件照常运行（下次重试）
+        }
+      }
+    }
   }
 
-  function clear(): void {
-    series.clear();
-  }
+  // 2. 扫描多文件目录加载（幂等：均 existsSync 校验 + 防御解析）
+  await loadMultiFileHistory(dir, store);
+}
 
-  return { append, list, countAll, trim, trimAll, load, dump, clear, getSeries };
+/** 扫描 `history/<provider>/<adapterId>.json` 加载所有桶。 */
+export async function loadMultiFileHistory(dir: string, store: ReturnType<typeof makeHistoryStore>): Promise<void> {
+  let providers: string[];
+  try {
+    providers = await readdir(dir);
+  } catch {
+    return; // 目录不存在 → 无历史
+  }
+  for (const provider of providers) {
+    const pdir = join(dir, provider);
+    let files: string[];
+    try {
+      files = await readdir(pdir);
+    } catch {
+      continue;
+    }
+    for (const file of files) {
+      if (!file.endsWith(".json")) continue;
+      const adapterId = file.slice(0, -5);
+      try {
+        const raw = await readFile(join(pdir, file), "utf8");
+        store.loadBucket(provider, adapterId, raw);
+      } catch {
+        // 单个桶读取失败不阻断
+      }
+    }
+  }
+}
+
+/** 落盘全部桶（各桶独立文件原子写）。 */
+export async function flushAllHistory(
+  root: string,
+  store: ReturnType<typeof makeHistoryStore>,
+): Promise<void> {
+  const dir = join(root, "history");
+  for (const key of store.keys()) {
+    const [provider, adapterId] = key.split("/");
+    const file = bucketFilePath(dir, provider, adapterId);
+    try {
+      await writeHistoryFile(file, store.bucketJson(provider, adapterId));
+    } catch {
+      // 单桶落盘失败不阻断
+    }
+  }
+}
+
+/** 落盘单个桶（同桶串行由调用方防抖保证）。 */
+export async function flushBucket(
+  root: string,
+  store: ReturnType<typeof makeHistoryStore>,
+  provider: string,
+  adapterId: string,
+): Promise<void> {
+  const dir = join(root, "history");
+  const file = bucketFilePath(dir, provider, adapterId);
+  try {
+    await writeHistoryFile(file, store.bucketJson(provider, adapterId));
+  } catch {
+    // 单桶落盘失败不阻断
+  }
 }
 
 /* 原子写落盘。 */
@@ -501,6 +725,26 @@ export function collectSamplePoint(adapter: HostProviderAdapter | undefined, usa
   };
 }
 
+/** 通用摘要推导（R2 兜底）：适配器无 summarize 时，从 windows 通用汇总或纯 label。 */
+export function deriveSummary(
+  provider: string,
+  args: { label: string; usage?: ProviderUsage | null; hasAdapter: boolean; fetchedAt: number },
+): ProviderSummary {
+  const windows = args.usage?.windows;
+  const text =
+    windows && windows.length > 0 ? summarizeTextFromWindows(windows) : args.label;
+  return {
+    ok: true,
+    provider,
+    label: args.label,
+    text,
+    level: levelFromWindows(windows),
+    hasAdapter: args.hasAdapter,
+    fetchedAt: args.fetchedAt,
+    derived: true,
+  };
+}
+
 
 // ------------------------------------------------------------------ 插件入口
 
@@ -544,24 +788,37 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
 
   const cache = makeUsageCache<StatsResult>({ ttlMs: current.cacheTtlMs });
 
-  // -------------------------------------------------------- 历史采样
-  const persistFile = current.persistFile ?? defaultPersistFile();
-  const store = makeHistoryStore({ maxAgeDays: current.maxAgeDays });
-  await store.load(await readHistoryFile(persistFile));
+  // -------------------------------------------------------- 历史采样（v3 多文件）
+  const root = historyRoot(current);
+  const store = makeHistoryStore({
+    maxAgeDays: current.maxAgeDays,
+    diag: (m): void => console.warn(`[dsh-opencode-usage]`, m),
+  });
+  // 割接迁移（旧单文件 v1/v2 → 多文件 v3）+ 扫描加载
+  await loadAllHistory(current, store, registry);
 
+  /** 脏桶集合（"provider/adapterId"）：采样追加后标记，防抖逐桶原子落盘。 */
+  const dirtyBuckets = new Set<string>();
   let persistTimer: ReturnType<typeof setTimeout> | null = null;
-  async function flushPersist(): Promise<void> {
-    try {
-      await writeHistoryFile(persistFile, store.dump());
-    } catch {
-      /* 落盘失败不阻断 */
+  async function flushDirty(): Promise<void> {
+    const entries = [...dirtyBuckets];
+    dirtyBuckets.clear();
+    for (const key of entries) {
+      const [provider, adapterId] = key.split("/");
+      store.trim(provider, adapterId);
+      try {
+        await flushBucket(root, store, provider, adapterId);
+      } catch {
+        // 单桶落盘失败不阻断
+      }
     }
   }
-  function schedulePersist(): void {
+  function schedulePersist(provider: string, adapterId: string): void {
+    dirtyBuckets.add(`${provider}/${adapterId}`);
     if (persistTimer !== null) clearTimeout(persistTimer);
     persistTimer = setTimeout(() => {
       persistTimer = null;
-      void flushPersist();
+      void flushDirty();
     }, 1000);
   }
 
@@ -631,12 +888,11 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
           cached: false,
         };
 
-        // 采样挂点（R1：优先适配器 samplePoint 结构化列，回落 windows；都在则跳过）
+        // 采样挂点（R2：优先适配器 samplePoint 结构化列，回落 windows；都在则跳过）
         const sample = collectSamplePoint(entry.adapter, usage);
         if (sample !== null) {
-          store.append(result.provider, [result.fetchedAt, ...sample.values]);
-          store.trimAll();
-          schedulePersist();
+          store.append(result.provider, entry.id, sample.cols, [result.fetchedAt, ...sample.values]);
+          schedulePersist(result.provider, entry.id);
         }
         if (usage.ok) {
           cache.set(provider, result);
@@ -663,6 +919,38 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
       const url = new URL(req.url ?? "/", "http://localhost");
       const provider = url.searchParams.get("provider") ?? OPENCODE_GO_PROVIDER;
       const result = await collectStats(provider);
+
+      // R2：内嵌 summary 子树（胶囊轻量内容）+ adapterId/hasAdapter
+      const entry = registry.getEntry(provider);
+      const adapterId = entry?.id ?? null;
+      const hasAdapter = entry !== undefined;
+      let summary: ProviderSummary;
+      if (entry !== undefined) {
+        const res = await registry.summarize(provider, {
+          provider,
+          fetch: fetchImpl,
+          usage: result.usage,
+        });
+        summary =
+          res.summary ??
+          deriveSummary(provider, {
+            label: result.label ?? entry.label,
+            usage: result.usage,
+            hasAdapter: true,
+            fetchedAt: result.fetchedAt,
+          });
+      } else {
+        summary = deriveSummary(provider, {
+          label: provider,
+          usage: null,
+          hasAdapter: false,
+          fetchedAt: result.fetchedAt,
+        });
+      }
+      if (current.stripSecrets) {
+        try { stripSensitiveKeys(summary as unknown); } catch { /* 忽略 */ }
+      }
+
       const limits: Record<string, number> = {};
       if (result.usage?.windows) {
         for (const w of result.usage.windows) {
@@ -672,8 +960,39 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
       writeJson(res, 200, {
         plugin: "dsh-opencode-usage",
         limits: Object.keys(limits).length > 0 ? limits : current.limits,
+        adapterId,
+        hasAdapter,
+        summary,
         ...result,
       });
+    },
+  };
+
+  // R2：切换启用适配器（POST /adapters/select）
+  const selectRoute: DshRoute = {
+    kind: "exact",
+    path: ROUTES.select,
+    handler: async (req, res) => {
+      if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
+      if (req.method !== "POST") return writeJson(res, 405, { error: `method not allowed: ${req.method}` });
+      let body: Record<string, unknown>;
+      try {
+        const raw = await readJsonBody(req);
+        if (typeof raw !== "object" || raw === null) return writeJson(res, 400, { error: "bad-json" });
+        body = raw as Record<string, unknown>;
+      } catch {
+        return writeJson(res, 400, { error: "bad-json" });
+      }
+      const provider = typeof body.provider === "string" ? body.provider : "";
+      const adapterId = typeof body.adapterId === "string" ? body.adapterId : "";
+      // 参数长度限制（防异常输入）
+      if (provider.length === 0 || adapterId.length === 0 || provider.length > 128 || adapterId.length > 128) {
+        return writeJson(res, 400, { error: "invalid provider/adapterId" });
+      }
+      const ok = registry.select(provider, adapterId);
+      if (!ok) return writeJson(res, 404, { error: "adapter not found" });
+      cache.clear(provider); // 切换后清该 provider 缓存（下一个请求走新适配器）
+      writeJson(res, 200, { ok: true, provider, adapterId });
     },
   };
 
@@ -700,7 +1019,10 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
       if (req.method !== "GET") return writeJson(res, 405, { error: `method not allowed: ${req.method}` });
       const url = new URL(req.url ?? "/", "http://localhost");
       const provider = url.searchParams.get("provider") ?? OPENCODE_GO_PROVIDER;
-      let samples = store.list(provider);
+      // adapterId 缺省 = 该 provider 当前启用适配器（无则内置）
+      const adapterId = url.searchParams.get("adapterId") ?? registry.getEntry(provider)?.id ?? OPENCODE_GO_ADAPTER_ID;
+      const bucket = store.list(provider, adapterId);
+      let samples = bucket.samples;
       const days = Number(url.searchParams.get("days"));
       if (Number.isFinite(days) && days > 0) {
         const cutoff = Date.now() - Math.min(Math.round(days), current.maxAgeDays) * 86400000;
@@ -711,8 +1033,10 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
         plugin: "dsh-opencode-usage",
         version: HISTORY_VERSION,
         provider,
+        adapterId,
         count: samples.length,
         maxAgeDays: current.maxAgeDays,
+        columns: bucket.columns,
         samples,
       });
     },
@@ -734,10 +1058,14 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
       writeJson(res, 200, {
         version: ADAPTER_CONTRACT_VERSION,
         host: snap.infos.filter((i) => i.status === "active").map((i) => ({
+          id: i.id,
+          label: i.label,
           providers: i.providers,
           source: i.source,
           file: i.file ?? null,
+          enabled: i.enabled,
         })),
+        enabled: snap.enabled,
         client,
       });
     },
@@ -785,7 +1113,7 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
         cacheTtlMs: current.cacheTtlMs,
         limits: current.limits,
         sampleIntervalMs: current.sampleIntervalMs,
-        history: { count: store.countAll(), maxAgeDays: current.maxAgeDays, persistFile },
+        history: { count: store.countAll(), maxAgeDays: current.maxAgeDays, root },
         lastStatus,
         adapters: snap.infos,
       });
@@ -794,7 +1122,7 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
 
   const disposeRoutes = ctx.effect(
     () => {
-      const routeDisposers = [statsRoute, historyRoute, adaptersRoute, userRoute, healthRoute].map((route) =>
+      const routeDisposers = [statsRoute, selectRoute, historyRoute, adaptersRoute, userRoute, healthRoute].map((route) =>
         ctx.webServer.register(route),
       );
       return () => {
@@ -818,7 +1146,8 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
         clearInterval(backgroundTimer);
         backgroundTimer = null;
       }
-      void flushPersist();
+      // 卸载时兜底落盘全部脏桶（fire-and-forget，不阻塞卸载）
+      void flushDirty();
     },
     "dsh-opencode-usage",
   );

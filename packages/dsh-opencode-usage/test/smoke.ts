@@ -329,58 +329,59 @@ assert.equal(resolveApiKey({ env: "sk-v", credentialsYaml: "k: sk-c", authJson: 
 assert.equal(resolveApiKey({ authJson: '{"opencode-go":{"type":"api","key":"sk-a"}}' }), "sk-a", "auth.json 兜底");
 assert.equal(resolveApiKey({}), undefined, "全缺返回 undefined");
 
-// ---------------------------------------------------------------- 历史采样序列（v2 多 provider）
+// ---------------------------------------------------------------- 历史采样序列（v3 多文件，(provider, adapterId) 双键）
 
 {
   let now = 1_000_000;
   const store = makeHistoryStore({ maxAgeDays: 14, now: () => now });
-  // 按 provider 追加
-  assert.deepEqual(store.append("opencode-go", [now, 2, 1, 0]), { appended: 1, replaced: 0 });
-  assert.deepEqual(store.append("opencode-go", [now + 1000, 4, 5, 6]), { appended: 0, replaced: 1 }, "同分钟替换");
-  assert.equal(store.list("opencode-go").length, 1);
-  assert.deepEqual(store.list("opencode-go")[0], [now + 1000, 4, 5, 6], "替换后保留最新点");
-  assert.deepEqual(store.append("opencode-go", [now + 60000, 7, 8, 9]), { appended: 1, replaced: 0 }, "跨分钟追加");
-  assert.equal(store.list("opencode-go").length, 2);
+  const cols = [{ key: "rolling", name: "5h" }, { key: "weekly", name: "周" }, { key: "monthly", name: "月" }];
+  // 按 (provider, adapterId) 追加
+  assert.deepEqual(store.append("opencode-go", "opencode-go-builtin", cols, [now, 2, 1, 0]), { appended: 1, replaced: 0 });
+  assert.deepEqual(store.append("opencode-go", "opencode-go-builtin", cols, [now + 1000, 4, 5, 6]), { appended: 0, replaced: 1 }, "同分钟替换");
+  assert.equal(store.list("opencode-go", "opencode-go-builtin").samples.length, 1);
+  assert.deepEqual(store.list("opencode-go", "opencode-go-builtin").samples[0], [now + 1000, 4, 5, 6], "替换后保留最新点");
+  assert.deepEqual(store.append("opencode-go", "opencode-go-builtin", cols, [now + 60000, 7, 8, 9]), { appended: 1, replaced: 0 }, "跨分钟追加");
+  assert.equal(store.list("opencode-go", "opencode-go-builtin").samples.length, 2);
 
-  // 另一 provider 独立序列
-  assert.deepEqual(store.append("my-relay", [now, 50, 60]), { appended: 1, replaced: 0 });
-  assert.equal(store.list("my-relay").length, 1);
-  assert.equal(store.list("opencode-go").length, 2, "各 provider 独立序列，互不干扰");
+  // 另一 adapterId（同 provider）独立桶
+  assert.deepEqual(store.append("opencode-go", "my-v2", [{ key: "credit", name: "余额" }], [now, 50]), { appended: 1, replaced: 0 });
+  assert.equal(store.list("opencode-go", "my-v2").samples.length, 1);
+  assert.equal(store.list("opencode-go", "opencode-go-builtin").samples.length, 2, "各 adapterId 独立桶，互不干扰");
 
-  assert.deepEqual(store.append("opencode-go", null), { appended: 0, replaced: 0 });
-  assert.deepEqual(store.append("opencode-go", [1]), { appended: 0, replaced: 0 }, "元素不足 2 丢弃");
-  assert.deepEqual(store.append("opencode-go", ["x", 1, 2, 3]), { appended: 0, replaced: 0 }, "ts 非法丢弃");
-  assert.deepEqual(store.append("opencode-go", [now + 120000, "bad", 5, null]), { appended: 1, replaced: 0 });
-  assert.equal(store.list("opencode-go").at(-1)[1], null, "非法 percent 归一为 null");
+  // 列声明随桶
+  const ocgBucket = store.list("opencode-go", "opencode-go-builtin");
+  assert.deepEqual(ocgBucket.columns.map((c) => c.key), ["rolling", "weekly", "monthly"], "columns 随桶落盘");
 
-  // trimAll 裁剪所有 provider
+  // 列数一致性：声明列数与已记录不一致 → 跳过
+  assert.deepEqual(store.append("opencode-go", "opencode-go-builtin", [{ key: "x", name: "X" }], [now + 90000, 1, 2, 3, 4]), { appended: 0, replaced: 0 }, "列数不一致跳过");
+
+  assert.deepEqual(store.append("opencode-go", "opencode-go-builtin", cols, null), { appended: 0, replaced: 0 });
+  assert.deepEqual(store.append("opencode-go", "opencode-go-builtin", cols, [1]), { appended: 0, replaced: 0 }, "元素不足 2 丢弃");
+  assert.deepEqual(store.append("opencode-go", "opencode-go-builtin", cols, ["x", 1, 2, 3]), { appended: 0, replaced: 0 }, "ts 非法丢弃");
+  assert.deepEqual(store.append("opencode-go", "opencode-go-builtin", cols, [now + 120000, "bad", 5, null]), { appended: 1, replaced: 0 });
+  assert.equal(store.list("opencode-go", "opencode-go-builtin").samples.at(-1)[1], null, "非法 percent 归一为 null");
+
+  // trimAll 裁剪所有桶
   now += 15 * 86400000;
   store.trimAll();
-  assert.ok(store.list("opencode-go").length === 0, "所有 provider 超龄点被裁剪");
-  assert.ok(store.list("my-relay").length === 0, "my-relay 也被裁剪");
+  assert.equal(store.list("opencode-go", "opencode-go-builtin").samples.length, 0, "超龄点被裁剪");
+  assert.equal(store.list("opencode-go", "my-v2").samples.length, 0, "my-v2 也被裁剪");
 
-  // v1 → v2 迁移
-  const v1Text = JSON.stringify({ version: 1, samples: [[now - 3600000, 1, 2, 3], [now, 4, 5, 6]] });
-  const store2 = makeHistoryStore({ maxAgeDays: 14, now: () => now });
-  assert.equal(store2.load(v1Text), 2, "v1 迁移 load 返回加载点数");
-  assert.equal(store2.list("opencode-go").length, 2, "v1 数据迁入 opencode-go 桶");
-  assert.deepEqual(store2.list("opencode-go")[0].slice(1), [1, 2, 3], "v1 迁移后列语义一致");
-
-  // v2 dump/load 往返
+  // bucketJson / loadBucket 往返
   const store3 = makeHistoryStore({ maxAgeDays: 14, now: () => now });
-  store3.append("a", [now - 3600000, 1, 2]);
-  store3.append("b", [now, 3, 4]);
-  const text = store3.dump();
+  store3.append("opencode-go", "opencode-go-builtin", cols, [now - 3600000, 1, 2, 3]);
+  store3.append("opencode-go", "opencode-go-builtin", cols, [now, 4, 5, 6]);
+  const text = store3.bucketJson("opencode-go", "opencode-go-builtin");
   const store4 = makeHistoryStore({ maxAgeDays: 14, now: () => now });
-  assert.equal(store4.load(text), 2, "v2 load 返回加载点数");
-  assert.deepEqual(store4.list("a"), store3.list("a"), "v2 dump/load 往返一致");
-  assert.deepEqual(store4.list("b"), store3.list("b"), "多 provider 往返一致");
+  assert.equal(store4.loadBucket("opencode-go", "opencode-go-builtin", text), 2, "loadBucket 返回加载点数");
+  assert.deepEqual(store4.list("opencode-go", "opencode-go-builtin").samples, store3.list("opencode-go", "opencode-go-builtin").samples, "往返一致");
+  assert.deepEqual(store4.list("opencode-go", "opencode-go-builtin").columns.map((c) => c.key), ["rolling", "weekly", "monthly"], "columns 往返一致");
 
   // 防御
   const bad = makeHistoryStore({ maxAgeDays: 14, now: () => now });
-  assert.equal(bad.load("{bad json"), 0, "坏 JSON 返回 0");
-  assert.equal(bad.load(JSON.stringify({ version: 2, series: "x" })), 0, "坏结构返回 0");
-  assert.equal(bad.load(JSON.stringify({ version: 2, series: { a: { samples: [[1], ["x", 1, 2], [now, 1, 2]] } } })), 1, "坏元素丢弃，好元素保留");
+  assert.equal(bad.loadBucket("a", "b", "{bad json"), 0, "坏 JSON 返回 0");
+  assert.equal(bad.loadBucket("a", "b", JSON.stringify({ version: 3, samples: "x" })), 0, "坏结构返回 0");
+  assert.equal(bad.loadBucket("a", "b", JSON.stringify({ version: 3, columns: [{ key: "x", name: "X" }], samples: [[1], ["x", 1, 2], [now, 1, 2]] })), 1, "坏元素丢弃，好元素保留");
 }
 
 {
@@ -412,13 +413,21 @@ assert.equal(cache.get("b"), undefined, "clear 全清");
 // ---------------------------------------------------------------- fake ctx + apply
 
 function fakeReq(overrides = {}) {
-  return {
+  const req = {
     socket: { remoteAddress: "127.0.0.1" },
     headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
     method: "GET",
     url: "/",
+    // readJsonBody 用 for await 读 body：提供 async-iterator 桩
+    [Symbol.asyncIterator]: async function* () {
+      if (typeof overrides.body === "string" && overrides.body !== "") {
+        yield Buffer.from(overrides.body);
+      }
+      // 无 body 或空 → 直接结束（readJsonBody 得到空 → JSON.parse 抛 → 400）
+    },
     ...overrides,
   };
+  return req;
 }
 
 function makeFakeCtx(overrides = {}) {
@@ -447,14 +456,14 @@ function makeFakeCtx(overrides = {}) {
   assert.equal(routes.length, 0, "enabled:false 不注册路由");
 }
 
-// 注册 stats + history + adapters + user + health 五路由
+// 注册 stats + select + history + adapters + user + health 六路由
 {
   const { ctx, routes } = makeFakeCtx();
   await apply(ctx, {});
   assert.deepEqual(
     routes.map((r) => r.path).sort(),
-    [ROUTES.health, ROUTES.history, ROUTES.adapters, ROUTES.stats, "/api/dsh-opencode-usage/user/"].sort(),
-    "注册四条路由",
+    [ROUTES.health, ROUTES.history, ROUTES.adapters, ROUTES.stats, ROUTES.select, "/api/dsh-opencode-usage/user/"].sort(),
+    "注册六条路由",
   );
   assert.ok(routes.every((r) => r.kind === "exact" || r.kind === "prefix"), "路由 exact 或 prefix");
 }
@@ -496,6 +505,9 @@ function makeFakeCtx(overrides = {}) {
   assert.equal(payload.version, 1, "adapters.json 带契约版本");
   assert.equal(payload.host.length >= 1, true, "内置 opencode-go 在元数据中");
   assert.equal(payload.host[0].providers.includes("opencode-go"), true);
+  assert.equal(payload.host[0].id, "opencode-go-builtin", "候选带 id");
+  assert.equal(payload.host[0].enabled, true, "候选带 enabled");
+  assert.equal(payload.enabled["opencode-go"], "opencode-go-builtin", "enabled 映射 provider→adapterId");
   assert.deepEqual(payload.client, [], "无客户端适配器时为 []");
   // 带客户端适配器配置
   const { ctx: ctx3, routes: routes3 } = makeFakeCtx();
@@ -510,6 +522,52 @@ function makeFakeCtx(overrides = {}) {
   assert.equal(payload3.client[0].file, "/abs/my-relay-client.js");
   assert.ok(payload3.client[0].url.startsWith("/api/dsh-opencode-usage/user/"), "客户端适配器有 serve URL");
   assert.equal(payload3.client[0].resolved, false, "文件不存在标记 resolved=false");
+}
+
+// select 路由：403 / 405 / 400 / 404 / 200（光标方法）
+{
+  const { ctx, routes } = makeFakeCtx();
+  await apply(ctx, {});
+  const select = routes.find((r) => r.path === ROUTES.select);
+  assert.ok(select, "select 路由存在");
+
+  const responses = [];
+  const res = { writeHead: () => {}, end: (chunk) => responses.push(JSON.parse(chunk)) };
+  select.handler(fakeReq({ socket: { remoteAddress: "10.0.0.2" } }), res);
+  assert.equal(responses.at(-1).error, "forbidden: loopback-only", "select 非回环 403");
+
+  const res405 = { writeHead: (code) => { responses.push({ __code: code }); }, end: () => {} };
+  select.handler(fakeReq({ method: "GET" }), res405);
+  assert.equal(responses.at(-1).__code, 405, "select 非 POST 405");
+
+  // 400：空/非法 body
+  const res400 = { writeHead: (code) => { responses.push({ __code: code }); }, end: () => {} };
+  await select.handler(fakeReq({ method: "POST" }), res400);
+  assert.equal(responses.at(-1).__code, 400, "select 空 body 400");
+
+  // 404：未知 adapterId
+  const res404 = { writeHead: (code) => { responses.push({ __code: code }); }, end: () => {} };
+  await select.handler(
+    fakeReq({
+      method: "POST",
+      body: JSON.stringify({ provider: "opencode-go", adapterId: "no-such" }),
+    }),
+    res404,
+  );
+  assert.equal(responses.at(-1).__code, 404, "select 未知 adapter 404");
+
+  // 200：重选内置自身
+  let payload;
+  const res200 = { writeHead: () => {}, end: (chunk) => { payload = JSON.parse(chunk); } };
+  await select.handler(
+    fakeReq({
+      method: "POST",
+      body: JSON.stringify({ provider: "opencode-go", adapterId: "opencode-go-builtin" }),
+    }),
+    res200,
+  );
+  assert.equal(payload.ok, true, "select 重选内置成功");
+  assert.equal(payload.adapterId, "opencode-go-builtin");
 }
 
 // user 路由：403 / 405 / 404
@@ -553,17 +611,26 @@ function makeFakeCtx(overrides = {}) {
   assert.equal(payload.usage.windows[2].limit, 60, "窗口自带限额");
   assert.equal(payload.limits.monthly, 60, "响应带展示限额（兼容键）");
   assert.equal(payload.plugin, "dsh-opencode-usage");
+  // R2：summary 子树 + adapterId/hasAdapter
+  assert.equal(payload.adapterId, "opencode-go-builtin", "响应带当前启用 adapterId");
+  assert.equal(payload.hasAdapter, true, "有启用适配器");
+  assert.equal(payload.summary.provider, "opencode-go", "summary 内嵌子树");
+  assert.equal(payload.summary.hasAdapter, true, "summary 有启用适配器");
+  assert.equal(payload.summary.text, "5h 2% · 周 1% · 月 0%", "胶囊文案来自内置 summarize（短名）");
   const fetchedAt = payload.fetchedAt;
 
   // 显式 provider 参数
   await stats.handler(fakeReq({ url: `${ROUTES.stats}?provider=opencode-go` }), res);
   assert.equal(payload.ok, true, "显式 provider 参数正常");
 
-  // 未知 provider → no-adapter 引导
+  // 未知 provider → no-adapter 引导（无候选）
   await stats.handler(fakeReq({ url: `${ROUTES.stats}?provider=ghost-relay` }), res);
   assert.equal(payload.configured, false);
   assert.equal(payload.reason, "no-adapter");
   assert.equal(payload.usage, null);
+  assert.equal(payload.hasAdapter, false, "未知 provider 无启用适配器");
+  assert.equal(payload.adapterId, null, "未知 provider adapterId null");
+  assert.equal(payload.summary.hasAdapter, false, "summary 标记无适配器");
 
   // 缓存命中：第二次请求不触发 fetchImpl（计数不变）
   let calls = 0;
@@ -608,8 +675,9 @@ function makeFakeCtx(overrides = {}) {
   const res2 = { writeHead: () => {}, end: (chunk) => { payload = JSON.parse(chunk); } };
   history.handler(fakeReq(), res2);
   assert.equal(payload.ok, true);
-  assert.equal(payload.version, 2, "历史数据 v2");
+  assert.equal(payload.version, 3, "历史数据 v3");
   assert.equal(payload.provider, "opencode-go", "缺省 provider = opencode-go");
+  assert.equal(payload.adapterId, "opencode-go-builtin", "缺省 adapterId = 内置");
   assert.equal(payload.count, 0, "未采样前空历史");
   assert.deepEqual(payload.samples, []);
 
@@ -623,6 +691,7 @@ function makeFakeCtx(overrides = {}) {
   history.handler(fakeReq(), res3);
   assert.equal(payload.count, 1, "一次成功 fetch 产生一个采样点");
   assert.deepEqual(payload.samples[0].slice(1), [2, 1, 0], "采样点 = [ts, rolling, weekly, monthly] percent");
+  assert.deepEqual(payload.columns.map((c) => c.key), ["rolling", "weekly", "monthly"], "历史响应带列声明");
 
   history.handler(fakeReq({ url: "/api/dsh-opencode-usage/history?days=1" }), res3);
   assert.equal(payload.count, 1, "days=1 内包含当前采样点");
@@ -665,8 +734,10 @@ function makeFakeCtx(overrides = {}) {
   assert.deepEqual(payload.limits, DEFAULT_CONFIG.limits);
   assert.equal(payload.history.maxAgeDays, DEFAULT_CONFIG.maxAgeDays, "health 带历史摘要");
   assert.equal(typeof payload.history.count, "number");
-  assert.equal(typeof payload.history.persistFile, "string");
+  assert.equal(typeof payload.history.root, "string");
   assert.equal(payload.adapters.length >= 1, true, "health 带适配器快照");
+  assert.equal(payload.adapters[0].id, "opencode-go-builtin", "适配器快照带 id");
+  assert.equal(payload.adapters[0].enabled, true, "适配器快照带 enabled");
 
   const res403 = { writeHead: () => {}, end: (chunk) => { payload = JSON.parse(chunk); } };
   health.handler(fakeReq({ socket: { remoteAddress: "192.168.1.5" } }), res403);
@@ -680,7 +751,7 @@ function makeFakeCtx(overrides = {}) {
   assertClientSourceContract(join(here, ".."));
   assertClientProductContract(join(here, ".."));
   const literals = new Set(client.match(/\/api\/[A-Za-z0-9_/.-]+/gu) ?? []);
-  const hostPaths = new Set([ROUTES.stats, ROUTES.history, ROUTES.health, ROUTES.adapters]);
+  const hostPaths = new Set([ROUTES.stats, ROUTES.history, ROUTES.health, ROUTES.adapters, ROUTES.select]);
   for (const lit of literals) {
     assert.ok(hostPaths.has(lit), `client 字面量 ${lit} 在 host ROUTES 中存在`);
   }
