@@ -15,9 +15,28 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { executeClient } from './client-contract-lib.ts'
+import { AGGREGATE_NAME, checkAggregateConsistency, listPluginDirs, loadManifest, warnUnknownEntries } from './plugins-manifest-lib.ts'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
-const plugins = readdirSync(join(ROOT, 'packages')).filter(d => d.startsWith('dsh-') && d !== 'dsh-plugins-all')
+
+// 插件清单单一来源（issue #36）：枚举走 lib，目录集 == manifest.active 前置闸
+warnUnknownEntries(ROOT)
+let manifest
+try {
+  manifest = loadManifest(ROOT)
+} catch (e) {
+  console.log(`FAIL plugins-manifest | ${e.message}`)
+  process.exit(1)
+}
+{
+  const problems = checkAggregateConsistency({ dirNames: listPluginDirs(ROOT), manifest })
+  if (problems.length > 0) {
+    for (const p of problems) console.log(`FAIL plugins-manifest | ${p}`)
+    process.exit(1)
+  }
+  console.log('PASS plugins-manifest | 目录集 == manifest.active 集')
+}
+const plugins = listPluginDirs(ROOT)
 
 let failed = 0
 for (const p of plugins) {
@@ -93,18 +112,13 @@ for (const p of plugins) {
     if (!existsSync(join(pkgRoot, 'lib', 'index.js'))) problems.push('缺 lib/index.js')
     const patch = existsSync(join(pkgRoot, 'cordis.patch.yml')) ? readFileSync(join(pkgRoot, 'cordis.patch.yml'), 'utf8') : ''
     if (!patch) problems.push('缺 cordis.patch.yml')
-    // 聚合行 id 必须与对应子包 patch id 一致（且无 config）
+    // 聚合行/依赖与 manifest.active 双向相等（issue #36：deps「多」也会 fail-loud）
     if (patch) {
       const aggRows = [...patch.matchAll(/^\s*- id:\s*(\S+)/gm)].map(m => m[1])
-      for (const pd of plugins) {
-        if (!aggRows.includes(`ui-${pd}`)) problems.push(`聚合行缺 ui-${pd}（与子包 id 不一致）`)
-      }
-      if (aggRows.length !== plugins.length) problems.push(`聚合行数 ${aggRows.length} != 子包数 ${plugins.length}`)
+      const deps = JSON.parse(readFileSync(join(pkgRoot, 'package.json'), 'utf8')).dependencies ?? {}
+      problems.push(...checkAggregateConsistency({ dirNames: plugins, manifest, aggDeps: deps, aggPatchIds: aggRows }))
       if (/^\s*config:/m.test(patch)) problems.push('聚合行带 config（应走 schema 默认值）')
     }
-    // dependencies 完整（开发态为 workspace:*；发布时替换为版本——存在即认可）
-    const deps = JSON.parse(readFileSync(join(pkgRoot, 'package.json'), 'utf8')).dependencies ?? {}
-    for (const pd of plugins) if (!deps[`@wingsky-1/${pd}`]) problems.push(`依赖缺 @wingsky-1/${pd}`)
     if (problems.length > 0) failed++
     console.log(`${problems.length === 0 ? 'PASS' : 'FAIL'} ${aggName} | ${problems.join('; ') || '聚合 tarball 完整且与子包一致'}`)
   } catch (e) {

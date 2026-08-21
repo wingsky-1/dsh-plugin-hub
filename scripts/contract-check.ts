@@ -14,16 +14,16 @@
  * materialize/断言），本脚本只负责包级联动断言（dsh.client 声明 ⇒
  * exports["./client"] 存在；src/client.ts ⇒ lib/client.js 产物存在）与报告汇总。
  */
-import { readFileSync, readdirSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assertClientContract } from './client-contract-lib.ts'
+import { listPluginDirs } from './plugins-manifest-lib.ts'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const packagesDir = join(ROOT, 'packages')
 
-const pluginDirs = readdirSync(packagesDir)
-  .filter((d) => d.startsWith('dsh-') && d !== 'dsh-plugins-all')
+const pluginDirs = listPluginDirs(ROOT)
 
 let failed = 0
 let checked = 0

@@ -1,0 +1,27 @@
+{
+  "active": [
+    "dsh-idle-archive",
+    "dsh-lan-proxy",
+    "dsh-mcp-manager",
+    "dsh-notifier",
+    "dsh-provider-usage",
+    "dsh-web-file-preview"
+  ],
+  "retired": [
+    {
+      "name": "dsh-gzip",
+      "reason": "HTTP 响应 gzip 压缩能力合并进 dsh-lan-proxy 转发层（0.1.9 起），不再独立分发",
+      "successor": "@wingsky-1/dsh-lan-proxy"
+    },
+    {
+      "name": "dsh-opencode-usage",
+      "reason": "重构为多 provider 适配器框架并更名，配置不自动迁移",
+      "successor": "@wingsky-1/dsh-provider-usage"
+    },
+    {
+      "name": "dsh-skill-explorer",
+      "reason": "停止维护；web UI 侧已有更优实现（符号链接识别、链接技能安全处理）",
+      "successor": "@linxin666/dsh-client-ui-skill-explorer"
+    }
+  ]
+}

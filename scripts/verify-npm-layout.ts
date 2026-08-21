@@ -19,9 +19,10 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { executeClient } from './client-contract-lib.ts'
+import { AGGREGATE_NAME, listPluginDirs } from './plugins-manifest-lib.ts'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
-const plugins = readdirSync(join(ROOT, 'packages')).filter(d => d.startsWith('dsh-') && d !== 'dsh-plugins-all')
+const plugins = listPluginDirs(ROOT)
 
 let failed = 0
 
@@ -31,7 +32,8 @@ let failed = 0
 //    git/file/link 安装会跑，导致装不上。发布物应预构建，安装即解包；构建只在发布期
 //    由 prepublishOnly 跑（不随安装执行）。聚合包 dsh-plugins-all 已对齐此约定。
 const FORBIDDEN_INSTALL_SCRIPTS = ['preinstall', 'install', 'postinstall', 'prepare']
-const allPackages = readdirSync(join(ROOT, 'packages')).filter(d => d.startsWith('dsh-'))
+// 全部发布包（含聚合包）：目录枚举 + 聚合包名，与 plugins-manifest-lib 同源
+const allPackages = [...listPluginDirs(ROOT), AGGREGATE_NAME]
 for (const p of allPackages) {
   const pkgJson = JSON.parse(readFileSync(join(ROOT, 'packages', p, 'package.json'), 'utf8'))
   const bad = Object.keys(pkgJson.scripts ?? {}).filter(s => FORBIDDEN_INSTALL_SCRIPTS.includes(s))

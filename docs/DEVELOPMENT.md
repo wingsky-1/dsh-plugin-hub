@@ -126,6 +126,18 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
 - `assertClientSourceContract`（smoke-lib）：兼容三种产物形态（纯净 wrapper /
   React externals / legacy），断言 `"use strict"`、契约外壳、Symbol.toStringTag、
   `factory: function(`、load 注册。
+- **插件清单单一来源**（issue #36）：某插件是否参与聚合/发布校验，唯一事实源是
+  `scripts/plugins-manifest.json`——`aggregate.ts` / `pack-check.ts` /
+  `contract-check.ts` / `verify-npm-layout.ts` 共读，并断言
+  「packages/ 目录集 == manifest.active 集」双向相等。
+  - **新增插件**：建目录后必须同步把目录名加入 `active`，否则全部门禁红
+    （opt-in fail-closed 设计：防止半成品目录被自动卷进聚合 patch 与发布管线）；
+  - **退役插件**：删除 packages/ 目录（git 历史保留），并在 `retired` 数组登记
+    `{ name, reason, successor }` 档案；
+  - `active` 刻意**不自动生成**：它就是「当前有哪些插件」的人工确认点，自动枚举
+    会退回「目录即事实源」的 fail-open 老路；
+  - schema 加载/校验逻辑只有一份：`scripts/plugins-manifest-lib.ts`（纯函数，
+    入口脚本只喂数据），测试见 `scripts/plugins-manifest.test.ts`。
 - **新增/修改客户端后**：`pnpm build && pnpm test && pnpm contract && pnpm pack:check`
   全绿再提交。
 
