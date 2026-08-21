@@ -108,21 +108,20 @@ GUI settings entry: Settings → Plugins → "LAN Access" card (saved changes ap
   Note: traffic that reaches the loopback web directly (local browser on `127.0.0.1:3080`,
   not through this plugin) is outside the compression surface — loopback links do not
   need compression.
-- **Migrating from dsh-gzip**: upgrade this plugin first, confirm the merged version is
-  active, then uninstall the standalone gzip package:
+- **Migrating from dsh-gzip**: upgrade this plugin, confirm compression is active, then
+  uninstall the standalone gzip package:
 
   ```sh
   dsh plugin --profile web update @wingsky-1/dsh-lan-proxy    # requires >= 0.1.10
-  curl -s http://127.0.0.1:3081/api/dsh-lan-proxy/compression  # loopback check: continue only when it returns {"merged":true}
+  curl -s http://127.0.0.1:3081/api/dsh-lan-proxy/health      # loopback check: continue when httpCompressMounted is true
   dsh plugin --profile web remove @wingsky-1/dsh-gzip
   # Restart dsh web to take effect
   ```
 
-- dsh-gzip v0.1.10+ detects this plugin's merged marker route
-  (`/api/dsh-lan-proxy/compression`) and skips its own installation (warns to uninstall);
-  when earlier versions or any host-side compression implementation coexists with this
-  plugin, the content-encoding check still guarantees responses are compressed at most
-  once (verified for every assembly order).
+- When legacy gzip@0.1.9 (no detection logic) coexists with this plugin, the
+  content-encoding check still guarantees responses are compressed at most once
+  (verified for every assembly order) — responses are never corrupted; uninstall it
+  promptly to keep health diagnostics unambiguous.
 
 ## HTTPS Support
 

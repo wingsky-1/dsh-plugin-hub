@@ -553,6 +553,11 @@ const main = async () => {
         const gz = gzipSync(Buffer.from(bigBody));
         res.writeHead(200, { "content-type": "application/json", "content-encoding": "gzip" });
         res.end(gz);
+      } else if (p === "/cut") {
+        // 悬挂回归：上游发头 + 部分 body 后暴力断连，客户端必须快速终止。
+        res.writeHead(200, { "content-type": "application/json", "content-length": String(9_000_000) });
+        res.write("y".repeat(300_000));
+        setTimeout(() => { res.socket?.destroy(); }, 30);
       } else { res.writeHead(404); res.end(); }
     });
     await new Promise((r) => upstream.listen(upPort, "127.0.0.1", r));
@@ -605,6 +610,26 @@ const main = async () => {
       assert.ok(statsOn.compressed >= 3, `compressed=${statsOn.compressed}（/big×1 + /range + /pregzip）`);
       assert.ok(statsOn.passthrough >= 1, `passthrough=${statsOn.passthrough}（SSE）`);
     });
+    // 悬挂回归（评审增量发现）：上游中途断连时 pipe 不传播错误，若不监听
+    // aborted/error 终止下游，客户端将无限悬挂。修复后必须在短时限内结束。
+    {
+      const cut = await new Promise((resolve) => {
+        const t0 = Date.now();
+        const req = httpRequest({ host: "127.0.0.1", port: pxPort, path: "/cut", headers: { host: "127.0.0.1", "accept-encoding": "gzip" } }, (res) => {
+          let bytes = 0;
+          res.on("data", (c) => { bytes += c.length; });
+          const finish = (how) => resolve({ how, bytes, ms: Date.now() - t0 });
+          res.on("end", () => finish("end"));
+          res.on("close", () => finish(`close(aborted=${res.aborted})`));
+          res.on("error", (e) => finish(`error:${e.code ?? e.message}`));
+        });
+        req.on("error", (e) => resolve({ how: `reqError:${e.code ?? e.message}`, bytes: 0, ms: Date.now() - t0 }));
+        req.end();
+      });
+      check("转发层：上游中途断连 → 客户端快速终止（不悬挂回归）", () => {
+        assert.ok(cut.ms < 4000, `耗时 ${cut.ms}ms（>4s 视作悬挂），结束方式 ${cut.how}`);
+      });
+    }
     await proxyOn.close();
 
     const proxyOff = createLanProxy(
@@ -774,25 +799,6 @@ const main = async () => {
     };
     apply(ctx, { host: "127.0.0.1", port: 19993, httpsEnabled: false });
 
-    const markerRoute = ws.exact.get(ROUTES.compression);
-    check("合并标记路由已注册", () => assert.ok(markerRoute, "compression marker route registered"));
-
-    const mRes403 = new FakeRes();
-    markerRoute.handler(makeReq({ socket: { remoteAddress: "192.168.1.9" } }), mRes403);
-    check("标记路由非回环 403", () => {
-      assert.equal(mRes403.statusCode, 403);
-      assert.equal(JSON.parse(Buffer.concat(mRes403._chunks).toString("utf8")).error, "forbidden: loopback-only");
-    });
-    const mRes405 = new FakeRes();
-    markerRoute.handler(makeReq({ method: "POST" }), mRes405);
-    check("标记路由 POST 405", () => assert.equal(mRes405.statusCode, 405));
-    const mRes200 = new FakeRes();
-    markerRoute.handler(makeReq(), mRes200);
-    check("标记路由 GET 回环返回 merged:true", () => {
-      assert.equal(mRes200.statusCode, 200);
-      assert.equal(JSON.parse(Buffer.concat(mRes200._chunks).toString("utf8")).merged, true);
-    });
-
     const apiRoute = ws.prefixes.get("/api");
     check("webServer handler 不被触碰（压缩在转发层，非宿主端 patch）", () => {
       assert.equal(apiRoute.handler, apiHandler, "/api handler 原样保留");
@@ -802,6 +808,7 @@ const main = async () => {
     const hRes = new FakeRes();
     healthRoute.handler(makeReq(), hRes);
     check("health 扩展返回压缩配置与生效状态", () => {
+      assert.equal(ws.exact.has(ROUTES.health), true, "health 路由已注册");
       const payload = JSON.parse(Buffer.concat(hRes._chunks).toString("utf8"));
       assert.equal(payload.httpCompressEnabled, true);
       assert.equal(payload.httpCompressLevel, 1);
@@ -812,8 +819,7 @@ const main = async () => {
     for (const d of [...disposers].reverse()) {
       try { d(); } catch {}
     }
-    check("lifecycle 卸载撤下标记路由且 webServer 原样", () => {
-      assert.equal(ws.exact.has(ROUTES.compression), false, "标记路由移除");
+    check("lifecycle 卸载撤下 health 路由且 webServer 原样", () => {
       assert.equal(ws.prefixes.get("/api").handler, apiHandler, "/api handler 全程原样");
       assert.equal(ws.exact.has(ROUTES.health), false, "health 路由移除");
     });
@@ -841,8 +847,7 @@ const main = async () => {
       effect(fn) { const d = fn(); if (typeof d === "function") disposers.push(d); return d; },
     };
     apply(ctx, { host: "127.0.0.1", port: 19994, httpsEnabled: false, httpCompressEnabled: false });
-    check("关闭压缩：无标记路由、health mounted=false", () => {
-      assert.equal(ws.exact.has(ROUTES.compression), false, "未注册标记路由");
+    check("关闭压缩：health mounted=false", () => {
       assert.equal(ws.prefixes.get("/api").handler, apiHandler, "webServer handler 原样");
       assert.ok(ws.exact.has(ROUTES.health), "health 路由仍注册（转发功能不受影响）");
       const hRes = new FakeRes();
@@ -858,8 +863,8 @@ const main = async () => {
     rmSync(applyHome, { recursive: true, force: true });
   }
 
-  // apply：运行中经 config.json 热关闭——压缩层与标记路由必须随 watch 卸载。
-  console.log("apply: 运行中热关闭（config.json watch → 压缩层卸载）");
+  // apply：运行中经 config.json 热关闭——压缩生效状态必须随 watch 翻转。
+  console.log("apply: 运行中热关闭（config.json watch → 压缩卸载）");
   const hotOffCase = async (label, patch, expectProxyOff) => {
     const applyHome = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-hotoff-"));
     const prevHome = process.env.DSH_HOME;
@@ -878,19 +883,23 @@ const main = async () => {
       effect(fn) { const d = fn(); if (typeof d === "function") disposers.push(d); return d; },
     };
     apply(ctx, { host: "127.0.0.1", port: 19995, httpsEnabled: false });
-    assert.ok(ws.exact.has(ROUTES.compression), "前置：标记路由已注册");
+    const healthMounted = () => {
+      const hRes = new FakeRes();
+      ws.exact.get(ROUTES.health).handler(makeReq(), hRes);
+      return JSON.parse(Buffer.concat(hRes._chunks).toString("utf8")).httpCompressMounted;
+    };
+    assert.ok(healthMounted() === true, "前置：压缩已生效");
     // 运行中写 config.json 触发热更新；轮询等待 watch（150ms 防抖）生效，
     // 不用固定 sleep（防 flake 纪律）。
     writeConfigFile(pluginDir(), patch);
     const deadline = Date.now() + 5000;
-    while (ws.exact.has(ROUTES.compression) && Date.now() < deadline) await sleep(25);
-    check(`${label}：标记路由撤下、webServer 原样`, () => {
-      assert.equal(ws.exact.has(ROUTES.compression), false, "标记路由已撤下");
+    while (healthMounted() && Date.now() < deadline) await sleep(25);
+    check(`${label}：压缩卸载、webServer 原样`, () => {
+      assert.equal(healthMounted(), false, "health mounted=false");
       assert.equal(ws.prefixes.get("/api").handler, apiHandler, "webServer handler 全程原样");
       const hRes = new FakeRes();
       ws.exact.get(ROUTES.health).handler(makeReq(), hRes);
       const payload = JSON.parse(Buffer.concat(hRes._chunks).toString("utf8"));
-      assert.equal(payload.httpCompressMounted, false, "health mounted=false");
       if (expectProxyOff) assert.equal(payload.listening, false, "转发器已停");
     });
     for (const d of [...disposers].reverse()) {

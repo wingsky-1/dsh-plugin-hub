@@ -358,6 +358,12 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
         agent,
       },
       (upstreamRes) => {
+        // 上游响应中途断开（dsh web 崩溃/重启）：pipe 不传播错误，必须显式终止
+        // 下游，否则客户端无限悬挂（实测复现）。headers 已发出时 destroy 断连，
+        // 客户端视作响应截断自行重试；连接池槽位随 socket 销毁自动释放。
+        const abortDownstream = () => res.destroy();
+        upstreamRes.on("aborted", abortDownstream);
+        upstreamRes.on("error", abortDownstream);
         res.writeHead(upstreamRes.statusCode!, upstreamRes.headers);
         upstreamRes.pipe(res);
       },

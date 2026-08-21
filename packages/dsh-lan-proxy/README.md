@@ -96,19 +96,18 @@ GUI 设置入口：设置 → 插件 → 「局域网访问」卡片（保存即
 - 实现位置在转发器自己的监听链上，不修改 dsh web 与任何其他插件的运行时行为；
   `httpCompressEnabled: false` 一键关闭。注意：直连回环 web（本机浏览器访问
   `127.0.0.1:3080`，不经本插件）的流量不在压缩面内——回环链路无需压缩。
-- **从 dsh-gzip 迁移**：先升级本插件并确认合并版已生效，再卸载独立 gzip 包：
+- **从 dsh-gzip 迁移**：升级本插件并确认压缩生效后，卸载独立 gzip 包：
 
   ```sh
   dsh plugin --profile web update @wingsky-1/dsh-lan-proxy    # 需 >= 0.1.10
-  curl -s http://127.0.0.1:3081/api/dsh-lan-proxy/compression  # 回环校验：返回 {"merged":true} 再继续
+  curl -s http://127.0.0.1:3081/api/dsh-lan-proxy/health      # 回环校验：httpCompressMounted 为 true 再继续
   dsh plugin --profile web remove @wingsky-1/dsh-gzip
   # 重启 dsh web 生效
   ```
 
-- dsh-gzip v0.1.10+ 会自动检测本插件的合并标记路由
-  （`/api/dsh-lan-proxy/compression`）并跳过自身安装（warn 提示卸载）；
-  更早版本或任何宿主端压缩实现与本插件并存时，因 content-encoding 检查
-  也只会压缩一次（已实测任意装配顺序均单层）。
+- 存量 gzip@0.1.9（无检测逻辑）与本插件双装时，因 content-encoding 检查只会
+  压缩一次（已实测任意装配顺序均单层），不会损坏响应；建议尽快卸载以免
+  health 诊断口径混淆。
 
 ## HTTPS 支持
 

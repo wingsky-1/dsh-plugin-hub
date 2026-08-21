@@ -40,11 +40,6 @@ export const inject = ["webServer"];
 /** 与客户端共享的 health 路由（单一来源）。 */
 export const ROUTES = {
   health: "/api/dsh-lan-proxy/health",
-  /**
-   * 合并版压缩标记路由（exact，loopback 围栏）：dsh-gzip v0.1.10+ 以本路由
-   * 存在为准判定「lan-proxy 已内置 HTTP 压缩」并跳过自身安装（防双装双压）。
-   */
-  compression: "/api/dsh-lan-proxy/compression",
 };
 
 /** RPC 通道（客户端设置卡片 connection.rpc.call 同款）。 */
@@ -327,8 +322,6 @@ export function apply(ctx: PluginContext, config: LanProxyConfig = {}): void {
   /** 配置实时来源：GUI 设置注册后优先，否则为组合层 entry + 插件配置文件。 */
   let current: () => LanProxyConfig = () => ({ ...config, ...fileConfig });
   let disposeProxy: (() => void) | undefined;
-  /** 合并版压缩标记路由的 disposer（随压缩开关在 sync() 内挂撤）。 */
-  let disposeMarker: (() => void) | undefined;
   /** 当前存活转发器（health 读取压缩协商计数用）。 */
   let activeProxy: LanProxy | undefined;
   let disposed = false;
@@ -390,26 +383,8 @@ export function apply(ctx: PluginContext, config: LanProxyConfig = {}): void {
       disposeProxy = undefined;
     }
     const value = resolve();
-    // HTTP 响应压缩开关（整插件关闭时标记路由一并撤下——与启动态
-    // 「enabled=false 不注册任何东西」语义一致）。
+    // HTTP 响应压缩开关（随转发器在 sync() 内一并生效/关闭）。
     const httpCompressEnabled = value.enabled !== false && value.httpCompressEnabled !== false;
-    // 合并版标记路由（exact，loopback 围栏）：dsh-gzip v0.1.10+ 据此跳过自身
-    // 安装。仅压缩启用时存在——关闭压缩即撤下，gzip 兼容版会恢复接管。
-    // 纯随配置状态挂撤，不依赖转发器端口解析结果。
-    if (httpCompressEnabled && disposeMarker === undefined) {
-      disposeMarker = ctx.webServer.register({
-        kind: "exact",
-        path: ROUTES.compression,
-        handler(req, res) {
-          if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
-          if (req.method !== "GET") return writeJson(res, 405, { error: "method not allowed: " + req.method });
-          writeJson(res, 200, { merged: true, plugin: "dsh-lan-proxy" });
-        },
-      });
-    } else if (!httpCompressEnabled && disposeMarker !== undefined) {
-      disposeMarker();
-      disposeMarker = undefined;
-    }
     if (!value.enabled) {
       return;
     }
@@ -641,11 +616,6 @@ export function apply(ctx: PluginContext, config: LanProxyConfig = {}): void {
     if (disposeProxy) {
       disposeProxy();
       disposeProxy = undefined;
-    }
-    // 撤下压缩标记路由（压缩随转发器重建，无独立资源需释放）。
-    if (disposeMarker) {
-      disposeMarker();
-      disposeMarker = undefined;
     }
   }, "lan-proxy: lifecycle");
 }

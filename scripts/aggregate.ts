@@ -27,14 +27,11 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const CHECK = process.argv.includes('--check')
 const AGGREGATE_NAME = 'dsh-plugins-all'
 const PATCH_PATH = join(ROOT, 'packages', AGGREGATE_NAME, 'cordis.patch.yml')
-// 已退役插件：不再进入聚合 patch（dsh-gzip 压缩能力已合并进 dsh-lan-proxy，
-// 见其 README 退役节；子包本身仍随仓发布至删除周期）。
-const RETIRED = new Set(['dsh-gzip'])
 
-/** 独立插件子包目录（排除聚合包与已退役包）。 */
+/** 独立插件子包目录（排除聚合包）。 */
 function childPlugins() {
   return readdirSync(join(ROOT, 'packages'))
-    .filter((d) => d.startsWith('dsh-') && d !== AGGREGATE_NAME && !RETIRED.has(d))
+    .filter((d) => d.startsWith('dsh-') && d !== AGGREGATE_NAME)
     .sort()
 }
 
