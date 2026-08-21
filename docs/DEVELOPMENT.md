@@ -144,3 +144,29 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
 
 正例（mcp-manager）：设 `DSH_HOME` 到临时目录、每块显式 `storePath: join(dir, "dsh-mcp.json")`、
 写盘为 `await writeFile`（已等待）。
+
+## 6. 多端兼容（三操作系统 + 三访问形态 + 明暗双主题）
+
+dsh web 部署在 Linux 服务器，经局域网被多种设备 / 系统访问。插件（尤其客户端 UI 与
+涉及文件 / 命令的宿主逻辑）必须同时满足以下三端兼容要求：
+
+1. **三操作系统（mac / linux / windows）**：插件在三种 OS 下都能正确工作。
+   - 路径 / 分隔符一律用 `node:path`（`join` / `sep`），禁止字符串拼接 `/` 或 `\`；
+     行尾、大小写敏感路径按 OS 处理。
+   - 不写死 OS 专属命令 / 二进制；若必须（如 notifier 的 Windows `toast.ps1`），按 OS
+     分支并提供 mac / linux 等价实现或优雅降级，不抛错阻断。
+   - 脚本 / 构建在三种 OS 均可跑（CI 即跨平台验证）。
+
+2. **三访问形态（PC / pad / phone）**：界面响应式、触控友好、窄屏可用。
+   - 布局用响应式（flex / grid + 媒体查询），不写死宽度；触控目标足够大、间距合理。
+   - 窄屏（phone / pad 竖屏）下信息不溢出、可滚动、关键操作可达；pad / phone 经局域网
+     访问是主要场景之一。
+
+3. **明暗双主题（light / dark）**：**禁止硬编码单一配色**。
+   - 颜色统一走 `--dsw-alias-*` / `--dsw-hljs-*` 等实时主题变量 + 浅色回退
+     （见 §2.3 / §3），明暗自适应；不要在 CSS / TS 里写死 `#fff` / `rgb(...)` 固定色。
+   - 挂载失败只 `console.warn`，绝不让 GUI 启动失败。
+
+验证：客户端交互改动须真机 / 浏览器在**双主题 + 窄屏（pad / phone）**下验证（呼应
+`dsh-plugin-hub-dev` skill §7 的浏览器 MCP 真点查 DOM）；宿主端逻辑须在三 OS 下可运行。
+构造的样例数据放工作区（如 `fwp-verify/`），不纳入发布包。
