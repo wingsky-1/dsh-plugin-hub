@@ -1,0 +1,3 @@
+- insert:
+    - id: ui-dsh-provider-usage
+      name: '@wingsky-1/dsh-provider-usage'

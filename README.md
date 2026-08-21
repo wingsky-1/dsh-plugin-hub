@@ -18,7 +18,7 @@ DSH（DeepSeek Harness）Web GUI 插件集，**npm 分发**：既可一键安装
 | 包名 | 功能 | 文档 | 状态 |
 |---|---|---|---|
 | `@wingsky-1/dsh-notifier` | 审批/完成/错误事件通知（浏览器 Notification + 系统 toast） | [README](packages/dsh-notifier/README.md) | ✅ 已发布 |
-| `@wingsky-1/dsh-opencode-usage` | OpenCode Go 套餐用量悬浮框（rolling/weekly/monthly） | [README](packages/dsh-opencode-usage/README.md) | ✅ 已发布 |
+| `@wingsky-1/dsh-provider-usage` | 多 provider 用量悬浮框（按 Provider 适配器框架，内置 OpenCode Go） | [README](packages/dsh-provider-usage/README.md) | ✅ 已发布 |
 | `@wingsky-1/dsh-lan-proxy` | 局域网访问 dsh web UI（HTTP/HTTPS/WS 转发 + TLS） | [README](packages/dsh-lan-proxy/README.md) | ✅ 已发布 |
 | `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理器（stdio/HTTP，工具注册给模型） | [README](packages/dsh-mcp-manager/README.md) | ✅ 已发布 |
 | `@wingsky-1/dsh-idle-archive` | 会话闲置提醒归档 | [README](packages/dsh-idle-archive/README.md) | ✅ 已发布 |
@@ -113,7 +113,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
 
 ```sh
 # 检测 profile 中是否仍引用旧 id（home 级与 profile 级）
-grep -rnE '^\s*id:\s*(dsh-gzip|dsh-idle-archive|lan-proxy|mcp-manager|notifier|opencode-usage)\s*$' \
+grep -rnE '^\s*id:\s*(dsh-gzip|dsh-idle-archive|lan-proxy|mcp-manager|notifier|opencode-usage|ui-dsh-opencode-usage)\s*$' \
   "$DSH_HOME/cordis.patch.yml" ~/.dsh/profiles/*/cordis.patch.yml 2>/dev/null
 # 有输出 → 重装覆盖拉取新配置（默认装 latest，即当前最新版）
 dsh plugin --profile web remove @wingsky-1/<包>

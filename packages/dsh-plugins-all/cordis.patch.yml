@@ -12,7 +12,7 @@
       name: '@wingsky-1/dsh-mcp-manager'
     - id: ui-dsh-notifier
       name: '@wingsky-1/dsh-notifier'
-    - id: ui-dsh-opencode-usage
-      name: '@wingsky-1/dsh-opencode-usage'
+    - id: ui-dsh-provider-usage
+      name: '@wingsky-1/dsh-provider-usage'
     - id: ui-dsh-web-file-preview
       name: '@wingsky-1/dsh-web-file-preview'
