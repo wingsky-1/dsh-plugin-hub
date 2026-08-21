@@ -1,6 +1,6 @@
 # 5. 设置面板独立 tab「用量统计」（子文件）
 
-> 主文件：[dsh-opencode-usage-provider-adapter-plan.md](dsh-opencode-usage-provider-adapter-plan.md)（阶段总览）
+> 主文件：[dsh-provider-usage-provider-adapter-plan.md](dsh-provider-usage-provider-adapter-plan.md)（阶段总览）
 > 本文件细化设置面板独立顶层 tab 的双端接线与页面内容，并与浮窗胶囊共享核心层。
 
 ---
@@ -23,13 +23,13 @@ M0 探针② 验证。
 
 ## 5.1 双端接线
 
-**宿主端**：`installSettingsNamespace(ctx, "dsh-opencode-usage", schema, entry, {
+**宿主端**：`installSettingsNamespace(ctx, "dsh-provider-usage", schema, entry, {
 setSource, onChange })`（复用本插件 `shared/settings-namespace.js`，能力已在包内
 未启用）。作用：让该 tab 能读写本插件配置（含 `adapters`），并让配置变更经
 `onChange` 触发宿主侧热生效。
 
 **客户端**：`slots.inject("settings.section", …)` 注册一条
-`{ id: "dsh-opencode-usage", order: <靠后位置>, label: "用量统计" }`，渲染
+`{ id: "dsh-provider-usage", order: <靠后位置>, label: "用量统计" }`，渲染
 **React 页面组件**（React externals 路径 + `react-shim.d.ts`）。组件内部经注入面 /
 `host.call` 拉取数据、读写配置。
 
@@ -39,10 +39,10 @@ setSource, onChange })`（复用本插件 `shared/settings-namespace.js`，能�
 
 | 区 | 内容 |
 | --- | --- |
-| 总览 | 当前会话 provider 识别结果 + 说明（复用同一 provider 解析，与浮窗一致） |
+| 总览 | 当前会话 provider 识别结果 + 生效适配器（id/label）+ 说明（复用同一 provider 解析，与浮窗一致） |
 | 用量可视化 | 三窗口/多窗口完整图表 + 明细表格（窗口/当前%/限额/重置/趋势）；比浮窗迷你图更完整 |
-| **适配器管理** | 列出生效适配器（内置 + 用户注入 host/client）：provider 名、来源文件、加载状态；失败/缺失给配置引导。**是「用户自定义 js」的可视化配置落点** |
-| 配置编辑 | 本插件可配置键（baseUrl / limits / adapters 路径 / 采样间隔等），读写经 settings 命名空间 + `normalizeConfig` 净化，保存即生效 |
+| **适配器管理** | 按 provider 分组展示**候选列表**（内置 + 用户注入）：每条显示 `id`、`label`、来源文件、加载状态、`enabled` 标记；单选「启用」切换（走 `POST /adapters/select`）；失败/无启用给配置引导。**是「用户自定义 js」的可视化配置落点** |
+| 配置编辑 | 本插件可配置键（baseUrl / limits / adapters 路径（含 `enabled`）/ 采样间隔等），读写经 settings 命名空间 + `normalizeConfig` 净化，保存即生效 |
 
 ---
 

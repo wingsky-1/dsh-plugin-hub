@@ -19,7 +19,7 @@ install them all at once as a single bundle, or pick individual plugins as neede
 | Package | What it does | Docs | Status |
 |---|---|---|---|
 | `@wingsky-1/dsh-notifier` | Approval/completion/error event notifications (browser Notification + system toast) | [README](packages/dsh-notifier/README.md) | ✅ Published |
-| `@wingsky-1/dsh-opencode-usage` | OpenCode Go plan usage float pill (rolling / weekly / monthly) | [README](packages/dsh-opencode-usage/README.md) | ✅ Published |
+| `@wingsky-1/dsh-provider-usage` | Multi-provider usage float pill (per-provider adapter framework, built-in OpenCode Go) | [README](packages/dsh-provider-usage/README.md) | ✅ Published |
 | `@wingsky-1/dsh-lan-proxy` | Access the dsh web UI over LAN (HTTP/HTTPS/WS forwarding + TLS) | [README](packages/dsh-lan-proxy/README.md) | ✅ Published |
 | `@wingsky-1/dsh-mcp-manager` | MCP server manager (stdio / HTTP, registers tools for the model) | [README](packages/dsh-mcp-manager/README.md) | ✅ Published |
 | `@wingsky-1/dsh-idle-archive` | Prompt to archive idle conversations | [README](packages/dsh-idle-archive/README.md) | ✅ Published |
@@ -122,7 +122,7 @@ affected packages to pull the new patch:
 
 ```sh
 # Detect whether old ids are still referenced in the profile (home-level and profile-level)
-grep -rnE '^\s*id:\s*(dsh-gzip|dsh-idle-archive|lan-proxy|mcp-manager|notifier|opencode-usage)\s*$' \
+grep -rnE '^\s*id:\s*(dsh-gzip|dsh-idle-archive|lan-proxy|mcp-manager|notifier|opencode-usage|ui-dsh-opencode-usage)\s*$' \
   "$DSH_HOME/cordis.patch.yml" ~/.dsh/profiles/*/cordis.patch.yml 2>/dev/null
 # If output exists → reinstall to overwrite and pull the new config (default = latest)
 dsh plugin --profile web remove @wingsky-1/<package>

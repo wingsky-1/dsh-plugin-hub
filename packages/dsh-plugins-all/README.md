@@ -51,7 +51,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
 | 包 | 功能 |
 |---|---|
 | `@wingsky-1/dsh-notifier` | 审批/完成/错误事件通知（浏览器 Notification + 系统 toast） |
-| `@wingsky-1/dsh-opencode-usage` | OpenCode Go 套餐用量悬浮框 |
+| `@wingsky-1/dsh-provider-usage` | 多 provider 用量悬浮框（适配器框架，内置 OpenCode Go） |
 | `@wingsky-1/dsh-lan-proxy` | 局域网访问 dsh web UI（HTTP/HTTPS/WS + TLS） |
 | `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理器（stdio/HTTP，工具注册给模型） |
 | `@wingsky-1/dsh-idle-archive` | 会话闲置提醒归档 |

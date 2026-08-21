@@ -1,7 +1,7 @@
 {
   "name": "@wingsky-1/dsh-plugins-all",
   "version": "0.1.9",
-  "description": "DSH 插件全家桶聚合包：一键安装全部 7 个功能插件（gzip / idle-archive / notifier / opencode-usage / mcp-manager / lan-proxy / web-file-preview）。装它 = 子包 dependencies 拉齐 + 聚合 cordis patch 激活。",
+  "description": "DSH 插件全家桶聚合包：一键安装全部 7 个功能插件（gzip / idle-archive / notifier / provider-usage / mcp-manager / lan-proxy / web-file-preview）。装它 = 子包 dependencies 拉齐 + 聚合 cordis patch 激活。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -31,7 +31,7 @@
     "@wingsky-1/dsh-gzip": "workspace:*",
     "@wingsky-1/dsh-idle-archive": "workspace:*",
     "@wingsky-1/dsh-notifier": "workspace:*",
-    "@wingsky-1/dsh-opencode-usage": "workspace:*",
+    "@wingsky-1/dsh-provider-usage": "workspace:*",
     "@wingsky-1/dsh-mcp-manager": "workspace:*",
     "@wingsky-1/dsh-lan-proxy": "workspace:*",
     "@wingsky-1/dsh-web-file-preview": "workspace:*"

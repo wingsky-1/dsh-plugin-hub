@@ -1,5 +1,5 @@
 {
-  "name": "@wingsky-1/dsh-opencode-usage",
+  "name": "@wingsky-1/dsh-provider-usage",
   "version": "0.1.9",
   "description": "OpenCode Go 套餐用量悬浮框：右上角常驻三窗口消耗百分比，展开为 rolling/weekly/monthly 三张独立迷你图（各窗口独立自适应坐标轴、100% 配额参考线、重置标记线、后台采样保历史连续；官方 /v1/usage 接口，权威数据，零本地计算）",
   "type": "module",
@@ -41,14 +41,25 @@
     "README.md",
     "LICENSE"
   ],
+  "peerDependencies": {
+    "react": "^18.2.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
   "engines": {
     "node": ">=20.0.0"
   },
   "license": "MIT",
+  "devDependencies": {
+    "schemastery": "^3.18.0"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/wingsky-1/dsh-plugin-hub.git",
-    "directory": "packages/dsh-opencode-usage"
+    "directory": "packages/dsh-provider-usage"
   },
   "bugs": {
     "url": "https://github.com/wingsky-1/dsh-plugin-hub/issues"

@@ -70,6 +70,12 @@ function warn(ctx, message) {
  * @returns {void}
  */
 export function installSettingsNamespace(ctx, ns, schema, entry, hooks) {
+  // 防御：ctx.inject 不可用（极简宿主/测试桩）与 settings 服务缺失同属降级场景，
+  // 静默跳过（卡片降级，不影响插件主体）。
+  if (typeof ctx?.inject !== "function") {
+    warn(ctx, `${ns}: ctx.inject 不可用 — 设置命名空间未注册，卡片降级`);
+    return;
+  }
   ctx.inject(["settings"], (sctx) => {
     const settings = sctx && sctx.settings;
     if (!settings || typeof settings.register !== "function") {

@@ -1,8 +1,13 @@
 # 2. 会话 Provider 识别 + M0 烟测（子文件）
 
-> 主文件：[dsh-opencode-usage-provider-adapter-plan.md](dsh-opencode-usage-provider-adapter-plan.md)（阶段总览）
+> 主文件：[dsh-provider-usage-provider-adapter-plan.md](dsh-provider-usage-provider-adapter-plan.md)（阶段总览）
 > 本文件细化「如何拿到当前选中会话的 provider」：M0 先验证，再定 slot 路径或回落
 > DOM+订阅；以及 provider 变化时的重渲染。
+>
+> **M0 结论（已实施）**：探针① 成立——客户端经 `session.models` RPC 取
+> `SessionModels.current.provider`，路径与 `ui-model-selection` 一致。浮窗采用
+> **既有 DOM 挂载 + `sessions.currentProvideInfo` 订阅**（回落路径），不额外做 React
+> slot 重构（行为等价、风险最小）；provider 检测与浮窗/设置 tab 共享同一核心层。
 
 ---
 

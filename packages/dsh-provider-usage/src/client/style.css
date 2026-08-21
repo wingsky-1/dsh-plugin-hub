@@ -1,4 +1,4 @@
-/* dsh-opencode-usage — 客户端样式（独立 .css 文件）。
+/* dsh-provider-usage — 客户端样式（独立 .css 文件）。
  *
  * 由 build-client 的 .css text-loader 构建期内联进 client.js（产物仍自包含单文件、
  * 零运行时依赖、无独立网络请求）。injectStyle 注入 <style data-dou-style>。

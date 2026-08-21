@@ -43,8 +43,6 @@ importers:
 
   packages/dsh-notifier: {}
 
-  packages/dsh-opencode-usage: {}
-
   packages/dsh-plugins-all:
     dependencies:
       '@wingsky-1/dsh-gzip':
@@ -62,12 +60,18 @@ importers:
       '@wingsky-1/dsh-notifier':
         specifier: workspace:*
         version: link:../dsh-notifier
-      '@wingsky-1/dsh-opencode-usage':
+      '@wingsky-1/dsh-provider-usage':
         specifier: workspace:*
-        version: link:../dsh-opencode-usage
+        version: link:../dsh-provider-usage
       '@wingsky-1/dsh-web-file-preview':
         specifier: workspace:*
         version: link:../dsh-web-file-preview
+
+  packages/dsh-provider-usage:
+    devDependencies:
+      schemastery:
+        specifier: ^3.18.0
+        version: 3.18.0
 
   packages/dsh-web-file-preview:
     devDependencies:
