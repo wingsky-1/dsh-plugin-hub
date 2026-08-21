@@ -118,7 +118,7 @@
 | D6 | 适配器注册表改为 **候选 + 唯一启用** | 同 provider 允许多候选，任一时刻一启用（R1） |
 | D7 | 切换启用适配器链接口 `POST /adapters/select` | 切换后清缓存，下一个请求走新适配器（R2） |
 | D8 | **按钮内容与浮框内容不分物理路由** | 单端点 `/stats` 内嵌 `summary` 子树 + 渲染器 `pill` 钩子（评审 P1-1/P1-2 硬约束，避免双缓存不一致与采样驱动断裂） |
-| D9 | 历史按 `(provider, adapterId)` 双键分桶落盘 | 单文件嵌套结构，切走保留旧桶、切回可见；`samplePoint` 结构化列声明 |
+| D9 | 历史按 `(provider, adapterId)` 双键分桶，**多文件存储**（每桶一文件） | 一桶一文件独立目录 `history/<provider>/<adapterId>.json`，各桶独立原子落盘，避免并发写互相覆盖；切走保留旧桶、切回可见；`samplePoint` 结构化列声明随桶落盘 |
 | D10 | 后台定时器遍历**所有已启用适配器** | 跨 provider 跨会话，各自独立 `(provider, adapterId)` 历史桶；采样/取数解耦（缓存命中也可采样） |
 | D11 | 无启用适配器 → 浮窗隐藏 + 60s 轻量探测 | 不显示永久错误条；引导入设置面板 |
 | D12 | `stripSecrets` 扩展扫 summary 全部字段 + 值模式匹配 | 键名（`secret/token/key/apikey`）+ 值模式（`sk-`/`Bearer `）双重脱敏 |
@@ -142,7 +142,7 @@
 │    · /adapters/select → 切换启用适配器 + 清缓存                    │
 │    · /adapters.json → 候选列表（含 id/label/enabled/source/status）│
 │    · 后台定时器 → 遍历所有已启用适配器，各自取数 + 采样             │
-│    · 历史 → (provider, adapterId) 双键分桶，单文件嵌套结构          │
+│    · 历史 → (provider, adapterId) 双键分桶，多文件每桶一文件        │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -195,7 +195,7 @@ plugins:
 - 旧配置无 `adapters` 键 → 走内置 OpenCode Go（默认启用），行为不退化。
 - 单端点内嵌 summary 子树：旧客户端不读该字段，只读 windows，零影响。
 - `POST /adapters/select` 新路由：旧客户端不调用，无影响。
-- 历史数据结构迁移：v1 → v2（按 provider 分桶，已实施）→ R3 升级为 `(provider, adapterId)` 双键分桶。
+- 历史数据结构迁移：v1 → v2（按 provider 分桶，已实施）→ **多文件 v3**（`(provider, adapterId)` 每桶一文件）。
 - 新增路由 / `settings.section` / 聚合包 patch 需补门禁用例。
 
 ---

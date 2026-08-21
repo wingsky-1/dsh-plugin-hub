@@ -1,90 +1,108 @@
 # 4. 多 Provider / 多适配器历史采样演进（子文件）
 
 > 主文件：[dsh-opencode-usage-provider-adapter-plan.md](dsh-opencode-usage-provider-adapter-plan.md)（阶段总览）
-> 本文件处理一个**结构性缺口**：现有 `history.json` 是**单 provider、三窗口固定列**
-> 结构；一台机器上会存在多个 provider、且同一 provider 可切换多个适配器（D6/D9）。
-> 历史需按 `(provider, adapterId)` 双键分桶，且列语义由适配器 `samplePoint` 声明。
+> 本文件处理历史采样的**结构性问题**：
+> 1. 单 provider、三窗口固定列结构 → 一台机器多 provider、同 provider 可切换多适配器
+>    （D6/D9），列语义随适配器走，需按 `(provider, adapterId)` 分桶；
+> 2. **历史不单文件存储，改多文件**（用户复核），避免并发写互相覆盖。
+>
+> 设计约束：每个 `(provider, adapterId)` 桶独立文件，独立原子落盘，天然隔离
+> 并发；列语义由适配器 `samplePoint` 声明并随桶落盘。
 
 ---
 
-## 4.1 现状结构（问题所在）
+## 4.1 现状结构与问题
 
-- 现有采样点 = `[ts, rollingPct, weeklyPct, monthlyPct]`，落盘
-  `~/.dsh/dsh-opencode-usage/history.json`（单文件单序列）。
-- 已演进：M3a 按 provider 分桶 v2（`series[provider].samples`）。
-- **新增缺口（D6/D9）**：同一 provider 可切换多个适配器（如官方 ↔ 用户增强版），
-  两者的**列语义可能不同**；若混在同一 provider 桶，切换后历史图列错位。
-  故需将桶键升级为 `(provider, adapterId)`，且每桶声明 `columns`。
+- 现有采样点 `[ts, rollingPct, weeklyPct, monthlyPct]`，单文件 `history.json`。
+- 已演进：M3a 单文件内按 provider 分桶（v2）。
+- **新问题（本文件解决）**：
+  - 同一 provider 切换多适配器，列语义可能不同 → 需按 `(provider, adapterId)` 分桶；
+  - **单文件并发写风险**：所有桶塞进一个 `history.json`，任意桶落盘即整体原子覆写；
+    多 provider/多适配器频繁采样时，不同桶的 flush 会互相竞争同一文件路径，
+    tmp+rename 虽防半截文件，但并发覆写可能丢失其它桶刚写入的数据。
+    → **改多文件，每桶独立文件独立落盘**。
 
 ---
 
-## 4.2 目标结构：按 (provider, adapterId) 分桶（v3）
+## 4.2 目标结构：多文件，按 (provider, adapterId) 一桶一文件
+
+```
+~/.dsh/dsh-opencode-usage/
+  history/
+    opencode-go/
+      opencode-go-builtin.json
+    my-relay/
+      my-relay-v1.json
+```
+
+每文件 = 一个桶，格式：
 
 ```jsonc
-// ~/.dsh/dsh-opencode-usage/history.json  v3
+// history/opencode-go/opencode-go-builtin.json  v3
 {
   "version": 3,
-  "series": {
-    "opencode-go": {
-      "opencode-go-builtin": {
-        "columns": [ { "key": "rolling", "name": "5h 滚动", "limit": 12, "resetPeriodMs": 18000000 },
-                     { "key": "weekly",  "name": "每周",    "limit": 30, "resetPeriodMs": 604800000 },
-                     { "key": "monthly", "name": "每月",    "limit": 60, "resetPeriodMs": 2592000000 } ],
-        "samples": [ [ts, 3, 1, 0], ... ]
-      }
-    },
-    "my-relay": {
-      "my-relay-v1": {
-        "columns": [ { "key": "credit", "name": "余额", "limit": 100, "resetPeriodMs": 2592000000 } ],
-        "samples": [ [ts, 42], ... ]
-      }
-    }
-  }
+  "provider": "opencode-go",
+  "adapterId": "opencode-go-builtin",
+  "columns": [
+    { "key": "rolling", "name": "5h 滚动", "limit": 12, "resetPeriodMs": 18000000 },
+    { "key": "weekly",  "name": "每周",    "limit": 30, "resetPeriodMs": 604800000 },
+    { "key": "monthly", "name": "每月",    "limit": 60, "resetPeriodMs": 2592000000 }
+  ],
+  "samples": [ [ts, 3, 1, 0], ... ]
 }
 ```
 
-- **键 = `provider / adapterId` 双层**，各自独立序列。
+- **键 = `provider / adapterId` 双层目录 + 文件名**。
 - **`columns` 由适配器 `samplePoint` 的结构化返回值提供**（见 `1-contracts.md` §1.1），
-  宿主原样落盘，渲染器按当前适配器的 columns 对齐列语义。
-- 切换适配器 → 该 provider 的新 adapterId 桶从零开始累积；切回旧 adapterId 还能看到
-  旧桶历史（切走不丢）。
+  随桶落盘，渲染器按当前启用适配器的 columns 对齐列语义。
+- 切换适配器 → 新 adapterId 的新文件从零累积；切回旧 adapterId 仍读旧文件（不丢）。
 
 ---
 
-## 4.3 归属规则（这次采样属于谁）
+## 4.3 并发与落盘策略
 
-后台定时器采样**不知道 GUI 选中会话**，这是设计的客观边界。归属策略：
-
-1. **前台归属（默认）**：客户端把「当前 provider」随 `/stats?provider=<name>` 请求带
-   给宿主，宿主据此把当次取回的归一化数据按 `(provider, adapterId)` 记入桶。
-2. **后台归属（浏览器关闭时）**：宿主对**每个已启用适配器各取一份**并各自入桶
-   （D10：遍历所有启用适配器，而非只看当前会话 provider），保证历史连续。代价是
-   请求数 × 启用适配器数，限流由 `sampleIntervalMs` + TTL 覆盖。
-3. 无法归属的旧数据（version 1/2）→ 迁移（见 4.4）。
+- **跨桶隔离**：每桶独立文件、独立 `tmp + rename` 原子落盘——不同桶 flush 各写各的，
+  互不竞争。目录：`history/<provider>/<adapterId>.json`。
+- **同桶串行化**：单进程内同桶 flush 用防抖 + 串行队列（上一次完成才放行下一次），
+  避免同桶 tmp 文件名碰撞与乱序。`tmp` 命名用随机后缀（如 `Date.now()` + 随机），
+  减少极端碰撞。
+- **多进程/多节点**：各宿主独立写各自目录（沿用现状，不承诺跨机合并）；同机多进程
+  由 tmp+rename 原子性 + 采样点同分钟去重兜底（后写覆盖同分钟旧点，不产生脏序列）。
+- **失败不阻断**：单桶落盘失败仅 warn，继续内存序列，下次采样重试（沿用现状语义）。
 
 ---
 
-## 4.4 迁移 v1 → v2 → v3
+## 4.4 归属性与迁移
 
-- 启动检测 `history.version`：
-  - `version === 1`（单序列）→ 读旧 `samples` 写入 `series["opencode-go"]["opencode-go-builtin"]`，
-    columns 用内置默认三窗口声明。
-  - `version === 2`（按 provider 单桶）→ 每 provider 桶搬到
-    `series[provider]["<该 provider 当前启用适配器 id>"]`；provider 无启用适配器时搬入
+### 归属规则（这次采样属于谁）
+
+1. **前台归属（默认）**：客户端把 `provider` 随 `/stats?provider=` 带宿主，宿主按
+   `(provider, 当前启用 adapterId)` 入桶。
+2. **后台归属（浏览器关闭）**：遍历所有启用适配器（D10）各取一份各自入桶，保证历史
+   连续；限流由 `sampleIntervalMs` + TTL 覆盖。
+3. **旧数据迁移**：启动时若发现旧单 `history.json`（v1/v2）→ 迁移到多文件。
+
+### 迁移 v1 → v2 → v3（多文件）
+
+- 启动扫描：若存在旧 `history.json`（在 `dsh-opencode-usage/` 目录）：
+  - `version === 1`（单序列）→ 写入 `history/opencode-go/opencode-go-builtin.json`
+    （columns 用内置默认三窗口）。
+  - `version === 2`（单文件 provider 分桶）→ 每 provider 桶搬至
+    `history/<provider>/<该 provider 当前启用 adapterId>.json`；无启用适配器时搬入
     内置 adapterId（若存在）。
-  - 原子改写文件；失败保留旧文件做备份（`history.json.vN.bak`），新数据写 v3。
-- 同分钟去重（按 `(provider, adapterId)` 双键）、超龄裁剪（`maxAgeDays`）按桶分别执行。
-- 采样点形状 `[ts, ...cols]`，列数由该桶 `columns` 声明；`append` 校验「至少 2 元素 +
-  ts 合法」+ **列数一致性**：桶首次写入记录列数，后续不一致 → warn + 跳过该点。
+  - 迁移成功后旧 `history.json` 备份为 `history.json.vN.bak` 并移除。
+- 加载：启动扫描 `history/` 下所有 `*.json`，逐个读入内存 `Map<"provider/adapterId", bucket>`。
+- 采样点形状 `[ts, ...cols]`，列数由桶 `columns` 声明；`append` 校验「至少 2 元素 + ts
+  合法」+ 列数一致性（桶首次写入记录列数，后续不一致 → warn + 跳过）。
+- 超龄裁剪（`maxAgeDays`）按桶执行，落盘时剔除非当前会话相关超龄点。
 
 ---
 
 ## 4.5 采样挂点与解耦（R2）
 
-- **采样/取数解耦**：采样挂点从「只有权威 fetch 成功才 append」放宽为「任意数据到达
-  点（含缓存命中）都 append」——`/stats` 轮询命中 TTL 缓存时也用缓存数据 append 采样点，
-  保证 60s 采样分辨率，不依赖真实上游请求。同分钟去重逻辑不变（`floor(ts/60000)` 相同
-  则替换）。
+- **采样/取数解耦**：采样挂点放宽为「任意数据到达点（含缓存命中）都 append」——
+  `/stats` 轮询命中 TTL 缓存时也用缓存数据 append 采样点，保证 60s 采样分辨率，不依赖
+  真实上游请求。同分钟去重逻辑不变（`floor(ts/60000)` 相同则替换）。
 - `collectStats` 取回结果 → 按 `usage.provider` + 当前启用 `adapterId` 追加到对应桶。
 
 ---

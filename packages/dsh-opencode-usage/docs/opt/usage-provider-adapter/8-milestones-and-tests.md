@@ -14,7 +14,7 @@
 | M2 (已实施) | 配置入口可用；用户 JS 注入端到端跑通；加载降级矩阵各场景有 smoke |
 | M3a (已实施) | 历史按 provider 分桶 v2；`/history?provider=` 过滤；后台遍历所有注册 provider |
 | **R1** | 注册表候选+启用机制可用；`ProviderSummary`/`id`/`label`/`samplePoint` 结构化列声明契约通过；`stripSecrets` 扩展扫 summary 全部字段；`defineUsageAdapter` 工厂可用；snapshot 返回候选详情 |
-| **R2** | `POST /adapters/select` 切换 + 缓存失效；`/stats` 内嵌 summary 子树 + 所有接口带 `adapterId`/`hasAdapter`；采样/取数解耦（缓存命中也采样）；后台遍历所有启用适配器；无启用适配器前台隐藏、60s 探测恢复；渲染器 `adapterId` 配对 + `pill` 钩子；历史 `(provider, adapterId)` 双键分桶 |
+| **R2** | `POST /adapters/select` 切换 + 缓存失效；`/stats` 内嵌 summary 子树 + 所有接口带 `adapterId`/`hasAdapter`；采样/取数解耦（缓存命中也采样）；后台遍历所有启用适配器；无启用适配器前台隐藏、60s 探测恢复；渲染器 `adapterId` 配对 + `pill` 钩子；历史 `(provider, adapterId)` **多文件分桶（每桶一文件，独立原子落盘）** |
 | **R3** | 契约本文档（完整接入清单 + 启用/切换/后台说明）；示例中转站模板补 `summarize/samplePoint`；README 安全模型更新；smoke 三处同步 |
 | **M3b** | `settings.section` 独立 tab 出现且四区可用（总览/可视化/适配器候选单选启用/配置编辑）；`settings` 持久化 enabled 选择（重启保留）；切换热生效 |
 
@@ -33,7 +33,7 @@
 | 无适配器隐藏 | 有启用 → 浮窗显示；无启用 → 浮窗隐藏 + 60s 探测恢复；`hasAdapter: false` 响应 |
 | 后台 | 定时器遍历所有启用适配器；跳过禁用候选；各自独立采样入桶 |
 | 加载 | 用户 js 文件缺失/语法错/版本不符 → warn + 该候选不注册，插件其余照常 |
-| 历史 | 双键分桶；`?provider=&adapterId=` 过滤；v2→v3 迁移（含 v1→v2→v3 级联）；同分钟去重按 (provider, adapterId) 双键；列数一致性校验 |
+| 历史 | `(provider, adapterId)` 多文件分桶；`?provider=&adapterId=` 过滤；v2→v3 迁移（含 v1→v2→v3 级联、旧单文件备份移除）；同分钟去重按 (provider, adapterId) 双键；列数一致性校验；并发落盘隔离（不同桶独立文件不互相覆盖） |
 | 缓存 | 按 `(provider, adapterId)` 维度 TTL/inflight 复用 |
 | 护栏 | stripSecrets 覆盖 summary 全部字段 + 值模式匹配（`sk-`/`Bearer `脱敏） |
 | 客户端契约 | `exports.apply/inject` 装配、build-client 产物断言（沿用现有 smoke-lib） |
@@ -49,7 +49,7 @@
 | 旧配置（无 `adapters`） | 走内置 OpenCode Go（默认启用），行为不退化 |
 | 旧客户端 | 不读 `/stats` 响应的 `summary` 子树，只读 `windows`，零影响 |
 | 旧宿主（无 `/select` 路由） | 客户端不调用该接口，无影响 |
-| 旧 history.json（v1/v2） | 启动迁移到 v2/v3（双键分桶），保留 .bak 备份 |
+| 旧 history.json（v1/v2 单文件） | 启动迁移到多文件 v3（`(provider, adapterId)` 每桶一文件），旧文件备份 `.bak` 后移除 |
 | 无 settings 服务 | 独立 tab 不注册，浮窗照常 |
 | 无 connection/sessions | 回落内置 opencode-go（M0 回落路径） |
 | 多节点 web | 各宿主独立采样落盘（沿用现状，不承诺跨机合并） |
@@ -74,6 +74,7 @@
 | 切换后缓存失效遗漏 | H | 同一 provider 所有缓存键（stats/summary/history）统一清除，加 smoke 断言 |
 | 采样/取数解耦 → 缓存命中 append 重复采样 | M | 同分钟去重仍是同一逻辑（`floor(ts/60000) === floor(lastTs/60000)` → 替换），不重复 |
 | 双键历史桶列数不一致 | M | 首次写入记录列数，后续不一致 warn + 跳过（`1-contracts.md` §1.1 samplePoint 约定） |
+| 多文件目录/同名冲突（provider/addapterId 含路径分隔符） | M | 文件名规范化：`provider`/`adapterId` 白名单字符（`[A-Za-z0-9._-]`），非法字符转义，杜绝目录穿越/同名覆盖 |
 | `summarize` 误做独立网络请求 | M | 契约硬约束 + 代码评审；文档明示「禁止独立网络 IO」 |
 | 用户适配器 `samplPoint` 列声明与渲染器列对齐断链 | M | 历史响应 `columns` 字段由 samplePoint 的结构化返回值提供，渲染器依次读取 |
 | 无启用适配器隐藏后用户感知丢失 | M | 设置面板「用量统计」tab 始终可见（含无启用适配器的引导入口） |
@@ -84,6 +85,6 @@
 
 ## 8.6 交付物清单
 
-- **代码**：R1 契约+注册表 v2 + stripSecrets 扩展；R2 切换/语义分层/后台多适配器/历史双键；R3 文档/示例；M3b 设置面板独立 tab。
+- **代码**：R1 契约+注册表 v2 + stripSecrets 扩展；R2 切换/语义分层/后台多适配器/历史多文件分桶；R3 文档/示例；M3b 设置面板独立 tab。
 - **文档**：README（中英）安全模型 + 适配器开发指南；本组 docs 子文件已更新；示例中转站模板补 `summarize/samplePoint`。
 - **测试**：smoke 覆盖候选注册/切换/无启用隐藏/双键历史/路由围栏/护栏扩展。
