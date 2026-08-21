@@ -407,6 +407,13 @@ export function makeHistoryStore({
     return getBucket(provider, adapterId);
   }
 
+  /** 只读查桶：不存在则返回空桶常量、不创建（history 路由用，防任意 provider 无界建桶）。 */
+  function peek(provider: string, adapterId: string): HistoryBucket {
+    const b = buckets.get(keyOf(provider, adapterId));
+    if (b !== undefined) return b;
+    return { provider, adapterId, columns: [], samples: [] };
+  }
+
   /** 所有桶的计数。 */
   function countAll(): number {
     let total = 0;
@@ -501,6 +508,7 @@ export function makeHistoryStore({
   return {
     append,
     list,
+    peek,
     countAll,
     trim,
     trimAll,
@@ -810,7 +818,12 @@ export function stripSensitiveKeys(obj: unknown): void {
   for (const key of Object.keys(rec)) {
     const val = rec[key];
     if (typeof val === "string") {
-      if ((val.length >= 8 && /secret|token|key|apikey|password|credential|passphrase|cookie/ui.test(key)) || isSecretValue(val)) {
+      // 高敏键名（password 类）免长度门槛；泛化键名（token/key 类）保留 >=8 门槛防误伤普通字段
+      if (
+        /password|passphrase|credential|secret/ui.test(key) ||
+        (val.length >= 8 && /secret|token|key|apikey|cookie/ui.test(key)) ||
+        isSecretValue(val)
+      ) {
         rec[key] = "<redacted>";
         continue;
       }
@@ -1170,7 +1183,7 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
       const provider = url.searchParams.get("provider") ?? OPENCODE_GO_PROVIDER;
       // adapterId 缺省 = 该 provider 当前启用适配器（无则内置）
       const adapterId = url.searchParams.get("adapterId") ?? registry.getEntry(provider)?.id ?? OPENCODE_GO_ADAPTER_ID;
-      const bucket = store.list(provider, adapterId);
+      const bucket = store.peek(provider, adapterId);
       let samples = bucket.samples;
       const days = Number(url.searchParams.get("days"));
       if (Number.isFinite(days) && days > 0) {

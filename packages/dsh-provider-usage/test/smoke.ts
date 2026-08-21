@@ -185,8 +185,10 @@ assert.ok(!isClientProviderRenderer({ version: 1, providers: ["x"] }), "缺 rend
     ok: "fine",
     token: "sk-secret-token-12345", // 键名命中 → 脱敏
     authHeader: "Bearer sk-abcdefghijkl", // 值模式 Bearer → 脱敏
-    api_key: "abc", // 键名命中但值 <8 → 不脱敏（保留）
+    api_key: "abc", // 泛化键名命中但值 <8 → 不脱敏（保留，防误伤）
     password: "p@ssw0rd-xyz", // 键名 password → 脱敏（R1 扩展）
+    passphrase: "x", // 高敏键名免长度门槛：短值也脱敏
+    sortKey: "name", // 含 "key" 的普通字段名 + 短值 → 保留（防误伤）
     jwt: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig", // 值模式 JWT → 脱敏
     nested: { raw: "这里有一些文本，无密钥", deep: { k: "Bearer sk-1234567890abcdef" } },
     list: [{ secret: "sk-bbbbbbbb" }],
@@ -196,6 +198,8 @@ assert.ok(!isClientProviderRenderer({ version: 1, providers: ["x"] }), "缺 rend
   assert.equal(obj.authHeader, "<redacted>", "值模式 Bearer 脱敏");
   assert.equal(obj.api_key, "abc", "键名命中但短值保留");
   assert.equal(obj.password, "<redacted>", "键名 password 值脱敏");
+  assert.equal(obj.passphrase, "<redacted>", "高敏键名免长度门槛（短值也脱敏）");
+  assert.equal(obj.sortKey, "name", "含 key 的普通字段短值不误伤");
   assert.equal(obj.jwt, "<redacted>", "值模式 JWT 脱敏");
   assert.equal(obj.nested.deep.k, "<redacted>", "嵌套值 Bearer 脱敏");
   assert.equal(obj.list[0].secret, "<redacted>", "数组内键名脱敏");
