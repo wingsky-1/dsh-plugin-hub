@@ -94,3 +94,8 @@ type(scope): subject
 - smoke 全部无网络、无真实凭据，本地可直接运行。
 - 新功能/修复必须带 smoke 断言（含路由 403/405 围栏用例、client 契约断言）。
 - 新包自带 README（`README.md` 中文 + `README.en.md` 英文，中英配对）。
+
+## 参考文档
+
+- 开发规范（宿主/客户端写法、构建契约、测试防 flake 纪律）：[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
+- 贡献规范（Conventional Commits、功能分支 + PR 流程、提交前检查）：[CONTRIBUTING.md](CONTRIBUTING.md)
