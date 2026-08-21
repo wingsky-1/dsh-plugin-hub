@@ -96,6 +96,31 @@
   合法」+ 列数一致性（桶首次写入记录列数，后续不一致 → warn + 跳过）。
 - 超龄裁剪（`maxAgeDays`）按桶执行，落盘时剔除非当前会话相关超龄点。
 
+### 割接矩阵（重点：历史 opencode-usage 数据割接）
+
+「割接」指：现有用户（发布版 main 0.1.9 及此前，单文件 v1；M3a 分支单文件 v2）升级到
+多文件 v3 时，**已有 opencode-usage 历史采样点必须平滑过渡、不丢失、三窗口列语义延续**。
+
+| 旧状态（文件） | 割接目标（多文件 v3） | 动作 | 旧文件 |
+|---|---|---|---|
+| `{version:1, samples}`（单 provider 单序列，main 0.1.9） | `history/opencode-go/opencode-go-builtin.json` | 读 samples → 写 v3 桶（columns=内置三窗口） | `history.json` → `history.json.v1.bak` → 删 |
+| `{version:2, series:{p:{samples}}}`（M3a 单文件分桶） | 每 provider 桶 → 各自 adapterId 桶 | provider p → `history/<p>/<启用adapterId>.json` | `history.json` → `history.json.v2.bak` → 删 |
+| `history/<provider>/<adapterId>.json`（v3 多文件） | 保持 | 无 | 无 |
+
+**割接要点**：
+1. **opencode-go 旧历史归内置 `opencode-go-builtin`**：无论用户自定义适配器是否也认领
+   `opencode-go`，旧数据始终是官方接口的三窗口列语义，归内置桶，绝不让旧历史落到
+   列语义可能不同的自定义适配器桶（否则旧波浪图列错位）。自定义适配器在自身桶重新
+   积累。
+2. **不丢失**：先写新桶文件成功 → 再备份旧文件 → 再删旧文件；任何一步失败保留旧文件，
+   下次启动重试（幂等）。
+3. **连续性**：迁移后内置采样继续向同一 `opencode-go-builtin.json` 追加（columns 一致），
+   旧波浪图与新采样无缝衔接，不归零。
+4. **幂等**：检测到旧 `history.json` 存在才触发迁移；迁移成功即移除/改名旧文件，重复
+   启动不再二次迁移。
+5. **失败回退**：迁移失败保留旧文件 + `.bak`，插件照常运行（新数据写 v3 桶），历史不丢。
+6. **多节点**：各宿主独立迁移各自目录（沿用现状，不承诺跨机合并）。
+
 ---
 
 ## 4.5 采样挂点与解耦（R2）

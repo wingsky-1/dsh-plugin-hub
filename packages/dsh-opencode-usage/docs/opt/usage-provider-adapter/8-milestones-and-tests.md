@@ -33,7 +33,8 @@
 | 无适配器隐藏 | 有启用 → 浮窗显示；无启用 → 浮窗隐藏 + 60s 探测恢复；`hasAdapter: false` 响应 |
 | 后台 | 定时器遍历所有启用适配器；跳过禁用候选；各自独立采样入桶 |
 | 加载 | 用户 js 文件缺失/语法错/版本不符 → warn + 该候选不注册，插件其余照常 |
-| 历史 | `(provider, adapterId)` 多文件分桶；`?provider=&adapterId=` 过滤；v2→v3 迁移（含 v1→v2→v3 级联、旧单文件备份移除）；同分钟去重按 (provider, adapterId) 双键；列数一致性校验；并发落盘隔离（不同桶独立文件不互相覆盖） |
+| 历史 | `(provider, adapterId)` 多文件分桶；`?provider=&adapterId=` 过滤；同分钟去重按 (provider, adapterId) 双键；列数一致性校验；并发落盘隔离（不同桶独立文件不互相覆盖） |
+| 割接 | ★ v1 单序列 → v3 多文件（opencode-go 归 builtin 桶）；★ v2 单文件分桶 → v3 多文件；opencode-go 旧历史三窗口列延续；迁移失败保留旧文件+.bak 且插件照常、下次重试（幂等）；重复启动不二次迁移；自定义适配器认领 opencode-go 时旧历史仍归 builtin 桶 |
 | 缓存 | 按 `(provider, adapterId)` 维度 TTL/inflight 复用 |
 | 护栏 | stripSecrets 覆盖 summary 全部字段 + 值模式匹配（`sk-`/`Bearer `脱敏） |
 | 客户端契约 | `exports.apply/inject` 装配、build-client 产物断言（沿用现有 smoke-lib） |
