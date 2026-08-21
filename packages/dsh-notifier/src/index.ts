@@ -8,7 +8,7 @@
  *   用户审批结束），不短路
  * - 任务完成：agent/status（scoped emit，{agent, status}，idle | running）
  *   running → idle 跃迁，per-agent 状态机，多会话互不误报；子代理
- *   （header.delegationDepth ≥ 1）走独立开关/事件类型 subagent-done；
+ *   （header.origin === 'subagent'）走独立开关/事件类型 subagent-done；
  *   用户暂停/中断（turn/end reason aborted）固定静默
  * - 任务错误：agent/error（{agent, turn, step, error}），60 秒滚动窗口合并
  * - 轮结束：agent/turn-stopping（serial，{agent, turn}，仅宿主通知，不跑模型）
@@ -108,8 +108,15 @@ export interface NotifyDetail {
 export interface AgentLite {
   id?: string;
   session?: {
-    /** 子代理深度标记（dsh-subagent 写入：子代理 ≥1，主 agent 无此字段）。 */
-    header?: { delegationDepth?: unknown };
+    /** 会话头（SessionHeader 最小面；子代理识别只用 origin，见 isSubagentOf）。 */
+    header?: {
+      /** 子代理身份标记：DSH 强制唯一合法值为 'subagent'，主会话/fork 派生会话恒为 undefined。 */
+      origin?: unknown;
+      /** 父会话 id：子代理与 fork/派生会话都会写，故不能单独作为子代理判据。 */
+      parentSession?: unknown;
+      /** 子代理深度计数：resume/运行时 deepen 路径可能缺失或失真，仅作兜底。 */
+      delegationDepth?: unknown;
+    };
     events?: Array<{
       type?: string;
       data?: { title?: unknown; turn?: unknown; reason?: { kind?: unknown } };
@@ -233,26 +240,68 @@ export function formatDuration(ms: number): string {
 }
 
 /**
- * 错误文本脱敏：掩蔽常见敏感特征（用户路径、长令牌/密钥串、密钥赋值），再截断。
- * 用于 agent/error 进入通知与历史的文本，把「错误信息可能内嵌命令回显/路径/
- * 凭据片段」的外泄面收敛到可读的摘要。
+ * 脱敏规则有序表：顺序即数据（具体在前、泛化在后），消灭隐式语句序。
+ * 顺序硬约束（对抗评审实测确立）：
+ * - DSN 必须先于 JWT/通用长串/密钥赋值：否则 DSN 密码先被劣化为 <token>，
+ *   DSN 字符类排除 <> 随即失配，用户名残留明文；
+ * - 邮箱必须殿后且带 (?<!<) 界定：避免把 DSN 掩码占位符 <redacted>@host
+ *   中的 "redacted@host" 再误判为邮箱产生 <<email>>。
+ * 已证伪不收录（勿加回）：IPv4（UA 版本号 Chrome/120.0.0.0 形态不可区分，
+ * 误伤高频）、手机号（订单号误伤、错误文本出现概率趋零）、信用卡
+ * （13 位毫秒时间戳 100% 命中，Luhn 校验也救不了）。
+ */
+const SANITIZE_RULES: ReadonlyArray<readonly [RegExp, string]> = [
+  // 用户路径（/home/xx、/Users/xx、/root/xx、/etc/xx、C:\Users\xx）→ <path>
+  // （排除冒号/分号等后缀分隔符，避免吞掉紧随其后的文本：`/home/x: EACCES` 应保留冒号）
+  [/(?:\/home\/[^\s"'`<>:;]+|\/Users\/[^\s"'`<>:;]+|\/root\/[^\s"'`<>:;]+|\/etc\/[^\s"'`<>:;]+|C:\\Users\\[^\s"'`<>:;]+)/giu, "<path>"],
+  // PEM 私钥完整块（RSA/EC/OPENSSH/ENCRYPTED…）→ <private-key>
+  // 窗口上限 {0,4096}：真实私钥块 ≤ 数 KB；无窗口时每个 BEGIN 起点都会惰性扫到
+  // 文本尾找 END，k 个 BEGIN 即 O(k·n)，1MB 高密度输入可阻塞宿主事件循环数秒
+  // （评审实测）。超窗视为无 END，交由下一条孤立 BEGIN 兜底规则接住。
+  [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]{0,4096}?-----END [A-Z ]*PRIVATE KEY-----/g, "<private-key>"],
+  // PEM 孤立 BEGIN 兜底：错误消息常只贴出头几行就被截断，无 END 行；
+  // 吃到文本尾即可（尾部反正受 maxLen 截断）
+  [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*/g, "<private-key>"],
+  // 数据库/消息队列连接串凭据 → 只留 scheme://<redacted>@host
+  // 用户名允许为空（redis://:pass@host 是最常见带密码形态）；i flag 兼容大写 scheme；
+  // amqps?：AMQPS 同端口语义，漏收会产生「密码被邮箱规则侥幸掩掉、用户名明文残留」
+  // 的半脱敏误导形态；jdbc 不收录：JDBC 凭据在 query 参数（?password=），密钥赋值规则已覆盖。
+  // 已知局限（评审记录）：密码含 <>/引号等 URL 应编码字符时整条失配、明文残留——
+  // 错误消息中的未编码形态不罕见，但放宽字符类会引入占位符/引号边界歧义，暂记录不改。
+  [/\b(postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|rediss?|amqps?|mssql):\/\/([^\s:@\/"'`<>]*):([^\s@\/"'`<>]+)@/giu, "$1://<redacted>@"],
+  // GitHub PAT classic（ghp/gho/ghu/ghs/ghr + 36 位字母数字；业界共识写死长度）
+  [/\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36}\b/gu, "<token>"],
+  // GitHub fine-grained PAT（github_pat_ 强前缀锚定，长度取区间吸收未来调整）
+  [/\bgithub_pat_[A-Za-z0-9]{20,30}_[A-Za-z0-9]{50,80}\b/gu, "<token>"],
+  // JWT（eyJ JWT：header.payload.signature 三段，base64url 字符集含 - _）→ <token>
+  // 精确匹配三段（每段 ≥1 字符，含 - _），避免误伤普通长串（对抗评审建议：勿盲目放宽
+  // 通用 base64 正则到 base64url，那会误伤 URL/长串）。
+  [/\beyJ[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+){2}\b/gu, "<token>"],
+  // AWS 访问密钥前缀（AKIA 20 字符，不满足通用 ≥24hex/≥32base64 阈值）→ <token>
+  [/\bAKIA[A-Z0-9]{16}\b/gu, "<token>"],
+  // 长令牌/密钥串（≥24 hex 或 ≥32 base64）→ <token>
+  [/\b(?:[0-9a-fA-F]{24,}|[A-Za-z0-9+/]{32,}={0,2})\b/gu, "<token>"],
+  // 密钥字段赋值（password=/token=/api_key=…）→ 只留键名+掩码
+  // 分隔符 [=:] 必须显式：可选版会把 "token expired"/"password policy" 等自然语言
+  // 高频误伤成 token=<redacted>（审批理由/提问文本接入后误伤面被放大，评审实测）
+  [/\b(password|passwd|token|api[_-]?key|secret|authorization)\b\s*[=:]\s*["']?[^\s"'`,;<>]{3,}/giu, "$1=<redacted>"],
+  // 邮箱（严格版：域名首标签须字母开头，排除 image@2x.png / pkg@1.2.3 误伤）→ <email>
+  // 负向后行断言排除词字符与 <：防止从 <redacted>@host 占位符中间起配
+  [/(?<![A-Za-z0-9._%+<>-])[A-Za-z0-9._%+-]+@[A-Za-z][A-Za-z0-9.-]*\.[A-Za-z]{2,}/gu, "<email>"],
+];
+
+/**
+ * 错误文本脱敏：按 SANITIZE_RULES 有序表掩蔽常见敏感特征（用户路径、私钥、
+ * 连接串凭据、各类令牌、密钥赋值、邮箱），再截断。
+ * 用于 agent/error 与审批理由/提问文本进入通知与历史前的处理，把「文本可能
+ * 内嵌命令回显/路径/凭据片段」的外泄面收敛到可读的摘要。
  * @returns 脱敏并截断（默认 300 字符）后的错误文本。
  */
 export function sanitizeErrorText(text: unknown, maxLen = 300): string {
   let s = String(text);
-  // 用户路径（/home/xx、/Users/xx、/root/xx、/etc/xx、C:\Users\xx）→ <path>
-  // （排除冒号/分号等后缀分隔符，避免吞掉紧随其后的文本：`/home/x: EACCES` 应保留冒号）
-  s = s.replace(/(?:\/home\/[^\s"'`<>:;]+|\/Users\/[^\s"'`<>:;]+|\/root\/[^\s"'`<>:;]+|\/etc\/[^\s"'`<>:;]+|C:\\Users\\[^\s"'`<>:;]+)/giu, "<path>");
-  // JWT（eyJ JWT：header.payload.signature 三段，base64url 字符集含 - _）→ <token>
-  // 精确匹配三段（每段 ≥1 字符，含 - _），避免误伤普通长串（对抗评审建议：勿盲目放宽
-  // 通用 base64 正则到 base64url，那会误伤 URL/长串）。
-  s = s.replace(/\beyJ[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+){2}\b/gu, "<token>");
-  // AWS 访问密钥前缀（AKIA 20 字符，不满足通用 ≥24hex/≥32base64 阈值）→ <token>
-  s = s.replace(/\bAKIA[A-Z0-9]{16}\b/gu, "<token>");
-  // 长令牌/密钥串（≥24 hex 或 ≥32 base64）→ <token>
-  s = s.replace(/\b(?:[0-9a-fA-F]{24,}|[A-Za-z0-9+/]{32,}={0,2})\b/gu, "<token>");
-  // 密钥字段赋值（password=/token=/api_key=…）→ 只留键名+掩码
-  s = s.replace(/\b(password|passwd|token|api[_-]?key|secret|authorization)\b\s*[=:]?\s*["']?[^\s"'`,;<>]{3,}/giu, "$1=<redacted>");
+  for (const [pattern, replacement] of SANITIZE_RULES) {
+    s = s.replace(pattern, replacement);
+  }
   return s.slice(0, maxLen);
 }
 
@@ -388,13 +437,24 @@ export function lastTurnEndOf(agent: AgentLite | undefined): { turn: number; kin
 }
 
 /**
- * agent 是否为子代理：session.header.delegationDepth ≥ 1
- * （dsh-subagent 创建子代理时写入 childDepth = parent+1；主 agent 无此
- * 字段/为 0）。先规约数字再比较（strict 下 unknown 不能直接参与比较）。
+ * agent 是否为子代理：以 session.header.origin === 'subagent' 为唯一判据。
+ *
+ * 选此信号而非 delegationDepth / parentSession 的原因（均经 DSH 源码核验）：
+ * - origin 由 SessionHeader 校验强制唯一合法值为 'subagent'
+ *   （packages/core/session/src/index.ts:125：origin 非 undefined 就必须是
+ *   'subagent'），主会话/fork 派生会话恒为 undefined → 零误判面。
+ * - DSH 自身在无父 id 场景（packages/subagent/subagent/src/list-children.ts:324、
+ *   :235）也只认 origin === 'subagent' 识别子代理，口径一致。
+ * - parentSession 不能作判据：Session.fork()（session/src/index.ts:1091）与
+ *   apiproxy 的 lineage 场景会写 parentSession 但不带 origin → 若用 parentSession
+ *   会把 fork/派生主流程会话误判为子代理，其「任务完成」被默认
+ *   notifySubagentDone=false 静默（当前 bug 的镜像回归）。
+ * - delegationDepth 在某些路径（resume 信任持久化 header、运行时 deepen）下并非
+ *   可靠的「是否子代理」标记，仅作兜底。
+ * 综上：单用 origin 最权威、最稳；notifier 是单 agent 独立判定，不要求父 id 匹配。
  */
 export function isSubagentOf(agent: AgentLite | undefined): boolean {
-  const depth = Number(agent?.session?.header?.delegationDepth ?? 0);
-  return Number.isFinite(depth) && depth >= 1;
+  return agent?.session?.header?.origin === "subagent";
 }
 
 /** "HH:MM" → 分钟数（校验 0-23 时 / 0-59 分）。 */
@@ -735,7 +795,7 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
   /**
    * 任务完成状态机（per-agent）：见到某会话 running 记 pendingDone，下次该会话
    * idle 时判定是否通知（带耗时）。多会话/子代理各自独立跟踪，互不误报。
-   * 子代理（header.delegationDepth ≥ 1）走独立开关 notifySubagentDone 与
+   * 子代理（header.origin === 'subagent'）走独立开关 notifySubagentDone 与
    * 独立事件类型 subagent-done；用户暂停/中断（turn/end reason aborted）固定静默。
    */
   const agentStates = new Map<string, { runningSeen: boolean; startedAt: number; lastEndedTurn?: number }>(); // agentId -> { runningSeen, startedAt, lastEndedTurn }
@@ -756,7 +816,8 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
       const askDetail = () => ({
         tool: req?.toolName as string | undefined,
         taskTitle: sessionTitleOf(req?.agent),
-        reason: req?.reason ? String(req.reason).slice(0, 120) : undefined,
+        // 审批理由最常内嵌命令回显与凭据片段，进通知前必须脱敏（120 字符截断）
+        reason: req?.reason ? sanitizeErrorText(req.reason, 120) : undefined,
       });
       try {
         notify("ask", askDetail());
@@ -831,7 +892,8 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
           notify("question", {
             tool: "ask_user_question",
             taskTitle: sessionTitleOf((request as { agent?: AgentLite } | null | undefined)?.agent),
-            question: first && (first as { question?: unknown }).question ? String((first as { question?: unknown }).question).slice(0, 120) : undefined,
+            // 提问文本同样可能内嵌上下文片段，进通知前脱敏（120 字符截断）
+            question: first && (first as { question?: unknown }).question ? sanitizeErrorText((first as { question?: unknown }).question, 120) : undefined,
           });
         }
       } catch (error) {

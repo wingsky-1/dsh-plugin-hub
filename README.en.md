@@ -145,36 +145,10 @@ dsh plugin --profile web add @wingsky-1/<package>@latest
 
 Requirements: Node ≥ 23.6 (tests run TS directly with native type stripping), pnpm ≥ 11.
 
-```sh
-pnpm install
-pnpm build        # build all plugins (host-side tsc + esbuild inlines shared; client build: clean module → contract shell)
-pnpm contract     # client contract checks (node scripts/contract-check.ts: load id/apply/inject/arrive)
-pnpm test         # full smoke (test/*.ts run directly)
-pnpm pack:check   # pack smoke: pnpm pack then verify tarball contents
-```
-
-Directory layout:
-
-```
-packages/dsh-*/            # each plugin = an independent npm package (@wingsky-1/dsh-*)
-  src/index.ts             # host-side entry (cordis service; exports ROUTES as single source for client routes)
-  src/client/index.ts      # client clean-module entry (exports apply/inject only, no load/IIFE shell)
-  src/client/style.css     # client styles (separate file; inlined into client.js by text-loader at build time)
-  src/client/*.ts          # client helper modules (not for host; browser-side only)
-  src/*.ts                 # remaining host modules; profile deps exported by the host — see cordis.patch.yml
-packages/dsh-plugins-all/  # bundle package (dependencies reference all subpackages; published via pnpm publish with version replacement)
-shared/                    # host-side shared layer (loopback/host-utils/frontmatter), inlined into each package at build time, not published
-types/dsh.d.ts             # self-built DSH plugin type layer
-scripts/                   # build/contract/pack-check scripts (*.ts, run directly with Node)
-```
-
-Client development (clean-module convention): source does **not** write `window.__ModuleLoader__` /
-IIFE — only `export function apply(ctx)` + `export const inject`; the contract shell
-(load/IIFE/Symbol.toStringTag assembly + load id = package name) is generated uniformly by
-`scripts/build-client.ts` at build time. Styles live in a separate `style.css` (inlined from
-`.css` by the text-loader). Pure browser third-party libs (e.g. web-file-preview's
-dompurify/diff2html) are inlined into the output via `dsh.client.inlineBareImports: true` and
-live under `src/client/`. See [DEVELOPMENT.md](docs/DEVELOPMENT.md).
+Build / contract / test / pack commands, directory layout, and host- & client-side coding
+conventions all live in [DEVELOPMENT.md](docs/DEVELOPMENT.md) (start at §0); contributing
+workflow in [CONTRIBUTING.md](CONTRIBUTING.md); issue workflow in
+[ISSUE-WORKFLOW.md](docs/ISSUE-WORKFLOW.md).
 
 Plugins were reviewed before being moved into this repository (self-contained build, privacy
 cleanup, security hardening, complete metadata).

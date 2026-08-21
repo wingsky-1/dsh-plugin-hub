@@ -120,7 +120,15 @@ Pick one of the following access forms (both the panel and the README surface a 
 ## Security & boundaries
 
 - Notification text only contains metadata such as task title / tool name / request reason — **never tool parameters** (prevents sensitive info leakage)
-- **Error notification text is redacted**: user paths / long tokens / key assignments are masked first (`<path>`/`<token>`/`<redacted>`) and then truncated to 300 chars, reducing the exposure surface of embedded command echo, paths, and credential fragments within error messages
+- **Error notification text is redacted**: masked via an ordered rule table and truncated to 300 chars before entering notifications and history, reducing the exposure surface of embedded command echo, paths, and credential fragments. Covered categories and placeholders:
+  - User paths (`/home` `/Users` `/root` `/etc` `C:\Users`) → `<path>`
+  - PEM private key blocks (including truncated forms with only the BEGIN header) → `<private-key>`
+  - Database / message-queue connection-string credentials (postgres/mysql/mongodb/redis/amqps etc., scheme preserved; not redacted when the password contains URL-reserved chars like `<>`/quotes — known limitation) → `scheme://<redacted>@host`
+  - Tokens: JWT, AWS AKIA, GitHub PAT (classic and fine-grained), ≥24-char hex / ≥32-char base64 runs → `<token>`
+  - Secret field assignments (`password=`/`token=`/`api_key=`…; an explicit `=`/`:` separator is required) → `key=<redacted>`
+  - Email addresses → `<email>`
+  - **Approval reasons and question texts** are redacted too (truncated to 120 chars) — these most often embed command echo and credential fragments
+  - Proven false-positive-prone, deliberately not covered: IPv4 (same shape as UA version numbers), phone numbers (same shape as order IDs), credit cards (13-digit millisecond timestamps match at 100%)
 - System notification failures are silent (logs only), and do not affect the main flow; a missing / non-executable native binary (ENOENT etc.) is caught by the `error` event and **never bubbles up as an unhandled error that crashes the host process** (see issue #1)
 - **The two channels are delivered to different machines (don't confuse them)**:
   - **Browser notifications** are pushed to **the browser client you are actually using** (your Mac / phone both count), and pop a native notification via the browser's Notification API; they require permission and by default only pop when the page is hidden (the panel can enable "also when visible"). No matter which machine dsh web runs on, as long as browser notifications are allowed you receive them on your own Mac.
@@ -128,7 +136,7 @@ Pick one of the following access forms (both the panel and the README surface a 
 - **iOS difference**: Safari's normal tabs have no Web Notifications API (only the "Add to Home Screen" PWA does); on iOS the available channels are "in-page banner + sound when the page is visible" and system notifications after HTTPS + A2HS
 - Browser notifications require a **secure context** (HTTPS or localhost); LAN HTTP access automatically routes through the fallback channel (banner / sound / title reminder)
 - Browser notification permission is requested within a gesture (when clicking the sidebar "Notifications" entry or a panel button)
-- Windows system notifications are implemented via a PowerShell WinRT script, with the command passed as a parameter array (no shell concatenation surface)
+- Windows system notifications are implemented via a PowerShell WinRT script, with the command passed as a parameter array (no shell concatenation surface); the script idempotently registers the AppUserModelId on startup (HKCU, no admin required) — an unregistered AUMID gets toasts silently dropped by Windows 10/11
 
 ## Verification
 

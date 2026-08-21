@@ -21,18 +21,7 @@ types/dsh.d.ts        宿主端类型层
 
 ## 常用命令
 
-```sh
-pnpm install
-pnpm build            # 全仓构建（clean-lib → tsc → bundle-host）
-pnpm test             # 全量 smoke（Node ≥23.6 原生直跑 TS）
-pnpm contract         # 客户端契约（执行产物断言）
-pnpm pack:check       # tarball 完整性（含聚合包专项）
-pnpm verify:npmlayout # npm 布局：解包后可加载
-pnpm aggregate:check  # 聚合 patch 不漂移
-pnpm typecheck        # 全仓类型检查
-node scripts/dsh-plugin-new <name>   # 脚手架（F 阶段提供）
-```
-
+构建 / 测试 / 契约 / 打包命令见 [docs/DEVELOPMENT.md §0](docs/DEVELOPMENT.md#0-构建总览)。
 改动提交前至少跑一遍 `pnpm build && pnpm test && pnpm contract && pnpm pack:check`
 （CI 会全量跑所有门禁）。
 
@@ -42,43 +31,21 @@ node scripts/dsh-plugin-new <name>   # 脚手架（F 阶段提供）
   `types/dsh.d.ts`；禁止 tsconfig 指向任何 DSH 源码 checkout。
 - **新包一律 `dsh-` 前缀**；npm 包名 `@wingsky-1/dsh-*`；聚合包 `dsh-plugins-all`。
 - **零运行时依赖**：所有插件发布物自包含，运行时零 npm 依赖（宿主注入模型）。
-- **构建预设只用 `scripts/build-client.ts`**（客户端契约外壳生成 + load id 注入 +
-  内建校验），禁止在包内复制参数。
-- **客户端源码是「干净模块」**：只 `export function apply(ctx)` + `export const inject`，
-  源码**禁止**写 `window.__ModuleLoader__.load`、IIFE、手拼 `__DSH_PLUGIN_ID__`、
-  `declare var module`/`interface Window.__ModuleLoader__`——这些契约外壳（load 注册、
-  IIFE 闭包工厂 + factory + `Symbol.toStringTag` 装配 + load id === 包名）由
-  build-client 构建期统一生成。客户端入口统一 `src/client/index.ts`。
-- **客户端样式**：独立 `src/client/style.css`（`.css` text-loader 构建期内联），
-  源码 `import STYLE from "./style.css"`；不把 CSS 写进 ts。颜色用 `--dsw-alias-*` 等
-  实时主题变量 + 浅色回退，明暗自适应；挂载失败只 console.warn。
-- **客户端路径二选一**：默认「bare import = 宿主注入 external（React，需
-  `react-shim.d.ts`）」；纯浏览器第三方库用 `dsh.client.inlineBareImports: true`
-  内联（互斥）。契约：load id === 包名（arrive 校验） + `exports.apply/inject` 装配 +
-  自包含零依赖。
-- **全部路由强制 loopback 围栏**（非回环 403，方法不匹配 405）；health 路由必项。
-- **patch id 规范**：独立包 `ui-<name>`；聚合行由 aggregate.ts 生成（同 id，无
-  config）。**独立包与聚合包禁双装**（同 id 双装 loader 报 duplicate）。改独立包
-  patch 后必须 `node scripts/aggregate.ts` 重新生成聚合 patch。
-- **共享层 js + d.ts 双写**（tsc rootDir 硬约束，shared 不可 TS 化）。
+- **客户端为干净模块**：只 `export function apply(ctx)` + `export const inject`，
+  样式独立 `src/client/style.css`，构建走 `scripts/build-client.ts`，路由强制 loopback
+  围栏，patch id 用 `ui-<name>`。细则与禁止项见
+  [DEVELOPMENT.md §1/§2/§3](docs/DEVELOPMENT.md#1-宿主端srcindexts规范)。
 - **安全语义**：涉及密钥/凭据/远程执行/令牌的包修改安全语义时同步更新 README
   与测试；安全模型放包 README 的 `## 安全模型` 一节。
 
-## 提交规范（Conventional Commits）
+## 提交规范
 
-```
-type(scope): subject
-```
-
-- type：`feat` / `fix` / `docs` / `refactor` / `test` / `chore` / `ci` / `perf`
-- scope：包名或主题（如 `dsh-gzip`、`scripts`、`release`）
-- 禁止 emoji（代码、注释、文档、UI、提交信息全覆盖）
+Conventional Commits（`type(scope): subject`；type：`feat` / `fix` / `docs` / `refactor` /
+`test` / `chore` / `ci` / `perf`；**禁止 emoji**）：见 [CONTRIBUTING.md](CONTRIBUTING.md) 提交信息。
 
 ## 提交前检查
 
-- 敏感信息：不提交本机路径/用户名/IP/凭据（提交前扫描）。
-- 发布物：`pnpm pack` 后 tarball 不含 `src/`、`test/`、内部文档。
-- 只推功能代码与对外文档，不推内部治理/讨论细节。
+见 [CONTRIBUTING.md](CONTRIBUTING.md) 提交前检查（敏感信息扫描 / 发布物边界 / 只推功能代码）。
 
 ## 发布纪律（Release notes）
 
@@ -88,9 +55,17 @@ type(scope): subject
 - GitHub Release 更新说明**每版入库**为 `docs/release-notes/vX.Y.Z.md`，由发版 agent
   从上一 tag 至今的常规提交生成、逐条译为 `EN / 中文`、随 `chore(release):` 提交；
   管线优先引用该文件，缺失则回退 GitHub 自动 notes。**禁止 emoji**（覆盖文档与提交信息）。
+- 合并方式：CI 全绿后 squash merge（见 CONTRIBUTING.md 开发流程）。
 
 ## 测试纪律
 
-- smoke 全部无网络、无真实凭据，本地可直接运行。
-- 新功能/修复必须带 smoke 断言（含路由 403/405 围栏用例、client 契约断言）。
-- 新包自带 README（`README.md` 中文 + `README.en.md` 英文，中英配对）。
+smoke 全部无网络、无真实凭据，本地可直接运行；新功能/修复必须带 smoke 断言
+（含路由 403/405 围栏用例、client 契约断言）。防 flake 纪律（隔离文件路径 / 设 DSH_HOME
+到临时目录 / 轮询替代固定 sleep）见
+[DEVELOPMENT.md §5](docs/DEVELOPMENT.md#5-smoke-测试防-flake-纪律)。
+
+## 参考文档
+
+- 开发规范（宿主/客户端写法、构建契约、多端兼容、测试防 flake 纪律）：[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
+- 贡献规范（Conventional Commits、功能分支 + PR 流程、提交前检查）：[CONTRIBUTING.md](CONTRIBUTING.md)
+- issue 处理流程（提报 / 分诊 / 修复 / 关闭全周期）：[docs/ISSUE-WORKFLOW.md](docs/ISSUE-WORKFLOW.md)
