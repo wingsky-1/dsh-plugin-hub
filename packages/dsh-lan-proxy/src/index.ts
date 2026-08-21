@@ -485,7 +485,9 @@ export function apply(ctx: PluginContext, config: LanProxyConfig = {}): void {
     compressHandlers = null;
     compressMounted = false;
     const value = resolve();
-    if (value.httpCompressEnabled === false) {
+    // 整插件热关闭（enabled=false）时压缩层与标记路由一并卸载——与启动态
+    // 「enabled=false 不注册任何东西」语义一致，避免转发器已停而压缩残留。
+    if (value.enabled === false || value.httpCompressEnabled === false) {
       ctx.logger.info("lan-proxy: http compression disabled");
       return;
     }

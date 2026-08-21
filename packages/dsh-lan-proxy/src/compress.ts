@@ -267,7 +267,11 @@ export function installWrappers(webServer: DshWebServer, stats: CompressStats, l
 
   // 挂点 2：register patch 兜底（后续注册的 prefix / exact）。register 为官方必选
   // 方法，直接 patch；fallback/registerFallback 为非官方方法才判存在性。
+  // 注意：patch 期对后续路由的 handler 替换必须记入 disposers——lan-proxy 场景下
+  // 压缩层会随配置热更新反复拆装，若不恢复，路由将永久停留旧闭包（level/stats
+  // 失真），且完全卸载后残留压缩包装。
   {
+    const patched: Array<{ target: { handler: DshRoute["handler"] }; original: DshRoute["handler"] }> = [];
     const originalRegister = webServer.register;
     webServer.register = function register(route: DshRoute) {
       const dispose = originalRegister.call(webServer, route);
@@ -278,6 +282,7 @@ export function installWrappers(webServer: DshWebServer, stats: CompressStats, l
         const target = stored ?? route;
         const original = target.handler;
         target.handler = wrap(original);
+        patched.push({ target, original });
         if (route.kind === "prefix") {
           if (route.path === "/api") handlers.api = "register-patch";
           else if (route.path === "/plugins") handlers.plugins = "register-patch";
@@ -287,6 +292,13 @@ export function installWrappers(webServer: DshWebServer, stats: CompressStats, l
     };
     disposers.push(() => {
       webServer.register = originalRegister;
+      // 逆序恢复 patch 期替换过的 handler（仅当仍是我们包装的版本，避免覆盖
+      // 第三方在其后的再次替换）。
+      for (let i = patched.length - 1; i >= 0; i -= 1) {
+        const { target, original } = patched[i];
+        if ((target.handler as any)?.[COMPRESS_WRAPPED]) target.handler = original;
+      }
+      patched.length = 0;
     });
   }
 

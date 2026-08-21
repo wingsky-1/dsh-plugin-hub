@@ -26,7 +26,7 @@ import { fileURLToPath } from "node:url";
 import { assertClientProductContract, assertClientSourceContract } from "../../../test/smoke-lib.ts";
 
 const pkgDir = fileURLToPath(new URL("..", import.meta.url));
-import { apply, loadFileConfig, writeConfigFile, sanitizeSettings, rpcHandler, ROUTES, CHANNEL,
+import { apply, loadFileConfig, writeConfigFile, sanitizeSettings, rpcHandler, ROUTES, CHANNEL, pluginDir,
   hostnameAllowed, formatAuthority, rewriteHeaders, createLanProxy, isLoopbackTarget, DEFAULT_OPTIONS,
   compressWsPath, DEFAULT_WSS_COMPRESS_PATHS,
   ensureSelfSignedTls, certStillValid, toSanEntry, loadTlsFromFiles, SELF_SIGNED_KEY, SELF_SIGNED_CERT,
@@ -38,12 +38,20 @@ const PROXY_HTTPS_PORT = 19092;
 const LAN_HOST = "192.168.1.50";
 const failures = [];
 const check = (name, fn) => {
+  const fail = (err) => {
+    failures.push(name);
+    console.error(`  FAIL ${name}\n       ${err && err.message ? err.message : err}`);
+  };
   try {
-    fn();
+    const result = fn();
+    // promise 感知：async 断言失败同样记入 failures（否则静默丢失、报告失真）。
+    if (result && typeof result.then === "function") {
+      result.then(() => console.log(`  ok   ${name}`), fail);
+      return;
+    }
     console.log(`  ok   ${name}`);
   } catch (err) {
-    failures.push(name);
-    console.error(`  FAIL ${name}\n       ${err.message}`);
+    fail(err);
   }
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -640,12 +648,17 @@ const main = async () => {
     assert.equal(res.getHeader("content-encoding"), undefined, "Range 不压缩");
     assert.equal(Buffer.concat(res._chunks).toString("utf8"), "code");
   });
-  check("level 9 压缩仍生效且解压一致", async () => {
+  check("level 9 压缩仍生效且解压一致", () => {
     const body = JSON.stringify({ big: "x".repeat(5000), n: 7 });
-    const { res, stats } = await runCompressed("application/json; charset=utf-8", body, { "accept-encoding": "gzip" }, 9);
-    assert.equal(stats.compressed, 1);
-    assert.equal(res.getHeader("content-encoding"), "gzip");
-    assert.equal(gunzipSync(Buffer.concat(res._chunks)).toString("utf8"), body);
+    const res = new FakeRes();
+    const wrapped = wrapResponse(res, { method: "GET", headers: { "accept-encoding": "gzip" } }, { compressed: 0, passthrough: 0 }, 9);
+    wrapped.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+    wrapped.write(body);
+    wrapped.end();
+    return waitEnded(res).then(() => {
+      assert.equal(res.getHeader("content-encoding"), "gzip");
+      assert.equal(gunzipSync(Buffer.concat(res._chunks)).toString("utf8"), body);
+    });
   });
   check("无 body 状态（304/204/206）不误压", () => {
     for (const status of [304, 204, 206]) {
@@ -744,6 +757,36 @@ const main = async () => {
     installWrappers(ws, { compressed: 0, passthrough: 0 });
     check("幂等：二次 install 不重复包裹", () => {
       assert.equal(ws.exact.get("/x").handler, firstHandler);
+    });
+  }
+  {
+    // 缺口回归：register-patch 期对后续注册路由的替换必须随卸载恢复——
+    // lan-proxy 压缩层随配置热更新反复拆装，不恢复会导致路由停留旧闭包
+    // （level/stats 失真）且完全卸载后残留压缩包装。
+    const ws = makeWebServer();
+    let calls = 0;
+    const original = (_req, res) => { calls += 1; res.writeHead(200, { "content-type": "application/json" }); res.end('{"n":1}'); };
+    const stats1 = { compressed: 0, passthrough: 0 };
+    const d1 = installWrappers(ws, stats1);
+    ws.register({ kind: "exact", path: "/late", handler: original });
+    const route = ws.exact.get("/late");
+    const wrappedV1 = route.handler;
+    for (const dispose of [...d1.disposers].reverse()) dispose();
+    check("卸载恢复 patch 期注册路由的 handler（无残留包装）", () => {
+      assert.notEqual(wrappedV1, original, "patch 期已被包装");
+      assert.equal(route.handler, original, "卸载后恢复原 handler");
+      assert.equal(calls, 0);
+    });
+    const stats2 = { compressed: 0, passthrough: 0 };
+    const d2 = installWrappers(ws, stats2);
+    const res2 = new FakeRes();
+    route.handler(makeReq({ headers: { host: "127.0.0.1:3080", "accept-encoding": "gzip" } }), res2);
+    await waitEnded(res2);
+    for (const dispose of [...d2.disposers].reverse()) dispose();
+    check("重装后 patch 路由重新生效且计数归属新 stats，再卸载仍恢复", () => {
+      assert.equal(res2.getHeader("content-encoding"), "gzip");
+      assert.equal(stats2.compressed, 1, "新一代 stats 计数");
+      assert.equal(route.handler, original, "二次卸载仍恢复原 handler");
     });
   }
 
@@ -990,7 +1033,51 @@ const main = async () => {
     rmSync(applyHome, { recursive: true, force: true });
   }
 
-  // apply：enabled=false 整插件关闭 → 压缩与转发都不注册。
+  // apply：运行中经 config.json 热关闭——压缩层与标记路由必须随 watch 卸载。
+  console.log("apply: 运行中热关闭（config.json watch → 压缩层卸载）");
+  const hotOffCase = async (label, patch, expectProxyOff) => {
+    const applyHome = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-hotoff-"));
+    const prevHome = process.env.DSH_HOME;
+    process.env.DSH_HOME = applyHome;
+    const ws = makeWebServer();
+    const apiHandler = (req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end('{"ok":1}');
+    };
+    ws.prefixes.set("/api", { kind: "prefix", path: "/api", handler: apiHandler });
+    const disposers = [];
+    const ctx = {
+      logger: { info: () => {}, warn: () => {}, error: () => {} },
+      webServer: ws,
+      inject() {},
+      effect(fn) { const d = fn(); if (typeof d === "function") disposers.push(d); return d; },
+    };
+    apply(ctx, { host: "127.0.0.1", port: 19995, httpsEnabled: false });
+    assert.ok(ws.exact.has(ROUTES.compression), "前置：标记路由已注册");
+    // 运行中写 config.json 触发热更新；轮询等待 watch（150ms 防抖）生效，
+    // 不用固定 sleep（防 flake 纪律）。
+    writeConfigFile(pluginDir(), patch);
+    const deadline = Date.now() + 5000;
+    while (ws.exact.has(ROUTES.compression) && Date.now() < deadline) await sleep(25);
+    check(`${label}：标记路由撤下、/api handler 恢复`, () => {
+      assert.equal(ws.exact.has(ROUTES.compression), false, "标记路由已撤下");
+      assert.equal(ws.prefixes.get("/api").handler, apiHandler, "/api handler 已恢复");
+      const hRes = new FakeRes();
+      ws.exact.get(ROUTES.health).handler(makeReq(), hRes);
+      const payload = JSON.parse(Buffer.concat(hRes._chunks).toString("utf8"));
+      assert.equal(payload.httpCompressMounted, false, "health mounted=false");
+      if (expectProxyOff) assert.equal(payload.listening, false, "转发器已停");
+    });
+    for (const d of [...disposers].reverse()) {
+      try { d(); } catch {}
+    }
+    process.env.DSH_HOME = prevHome;
+    rmSync(applyHome, { recursive: true, force: true });
+  };
+  await hotOffCase("热关 httpCompressEnabled=false", { httpCompressEnabled: false }, false);
+  await hotOffCase("热关 enabled=false（整插件）", { enabled: false }, true);
+
+  // apply：enabled=false 整插件关闭 → 压缩与转发都不注册（启动态）。
   {
     const applyHome = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-apply-all-off-"));
     const prevHome = process.env.DSH_HOME;
@@ -1030,6 +1117,9 @@ const main = async () => {
   // Node 24 全局 agent 默认 keep-alive，销毁它让事件循环干净退出
   const { globalAgent } = await import("node:http");
   globalAgent.destroy();
+  // 等 check() 的 promise 分支（异步断言）全部落定后再统计失败。
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
   if (failures.length) {
     console.error(`\n${failures.length} check(s) failed: ${failures.join(", ")}`);
     process.exit(1);
