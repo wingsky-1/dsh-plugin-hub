@@ -203,6 +203,48 @@ assert.equal(sanitizeErrorText("order 1234567890123456 paid"), "order 1234567890
   assert.ok(cost < 1000, `约 1MB 文本脱敏耗时 ${cost}ms < 1000ms（防回溯退化）`);
 }
 
+// 性能护栏（对抗形态）：多 BEGIN 无 END 输入曾因完整块规则 O(k·n) 阻塞宿主数秒
+// （评审实测 1MB 高密度 BEGIN 6-17s），限窗 {0,4096} 后必须保持线性量级
+{
+  const adversarial = "-----BEGIN PRIVATE KEY-----".repeat(20000); // 约 560KB
+  const t0 = Date.now();
+  const out = sanitizeErrorText(adversarial);
+  const cost = Date.now() - t0;
+  assert.ok(cost < 5000, `对抗输入（2 万 BEGIN 无 END）脱敏耗时 ${cost}ms < 5000ms（防 PEM 回溯回归）`);
+  assert.ok(out.startsWith("<private-key>"), "对抗输入由孤立 BEGIN 兜底规则接住");
+}
+
+// ---- 评审修复回归：PEM 限窗 / 赋值分隔符收紧 / amqps ----
+
+// PEM 完整块在窗口内仍整体打码；超窗伪块由孤立 BEGIN 兜底接住
+{
+  const pad = "A".repeat(5000);
+  assert.equal(
+    sanitizeErrorText(`-----BEGIN RSA PRIVATE KEY-----\n${pad}\n-----END RSA PRIVATE KEY-----\nok`),
+    "<private-key>",
+    "PEM 超 4096 窗口的真实长块：完整块失配后由兜底规则整体掩蔽到文本尾"
+  );
+  assert.equal(
+    sanitizeErrorText("前 -----BEGIN PRIVATE KEY-----\nMIIEow\n-----END RSA PRIVATE KEY----- 后续可读"),
+    "前 <private-key> 后续可读",
+    "PEM 窗口内完整块打码且块后内容保留可读"
+  );
+}
+
+// 密钥赋值规则：分隔符 [=:] 必须显式——自然语言不得误伤（评审 P1 回归）
+assert.equal(sanitizeErrorText("auth failed: token expired"), "auth failed: token expired", "自然语言 token expired 不误伤");
+assert.equal(sanitizeErrorText("request rejected: invalid token provided"), "request rejected: invalid token provided", "invalid token provided 不误伤");
+assert.equal(sanitizeErrorText("password policy requires changes"), "password policy requires changes", "password policy 不误伤");
+assert.equal(sanitizeErrorText("Authorization header missing"), "Authorization header missing", "Authorization header 不误伤");
+// 显式赋值形态仍打码（含「键名: 空格 值」与引号形态）
+assert.equal(sanitizeErrorText("token: abc123"), "token=<redacted>", "显式冒号赋值仍打码");
+assert.equal(sanitizeErrorText('password = "s3cr3t"'), 'password=<redacted>"', "等号带空格+引号赋值仍打码（收尾引号残留为已知形态）");
+assert.ok(!sanitizeErrorText("api_key=sk-live-9f8e7d6c5b4a").includes("sk-live"), "api_key= 赋值仍打码");
+
+// amqps 连接串凭据：scheme 保留、凭据整体掩蔽（评审 P2 回归，不再半脱敏）
+assert.equal(sanitizeErrorText("amqps://guest:guest@rabbit.local/vhost"), "amqps://<redacted>@rabbit.local/vhost", "amqps 连接串整体掩蔽");
+assert.equal(sanitizeErrorText("AMQPS://u:p@h/v"), "AMQPS://<redacted>@h/v", "amqps 大写 scheme 掩蔽");
+
 // M4 配置归一化：askRemindMin / quietHours.allowKinds
 assert.equal(normalizeConfig({ askRemindMin: 3 }).askRemindMin, 3, "审批提醒分钟可配");
 assert.equal(normalizeConfig({ askRemindMin: 0 }).askRemindMin, 0, "0=关闭审批提醒");

@@ -123,9 +123,9 @@ Pick one of the following access forms (both the panel and the README surface a 
 - **Error notification text is redacted**: masked via an ordered rule table and truncated to 300 chars before entering notifications and history, reducing the exposure surface of embedded command echo, paths, and credential fragments. Covered categories and placeholders:
   - User paths (`/home` `/Users` `/root` `/etc` `C:\Users`) → `<path>`
   - PEM private key blocks (including truncated forms with only the BEGIN header) → `<private-key>`
-  - Database / message-queue connection-string credentials (postgres/mysql/mongodb/redis/amqp etc., scheme preserved) → `scheme://<redacted>@host`
+  - Database / message-queue connection-string credentials (postgres/mysql/mongodb/redis/amqps etc., scheme preserved; not redacted when the password contains URL-reserved chars like `<>`/quotes — known limitation) → `scheme://<redacted>@host`
   - Tokens: JWT, AWS AKIA, GitHub PAT (classic and fine-grained), ≥24-char hex / ≥32-char base64 runs → `<token>`
-  - Secret field assignments (`password=`/`token=`/`api_key=`…) → `key=<redacted>`
+  - Secret field assignments (`password=`/`token=`/`api_key=`…; an explicit `=`/`:` separator is required) → `key=<redacted>`
   - Email addresses → `<email>`
   - **Approval reasons and question texts** are redacted too (truncated to 120 chars) — these most often embed command echo and credential fragments
   - Proven false-positive-prone, deliberately not covered: IPv4 (same shape as UA version numbers), phone numbers (same shape as order IDs), credit cards (13-digit millisecond timestamps match at 100%)

@@ -119,9 +119,9 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-notifier
 - **错误通知文本经脱敏**：进入通知与历史前按有序规则表打码再截断 300 字符，降低错误消息内嵌命令回显、路径与凭据片段的外泄面。覆盖类别与占位符：
   - 用户路径（`/home` `/Users` `/root` `/etc` `C:\Users`）→ `<path>`
   - PEM 私钥块（含只有 BEGIN 头的截断形态）→ `<private-key>`
-  - 数据库/消息队列连接串凭据（postgres/mysql/mongodb/redis/amqp 等，scheme 保留）→ `scheme://<redacted>@host`
+  - 数据库/消息队列连接串凭据（postgres/mysql/mongodb/redis/amqps 等，scheme 保留；密码含 `<>`/引号等 URL 应编码字符时不脱敏，属已知局限）→ `scheme://<redacted>@host`
   - 各类令牌：JWT、AWS AKIA、GitHub PAT（classic 与 fine-grained）、≥24 位 hex / ≥32 位 base64 长串 → `<token>`
-  - 密钥字段赋值（`password=`/`token=`/`api_key=`…）→ `键名=<redacted>`
+  - 密钥字段赋值（`password=`/`token=`/`api_key=`…，须带显式 `=`/`:` 分隔符）→ `键名=<redacted>`
   - 邮箱 → `<email>`
   - **审批理由与提问文本**同样经脱敏（120 字符截断）——这两类文本最常内嵌命令回显与凭据片段
   - 已证伪不收录（高频误伤）：IPv4（UA 版本号同形）、手机号（订单号同形）、信用卡（13 位毫秒时间戳 100% 命中）
