@@ -7,9 +7,8 @@
 
 ## 0. 提交 issue 之前
 
-1. **先升级再报告**：很多缺陷在最新版已修（如 #2 记录的 notifier 0.1.8 SSE 泄漏，
-   0.1.9 即已修复）。请先 `dsh plugin --profile web update @wingsky-1/<插件>` 升到
-   latest 再确认问题仍在。
+1. **先升级再报告**：很多缺陷在最新版已修。请先
+   `dsh plugin --profile web update @wingsky-1/<插件>` 升到 latest 再确认问题仍在。
 2. **搜索既有 issue**：同问题不重复开，在原 issue 下补充信息即可。
 3. **选对模板**：
    - 缺陷（崩溃 / 功能异常 / 平台兼容）→ **Bug 报告** 表单（`[bug]` 前缀）
@@ -19,12 +18,12 @@
 
 ## 1. 分类与标题惯例
 
-| 类型 | 标题形态 | 标签 | 真实样本 |
-|---|---|---|---|
-| 缺陷 | `fix(<scope>): <问题描述>` | `bug` | #17、#7 |
-| 功能 / 演进 | `[feature] [<scope>] <主题>` | `enhancement` | #6、#4 |
-| 长期跟踪（meta） | `<主题>（Meta）` 或「配套：…」 | `enhancement` | #8 及其子项 #9–#13 |
-| 安全 / 升级公告 | `<影响面描述>，请升级到 x.y.z` | `bug` | #2 |
+| 类型 | 标题形态 | 标签 |
+|---|---|---|
+| 缺陷 | `fix(<scope>): <问题描述>` | `bug` |
+| 功能 / 演进 | `[feature] [<scope>] <主题>` | `enhancement` |
+| 长期跟踪（meta） | `<主题>（Meta）` 或「配套：…」 | `enhancement` |
+| 安全 / 升级公告 | `<影响面描述>，请升级到 x.y.z` | `bug` |
 
 - scope 用包名短横线形（`dsh-notifier`）；跨包 / 仓库级用 `meta`。
 - 一个 issue 只装一件事；多子项的长期目标拆成 Meta + 子 issue（见 §3）。
@@ -47,31 +46,16 @@
    - 或 commit message 引用 `(#<编号>)`，merge 后 issue 上会留下 referenced 记录，
      手动关闭。
 5. **合并即收尾**：CI 全绿后 squash merge（远端分支自动删除）；issue 若未自动关闭
-   则手动关闭并在评论里给出「修复版本号」（发布后回填，如 #17 对应 0.1.9）。
+   则手动关闭并在评论里给出「修复版本号」（发布后回填）。
 
 ## 3. 特殊类型
 
-- **Meta 长期跟踪**（样本 #8「依赖现代化」）：父 issue 维护子项清单（如 #9–#13），
-  每完成一个子项在父项勾销并链接对应 PR；父 issue 在全部子项完成后才关闭。
-- **feature 演进跟踪**（样本 #4）：正文维护里程碑 / 方案文档链接，随阶段推进更新
-  进度评论，issue 即该功能的唯一进度源。
-- **安全 / 升级公告**（样本 #2）：标题直接给出结论性指引（受影响版本 + 目标版本），
-  正文列影响面与升级命令；此类 issue 保持 open 至受影响版本从 registry 视角被
-  完全替代。
-
-## 4. 完整闭环样本
-
-[#17](https://github.com/wingsky-1/dsh-plugin-hub/issues/17)（notifier history 测试
-竞态 flake）走完了标准全周期：
-
-```text
-Bug 表单提报（[bug] 前缀，附日志）
-→ 打 bug 标签
-→ 定位：多 apply() 实例共享默认持久化路径 + fire-and-forget 写盘时序
-→ 修复分支 fix/dsh-notifier-history-flake（隔离文件 + waitForHistory 轮询）
-→ PR #20 正文 Fixes #17，纪律沉淀为 DEVELOPMENT.md §5
-→ CI 全绿 squash merge → #17 自动关闭
-```
+- **Meta 长期跟踪**：多子项的长期目标拆成一个父 issue + 多个子 issue；父 issue
+  维护子项清单，每完成一个子项在父项勾销并链接对应 PR，全部子项完成后才关闭。
+- **feature 演进跟踪**：正文维护里程碑 / 方案文档链接，随阶段推进更新进度评论，
+  issue 即该功能的唯一进度源。
+- **安全 / 升级公告**：标题直接给出结论性指引（受影响版本 + 目标版本），正文列
+  影响面与升级命令；此类 issue 保持 open 至受影响版本从 registry 视角被完全替代。
 
 ## 参考文档
 
