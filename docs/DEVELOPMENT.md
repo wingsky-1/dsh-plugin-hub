@@ -110,3 +110,37 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
   `factory: function(`、load 注册。
 - **新增/修改客户端后**：`pnpm build && pnpm test && pnpm contract && pnpm pack:check`
   全绿再提交。
+
+## 5. Smoke 测试防 flake 纪律
+
+背景：notifier 的 history 路由测试曾因「多个 `apply()` 实例共享同一 `history.jsonl` +
+`appendHistory` 为 fire-and-forget 异步写盘 + 固定 `setTimeout(50)` 后断言『最后一条
+为 test』」而 CI 偶发失败（issue #17）。根因是**测试多实例共享全局默认持久化路径、且
+依赖异步写盘时序**，与产品逻辑无关。以下纪律用于前置拦截此类 flake。
+
+核心原则：**smoke 测试不得依赖「全局默认持久化路径 + 异步写盘的时序」**。
+
+1. **显式隔离文件路径**：每个测试块必须显式传入 `historyFile` / `persistFile` /
+   `storePath` 等，指向 `join(work, "<包>-<块名>.jsonl")` 之类的**唯一临时文件**；
+   **禁止多个 `apply()` 实例共享同一文件路径**，尤其禁止依赖 `homedir()` / `DSH_HOME`
+   下的默认文件（默认路径是全局单文件，多实例各起一条写链会互相 read-modify-write 竞态）。
+2. **测试前置设置 `DSH_HOME` 等环境到临时目录**：所有测试开头
+   `process.env.DSH_HOME = mkdtempSync(join(tmpdir(), "<pkg>-"))`，结尾还原（delete 或
+   复位原值）。这同时杜绝两件事：① 向真实 `~/.dsh` 写测试数据（污染 + 跨运行状态泄漏）；
+   ② 多个测试块 / 运行间共享同一默认文件。**mcp-manager 已如此实践，作为强制基准。**
+3. **异步落盘用轮询替代固定 sleep**：断言持久化状态前必须 `poll-until` 满足条件再断言，
+   严禁 `setTimeout(resolve, 50 / 300)` 这类「等够毫秒」的时序假设。参考 notifier 的
+   `waitForHistory(route, predicate)` 辅助（轮询 GET 直到谓词成立，超时兜底返回当前态）。
+4. **fire-and-forget 写入禁止跨块断言顺序**：若写是 `void flush()` / 防抖定时器
+   （如 opencode-usage 的 `schedulePersist`、notifier 的 `appendHistory`），绝不能依赖
+   「最后一条是 X」「条数 === N」等顺序敏感断言；必须**隔离文件 + 轮询**。理想情况：
+   被测插件暴露 `await flushPersist()` 之类的可等待落盘钩子，测试直接 `await` 比轮询更稳。
+5. **CI 稳定性门槛**：新增 / 修改 `test/smoke.ts` 后，本地连续跑 **≥10 次**（如
+   `for i in $(seq 1 10); do node packages/<pkg>/test/smoke.ts; done`）确认无 flake 再提交。
+
+反例（notifier #17，已修）：多个 `apply(...)` 都传 `historyFile: join(work, "history.jsonl")`
+（共享文件）；`await setTimeout(resolve, 50)` 后 `assert.equal(records.at(-1).kind, "test")`。
+正例：路由块改用专属 `history-route.jsonl`；落盘用 `waitForHistory` 轮询。
+
+正例（mcp-manager）：设 `DSH_HOME` 到临时目录、每块显式 `storePath: join(dir, "dsh-mcp.json")`、
+写盘为 `await writeFile`（已等待）。
