@@ -113,6 +113,14 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-notifier
 | `/api/dsh-notifier/history` | GET / **DELETE** | GET 最近通知记录（最多 200 条，`historyMaxAgeDays` 过滤 / 被免打扰拦截的标记 `suppressed`）；**DELETE 清空** |
 | `/api/dsh-notifier/health` | GET | 健康检查 |
 
+## 类型依赖
+
+宿主端类型来自官方 `@deepseek-ai/*` 包（`dsh-agent` / `dsh-session` / `dsh-host-webserver`
+等，版本统一锁在仓库 `pnpm-workspace.yaml` catalog，随 DSH 发布节奏升级）：
+**仅 `import type` 编译期使用**，编译产物零官方运行时导入，运行时对象全部由 dsh
+宿主注入。包以 optional peerDependencies 声明这一宿主耦合；对插件做类型检查的
+消费者需可解析这些官方包（跳过类型检查则无影响）。
+
 ## 安全与边界
 
 - 通知文本只含任务标题/工具名/申请理由等元信息，**不含工具参数**（防敏感信息外泄）

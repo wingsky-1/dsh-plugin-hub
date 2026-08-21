@@ -36,11 +36,38 @@
   "files": [
     "lib",
     "shared/**/*.d.ts",
-    "types/dsh.d.ts",
     "cordis.patch.yml",
     "README.md",
     "LICENSE"
   ],
+  "devDependencies": {
+    "@deepseek-ai/cordis": "catalog:",
+    "@deepseek-ai/dsh-agent": "catalog:",
+    "@deepseek-ai/dsh-host-webserver": "catalog:",
+    "@deepseek-ai/dsh-session": "catalog:",
+    "@deepseek-ai/dsh-session-title": "catalog:",
+    "@deepseek-ai/dsh-user-approval": "catalog:"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-agent": "*",
+    "@deepseek-ai/dsh-host-webserver": "*",
+    "@deepseek-ai/dsh-session": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-agent": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-host-webserver": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-session": {
+      "optional": true
+    }
+  },
   "engines": {
     "node": ">=20.0.0"
   },

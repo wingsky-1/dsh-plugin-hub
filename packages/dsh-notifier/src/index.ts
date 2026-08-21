@@ -31,7 +31,19 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ServerResponse } from "node:http";
-import type { PluginContext, DshRoute } from "../../../types/dsh.js";
+// 官方类型层（issue #16，锁 0.1.1-rc.2；仅 import type，编译期擦除，
+// 禁止运行时值导入——contract-check 有门禁）。session/title 事件键由
+// dsh-session-title 经 declare module 注入 SessionEventMap，必须引入其类型面。
+import type { Context } from "@deepseek-ai/cordis";
+import type { Agent } from "@deepseek-ai/dsh-agent";
+import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
+import type { TurnEndReason } from "@deepseek-ai/dsh-session/types";
+import type {} from "@deepseek-ai/dsh-session-title";
+import type {} from "@deepseek-ai/dsh-user-approval";
+
+/** turn/end reason.kind 的官方联合（TurnEndReasonMap；插件可经 declare module 扩展，
+ * 运行时出现未知 kind 由调用方保守静默——见 agent/status 完成判定白名单）。 */
+type TurnEndKind = TurnEndReason extends { kind: infer K } ? K : never;
 
 /** 稳定的 cordis 插件名。 */
 export const name = "notifier";
@@ -104,25 +116,8 @@ export interface NotifyDetail {
   ts?: number;
 }
 
-/** Agent 对象最小面（事件 payload.agent；session.events 取会话标题与 turn/end）。 */
-export interface AgentLite {
-  id?: string;
-  session?: {
-    /** 会话头（SessionHeader 最小面；子代理识别只用 origin，见 isSubagentOf）。 */
-    header?: {
-      /** 子代理身份标记：DSH 强制唯一合法值为 'subagent'，主会话/fork 派生会话恒为 undefined。 */
-      origin?: unknown;
-      /** 父会话 id：子代理与 fork/派生会话都会写，故不能单独作为子代理判据。 */
-      parentSession?: unknown;
-      /** 子代理深度计数：resume/运行时 deepen 路径可能缺失或失真，仅作兜底。 */
-      delegationDepth?: unknown;
-    };
-    events?: Array<{
-      type?: string;
-      data?: { title?: unknown; turn?: unknown; reason?: { kind?: unknown } };
-    }>;
-  };
-}
+/** Agent 事件 payload 的类型来源：官方 @deepseek-ai/dsh-agent（原手写 AgentLite
+ * 已删，字段语义见官方 SessionHeader.origin / Session.events 判别联合）。 */
 
 /** 与客户端共享的路由常量（smoke 断言两端一致）。 */
 export const ROUTES = {
@@ -390,13 +385,16 @@ export function prettyToolName(name: unknown): string {
  * @param agent Agent 对象（事件 payload.agent）。
  * @returns 截断 40 字符的标题。
  */
-export function sessionTitleOf(agent: AgentLite | undefined): string | undefined {
+export function sessionTitleOf(agent: Agent | undefined): string | undefined {
   try {
-    const events = agent?.session?.events;
-    if (!Array.isArray(events)) return undefined;
+    // 运行时防御保留（payload 跨宿主边界，不受信）：显式收窄而非 Array.isArray
+    // （后者会把 readonly SessionEvent[] 压成 any[]，令 typecheck 对 events 访问失明）。
+    const events = agent?.session?.events as ReadonlyArray<{ type: unknown; data?: { title?: unknown } }> | undefined;
+    if (events === undefined) return undefined;
     for (let i = events.length - 1; i >= 0; i -= 1) {
-      if (events[i]?.type === "session/title" && typeof events[i].data?.title === "string") {
-        const title = (events[i] as { data: { title: string } }).data.title.trim();
+      const ev = events[i] as { type: unknown; data?: { title?: unknown } } | undefined;
+      if (ev?.type === "session/title" && typeof ev.data?.title === "string") {
+        const title = ev.data.title.trim();
         return title.length > 0 ? title.slice(0, 40) : undefined;
       }
     }
@@ -417,17 +415,18 @@ export function sessionTitleOf(agent: AgentLite | undefined): string | undefined
  * @returns {turn, kind}（kind 为 turn/end reason.kind，如 completed /
  *   aborted / error / max-tokens）；无 turn/end 或读取失败返回 undefined。
  */
-export function lastTurnEndOf(agent: AgentLite | undefined): { turn: number; kind: string } | undefined {
+export function lastTurnEndOf(agent: Agent | undefined): { turn: number; kind: TurnEndKind } | undefined {
   try {
-    const events = agent?.session?.events;
-    if (!Array.isArray(events)) return undefined;
+    // 运行时防御同 sessionTitleOf：显式收窄，不用 Array.isArray（any 化陷阱）
+    const events = agent?.session?.events as ReadonlyArray<{ type: unknown; data?: { turn?: unknown; reason?: unknown } }> | undefined;
+    if (events === undefined) return undefined;
     for (let i = events.length - 1; i >= 0; i -= 1) {
-      const ev = events[i];
+      const ev = events[i] as { type: unknown; data?: { turn?: unknown; reason?: unknown } } | undefined;
       if (ev?.type !== "turn/end") continue;
       const reason = ev.data?.reason;
       if (reason === undefined || reason === null || typeof reason !== "object") continue;
       const turn = typeof ev.data?.turn === "number" ? ev.data.turn : NaN;
-      const kind = String((reason as { kind?: unknown }).kind ?? "");
+      const kind = String((reason as { kind?: unknown }).kind ?? "") as TurnEndKind;
       return { turn, kind };
     }
   } catch {
@@ -453,7 +452,7 @@ export function lastTurnEndOf(agent: AgentLite | undefined): { turn: number; kin
  *   可靠的「是否子代理」标记，仅作兜底。
  * 综上：单用 origin 最权威、最稳；notifier 是单 agent 独立判定，不要求父 id 匹配。
  */
-export function isSubagentOf(agent: AgentLite | undefined): boolean {
+export function isSubagentOf(agent: Agent | undefined): boolean {
   return agent?.session?.header?.origin === "subagent";
 }
 
@@ -495,7 +494,7 @@ function sseData(payload: unknown): string {
  * @param ctx 宿主插件上下文。
  * @param config 配置（enabled / configFile 覆盖 / toastScript 覆盖）。
  */
-export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}): Promise<void> {
+export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Promise<void> {
   if (config.enabled === false) return;
   const storeFile = typeof config.configFile === "string" ? config.configFile : configFile();
   const toastScript = typeof config.toastScript === "string" ? config.toastScript : toastScriptPath();
@@ -811,7 +810,7 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
   const askRemindTimers = new Map<string, NodeJS.Timeout>();
 
   disposers.push(
-    ctx.on("approval/request", async (req: { toolName?: unknown; agent?: AgentLite; reason?: unknown } | undefined, next: () => unknown) => {
+    ctx.on("approval/request", async (req, next) => {
       if (!current.notifyAsk) return next();
       const askDetail = () => ({
         tool: req?.toolName as string | undefined,
@@ -891,7 +890,7 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
           const first = Array.isArray(request && (request as { questions?: unknown[] }).questions) ? (request as { questions?: unknown[] }).questions![0] : undefined;
           notify("question", {
             tool: "ask_user_question",
-            taskTitle: sessionTitleOf((request as { agent?: AgentLite } | null | undefined)?.agent),
+            taskTitle: sessionTitleOf((request as { agent?: Agent } | null | undefined)?.agent),
             // 提问文本同样可能内嵌上下文片段，进通知前脱敏（120 字符截断）
             question: first && (first as { question?: unknown }).question ? sanitizeErrorText((first as { question?: unknown }).question, 120) : undefined,
           });
@@ -967,7 +966,7 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
    * 无条件重置状态，再做中断抑制与主/子分流。
    */
   disposers.push(
-    ctx.on("agent/status", ({ agent, status }: { agent?: AgentLite; status?: string }) => {
+    ctx.on("agent/status", ({ agent, status }) => {
       try {
         const agentId = agent?.id ?? "?";
         let state = agentStates.get(agentId);
@@ -1019,7 +1018,7 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
 
   /** 会话销毁时清理其状态机条目（含错误合并窗口与 turn 去重，防 Map/Set 无界增长）。 */
   disposers.push(
-    ctx.on("agent/disposed", ({ agent }: { agent?: AgentLite }) => {
+    ctx.on("agent/disposed", ({ agent }) => {
       if (agent?.id !== undefined) {
         agentStates.delete(agent.id);
         errorMerge.delete(agent.id);
@@ -1036,7 +1035,7 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
   /** 任务错误（60 秒滚动窗口内合并同类错误，防刷屏；窗口内被吞的错误保留
    *  最近 2 条摘要，窗口过期后随通知提示「窗口内其他错误」）。 */
   disposers.push(
-    ctx.on("agent/error", (payload: { agent?: AgentLite; error?: unknown; turn?: unknown; step?: unknown }) => {
+    ctx.on("agent/error", (payload) => {
       try {
         if (!current.notifyTaskError) return;
         const agentId = payload?.agent?.id;
@@ -1075,7 +1074,7 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
 
   /** 轮结束（默认关）。cordis serial 事件签名是 cb(payload)，无 next——调用 next() 会 TypeError 且污染整轮。 */
   disposers.push(
-    ctx.on("agent/turn-stopping", async (payload: { agent?: AgentLite; turn?: unknown }) => {
+    ctx.on("agent/turn-stopping", async (payload) => {
       try {
         if (current.notifyTurnEnd) {
           const turn = typeof payload?.turn === "number" ? payload.turn : NaN;
@@ -1095,7 +1094,7 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
 
   // ------------------------------------------------------------ 路由
 
-  const configRoute: DshRoute = {
+  const configRoute: WebRoute = {
     kind: "exact",
     path: ROUTES.config,
     handler: async (req, res) => {
@@ -1129,7 +1128,7 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
     },
   };
 
-  const eventsRoute: DshRoute = {
+  const eventsRoute: WebRoute = {
     kind: "exact",
     path: ROUTES.events,
     handler: (req, res) => {
@@ -1176,7 +1175,7 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
   };
 
   /** 健康检查：插件是否加载、配置摘要、SSE 连接数。 */
-  const healthRoute: DshRoute = {
+  const healthRoute: WebRoute = {
     kind: "exact",
     path: ROUTES.health,
     handler: (req, res) => {
@@ -1206,7 +1205,7 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
    * 测试通知：POST 触发一条测试通知（绕过免打扰，测试意图是验证通道本身）。
    * 系统通知 + SSE 广播同时走一遍，客户端收到 kind=test 的帧无条件弹窗。
    */
-  const testRoute: DshRoute = {
+  const testRoute: WebRoute = {
     kind: "exact",
     path: ROUTES.test,
     handler: (req, res) => {
@@ -1224,7 +1223,7 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
   };
 
   /** 通知历史：GET 返回最近记录（jsonl 尾部最多 HISTORY_LIMIT 条）。 */
-  const historyRoute: DshRoute = {
+  const historyRoute: WebRoute = {
     kind: "exact",
     path: ROUTES.history,
     handler: async (req, res) => {
