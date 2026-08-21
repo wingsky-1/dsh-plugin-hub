@@ -41,6 +41,11 @@ node scripts/contract-check.ts && node scripts/pack-check.ts
 - smoke 全部无网络、无真实凭据，本地可直接运行
 - 新功能/修复必须带 smoke 断言（含路由 403/405 围栏用例）
 
+## 参考文档
+
+- 开发规范（宿主/客户端写法、构建契约、多端兼容、测试防 flake 纪律）：[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
+- 仓库规则（全局约定、发布纪律）：[AGENTS.md](AGENTS.md)
+
 ## License
 
 MIT
