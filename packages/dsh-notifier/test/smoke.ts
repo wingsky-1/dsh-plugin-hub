@@ -11,7 +11,7 @@
  *   不暴露会话 id，无标题降级）/
  *   next 抛错原样传播 / notifyAsk=false 不通知
  * - agent/status：per-agent 状态机，多会话互不误报；disposed 清理；
- *   子代理分流（delegationDepth≥1 → subagent-done，独立开关默认关，
+ *   子代理分流（header.origin==='subagent' → subagent-done，独立开关默认关，
  *   notifyTaskDone=false 不拦截）；中断抑制（turn/end aborted 静默、
  *   error/blocked 静默（不误报完成）、S1 无新 turn/end closure 静默、
  *   中断/失败后继续正常通知）
@@ -235,21 +235,27 @@ function makeLoggingCtx() {
   return { ctx, routes, listeners, infos };
 }
 
-// 带会话标题/子代理深度/turn/end 的 agent 辅助（模拟 dsh-session-title 与
+// 带会话标题/子代理身份/turn/end 的 agent 辅助（模拟 dsh-session-title 与
 // dsh-agent-loop 写入的日志；真实宿主跑完一轮必有 turn/end 落盘）。
 // opts.turnEnd：turn 号（有则追加一条 turn/end 事件）；
 // opts.turnEndKind：reason.kind（默认 completed，aborted 模拟用户中断）；
-// opts.depth：header.delegationDepth（≥1 模拟子代理）。
+// opts.subagent：true 模拟子代理（写入 origin:'subagent'，与 DSH childSessionMeta 一致）；
+// opts.parentSession：模拟 fork/派生会话（只写 parentSession、不带 origin）；
+// opts.depth：header.delegationDepth（仅作附加，不作子代理判据）。
 function agentWithTitle(id, title, opts = {}) {
   const events = [];
   if (opts.turnEnd !== undefined) {
     events.push({ type: "turn/end", data: { turn: opts.turnEnd, reason: { kind: opts.turnEndKind ?? "completed" } } });
   }
   if (title) events.push({ type: "session/title", data: { title } });
+  const header = {};
+  if (opts.subagent) header.origin = "subagent";
+  if (opts.parentSession !== undefined) header.parentSession = opts.parentSession;
+  if (opts.depth !== undefined) header.delegationDepth = opts.depth;
   return {
     id,
     session: {
-      header: opts.depth !== undefined ? { delegationDepth: opts.depth } : undefined,
+      header: Object.keys(header).length > 0 ? header : undefined,
       events,
     },
   };
@@ -402,14 +408,38 @@ function agentWithTitle(id, title, opts = {}) {
 {
   const subCfg = join(work, "subagent.json");
 
+  // 判定依据回归（issue #7）：单用 header.origin === 'subagent' 识别子代理。
+  // 反例 1：只带 parentSession（无 origin）的 fork/派生会话必须走 done（不被静默）。
+  // 这是三信号「或」方案的镜像回归防护——Session.fork() 写 parentSession 但不带
+  // origin，若用 parentSession 当判据会误判为子代理、致其完成被默认静默。
+  {
+    const infos = [];
+    const { ctx, listeners } = makeFakeCtx({ logger: { warn: () => {}, info: (t) => infos.push(t) } });
+    await apply(ctx, { enabled: true, configFile: subCfg, toastScript: join(work, "toast.ps1"), historyFile: join(work, "history.jsonl") });
+    const status = listeners.get("agent/status")[0];
+    status({ agent: agentWithTitle("fork-1", "fork 派生会话", { parentSession: "parent-x", turnEnd: 1 }), status: "running" });
+    status({ agent: agentWithTitle("fork-1", "fork 派生会话", { parentSession: "parent-x", turnEnd: 1 }), status: "idle" });
+    assert.equal(infos.length, 1, "仅 parentSession（无 origin）的会话走主任务完成，不被静默");
+    assert.match(infos[0], /done/, "fork/派生会话发 done 而非 subagent-done");
+    // 反例 2：主会话（无 header / 无 origin）必须走 done（原 bug 回归防护）。
+    // 注意：fork-1 与 main-x 同为 done 类型，会被完成风暴聚合窗口（默认 3s）合并，
+    // main-x 的「单条」通知延迟到窗口到点才补发；故此处先等聚合窗口过期，
+    // 让 main-x 落在独立窗口、即时通知。
+    await new Promise((resolve) => setTimeout(resolve, 3200));
+    status({ agent: agentWithTitle("main-x", "主任务", { turnEnd: 1 }), status: "running" });
+    status({ agent: agentWithTitle("main-x", "主任务", { turnEnd: 1 }), status: "idle" });
+    assert.equal(infos.length, 2, "主会话完成走 done");
+    assert.match(infos[1], /done/);
+  }
+
   // 默认关：子代理完成不通知，主任务完成不受影响
   {
     const infos = [];
     const { ctx, listeners } = makeFakeCtx({ logger: { warn: () => {}, info: (t) => infos.push(t) } });
     await apply(ctx, { enabled: true, configFile: subCfg, toastScript: join(work, "toast.ps1"), historyFile: join(work, "history.jsonl") });
     const status = listeners.get("agent/status")[0];
-    status({ agent: agentWithTitle("sub-1", "子任务A", { depth: 1, turnEnd: 1 }), status: "running" });
-    status({ agent: agentWithTitle("sub-1", "子任务A", { depth: 1, turnEnd: 1 }), status: "idle" });
+    status({ agent: agentWithTitle("sub-1", "子任务A", { subagent: true, turnEnd: 1 }), status: "running" });
+    status({ agent: agentWithTitle("sub-1", "子任务A", { subagent: true, turnEnd: 1 }), status: "idle" });
     assert.equal(infos.length, 0, "notifySubagentDone 默认关：子代理完成不通知");
     status({ agent: agentWithTitle("main-1", "主任务", { turnEnd: 1 }), status: "running" });
     status({ agent: agentWithTitle("main-1", "主任务", { turnEnd: 1 }), status: "idle" });
@@ -424,8 +454,8 @@ function agentWithTitle(id, title, opts = {}) {
     const { ctx, listeners } = makeFakeCtx({ logger: { warn: () => {}, info: (t) => infos.push(t) } });
     await apply(ctx, { enabled: true, configFile: subCfg, toastScript: join(work, "toast.ps1"), historyFile: join(work, "history.jsonl") });
     const status = listeners.get("agent/status")[0];
-    status({ agent: agentWithTitle("sub-2", "子任务B", { depth: 1, turnEnd: 1 }), status: "running" });
-    status({ agent: agentWithTitle("sub-2", "子任务B", { depth: 1, turnEnd: 1 }), status: "idle" });
+    status({ agent: agentWithTitle("sub-2", "子任务B", { subagent: true, turnEnd: 1 }), status: "running" });
+    status({ agent: agentWithTitle("sub-2", "子任务B", { subagent: true, turnEnd: 1 }), status: "idle" });
     assert.equal(infos.length, 1);
     assert.match(infos[0], /subagent-done/, "子代理完成用独立事件类型");
     assert.match(infos[0], /子任务「子任务B」已完成/, "subagent-done 文案带任务标题");
@@ -446,8 +476,8 @@ function agentWithTitle(id, title, opts = {}) {
     const { ctx, listeners } = makeFakeCtx({ logger: { warn: () => {}, info: (t) => infos.push(t) } });
     await apply(ctx, { enabled: true, configFile: subCfg, toastScript: join(work, "toast.ps1"), historyFile: join(work, "history.jsonl") });
     const status = listeners.get("agent/status")[0];
-    status({ agent: agentWithTitle("sub-3", "子任务C", { depth: 1, turnEnd: 1 }), status: "running" });
-    status({ agent: agentWithTitle("sub-3", "子任务C", { depth: 1, turnEnd: 1 }), status: "idle" });
+    status({ agent: agentWithTitle("sub-3", "子任务C", { subagent: true, turnEnd: 1 }), status: "running" });
+    status({ agent: agentWithTitle("sub-3", "子任务C", { subagent: true, turnEnd: 1 }), status: "idle" });
     assert.equal(infos.length, 1, "notifyTaskDone=false 不拦截子代理完成（S2）");
     assert.match(infos[0], /subagent-done/);
     status({ agent: agentWithTitle("main-3", "主任务3", { turnEnd: 1 }), status: "running" });

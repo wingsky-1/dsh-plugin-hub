@@ -8,7 +8,7 @@
  *   用户审批结束），不短路
  * - 任务完成：agent/status（scoped emit，{agent, status}，idle | running）
  *   running → idle 跃迁，per-agent 状态机，多会话互不误报；子代理
- *   （header.delegationDepth ≥ 1）走独立开关/事件类型 subagent-done；
+ *   （header.origin === 'subagent'）走独立开关/事件类型 subagent-done；
  *   用户暂停/中断（turn/end reason aborted）固定静默
  * - 任务错误：agent/error（{agent, turn, step, error}），60 秒滚动窗口合并
  * - 轮结束：agent/turn-stopping（serial，{agent, turn}，仅宿主通知，不跑模型）
@@ -108,8 +108,15 @@ export interface NotifyDetail {
 export interface AgentLite {
   id?: string;
   session?: {
-    /** 子代理深度标记（dsh-subagent 写入：子代理 ≥1，主 agent 无此字段）。 */
-    header?: { delegationDepth?: unknown };
+    /** 会话头（SessionHeader 最小面；子代理识别只用 origin，见 isSubagentOf）。 */
+    header?: {
+      /** 子代理身份标记：DSH 强制唯一合法值为 'subagent'，主会话/fork 派生会话恒为 undefined。 */
+      origin?: unknown;
+      /** 父会话 id：子代理与 fork/派生会话都会写，故不能单独作为子代理判据。 */
+      parentSession?: unknown;
+      /** 子代理深度计数：resume/运行时 deepen 路径可能缺失或失真，仅作兜底。 */
+      delegationDepth?: unknown;
+    };
     events?: Array<{
       type?: string;
       data?: { title?: unknown; turn?: unknown; reason?: { kind?: unknown } };
@@ -388,13 +395,24 @@ export function lastTurnEndOf(agent: AgentLite | undefined): { turn: number; kin
 }
 
 /**
- * agent 是否为子代理：session.header.delegationDepth ≥ 1
- * （dsh-subagent 创建子代理时写入 childDepth = parent+1；主 agent 无此
- * 字段/为 0）。先规约数字再比较（strict 下 unknown 不能直接参与比较）。
+ * agent 是否为子代理：以 session.header.origin === 'subagent' 为唯一判据。
+ *
+ * 选此信号而非 delegationDepth / parentSession 的原因（均经 DSH 源码核验）：
+ * - origin 由 SessionHeader 校验强制唯一合法值为 'subagent'
+ *   （packages/core/session/src/index.ts:125：origin 非 undefined 就必须是
+ *   'subagent'），主会话/fork 派生会话恒为 undefined → 零误判面。
+ * - DSH 自身在无父 id 场景（packages/subagent/subagent/src/list-children.ts:324、
+ *   :235）也只认 origin === 'subagent' 识别子代理，口径一致。
+ * - parentSession 不能作判据：Session.fork()（session/src/index.ts:1091）与
+ *   apiproxy 的 lineage 场景会写 parentSession 但不带 origin → 若用 parentSession
+ *   会把 fork/派生主流程会话误判为子代理，其「任务完成」被默认
+ *   notifySubagentDone=false 静默（当前 bug 的镜像回归）。
+ * - delegationDepth 在某些路径（resume 信任持久化 header、运行时 deepen）下并非
+ *   可靠的「是否子代理」标记，仅作兜底。
+ * 综上：单用 origin 最权威、最稳；notifier 是单 agent 独立判定，不要求父 id 匹配。
  */
 export function isSubagentOf(agent: AgentLite | undefined): boolean {
-  const depth = Number(agent?.session?.header?.delegationDepth ?? 0);
-  return Number.isFinite(depth) && depth >= 1;
+  return agent?.session?.header?.origin === "subagent";
 }
 
 /** "HH:MM" → 分钟数（校验 0-23 时 / 0-59 分）。 */
@@ -735,7 +753,7 @@ export async function apply(ctx: PluginContext, config: NotifierApplyConfig = {}
   /**
    * 任务完成状态机（per-agent）：见到某会话 running 记 pendingDone，下次该会话
    * idle 时判定是否通知（带耗时）。多会话/子代理各自独立跟踪，互不误报。
-   * 子代理（header.delegationDepth ≥ 1）走独立开关 notifySubagentDone 与
+   * 子代理（header.origin === 'subagent'）走独立开关 notifySubagentDone 与
    * 独立事件类型 subagent-done；用户暂停/中断（turn/end reason aborted）固定静默。
    */
   const agentStates = new Map<string, { runningSeen: boolean; startedAt: number; lastEndedTurn?: number }>(); // agentId -> { runningSeen, startedAt, lastEndedTurn }
