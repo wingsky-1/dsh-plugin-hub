@@ -136,35 +136,10 @@ dsh plugin --profile web add @wingsky-1/<包>@latest
 
 要求：Node ≥ 23.6（测试用原生 type stripping 直跑 TS）、pnpm ≥ 11。
 
-```sh
-pnpm install
-pnpm build        # 构建全部插件（宿主端 tsc + esbuild 内联 shared；客户端 build-client：干净模块→契约外壳）
-pnpm contract     # 客户端契约检查（node scripts/contract-check.ts，load id/apply/inject/arrive）
-pnpm test         # 全量 smoke（test/*.ts 直跑）
-pnpm pack:check   # 打包冒烟：pnpm pack 后检查 tarball 内容完整性
-```
-
-目录结构：
-
-```
-packages/dsh-*/            # 每个插件 = 独立 npm 包（@wingsky-1/dsh-*）
-  src/index.ts             # 宿主端入口（cordis service，export ROUTES 作客户端路由单一来源）
-  src/client/index.ts      # 客户端干净模块入口（只 export apply/inject，无 load/IIFE 外壳）
-  src/client/style.css     # 客户端样式（独立文件，构建期 text-loader 内联进 client.js）
-  src/client/*.ts          # 客户端辅助模块（宿主用不到、仅浏览器侧）
-  src/*.ts                 # 其余为宿主模块；宿主导出的 profile 依赖另见 cordis.patch.yml
-packages/dsh-plugins-all/  # 聚合包（dependencies 引用全部子包，发布用 pnpm publish 替换版本号）
-shared/                    # 宿主端共享层（loopback/host-utils/frontmatter），构建期内联进各包，不发布
-types/dsh.d.ts             # 自建 DSH 插件类型层
-scripts/                   # 构建/契约/打包校验脚本（*.ts，Node 直跑）
-```
-
-客户端开发（干净模块规范）：源码**不写** `window.__ModuleLoader__` / IIFE——只
-`export function apply(ctx)` + `export const inject`；契约外壳（load/IIFE/Symbol.toStringTag
-装配 + load id=包名）由 `scripts/build-client.ts` 统一生成。样式放独立 `style.css`（`.css`
-text-loader 内联）。纯浏览器第三方库（如 web-file-preview 的 dompurify/diff2html）经
-`dsh.client.inlineBareImports: true` 内联进产物，统一走 `src/client/` 目录。详见
-[DEVELOPMENT.md](docs/DEVELOPMENT.md)。
+构建 / 契约 / 测试 / 打包命令、目录结构、宿主端与客户端写法规范，统一见
+[DEVELOPMENT.md](docs/DEVELOPMENT.md)（从 §0 构建总览开始）；贡献流程见
+[CONTRIBUTING.md](CONTRIBUTING.md)；issue 处理流程见
+[ISSUE-WORKFLOW.md](docs/ISSUE-WORKFLOW.md)。
 
 插件迁入本仓库前均经过开源前审查（构建自包含、隐私清理、安全加固、元数据完整）。
 

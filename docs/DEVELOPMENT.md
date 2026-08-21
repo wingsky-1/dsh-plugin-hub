@@ -17,6 +17,21 @@ pnpm pack:check   # tarball 完整性（含聚合包）
 pnpm typecheck    # 全仓类型检查
 ```
 
+目录结构：
+
+```text
+packages/dsh-*/            # 每个插件 = 独立 npm 包（@wingsky-1/dsh-*）
+  src/index.ts             # 宿主端入口（cordis service，export ROUTES 作客户端路由单一来源）
+  src/client/index.ts      # 客户端干净模块入口（只 export apply/inject，无 load/IIFE 外壳）
+  src/client/style.css     # 客户端样式（独立文件，构建期 text-loader 内联进 client.js）
+  src/client/*.ts          # 客户端辅助模块（宿主用不到、仅浏览器侧）
+  src/*.ts                 # 其余为宿主模块；宿主导出的 profile 依赖另见 cordis.patch.yml
+packages/dsh-plugins-all/  # 聚合包（dependencies 引用全部子包，发布用 pnpm publish 替换版本号）
+shared/                    # 宿主端共享层（loopback/host-utils/frontmatter），构建期内联进各包，不发布
+types/dsh.d.ts             # 自建 DSH 插件类型层
+scripts/                   # 构建/契约/打包校验脚本（*.ts，Node 直跑）
+```
+
 `scripts/bundle-host.ts` 编排单包构建：
 1. esbuild 内联 `shared/*` 进 `lib/index.js`（宿主端自包含单文件）。
 2. 客户端经 `scripts/build-client.ts`（唯一契约外壳/注入点）构建 `lib/client.js`。

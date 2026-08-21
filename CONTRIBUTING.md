@@ -17,7 +17,7 @@
 
 ## 开发流程
 
-1. Fork 本仓库（或直接提 issue 讨论）
+1. Fork 本仓库（或直接提 issue 讨论，流程见 [docs/ISSUE-WORKFLOW.md](docs/ISSUE-WORKFLOW.md)）
 2. 创建功能分支：`feat/<主题>` 或 `fix/<主题>`
 3. 本地验证全绿：
 
@@ -45,6 +45,7 @@ node scripts/contract-check.ts && node scripts/pack-check.ts
 
 - 开发规范（宿主/客户端写法、构建契约、多端兼容、测试防 flake 纪律）：[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
 - 仓库规则（全局约定、发布纪律）：[AGENTS.md](AGENTS.md)
+- issue 处理流程（提报 / 分诊 / 修复 / 关闭全周期）：[docs/ISSUE-WORKFLOW.md](docs/ISSUE-WORKFLOW.md)
 
 ## License
 
