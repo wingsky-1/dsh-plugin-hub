@@ -18,6 +18,10 @@ import { executeClient } from './client-contract-lib.ts'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const plugins = readdirSync(join(ROOT, 'packages')).filter(d => d.startsWith('dsh-') && d !== 'dsh-plugins-all')
+// 已退役插件：仍随仓发布（tarball 检查保留），但不再进入聚合包（dsh-gzip 压缩
+// 能力已合并进 dsh-lan-proxy，见其 README 退役节）。
+const RETIRED_FROM_AGGREGATE = new Set(['dsh-gzip'])
+const aggregated = plugins.filter(p => !RETIRED_FROM_AGGREGATE.has(p))
 
 let failed = 0
 for (const p of plugins) {
@@ -93,18 +97,18 @@ for (const p of plugins) {
     if (!existsSync(join(pkgRoot, 'lib', 'index.js'))) problems.push('缺 lib/index.js')
     const patch = existsSync(join(pkgRoot, 'cordis.patch.yml')) ? readFileSync(join(pkgRoot, 'cordis.patch.yml'), 'utf8') : ''
     if (!patch) problems.push('缺 cordis.patch.yml')
-    // 聚合行 id 必须与对应子包 patch id 一致（且无 config）
+    // 聚合行 id 必须与对应子包 patch id 一致（且无 config；退役包除外）
     if (patch) {
       const aggRows = [...patch.matchAll(/^\s*- id:\s*(\S+)/gm)].map(m => m[1])
-      for (const pd of plugins) {
+      for (const pd of aggregated) {
         if (!aggRows.includes(`ui-${pd}`)) problems.push(`聚合行缺 ui-${pd}（与子包 id 不一致）`)
       }
-      if (aggRows.length !== plugins.length) problems.push(`聚合行数 ${aggRows.length} != 子包数 ${plugins.length}`)
+      if (aggRows.length !== aggregated.length) problems.push(`聚合行数 ${aggRows.length} != 子包数 ${aggregated.length}`)
       if (/^\s*config:/m.test(patch)) problems.push('聚合行带 config（应走 schema 默认值）')
     }
     // dependencies 完整（开发态为 workspace:*；发布时替换为版本——存在即认可）
     const deps = JSON.parse(readFileSync(join(pkgRoot, 'package.json'), 'utf8')).dependencies ?? {}
-    for (const pd of plugins) if (!deps[`@wingsky-1/${pd}`]) problems.push(`依赖缺 @wingsky-1/${pd}`)
+    for (const pd of aggregated) if (!deps[`@wingsky-1/${pd}`]) problems.push(`依赖缺 @wingsky-1/${pd}`)
     if (problems.length > 0) failed++
     console.log(`${problems.length === 0 ? 'PASS' : 'FAIL'} ${aggName} | ${problems.join('; ') || '聚合 tarball 完整且与子包一致'}`)
   } catch (e) {

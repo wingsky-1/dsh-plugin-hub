@@ -52,11 +52,15 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
 |---|---|
 | `@wingsky-1/dsh-notifier` | 审批/完成/错误事件通知（浏览器 Notification + 系统 toast） |
 | `@wingsky-1/dsh-provider-usage` | 多 provider 用量悬浮框（适配器框架，内置 OpenCode Go） |
-| `@wingsky-1/dsh-lan-proxy` | 局域网访问 dsh web UI（HTTP/HTTPS/WS + TLS） |
+| `@wingsky-1/dsh-lan-proxy` | 局域网访问 dsh web UI（HTTP/HTTPS/WS + TLS + HTTP 响应 gzip 压缩） |
 | `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理器（stdio/HTTP，工具注册给模型） |
 | `@wingsky-1/dsh-idle-archive` | 会话闲置提醒归档 |
-| `@wingsky-1/dsh-gzip` | /api 响应 gzip 压缩 |
+| `@wingsky-1/dsh-web-file-preview` | 点击对话文件链接在 web 端预览（图片/文本/Markdown/代码/Diff） |
 
+> `@wingsky-1/dsh-gzip` 已退役：HTTP 响应压缩合并进 dsh-lan-proxy，不再随全家桶
+> 分发。此前单独安装过 dsh-gzip 的用户升级后请执行
+> `dsh plugin --profile web remove @wingsky-1/dsh-gzip` 卸载。
+>
 > dsh-memory（项目长期记忆）未包含在本聚合包内。
 
 ## 单独安装

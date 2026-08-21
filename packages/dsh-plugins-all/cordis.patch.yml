@@ -2,8 +2,6 @@
 # 聚合行 = 各独立包 cordis.patch.yml 的 insert 行原样拼接（id + name，无 config，
 # 配置走 schema 默认值）。改独立包 patch 后运行 `node scripts/aggregate.ts` 重新生成。
 - insert:
-    - id: ui-dsh-gzip
-      name: '@wingsky-1/dsh-gzip'
     - id: ui-dsh-idle-archive
       name: '@wingsky-1/dsh-idle-archive'
     - id: ui-dsh-lan-proxy
