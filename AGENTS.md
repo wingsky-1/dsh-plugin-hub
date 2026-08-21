@@ -68,3 +68,4 @@ smoke 全部无网络、无真实凭据，本地可直接运行；新功能/修�
 
 - 开发规范（宿主/客户端写法、构建契约、多端兼容、测试防 flake 纪律）：[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
 - 贡献规范（Conventional Commits、功能分支 + PR 流程、提交前检查）：[CONTRIBUTING.md](CONTRIBUTING.md)
+- issue 处理流程（提报 / 分诊 / 修复 / 关闭全周期）：[docs/ISSUE-WORKFLOW.md](docs/ISSUE-WORKFLOW.md)
