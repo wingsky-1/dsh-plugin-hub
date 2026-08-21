@@ -86,7 +86,7 @@ Authorization: Bearer <OPENCODE_GO_API_KEY>
 | `apiKey` | 无 | 显式 API Key（缺省走凭据解析链） |
 | `maxAgeDays` | `30` | 历史采样保留天数（1–365） |
 | `sampleIntervalMs` | `300000` | 宿主后台采样间隔（30s–1h；遍历所有已启用适配器） |
-| `persistFile` | `<DSH_HOME>/dsh-opencode-usage/history.json` | 历史根目录覆盖（其目录为历史根） |
+| `persistFile` | 无（默认历史根 `<DSH_HOME>/dsh-opencode-usage/`，多文件桶存于其 `history/` 子目录） | 历史根目录覆盖（其目录为历史根） |
 | `adapters.host[]` | 无 | 自定义宿主取数适配器候选（`provider`/`file`/`enabled`，见下节） |
 | `adapters.client[]` | 无 | 自定义客户端渲染器文件（`file`） |
 
@@ -178,13 +178,13 @@ plugins:
 路径支持 `~` 展开 / 绝对路径 / 相对 DSH_HOME。加载失败只 warn + 该候选不注册，
 不阻断插件其余功能。
 
-## 安全与边界
+## 安全模型
 
 - **token 不落盘、不落日志、不进浏览器端**：API Key 仅存于宿主进程内存，
   浏览器只经 `/stats` 拿展示字段
 - **`baseUrl` 可配置 = 你的 token 会发送到该地址**：仅配置可信的用量接口；
   默认官方 `https://opencode.ai/zen/go/v1/usage`
-- **stripSecrets 护栏（默认开，`security.stripSecrets: false` 关）**：对归一化返回
+- **stripSecrets 护栏（默认开，`stripSecrets: false` 关）**：对归一化返回
   （含 summary 文案字段）做两层脱敏——键名含 `secret/token/key/apikey` 且值为字符串
   （≥8 字符）→ 替换 `<redacted>`；值命中疑似密钥模式（`Bearer xxx` / `sk-xxx` /
   `api_key=xxx` / 长 hex）→ 整值脱敏。护栏是尽力而为，**不承诺绝对隔离**
@@ -206,7 +206,7 @@ curl -s http://127.0.0.1:3080/api/dsh-opencode-usage/health
 
 # 源码在 src/，改后必须 build
 pnpm --filter @wingsky-1/dsh-opencode-usage build
-node test/smoke.mjs
+node test/smoke.ts
 ```
 
 ## License

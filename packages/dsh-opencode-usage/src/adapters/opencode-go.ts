@@ -104,6 +104,10 @@ export async function fetchOpenCodeGo({
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const onAbort = (): void => controller.abort();
   signal?.addEventListener("abort", onAbort, { once: true });
+  const finish = (): void => {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
+  };
   let res: Response;
   try {
     res = await fetcher(baseUrl, {
@@ -111,18 +115,25 @@ export async function fetchOpenCodeGo({
       signal: controller.signal,
     });
   } catch {
+    finish();
     return { ok: false, error: "network" };
-  } finally {
-    clearTimeout(timer);
-    signal?.removeEventListener("abort", onAbort);
   }
-  if (res.status === 401 || res.status === 403) return { ok: false, error: "unauthorized" };
-  if (!res.ok) return { ok: false, error: `http-${res.status}` };
+  if (res.status === 401 || res.status === 403) {
+    finish();
+    return { ok: false, error: "unauthorized" };
+  }
+  if (!res.ok) {
+    finish();
+    return { ok: false, error: `http-${res.status}` };
+  }
+  // 响应体读取仍受同一超时约束（abort 会中断 body 流，慢响应体不再无限挂起）
   let body: unknown;
   try {
     body = await res.json();
   } catch {
     return { ok: false, error: "bad-json" };
+  } finally {
+    finish();
   }
   const parsed = parseUsageResponse(body);
   if (parsed === null) return { ok: false, error: "bad-json" };

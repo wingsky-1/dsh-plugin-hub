@@ -332,9 +332,20 @@ export function makeHistoryStore({
   const buckets = new Map<string, HistoryBucket>();
   /** 各桶已声明的列数（列一致性校验）。 */
   const columnCount = new Map<string, number>();
+  /** 各桶已存在的采样 ts 集合（精确去重：割接迁移与目录重扫叠加时防同点翻倍）。 */
+  const tsSeen = new Map<string, Set<number>>();
 
   function keyOf(provider: string, adapterId: string): string {
     return `${provider}/${adapterId}`;
+  }
+
+  function seenSet(key: string): Set<number> {
+    let s = tsSeen.get(key);
+    if (s === undefined) {
+      s = new Set();
+      tsSeen.set(key, s);
+    }
+    return s;
   }
 
   function getBucket(provider: string, adapterId: string): HistoryBucket {
@@ -361,14 +372,18 @@ export function makeHistoryStore({
     const ts = Number(point[0]);
     if (!Number.isFinite(ts)) return { appended: 0, replaced: 0 };
     const normalized = [ts, ...point.slice(1).map((v) => (typeof v === "number" && Number.isFinite(v) ? v : null))];
+    const key = keyOf(provider, adapterId);
+    // 精确 ts 去重：同一点重复到达（割接迁移 + 目录重扫叠加）直接跳过
+    const seen = seenSet(key);
+    if (seen.has(ts)) return { appended: 0, replaced: 0 };
     const size = normalized.length - 1;
-    const prevCount = columnCount.get(keyOf(provider, adapterId));
+    const prevCount = columnCount.get(key);
     if (prevCount !== undefined && prevCount !== size) {
       diag(`采样列数不一致（provider=${provider}, adapterId=${adapterId}）：声明 ${size} ≠ 已记录 ${prevCount}，跳过该点`);
       return { appended: 0, replaced: 0 };
     }
     if (prevCount === undefined) {
-      columnCount.set(keyOf(provider, adapterId), size);
+      columnCount.set(key, size);
     }
     const bucket = getBucket(provider, adapterId);
     if (bucket.columns.length === 0) bucket.columns = [...columns];
@@ -376,11 +391,14 @@ export function makeHistoryStore({
     let replaced = 0;
     const last = samples.length > 0 ? samples[samples.length - 1] : undefined;
     if (last !== undefined && typeof last[0] === "number" && Math.floor(last[0] / 60000) === Math.floor(ts / 60000)) {
+      // 同分钟替换：旧点 ts 移出去重集合
+      if (typeof last[0] === "number") seen.delete(last[0]);
       samples[samples.length - 1] = normalized;
       replaced = 1;
     } else {
       samples.push(normalized);
     }
+    seen.add(ts);
     return { appended: replaced === 1 ? 0 : 1, replaced };
   }
 
@@ -399,10 +417,12 @@ export function makeHistoryStore({
   /** 裁剪某桶超龄点。 */
   function trim(provider: string, adapterId: string): number {
     const cutoff = now() - maxAgeDays * 86400000;
+    const key = keyOf(provider, adapterId);
     const samples = getBucket(provider, adapterId).samples;
     let removed = 0;
     while (samples.length > 0 && typeof samples[0][0] === "number" && samples[0][0] < cutoff) {
-      samples.shift();
+      const dropped = samples.shift();
+      if (dropped !== undefined) seenSet(key).delete(dropped[0] as number);
       removed += 1;
     }
     return removed;
@@ -423,6 +443,7 @@ export function makeHistoryStore({
   function clear(): void {
     buckets.clear();
     columnCount.clear();
+    tsSeen.clear();
   }
 
   /** 单桶序列化为 JSON 文本（v3 单文件格式）。 */
@@ -456,12 +477,17 @@ export function makeHistoryStore({
     const rawSamples = rec.samples;
     if (!Array.isArray(rawSamples)) return 0;
     let loaded = 0;
+    const key = keyOf(provider, adapterId);
+    const seen = seenSet(key);
     const bucket = getBucket(provider, adapterId);
     if (columns.length > 0 && bucket.columns.length === 0) bucket.columns = columns;
     for (const item of rawSamples) {
       if (!isUnknownArray(item) || item.length < 2) continue;
       const ts = Number(item[0]);
       if (!Number.isFinite(ts)) continue;
+      // 精确 ts 去重：割接刚写出的桶被本函数重扫时，同点不再重复入内存（防翻倍）
+      if (seen.has(ts)) continue;
+      seen.add(ts);
       bucket.samples.push([ts, ...item.slice(1).map((v) => (typeof v === "number" && Number.isFinite(v) ? v : null))]);
       loaded += 1;
     }
@@ -730,6 +756,9 @@ const SECRET_VALUE_PATTERNS: RegExp[] = [
   /Bearer\s+\S+/u, // Authorization 头回显
   /\bsk-[A-Za-z0-9_-]{8,}\b/u, // OpenAI 风格 key
   /\bapi[_-]?key\s*[:=]\s*\S+/u, // api_key: xxx
+  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}\./u, // JWT（三段式头部特征）
+  /\bAIza[0-9A-Za-z_-]{20,}\b/u, // Google API key
+  /\bAKIA[0-9A-Z]{16}\b/u, // AWS access key id
   /\b[0-9a-fA-F]{40,}\b/u, // 40+ hex（疑似 token）
   /\b[0-9a-fA-F]{64}\b/u, // 64 hex（sha/token）
 ];
@@ -758,7 +787,7 @@ export function stripSensitiveKeys(obj: unknown): void {
   for (const key of Object.keys(rec)) {
     const val = rec[key];
     if (typeof val === "string") {
-      if ((val.length >= 8 && /secret|token|key|apikey/ui.test(key)) || isSecretValue(val)) {
+      if ((val.length >= 8 && /secret|token|key|apikey|password|credential|passphrase|cookie/ui.test(key)) || isSecretValue(val)) {
         rec[key] = "<redacted>";
         continue;
       }
@@ -902,6 +931,9 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
 
   let inflightStats: Map<string, Promise<StatsResult>> | null = new Map();
 
+  /** 适配器切换代数：select 时递增，inflight 完成后代数不符则丢弃结果（防旧适配器数据回填缓存）。 */
+  let statsEpoch = 0;
+
   /** 解析某 provider 的 API Key（当前仅 opencode-go 有解析链；M2 扩展）。 */
   async function resolveKeyFor(provider: string): Promise<string | undefined> {
     if (provider === OPENCODE_GO_PROVIDER) return loadApiKey(current, keyPaths);
@@ -909,16 +941,21 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
     return undefined;
   }
 
-  /** 用量统计核心（路由 handler 与 health 共用）。 */
-  function collectStats(provider: string = OPENCODE_GO_PROVIDER): Promise<StatsResult> {
+  /**
+   * 用量统计核心（路由 handler 与 health 共用）。
+   * @param ignoreInflight - epoch 切换后的重取绕过 inflight 去重（否则会拿回旧 promise）。
+   */
+  function collectStats(provider: string = OPENCODE_GO_PROVIDER, ignoreInflight = false): Promise<StatsResult> {
     const cached = cache.get(provider);
     if (cached !== undefined) return Promise.resolve({ ...cached, cached: true });
 
     if (inflightStats === null) inflightStats = new Map();
-    const inflight = inflightStats.get(provider);
+    const inflight = ignoreInflight ? undefined : inflightStats.get(provider);
     if (inflight !== undefined) return inflight;
 
+    let switched = false;
     const promise = (async (): Promise<StatsResult> => {
+      const epoch = statsEpoch;
       try {
         // 查当前启用适配器
         const entry = registry.getEntry(provider);
@@ -941,6 +978,11 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
           signal: undefined as AbortSignal | undefined,
         };
         const usage = await registry.fetchUsage(provider, fetchCtx);
+        // 请求期间发生 select 切换 → 本结果来自旧适配器，丢弃并按新适配器重取
+        if (epoch !== statsEpoch) {
+          switched = true; // 新 promise 已占住 inflight 槽位，finally 不再按 key 清理
+          return collectStats(provider, true);
+        }
 
         // 密钥护栏（默认开）
         if (current.stripSecrets && usage.data !== undefined) {
@@ -975,7 +1017,10 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
         lastStatus = { at: result.fetchedAt, error: result.error, configured: true };
         return result;
       } finally {
-        inflightStats?.delete(provider);
+        // epoch 切换重取时新 promise 已占位，按 key 清理会误删新槽位，故跳过
+        if (!switched && inflightStats !== null) {
+          inflightStats.delete(provider);
+        }
       }
     })();
     inflightStats.set(provider, promise);
@@ -1065,6 +1110,7 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
       }
       const ok = registry.select(provider, adapterId);
       if (!ok) return writeJson(res, 404, { error: "adapter not found" });
+      statsEpoch += 1; // 递增代数：inflight 的旧适配器结果不再回填缓存
       cache.clear(provider); // 切换后清该 provider 缓存（下一个请求走新适配器）
       // M3b：持久化启用选择（重启保留；fire-and-forget，失败只 warn）
       void writeAdapterState(current, registry.snapshot().enabled);

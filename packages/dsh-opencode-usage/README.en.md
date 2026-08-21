@@ -91,7 +91,7 @@ The response is cached with a 30-second TTL (configurable) to avoid high-frequen
 | `apiKey` | none | Explicit API Key (falls back to the credential resolution chain when absent) |
 | `maxAgeDays` | `30` | History sampling retention days (1–365) |
 | `sampleIntervalMs` | `300000` | Host background sampling interval (30s–1h; iterates all enabled adapters) |
-| `persistFile` | `<DSH_HOME>/dsh-opencode-usage/history.json` | History root override (its directory becomes the history root) |
+| `persistFile` | none (default history root `<DSH_HOME>/dsh-opencode-usage/`, multi-file buckets under its `history/` subdirectory) | History root override (its directory becomes the history root) |
 | `adapters.host[]` | none | Custom host fetch-adapter candidates (`provider`/`file`/`enabled`, see below) |
 | `adapters.client[]` | none | Custom client renderer files (`file`) |
 
@@ -186,13 +186,13 @@ plugins:
 Paths support `~` expansion / absolute paths / DSH_HOME-relative. Load failures only warn
 and skip that candidate without blocking the rest of the plugin.
 
-## Security and Boundaries
+## Security Model
 
 - **Token is never written to disk, never logged, never sent to the browser side**: the API Key
   lives only in host-process memory; the browser only fetches display fields via `/stats`
 - **`baseUrl` is configurable = your token is sent to that address**: only configure a trusted
   usage interface; default is the official `https://opencode.ai/zen/go/v1/usage`
-- **stripSecrets guard (on by default; disable with `security.stripSecrets: false`)**: two-layer
+- **stripSecrets guard (on by default; disable with `stripSecrets: false`)**: two-layer
   redaction over normalized returns (including summary text fields) — keys matching
   `secret/token/key/apikey` with string values (≥8 chars) are replaced with `<redacted>`;
   values matching secret-like patterns (`Bearer xxx` / `sk-xxx` / `api_key=xxx` / long hex)
@@ -219,7 +219,7 @@ curl -s http://127.0.0.1:3080/api/dsh-opencode-usage/health
 
 # Source is in src/, must build after changes
 pnpm --filter @wingsky-1/dsh-opencode-usage build
-node test/smoke.mjs
+node test/smoke.ts
 ```
 
 ## License

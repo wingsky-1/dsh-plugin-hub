@@ -182,6 +182,8 @@ assert.ok(!isClientProviderRenderer({ version: 1, providers: ["x"] }), "缺 rend
     token: "sk-secret-token-12345", // 键名命中 → 脱敏
     authHeader: "Bearer sk-abcdefghijkl", // 值模式 Bearer → 脱敏
     api_key: "abc", // 键名命中但值 <8 → 不脱敏（保留）
+    password: "p@ssw0rd-xyz", // 键名 password → 脱敏（R1 扩展）
+    jwt: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig", // 值模式 JWT → 脱敏
     nested: { raw: "这里有一些文本，无密钥", deep: { k: "Bearer sk-1234567890abcdef" } },
     list: [{ secret: "sk-bbbbbbbb" }],
   };
@@ -189,6 +191,8 @@ assert.ok(!isClientProviderRenderer({ version: 1, providers: ["x"] }), "缺 rend
   assert.equal(obj.token, "<redacted>", "键名 token 值脱敏");
   assert.equal(obj.authHeader, "<redacted>", "值模式 Bearer 脱敏");
   assert.equal(obj.api_key, "abc", "键名命中但短值保留");
+  assert.equal(obj.password, "<redacted>", "键名 password 值脱敏");
+  assert.equal(obj.jwt, "<redacted>", "值模式 JWT 脱敏");
   assert.equal(obj.nested.deep.k, "<redacted>", "嵌套值 Bearer 脱敏");
   assert.equal(obj.list[0].secret, "<redacted>", "数组内键名脱敏");
   assert.equal(obj.nested.raw, "这里有一些文本，无密钥", "普通文本不动");
@@ -705,22 +709,47 @@ function makeFakeCtx(overrides = {}) {
 
 // ---------------------------------------------------------------- 割接迁移（v1/v2 单文件 → 多文件 v3，.bak 保留不删）
 
+/** 轮询等待条件成立（替代固定 sleep：防抖 1000ms 在慢机上会 flake）。 */
+async function waitFor(cond, timeoutMs = 5000, stepMs = 50) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (cond()) return true;
+    await new Promise((r) => setTimeout(r, stepMs));
+  }
+  return cond();
+}
+
 {
   // v1 单序列 → opencode-go 内置桶；旧文件重命名 .bak 保留（用户要求：不删除）
   const dir = mkdtempSync(join(tmpdir(), "dou-mig-"));
   const legacy = join(dir, "history.json");
-  writeFileSync(legacy, JSON.stringify({ version: 1, samples: [[Date.now() - 60000, 1, 2, 3], [Date.now(), 4, 5, 6]] }));
+  // 取过去两分钟的整点（避开当前分钟：否则启动采样会同分钟替换最后一个迁移点，断言不确定）
+  const nowMin = Math.floor(Date.now() / 60000) * 60000;
+  const legacyTs = [nowMin - 120000, nowMin - 60000];
+  writeFileSync(legacy, JSON.stringify({ version: 1, samples: [[legacyTs[0], 1, 2, 3], [legacyTs[1], 4, 5, 6]] }));
 
   const { ctx, routes } = makeFakeCtx();
   await apply(ctx, { apiKey: "sk-test", fetchImpl: async () => fakeRes(200, OK_BODY), persistFile: join(dir, "history.json") });
-  await new Promise((r) => setTimeout(r, 1200)); // 等防抖落盘
 
   const bucketFile = join(dir, "history", "opencode-go", "opencode-go-builtin.json");
   assert.equal(existsSync(bucketFile), true, "v1 迁移生成多文件桶");
-  const bucket = JSON.parse(readFileSync(bucketFile, "utf8"));
+  let bucket;
+  const flushed = await waitFor(() => {
+    try {
+      bucket = JSON.parse(readFileSync(bucketFile, "utf8"));
+      return Array.isArray(bucket.samples) && bucket.samples.length >= 3;
+    } catch {
+      return false;
+    }
+  });
+  assert.equal(flushed, true, "防抖落盘完成（迁移 2 点 + 启动采样 1 点）");
   assert.equal(bucket.version, 3, "桶文件 v3");
   assert.equal(bucket.adapterId, "opencode-go-builtin", "opencode-go 旧历史归内置桶");
-  assert.ok(bucket.samples.length >= 2, "旧采样点迁入（不丢失）");
+  for (const t of legacyTs) {
+    assert.equal(bucket.samples.some((s) => s[0] === t), true, `旧采样点迁入（ts=${t}）`);
+  }
+  const tsSet = new Set(bucket.samples.map((s) => s[0]));
+  assert.equal(tsSet.size, bucket.samples.length, "无重复 ts（回归：割接写盘 + 目录重扫叠加不翻倍）");
   assert.deepEqual(bucket.columns.map((c) => c.key), ["rolling", "weekly", "monthly"], "columns=内置三窗口");
 
   assert.equal(existsSync(legacy), false, "旧文件本体已移除（幂等）");
@@ -737,19 +766,23 @@ function makeFakeCtx(overrides = {}) {
   // v2 单文件分桶 → 各 provider 桶；.bak 保留
   const dir = mkdtempSync(join(tmpdir(), "dou-mig2-"));
   const legacy = join(dir, "history.json");
+  const relayTs = Date.now() - 60000;
   writeFileSync(legacy, JSON.stringify({
     version: 2,
     series: {
       "opencode-go": { samples: [[Date.now() - 60000, 1, 2, 3]] },
-      "my-relay": { samples: [[Date.now() - 60000, 9]] },
+      "my-relay": { samples: [[relayTs, 9]] },
     },
   }));
   const { ctx } = makeFakeCtx();
   await apply(ctx, { apiKey: "sk-test", fetchImpl: async () => fakeRes(200, OK_BODY), persistFile: join(dir, "history.json") });
-  await new Promise((r) => setTimeout(r, 1200));
 
-  assert.equal(existsSync(join(dir, "history", "opencode-go", "opencode-go-builtin.json")), true, "v2 opencode-go 桶迁移");
-  assert.equal(existsSync(join(dir, "history", "my-relay", "opencode-go-builtin.json")), true, "v2 非 opencode provider 缺启用适配器时归内置 adapterId 桶");
+  const ocgFile = join(dir, "history", "opencode-go", "opencode-go-builtin.json");
+  const relayFile = join(dir, "history", "my-relay", "opencode-go-builtin.json");
+  assert.equal(existsSync(ocgFile), true, "v2 opencode-go 桶迁移");
+  assert.equal(existsSync(relayFile), true, "v2 非 opencode provider 缺启用适配器时归内置 adapterId 桶");
+  const relayBucket = JSON.parse(readFileSync(relayFile, "utf8"));
+  assert.deepEqual(relayBucket.samples.map((s) => s[0]), [relayTs], "relay 桶恰好 1 点（无翻倍/无多余采样）");
   assert.equal(existsSync(join(dir, "history.json.v2.bak")), true, "v2 .bak 备份保留");
   assert.equal(existsSync(legacy), false, "v2 旧文件本体移除");
 }
@@ -826,4 +859,4 @@ function makeFakeCtx(overrides = {}) {
   }
 }
 
-console.log("dsh-opencode-usage smoke: 全部通过 ✅");
+console.log("dsh-opencode-usage smoke: 全部通过");

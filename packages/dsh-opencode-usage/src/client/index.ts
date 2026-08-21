@@ -452,7 +452,8 @@ export function apply(ctx: any): void {
     connection = ctx.get("connection") as ConnectionHandleLike | undefined;
     registry = makeRendererRegistry();
     registry.register(openCodeGoClientRenderer, "builtin");
-    installGlobalBridge(registry);
+    // 桥接持 registry 句柄（而非闭包捕获）：热重载重建 apply 后新 registry 立即生效
+    installGlobalBridge(() => registry);
     // M2: 加载用户客户端渲染器（fire-and-forget）
     loadUserRenderers(registry).catch(() => {});
 

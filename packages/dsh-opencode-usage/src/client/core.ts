@@ -115,12 +115,16 @@ export type RendererRegistry = ReturnType<typeof makeRendererRegistry>;
 
 // ---------------------------------------------------------------- 全局桥接（D4）
 
-/** 建立 window.__DSH_USAGE__ 全局桥接（插件主动加载用户 js 的自注册入口）。 */
-export function installGlobalBridge(registry: RendererRegistry): { dispose(): void } {
+/**
+ * 建立 window.__DSH_USAGE__ 全局桥接（插件主动加载用户 js 的自注册入口）。
+ * @param getRegistry - 取当前生效渲染器注册表的句柄函数：热重载重建 apply 后，
+ *   新 registry 经此句柄立即生效，旧桥接闭包不再捕获过期注册表。
+ */
+export function installGlobalBridge(getRegistry: () => RendererRegistry | undefined): { dispose(): void } {
   const win = window as unknown as Record<string, unknown>;
   const existing = win[USAGE_GLOBAL_KEY] as DshUsageGlobal | undefined;
   if (existing !== undefined && typeof existing === "object") {
-    // 已有桥接（热重载）：沿用，不重复建
+    // 已有桥接（热重载）：沿用实例；其内部经 getRegistry() 句柄取当前注册表
     return { dispose: () => {} };
   }
   const bridge: DshUsageGlobal = {
@@ -136,6 +140,11 @@ export function installGlobalBridge(registry: RendererRegistry): { dispose(): vo
         typeof renderer.render === "function";
       if (!valid) {
         console.warn("[dsh-opencode-usage] 用户渲染器契约校验失败，不注册");
+        return false;
+      }
+      const registry = getRegistry();
+      if (registry === undefined) {
+        console.warn("[dsh-opencode-usage] 插件未就绪或已卸载，用户渲染器暂不注册");
         return false;
       }
       registry.register(renderer, "user-file", "window bridge");
