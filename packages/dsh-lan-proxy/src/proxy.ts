@@ -70,8 +70,10 @@ export interface LanProxyOptions {
     paths: readonly string[];
   };
   /**
-   * HTTP 响应 gzip 压缩（合并自 dsh-gzip，经 compression 中间件在转发层实现）：
-   * 对可压缩响应（JSON / 文本；SSE 豁免）按 Accept-Encoding 协商 gzip。
+   * HTTP 响应压缩（合并自 dsh-gzip，经 compression 中间件在转发层实现）：
+   * 对可压缩响应（JSON / 文本；SSE 豁免）按 Accept-Encoding 协商——含 br 时优先
+   * 输出 Brotli（compression@1.8+ 支持），否则回退 gzip；options.level 仅作用
+   * 于 gzip 回退路径。
    * 启用后 dsh-gzip 独立包（宿主端压缩）与本层经 content-encoding 检查天然互斥，
    * 任意组合只压一次。回环直连 web（不经本转发器）不经过此层。
    */

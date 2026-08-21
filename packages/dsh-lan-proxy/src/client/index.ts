@@ -214,7 +214,7 @@ var CHANNEL = "/dsh-lan-proxy";
           }),
         ),
         React.createElement("div", { className: "lp-set-row" },
-          React.createElement("label", null, "HTTP 响应压缩（gzip）"),
+          React.createElement("label", null, "HTTP 响应压缩（Brotli/gzip）"),
           React.createElement("input", {
             type: "checkbox",
             checked: settings.httpCompressEnabled,

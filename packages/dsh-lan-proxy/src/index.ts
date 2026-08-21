@@ -79,9 +79,9 @@ export interface LanProxyConfig {
   wsCompressEnabled?: boolean;
   /** 参与 WebSocket 压缩桥接的路径白名单。 */
   wsCompressPaths?: string[];
-  /** HTTP 响应 gzip 压缩总开关（默认 true；合并自 dsh-gzip）。 */
+  /** HTTP 响应压缩总开关（默认 true；合并自 dsh-gzip）。协商经 compression 中间件：客户端 Accept-Encoding 含 br 时输出 Brotli（库固定质量 4），否则回退 gzip。 */
   httpCompressEnabled?: boolean;
-  /** HTTP 响应 gzip 压缩级别 1..9（默认 1）。 */
+  /** HTTP 响应压缩级别 1..9（默认 1；仅作用于 gzip 回退路径）。 */
   httpCompressLevel?: number;
 }
 
@@ -128,7 +128,7 @@ export const Config = z.object({
    * 静态资源等可压缩响应做应用层 gzip。安装失败仅 warn 降级，不阻断转发。
    */
   httpCompressEnabled: z.boolean().default(true),
-  /** HTTP 响应 gzip 压缩级别 1..9（默认 1：静态文本场景性价比最高）。 */
+  /** HTTP 响应压缩级别 1..9（默认 1：静态文本场景性价比最高；仅作用于 gzip 回退路径，br 协商时由库固定质量 4）。 */
   httpCompressLevel: z.natural().max(9).default(1),
 });
 

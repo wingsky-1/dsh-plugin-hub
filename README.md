@@ -18,7 +18,7 @@ DSH（DeepSeek Harness）Web GUI 插件集，npm 分发：一键装全家桶，�
 |---|---|---|---|
 | `@wingsky-1/dsh-notifier` | 审批/完成/错误事件通知（浏览器 Notification + 系统 toast） | [README](packages/dsh-notifier/README.md) | ✅ 已发布 |
 | `@wingsky-1/dsh-provider-usage` | 多 provider 用量悬浮框（按 Provider 适配器框架，内置 OpenCode Go） | [README](packages/dsh-provider-usage/README.md) | ✅ 已发布 |
-| `@wingsky-1/dsh-lan-proxy` | 局域网访问 dsh web UI（HTTP/HTTPS/WS 转发 + TLS + HTTP 响应 gzip 压缩） | [README](packages/dsh-lan-proxy/README.md) | ✅ 已发布 |
+| `@wingsky-1/dsh-lan-proxy` | 局域网访问 dsh web UI（HTTP/HTTPS/WS 转发 + TLS + HTTP 响应压缩，Brotli/gzip 自适应） | [README](packages/dsh-lan-proxy/README.md) | ✅ 已发布 |
 | `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理器（stdio/HTTP，工具注册给模型） | [README](packages/dsh-mcp-manager/README.md) | ✅ 已发布 |
 | `@wingsky-1/dsh-idle-archive` | 会话闲置提醒归档 | [README](packages/dsh-idle-archive/README.md) | ✅ 已发布 |
 | `@wingsky-1/dsh-web-file-preview` | 点击对话文件链接在 web 端预览（图片/文本/Markdown/代码/Diff） | [README](packages/dsh-web-file-preview/README.md) | ✅ 已发布 |
@@ -37,7 +37,7 @@ DSH（DeepSeek Harness）Web GUI 插件集，npm 分发：一键装全家桶，�
 
 **`@wingsky-1/dsh-gzip` → 已合并进 `@wingsky-1/dsh-lan-proxy`**（0.1.9 起）
 
-HTTP 响应 gzip 压缩能力整体并入 lan-proxy（默认开启，SSE 流式响应豁免，可配置）。
+HTTP 响应压缩能力整体并入 lan-proxy（默认开启，Brotli/gzip 按 Accept-Encoding 自适应协商，SSE 流式响应豁免，可配置）。
 卸载 dsh-gzip、安装 dsh-lan-proxy 即获得等价压缩能力：
 
 ```sh

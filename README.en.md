@@ -19,7 +19,7 @@ install them all at once as a single bundle, or pick individual plugins as neede
 |---|---|---|---|
 | `@wingsky-1/dsh-notifier` | Approval/completion/error event notifications (browser Notification + system toast) | [README](packages/dsh-notifier/README.md) | ✅ Published |
 | `@wingsky-1/dsh-provider-usage` | Multi-provider usage float pill (per-provider adapter framework, built-in OpenCode Go) | [README](packages/dsh-provider-usage/README.md) | ✅ Published |
-| `@wingsky-1/dsh-lan-proxy` | Access the dsh web UI over LAN (HTTP/HTTPS/WS forwarding + TLS + HTTP response gzip compression) | [README](packages/dsh-lan-proxy/README.md) | ✅ Published |
+| `@wingsky-1/dsh-lan-proxy` | Access the dsh web UI over LAN (HTTP/HTTPS/WS forwarding + TLS + HTTP response compression, Brotli/gzip) | [README](packages/dsh-lan-proxy/README.md) | ✅ Published |
 | `@wingsky-1/dsh-mcp-manager` | MCP server manager (stdio / HTTP, registers tools for the model) | [README](packages/dsh-mcp-manager/README.md) | ✅ Published |
 | `@wingsky-1/dsh-idle-archive` | Prompt to archive idle conversations | [README](packages/dsh-idle-archive/README.md) | ✅ Published |
 | `@wingsky-1/dsh-web-file-preview` | Click conversation file links to preview in the web UI (image / text / Markdown / code / Diff) | [README](packages/dsh-web-file-preview/README.md) | ✅ Published |
@@ -41,8 +41,8 @@ package, install the new one, then restart `dsh web`:
 
 **`@wingsky-1/dsh-gzip` → merged into `@wingsky-1/dsh-lan-proxy`** (since 0.1.9)
 
-HTTP response gzip compression moved wholesale into lan-proxy (on by default, SSE streaming
-exempt, configurable). Uninstall dsh-gzip and install dsh-lan-proxy to get the equivalent:
+HTTP response compression moved wholesale into lan-proxy (on by default, Brotli/gzip
+negotiated via Accept-Encoding, SSE streaming exempt, configurable). Uninstall dsh-gzip and install dsh-lan-proxy to get the equivalent:
 
 ```sh
 dsh plugin --profile web remove @wingsky-1/dsh-gzip
