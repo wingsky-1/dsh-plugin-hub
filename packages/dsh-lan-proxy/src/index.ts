@@ -23,8 +23,8 @@ import { homedir, networkInterfaces } from "node:os";
 import { join } from "node:path";
 import { mkdirSync, readFileSync, renameSync, watch, writeFileSync } from "node:fs";
 import z from "schemastery";
-import { createLanProxy, DEFAULT_OPTIONS, isLoopbackTarget } from "./proxy.js";
-import type { TlsMaterials } from "./proxy.js";
+import { createLanProxy, DEFAULT_OPTIONS, isLoopbackTarget, normalizeLevel } from "./proxy.js";
+import type { TlsMaterials, LanProxy } from "./proxy.js";
 import { ensureSelfSignedTls, loadTlsFromFiles } from "./cert.js";
 import { isLoopbackRequest } from "../../../shared/loopback.js";
 import { writeJson } from "../../../shared/host-utils.js";
@@ -79,6 +79,10 @@ export interface LanProxyConfig {
   wsCompressEnabled?: boolean;
   /** 参与 WebSocket 压缩桥接的路径白名单。 */
   wsCompressPaths?: string[];
+  /** HTTP 响应 gzip 压缩总开关（默认 true；合并自 dsh-gzip）。 */
+  httpCompressEnabled?: boolean;
+  /** HTTP 响应 gzip 压缩级别 1..9（默认 1）。 */
+  httpCompressLevel?: number;
 }
 
 /** 插件配置，由同名 schemastery schema 校验，也用于 GUI 设置面板渲染。 */
@@ -119,6 +123,13 @@ export const Config = z.object({
   wsCompressEnabled: z.boolean().default(true),
   /** 参与 WebSocket 压缩桥接的路径白名单（默认：会话事件流两个端点）。 */
   wsCompressPaths: z.array(z.string()).default(["/api/events.mux", "/api/events.host"]),
+  /**
+   * HTTP 响应 gzip 压缩总开关（默认开；合并自 dsh-gzip）：对 /api、/plugins、
+   * 静态资源等可压缩响应做应用层 gzip。安装失败仅 warn 降级，不阻断转发。
+   */
+  httpCompressEnabled: z.boolean().default(true),
+  /** HTTP 响应 gzip 压缩级别 1..9（默认 1：静态文本场景性价比最高）。 */
+  httpCompressLevel: z.natural().max(9).default(1),
 });
 
 /** 本机非回环 IPv4 地址，用于启动时的 LAN URL 日志行。 */
@@ -151,6 +162,8 @@ const FILE_CONFIG_VALIDATORS: Record<string, (v: unknown) => boolean> = {
   printBanner: (v) => typeof v === "boolean",
   wsCompressEnabled: (v) => typeof v === "boolean",
   wsCompressPaths: (v) => Array.isArray(v) && v.every((s) => typeof s === "string"),
+  httpCompressEnabled: (v) => typeof v === "boolean",
+  httpCompressLevel: (v) => typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 9,
 };
 
 /**
@@ -205,6 +218,8 @@ export interface ResolvedConfig {
   printBanner: boolean;
   wsCompressEnabled: boolean;
   wsCompressPaths: readonly string[];
+  httpCompressEnabled: boolean;
+  httpCompressLevel: number;
 }
 
 /** RPC 通道依赖（apply 内注入；smoke 可直接构造单测）。 */
@@ -307,6 +322,8 @@ export function apply(ctx: PluginContext, config: LanProxyConfig = {}): void {
   /** 配置实时来源：GUI 设置注册后优先，否则为组合层 entry + 插件配置文件。 */
   let current: () => LanProxyConfig = () => ({ ...config, ...fileConfig });
   let disposeProxy: (() => void) | undefined;
+  /** 当前存活转发器（health 读取压缩协商计数用）。 */
+  let activeProxy: LanProxy | undefined;
   let disposed = false;
   /** 上一次打印的横幅（防刷屏：监听结果没变化不重复打印）。 */
   let lastBanner = "";
@@ -327,6 +344,8 @@ export function apply(ctx: PluginContext, config: LanProxyConfig = {}): void {
       printBanner: value.printBanner ?? true,
       wsCompressEnabled: value.wsCompressEnabled ?? true,
       wsCompressPaths: value.wsCompressPaths ?? DEFAULT_WSS_COMPRESS_PATHS,
+      httpCompressEnabled: value.httpCompressEnabled ?? true,
+      httpCompressLevel: value.httpCompressLevel ?? 1,
     };
   };
 
@@ -364,13 +383,19 @@ export function apply(ctx: PluginContext, config: LanProxyConfig = {}): void {
       disposeProxy = undefined;
     }
     const value = resolve();
-    if (!value.enabled) return;
+    // HTTP 响应压缩开关（随转发器在 sync() 内一并生效/关闭）。
+    const httpCompressEnabled = value.enabled !== false && value.httpCompressEnabled !== false;
+    if (!value.enabled) {
+      return;
+    }
     const targetPort = value.targetPort ?? ctx.webServer.port;
     if (targetPort === undefined) {
       ctx.logger.error("lan-proxy: webServer has no bound port yet — cannot start");
       return;
     }
     const tls = value.httpsEnabled === false ? undefined : prepareTls(value);
+    // HTTP 响应压缩随转发器整体重建：配置热更新（GUI 保存 / config.json watch）
+    // 走同一条 sync() 路径，无需独立拆装生命周期。
     const proxy = createLanProxy(
       {
         host: value.host,
@@ -383,9 +408,14 @@ export function apply(ctx: PluginContext, config: LanProxyConfig = {}): void {
           enabled: value.wsCompressEnabled !== false,
           paths: value.wsCompressPaths ?? DEFAULT_WSS_COMPRESS_PATHS,
         },
+        httpCompress: {
+          enabled: httpCompressEnabled,
+          level: normalizeLevel(value.httpCompressLevel),
+        },
       },
       ctx.logger,
     );
+    activeProxy = proxy;
     proxy
       .listen()
       .then(({ httpPort, httpsPort }) => {
@@ -432,6 +462,7 @@ export function apply(ctx: PluginContext, config: LanProxyConfig = {}): void {
     if (syncTimer !== undefined) clearTimeout(syncTimer);
     syncTimer = setTimeout(() => {
       syncTimer = undefined;
+      // 压缩随转发器在 sync() 内一并重建（含标记路由挂撤）。
       sync();
     }, 3000);
   };
@@ -482,6 +513,10 @@ export function apply(ctx: PluginContext, config: LanProxyConfig = {}): void {
           ...s,
           wsCompressEnabled: fileConfig.wsCompressEnabled ?? s.wsCompressEnabled,
           wsCompressPaths: fileConfig.wsCompressPaths ?? s.wsCompressPaths,
+          // ⚠️ httpCompress 两个键同理：以持久化层（config.json）优先，避免
+          // settings 命名空间用 schema 默认 true 无条件覆盖 config.json=false。
+          httpCompressEnabled: fileConfig.httpCompressEnabled ?? s.httpCompressEnabled,
+          httpCompressLevel: fileConfig.httpCompressLevel ?? s.httpCompressLevel,
         };
       };
       // 先更新读取来源使 resolve() 用新值；重建推迟到下一轮事件循环：
@@ -503,6 +538,7 @@ export function apply(ctx: PluginContext, config: LanProxyConfig = {}): void {
       if (JSON.stringify(next) === JSON.stringify(fileConfig)) return;
       fileConfig = next;
       ctx.logger.info("lan-proxy: config.json changed — reloading");
+      // 压缩随转发器在 sync() 内一并重建（幂等）。
       sync();
     }, 150);
   };
@@ -557,6 +593,11 @@ export function apply(ctx: PluginContext, config: LanProxyConfig = {}): void {
         wsCompressPaths: v.wsCompressPaths,
         // 诊断：持久化层实际读到的值 + 插件目录（判断是否读错 config）
         fileWsCompressEnabled: fileConfig.wsCompressEnabled,
+        // —— HTTP 响应压缩（转发层 compression 中间件）：配置 + 生效状态 + 协商计数 ——
+        httpCompressEnabled: v.httpCompressEnabled,
+        httpCompressLevel: v.httpCompressLevel,
+        httpCompressMounted: v.enabled !== false && v.httpCompressEnabled !== false && disposeProxy !== undefined,
+        httpCompressStats: activeProxy?.httpCompressStats() ?? { compressed: 0, passthrough: 0 },
         configDir,
       });
     },
@@ -580,5 +621,5 @@ export function apply(ctx: PluginContext, config: LanProxyConfig = {}): void {
 }
 
 // 测试面 re-export（smoke 只依赖主入口，避免发布物保留内部模块）
-export { createLanProxy, hostnameAllowed, formatAuthority, rewriteHeaders, isLoopbackTarget, DEFAULT_OPTIONS, compressWsPath } from "./proxy.js";
+export { createLanProxy, hostnameAllowed, formatAuthority, rewriteHeaders, isLoopbackTarget, DEFAULT_OPTIONS, compressWsPath, isCompressible, normalizeLevel } from "./proxy.js";
 export { ensureSelfSignedTls, certStillValid, toSanEntry, loadTlsFromFiles, SELF_SIGNED_KEY, SELF_SIGNED_CERT } from "./cert.js";

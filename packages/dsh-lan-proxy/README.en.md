@@ -71,6 +71,8 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-lan-proxy
 | `tlsCertFile` / `tlsKeyFile` | none | Custom certificate (mkcert, etc.) |
 | `wsCompressEnabled` | `true` | Whether to apply compressed bridging to WebSockets matching `wsCompressPaths` |
 | `wsCompressPaths` | `/api/events.mux, /api/events.host` | Path allowlist participating in WebSocket compression |
+| `httpCompressEnabled` | `true` | Master switch for HTTP response gzip compression (merged from dsh-gzip) |
+| `httpCompressLevel` | `1` | gzip level 1..9 (1 offers the best cost/benefit for static text) |
 
 GUI settings entry: Settings → Plugins → "LAN Access" card (saved changes apply hot).
 
@@ -87,6 +89,39 @@ GUI settings entry: Settings → Plugins → "LAN Access" card (saved changes ap
   negotiates compression; the two segments are independent, so there is **no double compression
   and no conflict**.
 - All other WebSocket paths remain TCP byte passthrough (unaffected).
+
+## HTTP Response Compression (gzip, merged from dsh-gzip)
+
+- Since v0.1.10, the HTTP response gzip compression capability of the standalone dsh-gzip plugin (source removed from this repository)
+  has been merged into this plugin, implemented at the **forwarding layer** via the
+  battle-tested [compression](https://www.npmjs.com/package/compression) middleware
+  (inlined at build time; still zero runtime dependencies): for requests served through
+  this plugin, compressible responses (JSON / text) from `/api` (RPC), `/plugins`
+  (client bundles), and static assets/index.html negotiate gzip automatically; SSE
+  (text/event-stream), zip exports, already-encoded responses, HEAD, Range requests,
+  and responses under 1KB pass through untouched.
+- Benefit: large JSON responses such as session history (4~13MB uncompressed) often hit
+  the browser RPC 30s timeout over remote/slow links ("history load failed"); after gzip
+  they are ~1.2MB — measured in an isolated environment at ~36s down to ~3s.
+- The middleware sits on the forwarder's own listener chain and does not modify dsh web
+  or any other plugin's runtime behavior; set `httpCompressEnabled: false` to turn it off.
+  Note: traffic that reaches the loopback web directly (local browser on `127.0.0.1:3080`,
+  not through this plugin) is outside the compression surface — loopback links do not
+  need compression.
+- **Migrating from dsh-gzip**: upgrade this plugin, confirm compression is active, then
+  uninstall the standalone gzip package:
+
+  ```sh
+  dsh plugin --profile web update @wingsky-1/dsh-lan-proxy    # requires >= 0.1.10
+  curl -s http://127.0.0.1:3081/api/dsh-lan-proxy/health      # loopback check: continue when httpCompressMounted is true
+  dsh plugin --profile web remove @wingsky-1/dsh-gzip
+  # Restart dsh web to take effect
+  ```
+
+- When legacy gzip@0.1.9 (no detection logic) coexists with this plugin, the
+  content-encoding check still guarantees responses are compressed at most once
+  (verified for every assembly order) — responses are never corrupted; uninstall it
+  promptly to keep health diagnostics unambiguous.
 
 ## HTTPS Support
 
@@ -109,15 +144,24 @@ GUI settings entry: Settings → Plugins → "LAN Access" card (saved changes ap
   within the browser trust perimeter — make sure your LAN is trusted, or disable this plugin
 - **Private key permission**: auto-generated self-signed private keys are written with 0600
 - **Open port reminder**: `0.0.0.0` listening is visible to every device on the LAN
+- **HTTP response compression**: compression happens at the forwarding layer and only applies
+  to the link between this plugin and the LAN client; it never touches dsh web's response
+  generation, adds no reachable data surface, and only costs a small amount of CPU (disable
+  via `httpCompressEnabled: false`). The loopback fence on health/marker routes applies to
+  requests hitting the loopback web directly; requests forwarded through this plugin are
+  trusted by design (see Credential surface)
 
 ## Verification
 
 ```sh
-# Health check (loopback)
-curl -s http://127.0.0.1:3081/api/lan-proxy/health
+# Health check (loopback; includes compression config, active state and negotiation counters)
+curl -s http://127.0.0.1:3081/api/dsh-lan-proxy/health
+
+# Merged-compression marker route (loopback)
+curl -s http://127.0.0.1:3081/api/dsh-lan-proxy/compression
 
 # LAN access (from another device)
-curl http://<your-LAN-IP>:3081/api/dsh-gzip/health
+curl http://<your-LAN-IP>:3081/api/dsh-lan-proxy/health
 ```
 
 ## Known Limitations

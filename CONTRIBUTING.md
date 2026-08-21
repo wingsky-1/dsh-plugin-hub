@@ -10,7 +10,7 @@
 ```
 
 - type：`feat` / `fix` / `docs` / `refactor` / `test` / `chore` / `ci` / `perf`
-- scope：插件名（如 `dsh-gzip`）或省略
+- scope：插件名（如 `dsh-lan-proxy`）或省略
 - subject：动词开头，一行说清改动
 
 示例：`fix(dsh-lan-proxy): 收紧 targetHost 回环白名单`

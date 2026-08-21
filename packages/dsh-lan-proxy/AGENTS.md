@@ -16,7 +16,16 @@ HTTPS 3443）监听，把 HTTP/HTTPS 与 WebSocket/wss 转发到回环 web 服�
 - `src/index.ts` — 宿主端 cordis service（薄壳 apply：解析配置 → 注册 → 收集
   disposer；所有清理统一写在 `ctx.effect` 返回的 disposer 里）
 - `src/proxy.ts` — 转发器核心 `createLanProxy`（HTTP/HTTPS/WebSocket 桥接、
-  Host 重写、DNS 重绑定防护、wss 压缩桥接）；业务逻辑导出纯函数可单测
+  Host 重写、DNS 重绑定防护、wss 压缩桥接）；业务逻辑导出纯函数可单测。
+  HTTP 响应 gzip 压缩（原独立包 dsh-gzip 已退役并入）也在此层：经成熟开源库
+  `compression` 中间件挂在转发器自己的 `createServer` 处理链上（构建期 esbuild
+  内联，保持零运行时依赖），自定义 filter 复用 `isCompressible`（SSE 豁免）；
+  协商 / Vary / Content-Length 删除 / Range·204·304 豁免全部由库承担。
+  上游已带 content-encoding 时本层自动让位（与宿主端任意压缩实现共存只压一次，
+  smoke 有专项用例锁定）。
+  **禁止**在 webServer 宿主端 patch handler 实现压缩（非官方 API 挂载面，
+  曾引出包装/卸载/幂等一整类缺陷）；**禁止**手写响应流 gzip 接线（一律走
+  compression 中间件）
 - `src/cert.ts` — TLS 证书（配置证书加载 / 自签名生成并缓存到
   `<DSH_HOME>/lan-proxy/`，私钥落盘 0600）
 - `src/client/` — 客户端（干净模块：`index.ts` + `style.css` + `css.d.ts` +

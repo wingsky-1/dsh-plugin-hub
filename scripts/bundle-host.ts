@@ -30,7 +30,7 @@ const esbuildBin = join(ROOT, 'node_modules', '.bin', process.platform === 'win3
 const libDir = join(pkgDir, 'lib')
 
 if (!process.argv[2]) {
-  console.error('用法：node scripts/bundle-host.mjs <插件目录>（如 packages/dsh-gzip，或包目录内传 .）')
+  console.error('用法：node scripts/bundle-host.mjs <插件目录>（如 packages/dsh-notifier，或包目录内传 .）')
   process.exit(1)
 }
 // 路径级校验：插件目录必须位于仓库 packages/ 下（兼容 pnpm --filter 的包目录 cwd 传 .）

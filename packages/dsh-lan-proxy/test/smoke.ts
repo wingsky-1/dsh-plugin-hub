@@ -14,6 +14,8 @@
 //
 // 运行：node dsh-lan-proxy/test/smoke.mjs   （在仓库根目录下）
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
+import { gzipSync, gunzipSync } from "node:zlib";
 import { createServer, request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { connect } from "node:net";
@@ -24,10 +26,11 @@ import { fileURLToPath } from "node:url";
 import { assertClientProductContract, assertClientSourceContract } from "../../../test/smoke-lib.ts";
 
 const pkgDir = fileURLToPath(new URL("..", import.meta.url));
-import { apply, loadFileConfig, writeConfigFile, sanitizeSettings, rpcHandler, ROUTES, CHANNEL,
+import { apply, loadFileConfig, writeConfigFile, sanitizeSettings, rpcHandler, ROUTES, CHANNEL, pluginDir,
   hostnameAllowed, formatAuthority, rewriteHeaders, createLanProxy, isLoopbackTarget, DEFAULT_OPTIONS,
   compressWsPath, DEFAULT_WSS_COMPRESS_PATHS,
-  ensureSelfSignedTls, certStillValid, toSanEntry, loadTlsFromFiles, SELF_SIGNED_KEY, SELF_SIGNED_CERT } from "../lib/index.js";
+  ensureSelfSignedTls, certStillValid, toSanEntry, loadTlsFromFiles, SELF_SIGNED_KEY, SELF_SIGNED_CERT,
+  isCompressible, normalizeLevel } from "../lib/index.js";
 
 const UPSTREAM_PORT = 19090;
 const PROXY_PORT = 19091;
@@ -35,15 +38,118 @@ const PROXY_HTTPS_PORT = 19092;
 const LAN_HOST = "192.168.1.50";
 const failures = [];
 const check = (name, fn) => {
+  const fail = (err) => {
+    failures.push(name);
+    console.error(`  FAIL ${name}\n       ${err && err.message ? err.message : err}`);
+  };
   try {
-    fn();
+    const result = fn();
+    // promise 感知：async 断言失败同样记入 failures（否则静默丢失、报告失真）。
+    if (result && typeof result.then === "function") {
+      result.then(() => console.log(`  ok   ${name}`), fail);
+      return;
+    }
     console.log(`  ok   ${name}`);
   } catch (err) {
-    failures.push(name);
-    console.error(`  FAIL ${name}\n       ${err.message}`);
+    fail(err);
   }
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ── HTTP 压缩层测试桩（迁移自 dsh-gzip smoke）───────────────────────────────
+class FakeRes extends EventEmitter {
+  constructor() {
+    super();
+    this.headersSent = false;
+    this._headers = new Map();
+    this._chunks = [];
+    this.ended = false;
+    this.destroyed = false;
+  }
+  getHeader(name) {
+    return this._headers.get(String(name).toLowerCase());
+  }
+  setHeader(name, value) {
+    this._headers.set(String(name).toLowerCase(), value);
+  }
+  removeHeader(name) {
+    this._headers.delete(String(name).toLowerCase());
+  }
+  writeHead(code, msg, headers) {
+    if (typeof msg === "object" && msg !== null) {
+      headers = msg;
+      msg = undefined;
+    }
+    this.statusCode = code;
+    if (headers && typeof headers === "object") {
+      for (const [key, value] of Object.entries(headers)) this._headers.set(key.toLowerCase(), value);
+    }
+    this.headersSent = true;
+  }
+  write(chunk, encoding, callback) {
+    if (typeof encoding === "function") {
+      callback = encoding;
+      encoding = undefined;
+    }
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk ?? ""), encoding);
+    this._chunks.push(buf);
+    if (typeof callback === "function") callback();
+    return true;
+  }
+  end(chunk, encoding, callback) {
+    if (typeof chunk === "function") {
+      callback = chunk;
+      chunk = undefined;
+    }
+    if (chunk !== undefined && chunk !== null) this.write(chunk, encoding);
+    this.ended = true;
+    if (typeof callback === "function") callback();
+  }
+  destroy() {
+    this.destroyed = true;
+  }
+}
+
+/** fake webServer：prefixes/exact Map + register/registerFallback + port（转发器目标端口）。 */
+function makeWebServer() {
+  const prefixes = new Map();
+  const exact = new Map();
+  const ws = {
+    prefixes,
+    exact,
+    fallback: undefined,
+    port: 30800,
+    register(route) {
+      const table = route.kind === "exact" ? exact : prefixes;
+      if (table.has(route.path)) throw new Error("duplicate");
+      table.set(route.path, route);
+      return () => {
+        table.delete(route.path);
+      };
+    },
+    registerFallback(handler) {
+      ws.fallback = handler;
+      return () => {
+        ws.fallback = undefined;
+      };
+    },
+    // apply 内 randomUUID polyfill 经 tapIndex 注入；smoke 无需断言 HTML。
+    tapIndex() {
+      return () => {};
+    },
+  };
+  return ws;
+}
+
+function makeReq(over = {}) {
+  return {
+    method: "GET",
+    headers: { host: "127.0.0.1:3080" },
+    socket: { remoteAddress: "127.0.0.1" },
+    ...over,
+  };
+}
+
 
 // ── upstream fake dsh web server ────────────────────────────────────────────
 const upstream = createServer((req, res) => {
@@ -404,6 +510,181 @@ const main = async () => {
   check("sanitize 拒绝非字符串数组 paths", () =>
     assert.equal(sanitizeSettings({ wsCompressPaths: [1, 2] }), null));
 
+  // ── HTTP 响应压缩（转发层 compression 中间件）：纯函数 ────────────────────
+  console.log("unit: HTTP 压缩纯函数（isCompressible / normalizeLevel）");
+  check("isCompressible json/+json/text/SSE 豁免/zip 豁免", () => {
+    assert.equal(isCompressible("application/json"), true);
+    assert.equal(isCompressible("application/json; charset=utf-8"), true);
+    assert.equal(isCompressible("application/vnd.test+json"), true);
+    assert.equal(isCompressible("text/html"), true);
+    assert.equal(isCompressible("text/event-stream"), false, "SSE 豁免");
+    assert.equal(isCompressible("application/zip"), false, "zip 豁免");
+    assert.equal(isCompressible(undefined), false);
+  });
+  check("normalizeLevel 非法回退 1 / clamp 1..9 / 截断小数", () => {
+    assert.equal(normalizeLevel(undefined), 1);
+    assert.equal(normalizeLevel("x"), 1);
+    assert.equal(normalizeLevel(NaN), 1);
+    assert.equal(normalizeLevel(0), 1);
+    assert.equal(normalizeLevel(-3), 1);
+    assert.equal(normalizeLevel(99), 9);
+    assert.equal(normalizeLevel(5), 5);
+    assert.equal(normalizeLevel(5.7), 5);
+  });
+
+  // ── 转发层 HTTP 压缩：真实 upstream × 真实 createLanProxy ─────────────────
+  console.log("integration: 转发层 HTTP 压缩（compression 中间件）");
+  {
+    const upPort = 19190, pxPort = 19191;
+    const bigBody = JSON.stringify({ data: "y".repeat(300_000) });
+    const upstream = createServer((req, res) => {
+      const p = new URL(req.url ?? "/", "http://x").pathname;
+      if (p === "/big") {
+        res.writeHead(200, { "content-type": "application/json", "content-length": String(Buffer.byteLength(bigBody)) });
+        res.end(bigBody);
+      } else if (p === "/range") {
+        res.writeHead(206, { "content-type": "application/json", "content-range": `bytes 0-9/${bigBody.length}`, "content-length": "10" });
+        res.end("y".repeat(10));
+      } else if (p === "/sse") {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.end("data: x\n\n");
+      } else if (p === "/pregzip") {
+        // 模拟 dsh-gzip 独立包在宿主端已压缩：转发层必须让位（单层）。
+        const gz = gzipSync(Buffer.from(bigBody));
+        res.writeHead(200, { "content-type": "application/json", "content-encoding": "gzip" });
+        res.end(gz);
+      } else if (p === "/cut") {
+        // 悬挂回归：上游发头 + 部分 body 后暴力断连，客户端必须快速终止。
+        res.writeHead(200, { "content-type": "application/json", "content-length": String(9_000_000) });
+        res.write("y".repeat(300_000));
+        setTimeout(() => { res.socket?.destroy(); }, 30);
+      } else { res.writeHead(404); res.end(); }
+    });
+    await new Promise((r) => upstream.listen(upPort, "127.0.0.1", r));
+
+    const requestThrough = (port, path, headers) => new Promise((resolve, reject) => {
+      const req = httpRequest({ host: "127.0.0.1", port, path, headers: { host: "127.0.0.1", ...headers } }, (res) => {
+        const chunks = [];
+        res.on("data", (c) => chunks.push(c));
+        res.on("end", () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }));
+      });
+      req.on("error", reject);
+      req.end();
+    });
+
+    const proxyOn = createLanProxy(
+      { host: "127.0.0.1", port: pxPort, targetHost: "127.0.0.1", targetPort: upPort, httpCompress: { enabled: true, level: 1 } },
+      console,
+    );
+    await proxyOn.listen();
+
+    let r = await requestThrough(pxPort, "/big", { "accept-encoding": "gzip" });
+    check("转发层：大 JSON 经代理被 gzip 且解压逐字节一致", () => {
+      assert.equal(r.headers["content-encoding"], "gzip");
+      assert.equal(r.headers["content-length"], undefined, "content-length 已删除");
+      assert.equal(gunzipSync(r.body).toString(), bigBody);
+    });
+    r = await requestThrough(pxPort, "/big", {});
+    check("转发层：无 Accept-Encoding 透传原文", () => {
+      assert.equal(r.headers["content-encoding"], undefined);
+      assert.equal(r.body.toString(), bigBody);
+    });
+    r = await requestThrough(pxPort, "/range", { "accept-encoding": "gzip" });
+    check("转发层：Range/206 豁免不压", () => {
+      assert.equal(r.status, 206);
+      assert.equal(r.headers["content-encoding"], undefined);
+      assert.equal(r.headers["content-range"], `bytes 0-9/${bigBody.length}`);
+    });
+    r = await requestThrough(pxPort, "/sse", { "accept-encoding": "gzip" });
+    check("转发层：SSE 豁免不压", () => {
+      assert.equal(r.headers["content-encoding"], undefined);
+      assert.equal(r.body.toString(), "data: x\n\n");
+    });
+    r = await requestThrough(pxPort, "/pregzip", { "accept-encoding": "gzip" });
+    check("转发层：上游已压缩让位（dsh-gzip 宿主端共存，仅单层）", () => {
+      assert.equal(r.headers["content-encoding"], "gzip");
+      assert.equal(gunzipSync(r.body).toString(), bigBody, "gunzip 一次即原文（无双层）");
+    });
+    const statsOn = proxyOn.httpCompressStats();
+    check("转发层：协商计数递增（协商口径：206 计入 compressed、无 AE 不进 filter）", () => {
+      assert.ok(statsOn.compressed >= 3, `compressed=${statsOn.compressed}（/big×1 + /range + /pregzip）`);
+      assert.ok(statsOn.passthrough >= 1, `passthrough=${statsOn.passthrough}（SSE）`);
+    });
+    // 计数防污染：本地生成的 403 围栏响应不得进入协商计数。
+    {
+      const before = proxyOn.httpCompressStats();
+      await new Promise((resolve) => {
+        const req = httpRequest({ host: "127.0.0.1", port: pxPort, path: "/big", headers: { host: "evil.example.com" } }, (res) => {
+          res.resume(); res.on("end", resolve);
+        });
+        req.on("error", () => resolve());
+        req.end();
+      });
+      const after = proxyOn.httpCompressStats();
+      check("转发层：本地 403 响应不污染协商计数", () => {
+        assert.deepEqual(after, before, `403 前后 stats 应一致，实际 ${JSON.stringify(before)} → ${JSON.stringify(after)}`);
+      });
+    }
+    // 悬挂回归（评审增量发现）：上游中途断连时 pipe 不传播错误，若不监听
+    // aborted/error 终止下游，客户端将无限悬挂。修复后必须在短时限内结束。
+    {
+      const cut = await new Promise((resolve) => {
+        const t0 = Date.now();
+        const req = httpRequest({ host: "127.0.0.1", port: pxPort, path: "/cut", headers: { host: "127.0.0.1", "accept-encoding": "gzip" } }, (res) => {
+          let bytes = 0;
+          res.on("data", (c) => { bytes += c.length; });
+          const finish = (how) => resolve({ how, bytes, ms: Date.now() - t0 });
+          res.on("end", () => finish("end"));
+          res.on("close", () => finish(`close(aborted=${res.aborted})`));
+          res.on("error", (e) => finish(`error:${e.code ?? e.message}`));
+        });
+        req.on("error", (e) => resolve({ how: `reqError:${e.code ?? e.message}`, bytes: 0, ms: Date.now() - t0 }));
+        req.end();
+      });
+      check("转发层：上游中途断连 → 客户端快速终止（不悬挂回归）", () => {
+        assert.ok(cut.ms < 4000, `耗时 ${cut.ms}ms（>4s 视作悬挂），结束方式 ${cut.how}`);
+      });
+    }
+    await proxyOn.close();
+
+    const proxyOff = createLanProxy(
+      { host: "127.0.0.1", port: pxPort + 1, targetHost: "127.0.0.1", targetPort: upPort, httpCompress: { enabled: false, level: 1 } },
+      console,
+    );
+    await proxyOff.listen();
+    r = await requestThrough(pxPort + 1, "/big", { "accept-encoding": "gzip" });
+    check("转发层：enabled=false 全透传", () => {
+      assert.equal(r.headers["content-encoding"], undefined);
+      assert.equal(r.body.toString(), bigBody);
+    });
+    await proxyOff.close();
+    upstream.close();
+  }
+
+  // ── sanitize / loadFileConfig 接受 httpCompress 新键 ─────────────────────
+  console.log("unit: httpCompress 配置键");
+  check("sanitize 接受 httpCompressEnabled/httpCompressLevel", () => {
+    const out = sanitizeSettings({ httpCompressEnabled: false, httpCompressLevel: 5 });
+    assert.deepEqual(out, { httpCompressEnabled: false, httpCompressLevel: 5 });
+  });
+  check("sanitize 拒绝越界/非整数 level 整体拒绝", () => {
+    assert.equal(sanitizeSettings({ httpCompressLevel: 10 }), null);
+    assert.equal(sanitizeSettings({ httpCompressLevel: 0 }), null);
+    assert.equal(sanitizeSettings({ httpCompressLevel: 1.5 }), null);
+    assert.equal(sanitizeSettings({ httpCompressLevel: "3" }), null);
+  });
+  check("loadFileConfig 解析 httpCompress 键并丢弃非法值", () => {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-httpc-"));
+    writeFileSync(join(dir, "config.json"), JSON.stringify({ httpCompressEnabled: false, httpCompressLevel: 6, httpCompressLevelBad: "x" }));
+    const parsed = loadFileConfig(dir);
+    assert.equal(parsed.httpCompressEnabled, false);
+    assert.equal(parsed.httpCompressLevel, 6);
+    writeFileSync(join(dir, "config.json"), JSON.stringify({ httpCompressLevel: 12 }));
+    assert.deepEqual(loadFileConfig(dir), {});
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+
   console.log("unit: writeConfigFile（原子写）");
   {
     const cfgDir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-write-"));
@@ -512,6 +793,160 @@ const main = async () => {
     rmSync(applyHome, { recursive: true, force: true });
   }
 
+  // apply 集成：HTTP 压缩层安装 + 合并标记路由 + health 扩展字段。
+  console.log("apply: HTTP 压缩集成（转发 + 压缩并存 / 标记路由 / health 扩展）");
+  {
+    const applyHome = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-apply-httpc-"));
+    const prevHome = process.env.DSH_HOME;
+    process.env.DSH_HOME = applyHome;
+    const ws = makeWebServer();
+    const apiHandler = (req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: 1, data: "y".repeat(300) }));
+    };
+    ws.prefixes.set("/api", { kind: "prefix", path: "/api", handler: apiHandler });
+    const disposers = [];
+    const ctx = {
+      logger: { info: () => {}, warn: () => {}, error: () => {} },
+      webServer: ws,
+      inject() {},
+      effect(fn) { const d = fn(); if (typeof d === "function") disposers.push(d); return d; },
+    };
+    apply(ctx, { host: "127.0.0.1", port: 19993, httpsEnabled: false });
+
+    const apiRoute = ws.prefixes.get("/api");
+    check("webServer handler 不被触碰（压缩在转发层，非宿主端 patch）", () => {
+      assert.equal(apiRoute.handler, apiHandler, "/api handler 原样保留");
+    });
+
+    const healthRoute = ws.exact.get(ROUTES.health);
+    const hRes = new FakeRes();
+    healthRoute.handler(makeReq(), hRes);
+    check("health 扩展返回压缩配置与生效状态", () => {
+      assert.equal(ws.exact.has(ROUTES.health), true, "health 路由已注册");
+      const payload = JSON.parse(Buffer.concat(hRes._chunks).toString("utf8"));
+      assert.equal(payload.httpCompressEnabled, true);
+      assert.equal(payload.httpCompressLevel, 1);
+      assert.equal(payload.httpCompressMounted, true);
+      assert.equal(typeof payload.httpCompressStats.compressed, "number");
+    });
+
+    for (const d of [...disposers].reverse()) {
+      try { d(); } catch {}
+    }
+    check("lifecycle 卸载撤下 health 路由且 webServer 原样", () => {
+      assert.equal(ws.prefixes.get("/api").handler, apiHandler, "/api handler 全程原样");
+      assert.equal(ws.exact.has(ROUTES.health), false, "health 路由移除");
+    });
+    process.env.DSH_HOME = prevHome;
+    rmSync(applyHome, { recursive: true, force: true });
+  }
+
+  // apply：httpCompressEnabled=false 只关压缩，转发不受影响。
+  console.log("apply: httpCompressEnabled=false 关闭压缩");
+  {
+    const applyHome = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-apply-httpc-off-"));
+    const prevHome = process.env.DSH_HOME;
+    process.env.DSH_HOME = applyHome;
+    const ws = makeWebServer();
+    const apiHandler = (req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end('{"ok":1}');
+    };
+    ws.prefixes.set("/api", { kind: "prefix", path: "/api", handler: apiHandler });
+    const disposers = [];
+    const ctx = {
+      logger: { info: () => {}, warn: () => {}, error: () => {} },
+      webServer: ws,
+      inject() {},
+      effect(fn) { const d = fn(); if (typeof d === "function") disposers.push(d); return d; },
+    };
+    apply(ctx, { host: "127.0.0.1", port: 19994, httpsEnabled: false, httpCompressEnabled: false });
+    check("关闭压缩：health mounted=false", () => {
+      assert.equal(ws.prefixes.get("/api").handler, apiHandler, "webServer handler 原样");
+      assert.ok(ws.exact.has(ROUTES.health), "health 路由仍注册（转发功能不受影响）");
+      const hRes = new FakeRes();
+      ws.exact.get(ROUTES.health).handler(makeReq(), hRes);
+      const payload = JSON.parse(Buffer.concat(hRes._chunks).toString("utf8"));
+      assert.equal(payload.httpCompressEnabled, false);
+      assert.equal(payload.httpCompressMounted, false);
+    });
+    for (const d of [...disposers].reverse()) {
+      try { d(); } catch {}
+    }
+    process.env.DSH_HOME = prevHome;
+    rmSync(applyHome, { recursive: true, force: true });
+  }
+
+  // apply：运行中经 config.json 热关闭——压缩生效状态必须随 watch 翻转。
+  console.log("apply: 运行中热关闭（config.json watch → 压缩卸载）");
+  const hotOffCase = async (label, patch, expectProxyOff) => {
+    const applyHome = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-hotoff-"));
+    const prevHome = process.env.DSH_HOME;
+    process.env.DSH_HOME = applyHome;
+    const ws = makeWebServer();
+    const apiHandler = (req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end('{"ok":1}');
+    };
+    ws.prefixes.set("/api", { kind: "prefix", path: "/api", handler: apiHandler });
+    const disposers = [];
+    const ctx = {
+      logger: { info: () => {}, warn: () => {}, error: () => {} },
+      webServer: ws,
+      inject() {},
+      effect(fn) { const d = fn(); if (typeof d === "function") disposers.push(d); return d; },
+    };
+    apply(ctx, { host: "127.0.0.1", port: 19995, httpsEnabled: false });
+    const healthMounted = () => {
+      const hRes = new FakeRes();
+      ws.exact.get(ROUTES.health).handler(makeReq(), hRes);
+      return JSON.parse(Buffer.concat(hRes._chunks).toString("utf8")).httpCompressMounted;
+    };
+    assert.ok(healthMounted() === true, "前置：压缩已生效");
+    // 运行中写 config.json 触发热更新；轮询等待 watch（150ms 防抖）生效，
+    // 不用固定 sleep（防 flake 纪律）。
+    writeConfigFile(pluginDir(), patch);
+    const deadline = Date.now() + 5000;
+    while (healthMounted() && Date.now() < deadline) await sleep(25);
+    check(`${label}：压缩卸载、webServer 原样`, () => {
+      assert.equal(healthMounted(), false, "health mounted=false");
+      assert.equal(ws.prefixes.get("/api").handler, apiHandler, "webServer handler 全程原样");
+      const hRes = new FakeRes();
+      ws.exact.get(ROUTES.health).handler(makeReq(), hRes);
+      const payload = JSON.parse(Buffer.concat(hRes._chunks).toString("utf8"));
+      if (expectProxyOff) assert.equal(payload.listening, false, "转发器已停");
+    });
+    for (const d of [...disposers].reverse()) {
+      try { d(); } catch {}
+    }
+    process.env.DSH_HOME = prevHome;
+    rmSync(applyHome, { recursive: true, force: true });
+  };
+  await hotOffCase("热关 httpCompressEnabled=false", { httpCompressEnabled: false }, false);
+  await hotOffCase("热关 enabled=false（整插件）", { enabled: false }, true);
+
+  // apply：enabled=false 整插件关闭 → 压缩与转发都不注册（启动态）。
+  {
+    const applyHome = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-apply-all-off-"));
+    const prevHome = process.env.DSH_HOME;
+    process.env.DSH_HOME = applyHome;
+    const ws = makeWebServer();
+    const ctx = {
+      logger: { info: () => {}, warn: () => {}, error: () => {} },
+      webServer: ws,
+      inject() {},
+      effect(fn) { return fn(); },
+    };
+    apply(ctx, { enabled: false });
+    check("enabled=false：压缩与转发都不注册", () => {
+      assert.equal(ws.exact.size, 0);
+      assert.equal(ws.prefixes.size, 0);
+    });
+    process.env.DSH_HOME = prevHome;
+    rmSync(applyHome, { recursive: true, force: true });
+  }
+
   // 客户端契约（共享 smoke-lib：源形态 + 执行契约，与 contract-check 同源）。
   {
     const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
@@ -523,12 +958,17 @@ const main = async () => {
       assert.ok(client.includes("HTTPS 端口"));
       assert.ok(client.includes("证书文件"));
       assert.ok(client.includes("启动时打印访问地址"));
+      assert.ok(client.includes("HTTP 响应压缩"), "HTTP 压缩开关已渲染");
+      assert.ok(client.includes("压缩级别"), "压缩级别输入已渲染");
     });
   }
 
   // Node 24 全局 agent 默认 keep-alive，销毁它让事件循环干净退出
   const { globalAgent } = await import("node:http");
   globalAgent.destroy();
+  // 等 check() 的 promise 分支（异步断言）全部落定后再统计失败。
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
   if (failures.length) {
     console.error(`\n${failures.length} check(s) failed: ${failures.join(", ")}`);
     process.exit(1);
