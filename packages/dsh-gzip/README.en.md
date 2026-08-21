@@ -7,15 +7,17 @@
 > "forwarding + compression" in one package. Upgrade lan-proxy and uninstall this package:
 >
 > ```sh
-> dsh plugin --profile web update @wingsky-1/dsh-lan-proxy
+> dsh plugin --profile web update @wingsky-1/dsh-lan-proxy    # requires >= 0.1.10
+> curl -s http://127.0.0.1:3081/api/dsh-lan-proxy/compression  # loopback check: continue only when it returns {"merged":true}
 > dsh plugin --profile web remove @wingsky-1/dsh-gzip
 > # Restart dsh web to take effect
 > ```
 >
 > v0.1.10 is the final compatibility release: when the merged lan-proxy is detected (marker
 > route `/api/dsh-lan-proxy/compression`), it skips its own installation and warns to
-> uninstall; the npm package has been marked deprecated. The source will be removed in a
-> later release cycle.
+> uninstall. After v0.1.10 ships, the npm package will be marked deprecated; the source
+> will be removed in a later release cycle (the aggregate package dsh-plugins-all has
+> already dropped this package — family-bucket users migrate by upgrading the aggregate).
 
 A response gzip compression plugin for the DSH Web GUI: enables gzip compression for
 `/api` responses, static assets (`/assets/*` and index.html), and plugin client bundles

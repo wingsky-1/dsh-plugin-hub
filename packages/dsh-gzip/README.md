@@ -7,14 +7,16 @@
 > 「转发 + 压缩」。请升级 lan-proxy 并卸载本包：
 >
 > ```sh
-> dsh plugin --profile web update @wingsky-1/dsh-lan-proxy
+> dsh plugin --profile web update @wingsky-1/dsh-lan-proxy    # 需 >= 0.1.10
+> curl -s http://127.0.0.1:3081/api/dsh-lan-proxy/compression  # 回环校验：返回 {"merged":true} 再继续
 > dsh plugin --profile web remove @wingsky-1/dsh-gzip
 > # 重启 dsh web 生效
 > ```
 >
 > v0.1.10 为最终兼容版：检测到合并版 lan-proxy（标记路由
-> `/api/dsh-lan-proxy/compression`）时跳过自身安装并 warn 提示卸载；npm 包已标记
-> deprecated，源码将在后续版本周期删除。
+> `/api/dsh-lan-proxy/compression`）时跳过自身安装并 warn 提示卸载。v0.1.10 发布后
+> npm 包将标记 deprecated；源码将在后续版本周期删除（届时聚合包 dsh-plugins-all
+> 已同步移除本包，全家桶用户升级聚合包即完成迁移）。
 
 DSH Web GUI 的响应 gzip 压缩插件：为远程 / 低带宽链路开启 `/api` 响应、静态
 资源（`/assets/*` 与 index.html）以及插件客户端 bundle（`/plugins/<pkg>/client.js`）
