@@ -21,7 +21,7 @@ types/dsh.d.ts        宿主端类型层
 
 ## 常用命令
 
-构建 / 测试 / 契约 / 打包命令见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) §0。
+构建 / 测试 / 契约 / 打包命令见 [docs/DEVELOPMENT.md §0](docs/DEVELOPMENT.md#0-构建总览)。
 改动提交前至少跑一遍 `pnpm build && pnpm test && pnpm contract && pnpm pack:check`
 （CI 会全量跑所有门禁）。
 
@@ -33,7 +33,8 @@ types/dsh.d.ts        宿主端类型层
 - **零运行时依赖**：所有插件发布物自包含，运行时零 npm 依赖（宿主注入模型）。
 - **客户端为干净模块**：只 `export function apply(ctx)` + `export const inject`，
   样式独立 `src/client/style.css`，构建走 `scripts/build-client.ts`，路由强制 loopback
-  围栏，patch id 用 `ui-<name>`。细则与禁止项见 DEVELOPMENT.md §1/§2/§3。
+  围栏，patch id 用 `ui-<name>`。细则与禁止项见
+  [DEVELOPMENT.md §1/§2/§3](docs/DEVELOPMENT.md#1-宿主端srcindexts规范)。
 - **安全语义**：涉及密钥/凭据/远程执行/令牌的包修改安全语义时同步更新 README
   与测试；安全模型放包 README 的 `## 安全模型` 一节。
 
@@ -60,9 +61,10 @@ Conventional Commits（`type(scope): subject`；type：`feat` / `fix` / `docs` /
 
 smoke 全部无网络、无真实凭据，本地可直接运行；新功能/修复必须带 smoke 断言
 （含路由 403/405 围栏用例、client 契约断言）。防 flake 纪律（隔离文件路径 / 设 DSH_HOME
-到临时目录 / 轮询替代固定 sleep）见 DEVELOPMENT.md §5。
+到临时目录 / 轮询替代固定 sleep）见
+[DEVELOPMENT.md §5](docs/DEVELOPMENT.md#5-smoke-测试防-flake-纪律)。
 
 ## 参考文档
 
-- 开发规范（宿主/客户端写法、构建契约、测试防 flake 纪律）：[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
+- 开发规范（宿主/客户端写法、构建契约、多端兼容、测试防 flake 纪律）：[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
 - 贡献规范（Conventional Commits、功能分支 + PR 流程、提交前检查）：[CONTRIBUTING.md](CONTRIBUTING.md)
