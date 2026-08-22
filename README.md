@@ -6,12 +6,11 @@
 
 **简体中文** | [English](README.en.md)
 
-DSH（DeepSeek Harness）Web GUI 插件集，**npm 分发**：既可一键安装全家桶，也可单独安装单个插件。
+DSH（DeepSeek Harness）Web GUI 插件集，npm 分发：一键装全家桶，或按需单装。
 
 - 聚合包：`@wingsky-1/dsh-plugins-all`（一键装齐全部插件）
 - 单插件：`@wingsky-1/dsh-*`（按需安装）
-- 所有插件走 DSH 官方 profile 机制挂载（`dsh.bundle.patch`），不改 DSH 源码
-- 已发布到 npm（`@wingsky-1` scope），零运行时依赖
+- 全部走 DSH 官方 profile 机制挂载（`dsh.bundle.patch`），不改 DSH 源码；发布物自包含，构建期内联打包
 
 ## 插件列表
 
@@ -19,7 +18,7 @@ DSH（DeepSeek Harness）Web GUI 插件集，**npm 分发**：既可一键安装
 |---|---|---|---|
 | `@wingsky-1/dsh-notifier` | 审批/完成/错误事件通知（浏览器 Notification + 系统 toast） | [README](packages/dsh-notifier/README.md) | ✅ 已发布 |
 | `@wingsky-1/dsh-provider-usage` | 多 provider 用量悬浮框（按 Provider 适配器框架，内置 OpenCode Go） | [README](packages/dsh-provider-usage/README.md) | ✅ 已发布 |
-| `@wingsky-1/dsh-lan-proxy` | 局域网访问 dsh web UI（HTTP/HTTPS/WS 转发 + TLS + HTTP 响应 gzip 压缩） | [README](packages/dsh-lan-proxy/README.md) | ✅ 已发布 |
+| `@wingsky-1/dsh-lan-proxy` | 局域网访问 dsh web UI（HTTP/HTTPS/WS 转发 + TLS + HTTP 响应压缩，Brotli/gzip 自适应） | [README](packages/dsh-lan-proxy/README.md) | ✅ 已发布 |
 | `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理器（stdio/HTTP，工具注册给模型） | [README](packages/dsh-mcp-manager/README.md) | ✅ 已发布 |
 | `@wingsky-1/dsh-idle-archive` | 会话闲置提醒归档 | [README](packages/dsh-idle-archive/README.md) | ✅ 已发布 |
 | `@wingsky-1/dsh-web-file-preview` | 点击对话文件链接在 web 端预览（图片/文本/Markdown/代码/Diff） | [README](packages/dsh-web-file-preview/README.md) | ✅ 已发布 |
@@ -30,6 +29,36 @@ DSH（DeepSeek Harness）Web GUI 插件集，**npm 分发**：既可一键安装
 > 支持符号链接识别、链接技能安全处理等，请直接使用 web UI 内置技能中心，勿再安装本包。
 
 > dsh-memory（项目长期记忆）暂未包含，规划中。
+
+<details>
+<summary><b>从旧包迁移（升级指导）</b>——装过 <code>dsh-gzip</code> / <code>dsh-opencode-usage</code> 的请展开</summary>
+
+历史上发布过、现已不再分发的两个旧包，请按下面方式迁移（均先卸载旧包再安装新包，装完重启 `dsh web`）：
+
+**`@wingsky-1/dsh-gzip` → 已合并进 `@wingsky-1/dsh-lan-proxy`**（0.1.9 起）
+
+HTTP 响应压缩能力整体并入 lan-proxy（默认开启，Brotli/gzip 按 Accept-Encoding 自适应协商，SSE 流式响应豁免，可配置）。
+卸载 dsh-gzip、安装 dsh-lan-proxy 即获得等价压缩能力：
+
+```sh
+dsh plugin --profile web remove @wingsky-1/dsh-gzip
+dsh plugin --profile web add @wingsky-1/dsh-lan-proxy
+```
+
+**`@wingsky-1/dsh-opencode-usage` → 已重构更名为 `@wingsky-1/dsh-provider-usage`**
+
+重构为多 provider 适配器框架（内置 OpenCode Go，支持用户自定义取数适配器）。
+patch `id` 由 `ui-dsh-opencode-usage` 变为 `ui-dsh-provider-usage`，配置项亦有调整，
+不会自动迁移——重装后请在设置面板重新确认配置（如 `apiKey`、`baseUrl`）：
+
+```sh
+dsh plugin --profile web remove @wingsky-1/dsh-opencode-usage
+dsh plugin --profile web add @wingsky-1/dsh-provider-usage
+```
+
+> 两个旧包的 npm 版本均已标记 deprecated（安装时会提示迁移去向）。
+
+</details>
 
 ## 安装
 

@@ -5,8 +5,8 @@
 DSH（DeepSeek Harness）的 **MCP 服务器管理插件**：会话界面右上角浮窗 + 分级面板 +
 快速接入（手工表单 + 粘贴 mcpServers JSON 导入，**不预设任何服务器**），支持
 **项目级 MCP 跟随会话切换**。已连接服务器的工具以 `mcp__<serverName>__<rawName>`
-注册给模型直接调用。**零运行时依赖**（MCP 协议客户端基于 `node:child_process`
-与全局 `fetch` 直接实现）。
+注册给模型直接调用。MCP 协议客户端基于 `node:child_process`
+与全局 `fetch` 直接实现，无需额外安装。
 
 ## 安装
 
@@ -102,6 +102,14 @@ node test/smoke.mjs
   重连 / 手动刷新时重新同步
 - 仅桥接工具能力；MCP 的 resources 与 prompts 尚无 harness 消费接口
 - 依赖 Node ≥ 20
+
+## 类型依赖
+
+宿主端类型来自官方 `@deepseek-ai/*` 包（`cordis` / `dsh-host-webserver` / `dsh-agent` /
+`dsh-tools` / `dsh-system-prompt`，版本统一锁在仓库 `pnpm-workspace.yaml` catalog，
+随 DSH 发布节奏升级）：**仅 `import type` 编译期使用**，编译产物零官方运行时导入。
+包以 optional peerDependencies 声明这一宿主耦合；对插件做类型检查的消费者需可解析
+这些官方包（跳过类型检查则无影响）。
 
 ## License
 

@@ -71,8 +71,8 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-lan-proxy
 | `tlsCertFile` / `tlsKeyFile` | none | Custom certificate (mkcert, etc.) |
 | `wsCompressEnabled` | `true` | Whether to apply compressed bridging to WebSockets matching `wsCompressPaths` |
 | `wsCompressPaths` | `/api/events.mux, /api/events.host` | Path allowlist participating in WebSocket compression |
-| `httpCompressEnabled` | `true` | Master switch for HTTP response gzip compression (merged from dsh-gzip) |
-| `httpCompressLevel` | `1` | gzip level 1..9 (1 offers the best cost/benefit for static text) |
+| `httpCompressEnabled` | `true` | Master switch for HTTP response compression (Brotli/gzip negotiation, merged from dsh-gzip) |
+| `httpCompressLevel` | `1` | Compression preset 0..3: `0` default / `1` low (gzip 1 / br 2, fastest) · `2` medium (gzip 5 / br 5, balanced) / `3` high (gzip 9 / br 9, best ratio) — effective for **both** gzip and Brotli; legacy integer values 4..9 are migrated to 3 automatically |
 
 GUI settings entry: Settings → Plugins → "LAN Access" card (saved changes apply hot).
 
@@ -90,18 +90,18 @@ GUI settings entry: Settings → Plugins → "LAN Access" card (saved changes ap
   and no conflict**.
 - All other WebSocket paths remain TCP byte passthrough (unaffected).
 
-## HTTP Response Compression (gzip, merged from dsh-gzip)
+## HTTP Response Compression (Brotli/gzip, merged from dsh-gzip)
 
-- Since v0.1.10, the HTTP response gzip compression capability of the standalone dsh-gzip plugin (source removed from this repository)
+- Since v0.1.10, the HTTP response compression capability of the standalone dsh-gzip plugin (source removed from this repository)
   has been merged into this plugin, implemented at the **forwarding layer** via the
   battle-tested [compression](https://www.npmjs.com/package/compression) middleware
-  (inlined at build time; still zero runtime dependencies): for requests served through
+  (inlined at build time): for requests served through
   this plugin, compressible responses (JSON / text) from `/api` (RPC), `/plugins`
-  (client bundles), and static assets/index.html negotiate gzip automatically; SSE
+  (client bundles), and static assets/index.html negotiate compression automatically — Brotli when the client's Accept-Encoding includes br, gzip fallback otherwise; SSE
   (text/event-stream), zip exports, already-encoded responses, HEAD, Range requests,
   and responses under 1KB pass through untouched.
 - Benefit: large JSON responses such as session history (4~13MB uncompressed) often hit
-  the browser RPC 30s timeout over remote/slow links ("history load failed"); after gzip
+  the browser RPC 30s timeout over remote/slow links ("history load failed"); after compression
   they are ~1.2MB — measured in an isolated environment at ~36s down to ~3s.
 - The middleware sits on the forwarder's own listener chain and does not modify dsh web
   or any other plugin's runtime behavior; set `httpCompressEnabled: false` to turn it off.

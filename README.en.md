@@ -6,13 +6,12 @@
 
 [简体中文](README.md) | **English**
 
-A collection of plugins for the **DSH (DeepSeek Harness)** web GUI, distributed via **npm**:
+A collection of plugins for the **DSH (DeepSeek Harness)** web GUI, distributed via npm:
 install them all at once as a single bundle, or pick individual plugins as needed.
 
 - **Bundle package**: `@wingsky-1/dsh-plugins-all` — install everything in one shot
 - **Individual plugins**: `@wingsky-1/dsh-*` — install only what you need
-- All plugins mount through DSH's official profile mechanism (`dsh.bundle.patch`) — **no DSH source changes**
-- Published to npm under the `@wingsky-1` scope, **zero runtime dependencies**
+- All plugins mount through DSH's official profile mechanism (`dsh.bundle.patch`) — no DSH source changes; artifacts are self-contained with build-time inlining
 
 ## Plugin list
 
@@ -20,7 +19,7 @@ install them all at once as a single bundle, or pick individual plugins as neede
 |---|---|---|---|
 | `@wingsky-1/dsh-notifier` | Approval/completion/error event notifications (browser Notification + system toast) | [README](packages/dsh-notifier/README.md) | ✅ Published |
 | `@wingsky-1/dsh-provider-usage` | Multi-provider usage float pill (per-provider adapter framework, built-in OpenCode Go) | [README](packages/dsh-provider-usage/README.md) | ✅ Published |
-| `@wingsky-1/dsh-lan-proxy` | Access the dsh web UI over LAN (HTTP/HTTPS/WS forwarding + TLS + HTTP response gzip compression) | [README](packages/dsh-lan-proxy/README.md) | ✅ Published |
+| `@wingsky-1/dsh-lan-proxy` | Access the dsh web UI over LAN (HTTP/HTTPS/WS forwarding + TLS + HTTP response compression, Brotli/gzip) | [README](packages/dsh-lan-proxy/README.md) | ✅ Published |
 | `@wingsky-1/dsh-mcp-manager` | MCP server manager (stdio / HTTP, registers tools for the model) | [README](packages/dsh-mcp-manager/README.md) | ✅ Published |
 | `@wingsky-1/dsh-idle-archive` | Prompt to archive idle conversations | [README](packages/dsh-idle-archive/README.md) | ✅ Published |
 | `@wingsky-1/dsh-web-file-preview` | Click conversation file links to preview in the web UI (image / text / Markdown / code / Diff) | [README](packages/dsh-web-file-preview/README.md) | ✅ Published |
@@ -33,6 +32,38 @@ install them all at once as a single bundle, or pick individual plugins as neede
 > Use the built-in skill center in the web UI instead — please do not install this package.
 
 > dsh-memory (project long-term memory) is not included yet; it is planned.
+
+<details>
+<summary><b>Migrating from legacy packages (upgrade guide)</b> — expand if you installed <code>dsh-gzip</code> / <code>dsh-opencode-usage</code></summary>
+
+Two packages were published historically and are no longer distributed. Uninstall the old
+package, install the new one, then restart `dsh web`:
+
+**`@wingsky-1/dsh-gzip` → merged into `@wingsky-1/dsh-lan-proxy`** (since 0.1.9)
+
+HTTP response compression moved wholesale into lan-proxy (on by default, Brotli/gzip
+negotiated via Accept-Encoding, SSE streaming exempt, configurable). Uninstall dsh-gzip and install dsh-lan-proxy to get the equivalent:
+
+```sh
+dsh plugin --profile web remove @wingsky-1/dsh-gzip
+dsh plugin --profile web add @wingsky-1/dsh-lan-proxy
+```
+
+**`@wingsky-1/dsh-opencode-usage` → renamed/refactored to `@wingsky-1/dsh-provider-usage`**
+
+Refactored into a multi-provider adapter framework (built-in OpenCode Go, custom data-source
+adapters supported). The patch `id` changed from `ui-dsh-opencode-usage` to
+`ui-dsh-provider-usage` and config keys were adjusted — nothing migrates automatically.
+Reinstall, then re-check your settings in the settings panel (e.g. `apiKey`, `baseUrl`):
+
+```sh
+dsh plugin --profile web remove @wingsky-1/dsh-opencode-usage
+dsh plugin --profile web add @wingsky-1/dsh-provider-usage
+```
+
+> Both legacy packages are marked deprecated on npm (installing them prints a migration hint).
+
+</details>
 
 ## Installation
 

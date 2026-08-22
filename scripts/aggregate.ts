@@ -19,25 +19,24 @@
  *   node scripts/aggregate.ts           # 重新生成聚合 patch
  *   node scripts/aggregate.ts --check   # 校验漂移（CI 用）
  */
-import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { checkAggregateConsistency, listPluginDirs, loadManifest, warnUnknownEntries } from './plugins-manifest-lib.ts'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const CHECK = process.argv.includes('--check')
 const AGGREGATE_NAME = 'dsh-plugins-all'
 const PATCH_PATH = join(ROOT, 'packages', AGGREGATE_NAME, 'cordis.patch.yml')
 
-/** 独立插件子包目录（排除聚合包）。 */
-function childPlugins() {
-  return readdirSync(join(ROOT, 'packages'))
-    .filter((d) => d.startsWith('dsh-') && d !== AGGREGATE_NAME)
-    .sort()
-}
-
 /** 解析子包 cordis.patch.yml 的 insert 行 -> [{ id, name }]（丢弃 config/注释）。 */
 function parsePatchRows(child) {
-  const text = readFileSync(join(ROOT, 'packages', child, 'cordis.patch.yml'), 'utf8')
+  const path = join(ROOT, 'packages', child, 'cordis.patch.yml')
+  if (!existsSync(path)) {
+    console.error(`[aggregate] ${child}: 缺 cordis.patch.yml（新插件请先创建 patch 再跑本脚本）`)
+    process.exit(1)
+  }
+  const text = readFileSync(path, 'utf8')
   const rows = []
   for (const line of text.split('\n')) {
     const m = line.match(/^\s*-\s+id:\s*(\S+)/)
@@ -73,7 +72,23 @@ function renderPatch(children) {
   return lines.join('\n') + '\n'
 }
 
-const children = childPlugins()
+const children = listPluginDirs(ROOT)
+
+// 清单一致性前置闸：目录集必须 == manifest.active 集（issue #36，opt-in fail-closed）
+warnUnknownEntries(ROOT)
+let manifest
+try {
+  manifest = loadManifest(ROOT)
+} catch (e) {
+  console.error(`[aggregate] ${e.message}`)
+  process.exit(1)
+}
+const manifestProblems = checkAggregateConsistency({ dirNames: children, manifest })
+if (manifestProblems.length > 0) {
+  for (const p of manifestProblems) console.error(`[aggregate] FAILED: ${p}`)
+  process.exit(1)
+}
+
 const generated = renderPatch(children)
 
 if (CHECK) {

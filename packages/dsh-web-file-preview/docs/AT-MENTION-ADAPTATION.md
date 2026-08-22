@@ -72,7 +72,7 @@ folder/session chip 因无扩展名当前恰为 no-op，但标题形如 `foo.ts`
 
 ### 3.4 可维护性
 - `cleanRefChipPath` 落 `src/grouping.ts`（双端单一事实源，与 `isLikelySingleFilePath` 同处，smoke 可直测），
-  不引入 harness 内部 `file-reference/grammar` 依赖（保持插件零依赖、自包含）。✓
+  不引入 harness 内部 `file-reference/grammar` 依赖（插件自包含）。✓
 - `findFileLink` 返回值：去掉冗余 `via`，仅用 `kind: "file" | "folder" | undefined` 判别——
   `file`→`path` 有值；`folder`→`path:null`+`kind:"folder"`；`null`→未命中。判别干净。✓
 
@@ -89,7 +89,7 @@ folder/session chip 因无扩展名当前恰为 no-op，但标题形如 `foo.ts`
 
 ### 3.6 与规范冲突
 - hub 干净模块：客户端仅改 `src/client/index.ts`（单一入口），共享纯逻辑在 `src/grouping.ts`；不改 DSH 源码。✓
-- 零依赖：不新增第三方库。✓
+- 不新增第三方库。✓
 - 契约门禁：`pnpm contract` 校验 load id===包名、`apply/inject` 装配——本次不改动这些，门禁不受影响。✓
 - 阶段 commit：A（grouping+smoke）与 B+C（client）分两个独立收口 commit。✓
 

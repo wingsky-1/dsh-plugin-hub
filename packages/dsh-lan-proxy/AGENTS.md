@@ -6,7 +6,7 @@
 
 ## 定位
 
-局域网访问 dsh web UI 的零依赖转发器：在 `0.0.0.0:<port>`（默认 HTTP 3081、
+局域网访问 dsh web UI 的转发器：在 `0.0.0.0:<port>`（默认 HTTP 3081、
 HTTPS 3443）监听，把 HTTP/HTTPS 与 WebSocket/wss 转发到回环 web 服务器
 （默认 `127.0.0.1:3080`），重写 Host/Origin 以通过 /api 浏览器信任围栏。
 端口/证书/压缩路径等均可经 GUI 设置面板或 config.json 热更新。
@@ -17,9 +17,9 @@ HTTPS 3443）监听，把 HTTP/HTTPS 与 WebSocket/wss 转发到回环 web 服�
   disposer；所有清理统一写在 `ctx.effect` 返回的 disposer 里）
 - `src/proxy.ts` — 转发器核心 `createLanProxy`（HTTP/HTTPS/WebSocket 桥接、
   Host 重写、DNS 重绑定防护、wss 压缩桥接）；业务逻辑导出纯函数可单测。
-  HTTP 响应 gzip 压缩（原独立包 dsh-gzip 已退役并入）也在此层：经成熟开源库
+  HTTP 响应压缩（原独立包 dsh-gzip 已退役并入；compression@1.8+ 按 Accept-Encoding 协商，br 优先、gzip 回退；档位预设经 resolveCompressionOptions 映射，对双算法生效）也在此层：经成熟开源库
   `compression` 中间件挂在转发器自己的 `createServer` 处理链上（构建期 esbuild
-  内联，保持零运行时依赖），自定义 filter 复用 `isCompressible`（SSE 豁免）；
+  内联进产物），自定义 filter 复用 `isCompressible`（SSE 豁免）；
   协商 / Vary / Content-Length 删除 / Range·204·304 豁免全部由库承担。
   上游已带 content-encoding 时本层自动让位（与宿主端任意压缩实现共存只压一次，
   smoke 有专项用例锁定）。

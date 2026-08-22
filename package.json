@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "DSH（DeepSeek Harness）插件集：npm 分发，可一键装全家桶（@wingsky-1/dsh-plugins-all）或单独安装（@wingsky-1/dsh-*）",
+  "description": "DSH（DeepSeek Harness）Web GUI 插件集：通知、provider 用量、局域网代理、MCP 管理、闲置归档、文件预览——一键装全家桶或按需单装",
   "license": "MIT",
   "scripts": {
     "build": "pnpm -r build",

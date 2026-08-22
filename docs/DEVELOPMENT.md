@@ -7,7 +7,7 @@
 
 ## 0. 构建总览
 
-每个插件包 = 独立 npm 包（`@wingsky-1/dsh-*`），发布物**零运行时 npm 依赖**、自包含。
+每个插件包 = 独立 npm 包（`@wingsky-1/dsh-*`），发布物自包含（第三方依赖构建期内联）。
 
 ```sh
 pnpm build        # 全仓构建 = pnpm -r build（各包：clean-lib → tsc → bundle-host）
@@ -46,7 +46,7 @@ scripts/                   # 构建/契约/打包校验脚本（*.ts，Node 直�
   define 注入给客户端（客户端不引用则零影响）。
 - **依赖纪律**：只 import `../../shared/*`（loopback / host-utils / frontmatter，构建期
   内联）与 Node 内置模块；**任何第三方运行时依赖一律由 esbuild `--bundle` 内联**
-  （如 web-file-preview 宿主用的 `untildify`/`marked`），发布物零运行时 npm 依赖。
+  （如 web-file-preview 宿主用的 `untildify`/`marked`），发布物不以运行时 npm 依赖形式发布。
 - **安全**：全部路由强制 loopback 围栏（非回环 403、方法错 405），`/health` 必项；
   RPC/端点做参数校验；密钥/凭据不入包。
 - **挂载**：`cordis.patch.yml`，patch **id 用 `ui-<name>`**；声明 `dsh.client` 时必须有
@@ -84,9 +84,9 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
 
 | 路径 | 触发 | 说明 |
 |---|---|---|
-| 零依赖 wrapper | 干净模块、无 bare import | esbuild iife + 生成契约外壳；`apply/inject` 直出 |
+| 纯净 wrapper | 干净模块、无 bare import | esbuild iife + 生成契约外壳；`apply/inject` 直出 |
 | wrapper + externals | 干净模块 `import * as React from "react"` | 干净模块 cjs 内联进 `factory(require)`，React 由 loader 的 `require("react")` 注入（dsh web **无全局 React**）。需同目录 `react-shim.d.ts`（`declare module "react"`，不引 @types/react），`peerDependencies.react` + `optional` |
-| 第三方内联 | `dsh.client.inlineBareImports: true` | 干净模块的 bare import（dompurify/diff2html/marked/highlight…）由 esbuild **内联进 client.js**，仍自包含零依赖。用于纯浏览器第三方库、无宿主注入 JS 模块的场景 |
+| 第三方内联 | `dsh.client.inlineBareImports: true` | 干净模块的 bare import（dompurify/diff2html/marked/highlight…）由 esbuild **内联进 client.js**，产物仍自包含。用于纯浏览器第三方库、无宿主注入 JS 模块的场景 |
 
 > ⚠️ **互斥**：默认「bare import = 宿主注入 external（React）」；`inlineBareImports: true`
 > 则全部内联。按包二选一，不要混用。
@@ -114,7 +114,7 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
 - 客户端样式放独立 `src/client/style.css`，源码 `import STYLE from "./style.css"`，
   `injectStyle` 里 `style.textContent = STYLE`。
 - `.css` 经 `build-client` 的 **text-loader** 构建期**原样内联**成字符串打进
-  `lib/client.js`——产物仍自包含单文件、零运行时依赖、无独立网络请求。
+  `lib/client.js`——产物仍自包含单文件、无独立网络请求。
 - `src/client/css.d.ts` 提供 `declare module "*.css"`（tsc 的 `verbatimModuleSyntax`
   需要类型；仅类型面无运行时）。
 - 用**格式化多行**书写（区别于旧的字符串拼接）；前缀硬编码进 CSS 与 JS 常量保持一致。
@@ -123,9 +123,22 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
 
 - `pnpm contract`（contract-check）：load id === 包名、`dsh.client ⇒ exports["./client"]`、
   `src/client/index.ts ⇒ lib/client.js` 产物、arrive 可解析、`exports.apply/inject` 装配。
-- `assertClientSourceContract`（smoke-lib）：兼容三种产物形态（零依赖 wrapper /
+- `assertClientSourceContract`（smoke-lib）：兼容三种产物形态（纯净 wrapper /
   React externals / legacy），断言 `"use strict"`、契约外壳、Symbol.toStringTag、
   `factory: function(`、load 注册。
+- **插件清单单一来源**（issue #36）：某插件是否参与聚合/发布校验，唯一事实源是
+  `scripts/plugins-manifest.json`。四个脚本共用 `plugins-manifest-lib.ts` 的目录
+  枚举（`isDirectory` 过滤 + 排除聚合包 + 稳定排序）；其中 `aggregate.ts` 与
+  `pack-check.ts` 另做「packages/ 目录集 == manifest.active 集」双向相等断言，
+  以及聚合 deps 键集 / patch id 集对 active 的双向相等断言。
+  - **新增插件**：建目录后必须同步把目录名加入 `active`，否则全部门禁红
+    （opt-in fail-closed 设计：防止半成品目录被自动卷进聚合 patch 与发布管线）；
+  - **退役插件**：删除 packages/ 目录（git 历史保留），并在 `retired` 数组登记
+    `{ name, reason, successor }` 档案；
+  - `active` 刻意**不自动生成**：它就是「当前有哪些插件」的人工确认点，自动枚举
+    会退回「目录即事实源」的 fail-open 老路；
+  - schema 加载/校验逻辑只有一份：`scripts/plugins-manifest-lib.ts`（纯函数，
+    入口脚本只喂数据），测试见 `scripts/plugins-manifest.test.ts`。
 - **新增/修改客户端后**：`pnpm build && pnpm test && pnpm contract && pnpm pack:check`
   全绿再提交。
 

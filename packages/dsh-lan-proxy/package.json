@@ -1,6 +1,6 @@
 {
   "name": "@wingsky-1/dsh-lan-proxy",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "局域网访问 dsh web UI：在 0.0.0.0:<port> 监听，把 HTTP/HTTPS 与 WebSocket/wss 转发到回环 web 服务器（默认 127.0.0.1:3080）。重写 Host/Origin 以通过 /api 浏览器信任围栏，仅接受 IP 字面量或 localhost 的 Host 头（DNS 重绑定防护）。HTTPS 默认并存（3443），证书可配置或自动生成自签名。",
   "type": "module",
   "main": "lib/index.js",

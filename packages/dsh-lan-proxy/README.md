@@ -66,8 +66,8 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-lan-proxy
 | `tlsCertFile` / `tlsKeyFile` | 无 | 自定义证书（mkcert 等） |
 | `wsCompressEnabled` | `true` | 是否对命中 `wsCompressPaths` 的 WebSocket 做压缩桥接 |
 | `wsCompressPaths` | `/api/events.mux, /api/events.host` | 参与 WebSocket 压缩的路径白名单 |
-| `httpCompressEnabled` | `true` | HTTP 响应 gzip 压缩总开关（合并自 dsh-gzip） |
-| `httpCompressLevel` | `1` | gzip 压缩级别 1..9（1 对静态文本性价比最高） |
+| `httpCompressEnabled` | `true` | HTTP 响应压缩总开关（Brotli/gzip 自适应协商，合并自 dsh-gzip） |
+| `httpCompressLevel` | `1` | 压缩档位预设 0..3：`0` 默认 / `1` 低（gzip 1 / br 2，最快）· `2` 中（gzip 5 / br 5，均衡）/ `3` 高（gzip 9 / br 9，最高压缩比），对 gzip 与 Brotli **同时生效**；旧配置整数 4..9 自动迁移为 3 |
 
 GUI 设置入口：设置 → 插件 → 「局域网访问」卡片（保存即热更新）。
 
@@ -82,16 +82,16 @@ GUI 设置入口：设置 → 插件 → 「局域网访问」卡片（保存即
   两段各自独立，**不会双重压缩、不冲突**。
 - 其余 WebSocket 路径保持 TCP 字节透传（不受影响）。
 
-## HTTP 响应压缩（gzip，合并自 dsh-gzip）
+## HTTP 响应压缩（Brotli/gzip 自适应，合并自 dsh-gzip）
 
-- v0.1.10 起，原独立插件 dsh-gzip（源码已自本仓移除）的 HTTP 响应 gzip 压缩能力已合并进本插件，
+- v0.1.10 起，原独立插件 dsh-gzip（源码已自本仓移除）的 HTTP 响应压缩能力已合并进本插件，
   在**转发层**实现（成熟开源库 [compression](https://www.npmjs.com/package/compression)
-  中间件，构建期内联、保持零运行时依赖）：经本插件访问时，对 `/api`（RPC）、
+  中间件，构建期内联进产物）：经本插件访问时，对 `/api`（RPC）、
   `/plugins`（客户端 bundle）与静态资源/index.html 等可压缩响应（JSON / 文本）
-  自动协商 gzip；SSE（text/event-stream）、zip 导出、已编码响应、HEAD、
+  自动协商压缩——客户端 Accept-Encoding 含 br 时优先 Brotli，否则回退 gzip；SSE（text/event-stream）、zip 导出、已编码响应、HEAD、
   带 Range 的请求、小于 1KB 的响应原样透传。
 - 收益：会话历史等大 JSON 响应（4~13MB 未压缩）经远程/慢链路访问时常触发
-  浏览器 RPC 30s 超时「历史加载失败」；gzip 后约 ~1.2MB，隔离环境实测由
+  浏览器 RPC 30s 超时「历史加载失败」；压缩后约 ~1.2MB，隔离环境实测由
   ~36s 降到 ~3s。
 - 实现位置在转发器自己的监听链上，不修改 dsh web 与任何其他插件的运行时行为；
   `httpCompressEnabled: false` 一键关闭。注意：直连回环 web（本机浏览器访问
