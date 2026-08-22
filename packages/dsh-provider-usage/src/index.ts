@@ -990,6 +990,13 @@ export function deriveSummary(
 }
 
 
+/** 错误消息路径脱敏（信息面最小披露）：DSH_HOME → ~/.dsh、用户 home → ~。 */
+export function sanitizePathInMessage(s: string): string {
+  const home = homedir();
+  const dshHome = process.env.DSH_HOME ?? join(home, ".dsh");
+  return s.split(dshHome).join("~/.dsh").split(home).join("~");
+}
+
 // ------------------------------------------------------------------ 插件入口
 
 export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Promise<void> {
@@ -1002,7 +1009,9 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
   };
 
   // -------------------------------------------------------- 适配器注册表
-  const registry = makeHostAdapterRegistry();
+  // issue #38：错误登记走注册表（面板可展示每个用户适配器最近一次加载/执行错误），
+  // 消息经路径脱敏维持信息面最小披露。
+  const registry = makeHostAdapterRegistry({ sanitizePath: sanitizePathInMessage });
   registry.register(openCodeGoHostAdapter, "builtin");
 
   /**
@@ -1015,19 +1024,18 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
     return mod.default ?? mod;
   }
 
-  // M2: 加载用户宿主适配器（多个文件依序加载，单个失败不阻断）
+  // M2: 加载用户宿主适配器（多个文件依序加载，单个失败不阻断；失败登记错误供面板排障）
   for (const entry of current.adapters.host) {
     const file = resolvePath(entry.file);
     if (file === undefined) {
-      console.warn(`[dsh-provider-usage] 用户宿主适配器文件不存在：${entry.file}，跳过`);
+      registry.recordError(`file:${basename(entry.file)}`, "load", `文件不存在或不可读：${entry.file}`);
       continue;
     }
     try {
       const adapter = await loadUserHostAdapterFile(file);
       registry.register(adapter, "user-file", file, entry.enabled);
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.warn(`[dsh-provider-usage] 用户宿主适配器加载失败 ${entry.file}: ${msg}`);
+      registry.recordError(`file:${basename(file)}`, "load", e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -1052,15 +1060,14 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
   for (const rec of await readUserAdapters(root)) {
     const file = resolvePath(rec.file);
     if (file === undefined) {
-      console.warn(`[dsh-provider-usage] 运行时登记适配器文件不存在：${basename(rec.file)}，跳过`);
+      registry.recordError(`file:${basename(rec.file)}`, "load", `文件不存在或不可读：${rec.file}`);
       continue;
     }
     try {
       const adapter = await loadUserHostAdapterFile(file);
       registry.register(adapter, "user-file", file);
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.warn(`[dsh-provider-usage] 运行时登记适配器加载失败 ${basename(rec.file)}: ${msg}`);
+      registry.recordError(`file:${basename(file)}`, "load", e instanceof Error ? e.message : String(e));
     }
   }
   const savedEnabled = await readAdapterState(root);
@@ -1363,6 +1370,7 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
         adapter = await loadUserHostAdapterFile(file);
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
+        registry.recordError(`file:${basename(file)}`, "load", msg);
         return writeJson(res, 422, { error: "adapter-load-failed", detail: msg });
       }
       // 登记元数据一致性：实际身份以适配器导出为准，入参 id 填错直接拒绝（防清单与注册表漂移）
@@ -1461,6 +1469,8 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
         })),
         enabled: snap.enabled,
         client,
+        // issue #38：最近一次适配器错误登记（面板排障展示；key=adapterId 或 file:<名>）
+        errors: snap.errors.map((e) => ({ key: e.key, at: e.at, kind: e.kind, message: e.message })),
       });
     },
   };
@@ -1515,6 +1525,8 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
           ...i,
           file: i.file !== undefined ? basename(i.file) : undefined,
         })),
+        // issue #38：最近一次适配器错误登记（排障展示，消息已路径脱敏）
+        errors: snap.errors.map((e) => ({ key: e.key, at: e.at, kind: e.kind, message: e.message })),
       });
     },
   };

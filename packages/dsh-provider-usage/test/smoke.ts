@@ -666,6 +666,106 @@ async function waitFor(cond, timeoutMs = 5000, stepMs = 50) {
   assert.equal(stats2.hasAdapter, false, "重启后显式清空态保持（不回退内置默认启用）");
 }
 
+// ---------------------------------------------------------------- 注入容错补强（issue #38）：执行抛错 / 超时护栏 / 错误登记披露
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dou-fault-"));
+  // 执行抛错适配器
+  const crashFile = join(dir, "crash-adapter.mjs");
+  writeFileSync(
+    crashFile,
+    [
+      "export default {",
+      "  version: 1,",
+      '  id: "crash-adapter",',
+      '  label: "Crash",',
+      '  providers: ["crash-relay"],',
+      '  async fetchUsage() { throw new Error("boom-crash"); },',
+      "};",
+    ].join("\n"),
+  );
+  // 挂起适配器（永不 resolve 的 promise：护栏必须放行采样循环）
+  const hangFile = join(dir, "hang-adapter.mjs");
+  writeFileSync(
+    hangFile,
+    [
+      "export default {",
+      "  version: 1,",
+      '  id: "hang-adapter",',
+      '  label: "Hang",',
+      '  providers: ["hang-relay"],',
+      "  async fetchUsage() { return new Promise(() => {}); },",
+      "};",
+    ].join("\n"),
+  );
+  // 畸形导出（缺 fetchUsage）：放 DSH_HOME 下以同时验证错误消息路径脱敏
+  const badRel = "plugins/provider-usage/bad-shape.mjs";
+  const badAbs = join(process.env.DSH_HOME, "plugins", "provider-usage");
+  mkdirSync(badAbs, { recursive: true });
+  writeFileSync(join(badAbs, "bad-shape.mjs"), 'export default { version: 1, id: "bad-shape", label: "Bad", providers: ["p"] };');
+
+  const t0 = Date.now();
+  const { ctx, routes } = makeFakeCtx();
+  await apply(ctx, {
+    persistFile: join(dir, "history.json"),
+    timeoutMs: 120,
+    credentialsFile: join(here, "no-such-credentials.yaml"),
+    authFile: join(here, "no-such-auth.json"),
+    adapters: {
+      host: [
+        { provider: "crash-relay", file: crashFile },
+        { provider: "hang-relay", file: hangFile },
+        { provider: "p", file: badRel },
+      ],
+    },
+  });
+
+  const adaptersRoute = routes.find((r) => r.path === ROUTES.adapters);
+  const stats = routes.find((r) => r.path === ROUTES.stats);
+  let meta;
+  const metaRes = { writeHead: () => {}, end: (chunk) => { meta = JSON.parse(chunk); } };
+  let statsPayload;
+  const statsRes = { writeHead: () => {}, end: (chunk) => { statsPayload = JSON.parse(chunk); } };
+
+  // 加载期：畸形导出拒收 + 错误登记（消息含明细、DSH_HOME 绝对路径已脱敏）
+  adaptersRoute.handler(fakeReq(), metaRes);
+  assert.ok(!meta.host.some((h) => h.id === "bad-shape"), "畸形导出不注册");
+  const loadErr = meta.errors.find((e) => e.key === "file:bad-shape.mjs");
+  assert.ok(loadErr, "加载错误已登记");
+  assert.equal(loadErr.kind, "load");
+  assert.ok(loadErr.message.includes("fetchUsage"), "错误消息含缺失成员明细");
+  assert.ok(!JSON.stringify(meta).includes(process.env.DSH_HOME), "adapters.json 错误消息不含 DSH_HOME 绝对路径");
+
+  // 执行抛错：stats 降级 adapter-crash + exec 错误登记
+  await stats.handler(fakeReq({ url: `${ROUTES.stats}?provider=crash-relay` }), statsRes);
+  assert.equal(statsPayload.usage.ok, false);
+  assert.equal(statsPayload.usage.error, "adapter-crash", "执行抛错降级 adapter-crash");
+  adaptersRoute.handler(fakeReq(), metaRes);
+  const crashErr = meta.errors.find((e) => e.key === "crash-adapter");
+  assert.ok(crashErr && crashErr.kind === "exec" && crashErr.message === "boom-crash", "执行错误已登记（最近一次）");
+
+  // 超时护栏：挂起适配器被限时拦截，返回 adapter-timeout 且调用方不再无限等待
+  const before = Date.now();
+  await stats.handler(fakeReq({ url: `${ROUTES.stats}?provider=hang-relay` }), statsRes);
+  const elapsed = Date.now() - before;
+  assert.equal(statsPayload.usage.ok, false);
+  assert.equal(statsPayload.usage.error, "adapter-timeout", "挂起适配器被护栏拦截为 adapter-timeout");
+  assert.ok(elapsed < 5000, `护栏及时放行（耗时 ${elapsed}ms，未阻塞请求链）`);
+  assert.ok(elapsed >= 100, "护栏时长 ≥ ctx.timeoutMs");
+  adaptersRoute.handler(fakeReq(), metaRes);
+  const hangErr = meta.errors.find((e) => e.key === "hang-adapter");
+  assert.ok(hangErr && hangErr.kind === "exec" && hangErr.message.includes("超时"), "超时错误已登记");
+
+  // health 同步披露错误登记
+  const health = routes.find((r) => r.path === ROUTES.health);
+  let healthPayload;
+  const healthRes = { writeHead: () => {}, end: (chunk) => { healthPayload = JSON.parse(chunk); } };
+  health.handler(fakeReq(), healthRes);
+  assert.ok(Array.isArray(healthPayload.errors) && healthPayload.errors.length >= 3, "health 披露错误登记");
+  assert.ok(!JSON.stringify(healthPayload).includes(process.env.DSH_HOME), "health 错误消息同样路径脱敏");
+  assert.ok(Date.now() - t0 < 15000, "整组容错用例未出现死等");
+}
+
 // stats：无 key 时 usage.error=no-api-key（不网络；路径指向不存在文件）
 {
   const { ctx, routes } = makeFakeCtx();
