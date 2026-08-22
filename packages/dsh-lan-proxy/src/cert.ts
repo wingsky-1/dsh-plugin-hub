@@ -1,19 +1,23 @@
-// dsh-lan-proxy — TLS 证书准备（零运行时依赖）。
+// dsh-lan-proxy — TLS 证书准备。
 //
 // 两级证书来源，按配置优先：
 //   1. 用户提供的 PEM 文件（tlsCertFile / tlsKeyFile）——正式证书、
 //      mkcert 本地 CA 证书等，由 loadTlsFromFiles 读取；
-//   2. 自动生成的自签名证书——用系统 openssl 生成（有效期 825 天），
+//   2. 自动生成的自签名证书——用 selfsigned（构建期内联进产物，
+//      运行时零依赖）生成（rsa:2048 / sha256 / 有效期 825 天），
 //      缓存到 <DSH_HOME>/lan-proxy/，幂等复用：证书存在且 24 小时内
 //      不过期则直接复用，否则重新生成。
+//   过期判定用 node:crypto 的 X509Certificate 解析 validToDate，
+//   不再依赖宿主机 openssl 子进程（issue #9）。
 //
 // 自签名证书带 subjectAltName（localhost / 127.0.0.1 / ::1 / 调用方传入的
 // 本机局域网 IP）：Chrome 59+ 对缺失 SAN 的证书直接拒绝（无法"继续访问"），
 // 有 SAN 的自签证书至少允许用户显式信任后进入。
-import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { X509Certificate } from "node:crypto";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isIP } from "node:net";
+import { generate as generateSelfSigned } from "selfsigned";
 import type { TlsMaterials } from "./proxy.js";
 
 /** 自签证书缓存文件名（目录由调用方决定，默认 <DSH_HOME>/lan-proxy）。 */
@@ -25,13 +29,24 @@ const CERT_DAYS = 825;
 /** 剩余有效期低于该秒数视为即将过期，需要重签（24 小时）。 */
 const MIN_REMAINING_SECONDS = 86400;
 
-/** 默认 SAN：回环访问（本机 https://localhost:3443 测试）。 */
-const DEFAULT_SANS = ["IP:127.0.0.1", "DNS:localhost", "IP:::1"];
+/** selfsigned subjectAltName 条目（type 7 = IP 字面量，type 2 = DNS 名）。 */
+export interface SanAltName {
+  type: 2 | 7;
+  value?: string;
+  ip?: string;
+}
 
-/** 把主机名/IP 编码为 openssl SAN 条目（IP 字面量用 IP: 前缀，其余用 DNS:）。 */
-export function toSanEntry(host: string): string {
-  if (host === "localhost") return "DNS:localhost";
-  return isIP(host) !== 0 ? `IP:${host}` : `DNS:${host}`;
+/** 默认 SAN：回环访问（本机 https://localhost:3443 测试）。 */
+const DEFAULT_SANS: SanAltName[] = [
+  { type: 7, ip: "127.0.0.1" },
+  { type: 2, value: "localhost" },
+  { type: 7, ip: "::1" },
+];
+
+/** 把主机名/IP 编码为 selfsigned SAN 条目（IP 字面量走 ip 字段，其余走 DNS value）。 */
+export function toSanEntry(host: string): SanAltName {
+  if (host === "localhost") return { type: 2, value: "localhost" };
+  return isIP(host) !== 0 ? { type: 7, ip: host } : { type: 2, value: host };
 }
 
 /** 读取用户提供的 PEM 证书与私钥文件。 */
@@ -52,11 +67,8 @@ export interface SelfSignedOptions {
 /** 证书是否仍然有效（存在、可解析、剩余有效期 > 24 小时）。 */
 export function certStillValid(certPath: string): boolean {
   try {
-    execFileSync("openssl", ["x509", "-in", certPath, "-noout", "-checkend", String(MIN_REMAINING_SECONDS)], {
-      stdio: "ignore",
-      timeout: 10000,
-    });
-    return true;
+    const cert = new X509Certificate(readFileSync(certPath));
+    return cert.validToDate.getTime() - Date.now() > MIN_REMAINING_SECONDS * 1000;
   } catch {
     return false;
   }
@@ -64,46 +76,33 @@ export function certStillValid(certPath: string): boolean {
 
 /**
  * 幂等获取自签名证书材料：缓存目录里已有未过期证书则直接复用，
- * 否则用 openssl 生成（rsa:2048 / sha256 / 825 天 / 带 SAN）。
- * openssl 不可用或生成失败时抛错（调用方降级为 HTTP-only）。
+ * 否则用 selfsigned 生成（rsa:2048 / sha256 / 825 天 / 带 SAN）并落盘缓存。
+ * 生成失败时抛错（调用方降级为 HTTP-only）。
  */
 export function ensureSelfSignedTls(options: SelfSignedOptions): TlsMaterials {
   const keyPath = join(options.dir, SELF_SIGNED_KEY);
   const certPath = join(options.dir, SELF_SIGNED_CERT);
   if (existsSync(certPath) && existsSync(keyPath) && certStillValid(certPath)) {
-    // 私钥权限收敛 0600（openssl -keyout 受 umask 影响可能过宽）
-  chmodSync(keyPath, 0o600);
-  return { cert: readFileSync(certPath), key: readFileSync(keyPath) };
+    // 私钥权限收敛 0600（历史缓存可能受 umask 影响过宽）
+    chmodSync(keyPath, 0o600);
+    return { cert: readFileSync(certPath), key: readFileSync(keyPath) };
   }
   mkdirSync(options.dir, { recursive: true });
   const sans = [...DEFAULT_SANS, ...(options.extraSans ?? []).map(toSanEntry)];
+  let pem: { private: string; cert: string };
   try {
-    execFileSync(
-      "openssl",
-      [
-        "req",
-        "-x509",
-        "-newkey",
-        "rsa:2048",
-        "-sha256",
-        "-nodes",
-        "-keyout",
-        keyPath,
-        "-out",
-        certPath,
-        "-days",
-        String(CERT_DAYS),
-        "-subj",
-        "/CN=dsh-lan-proxy",
-        "-addext",
-        `subjectAltName=${sans.join(",")}`,
-      ],
-      { stdio: "ignore", timeout: 30000 },
-    );
+    pem = generateSelfSigned([{ name: "commonName", value: "dsh-lan-proxy" }], {
+      keySize: 2048,
+      algorithm: "sha256",
+      days: CERT_DAYS,
+      extensions: [{ name: "subjectAltName", altNames: sans }],
+    });
   } catch (err) {
-    throw new Error(`self-signed cert generation failed (is openssl installed?): ${(err as Error).message}`);
+    throw new Error(`self-signed cert generation failed: ${(err as Error).message}`);
   }
-  // 私钥权限收敛 0600（openssl -keyout 受 umask 影响可能过宽）
+  writeFileSync(keyPath, pem.private, { mode: 0o600 });
+  writeFileSync(certPath, pem.cert);
+  // 显式收敛私钥权限 0600（writeFileSync mode 受 umask 影响可能过宽）
   chmodSync(keyPath, 0o600);
   return { cert: readFileSync(certPath), key: readFileSync(keyPath) };
 }

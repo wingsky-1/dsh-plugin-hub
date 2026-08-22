@@ -355,15 +355,21 @@ const main = async () => {
   check("HTTP/1.0 missing Host refused with 403", () => assert.ok(h10.statusLine.startsWith("HTTP/1.1 403")));
 
   console.log("unit: cert module");
-  check("SAN entry: IPv4 literal", () => assert.equal(toSanEntry("192.168.1.5"), "IP:192.168.1.5"));
-  check("SAN entry: IPv6 literal", () => assert.equal(toSanEntry("::1"), "IP:::1"));
-  check("SAN entry: hostname", () => assert.equal(toSanEntry("myhost.lan"), "DNS:myhost.lan"));
-  check("SAN entry: localhost", () => assert.equal(toSanEntry("localhost"), "DNS:localhost"));
+  check("SAN entry: IPv4 literal", () => assert.deepEqual(toSanEntry("192.168.1.5"), { type: 7, ip: "192.168.1.5" }));
+  check("SAN entry: IPv6 literal", () => assert.deepEqual(toSanEntry("::1"), { type: 7, ip: "::1" }));
+  check("SAN entry: hostname", () => assert.deepEqual(toSanEntry("myhost.lan"), { type: 2, value: "myhost.lan" }));
+  check("SAN entry: localhost", () => assert.deepEqual(toSanEntry("localhost"), { type: 2, value: "localhost" }));
   check("self-signed files written", () => {
     assert.ok(existsSync(join(certDir, SELF_SIGNED_CERT)));
     assert.ok(existsSync(join(certDir, SELF_SIGNED_KEY)));
   });
   check("self-signed cert parses and is valid", () => assert.equal(certStillValid(join(certDir, SELF_SIGNED_CERT)), true));
+  check("certStillValid rejects unparseable cert", () => {
+    const bad = join(mkdtempSync(join(tmpdir(), "dsh-lan-proxy-badcert-")), "bad.pem");
+    writeFileSync(bad, "not a pem");
+    assert.equal(certStillValid(bad), false);
+    assert.equal(certStillValid("/nonexistent/cert.pem"), false);
+  });
   check("self-signed idempotent reuse (same materials)", () => {
     const again = ensureSelfSignedTls({ dir: certDir, extraSans: [LAN_HOST] });
     assert.equal(again.cert.toString(), tls.cert.toString());
