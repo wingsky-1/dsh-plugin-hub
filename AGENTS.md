@@ -84,7 +84,9 @@ Conventional Commits（`type(scope): subject`；type：`feat` / `fix` / `docs` /
   tag 后全量门禁，再 `pnpm publish`、创建 GitHub Release。**不要**直接改包版本号绕过
   tag 校验。
 - GitHub Release 更新说明**每版入库**为 `docs/release-notes/vX.Y.Z.md`，由发版 agent
-  从上一 tag 至今的常规提交生成、逐条译为 `EN / 中文`、随 `chore(release):` 提交；
+  从上一 tag 至今的常规提交生成、**中文与英文各自成节分开呈现（不逐条混排）**、
+  **文件头提供语言锚点跳转导航**（如 `> [中文](#中文) · [English](#english)`）、
+  随 `chore(release):` 提交；
   管线优先引用该文件，缺失则回退 GitHub 自动 notes。**禁止 emoji**（覆盖文档与提交信息）。
 - 合并方式：CI 全绿后 squash merge（见 CONTRIBUTING.md 开发流程）。
 
