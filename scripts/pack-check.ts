@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { executeClient } from './client-contract-lib.ts'
+import { extractInlinedPackages } from './collect-licenses.ts'
 import { AGGREGATE_NAME, checkAggregateConsistency, listPluginDirs, loadManifest, warnUnknownEntries } from './plugins-manifest-lib.ts'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -65,6 +66,31 @@ for (const p of plugins) {
     const outsideRef = /(?:from|import)\s*["']\.\.\/\.\.\/(?:shared|types)/.test(idx)
     if (outsideRef) problems.push('lib 残留 ../../shared|types 运行时引用')
     if (!idx.includes('isLoopbackRequest')) problems.push('内联后缺 isLoopbackRequest 导出')
+
+    // 第三方 license 归集断言（issue #13）：产物内联了第三方库（esbuild 模块
+    // 注释可证）⇒ 必须随包附 lib/THIRD-PARTY-LICENSES——存在、非空、含宽松系
+    // 许可字样（MIT/BSD/Apache），且覆盖每个被内联的包名。内联 = 分发库副本，
+    // 缺清单即合规缺口，fail-loud。
+    {
+      const inlined = new Set(extractInlinedPackages(idx))
+      const clientJsPath = join(pkgRoot, 'lib', 'client.js')
+      if (existsSync(clientJsPath)) {
+        for (const n of extractInlinedPackages(readFileSync(clientJsPath, 'utf8'))) inlined.add(n)
+      }
+      if (inlined.size > 0) {
+        const licPath = join(pkgRoot, 'lib', 'THIRD-PARTY-LICENSES')
+        if (!existsSync(licPath)) {
+          problems.push(`产物内联第三方库（${[...inlined].join(', ')}）但缺 lib/THIRD-PARTY-LICENSES`)
+        } else {
+          const lic = readFileSync(licPath, 'utf8')
+          if (!lic.trim()) problems.push('THIRD-PARTY-LICENSES 为空')
+          if (!/(MIT|BSD|Apache)/i.test(lic)) problems.push('THIRD-PARTY-LICENSES 缺 MIT/BSD/Apache 许可字样')
+          for (const n of inlined) {
+            if (!lic.includes(n)) problems.push(`THIRD-PARTY-LICENSES 未覆盖被内联库 ${n}`)
+          }
+        }
+      }
+    }
 
     // client id 契约（tarball 内产物）：load id 必须 === 完整包名——浏览器 arrive()
     // 校验 factories.has(包名) 的同构模拟；防「打包/裁剪后产物与包名脱钩」再犯。
