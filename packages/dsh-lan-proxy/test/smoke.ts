@@ -1079,6 +1079,21 @@ const main = async () => {
       assert.ok(client.includes("HTTP 响应压缩：已关闭"), "关闭态文案");
       assert.ok(client.includes("lp-set-status"), "状态行样式类");
     });
+    // issue #33 子项 4：可达性——label/input 经 htmlFor+id 全关联，数字输入带 inputMode。
+    check("client 全部 label 经 htmlFor/id 关联且 number 输入带 inputMode", () => {
+      const expectedIds = [
+        "lp-set-enabled", "lp-set-port", "lp-set-https-enabled", "lp-set-https-port",
+        "lp-set-cert", "lp-set-key", "lp-set-banner", "lp-set-ws-compress",
+        "lp-set-ws-paths", "lp-set-http-compress", "lp-set-level",
+      ];
+      const forIds = [...client.matchAll(/htmlFor:\s*"([^"]+)"/g)].map((m: any) => m[1]);
+      assert.deepEqual([...forIds].sort(), [...expectedIds].sort(), "11 行全部 htmlFor 关联");
+      for (const fid of forIds) {
+        assert.ok(new RegExp(`id:\\s*"${fid}"`).test(client), `控件侧存在同名 id「${fid}」`);
+      }
+      const inputModeCount = [...client.matchAll(/inputMode:\s*"numeric"/g)].length;
+      assert.equal(inputModeCount, 2, "port/httpsPort 两个 number 输入均带 inputMode=numeric");
+    });
   }
 
   // Node 24 全局 agent 默认 keep-alive，销毁它让事件循环干净退出
