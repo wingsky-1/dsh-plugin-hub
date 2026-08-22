@@ -16,7 +16,7 @@ description: >
 1. 拉取队列：`gh issue list --label zone/auto --state open --json number,title,author`
 2. 来源校验逐个过（author 或 labeling actor 为维护者），不合格的跳过并在报告中列出
 3. 用 dsh workflow 工具编排：items = 合格 issue 列表，
-   每个 item 走 oss-pipeline 状态机（③-⑧ 可委派 subagent 并行；
+   每个 item 走 oss-pipeline 状态机（③-⑨ 可委派 subagent 并行；
    委派时按 oss-pipeline 纪律附带对应 `agents/<role>.md` 规程路径）
 4. **并行度 ≤3**，且节流跟随 CI 完成节奏（等 checks 再推下一个），
    禁止无脑 fan-out 造成排队雪崩

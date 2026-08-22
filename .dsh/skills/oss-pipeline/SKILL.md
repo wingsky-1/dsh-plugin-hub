@@ -36,7 +36,11 @@ CI 日志 / diff / 测试全文只在 subagent 上下文出现，禁止进入主
 ③ 规格：issue 无「验收标准」清单则委派 spec-writer（规程 [agents/spec-writer.md](../../../agents/spec-writer.md)）
    补写为可断言清单（Gherkin `.feature` 基建启用后升级为 tests/features/*.feature）
 ④ 实现：委派 coder（规程 [agents/coder.md](../../../agents/coder.md)）；PR 创建后立即置 draft，让 CI 先转起来
-⑤ 收敛环（≤2 圈）：入环先查合并状态——`gh pr view --json mergeStateStatus`：
+⑤ 验证证据：涉及界面行为的改动委派 qa（规程 [agents/qa.md](../../../agents/qa.md)）
+   在隔离环境实测，截图归档至 `packages/dsh-<name>/docs/archive/<issue号>-<行为描述>.png`
+   （element screenshot 只截插件 UI 本身、不带整窗；`docs/` 不入发布物 tarball），
+   PR 正文贴图引用路径、issue 评论回链 PR（双向引用）；纯宿主端 / 文档改动跳过本步
+⑥ 收敛环（≤2 圈）：入环先查合并状态——`gh pr view --json mergeStateStatus`：
    `CONFLICTING`/`DIRTY` → 立即转冲突处理（rebase origin/main → 解决冲突 →
    本地五连门禁 → `push --force-with-lease`），禁止在 CI 上空转；
    `CLEAN` 才挂后台 job `gh pr checks --watch`；checks 缺失先复核 mergeState，
@@ -47,11 +51,11 @@ CI 日志 / diff / 测试全文只在 subagent 上下文出现，禁止进入主
    在 PR 贴已尝试路径清单 + @维护者，给原 issue 打
    `blocked-human` label（`gh issue edit <n> --add-label blocked-human`），goal 置 blocked——
    新会话靠此标签重建视图，不可省略
-⑥ 转向检查：每次出环前拉取该 PR 未读评论（oss-steering），识别意图后消化
-⑦ 交付：全绿 + zone/auto → `gh pr merge --auto --squash`
+⑦ 转向检查：每次出环前拉取该 PR 未读评论（oss-steering），识别意图后消化
+⑧ 交付：全绿 + zone/auto → `gh pr merge --auto --squash`
    （仅允许 --auto 开关形态：合并决定权在分支保护与 CI；禁止无 --auto 的直接合并。
     共用身份期补偿约束：合并前逐条核对 issue 验收标准已落实）
-⑧ 清理：删 worktree 与本地分支，输出一行结论
+⑨ 清理：删 worktree 与本地分支，输出一行结论
 
 ## 铁律
 - 完成定义 = 五连门禁全绿 + issue 验收标准全部满足，无例外
