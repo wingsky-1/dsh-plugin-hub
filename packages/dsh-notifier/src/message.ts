@@ -49,8 +49,9 @@ export function formatDuration(ms: number): string {
  * 顺序硬约束（对抗评审实测确立）：
  * - DSN 必须先于 JWT/通用长串/密钥赋值：否则 DSN 密码先被劣化为 <token>，
  *   DSN 字符类排除 <> 随即失配，用户名残留明文；
- * - 邮箱必须殿后且带 (?<!<) 界定：避免把 DSN 掩码占位符 <redacted>@host
- *   中的 "redacted@host" 再误判为邮箱产生 <<email>>。
+ * - 邮箱必须殿后且带双负向后行断言（词字符 + 字面 <redacted）界定：避免把
+ *   DSN 掩码占位符 <redacted>@host 中的 "redacted@host" 再误判为邮箱产生
+ *   <<email>>；不整体排除 <，使尖括号引用形态 <user@host> 正常打码。
  * 已证伪不收录（勿加回）：IPv4（UA 版本号 Chrome/120.0.0.0 形态不可区分，
  * 误伤高频）、手机号（订单号误伤、错误文本出现概率趋零）、信用卡
  * （13 位毫秒时间戳 100% 命中，Luhn 校验也救不了）。
@@ -91,8 +92,11 @@ const SANITIZE_RULES: ReadonlyArray<readonly [RegExp, string]> = [
   // 高频误伤成 token=<redacted>（审批理由/提问文本接入后误伤面被放大，评审实测）
   [/\b(password|passwd|token|api[_-]?key|secret|authorization)\b\s*[=:]\s*["']?[^\s"'`,;<>]{3,}/giu, "$1=<redacted>"],
   // 邮箱（严格版：域名首标签须字母开头，排除 image@2x.png / pkg@1.2.3 误伤）→ <email>
-  // 负向后行断言排除词字符与 <：防止从 <redacted>@host 占位符中间起配
-  [/(?<![A-Za-z0-9._%+<>-])[A-Za-z0-9._%+-]+@[A-Za-z][A-Za-z0-9.-]*\.[A-Za-z]{2,}/gu, "<email>"],
+  // 双负向后行断言：① 词字符——防止从占位符/单词中间起配；② 字面 <redacted
+  // ——防止把 DSN 掩码占位符 <redacted>@host 再误判为邮箱产生 <<email>>。
+  // 不整体排除 <：否则尖括号引用形态 <user@host> 整体漏网明文泄漏（issue #30）；
+  // 占位符顺序约束由断言②单独保住。
+  [/(?<![A-Za-z0-9._%+-])(?<!<redacted)[A-Za-z0-9._%+-]+@[A-Za-z][A-Za-z0-9.-]*\.[A-Za-z]{2,}/gu, "<email>"],
 ];
 
 /**
