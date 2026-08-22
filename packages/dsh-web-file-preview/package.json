@@ -1,6 +1,6 @@
 {
   "name": "@wingsky-1/dsh-web-file-preview",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "点击对话中的文件链接在 web 端预览：宿主端按 MIME 服务会话工作区内文件（图片直出/文本 UTF-8 直出 + git diff），客户端拦截文件链接弹出预览 Modal（Markdown/代码高亮/Diff/图片灯箱）",
   "type": "module",
   "main": "lib/index.js",
