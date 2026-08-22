@@ -83,6 +83,15 @@ pnpm build && pnpm test                 # 仓库内：构建 + smoke
 curl http://127.0.0.1:3080/api/dsh-file-preview/health
 ```
 
+## 兼容性（issue #37 起）
+
+静态点击拦截的生效范围与让权约定如下：
+
+- **作用域圈定**：document 捕获拦截仅在**宿主对话流子树**内生效——判定锚点为祖先链上存在 `[data-chat-flow]` 或 `[data-chat-anchor-key]`（DSH ChatView 官方自用的滚动锚点属性，见 `src/client/link-resolver.ts` 的 `SCOPE_SELECTORS`，追加式数组）。**对话流之外的任何元素一律放行**：第三方插件 UI（文件树、浮层、面板等）不再被全局路径嗅探劫持。这是行为变更：旧版对全 document 生效的宽松拦截自本版起收敛到对话流内。
+- **解析优先级**：元素显式声明的路径凭证（`data-ref-chip` / `title` / `<a href>`）永远优先于"文本像路径"的启发式嗅探；凭证与本轮文本命中 basename 一致时采信凭证完整路径，不一致则跳过该凭证不猜（与 DSH `producedFileMentions` 的保守原则同源）。第三方文件树常见的 `<div title="完整路径"><span>裸文件名</span></div>` 行结构因此能解析出完整路径。
+- **逃生门属性**：任何元素子树标注 `data-dsh-no-preview` 即对本插件豁免（跨区域生效，优先级高于作用域圈定）。第三方插件在自有可点击 UI 上加此属性即可确保零干扰。
+- **适配点**：若未来 DSH 改版调整了对话流 DOM 标识，更新 `src/client/link-resolver.ts` 中 `SCOPE_SELECTORS` 常量即可（追加新锚点，无需改动算法）。
+
 ## 安全模型
 
 - **⚠️ 局域网部署高危告警（务必阅读）**：本插件经 `dsh-lan-proxy`（或任何把外部流量转发到 127.0.0.1 的代理）对外暴露时，**loopback 围栏会被代理重写 Host/Origin 而穿透**——此时**局域网内任意设备**（无需任何 dsh 凭据/登录态）可直接访问 `/api/dsh-file-preview/file?path=…` 预览本机任意扩展名在文本/图片/Markdown/代码白名单内的文件，**包括 `~/.dsh/.credentials.yaml`、`~/.dsh/*.json` 等凭据/配置文件**（`path` 支持 `~` 展开与绝对路径，`stat` 跟随符号链接，不做逃出拦截）。请在**可信局域网**部署（勿暴露到公共 WiFi/互联网），或自行在网络层配置**会话鉴权 / API 前缀白名单**后再对外。被穿透后的后果由部署方承担——本插件按下方"不做重复兜底"条款不提供插件层访问控制。
