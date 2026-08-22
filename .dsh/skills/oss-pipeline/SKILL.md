@@ -36,7 +36,11 @@ CI 日志 / diff / 测试全文只在 subagent 上下文出现，禁止进入主
 ③ 规格：issue 无「验收标准」清单则委派 spec-writer（规程 [agents/spec-writer.md](../../../agents/spec-writer.md)）
    补写为可断言清单（Gherkin `.feature` 基建启用后升级为 tests/features/*.feature）
 ④ 实现：委派 coder（规程 [agents/coder.md](../../../agents/coder.md)）；PR 创建后立即置 draft，让 CI 先转起来
-⑤ 收敛环（≤2 圈）：后台 job 挂 `gh pr checks --watch`；
+⑤ 收敛环（≤2 圈）：入环先查合并状态——`gh pr view --json mergeStateStatus`：
+   `CONFLICTING`/`DIRTY` → 立即转冲突处理（rebase origin/main → 解决冲突 →
+   本地五连门禁 → `push --force-with-lease`），禁止在 CI 上空转；
+   `CLEAN` 才挂后台 job `gh pr checks --watch`；checks 缺失先复核 mergeState，
+   再等待或手动 dispatch（最多一次）；
    红 → 委派 hardener（规程 [agents/hardener.md](../../../agents/hardener.md)）读 CI 日志修复重推；
    评审发现复杂度热点 → 委派 cleaner（规程 [agents/cleaner.md](../../../agents/cleaner.md)）；
    2 圈未绿 → 熔断：

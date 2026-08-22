@@ -21,7 +21,11 @@ import z from "schemastery";
 import { isLoopbackRequest } from "../../../shared/loopback.js";
 import { writeJson } from "../../../shared/host-utils.js";
 import { installSettingsNamespace } from "../../../shared/settings-namespace.js";
-import type { PluginContext } from "../../../types/dsh.js";
+// 官方类型层（issue #16/#48，锁版见 pnpm-workspace catalog；仅 import type，
+// 编译期擦除，禁止运行时值导入——contract-check 有门禁）。dsh-host-webserver
+// 经 declare module 注入 ctx.webServer，必须引入其类型面。
+import type { Context } from "@deepseek-ai/cordis";
+import type {} from "@deepseek-ai/dsh-host-webserver";
 
 export { isLoopbackRequest } from "../../../shared/loopback.js";
 export { writeJson } from "../../../shared/host-utils.js";
@@ -56,7 +60,9 @@ export interface IdleArchiveConfig {
  * 实测约束：schemastery 3.18 无 `.optional()`，不带 `.required()` 的字段默认可选；
  * 数值上限与 LIMITS 保持一致，越界仍由 sanitizeSettings 钳制兜底。
  */
-export const Config = z.object({
+// 显式注解：官方类型层与本包 devDep schemastery 各带同名全局命名空间合并后，
+// Config 的推断类型声明发射不再可移植（TS2883），按 TS 建议显式标注。
+export const Config: z<Settings> = z.object({
   /** 闲置阈值：超过该小时数未对话的会话才提醒归档。 */
   idleHours: z.natural().max(24 * 365).default(72),
   /** 拒绝（暂不归档）后的静默小时数。 */
@@ -316,10 +322,11 @@ export async function handler(endpoint: string, payload: Record<string, unknown>
 }
 
 /** 薄壳 apply：只做登记；清理全部进 effect 返回的 disposer。 */
-export function apply(ctx: PluginContext, config: IdleArchiveConfig = {}): void {
+export function apply(ctx: Context, config: IdleArchiveConfig = {}): void {
   // RPC 通道（客户端配置/静默期读写；authority: loopback 防非回环调用）。
-  // ctx.inject 未在 types/dsh.d.ts 声明，故此处按实际调用面收紧为最小接口（unknown 兜底）。
-  (ctx.inject as (services: string[], fn: (c: ConnectionCtx) => void) => void)(
+  // inject 回调里的 connection/agents/sessionQuery 服务面官方未发布类型，
+  // 按实际调用面以最小接口收窄（unknown 兜底）。
+  (ctx.inject as unknown as (services: string[], fn: (c: ConnectionCtx) => void) => void)(
     ["connection", "agents", "sessionQuery"],
     (connectionCtx) => {
       agentsService = (connectionCtx as unknown as { agents?: typeof agentsService }).agents;

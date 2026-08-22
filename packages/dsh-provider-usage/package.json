@@ -36,7 +36,6 @@
   "files": [
     "lib",
     "shared/**/*.d.ts",
-    "types/dsh.d.ts",
     "cordis.patch.yml",
     "README.md",
     "LICENSE"
@@ -54,6 +53,8 @@
   },
   "license": "MIT",
   "devDependencies": {
+    "@deepseek-ai/cordis": "catalog:",
+    "@deepseek-ai/dsh-host-webserver": "catalog:",
     "schemastery": "^3.18.0"
   },
   "repository": {

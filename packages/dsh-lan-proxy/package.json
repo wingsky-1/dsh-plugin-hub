@@ -49,7 +49,6 @@
   "files": [
     "lib",
     "shared/**/*.d.ts",
-    "types/dsh.d.ts",
     "cordis.patch.yml",
     "README.md",
     "LICENSE"
@@ -79,6 +78,8 @@
     "access": "public"
   },
   "devDependencies": {
+    "@deepseek-ai/cordis": "catalog:",
+    "@deepseek-ai/dsh-host-webserver": "catalog:",
     "@types/compression": "^1.7.5",
     "@types/ws": "^8.18.1",
     "compression": "^1.8.1",
