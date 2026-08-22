@@ -1,0 +1,62 @@
+name: Health report
+
+on:
+  schedule:
+    # 每周一 UTC 02:17（北京时间 10:17）
+    - cron: '17 2 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: health-report
+  cancel-in-progress: false
+
+jobs:
+  report:
+    name: Collect metrics & open issue
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@a8198c4bff370c8506180b035930dea56dbd5288 # v5
+        # 版本以根 package.json 的 packageManager 字段为单一事实源（勿同时指定 version）
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all
+        run: pnpm build
+
+      - name: Coverage（c8 采集）
+        run: pnpm cov
+
+      - name: CRAP 明细
+        run: pnpm crap
+
+      - name: Generate report body
+        run: node scripts/health-report-body.mjs > health-body.md
+
+      - name: Create health issue（幂等：同日重跑不重复建）
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TITLE="chore(health): 周度健康报告 $(date -u +%Y-%m-%d)"
+          EXISTING=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number')
+          if [ -n "$EXISTING" ]; then
+            echo "issue #$EXISTING 已存在，跳过创建"
+          else
+            gh issue create --title "$TITLE" --body-file health-body.md
+          fi
