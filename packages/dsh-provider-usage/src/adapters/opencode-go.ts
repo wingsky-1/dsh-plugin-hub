@@ -159,6 +159,8 @@ export const openCodeGoHostAdapter: HostProviderAdapter = defineUsageAdapter({
     const fetched = await fetchOpenCodeGo({
       baseUrl: ctx.baseUrl ?? DEFAULT_BASE_URL,
       apiKey: ctx.apiKey,
+      // issue #26：timeoutMs 经 HostFetchContext 通道下发（配置可生效），缺省维持原 15000
+      timeoutMs: ctx.timeoutMs ?? 15000,
       fetchImpl: ctx.fetch,
       signal: ctx.signal,
     });

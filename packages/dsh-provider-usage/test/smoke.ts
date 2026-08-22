@@ -248,6 +248,23 @@ assert.ok(!isClientProviderRenderer({ version: 1, providers: ["x"] }), "缺 rend
   const sum = await made.summarize({ provider: "relay", fetch, usage: { ok: true, provider: "relay", label: "中转站", fetchedAt: 1, windows: [{ key: "credit", name: "额度", percent: 30 }] } });
   assert.equal(sum.hasAdapter, true);
   assert.equal(typeof sum.text, "string");
+
+  // issue #26：声明 windows 数 ≠ 实际返回 windows 数 → 长度校验拦截，跳过采样
+  const mismatched = defineUsageAdapter({
+    id: "mismatch",
+    label: "M",
+    providers: ["m"],
+    windows: [
+      { key: "a", name: "A", limit: 100 },
+      { key: "b", name: "B", limit: 100 },
+    ],
+    fetchUsage: async () => ({ ok: true, provider: "m", label: "M", fetchedAt: 1 }),
+  });
+  const badSample = mismatched.samplePoint({
+    ok: true, provider: "m", label: "M", fetchedAt: 1,
+    windows: [{ key: "a", name: "A", percent: 10 }],
+  });
+  assert.equal(badSample, null, "cols/values 长度不等 → 工厂跳过采样（返回 null）");
 }
 
 
@@ -325,6 +342,19 @@ const OK_BODY = { usage: { rolling: { status: "ok", percent: 2, resetsAt: "r" },
   const nokey = await openCodeGoHostAdapter.fetchUsage({ provider: OPENCODE_GO_PROVIDER, fetch: async () => fakeRes(200, OK_BODY) });
   assert.equal(nokey.ok, false);
   assert.equal(nokey.error, "no-api-key");
+
+  // issue #26：ctx.timeoutMs 经 HostFetchContext 下发生效（5ms 超时快速 abort → network；
+  // 若通道断裂回落硬编码 15000，本用例会挂起至超时而非快速返回）
+  const t0 = Date.now();
+  const slow = await openCodeGoHostAdapter.fetchUsage({
+    provider: OPENCODE_GO_PROVIDER,
+    apiKey: "sk-1",
+    timeoutMs: 5,
+    fetch: (_url, opts) => new Promise((_resolve, reject) => opts.signal.addEventListener("abort", () => reject(new Error("aborted")))),
+  });
+  assert.equal(slow.ok, false);
+  assert.equal(slow.error, "network", "ctx.timeoutMs=5 触发取数超时");
+  assert.ok(Date.now() - t0 < 5000, "超时按 ctx.timeoutMs 生效而非默认 15000");
 }
 
 // ---------------------------------------------------------------- API Key 解析链
@@ -367,6 +397,17 @@ assert.equal(resolveApiKey({}), undefined, "全缺返回 undefined");
 
   // 列数一致性：声明列数与已记录不一致 → 跳过
   assert.deepEqual(store.append("opencode-go", "opencode-go-builtin", [{ key: "x", name: "X" }], [now + 90000, 1, 2, 3, 4]), { appended: 0, replaced: 0 }, "列数不一致跳过");
+
+  // issue #26：首点即 cols/values 宽度不等 → 单点校验拦截，桶保持空
+  const freshStore = makeHistoryStore({ maxAgeDays: 14, now: () => now });
+  assert.deepEqual(
+    freshStore.append("p1", "a1", [{ key: "x", name: "X" }], [now, 1, 2]),
+    { appended: 0, replaced: 0 },
+    "cols 1 ≠ values 2 → append 跳过",
+  );
+  assert.equal(freshStore.list("p1", "a1").samples.length, 0, "被拒点不入桶");
+  // 合法宽度一致 → 正常入桶
+  assert.deepEqual(freshStore.append("p1", "a1", [{ key: "x", name: "X" }], [now + 1000, 3]), { appended: 1, replaced: 0 }, "宽度相等正常入桶");
 
   assert.deepEqual(store.append("opencode-go", "opencode-go-builtin", cols, null), { appended: 0, replaced: 0 });
   assert.deepEqual(store.append("opencode-go", "opencode-go-builtin", cols, [1]), { appended: 0, replaced: 0 }, "元素不足 2 丢弃");
@@ -786,11 +827,18 @@ async function waitFor(cond, timeoutMs = 5000, stepMs = 50) {
   await apply(ctx, { apiKey: "sk-test", fetchImpl: async () => fakeRes(200, OK_BODY), persistFile: join(dir, "history.json") });
 
   const ocgFile = join(dir, "history", "opencode-go", "opencode-go-builtin.json");
-  const relayFile = join(dir, "history", "my-relay", "opencode-go-builtin.json");
+  // issue #26：非 opencode provider 归独立 legacy 桶（不再强制 opencode-go 三窗口桶）
+  const relayFile = join(dir, "history", "my-relay", "legacy.json");
   assert.equal(existsSync(ocgFile), true, "v2 opencode-go 桶迁移");
-  assert.equal(existsSync(relayFile), true, "v2 非 opencode provider 缺启用适配器时归内置 adapterId 桶");
+  assert.equal(existsSync(relayFile), true, "v2 非 opencode provider 归独立 legacy 桶");
   const relayBucket = JSON.parse(readFileSync(relayFile, "utf8"));
   assert.deepEqual(relayBucket.samples.map((s) => s[0]), [relayTs], "relay 桶恰好 1 点（无翻倍/无多余采样）");
+  // 列声明按样本宽度生成通用列名（样本 [ts, 9] 宽度 1 → col-1）
+  assert.deepEqual(
+    relayBucket.columns,
+    [{ key: "col-1", name: "col-1" }],
+    "legacy 桶 columns = 按样本宽度的通用列名",
+  );
   assert.equal(existsSync(join(dir, "history.json.v2.bak")), true, "v2 .bak 备份保留");
   assert.equal(existsSync(legacy), false, "v2 旧文件本体移除");
 }

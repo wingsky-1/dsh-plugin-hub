@@ -390,6 +390,11 @@ export function makeHistoryStore({
     const seen = seenSet(key);
     if (seen.has(ts)) return { appended: 0, replaced: 0 };
     const size = normalized.length - 1;
+    // 契约自检（issue #26）：列声明数必须与样本值宽度相等，错位即静默污染桶
+    if (columns.length !== size) {
+      diag(`采样列声明与数值宽度不一致（provider=${provider}, adapterId=${adapterId}）：cols ${columns.length} ≠ values ${size}，跳过该点`);
+      return { appended: 0, replaced: 0 };
+    }
     const prevCount = columnCount.get(key);
     if (prevCount !== undefined && prevCount !== size) {
       diag(`采样列数不一致（provider=${provider}, adapterId=${adapterId}）：声明 ${size} ≠ 已记录 ${prevCount}，跳过该点`);
@@ -543,6 +548,17 @@ export function builtInColumns(): import("./contracts.js").SampleColumn[] {
   }));
 }
 
+/**
+ * v2 割接中非 opencode provider 样本的独立 legacy 桶 adapterId
+ * （issue #26：不再强制归 opencode-go 三窗口桶——样本宽度与列语义都对不上）。
+ */
+export const LEGACY_ADAPTER_ID = "legacy";
+
+/** 按样本宽度生成通用列名（col-1..col-N；legacy 桶无适配器声明可用）。 */
+export function genericColumns(width: number): import("./contracts.js").SampleColumn[] {
+  return Array.from({ length: width }, (_, i) => ({ key: `col-${i + 1}`, name: `col-${i + 1}` }));
+}
+
 /** 历史根目录（persistFile 覆盖时用其目录；否则默认 DSH_HOME/dsh-provider-usage）。 */
 function historyRoot(current: NormalizedConfig): string {
   if (typeof current.persistFile === "string" && current.persistFile !== "") return dirname(current.persistFile);
@@ -614,7 +630,6 @@ async function renamePreservingBackup(file: string, preferredBak: string): Promi
 export async function loadAllHistory(
   config: NormalizedConfig,
   store: ReturnType<typeof makeHistoryStore>,
-  registry: ReturnType<typeof makeHostAdapterRegistry>,
   rootOverride?: string,
 ): Promise<void> {
   const root = rootOverride ?? historyRoot(config);
@@ -650,17 +665,22 @@ export async function loadAllHistory(
               }
             }
           } else {
-            // v2 单文件分桶 → 各 provider 桶 → 当前启用 adapterId（缺省内置）
+            // v2 单文件分桶 → 各 provider 桶。opencode-go 归内置桶（三窗口列延续）；
+            // 非 opencode provider 归独立 legacy 桶，列声明按样本宽度生成通用列名
+            // （issue #26：样本宽度可能只有 1 列，强制三窗口 columns 会错位）。
             const rawSeries = rec.series as Record<string, { samples: unknown[] }> | undefined;
             if (typeof rawSeries === "object" && rawSeries !== null) {
               for (const provider of Object.keys(rawSeries)) {
                 const bucket = rawSeries[provider];
                 if (!Array.isArray(bucket?.samples)) continue;
-                const targetId = provider === OPENCODE_GO_PROVIDER
-                  ? OPENCODE_GO_ADAPTER_ID
-                  : (registry.getEntry(provider)?.id ?? OPENCODE_GO_ADAPTER_ID);
+                const isBuiltin = provider === OPENCODE_GO_PROVIDER;
+                const targetId = isBuiltin ? OPENCODE_GO_ADAPTER_ID : LEGACY_ADAPTER_ID;
                 for (const item of bucket.samples) {
-                  store.append(provider, targetId, builtInColumns(), item);
+                  if (!isUnknownArray(item) || item.length < 2) continue;
+                  const cols = isBuiltin
+                    ? builtInColumns()
+                    : genericColumns(item.length - 1);
+                  store.append(provider, targetId, cols, item);
                 }
               }
             }
@@ -951,7 +971,7 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
     diag: (m): void => console.warn(`[dsh-provider-usage]`, m),
   });
   // 割接迁移（旧单文件 v1/v2 → 多文件 v3）+ 扫描加载
-  await loadAllHistory(current, store, registry, root);
+  await loadAllHistory(current, store, root);
 
   /** 脏桶集合（"provider/adapterId"）：采样追加后标记，防抖逐桶原子落盘。 */
   const dirtyBuckets = new Set<string>();
@@ -1027,6 +1047,7 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
           provider,
           apiKey,
           baseUrl: current.baseUrl,
+          timeoutMs: current.timeoutMs,
           fetch: fetchImpl,
           signal: undefined as AbortSignal | undefined,
         };
