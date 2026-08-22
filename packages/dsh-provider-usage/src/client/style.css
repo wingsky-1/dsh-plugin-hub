@@ -329,12 +329,15 @@
   min-width: 60px;
   color: var(--dsw-alias-label-tertiary, #9aa0ab);
 }
+/* 纵向表单（dou-addForm 为 column 布局）中的单行输入框：
+   禁用 flex 伸缩——column 下 flex-basis 会变成高度起点导致输入框纵向撑爆（issue #87） */
 .dou-input {
-  flex: 1 1 180px;
+  width: 100%;
+  flex: none;
   min-width: 0;
   font: inherit;
   font-size: 12px;
-  padding: 3px 6px;
+  padding: 4px 8px;
   border: 1px solid var(--dsw-alias-border-l1, #d7dae0);
   border-radius: 5px;
   background: var(--dsw-alias-bg-base, #fdfdfd);

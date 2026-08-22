@@ -498,6 +498,51 @@ function makeFakeCtx(overrides = {}) {
   assert.equal(responses.at(-1).__code, 404, "user 不存在的索引 404");
 }
 
+// ---------------------------------------------------------------- issue #87：fetchCtx.baseUrl 按 provider 区分 + 失败结果短缓存
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dou-issue87-"));
+  // probe adapter：捕获 fetchUsage 收到的 ctx；固定返回失败态（测失败短缓存）
+  const probeFile = join(dir, "probe-relay.mjs");
+  writeFileSync(
+    probeFile,
+    [
+      "export default {",
+      "  version: 1,",
+      '  id: "issue87-probe",',
+      '  label: "Issue87 Probe",',
+      '  providers: ["probe-relay"],',
+      "  async fetchUsage(ctx) {",
+      "    globalThis.__douIssue87 = { baseUrl: ctx.baseUrl, timeoutMs: ctx.timeoutMs };",
+      "    return { ok: false, provider: ctx.provider, label: this.label, fetchedAt: Date.now(), error: 'http-500' };",
+      "  },",
+      "};",
+    ].join("\n"),
+  );
+
+  const { ctx, routes } = makeFakeCtx();
+  await apply(ctx, { adapters: { host: [{ provider: "probe-relay", file: probeFile }] } });
+  const statsRoute = routes.find((r) => r.path === ROUTES.stats);
+  assert.ok(statsRoute, "stats 路由存在");
+  try {
+    let payload;
+    const res200 = { writeHead: () => {}, end: (chunk) => { payload = JSON.parse(chunk); } };
+
+    // 第一次请求：与启动补采共享 inflight/缓存，顺带完成 ctx 探针
+    await statsRoute.handler(fakeReq({ url: `${ROUTES.stats}?provider=probe-relay` }), res200);
+    const probe = globalThis.__douIssue87 ?? {};
+    assert.equal(probe.baseUrl, undefined, "非 opencode-go provider 不透传全局 baseUrl（issue #87）");
+    assert.equal(probe.timeoutMs, DEFAULT_CONFIG.timeoutMs, "timeoutMs 走默认配置（2000）");
+    assert.equal(payload.usage?.ok, false, "probe adapter 固定返回失败态");
+
+    // 第二次请求：失败态命中 10s 防风暴短缓存（旧版失败不缓存 → 每次重新打满护栏）
+    await statsRoute.handler(fakeReq({ url: `${ROUTES.stats}?provider=probe-relay` }), res200);
+    assert.equal(payload.cached, true, "失败结果被短缓存（第二次 cached=true）");
+  } finally {
+    delete globalThis.__douIssue87;
+  }
+}
+
 // stats 200 全链路：注入 fetchImpl + apiKey（不落盘、不网络）
 {
   const { ctx, routes } = makeFakeCtx();

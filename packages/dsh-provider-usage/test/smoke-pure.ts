@@ -16,7 +16,7 @@
 import { mkdtempSync, writeFileSync, readFileSync, readdirSync, mkdirSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { tmpdir, homedir } from "node:os";
 import assert from "node:assert/strict";
 import type { FetchLike, ProviderSummary, ProviderUsage, SummaryLevel } from "../lib/index.js";
 import * as libIndex from "../lib/index.js";
@@ -46,6 +46,9 @@ import {
   makeHistoryStore,
   writeHistoryFile,
   readHistoryFile,
+  // issue #87：~ 展开单一事实源 + add 入参校验
+  expandHomePath,
+  resolveAddAdapterFile,
   // 客户端行为纯函数（issue #28：宿主侧可导入，client bundle 同源内联）
   derivePillLabel,
   derivePillLevel,
@@ -597,6 +600,39 @@ assert.equal(resolveApiKey({}), undefined, "全缺返回 undefined");
   cache.set("b", { x: 1 });
   cache.clear();
   assert.equal(cache.get("b"), undefined, "clear 全清");
+}
+
+// ---------------------------------------------------------------- issue #87：条目级 TTL（失败短缓存）
+
+{
+  let now = 0;
+  const cache = makeUsageCache<{ ok: boolean }>({ ttlMs: 30000, now: () => now });
+  cache.set("ok-provider", { ok: true });
+  cache.set("bad-provider", { ok: false }, { ttlMs: 10 });
+  now = 5;
+  assert.deepEqual(cache.get("bad-provider"), { ok: false }, "条目 TTL 未到期可命中");
+  now = 11;
+  assert.equal(cache.get("bad-provider"), undefined, "条目 TTL 覆盖生效（失败短缓存先过期）");
+  assert.deepEqual(cache.get("ok-provider"), { ok: true }, "默认 TTL 不受条目覆盖影响");
+}
+
+// ---------------------------------------------------------------- issue #87：~ 展开与 add 路径校验修订
+
+{
+  // issue #87：~ 展开复用 untildify（单一事实源，与 dsh-web-file-preview 同源同版）
+  const realHome = homedir();
+  assert.equal(expandHomePath("~"), realHome, "~ 展开到用户 home");
+  assert.equal(expandHomePath("~/a/b.mjs"), join(realHome, "a/b.mjs"), "~/相对段 展开");
+  assert.equal(expandHomePath("/abs/noop.mjs"), "/abs/noop.mjs", "非 ~ 前缀原样返回");
+  assert.equal(expandHomePath("~other/x.mjs"), "~other/x.mjs", "~user 形态不展开（untildify 边界）");
+
+  // resolveAddAdapterFile：~ 前缀先展开再校验（issue #87）。untildify 内部 join 会把
+  // ~/a/../b 规范化为 home/b——~ 形态展开后等价于直接输入绝对路径（同一信任模型：
+  // 本机文件可加载），故穿越段不构成提权；拒绝分支由「未规整形态」与「文件不存在」兜底。
+  assert.equal(resolveAddAdapterFile("~/nonexistent-dir-xyz/a.mjs"), undefined, "~ 展开为不存在路径 → 拒绝");
+  assert.equal(resolveAddAdapterFile("rel/../x.mjs"), undefined, "相对路径穿越拒绝");
+  assert.equal(resolveAddAdapterFile(""), undefined, "空串拒绝");
+  assert.equal(resolveAddAdapterFile("/nonexistent-dir-xyz/a.mjs"), undefined, "不存在的绝对路径拒绝");
 }
 
 // ---------------------------------------------------------------- 客户端行为纯函数（issue #28：替代 bundle includes 断言）

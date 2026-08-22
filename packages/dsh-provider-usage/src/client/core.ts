@@ -28,6 +28,14 @@ export const SELECT_URL = __DSH_ROUTES__?.select ?? "/api/dsh-provider-usage/ada
 export const INSPECT_URL = __DSH_ROUTES__?.inspect ?? "/api/dsh-provider-usage/adapters/inspect";
 export const ADD_URL = __DSH_ROUTES__?.add ?? "/api/dsh-provider-usage/adapters/add";
 
+/** 客户端请求超时（issue #87）：与宿主取数护栏同量级，防慢响应占满浏览器同域并发。 */
+const CLIENT_TIMEOUT_MS = 2000;
+
+/** 带超时的 fetch（issue #87：所有插件请求统一走此封装）。 */
+export function fetchTimeout(url: string, init?: RequestInit): Promise<Response> {
+  return fetch(url, { ...init, signal: AbortSignal.timeout(CLIENT_TIMEOUT_MS) });
+}
+
 /** 会话提供信息（sessions.currentProvideInfo 的读面，宽松类型）。 */
 export interface SessionMaybeProvide {
   sessionId?: string;
@@ -205,7 +213,7 @@ export async function fetchStats(
   hasAdapter: boolean;
   cached?: boolean;
 }> {
-  const res = await fetch(`${STATS_URL}?provider=${encodeURIComponent(provider)}`, {
+  const res = await fetchTimeout(`${STATS_URL}?provider=${encodeURIComponent(provider)}`, {
     headers: { Accept: "application/json" },
     cache: "no-store",
   });
@@ -230,7 +238,7 @@ export async function fetchHistory(
 ): Promise<{ samples?: number[][]; columns?: import("../contracts.js").SampleColumn[]; provider?: string; adapterId?: string }> {
   const base = `${HISTORY_URL}?provider=${encodeURIComponent(provider)}&adapterId=${encodeURIComponent(adapterId)}`;
   const url = days === undefined ? base : `${base}&days=${days}`;
-  const res = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
+  const res = await fetchTimeout(url, { headers: { Accept: "application/json" }, cache: "no-store" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return (await res.json()) as { samples?: number[][]; columns?: import("../contracts.js").SampleColumn[]; provider?: string; adapterId?: string };
 }
@@ -240,7 +248,7 @@ export async function fetchAdapterMeta(): Promise<{
   version?: number;
   client?: Array<{ file?: string | null; url?: string; resolved?: boolean }>;
 }> {
-  const res = await fetch(ADAPTERS_URL, { headers: { Accept: "application/json" }, cache: "no-store" });
+  const res = await fetchTimeout(ADAPTERS_URL, { headers: { Accept: "application/json" }, cache: "no-store" });
   if (!res.ok) return {};
   return (await res.json()) as { version?: number; client?: Array<{ file?: string | null; url?: string; resolved?: boolean }> };
 }
@@ -254,7 +262,7 @@ export async function loadUserRenderers(registry: RendererRegistry): Promise<num
   for (const entry of meta.client) {
     if (!entry.url) continue;
     try {
-      const res = await fetch(entry.url, { headers: { Accept: "application/javascript" }, cache: "no-store" });
+      const res = await fetchTimeout(entry.url, { headers: { Accept: "application/javascript" }, cache: "no-store" });
       if (!res.ok) {
         console.warn(`[dsh-provider-usage] 用户渲染器 ${entry.url} 加载失败（HTTP ${res.status}）`);
         continue;
