@@ -99,8 +99,13 @@ smoke 全部无网络、无真实凭据，本地可直接运行；新功能/修�
 
 ## Agent 环境
 
-- 项目级 skills 位于 `.dsh/skills/`（dsh 在本仓库会话中自动加载）：插件开发
-  （`dsh-plugin-hub-dev`）、整插件深评（`dsh-plugin-review`）、PR 评审
-  （`dsh-plugin-hub-pr-review`）、dsh 升级影响分析（`dsh-upgrade`）。
+- 项目级 skills 位于 `.dsh/skills/`（dsh 在本仓库会话中自动加载），分两层：
+  - **方法论层**：插件开发（`dsh-plugin-hub-dev`）、整插件深评（`dsh-plugin-review`）、
+    PR 评审（`dsh-plugin-hub-pr-review`）、dsh 升级影响分析（`dsh-upgrade`）。
+  - **维护编排层**（issue 驱动自治循环）：单 issue 流水线（`oss-pipeline`）、
+    批量编排（`oss-triage`）、PR 评论转向（`oss-steering`）、健康巡检（`oss-report`）；
+    配套角色规程在 `agents/`（spec-writer / coder / cleaner / hardener / qa），
+    授权标签体系为 `zone/auto` / `zone/red-line` / `approved` / `api-approved` /
+    `blocked-human` / `pending-ratification`。
 - `.dsh/mcp.json` 为浏览器验证 MCP（playwright / chrome-devtools，headless）；
   chrome-devtools 需系统已安装 Chrome，属可选的本地验证工具，非 CI 必需。
