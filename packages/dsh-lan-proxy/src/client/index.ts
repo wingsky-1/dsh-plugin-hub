@@ -98,10 +98,29 @@ var CHANNEL = "/dsh-lan-proxy";
     }
 
     function save() {
+      // 本地预校验（issue #33 子项 1）：数字键先归一化，非法值在提交前就
+      // 指明字段与合法范围——不依赖宿主整体拒绝后才报错。
+      var portValue = Number(settings.port);
+      if (!Number.isInteger(portValue) || portValue < 1 || portValue > 65535) {
+        setSaved("保存失败：LAN 端口（HTTP）需为 1-65535 的整数");
+        return;
+      }
+      var httpsPortValue = Number(settings.httpsPort);
+      if (!Number.isInteger(httpsPortValue) || httpsPortValue < 1 || httpsPortValue > 65535) {
+        setSaved("保存失败：HTTPS 端口需为 1-65535 的整数");
+        return;
+      }
+      var levelValue = Number(settings.httpCompressLevel);
+      if (!Number.isInteger(levelValue) || levelValue < 0 || levelValue > 3) {
+        setSaved("保存失败：压缩档位需为 0-3 的整数");
+        return;
+      }
       var payload: Record<string, any> = {};
       for (var key in DEFAULTS) {
         var value = settings[key];
-        if (key === "port" || key === "httpsPort" || key === "httpCompressLevel") value = Number(value);
+        if (key === "port") value = portValue;
+        else if (key === "httpsPort") value = httpsPortValue;
+        else if (key === "httpCompressLevel") value = levelValue;
         payload[key] = value;
       }
       rpc("config", { settings: payload }).then(function () {

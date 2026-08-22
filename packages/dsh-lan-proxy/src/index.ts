@@ -246,6 +246,59 @@ export type RpcResult =
   | { ok: false; error: { code: string; details: string } };
 
 /**
+ * 各配置键的合法范围描述（issue #33 子项 1）：校验失败时向用户指明
+ * 「哪个字段、合法值是什么」，替代原先硬编码的整体拒绝文案。
+ * 与 FILE_CONFIG_VALIDATORS 平行维护；键集合一致（同一批 Object.keys 遍历）。
+ */
+const SETTING_FIELD_HINTS: Record<string, string> = {
+  enabled: "需为布尔值",
+  host: "需为字符串",
+  port: "需为 1-65535 的整数",
+  httpsEnabled: "需为布尔值",
+  httpsPort: "需为 1-65535 的整数",
+  tlsCertFile: "需为字符串（PEM 文件路径，留空 = 自签名证书）",
+  tlsKeyFile: "需为字符串（PEM 文件路径，留空 = 自签名证书）",
+  targetHost: "需为回环地址或主机名",
+  targetPort: "需为 1-65535 的整数",
+  printBanner: "需为布尔值",
+  wsCompressEnabled: "需为布尔值",
+  wsCompressPaths: "需为字符串数组（路径白名单）",
+  httpCompressEnabled: "需为布尔值",
+  httpCompressLevel: "需为 0-3 的档位整数（4-9 自动迁移为高档 3）",
+};
+
+/** validateSettings 的校验结果：null = 全部合法。 */
+export interface SettingInvalid {
+  /** 首个非法的配置键名。 */
+  key: string;
+  /** 该键的合法范围描述（面向用户的文案）。 */
+  hint: string;
+}
+
+/**
+ * 校验客户端提交的配置（不净化）：返回首个非法键与其合法范围，全部合法返回
+ * null（issue #33 子项 1）。遍历顺序与 sanitizeSettings 一致（FILE_CONFIG_VALIDATORS
+ * 键序），保证「首个非法键」口径相同。导出供 smoke 单测。
+ */
+export function validateSettings(raw: unknown): SettingInvalid | null {
+  if (typeof raw !== "object" || raw === null) return { key: "(payload)", hint: "需为配置对象" };
+  const src = raw as Record<string, unknown>;
+  for (const key of Object.keys(FILE_CONFIG_VALIDATORS)) {
+    const value = src[key];
+    // 与 sanitizeSettings 同口径：旧档位整数 4..9 先迁移再校验。
+    const normalized =
+      key === "httpCompressLevel" && typeof value === "number" && Number.isInteger(value) && value > 3 && value <= 9
+        ? 3
+        : value;
+    if (normalized === undefined || normalized === null) continue;
+    if (!FILE_CONFIG_VALIDATORS[key](normalized)) {
+      return { key, hint: SETTING_FIELD_HINTS[key] ?? "类型非法" };
+    }
+  }
+  return null;
+}
+
+/**
  * 净化客户端提交的配置：只接受已知键；任一键类型非法 → 整体拒绝（返回 null，
  * 避免静默丢键造成"保存了但没生效"的困惑）；空字符串证书路径 = 显式清除
  * （恢复自签证书）。
@@ -278,7 +331,13 @@ export function rpcHandler(deps: RpcDeps): (endpoint: string, payload: unknown) 
           return { ok: true, value: { settings: deps.fileConfig(), effective: deps.resolve() } };
         }
         case "config": {
-          const settings = sanitizeSettings((payload as { settings?: unknown } | null | undefined)?.settings);
+          const rawSettings = (payload as { settings?: unknown } | null | undefined)?.settings;
+          // 先定位首个非法键（issue #33 子项 1）：错误文案指明字段与合法范围。
+          const invalid = validateSettings(rawSettings);
+          if (invalid !== null) {
+            return { ok: false, error: { code: "invalid", details: `配置项「${invalid.key}」非法：${invalid.hint}` } };
+          }
+          const settings = sanitizeSettings(rawSettings);
           if (settings === null) {
             return { ok: false, error: { code: "invalid", details: "非法配置值（未知键或类型错误）" } };
           }
