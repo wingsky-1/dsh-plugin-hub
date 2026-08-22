@@ -83,6 +83,16 @@ async function jsonGet(url: string): Promise<unknown> {
   return res.json();
 }
 
+/** 复制文本到剪贴板（设置页「复制引导指令」用；失败静默返回 false）。 */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** 状态等级 → 颜色（主题变量 + 浅色回退）。 */
 function levelColor(level: string | undefined): string {
   if (level === "err") return "var(--dsw-alias-state-error-primary,#d64545)";
@@ -187,6 +197,16 @@ function ProviderItem({
   const [addMsg, setAddMsg] = React.useState<string | null>(null);
   const [addErr, setAddErr] = React.useState<boolean>(false);
   const [adding, setAdding] = React.useState<boolean>(false);
+  const [copied, setCopied] = React.useState<boolean>(false);
+
+  /** 一句话引导指令：无候选时复制到会话，agent 按 9-agent-guide-mjs.md 自主引导。 */
+  const guideCommand = `请为提供商 ${item.provider} 创建用量统计适配器：自行查找其用量接口与鉴权方式，自主设计适配器方案（id/展示名/窗口字段），先给我审核方案，确认后生成 .mjs 文件、告诉保存路径并引导我在「用量统计」设置页添加适配器。`;
+  const onCopyGuide = async (): Promise<void> => {
+    if (await copyText(guideCommand)) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
 
   /** 检测文件：inspect 路由回显导出信息，不注册（确认后才 add）。 */
   const doInspect = async (): Promise<void> => {
@@ -345,13 +365,24 @@ function ProviderItem({
       : React.createElement(
           "div",
           { className: "dou-provBody" },
-          // 无候选引导（已知清单里的 provider 尚无任何适配器）
+          // 无候选引导（已知清单里的 provider 尚无任何适配器）：文件注入 + 复制一句话引导指令
           candidates.length === 0
-            ? React.createElement(
-                "div",
-                { className: "dou-hint" },
-                "该提供商暂无候选适配器——可通过下方 [+ 添加适配器] 注入本地适配器文件，或在 cordis.patch.yml 的 adapters.host 中配置。",
-              )
+            ? [
+                React.createElement(
+                  "div",
+                  { key: "hint", className: "dou-hint" },
+                  "该提供商暂无候选适配器——可通过下方 [+ 添加适配器] 注入本地适配器文件，或在 cordis.patch.yml 的 adapters.host 中配置；也可复制引导指令，让 Agent 帮你创建适配器。",
+                ),
+                React.createElement(
+                  "div",
+                  { key: "guide", className: "dou-provActions" },
+                  React.createElement(
+                    "button",
+                    { type: "button", className: "dou-btn", disabled: busy, onClick: onCopyGuide },
+                    copied ? "已复制 ✓" : "复制引导指令",
+                  ),
+                ),
+              ]
             : adapterRows,
           React.createElement(
             "div",
@@ -400,6 +431,16 @@ function ProviderListSection({
   for (const e of meta?.errors ?? []) errorByKey.set(e.key, e);
   // 用户文件加载失败错误无 provider 归属（登记 key=file:<名>），在列表顶部全局展示一次
   const fileErrors = [...errorByKey.entries()].filter(([k]) => k.startsWith("file:"));
+  // 列表完全为空（adapters.json 不可达或模型配置无 provider）时的全局引导复制
+  const [copiedGlobal, setCopiedGlobal] = React.useState<boolean>(false);
+  const globalGuideCommand =
+    "请帮我接入一个提供商的用量统计：自行调研/确认数据源与用量接口、自主设计适配器方案并先给我审核，确认后生成 .mjs 文件、告诉保存路径并引导我在「用量统计」设置页完成登记。";
+  const onCopyGlobalGuide = async (): Promise<void> => {
+    if (await copyText(globalGuideCommand)) {
+      setCopiedGlobal(true);
+      setTimeout(() => setCopiedGlobal(false), 2000);
+    }
+  };
 
   /** 手风琴渲染复用（主分组与额外分组同构）。 */
   const accordion = (items: ProviderListItem[]): React.ReactElement =>
@@ -440,7 +481,20 @@ function ProviderListSection({
         )
       : null,
     main.length === 0
-      ? React.createElement("div", { style: { color: "var(--dsw-alias-label-tertiary,#9aa0ab)" } }, "无提供商数据（adapters.json 不可达）")
+      ? React.createElement(
+          "div",
+          { className: "dou-hint" },
+          "未发现已配置的提供商（adapters.json 不可达或模型配置页尚未配置提供商）。可复制引导指令，让 Agent 帮你接入数据源并创建适配器。",
+          React.createElement(
+            "div",
+            { className: "dou-provActions" },
+            React.createElement(
+              "button",
+              { type: "button", className: "dou-btn", disabled: busy, onClick: onCopyGlobalGuide },
+              copiedGlobal ? "已复制 ✓" : "复制引导指令",
+            ),
+          ),
+        )
       : accordion(main),
     // 尾部独立分组：候选/启用态指向不在模型配置中的 provider（用户适配器自定义路由，
     // 避免静默消失，不计入主列表数量；模型页补建该提供商后自动并入主列表）
