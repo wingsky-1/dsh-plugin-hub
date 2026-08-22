@@ -1,0 +1,59 @@
+name: Health report
+
+on:
+  schedule:
+    # 每周一 UTC 02:17（北京时间 10:17）
+    - cron: '17 2 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: health-report
+  cancel-in-progress: false
+
+jobs:
+  report:
+    name: Collect metrics & open issue
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        # 版本以根 package.json 的 packageManager 字段为单一事实源（勿同时指定 version）
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all
+        run: pnpm build
+
+      - name: Coverage（c8 采集）
+        run: pnpm cov
+
+      - name: CRAP 明细
+        run: pnpm crap
+
+      - name: Generate report body
+        run: node scripts/health-report-body.mjs > health-body.md
+
+      - name: Create health issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TITLE="chore(health): 周度健康报告 $(date -u +%Y-%m-%d)"
+          gh issue create \
+            --title "$TITLE" \
+            --body-file health-body.md

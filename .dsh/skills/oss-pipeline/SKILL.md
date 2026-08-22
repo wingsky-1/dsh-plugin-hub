@@ -18,6 +18,8 @@ description: >
 你是调度员：实现、读日志、写测试全部委派 subagent（workflow 工具编排更佳），
 你只接收结论行："issue #N → <状态>, 关键指标, PR#M"。
 CI 日志 / diff / 测试全文只在 subagent 上下文出现，禁止进入主会话。
+**委派必附规程**：每个 subagent 的 prompt 必须写明其角色规程文件路径
+（`agents/<role>.md`）并要求先读再动手——规程是角色的唯一事实源，不靠 prompt 临场发挥。
 
 ## 前置检查（每次动手前）
 1. `gh auth status`——确认当前凭据身份；若使用 Agent 专用凭据（GH_CONFIG_DIR 隔离），
@@ -31,11 +33,13 @@ CI 日志 / diff / 测试全文只在 subagent 上下文出现，禁止进入主
    `gh api repos/{repo}/issues/<n>/timeline --paginate \
      --jq '[.[] | select(.event=="labeled" and .label.name=="zone/auto") | .actor.login] | unique'`
 ② 隔离：`git worktree add ../wt-<n> -b task/<n>`；禁止多任务共用同一 checkout
-③ 规格：issue 无「验收标准」清单则委派 spec-writer 补写为可断言清单
-   （Gherkin `.feature` 基建启用后升级为 tests/features/*.feature）
-④ 实现：委派 coder subagent；PR 创建后立即置 draft，让 CI 先转起来
+③ 规格：issue 无「验收标准」清单则委派 spec-writer（规程 `agents/spec-writer.md`）
+   补写为可断言清单（Gherkin `.feature` 基建启用后升级为 tests/features/*.feature）
+④ 实现：委派 coder（规程 `agents/coder.md`）；PR 创建后立即置 draft，让 CI 先转起来
 ⑤ 收敛环（≤2 圈）：后台 job 挂 `gh pr checks --watch`；
-   红 → 委派 subagent 读 CI 日志修复重推；2 圈未绿 → 熔断：
+   红 → 委派 hardener（规程 `agents/hardener.md`）读 CI 日志修复重推；
+   评审发现复杂度热点 → 委派 cleaner（规程 `agents/cleaner.md`）；
+   2 圈未绿 → 熔断：
    在 PR 贴已尝试路径清单 + @维护者，给原 issue 打
    `blocked-human` label（`gh issue edit <n> --add-label blocked-human`），goal 置 blocked——
    新会话靠此标签重建视图，不可省略

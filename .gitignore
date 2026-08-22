@@ -17,3 +17,4 @@ packages/*/.index.bundle.js
 Thumbs.db
 .idea/
 .vscode/
+coverage/

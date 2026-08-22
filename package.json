@@ -14,7 +14,9 @@
     "aggregate:check": "node scripts/aggregate.ts --check",
     "test:scripts": "node --test scripts/*.test.ts",
     "docs:check": "node scripts/verify-docs.ts",
-    "typecheck": "pnpm -r --if-present run typecheck"
+    "typecheck": "pnpm -r --if-present run typecheck",
+    "cov": "c8 --reporter=json --reporter=json-summary --reporter=text pnpm -r --if-present test",
+    "crap": "node scripts/crap-check.mjs"
   },
   "keywords": [
     "dsh",
@@ -24,6 +26,8 @@
   "packageManager": "pnpm@11.21.0",
   "devDependencies": {
     "@types/node": "^26.2.0",
+    "acorn": "^8.18.0",
+    "c8": "^12.0.0",
     "esbuild": "^0.28.2",
     "typescript": "^7.0.2"
   },

@@ -13,6 +13,8 @@
 pnpm build        # 全仓构建 = pnpm -r build（各包：clean-lib → tsc → bundle-host）
 pnpm contract     # 客户端契约（node scripts/contract-check.ts）
 pnpm test         # 全量 smoke（Node ≥23.6 原生 type stripping 直跑）
+pnpm cov          # 覆盖率采集（c8 包裹 smoke，测量对象 = lib 编译产物）
+pnpm crap         # 单函数 CRAP 检查（先跑 cov；观察期只记录，--strict 为未来硬卡点）
 pnpm pack:check   # tarball 完整性（含聚合包）
 pnpm typecheck    # 全仓类型检查
 ```
