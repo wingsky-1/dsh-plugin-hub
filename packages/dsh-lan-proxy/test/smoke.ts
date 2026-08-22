@@ -38,6 +38,7 @@ const PROXY_PORT = 19091;
 const PROXY_HTTPS_PORT = 19092;
 const LAN_HOST = "192.168.1.50";
 const failures = [];
+const pendingChecks = []; // 收集全部 async 用例 promise，收尾统一 allSettled（防迟到失败漏计 → 假绿）
 const check = (name, fn) => {
   const fail = (err) => {
     failures.push(name);
@@ -47,6 +48,7 @@ const check = (name, fn) => {
     const result = fn();
     // promise 感知：async 断言失败同样记入 failures（否则静默丢失、报告失真）。
     if (result && typeof result.then === "function") {
+      pendingChecks.push(result);
       result.then(() => console.log(`  ok   ${name}`), fail);
       return;
     }
@@ -979,9 +981,10 @@ const main = async () => {
   // Node 24 全局 agent 默认 keep-alive，销毁它让事件循环干净退出
   const { globalAgent } = await import("node:http");
   globalAgent.destroy();
-  // 等 check() 的 promise 分支（异步断言）全部落定后再统计失败。
-  await new Promise((r) => setImmediate(r));
-  await new Promise((r) => setImmediate(r));
+  // 显式等 check() 收集的全部 async 用例落定后再统计失败：原先两轮 setImmediate
+  // 只能等到微/宏任务队列的立即回调，晚于其落定的迟到断言（如 setTimeout 延迟
+  // 失败）会漏计 failures → exit 0 假绿。
+  await Promise.allSettled(pendingChecks);
   if (failures.length) {
     console.error(`\n${failures.length} check(s) failed: ${failures.join(", ")}`);
     process.exit(1);
