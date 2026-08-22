@@ -138,6 +138,7 @@ be able to resolve these official packages (skipping type checking is unaffected
   - Secret field assignments (`password=`/`token=`/`api_key=`…; an explicit `=`/`:` separator is required) → `key=<redacted>`
   - Email addresses → `<email>`
   - **Approval reasons and question texts** are redacted too (truncated to 120 chars) — these most often embed command echo and credential fragments
+  - **Known trade-off (rule intentionally unchanged)**: 40-char git commit SHAs are indistinguishable from "≥24-char hex secrets" and get masked to `<token>` by the generic long-run rule (e.g. `HEAD detached at abc0123…` → `HEAD detached at <token>`), losing the lookup value of error messages. The false positive is accepted in exchange for secret coverage: a SHA-scenario whitelist would be unreliable (40-hex cannot be told apart from real secrets by shape), so this is documented as known behavior only
   - Proven false-positive-prone, deliberately not covered: IPv4 (same shape as UA version numbers), phone numbers (same shape as order IDs), credit cards (13-digit millisecond timestamps match at 100%)
 - System notification failures are silent (logs only), and do not affect the main flow; a missing / non-executable native binary (ENOENT etc.) is caught by the `error` event and **never bubbles up as an unhandled error that crashes the host process** (see issue #1)
 - **The two channels are delivered to different machines (don't confuse them)**:
@@ -146,7 +147,7 @@ be able to resolve these official packages (skipping type checking is unaffected
 - **iOS difference**: Safari's normal tabs have no Web Notifications API (only the "Add to Home Screen" PWA does); on iOS the available channels are "in-page banner + sound when the page is visible" and system notifications after HTTPS + A2HS
 - Browser notifications require a **secure context** (HTTPS or localhost); LAN HTTP access automatically routes through the fallback channel (banner / sound / title reminder)
 - Browser notification permission is requested within a gesture (when clicking the sidebar "Notifications" entry or a panel button)
-- Windows system notifications are implemented via a PowerShell WinRT script, with the command passed as a parameter array (no shell concatenation surface); the script idempotently registers the AppUserModelId on startup (HKCU, no admin required) — an unregistered AUMID gets toasts silently dropped by Windows 10/11
+- Windows system notifications are implemented via a PowerShell WinRT script, with the command passed as a parameter array (no shell concatenation surface); the script idempotently registers the AppUserModelId `DSH.dsh-notifier` on startup (HKCU, no admin required) — an unregistered AUMID gets toasts silently dropped by Windows 10/11. The AUMID follows the `Company.Product` convention to avoid collisions in the public namespace (`HKCU\SOFTWARE\Classes\AppUserModelId`) where same-named apps overwrite each other's display names; a legacy `DSH` key registered by older versions is harmless leftover (just an empty registry entry, does not affect new toasts) and can be removed manually with `Remove-Item -Path "HKCU:\SOFTWARE\Classes\AppUserModelId\DSH"` if desired
 
 ## Verification
 
