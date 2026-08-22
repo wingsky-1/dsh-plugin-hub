@@ -1,0 +1,12 @@
+{
+  "$comment": "Gauntlet 阈值唯一事实源（指导文档 11.4：阈值外置单一 config）。观察期基线校准后在此改值并开启 strict；文档附录 A 起点量级：CRAP <=12、覆盖率下限 80~90%（当前 lib 产物口径 + 同行多函数宽松判定，实际取值需按本仓基线上浮）。",
+  "crap": {
+    "threshold": 16,
+    "strict": false
+  },
+  "coverage": {
+    "note": "观察期仅记录不设限；校准后在此加 lines/functions 下限并接入 ci.yml 硬卡点",
+    "lines": null,
+    "functions": null
+  }
+}

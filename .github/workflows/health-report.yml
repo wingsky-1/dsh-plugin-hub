@@ -22,14 +22,14 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@a8198c4bff370c8506180b035930dea56dbd5288 # v5
         # 版本以根 package.json 的 packageManager 字段为单一事实源（勿同时指定 version）
 
       - name: Setup Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
           cache: pnpm
@@ -49,11 +49,14 @@ jobs:
       - name: Generate report body
         run: node scripts/health-report-body.mjs > health-body.md
 
-      - name: Create health issue
+      - name: Create health issue（幂等：同日重跑不重复建）
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           TITLE="chore(health): 周度健康报告 $(date -u +%Y-%m-%d)"
-          gh issue create \
-            --title "$TITLE" \
-            --body-file health-body.md
+          EXISTING=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number')
+          if [ -n "$EXISTING" ]; then
+            echo "issue #$EXISTING 已存在，跳过创建"
+          else
+            gh issue create --title "$TITLE" --body-file health-body.md
+          fi

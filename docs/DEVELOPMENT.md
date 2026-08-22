@@ -19,6 +19,9 @@ pnpm pack:check   # tarball 完整性（含聚合包）
 pnpm typecheck    # 全仓类型检查
 ```
 
+> Node 版本：本地直跑 TS 需 **≥23.6**（type stripping 门槛）；CI 固定 Node 24。
+> 阈值与 strict 开关见 `scripts/gauntlet.config.json`（唯一事实源）。
+
 目录结构：
 
 ```text

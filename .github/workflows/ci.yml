@@ -48,9 +48,11 @@ jobs:
 
       - name: Coverage（c8 采集，观察期只记录）
         run: pnpm cov
+        continue-on-error: true   # 观察期：采集自身异常不得阻断门禁
 
       - name: CRAP check（复杂度×覆盖率，观察期只记录）
         run: pnpm crap
+        continue-on-error: true   # 观察期：同上；基线校准后移除并启用 --strict
 
       - name: Pack check（防发布断链）
         run: pnpm pack:check
