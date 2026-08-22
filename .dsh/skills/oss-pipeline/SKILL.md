@@ -33,12 +33,12 @@ CI 日志 / diff / 测试全文只在 subagent 上下文出现，禁止进入主
    `gh api repos/{repo}/issues/<n>/timeline --paginate \
      --jq '[.[] | select(.event=="labeled" and .label.name=="zone/auto") | .actor.login] | unique'`
 ② 隔离：`git worktree add ../wt-<n> -b task/<n>`；禁止多任务共用同一 checkout
-③ 规格：issue 无「验收标准」清单则委派 spec-writer（规程 `agents/spec-writer.md`）
+③ 规格：issue 无「验收标准」清单则委派 spec-writer（规程 [agents/spec-writer.md](../../../agents/spec-writer.md)）
    补写为可断言清单（Gherkin `.feature` 基建启用后升级为 tests/features/*.feature）
-④ 实现：委派 coder（规程 `agents/coder.md`）；PR 创建后立即置 draft，让 CI 先转起来
+④ 实现：委派 coder（规程 [agents/coder.md](../../../agents/coder.md)）；PR 创建后立即置 draft，让 CI 先转起来
 ⑤ 收敛环（≤2 圈）：后台 job 挂 `gh pr checks --watch`；
-   红 → 委派 hardener（规程 `agents/hardener.md`）读 CI 日志修复重推；
-   评审发现复杂度热点 → 委派 cleaner（规程 `agents/cleaner.md`）；
+   红 → 委派 hardener（规程 [agents/hardener.md](../../../agents/hardener.md)）读 CI 日志修复重推；
+   评审发现复杂度热点 → 委派 cleaner（规程 [agents/cleaner.md](../../../agents/cleaner.md)）；
    2 圈未绿 → 熔断：
    在 PR 贴已尝试路径清单 + @维护者，给原 issue 打
    `blocked-human` label（`gh issue edit <n> --add-label blocked-human`），goal 置 blocked——

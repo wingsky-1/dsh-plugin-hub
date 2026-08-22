@@ -40,7 +40,7 @@ S0 基线：当前版本 + 目标 rc 发现
    - **github-pin 插件**：`github:owner/repo#tag`（非 npm，pnpm 直接 clone）。
 5. **读红线**：本工作树 AGENTS.md 的「禁止 kill/重启 dsh web」「命令优先用 workdir」「方案先于实现」。
 
-> 完整命令见 `references/upgrade-cookbook.md`（版本发现 / lib diff / git tag diff / github-pin 调查 / 备份与回滚）。
+> 完整命令见 [references/upgrade-cookbook.md](references/upgrade-cookbook.md)（版本发现 / lib diff / git tag diff / github-pin 调查 / 备份与回滚）。
 
 ## S1 升级影响分析（dsh 自身）
 
@@ -83,7 +83,7 @@ S0 基线：当前版本 + 目标 rc 发现
 
 ## S4 升级计划与命令（分阶段，全交用户执行）
 
-每阶段给「目标 + 命令」，模板见 `references/upgrade-cookbook.md`。
+每阶段给「目标 + 命令」，模板见 [references/upgrade-cookbook.md](references/upgrade-cookbook.md)。
 
 - **Phase 0 备份**：`cp package.json` / `settings.yaml` / `pnpm-lock.yaml` 到 `.bak-rcN`。
 - **Phase 1 升 dsh CLI**：`npm i -g @deepseek-ai/dsh@<target>`（显式 pin）；`dsh --version` 验证。*只换磁盘文件，运行的 web 进程仍旧代码。*

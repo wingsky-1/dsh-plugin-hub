@@ -92,7 +92,7 @@ pnpm build && pnpm test && pnpm contract && pnpm pack:check
 - **阶段式门禁 + 阶段 commit**：每个逻辑阶段（一次评审项修复 / 一个里程碑）结束即
   独立收口——全门禁跑绿 + 工作树/产物核对 + 阶段 commit（一句话改什么），不攒到
   最后一次性提交。此纪律与 commit-only 模式定义见
-  `dsh-plugin-review/references/workflow-common.md` §1/§3（唯一事实源，不在此内联重复）。
+  [dsh-plugin-review/references/workflow-common.md](../dsh-plugin-review/references/workflow-common.md) §1/§3（唯一事实源，不在此内联重复）。
 
 ## 6. 运行时=最新产物确认 + 重启红线
 
@@ -102,7 +102,7 @@ pnpm build && pnpm test && pnpm contract && pnpm pack:check
 3. 不一致 → 改动**需重启 dsh web 才生效**——**红线：由用户/平台重启，agent 不代操作**；
    如实提示用户重启后再验证。
 > 防「验证时改的没生效却误判 OK/失败」的假象（实测踩坑：进程未重启致 413 不生效、
-> 600KB 仍 200 的误判）。证据检核细则见 `dsh-plugin-review/references/verify-checklist.md` §4。
+> 600KB 仍 200 的误判）。证据检核细则见 [dsh-plugin-review/references/verify-checklist.md](../dsh-plugin-review/references/verify-checklist.md) §4。
 
 ## 7. 验证证据（浏览器 MCP / curl / smoke）
 
@@ -110,12 +110,13 @@ pnpm build && pnpm test && pnpm contract && pnpm pack:check
   **浏览器 MCP 真点查 DOM** 验证，不限于 node smoke 纯函数；构造 fixture（样例数据放
   临时目录，不纳入发布包）。
 - P0/P1 断言必须实测并标证据类型（curl / playwright / smoke）；检核表见
-  `dsh-plugin-review/references/verify-checklist.md`。
+  [dsh-plugin-review/references/verify-checklist.md](../dsh-plugin-review/references/verify-checklist.md)。
 - 新配置键**四同步**：normalize 白名单 / 透传排除表 + 客户端渲染 + smoke 断言 +
   README 样例（漏一项即被 `unknown 键透传` 覆盖归一化或契约不同步）。见
-  `dsh-plugin-review/references/workflow-common.md` §5 高频坑。
+  [dsh-plugin-review/references/workflow-common.md](../dsh-plugin-review/references/workflow-common.md) §5 高频坑。
 
 ## 8. 相关
 
-- 权威详细版：本仓库 `docs/DEVELOPMENT.md`。
-- 发布纪律：仓库根 `AGENTS.md`「发布纪律」节 + `CONTRIBUTING.md`。
+- 权威详细版：本仓库 [docs/DEVELOPMENT.md](../../../docs/DEVELOPMENT.md)。
+- 发布纪律：仓库根 [AGENTS.md](../../../AGENTS.md)「发布纪律」节 +
+  [CONTRIBUTING.md](../../../CONTRIBUTING.md)。

@@ -26,7 +26,7 @@ S0 准备与基线 → S1 维度裁剪 → S2 并行子 Agent 评审 → S3 交�
 阶段号 S0-S7（正文节号 §）；S7 只在「评审结论获批进入实施」时走，平时评审止于 S6。
 每阶段有明确的输入/输出与退出口；用户只追加一个维度（如「安装影响」）时，
 从 S1 重新裁剪即可，不必重跑已完成阶段。生效的验证证据要按
-`references/verify-checklist.md`（P0/P1 断言必须实测）。
+[references/verify-checklist.md](references/verify-checklist.md)（P0/P1 断言必须实测）。
 
 ## S0 准备与基线（协调者亲做，不委托）
 
@@ -45,7 +45,7 @@ S0 准备与基线 → S1 维度裁剪 → S2 并行子 Agent 评审 → S3 交�
 
 ## 2. S1 维度裁剪（默认 6 维 + 可选维，按目标类型取舍）
 
-默认矩阵见 `references/dimensions.md`（每维含审查重点 / 证据要求 / 输出要求）：
+默认矩阵见 [references/dimensions.md](references/dimensions.md)（每维含审查重点 / 证据要求 / 输出要求）：
 
 | 维度 | 何时必须 | 审查主体 |
 |---|---|---|
@@ -79,7 +79,7 @@ A + B。用户点名维度时以其为准（如「增加安装影响分析」→
 每个子 Agent **看不到本会话上下文**，prompt 必须包含：
 1. **绝对路径清单**：目标插件全部源码 + 仓库规范 + 共享层（如 hub 的
    `shared/loopback.js`、`types/dsh.d.ts`）+ 用于对照的同事插件。
-2. **维度重点**：该维度的审查方向与证据要求的提示（复制 `references/dimensions.md` 对应节）。
+2. **维度重点**：该维度的审查方向与证据要求的提示（复制 [references/dimensions.md](references/dimensions.md) 对应节）。
 3. **输出格式模板**（一并告诉它）：逐条发现格式固定为
    `**位置**（文件:行）/ **严重度**（P0-P3）/ **场景复现** / **证据**（代码引用）/
    **修复建议**`；另给：亮点 3-6 条、分值 0-100、Top N 整改清单。
@@ -90,7 +90,7 @@ A + B。用户点名维度时以其为准（如「增加安装影响分析」→
 
 ### 3.3 输出模板
 
-见 `references/templates.md`（子 Agent prompt 模板 / 发现条目模板 /
+见 [references/templates.md](references/templates.md)（子 Agent prompt 模板 / 发现条目模板 /
 聚合总报告模板 / 计划模板）。发现严重度定义：
 
 | 级别 | 定义 |
@@ -101,7 +101,7 @@ A + B。用户点名维度时以其为准（如「增加安装影响分析」→
 | P3 | 建议：打磨项 |
 
 **证据分级**：P0/P1 断言**必须给实测证据**（curl / 浏览器 MCP / node smoke，标注证据
-类型，见 `references/verify-checklist.md`）；P2/P3 允许代码引用 + 标注「未验证」。
+类型，见 [references/verify-checklist.md](references/verify-checklist.md)）；P2/P3 允许代码引用 + 标注「未验证」。
 禁止只引代码推理定性 P0/P1（实测常推翻纸面结论，如 URL 长路径 431@~16KB 边界）。
 
 ### 3.4 并行纪律
@@ -117,7 +117,7 @@ A + B。用户点名维度时以其为准（如「增加安装影响分析」→
 1. 逐个收齐子 Agent 报告（先到先收，全部到齐才聚合）。
 2. **交叉验证**：同一发现被 ≥2 个独立子 Agent 提出 → 在总清单该项打 **★**；
    相互矛盾时以「有源码/宿主证据 + 行号」者为准，协调者在总报告中写明裁决理由。
-3. **聚合总报告结构**（模板见 `references/templates.md`）：
+3. **聚合总报告结构**（模板见 [references/templates.md](references/templates.md)）：
    - 总览表（维度/子 Agent id/结论一句话/评分）
    - **主线判断**（贯穿多份报告的根因，如"部署形态与服务定位错位"——这是总报告
      最有价值的一节，协调者必须自己提炼，不照抄）
@@ -139,7 +139,7 @@ A + B。用户点名维度时以其为准（如「增加安装影响分析」→
 ## 6. S5 对抗性评审（强制，对落地计划）
 
 1. **为什么**：协调者自产计划自带视角盲区；独立子 Agent 不带先入之见能挑错。
-2. **派 ≥2 个并行对抗子 Agent**（模板见 `references/adversarial-review.md`）：
+2. **派 ≥2 个并行对抗子 Agent**（模板见 [references/adversarial-review.md](references/adversarial-review.md)）：
    - 视角 1「计划/交付」：排期真实性、依赖次序、遗漏（配置迁移/聚合 patch/版本/
      README 配对/验证矩阵）、残余项、范围蔓延、最低可行切片。
    - 视角 2「技术路径」：逐项实现思路是否正确/有坑（平台编码、事件语义、兼容、
@@ -152,17 +152,17 @@ A + B。用户点名维度时以其为准（如「增加安装影响分析」→
 - 默认在会话交付即可；用户要求落库时生成 `docs/REVIEW-<插件>.md`
   （或经 `technical-documentation` 规范瘦身）。
 - 报告内保留每一子 Agent 的名目与结论摘要，方便回溯与后续逐个整改。
-- **重度评审**（评审后进入实施）建议按 `references/templates.md` 的「评审交付物」
+- **重度评审**（评审后进入实施）建议按 [references/templates.md](references/templates.md) 的「评审交付物」
   节落成 `REVIEW-AND-PLAN.md`（范围决策 + 阶段计划 + 专项方案/决策点）与
   `TECH-DEBT.md`（已清偿/遗留/勾选/自研对照）；quick 评审默认会话交付，不强求落库。
 
 ## 8. S7 评审→实施交接（指针，不内联实施细节；仅获批进入实施时走）
 
-- 计划获批进入实施时：**转入 `dsh-plugin-hub-dev` 按实施 skill 执行**；
+- 计划获批进入实施时：**转入 [`dsh-plugin-hub-dev`](../dsh-plugin-hub-dev/SKILL.md) 按实施 skill 执行**；
   交接物为 `REVIEW-AND-PLAN.md`（含阶段计划与决策点）。
 - commit-only / 阶段门禁 / 运行时确认 / 实施常见坑等**实施细节归实施 skill**，
-  本 skill 是纯只读评审，不内联（见 `references/workflow-common.md` §1/§3/§5）。
-- **实测验证证据**（P0/P1 断言必须实测）按 `references/verify-checklist.md` 执行。
+  本 skill 是纯只读评审，不内联（见 [references/workflow-common.md](references/workflow-common.md) §1/§3/§5）。
+- **实测验证证据**（P0/P1 断言必须实测）按 [references/verify-checklist.md](references/verify-checklist.md) 执行。
 
 ## 9. 交付与纪律检查
 
