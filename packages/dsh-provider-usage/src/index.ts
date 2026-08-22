@@ -9,12 +9,14 @@
  * - GET /api/dsh-provider-usage/stats[?provider=<name>]  用量统计
  * - GET /api/dsh-provider-usage/history[?days=N]          历史采样序列
  * - GET /api/dsh-provider-usage/adapters.json              适配器元数据（M2）
+ * - POST /api/dsh-provider-usage/adapters/select           切换/清空启用适配器
+ * - POST /api/dsh-provider-usage/adapters/add              登记用户适配器文件（issue #38）
  * - GET /api/dsh-provider-usage/health                     健康检查
  */
 import { readFile, writeFile, rename, unlink, mkdir, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isLoopbackRequest } from "../../../shared/loopback.js";
 import { writeJson, readJsonBody } from "../../../shared/host-utils.js";
@@ -36,7 +38,7 @@ import {
   OPENCODE_GO_WINDOWS,
 } from "./adapters/opencode-go.js";
 import type { ProviderUsage, UsageWindow, FetchLike, HostProviderAdapter, SamplePointData, ProviderSummary } from "./contracts.js";
-import { resolvePath } from "./path-resolve.js";
+import { resolvePath, pluginHome } from "./path-resolve.js";
 
 // ------------------------------------------------------------------ 对外 re-export
 // 注意：bundle-host 会把 tsc 产物中的子模块全部内联进 lib/index.js 并清理游离 .js，
@@ -106,6 +108,7 @@ export const ROUTES: Record<string, string> = {
   history: "/api/dsh-provider-usage/history",
   adapters: "/api/dsh-provider-usage/adapters.json",
   select: "/api/dsh-provider-usage/adapters/select",
+  add: "/api/dsh-provider-usage/adapters/add",
   health: "/api/dsh-provider-usage/health",
 };
 
@@ -121,6 +124,12 @@ export const DEFAULT_CONFIG: NormalizedConfig = {
   adapters: { host: [], client: [] },
   stripSecrets: true,
 };
+
+/**
+ * 内置已知 provider 清单（issue #38：设置页提供商全集的第三路来源——无候选的
+ * 也展示并给引导）。随内置适配器扩展维护。
+ */
+export const KNOWN_PROVIDERS: string[] = [OPENCODE_GO_PROVIDER];
 
 /**
  * 设置面板 schemastery schema（M3b：settings 命名空间用，与 normalizeConfig 同构）。
@@ -780,17 +789,23 @@ export function adapterStateFile(root: string): string {
   return join(root, "adapter-state.json");
 }
 
-/** 读取持久化的 enabled 映射（provider → adapterId）；坏文件返回 {}。 */
-export async function readAdapterState(root: string): Promise<Record<string, string>> {
+/**
+ * 读取持久化的 enabled 映射（provider → adapterId）；坏文件返回 {}。
+ * 值为 null 表示该 provider 被显式清空禁用（issue #38），重启后保持无启用。
+ */
+export async function readAdapterState(root: string): Promise<Record<string, string | null>> {
   const raw = await readHistoryFile(adapterStateFile(root));
   if (typeof raw !== "string" || raw === "") return {};
   try {
     const data = JSON.parse(raw) as Record<string, unknown>;
-    const out: Record<string, string> = {};
+    const out: Record<string, string | null> = {};
     for (const [provider, id] of Object.entries(data)) {
-      if (typeof provider === "string" && typeof id === "string" && provider.length > 0 && id.length > 0) {
-        out[provider] = id;
+      if (typeof provider !== "string" || provider.length === 0) continue;
+      if (id === null) {
+        out[provider] = null;
+        continue;
       }
+      if (typeof id === "string" && id.length > 0) out[provider] = id;
     }
     return out;
   } catch {
@@ -798,13 +813,88 @@ export async function readAdapterState(root: string): Promise<Record<string, str
   }
 }
 
-/** 原子写 enabled 映射（select 切换时调用；失败只 warn 不阻断切换）。 */
-export async function writeAdapterState(root: string, enabled: Record<string, string>): Promise<void> {
+/** 原子写 enabled 映射（select 切换/清空时调用；失败只 warn 不阻断切换）。 */
+export async function writeAdapterState(root: string, enabled: Record<string, string | null>): Promise<void> {
   try {
     await writeHistoryFile(adapterStateFile(root), JSON.stringify(enabled));
   } catch {
     console.warn("[dsh-provider-usage] 启用选择落盘失败（内存态仍生效）");
   }
+}
+
+// ------------------------------------------------------------------ 运行时用户适配器清单（issue #38）
+
+/** 用户适配器登记条目（adapters/add 路由写入、启动时合并加载）。 */
+export interface UserAdapterRecord {
+  id: string;
+  label: string;
+  provider: string;
+  file: string;
+}
+
+/** 用户适配器清单文件（历史根目录下，与 adapter-state.json 同区）。 */
+export function userAdaptersFile(root: string): string {
+  return join(root, "user-adapters.json");
+}
+
+/**
+ * 校验 adapters/add 入参的 file 字段：文件存在可读 + 路径规整禁穿越。
+ * 规则：
+ * - 禁 NUL 字节与空串；
+ * - 输入必须已规整（`path.resolve` 前后一致，拒绝 `a/../b`、`./x` 等未规整形态）；
+ * - 绝对路径：规整即可（信任模型同配置注入——本机用户可加载任意本地文件）；
+ * - 相对路径：只允许经 resolvePath 落在 DSH_HOME 或插件 home 之内。
+ * @returns 解析后的绝对路径；非法返回 undefined。
+ */
+export function resolveAddAdapterFile(input: unknown, dshHome = process.env.DSH_HOME ?? join(homedir(), ".dsh")): string | undefined {
+  if (typeof input !== "string") return undefined;
+  const trimmed = input.trim();
+  if (trimmed === "" || trimmed.includes("\0")) return undefined;
+  // 规整性：resolve 前后必须一致（拒绝 .. / . 段穿越形态）
+  if (resolve(trimmed) !== trimmed) return undefined;
+  const resolved = resolvePath(trimmed);
+  if (resolved === undefined) return undefined; // 不存在 / 非常规文件
+  if (!isAbsolute(trimmed)) {
+    // 相对路径：解析结果必须位于 DSH_HOME 或插件 home 之内
+    for (const base of [dshHome, pluginHome(dshHome)]) {
+      const rel = relative(base, resolved);
+      if (rel !== "" && !rel.startsWith("..") && !isAbsolute(rel)) return resolved;
+    }
+    return undefined;
+  }
+  return resolved;
+}
+
+/** 防御式解析用户适配器清单文本（坏文件返回 []）。 */
+export function parseUserAdapters(raw: string | undefined): UserAdapterRecord[] {
+  if (typeof raw !== "string" || raw === "") return [];
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (typeof data !== "object" || data === null) return [];
+  const list = (data as Record<string, unknown>)["adapters"];
+  if (!Array.isArray(list)) return [];
+  const out: UserAdapterRecord[] = [];
+  for (const item of list) {
+    if (typeof item !== "object" || item === null) continue;
+    const rec = item as Record<string, unknown>;
+    const id = typeof rec.id === "string" ? rec.id : "";
+    const label = typeof rec.label === "string" ? rec.label : "";
+    const provider = typeof rec.provider === "string" ? rec.provider : "";
+    const file = typeof rec.file === "string" ? rec.file : "";
+    if (id.length > 0 && label.length > 0 && provider.length > 0 && file.length > 0) {
+      out.push({ id, label, provider, file });
+    }
+  }
+  return out;
+}
+
+/** 读取用户适配器清单（坏文件/不存在返回 []）。 */
+export async function readUserAdapters(root: string): Promise<UserAdapterRecord[]> {
+  return parseUserAdapters(await readHistoryFile(userAdaptersFile(root)));
 }
 
 // ------------------------------------------------------------------ 密钥护栏（stripSecrets，默认开）
@@ -906,6 +996,13 @@ export function deriveSummary(
 }
 
 
+/** 错误消息路径脱敏（信息面最小披露）：DSH_HOME → ~/.dsh、用户 home → ~。 */
+export function sanitizePathInMessage(s: string): string {
+  const home = homedir();
+  const dshHome = process.env.DSH_HOME ?? join(home, ".dsh");
+  return s.split(dshHome).join("~/.dsh").split(home).join("~");
+}
+
 // ------------------------------------------------------------------ 插件入口
 
 export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Promise<void> {
@@ -918,24 +1015,33 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
   };
 
   // -------------------------------------------------------- 适配器注册表
-  const registry = makeHostAdapterRegistry();
+  // issue #38：错误登记走注册表（面板可展示每个用户适配器最近一次加载/执行错误），
+  // 消息经路径脱敏维持信息面最小披露。
+  const registry = makeHostAdapterRegistry({ sanitizePath: sanitizePathInMessage });
   registry.register(openCodeGoHostAdapter, "builtin");
 
-  // M2: 加载用户宿主适配器（多个文件依序加载，单个失败不阻断）
+  /**
+   * 用户宿主适配器文件加载链（config.adapters.host 与运行时 adapters/add 清单
+   * 共用，issue #38）：import + default/具名取舍。失败抛出由调用方兜底。
+   */
+  async function loadUserHostAdapterFile(file: string): Promise<unknown> {
+    const url = pathToFileURL(file).href;
+    const mod = (await import(url)) as Record<string, unknown>;
+    return mod.default ?? mod;
+  }
+
+  // M2: 加载用户宿主适配器（多个文件依序加载，单个失败不阻断；失败登记错误供面板排障）
   for (const entry of current.adapters.host) {
     const file = resolvePath(entry.file);
     if (file === undefined) {
-      console.warn(`[dsh-provider-usage] 用户宿主适配器文件不存在：${entry.file}，跳过`);
+      registry.recordError(`file:${basename(entry.file)}`, "load", `文件不存在或不可读：${entry.file}`);
       continue;
     }
     try {
-      const url = pathToFileURL(file).href;
-      const mod = await import(url);
-      const adapter = (mod as Record<string, unknown>).default ?? mod;
+      const adapter = await loadUserHostAdapterFile(file);
       registry.register(adapter, "user-file", file, entry.enabled);
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.warn(`[dsh-provider-usage] 用户宿主适配器加载失败 ${entry.file}: ${msg}`);
+      registry.recordError(`file:${basename(file)}`, "load", e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -955,6 +1061,21 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
 
   // M3b：应用持久化的启用选择（重启保留；仅覆盖仍存在的候选）。
   // 状态文件在历史根下，须在数据割接定根之后读取（回落旧根时同根一致）。
+  // issue #38：运行时 adapters/add 登记的清单先于 savedEnabled 合并加载
+  // （注册默认启用语义与 config.host 一致，随后由 savedEnabled 校正最终态）。
+  for (const rec of await readUserAdapters(root)) {
+    const file = resolvePath(rec.file);
+    if (file === undefined) {
+      registry.recordError(`file:${basename(rec.file)}`, "load", `文件不存在或不可读：${rec.file}`);
+      continue;
+    }
+    try {
+      const adapter = await loadUserHostAdapterFile(file);
+      registry.register(adapter, "user-file", file);
+    } catch (e: unknown) {
+      registry.recordError(`file:${basename(file)}`, "load", e instanceof Error ? e.message : String(e));
+    }
+  }
   const savedEnabled = await readAdapterState(root);
   for (const [provider, adapterId] of Object.entries(savedEnabled)) {
     registry.select(provider, adapterId);
@@ -1007,8 +1128,23 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
    * IO 时序，链上最后一次写入最终生效。
    */
   let adapterStateChain: Promise<void> = Promise.resolve();
-  function scheduleWriteAdapterState(enabled: Record<string, string>): void {
+  function scheduleWriteAdapterState(enabled: Record<string, string | null>): void {
     adapterStateChain = adapterStateChain.then(() => writeAdapterState(root, enabled));
+  }
+
+  /** 用户适配器清单落盘串行链（issue #38）：连续 add 的写完成顺序不依赖 IO 时序。 */
+  async function persistUserAdapter(rec: UserAdapterRecord): Promise<void> {
+    const write = async (): Promise<void> => {
+      const list = await readUserAdapters(root);
+      if (list.some((r) => r.id === rec.id)) return; // 幂等：已登记不再追加
+      list.push(rec);
+      await writeHistoryFile(userAdaptersFile(root), JSON.stringify({ version: 1, adapters: list }));
+    };
+    try {
+      await (adapterStateChain = adapterStateChain.then(write));
+    } catch {
+      console.warn("[dsh-provider-usage] 用户适配器清单落盘失败（内存态仍生效）");
+    }
   }
 
   /** 解析某 provider 的 API Key（当前仅 opencode-go 有解析链；M2 扩展）。 */
@@ -1181,18 +1317,88 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
         return writeJson(res, 400, { error: "bad-json" });
       }
       const provider = typeof body.provider === "string" ? body.provider : "";
+      // issue #38：adapterId 显式 null = 清空该 provider 启用项（「禁用该提供商」）
+      const clearing = body.adapterId === null;
       const adapterId = typeof body.adapterId === "string" ? body.adapterId : "";
-      // 参数长度限制（防异常输入）
-      if (provider.length === 0 || adapterId.length === 0 || provider.length > 128 || adapterId.length > 128) {
+      // 参数长度限制（防异常输入）；缺失/空串仍拒绝（清空必须显式 null）
+      if (!clearing && (provider.length === 0 || adapterId.length === 0 || provider.length > 128 || adapterId.length > 128)) {
         return writeJson(res, 400, { error: "invalid provider/adapterId" });
       }
-      const ok = registry.select(provider, adapterId);
+      const ok = registry.select(provider, clearing ? null : adapterId);
       if (!ok) return writeJson(res, 404, { error: "adapter not found" });
       statsEpoch += 1; // 递增代数：inflight 的旧适配器结果不再回填缓存
       cache.clear(provider); // 切换后清该 provider 缓存（下一个请求走新适配器）
-      // M3b：持久化启用选择（重启保留；经 promise 链串行化，失败只 warn）
+      // M3b：持久化启用选择（重启保留；经 promise 链串行化，失败只 warn）。
+      // 清空态以显式 null 固化，重启后保持无启用（不回退默认启用）。
+      scheduleWriteAdapterState(
+        clearing ? { ...registry.snapshot().enabled, [provider]: null } : registry.snapshot().enabled,
+      );
+      writeJson(res, 200, { ok: true, provider, adapterId: clearing ? null : adapterId });
+    },
+  };
+
+  // issue #38：登记用户适配器文件并热注册（POST /adapters/add）。
+  // 入参 { id, label, provider, file }；校验文件存在可读 + 路径规整禁穿越；
+  // 登记进用户适配器清单（重启保留）并复用 user-file 加载链热注册。
+  // 本期不做「粘贴 JS 落盘」。
+  const addRoute: WebRoute = {
+    kind: "exact",
+    path: ROUTES.add,
+    handler: async (req, res) => {
+      if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
+      if (req.method !== "POST") return writeJson(res, 405, { error: `method not allowed: ${req.method}` });
+      let body: Record<string, unknown>;
+      try {
+        const raw = await readJsonBody(req);
+        if (typeof raw !== "object" || raw === null) return writeJson(res, 400, { error: "bad-json" });
+        body = raw as Record<string, unknown>;
+      } catch {
+        return writeJson(res, 400, { error: "bad-json" });
+      }
+      const id = typeof body.id === "string" ? body.id.trim() : "";
+      const label = typeof body.label === "string" ? body.label.trim() : "";
+      const provider = typeof body.provider === "string" ? body.provider.trim() : "";
+      if (
+        id.length === 0 || label.length === 0 || provider.length === 0 ||
+        id.length > 128 || label.length > 128 || provider.length > 128
+      ) {
+        return writeJson(res, 400, { error: "invalid-input" });
+      }
+      const file = resolveAddAdapterFile(body.file);
+      if (file === undefined) {
+        return writeJson(res, 400, { error: "invalid-file", detail: "文件不存在/不可读，或路径未规整（禁穿越）" });
+      }
+      if (registry.snapshot().infos.some((i) => i.id === id)) {
+        return writeJson(res, 409, { error: "duplicate-id", detail: `适配器 id 已存在：${id}` });
+      }
+      let adapter: unknown;
+      try {
+        adapter = await loadUserHostAdapterFile(file);
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        registry.recordError(`file:${basename(file)}`, "load", msg);
+        return writeJson(res, 422, { error: "adapter-load-failed", detail: msg });
+      }
+      // 登记元数据一致性：实际身份以适配器导出为准，入参 id 填错直接拒绝（防清单与注册表漂移）
+      const actualId = typeof (adapter as Record<string, unknown> | null)?.id === "string"
+        ? ((adapter as Record<string, unknown>).id as string)
+        : undefined;
+      if (actualId !== id) {
+        return writeJson(res, 422, { error: "id-mismatch", detail: `模块导出 id=${actualId ?? "<缺失>"} 与入参 id=${id} 不一致` });
+      }
+      if (!registry.register(adapter, "user-file", file)) {
+        return writeJson(res, 422, { error: "invalid-adapter", detail: "契约校验失败（version/id/label/providers/fetchUsage）" });
+      }
+      await persistUserAdapter({ id, label, provider, file });
+      // 热注册默认成为该 provider 启用者：把新选择固化进启用状态落盘
+      statsEpoch += 1;
+      cache.clear(provider);
       scheduleWriteAdapterState(registry.snapshot().enabled);
-      writeJson(res, 200, { ok: true, provider, adapterId });
+      writeJson(res, 200, {
+        ok: true,
+        adapter: { id, label, provider, file: basename(file) },
+        enabled: registry.snapshot().enabled,
+      });
     },
   };
 
@@ -1269,6 +1475,10 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
         })),
         enabled: snap.enabled,
         client,
+        // issue #38：内置已知 provider 清单（提供商全集第三路来源）
+        knownProviders: [...KNOWN_PROVIDERS],
+        // issue #38：最近一次适配器错误登记（面板排障展示；key=adapterId 或 file:<名>）
+        errors: snap.errors.map((e) => ({ key: e.key, at: e.at, kind: e.kind, message: e.message })),
       });
     },
   };
@@ -1323,13 +1533,15 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
           ...i,
           file: i.file !== undefined ? basename(i.file) : undefined,
         })),
+        // issue #38：最近一次适配器错误登记（排障展示，消息已路径脱敏）
+        errors: snap.errors.map((e) => ({ key: e.key, at: e.at, kind: e.kind, message: e.message })),
       });
     },
   };
 
   const disposeRoutes = ctx.effect(
     () => {
-      const routeDisposers = [statsRoute, selectRoute, historyRoute, adaptersRoute, userRoute, healthRoute].map((route) =>
+      const routeDisposers = [statsRoute, selectRoute, addRoute, historyRoute, adaptersRoute, userRoute, healthRoute].map((route) =>
         ctx.webServer.register(route),
       );
       return () => {

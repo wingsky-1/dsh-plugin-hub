@@ -12,9 +12,13 @@ import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 
-/** 插件 home 目录（host 文件逻辑归属区 ~/.dsh/plugins/provider-usage）。 */
-export function pluginHome(): string {
-  return join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), "plugins", "provider-usage");
+/**
+ * 插件 home 目录（host 文件逻辑归属区 ~/.dsh/plugins/provider-usage）。
+ * @param base - DSH_HOME 根（缺省读 env，回落 ~/.dsh）；参数化供调用方在非全局
+ *   env 场景（如路由入参校验）复用同一拼装规则。
+ */
+export function pluginHome(base = process.env.DSH_HOME ?? join(homedir(), ".dsh")): string {
+  return join(base, "plugins", "provider-usage");
 }
 
 /**

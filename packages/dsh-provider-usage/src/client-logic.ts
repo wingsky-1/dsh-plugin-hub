@@ -100,3 +100,52 @@ export function rendererLookupKeys(provider: string, adapterId?: string): string
   if (adapterId !== undefined && adapterId !== "") return [`${provider}/${adapterId}`, provider];
   return [provider];
 }
+
+// ------------------------------------------------------------------ 设置页·提供商全集（issue #38）
+
+/** 提供商全集合并的输入（全部来自 adapters.json 响应 + 宿主已知清单）。 */
+export interface ProvidersUnionInput {
+  /** provider → 已注册候选列表（adapters.json host[] 按 providers 分组）。 */
+  candidatesByProvider: Record<string, Array<{ id: string; label: string; source: string }>>;
+  /** 运行时启用映射（provider → adapterId）。 */
+  enabled?: Record<string, string>;
+  /** 内置已知清单（宿主 knownProviders；无候选也展示并给引导）。 */
+  known: string[];
+}
+
+/** 提供商列表项（设置页手风琴一行的数据面）。 */
+export interface ProviderListItem {
+  provider: string;
+  /** 是否有已注册候选（false = 仅出现在已知清单，需展示引导文案）。 */
+  hasCandidates: boolean;
+  /** 当前启用 adapterId（null = 未启用/已清空）。 */
+  enabledId: string | null;
+}
+
+/**
+ * 提供商全集 = 已注册候选覆盖 ∪ 运行时启用映射 ∪ 内置已知清单（issue #38）。
+ * 排序：内置已知在前（引导位），其余按字典序；逐项带候选存在性与启用态，
+ * 面板直接渲染，不再自行拼装。
+ */
+export function unionProviders(input: ProvidersUnionInput): ProviderListItem[] {
+  const providers = new Set<string>();
+  for (const p of Object.keys(input.candidatesByProvider)) providers.add(p);
+  for (const p of Object.keys(input.enabled ?? {})) providers.add(p);
+  for (const p of input.known) providers.add(p);
+  const knownSet = new Set(input.known);
+  const sorted = [...providers].sort((a, b) => {
+    const ka = knownSet.has(a) ? 0 : 1;
+    const kb = knownSet.has(b) ? 0 : 1;
+    return ka !== kb ? ka - kb : a.localeCompare(b);
+  });
+  return sorted.map((provider) => ({
+    provider,
+    hasCandidates: (input.candidatesByProvider[provider]?.length ?? 0) > 0,
+    enabledId: input.enabled?.[provider] ?? null,
+  }));
+}
+
+/** 折叠态徽标文案（issue #38：显示「启用中: <adapter-id>」或「未启用」）。 */
+export function providerBadgeText(item: Pick<ProviderListItem, "enabledId">): string {
+  return item.enabledId !== null ? `启用中: ${item.enabledId}` : "未启用";
+}
