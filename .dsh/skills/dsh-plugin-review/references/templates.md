@@ -139,4 +139,4 @@ typecheck ✅ / smoke ✅ / 工作树干净 ✅
 - [x] <债>（commit/日期）
 ```
 
-> 实测验证证据模板见 `./verify-checklist.md`（curl / 浏览器 MCP / smoke 三型检核表）。
+> 实测验证证据模板见 [verify-checklist.md](verify-checklist.md)（curl / 浏览器 MCP / smoke 三型检核表）。

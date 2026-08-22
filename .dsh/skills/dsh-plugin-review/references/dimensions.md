@@ -104,4 +104,4 @@ conf/lodash/croner…），判定「保持自研 / 替换 / 借鉴」，评估�
 - 证据导向：任何断言必须「有文件有真相」，无法核实的写「未验证」。
 - 复杂场景要求「能跑真实验证最小清单」，不要只凭 agent 自述。
 - **证据分级**：P0/P1 断言**必须实测**（curl / 浏览器 MCP / node smoke，标注证据
-  类型）；P2/P3 允许静态证据 + 标注「未验证」。详见 `./verify-checklist.md`。
+  类型）；P2/P3 允许静态证据 + 标注「未验证」。详见 [verify-checklist.md](verify-checklist.md)。
