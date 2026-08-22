@@ -29,13 +29,15 @@
 
 **设置页入口**：在某提供商无候选（或列表为空）时，界面提供「复制引导指令」按钮——
 用户把复制的一句话发到会话，即触发本流程。指令示例（设置页/浮窗实际复制的文案与此
-一致，且末尾带本文档引用，Agent 收到后应首先查阅）：
+一致，且末尾带本文档的 **GitHub 链接**——任何工作目录下的 Agent 都能读取；在插件
+仓库内开发时也可按相对路径 `packages/dsh-provider-usage/docs/opt/usage-provider-adapter/9-agent-guide-mjs.md`
+直接读取）：
 
 > 请为提供商 \<provider\> 创建用量统计适配器：以该提供商在模型配置中的 API 端点
 > （baseUrl）为起点，自行确认用量接口与鉴权方式，自主设计适配器方案（id/展示名/窗口字段），
 > 先给我审核方案（含 API 端点），确认后生成 .mjs 文件、告诉保存路径并引导我在
 > 「用量统计」设置页添加适配器。按 mjs 适配器开发指导文档
-> （packages/dsh-provider-usage/docs/opt/usage-provider-adapter/9-agent-guide-mjs.md）
+> （https://github.com/wingsky-1/dsh-plugin-hub/blob/main/packages/dsh-provider-usage/docs/opt/usage-provider-adapter/9-agent-guide-mjs.md）
 > 执行引导流程。
 
 收到后按以下流程执行（默认全程自主，只保留审核点）：

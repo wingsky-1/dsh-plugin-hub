@@ -224,7 +224,7 @@ function renderPanel(): void {
       el("p", { class: PILL_PREFIX + "hint", text: "在设置面板「用量统计」的适配器管理中启用一个候选适配器；也可复制下方引导指令，让 Agent 帮你接入用量数据源。" }),
     );
     // 一句话引导指令：复制到会话即触发 agent 自主引导（9-agent-guide-mjs.md）
-    const guide = `请为提供商 ${currentProvider} 创建用量统计适配器：以该提供商在模型配置中的 API 端点（baseUrl）为起点，自行确认用量接口与鉴权方式，自主设计适配器方案（id/展示名/窗口字段），先给我审核方案（含 API 端点），确认后生成 .mjs 文件、告诉保存路径并引导我在「用量统计」设置页添加适配器。按 mjs 适配器开发指导文档（packages/dsh-provider-usage/docs/opt/usage-provider-adapter/9-agent-guide-mjs.md）执行引导流程。`;
+    const guide = `请为提供商 ${currentProvider} 创建用量统计适配器：以该提供商在模型配置中的 API 端点（baseUrl）为起点，自行确认用量接口与鉴权方式，自主设计适配器方案（id/展示名/窗口字段），先给我审核方案（含 API 端点），确认后生成 .mjs 文件、告诉保存路径并引导我在「用量统计」设置页添加适配器。按 mjs 适配器开发指导文档（https://github.com/wingsky-1/dsh-plugin-hub/blob/main/packages/dsh-provider-usage/docs/opt/usage-provider-adapter/9-agent-guide-mjs.md）执行引导流程。`;
     const btn = el("button", {
       type: "button",
       class: PILL_PREFIX + "btn",

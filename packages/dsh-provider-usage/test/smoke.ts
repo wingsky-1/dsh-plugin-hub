@@ -1013,6 +1013,7 @@ async function waitFor(cond, timeoutMs = 5000, stepMs = 50) {
   assert.ok(client.includes("复制引导指令"), "无候选/空态提供复制一句话引导指令入口（agent 自主引导）");
   assert.ok(client.includes("创建用量统计适配器"), "浮窗无适配器态提供复制引导指令（含 provider 名的完整指令）");
   assert.ok(client.includes("9-agent-guide-mjs.md"), "引导指令带 mjs 开发指导文档引用");
+  assert.ok(client.includes("github.com/wingsky-1/dsh-plugin-hub"), "引导指令引用 GitHub 文档链接（任意目录可读）");
   assert.ok(client.includes("dou-provHead"), "手风琴折叠头样式类");
   assert.ok(client.includes("dou-provErr"), "错误登记展示（候选执行/文件加载最近一次错误）");
   assert.ok(client.includes("modelProviders"), "消费宿主模型配置提供商清单（与模型配置页同源）");
