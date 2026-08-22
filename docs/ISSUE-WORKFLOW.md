@@ -47,7 +47,15 @@
    - PR 正文写 `Fixes #<编号>` —— merge 后 GitHub 自动关闭 issue；
    - 或 commit message 引用 `(#<编号>)`，merge 后 issue 上会留下 referenced 记录，
      手动关闭。
-5. **合并即收尾**：CI 全绿后 squash merge（远端分支自动删除）；issue 若未自动关闭
+5. **收敛与冲突处理**：先查合并状态再看 CI——`gh pr view --json mergeStateStatus`：
+   - `CLEAN` → 等 CI 全绿即可；
+   - checks 未触发/缺失 → 先确认 mergeState 不是 `BLOCKED(CONFLICTING)`，再考虑等待
+     或手动 dispatch（最多一次）；
+   - `CONFLICTING` / `DIRTY` → 立即转冲突处理，不要在 CI 上空转：
+     ① `git fetch && git rebase origin/main`；② 解决冲突（保留双方语义，不丢任一方改动）；
+     ③ 本地重跑全量门禁；④ `git push --force-with-lease` 回推 PR。
+     冲突多源于并行合入的 docs/skill 改动，属正常演进代价，一次 rebase 消化。
+6. **合并即收尾**：CI 全绿后 squash merge（远端分支自动删除）；issue 若未自动关闭
    则手动关闭并在评论里给出「修复版本号」（发布后回填）。
 
 ## 3. 特殊类型

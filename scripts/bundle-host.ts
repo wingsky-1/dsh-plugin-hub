@@ -10,8 +10,8 @@
  * 步骤：
  * 1. esbuild bundle lib/index.js（--platform=node，内置模块自动 external），
  *    把 `../../shared/*` 运行时 import 内联进产物 —— npm 包自包含，不断链。
- * 2. d.ts X1：lib/*.d.ts 中 `../../shared/` → `../shared/`、`../../types/` → `../types/`，
- *    并把 shared/*.d.ts、types/dsh.d.ts 复制进包内 shared/、types/（纯类型，随包发布）。
+ * 2. d.ts X1：lib/*.d.ts 中 `../../shared/` → `../shared/`，
+ *    并把 shared/*.d.ts 复制进包内 shared/（纯类型，随包发布）。
  * 3. 复制仓库根 LICENSE 进包（files 白名单含 LICENSE）。
  *
  * 前置：插件已 tsc 编译（tsc -p tsconfig.json），lib/ 含 js + d.ts。
@@ -143,8 +143,8 @@ function cleanFreeFloatingJs(dir, isRoot) {
 }
 cleanFreeFloatingJs(libDir, true)
 
-// 2a. d.ts 路径改写（X1，递归且按文件深度感知）：shared|types 相对引用 → 包内副本。
-// 顶层 lib/x.d.ts 引用包内副本为 ../shared/、../types/；
+// 2a. d.ts 路径改写（X1，递归且按文件深度感知）：shared 相对引用 → 包内副本。
+// 顶层 lib/x.d.ts 引用包内副本为 ../shared/；
 // 子目录 lib/a/b.d.ts 引用为 ../../shared/（深度 +1 级）。
 function rewriteDtsPaths(dir, depth) {
   const prefix = '../'.repeat(depth + 1)
@@ -155,21 +155,18 @@ function rewriteDtsPaths(dir, depth) {
     const p = join(dir, f.name)
     const t = readFileSync(p, 'utf8')
       .replace(/(?:\.\.\/)+shared\//g, `${prefix}shared/`)
-      .replace(/(?:\.\.\/)+types\//g, `${prefix}types/`)
     writeFileSync(p, t)
   }
 }
 rewriteDtsPaths(libDir, 0)
-// 2b. shared/types 声明副本进包（递归：shared/ 下所有 .d.ts，含子目录如 host/）
+// 2b. shared 声明副本进包（递归：shared/ 下所有 .d.ts，含子目录如 host/）
 mkdirSync(join(pkgDir, 'shared'), { recursive: true })
-mkdirSync(join(pkgDir, 'types'), { recursive: true })
 for (const rel of walkFiles(join(ROOT, 'shared'), (f) => f.endsWith('.d.ts'))) {
   const dest = join(pkgDir, 'shared', rel)
   mkdirSync(dirname(dest), { recursive: true })
   cpSync(join(ROOT, 'shared', rel), dest)
 }
-cpSync(join(ROOT, 'types', 'dsh.d.ts'), join(pkgDir, 'types', 'dsh.d.ts'))
-console.log(`[bundle-host] ${process.argv[2]}: d.ts X1 完成（shared/、types/ 副本随包）`)
+console.log(`[bundle-host] ${process.argv[2]}: d.ts X1 完成（shared/ 副本随包）`)
 
 // 3. LICENSE 进包
 cpSync(join(ROOT, 'LICENSE'), join(pkgDir, 'LICENSE'))
