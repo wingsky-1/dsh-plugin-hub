@@ -146,7 +146,7 @@ be able to resolve these official packages (skipping type checking is unaffected
 - **iOS difference**: Safari's normal tabs have no Web Notifications API (only the "Add to Home Screen" PWA does); on iOS the available channels are "in-page banner + sound when the page is visible" and system notifications after HTTPS + A2HS
 - Browser notifications require a **secure context** (HTTPS or localhost); LAN HTTP access automatically routes through the fallback channel (banner / sound / title reminder)
 - Browser notification permission is requested within a gesture (when clicking the sidebar "Notifications" entry or a panel button)
-- Windows system notifications are implemented via a PowerShell WinRT script, with the command passed as a parameter array (no shell concatenation surface); the script idempotently registers the AppUserModelId on startup (HKCU, no admin required) — an unregistered AUMID gets toasts silently dropped by Windows 10/11
+- Windows system notifications are implemented via a PowerShell WinRT script, with the command passed as a parameter array (no shell concatenation surface); the script idempotently registers the AppUserModelId `DSH.dsh-notifier` on startup (HKCU, no admin required) — an unregistered AUMID gets toasts silently dropped by Windows 10/11. The AUMID follows the `Company.Product` convention to avoid collisions in the public namespace (`HKCU\SOFTWARE\Classes\AppUserModelId`) where same-named apps overwrite each other's display names; a legacy `DSH` key registered by older versions is harmless leftover (just an empty registry entry, does not affect new toasts) and can be removed manually with `Remove-Item -Path "HKCU:\SOFTWARE\Classes\AppUserModelId\DSH"` if desired
 
 ## Verification
 
