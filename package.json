@@ -31,6 +31,7 @@
     "c8": "^12.0.0",
     "esbuild": "^0.28.2",
     "http-proxy": "1.18.1",
+    "mime": "^4.1.0",
     "selfsigned": "^2.4.1",
     "typescript": "^7.0.2"
   },

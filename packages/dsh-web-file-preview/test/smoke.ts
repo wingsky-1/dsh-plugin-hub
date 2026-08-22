@@ -92,6 +92,12 @@ assert.equal(previewKindOf("a.js").group, "renderedCode", "代码渲染组");
 assert.equal(previewKindOf("hello.md").contentType, "text/markdown; charset=utf-8");
 assert.equal(previewKindOf("a.txt").group, "text");
 assert.equal(previewKindOf("a.exe").group, "other");
+// issue #12：图片组 Content-Type 改由 mime 库提供——精确值逐项断言（原自写表等价映射）。
+assert.equal(previewKindOf("a.png").contentType, "image/png");
+assert.equal(previewKindOf("a.webp").contentType, "image/webp");
+assert.equal(previewKindOf("a.svg").contentType, "image/svg+xml");
+assert.equal(previewKindOf("a.avif").contentType, "image/avif");
+assert.equal(previewKindOf("dir/a.JPG").contentType, "image/jpeg", "大小写不敏感且走 mime 库");
 
 assert.equal(normalizeConfig(undefined).enabled, true, "默认启用");
 assert.equal(normalizeConfig(undefined).maxTextBytes, DEFAULT_CONFIG.maxTextBytes, "默认文本上限");
