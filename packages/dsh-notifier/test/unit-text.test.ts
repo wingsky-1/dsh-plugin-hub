@@ -47,9 +47,30 @@ assert.equal(sessionTitleOf({ id: "session-1" }), undefined, "无 session 返回
 assert.equal(sessionTitleOf(undefined), undefined, "无 agent 返回 undefined");
 assert.equal(sessionTitleOf({ id: "session-1", session: { events: "bad" } }), undefined, "events 非数组容错");
 assert.equal(
-  sessionTitleOf({ session: { events: [{ type: "session/title", data: { title: "x".repeat(80) } }] } }),
-  "x".repeat(40),
+  sessionTitleOf({ session: { events: [{ type: "session/title", data: { title: "优".repeat(80) } }] } }),
+  "优".repeat(40),
   "标题截断 40 字符"
+);
+
+// sessionTitleOf 接入脱敏链（issue #30）：标题源自会话内容，进入通知与历史前
+// 敏感片段必须打码；正常标题不含敏感特征、脱敏后原样透传保持可读
+assert.ok(
+  !sessionTitleOf({ session: { events: [{ type: "session/title", data: { title: `修复 ${"a".repeat(48)} 泄漏` } }] } })!.includes("aaaa"),
+  "标题中长 hex 密钥片段被打码为 <token>"
+);
+assert.equal(
+  sessionTitleOf({ session: { events: [{ type: "session/title", data: { title: `修复 ${"f".repeat(30)} 泄漏` } }] } }),
+  "修复 <token> 泄漏",
+  "≥24 位 hex 长串在标题中打码"
+);
+assert.ok(
+  !sessionTitleOf({ session: { events: [{ type: "session/title", data: { title: "联系 admin@corp.example.com 处理部署" } }] } })!.includes("admin@"),
+  "标题中邮箱地址被打码为 <email>"
+);
+assert.equal(
+  sessionTitleOf(titledAgent),
+  "优化 notifier 插件",
+  "正常标题脱敏后原样透传（可读性不受影响）"
 );
 
 // loopback 围栏：回环放行、非回环拒绝

@@ -98,6 +98,18 @@ assert.equal(
   "mysql://<redacted>@db.example.com down",
   "DSN 与邮箱规则顺序回归"
 );
+// 尖括号引用形态（issue #30）：双断言放行 <user@host>，不再整体漏网
+assert.equal(
+  sanitizeErrorText("From: John <john.doe@corp.example.com> signed"),
+  "From: John <<email>> signed",
+  "尖括号包裹的真实邮箱正常打码"
+);
+// 占位符不被二次破坏（issue #30）：裸 <redacted>@真实域名 形态必须原样保留
+assert.equal(
+  sanitizeErrorText("<redacted>@db.example.com down"),
+  "<redacted>@db.example.com down",
+  "DSN 掩码占位符不被邮箱规则二次命中"
+);
 
 // 规则顺序硬约束回归
 assert.equal(

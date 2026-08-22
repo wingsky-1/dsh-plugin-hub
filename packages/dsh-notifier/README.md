@@ -132,6 +132,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-notifier
   - 密钥字段赋值（`password=`/`token=`/`api_key=`…，须带显式 `=`/`:` 分隔符）→ `键名=<redacted>`
   - 邮箱 → `<email>`
   - **审批理由与提问文本**同样经脱敏（120 字符截断）——这两类文本最常内嵌命令回显与凭据片段
+  - **已知取舍（不修正则）**：40 位 git commit SHA 与「≥24 位 hex 密钥」同形不可区分，会被通用长串规则打码为 `<token>`（如 `HEAD detached at abc0123…` → `HEAD detached at <token>`），损失错误消息的可查性。接受误伤换取密钥覆盖面：SHA 场景白名单不可靠（40 hex 与真密钥无法凭形态区分），故仅在此记录为已知行为
   - 已证伪不收录（高频误伤）：IPv4（UA 版本号同形）、手机号（订单号同形）、信用卡（13 位毫秒时间戳 100% 命中）
 - 系统通知失败静默（仅日志），不影响主流程；原生二进制缺失/不可执行（ENOENT 等）
   会被 `error` 事件接住，**绝不冒泡成 unhandled error 把宿主进程打挂**（见 issue #1）
@@ -142,7 +143,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-notifier
   才有）；iOS 上可用通道为「页面可见时横幅 + 提示音」及 HTTPS+A2HS 后的系统通知
 - 浏览器通知需要**安全上下文**（HTTPS 或 localhost）；局域网 HTTP 访问自动走降级通道（横幅/提示音/标题提醒）
 - 浏览器通知权限为手势内请求（点击侧边栏「通知」入口或面板按钮时）
-- Windows 系统通知通过 PowerShell WinRT 脚本实现，命令以参数数组传递（无 shell 拼接面）；脚本启动时幂等注册 AppUserModelId（HKCU，无需管理员权限）——未注册的 AUMID 在 Win10/11 上 toast 会被系统静默丢弃
+- Windows 系统通知通过 PowerShell WinRT 脚本实现，命令以参数数组传递（无 shell 拼接面）；脚本启动时幂等注册 AppUserModelId `DSH.dsh-notifier`（HKCU，无需管理员权限）——未注册的 AUMID 在 Win10/11 上 toast 会被系统静默丢弃。AUMID 采用 `Company.Product` 形态，避免在公共命名空间（`HKCU\SOFTWARE\Classes\AppUserModelId`）与其他同名软件冲突互覆；历史版本注册的旧键 `DSH` 残留无害（仅一个空注册表条目，不影响新 toast），如需清理可手动执行 `Remove-Item -Path "HKCU:\SOFTWARE\Classes\AppUserModelId\DSH"`
 
 ## 验证
 
