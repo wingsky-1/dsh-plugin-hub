@@ -25,6 +25,7 @@ export const STATS_URL = __DSH_ROUTES__?.stats ?? "/api/dsh-provider-usage/stats
 export const HISTORY_URL = __DSH_ROUTES__?.history ?? "/api/dsh-provider-usage/history";
 export const ADAPTERS_URL = __DSH_ROUTES__?.adapters ?? "/api/dsh-provider-usage/adapters.json";
 export const SELECT_URL = __DSH_ROUTES__?.select ?? "/api/dsh-provider-usage/adapters/select";
+export const INSPECT_URL = __DSH_ROUTES__?.inspect ?? "/api/dsh-provider-usage/adapters/inspect";
 export const ADD_URL = __DSH_ROUTES__?.add ?? "/api/dsh-provider-usage/adapters/add";
 
 /** 会话提供信息（sessions.currentProvideInfo 的读面，宽松类型）。 */
