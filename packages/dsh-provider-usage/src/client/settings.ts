@@ -5,9 +5,10 @@
  * - 总览：当前生效适配器逐 provider 摘要（enabled 映射驱动，保留）
  * - 用量可视化：summary 文案 + 各窗口明细表（保留）
  * - 提供商列表（替代原「适配器管理」平铺区块）：全集 = 已注册候选 ∪ 运行时
- *   启用 ∪ 内置已知清单（无候选也展示并给引导）；折叠态徽标显示
- *   「启用中: <adapter-id>」，展开页内管理候选适配器（名称/来源/启用开关单选）、
- *   [禁用该提供商]、[+ 添加适配器]（本地文件路径登记并热注册）
+ *   识别（recognizedProviders）∪ 运行时启用 ∪ 内置已知清单（无候选也展示并给
+ *   引导）；折叠态徽标显示「启用中: <adapter-id>」，展开页内管理候选适配器
+ *   （名称/来源/启用开关单选）、[禁用该提供商]、[+ 添加适配器]（本地文件路径
+ *   登记并热注册）
  * - 配置：常用配置键展示（patch 层为单一事实源，此处只读）
  *
  * 数据面：全部走宿主 loopback 路由（/stats、/adapters.json、POST /adapters/select、
@@ -42,6 +43,8 @@ interface AdaptersMeta {
   host?: AdapterInfo[];
   enabled?: Record<string, string>;
   knownProviders?: string[];
+  /** 运行时识别到的 provider（issue #38 第二路来源：历史采样 ∪ 启用状态文件键）。 */
+  recognizedProviders?: string[];
   errors?: AdapterErrorEntry[];
 }
 
@@ -484,6 +487,7 @@ export function SettingsPage() {
           unionProviders({
             candidatesByProvider: grouped,
             enabled: m.enabled,
+            recognized: m.recognizedProviders ?? [],
             known: m.knownProviders ?? [],
           }),
         );

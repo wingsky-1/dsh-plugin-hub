@@ -688,18 +688,24 @@ function mkSummary(overrides: Partial<ProviderSummary> = {}): ProviderSummary {
       "z-relay": [{ id: "z-relay-user", label: "Z Relay", source: "user-file" }],
     },
     enabled: { "opencode-go": "opencode-go-builtin", "runtime-only": "x" },
+    recognized: ["hist-only", "runtime-only", "opencode-go"],
     known: ["opencode-go", "future-provider"],
   });
-  // 全集三路合并去重：候选 ∪ 启用 ∪ 已知
+  // 全集四路合并去重：候选 ∪ 启用 ∪ 运行时识别 ∪ 已知
   assert.deepEqual(
     items.map((i) => i.provider),
-    ["future-provider", "opencode-go", "runtime-only", "z-relay"],
-    "全集 = 候选 ∪ 运行时启用 ∪ 内置已知（已知在前，其余字典序）",
+    ["future-provider", "opencode-go", "hist-only", "runtime-only", "z-relay"],
+    "全集 = 候选 ∪ 运行时启用 ∪ 运行时识别 ∪ 内置已知（已知在前，其余字典序）",
   );
   const ocg = items.find((i) => i.provider === "opencode-go");
   assert.ok(ocg?.hasCandidates && ocg.enabledId === "opencode-go-builtin", "已知且有候选：带启用态");
   const future = items.find((i) => i.provider === "future-provider");
   assert.equal(future?.hasCandidates, false, "仅已知清单项无候选（引导位）");
+  // 运行时识别项：无候选无启用也入全集；与 enabled 重叠的 provider 去重只出现一次
+  const hist = items.find((i) => i.provider === "hist-only");
+  assert.equal(hist?.hasCandidates, false, "运行时识别项无候选");
+  assert.equal(hist?.enabledId, null, "运行时识别项未启用");
+  assert.equal(items.filter((i) => i.provider === "runtime-only").length, 1, "识别与启用重叠去重");
   assert.equal(items.find((i) => i.provider === "runtime-only")?.enabledId, "x", "运行时启用映射入全集");
   // 空输入 → 空列表
   assert.deepEqual(unionProviders({ candidatesByProvider: {}, known: [] }), [], "空输入空列表");
