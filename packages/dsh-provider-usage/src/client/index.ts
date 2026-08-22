@@ -220,7 +220,26 @@ function renderPanel(): void {
   const renderer = registry?.get(currentProvider, lastAdapterId);
   if (!hasAdapter) {
     floatPanel.appendChild(el("p", { class: PILL_PREFIX + "error", text: "该提供商暂无启用的适配器。" }));
-    floatPanel.appendChild(el("p", { class: PILL_PREFIX + "hint", text: "在设置面板「用量统计」的适配器管理中启用一个候选适配器。" }));
+    floatPanel.appendChild(
+      el("p", { class: PILL_PREFIX + "hint", text: "在设置面板「用量统计」的适配器管理中启用一个候选适配器；也可复制下方引导指令，让 Agent 帮你接入用量数据源。" }),
+    );
+    // 一句话引导指令：复制到会话即触发 agent 自主引导（9-agent-guide-mjs.md）
+    const guide = `请为提供商 ${currentProvider} 创建用量统计适配器：自行查找其用量接口与鉴权方式，自主设计适配器方案（id/展示名/窗口字段），先给我审核方案，确认后生成 .mjs 文件、告诉保存路径并引导我在「用量统计」设置页添加适配器。`;
+    const btn = el("button", {
+      type: "button",
+      class: PILL_PREFIX + "btn",
+      text: "复制引导指令",
+      onClick: () => {
+        void navigator.clipboard
+          .writeText(guide)
+          .then(() => { btn.textContent = "已复制 ✓"; })
+          .catch(() => { btn.textContent = "复制失败"; });
+        setTimeout(() => {
+          btn.textContent = "复制引导指令";
+        }, 2000);
+      },
+    });
+    floatPanel.appendChild(btn);
     return;
   }
   if (renderer === undefined) {
