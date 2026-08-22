@@ -148,6 +148,11 @@ export interface HostFetchContext {
   apiKey?: string;
   /** 该 provider 的 baseUrl（来自配置，可选——适配器可自持默认）。 */
   baseUrl?: string;
+  /**
+   * 取数超时（毫秒；来自插件配置 timeoutMs，可选——适配器可自持默认）。
+   * 修复死配置键（issue #26）：此前 README 承诺可配但契约无通道，内置硬编码。
+   */
+  timeoutMs?: number;
   /** 插件注入的 fetch（可替换实现便于测试）。 */
   fetch: FetchLike;
   /** 超时/卸载取消信号。 */
@@ -368,15 +373,19 @@ export function defineUsageAdapter(spec: UsageAdapterSpec): HostProviderAdapter 
   };
   adapter.samplePoint = (usage: ProviderUsage): SamplePointData | null => {
     if (!Array.isArray(usage.windows) || usage.windows.length === 0) return null;
-    return {
-      cols: spec.windows.map((w) => ({
-        key: w.key,
-        name: w.name,
-        ...(w.limit !== undefined ? { limit: w.limit } : {}),
-        ...(w.resetPeriodMs !== undefined ? { resetPeriodMs: w.resetPeriodMs } : {}),
-      })),
-      values: usage.windows.map((w) => (typeof w.percent === "number" && Number.isFinite(w.percent) ? w.percent : null)),
-    };
+    const cols: SampleColumn[] = spec.windows.map((w) => ({
+      key: w.key,
+      name: w.name,
+      ...(w.limit !== undefined ? { limit: w.limit } : {}),
+      ...(w.resetPeriodMs !== undefined ? { resetPeriodMs: w.resetPeriodMs } : {}),
+    }));
+    const values = usage.windows.map((w) =>
+      typeof w.percent === "number" && Number.isFinite(w.percent) ? w.percent : null,
+    );
+    // 契约自检（issue #26）：SamplePointData 注释约定 length 必须相等；
+    // 声明的 windows 数与实际返回 windows 数不一致时跳过采样，不产出错位桶。
+    if (cols.length !== values.length) return null;
+    return { cols, values };
   };
   adapter.summarize = async (ctx: HostFetchContext): Promise<ProviderSummary> => {
     const usage = ctx.usage ?? null;
