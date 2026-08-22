@@ -127,9 +127,54 @@ export const DEFAULT_CONFIG: NormalizedConfig = {
 
 /**
  * 内置已知 provider 清单（issue #38：设置页提供商全集的第三路来源——无候选的
- * 也展示并给引导）。随内置适配器扩展维护。
+ * 也展示并给引导）。
+ *
+ * 权威依据：dsh 模型配置生态（llm-pi-ai）内置 catalog 的 provider 路由键集，
+ * 即 @earendil-works/pi-ai `providers/all` 的 `BuiltinProvider` 枚举
+ * （`MODELS` 一级键，锁版见 dsh pnpm-workspace catalog 同源 pi-ai 0.82.x），
+ * 覆盖 deepseek / openai / anthropic / google(Gemini) / openrouter /
+ * qwen-token-plan 等；模型配置页可添加的 provider 与此处一一对应。
+ * 升级 pi-ai 后新增 provider 时同步维护本清单。
  */
-export const KNOWN_PROVIDERS: string[] = [OPENCODE_GO_PROVIDER];
+export const KNOWN_PROVIDERS: string[] = [
+  "amazon-bedrock",
+  "ant-ling",
+  "anthropic",
+  "azure-openai-responses",
+  "cerebras",
+  "cloudflare-ai-gateway",
+  "cloudflare-workers-ai",
+  "deepseek",
+  "fireworks",
+  "github-copilot",
+  "google",
+  "google-vertex",
+  "groq",
+  "huggingface",
+  "kimi-coding",
+  "minimax",
+  "minimax-cn",
+  "mistral",
+  "moonshotai",
+  "moonshotai-cn",
+  OPENCODE_GO_PROVIDER, // opencode-go
+  "nvidia",
+  "openai",
+  "openai-codex",
+  "opencode",
+  "openrouter",
+  "qwen-token-plan",
+  "qwen-token-plan-cn",
+  "together",
+  "vercel-ai-gateway",
+  "xai",
+  "xiaomi",
+  "xiaomi-token-plan-ams",
+  "xiaomi-token-plan-cn",
+  "xiaomi-token-plan-sgp",
+  "zai",
+  "zai-coding-cn",
+];
 
 /**
  * 设置面板 schemastery schema（M3b：settings 命名空间用，与 normalizeConfig 同构）。
@@ -1081,6 +1126,12 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
     registry.select(provider, adapterId);
   }
 
+  // issue #38：宿主侧「运行时识别到的 provider」持久化产物之一——启用状态文件
+  // 中出现过的键（含显式清空 null 的：该 provider 从 enabled 映射消失，但仍算
+  // 运行时见过，须留在设置页全集里可见、可再启用）。历史采样桶为另一路产物，
+  // 在 /adapters 响应组装时动态并入（见 adaptersRoute）。
+  const stateRecognizedProviders = new Set<string>(Object.keys(savedEnabled));
+
   const store = makeHistoryStore({
     maxAgeDays: current.maxAgeDays,
     diag: (m): void => console.warn(`[dsh-provider-usage]`, m),
@@ -1477,6 +1528,16 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
         client,
         // issue #38：内置已知 provider 清单（提供商全集第三路来源）
         knownProviders: [...KNOWN_PROVIDERS],
+        // issue #38：运行时识别到的 provider（提供商全集第二路来源）= 历史采样桶
+        // 覆盖的 provider ∪ 启用状态文件出现过的键。排序输出便于客户端直接消费。
+        recognizedProviders: (() => {
+          const recognized = new Set<string>(stateRecognizedProviders);
+          for (const key of store.keys()) {
+            const provider = key.split("/")[0] ?? "";
+            if (provider !== "") recognized.add(provider);
+          }
+          return [...recognized].sort((a, b) => a.localeCompare(b));
+        })(),
         // issue #38：最近一次适配器错误登记（面板排障展示；key=adapterId 或 file:<名>）
         errors: snap.errors.map((e) => ({ key: e.key, at: e.at, kind: e.kind, message: e.message })),
       });

@@ -23,6 +23,7 @@ import {
   apply,
   ROUTES,
   DEFAULT_CONFIG,
+  KNOWN_PROVIDERS,
   OPENCODE_GO_PROVIDER,
   OPENCODE_GO_ADAPTER_ID,
   LEGACY_ADAPTER_ID,
@@ -132,7 +133,12 @@ function makeFakeCtx(overrides = {}) {
   assert.equal(payload.host[0].id, "opencode-go-builtin", "候选带 id");
   assert.equal(payload.host[0].enabled, true, "候选带 enabled");
   assert.equal(payload.enabled["opencode-go"], "opencode-go-builtin", "enabled 映射 provider→adapterId");
-  assert.deepEqual(payload.knownProviders, ["opencode-go"], "knownProviders 内置已知清单（issue #38）");
+  assert.deepEqual(payload.knownProviders, KNOWN_PROVIDERS, "knownProviders = 内置已知权威清单（issue #38）");
+  // 权威清单关键成员（dsh 模型配置生态常见 provider，pi-ai catalog 路由键）
+  for (const p of ["deepseek", "openai", "anthropic", "google", "openrouter", "qwen-token-plan", OPENCODE_GO_PROVIDER]) {
+    assert.ok(KNOWN_PROVIDERS.includes(p), `内置已知清单含 ${p}`);
+  }
+  assert.equal(new Set(KNOWN_PROVIDERS).size, KNOWN_PROVIDERS.length, "内置已知清单无重复");
   assert.deepEqual(payload.client, [], "无客户端适配器时为 []");
   // 带客户端适配器配置
   const { ctx: ctx3, routes: routes3 } = makeFakeCtx();
@@ -195,6 +201,56 @@ function makeFakeCtx(overrides = {}) {
   );
   assert.equal(payload.ok, true, "select 重选内置成功");
   assert.equal(payload.adapterId, "opencode-go-builtin");
+}
+
+// ---------------------------------------------------------------- 运行时识别 provider 注入 /adapters（issue #38）
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dou-recog-"));
+  // 预置宿主侧运行时识别产物（两路持久化状态）：
+  // 1) 历史采样桶：hist-relay 经 legacy 桶采过样（v3 多文件格式）
+  mkdirSync(join(dir, "history", "hist-relay"), { recursive: true });
+  writeFileSync(
+    join(dir, "history", "hist-relay", `${LEGACY_ADAPTER_ID}.json`),
+    JSON.stringify({
+      version: 3,
+      provider: "hist-relay",
+      adapterId: LEGACY_ADAPTER_ID,
+      columns: [{ key: "col-1", name: "col-1" }],
+      samples: [[Date.now() - 60000, 5]],
+    }),
+  );
+  // 2) 启用状态文件键（含显式清空 null 的 cleared-relay：已从 enabled 映射消失，
+  //    但属运行时见过的 provider，须留在全集可见、可再启用）
+  writeFileSync(
+    join(dir, "adapter-state.json"),
+    JSON.stringify({ "cleared-relay": null, [OPENCODE_GO_PROVIDER]: OPENCODE_GO_ADAPTER_ID }),
+  );
+
+  const { ctx, routes } = makeFakeCtx();
+  await apply(ctx, {
+    persistFile: join(dir, "history.json"),
+    fetchImpl: async () => fakeRes(200, OK_BODY),
+    credentialsFile: join(here, "no-such-credentials.yaml"),
+    authFile: join(here, "no-such-auth.json"),
+  });
+  const adaptersRoute = routes.find((r) => r.path === ROUTES.adapters);
+  let payload;
+  const res = { writeHead: () => {}, end: (chunk) => { payload = JSON.parse(chunk); } };
+  adaptersRoute.handler(fakeReq(), res);
+
+  assert.ok(Array.isArray(payload.recognizedProviders), "adapters.json 带 recognizedProviders 字段");
+  for (const p of ["hist-relay", "cleared-relay"]) {
+    assert.ok(payload.recognizedProviders.includes(p), `recognizedProviders 含历史桶/状态文件识别的 ${p}`);
+  }
+  assert.deepEqual(
+    payload.recognizedProviders,
+    [...payload.recognizedProviders].sort((a, b) => a.localeCompare(b)),
+    "recognizedProviders 排序输出",
+  );
+  // 显式清空的 provider 不在 enabled 映射（select(null) 即删），只能经识别来源留在全集
+  assert.equal(payload.enabled["cleared-relay"], undefined, "清空态不进 enabled 映射");
+  assert.equal(payload.enabled[OPENCODE_GO_PROVIDER], OPENCODE_GO_ADAPTER_ID, "启用态照常保留");
 }
 
 // ---------------------------------------------------------------- adapters/add 路由（issue #38）：围栏 / 校验 / 登记热注册 / 重启合并
@@ -832,6 +888,7 @@ async function waitFor(cond, timeoutMs = 5000, stepMs = 50) {
   assert.ok(client.includes("dou-provHead"), "手风琴折叠头样式类");
   assert.ok(client.includes("dou-provErr"), "错误登记展示（候选执行/文件加载最近一次错误）");
   assert.ok(client.includes("knownProviders"), "消费宿主内置已知清单");
+  assert.ok(client.includes("recognizedProviders"), "消费宿主运行时识别清单（提供商全集第二路来源）");
 
   // issue #27：总览不再硬编码 opencode-go，按 adapters.json enabled 映射逐 provider 拉取
   assert.ok(!client.includes("?provider=opencode-go"), "settings 总览移除硬编码 ?provider=opencode-go");

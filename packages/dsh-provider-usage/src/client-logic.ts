@@ -109,6 +109,11 @@ export interface ProvidersUnionInput {
   candidatesByProvider: Record<string, Array<{ id: string; label: string; source: string }>>;
   /** 运行时启用映射（provider → adapterId）。 */
   enabled?: Record<string, string>;
+  /**
+   * 运行时识别到的 provider（adapters.json recognizedProviders：历史采样桶 ∪
+   * 启用状态文件键；issue #38 第二路来源——无候选无启用的也留在全集可见）。
+   */
+  recognized?: string[];
   /** 内置已知清单（宿主 knownProviders；无候选也展示并给引导）。 */
   known: string[];
 }
@@ -123,14 +128,15 @@ export interface ProviderListItem {
 }
 
 /**
- * 提供商全集 = 已注册候选覆盖 ∪ 运行时启用映射 ∪ 内置已知清单（issue #38）。
- * 排序：内置已知在前（引导位），其余按字典序；逐项带候选存在性与启用态，
- * 面板直接渲染，不再自行拼装。
+ * 提供商全集 = 已注册候选覆盖 ∪ 运行时启用映射 ∪ 运行时识别 ∪ 内置已知清单
+ * （issue #38）。排序：内置已知在前（引导位），其余按字典序；逐项带候选存在性
+ * 与启用态，面板直接渲染，不再自行拼装。
  */
 export function unionProviders(input: ProvidersUnionInput): ProviderListItem[] {
   const providers = new Set<string>();
   for (const p of Object.keys(input.candidatesByProvider)) providers.add(p);
   for (const p of Object.keys(input.enabled ?? {})) providers.add(p);
+  for (const p of input.recognized ?? []) providers.add(p);
   for (const p of input.known) providers.add(p);
   const knownSet = new Set(input.known);
   const sorted = [...providers].sort((a, b) => {
