@@ -25,6 +25,7 @@
   ],
   "packageManager": "pnpm@11.21.0",
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@types/http-proxy": "^1.17.17",
     "@types/node": "^26.2.0",
     "acorn": "^8.18.0",

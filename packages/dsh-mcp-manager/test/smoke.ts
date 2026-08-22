@@ -24,6 +24,7 @@ import {
   apply,
   buildToolDefinition,
   composeCatalogEntries,
+  ConnectionSupervisor,
   DEFAULT_RESULT_TRUNCATE_BYTES,
   DEFAULT_TOOL_CALL_TIMEOUT_MS,
   digestCatalogEntries,
@@ -1102,6 +1103,100 @@ const main = async () => {
     const rejected = resolveCatalogInjection({ kind: "reject" }, [], supervisors, 6, undefined, agent2);
     assert.equal(rejected.kind, "reject");
   });
+
+  // ---------- SDK 端到端（issue #11 PoC 契约不漂移证据：真实 stdio 连接 /
+  // initialize 版本协商 / 工具注册 / callTool / 断线自动重连，全程无网络）。
+
+  /** 轮询等待条件成立（防 flake 纪律：轮询替代固定 sleep）。 */
+  async function waitFor(label, cond, timeoutMs = 10_000) {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (cond()) return;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error(`timeout waiting for ${label}`);
+  }
+
+  console.log("SDK 端到端连接（连接/工具注册/callTool/断线重连）");
+  {
+    // 最小 stdio MCP server fixture：node 子进程，行分隔 JSON-RPC，
+    // 回应 initialize / tools/list / tools/call（无任何第三方依赖；
+    // 响应必须携带规范要求的 jsonrpc:"2.0" 信封——SDK 会严格校验）。
+    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-sdk-"));
+    const serverScript = join(dir, "mini-mcp-server.mjs");
+    writeFileSync(
+      serverScript,
+      [
+        'import { createInterface } from "node:readline";',
+        'const send = (obj) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...obj }) + "\\n");',
+        'createInterface({ input: process.stdin }).on("line", (line) => {',
+        "  let msg;",
+        "  try { msg = JSON.parse(line); } catch { return; }",
+        '  if (msg.method === "initialize") {',
+        '    send({ id: msg.id, result: { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "mini", version: "0.0.1" } } });',
+        '  } else if (msg.method === "tools/list") {',
+        "    send({ id: msg.id, result: { tools: [{ name: \"echo\", description: \"echo back\", inputSchema: { type: \"object\", properties: { text: { type: \"string\" } } } }] } });",
+        '  } else if (msg.method === "tools/call") {',
+        "    send({ id: msg.id, result: { content: [{ type: \"text\", text: String(msg.params?.arguments?.text ?? \"\") }] } });",
+        "  } else if (msg.id !== undefined) {",
+        '    send({ id: msg.id, error: { code: -32601, message: "method not found" } });',
+        "  }",
+        "});",
+      ].join("\n"),
+    );
+
+    const registered = [];
+    const supervisor = new ConnectionSupervisor(
+      {
+        ctx: { tools: { register: (definition) => { registered.push(definition); return () => {}; } } },
+        logger: { warn: () => {}, info: () => {}, error: () => {} },
+        enhancement: {},
+        emitStatus() {},
+        recordCatalogTools: async () => {},
+      },
+      normalizeServer({
+        name: "mini",
+        transport: "stdio",
+        command: process.execPath,
+        args: [serverScript],
+        reconnect: { enabled: true, initialDelayMs: 50, maxDelayMs: 200, maxAttempts: 5 },
+      }),
+    );
+
+    await checkAsync("connect → SDK 版本协商 + 工具注册", async () => {
+      await supervisor.connect();
+      assert.equal(supervisor.status, "connected");
+      assert.deepEqual(supervisor.tools, ["mcp__mini__echo"]);
+      assert.equal(registered.length, 1);
+      assert.equal(registered[0].name, "mcp__mini__echo");
+    });
+
+    await checkAsync("工具 execute 全链路走 SDK callTool", async () => {
+      const value = await registered[0].execute({ text: "hello sdk" }, { signal: undefined });
+      assert.deepEqual(value.content, [{ type: "text", text: "hello sdk" }]);
+      assert.equal(value.structuredContent, undefined);
+    });
+
+    await checkAsync("子进程被杀 → 有界退避重连 → 工具重新注册", async () => {
+      const oldPid = supervisor.transport.sdk.pid;
+      assert.ok(oldPid > 0);
+      process.kill(oldPid, "SIGTERM");
+      // 新代际 transport 建立且恢复 connected（旧 pid 不复用即证明发生过重连）。
+      await waitFor("reconnected with new generation", () =>
+        supervisor.status === "connected" &&
+        supervisor.transport !== undefined &&
+        supervisor.transport.sdk.pid !== undefined &&
+        supervisor.transport.sdk.pid !== oldPid &&
+        supervisor.tools.length === 1,
+      );
+      assert.ok(registered.length >= 2, "重连后工具重新注册");
+      const value = await registered.at(-1).execute({ text: "after reconnect" }, { signal: undefined });
+      assert.equal(value.content[0].text, "after reconnect");
+    });
+
+    await supervisor.disconnect();
+    rmSync(dir, { recursive: true, force: true });
+  }
 
   if (failures.length > 0) {
     console.error(`\n${failures.length} check(s) failed: ${failures.join(", ")}`);

@@ -1,15 +1,19 @@
 /**
  * dsh-mcp-manager — MCP 传输层（独立模块）。
  *
- * stdio / streamable-http 两种传输（零运行时依赖，直接基于
- * node:child_process 与全局 fetch 实现），以及 env 展开辅助与
- * 按传输类型创建实例的 createTransport。
+ * stdio / streamable-http 两种传输：子进程生命周期、换行 JSON-RPC 帧解析、
+ * SSE 响应解析、Mcp-Session-Id 会话保持等能力面由官方
+ * @modelcontextprotocol/sdk 的 StdioClientTransport / StreamableHTTPClientTransport
+ * 承担（issue #11，决策 #47 approved；devDependency，构建期经 bundle-host
+ * 内联进产物）。本模块保留：
+ *  - env 安全过滤与 ${ENV} 展开（凭据形状环境变量不透传给 MCP 子进程）；
+ *  - supervisor 依赖的适配面：connect / close / onClose / `sdk` 实例暴露；
+ *  - parseSsePayload 兼容导出（smoke 契约；内部传输已交 SDK 解析）。
  * 由 lib/index.js 组合根 re-export。
  */
 
-import { spawn } from "node:child_process";
-import type { ChildProcessWithoutNullStreams } from "node:child_process";
-import { createInterface } from "node:readline";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { ServerConfig } from "./types.js";
 
 // ------------------------------------------------- env 展开 / 子进程环境
@@ -34,7 +38,8 @@ function expandEnvObject(input: Record<string, unknown> | undefined): Record<str
   return out;
 }
 
-/** 构建 stdio 子进程环境：父环境去掉凭据形状与陈旧 DSH_* 名，再合并显式 env（支持 ${ENV} 引用）。 */
+/** 构建 stdio 子进程环境：父环境去掉凭据形状与陈旧 DSH_* 名，再合并显式 env（支持 ${ENV} 引用）。
+ * 显式传入完整环境后 SDK 不再套用其默认白名单（getDefaultEnvironment），安全语义与自写版一致。 */
 function buildChildEnv(extra: Record<string, unknown> | undefined): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
@@ -49,66 +54,45 @@ function buildChildEnv(extra: Record<string, unknown> | undefined): Record<strin
 // ------------------------------------------------------------- MCP 传输
 
 /**
- * streamable-http 传输（MCP 2025-03-26）：POST JSON-RPC，携带/回传
- * `Mcp-Session-Id`；响应可能是 JSON 或 SSE 流。零依赖实现。
+ * streamable-http 传输：薄适配官方 StreamableHTTPClientTransport——
+ * POST JSON-RPC、SSE 流式响应、`Mcp-Session-Id` 会话保持、断线重连均由 SDK 承担；
+ * headers 支持 ${ENV} 展开（凭据不落盘明文）。
  */
 export class HttpTransport {
   url: string;
   headers: Record<string, string>;
-  sessionId: string | undefined;
+  /** 官方 SDK 传输实例（MCPClient.initialize 经 SDK Client.connect 挂入）。 */
+  readonly sdk: StreamableHTTPClientTransport;
 
   constructor(url: string, headers: Record<string, string> = {}) {
     this.url = url;
     this.headers = headers;
-    this.sessionId = undefined;
+    this.sdk = new StreamableHTTPClientTransport(new URL(url), {
+      requestInit: { headers: expandEnvObject(headers) },
+    });
   }
 
-  /** streamable-http 无连接态：每次请求即建连。supervisor 统一调用。 */
+  /** streamable-http 无连接态（SDK start 仅初始化内部状态）：真正的建连由
+   * MCPClient.initialize() 经 SDK Client.connect 驱动。supervisor 统一调用。 */
   async connect(): Promise<void> {}
 
-  async request(msg: { id?: unknown; [key: string]: unknown }, opts: { signal?: AbortSignal; timeoutMs?: number } = {}): Promise<unknown> {
-    const { signal, timeoutMs } = opts;
-    const headers: Record<string, string> = {
-      "content-type": "application/json",
-      accept: "application/json, text/event-stream",
-      ...expandEnvObject(this.headers),
+  onClose(handler: (error: Error) => void) {
+    // SDK transport 的 onclose 为回调属性且 Client.connect 会链式保留既有值，
+    // 这里同样叠加而非覆盖。
+    const previous = this.sdk.onclose;
+    this.sdk.onclose = () => {
+      previous?.();
+      handler(new Error("MCP streamable-http transport closed"));
     };
-    if (this.sessionId !== undefined) headers["mcp-session-id"] = this.sessionId;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs ?? 30_000);
-    const onAbort = () => controller.abort();
-    if (signal !== undefined) signal.addEventListener("abort", onAbort, { once: true });
-    try {
-      const response = await fetch(this.url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(msg),
-        signal: controller.signal,
-      });
-      const sessionId = response.headers.get("mcp-session-id");
-      if (sessionId !== null && sessionId !== "") this.sessionId = sessionId;
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status} ${response.statusText}`);
-      }
-      const contentType = response.headers.get("content-type") ?? "";
-      if (contentType.includes("text/event-stream")) {
-        const text = await response.text();
-        const parsed = parseSsePayload(text, msg.id);
-        if (parsed !== undefined) return parsed;
-        if (msg.id === undefined) return undefined;
-        throw new Error("MCP SSE response carried no matching payload");
-      }
-      const text = await response.text();
-      if (text.trim() === "") return undefined; // 通知可能 202 无 body
-      return JSON.parse(text);
-    } finally {
-      clearTimeout(timer);
-      if (signal !== undefined) signal.removeEventListener("abort", onAbort);
-    }
+  }
+
+  async close(): Promise<void> {
+    await this.sdk.close();
   }
 }
 
-/** 从 SSE 文本中提取 id 匹配的 JSON 载荷。 */
+/** 从 SSE 文本中提取 id 匹配的 JSON 载荷（兼容导出：smoke 契约断言用；
+ * 内部 SSE 解析已交由 SDK StreamableHTTPClientTransport）。 */
 export function parseSsePayload(text: string, id: unknown): unknown {
   const events = text.split(/\r?\n\r?\n/);
   for (const event of events) {
@@ -127,171 +111,64 @@ export function parseSsePayload(text: string, id: unknown): unknown {
   return undefined;
 }
 
-/** stdio 传输：spawn 子进程，换行分隔 JSON-RPC。 */
+/**
+ * stdio 传输：薄适配官方 StdioClientTransport——spawn、stdin 写入背压、
+ * stdout 换行 JSON 帧解析、退出清理（TERM→KILL 兜底）均由 SDK 承担。
+ * 本类保留自写版的两项宿主语义：
+ *  - 子进程环境安全过滤（buildChildEnv：剔除凭据形状 / DSH_* 名 + ${ENV} 展开）；
+ *  - stderr 尾部留存（stderrTail）用于启动失败诊断。
+ */
 export class StdioTransport {
   command: string;
   args: string[];
   env: Record<string, unknown>;
   cwd: string | undefined;
-  child: ChildProcessWithoutNullStreams | undefined;
-  pending: Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer?: NodeJS.Timeout; cleanup?: () => void }>;
-  closed: Promise<Error> | undefined;
-  stderrTail: string;
-  closeHandlers: Array<(error: Error) => void>;
+  /** 官方 SDK 传输实例（MCPClient.initialize 经 SDK Client.connect 挂入）。 */
+  readonly sdk: StdioClientTransport;
+  /** 子进程 stderr 尾部（最多 4000 字节），连接失败时附入错误消息辅助诊断。 */
+  stderrTail = "";
+  /** 断开原因（onerror 记录最近错误；未出错即退出时为通用退出消息）。 */
+  closeReason: Error;
 
   constructor(config: { command: string; args?: string[]; env?: Record<string, unknown>; cwd?: string }) {
     this.command = config.command;
     this.args = config.args ?? [];
     this.env = config.env ?? {};
     this.cwd = config.cwd || undefined;
-    this.child = undefined;
-    this.pending = new Map();
-    this.closed = undefined;
-    this.stderrTail = "";
-    this.closeHandlers = [];
+    this.sdk = new StdioClientTransport({
+      command: this.command,
+      args: this.args,
+      cwd: this.cwd,
+      env: buildChildEnv(this.env),
+      stderr: "pipe",
+    });
+    this.closeReason = new Error(`MCP stdio server exited (command=${this.command})`);
+    // stderr 立即可监听（SDK 在 start 前即创建 PassThrough，早启输出不丢）。
+    this.sdk.stderr?.on("data", (chunk: Buffer) => {
+      this.stderrTail = (this.stderrTail + chunk.toString("utf8")).slice(-4000);
+    });
+    // onerror 记录最近错误，作为 onclose 断开原因传递给 supervisor。
+    this.sdk.onerror = (error) => {
+      this.closeReason = error;
+    };
   }
+
+  /** 连接由 MCPClient.initialize() 经 SDK Client.connect 统一驱动
+   * （spawn + initialize 版本协商 + notifications/initialized）；此处保持
+   * supervisor 调用面不变、无独立动作（避免双重 start）。 */
+  async connect(): Promise<void> {}
 
   onClose(handler: (error: Error) => void) {
-    this.closeHandlers.push(handler);
-  }
-
-  async connect(): Promise<void> {
-    const child = spawn(this.command, this.args, {
-      env: buildChildEnv(this.env),
-      cwd: this.cwd,
-      stdio: ["pipe", "pipe", "pipe"],
-      shell: false,
-      windowsHide: true,
-    });
-    this.child = child;
-
-    // 子进程立即退出/命令不存在时，stdin 写入会触发 EPIPE 'error' 事件——
-    // 若不监听，Node 会把它当未处理错误让宿主进程崩溃。写入失败由 request()
-    // 的 write 回调 reject 正常传播；这里只做吞掉事件处理。
-    child.stdin.on("error", () => {});
-
-    const closed = new Promise<Error>((resolveClose) => {
-      child.on("exit", (code, signal) => resolveClose(new Error(`MCP stdio server exited (code=${code}, signal=${signal ?? "none"})`)));
-      child.on("error", (error) => resolveClose(error));
-    });
-    this.closed = closed;
-    closed.then((error) => {
-      for (const handler of [...this.closeHandlers]) handler(error);
-    });
-
-    const lines = createInterface({ input: child.stdout });
-    lines.on("line", (line) => {
-      const trimmed = line.trim();
-      if (trimmed === "") return;
-      let message;
-      try {
-        message = JSON.parse(trimmed);
-      } catch {
-        return;
-      }
-      if (typeof message.id === "number" || typeof message.id === "string") {
-        const entry = this.pending.get(String(message.id));
-        if (entry !== undefined) {
-          this.pending.delete(String(message.id));
-          entry.resolve(message);
-        }
-      }
-    });
-
-    child.stderr.on("data", (chunk) => {
-      const text = chunk.toString("utf8");
-      this.stderrTail = (this.stderrTail + text).slice(-4000);
-    });
-
-    // spawn 完成（或失败）后表示连接建立。
-    await new Promise<Error | void>((resolveReady) => {
-      child.once("spawn", () => resolveReady());
-      child.once("error", (error) => resolveReady(error));
-    });
-    if (child.exitCode !== null || child.signalCode !== null) {
-      throw new Error(`MCP stdio server failed to start: ${this.stderrTail.trim() || "no output"}`);
-    }
-  }
-
-  request(msg: { id?: unknown; [key: string]: unknown }, opts: { signal?: AbortSignal; timeoutMs?: number } = {}): Promise<unknown> {
-    const { signal, timeoutMs } = opts;
-    if (this.child === undefined || this.child.stdin === undefined) {
-      return Promise.reject(new Error("MCP stdio transport is not connected"));
-    }
-    if (msg.id === undefined) {
-      // 通知：只写不等待
-      return new Promise<void>((resolveNotify) => {
-        try {
-          this.child!.stdin!.write(`${JSON.stringify(msg)}\n`, resolveNotify as (error?: Error | null) => void);
-        } catch {
-          resolveNotify();
-        }
-      });
-    }
-    return new Promise((resolve, reject) => {
-      const entry: { resolve: (value: unknown) => void; reject: (error: Error) => void; timer?: NodeJS.Timeout; cleanup?: () => void } = { resolve, reject };
-      this.pending.set(String(msg.id), entry);
-      const timer = setTimeout(() => {
-        if (this.pending.delete(String(msg.id))) {
-          reject(new Error(`MCP stdio request timed out after ${timeoutMs ?? 30_000}ms`));
-        }
-      }, timeoutMs ?? 30_000);
-      if (signal !== undefined) {
-        const onAbort = () => {
-          clearTimeout(timer);
-          if (this.pending.delete(String(msg.id))) {
-            const error = new Error("MCP stdio request aborted");
-            error.name = "AbortError";
-            reject(error);
-          }
-        };
-        signal.addEventListener("abort", onAbort, { once: true });
-        entry.cleanup = () => signal.removeEventListener("abort", onAbort);
-      }
-      entry.timer = timer;
-      try {
-        this.child!.stdin!.write(`${JSON.stringify(msg)}\n`, (error) => {
-          if (error !== null && error !== undefined && this.pending.delete(String(msg.id))) {
-            clearTimeout(entry.timer!);
-            reject(error);
-          }
-        });
-      } catch (error) {
-        clearTimeout(entry.timer);
-        if (this.pending.delete(String(msg.id))) reject(error);
-      }
-    });
+    // 与 HttpTransport 同策略：叠加而非覆盖（Client.connect 也会再链一层）。
+    const previous = this.sdk.onclose as (() => unknown) | undefined;
+    this.sdk.onclose = () => {
+      previous?.();
+      handler(this.closeReason);
+    };
   }
 
   async close(): Promise<void> {
-    const child = this.child;
-    this.child = undefined;
-    for (const entry of this.pending.values()) {
-      clearTimeout(entry.timer!);
-      entry.reject(new Error("MCP stdio transport closed"));
-    }
-    this.pending.clear();
-    if (child !== undefined) {
-      const exit = new Promise<void>((resolveExit) => {
-        child.once("exit", () => resolveExit());
-        child.once("error", () => resolveExit());
-      });
-      try {
-        child.kill();
-      } catch {
-        // 已退出
-      }
-      const timer = setTimeout(() => {
-        try {
-          child.kill("SIGKILL");
-        } catch {
-          // 已退出
-        }
-      }, 2000);
-      timer.unref();
-      await Promise.race([exit, new Promise<void>((resolveExit) => setTimeout(resolveExit, 3000))]);
-      clearTimeout(timer);
-    }
+    await this.sdk.close();
   }
 }
 
