@@ -14,8 +14,9 @@ import type { StdioTransport, HttpTransport } from "./transport.js";
 import { SCOPE_GLOBAL, SCOPE_PROJECT } from "./scope.js";
 import { MCPClient } from "./protocol.js";
 import type { ServerConfig } from "./types.js";
-import type { DshTool } from "../../../types/dsh.js";
 import type { Context, LoggerService } from "@deepseek-ai/cordis";
+// 官方工具定义类型（仅 import type，编译期擦除；contract-check 禁止运行时值导入）。
+import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
 
 /** 重连策略（解析后）。 */
 export interface ReconnectPolicy {
@@ -26,8 +27,7 @@ export interface ReconnectPolicy {
 }
 
 /** McpManager 最小面（supervisor 使用；避免 index↔supervisor 循环 import）。
- * tools 面取官方 Context（register 入参为官方 ToolDefinition），自建 DshTool
- * 在注册点经边界收窄传入（见 registerTool 调用处）。 */
+ * tools 面取官方 Context，register 入参为官方 ToolDefinition。 */
 export interface ManagerLite {
   ctx: Pick<Context, "tools">;
   logger: LoggerService;
@@ -218,7 +218,7 @@ export function assertSupportedOutputSchema(schema: unknown): unknown {
 /** 构建 dsh 工具定义（契约与官方 dsh-mcp-client 一致）。
  * @param opts 感知增强选项：{enhanceEmptyDescriptions, resultTruncateBytes}。
  */
-export function buildToolDefinition(client: MCPClient, tool: Record<string, unknown>, server: ServerConfig, opts: { enhanceEmptyDescriptions?: boolean; resultTruncateBytes?: number } = {}): DshTool {
+export function buildToolDefinition(client: MCPClient, tool: Record<string, unknown>, server: ServerConfig, opts: { enhanceEmptyDescriptions?: boolean; resultTruncateBytes?: number } = {}): ToolDefinition {
   const rawName = tool.name as string;
   const structuredSchema = assertSupportedOutputSchema(tool.outputSchema);
   const enhanceEmpty = opts.enhanceEmptyDescriptions !== false;
@@ -236,7 +236,7 @@ export function buildToolDefinition(client: MCPClient, tool: Record<string, unkn
     description,
     // 业界标准（官方 dsh-mcp-client）：parameters 原样直传 MCP inputSchema，
     // 宽容接受——dsh 注册不校验 parameters，运行时校验忽略未知键。
-    parameters: tool.inputSchema ?? {},
+    parameters: (tool.inputSchema ?? {}) as Record<string, unknown>,
     output: {
       schema: {
         type: "object",
@@ -252,7 +252,7 @@ export function buildToolDefinition(client: MCPClient, tool: Record<string, unkn
         return [{ type: "text", text: renderText(extractText(content, rawName)) as string }];
       },
     },
-    async execute(args: unknown, exec: { signal?: AbortSignal; [key: string]: unknown }) {
+    async execute(args: unknown, exec: { signal?: AbortSignal }) {
       const timeoutMs = server.toolCallTimeoutMs ?? DEFAULT_TOOL_CALL_TIMEOUT_MS;
       const result = await client.callTool(rawName, typeof args === "object" && args !== null ? args : {}, {
         signal: exec.signal,
@@ -428,7 +428,7 @@ export class ConnectionSupervisor {
 
   /** 拉取工具列表并整体替换注册（代际安全：先取后换）。 */
   async syncTools(client: MCPClient, startup: boolean): Promise<void> {
-    const definitions = new Map<string, DshTool>();
+    const definitions = new Map<string, ToolDefinition>();
     const toolMeta = new Map<string, { description?: unknown }>();
     let cursor;
     do {
@@ -452,9 +452,7 @@ export class ConnectionSupervisor {
     const disposers = new Map<string, () => void>();
     try {
       for (const [publicName, definition] of definitions) {
-        // 边界收窄：自建 DshTool（宽松契约面）→ 官方 ToolDefinition；
-        // buildToolDefinition 构造的对象本就满足官方 register 运行时校验。
-        disposers.set(publicName, this.manager.ctx.tools.register(definition as Parameters<typeof this.manager.ctx.tools.register>[0]));
+        disposers.set(publicName, this.manager.ctx.tools.register(definition));
       }
     } catch (error) {
       for (const dispose of disposers.values()) dispose();

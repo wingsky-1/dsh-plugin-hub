@@ -8,7 +8,7 @@
 ## 评审对象（全部文件，逐行读）
 - <绝对路径 1>（说明，如「宿主端，917 行」）
 - <绝对路径 2>（客户端…）、<style.css / 脚本 / smoke / README / package.json / cordis.patch.yml>
-- 对照规范/共享层：<仓库 AGENTS.md>、<shared/loopback.js / host-utils.js>、<types/dsh.d.ts>
+- 对照规范/共享层：<仓库 AGENTS.md>、<shared/loopback.js / host-utils.js>、<pnpm-workspace catalog（@deepseek-ai/* 官方类型层）>
 
 ## 插件背景
 <3-6 行：插件定位、事件接入、通道、安全边界、部署形态（Linux+局域网+三端）、
@@ -139,4 +139,4 @@ typecheck ✅ / smoke ✅ / 工作树干净 ✅
 - [x] <债>（commit/日期）
 ```
 
-> 实测验证证据模板见 `./verify-checklist.md`（curl / 浏览器 MCP / smoke 三型检核表）。
+> 实测验证证据模板见 [verify-checklist.md](verify-checklist.md)（curl / 浏览器 MCP / smoke 三型检核表）。

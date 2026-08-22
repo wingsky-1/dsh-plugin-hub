@@ -2,7 +2,7 @@
 
 > 用途：评审与实施的「实测验证」证据检核表——**P0/P1 级断言（阻断/安全洞/数据损坏/
 > 明显功能错）必须给实测证据，禁止只引代码推理**；P2/P3 允许静态证据并标注「未验证」。
-> 各 skill（dsh-plugin-review / dsh-plugin-hub-dev / dsh-plugin-dev）在验证节引用本文件，
+> 各 skill（dsh-plugin-review / dsh-plugin-hub-dev）在验证节引用本文件，
 > 不各自内联。来源：dsh-web-file-preview / dsh-notifier 工作流复盘（OPTIMIZATION-NOTES-2026-08）。
 
 ---
@@ -34,7 +34,7 @@
 - 做法：构造 fixture（样例 md/图/链接等放工作区如 `fwp-verify/`，**不纳入发布包**）；
   playwright/浏览器 MCP 真实点击 + 断言 DOM 结果（不是只 smoke 纯函数）。
 - 多端验证矩阵：哪些可 DevTools 模拟，哪些**必须真机**（iOS/iPad/Windows），
-  按 `dimensions.md` D 维执行。
+  按 [dimensions.md](dimensions.md) D 维执行。
 - 双主题：浅色/暗色各查一遍（`--dsw-alias-*` 变量生效、无硬编码单色）。
 
 ## 3. node smoke 类检核（纯函数/契约/围栏）

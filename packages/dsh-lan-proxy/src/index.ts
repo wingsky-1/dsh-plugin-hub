@@ -29,7 +29,11 @@ import { ensureSelfSignedTls, loadTlsFromFiles } from "./cert.js";
 import { isLoopbackRequest } from "../../../shared/loopback.js";
 import { writeJson } from "../../../shared/host-utils.js";
 import { installSettingsNamespace } from "../../../shared/settings-namespace.js";
-import type { PluginContext } from "../../../types/dsh.js";
+// 官方类型层（issue #16/#48，锁版见 pnpm-workspace catalog；仅 import type，
+// 编译期擦除，禁止运行时值导入——contract-check 有门禁）。dsh-host-webserver
+// 经 declare module 注入 ctx.webServer，必须引入其类型面。
+import type { Context } from "@deepseek-ai/cordis";
+import type {} from "@deepseek-ai/dsh-host-webserver";
 
 /** 稳定的 cordis 插件名。 */
 export const name = "lan-proxy";
@@ -85,8 +89,10 @@ export interface LanProxyConfig {
   httpCompressLevel?: number;
 }
 
-/** 插件配置，由同名 schemastery schema 校验，也用于 GUI 设置面板渲染。 */
-export const Config = z.object({
+/** 插件配置，由同名 schemastery schema 校验，也用于 GUI 设置面板渲染。
+ * 显式注解：官方类型层与本包 devDep schemastery 各带同名全局命名空间合并后，
+ * Config 的推断类型声明发射不再可移植（TS2883），按 TS 建议显式标注。 */
+export const Config: z<LanProxyConfig> = z.object({
   /** 总开关。 */
   enabled: z.boolean().default(true),
   /** LAN 绑定地址。 */
@@ -316,7 +322,7 @@ interface ConnectionCtx {
  * @param config 解析后的插件配置（loader 已应用 schema 默认值）。
  * @returns 无。
  */
-export function apply(ctx: PluginContext, config: LanProxyConfig = {}): void {
+export function apply(ctx: Context, config: LanProxyConfig = {}): void {
   if (config.enabled === false) return;
   // 插件目录（<DSH_HOME>/lan-proxy）：证书缓存 + 插件自身配置文件 config.json。
   const configDir = pluginDir();

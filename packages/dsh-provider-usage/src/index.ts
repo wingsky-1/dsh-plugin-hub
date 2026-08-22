@@ -20,7 +20,11 @@ import { isLoopbackRequest } from "../../../shared/loopback.js";
 import { writeJson, readJsonBody } from "../../../shared/host-utils.js";
 import { installSettingsNamespace } from "../../../shared/settings-namespace.js";
 import z from "schemastery";
-import type { PluginContext, DshRoute } from "../../../types/dsh.js";
+// 官方类型层（issue #16/#48，锁版见 pnpm-workspace catalog；仅 import type，
+// 编译期擦除，禁止运行时值导入——contract-check 有门禁）。dsh-host-webserver
+// 经 declare module 注入 ctx.webServer 并导出 WebRoute 路由对象类型。
+import type { Context } from "@deepseek-ai/cordis";
+import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import { ADAPTER_CONTRACT_VERSION, summarizeTextFromWindows, levelFromWindows } from "./contracts.js";
 import { makeHostAdapterRegistry } from "./registry.js";
 import type { HostAdapterRegistry } from "./registry.js";
@@ -131,8 +135,17 @@ export function defaultPersistFile(): string {
  * 实测约束：schemastery 3.18 无 `.optional()`；不带 `.required()` 的字段默认可选。
  * 说明：apiKey 不进 schema（避免设置面板回显密钥）；adapters 复杂结构经 patch 层
  * 配置管理，面板只暴露常用键。
+ * 显式注解：官方类型层与本包 devDep schemastery 各带同名全局命名空间合并后，
+ * Config 的推断类型声明发射不再可移植（TS2883），按 TS 建议显式标注。
  */
-export const Config = z.object({
+export const Config: z<{
+  baseUrl: string;
+  timeoutMs: number;
+  cacheTtlMs: number;
+  maxAgeDays: number;
+  sampleIntervalMs: number;
+  stripSecrets: boolean;
+}> = z.object({
   baseUrl: z.string().default(DEFAULT_CONFIG.baseUrl),
   timeoutMs: z.number().default(DEFAULT_CONFIG.timeoutMs),
   cacheTtlMs: z.number().default(DEFAULT_CONFIG.cacheTtlMs),
@@ -881,7 +894,7 @@ export function deriveSummary(
 
 // ------------------------------------------------------------------ 插件入口
 
-export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {}): Promise<void> {
+export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Promise<void> {
   if (config.enabled === false) return;
   const current = normalizeConfig(config);
   const fetchImpl: FetchLike = typeof config.fetchImpl === "function" ? config.fetchImpl as FetchLike : fetch;
@@ -1069,7 +1082,7 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
 
   // -------------------------------------------------------- 路由注册
 
-  const statsRoute: DshRoute = {
+  const statsRoute: WebRoute = {
     kind: "exact",
     path: ROUTES.stats,
     handler: async (req, res) => {
@@ -1128,7 +1141,7 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
   };
 
   // R2：切换启用适配器（POST /adapters/select）
-  const selectRoute: DshRoute = {
+  const selectRoute: WebRoute = {
     kind: "exact",
     path: ROUTES.select,
     handler: async (req, res) => {
@@ -1173,7 +1186,7 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
     }
   }
 
-  const historyRoute: DshRoute = {
+  const historyRoute: WebRoute = {
     kind: "exact",
     path: ROUTES.history,
     handler: (req, res) => {
@@ -1205,7 +1218,7 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
   };
 
   // M2: 适配器元数据路由（含用户客户端渲染器文件 URL）
-  const adaptersRoute: DshRoute = {
+  const adaptersRoute: WebRoute = {
     kind: "exact",
     path: ROUTES.adapters,
     handler: (req, res) => {
@@ -1234,7 +1247,7 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
   };
 
   // M2: 用户客户端 JS 静态服务路由（loopback 围栏，text/javascript content-type）
-  const userRoute: DshRoute = {
+  const userRoute: WebRoute = {
     // 匹配 /api/dsh-provider-usage/user/<n>.js
     kind: "prefix",
     path: "/api/dsh-provider-usage/user/",
@@ -1261,7 +1274,7 @@ export async function apply(ctx: PluginContext, config: OpenCodePluginConfig = {
     },
   };
 
-  const healthRoute: DshRoute = {
+  const healthRoute: WebRoute = {
     kind: "exact",
     path: ROUTES.health,
     handler: (req, res) => {

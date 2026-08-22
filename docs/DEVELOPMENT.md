@@ -33,14 +33,13 @@ packages/dsh-*/            # 每个插件 = 独立 npm 包（@wingsky-1/dsh-*）
   src/*.ts                 # 其余为宿主模块；宿主导出的 profile 依赖另见 cordis.patch.yml
 packages/dsh-plugins-all/  # 聚合包（dependencies 引用全部子包，发布用 pnpm publish 替换版本号）
 shared/                    # 宿主端共享层（loopback/host-utils/frontmatter），构建期内联进各包，不发布
-types/dsh.d.ts             # 自建 DSH 插件类型层
 scripts/                   # 构建/契约/打包校验脚本（*.ts，Node 直跑）
 ```
 
 `scripts/bundle-host.ts` 编排单包构建：
 1. esbuild 内联 `shared/*` 进 `lib/index.js`（宿主端自包含单文件）。
 2. 客户端经 `scripts/build-client.ts`（唯一契约外壳/注入点）构建 `lib/client.js`。
-3. d.ts X1：改写 `../../../shared|types` → 包内副本，`shared/*.d.ts`、`types/dsh.d.ts` 随包。
+3. d.ts X1：改写 `../../../shared` → 包内副本，`shared/*.d.ts` 随包。
    shared 层因此保持 **js + d.ts 双写**（tsc `rootDir` 硬约束，shared 不可 TS 化）。
 4. 拷贝资源（非 TS 文件）+ LICENSE。
 5. 第三方 license 归集：扫描产物中 esbuild 的 node_modules 模块注释，把真实被内联
@@ -48,6 +47,11 @@ scripts/                   # 构建/契约/打包校验脚本（*.ts，Node 直�
    （`scripts/collect-licenses.ts`）。**运行时依赖 = 构建期内联**——内联在法律上
    等于分发该库副本，必须随发布物附其 license 文本与版权声明；`pack:check` 断言
    「有内联 ⇒ 清单存在、非空、含 MIT/BSD/Apache 字样且覆盖每个被内联的包名」。
+
+宿主端类型一律用官方类型层（pnpm-workspace catalog 锁版：`@deepseek-ai/cordis`
+的 `Context` + `@deepseek-ai/dsh-host-webserver` 的 `WebRoute`/ctx.webServer 增强 +
+`@deepseek-ai/dsh-tools` 的 `ToolDefinition`/ctx.tools 增强等；仅 import type，
+contract-check 禁止运行时值导入）。原自建类型层 `types/dsh.d.ts` 已删除（issue #48）。
 
 ## 1. 宿主端（`src/index.ts`）规范
 
