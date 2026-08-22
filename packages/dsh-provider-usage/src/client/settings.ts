@@ -200,7 +200,7 @@ function ProviderItem({
   const [copied, setCopied] = React.useState<boolean>(false);
 
   /** 一句话引导指令：无候选时复制到会话，agent 按 9-agent-guide-mjs.md 自主引导。 */
-  const guideCommand = `请为提供商 ${item.provider} 创建用量统计适配器：自行查找其用量接口与鉴权方式，自主设计适配器方案（id/展示名/窗口字段），先给我审核方案，确认后生成 .mjs 文件、告诉保存路径并引导我在「用量统计」设置页添加适配器。`;
+  const guideCommand = `请为提供商 ${item.provider} 创建用量统计适配器：以该提供商在模型配置中的 API 端点（baseUrl）为起点，自行确认用量接口与鉴权方式，自主设计适配器方案（id/展示名/窗口字段），先给我审核方案（含 API 端点），确认后生成 .mjs 文件、告诉保存路径并引导我在「用量统计」设置页添加适配器。`;
   const onCopyGuide = async (): Promise<void> => {
     if (await copyText(guideCommand)) {
       setCopied(true);
@@ -434,7 +434,7 @@ function ProviderListSection({
   // 列表完全为空（adapters.json 不可达或模型配置无 provider）时的全局引导复制
   const [copiedGlobal, setCopiedGlobal] = React.useState<boolean>(false);
   const globalGuideCommand =
-    "请帮我接入一个提供商的用量统计：自行调研/确认数据源与用量接口、自主设计适配器方案并先给我审核，确认后生成 .mjs 文件、告诉保存路径并引导我在「用量统计」设置页完成登记。";
+    "请帮我接入一个提供商的用量统计：以你在模型配置中该提供商的 API 端点（baseUrl）为起点，自行确认用量接口与鉴权方式、自主设计适配器方案并先给我审核（含 API 端点），确认后生成 .mjs 文件、告诉保存路径并引导我在「用量统计」设置页完成登记。";
   const onCopyGlobalGuide = async (): Promise<void> => {
     if (await copyText(globalGuideCommand)) {
       setCopiedGlobal(true);
