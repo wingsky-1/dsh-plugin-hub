@@ -1,23 +1,20 @@
 /**
- * dsh-provider-usage — 设置面板独立 tab「用量统计」（M3b，issue #38 重构）。
+ * dsh-provider-usage — 设置面板独立 tab「用量统计」（M3b，issue #38 重构；v2 交互收敛）。
  *
- * 经 slots.inject("settings.section") 注册顶层 tab，React 渲染四区：
- * - 总览：当前生效适配器逐 provider 摘要（enabled 映射驱动，保留）
- * - 用量可视化：summary 文案 + 各窗口明细表（保留）
- * - 提供商列表（替代原「适配器管理」平铺区块）：主列表与 dsh 模型配置页的
- *   提供商列表精确一致（adapters.json modelProviders = ctx.llm.listProviders()
- *   注册路由，issue #38 维护者意图修正）；无候选的保留展示并给引导；候选或
- *   启用态指向不在模型配置中的 provider 收进尾部独立分组「未在模型配置中的
- *   适配器」（避免静默消失，不计入主列表数量）。折叠态徽标显示
- *   「启用中: <adapter-id>」，展开页内管理候选适配器（名称/来源/启用开关单选）、
- *   [禁用该提供商]、[+ 添加适配器]（本地文件路径登记并热注册）
- * - 配置：常用配置键展示（patch 层为单一事实源，此处只读）
+ * 经 slots.inject("settings.section") 注册顶层 tab，React 渲染两区：
+ * - 提供商列表（主区）：与 dsh 模型配置页提供商列表精确一致（adapters.json
+ *   modelProviders = ctx.llm.listProviders() 注册路由）；每个提供商展开后展示
+ *   适配器候选行，**每行独立开关**（唯一启用，开启一个自动关掉上一个；关闭当前
+ *   启用者 = 停用该 provider 的用量取数，不影响模型配置页的提供商可用性）。
+ *   [+ 添加适配器] 内嵌于对应提供商：仅输入文件路径，检测（inspect 路由）回显
+ *   导出信息后确认添加（add 路由，身份以导出为准）。
+ * - 用量可视化：summary 文案 + 各窗口明细表（保留）。
  *
  * 数据面：全部走宿主 loopback 路由（/stats、/adapters.json、POST /adapters/select、
- * POST /adapters/add），不引入额外 RPC 通道。
+ * POST /adapters/inspect、POST /adapters/add），不引入额外 RPC 通道。
  */
 import * as React from "react";
-import { STATS_URL, ADAPTERS_URL, SELECT_URL, ADD_URL } from "./core.js";
+import { STATS_URL, ADAPTERS_URL, SELECT_URL, INSPECT_URL, ADD_URL } from "./core.js";
 import { splitProviderList, providerBadgeText } from "../client-logic.js";
 import type { ProviderListItem } from "../client-logic.js";
 
@@ -59,17 +56,41 @@ interface StatsView {
   usage?: { ok?: boolean; error?: string | null; windows?: Array<{ key: string; name: string; percent: number | null; limit?: number; resetsAt?: string }> } | null;
 }
 
-/** 添加适配器表单值。 */
-interface AddFormValue {
+/** inspect 回显的导出信息（以模块导出为准）。 */
+interface InspectAdapter {
   id: string;
   label: string;
-  file: string;
+  providers: string[];
+  version: number;
+}
+
+/** inspect 结果（ok=false 时 detail 可回显给用户排障）。 */
+interface InspectResult {
+  ok: boolean;
+  adapter?: InspectAdapter;
+  detail?: string;
+}
+
+/** add 结果（ok=false 时 detail 可回显给用户排障）。 */
+interface AddResult {
+  ok: boolean;
+  detail?: string;
 }
 
 async function jsonGet(url: string): Promise<unknown> {
   const res = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
+}
+
+/** 复制文本到剪贴板（设置页「复制引导指令」用；失败静默返回 false）。 */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** 状态等级 → 颜色（主题变量 + 浅色回退）。 */
@@ -95,48 +116,6 @@ const titleStyle: Object = {
   fontWeight: 600,
   margin: "0 0 6px",
 };
-
-/** 总览区：按 provider 逐行展示当前生效适配器 + summary 文案（enabled 映射驱动）。 */
-function OverviewSection({ statsByProvider }: { statsByProvider: Record<string, StatsView | null> }) {
-  const providers = Object.keys(statsByProvider);
-  return React.createElement(
-    "div",
-    { style: sectionStyle },
-    React.createElement("h4", { style: titleStyle }, "总览"),
-    providers.length === 0
-      ? React.createElement(
-          "div",
-          { style: { color: "var(--dsw-alias-label-tertiary,#9aa0ab)" } },
-          "暂无已启用的 provider（adapters.json enabled 映射为空）。",
-        )
-      : providers.map((provider) => {
-          const stats = statsByProvider[provider];
-          const label = stats?.label ?? provider;
-          const adapter = stats?.adapterId ?? null;
-          return React.createElement(
-            "div",
-            { key: provider, style: { marginBottom: 6 } },
-            React.createElement(
-              "div",
-              null,
-              `${provider} · 生效适配器：${adapter ?? "无"}`,
-            ),
-            React.createElement(
-              "div",
-              { style: { color: levelColor(stats?.summary?.level) } },
-              stats?.summary?.text ? `${label}：${stats.summary.text}` : `${label}：暂无数据`,
-            ),
-            !stats?.hasAdapter
-              ? React.createElement(
-                  "div",
-                  { style: { color: "var(--dsw-alias-state-error-primary,#d64545)" } },
-                  "该提供商暂无启用的适配器——请在下方提供商列表中展开并启用。",
-                )
-              : null,
-          );
-        }),
-  );
-}
 
 /** 用量可视化区：各 provider 一张窗口明细表。 */
 function UsageSection({ statsByProvider }: { statsByProvider: Record<string, StatsView | null> }) {
@@ -189,7 +168,7 @@ function UsageSection({ statsByProvider }: { statsByProvider: Record<string, Sta
   );
 }
 
-/** 单个提供商手风琴项：折叠头（徽标）+ 展开管理区（候选单选/禁用/添加）。 */
+/** 单个提供商手风琴项：折叠头（徽标）+ 展开管理区（候选开关 + 内嵌添加表单）。 */
 function ProviderItem({
   item,
   candidates,
@@ -197,6 +176,7 @@ function ProviderItem({
   busy,
   onSwitch,
   onDisable,
+  onInspect,
   onAdd,
 }: {
   item: ProviderListItem;
@@ -205,41 +185,165 @@ function ProviderItem({
   busy: boolean;
   onSwitch(provider: string, adapterId: string): void;
   onDisable(provider: string): void;
-  onAdd(provider: string, form: AddFormValue): Promise<{ ok: boolean; detail?: string }>;
+  onInspect(file: string): Promise<InspectResult>;
+  onAdd(provider: string, form: { file: string }): Promise<AddResult>;
 }) {
   const [open, setOpen] = React.useState<boolean>(false);
   const [showAddForm, setShowAddForm] = React.useState<boolean>(false);
-  const [form, setForm] = React.useState<AddFormValue>({ id: "", label: "", file: "" });
+  const [file, setFile] = React.useState<string>("");
+  const [inspecting, setInspecting] = React.useState<boolean>(false);
+  const [inspected, setInspected] = React.useState<InspectAdapter | null>(null);
+  const [inspErr, setInspErr] = React.useState<string | null>(null);
   const [addMsg, setAddMsg] = React.useState<string | null>(null);
   const [addErr, setAddErr] = React.useState<boolean>(false);
   const [adding, setAdding] = React.useState<boolean>(false);
+  const [copied, setCopied] = React.useState<boolean>(false);
 
-  const submitAdd = (): void => {
-    if (form.id.trim() === "" || form.label.trim() === "" || form.file.trim() === "" || busy || adding) return;
-    setAdding(true);
-    onAdd(item.provider, { id: form.id.trim(), label: form.label.trim(), file: form.file.trim() })
-      .then((r) => {
-        if (r.ok) {
-          setForm({ id: "", label: "", file: "" });
-          setShowAddForm(false);
-          setAddErr(false);
-          setAddMsg(null);
-        } else {
-          setAddErr(true);
-          setAddMsg(r.detail ?? "添加失败");
-        }
-      })
-      .catch(() => {
-        setAddErr(true);
-        setAddMsg("添加失败（网络错误）");
-      })
-      .finally(() => setAdding(false));
+  /** 一句话引导指令：无候选时复制到会话，agent 按 9-agent-guide-mjs.md 自主引导。 */
+  const guideCommand = `请为提供商 ${item.provider} 创建用量统计适配器：以该提供商在模型配置中的 API 端点（baseUrl）为起点，自行确认用量接口与鉴权方式，自主设计适配器方案（id/展示名/窗口字段），先给我审核方案（含 API 端点），确认后生成 .mjs 文件、告诉保存路径并引导我在「用量统计」设置页添加适配器。按 mjs 适配器开发指导文档（https://github.com/wingsky-1/dsh-plugin-hub/blob/main/packages/dsh-provider-usage/docs/opt/usage-provider-adapter/9-agent-guide-mjs.md）执行引导流程。`;
+  const onCopyGuide = async (): Promise<void> => {
+    if (await copyText(guideCommand)) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
+
+  /** 检测文件：inspect 路由回显导出信息，不注册（确认后才 add）。 */
+  const doInspect = async (): Promise<void> => {
+    if (file.trim() === "" || busy || inspecting) return;
+    setInspecting(true);
+    setInspErr(null);
+    setInspected(null);
+    setAddMsg(null);
+    try {
+      const r = await onInspect(file.trim());
+      if (r.ok) setInspected(r.adapter ?? null);
+      else setInspErr(r.detail ?? "检测失败");
+    } finally {
+      setInspecting(false);
+    }
+  };
+
+  /** 确认添加：仅 file（身份以导出为准），add 路由热注册。 */
+  const submitAdd = async (): Promise<void> => {
+    if (file.trim() === "" || inspected === null || busy || adding) return;
+    setAdding(true);
+    setAddMsg(null);
+    const r = await onAdd(item.provider, { file: file.trim() });
+    if (r.ok) {
+      setFile("");
+      setInspected(null);
+      setShowAddForm(false);
+      setInspErr(null);
+    } else {
+      setAddErr(true);
+      setAddMsg(r.detail ?? "添加失败");
+    }
+    setAdding(false);
+  };
+
+  /** 展开/收起内嵌添加表单（重置状态）。 */
+  const toggleAdd = (): void => {
+    setShowAddForm((v) => !v);
+    setFile("");
+    setInspected(null);
+    setInspErr(null);
+    setAddMsg(null);
+    setAddErr(false);
+  };
+
+  const adapterRows = candidates.map((c) => {
+    const err = errorByKey.get(c.id);
+    const enabled = c.id === item.enabledId;
+    return React.createElement(
+      "div",
+      { key: c.id, className: `dou-adapterRow${enabled ? " dou-active" : ""}` },
+      React.createElement(
+        "div",
+        { className: "dou-adapterInfo" },
+        React.createElement("span", { className: "dou-adapterName" }, c.label),
+        React.createElement("span", { className: "dou-adapterMeta" }, `${c.id} · ${c.source === "builtin" ? "内置" : "自定义"}`),
+      ),
+      React.createElement(
+        "label",
+        { className: "dou-switchWrap", title: enabled ? "停用该适配器（仅影响用量取数）" : "启用该适配器" },
+        React.createElement("input", {
+          type: "checkbox",
+          className: "dou-switch",
+          checked: enabled,
+          disabled: busy,
+          onChange: (e: unknown) => {
+            const checked = (e as { target: { checked: boolean } }).target.checked;
+            if (checked) onSwitch(item.provider, c.id);
+            else onDisable(item.provider);
+          },
+        }),
+        React.createElement("span", { className: "dou-switchTrack", "aria-hidden": "true" }),
+      ),
+      err !== undefined
+        ? React.createElement("div", { className: "dou-provErr" }, `最近一次错误：${err.message}`)
+        : null,
+    );
+  });
+
+  const inspectCard =
+    inspected === null
+      ? null
+      : React.createElement(
+          "div",
+          { className: "dou-inspectCard" },
+          React.createElement("div", { className: "dou-inspectRow" }, React.createElement("span", { className: "dou-inspectK" }, "适配器 ID"), React.createElement("span", { className: "dou-inspectV" }, inspected.id)),
+          React.createElement("div", { className: "dou-inspectRow" }, React.createElement("span", { className: "dou-inspectK" }, "展示名"), React.createElement("span", { className: "dou-inspectV" }, inspected.label)),
+          React.createElement("div", { className: "dou-inspectRow" }, React.createElement("span", { className: "dou-inspectK" }, "归属提供商"), React.createElement("span", { className: "dou-inspectV" }, inspected.providers.join("、") || item.provider)),
+          React.createElement("div", { className: "dou-inspectRow" }, React.createElement("span", { className: "dou-inspectK" }, "契约版本"), React.createElement("span", { className: "dou-inspectV" }, `version ${inspected.version} ✓`)),
+        );
+
+  const addForm = React.createElement(
+    "div",
+    { className: "dou-addForm" },
+    React.createElement(
+      "div",
+      { className: "dou-addField" },
+      React.createElement(
+        "span",
+        { className: "dou-addLabel" },
+        "文件路径",
+        React.createElement("span", { className: "dou-addOnly" }, "（唯一输入——id/展示名/归属提供商从文件导出自动读取）"),
+      ),
+    ),
+    React.createElement("input", {
+      className: "dou-input",
+      value: file,
+      placeholder: "~/.dsh/.../xxx.mjs 或绝对路径",
+      maxLength: 1024,
+      onChange: (e: unknown) => setFile((e as { target: { value: string } }).target.value),
+    }),
+    React.createElement(
+      "div",
+      { className: "dou-provActions" },
+      React.createElement(
+        "button",
+        { type: "button", className: "dou-btn", disabled: busy || inspecting || file.trim() === "", onClick: doInspect },
+        inspecting ? "检测中…" : "检测文件",
+      ),
+      React.createElement(
+        "button",
+        { type: "button", className: "dou-btn", disabled: busy || adding || inspected === null, onClick: submitAdd },
+        adding ? "添加中…" : "确认添加",
+      ),
+      React.createElement("button", { type: "button", className: "dou-btn", disabled: busy || adding, onClick: toggleAdd }, "取消"),
+    ),
+    inspErr !== null ? React.createElement("div", { className: "dou-provErr" }, inspErr) : null,
+    inspectCard,
+    addMsg !== null
+      ? React.createElement("div", { className: addErr ? "dou-provErr" : "dou-hint" }, addMsg)
+      : null,
+  );
 
   return React.createElement(
     "div",
     { className: "dou-provItem" },
-    // 折叠头：▸/▾ + provider 名 + 徽标（启用中: <adapter-id> / 未启用）
+    // 折叠头：▸/▾ + provider 名 + 徽标（已启用: <adapter-id> / 未启用适配器）
     React.createElement(
       "button",
       {
@@ -261,128 +365,40 @@ function ProviderItem({
       : React.createElement(
           "div",
           { className: "dou-provBody" },
-          // 无候选引导（已知清单里的 provider 尚无任何适配器）
+          // 无候选引导（已知清单里的 provider 尚无任何适配器）：文件注入 + 复制一句话引导指令
           candidates.length === 0
-            ? React.createElement(
-                "div",
-                { className: "dou-hint" },
-                "该提供商暂无候选适配器——可通过下方 [+ 添加适配器] 注入本地适配器文件，或在 cordis.patch.yml 的 adapters.host 中配置。",
-              )
-            : candidates.map((c) => {
-                const err = errorByKey.get(c.id);
-                return React.createElement(
+            ? [
+                React.createElement(
                   "div",
-                  { key: c.id },
+                  { key: "hint", className: "dou-hint" },
+                  "该提供商暂无候选适配器——可通过下方 [+ 添加适配器] 注入本地适配器文件，或在 cordis.patch.yml 的 adapters.host 中配置；也可复制引导指令，让 Agent 帮你创建适配器。",
+                ),
+                React.createElement(
+                  "div",
+                  { key: "guide", className: "dou-provActions" },
                   React.createElement(
-                    "label",
-                    { className: "dou-radioRow" },
-                    React.createElement("input", {
-                      type: "radio",
-                      name: `dou-adm-${item.provider}`,
-                      checked: c.id === item.enabledId,
-                      disabled: busy,
-                      onChange: () => onSwitch(item.provider, c.id),
-                    }),
-                    React.createElement(
-                      "span",
-                      null,
-                      `${c.label}（${c.id}${c.source === "builtin" ? " · 内置" : " · 自定义"}）`,
-                    ),
+                    "button",
+                    { type: "button", className: "dou-btn", disabled: busy, onClick: onCopyGuide },
+                    copied ? "已复制 ✓" : "复制引导指令",
                   ),
-                  err !== undefined
-                    ? React.createElement("div", { className: "dou-provErr" }, `最近一次错误：${err.message}`)
-                    : null,
-                );
-              }),
-          // 操作行：禁用该提供商 / + 添加适配器
+                ),
+              ]
+            : adapterRows,
           React.createElement(
             "div",
             { className: "dou-provActions" },
             React.createElement(
               "button",
-              {
-                type: "button",
-                className: "dou-btn",
-                disabled: busy || item.enabledId === null,
-                onClick: () => onDisable(item.provider),
-              },
-              "禁用该提供商",
-            ),
-            React.createElement(
-              "button",
-              {
-                type: "button",
-                className: "dou-btn",
-                disabled: busy,
-                onClick: () => {
-                  setShowAddForm((v) => !v);
-                  setAddMsg(null);
-                },
-              },
-              "+ 添加适配器",
+              { type: "button", className: "dou-btn", disabled: busy, onClick: toggleAdd },
+              showAddForm ? "收起" : "+ 添加适配器",
             ),
           ),
-          // 添加表单（本期仅文件路径注入；粘贴 JS 落盘后续再加）
-          !showAddForm
-            ? null
-            : React.createElement(
-                "div",
-                { className: "dou-addForm" },
-                React.createElement(
-                  "div",
-                  { className: "dou-addField" },
-                  React.createElement("span", { className: "dou-addLabel" }, "适配器 ID"),
-                  React.createElement("input", {
-                    className: "dou-input",
-                    value: form.id,
-                    maxLength: 128,
-                    placeholder: "须与模块导出 id 一致",
-                    onChange: (e: unknown) => setForm((f) => ({ ...f, id: (e as { target: { value: string } }).target.value })),
-                  }),
-                ),
-                React.createElement(
-                  "div",
-                  { className: "dou-addField" },
-                  React.createElement("span", { className: "dou-addLabel" }, "展示名"),
-                  React.createElement("input", {
-                    className: "dou-input",
-                    value: form.label,
-                    maxLength: 128,
-                    placeholder: "如 My Relay 官方",
-                    onChange: (e: unknown) => setForm((f) => ({ ...f, label: (e as { target: { value: string } }).target.value })),
-                  }),
-                ),
-                React.createElement(
-                  "div",
-                  { className: "dou-addField" },
-                  React.createElement("span", { className: "dou-addLabel" }, "文件路径"),
-                  React.createElement("input", {
-                    className: "dou-input",
-                    value: form.file,
-                    placeholder: "~/.dsh/plugins/provider-usage/my-relay.mjs 或绝对路径",
-                    onChange: (e: unknown) => setForm((f) => ({ ...f, file: (e as { target: { value: string } }).target.value })),
-                  }),
-                ),
-                React.createElement(
-                  "div",
-                  { className: "dou-addField" },
-                  React.createElement("span", { className: "dou-addLabel" }, "归属提供商"),
-                  React.createElement("span", null, item.provider),
-                ),
-                addMsg !== null
-                  ? React.createElement("div", { className: addErr ? "dou-provErr" : "dou-hint" }, addMsg)
-                  : null,
-                React.createElement(
-                  "button",
-                  { type: "button", className: "dou-btn", disabled: busy || adding, onClick: submitAdd },
-                  adding ? "添加中…" : "确认添加",
-                ),
-              ),
+          !showAddForm ? null : addForm,
         ),
   );
 }
 
-/** 提供商列表区（issue #38 意图修正）：主列表对齐模型配置页 + 额外 provider 独立分组。 */
+/** 提供商列表区：主列表对齐模型配置页 + 自定义 provider 独立分组。 */
 function ProviderListSection({
   meta,
   main,
@@ -390,6 +406,7 @@ function ProviderListSection({
   busy,
   onSwitch,
   onDisable,
+  onInspect,
   onAdd,
 }: {
   meta: AdaptersMeta | null;
@@ -398,7 +415,8 @@ function ProviderListSection({
   busy: boolean;
   onSwitch(provider: string, adapterId: string): void;
   onDisable(provider: string): void;
-  onAdd(provider: string, form: AddFormValue): Promise<{ ok: boolean; detail?: string }>;
+  onInspect(file: string): Promise<InspectResult>;
+  onAdd(provider: string, form: { file: string }): Promise<AddResult>;
 }) {
   // host[] 按 providers 分组为候选映射
   const candidatesByProvider = new Map<string, Array<{ id: string; label: string; source: string }>>();
@@ -413,6 +431,16 @@ function ProviderListSection({
   for (const e of meta?.errors ?? []) errorByKey.set(e.key, e);
   // 用户文件加载失败错误无 provider 归属（登记 key=file:<名>），在列表顶部全局展示一次
   const fileErrors = [...errorByKey.entries()].filter(([k]) => k.startsWith("file:"));
+  // 列表完全为空（adapters.json 不可达或模型配置无 provider）时的全局引导复制
+  const [copiedGlobal, setCopiedGlobal] = React.useState<boolean>(false);
+  const globalGuideCommand =
+    "请帮我接入一个提供商的用量统计：以你在模型配置中该提供商的 API 端点（baseUrl）为起点，自行确认用量接口与鉴权方式、自主设计适配器方案并先给我审核（含 API 端点），确认后生成 .mjs 文件、告诉保存路径并引导我在「用量统计」设置页完成登记。按 mjs 适配器开发指导文档（https://github.com/wingsky-1/dsh-plugin-hub/blob/main/packages/dsh-provider-usage/docs/opt/usage-provider-adapter/9-agent-guide-mjs.md）执行引导流程。";
+  const onCopyGlobalGuide = async (): Promise<void> => {
+    if (await copyText(globalGuideCommand)) {
+      setCopiedGlobal(true);
+      setTimeout(() => setCopiedGlobal(false), 2000);
+    }
+  };
 
   /** 手风琴渲染复用（主分组与额外分组同构）。 */
   const accordion = (items: ProviderListItem[]): React.ReactElement =>
@@ -428,6 +456,7 @@ function ProviderListSection({
           busy,
           onSwitch,
           onDisable,
+          onInspect,
           onAdd,
         }),
       ),
@@ -440,7 +469,7 @@ function ProviderListSection({
     React.createElement(
       "div",
       { className: "dou-hint" },
-      `提供商列表与模型配置页保持一致（共 ${main.length} 个）；展开某个提供商以切换/禁用其适配器或添加新适配器。`,
+      `提供商列表与模型配置页保持一致（共 ${main.length} 个）；展开某个提供商以切换适配器开关或添加新适配器。`,
     ),
     fileErrors.length > 0
       ? fileErrors.map(([k, e]) =>
@@ -452,10 +481,23 @@ function ProviderListSection({
         )
       : null,
     main.length === 0
-      ? React.createElement("div", { style: { color: "var(--dsw-alias-label-tertiary,#9aa0ab)" } }, "无提供商数据（adapters.json 不可达）")
+      ? React.createElement(
+          "div",
+          { className: "dou-hint" },
+          "未发现已配置的提供商（adapters.json 不可达或模型配置页尚未配置提供商）。可复制引导指令，让 Agent 帮你接入数据源并创建适配器。",
+          React.createElement(
+            "div",
+            { className: "dou-provActions" },
+            React.createElement(
+              "button",
+              { type: "button", className: "dou-btn", disabled: busy, onClick: onCopyGlobalGuide },
+              copiedGlobal ? "已复制 ✓" : "复制引导指令",
+            ),
+          ),
+        )
       : accordion(main),
-    // 尾部独立分组：候选/启用态指向不在模型配置中的 provider（避免静默消失，
-    // 不计入上方主列表数量）
+    // 尾部独立分组：候选/启用态指向不在模型配置中的 provider（用户适配器自定义路由，
+    // 避免静默消失，不计入主列表数量；模型页补建该提供商后自动并入主列表）
     extra.length > 0
       ? React.createElement(
           "div",
@@ -463,12 +505,12 @@ function ProviderListSection({
           React.createElement(
             "h4",
             { style: titleStyle },
-            "未在模型配置中的适配器",
+            "自定义提供商",
           ),
           React.createElement(
             "div",
             { className: "dou-hint" },
-            "以下提供商不在模型配置页的提供商列表中（用户适配器指向的自定义路由），不计入上方数量。",
+            "以下 providers 未出现在 dsh 模型配置页（模型暂选不到该提供商，先登记适配器；在模型页补建后即可选用），不计入上方数量。",
           ),
           accordion(extra),
         )
@@ -476,21 +518,7 @@ function ProviderListSection({
   );
 }
 
-/** 配置区：常用键只读展示（patch 层为单一事实源）。 */
-function ConfigSection() {
-  return React.createElement(
-    "div",
-    { style: sectionStyle },
-    React.createElement("h4", { style: titleStyle }, "配置"),
-    React.createElement(
-      "div",
-      { style: { color: "var(--dsw-alias-label-tertiary,#9aa0ab)" } },
-      "baseUrl / timeoutMs / cacheTtlMs / maxAgeDays / sampleIntervalMs / stripSecrets / adapters 等键经 cordis.patch.yml（用户 patch 层）配置；修改后重启 dsh web 生效。",
-    ),
-  );
-}
-
-/** 设置页根组件：模型配置提供商列表驱动手风琴；总览/可视化仅对启用中的 provider 拉 /stats。 */
+/** 设置页根组件：模型配置提供商列表驱动手风琴；用量可视化对启用中的 provider 拉 /stats。 */
 export function SettingsPage() {
   const [statsByProvider, setStatsByProvider] = React.useState<Record<string, StatsView | null>>({});
   const [meta, setMeta] = React.useState<AdaptersMeta | null>(null);
@@ -502,8 +530,7 @@ export function SettingsPage() {
       const m = (await jsonGet(ADAPTERS_URL).catch(() => null)) as AdaptersMeta | null;
       if (m !== null) {
         setMeta(m);
-        // issue #38 意图修正：主列表 = modelProviders（与模型配置页精确一致），
-        // 额外 provider 收进独立分组
+        // 主列表 = modelProviders（与模型配置页精确一致），额外 provider 收进独立分组
         const grouped: Record<string, Array<{ id: string; label: string; source: string }>> = {};
         for (const info of m.host ?? []) {
           for (const provider of info.providers) {
@@ -518,7 +545,7 @@ export function SettingsPage() {
           }),
         );
       }
-      // 总览/可视化：仅对运行时启用的 provider 并行拉 /stats
+      // 用量可视化：仅对运行时启用的 provider 并行拉 /stats
       const providers = Object.keys(m?.enabled ?? {});
       const pairs = await Promise.all(
         providers.map(async (provider) => {
@@ -560,7 +587,7 @@ export function SettingsPage() {
     [reload],
   );
 
-  // issue #38：「禁用该提供商」= select 清空该 provider 启用项（adapterId: null）
+  // 关闭开关 = select 清空该 provider 启用项（停用该 provider 的用量取数）
   const onDisable = React.useCallback(
     (provider: string): void => {
       mutate(() =>
@@ -574,14 +601,32 @@ export function SettingsPage() {
     [reload],
   );
 
-  // issue #38：「+ 添加适配器」= adapters/add 登记本地文件并热注册
+  /** 检测文件：仅回显导出信息，不登记。 */
+  const onInspect = React.useCallback(async (file: string): Promise<InspectResult> => {
+    try {
+      const res = await fetch(INSPECT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; adapter?: InspectAdapter; error?: string; detail?: string };
+      if (!res.ok) {
+        return { ok: false, detail: body.detail ?? body.error ?? `HTTP ${res.status}` };
+      }
+      return { ok: true, adapter: body.adapter };
+    } catch (e) {
+      return { ok: false, detail: e instanceof Error ? e.message : String(e) };
+    }
+  }, []);
+
+  /** 登记适配器：仅 file（身份以导出为准），热注册生效。 */
   const onAdd = React.useCallback(
-    async (provider: string, form: AddFormValue): Promise<{ ok: boolean; detail?: string }> => {
+    async (_provider: string, form: { file: string }): Promise<AddResult> => {
       try {
         const res = await fetch(ADD_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: form.id, label: form.label, provider, file: form.file }),
+          body: JSON.stringify({ file: form.file }),
         });
         const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; detail?: string };
         if (!res.ok) {
@@ -599,9 +644,16 @@ export function SettingsPage() {
   return React.createElement(
     "div",
     { className: "dou-settings", style: { maxWidth: 560 } },
-    React.createElement(OverviewSection, { statsByProvider }),
     React.createElement(UsageSection, { statsByProvider }),
-    React.createElement(ProviderListSection, { meta, main: list.main, extra: list.extra, busy, onSwitch, onDisable, onAdd }),
-    React.createElement(ConfigSection, null),
+    React.createElement(ProviderListSection, {
+      meta,
+      main: list.main,
+      extra: list.extra,
+      busy,
+      onSwitch,
+      onDisable,
+      onInspect,
+      onAdd,
+    }),
   );
 }

@@ -152,7 +152,7 @@ export function splitProviderList(input: ProviderListInput): { main: ProviderLis
   return { main, extra };
 }
 
-/** 折叠态徽标文案（issue #38：显示「启用中: <adapter-id>」或「未启用」）。 */
+/** 折叠态徽标文案（适配器级语义：显示「已启用: <adapter-id>」或「未启用适配器」）。 */
 export function providerBadgeText(item: Pick<ProviderListItem, "enabledId">): string {
-  return item.enabledId !== null ? `启用中: ${item.enabledId}` : "未启用";
+  return item.enabledId !== null ? `已启用: ${item.enabledId}` : "未启用适配器";
 }

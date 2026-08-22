@@ -744,8 +744,8 @@ function mkSummary(overrides: Partial<ProviderSummary> = {}): ProviderSummary {
 {
   assert.equal(
     providerBadgeText({ enabledId: "opencode-go-builtin" }),
-    "启用中: opencode-go-builtin",
-    "折叠徽标显示启用中 adapter-id",
+    "已启用: opencode-go-builtin",
+    "折叠徽标显示已启用 adapter-id（适配器级语义）",
   );
-  assert.equal(providerBadgeText({ enabledId: null }), "未启用", "清空/未启用徽标文案");
+  assert.equal(providerBadgeText({ enabledId: null }), "未启用适配器", "清空/未启用徽标文案");
 }
