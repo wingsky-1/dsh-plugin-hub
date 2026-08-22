@@ -50,6 +50,9 @@ importers:
       esbuild:
         specifier: ^0.28.2
         version: 0.28.2
+      selfsigned:
+        specifier: ^2.4.1
+        version: 2.4.1
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -498,6 +501,9 @@ packages:
     resolution: {integrity: sha512-jmjpa4BwUsmhxcfsgUit/7A9KbrC48Q0q8KvnY107ogcjGgTFDlIL3RpihNpx2Mu1hM4mdFQjoVc4O6JoGKHsA==}
     deprecated: This is a stub types definition. marked provides its own type definitions, so you do not need this installed.
 
+  '@types/node-forge@1.3.14':
+    resolution: {integrity: sha512-mhVF2BnD4BO+jtOp7z1CdzaK4mbuK0LLQYAvdOLqHTavxFNq4zA1EmYkpnFjP8HOUzedfQkRnp0E2ulSAYSzAw==}
+
   '@types/node@26.2.0':
     resolution: {integrity: sha512-5IviulTZeRNp2vAJ514cc/HUlY5nZ9fCbq9DMyC52BrhFZACo3nI0R7qBxhQmo/d27NFe96ur/b7Wwxklda+kg==}
 
@@ -816,6 +822,10 @@ packages:
     resolution: {integrity: sha512-myRT3DiWPHqho5PrJaIRyaMv2kgYf0mUVgBNOYMuCH5Ki1yEiQaf/ZJuQ62nvpc44wL5WDbTX7yGJi1Neevw8w==}
     engines: {node: '>= 0.6'}
 
+  node-forge@1.4.0:
+    resolution: {integrity: sha512-LarFH0+6VfriEhqMMcLX2F7SwSXeWwnEAJEsYm5QKWchiVYVvJyV9v7UDvUv+w5HO23ZpQTXDv/GxdDdMyOuoQ==}
+    engines: {node: '>= 6.13.0'}
+
   nopt@1.0.10:
     resolution: {integrity: sha512-NWmpvLSqUrgrAC9HCuxEvb+PSloHpqVu+FqcO4eeF2h5qYRhA7ev6KvelyQAKtegUbC6RypJnlEOhd8vloNKYg==}
     hasBin: true
@@ -849,6 +859,10 @@ packages:
 
   schemastery@3.18.0:
     resolution: {integrity: sha512-Jw2uxjoyyqc/yeurmChUEc/jbi8GsrdXV/KmqRUDZXJAXAmrJiPsz8vKa17l/VckyzljHZ9oGaul443CQiXxtA==}
+
+  selfsigned@2.4.1:
+    resolution: {integrity: sha512-th5B4L2U+eGLq1TVh7zNRGBapioSORUeymIydxgFpwww9d2qyKvtuPU2jJuHvYAwwqi2Y596QBL3eEqcPEYL8Q==}
+    engines: {node: '>=10'}
 
   semver@7.8.5:
     resolution: {integrity: sha512-Y7/KDsb8LjooZpwaqGyulO6DQlksgCncchHGk+sZIY4SBvUocMBEFH5Ur1fI4dV+Jvl0w6cjvucaIi40puRioA==}
@@ -1152,6 +1166,10 @@ snapshots:
     dependencies:
       marked: 18.0.9
 
+  '@types/node-forge@1.3.14':
+    dependencies:
+      '@types/node': 26.2.0
+
   '@types/node@26.2.0':
     dependencies:
       undici-types: 8.3.0
@@ -1418,6 +1436,8 @@ snapshots:
 
   negotiator@0.6.4: {}
 
+  node-forge@1.4.0: {}
+
   nopt@1.0.10:
     dependencies:
       abbrev: 1.1.1
@@ -1447,6 +1467,11 @@ snapshots:
     dependencies:
       '@standard-schema/spec': 1.1.0
       cosmokit: 1.8.1
+
+  selfsigned@2.4.1:
+    dependencies:
+      '@types/node-forge': 1.3.14
+      node-forge: 1.4.0
 
   semver@7.8.5: {}
 
