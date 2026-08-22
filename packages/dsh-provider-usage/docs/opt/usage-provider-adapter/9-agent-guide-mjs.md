@@ -23,6 +23,8 @@
    接口/鉴权时，才向用户提出**最小必要**问题（问数据源地址或鉴权方式，不重复问
    命名等可由 agent 决策的事）。
 
+4. **类型决定策略，不套用一刀切探测**：执行前先判断 provider 属于哪一类——通用大平台走官方文档，非大平台走主动询问——不同类别的端点获取、鉴权确认、窗口设计方式截然不同（见 9.1 步骤 1-2 分类执行表）。
+
 判断口诀：**取数在宿主（mjs），化妆在客户端（js）**。绝大多数诉求只到 mjs。
 
 ## 9.1 一句话指令 + 完整引导流程
@@ -42,24 +44,40 @@
 
 收到后按以下流程执行（默认全程自主，只保留审核点）：
 
-1. **盘点已知**（0 提问）：从用户当前会话/模型配置/已有文件的上下文收集：provider 名、
-   baseUrl、apiKey、已有的接口线索。
-2. **自主调研**（0 提问）：先取该 provider 在模型配置中的 **baseUrl**（API 端点），
-   基于它确认用量端点（同域惯例路径 + 官方文档交叉验证）、鉴权头、返回结构。查到即用；
-   能从已有信息合理推导（如 `{baseUrl}/v1/usage`、Bearer 鉴权）也直接用并标注「推断」。
-   端点确认结果必须写进决策审核卡「接口」行（**必填**，交用户审）。
-3. **产出决策审核卡**（给用户看，等确认）：用简短清单列出全部实质决策，例如：
+1. **盘点已知**（0 提问）：从用户当前会话/模型配置收集：provider 名、baseUrl、apiKey 来源。
+2. **提供商类型识别 + 分支执行**：根据下表判断 provider 类型，按对应分支执行。
+
+   | 类型 | 判定特征 | 执行策略 |
+   |---|---|---|
+   | **A. 通用大平台** | 公开 API 文档完善；baseUrl 匹配已知域名（`api.openai.com`、`api.anthropic.com`、`generativelanguage.googleapis.com` 等）；官方开发者平台有标准用量/计费接口 | 走官方文档确认用量端点、鉴权方式、响应结构。**0 提问**。 |
+   | **B. Coding Plan** | 提供商名含 coding/plan 等关键词或已知为 coding 平台（如 `opencode`）；有周期配额概念（5h 滚动/每周/每月）；有限额字段 | 走周期窗口统计。按 9.2 模板设计 `windows`（5h 滚动/每周/每月），`percent` 从配额计算。**0 提问**。 |
+   | **C. 非 Coding Plan 中转站/聚合服务** | 未知域名；baseUrl 看起来是自建/第三方聚合；无法从公开文档确认用量接口；无周期配额概念，通常是余额计费 | **主动问用户 3 个问题**（见下方模板），然后 agent 自己解析鉴权方式和返回结构。 |
+
+   **分支 C 提问模板**（直接贴给用户）：
+
+   ```text
+   你提供的 <provider> 看起来是自建/第三方中转服务。
+   为了设计适配器，请确认三件事：
+   1. 想追踪什么数据？【余额（充值剩余）/ 周期配额（限额）/ 用量明细 / 其他】
+   2. 查询接口地址和请求方法？（如 GET https://api.yoursite.com/v1/balance）
+   3. 给一个调用示例（curl，API Key 脱敏，如 sk-xxx），我看看鉴权方式和返回结构。
+   ```
+
+   > 拿到示例后，agent 自主解析鉴权头/参数、返回结构字段含义，**不需要用户额外解释**。
+
+3. **产出决策审核卡**（给用户看，等确认）：用简短清单列出全部实质决策，**首行标注类型**（A/B/C），例如：
 
    ```text
    ── 适配器方案（请审核）────────────────
+   · 类型：C（非 Coding Plan 中转站，来自你的模型配置 + 你提供的示例）
    · provider 认领：my-relay（来自你的模型配置）
    · API 端点（baseUrl）：https://relay.example.com/v1（来自模型配置）
-   · 用量接口：GET https://relay.example.com/v1/usage（同域惯例 + 官方文档 → 链接）
-   · 鉴权：Authorization: Bearer <ctx.apiKey>（走插件解析链）
-   · 窗口：5h 滚动(percent) / 每周(percent) / 请求数(计数)
+   · 用量接口：GET https://relay.example.com/v1/balance（你提供的示例 + 实测验证）
+   · 鉴权：Authorization: Bearer <ctx.apiKey>（按你提供的示例，走插件解析链）
+   · 窗口：余额（percent: null，充值后占比无意义） / 余额数值趋势（历史采样）
    · id：my-relay（kebab-case，与数据源同名）
    · label：我的中转站（中文展示名）
-   · 保存路径：~/.dsh/plugins/provider-usage/my-relay.mjs
+   · 保存路径：~/.dsh/provider-usage/my-relay.mjs（~/.dsh/ 下不受插件升级影响）
    · 登记方式：设置页 [+ 添加适配器]（仅填文件路径，热注册）
    ───────────────────────────────────────
    确认 or 调整哪一项？
@@ -120,6 +138,80 @@ export default {
 };
 ```
 
+### 9.2.1 余额型适配器变体（percent: null + 自定义 summarize/samplePoint）
+
+余额计费（充值剩余）的中转站/聚合服务，不适合用百分比窗口（充值后占比无意义），
+改用 `percent: null` + 自定义胶囊文案 + 对余额数值做历史采样：
+
+```js
+// my-relay.mjs —— 余额型适配器模板
+export default {
+  version: 1,
+  id: "my-relay",
+  label: "我的中转站",
+  providers: ["my-relay"],
+
+  // 窗口声明：不设 limit（余额无上限），percent 由 fetchUsage 返回 null
+  windows: [
+    { key: "balance", name: "余额" },
+  ],
+
+  async fetchUsage(ctx) {
+    const res = await ctx.fetch(`${ctx.baseUrl ?? "https://relay.example.com/v1/balance"}`, {
+      headers: {
+        ...(ctx.apiKey ? { Authorization: `Bearer ${ctx.apiKey}` } : {}),
+        Accept: "application/json",
+      },
+      signal: ctx.signal,
+    });
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, provider: ctx.provider, label: this.label, fetchedAt: Date.now(), error: "unauthorized" };
+    }
+    if (!res.ok) {
+      return { ok: false, provider: ctx.provider, label: this.label, fetchedAt: Date.now(), error: `http-${res.status}` };
+    }
+    const body = await res.json();
+    // 假设返回 { balance: 0.6, unit: "元" }——按实际字段调整
+    return {
+      ok: true,
+      provider: ctx.provider,
+      label: this.label,
+      fetchedAt: Date.now(),
+      windows: [
+        {
+          key: "balance",
+          name: "余额",
+          percent: null, // 余额型，不设百分比
+          raw: body.balance, // 余额数值
+        },
+      ],
+      data: body,
+    };
+  },
+
+  // 自定义胶囊文案：只显示余额，不带占比
+  async summarize(ctx) {
+    const balance = ctx.usage?.windows?.[0]?.raw;
+    const text = typeof balance === "number" ? `余额 ¥${balance.toFixed(2)}` : this.label;
+    const level = typeof balance === "number" && balance < 0.1 ? "warn" : "ok";
+    return {
+      ok: true, provider: ctx.provider, label: this.label,
+      text, level, hasAdapter: true, fetchedAt: Date.now(),
+    };
+  },
+
+  // 历史采样余额数值，用于趋势图
+  samplePoint(usage) {
+    const balance = usage?.windows?.[0]?.raw;
+    if (typeof balance !== "number") return null;
+    return { cols: [{ key: "balance", name: "余额" }], values: [balance] };
+  },
+};
+```
+
+> 余额型适配器默认走**方式 B**（完全自定义），因为自动派生无法正确处理 `percent: null`。
+> 必须手写 `summarize` 和 `samplePoint`。
+
 契约要点（不满足则被拒收，面板会显示具体缺什么）：
 
 - `version` 必须 === `1`（ADAPTER_CONTRACT_VERSION）；
@@ -164,6 +256,7 @@ export default {
 - 该 .mjs **在宿主 Node 进程内以完整权限执行**——只登记你信任的本地文件；
 - `ctx.apiKey` 仅作取数入参，**禁止**把它写进返回体 / 日志 / 透传给第三方；
 - 面板添加只接受规整路径（禁 `..` 穿越），错误消息自动脱敏路径，不要自行打印绝对路径。
+- 分支 C 用户提供示例 curl 时，提醒用户将 API Key 脱敏（如 `sk-xxx`），**agent 不得存储该示例**，仅用于解析鉴权方式和返回结构。
 
 ## 9.5 验证与排障速查
 
