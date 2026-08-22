@@ -89,6 +89,18 @@ export interface LanProxyConfig {
   httpCompressLevel?: number;
 }
 
+/** HTTP 压缩运行快照（issue #33 子项 3：GUI 可见的压缩生效状态）。 */
+export interface HttpCompressSnapshot {
+  /** 配置意图：HTTP 响应压缩开关。 */
+  httpCompressEnabled: boolean;
+  /** 压缩档位预设 0..3。 */
+  httpCompressLevel: number;
+  /** 是否实际挂载在存活转发器上（enabled 且配置开启且转发器监听中）。 */
+  httpCompressMounted: boolean;
+  /** 协商计数（compressed = 按协商压缩/计入口径，passthrough = 豁免直通）。 */
+  httpCompressStats: { compressed: number; passthrough: number };
+}
+
 /** 插件配置，由同名 schemastery schema 校验，也用于 GUI 设置面板渲染。
  * 显式注解：官方类型层与本包 devDep schemastery 各带同名全局命名空间合并后，
  * Config 的推断类型声明发射不再可移植（TS2883），按 TS 建议显式标注。 */
@@ -234,16 +246,71 @@ export interface ResolvedConfig {
 export interface RpcDeps {
   /** 当前生效配置（含默认值兜底）。 */
   resolve: () => ResolvedConfig;
-  /** 持久化层（config.json）当前内容——客户端编辑的落点。 */
+  /** 持久化层（config.json）当前内容——客户端编辑的落点与增量合并基底。 */
   fileConfig: () => Partial<LanProxyConfig>;
-  /** 保存新配置：原子写 config.json 并立即生效（watch 幂等兜底）。 */
+  /** 保存合并后的持久化层全量：原子写 config.json 并立即生效（watch 幂等兜底）。 */
   save: (settings: Partial<LanProxyConfig>) => void;
+  /** HTTP 压缩运行快照（issue #33 子项 3；缺省时 state.compress 为 null）。 */
+  compress?: () => HttpCompressSnapshot;
 }
 
 /** RPC 结果信封（客户端 connection.rpc.call 约定）。 */
 export type RpcResult =
   | { ok: true; value: unknown }
   | { ok: false; error: { code: string; details: string } };
+
+/**
+ * 各配置键的合法范围描述（issue #33 子项 1）：校验失败时向用户指明
+ * 「哪个字段、合法值是什么」，替代原先硬编码的整体拒绝文案。
+ * 与 FILE_CONFIG_VALIDATORS 平行维护；键集合一致（同一批 Object.keys 遍历）。
+ */
+const SETTING_FIELD_HINTS: Record<string, string> = {
+  enabled: "需为布尔值",
+  host: "需为字符串",
+  port: "需为 1-65535 的整数",
+  httpsEnabled: "需为布尔值",
+  httpsPort: "需为 1-65535 的整数",
+  tlsCertFile: "需为字符串（PEM 文件路径，留空 = 自签名证书）",
+  tlsKeyFile: "需为字符串（PEM 文件路径，留空 = 自签名证书）",
+  targetHost: "需为回环地址或主机名",
+  targetPort: "需为 1-65535 的整数",
+  printBanner: "需为布尔值",
+  wsCompressEnabled: "需为布尔值",
+  wsCompressPaths: "需为字符串数组（路径白名单）",
+  httpCompressEnabled: "需为布尔值",
+  httpCompressLevel: "需为 0-3 的档位整数（4-9 自动迁移为高档 3）",
+};
+
+/** validateSettings 的校验结果：null = 全部合法。 */
+export interface SettingInvalid {
+  /** 首个非法的配置键名。 */
+  key: string;
+  /** 该键的合法范围描述（面向用户的文案）。 */
+  hint: string;
+}
+
+/**
+ * 校验客户端提交的配置（不净化）：返回首个非法键与其合法范围，全部合法返回
+ * null（issue #33 子项 1）。遍历顺序与 sanitizeSettings 一致（FILE_CONFIG_VALIDATORS
+ * 键序），保证「首个非法键」口径相同。导出供 smoke 单测。
+ */
+export function validateSettings(raw: unknown): SettingInvalid | null {
+  if (typeof raw !== "object" || raw === null) return { key: "(payload)", hint: "需为配置对象" };
+  const src = raw as Record<string, unknown>;
+  for (const key of Object.keys(FILE_CONFIG_VALIDATORS)) {
+    const value = src[key];
+    // 与 sanitizeSettings 同口径：旧档位整数 4..9 先迁移再校验。
+    const normalized =
+      key === "httpCompressLevel" && typeof value === "number" && Number.isInteger(value) && value > 3 && value <= 9
+        ? 3
+        : value;
+    if (normalized === undefined || normalized === null) continue;
+    if (!FILE_CONFIG_VALIDATORS[key](normalized)) {
+      return { key, hint: SETTING_FIELD_HINTS[key] ?? "类型非法" };
+    }
+  }
+  return null;
+}
 
 /**
  * 净化客户端提交的配置：只接受已知键；任一键类型非法 → 整体拒绝（返回 null，
@@ -275,18 +342,34 @@ export function rpcHandler(deps: RpcDeps): (endpoint: string, payload: unknown) 
     try {
       switch (endpoint) {
         case "state": {
-          return { ok: true, value: { settings: deps.fileConfig(), effective: deps.resolve() } };
+          return { ok: true, value: { settings: deps.fileConfig(), effective: deps.resolve(), compress: deps.compress?.() ?? null } };
         }
         case "config": {
-          const settings = sanitizeSettings((payload as { settings?: unknown } | null | undefined)?.settings);
+          const rawSettings = (payload as { settings?: unknown } | null | undefined)?.settings;
+          // 先定位首个非法键（issue #33 子项 1）：错误文案指明字段与合法范围。
+          const invalid = validateSettings(rawSettings);
+          if (invalid !== null) {
+            return { ok: false, error: { code: "invalid", details: `配置项「${invalid.key}」非法：${invalid.hint}` } };
+          }
+          const settings = sanitizeSettings(rawSettings);
           if (settings === null) {
             return { ok: false, error: { code: "invalid", details: "非法配置值（未知键或类型错误）" } };
           }
           if (Boolean(settings.tlsCertFile) !== Boolean(settings.tlsKeyFile)) {
             return { ok: false, error: { code: "tls-pair", details: "证书文件与私钥文件必须成对提供（或都留空以使用自签名证书）" } };
           }
-          deps.save(settings);
-          return { ok: true, value: { settings } };
+          // 增量保存（issue #33 子项 2）：客户端只提交改动键的 diff，这里把
+          // diff 合并进现有持久化层再落盘——未提交的键保持原值，组合层设值
+          // （cordis.patch.yml）不会被客户端默认值静默覆盖。
+          const merged: Partial<LanProxyConfig> = { ...deps.fileConfig(), ...settings };
+          // 空字符串证书路径 = 显式清除（恢复自签证书）：sanitizeSettings 已把
+          // 该键从 patch 中剔除，需同步从合并视图删除才能覆盖掉旧值。
+          const rawSrc = (typeof rawSettings === "object" && rawSettings !== null ? rawSettings : {}) as Record<string, unknown>;
+          for (const key of ["tlsCertFile", "tlsKeyFile"]) {
+            if (rawSrc[key] === "") delete (merged as Record<string, unknown>)[key];
+          }
+          deps.save(merged);
+          return { ok: true, value: { settings: merged } };
         }
         default:
           return { ok: false, error: { code: "unknown", details: String(endpoint) } };
@@ -356,6 +439,20 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
       wsCompressPaths: value.wsCompressPaths ?? DEFAULT_WSS_COMPRESS_PATHS,
       httpCompressEnabled: value.httpCompressEnabled ?? true,
       httpCompressLevel: value.httpCompressLevel ?? 1,
+    };
+  };
+
+  /**
+   * HTTP 压缩运行快照（issue #33 子项 3）：health 与 RPC state 共用的单一来源，
+   * GUI 据此显示「压缩是否在工作 + 协商计数」。
+   */
+  const compressSnapshot = (): HttpCompressSnapshot => {
+    const v = resolve();
+    return {
+      httpCompressEnabled: v.httpCompressEnabled,
+      httpCompressLevel: v.httpCompressLevel,
+      httpCompressMounted: v.enabled !== false && v.httpCompressEnabled !== false && disposeProxy !== undefined,
+      httpCompressStats: activeProxy?.httpCompressStats() ?? { compressed: 0, passthrough: 0 },
     };
   };
 
@@ -563,6 +660,7 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
   const handleRpc = rpcHandler({
     resolve,
     fileConfig: () => fileConfig,
+    compress: compressSnapshot,
     save: (settings) => {
       writeConfigFile(configDir, settings); // 先落盘
       fileConfig = settings; // 立即更新内存生效值（watch 触发 reload 时 JSON 相等即跳过，幂等）
@@ -590,6 +688,8 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
       if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
       if (req.method !== "GET") return writeJson(res, 405, { error: "method not allowed: " + req.method });
       const v = resolve();
+      // 压缩快照与 RPC state 同源（compressSnapshot 单一来源）。
+      const compress = compressSnapshot();
       writeJson(res, 200, {
         ok: true,
         plugin: "dsh-lan-proxy",
@@ -604,10 +704,7 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
         // 诊断：持久化层实际读到的值 + 插件目录（判断是否读错 config）
         fileWsCompressEnabled: fileConfig.wsCompressEnabled,
         // —— HTTP 响应压缩（转发层 compression 中间件）：配置 + 生效状态 + 协商计数 ——
-        httpCompressEnabled: v.httpCompressEnabled,
-        httpCompressLevel: v.httpCompressLevel,
-        httpCompressMounted: v.enabled !== false && v.httpCompressEnabled !== false && disposeProxy !== undefined,
-        httpCompressStats: activeProxy?.httpCompressStats() ?? { compressed: 0, passthrough: 0 },
+        ...compress,
         configDir,
       });
     },

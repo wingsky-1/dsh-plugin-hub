@@ -27,7 +27,7 @@ import { fileURLToPath } from "node:url";
 import { assertClientProductContract, assertClientSourceContract } from "../../../test/smoke-lib.ts";
 
 const pkgDir = fileURLToPath(new URL("..", import.meta.url));
-import { apply, loadFileConfig, writeConfigFile, sanitizeSettings, rpcHandler, ROUTES, CHANNEL, pluginDir,
+import { apply, loadFileConfig, writeConfigFile, sanitizeSettings, validateSettings, rpcHandler, ROUTES, CHANNEL, pluginDir,
   hostnameAllowed, formatAuthority, rewriteHeaders, createLanProxy, isLoopbackTarget, DEFAULT_OPTIONS,
   compressWsPath, DEFAULT_WSS_COMPRESS_PATHS,
   ensureSelfSignedTls, certStillValid, toSanEntry, loadTlsFromFiles, SELF_SIGNED_KEY, SELF_SIGNED_CERT,
@@ -493,6 +493,35 @@ const main = async () => {
   check("rejects null payload", () => assert.equal(sanitizeSettings(null), null));
   check("rejects out-of-range port", () => assert.equal(sanitizeSettings({ port: 70000 }), null));
 
+  // issue #33 子项 1：校验失败指明首个非法字段与合法范围。
+  console.log("unit: validateSettings（非法值定位到字段与范围）");
+  check("validateSettings 定位首个非法键并给出范围提示", () => {
+    const bad = validateSettings({ enabled: "yes", port: "abc" });
+    assert.ok(bad !== null);
+    assert.equal(bad.key, "enabled", "按 FILE_CONFIG_VALIDATORS 键序取首个非法键");
+    assert.ok(bad.hint.includes("布尔"), `hint 指明类型要求，实际「${bad.hint}」`);
+  });
+  check("validateSettings 端口越界提示 1-65535", () => {
+    for (const v of [0, 70000, 1.5, "4099"]) {
+      const bad = validateSettings({ port: v });
+      assert.ok(bad !== null, `port=${String(v)} 应非法`);
+      assert.equal(bad.key, "port");
+      assert.ok(bad.hint.includes("1-65535"), `hint 含合法范围，实际「${bad.hint}」`);
+    }
+  });
+  check("validateSettings 档位越界提示 0-3；旧档位 4..9 迁移后合法；全合法返回 null", () => {
+    const bad = validateSettings({ httpCompressLevel: 10 });
+    assert.ok(bad !== null);
+    assert.equal(bad.key, "httpCompressLevel");
+    assert.ok(bad.hint.includes("0-3"), `hint 含档位范围，实际「${bad.hint}」`);
+    assert.equal(validateSettings({ httpCompressLevel: 6 }), null, "旧档位 4..9 迁移为高档后合法");
+    assert.equal(validateSettings({ enabled: false, port: 4099, httpsPort: 3443, printBanner: true, wsCompressPaths: ["/x"], httpCompressEnabled: true, httpCompressLevel: 2 }), null);
+  });
+  check("validateSettings 非对象 payload 指明需配置对象", () => {
+    const bad = validateSettings("nope");
+    assert.ok(bad !== null && bad.key === "(payload)");
+  });
+
   console.log("unit: WebSocket 压缩桥接配置");
   // 默认白名单包含会话事件流两个端点。
   check("默认压缩白名单含 events.mux / events.host", () => {
@@ -724,6 +753,7 @@ const main = async () => {
       resolve: () => ({ enabled: true, host: "0.0.0.0", port: 3081, httpsEnabled: true, httpsPort: 3443, targetHost: "127.0.0.1", printBanner: true }),
       fileConfig: () => ({ tlsCertFile: "/x.pem", tlsKeyFile: "/x-key.pem" }),
       save: (s) => { saved = s; },
+      compress: () => ({ httpCompressEnabled: true, httpCompressLevel: 1, httpCompressMounted: true, httpCompressStats: { compressed: 7, passthrough: 2 } }),
     });
     const state = await handler("state", {});
     check("state returns persisted + effective", () => {
@@ -732,13 +762,49 @@ const main = async () => {
       assert.equal(state.value.effective.port, 3081);
       assert.equal(state.value.effective.printBanner, true);
     });
+    // issue #33 子项 3：state 附带压缩运行快照。
+    check("state 附带压缩快照（mounted + 协商计数）", () => {
+      assert.equal(state.value.compress.httpCompressMounted, true);
+      assert.equal(state.value.compress.httpCompressStats.compressed, 7);
+      assert.equal(state.value.compress.httpCompressStats.passthrough, 2);
+    });
+    const handlerNoCompress = rpcHandler({
+      resolve: () => ({ enabled: true, host: "0.0.0.0", port: 3081, httpsEnabled: true, httpsPort: 3443, targetHost: "127.0.0.1", printBanner: true }),
+      fileConfig: () => ({}),
+      save: (s) => { saved = s; },
+    });
+    const stateNoCompress = await handlerNoCompress("state", {});
+    check("state 无 compress deps 时快照为 null（旧宿主兼容）", () => {
+      assert.equal(stateNoCompress.value.compress, null);
+    });
     const ok = await handler("config", { settings: { enabled: false, port: 4099, tlsCertFile: "", tlsKeyFile: "", printBanner: false } });
-    check("config saves sanitized settings (empty certs cleared)", () => {
+    check("config saves merged settings (empty certs cleared from merge)", () => {
       assert.equal(ok.ok, true);
+      // 增量保存（issue #33 子项 2）：patch 合并进持久化层全量落盘；
+      // 空证书路径从合并视图删除（显式清除 = 恢复自签证书）。
       assert.deepEqual(saved, { enabled: false, port: 4099, printBanner: false });
+    });
+    // issue #33 子项 2：增量 diff 合并——patch 未携带的已有键保持原值。
+    const incremental = await handler("config", { settings: { printBanner: false } });
+    check("config 增量合并保留持久化层未提交键", () => {
+      assert.equal(incremental.ok, true);
+      assert.deepEqual(saved, { tlsCertFile: "/x.pem", tlsKeyFile: "/x-key.pem", printBanner: false });
     });
     const bad = await handler("config", { settings: { port: "abc" } });
     check("config rejects invalid values", () => assert.equal(bad.ok, false) && assert.equal(bad.error.code, "invalid"));
+    // issue #33 子项 1：错误 details 指明首个非法字段与合法范围。
+    const badPort = await handler("config", { settings: { port: 70000 } });
+    check("config 非法端口错误含键名与 1-65535 范围", () => {
+      assert.equal(badPort.ok, false);
+      assert.ok(badPort.error.details.includes("port"), `details 含字段名，实际「${badPort.error.details}」`);
+      assert.ok(badPort.error.details.includes("1-65535"), `details 含合法范围，实际「${badPort.error.details}」`);
+    });
+    const badLevel = await handler("config", { settings: { httpCompressLevel: 1.5 } });
+    check("config 非法档位错误含键名与 0-3 范围", () => {
+      assert.equal(badLevel.ok, false);
+      assert.ok(badLevel.error.details.includes("httpCompressLevel"), `实际「${badLevel.error.details}」`);
+      assert.ok(badLevel.error.details.includes("0-3"), `实际「${badLevel.error.details}」`);
+    });
     const lone = await handler("config", { settings: { tlsCertFile: "/x.pem" } });
     check("config rejects lone cert without key", () => assert.equal(lone.ok, false) && assert.equal(lone.error.code, "tls-pair"));
     const unknown = await handler("nope", {});
@@ -782,6 +848,16 @@ const main = async () => {
     });
     const healthRoute = routes.filter((r) => r.path === ROUTES.health)[0];
     check("health route registered", () => assert.ok(healthRoute));
+    // issue #33 子项 3：apply 注入 compress 快照，RPC state 可见压缩生效状态。
+    {
+      const liveState = await rpcHandles[0].h("state", {});
+      check("apply 下 RPC state 附带压缩快照且 mounted=true", () => {
+        assert.equal(liveState.ok, true);
+        assert.equal(liveState.value.compress.httpCompressMounted, true, "转发器已监听 → 压缩已挂载");
+        assert.equal(liveState.value.compress.httpCompressEnabled, true);
+        assert.equal(typeof liveState.value.compress.httpCompressStats.compressed, "number");
+      });
+    }
     const fakeReq = (overrides = {}) => Object.assign(
       { method: "GET", socket: { remoteAddress: "127.0.0.1" }, headers: { host: "127.0.0.1:3080" }, url: ROUTES.health },
       overrides,
@@ -981,6 +1057,42 @@ const main = async () => {
       assert.ok(client.includes("启动时打印访问地址"));
       assert.ok(client.includes("HTTP 响应压缩"), "HTTP 压缩开关已渲染");
       assert.ok(client.includes("压缩档位") && client.includes("高（最高压缩比：gzip 9 / br 9）"), "压缩档位下拉框已渲染");
+    });
+    // issue #33 子项 1：客户端 save() 前本地校验，错误指明字段与范围。
+    check("client 本地校验文案指明字段与合法范围", () => {
+      assert.ok(client.includes("LAN 端口（HTTP）需为 1-65535 的整数"), "端口范围提示");
+      assert.ok(client.includes("HTTPS 端口需为 1-65535 的整数"), "HTTPS 端口范围提示");
+      assert.ok(client.includes("压缩档位需为 0-3 的整数"), "档位范围提示");
+      assert.ok(client.includes("Number.isInteger"), "本地整数校验");
+    });
+    // issue #33 子项 2：effective 校准展示 + 增量 diff 提交。
+    check("client 以 effective 校准展示且增量提交", () => {
+      assert.ok(client.includes("effective"), "state.effective 被消费");
+      assert.ok(client.includes("baseline"), "加载基线快照（diff 基准）");
+      assert.ok(client.includes("sameSetting"), "增量 diff 键值比较");
+      assert.ok(client.indexOf("Object.keys(payload).length === 0") >= 0, "无改动不发起保存请求");
+    });
+    // issue #33 子项 3：压缩状态 GUI 可见（卡片底部轻量状态行）。
+    check("client 渲染压缩状态行", () => {
+      assert.ok(client.includes("compressStatusLine"), "状态行文案函数");
+      assert.ok(client.includes("HTTP 响应压缩：已启用 · 协商 "), "已启用 + 协商计数文案");
+      assert.ok(client.includes("HTTP 响应压缩：已关闭"), "关闭态文案");
+      assert.ok(client.includes("lp-set-status"), "状态行样式类");
+    });
+    // issue #33 子项 4：可达性——label/input 经 htmlFor+id 全关联，数字输入带 inputMode。
+    check("client 全部 label 经 htmlFor/id 关联且 number 输入带 inputMode", () => {
+      const expectedIds = [
+        "lp-set-enabled", "lp-set-port", "lp-set-https-enabled", "lp-set-https-port",
+        "lp-set-cert", "lp-set-key", "lp-set-banner", "lp-set-ws-compress",
+        "lp-set-ws-paths", "lp-set-http-compress", "lp-set-level",
+      ];
+      const forIds = [...client.matchAll(/htmlFor:\s*"([^"]+)"/g)].map((m: any) => m[1]);
+      assert.deepEqual([...forIds].sort(), [...expectedIds].sort(), "11 行全部 htmlFor 关联");
+      for (const fid of forIds) {
+        assert.ok(new RegExp(`id:\\s*"${fid}"`).test(client), `控件侧存在同名 id「${fid}」`);
+      }
+      const inputModeCount = [...client.matchAll(/inputMode:\s*"numeric"/g)].length;
+      assert.equal(inputModeCount, 2, "port/httpsPort 两个 number 输入均带 inputMode=numeric");
     });
   }
 
