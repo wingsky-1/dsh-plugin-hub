@@ -19,7 +19,7 @@ import * as React from "react";
 
 var CHANNEL = "/dsh-lan-proxy";
   var STYLE_ID = "dsh-lan-proxy-style";
-  var CSS_VERSION = "1";
+  var CSS_VERSION = "2";
 
   /** 展示缺省值（与宿主 DEFAULT_OPTIONS 同构；持久化层未保存的键回落这些值）。 */
   var DEFAULTS: Record<string, any> = {
@@ -69,6 +69,15 @@ var CHANNEL = "/dsh-lan-proxy";
     return a === b;
   }
 
+  /** HTTP 压缩状态行文案（issue #33 子项 3）；无快照返回 null（不渲染该行）。 */
+  function compressStatusLine(c: any): string | null {
+    if (!c || typeof c !== "object") return null;
+    if (c.httpCompressEnabled === false) return "HTTP 响应压缩：已关闭";
+    if (c.httpCompressMounted !== true) return "HTTP 响应压缩：未生效";
+    var stats = c.httpCompressStats || {};
+    return "HTTP 响应压缩：已启用 · 协商 " + (stats.compressed || 0) + " 次 · 直通 " + (stats.passthrough || 0) + " 次";
+  }
+
   /**
    * 设置面板插件项：启用 / LAN 端口 / HTTPS / 证书文件 / 启动横幅。
    * 改动只在点「保存」后生效：宿主原子写 config.json 并立即重建转发器。
@@ -85,6 +94,10 @@ var CHANNEL = "/dsh-lan-proxy";
     var openState = useState(false);
     var open = openState[0];
     var setOpen = openState[1];
+    // HTTP 压缩运行快照（issue #33 子项 3）：state 响应附带，底部轻量状态行展示。
+    var compressDraft = useState(null);
+    var compress = compressDraft[0];
+    var setCompress = compressDraft[1];
     // 加载基线（issue #33 子项 2）：保存时只提交与基线不同的键（增量 diff），
     // 未改动的键不提交——组合层设值不会被客户端默认值静默覆盖回写。
     var baseline: Record<string, any> | null = null;
@@ -105,6 +118,7 @@ var CHANNEL = "/dsh-lan-proxy";
         var persisted = (v && v.settings) || {};
         for (var pk in persisted) merged[pk] = persisted[pk];
         baseline = Object.assign({}, merged);
+        setCompress((v && v.compress) || null);
         setSettings(merged);
       }).catch(function (e: any) {
         if (!alive) return;
@@ -287,6 +301,10 @@ var CHANNEL = "/dsh-lan-proxy";
         React.createElement("div", { className: "lp-set-hint" },
           "保存即热更新（写入 ~/.dsh/lan-proxy/config.json，无需重启 dsh web）。" +
           "修改后内网设备访问新端口，旧端口立即失效。"),
+        (function () {
+          var compressLine = compressStatusLine(compress);
+          return compressLine ? React.createElement("div", { className: "lp-set-status" }, compressLine) : null;
+        })(),
         React.createElement("div", { className: "lp-set-foot" },
           saved ? React.createElement("span", { className: saved.indexOf("失败") >= 0 ? "lp-set-error" : "lp-set-saved" }, saved) : null,
           React.createElement("button", { type: "button", className: "lp-set-save", onClick: save }, "保存"),

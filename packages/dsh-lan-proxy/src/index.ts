@@ -89,6 +89,18 @@ export interface LanProxyConfig {
   httpCompressLevel?: number;
 }
 
+/** HTTP 压缩运行快照（issue #33 子项 3：GUI 可见的压缩生效状态）。 */
+export interface HttpCompressSnapshot {
+  /** 配置意图：HTTP 响应压缩开关。 */
+  httpCompressEnabled: boolean;
+  /** 压缩档位预设 0..3。 */
+  httpCompressLevel: number;
+  /** 是否实际挂载在存活转发器上（enabled 且配置开启且转发器监听中）。 */
+  httpCompressMounted: boolean;
+  /** 协商计数（compressed = 按协商压缩/计入口径，passthrough = 豁免直通）。 */
+  httpCompressStats: { compressed: number; passthrough: number };
+}
+
 /** 插件配置，由同名 schemastery schema 校验，也用于 GUI 设置面板渲染。
  * 显式注解：官方类型层与本包 devDep schemastery 各带同名全局命名空间合并后，
  * Config 的推断类型声明发射不再可移植（TS2883），按 TS 建议显式标注。 */
@@ -238,6 +250,8 @@ export interface RpcDeps {
   fileConfig: () => Partial<LanProxyConfig>;
   /** 保存合并后的持久化层全量：原子写 config.json 并立即生效（watch 幂等兜底）。 */
   save: (settings: Partial<LanProxyConfig>) => void;
+  /** HTTP 压缩运行快照（issue #33 子项 3；缺省时 state.compress 为 null）。 */
+  compress?: () => HttpCompressSnapshot;
 }
 
 /** RPC 结果信封（客户端 connection.rpc.call 约定）。 */
@@ -328,7 +342,7 @@ export function rpcHandler(deps: RpcDeps): (endpoint: string, payload: unknown) 
     try {
       switch (endpoint) {
         case "state": {
-          return { ok: true, value: { settings: deps.fileConfig(), effective: deps.resolve() } };
+          return { ok: true, value: { settings: deps.fileConfig(), effective: deps.resolve(), compress: deps.compress?.() ?? null } };
         }
         case "config": {
           const rawSettings = (payload as { settings?: unknown } | null | undefined)?.settings;
@@ -425,6 +439,20 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
       wsCompressPaths: value.wsCompressPaths ?? DEFAULT_WSS_COMPRESS_PATHS,
       httpCompressEnabled: value.httpCompressEnabled ?? true,
       httpCompressLevel: value.httpCompressLevel ?? 1,
+    };
+  };
+
+  /**
+   * HTTP 压缩运行快照（issue #33 子项 3）：health 与 RPC state 共用的单一来源，
+   * GUI 据此显示「压缩是否在工作 + 协商计数」。
+   */
+  const compressSnapshot = (): HttpCompressSnapshot => {
+    const v = resolve();
+    return {
+      httpCompressEnabled: v.httpCompressEnabled,
+      httpCompressLevel: v.httpCompressLevel,
+      httpCompressMounted: v.enabled !== false && v.httpCompressEnabled !== false && disposeProxy !== undefined,
+      httpCompressStats: activeProxy?.httpCompressStats() ?? { compressed: 0, passthrough: 0 },
     };
   };
 
@@ -632,6 +660,7 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
   const handleRpc = rpcHandler({
     resolve,
     fileConfig: () => fileConfig,
+    compress: compressSnapshot,
     save: (settings) => {
       writeConfigFile(configDir, settings); // 先落盘
       fileConfig = settings; // 立即更新内存生效值（watch 触发 reload 时 JSON 相等即跳过，幂等）
@@ -659,6 +688,8 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
       if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
       if (req.method !== "GET") return writeJson(res, 405, { error: "method not allowed: " + req.method });
       const v = resolve();
+      // 压缩快照与 RPC state 同源（compressSnapshot 单一来源）。
+      const compress = compressSnapshot();
       writeJson(res, 200, {
         ok: true,
         plugin: "dsh-lan-proxy",
@@ -673,10 +704,7 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
         // 诊断：持久化层实际读到的值 + 插件目录（判断是否读错 config）
         fileWsCompressEnabled: fileConfig.wsCompressEnabled,
         // —— HTTP 响应压缩（转发层 compression 中间件）：配置 + 生效状态 + 协商计数 ——
-        httpCompressEnabled: v.httpCompressEnabled,
-        httpCompressLevel: v.httpCompressLevel,
-        httpCompressMounted: v.enabled !== false && v.httpCompressEnabled !== false && disposeProxy !== undefined,
-        httpCompressStats: activeProxy?.httpCompressStats() ?? { compressed: 0, passthrough: 0 },
+        ...compress,
         configDir,
       });
     },

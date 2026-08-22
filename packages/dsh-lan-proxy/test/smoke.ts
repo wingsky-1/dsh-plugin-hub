@@ -753,6 +753,7 @@ const main = async () => {
       resolve: () => ({ enabled: true, host: "0.0.0.0", port: 3081, httpsEnabled: true, httpsPort: 3443, targetHost: "127.0.0.1", printBanner: true }),
       fileConfig: () => ({ tlsCertFile: "/x.pem", tlsKeyFile: "/x-key.pem" }),
       save: (s) => { saved = s; },
+      compress: () => ({ httpCompressEnabled: true, httpCompressLevel: 1, httpCompressMounted: true, httpCompressStats: { compressed: 7, passthrough: 2 } }),
     });
     const state = await handler("state", {});
     check("state returns persisted + effective", () => {
@@ -760,6 +761,21 @@ const main = async () => {
       assert.equal(state.value.settings.tlsCertFile, "/x.pem");
       assert.equal(state.value.effective.port, 3081);
       assert.equal(state.value.effective.printBanner, true);
+    });
+    // issue #33 子项 3：state 附带压缩运行快照。
+    check("state 附带压缩快照（mounted + 协商计数）", () => {
+      assert.equal(state.value.compress.httpCompressMounted, true);
+      assert.equal(state.value.compress.httpCompressStats.compressed, 7);
+      assert.equal(state.value.compress.httpCompressStats.passthrough, 2);
+    });
+    const handlerNoCompress = rpcHandler({
+      resolve: () => ({ enabled: true, host: "0.0.0.0", port: 3081, httpsEnabled: true, httpsPort: 3443, targetHost: "127.0.0.1", printBanner: true }),
+      fileConfig: () => ({}),
+      save: (s) => { saved = s; },
+    });
+    const stateNoCompress = await handlerNoCompress("state", {});
+    check("state 无 compress deps 时快照为 null（旧宿主兼容）", () => {
+      assert.equal(stateNoCompress.value.compress, null);
     });
     const ok = await handler("config", { settings: { enabled: false, port: 4099, tlsCertFile: "", tlsKeyFile: "", printBanner: false } });
     check("config saves merged settings (empty certs cleared from merge)", () => {
@@ -832,6 +848,16 @@ const main = async () => {
     });
     const healthRoute = routes.filter((r) => r.path === ROUTES.health)[0];
     check("health route registered", () => assert.ok(healthRoute));
+    // issue #33 子项 3：apply 注入 compress 快照，RPC state 可见压缩生效状态。
+    {
+      const liveState = await rpcHandles[0].h("state", {});
+      check("apply 下 RPC state 附带压缩快照且 mounted=true", () => {
+        assert.equal(liveState.ok, true);
+        assert.equal(liveState.value.compress.httpCompressMounted, true, "转发器已监听 → 压缩已挂载");
+        assert.equal(liveState.value.compress.httpCompressEnabled, true);
+        assert.equal(typeof liveState.value.compress.httpCompressStats.compressed, "number");
+      });
+    }
     const fakeReq = (overrides = {}) => Object.assign(
       { method: "GET", socket: { remoteAddress: "127.0.0.1" }, headers: { host: "127.0.0.1:3080" }, url: ROUTES.health },
       overrides,
@@ -1045,6 +1071,13 @@ const main = async () => {
       assert.ok(client.includes("baseline"), "加载基线快照（diff 基准）");
       assert.ok(client.includes("sameSetting"), "增量 diff 键值比较");
       assert.ok(client.indexOf("Object.keys(payload).length === 0") >= 0, "无改动不发起保存请求");
+    });
+    // issue #33 子项 3：压缩状态 GUI 可见（卡片底部轻量状态行）。
+    check("client 渲染压缩状态行", () => {
+      assert.ok(client.includes("compressStatusLine"), "状态行文案函数");
+      assert.ok(client.includes("HTTP 响应压缩：已启用 · 协商 "), "已启用 + 协商计数文案");
+      assert.ok(client.includes("HTTP 响应压缩：已关闭"), "关闭态文案");
+      assert.ok(client.includes("lp-set-status"), "状态行样式类");
     });
   }
 

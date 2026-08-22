@@ -59,6 +59,12 @@
 }
 .lp-set-input:focus { outline: none; border-color: var(--dsw-alias-state-info-primary, #3b82f6); }
 .lp-set-hint { font-size: 11px; color: var(--dsw-alias-label-tertiary, #8a919c); line-height: 1.5; }
+/* HTTP 压缩运行状态行（issue #33 子项 3）：轻量一行，随 state 快照刷新。 */
+.lp-set-status {
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary, #5f6672);
+  line-height: 1.5;
+}
 .lp-set-foot { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 10px; }
 .lp-set-save {
   border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
