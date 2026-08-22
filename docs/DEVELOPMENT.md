@@ -42,6 +42,11 @@ scripts/                   # 构建/契约/打包校验脚本（*.ts，Node 直�
 3. d.ts X1：改写 `../../../shared` → 包内副本，`shared/*.d.ts` 随包。
    shared 层因此保持 **js + d.ts 双写**（tsc `rootDir` 硬约束，shared 不可 TS 化）。
 4. 拷贝资源（非 TS 文件）+ LICENSE。
+5. 第三方 license 归集：扫描产物中 esbuild 的 node_modules 模块注释，把真实被内联
+   的第三方库（含传递依赖）license 文本写入 `lib/THIRD-PARTY-LICENSES`
+   （`scripts/collect-licenses.ts`）。**运行时依赖 = 构建期内联**——内联在法律上
+   等于分发该库副本，必须随发布物附其 license 文本与版权声明；`pack:check` 断言
+   「有内联 ⇒ 清单存在、非空、含 MIT/BSD/Apache 字样且覆盖每个被内联的包名」。
 
 宿主端类型一律用官方类型层（pnpm-workspace catalog 锁版：`@deepseek-ai/cordis`
 的 `Context` + `@deepseek-ai/dsh-host-webserver` 的 `WebRoute`/ctx.webServer 增强 +

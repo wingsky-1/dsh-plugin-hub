@@ -171,3 +171,12 @@ console.log(`[bundle-host] ${process.argv[2]}: d.ts X1 完成（shared/ 副本�
 // 3. LICENSE 进包
 cpSync(join(ROOT, 'LICENSE'), join(pkgDir, 'LICENSE'))
 console.log(`[bundle-host] ${process.argv[2]}: LICENSE 就位`)
+
+// 4. 第三方 license 归集（issue #13）：产物内联了第三方库 ⇒ 随发布物附
+//    lib/THIRD-PARTY-LICENSES（合规义务：内联 = 分发库副本）。提取与归集
+//    逻辑单一来源在 scripts/collect-licenses.ts；无内联则跳过不写文件。
+const { collectForPackage } = await import('./collect-licenses.ts')
+const licensed = collectForPackage(relative(ROOT, pkgDir))
+console.log(licensed.length > 0
+  ? `[bundle-host] ${process.argv[2]}: THIRD-PARTY-LICENSES 已归集（${licensed.length} 个第三方库: ${licensed.join(', ')}）`
+  : `[bundle-host] ${process.argv[2]}: 无第三方内联，跳过 license 归集`)
