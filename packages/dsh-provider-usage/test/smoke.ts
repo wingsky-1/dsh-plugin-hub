@@ -25,6 +25,7 @@ import {
   apply,
   ROUTES,
   DEFAULT_CONFIG,
+  Config,
   normalizeConfig,
   ADAPTER_CONTRACT_VERSION,
   makeHostAdapterRegistry,
@@ -931,6 +932,24 @@ async function waitFor(cond, timeoutMs = 5000, stepMs = 50) {
   assert.ok(client.includes('"settings.section"'), "注册 settings.section 顶层 tab");
   assert.ok(client.includes("用量统计"), "tab 标签「用量统计」");
   assert.ok(client.includes("adapters/select"), "适配器管理走 select 接口");
+
+  // issue #27：总览不再硬编码 opencode-go，按 adapters.json enabled 映射逐 provider 拉取
+  assert.ok(!client.includes("?provider=opencode-go"), "settings 总览移除硬编码 ?provider=opencode-go");
+  assert.ok(client.includes("encodeURIComponent(provider)"), "逐 provider 拉取 /stats（URL 编码）");
+  // issue #27：slots 注入独立 try/catch，注册失败不连坐浮窗挂载
+  assert.ok(
+    client.includes("设置面板 section 注册失败"),
+    "slots.inject 独立 try/catch（失败只降级不炸 apply）",
+  );
+}
+
+// ---------------------------------------------------------------- 设置面板 schema 只读语义（issue #27）
+
+{
+  const schemaJson = JSON.stringify(Config);
+  const disabledCount = (schemaJson.match(/"disabled":true/gu) ?? []).length;
+  assert.equal(disabledCount, 6, "Config 六个字段全部 disabled 只读态");
+  assert.ok(schemaJson.includes("cordis.patch.yml"), "schema description 注明修改走 patch 层");
 }
 
 // ---------------------------------------------------------------- 客户端路由一致性

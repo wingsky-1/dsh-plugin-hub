@@ -70,72 +70,96 @@ const titleStyle: Object = {
   margin: "0 0 6px",
 };
 
-/** 总览区：当前 provider + 生效适配器 + summary 文案。 */
-function OverviewSection({ stats }: { stats: StatsView | null }) {
-  const label = stats?.label ?? stats?.provider ?? "-";
-  const adapter = stats?.adapterId ?? null;
+/** 总览区：按 provider 逐行展示当前生效适配器 + summary 文案（enabled 映射驱动）。 */
+function OverviewSection({ statsByProvider }: { statsByProvider: Record<string, StatsView | null> }) {
+  const providers = Object.keys(statsByProvider);
   return React.createElement(
     "div",
     { style: sectionStyle },
     React.createElement("h4", { style: titleStyle }, "总览"),
-    React.createElement(
-      "div",
-      null,
-      `当前 provider：${stats?.provider ?? "未识别"} · 生效适配器：${adapter ?? "无"}`,
-    ),
-    React.createElement(
-      "div",
-      { style: { color: levelColor(stats?.summary?.level) } },
-      stats?.summary?.text ? `${label}：${stats.summary.text}` : `${label}：暂无数据`,
-    ),
-    !stats?.hasAdapter && stats?.provider
+    providers.length === 0
       ? React.createElement(
           "div",
-          { style: { color: "var(--dsw-alias-state-error-primary,#d64545)" } },
-          "该提供商暂无启用的适配器——请在下方「适配器管理」启用一个候选。",
+          { style: { color: "var(--dsw-alias-label-tertiary,#9aa0ab)" } },
+          "暂无已启用的 provider（adapters.json enabled 映射为空）。",
         )
-      : null,
+      : providers.map((provider) => {
+          const stats = statsByProvider[provider];
+          const label = stats?.label ?? provider;
+          const adapter = stats?.adapterId ?? null;
+          return React.createElement(
+            "div",
+            { key: provider, style: { marginBottom: 6 } },
+            React.createElement(
+              "div",
+              null,
+              `${provider} · 生效适配器：${adapter ?? "无"}`,
+            ),
+            React.createElement(
+              "div",
+              { style: { color: levelColor(stats?.summary?.level) } },
+              stats?.summary?.text ? `${label}：${stats.summary.text}` : `${label}：暂无数据`,
+            ),
+            !stats?.hasAdapter
+              ? React.createElement(
+                  "div",
+                  { style: { color: "var(--dsw-alias-state-error-primary,#d64545)" } },
+                  "该提供商暂无启用的适配器——请在下方「适配器管理」启用一个候选。",
+                )
+              : null,
+          );
+        }),
   );
 }
 
-/** 用量可视化区：各窗口明细表。 */
-function UsageSection({ stats }: { stats: StatsView | null }) {
-  const windows = stats?.usage?.windows ?? [];
+/** 用量可视化区：各 provider 一张窗口明细表。 */
+function UsageSection({ statsByProvider }: { statsByProvider: Record<string, StatsView | null> }) {
+  const providers = Object.keys(statsByProvider);
   return React.createElement(
     "div",
     { style: sectionStyle },
     React.createElement("h4", { style: titleStyle }, "用量可视化"),
-    windows.length === 0
+    providers.length === 0
       ? React.createElement("div", { style: { color: "var(--dsw-alias-label-tertiary,#9aa0ab)" } }, "暂无窗口数据")
-      : React.createElement(
-          "table",
-          { style: { width: "100%", borderCollapse: "collapse" } },
-          React.createElement(
-            "thead",
-            null,
-            React.createElement(
-              "tr",
-              null,
-              ["窗口", "当前", "限额", "重置"].map((h) =>
-                React.createElement("th", { key: h, style: { textAlign: "left", padding: "2px 6px" } }, h),
-              ),
-            ),
-          ),
-          React.createElement(
-            "tbody",
-            null,
-            windows.map((w) =>
-              React.createElement(
-                "tr",
-                { key: w.key },
-                React.createElement("td", { style: { padding: "2px 6px" } }, w.name),
-                React.createElement("td", { style: { padding: "2px 6px", color: levelColor(typeof w.percent === "number" && w.percent >= 80 ? (w.percent >= 95 ? "err" : "warn") : "ok") } }, typeof w.percent === "number" ? `${w.percent}%` : "--"),
-                React.createElement("td", { style: { padding: "2px 6px" } }, w.limit !== undefined ? String(w.limit) : "-"),
-                React.createElement("td", { style: { padding: "2px 6px" } }, w.resetsAt ?? "-"),
-              ),
-            ),
-          ),
-        ),
+      : providers.map((provider) => {
+          const windows = statsByProvider[provider]?.usage?.windows ?? [];
+          return React.createElement(
+            "div",
+            { key: provider, style: { marginBottom: 10 } },
+            React.createElement("div", { style: { fontWeight: 600 } }, provider),
+            windows.length === 0
+              ? React.createElement("div", { style: { color: "var(--dsw-alias-label-tertiary,#9aa0ab)" } }, "暂无窗口数据")
+              : React.createElement(
+                  "table",
+                  { style: { width: "100%", borderCollapse: "collapse" } },
+                  React.createElement(
+                    "thead",
+                    null,
+                    React.createElement(
+                      "tr",
+                      null,
+                      ["窗口", "当前", "限额", "重置"].map((h) =>
+                        React.createElement("th", { key: h, style: { textAlign: "left", padding: "2px 6px" } }, h),
+                      ),
+                    ),
+                  ),
+                  React.createElement(
+                    "tbody",
+                    null,
+                    windows.map((w) =>
+                      React.createElement(
+                        "tr",
+                        { key: w.key },
+                        React.createElement("td", { style: { padding: "2px 6px" } }, w.name),
+                        React.createElement("td", { style: { padding: "2px 6px", color: levelColor(typeof w.percent === "number" && w.percent >= 80 ? (w.percent >= 95 ? "err" : "warn") : "ok") } }, typeof w.percent === "number" ? `${w.percent}%` : "--"),
+                        React.createElement("td", { style: { padding: "2px 6px" } }, w.limit !== undefined ? String(w.limit) : "-"),
+                        React.createElement("td", { style: { padding: "2px 6px" } }, w.resetsAt ?? "-"),
+                      ),
+                    ),
+                  ),
+                ),
+          );
+        }),
   );
 }
 
@@ -199,20 +223,29 @@ function ConfigSection() {
   );
 }
 
-/** 设置页根组件：拉取 /stats 与 /adapters.json，渲染四区。 */
+/** 设置页根组件：按 adapters.json enabled 映射逐 provider 拉取 /stats，渲染四区。 */
 export function SettingsPage() {
-  const [stats, setStats] = React.useState(null);
+  // 注：react 类型面在 #28 引入最小声明后再补泛型标注（当前 shim 为宽松形态）
+  const [statsByProvider, setStatsByProvider] = React.useState({});
   const [meta, setMeta] = React.useState(null);
   const [busy, setBusy] = React.useState(false);
 
   const reload = React.useCallback(async (): Promise<void> => {
     try {
-      const [s, m] = await Promise.all([
-        jsonGet(`${STATS_URL}?provider=opencode-go`).catch(() => null),
-        jsonGet(ADAPTERS_URL).catch(() => null),
-      ]);
-      setStats(s as StatsView);
-      setMeta(m as AdaptersMeta);
+      // issue #27：总览不再硬编码 ?provider=opencode-go——先取 adapters.json 的
+      // enabled 映射（provider → adapterId），再对每个启用 provider 并行拉 /stats。
+      const m = (await jsonGet(ADAPTERS_URL).catch(() => null)) as AdaptersMeta | null;
+      const providers = Object.keys(m?.enabled ?? {});
+      const pairs = await Promise.all(
+        providers.map(async (provider) => {
+          const s = (await jsonGet(`${STATS_URL}?provider=${encodeURIComponent(provider)}`).catch(
+            () => null,
+          )) as StatsView | null;
+          return [provider, s] as const;
+        }),
+      );
+      setMeta(m);
+      setStatsByProvider(Object.fromEntries(pairs));
     } catch {
       /* 面板数据拉取失败静默（保留旧值） */
     }
@@ -242,8 +275,8 @@ export function SettingsPage() {
   return React.createElement(
     "div",
     { className: "dou-settings", style: { maxWidth: 560 } },
-    React.createElement(OverviewSection, { stats }),
-    React.createElement(UsageSection, { stats }),
+    React.createElement(OverviewSection, { statsByProvider }),
+    React.createElement(UsageSection, { statsByProvider }),
     React.createElement(AdapterSection, { meta, onSwitch, busy }),
     React.createElement(ConfigSection, null),
   );

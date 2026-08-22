@@ -457,17 +457,25 @@ export function apply(ctx: any): void {
     // M2: 加载用户客户端渲染器（fire-and-forget）
     loadUserRenderers(registry).catch(() => {});
 
-    // M3b：设置面板独立 tab「用量统计」（settings.section；slots 服务缺失时跳过）
-    const slots = ctx.get("slots");
-    if (slots && typeof slots.inject === "function") {
-      slots.inject("settings.section", function () {
-        return slots.register(
-          { name: "settings.section", id: "dsh-provider-usage", order: 90, label: "用量统计" },
-          function () {
-            return React.createElement(SettingsPage, null);
-          },
-        );
-      });
+    // M3b：设置面板独立 tab「用量统计」（settings.section）。
+    // issue #27：与浮窗挂载拆开——独立 try/catch，slots.register 抛错不再连坐
+    // 浮窗；inject 返回的 disposer（若为函数）纳入卸载清理链。
+    let disposeSettingsSection: (() => void) | undefined;
+    try {
+      const slots = ctx.get("slots");
+      if (slots && typeof slots.inject === "function") {
+        const injected: unknown = slots.inject("settings.section", function () {
+          return slots.register(
+            { name: "settings.section", id: "dsh-provider-usage", order: 90, label: "用量统计" },
+            function () {
+              return React.createElement(SettingsPage, null);
+            },
+          );
+        });
+        if (typeof injected === "function") disposeSettingsSection = injected as () => void;
+      }
+    } catch (error) {
+      console.warn("[dsh-provider-usage] 设置面板 section 注册失败（跳过，不影响悬浮框）", error);
     }
 
     const disposeFloat = mountFloat();
@@ -494,6 +502,10 @@ export function apply(ctx: any): void {
     void detect();
 
     ctx.effect(() => () => {
+      if (disposeSettingsSection !== undefined) {
+        try { disposeSettingsSection(); } catch { /* 忽略 */ }
+        disposeSettingsSection = undefined;
+      }
       if (unsubSessions !== undefined) unsubSessions();
       disposeFloat();
       renderGeneration += 1;

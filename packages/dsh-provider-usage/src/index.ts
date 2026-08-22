@@ -135,9 +135,14 @@ export function defaultPersistFile(): string {
  * 实测约束：schemastery 3.18 无 `.optional()`；不带 `.required()` 的字段默认可选。
  * 说明：apiKey 不进 schema（避免设置面板回显密钥）；adapters 复杂结构经 patch 层
  * 配置管理，面板只暴露常用键。
+ * 只读语义（issue #27）：命名空间是 patch 层配置的只读镜像（本插件不写回），面板
+ * 控件一律 disabled 态 + description 注明修改走用户层 cordis.patch.yml，杜绝
+ * 「可编辑但改动零消费」的误导 UI。
  * 显式注解：官方类型层与本包 devDep schemastery 各带同名全局命名空间合并后，
  * Config 的推断类型声明发射不再可移植（TS2883），按 TS 建议显式标注。
  */
+const READONLY_HINT = "（只读镜像）修改请编辑用户层 cordis.patch.yml 后重启 dsh web 生效";
+
 export const Config: z<{
   baseUrl: string;
   timeoutMs: number;
@@ -146,12 +151,12 @@ export const Config: z<{
   sampleIntervalMs: number;
   stripSecrets: boolean;
 }> = z.object({
-  baseUrl: z.string().default(DEFAULT_CONFIG.baseUrl),
-  timeoutMs: z.number().default(DEFAULT_CONFIG.timeoutMs),
-  cacheTtlMs: z.number().default(DEFAULT_CONFIG.cacheTtlMs),
-  maxAgeDays: z.number().default(DEFAULT_CONFIG.maxAgeDays),
-  sampleIntervalMs: z.number().default(DEFAULT_CONFIG.sampleIntervalMs),
-  stripSecrets: z.boolean().default(true),
+  baseUrl: z.string().default(DEFAULT_CONFIG.baseUrl).description(`官方接口地址${READONLY_HINT}`).disabled(true),
+  timeoutMs: z.number().default(DEFAULT_CONFIG.timeoutMs).description(`取数超时毫秒${READONLY_HINT}`).disabled(true),
+  cacheTtlMs: z.number().default(DEFAULT_CONFIG.cacheTtlMs).description(`统计缓存 TTL 毫秒${READONLY_HINT}`).disabled(true),
+  maxAgeDays: z.number().default(DEFAULT_CONFIG.maxAgeDays).description(`历史保留天数${READONLY_HINT}`).disabled(true),
+  sampleIntervalMs: z.number().default(DEFAULT_CONFIG.sampleIntervalMs).description(`后台采样间隔毫秒${READONLY_HINT}`).disabled(true),
+  stripSecrets: z.boolean().default(true).description(`剔除疑似密钥字段${READONLY_HINT}`).disabled(true),
 });
 
 // ------------------------------------------------------------------ 配置归一化
