@@ -607,6 +607,65 @@ async function waitFor(cond, timeoutMs = 5000, stepMs = 50) {
   assert.equal(settled, true, "连续 select 串行化落盘：最终态 = 最后一次选择");
 }
 
+// ---------------------------------------------------------------- select 清空（adapterId: null，issue #38）
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dou-clear-"));
+  const { ctx, routes } = makeFakeCtx();
+  await apply(ctx, {
+    apiKey: "sk-test",
+    persistFile: join(dir, "history.json"),
+    fetchImpl: async () => fakeRes(200, OK_BODY),
+  });
+  const select = routes.find((r) => r.path === ROUTES.select);
+  const stats = routes.find((r) => r.path === ROUTES.stats);
+  const responses = [];
+  const resCode = { writeHead: (code) => { responses.push({ __code: code }); }, end: () => {} };
+  let payload;
+  const res200 = { writeHead: () => {}, end: (chunk) => { payload = JSON.parse(chunk); } };
+  let statsPayload;
+  const statsRes = { writeHead: () => {}, end: (chunk) => { statsPayload = JSON.parse(chunk); } };
+
+  // adapterId 缺失/空串仍 400（清空必须显式 null）
+  await select.handler(fakeReq({ method: "POST", body: JSON.stringify({ provider: OPENCODE_GO_PROVIDER }) }), resCode);
+  assert.equal(responses.at(-1).__code, 400, "adapterId 缺失仍 400");
+
+  // 清空：200 + adapterId null；stats → no-enabled-adapter（有候选全禁用）
+  await select.handler(
+    fakeReq({ method: "POST", body: JSON.stringify({ provider: OPENCODE_GO_PROVIDER, adapterId: null }) }),
+    res200,
+  );
+  assert.equal(payload.ok, true, "清空成功");
+  assert.equal(payload.adapterId, null, "响应 adapterId null");
+  await stats.handler(fakeReq({ url: `${ROUTES.stats}?provider=${OPENCODE_GO_PROVIDER}` }), statsRes);
+  assert.equal(statsPayload.hasAdapter, false, "清空后无启用适配器（浮窗隐藏语义）");
+  assert.equal(statsPayload.reason, "no-enabled-adapter", "清空后 reason 为 no-enabled-adapter");
+
+  // 落盘为显式 null；重启后保持禁用（不回退默认启用）
+  const stateFile = join(dir, "adapter-state.json");
+  assert.equal(
+    await waitFor(() => {
+      try {
+        return JSON.parse(readFileSync(stateFile, "utf8"))[OPENCODE_GO_PROVIDER] === null;
+      } catch {
+        return false;
+      }
+    }),
+    true,
+    "清空态以显式 null 落盘",
+  );
+  const { ctx: ctx2, routes: routes2 } = makeFakeCtx();
+  await apply(ctx2, {
+    apiKey: "sk-test",
+    persistFile: join(dir, "history.json"),
+    fetchImpl: async () => fakeRes(200, OK_BODY),
+  });
+  let stats2;
+  const statsRes2 = { writeHead: () => {}, end: (chunk) => { stats2 = JSON.parse(chunk); } };
+  await routes2.find((r) => r.path === ROUTES.stats).handler(fakeReq(), statsRes2);
+  assert.equal(stats2.hasAdapter, false, "重启后显式清空态保持（不回退内置默认启用）");
+}
+
 // stats：无 key 时 usage.error=no-api-key（不网络；路径指向不存在文件）
 {
   const { ctx, routes } = makeFakeCtx();

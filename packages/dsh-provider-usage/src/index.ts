@@ -783,17 +783,23 @@ export function adapterStateFile(root: string): string {
   return join(root, "adapter-state.json");
 }
 
-/** 读取持久化的 enabled 映射（provider → adapterId）；坏文件返回 {}。 */
-export async function readAdapterState(root: string): Promise<Record<string, string>> {
+/**
+ * 读取持久化的 enabled 映射（provider → adapterId）；坏文件返回 {}。
+ * 值为 null 表示该 provider 被显式清空禁用（issue #38），重启后保持无启用。
+ */
+export async function readAdapterState(root: string): Promise<Record<string, string | null>> {
   const raw = await readHistoryFile(adapterStateFile(root));
   if (typeof raw !== "string" || raw === "") return {};
   try {
     const data = JSON.parse(raw) as Record<string, unknown>;
-    const out: Record<string, string> = {};
+    const out: Record<string, string | null> = {};
     for (const [provider, id] of Object.entries(data)) {
-      if (typeof provider === "string" && typeof id === "string" && provider.length > 0 && id.length > 0) {
-        out[provider] = id;
+      if (typeof provider !== "string" || provider.length === 0) continue;
+      if (id === null) {
+        out[provider] = null;
+        continue;
       }
+      if (typeof id === "string" && id.length > 0) out[provider] = id;
     }
     return out;
   } catch {
@@ -801,8 +807,8 @@ export async function readAdapterState(root: string): Promise<Record<string, str
   }
 }
 
-/** 原子写 enabled 映射（select 切换时调用；失败只 warn 不阻断切换）。 */
-export async function writeAdapterState(root: string, enabled: Record<string, string>): Promise<void> {
+/** 原子写 enabled 映射（select 切换/清空时调用；失败只 warn 不阻断切换）。 */
+export async function writeAdapterState(root: string, enabled: Record<string, string | null>): Promise<void> {
   try {
     await writeHistoryFile(adapterStateFile(root), JSON.stringify(enabled));
   } catch {
@@ -1109,7 +1115,7 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
    * IO 时序，链上最后一次写入最终生效。
    */
   let adapterStateChain: Promise<void> = Promise.resolve();
-  function scheduleWriteAdapterState(enabled: Record<string, string>): void {
+  function scheduleWriteAdapterState(enabled: Record<string, string | null>): void {
     adapterStateChain = adapterStateChain.then(() => writeAdapterState(root, enabled));
   }
 
@@ -1298,18 +1304,23 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
         return writeJson(res, 400, { error: "bad-json" });
       }
       const provider = typeof body.provider === "string" ? body.provider : "";
+      // issue #38：adapterId 显式 null = 清空该 provider 启用项（「禁用该提供商」）
+      const clearing = body.adapterId === null;
       const adapterId = typeof body.adapterId === "string" ? body.adapterId : "";
-      // 参数长度限制（防异常输入）
-      if (provider.length === 0 || adapterId.length === 0 || provider.length > 128 || adapterId.length > 128) {
+      // 参数长度限制（防异常输入）；缺失/空串仍拒绝（清空必须显式 null）
+      if (!clearing && (provider.length === 0 || adapterId.length === 0 || provider.length > 128 || adapterId.length > 128)) {
         return writeJson(res, 400, { error: "invalid provider/adapterId" });
       }
-      const ok = registry.select(provider, adapterId);
+      const ok = registry.select(provider, clearing ? null : adapterId);
       if (!ok) return writeJson(res, 404, { error: "adapter not found" });
       statsEpoch += 1; // 递增代数：inflight 的旧适配器结果不再回填缓存
       cache.clear(provider); // 切换后清该 provider 缓存（下一个请求走新适配器）
-      // M3b：持久化启用选择（重启保留；经 promise 链串行化，失败只 warn）
-      scheduleWriteAdapterState(registry.snapshot().enabled);
-      writeJson(res, 200, { ok: true, provider, adapterId });
+      // M3b：持久化启用选择（重启保留；经 promise 链串行化，失败只 warn）。
+      // 清空态以显式 null 固化，重启后保持无启用（不回退默认启用）。
+      scheduleWriteAdapterState(
+        clearing ? { ...registry.snapshot().enabled, [provider]: null } : registry.snapshot().enabled,
+      );
+      writeJson(res, 200, { ok: true, provider, adapterId: clearing ? null : adapterId });
     },
   };
 

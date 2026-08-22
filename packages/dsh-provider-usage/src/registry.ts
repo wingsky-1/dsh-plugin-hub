@@ -146,10 +146,15 @@ export function makeHostAdapterRegistry(opts: { diag?: (m: string) => void } = {
   }
 
   /**
-   * 运行时切换某 provider 的启用适配器。
-   * @returns 是否切换成功（provider 与 adapterId 均存在）。
+   * 运行时切换某 provider 的启用适配器；adapterId = null 清空该 provider 启用项
+   * （issue #38：「禁用该提供商」，幂等，无候选也返回 true）。
+   * @returns 是否成功（切换要求 provider 与 adapterId 均存在；清空恒成功）。
    */
-  function select(provider: string, adapterId: string): boolean {
+  function select(provider: string, adapterId: string | null): boolean {
+    if (adapterId === null) {
+      enabledIds.delete(provider);
+      return true;
+    }
     const entry = findEntry(provider, adapterId);
     if (entry === undefined) return false;
     enabledIds.set(provider, adapterId);
