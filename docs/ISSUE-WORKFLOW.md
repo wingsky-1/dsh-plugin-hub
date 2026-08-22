@@ -33,7 +33,7 @@
 ## 2. 处理流水线（维护者）
 
 ```text
-提报 → 分诊(triage) → 定位 → 修复分支 → PR(关联 issue) → CI 全绿 squash merge → 自动关闭
+提报 → 分诊(triage) → 定位 → 修复分支 → 验证证据 → PR(关联 issue) → CI 全绿 squash merge → 自动关闭
 ```
 
 1. **分诊**：确认复现信息完整（缺则向报告者追问）；打 `bug` / `enhancement` 标签；
@@ -43,11 +43,19 @@
    [DEVELOPMENT.md §5](DEVELOPMENT.md#5-smoke-测试防-flake-纪律)（隔离文件路径 /
    设 `DSH_HOME` / 轮询替代固定 sleep）。
 3. **修复分支**：命名 `fix/<主题>` 或 `feat/<主题>`（与 CONTRIBUTING.md 开发流程一致）。
-4. **PR 关联 issue**（二选一，推荐前者）：
+4. **验证证据**（涉及界面行为的改动——overlay / URL 重写 / Modal 内跳转 / 双主题 /
+   窄屏等）：在隔离环境实测后截图归档至
+   `packages/dsh-<name>/docs/archive/<issue号>-<行为描述>.png`（如
+   `37-basename-fallback-overlay.png`）；截图只截插件 UI 本身（headless element
+   screenshot），不带浏览器整窗，避免泄露本机环境。归档后双向引用：PR 正文贴图并
+   引用文件路径，issue 评论回链 PR。发布边界已核实安全：各包 files 白名单不含
+   `docs/`，截图不入 tarball，不破坏「发布物不含内部文档」约定。纯宿主端 /
+   文档改动可跳过本步。
+5. **PR 关联 issue**（二选一，推荐前者）：
    - PR 正文写 `Fixes #<编号>` —— merge 后 GitHub 自动关闭 issue；
    - 或 commit message 引用 `(#<编号>)`，merge 后 issue 上会留下 referenced 记录，
      手动关闭。
-5. **收敛与冲突处理**：先查合并状态再看 CI——`gh pr view --json mergeStateStatus`：
+6. **收敛与冲突处理**：先查合并状态再看 CI——`gh pr view --json mergeStateStatus`：
    - `CLEAN` → 等 CI 全绿即可；
    - checks 未触发/缺失 → 先确认 mergeState 不是 `BLOCKED(CONFLICTING)`，再考虑等待
      或手动 dispatch（最多一次）；
@@ -55,7 +63,7 @@
      ① `git fetch && git rebase origin/main`；② 解决冲突（保留双方语义，不丢任一方改动）；
      ③ 本地重跑全量门禁；④ `git push --force-with-lease` 回推 PR。
      冲突多源于并行合入的 docs/skill 改动，属正常演进代价，一次 rebase 消化。
-6. **合并即收尾**：CI 全绿后 squash merge（远端分支自动删除）；issue 若未自动关闭
+7. **合并即收尾**：CI 全绿后 squash merge（远端分支自动删除）；issue 若未自动关闭
    则手动关闭并在评论里给出「修复版本号」（发布后回填）。
 
 ## 3. 特殊类型
