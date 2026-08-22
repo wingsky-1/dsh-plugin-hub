@@ -36,10 +36,19 @@ CI 日志 / diff / 测试全文只在 subagent 上下文出现，禁止进入主
 ③ 规格：issue 无「验收标准」清单则委派 spec-writer（规程 [agents/spec-writer.md](../../../agents/spec-writer.md)）
    补写为可断言清单（Gherkin `.feature` 基建启用后升级为 tests/features/*.feature）
 ④ 实现：委派 coder（规程 [agents/coder.md](../../../agents/coder.md)）；PR 创建后立即置 draft，让 CI 先转起来
-⑤ 验证证据：涉及界面行为的改动委派 qa（规程 [agents/qa.md](../../../agents/qa.md)）
-   在隔离环境实测，截图归档至 `packages/dsh-<name>/docs/archive/<issue号>-<行为描述>.png`
+④.5 验证证据 + 意图级核对：涉及界面行为 / 路由的改动必经——委派 qa
+   （规程 [agents/qa.md](../../../agents/qa.md)）在隔离环境实测；纯宿主逻辑且
+   hardener 断言已覆盖者豁免本步。qa 交接凭据 = 实测断言结论 + 截图已归档路径清单，
+   截图归档至 `packages/dsh-<name>/docs/archive/<issue号>-<行为描述>.png`
    （element screenshot 只截插件 UI 本身、不带整窗；`docs/` 不入发布物 tarball），
-   PR 正文贴图引用路径、issue 评论回链 PR（双向引用）；纯宿主端 / 文档改动跳过本步
+   PR 正文贴图引用路径、issue 评论回链 PR（双向引用）；
+   并对照 issue 用户可见行为做意图级核对——实测抽查行为结果而非字面关键词满足，
+   截图即 #51 约定的证据归档载体
+⑤ 复核闸（代码 review gate；实现 / qa 之后、merge 决定之前）：
+   diff > 100 行，或触及安全面（围栏 / 脱敏 / 凭据）、`shared/` 契约层、
+   聚合包 dsh-plugins-all 邻接面、跨 ≥2 插件包时强制触发——委派上下文独立 subagent
+   按 dsh-plugin-hub-pr-review 精简清单审查 PR diff，产出发现列表交主控裁决，
+   复核 subagent 不直接改码；小改动跳过本闸，不加流程税
 ⑥ 收敛环（≤2 圈）：入环先查合并状态——`gh pr view --json mergeStateStatus`：
    `CONFLICTING`/`DIRTY` → 立即转冲突处理（rebase origin/main → 解决冲突 →
    本地五连门禁 → `push --force-with-lease`），禁止在 CI 上空转；
