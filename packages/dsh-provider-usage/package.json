@@ -55,7 +55,8 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "catalog:",
     "@deepseek-ai/dsh-host-webserver": "catalog:",
-    "schemastery": "^3.18.0"
+    "schemastery": "^3.18.0",
+    "untildify": "^6.0.0"
   },
   "repository": {
     "type": "git",

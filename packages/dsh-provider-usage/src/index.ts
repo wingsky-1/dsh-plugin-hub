@@ -39,7 +39,7 @@ import {
   OPENCODE_GO_WINDOWS,
 } from "./adapters/opencode-go.js";
 import type { ProviderUsage, UsageWindow, FetchLike, HostProviderAdapter, SamplePointData, ProviderSummary } from "./contracts.js";
-import { resolvePath, pluginHome } from "./path-resolve.js";
+import { resolvePath, pluginHome, expandHomePath } from "./path-resolve.js";
 
 // ------------------------------------------------------------------ 对外 re-export
 // 注意：bundle-host 会把 tsc 产物中的子模块全部内联进 lib/index.js 并清理游离 .js，
@@ -118,7 +118,9 @@ export const ROUTES: Record<string, string> = {
 
 export const DEFAULT_CONFIG: NormalizedConfig = {
   baseUrl: DEFAULT_BASE_URL,
-  timeoutMs: 15000,
+  // issue #87：余额/用量类轻接口取数超时 15s → 2s（慢远端不再长时间占住 stats 请求，
+  // 防浏览器同域并发被挂起请求占满）；normalizeConfig 上限保持不变，可配置调回。
+  timeoutMs: 2000,
   cacheTtlMs: 30000,
   limits: { rolling: 12, weekly: 30, monthly: 60 },
   apiKey: undefined,
@@ -314,20 +316,26 @@ export async function loadApiKey(
 
 // ------------------------------------------------------------------ 缓存
 
+/** 失败结果的防风暴节流缓存时长（issue #87）：慢远端场景下页面每次刷新都重新
+ * 打满护栏时长会占满浏览器同域并发连接——失败态也短缓存，10s 内直接回同一错误态。 */
+export const FAILURE_CACHE_TTL_MS = 10000;
+
 export function makeUsageCache<T>({ ttlMs, now = () => Date.now() }: { ttlMs: number; now?: () => number }) {
-  const entries = new Map<string, { ts: number; value: T }>();
+  // 每条目独立过期时刻（issue #87）：支持 set 时按条目覆盖 TTL（失败短缓存），
+  // 默认仍用构造期统一 TTL，行为与旧版兼容。
+  const entries = new Map<string, { expiresAt: number; value: T }>();
   return {
     get(key: string): T | undefined {
       const entry = entries.get(key);
       if (entry === undefined) return undefined;
-      if (now() - entry.ts >= ttlMs) {
+      if (now() >= entry.expiresAt) {
         entries.delete(key);
         return undefined;
       }
       return entry.value;
     },
-    set(key: string, value: T): void {
-      entries.set(key, { ts: now(), value });
+    set(key: string, value: T, opts?: { ttlMs?: number }): void {
+      entries.set(key, { expiresAt: now() + Math.max(0, opts?.ttlMs ?? ttlMs), value });
     },
     clear(key?: string): void {
       if (key === undefined) entries.clear();
@@ -878,8 +886,10 @@ export function resolveAddAdapterFile(input: unknown, dshHome = process.env.DSH_
   const trimmed = input.trim();
   if (trimmed === "" || trimmed.includes("\0")) return undefined;
   // 规整性：resolve 前后必须一致（拒绝 .. / . 段穿越形态）
-  if (resolve(trimmed) !== trimmed) return undefined;
-  const resolved = resolvePath(trimmed);
+  // ~ 展开（单一事实源 expandHomePath），后续校验一律在展开形态上进行（issue #87）
+  const expandedForCheck = expandHomePath(trimmed);
+  if (resolve(expandedForCheck) !== expandedForCheck) return undefined;
+  const resolved = resolvePath(expandedForCheck);
   if (resolved === undefined) return undefined; // 不存在 / 非常规文件
   if (!isAbsolute(trimmed)) {
     // 相对路径：解析结果必须位于 DSH_HOME 或插件 home 之内
@@ -1239,7 +1249,11 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
         const fetchCtx = {
           provider,
           apiKey,
-          baseUrl: current.baseUrl,
+          // issue #87：current.baseUrl 是 OpenCode Go 全局地址（官方类型层 LlmProviderInfo
+          // 仅 { id, name }，插件拿不到各 provider 自己的 baseURL）——只对内置 opencode-go
+          // 透传；其余 provider 传 undefined，让适配器自身的 fallback 地址生效，
+          // 避免把 OpenCode Go 主机拼进第三方适配器的请求 URL。
+          baseUrl: provider === OPENCODE_GO_PROVIDER ? current.baseUrl : undefined,
           timeoutMs: current.timeoutMs,
           fetch: fetchImpl,
           signal: undefined as AbortSignal | undefined,
@@ -1277,9 +1291,9 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
           store.append(result.provider, entry.id, sample.cols, [result.fetchedAt, ...sample.values]);
           schedulePersist(result.provider, entry.id);
         }
-        if (usage.ok) {
-          cache.set(provider, result);
-        }
+        // issue #87：失败结果也短缓存（FAILURE_CACHE_TTL_MS 防风暴节流）——此前仅
+        // 缓存成功态，慢远端场景下页面每次刷新都重新打满护栏时长。
+        cache.set(provider, result, usage.ok ? undefined : { ttlMs: FAILURE_CACHE_TTL_MS });
 
         lastStatus = { at: result.fetchedAt, error: result.error, configured: true };
         return result;

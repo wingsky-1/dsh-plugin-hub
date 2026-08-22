@@ -11,6 +11,11 @@
 import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
+// issue #87：~ 展开复用成熟开源实现 untildify（与 dsh-web-file-preview 同源同版，
+// devDependency + 构建期 esbuild 内联，发布物零运行时依赖）。
+// 行为边界：仅展开开头的 `~`；`~user/...` 形态不展开、原样返回（旧手写实现把
+// ~user 误展开到当前用户 home 的权宜语义一并移除——UI placeholder 只承诺 ~/.dsh/...）。
+import untildify from "untildify";
 
 /**
  * 插件 home 目录（host 文件逻辑归属区 ~/.dsh/plugins/provider-usage）。
@@ -22,6 +27,14 @@ export function pluginHome(base = process.env.DSH_HOME ?? join(homedir(), ".dsh"
 }
 
 /**
+ * `~` 前缀展开（issue #87 单一事实源：resolvePath 与 resolveAddAdapterFile 共用，
+ * 保证「UI 承诺支持 ~ 路径」与校验行为一致）。
+ */
+export function expandHomePath(p: string): string {
+  return untildify(p);
+}
+
+/**
  * 解析路径（支持 `~`、`~user`、绝对路径、相对 DSH_HOME/插件 home）。
  * @param p - 原始路径。
  * @returns 解析后的绝对路径，或 undefined（解析失败/文件不存在）。
@@ -30,18 +43,11 @@ export function resolvePath(p: string): string | undefined {
   if (typeof p !== "string" || p.trim() === "") return undefined;
   const trimmed = p.trim();
 
-  // 1. ~ 展开
+  // 1. ~ 展开与绝对路径判定（expandHomePath 统一处理，issue #87）
+  const expandedHome = expandHomePath(trimmed);
   let expanded: string;
-  if (trimmed.startsWith("~")) {
-    // ~ 或 ~user
-    const slashIdx = trimmed.indexOf("/");
-    const userPart = slashIdx === -1 ? trimmed : trimmed.slice(0, slashIdx);
-    if (userPart === "~" || userPart === "~root") {
-      expanded = join(homedir(), trimmed.slice(userPart.length));
-    } else {
-      // ~user 在非 root 环境较复杂，统一用当前用户 home 展开（大多数场景）
-      expanded = join(homedir(), trimmed.slice(1));
-    }
+  if (expandedHome !== trimmed) {
+    expanded = expandedHome;
   } else if (isAbsolute(trimmed)) {
     expanded = trimmed;
   } else {

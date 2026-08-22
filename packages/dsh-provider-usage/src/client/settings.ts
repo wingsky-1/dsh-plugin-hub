@@ -14,7 +14,7 @@
  * POST /adapters/inspect、POST /adapters/add），不引入额外 RPC 通道。
  */
 import * as React from "react";
-import { STATS_URL, ADAPTERS_URL, SELECT_URL, INSPECT_URL, ADD_URL } from "./core.js";
+import { STATS_URL, ADAPTERS_URL, SELECT_URL, INSPECT_URL, ADD_URL, fetchTimeout } from "./core.js";
 import { splitProviderList, providerBadgeText } from "../client-logic.js";
 import type { ProviderListItem } from "../client-logic.js";
 
@@ -78,7 +78,7 @@ interface AddResult {
 }
 
 async function jsonGet(url: string): Promise<unknown> {
-  const res = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
+  const res = await fetchTimeout(url, { headers: { Accept: "application/json" }, cache: "no-store" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
@@ -328,7 +328,14 @@ function ProviderItem({
       ),
       React.createElement(
         "button",
-        { type: "button", className: "dou-btn", disabled: busy || adding || inspected === null, onClick: submitAdd },
+        {
+          type: "button",
+          className: "dou-btn",
+          disabled: busy || adding || inspected === null,
+          onClick: submitAdd,
+          // issue #87：检测未通过时按钮禁用态不再是无声的——悬停提示引导先检测
+          title: inspected === null ? "请先通过「检测文件」后再确认添加" : undefined,
+        },
         adding ? "添加中…" : "确认添加",
       ),
       React.createElement("button", { type: "button", className: "dou-btn", disabled: busy || adding, onClick: toggleAdd }, "取消"),
@@ -577,7 +584,7 @@ export function SettingsPage() {
   const onSwitch = React.useCallback(
     (provider: string, adapterId: string): void => {
       mutate(() =>
-        fetch(SELECT_URL, {
+        fetchTimeout(SELECT_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ provider, adapterId }),
@@ -591,7 +598,7 @@ export function SettingsPage() {
   const onDisable = React.useCallback(
     (provider: string): void => {
       mutate(() =>
-        fetch(SELECT_URL, {
+        fetchTimeout(SELECT_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ provider, adapterId: null }),
@@ -604,7 +611,7 @@ export function SettingsPage() {
   /** 检测文件：仅回显导出信息，不登记。 */
   const onInspect = React.useCallback(async (file: string): Promise<InspectResult> => {
     try {
-      const res = await fetch(INSPECT_URL, {
+      const res = await fetchTimeout(INSPECT_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ file }),
@@ -623,7 +630,7 @@ export function SettingsPage() {
   const onAdd = React.useCallback(
     async (_provider: string, form: { file: string }): Promise<AddResult> => {
       try {
-        const res = await fetch(ADD_URL, {
+        const res = await fetchTimeout(ADD_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ file: form.file }),
