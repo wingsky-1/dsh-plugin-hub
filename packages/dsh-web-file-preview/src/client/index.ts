@@ -153,7 +153,7 @@ import STYLE from "./style.css";
        * textContent 仅在四类嗅探标签上读取（大容器 DIV 不读，避免大串拼接开销；
        * 评审 U5：不扩 DIV——父容器文本常是多段拼接，保留防误拦）。
        */
-      function findFileLink(target: any): { path: string | null; node: Element; kind: "file" | "folder" } | null {
+      function findFileLink(target: any): { path: string | null; kind: "file" | "folder" } | null {
         const chain: any[] = [];
         let node: any = target;
         while (node && node !== document && node.nodeType === 1) {
@@ -176,8 +176,7 @@ import STYLE from "./style.css";
           };
         }
         const hit = resolveFileLink(parentLink!);
-        if (hit === null) return null;
-        return { path: hit.path, node: chain[0], kind: hit.kind };
+        return hit === null ? null : { path: hit.path, kind: hit.kind };
       }
 
       // ---------------------------------------------------- 会话 cwd
@@ -822,7 +821,13 @@ import STYLE from "./style.css";
         //    链接嗅探与拦截——第三方插件 UI（文件树等）天然出圈，不再被全局劫持。
         const targetEl = event.target instanceof Element ? (event.target as Element) : null;
         if (targetEl === null) return;
-        const gate = decideGate({ matches: (sel) => targetEl.closest(sel) !== null }, SCOPE_SELECTORS);
+        // closest 对非法选择器会抛 SyntaxError——全局捕获回调绝不能整体抛错
+        // （否则后续所有点击拦截失效），异常一律降级为"未命中"。
+        const gate = decideGate({
+          matches: (sel) => {
+            try { return targetEl.closest(sel) !== null; } catch { return false; }
+          },
+        }, SCOPE_SELECTORS);
         if (gate === "pass") return;
         const hit = findFileLink(targetEl);
         if (hit === null) return;

@@ -87,7 +87,7 @@ curl http://127.0.0.1:3080/api/dsh-file-preview/health
 
 静态点击拦截的生效范围与让权约定如下：
 
-- **作用域圈定**：document 捕获拦截仅在**宿主对话流子树**内生效——判定锚点为祖先链上存在 `[data-chat-flow]` 或 `[data-chat-anchor-key]`（DSH ChatView 官方自用的滚动锚点属性，见 `src/client/link-resolver.ts` 的 `SCOPE_SELECTORS`，追加式数组）。**对话流之外的任何元素一律放行**：第三方插件 UI（文件树、浮层、面板等）不再被全局路径嗅探劫持。这是行为变更：旧版对全 document 生效的宽松拦截自本版起收敛到对话流内。
+- **作用域圈定**：document 捕获拦截仅在**宿主对话流子树**内生效——判定锚点为祖先链上存在 `[data-chat-flow]` 或 `[data-chat-anchor-key]`（DSH ChatView 官方自用的滚动锚点属性，见 `src/client/link-resolver.ts` 的 `SCOPE_SELECTORS`，追加式数组）。**对话流之外的任何元素一律放行**（下条豁免属性除外，其跨区域优先）：第三方插件 UI（文件树、浮层、面板等）不再被全局路径嗅探劫持。这是行为变更：旧版对全 document 生效的宽松拦截自本版起收敛到对话流内。
 - **解析优先级**：元素显式声明的路径凭证（`data-ref-chip` / `title` / `<a href>`）永远优先于"文本像路径"的启发式嗅探；凭证与本轮文本命中 basename 一致时采信凭证完整路径，不一致则跳过该凭证不猜（与 DSH `producedFileMentions` 的保守原则同源）。第三方文件树常见的 `<div title="完整路径"><span>裸文件名</span></div>` 行结构因此能解析出完整路径。
 - **逃生门属性**：任何元素子树标注 `data-dsh-no-preview` 即对本插件豁免（跨区域生效，优先级高于作用域圈定）。第三方插件在自有可点击 UI 上加此属性即可确保零干扰。
 - **适配点**：若未来 DSH 改版调整了对话流 DOM 标识，更新 `src/client/link-resolver.ts` 中 `SCOPE_SELECTORS` 常量即可（追加新锚点，无需改动算法）。
