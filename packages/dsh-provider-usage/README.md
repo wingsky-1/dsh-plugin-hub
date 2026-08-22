@@ -106,7 +106,7 @@ Authorization: Bearer <OPENCODE_GO_API_KEY>
 | --- | --- |
 | `GET /api/dsh-provider-usage/stats[?provider=X]` | 用量统计 + 内嵌 `summary` 子树（胶囊轻量内容）+ `adapterId`/`hasAdapter` |
 | `GET /api/dsh-provider-usage/history[?provider=&adapterId=&days=N]` | 历史采样序列（含 `columns` 列声明） |
-| `GET /api/dsh-provider-usage/adapters.json` | 适配器候选元数据（id/label/providers/source/file/enabled） |
+| `GET /api/dsh-provider-usage/adapters.json` | 适配器候选元数据（id/label/providers/source/file/enabled）+ `modelProviders`（模型配置页提供商路由，设置页主列表同源） |
 | `POST /api/dsh-provider-usage/adapters/select` | 切换启用适配器（body `{provider, adapterId}`） |
 | `GET /api/dsh-provider-usage/user/<n>.js` | 用户客户端渲染器静态服务 |
 | `GET /api/dsh-provider-usage/health` | 健康检查 + 适配器快照 |

@@ -52,8 +52,8 @@ import {
   derivePillTitle,
   shouldHideFloat,
   rendererLookupKeys,
-  // 设置页提供商全集（issue #38）
-  unionProviders,
+  // 设置页提供商列表拆分（issue #38 维护者意图修正）
+  splitProviderList,
   providerBadgeText,
 } from "../lib/index.js";
 
@@ -665,7 +665,15 @@ function mkSummary(overrides: Partial<ProviderSummary> = {}): ProviderSummary {
 
 {
   // 无调用方的导出已从导出面移除（防回归）
-  for (const key of ["CONFIG_KEYS", "defaultPersistFile", "resolvePathWeak", "OPENCODE_GO_DEFAULT_ENABLED"] as const) {
+  for (const key of [
+    "CONFIG_KEYS",
+    "defaultPersistFile",
+    "resolvePathWeak",
+    "OPENCODE_GO_DEFAULT_ENABLED",
+    // issue #38 维护者意图修正：knownProviders/recognizedProviders 超集路径移除
+    "KNOWN_PROVIDERS",
+    "unionProviders",
+  ] as const) {
     assert.equal(key in libIndex, false, `死代码 ${key} 已从导出面移除`);
   }
   // 注册表不再暴露 unregisterProvider（无调用方）
@@ -679,36 +687,58 @@ function mkSummary(overrides: Partial<ProviderSummary> = {}): ProviderSummary {
   );
 }
 
-// ---------------------------------------------------------------- 设置页·提供商全集（issue #38）
+// ---------------------------------------------------------------- 设置页·提供商列表拆分（issue #38 维护者意图修正）
 
 {
-  const items = unionProviders({
+  const input = {
     candidatesByProvider: {
       "opencode-go": [{ id: "opencode-go-builtin", label: "OpenCode Go 官方", source: "builtin" }],
       "z-relay": [{ id: "z-relay-user", label: "Z Relay", source: "user-file" }],
     },
-    enabled: { "opencode-go": "opencode-go-builtin", "runtime-only": "x" },
-    recognized: ["hist-only", "runtime-only", "opencode-go"],
-    known: ["opencode-go", "future-provider"],
-  });
-  // 全集四路合并去重：候选 ∪ 启用 ∪ 运行时识别 ∪ 已知
+    enabled: { "opencode-go": "opencode-go-builtin" },
+    modelProviders: ["anthropic", "opencode-go", "deepseek"],
+  };
+  const { main, extra } = splitProviderList(input);
+  // 主列表与模型配置页精确一致：数量与顺序严格等于 modelProviders
   assert.deepEqual(
-    items.map((i) => i.provider),
-    ["future-provider", "opencode-go", "hist-only", "runtime-only", "z-relay"],
-    "全集 = 候选 ∪ 运行时启用 ∪ 运行时识别 ∪ 内置已知（已知在前，其余字典序）",
+    main.map((i) => i.provider),
+    ["anthropic", "opencode-go", "deepseek"],
+    "主列表 = modelProviders 精确一致（数量与模型配置页对齐）",
   );
-  const ocg = items.find((i) => i.provider === "opencode-go");
-  assert.ok(ocg?.hasCandidates && ocg.enabledId === "opencode-go-builtin", "已知且有候选：带启用态");
-  const future = items.find((i) => i.provider === "future-provider");
-  assert.equal(future?.hasCandidates, false, "仅已知清单项无候选（引导位）");
-  // 运行时识别项：无候选无启用也入全集；与 enabled 重叠的 provider 去重只出现一次
-  const hist = items.find((i) => i.provider === "hist-only");
-  assert.equal(hist?.hasCandidates, false, "运行时识别项无候选");
-  assert.equal(hist?.enabledId, null, "运行时识别项未启用");
-  assert.equal(items.filter((i) => i.provider === "runtime-only").length, 1, "识别与启用重叠去重");
-  assert.equal(items.find((i) => i.provider === "runtime-only")?.enabledId, "x", "运行时启用映射入全集");
-  // 空输入 → 空列表
-  assert.deepEqual(unionProviders({ candidatesByProvider: {}, known: [] }), [], "空输入空列表");
+  const ocg = main.find((i) => i.provider === "opencode-go");
+  assert.ok(ocg?.hasCandidates && ocg.enabledId === "opencode-go-builtin", "主列表项带候选存在性与启用态");
+  // 无适配器候选的 modelProvider 保留展示（引导位）
+  assert.equal(main.find((i) => i.provider === "anthropic")?.hasCandidates, false, "无候选的 modelProvider 保留展示（引导文案）");
+  assert.equal(main.find((i) => i.provider === "deepseek")?.enabledId, null, "无启用的 modelProvider enabledId null");
+  // 用户适配器指向不在 modelProviders 的 provider → 收进尾部独立分组，不计入主列表数量
+  assert.deepEqual(extra.map((i) => i.provider), ["z-relay"], "额外 provider 进独立分组（字典序）");
+  assert.equal(extra[0]?.hasCandidates, true, "额外分组项带候选存在性");
+  assert.equal(extra[0]?.enabledId, null, "额外分组项未启用时 enabledId null");
+
+  // 启用态指向额外 provider 同样进独立分组（带启用态）
+  const onlyEnabled = splitProviderList({
+    candidatesByProvider: {},
+    enabled: { "ghost-relay": "ghost-a" },
+    modelProviders: ["opencode-go"],
+  });
+  assert.deepEqual(onlyEnabled.main.map((i) => i.provider), ["opencode-go"], "主列表不受额外启用影响");
+  assert.deepEqual(onlyEnabled.extra.map((i) => i.provider), ["ghost-relay"], "启用态指向的额外 provider 进独立分组");
+  assert.equal(onlyEnabled.extra[0]?.enabledId, "ghost-a", "额外分组项带启用态");
+
+  // 空 modelProviders → 主列表空，候选仍经独立分组可见（不静默消失）
+  const emptyModel = splitProviderList({
+    candidatesByProvider: { solo: [{ id: "solo-a", label: "S", source: "user-file" }] },
+    modelProviders: [],
+  });
+  assert.deepEqual(emptyModel.main, [], "空 modelProviders → 主列表空");
+  assert.deepEqual(emptyModel.extra.map((i) => i.provider), ["solo"], "无模型配置时候选仍可见（独立分组）");
+
+  // 双空输入 → 双空列表
+  assert.deepEqual(
+    splitProviderList({ candidatesByProvider: {}, modelProviders: [] }),
+    { main: [], extra: [] },
+    "空输入双空列表",
+  );
 }
 
 {

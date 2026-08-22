@@ -4,11 +4,13 @@
  * 经 slots.inject("settings.section") 注册顶层 tab，React 渲染四区：
  * - 总览：当前生效适配器逐 provider 摘要（enabled 映射驱动，保留）
  * - 用量可视化：summary 文案 + 各窗口明细表（保留）
- * - 提供商列表（替代原「适配器管理」平铺区块）：全集 = 已注册候选 ∪ 运行时
- *   识别（recognizedProviders）∪ 运行时启用 ∪ 内置已知清单（无候选也展示并给
- *   引导）；折叠态徽标显示「启用中: <adapter-id>」，展开页内管理候选适配器
- *   （名称/来源/启用开关单选）、[禁用该提供商]、[+ 添加适配器]（本地文件路径
- *   登记并热注册）
+ * - 提供商列表（替代原「适配器管理」平铺区块）：主列表与 dsh 模型配置页的
+ *   提供商列表精确一致（adapters.json modelProviders = ctx.llm.listProviders()
+ *   注册路由，issue #38 维护者意图修正）；无候选的保留展示并给引导；候选或
+ *   启用态指向不在模型配置中的 provider 收进尾部独立分组「未在模型配置中的
+ *   适配器」（避免静默消失，不计入主列表数量）。折叠态徽标显示
+ *   「启用中: <adapter-id>」，展开页内管理候选适配器（名称/来源/启用开关单选）、
+ *   [禁用该提供商]、[+ 添加适配器]（本地文件路径登记并热注册）
  * - 配置：常用配置键展示（patch 层为单一事实源，此处只读）
  *
  * 数据面：全部走宿主 loopback 路由（/stats、/adapters.json、POST /adapters/select、
@@ -16,7 +18,7 @@
  */
 import * as React from "react";
 import { STATS_URL, ADAPTERS_URL, SELECT_URL, ADD_URL } from "./core.js";
-import { unionProviders, providerBadgeText } from "../client-logic.js";
+import { splitProviderList, providerBadgeText } from "../client-logic.js";
 import type { ProviderListItem } from "../client-logic.js";
 
 /** 候选条目（adapters.json host[]）。 */
@@ -42,9 +44,8 @@ interface AdaptersMeta {
   version?: number;
   host?: AdapterInfo[];
   enabled?: Record<string, string>;
-  knownProviders?: string[];
-  /** 运行时识别到的 provider（issue #38 第二路来源：历史采样 ∪ 启用状态文件键）。 */
-  recognizedProviders?: string[];
+  /** 模型配置页提供商路由（与 dsh 设置「模型」页同源，主列表权威清单）。 */
+  modelProviders?: string[];
   errors?: AdapterErrorEntry[];
 }
 
@@ -381,17 +382,19 @@ function ProviderItem({
   );
 }
 
-/** 提供商列表区（issue #38）：全集合并 + 手风琴展开管理。 */
+/** 提供商列表区（issue #38 意图修正）：主列表对齐模型配置页 + 额外 provider 独立分组。 */
 function ProviderListSection({
   meta,
-  items,
+  main,
+  extra,
   busy,
   onSwitch,
   onDisable,
   onAdd,
 }: {
   meta: AdaptersMeta | null;
-  items: ProviderListItem[];
+  main: ProviderListItem[];
+  extra: ProviderListItem[];
   busy: boolean;
   onSwitch(provider: string, adapterId: string): void;
   onDisable(provider: string): void;
@@ -411,6 +414,25 @@ function ProviderListSection({
   // 用户文件加载失败错误无 provider 归属（登记 key=file:<名>），在列表顶部全局展示一次
   const fileErrors = [...errorByKey.entries()].filter(([k]) => k.startsWith("file:"));
 
+  /** 手风琴渲染复用（主分组与额外分组同构）。 */
+  const accordion = (items: ProviderListItem[]): React.ReactElement =>
+    React.createElement(
+      "div",
+      { className: "dou-provList" },
+      items.map((item) =>
+        React.createElement(ProviderItem, {
+          key: item.provider,
+          item,
+          candidates: candidatesByProvider.get(item.provider) ?? [],
+          errorByKey,
+          busy,
+          onSwitch,
+          onDisable,
+          onAdd,
+        }),
+      ),
+    );
+
   return React.createElement(
     "div",
     { style: sectionStyle },
@@ -418,7 +440,7 @@ function ProviderListSection({
     React.createElement(
       "div",
       { className: "dou-hint" },
-      "提供商全集 = 已注册适配器 ∪ 运行时识别 ∪ 内置已知清单；展开某个提供商以切换/禁用其适配器或添加新适配器。",
+      `提供商列表与模型配置页保持一致（共 ${main.length} 个）；展开某个提供商以切换/禁用其适配器或添加新适配器。`,
     ),
     fileErrors.length > 0
       ? fileErrors.map(([k, e]) =>
@@ -429,24 +451,28 @@ function ProviderListSection({
           ),
         )
       : null,
-    items.length === 0
+    main.length === 0
       ? React.createElement("div", { style: { color: "var(--dsw-alias-label-tertiary,#9aa0ab)" } }, "无提供商数据（adapters.json 不可达）")
-      : React.createElement(
+      : accordion(main),
+    // 尾部独立分组：候选/启用态指向不在模型配置中的 provider（避免静默消失，
+    // 不计入上方主列表数量）
+    extra.length > 0
+      ? React.createElement(
           "div",
-          { className: "dou-provList" },
-          items.map((item) =>
-            React.createElement(ProviderItem, {
-              key: item.provider,
-              item,
-              candidates: candidatesByProvider.get(item.provider) ?? [],
-              errorByKey,
-              busy,
-              onSwitch,
-              onDisable,
-              onAdd,
-            }),
+          null,
+          React.createElement(
+            "h4",
+            { style: titleStyle },
+            "未在模型配置中的适配器",
           ),
-        ),
+          React.createElement(
+            "div",
+            { className: "dou-hint" },
+            "以下提供商不在模型配置页的提供商列表中（用户适配器指向的自定义路由），不计入上方数量。",
+          ),
+          accordion(extra),
+        )
+      : null,
   );
 }
 
@@ -464,11 +490,11 @@ function ConfigSection() {
   );
 }
 
-/** 设置页根组件：提供商全集驱动手风琴；总览/可视化仅对启用中的 provider 拉 /stats。 */
+/** 设置页根组件：模型配置提供商列表驱动手风琴；总览/可视化仅对启用中的 provider 拉 /stats。 */
 export function SettingsPage() {
   const [statsByProvider, setStatsByProvider] = React.useState<Record<string, StatsView | null>>({});
   const [meta, setMeta] = React.useState<AdaptersMeta | null>(null);
-  const [items, setItems] = React.useState<ProviderListItem[]>([]);
+  const [list, setList] = React.useState<{ main: ProviderListItem[]; extra: ProviderListItem[] }>({ main: [], extra: [] });
   const [busy, setBusy] = React.useState(false);
 
   const reload = React.useCallback(async (): Promise<void> => {
@@ -476,19 +502,19 @@ export function SettingsPage() {
       const m = (await jsonGet(ADAPTERS_URL).catch(() => null)) as AdaptersMeta | null;
       if (m !== null) {
         setMeta(m);
-        // issue #38：提供商全集 = 已注册候选 ∪ 运行时启用 ∪ 内置已知清单
+        // issue #38 意图修正：主列表 = modelProviders（与模型配置页精确一致），
+        // 额外 provider 收进独立分组
         const grouped: Record<string, Array<{ id: string; label: string; source: string }>> = {};
         for (const info of m.host ?? []) {
           for (const provider of info.providers) {
             (grouped[provider] ??= []).push({ id: info.id, label: info.label, source: info.source });
           }
         }
-        setItems(
-          unionProviders({
+        setList(
+          splitProviderList({
             candidatesByProvider: grouped,
             enabled: m.enabled,
-            recognized: m.recognizedProviders ?? [],
-            known: m.knownProviders ?? [],
+            modelProviders: m.modelProviders ?? [],
           }),
         );
       }
@@ -575,7 +601,7 @@ export function SettingsPage() {
     { className: "dou-settings", style: { maxWidth: 560 } },
     React.createElement(OverviewSection, { statsByProvider }),
     React.createElement(UsageSection, { statsByProvider }),
-    React.createElement(ProviderListSection, { meta, items, busy, onSwitch, onDisable, onAdd }),
+    React.createElement(ProviderListSection, { meta, main: list.main, extra: list.extra, busy, onSwitch, onDisable, onAdd }),
     React.createElement(ConfigSection, null),
   );
 }
