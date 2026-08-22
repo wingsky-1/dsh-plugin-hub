@@ -10,7 +10,8 @@
  * - GET /api/dsh-provider-usage/history[?days=N]          历史采样序列
  * - GET /api/dsh-provider-usage/adapters.json              适配器元数据（M2）
  * - POST /api/dsh-provider-usage/adapters/select           切换/清空启用适配器
- * - POST /api/dsh-provider-usage/adapters/add              登记用户适配器文件（issue #38）
+ * - POST /api/dsh-provider-usage/adapters/inspect           预览适配器文件（回显导出信息，不注册）
+ * - POST /api/dsh-provider-usage/adapters/add               登记用户适配器文件（仅 file 路径，身份以导出为准）
  * - GET /api/dsh-provider-usage/health                     健康检查
  */
 import { readFile, writeFile, rename, unlink, mkdir, readdir } from "node:fs/promises";
@@ -27,7 +28,7 @@ import z from "schemastery";
 // 经 declare module 注入 ctx.webServer 并导出 WebRoute 路由对象类型。
 import type { Context } from "@deepseek-ai/cordis";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
-import { ADAPTER_CONTRACT_VERSION, summarizeTextFromWindows, levelFromWindows } from "./contracts.js";
+import { ADAPTER_CONTRACT_VERSION, summarizeTextFromWindows, levelFromWindows, isHostProviderAdapter, describeAdapterShape } from "./contracts.js";
 import { makeHostAdapterRegistry } from "./registry.js";
 import type { HostAdapterRegistry } from "./registry.js";
 import {
@@ -110,6 +111,7 @@ export const ROUTES: Record<string, string> = {
   history: "/api/dsh-provider-usage/history",
   adapters: "/api/dsh-provider-usage/adapters.json",
   select: "/api/dsh-provider-usage/adapters/select",
+  inspect: "/api/dsh-provider-usage/adapters/inspect",
   add: "/api/dsh-provider-usage/adapters/add",
   health: "/api/dsh-provider-usage/health",
 };
@@ -850,8 +852,11 @@ export async function writeAdapterState(root: string, enabled: Record<string, st
 export interface UserAdapterRecord {
   id: string;
   label: string;
+  /** providers[0]（清单兼容旧单 provider 结构；实际注册以导出 providers 为准）。 */
   provider: string;
   file: string;
+  /** v2：完整认领列表（add 路由从模块导出读取，清单元数据）。 */
+  providers?: string[];
 }
 
 /** 用户适配器清单文件（历史根目录下，与 adapter-state.json 同区）。 */
@@ -908,7 +913,11 @@ export function parseUserAdapters(raw: string | undefined): UserAdapterRecord[] 
     const provider = typeof rec.provider === "string" ? rec.provider : "";
     const file = typeof rec.file === "string" ? rec.file : "";
     if (id.length > 0 && label.length > 0 && provider.length > 0 && file.length > 0) {
-      out.push({ id, label, provider, file });
+      // providers 为 v2 可选字段（旧清单无该字段仍兼容加载）
+      const providers = Array.isArray(rec.providers)
+        ? rec.providers.filter((p): p is string => typeof p === "string" && p.length > 0)
+        : undefined;
+      out.push({ id, label, provider, file, ...(providers !== undefined && providers.length > 0 ? { providers } : {}) });
     }
   }
   return out;
@@ -1050,6 +1059,29 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
     const url = pathToFileURL(file).href;
     const mod = (await import(url)) as Record<string, unknown>;
     return mod.default ?? mod;
+  }
+
+  /**
+   * 加载 + 契约校验（inspect / add 共用）：失败登记最近一次错误并返回可回显的
+   * 错误码与明细（信息面最小披露由 recordError 脱敏路径）。
+   */
+  async function loadUserAdapterChecked(
+    file: string,
+  ): Promise<{ ok: true; adapter: HostProviderAdapter } | { ok: false; code: string; detail: string }> {
+    let mod: unknown;
+    try {
+      mod = await loadUserHostAdapterFile(file);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      registry.recordError(`file:${basename(file)}`, "load", msg);
+      return { ok: false, code: "adapter-load-failed", detail: msg };
+    }
+    if (!isHostProviderAdapter(mod)) {
+      const detail = describeAdapterShape(mod) ?? "未知形状问题";
+      registry.recordError(`file:${basename(file)}`, "load", `契约校验失败（${detail}），已拒收`);
+      return { ok: false, code: "invalid-adapter", detail: `契约校验失败（${detail}）` };
+    }
+    return { ok: true, adapter: mod };
   }
 
   // M2: 加载用户宿主适配器（多个文件依序加载，单个失败不阻断；失败登记错误供面板排障）
@@ -1359,10 +1391,43 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
     },
   };
 
+  // issue #38：预览用户适配器文件（POST /adapters/inspect）。
+  // 加载并契约校验，回显导出信息（id/label/providers/version），不做任何注册/落盘，
+  // 供面板「检测文件」在确认添加前展示；重复 id 检查留给 add。
+  const inspectRoute: WebRoute = {
+    kind: "exact",
+    path: ROUTES.inspect,
+    handler: async (req, res) => {
+      if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
+      if (req.method !== "POST") return writeJson(res, 405, { error: `method not allowed: ${req.method}` });
+      let body: Record<string, unknown>;
+      try {
+        const raw = await readJsonBody(req);
+        if (typeof raw !== "object" || raw === null) return writeJson(res, 400, { error: "bad-json" });
+        body = raw as Record<string, unknown>;
+      } catch {
+        return writeJson(res, 400, { error: "bad-json" });
+      }
+      const file = resolveAddAdapterFile(body.file);
+      if (file === undefined) {
+        return writeJson(res, 400, { error: "invalid-file", detail: "文件不存在/不可读，或路径未规整（禁穿越）" });
+      }
+      const loaded = await loadUserAdapterChecked(file);
+      if (!loaded.ok) {
+        return writeJson(res, 422, { error: loaded.code, detail: loaded.detail });
+      }
+      const { adapter } = loaded;
+      writeJson(res, 200, {
+        ok: true,
+        adapter: { id: adapter.id, label: adapter.label, providers: adapter.providers, version: adapter.version },
+        file: basename(file),
+      });
+    },
+  };
+
   // issue #38：登记用户适配器文件并热注册（POST /adapters/add）。
-  // 入参 { id, label, provider, file }；校验文件存在可读 + 路径规整禁穿越；
-  // 登记进用户适配器清单（重启保留）并复用 user-file 加载链热注册。
-  // 本期不做「粘贴 JS 落盘」。
+  // v2 简化：入参仅 { file }，id/label/providers 一律以模块导出为准
+  // （面板可先经 inspect 预览确认，此处登记；身份以导出为准防清单与注册表漂移）。
   const addRoute: WebRoute = {
     kind: "exact",
     path: ROUTES.add,
@@ -1377,48 +1442,36 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
       } catch {
         return writeJson(res, 400, { error: "bad-json" });
       }
-      const id = typeof body.id === "string" ? body.id.trim() : "";
-      const label = typeof body.label === "string" ? body.label.trim() : "";
-      const provider = typeof body.provider === "string" ? body.provider.trim() : "";
-      if (
-        id.length === 0 || label.length === 0 || provider.length === 0 ||
-        id.length > 128 || label.length > 128 || provider.length > 128
-      ) {
-        return writeJson(res, 400, { error: "invalid-input" });
-      }
       const file = resolveAddAdapterFile(body.file);
       if (file === undefined) {
         return writeJson(res, 400, { error: "invalid-file", detail: "文件不存在/不可读，或路径未规整（禁穿越）" });
       }
-      if (registry.snapshot().infos.some((i) => i.id === id)) {
-        return writeJson(res, 409, { error: "duplicate-id", detail: `适配器 id 已存在：${id}` });
+      const loaded = await loadUserAdapterChecked(file);
+      if (!loaded.ok) {
+        return writeJson(res, 422, { error: loaded.code, detail: loaded.detail });
       }
-      let adapter: unknown;
-      try {
-        adapter = await loadUserHostAdapterFile(file);
-      } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : String(e);
-        registry.recordError(`file:${basename(file)}`, "load", msg);
-        return writeJson(res, 422, { error: "adapter-load-failed", detail: msg });
-      }
-      // 登记元数据一致性：实际身份以适配器导出为准，入参 id 填错直接拒绝（防清单与注册表漂移）
-      const actualId = typeof (adapter as Record<string, unknown> | null)?.id === "string"
-        ? ((adapter as Record<string, unknown>).id as string)
-        : undefined;
-      if (actualId !== id) {
-        return writeJson(res, 422, { error: "id-mismatch", detail: `模块导出 id=${actualId ?? "<缺失>"} 与入参 id=${id} 不一致` });
+      const { adapter } = loaded;
+      if (registry.snapshot().infos.some((i) => i.id === adapter.id)) {
+        return writeJson(res, 409, { error: "duplicate-id", detail: `适配器 id 已存在：${adapter.id}` });
       }
       if (!registry.register(adapter, "user-file", file)) {
         return writeJson(res, 422, { error: "invalid-adapter", detail: "契约校验失败（version/id/label/providers/fetchUsage）" });
       }
-      await persistUserAdapter({ id, label, provider, file });
+      // 清单以导出为准持久化（provider 字段兼容旧单 provider 结构）
+      await persistUserAdapter({
+        id: adapter.id,
+        label: adapter.label,
+        provider: adapter.providers[0] ?? "",
+        providers: adapter.providers,
+        file,
+      });
       // 热注册默认成为该 provider 启用者：把新选择固化进启用状态落盘
       statsEpoch += 1;
-      cache.clear(provider);
+      for (const provider of adapter.providers) cache.clear(provider);
       scheduleWriteAdapterState(registry.snapshot().enabled);
       writeJson(res, 200, {
         ok: true,
-        adapter: { id, label, provider, file: basename(file) },
+        adapter: { id: adapter.id, label: adapter.label, providers: adapter.providers, file: basename(file) },
         enabled: registry.snapshot().enabled,
       });
     },
@@ -1565,7 +1618,7 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
 
   const disposeRoutes = ctx.effect(
     () => {
-      const routeDisposers = [statsRoute, selectRoute, addRoute, historyRoute, adaptersRoute, userRoute, healthRoute].map((route) =>
+      const routeDisposers = [statsRoute, selectRoute, inspectRoute, addRoute, historyRoute, adaptersRoute, userRoute, healthRoute].map((route) =>
         ctx.webServer.register(route),
       );
       return () => {

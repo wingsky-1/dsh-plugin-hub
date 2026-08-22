@@ -91,14 +91,14 @@ function makeFakeCtx(overrides = {}) {
   assert.equal(routes.length, 0, "enabled:false 不注册路由");
 }
 
-// 注册 stats + select + add + history + adapters + user + health 七路由
+// 注册 stats + select + inspect + add + history + adapters + user + health 八路由
 {
   const { ctx, routes } = makeFakeCtx();
   await apply(ctx, {});
   assert.deepEqual(
     routes.map((r) => r.path).sort(),
-    [ROUTES.health, ROUTES.history, ROUTES.adapters, ROUTES.stats, ROUTES.select, ROUTES.add, "/api/dsh-provider-usage/user/"].sort(),
-    "注册七条路由",
+    [ROUTES.health, ROUTES.history, ROUTES.adapters, ROUTES.stats, ROUTES.select, ROUTES.inspect, ROUTES.add, "/api/dsh-provider-usage/user/"].sort(),
+    "注册八条路由",
   );
   assert.ok(routes.every((r) => r.kind === "exact" || r.kind === "prefix"), "路由 exact 或 prefix");
 }
@@ -342,37 +342,33 @@ function makeFakeCtx(overrides = {}) {
   await add.handler(fakeReq({ method: "GET" }), resCode);
   assert.equal(responses.at(-1).__code, 405, "add 非 POST 405");
 
-  // 400：缺字段 / 坏 body
+  // 400：缺字段 / 坏 body（v2 入参仅 file）
   await post(undefined);
   assert.equal(responses.at(-1).__code, 400, "add 空 body 400");
-  await post(JSON.stringify({ id: "x", label: "y" }));
-  assert.equal(responses.at(-1).__code, 400, "add 缺 provider/file 400");
-  await post(JSON.stringify({ id: `x`.repeat(129), label: "y", provider: "p", file: adapterFile }));
-  assert.equal(responses.at(-1).__code, 400, "add 超长 id 400");
+  await post(JSON.stringify({}));
+  assert.equal(responses.at(-1).__code, 400, "add 缺 file 400");
 
   // 400：文件不存在 / 未规整穿越形态
-  await post(JSON.stringify({ id: "a", label: "b", provider: "p", file: join(dir, "no-such.mjs") }));
+  await post(JSON.stringify({ file: join(dir, "no-such.mjs") }));
   assert.equal(responses.at(-1).__code, 400, "add 不存在文件 400");
-  await post(JSON.stringify({ id: "a", label: "b", provider: "p", file: `${dir}/sub/../added-relay.mjs` }));
+  await post(JSON.stringify({ file: `${dir}/sub/../added-relay.mjs` }));
   assert.equal(responses.at(-1).__code, 400, "add 含 .. 未规整路径 400（禁穿越）");
 
-  // 422：合法文件但模块导出畸形（缺 fetchUsage）/ id 与入参不一致
+  // 422：合法文件但模块导出畸形（缺 fetchUsage）——身份以导出为准，无需入参 id
   const badExport = join(dir, "bad-export.mjs");
   writeFileSync(badExport, 'export default { version: 1, id: "bad-export", label: "Bad", providers: ["p"] };');
-  await post(JSON.stringify({ id: "bad-export", label: "Bad", provider: "p", file: badExport }));
+  await post(JSON.stringify({ file: badExport }));
   assert.equal(responses.at(-1).__code, 422, "add 畸形导出（缺 fetchUsage）422");
+  await post(JSON.stringify({ file: badExport }), res);
+  assert.equal(responses.at(-1).error, "invalid-adapter", "add 畸形导出错误码 invalid-adapter");
 
-  const mismatched = join(dir, "mismatched.mjs");
-  writeFileSync(mismatched, 'export default { version: 1, id: "actual-id", label: "M", providers: ["p"], async fetchUsage() {} };');
-  await post(JSON.stringify({ id: "claimed-id", label: "M", provider: "p", file: mismatched }));
-  assert.equal(responses.at(-1).__code, 422, "add 导出 id 与入参不一致 422");
-
-  // 200：成功登记 + 热注册 + 清单落盘
+  // 200：成功登记 + 热注册 + 清单落盘（仅 file 入参，身份以导出为准）
   let payload;
   const res200 = { writeHead: () => {}, end: (chunk) => { payload = JSON.parse(chunk); } };
-  await post(JSON.stringify({ id: "added-relay", label: "Added Relay", provider: "added-relay-provider", file: adapterFile }), res200);
+  await post(JSON.stringify({ file: adapterFile }), res200);
   assert.equal(payload.ok, true, "add 成功");
   assert.equal(payload.adapter.id, "added-relay");
+  assert.deepEqual(payload.adapter.providers, ["added-relay-provider"], "add 响应带导出 providers");
   assert.ok(!JSON.stringify(payload).includes(dir), "add 响应不外泄绝对路径（只披露文件名）");
 
   // 热注册生效：adapters.json 出现新候选并默认启用；stats 可取该 provider（no-api-key 错误态即证明走通了适配器）
@@ -407,8 +403,81 @@ function makeFakeCtx(overrides = {}) {
   assert.ok(meta2.host.find((h) => h.id === "added-relay"), "重启后清单合并加载恢复候选");
 
   // 409：同 id 重复登记
-  await post(JSON.stringify({ id: "added-relay", label: "Added Relay", provider: "added-relay-provider", file: adapterFile }));
+  await post(JSON.stringify({ file: adapterFile }));
   assert.equal(responses.at(-1).__code, 409, "重复 id 409");
+}
+
+// ---------------------------------------------------------------- adapters/inspect 路由（issue #38）：围栏 / 校验 / 回显不注册
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dou-inspect-"));
+  const validFile = join(dir, "inspect-relay.mjs");
+  writeFileSync(
+    validFile,
+    [
+      "export default {",
+      "  version: 1,",
+      '  id: "inspect-relay",',
+      '  label: "Inspect Relay",',
+      '  providers: ["inspect-relay-provider"],',
+      '  async fetchUsage() { return { ok: true, provider: "inspect-relay-provider", label: "I", fetchedAt: 0 }; },',
+      "};",
+    ].join("\n"),
+  );
+  const badFile = join(dir, "inspect-bad.mjs");
+  writeFileSync(badFile, 'export default { version: 1, id: "inspect-bad", label: "Bad", providers: ["p"] };');
+  const brokenFile = join(dir, "inspect-broken.mjs");
+  writeFileSync(brokenFile, "export default {");
+
+  const { ctx, routes } = makeFakeCtx();
+  await apply(ctx, {});
+  const inspect = routes.find((r) => r.path === ROUTES.inspect);
+  assert.ok(inspect, "inspect 路由存在");
+  const responses = [];
+  const res = { writeHead: () => {}, end: (chunk) => responses.push(JSON.parse(chunk)) };
+  const resCode = { writeHead: (code) => { responses.push({ __code: code }); }, end: () => {} };
+  const post = (body, target = resCode) => inspect.handler(fakeReq({ method: "POST", body }), target);
+
+  // 围栏：403 / 405
+  await inspect.handler(fakeReq({ socket: { remoteAddress: "10.0.0.2" } }), res);
+  assert.equal(responses.at(-1).error, "forbidden: loopback-only", "inspect 非回环 403");
+  await inspect.handler(fakeReq({ method: "GET" }), resCode);
+  assert.equal(responses.at(-1).__code, 405, "inspect 非 POST 405");
+
+  // 400：空 body / 缺 file / 文件不存在 / 未规整穿越
+  await post(undefined);
+  assert.equal(responses.at(-1).__code, 400, "inspect 空 body 400");
+  await post(JSON.stringify({}));
+  assert.equal(responses.at(-1).__code, 400, "inspect 缺 file 400");
+  await post(JSON.stringify({ file: join(dir, "no-such.mjs") }));
+  assert.equal(responses.at(-1).__code, 400, "inspect 不存在文件 400");
+  await post(JSON.stringify({ file: `${dir}/sub/../inspect-relay.mjs` }));
+  assert.equal(responses.at(-1).__code, 400, "inspect 含 .. 未规整路径 400（禁穿越）");
+
+  // 422：畸形导出（缺 fetchUsage）/ 语法错误（加载失败）
+  await post(JSON.stringify({ file: badFile }));
+  assert.equal(responses.at(-1).__code, 422, "inspect 畸形导出 422");
+  await post(JSON.stringify({ file: badFile }), res);
+  assert.equal(responses.at(-1).error, "invalid-adapter", "inspect 畸形导出错误码 invalid-adapter");
+  await post(JSON.stringify({ file: brokenFile }));
+  assert.equal(responses.at(-1).__code, 422, "inspect 加载失败（语法错误）422");
+  await post(JSON.stringify({ file: brokenFile }), res);
+  assert.equal(responses.at(-1).error, "adapter-load-failed", "inspect 加载失败错误码 adapter-load-failed");
+
+  // 200：回显导出信息，不注册（adapters.json 无该候选）
+  let payload;
+  const res200 = { writeHead: () => {}, end: (chunk) => { payload = JSON.parse(chunk); } };
+  await post(JSON.stringify({ file: validFile }), res200);
+  assert.equal(payload.ok, true, "inspect 成功");
+  assert.equal(payload.adapter.id, "inspect-relay");
+  assert.equal(payload.adapter.label, "Inspect Relay");
+  assert.deepEqual(payload.adapter.providers, ["inspect-relay-provider"], "inspect 回显 providers");
+  assert.equal(payload.adapter.version, 1, "inspect 回显契约版本");
+  assert.ok(!JSON.stringify(payload).includes(dir), "inspect 响应不外泄绝对路径（只披露文件名）");
+  let meta;
+  const metaRes = { writeHead: () => {}, end: (chunk) => { meta = JSON.parse(chunk); } };
+  routes.find((r) => r.path === ROUTES.adapters).handler(fakeReq(), metaRes);
+  assert.equal(meta.host.some((h) => h.id === "inspect-relay"), false, "inspect 只预览不注册");
 }
 
 // user 路由：403 / 405 / 404
@@ -936,14 +1005,16 @@ async function waitFor(cond, timeoutMs = 5000, stepMs = 50) {
   assert.ok(client.includes("用量统计"), "tab 标签「用量统计」");
   assert.ok(client.includes("adapters/select"), "适配器管理走 select 接口");
 
-  // issue #38：设置页按提供商重构（总览 + 提供商手风琴列表）
+  // issue #38：设置页按提供商重构（提供商手风琴 + 适配器行独立开关 + 内嵌添加表单）
   assert.ok(client.includes("adapters/add"), "添加适配器走 add 接口");
-  assert.ok(client.includes("禁用该提供商"), "提供商展开页内禁用按钮");
+  assert.ok(client.includes("adapters/inspect"), "检测文件走 inspect 接口（回显导出信息，不注册）");
+  assert.ok(client.includes("dou-switch"), "适配器候选行独立开关（CSS 内联样式类）");
   assert.ok(client.includes("+ 添加适配器"), "提供商展开页内添加入口");
   assert.ok(client.includes("dou-provHead"), "手风琴折叠头样式类");
   assert.ok(client.includes("dou-provErr"), "错误登记展示（候选执行/文件加载最近一次错误）");
   assert.ok(client.includes("modelProviders"), "消费宿主模型配置提供商清单（与模型配置页同源）");
-  assert.ok(client.includes("未在模型配置中的适配器"), "额外 provider 独立分组展示（不静默消失）");
+  assert.ok(client.includes("自定义提供商"), "自定义 provider 独立分组展示（不静默消失）");
+  assert.ok(!client.includes("禁用该提供商"), "适配器级开关取代「禁用该提供商」按钮（provider 禁用属模型配置页职责）");
 
   // issue #27：总览不再硬编码 opencode-go，按 adapters.json enabled 映射逐 provider 拉取
   assert.ok(!client.includes("?provider=opencode-go"), "settings 总览移除硬编码 ?provider=opencode-go");
@@ -962,7 +1033,7 @@ async function waitFor(cond, timeoutMs = 5000, stepMs = 50) {
   assertClientSourceContract(join(here, ".."));
   assertClientProductContract(join(here, ".."));
   const literals = new Set(client.match(/\/api\/[A-Za-z0-9_/.-]+/gu) ?? []);
-  const hostPaths = new Set([ROUTES.stats, ROUTES.history, ROUTES.health, ROUTES.adapters, ROUTES.select, ROUTES.add]);
+  const hostPaths = new Set([ROUTES.stats, ROUTES.history, ROUTES.health, ROUTES.adapters, ROUTES.select, ROUTES.inspect, ROUTES.add]);
   for (const lit of literals) {
     assert.ok(hostPaths.has(lit), `client 字面量 ${lit} 在 host ROUTES 中存在`);
   }
