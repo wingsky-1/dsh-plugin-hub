@@ -25,10 +25,8 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import type { ServerResponse } from "node:http";
-// 官方类型层（issue #16 同批，锁 0.1.1-rc.2；仅 import type，编译期擦除，
-// 禁止运行时值导入——contract-check 有门禁）。DshTool 仍取自根 types/dsh.js：
-// 与官方 ToolDefinition 的签名摩擦大于收益（评审结论），自建面保留并作为
-// 与官方工具契约的显式对齐点。
+// 官方类型层（issue #16/#48，锁版见 pnpm-workspace catalog；仅 import type，
+// 编译期擦除，禁止运行时值导入——contract-check 有门禁）。
 import type { Context, LoggerService } from "@deepseek-ai/cordis";
 import type { PreStepDecision } from "@deepseek-ai/dsh-agent";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
@@ -37,7 +35,6 @@ import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type {} from "@deepseek-ai/dsh-agent";
 import type {} from "@deepseek-ai/dsh-system-prompt";
 import type {} from "@deepseek-ai/dsh-tools";
-import type { DshTool } from "../../../types/dsh.js";
 import type { ServerConfig } from "./types.js";
 import type { CatalogCache, CatalogDecision, CatalogMessage, SupervisorLite, CatalogAgent } from "./catalog.js";
 

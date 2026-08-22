@@ -23,7 +23,8 @@ import { isLoopbackRequest } from "../../../shared/loopback.js";
 import { writeJson, errorMessage } from "../../../shared/host-utils.js";
 import { previewKindOf } from "./mime.js";
 import { computeGitDiff } from "./git.js";
-import type { DshRoute } from "../../../types/dsh.js";
+// 官方路由对象类型（仅 import type，编译期擦除；contract-check 禁止运行时值导入）。
+import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 
 /** 路由路径单一来源（客户端契约 / smoke 共用）。 */
 export const ROUTES = {
@@ -182,8 +183,8 @@ export async function serveFileRoute(
  * @param cfg - 配置。
  * @returns 可注册进 ctx.webServer 的路由数组。
  */
-export function makeRoutes(cfg: PreviewConfig): DshRoute[] {
-  const fileRoute: DshRoute = {
+export function makeRoutes(cfg: PreviewConfig): WebRoute[] {
+  const fileRoute: WebRoute = {
     kind: "exact",
     path: ROUTES.file,
     handler: (req: IncomingMessage, res: ServerResponse): Promise<void> | void => {
@@ -199,7 +200,7 @@ export function makeRoutes(cfg: PreviewConfig): DshRoute[] {
       return serveFileRoute(res, req, url, cfg);
     },
   };
-  const healthRoute: DshRoute = {
+  const healthRoute: WebRoute = {
     kind: "exact",
     path: ROUTES.health,
     handler: (req: IncomingMessage, res: ServerResponse): void => {
@@ -214,7 +215,7 @@ export function makeRoutes(cfg: PreviewConfig): DshRoute[] {
       writeJson(res, 200, { ok: true, plugin: "dsh-web-file-preview" });
     },
   };
-  const diffRoute: DshRoute = {
+  const diffRoute: WebRoute = {
     kind: "exact",
     path: ROUTES.diff,
     // async：diff 计算（execFile）不阻塞服务事件循环（评审 C3）；try/catch 兜底防

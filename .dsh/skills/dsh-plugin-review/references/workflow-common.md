@@ -11,7 +11,8 @@
 
 - 每个逻辑阶段（如「一次评审项修复」「一个里程碑」）结束时**独立收口**：
   1. 全量门禁跑绿（hub 通用：`pnpm build && pnpm test && pnpm contract && pnpm pack:check`；
-     主仓见 `dsh-plugin-dev` §4 验证流程）；
+     本仓执行清单见 `.dsh/skills/dsh-plugin-hub-dev`，验证证据检核见
+     [verify-checklist.md](verify-checklist.md)）；
   2. 工作树/产物核对（编入库的 `lib/` 与源码一致、无游离 css/临时文件）；
   3. **阶段 commit**（一句话改什么、为什么），不攒到最后一次性提交。
 - 好处：每阶段可审、可回滚、可单独验收；失败定位到阶段而非整批。
@@ -55,8 +56,8 @@ review（评审/计划） → 落地计划 + REVIEW-AND-PLAN 交接物 → 用�
 - `querySelector` 返回 `Element` 无 `hidden` 属性类型 → DOM 类型断言或判空后再用。
 - 子进程 spawn 的 kill 只杀主进程、残留子进程 → 进程树清理
   （Unix `kill(-pid)` + `detached:true` 进程组 / Win `taskkill /pid <id> /T /F`）。
-- 改 client 后验证前先核对**运行时加载产物与构建产物一致**（见 `verify-checklist.md` §4
-  运行时确认；重启由用户/平台执行，agent 不代操作）。
+- 改 client 后验证前先核对**运行时加载产物与构建产物一致**（见
+  [verify-checklist.md](verify-checklist.md) §4 运行时确认；重启由用户/平台执行，agent 不代操作）。
 
 > 以上定义为跨 skill 共享事实；具体 skill **默认只引用本条**，不复制全文。特殊情况下
 > （某 skill 是该规则的高频触发点，如 hub-dev 的实施节）可就近重申一行要点，但必须以

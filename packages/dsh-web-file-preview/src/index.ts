@@ -12,7 +12,11 @@
  * 激活：安装进 profile（见 cordis.patch.yml），重启一次 dsh web 生效。
  */
 
-import type { PluginContext } from "../../../types/dsh.js";
+// 官方类型层（issue #16/#48，锁版见 pnpm-workspace catalog；仅 import type，
+// 编译期擦除，禁止运行时值导入——contract-check 有门禁）。dsh-host-webserver
+// 经 declare module 注入 ctx.webServer，必须引入其类型面。
+import type { Context } from "@deepseek-ai/cordis";
+import type {} from "@deepseek-ai/dsh-host-webserver";
 import { ROUTES, makeRoutes, serveFileRoute, type PreviewConfig } from "./routes.js";
 import { previewKindOf } from "./mime.js";
 import { computeGitDiff } from "./git.js";
@@ -46,7 +50,7 @@ export function normalizeConfig(config: PreviewConfig | undefined): PreviewConfi
 }
 
 /** 插件 apply：薄壳，只做登记。enabled=false 时不注册任何路由。 */
-export function apply(ctx: PluginContext, config?: PreviewConfig): void {
+export function apply(ctx: Context, config?: PreviewConfig): void {
   const cfg = normalizeConfig(config);
   if (cfg.enabled === false) return;
 

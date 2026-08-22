@@ -20,12 +20,12 @@
 
 | 文件 | 作用 |
 |---|---|
-| `SKILL.md` | 端到端执行清单（S0 准备 → S5 对抗评审 → S6 报告沉淀 → S7 实施交接），协调者照跑 |
-| `references/dimensions.md` | 6 个默认评审维度 + 可选 G（开源/依赖复核）的审查重点与证据要求（写子 Agent prompt 直接复制） |
-| `references/templates.md` | 子 Agent prompt 模板、发现条目、总报告、落地计划、评审交付物（REVIEW-AND-PLAN / TECH-DEBT）模板 |
-| `references/adversarial-review.md` | 对抗性评审手册（双视角派发 + 裁决纪律） |
-| `references/workflow-common.md` | 跨 skill 共享纪律（阶段 commit / 文档同步 / commit-only / 交接指针 / 实施坑）——唯一事实源，被 review / hub-dev 共同引用 |
-| `references/verify-checklist.md` | 实测证据检核表（curl / 浏览器 MCP / smoke、运行时确认、fixture 约定）——P0/P1 断言必须实测 |
+| [`SKILL.md`](SKILL.md) | 端到端执行清单（S0 准备 → S5 对抗评审 → S6 报告沉淀 → S7 实施交接），协调者照跑 |
+| [`references/dimensions.md`](references/dimensions.md) | 6 个默认评审维度 + 可选 G（开源/依赖复核）的审查重点与证据要求（写子 Agent prompt 直接复制） |
+| [`references/templates.md`](references/templates.md) | 子 Agent prompt 模板、发现条目、总报告、落地计划、评审交付物（REVIEW-AND-PLAN / TECH-DEBT）模板 |
+| [`references/adversarial-review.md`](references/adversarial-review.md) | 对抗性评审手册（双视角派发 + 裁决纪律） |
+| [`references/workflow-common.md`](references/workflow-common.md) | 跨 skill 共享纪律（阶段 commit / 文档同步 / commit-only / 交接指针 / 实施坑）——唯一事实源，被 review / hub-dev 共同引用 |
+| [`references/verify-checklist.md`](references/verify-checklist.md) | 实测证据检核表（curl / 浏览器 MCP / smoke、运行时确认、fixture 约定）——P0/P1 断言必须实测 |
 
 ## 快速上手
 
@@ -33,7 +33,7 @@
 2. 说：「对 <插件> 做多 Agent 深度评审（或只要某一维度，如只评多端适配）」。
 3. 一次性并行启动各维后台子 Agent（deep 默认 5-7 维各 1 个 / quick 可 1-2 维；SKILL.md S2 给出自包含 prompt 规则）。
 4. 全部回报后，协调者交叉验证并输出聚合总报告 + 落地计划 +（可选）对抗评审；重度评审可落成 `REVIEW-AND-PLAN.md` / `TECH-DEBT.md`。
-5. 确认后按 S7 交接：变动环节转入 `dsh-plugin-hub-dev` 执行（commit-only / 阶段门禁 / 运行时确认见 workflow-common.md）。
+5. 确认后按 S7 交接：变动环节转入 [`dsh-plugin-hub-dev`](../dsh-plugin-hub-dev/SKILL.md) 执行（commit-only / 阶段门禁 / 运行时确认见 [workflow-common.md](references/workflow-common.md)）。
 
 ## 何时使用
 
