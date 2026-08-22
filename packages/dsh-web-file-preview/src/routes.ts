@@ -18,11 +18,13 @@
 import untildify from "untildify";
 import { resolve, isAbsolute } from "node:path";
 import { stat, readFile } from "node:fs/promises";
+import type { Stats } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { isLoopbackRequest } from "../../../shared/loopback.js";
 import { writeJson, errorMessage } from "../../../shared/host-utils.js";
 import { previewKindOf } from "./mime.js";
 import { computeGitDiff } from "./git.js";
+import { bareBasenameOf, findUniqueByBasename } from "./basename-fallback.js";
 // 官方路由对象类型（仅 import type，编译期擦除；contract-check 禁止运行时值导入）。
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 
@@ -91,11 +93,31 @@ export async function serveFileRoute(
   // 任意文件访问由平台/用户负责（见文件头约定）。
   // C5：绝对路径无需 cwd（上层校验已保证「相对路径必有 cwd」）。
   const expandedPath = untildify(path);
-  const resolved = isAbsolute(expandedPath) ? resolve(expandedPath) : resolve(cwd as string, expandedPath);
-  let info;
+  let resolved = isAbsolute(expandedPath) ? resolve(expandedPath) : resolve(cwd as string, expandedPath);
+  let info: Stats | undefined;
   try {
     info = await stat(resolved);
   } catch {
+    // issue #41 — 仅此 404 负路径进入的 basename 兜底（默认开启，无设置项）：
+    // 相对路径未命中且带 cwd 时，按裸文件名在工作区内受控搜索唯一真实文件；
+    // 绝对路径（完整凭证打错不换目标）与无 cwd 不兜底；0 命中 / ≥2 歧义 /
+    // 触顶一律维持原 404。兜底链路任何意外都吞掉并保持 404，绝不放大为 500。
+    if (!isAbsolute(expandedPath) && cwd !== undefined && cwd !== "") {
+      const name = bareBasenameOf(path);
+      if (name !== null) {
+        try {
+          const found = await findUniqueByBasename(cwd, name);
+          if (found !== null) {
+            resolved = found;
+            info = await stat(resolved); // 命中后复检（竞态删除 → info 保持 undefined → 404）
+          }
+        } catch {
+          // 维持 404
+        }
+      }
+    }
+  }
+  if (info === undefined) {
     writeJson(res, 404, { error: `not found: ${path}` });
     return;
   }
