@@ -126,6 +126,12 @@ export const DEFAULT_CONFIG: NormalizedConfig = {
 };
 
 /**
+ * 内置已知 provider 清单（issue #38：设置页提供商全集的第三路来源——无候选的
+ * 也展示并给引导）。随内置适配器扩展维护。
+ */
+export const KNOWN_PROVIDERS: string[] = [OPENCODE_GO_PROVIDER];
+
+/**
  * 设置面板 schemastery schema（M3b：settings 命名空间用，与 normalizeConfig 同构）。
  * 实测约束：schemastery 3.18 无 `.optional()`；不带 `.required()` 的字段默认可选。
  * 说明：apiKey 不进 schema（避免设置面板回显密钥）；adapters 复杂结构经 patch 层
@@ -1469,6 +1475,8 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
         })),
         enabled: snap.enabled,
         client,
+        // issue #38：内置已知 provider 清单（提供商全集第三路来源）
+        knownProviders: [...KNOWN_PROVIDERS],
         // issue #38：最近一次适配器错误登记（面板排障展示；key=adapterId 或 file:<名>）
         errors: snap.errors.map((e) => ({ key: e.key, at: e.at, kind: e.kind, message: e.message })),
       });

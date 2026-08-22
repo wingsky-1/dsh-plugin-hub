@@ -132,6 +132,7 @@ function makeFakeCtx(overrides = {}) {
   assert.equal(payload.host[0].id, "opencode-go-builtin", "候选带 id");
   assert.equal(payload.host[0].enabled, true, "候选带 enabled");
   assert.equal(payload.enabled["opencode-go"], "opencode-go-builtin", "enabled 映射 provider→adapterId");
+  assert.deepEqual(payload.knownProviders, ["opencode-go"], "knownProviders 内置已知清单（issue #38）");
   assert.deepEqual(payload.client, [], "无客户端适配器时为 []");
   // 带客户端适配器配置
   const { ctx: ctx3, routes: routes3 } = makeFakeCtx();
@@ -823,6 +824,14 @@ async function waitFor(cond, timeoutMs = 5000, stepMs = 50) {
   assert.ok(client.includes('"settings.section"'), "注册 settings.section 顶层 tab");
   assert.ok(client.includes("用量统计"), "tab 标签「用量统计」");
   assert.ok(client.includes("adapters/select"), "适配器管理走 select 接口");
+
+  // issue #38：设置页按提供商重构（总览 + 提供商手风琴列表）
+  assert.ok(client.includes("adapters/add"), "添加适配器走 add 接口");
+  assert.ok(client.includes("禁用该提供商"), "提供商展开页内禁用按钮");
+  assert.ok(client.includes("+ 添加适配器"), "提供商展开页内添加入口");
+  assert.ok(client.includes("dou-provHead"), "手风琴折叠头样式类");
+  assert.ok(client.includes("dou-provErr"), "错误登记展示（候选执行/文件加载最近一次错误）");
+  assert.ok(client.includes("knownProviders"), "消费宿主内置已知清单");
 
   // issue #27：总览不再硬编码 opencode-go，按 adapters.json enabled 映射逐 provider 拉取
   assert.ok(!client.includes("?provider=opencode-go"), "settings 总览移除硬编码 ?provider=opencode-go");

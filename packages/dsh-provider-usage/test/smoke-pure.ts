@@ -52,6 +52,9 @@ import {
   derivePillTitle,
   shouldHideFloat,
   rendererLookupKeys,
+  // 设置页提供商全集（issue #38）
+  unionProviders,
+  providerBadgeText,
 } from "../lib/index.js";
 
 // ---------------------------------------------------------------- 共享桩（导出给集成区复用）
@@ -674,4 +677,39 @@ function mkSummary(overrides: Partial<ProviderSummary> = {}): ProviderSummary {
     openCodeGoHostAdapter.providers.length,
     "providers 数组无重复",
   );
+}
+
+// ---------------------------------------------------------------- 设置页·提供商全集（issue #38）
+
+{
+  const items = unionProviders({
+    candidatesByProvider: {
+      "opencode-go": [{ id: "opencode-go-builtin", label: "OpenCode Go 官方", source: "builtin" }],
+      "z-relay": [{ id: "z-relay-user", label: "Z Relay", source: "user-file" }],
+    },
+    enabled: { "opencode-go": "opencode-go-builtin", "runtime-only": "x" },
+    known: ["opencode-go", "future-provider"],
+  });
+  // 全集三路合并去重：候选 ∪ 启用 ∪ 已知
+  assert.deepEqual(
+    items.map((i) => i.provider),
+    ["future-provider", "opencode-go", "runtime-only", "z-relay"],
+    "全集 = 候选 ∪ 运行时启用 ∪ 内置已知（已知在前，其余字典序）",
+  );
+  const ocg = items.find((i) => i.provider === "opencode-go");
+  assert.ok(ocg?.hasCandidates && ocg.enabledId === "opencode-go-builtin", "已知且有候选：带启用态");
+  const future = items.find((i) => i.provider === "future-provider");
+  assert.equal(future?.hasCandidates, false, "仅已知清单项无候选（引导位）");
+  assert.equal(items.find((i) => i.provider === "runtime-only")?.enabledId, "x", "运行时启用映射入全集");
+  // 空输入 → 空列表
+  assert.deepEqual(unionProviders({ candidatesByProvider: {}, known: [] }), [], "空输入空列表");
+}
+
+{
+  assert.equal(
+    providerBadgeText({ enabledId: "opencode-go-builtin" }),
+    "启用中: opencode-go-builtin",
+    "折叠徽标显示启用中 adapter-id",
+  );
+  assert.equal(providerBadgeText({ enabledId: null }), "未启用", "清空/未启用徽标文案");
 }

@@ -154,3 +154,125 @@
 }
 .dou-legendDot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .dou-miniChart { margin-top: 6px; }
+
+/* ---------------------------------------------------------------- 设置页·提供商手风琴列表（issue #38） */
+
+.dou-provList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dou-provItem {
+  border: 1px solid var(--dsw-alias-border-l2, #e8eaf0);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base, #fdfdfd);
+  overflow: hidden;
+}
+.dou-provHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary, #1c1e26);
+  text-align: left;
+  cursor: pointer;
+}
+.dou-provHead:hover { background: var(--dsw-alias-interactive-bg-hover, #f2f3f6); }
+.dou-provArrow {
+  flex: none;
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+.dou-provArrowOpen { transform: rotate(90deg); }
+.dou-provName {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.dou-provBadge {
+  flex: none;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 0 8px;
+  border-radius: 99px;
+  border: 1px solid var(--dsw-alias-border-l1, #d7dae0);
+  background: var(--dsw-alias-bg-layer-1, #f8f9fb);
+}
+.dou-provBadgeOff { color: var(--dsw-alias-label-tertiary, #9aa0ab); border-style: dashed; }
+.dou-provBody {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px 10px 26px;
+  border-top: 1px solid var(--dsw-alias-border-l2, #e8eaf0);
+}
+.dou-radioRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  cursor: pointer;
+}
+.dou-provErr {
+  color: var(--dsw-alias-state-error-primary, #d64545);
+  font-size: 11px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.dou-provActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+.dou-addForm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px dashed var(--dsw-alias-border-l1, #d7dae0);
+  border-radius: 6px;
+}
+.dou-addField {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.dou-addLabel {
+  flex: none;
+  min-width: 60px;
+  color: var(--dsw-alias-label-tertiary, #9aa0ab);
+}
+.dou-input {
+  flex: 1 1 180px;
+  min-width: 0;
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid var(--dsw-alias-border-l1, #d7dae0);
+  border-radius: 5px;
+  background: var(--dsw-alias-bg-base, #fdfdfd);
+  color: var(--dsw-alias-label-primary, #1c1e26);
+}
+.dou-input:focus {
+  outline: none;
+  border-color: var(--dsw-alias-state-info-primary, #4a7dd6);
+}
+
+/* 三端响应式：窄屏收起展开区左缩进，徽标允许换行占整行 */
+@media (max-width: 480px) {
+  .dou-provBody { padding-left: 10px; }
+  .dou-provBadge { max-width: 100%; }
+}
