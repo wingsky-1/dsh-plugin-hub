@@ -93,3 +93,9 @@ CI 日志 / diff / 测试全文只在 subagent 上下文出现，禁止进入主
   禁止 `>/dev/null`、`tail` 截断输出、`|| true` 吞错误码——
   反例：`gh pr create ... >/dev/null && echo ok` 在创建实际失败（分支保护拒推、
   重名等）时仍打印 ok，主控误判成功直接跳到收尾，坏结果被静默放大到合并阶段才暴露
+
+## 发版冻结窗口
+定义：release 分支 rebase 完成至推 tag 之间为 main 冻结期——冻结窗口内禁止任何
+新 PR 合入 main。操作指引：冻结开始前已合入 main 但尚未进入 release 分支的改动，
+统一改基到 tag 之后（`git rebase --onto <tag> <旧基>`）并重跑五连门禁后再走
+merge 流程，保证 main 与发布物内容一致。
