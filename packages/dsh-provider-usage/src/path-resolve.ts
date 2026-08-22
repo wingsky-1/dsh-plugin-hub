@@ -66,21 +66,3 @@ export function resolvePath(p: string): string | undefined {
 
   return expanded;
 }
-
-/**
- * 弱校验：只做路径展开，不做 existsSync 检查（用于加载前先判断目标路径，失败
- * 由 import 侧处理）。
- */
-export function resolvePathWeak(p: string): string {
-  if (typeof p !== "string" || p.trim() === "") return "";
-  const trimmed = p.trim();
-  if (trimmed.startsWith("~")) {
-    const slashIdx = trimmed.indexOf("/");
-    const home = homedir();
-    if (slashIdx === -1) return join(home, trimmed.slice(1));
-    return join(home, trimmed.slice(slashIdx + 1));
-  }
-  if (isAbsolute(trimmed)) return trimmed;
-  const dshHome = process.env.DSH_HOME ?? join(homedir(), ".dsh");
-  return join(dshHome, trimmed);
-}

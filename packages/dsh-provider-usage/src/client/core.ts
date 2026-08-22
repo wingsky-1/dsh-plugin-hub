@@ -17,6 +17,7 @@ import type {
   DshUsageGlobal,
 } from "../contracts.js";
 import { USAGE_GLOBAL_KEY, ADAPTER_CONTRACT_VERSION } from "../contracts.js";
+import { rendererLookupKeys } from "../client-logic.js";
 
 /** 与 host 端 ROUTES 一致（单一来源，smoke 校验；构建期经 __DSH_ROUTES__ 注入）。 */
 declare const __DSH_ROUTES__: Record<string, string> | undefined;
@@ -87,20 +88,13 @@ export function makeRendererRegistry(opts: { diag?: (msg: string) => void } = {}
     entries.push({ providers: [...renderer.providers], source, file });
   }
 
-  /** 按 provider 查渲染器（可选 adapterId 配对：优先 provider/adapterId，回落默认渲染器）。 */
+  /** 按 provider 查渲染器（配对键优先级：provider/adapterId 专用 → provider 默认）。 */
   function get(provider: string, adapterId?: string): ClientProviderRenderer | undefined {
-    if (adapterId !== undefined) {
-      const hit = byProvider.get(`${provider}/${adapterId}`);
+    for (const key of rendererLookupKeys(provider, adapterId)) {
+      const hit = byProvider.get(key);
       if (hit !== undefined) return hit;
     }
-    return byProvider.get(provider);
-  }
-
-  /** 撤销某 provider 的渲染器（卸载用户注入时回落内置）。 */
-  function unregister(providers: string[], removed: ClientProviderRenderer): void {
-    for (const p of providers) {
-      if (byProvider.get(p) === removed) byProvider.delete(p);
-    }
+    return undefined;
   }
 
   /** 快照（设置面板适配器管理区展示用）。 */
@@ -108,7 +102,9 @@ export function makeRendererRegistry(opts: { diag?: (msg: string) => void } = {}
     return [...entries];
   }
 
-  return { register, get, unregister, snapshot };
+  // issue #29：unregister 无调用方已删除——用户渲染器经桥接注册后随插件卸载整体清空
+
+  return { register, get, snapshot };
 }
 
 export type RendererRegistry = ReturnType<typeof makeRendererRegistry>;
@@ -150,10 +146,8 @@ export function installGlobalBridge(getRegistry: () => RendererRegistry | undefi
       registry.register(renderer, "user-file", "window bridge");
       return true;
     },
-    unregisterRenderer(providers) {
-      // 宽松处理：仅提示，注册表条目保留（插件卸载时整体清空）
-      console.warn("[dsh-provider-usage] unregisterRenderer 收到", providers);
-    },
+    // issue #29：unregisterRenderer 的 console.warn no-op 已删除——契约保留该可选
+    // 成员，第三方可安全调用；本插件卸载时注册表整体丢弃。
   };
   try {
     win[USAGE_GLOBAL_KEY] = bridge;

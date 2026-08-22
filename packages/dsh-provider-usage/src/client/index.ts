@@ -31,7 +31,9 @@ import type { OpenCodeGoRenderContext } from "./renderers/opencode-go.js";
 import { SettingsPage } from "./settings.js";
 // React externals 路径（M3b settings.section）：运行时由 dsh web factory require("react") 注入
 import * as React from "react";
-import type { ProviderUsage, UsageWindow, ProviderSummary, SummaryLevel } from "../contracts.js";
+// 胶囊/隐藏/配对行为纯函数（issue #28：与 smoke 断言同源，替代 bundle includes）
+import { derivePillLabel, derivePillLevel, derivePillTitle, shouldHideFloat } from "../client-logic.js";
+import type { ProviderUsage, ProviderSummary, SummaryLevel } from "../contracts.js";
 
 /** 无会话时回落 provider（内置 opencode-go，无感升级）。 */
 const FALLBACK_PROVIDER = "opencode-go";
@@ -85,60 +87,32 @@ function conversationHost(): HTMLElement {
 
 // ------------------------------------------------------------------ 胶囊（读 summary 子树 + pill 钩子）
 
-/** 窗口短名（胶囊兜底用）。 */
-function shortName(w: UsageWindow | string): string {
-  const name = typeof w === "string" ? w : w.name ?? w.key;
-  if (name === "rolling") return "5h";
-  if (name === "weekly") return "周";
-  if (name === "monthly") return "月";
-  if (typeof w === "string") return w;
-  if (name.length > 4) return name.slice(0, 4);
-  return name;
-}
-
-/** 通用胶囊文案：优先渲染器 pill 钩子，回落 summary.text。 */
+/** 胶囊文案：行为逻辑在 client-logic.ts 纯函数（smoke 行为级断言同源）。 */
 function pillLabel(): string {
-  const renderer = registry?.get(currentProvider, lastAdapterId);
-  if (renderer && typeof renderer.pill === "function" && lastSummary) {
-    const custom = renderer.pill(lastSummary);
-    if (custom !== null && custom !== undefined && custom.text) return custom.text;
-  }
-  if (lastSummary && typeof lastSummary.text === "string" && lastSummary.text !== "")
-    return lastSummary.text;
-  if (lastData && lastData.ok && Array.isArray(lastData.windows)) {
-    const parts: string[] = [];
-    for (const w of lastData.windows) {
-      if (typeof w.percent === "number") parts.push(`${shortName(w)} ${w.percent}%`);
-    }
-    if (parts.length > 0) return parts.join(" · ");
-  }
-  const label = lastSummary?.label ?? lastData?.label ?? currentProvider;
-  return `${shortName(label)} --%`;
+  return derivePillLabel({
+    renderer: registry?.get(currentProvider, lastAdapterId),
+    summary: lastSummary,
+    data: lastData,
+    provider: currentProvider,
+  });
 }
 
-/** 状态点：优先 pill 钩子/ summary.level。 */
+/** 状态点：pill 钩子 / summary.level。 */
 function pillDot(): SummaryLevel {
-  const renderer = registry?.get(currentProvider, lastAdapterId);
-  if (renderer && typeof renderer.pill === "function" && lastSummary) {
-    const custom = renderer.pill(lastSummary);
-    if (custom !== null && custom !== undefined) return custom.level;
-  }
-  if (lastSummary) return lastSummary.level ?? "off";
-  return "off";
+  return derivePillLevel({
+    renderer: registry?.get(currentProvider, lastAdapterId),
+    summary: lastSummary,
+  });
 }
 
 function pillTitle(): string {
-  const label = lastSummary?.label ?? lastData?.label ?? currentProvider;
-  if (!hasAdapter) return `${label} 用量：无启用适配器`;
-  if (lastSummary) {
-    const parts: string[] = [];
-    if (lastSummary.text) parts.push(lastSummary.text);
-    if (lastSummary.hint) parts.push(lastSummary.hint);
-    return parts.length > 0 ? `${label} 用量：${parts.join(" · ")}` : `${label} 用量`;
-  }
-  if (lastData === null) return `${label} 用量（加载中…）`;
-  if (!lastData.ok) return `${label} 用量获取失败：${lastData.error ?? "未知错误"}`;
-  return `${label} 用量`;
+  return derivePillTitle({
+    renderer: registry?.get(currentProvider, lastAdapterId),
+    summary: lastSummary,
+    data: lastData,
+    provider: currentProvider,
+    hasAdapter,
+  });
 }
 
 function renderPill(): void {
@@ -146,7 +120,7 @@ function renderPill(): void {
   const labelEl = floatPill.querySelector(`.${PILL_PREFIX}label`);
   const dotEl = floatPill.querySelector(`.${PILL_PREFIX}dot`);
   // D11：无启用适配器 → 隐藏浮窗（保留轮询探测恢复）
-  floatPill.hidden = !hasAdapter;
+  floatPill.hidden = shouldHideFloat(hasAdapter);
   floatPill.title = pillTitle();
   if (labelEl !== null) labelEl.textContent = pillLabel();
   if (dotEl !== null) dotEl.className = `${PILL_PREFIX}dot dou-dot-${pillDot()}`;
@@ -457,17 +431,25 @@ export function apply(ctx: any): void {
     // M2: 加载用户客户端渲染器（fire-and-forget）
     loadUserRenderers(registry).catch(() => {});
 
-    // M3b：设置面板独立 tab「用量统计」（settings.section；slots 服务缺失时跳过）
-    const slots = ctx.get("slots");
-    if (slots && typeof slots.inject === "function") {
-      slots.inject("settings.section", function () {
-        return slots.register(
-          { name: "settings.section", id: "dsh-provider-usage", order: 90, label: "用量统计" },
-          function () {
-            return React.createElement(SettingsPage, null);
-          },
-        );
-      });
+    // M3b：设置面板独立 tab「用量统计」（settings.section）。
+    // issue #27：与浮窗挂载拆开——独立 try/catch，slots.register 抛错不再连坐
+    // 浮窗；inject 返回的 disposer（若为函数）纳入卸载清理链。
+    let disposeSettingsSection: (() => void) | undefined;
+    try {
+      const slots = ctx.get("slots");
+      if (slots && typeof slots.inject === "function") {
+        const injected: unknown = slots.inject("settings.section", function () {
+          return slots.register(
+            { name: "settings.section", id: "dsh-provider-usage", order: 90, label: "用量统计" },
+            function () {
+              return React.createElement(SettingsPage, null);
+            },
+          );
+        });
+        if (typeof injected === "function") disposeSettingsSection = injected as () => void;
+      }
+    } catch (error) {
+      console.warn("[dsh-provider-usage] 设置面板 section 注册失败（跳过，不影响悬浮框）", error);
     }
 
     const disposeFloat = mountFloat();
@@ -494,6 +476,10 @@ export function apply(ctx: any): void {
     void detect();
 
     ctx.effect(() => () => {
+      if (disposeSettingsSection !== undefined) {
+        try { disposeSettingsSection(); } catch { /* 忽略 */ }
+        disposeSettingsSection = undefined;
+      }
       if (unsubSessions !== undefined) unsubSessions();
       disposeFloat();
       renderGeneration += 1;

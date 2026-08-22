@@ -19,7 +19,7 @@ import * as React from "react";
 
 var CHANNEL = "/dsh-lan-proxy";
   var STYLE_ID = "dsh-lan-proxy-style";
-  var CSS_VERSION = "1";
+  var CSS_VERSION = "2";
 
   /** 展示缺省值（与宿主 DEFAULT_OPTIONS 同构；持久化层未保存的键回落这些值）。 */
   var DEFAULTS: Record<string, any> = {
@@ -55,6 +55,29 @@ var CHANNEL = "/dsh-lan-proxy";
 
   // ------------------------------------------------------------ 设置卡片
 
+  /** 增量 diff 的键值比较：路径白名单数组按元素逐一比较，其余严格相等。 */
+  function sameSetting(key: string, a: any, b: any): boolean {
+    if (key === "wsCompressPaths") {
+      var la = Array.isArray(a) ? a : [];
+      var lb = Array.isArray(b) ? b : [];
+      if (la.length !== lb.length) return false;
+      for (var i = 0; i < la.length; i++) {
+        if (la[i] !== lb[i]) return false;
+      }
+      return true;
+    }
+    return a === b;
+  }
+
+  /** HTTP 压缩状态行文案（issue #33 子项 3）；无快照返回 null（不渲染该行）。 */
+  function compressStatusLine(c: any): string | null {
+    if (!c || typeof c !== "object") return null;
+    if (c.httpCompressEnabled === false) return "HTTP 响应压缩：已关闭";
+    if (c.httpCompressMounted !== true) return "HTTP 响应压缩：未生效";
+    var stats = c.httpCompressStats || {};
+    return "HTTP 响应压缩：已启用 · 协商 " + (stats.compressed || 0) + " 次 · 直通 " + (stats.passthrough || 0) + " 次";
+  }
+
   /**
    * 设置面板插件项：启用 / LAN 端口 / HTTPS / 证书文件 / 启动横幅。
    * 改动只在点「保存」后生效：宿主原子写 config.json 并立即重建转发器。
@@ -71,15 +94,31 @@ var CHANNEL = "/dsh-lan-proxy";
     var openState = useState(false);
     var open = openState[0];
     var setOpen = openState[1];
+    // HTTP 压缩运行快照（issue #33 子项 3）：state 响应附带，底部轻量状态行展示。
+    var compressDraft = useState(null);
+    var compress = compressDraft[0];
+    var setCompress = compressDraft[1];
+    // 加载基线（issue #33 子项 2）：保存时只提交与基线不同的键（增量 diff），
+    // 未改动的键不提交——组合层设值不会被客户端默认值静默覆盖回写。
+    var baseline: Record<string, any> | null = null;
 
     useEffect(function () {
       var alive = true;
       rpc("state", {}).then(function (v: any) {
         if (!alive) return;
         var merged: Record<string, any> = {};
+        // 展示校准（issue #33 子项 2）：DEFAULTS 兜底 → 宿主生效值（组合层
+        // cordis.patch.yml 设值的键显示实际生效值，而非默认值）→ 持久化层
+        // （用户上次在本卡片保存的内容，作为编辑基线）。
         for (var key in DEFAULTS) merged[key] = DEFAULTS[key];
+        var effective = (v && v.effective) || {};
+        for (var ek in DEFAULTS) {
+          if (effective[ek] !== undefined && effective[ek] !== null) merged[ek] = effective[ek];
+        }
         var persisted = (v && v.settings) || {};
-        for (var key2 in persisted) merged[key2] = persisted[key2];
+        for (var pk in persisted) merged[pk] = persisted[pk];
+        baseline = Object.assign({}, merged);
+        setCompress((v && v.compress) || null);
         setSettings(merged);
       }).catch(function (e: any) {
         if (!alive) return;
@@ -98,13 +137,38 @@ var CHANNEL = "/dsh-lan-proxy";
     }
 
     function save() {
+      // 本地预校验（issue #33 子项 1）：数字键先归一化，非法值在提交前就
+      // 指明字段与合法范围——不依赖宿主整体拒绝后才报错。
+      var portValue = Number(settings.port);
+      if (!Number.isInteger(portValue) || portValue < 1 || portValue > 65535) {
+        setSaved("保存失败：LAN 端口（HTTP）需为 1-65535 的整数");
+        return;
+      }
+      var httpsPortValue = Number(settings.httpsPort);
+      if (!Number.isInteger(httpsPortValue) || httpsPortValue < 1 || httpsPortValue > 65535) {
+        setSaved("保存失败：HTTPS 端口需为 1-65535 的整数");
+        return;
+      }
+      var levelValue = Number(settings.httpCompressLevel);
+      if (!Number.isInteger(levelValue) || levelValue < 0 || levelValue > 3) {
+        setSaved("保存失败：压缩档位需为 0-3 的整数");
+        return;
+      }
+      // 增量提交（issue #33 子项 2）：只发送与加载基线不同的键，未改动的键
+      // 不提交——组合层设值不会被客户端默认值静默覆盖回写；宿主端把 diff
+      // 合并进 config.json 现有内容。
+      var normalized: Record<string, any> = { port: portValue, httpsPort: httpsPortValue, httpCompressLevel: levelValue };
       var payload: Record<string, any> = {};
       for (var key in DEFAULTS) {
-        var value = settings[key];
-        if (key === "port" || key === "httpsPort" || key === "httpCompressLevel") value = Number(value);
-        payload[key] = value;
+        var cur = key in normalized ? normalized[key] : settings[key];
+        if (baseline === null || !sameSetting(key, cur, baseline[key])) payload[key] = cur;
+      }
+      if (Object.keys(payload).length === 0) {
+        setSaved("未修改");
+        return;
       }
       rpc("config", { settings: payload }).then(function () {
+        baseline = Object.assign({}, settings);
         setSaved("已保存，已热更新");
         setTimeout(function () { setSaved(""); }, 2200);
       }).catch(function (e: any) {
@@ -127,18 +191,21 @@ var CHANNEL = "/dsh-lan-proxy";
       ),
       open ? React.createElement("div", { className: "lp-set-body" },
         React.createElement("div", { className: "lp-set-row" },
-          React.createElement("label", null, "启用"),
+          React.createElement("label", { htmlFor: "lp-set-enabled" }, "启用"),
           React.createElement("input", {
+            id: "lp-set-enabled",
             type: "checkbox",
             checked: settings.enabled,
             onChange: function (e: any) { patch({ enabled: e.target.checked }); },
           }),
         ),
         React.createElement("div", { className: "lp-set-row" },
-          React.createElement("label", null, "LAN 端口（HTTP）"),
+          React.createElement("label", { htmlFor: "lp-set-port" }, "LAN 端口（HTTP）"),
           React.createElement("input", {
+            id: "lp-set-port",
             className: "lp-set-input",
             type: "number",
+            inputMode: "numeric",
             min: 1,
             max: 65535,
             value: settings.port,
@@ -146,18 +213,21 @@ var CHANNEL = "/dsh-lan-proxy";
           }),
         ),
         React.createElement("div", { className: "lp-set-row" },
-          React.createElement("label", null, "HTTPS 并存"),
+          React.createElement("label", { htmlFor: "lp-set-https-enabled" }, "HTTPS 并存"),
           React.createElement("input", {
+            id: "lp-set-https-enabled",
             type: "checkbox",
             checked: settings.httpsEnabled,
             onChange: function (e: any) { patch({ httpsEnabled: e.target.checked }); },
           }),
         ),
         React.createElement("div", { className: "lp-set-row" },
-          React.createElement("label", null, "HTTPS 端口"),
+          React.createElement("label", { htmlFor: "lp-set-https-port" }, "HTTPS 端口"),
           React.createElement("input", {
+            id: "lp-set-https-port",
             className: "lp-set-input",
             type: "number",
+            inputMode: "numeric",
             min: 1,
             max: 65535,
             value: settings.httpsPort,
@@ -165,8 +235,9 @@ var CHANNEL = "/dsh-lan-proxy";
           }),
         ),
         React.createElement("div", { className: "lp-set-row" },
-          React.createElement("label", null, "证书文件（PEM）"),
+          React.createElement("label", { htmlFor: "lp-set-cert" }, "证书文件（PEM）"),
           React.createElement("input", {
+            id: "lp-set-cert",
             className: "lp-set-input",
             type: "text",
             placeholder: "留空 = 自动生成自签名证书",
@@ -175,8 +246,9 @@ var CHANNEL = "/dsh-lan-proxy";
           }),
         ),
         React.createElement("div", { className: "lp-set-row" },
-          React.createElement("label", null, "私钥文件（PEM）"),
+          React.createElement("label", { htmlFor: "lp-set-key" }, "私钥文件（PEM）"),
           React.createElement("input", {
+            id: "lp-set-key",
             className: "lp-set-input",
             type: "text",
             placeholder: "与证书文件成对",
@@ -185,24 +257,27 @@ var CHANNEL = "/dsh-lan-proxy";
           }),
         ),
         React.createElement("div", { className: "lp-set-row" },
-          React.createElement("label", null, "启动时打印访问地址"),
+          React.createElement("label", { htmlFor: "lp-set-banner" }, "启动时打印访问地址"),
           React.createElement("input", {
+            id: "lp-set-banner",
             type: "checkbox",
             checked: settings.printBanner,
             onChange: function (e: any) { patch({ printBanner: e.target.checked }); },
           }),
         ),
         React.createElement("div", { className: "lp-set-row" },
-          React.createElement("label", null, "WebSocket 压缩（事件流）"),
+          React.createElement("label", { htmlFor: "lp-set-ws-compress" }, "WebSocket 压缩（事件流）"),
           React.createElement("input", {
+            id: "lp-set-ws-compress",
             type: "checkbox",
             checked: settings.wsCompressEnabled,
             onChange: function (e: any) { patch({ wsCompressEnabled: e.target.checked }); },
           }),
         ),
         React.createElement("div", { className: "lp-set-row" },
-          React.createElement("label", null, "压缩路径（逗号分隔）"),
+          React.createElement("label", { htmlFor: "lp-set-ws-paths" }, "压缩路径（逗号分隔）"),
           React.createElement("input", {
+            id: "lp-set-ws-paths",
             className: "lp-set-input",
             type: "text",
             placeholder: "/api/events.mux, /api/events.host",
@@ -214,16 +289,18 @@ var CHANNEL = "/dsh-lan-proxy";
           }),
         ),
         React.createElement("div", { className: "lp-set-row" },
-          React.createElement("label", null, "HTTP 响应压缩（Brotli/gzip）"),
+          React.createElement("label", { htmlFor: "lp-set-http-compress" }, "HTTP 响应压缩（Brotli/gzip）"),
           React.createElement("input", {
+            id: "lp-set-http-compress",
             type: "checkbox",
             checked: settings.httpCompressEnabled,
             onChange: function (e: any) { patch({ httpCompressEnabled: e.target.checked }); },
           }),
         ),
         React.createElement("div", { className: "lp-set-row" },
-          React.createElement("label", null, "压缩档位"),
+          React.createElement("label", { htmlFor: "lp-set-level" }, "压缩档位"),
           React.createElement("select", {
+            id: "lp-set-level",
             className: "lp-set-input",
             value: String(settings.httpCompressLevel),
             onChange: function (e: any) { patch({ httpCompressLevel: Number(e.target.value) }); },
@@ -237,6 +314,10 @@ var CHANNEL = "/dsh-lan-proxy";
         React.createElement("div", { className: "lp-set-hint" },
           "保存即热更新（写入 ~/.dsh/lan-proxy/config.json，无需重启 dsh web）。" +
           "修改后内网设备访问新端口，旧端口立即失效。"),
+        (function () {
+          var compressLine = compressStatusLine(compress);
+          return compressLine ? React.createElement("div", { className: "lp-set-status" }, compressLine) : null;
+        })(),
         React.createElement("div", { className: "lp-set-foot" },
           saved ? React.createElement("span", { className: saved.indexOf("失败") >= 0 ? "lp-set-error" : "lp-set-saved" }, saved) : null,
           React.createElement("button", { type: "button", className: "lp-set-save", onClick: save }, "保存"),

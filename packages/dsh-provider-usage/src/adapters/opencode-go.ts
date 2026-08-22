@@ -39,9 +39,6 @@ export const OPENCODE_GO_WINDOWS: Array<{
   { key: "monthly", name: "每月", limit: 60, resetPeriodMs: 30 * 86400000 },
 ];
 
-/** 默认启用状态（内置默认启，除非配置显式 enabled:false）。 */
-export const OPENCODE_GO_DEFAULT_ENABLED = true;
-
 /** 防御式窗口解析：任意输入 → { key, name, percent, raw?, resetsAt?, limit? }。 */
 export function pickWindow(w: unknown, key: string, name: string, limit: number): UsageWindow | null {
   if (typeof w !== "object" || w === null) return null;
@@ -159,6 +156,8 @@ export const openCodeGoHostAdapter: HostProviderAdapter = defineUsageAdapter({
     const fetched = await fetchOpenCodeGo({
       baseUrl: ctx.baseUrl ?? DEFAULT_BASE_URL,
       apiKey: ctx.apiKey,
+      // issue #26：timeoutMs 经 HostFetchContext 通道下发（配置可生效），缺省维持原 15000
+      timeoutMs: ctx.timeoutMs ?? 15000,
       fetchImpl: ctx.fetch,
       signal: ctx.signal,
     });

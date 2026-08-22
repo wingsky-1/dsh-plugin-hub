@@ -11,10 +11,10 @@
  * - GET /api/dsh-provider-usage/adapters.json              适配器元数据（M2）
  * - GET /api/dsh-provider-usage/health                     健康检查
  */
-import { readFile, writeFile, rename, mkdir, readdir } from "node:fs/promises";
+import { readFile, writeFile, rename, unlink, mkdir, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isLoopbackRequest } from "../../../shared/loopback.js";
 import { writeJson, readJsonBody } from "../../../shared/host-utils.js";
@@ -45,6 +45,9 @@ export * from "./contracts.js";
 export * from "./registry.js";
 export * from "./adapters/opencode-go.js";
 export * from "./path-resolve.js";
+// 客户端行为纯函数（issue #28）：smoke 从 lib/index.js 做行为级断言，
+// client bundle 由 esbuild 内联同一实现，无双源漂移。
+export * from "./client-logic.js";
 
 // ------------------------------------------------------------------ 类型
 
@@ -62,7 +65,6 @@ export interface NormalizedConfig {
     host: Array<{ provider: string; file: string; enabled?: boolean }>;
     client: Array<{ file: string }>;
   };
-  providerHint: Record<string, string>;
   /** 可选护栏：剔除疑似密钥字段（默认开）。 */
   stripSecrets: boolean;
 }
@@ -117,27 +119,22 @@ export const DEFAULT_CONFIG: NormalizedConfig = {
   sampleIntervalMs: 300000,
   persistFile: undefined,
   adapters: { host: [], client: [] },
-  providerHint: {},
   stripSecrets: true,
 };
-
-export const CONFIG_KEYS: string[] = [
-  "baseUrl", "timeoutMs", "cacheTtlMs", "apiKey", "maxAgeDays",
-  "sampleIntervalMs", "persistFile", "adapters", "providerHint", "stripSecrets",
-];
-
-export function defaultPersistFile(): string {
-  return join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), "dsh-provider-usage", "history.json");
-}
 
 /**
  * 设置面板 schemastery schema（M3b：settings 命名空间用，与 normalizeConfig 同构）。
  * 实测约束：schemastery 3.18 无 `.optional()`；不带 `.required()` 的字段默认可选。
  * 说明：apiKey 不进 schema（避免设置面板回显密钥）；adapters 复杂结构经 patch 层
  * 配置管理，面板只暴露常用键。
+ * 只读语义（issue #27）：命名空间是 patch 层配置的只读镜像（本插件不写回），面板
+ * 控件一律 disabled 态 + description 注明修改走用户层 cordis.patch.yml，杜绝
+ * 「可编辑但改动零消费」的误导 UI。
  * 显式注解：官方类型层与本包 devDep schemastery 各带同名全局命名空间合并后，
  * Config 的推断类型声明发射不再可移植（TS2883），按 TS 建议显式标注。
  */
+const READONLY_HINT = "（只读镜像）修改请编辑用户层 cordis.patch.yml 后重启 dsh web 生效";
+
 export const Config: z<{
   baseUrl: string;
   timeoutMs: number;
@@ -146,12 +143,12 @@ export const Config: z<{
   sampleIntervalMs: number;
   stripSecrets: boolean;
 }> = z.object({
-  baseUrl: z.string().default(DEFAULT_CONFIG.baseUrl),
-  timeoutMs: z.number().default(DEFAULT_CONFIG.timeoutMs),
-  cacheTtlMs: z.number().default(DEFAULT_CONFIG.cacheTtlMs),
-  maxAgeDays: z.number().default(DEFAULT_CONFIG.maxAgeDays),
-  sampleIntervalMs: z.number().default(DEFAULT_CONFIG.sampleIntervalMs),
-  stripSecrets: z.boolean().default(true),
+  baseUrl: z.string().default(DEFAULT_CONFIG.baseUrl).description(`官方接口地址${READONLY_HINT}`).disabled(true),
+  timeoutMs: z.number().default(DEFAULT_CONFIG.timeoutMs).description(`取数超时毫秒${READONLY_HINT}`).disabled(true),
+  cacheTtlMs: z.number().default(DEFAULT_CONFIG.cacheTtlMs).description(`统计缓存 TTL 毫秒${READONLY_HINT}`).disabled(true),
+  maxAgeDays: z.number().default(DEFAULT_CONFIG.maxAgeDays).description(`历史保留天数${READONLY_HINT}`).disabled(true),
+  sampleIntervalMs: z.number().default(DEFAULT_CONFIG.sampleIntervalMs).description(`后台采样间隔毫秒${READONLY_HINT}`).disabled(true),
+  stripSecrets: z.boolean().default(true).description(`剔除疑似密钥字段${READONLY_HINT}`).disabled(true),
 });
 
 // ------------------------------------------------------------------ 配置归一化
@@ -161,7 +158,6 @@ export function normalizeConfig(input: unknown): NormalizedConfig {
     ...DEFAULT_CONFIG,
     limits: { ...DEFAULT_CONFIG.limits },
     adapters: { host: [], client: [] },
-    providerHint: {},
   };
   if (typeof input !== "object" || input === null) return base;
   const cfg = input as Record<string, unknown>;
@@ -201,13 +197,6 @@ export function normalizeConfig(input: unknown): NormalizedConfig {
         .filter((c) => typeof c === "object" && c !== null)
         .map((c) => ({ file: String(c.file ?? "") }))
         .filter((c) => c.file.length > 0);
-    }
-  }
-  if (typeof cfg.providerHint === "object" && cfg.providerHint !== null) {
-    const hint = cfg.providerHint as Record<string, unknown>;
-    base.providerHint = {};
-    for (const key of Object.keys(hint)) {
-      if (typeof hint[key] === "string") base.providerHint[key] = hint[key] as string;
     }
   }
   return base;
@@ -390,6 +379,11 @@ export function makeHistoryStore({
     const seen = seenSet(key);
     if (seen.has(ts)) return { appended: 0, replaced: 0 };
     const size = normalized.length - 1;
+    // 契约自检（issue #26）：列声明数必须与样本值宽度相等，错位即静默污染桶
+    if (columns.length !== size) {
+      diag(`采样列声明与数值宽度不一致（provider=${provider}, adapterId=${adapterId}）：cols ${columns.length} ≠ values ${size}，跳过该点`);
+      return { appended: 0, replaced: 0 };
+    }
     const prevCount = columnCount.get(key);
     if (prevCount !== undefined && prevCount !== size) {
       diag(`采样列数不一致（provider=${provider}, adapterId=${adapterId}）：声明 ${size} ≠ 已记录 ${prevCount}，跳过该点`);
@@ -543,6 +537,17 @@ export function builtInColumns(): import("./contracts.js").SampleColumn[] {
   }));
 }
 
+/**
+ * v2 割接中非 opencode provider 样本的独立 legacy 桶 adapterId
+ * （issue #26：不再强制归 opencode-go 三窗口桶——样本宽度与列语义都对不上）。
+ */
+export const LEGACY_ADAPTER_ID = "legacy";
+
+/** 按样本宽度生成通用列名（col-1..col-N；legacy 桶无适配器声明可用）。 */
+export function genericColumns(width: number): import("./contracts.js").SampleColumn[] {
+  return Array.from({ length: width }, (_, i) => ({ key: `col-${i + 1}`, name: `col-${i + 1}` }));
+}
+
 /** 历史根目录（persistFile 覆盖时用其目录；否则默认 DSH_HOME/dsh-provider-usage）。 */
 function historyRoot(current: NormalizedConfig): string {
   if (typeof current.persistFile === "string" && current.persistFile !== "") return dirname(current.persistFile);
@@ -614,7 +619,6 @@ async function renamePreservingBackup(file: string, preferredBak: string): Promi
 export async function loadAllHistory(
   config: NormalizedConfig,
   store: ReturnType<typeof makeHistoryStore>,
-  registry: ReturnType<typeof makeHostAdapterRegistry>,
   rootOverride?: string,
 ): Promise<void> {
   const root = rootOverride ?? historyRoot(config);
@@ -650,17 +654,22 @@ export async function loadAllHistory(
               }
             }
           } else {
-            // v2 单文件分桶 → 各 provider 桶 → 当前启用 adapterId（缺省内置）
+            // v2 单文件分桶 → 各 provider 桶。opencode-go 归内置桶（三窗口列延续）；
+            // 非 opencode provider 归独立 legacy 桶，列声明按样本宽度生成通用列名
+            // （issue #26：样本宽度可能只有 1 列，强制三窗口 columns 会错位）。
             const rawSeries = rec.series as Record<string, { samples: unknown[] }> | undefined;
             if (typeof rawSeries === "object" && rawSeries !== null) {
               for (const provider of Object.keys(rawSeries)) {
                 const bucket = rawSeries[provider];
                 if (!Array.isArray(bucket?.samples)) continue;
-                const targetId = provider === OPENCODE_GO_PROVIDER
-                  ? OPENCODE_GO_ADAPTER_ID
-                  : (registry.getEntry(provider)?.id ?? OPENCODE_GO_ADAPTER_ID);
+                const isBuiltin = provider === OPENCODE_GO_PROVIDER;
+                const targetId = isBuiltin ? OPENCODE_GO_ADAPTER_ID : LEGACY_ADAPTER_ID;
                 for (const item of bucket.samples) {
-                  store.append(provider, targetId, builtInColumns(), item);
+                  if (!isUnknownArray(item) || item.length < 2) continue;
+                  const cols = isBuiltin
+                    ? builtInColumns()
+                    : genericColumns(item.length - 1);
+                  store.append(provider, targetId, cols, item);
                 }
               }
             }
@@ -742,12 +751,17 @@ export async function flushBucket(
   }
 }
 
-/* 原子写落盘。 */
+/* 原子写落盘。rename 失败时清理 .tmp 残留（issue #29）后原样抛出，由调用方兜底。 */
 export async function writeHistoryFile(file: string, text: string): Promise<void> {
   await mkdir(dirname(file), { recursive: true });
   const tmp = `${file}.${Date.now()}.tmp`;
   await writeFile(tmp, text, { encoding: "utf8", mode: 0o600 });
-  await rename(tmp, file);
+  try {
+    await rename(tmp, file);
+  } catch (error) {
+    try { await unlink(tmp); } catch { /* 清理失败不遮掩原错误 */ }
+    throw error;
+  }
 }
 
 export async function readHistoryFile(file: string): Promise<string | undefined> {
@@ -951,7 +965,7 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
     diag: (m): void => console.warn(`[dsh-provider-usage]`, m),
   });
   // 割接迁移（旧单文件 v1/v2 → 多文件 v3）+ 扫描加载
-  await loadAllHistory(current, store, registry, root);
+  await loadAllHistory(current, store, root);
 
   /** 脏桶集合（"provider/adapterId"）：采样追加后标记，防抖逐桶原子落盘。 */
   const dirtyBuckets = new Set<string>();
@@ -982,10 +996,20 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
     at: 0, error: null, configured: false,
   };
 
-  let inflightStats: Map<string, Promise<StatsResult>> | null = new Map();
+  /** inflight 统计请求去重（provider → 进行中的 promise；issue #29 收敛为非空 Map）。 */
+  const inflightStats = new Map<string, Promise<StatsResult>>();
 
   /** 适配器切换代数：select 时递增，inflight 完成后代数不符则丢弃结果（防旧适配器数据回填缓存）。 */
   let statsEpoch = 0;
+
+  /**
+   * 启用选择落盘串行链（issue #29）：连续 select 的异步写完成顺序不再依赖
+   * IO 时序，链上最后一次写入最终生效。
+   */
+  let adapterStateChain: Promise<void> = Promise.resolve();
+  function scheduleWriteAdapterState(enabled: Record<string, string>): void {
+    adapterStateChain = adapterStateChain.then(() => writeAdapterState(root, enabled));
+  }
 
   /** 解析某 provider 的 API Key（当前仅 opencode-go 有解析链；M2 扩展）。 */
   async function resolveKeyFor(provider: string): Promise<string | undefined> {
@@ -1002,7 +1026,6 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
     const cached = cache.get(provider);
     if (cached !== undefined) return Promise.resolve({ ...cached, cached: true });
 
-    if (inflightStats === null) inflightStats = new Map();
     const inflight = ignoreInflight ? undefined : inflightStats.get(provider);
     if (inflight !== undefined) return inflight;
 
@@ -1027,6 +1050,7 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
           provider,
           apiKey,
           baseUrl: current.baseUrl,
+          timeoutMs: current.timeoutMs,
           fetch: fetchImpl,
           signal: undefined as AbortSignal | undefined,
         };
@@ -1071,7 +1095,7 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
         return result;
       } finally {
         // epoch 切换重取时新 promise 已占位，按 key 清理会误删新槽位，故跳过
-        if (!switched && inflightStats !== null) {
+        if (!switched) {
           inflightStats.delete(provider);
         }
       }
@@ -1098,13 +1122,14 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
       const hasAdapter = entry !== undefined;
       let summary: ProviderSummary;
       if (entry !== undefined) {
-        const res = await registry.summarize(provider, {
+        // issue #29：原局部名 res 遮蔽 http res 参数，改名 summarizeOut 防误用
+        const summarizeOut = await registry.summarize(provider, {
           provider,
           fetch: fetchImpl,
           usage: result.usage,
         });
         summary =
-          res.summary ??
+          summarizeOut.summary ??
           deriveSummary(provider, {
             label: result.label ?? entry.label,
             usage: result.usage,
@@ -1165,8 +1190,8 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
       if (!ok) return writeJson(res, 404, { error: "adapter not found" });
       statsEpoch += 1; // 递增代数：inflight 的旧适配器结果不再回填缓存
       cache.clear(provider); // 切换后清该 provider 缓存（下一个请求走新适配器）
-      // M3b：持久化启用选择（重启保留；fire-and-forget，失败只 warn）
-      void writeAdapterState(root, registry.snapshot().enabled);
+      // M3b：持久化启用选择（重启保留；经 promise 链串行化，失败只 warn）
+      scheduleWriteAdapterState(registry.snapshot().enabled);
       writeJson(res, 200, { ok: true, provider, adapterId });
     },
   };
@@ -1227,7 +1252,8 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
       const snap = registry.snapshot();
       const client = userClientFiles.map((entry, i) => ({
         url: `/api/dsh-provider-usage/user/${i}.js`,
-        file: entry.file,
+        // issue #29 信息面收敛：只披露文件名，不外泄用户目录绝对路径
+        file: basename(entry.file),
         resolved: entry.resolvedPath !== undefined,
       }));
       writeJson(res, 200, {
@@ -1237,7 +1263,8 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
           label: i.label,
           providers: i.providers,
           source: i.source,
-          file: i.file ?? null,
+          // issue #29：同上，用户适配器文件只披露文件名
+          file: i.file !== undefined ? basename(i.file) : null,
           enabled: i.enabled,
         })),
         enabled: snap.enabled,
@@ -1288,9 +1315,14 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
         cacheTtlMs: current.cacheTtlMs,
         limits: current.limits,
         sampleIntervalMs: current.sampleIntervalMs,
-        history: { count: store.countAll(), maxAgeDays: current.maxAgeDays, root },
+        // issue #29 信息面收敛：不再暴露 history.root 绝对路径（loopback 内也最小披露）
+        history: { count: store.countAll(), maxAgeDays: current.maxAgeDays },
         lastStatus,
-        adapters: snap.infos,
+        // 适配器快照的用户文件路径同步只披露文件名
+        adapters: snap.infos.map((i) => ({
+          ...i,
+          file: i.file !== undefined ? basename(i.file) : undefined,
+        })),
       });
     },
   };
@@ -1329,8 +1361,10 @@ export async function apply(ctx: Context, config: OpenCodePluginConfig = {}): Pr
         clearInterval(backgroundTimer);
         backgroundTimer = null;
       }
-      // 卸载时兜底落盘全部脏桶（fire-and-forget，不阻塞卸载）
-      void flushDirty();
+      // 卸载时兜底落盘全部脏桶（不阻塞卸载）：以 ref 计时器保活事件循环
+      // （上限 5s 防挂死），落盘完成即释放——否则进程可能在末批采样落盘前退出
+      const keepAlive = setTimeout(() => {}, 5000);
+      void flushDirty().finally(() => clearTimeout(keepAlive));
     },
     "dsh-provider-usage",
   );
