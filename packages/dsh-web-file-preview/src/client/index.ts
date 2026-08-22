@@ -19,7 +19,8 @@
 import { renderMarkdown } from "./md.js";
 import { highlightCode } from "./code.js";
 import { renderGroupFor, type GroupResult } from "./renderer.js";
-import { groupOfPath, isLikelySingleFilePath, cleanRefChipPath } from "../grouping.js";
+import { groupOfPath } from "../grouping.js";
+import { resolveFileLink, decideGate, SCOPE_SELECTORS, type ResolverNode } from "./link-resolver.js";
 import { sanitizePreview } from "./rewrite.js";
 import { html as diffToHtml } from "diff2html";
 import DOMPurify from "dompurify";
@@ -146,59 +147,36 @@ import STYLE from "./style.css";
         return groupOfPath(String(value)).group !== "other";
       }
 
-      /** 路径形如（结构性判定，单一事实源 src/grouping.ts）。 */
-      function isPathLike(value: string): boolean {
-        return isLikelySingleFilePath(String(value));
-      }
-
       /**
-       * 向上找携带"文件路径"线索的可点击元素（B 静态拦截）：
-       *  - `data-ref-chip` 为权威信号（dsh rc8 `@` 引用）：file → cleanRefChipPath 还原
-       *    干净路径；folder → kind:"folder"（提示，不开预览）；session/skill/解析失败 →
-       *    跳过本节点继续向上（避免把 `@label` 当路径误拦）。
-       *  - title 属性 == 完整路径（产出文件 chip / 行内文件引用的权威信号）；
-       *  - <a href> 指向本地文件；
-       *  - 内联元素（code/span/a）文本本身就是完整可预览路径（覆盖"只输出、
-       *    没有编辑/打开操作"的路径 token——这类不走 openPath，A 覆盖不到）。
-       * 返回值：`kind:"file"` → path 有值；`kind:"folder"` → path 为 null；其它沿用
-       * 「file」语义；未命中 → null。
+       * 把真实 Element 祖先链适配为 ResolverNode 投影后委托纯逻辑解析
+       * （issue #37：两阶段算法与决策顺序见 src/client/link-resolver.ts）。
+       * textContent 仅在四类嗅探标签上读取（大容器 DIV 不读，避免大串拼接开销；
+       * 评审 U5：不扩 DIV——父容器文本常是多段拼接，保留防误拦）。
        */
-      function findFileLink(target: any): { path: string | null; node: Element; kind: "file" | "folder" } | null {
+      function findFileLink(target: any): { path: string | null; kind: "file" | "folder" } | null {
+        const chain: any[] = [];
         let node: any = target;
         while (node && node !== document && node.nodeType === 1) {
-          // ref-chip 权威分支：先于通用嗅探，避免 `@/abs/…` 被 isLikelySingleFilePath
-          // 命中后把带前导 @ 的脏路径塞给宿主导致 404（issue #3）。
-          const chip = node.getAttribute ? (node.getAttribute("data-ref-chip") || "") : "";
-          if (chip !== "") {
-            if (chip === "file") {
-              const clean = cleanRefChipPath(node.getAttribute("title") || "", "file");
-              if (clean !== null) return { path: clean, node: node as Element, kind: "file" };
-            } else if (chip === "folder") {
-              return { path: null, node: node as Element, kind: "folder" };
-            }
-            // session / skill / 无法解析的 file：跳过本节点，继续向上
-            // （避免误匹配 "@label"，且不弱化祖先的正常嗅探）。
-            node = node.parentNode;
-            continue;
-          }
-          const title = node.getAttribute ? (node.getAttribute("title") || "").trim() : "";
-          if (title !== "" && isPathLike(title)) return { path: title, node: node as Element, kind: "file" };
-          if (node.tagName === "A") {
-            const href = (node.getAttribute("href") || "").trim();
-            if (isPathLike(href)) return { path: href, node: node as Element, kind: "file" };
-          }
-          // 评审 U5：文本嗅探范围扩到 BUTTON（chip / 工具卡都是 <button>，与 A 机制双保险；
-          // 不扩 DIV——父容器 textContent 常是多段拼接，保留它防误拦）；长度上限 200→1024
-          // （monorepo 绝对路径常态超 200）。
-          if (node.tagName === "CODE" || node.tagName === "SPAN" || node.tagName === "A" || node.tagName === "BUTTON") {
-            const text = (node.textContent || "").trim();
-            if (text.length > 0 && text.length <= 1024 && isPathLike(text)) {
-              return { path: text, node: node as Element, kind: "file" };
-            }
-          }
+          chain.push(node);
           node = node.parentNode;
         }
-        return null;
+        if (chain.length === 0) return null;
+        let parentLink: ResolverNode | null = null;
+        for (let i = chain.length - 1; i >= 0; i--) {
+          const el = chain[i];
+          const get = (name: string): string => {
+            try { return el.getAttribute ? (el.getAttribute(name) || "") : ""; } catch { return ""; }
+          };
+          const sniffable = el.tagName === "CODE" || el.tagName === "SPAN" || el.tagName === "A" || el.tagName === "BUTTON";
+          parentLink = {
+            tag: String(el.tagName || ""),
+            attrs: { title: get("title"), href: get("href"), "data-ref-chip": get("data-ref-chip") },
+            text: sniffable ? (el.textContent || "") : "",
+            parent: parentLink,
+          };
+        }
+        const hit = resolveFileLink(parentLink!);
+        return hit === null ? null : { path: hit.path, kind: hit.kind };
       }
 
       // ---------------------------------------------------- 会话 cwd
@@ -837,7 +815,21 @@ import STYLE from "./style.css";
         // 意图（评审 U5；移动端长按选中后松手产生的 click 不再误弹预览）。
         const selection = window.getSelection ? window.getSelection() : null;
         if (selection !== null && selection.toString() !== "") return;
-        const hit = findFileLink(event.target);
+        // 点击闸门（issue #37，决策顺序见 link-resolver.decideGate）：
+        // 1) 豁免属性 data-dsh-no-preview 优先于作用域（跨区域生效）；
+        // 2) 仅对话流子树（宿主 [data-chat-flow] / [data-chat-anchor-key]）内才做
+        //    链接嗅探与拦截——第三方插件 UI（文件树等）天然出圈，不再被全局劫持。
+        const targetEl = event.target instanceof Element ? (event.target as Element) : null;
+        if (targetEl === null) return;
+        // closest 对非法选择器会抛 SyntaxError——全局捕获回调绝不能整体抛错
+        // （否则后续所有点击拦截失效），异常一律降级为"未命中"。
+        const gate = decideGate({
+          matches: (sel) => {
+            try { return targetEl.closest(sel) !== null; } catch { return false; }
+          },
+        }, SCOPE_SELECTORS);
+        if (gate === "pass") return;
+        const hit = findFileLink(targetEl);
         if (hit === null) return;
         // folder 引用：轻量提示，不开 Modal（ref-chip 权威优先，拦截默认行为）。
         if (hit.kind === "folder") {

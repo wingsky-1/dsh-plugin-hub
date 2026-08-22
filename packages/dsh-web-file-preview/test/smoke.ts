@@ -23,6 +23,7 @@ import {
   normalizeConfig, DEFAULT_CONFIG, groupOfPath, isLikelySingleFilePath, resolveRelativePath,
   cleanRefChipPath,
 } from "../lib/index.js";
+import { build as esbuildBuild } from "esbuild";
 import { assertClientProductContract, assertClientSourceContract } from "../../../test/smoke-lib.ts";
 
 const pkgDir = fileURLToPath(new URL("..", import.meta.url));
@@ -355,6 +356,95 @@ try {
   const literals = [...client.matchAll(/\/api\/dsh-file-preview\/[a-z-]+/g)].map((m) => m[0]);
   for (const literal of literals) assert.ok(expectedRoutes.includes(literal), `client 出现未知路由: ${literal}`);
   for (const route of expectedRoutes) assert.ok(literals.includes(route), `client 缺少路由: ${route}`);
+
+  // ---- issue #37：链接解析两阶段算法（link-resolver，纯逻辑直测）----
+  // lib/client/*.js 由 bundle-host 按发布物边界清理（仅留顶层 index.js/client.js 与
+  // .d.ts），故用仓库 devDependency esbuild 把源码即时打成内存 ESM、经 data-URI 导入，
+  // 直测真实源码而非字符串契约。
+  const resolverBundle = await esbuildBuild({
+    entryPoints: [join(pkgDir, "src/client/link-resolver.ts")],
+    bundle: true, format: "esm", write: false, logLevel: "silent",
+  });
+  const resolverCode = resolverBundle.outputFiles[0]!.text;
+  const { resolveFileLink, decideGate, basenameOf, SCOPE_SELECTORS, EXEMPT_SELECTOR } = await import(
+    `data:text/javascript;base64,${Buffer.from(resolverCode).toString("base64")}`
+  ) as typeof import("../lib/client/link-resolver.js");
+  // 最小投影构造器：attrs 缺省空串，parent 自内向外。
+  const mkNode = (tag: string, attrs: Record<string, string>, text: string, parent: ReturnType<typeof mkNode> | null = null) =>
+    ({ tag, attrs: { title: "", href: "", "data-ref-chip": "", ...attrs }, text, parent });
+  // 用例 1：better-sidebar 文件树行 div(title=完整路径) > span(裸文件名)——本次 bug 主场景。
+  {
+    const span = mkNode("SPAN", {}, "成品.png");
+    span.parent = mkNode("DIV", { title: "F:\\DailyChat\\sub\\成品.png" }, "");
+    assert.deepEqual(resolveFileLink(span), { path: "F:\\DailyChat\\sub\\成品.png", kind: "file" }, "祖先凭证 basename 一致 → 采信完整路径");
+  }
+  // 用例 2：宿主产物 chip button(title=path) > span(name)。
+  {
+    const span = mkNode("SPAN", {}, "report.md");
+    span.parent = mkNode("BUTTON", { title: "/w/a/report.md" }, "");
+    assert.deepEqual(resolveFileLink(span), { path: "/w/a/report.md", kind: "file" }, "chip 结构 → 凭证路径");
+  }
+  // 用例 3：CODE 内联完整路径、无任何凭证。
+  assert.deepEqual(
+    resolveFileLink(mkNode("CODE", {}, "F:\\a\\b\\c.png")),
+    { path: "F:\\a\\b\\c.png", kind: "file" },
+    "内联完整路径无凭证 → 原样",
+  );
+  // 用例 4：相对路径文本无凭证。
+  assert.deepEqual(
+    resolveFileLink(mkNode("SPAN", {}, "sub/dir/img.png")),
+    { path: "sub/dir/img.png", kind: "file" },
+    "相对路径文本无凭证 → 原样",
+  );
+  // 用例 5：行空白点击（target 即带 title 的行节点本身）。
+  assert.deepEqual(
+    resolveFileLink(mkNode("DIV", { title: "/w/x/only.md" }, "")),
+    { path: "/w/x/only.md", kind: "file" },
+    "target 自身 title → 凭证",
+  );
+  // 用例 6：凭证与文本 basename 不一致 → 不猜（跳过该凭证），回退文本命中。
+  {
+    const span = mkNode("SPAN", {}, "cat.png");
+    span.parent = mkNode("DIV", { title: "/other/notes.md" }, "");
+    assert.deepEqual(resolveFileLink(span), { path: "cat.png", kind: "file" }, "basename 不一致 → 跳过凭证回退文本");
+  }
+  // 用例 7：仅裸名、全链无凭证 → 裸名兜底（旧行为）。
+  assert.deepEqual(resolveFileLink(mkNode("SPAN", {}, "solo.txt")), { path: "solo.txt", kind: "file" }, "仅裸名 → 兜底");
+  // 用例 8：ref-chip 权威分支不变。
+  assert.deepEqual(
+    resolveFileLink(mkNode("SPAN", { "data-ref-chip": "file", title: "@/abs/a.md" }, "@/abs/a.md")),
+    { path: "/abs/a.md", kind: "file" },
+    "ref-chip file → 去前导 @",
+  );
+  assert.deepEqual(
+    resolveFileLink(mkNode("SPAN", { "data-ref-chip": "folder", title: "@/abs/dir/" }, "@/abs/dir/")),
+    { path: null, kind: "folder" },
+    "ref-chip folder → 提示语义",
+  );
+  // 用例 9：chip=session 节点整体跳过（其文本不参与嗅探），向上采信父凭证——固化 skip 时序语义。
+  {
+    const chip = mkNode("SPAN", { "data-ref-chip": "session", title: "@session-label" }, "notes.md");
+    chip.parent = mkNode("DIV", { title: "/real/notes.md" }, "");
+    assert.deepEqual(resolveFileLink(chip), { path: "/real/notes.md", kind: "file" }, "chip session 跳过后父凭证生效");
+  }
+  // 用例 10：basename 归一化（大小写 + 双向分隔符）一致即视为同一文件。
+  {
+    const span = mkNode("SPAN", {}, "Cat.PNG");
+    span.parent = mkNode("DIV", { title: "F:/x/y/CAT.PNG" }, "");
+    assert.deepEqual(resolveFileLink(span), { path: "F:/x/y/CAT.PNG", kind: "file" }, "basename 归一化比较");
+    assert.equal(basenameOf("A\\B/C.PNG"), "c.png", "混合分隔符取末段并小写");
+  }
+  // 用例 11：点击闸门顺序——豁免属性优先于作用域；作用域外放行。
+  {
+    const probeAll = { matches: () => true };
+    assert.equal(decideGate(probeAll, SCOPE_SELECTORS), "pass", "豁免优先于作用域");
+    const probeFlowOnly = {
+      matches: (sel: string) => sel !== EXEMPT_SELECTOR,
+    };
+    assert.equal(decideGate(probeFlowOnly, SCOPE_SELECTORS), "inspect", "对话流内且未豁免 → 解析");
+    const probeNone = { matches: () => false };
+    assert.equal(decideGate(probeNone, SCOPE_SELECTORS), "pass", "作用域外 → 放行");
+  }
 
   console.log("PASS dsh-web-file-preview smoke");
 } finally {
