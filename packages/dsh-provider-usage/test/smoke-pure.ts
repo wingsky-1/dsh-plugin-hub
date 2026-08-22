@@ -29,6 +29,7 @@ import {
   makeHostAdapterRegistry,
   isHostProviderAdapter,
   isClientProviderRenderer,
+  describeAdapterShape,
   OPENCODE_GO_PROVIDER,
   OPENCODE_GO_ADAPTER_ID,
   openCodeGoHostAdapter,
@@ -51,6 +52,9 @@ import {
   derivePillTitle,
   shouldHideFloat,
   rendererLookupKeys,
+  // 设置页提供商全集（issue #38）
+  unionProviders,
+  providerBadgeText,
 } from "../lib/index.js";
 
 // ---------------------------------------------------------------- 共享桩（导出给集成区复用）
@@ -208,6 +212,64 @@ assert.ok(!isClientProviderRenderer({ version: 1, providers: ["x"] }), "缺 rend
   assert.equal(snap.enabled["opencode-go"], OPENCODE_GO_ADAPTER_ID, "enabled 映射 provider→adapterId");
   const myRelayInfo = snap.infos.find((i) => i.id === "my-relay");
   assert.equal(myRelayInfo?.enabled, false, "禁用候选 enabled=false");
+
+  // issue #38：select(null) 清空启用项（幂等）
+  assert.equal(reg.select(OPENCODE_GO_PROVIDER, null), true, "清空内置 provider 启用项成功");
+  assert.equal(reg.get(OPENCODE_GO_PROVIDER), undefined, "清空后无启用者");
+  assert.equal(reg.hasCandidates(OPENCODE_GO_PROVIDER), true, "候选仍在（no-enabled-adapter 语义）");
+  assert.equal(reg.select("never-seen", null), true, "清空未知 provider 幂等成功");
+}
+
+// ---------------------------------------------------------------- 形状明细诊断 + 超时护栏 + 错误登记（issue #38）
+
+{
+  // describeAdapterShape：拒收时给出「缺什么」明细
+  assert.equal(describeAdapterShape(openCodeGoHostAdapter), null, "合法适配器无形状问题");
+  assert.ok(describeAdapterShape(null)?.includes("不是对象"), "null 导出 → 非对象描述");
+  assert.ok(describeAdapterShape({ version: 2 })?.includes("fetchUsage"), "缺 fetchUsage 出现在明细中");
+  assert.ok(describeAdapterShape({ version: 1, id: "a", label: "A" })?.includes("providers"), "缺 providers 出现在明细中");
+  assert.ok(describeAdapterShape({ version: 9, id: "", label: "", providers: ["x"] })?.includes("version"), "版本不符出现在明细中");
+
+  const diags: string[] = [];
+  const reg = makeHostAdapterRegistry({
+    diag: (m) => diags.push(m),
+    sanitizePath: (s) => s.replaceAll("/home/secret-user", "~"),
+  });
+
+  // 契约拒收 → 明细诊断 + 错误登记（file:<名> 键，消息经脱敏）
+  reg.register({ version: 1, id: "bad-shape", label: "B", providers: [] }, "user-file", "/home/secret-user/x/bad.mjs");
+  const loadErr = reg.snapshot().errors.find((e) => e.key === "file:bad.mjs");
+  assert.ok(loadErr, "契约拒收已登记错误");
+  assert.equal(loadErr?.kind, "load");
+  assert.ok(loadErr?.message.includes("providers"), "登记消息含缺失成员明细");
+  assert.ok(!loadErr?.message.includes("/home/secret-user"), "登记消息已经路径脱敏");
+  assert.ok(diags.some((m) => m.includes("providers")), "诊断输出含明细");
+
+  // recordError（加载链 import 失败场景）+ 同 key 覆盖取最近一次
+  reg.recordError("file:gone.mjs", "load", "ENOENT: /x/gone.mjs");
+  reg.recordError("file:gone.mjs", "load", "第二次错误（覆盖）");
+  const goneErrs = reg.snapshot().errors.filter((e) => e.key === "file:gone.mjs");
+  assert.equal(goneErrs.length, 1, "同 key 只保留最近一次");
+  assert.equal(goneErrs[0]?.message, "第二次错误（覆盖）", "最近一次错误生效");
+
+  // 超时护栏：挂起适配器限时拦截为 adapter-timeout + exec 登记
+  const hangReg = makeHostAdapterRegistry({ diag: (m) => diags.push(m) });
+  hangReg.register(
+    {
+      version: 1,
+      id: "hang",
+      label: "H",
+      providers: ["hang"],
+      fetchUsage: async () => new Promise<ProviderUsage>(() => {}),
+    },
+    "builtin",
+  );
+  const before = Date.now();
+  const guarded = await hangReg.fetchUsage("hang", { provider: "hang", fetch, timeoutMs: 80 });
+  assert.equal(guarded.error, "adapter-timeout", "挂起适配器被护栏拦截");
+  assert.ok(Date.now() - before >= 50 && Date.now() - before < 5000, "护栏按时触发且不永久阻塞");
+  const hangErr = hangReg.snapshot().errors.find((e) => e.key === "hang");
+  assert.ok(hangErr?.kind === "exec" && hangErr.message.includes("超时"), "超时登记 kind=exec");
 }
 
 // ---------------------------------------------------------------- 密钥护栏（stripSecrets 值模式 + 键名）
@@ -615,4 +677,39 @@ function mkSummary(overrides: Partial<ProviderSummary> = {}): ProviderSummary {
     openCodeGoHostAdapter.providers.length,
     "providers 数组无重复",
   );
+}
+
+// ---------------------------------------------------------------- 设置页·提供商全集（issue #38）
+
+{
+  const items = unionProviders({
+    candidatesByProvider: {
+      "opencode-go": [{ id: "opencode-go-builtin", label: "OpenCode Go 官方", source: "builtin" }],
+      "z-relay": [{ id: "z-relay-user", label: "Z Relay", source: "user-file" }],
+    },
+    enabled: { "opencode-go": "opencode-go-builtin", "runtime-only": "x" },
+    known: ["opencode-go", "future-provider"],
+  });
+  // 全集三路合并去重：候选 ∪ 启用 ∪ 已知
+  assert.deepEqual(
+    items.map((i) => i.provider),
+    ["future-provider", "opencode-go", "runtime-only", "z-relay"],
+    "全集 = 候选 ∪ 运行时启用 ∪ 内置已知（已知在前，其余字典序）",
+  );
+  const ocg = items.find((i) => i.provider === "opencode-go");
+  assert.ok(ocg?.hasCandidates && ocg.enabledId === "opencode-go-builtin", "已知且有候选：带启用态");
+  const future = items.find((i) => i.provider === "future-provider");
+  assert.equal(future?.hasCandidates, false, "仅已知清单项无候选（引导位）");
+  assert.equal(items.find((i) => i.provider === "runtime-only")?.enabledId, "x", "运行时启用映射入全集");
+  // 空输入 → 空列表
+  assert.deepEqual(unionProviders({ candidatesByProvider: {}, known: [] }), [], "空输入空列表");
+}
+
+{
+  assert.equal(
+    providerBadgeText({ enabledId: "opencode-go-builtin" }),
+    "启用中: opencode-go-builtin",
+    "折叠徽标显示启用中 adapter-id",
+  );
+  assert.equal(providerBadgeText({ enabledId: null }), "未启用", "清空/未启用徽标文案");
 }

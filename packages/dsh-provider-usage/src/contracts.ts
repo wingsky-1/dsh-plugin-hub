@@ -36,6 +36,7 @@ export const ERROR_CODES = [
   "bad-json", // 响应体不可解析
   "adapter-load-failed", // 用户适配器加载失败
   "adapter-crash", // 用户适配器运行抛错
+  "adapter-timeout", // 用户适配器执行超时（护栏拦截，issue #38）
 ] as const;
 
 /** 错误码字符串类型（含 http-<status> 动态形态）。 */
@@ -272,6 +273,24 @@ export function isHostProviderAdapter(v: unknown): v is HostProviderAdapter {
     a.providers.every((p) => typeof p === "string" && p.length > 0) &&
     typeof a.fetchUsage === "function"
   );
+}
+
+/**
+ * 宿主端适配器形状问题明细（issue #38 注入容错：拒收时给出「缺什么」的可排障
+ * 诊断，而非只报一个布尔）。通过校验返回 null。
+ */
+export function describeAdapterShape(v: unknown): string | null {
+  if (typeof v !== "object" || v === null) return `导出不是对象（${v === null ? "null" : typeof v}）`;
+  const a = v as Record<string, unknown>;
+  const missing: string[] = [];
+  if (a.version !== ADAPTER_CONTRACT_VERSION) missing.push(`version 必须 === ${ADAPTER_CONTRACT_VERSION}（实际 ${String(a.version)}）`);
+  if (typeof a.id !== "string" || (a.id as string).length === 0) missing.push("id（非空字符串）");
+  if (typeof a.label !== "string" || (a.label as string).length === 0) missing.push("label（非空字符串）");
+  if (!Array.isArray(a.providers) || a.providers.length === 0 || !a.providers.every((p) => typeof p === "string" && p.length > 0)) {
+    missing.push("providers（非空字符串数组）");
+  }
+  if (typeof a.fetchUsage !== "function") missing.push("fetchUsage（函数）");
+  return missing.length > 0 ? missing.join("、") : null;
 }
 
 /** 校验客户端渲染器结构。 */
