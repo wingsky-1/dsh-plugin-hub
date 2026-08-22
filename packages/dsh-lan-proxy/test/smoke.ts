@@ -762,9 +762,17 @@ const main = async () => {
       assert.equal(state.value.effective.printBanner, true);
     });
     const ok = await handler("config", { settings: { enabled: false, port: 4099, tlsCertFile: "", tlsKeyFile: "", printBanner: false } });
-    check("config saves sanitized settings (empty certs cleared)", () => {
+    check("config saves merged settings (empty certs cleared from merge)", () => {
       assert.equal(ok.ok, true);
+      // 增量保存（issue #33 子项 2）：patch 合并进持久化层全量落盘；
+      // 空证书路径从合并视图删除（显式清除 = 恢复自签证书）。
       assert.deepEqual(saved, { enabled: false, port: 4099, printBanner: false });
+    });
+    // issue #33 子项 2：增量 diff 合并——patch 未携带的已有键保持原值。
+    const incremental = await handler("config", { settings: { printBanner: false } });
+    check("config 增量合并保留持久化层未提交键", () => {
+      assert.equal(incremental.ok, true);
+      assert.deepEqual(saved, { tlsCertFile: "/x.pem", tlsKeyFile: "/x-key.pem", printBanner: false });
     });
     const bad = await handler("config", { settings: { port: "abc" } });
     check("config rejects invalid values", () => assert.equal(bad.ok, false) && assert.equal(bad.error.code, "invalid"));
@@ -1030,6 +1038,13 @@ const main = async () => {
       assert.ok(client.includes("HTTPS 端口需为 1-65535 的整数"), "HTTPS 端口范围提示");
       assert.ok(client.includes("压缩档位需为 0-3 的整数"), "档位范围提示");
       assert.ok(client.includes("Number.isInteger"), "本地整数校验");
+    });
+    // issue #33 子项 2：effective 校准展示 + 增量 diff 提交。
+    check("client 以 effective 校准展示且增量提交", () => {
+      assert.ok(client.includes("effective"), "state.effective 被消费");
+      assert.ok(client.includes("baseline"), "加载基线快照（diff 基准）");
+      assert.ok(client.includes("sameSetting"), "增量 diff 键值比较");
+      assert.ok(client.indexOf("Object.keys(payload).length === 0") >= 0, "无改动不发起保存请求");
     });
   }
 

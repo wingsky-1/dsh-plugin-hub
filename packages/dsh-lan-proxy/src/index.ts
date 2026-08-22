@@ -234,9 +234,9 @@ export interface ResolvedConfig {
 export interface RpcDeps {
   /** 当前生效配置（含默认值兜底）。 */
   resolve: () => ResolvedConfig;
-  /** 持久化层（config.json）当前内容——客户端编辑的落点。 */
+  /** 持久化层（config.json）当前内容——客户端编辑的落点与增量合并基底。 */
   fileConfig: () => Partial<LanProxyConfig>;
-  /** 保存新配置：原子写 config.json 并立即生效（watch 幂等兜底）。 */
+  /** 保存合并后的持久化层全量：原子写 config.json 并立即生效（watch 幂等兜底）。 */
   save: (settings: Partial<LanProxyConfig>) => void;
 }
 
@@ -344,8 +344,18 @@ export function rpcHandler(deps: RpcDeps): (endpoint: string, payload: unknown) 
           if (Boolean(settings.tlsCertFile) !== Boolean(settings.tlsKeyFile)) {
             return { ok: false, error: { code: "tls-pair", details: "证书文件与私钥文件必须成对提供（或都留空以使用自签名证书）" } };
           }
-          deps.save(settings);
-          return { ok: true, value: { settings } };
+          // 增量保存（issue #33 子项 2）：客户端只提交改动键的 diff，这里把
+          // diff 合并进现有持久化层再落盘——未提交的键保持原值，组合层设值
+          // （cordis.patch.yml）不会被客户端默认值静默覆盖。
+          const merged: Partial<LanProxyConfig> = { ...deps.fileConfig(), ...settings };
+          // 空字符串证书路径 = 显式清除（恢复自签证书）：sanitizeSettings 已把
+          // 该键从 patch 中剔除，需同步从合并视图删除才能覆盖掉旧值。
+          const rawSrc = (typeof rawSettings === "object" && rawSettings !== null ? rawSettings : {}) as Record<string, unknown>;
+          for (const key of ["tlsCertFile", "tlsKeyFile"]) {
+            if (rawSrc[key] === "") delete (merged as Record<string, unknown>)[key];
+          }
+          deps.save(merged);
+          return { ok: true, value: { settings: merged } };
         }
         default:
           return { ok: false, error: { code: "unknown", details: String(endpoint) } };

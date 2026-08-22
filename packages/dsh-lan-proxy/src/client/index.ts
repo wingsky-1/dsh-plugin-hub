@@ -55,6 +55,20 @@ var CHANNEL = "/dsh-lan-proxy";
 
   // ------------------------------------------------------------ 设置卡片
 
+  /** 增量 diff 的键值比较：路径白名单数组按元素逐一比较，其余严格相等。 */
+  function sameSetting(key: string, a: any, b: any): boolean {
+    if (key === "wsCompressPaths") {
+      var la = Array.isArray(a) ? a : [];
+      var lb = Array.isArray(b) ? b : [];
+      if (la.length !== lb.length) return false;
+      for (var i = 0; i < la.length; i++) {
+        if (la[i] !== lb[i]) return false;
+      }
+      return true;
+    }
+    return a === b;
+  }
+
   /**
    * 设置面板插件项：启用 / LAN 端口 / HTTPS / 证书文件 / 启动横幅。
    * 改动只在点「保存」后生效：宿主原子写 config.json 并立即重建转发器。
@@ -71,15 +85,26 @@ var CHANNEL = "/dsh-lan-proxy";
     var openState = useState(false);
     var open = openState[0];
     var setOpen = openState[1];
+    // 加载基线（issue #33 子项 2）：保存时只提交与基线不同的键（增量 diff），
+    // 未改动的键不提交——组合层设值不会被客户端默认值静默覆盖回写。
+    var baseline: Record<string, any> | null = null;
 
     useEffect(function () {
       var alive = true;
       rpc("state", {}).then(function (v: any) {
         if (!alive) return;
         var merged: Record<string, any> = {};
+        // 展示校准（issue #33 子项 2）：DEFAULTS 兜底 → 宿主生效值（组合层
+        // cordis.patch.yml 设值的键显示实际生效值，而非默认值）→ 持久化层
+        // （用户上次在本卡片保存的内容，作为编辑基线）。
         for (var key in DEFAULTS) merged[key] = DEFAULTS[key];
+        var effective = (v && v.effective) || {};
+        for (var ek in DEFAULTS) {
+          if (effective[ek] !== undefined && effective[ek] !== null) merged[ek] = effective[ek];
+        }
         var persisted = (v && v.settings) || {};
-        for (var key2 in persisted) merged[key2] = persisted[key2];
+        for (var pk in persisted) merged[pk] = persisted[pk];
+        baseline = Object.assign({}, merged);
         setSettings(merged);
       }).catch(function (e: any) {
         if (!alive) return;
@@ -115,15 +140,21 @@ var CHANNEL = "/dsh-lan-proxy";
         setSaved("保存失败：压缩档位需为 0-3 的整数");
         return;
       }
+      // 增量提交（issue #33 子项 2）：只发送与加载基线不同的键，未改动的键
+      // 不提交——组合层设值不会被客户端默认值静默覆盖回写；宿主端把 diff
+      // 合并进 config.json 现有内容。
+      var normalized: Record<string, any> = { port: portValue, httpsPort: httpsPortValue, httpCompressLevel: levelValue };
       var payload: Record<string, any> = {};
       for (var key in DEFAULTS) {
-        var value = settings[key];
-        if (key === "port") value = portValue;
-        else if (key === "httpsPort") value = httpsPortValue;
-        else if (key === "httpCompressLevel") value = levelValue;
-        payload[key] = value;
+        var cur = key in normalized ? normalized[key] : settings[key];
+        if (baseline === null || !sameSetting(key, cur, baseline[key])) payload[key] = cur;
+      }
+      if (Object.keys(payload).length === 0) {
+        setSaved("未修改");
+        return;
       }
       rpc("config", { settings: payload }).then(function () {
+        baseline = Object.assign({}, settings);
         setSaved("已保存，已热更新");
         setTimeout(function () { setSaved(""); }, 2200);
       }).catch(function (e: any) {
