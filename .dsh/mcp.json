@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "servers": [
+    {
+      "name": "playwright",
+      "transport": "stdio",
+      "enabled": true,
+      "toolCallTimeoutMs": 60000,
+      "reconnect": {},
+      "command": "pnpm",
+      "args": [
+        "dlx",
+        "@playwright/mcp@latest",
+        "--browser=chromium"
+      ]
+    },
+    {
+      "name": "chrome-devtools",
+      "transport": "stdio",
+      "enabled": true,
+      "toolCallTimeoutMs": 60000,
+      "reconnect": {},
+      "command": "pnpm",
+      "args": [
+        "dlx",
+        "chrome-devtools-mcp@latest",
+        "--headless"
+      ]
+    }
+  ]
+}
