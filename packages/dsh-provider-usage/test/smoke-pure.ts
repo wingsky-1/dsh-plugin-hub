@@ -13,11 +13,13 @@
  * - 客户端行为纯函数：胶囊文案/等级/title、D11 隐藏语义、渲染器配对键序
  *   （替代对 lib/client.js 的 includes 字符串断言）
  */
-import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, readdirSync, mkdirSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import assert from "node:assert/strict";
 import type { FetchLike, ProviderSummary, ProviderUsage, SummaryLevel } from "../lib/index.js";
+import * as libIndex from "../lib/index.js";
 import {
   ROUTES,
   DEFAULT_CONFIG,
@@ -74,6 +76,8 @@ assert.equal(merged.timeoutMs, 999);
 assert.equal(merged.cacheTtlMs, 5000);
 assert.equal(merged.limits.weekly, 40);
 assert.equal(merged.limits.rolling, DEFAULT_CONFIG.limits.rolling, "未覆盖的限额保留默认");
+// issue #29：providerHint 死配置键已删除（解析后零消费）
+assert.equal("providerHint" in normalizeConfig({ providerHint: { a: "b" } }), false, "providerHint 键已删除不再解析");
 assert.equal("bogus" in merged, false, "未知键丢弃");
 assert.equal(normalizeConfig({ timeoutMs: "x" }).timeoutMs, DEFAULT_CONFIG.timeoutMs, "非法数字回退");
 assert.equal(normalizeConfig({ timeoutMs: -5 }).timeoutMs, DEFAULT_CONFIG.timeoutMs, "负数回退");
@@ -500,6 +504,18 @@ assert.equal(resolveApiKey({}), undefined, "全缺返回 undefined");
   const text = await readHistoryFile(file);
   assert.equal(JSON.parse(text ?? "{}").samples.length, 1, "落盘往返");
   assert.equal(await readHistoryFile(join(dir, "no-such.json")), undefined, "文件不存在返回 undefined");
+
+  // issue #29：rename 失败（目标路径已是目录）→ 抛错且 .tmp 无残留（容错：执行抛错）
+  const occupied = join(dir, "occupied.json");
+  await mkdir(occupied); // 目标为目录 → rename(tmp, dir) 必败
+  let threw = false;
+  try {
+    await writeHistoryFile(occupied, JSON.stringify({ x: 1 }));
+  } catch {
+    threw = true;
+  }
+  assert.equal(threw, true, "rename 到目录目标抛错");
+  assert.deepEqual(readdirSync(dir).filter((f) => f.endsWith(".tmp")), [], ".tmp 残留已清理");
 }
 
 // ---------------------------------------------------------------- TTL 缓存（按 provider 键控）
@@ -581,4 +597,22 @@ function mkSummary(overrides: Partial<ProviderSummary> = {}): ProviderSummary {
     "配对键先专用后默认",
   );
   assert.deepEqual(rendererLookupKeys("opencode-go"), ["opencode-go"], "无 adapterId 只查默认");
+}
+
+// ---------------------------------------------------------------- 死代码清理回归（issue #29）
+
+{
+  // 无调用方的导出已从导出面移除（防回归）
+  for (const key of ["CONFIG_KEYS", "defaultPersistFile", "resolvePathWeak", "OPENCODE_GO_DEFAULT_ENABLED"] as const) {
+    assert.equal(key in libIndex, false, `死代码 ${key} 已从导出面移除`);
+  }
+  // 注册表不再暴露 unregisterProvider（无调用方）
+  const reg = makeHostAdapterRegistry();
+  assert.equal("unregisterProvider" in reg, false, "unregisterProvider 已移除");
+  // 宿主适配器 providers 数组无重复项
+  assert.equal(
+    new Set(openCodeGoHostAdapter.providers).size,
+    openCodeGoHostAdapter.providers.length,
+    "providers 数组无重复",
+  );
 }

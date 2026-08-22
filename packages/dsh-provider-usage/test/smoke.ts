@@ -143,7 +143,9 @@ function makeFakeCtx(overrides = {}) {
   const res3 = { writeHead: () => {}, end: (chunk) => { payload3 = JSON.parse(chunk); } };
   adaptersRoute3.handler(fakeReq(), res3);
   assert.equal(payload3.client.length, 1, "有客户端适配器时 client 非空");
-  assert.equal(payload3.client[0].file, "/abs/my-relay-client.js");
+  // issue #29 信息面收敛：只披露文件名，不外泄绝对路径
+  assert.equal(payload3.client[0].file, "my-relay-client.js");
+  assert.ok(!JSON.stringify(payload3).includes("/abs/"), "adapters.json 不含绝对路径");
   assert.ok(payload3.client[0].url.startsWith("/api/dsh-provider-usage/user/"), "客户端适配器有 serve URL");
   assert.equal(payload3.client[0].resolved, false, "文件不存在标记 resolved=false");
 }
@@ -444,6 +446,64 @@ async function waitFor(cond, timeoutMs = 5000, stepMs = 50) {
   }
 }
 
+// ---------------------------------------------------------------- select 持久化串行化 + 用户宿主适配器加载（issue #29）
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dou-sel-"));
+  const adapterFile = join(dir, "user-ocg.mjs");
+  writeFileSync(
+    adapterFile,
+    [
+      "export default {",
+      "  version: 1,",
+      '  id: "user-ocg",',
+      '  label: "User OpenCode",',
+      '  providers: ["opencode-go"],',
+      '  async fetchUsage() { return { ok: true, provider: "opencode-go", label: "User", fetchedAt: 0 }; },',
+      "};",
+    ].join("\n"),
+  );
+  const { ctx, routes } = makeFakeCtx();
+  await apply(ctx, {
+    apiKey: "sk-test",
+    persistFile: join(dir, "history.json"),
+    adapters: { host: [{ provider: "opencode-go", file: adapterFile }] },
+    credentialsFile: join(here, "no-such-credentials.yaml"),
+    authFile: join(here, "no-such-auth.json"),
+  });
+
+  const adaptersRoute2 = routes.find((r) => r.path === ROUTES.adapters);
+  let meta;
+  const metaRes = { writeHead: () => {}, end: (chunk) => { meta = JSON.parse(chunk); } };
+  adaptersRoute2.handler(fakeReq(), metaRes);
+  assert.equal(meta.host.length, 2, "内置 + 用户宿主适配器都在候选");
+  const userInfo = meta.host.find((h) => h.id === "user-ocg");
+  assert.equal(userInfo.file, "user-ocg.mjs", "信息面收敛：用户文件只披露文件名");
+  assert.equal(userInfo.enabled, true, "后注册的用户适配器默认启用");
+
+  // 连续两次 select（promise 链串行化）：最终落盘态 = 最后一次选择
+  const selectRoute2 = routes.find((r) => r.path === ROUTES.select);
+  let selPayload;
+  const selRes = { writeHead: () => {}, end: (chunk) => { selPayload = JSON.parse(chunk); } };
+  const postSelect = (adapterId) =>
+    selectRoute2.handler(
+      fakeReq({ method: "POST", body: JSON.stringify({ provider: OPENCODE_GO_PROVIDER, adapterId }) }),
+      selRes,
+    );
+  await postSelect(OPENCODE_GO_ADAPTER_ID);
+  await postSelect("user-ocg");
+
+  const stateFile = join(dir, "adapter-state.json");
+  const settled = await waitFor(() => {
+    try {
+      return JSON.parse(readFileSync(stateFile, "utf8"))[OPENCODE_GO_PROVIDER] === "user-ocg";
+    } catch {
+      return false;
+    }
+  });
+  assert.equal(settled, true, "连续 select 串行化落盘：最终态 = 最后一次选择");
+}
+
 // stats：无 key 时 usage.error=no-api-key（不网络；路径指向不存在文件）
 {
   const { ctx, routes } = makeFakeCtx();
@@ -476,7 +536,9 @@ async function waitFor(cond, timeoutMs = 5000, stepMs = 50) {
   assert.deepEqual(payload.limits, DEFAULT_CONFIG.limits);
   assert.equal(payload.history.maxAgeDays, DEFAULT_CONFIG.maxAgeDays, "health 带历史摘要");
   assert.equal(typeof payload.history.count, "number");
-  assert.equal(typeof payload.history.root, "string");
+  // issue #29 信息面收敛：不再暴露 history.root 绝对路径
+  assert.equal("root" in payload.history, false, "health.history 不再暴露 root");
+  assert.ok(!JSON.stringify(payload).includes(process.env.DSH_HOME), "health 响应不含 DSH_HOME 绝对路径");
   assert.equal(payload.adapters.length >= 1, true, "health 带适配器快照");
   assert.equal(payload.adapters[0].id, "opencode-go-builtin", "适配器快照带 id");
   assert.equal(payload.adapters[0].enabled, true, "适配器快照带 enabled");

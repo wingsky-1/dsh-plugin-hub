@@ -97,19 +97,14 @@ export function makeRendererRegistry(opts: { diag?: (msg: string) => void } = {}
     return undefined;
   }
 
-  /** 撤销某 provider 的渲染器（卸载用户注入时回落内置）。 */
-  function unregister(providers: string[], removed: ClientProviderRenderer): void {
-    for (const p of providers) {
-      if (byProvider.get(p) === removed) byProvider.delete(p);
-    }
-  }
-
   /** 快照（设置面板适配器管理区展示用）。 */
   function snapshot(): Array<{ providers: string[]; source: "builtin" | "user-file"; file?: string }> {
     return [...entries];
   }
 
-  return { register, get, unregister, snapshot };
+  // issue #29：unregister 无调用方已删除——用户渲染器经桥接注册后随插件卸载整体清空
+
+  return { register, get, snapshot };
 }
 
 export type RendererRegistry = ReturnType<typeof makeRendererRegistry>;
@@ -151,10 +146,8 @@ export function installGlobalBridge(getRegistry: () => RendererRegistry | undefi
       registry.register(renderer, "user-file", "window bridge");
       return true;
     },
-    unregisterRenderer(providers) {
-      // 宽松处理：仅提示，注册表条目保留（插件卸载时整体清空）
-      console.warn("[dsh-provider-usage] unregisterRenderer 收到", providers);
-    },
+    // issue #29：unregisterRenderer 的 console.warn no-op 已删除——契约保留该可选
+    // 成员，第三方可安全调用；本插件卸载时注册表整体丢弃。
   };
   try {
     win[USAGE_GLOBAL_KEY] = bridge;

@@ -445,7 +445,8 @@ export interface OpenCodeGoRenderContext extends RenderContext {
 /** 内置 OpenCode Go 客户端渲染器。 */
 export const openCodeGoClientRenderer: ClientProviderRenderer & { renderOpenCodeGo(ctx: OpenCodeGoRenderContext): () => void } = {
   version: ADAPTER_CONTRACT_VERSION,
-  providers: ["opencode-go", "opencode", "opencode-go"],
+  // issue #29：去除重复项 "opencode-go"（原数组 ["opencode-go", "opencode", "opencode-go"]）
+  providers: ["opencode-go", "opencode"],
   // R2：与内置适配器配对（仅该 provider 启用内置时用本渲染器）
   adapterId: "opencode-go-builtin",
   render(ctx: RenderContext) {

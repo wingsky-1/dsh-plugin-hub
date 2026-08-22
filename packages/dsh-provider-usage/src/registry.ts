@@ -20,8 +20,11 @@ import { isHostProviderAdapter, usageError } from "./contracts.js";
 /** 注册条目来源。 */
 export type AdapterSource = "builtin" | "user-file";
 
-/** 候选条目状态。 */
-export type AdapterStatus = "active" | "invalid" | "load-failed";
+/**
+ * 候选条目状态（issue #29 收敛）：注册即结构校验通过，invalid/load-failed 从未
+ * 赋值（加载失败在 apply 层直接不注册），故只保留 active。
+ */
+export type AdapterStatus = "active";
 
 /** 注册表诊断条目（health / 设置面板候选展示用）。 */
 export interface AdapterRegistrationInfo {
@@ -39,8 +42,6 @@ export interface AdapterRegistrationInfo {
   status: AdapterStatus;
   /** 是否当前启用（per provider；多 provider 认领时以对应用户为准）。 */
   enabled: boolean;
-  /** 失败诊断（status != active 时有值）。 */
-  error?: string;
 }
 
 /** 内部候选条目。 */
@@ -52,7 +53,6 @@ interface AdapterEntry {
   source: AdapterSource;
   file?: string;
   status: AdapterStatus;
-  error?: string;
 }
 
 /**
@@ -120,13 +120,9 @@ export function makeHostAdapterRegistry(opts: { diag?: (m: string) => void } = {
     for (const provider of adapter.providers) {
       candidates(provider).push(entry);
       // 默认启用：enabledHint !== false → 成为该 provider 当前启用者
+      // （启用态由快照按 enabledIds 判定，无需回改旧候选）
       if (enabledHint !== false) {
-        // 若此前 provider 已有另一启用者，标记其停用（仅当前启用被替换）
-        const prevEnabledEntry = enabledIds.has(provider) ? findEntry(provider, enabledIds.get(provider)!) : undefined;
         enabledIds.set(provider, adapter.id);
-        if (prevEnabledEntry !== undefined && prevEnabledEntry !== entry) {
-          // prev 不再是启用条目；已在 registeredIds，其 enabled 状态由快照按 enabledIds 判定
-        }
       }
     }
     return true;
@@ -196,12 +192,6 @@ export function makeHostAdapterRegistry(opts: { diag?: (m: string) => void } = {
     }
   }
 
-  /** 撤销某 provider 的候选（卸载用；当前实现保留候选仅作状态记录，暂不提供）。 */
-  function unregisterProvider(provider: string): void {
-    candidatesByProvider.delete(provider);
-    enabledIds.delete(provider);
-  }
-
   /** 当前启用适配器的 provider 列表（后台采样遍历用）。 */
   function enabledProviders(): string[] {
     return [...enabledIds.keys()];
@@ -238,7 +228,6 @@ export function makeHostAdapterRegistry(opts: { diag?: (m: string) => void } = {
           ...(entry.file !== undefined ? { file: entry.file } : {}),
           status: entry.status,
           enabled: enabledIds.get(provider) === entry.id,
-          ...(entry.error !== undefined ? { error: entry.error } : {}),
         });
       }
     }
@@ -254,7 +243,6 @@ export function makeHostAdapterRegistry(opts: { diag?: (m: string) => void } = {
     select,
     fetchUsage,
     summarize,
-    unregisterProvider,
     enabledProviders,
     isEnabled,
     hasCandidates,
