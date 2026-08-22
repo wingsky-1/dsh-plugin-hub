@@ -101,54 +101,55 @@ export function rendererLookupKeys(provider: string, adapterId?: string): string
   return [provider];
 }
 
-// ------------------------------------------------------------------ 设置页·提供商全集（issue #38）
+// ------------------------------------------------------------------ 设置页·提供商列表（issue #38 维护者意图修正）
 
-/** 提供商全集合并的输入（全部来自 adapters.json 响应 + 宿主已知清单）。 */
-export interface ProvidersUnionInput {
+/** 提供商列表拆分的输入（全部来自 adapters.json 响应）。 */
+export interface ProviderListInput {
   /** provider → 已注册候选列表（adapters.json host[] 按 providers 分组）。 */
   candidatesByProvider: Record<string, Array<{ id: string; label: string; source: string }>>;
   /** 运行时启用映射（provider → adapterId）。 */
   enabled?: Record<string, string>;
-  /**
-   * 运行时识别到的 provider（adapters.json recognizedProviders：历史采样桶 ∪
-   * 启用状态文件键；issue #38 第二路来源——无候选无启用的也留在全集可见）。
-   */
-  recognized?: string[];
-  /** 内置已知清单（宿主 knownProviders；无候选也展示并给引导）。 */
-  known: string[];
+  /** 模型配置页提供商路由（adapters.json modelProviders，主列表权威清单）。 */
+  modelProviders?: string[];
 }
 
 /** 提供商列表项（设置页手风琴一行的数据面）。 */
 export interface ProviderListItem {
   provider: string;
-  /** 是否有已注册候选（false = 仅出现在已知清单，需展示引导文案）。 */
+  /** 是否有已注册候选（false = 无候选，展示引导文案）。 */
   hasCandidates: boolean;
   /** 当前启用 adapterId（null = 未启用/已清空）。 */
   enabledId: string | null;
 }
 
-/**
- * 提供商全集 = 已注册候选覆盖 ∪ 运行时启用映射 ∪ 运行时识别 ∪ 内置已知清单
- * （issue #38）。排序：内置已知在前（引导位），其余按字典序；逐项带候选存在性
- * 与启用态，面板直接渲染，不再自行拼装。
- */
-export function unionProviders(input: ProvidersUnionInput): ProviderListItem[] {
-  const providers = new Set<string>();
-  for (const p of Object.keys(input.candidatesByProvider)) providers.add(p);
-  for (const p of Object.keys(input.enabled ?? {})) providers.add(p);
-  for (const p of input.recognized ?? []) providers.add(p);
-  for (const p of input.known) providers.add(p);
-  const knownSet = new Set(input.known);
-  const sorted = [...providers].sort((a, b) => {
-    const ka = knownSet.has(a) ? 0 : 1;
-    const kb = knownSet.has(b) ? 0 : 1;
-    return ka !== kb ? ka - kb : a.localeCompare(b);
-  });
-  return sorted.map((provider) => ({
+function toListItem(input: ProviderListInput, provider: string): ProviderListItem {
+  return {
     provider,
     hasCandidates: (input.candidatesByProvider[provider]?.length ?? 0) > 0,
     enabledId: input.enabled?.[provider] ?? null,
-  }));
+  };
+}
+
+/**
+ * 设置页提供商列表拆分（取代 #68 的四路并集 unionProviders——那会把用户未
+ * 配置的内置清单提供商也列出来，偏离维护者意图）：
+ * - main：与模型配置页提供商列表精确一致（= modelProviders，数量与集合对齐、
+ *   顺序随宿主；无候选的保留展示并给引导文案）；
+ * - extra：候选或启用态指向不在 modelProviders 的 provider（用户适配器自定义
+ *   路由），收进尾部独立分组避免静默消失，不计入主列表数量。
+ */
+export function splitProviderList(input: ProviderListInput): { main: ProviderListItem[]; extra: ProviderListItem[] } {
+  const modelSet = new Set(input.modelProviders ?? []);
+  const main = (input.modelProviders ?? []).map((p) => toListItem(input, p));
+  const extraKeys = new Set<string>();
+  for (const p of Object.keys(input.candidatesByProvider)) {
+    if (!modelSet.has(p)) extraKeys.add(p);
+  }
+  for (const p of Object.keys(input.enabled ?? {})) {
+    if (!modelSet.has(p)) extraKeys.add(p);
+  }
+  const extra = [...extraKeys].sort((a, b) => a.localeCompare(b)).map((p) => toListItem(input, p));
+  return { main, extra };
 }
 
 /** 折叠态徽标文案（issue #38：显示「启用中: <adapter-id>」或「未启用」）。 */

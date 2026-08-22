@@ -23,7 +23,6 @@ import {
   apply,
   ROUTES,
   DEFAULT_CONFIG,
-  KNOWN_PROVIDERS,
   OPENCODE_GO_PROVIDER,
   OPENCODE_GO_ADAPTER_ID,
   LEGACY_ADAPTER_ID,
@@ -63,6 +62,17 @@ function makeFakeCtx(overrides = {}) {
       register(route) {
         routes.push(route);
         return () => {};
+      },
+    },
+    // 模型配置页同源 llm 服务桩（issue #38 维护者意图修正）：默认注册路由集，
+    // 用例经 overrides.llm 覆盖以验证 modelProviders 与注入服务的一致性。
+    llm: {
+      listProviders() {
+        return [
+          { id: "anthropic", name: "Anthropic" },
+          { id: "deepseek", name: "DeepSeek" },
+          { id: OPENCODE_GO_PROVIDER, name: "OpenCode Go" },
+        ];
       },
     },
     effect(fn) {
@@ -133,12 +143,58 @@ function makeFakeCtx(overrides = {}) {
   assert.equal(payload.host[0].id, "opencode-go-builtin", "候选带 id");
   assert.equal(payload.host[0].enabled, true, "候选带 enabled");
   assert.equal(payload.enabled["opencode-go"], "opencode-go-builtin", "enabled 映射 provider→adapterId");
-  assert.deepEqual(payload.knownProviders, KNOWN_PROVIDERS, "knownProviders = 内置已知权威清单（issue #38）");
-  // 权威清单关键成员（dsh 模型配置生态常见 provider，pi-ai catalog 路由键）
-  for (const p of ["deepseek", "openai", "anthropic", "google", "openrouter", "qwen-token-plan", OPENCODE_GO_PROVIDER]) {
-    assert.ok(KNOWN_PROVIDERS.includes(p), `内置已知清单含 ${p}`);
+  // issue #38 维护者意图修正：modelProviders = 注入 llm 服务注册路由的 id 集
+  // （与模型配置页同源），排序去重输出；knownProviders/recognizedProviders 超集路径移除
+  assert.deepEqual(
+    payload.modelProviders,
+    ["anthropic", "deepseek", OPENCODE_GO_PROVIDER],
+    "adapters.json modelProviders 与注入 llm 服务的注册路由一致",
+  );
+  assert.equal("knownProviders" in payload, false, "knownProviders 路径已移除（意图修正）");
+  assert.equal("recognizedProviders" in payload, false, "recognizedProviders 路径已移除（意图修正）");
+  assert.equal(new Set(payload.modelProviders).size, payload.modelProviders.length, "modelProviders 无重复");
+  // 防御式只读：llm 缺失 / listProviders 抛错 / 形状不符 → 回落空数组或剔除非法项，不挂
+  {
+    const { ctx: ctxNoLlm, routes: routesNoLlm } = makeFakeCtx({ llm: undefined });
+    await apply(ctxNoLlm, {});
+    const noLlmRoute = routesNoLlm.find((r) => r.path === ROUTES.adapters);
+    let noLlmPayload;
+    const noLlmRes = { writeHead: () => {}, end: (chunk) => { noLlmPayload = JSON.parse(chunk); } };
+    noLlmRoute.handler(fakeReq(), noLlmRes);
+    assert.deepEqual(noLlmPayload.modelProviders, [], "llm 服务缺失时 modelProviders 回落空数组");
+
+    const { ctx: ctxThrow, routes: routesThrow } = makeFakeCtx({
+      llm: { listProviders() { throw new Error("boom-llm"); } },
+    });
+    await apply(ctxThrow, {});
+    const throwRoute = routesThrow.find((r) => r.path === ROUTES.adapters);
+    let throwPayload;
+    const throwRes = { writeHead: () => {}, end: (chunk) => { throwPayload = JSON.parse(chunk); } };
+    throwRoute.handler(fakeReq(), throwRes);
+    assert.deepEqual(throwPayload.modelProviders, [], "listProviders 抛错时 modelProviders 回落空数组");
+
+    const { ctx: ctxShape, routes: routesShape } = makeFakeCtx({
+      llm: { listProviders: () => [{ name: "无 id" }, null, { id: 42 }, { id: "valid-relay", name: "V" }] },
+    });
+    await apply(ctxShape, {});
+    const shapeRoute = routesShape.find((r) => r.path === ROUTES.adapters);
+    let shapePayload;
+    const shapeRes = { writeHead: () => {}, end: (chunk) => { shapePayload = JSON.parse(chunk); } };
+    shapeRoute.handler(fakeReq(), shapeRes);
+    assert.deepEqual(shapePayload.modelProviders, ["valid-relay"], "形状不符项剔除，仅收合法字符串 id");
   }
-  assert.equal(new Set(KNOWN_PROVIDERS).size, KNOWN_PROVIDERS.length, "内置已知清单无重复");
+  // 自定义 llm 路由集照实透传（排序），不掺任何内置清单
+  {
+    const { ctx: ctxCustom, routes: routesCustom } = makeFakeCtx({
+      llm: { listProviders: () => [{ id: "z-custom", name: "Z" }, { id: "a-custom", name: "A" }] },
+    });
+    await apply(ctxCustom, {});
+    const customRoute = routesCustom.find((r) => r.path === ROUTES.adapters);
+    let customPayload;
+    const customRes = { writeHead: () => {}, end: (chunk) => { customPayload = JSON.parse(chunk); } };
+    customRoute.handler(fakeReq(), customRes);
+    assert.deepEqual(customPayload.modelProviders, ["a-custom", "z-custom"], "自定义 llm 路由集照实透传（排序）");
+  }
   assert.deepEqual(payload.client, [], "无客户端适配器时为 []");
   // 带客户端适配器配置
   const { ctx: ctx3, routes: routes3 } = makeFakeCtx();
@@ -203,12 +259,12 @@ function makeFakeCtx(overrides = {}) {
   assert.equal(payload.adapterId, "opencode-go-builtin");
 }
 
-// ---------------------------------------------------------------- 运行时识别 provider 注入 /adapters（issue #38）
+// ---------------------------------------------------------------- 历史桶/状态文件键不进提供商列表（issue #38 维护者意图修正）
 
 {
   const dir = mkdtempSync(join(tmpdir(), "dou-recog-"));
-  // 预置宿主侧运行时识别产物（两路持久化状态）：
-  // 1) 历史采样桶：hist-relay 经 legacy 桶采过样（v3 多文件格式）
+  // 预置旧「识别路径」的持久化产物（#68 曾据此扩充列表，现应只作数据保留、
+  // 不再驱动展示）：1) 历史采样桶 hist-relay；2) 启用状态文件显式清空键 cleared-relay
   mkdirSync(join(dir, "history", "hist-relay"), { recursive: true });
   writeFileSync(
     join(dir, "history", "hist-relay", `${LEGACY_ADAPTER_ID}.json`),
@@ -220,14 +276,15 @@ function makeFakeCtx(overrides = {}) {
       samples: [[Date.now() - 60000, 5]],
     }),
   );
-  // 2) 启用状态文件键（含显式清空 null 的 cleared-relay：已从 enabled 映射消失，
-  //    但属运行时见过的 provider，须留在全集可见、可再启用）
   writeFileSync(
     join(dir, "adapter-state.json"),
     JSON.stringify({ "cleared-relay": null, [OPENCODE_GO_PROVIDER]: OPENCODE_GO_ADAPTER_ID }),
   );
 
-  const { ctx, routes } = makeFakeCtx();
+  // llm 桩收窄到仅 opencode-go：modelProviders 必须与注册路由精确一致
+  const { ctx, routes } = makeFakeCtx({
+    llm: { listProviders: () => [{ id: OPENCODE_GO_PROVIDER, name: "OpenCode Go" }] },
+  });
   await apply(ctx, {
     persistFile: join(dir, "history.json"),
     fetchImpl: async () => fakeRes(200, OK_BODY),
@@ -239,16 +296,12 @@ function makeFakeCtx(overrides = {}) {
   const res = { writeHead: () => {}, end: (chunk) => { payload = JSON.parse(chunk); } };
   adaptersRoute.handler(fakeReq(), res);
 
-  assert.ok(Array.isArray(payload.recognizedProviders), "adapters.json 带 recognizedProviders 字段");
+  // 主列表严格等于模型配置页提供商路由：历史桶/状态文件键不掺入
+  assert.deepEqual(payload.modelProviders, [OPENCODE_GO_PROVIDER], "modelProviders 仅含注入 llm 的注册路由");
   for (const p of ["hist-relay", "cleared-relay"]) {
-    assert.ok(payload.recognizedProviders.includes(p), `recognizedProviders 含历史桶/状态文件识别的 ${p}`);
+    assert.equal(payload.modelProviders.includes(p), false, `${p} 不因历史桶/状态文件键混入主列表`);
   }
-  assert.deepEqual(
-    payload.recognizedProviders,
-    [...payload.recognizedProviders].sort((a, b) => a.localeCompare(b)),
-    "recognizedProviders 排序输出",
-  );
-  // 显式清空的 provider 不在 enabled 映射（select(null) 即删），只能经识别来源留在全集
+  // 启用状态照常生效：opencode-go 默认启用保留、显式清空不回 enabled 映射
   assert.equal(payload.enabled["cleared-relay"], undefined, "清空态不进 enabled 映射");
   assert.equal(payload.enabled[OPENCODE_GO_PROVIDER], OPENCODE_GO_ADAPTER_ID, "启用态照常保留");
 }
@@ -331,6 +384,8 @@ function makeFakeCtx(overrides = {}) {
   assert.ok(addedInfo, "热注册后候选可见");
   assert.equal(addedInfo.enabled, true, "新添加适配器默认启用");
   assert.equal(meta.enabled["added-relay-provider"], "added-relay", "enabled 映射含新 provider");
+  // 用户适配器指向的自定义路由不混入 modelProviders（客户端收进独立分组）
+  assert.equal(meta.modelProviders.includes("added-relay-provider"), false, "自定义路由 provider 不进 modelProviders");
   const stats = routes.find((r) => r.path === ROUTES.stats);
   let statsPayload;
   const statsRes = { writeHead: () => {}, end: (chunk) => { statsPayload = JSON.parse(chunk); } };
@@ -887,8 +942,8 @@ async function waitFor(cond, timeoutMs = 5000, stepMs = 50) {
   assert.ok(client.includes("+ 添加适配器"), "提供商展开页内添加入口");
   assert.ok(client.includes("dou-provHead"), "手风琴折叠头样式类");
   assert.ok(client.includes("dou-provErr"), "错误登记展示（候选执行/文件加载最近一次错误）");
-  assert.ok(client.includes("knownProviders"), "消费宿主内置已知清单");
-  assert.ok(client.includes("recognizedProviders"), "消费宿主运行时识别清单（提供商全集第二路来源）");
+  assert.ok(client.includes("modelProviders"), "消费宿主模型配置提供商清单（与模型配置页同源）");
+  assert.ok(client.includes("未在模型配置中的适配器"), "额外 provider 独立分组展示（不静默消失）");
 
   // issue #27：总览不再硬编码 opencode-go，按 adapters.json enabled 映射逐 provider 拉取
   assert.ok(!client.includes("?provider=opencode-go"), "settings 总览移除硬编码 ?provider=opencode-go");
