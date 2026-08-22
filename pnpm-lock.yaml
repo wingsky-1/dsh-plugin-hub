@@ -56,6 +56,9 @@ importers:
       http-proxy:
         specifier: 1.18.1
         version: 1.18.1(debug@2.6.9(supports-color@7.2.0))
+      mime:
+        specifier: ^4.1.0
+        version: 4.1.0
       selfsigned:
         specifier: ^2.4.1
         version: 2.4.1
@@ -832,6 +835,11 @@ packages:
     resolution: {integrity: sha512-aU5EJuIN2WDemCcAp2vFBfp/m4EAhWJnUNSSw0ixs7/kXbd6Pg64EmwJkNdFhB8aWt1sH2CTXrLxo/iAGV3oPQ==}
     engines: {node: '>= 0.6'}
 
+  mime@4.1.0:
+    resolution: {integrity: sha512-X5ju04+cAzsojXKes0B/S4tcYtFAJ6tTMuSPBEn9CPGlrWr8Fiw7qYeLT0XyH80HSoAoqWCaz+MWKh22P7G1cw==}
+    engines: {node: '>=16'}
+    hasBin: true
+
   minimatch@10.2.6:
     resolution: {integrity: sha512-vpLQEs+VLCr1nU0BXS07maYoFwlDAH0gngQuuttxIwutDFEMHq2blX+8vpgxDdK3J1PwjCJiep77OitTZ4Ll1A==}
     engines: {node: 18 || 20 || >=22}
@@ -1471,6 +1479,8 @@ snapshots:
   marked@18.0.9: {}
 
   mime-db@1.54.0: {}
+
+  mime@4.1.0: {}
 
   minimatch@10.2.6:
     dependencies:
