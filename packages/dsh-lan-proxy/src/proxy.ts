@@ -3,7 +3,14 @@
 // 在 0.0.0.0:<port> 上监听，把所有 HTTP 请求与 WebSocket 升级转发到
 // 127.0.0.1:<targetPort>（dsh web 服务器）。提供 `tls` + `httpsPort` 时，
 // 额外在 0.0.0.0:<httpsPort> 上监听 HTTPS（与 HTTP 并存，同一转发核心），
-// WebSocket 升级同步支持 wss。两个设计点使它适配 dsh 的安全模型：
+// WebSocket 升级同步支持 wss。
+//
+// 转发引擎为成熟开源库 http-proxy（issue #10；新增第三方依赖红线已经决策
+// issue #47 批准）：HTTP 报文转发与 WS upgrade 的 socket 管道、背压、升级
+// 边界由库承担，构建期经 esbuild 内联进 lib/index.js，运行时零 npm 依赖。
+// 安全围栏不交出去——hostnameAllowed / rewriteHeaders / isLoopbackTarget
+// 纯函数保留为转发前置校验，http-proxy 仅在其后接管。两个设计点使它适配
+// dsh 的安全模型：
 //
 // 1. /api 浏览器信任围栏。dsh-client-connection 会拒绝所有 Host 头不是回环
 //    主机名或已配置受信 authority 的 /api 请求（DNS 重绑定 + 跨站防御）。
@@ -21,17 +28,21 @@
 //
 // `sec-fetch-site` 原样透传：从转发器自身源加载的浏览器页面发送
 // `same-origin`，跨站页面仍发送 `cross-site` 并被围栏拒绝 — 防御链路完整。
-import { createServer, request as httpRequest, Agent } from "node:http";
+import { createServer, Agent } from "node:http";
 import type { Server, IncomingMessage, IncomingHttpHeaders, ServerResponse } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import type { Server as HttpsServer } from "node:https";
-import { connect, isIP } from "node:net";
-import { constants as zlibConstants } from "node:zlib";
+import { isIP } from "node:net";
 import type { Socket, AddressInfo } from "node:net";
+import { constants as zlibConstants } from "node:zlib";
 import { WebSocket as WsClient, WebSocketServer } from "ws";
 // 成熟开源压缩中间件（Express 生态事实标准）：协商 / Vary / Content-Length 删除 /
 // 背压 / 204·304·Range 豁免全部由库承担，构建期经 esbuild 内联（零运行时依赖）。
 import compression from "compression";
+// 成熟开源 HTTP/WS 转发库（node-http-proxy）：接管 HTTP 转发与 WS upgrade，
+// 构建期经 esbuild 内联（零运行时依赖）。默认导入对齐其 CJS 导出面
+// （module.exports = ProxyServer 类，静态方法 createProxyServer）。
+import httpProxy from "http-proxy";
 
 /** HTTP 响应压缩中间件请求对象最小面（compression 的 req 参数仅读 method/httpVersion 等）。 */
 type CompressReq = IncomingMessage;
@@ -62,9 +73,10 @@ export interface LanProxyOptions {
   targetPort: number;
   /**
    * WebSocket 压缩桥接：对命中 `paths` 的 WS 升级做「终结 + permessage-deflate」，
-   * 浏览器段压缩、DSH 段明文；其余 WebSocket 继续 TCP 字节透传。默认作用于大流量
-   * 的 `events.mux` / `events.host`（会话事件流）。DSH 服务端即使未来自身开启
-   * permessage-deflate，这里 DSH 段固定不协商、浏览器段独立协商，天然避免双重压缩。
+   * 浏览器段压缩、DSH 段明文；其余 WebSocket 继续由 http-proxy 做 TCP 字节透传。
+   * 默认作用于大流量的 `events.mux` / `events.host`（会话事件流）。DSH 服务端即使
+   * 未来自身开启 permessage-deflate，这里 DSH 段固定不协商、浏览器段独立协商，
+   * 天然避免双重压缩。
    */
   wsCompress?: {
     enabled: boolean;
@@ -180,30 +192,13 @@ export function isLoopbackTarget(host: string): boolean {
   return host === "localhost" || bare === "127.0.0.1" || bare === "::1" || bare === "::ffff:127.0.0.1";
 }
 
-/** 为上游一跳重建请求头（Host/Origin 重写）。导出供纯函数单测锁定行为。 */
+/** 为上游一跳重建请求头（Host/Origin 重写）。导出供纯函数单测锁定行为；
+ *  实际转发路径上作为 http-proxy 的每请求 headers 覆盖传入（前置校验不外移）。 */
 export function rewriteHeaders(headers: IncomingHttpHeaders, targetAuthority: string): IncomingHttpHeaders {
   const out = { ...headers };
   out.host = targetAuthority;
   if (out.origin !== undefined) out.origin = `http://${targetAuthority}`;
   return out;
-}
-
-/**
- * 根据原始线路请求头序列化 WebSocket 升级请求，重写 Host/Origin。
- * `req.rawHeaders` 保留浏览器的原始大小写；原有的
- * `Connection: Upgrade` / `Upgrade: websocket` 原样透传。
- */
-function serializeUpgradeRequest(req: IncomingMessage, targetAuthority: string): string {
-  const raw = req.rawHeaders;
-  const lines = [`${req.method} ${req.url} HTTP/${req.httpVersion}`];
-  const skip = new Set(["host", "origin"]);
-  for (let i = 0; i + 1 < raw.length; i += 2) {
-    if (skip.has(raw[i].toLowerCase())) continue;
-    lines.push(`${raw[i]}: ${raw[i + 1]}`);
-  }
-  lines.push(`Host: ${targetAuthority}`);
-  if (req.headers.origin !== undefined) lines.push(`Origin: http://${targetAuthority}`);
-  return `${lines.join("\r\n")}\r\n\r\n`;
 }
 
 /**
@@ -306,7 +301,7 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
     throw new Error(`lan-proxy: targetPort must be a valid port, got ${targetPort}`);
   }
   const targetAuthority = formatAuthority(targetHost, targetPort);
-  /** 上游连接的 keep-alive 连接池；close() 时销毁。 */
+  /** 上游连接的 keep-alive 连接池；close() 时销毁。http-proxy 经 agent 选项复用。 */
   const agent = new Agent({ keepAlive: true, maxSockets: MAX_UPSTREAM_SOCKETS });
 
   // ---- HTTP 响应压缩（compression 中间件，转发层实现）----
@@ -353,7 +348,42 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
     socket.on("close", () => sockets.delete(socket));
   };
 
-  /** HTTP(S) 普通请求转发（HTTP/HTTPS 两个 server 共享）。 */
+  // ---- 转发核心：http-proxy 接管（安全围栏之后） ----
+  // 目标为回环上游（isLoopbackTarget 已强校验）；keep-alive 连接池经 agent
+  // 选项交给库；不用 changeOrigin——Host/Origin 重写由自有 rewriteHeaders
+  // 前置完成（围栏逻辑不出本模块）。
+  const proxy = httpProxy.createProxyServer({
+    target: { host: targetHost, port: targetPort },
+    agent,
+  });
+  /** 每请求转发选项：rewriteHeaders 前置重写 Host/Origin 后整体覆盖出站头。 */
+  const forwardOptions = (req: IncomingMessage): { headers: Record<string, string> } => ({
+    // IncomingHttpHeaders 的值域含 string[]（多值头）；http-proxy 仅将其原样
+    // extend 进出站头对象，不做窄化处理，运行时无需收窄。
+    headers: rewriteHeaders(req.headers, targetAuthority) as Record<string, string>,
+  });
+  // 上游响应中途断开（dsh web 崩溃/重启）：pipe 不传播错误，必须显式终止下游，
+  // 否则客户端无限悬挂（实测复现）。headers 已发出时 destroy 断连，客户端视作
+  // 响应截断自行重试；连接池槽位随上游 socket 销毁自动释放。
+  proxy.on("proxyRes", (proxyRes, _req, res) => {
+    const abortDownstream = () => res.destroy();
+    proxyRes.on("aborted", abortDownstream);
+    proxyRes.on("error", abortDownstream);
+  });
+  // 转发错误收口（上游不可达 / 客户端提前断开等）：HTTP 请求回 502 bad gateway
+  // （本地响应，不计入压缩协商）；WS 升级路径第三个参数是对端 socket，直接断开。
+  proxy.on("error", (err, _req, res) => {
+    logger.warn?.(`lan-proxy: proxy error: ${err.message}`);
+    if ("writeHead" in res) {
+      markLocal(res);
+      if (!res.headersSent) res.writeHead(502, { "content-type": "text/plain" });
+      if (!res.writableEnded) res.end("bad gateway");
+    } else {
+      res.destroy();
+    }
+  });
+
+  /** HTTP(S) 普通请求处理（HTTP/HTTPS 两个 server 共享）。 */
   const handleRequest = (req: IncomingMessage, res: ServerResponse) => {
     if (!hostnameAllowed(req.headers.host)) {
       markLocal(res);
@@ -377,49 +407,8 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
       res.end();
       return;
     }
-    const upstream = httpRequest(
-      {
-        hostname: targetHost,
-        port: targetPort,
-        path: req.url,
-        method: req.method,
-        headers: rewriteHeaders(req.headers, targetAuthority),
-        agent,
-      },
-      (upstreamRes) => {
-        // 上游响应中途断开（dsh web 崩溃/重启）：pipe 不传播错误，必须显式终止
-        // 下游，否则客户端无限悬挂（实测复现）。headers 已发出时 destroy 断连，
-        // 客户端视作响应截断自行重试；连接池槽位随 socket 销毁自动释放。
-        const abortDownstream = () => res.destroy();
-        upstreamRes.on("aborted", abortDownstream);
-        upstreamRes.on("error", abortDownstream);
-        res.writeHead(upstreamRes.statusCode!, upstreamRes.headers);
-        upstreamRes.pipe(res);
-      },
-    );
-    upstream.on("error", (err) => {
-      logger.warn?.(`lan-proxy: upstream error: ${err.message}`);
-      if (!res.headersSent) {
-        markLocal(res);
-        res.writeHead(502, { "content-type": "text/plain" });
-      }
-      res.end("bad gateway");
-    });
-    req.on("error", (err) => {
-      logger.warn?.(`lan-proxy: request error: ${err.message}`);
-      upstream.destroy(err);
-    });
-    // 客户端连接提前关闭（响应尚未写完，如用户关标签页/断网）时销毁上游请求。
-    // 否则悬挂请求会占住 keep-alive 连接池槽位：SSE/WS 等长响应场景反复断开
-    // 客户端会耗尽连接池（MAX_UPSTREAM_SOCKETS=64），之后所有新请求排队挂死
-    // （实测：浏览器重连几次后 lan-proxy 整体无响应，重载才恢复）。
-    // 注意：必须监听 res 的 close（连接关闭信号），不能监听 req 的 close——
-    // req 的 close 在请求消息接收完成时就触发（与连接无关），会误杀正常请求。
-    // 正常完成（res 已 end）时连接照常回池复用，不影响 keep-alive。
-    res.on("close", () => {
-      if (!res.writableEnded) upstream.destroy();
-    });
-    req.pipe(upstream);
+    // 围栏（hostnameAllowed / rewriteHeaders）前置完成后，http-proxy 接管转发。
+    proxy.web(req, res, forwardOptions(req));
   };
 
   /** WebSocket 升级转发（HTTP/HTTPS 两个 server 共享；HTTPS 即 wss）。 */
@@ -430,24 +419,12 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
       return;
     }
     // WebSocket 压缩桥接：命中白名单路径 → 终结 + permessage-deflate（浏览器段压缩、
-    // DSH 段明文）。其余 WebSocket 保持下方 TCP 字节透传。
+    // DSH 段明文）。其余 WebSocket 由 http-proxy 接管 TCP 字节透传。
     if (options.wsCompress?.enabled && compressWsPath(options.wsCompress.paths, req.url)) {
       bridgeCompressedWs(req, socket, head, { targetHost, targetPort, logger });
       return;
     }
-    const upstream = connect(targetPort, targetHost, () => {
-      upstream.write(serializeUpgradeRequest(req, targetAuthority));
-      upstream.write(head);
-      upstream.pipe(socket);
-      socket.pipe(upstream);
-    });
-    upstream.on("error", (err) => {
-      logger.warn?.(`lan-proxy: upgrade error: ${err.message}`);
-      socket.destroy();
-    });
-    socket.on("error", () => upstream.destroy());
-    socket.on("close", () => upstream.destroy());
-    upstream.on("close", () => socket.destroy());
+    proxy.ws(req, socket, head, forwardOptions(req));
   };
 
   const server = createServer(withCompress(handleRequest));
