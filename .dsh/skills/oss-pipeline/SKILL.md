@@ -70,6 +70,13 @@ CI 日志 / diff / 测试全文只在 subagent 上下文出现，禁止进入主
 ⑧ 交付：全绿 + zone/auto → `gh pr merge --auto --squash`
    （仅允许 --auto 开关形态：合并决定权在分支保护与 CI；禁止无 --auto 的直接合并。
     共用身份期补偿约束：合并前逐条核对 issue 验收标准已落实）
+   关闭语义三态（与 agents/coder.md 交付规范同一规则）：
+   | 关键字 | 适用条件 |
+   |---|---|
+   | Closes | 仅当 issue 验收标准全项落实方可使用，merge 后自动关闭 |
+   | Refs | 仅引用关联（背景 / 前置依赖），不承诺完成本 issue |
+   | Partially addresses | 仅落实部分子项时使用，此时禁止 Closes |
+   多子项 / 多方案 issue 一律默认 Refs / Partially addresses
 ⑨ 清理：删 worktree 与本地分支，输出一行结论
 
 ## 铁律
