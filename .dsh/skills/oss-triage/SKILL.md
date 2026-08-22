@@ -21,6 +21,16 @@ description: >
 4. **并行度 ≤3**，且节流跟随 CI 完成节奏（等 checks 再推下一个），
    禁止无脑 fan-out 造成排队雪崩
 5. 每个 worktree 独立（`git worktree`），禁止共享 checkout
+6. **dep-touching 批次强制串行**：凡改根依赖清单（package.json）或 lockfile
+   （pnpm-lock.yaml）的批次标记 `dep-touching`，脱离并行车道、强制进串行车道执行；
+   解冲突后必须重跑全量门禁（五连）再推送，禁止只跑局部测试就推
+
+## 铁律
+- 写后读回验证：任何 gh/git 远端写操作（打标签 / 评论 / 认领 / push 等）完成后，
+  立即以只读调用确认并展示回读证据（如 `gh issue view --json labels`），不确认
+  不推进下一个 item；禁止 `>/dev/null`、`tail` 截断输出、`|| true` 吞错误码——
+  反例：批量打标签写成 `gh issue edit $n --add-label zone/auto >/dev/null 2>&1 || true`
+  会把限流 / 权限失败静默吞掉，批次总结全是假阳性，事后无法定位哪个 item 实际漏打
 
 ## 升级与熔断
 - 任一 issue 触发熔断（2 圈未绿）：由 pipeline 状态机负责打
