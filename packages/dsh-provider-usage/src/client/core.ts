@@ -17,6 +17,7 @@ import type {
   DshUsageGlobal,
 } from "../contracts.js";
 import { USAGE_GLOBAL_KEY, ADAPTER_CONTRACT_VERSION } from "../contracts.js";
+import { rendererLookupKeys } from "../client-logic.js";
 
 /** 与 host 端 ROUTES 一致（单一来源，smoke 校验；构建期经 __DSH_ROUTES__ 注入）。 */
 declare const __DSH_ROUTES__: Record<string, string> | undefined;
@@ -87,13 +88,13 @@ export function makeRendererRegistry(opts: { diag?: (msg: string) => void } = {}
     entries.push({ providers: [...renderer.providers], source, file });
   }
 
-  /** 按 provider 查渲染器（可选 adapterId 配对：优先 provider/adapterId，回落默认渲染器）。 */
+  /** 按 provider 查渲染器（配对键优先级：provider/adapterId 专用 → provider 默认）。 */
   function get(provider: string, adapterId?: string): ClientProviderRenderer | undefined {
-    if (adapterId !== undefined) {
-      const hit = byProvider.get(`${provider}/${adapterId}`);
+    for (const key of rendererLookupKeys(provider, adapterId)) {
+      const hit = byProvider.get(key);
       if (hit !== undefined) return hit;
     }
-    return byProvider.get(provider);
+    return undefined;
   }
 
   /** 撤销某 provider 的渲染器（卸载用户注入时回落内置）。 */

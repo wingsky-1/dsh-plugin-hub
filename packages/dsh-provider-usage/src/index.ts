@@ -45,6 +45,9 @@ export * from "./contracts.js";
 export * from "./registry.js";
 export * from "./adapters/opencode-go.js";
 export * from "./path-resolve.js";
+// 客户端行为纯函数（issue #28）：smoke 从 lib/index.js 做行为级断言，
+// client bundle 由 esbuild 内联同一实现，无双源漂移。
+export * from "./client-logic.js";
 
 // ------------------------------------------------------------------ 类型
 

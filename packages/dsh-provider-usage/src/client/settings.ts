@@ -225,9 +225,8 @@ function ConfigSection() {
 
 /** 设置页根组件：按 adapters.json enabled 映射逐 provider 拉取 /stats，渲染四区。 */
 export function SettingsPage() {
-  // 注：react 类型面在 #28 引入最小声明后再补泛型标注（当前 shim 为宽松形态）
-  const [statsByProvider, setStatsByProvider] = React.useState({});
-  const [meta, setMeta] = React.useState(null);
+  const [statsByProvider, setStatsByProvider] = React.useState<Record<string, StatsView | null>>({});
+  const [meta, setMeta] = React.useState<AdaptersMeta | null>(null);
   const [busy, setBusy] = React.useState(false);
 
   const reload = React.useCallback(async (): Promise<void> => {

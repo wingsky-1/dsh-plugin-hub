@@ -31,7 +31,9 @@ import type { OpenCodeGoRenderContext } from "./renderers/opencode-go.js";
 import { SettingsPage } from "./settings.js";
 // React externals 路径（M3b settings.section）：运行时由 dsh web factory require("react") 注入
 import * as React from "react";
-import type { ProviderUsage, UsageWindow, ProviderSummary, SummaryLevel } from "../contracts.js";
+// 胶囊/隐藏/配对行为纯函数（issue #28：与 smoke 断言同源，替代 bundle includes）
+import { derivePillLabel, derivePillLevel, derivePillTitle, shouldHideFloat } from "../client-logic.js";
+import type { ProviderUsage, ProviderSummary, SummaryLevel } from "../contracts.js";
 
 /** 无会话时回落 provider（内置 opencode-go，无感升级）。 */
 const FALLBACK_PROVIDER = "opencode-go";
@@ -85,60 +87,32 @@ function conversationHost(): HTMLElement {
 
 // ------------------------------------------------------------------ 胶囊（读 summary 子树 + pill 钩子）
 
-/** 窗口短名（胶囊兜底用）。 */
-function shortName(w: UsageWindow | string): string {
-  const name = typeof w === "string" ? w : w.name ?? w.key;
-  if (name === "rolling") return "5h";
-  if (name === "weekly") return "周";
-  if (name === "monthly") return "月";
-  if (typeof w === "string") return w;
-  if (name.length > 4) return name.slice(0, 4);
-  return name;
-}
-
-/** 通用胶囊文案：优先渲染器 pill 钩子，回落 summary.text。 */
+/** 胶囊文案：行为逻辑在 client-logic.ts 纯函数（smoke 行为级断言同源）。 */
 function pillLabel(): string {
-  const renderer = registry?.get(currentProvider, lastAdapterId);
-  if (renderer && typeof renderer.pill === "function" && lastSummary) {
-    const custom = renderer.pill(lastSummary);
-    if (custom !== null && custom !== undefined && custom.text) return custom.text;
-  }
-  if (lastSummary && typeof lastSummary.text === "string" && lastSummary.text !== "")
-    return lastSummary.text;
-  if (lastData && lastData.ok && Array.isArray(lastData.windows)) {
-    const parts: string[] = [];
-    for (const w of lastData.windows) {
-      if (typeof w.percent === "number") parts.push(`${shortName(w)} ${w.percent}%`);
-    }
-    if (parts.length > 0) return parts.join(" · ");
-  }
-  const label = lastSummary?.label ?? lastData?.label ?? currentProvider;
-  return `${shortName(label)} --%`;
+  return derivePillLabel({
+    renderer: registry?.get(currentProvider, lastAdapterId),
+    summary: lastSummary,
+    data: lastData,
+    provider: currentProvider,
+  });
 }
 
-/** 状态点：优先 pill 钩子/ summary.level。 */
+/** 状态点：pill 钩子 / summary.level。 */
 function pillDot(): SummaryLevel {
-  const renderer = registry?.get(currentProvider, lastAdapterId);
-  if (renderer && typeof renderer.pill === "function" && lastSummary) {
-    const custom = renderer.pill(lastSummary);
-    if (custom !== null && custom !== undefined) return custom.level;
-  }
-  if (lastSummary) return lastSummary.level ?? "off";
-  return "off";
+  return derivePillLevel({
+    renderer: registry?.get(currentProvider, lastAdapterId),
+    summary: lastSummary,
+  });
 }
 
 function pillTitle(): string {
-  const label = lastSummary?.label ?? lastData?.label ?? currentProvider;
-  if (!hasAdapter) return `${label} 用量：无启用适配器`;
-  if (lastSummary) {
-    const parts: string[] = [];
-    if (lastSummary.text) parts.push(lastSummary.text);
-    if (lastSummary.hint) parts.push(lastSummary.hint);
-    return parts.length > 0 ? `${label} 用量：${parts.join(" · ")}` : `${label} 用量`;
-  }
-  if (lastData === null) return `${label} 用量（加载中…）`;
-  if (!lastData.ok) return `${label} 用量获取失败：${lastData.error ?? "未知错误"}`;
-  return `${label} 用量`;
+  return derivePillTitle({
+    renderer: registry?.get(currentProvider, lastAdapterId),
+    summary: lastSummary,
+    data: lastData,
+    provider: currentProvider,
+    hasAdapter,
+  });
 }
 
 function renderPill(): void {
@@ -146,7 +120,7 @@ function renderPill(): void {
   const labelEl = floatPill.querySelector(`.${PILL_PREFIX}label`);
   const dotEl = floatPill.querySelector(`.${PILL_PREFIX}dot`);
   // D11：无启用适配器 → 隐藏浮窗（保留轮询探测恢复）
-  floatPill.hidden = !hasAdapter;
+  floatPill.hidden = shouldHideFloat(hasAdapter);
   floatPill.title = pillTitle();
   if (labelEl !== null) labelEl.textContent = pillLabel();
   if (dotEl !== null) dotEl.className = `${PILL_PREFIX}dot dou-dot-${pillDot()}`;
