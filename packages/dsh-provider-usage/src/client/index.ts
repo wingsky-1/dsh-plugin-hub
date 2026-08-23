@@ -203,6 +203,33 @@ function errorMessage(code: string | undefined | null): string {
   }
 }
 
+/** 无启用适配器引导（v1 D11 语义）：说明文案 + 复制一句话指令，让 Agent 按文档自主接入。 */
+function showNoAdapterGuide(box: HTMLElement): void {
+  box.appendChild(
+    el("p", { class: PILL_PREFIX + "error", text: "该提供商暂无启用的适配器。" }),
+  );
+  box.appendChild(
+    el("p", {
+      class: PILL_PREFIX + "hint",
+      text: "在设置面板「用量统计」的适配器管理中启用一个候选适配器；也可复制下方引导指令，让 Agent 帮你接入用量数据源。",
+    }),
+  );
+  const guide = `请为提供商 ${currentProvider} 创建用量统计适配器（v2 契约）：以该提供商在模型配置中的 API 端点（baseUrl）为起点，自行确认用量接口与鉴权方式，自主设计适配器方案（name/展示名/接口路径），先给我审核方案（含 API 端点），确认后生成 .mjs 文件、告诉保存路径并引导我在「用量统计」设置页添加适配器。按用量统计适配器开发引导文档（https://github.com/wingsky-1/dsh-plugin-hub/blob/main/packages/dsh-provider-usage/docs/adapter-guide.md）执行引导流程。`;
+  const btn = el("button", {
+    type: "button",
+    class: PILL_PREFIX + "btn",
+    text: "复制引导指令",
+    onClick: () => {
+      void navigator.clipboard
+        .writeText(guide)
+        .then(() => { btn.textContent = "已复制 ✓"; })
+        .catch(() => { btn.textContent = "复制失败"; });
+      setTimeout(() => { btn.textContent = "复制引导指令"; }, 2000);
+    },
+  });
+  box.appendChild(btn);
+}
+
 /** 渲染展开面板（head + 内容区[panelHtml] + foot）。 */
 function renderPanel(): void {
   if (floatPanel === undefined) return;
@@ -221,43 +248,26 @@ function renderPanel(): void {
 
   // 优先级：面板内容（panelHtml）> 状态/历史错误 > 加载中
   // （stats 失败但历史有图时仍展示图表——数据可用性优先于错误提示）
+  const histReason = lastHistory?.reason ?? null;
   const hasPanelHtml = lastHistory !== null && lastHistory !== undefined && !!lastHistory.panelHtml;
+  // 「无启用适配器/未配置」→ 引导分支（说明文案 + 复制一句话指令）
+  const unconfigured =
+    histReason === "no-enabled-adapter" ||
+    histReason === "no-adapter" ||
+    (lastHistory === null && stats !== null && !stats.configured);
   if (hasPanelHtml) {
     panelContentBox.innerHTML = lastHistory!.panelHtml ?? "";
     if (lastHistory!.error) {
       panelContentBox.appendChild(el("p", { class: PILL_PREFIX + "hint", text: `提示：${errorMessage(lastHistory!.error)}` }));
     }
+  } else if (unconfigured) {
+    showNoAdapterGuide(panelContentBox);
   } else if (lastHistory !== undefined && lastHistory !== null && lastHistory.error) {
     panelContentBox.appendChild(el("p", { class: PILL_PREFIX + "error", text: errorMessage(lastHistory.error) }));
   } else if (stats !== null && stats.ok === false) {
-    // stats 失败且无历史：区分「未配置」与「取数失败」（error 为 null 的 reason 态给明确文案）
+    // stats 取数失败：error 有值给具体文案；无值的 reason 态（busy 等）也给明确提示
     const reason = (stats as { reason?: string | null }).reason;
-    const code = stats.error || reason || "";
-    if (!stats.configured) {
-      // v1 D11 引导：无启用适配器 → 说明文案 + 复制一句话引导指令（v2 文档）
-      panelContentBox.appendChild(
-        el("p", { class: PILL_PREFIX + "error", text: errorMessage(code === "" ? "no-adapter" : code) }),
-      );
-      panelContentBox.appendChild(
-        el("p", { class: PILL_PREFIX + "hint", text: "在设置面板「用量统计」的适配器管理中启用一个候选适配器；也可复制下方引导指令，让 Agent 帮你接入用量数据源。" }),
-      );
-      const guide = `请为提供商 ${currentProvider} 创建用量统计适配器（v2 契约）：以该提供商在模型配置中的 API 端点（baseUrl）为起点，自行确认用量接口与鉴权方式，自主设计适配器方案（name/展示名/接口路径），先给我审核方案（含 API 端点），确认后生成 .mjs 文件、告诉保存路径并引导我在「用量统计」设置页添加适配器。按用量统计适配器开发引导文档（https://github.com/wingsky-1/dsh-plugin-hub/blob/main/packages/dsh-provider-usage/docs/adapter-guide.md）执行引导流程。`;
-      const btn = el("button", {
-        type: "button",
-        class: PILL_PREFIX + "btn",
-        text: "复制引导指令",
-        onClick: () => {
-          void navigator.clipboard
-            .writeText(guide)
-            .then(() => { btn.textContent = "已复制 ✓"; })
-            .catch(() => { btn.textContent = "复制失败"; });
-          setTimeout(() => { btn.textContent = "复制引导指令"; }, 2000);
-        },
-      });
-      panelContentBox.appendChild(btn);
-    } else {
-      panelContentBox.appendChild(el("p", { class: PILL_PREFIX + "error", text: errorMessage(stats.error || reason) }));
-    }
+    panelContentBox.appendChild(el("p", { class: PILL_PREFIX + "error", text: errorMessage(stats.error || reason) }));
   } else {
     panelContentBox.appendChild(el("p", { class: PILL_PREFIX + "hint", text: "加载中…" }));
   }

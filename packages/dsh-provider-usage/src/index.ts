@@ -487,7 +487,15 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       const url = new URL(req.url ?? "/", "http://localhost");
       const prov = url.searchParams.get("provider") ?? config.provider;
       const entry = registry.getEntry(prov);
-      if (entry === undefined) return writeJson(res, 200, { ok: true, plugin: "dsh-provider-usage", version: ADAPTER_CONTRACT_VERSION, provider: prov, adapterName: null, panelHtml: "<p>暂无启用的适配器</p>", error: null, range: { start: 0, end: 0 } });
+      if (entry === undefined) {
+        // 无启用适配器：返回结构化 reason（不带占位 HTML），客户端据此展示引导 + 复制按钮
+        const code = registry.hasCandidates(prov) ? "no-enabled-adapter" : "no-adapter";
+        return writeJson(res, 200, {
+          ok: false, plugin: "dsh-provider-usage", version: ADAPTER_CONTRACT_VERSION,
+          provider: prov, adapterName: null, panelHtml: null, error: null, reason: code,
+          range: { start: 0, end: 0 },
+        });
+      }
       const days = Number(url.searchParams.get("days"));
       const end = Date.now();
       const start = Number.isFinite(days) && days > 0

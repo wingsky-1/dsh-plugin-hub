@@ -54,6 +54,8 @@ export interface HistoryResponseV2 {
   adapterName: string;
   panelHtml?: string;
   error?: string | null;
+  /** 无启用适配器等降级原因（panelHtml 为空时客户端据此展示引导）。 */
+  reason?: 'busy' | 'no-enabled-adapter' | 'no-adapter' | null;
   range: { start: number; end: number };
 }
 
