@@ -49,7 +49,8 @@
    `37-basename-fallback-overlay.png`）；截图只截插件 UI 本身（headless element
    screenshot），不带浏览器整窗，避免泄露本机环境。归档后双向引用：PR 正文贴图并
    引用文件路径，issue 评论回链 PR。发布边界已核实安全：各包 files 白名单不含
-   `docs/`，截图不入 tarball，不破坏「发布物不含内部文档」约定。纯宿主端 /
+   `docs/`，截图不入 tarball，不破坏「发布物不含内部文档」约定。PR 模板已内置
+   客户端截图证据清单，见 `.github/PULL_REQUEST_TEMPLATE.md`。纯宿主端 /
    文档改动可跳过本步。
 5. **代码复核闸**（触发条件与 oss-pipeline 复核层一致）：diff 超 ~100 行，或触及
    安全面（围栏 / 脱敏 / 凭据）、`shared/` 契约层、聚合包 `dsh-plugins-all`
