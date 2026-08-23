@@ -18,4 +18,5 @@ Thumbs.db
 .idea/
 .vscode/
 coverage/
+.stryker-tmp/
 .maintenance-drafts/

@@ -14,5 +14,15 @@
       "covered": 399,
       "note": "观察期基线（self-cov 口径，去内联垫片后仅计自写函数），只记录不判红"
     }
+  },
+  "mutation": {
+    "note": "观察期仅记录不卡点；阶段三按 #42 二期校准后接入 ci.yml 硬卡点。baselineScore 为 Stryker 报告口径（1.19%），因 tap-runner 将 top-level assert 断言失败分类为 RuntimeError 而非 Killed，有效 score 约 72.6%（212/286）。",
+    "baselineScore": 1.19,
+    "baselineCovered": 1.33,
+    "baselinePkg": "dsh-notifier",
+    "baselineDate": "2026-08-24",
+    "baselineDuration": "6m54s",
+    "baselineScope": "packages/dsh-notifier/lib/index.js:255-504（对应 src/message.ts）",
+    "strict": false
   }
 }
