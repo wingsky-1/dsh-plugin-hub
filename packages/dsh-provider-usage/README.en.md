@@ -85,7 +85,8 @@ The usage capsule (floating pill in the conversation corner) and its panel can b
 Settings → Plugins → "用量统计" → "胶囊位置" — pick an anchor (top-right / top-left / bottom-right /
 bottom-left) and offsets (horizontal / vertical / panel gap), then hit Save. It takes effect
 **immediately across all devices** (persisted to `ui.json` and broadcast over SSE; no restart).
-Defaults: top-right / 14 / 8 / 44 — the historical fixed position.
+Defaults: top-right / 8 / 8 / 44 — the horizontal offset 8 aligns with the MCP-manager float's
+right edge; with an MCP float present the capsule also drops down automatically (34px clearance).
 
 ## API key resolution order (V1 config chain)
 
