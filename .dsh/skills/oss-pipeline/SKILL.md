@@ -77,6 +77,12 @@ CI 日志 / diff / 测试全文只在 subagent 上下文出现，禁止进入主
    | Refs | 仅引用关联（背景 / 前置依赖），不承诺完成本 issue |
    | Partially addresses | 仅落实部分子项时使用，此时禁止 Closes |
    多子项 / 多方案 issue 一律默认 Refs / Partially addresses
+
+   **「重开 vs 另开」判定**：合并 PR 后若发现**处于同一 issue 范围内**的新不符项 /
+   验收未全满足（功能不完整、漏验收子项、或该改动自身带出的同域 bug）→
+   **重开原 issue 继续修**，并在原 issue 评论留痕「重开原因 + 后续 PR 号」，
+   **不另开 follow-up issue**；仅当偏离项**确属跨领域 / 独立课题**（不同包、不同主题、
+   不同层）时才另开新 issue 跟踪
 ⑨ 清理：删 worktree 与本地分支，输出一行结论
 
 ## 铁律
