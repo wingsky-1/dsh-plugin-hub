@@ -2,16 +2,22 @@
 // 由 scripts/build/build-client.ts 统一生成——源码不写任何 loader 痕迹。
 // 样式：独立 style.css（见同目录），build-client 的 .css text-loader 构建期内联为字符串
 import STYLE from "./style.css";
+// React 由 dsh web 的 factory require("react") 注入（build-client externals 路径）；
+// 设置页 `settings.plugin.item` 卡由宿主 React 渲染，故客户端必须提供 React 组件。
+import * as React from "react";
 /**
- * dsh-mcp-manager — 浏览器端。运行在 dsh web GUI 中，纯 DOM 实现
- * （无 React、无构建工具）：侧边栏注入「MCP」入口按钮，点击打开模态面板：
+ * dsh-mcp-manager — 浏览器端。运行在 dsh web GUI 中：侧边栏注入「MCP」入口按钮，
+ * 点击打开模态面板（纯 DOM 渲染）：
  *  - 「服务器」页：按状态分级展示 MCP 服务器（运行中 / 连接中 / 重连中 /
  *    已停用 / 未连接 / 失败），每台卡片显示传输、端点、工具数、可展开的
  *    工具名，以及 连接 / 断开 / 重连 / 编辑 / 删除 操作；
  *  - 「快速接入」页：手工表单（stdio / streamable-http）与粘贴
  *    mcpServers JSON 导入（仅支持 JSON 格式，不预设任何服务器）。
  *
- * 失败策略与 dsh-ssh / dsh-skill-explorer 一致：DOM 挂载问题只 warn 不抛。
+ * 设置页插件卡（settings.plugin.item，浮窗位置/偏移编辑区）由宿主 React 渲染，
+ * 故额外用 React（经 build-client externals 注入）提供一个轻量卡片组件；主面板
+ * 与管理逻辑仍为纯 DOM。失败策略与 dsh-ssh / dsh-skill-explorer 一致：DOM 挂载
+ * 问题只 warn 不抛。
  */
 
 /** 与 host 端 ROUTES 一致的路径。 */
@@ -853,6 +859,114 @@ function bindSession(ctx: any) {
 }
 
 /**
+ * 设置页插件卡（settings.plugin.item）：浮窗位置 / 偏移编辑区。
+ * 与 provider-usage「胶囊位置」编辑区同构友好度（锚点下拉 + 水平/垂直偏移 + 空白偏移 +
+ * 保存），读/写走 /api/dsh-mcp/config（GET 读 / POST 写），保存后经 SSE 热更新。
+ */
+function SettingsCard() {
+  const useState = React.useState;
+  const useEffect = React.useEffect;
+  const [cfg, setCfg] = useState(null);
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  useEffect(() => {
+    let live = true;
+    api(API.config).then((c: any) => {
+      if (live && c !== null && typeof c === "object") setCfg(c);
+    }).catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  if (cfg === null) {
+    return React.createElement("li", { className: "dm-set-card" }, "MCP 管理器：加载中…");
+  }
+
+  const set = (patch: any) => setCfg((c: any) => (c !== null ? Object.assign({}, c, patch) : c));
+  const numInput = (key: string, label: string) =>
+    React.createElement("label", { className: "dm-set-field" },
+      label,
+      React.createElement("input", {
+        className: "dm-set-input",
+        type: "number",
+        min: 0,
+        max: 2000,
+        value: String(cfg[key]),
+        onChange: (e: any) => {
+          const v = Number(e.target.value);
+          set({ [key]: Number.isFinite(v) ? Math.min(2000, Math.max(0, Math.round(v))) : 0 });
+        },
+      }),
+    );
+  const save = async () => {
+    setSaving(true);
+    setMsg(null);
+    try {
+      await api(API.config, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(cfg),
+      });
+      setMsg({ ok: true, text: "已保存——浮窗位置即时生效（无需重启）" });
+      setTimeout(() => setMsg(null), 2400);
+    } catch (e) {
+      setMsg({ ok: false, text: `保存失败：${e instanceof Error ? e.message : String(e)}` });
+    }
+    setSaving(false);
+  };
+
+  return React.createElement("li", { className: "dm-set-card" + (open ? " dm-set-cardOpen" : "") },
+    React.createElement("button", {
+      type: "button",
+      className: "dm-set-head",
+      "aria-expanded": open,
+      onClick: () => setOpen(!open),
+    },
+      React.createElement("span", { className: "dm-set-headText" },
+        React.createElement("span", { className: "dm-set-name" }, "MCP 管理器（dsh-mcp-manager）"),
+        React.createElement("span", { className: "dm-set-description" }, "浮窗位置 / 水平·垂直·空白偏移"),
+      ),
+      React.createElement("span", { className: "dm-set-chevron" + (open ? " dm-set-chevronOpen" : "") }, "▾"),
+    ),
+    open ? React.createElement("div", { className: "dm-set-body" },
+      React.createElement("div", { className: "dm-set-row" },
+        React.createElement("label", { htmlFor: "dm-set-position" }, "锚点"),
+        React.createElement("select", {
+          id: "dm-set-position",
+          className: "dm-set-input",
+          value: cfg.position,
+          onChange: (e: any) => set({ position: e.target.value }),
+        },
+          React.createElement("option", { value: "top-right" }, "右上（top-right）"),
+          React.createElement("option", { value: "bottom-right" }, "右下（bottom-right）"),
+        ),
+      ),
+      React.createElement("div", { className: "dm-set-row" },
+        numInput("offsetX", "水平偏移"),
+        numInput("offsetY", "垂直偏移"),
+        numInput("blankY", "空白偏移"),
+      ),
+      React.createElement("div", { className: "dm-set-hint" },
+        "保存即热更新：宿主经 SSE events 通道广播一变，所有标签页的浮窗即刻原位更新，无需重启 dsh web。"),
+      React.createElement("div", { className: "dm-set-foot" },
+        msg !== null
+          ? React.createElement("span", { className: msg.ok ? "dm-set-saved" : "dm-set-error" }, msg.text)
+          : null,
+        React.createElement("button", {
+          type: "button",
+          className: "dm-set-save",
+          disabled: saving,
+          onClick: () => { void save(); },
+        }, saving ? "保存中…" : "保存"),
+      ),
+    ) : null,
+  );
+}
+
+/**
  * 挂载浏览器端：注入样式 + 右上角浮窗（会话跟随）+ 管理面板。
  * @param {import("@deepseek-ai/dsh-client-runtime/client").ClientContext} ctx
  * @returns {void}
@@ -867,6 +981,18 @@ export function apply(ctx: any) {
     }
 
     const disposers: any[] = [];
+
+    // 设置页插件卡（settings.plugin.item）：rc.7 起由 list(id) 改为 keyed(key)，
+    // 需 id 与 key 双写且 key = 宿主端 installSettingsNamespace 注册的命名空间
+    // （dsh-mcp-manager），才会被 configurable 面板派发（对照 dsh-lan-proxy）。
+    const slots = ctx.get("slots");
+    if (slots && typeof slots.inject === "function") {
+      slots.inject("settings.plugin.item", () => slots.register(
+        { name: "settings.plugin.item", id: "dsh-mcp-manager", key: "dsh-mcp-manager", order: 60 },
+        () => React.createElement(SettingsCard, null),
+      ));
+    }
+
     disposers.push(mountFloat(ctx));
     disposers.push(bindSession(ctx));
 
@@ -990,5 +1116,6 @@ export function apply(ctx: any) {
 }
 
 // ---- 客户端契约：apply/inject 由 build-client 经 factory 装配（干净模块）----
-// 注入 sessions 服务以跟随当前会话（cwd 切换项目级 MCP）。
-export const inject: string[] = ["sessions"];
+// 注入 sessions 服务以跟随当前会话（cwd 切换项目级 MCP）；slots 服务用于
+// 注册设置页插件卡（settings.plugin.item）。
+export const inject: string[] = ["sessions", "slots"];
