@@ -30,6 +30,7 @@ import { assertClientProductContract, assertClientSourceContract } from "../../.
 import "./unit-grouping.test.ts";
 import "./unit-relpath.test.ts";
 import "./unit-link-resolver.test.ts";
+import "./unit-routes.test.ts";
 
 const pkgDir = fileURLToPath(new URL("..", import.meta.url));
 
