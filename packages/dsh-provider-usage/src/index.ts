@@ -122,6 +122,22 @@ export function normalizeUiConfig(raw: unknown): UiPlacementConfig {
   };
 }
 
+/** 面板垂直锚点规则：底部锚点（bottom-*）→ 向上弹出；顶部锚点（top-*）→ 向下弹出。 */
+export function panelAnchorForPlacement(placement: UiPlacementConfig["placement"] | undefined): "top" | "bottom" {
+  return placement === "bottom-right" || placement === "bottom-left" ? "bottom" : "top";
+}
+
+/** 面板垂直定位纯函数（供 smoke 断言翻转分支；clamp 到视口内，不溢出）。 */
+export function panelTopForAnchor(
+  anchor: "top" | "bottom",
+  pillTop: number,
+  pillBottom: number,
+  panelHeight: number,
+  gap: number,
+): number {
+  return anchor === "bottom" ? Math.max(6, pillTop - panelHeight - gap) : Math.max(6, pillBottom + gap);
+}
+
 /** UI 配置持久化文件（historyRoot 下，0600）。 */
 export function uiConfigFile(root: string): string {
   return join(root, "ui.json");
