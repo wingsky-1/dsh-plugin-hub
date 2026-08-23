@@ -385,9 +385,11 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     if (mutex.isLocked()) {
       const last = cache.get(provider);
       if (last !== undefined) return { ...last, status: 'cached' };
+      // busy ≠ 未配置：适配器已就绪，仅上一次取数仍在进行（不报红，客户端按 stale 处理）
+      const entryName = registry.getEntry(provider)?.name ?? "unknown";
       return {
-        ok: false, configured: false, reason: 'busy', error: null,
-        fetchedAt: Date.now(), provider, adapterName: registry.getEntry(provider)?.name ?? "unknown",
+        ok: true, configured: true, reason: 'busy', error: null,
+        fetchedAt: Date.now(), provider, adapterName: entryName,
         status: 'stale',
       };
     }

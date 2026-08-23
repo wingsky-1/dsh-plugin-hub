@@ -24,7 +24,6 @@ import STYLE from "./style.css";
 const FALLBACK_PROVIDER = "opencode-go";
 
 const REFRESH_MS = 60000; // 轮询间隔
-const HISTORY_MIN_GAP_MS = 30000; // 历史重拉最小间隔
 const PILL_PREFIX = "dou-"; // 样式类名前缀
 const MAX_HISTORY_DAYS = 30; // 历史请求天数
 
@@ -102,7 +101,6 @@ let floatPanel: HTMLElement | undefined;
 let floatOpen = false;
 let panelContentBox: HTMLElement | undefined;
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
-let lastHistoryAt = 0;
 
 function conversationHost(): HTMLElement {
   return (
@@ -114,9 +112,9 @@ function conversationHost(): HTMLElement {
 
 /** 状态点等级：fresh/cached → ok；stale → warn；未配置/错误 → err。 */
 function pillDotLevel(stats: StatsResponseV2 | null): "ok" | "warn" | "err" {
-  if (stats === null) return "err";
-  if (!stats.configured) return "err";
-  if (stats.status === "stale") return "warn";
+  if (stats === null) return "warn"; // 启动加载中：黄点（非错误）
+  if (!stats.configured) return "err"; // 确实未配置/无启用适配器
+  if (stats.status === "stale") return "warn"; // 降级陈旧（含 busy：取数进行中）
   return "ok";
 }
 
@@ -130,10 +128,13 @@ function renderPill(): void {
   const hide = stats === null || (!stats.configured && !stats.capsuleHtml);
   floatPill.hidden = hide;
   if (stats !== null) {
-    floatPill.title =
-      stats.error !== null && stats.error !== undefined
-        ? `用量获取失败：${stats.error}`
-        : `${stats.adapterName} · ${stats.status === "stale" ? "数据陈旧" : stats.status === "cached" ? "缓存" : "实时"} · 更新于 ${fmtAge(stats.fetchedAt)}`;
+    if (stats.error !== null && stats.error !== undefined) {
+      floatPill.title = `用量获取失败：${stats.error}`;
+    } else if ((stats as { reason?: string | null }).reason === "busy") {
+      floatPill.title = `${stats.adapterName} · 取数进行中，稍候自动刷新`;
+    } else {
+      floatPill.title = `${stats.adapterName} · ${stats.status === "stale" ? "数据陈旧" : stats.status === "cached" ? "缓存" : "实时"} · 更新于 ${fmtAge(stats.fetchedAt)}`;
+    }
   }
   if (labelEl !== null) {
     if (stats?.capsuleHtml) labelEl.innerHTML = stats.capsuleHtml;
@@ -155,13 +156,11 @@ async function refreshStats(): Promise<void> {
     if (r.adapterVersion !== lastAdapterVersion) {
       lastAdapterVersion = r.adapterVersion;
       lastHistory = null;
-      lastHistoryAt = 0;
     }
     lastStats = r;
     renderPill();
     if (floatOpen) {
-      renderPanel();
-      if (Date.now() - lastHistoryAt >= HISTORY_MIN_GAP_MS) void refreshHistory();
+      void refreshHistory(); // 面板开着：随轮询同步刷新历史
     }
   } catch {
     if (gen !== renderGeneration) return;
@@ -177,7 +176,6 @@ async function refreshHistory(): Promise<void> {
     const body = await fetchHistory(currentProvider, MAX_HISTORY_DAYS);
     if (gen !== renderGeneration) return;
     lastHistory = body;
-    lastHistoryAt = Date.now();
     if (floatOpen) renderPanel();
   } catch {
     if (gen !== renderGeneration) return;
@@ -185,7 +183,7 @@ async function refreshHistory(): Promise<void> {
   }
 }
 
-/** 错误码 → 面板提示文案。 */
+/** 错误码/原因 → 面板提示文案（覆盖 error 码与 reason 降级码）。 */
 function errorMessage(code: string | undefined | null): string {
   switch (code) {
     case "no-api-key": return "未找到 API Key（走 {PROVIDER}_API_KEY 环境变量或 .credentials.yaml）。";
@@ -194,9 +192,14 @@ function errorMessage(code: string | undefined | null): string {
     case "network": return "网络错误，请检查连接后重试。";
     case "bad-data":
     case "bad-json": return "数据格式异常，请检查服务商接口或适配器返回。";
+    case "adapter-load-failed": return "自定义适配器加载失败，请检查文件路径与契约（设置页可见错误明细）。";
+    // reason 降级码（error 为 null 但 ok=false 的形态）
+    case "busy": return "上一次取数仍在进行，稍候自动刷新。";
+    case "no-enabled-adapter": return "该提供商有候选适配器但均未启用，请在设置面板「用量统计」启用。";
+    case "no-adapter": return "该提供商未配置适配器，请在设置面板「用量统计」添加。";
     default:
       if (typeof code === "string" && code.startsWith("http-")) return `服务返回 ${code.slice(5)}，请检查中转站状态。`;
-      return `用量获取失败：${code ?? "未知错误"}。`;
+      return `用量获取失败：${code || "暂无数据"}。`;
   }
 }
 
@@ -216,15 +219,26 @@ function renderPanel(): void {
   panelContentBox = el("div", { class: PILL_PREFIX + "charts" });
   floatPanel.appendChild(panelContentBox);
 
-  // 错误态优先
-  if (stats !== null && stats.ok === false) {
-    panelContentBox.appendChild(
-      el("p", { class: PILL_PREFIX + "error", text: errorMessage(stats.error) }),
-    );
-  } else if (lastHistory !== undefined && lastHistory !== null) {
-    if (lastHistory.panelHtml) panelContentBox.innerHTML = lastHistory.panelHtml;
-    else if (lastHistory.error) {
-      panelContentBox.appendChild(el("p", { class: PILL_PREFIX + "error", text: errorMessage(lastHistory.error) }));
+  // 优先级：面板内容（panelHtml）> 状态/历史错误 > 加载中
+  // （stats 失败但历史有图时仍展示图表——数据可用性优先于错误提示）
+  const hasPanelHtml = lastHistory !== null && lastHistory !== undefined && !!lastHistory.panelHtml;
+  if (hasPanelHtml) {
+    panelContentBox.innerHTML = lastHistory!.panelHtml ?? "";
+    if (lastHistory!.error) {
+      panelContentBox.appendChild(el("p", { class: PILL_PREFIX + "hint", text: `提示：${errorMessage(lastHistory!.error)}` }));
+    }
+  } else if (lastHistory !== undefined && lastHistory !== null && lastHistory.error) {
+    panelContentBox.appendChild(el("p", { class: PILL_PREFIX + "error", text: errorMessage(lastHistory.error) }));
+  } else if (stats !== null && stats.ok === false) {
+    // stats 失败且无历史：区分「未配置」与「取数失败」（error 为 null 的 reason 态给明确文案）
+    const reason = (stats as { reason?: string | null }).reason;
+    const code = stats.error || reason || "";
+    if (!stats.configured) {
+      panelContentBox.appendChild(
+        el("p", { class: PILL_PREFIX + "error", text: errorMessage(code === "" ? "no-adapter" : code) }),
+      );
+    } else {
+      panelContentBox.appendChild(el("p", { class: PILL_PREFIX + "error", text: errorMessage(stats.error || reason) }));
     }
   } else {
     panelContentBox.appendChild(el("p", { class: PILL_PREFIX + "hint", text: "加载中…" }));
@@ -264,9 +278,8 @@ function toggleFloat(force?: boolean): void {
   if (next) {
     placePanel();
     renderPanel();
-    void refreshStats();
-    // 展开面板即拉取历史（30s 节流；与 v1 行为一致）
-    if (Date.now() - lastHistoryAt >= HISTORY_MIN_GAP_MS) void refreshHistory();
+    // 展开面板只拉历史（每次都调）；胶囊文案由轮询维护，不重复调 stats
+    void refreshHistory();
   }
 }
 
