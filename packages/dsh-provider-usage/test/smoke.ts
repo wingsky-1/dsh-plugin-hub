@@ -20,6 +20,11 @@ import assert from "node:assert/strict";
 // 纯函数断言区先行执行（无 @ts-nocheck、强类型）
 import "./smoke-pure.ts";
 
+// 结构化单元测试（#83 阶段一：对齐 notifier 的 unit-*.test.ts 样板）
+import "./unit-contract.test.ts";
+import "./unit-config.test.ts";
+import "./unit-history.test.ts";
+
 import {
   apply,
   ROUTES,

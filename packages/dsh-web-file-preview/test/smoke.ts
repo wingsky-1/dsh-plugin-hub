@@ -26,6 +26,11 @@ import {
 import { build as esbuildBuild } from "esbuild";
 import { assertClientProductContract, assertClientSourceContract } from "../../../test/smoke-lib.ts";
 
+// 结构化单元测试（#83 阶段一：对齐 notifier 的 unit-*.test.ts 样板）
+import "./unit-grouping.test.ts";
+import "./unit-relpath.test.ts";
+import "./unit-link-resolver.test.ts";
+
 const pkgDir = fileURLToPath(new URL("..", import.meta.url));
 
 // ------------------------------------------------------------ 分组单一事实源（grouping）
