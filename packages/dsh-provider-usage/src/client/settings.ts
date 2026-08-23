@@ -141,7 +141,9 @@ function UsageSection({ statsByProvider }: { statsByProvider: Record<string, Sta
               verticalAlign: "middle",
             },
           });
-          const meta = `${s?.adapterName ?? "-"} · ${STATUS_LABEL[s?.status ?? ""] ?? "未配置"}${
+          // 适配器名与 provider 同名时省略，避免「rjkrjk」式连读
+          const adapterPart = s?.adapterName && s.adapterName !== provider ? `${s.adapterName} · ` : "";
+          const meta = `${adapterPart}${STATUS_LABEL[s?.status ?? ""] ?? "未配置"}${
             typeof s?.fetchedAt === "number"
               ? ` · 更新于 ${new Date(s.fetchedAt).toLocaleTimeString("zh-CN", { hour12: false })}`
               : ""
