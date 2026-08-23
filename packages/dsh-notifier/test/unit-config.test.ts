@@ -8,14 +8,19 @@
  * historyMaxAgeDays）/quietHours 归一化（HH:MM 校验、allowKinds 白名单）。
  */
 import { join } from "node:path";
+import { homedir, tmpdir } from "node:os";
 import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { assert } from "./helpers.ts";
-import { normalizeConfig, parseHHMM, isInQuietHours, DEFAULT_CONFIG } from "../lib/index.js";
+import { normalizeConfig, parseHHMM, isInQuietHours, DEFAULT_CONFIG, configFile, historyFile, toastScriptPath } from "../lib/index.js";
 
 const work = mkdtempSync(join(tmpdir(), "dnotify-unit-config-"));
 try {
   const DEFAULT_CONFIG_UNTOUCHED = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+
+  // 路径契约（config.ts 导出；apply 未覆盖路径时由宿主按此位置读写）
+  assert.equal(configFile(), join(homedir(), ".dsh", "dsh-notifier.json"), "配置路径固定到 ~/.dsh/dsh-notifier.json");
+  assert.equal(historyFile(), join(homedir(), ".dsh", "dsh-notifier-history.jsonl"), "历史路径固定到 ~/.dsh/dsh-notifier-history.jsonl");
+  assert.ok(toastScriptPath().endsWith(join("lib", "toast.ps1")), "toast 脚本随包 lib/ 下");
 
   assert.equal(normalizeConfig(undefined).notifyAsk, true);
   const merged = normalizeConfig({ notifyAsk: false, bogus: 1, quietHours: { enabled: true, start: "23:30", end: "06:00", x: 1 } });
