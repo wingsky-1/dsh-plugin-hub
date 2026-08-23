@@ -9,7 +9,13 @@
 
 每个插件包 = 独立 npm 包（`@wingsky-1/dsh-*`），发布物自包含（第三方依赖构建期内联）。
 
+> **安装依赖**：本仓库是 pnpm workspace（`pnpm-workspace.yaml` + 包间 `workspace:*`
+> 协议 + pnpm 严格 node_modules）。动手前必须 `pnpm install`（在仓库根执行）。
+> **不要用 `npm install`**——它会因 `workspace:*` 协议与 pnpm 布局而失败，且无法
+> 复现 CI 的依赖解析结果。
+
 ```sh
+pnpm install       # 仓库根，pnpm workspace 依赖安装（必须先于一切构建）
 pnpm build        # 全仓构建 = pnpm -r build（各包：clean-lib → tsc → bundle-host）
 pnpm contract     # 客户端契约（node scripts/contract-check.ts）
 pnpm test         # 全量 smoke（Node ≥23.6 原生 type stripping 直跑）

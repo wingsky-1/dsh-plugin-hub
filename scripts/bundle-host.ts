@@ -19,14 +19,13 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { execFileSync } from 'node:child_process'
+import { build } from 'esbuild'
 import { buildClient, copyClientResources } from './build-client.ts'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // 插件目录相对当前工作目录解析（pnpm --filter 场景 cwd=包目录传 .；仓库根场景传 packages/dsh-*）
 const pkgDir = resolve(process.cwd(), process.argv[2] ?? '.')
 const pkgJson = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8'))
-const esbuildBin = join(ROOT, 'node_modules', '.bin', process.platform === 'win32' ? 'esbuild.cmd' : 'esbuild')
 const libDir = join(pkgDir, 'lib')
 
 if (!process.argv[2]) {
@@ -56,20 +55,22 @@ function walkFiles(dir, predicate) {
 
 // 1. esbuild 内联 shared（tsc 产物 → 自包含单文件，临时文件再替换，避免占用原文件）
 const tmpBundle = join(libDir, '.index.bundle.js')
-const esbuildArgs = [
-  join(libDir, 'index.js'),
-  '--bundle', '--format=esm', '--platform=node', '--target=node20',
-  `--outfile=${tmpBundle}`, '--log-level=warning', '--charset=utf8',
-]
 // 可选 banner（按包，dsh.bundle.bannerJs）：在 ESM 产物顶部注入代码。用于给内联的
 // CJS 库（如 ws）提供 require（createRequire），避免其内部动态 require Node 内置
 // 模块在 ESM 顶层报 "Dynamic require ... is not supported"。其余包不设该字段则零影响。
 const bannerJs = pkgJson?.dsh?.bundle?.bannerJs
-if (typeof bannerJs === 'string' && bannerJs.length > 0) {
-  esbuildArgs.push('--banner:js=' + bannerJs)
-}
 try {
-  execFileSync(esbuildBin, esbuildArgs, { stdio: 'inherit' })
+  await build({
+    entryPoints: [join(libDir, 'index.js')],
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    target: 'node20',
+    outfile: tmpBundle,
+    logLevel: 'warning',
+    charset: 'utf8',
+    banner: typeof bannerJs === 'string' && bannerJs.length > 0 ? { js: bannerJs } : undefined,
+  })
 } catch (e) {
   console.error(`[bundle-host] esbuild 失败: ${e.message}`)
   process.exit(1)
