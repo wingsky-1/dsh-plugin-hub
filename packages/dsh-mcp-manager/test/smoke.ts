@@ -701,8 +701,8 @@ const main = async () => {
       const routes = makeRoutes(manager, process.cwd());
       const find = (path) => routes.find((route) => route.path === path);
 
-      check("注册 6 条 exact 路由", () => {
-        assert.equal(routes.length, 6);
+      check("注册 7 条 exact 路由", () => {
+        assert.equal(routes.length, 7);
         for (const route of routes) assert.equal(route.kind, "exact");
       });
 
@@ -835,7 +835,7 @@ const main = async () => {
     const ctx = fakeCtx();
     try {
       await apply(ctx, { enabled: true, storePath: join(dir, "dsh-mcp.json") });
-      assert.equal(ctx.routes.length, 8); // 6 条业务路由 + 1 条 SSE events + 1 条 health
+      assert.equal(ctx.routes.length, 9); // 7 条业务路由 + 1 条 SSE events + 1 条 health
       assert.ok(ctx.routes.some((route) => route.path === ROUTES.events), "SSE events 路由已注册");
       assert.equal(ctx.sections.length, 1);
       assert.equal(ctx.sections[0].name, "plugin:dsh-mcp-manager");
