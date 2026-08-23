@@ -20,6 +20,7 @@ import type { McpStore } from "./store.js";
 export interface RoutesManager {
   setSession(cwd: string | undefined): Promise<void>;
   refreshFromDisk(): Promise<void>;
+  uiConfig(): Record<string, unknown>;
   summary(): Record<string, unknown>;
   add(server: Record<string, unknown>, scope?: string): Promise<ServerConfig>;
   update(name: string, patch: Record<string, unknown>, scope?: string): Promise<ServerConfig>;
@@ -39,6 +40,7 @@ export interface RoutesManager {
 /** 路由路径清单（与客户端一致）。 */
 export const ROUTES = {
   servers: "/api/dsh-mcp/servers",
+  config: "/api/dsh-mcp/config",
   session: "/api/dsh-mcp/session",
   connect: "/api/dsh-mcp/servers/connect",
   disconnect: "/api/dsh-mcp/servers/disconnect",
@@ -80,6 +82,18 @@ export function makeRoutes(manager: RoutesManager, cwd = process.cwd()): WebRout
   };
 
   return [
+    {
+      kind: "exact",
+      path: ROUTES.config,
+      handler: async (req, res) => {
+        if (!guard(req, res, "GET")) return;
+        try {
+          writeJson(res, 200, manager.uiConfig());
+        } catch (error) {
+          handleError(res, error);
+        }
+      },
+    },
     {
       kind: "exact",
       path: ROUTES.servers,

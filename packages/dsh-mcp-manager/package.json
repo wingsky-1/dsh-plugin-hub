@@ -41,6 +41,9 @@
     "README.md",
     "LICENSE"
   ],
+  "dependencies": {
+    "schemastery": "^3.18.0"
+  },
   "devDependencies": {
     "@deepseek-ai/cordis": "catalog:",
     "@deepseek-ai/dsh-host-webserver": "catalog:",
