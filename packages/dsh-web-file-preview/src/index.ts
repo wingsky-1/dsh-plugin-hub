@@ -78,7 +78,9 @@ export function apply(ctx: Context, config?: PreviewConfig): void {
 // 路由常量 / 纯函数透出（smoke、客户端契约、诊断共用）。
 export { ROUTES, makeRoutes, serveFileRoute, previewKindOf, computeGitDiff };
 // 预览分组判定（单一事实源，宿主/客户端共用；经此透出供 smoke 断言双端一致）。
-export { groupOfPath, isLikelySingleFilePath, cleanRefChipPath } from "./grouping.js";
+export { groupOfPath, groupOfExt, extOf, isPreviewablePath, isLikelySingleFilePath, cleanRefChipPath } from "./grouping.js";
 // Markdown 相对引用展开（U8 v2；纯函数，经此透出供 smoke 断言）。
 export { resolveRelativePath } from "./relpath.js";
+// 点击链接解析纯逻辑（客户端无 DOM 依赖，经此透出供单元测试）。
+export { basenameOf, decideGate, resolveFileLink } from "./client/link-resolver.js";
 
