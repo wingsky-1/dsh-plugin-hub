@@ -712,8 +712,12 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
       // sctx 注入 settings 服务（cordis 类型面未声明该服务，经 unknown 中转取最小面）。
       const settings = (sctx as unknown as { settings?: { update?: (ns: string, patch: Record<string, unknown>) => Promise<unknown> } } | undefined)?.settings;
       if (settings && typeof settings.update === "function") {
+        // settings.update 是 cordis 服务方法，不绑 this（内部访问 this.write）——直接
+        // 解构后调用会丢 this → this.write undefined（回归 #125 保存 400）。这里保留
+        // 本地引用并以 call(settings) 把服务对象本身作为 this 传入；同时规避 TS 对
+        // 可选属性 settings.update 的收窄在闭包内丢失（2722）。
         const update = settings.update;
-        manager.uiUpdate = (patch) => update("dsh-mcp-manager", patch);
+        manager.uiUpdate = (patch) => update.call(settings, "dsh-mcp-manager", patch);
       }
     });
   }
