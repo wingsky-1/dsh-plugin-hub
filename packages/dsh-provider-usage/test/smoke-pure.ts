@@ -221,7 +221,7 @@ assert.equal(sanitizeHtml('<iframe src="x"></iframe>y'), "y");
 
 {
   const d = normalizeUiConfig(undefined);
-  assert.deepEqual(d, DEFAULT_UI_CONFIG, "默认配置 top-right/0/8/44");
+  assert.deepEqual(d, DEFAULT_UI_CONFIG, "默认配置 top-right/0/8/10");
   const clamped = normalizeUiConfig({ placement: "bottom-left", offsetX: 99999, offsetY: -3, panelOffsetY: 0.6 });
   assert.equal(clamped.placement, "bottom-left", "合法 placement 透传");
   assert.equal(clamped.offsetX, 2000, "offsetX 上限 clamp");

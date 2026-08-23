@@ -99,7 +99,7 @@ export const DEFAULT_UI_CONFIG: UiPlacementConfig = {
   placement: "top-right",
   offsetX: 0,
   offsetY: 8,
-  panelOffsetY: 44,
+  panelOffsetY: 10,
 };
 
 const UI_PLACEMENTS: UiPlacementConfig["placement"][] = ["top-right", "top-left", "bottom-right", "bottom-left"];
