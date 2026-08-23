@@ -47,7 +47,8 @@
     "@deepseek-ai/dsh-llm": "catalog:",
     "@deepseek-ai/dsh-agent": "catalog:",
     "@deepseek-ai/dsh-system-prompt": "catalog:",
-    "@deepseek-ai/dsh-tools": "catalog:"
+    "@deepseek-ai/dsh-tools": "catalog:",
+    "schemastery": "^3.18.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "*",

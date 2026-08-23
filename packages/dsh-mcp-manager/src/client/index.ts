@@ -22,6 +22,7 @@ const API = {
   reconnect: "/api/dsh-mcp/servers/reconnect",
   importJson: "/api/dsh-mcp/import/json",
   session: "/api/dsh-mcp/session",
+  config: "/api/dsh-mcp/config",
   events: "/api/dsh-mcp/events",
     health: "/api/dsh-mcp/health",
 };
@@ -552,6 +553,8 @@ let floatPanel: any;
 let floatOpen = false;
 let currentCwd: any = undefined;
 let projectRoot: any = undefined;
+let updateFloatState: any = undefined;
+let mcpUiConfig: any = { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 };
 
 /** 状态点的颜色（与 STATUS_ORDER 一致）。 */
 function statusDot(status: any) {
@@ -662,6 +665,8 @@ function toggleFloat(force?: any) {
   if (next) {
     placePanel();
     renderFloatPanel();
+    // 聚焦面板本身，让后续点击外部时能通过 focusout 自动关闭。
+    floatPanel.focus({ preventScroll: true });
   }
 }
 
@@ -679,11 +684,30 @@ function placePanel() {
 function conversationHost() {
   return document.querySelector('[data-conversation-scroll]')
     ?? document.querySelector('[data-pane="conversation"]')
+    ?? document.querySelector('.pI_x6G_centerCol')
     ?? document.body;
 }
 
-/** 挂载浮窗：胶囊挂在会话滚动容器（scrollBody）内并钉住右上角，下拉面板 fixed 跟随。 */
-function mountFloat() {
+/** 全局 overlay 层：下拉面板挂这里（fixed 定位，避免被滚动容器裁剪）。 */
+function panelHost() {
+  return document.querySelector('[data-shell-overlay]')
+    ?? document.body;
+}
+
+/** 从 settings.yaml 读取的配置决定新/老会话垂直偏移。 */
+function floatTopOffset(ctx: any) {
+  const snap = ctx?.sessions?.list?.getSnapshot?.();
+  const current = snap?.current;
+  const session = current === undefined ? undefined : snap?.byId?.[current];
+  const blank = session?.blank === true;
+  const cfg = mcpUiConfig || {};
+  const y = typeof cfg.offsetY === "number" ? cfg.offsetY : 8;
+  const blankY = typeof cfg.blankY === "number" ? cfg.blankY : y;
+  return blank ? blankY : y;
+}
+
+/** 挂载浮窗：胶囊继续挂在会话滚动容器（scrollBody）内并钉住右上角，下拉面板 fixed 跟随。 */
+function mountFloat(ctx: any) {
   const pill = el("button", {
     type: "button",
     class: "dm-float",
@@ -694,35 +718,63 @@ function mountFloat() {
   pill.addEventListener("click", () => toggleFloat());
   const panel = el("div", { class: "dm-float-panel" });
   panel.hidden = true;
+  panel.tabIndex = -1;
   floatPill = pill;
   floatPanel = panel;
-  // 面板挂 body（fixed 定位），胶囊挂滚动容器
-  if (panel.parentElement !== document.body) document.body.appendChild(panel);
+  // 胶囊挂会话滚动容器，下拉面板挂 shell.overlay（fixed 定位，仍与通知同一层）。
+  const panelRoot = panelHost();
+  if (panel.parentElement !== panelRoot) panelRoot.appendChild(panel);
+
+  // 失去焦点后自动关闭：焦点离开胶囊/面板时收起下拉框。
+  // 面板打开时主动聚焦到面板，因此点击外部任意区域都会触发 focusout。
+  const onFocusOut = (event: any) => {
+    if (!floatOpen) return;
+    const next = event.relatedTarget as Node | null;
+    if (next !== null && (floatPanel.contains(next) || floatPill.contains(next))) return;
+    toggleFloat(false);
+  };
+  document.addEventListener("focusout", onFocusOut);
 
   let host: any;
   let listeners: any = [];
+
+  /** 按 settings.yaml 配置把胶囊定位到对话容器右上/右下角。 */
+  const updateFloat = () => {
+    const best = conversationHost();
+    if (best === null || best === undefined) return;
+    const rect = best.getBoundingClientRect();
+    const cfg = mcpUiConfig || {};
+    const position = cfg.position === "bottom-right" ? "bottom-right" : "top-right";
+    const offsetX = typeof cfg.offsetX === "number" ? cfg.offsetX : 8;
+    const y = floatTopOffset(ctx);
+    pill.style.position = "fixed";
+    pill.style.left = `${rect.right - pill.offsetWidth - offsetX}px`;
+    pill.style.right = "auto";
+    if (position === "bottom-right") {
+      pill.style.top = `${rect.bottom - pill.offsetHeight - y}px`;
+    } else {
+      pill.style.top = `${rect.top + y}px`;
+    }
+    if (floatOpen) placePanel();
+  };
+  updateFloatState = updateFloat;
+
   const attachListeners = (target: any) => {
     for (const detach of listeners.splice(0)) detach();
-    const onScroll = () => {
-      const top = (target === document.body ? window.scrollY : target.scrollTop) + 8;
-      pill.style.top = `${top}px`;
-      if (floatOpen) placePanel();
-    };
-    const onResize = () => {
-      if (floatOpen) placePanel();
-    };
+    const onScroll = () => updateFloat();
+    const onResize = () => updateFloat();
     target.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", onResize);
     listeners.push(() => {
       target.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onResize);
     });
-    onScroll();
+    updateFloat();
   };
 
   /**
-   * 放置/迁移：每次调用都重新求最佳宿主（scrollBody 优先），浮窗永远跟着
-   * 它走——即使初始化时 scrollBody 尚未渲染（退回 body），一旦出现就迁移。
+   * 放置/迁移：每次调用都重新求最佳宿主（scrollBody 优先），胶囊跟着它走——
+   * 即使初始化时 scrollBody 尚未渲染（退回 body），一旦出现就迁移。
    */
   const place = () => {
     const best = conversationHost();
@@ -751,6 +803,8 @@ function mountFloat() {
   }
   renderPill();
   return () => {
+    updateFloatState = undefined;
+    document.removeEventListener("focusout", onFocusOut);
     observer.disconnect();
     for (const detach of listeners.splice(0)) detach();
     pill.remove();
@@ -774,8 +828,10 @@ function bindSession(ctx: any) {
     } catch {
       cwd = undefined;
     }
-    if (cwd === currentCwd) return;
+    const prevCwd = currentCwd;
     currentCwd = cwd;
+    updateFloatState?.();
+    if (cwd === prevCwd) return;
     // 无论 cwd 是否为空都通知宿主切换：空 cwd（blank 会话/新会话还没选
     // 工作区）也要显式清空宿主的项目级 MCP，否则宿主全局单例会残留
     // 上一个会话的项目级服务器，别的会话就串台显示了。
@@ -805,8 +861,15 @@ export function apply(ctx: any) {
     }
 
     const disposers: any[] = [];
-    disposers.push(mountFloat());
+    disposers.push(mountFloat(ctx));
     disposers.push(bindSession(ctx));
+
+    // 读取 settings.yaml 中的 UI 配置（右上/右下 + 偏移量），不依赖设置页。
+    api(API.config).then((cfg: any) => {
+      if (cfg !== null && typeof cfg === "object") mcpUiConfig = cfg;
+      updateFloatState?.();
+    }).catch(() => {});
+
 
     // 首次刷新：立即执行，失败按 500ms/1s/2s 退避重试（宿主路由可能尚未就绪，
     // 不依赖固定延迟猜测）。

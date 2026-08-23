@@ -671,6 +671,7 @@ const main = async () => {
         store,
         logger: { warn: () => {}, info: () => {}, error: () => {} },
         summary: () => ({ servers: [], counts: {} }),
+        uiConfig: () => ({ position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 }),
         refreshFromDisk: async () => {},
         setSession: async (cwd) => {
           managerState.sessionCwd = cwd;
@@ -701,8 +702,8 @@ const main = async () => {
       const routes = makeRoutes(manager, process.cwd());
       const find = (path) => routes.find((route) => route.path === path);
 
-      check("注册 6 条 exact 路由", () => {
-        assert.equal(routes.length, 6);
+      check("注册 7 条 exact 路由", () => {
+        assert.equal(routes.length, 7);
         for (const route of routes) assert.equal(route.kind, "exact");
       });
 
@@ -765,6 +766,14 @@ const main = async () => {
         const res = fakeRes();
         await find(ROUTES.servers).handler(fakeFenceBroken("GET", ROUTES.servers), res);
         assert.equal(res.state.status, 403);
+      });
+      await checkAsync("config 非 loopback → 200（只读 UI 配置放开）", async () => {
+        const res = fakeRes();
+        await find(ROUTES.config).handler(fakeFenceBroken("GET", ROUTES.config), res);
+        assert.equal(res.state.status, 200);
+        const body = JSON.parse(res.state.body);
+        assert.equal(body.position, "top-right");
+        assert.equal(body.offsetX, 8);
       });
       await checkAsync("import/json 导入", async () => {
         const res = fakeRes();
@@ -835,7 +844,7 @@ const main = async () => {
     const ctx = fakeCtx();
     try {
       await apply(ctx, { enabled: true, storePath: join(dir, "dsh-mcp.json") });
-      assert.equal(ctx.routes.length, 8); // 6 条业务路由 + 1 条 SSE events + 1 条 health
+      assert.equal(ctx.routes.length, 9); // 7 条业务路由 + 1 条 SSE events + 1 条 health
       assert.ok(ctx.routes.some((route) => route.path === ROUTES.events), "SSE events 路由已注册");
       assert.equal(ctx.sections.length, 1);
       assert.equal(ctx.sections[0].name, "plugin:dsh-mcp-manager");

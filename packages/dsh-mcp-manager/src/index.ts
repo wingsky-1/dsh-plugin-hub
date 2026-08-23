@@ -25,6 +25,8 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import type { ServerResponse } from "node:http";
+import z from "schemastery";
+import { installSettingsNamespace } from "../../../shared/settings-namespace.js";
 // 官方类型层（issue #16/#48，锁版见 pnpm-workspace catalog；仅 import type，
 // 编译期擦除，禁止运行时值导入——contract-check 有门禁）。
 import type { Context, LoggerService } from "@deepseek-ai/cordis";
@@ -68,6 +70,17 @@ export const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;
 /** 空 description 工具的条件拼接默认开启。 */
 export const DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS = true;
 
+/** MCP 浮动按钮 UI 配置（隐藏 settings namespace，不在设置页显示）。 */
+const UiConfigSchema = z.object({
+  position: z.union([z.const("top-right"), z.const("bottom-right")]).default("top-right"),
+  offset: z.object({
+    x: z.number().default(8),
+    y: z.number().default(8),
+    blankY: z.number().default(40),
+  }).default({ x: 8, y: 8, blankY: 40 }),
+});
+
+
 // ------------------------------------------------------------ 管理器
 
 /** DSH 全局家目录（与官方 dsh-home-paths 同语义：DSH_HOME ?? ~/.dsh）。 */
@@ -94,6 +107,7 @@ export class McpManager {
   enhancement: { enhanceEmptyDescriptions?: boolean; resultTruncateBytes?: number };
   catalogCache: CatalogCache;
   catalogCachePath: string;
+  uiConfigSource: () => any;
   sseConnections?: Set<ServerResponse>;
 
   constructor(ctx: Context, store: McpStore) {
@@ -114,6 +128,19 @@ export class McpManager {
     // 目录缓存：serverName → { summary }（磁盘持久化，digest 的稳定数据源）。
     this.catalogCache = new Map();
     this.catalogCachePath = catalogCacheFile();
+    this.uiConfigSource = () => ({ position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 });
+  }
+
+  /** 读取 settings 命名空间中的 MCP UI 配置（供 /api/dsh-mcp/config 返回）。 */
+  uiConfig(): Record<string, unknown> {
+    const value = this.uiConfigSource() ?? {};
+    const defaults: Record<string, unknown> = { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 };
+    const out: Record<string, unknown> = { ...defaults };
+    if (value.position === "top-right" || value.position === "bottom-right") out.position = value.position;
+    if (typeof value.offset?.x === "number") out.offsetX = value.offset.x;
+    if (typeof value.offset?.y === "number") out.offsetY = value.offset.y;
+    out.blankY = typeof value.offset?.blankY === "number" ? value.offset.blankY : out.offsetY;
+    return out;
   }
 
   /** 从磁盘加载目录缓存（损坏/缺失 → 空缓存，不崩溃）。 */
@@ -550,6 +577,15 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
   await store.load();
   const manager = new McpManager(ctx, store);
   manager.enhancement = { enhanceEmptyDescriptions, resultTruncateBytes };
+
+    // 隐藏 settings namespace：配置保存在 settings.yaml，不在设置页显示。
+    installSettingsNamespace(ctx, "dsh-mcp-manager", UiConfigSchema, config ?? {}, {
+      setSource: (source) => {
+        manager.uiConfigSource = source as () => any;
+      },
+      onChange: () => {},
+    });
+
 
   let disposeRoutes = () => {};
   let disposeSection = () => {};
