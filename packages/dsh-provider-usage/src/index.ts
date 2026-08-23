@@ -72,7 +72,6 @@ export const DEFAULT_CONFIG = {
   cacheDurationMs: 60000,
   fetchTimeoutMs: 2000,
   autoReload: false,
-  maxDetailRows: 5000,
   maxAgeDays: 30,
   maxSizeMB: 20,
 };
@@ -88,7 +87,6 @@ export interface NormalizedConfig {
   cacheDurationMs: number;
   fetchTimeoutMs: number;
   autoReload: boolean;
-  maxDetailRows: number;
   maxAgeDays: number;
   maxSizeMB: number;
 }
@@ -102,7 +100,6 @@ export const Config: z<{
   cacheDurationMs: number;
   fetchTimeoutMs: number;
   autoReload: boolean;
-  maxDetailRows: number;
   maxAgeDays: number;
   maxSizeMB: number;
 }> = z.object({
@@ -114,7 +111,6 @@ export const Config: z<{
   cacheDurationMs: z.number().default(DEFAULT_CONFIG.cacheDurationMs).description("缓存新鲜度毫秒").disabled(true),
   fetchTimeoutMs: z.number().default(DEFAULT_CONFIG.fetchTimeoutMs).description("取数超时毫秒").disabled(true),
   autoReload: z.boolean().default(false).description("热更新开关（编辑适配器 mjs 后自动重新加载）"),
-  maxDetailRows: z.number().default(DEFAULT_CONFIG.maxDetailRows).description("历史查询行数上限").disabled(true),
   maxAgeDays: z.number().default(DEFAULT_CONFIG.maxAgeDays).description("历史数据保留天数").disabled(true),
   maxSizeMB: z.number().default(DEFAULT_CONFIG.maxSizeMB).description("历史数据大小上限（MB）").disabled(true),
 });
@@ -133,7 +129,6 @@ export function normalizeConfig(input: unknown): NormalizedConfig {
   if (Number.isFinite(cfg.cacheDurationMs)) base.cacheDurationMs = Math.max(5000, cfg.cacheDurationMs as number);
   if (Number.isFinite(cfg.fetchTimeoutMs)) base.fetchTimeoutMs = Math.min(Math.max(500, cfg.fetchTimeoutMs as number), 30000);
   if (typeof cfg.autoReload === "boolean") base.autoReload = cfg.autoReload;
-  if (Number.isFinite(cfg.maxDetailRows)) base.maxDetailRows = Math.min(50000, cfg.maxDetailRows as number);
   if (Number.isFinite(cfg.maxAgeDays)) base.maxAgeDays = Math.min(365, cfg.maxAgeDays as number);
   if (Number.isFinite(cfg.maxSizeMB)) base.maxSizeMB = Math.min(500, cfg.maxSizeMB as number);
   return base;
@@ -490,7 +485,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       const url = new URL(req.url ?? "/", "http://localhost");
       const prov = url.searchParams.get("provider") ?? config.provider;
       const entry = registry.getEntry(prov);
-      if (entry === undefined) return writeJson(res, 200, { ok: true, plugin: "dsh-provider-usage", version: ADAPTER_CONTRACT_VERSION, provider: prov, adapterName: null, panelHtml: "<p>暂无启用的适配器</p>", error: null, truncated: false, range: { start: 0, end: 0 } });
+      if (entry === undefined) return writeJson(res, 200, { ok: true, plugin: "dsh-provider-usage", version: ADAPTER_CONTRACT_VERSION, provider: prov, adapterName: null, panelHtml: "<p>暂无启用的适配器</p>", error: null, range: { start: 0, end: 0 } });
       const days = Number(url.searchParams.get("days"));
       const end = Date.now();
       const start = Number.isFinite(days) && days > 0
@@ -501,7 +496,6 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
         provider: prov,
         history,
         range: { start, end },
-        limit: config.maxDetailRows,
         timeoutMs: config.fetchTimeoutMs,
       });
       writeJson(res, 200, {
@@ -512,7 +506,6 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
         adapterName: entry.name,
         panelHtml: result.panelHtml,
         error: result.error ?? null,
-        truncated: result.truncated,
         range: { start, end },
       });
     },

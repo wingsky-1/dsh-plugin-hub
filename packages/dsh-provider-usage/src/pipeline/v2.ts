@@ -132,24 +132,23 @@ export async function capsuleHtmlFromHistory(
   return `<span>${esc(fallbackText)}</span>`;
 }
 
-/** v2 面板管道：查询历史 → formatPanel → HTML。 */
+/** v2 面板管道：查询历史（全量）→ formatPanel → HTML。 */
 export async function runV2PanelPipeline(opts: {
   adapter: UsageStatsAdapter;
   provider: string;
   history: HistoryStore;
   range: { start: number; end: number };
-  limit?: number;
   timeoutMs?: number;
-}): Promise<{ panelHtml?: string; error?: string; truncated: boolean }> {
-  const { adapter, provider, history, range, limit = 5000, timeoutMs = 2000 } = opts;
-  const { entries, truncated } = await history.query(provider, adapter.name, range, limit);
+}): Promise<{ panelHtml?: string; error?: string }> {
+  const { adapter, provider, history, range, timeoutMs = 2000 } = opts;
+  const { entries } = await history.query(provider, adapter.name, range);
   const panelInput = {
     entries,
     range,
-    truncated,
+    truncated: false,
     esc,
   };
   const formatted = await safeFormat(() => adapter.formatPanel(panelInput), 'formatPanel', timeoutMs);
-  if (formatted.error !== undefined) return { error: formatted.error, truncated };
-  return { panelHtml: sanitizeHtml(formatted.html ?? ''), truncated };
+  if (formatted.error !== undefined) return { error: formatted.error };
+  return { panelHtml: sanitizeHtml(formatted.html ?? '') };
 }

@@ -54,7 +54,6 @@ export interface HistoryResponseV2 {
   adapterName: string;
   panelHtml?: string;
   error?: string | null;
-  truncated: boolean;
   range: { start: number; end: number };
 }
 

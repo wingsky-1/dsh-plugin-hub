@@ -67,26 +67,29 @@ export class HistoryStore {
     return parseJsonl(raw);
   }
 
-  /** 按时间范围查询（只扫 range 覆盖的天数文件）。 */
+  /**
+   * 按时间范围查询（只扫 range 覆盖的天数文件）。
+   *
+   * **全量返回**：range 内所有匹配条目（时间升序），不做 limit 截断——
+   * 历史必须包含最新采样（面板卡片头与胶囊实时数据一致性依赖于此）。
+   * 响应体积可控：formatPanel 渲染为 HTML 后只含图表卡片，不透传原始数组。
+   */
   async query(
     provider: string,
     name: string,
     range: { start: number; end: number },
-    limit = 5000,
-  ): Promise<{ entries: HistoryEntry[]; truncated: boolean }> {
+  ): Promise<{ entries: HistoryEntry[] }> {
     const entries: HistoryEntry[] = [];
-    // 从 start 所在日到 end 所在日逐日读取
-    let day = startOfDay(range.start);
-    const endDay = startOfDay(range.end);
-    while (day <= endDay) {
-      const dayEntries = await this.readDay(provider, name, day);
-      for (const e of dayEntries) {
-        if (e.time >= range.start && e.time <= range.end) entries.push(e);
-        if (entries.length >= limit) return { entries, truncated: true };
-      }
-      day += 86400000;
+    // range 覆盖的天列表（升序），逐天读取
+    for (let day = startOfDay(range.start); day <= startOfDay(range.end); day += 86400000) {
+      const dayEntries = (await this.readDay(provider, name, day)).filter(
+        (e) => e.time >= range.start && e.time <= range.end,
+      );
+      entries.push(...dayEntries);
     }
-    return { entries, truncated: false };
+    // 稳定排序防御乱序采样（append 天然近似有序）
+    entries.sort((a, b) => a.time - b.time);
+    return { entries };
   }
 
   /** 获取最后一条（读最后一天文件的尾行 try-parse，失败返回 null）。 */

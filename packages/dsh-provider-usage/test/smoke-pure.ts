@@ -88,13 +88,9 @@ assert.equal(sanitizeHtml('<iframe src="x"></iframe>y'), "y");
   const last = await store.last("prov", "adp");
   assert.ok(last !== null && (last.data as Record<string, unknown>).v === 2, "last() 应返回最新一条");
 
-  const q = await store.query("prov", "adp", { start: now - 2000, end: now + 1 }, 100);
-  assert.equal(q.entries.length, 2);
-  assert.equal(q.truncated, false);
-
-  const qLim = await store.query("prov", "adp", { start: now - 2000, end: now + 1 }, 1);
-  assert.equal(qLim.entries.length, 1);
-  assert.equal(qLim.truncated, true);
+  const q = await store.query("prov", "adp", { start: now - 2000, end: now + 1 });
+  assert.equal(q.entries.length, 2, "全量返回不截断");
+  assert.equal((q.entries[1].data as Record<string, unknown>).v, 2, "末条为最新采样");
 
   const none = await store.last("nope", "nope");
   assert.equal(none, null);

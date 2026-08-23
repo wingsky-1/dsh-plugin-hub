@@ -6,7 +6,7 @@
  * - apply：enabled:false 不注册；注册四路由（stats/history/health/adapter.mjs）
  * - 全路由 403（非回环）/ 405（方法错）围栏
  * - /stats v2 响应形状（capsuleHtml / status / adapterVersion）
- * - /history v2 响应形状（panelHtml / truncated / range）
+ * - /history v2 响应形状（panelHtml / range）
  * - /health 快照形状
  * - 客户端 bundle 契约面与路由一致性
  */
@@ -186,7 +186,6 @@ for (const routePath of [ROUTES.stats, ROUTES.history, ROUTES.health, ROUTES.ada
   assert.equal(payload.version, ADAPTER_CONTRACT_VERSION);
   assert.equal(payload.provider, OPENCODE_GO_PROVIDER);
   assert.equal(payload.adapterName, OPENCODE_GO_ADAPTER_ID);
-  assert.equal(typeof payload.truncated, "boolean");
   assert.ok(payload.range && typeof payload.range.start === "number", "range 形状合法");
 }
 
