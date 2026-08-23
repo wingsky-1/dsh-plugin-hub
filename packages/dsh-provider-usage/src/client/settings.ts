@@ -1,26 +1,21 @@
 /**
- * dsh-provider-usage — 设置面板独立 tab「用量统计」（M3b，issue #38 重构；v2 交互收敛）。
+ * dsh-provider-usage — 设置面板独立 tab「用量统计」（v2 数据面 + v1 交互样式）。
  *
- * 经 slots.inject("settings.section") 注册顶层 tab，React 渲染两区：
- * - 提供商列表（主区）：与 dsh 模型配置页提供商列表精确一致（adapters.json
- *   modelProviders = ctx.llm.listProviders() 注册路由）；每个提供商展开后展示
- *   适配器候选行，**每行独立开关**（唯一启用，开启一个自动关掉上一个；关闭当前
- *   启用者 = 停用该 provider 的用量取数，不影响模型配置页的提供商可用性）。
- *   [+ 添加适配器] 内嵌于对应提供商：仅输入文件路径，检测（inspect 路由）回显
- *   导出信息后确认添加（add 路由，身份以导出为准）。
- * - 用量可视化：summary 文案 + 各窗口明细表（保留）。
- *
- * 数据面：全部走宿主 loopback 路由（/stats、/adapters.json、POST /adapters/select、
- * POST /adapters/inspect、POST /adapters/add），不引入额外 RPC 通道。
+ * 经 slots.inject("settings.section") 注册顶层 tab。UI/交互与 v1 保持一致
+ * （手风琴提供商列表 + 候选开关 + 内嵌添加表单 + 检测卡片 + 引导指令复制），
+ * 仅数据面对接 v2：适配器字段 id→name、select body {provider, adapterName}、
+ * 用量可视化展示宿主端渲染的胶囊 HTML。
  */
 import * as React from "react";
 import { STATS_URL, ADAPTERS_URL, SELECT_URL, INSPECT_URL, ADD_URL, fetchTimeout } from "./core.js";
 import { splitProviderList, providerBadgeText } from "../client-logic.js";
 import type { ProviderListItem } from "../client-logic.js";
 
+// ---------------------------------------------------------------- 类型
+
 /** 候选条目（adapters.json host[]）。 */
 interface AdapterInfo {
-  id: string;
+  name: string;
   label: string;
   providers: string[];
   source: "builtin" | "user-file";
@@ -28,7 +23,7 @@ interface AdapterInfo {
   enabled?: boolean;
 }
 
-/** 错误登记条目（adapters.json errors[]，issue #38）。 */
+/** 错误登记条目（adapters.json errors[]）。 */
 interface AdapterErrorEntry {
   key: string;
   at: number;
@@ -41,24 +36,25 @@ interface AdaptersMeta {
   version?: number;
   host?: AdapterInfo[];
   enabled?: Record<string, string>;
-  /** 模型配置页提供商路由（与 dsh 设置「模型」页同源，主列表权威清单）。 */
   modelProviders?: string[];
   errors?: AdapterErrorEntry[];
 }
 
-/** /stats 响应中本页消费的字段。 */
+/** /stats 响应中本页消费的字段（v2）。 */
 interface StatsView {
   provider?: string;
-  label?: string;
-  adapterId?: string | null;
-  hasAdapter?: boolean;
-  summary?: { text?: string; level?: string; hint?: string } | null;
-  usage?: { ok?: boolean; error?: string | null; windows?: Array<{ key: string; name: string; percent: number | null; limit?: number; resetsAt?: string }> } | null;
+  adapterName?: string;
+  status?: "fresh" | "cached" | "stale";
+  capsuleHtml?: string;
+  ok?: boolean;
+  configured?: boolean;
+  error?: string | null;
+  fetchedAt?: number;
 }
 
-/** inspect 回显的导出信息（以模块导出为准）。 */
+/** inspect 回显的导出信息（v2：name 字段）。 */
 interface InspectAdapter {
-  id: string;
+  name: string;
   label: string;
   providers: string[];
   version: number;
@@ -83,7 +79,7 @@ async function jsonGet(url: string): Promise<unknown> {
   return res.json();
 }
 
-/** 复制文本到剪贴板（设置页「复制引导指令」用；失败静默返回 false）。 */
+/** 复制文本到剪贴板（失败静默返回 false）。 */
 async function copyText(text: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text);
@@ -91,14 +87,6 @@ async function copyText(text: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-/** 状态等级 → 颜色（主题变量 + 浅色回退）。 */
-function levelColor(level: string | undefined): string {
-  if (level === "err") return "var(--dsw-alias-state-error-primary,#d64545)";
-  if (level === "warn") return "var(--dsw-alias-state-warn-primary,#c9820b)";
-  if (level === "ok") return "var(--dsw-alias-state-success-primary,#0f9d6e)";
-  return "var(--dsw-alias-label-tertiary,#9aa0ab)";
 }
 
 const sectionStyle: Object = {
@@ -117,7 +105,20 @@ const titleStyle: Object = {
   margin: "0 0 6px",
 };
 
-/** 用量可视化区：各 provider 一张窗口明细表。 */
+const STATUS_LABEL: Record<string, string> = {
+  fresh: "实时",
+  cached: "缓存",
+  stale: "陈旧（已降级）",
+};
+
+/** 状态 → 颜色（主题变量 + 浅色回退）。 */
+function statusColor(status: string | undefined): string {
+  if (status === "stale") return "var(--dsw-alias-state-warn-primary,#c9820b)";
+  if (status === "fresh" || status === "cached") return "var(--dsw-alias-state-success-primary,#0f9d6e)";
+  return "var(--dsw-alias-state-error-primary,#d64545)";
+}
+
+/** 用量可视化区：各启用 provider 的状态点 + 胶囊内容（宿主端渲染 HTML）。 */
 function UsageSection({ statsByProvider }: { statsByProvider: Record<string, StatsView | null> }) {
   const providers = Object.keys(statsByProvider);
   return React.createElement(
@@ -125,47 +126,61 @@ function UsageSection({ statsByProvider }: { statsByProvider: Record<string, Sta
     { style: sectionStyle },
     React.createElement("h4", { style: titleStyle }, "用量可视化"),
     providers.length === 0
-      ? React.createElement("div", { style: { color: "var(--dsw-alias-label-tertiary,#9aa0ab)" } }, "暂无窗口数据")
+      ? React.createElement("div", { style: { color: "var(--dsw-alias-label-tertiary,#9aa0ab)" } }, "暂无启用的 provider")
       : providers.map((provider) => {
-          const windows = statsByProvider[provider]?.usage?.windows ?? [];
+          const s = statsByProvider[provider];
+          const dot = React.createElement("span", {
+            key: "dot",
+            style: {
+              display: "inline-block",
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              background: statusColor(s?.status),
+              marginRight: 6,
+              verticalAlign: "middle",
+            },
+          });
+          const meta = `${s?.adapterName ?? "-"} · ${STATUS_LABEL[s?.status ?? ""] ?? "未配置"}${
+            typeof s?.fetchedAt === "number"
+              ? ` · 更新于 ${new Date(s.fetchedAt).toLocaleTimeString("zh-CN", { hour12: false })}`
+              : ""
+          }`;
           return React.createElement(
             "div",
             { key: provider, style: { marginBottom: 10 } },
-            React.createElement("div", { style: { fontWeight: 600 } }, provider),
-            windows.length === 0
-              ? React.createElement("div", { style: { color: "var(--dsw-alias-label-tertiary,#9aa0ab)" } }, "暂无窗口数据")
-              : React.createElement(
-                  "table",
-                  { style: { width: "100%", borderCollapse: "collapse" } },
-                  React.createElement(
-                    "thead",
-                    null,
-                    React.createElement(
-                      "tr",
-                      null,
-                      ["窗口", "当前", "限额", "重置"].map((h) =>
-                        React.createElement("th", { key: h, style: { textAlign: "left", padding: "2px 6px" } }, h),
-                      ),
-                    ),
+            React.createElement(
+              "div",
+              { style: { marginBottom: 4 } },
+              dot,
+              React.createElement("span", { style: { fontWeight: 600 } }, provider),
+              React.createElement(
+                "span",
+                { style: { color: "var(--dsw-alias-label-tertiary,#9aa0ab)", marginLeft: 8, fontSize: 11 } },
+                meta,
+              ),
+            ),
+            s?.capsuleHtml
+              ? React.createElement("div", { dangerouslySetInnerHTML: { __html: s.capsuleHtml } })
+              : s?.error
+                ? React.createElement(
+                    "div",
+                    { style: { color: "var(--dsw-alias-state-error-primary,#d64545)" } },
+                    String(s.error),
+                  )
+                : React.createElement(
+                    "div",
+                    { style: { color: "var(--dsw-alias-label-tertiary,#9aa0ab)" } },
+                    "暂无数据",
                   ),
-                  React.createElement(
-                    "tbody",
-                    null,
-                    windows.map((w) =>
-                      React.createElement(
-                        "tr",
-                        { key: w.key },
-                        React.createElement("td", { style: { padding: "2px 6px" } }, w.name),
-                        React.createElement("td", { style: { padding: "2px 6px", color: levelColor(typeof w.percent === "number" && w.percent >= 80 ? (w.percent >= 95 ? "err" : "warn") : "ok") } }, typeof w.percent === "number" ? `${w.percent}%` : "--"),
-                        React.createElement("td", { style: { padding: "2px 6px" } }, w.limit !== undefined ? String(w.limit) : "-"),
-                        React.createElement("td", { style: { padding: "2px 6px" } }, w.resetsAt ?? "-"),
-                      ),
-                    ),
-                  ),
-                ),
           );
         }),
   );
+}
+
+/** 一句话引导指令（v2 文档链接）。 */
+function guideCommand(provider: string): string {
+  return `请为提供商 ${provider} 创建用量统计适配器（v2 契约）：以该提供商在模型配置中的 API 端点（baseUrl）为起点，自行确认用量接口与鉴权方式，自主设计适配器方案（name/展示名/接口路径），先给我审核方案（含 API 端点），确认后生成 .mjs 文件、告诉保存路径并引导我在「用量统计」设置页添加适配器。按用量统计适配器开发引导文档（https://github.com/wingsky-1/dsh-plugin-hub/blob/main/packages/dsh-provider-usage/docs/adapter-guide.md）执行引导流程。`;
 }
 
 /** 单个提供商手风琴项：折叠头（徽标）+ 展开管理区（候选开关 + 内嵌添加表单）。 */
@@ -180,10 +195,10 @@ function ProviderItem({
   onAdd,
 }: {
   item: ProviderListItem;
-  candidates: Array<{ id: string; label: string; source: string }>;
+  candidates: Array<{ name: string; label: string; source: string; file?: string | null }>;
   errorByKey: Map<string, AdapterErrorEntry>;
   busy: boolean;
-  onSwitch(provider: string, adapterId: string): void;
+  onSwitch(provider: string, adapterName: string): void;
   onDisable(provider: string): void;
   onInspect(file: string): Promise<InspectResult>;
   onAdd(provider: string, form: { file: string }): Promise<AddResult>;
@@ -199,10 +214,9 @@ function ProviderItem({
   const [adding, setAdding] = React.useState<boolean>(false);
   const [copied, setCopied] = React.useState<boolean>(false);
 
-  /** 一句话引导指令：无候选时复制到会话，agent 按 9-agent-guide-mjs.md 自主引导。 */
-  const guideCommand = `请为提供商 ${item.provider} 创建用量统计适配器：以该提供商在模型配置中的 API 端点（baseUrl）为起点，自行确认用量接口与鉴权方式，自主设计适配器方案（id/展示名/窗口字段），先给我审核方案（含 API 端点），确认后生成 .mjs 文件、告诉保存路径并引导我在「用量统计」设置页添加适配器。按 mjs 适配器开发指导文档（https://github.com/wingsky-1/dsh-plugin-hub/blob/main/packages/dsh-provider-usage/docs/opt/usage-provider-adapter/9-agent-guide-mjs.md）执行引导流程。`;
+  const guide = guideCommand(item.provider);
   const onCopyGuide = async (): Promise<void> => {
-    if (await copyText(guideCommand)) {
+    if (await copyText(guide)) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
@@ -224,7 +238,7 @@ function ProviderItem({
     }
   };
 
-  /** 确认添加：仅 file（身份以导出为准），add 路由热注册。 */
+  /** 确认添加：仅 file（身份以导出为准），add 路由热注册并持久化。 */
   const submitAdd = async (): Promise<void> => {
     if (file.trim() === "" || inspected === null || busy || adding) return;
     setAdding(true);
@@ -253,16 +267,20 @@ function ProviderItem({
   };
 
   const adapterRows = candidates.map((c) => {
-    const err = errorByKey.get(c.id);
-    const enabled = c.id === item.enabledId;
+    const err = errorByKey.get(c.name);
+    const enabled = c.name === item.enabledId;
     return React.createElement(
       "div",
-      { key: c.id, className: `dou-adapterRow${enabled ? " dou-active" : ""}` },
+      { key: c.name, className: `dou-adapterRow${enabled ? " dou-active" : ""}` },
       React.createElement(
         "div",
         { className: "dou-adapterInfo" },
         React.createElement("span", { className: "dou-adapterName" }, c.label),
-        React.createElement("span", { className: "dou-adapterMeta" }, `${c.id} · ${c.source === "builtin" ? "内置" : "自定义"}`),
+        React.createElement(
+          "span",
+          { className: "dou-adapterMeta" },
+          `${c.name} · ${c.source === "builtin" ? "内置" : "自定义"}${c.file ? ` · ${c.file}` : ""}`,
+        ),
       ),
       React.createElement(
         "label",
@@ -274,7 +292,7 @@ function ProviderItem({
           disabled: busy,
           onChange: (e: unknown) => {
             const checked = (e as { target: { checked: boolean } }).target.checked;
-            if (checked) onSwitch(item.provider, c.id);
+            if (checked) onSwitch(item.provider, c.name);
             else onDisable(item.provider);
           },
         }),
@@ -292,7 +310,7 @@ function ProviderItem({
       : React.createElement(
           "div",
           { className: "dou-inspectCard" },
-          React.createElement("div", { className: "dou-inspectRow" }, React.createElement("span", { className: "dou-inspectK" }, "适配器 ID"), React.createElement("span", { className: "dou-inspectV" }, inspected.id)),
+          React.createElement("div", { className: "dou-inspectRow" }, React.createElement("span", { className: "dou-inspectK" }, "适配器名"), React.createElement("span", { className: "dou-inspectV" }, inspected.name)),
           React.createElement("div", { className: "dou-inspectRow" }, React.createElement("span", { className: "dou-inspectK" }, "展示名"), React.createElement("span", { className: "dou-inspectV" }, inspected.label)),
           React.createElement("div", { className: "dou-inspectRow" }, React.createElement("span", { className: "dou-inspectK" }, "归属提供商"), React.createElement("span", { className: "dou-inspectV" }, inspected.providers.join("、") || item.provider)),
           React.createElement("div", { className: "dou-inspectRow" }, React.createElement("span", { className: "dou-inspectK" }, "契约版本"), React.createElement("span", { className: "dou-inspectV" }, `version ${inspected.version} ✓`)),
@@ -308,7 +326,7 @@ function ProviderItem({
         "span",
         { className: "dou-addLabel" },
         "文件路径",
-        React.createElement("span", { className: "dou-addOnly" }, "（唯一输入——id/展示名/归属提供商从文件导出自动读取）"),
+        React.createElement("span", { className: "dou-addOnly" }, "（唯一输入——name/展示名/归属提供商从文件导出自动读取）"),
       ),
     ),
     React.createElement("input", {
@@ -333,7 +351,6 @@ function ProviderItem({
           className: "dou-btn",
           disabled: busy || adding || inspected === null,
           onClick: submitAdd,
-          // issue #87：检测未通过时按钮禁用态不再是无声的——悬停提示引导先检测
           title: inspected === null ? "请先通过「检测文件」后再确认添加" : undefined,
         },
         adding ? "添加中…" : "确认添加",
@@ -350,7 +367,7 @@ function ProviderItem({
   return React.createElement(
     "div",
     { className: "dou-provItem" },
-    // 折叠头：▸/▾ + provider 名 + 徽标（已启用: <adapter-id> / 未启用适配器）
+    // 折叠头：▸/▾ + provider 名 + 徽标（已启用: <name> / 未启用适配器）
     React.createElement(
       "button",
       {
@@ -372,13 +389,13 @@ function ProviderItem({
       : React.createElement(
           "div",
           { className: "dou-provBody" },
-          // 无候选引导（已知清单里的 provider 尚无任何适配器）：文件注入 + 复制一句话引导指令
+          // 无候选引导：文件注入 + 复制一句话引导指令（v2 文档）
           candidates.length === 0
             ? [
                 React.createElement(
                   "div",
                   { key: "hint", className: "dou-hint" },
-                  "该提供商暂无候选适配器——可通过下方 [+ 添加适配器] 注入本地适配器文件，或在 cordis.patch.yml 的 adapters.host 中配置；也可复制引导指令，让 Agent 帮你创建适配器。",
+                  "该提供商暂无候选适配器——可通过下方 [+ 添加适配器] 注入本地适配器文件；也可复制引导指令，让 Agent 帮你创建适配器。",
                 ),
                 React.createElement(
                   "div",
@@ -420,28 +437,33 @@ function ProviderListSection({
   main: ProviderListItem[];
   extra: ProviderListItem[];
   busy: boolean;
-  onSwitch(provider: string, adapterId: string): void;
+  onSwitch(provider: string, adapterName: string): void;
   onDisable(provider: string): void;
   onInspect(file: string): Promise<InspectResult>;
   onAdd(provider: string, form: { file: string }): Promise<AddResult>;
 }) {
   // host[] 按 providers 分组为候选映射
-  const candidatesByProvider = new Map<string, Array<{ id: string; label: string; source: string }>>();
+  const candidatesByProvider = new Map<string, Array<{ name: string; label: string; source: string; file?: string | null }>>();
   for (const info of meta?.host ?? []) {
     for (const provider of info.providers) {
       const list = candidatesByProvider.get(provider) ?? [];
-      list.push({ id: info.id, label: info.label, source: info.source });
+      list.push({
+        name: info.name,
+        label: info.label,
+        source: info.source,
+        ...(info.file !== undefined && info.file !== null ? { file: info.file } : {}),
+      });
       candidatesByProvider.set(provider, list);
     }
   }
   const errorByKey = new Map<string, AdapterErrorEntry>();
   for (const e of meta?.errors ?? []) errorByKey.set(e.key, e);
-  // 用户文件加载失败错误无 provider 归属（登记 key=file:<名>），在列表顶部全局展示一次
+  // 用户文件加载错误无 provider 归属（key=file:<名>），列表顶部全局展示一次
   const fileErrors = [...errorByKey.entries()].filter(([k]) => k.startsWith("file:"));
-  // 列表完全为空（adapters.json 不可达或模型配置无 provider）时的全局引导复制
+  // 列表完全为空时的全局引导复制
   const [copiedGlobal, setCopiedGlobal] = React.useState<boolean>(false);
   const globalGuideCommand =
-    "请帮我接入一个提供商的用量统计：以你在模型配置中该提供商的 API 端点（baseUrl）为起点，自行确认用量接口与鉴权方式、自主设计适配器方案并先给我审核（含 API 端点），确认后生成 .mjs 文件、告诉保存路径并引导我在「用量统计」设置页完成登记。按 mjs 适配器开发指导文档（https://github.com/wingsky-1/dsh-plugin-hub/blob/main/packages/dsh-provider-usage/docs/opt/usage-provider-adapter/9-agent-guide-mjs.md）执行引导流程。";
+    "请帮我接入一个提供商的用量统计：以你在模型配置中该提供商的 API 端点（baseUrl）为起点，自行确认用量接口与鉴权方式、自主设计适配器方案并先给我审核（含 API 端点），确认后生成 .mjs 文件、告诉保存路径并引导我在「用量统计」设置页完成登记。按用量统计适配器开发引导文档（https://github.com/wingsky-1/dsh-plugin-hub/blob/main/packages/dsh-provider-usage/docs/adapter-guide.md）执行引导流程。";
   const onCopyGlobalGuide = async (): Promise<void> => {
     if (await copyText(globalGuideCommand)) {
       setCopiedGlobal(true);
@@ -503,17 +525,11 @@ function ProviderListSection({
           ),
         )
       : accordion(main),
-    // 尾部独立分组：候选/启用态指向不在模型配置中的 provider（用户适配器自定义路由，
-    // 避免静默消失，不计入主列表数量；模型页补建该提供商后自动并入主列表）
     extra.length > 0
       ? React.createElement(
           "div",
           null,
-          React.createElement(
-            "h4",
-            { style: titleStyle },
-            "自定义提供商",
-          ),
+          React.createElement("h4", { style: titleStyle }, "自定义提供商"),
           React.createElement(
             "div",
             { className: "dou-hint" },
@@ -538,10 +554,10 @@ export function SettingsPage() {
       if (m !== null) {
         setMeta(m);
         // 主列表 = modelProviders（与模型配置页精确一致），额外 provider 收进独立分组
-        const grouped: Record<string, Array<{ id: string; label: string; source: string }>> = {};
+        const grouped: Record<string, Array<{ name: string; label: string; source: string }>> = {};
         for (const info of m.host ?? []) {
           for (const provider of info.providers) {
-            (grouped[provider] ??= []).push({ id: info.id, label: info.label, source: info.source });
+            (grouped[provider] ??= []).push({ name: info.name, label: info.label, source: info.source });
           }
         }
         setList(
@@ -582,12 +598,12 @@ export function SettingsPage() {
   }
 
   const onSwitch = React.useCallback(
-    (provider: string, adapterId: string): void => {
+    (provider: string, adapterName: string): void => {
       mutate(() =>
         fetchTimeout(SELECT_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ provider, adapterId }),
+          body: JSON.stringify({ provider, adapterName }),
         }),
       );
     },
@@ -601,7 +617,7 @@ export function SettingsPage() {
         fetchTimeout(SELECT_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ provider, adapterId: null }),
+          body: JSON.stringify({ provider, adapterName: null }),
         }),
       );
     },
@@ -626,7 +642,7 @@ export function SettingsPage() {
     }
   }, []);
 
-  /** 登记适配器：仅 file（身份以导出为准），热注册生效。 */
+  /** 登记适配器：仅 file（身份以导出为准），add 路由热注册并持久化。 */
   const onAdd = React.useCallback(
     async (_provider: string, form: { file: string }): Promise<AddResult> => {
       try {

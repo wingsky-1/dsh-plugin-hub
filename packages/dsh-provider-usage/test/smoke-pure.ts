@@ -1,787 +1,376 @@
 /**
- * dsh-provider-usage — 纯函数断言区（issue #28：本文件不带 @ts-nocheck，
- * 全部强类型；集成区见 smoke.ts）。
+ * dsh-provider-usage — 纯函数 smoke（v2 契约重构版）。
  *
- * 覆盖：
- * - normalizeConfig / Config schema 只读语义
- * - 契约校验、候选注册表（启用切换）、stripSecrets、collectSamplePoint
- * - defineUsageAdapter 工厂（自动派生 + cols/values 长度拦截）
- * - pickWindow / parseUsageResponse / fetchOpenCodeGo（200/401/500/网络错/
- *   坏 JSON/无 key/超时）/ 内置适配器归一化（含 ctx.timeoutMs 通道）
- * - API Key 解析链、makeHistoryStore（v3 双键桶）、writeHistoryFile 往返、
- *   makeUsageCache TTL
- * - 客户端行为纯函数：胶囊文案/等级/title、D11 隐藏语义、渲染器配对键序
- *   （替代对 lib/client.js 的 includes 字符串断言）
+ * 覆盖：esc / 契约校验 / 净化器 / HistoryStore（JSONL 分片）/ safe 守卫 /
+ * normalizeConfig / provider-config 配置链 / opencode-go v2 解析 / 热更新加载校验。
  */
-import { mkdtempSync, writeFileSync, readFileSync, readdirSync, mkdirSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { tmpdir, homedir } from "node:os";
+import { tmpdir } from "node:os";
 import assert from "node:assert/strict";
-import type { FetchLike, ProviderSummary, ProviderUsage, SummaryLevel } from "../lib/index.js";
-import * as libIndex from "../lib/index.js";
 import {
   ROUTES,
   DEFAULT_CONFIG,
-  Config,
-  normalizeConfig,
   ADAPTER_CONTRACT_VERSION,
-  makeHostAdapterRegistry,
-  isHostProviderAdapter,
-  isClientProviderRenderer,
-  describeAdapterShape,
+  esc,
+  isUsageStatsAdapter,
+  describeUsageStatsAdapterShape,
+  sanitizeHtml,
+  HistoryStore,
+  parseJsonl,
+  startOfDay,
+  migrateLegacyV3,
+  legacySampleToData,
+  safeFetchData,
+  safeFormat,
+  normalizeConfig,
+  resolveProviderConfig,
+  credentialsFile,
   OPENCODE_GO_PROVIDER,
   OPENCODE_GO_ADAPTER_ID,
-  openCodeGoHostAdapter,
-  defineUsageAdapter,
-  stripSensitiveKeys,
-  collectSamplePoint,
-  pickWindow,
+  openCodeGoAdapter,
   parseUsageResponse,
-  fetchOpenCodeGo,
-  credentialsKeyFromYaml,
-  opencodeKeyFromAuth,
-  resolveApiKey,
-  makeUsageCache,
-  makeHistoryStore,
-  writeHistoryFile,
-  readHistoryFile,
-  // issue #87：~ 展开单一事实源 + add 入参校验
-  expandHomePath,
-  resolveAddAdapterFile,
-  // 客户端行为纯函数（issue #28：宿主侧可导入，client bundle 同源内联）
-  derivePillLabel,
-  derivePillLevel,
-  derivePillTitle,
-  shouldHideFloat,
-  rendererLookupKeys,
-  // 设置页提供商列表拆分（issue #38 维护者意图修正）
-  splitProviderList,
-  providerBadgeText,
+  fetchOpenCodeGoV2,
+  loadAndValidateAdapter,
+  readStamp,
+  stampEqual,
+  makeAdapterRegistry,
 } from "../lib/index.js";
 
-// ---------------------------------------------------------------- 共享桩（导出给集成区复用）
+// ---------------------------------------------------------------- esc
 
-export function fakeRes(status: number, body: unknown): Response {
-  return { status, ok: status >= 200 && status < 300, json: async () => body } as unknown as Response;
-}
+assert.equal(esc("<script>"), "&lt;script&gt;");
+assert.equal(esc(`a"b'c&d`), "a&quot;b&#39;c&amp;d");
+assert.equal(esc(null), "");
+assert.equal(esc(undefined), "");
+assert.equal(esc(123), "123");
 
-export const OK_BODY = {
-  usage: {
-    rolling: { status: "ok", percent: 2, resetsAt: "r" },
-    weekly: { status: "ok", percent: 1, resetsAt: "w" },
-    monthly: { status: "ok", percent: 0, resetsAt: "m" },
-  },
+// ---------------------------------------------------------------- v2 契约校验
+
+const validAdapter = {
+  version: 2,
+  name: "my-stats",
+  providers: ["p1"],
+  fetchData: async () => ({}),
+  formatCapsule: () => "<span>x</span>",
+  formatPanel: () => "<table></table>",
 };
 
-// ---------------------------------------------------------------- 配置
+assert.equal(ADAPTER_CONTRACT_VERSION, 2, "新契约版本必须是 2");
+assert.equal(isUsageStatsAdapter(validAdapter), true);
+assert.equal(isUsageStatsAdapter({ ...validAdapter, version: 1 }), false);
+assert.equal(isUsageStatsAdapter({ ...validAdapter, name: "bad name!" }), false);
+assert.equal(isUsageStatsAdapter({ ...validAdapter, name: "a" }), false); // 长度 < 2
+assert.equal(isUsageStatsAdapter({ ...validAdapter, fetchData: "x" }), false);
+assert.equal(isUsageStatsAdapter({ ...validAdapter, formatCapsule: undefined }), false);
+assert.equal(isUsageStatsAdapter(null), false);
 
-assert.equal(normalizeConfig(undefined).baseUrl, DEFAULT_CONFIG.baseUrl);
-const merged = normalizeConfig({ baseUrl: "https://example.com/x", timeoutMs: 999, cacheTtlMs: 5000, limits: { weekly: 40 }, bogus: 1 });
-assert.equal(merged.baseUrl, "https://example.com/x");
-assert.equal(merged.timeoutMs, 999);
-assert.equal(merged.cacheTtlMs, 5000);
-assert.equal(merged.limits.weekly, 40);
-assert.equal(merged.limits.rolling, DEFAULT_CONFIG.limits.rolling, "未覆盖的限额保留默认");
-// issue #29：providerHint 死配置键已删除（解析后零消费）
-assert.equal("providerHint" in normalizeConfig({ providerHint: { a: "b" } }), false, "providerHint 键已删除不再解析");
-assert.equal("bogus" in merged, false, "未知键丢弃");
-assert.equal(normalizeConfig({ timeoutMs: "x" }).timeoutMs, DEFAULT_CONFIG.timeoutMs, "非法数字回退");
-assert.equal(normalizeConfig({ timeoutMs: -5 }).timeoutMs, DEFAULT_CONFIG.timeoutMs, "负数回退");
-assert.equal(normalizeConfig({ timeoutMs: 999999 }).timeoutMs, 120000, "超上限钳制");
-assert.equal(DEFAULT_CONFIG.sampleIntervalMs, 300000, "后台采样默认 5 分钟");
-assert.equal(normalizeConfig({ sampleIntervalMs: 60000 }).sampleIntervalMs, 60000, "后台采样间隔可配置");
-assert.equal(normalizeConfig({ sampleIntervalMs: 1000 }).sampleIntervalMs, DEFAULT_CONFIG.sampleIntervalMs, "后台采样间隔 <30s 回退（防打爆官方接口）");
-assert.equal(normalizeConfig({ sampleIntervalMs: 99999999 }).sampleIntervalMs, 3600000, "后台采样间隔上限钳制 1h");
-assert.equal(normalizeConfig({ apiKey: "  sk-abc  " }).apiKey, "sk-abc", "apiKey 修剪");
-assert.equal(normalizeConfig({ maxAgeDays: 30 }).maxAgeDays, 30, "maxAgeDays 覆盖");
-assert.equal(normalizeConfig({ maxAgeDays: 9999 }).maxAgeDays, 365, "maxAgeDays 钳制上限");
-assert.equal(normalizeConfig({ persistFile: " /tmp/h.json " }).persistFile, "/tmp/h.json", "persistFile 修剪");
-assert.equal(ADAPTER_CONTRACT_VERSION, 1, "契约版本 = 1");
+const shape = describeUsageStatsAdapterShape({ version: 1 });
+assert.ok(shape !== null && shape.includes("version"), "形状诊断应包含 version 缺失");
+assert.equal(describeUsageStatsAdapterShape(validAdapter), null);
 
-// adapters 配置归一化
+// ---------------------------------------------------------------- sanitize
+
+assert.equal(sanitizeHtml("<script>alert(1)</script><b>ok</b>"), "<b>ok</b>");
+assert.equal(sanitizeHtml('<img src="x" onerror="alert(1)">'), '<img src="x">');
+assert.equal(sanitizeHtml('<a href="javascript:alert(1)">x</a>'), '<a href="alert(1)">x</a>');
+assert.equal(sanitizeHtml('<iframe src="x"></iframe>y'), "y");
+
+// ---------------------------------------------------------------- HistoryStore（JSONL 按天分片）
+
 {
-  const c = normalizeConfig({
-    adapters: {
-      host: [{ provider: "my-relay", file: "/abs/my-relay-host.mjs", enabled: false }, { provider: "", file: "/x.js" }, "bad"],
-      client: [{ file: "/abs/my-relay-client.js" }, 42],
-    },
-    stripSecrets: false,
-  });
-  assert.deepEqual(c.adapters.host, [{ provider: "my-relay", file: "/abs/my-relay-host.mjs", enabled: false }], "host 适配器净化（含 enabled 字段）");
-  assert.deepEqual(c.adapters.client, [{ file: "/abs/my-relay-client.js" }], "client 适配器净化");
-  assert.equal(c.stripSecrets, false, "stripSecrets 可关");
-  assert.equal(normalizeConfig({ stripSecrets: "x" }).stripSecrets, true, "stripSecrets 非法值回退默认");
-  // enabled 缺省（undefined）→ 默认启用
-  const c2 = normalizeConfig({ adapters: { host: [{ provider: "p", file: "/x.js" }] } });
-  assert.equal(c2.adapters.host[0].enabled, undefined, "enabled 缺省 undefined（注册时默认启用）");
+  const dir = mkdtempSync(join(tmpdir(), "dou-hist-"));
+  const store = new HistoryStore({ root: dir, maxAgeMs: 30 * 86400000, maxSizeBytes: 1024 * 1024 });
+  const now = Date.now();
+  await store.append("prov", "adp", { time: now - 1000, data: { v: 1 } });
+  await store.append("prov", "adp", { time: now, data: { v: 2 } });
+
+  const last = await store.last("prov", "adp");
+  assert.ok(last !== null && (last.data as Record<string, unknown>).v === 2, "last() 应返回最新一条");
+
+  const q = await store.query("prov", "adp", { start: now - 2000, end: now + 1 });
+  assert.equal(q.entries.length, 2, "全量返回不截断");
+  assert.equal((q.entries[1].data as Record<string, unknown>).v, 2, "末条为最新采样");
+
+  const none = await store.last("nope", "nope");
+  assert.equal(none, null);
+
+  // 坏行跳过
+  const dayDir = join(dir, "prov", "adp");
+  const files = await import("node:fs/promises").then((m) => m.readdir(dayDir));
+  const fp = join(dayDir, files[0]);
+  const raw = await import("node:fs/promises").then((m) => m.readFile(fp, "utf8"));
+  await import("node:fs/promises").then((m) => m.writeFile(fp, "{broken\n" + raw, "utf8"));
+  const afterRaw = await import("node:fs/promises").then((m) => m.readFile(fp, "utf8"));
+  assert.equal(parseJsonl(afterRaw).length, 2, "坏行应被跳过不抛错");
+
+  rmSync(dir, { recursive: true, force: true });
 }
 
-// ---------------------------------------------------------------- 设置面板 schema 只读语义（issue #27）
-
+// startOfDay
 {
-  const schemaJson = JSON.stringify(Config);
-  const disabledCount = (schemaJson.match(/"disabled":true/gu) ?? []).length;
-  assert.equal(disabledCount, 6, "Config 六个字段全部 disabled 只读态");
-  assert.ok(schemaJson.includes("cordis.patch.yml"), "schema description 注明修改走 patch 层");
+  const t = new Date(2025, 0, 15, 13, 45).getTime();
+  const s = new Date(startOfDay(t));
+  assert.equal(s.getHours(), 0);
+  assert.equal(s.getDate(), 15);
 }
 
-// ---------------------------------------------------------------- 契约校验
-
-assert.ok(isHostProviderAdapter(openCodeGoHostAdapter), "内置适配器通过契约校验（含 id/label）");
-assert.equal(openCodeGoHostAdapter.id, "opencode-go-builtin", "内置适配器 id");
-assert.equal(openCodeGoHostAdapter.label, "OpenCode Go 官方", "内置适配器 label");
-assert.equal(typeof openCodeGoHostAdapter.summarize, "function", "工厂自动派生 summarize");
-assert.equal(typeof openCodeGoHostAdapter.samplePoint, "function", "工厂自动派生 samplePoint");
-assert.ok(!isHostProviderAdapter({ version: 2, id: "a", label: "A", providers: ["x"], fetchUsage: () => Promise.resolve({}) as never }), "版本不符拒绝");
-assert.ok(!isHostProviderAdapter({ version: 1, id: "a", label: "A", providers: [], fetchUsage: () => Promise.resolve({}) as never }), "空 providers 拒绝");
-assert.ok(!isHostProviderAdapter({ version: 1, id: "", label: "A", providers: ["x"], fetchUsage: () => Promise.resolve({}) as never }), "空 id 拒绝");
-assert.ok(!isHostProviderAdapter({ version: 1, id: "a", label: "A", providers: ["x"] }), "缺 fetchUsage 拒绝");
-assert.ok(!isHostProviderAdapter(null), "null 拒绝");
-assert.ok(isClientProviderRenderer({ version: 1, providers: ["x"], render: () => {} }), "合法渲染器通过");
-assert.ok(!isClientProviderRenderer({ version: 1, providers: ["x"] }), "缺 render 拒绝");
-
-// ---------------------------------------------------------------- 注册表（候选 + 唯一启用）
+// ---------------------------------------------------------------- v3 旧格式迁移
 
 {
-  const diags: string[] = [];
-  const reg = makeHostAdapterRegistry({ diag: (m) => diags.push(m) });
-  assert.ok(reg.register(openCodeGoHostAdapter, "builtin"), "内置注册成功");
-  assert.equal(reg.get(OPENCODE_GO_PROVIDER), openCodeGoHostAdapter, "按 provider 查到内置（默认启用）");
-
-  // 用户适配器加入候选并成为当前启用者（同 provider，默认启）
-  const userAdapter = {
-    version: 1,
-    id: "my-opencode-go-v1",
-    label: "我的增强版",
-    providers: [OPENCODE_GO_PROVIDER],
-    fetchUsage: async (): Promise<ProviderUsage> => ({ ok: true, provider: OPENCODE_GO_PROVIDER, label: "用户版", fetchedAt: 1 }),
-  };
-  assert.ok(reg.register(userAdapter, "user-file", "/u.mjs"), "用户注册成功");
-  assert.equal(reg.get(OPENCODE_GO_PROVIDER), userAdapter, "用户成为当前启用者");
-  assert.equal(reg.isEnabled(OPENCODE_GO_PROVIDER, userAdapter.id), true, "用户启用标记");
-
-  // select 切回内置
-  assert.equal(reg.select(OPENCODE_GO_PROVIDER, OPENCODE_GO_ADAPTER_ID), true, "切回内置");
-  assert.equal(reg.get(OPENCODE_GO_PROVIDER), openCodeGoHostAdapter, "内置重新启用");
-  assert.equal(reg.select(OPENCODE_GO_PROVIDER, "not-exist"), false, "切换不存在的适配器失败");
-
-  // 显式 enabled:false 的用户适配器 → 禁用候选（不启用）
-  const disabledRelay = {
-    version: 1,
-    id: "my-relay",
-    label: "中转站",
-    providers: ["my-relay"],
-    fetchUsage: async (): Promise<ProviderUsage> => ({ ok: true, provider: "my-relay", label: "R", fetchedAt: 1 }),
-  };
-  assert.ok(reg.register(disabledRelay, "user-file", "/r.mjs", false), "禁用候选注册成功");
-  assert.equal(reg.get("my-relay"), undefined, "禁用候选不作为启用者");
-  assert.equal(reg.hasCandidates("my-relay"), true, "有候选但未启用");
-  const r = await reg.fetchUsage("my-relay", { provider: "my-relay", fetch });
-  assert.equal(r.error, "no-enabled-adapter", "有候选但全禁用 → no-enabled-adapter");
-
-  // 无候选 provider → no-adapter
-  const r2 = await reg.fetchUsage("ghost", { provider: "ghost", fetch });
-  assert.equal(r2.error, "no-adapter");
-
-  // adapter-crash：运行抛错被归一化（容错：执行抛错）
-  const badReg = makeHostAdapterRegistry();
-  badReg.register(
-    {
-      version: 1,
-      id: "boom",
-      label: "B",
-      providers: ["boom"],
-      fetchUsage: async (): Promise<ProviderUsage> => {
-        throw new Error("x");
-      },
-    },
-    "builtin",
+  // legacySampleToData：余额型裸值 + 三窗口 percent
+  const rjkData = legacySampleToData([{ key: "balance", name: "余额" }], [1787000000000, 10.1365]);
+  assert.deepEqual(rjkData, { balance: 10.1365 }, "balance 列产出裸数值");
+  const ogData = legacySampleToData(
+    [{ key: "rolling" }, { key: "weekly" }, { key: "monthly" }],
+    [1787000000000, 2, 1, 0],
   );
-  const crash = await badReg.fetchUsage("boom", { provider: "boom", fetch });
-  assert.equal(crash.error, "adapter-crash");
+  assert.deepEqual(ogData, { rolling: { percent: 2 }, weekly: { percent: 1 }, monthly: { percent: 0 } }, "三窗口列产出 percent 对象");
+  // 无列声明 → colNN 通用装配
+  const generic = legacySampleToData(undefined, [1787000000000, 5, 6]);
+  assert.deepEqual(generic, { col1: 5, col2: 6 }, "无列声明产出 colNN");
 
-  // 契约校验失败的注册 → 告警且不注册（容错：畸形导出）
-  const before = diags.length;
-  reg.register({ version: 1, id: "bad", label: "B", providers: [], fetchUsage: () => Promise.resolve({}) as never }, "user-file", "/bad.mjs");
-  assert.ok(diags.length > before, "无效适配器告警");
-  // id 重复拒绝
-  reg.register({ version: 1, id: "my-opencode-go-v1", label: "X", providers: ["ghost2"], fetchUsage: () => Promise.resolve({}) as never }, "user-file", "/dup.mjs");
-  assert.equal(reg.get("ghost2"), undefined, "id 重复的适配器被拒绝，不注册");
-
-  // snapshot：候选详情 + enabled 映射 + enabledProviders
-  const snap = reg.snapshot();
-  assert.equal(snap.enabledProviders.includes("opencode-go"), true, "enabledProviders 含 opencode-go（内置已启用）");
-  assert.equal(snap.enabled["opencode-go"], OPENCODE_GO_ADAPTER_ID, "enabled 映射 provider→adapterId");
-  const myRelayInfo = snap.infos.find((i) => i.id === "my-relay");
-  assert.equal(myRelayInfo?.enabled, false, "禁用候选 enabled=false");
-
-  // issue #38：select(null) 清空启用项（幂等）
-  assert.equal(reg.select(OPENCODE_GO_PROVIDER, null), true, "清空内置 provider 启用项成功");
-  assert.equal(reg.get(OPENCODE_GO_PROVIDER), undefined, "清空后无启用者");
-  assert.equal(reg.hasCandidates(OPENCODE_GO_PROVIDER), true, "候选仍在（no-enabled-adapter 语义）");
-  assert.equal(reg.select("never-seen", null), true, "清空未知 provider 幂等成功");
-}
-
-// ---------------------------------------------------------------- 形状明细诊断 + 超时护栏 + 错误登记（issue #38）
-
-{
-  // describeAdapterShape：拒收时给出「缺什么」明细
-  assert.equal(describeAdapterShape(openCodeGoHostAdapter), null, "合法适配器无形状问题");
-  assert.ok(describeAdapterShape(null)?.includes("不是对象"), "null 导出 → 非对象描述");
-  assert.ok(describeAdapterShape({ version: 2 })?.includes("fetchUsage"), "缺 fetchUsage 出现在明细中");
-  assert.ok(describeAdapterShape({ version: 1, id: "a", label: "A" })?.includes("providers"), "缺 providers 出现在明细中");
-  assert.ok(describeAdapterShape({ version: 9, id: "", label: "", providers: ["x"] })?.includes("version"), "版本不符出现在明细中");
-
-  const diags: string[] = [];
-  const reg = makeHostAdapterRegistry({
-    diag: (m) => diags.push(m),
-    sanitizePath: (s) => s.replaceAll("/home/secret-user", "~"),
-  });
-
-  // 契约拒收 → 明细诊断 + 错误登记（file:<名> 键，消息经脱敏）
-  reg.register({ version: 1, id: "bad-shape", label: "B", providers: [] }, "user-file", "/home/secret-user/x/bad.mjs");
-  const loadErr = reg.snapshot().errors.find((e) => e.key === "file:bad.mjs");
-  assert.ok(loadErr, "契约拒收已登记错误");
-  assert.equal(loadErr?.kind, "load");
-  assert.ok(loadErr?.message.includes("providers"), "登记消息含缺失成员明细");
-  assert.ok(!loadErr?.message.includes("/home/secret-user"), "登记消息已经路径脱敏");
-  assert.ok(diags.some((m) => m.includes("providers")), "诊断输出含明细");
-
-  // recordError（加载链 import 失败场景）+ 同 key 覆盖取最近一次
-  reg.recordError("file:gone.mjs", "load", "ENOENT: /x/gone.mjs");
-  reg.recordError("file:gone.mjs", "load", "第二次错误（覆盖）");
-  const goneErrs = reg.snapshot().errors.filter((e) => e.key === "file:gone.mjs");
-  assert.equal(goneErrs.length, 1, "同 key 只保留最近一次");
-  assert.equal(goneErrs[0]?.message, "第二次错误（覆盖）", "最近一次错误生效");
-
-  // 超时护栏：挂起适配器限时拦截为 adapter-timeout + exec 登记
-  const hangReg = makeHostAdapterRegistry({ diag: (m) => diags.push(m) });
-  hangReg.register(
-    {
-      version: 1,
-      id: "hang",
-      label: "H",
-      providers: ["hang"],
-      fetchUsage: async () => new Promise<ProviderUsage>(() => {}),
-    },
-    "builtin",
-  );
-  const before = Date.now();
-  const guarded = await hangReg.fetchUsage("hang", { provider: "hang", fetch, timeoutMs: 80 });
-  assert.equal(guarded.error, "adapter-timeout", "挂起适配器被护栏拦截");
-  assert.ok(Date.now() - before >= 50 && Date.now() - before < 5000, "护栏按时触发且不永久阻塞");
-  const hangErr = hangReg.snapshot().errors.find((e) => e.key === "hang");
-  assert.ok(hangErr?.kind === "exec" && hangErr.message.includes("超时"), "超时登记 kind=exec");
-}
-
-// ---------------------------------------------------------------- 密钥护栏（stripSecrets 值模式 + 键名）
-
-{
-  const obj = {
-    ok: "fine",
-    token: "sk-secret-token-12345", // 键名命中 → 脱敏
-    authHeader: "Bearer sk-abcdefghijkl", // 值模式 Bearer → 脱敏
-    api_key: "abc", // 泛化键名命中但值 <8 → 不脱敏（保留，防误伤）
-    password: "p@ssw0rd-xyz", // 键名 password → 脱敏（R1 扩展）
-    passphrase: "x", // 高敏键名免长度门槛：短值也脱敏
-    sortKey: "name", // 含 "key" 的普通字段名 + 短值 → 保留（防误伤）
-    jwt: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig", // 值模式 JWT → 脱敏
-    nested: { raw: "这里有一些文本，无密钥", deep: { k: "Bearer sk-1234567890abcdef" } },
-    list: [{ secret: "sk-bbbbbbbb" }],
-  };
-  stripSensitiveKeys(obj);
-  assert.equal(obj.token, "<redacted>", "键名 token 值脱敏");
-  assert.equal(obj.authHeader, "<redacted>", "值模式 Bearer 脱敏");
-  assert.equal(obj.api_key, "abc", "键名命中但短值保留");
-  assert.equal(obj.password, "<redacted>", "键名 password 值脱敏");
-  assert.equal(obj.passphrase, "<redacted>", "高敏键名免长度门槛（短值也脱敏）");
-  assert.equal(obj.sortKey, "name", "含 key 的普通字段短值不误伤");
-  assert.equal(obj.jwt, "<redacted>", "值模式 JWT 脱敏");
-  assert.equal(obj.nested.deep.k, "<redacted>", "嵌套值 Bearer 脱敏");
-  assert.equal(obj.list[0]?.secret, "<redacted>", "数组内键名脱敏");
-  assert.equal(obj.nested.raw, "这里有一些文本，无密钥", "普通文本不动");
-}
-
-// ---------------------------------------------------------------- samplePoint（数据格式放开）
-
-{
-  // 无 samplePoint 但含 windows → 回落通用提取
-  const adapter = {
-    version: ADAPTER_CONTRACT_VERSION,
-    id: "a",
-    label: "A",
-    providers: ["x"],
-    fetchUsage: async (): Promise<ProviderUsage> => ({ ok: true, provider: "x", label: "A", fetchedAt: 1 }),
-  };
-  const usage: ProviderUsage = {
-    ok: true, provider: "x", label: "A", fetchedAt: 1,
-    windows: [{ key: "rolling", name: "5h", percent: 3 }, { key: "monthly", name: "月", percent: 0 }],
-  };
-  const sp = collectSamplePoint(adapter, usage);
-  assert.deepEqual(sp?.values, [3, 0], "回落从 windows 提取 percent 列");
-  assert.deepEqual(sp?.cols.map((c) => c.key), ["rolling", "monthly"], "回落列声明 = windows key");
-
-  // 自定义 samplePoint（自定义格式）
-  const custom = {
-    version: ADAPTER_CONTRACT_VERSION,
-    id: "c", label: "C", providers: ["y"],
-    fetchUsage: async (): Promise<ProviderUsage> => ({ ok: true, provider: "y", label: "C", fetchedAt: 1 }),
-    samplePoint: (u: ProviderUsage) => ({
-      cols: [{ key: "credit", name: "余额" }],
-      values: [(u.data as { credit: number }).credit],
+  // migrateLegacyV3：构造 v3 桶 → 迁移 → 校验 JSONL 与 .bak
+  const dir = mkdtempSync(join(tmpdir(), "dou-legacy-"));
+  const histDir = join(dir, "history", "prov1");
+  await import("node:fs/promises").then((m) => m.mkdir(histDir, { recursive: true }));
+  const ts = Date.now() - 3600000;
+  await import("node:fs/promises").then((m) => m.writeFile(
+    join(histDir, "adp1.json"),
+    JSON.stringify({
+      version: 3,
+      provider: "prov1",
+      adapterId: "adp1",
+      columns: [{ key: "balance", name: "余额" }],
+      samples: [[ts - 600000, 9.5], [ts, 9.2]],
     }),
-  };
-  const customSp = collectSamplePoint(custom, { ok: true, provider: "y", label: "C", fetchedAt: 1, data: { credit: 42 } });
-  assert.deepEqual(customSp, { cols: [{ key: "credit", name: "余额" }], values: [42] }, "自定义 samplePoint 优先");
-
-  // 两者都没有 → 不采样
-  const plain = {
-    version: ADAPTER_CONTRACT_VERSION,
-    id: "p", label: "P", providers: ["y"],
-    fetchUsage: async (): Promise<ProviderUsage> => ({ ok: true, provider: "y", label: "P", fetchedAt: 1 }),
-  };
-  const none = collectSamplePoint(plain, { ok: true, provider: "y", label: "P", fetchedAt: 1, data: { a: 1 } });
-  assert.equal(none, null, "无 samplePoint 且无 windows → 不采样");
+  ));
+  const store2 = new HistoryStore({ root: dir, maxAgeMs: 30 * 86400000, maxSizeBytes: 1024 * 1024 });
+  const migratedCount = await migrateLegacyV3(dir, store2);
+  assert.equal(migratedCount, 2, "迁移 2 个采样点");
+  // 新格式可查询（balance 裸值）
+  const q = await store2.query("prov1", "adp1", { start: ts - 600000, end: ts + 1 }, 10);
+  assert.equal(q.entries.length, 2);
+  assert.deepEqual(q.entries[0].data, { balance: 9.5 }, "迁移后 data 形态正确");
+  // 旧文件已重命名 .bak
+  const filesAfter = await import("node:fs/promises").then((m) => m.readdir(histDir));
+  assert.ok(filesAfter.some((f) => f.endsWith(".v3.bak")), "旧桶重命名为 .bak");
+  // 幂等：二次迁移不重复
+  const again = await migrateLegacyV3(dir, store2);
+  assert.equal(again, 0, "二次迁移幂等（.bak 不再扫描）");
+  rmSync(dir, { recursive: true, force: true });
 }
 
-// ---------------------------------------------------------------- defineUsageAdapter 工厂
+// ---------------------------------------------------------------- safe 守卫
 
 {
-  const made = defineUsageAdapter({
-    id: "relay",
-    label: "中转站",
-    providers: ["relay"],
-    windows: [{ key: "credit", name: "额度", limit: 100, resetPeriodMs: 86400000 }],
-    fetchUsage: async () => ({ ok: true, provider: "relay", label: "中转站", fetchedAt: 1, windows: [{ key: "credit", name: "额度", percent: 30, limit: 100 }] }),
-  });
-  assert.equal(made.id, "relay");
-  assert.equal(made.version, 1, "工厂默认契约版本");
-  const sample = made.samplePoint?.({ ok: true, provider: "relay", label: "中转站", fetchedAt: 1, windows: [{ key: "credit", name: "额度", percent: 30, limit: 100 }] });
-  assert.deepEqual(sample?.values, [30], "工厂派生 samplePoint");
-  const sum = (await made.summarize?.({ provider: "relay", fetch, usage: { ok: true, provider: "relay", label: "中转站", fetchedAt: 1, windows: [{ key: "credit", name: "额度", percent: 30 }] } }))!;
-  assert.equal(sum.hasAdapter, true);
-  assert.equal(typeof sum.text, "string");
+  // 正常路径
+  const okR = await safeFetchData(async () => ({ a: 1 }), 2000);
+  assert.deepEqual(okR.data, { a: 1 });
 
-  // issue #26：声明 windows 数 ≠ 实际返回 windows 数 → 长度校验拦截，跳过采样
-  const mismatched = defineUsageAdapter({
-    id: "mismatch",
-    label: "M",
-    providers: ["m"],
-    windows: [
-      { key: "a", name: "A", limit: 100 },
-      { key: "b", name: "B", limit: 100 },
-    ],
-    fetchUsage: async () => ({ ok: true, provider: "m", label: "M", fetchedAt: 1 }),
-  });
-  const badSample = mismatched.samplePoint?.({
-    ok: true, provider: "m", label: "M", fetchedAt: 1,
-    windows: [{ key: "a", name: "A", percent: 10 }],
-  });
-  assert.equal(badSample, null, "cols/values 长度不等 → 工厂跳过采样（返回 null）");
-}
+  // 抛错 → error 不外抛
+  const errR = await safeFetchData(async () => { throw new Error("boom"); }, 2000);
+  assert.ok(errR.error !== undefined && errR.error.includes("boom"));
 
-// ---------------------------------------------------------------- opencode-go 解析与取数
+  // 数组 → 校验失败（必须对象）
+  const badR = await safeFetchData(async () => [1, 2], 2000);
+  assert.ok(badR.error !== undefined && badR.error.includes("对象"));
 
-assert.deepEqual(
-  pickWindow({ status: "ok", percent: 9, resetsAt: "2026-08-15T00:00:00Z" }, "rolling", "5h 滚动", 12),
-  { key: "rolling", name: "5h 滚动", percent: 9, resetsAt: "2026-08-15T00:00:00Z", limit: 12, raw: undefined },
-);
-assert.equal(pickWindow({ percent: "12" }, "r", "R", 1)?.percent, 12, "字符串 percent 转数字");
-assert.equal(pickWindow({ percent: "abc" }, "r", "R", 1)?.percent, null, "非法 percent 置 null");
-assert.equal(pickWindow(null, "r", "R", 1), null);
-assert.equal(pickWindow("x", "r", "R", 1), null);
+  // 循环引用 → 序列化失败隔离
+  const cyc: Record<string, unknown> = {};
+  cyc.self = cyc;
+  const cycR = await safeFetchData(async () => cyc, 2000);
+  assert.ok(cycR.error !== undefined);
 
-{
-  const parsed = parseUsageResponse({ usage: { rolling: { percent: 1 }, weekly: { percent: 2 }, monthly: { percent: 3 } } });
-  assert.equal(parsed?.monthly?.percent, 3, "嵌套 usage");
-  const parsed2 = parseUsageResponse({ rolling: { percent: 1 }, weekly: { percent: 2 }, monthly: { percent: 3 } });
-  assert.equal(parsed2?.rolling?.percent, 1, "直接三键");
-}
-assert.equal(parseUsageResponse(null), null);
-assert.equal(parseUsageResponse("x"), null);
-
-{
-  const r = await fetchOpenCodeGo({ baseUrl: "https://x", apiKey: "sk-1", fetchImpl: async () => fakeRes(200, OK_BODY) });
-  assert.equal(r.ok, true, "200 取数成功");
-  if (r.ok) {
-    assert.equal(r.windows.length, 3, "三窗口");
-    assert.equal(r.windows[2]?.percent, 0);
-    assert.equal(r.windows[2]?.key, "monthly");
-  }
-}
-{
-  const r = await fetchOpenCodeGo({ baseUrl: "https://x", apiKey: "sk-1", fetchImpl: async () => fakeRes(401, {}) });
-  assert.equal(r.ok, false);
-  assert.equal(r.error, "unauthorized");
-}
-{
-  const r = await fetchOpenCodeGo({ baseUrl: "https://x", apiKey: "sk-1", fetchImpl: async () => fakeRes(500, {}) });
-  assert.equal(r.ok, false);
-  assert.equal(r.error, "http-500");
-}
-{
-  // 容错：网络抛错
-  const r = await fetchOpenCodeGo({ baseUrl: "https://x", apiKey: "sk-1", fetchImpl: async () => { throw new Error("boom"); } });
-  assert.equal(r.ok, false);
-  assert.equal(r.error, "network");
-}
-{
-  // 容错：坏 JSON
-  const r = await fetchOpenCodeGo({ baseUrl: "https://x", apiKey: "sk-1", fetchImpl: async () => fakeRes(200, "<html>") });
-  assert.equal(r.ok, false);
-  assert.equal(r.error, "bad-json");
-}
-{
-  const r = await fetchOpenCodeGo({ baseUrl: "https://x", apiKey: "", fetchImpl: async () => fakeRes(200, OK_BODY) });
-  assert.equal(r.ok, false);
-  assert.equal(r.error, "no-api-key");
-}
-{
-  // 超时：abort 触发 reject → network
-  const hangingFetch: FetchLike = (_url, opts) =>
-    new Promise((_resolve, reject) => {
-      opts?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
-    });
-  const r = await fetchOpenCodeGo({ baseUrl: "https://x", apiKey: "sk-1", timeoutMs: 5, fetchImpl: hangingFetch });
-  assert.equal(r.ok, false);
-  assert.equal(r.error, "network");
-}
-
-// 内置适配器 fetchUsage 归一化（含 ctx.timeoutMs 通道）
-{
-  const usage = await openCodeGoHostAdapter.fetchUsage({
-    provider: OPENCODE_GO_PROVIDER,
-    apiKey: "sk-1",
-    fetch: async () => fakeRes(200, OK_BODY),
-  });
-  assert.equal(usage.ok, true);
-  assert.equal(usage.provider, "opencode-go");
-  assert.equal(usage.label, "OpenCode Go");
-  assert.equal(usage.windows?.length, 3);
-  const nokey = await openCodeGoHostAdapter.fetchUsage({ provider: OPENCODE_GO_PROVIDER, fetch: async () => fakeRes(200, OK_BODY) });
-  assert.equal(nokey.ok, false);
-  assert.equal(nokey.error, "no-api-key");
-
-  // issue #26：ctx.timeoutMs 经 HostFetchContext 下发生效（5ms 快速 abort；
-  // 若通道断裂回落硬编码 15000，本用例会挂起而非快速返回）
+  // 超时（挂起 → 快速超时，不阻塞）
   const t0 = Date.now();
-  const slow = await openCodeGoHostAdapter.fetchUsage({
-    provider: OPENCODE_GO_PROVIDER,
-    apiKey: "sk-1",
-    timeoutMs: 5,
-    fetch: (_url, opts) =>
-      new Promise((_resolve, reject) => {
-        opts?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
-      }),
-  });
-  assert.equal(slow.ok, false);
-  assert.equal(slow.error, "network", "ctx.timeoutMs=5 触发取数超时");
-  assert.ok(Date.now() - t0 < 5000, "超时按 ctx.timeoutMs 生效而非默认 15000");
+  const toR = await safeFetchData(() => new Promise(() => {}), 300);
+  assert.ok(toR.error !== undefined && toR.error.includes("超时"));
+  assert.ok(Date.now() - t0 < 1500, "超时应快速返回，不挂起");
 }
 
-// ---------------------------------------------------------------- API Key 解析链
+{
+  const okF = await safeFormat(() => "<b>x</b>", "formatCapsule", 2000);
+  assert.equal(okF.html, "<b>x</b>");
 
-assert.equal(credentialsKeyFromYaml('DEEPSEEK_API_KEY: sk-aaa\nOPENCODE_GO_API_KEY: sk-opencode-123\n'), "sk-opencode-123");
-assert.equal(credentialsKeyFromYaml('OPENCODE_GO_API_KEY: "sk-q"'), "sk-q", "带引号");
-assert.equal(credentialsKeyFromYaml(""), undefined);
-assert.equal(credentialsKeyFromYaml(undefined), undefined);
-assert.equal(opencodeKeyFromAuth('{"opencode-go":{"type":"api","key":"sk-go-1"}}'), "sk-go-1", "opencode-go 优先");
-assert.equal(opencodeKeyFromAuth('{"opencode":{"type":"api","key":"sk-oc-2"}}'), "sk-oc-2", "回退 opencode");
-assert.equal(opencodeKeyFromAuth('{"opencode":{"type":"api"}}'), undefined, "无 key");
-assert.equal(opencodeKeyFromAuth("{bad json"), undefined, "容错：坏 JSON");
-assert.equal(resolveApiKey({ explicit: "sk-e", env: "sk-v", credentialsYaml: "k: sk-c", authJson: "{}" }), "sk-e", "显式优先");
-assert.equal(resolveApiKey({ env: "sk-v", credentialsYaml: "k: sk-c", authJson: "{}" }), "sk-v", "环境变量次之");
-assert.equal(resolveApiKey({ authJson: '{"opencode-go":{"type":"api","key":"sk-a"}}' }), "sk-a", "auth.json 兜底");
-assert.equal(resolveApiKey({}), undefined, "全缺返回 undefined");
+  const errF = await safeFormat(() => { throw new Error("fmt-boom"); }, "formatCapsule", 2000);
+  assert.ok(errF.error !== undefined && errF.error.includes("fmt-boom"));
 
-// ---------------------------------------------------------------- 历史采样序列（v3 多文件，(provider, adapterId) 双键）
+  const typeF = await safeFormat(() => 42 as unknown as string, "formatCapsule", 2000);
+  assert.ok(typeF.error !== undefined && typeF.error.includes("字符串"));
+}
+
+// ---------------------------------------------------------------- normalizeConfig
 
 {
-  let now = 1_000_000;
-  const store = makeHistoryStore({ maxAgeDays: 14, now: () => now });
-  const cols = [{ key: "rolling", name: "5h" }, { key: "weekly", name: "周" }, { key: "monthly", name: "月" }];
-  // 按 (provider, adapterId) 追加
-  assert.deepEqual(store.append("opencode-go", "opencode-go-builtin", cols, [now, 2, 1, 0]), { appended: 1, replaced: 0 });
-  assert.deepEqual(store.append("opencode-go", "opencode-go-builtin", cols, [now + 1000, 4, 5, 6]), { appended: 0, replaced: 1 }, "同分钟替换");
-  assert.equal(store.list("opencode-go", "opencode-go-builtin").samples.length, 1);
-  assert.deepEqual(store.list("opencode-go", "opencode-go-builtin").samples[0], [now + 1000, 4, 5, 6], "替换后保留最新点");
-  assert.deepEqual(store.append("opencode-go", "opencode-go-builtin", cols, [now + 60000, 7, 8, 9]), { appended: 1, replaced: 0 }, "跨分钟追加");
-  assert.equal(store.list("opencode-go", "opencode-go-builtin").samples.length, 2);
+  const c = normalizeConfig(undefined);
+  assert.equal(c.fetchTimeoutMs, DEFAULT_CONFIG.fetchTimeoutMs);
+  assert.equal(c.provider, "opencode-go");
+  const m = normalizeConfig({ adapter: "/tmp/a.mjs", staticPath: "/v1/usage", provider: "deepseek", apiKey: "sk-x", fetchTimeoutMs: 99999, maxAgeDays: 9999 });
+  assert.equal(m.adapter, "/tmp/a.mjs");
+  assert.equal(m.provider, "deepseek");
+  assert.equal(m.apiKey, "sk-x");
+  assert.equal(m.fetchTimeoutMs, 30000, "超时上限 clamp 到 30s");
+  assert.equal(m.maxAgeDays, 365, "保留天数上限 clamp");
+}
 
-  // 另一 adapterId（同 provider）独立桶
-  assert.deepEqual(store.append("opencode-go", "my-v2", [{ key: "credit", name: "余额" }], [now, 50]), { appended: 1, replaced: 0 });
-  assert.equal(store.list("opencode-go", "my-v2").samples.length, 1);
-  assert.equal(store.list("opencode-go", "opencode-go-builtin").samples.length, 2, "各 adapterId 独立桶，互不干扰");
+// ---------------------------------------------------------------- provider-config 配置链
 
-  // 列声明随桶
-  const ocgBucket = store.list("opencode-go", "opencode-go-builtin");
-  assert.deepEqual(ocgBucket.columns.map((c) => c.key), ["rolling", "weekly", "monthly"], "columns 随桶落盘");
+{
+  // 显式 key 优先
+  const r1 = await resolveProviderConfig("myprov", { apiKey: "explicit", apiEndpoint: "https://x" });
+  assert.equal(r1.apiKey, "explicit");
+  assert.equal(r1.apiEndpoint, "https://x");
 
-  // 列数一致性：单点 cols ≠ values 宽度 → 跳过（issue #26 单点校验）
-  assert.deepEqual(store.append("opencode-go", "opencode-go-builtin", [{ key: "x", name: "X" }], [now + 90000, 1, 2, 3, 4]), { appended: 0, replaced: 0 }, "列数不一致跳过");
+  // env 回落：provider myprov-test → 环境变量 MYPROV_TEST_API_KEY
+  process.env.MYPROV_TEST_API_KEY = "from-env";
+  const r2 = await resolveProviderConfig("myprov-test", {});
+  assert.equal(r2.apiKey, "from-env");
+  delete process.env.MYPROV_TEST_API_KEY;
 
-  // issue #26：首点即 cols/values 宽度不等 → 单点校验拦截，桶保持空
-  const freshStore = makeHistoryStore({ maxAgeDays: 14, now: () => now });
-  assert.deepEqual(
-    freshStore.append("p1", "a1", [{ key: "x", name: "X" }], [now, 1, 2]),
-    { appended: 0, replaced: 0 },
-    "cols 1 ≠ values 2 → append 跳过",
+  // 无密钥
+  const r3 = await resolveProviderConfig("never-exists-prov", {});
+  assert.equal(r3.apiKey, undefined);
+
+  // credentials 文件路径
+  assert.ok(credentialsFile("/tmp/dsh").endsWith(".credentials.yaml"));
+}
+
+// ---------------------------------------------------------------- opencode-go v2
+
+{
+  // parseUsageResponse 兼容两种形状
+  const p1 = parseUsageResponse({ usage: { rolling: { percent: 2 } } });
+  assert.ok(p1 !== null && p1.rolling.percent === 2);
+  const p2 = parseUsageResponse({ rolling: { percent: 3 } });
+  assert.ok(p2 !== null && p2.rolling.percent === 3);
+  assert.equal(parseUsageResponse("junk"), null);
+
+  // fetchOpenCodeGoV2：成功
+  const fakeRes = (status: number, body: unknown): Response =>
+    ({ status, ok: status >= 200 && status < 300, json: async () => body }) as unknown as Response;
+  const okF = await fetchOpenCodeGoV2(
+    { apiEndpoint: "https://x", staticPath: "/usage", apiKey: "sk-1", provider: OPENCODE_GO_PROVIDER, timeoutMs: 2000 },
+    (async () => fakeRes(200, { usage: { rolling: { percent: 2 }, weekly: { percent: 1 }, monthly: { percent: 0 } } })) as unknown as typeof fetch,
   );
-  assert.equal(freshStore.list("p1", "a1").samples.length, 0, "被拒点不入桶");
-  // 合法宽度一致 → 正常入桶
-  assert.deepEqual(freshStore.append("p1", "a1", [{ key: "x", name: "X" }], [now + 1000, 3]), { appended: 1, replaced: 0 }, "宽度相等正常入桶");
+  assert.ok(okF.rolling !== undefined);
 
-  assert.deepEqual(store.append("opencode-go", "opencode-go-builtin", cols, null), { appended: 0, replaced: 0 });
-  assert.deepEqual(store.append("opencode-go", "opencode-go-builtin", cols, [1]), { appended: 0, replaced: 0 }, "元素不足 2 丢弃");
-  assert.deepEqual(store.append("opencode-go", "opencode-go-builtin", cols, ["x", 1, 2, 3]), { appended: 0, replaced: 0 }, "ts 非法丢弃");
-  assert.deepEqual(store.append("opencode-go", "opencode-go-builtin", cols, [now + 120000, "bad", 5, null]), { appended: 1, replaced: 0 });
-  const lastPoint = store.list("opencode-go", "opencode-go-builtin").samples.at(-1);
-  assert.equal(lastPoint?.[1], null, "非法 percent 归一为 null");
+  // 401 → 抛 unauthorized（由 safeFetchData 在管道层隔离）
+  await assert.rejects(
+    () => fetchOpenCodeGoV2(
+      { apiEndpoint: "https://x", staticPath: "/u", apiKey: "sk-1", provider: "p", timeoutMs: 2000 },
+      (async () => fakeRes(401, {})) as unknown as typeof fetch,
+    ),
+    /unauthorized/,
+  );
 
-  // trimAll 裁剪所有桶
-  now += 15 * 86400000;
-  store.trimAll();
-  assert.equal(store.list("opencode-go", "opencode-go-builtin").samples.length, 0, "超龄点被裁剪");
-  assert.equal(store.list("opencode-go", "my-v2").samples.length, 0, "my-v2 也被裁剪");
+  // 缺 key
+  await assert.rejects(
+    () => fetchOpenCodeGoV2({ apiEndpoint: "", staticPath: "", provider: "p", timeoutMs: 2000 }),
+    /no-api-key/,
+  );
 
-  // bucketJson / loadBucket 往返
-  const store3 = makeHistoryStore({ maxAgeDays: 14, now: () => now });
-  store3.append("opencode-go", "opencode-go-builtin", cols, [now - 3600000, 1, 2, 3]);
-  store3.append("opencode-go", "opencode-go-builtin", cols, [now, 4, 5, 6]);
-  const text = store3.bucketJson("opencode-go", "opencode-go-builtin");
-  const store4 = makeHistoryStore({ maxAgeDays: 14, now: () => now });
-  assert.equal(store4.loadBucket("opencode-go", "opencode-go-builtin", text), 2, "loadBucket 返回加载点数");
-  assert.deepEqual(store4.list("opencode-go", "opencode-go-builtin").samples, store3.list("opencode-go", "opencode-go-builtin").samples, "往返一致");
-  assert.deepEqual(store4.list("opencode-go", "opencode-go-builtin").columns.map((c) => c.key), ["rolling", "weekly", "monthly"], "columns 往返一致");
+  // 内置适配器契约自检
+  assert.equal(isUsageStatsAdapter(openCodeGoAdapter), true, "内置适配器必须通过 v2 契约校验");
+  assert.deepEqual(openCodeGoAdapter.providers, ["opencode-go"]);
+  assert.equal(openCodeGoAdapter.name, OPENCODE_GO_ADAPTER_ID);
 
-  // 防御（容错：坏文件/坏结构）
-  const bad = makeHistoryStore({ maxAgeDays: 14, now: () => now });
-  assert.equal(bad.loadBucket("a", "b", "{bad json"), 0, "坏 JSON 返回 0");
-  assert.equal(bad.loadBucket("a", "b", JSON.stringify({ version: 3, samples: "x" })), 0, "坏结构返回 0");
-  assert.equal(bad.loadBucket("a", "b", JSON.stringify({ version: 3, columns: [{ key: "x", name: "X" }], samples: [[1], ["x", 1, 2], [now, 1, 2]] })), 1, "坏元素丢弃，好元素保留");
-}
+  // formatCapsule 返回 HTML 字符串（含窗口短名）
+  const html = openCodeGoAdapter.formatCapsule({
+    time: Date.now(),
+    data: { rolling: { percent: 5 }, weekly: { percent: 1 }, monthly: { percent: 0 } },
+    status: "fresh",
+    esc,
+  });
+  assert.ok(html.includes("5h"), "胶囊文案应含窗口短名");
 
-{
-  const dir = mkdtempSync(join(tmpdir(), "dou-smoke-"));
-  const file = join(dir, "hist.json");
-  await writeHistoryFile(file, JSON.stringify({ version: 1, samples: [[1, 2, 3, 4]] }));
-  const text = await readHistoryFile(file);
-  assert.equal(JSON.parse(text ?? "{}").samples.length, 1, "落盘往返");
-  assert.equal(await readHistoryFile(join(dir, "no-such.json")), undefined, "文件不存在返回 undefined");
-
-  // issue #29：rename 失败（目标路径已是目录）→ 抛错且 .tmp 无残留（容错：执行抛错）
-  const occupied = join(dir, "occupied.json");
-  await mkdir(occupied); // 目标为目录 → rename(tmp, dir) 必败
-  let threw = false;
-  try {
-    await writeHistoryFile(occupied, JSON.stringify({ x: 1 }));
-  } catch {
-    threw = true;
-  }
-  assert.equal(threw, true, "rename 到目录目标抛错");
-  assert.deepEqual(readdirSync(dir).filter((f) => f.endsWith(".tmp")), [], ".tmp 残留已清理");
-}
-
-// ---------------------------------------------------------------- TTL 缓存（按 provider 键控）
-
-{
-  let now = 1000;
-  const cache = makeUsageCache<{ v?: number; x?: number }>({ ttlMs: 30000, now: () => now });
-  assert.equal(cache.get("a"), undefined);
-  cache.set("a", { v: 1 });
-  cache.set("b", { v: 2 });
-  assert.deepEqual(cache.get("a"), { v: 1 });
-  assert.deepEqual(cache.get("b"), { v: 2 }, "多 provider 独立缓存");
-  cache.clear("a");
-  assert.equal(cache.get("a"), undefined, "按 provider 清除");
-  now = 1000 + 30000;
-  assert.equal(cache.get("b"), undefined, "TTL 过期失效");
-  cache.set("b", { x: 1 });
-  cache.clear();
-  assert.equal(cache.get("b"), undefined, "clear 全清");
-}
-
-// ---------------------------------------------------------------- issue #87：条目级 TTL（失败短缓存）
-
-{
-  let now = 0;
-  const cache = makeUsageCache<{ ok: boolean }>({ ttlMs: 30000, now: () => now });
-  cache.set("ok-provider", { ok: true });
-  cache.set("bad-provider", { ok: false }, { ttlMs: 10 });
-  now = 5;
-  assert.deepEqual(cache.get("bad-provider"), { ok: false }, "条目 TTL 未到期可命中");
-  now = 11;
-  assert.equal(cache.get("bad-provider"), undefined, "条目 TTL 覆盖生效（失败短缓存先过期）");
-  assert.deepEqual(cache.get("ok-provider"), { ok: true }, "默认 TTL 不受条目覆盖影响");
-}
-
-// ---------------------------------------------------------------- issue #87：~ 展开与 add 路径校验修订
-
-{
-  // issue #87：~ 展开复用 untildify（单一事实源，与 dsh-web-file-preview 同源同版）
-  const realHome = homedir();
-  assert.equal(expandHomePath("~"), realHome, "~ 展开到用户 home");
-  assert.equal(expandHomePath("~/a/b.mjs"), join(realHome, "a/b.mjs"), "~/相对段 展开");
-  assert.equal(expandHomePath("/abs/noop.mjs"), "/abs/noop.mjs", "非 ~ 前缀原样返回");
-  assert.equal(expandHomePath("~other/x.mjs"), "~other/x.mjs", "~user 形态不展开（untildify 边界）");
-
-  // resolveAddAdapterFile：~ 前缀先展开再校验（issue #87）。untildify 内部 join 会把
-  // ~/a/../b 规范化为 home/b——~ 形态展开后等价于直接输入绝对路径（同一信任模型：
-  // 本机文件可加载），故穿越段不构成提权；拒绝分支由「未规整形态」与「文件不存在」兜底。
-  assert.equal(resolveAddAdapterFile("~/nonexistent-dir-xyz/a.mjs"), undefined, "~ 展开为不存在路径 → 拒绝");
-  assert.equal(resolveAddAdapterFile("rel/../x.mjs"), undefined, "相对路径穿越拒绝");
-  assert.equal(resolveAddAdapterFile(""), undefined, "空串拒绝");
-  assert.equal(resolveAddAdapterFile("/nonexistent-dir-xyz/a.mjs"), undefined, "不存在的绝对路径拒绝");
-}
-
-// ---------------------------------------------------------------- 客户端行为纯函数（issue #28：替代 bundle includes 断言）
-
-function mkSummary(overrides: Partial<ProviderSummary> = {}): ProviderSummary {
-  return {
-    ok: true, provider: "opencode-go", label: "OpenCode Go",
-    text: "5h 2% · 周 1% · 月 0%", level: "ok", hasAdapter: true, fetchedAt: 1,
-    ...overrides,
-  };
-}
-
-{
-  const summary = mkSummary();
-
-  // 渲染器 pill 钩子优先（文案 + 等级）
-  const customRenderer = { pill: (): { text: string; level: SummaryLevel } => ({ text: "自定义 7%", level: "warn" }) };
-  assert.equal(derivePillLabel({ renderer: customRenderer, summary }), "自定义 7%", "pill 钩子文案优先");
-  assert.equal(derivePillLevel({ renderer: customRenderer, summary }), "warn", "pill 钩子等级优先");
-
-  // pill 返回 null → 回落 summary.text / summary.level
-  const nullRenderer = { pill: (): null => null };
-  assert.equal(derivePillLabel({ renderer: nullRenderer, summary }), "5h 2% · 周 1% · 月 0%", "pill null 回落 summary.text");
-  assert.equal(derivePillLevel({ renderer: nullRenderer, summary }), "ok", "pill null 回落 summary.level");
-
-  // 无渲染器无 summary → windows 兜底推导（短名 + 百分比拼接）
-  const usage: ProviderUsage = {
-    ok: true, provider: "x", label: "X", fetchedAt: 1,
-    windows: [
-      { key: "rolling", name: "5h 滚动", percent: 3 },
-      { key: "monthly", name: "每月", percent: 0 },
+  // formatPanel 返回三窗口迷你图卡片 HTML（SVG 图表，与 v1 展示逻辑一致）
+  const panel = openCodeGoAdapter.formatPanel({
+    entries: [
+      { time: Date.now() - 600000, data: { rolling: { percent: 2 }, weekly: { percent: 1 }, monthly: { percent: 0 } } },
+      { time: Date.now(), data: { rolling: { percent: 5 }, weekly: { percent: 3 }, monthly: { percent: 1 } } },
     ],
-  };
-  assert.equal(derivePillLabel({ data: usage, provider: "x" }), "5h 滚 3% · 每月 0%", "windows 兜底推导（窗口名 >4 字符截断）");
-
-  // 全缺 → label --%（字符串 label 不截断，与既有行为一致）
-  assert.equal(derivePillLabel({ provider: "ghost-relay" }), "ghost-relay --%", "全缺回落 label --%");
-
-  // D11 隐藏语义：无启用适配器隐藏浮窗、有则显示
-  assert.equal(shouldHideFloat(false), true, "无启用适配器隐藏浮窗");
-  assert.equal(shouldHideFloat(true), false, "有启用适配器显示");
-
-  // title：无适配器提示 / hint 拼接 / 错误态
-  assert.equal(derivePillTitle({ hasAdapter: false, provider: "p" }), "p 用量：无启用适配器", "title 无适配器提示");
-  assert.equal(
-    derivePillTitle({ hasAdapter: true, summary: mkSummary({ hint: "限额 $12" }) }),
-    "OpenCode Go 用量：5h 2% · 周 1% · 月 0% · 限额 $12",
-    "title 拼接 text 与 hint",
-  );
-  assert.equal(
-    derivePillTitle({ hasAdapter: true, data: { ok: false, provider: "p", label: "L", fetchedAt: 1, error: "no-api-key" } }),
-    "L 用量获取失败：no-api-key",
-    "title 错误态说明（有适配器但取数失败）",
-  );
-
-  // 渲染器配对键优先级：专用 provider/adapterId → 默认 provider
-  assert.deepEqual(
-    rendererLookupKeys("opencode-go", "opencode-go-builtin"),
-    ["opencode-go/opencode-go-builtin", "opencode-go"],
-    "配对键先专用后默认",
-  );
-  assert.deepEqual(rendererLookupKeys("opencode-go"), ["opencode-go"], "无 adapterId 只查默认");
-}
-
-// ---------------------------------------------------------------- 死代码清理回归（issue #29）
-
-{
-  // 无调用方的导出已从导出面移除（防回归）
-  for (const key of [
-    "CONFIG_KEYS",
-    "defaultPersistFile",
-    "resolvePathWeak",
-    "OPENCODE_GO_DEFAULT_ENABLED",
-    // issue #38 维护者意图修正：knownProviders/recognizedProviders 超集路径移除
-    "KNOWN_PROVIDERS",
-    "unionProviders",
-  ] as const) {
-    assert.equal(key in libIndex, false, `死代码 ${key} 已从导出面移除`);
-  }
-  // 注册表不再暴露 unregisterProvider（无调用方）
-  const reg = makeHostAdapterRegistry();
-  assert.equal("unregisterProvider" in reg, false, "unregisterProvider 已移除");
-  // 宿主适配器 providers 数组无重复项
-  assert.equal(
-    new Set(openCodeGoHostAdapter.providers).size,
-    openCodeGoHostAdapter.providers.length,
-    "providers 数组无重复",
-  );
-}
-
-// ---------------------------------------------------------------- 设置页·提供商列表拆分（issue #38 维护者意图修正）
-
-{
-  const input = {
-    candidatesByProvider: {
-      "opencode-go": [{ id: "opencode-go-builtin", label: "OpenCode Go 官方", source: "builtin" }],
-      "z-relay": [{ id: "z-relay-user", label: "Z Relay", source: "user-file" }],
-    },
-    enabled: { "opencode-go": "opencode-go-builtin" },
-    modelProviders: ["anthropic", "opencode-go", "deepseek"],
-  };
-  const { main, extra } = splitProviderList(input);
-  // 主列表与模型配置页精确一致：数量与顺序严格等于 modelProviders
-  assert.deepEqual(
-    main.map((i) => i.provider),
-    ["anthropic", "opencode-go", "deepseek"],
-    "主列表 = modelProviders 精确一致（数量与模型配置页对齐）",
-  );
-  const ocg = main.find((i) => i.provider === "opencode-go");
-  assert.ok(ocg?.hasCandidates && ocg.enabledId === "opencode-go-builtin", "主列表项带候选存在性与启用态");
-  // 无适配器候选的 modelProvider 保留展示（引导位）
-  assert.equal(main.find((i) => i.provider === "anthropic")?.hasCandidates, false, "无候选的 modelProvider 保留展示（引导文案）");
-  assert.equal(main.find((i) => i.provider === "deepseek")?.enabledId, null, "无启用的 modelProvider enabledId null");
-  // 用户适配器指向不在 modelProviders 的 provider → 收进尾部独立分组，不计入主列表数量
-  assert.deepEqual(extra.map((i) => i.provider), ["z-relay"], "额外 provider 进独立分组（字典序）");
-  assert.equal(extra[0]?.hasCandidates, true, "额外分组项带候选存在性");
-  assert.equal(extra[0]?.enabledId, null, "额外分组项未启用时 enabledId null");
-
-  // 启用态指向额外 provider 同样进独立分组（带启用态）
-  const onlyEnabled = splitProviderList({
-    candidatesByProvider: {},
-    enabled: { "ghost-relay": "ghost-a" },
-    modelProviders: ["opencode-go"],
+    range: { start: Date.now() - 1000, end: Date.now() },
+    truncated: false,
+    esc,
   });
-  assert.deepEqual(onlyEnabled.main.map((i) => i.provider), ["opencode-go"], "主列表不受额外启用影响");
-  assert.deepEqual(onlyEnabled.extra.map((i) => i.provider), ["ghost-relay"], "启用态指向的额外 provider 进独立分组");
-  assert.equal(onlyEnabled.extra[0]?.enabledId, "ghost-a", "额外分组项带启用态");
-
-  // 空 modelProviders → 主列表空，候选仍经独立分组可见（不静默消失）
-  const emptyModel = splitProviderList({
-    candidatesByProvider: { solo: [{ id: "solo-a", label: "S", source: "user-file" }] },
-    modelProviders: [],
+  assert.ok(panel.includes("dou-card"), "面板应含卡片");
+  assert.ok(panel.includes("5h 滚动") && panel.includes("每周") && panel.includes("每月"), "面板含三窗口名称");
+  assert.ok(panel.includes("<svg"), "面板含 SVG 迷你图");
+  assert.ok(panel.includes("dou-cardCur"), "卡片头含当前百分比");
+  // 空历史 → 空态文案
+  const emptyPanel = openCodeGoAdapter.formatPanel({
+    entries: [],
+    range: { start: 0, end: 1 },
+    truncated: false,
+    esc,
   });
-  assert.deepEqual(emptyModel.main, [], "空 modelProviders → 主列表空");
-  assert.deepEqual(emptyModel.extra.map((i) => i.provider), ["solo"], "无模型配置时候选仍可见（独立分组）");
-
-  // 双空输入 → 双空列表
-  assert.deepEqual(
-    splitProviderList({ candidatesByProvider: {}, modelProviders: [] }),
-    { main: [], extra: [] },
-    "空输入双空列表",
-  );
+  assert.ok(emptyPanel.includes("暂无"), "空历史应有空态提示");
+  // 单点历史 → 采集中提示（≥2 点才显示趋势）
+  const onePanel = openCodeGoAdapter.formatPanel({
+    entries: [{ time: Date.now(), data: { rolling: { percent: 5 }, weekly: { percent: 3 }, monthly: { percent: 1 } } }],
+    range: { start: Date.now() - 1000, end: Date.now() },
+    truncated: false,
+    esc,
+  });
+  assert.ok(onePanel.includes("dou-chartEmpty"), "单点历史显示采集中提示");
 }
+
+// ---------------------------------------------------------------- registry v2
 
 {
-  assert.equal(
-    providerBadgeText({ enabledId: "opencode-go-builtin" }),
-    "已启用: opencode-go-builtin",
-    "折叠徽标显示已启用 adapter-id（适配器级语义）",
-  );
-  assert.equal(providerBadgeText({ enabledId: null }), "未启用适配器", "清空/未启用徽标文案");
+  const reg = makeAdapterRegistry();
+  reg.register(validAdapter as never, "user-file", "/tmp/x.mjs");
+  assert.ok(reg.get("p1") !== undefined);
+  assert.ok(reg.enabledProviders().includes("p1"));
+  const snap = reg.snapshot();
+  assert.equal(snap.infos.length, 1);
+  assert.equal(snap.errors.length, 0);
+  reg.recordError("test", "exec", "oops");
+  assert.equal(reg.snapshot().errors.length, 1);
+  assert.equal(reg.select("p1", null), true);
+  assert.equal(reg.get("p1"), undefined);
 }
+
+// ---------------------------------------------------------------- 热更新加载校验
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dou-hot-"));
+
+  // 合法适配器
+  const okFile = join(dir, "adapter-ok.mjs");
+  writeFileSync(okFile, `
+export const version = 2;
+export const name = "hot-adapter";
+export const providers = ["hp"];
+export async function fetchData() { return {}; }
+export function formatCapsule() { return ""; }
+export function formatPanel() { return ""; }
+`, "utf8");
+  const stamp = await readStamp(okFile);
+  assert.ok(stamp !== null);
+  const loaded = await loadAndValidateAdapter(okFile, stamp);
+  assert.ok(loaded.adapter !== undefined && loaded.adapter.name === "hot-adapter");
+  assert.equal(stampEqual(stamp, stamp), true);
+  assert.equal(stampEqual(stamp, null), false);
+
+  // 非法适配器（缺导出）→ fail-fast 拒收
+  // （用独立文件：同文件快速重写可能落同一 mtimeMs，?t= 缓存键相同会命中旧模块）
+  const badFile = join(dir, "adapter-bad.mjs");
+  writeFileSync(badFile, `export const version = 2; export const name = "x2";`, "utf8");
+  const stamp2 = await readStamp(badFile);
+  assert.ok(stamp2 !== null && !stampEqual(stamp, stamp2));
+  const bad = await loadAndValidateAdapter(badFile, stamp2);
+  assert.ok(bad.error !== undefined && bad.error.includes("契约校验失败"));
+  assert.equal(bad.adapter, undefined);
+
+  rmSync(dir, { recursive: true, force: true });
+}
+
+// ---------------------------------------------------------------- 路由表形状
+
+assert.equal(typeof ROUTES.stats, "string");
+assert.ok(ROUTES.stats.startsWith("/api/"));
+assert.ok(ROUTES.health.startsWith("/api/"));
+
+console.log("[smoke-pure] 全部断言通过 ✓ (v2)");
