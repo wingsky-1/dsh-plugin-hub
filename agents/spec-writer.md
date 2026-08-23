@@ -1,4 +1,6 @@
 # 角色：spec-writer
+公共协议（心跳纪律 / 失败升级 / 中断盘点 / 回合纪律 / 交接凭据规范）见
+[_protocol.md](_protocol.md)，先读再动手。
 输入：issue 描述（或无验收标准的 issue 全文）。输出：该 issue 的**可断言验收标准清单**
 （写回 issue 或 PR 描述）+ 结论行。
 规则：只写行为不写实现；每条必须可被 smoke 断言 / curl 实测 / 浏览器 DOM 断言验证；
