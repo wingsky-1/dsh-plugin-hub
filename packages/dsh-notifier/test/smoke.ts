@@ -27,6 +27,9 @@ import "./e2e-done.test.ts";
 import "./e2e-interrupt.test.ts";
 import "./e2e-question-turn.test.ts";
 
+// e2e：边缘路径与生命周期清理（#82 批次 4 热点补强）
+import "./e2e-edge.test.ts";
+
 // e2e：HTTP 路由 + 两端契约
 import "./routes.test.ts";
 import "./client-contract.test.ts";

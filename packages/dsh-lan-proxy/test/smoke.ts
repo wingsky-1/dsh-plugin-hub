@@ -33,6 +33,12 @@ import { apply, loadFileConfig, writeConfigFile, sanitizeSettings, validateSetti
   ensureSelfSignedTls, certStillValid, toSanEntry, loadTlsFromFiles, SELF_SIGNED_KEY, SELF_SIGNED_CERT,
   isCompressible, resolveCompressionOptions } from "../lib/index.js";
 
+// 结构化单元测试（issue #82 批次 2：清零未覆盖 CRAP 超阈热点）。
+// 注意：单元测试在模块加载期执行（早于下方 main() 的集成区），
+// 全 localhost 随机端口 + 临时 DSH_HOME，无外网、无子进程。
+import "./unit-proxy.test.ts";
+import "./unit-apply.test.ts";
+
 const UPSTREAM_PORT = 19090;
 const PROXY_PORT = 19091;
 const PROXY_HTTPS_PORT = 19092;
