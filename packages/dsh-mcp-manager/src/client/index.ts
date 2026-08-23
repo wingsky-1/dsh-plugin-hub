@@ -722,6 +722,16 @@ function mountFloat(ctx: any) {
   const panelRoot = panelHost();
   if (panel.parentElement !== panelRoot) panelRoot.appendChild(panel);
 
+  // 点击下拉框之外的区域（包括胶囊以外的任意位置）也关闭；
+  // 胶囊本身不在这里关，仍交给自身的 click toggle，避免开/关互相抵消。
+  const onDocumentClick = (event: any) => {
+    if (!floatOpen) return;
+    const path = typeof event.composedPath === "function" ? event.composedPath() : [];
+    if (path.includes(floatPanel) || path.includes(floatPill)) return;
+    toggleFloat(false);
+  };
+  document.addEventListener("click", onDocumentClick);
+
   let host: any;
   let listeners: any = [];
 
@@ -791,6 +801,7 @@ function mountFloat(ctx: any) {
   renderPill();
   return () => {
     updateFloatState = undefined;
+    document.removeEventListener("click", onDocumentClick);
     observer.disconnect();
     for (const detach of listeners.splice(0)) detach();
     pill.remove();
