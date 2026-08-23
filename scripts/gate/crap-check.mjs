@@ -72,7 +72,9 @@ function foreignSegments(code) {
   let offset = 0;
   for (const line of code.split('\n')) {
     const m = /^\/\/ (\S+)\s*$/.exec(line);
-    if (m) {
+    // 只把包含 `/` 的注释作为模块边界（路径注释），过滤 `@__NO_SIDE_EFFECTS__` 等
+    // esbuild 内联注解——后者不关闭外层依赖段，避免依赖函数漏过滤。
+    if (m && m[1].includes('/')) {
       if (current) segments.push({ start: current.start, end: offset, foreign: current.foreign });
       current = { start: offset, foreign: m[1].includes('node_modules') };
     }
