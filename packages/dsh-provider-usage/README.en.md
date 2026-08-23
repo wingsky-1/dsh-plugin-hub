@@ -2,226 +2,195 @@
 [![npm](https://img.shields.io/npm/v/@wingsky-1/dsh-provider-usage)](https://www.npmjs.com/package/@wingsky-1/dsh-provider-usage)
 [![GitHub Releases](https://img.shields.io/github/v/release/wingsky-1/dsh-plugin-hub)](https://github.com/wingsky-1/dsh-plugin-hub/releases)
 
-A DSH (DeepSeek Harness) Web GUI plugin: **OpenCode Go plan-usage floating pill + three-window mini charts**.
+DSH (DeepSeek Harness) Web GUI plugin: **usage statistics float widget** (v2 contract rewrite).
 
-A persistent floating capsule sits at the top-right of the chat interface, showing the real-time
-consumption percentage of the three OpenCode Go plan windows (color shifts with usage level:
-\>80% yellow, \>95% red). Click to expand a detail panel:
+A persistent capsule at the top-right of the chat view shows usage for the current model
+provider; click it to open a detail panel. Rendering happens on the **host side** — user
+adapters return HTML, the client only injects it.
 
-- Three mini-chart cards (rolling 5-hour / weekly / monthly), each window with independently
-  adaptive y-axis and x-axis time ticks, a 100% quota reference dashed line, and a reset marker
-  line (derived back from `resetsAt`)
-- Background sampling keeps history continuous (continues even when the browser is closed); data
-  comes from the official `/v1/usage` interface (authoritative data, zero local computation)
+> 中文文档：[README.md](README.md)（authoritative）。架构图解（flow / sequence charts）：
+> [docs/architecture.md](docs/architecture.md)；适配器开发引导：[docs/adapter-guide.md](docs/adapter-guide.md)。
 
-## Installation
+## Install
 
-Prerequisite: DeepSeek Harness installed and `dsh web` running normally (for running dsh
-without a global install, see "Without a global dsh install" below).
+Prerequisite: DeepSeek Harness installed and `dsh web` runnable (if `dsh` is not globally
+installed, see below).
 
-### Install plugins (add)
+### Add
 
 ```sh
 dsh plugin --profile web add @wingsky-1/dsh-provider-usage
 ```
 
-### Uninstall plugins (remove)
+### Remove
 
 ```sh
 dsh plugin --profile web remove @wingsky-1/dsh-provider-usage
 ```
 
-### Update plugins (update)
+### Update
 
 ```sh
 dsh plugin --profile web update @wingsky-1/dsh-provider-usage
 ```
 
-> After install / uninstall / update, **restart `dsh web` once** (bundle layers are only
-> composed at startup) for changes to take effect.
-
-### Pin a version (@version)
-
-Omitting `@version` installs the default latest (recommended). Only when the registry has not synced the latest yet, or the latest has issues in your environment, append `@version` to the package name:
-
-```sh
-dsh plugin --profile web add @wingsky-1/dsh-provider-usage@<version>
-```
+> Restart `dsh web` once after add / remove / update (bundles are composed at startup only).
 
 ### Without a global dsh install
 
-If there is no global `dsh` command on the machine, use `npx` to run it on the fly (`dsh plugin`
-calls `pnpm` under the hood, so `pnpm` and `Node.js` must still be installed locally):
-
 ```sh
 npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-provider-usage
-npx @deepseek-ai/dsh plugin --profile web remove @wingsky-1/dsh-provider-usage
-npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-provider-usage
 ```
 
-## Data Source
+## How it works (v2)
 
-> **Note**: this English README still describes pre-v2 behavior and lags behind the
-> current implementation. The Chinese [README.md](README.md) is authoritative; for
-> architecture diagrams (flow / sequence charts) see [architecture.md](docs/architecture.md).
-
-The plugin calls the official OpenCode Go usage interface directly:
-
-```http
-GET https://opencode.ai/zen/go/v1/usage
-Authorization: Bearer <OPENCODE_GO_API_KEY>
+```
+Host (Node)                                    Client (browser)
+─────────────────────────────                 ─────────────────────
+Warmup timer (5min) ─┐
+                     ├→ getStats()             60s polling /stats
+Client polling ──────┘   │ Mutex                  ↓
+                         │ 60s cache           Capsule frame ← capsuleHtml
+                         │ 2s fetch timeout     Panel frame ← panelHtml (/history)
+                         ↓
+                   adapter.fetchData(ctx)   ← user .mjs (apiEndpoint/staticPath/apiKey injected)
+                         ↓
+                   daily-sharded JSONL history
+                         ↓
+                   adapter.formatCapsule/Panel() → sanitize → HTML
 ```
 
-The response is cached with a 30-second TTL (configurable) to avoid high-frequency requests.
-
-## API Key Resolution Order
-
-1. Plugin config `config.apiKey` (explicit, optional)
-2. Environment variable `OPENCODE_GO_API_KEY`
-3. DSH credentials file `<DSH_HOME>/.credentials.yaml` (DSH_HOME takes priority, default `~/.dsh`)
-   with `OPENCODE_GO_API_KEY`
-4. OpenCode's own `~/.local/share/opencode/auth.json` entry `opencode-go`
-   (falling back to `opencode`)
+The built-in adapter `opencode-go-builtin` (OpenCode Go official `/v1/usage`, three
+windows) works out of the box.
 
 ## Configuration
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `enabled` | `true` | Plugin on/off switch |
-| `baseUrl` | `https://opencode.ai/zen/go/v1/usage` | Built-in opencode-go usage interface address (**configurable, i.e. the token-forwarding target**) |
-| `timeoutMs` | `15000` | Request timeout (ms) |
-| `cacheTtlMs` | `30000` | Usage cache TTL (ms) |
-| `limits` | `{rolling:12, weekly:30, monthly:60}` | Display limits (USD/window) |
-| `apiKey` | none | Explicit API Key (falls back to the credential resolution chain when absent) |
-| `maxAgeDays` | `30` | History sampling retention days (1–365) |
-| `sampleIntervalMs` | `300000` | Host background sampling interval (30s–1h; iterates all enabled adapters) |
-| `persistFile` | none (default history root `<DSH_HOME>/dsh-provider-usage/`, multi-file buckets under its `history/` subdirectory) | History root override (its directory becomes the history root) |
-| `adapters.host[]` | none | Custom host fetch-adapter candidates (`provider`/`file`/`enabled`, see below) |
-| `adapters.client[]` | none | Custom client renderer files (`file`) |
+| `enabled` | `true` | Plugin switch |
+| `adapter` | none | User adapter mjs path (built-in opencode-go by default) |
+| `provider` | `opencode-go` | Model provider name to associate |
+| `staticPath` | none | API path (injected into fetchData, appended to apiEndpoint) |
+| `apiEndpoint` | none | API base URL (optional; explicit config wins over credential chain) |
+| `apiKey` | none | Explicit key (optional; falls back to the credential chain, never echoed in settings) |
+| `historyDir` | `<DSH_HOME>/dsh-provider-usage/` | History storage root |
+| `warmupIntervalMs` | `300000` | Background warmup interval |
+| `cacheDurationMs` | `60000` | Cache freshness (ms) |
+| `fetchTimeoutMs` | `2000` | Forced fetchData timeout (500–30000ms) |
+| `autoReload` | `false` | Hot reload on adapter file edits |
 
-### Adapter candidates and enabling
+## API key resolution order (V1 config chain)
 
-One provider may have multiple adapter candidates (built-in + user-injected); **only one is
-enabled at any moment**:
-
-- The built-in `opencode-go-builtin` is enabled by default;
-- User adapters explicitly listed in the config are enabled by default (becoming the
-  provider's current enabled adapter); `enabled: false` disables a candidate explicitly;
-- Runtime switching: the settings panel (M3b) or `POST /api/dsh-provider-usage/adapters/select`
-  (body `{ provider, adapterId }`); that provider's cache is invalidated immediately;
-- When the current session's provider has no enabled adapter, the float widget hides and
-  reappears automatically once an adapter is enabled.
+1. Plugin config `apiKey` (explicit)
+2. Environment variable `{PROVIDER}_API_KEY` (uppercase, hyphens → underscores)
+3. opencode-go legacy env var `OPENCODE_GO_API_KEY`
+4. `{PROVIDER}_API_KEY` in `<DSH_HOME>/.credentials.yaml`
+   (opencode-go also probes the legacy name `OPENCODE_GO_API_KEY`)
+5. opencode-go compatibility: `~/.local/share/opencode/auth.json` entry
+   `opencode-go` (or `opencode`)
 
 ## Routes (all loopback-fenced)
 
 | Route | Description |
 | --- | --- |
-| `GET /api/dsh-provider-usage/stats[?provider=X]` | Usage statistics + embedded `summary` subtree (pill lightweight content) + `adapterId`/`hasAdapter` |
-| `GET /api/dsh-provider-usage/history[?provider=&adapterId=&days=N]` | History sampling series (with `columns` declaration) |
-| `GET /api/dsh-provider-usage/adapters.json` | Adapter candidate metadata (id/label/providers/source/file/enabled) |
-| `POST /api/dsh-provider-usage/adapters/select` | Switch the enabled adapter (body `{provider, adapterId}`) |
-| `GET /api/dsh-provider-usage/user/<n>.js` | User client renderer static serving |
-| `GET /api/dsh-provider-usage/health` | Health check + adapter snapshot |
+| `GET /api/dsh-provider-usage/stats?provider=X` | Usage stats + `capsuleHtml` + `status`/`adapterVersion` |
+| `GET /api/dsh-provider-usage/history?provider=X&days=N` | History query + `panelHtml` + query `range` |
+| `GET /api/dsh-provider-usage/health` | Health check + adapter snapshot + error log |
+| `GET /api/dsh-provider-usage/adapters.json` | Adapter candidate metadata (same source as the settings page list, incl. `modelProviders`) |
+| `POST /api/dsh-provider-usage/adapters/select` | Switch / clear the enabled adapter |
+| `POST /api/dsh-provider-usage/adapters/inspect` | Preview an adapter file (echo exports, no registration) |
+| `POST /api/dsh-provider-usage/adapters/add` | Register a user adapter file (settings page flow) |
 
-## Provider Adapter Development Guide
+## Adapter development guide (v2 contract)
 
-Adapting a custom relay takes two files (full example in
-`docs/opt/usage-provider-adapter/examples/my-relay/`):
-
-**1. Host fetch adapter `.mjs`** (default-exported contract object):
-
-```js
-export default {
-  version: 1,
-  id: "my-relay",            // unique adapter id (shown in the settings candidates list)
-  label: "My Relay",
-  providers: ["my-relay"],   // claimed provider names
-  async fetchUsage(ctx) {    // required: fetch and normalize
-    const res = await ctx.fetch("https://relay.example.com/v1/usage");
-    const body = await res.json();
-    return { ok: true, provider: "my-relay", label: "My Relay",
-             fetchedAt: Date.now(), data: body };   // data format is yours
-  },
-  // optional summarize(ctx): custom pill text (derive from ctx.usage only, no network)
-  // optional samplePoint(usage): declare history sample columns { cols, values }
-};
-```
-
-Factory shortcut (auto-derives summarize/samplePoint):
+Any data source plugs in with one mjs file (full example:
+`examples/usage-adapter.example.mjs`; agent-oriented walkthrough:
+[docs/adapter-guide.md](docs/adapter-guide.md)):
 
 ```js
-import { defineUsageAdapter } from "@wingsky-1/dsh-provider-usage";
-export default defineUsageAdapter({
-  id: "my-relay", label: "My Relay", providers: ["my-relay"],
-  windows: [{ key: "credit", name: "Credit", limit: 100 }],
-  async fetchUsage(ctx) { /* ...return data containing windows */ },
-});
+// my-stats.mjs
+export const version = 2;                    // required: contract version (fixed 2)
+export const name = "my-stats";              // required: unique name (^[A-Za-z0-9_-]{2,64}$)
+export const label = "My Stats";             // optional: display name
+export const providers = ["my-relay"];       // required: claimed providers
+export const retention = { maxAgeDays: 30 }; // optional: retention policy
+
+/** Required: fetch raw data (runs on the host; args injected by the plugin) */
+export async function fetchData({ apiEndpoint, staticPath, apiKey, signal, timeoutMs }) {
+  const res = await fetch(apiEndpoint + staticPath, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+    signal,
+  });
+  if (!res.ok) throw new Error(`http-${res.status}`);
+  return res.json(); // return only the minimal dataset needed for display
+}
+
+/** Required: capsule content (host side, returns an HTML string) */
+export function formatCapsule({ data, status, esc }) {
+  return `<span style="font-weight:600">${esc(data.visits ?? 0)} visits</span>`;
+}
+
+/** Required: panel content (host side, returns an HTML string) */
+export function formatPanel({ entries, range, truncated, esc }) {
+  const rows = entries.slice(-60).map((e) =>
+    `<tr><td>${esc(new Date(e.time).toLocaleString())}</td><td>${esc(e.data.visits)}</td></tr>`).join("");
+  return `<table>${rows}</table>`;
+}
 ```
 
-**2. Client renderer `.js`** (self-registers via the global bridge):
+**Wiring** — recommended via the settings page (no config-file editing, no restart):
 
-```js
-window.__DSH_USAGE__?.registerRenderer({
-  version: 1,
-  providers: ["my-relay"],
-  adapterId: "my-relay",     // optional: bind to an adapter; default renderer otherwise
-  pill(summary) { return null; },  // optional: custom pill text
-  render(ctx) {              // required: draw into ctx.mount; return cleanup (optional)
-    const div = document.createElement("div");
-    div.textContent = JSON.stringify(ctx.data?.data ?? {});
-    ctx.mount.appendChild(div);
-  },
-});
-```
+1. Open dsh Settings → Plugins → "Usage Stats"
+2. Under the target provider click "+ Add adapter", enter the mjs file path
+   (`~` expansion / absolute paths supported)
+3. Click "Inspect" to echo the exports → confirm add (auto-persisted and hot-registered
+   as the provider's enabled adapter)
+4. Toggle candidates on/off; changes take effect immediately and persist
 
-**Wiring** (cordis.patch.yml / user patch layer):
+Alternatively declare in cordis.patch.yml (optional overlay, loaded at startup):
 
 ```yml
 plugins:
-  ui-dsh-provider-usage:
-    adapters:
-      host:
-        - provider: my-relay
-          file: ~/.dsh/my-relay-host.mjs
-      client:
-        - file: ~/.dsh/my-relay-client.js
+  '@wingsky-1/dsh-provider-usage':
+    adapter: ~/dsh/my-stats.mjs
+    provider: my-relay
+    staticPath: /api/usage
+    autoReload: true        # hot-reload after editing the mjs
 ```
 
-Paths support `~` expansion / absolute paths / DSH_HOME-relative. Load failures only warn
-and skip that candidate without blocking the rest of the plugin.
+Load failures are rejected fail-fast and logged (visible in the settings panel) without
+affecting other plugin features. Path safety: relative paths must land inside `DSH_HOME`
+or the plugin home; non-normalized forms (`../` traversal) are rejected with 400.
 
-## Security Model
+## Security model
 
-- **Token is never written to disk, never logged, never sent to the browser side**: the API Key
-  lives only in host-process memory; the browser only fetches display fields via `/stats`
-- **`baseUrl` is configurable = your token is sent to that address**: only configure a trusted
-  usage interface; default is the official `https://opencode.ai/zen/go/v1/usage`
-- **stripSecrets guard (on by default; disable with `stripSecrets: false`)**: two-layer
-  redaction over normalized returns (including summary text fields) — keys matching
-  `secret/token/key/apikey` with string values (≥8 chars) are replaced with `<redacted>`;
-  values matching secret-like patterns (`Bearer xxx` / `sk-xxx` / `api_key=xxx` / long hex)
-  are redacted wholesale. Best-effort — **no absolute isolation is promised**
-- **User host js runs with full Node permissions** (network/files/env), equivalent to writing
-  your own plugin process; only load local files you trust — the plugin never pulls code from
-  the network for execution
-- **User client js** shares the trust level of other web plugins (browser sandbox); registered
-  through the versioned bridge (contract mismatch only warns and skips)
-- History sampling persists as multi-file storage (one file per `(provider, adapterId)` bucket,
-  `0600` permissions tmp+rename atomic write); when upgrading from the legacy single file it is
-  renamed to `.bak` and **kept (never deleted — cleanup is left to the user)**
-- All routes are loopback-fenced (non-loopback 403 / wrong method 405); the `select` API limits
-  parameter length to 128
-- Official interface request frequency is controlled: GUI polling ≤1 request/60s + background
-  sampling ≤1 request/5min (each with an additional 30s TTL cache suppressing duplicate
-  requests), so it will not hit rate limits
+- **Adapter code = full Node permissions on the host** (network/fs/env), equivalent to
+  writing your own in-process plugin; only load local files you trust — the plugin never
+  pulls code from the network for execution
+- **Keys never reach the browser**: apiKey lives only in host-process memory and is
+  injected into fetchData as an argument; adapter files never contain key values
+- **Two-layer XSS defense**: external API strings must be escaped with `esc()` before
+  being placed into HTML (documented obligation); the plugin additionally sanitizes all
+  format output on the host (script/iframe/on* attributes/javascript: removal)
+- **Hot reload is off by default**; when enabled it polls mtime+size, atomically swaps in
+  the new version only after validation passes, and keeps the old version on failure
+- **Timeout discipline**: fetchData gets a forced 2s timeout + AbortSignal; when the lock
+  is busy requests degrade to cache instead of queueing — page requests are never blocked
+- **Fail-fast loading**: missing exports / wrong types / invalid names are rejected with
+  diagnosable errors
+- **History**: daily-sharded JSONL (`0600` permissions) with automatic age/size pruning;
+  raw data is serialization-checked before persistence
+- All routes loopback-fenced (403 non-loopback / 405 wrong method); minimal information
+  disclosure on admin endpoints (user files shown as basename only); request rate is
+  bounded (polling ≤1/60s + warmup ≤1/5min + 60s TTL cache)
 
-## Verification
+## Verify
 
 ```sh
 # Health check (loopback)
 curl -s http://127.0.0.1:3080/api/dsh-provider-usage/health
 
-# Source is in src/, must build after changes
+# Source lives in src/, rebuild after changes
 pnpm --filter @wingsky-1/dsh-provider-usage build
 node test/smoke.ts
 ```

@@ -141,7 +141,7 @@ sequenceDiagram
     G->>G: history.append({time,data}) 管线返回后落盘<br/>仅当 ok && fresh && rawData（失败仅记日志）
     G->>G: cache.set(provider, result) 成功与失败结果都缓存
     G-->>B: 200 {capsuleHtml?, status=fresh|stale, adapterName,...}
-    Note over B: renderPill(): label.innerHTML = capsuleHtml<br/>状态点 fresh/cached→绿 stale→黄<br/>configured=false 且无内容 → 胶囊整体隐藏
+    Note over B: renderPill(): label.innerHTML = capsuleHtml<br/>状态点 fresh/cached→绿 stale→黄<br/>未配置 → 红点错误态胶囊（provider 名，点击看引导）
 ```
 
 降级语义速查（客户端状态点颜色由这些字段决定）：
@@ -152,7 +152,7 @@ sequenceDiagram
 | 60s 缓存命中 | `status=cached` | 绿点，tooltip 标「缓存」 |
 | 锁忙（取数进行中） | `ok=true, reason=busy, status=stale` | 黄点，「取数进行中，稍候自动刷新」 |
 | 取数失败/超时 | `ok=false, error=...` | 黄点 + tooltip 错误详情 |
-| 无候选适配器 | `configured=false, reason=no-adapter` | 胶囊整体隐藏（无数据不渲染）；接入引导由设置页承载 |
+| 无候选适配器 | `configured=false, reason=no-adapter` | 红点错误态胶囊（显示 provider 名）；点开面板见接入引导 + 复制引导指令 |
 | 有候选但全禁用 | `configured=false, reason=no-enabled-adapter` | 同上 |
 
 注意：失败与 no-\* 结果同样会写入缓存，TTL 内重复请求直接复用缓存条目（status 改标 `cached`），不会反复打外部 API。
