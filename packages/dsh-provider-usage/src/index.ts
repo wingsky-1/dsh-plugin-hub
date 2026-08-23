@@ -97,7 +97,7 @@ export interface UiPlacementConfig {
 
 export const DEFAULT_UI_CONFIG: UiPlacementConfig = {
   placement: "top-right",
-  offsetX: 8,
+  offsetX: 0,
   offsetY: 8,
   panelOffsetY: 44,
 };

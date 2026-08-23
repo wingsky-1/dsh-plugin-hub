@@ -97,7 +97,7 @@ let renderGeneration = 0;
 let lastAdapterVersion = 0;
 
 /** 胶囊/面板位置配置（设置页保存后经 SSE 即时刷新）。 */
-let uiConfig: UiPlacementConfig = { placement: "top-right", offsetX: 8, offsetY: 8, panelOffsetY: 44 };
+let uiConfig: UiPlacementConfig = { placement: "top-right", offsetX: 0, offsetY: 8, panelOffsetY: 44 };
 /** SSE 事件通道（ui-config-changed 监听）。 */
 let eventsSource: EventSource | null = null;
 
