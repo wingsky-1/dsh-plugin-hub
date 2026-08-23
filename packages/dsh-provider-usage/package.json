@@ -1,6 +1,6 @@
 {
   "name": "@wingsky-1/dsh-provider-usage",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "用量统计悬浮框（v2 契约）：胶囊 + 详情面板，宿主端渲染 HTML 注入；用户 mjs 适配器三函数接入任意数据源（fetchData/formatCapsule/formatPanel），密钥配置链注入、按天分片 JSONL 历史、热更新可选；内置 OpenCode Go 官方用量适配器",
   "type": "module",
   "main": "lib/index.js",
