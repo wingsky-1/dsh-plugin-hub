@@ -50,6 +50,16 @@ jobs:
         run: pnpm cov
         continue-on-error: true   # 观察期：采集自身异常不得阻断门禁
 
+      - name: Self-written coverage summary
+        run: |
+          {
+            echo "### Self-written 覆盖率口径"
+            echo ""
+            echo '```'
+            node scripts/gate/self-cov.mjs
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: CRAP check（复杂度×覆盖率，观察期只记录）
         run: pnpm crap
         continue-on-error: true   # 观察期：同上；基线校准后移除并启用 --strict
