@@ -107,10 +107,13 @@ function repositionPill(pill: HTMLElement, target: HTMLElement): void {
   const viewH = target === document.body ? window.innerHeight : target.clientHeight;
   const isBottom = uiConfig.placement === "bottom-right" || uiConfig.placement === "bottom-left";
   const isLeft = uiConfig.placement === "top-left" || uiConfig.placement === "bottom-left";
-  // 垂直：top 锚点 → 容器顶部 + offsetY；bottom 锚点 → 可视区底部 - offsetY - 胶囊高
+  // MCP 浮窗自动避让：会话容器顶部存在 MCP 浮窗按钮时，胶囊在其下方（不重叠，
+  // 与历史行为等效：原实现 top 42 而非 8，避让量 34 叠加在配置 offsetY 之上）
+  const mcpClearance = target.querySelector("[data-dsh-mcp-float]") !== null ? 34 : 0;
+  // 垂直：top 锚点 → 容器顶部 + offsetY（+MCP 避让）；bottom 锚点 → 可视区底部 - offsetY - 胶囊高
   const top = isBottom
     ? scrollTop + Math.max(0, viewH - uiConfig.offsetY - pill.offsetHeight)
-    : scrollTop + uiConfig.offsetY;
+    : scrollTop + uiConfig.offsetY + mcpClearance;
   pill.style.top = `${top}px`;
   pill.style.bottom = "auto";
   pill.style.right = isLeft ? "auto" : `${uiConfig.offsetX}px`;
