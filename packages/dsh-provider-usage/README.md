@@ -59,6 +59,8 @@ npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-provider-usage
 
 内置适配器 `opencode-go-builtin`（OpenCode Go 官方 `/v1/usage` 三窗口用量）开箱即用。
 
+> **图解文档**：完整的流程图 / 时序图（启动装配、`/stats` 取数全链路、`/history` 面板、自定义适配器注入三条路径与热更新、客户端交互、密钥解析链）见 [docs/architecture.md](docs/architecture.md)。
+
 ## 配置
 
 | 键 | 默认值 | 含义 |

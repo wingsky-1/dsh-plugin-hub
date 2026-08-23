@@ -3,6 +3,7 @@
 > 适用插件：`@wingsky-1/dsh-provider-usage`（v2 契约重构版）。
 > 本文是 Agent 自主引导用户接入自定义数据源的权威流程手册。
 > 快速参考：契约细节见第 7 节；完整示例见 `examples/usage-adapter.example.mjs`。
+> 插件内部运行机制（取数管道 / 注册表 / 热更新 / 设置页交互）的图解见 [architecture.md](architecture.md)。
 
 ---
 
