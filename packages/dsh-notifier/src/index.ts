@@ -140,7 +140,7 @@ export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Pro
    * @param kind ask / done / error / turn-end。
    * @param detail {tool?, taskTitle?, reason?, durationMs?, turn?, step?, message?, mergedCount?}（不含工具参数）。
    */
-  function notify(kind: string, detail: NotifyDetail = {}) {
+  function notify(kind: string, detail: NotifyDetail = {}): boolean {
     const spec = NOTIFY_KINDS[kind];
     const ts = Date.now();
     const title = spec?.title ?? "DSH 通知";
@@ -155,13 +155,14 @@ export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Pro
       // 免打扰拦截：**仍落一条「未发出」历史 + 日志**，让用户能核对「到底发没发」
       ctx.logger.info(`dsh-notifier: ${kind} 被免打扰拦截（未发出）：${message.replace(/\n/g, " / ")}`);
       appendHistory({ ts, kind, title, message, suppressed: "quiet" });
-      return;
+      return false;
     }
     const payload = { type: "notify", kind, title, message, ts };
     if (current.systemNotify) system.notify(title, message);
     if (current.browserNotify) sse.broadcast(payload);
     ctx.logger.info(`dsh-notifier: ${kind} ${message.replace(/\n/g, " / ")}`);
     appendHistory({ ts, kind, title, message });
+    return true;
   }
 
   // ------------------------------------------------------------ 事件监听
@@ -427,12 +428,14 @@ export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Pro
           prev.since = now;
           prev.lastMessages.push(sanitized.slice(0, 80));
           if (prev.lastMessages.length > 2) prev.lastMessages.shift();
+          // 合并分支落一条带标记的历史，确保用户可核对「到底发没发」
+          appendHistory({ ts: now, kind: "error", title: "DSH：任务出错", message: `（合并）${sanitized.slice(0, 120)}`, suppressed: "merged" });
           return;
         }
         const mergedCount = prev !== undefined ? prev.count : 0;
         const mergedErrors = prev !== undefined ? prev.lastMessages : [];
-        errorMerge.set(key, { count: 0, since: now, lastMessages: [] });
-        notify("error", {
+        // 先通知，确认放行后再开窗/推进——免打扰拦截时不消耗合并窗口
+        const notified = notify("error", {
           message: sanitized,
           taskTitle: sessionTitleOf(payload?.agent),
           turn: typeof payload?.turn === "number" ? payload.turn : undefined,
@@ -440,6 +443,9 @@ export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Pro
           mergedCount,
           mergedErrors,
         });
+        if (notified) {
+          errorMerge.set(key, { count: 0, since: now, lastMessages: [] });
+        }
       } catch (error) {
         ctx.logger.warn(`dsh-notifier: agent/error 处理失败: ${errorMessage(error)}`);
       }
