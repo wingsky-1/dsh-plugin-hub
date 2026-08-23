@@ -8,15 +8,15 @@
   "scripts": {
     "build": "pnpm -r build",
     "test": "pnpm -r test",
-    "contract": "node scripts/contract-check.ts",
-    "pack:check": "node scripts/pack-check.ts",
-    "verify:npmlayout": "node scripts/verify-npm-layout.ts",
-    "aggregate:check": "node scripts/aggregate.ts --check",
-    "test:scripts": "node --test scripts/*.test.ts",
-    "docs:check": "node scripts/verify-docs.ts",
+    "contract": "node scripts/gate/contract-check.ts",
+    "pack:check": "node scripts/gate/pack-check.ts",
+    "verify:npmlayout": "node scripts/gate/verify-npm-layout.ts",
+    "aggregate:check": "node scripts/gate/aggregate.ts --check",
+    "test:scripts": "node --test scripts/test/*.test.ts",
+    "docs:check": "node scripts/gate/verify-docs.ts",
     "typecheck": "pnpm -r --if-present run typecheck",
     "cov": "c8 --reporter=json --reporter=json-summary --reporter=text pnpm -r --if-present test",
-    "crap": "node scripts/crap-check.mjs"
+    "crap": "node scripts/gate/crap-check.mjs"
   },
   "keywords": [
     "dsh",

@@ -22,9 +22,9 @@ import { join } from 'node:path';
 import * as acorn from 'acorn';
 
 const repoRoot = process.cwd();
-const configPath = join(repoRoot, 'scripts', 'gauntlet.config.json');
+const configPath = join(repoRoot, 'scripts', 'data', 'gauntlet.config.json');
 const config = existsSync(configPath) ? JSON.parse(readFileSync(configPath, 'utf8')) : {};
-/** 阈值唯一事实源 = scripts/gauntlet.config.json；--threshold 仅作临时覆盖。 */
+/** 阈值唯一事实源 = scripts/data/gauntlet.config.json；--threshold 仅作临时覆盖。 */
 const DEFAULT_THRESHOLD = config.crap?.threshold ?? 12;
 const argv = process.argv.slice(2);
 const idx = argv.indexOf('--threshold');

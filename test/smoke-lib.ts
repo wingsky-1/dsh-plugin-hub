@@ -8,7 +8,7 @@
  *   - check(name, fn) / report(title)：断言注册 + 汇总 + 退出码（预留，供后续换用；
  *     存量 6 包 smoke 仍用各自本地实现，业务断言未迁移）；
  *   - fakeReq / makeRes：路由 handler 测试用 req/res stub（预留，后续接入）；
- *   - assertClientProductContract：客户端产物「执行契约」断言——复用 scripts/client-contract-lib.ts
+ *   - assertClientProductContract：客户端产物「执行契约」断言——复用 scripts/lib/client-contract-lib.ts
  *     （与 contract-check 同一实现，消除 6 份 smoke 内嵌重复的业务语义）【已接入】；
  *   - assertClientSourceContract：客户端产物「源形态」契约断言（兼容 legacy 手写 IIFE 与
  *     wrapper 生成两种产物形态）【已接入】；
@@ -21,7 +21,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { assertClientContract } from '../scripts/client-contract-lib.ts'
+import { assertClientContract } from '../scripts/lib/client-contract-lib.ts'
 
 let count = 0
 let failedCount = 0

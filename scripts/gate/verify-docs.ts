@@ -22,7 +22,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const STRICT_EN = process.argv.includes('--strict-en')
 const failures = []
 

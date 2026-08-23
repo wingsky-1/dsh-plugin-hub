@@ -24,7 +24,7 @@
 ```sh
 pnpm install
 pnpm --filter @wingsky-1/<插件> build && pnpm --filter @wingsky-1/<插件> test
-node scripts/contract-check.ts && node scripts/pack-check.ts
+node scripts/gate/contract-check.ts && node scripts/gate/pack-check.ts
 ```
 
 4. 推分支 → 开 PR（描述动机 + 改动 + 验证结果）

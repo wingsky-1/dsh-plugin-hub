@@ -98,7 +98,7 @@
 
 两条机制性风险：
 
-4. **装配字典序风险**：聚合包装配顺序由 `scripts/aggregate.ts` 按
+4. **装配字典序风险**：聚合包装配顺序由 `scripts/gate/aggregate.ts` 按
    `readdirSync().sort()` 字典序生成——凡「A 包 apply 时检测 B 包痕迹」类
    兼容逻辑，字典序可能使检测必然落空（B 恰在 A 之后 apply ⇒ 标记不存在）。
    逐条给出「检测落空」的后果方向与兜底防线。

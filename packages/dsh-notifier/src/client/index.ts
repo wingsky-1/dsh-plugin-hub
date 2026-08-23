@@ -5,7 +5,7 @@
  * 路由常量与宿主端 ROUTES 一致（smoke 断言）。
  */
 // 浏览器半区干净模块：只导出 apply/inject，契约外壳（IIFE/load/Symbol.toStringTag 装配）
-// 由 scripts/build-client.ts 统一生成——源码不写任何 loader 痕迹。
+// 由 scripts/build/build-client.ts 统一生成——源码不写任何 loader 痕迹。
 // 样式：独立 style.css（见同目录），build-client 的 .css text-loader 构建期内联为字符串
 import STYLE from "./style.css";
 

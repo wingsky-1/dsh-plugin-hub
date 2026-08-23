@@ -37,7 +37,7 @@ export const inject: string[] = [];           // 声明 apply 用到的 ctx 服�
 **禁止**写 `window.__ModuleLoader__.load`、外层 IIFE、手拼 `__DSH_PLUGIN_ID__`、
 `declare var module` / `interface Window.__ModuleLoader__`。契约外壳（load 注册、
 IIFE 工厂、Symbol.toStringTag 装配、**load id === 包名** define 注入）由
-`scripts/build-client.ts` 统一生成并内建校验。
+`scripts/build/build-client.ts` 统一生成并内建校验。
 
 客户端入口统一 `src/client/index.ts`（`src/client.ts` 已停用）。
 
