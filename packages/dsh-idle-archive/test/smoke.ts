@@ -33,6 +33,11 @@ import {
   isLoopbackRequest,
 } from "../lib/index.js";
 
+// 结构化单元测试（#82 批次 6：settings 命名空间路径 / isUnloading / warn /
+// persistSettingsFromStore / sanitizeSettings 边界），对齐 notifier/provider-usage
+// 样板：smoke.ts 作为入口同步加载（package.json test 命令只跑 smoke.ts）。
+import "./unit-apply.test.ts";
+
 // 隔离 DSH_HOME：全部落盘到临时目录，不碰真实 ~/.dsh。
 const HOME = mkdtempSync(join(tmpdir(), "dia-"));
 process.env.DSH_HOME = HOME;
