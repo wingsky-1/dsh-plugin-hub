@@ -665,6 +665,8 @@ function toggleFloat(force?: any) {
   if (next) {
     placePanel();
     renderFloatPanel();
+    // 聚焦面板本身，让后续点击外部时能通过 focusout 自动关闭。
+    floatPanel.focus({ preventScroll: true });
   }
 }
 
@@ -716,21 +718,22 @@ function mountFloat(ctx: any) {
   pill.addEventListener("click", () => toggleFloat());
   const panel = el("div", { class: "dm-float-panel" });
   panel.hidden = true;
+  panel.tabIndex = -1;
   floatPill = pill;
   floatPanel = panel;
   // 胶囊挂会话滚动容器，下拉面板挂 shell.overlay（fixed 定位，仍与通知同一层）。
   const panelRoot = panelHost();
   if (panel.parentElement !== panelRoot) panelRoot.appendChild(panel);
 
-  // 点击下拉框之外的区域（包括胶囊以外的任意位置）也关闭；
-  // 胶囊本身不在这里关，仍交给自身的 click toggle，避免开/关互相抵消。
-  const onDocumentClick = (event: any) => {
+  // 失去焦点后自动关闭：焦点离开胶囊/面板时收起下拉框。
+  // 面板打开时主动聚焦到面板，因此点击外部任意区域都会触发 focusout。
+  const onFocusOut = (event: any) => {
     if (!floatOpen) return;
-    const path = typeof event.composedPath === "function" ? event.composedPath() : [];
-    if (path.includes(floatPanel) || path.includes(floatPill)) return;
+    const next = event.relatedTarget as Node | null;
+    if (next !== null && (floatPanel.contains(next) || floatPill.contains(next))) return;
     toggleFloat(false);
   };
-  document.addEventListener("click", onDocumentClick);
+  document.addEventListener("focusout", onFocusOut);
 
   let host: any;
   let listeners: any = [];
@@ -801,7 +804,7 @@ function mountFloat(ctx: any) {
   renderPill();
   return () => {
     updateFloatState = undefined;
-    document.removeEventListener("click", onDocumentClick);
+    document.removeEventListener("focusout", onFocusOut);
     observer.disconnect();
     for (const detach of listeners.splice(0)) detach();
     pill.remove();
