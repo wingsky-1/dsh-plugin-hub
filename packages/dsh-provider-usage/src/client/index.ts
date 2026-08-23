@@ -13,8 +13,10 @@ import {
   resolveProviderFromSession,
   fetchStats,
   fetchHistory,
+  fetchUiConfig,
+  EVENTS_URL,
 } from "./core.js";
-import type { SessionsServiceLike, ConnectionHandleLike, StatsResponseV2, HistoryResponseV2 } from "./core.js";
+import type { SessionsServiceLike, ConnectionHandleLike, StatsResponseV2, HistoryResponseV2, UiPlacementConfig } from "./core.js";
 import { SettingsPage } from "./settings.js";
 // React externals 路径：运行时由 dsh web factory require("react") 注入
 import * as React from "react";
@@ -93,6 +95,35 @@ let lastHistory: HistoryResponseV2 | null = null;
 let renderGeneration = 0;
 /** 用户适配器版本（变化即全量重置，防新数据旧模板混搭）。 */
 let lastAdapterVersion = 0;
+
+/** 胶囊/面板位置配置（设置页保存后经 SSE 即时刷新）。 */
+let uiConfig: UiPlacementConfig = { placement: "top-right", offsetX: 14, offsetY: 8, panelOffsetY: 44 };
+/** SSE 事件通道（ui-config-changed 监听）。 */
+let eventsSource: EventSource | null = null;
+
+/** 按当前配置重算胶囊位置（模块级：mountFloat 与配置变更共用）。 */
+function repositionPill(pill: HTMLElement, target: HTMLElement): void {
+  const scrollTop = target === document.body ? window.scrollY : target.scrollTop;
+  const viewH = target === document.body ? window.innerHeight : target.clientHeight;
+  const isBottom = uiConfig.placement === "bottom-right" || uiConfig.placement === "bottom-left";
+  const isLeft = uiConfig.placement === "top-left" || uiConfig.placement === "bottom-left";
+  // 垂直：top 锚点 → 容器顶部 + offsetY；bottom 锚点 → 可视区底部 - offsetY - 胶囊高
+  const top = isBottom
+    ? scrollTop + Math.max(0, viewH - uiConfig.offsetY - pill.offsetHeight)
+    : scrollTop + uiConfig.offsetY;
+  pill.style.top = `${top}px`;
+  pill.style.bottom = "auto";
+  pill.style.right = isLeft ? "auto" : `${uiConfig.offsetX}px`;
+  pill.style.left = isLeft ? `${uiConfig.offsetX}px` : "auto";
+}
+
+/** 按当前配置重算胶囊/面板位置（滚动/缩放/配置变更时调用）。 */
+function applyUiPlacement(): void {
+  const target = conversationHost();
+  if (target === null || target === undefined) return;
+  if (floatPill !== undefined) repositionPill(floatPill, target);
+  if (floatOpen && floatPanel !== undefined) placePanel();
+}
 
 // ------------------------------------------------------------------ 浮窗 chrome
 
@@ -318,9 +349,14 @@ function placePanel(): void {
   if (floatPill === undefined || floatPanel === undefined) return;
   const rect = floatPill.getBoundingClientRect();
   if (rect.width === 0 && rect.height === 0) return;
-  floatPanel.style.top = Math.max(6, rect.bottom + 6) + "px";
-  floatPanel.style.right = Math.max(10, Math.round(window.innerWidth - rect.right)) + "px";
-  floatPanel.style.left = "auto";
+  floatPanel.style.top = `${Math.max(6, rect.bottom + uiConfig.panelOffsetY)}px`;
+  if (uiConfig.placement === "top-left" || uiConfig.placement === "bottom-left") {
+    floatPanel.style.left = `${Math.max(10, Math.round(rect.left))}px`;
+    floatPanel.style.right = "auto";
+  } else {
+    floatPanel.style.right = `${Math.max(10, Math.round(window.innerWidth - rect.right))}px`;
+    floatPanel.style.left = "auto";
+  }
 }
 
 function mountFloat(): () => void {
@@ -341,22 +377,15 @@ function mountFloat(): () => void {
   let host: HTMLElement | null;
   const listeners: Array<() => void> = [];
 
-  const repositionPill = (target: HTMLElement): void => {
-    if (target === null || target === undefined) return;
-    const scrollTop = target === document.body ? window.scrollY : target.scrollTop;
-    const topBase = target.querySelector("[data-dsh-mcp-float]") !== null ? 42 : 8;
-    pill.style.top = `${scrollTop + topBase}px`;
-  };
-
   const attachListeners = (target: HTMLElement): void => {
     for (const stop of listeners) { try { stop(); } catch { /* 忽略 */ } }
     listeners.length = 0;
     const onScroll = (): void => {
-      repositionPill(target);
+      repositionPill(pill, target);
       if (floatOpen) placePanel();
     };
     const onResize = (): void => {
-      repositionPill(target);
+      repositionPill(pill, target);
       if (floatOpen) placePanel();
     };
     target.addEventListener("scroll", onScroll, { passive: true });
@@ -377,7 +406,7 @@ function mountFloat(): () => void {
       best.appendChild(pill);
       attachListeners(best);
     }
-    repositionPill(host);
+    repositionPill(pill, host);
     return true;
   };
 
@@ -397,6 +426,26 @@ function mountFloat(): () => void {
   renderPill();
   void refreshStats();
 
+  // 胶囊位置配置：启动拉取一次 + SSE 订阅即时热更新（设置页保存即生效，跨端同步）
+  void fetchUiConfig().then((cfg) => {
+    uiConfig = cfg;
+    applyUiPlacement();
+  });
+  try {
+    eventsSource = new EventSource(EVENTS_URL);
+    eventsSource.onmessage = (ev: MessageEvent) => {
+      try {
+        const msg = JSON.parse(String(ev.data)) as { type?: string };
+        if (msg.type === "ui-config-changed") {
+          void fetchUiConfig().then((cfg) => {
+            uiConfig = cfg;
+            applyUiPlacement();
+          });
+        }
+      } catch { /* 忽略畸形帧 */ }
+    };
+  } catch { /* EventSource 不可用：静默降级，下次挂载重新拉取 */ }
+
   refreshTimer = setInterval(() => { void refreshStats(); }, REFRESH_MS);
   const onVisible = (): void => {
     if (document.visibilityState === "visible") void refreshStats();
@@ -411,6 +460,10 @@ function mountFloat(): () => void {
       refreshTimer = null;
     }
     document.removeEventListener("visibilitychange", onVisible);
+    if (eventsSource !== null) {
+      eventsSource.close();
+      eventsSource = null;
+    }
     pill.remove();
     panel.remove();
     floatPill = undefined;

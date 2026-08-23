@@ -35,6 +35,8 @@ import {
   readStamp,
   stampEqual,
   makeAdapterRegistry,
+  normalizeUiConfig,
+  DEFAULT_UI_CONFIG,
 } from "../lib/index.js";
 
 // ---------------------------------------------------------------- esc
@@ -213,6 +215,21 @@ assert.equal(sanitizeHtml('<iframe src="x"></iframe>y'), "y");
   assert.equal(m.apiKey, "sk-x");
   assert.equal(m.fetchTimeoutMs, 30000, "超时上限 clamp 到 30s");
   assert.equal(m.maxAgeDays, 365, "保留天数上限 clamp");
+}
+
+// ---------------------------------------------------------------- normalizeUiConfig
+
+{
+  const d = normalizeUiConfig(undefined);
+  assert.deepEqual(d, DEFAULT_UI_CONFIG, "默认配置 top-right/14/8/44");
+  const clamped = normalizeUiConfig({ placement: "bottom-left", offsetX: 99999, offsetY: -3, panelOffsetY: 0.6 });
+  assert.equal(clamped.placement, "bottom-left", "合法 placement 透传");
+  assert.equal(clamped.offsetX, 2000, "offsetX 上限 clamp");
+  assert.equal(clamped.offsetY, 0, "offsetY 下限 clamp");
+  assert.equal(clamped.panelOffsetY, 1, "panelOffsetY 取整");
+  const bad = normalizeUiConfig({ placement: "middle", offsetX: "abc", offsetY: null, panelOffsetY: 44 });
+  assert.equal(bad.placement, DEFAULT_UI_CONFIG.placement, "非法 placement 回退默认");
+  assert.equal(bad.offsetX, DEFAULT_UI_CONFIG.offsetX, "非法 offsetX 回退默认");
 }
 
 // ---------------------------------------------------------------- provider-config 配置链

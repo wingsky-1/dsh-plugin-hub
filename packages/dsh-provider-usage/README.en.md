@@ -79,6 +79,14 @@ windows) works out of the box.
 | `fetchTimeoutMs` | `2000` | Forced fetchData timeout (500–30000ms) |
 | `autoReload` | `true` | Hot reload on adapter file edits (enabled by default; set `false` to disable) |
 
+## Capsule placement
+
+The usage capsule (floating pill in the conversation corner) and its panel can be repositioned:
+Settings → Plugins → "用量统计" → "胶囊位置" — pick an anchor (top-right / top-left / bottom-right /
+bottom-left) and offsets (horizontal / vertical / panel gap), then hit Save. It takes effect
+**immediately across all devices** (persisted to `ui.json` and broadcast over SSE; no restart).
+Defaults: top-right / 14 / 8 / 44 — the historical fixed position.
+
 ## API key resolution order (V1 config chain)
 
 1. Plugin config `apiKey` (explicit)
