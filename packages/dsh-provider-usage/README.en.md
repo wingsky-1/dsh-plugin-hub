@@ -61,6 +61,10 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-provider-usage
 
 ## Data Source
 
+> **Note**: this English README still describes pre-v2 behavior and lags behind the
+> current implementation. The Chinese [README.md](README.md) is authoritative; for
+> architecture diagrams (flow / sequence charts) see [architecture.md](docs/architecture.md).
+
 The plugin calls the official OpenCode Go usage interface directly:
 
 ```http

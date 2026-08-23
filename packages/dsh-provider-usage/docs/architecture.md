@@ -33,7 +33,7 @@ flowchart LR
         ROUTES --> PIPEPANEL
         GETSTATS --> REG
         GETSTATS --> PIPE
-        PIPE --> HIST
+        GETSTATS --> HIST
         PIPEPANEL --> HIST
         HOT --> REG
         WARM --> GETSTATS
@@ -45,7 +45,7 @@ flowchart LR
 
     PILL -->|"GET /stats"| ROUTES
     PANEL -->|"GET /history"| ROUTES
-    SETTINGS -->|"adapters.json / select / inspect / add"| ROUTES
+    SETTINGS -->|"GET /stats · adapters.json /<br/>select / inspect / add"| ROUTES
     PIPE -->|"apiEndpoint/apiKey 注入"| ADAPTER
     ADAPTER -->|"fetch()"| API
     HIST --- DISK
@@ -60,7 +60,7 @@ flowchart LR
 
 ## 2. 插件启动流程（`apply(ctx, config)`）
 
-宿主端入口按固定顺序装配。任何一步失败都不阻断启动——适配器加载失败走 fail-fast 拒收并登记错误，其余功能照常。
+插件本身不改 DSH 源码——经 `cordis.patch.yml` + profile 机制挂载到 `dsh web`，`apply(ctx, config)` 在宿主启动时被调用。宿主端入口按固定顺序装配。任何一步失败都不阻断启动——适配器加载失败走 fail-fast 拒收并登记错误，其余功能照常。
 
 ```mermaid
 flowchart TD
@@ -89,6 +89,8 @@ flowchart TD
 | `user-adapters.json` | 设置页 add | 用户适配器清单 `{version:1, adapters:[{id,label,providers,file}]}`，tmp+rename 原子写、mode 0600 |
 | `adapter-state.json` | select / add | provider → 启用适配器 name 映射（`null` 表示显式清空），串行链写入 |
 
+关于末步的 `installSettingsNamespace`：它把插件 Config schema 以**只读镜像**形式暴露到设置面板 UI（`setSource`/`onChange` 均为空实现，纯展示；rc.7 的 keyed 渲染约束下不提供运行时写回）——真正的运行时管理由设置页 tab 经 `adapters.json / select / inspect / add` 路由承载，apiKey 不进 schema 故不回显。
+
 ---
 
 ## 3. 核心时序：`GET /stats` 取数全链路
@@ -105,7 +107,6 @@ sequenceDiagram
     participant P as runV2Pipeline<br/>(safeFetchData)
     participant AD as adapter.fetchData()
     participant API as 外部用量 API
-    participant H as HistoryStore
     participant F as adapter.formatCapsule()
 
     B->>R: GET /stats?provider=X
@@ -125,25 +126,22 @@ sequenceDiagram
             else 有启用适配器
                 G->>P: runV2Pipeline(adapter, config, timeoutMs)
                 Note over P: resolveProviderConfig 密钥链(§7)<br/>组装 FetchContext 入参
-                P->>AD: fetchData({apiEndpoint, staticPath,<br/>apiKey, timeoutMs, signal})
+                P->>AD: fetchData({apiEndpoint, staticPath, apiKey,<br/>provider, timeoutMs, signal, fetch})
                 AD->>API: fetch(apiEndpoint + staticPath)
                 API-->>AD: JSON 数据
                 AD-->>P: 返回对象（最小数据集）
-                alt 抛错 / 超 2s 强制超时 / 不可序列化
-                    P-->>G: ok=false, reason=fetch-failed<br/>status=stale（绝不外抛异常）
-                else 成功
-                    P->>H: append({time,data}) 按天分片 JSONL
-                    P->>F: formatCapsule({time,data,status:fresh,esc})
-                    F-->>P: HTML 字符串
-                    Note over P: sanitizeHtml 净化兜底<br/>(script/iframe/on*/javascript:)
-                    P-->>G: V2PipelineResult(capsuleHtml)
-                    G->>G: cache.set(provider, result)
-                    G-->>B: 200 {capsuleHtml, status=fresh, adapterName,...}
-                end
+                Note over P,G: 失败（抛错 / 超 2s 强制超时 / 不可序列化）:<br/>ok=false, reason=fetch-failed, status=stale<br/>（绝不外抛异常；此形态不 format、不落盘）
+                P->>F: formatCapsule({time,data,status:fresh,esc})
+                F-->>P: HTML 字符串
+                Note over P: sanitizeHtml 净化兜底<br/>(script/iframe/on*/javascript:)
+                P-->>G: V2PipelineResult(capsuleHtml?, rawData?)
             end
         end
     end
-    Note over B: renderPill(): label.innerHTML = capsuleHtml<br/>状态点 fresh/cached→绿 stale→黄 !configured→红
+    G->>G: history.append({time,data}) 管线返回后落盘<br/>仅当 ok && fresh && rawData（失败仅记日志）
+    G->>G: cache.set(provider, result) 成功与失败结果都缓存
+    G-->>B: 200 {capsuleHtml?, status=fresh|stale, adapterName,...}
+    Note over B: renderPill(): label.innerHTML = capsuleHtml<br/>状态点 fresh/cached→绿 stale→黄<br/>configured=false 且无内容 → 胶囊整体隐藏
 ```
 
 降级语义速查（客户端状态点颜色由这些字段决定）：
@@ -154,8 +152,10 @@ sequenceDiagram
 | 60s 缓存命中 | `status=cached` | 绿点，tooltip 标「缓存」 |
 | 锁忙（取数进行中） | `ok=true, reason=busy, status=stale` | 黄点，「取数进行中，稍候自动刷新」 |
 | 取数失败/超时 | `ok=false, error=...` | 黄点 + tooltip 错误详情 |
-| 无候选适配器 | `configured=false, reason=no-adapter` | 红点；面板展示引导 |
-| 有候选但全禁用 | `configured=false, reason=no-enabled-adapter` | 红点；面板提示去设置页启用 |
+| 无候选适配器 | `configured=false, reason=no-adapter` | 胶囊整体隐藏（无数据不渲染）；接入引导由设置页承载 |
+| 有候选但全禁用 | `configured=false, reason=no-enabled-adapter` | 同上 |
+
+注意：失败与 no-\* 结果同样会写入缓存，TTL 内重复请求直接复用缓存条目（status 改标 `cached`），不会反复打外部 API。
 
 ---
 
@@ -201,7 +201,7 @@ sequenceDiagram
 flowchart TD
     U(["用户写好 my-stats.mjs<br/>(契约: version=2 + name + providers +<br/>fetchData/formatCapsule/formatPanel)"]) --> PATH
 
-    subgraph PATH [" "]
+    subgraph PATH ["注入路径"]
         direction LR
         P1["路径 A: cordis.patch.yml 声明<br/>adapter: ~/my-stats.mjs<br/>(启动时加载，兼容态)"]
         P2["路径 B: 设置页添加<br/>(运行时热注册，推荐)"]
@@ -214,6 +214,10 @@ flowchart TD
 
     L1 & L2 & L3 --> REG["AdapterRegistry.register → 契约校验 fail-fast：<br/>缺导出/name 非法/version≠2 拒收 + recordError<br/>通过后默认成为该 provider 启用者<br/>(或按 adapter-state.json 恢复的选择)"]
 ```
+
+设置页主列表的数据源 `GET /adapters.json` 除返回注册表快照（host/enabled/errors）外，还经 `ctx.llm.listProviders()`（插件 `inject` 含 `llm`）带上模型配置页的提供商列表 `modelProviders`，用于把「模型配置中的 provider」与「已注册适配器认领的 provider」对齐展示。
+
+> 注意：运行时注册表**只收 v2 契约（`version === 2`）**；`contracts.ts` 保留的 v1 deprecated 类型仅为编译期引用兼容，不再有加载路径。
 
 ### 5.2 时序：设置页「检测 → 添加」（运行时注入的主路径）
 
@@ -299,7 +303,7 @@ flowchart TD
     A --> B["slots.inject settings.section<br/>注册独立 tab「用量统计」<br/>(独立 try/catch 不连坐浮窗)"]
     A --> C["mountFloat(): 胶囊 button + 面板 div<br/>MutationObserver 自动重挂位<br/>scroll/resize 跟随定位"]
     C --> D["立即 refreshStats() 一次<br/>+ setInterval 60s 轮询<br/>+ visibilitychange 转可见补刷"]
-    A --> E["provider 检测:<br/>sessions.currentProvideInfo subscribe<br/>→ sessions.models(sessionId)<br/>→ current.provider ?? 回落 opencode-go"]
+    A --> E["provider 检测:<br/>sessions.currentProvideInfo subscribe<br/>(不可用回落 sessions.list subscribe)<br/>→ sessions.models(sessionId)<br/>→ current.provider ?? 回落 opencode-go"]
     E -->|"provider 变化"| F["renderGeneration+1 防竞态<br/>清 lastStats/lastHistory → 重新拉取"]
 ```
 
@@ -310,7 +314,7 @@ flowchart TD
     P(["用户点击胶囊"]) --> T["toggleFloat(): 展开面板<br/>refreshHistory() 拉 /history"]
     T --> K{"renderPanel 内容优先级"}
     K -->|"panelHtml 有值"| L["innerHTML 注入图表<br/>(stats 失败但历史有图仍展示)"]
-    K -->|"no-adapter / no-enabled-adapter"| M["引导分支: 说明文案 +<br/>「复制引导指令」按钮(指向 adapter-guide.md)"]
+    K -->|"no-adapter / no-enabled-adapter<br/>或 历史未拉到且 stats 已示未配置"| M["引导分支: 说明文案 +<br/>「复制引导指令」按钮(指向 adapter-guide.md)"]
     K -->|"其他错误"| N["errorMessage(code) 映射中文提示"]
     K -->|"尚无数据"| O["加载中…"]
 ```
@@ -318,7 +322,7 @@ flowchart TD
 防竞态与一致性细节：
 
 - **renderGeneration 代 token**：provider 切换/卸载时自增，迟到的旧请求响应直接丢弃；
-- **adapterVersion 变化即全量重置**：热更新换版后丢弃旧 `lastHistory`，防止「新数据 × 旧模板」混搭；
+- **adapterVersion 重置机制（预留）**：客户端在响应 `adapterVersion` 变化时会丢弃旧 `lastHistory`，防止「新数据 × 旧模板」混搭；当前服务端 `/stats` 恒返回 `adapterVersion: 0`，该路径暂不触发（为换版语义预留）；
 - **所有异常只 warn**：任何请求失败都不会让 GUI 启动失败或挂起（客户端请求统一 2s 超时）。
 
 ---
@@ -335,9 +339,9 @@ flowchart TD
     B -->|命中| DONE
     B -->|未命中| C{"provider=opencode-go?<br/>旧变量 OPENCODE_GO_API_KEY"}
     C -->|命中| DONE
-    C -->|否| D{"DSH_HOME/.credentials.yaml<br/>{PROVIDER}_API_KEY 字段"}
+    C -->|否| D{"DSH_HOME/.credentials.yaml<br/>先查 {PROVIDER}_API_KEY 字段<br/>(opencode-go 再查旧名 OPENCODE_GO_API_KEY)"}
     D -->|命中| DONE
-    D -->|未命中| E{"provider=opencode-go?<br/>~/.local/share/opencode/auth.json<br/>opencode-go 条目(type=api,key=...)"}
+    D -->|未命中| E{"provider=opencode-go?<br/>~/.local/share/opencode/auth.json<br/>opencode-go 或 opencode 条目(type=api,key=...)"}
     E -->|命中| DONE
     E -->|未命中| NONE["apiKey=undefined<br/>(适配器可自行抛 no-api-key)"]
 ```
@@ -353,16 +357,18 @@ flowchart TD
 | 路由围栏 | 所有路由 loopback 才放行（非回环 403）、方法白名单（405） | 每个 route handler 入口 |
 | 取数超时 | `safeFetchData`: Promise.race + AbortController，强制 timeoutMs（默认 2s）；结果必须过 JSON 序列化校验 | `core/guards.ts` |
 | 渲染超时 | `safeFormat`: 异步 format 2s 超时 + 返回类型校验（同步死循环为文档化风险） | `core/guards.ts` |
-| XSS 兜底 | `sanitizeHtml` 白名单式正则净化：script/iframe/frame/object/embed/meta/link/base、on* 事件、javascript:/data:text-html 协议 | `sanitize.ts` |
+| XSS 兜底 | `sanitizeHtml` 白名单式正则净化：script/iframe/frame/object/embed/meta/link/base 标签、on* 事件、`javascript:`/`data:text/html` 协议、CSS `expression(` | `sanitize.ts` |
 | 密钥隔离 | apiKey 仅宿主内存，不入设置面板 schema、不下发浏览器 | `provider-config.ts` / `index.ts` |
 | 路径安全 | add/inspect 拒绝 `\0`、未规整相对路径；相对路径限 DSH_HOME / 插件 home 内；历史目录名 `safeSegment` 防穿越 | `index.ts` / `contracts.ts` |
 | 信息最小披露 | health/errors 中用户文件路径脱敏为 basename 或 `~` 形态 | `index.ts` / `registry.ts` |
-| 历史文件 | 按天分片 JSONL，mode 0600，超龄（30 天）/超量（20MB）自动清理；清单文件 tmp+rename 原子写 | `core/history.ts` / `index.ts` |
+| 历史文件 | 按天分片 JSONL，mode 0600；清理在每次 append 后惰性触发——先删过期日文件，再在总大小超限时从最旧删起且恒保留最后 1 个文件防清零；清单文件 tmp+rename 原子写 | `core/history.ts` / `index.ts` |
 | fail-fast 加载 | 缺导出 / 类型错 / name 不合白名单 → 拒收并登记可排障错误，不影响插件其余功能 | `contracts.ts` / `registry.ts` |
 
 ---
 
 ## 9. 关键模块索引
+
+构建链：`src/*.ts` 经 tsc 编译后由 bundle-host 把全部子模块**内联进单一 `lib/index.js`**（发布物自包含、无运行时 npm 依赖），因此契约与核心模块一律在 `src/index.ts` re-export——smoke/lint 只能从 `lib/index.js` 导入。各模块职责：
 
 | 模块 | 职责 |
 | --- | --- |
@@ -375,6 +381,9 @@ flowchart TD
 | `src/hotreload.ts` | mtime+size 轮询热更新 + 原子切换 |
 | `src/provider-config.ts` | 密钥五级解析链 |
 | `src/sanitize.ts` | HTML 结构化净化 |
+| `src/adapters/opencode-go.ts` | 内置适配器 opencode-go-builtin：OpenCode Go `/v1/usage` 三窗口用量 |
 | `src/client/index.ts` | 客户端入口：胶囊/面板挂载、轮询、provider 检测 |
 | `src/client/settings.ts` | 设置页 tab：适配器管理（检测/添加/切换/停用） |
 | `src/client/core.ts` | 客户端数据层：fetch 封装、响应类型、会话 provider 解析 |
+| `src/client-logic.ts` | 设置页纯函数：provider 列表拆分与徽标文案 |
+| `src/path-resolve.ts` | 路径解析：`~` 展开、DSH_HOME 相对路径解析（pluginHome） |
