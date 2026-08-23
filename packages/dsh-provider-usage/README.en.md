@@ -77,7 +77,7 @@ windows) works out of the box.
 | `warmupIntervalMs` | `300000` | Background warmup interval |
 | `cacheDurationMs` | `60000` | Cache freshness (ms) |
 | `fetchTimeoutMs` | `2000` | Forced fetchData timeout (500–30000ms) |
-| `autoReload` | `false` | Hot reload on adapter file edits |
+| `autoReload` | `true` | Hot reload on adapter file edits (enabled by default; set `false` to disable) |
 
 ## API key resolution order (V1 config chain)
 
@@ -155,7 +155,8 @@ plugins:
     adapter: ~/dsh/my-stats.mjs
     provider: my-relay
     staticPath: /api/usage
-    autoReload: true        # hot-reload after editing the mjs
+    # autoReload is enabled by default; to disable (security/stability concerns):
+    # autoReload: false
 ```
 
 Load failures are rejected fail-fast and logged (visible in the settings panel) without

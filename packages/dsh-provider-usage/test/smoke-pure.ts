@@ -206,6 +206,7 @@ assert.equal(sanitizeHtml('<iframe src="x"></iframe>y'), "y");
   const c = normalizeConfig(undefined);
   assert.equal(c.fetchTimeoutMs, DEFAULT_CONFIG.fetchTimeoutMs);
   assert.equal(c.provider, "opencode-go");
+  assert.equal(c.autoReload, true, "autoReload 默认开启：编辑适配器 mjs 后自动热更新");
   const m = normalizeConfig({ adapter: "/tmp/a.mjs", staticPath: "/v1/usage", provider: "deepseek", apiKey: "sk-x", fetchTimeoutMs: 99999, maxAgeDays: 9999 });
   assert.equal(m.adapter, "/tmp/a.mjs");
   assert.equal(m.provider, "deepseek");

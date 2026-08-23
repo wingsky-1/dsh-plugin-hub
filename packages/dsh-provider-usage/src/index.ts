@@ -71,7 +71,7 @@ export const DEFAULT_CONFIG = {
   warmupIntervalMs: 300000,
   cacheDurationMs: 60000,
   fetchTimeoutMs: 2000,
-  autoReload: false,
+  autoReload: true,
   maxAgeDays: 30,
   maxSizeMB: 20,
 };
@@ -110,7 +110,7 @@ export const Config: z<{
   warmupIntervalMs: z.number().default(DEFAULT_CONFIG.warmupIntervalMs).description("后台预热间隔毫秒").disabled(true),
   cacheDurationMs: z.number().default(DEFAULT_CONFIG.cacheDurationMs).description("缓存新鲜度毫秒").disabled(true),
   fetchTimeoutMs: z.number().default(DEFAULT_CONFIG.fetchTimeoutMs).description("取数超时毫秒").disabled(true),
-  autoReload: z.boolean().default(false).description("热更新开关（编辑适配器 mjs 后自动重新加载）"),
+  autoReload: z.boolean().default(true).description("热更新开关（编辑适配器 mjs 后自动重新加载；默认开启，可显式 false 关闭）"),
   maxAgeDays: z.number().default(DEFAULT_CONFIG.maxAgeDays).description("历史数据保留天数").disabled(true),
   maxSizeMB: z.number().default(DEFAULT_CONFIG.maxSizeMB).description("历史数据大小上限（MB）").disabled(true),
 });
@@ -316,6 +316,9 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     if (loaded.ok) registry.register(loaded.adapter, "user-file", file);
   }
 
+  // 缓存（声明提前：热更新 onReload 回调依赖 cache，须在热更新块前就绪）
+  const cache = new Map<string, V2PipelineResult>();
+
   // 3. 热更新（config.adapter 声明 + 设置页登记的文件；autoReload=true 时生效）
   const hotReloaders: HotReloadableAdapter[] = [];
   if (config.autoReload) {
@@ -358,8 +361,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     else registry.select(provider, name);
   }
 
-  // 5. 缓存 + 互斥锁
-  const cache = new Map<string, V2PipelineResult>();
+  // 5. 互斥锁（缓存已在上方声明）
   const mutex = new Mutex();
 
   function cacheFresh(provider: string): V2PipelineResult | undefined {
