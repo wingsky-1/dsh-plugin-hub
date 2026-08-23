@@ -160,8 +160,11 @@ export function apply(ctx: any): void {
       document.removeEventListener("visibilitychange", onVisible);
       for (const dispose of disposers.splice(0)) dispose();
       if (state.overlay !== undefined && state.overlay.parentElement !== null) state.overlay.remove();
-      // 重置全部模块级状态（HMR / 重复 apply 不残留旧 tab 与编辑态）。
+      // 重置全部模块级状态，但保留 mcpUiConfig（原始 dispose 不重置它，避免
+      // HMR 重复 apply 期间浮窗位置瞬态跳回默认再被 api(API.config) 拉回）。
+      const savedUiConfig = state.mcpUiConfig;
       Object.assign(state, createState());
+      state.mcpUiConfig = savedUiConfig;
     }, "dsh-mcp-manager: ui");
   } catch (error) {
     console.warn("[dsh-mcp-manager] mount failed:", error);

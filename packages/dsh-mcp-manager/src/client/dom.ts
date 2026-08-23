@@ -15,7 +15,7 @@ export function el(tag: any, attrs: any = {}, children?: any): any {
     if (key === "class") node.className = value as string;
     else if (key === "text") node.textContent = String(value);
     else if (key === "dataset") Object.assign(node.dataset, value as any);
-    else if (key.startsWith("on")) (node as any)[key] = value;
+    else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
     else if (key === "checked") (node as any).checked = value;
     else if (key === "disabled") (node as any).disabled = value;
     else if (key === "children") continue;
