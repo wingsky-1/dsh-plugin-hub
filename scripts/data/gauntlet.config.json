@@ -7,6 +7,12 @@
   "coverage": {
     "note": "观察期仅记录不设限；校准后在此加 lines/functions 下限并接入 ci.yml 硬卡点",
     "lines": null,
-    "functions": null
+    "functions": null,
+    "selfWrittenFunctions": {
+      "pct": 55.26,
+      "total": 722,
+      "covered": 399,
+      "note": "观察期基线（self-cov 口径，去内联垫片后仅计自写函数），只记录不判红"
+    }
   }
 }
