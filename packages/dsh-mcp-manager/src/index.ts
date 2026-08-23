@@ -25,7 +25,7 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import type { ServerResponse } from "node:http";
-import z from "@deepseek-ai/schemastery";
+import z from "schemastery";
 import { installSettingsNamespace } from "../../../shared/settings-namespace.js";
 // 官方类型层（issue #16/#48，锁版见 pnpm-workspace catalog；仅 import type，
 // 编译期擦除，禁止运行时值导入——contract-check 有门禁）。
