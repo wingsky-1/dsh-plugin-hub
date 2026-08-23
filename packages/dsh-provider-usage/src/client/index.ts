@@ -234,9 +234,27 @@ function renderPanel(): void {
     const reason = (stats as { reason?: string | null }).reason;
     const code = stats.error || reason || "";
     if (!stats.configured) {
+      // v1 D11 引导：无启用适配器 → 说明文案 + 复制一句话引导指令（v2 文档）
       panelContentBox.appendChild(
         el("p", { class: PILL_PREFIX + "error", text: errorMessage(code === "" ? "no-adapter" : code) }),
       );
+      panelContentBox.appendChild(
+        el("p", { class: PILL_PREFIX + "hint", text: "在设置面板「用量统计」的适配器管理中启用一个候选适配器；也可复制下方引导指令，让 Agent 帮你接入用量数据源。" }),
+      );
+      const guide = `请为提供商 ${currentProvider} 创建用量统计适配器（v2 契约）：以该提供商在模型配置中的 API 端点（baseUrl）为起点，自行确认用量接口与鉴权方式，自主设计适配器方案（name/展示名/接口路径），先给我审核方案（含 API 端点），确认后生成 .mjs 文件、告诉保存路径并引导我在「用量统计」设置页添加适配器。按用量统计适配器开发引导文档（https://github.com/wingsky-1/dsh-plugin-hub/blob/main/packages/dsh-provider-usage/docs/adapter-guide.md）执行引导流程。`;
+      const btn = el("button", {
+        type: "button",
+        class: PILL_PREFIX + "btn",
+        text: "复制引导指令",
+        onClick: () => {
+          void navigator.clipboard
+            .writeText(guide)
+            .then(() => { btn.textContent = "已复制 ✓"; })
+            .catch(() => { btn.textContent = "复制失败"; });
+          setTimeout(() => { btn.textContent = "复制引导指令"; }, 2000);
+        },
+      });
+      panelContentBox.appendChild(btn);
     } else {
       panelContentBox.appendChild(el("p", { class: PILL_PREFIX + "error", text: errorMessage(stats.error || reason) }));
     }
