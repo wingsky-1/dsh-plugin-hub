@@ -17,7 +17,7 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { collectForPackage, extractInlinedPackages } from './collect-licenses.ts'
+import { collectForPackage, extractInlinedPackages } from '../build/collect-licenses.ts'
 
 function tempRepo() {
   const dir = mkdtempSync(join(tmpdir(), 'lic-test-'))
@@ -61,7 +61,7 @@ test('extractInlinedPackages：@deepseek-ai 宿主注入排除、去重、排序
 })
 
 test('extractInlinedModuleRefs：scoped 包的 .pnpm 安装段无重复前缀', async () => {
-  const { extractInlinedModuleRefs } = await import('./collect-licenses.ts')
+  const { extractInlinedModuleRefs } = await import('../build/collect-licenses.ts')
   const src = '// ../../node_modules/.pnpm/@profoundlogic+hogan@3.0.4/node_modules/@profoundlogic/hogan/lib/compiler.js'
   const refs = extractInlinedModuleRefs(src)
   assert.deepEqual(refs, [{

@@ -5,7 +5,7 @@
 /**
  * plugins-manifest-lib — 插件清单单一事实源（issue #36）的纯函数库。
  *
- * `scripts/plugins-manifest.json` 是「某插件是否参与聚合/发布校验」的唯一声明处：
+ * `scripts/data/plugins-manifest.json` 是「某插件是否参与聚合/发布校验」的唯一声明处：
  *   - aggregate.ts / pack-check.ts / contract-check.ts / verify-npm-layout.ts 共读；
  *   - 断言逻辑只有本文件一份，入口脚本只喂数据（对齐 client-contract-lib 的
  *     「stub/实现同源」纪律，防两处内嵌实现漂移）。
@@ -16,7 +16,7 @@ import { join } from 'node:path'
 
 export const AGGREGATE_NAME = 'dsh-plugins-all'
 export const NPM_SCOPE = '@wingsky-1/'
-export const MANIFEST_PATH_SEGMENTS = ['scripts', 'plugins-manifest.json']
+export const MANIFEST_PATH_SEGMENTS = ['scripts', 'data', 'plugins-manifest.json']
 const NAME_RE = /^dsh-[a-z0-9-]+$/
 
 /**
@@ -40,7 +40,7 @@ export function warnUnknownEntries(root) {
 }
 
 function fail(msg) {
-  throw new Error(`scripts/plugins-manifest.json 解析失败：${msg}（schema 见 docs/DEVELOPMENT.md §4 插件清单）`)
+  throw new Error(`scripts/data/plugins-manifest.json 解析失败：${msg}（schema 见 docs/DEVELOPMENT.md §4 插件清单）`)
 }
 
 function checkName(name, where) {
@@ -107,7 +107,7 @@ export function checkAggregateConsistency({ dirNames, manifest, aggDeps, aggPatc
     if (!actual.has(d)) problems.push(`manifest.active 引用了不存在的目录: ${d} —— 退役请移入 retired 并删除目录`)
   }
   for (const d of dirNames) {
-    if (!expected.has(d)) problems.push(`packages/ 存在 dsh-* 子包但未登记 manifest.active: ${d} —— 新插件必须先加入 scripts/plugins-manifest.json`)
+    if (!expected.has(d)) problems.push(`packages/ 存在 dsh-* 子包但未登记 manifest.active: ${d} —— 新插件必须先加入 scripts/data/plugins-manifest.json`)
   }
 
   // #2 聚合包 dependencies 键集 == active 映射集（双向；只比键集合不比值——

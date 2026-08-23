@@ -12,7 +12,7 @@
 // 其它普通点击。零依赖纯 DOM，数组型约定见文件尾。
 
 // 客户端干净模块：只导出 apply/inject，契约外壳（IIFE/load/Symbol.toStringTag 装配）
-// 由 scripts/build-client.ts 统一生成——源码不写任何 loader 痕迹。
+// 由 scripts/build/build-client.ts 统一生成——源码不写任何 loader 痕迹。
 // 第三方库（DOMPurify/diff2html/marked/highlight.js）经 build-client 内联进产物
 // （package.json 声明 dsh.client.inlineBareImports: true，非宿主注入 external）。
 

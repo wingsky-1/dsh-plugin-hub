@@ -27,9 +27,9 @@
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { listPluginDirs } from './plugins-manifest-lib.ts'
+import { listPluginDirs } from '../lib/plugins-manifest-lib.ts'
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
 /**
  * 从 esbuild 产物源码提取被内联的第三方模块引用（去重，按包名排序）。

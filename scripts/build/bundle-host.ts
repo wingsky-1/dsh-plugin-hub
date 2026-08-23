@@ -22,7 +22,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import { buildClient, copyClientResources } from './build-client.ts'
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 // 插件目录相对当前工作目录解析（pnpm --filter 场景 cwd=包目录传 .；仓库根场景传 packages/dsh-*）
 const pkgDir = resolve(process.cwd(), process.argv[2] ?? '.')
 const pkgJson = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8'))

@@ -47,7 +47,7 @@ jobs:
         run: pnpm crap
 
       - name: Generate report body
-        run: node scripts/health-report-body.mjs > health-body.md
+        run: node scripts/release/health-report-body.mjs > health-body.md
 
       - name: Create health issue（幂等：同日重跑不重复建）
         env:

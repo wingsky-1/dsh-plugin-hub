@@ -12,7 +12,7 @@
 
 // 浏览器半区干净模块：只导出 apply/inject；React 由构建期 external 注入（经 factory
 // 注入的 require("react") 解析，dsh web 不暴露全局 React）。契约外壳（IIFE/load/
-// Symbol.toStringTag 装配）由 scripts/build-client.ts 统一生成——源码不写任何 loader。
+// Symbol.toStringTag 装配）由 scripts/build/build-client.ts 统一生成——源码不写任何 loader。
 // 样式：独立 style.css（见同目录），build-client 的 .css text-loader 构建期内联为字符串
 import STYLE from "./style.css";
 import * as React from "react";

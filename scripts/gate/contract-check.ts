@@ -17,10 +17,10 @@
 import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { assertClientContract } from './client-contract-lib.ts'
-import { listPluginDirs } from './plugins-manifest-lib.ts'
+import { assertClientContract } from '../lib/client-contract-lib.ts'
+import { listPluginDirs } from '../lib/plugins-manifest-lib.ts'
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const packagesDir = join(ROOT, 'packages')
 
 const pluginDirs = listPluginDirs(ROOT)

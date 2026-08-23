@@ -17,7 +17,7 @@
 ```sh
 pnpm install       # 仓库根，pnpm workspace 依赖安装（必须先于一切构建）
 pnpm build        # 全仓构建 = pnpm -r build（各包：clean-lib → tsc → bundle-host）
-pnpm contract     # 客户端契约（node scripts/contract-check.ts）
+pnpm contract     # 客户端契约（node scripts/gate/contract-check.ts）
 pnpm test         # 全量 smoke（Node ≥23.6 原生 type stripping 直跑）
 pnpm cov          # 覆盖率采集（c8 包裹 smoke，测量对象 = lib 编译产物）
 pnpm crap         # 单函数 CRAP 检查（先跑 cov；观察期只记录，--strict 为未来硬卡点）
@@ -26,7 +26,7 @@ pnpm typecheck    # 全仓类型检查
 ```
 
 > Node 版本：本地直跑 TS 需 **≥23.6**（type stripping 门槛）；CI 固定 Node 24。
-> 阈值与 strict 开关见 `scripts/gauntlet.config.json`（唯一事实源）。
+> 阈值与 strict 开关见 `scripts/data/gauntlet.config.json`（唯一事实源）。
 
 目录结构：
 
@@ -39,18 +39,18 @@ packages/dsh-*/            # 每个插件 = 独立 npm 包（@wingsky-1/dsh-*）
   src/*.ts                 # 其余为宿主模块；宿主导出的 profile 依赖另见 cordis.patch.yml
 packages/dsh-plugins-all/  # 聚合包（dependencies 引用全部子包，发布用 pnpm publish 替换版本号）
 shared/                    # 宿主端共享层（loopback/host-utils/frontmatter），构建期内联进各包，不发布
-scripts/                   # 构建/契约/打包校验脚本（*.ts，Node 直跑）
+scripts/                   # 仓库维护脚本（*.ts，Node 直跑；按职能分 build/ gate/ lib/ release/ test/ data/）
 ```
 
-`scripts/bundle-host.ts` 编排单包构建：
+`scripts/build/bundle-host.ts` 编排单包构建：
 1. esbuild 内联 `shared/*` 进 `lib/index.js`（宿主端自包含单文件）。
-2. 客户端经 `scripts/build-client.ts`（唯一契约外壳/注入点）构建 `lib/client.js`。
+2. 客户端经 `scripts/build/build-client.ts`（唯一契约外壳/注入点）构建 `lib/client.js`。
 3. d.ts X1：改写 `../../../shared` → 包内副本，`shared/*.d.ts` 随包。
    shared 层因此保持 **js + d.ts 双写**（tsc `rootDir` 硬约束，shared 不可 TS 化）。
 4. 拷贝资源（非 TS 文件）+ LICENSE。
 5. 第三方 license 归集：扫描产物中 esbuild 的 node_modules 模块注释，把真实被内联
    的第三方库（含传递依赖）license 文本写入 `lib/THIRD-PARTY-LICENSES`
-   （`scripts/collect-licenses.ts`）。**运行时依赖 = 构建期内联**——内联在法律上
+   （`scripts/build/collect-licenses.ts`）。**运行时依赖 = 构建期内联**——内联在法律上
    等于分发该库副本，必须随发布物附其 license 文本与版权声明；`pack:check` 断言
    「有内联 ⇒ 清单存在、非空、含 MIT/BSD/Apache 字样且覆盖每个被内联的包名」。
 
@@ -72,7 +72,7 @@ contract-check 禁止运行时值导入）。原自建类型层 `types/dsh.d.ts`
 - **挂载**：`cordis.patch.yml`，patch **id 用 `ui-<name>`**；声明 `dsh.client` 时必须有
   `exports["./client"]`（`contract-check` 联动断言，缺则整包拒载）。**独立包与聚合包
   禁双装**（同 id 双装 loader 报 duplicate）；改独立包 patch 后必须
-  `node scripts/aggregate.ts` 重新生成聚合 patch。
+  `node scripts/gate/aggregate.ts` 重新生成聚合 patch。
 - **测试**：`test/smoke.ts` 直跑，必含 403/405 围栏用例 + 客户端契约断言
   （`assertClientSourceContract` / `assertClientProductContract`）。
 
@@ -97,7 +97,7 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
 **禁止在源码里**：`window.__ModuleLoader__.load`、手拼 `__DSH_PLUGIN_ID__`、`require(`、
 外层 IIFE `(function(){})()`、`declare var module` / `interface Window.__ModuleLoader__`。
 这些（load 注册、IIFE 闭包工厂、`Symbol.toStringTag` 装配、`exports.apply/inject`、
-**load id === 包名**）全部由 `scripts/build-client.ts` 构建期统一生成——是唯一事实源，
+**load id === 包名**）全部由 `scripts/build/build-client.ts` 构建期统一生成——是唯一事实源，
 内建「load id === 包名」硬校验（构建即失败）。
 
 ### 2.1 三种客户端路径（build-client 自动选择，作者不用配置）
@@ -147,7 +147,7 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
   React externals / legacy），断言 `"use strict"`、契约外壳、Symbol.toStringTag、
   `factory: function(`、load 注册。
 - **插件清单单一来源**（issue #36）：某插件是否参与聚合/发布校验，唯一事实源是
-  `scripts/plugins-manifest.json`。四个脚本共用 `plugins-manifest-lib.ts` 的目录
+  `scripts/data/plugins-manifest.json`。四个脚本共用 `plugins-manifest-lib.ts` 的目录
   枚举（`isDirectory` 过滤 + 排除聚合包 + 稳定排序）；其中 `aggregate.ts` 与
   `pack-check.ts` 另做「packages/ 目录集 == manifest.active 集」双向相等断言，
   以及聚合 deps 键集 / patch id 集对 active 的双向相等断言。
@@ -157,8 +157,8 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
     `{ name, reason, successor }` 档案；
   - `active` 刻意**不自动生成**：它就是「当前有哪些插件」的人工确认点，自动枚举
     会退回「目录即事实源」的 fail-open 老路；
-  - schema 加载/校验逻辑只有一份：`scripts/plugins-manifest-lib.ts`（纯函数，
-    入口脚本只喂数据），测试见 `scripts/plugins-manifest.test.ts`。
+  - schema 加载/校验逻辑只有一份：`scripts/lib/plugins-manifest-lib.ts`（纯函数，
+    入口脚本只喂数据），测试见 `scripts/test/plugins-manifest.test.ts`。
 - **新增/修改客户端后**：`pnpm build && pnpm test && pnpm contract && pnpm pack:check`
   全绿再提交。
 

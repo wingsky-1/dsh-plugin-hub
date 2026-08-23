@@ -14,11 +14,11 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { executeClient } from './client-contract-lib.ts'
-import { extractInlinedPackages } from './collect-licenses.ts'
-import { AGGREGATE_NAME, checkAggregateConsistency, listPluginDirs, loadManifest, warnUnknownEntries } from './plugins-manifest-lib.ts'
+import { executeClient } from '../lib/client-contract-lib.ts'
+import { extractInlinedPackages } from '../build/collect-licenses.ts'
+import { AGGREGATE_NAME, checkAggregateConsistency, listPluginDirs, loadManifest, warnUnknownEntries } from '../lib/plugins-manifest-lib.ts'
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
 // 插件清单单一来源（issue #36）：枚举走 lib，目录集 == manifest.active 前置闸
 warnUnknownEntries(ROOT)

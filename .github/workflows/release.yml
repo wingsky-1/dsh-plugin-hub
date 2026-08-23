@@ -43,7 +43,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Verify versions（全包版本 == tag）
-        run: node scripts/verify-version.ts
+        run: node scripts/release/verify-version.ts
 
       - name: Build
         run: pnpm build
@@ -69,7 +69,7 @@ jobs:
             [ -z "$pkg" ] && continue
             echo "==> publish $pkg"
             pnpm --filter "$pkg" publish --no-git-checks
-          done < <(node scripts/publish-if-missing.ts)
+          done < <(node scripts/release/publish-if-missing.ts)
 
       # Release notes: prefer the agent-curated per-version file committed
       # alongside the release (docs/release-notes/<tag>.md); fall back to
