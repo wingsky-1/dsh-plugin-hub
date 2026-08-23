@@ -27,7 +27,7 @@ import { describeUsageStatsAdapterShape, ADAPTER_CONTRACT_VERSION } from "./cont
 import { makeAdapterRegistry } from "./registry.js";
 import { openCodeGoAdapter, OPENCODE_GO_PROVIDER, OPENCODE_GO_ADAPTER_ID } from "./adapters/opencode-go.js";
 import { runV2Pipeline, runV2PanelPipeline, type V2PipelineResult } from "./pipeline/v2.js";
-import { HistoryStore } from "./core/history.js";
+import { HistoryStore, migrateLegacyV3 } from "./core/history.js";
 import { resolveProviderConfig } from "./provider-config.js";
 import { HotReloadableAdapter, loadAndValidateAdapter } from "./hotreload.js";
 import { resolvePath, pluginHome, expandHomePath } from "./path-resolve.js";
@@ -39,7 +39,7 @@ export * from "./contracts.js";
 export * from "./registry.js";
 export * from "./adapters/opencode-go.js";
 export * from "./provider-config.js";
-export { HistoryStore, parseJsonl, startOfDay } from "./core/history.js";
+export { HistoryStore, parseJsonl, startOfDay, migrateLegacyV3, legacySampleToData } from "./core/history.js";
 export type { HistoryEntry } from "./core/history.js";
 export { safeFetchData, safeFormat, fetchWithTimeout } from "./core/guards.js";
 export { sanitizeHtml } from "./sanitize.js";
@@ -258,6 +258,14 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     maxAgeMs: config.maxAgeDays * 86400000,
     maxSizeBytes: config.maxSizeMB * 1024 * 1024,
   });
+
+  // 旧 v3 多文件桶 → 按天分片 JSONL 迁移（幂等；只迁移一次，旧文件 .bak 保留）
+  try {
+    const migrated = await migrateLegacyV3(historyRoot, history);
+    if (migrated > 0) console.warn(`[dsh-provider-usage] 已迁移 ${migrated} 条旧 v3 历史采样到按天分片 JSONL`);
+  } catch {
+    /* 迁移失败不阻断启动（下次启动重试） */
+  }
 
   // 1. 注册内置 opencode-go 适配器
   registry.register(openCodeGoAdapter, "builtin");

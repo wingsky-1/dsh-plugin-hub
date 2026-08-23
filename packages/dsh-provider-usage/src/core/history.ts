@@ -241,3 +241,129 @@ export async function listAdapters(root: string): Promise<Array<{ provider: stri
   }
   return out;
 }
+
+// ------------------------------------------------------------------ v3 旧格式迁移
+
+/** v3 桶文件头（历史多文件格式，读取后迁移为按天分片 JSONL）。 */
+interface LegacyV3Bucket {
+  provider?: string;
+  adapterId?: string;
+  columns?: Array<{ key: string; name: string; limit?: number }>;
+  samples?: Array<Array<number | null>>;
+}
+
+/**
+ * 已知的「裸数值列」（v3 percent 语义不适用、值为原始量纲的列）。
+ * 迁移时这些列产出裸值（如 rjk 的 balance 余额元），格式函数可直接用。
+ */
+const RAW_VALUE_COLUMNS: ReadonlySet<string> = new Set(["balance"]);
+
+/**
+ * 把 v3 桶样本序列翻译为新 JSONL 的 data 对象。
+ *
+ * 内置 opencode-go 桶列序 = 三窗口 [rolling, weekly, monthly]，逐列装配
+ * `{key: {percent}}` 窗口对象；RAW_VALUE_COLUMNS 内的列（如 balance）产出
+ * `{key: 裸值}`；其余列按列声明通用装配 `{colNN: value}`。
+ */
+export function legacySampleToData(
+  columns: LegacyV3Bucket["columns"],
+  sample: Array<number | null>,
+): Record<string, unknown> {
+  const data: Record<string, unknown> = {};
+  const width = sample.length - 1;
+  for (let c = 0; c < width; c += 1) {
+    const col = columns?.[c];
+    const val = sample[c + 1];
+    if (col !== undefined && typeof col.key === "string") {
+      if (RAW_VALUE_COLUMNS.has(col.key)) {
+        // 余额型裸数值列：原始量纲直出
+        data[col.key] = typeof val === "number" ? val : null;
+      } else {
+        // 内置三窗口列：percent 语义
+        data[col.key] = { percent: typeof val === "number" ? val : null };
+      }
+    } else {
+      data[`col${c + 1}`] = val;
+    }
+  }
+  return data;
+}
+
+/**
+ * 启动时迁移旧 v3 多文件桶到按天分片 JSONL。
+ *
+ * 扫描 `<root>/history/<provider>/<adapterId>.json`：
+ * - 读取每个桶 → 逐采样点调 store.writeDirect 写到对应日文件；
+ * - 迁移成功后旧文件重命名为 `.bak` 保留（不删除，由用户清理）；
+ * - 幂等：`.bak` 文件不再扫描；失败保留原文件下次重试。
+ * @returns 迁移的采样点数（诊断用）。
+ */
+export async function migrateLegacyV3(root: string, store: HistoryStore): Promise<number> {
+  const historyDir = join(root, "history");
+  let providers: string[];
+  try {
+    providers = await readdir(historyDir);
+  } catch {
+    return 0; // 无旧目录
+  }
+  let migrated = 0;
+  for (const provider of providers) {
+    const pdir = join(historyDir, provider);
+    let files: string[];
+    try {
+      files = await readdir(pdir);
+    } catch {
+      continue;
+    }
+    for (const file of files) {
+      if (!file.endsWith(".json")) continue; // .bak 与其它格式跳过
+      const adapterId = file.slice(0, -5);
+      let raw: string;
+      try {
+        raw = await readFile(join(pdir, file), "utf8");
+      } catch {
+        continue;
+      }
+      let bucket: LegacyV3Bucket;
+      try {
+        bucket = JSON.parse(raw) as LegacyV3Bucket;
+      } catch {
+        continue;
+      }
+      if (!Array.isArray(bucket.samples) || bucket.samples.length === 0) continue;
+      const cols = bucket.columns;
+      const entries: HistoryEntry[] = [];
+      for (const sample of bucket.samples) {
+        if (!Array.isArray(sample) || sample.length < 2) continue;
+        const ts = Number(sample[0]);
+        if (!Number.isFinite(ts)) continue;
+        entries.push({ time: ts, data: legacySampleToData(cols, sample) });
+      }
+      // 按天分组写入（writeDirect 原子写；同一天多条合并一次写入）
+      const byDay = new Map<number, HistoryEntry[]>();
+      for (const entry of entries) {
+        const day = startOfDay(entry.time);
+        const list = byDay.get(day);
+        if (list === undefined) byDay.set(day, [entry]);
+        else list.push(entry);
+      }
+      let ok = true;
+      for (const [day, list] of byDay) {
+        try {
+          await store.writeDirect(provider, adapterId, day, list);
+        } catch {
+          ok = false;
+          break;
+        }
+      }
+      if (ok) {
+        // 成功 → 旧文件重命名 .bak（幂等：不扫描 .bak；覆盖同名保留时间戳）
+        try {
+          await rename(join(pdir, file), join(pdir, `${file}.v3.bak`));
+        } catch { /* 重命名失败保留原文件，下次重试 */ }
+        migrated += entries.length;
+      }
+    }
+  }
+  return migrated;
+}

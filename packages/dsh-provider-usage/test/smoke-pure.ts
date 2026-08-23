@@ -19,6 +19,8 @@ import {
   HistoryStore,
   parseJsonl,
   startOfDay,
+  migrateLegacyV3,
+  legacySampleToData,
   safeFetchData,
   safeFormat,
   normalizeConfig,
@@ -115,6 +117,52 @@ assert.equal(sanitizeHtml('<iframe src="x"></iframe>y'), "y");
   const s = new Date(startOfDay(t));
   assert.equal(s.getHours(), 0);
   assert.equal(s.getDate(), 15);
+}
+
+// ---------------------------------------------------------------- v3 旧格式迁移
+
+{
+  // legacySampleToData：余额型裸值 + 三窗口 percent
+  const rjkData = legacySampleToData([{ key: "balance", name: "余额" }], [1787000000000, 10.1365]);
+  assert.deepEqual(rjkData, { balance: 10.1365 }, "balance 列产出裸数值");
+  const ogData = legacySampleToData(
+    [{ key: "rolling" }, { key: "weekly" }, { key: "monthly" }],
+    [1787000000000, 2, 1, 0],
+  );
+  assert.deepEqual(ogData, { rolling: { percent: 2 }, weekly: { percent: 1 }, monthly: { percent: 0 } }, "三窗口列产出 percent 对象");
+  // 无列声明 → colNN 通用装配
+  const generic = legacySampleToData(undefined, [1787000000000, 5, 6]);
+  assert.deepEqual(generic, { col1: 5, col2: 6 }, "无列声明产出 colNN");
+
+  // migrateLegacyV3：构造 v3 桶 → 迁移 → 校验 JSONL 与 .bak
+  const dir = mkdtempSync(join(tmpdir(), "dou-legacy-"));
+  const histDir = join(dir, "history", "prov1");
+  await import("node:fs/promises").then((m) => m.mkdir(histDir, { recursive: true }));
+  const ts = Date.now() - 3600000;
+  await import("node:fs/promises").then((m) => m.writeFile(
+    join(histDir, "adp1.json"),
+    JSON.stringify({
+      version: 3,
+      provider: "prov1",
+      adapterId: "adp1",
+      columns: [{ key: "balance", name: "余额" }],
+      samples: [[ts - 600000, 9.5], [ts, 9.2]],
+    }),
+  ));
+  const store2 = new HistoryStore({ root: dir, maxAgeMs: 30 * 86400000, maxSizeBytes: 1024 * 1024 });
+  const migratedCount = await migrateLegacyV3(dir, store2);
+  assert.equal(migratedCount, 2, "迁移 2 个采样点");
+  // 新格式可查询（balance 裸值）
+  const q = await store2.query("prov1", "adp1", { start: ts - 600000, end: ts + 1 }, 10);
+  assert.equal(q.entries.length, 2);
+  assert.deepEqual(q.entries[0].data, { balance: 9.5 }, "迁移后 data 形态正确");
+  // 旧文件已重命名 .bak
+  const filesAfter = await import("node:fs/promises").then((m) => m.readdir(histDir));
+  assert.ok(filesAfter.some((f) => f.endsWith(".v3.bak")), "旧桶重命名为 .bak");
+  // 幂等：二次迁移不重复
+  const again = await migrateLegacyV3(dir, store2);
+  assert.equal(again, 0, "二次迁移幂等（.bak 不再扫描）");
+  rmSync(dir, { recursive: true, force: true });
 }
 
 // ---------------------------------------------------------------- safe 守卫
