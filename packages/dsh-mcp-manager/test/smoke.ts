@@ -62,6 +62,12 @@ import {
   assertSupportedOutputSchema,
 } from "../lib/index.js";
 
+// 结构化单元测试（#82 批次 1：清零未覆盖 CRAP 超阈热点）
+import "./unit-shared.test.ts";
+import "./unit-manager.test.ts";
+import "./unit-apply.test.ts";
+import "./unit-hotspot.test.ts";
+
 const failures = [];
 const check = (label, fn) => {
   try {
