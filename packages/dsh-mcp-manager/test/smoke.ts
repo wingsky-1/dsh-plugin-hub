@@ -22,22 +22,30 @@ import { assertClientProductContract, assertClientSourceContract } from "../../.
 const pkgDir = join(dirname(fileURLToPath(import.meta.url)), "..");
 import {
   apply,
+  broadcastFrame,
   buildToolDefinition,
   composeCatalogEntries,
+  Config,
   ConnectionSupervisor,
   DEFAULT_RESULT_TRUNCATE_BYTES,
   DEFAULT_TOOL_CALL_TIMEOUT_MS,
+  DEFAULT_UI_CONFIG,
   digestCatalogEntries,
   escapeCatalogText,
   findCatalogMessage,
   fromClaudeEntry,
   expandEnv,
   inject,
+  makeEventsRoute,
+  makeHealthRoute,
   makeRoutes,
   McpManager,
   McpStore,
   name,
   normalizeServer,
+  normalizeUiConfig,
+  panelAnchorForPosition,
+  panelTopForAnchor,
   parseClaudeJson,
   parseSsePayload,
   publicToolName,
@@ -46,8 +54,10 @@ import {
   ROUTES,
   SCOPE_GLOBAL,
   SCOPE_PROJECT,
+  sseData,
   summarizeToolDescriptions,
   truncateText,
+  uiConfigChangedFrame,
   assertSupportedOutputSchema,
 } from "../lib/index.js";
 
@@ -157,6 +167,85 @@ const main = async () => {
   });
   check("client source contract（load id/IIFE/use strict/load once）", () => assertClientSourceContract(pkgDir));
   check("client product contract（执行断言：arrive 可解析/apply/inject）", () => assertClientProductContract(pkgDir));
+
+  console.log("Config schema（浮窗 UI 配置迁移到插件自身 Config.ui）");
+  check("Config 导出且含 ui 子对象（默认值与合法值域）", () => {
+    assert.ok(typeof Config === "function", "Config 是 schemastery schema（可调用）");
+    const parsed = Config({});
+    assert.equal(parsed.ui.position, "top-right", "ui.position 默认 top-right");
+    assert.deepEqual(parsed.ui.offset, { x: 8, y: 8, blankY: 40 }, "ui.offset 默认 {x:8,y:8,blankY:40}");
+    assert.equal(DEFAULT_UI_CONFIG.position, "top-right", "DEFAULT_UI_CONFIG.position 与升级前一致");
+    assert.deepEqual(DEFAULT_UI_CONFIG.offset, { x: 8, y: 8, blankY: 40 });
+    // 合法值域：bottom-right 透传
+    const bottom = Config({ ui: { position: "bottom-right" } });
+    assert.equal(bottom.ui.position, "bottom-right", "bottom-right 是合法 position");
+  });
+  check("normalizeUiConfig：默认 / 合法值透传 / 非法回退（不抛）", () => {
+    // 未配置 → 默认
+    assert.deepEqual(normalizeUiConfig(undefined), { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 });
+    assert.deepEqual(normalizeUiConfig(null), { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 });
+    // 新 Config.ui 嵌套形态
+    assert.deepEqual(
+      normalizeUiConfig({ ui: { position: "bottom-right", offset: { x: 12, y: 20, blankY: 60 } } }),
+      { position: "bottom-right", offsetX: 12, offsetY: 20, blankY: 60 },
+    );
+    // 旧隐藏命名空间扁平形态（position/offset）→ 兼容
+    assert.deepEqual(
+      normalizeUiConfig({ position: "bottom-right", offset: { x: 5, y: 6, blankY: 50 } }),
+      { position: "bottom-right", offsetX: 5, offsetY: 6, blankY: 50 },
+    );
+    // 客户端扁平形态（offsetX/offsetY/blankY）→ 兼容
+    assert.deepEqual(
+      normalizeUiConfig({ position: "bottom-right", offsetX: 3, offsetY: 4, blankY: 44 }),
+      { position: "bottom-right", offsetX: 3, offsetY: 4, blankY: 44 },
+    );
+    // 非法/缺失 → 安全回退默认，不抛
+    assert.deepEqual(normalizeUiConfig({ position: "middle-left" }), { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 });
+    assert.deepEqual(normalizeUiConfig({ ui: { position: "nope", offset: { x: "abc" } } }), { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 });
+    assert.deepEqual(normalizeUiConfig({ offset: {} }), { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 });
+  });
+  check("README 含 position/offset 配置说明（键名与默认值，中英）", () => {
+    for (const file of ["README.md", "README.en.md"]) {
+      const text = readFileSync(join(pkgDir, file), "utf8");
+      assert.ok(text.includes("position"), `${file} 未含 position 键`);
+      assert.ok(text.includes("top-right"), `${file} 未含 top-right（默认值）`);
+      assert.ok(text.includes("bottom-right"), `${file} 未含 bottom-right（合法值域）`);
+      assert.ok(text.includes("offset.x"), `${file} 未含 offset.x 键`);
+      assert.ok(text.includes("offset.y"), `${file} 未含 offset.y 键`);
+      assert.ok(text.includes("offset.blankY"), `${file} 未含 offset.blankY 键`);
+      const hotUpdatePhrase = file === "README.en.md" ? "without restarting" : "无需重启";
+      assert.ok(text.includes(hotUpdatePhrase), `${file} 未声明「保存即热更新无需重启」`);
+    }
+  });
+
+  console.log("配置变更 SSE 帧（既有 events 通道，不新增轮询/长连接）");
+  check("uiConfigChangedFrame 写出一帧 ui-config-changed", () => {
+    assert.equal(uiConfigChangedFrame(), 'data: {"type":"ui-config-changed"}\n\n');
+    assert.equal(sseData({ type: "ui-config-changed" }), uiConfigChangedFrame(), "与 sseData 同构");
+  });
+  check("broadcastFrame 向全部连接写帧（掉线忽略）", () => {
+    const written = [];
+    const conn = { write: (chunk) => { written.push(chunk); } };
+    const dead = { write: () => { throw new Error("closed"); } };
+    broadcastFrame(new Set([conn, dead]), "data: {\"type\":\"summary\"}\n\n");
+    assert.deepEqual(written, ["data: {\"type\":\"summary\"}\n\n"]);
+    broadcastFrame(undefined, "x"); // 无连接不抛
+  });
+
+  console.log("面板定位翻转规则（底部锚点上弹 / 顶部锚点下弹）");
+  check("panelAnchorForPosition：bottom-right → bottom，其余 → top", () => {
+    assert.equal(panelAnchorForPosition("bottom-right"), "bottom");
+    assert.equal(panelAnchorForPosition("top-right"), "top");
+    assert.equal(panelAnchorForPosition(undefined), "top", "缺省按顶部锚点（历史行为）");
+  });
+  check("panelTopForAnchor：底部锚点向上弹出 / 顶部锚点向下弹出", () => {
+    // 底部锚点（pill 在视口下部）：面板向上，下缘贴近 pill 上缘（pTop - panelHeight - gap）
+    assert.equal(panelTopForAnchor("bottom", 600, 640, 200, 6), 394, "底部锚点上弹");
+    // 顶部锚点（pill 在视口上部）：面板向下（pillBottom + gap），历史行为不变
+    assert.equal(panelTopForAnchor("top", 40, 80, 200, 6), 86, "顶部锚点下弹");
+    // clamp：底部锚点面板过高时钳到视口上缘（不溢出）
+    assert.equal(panelTopForAnchor("bottom", 30, 70, 2000, 6), 6, "底部锚点上弹 clamp 到视口内");
+  });
 
   console.log("normalizeServer");
   check("stdio 服务器规范化", () => {
@@ -774,6 +863,29 @@ const main = async () => {
         const body = JSON.parse(res.state.body);
         assert.equal(body.position, "top-right");
         assert.equal(body.offsetX, 8);
+      });
+      await checkAsync("config 非 GET → 405（方法错围栏）", async () => {
+        const res = fakeRes();
+        await find(ROUTES.config).handler(fakeReq("POST", ROUTES.config, { position: "bottom-right" }), res);
+        assert.equal(res.state.status, 405);
+      });
+      await checkAsync("events 非 loopback → 403 / 方法错 → 405（围栏不回归）", async () => {
+        const eventsRoute = makeEventsRoute(manager);
+        const res403 = fakeRes();
+        await eventsRoute.handler(fakeFenceBroken("GET", ROUTES.events), res403);
+        assert.equal(res403.state.status, 403);
+        const res405 = fakeRes();
+        await eventsRoute.handler(fakeReq("POST", ROUTES.events), res405);
+        assert.equal(res405.state.status, 405);
+      });
+      await checkAsync("health 非 loopback → 403 / 方法错 → 405（围栏不回归）", async () => {
+        const healthRoute = makeHealthRoute(manager);
+        const res403 = fakeRes();
+        await healthRoute.handler(fakeFenceBroken("GET", ROUTES.health), res403);
+        assert.equal(res403.state.status, 403);
+        const res405 = fakeRes();
+        await healthRoute.handler(fakeReq("POST", ROUTES.health), res405);
+        assert.equal(res405.state.status, 405);
       });
       await checkAsync("import/json 导入", async () => {
         const res = fakeRes();

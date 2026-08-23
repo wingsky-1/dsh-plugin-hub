@@ -55,7 +55,7 @@ import {
   summarizeToolDescriptions,
   resolveCatalogInjection,
 } from "./catalog.js";
-import { makeRoutes, makeEventsRoute, makeHealthRoute, sseData } from "./routes.js";
+import { makeRoutes, makeEventsRoute, makeHealthRoute, sseData, uiConfigChangedFrame } from "./routes.js";
 
 /** 稳定的 cordis 插件名。 */
 export const name = "mcp-manager";
@@ -70,7 +70,20 @@ export const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;
 /** 空 description 工具的条件拼接默认开启。 */
 export const DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS = true;
 
-/** MCP 浮动按钮 UI 配置（隐藏 settings namespace，不在设置页显示）。 */
+/** MCP 浮窗 UI 配置（插件自身 Config 的 `ui` 子对象，标准 cordis 配置注入）。 */
+export interface UiPlacementConfig {
+  /** 浮窗胶囊锚点：右上 / 右下（默认 top-right = 历史行为）。 */
+  position: "top-right" | "bottom-right";
+  /** 胶囊偏移：x 水平、y 垂直、blankY 空白会话垂直偏移。 */
+  offset: { x: number; y: number; blankY: number };
+}
+
+/** 默认浮窗 UI 配置（与升级前一致，无回归）。 */
+export const DEFAULT_UI_CONFIG: UiPlacementConfig = {
+  position: "top-right",
+  offset: { x: 8, y: 8, blankY: 40 },
+};
+
 const UiConfigSchema = z.object({
   position: z.union([z.const("top-right"), z.const("bottom-right")]).default("top-right"),
   offset: z.object({
@@ -78,6 +91,74 @@ const UiConfigSchema = z.object({
     y: z.number().default(8),
     blankY: z.number().default(40),
   }).default({ x: 8, y: 8, blankY: 40 }),
+});
+
+/** 客户端消费的浮窗 UI 配置（GET /api/dsh-mcp/config 的扁平形状）。 */
+export interface ClientUiConfig {
+  position: "top-right" | "bottom-right";
+  offsetX: number;
+  offsetY: number;
+  blankY: number;
+}
+
+/**
+ * 归一化浮窗 UI 配置（纯函数，可单测）。
+ * 兼容三种形态：新 `Config.ui` 嵌套、旧隐藏命名空间的扁平 `position/offset`、
+ * 客户端扁平 `position/offsetX/offsetY/blankY`。非法或缺失 → 安全回退默认，不抛。
+ */
+export function normalizeUiConfig(raw: unknown): ClientUiConfig {
+  const src = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
+  const ui = (
+    typeof src.ui === "object" && src.ui !== null ? (src.ui as Record<string, unknown>) : src
+  ) as Record<string, unknown>;
+  const position = ui.position === "bottom-right" ? "bottom-right" : "top-right";
+  const offset = (typeof ui.offset === "object" && ui.offset !== null ? ui.offset : {}) as Record<string, unknown>;
+  const clampNum = (value: unknown, dflt: number): number =>
+    typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.round(value)) : dflt;
+  const offsetX = clampNum(ui.offsetX ?? offset.x, DEFAULT_UI_CONFIG.offset.x);
+  const offsetY = clampNum(ui.offsetY ?? offset.y, DEFAULT_UI_CONFIG.offset.y);
+  const blankY = clampNum(ui.blankY ?? offset.blankY, DEFAULT_UI_CONFIG.offset.blankY);
+  return { position, offsetX, offsetY, blankY };
+}
+
+/** 面板垂直锚点规则：底部锚点（bottom-right）→ 向上弹出；否则顶部锚点（向下弹出）。 */
+export function panelAnchorForPosition(position: string | undefined): "top" | "bottom" {
+  return position === "bottom-right" ? "bottom" : "top";
+}
+
+/** 面板垂直定位纯函数（供 smoke 断言翻转分支；clamp 到视口内，不溢出）。 */
+export function panelTopForAnchor(
+  anchor: "top" | "bottom",
+  pillTop: number,
+  pillBottom: number,
+  panelHeight: number,
+  gap: number,
+): number {
+  return anchor === "bottom" ? Math.max(6, pillTop - panelHeight - gap) : Math.max(6, pillBottom + gap);
+}
+
+/**
+ * 插件 Config schema（标准 cordis 配置注入入口；含 `ui` 子对象）。
+ * 迁移后 position/offset 走插件自身 Config 而非隐藏命名空间，设置页插件卡可编辑。
+ */
+export const Config: z<{
+  enabled: boolean;
+  announceToAgent: boolean;
+  storePath: string;
+  announceCatalog: boolean;
+  catalogMaxEntries: number;
+  enhanceEmptyDescriptions: boolean;
+  resultTruncateBytes: number;
+  ui: UiPlacementConfig;
+}> = z.object({
+  enabled: z.boolean().default(true).description("是否启用本插件"),
+  announceToAgent: z.boolean().default(true).description("是否向 Agent 宣告插件（能力清单由 <available_mcp_servers> 承担）"),
+  storePath: z.string().description("全局服务器配置路径，留空用默认 <DSH_HOME>/dsh-mcp.json").disabled(true),
+  announceCatalog: z.boolean().default(DEFAULT_ANNOUNCE_CATALOG).description("是否注入 MCP 能力目录（<available_mcp_servers>）"),
+  catalogMaxEntries: z.number().default(DEFAULT_CATALOG_MAX_ENTRIES).description("目录注入条目上限").disabled(true),
+  enhanceEmptyDescriptions: z.boolean().default(DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS).description("空描述工具条件拼接自定义描述"),
+  resultTruncateBytes: z.number().default(DEFAULT_RESULT_TRUNCATE_BYTES).description("工具结果截断字节数").disabled(true),
+  ui: UiConfigSchema,
 });
 
 
@@ -132,15 +213,8 @@ export class McpManager {
   }
 
   /** 读取 settings 命名空间中的 MCP UI 配置（供 /api/dsh-mcp/config 返回）。 */
-  uiConfig(): Record<string, unknown> {
-    const value = this.uiConfigSource() ?? {};
-    const defaults: Record<string, unknown> = { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 };
-    const out: Record<string, unknown> = { ...defaults };
-    if (value.position === "top-right" || value.position === "bottom-right") out.position = value.position;
-    if (typeof value.offset?.x === "number") out.offsetX = value.offset.x;
-    if (typeof value.offset?.y === "number") out.offsetY = value.offset.y;
-    out.blankY = typeof value.offset?.blankY === "number" ? value.offset.blankY : out.offsetY;
-    return out;
+  uiConfig(): ClientUiConfig {
+    return normalizeUiConfig(this.uiConfigSource());
   }
 
   /** 从磁盘加载目录缓存（损坏/缺失 → 空缓存，不崩溃）。 */
@@ -565,7 +639,9 @@ export const MCP_GUIDANCE =
 export async function apply(ctx: Context, config: Record<string, unknown> | undefined): Promise<void> {
   const enabled = config?.enabled !== false;
   const announceToAgent = config?.announceToAgent !== false;
-  const storePath = (config?.storePath as string | undefined) ?? defaultStorePath();
+  const storePath = typeof config?.storePath === "string" && config.storePath !== ""
+    ? config.storePath
+    : defaultStorePath();
 
   // 感知增强配置（对抗性评审 v2）。默认值引用具名常量（单一事实源）。
   const announceCatalog = (config?.announceCatalog as boolean | undefined) ?? DEFAULT_ANNOUNCE_CATALOG;
@@ -578,13 +654,26 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
   const manager = new McpManager(ctx, store);
   manager.enhancement = { enhanceEmptyDescriptions, resultTruncateBytes };
 
-    // 隐藏 settings namespace：配置保存在 settings.yaml，不在设置页显示。
-    installSettingsNamespace(ctx, "dsh-mcp-manager", UiConfigSchema, config ?? {}, {
-      setSource: (source) => {
-        manager.uiConfigSource = source as () => any;
-      },
-      onChange: () => {},
-    });
+  // 插件自身 Config schema（标准 cordis 配置注入路径）：position/offset 不再藏于
+  // 隐藏命名空间，设置页插件卡可编辑；配置变更经既有 SSE events 通道广播一帧，
+  // 客户端收到后重新 GET /api/dsh-mcp/config 就地更新浮窗位置（无需重启/轮询）。
+  const broadcastUiConfigChanged = () => {
+    for (const res of manager.sseConnections ?? []) {
+      try {
+        res.write(uiConfigChangedFrame());
+      } catch {
+        // 连接已断，等待 close 事件清理
+      }
+    }
+  };
+  installSettingsNamespace(ctx, "dsh-mcp-manager", Config, config ?? {}, {
+    setSource: (source) => {
+      manager.uiConfigSource = source as () => any;
+    },
+    onChange: () => {
+      broadcastUiConfigChanged();
+    },
+  });
 
 
   let disposeRoutes = () => {};
@@ -706,7 +795,7 @@ export {
 // mcpServers JSON 导入
 export { fromClaudeEntry, parseClaudeJson } from "./import.js";
 // 路由
-export { ROUTES, makeRoutes } from "./routes.js";
+export { ROUTES, makeRoutes, makeEventsRoute, makeHealthRoute, sseData, uiConfigChangedFrame, broadcastFrame } from "./routes.js";
 export { SCOPE_GLOBAL, SCOPE_PROJECT, normalizeScope } from "./scope.js";
 // 仓库共享层（loopback 围栏 / writeJson / readJsonBody）
 export { isLoopbackRequest } from "../../../shared/loopback.js";

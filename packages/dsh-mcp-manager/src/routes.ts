@@ -14,6 +14,7 @@ import { writeJson, readJsonBody } from "../../../shared/host-utils.js";
 import { parseClaudeJson } from "./import.js";
 import { SCOPE_PROJECT, normalizeScope } from "./scope.js";
 import type { ServerConfig } from "./types.js";
+import type { ClientUiConfig } from "./index.js";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { ServerResponse } from "node:http";
 import type { McpStore } from "./store.js";
@@ -22,7 +23,7 @@ import type { McpStore } from "./store.js";
 export interface RoutesManager {
   setSession(cwd: string | undefined): Promise<void>;
   refreshFromDisk(): Promise<void>;
-  uiConfig(): Record<string, unknown>;
+  uiConfig(): ClientUiConfig;
   summary(): Record<string, unknown>;
   add(server: Record<string, unknown>, scope?: string): Promise<ServerConfig>;
   update(name: string, patch: Record<string, unknown>, scope?: string): Promise<ServerConfig>;
@@ -291,6 +292,22 @@ export function makeRoutes(manager: RoutesManager, cwd = process.cwd()): WebRout
 /** 序列化一帧 SSE data 行。 */
 export function sseData(payload: unknown): string {
   return `data: ${JSON.stringify(payload)}\n\n`;
+}
+
+/** 配置变更 SSE 帧：客户端收到后重新 GET /api/dsh-mcp/config 就地更新浮窗位置。 */
+export function uiConfigChangedFrame(): string {
+  return sseData({ type: "ui-config-changed" });
+}
+
+/** 向全部 SSE 连接写出一帧（逐连接 try/catch，掉线忽略）。 */
+export function broadcastFrame(connections: Set<ServerResponse> | undefined, frame: string): void {
+  for (const res of connections ?? []) {
+    try {
+      res.write(frame);
+    } catch {
+      // 连接已断，等待 close 事件清理
+    }
+  }
 }
 
 /**

@@ -37,6 +37,8 @@ import {
   makeAdapterRegistry,
   normalizeUiConfig,
   DEFAULT_UI_CONFIG,
+  panelAnchorForPlacement,
+  panelTopForAnchor,
 } from "../lib/index.js";
 
 // ---------------------------------------------------------------- esc
@@ -230,6 +232,23 @@ assert.equal(sanitizeHtml('<iframe src="x"></iframe>y'), "y");
   const bad = normalizeUiConfig({ placement: "middle", offsetX: "abc", offsetY: null, panelOffsetY: 44 });
   assert.equal(bad.placement, DEFAULT_UI_CONFIG.placement, "非法 placement 回退默认");
   assert.equal(bad.offsetX, DEFAULT_UI_CONFIG.offsetX, "非法 offsetX 回退默认");
+}
+
+// ---------------------------------------------------------------- 面板定位翻转规则
+
+{
+  // 底部锚点（bottom-*）→ 向上弹出；顶部锚点（top-*）→ 向下弹出
+  assert.equal(panelAnchorForPlacement("bottom-right"), "bottom", "bottom-right → 上弹");
+  assert.equal(panelAnchorForPlacement("bottom-left"), "bottom", "bottom-left → 上弹");
+  assert.equal(panelAnchorForPlacement("top-right"), "top", "top-right → 下弹（历史行为）");
+  assert.equal(panelAnchorForPlacement("top-left"), "top", "top-left → 下弹（历史行为）");
+  assert.equal(panelAnchorForPlacement(undefined), "top", "缺省按顶部锚点");
+
+  // 底部锚点：面板向上，下缘贴近 pill 上缘；顶部锚点：向下（pillBottom + gap）
+  assert.equal(panelTopForAnchor("bottom", 600, 640, 200, 10), 390, "底部锚点向上弹出");
+  assert.equal(panelTopForAnchor("top", 40, 80, 200, 10), 90, "顶部锚点向下弹出");
+  // clamp：底部锚点面板过高时钳到视口上缘（不溢出）
+  assert.equal(panelTopForAnchor("bottom", 30, 70, 2000, 10), 6, "底部锚点 clamp 到视口内");
 }
 
 // ---------------------------------------------------------------- provider-config 配置链

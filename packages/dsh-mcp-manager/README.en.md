@@ -70,6 +70,28 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
 | Result truncation | Tool results truncated at 8KB and marked (prevents oversized JSON from entering context in full) |
 | Timeout fallback | Tool call timeout defaults to 60s → 15s (overridable per server via `toolCallTimeoutMs`) |
 
+## Configuration (floating window position)
+
+The floating button (MCP pill) position and offsets are configured in the MCP manager
+plugin card under dsh **Settings → Plugins → MCP Manager** (`position` / `offset`), via the
+plugin's own `Config` using standard cordis config injection — no config file editing needed.
+
+| Key | Allowed values | Default |
+| --- | --- | --- |
+| `position` | `top-right` (top-right, default) / `bottom-right` (bottom-right) | `top-right` |
+| `offset.x` | Non-negative integer (horizontal offset, px) | `8` |
+| `offset.y` | Non-negative integer (vertical offset, px) | `8` |
+| `offset.blankY` | Non-negative integer (blank-session vertical offset, px) | `40` |
+
+When `position = bottom-right`, the dropdown panel expands **above the pill** (bottom
+anchor, popping upward), does not overflow the viewport, and content stays fully visible
+and clickable; at `top-right` it expands downward (historical behavior, unchanged default).
+
+Saving in the settings page takes effect immediately, **without restarting dsh web** and
+without manually refreshing the page: the host pushes a frame over the existing SSE events
+channel, and the client automatically re-fetches `/api/dsh-mcp/config` and updates the
+floating position in place.
+
 ## Routes (all loopback-fenced)
 
 | Route | Description |

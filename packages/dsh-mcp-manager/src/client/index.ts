@@ -675,7 +675,13 @@ function placePanel() {
   if (floatPill === undefined || floatPanel === undefined) return;
   const rect = floatPill.getBoundingClientRect();
   if (rect.width === 0 && rect.height === 0) return;
-  floatPanel.style.top = `${Math.max(6, rect.bottom + 6)}px`;
+  // 翻转逻辑：底部锚点（bottom-right）→ 面板向上弹出（以胶囊上缘为基准，留 6px
+  // 间距并 clamp 到视口上缘，不溢出）；顶部锚点（top-right）→ 向下弹出（历史行为）。
+  const anchorBottom = mcpUiConfig.position === "bottom-right";
+  const gap = 6;
+  floatPanel.style.top = anchorBottom
+    ? `${Math.max(6, rect.top - floatPanel.offsetHeight - gap)}px`
+    : `${Math.max(6, rect.bottom + gap)}px`;
   floatPanel.style.right = `${Math.max(10, Math.round(window.innerWidth - rect.right))}px`;
   floatPanel.style.left = "auto";
 }
@@ -911,7 +917,24 @@ export function apply(ctx: any) {
     };
     try {
       es = new EventSource(API.events);
-      es.onmessage = () => scheduleRefresh();
+      es.onmessage = (ev: MessageEvent) => {
+        let msg: any;
+        try {
+          msg = JSON.parse(String(ev.data));
+        } catch {
+          msg = undefined;
+        }
+        if (msg !== undefined && msg.type === "ui-config-changed") {
+          // 配置变更（设置页保存 position/offset）→ 重新 GET /config 就地更新浮窗位置，
+          // 非仅刷新 /servers；更新 mcpUiConfig 后重新定位胶囊与（若展开的）面板。
+          void api(API.config).then((cfg: any) => {
+            if (cfg !== null && typeof cfg === "object") mcpUiConfig = cfg;
+            updateFloatState?.();
+          }).catch(() => {});
+        } else {
+          scheduleRefresh();
+        }
+      };
       es.onerror = () => {
         // 宿主重启/热重载/网络抖动会主动断开旧连接，浏览器随即自动重连
         // （readyState 回到 CONNECTING）——这种瞬时断连不是失败，不累计。

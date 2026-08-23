@@ -65,6 +65,24 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
 | 结果截断 | 工具结果按 8KB 截断并标注（防超长 JSON 全量进上下文） |
 | 超时下探 | 工具调用超时默认 60s → 15s（可按服务器 `toolCallTimeoutMs` 覆盖） |
 
+## 配置（浮窗位置）
+
+浮窗按钮（MCP 胶囊）的位置与偏移在 dsh **设置 → 插件 → MCP 管理器** 的插件卡中配置
+（`position` / `offset`），走插件自身 `Config` 标准 cordis 配置注入，无需手改任何配置文件。
+
+| 键 | 值域 | 默认 |
+| --- | --- | --- |
+| `position` | `top-right`（右上，默认）/ `bottom-right`（右下） | `top-right` |
+| `offset.x` | 非负整数（水平偏移，单位 px） | `8` |
+| `offset.y` | 非负整数（垂直偏移，单位 px） | `8` |
+| `offset.blankY` | 非负整数（空白会话垂直偏移，单位 px） | `40` |
+
+当 `position = bottom-right` 时，下拉面板会**在胶囊上方展开**（底部锚点向上弹出），
+不溢出视口、内容完整可见可点击；`top-right` 时向下展开（历史行为，默认不变）。
+
+在设置页保存后即时生效，**无需重启 dsh web**、也无需手动刷新页面：宿主端经既有
+SSE events 通道推送一变，客户端自动重新拉取 `/api/dsh-mcp/config` 并就地更新浮窗位置。
+
 ## 路由（全部 loopback 围栏）
 
 | 路由 | 说明 |

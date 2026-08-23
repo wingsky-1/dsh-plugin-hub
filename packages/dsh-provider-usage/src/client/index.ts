@@ -352,7 +352,12 @@ function placePanel(): void {
   if (floatPill === undefined || floatPanel === undefined) return;
   const rect = floatPill.getBoundingClientRect();
   if (rect.width === 0 && rect.height === 0) return;
-  floatPanel.style.top = `${Math.max(6, rect.bottom + uiConfig.panelOffsetY)}px`;
+  // 翻转逻辑：底部锚点（bottom-*）→ 面板向上弹出（以胶囊上缘为基准，留配置面板间距
+  // 并 clamp 到视口上缘，不溢出）；顶部锚点（top-*）→ 向下弹出（历史行为）。
+  const anchorBottom = uiConfig.placement === "bottom-right" || uiConfig.placement === "bottom-left";
+  floatPanel.style.top = anchorBottom
+    ? `${Math.max(6, rect.top - floatPanel.offsetHeight - uiConfig.panelOffsetY)}px`
+    : `${Math.max(6, rect.bottom + uiConfig.panelOffsetY)}px`;
   if (uiConfig.placement === "top-left" || uiConfig.placement === "bottom-left") {
     floatPanel.style.left = `${Math.max(10, Math.round(rect.left))}px`;
     floatPanel.style.right = "auto";
