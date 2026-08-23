@@ -671,6 +671,7 @@ const main = async () => {
         store,
         logger: { warn: () => {}, info: () => {}, error: () => {} },
         summary: () => ({ servers: [], counts: {} }),
+        uiConfig: () => ({ position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 }),
         refreshFromDisk: async () => {},
         setSession: async (cwd) => {
           managerState.sessionCwd = cwd;
@@ -765,6 +766,14 @@ const main = async () => {
         const res = fakeRes();
         await find(ROUTES.servers).handler(fakeFenceBroken("GET", ROUTES.servers), res);
         assert.equal(res.state.status, 403);
+      });
+      await checkAsync("config 非 loopback → 200（只读 UI 配置放开）", async () => {
+        const res = fakeRes();
+        await find(ROUTES.config).handler(fakeFenceBroken("GET", ROUTES.config), res);
+        assert.equal(res.state.status, 200);
+        const body = JSON.parse(res.state.body);
+        assert.equal(body.position, "top-right");
+        assert.equal(body.offsetX, 8);
       });
       await checkAsync("import/json 导入", async () => {
         const res = fakeRes();

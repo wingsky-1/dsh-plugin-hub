@@ -3,6 +3,8 @@
  *
  * /api/dsh-mcp/* 路由（loopback-only）供 web GUI 分级展示、快速接入、
  * 导入 mcpServers JSON；events 为 SSE 状态推送通道。
+ * 例外：/api/dsh-mcp/config 是只读 UI 配置接口，允许非 loopback 访问，
+ * 便于远程页面读取 position/offset 等非敏感展示配置。
  * 由 lib/index.js 组合根 re-export（ROUTES / makeRoutes）。
  */
 
@@ -86,7 +88,10 @@ export function makeRoutes(manager: RoutesManager, cwd = process.cwd()): WebRout
       kind: "exact",
       path: ROUTES.config,
       handler: async (req, res) => {
-        if (!guard(req, res, "GET")) return;
+        if (req.method !== "GET") {
+          writeJson(res, 405, { error: `method not allowed: ${req.method}` });
+          return;
+        }
         try {
           writeJson(res, 200, manager.uiConfig());
         } catch (error) {
