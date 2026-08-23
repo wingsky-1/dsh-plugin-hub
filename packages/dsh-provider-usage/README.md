@@ -130,7 +130,14 @@ export function formatPanel({ entries, range, truncated, esc }) {
 }
 ```
 
-**接线配置**（cordis.patch.yml / 用户 patch 层）：
+**接线配置**（推荐设置页承载，无需手改配置文件）：
+
+1. 打开 dsh 设置 → 插件 →「用量统计」
+2. 在目标 provider 下点「+ 添加适配器」，输入 mjs 文件路径（支持 `~` 展开 / 绝对路径）
+3. 点「检测文件」回显导出信息 → 确认添加（自动持久化 + 热注册为该 provider 启用者）
+4. 切换启用 / 停用：候选行开关实时生效并持久化
+
+也兼容 cordis.patch.yml 声明（可选，配置态叠加）：
 
 ```yml
 plugins:
@@ -141,7 +148,7 @@ plugins:
     autoReload: true        # 编辑 mjs 后自动热更新
 ```
 
-路径支持 `~` 展开 / 绝对路径。加载失败 fail-fast 拒收并登记错误（设置面板可见），不影响插件其余功能。
+加载失败 fail-fast 拒收并登记错误（设置面板可见），不影响插件其余功能。路径安全：相对路径只允许落在 `DSH_HOME` 或插件 home 内，未规整形态（`../` 穿越）一律 400 拒绝。
 
 ### v1 → v2 迁移
 
@@ -151,7 +158,7 @@ plugins:
 | 客户端渲染器 `.js` + 全局桥接注册 | `formatCapsule`/`formatPanel` 返回 HTML（宿主端渲染） |
 | `id` 字段 | `name` 字段（白名单校验更严） |
 | `summarize`/`samplePoint`/windows | 移除——胶囊/面板直接由 format 函数产出 |
-| 设置页运行时添加/切换适配器 | cordis.patch.yml 声明 + 热更新 |
+| 设置页运行时添加/切换适配器（v1 既有） | **保留**：设置页「用量统计」承载（检测/添加/切换/停用，自动持久化）；cordis.patch.yml 声明仅为可选叠加 |
 
 ## 安全模型
 

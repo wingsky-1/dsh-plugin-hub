@@ -1,18 +1,20 @@
 /**
- * dsh-provider-usage — 设置面板独立 tab「用量统计」（v2 只读概览版）。
+ * dsh-provider-usage — 设置面板独立 tab「用量统计」（v2 适配器管理版）。
  *
- * 经 slots.inject("settings.section") 注册顶层 tab，React 渲染三区：
+ * 经 slots.inject("settings.section") 注册顶层 tab，React 渲染：
  * - 运行状态：各启用 provider 的胶囊内容 + 数据状态（/stats、/health）
- * - 适配器信息：当前生效适配器（name/label/source）+ 最近错误登记
- * - 配置引导：v2 适配器的 cordis.patch.yml 配置示例（复制即用）
+ * - 适配器管理（主区）：提供商 → 适配器候选行（每行独立开关，唯一启用）；
+ *   [+ 添加适配器] 输入文件路径 → 检测（inspect）回显导出信息 → 确认添加（add）
+ * - 最近错误登记展示
  *
- * v2 变更：适配器管理（inspect/add/select）随旧契约移除——用户适配器改由
- * cordis.patch.yml 声明（adapter 路径），热更新自动生效，无需运行时管理。
+ * 承载原则：用户不在 cordis.patch.yml 手改适配器配置，全部经此界面管理
+ * （add 持久化到 user-adapters.json，select 持久化到 adapter-state.json）。
  */
 import * as React from "react";
-import { STATS_URL, HEALTH_URL, fetchTimeout } from "./core.js";
+import { STATS_URL, HEALTH_URL, ADAPTERS_URL, SELECT_URL, INSPECT_URL, ADD_URL, fetchTimeout } from "./core.js";
 
-/** /health 响应中本页消费的形状。 */
+// ---------------------------------------------------------------- 类型
+
 interface HealthView {
   ok?: boolean;
   provider?: string;
@@ -21,7 +23,6 @@ interface HealthView {
   errors?: Array<{ key: string; at: number; kind: string; message: string }>;
 }
 
-/** /stats 响应中本页消费的形状。 */
 interface StatsView {
   provider?: string;
   adapterName?: string;
@@ -30,8 +31,53 @@ interface StatsView {
   ok?: boolean;
   configured?: boolean;
   error?: string | null;
-  fetchedAt?: number;
 }
+
+/** adapters.json 响应形状。 */
+interface AdaptersMeta {
+  version?: number;
+  host?: AdapterInfo[];
+  enabled?: Record<string, string>;
+  modelProviders?: string[];
+  errors?: AdapterErrorEntry[];
+}
+
+interface AdapterInfo {
+  name: string;
+  label: string;
+  providers: string[];
+  source: "builtin" | "user-file";
+  file?: string | null;
+  enabled?: boolean;
+}
+
+interface AdapterErrorEntry {
+  key: string;
+  at: number;
+  kind: string;
+  message: string;
+}
+
+/** inspect 回显的导出信息。 */
+interface InspectAdapter {
+  name: string;
+  label: string;
+  providers: string[];
+  version: number;
+}
+
+interface InspectResult {
+  ok: boolean;
+  adapter?: InspectAdapter;
+  detail?: string;
+}
+
+interface AddResult {
+  ok: boolean;
+  detail?: string;
+}
+
+// ---------------------------------------------------------------- 工具
 
 async function jsonGet(url: string): Promise<unknown> {
   const res = await fetchTimeout(url, { headers: { Accept: "application/json" }, cache: "no-store" });
@@ -39,16 +85,7 @@ async function jsonGet(url: string): Promise<unknown> {
   return res.json();
 }
 
-async function copyText(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** 数据状态 → 颜色（主题变量 + 浅色回退）。 */
+/** 状态等级 → 颜色（主题变量 + 浅色回退）。 */
 function statusColor(status: string | undefined): string {
   if (status === "stale") return "var(--dsw-alias-state-warn-primary,#c9820b)";
   if (status === "fresh" || status === "cached") return "var(--dsw-alias-state-success-primary,#0f9d6e)";
@@ -71,177 +108,269 @@ const titleStyle: Object = {
   margin: "0 0 6px",
 };
 
-const codeStyle: Object = {
-  display: "block",
-  padding: "8px 10px",
-  borderRadius: 6,
-  background: "var(--dsw-alias-bg-layer-2,#ffffff)",
-  border: "1px solid var(--dsw-alias-border-l1,#eef0f4)",
-  fontFamily: "monospace",
-  fontSize: 11,
-  whiteSpace: "pre-wrap",
-  wordBreak: "break-all" as const,
+const rowStyle: Object = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  padding: "4px 0",
 };
 
 const STATUS_LABEL: Record<string, string> = {
   fresh: "实时",
   cached: "缓存",
-  stale: "陈旧（已降级，展示最近一次数据）",
+  stale: "陈旧（已降级）",
 };
 
-/** 运行状态区：各 provider 的胶囊内容 + 状态。 */
+// ---------------------------------------------------------------- 运行状态区
+
 function StatusSection({ statsByProvider }: { statsByProvider: Record<string, StatsView | null> }) {
   const providers = Object.keys(statsByProvider);
-  if (providers.length === 0) {
-    return React.createElement(
-      "div",
-      { style: sectionStyle },
-      React.createElement("p", { style: titleStyle }, "运行状态"),
-      React.createElement("div", null, "暂无启用的 provider 数据。"),
-    );
-  }
   return React.createElement(
     "div",
     { style: sectionStyle },
     React.createElement("p", { style: titleStyle }, "运行状态"),
-    ...providers.map((provider) => {
-      const s = statsByProvider[provider];
-      const dot = React.createElement("span", {
-        key: "dot",
-        style: {
-          display: "inline-block",
-          width: 8,
-          height: 8,
-          borderRadius: "50%",
-          background: statusColor(s?.status),
-          marginRight: 6,
-        },
-      });
-      return React.createElement(
-        "div",
-        { key: provider, style: { marginBottom: 8 } },
-        React.createElement(
-          "div",
-          null,
-          dot,
-          React.createElement("strong", null, provider),
-          React.createElement(
-            "span",
-            { style: { color: "var(--dsw-alias-label-tertiary,#9aa0ab)", marginLeft: 8 } },
-            `（${s?.adapterName ?? "-"} · ${STATUS_LABEL[s?.status ?? ""] ?? "未配置"}）`,
-          ),
-        ),
-        s?.capsuleHtml
-          ? React.createElement("div", {
-              style: { marginTop: 4 },
-              dangerouslySetInnerHTML: { __html: s.capsuleHtml },
-            })
-          : null,
-        s?.error
-          ? React.createElement(
+    providers.length === 0
+      ? React.createElement("div", null, "暂无启用的 provider 数据。")
+      : providers.map((provider) => {
+          const s = statsByProvider[provider];
+          const dot = React.createElement("span", {
+            key: "dot",
+            style: {
+              display: "inline-block",
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              background: statusColor(s?.status),
+              marginRight: 6,
+            },
+          });
+          return React.createElement(
+            "div",
+            { key: provider, style: { marginBottom: 8 } },
+            React.createElement(
               "div",
-              { style: { color: "var(--dsw-alias-state-error-primary,#d64545)", marginTop: 2 } },
-              String(s.error),
-            )
-          : null,
-      );
-    }),
+              null,
+              dot,
+              React.createElement("strong", null, provider),
+              React.createElement(
+                "span",
+                { style: { color: "var(--dsw-alias-label-tertiary,#9aa0ab)", marginLeft: 8 } },
+                `（${s?.adapterName ?? "-"} · ${STATUS_LABEL[s?.status ?? ""] ?? "未配置"}）`,
+              ),
+            ),
+            s?.capsuleHtml
+              ? React.createElement("div", {
+                  style: { marginTop: 4 },
+                  dangerouslySetInnerHTML: { __html: s.capsuleHtml },
+                })
+              : null,
+            s?.error
+              ? React.createElement(
+                  "div",
+                  { style: { color: "var(--dsw-alias-state-error-primary,#d64545)", marginTop: 2 } },
+                  String(s.error),
+                )
+              : null,
+          );
+        }),
   );
 }
 
-/** 适配器信息区：生效适配器 + 错误登记。 */
-function AdapterSection({ health }: { health: HealthView | null }) {
-  const adapters = health?.adapters ?? [];
-  const errors = health?.errors ?? [];
+// ---------------------------------------------------------------- 适配器管理区
+
+/** 提供商内嵌组：候选行（开关）+ 添加表单。 */
+function ProviderGroup({
+  provider,
+  candidates,
+  enabledName,
+  busy,
+  onSwitch,
+  onDisable,
+  onInspect,
+  onAdd,
+}: {
+  provider: string;
+  candidates: AdapterInfo[];
+  enabledName: string | undefined;
+  busy: boolean;
+  onSwitch: (provider: string, name: string) => void;
+  onDisable: (provider: string) => void;
+  onInspect: (file: string) => Promise<InspectResult>;
+  onAdd: (provider: string, form: { file: string }) => Promise<AddResult>;
+}) {
+  const [adding, setAdding] = React.useState(false);
+  const [file, setFile] = React.useState("");
+  const [inspect, setInspect] = React.useState<InspectResult | null>(null);
+  const [addMsg, setAddMsg] = React.useState<string | null>(null);
+
+  const doInspect = async (): Promise<void> => {
+    if (file.trim() === "") return;
+    const r = await onInspect(file.trim());
+    setInspect(r);
+    setAddMsg(null);
+  };
+
+  const doAdd = async (): Promise<void> => {
+    const r = await onAdd(provider, { file: file.trim() });
+    setAddMsg(r.ok ? "已添加并启用 ✓" : `添加失败：${r.detail ?? "未知错误"}`);
+    if (r.ok) {
+      setAdding(false);
+      setFile("");
+      setInspect(null);
+    }
+  };
+
   return React.createElement(
     "div",
-    { style: sectionStyle },
-    React.createElement("p", { style: titleStyle }, "适配器"),
-    adapters.length === 0
-      ? React.createElement("div", null, "无已注册适配器。")
-      : React.createElement(
-          "ul",
-          { style: { margin: "0", paddingLeft: 18 } },
-          adapters.map((a) =>
-            React.createElement(
-              "li",
-              { key: a.name },
-              `${a.label}（${a.name} · ${a.source === "builtin" ? "内置" : "用户文件"}）`,
+    { style: { marginBottom: 10 } },
+    React.createElement("div", { style: { fontWeight: 600, marginBottom: 4 } }, provider),
+    candidates.length === 0
+      ? React.createElement("div", { style: { color: "var(--dsw-alias-label-tertiary,#9aa0ab)" } }, "该提供商暂无适配器候选。")
+      : candidates.map((c) =>
+          React.createElement(
+            "div",
+            { key: `${provider}/${c.name}`, style: rowStyle },
+            React.createElement("label", { style: { display: "flex", alignItems: "center", gap: 6, flex: 1 } },
+              React.createElement("input", {
+                type: "checkbox",
+                checked: enabledName === c.name,
+                disabled: busy,
+                onChange: () => {
+                  if (enabledName === c.name) onDisable(provider);
+                  else onSwitch(provider, c.name);
+                },
+              }),
+              React.createElement("span", null, c.label),
+              React.createElement(
+                "span",
+                { style: { color: "var(--dsw-alias-label-tertiary,#9aa0ab)", fontSize: 11 } },
+                `（${c.name}${c.source === "user-file" ? ` · ${c.file ?? ""}` : " · 内置"}）`,
+              ),
             ),
           ),
         ),
+    !adding
+      ? React.createElement(
+          "button",
+          { type: "button", onClick: () => setAdding(true), style: { marginTop: 4 } },
+          "+ 添加适配器",
+        )
+      : React.createElement(
+          "div",
+          { style: { marginTop: 6, border: "1px solid var(--dsw-alias-border-l1,#eef0f4)", borderRadius: 6, padding: 8, background: "var(--dsw-alias-bg-layer-2,#ffffff)" } },
+          React.createElement("div", null, "适配器文件路径（支持 ~ 展开 / 绝对路径）："),
+          React.createElement("input", {
+            type: "text",
+            value: file,
+            onChange: (e: { target: { value: string } }) => setFile(e.target.value),
+            placeholder: "~/.dsh/adapters/my-stats.mjs",
+            style: { width: "100%", boxSizing: "border-box" as const, marginTop: 4 },
+          }),
+          React.createElement(
+            "div",
+            { style: { marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap" as const } },
+            React.createElement("button", { type: "button", onClick: () => { void doInspect(); }, disabled: busy || file.trim() === "" }, "检测文件"),
+            file.trim() !== "" && inspect?.ok
+              ? React.createElement("button", { type: "button", onClick: () => { void doAdd(); }, disabled: busy }, "确认添加")
+              : null,
+            React.createElement("button", { type: "button", onClick: () => { setAdding(false); setInspect(null); setAddMsg(null); } }, "取消"),
+          ),
+          inspect !== null
+            ? React.createElement(
+                "div",
+                { style: { marginTop: 6, fontSize: 11, color: inspect.ok ? "var(--dsw-alias-state-success-primary,#0f9d6e)" : "var(--dsw-alias-state-error-primary,#d64545)" } },
+                inspect.ok
+                  ? `检测通过：${inspect.adapter?.label}（${inspect.adapter?.name} · providers: ${inspect.adapter?.providers.join(", ")}）`
+                  : `检测失败：${inspect.detail ?? "未知错误"}`,
+              )
+            : null,
+          addMsg !== null
+            ? React.createElement("div", { style: { marginTop: 6, fontSize: 11, color: addMsg.startsWith("已添加") ? "var(--dsw-alias-state-success-primary,#0f9d6e)" : "var(--dsw-alias-state-error-primary,#d64545)" } }, addMsg)
+            : null,
+        ),
+  );
+}
+
+function AdaptersSection({
+  meta,
+  busy,
+  onSwitch,
+  onDisable,
+  onInspect,
+  onAdd,
+}: {
+  meta: AdaptersMeta | null;
+  busy: boolean;
+  onSwitch: (provider: string, name: string) => void;
+  onDisable: (provider: string) => void;
+  onInspect: (file: string) => Promise<InspectResult>;
+  onAdd: (provider: string, form: { file: string }) => Promise<AddResult>;
+}) {
+  const host = meta?.host ?? [];
+  const enabled = meta?.enabled ?? {};
+  // 主列表 = modelProviders；额外 provider 收进独立分组
+  const modelProviders = meta?.modelProviders ?? [];
+  const providerNames = [
+    ...modelProviders,
+    ...host.flatMap((h) => h.providers).filter((p) => !modelProviders.includes(p)),
+  ];
+  const seen = new Set<string>();
+  const uniqueProviders = providerNames.filter((p) => (seen.has(p) ? false : (seen.add(p), true)));
+
+  const errors = meta?.errors ?? [];
+
+  return React.createElement(
+    "div",
+    { style: sectionStyle },
+    React.createElement("p", { style: titleStyle }, "适配器管理"),
+    uniqueProviders.length === 0
+      ? React.createElement("div", null, "暂无提供商。")
+      : uniqueProviders.map((provider) => {
+          const candidates = host.filter((h) => h.providers.includes(provider));
+          return React.createElement(ProviderGroup, {
+            key: provider,
+            provider,
+            candidates,
+            enabledName: enabled[provider],
+            busy,
+            onSwitch,
+            onDisable,
+            onInspect,
+            onAdd,
+          });
+        }),
     errors.length > 0
       ? React.createElement(
           "div",
-          { style: { marginTop: 8, color: "var(--dsw-alias-state-error-primary,#d64545)" } },
+          { style: { marginTop: 10, color: "var(--dsw-alias-state-error-primary,#d64545)" } },
           "最近错误：",
           ...errors.slice(-3).map((e, i) =>
-            React.createElement(
-              "div",
-              { key: i, style: { fontSize: 11 } },
-              `[${e.kind}] ${e.key}: ${e.message}`,
-            ),
+            React.createElement("div", { key: i, style: { fontSize: 11 } }, `[${e.kind}] ${e.key}: ${e.message}`),
           ),
         )
-      : null,
+      : React.createElement(
+          "div",
+          { style: { marginTop: 10, fontSize: 11, color: "var(--dsw-alias-label-tertiary,#9aa0ab)" } },
+          "适配器经此界面添加/切换后自动持久化，无需手动编辑配置文件。内置 opencode-go 默认启用。",
+        ),
   );
 }
 
-/** 配置引导区：v2 适配器接入示例。 */
-function ConfigGuideSection() {
-  const [copied, setCopied] = React.useState(false);
-  const sample = [
-    "# cordis.patch.yml（用户层）",
-    "plugins:",
-    "  '@wingsky-1/dsh-provider-usage':",
-    "    adapter: './adapters/my-stats.mjs'   # 用户适配器（v2 契约三函数）",
-    "    provider: 'opencode-go'              # 关联的模型 provider",
-    "    staticPath: '/v1/usage'              # API 路径（与 apiEndpoint 拼接）",
-    "    # autoReload: true                   # 编辑 mjs 后热更新（默认关）",
-  ].join("\n");
-  return React.createElement(
-    "div",
-    { style: sectionStyle },
-    React.createElement("p", { style: titleStyle }, "接入自定义适配器（v2 契约）"),
-    React.createElement(
-      "div",
-      null,
-      "编写一个 mjs 文件导出 version/name/providers/fetchData/formatCapsule/formatPanel，然后在用户层 cordis.patch.yml 声明路径：",
-    ),
-    React.createElement("code", { style: { ...codeStyle, marginTop: 6 } }, sample),
-    React.createElement(
-      "button",
-      {
-        type: "button",
-        onClick: () => {
-          void copyText(sample).then((ok) => {
-            setCopied(ok);
-            setTimeout(() => setCopied(false), 2000);
-          });
-        },
-        style: { marginTop: 6 },
-      },
-      copied ? "已复制 ✓" : "复制配置示例",
-    ),
-  );
-}
+// ---------------------------------------------------------------- 主组件
 
 export function SettingsPage() {
-  const [health, setHealth] = React.useState<HealthView | null>(null);
+  const [meta, setMeta] = React.useState<AdaptersMeta | null>(null);
   const [statsByProvider, setStatsByProvider] = React.useState<Record<string, StatsView | null>>({});
+  const [busy, setBusy] = React.useState(false);
 
   const reload = React.useCallback(async (): Promise<void> => {
     try {
-      const h = (await jsonGet(HEALTH_URL).catch(() => null)) as HealthView | null;
-      setHealth(h);
-      // 对 health 报告的 provider 并行拉 /stats
-      const providers = new Set<string>();
-      if (h?.provider) providers.add(h.provider);
-      for (const a of h?.adapters ?? []) {
-        for (const p of a.enabled ? [h?.provider ?? ""] : []) if (p) providers.add(p);
-      }
+      const m = (await jsonGet(ADAPTERS_URL).catch(() => null)) as AdaptersMeta | null;
+      if (m !== null) setMeta(m);
+      // 对启用中的 provider 拉 /stats
+      const providers = Object.keys(m?.enabled ?? {});
       const pairs = await Promise.all(
-        [...providers].map(async (provider) => {
+        providers.map(async (provider) => {
           const s = (await jsonGet(`${STATS_URL}?provider=${encodeURIComponent(provider)}`).catch(() => null)) as StatsView | null;
           return [provider, s] as const;
         }),
@@ -256,11 +385,85 @@ export function SettingsPage() {
     void reload();
   }, [reload]);
 
+  /** 统一包装：请求期间置 busy，完成后刷新面板数据。 */
+  function mutate(action: () => Promise<unknown>): void {
+    setBusy(true);
+    action()
+      .catch(() => {})
+      .then(() => reload())
+      .finally(() => setBusy(false));
+  }
+
+  const onSwitch = React.useCallback(
+    (provider: string, adapterName: string): void => {
+      mutate(() =>
+        fetchTimeout(SELECT_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ provider, adapterName }),
+        }),
+      );
+    },
+    [reload],
+  );
+
+  const onDisable = React.useCallback(
+    (provider: string): void => {
+      mutate(() =>
+        fetchTimeout(SELECT_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ provider, adapterName: null }),
+        }),
+      );
+    },
+    [reload],
+  );
+
+  /** 检测文件：仅回显导出信息，不登记。 */
+  const onInspect = React.useCallback(async (file: string): Promise<InspectResult> => {
+    try {
+      const res = await fetchTimeout(INSPECT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; adapter?: InspectAdapter; error?: string; detail?: string };
+      if (!res.ok) {
+        return { ok: false, detail: body.detail ?? body.error ?? `HTTP ${res.status}` };
+      }
+      return { ok: true, adapter: body.adapter };
+    } catch (e) {
+      return { ok: false, detail: e instanceof Error ? e.message : String(e) };
+    }
+  }, []);
+
+  /** 登记适配器：仅 file（身份以导出为准），热注册生效并持久化。 */
+  const onAdd = React.useCallback(
+    async (_provider: string, form: { file: string }): Promise<AddResult> => {
+      try {
+        const res = await fetchTimeout(ADD_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ file: form.file }),
+        });
+        const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; detail?: string };
+        if (!res.ok) {
+          return { ok: false, detail: body.detail ?? body.error ?? `HTTP ${res.status}` };
+        }
+        await reload();
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, detail: e instanceof Error ? e.message : String(e) };
+      }
+    },
+    [reload],
+  );
+
   return React.createElement(
     "div",
     { className: "dou-settings", style: { maxWidth: 560 } },
     React.createElement(StatusSection, { statsByProvider }),
-    React.createElement(AdapterSection, { health }),
-    React.createElement(ConfigGuideSection),
+    React.createElement(AdaptersSection, { meta, busy, onSwitch, onDisable, onInspect, onAdd }),
   );
 }

@@ -32,7 +32,7 @@ import {
   loadAndValidateAdapter,
   readStamp,
   stampEqual,
-  makeV2Registry,
+  makeAdapterRegistry,
 } from "../lib/index.js";
 
 // ---------------------------------------------------------------- esc
@@ -261,7 +261,7 @@ assert.equal(sanitizeHtml('<iframe src="x"></iframe>y'), "y");
 // ---------------------------------------------------------------- registry v2
 
 {
-  const reg = makeV2Registry();
+  const reg = makeAdapterRegistry();
   reg.register(validAdapter as never, "user-file", "/tmp/x.mjs");
   assert.ok(reg.get("p1") !== undefined);
   assert.ok(reg.enabledProviders().includes("p1"));

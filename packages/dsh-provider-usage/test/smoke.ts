@@ -55,7 +55,13 @@ function fakeReq(overrides = {}) {
     headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
     method: "GET",
     url: "/",
-    [Symbol.asyncIterator]: async function* () {},
+    // readJsonBody 用 for await 读 body：提供 async-iterator 桩
+    [Symbol.asyncIterator]: async function* () {
+      if (typeof overrides.body === "string" && overrides.body !== "") {
+        yield Buffer.from(overrides.body);
+      }
+      // 无 body 或空 → 直接结束（readJsonBody 得到空 → JSON.parse 抛 → 400）
+    },
     ...overrides,
   };
   return req;
@@ -96,22 +102,23 @@ function makeFakeCtx(overrides = {}) {
   assert.equal(routes.length, 0, "enabled:false 不注册任何路由");
 }
 
-// ---------------------------------------------------------------- 注册四路由
+// ---------------------------------------------------------------- 注册七路由
 
 {
   const { ctx, routes } = makeFakeCtx();
   await apply(ctx, { ...ISOLATED_CONFIG });
   assert.deepEqual(
     routes.map((r) => r.path).sort(),
-    [ROUTES.health, ROUTES.history, ROUTES.stats, ROUTES.adapter].sort(),
-    "注册四条路由（stats/history/health/adapter.mjs）",
+    [ROUTES.health, ROUTES.history, ROUTES.stats, ROUTES.adapters, ROUTES.select, ROUTES.inspect, ROUTES.add].sort(),
+    "注册七条路由（stats/history/adapters.json/select/inspect/add/health）",
   );
   assert.ok(routes.every((r) => r.kind === "exact" || r.kind === "prefix"), "路由 kind 合法");
 }
 
 // ---------------------------------------------------------------- 围栏：403 / 405
 
-for (const routePath of [ROUTES.stats, ROUTES.history, ROUTES.health, ROUTES.adapter]) {
+const POST_ROUTES = new Set([ROUTES.select, ROUTES.inspect, ROUTES.add]);
+for (const routePath of [ROUTES.stats, ROUTES.history, ROUTES.health, ROUTES.adapters, ROUTES.select, ROUTES.inspect, ROUTES.add]) {
   {
     const { ctx, routes } = makeFakeCtx();
     await apply(ctx, { ...ISOLATED_CONFIG });
@@ -122,15 +129,14 @@ for (const routePath of [ROUTES.stats, ROUTES.history, ROUTES.health, ROUTES.ada
     const responses403 = [];
     const res403 = { writeHead: () => {}, end: (chunk) => responses403.push(JSON.parse(chunk)) };
     route.handler(fakeReq({ socket: { remoteAddress: "10.0.0.2" } }), res403);
-    if (routePath !== ROUTES.adapter || responses403.length > 0) {
-      assert.equal(responses403.at(-1)?.error, "forbidden: loopback-only", `${routePath} 非回环 403`);
-    }
+    assert.equal(responses403.at(-1)?.error, "forbidden: loopback-only", `${routePath} 非回环 403`);
 
-    // 非 GET → 405
+    // 方法错 → 405（POST 路由用 DELETE 触发；GET 路由用 POST 触发）
+    const wrongMethod = POST_ROUTES.has(routePath) ? "DELETE" : "POST";
     const responses405 = [];
     const res405 = { writeHead: (code) => { responses405.push({ __code: code }); }, end: () => {} };
-    route.handler(fakeReq({ method: "POST" }), res405);
-    assert.equal(responses405.at(-1)?.__code, 405, `${routePath} 非 GET 405`);
+    route.handler(fakeReq({ method: wrongMethod }), res405);
+    assert.equal(responses405.at(-1)?.__code, 405, `${routePath} 非 ${POST_ROUTES.has(routePath) ? "POST" : "GET"} 405`);
   }
 }
 
@@ -273,6 +279,139 @@ export function formatPanel() { return "<p>ok</p>"; }
     if (typeof d === "function") d(); // 不应抛错
   }
   assert.ok(true, "卸载清理链路正常");
+}
+
+// ---------------------------------------------------------------- adapters.json / select / inspect / add
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dou-adapter-manage-"));
+  const goodFile = join(dir, "manage.mjs");
+  writeFileSync(goodFile, `
+export const version = 2;
+export const name = "manage-stats";
+export const label = "管理测试";
+export const providers = ["opencode-go"];
+export async function fetchData() { return { v: 1 }; }
+export function formatCapsule() { return "<span>x</span>"; }
+export function formatPanel() { return "<p>p</p>"; }
+`, "utf8");
+
+  const { ctx, routes } = makeFakeCtx();
+  await apply(ctx, { ...ISOLATED_CONFIG });
+  const withBody = (body: string) => fakeReq({ method: "POST", body });
+
+  // adapters.json：初始含内置适配器 + modelProviders
+  {
+    const adaptersRoute = routes.find((r) => r.path === ROUTES.adapters);
+    let payload;
+    adaptersRoute.handler(fakeReq(), { writeHead: () => {}, end: (c) => { payload = JSON.parse(c); } });
+    assert.equal(payload.version, 2, "adapters.json 带契约版本 v2");
+    assert.ok(payload.host.some((a) => a.name === OPENCODE_GO_ADAPTER_ID), "内置 opencode-go 在候选列表");
+    assert.ok(Array.isArray(payload.modelProviders), "modelProviders 来自 llm 服务");
+    assert.ok(payload.enabled[OPENCODE_GO_PROVIDER] === OPENCODE_GO_ADAPTER_ID, "内置默认启用");
+  }
+
+  // inspect：合法文件回显导出信息（不注册）
+  {
+    const inspectRoute = routes.find((r) => r.path === ROUTES.inspect);
+    let payload;
+    inspectRoute.handler(withBody(JSON.stringify({ file: goodFile })), { writeHead: () => {}, end: (c) => { payload = JSON.parse(c); } });
+    await new Promise((r) => setTimeout(r, 60));
+    if (payload.ok !== true) console.log("INSPECT PAYLOAD:", JSON.stringify(payload)); assert.equal(payload.ok, true, "inspect 合法文件 ok");
+    assert.equal(payload.adapter.name, "manage-stats", "inspect 回显 name");
+    assert.deepEqual(payload.adapter.providers, ["opencode-go"], "inspect 回显 providers");
+  }
+
+  // inspect：非法文件 → 422 + 可排障 detail
+  {
+    const badFile = join(dir, "bad.mjs");
+    writeFileSync(badFile, `export const version = 2; export const name = "only-name";`, "utf8");
+    const inspectRoute = routes.find((r) => r.path === ROUTES.inspect);
+    let payload;
+    inspectRoute.handler(withBody(JSON.stringify({ file: badFile })), { writeHead: () => {}, end: (c) => { payload = JSON.parse(c); } });
+    await new Promise((r) => setTimeout(r, 60));
+    assert.equal(payload.error, "invalid-adapter", "非法文件 inspect 返回 invalid-adapter");
+    assert.ok(payload.detail.includes("契约校验失败"), "detail 含可排障信息");
+  }
+
+  // inspect：未规整相对路径（../ 穿越形态）→ 400 invalid-file
+  {
+    const inspectRoute = routes.find((r) => r.path === ROUTES.inspect);
+    let payload;
+    inspectRoute.handler(withBody(JSON.stringify({ file: "../evil.mjs" })), { writeHead: () => {}, end: (c) => { payload = JSON.parse(c); } });
+    await new Promise((r) => setTimeout(r, 40));
+    assert.equal(payload.error, "invalid-file", "未规整相对路径 inspect 400");
+  }
+
+  // inspect：绝对路径但非 JS（如 /etc/passwd）→ 加载失败（本地可信，不做路径拒绝，
+  // 但 import 阶段失败登记 adapter-load-failed）
+  {
+    const inspectRoute = routes.find((r) => r.path === ROUTES.inspect);
+    let payload;
+    inspectRoute.handler(withBody(JSON.stringify({ file: "/etc/hostname" })), { writeHead: () => {}, end: (c) => { payload = JSON.parse(c); } });
+    await new Promise((r) => setTimeout(r, 60));
+    assert.ok(payload.error === "adapter-load-failed" || payload.error === "invalid-adapter" || payload.error === "invalid-file",
+      `非 JS 文件加载失败（实际 ${payload.error}）`);
+  }
+
+  // add：成功登记 + 成为启用者 + 持久化到 user-adapters.json
+  {
+    const addRoute = routes.find((r) => r.path === ROUTES.add);
+    let payload;
+    addRoute.handler(withBody(JSON.stringify({ file: goodFile })), { writeHead: () => {}, end: (c) => { payload = JSON.parse(c); } });
+    await new Promise((r) => setTimeout(r, 80));
+    assert.equal(payload.ok, true, "add 成功");
+    assert.equal(payload.adapter.name, "manage-stats");
+    assert.ok(payload.enabled[OPENCODE_GO_PROVIDER] === "manage-stats", "新增适配器成为该 provider 启用者");
+
+    // adapters.json 现在有两条候选（内置 + 用户）
+    const adaptersRoute = routes.find((r) => r.path === ROUTES.adapters);
+    let meta;
+    adaptersRoute.handler(fakeReq(), { writeHead: () => {}, end: (c) => { meta = JSON.parse(c); } });
+    assert.equal(meta.host.length, 2, "候选列表含内置 + 用户");
+  }
+
+  // add：重复 name → 409
+  {
+    const addRoute = routes.find((r) => r.path === ROUTES.add);
+    let payload;
+    addRoute.handler(withBody(JSON.stringify({ file: goodFile })), { writeHead: () => {}, end: (c) => { payload = JSON.parse(c); } });
+    await new Promise((r) => setTimeout(r, 60));
+    assert.equal(payload.error, "duplicate-name", "重复 name add 409");
+  }
+
+  // select：切换回内置
+  {
+    const selectRoute = routes.find((r) => r.path === ROUTES.select);
+    let payload;
+    selectRoute.handler(withBody(JSON.stringify({ provider: OPENCODE_GO_PROVIDER, adapterName: OPENCODE_GO_ADAPTER_ID })), { writeHead: () => {}, end: (c) => { payload = JSON.parse(c); } });
+    await new Promise((r) => setTimeout(r, 40));
+    assert.equal(payload.ok, true, "select 成功");
+    const adaptersRoute = routes.find((r) => r.path === ROUTES.adapters);
+    let meta;
+    adaptersRoute.handler(fakeReq(), { writeHead: () => {}, end: (c) => { meta = JSON.parse(c); } });
+    assert.ok(meta.enabled[OPENCODE_GO_PROVIDER] === OPENCODE_GO_ADAPTER_ID, "切换回内置生效");
+  }
+
+  // select：清空（null）→ 该 provider 无启用
+  {
+    const selectRoute = routes.find((r) => r.path === ROUTES.select);
+    let payload;
+    selectRoute.handler(withBody(JSON.stringify({ provider: OPENCODE_GO_PROVIDER, adapterName: null })), { writeHead: () => {}, end: (c) => { payload = JSON.parse(c); } });
+    await new Promise((r) => setTimeout(r, 40));
+    assert.equal(payload.ok, true, "清空 select 成功");
+    const adaptersRoute = routes.find((r) => r.path === ROUTES.adapters);
+    let meta;
+    adaptersRoute.handler(fakeReq(), { writeHead: () => {}, end: (c) => { meta = JSON.parse(c); } });
+    assert.equal(meta.enabled[OPENCODE_GO_PROVIDER], undefined, "清空后无启用");
+
+    // 清空后 /stats 返回 no-enabled-adapter（默认 provider 已被清空）
+    const stats = routes.find((r) => r.path === ROUTES.stats);
+    let s;
+    stats.handler(fakeReq({ url: `${ROUTES.stats}?provider=${OPENCODE_GO_PROVIDER}` }), { writeHead: () => {}, end: (c) => { s = JSON.parse(c); } });
+    await new Promise((r) => setTimeout(r, 60));
+    assert.equal(s.reason, "no-enabled-adapter", "有候选但清空 → no-enabled-adapter");
+  }
 }
 
 // ---------------------------------------------------------------- 客户端契约
