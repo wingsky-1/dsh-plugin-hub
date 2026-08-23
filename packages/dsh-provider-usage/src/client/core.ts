@@ -160,7 +160,7 @@ export async function fetchUiConfig(): Promise<UiPlacementConfig> {
     const body = (await res.json()) as { ui?: UiPlacementConfig };
     if (body.ui !== undefined) return body.ui;
   } catch { /* 忽略，走默认 */ }
-  return { placement: "top-right", offsetX: 0, offsetY: 8, panelOffsetY: 10 };
+  return { placement: "top-right", offsetX: 0, offsetY: 48, panelOffsetY: 10 };
 }
 
 /** 保存胶囊位置配置（宿主校验/落盘/广播）。 */

@@ -97,27 +97,30 @@ let renderGeneration = 0;
 let lastAdapterVersion = 0;
 
 /** 胶囊/面板位置配置（设置页保存后经 SSE 即时刷新）。 */
-let uiConfig: UiPlacementConfig = { placement: "top-right", offsetX: 0, offsetY: 8, panelOffsetY: 10 };
+let uiConfig: UiPlacementConfig = { placement: "top-right", offsetX: 0, offsetY: 48, panelOffsetY: 10 };
 /** SSE 事件通道（ui-config-changed 监听）。 */
 let eventsSource: EventSource | null = null;
 
-/** 按当前配置重算胶囊位置（模块级：mountFloat 与配置变更共用）。 */
+/** 按当前配置重算胶囊位置（模块级：mountFloat 与配置变更共用）。
+ *  固定定位（fixed）：胶囊钉在会话容器视口（rect）内，滚动内容滑动不改变其位置，
+ *  无动态避让（不再探测 MCP 浮窗做偏移），彻底消除滚动时频繁位移造成的 jitter/闪烁。
+ *  位置完全由配置的 placement/offset 决定（配置值即最终位置，滚动稳定）。 */
 function repositionPill(pill: HTMLElement, target: HTMLElement): void {
-  const scrollTop = target === document.body ? window.scrollY : target.scrollTop;
-  const viewH = target === document.body ? window.innerHeight : target.clientHeight;
+  const rect = target.getBoundingClientRect();
+  if (rect.width === 0 && rect.height === 0) return;
   const isBottom = uiConfig.placement === "bottom-right" || uiConfig.placement === "bottom-left";
   const isLeft = uiConfig.placement === "top-left" || uiConfig.placement === "bottom-left";
-  // MCP 浮窗自动避让：会话容器顶部存在 MCP 浮窗按钮时，胶囊在其下方（不重叠，
-  // 与历史行为等效：原实现 top 42 而非 8，避让量 34 叠加在配置 offsetY 之上）
-  const mcpClearance = target.querySelector("[data-dsh-mcp-float]") !== null ? 34 : 0;
-  // 垂直：top 锚点 → 容器顶部 + offsetY（+MCP 避让）；bottom 锚点 → 可视区底部 - offsetY - 胶囊高
-  const top = isBottom
-    ? scrollTop + Math.max(0, viewH - uiConfig.offsetY - pill.offsetHeight)
-    : scrollTop + uiConfig.offsetY + mcpClearance;
-  pill.style.top = `${top}px`;
+  pill.style.position = "fixed";
   pill.style.bottom = "auto";
-  pill.style.right = isLeft ? "auto" : `${uiConfig.offsetX}px`;
-  pill.style.left = isLeft ? `${uiConfig.offsetX}px` : "auto";
+  // 水平：left 锚点 → 容器左缘 + offsetX；right 锚点 → 容器右缘 - 宽 - offsetX（右侧对齐贴右缘）
+  pill.style.left = isLeft
+    ? `${Math.max(0, rect.left + uiConfig.offsetX)}px`
+    : `${Math.max(0, rect.right - pill.offsetWidth - uiConfig.offsetX)}px`;
+  pill.style.right = "auto";
+  // 垂直：bottom 锚点 → 容器底 - 高 - offsetY（clamp 到视口上缘防溢出）；top 锚点 → 容器顶 + offsetY
+  pill.style.top = isBottom
+    ? `${Math.max(6, rect.bottom - pill.offsetHeight - uiConfig.offsetY)}px`
+    : `${Math.max(0, rect.top + uiConfig.offsetY)}px`;
 }
 
 /** 按当前配置重算胶囊/面板位置（滚动/缩放/配置变更时调用）。 */
