@@ -221,7 +221,7 @@ assert.equal(sanitizeHtml('<iframe src="x"></iframe>y'), "y");
 
 {
   const d = normalizeUiConfig(undefined);
-  assert.deepEqual(d, DEFAULT_UI_CONFIG, "默认配置 top-right/0/8/44");
+  assert.deepEqual(d, DEFAULT_UI_CONFIG, "默认配置 top-right/0/8/10");
   const clamped = normalizeUiConfig({ placement: "bottom-left", offsetX: 99999, offsetY: -3, panelOffsetY: 0.6 });
   assert.equal(clamped.placement, "bottom-left", "合法 placement 透传");
   assert.equal(clamped.offsetX, 2000, "offsetX 上限 clamp");
@@ -235,20 +235,56 @@ assert.equal(sanitizeHtml('<iframe src="x"></iframe>y'), "y");
 // ---------------------------------------------------------------- provider-config 配置链
 
 {
-  // 显式 key 优先
-  const r1 = await resolveProviderConfig("myprov", { apiKey: "explicit", apiEndpoint: "https://x" });
+  // 显式 key 优先（ctx 缺席回落 V1 链）
+  const r1 = await resolveProviderConfig("myprov", undefined, { apiKey: "explicit", apiEndpoint: "https://x" });
   assert.equal(r1.apiKey, "explicit");
   assert.equal(r1.apiEndpoint, "https://x");
 
   // env 回落：provider myprov-test → 环境变量 MYPROV_TEST_API_KEY
   process.env.MYPROV_TEST_API_KEY = "from-env";
-  const r2 = await resolveProviderConfig("myprov-test", {});
+  const r2 = await resolveProviderConfig("myprov-test", undefined, {});
   assert.equal(r2.apiKey, "from-env");
   delete process.env.MYPROV_TEST_API_KEY;
 
   // 无密钥
-  const r3 = await resolveProviderConfig("never-exists-prov", {});
+  const r3 = await resolveProviderConfig("never-exists-prov", undefined, {});
   assert.equal(r3.apiKey, undefined);
+
+  // DSH 凭据 seam：fake ctx 提供 configurable provider + settings.get + credentials.resolve
+  const fakeCtx = {
+    llm: {
+      listConfigurableProviders: () => [
+        { provider: "deepseek-official", displayName: "DeepSeek", settingsNs: "llm-deepseek", settingsPath: [] },
+      ],
+    },
+    get: (name: string) => {
+      if (name === "settings") return { get: (ns: string) => (ns === "llm-deepseek" ? { apiKeyEnv: "DEEPSEEK_API_KEY" } : undefined) };
+      if (name === "credentials") return { resolve: async (ref: string) => (ref === "DEEPSEEK_API_KEY" ? { value: "sk-seam-test" } : undefined) };
+      return undefined;
+    },
+  };
+  const r4 = await resolveProviderConfig("deepseek-official", fakeCtx);
+  assert.equal(r4.apiKey, "sk-seam-test", "seam 经 settings.get(apiKeyEnv) + credentials.resolve 取到 key");
+
+  // seam：settingsPath 下钻（pi-ai 类嵌套命名空间）
+  const fakeCtxNested = {
+    llm: {
+      listConfigurableProviders: () => [
+        { provider: "pi-ai-r", settingsNs: "llm-pi-ai", settingsPath: ["providers", "pi-ai-r"] },
+      ],
+    },
+    get: (name: string) => {
+      if (name === "settings") return { get: (ns: string) => (ns === "llm-pi-ai" ? { providers: { "pi-ai-r": { apiKeyEnv: "RJK_API_KEY" } } } : undefined) };
+      if (name === "credentials") return { resolve: async (ref: string) => (ref === "RJK_API_KEY" ? { value: "sk-nested" } : undefined) };
+      return undefined;
+    },
+  };
+  const r5 = await resolveProviderConfig("pi-ai-r", fakeCtxNested);
+  assert.equal(r5.apiKey, "sk-nested", "seam 沿 settingsPath 下钻取 apiKeyEnv");
+
+  // seam 缺席（ctx 无 llm / provider 不在目录）→ 回落 V1 链
+  const r6 = await resolveProviderConfig("opencode-go", {}, { apiKey: "sk-explicit" });
+  assert.equal(r6.apiKey, "sk-explicit", "seam 缺席时回落 V1 链");
 
   // credentials 文件路径
   assert.ok(credentialsFile("/tmp/dsh").endsWith(".credentials.yaml"));

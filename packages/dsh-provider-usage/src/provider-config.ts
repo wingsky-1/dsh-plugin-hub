@@ -1,16 +1,20 @@
 /**
- * dsh-provider-usage — 模型配置读取（V1 配置链）。
+ * dsh-provider-usage — 模型配置读取（V1 配置链 + DSH 凭据 seam 双层）。
  *
- * 评审结论：V2（settings 命名空间读取）不可行，因为 LlmConfigurableProvider
- * 无标准化 apiKey/baseURL 字段。永久方案为 V1 配置链。
+ * 密钥解析优先级（从高到低）：
+ *   0. DSH 通用凭据 seam——由 configurable provider 目录驱动：读该 provider 的
+ *      settings 命名空间（llm adapter 声明的 `apiKeyEnv` 凭据引用名），再经
+ *      `credentials.resolve(ref)` 按 DSH 统一机制取值（env → .credentials.yaml
+ *      refs → .env）。不猜环境变量名，与 llm 层同源同 key。
+ *   1. 插件配置中的显式 apiKey
+ *   2. 环境变量 {PROVIDER}_API_KEY（大写，连字符替换为下划线）
+ *   3. opencode-go 兼容旧环境变量 OPENCODE_GO_API_KEY
+ *   4. .credentials.yaml 文件：先查 {PROVIDER}_API_KEY 字段，opencode-go
+ *      在标准 key 未命中时再查旧名 OPENCODE_GO_API_KEY
+ *   5. auth.json 文件（仅 opencode-go 兼容）
  *
- * 配置链优先级（从高到低；与 resolveApiKey 实现一致）：
- * 1. 插件配置中的显式 apiEndpoint / apiKey
- * 2. 环境变量 {PROVIDER}_API_KEY（大写，连字符替换为下划线）
- * 3. opencode-go 兼容旧环境变量 OPENCODE_GO_API_KEY
- * 4. .credentials.yaml 文件：先查 {PROVIDER}_API_KEY 字段，
- *    opencode-go 在标准 key 未命中时再查旧名 OPENCODE_GO_API_KEY
- * 5. auth.json 文件（仅 opencode-go 兼容）
+ * V1 链保留为兜底：opencode-go 默认 provider 不在 DSH configurable 目录，
+ * seam 对 null 时须回落 V1 链，勿用 seam 替换。
  */
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -72,27 +76,74 @@ export function opencodeAuthFile(): string {
 }
 
 /**
- * 解析 provider 配置（V1 配置链）。
+ * 解析 provider 配置（DSH 凭据 seam + V1 配置链兜底）。
  *
- * 返回的 apiEndpoint 优先级：
- *   1. 显式配置 input.apiEndpoint
- *   2. 无（必须由适配器 staticPath + 插件配置组合）
+ * @param provider - provider 路由键。
+ * @param ctx - 插件 apply 收到的 cordis 上下文；用于访问 llm/settings/credentials
+ *   服务（经可选访问取用，缺席时回落 V1 链，不引入硬依赖）。
+ * @param input - 插件配置提供（apiEndpoint/apiKey）。
  *
- * 返回的 apiKey 优先级（与实现一致）：
- *   1. 显式配置 input.apiKey
+ * apiKey 解析优先级：
+ *   0. DSH 凭据 seam（见 resolveViaCredentialSeam）
+ *   1. 显式 input.apiKey
  *   2. 环境变量 {PROVIDER}_API_KEY
  *   3. opencode-go 兼容旧环境变量 OPENCODE_GO_API_KEY
- *   4. .credentials.yaml 的 {PROVIDER}_API_KEY
- *      （opencode-go 标准 key 未命中时再查旧名）
+ *   4. .credentials.yaml 的 {PROVIDER}_API_KEY（opencode-go 再查旧名）
  *   5. auth.json（仅 opencode-go）
  */
 export async function resolveProviderConfig(
   provider: string,
+  ctx?: unknown,
   input?: ProviderConfigInput,
 ): Promise<ResolvedProviderConfig> {
   const apiEndpoint = input?.apiEndpoint?.trim() || undefined;
+
+  // 0. DSH 通用凭据 seam（最高优先，且不替换 V1 链）
+  const seamKey = await resolveViaCredentialSeam(provider, ctx);
+  if (seamKey !== undefined) return { apiEndpoint, apiKey: seamKey };
+
+  // 1–5. V1 配置链兜底
   const apiKey = await resolveApiKey(provider, input?.apiKey);
   return { apiEndpoint, apiKey };
+}
+
+/**
+ * DSH 通用凭据 seam：由 configurable provider 目录驱动，读 provider 的 settings
+ * 命名空间（llm adapter 声明的 `apiKeyEnv` 凭据引用名），再经 `credentials.resolve`
+ * 按 DSH 统一机制取值。沿线 `settingsPath` 下钻（覆盖 pi-ai 等嵌套命名空间）。
+ * 任何环节缺席/无值一律返回 undefined（回落 V1 链），不抛错。
+ */
+async function resolveViaCredentialSeam(
+  provider: string,
+  ctx?: unknown,
+): Promise<string | undefined> {
+  const anyCtx = (ctx ?? {}) as {
+    llm?: { listConfigurableProviders?: () => Array<{ provider: string; settingsNs: string; settingsPath?: string[] }> };
+    get?: (name: string) => unknown;
+  };
+  if (typeof anyCtx.llm?.listConfigurableProviders !== "function") return undefined;
+
+  const dir = anyCtx.llm.listConfigurableProviders().find((c) => c.provider === provider);
+  if (dir === undefined) return undefined;
+
+  const settings = anyCtx.get?.("settings") as { get?: (ns: string) => unknown } | undefined;
+  const credentials = anyCtx.get?.("credentials") as { resolve?: (ref: string) => Promise<{ value?: string } | undefined> } | undefined;
+  if (settings === undefined || typeof settings.get !== "function") return undefined;
+  if (credentials === undefined || typeof credentials.resolve !== "function") return undefined;
+
+  // 沿 settingsPath 下钻到 provider profile 对象
+  let node: unknown = settings.get(dir.settingsNs);
+  for (const seg of dir.settingsPath ?? []) {
+    node = (node as Record<string, unknown> | undefined)?.[seg];
+  }
+  const ref = (node as { apiKeyEnv?: string } | undefined)?.apiKeyEnv;
+  if (typeof ref !== "string" || ref.length === 0) return undefined;
+
+  const got = await credentials.resolve(ref);
+  if (got !== undefined && typeof got.value === "string" && got.value.length > 0) {
+    return got.value;
+  }
+  return undefined;
 }
 
 /** 解析密钥（V1 配置链）。 */
