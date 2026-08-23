@@ -222,3 +222,9 @@ dsh web 部署在 Linux 服务器，经局域网被多种设备 / 系统访问�
 验证：客户端交互改动须真机 / 浏览器在**双主题 + 窄屏（pad / phone）**下实测 DOM
 （浏览器 DevTools 或浏览器自动化 MCP 均可）；宿主端逻辑须在三 OS 下可运行。
 构造的样例 fixture 放仓库外工作区，不纳入发布物。
+
+---
+
+> **隔离环境浏览器验证**：客户端 UI 改动（`packages/*/src/client/**` 等）的隔离环境
+> 搭建、浏览器 MCP 核验方法、证据归档与流程契约，已独立为
+> [ISOLATED-VERIFICATION.md](ISOLATED-VERIFICATION.md)，从本节切分并扩展。
