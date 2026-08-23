@@ -3,14 +3,19 @@
  * dsh-provider-usage — unit：历史数据纯函数与 opencode-go 解析辅助。
  *
  * 覆盖：parseJsonl（坏行跳过/校验）、startOfDay（时区/闰年/边界）、
- * legacySampleToData（裸值列/缺列/空值）、pickWindow（防御式解析）。
+ * legacySampleToData（裸值列/缺列/空值）、pickWindow（防御式解析）、
+ * HistoryStore.exportAll（#82 批次 3）。
  */
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { assert } from "./helpers.ts";
 import {
   parseJsonl,
   startOfDay,
   legacySampleToData,
   pickWindow,
+  HistoryStore,
 } from "../lib/index.js";
 
 // ---------------------------------------------------------------- parseJsonl
@@ -115,3 +120,34 @@ assert.equal(pickWindow({ percent: "abc" }, "r", "n", 10)?.percent, null, "非�
 assert.equal(pickWindow({ percent: NaN }, "r", "n", 10)?.percent, null, "NaN percent 返回 null");
 assert.equal(pickWindow({ percent: 5 }, "r", "n", 10)?.raw, undefined, "无 raw 字段返回 undefined");
 assert.equal(pickWindow({ percent: 5, resetsAt: 123 }, "r", "n", 10)?.resetsAt, undefined, "resetsAt 非字符串丢弃");
+
+// ---------------------------------------------------------------- HistoryStore.exportAll
+
+{
+  const root = mkdtempSync(join(tmpdir(), "dou-hist-export-"));
+  const store = new HistoryStore({ root });
+  const now = Date.now();
+  // 写入几条数据（时间用当前时刻，避免 maybePrune 依据日文件名把历史日文件删掉）
+  await store.append("p1", "n1", { time: now - 1000, data: { a: 1 } });
+  await store.append("p1", "n1", { time: now, data: { a: 2 } });
+  const all = await store.exportAll("p1", "n1");
+  assert.equal(all.length, 2, "exportAll 返回两条");
+  assert.equal(all[0].data.a, 1, "exportAll 第一条 data");
+  assert.equal(all[1].data.a, 2, "exportAll 第二条 data");
+}
+
+// exportAll：空目录返回 []
+{
+  const root = mkdtempSync(join(tmpdir(), "dou-hist-export2-"));
+  const store = new HistoryStore({ root });
+  const all = await store.exportAll("absent", "nope");
+  assert.deepEqual(all, [], "exportAll 无数据返回 []");
+}
+
+// exportAll：目录不存在返回 []
+{
+  const root = mkdtempSync(join(tmpdir(), "dou-hist-export3-"));
+  const store = new HistoryStore({ root });
+  const all = await store.exportAll("no-such", "never");
+  assert.deepEqual(all, [], "exportAll 目录不存在返回 []");
+}

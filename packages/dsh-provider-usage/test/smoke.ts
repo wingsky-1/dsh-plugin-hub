@@ -24,6 +24,8 @@ import "./smoke-pure.ts";
 import "./unit-contract.test.ts";
 import "./unit-config.test.ts";
 import "./unit-history.test.ts";
+import "./unit-v1.test.ts";
+import "./unit-apply.test.ts";
 
 import {
   apply,
