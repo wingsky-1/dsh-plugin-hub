@@ -126,6 +126,19 @@ export function panelAnchorForPosition(position: string | undefined): "top" | "b
   return position === "bottom-right" ? "bottom" : "top";
 }
 
+/**
+ * 把客户端扁平形态（{position, offsetX, offsetY, blankY}）归一化为写入 `Config.ui`
+ * 的嵌套补丁（{position, offset:{x,y,blankY}}）。走 normalizeUiConfig 的净化为唯一
+ * 入口：非法值安全回退默认，负数 clamp 到 0，四舍五入。
+ */
+export function buildConfigUiPatch(raw: unknown): UiPlacementConfig {
+  const cfg = normalizeUiConfig(raw);
+  return {
+    position: cfg.position,
+    offset: { x: cfg.offsetX, y: cfg.offsetY, blankY: cfg.blankY },
+  };
+}
+
 /** 面板垂直定位纯函数（供 smoke 断言翻转分支；clamp 到视口内，不溢出）。 */
 export function panelTopForAnchor(
   anchor: "top" | "bottom",
@@ -189,6 +202,8 @@ export class McpManager {
   catalogCache: CatalogCache;
   catalogCachePath: string;
   uiConfigSource: () => any;
+  /** 设置命名空间写入 sink（apply 时经 ctx.inject(["settings"]) 注入；注入不到则写不可用）。 */
+  uiUpdate?: (patch: Record<string, unknown>) => Promise<unknown>;
   sseConnections?: Set<ServerResponse>;
 
   constructor(ctx: Context, store: McpStore) {
@@ -215,6 +230,20 @@ export class McpManager {
   /** 读取 settings 命名空间中的 MCP UI 配置（供 /api/dsh-mcp/config 返回）。 */
   uiConfig(): ClientUiConfig {
     return normalizeUiConfig(this.uiConfigSource());
+  }
+
+  /**
+   * 写入浮窗 UI 配置（/api/dsh-mcp/config POST）。
+   * 把客户端扁平形态归一化为 `Config.ui` 嵌套补丁，经设置命名空间持久化
+   * （settings.update 落盘 → scope.watch → onChange → SSE 广播一帧），随后返回
+   * 归一化后的最新配置。settings 服务不可用时抛错（写不可用）。
+   */
+  async updateUiConfig(raw: unknown): Promise<ClientUiConfig> {
+    if (typeof this.uiUpdate !== "function") {
+      throw new Error("ui config is not writable: settings service unavailable");
+    }
+    await this.uiUpdate({ ui: buildConfigUiPatch(raw) });
+    return this.uiConfig();
   }
 
   /** 从磁盘加载目录缓存（损坏/缺失 → 空缓存，不崩溃）。 */
@@ -674,6 +703,20 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
       broadcastUiConfigChanged();
     },
   });
+
+  // 写入 sink：设置页卡片经 POST /api/dsh-mcp/config 写配置时，通过 settings 服务
+  // 的 namespace update 落盘并触发 scope.watch → onChange → SSE 广播。settings 服务
+  // 未挂载时 uiUpdate 保持 undefined → 写路由返回「不可写」（卡片/设置页本就不渲染）。
+  if (typeof ctx.inject === "function") {
+    ctx.inject(["settings"], (sctx) => {
+      // sctx 注入 settings 服务（cordis 类型面未声明该服务，经 unknown 中转取最小面）。
+      const settings = (sctx as unknown as { settings?: { update?: (ns: string, patch: Record<string, unknown>) => Promise<unknown> } } | undefined)?.settings;
+      if (settings && typeof settings.update === "function") {
+        const update = settings.update;
+        manager.uiUpdate = (patch) => update("dsh-mcp-manager", patch);
+      }
+    });
+  }
 
 
   let disposeRoutes = () => {};

@@ -23,6 +23,7 @@ const pkgDir = join(dirname(fileURLToPath(import.meta.url)), "..");
 import {
   apply,
   broadcastFrame,
+  buildConfigUiPatch,
   buildToolDefinition,
   composeCatalogEntries,
   Config,
@@ -167,6 +168,11 @@ const main = async () => {
   });
   check("client source contract（load id/IIFE/use strict/load once）", () => assertClientSourceContract(pkgDir));
   check("client product contract（执行断言：arrive 可解析/apply/inject）", () => assertClientProductContract(pkgDir));
+  check("client 注册 settings.plugin.item 卡（id/key = 宿主命名空间 dsh-mcp-manager）", () => {
+    const clientSrc = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+    assert.ok(clientSrc.includes("settings.plugin.item"), "settings.plugin.item 卡已注册");
+    assert.ok(clientSrc.includes("dsh-mcp-manager"), "卡片 key/id 引用宿主命名空间 dsh-mcp-manager");
+  });
 
   console.log("Config schema（浮窗 UI 配置迁移到插件自身 Config.ui）");
   check("Config 导出且含 ui 子对象（默认值与合法值域）", () => {
@@ -203,6 +209,23 @@ const main = async () => {
     assert.deepEqual(normalizeUiConfig({ position: "middle-left" }), { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 });
     assert.deepEqual(normalizeUiConfig({ ui: { position: "nope", offset: { x: "abc" } } }), { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 });
     assert.deepEqual(normalizeUiConfig({ offset: {} }), { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 });
+  });
+  check("buildConfigUiPatch：客户端扁平形态 → Config.ui 嵌套补丁（写路径）", () => {
+    // 客户端 POST 的扁平形态 → 宿主写入 Config.ui 的嵌套补丁
+    assert.deepEqual(
+      buildConfigUiPatch({ position: "bottom-right", offsetX: 12, offsetY: 20, blankY: 60 }),
+      { position: "bottom-right", offset: { x: 12, y: 20, blankY: 60 } },
+    );
+    // 缺省 → 安全回退默认
+    assert.deepEqual(
+      buildConfigUiPatch(undefined),
+      { position: "top-right", offset: { x: 8, y: 8, blankY: 40 } },
+    );
+    // 非法 position → 回退 top-right；负偏移 clamp 到 0
+    assert.deepEqual(
+      buildConfigUiPatch({ position: "middle-left", offsetX: -5, offsetY: 3.6, blankY: 40 }),
+      { position: "top-right", offset: { x: 0, y: 4, blankY: 40 } },
+    );
   });
   check("README 含 position/offset 配置说明（键名与默认值，中英）", () => {
     for (const file of ["README.md", "README.en.md"]) {
@@ -756,11 +779,17 @@ const main = async () => {
     const { store, cleanup } = tempStore();
     try {
       const managerState = { sessionCwd: undefined, lastScope: undefined };
+      // 浮窗 UI 配置（可变，验证 config 读/写回传）。
+      let uiCfg = { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 };
       const manager = {
         store,
         logger: { warn: () => {}, info: () => {}, error: () => {} },
         summary: () => ({ servers: [], counts: {} }),
-        uiConfig: () => ({ position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 }),
+        uiConfig: () => uiCfg,
+        updateUiConfig: async (raw) => {
+          uiCfg = normalizeUiConfig(raw);
+          return uiCfg;
+        },
         refreshFromDisk: async () => {},
         setSession: async (cwd) => {
           managerState.sessionCwd = cwd;
@@ -856,7 +885,17 @@ const main = async () => {
         await find(ROUTES.servers).handler(fakeFenceBroken("GET", ROUTES.servers), res);
         assert.equal(res.state.status, 403);
       });
-      await checkAsync("config 非 loopback → 200（只读 UI 配置放开）", async () => {
+      await checkAsync("config GET → 200 读回（默认 top-right/8/8/40）", async () => {
+        const res = fakeRes();
+        await find(ROUTES.config).handler(fakeReq("GET", ROUTES.config), res);
+        assert.equal(res.state.status, 200);
+        const body = JSON.parse(res.state.body);
+        assert.equal(body.position, "top-right");
+        assert.equal(body.offsetX, 8);
+        assert.equal(body.offsetY, 8);
+        assert.equal(body.blankY, 40);
+      });
+      await checkAsync("config 非 loopback GET → 200（只读 UI 配置放开）", async () => {
         const res = fakeRes();
         await find(ROUTES.config).handler(fakeFenceBroken("GET", ROUTES.config), res);
         assert.equal(res.state.status, 200);
@@ -864,9 +903,30 @@ const main = async () => {
         assert.equal(body.position, "top-right");
         assert.equal(body.offsetX, 8);
       });
-      await checkAsync("config 非 GET → 405（方法错围栏）", async () => {
+      await checkAsync("config POST 写 → 200 且读回更新（配置读写）", async () => {
+        const write = fakeRes();
+        await find(ROUTES.config).handler(
+          fakeReq("POST", ROUTES.config, { position: "bottom-right", offsetX: 12, offsetY: 20, blankY: 60 }),
+          write,
+        );
+        assert.equal(write.state.status, 200);
+        const written = JSON.parse(write.state.body);
+        assert.equal(written.position, "bottom-right");
+        assert.equal(written.offsetX, 12);
+        // 读回：POST 后 GET /config 应反映新值（宿主经设置命名空间持久化后的归一化结果）。
+        const read = fakeRes();
+        await find(ROUTES.config).handler(fakeReq("GET", ROUTES.config), read);
+        const readBack = JSON.parse(read.state.body);
+        assert.deepEqual(readBack, { position: "bottom-right", offsetX: 12, offsetY: 20, blankY: 60 });
+      });
+      await checkAsync("config POST 非 loopback → 403（写操作不开放远程页面）", async () => {
         const res = fakeRes();
-        await find(ROUTES.config).handler(fakeReq("POST", ROUTES.config, { position: "bottom-right" }), res);
+        await find(ROUTES.config).handler(fakeFenceBroken("POST", ROUTES.config, { position: "bottom-right" }), res);
+        assert.equal(res.state.status, 403);
+      });
+      await checkAsync("config PUT → 405（仅 GET/POST 合法；方法错围栏）", async () => {
+        const res = fakeRes();
+        await find(ROUTES.config).handler(fakeReq("PUT", ROUTES.config, { position: "bottom-right" }), res);
         assert.equal(res.state.status, 405);
       });
       await checkAsync("events 非 loopback → 403 / 方法错 → 405（围栏不回归）", async () => {

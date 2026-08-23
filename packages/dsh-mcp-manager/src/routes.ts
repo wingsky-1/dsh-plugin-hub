@@ -24,6 +24,7 @@ export interface RoutesManager {
   setSession(cwd: string | undefined): Promise<void>;
   refreshFromDisk(): Promise<void>;
   uiConfig(): ClientUiConfig;
+  updateUiConfig(raw: unknown): Promise<ClientUiConfig>;
   summary(): Record<string, unknown>;
   add(server: Record<string, unknown>, scope?: string): Promise<ServerConfig>;
   update(name: string, patch: Record<string, unknown>, scope?: string): Promise<ServerConfig>;
@@ -89,15 +90,42 @@ export function makeRoutes(manager: RoutesManager, cwd = process.cwd()): WebRout
       kind: "exact",
       path: ROUTES.config,
       handler: async (req, res) => {
-        if (req.method !== "GET") {
-          writeJson(res, 405, { error: `method not allowed: ${req.method}` });
+        // GET：只读 UI 配置（允许非 loopback，供远程页面读取非敏感的展示配置）。
+        if (req.method === "GET") {
+          try {
+            writeJson(res, 200, manager.uiConfig());
+          } catch (error) {
+            handleError(res, error);
+          }
           return;
         }
-        try {
-          writeJson(res, 200, manager.uiConfig());
-        } catch (error) {
-          handleError(res, error);
+        // POST：写入浮窗 UI 配置（position / offset）。写操作只对 loopback 开放；
+        // 经设置命名空间落盘（Config.ui），触发 scope.watch → onChange → SSE 广播一帧，
+        // 客户端收到后重新 GET /config 就地更新浮窗位置，无需重启/轮询。
+        if (req.method === "POST") {
+          if (!isLoopbackRequest(req)) {
+            writeJson(res, 403, { error: "forbidden: loopback-only" });
+            return;
+          }
+          let body: unknown;
+          try {
+            body = await readJsonBody(req);
+          } catch {
+            writeJson(res, 400, { error: "invalid JSON body" });
+            return;
+          }
+          if (typeof body !== "object" || body === null) {
+            writeJson(res, 400, { error: "invalid JSON body" });
+            return;
+          }
+          try {
+            writeJson(res, 200, await manager.updateUiConfig(body));
+          } catch (error) {
+            handleError(res, error);
+          }
+          return;
         }
+        writeJson(res, 405, { error: `method not allowed: ${req.method}` });
       },
     },
     {
