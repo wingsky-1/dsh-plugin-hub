@@ -36,6 +36,9 @@
 提报 → 分诊(triage) → 定位 → 修复分支 → 验证证据 → 复核 → PR(关联 issue) → CI 全绿 squash merge → 自动关闭
 ```
 
+> agent 自治处理时，上述流水线由 `.dsh/skills/oss-pipeline`（loop engine 主循环）
+> 驱动，标签状态机与流转约定见 §4。
+
 1. **分诊**：确认复现信息完整（缺则向报告者追问）；打 `bug` / `enhancement` 标签；
    判断是否 Meta 子项，需要则挂到父 issue 并在父项清单登记。
 2. **定位**：宿主端问题看 `src/index.ts` 与 dsh web 日志（`<插件>:` 前缀行）；
@@ -49,7 +52,8 @@
    `37-basename-fallback-overlay.png`）；截图只截插件 UI 本身（headless element
    screenshot），不带浏览器整窗，避免泄露本机环境。归档后双向引用：PR 正文贴图并
    引用文件路径，issue 评论回链 PR。发布边界已核实安全：各包 files 白名单不含
-   `docs/`，截图不入 tarball，不破坏「发布物不含内部文档」约定。纯宿主端 /
+   `docs/`，截图不入 tarball，不破坏「发布物不含内部文档」约定。PR 模板已内置
+   客户端截图证据清单，见 `.github/PULL_REQUEST_TEMPLATE.md`。纯宿主端 /
    文档改动可跳过本步。
 5. **代码复核闸**（触发条件与 oss-pipeline 复核层一致）：diff 超 ~100 行，或触及
    安全面（围栏 / 脱敏 / 凭据）、`shared/` 契约层、聚合包 `dsh-plugins-all`
@@ -83,6 +87,27 @@
   issue 即该功能的唯一进度源。
 - **安全 / 升级公告**：标题直接给出结论性指引（受影响版本 + 目标版本），正文列
   影响面与升级命令；此类 issue 保持 open 至受影响版本从 registry 视角被完全替代。
+
+## 4. 标签体系与 loop 状态机（agent 自治处理）
+
+**授权标签**（决定 agent 能做什么，维护者专属通道）：
+
+| 标签 | 语义 |
+|---|---|
+| `zone/auto` | 允许 agent 自治处理的入场票；「按此执行」后可由 agent 代打（留痕 + 读回） |
+| `zone/red-line` | 禁止自治，须走原 issue 内 `needs-proposal-review` → 维护者 `approved` |
+| `approved` / `api-approved` | 维护者亲手批准，agent **永不代打** |
+| `needs-proposal-review` / `pending-ratification` | 方案待对抗评审 / 待维护者裁决 |
+| `blocked-human` | 熔断等人；恢复须移除后追加 resume 信号并校验 actor 权限 |
+
+**流转标签**（粗粒度阶段态，由 oss-pipeline 状态机维护）：`loop/deciding` /
+`loop/building` / `loop/review`，加 `blocked-human` 共四态，完成全部摘除。
+
+**状态行评论**（细粒度态）：`[loop] ts=<unix> phase=<阶段> round=<n>
+suspended_at=<挂起点> evidence=<链接>`；写入顺序先评论后标签，不一致以标签为准。
+
+**紧急通道**：`priority/critical` 跳过决策段直进实施段，门禁与 `--auto` 不减，
+合并后 24h 内须在原 issue 补决策评审留痕（追认），逾期由 oss-report 巡检标记违规。
 
 ## 参考文档
 
