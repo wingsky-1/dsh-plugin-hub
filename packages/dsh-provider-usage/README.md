@@ -59,6 +59,8 @@ npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-provider-usage
 
 内置适配器 `opencode-go-builtin`（OpenCode Go 官方 `/v1/usage` 三窗口用量）开箱即用。
 
+> **图解文档**：完整的流程图 / 时序图（启动装配、`/stats` 取数全链路、`/history` 面板、自定义适配器注入三条路径与热更新、客户端交互、密钥解析链）见 [docs/architecture.md](docs/architecture.md)。
+
 ## 配置
 
 | 键 | 默认值 | 含义 |
@@ -74,26 +76,30 @@ npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-provider-usage
 | `cacheDurationMs` | `60000` | 缓存新鲜度（毫秒） |
 | `fetchTimeoutMs` | `2000` | fetchData 强制超时（500–30000ms） |
 | `autoReload` | `false` | 热更新开关（编辑适配器文件后自动加载） |
-| `maxDetailRows` | `5000` | /history 单次查询行数上限 |
 | `maxAgeDays` | `30` | 历史保留天数 |
 | `maxSizeMB` | `20` | 历史大小上限（MB，超限从最旧日文件删） |
 
 ## 密钥解析顺序（V1 配置链）
 
 1. 插件配置 `apiKey`（显式指定）
-2. 环境变量 `{PROVIDER}_API_KEY`（大写，连字符换下划线，如 `OPENCODE_GO_API_KEY`）
-3. `<DSH_HOME>/.credentials.yaml` 中的 `{PROVIDER}_API_KEY`
-4. opencode-go 兼容：环境变量 `OPENCODE_GO_API_KEY`、
-   `~/.local/share/opencode/auth.json` 的 `opencode-go` 条目
+2. 环境变量 `{PROVIDER}_API_KEY`（大写，连字符换下划线）
+3. opencode-go 兼容旧环境变量 `OPENCODE_GO_API_KEY`
+4. `<DSH_HOME>/.credentials.yaml` 的 `{PROVIDER}_API_KEY`
+   （opencode-go 在标准 key 未命中时再查旧名 `OPENCODE_GO_API_KEY`）
+5. opencode-go 兼容：`~/.local/share/opencode/auth.json` 的
+   `opencode-go`（或 `opencode`）条目
 
 ## 路由（全部 loopback 围栏）
 
 | 路由 | 说明 |
 | --- | --- |
 | `GET /api/dsh-provider-usage/stats?provider=X` | 用量统计 + `capsuleHtml`（胶囊内容）+ `status`/`adapterVersion` |
-| `GET /api/dsh-provider-usage/history?provider=X&days=N` | 历史查询 + `panelHtml`（面板内容）+ `truncated` 标记 |
+| `GET /api/dsh-provider-usage/history?provider=X&days=N` | 历史查询 + `panelHtml`（面板内容）+ 查询 `range` |
 | `GET /api/dsh-provider-usage/health` | 健康检查 + 适配器快照 + 错误登记 |
-| `GET /api/dsh-provider-usage/adapter.mjs` | 用户适配器文件静态服务（供浏览器查看；未配置时 404） |
+| `GET /api/dsh-provider-usage/adapters.json` | 适配器候选元数据（设置页主列表同源，含 `modelProviders`） |
+| `POST /api/dsh-provider-usage/adapters/select` | 切换/清空启用适配器 |
+| `POST /api/dsh-provider-usage/adapters/inspect` | 预览适配器文件（回显导出信息，不注册） |
+| `POST /api/dsh-provider-usage/adapters/add` | 登记用户适配器文件（设置页承载） |
 
 ## 适配器开发指南（v2 契约）
 

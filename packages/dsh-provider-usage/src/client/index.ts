@@ -124,11 +124,14 @@ function renderPill(): void {
   const labelEl = floatPill.querySelector(`.${PILL_PREFIX}label`);
   const dotEl = floatPill.querySelector(`.${PILL_PREFIX}dot`);
   const stats = lastStats;
-  // 未配置适配器 → 隐藏浮窗（保留轮询探测恢复）
-  const hide = stats === null || (!stats.configured && !stats.capsuleHtml);
+  // 仅在首帧（尚无任何响应）时隐藏；未配置适配器保留错误态胶囊（红点 + provider 名），
+  // 点击展开面板可见接入引导（复制引导指令按钮可达）
+  const hide = stats === null;
   floatPill.hidden = hide;
   if (stats !== null) {
-    if (stats.error !== null && stats.error !== undefined) {
+    if (!stats.configured) {
+      floatPill.title = `${currentProvider} · 未配置适配器，点击查看接入引导`;
+    } else if (stats.error !== null && stats.error !== undefined) {
       floatPill.title = `用量获取失败：${stats.error}`;
     } else if ((stats as { reason?: string | null }).reason === "busy") {
       floatPill.title = `${stats.adapterName} · 取数进行中，稍候自动刷新`;

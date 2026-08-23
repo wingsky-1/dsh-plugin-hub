@@ -4,11 +4,12 @@
  * 评审结论：V2（settings 命名空间读取）不可行，因为 LlmConfigurableProvider
  * 无标准化 apiKey/baseURL 字段。永久方案为 V1 配置链。
  *
- * 配置链优先级（从高到低）：
+ * 配置链优先级（从高到低；与 resolveApiKey 实现一致）：
  * 1. 插件配置中的显式 apiEndpoint / apiKey
  * 2. 环境变量 {PROVIDER}_API_KEY（大写，连字符替换为下划线）
- * 3. .credentials.yaml 文件中的 {PROVIDER}_API_KEY 字段
- * 4. opencode-go 兼容旧环境变量 OPENCODE_GO_API_KEY
+ * 3. opencode-go 兼容旧环境变量 OPENCODE_GO_API_KEY
+ * 4. .credentials.yaml 文件：先查 {PROVIDER}_API_KEY 字段，
+ *    opencode-go 在标准 key 未命中时再查旧名 OPENCODE_GO_API_KEY
  * 5. auth.json 文件（仅 opencode-go 兼容）
  */
 import { readFile } from "node:fs/promises";
@@ -77,11 +78,12 @@ export function opencodeAuthFile(): string {
  *   1. 显式配置 input.apiEndpoint
  *   2. 无（必须由适配器 staticPath + 插件配置组合）
  *
- * 返回的 apiKey 优先级：
+ * 返回的 apiKey 优先级（与实现一致）：
  *   1. 显式配置 input.apiKey
  *   2. 环境变量 {PROVIDER}_API_KEY
- *   3. .credentials.yaml 中的 {PROVIDER}_API_KEY
- *   4. opencode-go 兼容旧环境变量
+ *   3. opencode-go 兼容旧环境变量 OPENCODE_GO_API_KEY
+ *   4. .credentials.yaml 的 {PROVIDER}_API_KEY
+ *      （opencode-go 标准 key 未命中时再查旧名）
  *   5. auth.json（仅 opencode-go）
  */
 export async function resolveProviderConfig(

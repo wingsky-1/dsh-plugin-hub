@@ -3,6 +3,7 @@
 > 适用插件：`@wingsky-1/dsh-provider-usage`（v2 契约重构版）。
 > 本文是 Agent 自主引导用户接入自定义数据源的权威流程手册。
 > 快速参考：契约细节见第 7 节；完整示例见 `examples/usage-adapter.example.mjs`。
+> 插件内部运行机制（取数管道 / 注册表 / 热更新 / 设置页交互）的图解见 [architecture.md](architecture.md)。
 
 ---
 
@@ -24,7 +25,7 @@
 
 用户从设置页「用量统计」→「接入自定义适配器」复制引导指令发到会话，即触发本流程。指令包含本文档的 **GitHub 链接**（任何工作目录下的 Agent 都能读取）：
 
-> 请为提供商 `<provider>` 创建用量统计适配器（v2 契约）：以该提供商在模型配置中的 API 端点（baseUrl）为起点，自行确认用量接口与鉴权方式，自主设计适配器方案（name/展示名/接口路径），先给我审核方案（含 API 端点），确认后生成 .mjs 文件、告诉保存路径并引导我在 cordis.patch.yml 中声明。按用量统计适配器开发引导文档（https://github.com/wingsky-1/dsh-plugin-hub/blob/main/packages/dsh-provider-usage/docs/adapter-guide.md）执行引导流程。
+> 请为提供商 `<provider>` 创建用量统计适配器（v2 契约）：以该提供商在模型配置中的 API 端点（baseUrl）为起点，自行确认用量接口与鉴权方式，自主设计适配器方案（name/展示名/接口路径），先给我审核方案（含 API 端点），确认后生成 .mjs 文件、告诉保存路径并引导我在「用量统计」设置页添加适配器。按用量统计适配器开发引导文档（https://github.com/wingsky-1/dsh-plugin-hub/blob/main/packages/dsh-provider-usage/docs/adapter-guide.md）执行引导流程。
 
 收到后按以下流程执行（默认全程自主，只保留审核点）：
 
@@ -72,10 +73,16 @@
 
 ### 2.5 步骤 5：引导用户接线
 
-告知用户：
+**主路径：设置页「用量统计」（运行时热注册，无需重启）**。告知用户：
 
 ```
-适配器文件已保存到 `<路径>`。请在用户层 cordis.patch.yml 添加以下配置：
+适配器文件已保存到 `<路径>`。请打开 dsh 设置 → 插件 →「用量统计」：
+1. 在目标 provider 下点「+ 添加适配器」，输入路径 `<路径>`
+2. 点「检测文件」确认导出信息（name/label/providers）
+3. 确认添加——自动注册并成为该 provider 启用者，胶囊下个轮询周期（≤60s）即出数据
+```
+
+**可选叠加**：也可在用户层 cordis.patch.yml 声明（启动时加载，改后需重启 dsh web）：
 
 ```yml
 plugins:
@@ -84,9 +91,6 @@ plugins:
     provider: <provider>
     staticPath: <用量接口路径>
     # autoReload: true    # 编辑 mjs 后自动热更新，无需重启
-```
-
-完成后重启 dsh web（或开启 autoReload 免重启），用量胶囊即出现在聊天界面右上角。
 ```
 
 ---
@@ -157,5 +161,5 @@ export const retention = { maxAgeDays: 30, maxSizeMB: 20 };  // 留存策略
 | `export default { version:1, id, label, providers, fetchUsage }` | 具名导出 `version:2, name, providers, fetchData` |
 | 客户端渲染器 `.js` + `window.__DSH_USAGE__` 桥接 | `formatCapsule`/`formatPanel` 返回 HTML（宿主端渲染） |
 | `summarize`/`samplePoint`/windows 归一化 | 移除，胶囊/面板直接由 format 函数产出 |
-| 设置页运行时 add/select 适配器 | `cordis.patch.yml` 声明 + 热更新 |
+| 设置页运行时 add/select 适配器 | **保留并增强**：设置页「用量统计」承载检测/添加/切换/停用；cordis.patch.yml 声明降为可选叠加 |
 | 历史 v3 多文件 JSON 桶 | 按天分片 JSONL（旧数据启动时自动迁移） |

@@ -383,8 +383,8 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     if (cached !== undefined) return { ...cached, status: 'cached' };
 
     if (mutex.isLocked()) {
-      const last = cache.get(provider);
-      if (last !== undefined) return { ...last, status: 'cached' };
+      // 到这里缓存必为空：cacheFresh 同步删除了过期条目，新鲜条目已在上方返回；
+      // 与持锁取数之间无 await 交错，不存在可复用的残留条目（防御性读取已删）。
       // busy ≠ 未配置：适配器已就绪，仅上一次取数仍在进行（不报红，客户端按 stale 处理）
       const entryName = registry.getEntry(provider)?.name ?? "unknown";
       return {
