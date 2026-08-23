@@ -71,13 +71,13 @@ export const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;
 export const DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS = true;
 
 /** MCP 浮动按钮 UI 配置（隐藏 settings namespace，不在设置页显示）。 */
-export const UiConfigSchema = z.object({
+const UiConfigSchema = z.object({
   position: z.union([z.const("top-right"), z.const("bottom-right")]).default("top-right"),
   offset: z.object({
     x: z.number().default(8),
     y: z.number().default(8),
     blankY: z.number().default(40),
-  }).default({}),
+  }).default({ x: 8, y: 8, blankY: 40 }),
 });
 
 
