@@ -77,7 +77,18 @@ windows) works out of the box.
 | `warmupIntervalMs` | `300000` | Background warmup interval |
 | `cacheDurationMs` | `60000` | Cache freshness (ms) |
 | `fetchTimeoutMs` | `2000` | Forced fetchData timeout (500–30000ms) |
-| `autoReload` | `false` | Hot reload on adapter file edits |
+| `autoReload` | `true` | Hot reload on adapter file edits (enabled by default; set `false` to disable) |
+
+## Capsule placement
+
+The usage capsule (floating pill in the conversation corner) and its panel can be repositioned:
+Settings → Plugins → "用量统计" → "胶囊位置" — pick an anchor (top-right / top-left / bottom-right /
+bottom-left) and offsets (horizontal / vertical / panel gap), then hit Save. It takes effect
+**immediately across all devices** (persisted to `ui.json` and broadcast over SSE; no restart).
+Defaults: top-right / 0 / 8 / 44 — the horizontal 0 aligns the capsule's right edge with the
+MCP-manager float (measured: an 8px in-container gap offsets the float's 8px inset), and with an
+MCP float present the capsule also drops down automatically (34px clearance), so the two floats
+never collide and stay right-aligned by default.
 
 ## API key resolution order (V1 config chain)
 
@@ -155,7 +166,8 @@ plugins:
     adapter: ~/dsh/my-stats.mjs
     provider: my-relay
     staticPath: /api/usage
-    autoReload: true        # hot-reload after editing the mjs
+    # autoReload is enabled by default; to disable (security/stability concerns):
+    # autoReload: false
 ```
 
 Load failures are rejected fail-fast and logged (visible in the settings panel) without

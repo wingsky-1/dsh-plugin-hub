@@ -90,7 +90,8 @@ plugins:
     adapter: <路径>
     provider: <provider>
     staticPath: <用量接口路径>
-    # autoReload: true    # 编辑 mjs 后自动热更新，无需重启
+    # autoReload 默认开启（编辑 mjs 后 2s 内自动热更新，无需重启）；
+    # 如因安全/稳定性顾虑可显式关闭：autoReload: false
 ```
 
 ---
@@ -150,7 +151,7 @@ export const retention = { maxAgeDays: 30, maxSizeMB: 20 };  // 留存策略
 | 设置页「适配器」区显示 load 错误 | 违反 fail-fast 校验（缺导出/name 非法），按错误信息修复 |
 | `/stats` 返回 `status:"stale"` + error | fetchData 抛错/超时：看 error 字段（no-api-key / unauthorized / http-xxx / network / timeout） |
 | 胶囊不显示 | provider 未启用适配器或无数据：`/health` 看 adapters 列表 |
-| 热更新不生效 | `autoReload` 未开 / 文件 mtime+size 未变化 / 新版本契约校验失败（保留旧版） |
+| 热更新不生效 | `autoReload` 被显式关闭 / 文件 mtime+size 未变化 / 新版本契约校验失败（保留旧版） |
 
 ---
 

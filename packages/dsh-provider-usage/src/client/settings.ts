@@ -7,7 +7,8 @@
  * 用量可视化展示宿主端渲染的胶囊 HTML。
  */
 import * as React from "react";
-import { STATS_URL, ADAPTERS_URL, SELECT_URL, INSPECT_URL, ADD_URL, fetchTimeout } from "./core.js";
+import { STATS_URL, ADAPTERS_URL, SELECT_URL, INSPECT_URL, ADD_URL, fetchTimeout, fetchUiConfig, saveUiConfig } from "./core.js";
+import type { UiPlacementConfig } from "./core.js";
 import { splitProviderList, providerBadgeText } from "../client-logic.js";
 import type { ProviderListItem } from "../client-logic.js";
 
@@ -116,6 +117,110 @@ function statusColor(status: string | undefined): string {
   if (status === "stale") return "var(--dsw-alias-state-warn-primary,#c9820b)";
   if (status === "fresh" || status === "cached") return "var(--dsw-alias-state-success-primary,#0f9d6e)";
   return "var(--dsw-alias-state-error-primary,#d64545)";
+}
+
+/** 胶囊位置配置区：锚点 + 偏移输入，保存即热更新（宿主落盘 + SSE 广播）。 */
+const PLACEMENT_OPTIONS: Array<{ value: UiPlacementConfig["placement"]; label: string }> = [
+  { value: "top-right", label: "右上" },
+  { value: "top-left", label: "左上" },
+  { value: "bottom-right", label: "右下" },
+  { value: "bottom-left", label: "左下" },
+];
+
+function UiSection() {
+  const [cfg, setCfg] = React.useState<UiPlacementConfig | null>(null);
+  const [saving, setSaving] = React.useState(false);
+  const [msg, setMsg] = React.useState<{ ok: boolean; text: string } | null>(null);
+
+  React.useEffect(() => {
+    let live = true;
+    void fetchUiConfig().then((c) => {
+      if (live) setCfg(c);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  if (cfg === null) return null; // 未加载完成不渲染，避免表单闪烁
+
+  const set = (patch: Partial<UiPlacementConfig>): void => setCfg((c) => (c !== null ? { ...c, ...patch } : c));
+
+  const save = async (): Promise<void> => {
+    setSaving(true);
+    setMsg(null);
+    try {
+      await saveUiConfig(cfg);
+      setMsg({ ok: true, text: "已保存——胶囊位置即时生效（所有设备）" });
+    } catch (e) {
+      setMsg({ ok: false, text: `保存失败：${e instanceof Error ? e.message : String(e)}` });
+    }
+    setSaving(false);
+  };
+
+  const numInput = (key: "offsetX" | "offsetY" | "panelOffsetY", label: string): React.ReactNode =>
+    React.createElement(
+      "label",
+      { style: { marginRight: 12, whiteSpace: "nowrap" } },
+      label,
+      React.createElement("input", {
+        type: "number",
+        min: 0,
+        max: 2000,
+        value: String(cfg[key]),
+        style: { width: 64, marginLeft: 6, padding: "2px 6px", border: "1px solid var(--dsw-alias-border-l2,#e8eaf0)", borderRadius: 4 },
+        onChange: (e: unknown) => {
+          const v = Number((e as { target: { value: string } }).target.value);
+          set({ [key]: Number.isFinite(v) ? Math.min(2000, Math.max(0, Math.round(v))) : 0 } as Partial<UiPlacementConfig>);
+        },
+      }),
+    );
+
+  return React.createElement(
+    "div",
+    { style: sectionStyle },
+    React.createElement("h4", { style: titleStyle }, "胶囊位置"),
+    React.createElement(
+      "div",
+      { style: { marginBottom: 8 } },
+      "锚点：",
+      React.createElement(
+        "select",
+        {
+          value: cfg.placement,
+          style: { marginLeft: 6, padding: "2px 6px", border: "1px solid var(--dsw-alias-border-l2,#e8eaf0)", borderRadius: 4 },
+          onChange: (e: unknown) => set({ placement: (e as { target: { value: UiPlacementConfig["placement"] } }).target.value }),
+        },
+        PLACEMENT_OPTIONS.map((o) => React.createElement("option", { key: o.value, value: o.value }, o.label)),
+      ),
+    ),
+    React.createElement(
+      "div",
+      { style: { marginBottom: 8 } },
+      numInput("offsetX", "水平偏移"),
+      numInput("offsetY", "垂直偏移"),
+      numInput("panelOffsetY", "面板间距"),
+    ),
+    React.createElement(
+      "button",
+      {
+        type: "button",
+        className: "dou-btn",
+        disabled: saving,
+        onClick: () => {
+          void save();
+        },
+      },
+      saving ? "保存中…" : "保存",
+    ),
+    msg !== null
+      ? React.createElement(
+          "span",
+          { style: { marginLeft: 10, color: msg.ok ? "var(--dsw-alias-state-success-primary,#0f9d6e)" : "var(--dsw-alias-state-error-primary,#d64545)" } },
+          msg.text,
+        )
+      : null,
+  );
 }
 
 /** 用量可视化区：各启用 provider 的状态点 + 胶囊内容（宿主端渲染 HTML）。 */
@@ -670,6 +775,7 @@ export function SettingsPage() {
     "div",
     { className: "dou-settings", style: { maxWidth: 560 } },
     React.createElement(UsageSection, { statsByProvider }),
+    React.createElement(UiSection),
     React.createElement(ProviderListSection, {
       meta,
       main: list.main,

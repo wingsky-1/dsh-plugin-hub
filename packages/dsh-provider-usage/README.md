@@ -75,9 +75,13 @@ npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-provider-usage
 | `warmupIntervalMs` | `300000` | 后台预热间隔（无客户端访问时保持历史连续） |
 | `cacheDurationMs` | `60000` | 缓存新鲜度（毫秒） |
 | `fetchTimeoutMs` | `2000` | fetchData 强制超时（500–30000ms） |
-| `autoReload` | `false` | 热更新开关（编辑适配器文件后自动加载） |
+| `autoReload` | `true` | 热更新开关（编辑适配器文件后自动加载；默认开启，可显式 `false` 关闭） |
 | `maxAgeDays` | `30` | 历史保留天数 |
 | `maxSizeMB` | `20` | 历史大小上限（MB，超限从最旧日文件删） |
+
+## 胶囊位置配置
+
+用量胶囊（会话右上角悬浮球）与面板的位置支持自定义：打开设置 → 插件 →「用量统计」→「胶囊位置」区，选择锚点（右上 / 左上 / 右下 / 左下）与偏移（水平 / 垂直 / 面板间距）后点「保存」——**立即生效且跨设备同步**（宿主落盘 `ui.json` 并经 SSE 广播，无需重启）。默认值：右上 / 0 / 8 / 44——水平偏移 0 使胶囊右缘与 MCP 管理器浮窗右缘对齐（实测容器内间隙 8px 恰好抵消），垂直方向有 MCP 浮窗时自动下移避让（叠加 34px），默认两胶囊不冲突且右对齐。
 
 ## 密钥解析顺序（V1 配置链）
 
@@ -151,7 +155,8 @@ plugins:
     adapter: ~/dsh/my-stats.mjs
     provider: my-relay
     staticPath: /api/usage
-    autoReload: true        # 编辑 mjs 后自动热更新
+    # autoReload 默认开启；如需关闭（安全/稳定性顾虑）显式声明：
+    # autoReload: false
 ```
 
 加载失败 fail-fast 拒收并登记错误（设置面板可见），不影响插件其余功能。路径安全：相对路径只允许落在 `DSH_HOME` 或插件 home 内，未规整形态（`../` 穿越）一律 400 拒绝。

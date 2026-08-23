@@ -9,6 +9,8 @@
  * - POST /api/dsh-provider-usage/adapters/inspect 预览适配器文件（回显导出信息，不注册）
  * - POST /api/dsh-provider-usage/adapters/add 登记用户适配器文件（设置页承载，免手改配置）
  * - GET /api/dsh-provider-usage/health  健康检查 + 适配器快照
+ * - GET/POST /api/dsh-provider-usage/ui-config 胶囊位置配置（读取/保存，保存后 SSE 广播）
+ * - GET /api/dsh-provider-usage/events  SSE 事件通道（ui-config-changed 等，客户端即时热更新）
  */
 import { readFile, writeFile, rename, unlink, mkdir, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -22,6 +24,7 @@ import { Mutex } from "async-mutex";
 import z from "schemastery";
 import type { Context } from "@deepseek-ai/cordis";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
+import type { ServerResponse } from "node:http";
 import type { UsageStatsAdapter } from "./contracts.js";
 import { describeUsageStatsAdapterShape, ADAPTER_CONTRACT_VERSION } from "./contracts.js";
 import { makeAdapterRegistry } from "./registry.js";
@@ -59,6 +62,8 @@ export const ROUTES: Record<string, string> = {
   inspect: "/api/dsh-provider-usage/adapters/inspect",
   add: "/api/dsh-provider-usage/adapters/add",
   health: "/api/dsh-provider-usage/health",
+  uiConfig: "/api/dsh-provider-usage/ui-config",
+  events: "/api/dsh-provider-usage/events",
 };
 
 export const DEFAULT_CONFIG = {
@@ -71,10 +76,80 @@ export const DEFAULT_CONFIG = {
   warmupIntervalMs: 300000,
   cacheDurationMs: 60000,
   fetchTimeoutMs: 2000,
-  autoReload: false,
+  autoReload: true,
   maxAgeDays: 30,
   maxSizeMB: 20,
 };
+
+// ------------------------------------------------------------------ 胶囊位置 UI 配置
+
+/** 胶囊/面板位置配置（设置页「胶囊位置」区维护，持久化到 historyRoot/ui.json）。 */
+export interface UiPlacementConfig {
+  /** 胶囊锚点：右上/左上/右下/左下（默认 top-right = 历史行为）。 */
+  placement: "top-right" | "top-left" | "bottom-right" | "bottom-left";
+  /** 胶囊水平偏移 px（对 left 或 right 生效）。 */
+  offsetX: number;
+  /** 胶囊垂直偏移 px（对 top 或 bottom 生效）。 */
+  offsetY: number;
+  /** 面板相对胶囊下缘的垂直间距 px。 */
+  panelOffsetY: number;
+}
+
+export const DEFAULT_UI_CONFIG: UiPlacementConfig = {
+  placement: "top-right",
+  offsetX: 0,
+  offsetY: 8,
+  panelOffsetY: 44,
+};
+
+const UI_PLACEMENTS: UiPlacementConfig["placement"][] = ["top-right", "top-left", "bottom-right", "bottom-left"];
+
+/** 校验并归一化客户端提交的 UI 配置（非法值回退默认；offset 限制 0–2000）。 */
+export function normalizeUiConfig(raw: unknown): UiPlacementConfig {
+  const src = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
+  const placement = UI_PLACEMENTS.includes(src.placement as UiPlacementConfig["placement"])
+    ? (src.placement as UiPlacementConfig["placement"])
+    : DEFAULT_UI_CONFIG.placement;
+  const clamp = (v: unknown, dflt: number): number => {
+    const n = typeof v === "number" && Number.isFinite(v) ? v : Number(v);
+    return Number.isFinite(n) ? Math.min(2000, Math.max(0, Math.round(n))) : dflt;
+  };
+  return {
+    placement,
+    offsetX: clamp(src.offsetX, DEFAULT_UI_CONFIG.offsetX),
+    offsetY: clamp(src.offsetY, DEFAULT_UI_CONFIG.offsetY),
+    panelOffsetY: clamp(src.panelOffsetY, DEFAULT_UI_CONFIG.panelOffsetY),
+  };
+}
+
+/** UI 配置持久化文件（historyRoot 下，0600）。 */
+export function uiConfigFile(root: string): string {
+  return join(root, "ui.json");
+}
+
+/** 读取 UI 配置（文件缺失/损坏回退默认）。 */
+export async function readUiConfig(root: string): Promise<UiPlacementConfig> {
+  try {
+    const text = await readFile(uiConfigFile(root), "utf8");
+    return normalizeUiConfig(JSON.parse(text));
+  } catch {
+    return { ...DEFAULT_UI_CONFIG };
+  }
+}
+
+/** 原子写 UI 配置（tmp + rename，0600；根目录缺失时先建）。 */
+export async function writeUiConfig(root: string, cfg: UiPlacementConfig): Promise<void> {
+  const file = uiConfigFile(root);
+  await mkdir(root, { recursive: true });
+  const tmp = `${file}.${Date.now()}.tmp`;
+  await writeFile(tmp, JSON.stringify(normalizeUiConfig(cfg)), { mode: 0o600 });
+  await rename(tmp, file);
+}
+
+/** 序列化一帧 SSE data 行（同 dsh-mcp-manager 的 sseData 语义）。 */
+export function sseData(payload: unknown): string {
+  return `data: ${JSON.stringify(payload)}\n\n`;
+}
 
 export interface NormalizedConfig {
   adapter: string;
@@ -110,7 +185,7 @@ export const Config: z<{
   warmupIntervalMs: z.number().default(DEFAULT_CONFIG.warmupIntervalMs).description("后台预热间隔毫秒").disabled(true),
   cacheDurationMs: z.number().default(DEFAULT_CONFIG.cacheDurationMs).description("缓存新鲜度毫秒").disabled(true),
   fetchTimeoutMs: z.number().default(DEFAULT_CONFIG.fetchTimeoutMs).description("取数超时毫秒").disabled(true),
-  autoReload: z.boolean().default(false).description("热更新开关（编辑适配器 mjs 后自动重新加载）"),
+  autoReload: z.boolean().default(true).description("热更新开关（编辑适配器 mjs 后自动重新加载；默认开启，可显式 false 关闭）"),
   maxAgeDays: z.number().default(DEFAULT_CONFIG.maxAgeDays).description("历史数据保留天数").disabled(true),
   maxSizeMB: z.number().default(DEFAULT_CONFIG.maxSizeMB).description("历史数据大小上限（MB）").disabled(true),
 });
@@ -316,6 +391,19 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     if (loaded.ok) registry.register(loaded.adapter, "user-file", file);
   }
 
+  // 缓存（声明提前：热更新 onReload 回调依赖 cache，须在热更新块前就绪）
+  const cache = new Map<string, V2PipelineResult>();
+
+  // 胶囊位置 UI 配置（设置页读写；SSE 广播变更）
+  const uiConfig = await readUiConfig(historyRoot);
+  const sseClients = new Set<ServerResponse>();
+  const broadcastUiConfigChanged = (): void => {
+    const frame = sseData({ type: "ui-config-changed" });
+    for (const res of sseClients) {
+      try { res.write(frame); } catch { /* 忽略掉线连接 */ }
+    }
+  };
+
   // 3. 热更新（config.adapter 声明 + 设置页登记的文件；autoReload=true 时生效）
   const hotReloaders: HotReloadableAdapter[] = [];
   if (config.autoReload) {
@@ -358,8 +446,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     else registry.select(provider, name);
   }
 
-  // 5. 缓存 + 互斥锁
-  const cache = new Map<string, V2PipelineResult>();
+  // 5. 互斥锁（缓存已在上方声明）
   const mutex = new Mutex();
 
   function cacheFresh(provider: string): V2PipelineResult | undefined {
@@ -689,9 +776,66 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     },
   };
 
+  // 7b. 胶囊位置配置（GET 读取 / POST 保存，保存后 SSE 广播即时热更新）
+  const uiConfigRoute: WebRoute = {
+    kind: "exact",
+    path: ROUTES.uiConfig,
+    handler: async (req, res) => {
+      if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
+      if (req.method === "GET") {
+        writeJson(res, 200, { ok: true, ui: uiConfig });
+        return;
+      }
+      if (req.method !== "POST") return writeJson(res, 405, { error: `method not allowed: ${req.method}` });
+      let body: Record<string, unknown>;
+      try {
+        const raw = await readJsonBody(req);
+        if (typeof raw !== "object" || raw === null) return writeJson(res, 400, { error: "bad-json" });
+        body = raw as Record<string, unknown>;
+      } catch {
+        return writeJson(res, 400, { error: "bad-json" });
+      }
+      const next = normalizeUiConfig(body);
+      Object.assign(uiConfig, next);
+      try {
+        await writeUiConfig(historyRoot, uiConfig);
+      } catch {
+        return writeJson(res, 500, { error: "persist-failed" });
+      }
+      broadcastUiConfigChanged();
+      writeJson(res, 200, { ok: true, ui: uiConfig });
+    },
+  };
+
+  // 7c. SSE 事件通道（客户端 EventSource 订阅；配置变更广播 ui-config-changed，内容不随帧传输）
+  const eventsRoute: WebRoute = {
+    kind: "exact",
+    path: ROUTES.events,
+    handler: (req, res) => {
+      if (!isLoopbackRequest(req)) {
+        writeJson(res, 403, { error: "forbidden: loopback-only" });
+        return;
+      }
+      if (req.method !== "GET") {
+        writeJson(res, 405, { error: `method not allowed: ${req.method}` });
+        return;
+      }
+      res.writeHead(200, {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+        connection: "keep-alive",
+      });
+      res.write(": connected\n\n");
+      sseClients.add(res);
+      res.on("close", () => {
+        sseClients.delete(res);
+      });
+    },
+  };
+
   const disposeRoutes = ctx.effect(
     () => {
-      const routeDisposers = [statsRoute, historyRoute, healthRoute, adaptersRoute, selectRoute, inspectRoute, addRoute].map((route) =>
+      const routeDisposers = [statsRoute, historyRoute, healthRoute, adaptersRoute, selectRoute, inspectRoute, addRoute, uiConfigRoute, eventsRoute].map((route) =>
         ctx.webServer.register(route),
       );
       return () => {
@@ -729,6 +873,10 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       disposeRoutes();
       if (warmupTimer !== null) clearInterval(warmupTimer);
       for (const hr of hotReloaders) hr.stop();
+      for (const res of sseClients) {
+        try { res.end(); } catch { /* 忽略 */ }
+      }
+      sseClients.clear();
       cache.clear();
       mutex.cancel();
     },

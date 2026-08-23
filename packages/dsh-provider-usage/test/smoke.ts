@@ -10,7 +10,7 @@
  * - /health 快照形状
  * - 客户端 bundle 契约面与路由一致性
  */
-import { readFileSync, mkdtempSync, writeFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, writeFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertClientProductContract, assertClientSourceContract } from "../../../test/smoke-lib.ts";
@@ -102,23 +102,23 @@ function makeFakeCtx(overrides = {}) {
   assert.equal(routes.length, 0, "enabled:false 不注册任何路由");
 }
 
-// ---------------------------------------------------------------- 注册七路由
+// ---------------------------------------------------------------- 注册九路由
 
 {
   const { ctx, routes } = makeFakeCtx();
   await apply(ctx, { ...ISOLATED_CONFIG });
   assert.deepEqual(
     routes.map((r) => r.path).sort(),
-    [ROUTES.health, ROUTES.history, ROUTES.stats, ROUTES.adapters, ROUTES.select, ROUTES.inspect, ROUTES.add].sort(),
-    "注册七条路由（stats/history/adapters.json/select/inspect/add/health）",
+    [ROUTES.health, ROUTES.history, ROUTES.stats, ROUTES.adapters, ROUTES.select, ROUTES.inspect, ROUTES.add, ROUTES.uiConfig, ROUTES.events].sort(),
+    "注册九条路由（stats/history/adapters.json/select/inspect/add/health/ui-config/events）",
   );
   assert.ok(routes.every((r) => r.kind === "exact" || r.kind === "prefix"), "路由 kind 合法");
 }
 
 // ---------------------------------------------------------------- 围栏：403 / 405
 
-const POST_ROUTES = new Set([ROUTES.select, ROUTES.inspect, ROUTES.add]);
-for (const routePath of [ROUTES.stats, ROUTES.history, ROUTES.health, ROUTES.adapters, ROUTES.select, ROUTES.inspect, ROUTES.add]) {
+const POST_ROUTES = new Set([ROUTES.select, ROUTES.inspect, ROUTES.add, ROUTES.uiConfig]);
+for (const routePath of [ROUTES.stats, ROUTES.history, ROUTES.health, ROUTES.adapters, ROUTES.select, ROUTES.inspect, ROUTES.add, ROUTES.uiConfig, ROUTES.events]) {
   {
     const { ctx, routes } = makeFakeCtx();
     await apply(ctx, { ...ISOLATED_CONFIG });
@@ -140,8 +140,52 @@ for (const routePath of [ROUTES.stats, ROUTES.history, ROUTES.health, ROUTES.ada
   }
 }
 
-// ---------------------------------------------------------------- /stats v2 响应
+// ---------------------------------------------------------------- ui-config / events
 
+{
+  const { ctx, routes } = makeFakeCtx();
+  await apply(ctx, { ...ISOLATED_CONFIG });
+  const uiRoute = routes.find((r) => r.path === ROUTES.uiConfig);
+  const evRoute = routes.find((r) => r.path === ROUTES.events);
+  assert.ok(uiRoute !== undefined && evRoute !== undefined, "ui-config/events 路由存在");
+
+  // GET 返回默认配置
+  let payload;
+  uiRoute.handler(fakeReq({ method: "GET" }), {
+    writeHead: () => {},
+    end: (chunk) => { payload = JSON.parse(chunk); },
+  });
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(payload.ok, true, "ui-config GET ok");
+  assert.equal(payload.ui.placement, "top-right", "默认 placement top-right");
+
+  // POST 保存：非法 placement 回退默认、offset clamp、落盘 ui.json
+  let postPayload;
+  uiRoute.handler(
+    fakeReq({
+      method: "POST",
+      body: JSON.stringify({ placement: "middle", offsetX: 99999, offsetY: -5, panelOffsetY: 10 }),
+    }),
+    {
+      writeHead: () => {},
+      end: (chunk) => { postPayload = JSON.parse(chunk); },
+    },
+  );
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(postPayload.ok, true, "ui-config POST ok");
+  assert.equal(postPayload.ui.placement, "top-right", "非法 placement 回退默认");
+  assert.equal(postPayload.ui.offsetX, 2000, "offsetX clamp 2000");
+  assert.equal(postPayload.ui.offsetY, 0, "offsetY clamp 0");
+  assert.equal(postPayload.ui.panelOffsetY, 10, "panelOffsetY 透传");
+
+  // ui.json 已落盘（DSH_HOME 隔离目录内）
+  const uiFile = join(process.env.DSH_HOME, "dsh-provider-usage", "ui.json");
+  assert.ok(existsSync(uiFile), "ui.json 已落盘");
+  const stored = JSON.parse(readFileSync(uiFile, "utf8"));
+  assert.equal(stored.placement, "top-right", "落盘值已归一化");
+}
+
+// ---------------------------------------------------------------- /stats v2 响应
 {
   const { ctx, routes } = makeFakeCtx();
   await apply(ctx, { ...ISOLATED_CONFIG });
