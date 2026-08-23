@@ -22,9 +22,9 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { checkAggregateConsistency, listPluginDirs, loadManifest, warnUnknownEntries } from './plugins-manifest-lib.ts'
+import { checkAggregateConsistency, listPluginDirs, loadManifest, warnUnknownEntries } from '../lib/plugins-manifest-lib.ts'
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const CHECK = process.argv.includes('--check')
 const AGGREGATE_NAME = 'dsh-plugins-all'
 const PATCH_PATH = join(ROOT, 'packages', AGGREGATE_NAME, 'cordis.patch.yml')

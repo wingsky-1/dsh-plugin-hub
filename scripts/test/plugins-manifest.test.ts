@@ -11,14 +11,14 @@
  *   - 目录集 ↔ manifest.active 双向不等（新目录未登记 / active 悬空）
  *   - loadManifest：JSON 语法错、形状错、名字不合规、active∩retired 重名、数组重复项
  *   - 正向全绿：当前真实 manifest + 真实 packages/ 目录
- * 运行：node --test scripts/plugins-manifest.test.ts（或 pnpm test:scripts）
+ * 运行：node --test scripts/test/plugins-manifest.test.ts（或 pnpm test:scripts）
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { checkAggregateConsistency, listPluginDirs, loadManifest } from './plugins-manifest-lib.ts'
+import { checkAggregateConsistency, listPluginDirs, loadManifest } from '../lib/plugins-manifest-lib.ts'
 
 const ACTIVE = ['dsh-alpha', 'dsh-beta']
 const MANIFEST = {
@@ -30,9 +30,9 @@ const MANIFEST = {
 
 function tempRepo() {
   const dir = mkdtempSync(join(tmpdir(), 'pm-test-'))
-  // 预建 packages/ 与 scripts/，各用例按需写入
+  // 预建 packages/ 与 scripts/data/，各用例按需写入
   mkdirSync(join(dir, 'packages'), { recursive: true })
-  mkdirSync(join(dir, 'scripts'), { recursive: true })
+  mkdirSync(join(dir, 'scripts', 'data'), { recursive: true })
   return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) }
 }
 
@@ -40,7 +40,7 @@ function fixtureRepo(manifestObj) {
   const { dir, cleanup } = tempRepo()
   mkdirSync(join(dir, 'packages', 'dsh-alpha'), { recursive: true })
   mkdirSync(join(dir, 'packages', 'dsh-beta'), { recursive: true })
-  writeFileSync(join(dir, 'scripts', 'plugins-manifest.json'), JSON.stringify(manifestObj))
+  writeFileSync(join(dir, 'scripts', 'data', 'plugins-manifest.json'), JSON.stringify(manifestObj))
   return { dir, cleanup }
 }
 
@@ -112,7 +112,7 @@ test('#6 JSON 语法错 → 单行友好错误（非裸 SyntaxError）', () => {
   const { dir, cleanup } = tempRepo()
   try {
     mkdirSync(join(dir, 'packages', 'dsh-alpha'), { recursive: true })
-    writeFileSync(join(dir, 'scripts', 'plugins-manifest.json'), '{ active: ')
+    writeFileSync(join(dir, 'scripts', 'data', 'plugins-manifest.json'), '{ active: ')
     assert.throws(() => loadManifest(dir), (e) => /JSON 语法错误/.test(e.message) && !/SyntaxError/.test(e.message))
   } finally {
     cleanup()
@@ -123,10 +123,10 @@ test('#7 形状错 / 名字不合规 → 报错', () => {
   const { dir, cleanup } = tempRepo()
   try {
     // 缺 active
-    writeFileSync(join(dir, 'scripts', 'plugins-manifest.json'), JSON.stringify({ retired: [] }))
+    writeFileSync(join(dir, 'scripts', 'data', 'plugins-manifest.json'), JSON.stringify({ retired: [] }))
     assert.throws(() => loadManifest(dir), /缺 active 数组/)
     // 名字不合规
-    writeFileSync(join(dir, 'scripts', 'plugins-manifest.json'), JSON.stringify({ active: ['Dsh_Foo'], retired: [] }))
+    writeFileSync(join(dir, 'scripts', 'data', 'plugins-manifest.json'), JSON.stringify({ active: ['Dsh_Foo'], retired: [] }))
     assert.throws(() => loadManifest(dir), /非法名字/)
   } finally {
     cleanup()
@@ -136,12 +136,12 @@ test('#7 形状错 / 名字不合规 → 报错', () => {
 test('#8 active∩retired 重名 / 数组重复项 → 报错', () => {
   const { dir, cleanup } = tempRepo()
   try {
-    writeFileSync(join(dir, 'scripts', 'plugins-manifest.json'), JSON.stringify({
+    writeFileSync(join(dir, 'scripts', 'data', 'plugins-manifest.json'), JSON.stringify({
       active: ['dsh-a'],
       retired: [{ name: 'dsh-a' }],
     }))
     assert.throws(() => loadManifest(dir), /同时出现在 active 与 retired/)
-    writeFileSync(join(dir, 'scripts', 'plugins-manifest.json'), JSON.stringify({
+    writeFileSync(join(dir, 'scripts', 'data', 'plugins-manifest.json'), JSON.stringify({
       active: ['dsh-a', 'dsh-a'],
       retired: [],
     }))
@@ -154,7 +154,7 @@ test('#8 active∩retired 重名 / 数组重复项 → 报错', () => {
 test('#9 正向全绿：真实仓库 manifest + 真实目录 + 真实聚合 deps/patch', async () => {
   // 直接 import 根 package.json 同级的真实数据（node --test 直跑 TS，无构建步骤）
   const { readFileSync } = await import('node:fs')
-  const root = join(import.meta.dirname, '..')
+  const root = join(import.meta.dirname, '..', '..')
   const manifest = loadManifest(root)
   const dirs = listPluginDirs(root)
   assert.deepEqual(checkAggregateConsistency({ dirNames: dirs, manifest }), [])

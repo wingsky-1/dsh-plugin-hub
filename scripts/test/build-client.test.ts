@@ -19,8 +19,8 @@ import vm from 'node:vm'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { buildClient } from './build-client.ts'
-import { assertClientContract } from './client-contract-lib.ts'
+import { buildClient } from '../build/build-client.ts'
+import { assertClientContract } from '../lib/client-contract-lib.ts'
 
 const PKG = '@wingsky-1/buildclient-test'
 

@@ -18,10 +18,10 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, existsSync } from 'node
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { executeClient } from './client-contract-lib.ts'
-import { AGGREGATE_NAME, listPluginDirs } from './plugins-manifest-lib.ts'
+import { executeClient } from '../lib/client-contract-lib.ts'
+import { AGGREGATE_NAME, listPluginDirs } from '../lib/plugins-manifest-lib.ts'
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const plugins = listPluginDirs(ROOT)
 
 let failed = 0
