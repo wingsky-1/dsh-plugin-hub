@@ -1026,6 +1026,68 @@ const main = async () => {
     }
   });
 
+  // 回归 #125：保存按钮 POST /api/dsh-mcp/config 曾报 400（this.write undefined）。
+  // 根因：apply 的 uiUpdate sink 把 settings.update 解构后调用，丢失 cordis 服务方法
+  // 的 this（dsh-settings update() 内部访问 this.write）。此处注入一个「要求 this」的
+  // settings stub（update 内部访问 this.write），对 config 写路由做端到端断言：
+  // 修复后 settings.update 以正确 this 调用 → 200 + 落盘 + 通读回写值。
+  await checkAsync("config POST 经 apply 注入 settings：update 保留 this 不再 400（回归 #125）", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-settings-"));
+    // 模拟 dsh-settings 服务：update 是方法（不绑 this），内部访问 this.write。
+    // 若调用链解构丢 this，this 为 undefined → this.write 抛 TypeError → 路由 400。
+    let scopeValue = { ui: { position: "top-right", offset: { x: 8, y: 8, blankY: 40 } } };
+    const settingsStub = {
+      register(ns, schema, opts) {
+        return { get: () => ({ ...scopeValue }), watch: () => {} };
+      },
+      async write(ns, patch) {
+        scopeValue = { ...(scopeValue ?? {}), ...(patch ?? {}) };
+      },
+      update(ns, patch) {
+        if (!this || typeof this.write !== "function") {
+          throw new TypeError("settings.update 被以错误 this 调用（this.write undefined）");
+        }
+        return this.write(ns, patch);
+      },
+    };
+    const sctx = { settings: settingsStub, effect: (fn) => { const d = fn(); return () => {}; } };
+    const ctx = fakeCtx({
+      inject: (keys, cb) => {
+        if (Array.isArray(keys) && keys.includes("settings")) cb(sctx);
+        return () => {};
+      },
+    });
+    const localReq = (method, url, body) => ({
+      method,
+      url,
+      socket: { remoteAddress: "127.0.0.1" },
+      headers: { host: "localhost:3080", origin: "http://localhost:3080", "sec-fetch-site": "same-origin" },
+      async *[Symbol.asyncIterator]() {
+        if (body !== undefined) yield Buffer.from(JSON.stringify(body));
+      },
+    });
+    try {
+      await apply(ctx, { enabled: true, storePath: join(dir, "dsh-mcp.json") });
+      const configRoute = ctx.routes.find((route) => route.path === ROUTES.config);
+      assert.ok(configRoute, "config 路由已注册");
+      const write = fakeRes();
+      await configRoute.handler(
+        localReq("POST", ROUTES.config, { position: "bottom-right", offsetX: 12, offsetY: 20, blankY: 60 }),
+        write,
+      );
+      assert.equal(write.state.status, 200, "settings.update 以正确 this 调用 → 写路由 200（不再 400）");
+      const written = JSON.parse(write.state.body);
+      assert.equal(written.position, "bottom-right");
+      assert.equal(written.offsetX, 12);
+      assert.equal(written.offsetY, 20);
+      assert.equal(written.blankY, 60);
+      // 落盘：this 正确时 settings.update 内部 this.write 已把 Config.ui 补丁合并进 scope。
+      assert.deepEqual(scopeValue.ui.offset, { x: 12, y: 20, blankY: 60 }, "settings.update 落盘（this.write 生效）");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   console.log("感知增强（L1 目录 / L2 描述兜底 / L3 截断 / 超时下探）");
   check("truncateText 短文本不截断", () => {
     assert.equal(truncateText("短文本", 8192), "短文本");
