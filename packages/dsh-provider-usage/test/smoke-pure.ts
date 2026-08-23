@@ -240,14 +240,20 @@ assert.equal(sanitizeHtml('<iframe src="x"></iframe>y'), "y");
   });
   assert.ok(html.includes("5h"), "胶囊文案应含窗口短名");
 
-  // formatPanel 返回表格 HTML
+  // formatPanel 返回三窗口迷你图卡片 HTML（SVG 图表，与 v1 展示逻辑一致）
   const panel = openCodeGoAdapter.formatPanel({
-    entries: [{ time: Date.now(), data: { rolling: { percent: 5 } } }],
+    entries: [
+      { time: Date.now() - 600000, data: { rolling: { percent: 2 }, weekly: { percent: 1 }, monthly: { percent: 0 } } },
+      { time: Date.now(), data: { rolling: { percent: 5 }, weekly: { percent: 3 }, monthly: { percent: 1 } } },
+    ],
     range: { start: Date.now() - 1000, end: Date.now() },
     truncated: false,
     esc,
   });
-  assert.ok(panel.includes("<table"), "面板应含表格");
+  assert.ok(panel.includes("dou-card"), "面板应含卡片");
+  assert.ok(panel.includes("5h 滚动") && panel.includes("每周") && panel.includes("每月"), "面板含三窗口名称");
+  assert.ok(panel.includes("<svg"), "面板含 SVG 迷你图");
+  assert.ok(panel.includes("dou-cardCur"), "卡片头含当前百分比");
   // 空历史 → 空态文案
   const emptyPanel = openCodeGoAdapter.formatPanel({
     entries: [],
@@ -256,6 +262,14 @@ assert.equal(sanitizeHtml('<iframe src="x"></iframe>y'), "y");
     esc,
   });
   assert.ok(emptyPanel.includes("暂无"), "空历史应有空态提示");
+  // 单点历史 → 采集中提示（≥2 点才显示趋势）
+  const onePanel = openCodeGoAdapter.formatPanel({
+    entries: [{ time: Date.now(), data: { rolling: { percent: 5 }, weekly: { percent: 3 }, monthly: { percent: 1 } } }],
+    range: { start: Date.now() - 1000, end: Date.now() },
+    truncated: false,
+    esc,
+  });
+  assert.ok(onePanel.includes("dou-chartEmpty"), "单点历史显示采集中提示");
 }
 
 // ---------------------------------------------------------------- registry v2
