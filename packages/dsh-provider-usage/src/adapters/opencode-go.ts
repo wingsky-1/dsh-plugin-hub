@@ -410,7 +410,8 @@ export const openCodeGoAdapter: UsageStatsAdapter = {
         .filter(({ v }) => typeof v.percent === "number")
         .map(({ w, v }) => `${w.short} ${v.percent}%`)
         .join(" · ") || "无数据";
-    return `<span style="font-weight:600">${e(text)}</span>`;
+    // 纯文本胶囊（v1 语义：无内联加粗，样式由 .dou-label 控制）
+    return `<span>${e(text)}</span>`;
   },
 
   formatPanel(input: PanelInput): string {

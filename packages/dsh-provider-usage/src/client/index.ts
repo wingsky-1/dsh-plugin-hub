@@ -265,6 +265,8 @@ function toggleFloat(force?: boolean): void {
     placePanel();
     renderPanel();
     void refreshStats();
+    // 展开面板即拉取历史（30s 节流；与 v1 行为一致）
+    if (Date.now() - lastHistoryAt >= HISTORY_MIN_GAP_MS) void refreshHistory();
   }
 }
 
