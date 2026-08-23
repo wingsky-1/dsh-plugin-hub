@@ -95,10 +95,13 @@ export interface UiPlacementConfig {
   panelOffsetY: number;
 }
 
+/** 默认胶囊/面板位置：右上角、右侧对齐（offsetX=0 贴容器右缘）；offsetY=48 让
+ *  胶囊默认位于 dsh-mcp-manager 浮窗（默认 top-right、offsetY=8、高约 26px）下方，
+ *  保证两胶囊默认互不重叠（issue #116，去避让后以固定默认值错开）。 */
 export const DEFAULT_UI_CONFIG: UiPlacementConfig = {
   placement: "top-right",
   offsetX: 0,
-  offsetY: 8,
+  offsetY: 48,
   panelOffsetY: 10,
 };
 

@@ -7,13 +7,10 @@
  * dou-，二者须保持一致。
  */
 
-/* 会话滚动容器（宿主挂 dou-conversation 属性）相对定位，供胶囊 absolute 定位 */
-[dou-conversation] {
-  position: relative;
-}
-
+/* 胶囊固定定位（fixed）：钉在会话容器视口内，滚动内容滑动不改变其位置——
+   配合 JS repositionPill 的 fixed 定位（issue #116 去避让，无滚动重算 jitter） */
 .dou-float {
-  position: absolute;
+  position: fixed;
   top: 8px;
   right: 14px;
   z-index: 40;

@@ -223,7 +223,10 @@ assert.equal(sanitizeHtml('<iframe src="x"></iframe>y'), "y");
 
 {
   const d = normalizeUiConfig(undefined);
-  assert.deepEqual(d, DEFAULT_UI_CONFIG, "默认配置 top-right/0/8/10");
+  assert.deepEqual(d, DEFAULT_UI_CONFIG, "默认配置 top-right/0/48/10");
+  // 默认垂直偏移 48：让胶囊位于 MCP 浮窗（默认 top-right/offsetY=8）下方，两胶囊默认不重叠（issue #116）
+  assert.equal(DEFAULT_UI_CONFIG.offsetY, 48, "默认 offsetY 48（避让 MCP 胶囊默认位置）");
+  assert.equal(DEFAULT_UI_CONFIG.offsetX, 0, "默认 offsetX 0（右侧对齐贴右缘）");
   const clamped = normalizeUiConfig({ placement: "bottom-left", offsetX: 99999, offsetY: -3, panelOffsetY: 0.6 });
   assert.equal(clamped.placement, "bottom-left", "合法 placement 透传");
   assert.equal(clamped.offsetX, 2000, "offsetX 上限 clamp");

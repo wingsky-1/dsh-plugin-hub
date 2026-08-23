@@ -469,6 +469,10 @@ export function formatPanel() { return "<p>p</p>"; }
   const clientSource = readFileSync(join(pkgDir, "src/client/index.ts"), "utf8");
   assert.ok(!clientSource.includes("__ModuleLoader__"), "客户端源码不得含 loader 痕迹");
   assert.ok(clientSource.includes("export function apply"), "客户端入口导出 apply");
+  // issue #116：避让已去除——客户端不再探测 MCP 浮窗做动态偏移，改为固定定位（位置只由配置决定）
+  assert.ok(!clientSource.includes("mcpClearance"), "客户端源码已去除 MCP 避让（mcpClearance）");
+  assert.ok(!clientSource.includes("data-dsh-mcp-float"), "客户端源码已去除 MCP 浮窗探测避让");
+  assert.ok(clientSource.includes('.style.position = "fixed"'), "客户端源码用固定定位渲染胶囊");
 
   // lib/index.js 导出 v2 契约面
   const hostLib = readFileSync(join(pkgDir, "lib/index.js"), "utf8");

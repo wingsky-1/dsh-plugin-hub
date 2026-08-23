@@ -85,10 +85,13 @@ The usage capsule (floating pill in the conversation corner) and its panel can b
 Settings → Plugins → "用量统计" → "胶囊位置" — pick an anchor (top-right / top-left / bottom-right /
 bottom-left) and offsets (horizontal / vertical / panel gap), then hit Save. It takes effect
 **immediately across all devices** (persisted to `ui.json` and broadcast over SSE; no restart).
-Defaults: top-right / 0 / 8 / 10 — the horizontal 0 aligns the capsule's right edge with the
-MCP-manager float (measured: an 8px in-container gap offsets the float's 8px inset), and with an
-MCP float present the capsule also drops down automatically (34px clearance) so the two floats
-never collide and stay right-aligned; the 6px panel gap keeps the panel tight under the capsule.
+Defaults: top-right / 0 / 48 / 10 — the capsule uses **fixed positioning** and never shifts with the
+scrolling conversation (no avoidance-related jitter; it stays put while scrolling); the horizontal 0
+keeps the capsule's right edge flush with the container's right edge (right-aligned); the vertical 48
+places the capsule just below the MCP-manager float (also top-right, 8px from the top) by default,
+so the two floats never overlap out of the box. The capsule and the MCP float do not probe or
+dodge each other — each is positioned solely by its own plugin config; the 10px panel gap keeps the
+panel tight under the capsule.
 
 ## API key resolution order (V1 config chain)
 
