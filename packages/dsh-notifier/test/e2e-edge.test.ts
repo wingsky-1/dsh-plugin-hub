@@ -10,7 +10,7 @@
 import { join } from "node:path";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { assert, makeNotifier, makeFakeCtx, agentWithTitle, makeRes, fakeReq } from "./helpers.ts";
+import { assert, makeNotifier, makeFakeCtx, agentWithTitle, makeRes, fakeReq, waitForHistory } from "./helpers.ts";
 import { ROUTES, apply } from "../lib/index.js";
 
 const work = mkdtempSync(join(tmpdir(), "dnotify-e2e-edge-"));
@@ -235,6 +235,96 @@ try {
     const status = listeners.get("agent/status")[0];
     status({ agent: agentWithTitle("noop-1", "从未 running"), status: "idle" });
     assert.equal(infos.length, 0, "无 running 记录的 idle 不通知");
+  }
+// ── 10. 免打扰拦截 + 勾选 error 豁免 → 窗口内再报错必须通知 ──
+  {
+    const qhAll = { enabled: true, start: "00:00", end: "23:59" };
+    const cfg = join(work, "qh-error-1.json");
+    // 免打扰开启，allowKinds 不含 error
+    writeFileSync(cfg, JSON.stringify({ errorMergeWindowMs: 60000, quietHours: { ...qhAll, allowKinds: ["ask"] } }));
+    const infos = [];
+    const { listeners, routes } = await makeNotifier(work, { configFile: cfg, historyFile: join(work, "qh-error-hist-1.jsonl") }, {
+      logger: { warn: () => {}, info: (t) => infos.push(t) },
+    });
+    const error = listeners.get("agent/error")[0];
+    const configRoute = routes.find((r) => r.path === ROUTES.config);
+    const historyRoute = routes.find((r) => r.path === ROUTES.history);
+
+    // 第一条错误：免打扰拦截，errorMerge 不开窗
+    error({ agent: { id: "qh-e1" }, turn: 1, error: new Error("err1") });
+    // 验证被免打扰拦截，且仅一条日志（无实际通知）
+    assert.equal(infos.filter((t) => /error/.test(t) && !t.includes("被免打扰拦截")).length, 0, "免打扰拦截时不发实际通知");
+    assert.ok(infos.some((t) => t.includes("被免打扰拦截")), "被拦截记录日志");
+    // 验证历史中有 suppressed: "quiet"
+    const hist1 = await waitForHistory(historyRoute, (r) => r.some((e) => e.kind === "error" && e.suppressed === "quiet"));
+    assert.ok(hist1.some((e) => e.kind === "error" && e.suppressed === "quiet"), "被拦截的错误落 suppressed:quiet 历史");
+
+    // 保存配置，开启 error 豁免（通过 PUT /config 模拟面板操作）
+    const { rec: putRec, res: putRes } = makeRes();
+    const newBody = Buffer.from(JSON.stringify({ quietHours: { ...qhAll, allowKinds: ["ask", "error"] } }));
+    await configRoute.handler({
+      method: "PUT",
+      url: "/",
+      socket: { remoteAddress: "127.0.0.1" },
+      headers: { host: "127.0.0.1:3080", "content-type": "application/json" },
+      on: (evt, cb) => { if (evt === "data") cb(newBody); if (evt === "end") cb(); },
+    }, putRes);
+    assert.equal(putRec.status, 200, "PUT /config 返回 200");
+    // 重置 info 计数
+    infos.length = 0;
+
+    // 第二条错误：窗口内（距上一条 < 60s），但无窗口（上一条被拦截未开窗），应正常通知
+    error({ agent: { id: "qh-e1" }, turn: 1, error: new Error("err2") });
+    assert.equal(infos.filter((t) => /error/.test(t) && !t.includes("被免打扰拦截")).length, 1, "开启 error 豁免后错误正常通知");
+    assert.ok(infos.some((t) => /error/.test(t) && t.includes("err2")), "通知内容包含 err2");
+  }
+
+  // ── 11. 合并被吞的错误落 suppressed: "merged" 历史 ──
+  {
+    const cfg = join(work, "merged-hist-cfg.json");
+    writeFileSync(cfg, JSON.stringify({ errorMergeWindowMs: 60000 }));
+    const infos = [];
+    const { listeners, routes } = await makeNotifier(work, { configFile: cfg, historyFile: join(work, "merged-hist.jsonl") }, {
+      logger: { warn: () => {}, info: (t) => infos.push(t) },
+    });
+    const error = listeners.get("agent/error")[0];
+    const historyRoute = routes.find((r) => r.path === ROUTES.history);
+
+    // 第一条错误：开窗
+    error({ agent: { id: "mh-1" }, turn: 1, error: new Error("first") });
+    assert.equal(infos.filter((t) => /error/.test(t)).length, 1, "首条错误通知");
+    // 清空 info 计数
+    infos.length = 0;
+
+    // 第二条错误（窗口内）：合并，应落 suppressed: "merged" 历史
+    error({ agent: { id: "mh-1" }, turn: 1, error: new Error("second") });
+    assert.equal(infos.filter((t) => /error/.test(t)).length, 0, "窗口内合并不产生新通知");
+    // 验证历史中有 suppressed: "merged"
+    const hist = await waitForHistory(historyRoute, (r) => r.some((e) => e.kind === "error" && e.suppressed === "merged"));
+    assert.ok(hist.some((e) => e.kind === "error" && e.suppressed === "merged"), "合并被吞的错误落 suppressed:merged 历史");
+  }
+
+  // ── 12. 多个错误持续到达时窗口不无限顺延（免打扰拦截不开窗 → 每次独立落 quiet 历史） ──
+  {
+    const qhAll = { enabled: true, start: "00:00", end: "23:59" };
+    const cfg = join(work, "no-extend-cfg.json");
+    writeFileSync(cfg, JSON.stringify({ errorMergeWindowMs: 60000, quietHours: { ...qhAll, allowKinds: [] } }));
+    const infos = [];
+    const { listeners } = await makeNotifier(work, { configFile: cfg, historyFile: join(work, "no-extend-hist.jsonl") }, {
+      logger: { warn: () => {}, info: (t) => infos.push(t) },
+    });
+    const error = listeners.get("agent/error")[0];
+
+    // 持续发送多条错误（免打扰拦截，不消耗窗口）
+    error({ agent: { id: "ne-1" }, turn: 1, error: new Error("e1") });
+    error({ agent: { id: "ne-1" }, turn: 1, error: new Error("e2") });
+    error({ agent: { id: "ne-1" }, turn: 1, error: new Error("e3") });
+    // 每条都被免打扰拦截，不产生实际通知
+    const actualNotifies = infos.filter((t) => /error/.test(t) && !t.includes("被免打扰拦截"));
+    assert.equal(actualNotifies.length, 0, "免打扰拦截时多条错误都不产生实际通知");
+    // 每条都记录了被拦截日志
+    const suppressedLogs = infos.filter((t) => t.includes("被免打扰拦截"));
+    assert.equal(suppressedLogs.length, 3, "每条错误都记录被拦截日志（窗口不无限顺延导致丢失）");
   }
 } finally {
   rmSync(work, { recursive: true, force: true });
