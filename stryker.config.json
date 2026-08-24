@@ -7,15 +7,11 @@
   "tap": {
     "nodeArgs": ["-r", "./scripts/test/mutation-tap-bridge.cjs"],
     "testFiles": [
-      "packages/dsh-notifier/test/unit-config.test.ts",
       "packages/dsh-notifier/test/unit-text.test.ts",
       "packages/dsh-notifier/test/unit-sanitize.test.ts",
       "packages/dsh-notifier/test/e2e-approval.test.ts",
       "packages/dsh-notifier/test/e2e-done.test.ts",
-      "packages/dsh-notifier/test/e2e-interrupt.test.ts",
-      "packages/dsh-notifier/test/e2e-question-turn.test.ts",
-      "packages/dsh-notifier/test/routes.test.ts",
-      "packages/dsh-notifier/test/client-contract.test.ts"
+      "packages/dsh-notifier/test/e2e-question-turn.test.ts"
     ]
   },
   "mutator": {
@@ -27,7 +23,7 @@
     ]
   },
   "plugins": ["@stryker-mutator/tap-runner"],
-  "concurrency": 4,
+  "concurrency": 16,
   "timeoutMS": 60000,
   "dryRunTimeoutMinutes": 5,
   "reporters": [
@@ -41,5 +37,5 @@
   "coverageAnalysis": "perTest",
   "tempDirName": ".stryker-tmp",
   "cleanTempDir": true,
-  "_comment": "阶段一试点：dsh-notifier 的 lib/index.js 构建产物无 node_modules 内联段，天然全量 self-written。mutate 构建产物而非 src 源码，因测试直接 import lib/index.js。试点范围缩小至 message.js 段（lib/index.js:255-504，对应 src/message.ts），排除高噪音字符串/数组/对象/模板字面量变异以控制总时长。测试文件逐个列出以启用 per-test coverage 精确关联，避免慢速 e2e 文件被无关 mutant 调用。tap.nodeArgs 注入 scripts/test/mutation-tap-bridge.cjs（#151）：把顶层 assert 失败的未捕获异常转写为 TAP not ok，使 tap-runner 将 mutant 正确计为 Killed 而非 RuntimeError（原试点 211/295 RuntimeError 即此分类缺陷）。阶段二『每包一个』新包配置放 stryker.conf.d/<pkg>.json（首例 dsh-idle-archive），后续批次逐包迁入。"
+  "_comment": "阶段一试点：dsh-notifier 的 lib/index.js 构建产物无 node_modules 内联段，天然全量 self-written。mutate 构建产物而非 src 源码，因测试直接 import lib/index.js。试点范围缩小至 message.js 段（lib/index.js:255-504，对应 src/message.ts），排除高噪音字符串/数组/对象/模板字面量变异以控制总时长。测试文件逐个列出以启用 per-test coverage 精确关联。#159 耗时优化批次：按上次报告 perTest 贡献统计精简 testFiles——移除零杀伤的 unit-config/routes/client-contract（覆盖 91-102 个 mutant 但杀伤均为 0）与低性价比的 e2e-interrupt（覆盖 207 杀伤仅 2，损失 2 个 killed 在等价容差内）；concurrency 提至 16——本套件耗时由 e2e 的 waitMergeWindow 定时器等待（3.2s sleep）主导、CPU 占用低，worker 超订物理核（8）以重叠等待时间；maxTestRunnerReuse 维持默认 0（无限复用），实测 reuse=100 持平无收益。合计 6m54s→1m42s，killed+timeout 212→210（±2 等价）。tap.nodeArgs 注入 scripts/test/mutation-tap-bridge.cjs（#151）：把顶层 assert 失败的未捕获异常转写为 TAP not ok，使 tap-runner 将 mutant 正确计为 Killed 而非 RuntimeError（原试点 211/295 RuntimeError 即此分类缺陷）。阶段二『每包一个』新包配置放 stryker.conf.d/<pkg>.json（首例 dsh-idle-archive），后续批次逐包迁入。"
 }
