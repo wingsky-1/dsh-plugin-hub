@@ -66,6 +66,18 @@
         "baselineDuration": "1m17s",
         "baselineScope": "packages/dsh-mcp-manager/lib/index.js:8610-8696+17322-17456+19271-19915+19964-21027（self-written 四段：store、transport+scope、protocol/supervisor/catalog、import/routes/index；排除 esbuild 垫片、zod/@modelcontextprotocol/sdk/ajv 等大段内联 vendor、shared 契约层内联副本与纯 import 提升段）",
         "config": "stryker.conf.d/dsh-mcp-manager.json"
+      },
+      "dsh-provider-usage": {
+        "baselineScore": 21.05,
+        "baselineCovered": 31.8,
+        "baselineKilled": 529,
+        "baselineTotal": 2556,
+        "baselineNoCoverage": 864,
+        "baselineErrors": 0,
+        "baselineDate": "2026-08-24",
+        "baselineDuration": "1m51s",
+        "baselineScope": "packages/dsh-provider-usage/lib/index.js:1372-2769+2805-3696（self-written 两段：contracts/registry/adapters-opencode-go/core-guards/sanitize/pipeline-v2/history/provider-config/hotreload 与 path-resolve/client-logic/index；排除 esbuild 垫片、cosmokit/schemastery/async-mutex/untildify 内联 vendor、shared 契约层内联副本与纯 import 提升段）",
+        "config": "stryker.conf.d/dsh-provider-usage.json"
       }
     }
   }
