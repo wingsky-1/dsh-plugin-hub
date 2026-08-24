@@ -831,9 +831,12 @@ assert.equal(openCodeGoAdapter.formatPanel({
     assert.ok(sigFast instanceof AbortSignal, "signal 覆盖为真 AbortSignal（展开序 {...init, signal}）");
 
     // 慢路径：超过 timeoutMs 的延迟 -> 返回时已观察到 abort
+    // （增量计数：前置测试可能遗留异步操作在本 await 窗口内触发 mock fetch，
+    //   绝对计数会造成时序 flake——CI 实证，改用差值锁定本调用恰一次）
+    const beforeSlow = calls.length;
     const slow = await fetchWithTimeout("https://gw.test/y", 20, { delayMs: 80 });
     assert.equal(slow.aborted, true, "超过 timeoutMs 后 controller.abort 已触发");
-    assert.equal(calls.length, 2, "两次调用均到达注入 fetch");
+    assert.equal(calls.length - beforeSlow, 1, "慢路径恰一次到达注入 fetch");
 
     // 默认参数形态：省略 timeoutMs 与 init 仍可完成快调用
     globalThis.fetch = async (url, opts) => ({ marker: "def", aborted: opts.signal.aborted });
