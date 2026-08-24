@@ -49,6 +49,34 @@ assert.equal(isHostProviderAdapter({ ...V1_ADAPTER, providers: [] }), false, "pr
 assert.equal(isHostProviderAdapter({ ...V1_ADAPTER, providers: [""] }), false, "providers 含空字符串返回 false");
 assert.equal(isHostProviderAdapter({ ...V1_ADAPTER, fetchUsage: "not-fn" }), false, "fetchUsage 非函数返回 false");
 
+// #150 分片 2：伪装类型与元素级边界（变异驱动）
+{
+  // 函数挂全套合法属性：typeof 守卫左子恒假变异下会被放行，
+  // 契约必须以严格 typeof 拒绝非 object 载体
+  const fake = () => {};
+  Object.assign(fake, { version: 1, id: "x", label: "y", providers: ["p"], fetchUsage: () => {} });
+  assert.equal(isHostProviderAdapter(fake), false, "函数载体即使属性齐全也拒绝");
+}
+{
+  // id 为带 length 的非字符串：typeof id 恒真变异下会放行
+  const a = { ...V1_ADAPTER, id: [1, 2, 3] };
+  assert.equal(isHostProviderAdapter(a), false, "id 为数组（length>0 非字符串）拒绝");
+}
+{
+  const a = { ...V1_ADAPTER, label: [1] };
+  assert.equal(isHostProviderAdapter(a), false, "label 为数组（length>0 非字符串）拒绝");
+}
+{
+  // 多元素含一个空串：every 换 some 变异下会放行
+  const a = { ...V1_ADAPTER, providers: ["good", ""] };
+  assert.equal(isHostProviderAdapter(a), false, "providers 多元素含空串拒绝（全称量词）");
+}
+{
+  // 元素为 length>0 的非字符串：回调 typeof 恒真变异下会放行
+  const a = { ...V1_ADAPTER, providers: [[1]] };
+  assert.equal(isHostProviderAdapter(a), false, "providers 元素为数组拒绝");
+}
+
 // ---------------------------------------------------------------- describeAdapterShape
 
 assert.equal(describeAdapterShape(null), "导出不是对象（null）", "null 描述");
@@ -74,6 +102,33 @@ assert.equal(describeAdapterShape({ version: 1, id: "a", label: "b", providers: 
   assert.ok(d.includes("fetchUsage"), "缺 fetchUsage 应报告");
 }
 
+// #150 分片 2：逐字段文案的元素级边界
+{
+  // id 为 length>0 的非字符串：typeof id 判定恒假变异下只剩 length 检查会漏报
+  const d = describeAdapterShape({ version: 1, id: [1, 2], label: "b", providers: ["p1"], fetchUsage: async () => {} });
+  assert.ok(d !== null && d.includes("id（非空字符串）"), "id 非字符串（数组）应报告");
+}
+{
+  const d = describeAdapterShape({ version: 1, id: "a", label: [1], providers: ["p1"], fetchUsage: async () => {} });
+  assert.ok(d !== null && d.includes("label（非空字符串）"), "label 非字符串（数组）应报告");
+}
+{
+  const base = { version: 1, id: "a", label: "b", fetchUsage: async () => {} };
+  for (const bad of [[""], [[]], "ab"] as unknown as string[]) {
+    const d = describeAdapterShape({ ...base, providers: bad });
+    assert.ok(d !== null && d.includes("providers（非空字符串数组）"),
+      `providers 缺陷形态 ${JSON.stringify(bad)} 应报告`);
+  }
+}
+{
+  const d = describeAdapterShape({ version: 1, id: "a", label: "b", providers: ["good", ""], fetchUsage: async () => {} });
+  assert.ok(d.includes("providers（非空字符串数组）"), "多元素含空串应报告（全称量词）");
+}
+{
+  const d = describeAdapterShape({ version: 1, id: "a", label: "b", providers: [[1]], fetchUsage: async () => {} });
+  assert.ok(d.includes("providers（非空字符串数组）"), "元素为数组应报告");
+}
+
 // ---------------------------------------------------------------- isClientProviderRenderer
 
 assert.equal(isClientProviderRenderer(null), false, "null 返回 false");
@@ -94,6 +149,23 @@ assert.equal(isClientProviderRenderer({
   version: 2, providers: ["anthropic"],
   render: () => {},
 }), false, "version 非 1 返回 false");
+
+// #150 分片 2：伪装类型与元素级边界（变异驱动）
+{
+  const fake = () => {};
+  Object.assign(fake, { version: 1, providers: ["p"], render: () => {} });
+  assert.equal(isClientProviderRenderer(fake), false, "函数载体即使属性齐全也拒绝");
+}
+{
+  assert.equal(isClientProviderRenderer({
+    version: 1, providers: ["good", ""], render: () => {},
+  }), false, "providers 多元素含空串拒绝（全称量词）");
+}
+{
+  assert.equal(isClientProviderRenderer({
+    version: 1, providers: [[1]], render: () => {},
+  }), false, "providers 元素为数组（length>0 非字符串）拒绝");
+}
 
 // ---------------------------------------------------------------- usageError / usageOk
 
