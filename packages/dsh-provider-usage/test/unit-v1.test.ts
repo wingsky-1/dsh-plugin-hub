@@ -36,6 +36,7 @@ import {
   safeFetchData,
   safeFormat,
   fetchWithTimeout,
+  sanitizeHtml,
 } from "../lib/index.js";
 
 // ---------------------------------------------------------------- isHostProviderAdapter
@@ -1121,4 +1122,45 @@ function resetLineXs(svg) {
   // timeTicks 中 step=2min, 但 spanMs=1ms → 可能 count<2 → 返回 [t0, t1]
   // 至少 SVG 有内容
   assert.ok(svg.startsWith("<svg"), "极短跨度仍产合法 SVG");
+}
+
+// ---------------------------------------------------------------- sanitizeHtml 清理链全正则覆盖（#150 变异加固 2/4 续）
+
+{
+  // 空串短路
+  assert.equal(sanitizeHtml(""), "", "空串直接返回空串");
+}
+{
+  // script 标签（含属性变体与大小写）
+  assert.equal(sanitizeHtml("<script>alert(1)</script>x"), "x", "script 标签整段移除");
+  assert.equal(sanitizeHtml("<SCRIPT type=text/javascript>x</SCRIPT>y"), "y", "script 大小写不敏感移除");
+}
+{
+  // iframe / frame / object / embed / meta / link / base
+  assert.equal(sanitizeHtml('<iframe src="x"></iframe>k'), "k", "iframe 整段移除");
+  assert.equal(sanitizeHtml('<frame src="x"></frame>f'), "f", "frame 整段移除");
+  assert.equal(sanitizeHtml('<object data="x"></object>o'), "o", "object 整段移除");
+  assert.equal(sanitizeHtml("<embed src=x></embed>e"), "e", "embed 整段移除");
+  assert.equal(sanitizeHtml('<meta charset="utf-8">m'), "m", "meta 标签移除");
+  assert.equal(sanitizeHtml('<link rel=stylesheet href=x>l'), "l", "link 标签移除");
+  assert.equal(sanitizeHtml('<base href="//evil/">b'), "b", "base 标签移除");
+}
+{
+  // on* 事件处理器三种引号形态 + 无引号形态
+  assert.equal(sanitizeHtml('<img src="x" onerror="alert(1)">'), "<img src=\"x\">", "on*=双引号事件被剥");
+  assert.equal(sanitizeHtml("<a onclick='go()'>c</a>"), "<a>c</a>", "on*=单引号事件被剥");
+  assert.equal(sanitizeHtml("<div onMouseOver=hi()>d</div>"), "<div>d</div>", "on*=无引号事件被剥（大小写不敏感）");
+}
+{
+  // javascript: URI 与 data:text/html 与 expression(
+  assert.equal(sanitizeHtml('<a href="javascript:alert(1)">x</a>'), '<a href="alert(1)">x</a>', "javascript: 协议剥离");
+  assert.equal(sanitizeHtml('<a href="JaVaScRiPt:x">y</a>'), '<a href="x">y</a>', "javascript: 大小写混合剥离");
+  assert.equal(sanitizeHtml('<iframe src="data:text/html,<b>z"></iframe>q'), "q", "data:text/html 场景随 iframe 移除");
+  const exp = sanitizeHtml("<div style=\"width:expression(alert(1))\">w</div>");
+  assert.ok(!exp.includes("expression("), "CSS expression( 被剥");
+}
+{
+  // 正常内容不被误伤
+  assert.equal(sanitizeHtml("<b>ok</b>"), "<b>ok</b>", "正常标签保留");
+  assert.equal(sanitizeHtml('<a href="https://example.com" title="t">n</a>'), '<a href="https://example.com" title="t">n</a>', "正常链接与属性保留");
 }
