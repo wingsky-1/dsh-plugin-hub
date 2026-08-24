@@ -1,0 +1,108 @@
+name: Observe (nightly)
+
+# #85 v3 F1/F6 定案：观察期采集与变异门禁的夜间调度。
+# - cov / self-cov --check（阈值硬校验）/ crap 明细
+# - 六包全量变异（串行）+ mutate 面守卫（F5）
+# - 报告落 issue（幂等：同日不重开）；回落 >1pp 自动追评（隔夜必有工单）
+# 变异硬门禁在本 workflow 生效：任一包 covered < threshold 且 strict 开启 → 运行失败。
+
+on:
+  schedule:
+    # UTC 18:43 = 北京时间 02:43，避开整点 GitHub Actions 高峰
+    - cron: '43 18 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: observe-nightly
+  cancel-in-progress: false
+
+jobs:
+  nightly:
+    name: Cov / Crap / Mutation nightly
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@a8198c4bff370c8506180b035930dea56dbd5288 # v5
+        # 版本以根 package.json 的 packageManager 字段为单一事实源（勿同时指定 version）
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all
+        run: pnpm build
+
+      - name: Coverage（c8 采集）
+        run: pnpm cov
+
+      - name: Self-written coverage gate（selfWrittenFunctions threshold 硬校验）
+        run: node scripts/gate/self-cov.mjs --check
+
+      - name: CRAP check（复杂度×覆盖率，观察期只记录）
+        run: pnpm crap
+        continue-on-error: true   # 观察期：基线校准归 #42 二期
+
+      - name: Mutation scope guard（F5：mutate 区间须落在 // lib/*.js 分段边界内）
+        run: node scripts/gate/mutate-scope-guard.mjs
+
+      - name: Mutation suites（六包串行全量）
+        run: |
+          for pkg in notifier idle-archive web-file-preview mcp-manager provider-usage lan-proxy; do
+            echo "::group::stryker dsh-$pkg"
+            npx stryker run "stryker.conf.d/dsh-$pkg.json"
+            echo "::endgroup::"
+          done
+
+      - name: Threshold check & report body（阈值校验 + 回落检测 + 报告产出）
+        id: report
+        run: |
+          set -e
+          node scripts/gate/observe-check.mjs --body-file observe-body.md --marker-file observe-marker.txt
+          echo "body=observe-body.md" >> "$GITHUB_OUTPUT"
+          MARKER=$(cat observe-marker.txt)
+          echo "marker=$MARKER" >> "$GITHUB_OUTPUT"
+
+      - name: Create/update observe issue（幂等：同日重跑不重复建；回落即追评）
+        if: always() && steps.report.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MARKER: ${{ steps.report.outputs.marker }}
+        run: |
+          set -e
+          TITLE="chore(observe): 夜间质量报告 $(date -u +%Y-%m-%d)"
+          EXISTING=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number')
+          if [ -n "$EXISTING" ]; then
+            echo "issue #$EXISTING 已存在，跳过创建"
+          else
+            gh issue create --title "$TITLE" --body-file observe-body.md
+          fi
+          # F6 回落闭环：标记文件非空 = 存在指标回落 → 在当日 issue 上追加警示评论
+          if [ -n "$MARKER" ]; then
+            NUM=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number')
+            gh issue comment "$NUM" --body-file observe-marker.txt || true
+          fi
+
+      - name: Upload artifacts（coverage / mutation 报告留档）
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: observe-reports
+          path: |
+            coverage/self-coverage.json
+            coverage/mutation/
+          retention-days: 14
+          if-no-files-found: warn
