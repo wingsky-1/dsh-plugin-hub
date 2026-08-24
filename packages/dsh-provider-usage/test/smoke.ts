@@ -33,6 +33,7 @@ import {
   ADAPTER_CONTRACT_VERSION,
   OPENCODE_GO_PROVIDER,
   OPENCODE_GO_ADAPTER_ID,
+  userAdaptersFile,
 } from "../lib/index.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -489,6 +490,79 @@ export function formatPanel() { return "<p>p</p>"; }
 }
 
 console.log("[smoke] 全部断言通过 ✓ (v2 集成)");
+
+// ---------------------------------------------------------------- #156 warmup 串行采样回归
+
+/**
+ * 回归：warmup 并发发起 + getStats 全局 mutex busy 短路 → 多 provider 只有
+ * 注册序第一个能采样，其余零采样数小时。修复后 warmupFn 串行 await，
+ * 全部 enabled provider 依次持锁取数。
+ */
+{
+  // 构造两个用户适配器（providers 互不相同），注册表指向绝对路径 mjs
+  const adapterDir = mkdtempSync(join(tmpdir(), "dou-warmup-adapters-"));
+  const mkAdapter = (name, provider) => {
+    const file = join(adapterDir, `${name}.mjs`);
+    writeFileSync(file, `
+export const version = 2;
+export const name = "${name}";
+export const label = "${name}";
+export const providers = ["${provider}"];
+export async function fetchData() {
+  // 模拟真实远端 IO 延迟：让持锁窗口覆盖后续 provider 的同步检查段，
+  // 否则 mock 同步完成过快、两请求都排进 mutex 队列，无法复现 busy 短路
+  await new Promise((r) => setTimeout(r, 40));
+  return { visits: 7 };
+}
+export function formatCapsule(input) { return "<span>" + input.data.visits + "</span>"; }
+export function formatPanel() { return "<p>ok</p>"; }
+`, "utf8");
+    return file;
+  };
+  const fileA = mkAdapter("warm-a", "prov-a");
+  const fileB = mkAdapter("warm-b", "prov-b");
+  writeFileSync(userAdaptersFile(join(process.env.DSH_HOME, "dsh-provider-usage")), JSON.stringify({
+    adapters: [
+      { id: "warm-a", label: "Warm A", providers: ["prov-a"], file: fileA },
+      { id: "warm-b", label: "Warm B", providers: ["prov-b"], file: fileB },
+    ],
+  }), "utf8");
+
+  const disposers = [];
+  const { ctx, routes } = makeFakeCtx({
+    effect(fn) {
+      const d = fn();
+      if (typeof d === "function") disposers.push(d);
+      return typeof d === "function" ? d : () => {};
+    },
+  });
+  await apply(ctx, { ...ISOLATED_CONFIG, warmupIntervalMs: 60000 });
+  // 启动即预热一次（串行 await）：给足两个 provider 依次取数的时间
+  await new Promise((r) => setTimeout(r, 400));
+
+  const statsRoute = routes.find((r) => r.path === ROUTES.stats);
+  const queryProvider = async (provider) => {
+    let payload;
+    statsRoute.handler(
+      fakeReq({ url: `${ROUTES.stats}?provider=${provider}` }),
+      { writeHead: () => {}, end: (chunk) => { payload = JSON.parse(chunk); } },
+    );
+    await new Promise((r) => setTimeout(r, 30));
+    return payload;
+  };
+  const pa = await queryProvider("prov-a");
+  const pb = await queryProvider("prov-b");
+
+  assert.equal(pa.adapterName, "warm-a", "provider A 经 warmup 完成采样（适配器生效）");
+  assert.notEqual(pa.status, "stale", `provider A 非 stale 短路（实际 ${pa.status}）`);
+  assert.equal(pb.adapterName, "warm-b", "provider B 经 warmup 完成采样——旧实现下 B 因 mutex busy 零采样（#156 主回归点）");
+  assert.notEqual(pb.status, "stale", `provider B 非 stale 短路（实际 ${pb.status}）`);
+
+  for (const d of [...disposers].reverse()) {
+    try { d(); } catch {}
+  }
+  console.log("[smoke] #156 warmup 串行采样回归 ✓");
+}
 
 // 恢复真实环境变量（测试收尾）
 for (const k of SAVED_ENV_KEYS) {

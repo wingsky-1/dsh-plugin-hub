@@ -827,16 +827,18 @@ assert.equal(openCodeGoAdapter.formatPanel({
     assert.equal(fast.aborted, false, "未超时时 signal 未被 abort");
     assert.equal(fast.url, "https://gw.test/x", "url 原样透传");
     assert.deepEqual(fast.headers, { "x-k": "v" }, "init.headers 透传");
-    const sigFast = calls[calls.length - 1].opts.signal;
+    // 同理按 url 过滤取 fast 的调用记录：calls 尾部在负载下可能被外部污染
+    const sigFast = calls.find((c) => c.url === "https://gw.test/x")?.opts.signal;
     assert.ok(sigFast instanceof AbortSignal, "signal 覆盖为真 AbortSignal（展开序 {...init, signal}）");
 
     // 慢路径：超过 timeoutMs 的延迟 -> 返回时已观察到 abort
-    // （增量计数：前置测试可能遗留异步操作在本 await 窗口内触发 mock fetch，
-    //   绝对计数会造成时序 flake——CI 实证，改用差值锁定本调用恰一次）
-    const beforeSlow = calls.length;
+    // （按 url 过滤计数：await 窗口内前置测试遗留异步操作可能触发本 mock fetch，
+    //   绝对计数与差值计数均会时序 flake——CI 两次实证；只有按调用特征过滤
+    //   才能彻底与外部污染解耦）
     const slow = await fetchWithTimeout("https://gw.test/y", 20, { delayMs: 80 });
     assert.equal(slow.aborted, true, "超过 timeoutMs 后 controller.abort 已触发");
-    assert.equal(calls.length - beforeSlow, 1, "慢路径恰一次到达注入 fetch");
+    assert.equal(calls.filter((c) => c.url === "https://gw.test/y").length, 1,
+      "慢路径恰一次到达注入 fetch");
 
     // 默认参数形态：省略 timeoutMs 与 init 仍可完成快调用
     globalThis.fetch = async (url, opts) => ({ marker: "def", aborted: opts.signal.aborted });
