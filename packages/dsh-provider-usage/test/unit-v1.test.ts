@@ -843,3 +843,59 @@ assert.equal(openCodeGoAdapter.formatPanel({
     globalThis.fetch = realFetch;
   }
 }
+
+// ---------------------------------------------------------------- trendOf 阈值与取整边界（#150 变异加固，经 formatPanel 观测）
+
+{
+  // delta 四舍五入到一位小数：1.234 -> 1.2
+  const r = openCodeGoAdapter.formatPanel({
+    entries: [mkEntry(0, { rolling: { percent: 0 } }), mkEntry(H5, { rolling: { percent: 1.234 } })],
+    range: { start: T0, end: T0 + H5 }, truncated: false, esc: (s) => String(s),
+  });
+  assert.ok(r.includes("dou-trend-up") && r.includes("▲ +1.2%"), "delta 四舍五入至一位小数");
+}
+{
+  // d = +0.05 恰在阈值上不触发 up（严格大于），取整 half-up 显示 0.1
+  const at = openCodeGoAdapter.formatPanel({
+    entries: [mkEntry(0, { rolling: { percent: 0 } }), mkEntry(H5, { rolling: { percent: 0.05 } })],
+    range: { start: T0, end: T0 + H5 }, truncated: false, esc: (s) => String(s),
+  });
+  assert.ok(at.includes("dou-trend-flat"), "+0.05 不算上升趋势（严格大于阈值）");
+  assert.ok(!at.includes("dou-trend-up"), "+0.05 无 up 标记");
+  assert.ok(at.includes("— 0.1%"), "+0.05 取整 half-up 为 0.1");
+}
+{
+  // d = -0.05 同理不算 down；Math.round(-0.5) 负零字符串化为 0
+  const at = openCodeGoAdapter.formatPanel({
+    entries: [mkEntry(0, { rolling: { percent: 0 } }), mkEntry(H5, { rolling: { percent: -0.05 } })],
+    range: { start: T0, end: T0 + H5 }, truncated: false, esc: (s) => String(s),
+  });
+  assert.ok(at.includes("dou-trend-flat"), "-0.05 不算下降趋势（严格小于阈值）");
+  assert.ok(!at.includes("dou-trend-down"), "-0.05 无 down 标记");
+  assert.ok(at.includes("— 0%"), "-0.05 经负零字符串化显示 0");
+}
+{
+  // 阈值内侧：d = 0.04 flat 且取整为 0；d = 0.06 up 且进位 0.1
+  const inner = openCodeGoAdapter.formatPanel({
+    entries: [mkEntry(0, { rolling: { percent: 0 } }), mkEntry(H5, { rolling: { percent: 0.04 } })],
+    range: { start: T0, end: T0 + H5 }, truncated: false, esc: (s) => String(s),
+  });
+  assert.ok(inner.includes("dou-trend-flat") && inner.includes("— 0%"), "阈值内侧平坦且取整为零");
+  const outer = openCodeGoAdapter.formatPanel({
+    entries: [mkEntry(0, { rolling: { percent: 0 } }), mkEntry(H5, { rolling: { percent: 0.06 } })],
+    range: { start: T0, end: T0 + H5 }, truncated: false, esc: (s) => String(s),
+  });
+  assert.ok(outer.includes("dou-trend-up") && outer.includes("▲ +0.1%"), "刚过阈值即上升并进位");
+}
+{
+  // 全 null 序列：trendOf 返回 null -> 该卡片无任何趋势标记；
+  // 三窗口中仅 rolling 有值时 dou-trend 恰出现一次
+  const only = openCodeGoAdapter.formatPanel({
+    entries: [
+      mkEntry(0, { rolling: { percent: 10 } }),
+      mkEntry(H5, { rolling: { percent: 12 } }),
+    ],
+    range: { start: T0, end: T0 + H5 }, truncated: false, esc: (s) => String(s),
+  });
+  assert.equal((only.match(/dou-trend/g) || []).length, 1, "全 null 窗口无趋势标记（仅有效窗口一个）");
+}
