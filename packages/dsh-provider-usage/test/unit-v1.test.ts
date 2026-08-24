@@ -899,3 +899,55 @@ assert.equal(openCodeGoAdapter.formatPanel({
   });
   assert.equal((only.match(/dou-trend/g) || []).length, 1, "全 null 窗口无趋势标记（仅有效窗口一个）");
 }
+
+// ---------------------------------------------------------------- resetTicks 回溯与非法输入边界（#150 变异加固，经 miniChartSvgMarkup 观测）
+
+/** 提取 SVG 中窗口重置竖线的 x1 坐标序列 */
+function resetLineXs(svg) {
+  return [...svg.matchAll(/<line x1="([\d.]+)" y1="14"[^]*?<title>窗口重置点<\/title>/g)]
+    .map((m) => Number(m[1]));
+}
+
+{
+  // r 在区间右端之外（+5min）：本体不入列；按 period=10min 回溯出
+  // 25/15/5min 三点全部落在 [t0, t1] -> 恰三条重置线且 x 递增（锁排序）
+  const svg = miniChartSvgMarkup({
+    samples: [{ x: T0, y: 10 }, { x: T0 + 30 * MIN, y: 20 }],
+    color: "#abc", lo: 0, hi: 100,
+    resetsAt: new Date(T0 + 35 * MIN).toISOString(),
+    resetPeriodMs: 10 * MIN, dateOnly: false,
+  });
+  const xs = resetLineXs(svg);
+  assert.equal(xs.length, 3, "r 区间外时按周期回溯产出三个历史重置点");
+  assert.ok(xs.every((v, i) => i === 0 || v > xs[i - 1]), "重置线 x 坐标升序（sort 生效）");
+}
+{
+  // guard<40 截断：period=1min、r=t1 外 1min、区间 45min ->
+  // 回溯点最多 40 个（循环守卫上限），不多不少
+  const svg = miniChartSvgMarkup({
+    samples: [{ x: T0, y: 10 }, { x: T0 + 45 * MIN, y: 20 }],
+    color: "#abc", lo: 0, hi: 100,
+    resetsAt: new Date(T0 + 46 * MIN).toISOString(),
+    resetPeriodMs: MIN, dateOnly: false,
+  });
+  const xs = resetLineXs(svg);
+  assert.equal(xs.length, 40, "回溯受 guard<40 守卫截断为恰四十个点");
+}
+{
+  // 非法 resetsAt / 非法 period 一律无重置线
+  const base = {
+    samples: [{ x: T0, y: 10 }, { x: T0 + 30 * MIN, y: 20 }],
+    color: "#abc", lo: 0, hi: 100, dateOnly: false,
+  };
+  for (const bad of [
+    { resetsAt: "", resetPeriodMs: 10 * MIN },
+    { resetsAt: "not-a-date", resetPeriodMs: 10 * MIN },
+    { resetsAt: undefined, resetPeriodMs: 10 * MIN },
+    { resetsAt: new Date(T0 + 10 * MIN).toISOString(), resetPeriodMs: 0 },
+    { resetsAt: new Date(T0 + 10 * MIN).toISOString(), resetPeriodMs: -5 * MIN },
+  ]) {
+    const svg = miniChartSvgMarkup({ ...base, ...bad });
+    assert.equal(resetLineXs(svg).length, 0,
+      `非法入参 ${JSON.stringify(bad)} 产零条重置线`);
+  }
+}
