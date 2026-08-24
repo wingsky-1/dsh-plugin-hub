@@ -20,7 +20,9 @@ description: >
    验证（oss-pipeline 实施段①），验证失败即弃权跳过并在报告中列出——
    `gh issue edit --add-label` 非原子，禁止以标签写入作为认领依据
 4. 用 dsh workflow 工具编排：items = 合格 issue 列表，
-   每个 item 走 oss-pipeline 实施段状态机（③-⑨ 可委派 subagent 并行；
+   每个 item 走 oss-pipeline 实施段状态机③-⑨ 或快速道
+   （快速道准入四条件与压缩流程见 oss-pipeline「快速道（fast lane）」节；
+   ③-⑨ 可委派 subagent 并行；
    委派时按 oss-pipeline 纪律附带对应 `agents/<role>.md` 规程路径与
    [agents/_protocol.md](../../../agents/_protocol.md) 公共协议）
 5. **并行度 ≤3**，且节流跟随 CI 完成节奏（等 checks 再推下一个），
