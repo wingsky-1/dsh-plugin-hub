@@ -42,6 +42,18 @@
         "baselineDuration": "12.7s",
         "baselineScope": "packages/dsh-idle-archive/lib/index.js:1055-1060+1146-1375（self-written 段；排除 esbuild 垫片、cosmokit/schemastery 内联 vendor、shared 契约层内联副本）",
         "config": "stryker.conf.d/dsh-idle-archive.json"
+      },
+      "dsh-web-file-preview": {
+        "baselineScore": 42.6,
+        "baselineCovered": 72.27,
+        "baselineKilled": 330,
+        "baselineTotal": 777,
+        "baselineNoCoverage": 319,
+        "baselineErrors": 0,
+        "baselineDate": "2026-08-24",
+        "baselineDuration": "15s",
+        "baselineScope": "packages/dsh-web-file-preview/lib/index.js:1255-1924（self-written 段；排除 untildify/mime 内联 vendor、shared 契约层内联副本与 routes import 提升段；client/link-resolver 内联进 index.js 本体故纳入）",
+        "config": "stryker.conf.d/dsh-web-file-preview.json"
       }
     }
   }
