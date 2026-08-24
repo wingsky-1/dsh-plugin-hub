@@ -217,7 +217,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Download package lib artifacts（F9：复用 matrix 全集产物，避免重复构建）
-        uses: actions/download-artifact@d3f86a106a0bac45b974ac688d36e6010e0d9730 # v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: lib-*
           path: artifacts-tmp
