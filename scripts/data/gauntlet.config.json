@@ -56,16 +56,19 @@
         "config": "stryker.conf.d/dsh-web-file-preview.json"
       },
       "dsh-mcp-manager": {
-        "baselineScore": 10.51,
-        "baselineCovered": 29.37,
-        "baselineKilled": 204,
+        "baselineScore": 58.74,
+        "baselineCovered": 74.66,
+        "baselineKilled": 1142,
+        "baselineTimeout": 4,
+        "baselineSurvived": 389,
         "baselineTotal": 1951,
-        "baselineNoCoverage": 1253,
+        "baselineNoCoverage": 416,
         "baselineErrors": 0,
         "baselineDate": "2026-08-24",
-        "baselineDuration": "1m17s",
+        "baselineDuration": "3m52s",
         "baselineScope": "packages/dsh-mcp-manager/lib/index.js:8610-8696+17322-17456+19271-19915+19964-21027（self-written 四段：store、transport+scope、protocol/supervisor/catalog、import/routes/index；排除 esbuild 垫片、zod/@modelcontextprotocol/sdk/ajv 等大段内联 vendor、shared 契约层内联副本与纯 import 提升段）",
-        "config": "stryker.conf.d/dsh-mcp-manager.json"
+        "config": "stryker.conf.d/dsh-mcp-manager.json",
+        "hardeningNote": "#148 变异加固轮：6 个单测 commit 将 covered 由 29.37% 提升至 74.66%"
       },
       "dsh-provider-usage": {
         "baselineScore": 21.05,

@@ -13,7 +13,13 @@
       "packages/dsh-mcp-manager/test/unit-apply.test.ts",
       "packages/dsh-mcp-manager/test/unit-hotspot.test.ts",
       "packages/dsh-mcp-manager/test/unit-manager.test.ts",
-      "packages/dsh-mcp-manager/test/unit-shared.test.ts"
+      "packages/dsh-mcp-manager/test/unit-shared.test.ts",
+      "packages/dsh-mcp-manager/test/unit-store.test.ts",
+      "packages/dsh-mcp-manager/test/unit-transport.test.ts",
+      "packages/dsh-mcp-manager/test/unit-catalog.test.ts",
+      "packages/dsh-mcp-manager/test/unit-supervisor.test.ts",
+      "packages/dsh-mcp-manager/test/unit-routes-sse.test.ts",
+      "packages/dsh-mcp-manager/test/unit-manager2.test.ts"
     ]
   },
   "mutator": {
