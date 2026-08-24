@@ -5,6 +5,7 @@
   ],
   "testRunner": "tap",
   "tap": {
+    "nodeArgs": ["-r", "./scripts/test/mutation-tap-bridge.cjs"],
     "testFiles": [
       "packages/dsh-notifier/test/unit-config.test.ts",
       "packages/dsh-notifier/test/unit-text.test.ts",
@@ -40,5 +41,5 @@
   "coverageAnalysis": "perTest",
   "tempDirName": ".stryker-tmp",
   "cleanTempDir": true,
-  "_comment": "阶段一试点：dsh-notifier 的 lib/index.js 构建产物无 node_modules 内联段，天然全量 self-written。mutate 构建产物而非 src 源码，因测试直接 import lib/index.js。试点范围缩小至 message.js 段（lib/index.js:255-504，对应 src/message.ts），排除高噪音字符串/数组/对象/模板字面量变异以控制总时长。测试文件逐个列出以启用 per-test coverage 精确关联，避免慢速 e2e 文件被无关 mutant 调用。"
+  "_comment": "阶段一试点：dsh-notifier 的 lib/index.js 构建产物无 node_modules 内联段，天然全量 self-written。mutate 构建产物而非 src 源码，因测试直接 import lib/index.js。试点范围缩小至 message.js 段（lib/index.js:255-504，对应 src/message.ts），排除高噪音字符串/数组/对象/模板字面量变异以控制总时长。测试文件逐个列出以启用 per-test coverage 精确关联，避免慢速 e2e 文件被无关 mutant 调用。tap.nodeArgs 注入 scripts/test/mutation-tap-bridge.cjs（#151）：把顶层 assert 失败的未捕获异常转写为 TAP not ok，使 tap-runner 将 mutant 正确计为 Killed 而非 RuntimeError（原试点 211/295 RuntimeError 即此分类缺陷）。阶段二『每包一个』新包配置放 stryker.conf.d/<pkg>.json（首例 dsh-idle-archive），后续批次逐包迁入。"
 }
