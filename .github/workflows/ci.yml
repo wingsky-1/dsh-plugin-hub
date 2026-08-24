@@ -225,10 +225,12 @@ jobs:
       - name: Restore lib into package trees
         run: |
           set -e
+          # upload-artifact 以 path 的最短公共祖先为 zip 根：
+          # path=packages/<pkg>/lib → artifact 内容即 lib 内部（不含 lib 层）
           for dir in artifacts-tmp/lib-*; do
             pkg="${dir#artifacts-tmp/lib-}"
-            mkdir -p "packages/$pkg"
-            cp -r "$dir/." "packages/$pkg/"
+            mkdir -p "packages/$pkg/lib"
+            cp -r "$dir/." "packages/$pkg/lib/"
           done
           # 断言七个包产物齐备（缺任何一个即红——全局门禁的前提）
           for pkg in dsh-notifier dsh-idle-archive dsh-web-file-preview dsh-mcp-manager dsh-provider-usage dsh-lan-proxy dsh-plugins-all; do
