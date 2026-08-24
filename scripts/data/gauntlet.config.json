@@ -18,13 +18,31 @@
     }
   },
   "mutation": {
-    "note": "观察期仅记录不卡点；阶段三按 #42 二期校准后接入 ci.yml 硬卡点。baselineScore 为 Stryker 报告口径（1.19%），因 tap-runner 将 top-level assert 断言失败分类为 RuntimeError 而非 Killed，有效 score 约 72.6%（212/286）。",
-    "baselineScore": 1.19,
-    "baselineCovered": 1.33,
-    "baselinePkg": "dsh-notifier",
-    "baselineDate": "2026-08-24",
-    "baselineDuration": "6m54s",
-    "baselineScope": "packages/dsh-notifier/lib/index.js:255-504（对应 src/message.ts）",
-    "strict": false
+    "note": "观察期仅记录不卡点；阶段三按 #42 二期校准后接入 ci.yml 硬卡点。score 为 Stryker 报告口径（分母含 noCoverage），covered 为官方 mutationScore 口径（(killed+timeout)/(total-noCoverage)）。#151 起 tap-runner 的 RuntimeError 分类缺陷经 scripts/test/mutation-tap-bridge.cjs 修正（未捕获异常转写 TAP not ok），error=0，自动口径与此前人工换算口径一致。",
+    "strict": false,
+    "packages": {
+      "dsh-notifier": {
+        "baselineScore": 1.19,
+        "baselineCovered": 1.33,
+        "legacyNote": "#139 阶段一试点原始记录：bridge 修正前报告口径（211/295 RuntimeError 未计杀灭）；当时人工换算有效口径约 72.6%（212/286）",
+        "fixedScore": 71.86,
+        "fixedCovered": 74.13,
+        "fixedDate": "2026-08-24",
+        "fixedDuration": "6m56s",
+        "scope": "packages/dsh-notifier/lib/index.js:255-504（对应 src/message.ts）"
+      },
+      "dsh-idle-archive": {
+        "baselineScore": 58.97,
+        "baselineCovered": 64.14,
+        "baselineKilled": 161,
+        "baselineTotal": 273,
+        "baselineNoCoverage": 22,
+        "baselineErrors": 0,
+        "baselineDate": "2026-08-24",
+        "baselineDuration": "12.7s",
+        "baselineScope": "packages/dsh-idle-archive/lib/index.js:1055-1060+1146-1375（self-written 段；排除 esbuild 垫片、cosmokit/schemastery 内联 vendor、shared 契约层内联副本）",
+        "config": "stryker.conf.d/dsh-idle-archive.json"
+      }
+    }
   }
 }
