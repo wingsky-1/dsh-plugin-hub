@@ -21,12 +21,21 @@ pnpm contract     # 客户端契约（node scripts/gate/contract-check.ts）
 pnpm test         # 全量 smoke（Node ≥23.6 原生 type stripping 直跑）
 pnpm cov          # 覆盖率采集（c8 包裹 smoke，测量对象 = lib 编译产物）
 pnpm crap         # 单函数 CRAP 检查（先跑 cov；观察期只记录，--strict 为未来硬卡点）
+node scripts/gate/self-cov.mjs
+                  # self-written 覆盖率口径报告（先跑 cov；读 coverage/coverage-final.json，
+                  # 去 esbuild 内联 vendor 段与 __ 运行时垫片后仅计自写函数/行/分支，
+                  # 输出 coverage/self-coverage.json；函数计数与 crap-check 同一口径；
+                  # --dry-run 预览不落盘；观察期只记录不判红）
 pnpm pack:check   # tarball 完整性（含聚合包）
 pnpm typecheck    # 全仓类型检查
 ```
 
 > Node 版本：本地直跑 TS 需 **≥23.6**（type stripping 门槛）；CI 固定 Node 24。
-> 阈值与 strict 开关见 `scripts/data/gauntlet.config.json`（唯一事实源）。
+> 阈值与 strict 开关见 `scripts/data/gauntlet.config.json`（唯一事实源）。其中
+> `coverage.selfWrittenFunctions` 记录 self-written 函数覆盖基线：self-cov 口径
+> （去 esbuild 内联 vendor 段与 `__` 运行时垫片后仅计自写函数），当前处于**观察期**
+> （只记录不判红），`threshold` 为阶段二目标值，待基线校准（issue #42 二期）后再
+> 接入 CI 硬卡点。
 
 目录结构：
 

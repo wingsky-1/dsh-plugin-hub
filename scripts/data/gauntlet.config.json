@@ -9,9 +9,9 @@
     "lines": null,
     "functions": null,
     "selfWrittenFunctions": {
-      "pct": 55.26,
-      "total": 722,
-      "covered": 399,
+      "pct": 66.31,
+      "total": 653,
+      "covered": 433,
       "threshold": 60,
       "strict": false,
       "note": "观察期基线（self-cov 口径，去内联垫片后仅计自写函数），threshold 为阶段二目标值，当前只记录不判红"
