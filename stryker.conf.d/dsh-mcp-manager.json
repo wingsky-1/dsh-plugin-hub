@@ -1,0 +1,43 @@
+{
+  "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "mutate": [
+    "packages/dsh-mcp-manager/lib/index.js:8610-8696",
+    "packages/dsh-mcp-manager/lib/index.js:17322-17456",
+    "packages/dsh-mcp-manager/lib/index.js:19271-19915",
+    "packages/dsh-mcp-manager/lib/index.js:19964-21027"
+  ],
+  "testRunner": "tap",
+  "tap": {
+    "nodeArgs": ["-r", "./scripts/test/mutation-tap-bridge.cjs"],
+    "testFiles": [
+      "packages/dsh-mcp-manager/test/unit-apply.test.ts",
+      "packages/dsh-mcp-manager/test/unit-hotspot.test.ts",
+      "packages/dsh-mcp-manager/test/unit-manager.test.ts",
+      "packages/dsh-mcp-manager/test/unit-shared.test.ts"
+    ]
+  },
+  "mutator": {
+    "excludedMutations": [
+      "StringLiteral",
+      "ArrayLiteral",
+      "ObjectLiteral",
+      "TemplateLiteral"
+    ]
+  },
+  "plugins": ["@stryker-mutator/tap-runner"],
+  "concurrency": 4,
+  "timeoutMS": 60000,
+  "dryRunTimeoutMinutes": 5,
+  "reporters": [
+    "progress",
+    "clear-text",
+    "json"
+  ],
+  "jsonReporter": {
+    "fileName": "coverage/mutation/dsh-mcp-manager.json"
+  },
+  "coverageAnalysis": "perTest",
+  "tempDirName": ".stryker-tmp",
+  "cleanTempDir": true,
+  "_comment": "#148 接入：mutate 限定 lib/index.js 的 self-written 四段（esbuild 路径注释 // lib/* 分界）：8610-8696 store、17322-17456 transport+scope、19271-19915 protocol/supervisor/catalog、19964-21027 import/routes/index。排除头部 var __* 垫片（1-42）、cosmokit/schemastery/which/cross-spawn/ajv/fast-uri/zod/@modelcontextprotocol/sdk 等 node_modules 内联 vendor 大段（43-8549、8700-17321、17457-19270）、shared/settings-namespace+loopback+host-utils 内联契约层副本（8557-8609、19916-19963，shared 由仓库级禁改规则保护且多包重复计账会使 score 横向不可比）、8550-8556 与 8697-8699 的纯 ESM import 提升段（无可变异面）。tap.nodeArgs 注入 mutation-tap-bridge.cjs（#151 全局生效）将未捕获异常转写 TAP not ok，RuntimeError 计 Killed。"
+}
