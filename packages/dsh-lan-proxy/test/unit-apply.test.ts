@@ -367,4 +367,58 @@ const { createServer } = await import("node:http");
   assert.equal(sanitizeSettings({ port: 99999 }), null, "非法值整体返回 null");
 }
 
+// ===== validateSettings 全字段类型矩阵（#147 变异加固接续：布尔/字符串/数组类逐字段） =====
+{
+  // 布尔类字段：字符串/数字形态一律非法
+  for (const key of ["enabled", "httpsEnabled", "printBanner", "wsCompressEnabled", "httpCompressEnabled"]) {
+    for (const bad of ["true", 1, 0]) {
+      assert.equal(validateSettings({ [key]: bad })?.key, key, `${key}=${JSON.stringify(bad)} 非法`);
+      assert.equal(validateSettings({ [key]: true }), null, `${key}=true 合法`);
+    }
+  }
+  // 字符串类字段：数字形态非法；空串除 targetHost（回环约束）外合法
+  for (const key of ["host", "tlsCertFile", "tlsKeyFile"]) {
+    assert.equal(validateSettings({ [key]: 42 })?.key, key, `${key} 数字形态非法`);
+    assert.equal(validateSettings({ [key]: "" }), null, `${key} 空串合法（留空语义）`);
+  }
+  assert.equal(validateSettings({ targetHost: 42 })?.key, "targetHost", "targetHost 数字形态非法");
+  assert.equal(validateSettings({ targetHost: "" })?.key, "targetHost", "targetHost 空串非回环非法");
+  // httpsPort 与 targetPort 共用端口校验器
+  assert.equal(validateSettings({ httpsPort: 0 })?.key, "httpsPort", "httpsPort 下界外非法");
+  assert.equal(validateSettings({ targetPort: 65536 })?.key, "targetPort", "targetPort 上界外非法");
+  assert.equal(validateSettings({ httpsPort: 3443, targetPort: 3080 }), null, "两端口合法值通过");
+  // level 迁移窗口内（4-9）经归一化后合法——validate 与 sanitize 同窗
+  assert.equal(validateSettings({ httpCompressLevel: 5 }), null, "level 5 迁移后合法");
+  assert.equal(validateSettings({ httpCompressLevel: 9 }), null, "level 9 迁移后合法");
+}
+
+// ===== Config schema 直测：schemastery 默认值与上界（#147 变异加固接续） =====
+{
+  const { Config } = await import("../lib/index.js");
+  // 空对象 → 全默认值（BooleanLiteral default true / 数值默认）
+  const defaults = Config({});
+  assert.equal(defaults.enabled, true, "enabled 默认 true");
+  assert.equal(defaults.httpsEnabled, true, "httpsEnabled 默认 true");
+  assert.equal(defaults.printBanner, true, "printBanner 默认 true");
+  assert.equal(defaults.wsCompressEnabled, true, "wsCompressEnabled 默认 true");
+  assert.equal(defaults.httpCompressEnabled, true, "httpCompressEnabled 默认 true");
+  assert.equal(defaults.httpCompressLevel, 1, "httpCompressLevel 默认低档 1");
+  assert.deepEqual(defaults.wsCompressPaths, ["/api/events.mux", "/api/events.host"], "ws 压缩路径默认两会话端点");
+  // 端口上界 65535 由 schema max 强制
+  assert.throws(() => Config({ port: 65536 }), "port 超 schema 上界抛错");
+  assert.throws(() => Config({ httpsPort: -1 }), "httpsPort 负数抛错");
+  assert.throws(() => Config({ httpCompressLevel: 4 }), "压缩档位超 3 抛错");
+}
+
+// ===== loadFileConfig 坏 JSON 与非 object JSON（#147 变异加固接续） =====
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-loadcfg2-"));
+  writeFileSync(join(dir, "config.json"), "{not-json", "utf8");
+  assert.deepEqual(loadFileConfig(dir), {}, "语法坏 JSON → 空对象（catch 分支）");
+  writeFileSync(join(dir, "config.json"), "[1,2]", "utf8");
+  assert.deepEqual(loadFileConfig(dir), {}, "数组 JSON 无合法配置键 → 空对象");
+  process.env.DSH_HOME;
+  rmSync(dir, { recursive: true, force: true });
+}
+
 console.log("[unit-apply] all passed ✓");
