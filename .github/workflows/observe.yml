@@ -73,8 +73,12 @@ jobs:
           set -e
           node scripts/gate/observe-check.mjs --body-file observe-body.md --marker-file observe-marker.txt
           echo "body=observe-body.md" >> "$GITHUB_OUTPUT"
-          MARKER=$(cat observe-marker.txt)
-          echo "marker=$MARKER" >> "$GITHUB_OUTPUT"
+          # 回落标记可能为多行文本，用 heredoc 定界符写入（裸 key=value 会截断/污染 outputs）
+          {
+            echo "marker<<MARKER_EOF"
+            cat observe-marker.txt
+            echo "MARKER_EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Create/update observe issue（幂等：同日重跑不重复建；回落即追评）
         if: always() && steps.report.outcome == 'success'
@@ -105,4 +109,4 @@ jobs:
             coverage/self-coverage.json
             coverage/mutation/
           retention-days: 14
-          if-no-files-found: warn
+          if-no-files-found: error   # 报告缺失本身即异常（fail-closed，评审 F4 旁证）

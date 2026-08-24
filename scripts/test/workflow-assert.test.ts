@@ -7,10 +7,12 @@
  *
  * 断言 ci.yml / observe.yml 的关键结构不变量：
  *   - repo-gate 聚合闸：if always()、fail-closed 断言步骤、required check 名不变
- *   - fail-closed 双闸：filter 失败 fallback 全量、空矩阵占位元素
+ *   - fail-closed 双闸：filter 失败 fallback 全量切片
+ *   - build-test 矩阵恒全集构建（repo-gate 全局门禁依赖全量 lib 产物，评审 F1）
  *   - action 一律 pin commit SHA（供应链纪律，与 health-report.yml 既有惯例一致）
- *   - observe.yml：夜间调度、self-cov --check 与 mutate-scope-guard 执行点在位
- *   - ALL_PACKAGES ↔ packages/ 目录集 ↔ gauntlet mutation.packages 三方一致
+ *   - observe.yml：夜间调度、self-cov --check 与 mutate-scope-guard 执行点在位；
+ *     六包串行清单 ↔ stryker.conf.d 文件集 ↔ gauntlet mutation.packages 三方一致
+ *   - changes 的 case 映射覆盖全部包（防新增包静默漏检，评审 F7）
  *
  * 运行：node --test scripts/test/workflow-assert.test.ts（或 pnpm test:scripts）
  */
@@ -23,6 +25,16 @@ const ROOT = join(import.meta.dirname, '../..')
 const CI = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8')
 const OBSERVE = readFileSync(join(ROOT, '.github/workflows/observe.yml'), 'utf8')
 const GAUNTLET = JSON.parse(readFileSync(join(ROOT, 'scripts/data/gauntlet.config.json'), 'utf8'))
+
+const ALL_PACKAGES = [
+  'dsh-notifier',
+  'dsh-idle-archive',
+  'dsh-web-file-preview',
+  'dsh-mcp-manager',
+  'dsh-provider-usage',
+  'dsh-lan-proxy',
+  'dsh-plugins-all',
+]
 
 test('ci.yml: repo-gate 保持分支保护 required check 名', () => {
   const m = /repo-gate:\s*\n\s*name: (.+)/.exec(CI)
@@ -39,27 +51,51 @@ test('ci.yml: repo-gate if always() 且首步 fail-closed 断言双上游', () =
   assert.ok(/Fail-closed gate assertion/.test(gate), 'fail-closed 断言步骤在位')
 })
 
-test('ci.yml: filter 失败 fallback 全量（fail-closed 双闸）', () => {
-  assert.ok(/FILTER_OUTCOME.*=.*"failure"|FILTER_OUTCOME" = "failure"/.test(CI) ||
-    CI.includes('[ "$FILTER_OUTCOME" = "failure" ]'),
-    'filter outcome failure 必须触发全量 fallback')
-  assert.ok(/base 置空|按全量处理/.test(CI), 'diff base 不可用时按全量处理（F4）')
+test('ci.yml: filter 失败 fallback 全量切片（fail-closed 双闸）', () => {
+  assert.ok(CI.includes('[ "$FILTER_OUTCOME" = "failure" ]'),
+    'filter outcome failure 必须触发全量切片 fallback')
+  assert.ok(/按全量处理/.test(CI), 'diff base 不可用时按全量处理（F4）')
 })
 
-test('ci.yml: 空矩阵注入占位元素且占位实例全步骤跳过（防空矩阵假绿）', () => {
-  assert.ok(CI.includes("EMPTY_MATRIX_PLACEHOLDER: '__none__'"), '占位元素定义')
-  assert.ok(/注入占位元素防空矩阵假绿/.test(CI), '空包场景注入占位')
-  // 占位实例跳过：matrix.package != '__none__' 条件至少出现在 build-test 各步骤
-  const skipCount = (CI.match(/matrix\.package != '__none__'/g) ?? []).length
-  assert.ok(skipCount >= 7, `build-test 每个实质步骤都须带占位跳过条件（当前 ${skipCount} 处）`)
+test('ci.yml: build-test 矩阵恒全集且 build 无条件（评审 F1：全局门禁依赖全量产物）', () => {
+  const bt = CI.slice(CI.indexOf('\n  build-test:'), CI.indexOf('\n  repo-gate:'))
+  for (const pkg of ALL_PACKAGES) {
+    assert.ok(bt.includes(`- ${pkg}\n`), `矩阵含 ${pkg}`)
+  }
+  // build 步骤不得带切片条件；smoke/typecheck 必须带切片条件且 --if-present（评审 F3）
+  const buildStep = /#([^#\n]*)Build package[^\n]*\n(?:.*\n)*?- name: Smoke tests/
+  assert.ok(/Build package（无条件[^\n]*\n        run: pnpm --filter/.exec(bt.replace(buildStep, (s) => s)), null)
+  const buildBlock = bt.slice(bt.indexOf('- name: Build package'), bt.indexOf('- name: Smoke tests'))
+  assert.ok(!buildBlock.includes('if:'), 'build 步骤不允许任何 if 条件（产物全集保障）')
+  for (const stepName of ['Smoke tests', 'Typecheck']) {
+    const idx = bt.indexOf(`- name: ${stepName}`)
+    const block = bt.slice(idx, bt.indexOf('- name:', idx + 10))
+    assert.ok(block.includes('contains(fromJSON(needs.changes.outputs.hitPackages), matrix.package)'),
+      `${stepName} 步骤须按命中清单切片`)
+    assert.ok(block.includes('--if-present'), `${stepName} 须 --if-present（聚合包无该脚本）`)
+  }
+})
+
+test('ci.yml: changes case 映射覆盖全部包（防新增包静默漏检，评审 F7）', () => {
+  const computeBlock = CI.slice(CI.indexOf('Compute hit packages'))
+  for (const pkg of ALL_PACKAGES) {
+    assert.ok(computeBlock.includes(`dsh-${pkg.slice(4)})`) || computeBlock.includes(`${pkg}) V=`),
+      `case 分支缺 ${pkg} —— 新增包必须同步加映射分支`)
+  }
+  // 循环遍历清单与 ALL_PACKAGES 一致
+  const loopList = /for pkg in ([\w -]+); do/.exec(computeBlock)?.[1]?.trim().split(/\s+/).sort()
+  assert.deepEqual(loopList, [...ALL_PACKAGES].sort(), 'for 循环清单与包全集不一致')
 })
 
 test('ci.yml/observe.yml: 第三方与官方 action 一律 pin commit SHA', () => {
   for (const [name, text] of [['ci.yml', CI], ['observe.yml', OBSERVE]]) {
-    const uses = [...text.matchAll(/uses:\s*(\S+)(?:@\s*(\S+))?/g)].map((m) => m[1] + (m[2] ? `@${m[2]}` : '@'))
-    for (const u of uses) {
-      const ref = u.split('@')[1] ?? ''
-      assert.match(ref, /^[0-9a-f]{40}/, `${name}: ${u} 未 pin 到 40 位 commit SHA`)
+    // 逐行解析 uses: 值（避免贪婪 \S+ 吞掉 @ref，评审 F9）
+    const lines = text.split('\n').filter((l) => l.trim().startsWith('uses:'))
+    assert.ok(lines.length > 0, `${name} 存在 uses 步骤`)
+    for (const line of lines) {
+      const m = /^uses:\s*([\w.-]+\/[\w.-]+)(?:@(\S+))?\s*(?:#.*)?$/.exec(line.trim())
+      assert.ok(m, `${name}: 无法解析的 uses 行："${line.trim()}"`)
+      assert.match(m[2] ?? '', /^[0-9a-f]{40}/, `${name}: ${m[1]} 未 pin 到 40 位 commit SHA`)
     }
   }
 })
@@ -73,26 +109,35 @@ test('observe.yml: 夜间调度 + 双硬门禁执行点 + issues 写权限', () 
   assert.ok(OBSERVE.includes('observe-check.mjs'), '阈值校验+回落检测脚本执行点（F1/F6）')
 })
 
-test('ALL_PACKAGES ↔ packages/ 目录 ↔ gauntlet mutation.packages 三方一致', () => {
-  const m = /ALL_PACKAGES: '(\[[^\]]+\])'/.exec(CI)
-  assert.ok(m, 'ci.yml 声明 ALL_PACKAGES 清单')
-  const declared = JSON.parse(m[1])
-
-  const pkgDir = join(ROOT, 'packages')
-  const dirs = readdirSync(pkgDir).sort()
-  const declaredSorted = [...declared].sort()
-  assert.deepEqual(declaredSorted, dirs,
-    `ci.yml ALL_PACKAGES 与 packages/ 目录不一致：ci=${declaredSorted.join(',')} dirs=${dirs.join(',')}`)
-
-  const gauntPkgs = Object.keys(GAUNTLET?.mutation?.packages ?? {}).sort()
-  const expectedGaunt = dirs.filter((d) => d !== 'dsh-plugins-all').sort()
-  assert.deepEqual(gauntPkgs, expectedGaunt,
-    'gauntlet mutation.packages 应覆盖全部功能插件包（聚合包除外）')
-
-  // observe.yml 六包串行清单与 gauntlet 功能包一致
+test('六包变异三方一致：observe 清单 ↔ stryker.conf.d 文件集 ↔ gauntlet 包集', () => {
+  // observe.yml 循环名单
   const loopPkgs = [...OBSERVE.matchAll(/for pkg in ([\w -]+); do/g)]
     .flatMap((m) => m[1].trim().split(/\s+/)).map((s) => `dsh-${s}`).sort()
-  assert.deepEqual(loopPkgs, expectedGaunt, 'observe.yml 变异串行清单须与 gauntlet 包集一致')
+
+  // stryker.conf.d 实际文件集（评审 F2：配置文件缺失会让夜间循环首夜必红）
+  const confDir = join(ROOT, 'stryker.conf.d')
+  const confFiles = readdirSync(confDir).filter((f) => f.endsWith('.json')).sort()
+  assert.deepEqual(loopPkgs, confFiles.map((f) => f.replace(/\.json$/, '')),
+    `observe 变异循环与 stryker.conf.d 文件集不一致：loop=${loopPkgs.join(',')} conf=${confFiles.join(',')}`)
+
+  // gauntlet mutation.packages 与 conf 文件集一致（不含 .json 后缀）
+  const gauntPkgs = Object.keys(GAUNTLET?.mutation?.packages ?? {}).sort()
+  assert.deepEqual(gauntPkgs, confFiles.map((f) => f.replace(/\.json$/, '')).sort(),
+    'gauntlet mutation.packages 应覆盖全部带变异配置的功能插件包')
+
+  // jsonReporter 输出路径 ↔ observe-check 读的报告名一致
+  for (const f of confFiles) {
+    const conf = JSON.parse(readFileSync(join(confDir, f), 'utf8'))
+    const out = conf?.jsonReporter?.fileName
+    assert.ok(out && out.endsWith(`coverage/mutation/${f}`),
+      `${f} 的 jsonReporter 输出应为 coverage/mutation/${f}（observe-check 按此约定读取）`)
+  }
+
+  // packages/ 目录集 ⊇ conf 文件集对应目录
+  for (const f of confFiles) {
+    const dir = join(ROOT, 'packages', f.replace(/\.json$/, ''))
+    assert.ok(existsSync(dir), `packages/${f.replace(/\.json$/, '')} 目录存在`)
+  }
 })
 
 test('gauntlet: mutation.packages 全部带 threshold 字段且 ≥60（阶段一基线）', () => {

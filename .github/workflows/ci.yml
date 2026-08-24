@@ -14,14 +14,6 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-env:
-  # 受影响包矩阵的全集（与 packages/ 目录一一对应；新增包须同步更新 changes.filter
-  # 与本清单——workflow-assert 自测会断言两者一致）
-  ALL_PACKAGES: '["dsh-notifier","dsh-idle-archive","dsh-web-file-preview","dsh-mcp-manager","dsh-provider-usage","dsh-lan-proxy","dsh-plugins-all"]'
-  # docs-only 等"无受影响包"场景注入 matrix 的占位元素：其实例全步骤跳过、恒为
-  # success，禁止零实例 matrix 造成的假绿（#85 v3 F2）
-  EMPTY_MATRIX_PLACEHOLDER: '__none__'
-
 jobs:
   # ── 第 1 段：路径预筛（声明式 filter；失败一律 fallback 全量 = fail-closed）──
   changes:
@@ -29,7 +21,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      packages: ${{ steps.pkgs.outputs.packages }}
+      # 命中"需跑 smoke/typecheck 切片"的包清单（json 数组，可为 []）
+      hitPackages: ${{ steps.pkgs.outputs.hitPackages }}
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -85,30 +78,28 @@ jobs:
             dsh-plugins-all:
               - 'packages/dsh-plugins-all/**'
 
-      - name: Compute package matrix
+      - name: Compute hit packages
         id: pkgs
         env:
-          ALL: ${{ env.ALL_PACKAGES }}
-          PLACEHOLDER: ${{ env.EMPTY_MATRIX_PLACEHOLDER }}
           GLOBAL_HIT: ${{ steps.filter.outputs.global }}
           FILTER_OUTCOME: ${{ steps.filter.outcome }}
           BASE_SET: ${{ steps.base.outputs.base }}
         run: |
           set -e
-          # fail-closed 双闸：diff 基准不可用 或 filter 步骤失败 → 一律全量
+          # fail-closed 双闸：diff 基准不可用 或 filter 步骤失败 → 一律全量切片
           if [ -z "$BASE_SET" ] || [ "$FILTER_OUTCOME" = "failure" ]; then
-            echo '::notice::fallback 全量（fail-closed）'
-            echo "packages=$ALL" >> "$GITHUB_OUTPUT"
+            echo '::notice::fallback 全量切片（fail-closed）'
+            echo 'hitPackages=["dsh-notifier","dsh-idle-archive","dsh-web-file-preview","dsh-mcp-manager","dsh-provider-usage","dsh-lan-proxy","dsh-plugins-all"]' >> "$GITHUB_OUTPUT"
             exit 0
           fi
           if [ "$GLOBAL_HIT" = "true" ]; then
-            echo '::notice::全局路径命中 → 全量'
-            echo "packages=$ALL" >> "$GITHUB_OUTPUT"
+            echo '::notice::全局路径命中 → 全量切片'
+            echo 'hitPackages=["dsh-notifier","dsh-idle-archive","dsh-web-file-preview","dsh-mcp-manager","dsh-provider-usage","dsh-lan-proxy","dsh-plugins-all"]' >> "$GITHUB_OUTPUT"
             exit 0
           fi
           HITS='['
           FIRST=1
-          for pkg in $(echo "$ALL" | jq -r '.[]'); do
+          for pkg in dsh-notifier dsh-idle-archive dsh-web-file-preview dsh-mcp-manager dsh-provider-usage dsh-lan-proxy dsh-plugins-all; do
             case "$pkg" in
               dsh-notifier)          V='${{ steps.filter.outputs.dsh-notifier }}' ;;
               dsh-idle-archive)      V='${{ steps.filter.outputs.dsh-idle-archive }}' ;;
@@ -125,16 +116,14 @@ jobs:
             fi
           done
           HITS="$HITS]"
-          COUNT=$(echo "$HITS" | jq 'length')
-          if [ "$COUNT" -eq 0 ]; then
-            echo '::notice::无受影响包（docs-only 等）→ 注入占位元素防空矩阵假绿'
-            echo "packages=[\"$PLACEHOLDER\"]" >> "$GITHUB_OUTPUT"
-          else
-            echo "packages=$HITS" >> "$GITHUB_OUTPUT"
-            echo "命中包: $HITS"
-          fi
+          echo "hitPackages=$HITS" >> "$GITHUB_OUTPUT"
+          echo "命中包（跑 smoke/typecheck 切片）: $HITS"
 
-  # ── 第 2 段：受影响包并行 build / smoke / typecheck + lib 产物 artifact ──
+  # ── 第 2 段：全包并行 build + lib artifact；smoke/typecheck 只对命中包切片 ──
+  # 设计说明（#85 评审 F1/F3 修订）：repo-gate 的全局门禁（contract/pack:check/
+  # verify:npmlayout/aggregate:check）断言**全部**插件包的 lib 产物，因此 build 与
+  # artifact 上传必须无条件覆盖全集；切片只作用于测试与类型检查，避免单包 PR
+  # 场景下未命中包缺产物而必红。
   build-test:
     name: Build / Test / Typecheck (${{ matrix.package }})
     needs: changes
@@ -142,44 +131,45 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: ${{ fromJSON(needs.changes.outputs.packages) }}
+        package:
+          - dsh-notifier
+          - dsh-idle-archive
+          - dsh-web-file-preview
+          - dsh-mcp-manager
+          - dsh-provider-usage
+          - dsh-lan-proxy
+          - dsh-plugins-all
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Checkout
-        if: matrix.package != '__none__'
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Setup pnpm
-        if: matrix.package != '__none__'
         uses: pnpm/action-setup@a8198c4bff370c8506180b035930dea56dbd5288 # v5
         # 版本以根 package.json 的 packageManager 字段为单一事实源（勿同时指定 version）
 
       - name: Setup Node.js
-        if: matrix.package != '__none__'
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
           cache: pnpm
 
       - name: Install dependencies
-        if: matrix.package != '__none__'
         run: pnpm install --frozen-lockfile
 
-      - name: Build package
-        if: matrix.package != '__none__'
+      - name: Build package（无条件：repo-gate 全局门禁依赖全量 lib 产物）
         run: pnpm --filter ./packages/${{ matrix.package }} build
 
-      - name: Smoke tests（package）
-        if: matrix.package != '__none__'
-        run: pnpm --filter ./packages/${{ matrix.package }} test
+      - name: Smoke tests（仅命中包；聚合包无 test 脚本由 --if-present 跳过）
+        if: contains(fromJSON(needs.changes.outputs.hitPackages), matrix.package)
+        run: pnpm --filter ./packages/${{ matrix.package }} --if-present test
 
-      - name: Typecheck（package）
-        if: matrix.package != '__none__'
-        run: pnpm --filter ./packages/${{ matrix.package }} typecheck
+      - name: Typecheck（仅命中包；聚合包无 typecheck 脚本由 --if-present 跳过）
+        if: contains(fromJSON(needs.changes.outputs.hitPackages), matrix.package)
+        run: pnpm --filter ./packages/${{ matrix.package }} --if-present typecheck
 
       - name: Upload lib artifact（供 repo-gate 全局门禁复用，F9）
-        if: matrix.package != '__none__'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: lib-${{ matrix.package }}
@@ -226,19 +216,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Materialize all build outputs（docs-only 占位场景：本地补全量产物）
-        if: contains(fromJSON(needs.changes.outputs.packages), '__none__')
-        run: pnpm build
-
-      - name: Download package lib artifacts（F9：复用 matrix 产物避免重复构建）
-        if: "!contains(fromJSON(needs.changes.outputs.packages), '__none__')"
+      - name: Download package lib artifacts（F9：复用 matrix 全集产物，避免重复构建）
         uses: actions/download-artifact@d3f86a106a0bac45b974ac688d36e6010e0d9730 # v4
         with:
           pattern: lib-*
           path: artifacts-tmp
 
       - name: Restore lib into package trees
-        if: "!contains(fromJSON(needs.changes.outputs.packages), '__none__')"
         run: |
           set -e
           for dir in artifacts-tmp/lib-*; do
@@ -246,7 +230,11 @@ jobs:
             mkdir -p "packages/$pkg"
             cp -r "$dir/." "packages/$pkg/"
           done
-          ls packages/*/lib/index.js >/dev/null && echo 'lib 产物就位'
+          # 断言七个包产物齐备（缺任何一个即红——全局门禁的前提）
+          for pkg in dsh-notifier dsh-idle-archive dsh-web-file-preview dsh-mcp-manager dsh-provider-usage dsh-lan-proxy dsh-plugins-all; do
+            test -f "packages/$pkg/lib/index.js" || { echo "::error::$pkg/lib/index.js 缺失"; exit 1; }
+          done
+          echo '七包 lib 产物就位'
 
       - name: Client contract（客户端契约）
         run: pnpm contract

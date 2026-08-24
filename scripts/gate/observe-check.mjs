@@ -83,10 +83,17 @@ for (const [pkg, cfg] of Object.entries(packages)) {
   const r = readMutationReport(reportPath);
   if (!r) {
     rows.push({ pkg, missing: true });
+    // F4 fail-closed：strict 开启后报告缺失 = 门禁被静默跳过，必须判红
+    if (mutationStrict) violations.push(`${pkg}: 变异报告缺失（${pkg}.json 不存在或不可解析）`);
     continue;
   }
   const threshold = typeof cfg.threshold === 'number' ? cfg.threshold : null;
-  const baseline = typeof cfg.baselineCovered === 'number' ? cfg.baselineCovered : null;
+  // F8：notifier 的 baselineCovered=1.33 是 bridge 修正前的试点原始记录（legacyNote），
+  // 真实加固后基线在 fixedCovered——回退链 fixedCovered ?? baselineCovered：
+  // 有 fixed 字段说明该包经历过修正后重校准，回落检测必须以新基线为准
+  const baseline = typeof cfg.fixedCovered === 'number'
+    ? cfg.fixedCovered
+    : (typeof cfg.baselineCovered === 'number' ? cfg.baselineCovered : null);
   const belowThreshold = threshold !== null && r.coveredScore < threshold;
   // 回落判据：较入库基线下降超过 1pp
   const regressed = baseline !== null && r.coveredScore < baseline - 1;

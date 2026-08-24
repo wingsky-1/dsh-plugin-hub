@@ -17,31 +17,41 @@ import { join } from 'node:path';
 const repoRoot = process.cwd();
 const baseRef = process.argv[2] ?? 'origin/main';
 
-function readGauntletFromGit(ref) {
+function gauntletExistsInGit(ref) {
+  // 区分「基准上确实没有此文件」与「git 环境故障」——后者必须判红而非放行（评审 F6）
   try {
-    return JSON.parse(
-      execFileSync('git', ['show', `${ref}:scripts/data/gauntlet.config.json`], {
-        cwd: repoRoot,
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-      }),
-    );
-  } catch {
-    return null;
+    execFileSync('git', ['cat-file', '-e', `${ref}:scripts/data/gauntlet.config.json`], {
+      cwd: repoRoot,
+      stdio: 'ignore',
+    });
+    return true;
+  } catch (err) {
+    if (err.status === 1) return false;   // cat-file 对不存在对象退出 1
+    throw err;                             // 其它（ref 缺失/仓库异常）上抛
   }
+}
+
+function readGauntletFromGit(ref) {
+  return JSON.parse(
+    execFileSync('git', ['show', `${ref}:scripts/data/gauntlet.config.json`], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }),
+  );
 }
 
 let oldCfg;
 try {
+  if (!gauntletExistsInGit(baseRef)) {
+    // 基准上尚无 config（首次引入本文件的 PR）：无从对比，放行并说明
+    console.log(`threshold-monotonic: ${baseRef} 上无 gauntlet.config.json —— 首次引入，跳过单调性对比`);
+    process.exit(0);
+  }
   oldCfg = readGauntletFromGit(baseRef);
 } catch (err) {
-  console.error(`threshold-monotonic: 读取 ${baseRef} 基准失败：${err.message}`);
+  console.error(`threshold-monotonic: 读取 ${baseRef} 基准失败：${err.message} —— 环境故障按 fail-closed 处理`);
   process.exit(2);
-}
-if (oldCfg === null) {
-  // 基准上尚无 config（首次引入本文件的 PR）：无从对比，放行并说明
-  console.log(`threshold-monotonic: ${baseRef} 上无 gauntlet.config.json —— 首次引入，跳过单调性对比`);
-  process.exit(0);
 }
 
 let newCfg;
