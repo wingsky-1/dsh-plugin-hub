@@ -5,7 +5,7 @@
     "strict": false
   },
   "coverage": {
-    "note": "观察期仅记录不设限；校准后在此加 lines/functions 下限并接入 ci.yml 硬卡点",
+    "note": "#85 v3 起 self-written 函数口径接入夜间硬校验（observe.yml → self-cov --check）；lines/functions（c8 全口径）继续观察期",
     "lines": null,
     "functions": null,
     "selfWrittenFunctions": {
@@ -13,13 +13,14 @@
       "total": 653,
       "covered": 433,
       "threshold": 60,
-      "strict": false,
-      "note": "观察期基线（self-cov 口径，去内联垫片后仅计自写函数），threshold 为阶段二目标值，当前只记录不判红"
+      "strict": true,
+      "note": "#85 v2 裁决：基线 60%、阶段二提至 80%（届时一次性改本字段并删除过渡说明）。当前实测 66.31% 高于下限，strict 开启由 observe.yml 夜间执行"
     }
   },
   "mutation": {
     "note": "观察期仅记录不卡点；阶段三按 #42 二期校准后接入 ci.yml 硬卡点。score 为 Stryker 报告口径（分母含 noCoverage），covered 为官方 mutationScore 口径（(killed+timeout)/(total-noCoverage)）。#151 起 tap-runner 的 RuntimeError 分类缺陷经 scripts/test/mutation-tap-bridge.cjs 修正（未捕获异常转写 TAP not ok），error=0，自动口径与此前人工换算口径一致。",
     "strict": false,
+    "strictNote": "#85 v2 落盘：per-package threshold=60（两阶梯第一阶）。全局 strict 暂 false——provider-usage 二阶段加固（52.87%→60%）达标后置 true，observe.yml 即对低阈包判红并自动建 issue",
     "packages": {
       "dsh-notifier": {
         "baselineScore": 1.19,
@@ -29,7 +30,8 @@
         "fixedCovered": 74.13,
         "fixedDate": "2026-08-24",
         "fixedDuration": "6m56s",
-        "scope": "packages/dsh-notifier/lib/index.js:255-504（对应 src/message.ts）"
+        "scope": "packages/dsh-notifier/lib/index.js:255-504（对应 src/message.ts）",
+        "threshold": 60
       },
       "dsh-idle-archive": {
         "baselineScore": 58.97,
@@ -41,7 +43,8 @@
         "baselineDate": "2026-08-24",
         "baselineDuration": "12.7s",
         "baselineScope": "packages/dsh-idle-archive/lib/index.js:1055-1060+1146-1375（self-written 段；排除 esbuild 垫片、cosmokit/schemastery 内联 vendor、shared 契约层内联副本）",
-        "config": "stryker.conf.d/dsh-idle-archive.json"
+        "config": "stryker.conf.d/dsh-idle-archive.json",
+        "threshold": 60
       },
       "dsh-web-file-preview": {
         "baselineScore": 42.6,
@@ -53,7 +56,8 @@
         "baselineDate": "2026-08-24",
         "baselineDuration": "15s",
         "baselineScope": "packages/dsh-web-file-preview/lib/index.js:1255-1924（self-written 段；排除 untildify/mime 内联 vendor、shared 契约层内联副本与 routes import 提升段；client/link-resolver 内联进 index.js 本体故纳入）",
-        "config": "stryker.conf.d/dsh-web-file-preview.json"
+        "config": "stryker.conf.d/dsh-web-file-preview.json",
+        "threshold": 60
       },
       "dsh-mcp-manager": {
         "baselineScore": 58.74,
@@ -68,7 +72,8 @@
         "baselineDuration": "3m0s",
         "baselineScope": "packages/dsh-mcp-manager/lib/index.js:8610-8696+17322-17456+19271-19915+19964-21027（self-written 四段：store、transport+scope、protocol/supervisor/catalog、import/routes/index；排除 esbuild 垫片、zod/@modelcontextprotocol/sdk/ajv 等大段内联 vendor、shared 契约层内联副本与纯 import 提升段）",
         "config": "stryker.conf.d/dsh-mcp-manager.json",
-        "hardeningNote": "#148 变异加固轮：6 个单测 commit 将 covered 由 29.37% 提升至 74.66%；耗时优化（#173）零杀伤 testFiles 移除 + conc8，3m52s→3m0s"
+        "hardeningNote": "#148 变异加固轮：6 个单测 commit 将 covered 由 29.37% 提升至 74.66%；耗时优化（#173）零杀伤 testFiles 移除 + conc8，3m52s→3m0s",
+        "threshold": 60
       },
       "dsh-provider-usage": {
         "baselineScore": 39.1,
@@ -82,7 +87,8 @@
         "baselineScope": "packages/dsh-provider-usage/lib/index.js:1372-2769+2805-3696（self-written 两段：contracts/registry/adapters-opencode-go/core-guards/sanitize/pipeline-v2/history/provider-config/hotreload 与 path-resolve/client-logic/index；排除 esbuild 垫片、cosmokit/schemastery/async-mutex/untildify 内联 vendor、shared 契约层内联副本与纯 import 提升段）",
         "config": "stryker.conf.d/dsh-provider-usage.json",
         "baselineTimeout": 18,
-        "hardeningNote": "#150 变异加固轮一阶段（PR #169）：covered 由 31.80% 提升至 52.87%（图表分档矩阵/sanitizeHtml 全正则/guards 边界），60% 达标缺口二阶段跟进"
+        "hardeningNote": "#150 变异加固轮一阶段（PR #169）：covered 由 31.80% 提升至 52.87%（图表分档矩阵/sanitizeHtml 全正则/guards 边界），60% 达标缺口二阶段跟进",
+        "threshold": 60
       },
       "dsh-lan-proxy": {
         "baselineScore": 52.43,
@@ -97,7 +103,8 @@
         "baselineDuration": "7m50s",
         "baselineScope": "packages/dsh-lan-proxy/lib/index.js:35657-35911+35912-35972+36058-36643（self-written 三段，对应 src/proxy.ts+cert.ts+index.ts 尾段；排除 esbuild 垫片、cosmokit/schemastery/ws/http-proxy/node-forge/selfsigned 内联 vendor、shared 契约层内联副本）",
         "config": "stryker.conf.d/dsh-lan-proxy.json",
-        "hardeningNote": "#147 变异加固轮：covered 由 49.75% 提升至 62.52%，60% 第一阶达标"
+        "hardeningNote": "#147 变异加固轮：covered 由 49.75% 提升至 62.52%，60% 第一阶达标",
+        "threshold": 60
       }
     }
   }

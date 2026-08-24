@@ -28,6 +28,10 @@ const repoRoot = process.cwd();
 const argv = process.argv.slice(2);
 const jsonMode = argv.includes('--json');
 const dryRun = argv.includes('--dry-run');
+// --check：阈值硬校验模式（#85 v3 实施清单）。读 gauntlet.config.json 的
+// coverage.selfWrittenFunctions.{threshold,strict}，functions pct 低于下限且
+// strict=true 时非零退出（observe.yml 夜间门禁执行点）。strict=false 仅告警不判红。
+const checkMode = argv.includes('--check');
 
 const coveragePath = join(repoRoot, 'coverage', 'coverage-final.json');
 if (!existsSync(coveragePath)) {
@@ -300,5 +304,34 @@ if (!dryRun) {
     process.stderr.write(msg + '\n');
   } else {
     console.log(msg);
+  }
+}
+
+// ── 阈值硬校验（--check，#85 v3）──────────────────────────────
+
+if (checkMode) {
+  const gauntletPath = join(repoRoot, 'scripts', 'data', 'gauntlet.config.json');
+  let gauntlet;
+  try {
+    gauntlet = JSON.parse(readFileSync(gauntletPath, 'utf8'));
+  } catch (err) {
+    console.error(`self-cov --check: gauntlet.config.json 解析失败：${err.message}`);
+    process.exit(2);
+  }
+  const cfg = gauntlet?.coverage?.selfWrittenFunctions ?? {};
+  const threshold = typeof cfg.threshold === 'number' ? cfg.threshold : null;
+  if (threshold === null) {
+    console.error('self-cov --check: coverage.selfWrittenFunctions.threshold 未配置 —— 视为配置错误（fail-closed）');
+    process.exit(2);
+  }
+  const pct = report.selfWritten.functions.pct;
+  const below = pct < threshold;
+  console.log(`self-cov --check: functions ${pct}% vs threshold ${threshold}% (strict=${Boolean(cfg.strict)})`);
+  if (below && cfg.strict) {
+    console.error(`self-cov --check: FAIL —— self-written 函数覆盖 ${pct}% 低于下限 ${threshold}%`);
+    process.exit(1);
+  }
+  if (below) {
+    console.warn(`self-cov --check: WARN —— 低于下限但 strict=false，观察期不判红`);
   }
 }

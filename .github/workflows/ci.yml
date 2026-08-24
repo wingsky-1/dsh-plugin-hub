@@ -15,21 +15,142 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ci:
-    name: Build / Contract / Smoke / Pack
+  # ── 第 1 段：路径预筛（声明式 filter；失败一律 fallback 全量 = fail-closed）──
+  changes:
+    name: Detect changed packages
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-
+    timeout-minutes: 5
+    outputs:
+      # 命中"需跑 smoke/typecheck 切片"的包清单（json 数组，可为 []）
+      hitPackages: ${{ steps.pkgs.outputs.hitPackages }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # F4：push 事件 diff 基准是 github.event.before（SHA），需完整历史保证可达；
+          # PR 事件以 origin/main 为三点比基准同样依赖本地对象完整性
+          fetch-depth: 0
+
+      - name: Resolve diff base
+        id: base
+        run: |
+          set -e
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "base=origin/${{ github.base_ref }}" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ github.event.before }}" ] && echo "${{ github.event.before }}" | grep -qv '^0*$'; then
+            echo "base=${{ github.event.before }}" >> "$GITHUB_OUTPUT"
+          else
+            # 全零 SHA（force push / 新分支首推）：base 置空 → 下方按全量处理
+            echo "base=" >> "$GITHUB_OUTPUT"
+            echo '::notice::push 事件 before 不可用 —— 按全量处理（fail-closed）'
+          fi
+
+      - name: Paths filter
+        id: filter
+        if: steps.base.outputs.base != ''
+        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        with:
+          base: ${{ steps.base.outputs.base }}
+          filters: |
+            global:
+              - 'shared/**'
+              - 'scripts/**'
+              - 'agents/**'
+              - '.github/**'
+              - 'docs/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'tsconfig.base.json'
+              - 'AGENTS.md'
+            dsh-notifier:
+              - 'packages/dsh-notifier/**'
+            dsh-idle-archive:
+              - 'packages/dsh-idle-archive/**'
+            dsh-web-file-preview:
+              - 'packages/dsh-web-file-preview/**'
+            dsh-mcp-manager:
+              - 'packages/dsh-mcp-manager/**'
+            dsh-provider-usage:
+              - 'packages/dsh-provider-usage/**'
+            dsh-lan-proxy:
+              - 'packages/dsh-lan-proxy/**'
+            dsh-plugins-all:
+              - 'packages/dsh-plugins-all/**'
+
+      - name: Compute hit packages
+        id: pkgs
+        env:
+          GLOBAL_HIT: ${{ steps.filter.outputs.global }}
+          FILTER_OUTCOME: ${{ steps.filter.outcome }}
+          BASE_SET: ${{ steps.base.outputs.base }}
+        run: |
+          set -e
+          # fail-closed 双闸：diff 基准不可用 或 filter 步骤失败 → 一律全量切片
+          if [ -z "$BASE_SET" ] || [ "$FILTER_OUTCOME" = "failure" ]; then
+            echo '::notice::fallback 全量切片（fail-closed）'
+            echo 'hitPackages=["dsh-notifier","dsh-idle-archive","dsh-web-file-preview","dsh-mcp-manager","dsh-provider-usage","dsh-lan-proxy","dsh-plugins-all"]' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$GLOBAL_HIT" = "true" ]; then
+            echo '::notice::全局路径命中 → 全量切片'
+            echo 'hitPackages=["dsh-notifier","dsh-idle-archive","dsh-web-file-preview","dsh-mcp-manager","dsh-provider-usage","dsh-lan-proxy","dsh-plugins-all"]' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          HITS='['
+          FIRST=1
+          for pkg in dsh-notifier dsh-idle-archive dsh-web-file-preview dsh-mcp-manager dsh-provider-usage dsh-lan-proxy dsh-plugins-all; do
+            case "$pkg" in
+              dsh-notifier)          V='${{ steps.filter.outputs.dsh-notifier }}' ;;
+              dsh-idle-archive)      V='${{ steps.filter.outputs.dsh-idle-archive }}' ;;
+              dsh-web-file-preview)  V='${{ steps.filter.outputs.dsh-web-file-preview }}' ;;
+              dsh-mcp-manager)       V='${{ steps.filter.outputs.dsh-mcp-manager }}' ;;
+              dsh-provider-usage)    V='${{ steps.filter.outputs.dsh-provider-usage }}' ;;
+              dsh-lan-proxy)         V='${{ steps.filter.outputs.dsh-lan-proxy }}' ;;
+              dsh-plugins-all)       V='${{ steps.filter.outputs.dsh-plugins-all }}' ;;
+              *)                     V='false' ;;
+            esac
+            if [ "$V" = "true" ]; then
+              if [ $FIRST -eq 1 ]; then FIRST=0; else HITS="$HITS,"; fi
+              HITS="$HITS\"$pkg\""
+            fi
+          done
+          HITS="$HITS]"
+          echo "hitPackages=$HITS" >> "$GITHUB_OUTPUT"
+          echo "命中包（跑 smoke/typecheck 切片）: $HITS"
+
+  # ── 第 2 段：全包并行 build + lib artifact；smoke/typecheck 只对命中包切片 ──
+  # 设计说明（#85 评审 F1/F3 修订）：repo-gate 的全局门禁（contract/pack:check/
+  # verify:npmlayout/aggregate:check）断言**全部**插件包的 lib 产物，因此 build 与
+  # artifact 上传必须无条件覆盖全集；切片只作用于测试与类型检查，避免单包 PR
+  # 场景下未命中包缺产物而必红。
+  build-test:
+    name: Build / Test / Typecheck (${{ matrix.package }})
+    needs: changes
+    if: always() && needs.changes.result == 'success'
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - dsh-notifier
+          - dsh-idle-archive
+          - dsh-web-file-preview
+          - dsh-mcp-manager
+          - dsh-provider-usage
+          - dsh-lan-proxy
+          - dsh-plugins-all
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@a8198c4bff370c8506180b035930dea56dbd5288 # v5
         # 版本以根 package.json 的 packageManager 字段为单一事实源（勿同时指定 version）
 
       - name: Setup Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
           cache: pnpm
@@ -37,32 +158,97 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build all
-        run: pnpm build
+      - name: Build package（无条件：repo-gate 全局门禁依赖全量 lib 产物）
+        run: pnpm --filter ./packages/${{ matrix.package }} build
 
-      - name: Client contract
+      - name: Smoke tests（仅命中包；聚合包无 test 脚本由 --if-present 跳过）
+        if: contains(fromJSON(needs.changes.outputs.hitPackages), matrix.package)
+        run: pnpm --filter ./packages/${{ matrix.package }} --if-present test
+
+      - name: Typecheck（仅命中包；聚合包无 typecheck 脚本由 --if-present 跳过）
+        if: contains(fromJSON(needs.changes.outputs.hitPackages), matrix.package)
+        run: pnpm --filter ./packages/${{ matrix.package }} --if-present typecheck
+
+      - name: Upload package outputs artifact（供 repo-gate 全局门禁复用，F9）
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pkg-${{ matrix.package }}
+          # 构建产物全集（.gitignore 同款四类）；多路径最短公共祖先 = 包根，
+          # zip 内容即 lib/ shared/ types/ LICENSE 本身
+          path: |
+            packages/${{ matrix.package }}/lib
+            packages/${{ matrix.package }}/shared
+            packages/${{ matrix.package }}/types
+            packages/${{ matrix.package }}/LICENSE
+          retention-days: 1
+          if-no-files-found: error
+
+  # ── 第 3 段：聚合闸（job 名保持分支保护 required check 名不变，无缝切换）──
+  repo-gate:
+    name: Build / Contract / Smoke / Pack
+    needs: [changes, build-test]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Fail-closed gate assertion（F2：任何上游非 success 即红）
+        run: |
+          set -e
+          echo "changes=${{ needs.changes.result }}  build-test=${{ needs.build-test.result }}"
+          if [ "${{ needs.changes.result }}" != "success" ]; then
+            echo "::error::changes 作业未成功（${{ needs.changes.result }}）—— fail-closed"
+            exit 1
+          fi
+          if [ "${{ needs.build-test.result }}" != "success" ]; then
+            echo "::error::build-test 存在失败/skipped 实例（${{ needs.build-test.result }}）—— fail-closed"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0   # 阈值单调性校验需读 origin/main 的 config（F3）
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@a8198c4bff370c8506180b035930dea56dbd5288 # v5
+        # 版本以根 package.json 的 packageManager 字段为单一事实源（勿同时指定 version）
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download package outputs artifacts（F9：复用 matrix 全集产物，避免重复构建）
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: pkg-*
+          path: artifacts-tmp
+
+      - name: Restore package outputs into package trees
+        run: |
+          set -e
+          # 多路径上传的 zip 根 = 包根：artifact 内容即 lib/ shared/ types/ LICENSE 本身
+          for dir in artifacts-tmp/pkg-*; do
+            pkg="${dir#artifacts-tmp/pkg-}"
+            mkdir -p "packages/$pkg"
+            cp -r "$dir/." "packages/$pkg/"
+          done
+          # 断言七个包产物齐备（缺任何一个即红——全局门禁的前提）
+          for pkg in dsh-notifier dsh-idle-archive dsh-web-file-preview dsh-mcp-manager dsh-provider-usage dsh-lan-proxy dsh-plugins-all; do
+            test -f "packages/$pkg/lib/index.js" || { echo "::error::$pkg/lib/index.js 缺失"; exit 1; }
+          done
+          echo '七包构建产物就位'
+
+      - name: Client contract（客户端契约）
         run: pnpm contract
 
-      - name: Smoke tests
-        run: pnpm test
-
-      - name: Coverage（c8 采集，观察期只记录）
-        run: pnpm cov
-        continue-on-error: true   # 观察期：采集自身异常不得阻断门禁
-
-      - name: Self-written coverage summary
-        run: |
-          {
-            echo "### Self-written 覆盖率口径"
-            echo ""
-            echo '```'
-            node scripts/gate/self-cov.mjs
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: CRAP check（复杂度×覆盖率，观察期只记录）
-        run: pnpm crap
-        continue-on-error: true   # 观察期：同上；基线校准后移除并启用 --strict
+      - name: Threshold monotonicity（F3：阈值只许升不许降，PR 场景生效）
+        if: github.event_name == 'pull_request'
+        run: node scripts/gate/threshold-monotonic.mjs origin/main
 
       - name: Pack check（防发布断链）
         run: pnpm pack:check
@@ -73,7 +259,7 @@ jobs:
       - name: Aggregate check（聚合 patch 不漂移）
         run: pnpm aggregate:check
 
-      - name: Scripts self-test（维护脚本自测）
+      - name: Scripts self-test（维护脚本自测，含 workflow 结构静态断言）
         run: pnpm test:scripts
 
       - name: Docs check（README/链接/占位符）
