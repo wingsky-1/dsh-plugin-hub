@@ -181,6 +181,13 @@ test('#178: ci.yml PR 增量门禁——restore-only + 按命中包切片 + 并�
   assert.ok(!mg.includes("'use-cache'") && !mg.includes('cache: true'), '不得用主 action 形态（自带 save 后置步骤即回写）')
   assert.ok(mg.includes('scripts/gate/mutation-gate.mjs'), '双指标判分脚本执行点在位')
   assert.ok(mg.includes('scripts/gate/self-cov.mjs'), '覆盖率指标数据源执行点在位')
+  // build 必须全量（run #32790425132 教训）：pnpm cov = c8 包裹全仓 smoke，
+  // 单包构建会让其余包 lib/index.js 缺失而 ERR_MODULE_NOT_FOUND
+  const mgBuildIdx = mg.indexOf('Build all packages')
+  assert.ok(mgBuildIdx > 0, 'mutation-gate 全量构建步骤在位')
+  const mgBuildBlock = mg.slice(mgBuildIdx, mg.indexOf('- name:', mgBuildIdx + 10))
+  assert.ok(/run: pnpm build\s*$/.test(mgBuildBlock), 'mutation-gate 构建步骤必须为全量 pnpm build')
+  assert.ok(!mgBuildBlock.includes('--filter'), 'mutation-gate 构建步骤禁止 --filter 单包切片')
 
   // 成败并入既有聚合闸，不新增分支保护 required check 名
   assert.ok(/needs: \[changes, build-test, mutation-gate\]/.test(CI), 'repo-gate needs 纳入 mutation-gate')

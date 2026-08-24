@@ -225,8 +225,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build package（变异对象 = lib 编译产物，与夜间口径一致）
-        run: pnpm --filter ./packages/${{ matrix.package }} build
+      # 必须全量构建（run #32790425132 教训）：后续 pnpm cov = c8 包裹全仓 smoke，
+      # 任一包 lib/index.js 缺失即 ERR_MODULE_NOT_FOUND；且 selfWritten.functions.pct
+      # 为全仓口径，单包 cov 会让覆盖率分母与夜间口径漂移
+      - name: Build all packages（变异对象与覆盖率口径均依赖全集 lib 产物）
+        run: pnpm build
 
       - name: Restore nightly incremental baseline（只读，无 save 后置步骤）
         # 精确 key 永不命中（PR 的 run_id 与夜间不同）→ 必走 restore-keys 前缀，
