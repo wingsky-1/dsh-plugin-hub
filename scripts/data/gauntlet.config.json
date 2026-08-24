@@ -71,16 +71,18 @@
         "hardeningNote": "#148 变异加固轮：6 个单测 commit 将 covered 由 29.37% 提升至 74.66%"
       },
       "dsh-provider-usage": {
-        "baselineScore": 21.05,
-        "baselineCovered": 31.8,
-        "baselineKilled": 529,
+        "baselineScore": 26.21,
+        "baselineCovered": 39.46,
+        "baselineKilled": 661,
         "baselineTotal": 2556,
-        "baselineNoCoverage": 864,
+        "baselineNoCoverage": 858,
         "baselineErrors": 0,
         "baselineDate": "2026-08-24",
-        "baselineDuration": "1m51s",
+        "baselineDuration": "1m55s",
         "baselineScope": "packages/dsh-provider-usage/lib/index.js:1372-2769+2805-3696（self-written 两段：contracts/registry/adapters-opencode-go/core-guards/sanitize/pipeline-v2/history/provider-config/hotreload 与 path-resolve/client-logic/index；排除 esbuild 垫片、cosmokit/schemastery/async-mutex/untildify 内联 vendor、shared 契约层内联副本与纯 import 提升段）",
-        "config": "stryker.conf.d/dsh-provider-usage.json"
+        "config": "stryker.conf.d/dsh-provider-usage.json",
+        "baselineTimeout": 9,
+        "hardeningNote": "#150 变异加固轮（分片1+2 部分）：covered 由 31.80% 提升至 39.46%，60% 达标缺口单列跟进"
       },
       "dsh-lan-proxy": {
         "baselineScore": 35.11,
