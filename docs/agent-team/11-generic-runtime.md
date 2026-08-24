@@ -8,13 +8,13 @@
 ```
 dsh 根会话（持 goal 长跑）
  └─ Tier-0 主控 = 守夜人 watchman
-     │   工具: mcp__team__* 全集 + send_message(仅直接子)
+     │   原生工具: team_* 全集 + send_message(仅直接子)
      ├─ subagent: Tier-1 主控 A（prompt 来自模板 tiers[1]）
      │    ├─ subagent: role X …
      │    └─ subagent: role Y …
      ├─ subagent: Tier-1 主控 B …
-     └─ gh（归档投影，bash）
-MCP server（插件附带，进程常驻）── 持有运行时状态、文件锁、校验与记账
+     └─ bash: gh（归档投影）
+插件（宿主进程内）── 注册 team_* 工具 + 持有运行时状态/文件锁/校验记账
 宿主端插件路由 ── Console 供数 + Gate resolve 写入
 ```
 
@@ -22,28 +22,38 @@ MCP server（插件附带，进程常驻）── 持有运行时状态、文件
 
 | 类别 | 承载物 | 内容 |
 |---|---|---|
-| 确定性操作 | MCP server 运行时（`mcp__team__*` 工具内部） | 模板校验、CAS 锁、目录创建、prompt 快照+hash、agents.json 登记、互斥断言 |
+| 确定性操作 | 插件运行时（`team_*` 原生工具内部） | 模板校验、CAS 锁、目录创建、prompt 快照+hash、agents.json 登记、互斥断言 |
 | 决策类 | 提示词规程 | 选任务、派单判断、协商裁决、巡场处置、熔断裁决 |
 
 LLM 只做决策；一切"必须精确执行"的动作都在工具内部完成，杜绝幻觉跳步。
 （开发期调试辅助 `team-cli` 直读目录排障用，不在关键路径。）
 
-## 2. 产品载体定案：一个 dsh 插件，两个面
+## 2. 产品载体定案：一个 dsh 插件，内置原生工具
 
-**整个框架以 dsh 插件形态交付（npm 包 `@wingsky-1/dsh-agent-team`），不再有"CLI 先行、插件后置"的过渡期：**
+**整个框架以 dsh 插件形态交付（npm 包 `@wingsky-1/dsh-agent-team`），team_* 是插件经 cordis `tools` 服务注册的原生会话工具——不引入 MCP server。**
 
 ```
 @wingsky-1/dsh-agent-team
-├── mcp/          MCP server —— team_* 工具的提供方
-│                 （经 .dsh/mcp.json / dsh-mcp-manager 注册；进程常驻，
-│                  天然持有运行时状态与文件锁；工具内做校验/记账/原子性）
-├── src/index.ts  宿主端插件（hub 标准形态）—— 只读供数路由 + Gate 写入路由 + loopback 围栏
+├── runtime/      平台无关纯库：模板校验 / 账本 / 信箱 / 黑板 / 事件记账 / 幂等
+│                 （不依赖 harness API，为未来跨平台迁移预留）
+├── src/index.ts  宿主端插件：
+│                 · inject tools 服务 → 注册 team_* 原生会话工具
+│                 · 只读供数路由 + Gate 写入路由（loopback 围栏）
 └── src/client/   Team Console（干净模块，见 12 文档）
 ```
 
-- agent 会话内原生调用 `mcp__team__send` 等真工具——"提示词 + 内置工具"形态一步到位
-- `team-cli` 降级为开发期调试辅助（直接操作目录排障），不在关键路径上
-- 宿主端路由与 MCP server 共享同一套运行时库（同一份校验/记账代码），Console 的写路径（Gate resolve）也经它落账
+依据（已验证）：官方 `@deepseek-ai/dsh-tool-cordis` 就是普通插件经 inject `tools` 注册
+model-facing 工具的实例；工具 schema 经 JSON 克隆规范化进入模型工具目录，与 bash/read 同级。
+
+相对 MCP server 形态的红利：
+
+- 无独立常驻进程，部署 = 装一个插件
+- 工具 handler 与 Console 路由同进程，运行时状态可"宿主内存 + 落盘"混合，不必全走文件
+- 跨平台迁移靠 runtime/ 纯库解耦预留：届时另写一层 MCP 绑定即可，核心零改动
+  （MCP 是传输协议不是能力本身，等真有跨平台需求再上）
+
+落地风险（G0 第一项 spike）：hub 现有插件均为 Web UI 型，尚无注册会话工具先例；
+需先验证 `tools` 注入方式、schema 声明、权限与工具呈现（卡片）集成。
 
 ### 2.1 内置工具集（协议唯一入口）
 
@@ -62,7 +72,8 @@ LLM 只做决策；一切"必须精确执行"的动作都在工具内部完成�
 | `team_gate_open/resolve` | 闸口申请/裁决 | resolve 仅限 Console 写入路径 |
 | ~~事件写~~ | 不存在 | 一切 team_* 调用由运行时自动落事件（副作用记账） |
 
-注：MCP 工具无法替父会话执行 `send_message`（那是 DSH 会话内部能力），所以唤醒仍由守夜人循环完成——工具只负责把"该唤醒了"的事实可靠地放进账本/信箱。
+注：插件工具运行在 DSH 进程内，但仍不能替父会话执行 `send_message`（那是 agent-loop 会话内部能力），
+唤醒依旧由守夜人循环完成——工具只负责把"该唤醒了"的事实可靠地放进账本/信箱。
 
 ## 3. 工作区目录布局
 
@@ -87,15 +98,18 @@ $TEAM_HOME/<instance-id>/
 
 信箱恢复纪律借鉴 omo：`.delivering-*` 崩溃残留按 TTL 收割重投；`processed/` 防 double-inject。
 
-## 4. 守夜人机制（P0 修复）
+## 4. 巡场循环（watch loop，原"守夜人"，P0 修复）
+
+**定位澄清：不存在独立的守夜人组件。持续驱动力 = DSH goal 机制（原生），巡场动作 = tiers[0] prompt 中的一段循环规程。**
+
+- goal 回答"谁保证 Tier-0 反复醒来"：目标未完成自动开新一轮 turn，complete/blocked 管理生命周期
+- 巡场规程回答"醒来后做什么"：纯提示词 + 账本/信箱数据结构，零新增框架机制
 
 **问题**：subagent 无法自发开新 turn。Gate 挂起后谁唤醒？父死后子树谁来管？
 
-**答案：守夜人 = Tier-0 所在根会话本身，靠 DSH goal 机制长跑。**
-
 ```
 人启动团队（根会话发指令 + create_goal("完成本团队目标")）
-  → Tier-0 规程循环（goal 自动续轮驱动）：
+  → Tier-0 巡场循环（goal 自动续轮驱动）：
      ① 收割各子完成通知 / 读 mailbox 未读
      ② 巡检 gates/ 是否有已 resolve 的闸口 → send_message 唤醒挂起的直接子
      ③ 处理 blocked 上行 → 计圈/熔断/转人工
@@ -103,8 +117,9 @@ $TEAM_HOME/<instance-id>/
      ⑤ 全部 done → goal complete，收圈归档
 ```
 
-- Gate 链路闭环：Console 批准写 `gates/<id>.json` → Tier-0 下一次续轮读到 → `send_message` 唤醒挂起子。
-- 中层挂起同理：Tier-1 的 turn 结束即停，其唤醒者是 Tier-0（父）；Tier-1 自己的子由 Tier-1 在被唤醒后的 turn 里继续管理。
+- Gate 链路闭环：Console 批准写 `gates/<id>.json` → Tier-0 下一轮巡检读到 → `send_message` 唤醒挂起子。
+- **轮次驱动而非事件驱动**：批准到唤醒的延迟 = 续轮节奏（分钟级），对本场景够用，非实时系统。
+- **goal 生命周期映射（规程必须显式定义）**：单任务 blocked-human ≠ 团队整体 blocked（还有任务推进就不许置 blocked，否则续轮停摆误伤其他房间）；max_goal_rounds 按批次规模预估设够。
 - **agents.json 是"父死子活"的解药**：根会话崩溃后重启，从 agents.json 读回整棵树的 durable id，`list_agents` 核对存活者 reattach，仅对确死者重派——不丢弃全部上下文。
 
 ## 5. 幂等与恢复（泛化修订版）
@@ -157,6 +172,33 @@ stages_ext: [deciding, building, review]   # 业务子状态，仅展示
 
 （原 selector 字段已删——任务选择策略并入 tiers[0] prompt。）
 
+### 7.1 角色文件格式（Role Spec 正式定义，Q7 裁决落地）
+
+角色以独立文件定义（模板内 `roles/*.role.yaml`），team.yaml 只写引用与覆盖。格式：
+
+```yaml
+# roles/coder.role.yaml
+id: coder
+title: 实现工程师                # 展示用
+prompt: ./coder.md              # 领域知识；实例化时内联快照+hash
+briefing:                        # 简报契约：spawn 时按此校验简报缺项
+  format: structured             # structured | freeform
+  sections_required:             # 必填小节（MetaGPT 式强接口，仅对需要者启用）
+    - background                 # 背景：任务上下文与目标
+    - boundary                   # 边界：允许/禁止触碰的范围
+    - acceptance                 # 验收：本次任务的 dod 引用或补充
+    - forbidden                  # 禁止事项（安全声明等）
+dod:                             # 完成判据清单；judge 核验时强制注入并要求逐条回执
+  - 改动通过 lint/build
+  - 附验证凭据（命令+结果摘要）
+max_hops: 3                      # 单次任务内该角色的往返上限
+as_judge: false                  # judge 角色：handoff 走回执核验模式
+```
+
+校验规则（工具层强制）：`dod` 与 `acceptance` 至少一处非空；`as_judge: true` 的角色必须存在且唯一（每团队一个）；`sections_required` 仅允许枚举值；实例化时 prompt 内联进 team.yaml 快照。
+
+设计意图：简报质量从"取决于模板作者写 prompt 的水平"变为结构保证；`briefing.sections_required` 是可选约束——简单角色可用 `freeform` 不设小节。
+
 ## 8. oss-maintenance 还原对照（不变式复核）
 
 原流程每个概念仍落在模板+提示词+结构化协商：计划门=Gate、双写=url 绑定用法、并行分组=touched paths 断言+并发池、交叉沟通=negotiation 工具（yield/merge/file-order，Tier-0 裁决）、熔断=resources 计数、状态行=归档内容格式约定。
@@ -165,6 +207,8 @@ stages_ext: [deciding, building, review]   # 业务子状态，仅展示
 
 | 阶段 | 交付 | 出口判据 |
 |---|---|---|
-| G0 | 插件骨架：MCP server（init/spawn/task/state/send/handoff）+ 运行时库 + 目录协议 + Tier-0 规程 + agents.json + 守夜人循环 | 单任务全链路跑通（agent 经 MCP 调工具）；kill 根会话后 reattach 续跑 |
-| G1 | 宿主端只读路由 + Console 运行视图 + Gate 路由与唤醒闭环 + negotiation + touched paths/dod 断言 | 多任务并行一轮含一次协商；Gate 批准实际解除挂起 |
-| G2 | 建团向导（auto 模式先行）、explicit 编辑器、Archive 渲染增强、stall counter | **第二个异构模板真实需求出现时启动**（成本收益纪律） |
+| G0 | 插件骨架：原生工具注册（tools 注入/schema/权限，dsh 已支持、按文档直接实现）→ init/spawn/task/state/send/handoff 工具 + 运行时库 + 目录协议 + Tier-0 巡场规程 + agents.json | 单任务全链路跑通（agent 原生调用 team_* 工具）；kill 根会话后 reattach 续跑 |
+| G1 | 宿主端只读路由 + Console 运行视图 + **Gate 待办接入 dsh 原生 todo/任务展示**（含批准入口）+ negotiation + touched paths/dod 断言 + 角色文件格式校验 | 多任务并行一轮含一次协商；Gate 批准经 web 实际解除挂起 |
+| G2 | 建团向导（auto 模式先行）、explicit 编辑器、Archive 渲染增强 | **第二个异构模板真实需求出现时启动**（成本收益纪律） |
+
+演进方向记录（不排期，见 DISCUSSION Q 队列）：stall counter 熔断（观察模式起步）、effort 分级派单、explicit 链式移交、headless 常驻形态。

@@ -26,11 +26,15 @@ Team Console
 
 其余一切对人是只读投影。Console 不提供任何"直接指挥子代理"的操作——指挥是 Tier-0 的职权，人的干预通过对话 Tier-0 或 Gate 裁决表达。
 
-## 3. Gates 待办
+## 3. Gates 待办（Q2 裁决：走 dsh 原生任务/todo 能力，人绝不读文件）
 
-- 列表：pending 闸口（团队、gate id、卡点上下文摘要取自事件 payload）
-- 动作：批准 / 驳回（附理由）→ `POST team/gates/:id/resolve` 写 `gates/<id>.json`
-- 唤醒链路：由守夜人（Tier-0 goal 续轮巡检）消费，见 11 文档 §4
+- **展示层用原生**：Tier-0 巡场发现 pending Gate 时，通过原生 todo/任务能力把待审项写入其会话任务清单 → web GUI 原生渲染，维护者在熟悉的界面看到待办，不接触 `gates/` 目录
+- 待办项内容 = 待审上下文本体（如批次清单表），就地可读，不必跳归档链接
+- **批准入口双通道**：
+  1. Web 批准按钮 → `POST team/gates/:id/resolve` 写 `gates/<id>.json`（事实源不变）
+  2. 对话 Tier-0（"批准计划门"）→ Tier-0 经 `team_gate_resolve` 工具落账
+- 唤醒链路：巡场下一轮读到 resolved → send_message 唤醒挂起子（见 11 文档 §4）
+- 权限边界不变：`gates/*.json` 是唯一事实源，原生 todo 只是投影；agent 永远不能代写 approved
 
 ## 4. 建团向导（G2；auto 模式先行）
 

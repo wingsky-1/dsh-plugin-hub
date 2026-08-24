@@ -67,15 +67,26 @@
 | D16 | 产品形态=dsh 插件单包（MCP server 工具面 + 宿主端路由/UI 面） | 用户定案；工具化一步到位，无 CLI 过渡期 | team-cli 先行过渡 |
 | D17 | 交叉沟通恢复为结构化协商 negotiation | 保全原始需求；结构化事件+裁决不破坏架构 | 纯串行化（弱化了沟通）/ 自由聊天（不可靠） |
 | D18 | 层级默认 3 + max_tiers 可配上限 | 可配性优先，性能担忧用资源上限兜底 | 硬锁 2~3 层 |
+| D19 | 守夜人=goal 驱动 + Tier-0 巡场规程，非独立组件 | dsh goal 原生提供持续驱动，零新增机制 | 独立守夜人进程/组件 |
+| D20 | Gate 待办走 dsh 原生 todo/任务能力 web 展示 | 人不该读文件；原生 UI 即投影，gates/ 仍唯一事实源 | Console 自建待办列表读 gates/ |
+| D21 | 角色文件格式 Role Spec 正式定义（briefing 强接口可选） | 简报质量结构化保证；随 G0 校验落地 | 仅 prompt 散文约定 |
+| D22 | Q1 stall counter 不实现仅记录演进方向 | 先跑通主链路，避免过早优化 | G1 直接纳入 |
 
-## 3. 开放问题（待后续讨论）
+### 第六阶段：守夜人澄清 + Q 队列裁决（v2.2）
+- **守夜人降格为"巡场循环"（D19）**：确认 dsh goal 原生提供持续驱动，无需额外组件——goal 出驱动力，tiers[0] prompt 出循环体。三个边界：轮次驱动非事件驱动（批准到唤醒有续轮节奏延迟）；单任务 blocked ≠ 团队 blocked 的 goal 生命周期映射；唤醒动作仍在 Tier-0 turn 内执行。
+- **Q2 裁决（D20）**：Gate 待办走 dsh 原生任务/todo 能力在 web 展示，人不读文件；`gates/*.json` 保持唯一事实源，原生 todo 是投影；批准入口双通道（Web 按钮 / 对话 Tier-0）。
+- **Q7 升级落地（D21）**：定义角色文件格式 Role Spec（`.role.yaml`）：id/title/prompt/briefing(format+sections_required)/dod/max_hops/as_judge，含工具层校验规则——见 11 文档 §7.1。
+- **原生工具定案确认（A14 修订）**：team_* 与 bash 同级的 agent 可调用原生工具；不引入 MCP server；跨平台迁移靠 runtime 纯库预留。
+- 分期更新：G0 含角色文件格式校验与巡场规程；G1 Gate 待办接入原生 todo 展示。
 
-| # | 问题 | 当前倾向 |
+## 3. 开放问题队列
+
+| # | 问题 | 裁决/倾向 |
 |---|---|---|
-| Q1 | stall counter 熔断是否并入 resources | 倾向 G1 采纳（Magentic-One 实证，成本低） |
-| Q2 | Gate 待办内嵌计划内容可视化 | 倾向 G1 小改（Devin plan 面板先例） |
-| Q3 | effort 分级派单（heavy/light） | 等 token 数据说话 |
-| Q4 | explicit 模式下链式移交（免全程审计） | 暂不做，留 v2+ |
-| Q5 | team-cli 升级为插件/MCP 真工具的时机 | 接口已按真工具设计，等 G0 实跑痛点 |
-| Q6 | 形态 B（headless 多进程）管理面 | 参照 claude-squad（tmux+worktree 表） |
-| Q7 | briefing 必填小节模板（MetaGPT 式强接口） | 随 G2 向导评估 |
+| Q1 | stall counter 熔断（连续无进展检测） | **先不实现，记录演进方向**；届时以观察模式起步（只告警不停机），攒误判率再收紧 |
+| Q2 | Gate 待办展示 | ✅ 已裁决：dsh 原生 todo/任务能力 web 展示（D20），纳入 G1 |
+| Q3 | effort 分级派单（heavy/light） | 先记录；等 G0 实跑 token 分布数据，可能作为 tiers[0] prompt 派单策略自然涌现 |
+| Q4 | explicit 模式下链式移交 | 记录留观；打破"主控全知"模型，出现真实省 token 需求再议 |
+| Q5 | team-cli 升级时机 | ✅ 关闭（原生工具已定案）；cli 仅存调试辅助身份 |
+| Q6 | 形态 B（headless 多进程常驻） | 留观；触发条件="人不在场持续推进"的真实需求；管理面参照 claude-squad |
+| Q7 | 角色文件格式 | ✅ 已裁决：定义 Role Spec 格式（D21），见 11 文档 §7.1 |
