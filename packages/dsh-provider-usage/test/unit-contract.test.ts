@@ -19,6 +19,7 @@ import {
   isUsageStatsAdapter,
   describeUsageStatsAdapterShape,
   ADAPTER_CONTRACT_VERSION,
+  ERROR_CODES,
 } from "../lib/index.js";
 
 // ---------------------------------------------------------------- safeSegment
@@ -249,4 +250,67 @@ assert.equal(describeUsageStatsAdapterShape({}), [
   a.name = "x!";
   assert.ok(describeUsageStatsAdapterShape(a)?.includes("name（2-64 位字母数字下划线连字符）") === true,
     "name 白名单外的明细文案");
+}
+
+// ---------------------------------------------------------------- ERROR_CODES 全量清单（#150 分片 2）
+
+assert.deepEqual(ERROR_CODES, [
+  "no-provider",
+  "no-adapter",
+  "no-enabled-adapter",
+  "no-api-key",
+  "unauthorized",
+  "timeout",
+  "network",
+  "bad-data",
+  "bad-json",
+  "adapter-load-failed",
+  "adapter-crash",
+  "adapter-timeout",
+], "错误码清单逐项锁定（顺序与内容均不可变）");
+
+// ---------------------------------------------------------------- isUsageStatsAdapter 补充边界（#150 分片 2）
+
+{
+  // String 包装对象：typeof 非 string，但 .length 与 regex.test 均可通过，
+  // 用于区分「typeof name 恒真」类变异（后续检查全部放行的伪装类型）
+  const a = validAdapter();
+  a.name = new String("abc");
+  assert.equal(isUsageStatsAdapter(a), false, "name 为 String 包装对象拒绝（严格 typeof）");
+}
+{
+  // 元素为非字符串但带 length 的值：every 回调 typeof 恒真变异下会放行
+  const a = validAdapter();
+  a.providers = [[1, 2]];
+  assert.equal(isUsageStatsAdapter(a), false, "providers 元素为数组（length>0 非字符串）拒绝");
+}
+
+// ---------------------------------------------------------------- describeUsageStatsAdapterShape 补充边界（#150 分片 2）
+
+{
+  // 头部非法尾部合法：regex 去 ^ 锚变异后不再报 name 缺失
+  const a = validAdapter();
+  a.name = "!!ab";
+  assert.ok(describeUsageStatsAdapterShape(a)?.includes("name（") === true,
+    "name 头部白名单外仍报缺失（锚点 ^ 必需）");
+}
+{
+  // 头部合法尾部非法：regex 去 $ 锚变异后不再报 name 缺失
+  const a = validAdapter();
+  a.name = "ab!!";
+  assert.ok(describeUsageStatsAdapterShape(a)?.includes("name（") === true,
+    "name 尾部白名单外仍报缺失（锚点 $ 必需）");
+}
+{
+  // 其余字段全合法、仅 providers 空数组：length===0 判定不可移除
+  const d = describeUsageStatsAdapterShape({
+    version: ADAPTER_CONTRACT_VERSION,
+    name: "ok-name",
+    providers: [],
+    fetchData: () => {},
+    formatCapsule: () => {},
+    formatPanel: () => {},
+  });
+  assert.ok(d !== null && d.includes("providers（非空字符串数组）"),
+    "空 providers 在其余字段合法时单独报缺失");
 }
