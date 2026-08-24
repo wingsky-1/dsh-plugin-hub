@@ -273,4 +273,98 @@ const { createServer } = await import("node:http");
   assert.equal(routes.length, 0, "enabled=false 不注册任何路由");
 }
 
+// ===== rpcHandler 成功路径与 config 合并语义（#147 变异加固） =====
+{
+  let saved = null;
+  const handler = rpcHandler({
+    resolve: () => ({ enabled: true, host: "0.0.0.0", port: 3081, httpCompressLevel: 2 }),
+    fileConfig: () => ({ host: "127.0.0.1", port: 3081 }),
+    save: (s) => { saved = s; },
+    compress: () => ({ compressed: 3, passthrough: 4 }),
+  });
+  // state：settings=文件层、effective=resolve()、compress 快照透传
+  const st = await handler("state", {});
+  assert.equal(st.ok, true, "state 成功");
+  assert.equal(st.value.settings.host, "127.0.0.1", "state.settings 来自 fileConfig");
+  assert.equal(st.value.effective.httpCompressLevel, 2, "state.effective 来自 resolve");
+  assert.deepEqual(st.value.compress, { compressed: 3, passthrough: 4 }, "state.compress 快照透传");
+  // deps.compress 缺省 → null
+  const handlerNoCompress = rpcHandler({
+    resolve: () => ({ enabled: true }), fileConfig: () => ({}), save: () => {},
+  });
+  const st2 = await handlerNoCompress("state", {});
+  assert.equal(st2.value.compress, null, "无 compress deps 时快照为 null");
+
+  // config 成功：merged = 文件层 ⊕ 提交项；save 落盘
+  const ok = await handler("config", { settings: { port: 4000 } });
+  assert.equal(ok.ok, true, "config 合法提交成功");
+  assert.equal(ok.value.settings.port, 4000, "merged 含新 port");
+  assert.equal(ok.value.settings.host, "127.0.0.1", "merged 保留旧 host");
+  assert.deepEqual(saved, ok.value.settings, "save 收到 merged");
+
+  // tls 空串清空语义：raw 显式 "" → merged 删除该键（回落自签名）
+  const clearTls = await handler("config", { settings: { tlsCertFile: "", tlsKeyFile: "", printBanner: false } });
+  assert.equal(clearTls.ok, true, "tls 双空串成对合法");
+  assert.ok(!("tlsCertFile" in saved) && !("tlsKeyFile" in saved), "空串提交从 merged 剔除两个 tls 键");
+
+  // tls-pair 校验：只给证书不给私钥
+  const halfPair = await handler("config", { settings: { tlsCertFile: "/tmp/a.pem" } });
+  assert.equal(halfPair.ok, false, "单边 tls 被拒");
+  assert.equal(halfPair.error.code, "tls-pair", "tls-pair 错误码");
+}
+
+// ===== validateSettings 字段级边界矩阵（#147 变异加固） =====
+{
+  // 非 object payload（数组按 object 形态处理、无字段可校验故通过——锁定现状）
+  for (const bad of [null, 42, "x"]) {
+    const r = validateSettings(bad);
+    assert.equal(r?.key, "(payload)", `非对象 ${JSON.stringify(bad)} 报 payload 错`);
+  }
+  assert.equal(validateSettings([]), null, "空数组无字段可校验、按现状通过");
+  // 数组也是 object——但仍是合法载体形态，逐字段校验通过后返回 null
+  // 端口类边界：0 / 负数 / 小数 / 超 65535
+  for (const p of [0, -1, 3.5, 65536, "80"]) {
+    const r = validateSettings({ port: p });
+    assert.equal(r?.key, "port", `port=${JSON.stringify(p)} 非法`);
+  }
+  assert.equal(validateSettings({ port: 65535 }), null, "port 上界 65535 合法");
+  assert.equal(validateSettings({ port: 1 }), null, "port 下界 1 合法");
+  // targetHost 回环约束
+  assert.equal(validateSettings({ targetHost: "8.8.8.8" })?.key, "targetHost", "非回环 targetHost 非法");
+  assert.equal(validateSettings({ targetHost: "localhost" }), null, "localhost 合法");
+  // httpCompressLevel 档位与迁移窗口
+  assert.equal(validateSettings({ httpCompressLevel: -1 })?.key, "httpCompressLevel", "-1 非法");
+  assert.equal(validateSettings({ httpCompressLevel: 10 })?.key, "httpCompressLevel", "10 超迁移窗非法");
+  assert.equal(validateSettings({ httpCompressLevel: 3.5 })?.key, "httpCompressLevel", "小数档位非法");
+  for (const lv of [0, 1, 2, 3]) {
+    assert.equal(validateSettings({ httpCompressLevel: lv }), null, `档位 ${lv} 合法`);
+  }
+  // wsCompressPaths 元素类型
+  assert.equal(validateSettings({ wsCompressPaths: [42] })?.key, "wsCompressPaths", "非字符串元素非法");
+  assert.equal(validateSettings({ wsCompressPaths: [] }), null, "空数组合法");
+  // undefined/null 字段跳过
+  assert.equal(validateSettings({ port: undefined, host: null }), null, "undefined/null 字段跳过校验");
+}
+
+// ===== sanitizeSettings 清洗语义（#147 变异加固） =====
+{
+  // 非 object → null
+  assert.equal(sanitizeSettings(null), null, "null → null");
+  assert.equal(sanitizeSettings("x"), null, "字符串 → null");
+  // 未知键被剔除、合法键保留
+  const cleaned = sanitizeSettings({ port: 3000, evilKey: "x" });
+  assert.equal(cleaned.port, 3000, "合法键保留");
+  assert.ok(!("evilKey" in cleaned), "未知键剔除");
+  // level 迁移 4-9 → 3
+  assert.equal(sanitizeSettings({ httpCompressLevel: 7 }).httpCompressLevel, 3, "level 7 迁移为高档 3");
+  assert.equal(sanitizeSettings({ httpCompressLevel: 4 }).httpCompressLevel, 3, "level 4 迁移为高档 3");
+  assert.equal(sanitizeSettings({ httpCompressLevel: 9 }).httpCompressLevel, 3, "level 9 迁移为高档 3");
+  // tls 空串剔除
+  const noTls = sanitizeSettings({ tlsCertFile: "", tlsKeyFile: "", httpsEnabled: true });
+  assert.ok(!("tlsCertFile" in noTls) && !("tlsKeyFile" in noTls), "tls 空串被剔除");
+  assert.equal(noTls.httpsEnabled, true, "其余键不受影响");
+  // 非法值整体拒绝
+  assert.equal(sanitizeSettings({ port: 99999 }), null, "非法值整体返回 null");
+}
+
 console.log("[unit-apply] all passed ✓");
