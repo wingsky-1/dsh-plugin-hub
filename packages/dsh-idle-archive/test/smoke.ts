@@ -36,7 +36,12 @@ import {
 // 结构化单元测试（#82 批次 6：settings 命名空间路径 / isUnloading / warn /
 // persistSettingsFromStore / sanitizeSettings 边界），对齐 notifier/provider-usage
 // 样板：smoke.ts 作为入口同步加载（package.json test 命令只跑 smoke.ts）。
+// #83 剩余缺口：三纯函数（settings/state/title）结构化单测同批挂载，
+// unit 断言只写在 unit-*.test.ts 内，本文件不混入。
 import "./unit-apply.test.ts";
+import "./unit-settings.test.ts";
+import "./unit-state.test.ts";
+import "./unit-title.test.ts";
 
 // 隔离 DSH_HOME：全部落盘到临时目录，不碰真实 ~/.dsh。
 const HOME = mkdtempSync(join(tmpdir(), "dia-"));
