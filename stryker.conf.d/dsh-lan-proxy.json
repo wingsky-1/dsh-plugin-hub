@@ -1,0 +1,40 @@
+{
+  "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "mutate": [
+    "packages/dsh-lan-proxy/lib/index.js:35657-35911",
+    "packages/dsh-lan-proxy/lib/index.js:35912-35972",
+    "packages/dsh-lan-proxy/lib/index.js:36058-36643"
+  ],
+  "testRunner": "tap",
+  "tap": {
+    "nodeArgs": ["-r", "./scripts/test/mutation-tap-bridge.cjs"],
+    "testFiles": [
+      "packages/dsh-lan-proxy/test/unit-apply.test.ts",
+      "packages/dsh-lan-proxy/test/unit-proxy.test.ts"
+    ]
+  },
+  "mutator": {
+    "excludedMutations": [
+      "StringLiteral",
+      "ArrayLiteral",
+      "ObjectLiteral",
+      "TemplateLiteral"
+    ]
+  },
+  "plugins": ["@stryker-mutator/tap-runner"],
+  "concurrency": 4,
+  "timeoutMS": 15000,
+  "dryRunTimeoutMinutes": 5,
+  "reporters": [
+    "progress",
+    "clear-text",
+    "json"
+  ],
+  "jsonReporter": {
+    "fileName": "coverage/mutation/dsh-lan-proxy.json"
+  },
+  "coverageAnalysis": "perTest",
+  "tempDirName": ".stryker-tmp",
+  "cleanTempDir": true,
+  "_comment": "#147 阶段二『每包一个』：mutate 限定 lib/index.js 三段 self-written（esbuild 分段注释 // lib/*.js）：35657-35911（src/proxy.ts 转发核心，comp17/CRAP306 一带）、35912-35972（src/cert.ts 自签证书）、36058-36643（src/index.ts 尾段 Config/apply/路由）；35635-35646 为纯 import 头无可变异语句不列。排除头部 var __* 垫片、cosmokit/schemastery/ws/http-proxy/node-forge/selfsigned 内联 vendor（// node_modules 段，约 3.5 万行）与 shared/* 内联契约层副本（同 dsh-idle-archive 口径：shared 由仓库级禁改规则保护，多包内联重复计账使各包 score 横向不可比）。testFiles 仅列 2 个 unit 文件逐个启用 per-test 关联；smoke.ts 绑定固定端口不可并行故不入。timeoutMS 必须保持 15000：unit-proxy 的 WS 桥接类 mutant 注入后挂起而非抛错，60s 兜底会使总时长冲到 15 分钟以上（#147 实测），15s 下全量三段 7m36s 达标。已知风险备注：unit-apply.test.ts 固定占用 19998 构造端口被占场景，多 worker 同时进入该用例理论上会 EADDRINUSE 互踩造成假阳性 Killed；#147 实测两轮 total 均为 843 且 error=0、score 与 dryRun 覆盖关联面吻合，未观察到互踩迹象，维持 concurrency=4。"
+}
