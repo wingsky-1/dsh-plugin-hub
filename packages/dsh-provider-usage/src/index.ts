@@ -871,15 +871,24 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   // 8. 后台预热定时器（保持历史连续；无客户端访问时兜底）
   let warmupTimer: ReturnType<typeof setInterval> | null = null;
   if (config.warmupIntervalMs > 0) {
-    const warmupFn = () => {
+    // #156：必须串行 await——并发发起时全部 getStats 的同步段（cacheFresh →
+    // isLocked → runExclusive）在事件循环同一轮内执行，注册序第一个 provider
+    // 拿到全局互斥锁后其余全部 busy 短路，多 provider 场景下永远只有第一个
+    // 能采样（夜间无 GUI 轮询时段其余 provider 断采数小时）。串行化后每个
+    // provider 依次持锁取数，busy 短路语义仅保留给并发的 /stats 客户端请求。
+    const warmupFn = async () => {
       for (const provider of registry.enabledProviders()) {
-        void getStats(provider).catch(() => {});
+        try {
+          await getStats(provider);
+        } catch {
+          // 单个 provider 失败不阻断后续 provider 的采样
+        }
       }
     };
     warmupTimer = setInterval(warmupFn, config.warmupIntervalMs);
     (warmupTimer as { unref?: () => void }).unref?.();
     // 启动时立即预热一次（所有启用 provider）
-    warmupFn();
+    void warmupFn();
   }
 
   // 9. 设置面板命名空间（只读镜像；apiKey 不进 schema 避免回显）
