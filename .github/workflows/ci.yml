@@ -207,7 +207,9 @@ jobs:
       matrix:
         package: ${{ fromJSON(needs.changes.outputs.mutationPackages) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 45 分钟悬崖余量：缓存 miss 首夜 = 天然降级全量变异（lan-proxy 全量实测 7m36s，
+    # 再叠加 install + 全量 build + cov 全仓 smoke），30 分钟存在被误杀风险
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -235,12 +237,23 @@ jobs:
         # 精确 key 永不命中（PR 的 run_id 与夜间不同）→ 必走 restore-keys 前缀，
         # 命中最近一夜 observe-incremental-<run_id>；save 归档根 = coverage/mutation/
         #（六份 incremental-*.json 同目录 glob），此处以同目录 path 解压还原。
+        id: baseline
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: coverage/mutation
           key: observe-incremental-${{ github.run_id }}
           restore-keys: |
             observe-incremental-
+
+      - name: Baseline cache verdict（hit/miss 审计标注）
+        env:
+          MATCHED_KEY: ${{ steps.baseline.outputs.cache-matched-key }}
+        run: |
+          if [ -n "$MATCHED_KEY" ]; then
+            echo "incremental 基线命中：$MATCHED_KEY"
+          else
+            echo '::notice::incremental 基线缓存 miss —— 本次降级为全量变异（首夜无基线或 LRU 淘汰均属预期，非缺陷）'
+          fi
 
       - name: Incremental mutation（incremental 生效跳过未变 mutant）
         run: npx stryker run stryker.conf.d/${{ matrix.package }}.json

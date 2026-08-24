@@ -178,7 +178,12 @@ test('#178: ci.yml PR 增量门禁——restore-only + 按命中包切片 + 并�
     '动态 matrix ← changes.mutationPackages（命中包天然切片，未触包不实例化）')
   assert.ok(mg.includes('restore-keys:'), '精确 key 必 miss 后走前缀兜底（命中最近一夜基线）')
   assert.ok(mg.includes('observe-incremental-'), 'restore-keys 前缀与夜间 save key 同源')
-  assert.ok(!mg.includes("'use-cache'") && !mg.includes('cache: true'), '不得用主 action 形态（自带 save 后置步骤即回写）')
+  // 主 action 形态自带 save 后置步骤即回写，一律禁用（只允许 restore/save 子 action）
+  assert.ok(!CI.includes('actions/cache/@'), 'ci.yml 禁用 actions/cache@ 主 action 形态（自带回写）')
+  assert.ok(!CI.includes('actions/cache/save@'), 'ci.yml 禁止 save 缓存（PR 结果绝不回写夜间基线）')
+  assert.ok(/timeout-minutes: 45/.test(mg), 'mutation-gate timeout ≥45 分钟（miss 首夜全量变异 + cov 全仓 smoke 的悬崖余量）')
+  assert.ok(mg.includes('cache-matched-key'), 'restore 步骤须暴露 cache-matched-key 供 hit/miss 审计')
+  assert.ok(mg.includes('::notice::'), '缓存 miss 时须打 notice 标注全量降级（首夜属预期，防误判缺陷）')
   assert.ok(mg.includes('scripts/gate/mutation-gate.mjs'), '双指标判分脚本执行点在位')
   assert.ok(mg.includes('scripts/gate/self-cov.mjs'), '覆盖率指标数据源执行点在位')
   // build 必须全量（run #32790425132 教训）：pnpm cov = c8 包裹全仓 smoke，
@@ -191,6 +196,21 @@ test('#178: ci.yml PR 增量门禁——restore-only + 按命中包切片 + 并�
 
   // 成败并入既有聚合闸，不新增分支保护 required check 名
   assert.ok(/needs: \[changes, build-test, mutation-gate\]/.test(CI), 'repo-gate needs 纳入 mutation-gate')
+  // 聚合闸 fail-closed 判定脚本必须显式引用 mutation-gate 结果（防聚合闸旁路）
+  const rg = CI.slice(CI.indexOf('\n  repo-gate:'))
+  assert.ok(rg.includes('needs.mutation-gate.result'),
+    'repo-gate fail-closed 判定脚本必须检查 needs.mutation-gate.result')
+})
+
+test('#178: ci.yml 包名全集 ≡ gauntlet 变异六包 ∪ {dsh-plugins-all}（防清单漂移）', () => {
+  const mentioned = [...new Set(CI.match(/dsh-[a-z0-9-]+/g) ?? [])].sort()
+  const expected = [...new Set([
+    ...Object.keys(GAUNTLET?.mutation?.packages ?? {}),
+    'dsh-plugins-all',
+  ])].sort()
+  assert.deepEqual(mentioned, expected,
+    `ci.yml 出现的包名集合与 gauntlet mutation.packages ∪ {dsh-plugins-all} 不一致：`
+    + `ci=${mentioned.join(',')} gauntlet+all=${expected.join(',')}——新增包须同步全部清单`)
 })
 
 test('#178: 六份 stryker 配置开增量且 incrementalFile 无点前缀', () => {
