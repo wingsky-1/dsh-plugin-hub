@@ -33,6 +33,7 @@ import {
   pickWindow,
   fetchOpenCodeGoV2,
   miniChartSvgMarkup,
+  safeFetchData,
 } from "../lib/index.js";
 
 // ---------------------------------------------------------------- isHostProviderAdapter
@@ -703,4 +704,64 @@ assert.equal(openCodeGoAdapter.formatPanel({
     range: { start: T0 - 13 * H5, end: T0 }, truncated: false, esc: (s) => String(s),
   });
   assert.ok(html.includes("▲ +2%"), "窗外高百分比不参与趋势计算");
+}
+
+// ---------------------------------------------------------------- safeFetchData 边界（#150 变异加固）
+
+{
+  // 成功路径：JSON 序列化管道保真——Date 经 stringify/parse 变 ISO 字符串，
+  // 若删去 round-trip（直接回传 raw）则保持 Date 对象，此断言即杀该变异
+  const r = await safeFetchData(async () => ({ n: 3, d: new Date(0), nest: { ok: true } }));
+  assert.ok(r.data !== undefined && r.error === undefined, "对象输入走 data 通道");
+  assert.equal(r.data?.n, 3, "标量字段保真");
+  assert.equal(r.data?.d, "1970-01-01T00:00:00.000Z", "Date 字段经序列化变 ISO 字符串");
+  assert.deepEqual(r.data?.nest, { ok: true }, "嵌套对象保真");
+}
+{
+  // 数组拒绝：typeof === "object" 但 Array.isArray 拦截
+  const r = await safeFetchData(async () => [1, 2]);
+  assert.equal(r.error, "fetchData 必须返回对象", "数组返回被拒绝并给出固定文案");
+  assert.equal(r.data, undefined, "拒绝时无 data 字段");
+}
+{
+  // null 拒绝：typeof null === "object" 但 null 拦截
+  const r = await safeFetchData(async () => null);
+  assert.equal(r.error, "fetchData 必须返回对象", "null 返回被拒绝");
+}
+{
+  // 原始值拒绝：stringify/parse 后仍非 object
+  for (const raw of ["str", 42, true]) {
+    const r = await safeFetchData(async () => raw);
+    assert.equal(r.error, "fetchData 必须返回对象", `原始值 ${JSON.stringify(raw)} 被拒绝`);
+  }
+}
+{
+  // fn 返回 undefined：JSON.parse(undefined) 抛 SyntaxError 进 catch
+  const r = await safeFetchData(async () => undefined);
+  assert.ok(typeof r.error === "string" && r.error.length > 0, "undefined 返回进错误通道");
+  assert.match(r.error ?? "", /undefined/, "错误消息携带 undefined 线索");
+}
+{
+  // fn 同步抛 Error：message 原样入 error
+  const r = await safeFetchData(() => { throw new Error("sync-boom"); });
+  assert.equal(r.error, "sync-boom", "同步抛错提取 message");
+}
+{
+  // fn 返回 rejected promise：同样进 catch
+  const r = await safeFetchData(async () => { throw new Error("async-boom"); });
+  assert.equal(r.error, "async-boom", "异步拒绝提取 message");
+}
+{
+  // 非 Error 抛出值：String(e) 兜底
+  const r = await safeFetchData(async () => { throw "plain"; });
+  assert.equal(r.error, "plain", "非 Error 抛出值经 String 提取");
+}
+{
+  // 超时分支：fn 永挂 + 极小 timeoutMs -> abort 监听 reject 固定文案；
+  // finally clearTimeout 保证进程不悬挂
+  const t0 = Date.now();
+  const r = await safeFetchData(() => new Promise(() => {}), 25);
+  assert.equal(r.error, "fetchData 超时", "超时返回固定文案");
+  assert.equal(r.data, undefined, "超时无 data");
+  assert.ok(Date.now() - t0 < 2000, "超时在 timeoutMs 量级触发而非默认 2s");
 }
