@@ -78,6 +78,20 @@
         "baselineDuration": "1m51s",
         "baselineScope": "packages/dsh-provider-usage/lib/index.js:1372-2769+2805-3696（self-written 两段：contracts/registry/adapters-opencode-go/core-guards/sanitize/pipeline-v2/history/provider-config/hotreload 与 path-resolve/client-logic/index；排除 esbuild 垫片、cosmokit/schemastery/async-mutex/untildify 内联 vendor、shared 契约层内联副本与纯 import 提升段）",
         "config": "stryker.conf.d/dsh-provider-usage.json"
+      },
+      "dsh-lan-proxy": {
+        "baselineScore": 35.11,
+        "baselineCovered": 49.75,
+        "baselineKilled": 259,
+        "baselineTimeout": 37,
+        "baselineSurvived": 299,
+        "baselineTotal": 843,
+        "baselineNoCoverage": 248,
+        "baselineErrors": 0,
+        "baselineDate": "2026-08-24",
+        "baselineDuration": "7m36s",
+        "baselineScope": "packages/dsh-lan-proxy/lib/index.js:35657-35911+35912-35972+36058-36643（self-written 三段，对应 src/proxy.ts+cert.ts+index.ts 尾段；排除 esbuild 垫片、cosmokit/schemastery/ws/http-proxy/node-forge/selfsigned 内联 vendor、shared 契约层内联副本）",
+        "config": "stryker.conf.d/dsh-lan-proxy.json"
       }
     }
   }
