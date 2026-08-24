@@ -169,11 +169,17 @@ jobs:
         if: contains(fromJSON(needs.changes.outputs.hitPackages), matrix.package)
         run: pnpm --filter ./packages/${{ matrix.package }} --if-present typecheck
 
-      - name: Upload lib artifact（供 repo-gate 全局门禁复用，F9）
+      - name: Upload package outputs artifact（供 repo-gate 全局门禁复用，F9）
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: lib-${{ matrix.package }}
-          path: packages/${{ matrix.package }}/lib
+          name: pkg-${{ matrix.package }}
+          # 构建产物全集（.gitignore 同款四类）；多路径最短公共祖先 = 包根，
+          # zip 内容即 lib/ shared/ types/ LICENSE 本身
+          path: |
+            packages/${{ matrix.package }}/lib
+            packages/${{ matrix.package }}/shared
+            packages/${{ matrix.package }}/types
+            packages/${{ matrix.package }}/LICENSE
           retention-days: 1
           if-no-files-found: error
 
@@ -216,27 +222,26 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Download package lib artifacts（F9：复用 matrix 全集产物，避免重复构建）
+      - name: Download package outputs artifacts（F9：复用 matrix 全集产物，避免重复构建）
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          pattern: lib-*
+          pattern: pkg-*
           path: artifacts-tmp
 
-      - name: Restore lib into package trees
+      - name: Restore package outputs into package trees
         run: |
           set -e
-          # upload-artifact 以 path 的最短公共祖先为 zip 根：
-          # path=packages/<pkg>/lib → artifact 内容即 lib 内部（不含 lib 层）
-          for dir in artifacts-tmp/lib-*; do
-            pkg="${dir#artifacts-tmp/lib-}"
-            mkdir -p "packages/$pkg/lib"
-            cp -r "$dir/." "packages/$pkg/lib/"
+          # 多路径上传的 zip 根 = 包根：artifact 内容即 lib/ shared/ types/ LICENSE 本身
+          for dir in artifacts-tmp/pkg-*; do
+            pkg="${dir#artifacts-tmp/pkg-}"
+            mkdir -p "packages/$pkg"
+            cp -r "$dir/." "packages/$pkg/"
           done
           # 断言七个包产物齐备（缺任何一个即红——全局门禁的前提）
           for pkg in dsh-notifier dsh-idle-archive dsh-web-file-preview dsh-mcp-manager dsh-provider-usage dsh-lan-proxy dsh-plugins-all; do
             test -f "packages/$pkg/lib/index.js" || { echo "::error::$pkg/lib/index.js 缺失"; exit 1; }
           done
-          echo '七包 lib 产物就位'
+          echo '七包构建产物就位'
 
       - name: Client contract（客户端契约）
         run: pnpm contract
