@@ -23,6 +23,8 @@ jobs:
     outputs:
       # 命中"需跑 smoke/typecheck 切片"的包清单（json 数组，可为 []）
       hitPackages: ${{ steps.pkgs.outputs.hitPackages }}
+      # 增量变异切片清单（#178）：hitPackages 剔除聚合包 dsh-plugins-all（无变异配置）
+      mutationPackages: ${{ steps.pkgs.outputs.mutationPackages }}
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -86,15 +88,20 @@ jobs:
           BASE_SET: ${{ steps.base.outputs.base }}
         run: |
           set -e
+          # mutationPackages：hitPackages 剔除聚合包后的增量变异切片（#178）
+          emit_outputs() {
+            echo "hitPackages=$1" >> "$GITHUB_OUTPUT"
+            echo "mutationPackages=$(printf '%s' "$1" | jq -c '[.[] | select(. != "dsh-plugins-all")]')" >> "$GITHUB_OUTPUT"
+          }
           # fail-closed 双闸：diff 基准不可用 或 filter 步骤失败 → 一律全量切片
           if [ -z "$BASE_SET" ] || [ "$FILTER_OUTCOME" = "failure" ]; then
             echo '::notice::fallback 全量切片（fail-closed）'
-            echo 'hitPackages=["dsh-notifier","dsh-idle-archive","dsh-web-file-preview","dsh-mcp-manager","dsh-provider-usage","dsh-lan-proxy","dsh-plugins-all"]' >> "$GITHUB_OUTPUT"
+            emit_outputs '["dsh-notifier","dsh-idle-archive","dsh-web-file-preview","dsh-mcp-manager","dsh-provider-usage","dsh-lan-proxy","dsh-plugins-all"]'
             exit 0
           fi
           if [ "$GLOBAL_HIT" = "true" ]; then
             echo '::notice::全局路径命中 → 全量切片'
-            echo 'hitPackages=["dsh-notifier","dsh-idle-archive","dsh-web-file-preview","dsh-mcp-manager","dsh-provider-usage","dsh-lan-proxy","dsh-plugins-all"]' >> "$GITHUB_OUTPUT"
+            emit_outputs '["dsh-notifier","dsh-idle-archive","dsh-web-file-preview","dsh-mcp-manager","dsh-provider-usage","dsh-lan-proxy","dsh-plugins-all"]'
             exit 0
           fi
           HITS='['
@@ -116,7 +123,7 @@ jobs:
             fi
           done
           HITS="$HITS]"
-          echo "hitPackages=$HITS" >> "$GITHUB_OUTPUT"
+          emit_outputs "$HITS"
           echo "命中包（跑 smoke/typecheck 切片）: $HITS"
 
   # ── 第 2 段：全包并行 build + lib artifact；smoke/typecheck 只对命中包切片 ──
@@ -183,10 +190,71 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-  # ── 第 3 段：聚合闸（job 名保持分支保护 required check 名不变，无缝切换）──
+  # ── 第 3 段：增量变异门禁（#178 v2：paths-filter 切片 + 夜间基线增量复用）──
+  # - 仅对命中包实例化（动态 matrix ← changes.mutationPackages；空清单时整体 skipped）
+  # - restore-only：只读夜间全量落下的 incremental 基线，绝不回写（防 PR 结果污染夜间基线源）
+  # - 缓存未命中（首夜前 / LRU 淘汰）天然降级为全量变异，门禁语义不变仅变慢
+  # - 双指标判分（scripts/gate/mutation-gate.mjs）：测试覆盖率（self-written 函数，
+  #   恒硬）+ 变异测试率（covered ≥ threshold，受 mutation.strict 开关约束）
+  # - 成败并入 repo-gate 聚合闸，不新增分支保护 required check 名
+  # 已知约束：GitHub Actions 的 matrix 不允许引用 env context，但可引用 needs outputs
+  mutation-gate:
+    name: Mutation gate (${{ matrix.package }})
+    needs: changes
+    if: always() && needs.changes.result == 'success'
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJSON(needs.changes.outputs.mutationPackages) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@a8198c4bff370c8506180b035930dea56dbd5288 # v5
+        # 版本以根 package.json 的 packageManager 字段为单一事实源（勿同时指定 version）
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build package（变异对象 = lib 编译产物，与夜间口径一致）
+        run: pnpm --filter ./packages/${{ matrix.package }} build
+
+      - name: Restore nightly incremental baseline（只读，无 save 后置步骤）
+        # 精确 key 永不命中（PR 的 run_id 与夜间不同）→ 必走 restore-keys 前缀，
+        # 命中最近一夜 observe-incremental-<run_id>；save 归档根 = coverage/mutation/
+        #（六份 incremental-*.json 同目录 glob），此处以同目录 path 解压还原。
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: coverage/mutation
+          key: observe-incremental-${{ github.run_id }}
+          restore-keys: |
+            observe-incremental-
+
+      - name: Incremental mutation（incremental 生效跳过未变 mutant）
+        run: npx stryker run stryker.conf.d/${{ matrix.package }}.json
+
+      - name: Coverage collection（self-written 口径数据源：c8 包裹全仓 smoke）
+        run: pnpm cov
+
+      - name: Self-written coverage report（落盘 coverage/self-coverage.json）
+        run: node scripts/gate/self-cov.mjs
+
+      - name: Mutation gate verdict（双指标判分：覆盖率恒硬 + 变异率受 strict 开关）
+        run: node scripts/gate/mutation-gate.mjs ${{ matrix.package }}
+
+  # ── 第 4 段：聚合闸（job 名保持分支保护 required check 名不变，无缝切换）──
   repo-gate:
     name: Build / Contract / Smoke / Pack
-    needs: [changes, build-test]
+    needs: [changes, build-test, mutation-gate]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -194,13 +262,20 @@ jobs:
       - name: Fail-closed gate assertion（F2：任何上游非 success 即红）
         run: |
           set -e
-          echo "changes=${{ needs.changes.result }}  build-test=${{ needs.build-test.result }}"
+          echo "changes=${{ needs.changes.result }}  build-test=${{ needs.build-test.result }}  mutation-gate=${{ needs.mutation-gate.result }}"
           if [ "${{ needs.changes.result }}" != "success" ]; then
             echo "::error::changes 作业未成功（${{ needs.changes.result }}）—— fail-closed"
             exit 1
           fi
           if [ "${{ needs.build-test.result }}" != "success" ]; then
             echo "::error::build-test 存在失败/skipped 实例（${{ needs.build-test.result }}）—— fail-closed"
+            exit 1
+          fi
+          # mutation-gate（#178）：success 放行；skipped 仅当无命中包（空矩阵）或
+          # changes 未成功——后者已被上方断言拦截，此处放行不构成旁路；
+          # failure/cancelled 一律判红
+          if [ "${{ needs.mutation-gate.result }}" != "success" ] && [ "${{ needs.mutation-gate.result }}" != "skipped" ]; then
+            echo "::error::mutation-gate 存在失败实例（${{ needs.mutation-gate.result }}）—— fail-closed"
             exit 1
           fi
 

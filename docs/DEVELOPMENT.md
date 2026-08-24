@@ -37,6 +37,25 @@ pnpm typecheck    # 全仓类型检查
 > （只记录不判红），`threshold` 为阶段二目标值，待基线校准（issue #42 二期）后再
 > 接入 CI 硬卡点。
 
+### 变异测试与增量链路（#178）
+
+六包变异配置集中在 `stryker.conf.d/dsh-<pkg>.json`（mutate 区间、testFiles、
+阈值口径与 `gauntlet.config.json` 三方一致，由 workflow-assert 自测锚定）。增量链路：
+
+- **夜间全量落基线**（observe.yml）：刻意不 restore 任何缓存——无 incremental
+  基线即天然全量；运行末尾把六份 `coverage/mutation/incremental-*.json` 写入
+  actions/cache（key = `observe-incremental-<run_id>`）。逐包容错记账：单包失败
+  记账继续跑完其余包，结尾统一非零退出。
+- **PR 增量门禁**（ci.yml `mutation-gate` job）：按 paths-filter 命中包切片，
+  restore-only 读最近一夜基线（绝不回写）后对该包跑 Stryker——incremental 模式
+  跳过未变 mutant，报告仍为全量口径（复用 mutant 继承原状态）。双指标判分
+  （scripts/gate/mutation-gate.mjs）：测试覆盖率 self-written 函数 ≥ threshold
+  恒硬；变异测试率 covered ≥ per-package threshold 受全局 `mutation.strict`
+  约束（false 期间仅标注，#150 达标翻转后自动变硬）。成败并入 repo-gate
+  聚合闸，不新增分支保护 required check 名。缓存未命中时天然降级为全量变异。
+- 本地手动入口：`npx stryker run stryker.conf.d/dsh-<pkg>.json`（临时强制全量用
+  官方 `--force` 参数，勿改配置文件）。
+
 目录结构：
 
 ```text

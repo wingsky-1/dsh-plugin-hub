@@ -5,6 +5,12 @@ name: Observe (nightly)
 # - 六包全量变异（串行）+ mutate 面守卫（F5）
 # - 报告落 issue（幂等：同日不重开）；回落 >1pp 自动追评（隔夜必有工单）
 # 变异硬门禁在本 workflow 生效：任一包 covered < threshold 且 strict 开启 → 运行失败。
+# #178 v2 增量链路：
+# - 本 workflow 刻意不做 actions/cache restore —— 无增量基线即天然全量，无需 --force；
+#   请勿"好心"补 restore 步骤（会破坏全量基线语义）。
+# - 全量运行末尾将六份 incremental 基线写入 actions/cache（save 用 if: always()
+#   保证部分失败夜也落盘已产出文件），key = observe-incremental-<run_id> 单条目；
+#   PR 侧 ci.yml 以 observe-incremental- 前缀 restore-only 读取。
 
 on:
   schedule:
@@ -59,13 +65,37 @@ jobs:
       - name: Mutation scope guard（F5：mutate 区间须落在 // lib/*.js 分段边界内）
         run: node scripts/gate/mutate-scope-guard.mjs
 
-      - name: Mutation suites（六包串行全量）
+      - name: Mutation suites（六包串行全量；单包失败记账继续跑完，结尾统一判红）
+        # #178 逐包容错：strict 判红路径下 incremental 基线已先落盘（StrykerJS 源码核实），
+        # 记账继续可让后续包照常产出报告与基线，避免单包连锁丢弃整夜数据
         run: |
+          FAILED=0
+          FAILED_PKGS=''
           for pkg in notifier idle-archive web-file-preview mcp-manager provider-usage lan-proxy; do
             echo "::group::stryker dsh-$pkg"
-            npx stryker run "stryker.conf.d/dsh-$pkg.json"
-            echo "::endgroup::"
+            if npx stryker run "stryker.conf.d/dsh-$pkg.json"; then
+              echo "::endgroup::"
+            else
+              echo "::endgroup::"
+              echo "::error::变异套件失败：dsh-$pkg（记账后继续执行其余包）"
+              FAILED=1
+              FAILED_PKGS="$FAILED_PKGS $pkg"
+            fi
           done
+          if [ "$FAILED" -ne 0 ]; then
+            echo "::error::以下包变异套件失败，统一判红:$FAILED_PKGS"
+            exit 1
+          fi
+
+      - name: Save incremental baseline cache（夜间新鲜基线 → PR 增量门禁读取）
+        # #178 v2：save 用 glob 使归档根 = coverage/mutation/（六文件同目录），
+        # PR 侧 restore 以同目录 path 解压。if: always() —— 部分失败夜已产出的
+        # 基线文件照常落缓存；key 带 run_id 单条目，旧夜靠 PR 侧 restore-keys 前缀兜底。
+        if: always()
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          key: observe-incremental-${{ github.run_id }}
+          path: coverage/mutation/incremental-*.json
 
       - name: Threshold check & report body（阈值校验 + 回落检测 + 报告产出）
         id: report
