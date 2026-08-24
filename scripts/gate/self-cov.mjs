@@ -267,8 +267,9 @@ report.selfWritten.branches.pct = calcPct(report.selfWritten.branches.covered, r
 // ── 输出 ──────────────────────────────────────────────────────
 
 if (jsonMode) {
+  // stdout 摘要保持确定性输出（不含 generatedAt）：同一份 lib 产物 + 覆盖数据下
+  // 连续两次运行可逐字节 diff（观察期基线刷新与 CI 比对依赖此性质）。
   process.stdout.write(JSON.stringify({
-    generatedAt: report.generatedAt,
     selfWritten: report.selfWritten,
     skippedForeign: report.skippedForeign,
   }));
