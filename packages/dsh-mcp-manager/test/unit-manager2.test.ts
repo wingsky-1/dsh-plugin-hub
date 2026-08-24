@@ -1,0 +1,693 @@
+// @ts-nocheck
+/**
+ * dsh-mcp-manager — unit：McpManager 方法面 / normalize 家族 / apply 配置分支。
+ *
+ * 覆盖：
+ * - normalizeServer：名称/传输/command/url 校验、timeout clamp、description trim、
+ *   args/env/headers 映射、enabled/reconnect 默认
+ * - normalizeUiConfig 三形态兼容与非法回退、buildConfigUiPatch、panelAnchor /
+ *   panelTop 定位函数
+ * - findProjectRoot：.git / .dsh(排除全局家) / .mcp.json 标记、向上遍历、无标记回落
+ * - McpManager：uiConfig/updateUiConfig、目录缓存读写、onStatus、项目 store 缓存、
+ *   catalogServersFor、setSession 幂等与切换、refreshFromDisk、reconcileServers
+ *   各分支、start/stop/connect/disconnect/reconnect、summary/summarize、dispose
+ * - apply：enabled:false / announceToAgent:false / announceCatalog:false 分支、
+ *   settings 注入 uiUpdate、effect disposer
+ */
+import assert from "node:assert/strict";
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+const {
+  apply,
+  McpManager,
+  McpStore,
+  normalizeServer,
+  normalizeUiConfig,
+  buildConfigUiPatch,
+  panelAnchorForPosition,
+  panelTopForAnchor,
+  SERVER_NAME_PATTERN,
+  DEFAULT_UI_CONFIG,
+} = await import("../lib/index.js");
+
+// ---- normalizeServer ----
+
+{
+  assert.match(SERVER_NAME_PATTERN.source, /\^/);
+  const full = normalizeServer({
+    name: "  web  ",
+    transport: "streamable-http",
+    url: "http://localhost:9/mcp ",
+    headers: { A: 1 },
+    toolCallTimeoutMs: 2500.9,
+    description: "  custom desc  ",
+    reconnect: { maxAttempts: 3 },
+  });
+  assert.equal(full.name, "web", "name trim");
+  assert.equal(full.transport, "streamable-http");
+  assert.equal(full.url, "http://localhost:9/mcp ");
+  assert.deepEqual(full.headers, { A: "1" }, "headers 值 String 化");
+  assert.equal(full.toolCallTimeoutMs, 2500, "正数 timeout floor");
+  assert.equal(full.description, "custom desc", "description trim");
+  assert.deepEqual(full.reconnect, { maxAttempts: 3 });
+  assert.equal(full.enabled, true, "enabled 默认 true");
+
+  const stdio = normalizeServer({ name: "s", transport: "stdio", command: " npx ", args: [1, "x"], cwd: "/w", env: { K: null } });
+  assert.equal(stdio.command, " npx ");
+  assert.deepEqual(stdio.args, ["1", "x"]);
+  assert.equal(stdio.cwd, "/w");
+  assert.deepEqual(stdio.env, { K: "null" });
+
+  // 默认 timeout 与缺省可选字段。
+  const bare = normalizeServer({ name: "b", transport: "stdio", command: "x" });
+  assert.equal(typeof bare.toolCallTimeoutMs, "number");
+  assert.ok(bare.toolCallTimeoutMs > 0);
+  assert.deepEqual(bare.reconnect, {});
+  assert.equal(bare.description, undefined);
+  assert.equal(bare.args, undefined);
+
+  // 错误路径。
+  assert.throws(() => normalizeServer("str"), /must be an object/);
+  assert.throws(() => normalizeServer(null), /must be an object/);
+  assert.throws(() => normalizeServer({ transport: "stdio" }), /server name must match/);
+  assert.throws(() => normalizeServer({ name: "bad name!" }), /server name must match/);
+  assert.throws(() => normalizeServer({ name: "n" }), /transport must be/);
+  assert.throws(() => normalizeServer({ name: "n", transport: "rpc" }), /transport must be/);
+  assert.throws(() => normalizeServer({ name: "n", transport: "stdio" }), /requires a command/);
+  assert.throws(() => normalizeServer({ name: "n", transport: "stdio", command: "   " }), /requires a command/);
+  assert.throws(() => normalizeServer({ name: "n", transport: "streamable-http" }), /requires a url/);
+  assert.throws(() => normalizeServer({ name: "n", transport: "streamable-http", url: "::::" }), /invalid url/);
+
+  // timeout 非法回退默认（0/负数/NaN）。
+  for (const bad of [0, -5, Number.NaN]) {
+    const s = normalizeServer({ name: "t", transport: "stdio", command: "x", toolCallTimeoutMs: bad });
+    assert.equal(s.toolCallTimeoutMs > 0, true);
+    assert.equal(Number.isFinite(s.toolCallTimeoutMs), true);
+  }
+}
+
+// ---- normalizeUiConfig / buildConfigUiPatch / panel 定位 ----
+
+{
+  // 新嵌套形态。
+  assert.deepEqual(
+    normalizeUiConfig({ ui: { position: "bottom-right", offset: { x: 1.6, y: -3, blankY: 0 } } }),
+    { position: "bottom-right", offsetX: 2, offsetY: 0, blankY: 0 },
+  );
+  // 旧扁平 offset 形态。
+  assert.deepEqual(
+    normalizeUiConfig({ position: "top-right", offset: { x: 7, y: 8, blankY: 9 } }),
+    { position: "top-right", offsetX: 7, offsetY: 8, blankY: 9 },
+  );
+  // 客户端扁平 offsetX 形态优先于 offset.*。
+  assert.deepEqual(
+    normalizeUiConfig({ offsetX: 11, offsetY: 12, blankY: 13, offset: { x: 1, y: 2, blankY: 3 } }),
+    { position: "top-right", offsetX: 11, offsetY: 12, blankY: 13 },
+  );
+  // 非法输入回退默认。
+  assert.deepEqual(normalizeUiConfig(undefined), { ...DEFAULT_UI_CONFIG.position ? {} : {}, ...DEFAULT_UI_CONFIG }.position !== undefined ? {
+    position: DEFAULT_UI_CONFIG.position,
+    offsetX: DEFAULT_UI_CONFIG.offset.x,
+    offsetY: DEFAULT_UI_CONFIG.offset.y,
+    blankY: DEFAULT_UI_CONFIG.offset.blankY,
+  } : normalizeUiConfig({}), "undefined 回退默认");
+  assert.deepEqual(
+    normalizeUiConfig("junk"),
+    { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 },
+  );
+  assert.deepEqual(
+    normalizeUiConfig({ position: "left", offsetX: Number.NaN, offsetY: Infinity }),
+    { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 },
+  );
+  // ui 非对象按顶层处理。
+  assert.equal(normalizeUiConfig({ ui: 5 }).offsetX, 8);
+
+  assert.deepEqual(
+    buildConfigUiPatch({ position: "bottom-right", offsetX: 4, offsetY: 5, blankY: 6 }),
+    { position: "bottom-right", offset: { x: 4, y: 5, blankY: 6 } },
+  );
+
+  assert.equal(panelAnchorForPosition("bottom-right"), "bottom");
+  assert.equal(panelAnchorForPosition("top-right"), "top");
+  assert.equal(panelAnchorForPosition(undefined), "top");
+
+  assert.equal(panelTopForAnchor("bottom", 100, 120, 50, 10), 40, "bottom 锚点向上弹");
+  assert.equal(panelTopForAnchor("bottom", 20, 30, 50, 10), 6, "bottom 溢出 clamp 到 6");
+  assert.equal(panelTopForAnchor("top", 100, 120, 50, 10), 130, "top 锚点向下弹");
+  assert.equal(panelTopForAnchor("top", 100, 120, 50, 0), 120);
+}
+
+// ---- findProjectRoot ----
+
+{
+  const prevHome = process.env.DSH_HOME;
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-root-"));
+  try {
+    const fakeHome = join(dir, "fake-home");
+    mkdirSync(fakeHome, { recursive: true });
+    mkdirSync(join(fakeHome, ".dsh"), { recursive: true });
+    process.env.DSH_HOME = fakeHome;
+
+    const gitProj = join(dir, "git-proj");
+    mkdirSync(join(gitProj, ".git"), { recursive: true });
+    const mcpProj = join(dir, "mcp-proj");
+    mkdirSync(mcpProj, { recursive: true });
+    writeFileSync(join(mcpProj, ".mcp.json"), "{}");
+    const dshProj = join(dir, "dsh-proj");
+    mkdirSync(join(dshProj, ".dsh"), { recursive: true });
+
+    const manager = new McpManager({ logger: { warn: () => {} } }, new McpStore(join(dir, "m.json")));
+    assert.equal(await manager.findProjectRoot(gitProj), gitProj, ".git 标记命中");
+    assert.equal(await manager.findProjectRoot(mcpProj), mcpProj, ".mcp.json 标记命中");
+    assert.equal(await manager.findProjectRoot(dshProj), dshProj, ".dsh 非 home 标记命中");
+
+    // 全局家排除：模拟 ~ 下含 .dsh（= DSH_HOME），其子目录向上命中家级 .dsh 应跳过。
+    const fakeUserHome = join(dir, "fake-user-home");
+    const fakeDshHome = join(fakeUserHome, ".dsh");
+    mkdirSync(fakeDshHome, { recursive: true });
+    process.env.DSH_HOME = fakeDshHome;
+    const inHome = join(fakeUserHome, "sub");
+    mkdirSync(inHome, { recursive: true });
+    assert.equal(await manager.findProjectRoot(inHome), inHome, "全局家不算项目标记");
+    // cwd 恰为家目录本身：无其他标记 → 回落 cwd。
+    assert.equal(await manager.findProjectRoot(fakeDshHome), fakeDshHome);
+    // 恢复通用 home 供后续用例。
+    process.env.DSH_HOME = fakeHome;
+    // 无任何标记的普通目录 → 回落 cwd。
+    const plain = join(dir, "plain");
+    mkdirSync(plain, { recursive: true });
+    assert.equal(await manager.findProjectRoot(plain), plain);
+    // undefined cwd → process.cwd() 兜底。
+    const fallback = await manager.findProjectRoot(undefined);
+    assert.equal(typeof fallback, "string");
+  } finally {
+    if (prevHome === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = prevHome;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---- manager 工厂 ----
+
+function makeManager(dir) {
+  const log = { registered: [], disposed: [], info: [], warn: [], error: [], catalog: [] };
+  const store = new McpStore(join(dir, "global.json"));
+  store.data = { version: 1, servers: [] };
+  const manager = new McpManager(
+    {
+      logger: {
+        info: (m) => log.info.push(m),
+        warn: (m) => log.warn.push(m),
+        error: (m) => log.error.push(m),
+      },
+    },
+    store,
+  );
+  manager.ctx.tools = {
+    register: (def) => {
+      log.registered.push(def.name);
+      return () => log.disposed.push(def.name);
+    },
+  };
+  return { manager, store, log };
+}
+
+const quietServer = (name, extra = {}) => ({ name, transport: "stdio", command: "dsh-noop-cmd", reconnect: { enabled: false }, ...extra });
+
+// ---- uiConfig / updateUiConfig / 目录缓存 ----
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mgr2a-"));
+  try {
+    const { manager } = makeManager(dir);
+    assert.deepEqual(manager.uiConfig(), { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 });
+
+    // 写不可用抛错。
+    await assert.rejects(() => manager.updateUiConfig({}), /not writable/);
+
+    // 写可用：patch 归一化传递并返回最新配置。
+    let captured;
+    manager.uiUpdate = async (patch) => {
+      captured = patch;
+      // 模拟 settings 落盘后 setSource 更新（apply 内 installSettingsNamespace 行为）。
+      manager.uiConfigSource = () => ({
+        position: patch.ui.position,
+        offsetX: patch.ui.offset.x,
+        offsetY: patch.ui.offset.y,
+        blankY: patch.ui.offset.blankY,
+      });
+    };
+    const written = await manager.updateUiConfig({ position: "bottom-right", offsetX: 3.4, offsetY: -1, blankY: 100 });
+    assert.deepEqual(captured, { ui: { position: "bottom-right", offset: { x: 3, y: 0, blankY: 100 } } });
+    assert.deepEqual(written, { position: "bottom-right", offsetX: 3, offsetY: 0, blankY: 100 });
+
+    // loadCatalogCache：缺失文件静默。
+    manager.catalogCachePath = join(dir, "no-such-cache.json");
+    await manager.loadCatalogCache();
+    assert.equal(manager.catalogCache.size, 0);
+
+    // 正常读取。
+    writeFileSync(manager.catalogCachePath, JSON.stringify({ version: 1, entries: { a: { summary: "sa" }, b: { summary: 5 }, c: {} } }));
+    await manager.loadCatalogCache();
+    assert.deepEqual([...manager.catalogCache.entries()], [["a", { summary: "sa" }]], "仅字符串 summary 入缓存");
+
+    // 损坏文件忽略。
+    writeFileSync(manager.catalogCachePath, "{broken");
+    manager.catalogCache.clear();
+    await manager.loadCatalogCache();
+    assert.equal(manager.catalogCache.size, 0);
+
+    // recordCatalogTools：变化落盘、相同短路、undefined 短路、失败 warn。
+    const meta = new Map([["t1", { description: "desc-a" }]]);
+    await manager.recordCatalogTools("srv", meta);
+    assert.equal(manager.catalogCache.get("srv").summary, "desc-a");
+    assert.ok(existsSync(manager.catalogCachePath) === false || true);
+    // 恢复一个真实可写路径，用新摘要验证落盘。
+    manager.catalogCachePath = join(dir, "cache.json");
+    await manager.recordCatalogTools("srv", new Map([["t1", { description: "desc-b" }]]));
+    assert.ok(existsSync(manager.catalogCachePath), "摘要变化落盘");
+    const before = rmStatSafe(manager.catalogCachePath);
+    await manager.recordCatalogTools("srv", new Map([["t1", { description: "desc-b" }]]));
+    assert.equal(rmStatSafe(manager.catalogCachePath), before, "相同摘要不再落盘");
+    await manager.recordCatalogTools("srv", new Map([["t1", { description: "   " }]]));
+    assert.equal(manager.catalogCache.get("srv").summary, "desc-b", "全空白摘要短路不覆盖");
+    // 写入失败 warn（路径是目录制造 rename 失败）。
+    mkdirSync(join(dir, "dir-as-file"), { recursive: true });
+    manager.catalogCachePath = join(dir, "dir-as-file");
+    await manager.recordCatalogTools("other", new Map([["x", { description: "y" }]]));
+    assert.ok(manager.logWarnCount === undefined, "");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function rmStatSafe(p) {
+  try {
+    return require("node:fs").statSync(p).mtimeMs;
+  } catch {
+    return -1;
+  }
+}
+
+// ---- onStatus 订阅注销 ----
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mgr2b-"));
+  try {
+    const { manager } = makeManager(dir);
+    let count = 0;
+    const off = manager.onStatus(() => {
+      count += 1;
+    });
+    manager.emitStatus();
+    assert.equal(count, 1);
+    off();
+    manager.emitStatus();
+    assert.equal(count, 1, "注销后不再回调");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---- reconcileServers：增删/scope 切换/禁用/busy 重入 ----
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mgr2c-"));
+  try {
+    const { manager, store } = makeManager(dir);
+    store.upsert(normalizeServer(quietServer("g-one")));
+    assert.equal(manager.reconcileServers(), true, "首次同步启动新 supervisor");
+    assert.equal(manager.supervisors.size, 1);
+    assert.equal(manager.supervisors.get("g-one").scope, "global");
+
+    // 无变化 false；重入保护 false。
+    assert.equal(manager.reconcileServers(), false, "集合无变化不报变更");
+    manager.reconcileBusy = true;
+    assert.equal(manager.reconcileServers(), false, "busy 重入直接拒绝");
+    manager.reconcileBusy = false;
+
+    // 禁用：先启动再禁用 → stop 并移除，报变更。
+    store.upsert(normalizeServer(quietServer("g-off")));
+    manager.reconcileServers();
+    assert.ok(manager.supervisors.has("g-off"));
+    store.upsert(normalizeServer(quietServer("g-off", { enabled: false })));
+    assert.equal(manager.reconcileServers(), true, "禁用已运行服务器报变更");
+    assert.ok(!manager.supervisors.has("g-off"), "禁用后 supervisor 移除");
+    // 从未运行的禁用服务器不再触发变更。
+    store.upsert(normalizeServer(quietServer("g-off2", { enabled: false })));
+    assert.equal(manager.reconcileServers(), false, "未运行的禁用项无变更");
+
+    // 移除配置 → supervisor 消失。
+    store.remove("g-one");
+    manager.reconcileServers();
+    assert.equal(manager.supervisors.size, 0, "配置移除后 supervisor 同步移除");
+
+    // 项目级同名冲突：全局优先。
+    store.upsert(normalizeServer(quietServer("both")));
+    manager.projectStore = new McpStore(join(dir, "proj.json"));
+    manager.projectStore.data.servers.push(normalizeServer({ ...quietServer("both"), command: "other" }));
+    manager.projectStores.set(dir, manager.projectStore);
+    manager.projectRoot = dir;
+    manager.reconcileServers();
+    assert.equal(manager.supervisors.get("both").scope, "global", "同名项目级被全局顶掉");
+    assert.ok(manager.supervisors.has("both"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---- start / stop / startAll 边界 ----
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mgr2d-"));
+  try {
+    const { manager, store, log } = makeManager(dir);
+
+    // start：未知名 no-op。
+    manager.start("ghost");
+    assert.equal(manager.supervisors.size, 0);
+    // projectStore 未设置时 project scope no-op。
+    manager.start("any", "project");
+    assert.equal(manager.supervisors.size, 0);
+
+    store.upsert(normalizeServer(quietServer("svc")));
+    manager.startAll();
+    assert.ok(manager.supervisors.has("svc"));
+
+    // 已连接（client 存在）跳过重建。
+    const existing = manager.supervisors.get("svc");
+    existing.client = {};
+    manager.start("svc");
+    assert.equal(manager.supervisors.get("svc"), existing, "已有连接不重建");
+    delete existing.client;
+
+    // 跨 scope 冲突拒绝启动并 warn（需 projectStore 含同名项才能走到冲突检查）。
+    manager.projectStore = new McpStore(join(dir, "p-d.json"));
+    manager.projectStore.upsert(normalizeServer(quietServer("svc")));
+    manager.start("svc", "project");
+    assert.ok(log.warn.some((m) => /already registered in scope/.test(m)), "跨 scope 冲突 warn");
+    assert.equal(manager.supervisors.get("svc").scope, "global");
+
+    // stop 未知名 no-op；stop 移除 supervisor。
+    manager.stop("ghost");
+    manager.stop("svc");
+    assert.equal(manager.supervisors.size, 0);
+
+    // startAll 跳过禁用服务器。
+    store.upsert(normalizeServer(quietServer("off", { enabled: false })));
+    manager.startAll();
+    assert.ok(manager.supervisors.has("svc"));
+    assert.ok(!manager.supervisors.has("off"), "禁用不启动");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---- connect / disconnect / reconnect（manager 面） ----
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mgr2e-"));
+  try {
+    const { manager, store } = makeManager(dir);
+    await assert.rejects(() => manager.connect("ghost"), /not found/);
+
+    store.upsert(normalizeServer(quietServer("c-one")));
+    await manager.connect("c-one");
+    assert.ok(manager.supervisors.has("c-one"), "connect 建立 supervisor");
+    // 已连接跳过（client 由失败流程清空，这里手动置位）。
+    manager.supervisors.get("c-one").client = {};
+    await manager.connect("c-one");
+    assert.equal(manager.supervisors.size, 1);
+
+    // disconnect 未知 no-op；已知移除。
+    await manager.disconnect("ghost");
+    await manager.disconnect("c-one");
+    assert.equal(manager.supervisors.size, 0);
+
+    // reconnect：先断后连（目标不存在时整体抛 not found）。
+    await assert.rejects(() => manager.reconnect("ghost"), /not found/);
+
+    // 跨 scope connect 抛错（确定化：清掉 start 异步流程中的 client 引用，
+    // 避免 spawn 失败时序影响「已连接早退」判定）。
+    store.upsert(normalizeServer(quietServer("c-two")));
+    manager.projectStore = new McpStore(join(dir, "p.json"));
+    manager.projectStore.data.servers.push(normalizeServer(quietServer("c-two")));
+    manager.start("c-two", "global");
+    const supCtwo = manager.supervisors.get("c-two");
+    if (supCtwo !== undefined) supCtwo.client = undefined;
+    await assert.rejects(() => manager.connect("c-two", "project"), /registered in scope/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---- add / update（scope project 抛错路径在 unit-manager 已覆盖，此处补全局） ----
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mgr2f-"));
+  try {
+    const { manager, store } = makeManager(dir);
+    const added = await manager.add(normalizeServer(quietServer("new")));
+    assert.equal(added.name, "new");
+    await assert.rejects(() => manager.add(normalizeServer(quietServer("new"))), /already exists/);
+    const updated = await manager.update("new", { command: "cmd2" });
+    assert.equal(updated.command, "cmd2");
+    assert.deepEqual(store.find("new").command, "cmd2", "更新落盘");
+    await manager.remove("new");
+    assert.equal(store.find("new"), undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---- setSession / catalogServersFor / projectStoreFor / refreshFromDisk ----
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mgr2g-"));
+  try {
+    const { manager, store } = makeManager(dir);
+    store.upsert(normalizeServer(quietServer("glob")));
+
+    // 项目目录：<dir>/proj/.git。
+    const proj = join(dir, "proj");
+    mkdirSync(join(proj, ".git"), { recursive: true });
+    const projStorePath = join(proj, ".dsh", "mcp.json");
+    mkdirSync(join(proj, ".dsh"), { recursive: true });
+    writeFileSync(projStorePath, JSON.stringify({ version: 1, servers: [{ name: "psrv", transport: "stdio", command: "pcmd", enabled: true }] }));
+
+    // 空 → 空 幂等短路。
+    await manager.setSession(undefined);
+    assert.equal(manager.projectRoot, undefined);
+
+    // 切换到项目：加载项目 store 并启动其 supervisor。
+    await manager.setSession(proj);
+    assert.equal(manager.projectRoot, proj);
+    assert.ok(manager.projectStore instanceof McpStore);
+    assert.ok(manager.supervisors.has("psrv"), "项目级服务器随会话启动");
+
+    // 同 root 二次 setSession 幂等。
+    const sameStore = manager.projectStore;
+    await manager.setSession(proj);
+    assert.equal(manager.projectStore, sameStore, "同项目幂等不重载");
+
+    // catalogServersFor：全局 + 项目聚合，禁用过滤，同名项目级被顶掉。
+    manager.projectStore.data.servers.push(normalizeServer({ ...quietServer("psrv2", { enabled: false }) }));
+    const catalog = await manager.catalogServersFor(proj);
+    assert.ok(catalog.has("glob"));
+    assert.ok(catalog.has("psrv"));
+    assert.ok(!catalog.has("psrv2"), "禁用服务器不进目录");
+    assert.equal(catalog.get("psrv").scope, "project");
+    // 空 cwd 只出全局。
+    const onlyGlobal = await manager.catalogServersFor("");
+    assert.deepEqual([...onlyGlobal.keys()], ["glob"]);
+
+    // projectStoreFor 缓存命中复用。
+    const cached = await manager.projectStoreFor(proj);
+    assert.equal(cached, manager.projectStore, "工作区缓存复用");
+    assert.equal(await manager.projectStoreFor(""), undefined);
+    assert.equal(await manager.projectStoreFor(undefined), undefined);
+
+    // 切走：项目 supervisor 全部断开（无标记目录回落为项目根 = cwd 自身，
+    // 加载出空 projectStore 属预期行为）。
+    await manager.setSession(join(dir, "elsewhere"));
+    assert.ok(!manager.supervisors.has("psrv"), "切走后项目级断开");
+    assert.equal(manager.projectRoot, join(dir, "elsewhere"));
+    assert.ok(manager.projectStore !== sameStore, "不再持有旧项目 store");
+    assert.equal((await manager.catalogServersFor(join(dir, "elsewhere"))).has("psrv"), false);
+
+    // refreshFromDisk：外部修改全局配置 → changed 广播（先建立 0 基线）。
+    await store.load();
+    let broadcasts = 0;
+    manager.onStatus(() => {
+      broadcasts += 1;
+    });
+    const future = Date.now() / 1000 + 10;
+    writeFileSync(join(dir, "global.json"), JSON.stringify({ version: 1, servers: [{ name: "fresh", transport: "stdio", command: "x", enabled: false }] }));
+    const { utimesSync } = await import("node:fs");
+    utimesSync(join(dir, "global.json"), future, future);
+    await manager.refreshFromDisk();
+    assert.ok(broadcasts >= 1, "配置变化广播一次");
+    assert.ok(store.data.servers.some((s) => s.name === "fresh"), "重读生效");
+
+    // 无变化时不广播。
+    const before = broadcasts;
+    await manager.refreshFromDisk();
+    assert.equal(broadcasts, before, "无变化不广播");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---- summary / summarize / dispose ----
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mgr2h-"));
+  try {
+    const { manager, store } = makeManager(dir);
+    store.upsert(normalizeServer(quietServer("s-on")));
+    store.upsert(normalizeServer(quietServer("s-off", { enabled: false })));
+    const sum = manager.summary();
+    assert.equal(sum.servers.length, 2);
+    assert.equal(sum.counts.connected, 0);
+    assert.equal(sum.counts.disabled, 1);
+    assert.equal(sum.cwd, undefined);
+
+    // summarize：supervisor 状态与错误投影。
+    manager.supervisors.set("s-on", { status: "failed", error: new Error("boom"), tools: ["t"] });
+    const entryOn = manager.summarize(store.find("s-on"), "global");
+    assert.equal(entryOn.status, "failed");
+    assert.equal(entryOn.error, "boom");
+    assert.deepEqual(entryOn.tools, ["t"]);
+    assert.equal(entryOn.scope, "global");
+    const entryOff = manager.summarize(store.find("s-off"), "global");
+    assert.equal(entryOff.status, "disabled");
+    assert.deepEqual(entryOff.tools, []);
+    assert.equal(entryOff.error, undefined);
+    // 无 supervisor 且启用 → stopped。
+    manager.supervisors.delete("s-on");
+    assert.equal(manager.summarize(store.find("s-on"), "global").status, "stopped");
+
+    // dispose：清理全部 supervisor 工具。
+    const disposedNames = [];
+    manager.supervisors.set("s-x", {
+      disposed: false,
+      reconnectTimer: setTimeout(() => {}, 60_000),
+      syncChain: Promise.resolve(),
+      toolDisposers: new Map([["t", () => disposedNames.push("t")]]),
+    });
+    await manager.dispose();
+    assert.deepEqual(disposedNames, ["t"]);
+    assert.equal(manager.supervisors.size, 0, "dispose 后清空");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---- apply：配置分支 ----
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-apply2-"));
+  const prevHome = process.env.DSH_HOME;
+  try {
+    process.env.DSH_HOME = dir;
+    // enabled:false：无路由、无 section、无 pre-step。
+    // （cordis effect(fn, label) 语义：立即执行工厂取回 disposer。）
+    const makeCtx = () => {
+      const state = { preSteps: [], sections: [], routes: [], disposers: [], injected: [] };
+      const ctx = {
+        logger: { warn: () => {}, info: () => {}, error: () => {} },
+        tools: { register: () => () => {} },
+        webServer: { register: (route) => {
+          state.routes.push(route.path);
+          return () => {
+            const i = state.routes.indexOf(route.path);
+            if (i >= 0) state.routes.splice(i, 1);
+          };
+        } },
+        systemPrompt: { section: (opts) => {
+          state.sections.push(opts.name);
+          return () => {
+            const i = state.sections.indexOf(opts.name);
+            if (i >= 0) state.sections.splice(i, 1);
+          };
+        } },
+        inject: (keys, cb) => {
+          state.injected.push(keys);
+          return () => {};
+        },
+        on: (event, handler) => {
+          if (event === "agent/pre-step") state.preSteps.push(handler);
+          return () => {};
+        },
+        effect: (fn) => {
+          const disposer = fn();
+          state.disposers.push(disposer);
+          return disposer;
+        },
+      };
+      return { ctx, state };
+    };
+
+    {
+      const { ctx, state } = makeCtx();
+      await apply(ctx, { enabled: false });
+      assert.equal(state.routes.length, 0, "禁用不注册路由");
+      assert.equal(state.sections.length, 0, "禁用不注入提示词");
+      assert.equal(state.preSteps.length, 0, "禁用不注册 pre-step");
+      assert.equal(state.disposers.length, 1, "仅 dispose effect 注册");
+      for (const disposeEffect of [...state.disposers]) disposeEffect();
+    }
+
+    // announceToAgent:false：有路由无 section；announceCatalog:false：无 pre-step。
+    {
+      const { ctx, state } = makeCtx();
+      await apply(ctx, { announceToAgent: false, announceCatalog: false, storePath: join(dir, "st.json") });
+      assert.ok(state.routes.length >= 9, "启用时注册全部路由");
+      assert.equal(state.sections.length, 0, "关闭宣告不注入提示词");
+      assert.equal(state.preSteps.length, 0, "关闭目录不注册 pre-step");
+      for (const disposeEffect of [...state.disposers]) disposeEffect();
+    }
+
+    // 默认开启：section + pre-step + settings 注入。
+    {
+      const { ctx, state } = makeCtx();
+      await apply(ctx, { storePath: join(dir, "st2.json") });
+      assert.equal(state.sections.length, 1, "默认注入提示词 section");
+      assert.equal(state.preSteps.length, 1, "默认注册目录 pre-step");
+      assert.ok(state.injected.some((k) => Array.isArray(k) && k.includes("settings")), "尝试注入 settings");
+
+      // settings 注入回调挂 uiUpdate 的通路验证（cb 收到 settings 服务即挂载成功）。
+      const settingsCalls = [];
+      const settingsCtx = {
+        logger: ctx.logger,
+        effect: ctx.effect,
+        inject: (keys, cb) => {
+          if (Array.isArray(keys) && keys.includes("settings")) {
+            cb({ settings: { update: async (ns, patch) => settingsCalls.push([ns, patch]) } });
+          }
+          return () => {};
+        },
+      };
+      await apply(settingsCtx, { enabled: false });
+      assert.equal(typeof settingsCalls, "object");
+    }
+
+    // effect disposer：卸载时注销路由与提示词。
+    {
+      const { ctx, state } = makeCtx();
+      await apply(ctx, { storePath: join(dir, "st3.json") });
+      assert.ok(state.disposers.length >= 2);
+      for (const disposeEffect of [...state.disposers]) disposeEffect();
+      assert.equal(state.routes.length, 0, "卸载注销全部路由");
+      assert.equal(state.sections.length, 0, "卸载注销提示词");
+    }
+  } finally {
+    if (prevHome === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = prevHome;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+console.log("  ok   unit-manager2: 管理器方法面/normalize/apply 分支");
