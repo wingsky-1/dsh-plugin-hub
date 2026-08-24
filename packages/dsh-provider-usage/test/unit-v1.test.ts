@@ -35,6 +35,7 @@ import {
   miniChartSvgMarkup,
   safeFetchData,
   safeFormat,
+  fetchWithTimeout,
 } from "../lib/index.js";
 
 // ---------------------------------------------------------------- isHostProviderAdapter
@@ -802,4 +803,43 @@ assert.equal(openCodeGoAdapter.formatPanel({
   // 超时分支：fn 永挂 + 极小 timeoutMs -> 文案含适配器名
   const r = await safeFormat(() => new Promise(() => {}), "FmtSlow", 25);
   assert.equal(r.error, "FmtSlow 超时", "超时返回含名字的固定文案");
+}
+
+// ---------------------------------------------------------------- fetchWithTimeout 边界（#150 变异加固）
+
+{
+  // mock 全局 fetch：记录入参并延迟 resolve，用 resolved 后的 signal.aborted
+  // 观察超时定时器是否真的触发了 abort（不悬挂、无网络）
+  const realFetch = globalThis.fetch;
+  const calls = [];
+  try {
+    globalThis.fetch = async (url, opts) => {
+      calls.push({ url, opts });
+      await new Promise((res) => setTimeout(res, opts.delayMs ?? 0));
+      return { marker: "mock", aborted: opts.signal.aborted, url, headers: opts.headers };
+    };
+
+    // 快路径：远小于超时的延迟 -> 正常返回且 signal 未 abort
+    const fast = await fetchWithTimeout("https://gw.test/x", 1000,
+      { headers: { "x-k": "v" }, signal: "fake-signal", delayMs: 10 });
+    assert.equal(fast.marker, "mock", "返回值来自注入的 fetch");
+    assert.equal(fast.aborted, false, "未超时时 signal 未被 abort");
+    assert.equal(fast.url, "https://gw.test/x", "url 原样透传");
+    assert.deepEqual(fast.headers, { "x-k": "v" }, "init.headers 透传");
+    const sigFast = calls[calls.length - 1].opts.signal;
+    assert.ok(sigFast instanceof AbortSignal, "signal 覆盖为真 AbortSignal（展开序 {...init, signal}）");
+
+    // 慢路径：超过 timeoutMs 的延迟 -> 返回时已观察到 abort
+    const slow = await fetchWithTimeout("https://gw.test/y", 20, { delayMs: 80 });
+    assert.equal(slow.aborted, true, "超过 timeoutMs 后 controller.abort 已触发");
+    assert.equal(calls.length, 2, "两次调用均到达注入 fetch");
+
+    // 默认参数形态：省略 timeoutMs 与 init 仍可完成快调用
+    globalThis.fetch = async (url, opts) => ({ marker: "def", aborted: opts.signal.aborted });
+    const def = await fetchWithTimeout("https://gw.test/z");
+    assert.equal(def.marker, "def", "默认参数下仍走 fetch 并返回");
+    assert.equal(def.aborted, false, "默认 10s 超时内完成不 abort");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 }
