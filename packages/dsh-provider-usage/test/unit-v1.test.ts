@@ -34,6 +34,7 @@ import {
   fetchOpenCodeGoV2,
   miniChartSvgMarkup,
   safeFetchData,
+  safeFormat,
 } from "../lib/index.js";
 
 // ---------------------------------------------------------------- isHostProviderAdapter
@@ -764,4 +765,41 @@ assert.equal(openCodeGoAdapter.formatPanel({
   assert.equal(r.error, "fetchData 超时", "超时返回固定文案");
   assert.equal(r.data, undefined, "超时无 data");
   assert.ok(Date.now() - t0 < 2000, "超时在 timeoutMs 量级触发而非默认 2s");
+}
+
+// ---------------------------------------------------------------- safeFormat 边界（#150 变异加固）
+
+{
+  // 成功路径：字符串原样透传
+  const r = await safeFormat(() => "<b>ok</b>", "FmtA");
+  assert.equal(r.html, "<b>ok</b>", "字符串返回走 html 通道");
+  assert.equal(r.error, undefined, "成功无 error 字段");
+}
+{
+  // 非字符串拒绝：name 嵌入固定文案
+  for (const bad of [42, null, undefined, { obj: true }]) {
+    const r = await safeFormat(() => bad, "FmtB");
+    assert.equal(r.error, "FmtB 必须返回字符串", `非字符串 ${String(bad)} 被拒绝且文案含适配器名`);
+    assert.equal(r.html, undefined, "拒绝时无 html 字段");
+  }
+}
+{
+  // fn 同步抛 Error：Promise.resolve().then(fn) 转 rejection 后 message 入 error
+  const r = await safeFormat(() => { throw new Error("fmt-sync-boom"); }, "FmtC");
+  assert.equal(r.error, "fmt-sync-boom", "同步抛错提取 message");
+}
+{
+  // fn 返回 rejected promise
+  const r = await safeFormat(async () => { throw new Error("fmt-async-boom"); }, "FmtD");
+  assert.equal(r.error, "fmt-async-boom", "异步拒绝提取 message");
+}
+{
+  // 非 Error 抛出值：String(e) 兜底
+  const r = await safeFormat(async () => { throw 7; }, "FmtE");
+  assert.equal(r.error, "7", "非 Error 抛出值经 String 提取");
+}
+{
+  // 超时分支：fn 永挂 + 极小 timeoutMs -> 文案含适配器名
+  const r = await safeFormat(() => new Promise(() => {}), "FmtSlow", 25);
+  assert.equal(r.error, "FmtSlow 超时", "超时返回含名字的固定文案");
 }
