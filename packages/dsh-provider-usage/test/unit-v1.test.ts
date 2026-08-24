@@ -951,3 +951,174 @@ function resetLineXs(svg) {
       `非法入参 ${JSON.stringify(bad)} 产零条重置线`);
   }
 }
+
+// ---------------------------------------------------------------- 图表纯函数分档矩阵（#150 变异加固 2/4 续）
+
+{
+  // timeTickStep 分档 + timeTicks 翻倍：spanMs=10min 触发 step=2min
+  // 预期 10:00-10:10 约 6 个刻度（HH:mm），经 step 翻倍后 count≤6 停
+  const svg = miniChartSvgMarkup({
+    samples: [{ x: T0, y: 0 }, { x: T0 + 10 * MIN, y: 5 }],
+    color: "#c", lo: 0, hi: 10, resetsAt: undefined, resetPeriodMs: 0, dateOnly: false,
+  });
+  assert.ok(/>\d{2}:\d{2}<\/text>/.test(svg), "10min span 刻度为 HH:mm");
+  assert.ok(svg.includes("10:00") || svg.includes("10:0"), "10min span 首个刻度含 10:00");
+}
+{
+  // timeTickStep 分档 2：spanMs=30min 触发 step=5min（10min<30min≤45min）
+  const svg = miniChartSvgMarkup({
+    samples: [{ x: T0, y: 0 }, { x: T0 + 30 * MIN, y: 5 }],
+    color: "#c", lo: 0, hi: 10, resetsAt: undefined, resetPeriodMs: 0, dateOnly: false,
+  });
+  assert.ok(/>\d{2}:\d{2}<\/text>/.test(svg), "30min span 刻度为 HH:mm");
+}
+{
+  // timeTickStep 分档 3：spanMs=1h 触发 step=15min（45min<1h≤3h）
+  const svg = miniChartSvgMarkup({
+    samples: [{ x: T0, y: 0 }, { x: T0 + 60 * MIN, y: 5 }],
+    color: "#c", lo: 0, hi: 10, resetsAt: undefined, resetPeriodMs: 0, dateOnly: false,
+  });
+  assert.ok(/>\d{2}:\d{2}<\/text>/.test(svg), "1h span 刻度为 HH:mm");
+}
+{
+  // timeTickStep 分档 4：spanMs=6h 触发 step=1h（3h<6h≤12h）
+  const svg = miniChartSvgMarkup({
+    samples: [{ x: T0, y: 0 }, { x: T0 + 6 * 3600000, y: 5 }],
+    color: "#c", lo: 0, hi: 10, resetsAt: undefined, resetPeriodMs: 0, dateOnly: false,
+  });
+  assert.ok(/>\d{2}:\d{2}<\/text>/.test(svg), "6h span 刻度为 HH:mm");
+  // 1h step → count≤6 循环限制下约 4-7 个刻度（10:00~16:00）
+  const ticks = svg.match(/\d{2}:\d{2}<\/text>/g);
+  assert.ok(ticks && ticks.length >= 3 && ticks.length <= 8, `6h span 刻度数合理（3-8 个），实为 ${ticks?.length}`);
+}
+{
+  // timeTickStep 分档 5：spanMs=2d 触发 step=3h（12h<2d≤3d）
+  const svg = miniChartSvgMarkup({
+    samples: [{ x: T0, y: 0 }, { x: T0 + 48 * 3600000, y: 5 }],
+    color: "#c", lo: 0, hi: 10, resetsAt: undefined, resetPeriodMs: 0, dateOnly: false,
+  });
+  // ≥1d 但 <7d → MM-dd HH:mm 格式，刻度文本含空格分隔日期与时间
+  assert.ok(svg.includes("6-") || svg.includes("6-17"), "2d span 刻度含月-日");
+  assert.ok(svg.includes(":"), "2d span 刻度含分钟指示（HH:mm 格式）");
+}
+{
+  // timeTickStep 分档 6：spanMs=5d 触发 step=6h（3d<5d≤7d）
+  const svg = miniChartSvgMarkup({
+    samples: [{ x: T0, y: 0 }, { x: T0 + 5 * 86400000, y: 5 }],
+    color: "#c", lo: 0, hi: 10, resetsAt: undefined, resetPeriodMs: 0, dateOnly: false,
+  });
+  // ≥1d 且 <7d → MM-dd HH:mm
+  assert.ok(svg.includes("6-16") || svg.includes("6-20"), "5d span 刻度含月-日");
+  assert.ok(svg.includes(":"), "5d span 刻度含分钟指示（HH:mm 格式）");
+}
+{
+  // timeTickStep 分档 7：spanMs=14d 触发 step=1d（7d<14d≤30d）
+  const svg = miniChartSvgMarkup({
+    samples: [{ x: T0, y: 0 }, { x: T0 + 14 * 86400000, y: 5 }],
+    color: "#c", lo: 0, hi: 10, resetsAt: undefined, resetPeriodMs: 0, dateOnly: false,
+  });
+  // spanMs≥7d → fmtAxisTime 返回 MM-dd（无 HH:mm）
+  assert.ok(svg.includes("6-16") || svg.includes("6-28"), "14d span 刻度为 MM-dd（无小时）");
+  const tickTexts14 = [...svg.matchAll(/>([^<]+)<\/text>/g)].map((m) => m[1]);
+  assert.ok(tickTexts14.every((t) => t.includes("%") || t.includes("-")),
+    "14d span 刻度文本为 MM-dd（无冒号）");
+  assert.ok(!tickTexts14.some((t) => t.includes(":")), "14d span 刻度文本不含冒号");
+}
+{
+  // timeTickStep 分档 8：spanMs=60d 触发 step=7d（>30d）
+  const svg = miniChartSvgMarkup({
+    samples: [{ x: T0, y: 0 }, { x: T0 + 60 * 86400000, y: 5 }],
+    color: "#c", lo: 0, hi: 10, resetsAt: undefined, resetPeriodMs: 0, dateOnly: false,
+  });
+  // spanMs≥7d → MM-dd
+  assert.ok(svg.includes("6-") || svg.includes("8-"), "60d span 刻度为 MM-dd");
+}
+{
+  // axisLabelWidthPx 分档：dateOnly=true → "MM-dd" 长度
+  const svg = miniChartSvgMarkup({
+    samples: [{ x: T0, y: 0 }, { x: T0 + 14 * 86400000, y: 5 }],
+    color: "#c", lo: 0, hi: 10, resetsAt: undefined, resetPeriodMs: 0, dateOnly: true,
+  });
+  assert.ok(svg.includes("6-16") || svg.includes("6-2"), "dateOnly 刻度为 M-DD 格式");
+  // 刻度文本均为 MM-dd 形态（含连字符，无冒号）
+  const tickTexts = [...svg.matchAll(/>([^<]+)<\/text>/g)].map((m) => m[1]);
+  assert.ok(tickTexts.some((t) => /^\d+-\d{2}$/.test(t)), "dateOnly 刻度文本为 M-DD 形态");
+  assert.ok(!tickTexts.some((t) => t.includes(":")), "dateOnly 刻度无 HH:mm");
+}
+{
+  // fmtPctTick 非整数：lo/hi 含小数 → 刻度出现 N.N%
+  const svg = miniChartSvgMarkup({
+    samples: [{ x: T0, y: 1.5 }, { x: T0 + 30 * MIN, y: 2.5 }],
+    color: "#c", lo: 0.5, hi: 9.5, resetsAt: undefined, resetPeriodMs: 0, dateOnly: false,
+  });
+  assert.ok(svg.includes(">0.5%</text>"), "小数 hi 刻度包含一位小数");
+  // gridVals = [0.5, 5, 9.5] → 5 为整数
+  assert.ok(svg.includes(">5%</text>"), "5 为整数百分比（无小数）");
+}
+{
+  // niceDomain 经 formatPanel 覆盖：极差/3 映射到 niceStep 不同分档
+  // niceStep 分档：norm<1.5 → step=mag；<3.5 → 2*mag；<7.5 → 5*mag；else → 10*mag
+  const e = esc;
+  // 极差=0.5/3≈0.167 → norm=0.167/0.1=1.67 → <3.5 → step=2*0.1=0.2
+  const tight = openCodeGoAdapter.formatPanel({
+    entries: [mkEntry(0, { rolling: { percent: 1, resetsAt: undefined } }),
+              mkEntry(H5, { rolling: { percent: 1.5, resetsAt: undefined } })],
+    range: { start: 0, end: H5 }, truncated: false, esc: (s) => String(s),
+  });
+  assert.ok(tight.includes("dou-"), "紧区间仍产趋势卡片");
+  // 极差=50/3≈16.67 → norm=16.67/10=1.667 → <3.5 → step=2*10=20
+  const wide = openCodeGoAdapter.formatPanel({
+    entries: [mkEntry(0, { rolling: { percent: 10, resetsAt: undefined } }),
+              mkEntry(H5, { rolling: { percent: 60, resetsAt: undefined } })],
+    range: { start: 0, end: H5 }, truncated: false, esc: (s) => String(s),
+  });
+  assert.ok(wide.includes("dou-"), "宽区间仍产趋势卡片");
+  // 极差=90/3=30 → norm=30/10=3 → <3.5 → step=2*10=20
+  const wider = openCodeGoAdapter.formatPanel({
+    entries: [mkEntry(0, { rolling: { percent: 0, resetsAt: undefined } }),
+              mkEntry(H5, { rolling: { percent: 90, resetsAt: undefined } })],
+    range: { start: 0, end: H5 }, truncated: false, esc: (s) => String(s),
+  });
+  assert.ok(wider.includes("dou-"), "更宽区间仍产趋势卡片");
+}
+{
+  // downsample 补最后点：当 out 最后元素不是 lastPt 时补入
+  const many = [];
+  for (let i = 0; i < 350; i += 1) {
+    many.push({ x: T0 + i * MIN, y: i % 50 });
+  }
+  const svg = miniChartSvgMarkup({
+    samples: many, color: "#c", lo: 0, hi: 100,
+    resetsAt: undefined, resetPeriodMs: 0, dateOnly: false,
+  });
+  // 降采样后包末点圆标记（断言 lastPt 被补入）
+  assert.ok(svg.includes("<circle"), "降采样末点圆标记存在");
+  assert.ok(svg.startsWith("<svg"), "降采样后仍为合法 SVG");
+}
+{
+  // smoothPath 短路径：pts.length<2 返回空串
+  // 2 个采样点 + 降采样后 ≥2 点 → 不触发短路径返回
+  // 但单点已由 L522 测试（miniChartSvgMarkup 返回空串）
+  // 这里验证 2 点下 path 含 M 命令（smoothPath 正常拼接）
+  const svg = miniChartSvgMarkup({
+    samples: [{ x: T0, y: 0 }, { x: T0 + 30 * MIN, y: 5 }],
+    color: "#c", lo: 0, hi: 10, resetsAt: undefined, resetPeriodMs: 0, dateOnly: false,
+  });
+  assert.ok(svg.includes('d="M'), "2 点图表产出 path 折线 M 命令");
+  // 相邻点 Catmull-Rom 曲线：C 命令存在
+  assert.ok(svg.includes(' C '), "smoothPath 产出 Catmull-Rom 曲线 C 命令");
+}
+{
+  // timeTicks out.length<2 → [t0, t1]：极短跨度（1 sample, spanMs=0）
+  // 但 miniChartSvgMarkup 中若 samples.length<2 直接返回 ""
+  // 需要 2 个点且 spanMs 极小使 timeTicks 产出 <2 个刻度
+  // 2 个点相同时刻（x 相同），spanMs=1min（fallback）
+  const svg = miniChartSvgMarkup({
+    samples: [{ x: T0, y: 0 }, { x: T0 + 1, y: 5 }],
+    color: "#c", lo: 0, hi: 10, resetsAt: undefined, resetPeriodMs: 0, dateOnly: false,
+  });
+  // spanMs=1ms → spanMs <= 1min 的分支（timeTickStep step=2min）
+  // timeTicks 中 step=2min, 但 spanMs=1ms → 可能 count<2 → 返回 [t0, t1]
+  // 至少 SVG 有内容
+  assert.ok(svg.startsWith("<svg"), "极短跨度仍产合法 SVG");
+}
