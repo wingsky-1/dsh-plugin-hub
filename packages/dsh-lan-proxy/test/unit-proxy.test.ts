@@ -12,14 +12,19 @@
  */
 import assert from "node:assert/strict";
 import { createServer, request as httpRequest } from "node:http";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { X509Certificate } from "node:crypto";
+import { constants as zlibConstants } from "node:zlib";
 
 import {
   hostnameAllowed, formatAuthority, rewriteHeaders, createLanProxy, isLoopbackTarget,
   DEFAULT_OPTIONS, compressWsPath, isCompressible, resolveCompressionOptions,
   ensureSelfSignedTls,
+} from "../lib/index.js";
+import {
+  toSanEntry, certStillValid, loadTlsFromFiles, SELF_SIGNED_KEY, SELF_SIGNED_CERT,
 } from "../lib/index.js";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -30,9 +35,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 assert.equal(hostnameAllowed("127.0.0.1"), true, "bare IPv4");
 assert.equal(hostnameAllowed("[::1]"), true, "bracketed IPv6");
 assert.equal(hostnameAllowed(""), false, "empty string");
+assert.equal(hostnameAllowed(undefined), false, "非字符串（undefined）→ 拒绝");
 assert.equal(hostnameAllowed("0.0.0.0"), true, "any IPv4");
 assert.equal(hostnameAllowed("192.168.1.1"), true, "LAN IPv4");
 assert.equal(hostnameAllowed("127.0.0.1:99999"), false, "端口越界 → URL 解析失败 → 拒绝");
+assert.equal(hostnameAllowed("localhost"), true, "localhost 字面量放行");
+assert.equal(hostnameAllowed("localhost:3080"), true, "localhost 带端口放行");
+assert.equal(hostnameAllowed("[::1]:443"), true, "bracketed IPv6 带端口放行");
+assert.equal(hostnameAllowed("example.com"), false, "DNS 域名拒绝（重绑定防护核心语义）");
+assert.equal(hostnameAllowed("sub.example.org"), false, "多级 DNS 域名拒绝");
+assert.equal(hostnameAllowed("::1"), false, "裸 IPv6 冒号 authority → URL 解析失败 → 拒绝");
 
 // isLoopbackTarget
 assert.equal(isLoopbackTarget("127.0.0.1"), true, "loopback IPv4");
@@ -40,8 +52,12 @@ assert.equal(isLoopbackTarget("::1"), true, "loopback IPv6");
 assert.equal(isLoopbackTarget("::ffff:127.0.0.1"), true, "IPv4-mapped IPv6 loopback");
 assert.equal(isLoopbackTarget("localhost"), true, "localhost");
 assert.equal(isLoopbackTarget("[::1]"), true, "bracketed IPv6 loopback");
+assert.equal(isLoopbackTarget("[127.0.0.1]"), true, "bracketed IPv4 loopback");
+assert.equal(isLoopbackTarget("[::ffff:127.0.0.1]"), true, "bracketed mapped loopback");
 assert.equal(isLoopbackTarget("192.168.1.1"), false, "非回环拒绝");
 assert.equal(isLoopbackTarget("evil.com"), false, "DNS 名拒绝");
+assert.equal(isLoopbackTarget(""), false, "空串拒绝");
+assert.equal(isLoopbackTarget("127.0.0.2"), false, "非 .1 回环段仍按字面匹配语义拒绝");
 
 // formatAuthority
 assert.equal(formatAuthority("0.0.0.0", 3081), "0.0.0.0:3081");
@@ -59,6 +75,16 @@ assert.deepEqual(rewriteHeaders({ host: "x:1", origin: "https://x:1" }, "127.0.0
   origin: "http://127.0.0.1:3080",
 }, "Origin https→http");
 assert.deepEqual(rewriteHeaders({}, "127.0.0.1:3080"), { host: "127.0.0.1:3080" }, "空头只加 host");
+assert.deepEqual(rewriteHeaders({ host: ["a", "b"], origin: ["http://a"] }, "127.0.0.1:9"), {
+  host: "127.0.0.1:9",
+  origin: "http://127.0.0.1:9",
+}, "多值头（string[]）同样整体覆盖为单值 authority");
+// 原对象不被修改（浅拷贝语义）
+{
+  const src = { host: "old:1" };
+  rewriteHeaders(src, "127.0.0.1:2");
+  assert.equal(src.host, "old:1", "入参 headers 不被就地修改");
+}
 
 // compressWsPath
 assert.equal(compressWsPath(["/a", "/b"], "/a?query=1"), true, "带查询串命中");
