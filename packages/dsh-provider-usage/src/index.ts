@@ -29,7 +29,7 @@ import type { UsageStatsAdapter } from "./contracts.js";
 import { describeUsageStatsAdapterShape, ADAPTER_CONTRACT_VERSION } from "./contracts.js";
 import { makeAdapterRegistry } from "./registry.js";
 import { openCodeGoAdapter, OPENCODE_GO_PROVIDER, OPENCODE_GO_ADAPTER_ID } from "./adapters/opencode-go.js";
-import { runV2Pipeline, runV2PanelPipeline, type V2PipelineResult } from "./pipeline/v2.js";
+import { runV2Pipeline, runV2PanelPipeline, panelCacheKey, isPanelCacheStale, type V2PipelineResult, type PanelCacheEntry } from "./pipeline/v2.js";
 import { HistoryStore, migrateLegacyV3 } from "./core/history.js";
 import { resolveProviderConfig } from "./provider-config.js";
 import { HotReloadableAdapter, loadAndValidateAdapter } from "./hotreload.js";
@@ -48,7 +48,8 @@ export { safeFetchData, safeFormat, fetchWithTimeout } from "./core/guards.js";
 export { sanitizeHtml } from "./sanitize.js";
 // 客户端行为纯函数（设置页列表拆分/徽标文案，经此透出供单元测试）。
 export { splitProviderList, providerBadgeText } from "./client-logic.js";
-export { runV2Pipeline, runV2PanelPipeline, capsuleHtmlFromHistory } from "./pipeline/v2.js";
+export { runV2Pipeline, runV2PanelPipeline, capsuleHtmlFromHistory, panelCacheKey, normalizeRangeDay, isPanelCacheStale, PANEL_CACHE_TTL_MS } from "./pipeline/v2.js";
+export type { PanelCacheEntry } from "./pipeline/v2.js";
 export { HotReloadableAdapter, loadAndValidateAdapter, readStamp, stampEqual } from "./hotreload.js";
 // 路径解析纯函数透出（供测试与调用方复用同一展开/解析规则，无行为变更）
 export { resolvePath, pluginHome, expandHomePath } from "./path-resolve.js";
@@ -425,6 +426,12 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   // 缓存（声明提前：热更新 onReload 回调依赖 cache，须在热更新块前就绪）
   const cache = new Map<string, V2PipelineResult>();
 
+  // #105① /history 面板渲染缓存：key=provider+adapterName+自然日粒度归一化 range，
+  // 值为 runV2PanelPipeline 返回值字符串层快照 {panelHtml,error,at}（绝不缓存 entries 中间层）。
+  // 主失效 = append 落盘全清；select/add/热更新三挂点同清；PANEL_CACHE_TTL_MS 仅兜底。
+  // 声明提前：与 cache 同理，热更新回调须可及。
+  const panelCache = new Map<string, PanelCacheEntry>();
+
   // 胶囊位置 UI 配置（设置页读写；SSE 广播变更）
   const uiConfig = await readUiConfig(historyRoot);
   const sseClients = new Set<ServerResponse>();
@@ -459,6 +466,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
           registry.removeByFile(file);
           registry.register(hr.current, "user-file", file);
           cache.clear();
+          panelCache.clear(); // #105①：新版适配器代码语义已变，面板渲染缓存同清
           registry.recordError(key, "load", `热更新成功：${hr.current.name}`);
         }
       });
@@ -541,6 +549,10 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       if (result.ok && result.status === 'fresh' && result.rawData !== undefined) {
         const historyEntry = { time: result.fetchedAt, data: result.rawData };
         await history.append(provider, entry.name, historyEntry).catch(() => {});
+        // #105① 主失效：新数据已落盘，/history 面板渲染缓存整体清除（TTL 仅兜底）。
+        // 注意 stats 自身 TTL 命中期间不重跑本路径，故主失效实际由
+        // warmup 周期 × stats TTL 复合门控（命中率按复合周期评估）。
+        panelCache.clear();
       }
 
       cache.set(provider, result);
@@ -619,6 +631,23 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       const start = Number.isFinite(days) && days > 0
         ? end - Math.min(Math.round(days), config.maxAgeDays) * 86400000
         : end - 86400000;
+      // #105① 渲染缓存命中检查：key 不含漂移时间戳（自然日粒度归一化），
+      // 同一自然日窗口内重复请求直接回放缓存快照，响应 range 仍回显真实 start/end
+      const cacheKey = panelCacheKey(prov, entry.name, { start, end });
+      const hitEntry = panelCache.get(cacheKey);
+      if (hitEntry !== undefined && !isPanelCacheStale(hitEntry, Date.now())) {
+        return writeJson(res, 200, {
+          ok: hitEntry.error === undefined,
+          plugin: "dsh-provider-usage",
+          version: ADAPTER_CONTRACT_VERSION,
+          provider: prov,
+          adapterName: entry.name,
+          panelHtml: hitEntry.panelHtml,
+          error: hitEntry.error ?? null,
+          range: { start, end },
+        });
+      }
+      panelCache.delete(cacheKey); // TTL 过期条目顺手清除（防御性，与 stats cacheFresh 同款）
       const result = await runV2PanelPipeline({
         adapter: entry.adapter,
         provider: prov,
@@ -626,6 +655,11 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
         range: { start, end },
         timeoutMs: config.fetchTimeoutMs,
       });
+      // #105① 只缓存成功结果：错误响应不入缓存（条件消除后下一次立即重算）；
+      // 无适配器分支在上方提前返回、同样不入缓存；缓存值仅为返回值字符串层
+      if (result.error === undefined) {
+        panelCache.set(cacheKey, { panelHtml: result.panelHtml, error: result.error, at: Date.now() });
+      }
       writeJson(res, 200, {
         ok: result.error === undefined,
         plugin: "dsh-provider-usage",
@@ -722,6 +756,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       const ok = registry.select(provider, clearing ? null : adapterName);
       if (!ok) return writeJson(res, 404, { error: "adapter not found" });
       cache.clear();
+      panelCache.clear(); // #105①：启用关系已变，面板渲染缓存同清（切换/清空后一律重算）
       scheduleWriteAdapterState(clearing ? { ...registry.snapshot().enabled, [provider]: null } : registry.snapshot().enabled);
       writeJson(res, 200, { ok: true, provider, adapterName: clearing ? null : adapterName });
     },
@@ -798,6 +833,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       };
       await persistUserAdapter(rec);
       cache.clear();
+      panelCache.clear(); // #105①：候选/启用面已变，面板渲染缓存同清
       scheduleWriteAdapterState(registry.snapshot().enabled);
       writeJson(res, 200, {
         ok: true,
@@ -918,6 +954,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       }
       sseClients.clear();
       cache.clear();
+      panelCache.clear(); // #105①：卸载时面板渲染缓存一并释放
       mutex.cancel();
     },
     "dsh-provider-usage",

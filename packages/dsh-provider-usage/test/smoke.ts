@@ -35,6 +35,10 @@ import {
   OPENCODE_GO_PROVIDER,
   OPENCODE_GO_ADAPTER_ID,
   userAdaptersFile,
+  PANEL_CACHE_TTL_MS,
+  normalizeRangeDay,
+  panelCacheKey,
+  isPanelCacheStale,
 } from "../lib/index.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -564,6 +568,429 @@ export function formatPanel() { return "<p>ok</p>"; }
   }
   console.log("[smoke] #156 warmup 串行采样回归 ✓");
 }
+
+// ---------------------------------------------------------------- #105① /history 渲染缓存
+
+/**
+ * 子项①验收（issue #105 spec-writer 13 条清单，本节覆盖 AC#1–AC#11 行为断言；
+ * AC#12 性能三要素见 PR 正文实测数据、AC#13 见 README 宣称）。
+ *
+ * 机制：进程内 Map 缓存 runV2PanelPipeline 返回值字符串层 {panelHtml,error,at}，
+ * key=provider+adapterName+自然日粒度归一化 range；主失效=append 落盘全清
+ * （stats TTL 命中期间不产生新 append，主失效由 warmup×stats TTL 复合门控），
+ * select/add/热更新三挂点同清；TTL 90s 仅兜底；错误/无适配器响应不入缓存。
+ */
+
+// ---- S0：纯函数定界与 key 正确性（AC#2 / AC#8 的常量与归一化部分）
+{
+  // AC#8：TTL 为 [60s,120s] 内编译期常量
+  assert.ok(Number.isInteger(PANEL_CACHE_TTL_MS), "TTL 是编译期整数常量");
+  assert.ok(PANEL_CACHE_TTL_MS >= 60000 && PANEL_CACHE_TTL_MS <= 120000, `TTL ∈ [60000,120000]（实际 ${PANEL_CACHE_TTL_MS}）`);
+  // 过期判定边界（严格大于）：at/now 分离入参支持注入时钟
+  assert.equal(isPanelCacheStale({ at: 0 }, PANEL_CACHE_TTL_MS), false, "恰好到龄未过期");
+  assert.equal(isPanelCacheStale({ at: 0 }, PANEL_CACHE_TTL_MS + 1), true, "超龄 1ms 即过期");
+  assert.equal(isPanelCacheStale({ at: 0 }, 59999, 60000), false, "自定义 ttl 下界内新鲜");
+  assert.equal(isPanelCacheStale({ at: 0 }, 60001, 60000), true, "自定义 ttl 超界过期");
+
+  // AC#2：自然日粒度归一化——同日内时钟漂移不进 key，跨日/不同 days 不同 key
+  const t1 = new Date(2026, 1, 10, 9, 15, 12, 345).getTime();
+  const t2 = new Date(2026, 1, 10, 20, 0, 0, 500).getTime();
+  const dayOf = (t) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
+  assert.deepEqual(normalizeRangeDay({ start: t1, end: t2 }), { start: dayOf(t1), end: dayOf(t2) }, "归一到当地当日零点");
+  const nextDay = new Date(2026, 1, 11, 0, 0, 1).getTime();
+  assert.notEqual(
+    panelCacheKey("p", "a", { start: t1, end: t2 }),
+    panelCacheKey("p", "a", { start: t1, end: nextDay }),
+    "跨自然日 → 不同 key",
+  );
+  assert.equal(
+    panelCacheKey("p", "a", { start: t1, end: t2 }),
+    panelCacheKey("p", "a", { start: t1 + 5000, end: t2 + 1500 }),
+    "同自然日内秒级漂移不进 key（end=Date.now() 漂移不致缓存空转）",
+  );
+  const weekMs = 7 * 86400000;
+  assert.notEqual(
+    panelCacheKey("p", "a", { start: t1 - weekMs, end: t1 }),
+    panelCacheKey("p", "a", { start: t1 - 30 * 86400000, end: t1 }),
+    "days=7 与 days=30 归一化为不同 key",
+  );
+  assert.notEqual(panelCacheKey("p1", "a", { start: t1, end: t2 }), panelCacheKey("p2", "a", { start: t1, end: t2 }), "provider 入 key");
+  assert.notEqual(panelCacheKey("p", "a1", { start: t1, end: t2 }), panelCacheKey("p", "a2", { start: t1, end: t2 }), "adapterName 入 key");
+}
+
+// ---- 测试公共件：spy 适配器生成 / 路由调用 helper / 可收集 disposers 的 fakeCtx
+
+const mkSpyFile = (dir, fileBase, name, provider, formatPanelBody, extra = "") => {
+  const file = join(dir, `${fileBase}.mjs`);
+  writeFileSync(file, `
+export const version = 2;
+export const name = "${name}";
+export const label = "${name}";
+export const providers = ["${provider}"];
+export async function fetchData() { return { v: 1 }; }
+export function formatCapsule() { return "<span>c</span>"; }
+export function formatPanel(input) { ${formatPanelBody} }
+${extra}
+`, "utf8");
+  return file;
+};
+
+const countingPanel = (counter) =>
+  `globalThis.${counter} = (globalThis.${counter} ?? 0) + 1;` +
+  `return "<p data-calls=\\"" + globalThis.${counter} + "\\" data-n=\\"" + input.entries.length + "\\">panel</p>";`;
+
+const makeCollectingCtx = () => {
+  const disposers = [];
+  const { ctx, routes } = makeFakeCtx({
+    effect(fn) {
+      const d = fn();
+      if (typeof d === "function") disposers.push(d);
+      return typeof d === "function" ? d : () => {};
+    },
+  });
+  return { ctx, routes, disposers };
+};
+
+const callRoute = (route, reqOverrides) => new Promise((resolve) => {
+  let payload;
+  route.handler(fakeReq(reqOverrides), {
+    writeHead: () => {},
+    end: (chunk) => { payload = JSON.parse(chunk); resolve(payload); },
+  });
+});
+const getHistory = (route, provider, days) =>
+  callRoute(route, { url: `${ROUTES.history}?provider=${provider}&days=${days}` });
+const postJson = (route, body) => callRoute(route, { method: "POST", body: JSON.stringify(body) });
+
+const disposeAll = (disposers) => {
+  for (const d of [...disposers].reverse()) { try { d(); } catch { /* 忽略 */ } }
+};
+
+// ---- S1：命中逐字节一致 + key 不含漂移时间戳 + append 落盘全清（AC#1/#2/#3 + 形状回归）
+{
+  const dir = mkdtempSync(join(tmpdir(), "dou-105-cache-"));
+  const spyFile = mkSpyFile(dir, "spy-a", "cache-spy-a", "cache-prov", countingPanel("__SPY_A"));
+  const { ctx, routes, disposers } = makeCollectingCtx();
+  await apply(ctx, {
+    ...ISOLATED_CONFIG,
+    provider: "cache-prov",
+    adapter: spyFile,
+    historyDir: join(dir, "hist"),
+    cacheDurationMs: 5000, // stats 缓存 5s 到龄：让「重取→append→面板缓存全清」可在测试窗口触发
+  });
+  await new Promise((r) => setTimeout(r, 800)); // 启动预热完成（getStats fresh → append#0 → 清空缓存）
+
+  const historyRoute = routes.find((r) => r.path === ROUTES.history);
+  const statsRoute = routes.find((r) => r.path === ROUTES.stats);
+
+  // AC#1 冷算填缓存
+  const h1 = await getHistory(historyRoute, "cache-prov", 7);
+  assert.equal(globalThis.__SPY_A, 1, "首次请求完整执行管道");
+  assert.equal(h1.ok, true);
+  assert.ok(String(h1.panelHtml).includes('data-calls="1"'), "冷算渲染首版");
+
+  // AC#1+#2 时钟推进 ≥1s 后仍命中同一 key：panelHtml/error 逐字节一致、管道计数不增
+  await new Promise((r) => setTimeout(r, 1100));
+  const h2 = await getHistory(historyRoute, "cache-prov", 7);
+  assert.equal(globalThis.__SPY_A, 1, "命中路径不重跑管道（query+formatPanel 计数均不增）");
+  assert.equal(h2.panelHtml, h1.panelHtml, "二次响应 panelHtml 与首次逐字节一致");
+  assert.equal(h2.error, h1.error, "error 字段一致");
+  assert.ok(h2.range.end > h1.range.end, "end 已随系统时钟漂移但不进 key，仍命中");
+  assert.deepEqual(
+    Object.keys(h2).sort(),
+    ["adapterName", "error", "ok", "panelHtml", "plugin", "provider", "range", "version"],
+    "八字段响应形状不变（AC#10 回归）",
+  );
+
+  // AC#2 不同 days 归一化为不同 key、互不串数据，range 回显各自真实 start/end
+  const h30 = await getHistory(historyRoute, "cache-prov", 30);
+  assert.equal(globalThis.__SPY_A, 2, "days=30 新 key 冷算");
+  assert.ok(h30.range.end - h30.range.start > 29 * 86400000, "days=30 窗口独立");
+  const h7b = await getHistory(historyRoute, "cache-prov", 7);
+  assert.equal(globalThis.__SPY_A, 2, "days=7 条目未被 days=30 冲掉，仍命中");
+  assert.equal(h7b.panelHtml, h1.panelHtml, "days=7 回放原条目");
+
+  // AC#3 主失效：等 stats TTL(5s) 到龄 → GET /stats 重取 fresh → append 落盘 → 面板缓存全清
+  await new Promise((r) => setTimeout(r, 5200));
+  const nBefore = Number(h1.panelHtml.match(/data-n="(\d+)"/)[1]);
+  await callRoute(statsRoute, { url: `${ROUTES.stats}?provider=cache-prov` });
+  const h3 = await getHistory(historyRoute, "cache-prov", 7);
+  assert.equal(globalThis.__SPY_A, 3, "append 落盘后缓存整体清除、完整管道重跑");
+  const nAfter = Number(h3.panelHtml.match(/data-n="(\d+)"/)[1]);
+  assert.equal(nAfter, nBefore + 1, "重算结果反映新落盘 entry");
+
+  disposeAll(disposers);
+}
+
+// ---- S2：select 切换/清空挂点失效（AC#4）
+{
+  const dir = mkdtempSync(join(tmpdir(), "dou-105-select-"));
+  const fileA = mkSpyFile(dir, "sel-a", "sel-spy-a", "sel-prov", countingPanel("__SPY_SEL_A"));
+  const fileB = mkSpyFile(dir, "sel-b", "sel-spy-b", "sel-prov", countingPanel("__SPY_SEL_B"));
+  const { ctx, routes, disposers } = makeCollectingCtx();
+  await apply(ctx, {
+    ...ISOLATED_CONFIG,
+    provider: "sel-prov",
+    adapter: fileA,
+    historyDir: join(dir, "hist"),
+  });
+  await new Promise((r) => setTimeout(r, 800));
+
+  const historyRoute = routes.find((r) => r.path === ROUTES.history);
+  const addRoute = routes.find((r) => r.path === ROUTES.add);
+  const selectRoute = routes.find((r) => r.path === ROUTES.select);
+
+  const ha1 = await getHistory(historyRoute, "sel-prov", 7);
+  assert.equal(globalThis.__SPY_SEL_A, 1, "sel-a 冷算填缓存");
+
+  // 登记 sel-b（add 抢占成为启用者），按 sel-b 重算填其条目
+  const added = await postJson(addRoute, { file: fileB });
+  assert.equal(added.ok, true, "add sel-b 成功");
+  const hb1 = await getHistory(historyRoute, "sel-prov", 7);
+  assert.equal(hb1.adapterName, "sel-spy-b", "sel-b 已是启用者");
+  assert.equal(globalThis.__SPY_SEL_B, 1);
+
+  // 切回 sel-a：select 挂点必须已清缓存——否则这里会复用切换前的旧 sel-a 条目
+  const switched = await postJson(selectRoute, { provider: "sel-prov", adapterName: "sel-spy-a" });
+  assert.equal(switched.ok, true);
+  const ha2 = await getHistory(historyRoute, "sel-prov", 7);
+  assert.equal(globalThis.__SPY_SEL_A, 2, "切换后旧缓存不得复用、按新启用关系重算");
+  assert.ok(String(ha2.panelHtml).includes('data-calls="2"'), "返回的是重算新 HTML 而非旧快照");
+
+  // 清空（adapterName=null）：结构化 reason，绝不回吐任何旧 HTML
+  const cleared = await postJson(selectRoute, { provider: "sel-prov", adapterName: null });
+  assert.equal(cleared.ok, true);
+  const hnone = await getHistory(historyRoute, "sel-prov", 7);
+  assert.equal(hnone.reason, "no-enabled-adapter", "清空后返回 no-enabled-adapter 结构化 JSON");
+  assert.equal(hnone.panelHtml, null, "panelHtml=null 而非任何旧 HTML");
+  assert.equal(hnone.adapterName, null);
+
+  disposeAll(disposers);
+}
+
+// ---- S3：错误与 no-adapter 响应不入缓存、条件消除立即恢复（AC#7）
+{
+  const dir = mkdtempSync(join(tmpdir(), "dou-105-err-"));
+  const errFile = join(dir, "err-a.mjs");
+  writeFileSync(errFile, `
+export const version = 2;
+export const name = "err-spy";
+export const providers = ["err-prov"];
+export async function fetchData() { return { v: 1 }; }
+export function formatCapsule() { return "<span>c</span>"; }
+export function formatPanel(input) {
+  globalThis.__SPY_ERR = (globalThis.__SPY_ERR ?? 0) + 1;
+  throw new Error("format-boom");
+}
+`, "utf8");
+  const okFile = mkSpyFile(dir, "ok-e", "ok-e-spy", "err-prov", countingPanel("__SPY_OK_E"));
+  const ghostFile = mkSpyFile(dir, "ghost-ok", "ghost-ok-spy", "ghost-prov", countingPanel("__SPY_GHOST"));
+  const { ctx, routes, disposers } = makeCollectingCtx();
+  await apply(ctx, {
+    ...ISOLATED_CONFIG,
+    provider: "err-prov",
+    adapter: errFile,
+    historyDir: join(dir, "hist"),
+  });
+  await new Promise((r) => setTimeout(r, 800));
+
+  const historyRoute = routes.find((r) => r.path === ROUTES.history);
+  const addRoute = routes.find((r) => r.path === ROUTES.add);
+
+  const e1 = await getHistory(historyRoute, "err-prov", 7);
+  assert.equal(e1.ok, false, "formatPanel 抛错 → 错误响应");
+  assert.ok(e1.error !== null && String(e1.error).length > 0, "error 非 undefined 语义经 null 化下发");
+
+  // 关键：两次错误请求之间【无任何 clear 挂点动作】——若错误入了缓存，
+  // 第二次会在剩余 TTL 内复读旧错误（计数维持 1）；未入缓存则必然重算
+  await new Promise((r) => setTimeout(r, 1100));
+  const e2 = await getHistory(historyRoute, "err-prov", 7);
+  assert.equal(globalThis.__SPY_ERR, 2, "错误响应不入缓存：第二次仍完整重算而非复读旧错误");
+  assert.equal(e2.ok, false);
+
+  // no-adapter：结构化响应不入缓存（连续两次一致、无崩溃）
+  const g1 = await getHistory(historyRoute, "ghost-prov", 7);
+  assert.equal(g1.reason, "no-adapter");
+  assert.equal(g1.panelHtml, null);
+  const g2 = await getHistory(historyRoute, "ghost-prov", 7);
+  assert.equal(g2.reason, "no-adapter", "no-adapter 结构化响应稳定重现");
+  assert.equal(g2.adapterName, null);
+
+  // 条件消除：登记正常适配器顶替错误适配器 → 下一次请求立即成功
+  const added = await postJson(addRoute, { file: okFile });
+  assert.equal(added.ok, true);
+  const o1 = await getHistory(historyRoute, "err-prov", 7);
+  assert.equal(o1.ok, true, "条件消除后立即重算并成功，不在剩余 TTL 内复读旧错误");
+  assert.equal(o1.adapterName, "ok-e-spy");
+  assert.equal(globalThis.__SPY_OK_E, 1);
+
+  // ghost-prov 条件消除（注册适配器）后同样立即可用
+  const gAdded = await postJson(addRoute, { file: ghostFile });
+  assert.equal(gAdded.ok, true);
+  const g3 = await getHistory(historyRoute, "ghost-prov", 7);
+  assert.equal(g3.ok, true, "no-adapter 条件消除后立即出数据");
+  assert.equal(globalThis.__SPY_GHOST, 1);
+
+  disposeAll(disposers);
+}
+
+// ---- S4：add 挂点失效（AC#5）——登记其他 provider 适配器，唯一变量即挂点全清
+{
+  const dir = mkdtempSync(join(tmpdir(), "dou-105-add-"));
+  const mainFile = mkSpyFile(dir, "add-a", "add-spy-a", "add-prov", countingPanel("__SPY_ADD_A"));
+  const otherFile = mkSpyFile(dir, "add-b", "add-spy-b", "other-add-prov", countingPanel("__SPY_ADD_B"));
+  const { ctx, routes, disposers } = makeCollectingCtx();
+  await apply(ctx, {
+    ...ISOLATED_CONFIG,
+    provider: "add-prov",
+    adapter: mainFile,
+    historyDir: join(dir, "hist"),
+  });
+  await new Promise((r) => setTimeout(r, 800));
+
+  const historyRoute = routes.find((r) => r.path === ROUTES.history);
+  const addRoute = routes.find((r) => r.path === ROUTES.add);
+
+  const a1 = await getHistory(historyRoute, "add-prov", 7);
+  assert.equal(globalThis.__SPY_ADD_A, 1);
+
+  // 登记一个【其他 provider】的适配器：add-prov 启用关系不变、key 不变、TTL 未到——
+  // 唯一能让下一次请求重算的机制就是 add 成功后的缓存全清
+  const added = await postJson(addRoute, { file: otherFile });
+  assert.equal(added.ok, true);
+  const a2 = await getHistory(historyRoute, "add-prov", 7);
+  assert.equal(globalThis.__SPY_ADD_A, 2, "add 成功后旧缓存清除、下次 /history 重算");
+
+  disposeAll(disposers);
+}
+
+// ---- S5：热更新挂点失效（AC#6）——autoReload 下文件变更 → 新版代码渲染
+{
+  const dir = mkdtempSync(join(tmpdir(), "dou-105-hr-"));
+  const hrFile = mkSpyFile(
+    dir, "hr-a", "hr-spy", "hr-prov",
+    `globalThis.__SPY_HR = (globalThis.__SPY_HR ?? 0) + 1; return "<p data-v=\\"1\\">v1</p>";`,
+    "// v1 marker line",
+  );
+  const { ctx, routes, disposers } = makeCollectingCtx();
+  await apply(ctx, {
+    ...ISOLATED_CONFIG,
+    provider: "hr-prov",
+    adapter: hrFile,
+    autoReload: true,
+    historyDir: join(dir, "hist"),
+  });
+  await new Promise((r) => setTimeout(r, 900));
+
+  const historyRoute = routes.find((r) => r.path === ROUTES.history);
+  const w1 = await getHistory(historyRoute, "hr-prov", 7);
+  assert.ok(String(w1.panelHtml).includes('data-v="1"'), "热更新前渲染 v1");
+
+  // 改写文件（size/mtime 双变）→ HotReloadableAdapter 轮询（2s）→ onReload ok → 挂点 clear
+  writeFileSync(hrFile, `
+export const version = 2;
+export const name = "hr-spy";
+export const label = "hr-spy";
+export const providers = ["hr-prov"];
+export async function fetchData() { return { v: 2 }; }
+export function formatCapsule() { return "<span>c</span>"; }
+export function formatPanel(input) {
+  globalThis.__SPY_HR = (globalThis.__SPY_HR ?? 0) + 1;
+  return "<p data-v=\\"2\\">v2</p>";
+}
+// v2 marker line —— 内容长度与 v1 不同，保证 stamp 变化可检出
+`, "utf8");
+
+  let w2 = null;
+  for (let i = 0; i < 24; i++) {
+    await new Promise((r) => setTimeout(r, 400));
+    const p = await getHistory(historyRoute, "hr-prov", 7);
+    if (String(p.panelHtml).includes('data-v="2"')) { w2 = p; break; }
+  }
+  assert.ok(w2 !== null, "热更新成功回调后旧缓存清除（轮询窗口内以新版代码渲染）");
+  assert.ok(globalThis.__SPY_HR >= 2, "新版 formatPanel 已被真实执行");
+
+  disposeAll(disposers);
+}
+
+// ---- S6：只缓存返回值字符串层——formatPanel 变异 entries 后命中不受影响（AC#9）
+{
+  const dir = mkdtempSync(join(tmpdir(), "dou-105-mut-"));
+  const mutFile = join(dir, "mut-a.mjs");
+  writeFileSync(mutFile, `
+export const version = 2;
+export const name = "mut-spy";
+export const providers = ["mut-prov"];
+export async function fetchData() { return { v: 1 }; }
+export function formatCapsule() { return "<span>c</span>"; }
+export function formatPanel(input) {
+  globalThis.__SPY_MUT = (globalThis.__SPY_MUT ?? 0) + 1;
+  const n = input.entries.length;
+  input.entries.length = 0; // 变异入参：恶意/劣质用户代码探针
+  return "<p data-len=\\"" + n + "\\" data-after=\\"" + input.entries.length + "\\">m</p>";
+}
+`, "utf8");
+  const { ctx, routes, disposers } = makeCollectingCtx();
+  await apply(ctx, {
+    ...ISOLATED_CONFIG,
+    provider: "mut-prov",
+    adapter: mutFile,
+    historyDir: join(dir, "hist"),
+  });
+  await new Promise((r) => setTimeout(r, 800)); // 预热保证历史至少 1 条
+
+  const historyRoute = routes.find((r) => r.path === ROUTES.history);
+  const m1 = await getHistory(historyRoute, "mut-prov", 7);
+  const lenN = Number(m1.panelHtml.match(/data-len="(\d+)"/)[1]);
+  assert.ok(lenN >= 1, `首算基于原始 entries（len=${lenN}）`);
+  assert.ok(String(m1.panelHtml).includes('data-after="0"'), "变异在首算内生效过");
+
+  const m2 = await getHistory(historyRoute, "mut-prov", 7);
+  assert.equal(globalThis.__SPY_MUT, 1, "命中路径不再调用 formatPanel");
+  assert.equal(m2.panelHtml, m1.panelHtml, "命中回放缓存字符串层——绝不读取/复用 entries 中间层重渲染");
+
+  disposeAll(disposers);
+}
+
+// ---- S7：不引入条件请求协商——无 ETag/Last-Modified 头、协商头请求仍 200 全量体（AC#11）
+{
+  const { ctx, routes, disposers } = makeCollectingCtx();
+  await apply(ctx, { ...ISOLATED_CONFIG, historyDir: join(mkdtempSync(join(tmpdir(), "dou-105-etag-")), "hist") });
+  await new Promise((r) => setTimeout(r, 300));
+  const historyRoute = routes.find((r) => r.path === ROUTES.history);
+
+  let code = 0;
+  let hdrs = {};
+  let raw = "";
+  historyRoute.handler(
+    fakeReq({
+      url: `${ROUTES.history}?days=7`,
+      headers: {
+        host: "127.0.0.1:3080",
+        "sec-fetch-site": "same-origin",
+        "if-none-match": '"W/fake-etag"',
+        "if-modified-since": "Mon, 09 Feb 2026 00:00:00 GMT",
+      },
+    }),
+    {
+      writeHead: (c, h) => { code = c; hdrs = h ?? {}; },
+      end: (chunk) => { raw = chunk; },
+    },
+  );
+  await new Promise((r) => setTimeout(r, 100));
+
+  assert.equal(code, 200, "携带 If-None-Match/If-Modified-Since 一律完整 200，不做 304 短路");
+  for (const k of Object.keys(hdrs)) {
+    const lk = k.toLowerCase();
+    assert.ok(lk !== "etag" && lk !== "last-modified", `响应头不含协商头（发现 ${k}）`);
+  }
+  const p = JSON.parse(raw);
+  assert.ok("panelHtml" in p && "range" in p, "200 体为完整响应形状");
+
+  disposeAll(disposers);
+}
+
+console.log("[smoke] #105① /history 渲染缓存断言全部通过 ✓");
 
 // 恢复真实环境变量（测试收尾）
 for (const k of SAVED_ENV_KEYS) {

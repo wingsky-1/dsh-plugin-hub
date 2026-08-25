@@ -152,3 +152,48 @@ export async function runV2PanelPipeline(opts: {
   if (formatted.error !== undefined) return { error: formatted.error };
   return { panelHtml: sanitizeHtml(formatted.html ?? '') };
 }
+
+// ------------------------------------------------------------------ #105① /history 渲染缓存（纯函数层）
+
+/** 面板渲染缓存兜底 TTL：编译期常量，定界 [60s, 120s]（issue #105 正文①节）。
+ *  仅作兜底而非主失效机制——主失效是 append 落盘全清；取区间中值 90s。 */
+export const PANEL_CACHE_TTL_MS = 90000;
+
+/** 面板渲染缓存条目：runV2PanelPipeline 返回值字符串层快照。
+ *  绝不缓存 entries 中间层（formatPanel 是用户代码，可能变异入参）。 */
+export interface PanelCacheEntry {
+  panelHtml?: string;
+  error?: string;
+  at: number;
+}
+
+/** 自然日粒度归一化：时间戳折算到当地时区当日零点。
+ *  路由的 end=Date.now() 每请求漂移，key 含精确时间戳会令缓存永不命中。 */
+export function normalizeRangeDay(range: { start: number; end: number }): { start: number; end: number } {
+  const dayFloor = (t: number): number => {
+    const d = new Date(t);
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  };
+  return { start: dayFloor(range.start), end: dayFloor(range.end) };
+}
+
+/** 缓存 key = provider + adapterName + 归一化 range。
+ *  不同 days 参数归一化到不同自然日窗口 → 不同 key，互不串数据。 */
+export function panelCacheKey(
+  provider: string,
+  adapterName: string,
+  range: { start: number; end: number },
+): string {
+  const n = normalizeRangeDay(range);
+  return `${provider}\u0000${adapterName}\u0000${n.start}\u0000${n.end}`;
+}
+
+/** TTL 兜底过期判定（严格大于；now/entry.at 分离入参便于单测注入时钟）。 */
+export function isPanelCacheStale(
+  entry: Pick<PanelCacheEntry, "at">,
+  now: number,
+  ttlMs: number = PANEL_CACHE_TTL_MS,
+): boolean {
+  return now - entry.at > ttlMs;
+}

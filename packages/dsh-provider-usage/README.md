@@ -48,11 +48,11 @@ npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-provider-usage
                   ├→ getStats()               60s 轮询 /stats
 客户端轮询 ───────┘   │ Mutex 互斥锁              ↓
                       │ 60s 缓存              胶囊框架 ← capsuleHtml
-                      │ 2s 取数超时           面板框架 ← panelHtml(/history)
+                      │ 2s 取数超时           面板框架 ← panelHtml(/history，90s 兜底缓存)
                       ↓
                 adapter.fetchData(ctx)   ← 用户 mjs（apiEndpoint/staticPath/apiKey 注入）
                       ↓
-                按天分片 JSONL 历史落盘
+                按天分片 JSONL 历史落盘 ──→ 面板渲染缓存全清（主失效）
                       ↓
                 adapter.formatCapsule/Panel() → 净化 → HTML 下发
 ```
@@ -98,12 +98,32 @@ npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-provider-usage
 | 路由 | 说明 |
 | --- | --- |
 | `GET /api/dsh-provider-usage/stats?provider=X` | 用量统计 + `capsuleHtml`（胶囊内容）+ `status`/`adapterVersion` |
-| `GET /api/dsh-provider-usage/history?provider=X&days=N` | 历史查询 + `panelHtml`（面板内容）+ 查询 `range` |
+| `GET /api/dsh-provider-usage/history?provider=X&days=N` | 历史查询 + `panelHtml`（面板内容）+ 查询 `range`（进程内渲染缓存，见下节） |
 | `GET /api/dsh-provider-usage/health` | 健康检查 + 适配器快照 + 错误登记 |
 | `GET /api/dsh-provider-usage/adapters.json` | 适配器候选元数据（设置页主列表同源，含 `modelProviders`） |
 | `POST /api/dsh-provider-usage/adapters/select` | 切换/清空启用适配器 |
 | `POST /api/dsh-provider-usage/adapters/inspect` | 预览适配器文件（回显导出信息，不注册） |
 | `POST /api/dsh-provider-usage/adapters/add` | 登记用户适配器文件（设置页承载） |
+
+## /history 渲染缓存
+
+`/history` 的 `panelHtml` 在宿主进程内缓存（issue #105 子项①），数据未变时重复请求零重算：
+
+- **命中条件**：同进程内 `(provider, 启用适配器, 归一化查询窗口)` 三者均未变。窗口按
+  **自然日粒度**归一化——`end=Date.now()` 的请求间漂移不参与 key，同一自然日内的重复
+  请求命中同一条目；不同 `days` 参数归一化为不同条目、互不串数据。命中回放只复用返回值
+  字符串层快照（`{panelHtml, error, at}`），绝不缓存 entries 中间层；响应中的 `range`
+  仍回显本次请求的真实 start/end。
+- **失效时机（四处）**：主失效 = 历史采样**落盘成功时全清**（新数据已入库，所有面板条目
+  一次性失效）；此外 **select**（切换/清空启用适配器）、**add**（登记新适配器）、
+  **热更新**（适配器文件变更加载成功）三处挂点同步全清。
+- **兜底 TTL**：编译期常量 `90000`ms（90 秒，定界 [60s, 120s] 区间取中值），非配置键；
+  仅作兜底而非主失效机制——生产命中率由 warmup 周期（5min）与 stats 缓存 TTL（60s）
+  复合门控：两次落盘之间的客户端轮询全部命中。
+- **不缓存边界**：管道错误响应与无适配器/无启用适配器的结构化响应一律不入缓存——条件
+  消除后下一次请求立即重算，不会在剩余 TTL 内复读旧错误或旧占位结构。
+- **无条件请求协商**：响应不含 ETag / Last-Modified，不做 304 短路；客户端维持
+  `cache: "no-store"`，本缓存为纯服务端行为、客户端零改动。
 
 ## 适配器开发指南（v2 契约）
 
