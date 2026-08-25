@@ -37,10 +37,13 @@ pnpm typecheck    # 全仓类型检查
 > （只记录不判红），`threshold` 为阶段二目标值，待基线校准（issue #42 二期）后再
 > 接入 CI 硬卡点。
 
-### 变异测试与增量链路（#178）
+### 变异测试与增量链路（#178 / #187）
 
 六包变异配置集中在 `stryker.conf.d/dsh-<pkg>.json`（mutate 区间、testFiles、
 阈值口径与 `gauntlet.config.json` 三方一致，由 workflow-assert 自测锚定）。增量链路：
+
+**全量分工总述**：PR 门管变更切片；夜间 observe 门管主干全量；发版前
+release.yml tag 管线跑全量门禁——全量只在这三处语义中的后两处真实执行。
 
 - **夜间全量落基线**（observe.yml）：刻意不 restore 任何缓存——无 incremental
   基线即天然全量；运行末尾把六份 `coverage/mutation/incremental-*.json` 写入
@@ -52,7 +55,12 @@ pnpm typecheck    # 全仓类型检查
   （scripts/gate/mutation-gate.mjs）：测试覆盖率 self-written 函数 ≥ threshold
   恒硬；变异测试率 covered ≥ per-package threshold 受全局 `mutation.strict`
   约束（false 期间仅标注，#150 达标翻转后自动变硬）。成败并入 repo-gate
-  聚合闸，不新增分支保护 required check 名。缓存未命中时天然降级为全量变异。
+  聚合闸（判定逻辑见 scripts/gate/repo-gate-assert.mjs），不新增分支保护
+  required check 名。缓存未命中时天然降级为全量变异。
+- **触发面收敛**（#187）：`mutation-gate` 仅限 pull_request 触发——push 到 main
+  时 diff 基准 `before` 不可用会使 paths-filter 走 fail-closed 全量 fallback，
+  变异随之退化全量且与当晚夜间全量完全重复；主干变异覆盖由 observe.yml 夜间
+  全量承接、发版前由 release.yml tag 管线承接，非 PR 事件下该 job 整体 skipped。
 - 本地手动入口：`npx stryker run stryker.conf.d/dsh-<pkg>.json`（临时强制全量用
   官方 `--force` 参数，勿改配置文件）。
 

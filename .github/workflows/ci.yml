@@ -190,8 +190,12 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-  # ── 第 3 段：增量变异门禁（#178 v2：paths-filter 切片 + 夜间基线增量复用）──
+  # ── 第 3 段：增量变异门禁（#178 v2 切片 + #187 触发面收敛至 pull_request）──
   # - 仅对命中包实例化（动态 matrix ← changes.mutationPackages；空清单时整体 skipped）
+  # - 仅限 pull_request 触发（#187）：main push 场景 before 基线不可用时 paths-filter
+  #   走 fail-closed 全量 fallback，变异会退化全量且与 observe.yml 夜间全量完全重复；
+  #   主干变异覆盖归夜间、发版归 release.yml tag 管线——全量只在这两处真实执行。
+  #   非 PR 事件下整体 skipped，由 repo-gate 判定脚本按事件语义显式放行
   # - restore-only：只读夜间全量落下的 incremental 基线，绝不回写（防 PR 结果污染夜间基线源）
   # - 缓存未命中（首夜前 / LRU 淘汰）天然降级为全量变异，门禁语义不变仅变慢
   # - 双指标判分（scripts/gate/mutation-gate.mjs）：测试覆盖率（self-written 函数，
@@ -201,7 +205,7 @@ jobs:
   mutation-gate:
     name: Mutation gate (${{ matrix.package }})
     needs: changes
-    if: always() && needs.changes.result == 'success'
+    if: github.event_name == 'pull_request' && needs.changes.result == 'success'
     strategy:
       fail-fast: false
       matrix:
@@ -275,30 +279,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - name: Fail-closed gate assertion（F2：任何上游非 success 即红）
-        run: |
-          set -e
-          echo "changes=${{ needs.changes.result }}  build-test=${{ needs.build-test.result }}  mutation-gate=${{ needs.mutation-gate.result }}"
-          if [ "${{ needs.changes.result }}" != "success" ]; then
-            echo "::error::changes 作业未成功（${{ needs.changes.result }}）—— fail-closed"
-            exit 1
-          fi
-          if [ "${{ needs.build-test.result }}" != "success" ]; then
-            echo "::error::build-test 存在失败/skipped 实例（${{ needs.build-test.result }}）—— fail-closed"
-            exit 1
-          fi
-          # mutation-gate（#178）：success 放行；skipped 仅当无命中包（空矩阵）或
-          # changes 未成功——后者已被上方断言拦截，此处放行不构成旁路；
-          # failure/cancelled 一律判红
-          if [ "${{ needs.mutation-gate.result }}" != "success" ] && [ "${{ needs.mutation-gate.result }}" != "skipped" ]; then
-            echo "::error::mutation-gate 存在失败实例（${{ needs.mutation-gate.result }}）—— fail-closed"
-            exit 1
-          fi
-
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0   # 阈值单调性校验需读 origin/main 的 config（F3）
+
+      - name: Fail-closed gate assertion（F2：任何上游非 success 即红）
+        # #187：判定逻辑收敛到 scripts/gate/repo-gate-assert.mjs（事件 × 切片清单
+        # × job 结果三维判定表，可被单元测试全组合锁死），env 注入避免内联 bash 漂移。
+        # 必须排在 Checkout 之后（run #32800733630 教训：脚本版需要工作区文件，
+        # 旧内联 bash 无文件依赖掩盖了这一时序约束）；仅依赖 Node 内置模块，
+        # 无需等 pnpm/setup-node，紧随 checkout 尽早判红
+        env:
+          GATE_EVENT: ${{ github.event_name }}
+          GATE_CHANGES: ${{ needs.changes.result }}
+          GATE_BUILD_TEST: ${{ needs.build-test.result }}
+          GATE_MUTATION: ${{ needs.mutation-gate.result }}
+          GATE_MUTATION_PKGS: ${{ needs.changes.outputs.mutationPackages }}
+        run: node scripts/gate/repo-gate-assert.mjs
 
       - name: Setup pnpm
         uses: pnpm/action-setup@a8198c4bff370c8506180b035930dea56dbd5288 # v5
