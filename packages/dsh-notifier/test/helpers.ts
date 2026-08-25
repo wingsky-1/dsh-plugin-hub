@@ -121,8 +121,10 @@ export async function waitForHistory(historyRoute, predicate, timeoutMs = 2000) 
  * opts.turnEnd：turn 号（有则追加一条 turn/end 事件）；
  * opts.turnEndKind：reason.kind（默认 completed，aborted 模拟用户中断）；
  * opts.subagent：true 模拟子代理（写入 origin:'subagent'，与 DSH childSessionMeta 一致）；
- * opts.parentSession：模拟 fork/派生会话（只写 parentSession、不带 origin）；
- * opts.depth：header.delegationDepth（仅作附加，不作子代理判据）。
+ * opts.parentSession：模拟 fork/派生会话（只写 parentSession、不带 origin；
+ *   是否委派 worker 由运行时归属面 fakeAgents 决定——issue #49）；
+ * opts.depth：header.delegationDepth（仅作附加，不作子代理判据）；
+ * opts.cwd：header.cwd（模拟 headless CLI 会话「header 仅 {cwd}」形态）。
  */
 export function agentWithTitle(id, title, opts = {}) {
   const events = [];
@@ -134,11 +136,31 @@ export function agentWithTitle(id, title, opts = {}) {
   if (opts.subagent) header.origin = "subagent";
   if (opts.parentSession !== undefined) header.parentSession = opts.parentSession;
   if (opts.depth !== undefined) header.delegationDepth = opts.depth;
+  if (opts.cwd !== undefined) header.cwd = opts.cwd;
   return {
     id,
     session: {
       header: Object.keys(header).length > 0 ? header : undefined,
       events,
+    },
+  };
+}
+
+/**
+ * 运行时归属模拟面（issue #49）：ctx.agents 判定所需最小实现。
+ * @param liveIds live registry 中存在的父/子 agent id 数组。
+ * @param ownedPairs 归属关系对 [childId, ownerId]：isOwnedBy(childId, owner)
+ *   仅当 owner 在 live 且存在对应关系对时返回 true。
+ */
+export function fakeAgents(liveIds = [], ownedPairs = []) {
+  const live = new Map(liveIds.map((id) => [id, { id }]));
+  return {
+    get(id) {
+      return live.get(id);
+    },
+    isOwnedBy(id, owner) {
+      if (owner === undefined || !live.has(owner.id)) return false;
+      return ownedPairs.some(([child, parent]) => child === id && parent === owner.id);
     },
   };
 }

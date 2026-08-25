@@ -15,7 +15,8 @@
  *   用户审批结束），不短路
  * - 任务完成：agent/status（scoped emit，{agent, status}，idle | running）
  *   running → idle 跃迁，per-agent 状态机，多会话互不误报；子代理
- *   （header.origin === 'subagent'）走独立开关/事件类型 subagent-done；
+ *   （origin === 'subagent'，或 fork 型委派且运行时归属成立——见 message.ts
+ *   isSubagentOf 双信号注释）走独立开关/事件类型 subagent-done；
  *   用户暂停/中断（turn/end reason aborted）固定静默
  * - 任务错误：agent/error（{agent, turn, step, error}），60 秒滚动窗口合并
  * - 轮结束：agent/turn-stopping（serial，{agent, turn}，仅宿主通知，不跑模型）
@@ -172,8 +173,9 @@ export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Pro
   /**
    * 任务完成状态机（per-agent）：见到某会话 running 记 pendingDone，下次该会话
    * idle 时判定是否通知（带耗时）。多会话/子代理各自独立跟踪，互不误报。
-   * 子代理（header.origin === 'subagent'）走独立开关 notifySubagentDone 与
-   * 独立事件类型 subagent-done；用户暂停/中断（turn/end reason aborted）固定静默。
+   * 子代理（isSubagentOf 双信号：origin === 'subagent' 或 fork 型委派运行时
+   * 归属成立）走独立开关 notifySubagentDone 与独立事件类型 subagent-done；
+   * 用户暂停/中断（turn/end reason aborted）固定静默。
    */
   const agentStates = new Map<string, { runningSeen: boolean; startedAt: number; lastEndedTurn?: number }>(); // agentId -> { runningSeen, startedAt, lastEndedTurn }
 
@@ -379,7 +381,11 @@ export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Pro
           // 语义对齐；失败由 agent/error 单独负责「任务出错」）。
           if (!hasNewEnd || ended === undefined || ended.kind !== "completed") return;
           const taskTitle = sessionTitleOf(agent);
-          if (isSubagentOf(agent)) {
+          // 子代理判定（issue #49 双信号）：origin 命中即 spawn 型；未命中查
+          // 运行时归属（fork 型委派 worker）；归属不成立/agents 服务缺位一律
+          // 保守走主任务分支——用户 fork 主线不被静默。三类 header 形态与
+          // 冷 resume 保守边界见 isSubagentOf 注释。
+          if (isSubagentOf(agent, ctx.agents)) {
             if (current.notifySubagentDone) enqueueDone("subagent-done", taskTitle, durationMs);
           } else if (current.notifyTaskDone) {
             enqueueDone("done", taskTitle, durationMs);

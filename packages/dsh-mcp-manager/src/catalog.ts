@@ -107,7 +107,10 @@ export function composeCatalogEntries(supervisors: Map<string, SupervisorLite>, 
       const cached = cache?.get(name);
       if (typeof cached?.summary === "string" && cached.summary !== "") text = cached.summary;
     }
-    entries.push({ name, text });
+    // 无描述时剥离 text 属性（不产出 `text: undefined`）：条目保持干净可
+    // JSON 序列化，否则目录消息 append 为 user/message 事件会被 dsh-session
+    // 序列化校验拒绝（issue #192）。
+    entries.push(text === undefined ? { name } : { name, text });
   }
   return entries;
 }

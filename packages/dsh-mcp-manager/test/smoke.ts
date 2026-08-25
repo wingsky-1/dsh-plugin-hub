@@ -51,6 +51,7 @@ import {
   parseSsePayload,
   publicToolName,
   renderMcpCatalogMessage,
+  renderMcpCatalogUpdate,
   resolveCatalogInjection,
   ROUTES,
   SCOPE_GLOBAL,
@@ -1123,7 +1124,8 @@ const main = async () => {
     const entries = composeCatalogEntries(supervisors, 6, cache);
     assert.equal(entries[0].text, "自定义描述 A", "用户配置优先");
     assert.equal(entries[1].text, "缓存摘要 B", "缓存摘要 fallback（无需用户配置）");
-    assert.equal(entries[2].text, undefined, "无配置无缓存 → 仅名字");
+    assert.equal(entries[2].name, "srv-c", "无配置无缓存 → 条目按名称保留");
+    assert.equal(Object.hasOwn(entries[2], "text"), false, "双缺省条目不含 text 属性（值断言防不了 text: undefined，必须查存在性）");
     // digest 稳定性：实时连接状态（tools/toolMeta）变化不影响目录 digest
     const connected = new Map([
       ["srv-a", { server: { description: "自定义描述 A" }, tools: ["t1"], toolMeta: new Map([["x", { description: "实时描述" }]]) }],
@@ -1207,6 +1209,12 @@ const main = async () => {
     assert.match(msg.content[0].text, /不代表当前连接状态/);
     assert.match(msg.content[0].text, /`code-graph`: 代码图谱/);
     assert.ok(typeof msg.id === "string" && msg.id.length > 0);
+
+    // #192 AC-3：双缺省行仅渲染名字（无冒号描述），带描述条目渲染不变
+    const mixed = renderMcpCatalogMessage([{ name: "bare-x" }, { name: "code-graph", text: "代码图谱" }]);
+    assert.match(mixed.content[0].text, /^- `bare-x`$/m, "双缺省行仅名字");
+    assert.doesNotMatch(mixed.content[0].text, /`bare-x`: /);
+    assert.match(mixed.content[0].text, /^- `code-graph`: 代码图谱$/m, "带描述行保持");
   });
   check("findCatalogMessage 定位既有目录", () => {
     const catalog = renderMcpCatalogMessage([{ name: "a", text: "b" }]);
@@ -1351,6 +1359,56 @@ const main = async () => {
     // reject 不处理
     const rejected = resolveCatalogInjection({ kind: "reject" }, [], supervisors, 6, undefined, agent2);
     assert.equal(rejected.kind, "reject");
+  });
+
+  // ---------- issue #192：双缺省条目不得产出 text: undefined ----------
+
+  check("composeCatalogEntries 双缺省条目干净可序列化（#192 AC-1/AC-2）", () => {
+    const supervisors = new Map([
+      ["bare-a", { server: { description: "" }, tools: [], toolMeta: new Map() }],
+      ["bare-b", { server: {}, tools: [], toolMeta: new Map() }],
+      ["with-desc", { server: { description: "有描述" }, tools: [], toolMeta: new Map() }],
+    ]);
+    const entries = composeCatalogEntries(supervisors, 6, undefined);
+    assert.equal(entries.length, 3, "双缺省服务器按名称保留不丢弃");
+    assert.deepEqual(entries.map((e) => e.name), ["bare-a", "bare-b", "with-desc"]);
+    for (const bare of [entries[0], entries[1]]) {
+      assert.equal(Object.hasOwn(bare, "text"), false, `双缺省条目 ${bare.name} 不含 text 属性`);
+    }
+    assert.equal(entries[2].text, "有描述");
+
+    // AC-2：两条渲染路径的完整消息 JSON 往返后深度相等（载荷无 undefined 属性）
+    for (const rendered of [renderMcpCatalogMessage(entries), renderMcpCatalogUpdate(entries)]) {
+      assert.doesNotThrow(() => JSON.stringify(rendered));
+      assert.deepEqual(JSON.parse(JSON.stringify(rendered)), rendered, "完整消息 JSON 往返深度相等");
+      assert.equal(
+        rendered.source.entries.map((e) => Object.hasOwn(e, "text")).join(","),
+        "false,false,true",
+        "source.entries 全部干净",
+      );
+    }
+  });
+
+  check("双缺省服务器目录消息可 append 为 user/message 且去重（#192 AC-4）", () => {
+    const supervisors = new Map([["bare-only", { server: { description: "" }, tools: [], toolMeta: new Map() }]]);
+    const agent = makeAgent();
+    let messages = [{ id: "m1", role: "user", content: [] }];
+    let result = runStep({ kind: "enter", messages: [...messages] }, messages, supervisors, undefined, agent);
+    messages = result.messages;
+    const catalogEvents = agent.session.events.filter((e) => e.type === "user/message" && e.data?.source?.kind === "mcp-catalog");
+    assert.equal(catalogEvents.length, 1, "首轮注入成功（append 为 user/message 未被拒绝）");
+    const appended = catalogEvents[0].data;
+    assert.equal(Object.hasOwn(appended.source.entries[0], "text"), false, "append 后事件载荷仍无 text 属性");
+    assert.doesNotThrow(() => JSON.stringify(appended), "事件载荷可 JSON 序列化（dsh-session 序列化校验等价物）");
+    assert.deepEqual(JSON.parse(JSON.stringify(appended)), appended, "往返深度相等");
+
+    // digest 去重语义不变：同集合再次 pre-step 不重复注入
+    result = runStep({ kind: "enter", messages: [...messages] }, messages, supervisors, undefined, agent);
+    assert.equal(
+      agent.session.events.filter((e) => e.type === "user/message" && e.data?.source?.kind === "mcp-catalog").length,
+      1,
+      "次轮不重复注入（digest 去重不变）",
+    );
   });
 
   // ---------- SDK 端到端（issue #11 PoC 契约不漂移证据：真实 stdio 连接 /
