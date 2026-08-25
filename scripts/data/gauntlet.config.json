@@ -44,7 +44,7 @@
         "baselineDuration": "12.7s",
         "baselineScope": "packages/dsh-idle-archive/lib/index.js:1055-1060+1146-1375（self-written 段；排除 esbuild 垫片、cosmokit/schemastery 内联 vendor、shared 契约层内联副本）",
         "config": "stryker.conf.d/dsh-idle-archive.json",
-        "threshold": 60
+        "threshold": 99
       },
       "dsh-web-file-preview": {
         "baselineScore": 42.6,
