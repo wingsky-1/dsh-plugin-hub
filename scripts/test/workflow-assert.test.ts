@@ -13,6 +13,8 @@
  *   - observe.yml：夜间调度、self-cov --check 与 mutate-scope-guard 执行点在位；
  *     六包串行清单 ↔ stryker.conf.d 文件集 ↔ gauntlet mutation.packages 三方一致
  *   - changes 的 case 映射覆盖全部包（防新增包静默漏检，评审 F7）
+ *   - #187 触发面收敛：mutation-gate 仅限 pull_request；repo-gate 判定走
+ *     scripts/gate/repo-gate-assert.mjs 并以判定表全组合单测锁死
  *
  * 运行：node --test scripts/test/workflow-assert.test.ts（或 pnpm test:scripts）
  */
@@ -20,6 +22,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync, existsSync } from 'node:fs'
 import { join, basename } from 'node:path'
+import { spawnSync } from 'node:child_process'
 
 const ROOT = join(import.meta.dirname, '../..')
 const CI = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8')
@@ -43,12 +46,16 @@ test('ci.yml: repo-gate 保持分支保护 required check 名', () => {
     'required check 名必须与旧单作业名一致（维护者分支保护无缝切换）')
 })
 
-test('ci.yml: repo-gate if always() 且首步 fail-closed 断言双上游', () => {
+test('ci.yml: repo-gate if always() 且首步 fail-closed 断言经判定脚本执行', () => {
   const gate = CI.slice(CI.indexOf('\n  repo-gate:'))
   assert.ok(/if: always\(\)/.test(gate), 'repo-gate 必须 always() 运行（上游失败时仍执行判红）')
-  assert.ok(gate.includes('needs.changes.result'), '断言 changes 结果')
-  assert.ok(gate.includes('needs.build-test.result'), '断言 build-test 结果')
   assert.ok(/Fail-closed gate assertion/.test(gate), 'fail-closed 断言步骤在位')
+  // #187：内联 bash 收敛为可单测的判定脚本，env 三维注入（事件 × 切片 × 结果）
+  assert.ok(gate.includes('run: node scripts/gate/repo-gate-assert.mjs'),
+    'repo-gate fail-closed 判定必须调用 scripts/gate/repo-gate-assert.mjs')
+  for (const env of ['GATE_EVENT', 'GATE_CHANGES', 'GATE_BUILD_TEST', 'GATE_MUTATION', 'GATE_MUTATION_PKGS']) {
+    assert.ok(new RegExp(`${env}: \\$\\{\\{`).test(gate), `判定脚本 env ${env} 注入缺失`)
+  }
 })
 
 test('ci.yml: filter 失败 fallback 全量切片（fail-closed 双闸）', () => {
@@ -200,6 +207,107 @@ test('#178: ci.yml PR 增量门禁——restore-only + 按命中包切片 + 并�
   const rg = CI.slice(CI.indexOf('\n  repo-gate:'))
   assert.ok(rg.includes('needs.mutation-gate.result'),
     'repo-gate fail-closed 判定脚本必须检查 needs.mutation-gate.result')
+})
+
+// ── #187 触发面收敛：mutation-gate 仅限 pull_request，主干变异归夜间全量 ──
+
+test('#187: ci.yml mutation-gate if 收敛至 pull_request（删除或改坏必红）', () => {
+  // build-test 不受收敛影响：push 时仍须全集构建（repo-gate 全局门禁依赖产物）
+  const bt = CI.slice(CI.indexOf('\n  build-test:'), CI.indexOf('\n  mutation-gate:'))
+  assert.ok(bt.includes('if: always() && needs.changes.result == \'success\''),
+    'build-test 的 if 必须保持 always() 全事件构建语义')
+
+  const mg = CI.slice(CI.indexOf('\n  mutation-gate:'), CI.indexOf('\n  repo-gate:'))
+  const m = /^    if: (.+)$/m.exec(mg)
+  assert.ok(m, 'mutation-gate 声明 job 级 if')
+  assert.equal(
+    m[1].trim(),
+    "github.event_name == 'pull_request' && needs.changes.result == 'success'",
+    'mutation-gate 的 if 必须精确为「仅 PR 且 changes 成功」——'
+    + '事件限制被删除（退化 push 全量变异）或被改坏（PR 门禁静默缺席）均判红',
+  )
+})
+
+test('#187: repo-gate-assert 判定表全组合锁定（事件 × 切片清单 × job 结果）', async () => {
+  const { evaluateGate } = await import('../gate/repo-gate-assert.mjs')
+  const base = {
+    event: 'pull_request',
+    changes: 'success',
+    buildTest: 'success',
+    mutation: 'success',
+    mutationPkgsJson: '["dsh-notifier"]',
+  }
+  const run = (over) => evaluateGate({ ...base, ...over })
+
+  // 前提闸：changes / build-test 非 success 一律红（含 cancelled / skipped）
+  for (const r of ['failure', 'cancelled', 'skipped']) {
+    assert.deepEqual({ ...run({ changes: r }), reason: undefined },
+      { ok: false, code: 1, reason: undefined }, `changes=${r} 必须红`)
+    assert.equal(run({ buildTest: r }).code, 1, `build-test=${r} 必须红`)
+  }
+
+  // PR + 非空切片：仅 success 放行；skipped = 该跑没跑的门禁静默绕过，必红
+  assert.equal(run({}).code, 0, 'PR 非空切片 success 放行')
+  for (const r of ['skipped', 'failure', 'cancelled']) {
+    const v = run({ mutation: r })
+    assert.equal(v.code, 1, `PR 非空切片 ${r} 必须红`)
+    assert.match(v.reason, /绕过|期望 success/, `${r} 判词须点名门禁绕过语义`)
+  }
+
+  // PR + 空矩阵：整体 skipped 是唯一合法形态
+  assert.equal(run({ mutationPkgsJson: '[]', mutation: 'skipped' }).code, 0, '空矩阵 skipped 合法放行')
+  for (const r of ['success', 'failure', 'cancelled']) {
+    assert.equal(run({ mutationPkgsJson: '[]', mutation: r }).code, 1, `空矩阵 ${r} 必须红`)
+  }
+
+  // 非 PR 事件：触发面收敛不变量——mutation-gate 必须 skipped；
+  // 若出现其他结果说明 ci.yml if 的事件限制已失效，显性红防静默退化全量
+  for (const ev of ['push', 'workflow_dispatch']) {
+    assert.equal(run({ event: ev, mutation: 'skipped', mutationPkgsJson: '[ ]' }).code, 0,
+      `${ev} + 整体 skipped 符合收敛预期`)
+    for (const r of ['success', 'failure', 'cancelled']) {
+      const v = run({ event: ev, mutation: r })
+      assert.equal(v.code, 1, `${ev} + mutation-gate=${r} 必须红`)
+      assert.match(v.reason, /收敛不变量/, `${ev} 下 ${r} 判词须点名收敛不变量`)
+    }
+  }
+
+  // 数据契约破坏：切片清单非合法 JSON 数组按环境错误处理（exit 2）
+  for (const bad of ['not-json', '{"a":1}', '"dsh-notifier"']) {
+    const v = run({ mutationPkgsJson: bad })
+    assert.equal(v.code, 2, `切片清单非法（${bad}）必须 exit 2`)
+  }
+})
+
+test('#187: repo-gate-assert CLI 退出码转发（GitHub Actions 判红依据）', () => {
+  const script = join(ROOT, 'scripts/gate/repo-gate-assert.mjs')
+  const envOf = (over) => ({
+    GATE_EVENT: over.event ?? '',
+    GATE_CHANGES: over.changes ?? '',
+    GATE_BUILD_TEST: over.buildTest ?? '',
+    GATE_MUTATION: over.mutation ?? '',
+    GATE_MUTATION_PKGS: over.mutationPkgsJson ?? '',
+  })
+  // 通过场景 exit 0
+  const okRun = spawnSync(process.execPath, [script], {
+    encoding: 'utf8',
+    env: { ...process.env, ...envOf({
+      event: 'push', changes: 'success', buildTest: 'success',
+      mutation: 'skipped', mutationPkgsJson: '[]',
+    }) },
+  })
+  assert.equal(okRun.status, 0, 'push + skipped 场景 CLI 必须 exit 0')
+  // 违约场景 exit 1 且输出 ::error:: 可检索的判词
+  const failRun = spawnSync(process.execPath, [script], {
+    encoding: 'utf8',
+    env: { ...process.env, ...envOf({
+      event: 'pull_request', changes: 'success', buildTest: 'success',
+      mutation: 'skipped', mutationPkgsJson: '["dsh-lan-proxy"]',
+    }) },
+  })
+  assert.equal(failRun.status, 1, 'PR 该跑没跑场景 CLI 必须 exit 1')
+  assert.match(failRun.stderr, /::error::/, '违约判词必须带 ::error:: 注解前缀（PR 页面可见）')
+  assert.match(failRun.stderr, /绕过/, '判词须点名门禁绕过语义')
 })
 
 test('#178: ci.yml 包名全集 ≡ gauntlet 变异六包 ∪ {dsh-plugins-all}（防清单漂移）', () => {
