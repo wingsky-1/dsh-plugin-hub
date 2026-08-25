@@ -15,6 +15,10 @@
  *   - changes 的 case 映射覆盖全部包（防新增包静默漏检，评审 F7）
  *   - #187 触发面收敛：mutation-gate 仅限 pull_request；repo-gate 判定走
  *     scripts/gate/repo-gate-assert.mjs 并以判定表全组合单测锁死
+ *   - #217 变异/覆盖解耦：cov 全局单次采集（coverage job）+ stryker 报告
+ *     artifact 传递 + mutation-verdict 聚合判分；changes.hasMutations 显式布尔；
+ *     mutate-scope-guard 前移进 PR 门禁；needs 连坐语义（coverage 失败 →
+ *     verdict 不跑 → repo-gate 红）由结构锚锁死
  *
  * 运行：node --test scripts/test/workflow-assert.test.ts（或 pnpm test:scripts）
  */
@@ -198,16 +202,15 @@ test('#178+#204: ci.yml PR 增量门禁——读仓库基线文件 + 按命中�
 
   const gateIdx = CI.indexOf('\n  mutation-gate:')
   assert.ok(gateIdx > 0, 'mutation-gate job 在位')
-  const mg = CI.slice(gateIdx, CI.indexOf('\n  repo-gate:'))
+  // #217 后矩阵只做基线 restore + stryker run + 报告上传，判分收敛到 mutation-verdict
+  const mg = CI.slice(gateIdx, CI.indexOf('\n  mutation-verdict:'))
   assert.ok(mg.includes('package: ${{ fromJSON(needs.changes.outputs.mutationPackages) }}'),
     '动态 matrix ← changes.mutationPackages（命中包天然切片，未触包不实例化）')
   assert.ok(mg.includes('scripts/gate/baseline/incremental-'), '读仓库基线文件路径 scripts/gate/baseline/incremental-<pkg>.json')
   assert.ok(mg.includes('#dsh-'), '矩阵包名 dsh-<pkg> → 基线文件名 incremental-<pkg>.json 的映射在位')
   assert.ok(mg.includes('::notice::'), '基线缺失时须打 notice 标注全量降级（首夜属预期，防误判缺陷）')
-  assert.ok(mg.includes('scripts/gate/mutation-gate.mjs'), '双指标判分脚本执行点在位')
-  assert.ok(mg.includes('scripts/gate/self-cov.mjs'), '覆盖率指标数据源执行点在位')
-  // build 必须全量（run #32790425132 教训）：pnpm cov = c8 包裹全仓 smoke，
-  // 单包构建会让其余包 lib/index.js 缺失而 ERR_MODULE_NOT_FOUND
+  // build 必须全量（run #32790425132 教训）：mutate 区间行号锚定 esbuild 产物分段，
+  // 产物结构依赖 workspace 内联链全集一致性
   const mgBuildIdx = mg.indexOf('Build all packages')
   assert.ok(mgBuildIdx > 0, 'mutation-gate 全量构建步骤在位')
   const mgBuildBlock = mg.slice(mgBuildIdx, mg.indexOf('- name:', mgBuildIdx + 10))
@@ -215,8 +218,9 @@ test('#178+#204: ci.yml PR 增量门禁——读仓库基线文件 + 按命中�
   assert.ok(!mgBuildBlock.includes('--filter'), 'mutation-gate 构建步骤禁止 --filter 单包切片')
 
   // 成败并入既有聚合闸，不新增分支保护 required check 名
-  assert.ok(/needs: \[changes, build-test, mutation-gate\]/.test(CI), 'repo-gate needs 纳入 mutation-gate')
-  // 聚合闸 fail-closed 判定脚本必须显式引用 mutation-gate 结果（防聚合闸旁路）
+  assert.ok(/needs: \[changes, build-test, coverage, mutation-gate, mutation-verdict\]/.test(CI),
+    'repo-gate needs 纳入 coverage 与 mutation-gate/mutation-verdict（#217 五维聚合）')
+  // 聚合闸 fail-closed 判定脚本必须显式引用变异链结果（防聚合闸旁路）
   const rg = CI.slice(CI.indexOf('\n  repo-gate:'))
   assert.ok(rg.includes('needs.mutation-gate.result'),
     'repo-gate fail-closed 判定脚本必须检查 needs.mutation-gate.result')
@@ -230,112 +234,178 @@ test('#187: ci.yml mutation-gate if 收敛至 pull_request（删除或改坏必�
   assert.ok(bt.includes('if: always() && needs.changes.result == \'success\''),
     'build-test 的 if 必须保持 always() 全事件构建语义')
 
-  const mg = CI.slice(CI.indexOf('\n  mutation-gate:'), CI.indexOf('\n  repo-gate:'))
+  const mg = CI.slice(CI.indexOf('\n  mutation-gate:'), CI.indexOf('\n  mutation-verdict:'))
   const m = /^    if: (.+)$/m.exec(mg)
   assert.ok(m, 'mutation-gate 声明 job 级 if')
   assert.equal(
     m[1].trim(),
-    "github.event_name == 'pull_request' && needs.changes.result == 'success'",
-    'mutation-gate 的 if 必须精确为「仅 PR 且 changes 成功」——'
-    + '事件限制被删除（退化 push 全量变异）或被改坏（PR 门禁静默缺席）均判红',
+    "github.event_name == 'pull_request' && needs.changes.outputs.hasMutations == 'true'",
+    'mutation-gate 的 if 必须精确为「仅 PR 且 hasMutations 显式布尔」——'
+    + '事件限制被删除（退化 push 全量变异）或被改坏（PR 门禁静默缺席）均判红；'
+    + '#217 起空切片判定走 changes.hasMutations，禁止 fromJSON|length 或裸 \'[]\' 比较',
   )
 })
 
-test('#187: repo-gate-assert 判定表全组合锁定（事件 × 切片清单 × job 结果）', async () => {
+test('#217+#187: repo-gate-assert 判定表全组合锁定（事件 × 切片 × coverage × 矩阵 × verdict）', async () => {
   const { evaluateGate } = await import('../gate/repo-gate-assert.mjs')
   const base = {
     event: 'pull_request',
     changes: 'success',
     buildTest: 'success',
+    coverage: 'success',
     mutation: 'success',
+    verdict: 'success',
+    hasMutations: 'true',
     mutationPkgsJson: '["dsh-notifier"]',
   }
   const run = (over) => evaluateGate({ ...base, ...over })
+  const RESULTS = ['success', 'failure', 'cancelled', 'skipped']
+
+  // 手写期望表（独立于实现成文，防同义反复；0=绿 1=红）：
+  //   - 非 PR：覆盖/变异三段全部 skipped 才绿（触发面收敛不变量）
+  //   - PR + hasMutations=true：coverage==success && 矩阵∈{success,failure}
+  //     && verdict==success 才绿
+  //   - PR + 空切片：coverage==skipped && 矩阵/verdict∈{skipped,failure} 才绿
+  const expectOf = (event, hm, cov, mut, verd) => {
+    if (event !== 'pull_request') {
+      return (cov === 'skipped' && mut === 'skipped' && verd === 'skipped') ? 0 : 1
+    }
+    if (hm === 'true') {
+      return (cov === 'success' && (mut === 'success' || mut === 'failure') && verd === 'success') ? 0 : 1
+    }
+    return (cov === 'skipped'
+      && (mut === 'skipped' || mut === 'failure')
+      && (verd === 'skipped' || verd === 'failure')) ? 0 : 1
+  }
+
+  // PR 分支：hasMutations × coverage × 矩阵 × verdict 全组合（2×4×4×4 = 128 case）
+  for (const hm of ['true', 'false']) {
+    const pkgsJson = hm === 'true' ? '["dsh-notifier"]' : '[]'
+    for (const cov of RESULTS) {
+      for (const mut of RESULTS) {
+        for (const verd of RESULTS) {
+          const expected = expectOf('pull_request', hm, cov, mut, verd)
+          const v = run({ hasMutations: hm, mutationPkgsJson: pkgsJson, coverage: cov, mutation: mut, verdict: verd })
+          assert.equal(v.code, expected,
+            `PR hasMutations=${hm} coverage=${cov} mutation=${mut} verdict=${verd} 应为 code=${expected}`)
+        }
+      }
+    }
+  }
+
+  // 非 PR 分支：三段结果全组合（2 事件 × 4×4×4 = 128 case）；push fail-closed
+  // 真实形态（GATE_MUTATION_PKGS 的 push 取值）为非空全集清单，数据校验须放行
+  for (const ev of ['push', 'workflow_dispatch']) {
+    for (const cov of RESULTS) {
+      for (const mut of RESULTS) {
+        for (const verd of RESULTS) {
+          const expected = expectOf(ev, 'true', cov, mut, verd)
+          const v = run({
+            event: ev,
+            hasMutations: 'true',
+            mutationPkgsJson: JSON.stringify(ALL_PACKAGES),
+            coverage: cov,
+            mutation: mut,
+            verdict: verd,
+          })
+          assert.equal(v.code, expected,
+            `${ev} coverage=${cov} mutation=${mut} verdict=${verd} 应为 code=${expected}`)
+        }
+      }
+    }
+  }
+
+  // ── reason 文案锚：区分「coverage 失败连坐」与「mutation 门禁绕过」（#217）──
+  assert.match(run({ coverage: 'failure' }).reason, /coverage 失败连坐/,
+    'coverage failure 判词必须点名「失败连坐」而非误报绕过')
+  assert.match(run({ coverage: 'cancelled' }).reason, /coverage 失败连坐/,
+    'coverage cancelled 同属失败连坐语义')
+  assert.match(run({ coverage: 'skipped' }).reason, /缺席/,
+    'coverage 缺席是结构性违约（if 契约被改坏），文案须与失败连坐区分')
+  assert.match(run({ mutation: 'skipped' }).reason, /门禁绕过/,
+    '矩阵该跑没跑判词必须点名「门禁绕过」')
+  assert.match(run({ verdict: 'skipped' }).reason, /门禁绕过/,
+    'verdict 该跑没跑同样按门禁绕过点名')
+  assert.match(run({ verdict: 'failure' }).reason, /双指标|判分未通过/,
+    'verdict failure 判词须点名判分未通过')
+  assert.match(run({ event: 'push', mutation: 'success' }).reason, /收敛不变量/,
+    '非 PR 下变异执行判词须点名收敛不变量')
+
+  // 防回归对照：矩阵 failure 在 hasMutations=true 下不单独判红（报告已下发、
+  // 由 verdict 统一裁决），但 verdict 未通过时整体必红
+  assert.equal(run({ mutation: 'failure', verdict: 'success' }).code, 0,
+    '矩阵实例级 failure + verdict 达标 = 绿（聚合判分语义）')
+  assert.equal(run({ mutation: 'success', verdict: 'failure' }).code, 1,
+    '矩阵 success 但 verdict 判分未通过 = 红')
+  assert.equal(run({ mutation: 'failure', verdict: 'failure' }).code, 1,
+    '矩阵与 verdict 双红 = 红')
 
   // 前提闸：changes / build-test 非 success 一律红（含 cancelled / skipped）
   for (const r of ['failure', 'cancelled', 'skipped']) {
-    assert.deepEqual({ ...run({ changes: r }), reason: undefined },
-      { ok: false, code: 1, reason: undefined }, `changes=${r} 必须红`)
+    assert.equal(run({ changes: r }).code, 1, `changes=${r} 必须红`)
     assert.equal(run({ buildTest: r }).code, 1, `build-test=${r} 必须红`)
   }
 
-  // PR + 非空切片：仅 success 放行；skipped = 该跑没跑的门禁静默绕过，必红
-  assert.equal(run({}).code, 0, 'PR 非空切片 success 放行')
-  for (const r of ['skipped', 'failure', 'cancelled']) {
-    const v = run({ mutation: r })
-    assert.equal(v.code, 1, `PR 非空切片 ${r} 必须红`)
-    assert.match(v.reason, /绕过|期望 success/, `${r} 判词须点名门禁绕过语义`)
-  }
-
-  // PR + 空切片：skipped / failure 均属合法缺席——GitHub 对零实例动态矩阵
-  // 实测回报 failure 而非官方口径 skipped（实证 run 32802575298：
-  // check-runs 无该 job 记录、jobs API total_count=9 无变异实例）
-  assert.equal(run({ mutationPkgsJson: '[]', mutation: 'skipped' }).code, 0, '空切片 skipped 合法放行')
-  assert.equal(run({ mutationPkgsJson: '[]', mutation: 'failure' }).code, 0,
-    '空切片 failure 合法放行（零实例动态矩阵实测形态，run 32802575298）')
-  for (const r of ['success', 'cancelled']) {
-    assert.equal(run({ mutationPkgsJson: '[]', mutation: r }).code, 1, `空切片 ${r} 必须红`)
-  }
-  // 防回归对照：空切片放宽绝不外溢到非空切片——该跑没跑仍按门禁绕过判红
-  assert.equal(run({ mutation: 'failure' }).code, 1,
-    '非空切片 failure 必须仍红（空切片放宽不得削弱防绕过逻辑）')
-
-  // 非 PR 事件：触发面收敛不变量——mutation-gate 必须 skipped；
-  // 若出现其他结果说明 ci.yml if 的事件限制已失效，显性红防静默退化全量
-  for (const ev of ['push', 'workflow_dispatch']) {
-    assert.equal(run({ event: ev, mutation: 'skipped', mutationPkgsJson: '[ ]' }).code, 0,
-      `${ev} + 整体 skipped 符合收敛预期`)
-    for (const r of ['success', 'failure', 'cancelled']) {
-      const v = run({ event: ev, mutation: r })
-      assert.equal(v.code, 1, `${ev} + mutation-gate=${r} 必须红`)
-      assert.match(v.reason, /收敛不变量/, `${ev} 下 ${r} 判词须点名收敛不变量`)
-    }
-  }
-  // push fail-closed 真实形态（GATE_MUTATION_PKGS 的 push 取值）：changes 无 if
-  // 照常运行，before 基线不可用令 paths-filter 全量 fallback → 清单为非空全集；
-  // 判定表非 PR 分支不读清单内容，非空全集 + 整体 skipped 同样放行
-  assert.equal(run({
-    event: 'push',
-    mutation: 'skipped',
-    mutationPkgsJson: JSON.stringify(ALL_PACKAGES),
-  }).code, 0, 'push fail-closed 全量清单（七包非空数组）+ 整体 skipped 放行')
-
-  // 数据契约破坏：切片清单非合法 JSON 数组按环境错误处理（exit 2）
+  // 数据契约破坏：exit 2 —— 清单非法 JSON、hasMutations 非 'true'/'false'、
+  // 显式布尔与切片非空性交叉矛盾
   for (const bad of ['not-json', '{"a":1}', '"dsh-notifier"']) {
-    const v = run({ mutationPkgsJson: bad })
-    assert.equal(v.code, 2, `切片清单非法（${bad}）必须 exit 2`)
+    assert.equal(run({ mutationPkgsJson: bad }).code, 2, `切片清单非法（${bad}）必须 exit 2`)
   }
+  for (const badHm of ['', 'TRUE', '1', 'null']) {
+    assert.equal(run({ hasMutations: badHm }).code, 2, `hasMutations="${badHm}" 必须 exit 2`)
+  }
+  assert.equal(run({ hasMutations: 'true', mutationPkgsJson: '[]' }).code, 2,
+    'hasMutations=true 而切片为空 = 数据矛盾 exit 2')
+  assert.equal(run({ hasMutations: 'false', mutationPkgsJson: '["dsh-notifier"]' }).code, 2,
+    'hasMutations=false 而切片非空 = 数据矛盾 exit 2')
 })
 
-test('#187: repo-gate-assert CLI 退出码转发（GitHub Actions 判红依据）', () => {
+test('#217+#187: repo-gate-assert CLI 退出码转发（GitHub Actions 判红依据）', () => {
   const script = join(ROOT, 'scripts/gate/repo-gate-assert.mjs')
   const envOf = (over) => ({
     GATE_EVENT: over.event ?? '',
     GATE_CHANGES: over.changes ?? '',
     GATE_BUILD_TEST: over.buildTest ?? '',
+    GATE_COVERAGE: over.coverage ?? '',
     GATE_MUTATION: over.mutation ?? '',
+    GATE_VERDICT: over.verdict ?? '',
+    GATE_HAS_MUTATIONS: over.hasMutations ?? '',
     GATE_MUTATION_PKGS: over.mutationPkgsJson ?? '',
   })
-  // 通过场景 exit 0
+  // 通过场景 exit 0：push 触发面收敛形态（三段全 skipped + 非空全集清单）
   const okRun = spawnSync(process.execPath, [script], {
     encoding: 'utf8',
     env: { ...process.env, ...envOf({
       event: 'push', changes: 'success', buildTest: 'success',
-      mutation: 'skipped', mutationPkgsJson: '[]',
+      coverage: 'skipped', mutation: 'skipped', verdict: 'skipped',
+      hasMutations: 'true', mutationPkgsJson: JSON.stringify(ALL_PACKAGES),
     }) },
   })
-  assert.equal(okRun.status, 0, 'push + skipped 场景 CLI 必须 exit 0')
-  // 违约场景 exit 1 且输出 ::error:: 可检索的判词
+  assert.equal(okRun.status, 0, 'push + 三段全 skipped 场景 CLI 必须 exit 0')
+  // 违约场景 exit 1 且输出 ::error:: 可检索的判词：PR 该跑没跑（verdict skipped）
   const failRun = spawnSync(process.execPath, [script], {
     encoding: 'utf8',
     env: { ...process.env, ...envOf({
       event: 'pull_request', changes: 'success', buildTest: 'success',
-      mutation: 'skipped', mutationPkgsJson: '["dsh-lan-proxy"]',
+      coverage: 'success', mutation: 'skipped', verdict: 'skipped',
+      hasMutations: 'true', mutationPkgsJson: '["dsh-lan-proxy"]',
     }) },
   })
   assert.equal(failRun.status, 1, 'PR 该跑没跑场景 CLI 必须 exit 1')
   assert.match(failRun.stderr, /::error::/, '违约判词必须带 ::error:: 注解前缀（PR 页面可见）')
   assert.match(failRun.stderr, /绕过/, '判词须点名门禁绕过语义')
+  // 连坐场景 exit 1 且判词区分「coverage 失败连坐」（#217 reason 分型）
+  const covFailRun = spawnSync(process.execPath, [script], {
+    encoding: 'utf8',
+    env: { ...process.env, ...envOf({
+      event: 'pull_request', changes: 'success', buildTest: 'success',
+      coverage: 'failure', mutation: 'skipped', verdict: 'skipped',
+      hasMutations: 'true', mutationPkgsJson: '["dsh-lan-proxy"]',
+    }) },
+  })
+  assert.equal(covFailRun.status, 1, 'coverage 失败连坐场景 CLI 必须 exit 1')
+  assert.match(covFailRun.stderr, /::error::/, '连坐判词必须带 ::error:: 注解前缀')
+  assert.match(covFailRun.stderr, /coverage 失败连坐/, '连坐场景判词必须点名「coverage 失败连坐」，不得误报为门禁绕过')
 })
 
 test('#178: ci.yml 包名全集 ≡ gauntlet 变异六包 ∪ {dsh-plugins-all}（防清单漂移）', () => {
@@ -371,4 +441,120 @@ test('#178: 变异统计口径单一事实源——observe-check 与 mutation-ga
     assert.ok(src.includes("from '../lib/mutation-report-lib.mjs'"),
       `${f} 须 import scripts/lib/mutation-report-lib.mjs 共享统计函数（防两处 covered 口径漂移）`)
   }
+})
+
+// ── #217 变异/覆盖解耦：cov 全局单次采集 + artifact 跨 job 传递 + 聚合判分 ──
+// 三段式：coverage（全局单进程 cov+self-cov+guard 前移）∥ mutation-gate 矩阵
+// （仅基线+stryker+报告上传，needs coverage 连坐）→ mutation-verdict
+// （artifact 汇合后逐包判分）。flake 根因（矩阵 6 路并行各自全仓 smoke 的端口
+// 竞争与时序漂移）随剥离消除。
+
+test('#217: changes 输出显式布尔 hasMutations（禁止脆弱空切片判定形态）', () => {
+  assert.ok(CI.includes('hasMutations: ${{ steps.pkgs.outputs.hasMutations }}'),
+    'changes outputs 必须声明并透传 hasMutations')
+  assert.ok(CI.includes("jq -c 'length > 0'"),
+    'hasMutations 必须由 mutationPackages 清单推导为显式布尔')
+  // 下游一律精确比较布尔字符串；GHA 表达式无 length/管道，两种脆弱形态禁用
+  assert.ok(!/\|\s*length/.test(CI), 'ci.yml 禁止 fromJSON(...)|length 判空形态')
+  assert.ok(!CI.includes("'[]'"), 'ci.yml 禁止裸字符串比较 \'[]\' 判空形态')
+})
+
+test('#217: coverage job 全局单次采集——if 精确、步骤链与 artifact 上传契约', () => {
+  const covIdx = CI.indexOf('\n  coverage:')
+  assert.ok(covIdx > 0, 'coverage job 在位（非矩阵单实例）')
+  const cov = CI.slice(covIdx, CI.indexOf('\n  mutation-gate:'))
+  assert.ok(!cov.includes('matrix:'), 'coverage job 不得使用 matrix（全局单次语义）')
+  assert.equal(
+    /^    if: (.+)$/m.exec(cov)?.[1]?.trim(),
+    "github.event_name == 'pull_request' && needs.changes.outputs.hasMutations == 'true'",
+    'coverage if 必须精确为「仅 PR 且 hasMutations」',
+  )
+  // 步骤链顺序：build → guard → cov → self-cov → upload
+  const buildIdx = cov.indexOf('- name: Build all packages')
+  const guardIdx = cov.indexOf('mutate-scope-guard.mjs')
+  const covRunIdx = cov.indexOf('run: pnpm cov')
+  const selfCovIdx = cov.indexOf('node scripts/gate/self-cov.mjs')
+  const upIdx = cov.indexOf('Upload self-coverage artifact')
+  for (const [name, idx] of [['Build all packages', buildIdx], ['mutate-scope-guard', guardIdx],
+    ['pnpm cov', covRunIdx], ['self-cov.mjs', selfCovIdx], ['upload artifact', upIdx]]) {
+    assert.ok(idx > 0, `coverage 步骤 ${name} 在位`)
+  }
+  assert.ok(buildIdx < guardIdx && guardIdx < covRunIdx && covRunIdx < selfCovIdx && selfCovIdx < upIdx,
+    'coverage 步骤链必须按 build → guard → cov → self-cov → upload 排布（guard 校验 lib 分段、self-cov 读 c8 产物）')
+  assert.ok(!cov.slice(0, upIdx).includes('--check'), 'PR coverage 只落盘不判红（--check 阈值硬校验归 observe 夜间）')
+
+  // artifact 上传契约（fail-closed）
+  const uploadBlock = cov.slice(upIdx)
+  assert.ok(uploadBlock.includes('name: self-coverage'), 'artifact 名必须精确为 self-coverage（下游同名精确下载）')
+  assert.ok(uploadBlock.includes('path: coverage/self-coverage.json'), '上传路径为固定产物路径')
+  assert.ok(uploadBlock.includes('if-no-files-found: error'), '产物缺失必须 error（防下游静默空判分）')
+  assert.ok(uploadBlock.includes('retention-days: 1'), '跨 job 传递产物 retention 收敛为 1 天')
+
+  // #217 顺路加固：mutate-scope-guard 前移进 PR 门禁（原只在 observe 夜间，
+  // 配置漂移注定合并后才暴露——实证 run 32869177152 / #235）
+  assert.ok(CI.includes('node scripts/gate/mutate-scope-guard.mjs'),
+    'mutate-scope-guard 必须前移进 ci.yml PR 门禁')
+})
+
+test('#217: mutation-gate 剥离 cov——needs coverage 连坐且 if 不含 always()', () => {
+  const mg = CI.slice(CI.indexOf('\n  mutation-gate:'), CI.indexOf('\n  mutation-verdict:'))
+  assert.ok(/needs: \[changes, coverage\]/.test(mg),
+    'mutation-gate needs 必须含 coverage（连坐通道）')
+  const m = /^    if: (.+)$/m.exec(mg)
+  assert.ok(m, 'mutation-gate 声明 job 级 if')
+  assert.ok(!m[1].includes('always()'),
+    '矩阵 if 禁止 always()：needs.coverage 失败/skip 时依赖隐式 success() 前提连带 skipped（连坐 fail-closed），'
+    + '加了 always() 连坐即失效，cov 挂了变异照跑')
+  // cov 已剥离出矩阵（每实例重复全仓 smoke 是 flake 根因）
+  assert.ok(!mg.includes('run: pnpm cov'), '矩阵不得再跑 pnpm cov（已收敛至 coverage job 单次）')
+  assert.ok(!mg.includes('self-cov.mjs'), '矩阵不得再跑 self-cov.mjs')
+  // 报告上传契约：失败实例的报告也下发聚合判分
+  const upIdx = mg.indexOf('Upload stryker report artifact')
+  assert.ok(upIdx > 0, 'stryker 报告上传步骤在位')
+  const upBlock = mg.slice(upIdx)
+  assert.ok(/if: always\(\)/.test(upBlock), '报告上传必须 if: always()（实例非零退出时报告照常下发统一判分）')
+  assert.ok(upBlock.includes('name: mutation-report-${{ matrix.package }}'),
+    '报告 artifact 名含 matrix.package 保证唯一（pattern 下游可枚举）')
+  assert.ok(upBlock.includes('if-no-files-found: error'), '报告缺失必须 error（verdict 缺报告 fail-closed 的前提）')
+})
+
+test('#217: mutation-verdict 聚合收尾——artifact 汇合 + 逐包双指标判分', () => {
+  const mv = CI.slice(CI.indexOf('\n  mutation-verdict:'), CI.indexOf('\n  repo-gate:'))
+  assert.ok(mv.length > 0, 'mutation-verdict job 在位')
+  assert.ok(/needs: \[changes, coverage, mutation-gate\]/.test(mv),
+    'verdict needs 三元：切片清单 + 覆盖产物 + 变异报告缺一不可')
+  assert.equal(
+    /^    if: (.+)$/m.exec(mv)?.[1]?.trim(),
+    "always() && needs.coverage.result == 'success' && needs.mutation-gate.result != 'skipped'",
+    'verdict if 必须精确为「always() 且 coverage success 且矩阵非 skipped」——'
+    + '矩阵 failure 时仍聚合判分（缺报告包 exit 2 fail-closed）；coverage 非 success 或矩阵 skipped 时连带缺席',
+  )
+  // artifact 下载：精确名 + pattern 双通道
+  assert.ok(mv.includes('name: self-coverage'), 'download 必须用精确 name self-coverage（pattern 匹配 0 个不报错）')
+  assert.ok(mv.includes('pattern: mutation-report-*'), '各包 stryker 报告经 pattern 枚举下载')
+  assert.ok(mv.includes('coverage/self-coverage.json') || mv.includes('path: coverage'),
+    'download path 须还原 self-coverage.json 原始层级（单文件 zip 根 = 文件本身）')
+  assert.ok(mv.includes('node scripts/gate/mutation-gate.mjs'), '逐包判分脚本调用在位')
+  assert.ok(mv.includes("SLICE: ${{ needs.changes.outputs.mutationPackages }}"),
+    'verdict 以 changes 切片清单驱动逐包判分')
+})
+
+test('#217: repo-gate 五维聚合 needs + 判定脚本 env 全维注入', () => {
+  const rg = CI.slice(CI.indexOf('\n  repo-gate:'))
+  for (const env of ['GATE_EVENT', 'GATE_CHANGES', 'GATE_BUILD_TEST',
+    'GATE_COVERAGE', 'GATE_MUTATION', 'GATE_VERDICT', 'GATE_HAS_MUTATIONS', 'GATE_MUTATION_PKGS']) {
+    assert.ok(new RegExp(`${env}: \\$\\{\\{`).test(rg), `判定脚本 env ${env} 注入缺失`)
+  }
+  // 判定表实现侧同维锁定（env ↔ evaluateGate 输入一一对应）
+})
+
+test('#217: observe.yml Mutation suites id + collect 区分整套 skip 与部分失败', () => {
+  const sIdx = OBSERVE.indexOf('- name: Mutation suites')
+  assert.ok(sIdx > 0, 'Mutation suites 步骤在位')
+  const sBlock = OBSERVE.slice(sIdx, OBSERVE.indexOf('- name:', sIdx + 10))
+  assert.ok(sBlock.includes('id: mutation-suites'), 'Mutation suites 必须声明 id 供下游引用 outcome')
+  const cIdx = OBSERVE.indexOf('- name: Collect incremental baseline')
+  const cBlock = OBSERVE.slice(cIdx, OBSERVE.indexOf('- name:', cIdx + 10))
+  assert.ok(cBlock.includes("if: always() && steps.mutation-suites.outcome != 'skipped'"),
+    'collect 条件必须区分整套 skip（无产物不收集）与部分失败（记账夜照常收集）')
 })

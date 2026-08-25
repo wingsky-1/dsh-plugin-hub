@@ -46,21 +46,39 @@ pnpm typecheck    # 全仓类型检查
 release.yml tag 管线跑全量门禁——全量只在这三处语义中的后两处真实执行。
 
 - **夜间全量落基线**（observe.yml）：刻意不 restore 任何缓存——无 incremental
-  基线即天然全量；运行末尾把六份 `coverage/mutation/incremental-*.json` 写入
-  actions/cache（key = `observe-incremental-<run_id>`）。逐包容错记账：单包失败
-  记账继续跑完其余包，结尾统一非零退出。
-- **PR 增量门禁**（ci.yml `mutation-gate` job）：按 paths-filter 命中包切片，
-  restore-only 读最近一夜基线（绝不回写）后对该包跑 Stryker——incremental 模式
-  跳过未变 mutant，报告仍为全量口径（复用 mutant 继承原状态）。双指标判分
-  （scripts/gate/mutation-gate.mjs）：测试覆盖率 self-written 函数 ≥ threshold
-  恒硬；变异测试率 covered ≥ per-package threshold 受全局 `mutation.strict`
-  约束（false 期间仅标注，#150 达标翻转后自动变硬）。成败并入 repo-gate
-  聚合闸（判定逻辑见 scripts/gate/repo-gate-assert.mjs），不新增分支保护
-  required check 名。缓存未命中时天然降级为全量变异。
-- **触发面收敛**（#187）：`mutation-gate` 仅限 pull_request 触发——push 到 main
-  时 diff 基准 `before` 不可用会使 paths-filter 走 fail-closed 全量 fallback，
-  变异随之退化全量且与当晚夜间全量完全重复；主干变异覆盖由 observe.yml 夜间
-  全量承接、发版前由 release.yml tag 管线承接，非 PR 事件下该 job 整体 skipped。
+  基线即天然全量；运行末尾把六份 `coverage/mutation/incremental-*.json` 收集到
+  仓库内版本化目录 `scripts/gate/baseline/`（#204 方案 A：git 跨 ref 天然可见，
+  替代按 ref 隔离、PR 永远 miss 的 actions/cache），有实质变化时经
+  create-pull-request 自动开 PR 合入 main。逐包容错记账：单包失败记账继续
+  跑完其余包，结尾统一非零退出。
+- **PR 增量门禁**（ci.yml，#217 变异/覆盖解耦为三段式）：
+  1. `coverage` job（全局单次）：单进程跑 `pnpm cov` + `self-cov.mjs`，产物
+     `coverage/self-coverage.json` 经 artifact 下发——cov 从变异矩阵剥离后，
+     矩阵多实例并行各自全仓 smoke 导致的 lan-proxy 固定端口 EADDRINUSE 与
+     provider-usage K12 时序漂移（flake 根因）随之消除；mutate-scope-guard
+     同步前移进本 job（PR 阶段即暴露 mutate 区间漂移，observe 夜间执行点保留）；
+  2. `mutation-gate` 矩阵（仅基线 + stryker）：按 paths-filter 命中包切片
+     （changes.hasMutations 显式布尔驱动 if），restore-only 读仓库内基线后对该包
+     跑 Stryker——incremental 模式跳过未变 mutant，报告仍为全量口径（复用
+     mutant 继承原状态）；needs coverage 连坐：coverage 失败/skip → 矩阵连带
+     skipped（if 不含 always()，隐式 success() 前提生效）；
+  3. `mutation-verdict`（聚合判分收尾）：下载 self-coverage 与各包 stryker 报告
+     artifact 后逐包跑双指标判分（scripts/gate/mutation-gate.mjs）——测试覆盖率
+     self-written 函数 ≥ threshold 恒硬；变异测试率 covered ≥ per-package
+     threshold 受全局 `mutation.strict` 约束（false 期间仅标注，#150 达标翻转后
+     自动变硬）。矩阵实例级 failure 时 verdict 仍聚合判分（缺报告的包 exit 2
+     fail-closed）。
+
+  成败并入 repo-gate 聚合闸（判定逻辑见 scripts/gate/repo-gate-assert.mjs，
+  五维判定表「事件 × 切片(hasMutations) × coverage × 变异矩阵 × verdict」由
+  单测全组合锁死），不新增分支保护 required check 名。基线缺失时天然降级为
+  全量变异。coverage 失败连坐整体红属预期 fail-closed（coverage job 失败 ≈
+  smoke 失败，同一 c8 包裹，build-test 同级硬信号）。
+- **触发面收敛**（#187 / #217 扩展）：覆盖与变异三段 job 仅限 pull_request
+  触发——push 到 main 时 diff 基准 `before` 不可用会使 paths-filter 走
+  fail-closed 全量 fallback，变异随之退化全量且与当晚夜间全量完全重复；主干
+  覆盖与变异覆盖由 observe.yml 夜间全量承接、发版前由 release.yml tag 管线
+  承接，非 PR 事件下三段 job 整体 skipped（repo-gate 判定表显式放行）。
 - 本地手动入口：`npx stryker run stryker.conf.d/dsh-<pkg>.json`（临时强制全量用
   官方 `--force` 参数，勿改配置文件）。
 

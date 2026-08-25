@@ -1,12 +1,21 @@
 #!/usr/bin/env node
 /**
- * mutation-gate — PR 增量变异门禁双指标判分（#178 v2）
+ * mutation-gate — PR 增量变异门禁双指标判分（#178 v2；#217 起由 mutation-verdict
+ * job 在 artifact 汇合后统一调用）
  *
- * 输入（ci.yml mutation-gate job 内按序产出）：
+ * 时序假设（#217 变异/覆盖解耦后的三段式链路）：
+ *   1. coverage job 全局单次跑 pnpm cov + self-cov.mjs，先于本脚本产出
+ *      coverage/self-coverage.json；
+ *   2. mutation-gate 矩阵各实例只做基线 restore + stryker run，报告经
+ *      upload-artifact 下发；
+ *   3. mutation-verdict job 用 download-artifact 把两路产物还原到本脚本约定
+ *      的固定路径后，才调用本脚本逐包判分。
+ *
+ * 输入（运行时必须已在工作区就位，均来自上游 artifact 下发）：
  *   - coverage/mutation/<pkg>.json     Stryker JSON 报告（incremental 运行产物，
  *                                      复用 mutant 继承原状态，报告恒为全量口径）
- *   - coverage/self-coverage.json      self-written 覆盖率明细（self-cov.mjs 先行产出）
- *   - scripts/data/gauntlet.config.json（阈值唯一事实源）
+ *   - coverage/self-coverage.json      self-written 覆盖率明细（coverage job 先行产出）
+ *   - scripts/data/gauntlet.config.json（阈值唯一事实源，随 checkout 就位）
  *
  * 用法：node scripts/gate/mutation-gate.mjs <pkg>   # pkg 形如 dsh-mcp-manager
  *
@@ -61,7 +70,7 @@ let failed = false;
 // ── 指标一：测试覆盖率（self-written 函数口径，恒硬） ──────────
 const selfCovPath = join(repoRoot, 'coverage', 'self-coverage.json');
 if (!existsSync(selfCovPath)) {
-  console.error('mutation-gate: coverage/self-coverage.json 不存在（须先运行 self-cov.mjs）—— fail-closed');
+  console.error('mutation-gate: coverage/self-coverage.json 不存在 —— coverage job 的 artifact 未下发（时序假设被破坏）—— fail-closed');
   process.exit(2);
 }
 let fnPct = null;
@@ -85,8 +94,9 @@ if (fnPct < covThreshold) {
 const reportPath = join(repoRoot, 'coverage', 'mutation', `${pkg}.json`);
 const r = readMutationReport(reportPath);
 if (!r) {
-  // stryker 步骤成功后报告必然存在；缺失 = 链路异常而非门禁语义，一律判红
-  console.error(`mutation-gate: ${pkg} 变异报告缺失或不可解析（${reportPath}）—— fail-closed`);
+  // stryker 步骤成功后报告必然存在；缺失 = 报告 artifact 未下发（链路异常）
+  // 而非门禁语义，一律判红
+  console.error(`mutation-gate: ${pkg} 变异报告缺失或不可解析（${reportPath}）—— stryker 报告 artifact 未下发，fail-closed`);
   process.exit(2);
 }
 console.log(
