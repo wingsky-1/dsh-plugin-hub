@@ -1256,7 +1256,8 @@ const main = async () => {
     assert.equal(escapeCatalogText("长".repeat(300)).length, 300, "长文本完整返回不截断");
   });
   check("renderMcpCatalogMessage 结构与声明", () => {
-    const msg = renderMcpCatalogMessage([{ name: "code-graph", text: "代码图谱" }]);
+    // 含 project 条目 → 引导经 ws_mcp_search/ws_mcp_call（#228 双轨迁移）
+    const msg = renderMcpCatalogMessage([{ name: "code-graph", text: "代码图谱", scope: "project" }]);
     assert.equal(msg.role, "user");
     assert.equal(msg.source.kind, "mcp-catalog");
     assert.equal(msg.content[0].type, "text");
@@ -1265,6 +1266,11 @@ const main = async () => {
     assert.match(msg.content[0].text, /ws_mcp_search/, "#228 目录文案引导经中间层调用");
     assert.match(msg.content[0].text, /`code-graph`: 代码图谱/);
     assert.ok(typeof msg.id === "string" && msg.id.length > 0);
+
+    // 纯 global 条目 → 保持 mcp__ 直呼引导（不误导全局服务器走中间层检索）
+    const onlyGlobal = renderMcpCatalogMessage([{ name: "ctx", scope: "global" }]);
+    assert.match(onlyGlobal.content[0].text, /mcp__<server>__<tool>/);
+    assert.doesNotMatch(onlyGlobal.content[0].text, /ws_mcp_search/);
 
     // #192 AC-3：双缺省行仅渲染名字（无冒号描述），带描述条目渲染不变
     const mixed = renderMcpCatalogMessage([{ name: "bare-x" }, { name: "code-graph", text: "代码图谱" }]);

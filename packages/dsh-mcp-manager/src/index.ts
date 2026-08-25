@@ -909,7 +909,8 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
     // 中间层（ws_mcp_search / ws_mcp_call）：按 Config.middleware 模式注册。
     // project 模式：项目级服务器不再注册 mcp__ 工具，改经中间层路由调用；
     // 全局服务器仍 mcp__ 直呼（双轨迁移默认）。
-    const middlewareMode = normalizeMiddlewareMode(config?.middleware);
+    // 默认值与 Config schema 一致（project）；宿主未 parse 原始 config 时兜底。
+    const middlewareMode = normalizeMiddlewareMode(config?.middleware ?? "project");
     if (middlewareMode !== "off") {
       const mw = await manager.initMiddleware(middlewareMode, (config?.middlewarePolicy as Record<string, unknown> | undefined) ?? {});
       // 路由输入：exec.agent 当前 cwd = agent.session.header.cwd（实证已闭合）。
@@ -1017,6 +1018,18 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
         };
         try {
           const watcher = fs.watch(dir, { persistent: false }, () => run());
+          // 目录被删/重命名等场景 FSWatcher 会 emit error；无监听器会抛
+          // uncaught exception 崩溃宿主进程（P1 修复）。
+          watcher.on("error", () => {
+            // 目录消失/权限变化：移除 watcher（配置写路径仍会 reconcile）。
+            const index = watchers.indexOf(watcher);
+            if (index >= 0) watchers.splice(index, 1);
+            try {
+              watcher.close();
+            } catch {
+              // 已关闭
+            }
+          });
           watchers.push(watcher);
         } catch {
           // watch 不可用（某些平台/只读目录）：降级无 watcher（写路径仍会 reconcile）。

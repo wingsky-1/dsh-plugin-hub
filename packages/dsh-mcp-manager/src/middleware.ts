@@ -89,6 +89,8 @@ export interface ConnectionEntry {
   reconnectTimer: NodeJS.Timeout | undefined;
   /** 代际断开清理。 */
   disposed: boolean;
+  /** 连续失败次数（有界指数退避依据；连接成功后清零）。 */
+  failedAttempts: number;
 }
 
 /** 目录中的单服务器条目。 */
@@ -257,24 +259,36 @@ export function globMatch(pattern: string, name: string): boolean {
   return new RegExp(`^${escaped}$`).test(name);
 }
 
-/** 策略裁决：deny 优先。返回 true = 允许。 */
-export function policyAllows(policy: MiddlewarePolicy | undefined, server: string, tool: string): boolean {
+/** 策略裁决：deny 优先。serverKey 支持全名（@root/server）或裸名——全名优先匹配（工作空间隔离），未命中回落裸名。返回 true = 允许。 */
+export function policyAllows(policy: MiddlewarePolicy | undefined, serverKey: string, tool: string): boolean {
   if (policy === undefined) return true;
-  const deny = policy.denyTools?.[server];
+  const fullDeny = policy.denyTools?.[serverKey];
+  if (fullDeny !== undefined && fullDeny.some((pattern) => globMatch(pattern, tool))) return false;
+  const deny = policy.denyTools?.[bareServerName(serverKey)];
   if (deny !== undefined && deny.some((pattern) => globMatch(pattern, tool))) return false;
-  const allow = policy.allowTools?.[server];
+  const fullAllow = policy.allowTools?.[serverKey];
+  if (fullAllow !== undefined && fullAllow.length > 0) {
+    return fullAllow.some((pattern) => globMatch(pattern, tool));
+  }
+  const allow = policy.allowTools?.[bareServerName(serverKey)];
   if (allow === undefined || allow.length === 0) return true;
   return allow.some((pattern) => globMatch(pattern, tool));
 }
 
+/** 提取裸名（@root/server → server；无前缀原样返回）。 */
+export function bareServerName(name: string): string {
+  const parsed = parseFullServerName(name);
+  return parsed?.server ?? name;
+}
+
 /** 策略拒绝原因（供 denialReason 提示）。 */
-export function policyDenialReason(policy: MiddlewarePolicy | undefined, server: string, tool: string): string | undefined {
-  if (policyAllows(policy, server, tool)) return undefined;
-  const deny = policy?.denyTools?.[server];
+export function policyDenialReason(policy: MiddlewarePolicy | undefined, serverKey: string, tool: string): string | undefined {
+  if (policyAllows(policy, serverKey, tool)) return undefined;
+  const deny = policy?.denyTools?.[serverKey] ?? policy?.denyTools?.[bareServerName(serverKey)];
   if (deny !== undefined && deny.some((pattern) => globMatch(pattern, tool))) {
-    return `ws_mcp_call: 工具 ${JSON.stringify(`${server}/${tool}`)} 被 denyTools 策略拒绝`;
+    return `ws_mcp_call: 工具 ${JSON.stringify(`${serverKey}/${tool}`)} 被 denyTools 策略拒绝`;
   }
-  return `ws_mcp_call: 工具 ${JSON.stringify(`${server}/${tool}`)} 不在 allowTools 白名单内，被策略拒绝`;
+  return `ws_mcp_call: 工具 ${JSON.stringify(`${serverKey}/${tool}`)} 不在 allowTools 白名单内，被策略拒绝`;
 }
 
 // ------------------------------------------------------------ 目录检索
@@ -286,17 +300,33 @@ function tokenize(text: string): string[] {
   return words;
 }
 
-/** 跨字段打分：query 词命中 server 名 / 工具名 / description / 参数名。 */
+/** 跨字段打分：query 词命中 server 名 / 工具名 / description / 参数名。
+ * 中文（无空格分词）：query 连续中文串在原始描述中 substring 匹配即可命中
+ * （修复：原实现把连续中文当单个 token，中文召回率接近零）。 */
 export function scoreTool(query: string, server: string, toolName: string, tool: CatalogTool): { score: number; matchedTerms: string[] } {
   if (query === "") return { score: 0, matchedTerms: [] };
+  const haystack = [
+    server,
+    toolName,
+    tool.description,
+    JSON.stringify(Object.keys(tool.inputSchema ?? {})),
+  ].join(" ").toLowerCase();
+  // 中文子串匹配（连续中文段直接 substring 命中原始文本）
+  const cjkQuery = query.match(/[\u4e00-\u9fff]+/gu) ?? [];
+  if (cjkQuery.length > 0) {
+    let score = 0;
+    const matchedTerms: string[] = [];
+    for (const segment of cjkQuery) {
+      if (segment.length < 2) continue;
+      if (haystack.includes(segment)) {
+        score += 2;
+        matchedTerms.push(segment);
+      }
+    }
+    if (score > 0) return { score, matchedTerms };
+  }
   const terms = tokenize(query);
   if (terms.length === 0) return { score: 0, matchedTerms: [] };
-  const haystack = [
-    tokenize(server).join(" "),
-    tokenize(toolName).join(" "),
-    tokenize(tool.description).join(" "),
-    tokenize(JSON.stringify(Object.keys(tool.inputSchema ?? {}))).join(" "),
-  ].join(" ");
   let score = 0;
   const matchedTerms: string[] = [];
   for (const term of terms) {
@@ -450,6 +480,17 @@ export class McpMiddleware {
     if (unit === undefined) return;
     const entry = unit.connections.get(serverName);
     if (entry !== undefined && (entry.status === "connected" || entry.status === "connecting")) return;
+    // 重连路径：旧 entry（failed）的 transport 先 close，防 streamable-http
+    // 半开 socket 累积泄漏（P1 修复）。
+    if (entry !== undefined) {
+      const oldClient = entry.client;
+      const oldTransport = entry.transport;
+      entry.client = undefined;
+      entry.transport = undefined;
+      if (oldClient !== undefined && oldTransport !== undefined) {
+        void oldTransport.close().catch(() => {});
+      }
+    }
     const servers = await this.host.projectServersFor(root);
     const server = servers?.find((entry) => entry.name === serverName);
     if (server === undefined || server.enabled === false) return;
@@ -479,6 +520,7 @@ export class McpMiddleware {
       connectedAt: undefined,
       reconnectTimer: undefined,
       disposed: false,
+      failedAttempts: entry?.failedAttempts ?? 0,
     };
     unit.connections.set(serverName, newEntry);
     const closeHandler = (error: Error) => {
@@ -498,26 +540,34 @@ export class McpMiddleware {
       if (newEntry.disposed || unit.connections.get(serverName) !== newEntry) return;
       newEntry.status = "connected";
       newEntry.connectedAt = Date.now();
+      newEntry.failedAttempts = 0;
       this.host.logger.info(`dsh-mcp-manager(${serverName}@${root}): connected`);
       this.host.emitStatus();
     } catch (error) {
       if (newEntry.disposed || unit.connections.get(serverName) !== newEntry) return;
-      this.host.logger.warn(`dsh-mcp-manager(${serverName}@${root}): connection attempt failed: ${msgOf(error)}`);
+      this.host.logger.warn(`dsh-mcp-manager(${serverName}@${root}): connection attempt failed: ${this.redact(error)}`);
       newEntry.status = "failed";
       newEntry.error = error;
+      newEntry.failedAttempts += 1;
       this.host.emitStatus();
       this.scheduleReconnect(root, serverName);
     }
   }
 
-  /** 后台重连（有界指数退避，常驻语义）。 */
+  /** 后台重连（有界指数退避：500ms 起、30s 上限、10 次后停止后台重试；
+   * 用户手动 connect 或 ws_mcp_call 触发时重新尝试——常驻语义）。 */
   private scheduleReconnect(root: string, serverName: string): void {
     const unit = this.units.get(root);
     if (unit === undefined) return;
     const entry = unit.connections.get(serverName);
     if (entry === undefined || entry.disposed) return;
     if (entry.reconnectTimer !== undefined) return;
-    const delayMs = 1000;
+    if (entry.failedAttempts > 10) {
+      // 预算耗尽：停止后台重试（保留 failed 状态；手动/调用触发可再试）。
+      this.host.logger.warn(`dsh-mcp-manager(${serverName}@${root}): reconnect gave up after 10 attempts`);
+      return;
+    }
+    const delayMs = Math.min(30_000, 500 * 2 ** Math.min(entry.failedAttempts - 1, 6));
     entry.reconnectTimer = setTimeout(() => {
       entry.reconnectTimer = undefined;
       if (entry.disposed) return;
@@ -557,8 +607,13 @@ export class McpMiddleware {
       unit.catalog.set(serverName, { discoveredAt: Date.now(), tools: bounded });
       this.persistCatalog(root);
     } catch (error) {
-      unit.catalog.set(serverName, { discoveredAt: 0, tools: new Map(), unavailable: msgOf(error) });
+      unit.catalog.set(serverName, { discoveredAt: 0, tools: new Map(), unavailable: this.redact(error) });
     }
+  }
+
+  /** 凭据脱敏（连接/发现/调用错误路径统一使用；P1 修复）。 */
+  private redact(error: unknown): string {
+    return createRedactor(this.allServers())(error);
   }
 
   private async listToolsAll(client: MCPClient): Promise<Array<Record<string, unknown>>> {
@@ -663,9 +718,11 @@ export class McpMiddleware {
       throw new Error(`ws_mcp_call: server ${JSON.stringify(fullName)} 连接仍在进行，请稍后重试`);
     }
     const tool = normalizeToolName(parsed.server, toolRaw);
-    if (!policyAllows(this.policy, parsed.server, tool)) {
-      const reason = policyDenialReason(this.policy, parsed.server, tool);
-      throw new Error(reason ?? `ws_mcp_call: 工具 ${JSON.stringify(`${parsed.server}/${tool}`)} 被策略拒绝`);
+    // 策略键支持全名（@root/server，工作空间隔离）或裸名（跨空间共用）。
+    const policyKey = fullServerName(parsed.root, parsed.server);
+    if (!policyAllows(this.policy, policyKey, tool)) {
+      const reason = policyDenialReason(this.policy, policyKey, tool);
+      throw new Error(reason ?? `ws_mcp_call: 工具 ${JSON.stringify(`${policyKey}/${tool}`)} 被策略拒绝`);
     }
     const catalog = unit.catalog.get(parsed.server);
     const stale =
@@ -919,8 +976,10 @@ export function registerMiddlewareTools(
         const tool = typeof params.tool === "string" ? params.tool : "";
         const parsed = parseFullServerName(server);
         if (parsed === undefined || parsed.server === "") return next();
-        if (!policyAllows(mw.policy, parsed.server, tool)) {
-          const reason = policyDenialReason(mw.policy, parsed.server, tool);
+        // 策略键支持全名（@root/server）或裸名。
+        const policyKey = fullServerName(parsed.root, parsed.server);
+        if (!policyAllows(mw.policy, policyKey, tool)) {
+          const reason = policyDenialReason(mw.policy, policyKey, tool);
           return { kind: "deny", reason: reason ?? `ws_mcp_call: 工具被策略拒绝` };
         }
         return next();
@@ -957,11 +1016,17 @@ export async function loadUserState(file: string): Promise<Map<string, Set<strin
   return out;
 }
 
-/** 持久化 userDisabled。 */
+/** 持久化 userDisabled（合并式：先读现有文件，内存 units 覆盖，保留已淘汰
+ * root 的记录——防 LRU 淘汰/卸载后禁用记录被静默抹掉，P1 修复）。 */
 export async function saveUserState(file: string, units: Map<string, ProjectUnit>): Promise<void> {
-  const disabled: Record<string, string[]> = {};
+  const merged = await loadUserState(file);
   for (const [root, unit] of units) {
-    if (unit.userDisabled.size > 0) disabled[root] = [...unit.userDisabled].sort();
+    if (unit.userDisabled.size > 0) merged.set(root, new Set(unit.userDisabled));
+    else merged.delete(root);
+  }
+  const disabled: Record<string, string[]> = {};
+  for (const [root, names] of merged) {
+    if (names.size > 0) disabled[root] = [...names].sort();
   }
   try {
     const dir = dirname(file);

@@ -16,11 +16,15 @@ import type { ServerConfig } from "./types.js";
 export interface CatalogEntry {
   name: string;
   text?: string;
+  /** 服务器归属（global/project）；用于区分调用引导（#228 双轨迁移）。 */
+  scope?: string;
 }
 
 /** supervisor 最小面（manager.supervisors 的条目）。 */
 export interface SupervisorLite {
   server: ServerConfig;
+  /** 服务器归属（global/project）；目录条目携带用于调用引导（#228）。 */
+  scope?: string;
 }
 
 /** 目录缓存（连接成功时持久化的工具描述摘要）。 */
@@ -110,7 +114,11 @@ export function composeCatalogEntries(supervisors: Map<string, SupervisorLite>, 
     // 无描述时剥离 text 属性（不产出 `text: undefined`）：条目保持干净可
     // JSON 序列化，否则目录消息 append 为 user/message 事件会被 dsh-session
     // 序列化校验拒绝（issue #192）。
-    entries.push(text === undefined ? { name } : { name, text });
+    const scope = typeof supervisor.scope === "string" ? supervisor.scope : undefined;
+    const entry: CatalogEntry = { name };
+    if (text !== undefined) entry.text = text;
+    if (scope !== undefined) entry.scope = scope;
+    entries.push(entry);
   }
   return entries;
 }
@@ -130,8 +138,16 @@ export function digestCatalogEntries(entries: CatalogEntry[]): string {
   return createHash("sha256").update(canonical).digest("hex");
 }
 
-/** 渲染能力目录消息（source 标记供定位替换）。 */
+/** 渲染能力目录消息（source 标记供定位替换）。
+ * 按条目 scope 区分调用引导（#228 双轨迁移）：
+ * - 含 project 条目 → 引导经 ws_mcp_search/ws_mcp_call（项目级走中间层）；
+ * - 仅 global 条目 → 保持 mcp__ 直呼引导（全局服务器不经中间层检索）。
+ */
 export function renderMcpCatalogMessage(entries: CatalogEntry[]): CatalogMessage {
+  const hasProject = entries.some((entry) => entry.scope === "project");
+  const guidance = hasProject
+    ? "任务匹配某服务器能力时，先用 `ws_mcp_search` 检索当前工作空间的 MCP 工具，再用 `ws_mcp_call` 调用（server/tool 取自检索结果）。**项目级服务器一律经这两个工具访问，不直接调用其 mcp__ 前缀工具**；全局服务器的 `mcp__<server>__<tool>` 工具仍可直接调用（见工具列表）。"
+    : "任务匹配某服务器能力时，直接调用其 `mcp__<server>__<tool>` 工具（具体工具名与参数见工具列表）。";
   const lines = [
     "<system-reminder>",
     "本会话已配置以下 MCP 服务器（**仅描述能力，不代表当前连接状态**；服务器在 GUI「MCP」浮窗中连接后，其工具才会注册可用）：",
@@ -140,7 +156,7 @@ export function renderMcpCatalogMessage(entries: CatalogEntry[]): CatalogMessage
     ...entries.map((entry) => (entry.text === undefined ? `- \`${entry.name}\`` : `- \`${entry.name}\`: ${escapeCatalogText(entry.text)}`)),
     "</available_mcp_servers>",
     "",
-    "任务匹配某服务器能力时，先用 `ws_mcp_search` 检索该工作空间的 MCP 工具，再用 `ws_mcp_call` 调用（server/tool 取自检索结果；项目级 MCP 一律经这两个工具访问，不直接调用 mcp__ 前缀工具）。",
+    guidance,
     "若某服务器此前可用而现在不可用，请勿反复重试同一工具超过两次，改用其他方式或提示用户检查「MCP」浮窗。",
     "</system-reminder>",
   ].join("\n");

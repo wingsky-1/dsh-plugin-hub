@@ -62,7 +62,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
 | JSON 导入 | 粘贴 mcpServers JSON 文本导入（仅 JSON 格式；不扫描任何应用配置文件） |
 | 模型工具 | 全局服务器工具以 `mcp__<server>__<tool>` 注册（64 字符、`[A-Za-z0-9_-]`、冲突时哈希后缀）；项目级服务器默认经中间层 `ws_mcp_search` / `ws_mcp_call` 访问（`middleware: project`，推荐），不同工作空间互不冲突 |
 | 工作空间隔离 | 中间层按调用方会话当前 cwd 路由到对应工作空间的连接池；server 全名 `@<root>/<server>` 一致性校验防跨空间串台 |
-| 断线重连 | 指数退避（500ms 起、30s 上限、10 次后放弃并注销工具） |
+| 断线重连 | 有界指数退避（500ms 起、30s 上限、10 次后停止后台重试；用户手动连接或 ws_mcp_call 触发可再试） |
 | 结果截断 | 工具结果按 8KB 截断并标注（防超长 JSON 全量进上下文） |
 | 超时下探 | 工具调用超时默认 60s → 15s（可按服务器 `toolCallTimeoutMs` 覆盖） |
 
@@ -95,7 +95,7 @@ SSE events 通道推送一变，客户端自动重新拉取 `/api/dsh-mcp/config
 | 键 | 值域 | 默认 |
 | --- | --- | --- |
 | `middleware` | `off` / `project`（推荐）/ `all` | `project` |
-| `middlewarePolicy` | `{ allowTools: {<server>: [glob]}, denyTools: {<server>: [glob]} }`（server 为裸名，deny 优先） | `{}` |
+| `middlewarePolicy` | `{ allowTools: {<serverKey>: [glob]}, denyTools: {<serverKey>: [glob]} }`（serverKey 为 `@<root>/<server>` 全名（工作空间隔离）或裸名（跨空间共用），全名优先；deny 优先） | `{}` |
 
 ## 路由（全部 loopback 围栏）
 
@@ -117,7 +117,7 @@ SSE events 通道推送一变，客户端自动重新拉取 `/api/dsh-mcp/config
   可能含敏感信息；工具描述/结果按不可信输入对待
 - **工作空间隔离（中间层）**：路由以调用方会话当前 cwd 为唯一输入；server
   全名一致性校验（参数声明的 root ≠ 路由 root → 拒绝）防跨空间串台；
-  策略 guard（allowTools/denyTools，deny 优先）按 server 全名配置
+  策略 guard（allowTools/denyTools，deny 优先）按 `@<root>/<server>` 全名或裸名配置（全名优先，工作空间隔离）
 - **凭据脱敏**：目录摘要与错误路径经 redactor 把 env/headers/URL 用户信息等
   凭据形状替换为 `[REDACTED]`
 - 能力目录注入含来源标注与"不代表当前连接状态"说明
