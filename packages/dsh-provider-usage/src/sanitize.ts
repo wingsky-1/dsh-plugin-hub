@@ -73,9 +73,12 @@ const isUrlStrippedChar = (c: string) => c === "\t" || c === "\n" || c === "\r";
 
 /**
  * 具名实体表：只收编「解码产物为 ASCII 且可能参与危险载体构造」的条目。
- * 匹配大小写不敏感、分号可选——比 HTML5 更宽松属保守封堵方向；
- * 因解码副本只用于检测、不影响输出字节，宽松不会误伤合法内容。
- * （HTML5 无产出单个 ASCII 字母的具名实体，字母拼接变体由数字实体路径覆盖。）
+ * 全部键均为 WHATWG named character references 正式名的小写规范化形式
+ * （已对照 https://html.spec.whatwg.org/entities.json 逐键核验，43/43 命中；
+ * 小写存储 + 查询期 toLowerCase 即大小写不敏感匹配）。匹配分号可选——比
+ * HTML5 更宽松属保守封堵方向；因解码副本只用于检测、不影响输出字节，宽松
+ * 多解不会误伤合法内容。（HTML5 无产出单个 ASCII 字母的具名实体，字母拼接
+ * 变体由数字实体路径覆盖。）
  */
 const NAMED_ENTITIES: Record<string, string> = {
   lt: "<",
@@ -207,7 +210,7 @@ function mergeRanges(ranges: Array<[number, number]>): Array<[number, number]> {
   for (const r of ranges) {
     const last = merged[merged.length - 1];
     if (last !== undefined && r[0] <= last[1]) {
-      if (r[1] > last[1]) last[1] = r[1];
+      last[1] = Math.max(last[1], r[1]);
     } else {
       merged.push([r[0], r[1]]);
     }
@@ -249,8 +252,12 @@ function stripDecodedDanger(html: string): string {
     }
   }
   if (ranges.length === 0) return html;
+  // 两步合并非冗余：第一步合并解码层跨正则重叠；映射回原文后，多 code-unit
+  // token（如 astral 实体的代理对）理论上可横跨两个相邻区间，故第二步做
+  // 防御性合并（拆开嵌套双调调用以便阅读）
+  const decodedCuts = mergeRanges(ranges);
   const cuts = mergeRanges(
-    mergeRanges(ranges).map(([s, e]) => [view.starts[s], view.ends[e - 1]] as [number, number]),
+    decodedCuts.map(([s, e]) => [view.starts[s], view.ends[e - 1]] as [number, number]),
   );
   let out = "";
   let pos = 0;

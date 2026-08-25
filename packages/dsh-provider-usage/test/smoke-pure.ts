@@ -83,29 +83,9 @@ assert.equal(sanitizeHtml('<iframe src="x"></iframe>y'), "y");
 
 // ------------------------------------------------- sanitize：实体编码变体封闭（#105③）
 
-// 统一判定标准辅助（qa 判据同款语义）：对字符串做恰好一轮 HTML 实体解码
-// （具名 + 十进制 + 十六进制数字实体，有无分号均解），模拟浏览器解析期行为。
-const SAN_NAMED: Record<string, string> = {
-  lt: "<", gt: ">", amp: "&", quot: '"', apos: "'",
-  colon: ":", semi: ";", equals: "=", sol: "/", num: "#",
-  lpar: "(", rpar: ")",
-};
-const sanDecodeOnce = (s: string): string =>
-  s
-    .replace(/&#x([0-9a-fA-F]+);?/g, (_m: string, h: string) =>
-      String.fromCodePoint(Math.min(parseInt(h, 16), 0x10ffff)))
-    .replace(/&#(\d+);?/g, (_m: string, d: string) =>
-      String.fromCodePoint(Math.min(parseInt(d, 10), 0x10ffff)))
-    .replace(/&([a-zA-Z][a-zA-Z0-9]*);?/g, (_m: string, nm: string) =>
-      SAN_NAMED[nm.toLowerCase()] ?? `&${nm}`);
-const SAN_DANGER_RE =
-  /<script\b|<iframe\b|<frame\b|<object\b|<embed\b|<meta\b|<link\b|<base\b|\son\w+\s*=|javascript\s*:|data\s*:\s*text\/html|expression\s*\(/i;
-/** 统一判定标准 v2：输出经一轮实体解码后，再按 WHATWG URL basic parser
- * 入口语义剥除全部 ASCII tab/newline/CR，不得匹配任何危险载体模式。
- * （v1 判据缺 URL 剥除步、与实现共盲放过 jav&#9;ascript: 族——复核 P1-1，
- * 判据与实现同步升级避免自证循环。） */
-const sanBrowserView = (s: string): string => sanDecodeOnce(s).replace(/[\t\n\r]/g, "");
-const sanContained = (out: string): boolean => !SAN_DANGER_RE.test(sanBrowserView(out));
+// 统一判定标准 v2 判据引自 test/helpers.ts 单一事实源（P2③）——
+// 禁止在测试文件内再镜像复制解码器/危险模式/判定函数
+import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
 
 // A1 [硬性] 十六进制带分号实体拼写的协议被封（issue 原例）
 {
@@ -246,11 +226,6 @@ const sanContained = (out: string): boolean => !SAN_DANGER_RE.test(sanBrowserVie
 // pad(k) 每轮仅暴露一层 <meta>（删除拼接出下一层），k 层需 k 轮——
 // 实现已去除固定轮数上限，迭代至不动点，任何深度不得残留或破坏幂等
 {
-  const pad = (k: number): string => {
-    let s = "<meta>";
-    for (let i = 1; i < k; i++) s = "<met" + s + "a>";
-    return s;
-  };
   for (const depth of [15, 16, 17, 18, 25]) {   // 覆盖旧 16 轮上限两侧
     const x = pad(depth);
     const y = sanitizeHtml(x);

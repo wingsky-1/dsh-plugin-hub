@@ -21,7 +21,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { assert } from "./helpers.ts";
+import { assert, judgeContained as pipeContained, judgePad as pad } from "./helpers.ts";
 console.error("EVAL-ORDER-TAG: V1");
 import {
   ADAPTER_CONTRACT_VERSION_V1,
@@ -1197,13 +1197,8 @@ function resetLineXs(svg) {
   for (const s of idemSamples) {
     assert.equal(sanitizeHtml(sanitizeHtml(s)), sanitizeHtml(s), `幂等不动点: ${s}`);
   }
-  // 深嵌套天然收敛与幂等（复核 P1-2）：pad(k) 每轮仅暴露一层 <meta>，
-  // 实现无固定轮数上限，任意深度不得残留或破坏幂等
-  const pad = (k: number): string => {
-    let s = "<meta>";
-    for (let i = 1; i < k; i++) s = "<met" + s + "a>";
-    return s;
-  };
+  // 深嵌套天然收敛与幂等（复核 P1-2）：pad(k) 引自 test/helpers.ts 单一事实源，
+  // 每轮仅暴露一层 <meta>，实现无固定轮数上限，任意深度不得残留或破坏幂等
   for (const depth of [17, 18, 25]) {
     const y = sanitizeHtml(pad(depth));
     assert.equal(sanitizeHtml(y), y, `深嵌套 pad(${depth}) 幂等不动点`);
@@ -1214,18 +1209,8 @@ function resetLineXs(svg) {
 // ---------------------------------------------------------------- #105③ C1 管道级端到端：净化在管道内生效
 
 {
-  // 统一判定标准 v2 精简版（qa 判据同款）：一轮实体解码后按 WHATWG URL
-  // 解析语义剥除 \t\n\r，不得匹配危险载体模式
-  const pipeNamed: Record<string, string> = { lt: "<", gt: ">", amp: "&", quot: '"', apos: "'", colon: ":", semi: ";", equals: "=", sol: "/", num: "#", lpar: "(", rpar: ")" };
-  const pipeDecodeOnce = (s: string): string =>
-    s
-      .replace(/&#x([0-9a-fA-F]+);?/g, (_m: string, h: string) => String.fromCodePoint(Math.min(parseInt(h, 16), 0x10ffff)))
-      .replace(/&#(\d+);?/g, (_m: string, d: string) => String.fromCodePoint(Math.min(parseInt(d, 10), 0x10ffff)))
-      .replace(/&([a-zA-Z][a-zA-Z0-9]*);?/g, (_m: string, nm: string) => pipeNamed[nm.toLowerCase()] ?? `&${nm}`);
-  const pipeBrowserView = (s: string): string => pipeDecodeOnce(s).replace(/[\t\n\r]/g, "");
-  const pipeDanger =
-    /<script\b|<iframe\b|<frame\b|<object\b|<embed\b|<meta\b|<link\b|<base\b|\son\w+\s*=|javascript\s*:|data\s*:\s*text\/html|expression\s*\(/i;
-  const pipeContained = (out: string): boolean => !pipeDanger.test(pipeBrowserView(out));
+  // pipeContained 判据引自 test/helpers.ts 单一事实源（统一判定标准 v2：
+  // 一轮实体解码 + WHATWG URL 剥除 \t\n\r 后不得匹配危险载体模式）
 
   // 恶意 formatCapsule（issue 原例 payload）→ runV2Pipeline 产出前净化兜底
   const capR = await runV2Pipeline({
