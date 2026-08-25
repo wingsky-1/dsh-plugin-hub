@@ -450,38 +450,48 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   };
 
   // 3. 热更新（config.adapter 声明 + 设置页登记的文件；autoReload=true 时生效）
+  // 运行时经设置页 add 的适配器也纳入监视（issue #206）：ensureHotReload 供启动与
+  // add 路由共用，watchedFiles 去重防同一文件重复监视。
   const hotReloaders: HotReloadableAdapter[] = [];
+  const watchedFiles = new Set<string>();
+
+  /** 为文件建立热更新监视（幂等：已监视/autoReload 关闭/路径不可解析则跳过）。 */
+  async function ensureHotReload(file: string): Promise<void> {
+    if (!config.autoReload) return;
+    const resolved = resolvePath(file);
+    if (resolved === undefined) return; // 文件不可读：add 已校验过，此处仅防御
+    if (watchedFiles.has(resolved)) return; // 已监视，幂等跳过
+    watchedFiles.add(resolved);
+    const hr = new HotReloadableAdapter(resolved, 2000, (info) => {
+      const key = `file:${basename(resolved)}`;
+      if (!info.ok) {
+        registry.recordError(key, "load", `热更新失败：${info.error ?? "未知错误"}`);
+        return;
+      }
+      if (hr.current !== null) {
+        // 原子替换：先移除旧文件注册，再注册新版本（改名场景不误报重复）
+        registry.removeByFile(resolved);
+        registry.register(hr.current, "user-file", resolved);
+        cache.clear();
+        panelCache.clear(); // #105①：新版适配器代码语义已变，面板渲染缓存同清
+        registry.recordError(key, "load", `热更新成功：${hr.current.name}`);
+      }
+    });
+    const started = await hr.start();
+    if (!started.ok && started.error !== undefined) {
+      registry.recordError(`file:${basename(resolved)}`, "load", `热更新启动失败：${started.error}`);
+    }
+    hotReloaders.push(hr);
+  }
+
   if (config.autoReload) {
-    const watchedFiles = new Set<string>();
     if (config.adapter !== "") {
       const cfgFile = resolvePath(config.adapter);
-      if (cfgFile !== undefined) watchedFiles.add(cfgFile);
+      if (cfgFile !== undefined) await ensureHotReload(cfgFile);
     }
     for (const rec of userRecords) {
       const f = resolvePath(rec.file);
-      if (f !== undefined) watchedFiles.add(f);
-    }
-    for (const file of watchedFiles) {
-      const hr = new HotReloadableAdapter(file, 2000, (info) => {
-        const key = `file:${basename(file)}`;
-        if (!info.ok) {
-          registry.recordError(key, "load", `热更新失败：${info.error ?? "未知错误"}`);
-          return;
-        }
-        if (hr.current !== null) {
-          // 原子替换：先移除旧文件注册，再注册新版本（改名场景不误报重复）
-          registry.removeByFile(file);
-          registry.register(hr.current, "user-file", file);
-          cache.clear();
-          panelCache.clear(); // #105①：新版适配器代码语义已变，面板渲染缓存同清
-          registry.recordError(key, "load", `热更新成功：${hr.current.name}`);
-        }
-      });
-      const started = await hr.start();
-      if (!started.ok && started.error !== undefined) {
-        registry.recordError(`file:${basename(file)}`, "load", `热更新启动失败：${started.error}`);
-      }
-      hotReloaders.push(hr);
+      if (f !== undefined) await ensureHotReload(f);
     }
   }
 
@@ -839,6 +849,8 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
         file,
       };
       await persistUserAdapter(rec);
+      // issue #206：运行时 add 的适配器也纳入热更新监视（autoReload 开启时）
+      await ensureHotReload(file);
       cache.clear();
       panelCache.clear(); // #105①：候选/启用面已变，面板渲染缓存同清
       scheduleWriteAdapterState(registry.snapshot().enabled);
