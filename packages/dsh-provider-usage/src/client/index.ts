@@ -4,7 +4,8 @@
  * v2 架构：渲染在宿主端完成（formatCapsule/formatPanel 返回 HTML），客户端只做：
  * - 胶囊框架挂载与定位（dou-float 按钮：状态点 + HTML 内容区）
  * - 面板框架挂载（head/内容区/foot，内容区注入宿主返回的 panelHtml）
- * - 60s 轮询 /stats + 可见性刷新 + provider 会话检测
+ * - 60s 轮询 /stats + 可见性刷新（每次取数前先复检会话当前 provider，#71 A1 自愈）
+ * - provider 会话检测（宿主 currentProvideInfo 订阅：切换会话即时跟随）
  * - 设置面板 section 注册（settings.ts React 组件）
  *
  * 纪律：任何异常只 warn，绝不让 GUI 启动失败；请求带超时不挂起。
@@ -195,10 +196,44 @@ function renderPill(): void {
 
 // ------------------------------------------------------------------ 数据拉取
 
+/**
+ * A1（issue #71）：从会话现场复检 provider——detect 与 refreshStats 共用的检测半区。
+ * 解析当前会话实际 provider/model（沿祖先链，#69 语义不变），与 currentProvider 不同则
+ * 就地切换并重置渲染状态（代 token 前进防旧响应回写），返回是否发生变化。
+ * 不主动拉数（由调用方决定），避免 refreshStats 内部递归。
+ */
+async function revalidateProvider(): Promise<boolean> {
+  if (sessions === undefined) return false;
+  // 先同步取会话在场快照（区分「无任何会话」与「有会话但不可解析」，await 前读取防竞态）
+  const hadSession = currentSessionId(sessions) !== undefined;
+  const resolved = await resolveProviderFromSession(sessions, connection);
+  const decision = decideProviderAfterDetect({
+    resolved,
+    hadSession,
+    previousDetected: detectedProvider,
+  });
+  if (resolved !== undefined) detectedProvider = resolved;
+  providerUnknown = decision.unknown;
+  if (decision.provider === currentProvider) return false;
+  currentProvider = decision.provider;
+  renderGeneration += 1;
+  lastStats = null;
+  lastHistory = null;
+  lastAdapterVersion = 0;
+  return true;
+}
+
 /** 拉取当前 provider 用量并刷新胶囊（失败落错误态，不向上抛）。 */
 async function refreshStats(): Promise<void> {
-  const gen = renderGeneration;
+  let gen = renderGeneration;
   try {
+    // A1（issue #71）：取数前先复检会话当前 provider/model——60s 轮询、可见性恢复、
+    // 手动刷新均在此自愈；会话内切模型虽无宿主信号触发 detect()，最长一个轮询周期内跟随
+    if (await revalidateProvider()) {
+      if (floatPill !== undefined) renderPill();
+      if (floatOpen && floatPanel !== undefined) renderPanel();
+    }
+    gen = renderGeneration; // 复检可能推进代号，取数前再读
     const r = await fetchStats(currentProvider);
     if (gen !== renderGeneration) return;
     // 适配器版本变化（热更新）→ 全量重置，防新数据旧模板混搭
@@ -335,11 +370,8 @@ function renderPanel(): void {
 
 // ------------------------------------------------------------------ provider 变化
 
+/** provider 已切换（状态重置由 revalidateProvider 完成）→ 重渲染 + 立即取新数据。 */
 function onProviderChanged(): void {
-  renderGeneration += 1;
-  lastStats = null;
-  lastHistory = null;
-  lastAdapterVersion = 0;
   if (floatPill !== undefined) renderPill();
   if (floatOpen && floatPanel !== undefined) renderPanel();
   void refreshStats();
@@ -528,25 +560,19 @@ export function apply(ctx: any): void {
     // provider 检测：会话变化 → 重新解析 provider → 重渲染
     // （issue #69：子代理会话 models() 必拒（agent-busy），检测沿 parentId 上溯父会话；
     //   全链失败保持上次检测结果并标注未识别，仅「从未成功」才回落默认——不再无条件回落）
+    // 检测半区已抽为 revalidateProvider（A1，issue #71）：与 refreshStats 取数前复检共用。
     let unsubSessions: (() => void) | undefined;
     const detect = (): void => {
       void (async () => {
-        // 先同步取会话在场快照（区分「无任何会话」与「有会话但不可解析」，await 前读取防竞态）
-        const hadSession = currentSessionId(sessions) !== undefined;
-        const resolved = await resolveProviderFromSession(sessions, connection);
-        const decision = decideProviderAfterDetect({
-          resolved,
-          hadSession,
-          previousDetected: detectedProvider,
-        });
-        if (resolved !== undefined) detectedProvider = resolved;
-        providerUnknown = decision.unknown;
-        if (decision.provider !== currentProvider) {
-          currentProvider = decision.provider;
-          onProviderChanged();
-        } else {
-          renderPill(); // provider 未变但未知标注可能变化 → 刷胶囊 title
+        const changed = await revalidateProvider();
+        if (changed) {
+          onProviderChanged(); // provider 变了 → 立即重拉（切换会话即时跟随）
+          return;
         }
+        renderPill(); // provider 未变但未知标注可能变化 → 刷胶囊 title
+        // 维护者补充需求（issue #71）：切换会话即使 provider 相同也立即刷一次 stats，
+        // 不等 60s 轮询 / visibilitychange（浮窗在场才刷；roster 变化触发的 detect 同样受益）
+        if (floatPill !== undefined) void refreshStats();
       })();
     };
     const maybe = sessions?.currentProvideInfo;
