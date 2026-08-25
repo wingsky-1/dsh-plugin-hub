@@ -222,9 +222,9 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
   assert.equal(sanitizeHtml(normal), normal, "A9: 正常空白字符零损伤");
 }
 
-// A10 [硬性][判定标准 v2] 深嵌套天然收敛与幂等（复核 P1-2）：
+// A10 [硬性][判定标准 v2] 深嵌套收敛与幂等（复核 P1-2）：
 // pad(k) 每轮仅暴露一层 <meta>（删除拼接出下一层），k 层需 k 轮——
-// 实现已去除固定轮数上限，迭代至不动点，任何深度不得残留或破坏幂等
+// 实现迭代至收敛，pad(15..25) 均在 64 轮宽松上限内全净收敛且幂等
 {
   for (const depth of [15, 16, 17, 18, 25]) {   // 覆盖旧 16 轮上限两侧
     const x = pad(depth);
@@ -238,6 +238,31 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
   const mOut = sanitizeHtml(mixed);
   assert.equal(sanitizeHtml(mOut), mOut, "A10: 混合深嵌套幂等");
   assert.ok(sanContained(mOut), "A10: 混合深嵌套 v2 判据安全");
+}
+
+// A11 [硬性][判定标准 v2.1] 迭代上限 fail-closed 与性能有界（复核 P1-3）
+{
+  // a) 超限触底：pad(70) 需 >64 轮 → fail-closed 返回空串；
+  //    f('')==='' 使幂等在超限分支仍构造成立
+  const deep = pad(70) + "&#X3c;script>alert(1)</script>z";
+  const out = sanitizeHtml(deep);
+  assert.equal(out, "", "A11a: 超深嵌套触底 fail-closed 返回空串");
+  assert.equal(sanitizeHtml(out), out, "A11a: fail-closed 后 f(f(x))===f(x)");
+
+  // b) 性能有界：60KB 级最坏构造不得冻结事件循环。
+  //    阈值依据：修复前同规模嵌套输入实测 ~29.5s；本机实测修复后 60KB
+  //    最坏构造 ~4ms / 62KB 正常文档 ~20ms，500ms 为实测 ×20+ 余量，
+  //    覆盖慢速 CI 环境（冻结级回归即可判红）
+  const evil = ("<met<meta>a>".repeat(3000)).slice(0, 60000);
+  const t0 = Date.now();
+  sanitizeHtml(evil);
+  const cost = Date.now() - t0;
+  assert.ok(cost < 500, `A11b: 60KB 最坏构造 ${cost}ms < 500ms（P1-3 性能有界）`);
+
+  // c) 正常内容远离上限：合法深嵌套标签/实体文档零损伤（未触发 fail-closed
+  //    的直接证据——触发即返回 ''，而此处逐字符原样返回）
+  const doc = "<div>".repeat(50) + "text &amp; more &#x2713;" + "</div>".repeat(50);
+  assert.equal(sanitizeHtml(doc), doc, "A11c: 合法深嵌套文档零损伤（远离 64 轮上限）");
 }
 
 // B 组：合法内容不误伤

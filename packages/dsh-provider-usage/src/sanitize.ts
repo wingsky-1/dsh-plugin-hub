@@ -9,15 +9,17 @@
  * - 第一层：既有明文形态黑名单（行为不变）；
  * - 第二层：对第一层输出做**一轮** HTML 实体解码得到「检测副本」，协议类
  *   模式再经 WHATWG URL 语义剥除 \t\n\r 得二级视图，在视图上定位危险载体
- *   模式，命中后只从**原文**删除对应字节区间，迭代至天然收敛。
+ *   模式，命中后只从**原文**删除对应字节区间，迭代至收敛（宽松轮数上限 +
+ *   触底 fail-closed，见 sanitizeHtml 第 4 步）。
  *   安全不变量（结构性保证）：
  *   1. 输出恒为输入的子序列（纯删除）——解码副本绝不回写为输出，
  *      因此 `&amp;#106;avascript:` / `&lt;script&gt;` 等本已安全的实体文本
  *      不可能被"误解码"升级为危险明文；
- *   2. 第二层迭代每轮要么无匹配终止、要么长度严格递减必终止（无固定上限，
- *      见 sanitizeHtml 第 4 步收敛性论证），终态谓词 = 解码 + URL 剥除后
- *      不含任何危险载体模式，该谓词同时蕴含第一层模式不再命中 ⇒
- *      `sanitizeHtml(sanitizeHtml(x)) === sanitizeHtml(x)` 幂等成立。
+ *   2. 第二层迭代每轮要么无匹配终止、要么长度严格递减必终止；设宽松轮数
+ *      上限（64，远超正常收敛所需）防最坏 O(n²) CPU 消耗（复核 P1-3），
+ *      触底 fail-closed 丢弃输出返回 ''——f('')==='' 使幂等硬闸
+ *      `sanitizeHtml(sanitizeHtml(x)) === sanitizeHtml(x)` 在任意分支构造
+ *      成立，终态恒满足「解码 + URL 剥除后不含危险载体」。
  */
 
 // ---------------------------------------------------------------- 第一层：明文形态黑名单
@@ -293,18 +295,25 @@ export function sanitizeHtml(html: string): string {
     .replace(JAVASCRIPT_URI_RE, '')
     .replace(DATA_TEXT_HTML_RE, '')
     .replace(STYLE_ON_SCRIPT_RE, '');
-  // 4. 实体编码变体封闭（#105③）：迭代至天然收敛，不设固定轮数上限。
+  // 4. 实体编码变体封闭（#105③）：迭代至收敛，设宽松轮数上限 + 触底 fail-closed。
   //    收敛性论证：stripDecodedDanger 要么无匹配原样返回（终止），要么至少
-  //    删除一个非空 match 区间使长度严格递减——轮数上界为输入长度，循环
-  //    必然终止；终态谓词「解码 + URL 剥除视图下不含任何危险载体」成立，
-  //    且该谓词蕴含第一层明文模式亦不再命中 ⇒ 幂等硬闸
-  //    sanitizeHtml(sanitizeHtml(x)) === sanitizeHtml(x) 构造成立。
-  //    （固定轮数上限会在深嵌套构造下静默截断——残留危险 token 且推翻幂等，
-  //    PR#196 复核 P1-2，故必须收敛至不动点而非触底放弃。）
-  for (;;) {
+  //    删除一个非空 match 区间使长度严格递减——正常内容 1-3 轮收敛，
+  //    深嵌套攻击构造（pad(25)）实测 ≤19 轮，上限 64 远超实际所需。
+  //    上限的必要性（复核 P1-3）：无上限时「删除拼接出新匹配」类深嵌套
+  //    构造最坏 O(n²)，60KB 输入实测冻结宿主事件循环 ~30s，且数据落盘
+  //    history 后每次 /history 重复触发＝持续 DoS。
+  //    触底 fail-closed：超限丢弃输出返回 ''。幂等与终态谓词同时保持——
+  //    sanitizeHtml('') === ''（空串短路），故 f(f(x)) === f(x) 在超限分支
+  //    构造成立，且 '' 显然满足「解码 + URL 剥除视图下不含危险载体」；
+  //    攻击代价从 CPU 冻结退化为内容丢弃（fail-closed 方向）。
+  let converged = false;
+  for (let round = 0; round < 64; round++) {
     const next = stripDecodedDanger(out);
-    if (next === out) break;
+    if (next === out) {
+      converged = true;
+      break;
+    }
     out = next;
   }
-  return out;
+  return converged ? out : '';
 }

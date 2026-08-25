@@ -190,9 +190,10 @@ or the plugin home; non-normalized forms (`../` traversal) are rejected with 400
   sanitizer also closes HTML entity-encoded variants — named / decimal / hex, with or
   without trailing semicolons are decoded before matching, and protocol-like payloads
   are located after stripping tab/LF/CR per WHATWG URL semantics (the jav&#9;ascript:
-  family included); sanitization only removes and iterates to a fixed point — the decoded
-  view is used solely for locating matches and never written back, so legitimately
-  escaped text passes through untouched
+  family included); sanitization only removes and iterates under a generous iteration
+  bound with fail-closed empty output beyond it (bounding worst-case CPU cost) — the
+  decoded view is used solely for locating matches and never written back, so
+  legitimately escaped text passes through untouched
 - **Hot reload is off by default**; when enabled it polls mtime+size, atomically swaps in
   the new version only after validation passes, and keeps the old version on failure
 - **Timeout discipline**: fetchData gets a forced 2s timeout + AbortSignal; when the lock

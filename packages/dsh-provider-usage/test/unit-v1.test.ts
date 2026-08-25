@@ -1197,13 +1197,17 @@ function resetLineXs(svg) {
   for (const s of idemSamples) {
     assert.equal(sanitizeHtml(sanitizeHtml(s)), sanitizeHtml(s), `幂等不动点: ${s}`);
   }
-  // 深嵌套天然收敛与幂等（复核 P1-2）：pad(k) 引自 test/helpers.ts 单一事实源，
-  // 每轮仅暴露一层 <meta>，实现无固定轮数上限，任意深度不得残留或破坏幂等
+  // 深嵌套收敛与幂等（复核 P1-2）：pad(k) 引自 test/helpers.ts 单一事实源，
+  // 每轮仅暴露一层 <meta>，pad(17/18/25) 均在 64 轮宽松上限内全净收敛且幂等
   for (const depth of [17, 18, 25]) {
     const y = sanitizeHtml(pad(depth));
     assert.equal(sanitizeHtml(y), y, `深嵌套 pad(${depth}) 幂等不动点`);
     assert.ok(!/<meta\b|<met\b/i.test(y), `深嵌套 pad(${depth}) 无危险 token 残留`);
   }
+  // 超限 fail-closed（复核 P1-3）：>64 轮深嵌套返回空串且幂等保持
+  const y70 = sanitizeHtml(pad(70) + "&#X3c;script>x</script>t");
+  assert.equal(y70, "", "超限 fail-closed 返回空串");
+  assert.equal(sanitizeHtml(y70), y70, "fail-closed 后 f(f(x))===f(x)");
 }
 
 // ---------------------------------------------------------------- #105③ C1 管道级端到端：净化在管道内生效
