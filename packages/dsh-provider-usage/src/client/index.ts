@@ -11,9 +11,13 @@
  */
 import {
   resolveProviderFromSession,
+  decideProviderAfterDetect,
+  currentSessionId,
   fetchStats,
   fetchHistory,
   fetchUiConfig,
+  FALLBACK_PROVIDER,
+  UNKNOWN_PROVIDER_HINT,
   EVENTS_URL,
 } from "./core.js";
 import type { SessionsServiceLike, ConnectionHandleLike, StatsResponseV2, HistoryResponseV2, UiPlacementConfig } from "./core.js";
@@ -21,9 +25,6 @@ import { SettingsPage } from "./settings.js";
 // React externals 路径：运行时由 dsh web factory require("react") 注入
 import * as React from "react";
 import STYLE from "./style.css";
-
-/** 无会话时回落 provider（内置 opencode-go）。 */
-const FALLBACK_PROVIDER = "opencode-go";
 
 const REFRESH_MS = 60000; // 轮询间隔
 const PILL_PREFIX = "dou-"; // 样式类名前缀
@@ -87,6 +88,10 @@ let connection: ConnectionHandleLike | undefined;
 
 /** 当前生效 provider。 */
 let currentProvider: string = FALLBACK_PROVIDER;
+/** 最近一次成功检测的 provider（issue #69 方案 B：全链失败时的保持值；undefined = 从未成功）。 */
+let detectedProvider: string | undefined;
+/** true = 有会话但 provider 未能确认（胶囊 title 标注「提供商未识别」）。 */
+let providerUnknown = false;
 /** 最近一次 /stats 响应。 */
 let lastStats: StatsResponseV2 | null = null;
 /** 最近一次 /history 响应。 */
@@ -166,15 +171,19 @@ function renderPill(): void {
   const hide = stats === null;
   floatPill.hidden = hide;
   if (stats !== null) {
+    let title: string;
     if (!stats.configured) {
-      floatPill.title = `${currentProvider} · 未配置适配器，点击查看接入引导`;
+      title = `${currentProvider} · 未配置适配器，点击查看接入引导`;
     } else if (stats.error !== null && stats.error !== undefined) {
-      floatPill.title = `用量获取失败：${stats.error}`;
+      title = `用量获取失败：${stats.error}`;
     } else if ((stats as { reason?: string | null }).reason === "busy") {
-      floatPill.title = `${stats.adapterName} · 取数进行中，稍候自动刷新`;
+      title = `${stats.adapterName} · 取数进行中，稍候自动刷新`;
     } else {
-      floatPill.title = `${stats.adapterName} · ${stats.status === "stale" ? "数据陈旧" : stats.status === "cached" ? "缓存" : "实时"} · 更新于 ${fmtAge(stats.fetchedAt)}`;
+      title = `${stats.adapterName} · ${stats.status === "stale" ? "数据陈旧" : stats.status === "cached" ? "缓存" : "实时"} · 更新于 ${fmtAge(stats.fetchedAt)}`;
     }
+    // issue #69 方案 B：有会话但 provider 未确认 → title 显式标注（不再静默展示可能不对的数据）
+    if (providerUnknown) title += ` · ${UNKNOWN_PROVIDER_HINT}`;
+    floatPill.title = title;
   }
   if (labelEl !== null) {
     if (stats?.capsuleHtml) labelEl.innerHTML = stats.capsuleHtml;
@@ -517,14 +526,26 @@ export function apply(ctx: any): void {
     const disposeFloat = mountFloat();
 
     // provider 检测：会话变化 → 重新解析 provider → 重渲染
+    // （issue #69：子代理会话 models() 必拒（agent-busy），检测沿 parentId 上溯父会话；
+    //   全链失败保持上次检测结果并标注未识别，仅「从未成功」才回落默认——不再无条件回落）
     let unsubSessions: (() => void) | undefined;
     const detect = (): void => {
       void (async () => {
-        const detected = await resolveProviderFromSession(sessions, connection);
-        const next = detected ?? FALLBACK_PROVIDER;
-        if (next !== currentProvider) {
-          currentProvider = next;
+        // 先同步取会话在场快照（区分「无任何会话」与「有会话但不可解析」，await 前读取防竞态）
+        const hadSession = currentSessionId(sessions) !== undefined;
+        const resolved = await resolveProviderFromSession(sessions, connection);
+        const decision = decideProviderAfterDetect({
+          resolved,
+          hadSession,
+          previousDetected: detectedProvider,
+        });
+        if (resolved !== undefined) detectedProvider = resolved;
+        providerUnknown = decision.unknown;
+        if (decision.provider !== currentProvider) {
+          currentProvider = decision.provider;
           onProviderChanged();
+        } else {
+          renderPill(); // provider 未变但未知标注可能变化 → 刷胶囊 title
         }
       })();
     };
@@ -544,6 +565,8 @@ export function apply(ctx: any): void {
       if (unsubSessions !== undefined) unsubSessions();
       disposeFloat();
       renderGeneration += 1;
+      detectedProvider = undefined;
+      providerUnknown = false;
       sessions = undefined;
       connection = undefined;
     }, "dsh-provider-usage: float");
