@@ -223,9 +223,10 @@ const { createServer } = await import("node:http");
   const applyHome = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-apply-listenfail-"));
   const prevHome = process.env.DSH_HOME;
   process.env.DSH_HOME = applyHome;
-  // 占用一个具体端口
+  // 占用一个随机端口（#217：port 0 由内核分配，避免 CI 并行固定端口互踩）
   const occupied = createServer();
-  await new Promise((r) => occupied.listen(19998, "127.0.0.1", r));
+  await new Promise((r) => occupied.listen(0, "127.0.0.1", r));
+  const occupiedPort = occupied.address().port;
   const routes = [];
   const rpcHandles = [];
   const disposers = [];
@@ -240,7 +241,7 @@ const { createServer } = await import("node:http");
     effect(fn) { const d = fn(); if (typeof d === "function") disposers.push(d); return d; },
   };
   const { apply } = await import("../lib/index.js");
-  apply(ctx, { host: "127.0.0.1", port: 19998, httpsEnabled: false, printBanner: false, wsCompressEnabled: false, httpCompressEnabled: false });
+  apply(ctx, { host: "127.0.0.1", port: occupiedPort, httpsEnabled: false, printBanner: false, wsCompressEnabled: false, httpCompressEnabled: false });
   await sleep(200); // 等 listen 异步 reject
   // health 路由存在，但 listening: false
   const healthRoute = routes.find((r) => r.path === ROUTES.health);
