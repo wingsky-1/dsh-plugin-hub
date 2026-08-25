@@ -68,7 +68,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-notifier
 
 - **向你提问**（默认开）：`ask_user_question` / GUI 提问弹窗触发时通知
 - **审批提醒**：真实审批路径 `approval/request` 触发时通知，含任务标题、工具中文名、申请理由与操作提示
-- **完成提醒**：任务从运行到空闲（`agent/status` running → idle）时通知，含任务标题与耗时；子代理完成走独立开关 `notifySubagentDone`（默认关）；用户停止生成/中断/任务失败/被阻塞时不通知完成（本轮 `turn/end` reason 为 `aborted`/`interrupted`/`error`/`blocked` 时固定静默——失败任务由错误提醒单独负责「任务出错」，避免同一轮既报错又误报完成）
+- **完成提醒**：任务从运行到空闲（`agent/status` running → idle）时通知，含任务标题与耗时；子代理完成走独立开关 `notifySubagentDone`（默认关；子代理含 `origin: subagent` 的 spawn 型与运行时归属成立的 fork 型委派——无归属的 fork 主线会话不受影响，仍报主任务完成）；用户停止生成/中断/任务失败/被阻塞时不通知完成（本轮 `turn/end` reason 为 `aborted`/`interrupted`/`error`/`blocked` 时固定静默——失败任务由错误提醒单独负责「任务出错」，避免同一轮既报错又误报完成）
 - **错误提醒**：任务出错（`agent/error`）时通知，含任务标题、出错轮次/步骤、错误信息（前 300 字符）；同类错误 60 秒窗口内自动合并
 - **轮次完成**（默认关）：`agent/turn-stopping` 时通知
 - **双通道**：
