@@ -569,6 +569,45 @@ function rmStatSafe(p) {
   }
 }
 
+// ---- 中间层模式 connect/disconnect 分支（#228：userDisabled 持久化）----
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mgr2t-"));
+  try {
+    const { manager, store } = makeManager(dir);
+    store.upsert(normalizeServer(quietServer("g1")));
+    const proj = join(dir, "proj");
+    mkdirSync(join(proj, ".git"), { recursive: true });
+    mkdirSync(join(proj, ".dsh"), { recursive: true });
+    writeFileSync(
+      join(proj, ".dsh", "mcp.json"),
+      JSON.stringify({ version: 1, servers: [{ name: "p1", transport: "stdio", command: "pcmd", enabled: true }] }),
+    );
+    await manager.setSession(proj);
+    // 初始化中间层（模拟 apply）。
+    await manager.initMiddleware("project", {});
+    assert.ok(manager.middleware !== undefined);
+    const mw = manager.middleware;
+    // 项目级 connect → 中间层连接池（userDisabled 解除 + ensureConnected）。
+    await manager.connect("p1", "project");
+    assert.ok(mw.units.has(proj), "中间层单元已创建");
+    const unit = mw.units.get(proj);
+    assert.equal(unit.userDisabled.has("p1"), false);
+    // 项目级 disconnect → userDisabled 持久化。
+    await manager.disconnect("p1");
+    assert.equal(unit.userDisabled.has("p1"), true, "断开后 userDisabled");
+    assert.equal(unit.connections.has("p1"), false, "连接拆毁");
+    // 持久化文件存在（不崩）。
+    const { existsSync } = await import("node:fs");
+    assert.equal(existsSync(manager.userStatePath), true);
+    // 全局 disconnect 不受中间层影响（supervisor 路径）。
+    await manager.disconnect("g1");
+    assert.ok(!manager.supervisors.has("g1"), "全局断开走 supervisor");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 // ---- summary / summarize / dispose ----
 
 {

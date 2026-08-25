@@ -397,10 +397,10 @@ export class McpManager {
         denyTools: (policy.denyTools as Record<string, string[]> | undefined) ?? undefined,
       },
     );
-    // 加载 userDisabled 到各工作空间单元（惰性：单元创建时合并）。
+    // 加载 userDisabled 并注入中间层实例（单元创建时合并；重启不丢）。
+    this.disabledByRoot = await loadUserState(this.userStatePath);
+    mw.disabledByRoot = this.disabledByRoot;
     this.middleware = mw;
-    const disabled = await loadUserState(this.userStatePath);
-    this.disabledByRoot = disabled;
     return mw;
   }
 
@@ -610,6 +610,10 @@ export class McpManager {
     }
     store.upsert(config);
     await store.save();
+    if (this.middlewareMode !== "off" && scope === SCOPE_PROJECT) {
+      // 中间层：拆毁当前 root 单元（下次惰性重建读新配置）。
+      this.touchMiddlewareUnit();
+    }
     if (config.enabled !== false) this.start(config.name, scope);
     return config;
   }
@@ -622,6 +626,10 @@ export class McpManager {
     store.upsert(merged);
     await store.save();
     this.stop(name);
+    if (this.middlewareMode !== "off" && scope === SCOPE_PROJECT) {
+      // 中间层：拆毁当前 root 单元（下次惰性重建读新配置）。
+      this.touchMiddlewareUnit();
+    }
     if (merged.enabled !== false) {
       // 编辑后重新连接（即便此前未连接）
       this.start(name, scope);
@@ -632,14 +640,36 @@ export class McpManager {
   async remove(name: string, scope: string = SCOPE_GLOBAL): Promise<void> {
     const store = scope === SCOPE_PROJECT ? await this.projectStoreOrThrow() : this.store;
     this.stop(name);
+    if (this.middlewareMode !== "off" && scope === SCOPE_PROJECT) {
+      // 中间层：拆毁当前 root 单元（下次惰性重建读新配置）。
+      this.touchMiddlewareUnit();
+    }
     store.remove(name);
     await store.save();
+  }
+
+  /** 中间层辅助：拆毁当前 root 单元（配置变更后强制惰性重建）。 */
+  private touchMiddlewareUnit(): void {
+    const mw = this.middleware;
+    if (mw === undefined || this.projectRoot === undefined) return;
+    mw.teardownUnit(this.projectRoot);
   }
 
   async connect(name: string, scope: string = SCOPE_GLOBAL): Promise<void> {
     const store = scope === SCOPE_PROJECT ? await this.projectStoreOrThrow() : this.store;
     const server = store.find(name);
     if (server === undefined) throw new Error(`server "${name}" not found in ${scope} scope`);
+    // 中间层模式：项目级连接走中间层连接池（userDisabled 解除 + 惰性连接）。
+    if (this.middlewareMode !== "off" && scope === SCOPE_PROJECT && this.middleware !== undefined) {
+      const root = this.projectRoot;
+      if (root === undefined) throw new Error("no active project session (call session with a cwd first)");
+      const unit = await this.middleware.projectUnitFor(root);
+      if (unit === undefined) throw new Error(`workspace ${root} has no project MCP config`);
+      unit.userDisabled.delete(name);
+      await this.saveUserState(this.middleware.units);
+      await this.middleware.ensureConnected(root, name);
+      return;
+    }
     const existing = this.supervisors.get(name);
     if (existing !== undefined && existing.client !== undefined) return;
     if (existing !== undefined && existing.scope !== scope) throw new Error(`server "${name}" is registered in scope "${existing.scope}"`);
@@ -650,6 +680,16 @@ export class McpManager {
   }
 
   async disconnect(name: string): Promise<void> {
+    // 中间层模式：项目级断开 → userDisabled 持久化 + 连接池拆毁该连接。
+    if (this.middlewareMode !== "off" && this.middleware !== undefined) {
+      const unit = [...this.middleware.units.values()].find((entry) => entry.connections.has(name) || entry.userDisabled.has(name));
+      if (unit !== undefined) {
+        unit.userDisabled.add(name);
+        await this.saveUserState(this.middleware.units);
+        unit.connections.delete(name);
+        return;
+      }
+    }
     const supervisor = this.supervisors.get(name);
     if (supervisor === undefined) return;
     this.supervisors.delete(name);
@@ -857,6 +897,9 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
         return manager.normalizedProjectRoot(typeof cwd === "string" ? cwd : undefined);
       };
       disposeMiddleware = registerMiddlewareTools(manager.ctx, mw, resolveRoot);
+      // startAll 在中间层注册前执行（off 语义），此处立即 reconcile：停掉
+      // 项目级 supervisor（改由中间层接管），防同一 server 双进程。
+      manager.reconcileServers();
       manager.logger.info(`dsh-mcp-manager: middleware mode=${middlewareMode}`);
     }
 
@@ -915,11 +958,11 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
 
     // 变更点驱动（#111）：fs.watch 监听全局与当前项目 mcp.json 配置目录，
     // 外部编辑/落盘 → 防重入 reconcile（运行中排队补跑）。取代 mtime 轮询。
-    let watchCleanup: () => void = () => {};
     try {
       const fs = await import("node:fs");
+      const watchers: Array<{ close(): void }> = [];
       const watched = new Set<string>();
-      const watchConfig = (dir: string, store: McpStore) => {
+      const watchConfig = (dir: string) => {
         if (watched.has(dir)) return;
         watched.add(dir);
         let busy = false;
@@ -944,33 +987,27 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
         };
         try {
           const watcher = fs.watch(dir, { persistent: false }, () => run());
-          watchCleanup = (() => {
-            const inner = watcher;
-            watched.delete(dir);
-            return () => {
-              try {
-                inner.close();
-              } catch {
-                // 已关闭
-              }
-            };
-          })();
-          void store;
+          watchers.push(watcher);
         } catch {
           // watch 不可用（某些平台/只读目录）：降级无 watcher（写路径仍会 reconcile）。
         }
       };
-      watchConfig(dirname(manager.store.path), manager.store);
-      if (manager.projectStore !== undefined) watchConfig(dirname(manager.projectStore.path), manager.projectStore);
+      watchConfig(dirname(manager.store.path));
+      if (manager.projectStore !== undefined) watchConfig(dirname(manager.projectStore.path));
       // 会话切换时项目 store 变化 → 重新挂 watcher。
       const unwatchProject = manager.onStatus(() => {
-        if (manager.projectStore !== undefined) watchConfig(dirname(manager.projectStore.path), manager.projectStore);
+        if (manager.projectStore !== undefined) watchConfig(dirname(manager.projectStore.path));
       });
-      watchCleanup = (() => {
-        const detach = watchCleanup;
+      watchCleanup = () => {
         unwatchProject();
-        return detach;
-      })();
+        for (const watcher of watchers.splice(0)) {
+          try {
+            watcher.close();
+          } catch {
+            // 已关闭
+          }
+        }
+      };
     } catch {
       // fs.watch 不可用：保持既有行为（写路径仍会 reconcile）。
     }
