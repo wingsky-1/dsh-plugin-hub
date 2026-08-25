@@ -532,6 +532,7 @@ export function formatCapsule() { return "<span>a1</span>"; }
 export function formatPanel() { return "<p>a1</p>"; }
 `, "utf8");
   const { ctx, routes } = makeFakeCtx();
+  mkdirSync(histDir, { recursive: true }); // 清单/状态落盘目录（消除 warmup 时序依赖，对齐 #212-B）
   await apply(ctx, { ...ISOLATED_CONFIG, provider: "p212", adapter: aFile, historyDir: histDir });
   await new Promise((r) => setTimeout(r, 300)); // 启动稳定（含 hr.start 初始同步）
 
