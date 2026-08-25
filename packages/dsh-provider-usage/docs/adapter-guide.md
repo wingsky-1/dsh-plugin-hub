@@ -100,7 +100,7 @@
 - `fetchData` 只返回展示所需的最小数据集（不返回全量原始日志）
 - 所有外部 API 数据拼入 HTML 模板前经 `esc()` 转义
 - **历史兼容**：修改展示或数据存储时考虑旧 JSONL 历史（见 3.3），`formatPanel` 对旧字段结构防御读取
-- **生成后验收（必做）**：用真实凭据跑一次 `fetchData` 并计时，总耗时须 < 2s（含最慢可选请求的降级路径）；超预算先给可选请求加短超时降级再交审
+- **生成后验收（必做）**：用真实凭据跑一次 `fetchData` 并计时，总耗时须在固定 5s 超时内（含最慢可选请求的降级路径）；超预算先给可选请求加短超时降级再交审
 
 ### 2.5 步骤 5：引导用户接线
 
@@ -165,7 +165,7 @@ export const retention = { maxAgeDays: 30, maxSizeMB: 20 };  // 留存策略
 | **HTML 转义义务** | 凡来自外部 API 的字符串拼入 HTML 模板，一律 `esc()` 转义（如 `esc(data.name)`） |
 | **最小数据集** | `fetchData` 只返回展示所需字段（这些数据按天落盘） |
 | **`name` 白名单** | `^[A-Za-z0-9_-]{2,64}$`：不能有空格/路径分隔符/中文 |
-| **超时意识** | fetchData 被强制 2s 超时（可配置）。**禁止串行多请求**（总耗时叠加必超时）；**并行请求（`Promise.all`）允许**，但总耗时 = 最慢请求。**关键请求（决定胶囊主数值的）不做短超时降级；可选增强数据（订阅窗口/明细）单独设短超时并降级**——`.catch(() => null)` 只防抛错不防挂起，须用 `Promise.race` 真超时：<br>`const withTimeout = (p, ms) => Promise.race([p, new Promise(r => setTimeout(() => r(null), ms))]);`<br>`const subs = await withTimeout(fetchSubs(), 800).catch(() => null); // 可选请求：短超时+降级` |
+| **超时意识** | fetchData 被强制 **固定 5s** 超时（插件级常量，不可配置）。**禁止串行多请求**（总耗时叠加必超时）；**并行请求（`Promise.all`）允许**，但总耗时 = 最慢请求。**关键请求（决定胶囊主数值的）不做短超时降级；可选增强数据（订阅窗口/明细）单独设短超时并降级**——`.catch(() => null)` 只防抛错不防挂起，须用 `Promise.race` 真超时：<br>`const withTimeout = (p, ms) => Promise.race([p, new Promise(r => setTimeout(() => r(null), ms))]);`<br>`const subs = await withTimeout(fetchSubs(), 800).catch(() => null); // 可选请求：短超时+降级` |
 | **历史兼容** | 修改展示或数据存储时，要考虑历史数据兼容：旧 JSONL 字段结构变化会让新 `formatPanel` 读不到数据（静默无图/无数据），`formatPanel` 对旧结构字段做防御（`?? "--"` 或兼容读取） |
 
 ---
