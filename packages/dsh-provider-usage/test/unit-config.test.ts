@@ -286,13 +286,10 @@ assert.equal(normalizeConfig({ provider: 42 }).provider, DEFAULT_CONFIG.provider
 assert.equal(normalizeConfig({ apiEndpoint: 42 }).apiEndpoint, "", "apiEndpoint 非字符串丢弃");
 assert.equal(normalizeConfig({ adapter: 42 }).adapter, "", "adapter 非字符串丢弃");
 
-// fetchTimeoutMs clamp 双边界：min(max(x,500),30000)
-assert.equal(normalizeConfig({ fetchTimeoutMs: 400 }).fetchTimeoutMs, 500, "fetchTimeoutMs 下限 500");
-assert.equal(normalizeConfig({ fetchTimeoutMs: 500 }).fetchTimeoutMs, 500, "fetchTimeoutMs 边界 500 透传");
-assert.equal(normalizeConfig({ fetchTimeoutMs: 29999 }).fetchTimeoutMs, 29999, "fetchTimeoutMs 区间内透传");
-assert.equal(normalizeConfig({ fetchTimeoutMs: 30000 }).fetchTimeoutMs, 30000, "fetchTimeoutMs 上边界 30000 透传");
-assert.equal(normalizeConfig({ fetchTimeoutMs: 30001 }).fetchTimeoutMs, 30000, "fetchTimeoutMs 上限 30000");
-assert.equal(normalizeConfig({ fetchTimeoutMs: "x" }).fetchTimeoutMs, DEFAULT_CONFIG.fetchTimeoutMs, "fetchTimeoutMs 非法丢弃");
+// fetchTimeoutMs 固定 5s 不可配置（#206 配套：远端慢时 2s 频繁超时；warmup 与 /stats 同限）
+assert.equal(normalizeConfig({ fetchTimeoutMs: 400 }).fetchTimeoutMs, DEFAULT_CONFIG.fetchTimeoutMs, "fetchTimeoutMs 固定 5s 不可配置");
+assert.equal(normalizeConfig({ fetchTimeoutMs: 30000 }).fetchTimeoutMs, DEFAULT_CONFIG.fetchTimeoutMs, "fetchTimeoutMs 固定 5s 不可配置（上限值也忽略）");
+assert.equal(normalizeConfig({ fetchTimeoutMs: "x" }).fetchTimeoutMs, DEFAULT_CONFIG.fetchTimeoutMs, "fetchTimeoutMs 非法输入保持默认");
 
 // maxAgeDays 上限 365、下限正整数（#184：<=0 或非整数回落默认，避免 maybePrune 下界落在未来全量清史）
 assert.equal(normalizeConfig({ maxAgeDays: 1 }).maxAgeDays, 1, "maxAgeDays 合法边界 1 保留");
