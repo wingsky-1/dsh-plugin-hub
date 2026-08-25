@@ -5,6 +5,7 @@
  * normalizeConfig / provider-config 配置链 / opencode-go v2 解析 / 热更新加载校验。
  */
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+console.error("EVAL-ORDER-TAG: PURE");
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import assert from "node:assert/strict";

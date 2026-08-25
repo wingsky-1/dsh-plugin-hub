@@ -38,5 +38,7 @@
   "coverageAnalysis": "perTest",
   "tempDirName": ".stryker-tmp",
   "cleanTempDir": true,
+  "incremental": true,
+  "incrementalFile": "coverage/mutation/incremental-provider-usage.json",
   "_comment": "#150 接入：mutate 限定 lib/index.js 的 self-written 两段（esbuild 路径注释 // lib/* 分界）：1372-2769 contracts/registry/adapters-opencode-go/core-guards/sanitize/pipeline-v2/history/provider-config/hotreload 九段连续自写模块、2805-3696 path-resolve/client-logic/index 主体。排除头部 var __* 垫片（1-30）、cosmokit/schemastery/async-mutex/untildify 等 node_modules 内联 vendor 大段（31-1054、1163-1368、2775-2804）、shared/loopback+host-utils+settings-namespace 内联契约层副本（1062-1162，shared 由仓库级禁改规则保护且多包重复计账会使 score 横向不可比）、1055-1061 与 1369-1371 与 2770-2774 的纯 ESM import 提升段（无可变异面）。tap.nodeArgs 注入 mutation-tap-bridge.cjs（#151 全局生效）将未捕获异常转写 TAP not ok，RuntimeError 计 Killed。"
 }

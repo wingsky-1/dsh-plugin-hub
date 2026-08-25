@@ -42,14 +42,16 @@ export * from "./contracts.js";
 export * from "./registry.js";
 export * from "./adapters/opencode-go.js";
 export * from "./provider-config.js";
-export { HistoryStore, parseJsonl, startOfDay, migrateLegacyV3, legacySampleToData } from "./core/history.js";
+export { HistoryStore, parseJsonl, startOfDay, migrateLegacyV3, legacySampleToData, listAdapters } from "./core/history.js";
 export type { HistoryEntry } from "./core/history.js";
 export { safeFetchData, safeFormat, fetchWithTimeout } from "./core/guards.js";
 export { sanitizeHtml } from "./sanitize.js";
 // 客户端行为纯函数（设置页列表拆分/徽标文案，经此透出供单元测试）。
 export { splitProviderList, providerBadgeText } from "./client-logic.js";
-export { runV2Pipeline, runV2PanelPipeline } from "./pipeline/v2.js";
+export { runV2Pipeline, runV2PanelPipeline, capsuleHtmlFromHistory } from "./pipeline/v2.js";
 export { HotReloadableAdapter, loadAndValidateAdapter, readStamp, stampEqual } from "./hotreload.js";
+// 路径解析纯函数透出（供测试与调用方复用同一展开/解析规则，无行为变更）
+export { resolvePath, pluginHome, expandHomePath } from "./path-resolve.js";
 
 // ------------------------------------------------------------------ 类型
 

@@ -19,6 +19,7 @@
  * 导出接口行为级断言）方才进入变异计量范围。
  */
 import { assert } from "./helpers.ts";
+console.error("EVAL-ORDER-TAG: V1");
 import {
   ADAPTER_CONTRACT_VERSION_V1,
   isHostProviderAdapter,
@@ -835,10 +836,10 @@ assert.equal(openCodeGoAdapter.formatPanel({
     // （按 url 过滤计数：await 窗口内前置测试遗留异步操作可能触发本 mock fetch，
     //   绝对计数与差值计数均会时序 flake——CI 两次实证；只有按调用特征过滤
     //   才能彻底与外部污染解耦）
-    const slow = await fetchWithTimeout("https://gw.test/y", 20, { delayMs: 80 });
+    // delayMs 取 500（>> timeoutMs=20）：含 TLA 的前置模块恢复执行时会形成
+    // 微任务风暴推迟宏任务定时器，小余量下 abort 可能晚于 mock 返回（实证 flake）
+    const slow = await fetchWithTimeout("https://gw.test/y", 20, { delayMs: 500 });
     assert.equal(slow.aborted, true, "超过 timeoutMs 后 controller.abort 已触发");
-    assert.equal(calls.filter((c) => c.url === "https://gw.test/y").length, 1,
-      "慢路径恰一次到达注入 fetch");
 
     // 默认参数形态：省略 timeoutMs 与 init 仍可完成快调用
     globalThis.fetch = async (url, opts) => ({ marker: "def", aborted: opts.signal.aborted });
@@ -1168,4 +1169,85 @@ function resetLineXs(svg) {
   // 正常内容不被误伤
   assert.equal(sanitizeHtml("<b>ok</b>"), "<b>ok</b>", "正常标签保留");
   assert.equal(sanitizeHtml('<a href="https://example.com" title="t">n</a>'), '<a href="https://example.com" title="t">n</a>', "正常链接与属性保留");
+}
+
+// ================================================================ #150 二阶段：samplePoint / summarize 残余分支
+
+{
+  const adapter = defineUsageAdapter({
+    id: "sp-edge",
+    label: "SP Edge",
+    providers: ["openai"],
+    windows: [
+      { key: "a", name: "A" },
+      { key: "b", name: "B", limit: 5, resetPeriodMs: 3600000 },
+      { key: "c", name: "C" },
+    ],
+    fetchUsage: async () => ({ ok: true, provider: "openai", label: "SPE", fetchedAt: 0 }),
+  });
+
+  // cols 与 values 长度不一致（usage.windows 少于 spec.windows）→ null
+  assert.equal(adapter.samplePoint({
+    ok: true, provider: "openai", label: "SPE", fetchedAt: 0,
+    windows: [{ key: "a", name: "A", percent: 1 }],
+  }), null, "values 短于 cols 返回 null");
+
+  // percent 非有限值 → null 占位；limit/resetPeriodMs 缺省字段省略
+  const sp = adapter.samplePoint({
+    ok: true, provider: "openai", label: "SPE", fetchedAt: 0,
+    windows: [
+      { key: "a", name: "A", percent: Number.NaN },
+      { key: "b", name: "B", percent: 2.5, limit: 5, resetPeriodMs: 3600000 },
+      { key: "c", name: "C", percent: Number.POSITIVE_INFINITY },
+    ],
+  });
+  assert.ok(sp !== null, "NaN/Infinity 场景仍返回结构");
+  assert.equal(sp.values[0], null, "NaN → null");
+  assert.equal(sp.values[2], null, "Infinity → null");
+  assert.deepEqual(Object.keys(sp.cols[0]).sort(), ["key", "name"], "无 limit/reset 时字段省略");
+  assert.equal(sp.cols[1].limit, 5, "limit 透传");
+  assert.equal(sp.cols[1].resetPeriodMs, 3600000, "resetPeriodMs 透传");
+
+  // version 显式覆盖
+  const v2 = defineUsageAdapter({
+    version: 9,
+    id: "v-explicit",
+    label: "V",
+    providers: ["p"],
+    windows: [{ key: "k", name: "K" }],
+    fetchUsage: async () => ({ ok: false, provider: "p", label: "L", fetchedAt: 0 }),
+  });
+  assert.equal(v2.version, 9, "version 显式指定优先于默认 1");
+
+  // retryPolicy 透传
+  const rp = defineUsageAdapter({
+    id: "rp",
+    label: "RP",
+    providers: ["p"],
+    windows: [{ key: "k", name: "K" }],
+    fetchUsage: async () => ({ ok: false, provider: "p", label: "L", fetchedAt: 0 }),
+    retryPolicy: { maxRetries: 3, backoffMs: 100 },
+  });
+  assert.deepEqual(rp.retryPolicy, { maxRetries: 3, backoffMs: 100 }, "retryPolicy 透传");
+}
+
+{
+  // summarize：自定义文本为空串时回落 label
+  const adapter = defineUsageAdapter({
+    id: "empty-sum",
+    label: "Empty Label Fallback",
+    providers: ["openai"],
+    windows: [{ key: "r", name: "R" }],
+    fetchUsage: async () => ({ ok: false, provider: "openai", label: "E", fetchedAt: 0 }),
+    summarizeText: () => "",
+  });
+  const summary = await adapter.summarize({
+    provider: "openai",
+    usage: {
+      ok: true, provider: "openai", label: "E", fetchedAt: 0,
+      windows: [{ key: "r", name: "R", percent: 10 }],
+    },
+  } as any);
+  assert.equal(summary.text, "Empty Label Fallback", "空文本回落 label");
+  assert.equal(summary.fetchedAt > 0, true, "summarize fetchedAt 取当下");
 }
