@@ -84,7 +84,10 @@ export const DEFAULT_CONFIG = {
   // #198 H1：由 60000 下调至 30000——峰谷徽标倒计时跨时段边界的展示翻转延迟
   // = 宿主缓存 + 客户端轮询（60s）+ 渲染余量，缓存减半使端到端 ≤95s 可达。
   cacheDurationMs: 30000,
-  fetchTimeoutMs: 2000,
+  // #206 配套：2s→5s——commandcode 等三请求并行适配器在远端慢时 2s 频繁超时；
+  // safeFetchData 为 Promise.race+Abort 纯异步超时，不阻塞主进程；
+  // 全局 mutex 串行取数下多 provider 排队最坏 n×5s（warmup 周期 300s 内可消化）。
+  fetchTimeoutMs: 5000,
   autoReload: true,
   maxAgeDays: 30,
   maxSizeMB: 20,
@@ -230,7 +233,7 @@ export function normalizeConfig(input: unknown): NormalizedConfig {
   if (typeof cfg.historyDir === "string") base.historyDir = cfg.historyDir;
   if (Number.isFinite(cfg.warmupIntervalMs)) base.warmupIntervalMs = Math.max(60000, cfg.warmupIntervalMs as number);
   if (Number.isFinite(cfg.cacheDurationMs)) base.cacheDurationMs = Math.max(5000, cfg.cacheDurationMs as number);
-  if (Number.isFinite(cfg.fetchTimeoutMs)) base.fetchTimeoutMs = Math.min(Math.max(500, cfg.fetchTimeoutMs as number), 30000);
+  // fetchTimeoutMs 固定 5s（不开放配置）：远端慢时 2s 频繁超时（#206 配套）
   if (typeof cfg.autoReload === "boolean") base.autoReload = cfg.autoReload;
   // #184：maxAgeDays 仅接受正整数——<=0 会令 maybePrune 下界落在未来（历史被全量清理）、
   // 面板查询区间 start>end 永空；非正整数一律视为非法回落默认值，上界 365 维持既有 clamp
