@@ -16,8 +16,13 @@ name: Observe (nightly)
 
 on:
   schedule:
-    # UTC 18:43 = 北京时间 02:43，避开整点 GitHub Actions 高峰
+    # UTC 18:43 = 北京时间 02:43，避开整点 GitHub Actions 高峰（夜间兜底）
     - cron: '43 18 * * *'
+  push:
+    # #204 用户指示：基线更新不必等夜间——每次 PR 合入 main 即触发全量变异更新基线，
+    # 使基线始终跟随 main 最新状态，后续 PR 增量面仅含本次合入改动（避免一天改动
+    # 堆积导致次日所有 PR 增量慢）。concurrency 组保证串行（合入频繁时排队不重复跑）。
+    branches: [main]
   workflow_dispatch:
 
 permissions:
