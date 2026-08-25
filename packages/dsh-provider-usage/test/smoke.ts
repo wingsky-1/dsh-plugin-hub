@@ -439,6 +439,39 @@ export function formatPanel() { return "<p>p</p>"; }
     assert.equal(payload.error, "duplicate-name", "重复 name add 409");
   }
 
+  // issue #206：add 后建立的适配器文件也纳入热更新监视——改文件 → 轮询周期内热更新生效
+  {
+    const healthRoute = routes.find((r) => r.path === ROUTES.health);
+    const readHealth = async (): Promise<Array<{ key: string; message: string }>> => {
+      let p;
+      healthRoute.handler(fakeReq(), { writeHead: () => {}, end: (c) => { p = JSON.parse(c); } });
+      await new Promise((r) => setTimeout(r, 20));
+      return p?.errors ?? [];
+    };
+    // 改文件（formatCapsule 文案变化，mtime+size 均变）
+    writeFileSync(goodFile, `
+export const version = 2;
+export const name = "manage-stats";
+export const label = "管理测试";
+export const providers = ["opencode-go"];
+export async function fetchData() { return { v: 2 }; }
+export function formatCapsule() { return "<span>v2</span>"; }
+export function formatPanel() { return "<p>p2</p>"; }
+`, "utf8");
+    // 轮询等待热更新记录出现（热更新轮询 2s；用轮询等待防 flake，上限 ~5s）
+    let seen = false;
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      const errors = await readHealth();
+      if (errors.some((e) => e.message.includes("热更新成功：manage-stats"))) {
+        seen = true;
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    assert.ok(seen, "add 后修改文件应触发热更新（issue #206）");
+  }
+
   // select：切换回内置
   {
     const selectRoute = routes.find((r) => r.path === ROUTES.select);
