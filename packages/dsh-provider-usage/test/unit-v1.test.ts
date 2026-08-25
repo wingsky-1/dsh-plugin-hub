@@ -18,6 +18,9 @@
  * （timeTickStep/timeTicks/trendOf/resetTicks/downsample/smoothPath 经
  * 导出接口行为级断言）方才进入变异计量范围。
  */
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { assert } from "./helpers.ts";
 console.error("EVAL-ORDER-TAG: V1");
 import {
@@ -38,6 +41,9 @@ import {
   safeFormat,
   fetchWithTimeout,
   sanitizeHtml,
+  HistoryStore,
+  runV2Pipeline,
+  runV2PanelPipeline,
 } from "../lib/index.js";
 
 // ---------------------------------------------------------------- isHostProviderAdapter
@@ -1169,6 +1175,89 @@ function resetLineXs(svg) {
   // 正常内容不被误伤
   assert.equal(sanitizeHtml("<b>ok</b>"), "<b>ok</b>", "正常标签保留");
   assert.equal(sanitizeHtml('<a href="https://example.com" title="t">n</a>'), '<a href="https://example.com" title="t">n</a>', "正常链接与属性保留");
+}
+
+// ---------------------------------------------------------------- #105③ 实体编码变体（清理链补充）
+
+{
+  assert.equal(sanitizeHtml('<a href="jav&#x61;script:alert(1)">x</a>'), '<a href="alert(1)">x</a>', "hex 实体 javascript: 剥除");
+  assert.equal(sanitizeHtml('<a href="&#106;avascript:alert(1)">y</a>'), '<a href="alert(1)">y</a>', "十进制词首 j 实体剥除");
+  assert.ok(!sanitizeHtml("jav&#x61script:x").includes("&#x61script"), "hex 无分号变体剥除");
+  assert.equal(sanitizeHtml("&#X3c;script>x</script>t"), "xt", "&#X3c; 开标签变体随 token 移除（其间文本保留）");
+  assert.equal(sanitizeHtml("<img src=x oncli&#99;k='go()'>"), "<img src=x>", "属性名尾部实体编码剥除");
+  // 幂等硬闸：净化不动点（含删除拼接出新载体的收敛样本）
+  const idemSamples = [
+    '<a href="jav&#x61;script:alert(1)">x</a>',
+    '<img src=x o&#110;click="alert(1)">',
+    '&lt;iframe src="data:text/html,x"&gt;&lt;/iframe&gt;k',
+    '<a href="&amp;#106;avascript:alert(1)">c</a>',
+    'data:text/htexpression(ml',
+    "<b>ok</b><a href=\"/api/x?a=1&amp;b=2\">n</a>",
+  ];
+  for (const s of idemSamples) {
+    assert.equal(sanitizeHtml(sanitizeHtml(s)), sanitizeHtml(s), `幂等不动点: ${s}`);
+  }
+}
+
+// ---------------------------------------------------------------- #105③ C1 管道级端到端：净化在管道内生效
+
+{
+  // 统一判定标准精简版（qa 判据同款）：一轮实体解码后不得匹配危险载体模式
+  const pipeNamed: Record<string, string> = { lt: "<", gt: ">", amp: "&", quot: '"', apos: "'", colon: ":", semi: ";", equals: "=", sol: "/", num: "#", lpar: "(", rpar: ")" };
+  const pipeDecodeOnce = (s: string): string =>
+    s
+      .replace(/&#x([0-9a-fA-F]+);?/g, (_m: string, h: string) => String.fromCodePoint(Math.min(parseInt(h, 16), 0x10ffff)))
+      .replace(/&#(\d+);?/g, (_m: string, d: string) => String.fromCodePoint(Math.min(parseInt(d, 10), 0x10ffff)))
+      .replace(/&([a-zA-Z][a-zA-Z0-9]*);?/g, (_m: string, nm: string) => pipeNamed[nm.toLowerCase()] ?? `&${nm}`);
+  const pipeDanger =
+    /<script\b|<iframe\b|<frame\b|<object\b|<embed\b|<meta\b|<link\b|<base\b|\son\w+\s*=|javascript\s*:|data\s*:\s*text\/html|expression\s*\(/i;
+  const pipeContained = (out: string): boolean => !pipeDanger.test(pipeDecodeOnce(out));
+
+  // 恶意 formatCapsule（issue 原例 payload）→ runV2Pipeline 产出前净化兜底
+  const capR = await runV2Pipeline({
+    adapter: {
+      version: 2,
+      name: "evil-caps",
+      providers: ["pv"],
+      fetchData: async () => ({}),
+      formatCapsule: () => '<div>u <a href="jav&#x61;script:alert(1)">win</a></div>',
+      formatPanel: () => "",
+    },
+    provider: "pv",
+    config: {},
+    staticPath: "",
+    timeoutMs: 500,
+  });
+  assert.equal(capR.ok, true, "C1: 管道执行成功");
+  assert.ok(capR.capsuleHtml !== undefined && pipeContained(capR.capsuleHtml),
+    "C1: capsuleHtml 满足统一判定标准（hex 实体载体封闭）");
+  assert.ok(capR.capsuleHtml !== undefined && !capR.capsuleHtml.includes("jav&#x61"),
+    "C1: 危险实体区间已自输出移除");
+
+  // 恶意 formatPanel（事件属性部分编码 + 具名冒号协议）→ runV2PanelPipeline 净化兜底
+  const store = new HistoryStore({ root: mkdtempSync(join(tmpdir(), "dou-san-pipe-")) });
+  try {
+    await store.append("pv", "evil-panel", { time: Date.now(), data: { v: 1 } });
+    const panelR = await runV2PanelPipeline({
+      adapter: {
+        version: 2,
+        name: "evil-panel",
+        providers: ["pv"],
+        fetchData: async () => ({}),
+        formatCapsule: () => "",
+        formatPanel: () => '<p t=1 o&#110;click="al()">x <a href="data&colon;text/html,y">l</a></p>',
+      },
+      provider: "pv",
+      history: store,
+      range: { start: Date.now() - 1000, end: Date.now() + 1000 },
+    });
+    assert.ok(panelR.panelHtml !== undefined && pipeContained(panelR.panelHtml),
+      "C1: panelHtml 满足统一判定标准（属性部分编码 + data&colon 封闭）");
+    assert.ok(panelR.panelHtml !== undefined && panelR.panelHtml.includes("<p t=1") && panelR.panelHtml.includes(">x "),
+      "C1: 无害属性与文本保留（兜底不扩大化）");
+  } finally {
+    rmSync(join(tmpdir(), "dou-san-pipe-"), { recursive: true, force: true });
+  }
 }
 
 // ================================================================ #150 二阶段：samplePoint / summarize 残余分支
