@@ -29,6 +29,7 @@ import type { UsageStatsAdapter } from "./contracts.js";
 import { describeUsageStatsAdapterShape, ADAPTER_CONTRACT_VERSION } from "./contracts.js";
 import { makeAdapterRegistry } from "./registry.js";
 import { openCodeGoAdapter, OPENCODE_GO_PROVIDER, OPENCODE_GO_ADAPTER_ID } from "./adapters/opencode-go.js";
+import { deepSeekOfficialAdapter, DEEPSEEK_OFFICIAL_PROVIDER, DEEPSEEK_OFFICIAL_ADAPTER_ID } from "./adapters/deepseek-official.js";
 import { runV2Pipeline, runV2PanelPipeline, panelCacheKey, isPanelCacheStale, type V2PipelineResult, type PanelCacheEntry } from "./pipeline/v2.js";
 import { HistoryStore, migrateLegacyV3 } from "./core/history.js";
 import { resolveProviderConfig } from "./provider-config.js";
@@ -41,6 +42,7 @@ import { resolvePath, pluginHome, expandHomePath } from "./path-resolve.js";
 export * from "./contracts.js";
 export * from "./registry.js";
 export * from "./adapters/opencode-go.js";
+export * from "./adapters/deepseek-official.js";
 export * from "./provider-config.js";
 export { HistoryStore, parseJsonl, startOfDay, migrateLegacyV3, legacySampleToData, listAdapters } from "./core/history.js";
 export type { HistoryEntry } from "./core/history.js";
@@ -79,7 +81,9 @@ export const DEFAULT_CONFIG = {
   apiKey: "",
   historyDir: "",
   warmupIntervalMs: 300000,
-  cacheDurationMs: 60000,
+  // #198 H1：由 60000 下调至 30000——峰谷徽标倒计时跨时段边界的展示翻转延迟
+  // = 宿主缓存 + 客户端轮询（60s）+ 渲染余量，缓存减半使端到端 ≤95s 可达。
+  cacheDurationMs: 30000,
   fetchTimeoutMs: 2000,
   autoReload: true,
   maxAgeDays: 30,
@@ -369,8 +373,11 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     /* 迁移失败不阻断启动（下次启动重试） */
   }
 
-  // 1. 注册内置 opencode-go 适配器
+  // 1. 注册内置适配器（builtin 先注册、默认启用；user-file 清单后注册覆盖启用者）
   registry.register(openCodeGoAdapter, "builtin");
+  // #198：内置 DeepSeek 官方余额适配器（name=deepseek-official-builtin，与用户已装
+  // user-file 原型 deepseek-official 可共存，注册顺序覆盖语义见 F 组验收）
+  registry.register(deepSeekOfficialAdapter, "builtin");
 
   // 2. 加载用户适配器（两来源：config.adapter 兼容声明 + 设置页登记的清单）
   async function loadUserHostAdapterFile(file: string): Promise<unknown> {

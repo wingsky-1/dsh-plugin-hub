@@ -57,7 +57,8 @@ npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-provider-usage
                 adapter.formatCapsule/Panel() → 净化 → HTML 下发
 ```
 
-内置适配器 `opencode-go-builtin`（OpenCode Go 官方 `/v1/usage` 三窗口用量）开箱即用。
+内置适配器 `opencode-go-builtin`（OpenCode Go 官方 `/v1/usage` 三窗口用量）与
+`deepseek-official-builtin`（DeepSeek 官方余额 + 峰谷倒计时徽标，见下节）开箱即用。
 
 > **图解文档**：完整的流程图 / 时序图（启动装配、`/stats` 取数全链路、`/history` 面板、自定义适配器注入三条路径与热更新、客户端交互、密钥解析链）见 [docs/architecture.md](docs/architecture.md)。
 
@@ -73,7 +74,7 @@ npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-provider-usage
 | `apiKey` | 无 | 显式密钥（可选；缺省走凭据解析链，不进设置面板回显） |
 | `historyDir` | `<DSH_HOME>/dsh-provider-usage/` | 历史存储根目录 |
 | `warmupIntervalMs` | `300000` | 后台预热间隔（无客户端访问时保持历史连续） |
-| `cacheDurationMs` | `60000` | 缓存新鲜度（毫秒） |
+| `cacheDurationMs` | `30000` | 缓存新鲜度（毫秒，下限 5000；#198 由 60000 下调——峰谷徽标跨时段边界端到端翻转延迟 ≤95s = 宿主缓存 30s + 客户端轮询 60s + 渲染余量） |
 | `fetchTimeoutMs` | `2000` | fetchData 强制超时（500–30000ms） |
 | `autoReload` | `true` | 热更新开关（编辑适配器文件后自动加载；默认开启，可显式 `false` 关闭） |
 | `maxAgeDays` | `30` | 历史保留天数 |
@@ -82,6 +83,45 @@ npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-provider-usage
 ## 胶囊位置配置
 
 用量胶囊（会话右上角悬浮球）与面板的位置支持自定义：打开设置 → 插件 →「用量统计」→「胶囊位置」区，选择锚点（右上 / 左上 / 右下 / 左下）与偏移（水平 / 垂直 / 面板间距）后点「保存」——**立即生效且跨设备同步**（宿主落盘 `ui.json` 并经 SSE 广播，无需重启）。默认值：右上 / 0 / 48 / 10——胶囊采用**固定定位**，不随会话滚动内容滑动位移（无避让抖动，滚动时位置稳定）；水平偏移 0 使胶囊右缘贴近容器右缘（右侧对齐）；垂直偏移 48 让胶囊默认位于 MCP 管理器浮窗（同为右上角、距顶 8px）正下方，两胶囊默认互不重叠；面板间距 10px。胶囊与 MCP 浮窗互不探测、互不避让，各自位置只由本插件配置决定。
+
+## DeepSeek 官方内置适配器（deepseek-official-builtin）
+
+认领 provider `deepseek-official`，对接 DeepSeek 官方「查询余额」接口
+`GET https://api.deepseek.com/user/balance`（来源：
+[api-docs.deepseek.com/api/get-user-balance](https://api-docs.deepseek.com/api/get-user-balance)）。
+
+### 数据口径
+
+- **仅保留 CNY 币种**：官方 `balance_infos[]` 含多币种条目时只取 `currency === "CNY"` 一条，
+  其余（如 USD）全量忽略；金额自官方字符串字段严格解析（非法/缺失 → `null`，杜绝 NaN 落盘）。
+- 无 CNY 条目（仅 USD 或空数组）时产出 `balance/toppedUp/grantedBalance = null` 的正常帧
+  （不抛错），胶囊显示「DeepSeek 余额 --」占位。
+- `is_available=false` 表示账号不可用：该帧仍记录与展示余额，但**不作为每日用量的守恒端点**
+  ——相邻区间的用量推算跳过并在面板标注「服务不可用区间不计」，避免把封禁/清零误计为消耗。
+
+### 每日用量推算（余额差守恒式）
+
+官方 API 无任何用量接口，每日用量由相邻采样点的余额差推算：
+
+```
+usage = (totalPrev − totalCur) + ΔtoppedUp + Δgranted
+```
+
+充值 +X 入账（total −X、toppedUp +X）与赠款过期/退款 −G 出账（total −G、granted −G）
+两类非消耗扰动被公式自动抵消。分量缺失时**逐项独立退化**：缺 granted 只跳过该项继续做
+toppedUp 修正（反之亦然）；两者都缺退化为纯余额差（旧历史分片兼容），面板汇总行会提示
+「部分日期按净变动口径估算」。跨度过大（>27h，采样中断）的区间不计柱不计入汇总，防畸形巨柱。
+
+### 双卡面板与峰谷徽标
+
+- 卡1：CNY 余额大头 + 近 24h 波动折线（统一时间锚、趋势箭头容差 ±0.005、降采样 ≤300 点）。
+- 卡2：近 15 个自然日每日用量柱形图（闭环基线口径；消耗蓝柱向上、净增绿柱向下、异常仅标注）。
+- 胶囊常驻**峰谷倒计时徽标**（纯本地时间计算，不依赖远端数据——取数失败时同样显示）：
+  - 时段定义为 **UTC 工作日固定窗口** `01:00–04:00 / 06:00–10:00`（半开区间），
+    来源 [api-docs.deepseek.com/quick_start/pricing](https://api-docs.deepseek.com/quick_start/pricing)，
+    核实日期 **2026-08-26**；硬编码常量无配置项，周末全天低谷。
+  - 谷态显示距下次开峰倒计时（如 `⚡谷 · 距峰 02:41`），峰态显示距切谷倒计时；
+    tooltip 注明 UTC 时段定义与服务器时区对照。
 
 ## 密钥解析顺序（V1 配置链）
 
@@ -92,6 +132,12 @@ npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-provider-usage
    （opencode-go 在标准 key 未命中时再查旧名 `OPENCODE_GO_API_KEY`）
 5. opencode-go 兼容：`~/.local/share/opencode/auth.json` 的
    `opencode-go`（或 `opencode`）条目
+
+> **DeepSeek 官方适配器三级密钥链**：插件配置 `apiKey` 注入 → 凭据链推导 env
+> （provider `deepseek-official` → `DEEPSEEK_OFFICIAL_API_KEY`）→ 适配器内自查
+> `DEEPSEEK_API_KEY` 兜底（与 llm 层共用，覆盖「llm 能跑、余额接口 401」场景；
+> 该兜底属适配器实现细节，不在共享 provider-config 层特判）。三级全空时取数报
+> `no-api-key` 并降级 stale 帧（峰谷徽标仍渲染）。
 
 ## 路由（全部 loopback 围栏）
 
@@ -196,7 +242,8 @@ plugins:
 - **适配器代码 = 宿主完整 Node 权限**（网络/文件/环境变量），等同用户自己写的进程内插件；
   仅加载你信任的本地文件，插件绝不从网络拉取执行代码
 - **密钥不进浏览器端**：apiKey 仅存于宿主进程内存，经入参注入 fetchData；
-  适配器文件即使被静态服务暴露也不含密钥值
+  适配器文件即使被静态服务暴露也不含密钥值（DeepSeek 官方内置适配器同样成立：
+  三级密钥链见上文，stats/history/adapters 响应体与胶囊/面板 HTML 均无密钥子串）
 - **XSS 双层防护**：外部 API 数据流入 HTML 前必须经 `esc()` 助手转义（文档义务）；
   插件在宿主端对所有 format 输出做结构化净化兜底（script/iframe/on* 属性/javascript: 协议移除），
   且兜底净化封闭 HTML 实体编码变体——具名 / 十进制 / 十六进制、有无分号均解出后匹配，
