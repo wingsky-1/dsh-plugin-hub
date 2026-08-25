@@ -45,8 +45,8 @@ npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-provider-usage
 宿主端（Node）                                客户端（浏览器）
 ─────────────────────────────                ─────────────────────
 预热定时器(5min) ─┐
-                  ├→ getStats()               60s 轮询 /stats
-客户端轮询 ───────┘   │ Mutex 互斥锁              ↓
+                  ├→ getStats()               60s 轮询 /stats（取数前先复检
+客户端轮询 ───────┘   │ Mutex 互斥锁              会话当前 provider，#71 自愈）
                       │ 60s 缓存              胶囊框架 ← capsuleHtml
                       │ 5s 取数超时           面板框架 ← panelHtml(/history，90s 兜底缓存)
                       ↓
@@ -59,6 +59,9 @@ npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-provider-usage
 
 内置适配器 `opencode-go-builtin`（OpenCode Go 官方 `/v1/usage` 三窗口用量）与
 `deepseek-official-builtin`（DeepSeek 官方余额 + 峰谷倒计时徽标，见下节）开箱即用。
+
+> provider 跟随语义：切换会话即时刷新；会话内切模型/provider 无宿主推送信号，
+> 由每次取数前的复检兜底自愈——最长一个轮询周期内跟随（#71）。
 
 > **图解文档**：完整的流程图 / 时序图（启动装配、`/stats` 取数全链路、`/history` 面板、自定义适配器注入三条路径与热更新、客户端交互、密钥解析链）见 [docs/architecture.md](docs/architecture.md)。
 

@@ -48,8 +48,8 @@ npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-provider-usage
 Host (Node)                                    Client (browser)
 ─────────────────────────────                 ─────────────────────
 Warmup timer (5min) ─┐
-                     ├→ getStats()             60s polling /stats
-Client polling ──────┘   │ Mutex                  ↓
+                     ├→ getStats()             60s polling /stats (re-checks the
+Client polling ──────┘   │ Mutex                  session provider before each fetch, #71)
                          │ 60s cache           Capsule frame ← capsuleHtml
                          │ 5s fetch timeout     Panel frame ← panelHtml (/history, 90s fallback cache)
                          ↓
@@ -63,6 +63,10 @@ Client polling ──────┘   │ Mutex                  ↓
 The built-in adapters `opencode-go-builtin` (OpenCode Go official `/v1/usage`, three
 windows) and `deepseek-official-builtin` (DeepSeek official balance + peak/valley
 countdown badge, see below) work out of the box.
+
+> Provider-follow semantics: switching sessions refreshes immediately; in-session
+> model/provider switches have no host push signal, so every fetch re-validates the
+> provider first — follow within at most one polling cycle (#71).
 
 ## Configuration
 
