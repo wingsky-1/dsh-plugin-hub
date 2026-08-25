@@ -7,6 +7,10 @@
  * autoReload 布尔透传、maxSizeMB 上限、historyDir 字符串。
  *
  * #82 批次 3 增补：resolveProviderConfig 全链（含 opencodeKeyFromAuth 分支）。
+ *
+ * #150 二阶段增补：normalizeConfig 全字段非法类型丢弃 + clamp 双边界矩阵、
+ * parseUserAdapters 字段级异型值分支（length>0 非目标类型）、readAdapterState
+ * 全分支、resolveAddAdapterFile 路径校验矩阵、normalizeUiConfig/面板锚点纯函数矩阵。
  */
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -15,6 +19,15 @@ import { assert } from "./helpers.ts";
 import {
   normalizeConfig,
   DEFAULT_CONFIG,
+  DEFAULT_UI_CONFIG,
+  normalizeUiConfig,
+  panelAnchorForPlacement,
+  panelTopForAnchor,
+  uiConfigFile,
+  readAdapterState,
+  parseUserAdapters,
+  resolveAddAdapterFile,
+  expandHomePath,
   resolveProviderConfig,
 } from "../lib/index.js";
 
@@ -186,3 +199,214 @@ function isolateCredEnv(homeDir?: string) {
     restore();
   }
 }
+// ================================================================ #150 二阶段：normalizeConfig 全字段矩阵
+
+// 非字符串字段一律丢弃回默认（三元 false 分支）
+assert.equal(normalizeConfig({ staticPath: 42 }).staticPath, "", "staticPath 非字符串丢弃");
+assert.equal(normalizeConfig({ provider: 42 }).provider, DEFAULT_CONFIG.provider, "provider 非字符串丢弃回默认");
+assert.equal(normalizeConfig({ apiEndpoint: 42 }).apiEndpoint, "", "apiEndpoint 非字符串丢弃");
+assert.equal(normalizeConfig({ adapter: 42 }).adapter, "", "adapter 非字符串丢弃");
+
+// fetchTimeoutMs clamp 双边界：min(max(x,500),30000)
+assert.equal(normalizeConfig({ fetchTimeoutMs: 400 }).fetchTimeoutMs, 500, "fetchTimeoutMs 下限 500");
+assert.equal(normalizeConfig({ fetchTimeoutMs: 500 }).fetchTimeoutMs, 500, "fetchTimeoutMs 边界 500 透传");
+assert.equal(normalizeConfig({ fetchTimeoutMs: 29999 }).fetchTimeoutMs, 29999, "fetchTimeoutMs 区间内透传");
+assert.equal(normalizeConfig({ fetchTimeoutMs: 30000 }).fetchTimeoutMs, 30000, "fetchTimeoutMs 上边界 30000 透传");
+assert.equal(normalizeConfig({ fetchTimeoutMs: 30001 }).fetchTimeoutMs, 30000, "fetchTimeoutMs 上限 30000");
+assert.equal(normalizeConfig({ fetchTimeoutMs: "x" }).fetchTimeoutMs, DEFAULT_CONFIG.fetchTimeoutMs, "fetchTimeoutMs 非法丢弃");
+
+// maxAgeDays 上限 365（无下限）
+assert.equal(normalizeConfig({ maxAgeDays: 365 }).maxAgeDays, 365, "maxAgeDays 边界 365 透传");
+assert.equal(normalizeConfig({ maxAgeDays: 366 }).maxAgeDays, 365, "maxAgeDays 上限 365");
+assert.equal(normalizeConfig({ maxAgeDays: -5 }).maxAgeDays, -5, "maxAgeDays 负数无下限（跟随实现）");
+assert.equal(normalizeConfig({ maxAgeDays: [] }).maxAgeDays, DEFAULT_CONFIG.maxAgeDays, "maxAgeDays 数组（Number.isFinite false）丢弃");
+
+// warmupIntervalMs 下限
+assert.equal(normalizeConfig({ warmupIntervalMs: 59999 }).warmupIntervalMs, 60000, "warmupIntervalMs 下限 60000（59999 抬升）");
+assert.equal(normalizeConfig({ warmupIntervalMs: 60000 }).warmupIntervalMs, 60000, "warmupIntervalMs 边界透传");
+assert.equal(normalizeConfig({ warmupIntervalMs: [] }).warmupIntervalMs, DEFAULT_CONFIG.warmupIntervalMs, "warmupIntervalMs 数组丢弃（Number.isFinite([]) 为 false）");
+
+// cacheDurationMs 下限
+assert.equal(normalizeConfig({ cacheDurationMs: 4999 }).cacheDurationMs, 5000, "cacheDurationMs 下限 5000（4999 抬升）");
+assert.equal(normalizeConfig({ cacheDurationMs: [] }).cacheDurationMs, DEFAULT_CONFIG.cacheDurationMs, "cacheDurationMs 数组丢弃");
+
+// maxSizeMB 上限
+assert.equal(normalizeConfig({ maxSizeMB: 501 }).maxSizeMB, 500, "maxSizeMB 上限 500（501 压回）");
+assert.equal(normalizeConfig({ maxSizeMB: [] }).maxSizeMB, DEFAULT_CONFIG.maxSizeMB, "maxSizeMB 数组丢弃");
+
+// null/undefined/标量输入 → 全默认
+assert.deepEqual(normalizeConfig(null), { ...DEFAULT_CONFIG }, "null 输入全默认");
+assert.deepEqual(normalizeConfig(undefined), { ...DEFAULT_CONFIG }, "undefined 输入全默认");
+assert.deepEqual(normalizeConfig(42), { ...DEFAULT_CONFIG }, "标量输入全默认");
+
+// ================================================================ #150 二阶段：parseUserAdapters 字段级异型值分支
+
+// item 非对象跳过（length 属性不存在 → 三元 false 分支）
+assert.deepEqual(parseUserAdapters('{"adapters":[null]}'), [], "item 为 null 跳过");
+assert.deepEqual(parseUserAdapters('{"adapters":[42]}'), [], "item 为数字跳过");
+assert.deepEqual(parseUserAdapters('{"adapters":["str"]}'), [], "item 为字符串跳过");
+
+// id 异型但 length>0：原实现按非字符串丢弃，变异为直通时输出会带数组 id
+assert.deepEqual(parseUserAdapters('{"adapters":[{"id":["x","y"],"providers":["p"],"file":"/f"}]}'), [],
+  "id 为 length>0 数组拒绝");
+assert.deepEqual(parseUserAdapters('{"adapters":[{"id":{},"providers":["p"],"file":"/f"}]}'), [],
+  "id 为对象拒绝");
+
+// label 异型：回退 id（label||id 语义），不采纳异型值本身
+{
+  const out = parseUserAdapters('{"adapters":[{"id":"a","label":["L"],"providers":["p1"],"file":"/f"}]}');
+  assert.deepEqual(out, [{ id: "a", label: "a", providers: ["p1"], file: "/f" }],
+    "label 为数组时回退 id（不被异型值污染）");
+}
+
+// providers 元素异型过滤：全部被滤掉后 providers 空 → 条目整体拒绝
+assert.deepEqual(parseUserAdapters('{"adapters":[{"id":"a","providers":[["x"],[2]],"file":"/f"}]}'), [],
+  "providers 元素全为数组被滤空后条目拒绝");
+assert.deepEqual(parseUserAdapters('{"adapters":[{"id":"a","providers":[{"length":1}],"file":"/f"}]}'), [],
+  "providers 元素为类数组对象被滤空后条目拒绝");
+assert.deepEqual(parseUserAdapters('{"adapters":[{"id":"a","providers":"pstr","file":"/f"}]}'), [],
+  "providers 为非数组拒绝");
+
+// file 异型但 length>0：原实现按非字符串置空 → 条目拒绝
+assert.deepEqual(parseUserAdapters('{"adapters":[{"id":"a","providers":["p"],"file":["/f"]}]}'), [],
+  "file 为 length>0 数组拒绝");
+
+// data 顶层异型 JSON
+assert.deepEqual(parseUserAdapters("null"), [], "JSON null 返回空数组");
+assert.deepEqual(parseUserAdapters("42"), [], "JSON 数字返回空数组");
+assert.deepEqual(parseUserAdapters('"str"'), [], "JSON 字符串返回空数组");
+
+// ================================================================ #150 二阶段：readAdapterState 全分支（root 直传临时目录）
+
+{
+  const root = mkdtempSync(join(tmpdir(), "dou-state-"));
+  assert.deepEqual(await readAdapterState(root), {}, "状态文件缺失返回空对象");
+
+  writeFileSync(join(root, "adapter-state.json"), "not json", "utf8");
+  assert.deepEqual(await readAdapterState(root), {}, "坏 JSON 返回空对象");
+
+  // 合法映射 + null 显式清空 + 各非法形态逐个区分
+  writeFileSync(join(root, "adapter-state.json"), JSON.stringify({
+    p1: "a",
+    p2: null,
+    p3: "",
+    p4: 42,
+    p5: ["a"],
+    p6: {},
+    "": "empty-key",
+  }), "utf8");
+  const state = await readAdapterState(root);
+  assert.deepEqual(state, { p1: "a", p2: null },
+    "仅保留非空字符串 id 与显式 null；空 key/空串/数字/数组/对象全部剔除");
+
+  // 顶层 JSON 标量字符串 → 实现按 Record 读，Object.entries 按字符索引展开（跟随实现行为）
+  writeFileSync(join(root, "adapter-state.json"), '"ab"', "utf8");
+  const fromStr = await readAdapterState(root);
+  assert.deepEqual(fromStr, { 0: "a", 1: "b" }, "顶层字符串按字符索引展开（跟随实现行为）");
+}
+
+// ================================================================ #150 二阶段：resolveAddAdapterFile 路径校验矩阵
+
+{
+  // HOME/DSH_HOME 指向临时目录；~ 展开、绝对路径、目录拒绝都基于真实文件系统
+  const home = mkdtempSync(join(tmpdir(), "dou-addfile-"));
+  const savedDsh = process.env.DSH_HOME;
+  const savedHomeEnv = process.env.HOME;
+  process.env.DSH_HOME = home;
+  process.env.HOME = home;
+  try {
+    // 非字符串 / 空串 / NUL
+    assert.equal(resolveAddAdapterFile(42), undefined, "非字符串拒绝");
+    assert.equal(resolveAddAdapterFile(null), undefined, "null 拒绝");
+    assert.equal(resolveAddAdapterFile(""), undefined, "空串拒绝");
+    assert.equal(resolveAddAdapterFile("   "), undefined, "纯空白拒绝");
+    assert.equal(resolveAddAdapterFile("a\0b"), undefined, "含 NUL 拒绝");
+
+    // 未规整形态（resolve 后改变）
+    assert.equal(resolveAddAdapterFile(`a/../b`), undefined, "a/../b 未规整拒绝");
+    assert.equal(resolveAddAdapterFile("./x.mjs"), undefined, "./x 未规整拒绝");
+
+    // 绝对路径：文件存在才放行
+    assert.equal(resolveAddAdapterFile(join(home, "missing.mjs")), undefined, "绝对路径文件不存在拒绝");
+    const realFile = join(home, "real.mjs");
+    writeFileSync(realFile, "export default {};", "utf8");
+    assert.equal(resolveAddAdapterFile(realFile), realFile, "存在的绝对路径放行");
+
+    // 目录路径拒绝（statSync.isFile false）
+    assert.equal(resolveAddAdapterFile(home), undefined, "目录路径拒绝");
+
+    // ~ 展开路径（isAbsolute(trimmed) false → 相对分支命中 dshHome 基座）。
+    // 注意：untildify 对 homedir() 有模块级缓存（首次调用固化），~ 展开落点
+    // 可能不随本用例的 HOME 设置变化，故以 expandHomePath 的实际展开结果为准；
+    // 仅当落点位于本用例隔离目录内时才创建探针文件，避免污染真实 HOME。
+    const tildeName = "tilde-probe.mjs";
+    const expandedTarget = expandHomePath(`~/${tildeName}`);
+    if (expandedTarget.startsWith(home)) {
+      writeFileSync(expandedTarget, "export default {};", "utf8");
+      assert.equal(resolveAddAdapterFile(`~/${tildeName}`), expandedTarget,
+        "~ 路径展开并命中 HOME 内文件");
+      assert.equal(resolveAddAdapterFile("~/missing.mjs"), undefined, "~ 路径文件不存在拒绝");
+    } else {
+      assert.equal(resolveAddAdapterFile(`~/${tildeName}`), undefined,
+        "~ 展开落点（外部 home 缓存）无文件时拒绝");
+    }
+
+    // ~user 形态不展开（untildify 仅处理裸 ~ 前缀），解析失败拒绝。
+    // 该断言与缓存无关：无论落点在哪，"~other/x.mjs" 不展开且不存在 → 拒绝。
+    assert.equal(resolveAddAdapterFile("~other/x.mjs"), undefined, "~user 形态不展开拒绝");
+  } finally {
+    process.env.DSH_HOME = savedDsh;
+    if (savedHomeEnv === undefined) delete process.env.HOME;
+    else process.env.HOME = savedHomeEnv;
+  }
+}
+
+// ================================================================ #150 二阶段：UI 配置与面板锚点纯函数矩阵
+
+// normalizeUiConfig：非法容器回退默认
+assert.deepEqual(normalizeUiConfig(null), { ...DEFAULT_UI_CONFIG }, "null 配置回退默认");
+assert.deepEqual(normalizeUiConfig(undefined), { ...DEFAULT_UI_CONFIG }, "undefined 配置回退默认");
+assert.deepEqual(normalizeUiConfig("str"), { ...DEFAULT_UI_CONFIG }, "标量配置回退默认");
+
+// placement 四合法值透传 + 非法回退
+for (const p of ["top-right", "top-left", "bottom-right", "bottom-left"]) {
+  assert.equal(normalizeUiConfig({ placement: p }).placement, p, `placement ${p} 透传`);
+}
+assert.equal(normalizeUiConfig({ placement: "center" }).placement, DEFAULT_UI_CONFIG.placement, "placement 非法枚举回退");
+assert.equal(normalizeUiConfig({ placement: 42 }).placement, DEFAULT_UI_CONFIG.placement, "placement 数字回退");
+assert.equal(normalizeUiConfig({ placement: null }).placement, DEFAULT_UI_CONFIG.placement, "placement null 回退");
+
+// offset clamp 矩阵：负数压 0、超上限压 2000、小数四舍五入、数字字符串经 Number() 接受
+assert.equal(normalizeUiConfig({ offsetX: -5 }).offsetX, 0, "offsetX 负数压 0");
+assert.equal(normalizeUiConfig({ offsetX: 2500 }).offsetX, 2000, "offsetX 超 2000 压回");
+assert.equal(normalizeUiConfig({ offsetX: 3.7 }).offsetX, 4, "offsetX 小数四舍五入");
+assert.equal(normalizeUiConfig({ offsetX: 0 }).offsetX, 0, "offsetX 边界 0 透传");
+assert.equal(normalizeUiConfig({ offsetX: 2000 }).offsetX, 2000, "offsetX 边界 2000 透传");
+assert.equal(normalizeUiConfig({ offsetY: "12" }).offsetY, 12, "offsetY 数字字符串经 Number() 接受");
+assert.equal(normalizeUiConfig({ offsetY: "abc" }).offsetY, DEFAULT_UI_CONFIG.offsetY, "offsetY 非数字字符串回退默认");
+assert.equal(normalizeUiConfig({ panelOffsetY: Number.POSITIVE_INFINITY }).panelOffsetY, DEFAULT_UI_CONFIG.panelOffsetY,
+  "panelOffsetY Infinity 回退默认");
+assert.equal(normalizeUiConfig({ panelOffsetY: 7.2 }).panelOffsetY, 7, "panelOffsetY 小数四舍五入");
+
+// 完整合法配置原样归一
+assert.deepEqual(
+  normalizeUiConfig({ placement: "bottom-left", offsetX: 10, offsetY: 20, panelOffsetY: 30 }),
+  { placement: "bottom-left", offsetX: 10, offsetY: 20, panelOffsetY: 30 },
+  "完整合法配置透传",
+);
+
+// panelAnchorForPlacement 全分支
+assert.equal(panelAnchorForPlacement("bottom-right"), "bottom", "bottom-right 向上弹出");
+assert.equal(panelAnchorForPlacement("bottom-left"), "bottom", "bottom-left 向上弹出");
+assert.equal(panelAnchorForPlacement("top-right"), "top", "top-right 向下弹出");
+assert.equal(panelAnchorForPlacement("top-left"), "top", "top-left 向下弹出");
+assert.equal(panelAnchorForPlacement(undefined), "top", "缺省向下弹出");
+
+// panelTopForAnchor：双锚点 + 底部溢出钳到 6
+assert.equal(panelTopForAnchor("top", 100, 120, 80, 8), 128, "顶部锚点 = pillBottom+gap");
+assert.equal(panelTopForAnchor("bottom", 200, 220, 80, 8), 112, "底部锚点 = pillTop-height-gap");
+assert.equal(panelTopForAnchor("bottom", 50, 60, 80, 8), 6, "底部锚点溢出钳到 6");
+assert.equal(panelTopForAnchor("top", 0, 0, 0, 4), 6, "顶部锚点过小钳到 6");
+
+// uiConfigFile 拼装规则
+assert.equal(uiConfigFile("/root"), join("/root", "ui.json"), "ui.json 拼装");
