@@ -181,6 +181,23 @@ const main = async () => {
     assert.ok(clientSrc.includes("dsh-mcp-manager"), "卡片 key/id 引用宿主命名空间 dsh-mcp-manager");
   });
 
+  check("设置卡片样式对齐官方风格（#167：12px 圆角 / bg-base 底 / 13.5px 名称字 / 12px 描述字）", () => {
+    const css = readFileSync(new URL("../src/client/style.css", import.meta.url), "utf8");
+    assert.match(css, /border-radius:12px/, "卡片圆角对齐官方 12px");
+    assert.match(css, /background:var\(--dsw-alias-bg-base,#ffffff\)/, "卡片底色对齐官方 bg-base");
+    assert.match(css, /\.dm-set-name\{display:block;font-size:13\.5px/, "名称字号 13.5px");
+    assert.match(css, /\.dm-set-description\{display:block;margin-top:2px;font-size:12px/, "描述字号 12px");
+    assert.match(css, /--dsw-alias-label-tertiary,#8a919c/, "描述用 tertiary 层级（与官方同款）");
+  });
+
+  check("设置卡片展开箭头为官方 SVG chevron（#167：非文本 ▾ 字符）", () => {
+    const clientSrc = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+    assert.ok(clientSrc.includes('dm-set-chevron'), "chevron class 在客户端产物中");
+    assert.ok(!/dm-set-chevron[^"]*"[^>]*>▾/.test(clientSrc), "不再使用文本 ▾ 字符作为箭头");
+    assert.ok(clientSrc.includes('M11.8486 5.5L11.4238'), "使用官方 chevron-down SVG path");
+    assert.match(clientSrc, /width:\s*14,\s*height:\s*14/, "SVG 尺寸 14x14（官方同款）");
+  });
+
   console.log("Config schema（浮窗 UI 配置迁移到插件自身 Config.ui）");
   check("Config 导出且含 ui 子对象（默认值与合法值域）", () => {
     assert.ok(typeof Config === "function", "Config 是 schemastery schema（可调用）");
