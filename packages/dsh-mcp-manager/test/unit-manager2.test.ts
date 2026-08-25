@@ -302,9 +302,12 @@ function rmStatSafe(p) {
       count += 1;
     });
     manager.emitStatus();
+    // emitStatus 是 coalesce 异步（setTimeout 0），等待宏任务落定。
+    await new Promise((resolve) => setTimeout(resolve, 5));
     assert.equal(count, 1);
     off();
     manager.emitStatus();
+    await new Promise((resolve) => setTimeout(resolve, 5));
     assert.equal(count, 1, "注销后不再回调");
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -528,12 +531,16 @@ function rmStatSafe(p) {
     const { utimesSync } = await import("node:fs");
     utimesSync(join(dir, "global.json"), future, future);
     await manager.refreshFromDisk();
+    // emitStatus 是 coalesce 异步（setTimeout 0），等待宏任务落定。
+    await new Promise((resolve) => setTimeout(resolve, 5));
     assert.ok(broadcasts >= 1, "配置变化广播一次");
     assert.ok(store.data.servers.some((s) => s.name === "fresh"), "重读生效");
 
     // 无变化时不广播。
+    await new Promise((resolve) => setTimeout(resolve, 5));
     const before = broadcasts;
     await manager.refreshFromDisk();
+    await new Promise((resolve) => setTimeout(resolve, 5));
     assert.equal(broadcasts, before, "无变化不广播");
   } finally {
     rmSync(dir, { recursive: true, force: true });
