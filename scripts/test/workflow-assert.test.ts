@@ -46,7 +46,7 @@ test('ci.yml: repo-gate 保持分支保护 required check 名', () => {
     'required check 名必须与旧单作业名一致（维护者分支保护无缝切换）')
 })
 
-test('ci.yml: repo-gate if always() 且首步 fail-closed 断言经判定脚本执行', () => {
+test('ci.yml: repo-gate if always() 且 fail-closed 断言经判定脚本执行', () => {
   const gate = CI.slice(CI.indexOf('\n  repo-gate:'))
   assert.ok(/if: always\(\)/.test(gate), 'repo-gate 必须 always() 运行（上游失败时仍执行判红）')
   assert.ok(/Fail-closed gate assertion/.test(gate), 'fail-closed 断言步骤在位')
@@ -56,6 +56,13 @@ test('ci.yml: repo-gate if always() 且首步 fail-closed 断言经判定脚本�
   for (const env of ['GATE_EVENT', 'GATE_CHANGES', 'GATE_BUILD_TEST', 'GATE_MUTATION', 'GATE_MUTATION_PKGS']) {
     assert.ok(new RegExp(`${env}: \\$\\{\\{`).test(gate), `判定脚本 env ${env} 注入缺失`)
   }
+  // 时序约束（run #32800733630 教训）：脚本版断言依赖工作区文件，必须排在
+  // Checkout 之后；旧内联 bash 无文件依赖曾掩盖该约束
+  const checkoutIdx = gate.indexOf('- name: Checkout')
+  const assertIdx = gate.indexOf('Fail-closed gate assertion')
+  assert.ok(checkoutIdx > 0, 'repo-gate 存在 Checkout 步骤')
+  assert.ok(assertIdx > checkoutIdx,
+    'fail-closed 断言步骤必须排在 Checkout 之后（脚本需要工作区存在 scripts/gate/）')
 })
 
 test('ci.yml: filter 失败 fallback 全量切片（fail-closed 双闸）', () => {
@@ -271,6 +278,14 @@ test('#187: repo-gate-assert 判定表全组合锁定（事件 × 切片清单 �
       assert.match(v.reason, /收敛不变量/, `${ev} 下 ${r} 判词须点名收敛不变量`)
     }
   }
+  // push fail-closed 真实形态（GATE_MUTATION_PKGS 的 push 取值）：changes 无 if
+  // 照常运行，before 基线不可用令 paths-filter 全量 fallback → 清单为非空全集；
+  // 判定表非 PR 分支不读清单内容，非空全集 + 整体 skipped 同样放行
+  assert.equal(run({
+    event: 'push',
+    mutation: 'skipped',
+    mutationPkgsJson: JSON.stringify(ALL_PACKAGES),
+  }).code, 0, 'push fail-closed 全量清单（七包非空数组）+ 整体 skipped 放行')
 
   // 数据契约破坏：切片清单非合法 JSON 数组按环境错误处理（exit 2）
   for (const bad of ['not-json', '{"a":1}', '"dsh-notifier"']) {

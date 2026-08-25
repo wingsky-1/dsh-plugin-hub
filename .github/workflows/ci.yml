@@ -279,9 +279,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0   # 阈值单调性校验需读 origin/main 的 config（F3）
+
       - name: Fail-closed gate assertion（F2：任何上游非 success 即红）
         # #187：判定逻辑收敛到 scripts/gate/repo-gate-assert.mjs（事件 × 切片清单
-        # × job 结果三维判定表，可被单元测试全组合锁死），env 注入避免内联 bash 漂移
+        # × job 结果三维判定表，可被单元测试全组合锁死），env 注入避免内联 bash 漂移。
+        # 必须排在 Checkout 之后（run #32800733630 教训：脚本版需要工作区文件，
+        # 旧内联 bash 无文件依赖掩盖了这一时序约束）；仅依赖 Node 内置模块，
+        # 无需等 pnpm/setup-node，紧随 checkout 尽早判红
         env:
           GATE_EVENT: ${{ github.event_name }}
           GATE_CHANGES: ${{ needs.changes.result }}
@@ -289,11 +297,6 @@ jobs:
           GATE_MUTATION: ${{ needs.mutation-gate.result }}
           GATE_MUTATION_PKGS: ${{ needs.changes.outputs.mutationPackages }}
         run: node scripts/gate/repo-gate-assert.mjs
-
-      - name: Checkout
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          fetch-depth: 0   # 阈值单调性校验需读 origin/main 的 config（F3）
 
       - name: Setup pnpm
         uses: pnpm/action-setup@a8198c4bff370c8506180b035930dea56dbd5288 # v5
