@@ -48,7 +48,7 @@ npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-provider-usage
                   ├→ getStats()               60s 轮询 /stats
 客户端轮询 ───────┘   │ Mutex 互斥锁              ↓
                       │ 60s 缓存              胶囊框架 ← capsuleHtml
-                      │ 2s 取数超时           面板框架 ← panelHtml(/history，90s 兜底缓存)
+                      │ 5s 取数超时           面板框架 ← panelHtml(/history，90s 兜底缓存)
                       ↓
                 adapter.fetchData(ctx)   ← 用户 mjs（apiEndpoint/staticPath/apiKey 注入）
                       ↓
@@ -75,7 +75,7 @@ npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-provider-usage
 | `historyDir` | `<DSH_HOME>/dsh-provider-usage/` | 历史存储根目录 |
 | `warmupIntervalMs` | `300000` | 后台预热间隔（无客户端访问时保持历史连续） |
 | `cacheDurationMs` | `30000` | 缓存新鲜度（毫秒，下限 5000；#198 由 60000 下调——峰谷徽标跨时段边界端到端翻转延迟 ≤95s = 宿主缓存 30s + 客户端轮询 60s + 渲染余量） |
-| `fetchTimeoutMs` | `2000` | fetchData 强制超时（500–30000ms） |
+| `fetchTimeoutMs` | `5000` | fetchData 强制超时（**固定值，不可配置**；#208 起 2s→5s，用户配置不生效） |
 | `autoReload` | `true` | 热更新开关（编辑适配器文件后自动加载；默认开启，可显式 `false` 关闭） |
 | `maxAgeDays` | `30` | 历史保留天数 |
 | `maxSizeMB` | `20` | 历史大小上限（MB，超限从最旧日文件删） |
@@ -252,7 +252,7 @@ plugins:
   解码副本仅用于定位、绝不回写输出，合法转义文本零损伤
 - **热更新安全**：默认关闭；开启后以 mtime+size 轮询检测变化，新版校验通过才原子切换，
   失败保留旧版并登记错误
-- **超时纪律**：fetchData 强制 2s 超时 + AbortSignal 传递；锁忙时不排队、直接降级返回缓存——
+- **超时纪律**：fetchData 强制 5s 超时（固定值，不可配置）+ AbortSignal 传递；锁忙时不排队、直接降级返回缓存——
   任何情况下不阻塞页面其他请求
 - **fail-fast 加载**：适配器缺导出/类型错/name 不合白名单 → 拒绝加载并登记可排障错误
 - **历史数据**：按天分片 JSONL 落盘（`0600` 权限），超龄/超量自动清理；

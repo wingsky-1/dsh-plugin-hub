@@ -50,7 +50,7 @@ export interface FetchContext {
   model?: string;
   /** 当前选中会话 id（可选）。 */
   sessionId?: string;
-  /** 超时配置（默认 2000ms）。 */
+  /** 超时配置（固定 5000ms，不可配置，由宿主端注入）。 */
   timeoutMs: number;
   /** 超时/卸载取消信号。 */
   signal?: AbortSignal;

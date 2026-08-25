@@ -66,7 +66,7 @@ flowchart LR
 flowchart TD
     S(["dsh web 启动<br/>cordis.patch.yml 挂载插件"]) --> A{"enabled === false ?"}
     A -->|是| Z0["不注册任何路由，直接返回"]
-    A -->|否| B["normalizeConfig 归一化配置<br/>+ makeAdapterRegistry(路径脱敏)<br/>(钳制 warmup≥60s / cache≥5s / timeout 0.5~30s)"]
+    A -->|否| B["normalizeConfig 归一化配置<br/>+ makeAdapterRegistry(路径脱敏)<br/>(钳制 warmup≥60s / cache≥5s / timeout 固定 5s 不可配置)"]
     B --> C["HistoryStore 就绪<br/>+ migrateLegacyV3 旧桶迁移(幂等)"]
     C --> D["register 内置 opencode-go<br/>(source=builtin，默认启用)"]
     D --> E{"用户适配器来源"}
@@ -130,7 +130,7 @@ sequenceDiagram
                 AD->>API: fetch(apiEndpoint + staticPath)
                 API-->>AD: JSON 数据
                 AD-->>P: 返回对象（最小数据集）
-                Note over P,G: 失败（抛错 / 超 2s 强制超时 / 不可序列化）:<br/>ok=false, reason=fetch-failed, status=stale<br/>（绝不外抛异常；此形态不 format、不落盘）
+                Note over P,G: 失败（抛错 / 超 5s 强制超时 / 不可序列化）:<br/>ok=false, reason=fetch-failed, status=stale<br/>（绝不外抛异常；此形态不 format、不落盘）
                 P->>F: formatCapsule({time,data,status:fresh,esc})
                 F-->>P: HTML 字符串
                 Note over P: sanitizeHtml 净化兜底<br/>(script/iframe/on*/javascript:)
@@ -323,7 +323,7 @@ flowchart TD
 
 - **renderGeneration 代 token**：provider 切换/卸载时自增，迟到的旧请求响应直接丢弃；
 - **adapterVersion 重置机制（预留）**：客户端在响应 `adapterVersion` 变化时会丢弃旧 `lastHistory`，防止「新数据 × 旧模板」混搭；当前服务端 `/stats` 恒返回 `adapterVersion: 0`，该路径暂不触发（为换版语义预留）；
-- **所有异常只 warn**：任何请求失败都不会让 GUI 启动失败或挂起（客户端请求统一 2s 超时）。
+- **所有异常只 warn**：任何请求失败都不会让 GUI 启动失败或挂起（客户端请求不设硬超时，取数超时由宿主端统一执行——固定 5s）。
 
 ---
 
@@ -355,8 +355,8 @@ flowchart TD
 | 机制 | 实现 | 位置 |
 | --- | --- | --- |
 | 路由围栏 | 所有路由 loopback 才放行（非回环 403）、方法白名单（405） | 每个 route handler 入口 |
-| 取数超时 | `safeFetchData`: Promise.race + AbortController，强制 timeoutMs（默认 2s）；结果必须过 JSON 序列化校验 | `core/guards.ts` |
-| 渲染超时 | `safeFormat`: 异步 format 2s 超时 + 返回类型校验（同步死循环为文档化风险） | `core/guards.ts` |
+| 取数超时 | `safeFetchData`: Promise.race + AbortController，强制 timeoutMs（固定 5000ms，不可配置）；结果必须过 JSON 序列化校验 | `core/guards.ts` |
+| 渲染超时 | `safeFormat`: 异步 format 超时（与取数同一 timeoutMs 注入，当前固定 5s） + 返回类型校验（同步死循环为文档化风险） | `core/guards.ts` |
 | XSS 兜底 | `sanitizeHtml` 白名单式正则净化：script/iframe/frame/object/embed/meta/link/base 标签、on* 事件、`javascript:`/`data:text/html` 协议、CSS `expression(` | `sanitize.ts` |
 | 密钥隔离 | apiKey 仅宿主内存，不入设置面板 schema、不下发浏览器 | `provider-config.ts` / `index.ts` |
 | 路径安全 | add/inspect 拒绝 `\0`、未规整相对路径；相对路径限 DSH_HOME / 插件 home 内；历史目录名 `safeSegment` 防穿越 | `index.ts` / `contracts.ts` |
