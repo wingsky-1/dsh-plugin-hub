@@ -157,19 +157,15 @@ jobs:
         run: |
           set -e
           node scripts/gate/observe-check.mjs --body-file observe-body.md --marker-file observe-marker.txt
-          echo "body=observe-body.md" >> "$GITHUB_OUTPUT"
-          # 回落标记可能为多行文本，用 heredoc 定界符写入（裸 key=value 会截断/污染 outputs）
-          {
-            echo "marker<<MARKER_EOF"
-            cat observe-marker.txt
-            echo "MARKER_EOF"
-          } >> "$GITHUB_OUTPUT"
+          # 报告与回落标记均以文件传递（#204：$GITHUB_OUTPUT 多行值在中文+换行内容下
+          # 触发 "Matching delimiter not found" 解析失败；GitHub 官方文档明示值不可控时
+          # 应写文件而非用 delimiter 格式）。下游步骤直接读 observe-body.md /
+          # observe-marker.txt（[ -s file ] 判断非空）。
 
       - name: Create/update observe issue（幂等：同日重跑不重复建；回落即追评）
         if: always() && steps.report.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
-          MARKER: ${{ steps.report.outputs.marker }}
         run: |
           set -e
           TITLE="chore(observe): 夜间质量报告 $(date -u +%Y-%m-%d)"
@@ -180,7 +176,7 @@ jobs:
             gh issue create --title "$TITLE" --body-file observe-body.md
           fi
           # F6 回落闭环：标记文件非空 = 存在指标回落 → 在当日 issue 上追加警示评论
-          if [ -n "$MARKER" ]; then
+          if [ -s observe-marker.txt ]; then
             NUM=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number')
             gh issue comment "$NUM" --body-file observe-marker.txt || true
           fi
