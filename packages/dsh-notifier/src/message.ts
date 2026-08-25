@@ -255,24 +255,59 @@ export function lastTurnEndOf(agent: Agent | undefined): { turn: number; kind: T
 }
 
 /**
- * agent 是否为子代理：以 session.header.origin === 'subagent' 为唯一判据。
- *
- * 选此信号而非 delegationDepth / parentSession 的原因（均经 DSH 源码核验）：
- * - origin 由 SessionHeader 校验强制唯一合法值为 'subagent'
- *   （packages/core/session/src/index.ts:125：origin 非 undefined 就必须是
- *   'subagent'），主会话/fork 派生会话恒为 undefined → 零误判面。
- * - DSH 自身在无父 id 场景（packages/subagent/subagent/src/list-children.ts:324、
- *   :235）也只认 origin === 'subagent' 识别子代理，口径一致。
- * - parentSession 不能作判据：Session.fork()（session/src/index.ts:1091）与
- *   apiproxy 的 lineage 场景会写 parentSession 但不带 origin → 若用 parentSession
- *   会把 fork/派生主流程会话误判为子代理，其「任务完成」被默认
- *   notifySubagentDone=false 静默（当前 bug 的镜像回归）。
- * - delegationDepth 在某些路径（resume 信任持久化 header、运行时 deepen）下并非
- *   可靠的「是否子代理」标记，仅作兜底。
- * 综上：单用 origin 最权威、最稳；notifier 是单 agent 独立判定，不要求父 id 匹配。
+ * 运行时归属查询面（issue #49）：对齐宿主 ctx.agents（AgentRegistry）判定所需
+ * 的最小结构子集——get 查活体父 agent 存在性、isOwnedBy 断言「该子 agent 确由
+ * 该父 agent 的作用域创建」。仅 import type 官方 Agent，不引入运行时依赖。
  */
-export function isSubagentOf(agent: Agent | undefined): boolean {
-  return agent?.session?.header?.origin === "subagent";
+export interface SubagentOwnership {
+  get(id: string): Agent | undefined;
+  isOwnedBy(id: string, owner: Agent): boolean;
+}
+
+/**
+ * agent 是否为子代理：双信号判定（origin 命中即子代理；未命中才查运行时归属；
+ * 两信号皆否一律走主任务分支——恰为两信号，无第三信号）。
+ *
+ * 三类会话 header 形态差异（DSH SessionHeader，均经官方类型层核验）：
+ * - spawn 型子代理：origin === 'subagent'（SessionHeader 校验强制唯一合法值，
+ *   packages/core/session/src/index.ts:125：origin 非 undefined 就必须是
+ *   'subagent'），通常带 parentSession + delegationDepth=父+1。信号一即命中。
+ * - fork 型委派子代理：parentSession + seedLength > 0、**无 origin**、
+ *   delegationDepth = 0（Session.fork() session/src/index.ts:1091 与 apiproxy
+ *   lineage 场景写 parentSession 但不带 origin）。信号一不命中，须查信号二。
+ * - headless CLI 会话：header 仅 { cwd }（无 origin 无 parentSession），两信号
+ *   皆否 → 主任务分支；其分类保持现状不在 notifier 变更面内。
+ *
+ * 为何需要信号二（运行时归属）：fork 型委派与用户 fork 主线在持久化 header 上
+ * **不可区分**（两者都只落 parentSession + seedLength、无 origin）——单看 header
+ * 要么漏报 fork 委派（现状 bug：委派 worker 完成被误报主任务 kind=done），要么
+ * 把用户 fork 主线误静默（#7 的镜像回归）。唯一可靠区分点是**运行时归属**：
+ * ctx.agents.get(parentSession) 非 undefined 且 isOwnedBy(该 agent id, 父 agent)
+ * === true 时，该 fork 会话确由父 agent 作用域创建（委派 worker）；归属不成立
+ * （父 id 不在 live registry / isOwnedBy false / agents 服务不可用）则视为用户
+ * fork 主线，保守走主任务分支——宁可多报一条 done，不静默用户自己的任务。
+ *
+ * 已知保守边界（冷 resume）：实例重启后脱离父作用域续跑的 fork worker 不在
+ * live registry，归属不成立 → 退报 done。与宿主 apiproxy 冷路径 fence 行为一致
+ * （attached/inspect 检查点 agent 参数为 void 0 时仅 origin 生效），属已确认的
+ * 接受边界（issue #49 2026-08-22 评论源码级确认），不做持久化推断补齐。
+ *
+ * @param agent Agent 对象（事件 payload.agent）。
+ * @param ownership 运行时归属查询面（ctx.agents）。缺省（undefined，如测试
+ *   fake ctx 未装配 agents 服务）时跳过信号二：仅 origin 判定，行为与本修复
+ *   前一致。
+ */
+export function isSubagentOf(agent: Agent | undefined, ownership?: SubagentOwnership): boolean {
+  // 信号一：spawn 型（origin 由 header 校验强制唯一合法值，零误判面）
+  if (agent?.session?.header?.origin === "subagent") return true;
+  // 信号二：fork 型委派——仅 parentSession 不能作判据（用户 fork 主线同形态），
+  // 必须运行时归属确凿成立才算子代理；任一环节不成立都保守走主任务分支。
+  const parentId = agent?.session?.header?.parentSession;
+  const selfId = agent?.id;
+  if (parentId === undefined || ownership === undefined || selfId === undefined) return false;
+  const parent = ownership.get(String(parentId));
+  if (parent === undefined) return false;
+  return ownership.isOwnedBy(String(selfId), parent) === true;
 }
 
 /**

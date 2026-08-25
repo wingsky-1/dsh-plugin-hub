@@ -451,6 +451,38 @@ assert.equal(sanitizeHtml('<a href="JaVaScRiPt:x">c</a>'), '<a href="x">c</a>', 
 assert.equal(sanitizeHtml('<a href="data:text/html;base64,x">c</a>'), '<a href=";base64,x">c</a>', "data:text/html 剥除");
 assert.equal(sanitizeHtml('<div style="width: expression(alert(1))">x</div>'), '<div style="width: alert(1))">x</div>', "expression( 剥除");
 
+// 实体编码变体封闭（#105③）——解码副本仅用于定位，输出恒为原文子序列
+assert.equal(
+  sanitizeHtml('<a href="jav&#x61;script:alert(1)">c</a>'),
+  '<a href="alert(1)">c</a>',
+  "hex 实体 javascript: 剥除",
+);
+assert.equal(
+  sanitizeHtml('<a href="javascript&colon;x">c</a>'),
+  '<a href="x">c</a>',
+  "具名冒号实体协议剥除（data&colon; 同路径，见 smoke-pure A7）",
+);
+assert.equal(
+  sanitizeHtml('<img src=x o&#110;click="evil()">'),
+  "<img src=x>",
+  "事件属性名部分实体编码剥除（保守封堵）",
+);
+assert.equal(
+  sanitizeHtml('<div style="width:expression&#40;alert(1))">x</div>'),
+  '<div style="width:alert(1))">x</div>',
+  "expression 数字实体变体剥除",
+);
+assert.equal(
+  sanitizeHtml('<a href="&amp;#106;avascript:x">c</a>'),
+  '<a href="&amp;#106;avascript:x">c</a>',
+  "双重编码安全文本零损伤（不得误解码升级为新载体）",
+);
+assert.equal(
+  sanitizeHtml("&lt;b&gt;text&lt;/b&gt;"),
+  "&lt;b&gt;text&lt;/b&gt;",
+  "无害实体文本原样（解码副本绝不回写为输出）",
+);
+
 // ================================================================ #150 二阶段：guards 边界
 
 // safeFetchData：序列化校验（数组/标量/null 拒绝）

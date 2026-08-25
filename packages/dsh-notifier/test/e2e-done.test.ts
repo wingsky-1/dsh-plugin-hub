@@ -4,13 +4,15 @@
  *
  * 覆盖：agent/status per-agent 状态机（多会话互不误报、连续 idle 不重复、
  * disposed 清理）；完成风暴聚合（首条即时 + 窗口补发聚合条）；agent/error
- * 通知与滚动窗口合并（含窗口过期计数、0=关闭）；子代理完成四场景
- * （fork 派生走 done / 默认关 / subagent-done 独立类型 / S2 开关组合）。
+ * 通知与滚动窗口合并（含窗口过期计数、0=关闭）；子代理完成场景（issue #49：
+ * fork 型委派按运行时归属拆分——归属成立默认静默/开关联动 subagent-done、
+ * 归属不成立保护用户 fork 主线走 done；spawn 型 origin 用例与 S2 开关组合）。
  */
 import { join } from "node:path";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { assert, makeNotifier, agentWithTitle, waitMergeWindow } from "./helpers.ts";
+import { assert, makeNotifier, agentWithTitle, fakeAgents, waitMergeWindow, fakeReq, makeRes } from "./helpers.ts";
+import { ROUTES } from "../lib/index.js";
 
 /** 带 info 收集的 logger 覆盖。 */
 function loggingOverride(infos) {
@@ -126,23 +128,105 @@ try {
   {
     const subCfg = join(work, "subagent.json");
 
-    // 判定依据回归（issue #7）：单用 header.origin === 'subagent' 识别子代理。
-    // 反例 1：只带 parentSession（无 origin）的 fork/派生会话必须走 done（不被静默）。
+    // ── issue #49：fork 型委派子代理完成不再误报主任务 kind=done ──
+    // fork 型委派（parentSession + seedLength、无 origin、depth=0）与用户 fork
+    // 主线在持久化 header 上不可区分，判定补运行时归属（ctx.agents.get /
+    // isOwnedBy）。原反例 1「仅 parentSession 无 origin 必须 walk done」与新
+    // 验收冲突，已按归属成立/不成立拆分改写（旧语义不保留）：
+
+    // A1：归属成立（父 live 且 isOwnedBy true）+ notifySubagentDone 默认关 →
+    //     该轮完全静默，通知历史无新增任何记录（尤其无 done）。
+    {
+      const agents = fakeAgents(["main-parent", "fork-worker"], [["fork-worker", "main-parent"]]);
+      const infos = [];
+      const { listeners, routes } = await makeNotifier(
+        work,
+        { configFile: join(work, "sub-fork-owned.json"), historyFile: join(work, "history-a1.jsonl") },
+        { agents, ...loggingOverride(infos) }
+      );
+      const status = listeners.get("agent/status")[0];
+      const forkAgent = () => agentWithTitle("fork-worker", "fork 委派子任务", { parentSession: "main-parent", depth: 0, turnEnd: 1 });
+      status({ agent: forkAgent(), status: "running" });
+      status({ agent: forkAgent(), status: "idle" });
+      assert.equal(infos.length, 0, "A1：fork 型委派归属成立且默认关时完全静默");
+      // 通知历史复核（AC 验证入口）：静默路径不触发任何 appendHistory，读全量应为空
+      const historyRoute = routes.find((r) => r.path === ROUTES.history);
+      const { rec, res } = makeRes();
+      await historyRoute.handler(fakeReq({}), res);
+      const records = JSON.parse(rec.text).records || [];
+      assert.equal(records.length, 0, "A1：通知历史无新增 done 记录");
+    }
+
+    // A2：同一场景开启 notifySubagentDone=true → 恰一条 subagent-done（文案含
+    //     任务标题与耗时），且不得同时出现 kind=done。
+    {
+      const onCfg = join(work, "sub-fork-on.json");
+      writeFileSync(onCfg, JSON.stringify({ notifySubagentDone: true }));
+      const agents = fakeAgents(["main-parent2", "fork-worker2"], [["fork-worker2", "main-parent2"]]);
+      const infos = [];
+      const { listeners } = await makeNotifier(work, { configFile: onCfg }, { agents, ...loggingOverride(infos) });
+      const status = listeners.get("agent/status")[0];
+      const forkAgent = () => agentWithTitle("fork-worker2", "fork 委派子任务B", { parentSession: "main-parent2", depth: 0, turnEnd: 1 });
+      status({ agent: forkAgent(), status: "running" });
+      status({ agent: forkAgent(), status: "idle" });
+      assert.equal(infos.length, 1, "A2：开启开关时恰产生一条通知");
+      assert.match(infos[0], /subagent-done/, "A2：事件类型为 subagent-done");
+      assert.match(infos[0], /子任务「fork 委派子任务B」已完成/, "A2：文案带任务标题");
+      assert.match(infos[0], /耗时：/, "A2：文案带耗时");
+      assert.ok(!infos.some((t) => /dsh-notifier: done /.test(t)), "A2：不得同时出现 kind=done");
+    }
+
+    // B1 支 1：header 含 parentSession 但父 id 不在 live registry（父已销毁/
+    // 冷 resume 脱离）→ 归属不成立，必须走主任务分支 kind=done（保护用户
+    // fork 主线，#7 语义不回归），不得被静默或误报 subagent-done。
+    {
+      const agents = fakeAgents(["fork-orphan"], []);
+      const infos = [];
+      const { listeners } = await makeNotifier(work, { configFile: join(work, "sub-fork-orphan.json") }, { agents, ...loggingOverride(infos) });
+      const status = listeners.get("agent/status")[0];
+      const mk = () => agentWithTitle("fork-orphan", "孤儿 fork 会话", { parentSession: "ghost-parent", turnEnd: 1 });
+      status({ agent: mk(), status: "running" });
+      status({ agent: mk(), status: "idle" });
+      assert.equal(infos.length, 1, "B1：父 id 不存在时不被静默");
+      assert.match(infos[0], /dsh-notifier: done /, "B1：发 kind=done 而非 subagent-done");
+    }
+
+    // B1 支 2：父 id live 但运行时不持有该 agent（isOwnedBy false，如无关
+    // provider 复用 id）→ 归属不成立，同样走主任务分支 kind=done。
+    {
+      const agents = fakeAgents(["unrelated-parent", "fork-x"], []); // 无 (fork-x, unrelated-parent) 归属对
+      const infos = [];
+      const { listeners } = await makeNotifier(work, { configFile: join(work, "sub-fork-unowned.json") }, { agents, ...loggingOverride(infos) });
+      const status = listeners.get("agent/status")[0];
+      const mk = () => agentWithTitle("fork-x", "无归属 fork 会话", { parentSession: "unrelated-parent", seedLength: 3, turnEnd: 1 });
+      status({ agent: mk(), status: "running" });
+      status({ agent: mk(), status: "idle" });
+      assert.equal(infos.length, 1, "B1：isOwnedBy=false 时归属不成立，不被静默");
+      assert.match(infos[0], /dsh-notifier: done /, "B1：发 kind=done 而非 subagent-done");
+    }
+
+    // D1：headless CLI 会话（header 仅 {cwd}，无 origin 无 parentSession）两信号
+    //     皆否，保持现状按主任务分支处理（本 issue 不改变其分类）。
     {
       const infos = [];
-      const { listeners } = await makeNotifier(work, { configFile: join(work, "sub-fork.json") }, loggingOverride(infos));
+      const { listeners } = await makeNotifier(work, { configFile: join(work, "sub-headless.json") }, loggingOverride(infos));
       const status = listeners.get("agent/status")[0];
-      status({ agent: agentWithTitle("fork-1", "fork 派生会话", { parentSession: "parent-x", turnEnd: 1 }), status: "running" });
-      status({ agent: agentWithTitle("fork-1", "fork 派生会话", { parentSession: "parent-x", turnEnd: 1 }), status: "idle" });
-      assert.equal(infos.length, 1, "仅 parentSession（无 origin）的会话走主任务完成，不被静默");
-      assert.match(infos[0], /done/, "fork/派生会话发 done 而非 subagent-done");
-      // 反例 2：主会话（无 header / 无 origin）必须走 done（原 bug 回归防护）。
-      // fork-1 与 main-x 同为 done 类型会被聚合窗口合并，故先等窗口过期再验 main-x。
-      await waitMergeWindow();
+      const mk = () => agentWithTitle("headless-1", "headless CLI 会话", { cwd: "/tmp/dsh-cli", turnEnd: 1 });
+      status({ agent: mk(), status: "running" });
+      status({ agent: mk(), status: "idle" });
+      assert.equal(infos.length, 1, "D1：headless 会话保持主任务分支现状");
+      assert.match(infos[0], /dsh-notifier: done /);
+    }
+
+    // 反例 2（原 #7 回归防护保留）：主会话（无 header / 无 origin）必须走 done。
+    {
+      const infos = [];
+      const { listeners } = await makeNotifier(work, { configFile: join(work, "sub-main.json") }, loggingOverride(infos));
+      const status = listeners.get("agent/status")[0];
       status({ agent: agentWithTitle("main-x", "主任务", { turnEnd: 1 }), status: "running" });
       status({ agent: agentWithTitle("main-x", "主任务", { turnEnd: 1 }), status: "idle" });
-      assert.equal(infos.length, 2, "主会话完成走 done");
-      assert.match(infos[1], /done/);
+      assert.equal(infos.length, 1, "主会话完成走 done");
+      assert.match(infos[0], /dsh-notifier: done /);
     }
 
     // 默认关：子代理完成不通知，主任务完成不受影响
