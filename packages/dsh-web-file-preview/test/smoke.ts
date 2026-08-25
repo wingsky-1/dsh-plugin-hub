@@ -21,7 +21,7 @@ import assert from "node:assert/strict";
 import {
   ROUTES, makeRoutes, serveFileRoute, previewKindOf, computeGitDiff,
   normalizeConfig, DEFAULT_CONFIG, groupOfPath, isLikelySingleFilePath, resolveRelativePath,
-  cleanRefChipPath,
+  cleanRefChipPath, resolveAbsolutePath, splitReferenceFragment,
 } from "../lib/index.js";
 import { build as esbuildBuild } from "esbuild";
 import { assertClientProductContract, assertClientSourceContract } from "../../../test/smoke-lib.ts";
@@ -87,6 +87,11 @@ assert.equal(resolveRelativePath(REL, "https://x/a.md"), null, "http 链接不�
 assert.equal(resolveRelativePath(REL, "//cdn/x.png"), null, "协议相对不展开");
 assert.equal(resolveRelativePath(REL, "data:image/png;base64,AA=="), null, "data URI 不展开");
 assert.equal(resolveRelativePath(REL, "#sec"), null, "纯锚点不展开");
+
+// issue #45：绝对路径展开 + fragment 剥离（纯函数层；详细分支见 unit-relpath.test.ts）
+assert.equal(resolveAbsolutePath("/home/u/proj/docs/design.md"), "/home/u/proj/docs/design.md", "#45 绝对路径规范化保留");
+assert.equal(resolveAbsolutePath("//cdn/x.png"), null, "#45 协议相对拒绝");
+assert.deepEqual(splitReferenceFragment("./f.md#g"), { ref: "./f.md", fragment: "g" }, "#45 fragment 剥离保留锚点");
 
 
 // ------------------------------------------------------------ 纯函数
@@ -459,6 +464,50 @@ try {
   const literals = [...client.matchAll(/\/api\/dsh-file-preview\/[a-z-]+/g)].map((m) => m[0]);
   for (const literal of literals) assert.ok(expectedRoutes.includes(literal), `client 出现未知路由: ${literal}`);
   for (const route of expectedRoutes) assert.ok(literals.includes(route), `client 缺少路由: ${route}`);
+
+  // ---- issue #45：引用 → 预览目标重写决策（rewrite-target，纯逻辑直测）----
+  // rewrite-target 无 DOM 依赖，同 link-resolver 模式：esbuild 打成内存 ESM、
+  // 经 data-URI 导入，直测真实源码而非字符串契约。
+  {
+    const rtBundle = await esbuildBuild({
+      entryPoints: [join(pkgDir, "src/client/rewrite-target.ts")],
+      bundle: true, format: "esm", write: false, logLevel: "silent",
+    });
+    const { rewriteTarget: rt } = await import(
+      `data:text/javascript;base64,${Buffer.from(rtBundle.outputFiles[0]!.text).toString("base64")}`
+    ) as typeof import("../lib/client/rewrite-target.js");
+    const opts = { cwd: "/home/u/proj", basePath: "/home/u/proj/docs/a.md" };
+    // 相对可预览（U8 v2 既有）：预览 URL + fragment null。
+    {
+      const hit = rt("./b.md", opts);
+      assert.ok(hit !== null, "#45 相对可预览仍重写");
+      assert.equal(hit!.path, "/home/u/proj/docs/b.md", "#45 相对解析不变");
+      assert.ok(hit!.url.startsWith("/api/dsh-file-preview/file?"), "#45 重写走预览 API");
+      assert.equal(hit!.fragment, null, "#45 无锚点 fragment 为 null");
+    }
+    // 绝对路径可预览（新增）：同样重写为 Modal 内跳转目标。
+    {
+      const hit = rt("/home/u/proj/docs/design.md", opts);
+      assert.ok(hit !== null, "#45 绝对路径可预览 → 重写（此前整页导航根因）");
+      assert.equal(hit!.path, "/home/u/proj/docs/design.md", "#45 绝对路径原样入 path");
+      assert.ok(hit!.url.includes("path=%2Fhome"), "#45 绝对路径编码进预览 URL");
+    }
+    // 带 fragment 的文件引用：fragment 剥离保留（附带瑕疵修复）。
+    assert.equal(rt("./f.md#g", opts)!.fragment, "g", "#45 ./f.md#g 保留锚点 g");
+    assert.equal(rt("./f.md#%E4%B8%AD", opts)!.fragment, "中", "#45 锚点解码一次");
+    // 绝对路径不可预览后缀 → 不重写（rewriteAnchor 层 target=_blank 兜底）。
+    assert.equal(rt("/home/u/proj/x.zip", opts), null, "#45 绝对路径 zip 不重写");
+    // 纯锚点 / 外域 / 协议相对 / data: → 不重写。
+    assert.equal(rt("#section", opts), null, "#45 纯锚点不走预览 URL");
+    assert.equal(rt("https://x/a.md", opts), null, "#45 外域不重写");
+    assert.equal(rt("//cdn/x.png", opts), null, "#45 协议相对不重写");
+    assert.equal(rt("data:image/png;base64,AA==", opts), null, "#45 data URI 不重写");
+  }
+  // client.js 行为哨兵：纯锚点标记 / fragment 定位参数 / 未重写链接新标签兜底
+  // （DOM 层真实行为由浏览器 MCP 实测覆盖，此处防产物回退丢实现）。
+  for (const marker of ["data-fp-anchor", "data-fp-frag", 'setAttribute("target", "_blank")', "scrollIntoView"]) {
+    assert.ok(client.includes(marker), `client.js 缺少 issue #45 标识: ${marker}`);
+  }
 
   // ---- issue #37：链接解析两阶段算法（link-resolver，纯逻辑直测）----
   // lib/client/*.js 由 bundle-host 按发布物边界清理（仅留顶层 index.js/client.js 与

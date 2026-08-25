@@ -79,8 +79,10 @@ export function apply(ctx: Context, config?: PreviewConfig): void {
 export { ROUTES, makeRoutes, serveFileRoute, previewKindOf, computeGitDiff };
 // 预览分组判定（单一事实源，宿主/客户端共用；经此透出供 smoke 断言双端一致）。
 export { groupOfPath, groupOfExt, extOf, isPreviewablePath, isLikelySingleFilePath, cleanRefChipPath } from "./grouping.js";
-// Markdown 相对引用展开（U8 v2；纯函数，经此透出供 smoke 断言）。
-export { resolveRelativePath } from "./relpath.js";
+// Markdown 相对/绝对引用展开与 fragment 拆分（U8 v2 + issue #45；纯函数，经此透出供 smoke 断言）。
+export { resolveRelativePath, resolveAbsolutePath, splitReferenceFragment } from "./relpath.js";
 // 点击链接解析纯逻辑（客户端无 DOM 依赖，经此透出供单元测试）。
 export { basenameOf, decideGate, resolveFileLink } from "./client/link-resolver.js";
+// 引用 → 预览目标重写决策纯逻辑（issue #45；无 DOM 依赖，经此透出供单元测试）。
+export { rewriteTarget } from "./client/rewrite-target.js";
 

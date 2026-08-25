@@ -43,6 +43,8 @@ export interface FilePreviewState {
   currentPath: string;
   /** 当前预览会话 cwd。 */
   currentCwd: string | undefined;
+  /** 待定位的标题锚点（issue #45：带 fragment 的引用在 md 首次渲染后消费一次）。 */
+  pendingFrag: string | undefined;
   /** md 内嵌图 blob objectURL 清单（closeModal 统一 revoke）。 */
   trackedBlobUrls: string[];
   /** 最大并发取图数。 */
@@ -93,6 +95,7 @@ export function createState(): FilePreviewState {
     activeAbort: undefined,
     currentPath: "",
     currentCwd: undefined,
+    pendingFrag: undefined,
     trackedBlobUrls: [],
     MAX_IMG_CONCURRENCY: 6,
     imgInFlight: 0,
