@@ -180,7 +180,7 @@ body[data-ds-dark-theme] #dsh-idle-archive-modal .dia-foot {
 .dia-set-headText { display: flex; flex-direction: column; flex: 1; gap: 4px; min-width: 0; }
 .dia-set-name { color: var(--dsw-alias-label-primary, #1f2329); font-size: 15px; font-weight: 600; line-height: 1.4; }
 .dia-set-description { color: var(--dsw-alias-label-tertiary, #5f6672); font-size: 13px; line-height: 1.5; }
-.dia-set-chevron { color: var(--dsw-alias-label-tertiary, #5f6672); flex: none; transition: transform 0.16s; font-size: 11px; }
+.dia-set-chevron { color: var(--dsw-alias-label-tertiary, #5f6672); flex: 0 0 auto; display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; margin: -10px -14px -10px 0; transition: transform 0.16s; }
 .dia-set-chevronOpen { transform: rotate(180deg); }
 .dia-set-body {
   border-top: 1px solid var(--dsw-alias-border-l2, #e2e5ea);
