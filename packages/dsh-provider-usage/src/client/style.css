@@ -95,6 +95,25 @@
 }
 .dou-label { white-space: nowrap; }
 
+/* #198 峰谷倒计时徽标：峰态橙（计费高）、谷态绿（折扣中）；
+   窄断点（≤380px）下与余额同排 nowrap + 省略号截断，不撑破胶囊容器 */
+.dou-peak {
+  display: inline-block;
+  max-width: 132px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.dou-peak-on { color: var(--dsw-alias-state-warn-primary, #c9820b); }
+.dou-peak-off { color: var(--dsw-alias-state-success-primary, #0f9d6e); }
+@media (max-width: 380px) {
+  .dou-peak { max-width: 88px; }
+}
+
 .dou-cardMeta { display: flex; align-items: center; gap: 5px; min-width: 0; }
 .dou-cardCur {
   font-weight: 700;

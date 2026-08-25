@@ -60,8 +60,9 @@ Client polling ──────┘   │ Mutex                  ↓
                    adapter.formatCapsule/Panel() → sanitize → HTML
 ```
 
-The built-in adapter `opencode-go-builtin` (OpenCode Go official `/v1/usage`, three
-windows) works out of the box.
+The built-in adapters `opencode-go-builtin` (OpenCode Go official `/v1/usage`, three
+windows) and `deepseek-official-builtin` (DeepSeek official balance + peak/valley
+countdown badge, see below) work out of the box.
 
 ## Configuration
 
@@ -75,7 +76,7 @@ windows) works out of the box.
 | `apiKey` | none | Explicit key (optional; falls back to the credential chain, never echoed in settings) |
 | `historyDir` | `<DSH_HOME>/dsh-provider-usage/` | History storage root |
 | `warmupIntervalMs` | `300000` | Background warmup interval |
-| `cacheDurationMs` | `60000` | Cache freshness (ms) |
+| `cacheDurationMs` | `30000` | Cache freshness (ms, floor 5000; lowered from 60000 in #198 so peak/valley badge flips propagate end-to-end within ~95s = 30s host cache + 60s client polling + render margin) |
 | `fetchTimeoutMs` | `2000` | Forced fetchData timeout (500–30000ms) |
 | `autoReload` | `true` | Hot reload on adapter file edits (enabled by default; set `false` to disable) |
 
@@ -93,6 +94,60 @@ so the two floats never overlap out of the box. The capsule and the MCP float do
 dodge each other — each is positioned solely by its own plugin config; the 10px panel gap keeps the
 panel tight under the capsule.
 
+## Built-in DeepSeek official adapter (deepseek-official-builtin)
+
+Claims provider `deepseek-official` and talks to the DeepSeek official
+"get user balance" endpoint `GET https://api.deepseek.com/user/balance`
+(see [api-docs.deepseek.com/api/get-user-balance](https://api-docs.deepseek.com/api/get-user-balance)).
+
+### Data semantics
+
+- **CNY only**: when the official `balance_infos[]` array contains multiple currencies,
+  only the `currency === "CNY"` entry is used; everything else (e.g. USD) is ignored.
+  Amounts are strictly parsed from the official string fields (invalid/missing → `null`,
+  NaN never persisted).
+- No CNY entry (USD-only or empty array) yields a normal frame with
+  `balance/toppedUp/grantedBalance = null` (no throw); the capsule shows a
+  "DeepSeek 余额 --" placeholder.
+- `is_available=false` marks an unavailable account: the frame is still recorded and its
+  balance displayed, but it **never serves as a conservation endpoint** for daily usage —
+  adjacent intervals skip usage derivation and are labeled as unavailable in the panel,
+  so bans/balance wipes are not mistaken for consumption.
+
+### Daily usage derivation (balance-delta conservation)
+
+The official API has no usage endpoint, so daily usage is derived from balance deltas
+between consecutive samples:
+
+```
+usage = (totalPrev − totalCur) + ΔtoppedUp + Δgranted
+```
+
+Top-ups (+X credited: total −X, toppedUp +X) and grant expiries/refunds (−G debited:
+total −G, granted −G) cancel out automatically. Missing components degrade
+**component-by-component**: without granted, only the toppedUp correction applies
+(and vice versa); with both missing it degrades to the raw balance delta (legacy history
+shards), and the panel summary notes that some days use the net-change caliber.
+Intervals spanning more than 27h (sampling interruption) are excluded from bars and
+totals to prevent malformed giant columns.
+
+### Two-card panel and peak/valley badge
+
+- Card 1: CNY balance headline + 24h fluctuation line chart (unified time anchor,
+  trend arrow tolerance ±0.005, downsampling ≤300 points).
+- Card 2: daily usage bar chart over the last 15 calendar days (closed-loop baseline;
+  blue bars up for consumption, green bars down for net gains, anomalies labeled only).
+- The capsule always carries a **peak/valley countdown badge** (pure local-time
+  computation, independent of remote data — rendered even on fetch failures):
+  - Windows are **fixed UTC weekday windows** `01:00–04:00 / 06:00–10:00`
+    (half-open intervals), per
+    [api-docs.deepseek.com/quick_start/pricing](https://api-docs.deepseek.com/quick_start/pricing),
+    verified on **2026-08-26**; hard-coded constants with no config knob, weekends are
+    off-peak all day.
+  - Off-peak shows the countdown to the next peak start (e.g. `⚡谷 · 距峰 02:41`);
+    peak shows the countdown to the next valley switch; the tooltip documents the UTC
+    window definition plus a server-timezone hint.
+
 ## API key resolution order (V1 config chain)
 
 1. Plugin config `apiKey` (explicit)
@@ -102,6 +157,13 @@ panel tight under the capsule.
    (opencode-go also probes the legacy name `OPENCODE_GO_API_KEY`)
 5. opencode-go compatibility: `~/.local/share/opencode/auth.json` entry
    `opencode-go` (or `opencode`)
+
+> **DeepSeek official adapter three-level key chain**: plugin config `apiKey` injection →
+> credential-chain derived env (provider `deepseek-official` → `DEEPSEEK_OFFICIAL_API_KEY`)
+> → adapter-local `DEEPSEEK_API_KEY` self-check fallback (shared with the llm layer,
+> covering "llm works but balance API 401"; this fallback is an adapter implementation
+> detail, not a shared provider-config special case). With all three absent, fetching
+> reports `no-api-key` and degrades to a stale frame (the peak/valley badge still renders).
 
 ## Routes (all loopback-fenced)
 
@@ -210,6 +272,8 @@ or the plugin home; non-normalized forms (`../` traversal) are rejected with 400
   pulls code from the network for execution
 - **Keys never reach the browser**: apiKey lives only in host-process memory and is
   injected into fetchData as an argument; adapter files never contain key values
+  (equally true for the built-in DeepSeek official adapter: three-level key chain above,
+  no key substring in stats/history/adapters responses nor in capsule/panel HTML)
 - **Two-layer XSS defense**: external API strings must be escaped with `esc()` before
   being placed into HTML (documented obligation); the plugin additionally sanitizes all
   format output on the host (script/iframe/on* attributes/javascript: removal). The

@@ -80,6 +80,14 @@ assert.equal(sanitizeHtml("<script>alert(1)</script><b>ok</b>"), "<b>ok</b>");
 assert.equal(sanitizeHtml('<img src="x" onerror="alert(1)">'), '<img src="x">');
 assert.equal(sanitizeHtml('<a href="javascript:alert(1)">x</a>'), '<a href="alert(1)">x</a>');
 assert.equal(sanitizeHtml('<iframe src="x"></iframe>y'), "y");
+// #198 D5/I2 净化契约：SVG 图表结构存活且净化面干净（错误文案含 <script> 注入面同样被双层防护）
+{
+  const svgOut = sanitizeHtml('<svg role="img"><rect onmouseover="evil()" fill="#fff"></rect><title>ok</title></svg>');
+  assert.ok(svgOut.includes("<svg") && svgOut.includes("role=\"img\""), "sanitize 后 SVG 结构存活");
+  assert.ok(!svgOut.includes("onmouseover"), "SVG 内 on* 事件属性被移除");
+  const injected = sanitizeHtml('<span>&lt;script&gt;alert(1)&lt;/script&gt;</span><script>alert(2)</script>');
+  assert.ok(!injected.includes("<script"), "脚本标签被移除（esc 实体化文本不受影响）");
+}
 
 // ------------------------------------------------- sanitize：实体编码变体封闭（#105③）
 

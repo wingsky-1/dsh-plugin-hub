@@ -27,6 +27,7 @@ import "./unit-history.test.ts";
 import "./unit-v1.test.ts";
 import "./unit-apply.test.ts";
 import "./unit-detect.test.ts";
+import "./unit-deepseek-official.test.ts";
 
 import {
   apply,
@@ -34,6 +35,8 @@ import {
   ADAPTER_CONTRACT_VERSION,
   OPENCODE_GO_PROVIDER,
   OPENCODE_GO_ADAPTER_ID,
+  DEEPSEEK_OFFICIAL_PROVIDER,
+  DEEPSEEK_OFFICIAL_ADAPTER_ID,
   userAdaptersFile,
   PANEL_CACHE_TTL_MS,
   normalizeRangeDay,
@@ -47,8 +50,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 process.env.DSH_HOME = mkdtempSync(join(tmpdir(), "dou-home-"));
 
 // 网络隔离（红线）：清掉可能存在于真实环境的密钥变量，防内置适配器发起真实请求；
-// 测试结束后恢复。
-const SAVED_ENV_KEYS = ["OPENCODE_GO_API_KEY", "OPENCODE_GO_PROVIDER_API_KEY"];
+// 测试结束后恢复（#198：deepseek 系列密钥一并清空——T2 无真实凭据纪律）。
+const SAVED_ENV_KEYS = ["OPENCODE_GO_API_KEY", "OPENCODE_GO_PROVIDER_API_KEY", "DEEPSEEK_API_KEY", "DEEPSEEK_OFFICIAL_API_KEY"];
 const savedEnv: Record<string, string | undefined> = {};
 for (const k of SAVED_ENV_KEYS) {
   savedEnv[k] = process.env[k];
@@ -420,11 +423,11 @@ export function formatPanel() { return "<p>p</p>"; }
     assert.equal(payload.adapter.name, "manage-stats");
     assert.ok(payload.enabled[OPENCODE_GO_PROVIDER] === "manage-stats", "新增适配器成为该 provider 启用者");
 
-    // adapters.json 现在有两条候选（内置 + 用户）
+    // adapters.json 现在有三条候选（两个内置 + 用户；#198 新增 deepseek-official-builtin）
     const adaptersRoute = routes.find((r) => r.path === ROUTES.adapters);
     let meta;
     adaptersRoute.handler(fakeReq(), { writeHead: () => {}, end: (c) => { meta = JSON.parse(c); } });
-    assert.equal(meta.host.length, 2, "候选列表含内置 + 用户");
+    assert.equal(meta.host.length, 3, "候选列表含两个内置 + 用户");
   }
 
   // add：重复 name → 409
@@ -495,6 +498,176 @@ export function formatPanel() { return "<p>p</p>"; }
 }
 
 console.log("[smoke] 全部断言通过 ✓ (v2 集成)");
+
+// ---------------------------------------------------------------- #198 deepseek-official 内置适配器集成
+//
+// 覆盖：A1（失败 stale 帧 + capsuleHtml）/ A3（错误帧不落盘）/ A5（成功帧落盘）/
+// E4（no-api-key → stale + 徽标常驻 G8）/ F1（builtin 默认启用）/ F2/K12（与 user-file
+// 原型共存且注册顺序覆盖成立）/ F4（候选列表 source 区分）/ E5（密钥不出现在响应体）。
+// 网络纪律：apiEndpoint 指向不可达回环（快速 network 失败），无任何出网请求。
+
+{
+  // 用户 mjs 原型模拟：name 与 provider 同名（deepseek-official，原型形态），
+  // 用于 K12 有意差异断言——与内置 -builtin 后缀名共存不冲突
+  const userDir = mkdtempSync(join(tmpdir(), "dou-ds-user-"));
+  const userFile = join(userDir, "deepseek-official.mjs");
+  writeFileSync(userFile, `
+export const version = 2;
+export const name = "deepseek-official";
+export const label = "DeepSeek 官方余额(用户)";
+export const providers = ["${DEEPSEEK_OFFICIAL_PROVIDER}"];
+export async function fetchData() { return { isAvailable: true, balance: 42.5, toppedUp: null, grantedBalance: null }; }
+export function formatCapsule(i) { return "<span>USER ¥" + (typeof i.data.balance === "number" ? i.data.balance.toFixed(2) : "--") + "</span>"; }
+export function formatPanel() { return "<p>user-panel</p>"; }
+`, "utf8");
+
+  const historyRoot = join(process.env.DSH_HOME, "dsh-provider-usage");
+  const withBody = (body) => fakeReq({ method: "POST", body });
+  const getJSON = async (route, url) => {
+    let payload;
+    await route.handler(fakeReq({ url }), { writeHead: () => {}, end: (c) => { payload = JSON.parse(c); } });
+    await new Promise((r) => setTimeout(r, 30));
+    return payload;
+  };
+
+  // ---- 场景 1：纯 builtin（warmup 关闭避免缓存/锁竞争，手动触发取数）----
+  {
+    const disposers = [];
+    const { ctx, routes } = makeFakeCtx({
+      effect(fn) {
+        const d = fn();
+        if (typeof d === "function") disposers.push(d);
+        return typeof d === "function" ? d : () => {};
+      },
+    });
+    await apply(ctx, { ...ISOLATED_CONFIG, provider: DEEPSEEK_OFFICIAL_PROVIDER, warmupIntervalMs: 0 });
+
+    // F1：默认注册后 adapters.json 启用者 = builtin、source=builtin
+    const adaptersRoute = routes.find((r) => r.path === ROUTES.adapters);
+    const meta = await getJSON(adaptersRoute, ROUTES.adapters);
+    assert.equal(meta.enabled[DEEPSEEK_OFFICIAL_PROVIDER], DEEPSEEK_OFFICIAL_ADAPTER_ID,
+      "F1: deepseek-official 默认启用者为 deepseek-official-builtin");
+    const dsBuiltin = meta.host.find((a) => a.name === DEEPSEEK_OFFICIAL_ADAPTER_ID);
+    assert.ok(dsBuiltin !== undefined && dsBuiltin.source === "builtin", "F1: 候选含 builtin 条目且 source=builtin");
+
+    // 启动即预热会把失败帧写进缓存（warmupIntervalMs 有下限 clamp 无法关闭）；
+    // select 语义自带 cache.clear()，重选 builtin 后下一次 stats 即全新取数
+    await new Promise((r) => setTimeout(r, 350));
+    const selectRoute1 = routes.find((r) => r.path === ROUTES.select);
+    await new Promise((resolve) => {
+      selectRoute1.handler(withBody(JSON.stringify({ provider: DEEPSEEK_OFFICIAL_PROVIDER, adapterName: DEEPSEEK_OFFICIAL_ADAPTER_ID })), {
+        writeHead: () => {}, end: (c) => resolve(JSON.parse(c)),
+      });
+    });
+
+    // A1：取数失败（不可达回环）→ HTTP 形状仍 200 由路由保证；ok=false / status=stale / capsuleHtml 非空
+    const stats = routes.find((r) => r.path === ROUTES.stats);
+    const failPayload = await getJSON(stats, `${ROUTES.stats}?provider=${DEEPSEEK_OFFICIAL_PROVIDER}`);
+    assert.equal(failPayload.ok, false, "A1: 失败帧 ok=false");
+    assert.equal(failPayload.status, "stale", "A1: 失败帧 status=stale");
+    assert.equal(failPayload.reason, "fetch-failed");
+    assert.ok(typeof failPayload.capsuleHtml === "string" && failPayload.capsuleHtml.length > 0, "A1: 失败帧 capsuleHtml 非空");
+    assert.ok(failPayload.capsuleHtml.includes("DeepSeek 余额 --"), "A1: 空 data 渲染占位文案");
+    assert.ok(failPayload.capsuleHtml.includes("dou-peak"), "G8: stale 帧峰谷徽标常驻");
+    assert.ok(failPayload.error === "network", `A1: 错误码 network（实际 ${failPayload.error}）`);
+
+    // A3：错误帧绝不落盘历史——builtin 历史目录不应存在
+    const builtinHistDir = join(historyRoot, DEEPSEEK_OFFICIAL_PROVIDER, DEEPSEEK_OFFICIAL_ADAPTER_ID);
+    assert.ok(!existsSync(builtinHistDir), "A3: 取数失败后历史目录无 builtin 条目（错误帧未落盘）");
+
+    // E5：密钥不出现在任一响应体
+    for (const p of [meta, failPayload]) {
+      assert.ok(!JSON.stringify(p).includes("sk-smoke-test"), "E5: 响应体不含密钥子串");
+    }
+
+    for (const d of [...disposers].reverse()) { try { d(); } catch {} }
+  }
+
+  // ---- 场景 2：三级密钥全空 → no-api-key → stale 帧 + 徽标（E4/G8）----
+  {
+    const disposers = [];
+    const { ctx, routes } = makeFakeCtx({
+      effect(fn) {
+        const d = fn();
+        if (typeof d === "function") disposers.push(d);
+        return typeof d === "function" ? d : () => {};
+      },
+    });
+    await apply(ctx, { apiKey: "", apiEndpoint: "http://127.0.0.1:9", provider: DEEPSEEK_OFFICIAL_PROVIDER, warmupIntervalMs: 0 });
+    // 等预热完成后 select 清缓存，确保下一次 stats 走全新取数路径（同场景 1）
+    await new Promise((r) => setTimeout(r, 350));
+    const selectRoute2 = routes.find((r) => r.path === ROUTES.select);
+    await new Promise((resolve) => {
+      selectRoute2.handler(withBody(JSON.stringify({ provider: DEEPSEEK_OFFICIAL_PROVIDER, adapterName: DEEPSEEK_OFFICIAL_ADAPTER_ID })), {
+        writeHead: () => {}, end: (c) => resolve(JSON.parse(c)),
+      });
+    });
+    const stats = routes.find((r) => r.path === ROUTES.stats);
+    const payload = await getJSON(stats, `${ROUTES.stats}?provider=${DEEPSEEK_OFFICIAL_PROVIDER}`);
+    assert.equal(payload.status, "stale", "E4: 三级全空 → stale 帧");
+    assert.equal(payload.error, "no-api-key", "E4: 错误码 no-api-key");
+    assert.ok(payload.capsuleHtml?.includes("dou-peak"), "G8: no-api-key 下徽标仍渲染（纯本地时间计算）");
+    assert.ok(!JSON.stringify(payload).includes("sk-"), "E4: 响应不含任何密钥形态子串");
+    for (const d of [...disposers].reverse()) { try { d(); } catch {} }
+  }
+
+  // ---- 场景 3：add user-file 原型（name=deepseek-official）→ 共存 + 覆盖启用（K12/F2/F4/A5）----
+  {
+    const disposers = [];
+    const { ctx, routes } = makeFakeCtx({
+      effect(fn) {
+        const d = fn();
+        if (typeof d === "function") disposers.push(d);
+        return typeof d === "function" ? d : () => {};
+      },
+    });
+    await apply(ctx, { ...ISOLATED_CONFIG, provider: DEEPSEEK_OFFICIAL_PROVIDER, warmupIntervalMs: 0 });
+
+    const addRoute = routes.find((r) => r.path === ROUTES.add);
+    const addPayload = await new Promise((resolve) => {
+      addRoute.handler(withBody(JSON.stringify({ file: userFile })), {
+        writeHead: () => {},
+        end: (c) => resolve(JSON.parse(c)),
+      });
+    });
+    await new Promise((r) => setTimeout(r, 60));
+    assert.equal(addPayload.ok, true, `K12: user-file 原型注册成功（${JSON.stringify(addPayload).slice(0, 120)}）`);
+    assert.equal(addPayload.enabled[DEEPSEEK_OFFICIAL_PROVIDER], "deepseek-official",
+      "F2: 后注册的 user-file 认领同名 provider 时成为启用者");
+
+    // F4：设置页候选列表同时展示 builtin 与 user-file 且 source 区分
+    const adaptersRoute = routes.find((r) => r.path === ROUTES.adapters);
+    const meta = await getJSON(adaptersRoute, ROUTES.adapters);
+    const sources = Object.fromEntries(meta.host.filter((a) => a.providers.includes(DEEPSEEK_OFFICIAL_PROVIDER)).map((a) => [a.name, a.source]));
+    assert.equal(sources[DEEPSEEK_OFFICIAL_ADAPTER_ID], "builtin", "F4: builtin 条目 source=builtin");
+    assert.equal(sources["deepseek-official"], "user-file", "F4: user-file 条目 source=user-file");
+    assert.ok(!JSON.stringify(meta).includes("sk-smoke-test"), "E5: adapters.json 不含密钥");
+
+    // stats：用户版生效 → fresh + 用户胶囊文案（本地数据零网络）
+    const stats = routes.find((r) => r.path === ROUTES.stats);
+    const fresh = await getJSON(stats, `${ROUTES.stats}?provider=${DEEPSEEK_OFFICIAL_PROVIDER}`);
+    await new Promise((r) => setTimeout(r, 40));
+    const freshRetry = await getJSON(stats, `${ROUTES.stats}?provider=${DEEPSEEK_OFFICIAL_PROVIDER}`);
+    const finalFresh = freshRetry.status === "fresh" ? freshRetry : fresh;
+    assert.equal(finalFresh.adapterName, "deepseek-official", "K12: 用户原型适配器接管取数");
+    assert.ok(["fresh", "cached"].includes(finalFresh.status), `A5: 成功帧 fresh/cached（实际 ${finalFresh.status}）`);
+    assert.ok(finalFresh.capsuleHtml?.includes("USER ¥42.50"), "A5: 用户版胶囊文案渲染");
+    assert.ok(!JSON.stringify(finalFresh).includes("sk-smoke-test"), "E5: stats 响应不含密钥");
+
+    // A5：成功帧正常落盘历史（对照 A3 的失败帧不落盘）
+    await new Promise((r) => setTimeout(r, 80));
+    const userHistDir = join(historyRoot, DEEPSEEK_OFFICIAL_PROVIDER, "deepseek-official");
+    assert.ok(existsSync(userHistDir), "A5: fresh 帧已按 (provider, adapterName) 落盘历史目录");
+
+    // history 路由对用户版可用（面板管线不崩）
+    const historyRoute = routes.find((r) => r.path === ROUTES.history);
+    const hist = await getJSON(historyRoute, `${ROUTES.history}?provider=${DEEPSEEK_OFFICIAL_PROVIDER}&days=1`);
+    assert.equal(hist.adapterName, "deepseek-official");
+    assert.ok(!JSON.stringify(hist).includes("sk-smoke-test"), "E5: history 响应不含密钥");
+
+    for (const d of [...disposers].reverse()) { try { d(); } catch {} }
+  }
+}
 
 // ---------------------------------------------------------------- #156 warmup 串行采样回归
 
