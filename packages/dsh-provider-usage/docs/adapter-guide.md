@@ -166,6 +166,7 @@ export const retention = { maxAgeDays: 30, maxSizeMB: 20 };  // 留存策略
 | **最小数据集** | `fetchData` 只返回展示所需字段（这些数据按天落盘） |
 | **`name` 白名单** | `^[A-Za-z0-9_-]{2,64}$`：不能有空格/路径分隔符/中文 |
 | **超时意识** | fetchData 被强制 **固定 5s** 超时（插件级常量，不可配置）。**禁止串行多请求**（总耗时叠加必超时）；**并行请求（`Promise.all`）允许**，但总耗时 = 最慢请求。**关键请求（决定胶囊主数值的）不做短超时降级；可选增强数据（订阅窗口/明细）单独设短超时并降级**——`.catch(() => null)` 只防抛错不防挂起，须用 `Promise.race` 真超时：<br>`const withTimeout = (p, ms) => Promise.race([p, new Promise(r => setTimeout(() => r(null), ms))]);`<br>`const subs = await withTimeout(fetchSubs(), 800).catch(() => null); // 可选请求：短超时+降级` |
+| **超时控制位置** | **不要在客户端做超时控制，宿主端控制即可**——客户端 fetch 不得设 `AbortSignal.timeout` 等硬超时（会先于宿主端 5s abort 请求导致取数被误杀）；适配器内可用 `ctx.timeoutMs`/`ctx.signal`（宿主注入），或对可选请求自行 `Promise.race` 降级 |
 | **历史兼容** | 修改展示或数据存储时，要考虑历史数据兼容：旧 JSONL 字段结构变化会让新 `formatPanel` 读不到数据（静默无图/无数据），`formatPanel` 对旧结构字段做防御（`?? "--"` 或兼容读取） |
 
 ---

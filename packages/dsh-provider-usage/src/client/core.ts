@@ -22,12 +22,13 @@ export const ADD_URL = __DSH_ROUTES__?.add ?? "/api/dsh-provider-usage/adapters/
 export const UI_CONFIG_URL = __DSH_ROUTES__?.uiConfig ?? "/api/dsh-provider-usage/ui-config";
 export const EVENTS_URL = __DSH_ROUTES__?.events ?? "/api/dsh-provider-usage/events";
 
-/** 客户端请求超时。 */
-const CLIENT_TIMEOUT_MS = 2000;
-
-/** 带超时的 fetch。 */
+/**
+ * 客户端 fetch 封装（不做超时控制——宿主端 fetchData 已统一 5s 超时，
+ * 客户端设 2s 硬超时会先于宿主端 abort 请求导致取数被误杀；
+ * 请求挂起交由宿主端超时 + 响应返回控制）。
+ */
 export function fetchTimeout(url: string, init?: RequestInit): Promise<Response> {
-  return fetch(url, { ...init, signal: AbortSignal.timeout(CLIENT_TIMEOUT_MS) });
+  return fetch(url, init);
 }
 
 // ---------------------------------------------------------------- 响应类型
