@@ -451,6 +451,21 @@ export class McpMiddleware {
     const servers = await this.host.projectServersFor(root);
     const server = servers?.find((entry) => entry.name === serverName);
     if (server === undefined || server.enabled === false) return;
+    // 与官方 dsh-mcp-client 并存（方案 E2）：运行时探测官方/其他插件是否已注册
+    // 同名 server 的 mcp__ 工具（说明该 server 已有其他实例连接）→ 跳过本实例，
+    // 防同一 server 双进程。探测失败（tools.schemas 不可用）不阻塞连接。
+    if (this.host.ctx.tools !== undefined && typeof this.host.ctx.tools.schemas === "function") {
+      try {
+        const registered = this.host.ctx.tools.schemas();
+        const prefix = `mcp__${serverName}__`;
+        if (Array.isArray(registered) && registered.some((schema) => typeof schema?.name === "string" && (schema.name as string).startsWith(prefix))) {
+          this.host.logger.warn(`dsh-mcp-manager(${serverName}@${root}): server 已由其他插件（如官方 dsh-mcp-client）注册 mcp__ 工具，跳过本实例连接（防双进程）`);
+          return;
+        }
+      } catch {
+        // 探测失败不阻塞
+      }
+    }
     const transport = createTransport(server);
     const client = new MCPClient(transport);
     const newEntry: ConnectionEntry = {

@@ -1262,6 +1262,7 @@ const main = async () => {
     assert.equal(msg.content[0].type, "text");
     assert.match(msg.content[0].text, /available_mcp_servers/);
     assert.match(msg.content[0].text, /不代表当前连接状态/);
+    assert.match(msg.content[0].text, /ws_mcp_search/, "#228 目录文案引导经中间层调用");
     assert.match(msg.content[0].text, /`code-graph`: 代码图谱/);
     assert.ok(typeof msg.id === "string" && msg.id.length > 0);
 
