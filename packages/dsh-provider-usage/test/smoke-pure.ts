@@ -81,6 +81,215 @@ assert.equal(sanitizeHtml('<img src="x" onerror="alert(1)">'), '<img src="x">');
 assert.equal(sanitizeHtml('<a href="javascript:alert(1)">x</a>'), '<a href="alert(1)">x</a>');
 assert.equal(sanitizeHtml('<iframe src="x"></iframe>y'), "y");
 
+// ------------------------------------------------- sanitize：实体编码变体封闭（#105③）
+
+// 统一判定标准 v2 判据引自 test/helpers.ts 单一事实源（P2③）——
+// 禁止在测试文件内再镜像复制解码器/危险模式/判定函数
+import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
+
+// A1 [硬性] 十六进制带分号实体拼写的协议被封（issue 原例）
+{
+  const out = sanitizeHtml('<a href="jav&#x61;script:alert(1)">x</a>');
+  assert.ok(sanContained(out), "A1: hex 带分号 javascript: 封闭");
+  assert.equal(out, '<a href="alert(1)">x</a>', "A1: 危险区间自原文删除，其余字符保留");
+}
+
+// A2 [硬性] 十进制数字实体变体被封（含前导零形态）
+{
+  for (const payload of [
+    '<a href="&#106;avascript:alert(1)">x</a>',       // 词首 j = 106
+    '<a href="&#0000106;avascript:alert(1)">x</a>',   // 前导零形态
+    '<a href="jav&#97;script:alert(1)">x</a>',        // a = 97
+  ]) {
+    assert.ok(sanContained(sanitizeHtml(payload)), `A2: 十进制实体变体封闭 ${payload}`);
+  }
+  // issue 清单字面样例：解码一轮为 "javjascript:"，本就不构成载体（浏览器同样
+  // 不执行）——按统一判定标准属安全文本，修复必须保持其原样而非误解码升级
+  const literal = sanitizeHtml('<a href="jav&#106;ascript:alert(1)">x</a>');
+  assert.ok(sanContained(literal), "A2: 字面样例满足统一判定标准");
+  assert.equal(literal, '<a href="jav&#106;ascript:alert(1)">x</a>', "A2: 安全文本零损伤");
+}
+
+// A3 [硬性] 无分号数字实体变体被封（HTML5 允许数字实体省略分号）
+{
+  assert.ok(
+    sanContained(sanitizeHtml('<a href="jav&#x61script:alert(1)">x</a>')),
+    "A3: hex 无分号（解码即 javascript:）封闭",
+  );
+  assert.ok(
+    sanContained(sanitizeHtml('<a href="&#106avascript:alert(1)">x</a>')),
+    "A3: 十进制无分号（词首 j）封闭",
+  );
+  // 清单字面样例 jav&#106ascript: 解码一轮为 "javjascript:"（安全文本）→ 判定 PASS
+  const literal = sanitizeHtml('<a href="jav&#106ascript:alert(1)">x</a>');
+  assert.ok(sanContained(literal), "A3: 字面样例满足统一判定标准");
+  assert.equal(literal, '<a href="jav&#106ascript:alert(1)">x</a>', "A3: 安全文本零损伤");
+}
+
+// A4 [硬性] 大小写混合变体被封（前缀 X 大写 / hex 字母大小写混排）
+{
+  for (const payload of [
+    '<a href="&#X6A;avascript:alert(1)">x</a>',   // 前缀 X 大写
+    '<a href="&#X6a;avascript:alert(1)">x</a>',   // 前缀大写 + 数字小写混排
+    '<a href="jav&#X61;script:alert(1)">x</a>',   // hex 字母大写混排（X61）
+  ]) {
+    assert.ok(sanContained(sanitizeHtml(payload)), `A4: 大小写混合变体封闭 ${payload}`);
+  }
+  // &#X3c;（= '<'）构造的部分编码开标签
+  const tagOut = sanitizeHtml("&#X3c;script>alert(1)</script>x");
+  assert.ok(sanContained(tagOut), "A4: &#X3c; 开标签变体封闭");
+  assert.equal(tagOut, "alert(1)x", "A4: 部分编码标签 token 自原文移除，其间文本保留（同 B3 语义）");
+}
+
+// A5 [硬性] 具名实体变体被封（HTML5 具名冒号实体）
+{
+  const out = sanitizeHtml('<a href="javascript&colon;alert(1)">c</a>');
+  assert.ok(sanContained(out), "A5: javascript&colon; 封闭");
+  assert.equal(out, '<a href="alert(1)">c</a>', "A5: 具名实体危险区间删除");
+}
+
+// A6 [硬性] 事件属性名部分实体编码被封（保守封堵，issue 原例）
+{
+  const out = sanitizeHtml('<img src=x o&#110;click="alert(1)">');
+  assert.ok(sanContained(out), "A6: o&#110;click 封闭（issue 原例）");
+  assert.equal(out, "<img src=x>", "A6: 部分编码属性整段删除");
+  assert.ok(
+    sanContained(sanitizeHtml('<img src=x oncli&#99;k="alert(1)">')),
+    "A6: oncli&#99;k 形态封闭",
+  );
+}
+
+// A7 [硬性] 封闭面覆盖全部载体类别：data:text/html 与 expression( 同类实体变体同封
+{
+  assert.ok(
+    sanContained(sanitizeHtml('<a href="data&colon;text/html;base64,x">c</a>')),
+    "A7: data&colon;text/html 封闭",
+  );
+  assert.ok(
+    sanContained(sanitizeHtml('<div style="width:expression&#40;alert(1))">x</div>')),
+    "A7: expression&#40; 封闭",
+  );
+}
+
+// A8 [硬性] 双重编码安全语义保持 + 净化幂等
+{
+  // (a) 双重编码：浏览器仅解码一层，其本身属安全文本；断言点是修复不得将其
+  //     误解码升级为新载体（输出经单轮解码不含可执行载体，且字节零损伤）
+  const dblIn = '<a href="&amp;#106;avascript:alert(1)">c</a>';
+  const dblOut = sanitizeHtml(dblIn);
+  assert.ok(sanContained(dblOut), "A8a: 双重编码输出经单轮解码无可执行载体");
+  assert.equal(dblOut, dblIn, "A8a: 双重编码安全文本零损伤");
+  assert.ok(!dblOut.includes("javascript:"), "A8a: 未被误解码升级为明文载体");
+
+  // (b) 幂等不动点：sanitizeHtml(sanitizeHtml(x)) === sanitizeHtml(x)
+  const idemSamples = [
+    '<a href="jav&#x61;script:alert(1)">x</a>',
+    '<img src=x o&#110;click="alert(1)">',
+    '&lt;script&gt;alert(1)&lt;/script&gt;',
+    dblIn,
+    "data:text/htexpression(ml",           // 删除拼接出新载体的收敛样本
+    '<SCRIPT>a</SCRIPT><iframe src=x></iframe>',
+    '<p>plain <b>text</b> &amp; more</p>',
+    '<a href="/api/x?a=1&amp;b=2">n</a>',
+  ];
+  for (const s of idemSamples) {
+    assert.equal(sanitizeHtml(sanitizeHtml(s)), sanitizeHtml(s), `A8b: 幂等不动点 ${s}`);
+  }
+}
+
+// A9 [硬性][判定标准 v2] 协议词 Tab/LF/CR 实体族被封（复核 P1-1）：
+// WHATWG URL basic parser 解析入口剥除全部 \t\n\r，jav&#9;ascript: 剥后还原
+// javascript:——v1 判据与实现曾共盲穿透，现实现按 URL 语义在剥除视图定位
+{
+  const t1 = [
+    '<a href="jav&#9;ascript:alert(1)">x</a>',    // 十进制 tab
+    '<a href="jav&#x09;ascript:alert(1)">x</a>',  // hex tab
+    '<a href="jav&#10;ascript:alert(1)">x</a>',   // LF
+    '<a href="jav&#13;ascript:alert(1)">x</a>',   // CR
+    '<a href="jav&Tab;ascript:alert(1)">x</a>',   // 具名 Tab
+    '<a href="dat&#9;a:text/html;base64,x">c</a>', // data:text/html 同族
+  ];
+  for (const payload of t1) {
+    const out = sanitizeHtml(payload);
+    assert.ok(sanContained(out), `A9: v2 判据下封闭 ${payload}`);
+    assert.ok(!out.includes("&#9;") && !out.includes("&#x09;") && !out.includes("&Tab;")
+      && !out.includes("&#10;") && !out.includes("&#13;"), `A9: 危险实体区间自输出移除 ${payload}`);
+  }
+  // 明文 tab 混入协议词同样封闭（URL 剥除语义不区分实体/字面来源）
+  assert.ok(sanContained(sanitizeHtml('<a href="jav\tascript:alert(1)">x</a>')), "A9: 字面 tab 变体封闭");
+  // 正常文本中的 tab/newline 不受影响（剥除仅用于检测视图，不改写输出）
+  const normal = '<p>a\tb\nc</p>';
+  assert.equal(sanitizeHtml(normal), normal, "A9: 正常空白字符零损伤");
+}
+
+// A10 [硬性][判定标准 v2] 深嵌套收敛与幂等（复核 P1-2）：
+// pad(k) 每轮仅暴露一层 <meta>（删除拼接出下一层），k 层需 k 轮——
+// 实现迭代至收敛，pad(15..25) 均在 64 轮宽松上限内全净收敛且幂等
+{
+  for (const depth of [15, 16, 17, 18, 25]) {   // 覆盖旧 16 轮上限两侧
+    const x = pad(depth);
+    const y = sanitizeHtml(x);
+    assert.equal(sanitizeHtml(y), y, `A10: pad(${depth}) 幂等不动点`);
+    assert.ok(!/<meta\b|<met\b/i.test(y), `A10: pad(${depth}) 无危险 token 残留`);
+    assert.ok(sanContained(y), `A10: pad(${depth}) v2 判据安全`);
+  }
+  // 深垫刀 + 部分编码开标签混合构造
+  const mixed = pad(18) + "&#X3c;script>alert(1)</script>z";
+  const mOut = sanitizeHtml(mixed);
+  assert.equal(sanitizeHtml(mOut), mOut, "A10: 混合深嵌套幂等");
+  assert.ok(sanContained(mOut), "A10: 混合深嵌套 v2 判据安全");
+}
+
+// A11 [硬性][判定标准 v2.1] 迭代上限 fail-closed 与性能有界（复核 P1-3）
+{
+  // a) 超限触底：pad(70) 需 >64 轮 → fail-closed 返回空串；
+  //    f('')==='' 使幂等在超限分支仍构造成立
+  const deep = pad(70) + "&#X3c;script>alert(1)</script>z";
+  const out = sanitizeHtml(deep);
+  assert.equal(out, "", "A11a: 超深嵌套触底 fail-closed 返回空串");
+  assert.equal(sanitizeHtml(out), out, "A11a: fail-closed 后 f(f(x))===f(x)");
+
+  // b) 性能有界：60KB 级最坏构造不得冻结事件循环。
+  //    阈值依据：修复前同规模嵌套输入实测 ~29.5s；本机实测修复后 60KB
+  //    最坏构造 ~4ms / 62KB 正常文档 ~20ms，500ms 为实测 ×20+ 余量，
+  //    覆盖慢速 CI 环境（冻结级回归即可判红）
+  const evil = ("<met<meta>a>".repeat(3000)).slice(0, 60000);
+  const t0 = Date.now();
+  sanitizeHtml(evil);
+  const cost = Date.now() - t0;
+  assert.ok(cost < 500, `A11b: 60KB 最坏构造 ${cost}ms < 500ms（P1-3 性能有界）`);
+
+  // c) 正常内容远离上限：合法深嵌套标签/实体文档零损伤（未触发 fail-closed
+  //    的直接证据——触发即返回 ''，而此处逐字符原样返回）
+  const doc = "<div>".repeat(50) + "text &amp; more &#x2713;" + "</div>".repeat(50);
+  assert.equal(sanitizeHtml(doc), doc, "A11c: 合法深嵌套文档零损伤（远离 64 轮上限）");
+}
+
+// B 组：合法内容不误伤
+
+// B1 [硬性] 合规适配器输出零损伤：esc() 五种实体产出形态组成的正常片段逐字符返回
+{
+  const frag = `<p>${esc("<b>bold</b>")} &amp; ${esc(`a"b'c&d`)} tail</p>`;
+  // esc 五形态齐备：&lt; &gt; &amp; &#39; &quot;
+  assert.ok(frag.includes("&lt;") && frag.includes("&gt;") && frag.includes("&amp;")
+    && frag.includes("&#39;") && frag.includes("&quot;"), "B1: 片段含 esc 全部五种产出形态");
+  assert.equal(sanitizeHtml(frag), frag, "B1: 正常片段逐字符原样返回");
+}
+
+// B2 [硬性] 正常业务 URL query 保留
+{
+  const b2 = '<a href="/api/x?a=1&amp;b=2">n</a>';
+  assert.equal(sanitizeHtml(b2), b2, "B2: 标签与 href 值不变");
+}
+
+// B3 [硬性] 显示型实体文本不被升级为真标签
+{
+  const b3 = sanitizeHtml("&lt;script&gt;alert(1)&lt;/script&gt;");
+  assert.ok(!b3.includes("<script"), "B3: 不含真 <script> 开标签（不升级）");
+  assert.ok(sanContained(b3), "B3: 满足统一判定标准");
+  assert.equal(b3, "alert(1)", "B3: 实体化标签 token 移除，其间文本原样保留");
+}
+
 // ---------------------------------------------------------------- HistoryStore（JSONL 按天分片）
 
 {

@@ -18,7 +18,10 @@
  * （timeTickStep/timeTicks/trendOf/resetTicks/downsample/smoothPath 经
  * 导出接口行为级断言）方才进入变异计量范围。
  */
-import { assert } from "./helpers.ts";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { assert, judgeContained as pipeContained, judgePad as pad } from "./helpers.ts";
 console.error("EVAL-ORDER-TAG: V1");
 import {
   ADAPTER_CONTRACT_VERSION_V1,
@@ -38,6 +41,9 @@ import {
   safeFormat,
   fetchWithTimeout,
   sanitizeHtml,
+  HistoryStore,
+  runV2Pipeline,
+  runV2PanelPipeline,
 } from "../lib/index.js";
 
 // ---------------------------------------------------------------- isHostProviderAdapter
@@ -1169,6 +1175,93 @@ function resetLineXs(svg) {
   // 正常内容不被误伤
   assert.equal(sanitizeHtml("<b>ok</b>"), "<b>ok</b>", "正常标签保留");
   assert.equal(sanitizeHtml('<a href="https://example.com" title="t">n</a>'), '<a href="https://example.com" title="t">n</a>', "正常链接与属性保留");
+}
+
+// ---------------------------------------------------------------- #105③ 实体编码变体（清理链补充）
+
+{
+  assert.equal(sanitizeHtml('<a href="jav&#x61;script:alert(1)">x</a>'), '<a href="alert(1)">x</a>', "hex 实体 javascript: 剥除");
+  assert.equal(sanitizeHtml('<a href="&#106;avascript:alert(1)">y</a>'), '<a href="alert(1)">y</a>', "十进制词首 j 实体剥除");
+  assert.ok(!sanitizeHtml("jav&#x61script:x").includes("&#x61script"), "hex 无分号变体剥除");
+  assert.equal(sanitizeHtml("&#X3c;script>x</script>t"), "xt", "&#X3c; 开标签变体随 token 移除（其间文本保留）");
+  assert.equal(sanitizeHtml("<img src=x oncli&#99;k='go()'>"), "<img src=x>", "属性名尾部实体编码剥除");
+  // 幂等硬闸：净化不动点（含删除拼接出新载体的收敛样本）
+  const idemSamples = [
+    '<a href="jav&#x61;script:alert(1)">x</a>',
+    '<img src=x o&#110;click="alert(1)">',
+    '&lt;iframe src="data:text/html,x"&gt;&lt;/iframe&gt;k',
+    '<a href="&amp;#106;avascript:alert(1)">c</a>',
+    'data:text/htexpression(ml',
+    "<b>ok</b><a href=\"/api/x?a=1&amp;b=2\">n</a>",
+  ];
+  for (const s of idemSamples) {
+    assert.equal(sanitizeHtml(sanitizeHtml(s)), sanitizeHtml(s), `幂等不动点: ${s}`);
+  }
+  // 深嵌套收敛与幂等（复核 P1-2）：pad(k) 引自 test/helpers.ts 单一事实源，
+  // 每轮仅暴露一层 <meta>，pad(17/18/25) 均在 64 轮宽松上限内全净收敛且幂等
+  for (const depth of [17, 18, 25]) {
+    const y = sanitizeHtml(pad(depth));
+    assert.equal(sanitizeHtml(y), y, `深嵌套 pad(${depth}) 幂等不动点`);
+    assert.ok(!/<meta\b|<met\b/i.test(y), `深嵌套 pad(${depth}) 无危险 token 残留`);
+  }
+  // 超限 fail-closed（复核 P1-3）：>64 轮深嵌套返回空串且幂等保持
+  const y70 = sanitizeHtml(pad(70) + "&#X3c;script>x</script>t");
+  assert.equal(y70, "", "超限 fail-closed 返回空串");
+  assert.equal(sanitizeHtml(y70), y70, "fail-closed 后 f(f(x))===f(x)");
+}
+
+// ---------------------------------------------------------------- #105③ C1 管道级端到端：净化在管道内生效
+
+{
+  // pipeContained 判据引自 test/helpers.ts 单一事实源（统一判定标准 v2：
+  // 一轮实体解码 + WHATWG URL 剥除 \t\n\r 后不得匹配危险载体模式）
+
+  // 恶意 formatCapsule（issue 原例 payload）→ runV2Pipeline 产出前净化兜底
+  const capR = await runV2Pipeline({
+    adapter: {
+      version: 2,
+      name: "evil-caps",
+      providers: ["pv"],
+      fetchData: async () => ({}),
+      formatCapsule: () => '<div>u <a href="jav&#x61;script:alert(1)">win</a></div>',
+      formatPanel: () => "",
+    },
+    provider: "pv",
+    config: {},
+    staticPath: "",
+    timeoutMs: 500,
+  });
+  assert.equal(capR.ok, true, "C1: 管道执行成功");
+  assert.ok(capR.capsuleHtml !== undefined && pipeContained(capR.capsuleHtml),
+    "C1: capsuleHtml 满足统一判定标准（hex 实体载体封闭）");
+  assert.ok(capR.capsuleHtml !== undefined && !capR.capsuleHtml.includes("jav&#x61"),
+    "C1: 危险实体区间已自输出移除");
+
+  // 恶意 formatPanel（事件属性部分编码 + 具名冒号协议）→ runV2PanelPipeline 净化兜底
+  const sanPipeDir = mkdtempSync(join(tmpdir(), "dou-san-pipe-"));
+  const store = new HistoryStore({ root: sanPipeDir });
+  try {
+    await store.append("pv", "evil-panel", { time: Date.now(), data: { v: 1 } });
+    const panelR = await runV2PanelPipeline({
+      adapter: {
+        version: 2,
+        name: "evil-panel",
+        providers: ["pv"],
+        fetchData: async () => ({}),
+        formatCapsule: () => "",
+        formatPanel: () => '<p t=1 o&#110;click="al()">x <a href="data&colon;text/html,y">l</a></p>',
+      },
+      provider: "pv",
+      history: store,
+      range: { start: Date.now() - 1000, end: Date.now() + 1000 },
+    });
+    assert.ok(panelR.panelHtml !== undefined && pipeContained(panelR.panelHtml),
+      "C1: panelHtml 满足统一判定标准（属性部分编码 + data&colon 封闭）");
+    assert.ok(panelR.panelHtml !== undefined && panelR.panelHtml.includes("<p t=1") && panelR.panelHtml.includes(">x "),
+      "C1: 无害属性与文本保留（兜底不扩大化）");
+  } finally {
+    rmSync(sanPipeDir, { recursive: true, force: true });
+  }
 }
 
 // ================================================================ #150 二阶段：samplePoint / summarize 残余分支
