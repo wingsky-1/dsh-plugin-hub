@@ -480,7 +480,7 @@ export function formatPanel() { return "<p>s</p>"; }
     };
 
     // 确定性等待启动预热结束：warmup 对 enabledProviders 串行取数，内置
-    // opencode-go 走真实网络（最长 fetchTimeoutMs=2000ms），prov-slow 是最后一个。
+    // opencode-go 走真实网络（最长 fetchTimeoutMs=5000ms），prov-slow 是最后一个。
     // 轮询中遇到 cached 即证明预热已对 prov-slow 写入缓存（整条链必然走完）；
     // 遇到 busy 继续等；cached 出现后清缓存，随后的请求必为 fresh 且无飞行任务。
     const deadline = Date.now() + 20000;

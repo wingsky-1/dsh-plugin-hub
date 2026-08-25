@@ -433,7 +433,7 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
   assert.equal(m.adapter, "/tmp/a.mjs");
   assert.equal(m.provider, "deepseek");
   assert.equal(m.apiKey, "sk-x");
-  assert.equal(m.fetchTimeoutMs, 30000, "超时上限 clamp 到 30s");
+  assert.equal(m.fetchTimeoutMs, DEFAULT_CONFIG.fetchTimeoutMs, "fetchTimeoutMs 固定 5s 不可配置（#206 配套）");
   assert.equal(m.maxAgeDays, 365, "保留天数上限 clamp");
 }
 

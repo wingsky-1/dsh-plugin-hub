@@ -84,7 +84,10 @@ export const DEFAULT_CONFIG = {
   // #198 H1：由 60000 下调至 30000——峰谷徽标倒计时跨时段边界的展示翻转延迟
   // = 宿主缓存 + 客户端轮询（60s）+ 渲染余量，缓存减半使端到端 ≤95s 可达。
   cacheDurationMs: 30000,
-  fetchTimeoutMs: 2000,
+  // #206 配套：2s→5s——commandcode 等三请求并行适配器在远端慢时 2s 频繁超时；
+  // safeFetchData 为 Promise.race+Abort 纯异步超时，不阻塞主进程；
+  // 全局 mutex 串行取数下多 provider 排队最坏 n×5s（warmup 周期 300s 内可消化）。
+  fetchTimeoutMs: 5000,
   autoReload: true,
   maxAgeDays: 30,
   maxSizeMB: 20,
@@ -230,7 +233,7 @@ export function normalizeConfig(input: unknown): NormalizedConfig {
   if (typeof cfg.historyDir === "string") base.historyDir = cfg.historyDir;
   if (Number.isFinite(cfg.warmupIntervalMs)) base.warmupIntervalMs = Math.max(60000, cfg.warmupIntervalMs as number);
   if (Number.isFinite(cfg.cacheDurationMs)) base.cacheDurationMs = Math.max(5000, cfg.cacheDurationMs as number);
-  if (Number.isFinite(cfg.fetchTimeoutMs)) base.fetchTimeoutMs = Math.min(Math.max(500, cfg.fetchTimeoutMs as number), 30000);
+  // fetchTimeoutMs 固定 5s（不开放配置）：远端慢时 2s 频繁超时（#206 配套）
   if (typeof cfg.autoReload === "boolean") base.autoReload = cfg.autoReload;
   // #184：maxAgeDays 仅接受正整数——<=0 会令 maybePrune 下界落在未来（历史被全量清理）、
   // 面板查询区间 start>end 永空；非正整数一律视为非法回落默认值，上界 365 维持既有 clamp
@@ -450,38 +453,48 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   };
 
   // 3. 热更新（config.adapter 声明 + 设置页登记的文件；autoReload=true 时生效）
+  // 运行时经设置页 add 的适配器也纳入监视（issue #206）：ensureHotReload 供启动与
+  // add 路由共用，watchedFiles 去重防同一文件重复监视。
   const hotReloaders: HotReloadableAdapter[] = [];
+  const watchedFiles = new Set<string>();
+
+  /** 为文件建立热更新监视（幂等：已监视/autoReload 关闭/路径不可解析则跳过）。 */
+  async function ensureHotReload(file: string): Promise<void> {
+    if (!config.autoReload) return;
+    const resolved = resolvePath(file);
+    if (resolved === undefined) return; // 文件不可读：add 已校验过，此处仅防御
+    if (watchedFiles.has(resolved)) return; // 已监视，幂等跳过
+    watchedFiles.add(resolved);
+    const hr = new HotReloadableAdapter(resolved, 2000, (info) => {
+      const key = `file:${basename(resolved)}`;
+      if (!info.ok) {
+        registry.recordError(key, "load", `热更新失败：${info.error ?? "未知错误"}`);
+        return;
+      }
+      if (hr.current !== null) {
+        // 原子替换：先移除旧文件注册，再注册新版本（改名场景不误报重复）
+        registry.removeByFile(resolved);
+        registry.register(hr.current, "user-file", resolved);
+        cache.clear();
+        panelCache.clear(); // #105①：新版适配器代码语义已变，面板渲染缓存同清
+        registry.recordError(key, "load", `热更新成功：${hr.current.name}`);
+      }
+    });
+    const started = await hr.start();
+    if (!started.ok && started.error !== undefined) {
+      registry.recordError(`file:${basename(resolved)}`, "load", `热更新启动失败：${started.error}`);
+    }
+    hotReloaders.push(hr);
+  }
+
   if (config.autoReload) {
-    const watchedFiles = new Set<string>();
     if (config.adapter !== "") {
       const cfgFile = resolvePath(config.adapter);
-      if (cfgFile !== undefined) watchedFiles.add(cfgFile);
+      if (cfgFile !== undefined) await ensureHotReload(cfgFile);
     }
     for (const rec of userRecords) {
       const f = resolvePath(rec.file);
-      if (f !== undefined) watchedFiles.add(f);
-    }
-    for (const file of watchedFiles) {
-      const hr = new HotReloadableAdapter(file, 2000, (info) => {
-        const key = `file:${basename(file)}`;
-        if (!info.ok) {
-          registry.recordError(key, "load", `热更新失败：${info.error ?? "未知错误"}`);
-          return;
-        }
-        if (hr.current !== null) {
-          // 原子替换：先移除旧文件注册，再注册新版本（改名场景不误报重复）
-          registry.removeByFile(file);
-          registry.register(hr.current, "user-file", file);
-          cache.clear();
-          panelCache.clear(); // #105①：新版适配器代码语义已变，面板渲染缓存同清
-          registry.recordError(key, "load", `热更新成功：${hr.current.name}`);
-        }
-      });
-      const started = await hr.start();
-      if (!started.ok && started.error !== undefined) {
-        registry.recordError(`file:${basename(file)}`, "load", `热更新启动失败：${started.error}`);
-      }
-      hotReloaders.push(hr);
+      if (f !== undefined) await ensureHotReload(f);
     }
   }
 
@@ -839,6 +852,8 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
         file,
       };
       await persistUserAdapter(rec);
+      // issue #206：运行时 add 的适配器也纳入热更新监视（autoReload 开启时）
+      await ensureHotReload(file);
       cache.clear();
       panelCache.clear(); // #105①：候选/启用面已变，面板渲染缓存同清
       scheduleWriteAdapterState(registry.snapshot().enabled);
