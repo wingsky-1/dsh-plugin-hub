@@ -13,6 +13,7 @@
  * 全分支、resolveAddAdapterFile 路径校验矩阵、normalizeUiConfig/面板锚点纯函数矩阵。
  */
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+console.error("EVAL-ORDER-TAG: CONFIG");
 import { join } from "node:path";
 import { tmpdir, homedir } from "node:os";
 import { assert } from "./helpers.ts";
@@ -30,6 +31,78 @@ import {
   expandHomePath,
   resolveProviderConfig,
 } from "../lib/index.js";
+
+// ================================================================ #150 二阶段：resolveAddAdapterFile 路径校验矩阵
+// 注意位置：本块必须位于本模块求值的最前部（同步段）。resolveAddAdapterFile/
+// expandHomePath 内部的 untildify 对 homedir() 首调固化且不可重置，而含顶层
+// await 的兄弟模块（如 unit-apply 的 apply 用例经 resolvePath 触达）会在本文件
+// 的 await 让出窗口内插入执行——若固化被其以外部 HOME 抢先完成，~ 展开用例
+// 将不可达。同步段先于任何其他模块的插入执行，故在此显式完成受控固化。
+
+{
+  // HOME/DSH_HOME 指向临时目录；~ 展开、绝对路径、目录拒绝都基于真实文件系统
+  const home = mkdtempSync(join(tmpdir(), "dou-addfile-"));
+  const savedDsh = process.env.DSH_HOME;
+  const savedHomeEnv = process.env.HOME;
+  process.env.DSH_HOME = home;
+  process.env.HOME = home;
+  try {
+    // 显式受控固化：此后进程内 ~ 展开落点恒为本隔离目录。
+    // 若落点已指向别处（前置模块抢先固化），直接失败暴露，不做静默降级。
+    if (expandHomePath("~") !== home) {
+      assert.fail(
+        `untildify homedir 已被前置调用固化为 ${expandHomePath("~")}（期望 ${home}），~ 展开用例前提失效`,
+      );
+    }
+    // 非字符串 / 空串 / NUL
+    assert.equal(resolveAddAdapterFile(42), undefined, "非字符串拒绝");
+    assert.equal(resolveAddAdapterFile(null), undefined, "null 拒绝");
+    assert.equal(resolveAddAdapterFile(""), undefined, "空串拒绝");
+    assert.equal(resolveAddAdapterFile("   "), undefined, "纯空白拒绝");
+    assert.equal(resolveAddAdapterFile("a\0b"), undefined, "含 NUL 拒绝");
+
+    // 未规整形态（resolve 后改变）
+    assert.equal(resolveAddAdapterFile(`a/../b`), undefined, "a/../b 未规整拒绝");
+    assert.equal(resolveAddAdapterFile("./x.mjs"), undefined, "./x 未规整拒绝");
+
+    // 绝对路径：文件存在才放行
+    assert.equal(resolveAddAdapterFile(join(home, "missing.mjs")), undefined, "绝对路径文件不存在拒绝");
+    const realFile = join(home, "real.mjs");
+    writeFileSync(realFile, "export default {};", "utf8");
+    assert.equal(resolveAddAdapterFile(realFile), realFile, "存在的绝对路径放行");
+
+    // 目录路径拒绝（statSync.isFile false）
+    assert.equal(resolveAddAdapterFile(home), undefined, "目录路径拒绝");
+
+    // ~ 展开路径（isAbsolute(trimmed) false → 相对分支命中 dshHome 基座）。
+    // untildify 对 homedir() 有模块级缓存（首次调用固化），~ 展开落点不随运行中
+    // HOME 设置变化，故以 expandHomePath("~") 的固化落点为基座构造探针文件，
+    // 并硬性要求落点位于本用例隔离目录内：若不满足，说明 untildify 已被前置
+    // 模块以外部 HOME 抢先固化、本用例可达性前提被破坏——直接失败暴露，
+    // 不允许静默退化为弱断言（二选一分支会让正向路径失去可达性）。
+    const tildeName = `dou-tilde-probe-${process.pid}.mjs`;
+    const expandedTarget = expandHomePath(`~/${tildeName}`);
+    if (!expandedTarget.startsWith(home)) {
+      assert.fail(
+        `untildify homedir 固化到外部 ${expandedTarget}（本用例隔离目录 ${home}），~ 展开用例不可达`,
+      );
+    }
+    writeFileSync(expandedTarget, "export default {};", "utf8");
+    assert.equal(resolveAddAdapterFile(`~/${tildeName}`), expandedTarget,
+      "~ 路径展开并命中 HOME 内文件");
+    // 负向用例与落点无关：未创建的同名探针必不存在
+    assert.equal(resolveAddAdapterFile("~/dou-no-such-probe.mjs"), undefined, "~ 路径文件不存在拒绝");
+
+    // ~user 形态不展开（untildify 仅处理裸 ~ 前缀），解析失败拒绝。
+    // 该断言与缓存无关：无论落点在哪，"~other/x.mjs" 不展开且不存在 → 拒绝。
+    assert.equal(resolveAddAdapterFile("~other/x.mjs"), undefined, "~user 形态不展开拒绝");
+  } finally {
+    process.env.DSH_HOME = savedDsh;
+    if (savedHomeEnv === undefined) delete process.env.HOME;
+    else process.env.HOME = savedHomeEnv;
+  }
+}
+
 
 // normalizeConfig 边界覆盖（smoke-pure 已覆盖 adapter/provider/fetchTimeoutMs/maxAgeDays）
 
@@ -303,62 +376,6 @@ assert.deepEqual(parseUserAdapters('"str"'), [], "JSON 字符串返回空数组"
   writeFileSync(join(root, "adapter-state.json"), '"ab"', "utf8");
   const fromStr = await readAdapterState(root);
   assert.deepEqual(fromStr, { 0: "a", 1: "b" }, "顶层字符串按字符索引展开（跟随实现行为）");
-}
-
-// ================================================================ #150 二阶段：resolveAddAdapterFile 路径校验矩阵
-
-{
-  // HOME/DSH_HOME 指向临时目录；~ 展开、绝对路径、目录拒绝都基于真实文件系统
-  const home = mkdtempSync(join(tmpdir(), "dou-addfile-"));
-  const savedDsh = process.env.DSH_HOME;
-  const savedHomeEnv = process.env.HOME;
-  process.env.DSH_HOME = home;
-  process.env.HOME = home;
-  try {
-    // 非字符串 / 空串 / NUL
-    assert.equal(resolveAddAdapterFile(42), undefined, "非字符串拒绝");
-    assert.equal(resolveAddAdapterFile(null), undefined, "null 拒绝");
-    assert.equal(resolveAddAdapterFile(""), undefined, "空串拒绝");
-    assert.equal(resolveAddAdapterFile("   "), undefined, "纯空白拒绝");
-    assert.equal(resolveAddAdapterFile("a\0b"), undefined, "含 NUL 拒绝");
-
-    // 未规整形态（resolve 后改变）
-    assert.equal(resolveAddAdapterFile(`a/../b`), undefined, "a/../b 未规整拒绝");
-    assert.equal(resolveAddAdapterFile("./x.mjs"), undefined, "./x 未规整拒绝");
-
-    // 绝对路径：文件存在才放行
-    assert.equal(resolveAddAdapterFile(join(home, "missing.mjs")), undefined, "绝对路径文件不存在拒绝");
-    const realFile = join(home, "real.mjs");
-    writeFileSync(realFile, "export default {};", "utf8");
-    assert.equal(resolveAddAdapterFile(realFile), realFile, "存在的绝对路径放行");
-
-    // 目录路径拒绝（statSync.isFile false）
-    assert.equal(resolveAddAdapterFile(home), undefined, "目录路径拒绝");
-
-    // ~ 展开路径（isAbsolute(trimmed) false → 相对分支命中 dshHome 基座）。
-    // 注意：untildify 对 homedir() 有模块级缓存（首次调用固化），~ 展开落点
-    // 可能不随本用例的 HOME 设置变化，故以 expandHomePath 的实际展开结果为准；
-    // 仅当落点位于本用例隔离目录内时才创建探针文件，避免污染真实 HOME。
-    const tildeName = "tilde-probe.mjs";
-    const expandedTarget = expandHomePath(`~/${tildeName}`);
-    if (expandedTarget.startsWith(home)) {
-      writeFileSync(expandedTarget, "export default {};", "utf8");
-      assert.equal(resolveAddAdapterFile(`~/${tildeName}`), expandedTarget,
-        "~ 路径展开并命中 HOME 内文件");
-      assert.equal(resolveAddAdapterFile("~/missing.mjs"), undefined, "~ 路径文件不存在拒绝");
-    } else {
-      assert.equal(resolveAddAdapterFile(`~/${tildeName}`), undefined,
-        "~ 展开落点（外部 home 缓存）无文件时拒绝");
-    }
-
-    // ~user 形态不展开（untildify 仅处理裸 ~ 前缀），解析失败拒绝。
-    // 该断言与缓存无关：无论落点在哪，"~other/x.mjs" 不展开且不存在 → 拒绝。
-    assert.equal(resolveAddAdapterFile("~other/x.mjs"), undefined, "~user 形态不展开拒绝");
-  } finally {
-    process.env.DSH_HOME = savedDsh;
-    if (savedHomeEnv === undefined) delete process.env.HOME;
-    else process.env.HOME = savedHomeEnv;
-  }
 }
 
 // ================================================================ #150 二阶段：UI 配置与面板锚点纯函数矩阵

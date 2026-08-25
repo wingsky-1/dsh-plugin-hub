@@ -7,6 +7,7 @@
  * HistoryStore.exportAll（#82 批次 3）。
  */
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+console.error("EVAL-ORDER-TAG: HISTORY");
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { assert } from "./helpers.ts";
@@ -202,7 +203,9 @@ import { listAdapters, migrateLegacyV3 } from "../lib/index.js";
   const store = new HistoryStore({ root });
   assert.equal(await store.last("p", "n"), null, "last 目录不存在返回 null");
 
-  const now = Date.now();
+  // 锚点取今天中午（本地时区）：若用 Date.now()，跨午夜瞬间运行时 now-5000
+  // 与 now 会落进两个日文件，使「单文件回退链」前提漂移产生 ±5s 的 flake 窗口
+  const now = new Date().setHours(12, 0, 0, 0);
   await store.append("p", "n", { time: now - 5000, data: { v: 1 } });
   await store.append("p", "n", { time: now, data: { v: 2 } });
   const lastEntry = await store.last("p", "n");

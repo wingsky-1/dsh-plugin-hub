@@ -9,6 +9,7 @@
  * #150 变异驱动加固）。
  */
 import { assert } from "./helpers.ts";
+console.error("EVAL-ORDER-TAG: CONTRACT");
 import {
   safeSegment,
   sseData,
@@ -319,7 +320,7 @@ assert.deepEqual(ERROR_CODES, [
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { makeAdapterRegistry, sanitizeHtml, safeFetchData, safeFormat, fetchWithTimeout,
+import { makeAdapterRegistry, sanitizeHtml, safeFetchData, safeFormat,
   runV2Pipeline, runV2PanelPipeline, capsuleHtmlFromHistory, HistoryStore,
   HotReloadableAdapter, readStamp, stampEqual, miniChartSvgMarkup,
   OPENCODE_GO_PROVIDER } from "../lib/index.js";
@@ -683,7 +684,10 @@ assert.equal(miniChartSvgMarkup({
   assert.ok(svg.includes('viewBox="0 0 320 100"'), "视口尺寸固定");
   assert.ok(svg.includes("stroke:#123456"), "曲线使用传入色");
   assert.ok(svg.includes("<circle"), "终点圆点存在");
-  assert.ok(svg.includes('stroke-dasharray:"3 3"') || svg.includes("dasharray"), "网格虚线存在");
+  // 网格线恰为 lo/mid/hi 三条（stroke-dasharray:3 3）；重置线(2 3)与 100% 参考
+  // 线(4 3)用不同 dash 值不会混入计数——精确计数而非 includes 存在性
+  const gridLines = svg.split('stroke-dasharray:3 3').length - 1;
+  assert.equal(gridLines, 3, "网格虚线恰三条（lo/中位/hi 各一）");
   assert.ok(svg.includes("100%"), "lo=0/hi=100 满足 lo<=100<=hi 且域宽>0.01 → 参考线存在");
 }
 {
@@ -731,6 +735,8 @@ assert.equal(miniChartSvgMarkup({
   });
   const circles = svg.split("<circle").length - 1;
   assert.equal(circles, 1, "降采样后仍只有一个终点圆点（渲染未崩）");
+  // 仅作退化护栏（防止降采样失效导致体积爆炸的非线性增长），非精确口径：
+  // 700 点降采样到 ≤301 点的 SVG 实际远小于该上限
   assert.ok(svg.length < 100000, "降采样控制了输出体积");
 }
 

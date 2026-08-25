@@ -19,6 +19,7 @@
  * 导出接口行为级断言）方才进入变异计量范围。
  */
 import { assert } from "./helpers.ts";
+console.error("EVAL-ORDER-TAG: V1");
 import {
   ADAPTER_CONTRACT_VERSION_V1,
   isHostProviderAdapter,
