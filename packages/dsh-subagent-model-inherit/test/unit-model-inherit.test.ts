@@ -80,7 +80,8 @@ assert.equal(name, "subagent-model-inherit");
   assert.equal(resolveInheritedSelection(child, makeAgent("p"), undefined), undefined,
     "缺 parentSession 应跳过");
   const forkChild = makeAgent("fork", { header: { parentSession: "p" } });
-  assert.equal(resolveInheritedSelection(forkChild, makeAgent("p"), undefined), undefined,
+  // fallback 给非 undefined 值：钉死「fork 不误伤」是门1 判定而非回退巧合
+  assert.equal(resolveInheritedSelection(forkChild, makeAgent("p"), { provider: "x", model: "y" }), undefined,
     "fork 型会话（无 origin 标记）不应被误伤");
 }
 
@@ -91,7 +92,7 @@ assert.equal(name, "subagent-model-inherit");
     "父已销毁应跳过（即使有 fallback）");
 }
 
-// 门 3：显式覆盖跳过
+// 门 3：显式覆盖跳过（含单字段不等的或语义分支）
 {
   const parent = makeAgent("p", { options: { provider: "deepseek", model: "deepseek-chat" } });
   const child = makeAgent("child", {
@@ -100,6 +101,19 @@ assert.equal(name, "subagent-model-inherit");
   });
   assert.equal(resolveInheritedSelection(child, parent, undefined), undefined,
     "显式指定不同模型应跳过");
+  // 或语义分支：仅单字段不等也必须跳过
+  const provOnly = makeAgent("child", {
+    options: { provider: "openai", model: "deepseek-chat" },
+    header: { origin: "subagent", parentSession: "p" },
+  });
+  assert.equal(resolveInheritedSelection(provOnly, parent, { provider: "x", model: "y" }), undefined,
+    "仅 provider 不同也应跳过");
+  const modelOnly = makeAgent("child", {
+    options: { provider: "deepseek", model: "other-model" },
+    header: { origin: "subagent", parentSession: "p" },
+  });
+  assert.equal(resolveInheritedSelection(modelOnly, parent, { provider: "x", model: "y" }), undefined,
+    "仅 model 不同也应跳过");
 }
 
 // 未指定 → 注入；#6 快照优先 logged header；采样字段不入快照
