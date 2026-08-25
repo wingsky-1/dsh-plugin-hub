@@ -21,8 +21,11 @@ on:
   push:
     # #204 用户指示：基线更新不必等夜间——每次 PR 合入 main 即触发全量变异更新基线，
     # 使基线始终跟随 main 最新状态，后续 PR 增量面仅含本次合入改动（避免一天改动
-    # 堆积导致次日所有 PR 增量慢）。concurrency 组保证串行（合入频繁时排队不重复跑）。
+    # 堆积导致次日所有 PR 增量慢）。
+    # paths-ignore（#204 修订）：基线 PR 合入只改 scripts/gate/baseline/** → 事件层
+    # 被过滤不触发 observe（防白跑 30min 全量变异）。
     branches: [main]
+    paths-ignore: ['scripts/gate/baseline/**']
   workflow_dispatch:
 
 permissions:
@@ -31,8 +34,9 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: observe-nightly
-  cancel-in-progress: false
+  # #204 修订：按事件分组——push 触发可被新合入取代（cancel），schedule 兜底必须完整跑完
+  group: observe-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 jobs:
   nightly:
