@@ -26,6 +26,7 @@ import "./unit-config.test.ts";
 import "./unit-history.test.ts";
 import "./unit-v1.test.ts";
 import "./unit-apply.test.ts";
+import "./unit-detect.test.ts";
 
 import {
   apply,

@@ -73,10 +73,35 @@ export interface ConnectionHandleLike {
   api?: {
     sessions?: {
       models?(req: { sessionId: string }): Promise<{
-        result?: { ok?: boolean; value?: { current?: { provider?: string; model?: string } } };
+        result?: {
+          ok?: boolean;
+          value?: { current?: { provider?: string; model?: string } };
+          /** RPC 业务错误形态（{ok:false,error:{code,...}}；agent-busy 即此形态或抛错携带 code）。 */
+          error?: { code?: string; message?: string } | unknown;
+        };
       }>;
     };
   };
+}
+
+/** sessions.list 快照中的单行（客户端 store 形态，防御式可选字段）。 */
+export interface SessionListRowLike {
+  id?: string;
+  /** 子代理行标记（spawn/fork 两类子代理均由宿主 store 写入）。 */
+  origin?: string;
+  /**
+   * 父会话 id：客户端 store 归一字段（线上 wire 字段 parentSessionId 由
+   * dsh-client-runtime 归一为 parentId）；防御兼容两种命名。
+   */
+  parentId?: string;
+  parentSessionId?: string;
+}
+
+/** sessions.list 快照形态（{current, ids, byId}，与宿主 client-runtime 一致）。 */
+export interface SessionListSnapshotLike {
+  current?: string;
+  ids?: string[];
+  byId?: Record<string, SessionListRowLike>;
 }
 
 export interface SessionsServiceLike {
@@ -84,7 +109,7 @@ export interface SessionsServiceLike {
     getSnapshot(): SessionMaybeProvide;
     subscribe?(fn: () => void): () => void;
   };
-  list?: { getSnapshot?(): { current?: string }; subscribe?(fn: () => void): () => void };
+  list?: { getSnapshot?(): SessionListSnapshotLike; subscribe?(fn: () => void): () => void };
 }
 
 export function currentSessionId(sessions: SessionsServiceLike | undefined): string | undefined {
@@ -98,6 +123,63 @@ export function currentSessionId(sessions: SessionsServiceLike | undefined): str
   return undefined;
 }
 
+// ---------------------------------------------------------------- 会话祖先链上溯（issue #69 方案 A）
+
+/** 上溯链深度封顶：链上最多探测的会话数（自身 + 至多 N-1 代祖先），防环与异常长链。 */
+export const MAX_ANCESTRY_DEPTH = 3;
+
+/** 行内父 id 读取：优先归一字段 parentId，防御兼容 wire 原名 parentSessionId。 */
+function parentSessionIdOf(row: SessionListRowLike | undefined): string | undefined {
+  const p = row?.parentId ?? row?.parentSessionId;
+  return typeof p === "string" && p.length > 0 ? p : undefined;
+}
+
+/**
+ * 从 startId 沿 sessions.list 快照 byId 行的 parentId 逐级上溯，产出待探测会话 id 链。
+ * 封顶 MAX_ANCESTRY_DEPTH（可调），visited 集合防环；快照缺失/断链即停。
+ * 设计原则（#69）：不做「是不是子代理」的正向分类——ordinary 会话无 parentId，链长即为 1。
+ */
+export function sessionAncestryChain(
+  sessions: SessionsServiceLike | undefined,
+  startId: string,
+  maxDepth: number = MAX_ANCESTRY_DEPTH,
+): string[] {
+  if (!(maxDepth >= 1)) return [];
+  const chain = [startId];
+  const seen = new Set<string>([startId]);
+  const byId = sessions?.list?.getSnapshot?.()?.byId;
+  let cur = startId;
+  while (chain.length < maxDepth) {
+    const parent = byId === undefined ? undefined : parentSessionIdOf(byId[cur]);
+    if (parent === undefined || seen.has(parent)) break; // 断链 / 环 → 停
+    chain.push(parent);
+    seen.add(parent);
+    cur = parent;
+  }
+  return chain;
+}
+
+/** agent-busy 错误识别：抛错携带 code/message，或 RPC 错误分支对象。 */
+export function isAgentBusyError(error: unknown): boolean {
+  if (error === null || typeof error !== "object") return false;
+  if ((error as { code?: unknown }).code === "agent-busy") return true;
+  const msg = (error as { message?: unknown }).message;
+  return typeof msg === "string" && msg.includes("agent-busy");
+}
+
+/** agent-busy 诊断日志（排障信号，不影响返回值语义）。 */
+function logAgentBusyDiagnosis(sessionId: string): void {
+  console.warn(
+    `[dsh-provider-usage] 会话 ${sessionId} 为忙着的子代理会话（agent-busy），provider 检测沿父会话上溯`,
+  );
+}
+
+/**
+ * 解析当前展示会话的 provider（issue #69 方案 A+B 的检测半区）：
+ * 从当前会话沿 parentId 上溯（封顶深度 3、防环），首个 models() 解析成功者胜；
+ * 子代理会话 models() 抛/返 agent-busy 时记一条诊断日志。全链失败返回 undefined，
+ * 兜底语义（保持上次检测 / 回落默认）由调用方 decideProviderAfterDetect 决定。
+ */
 export async function resolveProviderFromSession(
   sessions: SessionsServiceLike | undefined,
   connection: ConnectionHandleLike | undefined,
@@ -106,14 +188,59 @@ export async function resolveProviderFromSession(
   if (sessionId === undefined) return undefined;
   const models = connection?.api?.sessions?.models;
   if (typeof models !== "function") return undefined;
-  try {
-    const res = await models({ sessionId });
-    const value = res?.result?.value;
-    if (res?.result?.ok !== true || !value || typeof value.current?.provider !== "string") return undefined;
-    return value.current.provider;
-  } catch {
-    return undefined;
+  for (const sid of sessionAncestryChain(sessions, sessionId)) {
+    try {
+      const res = await models({ sessionId: sid });
+      const result = res?.result;
+      const value = result?.value;
+      if (result?.ok === true && value && typeof value.current?.provider === "string") {
+        return value.current.provider;
+      }
+      // RPC 业务错误形态（不抛错）：agent-busy 同样记诊断后继续上溯
+      if (isAgentBusyError((result as { error?: unknown } | undefined)?.error)) logAgentBusyDiagnosis(sid);
+    } catch (error) {
+      if (isAgentBusyError(error)) logAgentBusyDiagnosis(sid);
+    }
   }
+  return undefined;
+}
+
+// ---------------------------------------------------------------- 检测兜底决策（issue #69 方案 B）
+
+/** 无任何成功检测时的回落 provider（内置默认；仅在「从未检测成功」时使用）。 */
+export const FALLBACK_PROVIDER = "opencode-go";
+
+/** 胶囊 title 未识别标注文案。 */
+export const UNKNOWN_PROVIDER_HINT = "提供商未识别";
+
+/** detect 一轮结果决策入参。 */
+export interface DetectDecisionInput {
+  /** 本轮 resolveProviderFromSession 的解析结果（undefined = 全链失败或无会话）。 */
+  resolved: string | undefined;
+  /** 本轮检测时是否存在当前会话（区分「无会话回落」与「有会话但不可解析」）。 */
+  hadSession: boolean;
+  /** 历史上最近一次成功检测的 provider（从未成功则为 undefined）。 */
+  previousDetected: string | undefined;
+}
+
+/** detect 一轮结果决策出参。 */
+export interface DetectDecision {
+  /** 本轮应生效的 provider。 */
+  provider: string;
+  /** true = 有会话但 provider 未能确认（胶囊 title 标注「提供商未识别」）。 */
+  unknown: boolean;
+}
+
+/**
+ * 检测结果决策（纯函数，issue #69 方案 B）：
+ * - 解析成功 → 采用；
+ * - 无任何会话 → 维持原回落行为（回归防护，不算未知态）；
+ * - 有会话但全链失败 → 保持上次检测结果并标注未识别；仅当从未成功检测过才回落默认。
+ */
+export function decideProviderAfterDetect(input: DetectDecisionInput): DetectDecision {
+  if (input.resolved !== undefined) return { provider: input.resolved, unknown: false };
+  if (!input.hadSession) return { provider: FALLBACK_PROVIDER, unknown: false };
+  return { provider: input.previousDetected ?? FALLBACK_PROVIDER, unknown: true };
 }
 
 // ---------------------------------------------------------------- 数据拉取（v2）
