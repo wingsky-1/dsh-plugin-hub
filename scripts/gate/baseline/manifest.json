@@ -1,32 +1,32 @@
 {
   "notifier": {
     "size": 370802,
-    "mtime": "2026-08-25T11:54:47.468Z",
-    "sha256": "3c5247212135df63b68503fb565ee41cba79c9d2133229d484c08ce9de7bfed5"
+    "mtime": "2026-08-25T14:42:22.611Z",
+    "sha256": "97fd67e532d12c2b87aa7646df9e5934dc9ed036db0c9511b52699a9917b1d45"
   },
   "idle-archive": {
-    "size": 305395,
-    "mtime": "2026-08-25T11:55:10.275Z",
-    "sha256": "7a33188998f1c26eb04a9aff06eab29af37d2ebc20fc8f93774e2394320396a8"
+    "size": 305585,
+    "mtime": "2026-08-25T14:42:44.277Z",
+    "sha256": "198122334c0bfaad5dfa24d0482cd630a5e2d640ddba86cbec8901a0925ee8b6"
   },
   "web-file-preview": {
-    "size": 695095,
-    "mtime": "2026-08-25T11:55:37.856Z",
-    "sha256": "609bbbf0a3c87505aef611317137deaf13e2aa1595d17e413ce7c5fa28677039"
+    "size": 695096,
+    "mtime": "2026-08-25T14:43:09.519Z",
+    "sha256": "39612aa068c6e2b0fa2736d19a17671527aaaa816a45c3d86340bbab8f0db524"
   },
   "mcp-manager": {
     "size": 2360493,
-    "mtime": "2026-08-25T12:00:01.720Z",
-    "sha256": "782a7ef867391d7b7140e3b97411514a91052bf68d4e342bcd77f2d6fb26a284"
+    "mtime": "2026-08-25T14:47:23.100Z",
+    "sha256": "1aae794062a2342dbcc4604a0b9e6e07f6fd85756be95a74b793bfecd2698541"
   },
   "provider-usage": {
-    "size": 2554039,
-    "mtime": "2026-08-25T12:12:39.692Z",
-    "sha256": "4d43d3ba9ff8511fe467baf0f145811f65697f7322b2511d7afb38c8e36708a5"
+    "size": 2506970,
+    "mtime": "2026-08-25T14:59:47.636Z",
+    "sha256": "091d691f01d41315a740491d4f6fa39609eb173f8eb31a072e4b3555f62b02cd"
   },
   "lan-proxy": {
-    "size": 1885740,
-    "mtime": "2026-08-25T12:20:27.436Z",
-    "sha256": "b1ff1c694625106797cfeefa19b830300bf8bba70b9de84b2161d811d0d63821"
+    "size": 1888301,
+    "mtime": "2026-08-25T15:07:32.031Z",
+    "sha256": "6b1106ed3395528bb7c61980299aa54d1365cea3889fe6b2fafce8d087deba4d"
   }
 }
