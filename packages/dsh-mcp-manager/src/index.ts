@@ -320,8 +320,17 @@ export class McpManager {
     return () => this.listeners.delete(handler);
   }
 
+  /** coalesce 定时器（同一 tick 内多次状态变化合并为一次广播）。 */
+  private statusTimer: NodeJS.Timeout | undefined;
+
+  /** 状态变化广播（coalesce：同 tick 多次 emitStatus 只广播一次，防 SSE 风暴）。 */
   emitStatus(): void {
-    for (const handler of [...this.listeners]) handler();
+    if (this.statusTimer !== undefined) return;
+    this.statusTimer = setTimeout(() => {
+      this.statusTimer = undefined;
+      for (const handler of [...this.listeners]) handler();
+    }, 0);
+    this.statusTimer.unref?.();
   }
 
   /** 项目根发现：从 cwd 向上找 .git / .dsh / .mcp.json 标记，找不到用 cwd 本身。
@@ -744,6 +753,10 @@ export class McpManager {
   }
 
   async dispose(): Promise<void> {
+    if (this.statusTimer !== undefined) {
+      clearTimeout(this.statusTimer);
+      this.statusTimer = undefined;
+    }
     for (const supervisor of this.supervisors.values()) {
       supervisor.disposed = true;
       if (supervisor.reconnectTimer !== undefined) clearTimeout(supervisor.reconnectTimer);
