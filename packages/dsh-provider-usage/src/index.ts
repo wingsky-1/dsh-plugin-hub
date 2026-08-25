@@ -227,7 +227,11 @@ export function normalizeConfig(input: unknown): NormalizedConfig {
   if (Number.isFinite(cfg.cacheDurationMs)) base.cacheDurationMs = Math.max(5000, cfg.cacheDurationMs as number);
   if (Number.isFinite(cfg.fetchTimeoutMs)) base.fetchTimeoutMs = Math.min(Math.max(500, cfg.fetchTimeoutMs as number), 30000);
   if (typeof cfg.autoReload === "boolean") base.autoReload = cfg.autoReload;
-  if (Number.isFinite(cfg.maxAgeDays)) base.maxAgeDays = Math.min(365, cfg.maxAgeDays as number);
+  // #184：maxAgeDays 仅接受正整数——<=0 会令 maybePrune 下界落在未来（历史被全量清理）、
+  // 面板查询区间 start>end 永空；非正整数一律视为非法回落默认值，上界 365 维持既有 clamp
+  if (Number.isInteger(cfg.maxAgeDays) && (cfg.maxAgeDays as number) > 0) {
+    base.maxAgeDays = Math.min(365, cfg.maxAgeDays as number);
+  }
   if (Number.isFinite(cfg.maxSizeMB)) base.maxSizeMB = Math.min(500, cfg.maxSizeMB as number);
   return base;
 }
@@ -299,7 +303,11 @@ export async function readUserAdapters(root: string): Promise<UserAdapterRecord[
 export async function readAdapterState(root: string): Promise<Record<string, string | null>> {
   try {
     if (!existsSync(adapterStateFile(root))) return {};
-    const data = JSON.parse(await readFile(adapterStateFile(root), "utf8")) as Record<string, unknown>;
+    const parsed: unknown = JSON.parse(await readFile(adapterStateFile(root), "utf8"));
+    // #184：顶层必须是 plain object——null / 数组 / 字符串等类数组输入一律拒绝，
+    // 返回与「无有效状态」一致的空对象（调用方遍历空对象即无任何恢复动作）
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
+    const data = parsed as Record<string, unknown>;
     const out: Record<string, string | null> = {};
     for (const [provider, id] of Object.entries(data)) {
       if (typeof provider !== "string" || provider.length === 0) continue;
