@@ -114,16 +114,16 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           branch: ci/incremental-baseline
           base: main
-          title: 'chore(ci): update incremental mutation baseline（夜间基线快照）'
+          title: 'chore(ci): update incremental mutation baseline（基线快照）'
           body: |
-            夜间全量变异产出的 Stryker incremental 基线快照（#204 方案 A）。
+            全量变异产出的 Stryker incremental 基线快照（#204 方案 A；main push 或夜间调度触发）。
 
             变更内容：`scripts/gate/baseline/` 下的六包 incremental 基线文件与
             manifest.json（仅当基线内容有实质变化时本 PR 才会被创建）。
 
             无代码逻辑变更；合并后 PR 的 mutation-gate 将直接读取本目录基线
             走增量变异（跳过未变 mutant），替代失效的 actions/cache 跨 ref 通道。
-          commit-message: 'chore(ci): update incremental mutation baseline（夜间基线快照）'
+          commit-message: 'chore(ci): update incremental mutation baseline（基线快照）'
           labels: 'ci'
           delete-branch: true
           signoff: false
