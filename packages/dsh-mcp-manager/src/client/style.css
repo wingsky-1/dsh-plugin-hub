@@ -94,7 +94,7 @@
 .dm-set-headText{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
 .dm-set-name{display:block;font-size:13.5px;font-weight:600;color:var(--dsw-alias-label-primary,#1f2329)}
 .dm-set-description{display:block;margin-top:2px;font-size:12px;color:var(--dsw-alias-label-tertiary,#8a919c)}
-.dm-set-chevron{flex:none;color:var(--dsw-alias-label-tertiary,#5f6672);font-size:11px;transition:transform .16s ease}
+.dm-set-chevron{flex:0 0 auto;display:flex;align-items:center;justify-content:center;width:32px;height:32px;margin:-9px -14px -9px 0;color:var(--dsw-alias-label-tertiary,#5f6672);transition:transform .16s ease}
 .dm-set-chevronOpen{transform:rotate(180deg)}
 .dm-set-body{padding:4px 14px 14px;border-top:1px solid var(--dsw-alias-border-l1,#e2e5ea);display:flex;flex-direction:column;gap:9px}
 .dm-set-row{display:flex;align-items:center;gap:12px;margin:0;flex-wrap:wrap}

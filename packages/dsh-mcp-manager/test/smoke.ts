@@ -190,6 +190,14 @@ const main = async () => {
     assert.match(css, /--dsw-alias-label-tertiary,#8a919c/, "描述用 tertiary 层级（与官方同款）");
   });
 
+  check("设置卡片展开箭头为官方 SVG chevron（#167：非文本 ▾ 字符）", () => {
+    const clientSrc = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+    assert.ok(clientSrc.includes('dm-set-chevron'), "chevron class 在客户端产物中");
+    assert.ok(!/dm-set-chevron[^"]*"[^>]*>▾/.test(clientSrc), "不再使用文本 ▾ 字符作为箭头");
+    assert.ok(clientSrc.includes('M11.8486 5.5L11.4238'), "使用官方 chevron-down SVG path");
+    assert.match(clientSrc, /width:\s*14,\s*height:\s*14/, "SVG 尺寸 14x14（官方同款）");
+  });
+
   console.log("Config schema（浮窗 UI 配置迁移到插件自身 Config.ui）");
   check("Config 导出且含 ui 子对象（默认值与合法值域）", () => {
     assert.ok(typeof Config === "function", "Config 是 schemastery schema（可调用）");
