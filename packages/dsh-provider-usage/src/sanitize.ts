@@ -7,15 +7,16 @@
  *
  * #105③ 实体感知双层净化：
  * - 第一层：既有明文形态黑名单（行为不变）；
- * - 第二层：对第一层输出做**一轮** HTML 实体解码得到「检测副本」，在副本上
- *   定位危险载体模式，命中后只从**原文**删除对应字节区间。
+ * - 第二层：对第一层输出做**一轮** HTML 实体解码得到「检测副本」，协议类
+ *   模式再经 WHATWG URL 语义剥除 \t\n\r 得二级视图，在视图上定位危险载体
+ *   模式，命中后只从**原文**删除对应字节区间，迭代至天然收敛。
  *   安全不变量（结构性保证）：
  *   1. 输出恒为输入的子序列（纯删除）——解码副本绝不回写为输出，
  *      因此 `&amp;#106;avascript:` / `&lt;script&gt;` 等本已安全的实体文本
  *      不可能被"误解码"升级为危险明文；
- *   2. 第二层迭代至不动点（每轮要么无匹配终止、要么长度严格递减必终止，
- *      上限仅作防御），不动点谓词 = 解码一轮后不含任何危险载体模式，
- *      该谓词同时蕴含第一层模式不再命中 ⇒
+ *   2. 第二层迭代每轮要么无匹配终止、要么长度严格递减必终止（无固定上限，
+ *      见 sanitizeHtml 第 4 步收敛性论证），终态谓词 = 解码 + URL 剥除后
+ *      不含任何危险载体模式，该谓词同时蕴含第一层模式不再命中 ⇒
  *      `sanitizeHtml(sanitizeHtml(x)) === sanitizeHtml(x)` 幂等成立。
  */
 
@@ -40,6 +41,7 @@ const DATA_TEXT_HTML_RE = /\bdata\s*:\s*text\/html/giu;
  * 危险载体 token 级模式（在解码副本上匹配）。开/闭标签分开成对出现：
  * 实体化标签对（如 `&lt;script&gt;...&lt;/script&gt;`，浏览器渲染为纯文本）
  * 移除标签 token 后保留其间文本；真标签已在第一层整段移除。
+ * 协议类模式除外——它们在 URL 剥除视图上匹配（见 URL_PROTOCOL_RES）。
  */
 const DECODED_DANGER_RES: RegExp[] = [
   /<script\b[^>]*>/giu,
@@ -56,10 +58,18 @@ const DECODED_DANGER_RES: RegExp[] = [
   /<link\b[^>]*>/giu,
   /<base\b[^>]*>/giu,
   EVENT_HANDLER_RE,
-  JAVASCRIPT_URI_RE,
-  DATA_TEXT_HTML_RE,
   STYLE_ON_SCRIPT_RE,
 ];
+
+/**
+ * 协议类模式：WHATWG URL basic parser 在解析入口剥除输入中全部 ASCII
+ * tab/newline/CR，故 `jav&#9;ascript:` 解码一轮得 `jav\tascript:` 后 scheme
+ * 仍还原为 javascript:——此类载体必须在「解码 + 剥除」二级视图上定位
+ * （PR#196 复核 P1-1）。
+ */
+const URL_PROTOCOL_RES: RegExp[] = [JAVASCRIPT_URI_RE, DATA_TEXT_HTML_RE];
+
+const isUrlStrippedChar = (c: string) => c === "\t" || c === "\n" || c === "\r";
 
 /**
  * 具名实体表：只收编「解码产物为 ASCII 且可能参与危险载体构造」的条目。
@@ -205,14 +215,37 @@ function mergeRanges(ranges: Array<[number, number]>): Array<[number, number]> {
   return merged;
 }
 
-/** 单轮实体感知封闭：解码副本上收集全部危险 match，映射回原文一次性删除。 */
+/**
+ * 单轮实体感知封闭：解码副本上收集全部危险 match，映射回原文一次性删除。
+ * 协议类模式在「解码 + 剥除 \t\n\r」二级视图上定位（WHATWG URL 语义，
+ * P1-1），match 区间经剥除下标 → 解码下标两跳映射回原文区间。
+ */
 function stripDecodedDanger(html: string): string {
   const view = decodeEntitiesOnce(html);
-  const ranges: Array<[number, number]> = [];
+  // URL 剥除视图：view.text 去掉全部 \t\n\r，urlChars[k] = 剥除文本第 k 个
+  // code unit 在 view.text（解码副本）中的下标
+  const urlChars: number[] = [];
+  let urlText = "";
+  for (let i = 0; i < view.text.length; i++) {
+    if (isUrlStrippedChar(view.text[i])) continue;
+    urlText += view.text[i];
+    urlChars.push(i);
+  }
+  const ranges: Array<[number, number]> = []; // 解码副本 code unit 下标区间 [s,e)
   for (const re of DECODED_DANGER_RES) {
     re.lastIndex = 0;
     for (const m of view.text.matchAll(re)) {
       ranges.push([m.index, m.index + m[0].length]);
+    }
+  }
+  for (const re of URL_PROTOCOL_RES) {
+    re.lastIndex = 0;
+    for (const m of urlText.matchAll(re)) {
+      // match 首尾字符映射回解码副本；夹在两者之间的被剥字符随连续原文区间一并覆盖
+      let e = urlChars[m.index + m[0].length - 1] + 1;
+      // 尾部吞掉紧邻的被剥字符（如 javascript:&#10;），不留孤儿实体碎片
+      while (e < view.text.length && isUrlStrippedChar(view.text[e])) e++;
+      ranges.push([urlChars[m.index], e]);
     }
   }
   if (ranges.length === 0) return html;
@@ -253,9 +286,15 @@ export function sanitizeHtml(html: string): string {
     .replace(JAVASCRIPT_URI_RE, '')
     .replace(DATA_TEXT_HTML_RE, '')
     .replace(STYLE_ON_SCRIPT_RE, '');
-  // 4. 实体编码变体封闭（#105③）：迭代至不动点（上限纯防御；
-  //    每轮要么无匹配终止、要么长度严格递减，正常输入 1-2 轮收敛）
-  for (let round = 0; round < 16; round++) {
+  // 4. 实体编码变体封闭（#105③）：迭代至天然收敛，不设固定轮数上限。
+  //    收敛性论证：stripDecodedDanger 要么无匹配原样返回（终止），要么至少
+  //    删除一个非空 match 区间使长度严格递减——轮数上界为输入长度，循环
+  //    必然终止；终态谓词「解码 + URL 剥除视图下不含任何危险载体」成立，
+  //    且该谓词蕴含第一层明文模式亦不再命中 ⇒ 幂等硬闸
+  //    sanitizeHtml(sanitizeHtml(x)) === sanitizeHtml(x) 构造成立。
+  //    （固定轮数上限会在深嵌套构造下静默截断——残留危险 token 且推翻幂等，
+  //    PR#196 复核 P1-2，故必须收敛至不动点而非触底放弃。）
+  for (;;) {
     const next = stripDecodedDanger(out);
     if (next === out) break;
     out = next;

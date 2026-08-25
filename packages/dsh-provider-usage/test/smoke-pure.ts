@@ -100,8 +100,12 @@ const sanDecodeOnce = (s: string): string =>
       SAN_NAMED[nm.toLowerCase()] ?? `&${nm}`);
 const SAN_DANGER_RE =
   /<script\b|<iframe\b|<frame\b|<object\b|<embed\b|<meta\b|<link\b|<base\b|\son\w+\s*=|javascript\s*:|data\s*:\s*text\/html|expression\s*\(/i;
-/** 统一判定标准：净化输出经一轮实体解码后不含任何危险载体模式。 */
-const sanContained = (out: string): boolean => !SAN_DANGER_RE.test(sanDecodeOnce(out));
+/** 统一判定标准 v2：输出经一轮实体解码后，再按 WHATWG URL basic parser
+ * 入口语义剥除全部 ASCII tab/newline/CR，不得匹配任何危险载体模式。
+ * （v1 判据缺 URL 剥除步、与实现共盲放过 jav&#9;ascript: 族——复核 P1-1，
+ * 判据与实现同步升级避免自证循环。） */
+const sanBrowserView = (s: string): string => sanDecodeOnce(s).replace(/[\t\n\r]/g, "");
+const sanContained = (out: string): boolean => !SAN_DANGER_RE.test(sanBrowserView(out));
 
 // A1 [硬性] 十六进制带分号实体拼写的协议被封（issue 原例）
 {
@@ -211,6 +215,54 @@ const sanContained = (out: string): boolean => !SAN_DANGER_RE.test(sanDecodeOnce
   for (const s of idemSamples) {
     assert.equal(sanitizeHtml(sanitizeHtml(s)), sanitizeHtml(s), `A8b: 幂等不动点 ${s}`);
   }
+}
+
+// A9 [硬性][判定标准 v2] 协议词 Tab/LF/CR 实体族被封（复核 P1-1）：
+// WHATWG URL basic parser 解析入口剥除全部 \t\n\r，jav&#9;ascript: 剥后还原
+// javascript:——v1 判据与实现曾共盲穿透，现实现按 URL 语义在剥除视图定位
+{
+  const t1 = [
+    '<a href="jav&#9;ascript:alert(1)">x</a>',    // 十进制 tab
+    '<a href="jav&#x09;ascript:alert(1)">x</a>',  // hex tab
+    '<a href="jav&#10;ascript:alert(1)">x</a>',   // LF
+    '<a href="jav&#13;ascript:alert(1)">x</a>',   // CR
+    '<a href="jav&Tab;ascript:alert(1)">x</a>',   // 具名 Tab
+    '<a href="dat&#9;a:text/html;base64,x">c</a>', // data:text/html 同族
+  ];
+  for (const payload of t1) {
+    const out = sanitizeHtml(payload);
+    assert.ok(sanContained(out), `A9: v2 判据下封闭 ${payload}`);
+    assert.ok(!out.includes("&#9;") && !out.includes("&#x09;") && !out.includes("&Tab;")
+      && !out.includes("&#10;") && !out.includes("&#13;"), `A9: 危险实体区间自输出移除 ${payload}`);
+  }
+  // 明文 tab 混入协议词同样封闭（URL 剥除语义不区分实体/字面来源）
+  assert.ok(sanContained(sanitizeHtml('<a href="jav\tascript:alert(1)">x</a>')), "A9: 字面 tab 变体封闭");
+  // 正常文本中的 tab/newline 不受影响（剥除仅用于检测视图，不改写输出）
+  const normal = '<p>a\tb\nc</p>';
+  assert.equal(sanitizeHtml(normal), normal, "A9: 正常空白字符零损伤");
+}
+
+// A10 [硬性][判定标准 v2] 深嵌套天然收敛与幂等（复核 P1-2）：
+// pad(k) 每轮仅暴露一层 <meta>（删除拼接出下一层），k 层需 k 轮——
+// 实现已去除固定轮数上限，迭代至不动点，任何深度不得残留或破坏幂等
+{
+  const pad = (k: number): string => {
+    let s = "<meta>";
+    for (let i = 1; i < k; i++) s = "<met" + s + "a>";
+    return s;
+  };
+  for (const depth of [15, 16, 17, 18, 25]) {   // 覆盖旧 16 轮上限两侧
+    const x = pad(depth);
+    const y = sanitizeHtml(x);
+    assert.equal(sanitizeHtml(y), y, `A10: pad(${depth}) 幂等不动点`);
+    assert.ok(!/<meta\b|<met\b/i.test(y), `A10: pad(${depth}) 无危险 token 残留`);
+    assert.ok(sanContained(y), `A10: pad(${depth}) v2 判据安全`);
+  }
+  // 深垫刀 + 部分编码开标签混合构造
+  const mixed = pad(18) + "&#X3c;script>alert(1)</script>z";
+  const mOut = sanitizeHtml(mixed);
+  assert.equal(sanitizeHtml(mOut), mOut, "A10: 混合深嵌套幂等");
+  assert.ok(sanContained(mOut), "A10: 混合深嵌套 v2 判据安全");
 }
 
 // B 组：合法内容不误伤

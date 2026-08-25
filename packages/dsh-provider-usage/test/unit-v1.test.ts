@@ -1197,21 +1197,35 @@ function resetLineXs(svg) {
   for (const s of idemSamples) {
     assert.equal(sanitizeHtml(sanitizeHtml(s)), sanitizeHtml(s), `幂等不动点: ${s}`);
   }
+  // 深嵌套天然收敛与幂等（复核 P1-2）：pad(k) 每轮仅暴露一层 <meta>，
+  // 实现无固定轮数上限，任意深度不得残留或破坏幂等
+  const pad = (k: number): string => {
+    let s = "<meta>";
+    for (let i = 1; i < k; i++) s = "<met" + s + "a>";
+    return s;
+  };
+  for (const depth of [17, 18, 25]) {
+    const y = sanitizeHtml(pad(depth));
+    assert.equal(sanitizeHtml(y), y, `深嵌套 pad(${depth}) 幂等不动点`);
+    assert.ok(!/<meta\b|<met\b/i.test(y), `深嵌套 pad(${depth}) 无危险 token 残留`);
+  }
 }
 
 // ---------------------------------------------------------------- #105③ C1 管道级端到端：净化在管道内生效
 
 {
-  // 统一判定标准精简版（qa 判据同款）：一轮实体解码后不得匹配危险载体模式
+  // 统一判定标准 v2 精简版（qa 判据同款）：一轮实体解码后按 WHATWG URL
+  // 解析语义剥除 \t\n\r，不得匹配危险载体模式
   const pipeNamed: Record<string, string> = { lt: "<", gt: ">", amp: "&", quot: '"', apos: "'", colon: ":", semi: ";", equals: "=", sol: "/", num: "#", lpar: "(", rpar: ")" };
   const pipeDecodeOnce = (s: string): string =>
     s
       .replace(/&#x([0-9a-fA-F]+);?/g, (_m: string, h: string) => String.fromCodePoint(Math.min(parseInt(h, 16), 0x10ffff)))
       .replace(/&#(\d+);?/g, (_m: string, d: string) => String.fromCodePoint(Math.min(parseInt(d, 10), 0x10ffff)))
       .replace(/&([a-zA-Z][a-zA-Z0-9]*);?/g, (_m: string, nm: string) => pipeNamed[nm.toLowerCase()] ?? `&${nm}`);
+  const pipeBrowserView = (s: string): string => pipeDecodeOnce(s).replace(/[\t\n\r]/g, "");
   const pipeDanger =
     /<script\b|<iframe\b|<frame\b|<object\b|<embed\b|<meta\b|<link\b|<base\b|\son\w+\s*=|javascript\s*:|data\s*:\s*text\/html|expression\s*\(/i;
-  const pipeContained = (out: string): boolean => !pipeDanger.test(pipeDecodeOnce(out));
+  const pipeContained = (out: string): boolean => !pipeDanger.test(pipeBrowserView(out));
 
   // 恶意 formatCapsule（issue 原例 payload）→ runV2Pipeline 产出前净化兜底
   const capR = await runV2Pipeline({
@@ -1235,7 +1249,8 @@ function resetLineXs(svg) {
     "C1: 危险实体区间已自输出移除");
 
   // 恶意 formatPanel（事件属性部分编码 + 具名冒号协议）→ runV2PanelPipeline 净化兜底
-  const store = new HistoryStore({ root: mkdtempSync(join(tmpdir(), "dou-san-pipe-")) });
+  const sanPipeDir = mkdtempSync(join(tmpdir(), "dou-san-pipe-"));
+  const store = new HistoryStore({ root: sanPipeDir });
   try {
     await store.append("pv", "evil-panel", { time: Date.now(), data: { v: 1 } });
     const panelR = await runV2PanelPipeline({
@@ -1256,7 +1271,7 @@ function resetLineXs(svg) {
     assert.ok(panelR.panelHtml !== undefined && panelR.panelHtml.includes("<p t=1") && panelR.panelHtml.includes(">x "),
       "C1: 无害属性与文本保留（兜底不扩大化）");
   } finally {
-    rmSync(join(tmpdir(), "dou-san-pipe-"), { recursive: true, force: true });
+    rmSync(sanPipeDir, { recursive: true, force: true });
   }
 }
 
