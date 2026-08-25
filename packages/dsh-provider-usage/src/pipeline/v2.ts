@@ -77,6 +77,18 @@ export async function runV2Pipeline(ctx: V2PipelineContext): Promise<V2PipelineR
   }, ctx.timeoutMs);
 
   if (fetched.error !== undefined) {
+    // #198 A 组：取数失败仍产出 stale 胶囊（空 data + status:'stale' + error），
+    // 让峰谷徽标等纯本地信息在错误帧常驻；不带 rawData → 上层不落盘历史（错误帧绝不以
+    // fresh 身份进历史）。formatCapsule 对该输入渲染「无数据」占位且不抛错（safeFormat 隔离）。
+    const failCapsInput = {
+      time: fetchedAt,
+      data: {},
+      status: 'stale' as const,
+      error: fetched.error,
+      esc,
+    };
+    const failFormatted = await safeFormat(() => adapter.formatCapsule(failCapsInput), 'formatCapsule', ctx.timeoutMs);
+    const failCapsuleHtml = failFormatted.html !== undefined ? sanitizeHtml(failFormatted.html) : undefined;
     return {
       ok: false,
       configured: true,
@@ -86,6 +98,7 @@ export async function runV2Pipeline(ctx: V2PipelineContext): Promise<V2PipelineR
       provider,
       adapterName: adapter.name,
       status: 'stale',
+      ...(failCapsuleHtml !== undefined ? { capsuleHtml: failCapsuleHtml } : {}),
     };
   }
 

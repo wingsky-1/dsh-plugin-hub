@@ -114,6 +114,12 @@ assert.equal(normalizeConfig({ cacheDurationMs: 1000 }).cacheDurationMs, 5000, "
 assert.equal(normalizeConfig({ cacheDurationMs: 10000 }).cacheDurationMs, 10000, "cacheDurationMs 合法透传");
 assert.equal(normalizeConfig({ cacheDurationMs: "x" }).cacheDurationMs, DEFAULT_CONFIG.cacheDurationMs, "cacheDurationMs 非法丢弃");
 
+// #198 H1/H2：默认缓存由 60000 下调至 30000；显式配置语义与下限 clamp 保持
+assert.equal(DEFAULT_CONFIG.cacheDurationMs, 30000, "#198 H1: 默认 cacheDurationMs=30000");
+assert.equal(normalizeConfig({}).cacheDurationMs, 30000, "#198 H1: 未配置时生效 30000");
+assert.equal(normalizeConfig({ cacheDurationMs: 60000 }).cacheDurationMs, 60000, "#198 H2: 显式 60000 生效 60000");
+assert.equal(normalizeConfig({ cacheDurationMs: 4999 }).cacheDurationMs, 5000, "#198 H2: 下限 clamp 保持");
+
 assert.equal(normalizeConfig({ apiKey: "sk-abc123" }).apiKey, "sk-abc123", "apiKey 字符串透传");
 assert.equal(normalizeConfig({ apiKey: 123 }).apiKey, "", "apiKey 非字符串丢弃回默认空串");
 

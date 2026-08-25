@@ -164,40 +164,46 @@ test('gauntlet: mutation.packages 全部带 threshold 字段且 ≥60（阶段�
   }
 })
 
-// ── #178 v2：Stryker 增量模式接入（夜间全量落缓存 + PR 增量切片门禁）──
+// ── #178 v2 + #204：Stryker 增量模式接入（夜间全量落仓库基线 + PR 增量切片门禁）──
+// #204 修订：actions/cache 按 ref 隔离（PR 永远 miss main 缓存，GitHub Community #58583），
+// 基线改「仓库内版本化文件」——夜间 collect 到 scripts/gate/baseline/ + create-pull-request 合入 main，
+// PR 侧直接读文件（git 跨 ref 天然可见、可本地实证）。
 
-test('#178: observe.yml 夜间保持全量——只落缓存不读缓存', () => {
-  assert.ok(OBSERVE.includes('actions/cache/save@'), '夜间全量运行末尾须保存 incremental 基线缓存')
+test('#178+#204: observe.yml 夜间保持全量——只收集仓库基线不读缓存', () => {
   assert.ok(
     !OBSERVE.includes('actions/cache/restore'),
     'observe.yml 严禁出现 restore 缓存步骤——无基线即天然全量（v2 架构定案，勿"好心"补 restore）',
   )
-  const idx = OBSERVE.indexOf('Save incremental baseline cache')
-  assert.ok(idx > 0, 'save 步骤在位')
-  const block = OBSERVE.slice(idx, OBSERVE.indexOf('- name:', idx + 10))
-  assert.ok(block.includes('if: always()'), 'save 步骤必须 if: always()（部分失败夜已产出的基线照常落盘，评审 P1#3）')
-  assert.ok(block.includes('observe-incremental-${{ github.run_id }}'), '缓存 key = 单条目 observe-incremental-<run_id>（v2 P2#2 偏离定案）')
-  assert.ok(block.includes('coverage/mutation/incremental-*.json'), 'save path 用 glob 收六份基线文件')
+  assert.ok(
+    !OBSERVE.includes('actions/cache/save@'),
+    'observe.yml 已改用仓库内基线（#204），不得出现 cache/save 步骤',
+  )
+  const collectIdx = OBSERVE.indexOf('Collect incremental baseline')
+  assert.ok(collectIdx > 0, 'collect 步骤在位（夜间基线 → 仓库内固定路径）')
+  const collectBlock = OBSERVE.slice(collectIdx, OBSERVE.indexOf('- name:', collectIdx + 10))
+  assert.ok(collectBlock.includes('if: always()'), 'collect 步骤必须 if: always()（部分失败夜已产出的基线照常收集）')
+  assert.ok(collectBlock.includes('collect-incremental-baseline.mjs'), 'collect 脚本执行点在位')
+  assert.ok(OBSERVE.includes('create-pull-request@'), '基线经 create-pull-request 自动开 PR 合入 main（受保护分支禁直接 push）')
+  assert.ok(OBSERVE.includes('peter-evans/create-pull-request'), '使用业界标准 peter-evans/create-pull-request')
+  assert.ok(OBSERVE.includes('contents: write'), 'observe.yml permissions 需 contents: write（自动 PR 创建需要）')
+  assert.ok(OBSERVE.includes('pull-requests: write'), 'observe.yml permissions 需 pull-requests: write')
 })
 
-test('#178: ci.yml PR 增量门禁——restore-only + 按命中包切片 + 并入 repo-gate', () => {
-  // 只读不回写：允许 cache/restore，禁止 cache/save（防 PR 结果污染夜间基线源）
-  assert.ok(CI.includes('actions/cache/restore@'), 'PR 侧 restore-only 读缓存')
+test('#178+#204: ci.yml PR 增量门禁——读仓库基线文件 + 按命中包切片 + 并入 repo-gate', () => {
+  // #204：直接读 scripts/gate/baseline/ 仓库内文件，替代 actions/cache restore（跨 ref 失效）
+  assert.ok(CI.includes('Restore repo incremental baseline'), 'mutation-gate 基线读取步骤在位（读仓库内文件）')
+  assert.ok(!CI.includes('actions/cache/restore@'), 'ci.yml 不得再用 actions/cache/restore（#204 已废弃跨 ref 缓存通道）')
   assert.ok(!CI.includes('actions/cache/save@'), 'ci.yml 禁止 save 缓存（PR 结果绝不回写夜间基线）')
+  assert.ok(!CI.includes('actions/cache/@'), 'ci.yml 禁用 actions/cache@ 主 action 形态')
 
   const gateIdx = CI.indexOf('\n  mutation-gate:')
   assert.ok(gateIdx > 0, 'mutation-gate job 在位')
   const mg = CI.slice(gateIdx, CI.indexOf('\n  repo-gate:'))
   assert.ok(mg.includes('package: ${{ fromJSON(needs.changes.outputs.mutationPackages) }}'),
     '动态 matrix ← changes.mutationPackages（命中包天然切片，未触包不实例化）')
-  assert.ok(mg.includes('restore-keys:'), '精确 key 必 miss 后走前缀兜底（命中最近一夜基线）')
-  assert.ok(mg.includes('observe-incremental-'), 'restore-keys 前缀与夜间 save key 同源')
-  // 主 action 形态自带 save 后置步骤即回写，一律禁用（只允许 restore/save 子 action）
-  assert.ok(!CI.includes('actions/cache/@'), 'ci.yml 禁用 actions/cache@ 主 action 形态（自带回写）')
-  assert.ok(!CI.includes('actions/cache/save@'), 'ci.yml 禁止 save 缓存（PR 结果绝不回写夜间基线）')
-  assert.ok(/timeout-minutes: 45/.test(mg), 'mutation-gate timeout ≥45 分钟（miss 首夜全量变异 + cov 全仓 smoke 的悬崖余量）')
-  assert.ok(mg.includes('cache-matched-key'), 'restore 步骤须暴露 cache-matched-key 供 hit/miss 审计')
-  assert.ok(mg.includes('::notice::'), '缓存 miss 时须打 notice 标注全量降级（首夜属预期，防误判缺陷）')
+  assert.ok(mg.includes('scripts/gate/baseline/incremental-'), '读仓库基线文件路径 scripts/gate/baseline/incremental-<pkg>.json')
+  assert.ok(mg.includes('#dsh-'), '矩阵包名 dsh-<pkg> → 基线文件名 incremental-<pkg>.json 的映射在位')
+  assert.ok(mg.includes('::notice::'), '基线缺失时须打 notice 标注全量降级（首夜属预期，防误判缺陷）')
   assert.ok(mg.includes('scripts/gate/mutation-gate.mjs'), '双指标判分脚本执行点在位')
   assert.ok(mg.includes('scripts/gate/self-cov.mjs'), '覆盖率指标数据源执行点在位')
   // build 必须全量（run #32790425132 教训）：pnpm cov = c8 包裹全仓 smoke，
