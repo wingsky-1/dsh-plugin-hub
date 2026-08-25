@@ -16,8 +16,16 @@ name: Observe (nightly)
 
 on:
   schedule:
-    # UTC 18:43 = 北京时间 02:43，避开整点 GitHub Actions 高峰
+    # UTC 18:43 = 北京时间 02:43，避开整点 GitHub Actions 高峰（夜间兜底）
     - cron: '43 18 * * *'
+  push:
+    # #204 用户指示：基线更新不必等夜间——每次 PR 合入 main 即触发全量变异更新基线，
+    # 使基线始终跟随 main 最新状态，后续 PR 增量面仅含本次合入改动（避免一天改动
+    # 堆积导致次日所有 PR 增量慢）。
+    # paths-ignore（#204 修订）：基线 PR 合入只改 scripts/gate/baseline/** → 事件层
+    # 被过滤不触发 observe（防白跑 30min 全量变异）。
+    branches: [main]
+    paths-ignore: ['scripts/gate/baseline/**']
   workflow_dispatch:
 
 permissions:
@@ -26,8 +34,9 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: observe-nightly
-  cancel-in-progress: false
+  # #204 修订：按事件分组——push 触发可被新合入取代（cancel），schedule 兜底必须完整跑完
+  group: observe-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 jobs:
   nightly:
@@ -109,16 +118,16 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           branch: ci/incremental-baseline
           base: main
-          title: 'chore(ci): update incremental mutation baseline（夜间基线快照）'
+          title: 'chore(ci): update incremental mutation baseline（基线快照）'
           body: |
-            夜间全量变异产出的 Stryker incremental 基线快照（#204 方案 A）。
+            全量变异产出的 Stryker incremental 基线快照（#204 方案 A；main push 或夜间调度触发）。
 
             变更内容：`scripts/gate/baseline/` 下的六包 incremental 基线文件与
             manifest.json（仅当基线内容有实质变化时本 PR 才会被创建）。
 
             无代码逻辑变更；合并后 PR 的 mutation-gate 将直接读取本目录基线
             走增量变异（跳过未变 mutant），替代失效的 actions/cache 跨 ref 通道。
-          commit-message: 'chore(ci): update incremental mutation baseline（夜间基线快照）'
+          commit-message: 'chore(ci): update incremental mutation baseline（基线快照）'
           labels: 'ci'
           delete-branch: true
           signoff: false
