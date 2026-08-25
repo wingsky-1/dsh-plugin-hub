@@ -1,0 +1,40 @@
+{
+  "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "mutate": [
+    "packages/dsh-subagent-model-inherit/lib/index.js:1-59"
+  ],
+  "testRunner": "tap",
+  "tap": {
+    "nodeArgs": ["-r", "./scripts/test/mutation-tap-bridge.cjs"],
+    "testFiles": [
+      "packages/dsh-subagent-model-inherit/test/smoke.ts",
+      "packages/dsh-subagent-model-inherit/test/unit-model-inherit.test.ts"
+    ]
+  },
+  "mutator": {
+    "excludedMutations": [
+      "StringLiteral",
+      "ArrayLiteral",
+      "ObjectLiteral",
+      "TemplateLiteral"
+    ]
+  },
+  "plugins": ["@stryker-mutator/tap-runner"],
+  "concurrency": 4,
+  "timeoutMS": 60000,
+  "dryRunTimeoutMinutes": 5,
+  "reporters": [
+    "progress",
+    "clear-text",
+    "json"
+  ],
+  "jsonReporter": {
+    "fileName": "coverage/mutation/dsh-subagent-model-inherit.json"
+  },
+  "coverageAnalysis": "perTest",
+  "tempDirName": ".stryker-tmp",
+  "cleanTempDir": true,
+  "incremental": true,
+  "incrementalFile": "coverage/mutation/incremental-subagent-model-inherit.json",
+  "_comment": "#153 demo 包：bundle 全部 60 行均为 self-written（无 vendor/shared 内联），mutate 取全段。行号漂移风险由小体量缓解；后续若引入 shared 内联需重划区间（对齐 idle-archive 的分段注释约定）。incremental 基线首夜缺失时 CI notice 降级全量变异（#204 语义）。"
+}

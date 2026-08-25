@@ -81,6 +81,8 @@ jobs:
               - 'packages/dsh-provider-usage/**'
             dsh-lan-proxy:
               - 'packages/dsh-lan-proxy/**'
+            dsh-subagent-model-inherit:
+              - 'packages/dsh-subagent-model-inherit/**'
             dsh-plugins-all:
               - 'packages/dsh-plugins-all/**'
 
@@ -152,6 +154,7 @@ jobs:
           - dsh-mcp-manager
           - dsh-provider-usage
           - dsh-lan-proxy
+          - dsh-subagent-model-inherit
           - dsh-plugins-all
     runs-on: ubuntu-latest
     timeout-minutes: 15
