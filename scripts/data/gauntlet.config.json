@@ -19,8 +19,8 @@
   },
   "mutation": {
     "note": "观察期仅记录不卡点；阶段三按 #42 二期校准后接入 ci.yml 硬卡点。score 为 Stryker 报告口径（分母含 noCoverage），covered 为官方 mutationScore 口径（(killed+timeout)/(total-noCoverage)）。#151 起 tap-runner 的 RuntimeError 分类缺陷经 scripts/test/mutation-tap-bridge.cjs 修正（未捕获异常转写 TAP not ok），error=0，自动口径与此前人工换算口径一致。",
-    "strict": false,
-    "strictNote": "#85 v2 落盘：per-package threshold=60（两阶梯第一阶）。全局 strict 暂 false——provider-usage 二阶段加固（52.87%→60%）达标后置 true，observe.yml 即对低阈包判红并自动建 issue",
+    "strict": true,
+    "strictNote": "#85 v2 落盘：per-package threshold=60（两阶梯第一阶）。全局 strict 于 2026-08-25 随 provider-usage 二阶段达标（#150/#183，六包全 ≥60%）置 true——observe.yml 即对低阈包判红并自动建 issue",
     "packages": {
       "dsh-notifier": {
         "baselineScore": 1.19,
@@ -76,18 +76,19 @@
         "threshold": 60
       },
       "dsh-provider-usage": {
-        "baselineScore": 39.1,
-        "baselineCovered": 52.87,
-        "baselineKilled": 976,
-        "baselineTotal": 2556,
-        "baselineNoCoverage": 662,
+        "baselineScore": 67.28,
+        "baselineCovered": 67.28,
+        "baselineKilled": 1504,
+        "baselineTimeout": 20,
+        "baselineSurvived": 741,
+        "baselineTotal": 2265,
+        "baselineNoCoverage": 301,
         "baselineErrors": 0,
         "baselineDate": "2026-08-25",
         "baselineDuration": "4m30s",
         "baselineScope": "packages/dsh-provider-usage/lib/index.js:1372-2769+2805-3696（self-written 两段：contracts/registry/adapters-opencode-go/core-guards/sanitize/pipeline-v2/history/provider-config/hotreload 与 path-resolve/client-logic/index；排除 esbuild 垫片、cosmokit/schemastery/async-mutex/untildify 内联 vendor、shared 契约层内联副本与纯 import 提升段）",
         "config": "stryker.conf.d/dsh-provider-usage.json",
-        "baselineTimeout": 18,
-        "hardeningNote": "#150 变异加固轮一阶段（PR #169）：covered 由 31.80% 提升至 52.87%（图表分档矩阵/sanitizeHtml 全正则/guards 边界），60% 达标缺口二阶段跟进",
+        "hardeningNote": "#150 变异加固轮一阶段（PR #169）：covered 由 31.80% 提升至 52.87%；二阶段（PR #183）：提升至 67.28% ≥60 达标，全局 strict 随之开启",
         "threshold": 60
       },
       "dsh-lan-proxy": {
