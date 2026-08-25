@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-subagent-model-inherit/lib/index.js:1-60"
+    "packages/dsh-subagent-model-inherit/lib/index.js:1-59"
   ],
   "testRunner": "tap",
   "tap": {

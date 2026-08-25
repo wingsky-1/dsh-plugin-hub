@@ -11,8 +11,9 @@
  * 机制（对齐官方基建模式，零 DSH 源码修改）：
  * - 监听根上下文 `agent/created`（emit 事件，payload.agent 为新发布 Agent）；
  * - 三道门判定（见 resolveInheritedSelection）：origin/父存活/显式覆盖；
- * - 快照源与官方 dsh-host-apiproxy selectionFor 的 current getter 回退链同构：
- *   父日志最近 request/header config → ctx.agentDefaultModel.currentSelection()；
+ * - 快照源：父日志最近 request/header config（与官方 apiproxy selectionFor
+ *   回退链第二级同构）；父无日志时不注入——门 3 已保证子 options 与父相等，
+ *   放行即真继承；
  * - 在子 Agent 自己的 scope 安装 `agent/request` waterfall（首次注入后跳过——
  *   首请求落日志后 loop 以 logged header 延续注入值），仅覆盖
  *   provider/model/reasoningEffort 三字段，其余采样字段原样保留；
@@ -32,11 +33,9 @@
  */
 import type { Context } from "@deepseek-ai/cordis";
 // 类型面引入：dsh-agent 提供 Events 声明合并（agent/created、agent/request、
-// ctx.agents）与 Agent/ModelSelection 类型；dsh-agent-default-model 提供
-// ctx.agentDefaultModel 声明合并。均为编译期擦除的类型导入。
+// ctx.agents）与 Agent/ModelSelection 类型。均为编译期擦除的类型导入。
 import type {} from "@deepseek-ai/dsh-agent";
 import type { Agent, ModelSelection } from "@deepseek-ai/dsh-agent";
-import type {} from "@deepseek-ai/dsh-agent-default-model";
 import type { LlmCallConfig } from "@deepseek-ai/dsh-llm";
 
 /** Stable cordis plugin name. */
@@ -50,14 +49,11 @@ export const inject = ["agents"];
  *
  * @param child 新发布的子 Agent（agent/created payload.agent）
  * @param parent 按 header.parentSession 查到的活父 Agent；查不到传 undefined
- * @param fallback 父无历史请求时的回退快照（ctx.agentDefaultModel?.currentSelection()）；
- *   由调用方容错解析，本函数不触碰 ctx
- * @returns 应注入的选择；任一道门不过或无可用快照返回 undefined
+ * @returns 应注入的选择；任一道门不过或父无历史请求返回 undefined
  */
 export function resolveInheritedSelection(
   child: Agent,
   parent: Agent | undefined,
-  fallback: ModelSelection | undefined,
 ): ModelSelection | undefined {
   // 门 1：durable origin 血缘（childSessionMeta 写入，fork 型会话不带此标记）。
   const header = child.session.header;
@@ -77,19 +73,22 @@ export function resolveInheritedSelection(
   ) {
     return undefined;
   }
-  // 快照：优先父日志最近 header config（与 apiproxy selectionFor 回退链第二级
-  // 同构）；缺失时用部署默认选择回退。detached 拷贝，避免共享父的可变引用。
+  // 快照：父日志最近 header config（与 apiproxy selectionFor 回退链第二级
+  // 同构）。detached 拷贝，避免共享父的可变引用。缺失时不回退部署默认——
+  // 门 3 已保证子 options 与父相等，放行即真继承（子首请求走其合法持有的
+  // 静态路由）；注入部署默认反而会在「父以非默认模型初始化且未发请求就
+  // 委派」时把子改路由到错误模型（评审 M1）。
   const logged = parent.session.requestHeader()?.config;
-  if (logged !== undefined) {
-    return {
-      provider: logged.provider,
-      model: logged.model,
-      ...(logged.reasoningEffort === undefined
-        ? {}
-        : { reasoningEffort: logged.reasoningEffort }),
-    };
+  if (logged === undefined) {
+    return undefined;
   }
-  return fallback;
+  return {
+    provider: logged.provider,
+    model: logged.model,
+    ...(logged.reasoningEffort === undefined
+      ? {}
+      : { reasoningEffort: logged.reasoningEffort }),
+  };
 }
 
 /**
@@ -134,12 +133,7 @@ export function apply(ctx: Context, _config: SubagentModelInheritConfig = {}): v
     const parentSessionId = agent.session.header.parentSession;
     const parent =
       parentSessionId === undefined ? undefined : ctx.agents.get(parentSessionId);
-    const defaultModel = ctx.get("agentDefaultModel");
-    const selection = resolveInheritedSelection(
-      agent,
-      parent,
-      defaultModel?.currentSelection(),
-    );
+    const selection = resolveInheritedSelection(agent, parent);
     if (selection === undefined) return;
 
     let injected = false;

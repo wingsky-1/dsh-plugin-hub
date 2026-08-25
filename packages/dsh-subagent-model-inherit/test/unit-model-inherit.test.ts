@@ -75,76 +75,78 @@ assert.deepEqual(inject, ["agents"]);
 assert.equal(name, "subagent-model-inherit");
 
 // 门 1：origin 非 subagent / 缺 parentSession
+// 父带可注入快照：若门误放行，后续会取到快照返回非 undefined，从而暴露漏洞
 {
+  const injectableParent = makeAgent("p", { options: {}, headerConfig: PARENT_HEADER_CONFIG });
   const child = makeAgent("child", { header: { origin: "subagent" } });
-  assert.equal(resolveInheritedSelection(child, makeAgent("p"), undefined), undefined,
+  assert.equal(resolveInheritedSelection(child, injectableParent), undefined,
     "缺 parentSession 应跳过");
-  const forkChild = makeAgent("fork", { header: { parentSession: "p" } });
-  // fallback 给非 undefined 值：钉死「fork 不误伤」是门1 判定而非回退巧合
-  assert.equal(resolveInheritedSelection(forkChild, makeAgent("p"), { provider: "x", model: "y" }), undefined,
+  const forkChild = makeAgent("fork", {
+    header: { parentSession: "p" },
+    options: {},
+    headerConfig: PARENT_HEADER_CONFIG,
+  });
+  assert.equal(resolveInheritedSelection(forkChild, injectableParent), undefined,
     "fork 型会话（无 origin 标记）不应被误伤");
 }
 
 // 门 2：父不存在（冷恢复）
 {
   const child = makeAgent("child", { header: { origin: "subagent", parentSession: "gone" } });
-  assert.equal(resolveInheritedSelection(child, undefined, { provider: "x", model: "y" }), undefined,
-    "父已销毁应跳过（即使有 fallback）");
+  assert.equal(resolveInheritedSelection(child, undefined), undefined,
+    "父已销毁应跳过");
 }
 
 // 门 3：显式覆盖跳过（含单字段不等的或语义分支）
+// 父带可注入快照：若门误放行会取到快照，从而暴露漏洞
 {
-  const parent = makeAgent("p", { options: { provider: "deepseek", model: "deepseek-chat" } });
+  const parent = makeAgent("p", {
+    options: { provider: "deepseek", model: "deepseek-chat" },
+    headerConfig: PARENT_HEADER_CONFIG,
+  });
   const child = makeAgent("child", {
     options: { provider: "openai", model: "gpt-x" },
     header: { origin: "subagent", parentSession: "p" },
   });
-  assert.equal(resolveInheritedSelection(child, parent, undefined), undefined,
+  assert.equal(resolveInheritedSelection(child, parent), undefined,
     "显式指定不同模型应跳过");
   // 或语义分支：仅单字段不等也必须跳过
   const provOnly = makeAgent("child", {
     options: { provider: "openai", model: "deepseek-chat" },
     header: { origin: "subagent", parentSession: "p" },
   });
-  assert.equal(resolveInheritedSelection(provOnly, parent, { provider: "x", model: "y" }), undefined,
+  assert.equal(resolveInheritedSelection(provOnly, parent), undefined,
     "仅 provider 不同也应跳过");
   const modelOnly = makeAgent("child", {
     options: { provider: "deepseek", model: "other-model" },
     header: { origin: "subagent", parentSession: "p" },
   });
-  assert.equal(resolveInheritedSelection(modelOnly, parent, { provider: "x", model: "y" }), undefined,
+  assert.equal(resolveInheritedSelection(modelOnly, parent), undefined,
     "仅 model 不同也应跳过");
 }
 
-// 未指定 → 注入；#6 快照优先 logged header；采样字段不入快照
+// 未指定 → 注入；#6 快照取 logged header；采样字段不入快照
 {
   const parent = makeAgent("p", { options: { provider: "deepseek", model: "deepseek-chat" }, headerConfig: PARENT_HEADER_CONFIG });
   const child = makeAgent("child", {
     options: { provider: "deepseek", model: "deepseek-chat", maxTokens: 2048 },
     header: { origin: "subagent", parentSession: "p" },
   });
-  const sel = resolveInheritedSelection(child, parent, { provider: "fb", model: "fb" });
+  const sel = resolveInheritedSelection(child, parent);
   assert.deepEqual(sel, { provider: "deepseek", model: "deepseek-chat", reasoningEffort: "high" },
-    "#6 应优先取父日志 header config");
+    "#6 应取父日志 header config");
 }
 
-// #7 回退 agentDefaultModel
+// 父无日志 → 放行（undefined）：门 3 已保证子 options 与父相等，放行即真继承；
+// 注入部署默认反而会在「父以非默认模型初始化且未发请求就委派」时改错路由（评审 M1）
 {
-  const parent = makeAgent("p", { options: { provider: "deepseek", model: "deepseek-chat" }, headerConfig: undefined });
+  const parent = makeAgent("p", { options: { provider: "deepseek", model: "parent-custom" }, headerConfig: undefined });
   const child = makeAgent("child", {
-    options: { provider: "deepseek", model: "deepseek-chat" },
+    options: { provider: "deepseek", model: "parent-custom" },
     header: { origin: "subagent", parentSession: "p" },
   });
-  const sel = resolveInheritedSelection(child, parent, { provider: "fb", model: "fb-model" });
-  assert.deepEqual(sel, { provider: "fb", model: "fb-model" },
-    "#7 父无日志时应回退默认模型选择");
-}
-
-// 父无日志且无 fallback → undefined
-{
-  const parent = makeAgent("p", { options: {} });
-  const child = makeAgent("child", { header: { origin: "subagent", parentSession: "p" }, options: {} });
-  assert.equal(resolveInheritedSelection(child, parent, undefined), undefined);
+  assert.equal(resolveInheritedSelection(child, parent), undefined,
+    "父无日志时应放行（不注入部署默认，评审 M1 回归钉死）");
 }
 
 // injectSelection：三字段覆盖 + effort 剥离语义 + 采样保留
@@ -177,7 +179,7 @@ assert.equal(name, "subagent-model-inherit");
 }
 
 // #3–#9 全链路：经 apply 注册的 created handler 驱动
-function setupWorld({ childOptions, parentHeaderConfig, defaultSelection }) {
+function setupWorld({ childOptions, parentHeaderConfig }) {
   const parent = makeAgent("parent-1", {
     options: { provider: "deepseek", model: "deepseek-chat" },
     headerConfig: parentHeaderConfig,
@@ -189,7 +191,6 @@ function setupWorld({ childOptions, parentHeaderConfig, defaultSelection }) {
   const root = makeRootCtx({
     services: {
       agents: { get: (id) => (id === "parent-1" ? parent : undefined) },
-      ...(defaultSelection === undefined ? {} : { agentDefaultModel: { currentSelection: () => defaultSelection } }),
     },
   });
   apply(root);
@@ -217,7 +218,10 @@ function setupWorld({ childOptions, parentHeaderConfig, defaultSelection }) {
     temperature: 1, maxTokens: 8192,
   }, "首请求应注入父快照（含 effort），保留采样字段");
   const second = await wf[0]({}, next);
-  assert.equal(second.reasoningEffort, "medium", "#9 第二次请求应原样放行（injected 标志）");
+  assert.deepEqual(second, {
+    provider: "deepseek", model: "deepseek-chat", reasoningEffort: "medium",
+    temperature: 1, maxTokens: 8192,
+  }, "#9 第二次请求应整体原样放行（injected 标志，含 provider/model）");
 }
 
 // 显式覆盖 → 不装 waterfall（#5）；origin 不符 → 不装（#3）；父不存在 → 不装（#4 经 get 返回 undefined）

@@ -25,7 +25,7 @@ agent/created（根上下文监听）
   ├─ 门1：session.header.origin === 'subagent' 且 parentSession 存在
   ├─ 门2：ctx.agents.get(parentSession) 找到活父（冷恢复跳过）
   ├─ 门3：子 options.provider/model 与父相等（显式覆盖 → 跳过）
-  └─ 快照父模型：父日志最近 request/header config → agentDefaultModel.currentSelection()
+  └─ 快照父模型：父日志最近 request/header config
        └─ 子 scope 安装 agent/request waterfall（仅首请求注入）
 ```
 
@@ -38,11 +38,12 @@ agent/created（根上下文监听）
 | 场景 | 行为 |
 |------|------|
 | 子 Agent 显式指定 provider/model（workflow / tool config） | 跳过，不注入 |
-| 父 Agent 无历史请求（新会话） | 回退 `agentDefaultModel.currentSelection()` |
+| 父 Agent 无历史请求 | 放行不注入——门3 已保证子 options 与父相等，子沿用其合法继承的静态路由（官方 `resolveChildAgentOptions`），放行即真继承；不回退部署默认以免改错路由 |
 | 冷恢复、父已销毁 | 跳过（沿用子日志既有 header） |
 | 多层嵌套子 Agent | 第 n 层捕获第 n-1 层快照（幂等） |
 | 父 Agent 在子运行中销毁 | 快照已捕获，不影响后续请求 |
 | fork 型子会话（无 origin 标记） | 不误伤 |
+| api-remote 型子代理（apiproxy setup 已装官方 selection waterfall） | 本插件注入被外层官方 waterfall 覆盖，退回官方默认行为——无害失效，主场景 in-process 委派不受影响 |
 
 ### 已知限制
 
