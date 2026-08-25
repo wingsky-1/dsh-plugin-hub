@@ -9,7 +9,6 @@
   border: 1px solid var(--dsw-alias-border-l2, #e2e5ea);
   border-radius: 12px;
   background: var(--dsw-alias-bg-layer-3, #fbfbfc);
-  margin-bottom: 8px;
   overflow: hidden;
   transition: border-color 0.16s, background 0.16s;
 }

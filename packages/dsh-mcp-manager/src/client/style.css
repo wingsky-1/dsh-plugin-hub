@@ -88,7 +88,7 @@
 
 /* 设置页插件卡（settings.plugin.item）——浮窗位置 / 偏移编辑区。
  * 前缀 dm-，颜色走 --dsw-alias-* 主题变量 + 浅色回退，明暗自适应。 */
-.dm-set-card{list-style:none;margin:0 0 8px;padding:0;border:1px solid var(--dsw-alias-border-l2,#e2e5ea);border-radius:12px;background:var(--dsw-alias-bg-layer-3,#fbfbfc);overflow:hidden;transition:border-color .16s,background .16s}
+.dm-set-card{list-style:none;margin:0;padding:0;border:1px solid var(--dsw-alias-border-l2,#e2e5ea);border-radius:12px;background:var(--dsw-alias-bg-layer-3,#fbfbfc);overflow:hidden;transition:border-color .16s,background .16s}
 .dm-set-card:hover{border-color:var(--dsw-alias-label-dimmed,#9ba1a6)}
 .dm-set-head{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;background:transparent;border:none;cursor:pointer;text-align:left;color:var(--dsw-alias-label-primary,#1f2329)}
 .dm-set-head:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.04))}
