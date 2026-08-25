@@ -822,6 +822,9 @@ const main = async () => {
       });
 
       await checkAsync("无配置变化时 refreshFromDisk 不广播（防 SSE 空转循环）", async () => {
+        // 前一测试的 emitStatus 是 coalesce 异步（setTimeout 0），先等其落定，
+        // 避免上一轮广播误入本测试的监听计数。
+        await new Promise((r) => setTimeout(r, 10));
         let emitted = 0;
         manager.onStatus(() => {
           emitted += 1;
