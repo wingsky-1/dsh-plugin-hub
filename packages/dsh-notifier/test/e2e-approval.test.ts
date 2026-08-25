@@ -70,7 +70,14 @@ try {
 
   // M4 免打扰紧急例外：allowKinds 中的 kind 在免打扰时段仍通知
   {
-    const qhOn = { enabled: true, start: "00:00", end: "23:59" };
+    // 窗口围绕当前时间动态构造（±2 分钟）：#181 —— 写死 "00:00"/"23:59" 假设
+    // 全天覆盖，但实现是半开区间 [start, end)，23:59 这一分钟不命中，UTC 边缘必炸；
+    // now 邻近 00:00 时 start > end，天然走实现的跨午夜分支（quiet-hours.ts）。
+    const hhmm = (offsetMinutes) => {
+      const t = new Date(Date.now() + offsetMinutes * 60_000);
+      return `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
+    };
+    const qhOn = { enabled: true, start: hhmm(-2), end: hhmm(2) };
     const cfgAsk = join(work, "qh-ask.json");
     writeFileSync(cfgAsk, JSON.stringify({ quietHours: { ...qhOn, allowKinds: ["ask"] } }));
     const infos = [];
