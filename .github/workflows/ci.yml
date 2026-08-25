@@ -25,6 +25,10 @@ jobs:
       hitPackages: ${{ steps.pkgs.outputs.hitPackages }}
       # 增量变异切片清单（#178）：hitPackages 剔除聚合包 dsh-plugins-all（无变异配置）
       mutationPackages: ${{ steps.pkgs.outputs.mutationPackages }}
+      # 切片是否含变异对象包（#217：显式布尔字符串 'true'/'false'）。GHA 表达式
+      # 无取长度与管道能力，在 if 里对清单做取长判空或裸数组文本比较均脆弱；
+      # 下游 if 一律用 needs.changes.outputs.hasMutations == 'true' 精确比较
+      hasMutations: ${{ steps.pkgs.outputs.hasMutations }}
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -88,10 +92,13 @@ jobs:
           BASE_SET: ${{ steps.base.outputs.base }}
         run: |
           set -e
-          # mutationPackages：hitPackages 剔除聚合包后的增量变异切片（#178）
+          # mutationPackages：hitPackages 剔除聚合包后的增量变异切片（#178）；
+          # hasMutations（#217）：由同一清单推导的显式布尔，供下游 if 精确比较
           emit_outputs() {
+            MUTS="$(printf '%s' "$1" | jq -c '[.[] | select(. != "dsh-plugins-all")]')"
             echo "hitPackages=$1" >> "$GITHUB_OUTPUT"
-            echo "mutationPackages=$(printf '%s' "$1" | jq -c '[.[] | select(. != "dsh-plugins-all")]')" >> "$GITHUB_OUTPUT"
+            echo "mutationPackages=$MUTS" >> "$GITHUB_OUTPUT"
+            echo "hasMutations=$(printf '%s' "$MUTS" | jq -c 'length > 0')" >> "$GITHUB_OUTPUT"
           }
           # fail-closed 双闸：diff 基准不可用 或 filter 步骤失败 → 一律全量切片
           if [ -z "$BASE_SET" ] || [ "$FILTER_OUTCOME" = "failure" ]; then
@@ -190,33 +197,25 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-  # ── 第 3 段：增量变异门禁（#178 v2 切片 + #187 触发面收敛至 pull_request）──
-  # - 仅对命中包实例化（动态 matrix ← changes.mutationPackages；空清单时整体 skipped）
-  # - 仅限 pull_request 触发（#187）：main push 场景 before 基线不可用时 paths-filter
-  #   走 fail-closed 全量 fallback，变异会退化全量且与 observe.yml 夜间全量完全重复；
-  #   主干变异覆盖归夜间、发版归 release.yml tag 管线——全量只在这两处真实执行。
-  #   非 PR 事件下整体 skipped，由 repo-gate 判定脚本按事件语义显式放行
-  # - 基线来源（#204）：夜间 observe 把六包 incremental 基线提交进
-  #   scripts/gate/baseline/（仓库内版本化文件），本 job 直接读文件复制到
-  #   coverage/mutation/ —— git 跨 ref 天然可见，替代失效的 actions/cache
-  #   跨 ref 通道（#204 实证：actions/cache 按 ref 隔离，PR 永远 miss main 缓存）。
-  #   首夜/基线缺失时天然降级为全量变异，门禁语义不变仅变慢
-  # - 双指标判分（scripts/gate/mutation-gate.mjs）：测试覆盖率（self-written 函数，
-  #   恒硬）+ 变异测试率（covered ≥ threshold，受 mutation.strict 开关约束）
-  # - 成败并入 repo-gate 聚合闸，不新增分支保护 required check 名
-  # 已知约束：GitHub Actions 的 matrix 不允许引用 env context，但可引用 needs outputs
-  mutation-gate:
-    name: Mutation gate (${{ matrix.package }})
+  # ── 第 3 段之一：全局单次覆盖采集（#217 变异/覆盖解耦）──
+  # cov 从变异矩阵剥离为全局单进程采集：此前矩阵 6 实例并行各自跑 c8 全仓
+  # smoke，lan-proxy 固定端口 EADDRINUSE 与 provider-usage K12 时序漂移是 flake
+  # 根因；单次采集根治端口竞争，self-coverage.json 经 artifact 下发给 verdict。
+  #
+  # 拓扑（复核裁决采纳并行选项 b）：本 job 与 mutation-gate 矩阵平行
+  # （wall-clock = max(install+build+cov, install+build+stryker)，严格优于串行）。
+  # fail-closed 链路（GHA needs 默认语义，勿「优化」掉）：coverage 失败/skip →
+  # mutation-verdict（if 显式要求本 job success）连带 skipped → repo-gate 判定表
+  # 对 hasMutations=true 的 PR 以 GATE_COVERAGE 维度优先点名「coverage 失败连坐」
+  # 整体判红。变异矩阵不受本 job 影响、独立跑完（报告照常产出），但整体仍红——
+  # 不存在「cov 挂了而门禁绿」的半通状态。coverage job 失败 ≈ smoke 失败（同一
+  # c8 包裹），属 build-test 同级硬信号，观察期语义不豁免本 job。
+  coverage:
+    name: Coverage collection (global single-run)
     needs: changes
-    if: github.event_name == 'pull_request' && needs.changes.result == 'success'
-    strategy:
-      fail-fast: false
-      matrix:
-        package: ${{ fromJSON(needs.changes.outputs.mutationPackages) }}
+    if: github.event_name == 'pull_request' && needs.changes.outputs.hasMutations == 'true'
     runs-on: ubuntu-latest
-    # 45 分钟悬崖余量：缓存 miss 首夜 = 天然降级全量变异（lan-proxy 全量实测 7m36s，
-    # 再叠加 install + 全量 build + cov 全仓 smoke），30 分钟存在被误杀风险
-    timeout-minutes: 45
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -234,17 +233,94 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # 必须全量构建（run #32790425132 教训）：后续 pnpm cov = c8 包裹全仓 smoke，
-      # 任一包 lib/index.js 缺失即 ERR_MODULE_NOT_FOUND；且 selfWritten.functions.pct
-      # 为全仓口径，单包 cov 会让覆盖率分母与夜间口径漂移
-      - name: Build all packages（变异对象与覆盖率口径均依赖全集 lib 产物）
+      # 必须全量构建：selfWritten.functions.pct 是全仓 self-written 函数口径，
+      # 任一包 lib/index.js 缺失既会让 c8 smoke 报 ERR_MODULE_NOT_FOUND，也让
+      # 覆盖率分母与夜间 observe 口径漂移（run #32790425132 教训）
+      - name: Build all packages（覆盖率口径为全仓分母，依赖全集 lib 产物）
+        run: pnpm build
+
+      # Mutate 面守卫前移进 PR 门禁（#217 顺路加固，原只在 observe.yml 夜间执行，
+      # 配置漂移注定合并后才暴露——实证 run 32869177152 / #235）：毫秒级纯文本
+      # 校验 mutate 区间落在 // lib/*.js 分段边界内；须排在 build 之后（校验
+      # 对象是 lib 产物分段注释），先 fail-loud 省 cov 时间。observe.yml 夜间
+      # 执行点保留（双执行点：PR 早暴露 + 夜间兜底）。
+      - name: Mutation scope guard（F5：mutate 区间须落在 // lib/*.js 分段边界内）
+        run: node scripts/gate/mutate-scope-guard.mjs
+
+      - name: Coverage collection（c8 包裹全仓 smoke，全局单进程无端口竞争）
+        run: pnpm cov
+
+      - name: Self-written coverage report（落盘 coverage/self-coverage.json）
+        run: node scripts/gate/self-cov.mjs
+
+      - name: Upload self-coverage artifact（供 mutation-verdict 聚合判分）
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          # 精确 name：下游 download 用同名精确取（pattern 匹配 0 个不报错，精确名缺失才报错）
+          name: self-coverage
+          path: coverage/self-coverage.json
+          retention-days: 1
+          if-no-files-found: error
+
+  # ── 第 3 段之二：增量变异矩阵（#178 v2 切片 + #187 触发面收敛 + #217 解耦）──
+  # - 仅对变异切片实例化（动态 matrix ← changes.mutationPackages）；hasMutations
+  #   为 'false' 时 if 直接为假、矩阵不实例化（job result = skipped，零实例
+  #   动态矩阵实测报 failure 的怪癖形态由此消除）
+  # - 仅限 pull_request 触发（#187）：主干变异覆盖归 observe.yml 夜间全量、发版
+  #   归 release.yml tag 管线；非 PR 事件下整体 skipped，由 repo-gate 判定脚本
+  #   按事件语义显式放行
+  # - #217 解耦：本 job 只做基线 restore + stryker run + 报告上传，不再各自跑
+  #   pnpm cov / self-cov / 判分——双指标判分统一收敛到 mutation-verdict；
+  #   与 coverage job 平行无依赖（复核裁决选项 b），cov 失败不影响本矩阵跑完，
+  #   由 verdict 缺席 + repo-gate 判定表兜底整体红
+  # - 基线来源（#204）：读仓库内 scripts/gate/baseline/ 版本化文件（git 跨 ref
+  #   天然可见）；首夜/基线缺失时天然降级为全量变异，门禁语义不变仅变慢
+  # 已知约束：GitHub Actions 的 matrix 不允许引用 env context，但可引用 needs outputs
+  mutation-gate:
+    name: Mutation gate (${{ matrix.package }})
+    needs: changes
+    # 与 coverage job 平行（无 needs 依赖）；if 精确锁定事件面与显式布尔切片，
+    # 空 slice 时 if 直接为假、矩阵不实例化（job result = skipped）
+    if: github.event_name == 'pull_request' && needs.changes.outputs.hasMutations == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJSON(needs.changes.outputs.mutationPackages) }}
+    runs-on: ubuntu-latest
+    # cov 已剥离：最坏情形 = 基线缺失降级全量变异（lan-proxy 全量实测 7m36s）
+    # + install + 全量 build，30 分钟余量充足（原 45 分钟悬崖余量为 cov 所设）
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@a8198c4bff370c8506180b035930dea56dbd5288 # v5
+        # 版本以根 package.json 的 packageManager 字段为单一事实源（勿同时指定 version）
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # 必须全量构建（run #32790425132 教训）：mutate 区间的行号锚定 esbuild
+      # 产物分段注释，产物结构依赖 workspace 内联链（shared/ 与依赖包副本）的
+      # 全集一致性；单包构建曾因跨包 lib 缺失直接 ERR_MODULE_NOT_FOUND。
+      # 注意：cov 移入全局 coverage job 后，本步骤与覆盖率口径无关
+      - name: Build all packages（变异对象 lib 分段依赖全集一致的构建链）
         run: pnpm build
 
       - name: Restore repo incremental baseline（#204：读仓库内基线文件，替代失效的 actions/cache）
         # #204 方案 A：夜间 observe 把六包 incremental 基线提交进 scripts/gate/baseline/，
-        # PR checkout（merge commit 含 base/main 内容）直接读文件——git 无 ref 隔离，
-        # 不依赖 actions/cache 的平台缓存跨 ref 可见性（#204 实证 PR 永远 miss）。
+        # PR checkout（merge commit 含 base/main 内容）直接读文件复制到
+        # coverage/mutation/ —— git 跨 ref 天然可见，替代失效的 actions/cache
+        # 跨 ref 通道（#204 实证：actions/cache 按 ref 隔离，PR 永远 miss main 缓存）。
         # 矩阵包名 dsh-<pkg> → 基线文件名 incremental-<pkg>.json。
+        # 首夜/基线缺失时天然降级为全量变异（notice 标注属预期，非缺陷）。
         id: baseline
         run: |
           set -e
@@ -263,19 +339,106 @@ jobs:
       - name: Incremental mutation（incremental 生效跳过未变 mutant）
         run: npx stryker run stryker.conf.d/${{ matrix.package }}.json
 
-      - name: Coverage collection（self-written 口径数据源：c8 包裹全仓 smoke）
-        run: pnpm cov
+      - name: Upload stryker report artifact（报告交 mutation-verdict 统一判分）
+        # if: always()：实例非零退出（如内建阈值不足/崩溃）时已产出的报告照常
+        # 下发聚合判分；未产出报告时 if-no-files-found: error 让实例自身红
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mutation-report-${{ matrix.package }}
+          path: coverage/mutation/${{ matrix.package }}.json
+          retention-days: 1
+          if-no-files-found: error
 
-      - name: Self-written coverage report（落盘 coverage/self-coverage.json）
-        run: node scripts/gate/self-cov.mjs
+  # ── 第 3 段之三：聚合判分收尾（artifact 汇合 + 逐包双指标判分，#217）──
+  # - self-coverage（coverage job）与各包 stryker 报告（mutation-gate 矩阵）
+  #   在此汇合后逐包跑 scripts/gate/mutation-gate.mjs 双指标判分；
+  # - if 用 always() 组合：矩阵 failure（实例级 stryker 非零退出）时仍运行
+  #   聚合判分——已产出报告的包照常计账、缺报告的包由脚本 exit 2 fail-closed；
+  #   coverage 非 success（失败/skip，本 job 是 fail-closed 链路的收敛点）或
+  #   矩阵 skipped（空切片）时连带 skipped，交 repo-gate 判定表按维度裁决；
+  # - 判分链为纯 Node 内置模块（gauntlet config + mutation-report-lib），
+  #   无需 pnpm install。
+  mutation-verdict:
+    name: Mutation gate verdict (aggregate)
+    needs: [changes, coverage, mutation-gate]
+    if: always() && needs.coverage.result == 'success' && needs.mutation-gate.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - name: Mutation gate verdict（双指标判分：覆盖率恒硬 + 变异率受 strict 开关）
-        run: node scripts/gate/mutation-gate.mjs ${{ matrix.package }}
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          # 本 job 判分链为纯 Node 内置模块、不 pnpm install（见 job 头注释），必须
+          # 显式关闭 setup-node v5 默认的 package-manager-cache：其探测到仓库根
+          # pnpm-lock.yaml 会调用 PATH 中的 pnpm 计算缓存 key，而本 job 是全
+          # workflow 唯一不前置 pnpm/action-setup 的 job，runner 镜像又不自带
+          # pnpm → Setup Node.js 直接红（实证 run 32879414842 / 32876671584，
+          # "Unable to locate executable file: pnpm"，repo-gate F2 随之连坐红）
+          package-manager-cache: false
+
+      - name: Download self-coverage artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: self-coverage
+          # 单文件上传的 zip 根层级 = 文件本身：解压到 coverage/ 即还原出
+          # coverage/self-coverage.json 原始路径（判分脚本按此固定路径读取）
+          path: coverage
+
+      - name: Download mutation report artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: mutation-report-*
+          path: coverage/mutation
+
+      - name: Restore report layout（多 artifact 下载各建子目录，平铺回 coverage/mutation/）
+        env:
+          SLICE: ${{ needs.changes.outputs.mutationPackages }}
+        run: |
+          set -e
+          test -f coverage/self-coverage.json || { echo '::error::self-coverage artifact 未下发 —— fail-closed'; exit 1; }
+          DIRS="$(ls -d coverage/mutation/mutation-report-* 2>/dev/null || true)"
+          [ -n "$DIRS" ] || { echo '::error::变异报告 artifact 未下发（pattern 匹配 0 个）—— fail-closed'; exit 1; }
+          for dir in $DIRS; do
+            cp "$dir"/*.json coverage/mutation/
+          done
+          MISSING=0
+          for pkg in $(printf '%s' "$SLICE" | jq -r '.[]'); do
+            [ -f "coverage/mutation/${pkg}.json" ] || { echo "::error::${pkg} 变异报告 artifact 未下发 —— fail-closed"; MISSING=1; }
+          done
+          [ "$MISSING" -eq 0 ] || exit 1
+          echo 'artifact 层级还原完成：coverage/self-coverage.json + coverage/mutation/<pkg>.json'
+
+      - name: Mutation gate verdict（逐包双指标判分：覆盖率恒硬 + 变异率受 strict 开关）
+        # 记账模式：任一包判分失败继续跑完其余包，结尾统一判红（与夜间逐包容错纪律一致）
+        env:
+          SLICE: ${{ needs.changes.outputs.mutationPackages }}
+        run: |
+          set -e
+          FAILED=0
+          for pkg in $(printf '%s' "$SLICE" | jq -r '.[]'); do
+            echo "::group::mutation verdict $pkg"
+            if node scripts/gate/mutation-gate.mjs "$pkg"; then
+              echo "::endgroup::"
+            else
+              echo "::endgroup::"
+              FAILED=1
+            fi
+          done
+          [ "$FAILED" -eq 0 ] || { echo '::error::存在未通过双指标判分的切片包 —— fail-closed'; exit 1; }
 
   # ── 第 4 段：聚合闸（job 名保持分支保护 required check 名不变，无缝切换）──
+  # needs 连坐语义（#217）：coverage / mutation-gate / mutation-verdict 任一失败
+  # 都必须让本闸红——判定表按「事件 × 切片(hasMutations) × coverage × 变异矩阵
+  # × verdict」五维裁决；coverage 失败 → verdict 连坐 skipped → 判定表以
+  # GATE_COVERAGE 维度优先点名「coverage 失败连坐」，而非误报「mutation 绕过」
   repo-gate:
     name: Build / Contract / Smoke / Pack
-    needs: [changes, build-test, mutation-gate]
+    needs: [changes, build-test, coverage, mutation-gate, mutation-verdict]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -286,8 +449,9 @@ jobs:
           fetch-depth: 0   # 阈值单调性校验需读 origin/main 的 config（F3）
 
       - name: Fail-closed gate assertion（F2：任何上游非 success 即红）
-        # #187：判定逻辑收敛到 scripts/gate/repo-gate-assert.mjs（事件 × 切片清单
-        # × job 结果三维判定表，可被单元测试全组合锁死），env 注入避免内联 bash 漂移。
+        # #187：判定逻辑收敛到 scripts/gate/repo-gate-assert.mjs（可被单元测试
+        # 全组合锁死），env 注入避免内联 bash 漂移。#217 扩展为五维判定：
+        # 事件 × 切片(hasMutations) × coverage × 变异矩阵 × verdict。
         # 必须排在 Checkout 之后（run #32800733630 教训：脚本版需要工作区文件，
         # 旧内联 bash 无文件依赖掩盖了这一时序约束）；仅依赖 Node 内置模块，
         # 无需等 pnpm/setup-node，紧随 checkout 尽早判红
@@ -295,7 +459,10 @@ jobs:
           GATE_EVENT: ${{ github.event_name }}
           GATE_CHANGES: ${{ needs.changes.result }}
           GATE_BUILD_TEST: ${{ needs.build-test.result }}
+          GATE_COVERAGE: ${{ needs.coverage.result }}
           GATE_MUTATION: ${{ needs.mutation-gate.result }}
+          GATE_VERDICT: ${{ needs.mutation-verdict.result }}
+          GATE_HAS_MUTATIONS: ${{ needs.changes.outputs.hasMutations }}
           GATE_MUTATION_PKGS: ${{ needs.changes.outputs.mutationPackages }}
         run: node scripts/gate/repo-gate-assert.mjs
 
