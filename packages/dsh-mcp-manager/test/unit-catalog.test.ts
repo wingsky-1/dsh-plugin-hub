@@ -63,7 +63,8 @@ assert.equal(DEFAULT_CATALOG_MAX_ENTRIES, 6);
   const entries = composeCatalogEntries(supervisors, 10, cache);
   assert.equal(entries.length, 4);
   assert.deepEqual(entries[0], { name: "s1", text: "desc1" }, "自定义 description 优先");
-  assert.deepEqual(entries[1], { name: "s2", text: undefined }, "无描述无缓存 → 只显示名");
+  assert.deepEqual(entries[1], { name: "s2" }, "无描述无缓存 → 只显示名（不含 text 属性）");
+  assert.equal(Object.hasOwn(entries[1], "text"), false, "双缺省不产出 text: undefined（#192）");
   assert.deepEqual(entries[2], { name: "s3", text: "cached-summary" }, "缓存摘要回落");
   assert.equal(entries[3].text, undefined, "空串缓存视为无");
 
