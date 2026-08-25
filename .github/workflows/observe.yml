@@ -5,12 +5,14 @@ name: Observe (nightly)
 # - 六包全量变异（串行）+ mutate 面守卫（F5）
 # - 报告落 issue（幂等：同日不重开）；回落 >1pp 自动追评（隔夜必有工单）
 # 变异硬门禁在本 workflow 生效：任一包 covered < threshold 且 strict 开启 → 运行失败。
-# #178 v2 增量链路：
+# #178 v2 增量链路（#204 修订：缓存 → 仓库内版本化基线）：
 # - 本 workflow 刻意不做 actions/cache restore —— 无增量基线即天然全量，无需 --force；
 #   请勿"好心"补 restore 步骤（会破坏全量基线语义）。
-# - 全量运行末尾将六份 incremental 基线写入 actions/cache（save 用 if: always()
-#   保证部分失败夜也落盘已产出文件），key = observe-incremental-<run_id> 单条目；
-#   PR 侧 ci.yml 以 observe-incremental- 前缀 restore-only 读取。
+# - 全量运行末尾将六份 incremental 基线收集到 scripts/gate/baseline/（仓库内文件，
+#   #204 方案 A），有实质变化时经 create-pull-request 自动开 PR 合入 main；
+#   PR 侧 ci.yml mutation-gate 直接读该目录文件走增量变异。
+# - 背景：actions/cache 按 ref 隔离（PR 永远读不到 main 的缓存，社区广泛确认
+#   GitHub Community #58583），#204 实证此前增量链路对 PR 从未生效。
 
 on:
   schedule:
@@ -19,8 +21,9 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   issues: write
+  pull-requests: write
 
 concurrency:
   group: observe-nightly
@@ -87,15 +90,56 @@ jobs:
             exit 1
           fi
 
-      - name: Save incremental baseline cache（夜间新鲜基线 → PR 增量门禁读取）
-        # #178 v2：save 用 glob 使归档根 = coverage/mutation/（六文件同目录），
-        # PR 侧 restore 以同目录 path 解压。if: always() —— 部分失败夜已产出的
-        # 基线文件照常落缓存；key 带 run_id 单条目，旧夜靠 PR 侧 restore-keys 前缀兜底。
+      - name: Collect incremental baseline（#204：收集到仓库内 scripts/gate/baseline/）
+        # #204 方案 A（业界最佳实践）：夜间基线改「仓库内版本化文件」，替代 actions/cache
+        # save。actions/cache 按 ref 隔离（PR 永远读不到 main 的缓存，社区广泛确认，
+        # GitHub Community #58583），而 git 内容跨 ref 天然可见、可本地实证。
+        # if: always() —— 部分失败夜已产出的基线文件照常收集。
         if: always()
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        run: node scripts/gate/collect-incremental-baseline.mjs
+
+      - name: Open baseline PR（基线有变化时自动建 PR 合入 main）
+        # create-pull-request 只在有 diff 时创建 PR（无变化 = no-op，不产生噪音提交）。
+        # 受保护分支禁止 workflow 直接 push main → 走 PR + auto-merge 路径。
+        # PR 由 bot 身份创建，auto-merge 需在 PR 创建后由后续步骤开启（该 action 本身
+        # 不自动合并，仅建 PR；合并策略见下）。
+        if: always()
+        uses: peter-evans/create-pull-request@5e914681df9dc83dc4eef029a3d3d3038f73803b # v7
         with:
-          key: observe-incremental-${{ github.run_id }}
-          path: coverage/mutation/incremental-*.json
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ci/incremental-baseline
+          base: main
+          title: 'chore(ci): update incremental mutation baseline（夜间基线快照）'
+          body: |
+            夜间全量变异产出的 Stryker incremental 基线快照（#204 方案 A）。
+
+            变更内容：`scripts/gate/baseline/` 下的六包 incremental 基线文件与
+            manifest.json（仅当基线内容有实质变化时本 PR 才会被创建）。
+
+            无代码逻辑变更；合并后 PR 的 mutation-gate 将直接读取本目录基线
+            走增量变异（跳过未变 mutant），替代失效的 actions/cache 跨 ref 通道。
+          commit-message: 'chore(ci): update incremental mutation baseline（夜间基线快照）'
+          labels: 'ci'
+          delete-branch: true
+          signoff: false
+
+      - name: Auto-merge baseline PR（若被创建）
+        # create-pull-request 只建 PR 不合并；此处用 gh 开启 auto-merge。
+        # 注意：auto-merge 需要分支保护规则允许该 bot PR 自动合并（CI 全绿 + 无
+        # review 要求，或配置 auto-merge 通过条件）。若保护规则要求 review，本步骤
+        # 会失败并在日志提示，不影响夜间报告其余流程。
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR=$(gh pr list --repo "$GITHUB_REPOSITORY" --head ci/incremental-baseline --state open --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$PR" ]; then
+            echo "开启 auto-merge：PR #$PR"
+            gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --auto --squash || \
+              echo "::warning::auto-merge 开启失败（可能受分支保护 review 规则限制）——需人工合入 PR #$PR"
+          else
+            echo "无基线变更 PR（基线内容未变化），跳过 auto-merge"
+          fi
 
       - name: Threshold check & report body（阈值校验 + 回落检测 + 报告产出）
         id: report
