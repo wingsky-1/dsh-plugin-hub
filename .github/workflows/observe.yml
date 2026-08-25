@@ -157,10 +157,10 @@ jobs:
         run: |
           set -e
           node scripts/gate/observe-check.mjs --body-file observe-body.md --marker-file observe-marker.txt
-          echo "body=observe-body.md" >> "$GITHUB_OUTPUT"
-          # 回落标记不写入 $GITHUB_OUTPUT（#204：heredoc 多行值在中文+换行内容下
-          # 触发 "Matching delimiter not found" 解析失败），改由下游步骤直接读文件
-          # 判断（-s = 文件非空即真）。
+          # 报告与回落标记均以文件传递（#204：$GITHUB_OUTPUT 多行值在中文+换行内容下
+          # 触发 "Matching delimiter not found" 解析失败；GitHub 官方文档明示值不可控时
+          # 应写文件而非用 delimiter 格式）。下游步骤直接读 observe-body.md /
+          # observe-marker.txt（[ -s file ] 判断非空）。
 
       - name: Create/update observe issue（幂等：同日重跑不重复建；回落即追评）
         if: always() && steps.report.outcome == 'success'
