@@ -14,7 +14,7 @@
  * - evictIfNeeded LRU 淘汰
  */
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -221,4 +221,40 @@ function makeHost(serversByRoot = new Map()) {
   const empty = await loadUserState(file);
   assert.equal(empty.size, 0);
   mkdirSync(join(dir, "sub"));
+}
+
+// ---- last-good 目录缓存：loadCatalogCache 读取 / persistCatalog 空采集不写盘 ----
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mw-cat-"));
+  const baseHost = makeHost(new Map());
+  const catalogHost = {
+    ...baseHost.host,
+    catalogCachePath: (root) => join(dir, `${root.replace(/[^a-z0-9]/gi, "_")}.json`),
+  };
+  const mw = new McpMiddleware(catalogHost, {});
+  const unit = {
+    root: ROOT,
+    connections: new Map(),
+    catalog: new Map([
+      ["ctx", {
+        discoveredAt: Date.now(),
+        tools: new Map([["use_ctx", { description: "查询文档", inputSchema: {} }]]),
+      }],
+    ]),
+    userDisabled: new Set(),
+    lastTouchedAt: Date.now(),
+    inFlight: new Map(),
+  };
+  mw.units.set(ROOT, unit);
+  await mw.persistCatalog(ROOT);
+  const file = catalogHost.catalogCachePath(ROOT);
+  assert.equal(existsSync(file), true, "有工具的目录落盘");
+  // 空采集不写盘：清空目录后 persist 不覆盖已有缓存（保留 last-good）
+  const { readFileSync } = await import("node:fs");
+  const before = readFileSync(file, "utf8");
+  unit.catalog.get("ctx").tools.clear();
+  unit.catalog.get("ctx").unavailable = "failed";
+  await mw.persistCatalog(ROOT);
+  assert.equal(readFileSync(file, "utf8"), before, "空采集不覆盖已有缓存（保留 last-good）");
+  await mw.dispose();
 }

@@ -415,6 +415,8 @@ export class McpMiddleware {
         inFlight: new Map(),
       };
       this.units.set(root, unit);
+      // 加载 last-good 目录缓存（空采集不写盘；目录与连接分开淘汰）。
+      await this.loadCatalogCache(root);
       // 后台惰性连接（fire-and-forget，不阻塞调用方）。
       for (const server of servers) {
         if (server.enabled !== false) void this.ensureConnected(root, server.name);
@@ -573,8 +575,8 @@ export class McpMiddleware {
     return all;
   }
 
-  /** 目录 last-good 持久化（空采集不写盘）。 */
-  private async persistCatalog(root: string): Promise<void> {
+  /** 目录 last-good 持久化（空采集不写盘；public 供测试与外部触发）。 */
+  async persistCatalog(root: string): Promise<void> {
     const unit = this.units.get(root);
     if (unit === undefined) return;
     let anyTools = false;

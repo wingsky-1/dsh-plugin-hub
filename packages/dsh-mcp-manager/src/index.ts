@@ -77,6 +77,9 @@ export const inject = ["tools", "webServer", "systemPrompt"];
 /** MCP 服务器名命名空间约束（与官方 dsh-mcp-client 一致）。 */
 export const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;
 
+/** 中间层 all 模式的全局虚拟 root（全局服务器经中间层访问时的路由 key）。 */
+export const MIDDLEWARE_GLOBAL_ROOT = "@global";
+
 
 /** 空 description 工具的条件拼接默认开启。 */
 export const DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS = true;
@@ -356,8 +359,9 @@ export class McpManager {
     return this.findProjectRoot(cwd);
   }
 
-  /** 中间层宿主：按 root 读取项目级服务器配置（无标记目录 → undefined）。 */
+  /** 中间层宿主：按 root 读取服务器配置。all 模式的虚拟 root "@global" 返回全局配置。 */
   async projectServersFor(root: string): Promise<ServerConfig[] | undefined> {
+    if (root === MIDDLEWARE_GLOBAL_ROOT) return this.store.data.servers;
     const store = await this.projectStoreFor(root);
     return store?.data.servers;
   }
@@ -488,8 +492,10 @@ export class McpManager {
     }
     if (this.middlewareMode !== "off" && this.middleware !== undefined) {
       // 中间层：仅触达单元（fire-and-forget 惰性连接在 projectUnitFor 内）。
-      if (root !== undefined) {
-        void this.middleware.projectUnitFor(root).then((unit) => {
+      // all 模式：无项目 cwd 也触达全局虚拟 root @global。
+      const target = root !== undefined ? root : (this.middlewareMode === "all" ? MIDDLEWARE_GLOBAL_ROOT : undefined);
+      if (target !== undefined) {
+        void this.middleware.projectUnitFor(target).then((unit) => {
           if (unit !== undefined) this.middleware?.evictIfNeeded();
         });
       }
@@ -547,9 +553,11 @@ export class McpManager {
       let changed = false;
       for (const [name, supervisor] of [...this.supervisors]) {
         const want = desired.get(name);
-        // 中间层 project 模式：项目级服务器由中间层接管（不注册 mcp__ 工具，
-        // 避免双连接双进程）；全局仍直呼。
-        const middlewareTakes = this.middlewareMode === "project" && supervisor.scope === SCOPE_PROJECT;
+        // 中间层 project/all 模式：项目级（all 含全局）服务器由中间层接管
+        // （不注册 mcp__ 工具，避免双连接双进程）。
+        const middlewareTakes = this.middlewareMode !== "off" && (
+          supervisor.scope === SCOPE_PROJECT || (this.middlewareMode === "all" && supervisor.scope === SCOPE_GLOBAL)
+        );
         if (want === undefined || want.server.enabled === false || want.scope !== supervisor.scope || middlewareTakes) {
           this.stop(name);
           changed = true;
@@ -557,8 +565,10 @@ export class McpManager {
       }
       for (const [name, want] of desired) {
         if (want.server.enabled === false) continue;
-        // 中间层 project 模式：项目级服务器跳过 supervisor（由中间层惰性连接）。
-        if (this.middlewareMode === "project" && want.scope === SCOPE_PROJECT) continue;
+        // 中间层 project/all 模式：项目级（all 含全局）跳过 supervisor（由中间层惰性连接）。
+        if (this.middlewareMode !== "off" && (
+          want.scope === SCOPE_PROJECT || (this.middlewareMode === "all" && want.scope === SCOPE_GLOBAL)
+        )) continue;
         const existing = this.supervisors.get(name);
         if (existing === undefined || existing.scope !== want.scope) {
           this.start(name, want.scope);
@@ -890,15 +900,22 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
     if (middlewareMode !== "off") {
       const mw = await manager.initMiddleware(middlewareMode, (config?.middlewarePolicy as Record<string, unknown> | undefined) ?? {});
       // 路由输入：exec.agent 当前 cwd = agent.session.header.cwd（实证已闭合）。
+      // all 模式：cwd 无项目（或无项目配置）时 fallback 到全局虚拟 root @global。
       const resolveRoot = async (agent: unknown): Promise<string | undefined> => {
         if (typeof agent !== "object" || agent === null) return undefined;
         const session = (agent as { session?: { header?: { cwd?: unknown } } }).session;
         const cwd = session?.header?.cwd;
-        return manager.normalizedProjectRoot(typeof cwd === "string" ? cwd : undefined);
+        const root = await manager.normalizedProjectRoot(typeof cwd === "string" ? cwd : undefined);
+        if (root !== undefined) return root;
+        if (middlewareMode === "all") {
+          const globalServers = manager.globalServers().filter((server) => server.enabled !== false);
+          if (globalServers.length > 0) return MIDDLEWARE_GLOBAL_ROOT;
+        }
+        return undefined;
       };
       disposeMiddleware = registerMiddlewareTools(manager.ctx, mw, resolveRoot);
       // startAll 在中间层注册前执行（off 语义），此处立即 reconcile：停掉
-      // 项目级 supervisor（改由中间层接管），防同一 server 双进程。
+      // 项目级（all 含全局）supervisor（改由中间层接管），防同一 server 双进程。
       manager.reconcileServers();
       manager.logger.info(`dsh-mcp-manager: middleware mode=${middlewareMode}`);
     }
