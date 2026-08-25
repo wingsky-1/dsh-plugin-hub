@@ -302,9 +302,12 @@ function rmStatSafe(p) {
       count += 1;
     });
     manager.emitStatus();
+    // emitStatus 是 coalesce 异步（setTimeout 0），等待宏任务落定。
+    await new Promise((resolve) => setTimeout(resolve, 5));
     assert.equal(count, 1);
     off();
     manager.emitStatus();
+    await new Promise((resolve) => setTimeout(resolve, 5));
     assert.equal(count, 1, "注销后不再回调");
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -528,13 +531,85 @@ function rmStatSafe(p) {
     const { utimesSync } = await import("node:fs");
     utimesSync(join(dir, "global.json"), future, future);
     await manager.refreshFromDisk();
+    // emitStatus 是 coalesce 异步（setTimeout 0），等待宏任务落定。
+    await new Promise((resolve) => setTimeout(resolve, 5));
     assert.ok(broadcasts >= 1, "配置变化广播一次");
     assert.ok(store.data.servers.some((s) => s.name === "fresh"), "重读生效");
 
     // 无变化时不广播。
+    await new Promise((resolve) => setTimeout(resolve, 5));
     const before = broadcasts;
     await manager.refreshFromDisk();
+    await new Promise((resolve) => setTimeout(resolve, 5));
     assert.equal(broadcasts, before, "无变化不广播");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---- setSession 零连接副作用（#228：POST /session 永不挂起回归）----
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mgr2s-"));
+  try {
+    const { manager, store } = makeManager(dir);
+    // 项目目录含一个「连接会卡住」的服务器（stdio 命令不存在 → connect 会失败/等待，
+    // 若 setSession await 连接则此测试超时）。
+    const proj = join(dir, "proj");
+    mkdirSync(join(proj, ".git"), { recursive: true });
+    mkdirSync(join(proj, ".dsh"), { recursive: true });
+    writeFileSync(
+      join(proj, ".dsh", "mcp.json"),
+      JSON.stringify({ version: 1, servers: [{ name: "slow", transport: "stdio", command: "definitely-not-exist-cmd", enabled: true }] }),
+    );
+    // 中间层 project 模式：setSession 只切 currentRoot，不 await 连接。
+    manager.middlewareMode = "project";
+    const started = Date.now();
+    await manager.setSession(proj);
+    const elapsed = Date.now() - started;
+    assert.ok(elapsed < 2000, `setSession 零连接副作用（实际 ${elapsed}ms）`);
+    assert.equal(manager.projectRoot, proj);
+    // 中间层未初始化（apply 时才建）→ 不崩。
+    assert.equal(manager.middleware, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---- 中间层模式 connect/disconnect 分支（#228：userDisabled 持久化）----
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mgr2t-"));
+  try {
+    const { manager, store } = makeManager(dir);
+    store.upsert(normalizeServer(quietServer("g1")));
+    const proj = join(dir, "proj");
+    mkdirSync(join(proj, ".git"), { recursive: true });
+    mkdirSync(join(proj, ".dsh"), { recursive: true });
+    writeFileSync(
+      join(proj, ".dsh", "mcp.json"),
+      JSON.stringify({ version: 1, servers: [{ name: "p1", transport: "stdio", command: "pcmd", enabled: true }] }),
+    );
+    await manager.setSession(proj);
+    // 初始化中间层（模拟 apply）。
+    await manager.initMiddleware("project", {});
+    assert.ok(manager.middleware !== undefined);
+    const mw = manager.middleware;
+    // 项目级 connect → 中间层连接池（userDisabled 解除 + ensureConnected）。
+    await manager.connect("p1", "project");
+    assert.ok(mw.units.has(proj), "中间层单元已创建");
+    const unit = mw.units.get(proj);
+    assert.equal(unit.userDisabled.has("p1"), false);
+    // 项目级 disconnect → userDisabled 持久化。
+    await manager.disconnect("p1");
+    assert.equal(unit.userDisabled.has("p1"), true, "断开后 userDisabled");
+    assert.equal(unit.connections.has("p1"), false, "连接拆毁");
+    // 持久化文件存在（不崩）。
+    const { existsSync } = await import("node:fs");
+    assert.equal(existsSync(manager.userStatePath), true);
+    // 全局 disconnect 不受中间层影响（supervisor 路径）。
+    await manager.disconnect("g1");
+    assert.ok(!manager.supervisors.has("g1"), "全局断开走 supervisor");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

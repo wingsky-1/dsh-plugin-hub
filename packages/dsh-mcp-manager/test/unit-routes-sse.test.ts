@@ -121,6 +121,7 @@ const loopbackMethods = ["GET", "POST"];
     assert.ok(resOk.state.body.startsWith(": connected"));
     assert.ok(manager.sseConnections.has(resOk), "连接已登记");
     // 广播经 onStatus 到达已登记连接（apply 内即此组合）。
+    // emitStatus 是 coalesce 异步（setTimeout 0），需等待宏任务落定。
     let frames = 0;
     resOk.write = () => {
       frames += 1;
@@ -129,11 +130,13 @@ const loopbackMethods = ["GET", "POST"];
       broadcastFrame(manager.sseConnections, sseData({ type: "summary" }));
     });
     manager.emitStatus();
+    await new Promise((resolve) => setTimeout(resolve, 5));
     assert.equal(frames, 1);
     // close 注销。
     resOk.state.onClose();
     assert.equal(manager.sseConnections.size, 0, "close 后注销");
     manager.emitStatus();
+    await new Promise((resolve) => setTimeout(resolve, 5));
     assert.equal(frames, 1);
     unsubscribe();
   } finally {

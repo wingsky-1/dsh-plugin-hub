@@ -3,14 +3,14 @@
  *
  * 纪律（用户明确要求）：
  * 1. 用户代码报错一定不能导致插件崩溃 —— 所有用户函数调用经本模块包装。
- * 2. 一定不能有阻塞/挂起的连接 —— 2s 超时 + AbortSignal 传递，请求不挂起。
+ * 2. 一定不能有阻塞/挂起的连接 —— 超时 + AbortSignal 传递，请求不挂起（取数超时固定 5s）。
  */
 
 /**
- * 对用户 fetchData 的调用包装：2s 强制超时 + 序列化校验 + 错误隔离。
+ * 对用户 fetchData 的调用包装：强制超时（管线注入固定 5s）+ 序列化校验 + 错误隔离。
  *
  * @param fn 用户 fetchData
- * @param timeoutMs 超时毫秒（默认 2000）
+ * @param timeoutMs 超时毫秒（生产管线恒传 fetchTimeoutMs=5000；签名默认值仅兜底）
  * @returns 成功返回 { data }；失败返回 { error }（绝不抛异常）。
  */
 export async function safeFetchData(
@@ -50,10 +50,10 @@ export async function safeFetchData(
 }
 
 /**
- * 对用户 formatCapsule/formatPanel 的调用包装：2s 超时 + 返回值类型校验。
+ * 对用户 formatCapsule/formatPanel 的调用包装：超时由调用方注入 + 返回值类型校验。
  *
  * 注意：format 函数通常是同步的。同步死循环无法被真超时中断（JS 单线程），
- * 本包装的 2s 超时只对异步 format 生效；同步死循环由调用方文档化风险。
+ * 本包装的超时只对异步 format 生效；同步死循环由调用方文档化风险。
  */
 export async function safeFormat(
   fn: () => string,
