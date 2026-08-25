@@ -452,6 +452,27 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     }
   };
 
+  // 启用选择落盘串行链 + 清单落盘串行链（连续写的完成顺序不依赖 IO 时序）
+  // #212：声明提前至热更新块之前——hr.start() 的初始同步回调在 apply 尚未走完时即可触发，
+  // 回调内 scheduleWriteAdapterState 必须已可及（let TDZ 防御，同 cache/panelCache 先例）。
+  let stateChain: Promise<void> = Promise.resolve();
+  /**
+   * 启用关系落盘（串行链）。#212：以磁盘现状为基线合并——历史显式 null 停用标记得以保留，
+   * 运行期有启用者的 provider 以运行期为准；override 仅 select 清空时用于显式写 null。
+   * （此前直接落 snapshot().enabled 会把磁盘上的 null 停用标记抹掉，热更/登记挂点均受累。）
+   */
+  function scheduleWriteAdapterState(override?: Record<string, string | null>): void {
+    stateChain = stateChain
+      .then(async () => {
+        const saved = await readAdapterState(historyRoot);
+        const merged: Record<string, string | null> = { ...saved };
+        for (const [provider, name] of Object.entries(registry.snapshot().enabled)) merged[provider] = name;
+        if (override !== undefined) Object.assign(merged, override);
+        await writeFile(adapterStateFile(historyRoot), JSON.stringify(merged));
+      })
+      .catch(() => {});
+  }
+
   // 3. 热更新（config.adapter 声明 + 设置页登记的文件；autoReload=true 时生效）
   // 运行时经设置页 add 的适配器也纳入监视（issue #206）：ensureHotReload 供启动与
   // add 路由共用，watchedFiles 去重防同一文件重复监视。
@@ -472,12 +493,18 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
         return;
       }
       if (hr.current !== null) {
-        // 原子替换：先移除旧文件注册，再注册新版本（改名场景不误报重复）
-        registry.removeByFile(resolved);
-        registry.register(hr.current, "user-file", resolved);
+        // #212：原子替换（冲突预检先行，撞名时旧条目保留并返回失败）；
+        // 替换只更新代码不改写启用关系（enabled 保持语义在 registry.replaceByFile 内实现）
+        const replaced = registry.replaceByFile(resolved, hr.current);
+        if (!replaced.ok) {
+          registry.recordError(key, "load", `热更新失败：${replaced.detail}`);
+          return;
+        }
         cache.clear();
         panelCache.clear(); // #105①：新版适配器代码语义已变，面板渲染缓存同清
-        registry.recordError(key, "load", `热更新成功：${hr.current.name}`);
+        // #212：热更新结果持久化（合并语义落盘，保持后的启用关系写入 adapter-state.json）
+        scheduleWriteAdapterState();
+        console.warn(`[dsh-provider-usage] 热更新成功：${replaced.name}（${basename(resolved)}）`);
       }
     });
     const started = await hr.start();
@@ -485,6 +512,17 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       registry.recordError(`file:${basename(resolved)}`, "load", `热更新启动失败：${started.error}`);
     }
     hotReloaders.push(hr);
+  }
+
+  // #212：热更新监视初始化移至「adapter-state 恢复」之后——hr.start() 的初始同步回调
+  // 会经 replaceByFile → scheduleWriteAdapterState 落盘，若先于恢复执行，会把「默认启用、
+  // 尚未按持久化状态纠正」的中间态写进 adapter-state.json，与恢复逻辑产生竞态。
+
+  // 4. 恢复持久化的启用选择（adapter-state.json；null = 显式清空）
+  const savedEnabled = await readAdapterState(historyRoot);
+  for (const [provider, name] of Object.entries(savedEnabled)) {
+    if (name === null) registry.select(provider, null);
+    else registry.select(provider, name);
   }
 
   if (config.autoReload) {
@@ -496,13 +534,6 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       const f = resolvePath(rec.file);
       if (f !== undefined) await ensureHotReload(f);
     }
-  }
-
-  // 4. 恢复持久化的启用选择（adapter-state.json；null = 显式清空）
-  const savedEnabled = await readAdapterState(historyRoot);
-  for (const [provider, name] of Object.entries(savedEnabled)) {
-    if (name === null) registry.select(provider, null);
-    else registry.select(provider, name);
   }
 
   // 5. 互斥锁（缓存已在上方声明）
@@ -580,11 +611,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     });
   }
 
-  // 6. 启用选择落盘串行链 + 清单落盘串行链（连续写的完成顺序不依赖 IO 时序）
-  let stateChain: Promise<void> = Promise.resolve();
-  function scheduleWriteAdapterState(enabled: Record<string, string | null>): void {
-    stateChain = stateChain.then(() => writeFile(adapterStateFile(historyRoot), JSON.stringify(enabled)).catch(() => {}));
-  }
+  // 6. 清单落盘串行链（stateChain 声明提前至热更新块前，见 #212 注释）
   async function persistUserAdapter(rec: UserAdapterRecord): Promise<void> {
     const write = async (): Promise<void> => {
       const list = await readUserAdapters(historyRoot);
@@ -777,7 +804,9 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       if (!ok) return writeJson(res, 404, { error: "adapter not found" });
       cache.clear();
       panelCache.clear(); // #105①：启用关系已变，面板渲染缓存同清（切换/清空后一律重算）
-      scheduleWriteAdapterState(clearing ? { ...registry.snapshot().enabled, [provider]: null } : registry.snapshot().enabled);
+      // #212：清空用 override 显式落 null（合并语义会保留磁盘旧值，无法表达显式停用）
+      if (clearing) scheduleWriteAdapterState({ [provider]: null });
+      else scheduleWriteAdapterState();
       writeJson(res, 200, { ok: true, provider, adapterName: clearing ? null : adapterName });
     },
   };
@@ -856,7 +885,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       await ensureHotReload(file);
       cache.clear();
       panelCache.clear(); // #105①：候选/启用面已变，面板渲染缓存同清
-      scheduleWriteAdapterState(registry.snapshot().enabled);
+      scheduleWriteAdapterState(); // #212：合并语义落盘（保留磁盘 null 停用标记）
       writeJson(res, 200, {
         ok: true,
         adapter: { name: adapter.name, label: adapter.label ?? adapter.name, providers: adapter.providers, file: basename(file) },

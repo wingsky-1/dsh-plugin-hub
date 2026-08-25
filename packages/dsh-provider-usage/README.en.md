@@ -51,7 +51,7 @@ Warmup timer (5min) ─┐
                      ├→ getStats()             60s polling /stats
 Client polling ──────┘   │ Mutex                  ↓
                          │ 60s cache           Capsule frame ← capsuleHtml
-                         │ 2s fetch timeout     Panel frame ← panelHtml (/history, 90s fallback cache)
+                         │ 5s fetch timeout     Panel frame ← panelHtml (/history, 90s fallback cache)
                          ↓
                    adapter.fetchData(ctx)   ← user .mjs (apiEndpoint/staticPath/apiKey injected)
                          ↓
@@ -77,7 +77,7 @@ countdown badge, see below) work out of the box.
 | `historyDir` | `<DSH_HOME>/dsh-provider-usage/` | History storage root |
 | `warmupIntervalMs` | `300000` | Background warmup interval |
 | `cacheDurationMs` | `30000` | Cache freshness (ms, floor 5000; lowered from 60000 in #198 so peak/valley badge flips propagate end-to-end within ~95s = 30s host cache + 60s client polling + render margin) |
-| `fetchTimeoutMs` | `2000` | Forced fetchData timeout (500–30000ms) |
+| `fetchTimeoutMs` | `5000` | Forced fetchData timeout (**fixed, not configurable**; raised 2s→5s in #208, user values ignored) |
 | `autoReload` | `true` | Hot reload on adapter file edits (enabled by default; set `false` to disable) |
 
 ## Capsule placement
@@ -286,7 +286,7 @@ or the plugin home; non-normalized forms (`../` traversal) are rejected with 400
   legitimately escaped text passes through untouched
 - **Hot reload is off by default**; when enabled it polls mtime+size, atomically swaps in
   the new version only after validation passes, and keeps the old version on failure
-- **Timeout discipline**: fetchData gets a forced 2s timeout + AbortSignal; when the lock
+- **Timeout discipline**: fetchData gets a forced 5s timeout (fixed, not configurable) + AbortSignal; when the lock
   is busy requests degrade to cache instead of queueing — page requests are never blocked
 - **Fail-fast loading**: missing exports / wrong types / invalid names are rejected with
   diagnosable errors

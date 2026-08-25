@@ -10,7 +10,7 @@
  * - /health 快照形状
  * - 客户端 bundle 契约面与路由一致性
  */
-import { readFileSync, mkdtempSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, mkdtempSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertClientProductContract, assertClientSourceContract } from "../../../test/smoke-lib.ts";
@@ -38,6 +38,7 @@ import {
   DEEPSEEK_OFFICIAL_PROVIDER,
   DEEPSEEK_OFFICIAL_ADAPTER_ID,
   userAdaptersFile,
+  adapterStateFile,
   PANEL_CACHE_TTL_MS,
   normalizeRangeDay,
   panelCacheKey,
@@ -440,36 +441,45 @@ export function formatPanel() { return "<p>p</p>"; }
   }
 
   // issue #206：add 后建立的适配器文件也纳入热更新监视——改文件 → 轮询周期内热更新生效
+  // #212 回归：成功不再伪装 error 记录（旧实现把「热更新成功」写进 health errors），
+  // 改以 adapters.json 中新版 label 可观测生效为准，并断言 errors 无「热更新成功」、enabled 保持。
   {
+    const adaptersRoute = routes.find((r) => r.path === ROUTES.adapters);
     const healthRoute = routes.find((r) => r.path === ROUTES.health);
+    const readAdapters = (): Promise<{ host: Array<{ name: string; label: string; file: string | null; enabled: boolean }>; enabled: Record<string, string>; errors: Array<{ key: string; message: string }> }> => {
+      let p;
+      adaptersRoute.handler(fakeReq(), { writeHead: () => {}, end: (c) => { p = JSON.parse(c); } });
+      return Promise.resolve(p);
+    };
     const readHealth = async (): Promise<Array<{ key: string; message: string }>> => {
       let p;
       healthRoute.handler(fakeReq(), { writeHead: () => {}, end: (c) => { p = JSON.parse(c); } });
       await new Promise((r) => setTimeout(r, 20));
       return p?.errors ?? [];
     };
-    // 改文件（formatCapsule 文案变化，mtime+size 均变）
+    // 改文件（label 文案变化，mtime+size 均变）
     writeFileSync(goodFile, `
 export const version = 2;
 export const name = "manage-stats";
-export const label = "管理测试";
+export const label = "管理测试二版";
 export const providers = ["opencode-go"];
 export async function fetchData() { return { v: 2 }; }
 export function formatCapsule() { return "<span>v2</span>"; }
 export function formatPanel() { return "<p>p2</p>"; }
 `, "utf8");
-    // 轮询等待热更新记录出现（热更新轮询 2s；用轮询等待防 flake，上限 ~5s）
-    let seen = false;
-    const deadline = Date.now() + 5000;
+    // 轮询等待热更新生效（热更新轮询 2s；用轮询等待防 flake，上限 ~6s）
+    let hot = false;
+    let snap;
+    const deadline = Date.now() + 6000;
     while (Date.now() < deadline) {
-      const errors = await readHealth();
-      if (errors.some((e) => e.message.includes("热更新成功：manage-stats"))) {
-        seen = true;
-        break;
-      }
       await new Promise((r) => setTimeout(r, 200));
+      snap = await readAdapters();
+      if (snap.host.some((a) => a.name === "manage-stats" && a.label === "管理测试二版")) { hot = true; break; }
     }
-    assert.ok(seen, "add 后修改文件应触发热更新（issue #206）");
+    assert.ok(hot, "add 后修改文件应触发热更新且新版代码生效（issue #206）");
+    assert.equal(snap.host.find((a) => a.name === "manage-stats")?.enabled, true, "热更新不改写启用关系：add 时成为的启用者保持启用（#212-A）");
+    const errors = await readHealth();
+    assert.ok(!errors.some((e) => e.message.includes("热更新成功")), "成功不得伪装为 error 记录（#212 日志真实）");
   }
 
   // select：切换回内置
@@ -504,6 +514,147 @@ export function formatPanel() { return "<p>p2</p>"; }
     await new Promise((r) => setTimeout(r, 60));
     assert.equal(s.reason, "no-enabled-adapter", "有候选但清空 → no-enabled-adapter");
   }
+}
+
+// ---------------------------------------------------------------- #212-A：热更新不改写 enabled 且持久化
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dou-212-a-"));
+  const histDir = join(dir, "hist");
+  const aFile = join(dir, "a.mjs");
+  writeFileSync(aFile, `
+export const version = 2;
+export const name = "p212-a";
+export const label = "A v1";
+export const providers = ["p212"];
+export async function fetchData() { return { v: 1 }; }
+export function formatCapsule() { return "<span>a1</span>"; }
+export function formatPanel() { return "<p>a1</p>"; }
+`, "utf8");
+  const { ctx, routes } = makeFakeCtx();
+  mkdirSync(histDir, { recursive: true }); // 清单/状态落盘目录（消除 warmup 时序依赖，对齐 #212-B）
+  await apply(ctx, { ...ISOLATED_CONFIG, provider: "p212", adapter: aFile, historyDir: histDir });
+  await new Promise((r) => setTimeout(r, 300)); // 启动稳定（含 hr.start 初始同步）
+
+  const adaptersRoute = routes.find((r) => r.path === ROUTES.adapters);
+  const selectRoute = routes.find((r) => r.path === ROUTES.select);
+  const readAdapters = (): { host: Array<{ name: string; label: string; enabled: boolean }>; enabled: Record<string, string> } => {
+    let p;
+    adaptersRoute.handler(fakeReq(), { writeHead: () => {}, end: (c) => { p = JSON.parse(c); } });
+    return p;
+  };
+  // 用户显式停用（select provider null）
+  {
+    let payload;
+    selectRoute.handler(fakeReq({ method: "POST", body: JSON.stringify({ provider: "p212", adapterName: null }) }), { writeHead: () => {}, end: (c) => { payload = JSON.parse(c); } });
+    await new Promise((r) => setTimeout(r, 60));
+    assert.equal(payload.ok, true, "显式停用成功");
+  }
+  // 改文件触发热更新（label 变化可观测新版生效）
+  writeFileSync(aFile, `
+export const version = 2;
+export const name = "p212-a";
+export const label = "A v2";
+export const providers = ["p212"];
+export async function fetchData() { return { v: 2 }; }
+export function formatCapsule() { return "<span>a2</span>"; }
+export function formatPanel() { return "<p>a2</p>"; }
+// v2 marker —— 内容长度变化保证 stamp 可检出
+`, "utf8");
+  let snap;
+  let hot = false;
+  const deadline = Date.now() + 6000;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 200));
+    snap = readAdapters();
+    if (snap.host.some((a) => a.name === "p212-a" && a.label === "A v2")) { hot = true; break; }
+  }
+  assert.ok(hot, "停用的适配器文件编辑后热更新生效");
+  assert.equal(snap.host.find((a) => a.name === "p212-a")?.enabled, false, "停用的适配器热更新后保持停用，不得静默变回启用（#212-A）");
+  assert.equal(snap.enabled.p212, undefined, "provider 保持无启用者");
+  // 持久化：adapter-state.json 轮询等待落盘 null（scheduleWriteAdapterState 为异步串行链）
+  let persisted = false;
+  const stateFile = adapterStateFile(histDir);
+  const persistDeadline = Date.now() + 3000;
+  while (Date.now() < persistDeadline) {
+    if (existsSync(stateFile)) {
+      try {
+        const st = JSON.parse(readFileSync(stateFile, "utf8"));
+        if (st.p212 === null) { persisted = true; break; }
+      } catch { /* 写入中途，继续轮询 */ }
+    }
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  assert.ok(persisted, "热更新后的启用关系已持久化到 adapter-state.json（#212-A）");
+}
+
+// ---------------------------------------------------------------- #212-B：改名撞名 → 冲突报错 + 旧条目保留 + 无假成功
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dou-212-b-"));
+  const histDir = join(dir, "hist");
+  const f1 = join(dir, "one.mjs");   // 经 config.adapter 登记
+  const f2 = join(dir, "two.mjs");   // 经 add 路由登记
+  writeFileSync(f1, `
+export const version = 2;
+export const name = "u-one";
+export const label = "One v1";
+export const providers = ["p212b"];
+export async function fetchData() { return { v: 1 }; }
+export function formatCapsule() { return "<span>1</span>"; }
+export function formatPanel() { return "<p>1</p>"; }
+`, "utf8");
+  writeFileSync(f2, `
+export const version = 2;
+export const name = "u-two";
+export const label = "Two v1";
+export const providers = ["p212c"];
+export async function fetchData() { return { v: 1 }; }
+export function formatCapsule() { return "<span>2</span>"; }
+export function formatPanel() { return "<p>2</p>"; }
+`, "utf8");
+  const { ctx, routes } = makeFakeCtx();
+  mkdirSync(histDir, { recursive: true }); // 清单/状态落盘目录（生产由插件 home 保证存在）
+  await apply(ctx, { ...ISOLATED_CONFIG, adapter: f1, historyDir: histDir });
+  const adaptersRoute = routes.find((r) => r.path === ROUTES.adapters);
+  const healthRoute = routes.find((r) => r.path === ROUTES.health);
+  const addRoute = routes.find((r) => r.path === ROUTES.add);
+  // add 登记第二个文件（纳入热更监视）
+  {
+    let payload;
+    addRoute.handler(fakeReq({ method: "POST", body: JSON.stringify({ file: f2 }) }), { writeHead: () => {}, end: (c) => { payload = JSON.parse(c); } });
+    await new Promise((r) => setTimeout(r, 80));
+    assert.equal(payload.ok, true, "第二个适配器登记成功");
+  }
+  // 把 one.mjs 的导出 name 改为 u-two（与另一 user-file 撞名）→ 触发热更冲突路径
+  writeFileSync(f1, `
+export const version = 2;
+export const name = "u-two";
+export const label = "One renamed";
+export const providers = ["p212b"];
+export async function fetchData() { return { v: 2 }; }
+export function formatCapsule() { return "<span>x</span>"; }
+export function formatPanel() { return "<p>x</p>"; }
+// rename marker —— 内容长度变化保证 stamp 可检出
+`, "utf8");
+  // 轮询等待冲突报错出现（health errors 可见）
+  let conflictErr = null;
+  const deadline = Date.now() + 6000;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 200));
+    let p;
+    healthRoute.handler(fakeReq(), { writeHead: () => {}, end: (c) => { p = JSON.parse(c); } });
+    const found = (p?.errors ?? []).find((e) => e.kind === "load" && e.message.includes("热更新失败") && e.message.includes("u-two"));
+    if (found !== undefined) { conflictErr = found; break; }
+  }
+  assert.ok(conflictErr !== null, "改名撞名应产生明确的冲突报错且 health 可见（#212-B）");
+  // 旧条目保留：one.mjs 仍以旧名 u-one 在候选列表，u-two 归属不变
+  let meta;
+  adaptersRoute.handler(fakeReq(), { writeHead: () => {}, end: (c) => { meta = JSON.parse(c); } });
+  const oneEntry = meta.host.find((a) => a.file === "one.mjs");
+  assert.ok(oneEntry !== undefined && oneEntry.name === "u-one", "撞名后 one.mjs 旧条目保留、未静默丢失（#212-B）");
+  assert.ok(meta.host.some((a) => a.name === "u-two" && a.file === "two.mjs"), "既有 u-two 条目不受牵连");
+  assert.ok(!meta.errors.some((e) => e.message.includes("热更新成功")), "不得出现假「热更新成功」记录（#212-B）");
 }
 
 // ---------------------------------------------------------------- 客户端契约

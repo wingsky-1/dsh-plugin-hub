@@ -78,12 +78,15 @@ jobs:
         run: node scripts/gate/mutate-scope-guard.mjs
 
       - name: Mutation suites（六包串行全量；单包失败记账继续跑完，结尾统一判红）
+        # id 供 collect 步骤区分「整套 skip（无产物无从收集）」与「部分失败
+        # （记账夜已产出的基线照常收集）」（#217）
+        id: mutation-suites
         # #178 逐包容错：strict 判红路径下 incremental 基线已先落盘（StrykerJS 源码核实），
         # 记账继续可让后续包照常产出报告与基线，避免单包连锁丢弃整夜数据
         run: |
           FAILED=0
           FAILED_PKGS=''
-          for pkg in notifier idle-archive web-file-preview mcp-manager provider-usage lan-proxy; do
+          for pkg in notifier idle-archive web-file-preview mcp-manager provider-usage lan-proxy subagent-model-inherit; do
             echo "::group::stryker dsh-$pkg"
             if npx stryker run "stryker.conf.d/dsh-$pkg.json"; then
               echo "::endgroup::"
@@ -103,8 +106,9 @@ jobs:
         # #204 方案 A（业界最佳实践）：夜间基线改「仓库内版本化文件」，替代 actions/cache
         # save。actions/cache 按 ref 隔离（PR 永远读不到 main 的缓存，社区广泛确认，
         # GitHub Community #58583），而 git 内容跨 ref 天然可见、可本地实证。
-        # if: always() —— 部分失败夜已产出的基线文件照常收集。
-        if: always()
+        # if: always() && 非 skipped —— 部分失败夜已产出的基线文件照常收集；
+        # 但整套变异被 skip 时无任何产物，collect 不运行（防 copied=0 误红，#217）。
+        if: always() && steps.mutation-suites.outcome != 'skipped'
         run: node scripts/gate/collect-incremental-baseline.mjs
 
       - name: Open baseline PR（基线有变化时自动建 PR 合入 main）

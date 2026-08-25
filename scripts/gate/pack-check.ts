@@ -20,7 +20,7 @@ import { AGGREGATE_NAME, checkAggregateConsistency, listPluginDirs, loadManifest
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
-// 插件清单单一来源（issue #36）：枚举走 lib，目录集 == manifest.active 前置闸
+// 插件清单单一来源（issue #36）：枚举走 lib，目录集 == manifest.active ∪ standalone 前置闸
 warnUnknownEntries(ROOT)
 let manifest
 try {
@@ -35,7 +35,7 @@ try {
     for (const p of problems) console.log(`FAIL plugins-manifest | ${p}`)
     process.exit(1)
   }
-  console.log('PASS plugins-manifest | 目录集 == manifest.active 集')
+  console.log('PASS plugins-manifest | 目录集 == manifest.active ∪ standalone 集')
 }
 const plugins = listPluginDirs(ROOT)
 
@@ -65,7 +65,10 @@ for (const p of plugins) {
     // 只匹配 import 语句中的仓库外相对引用（esbuild 模块注释含路径文本，不算断链）
     const outsideRef = /(?:from|import)\s*["']\.\.\/\.\.\/(?:shared|types)/.test(idx)
     if (outsideRef) problems.push('lib 残留 ../../shared|types 运行时引用')
-    if (!idx.includes('isLoopbackRequest')) problems.push('内联后缺 isLoopbackRequest 导出')
+    // loopback 围栏断言跟随 HTTP 面存在性：产物注入 webServer（有 RPC/路由面）
+    // 才要求 isLoopbackRequest；纯事件面插件（无 webServer，如 #153 模型继承器）
+    // 无 HTTP 面，围栏不适用。
+    if (idx.includes('webServer') && !idx.includes('isLoopbackRequest')) problems.push('内联后缺 isLoopbackRequest 导出')
 
     // 第三方 license 归集断言（issue #13）：产物内联了第三方库（esbuild 模块
     // 注释可证）⇒ 必须随包附 lib/THIRD-PARTY-LICENSES——存在、非空、含宽松系

@@ -106,6 +106,21 @@
         "config": "stryker.conf.d/dsh-lan-proxy.json",
         "hardeningNote": "#147 变异加固轮：covered 由 49.75% 提升至 62.52%，60% 第一阶达标",
         "threshold": 60
+      },
+      "dsh-subagent-model-inherit": {
+        "baselineScore": 96.0,
+        "baselineCovered": 96.0,
+        "baselineKilled": 48,
+        "baselineSurvived": 2,
+        "baselineTotal": 50,
+        "baselineNoCoverage": 0,
+        "baselineErrors": 0,
+        "baselineDate": "2026-08-26",
+        "baselineDuration": "8s",
+        "baselineScope": "packages/dsh-subagent-model-inherit/lib/index.js:1-60（self-written 全段：纯事件面插件，无 vendor/shared 内联）",
+        "config": "stryker.conf.d/dsh-subagent-model-inherit.json",
+        "hardeningNote": "#153 demo 修复评审 M1 后 96.00%（48/50）；剩余 3 个幸存为 ConditionalExpression-false 类，手动注入同款变体断言实际失败（exit=1），疑似 tap-runner + 顶层 await 分类问题（观察项，见 PR #240）",
+        "threshold": 60
       }
     }
   }

@@ -424,7 +424,89 @@ function mkAdapter(over: Record<string, unknown> = {}): Record<string, unknown> 
   assert.equal(reg.removeByFile("/ghost.mjs"), 0, "移除不存在文件计 0");
 }
 
-// ================================================================ #150 二阶段：sanitizeHtml 白名单矩阵
+// ================================================================ #212：replaceByFile 热更新替换（enabled 保持 + 冲突保留旧条目）
+
+// A1：显式停用的适配器热更新后不得变回启用（缺陷 A 回归）
+{
+  const reg = makeAdapterRegistry();
+  assert.equal(reg.register(mkAdapter({ name: "f-one" }), "user-file", "/a.mjs"), true);
+  assert.equal(reg.select("prov-x", null), true, "用户显式停用");
+  const r = reg.replaceByFile("/a.mjs", mkAdapter({ name: "f-one", label: "v2" }));
+  assert.equal(r.ok, true, "同名替换成功");
+  const info = reg.snapshot().infos.find((i) => i.name === "f-one");
+  assert.equal(info?.enabled, false, "停用的适配器热更新后保持停用（#212-A）");
+  assert.equal(reg.getEntry("prov-x"), undefined, "prov-x 保持无启用者");
+}
+
+// A2：启用中的适配器替换后仍是启用者（保持语义的另一侧）
+{
+  const reg = makeAdapterRegistry();
+  reg.register(mkAdapter({ name: "on-a" }), "user-file", "/a.mjs");
+  const r = reg.replaceByFile("/a.mjs", mkAdapter({ name: "on-a", label: "v2" }));
+  assert.equal(r.ok, true);
+  assert.equal(reg.isEnabled("prov-x", "on-a"), true, "启用者热更新后仍启用（#212-A）");
+}
+
+// A3：多 provider 认领时逐 provider 精确恢复（部分启用部分停用）
+{
+  const reg = makeAdapterRegistry();
+  reg.register(mkAdapter({ name: "multi", providers: ["p1", "p2"] }), "user-file", "/m.mjs");
+  assert.equal(reg.select("p2", null), true, "仅停用 p2");
+  const r = reg.replaceByFile("/m.mjs", mkAdapter({ name: "multi", providers: ["p1", "p2"], label: "v2" }));
+  assert.equal(r.ok, true);
+  const snap = reg.snapshot();
+  assert.equal(snap.enabled.p1, "multi", "p1 启用关系保持");
+  assert.equal(snap.enabled.p2, undefined, "p2 停用关系保持（不得被默认启用覆盖）");
+}
+
+// B1：改名撞内置名 → 拒绝且旧条目原样保留（缺陷 B 回归；health 报错可见性见 smoke #212-B 集成用例）
+{
+  const reg = makeAdapterRegistry();
+  assert.equal(reg.register(mkAdapter({ name: "builtin-occ" }), "builtin"), true);
+  assert.equal(reg.register(mkAdapter({ name: "renamer" }), "user-file", "/r.mjs"), true);
+  const r = reg.replaceByFile("/r.mjs", mkAdapter({ name: "builtin-occ" }));
+  assert.equal(r.ok, false, "撞名拒绝替换");
+  assert.equal(r.code, "duplicate-name");
+  assert.ok(r.detail.includes("builtin-occ"), "拒绝结果携带冲突 name 详情");
+  const infos = reg.snapshot().infos;
+  assert.ok(infos.some((i) => i.name === "renamer" && i.file === "/r.mjs"), "旧条目未被删除（#212-B）");
+  assert.equal(reg.hasName("renamer"), true, "旧名仍在注册表");
+}
+
+// B2：改名撞另一 user-file 名 → 同样拒绝且两文件条目均保留
+{
+  const reg = makeAdapterRegistry();
+  reg.register(mkAdapter({ name: "u-first", providers: ["pq"] }), "user-file", "/u1.mjs");
+  reg.register(mkAdapter({ name: "u-second", providers: ["pr"] }), "user-file", "/u2.mjs");
+  const r = reg.replaceByFile("/u2.mjs", mkAdapter({ name: "u-first", providers: ["pr"] }));
+  assert.equal(r.ok, false, "撞 user-file 名拒绝");
+  assert.equal(r.code, "duplicate-name");
+  const infos = reg.snapshot().infos;
+  assert.ok(infos.some((i) => i.name === "u-second" && i.file === "/u2.mjs"), "u2 旧条目保留");
+  assert.ok(infos.some((i) => i.name === "u-first" && i.file === "/u1.mjs"), "u1 条目不受牵连");
+}
+
+// B3：改名不冲突 → 替换成功，旧名清理，启用关系跟随文件语义
+{
+  const reg = makeAdapterRegistry();
+  reg.register(mkAdapter({ name: "old-name" }), "user-file", "/c.mjs"); // 默认启用 prov-x
+  const r = reg.replaceByFile("/c.mjs", mkAdapter({ name: "new-name" }));
+  assert.equal(r.ok, true, "改名不冲突替换成功");
+  assert.equal(reg.hasName("old-name"), false, "旧名已清理");
+  assert.equal(reg.isEnabled("prov-x", "new-name"), true, "该文件原为启用者，新版沿用启用");
+}
+
+// B4：契约失败的新版同样拒绝且保留旧条目
+{
+  const reg = makeAdapterRegistry();
+  reg.register(mkAdapter({ name: "orig" }), "user-file", "/o.mjs");
+  const r = reg.replaceByFile("/o.mjs", { foo: 1 });
+  assert.equal(r.ok, false);
+  assert.equal(r.code, "invalid-adapter");
+  assert.ok(reg.snapshot().infos.some((i) => i.name === "orig"), "非法新版不破坏旧条目");
+}
+
+// ================================================================ #212：sanitizeHtml 白名单矩阵
 
 assert.equal(sanitizeHtml(""), "", "空串直通");
 assert.equal(sanitizeHtml("<p>plain</p>"), "<p>plain</p>", "无害 HTML 原样");

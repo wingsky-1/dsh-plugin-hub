@@ -64,7 +64,13 @@ for (const p of plugins) {
         problems.push('宿主入口缺 name 导出')
       }
       if (!/apply/.test(modText)) problems.push('宿主入口缺 apply（可能内联缺失）')
-      if (!/ROUTES|route/i.test(modText)) problems.push('宿主入口缺 ROUTES/路由')
+      // ROUTES 是「客户端路由单一事实源」契约（DEVELOPMENT §3），仅对带客户端半
+      // 的包强制；纯事件面插件（无 lib/client.js、无 dsh.client 声明，如 #153）
+      // 无路由面，断言不适用（与 pack-check 的围栏跟随 HTTP 面同口径）。
+      const declaresClient = JSON.parse(readFileSync(join(pkgRoot, 'package.json'), 'utf8')).dsh?.client !== undefined
+      if ((existsSync(join(pkgRoot, 'lib', 'client.js')) || declaresClient) && !/ROUTES|route/i.test(modText)) {
+        problems.push('宿主入口缺 ROUTES/路由')
+      }
     }
 
     // 2. 客户端契约（arrive 模拟，同 contract-check 实现）
