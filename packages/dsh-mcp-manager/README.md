@@ -60,7 +60,8 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
 | 服务器管理 | 增删改查（可选项目级/全局）、连接 / 断开 / 重连；配置版本化 JSON，原子写入 |
 | 两种传输 | stdio（本地子进程，env 支持 `${ENV}` 引用）与 streamable-http（远程，header 支持 `${ENV}` 引用，自动回传 `Mcp-Session-Id`） |
 | JSON 导入 | 粘贴 mcpServers JSON 文本导入（仅 JSON 格式；不扫描任何应用配置文件） |
-| 模型工具 | 已连接服务器的工具以 `mcp__<server>__<tool>` 注册（64 字符、`[A-Za-z0-9_-]`、冲突时哈希后缀） |
+| 模型工具 | 全局服务器工具以 `mcp__<server>__<tool>` 注册（64 字符、`[A-Za-z0-9_-]`、冲突时哈希后缀）；项目级服务器默认经中间层 `ws_mcp_search` / `ws_mcp_call` 访问（`middleware: project`，推荐），不同工作空间互不冲突 |
+| 工作空间隔离 | 中间层按调用方会话当前 cwd 路由到对应工作空间的连接池；server 全名 `@<root>/<server>` 一致性校验防跨空间串台 |
 | 断线重连 | 指数退避（500ms 起、30s 上限、10 次后放弃并注销工具） |
 | 结果截断 | 工具结果按 8KB 截断并标注（防超长 JSON 全量进上下文） |
 | 超时下探 | 工具调用超时默认 60s → 15s（可按服务器 `toolCallTimeoutMs` 覆盖） |
@@ -83,6 +84,19 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
 在设置页保存后即时生效，**无需重启 dsh web**、也无需手动刷新页面：宿主端经既有
 SSE events 通道推送一变，客户端自动重新拉取 `/api/dsh-mcp/config` 并就地更新浮窗位置。
 
+## 配置（中间层）
+
+项目级 MCP 经中间层访问（`middleware: project`，默认）：模型面恒定两个工具
+`ws_mcp_search`（先检索当前工作空间 MCP 工具）/ `ws_mcp_call`（按 `@<root>/<server>`
+全名调用），执行时按调用方会话当前 cwd 路由到对应工作空间连接池，不同工作空间
+注入不同 MCP、无命名冲突。切换 `middleware: off` 回到旧行为（项目级也直接注册
+`mcp__` 工具）；`middleware: all` 则全局服务器也走中间层。
+
+| 键 | 值域 | 默认 |
+| --- | --- | --- |
+| `middleware` | `off` / `project`（推荐）/ `all` | `project` |
+| `middlewarePolicy` | `{ allowTools: {<server>: [glob]}, denyTools: {<server>: [glob]} }`（server 为裸名，deny 优先） | `{}` |
+
 ## 路由（全部 loopback 围栏）
 
 | 路由 | 说明 |
@@ -101,6 +115,11 @@ SSE events 通道推送一变，客户端自动重新拉取 `/api/dsh-mcp/config
   仅配置可信的服务器
 - **MCP 工具在真实服务器上执行，先确认再操作**；工具结果原样返回，
   可能含敏感信息；工具描述/结果按不可信输入对待
+- **工作空间隔离（中间层）**：路由以调用方会话当前 cwd 为唯一输入；server
+  全名一致性校验（参数声明的 root ≠ 路由 root → 拒绝）防跨空间串台；
+  策略 guard（allowTools/denyTools，deny 优先）按 server 全名配置
+- **凭据脱敏**：目录摘要与错误路径经 redactor 把 env/headers/URL 用户信息等
+  凭据形状替换为 `[REDACTED]`
 - 能力目录注入含来源标注与"不代表当前连接状态"说明
 
 ## 验证

@@ -540,6 +540,35 @@ function rmStatSafe(p) {
   }
 }
 
+// ---- setSession 零连接副作用（#228：POST /session 永不挂起回归）----
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mgr2s-"));
+  try {
+    const { manager, store } = makeManager(dir);
+    // 项目目录含一个「连接会卡住」的服务器（stdio 命令不存在 → connect 会失败/等待，
+    // 若 setSession await 连接则此测试超时）。
+    const proj = join(dir, "proj");
+    mkdirSync(join(proj, ".git"), { recursive: true });
+    mkdirSync(join(proj, ".dsh"), { recursive: true });
+    writeFileSync(
+      join(proj, ".dsh", "mcp.json"),
+      JSON.stringify({ version: 1, servers: [{ name: "slow", transport: "stdio", command: "definitely-not-exist-cmd", enabled: true }] }),
+    );
+    // 中间层 project 模式：setSession 只切 currentRoot，不 await 连接。
+    manager.middlewareMode = "project";
+    const started = Date.now();
+    await manager.setSession(proj);
+    const elapsed = Date.now() - started;
+    assert.ok(elapsed < 2000, `setSession 零连接副作用（实际 ${elapsed}ms）`);
+    assert.equal(manager.projectRoot, proj);
+    // 中间层未初始化（apply 时才建）→ 不崩。
+    assert.equal(manager.middleware, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 // ---- summary / summarize / dispose ----
 
 {

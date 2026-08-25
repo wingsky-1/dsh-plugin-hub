@@ -140,7 +140,7 @@ export function renderMcpCatalogMessage(entries: CatalogEntry[]): CatalogMessage
     ...entries.map((entry) => (entry.text === undefined ? `- \`${entry.name}\`` : `- \`${entry.name}\`: ${escapeCatalogText(entry.text)}`)),
     "</available_mcp_servers>",
     "",
-    "任务匹配某服务器能力时，直接调用其 `mcp__<server>__<tool>` 工具（具体工具名与参数见工具列表）。",
+    "任务匹配某服务器能力时，先用 `ws_mcp_search` 检索该工作空间的 MCP 工具，再用 `ws_mcp_call` 调用（server/tool 取自检索结果；项目级 MCP 一律经这两个工具访问，不直接调用 mcp__ 前缀工具）。",
     "若某服务器此前可用而现在不可用，请勿反复重试同一工具超过两次，改用其他方式或提示用户检查「MCP」浮窗。",
     "</system-reminder>",
   ].join("\n");

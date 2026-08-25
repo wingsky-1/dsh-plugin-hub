@@ -31,17 +31,26 @@ export function el(tag: any, attrs: any = {}, children?: any): any {
 /**
  * HTTP API 请求。
  * 返回 JSON 解析后的 body；非 2xx 抛 Error。
+ * 带默认超时（10s，AbortSignal），防挂起请求占用连接（#111 变更点驱动）。
  */
 export async function api(path: any, options: any = {}): Promise<any> {
-  const response = await fetch(path, options);
-  let body: any;
+  const timeoutMs = options.timeoutMs ?? 10_000;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error(`request timed out (${timeoutMs}ms)`)), timeoutMs);
+  const merged = { ...options, signal: options.signal ?? controller.signal };
   try {
-    body = await response.json();
-  } catch {
-    body = undefined;
+    const response = await fetch(path, merged);
+    let body: any;
+    try {
+      body = await response.json();
+    } catch {
+      body = undefined;
+    }
+    if (!response.ok) {
+      throw new Error(body?.error ?? `HTTP ${response.status}`);
+    }
+    return body;
+  } finally {
+    clearTimeout(timer);
   }
-  if (!response.ok) {
-    throw new Error(body?.error ?? `HTTP ${response.status}`);
-  }
-  return body;
 }

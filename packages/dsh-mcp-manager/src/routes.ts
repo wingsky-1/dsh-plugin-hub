@@ -141,9 +141,9 @@ export function makeRoutes(manager: RoutesManager, cwd = process.cwd()): WebRout
         if (method === "GET") {
           try {
             await maybeSession(url);
-            // 浮窗刷新：重读磁盘配置（全局 + 项目，外部修改 mcp.json 自动生效）
-            // 并同步连接集合（新增启动 / 移除断开），无需重启宿主。
-            await manager.refreshFromDisk();
+            // 变更点驱动（#111/#228）：GET /servers 是纯读快照，零副作用——
+            // 磁盘变更由 fs.watch 事件驱动 reconcile，状态从内存 store 读。
+            // 历史 refreshFromDisk 副作用（mtime 轮询 + reconcile）已移除。
             writeJson(res, 200, manager.summary());
           } catch (error) {
             handleError(res, error);

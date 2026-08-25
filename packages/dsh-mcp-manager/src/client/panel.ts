@@ -13,8 +13,23 @@ import { renderServers } from "./servers.js";
 import { buildQuickAdd } from "./quick-add.js";
 import { renderPill, renderFloatPanel } from "./float.js";
 
-/** 刷新服务器列表与浮窗摘要。 */
-export async function refresh(state: McpState, actions: UiActions): Promise<boolean> {
+/** 模块级单飞去重句柄（invalidate 单飞：同一时刻只有一个 in-flight 拉取）。 */
+let inflight: Promise<boolean> | undefined;
+
+/**
+ * 刷新服务器列表与浮窗摘要（单飞：in-flight 复用；#111 变更点驱动）。
+ * 返回 true=成功；false=失败（调用方按退避重试）。
+ */
+export function refresh(state: McpState, actions: UiActions): Promise<boolean> {
+  if (inflight !== undefined) return inflight;
+  inflight = doRefresh(state, actions).finally(() => {
+    inflight = undefined;
+  });
+  return inflight;
+}
+
+/** 实际拉取（单飞内部）。 */
+async function doRefresh(state: McpState, actions: UiActions): Promise<boolean> {
   try {
     const suffix = typeof state.currentCwd === "string" && state.currentCwd !== ""
       ? `?cwd=${encodeURIComponent(state.currentCwd)}`

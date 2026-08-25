@@ -68,6 +68,8 @@ import "./unit-shared.test.ts";
 import "./unit-manager.test.ts";
 import "./unit-apply.test.ts";
 import "./unit-hotspot.test.ts";
+// 中间层（#228：ws_mcp_search / ws_mcp_call + 连接池 + 目录 + 策略）
+import "./unit-middleware.test.ts";
 
 const failures = [];
 const check = (label, fn) => {
@@ -175,6 +177,39 @@ const main = async () => {
   });
   check("client source contract（load id/IIFE/use strict/load once）", () => assertClientSourceContract(pkgDir));
   check("client product contract（执行断言：arrive 可解析/apply/inject）", () => assertClientProductContract(pkgDir));
+  await checkAsync("中间层工具注册（ws_mcp_search / ws_mcp_call + 路由一致性）", async () => {
+    const { registerMiddlewareTools, McpMiddleware, fullServerName, parseFullServerName } = await import("../lib/index.js");
+    const registered = [];
+    const ctx = { tools: { register: (def) => { registered.push(def); return () => {}; } } };
+    const host = {
+      ctx,
+      logger: { info: () => {}, warn: () => {}, error: () => {} },
+      projectServersFor: async () => [],
+      globalServers: () => [],
+      normalizedProjectRoot: async (cwd) => (cwd === "/proj" ? "/proj" : undefined),
+      saveUserState: async () => {},
+      emitStatus: () => {},
+      catalogCachePath: () => "/tmp/cache.json",
+    };
+    const mw = new McpMiddleware(host, {});
+    const dispose = registerMiddlewareTools(ctx, mw, async (agent) => {
+      const cwd = agent?.session?.header?.cwd;
+      return cwd === "/proj" ? "/proj" : undefined;
+    });
+    const names = registered.map((def) => def.name).sort();
+    assert.deepEqual(names, ["ws_mcp_call", "ws_mcp_search"], "两个中间层工具注册");
+    assert.match(registered.find((d) => d.name === "ws_mcp_search").description, /ws_mcp_call/, "search 描述引导先搜后调");
+    // 路由：agent-less → 显式失败
+    const searchDef = registered.find((d) => d.name === "ws_mcp_search");
+    const callDef = registered.find((d) => d.name === "ws_mcp_call");
+    await assert.rejects(() => searchDef.execute({}, { agent: undefined }), /无法确定工作空间/);
+    // 路由：有 agent 但 cwd 无项目 → 显式失败（ws_mcp_call 缺 server 参数先报必填）
+    await assert.rejects(() => callDef.execute({}, { agent: { session: { header: { cwd: "/other" } } } }), /无法确定工作空间|server 与 tool 均为必填/);
+    // server 全名解析往返
+    const full = fullServerName("/proj", "ctx");
+    assert.deepEqual(parseFullServerName(full), { root: "/proj", server: "ctx" });
+    dispose();
+  });
   check("client 注册 settings.plugin.item 卡（id/key = 宿主命名空间 dsh-mcp-manager）", () => {
     const clientSrc = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
     assert.ok(clientSrc.includes("settings.plugin.item"), "settings.plugin.item 卡已注册");
