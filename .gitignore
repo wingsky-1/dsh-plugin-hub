@@ -20,3 +20,7 @@ Thumbs.db
 coverage/
 .stryker-tmp/
 .maintenance-drafts/
+
+# 测试运行时污染兜底（#218）：DSH_HOME 未正确注入时产生的 undefined 路径与历史数据
+packages/*/undefined/
+**/*.jsonl
