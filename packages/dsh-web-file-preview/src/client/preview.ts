@@ -10,6 +10,7 @@ import type { FilePreviewState, NavEntry } from "./state.js";
 import { fetchText, renderTabBody, probeDiff } from "./text.js";
 import { renderImage, closeLightbox } from "./image.js";
 import { renderGroupFor } from "./renderer.js";
+import { scrollToFragment } from "./anchor.js";
 
 /** 文件预览 URL（F2-B）。 */
 export function fileUrl(path: string, cwd: string | undefined, state: FilePreviewState): string {
@@ -87,8 +88,15 @@ export function openPreview(
   cwd: string | undefined,
   isBack = false,
   prev?: NavEntry,
+  frag?: string,
 ): void {
   ensureStyle();
+  // issue #45：带 fragment 的文件引用（./f.md#g）——待定位锚点只随「前进打开」
+  // 设置一次，md 首次渲染后消费；返回（isBack）不带锚点语义。
+  // 注意：此处无条件赋值（含 undefined）是 pendingFrag 的唯一写入点之一，
+  // closeModal 不得清理它——openPreview 内部先赋值后调 closeModal，清理会把
+  // 本次锚点意图抹掉（实测踩坑）。
+  state.pendingFrag = isBack ? undefined : (frag ?? undefined);
   // 返回栈：进入"新文件"（非返回触发、当前已有活跃 Modal、目标不同）→ 把当前
   // 文件与预览态快照压栈，供「← 返回」还原。返回触发（isBack）不再重复压栈；
   // 以 overlay !== undefined（当前是否已有打开的 Modal）判断"是否在浏览链内"，
@@ -222,13 +230,32 @@ export function openPreview(
   ov.addEventListener("click", (event: any) => {
     // U8 v2（D1-b）：md 内相对链接 → Modal 内跳转预览（不新标签、不整页导航）。
     const targetEl = event.target instanceof Element ? (event.target as Element) : null;
+    // issue #45：纯锚点（#section，rewriteAnchor 已标 data-fp-anchor）→ 拦截默认
+    // hash 导航（不改 location.hash、SPA 路由不受扰），在 Modal 正文内平滑滚动定位。
+    if (targetEl !== null) {
+      let anchorLink: Element | null = null;
+      try { anchorLink = targetEl.closest("a[data-fp-anchor]"); } catch { anchorLink = null; }
+      if (anchorLink !== null && anchorLink !== undefined) {
+        event.preventDefault();
+        event.stopPropagation();
+        scrollToFragment(state.overlay, anchorLink.getAttribute("data-fp-anchor") ?? "");
+        return;
+      }
+    }
     const link = targetEl === null ? null : targetEl.closest?.("a[data-fp-ref]");
     if (link !== null && link !== undefined) {
       const target = link.getAttribute("data-fp-ref");
       if (target !== null && target !== "") {
         event.preventDefault();
         event.stopPropagation();
-        openPreview(state, target, link.getAttribute("data-fp-cwd") || state.currentCwd);
+        openPreview(
+          state,
+          target,
+          link.getAttribute("data-fp-cwd") || state.currentCwd,
+          false,
+          undefined,
+          link.getAttribute("data-fp-frag") || undefined,
+        );
         return;
       }
     }

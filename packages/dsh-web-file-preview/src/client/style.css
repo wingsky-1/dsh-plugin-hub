@@ -98,3 +98,7 @@
 .fwp-folder-notice{position:fixed;left:50%;transform:translateX(-50%);bottom:24px;z-index:10001;max-width:min(480px,92vw);padding:10px 18px;border-radius:10px;background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#1c1e26);border:1px solid var(--dsw-alias-border-l1,#d7dae0);box-shadow:0 8px 30px rgba(0,0,0,.22);font-size:13px;line-height:1.5;cursor:pointer;text-align:center;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
 .fwp-folder-notice:hover{background:var(--dsw-alias-interactive-bg-hover,#eef1f5)}
 @media (pointer: coarse){.fwp-folder-notice{padding:12px 20px;font-size:14px;min-height:44px;box-sizing:border-box}}
+/* issue #45：Modal 内锚点定位落点的短暂高亮（scrollToFragment 加/自动移除）。
+   半透明暖黄在明暗两态下均可辨识；动画结束透明回落，不残留状态。 */
+.fwp-frag-hit{animation:fwp-frag-flash 1.6s ease-out;border-radius:4px}
+@keyframes fwp-frag-flash{0%{background-color:rgba(255,196,66,.42)}70%{background-color:rgba(255,196,66,.18)}100%{background-color:transparent}}
