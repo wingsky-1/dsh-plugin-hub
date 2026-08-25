@@ -37,6 +37,10 @@ export interface RoutesManager {
   sseConnections?: Set<ServerResponse>;
   supervisors: Map<string, { status: string; tools: string[] }>;
   catalogCache: Map<string, unknown>;
+  /** 中间层模式（off/project/all；health 计数展示用，缺省 off）。 */
+  middlewareMode?: string;
+  /** 中间层连接池（health 补中间层计数；结构面与 McpMiddleware.units 兼容）。 */
+  middleware?: { units: Map<string, { connections: Map<string, { status: string }> }> } | undefined;
 }
 
 // ------------------------------------------------------------ HTTP 路由
@@ -395,6 +399,17 @@ export function makeHealthRoute(manager: RoutesManager): WebRoute {
         if (supervisor.status === "connected") connected += 1;
         tools += supervisor.tools.length;
       }
+      // 中间层连接池计数（#228：项目级连接不在 supervisors，需单独投影诊断）。
+      let middlewareUnits = 0;
+      let middlewareConnections = 0;
+      let middlewareConnected = 0;
+      for (const unit of manager.middleware?.units.values() ?? []) {
+        middlewareUnits += 1;
+        for (const entry of unit.connections.values()) {
+          middlewareConnections += 1;
+          if (entry.status === "connected") middlewareConnected += 1;
+        }
+      }
       writeJson(res, 200, {
         ok: true,
         plugin: "dsh-mcp-manager",
@@ -402,6 +417,12 @@ export function makeHealthRoute(manager: RoutesManager): WebRoute {
         connected,
         tools,
         catalogCacheEntries: manager.catalogCache.size,
+        middleware: {
+          mode: manager.middlewareMode ?? "off",
+          units: middlewareUnits,
+          connections: middlewareConnections,
+          connected: middlewareConnected,
+        },
       });
     },
   };

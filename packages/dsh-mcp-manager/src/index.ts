@@ -58,6 +58,7 @@ import {
 import { makeRoutes, makeEventsRoute, makeHealthRoute, sseData, uiConfigChangedFrame } from "./routes.js";
 import {
   McpMiddleware,
+  msgOf,
   normalizeMiddlewareMode,
   registerMiddlewareTools,
   userStateFile,
@@ -741,7 +742,44 @@ export class McpManager {
     };
   }
 
+  /**
+   * 中间层投影单元：该 server 在当前模式下由中间层接管时返回其所在单元，
+   * 否则 undefined（supervisor 路径照旧）。project 模式仅项目级走池；
+   * all 模式全局也经虚拟 root @global 走池（与 reconcileServers 的
+   * middlewareTakes 判定同口径）。
+   */
+  private middlewareUnitFor(serverName: string, scope: string): ProjectUnit | undefined {
+    const mw = this.middleware;
+    if (mw === undefined || this.middlewareMode === "off") return undefined;
+    const taken = scope === SCOPE_PROJECT || (this.middlewareMode === "all" && scope === SCOPE_GLOBAL);
+    if (!taken) return undefined;
+    const root = scope === SCOPE_PROJECT ? this.projectRoot : MIDDLEWARE_GLOBAL_ROOT;
+    return root === undefined ? undefined : mw.units.get(root);
+  }
+
   summarize(server: ServerConfig, scope: string): Record<string, unknown> {
+    // 中间层模式（#228 回归修复）：被中间层接管的服务器从连接池 + 目录缓存
+    // 投影状态与工具列表——此前只读 supervisors，项目级无 supervisor 条目恒
+    // 兜底 "stopped"，浮窗/summary 与真实连接态脱节。返回形状不变。
+    const unit = this.middlewareUnitFor(server.name, scope);
+    if (unit !== undefined) {
+      const entry = unit.connections.get(server.name);
+      if (entry !== undefined) {
+        const catalog = unit.catalog.get(server.name);
+        return {
+          ...server,
+          scope,
+          status: entry.status,
+          error: entry.error !== undefined ? msgOf(entry.error) : undefined,
+          tools: catalog !== undefined && catalog.unavailable === undefined ? [...catalog.tools.keys()] : [],
+        };
+      }
+      // 用户手动断开（userDisabled）：连接条目已拆毁；状态对齐旧行为 stopped
+      // （浮窗「连接」按钮可经 manager.connect 解除禁用重新拉起），工具不展示。
+      if (unit.userDisabled.has(server.name)) {
+        return { ...server, scope, status: "stopped", error: undefined, tools: [] };
+      }
+    }
     const supervisor = this.supervisors.get(server.name);
     return {
       ...server,
