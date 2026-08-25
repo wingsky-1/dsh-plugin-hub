@@ -689,14 +689,17 @@ function rmStatSafe(p) {
       tools: new Map([["t1", { description: "d1", inputSchema: {} }], ["t2", { description: "", inputSchema: {} }]]),
     });
 
-    // 回归盲区主断言：中间层 connected → summary 显示 connected + tools 列表
-    // （此前 summarize 只读 supervisors，项目级恒兜底 stopped / 0 工具）。
+    // 回归盲区主断言（#228 维护者实测补充验收）：中间层 connected →
+    // summary 显示 connected、tools 从 catalog 缓存填充出**非空列表**且与
+    // 目录一致（此前 summarize 只读 supervisors，项目级恒 stopped / 空数组，
+    // 而 ws_mcp_search 实测目录有货）。
     const sum = manager.summary();
     const p1 = sum.servers.find((s) => s.name === "p1");
     assert.ok(p1 !== undefined, "项目级 server 在 summary 中");
     assert.equal(p1.scope, "project");
     assert.equal(p1.status, "connected");
-    assert.deepEqual([...p1.tools].sort(), ["t1", "t2"], "tools 由 catalog 缓存填充");
+    assert.ok(Array.isArray(p1.tools) && p1.tools.length > 0, "summary.tools 非空（catalog 有货不得返回空数组）");
+    assert.deepEqual([...p1.tools].sort(), ["t1", "t2"], "summary.tools 与 catalog 目录一致");
     assert.equal(sum.counts.connected, 1);
 
     // failed 态：error 详情投影（浮窗红字展示来源）。
