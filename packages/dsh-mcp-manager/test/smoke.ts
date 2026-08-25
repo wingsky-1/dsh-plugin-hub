@@ -181,12 +181,15 @@ const main = async () => {
     assert.ok(clientSrc.includes("dsh-mcp-manager"), "卡片 key/id 引用宿主命名空间 dsh-mcp-manager");
   });
 
-  check("设置卡片样式对齐官方风格（#167：12px 圆角 / bg-base 底 / 13.5px 名称字 / 12px 描述字）", () => {
+  check("设置卡片样式对齐官方风格（#219：12px 圆角 / bg-layer-3 底 / border-l2 / 15px 名称字 / 13px 描述字 / 14 16 padding / gap 4）", () => {
     const css = readFileSync(new URL("../src/client/style.css", import.meta.url), "utf8");
     assert.match(css, /border-radius:12px/, "卡片圆角对齐官方 12px");
-    assert.match(css, /background:var\(--dsw-alias-bg-base,#ffffff\)/, "卡片底色对齐官方 bg-base");
-    assert.match(css, /\.dm-set-name\{display:block;font-size:13\.5px/, "名称字号 13.5px");
-    assert.match(css, /\.dm-set-description\{display:block;margin-top:2px;font-size:12px/, "描述字号 12px");
+    assert.match(css, /background:var\(--dsw-alias-bg-layer-3,#fbfbfc\)/, "卡片底色对齐官方 bg-layer-3");
+    assert.match(css, /border:1px solid var\(--dsw-alias-border-l2,#e2e5ea\)/, "卡片边框对齐官方 border-l2");
+    assert.match(css, /\.dm-set-head\{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px/, "head padding 对齐官方 14px 16px");
+    assert.match(css, /\.dm-set-headText\{display:flex;flex-direction:column;gap:4px/, "headText gap 对齐官方 4px");
+    assert.match(css, /\.dm-set-name\{display:block;font-size:15px;font-weight:600;line-height:1\.4/, "名称字号对齐官方 15px");
+    assert.match(css, /\.dm-set-description\{display:block;font-size:13px;line-height:1\.5/, "描述字号对齐官方 13px");
     assert.match(css, /--dsw-alias-label-tertiary,#8a919c/, "描述用 tertiary 层级（与官方同款）");
   });
 
