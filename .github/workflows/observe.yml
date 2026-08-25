@@ -104,7 +104,7 @@ jobs:
         # PR 由 bot 身份创建，auto-merge 需在 PR 创建后由后续步骤开启（该 action 本身
         # 不自动合并，仅建 PR；合并策略见下）。
         if: always()
-        uses: peter-evans/create-pull-request@5e914681df9dc83dc4eef029a3d3d3038f73803b # v7
+        uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           branch: ci/incremental-baseline
@@ -125,6 +125,8 @@ jobs:
 
       - name: Auto-merge baseline PR（若被创建）
         # create-pull-request 只建 PR 不合并；此处用 gh 开启 auto-merge。
+        # 竞态处理：create-pull-request 刚创建 PR 后，GitHub API 可能有传播延迟，
+        # 单次 gh pr list 可能查不到 → 用循环重试（最多 60s）规避。
         # 注意：auto-merge 需要分支保护规则允许该 bot PR 自动合并（CI 全绿 + 无
         # review 要求，或配置 auto-merge 通过条件）。若保护规则要求 review，本步骤
         # 会失败并在日志提示，不影响夜间报告其余流程。
@@ -132,13 +134,22 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          PR=$(gh pr list --repo "$GITHUB_REPOSITORY" --head ci/incremental-baseline --state open --json number --jq '.[0].number' 2>/dev/null || true)
+          PR=""
+          for i in $(seq 1 12); do
+            PR=$(gh pr list --repo "$GITHUB_REPOSITORY" --head ci/incremental-baseline --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)
+            if [ -n "$PR" ]; then
+              echo "PR #$PR 已可见（第 ${i} 次轮询）"
+              break
+            fi
+            echo "等待 PR 可见性传播（第 ${i} 次，5s）…"
+            sleep 5
+          done
           if [ -n "$PR" ]; then
             echo "开启 auto-merge：PR #$PR"
             gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --auto --squash || \
               echo "::warning::auto-merge 开启失败（可能受分支保护 review 规则限制）——需人工合入 PR #$PR"
           else
-            echo "无基线变更 PR（基线内容未变化），跳过 auto-merge"
+            echo "无基线变更 PR（基线内容未变化或创建失败），跳过 auto-merge"
           fi
 
       - name: Threshold check & report body（阈值校验 + 回落检测 + 报告产出）
