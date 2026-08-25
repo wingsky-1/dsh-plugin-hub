@@ -8,6 +8,7 @@
 import { renderMarkdown } from "./md.js";
 import { highlightCode } from "./code.js";
 import { sanitizePreview } from "./rewrite.js";
+import { applyHeadingIds, scrollToFragment } from "./anchor.js";
 import { el, errorView } from "./dom.js";
 import type { FilePreviewState } from "./state.js";
 import { html as diffToHtml } from "diff2html";
@@ -68,8 +69,18 @@ export function renderTabBody(body: HTMLElement, state: FilePreviewState): void 
         class: "fwp-rendered fwp-rendered-md",
         html: sanitizePreview(renderMarkdown(text), { cwd: state.currentCwd, basePath: state.currentPath }),
       });
+      // issue #45：marked v18 不产 heading id——按 GFM slug 规则补齐，纯锚点
+      // （data-fp-anchor / data-fp-frag）才有 Modal 内滚动落点。
+      applyHeadingIds(rendered);
       body.appendChild(rendered);
       upgradePreviewImages(rendered, state);
+      // issue #45：带 fragment 的文件引用（./f.md#g）在首次 md 渲染后定位小节；
+      // 消费即清（切 tab / 返回不重复滚动；目标不存在则忽略）。
+      const frag = state.pendingFrag;
+      if (frag !== undefined && frag !== "") {
+        state.pendingFrag = undefined;
+        window.requestAnimationFrame(() => scrollToFragment(body, frag));
+      }
     } else {
       const highlighted = `<pre><code class="hljs">${highlightCode(text, group.ext)}</code></pre>`;
       body.appendChild(el("div", { class: "fwp-rendered fwp-rendered-code", html: DOMPurify.sanitize(highlighted) }));

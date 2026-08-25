@@ -3,10 +3,12 @@
  * dsh-web-file-preview — unit：Markdown 相对引用路径展开（relpath）。
  *
  * 覆盖：resolveRelativePath 全部语义分支——同目录、./、../、query/fragment 丢弃、
- * %20 解码、绝对路径/协议相对/外域/data URI 不展开、/api/ 幂等保持、空/非法引用。
+ * %20 解码、绝对路径/协议相对/外域/data URI 不展开、/api/ 幂等保持、空/非法引用；
+ * issue #45 新增：resolveAbsolutePath 绝对路径规范化分支与
+ * splitReferenceFragment fragment 剥离分支。
  */
 import { assert } from "./helpers.ts";
-import { resolveRelativePath } from "../lib/index.js";
+import { resolveRelativePath, resolveAbsolutePath, splitReferenceFragment } from "../lib/index.js";
 
 const BASE = "/home/u/work/src/a.md";
 
@@ -52,3 +54,26 @@ assert.equal(resolveRelativePath(BASE, "../../other/file.md"), "/home/u/other/fi
 
 // baseFile 不含目录（裸文件名）→ URL 构造异常，返回 null
 assert.equal(resolveRelativePath("readme.md", "img.png"), null, "裸文件名基路径无法解析，返回 null");
+
+// ------------------------------------------------------------ issue #45：绝对路径展开（resolveAbsolutePath）
+
+assert.equal(resolveAbsolutePath("/home/u/proj/docs/design.md"), "/home/u/proj/docs/design.md", "绝对路径原样保留");
+assert.equal(resolveAbsolutePath("/home/u/proj/docs/../docs/design.md"), "/home/u/proj/docs/design.md", ".. 规范化");
+assert.equal(resolveAbsolutePath("/a/b/./c.md"), "/a/b/c.md", ". 规范化");
+assert.equal(resolveAbsolutePath("/x/%E4%B8%AD%E6%96%87.md"), "/x/中文.md", "UTF-8 编码解码");
+assert.equal(resolveAbsolutePath("/x/my file.md"), "/x/my file.md", "含空格路径原样");
+assert.equal(resolveAbsolutePath("//cdn/x.png"), null, "// 协议相对形态拒绝");
+assert.equal(resolveAbsolutePath("rel/a.md"), null, "非 / 开头拒绝");
+assert.equal(resolveAbsolutePath(""), null, "空字符串拒绝");
+assert.equal(resolveAbsolutePath(undefined), null, "undefined 拒绝");
+assert.equal(resolveAbsolutePath(null), null, "null 拒绝");
+
+// ------------------------------------------------------------ issue #45：fragment 剥离（splitReferenceFragment）
+
+assert.deepEqual(splitReferenceFragment("./f.md#g"), { ref: "./f.md", fragment: "g" }, "相对引用带锚点拆分");
+assert.deepEqual(splitReferenceFragment("b.md"), { ref: "b.md", fragment: null }, "无锚点 fragment 为 null");
+assert.deepEqual(splitReferenceFragment("#section"), { ref: "", fragment: "section" }, "纯锚点 ref 为空串");
+assert.deepEqual(splitReferenceFragment("a.md?x=1#sec"), { ref: "a.md?x=1", fragment: "sec" }, "query+锚点拆分");
+assert.deepEqual(splitReferenceFragment("a.md#"), { ref: "a.md", fragment: null }, "空锚点视为无 fragment");
+assert.deepEqual(splitReferenceFragment("a.md#%E4%B8%AD"), { ref: "a.md", fragment: "中" }, "锚点 %XX 解码一次");
+assert.deepEqual(splitReferenceFragment("a.md#%zz"), { ref: "a.md", fragment: "%zz" }, "非法编码锚点原样保留");
