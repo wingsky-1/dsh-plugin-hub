@@ -2,11 +2,14 @@
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
     "packages/dsh-provider-usage/lib/index.js:1372-2792",
-    "packages/dsh-provider-usage/lib/index.js:2829-3727"
+    "packages/dsh-provider-usage/lib/index.js:2637-3727"
   ],
   "testRunner": "tap",
   "tap": {
-    "nodeArgs": ["-r", "./scripts/test/mutation-tap-bridge.cjs"],
+    "nodeArgs": [
+      "-r",
+      "./scripts/test/mutation-tap-bridge.cjs"
+    ],
     "testFiles": [
       "packages/dsh-provider-usage/test/unit-apply.test.ts",
       "packages/dsh-provider-usage/test/unit-contract.test.ts",
@@ -23,7 +26,9 @@
       "TemplateLiteral"
     ]
   },
-  "plugins": ["@stryker-mutator/tap-runner"],
+  "plugins": [
+    "@stryker-mutator/tap-runner"
+  ],
   "concurrency": 4,
   "timeoutMS": 60000,
   "dryRunTimeoutMinutes": 5,
