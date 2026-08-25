@@ -74,7 +74,7 @@ function renderPatch(children) {
 
 const children = listPluginDirs(ROOT)
 
-// 清单一致性前置闸：目录集必须 == manifest.active 集（issue #36，opt-in fail-closed）
+// 清单一致性前置闸：目录集必须 == manifest.active ∪ standalone 集（issue #36，opt-in fail-closed）
 warnUnknownEntries(ROOT)
 let manifest
 try {
@@ -89,7 +89,9 @@ if (manifestProblems.length > 0) {
   process.exit(1)
 }
 
-const generated = renderPatch(children)
+// 聚合 patch 只收 active 集；standalone（独立发包，如 demo 演进包）不进聚合。
+const aggregateChildren = children.filter((d) => manifest.active.includes(d))
+const generated = renderPatch(aggregateChildren)
 
 if (CHECK) {
   const onDisk = existsSync(PATCH_PATH) ? readFileSync(PATCH_PATH, 'utf8') : ''

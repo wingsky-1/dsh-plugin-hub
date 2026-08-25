@@ -1,0 +1,8 @@
+# dsh-subagent-model-inherit bundle patch：向 web profile 的插件名册插入子 Agent
+# 模型继承器这一行。该行是按包名激活的普通 cordis 插件：主机端（exports "."）
+# 在宿主进程运行，注入 agents 服务，监听 agent/created 并按需安装 agent/request
+# waterfall。无客户端半（模型继承是纯宿主基础设施，不需要 UI）。配置走 schema
+# 默认值（当前无配置键），独立/聚合行均不带 config。
+- insert:
+    - id: ui-dsh-subagent-model-inherit
+      name: '@wingsky-1/dsh-subagent-model-inherit'

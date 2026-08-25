@@ -50,8 +50,9 @@ function checkName(name, where) {
 }
 
 /**
- * 读取并校验 manifest。三项自洽校验：数组内重复、active∩retired 重名、名字合规。
- * IO/形状错误抛单行友好错误（调用方 catch 后 exit 非 0），禁止裸 SyntaxError 栈。
+ * 读取并校验 manifest。自洽校验：数组内重复、active∩retired∩standalone 重名、
+ * 名字合规。IO/形状错误抛单行友好错误（调用方 catch 后 exit 非 0），
+ * 禁止裸 SyntaxError 栈。
  */
 export function loadManifest(root) {
   let raw
@@ -72,11 +73,20 @@ export function loadManifest(root) {
   if (!Array.isArray(json.retired)) {
     fail('缺 retired 数组')
   }
+  // standalone：独立发包、不进聚合包的插件（demo 演进等）；可选，缺省空集。
+  const standalone = Array.isArray(json.standalone) ? json.standalone : []
   const seenActive = new Set()
   for (const name of json.active) {
     checkName(name, 'active')
     if (seenActive.has(name)) fail(`active 数组重复项：${name}`)
     seenActive.add(name)
+  }
+  const seenStandalone = new Set()
+  for (const name of standalone) {
+    checkName(name, 'standalone')
+    if (seenStandalone.has(name)) fail(`standalone 数组重复项：${name}`)
+    if (seenActive.has(name)) fail(`${name} 同时出现在 active 与 standalone`)
+    seenStandalone.add(name)
   }
   const seenRetired = new Set()
   for (const item of json.retired) {
@@ -85,8 +95,9 @@ export function loadManifest(root) {
     if (seenRetired.has(item.name)) fail(`retired 数组重复项：${item.name}`)
     seenRetired.add(item.name)
     if (seenActive.has(item.name)) fail(`${item.name} 同时出现在 active 与 retired`)
+    if (seenStandalone.has(item.name)) fail(`${item.name} 同时出现在 standalone 与 retired`)
   }
-  return { active: [...seenActive], retired: json.retired.map((r) => ({ ...r })) }
+  return { active: [...seenActive], standalone: [...seenStandalone], retired: json.retired.map((r) => ({ ...r })) }
 }
 
 /**
@@ -100,14 +111,19 @@ export function loadManifest(root) {
 export function checkAggregateConsistency({ dirNames, manifest, aggDeps, aggPatchIds }) {
   const problems = []
   const actual = new Set(dirNames)
-  const expected = new Set(manifest.active)
+  // 目录集语义：active（进聚合）∪ standalone（独立发包）都必须真实存在；
+  // retired 包目录应删除，不在此列。
+  const expected = new Set([...manifest.active, ...(manifest.standalone ?? [])])
 
-  // #1 目录集 == active 集（双向）：新目录必须登记；登记项必须真实存在
-  for (const d of manifest.active) {
-    if (!actual.has(d)) problems.push(`manifest.active 引用了不存在的目录: ${d} —— 退役请移入 retired 并删除目录`)
+  // #1 目录集 == active ∪ standalone 集（双向）：新目录必须登记；登记项必须真实存在
+  for (const d of [...manifest.active, ...(manifest.standalone ?? [])]) {
+    if (!actual.has(d)) {
+      const where = manifest.active.includes(d) ? 'active' : 'standalone'
+      problems.push(`manifest.${where} 引用了不存在的目录: ${d} —— 退役请移入 retired 并删除目录`)
+    }
   }
   for (const d of dirNames) {
-    if (!expected.has(d)) problems.push(`packages/ 存在 dsh-* 子包但未登记 manifest.active: ${d} —— 新插件必须先加入 scripts/data/plugins-manifest.json`)
+    if (!expected.has(d)) problems.push(`packages/ 存在 dsh-* 子包但未登记 manifest: ${d} —— 新插件必须加入 scripts/data/plugins-manifest.json 的 active 或 standalone`)
   }
 
   // #2 聚合包 dependencies 键集 == active 映射集（双向；只比键集合不比值——
@@ -115,14 +131,17 @@ export function checkAggregateConsistency({ dirNames, manifest, aggDeps, aggPatc
   if (aggDeps !== undefined) {
     const own = Object.keys(aggDeps).filter((k) => k.startsWith(NPM_SCOPE))
     const expectedDeps = new Set(manifest.active.map((d) => NPM_SCOPE + d))
+    const standaloneNames = new Set(manifest.standalone ?? [])
     const retiredNames = new Set(manifest.retired.map((r) => r.name))
     for (const dep of own) {
       if (expectedDeps.has(dep)) continue
       const short = dep.slice(NPM_SCOPE.length)
-      if (retiredNames.has(short)) {
+      if (standaloneNames.has(short)) {
+        problems.push(`deps 多出独立发包 ${dep} —— standalone 插件不进聚合包，请删除该依赖行`)
+      } else if (retiredNames.has(short)) {
         problems.push(`deps 多出已退役包 ${dep} —— 请删除该依赖行`)
       } else {
-        problems.push(`deps 多出未收录包 ${dep} —— 既不在 active 也不在 retired，请检查拼写或在 manifest 登记`)
+        problems.push(`deps 多出未收录包 ${dep} —— 既不在 active/standalone 也不在 retired，请检查拼写或在 manifest 登记`)
       }
     }
     for (const dep of expectedDeps) {

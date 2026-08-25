@@ -185,14 +185,18 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
 - **插件清单单一来源**（issue #36）：某插件是否参与聚合/发布校验，唯一事实源是
   `scripts/data/plugins-manifest.json`。四个脚本共用 `plugins-manifest-lib.ts` 的目录
   枚举（`isDirectory` 过滤 + 排除聚合包 + 稳定排序）；其中 `aggregate.ts` 与
-  `pack-check.ts` 另做「packages/ 目录集 == manifest.active 集」双向相等断言，
-  以及聚合 deps 键集 / patch id 集对 active 的双向相等断言。
-  - **新增插件**：建目录后必须同步把目录名加入 `active`，否则全部门禁红
+  `pack-check.ts` 另做「packages/ 目录集 == manifest.active ∪ standalone 集」双向
+  相等断言，以及聚合 deps 键集 / patch id 集对 active 的双向相等断言。
+  - **新增插件**：建目录后必须同步把目录名加入 `active`（参与聚合的常规插件）
+    或 `standalone`（独立发包、不进聚合包，如 demo 演进包），否则全部门禁红
     （opt-in fail-closed 设计：防止半成品目录被自动卷进聚合 patch 与发布管线）；
+  - **独立发包插件**（`standalone`）：与 active 同样参与目录登记、pack tarball
+    校验与发布管线，但不出现在聚合包 deps 与聚合 cordis.patch.yml 中；
+    聚合 deps 误引 standalone 包会被 fail-loud；
   - **退役插件**：删除 packages/ 目录（git 历史保留），并在 `retired` 数组登记
     `{ name, reason, successor }` 档案；
-  - `active` 刻意**不自动生成**：它就是「当前有哪些插件」的人工确认点，自动枚举
-    会退回「目录即事实源」的 fail-open 老路；
+  - `active`/`standalone` 刻意**不自动生成**：它们就是「当前有哪些插件」的人工确认点，
+    自动枚举会退回「目录即事实源」的 fail-open 老路；
   - schema 加载/校验逻辑只有一份：`scripts/lib/plugins-manifest-lib.ts`（纯函数，
     入口脚本只喂数据），测试见 `scripts/test/plugins-manifest.test.ts`。
 - **新增/修改客户端后**：`pnpm build && pnpm test && pnpm contract && pnpm pack:check`

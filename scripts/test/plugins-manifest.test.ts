@@ -99,7 +99,22 @@ test('#3c patch 同 id 重复行 → fail-loud（Set 去重盲区闭合）', () 
 test('#4 目录有包但 manifest 没有 → 报「未登记」', () => {
   const problems = checkAggregateConsistency({ dirNames: [...ACTIVE, 'dsh-newkid'], manifest: MANIFEST })
   assert.equal(problems.length, 1)
-  assert.match(problems[0], /未登记 manifest\.active: dsh-newkid/)
+  assert.match(problems[0], /未登记 manifest: dsh-newkid/)
+})
+
+test('#4b 目录有包但只在 standalone → 双向通过；聚合 deps 误引 → fail-loud', () => {
+  const manifest = { active: ACTIVE, standalone: ['dsh-demo'], retired: MANIFEST.retired }
+  // 目录集 == active ∪ standalone：正向全绿（无聚合断言段）
+  assert.deepEqual(checkAggregateConsistency({ dirNames: [...ACTIVE, 'dsh-demo'], manifest }), [])
+  // 聚合 deps 误引 standalone 包 → 明确分支文案
+  const problems = checkAggregateConsistency({
+    dirNames: [...ACTIVE, 'dsh-demo'],
+    manifest,
+    aggDeps: { ...EXPECTED_DEPS, '@wingsky-1/dsh-demo': 'workspace:*' },
+    aggPatchIds: ['ui-dsh-alpha', 'ui-dsh-beta'],
+  })
+  assert.equal(problems.length, 1)
+  assert.match(problems[0], /多出独立发包 @wingsky-1\/dsh-demo/)
 })
 
 test('#5 active 引用不存在目录 → 报「不存在的目录」', () => {
@@ -146,6 +161,30 @@ test('#8 active∩retired 重名 / 数组重复项 → 报错', () => {
       retired: [],
     }))
     assert.throws(() => loadManifest(dir), /active 数组重复项：dsh-a/)
+  } finally {
+    cleanup()
+  }
+})
+
+test('#8b standalone 校验：重名互斥 / 数组重复项 → 报错；缺省缺省为空集', () => {
+  const { dir, cleanup } = tempRepo()
+  try {
+    writeFileSync(join(dir, 'scripts', 'data', 'plugins-manifest.json'), JSON.stringify({
+      active: ['dsh-a'],
+      standalone: ['dsh-a'],
+      retired: [],
+    }))
+    assert.throws(() => loadManifest(dir), /同时出现在 active 与 standalone/)
+    writeFileSync(join(dir, 'scripts', 'data', 'plugins-manifest.json'), JSON.stringify({
+      active: [],
+      standalone: ['dsh-b', 'dsh-b'],
+      retired: [],
+    }))
+    assert.throws(() => loadManifest(dir), /standalone 数组重复项：dsh-b/)
+    writeFileSync(join(dir, 'scripts', 'data', 'plugins-manifest.json'), JSON.stringify({
+      active: ['dsh-a'], retired: [],
+    }))
+    assert.deepEqual(loadManifest(dir).standalone, [], '缺 standalone 键应为空集')
   } finally {
     cleanup()
   }
