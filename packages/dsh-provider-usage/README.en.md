@@ -51,11 +51,11 @@ Warmup timer (5min) ─┐
                      ├→ getStats()             60s polling /stats
 Client polling ──────┘   │ Mutex                  ↓
                          │ 60s cache           Capsule frame ← capsuleHtml
-                         │ 2s fetch timeout     Panel frame ← panelHtml (/history)
+                         │ 2s fetch timeout     Panel frame ← panelHtml (/history, 90s fallback cache)
                          ↓
                    adapter.fetchData(ctx)   ← user .mjs (apiEndpoint/staticPath/apiKey injected)
                          ↓
-                   daily-sharded JSONL history
+                   daily-sharded JSONL history ──→ panel render cache cleared (primary invalidation)
                          ↓
                    adapter.formatCapsule/Panel() → sanitize → HTML
 ```
@@ -108,12 +108,38 @@ panel tight under the capsule.
 | Route | Description |
 | --- | --- |
 | `GET /api/dsh-provider-usage/stats?provider=X` | Usage stats + `capsuleHtml` + `status`/`adapterVersion` |
-| `GET /api/dsh-provider-usage/history?provider=X&days=N` | History query + `panelHtml` + query `range` |
+| `GET /api/dsh-provider-usage/history?provider=X&days=N` | History query + `panelHtml` + query `range` (in-process render cache, see below) |
 | `GET /api/dsh-provider-usage/health` | Health check + adapter snapshot + error log |
 | `GET /api/dsh-provider-usage/adapters.json` | Adapter candidate metadata (same source as the settings page list, incl. `modelProviders`) |
 | `POST /api/dsh-provider-usage/adapters/select` | Switch / clear the enabled adapter |
 | `POST /api/dsh-provider-usage/adapters/inspect` | Preview an adapter file (echo exports, no registration) |
 | `POST /api/dsh-provider-usage/adapters/add` | Register a user adapter file (settings page flow) |
+
+## /history render cache
+
+`panelHtml` served by `/history` is cached in the host process (issue #105, sub-item 1);
+repeated requests skip recomputation while data is unchanged:
+
+- **Hit condition**: within the same process, `(provider, enabled adapter, normalized query
+  window)` all unchanged. The window is normalized at **calendar-day granularity** — the
+  per-request drift of `end=Date.now()` never enters the cache key; repeated requests within
+  the same calendar day hit the same entry. Different `days` values normalize to different
+  entries and never cross-contaminate. Hits replay a snapshot of the return-value string
+  layer (`{panelHtml, error, at}`) only — entries are never cached; the response `range`
+  still echoes the request's real start/end.
+- **Invalidation (four points)**: primary = full clear on **successful history append**
+  (new data landed, all panel entries dropped at once); plus three sync hooks —
+  **select** (switch/clear enabled adapter), **add** (register new adapter), and
+  **hot reload** (adapter file changed and reloaded).
+- **Fallback TTL**: compile-time constant `90000`ms (90s, mid-point of the bounded
+  [60s, 120s] range), not a config key; it is only a fallback, not the primary mechanism.
+  In production the hit ratio is gated by warmup period (5min) × stats cache TTL (60s):
+  client polls between two appends all hit.
+- **Not cached**: pipeline errors and no-adapter / no-enabled-adapter structured responses
+  are never cached — once the condition clears, the next request recomputes immediately and
+  may succeed instead of replaying a stale error or placeholder.
+- **No conditional-request negotiation**: no ETag / Last-Modified headers, no 304 short-circuit;
+  clients keep `cache: "no-store"` — this cache is purely server-side with zero client changes.
 
 ## Adapter development guide (v2 contract)
 
