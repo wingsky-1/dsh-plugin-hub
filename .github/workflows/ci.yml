@@ -196,8 +196,11 @@ jobs:
   #   走 fail-closed 全量 fallback，变异会退化全量且与 observe.yml 夜间全量完全重复；
   #   主干变异覆盖归夜间、发版归 release.yml tag 管线——全量只在这两处真实执行。
   #   非 PR 事件下整体 skipped，由 repo-gate 判定脚本按事件语义显式放行
-  # - restore-only：只读夜间全量落下的 incremental 基线，绝不回写（防 PR 结果污染夜间基线源）
-  # - 缓存未命中（首夜前 / LRU 淘汰）天然降级为全量变异，门禁语义不变仅变慢
+  # - 基线来源（#204）：夜间 observe 把六包 incremental 基线提交进
+  #   scripts/gate/baseline/（仓库内版本化文件），本 job 直接读文件复制到
+  #   coverage/mutation/ —— git 跨 ref 天然可见，替代失效的 actions/cache
+  #   跨 ref 通道（#204 实证：actions/cache 按 ref 隔离，PR 永远 miss main 缓存）。
+  #   首夜/基线缺失时天然降级为全量变异，门禁语义不变仅变慢
   # - 双指标判分（scripts/gate/mutation-gate.mjs）：测试覆盖率（self-written 函数，
   #   恒硬）+ 变异测试率（covered ≥ threshold，受 mutation.strict 开关约束）
   # - 成败并入 repo-gate 聚合闸，不新增分支保护 required check 名
@@ -237,27 +240,25 @@ jobs:
       - name: Build all packages（变异对象与覆盖率口径均依赖全集 lib 产物）
         run: pnpm build
 
-      - name: Restore nightly incremental baseline（只读，无 save 后置步骤）
-        # 精确 key 永不命中（PR 的 run_id 与夜间不同）→ 必走 restore-keys 前缀，
-        # 命中最近一夜 observe-incremental-<run_id>；save 归档根 = coverage/mutation/
-        #（六份 incremental-*.json 同目录 glob），此处以同目录 path 解压还原。
+      - name: Restore repo incremental baseline（#204：读仓库内基线文件，替代失效的 actions/cache）
+        # #204 方案 A：夜间 observe 把六包 incremental 基线提交进 scripts/gate/baseline/，
+        # PR checkout（merge commit 含 base/main 内容）直接读文件——git 无 ref 隔离，
+        # 不依赖 actions/cache 的平台缓存跨 ref 可见性（#204 实证 PR 永远 miss）。
+        # 矩阵包名 dsh-<pkg> → 基线文件名 incremental-<pkg>.json。
         id: baseline
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: coverage/mutation
-          key: observe-incremental-${{ github.run_id }}
-          restore-keys: |
-            observe-incremental-
-
-      - name: Baseline cache verdict（hit/miss 审计标注）
-        env:
-          MATCHED_KEY: ${{ steps.baseline.outputs.cache-matched-key }}
         run: |
-          if [ -n "$MATCHED_KEY" ]; then
-            echo "incremental 基线命中：$MATCHED_KEY"
+          set -e
+          PKG="${MATRIX_PKG#dsh-}"
+          SRC="scripts/gate/baseline/incremental-${PKG}.json"
+          if [ -f "$SRC" ]; then
+            mkdir -p coverage/mutation
+            cp "$SRC" "coverage/mutation/incremental-${PKG}.json"
+            echo "incremental 基线命中：$SRC（仓库内文件）"
           else
-            echo '::notice::incremental 基线缓存 miss —— 本次降级为全量变异（首夜无基线或 LRU 淘汰均属预期，非缺陷）'
+            echo '::notice::incremental 基线文件缺失 —— 本次降级为全量变异（首夜无基线属预期，非缺陷）'
           fi
+        env:
+          MATRIX_PKG: ${{ matrix.package }}
 
       - name: Incremental mutation（incremental 生效跳过未变 mutant）
         run: npx stryker run stryker.conf.d/${{ matrix.package }}.json
