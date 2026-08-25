@@ -288,11 +288,14 @@ assert.equal(normalizeConfig({ fetchTimeoutMs: 30000 }).fetchTimeoutMs, 30000, "
 assert.equal(normalizeConfig({ fetchTimeoutMs: 30001 }).fetchTimeoutMs, 30000, "fetchTimeoutMs 上限 30000");
 assert.equal(normalizeConfig({ fetchTimeoutMs: "x" }).fetchTimeoutMs, DEFAULT_CONFIG.fetchTimeoutMs, "fetchTimeoutMs 非法丢弃");
 
-// maxAgeDays 上限 365（无下限）
+// maxAgeDays 上限 365、下限正整数（#184：<=0 或非整数回落默认，避免 maybePrune 下界落在未来全量清史）
+assert.equal(normalizeConfig({ maxAgeDays: 1 }).maxAgeDays, 1, "maxAgeDays 合法边界 1 保留");
 assert.equal(normalizeConfig({ maxAgeDays: 365 }).maxAgeDays, 365, "maxAgeDays 边界 365 透传");
 assert.equal(normalizeConfig({ maxAgeDays: 366 }).maxAgeDays, 365, "maxAgeDays 上限 365");
-assert.equal(normalizeConfig({ maxAgeDays: -5 }).maxAgeDays, -5, "maxAgeDays 负数无下限（跟随实现）");
-assert.equal(normalizeConfig({ maxAgeDays: [] }).maxAgeDays, DEFAULT_CONFIG.maxAgeDays, "maxAgeDays 数组（Number.isFinite false）丢弃");
+assert.equal(normalizeConfig({ maxAgeDays: -5 }).maxAgeDays, DEFAULT_CONFIG.maxAgeDays, "maxAgeDays 负数回落默认");
+assert.equal(normalizeConfig({ maxAgeDays: 0 }).maxAgeDays, DEFAULT_CONFIG.maxAgeDays, "maxAgeDays 0 回落默认");
+assert.equal(normalizeConfig({ maxAgeDays: 1.5 }).maxAgeDays, DEFAULT_CONFIG.maxAgeDays, "maxAgeDays 非整数回落默认");
+assert.equal(normalizeConfig({ maxAgeDays: [] }).maxAgeDays, DEFAULT_CONFIG.maxAgeDays, "maxAgeDays 数组丢弃");
 
 // warmupIntervalMs 下限
 assert.equal(normalizeConfig({ warmupIntervalMs: 59999 }).warmupIntervalMs, 60000, "warmupIntervalMs 下限 60000（59999 抬升）");
@@ -372,10 +375,19 @@ assert.deepEqual(parseUserAdapters('"str"'), [], "JSON 字符串返回空数组"
   assert.deepEqual(state, { p1: "a", p2: null },
     "仅保留非空字符串 id 与显式 null；空 key/空串/数字/数组/对象全部剔除");
 
-  // 顶层 JSON 标量字符串 → 实现按 Record 读，Object.entries 按字符索引展开（跟随实现行为）
+  // #184：顶层非 plain object（字符串/数字/null/数组）一律拒绝 → 空对象（与「无有效状态」同形态）
   writeFileSync(join(root, "adapter-state.json"), '"ab"', "utf8");
-  const fromStr = await readAdapterState(root);
-  assert.deepEqual(fromStr, { 0: "a", 1: "b" }, "顶层字符串按字符索引展开（跟随实现行为）");
+  assert.deepEqual(await readAdapterState(root), {}, "顶层字符串拒绝（不再按字符索引展开）");
+  writeFileSync(join(root, "adapter-state.json"), "42", "utf8");
+  assert.deepEqual(await readAdapterState(root), {}, "顶层数字拒绝");
+  writeFileSync(join(root, "adapter-state.json"), "null", "utf8");
+  assert.deepEqual(await readAdapterState(root), {}, "顶层 null 拒绝");
+  writeFileSync(join(root, "adapter-state.json"), '["a","b"]', "utf8");
+  assert.deepEqual(await readAdapterState(root), {}, "顶层数组拒绝");
+
+  // plain object 正常解析（拒绝路径不误伤合法映射）
+  writeFileSync(join(root, "adapter-state.json"), '{"p9":"x"}', "utf8");
+  assert.deepEqual(await readAdapterState(root), { p9: "x" }, "plain object 正常解析");
 }
 
 // ================================================================ #150 二阶段：UI 配置与面板锚点纯函数矩阵
