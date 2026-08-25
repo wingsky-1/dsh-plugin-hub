@@ -373,6 +373,13 @@ jobs:
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
+          # 本 job 判分链为纯 Node 内置模块、不 pnpm install（见 job 头注释），必须
+          # 显式关闭 setup-node v5 默认的 package-manager-cache：其探测到仓库根
+          # pnpm-lock.yaml 会调用 PATH 中的 pnpm 计算缓存 key，而本 job 是全
+          # workflow 唯一不前置 pnpm/action-setup 的 job，runner 镜像又不自带
+          # pnpm → Setup Node.js 直接红（实证 run 32879414842 / 32876671584，
+          # "Unable to locate executable file: pnpm"，repo-gate F2 随之连坐红）
+          package-manager-cache: false
 
       - name: Download self-coverage artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
