@@ -677,12 +677,17 @@ export function formatPanel() { return "<p>user-panel</p>"; }
     assert.ok(!JSON.stringify(meta).includes("sk-smoke-test"), "E5: adapters.json 不含密钥");
 
     // stats：用户版生效 → fresh + 用户胶囊文案（本地数据零网络）
+    // #217：轮询替代固定 sleep——注册后 warmup 采样时序不定（CI 并行下更明显），
+    // 反复查 stats 直到用户版接管（adapterName=deepseek-official），超时 3s 兜底。
     const stats = routes.find((r) => r.path === ROUTES.stats);
-    const fresh = await getJSON(stats, `${ROUTES.stats}?provider=${DEEPSEEK_OFFICIAL_PROVIDER}`);
-    await new Promise((r) => setTimeout(r, 40));
-    const freshRetry = await getJSON(stats, `${ROUTES.stats}?provider=${DEEPSEEK_OFFICIAL_PROVIDER}`);
-    const finalFresh = freshRetry.status === "fresh" ? freshRetry : fresh;
-    assert.equal(finalFresh.adapterName, "deepseek-official", "K12: 用户原型适配器接管取数");
+    let finalFresh = null;
+    const pollDeadline = Date.now() + 3000;
+    while (Date.now() < pollDeadline) {
+      const snap = await getJSON(stats, `${ROUTES.stats}?provider=${DEEPSEEK_OFFICIAL_PROVIDER}`);
+      if (snap.adapterName === "deepseek-official") { finalFresh = snap; break; }
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    assert.ok(finalFresh, "K12: 用户原型适配器接管取数（轮询 3s 内应生效）");
     assert.ok(["fresh", "cached"].includes(finalFresh.status), `A5: 成功帧 fresh/cached（实际 ${finalFresh.status}）`);
     assert.ok(finalFresh.capsuleHtml?.includes("USER ¥42.50"), "A5: 用户版胶囊文案渲染");
     assert.ok(!JSON.stringify(finalFresh).includes("sk-smoke-test"), "E5: stats 响应不含密钥");
