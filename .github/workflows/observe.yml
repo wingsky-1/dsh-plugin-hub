@@ -83,7 +83,7 @@ jobs:
         run: |
           FAILED=0
           FAILED_PKGS=''
-          for pkg in notifier idle-archive web-file-preview mcp-manager provider-usage lan-proxy; do
+          for pkg in notifier idle-archive web-file-preview mcp-manager provider-usage lan-proxy subagent-model-inherit; do
             echo "::group::stryker dsh-$pkg"
             if npx stryker run "stryker.conf.d/dsh-$pkg.json"; then
               echo "::endgroup::"
