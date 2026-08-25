@@ -114,6 +114,12 @@ smoke 全部无网络、无真实凭据，本地可直接运行；新功能/修�
 到临时目录 / 轮询替代固定 sleep）见
 [DEVELOPMENT.md §5](docs/DEVELOPMENT.md#5-smoke-测试防-flake-纪律)。
 
+**测试产物零污染纪律（#218）**：
+- 测试运行时落盘**必须**落在 `mkdtempSync` 隔离目录（DSH_HOME 已隔离），
+  **禁止**产生任何含 `undefined` 段的路径（如 `packages/*/undefined/**`）；
+- 提交前自查：`git status` 出现 `packages/*/undefined/`、`*.jsonl` 等运行时产物
+  一律视为污染，不得提交；自动收集脚本（基线等）只收白名单路径。
+
 ## 参考文档
 
 - 开发规范（宿主/客户端写法、构建契约、多端兼容、测试防 flake 纪律）：[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
