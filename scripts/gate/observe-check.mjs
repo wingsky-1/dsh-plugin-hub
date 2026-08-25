@@ -20,6 +20,7 @@
  */
 import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { readMutationReport } from '../lib/mutation-report-lib.mjs';
 
 const repoRoot = process.cwd();
 const argv = process.argv.slice(2);
@@ -41,30 +42,6 @@ try {
 const packages = gauntlet?.mutation?.packages ?? {};
 const mutationStrict = Boolean(gauntlet?.mutation?.strict);
 
-/** 从 Stryker 报告提取 covered 口径指标 */
-function readMutationReport(path) {
-  if (!existsSync(path)) return null;
-  let report;
-  try {
-    report = JSON.parse(readFileSync(path, 'utf8'));
-  } catch {
-    return null;
-  }
-  let killed = 0, timeout = 0, survived = 0, noCoverage = 0;
-  for (const f of Object.values(report.files ?? {})) {
-    for (const m of f.mutants ?? []) {
-      if (m.status === 'Killed') killed += 1;
-      else if (m.status === 'Timeout') timeout += 1;
-      else if (m.status === 'Survived') survived += 1;
-      else if (m.status === 'NoCoverage') noCoverage += 1;
-    }
-  }
-  const covered = killed + timeout + survived;
-  // covered 口径与仓库既有基线一致：分母不含 noCoverage
-  const coveredScore = covered > 0 ? Math.round(((killed + timeout) / covered) * 10000) / 100 : 0;
-  return { killed, timeout, survived, noCoverage, total: covered + noCoverage, coveredScore };
-}
-
 const rows = [];
 const violations = [];
 const regressions = [];
@@ -80,11 +57,18 @@ if (existsSync(selfCovPath)) {
 
 for (const [pkg, cfg] of Object.entries(packages)) {
   const reportPath = join(repoRoot, 'coverage', 'mutation', `${pkg}.json`);
+  // 缺失与损坏分开标注（#178）：逐包容错记账后单包失败不再中断整夜，
+  // 「文件不存在」= 该包本次未执行（非崩溃），「存在但解析失败」= 报告损坏
+  if (!existsSync(reportPath)) {
+    rows.push({ pkg, missing: true, missingLabel: '未执行' });
+    // F4 fail-closed：strict 开启后报告缺失 = 门禁被静默跳过，必须判红
+    if (mutationStrict) violations.push(`${pkg}: 变异报告缺失（${pkg}.json 不存在——该包未执行）`);
+    continue;
+  }
   const r = readMutationReport(reportPath);
   if (!r) {
-    rows.push({ pkg, missing: true });
-    // F4 fail-closed：strict 开启后报告缺失 = 门禁被静默跳过，必须判红
-    if (mutationStrict) violations.push(`${pkg}: 变异报告缺失（${pkg}.json 不存在或不可解析）`);
+    rows.push({ pkg, missing: true, missingLabel: '报告损坏' });
+    if (mutationStrict) violations.push(`${pkg}: 变异报告损坏（${pkg}.json 存在但不可解析）`);
     continue;
   }
   const threshold = typeof cfg.threshold === 'number' ? cfg.threshold : null;
@@ -123,7 +107,7 @@ lines.push('| 包 | covered | threshold | 基线 | Δ vs 基线 | killed | survi
 lines.push('|---|---|---|---|---|---|---|---|');
 for (const r of rows) {
   if (r.missing) {
-    lines.push(`| ${r.pkg} | ⚠️ 报告缺失 | — | — | — | — | — | — |`);
+    lines.push(`| ${r.pkg} | ⚠️ ${r.missingLabel} | — | — | — | — | — | — |`);
     continue;
   }
   const delta = r.baseline === null ? '—' : (r.coveredScore - r.baseline).toFixed(2);
