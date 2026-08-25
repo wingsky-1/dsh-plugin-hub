@@ -48,6 +48,14 @@ interface AdapterEntry {
 }
 
 /**
+ * 热更新替换结果（#212）。
+ * ok=false 时旧条目**原样保留**（冲突预检先行，不做先删后注册），detail 供 health/日志如实呈现。
+ */
+export type ReplaceFileResult =
+  | { ok: true; name: string }
+  | { ok: false; code: "invalid-adapter" | "duplicate-name"; detail: string };
+
+/**
  * 适配器注册表（候选 + 唯一启用）。
  * @param opts.diag - 诊断收集器（缺省 console.warn）。
  * @param opts.sanitizePath - 错误消息路径脱敏（把绝对路径归约为 `~` 形态，信息面最小披露）。
@@ -237,6 +245,51 @@ export function makeAdapterRegistry(opts: { diag?: (m: string) => void; sanitize
     return removed;
   }
 
+  /**
+   * 热更新原子替换某文件注册的全部候选（#212）：
+   * - 冲突预检：新版 name 与**其他来源**已注册名重复 → 拒绝且不动旧条目（修复改名撞名静默丢失）；
+   * - enabled 保持：替换只更新代码不改写启用关系——本文件旧条目在其认领 provider 上
+   *   原本是启用者的，替换后新条目沿用；原本停用的不得变回启用；新增认领的 provider 不自动启用。
+   * @param file - 用户文件路径（定位被替换的旧条目）。
+   * @param next - 新版适配器（契约校验失败同样拒绝且保留旧条目）。
+   */
+  function replaceByFile(file: string, next: unknown): ReplaceFileResult {
+    if (!isUsageStatsAdapter(next)) {
+      const detail = describeUsageStatsAdapterShape(next) ?? "未知形状问题";
+      return { ok: false, code: "invalid-adapter", detail: `契约校验失败（${detail}），已保留旧条目` };
+    }
+    const a = next;
+    // 收集本文件旧条目（同一条目可出现在多个 provider 桶，按 name 去重）
+    const oldEntries = new Map<string, AdapterEntry>();
+    for (const list of candidatesByProvider.values()) {
+      for (const e of list) {
+        if (e.file === file) oldEntries.set(e.name, e);
+      }
+    }
+    // 冲突预检：新 name 不属于本文件旧名、却已被其他来源占用 → 拒绝，旧条目原样保留
+    if (!oldEntries.has(a.name) && registeredNames.has(a.name)) {
+      return { ok: false, code: "duplicate-name", detail: `适配器 name 冲突：${a.name}（已被其他适配器占用，旧条目保留）` };
+    }
+    // 记录旧启用状态：本文件旧条目在其认领的每个 provider 上是否是当前启用者
+    const wasEnabledProviders = new Set<string>();
+    for (const entry of oldEntries.values()) {
+      for (const provider of entry.providers) {
+        if (enabledNames.get(provider) === entry.name) wasEnabledProviders.add(provider);
+      }
+    }
+    // 原子替换：移除旧条目后以「不默认启用」注册新版，再逐 provider 精确恢复原启用关系
+    // （同步执行无 await 间隙，中间态外部不可观察）
+    removeByFile(file);
+    if (!register(a, "user-file", file, false)) {
+      // 防御分支：契约与重名均已在上方排除，理论不可达
+      return { ok: false, code: "invalid-adapter", detail: "替换注册失败，已保留语义上的空缺" };
+    }
+    for (const provider of a.providers) {
+      if (wasEnabledProviders.has(provider)) select(provider, a.name);
+    }
+    return { ok: true, name: a.name };
+  }
+
   return {
     register,
     recordError,
@@ -248,6 +301,7 @@ export function makeAdapterRegistry(opts: { diag?: (m: string) => void; sanitize
     hasCandidates,
     hasName,
     removeByFile,
+    replaceByFile,
     snapshot,
   };
 }
