@@ -56,6 +56,17 @@ import {
   resolveCatalogInjection,
 } from "./catalog.js";
 import { makeRoutes, makeEventsRoute, makeHealthRoute, sseData, uiConfigChangedFrame } from "./routes.js";
+import {
+  McpMiddleware,
+  normalizeMiddlewareMode,
+  registerMiddlewareTools,
+  userStateFile,
+  loadUserState,
+  saveUserState,
+  catalogCacheFileFor,
+  type MiddlewareMode,
+  type ProjectUnit,
+} from "./middleware.js";
 
 /** 稳定的 cordis 插件名。 */
 export const name = "mcp-manager";
@@ -65,6 +76,9 @@ export const inject = ["tools", "webServer", "systemPrompt"];
 
 /** MCP 服务器名命名空间约束（与官方 dsh-mcp-client 一致）。 */
 export const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;
+
+/** 中间层 all 模式的全局虚拟 root（全局服务器经中间层访问时的路由 key）。 */
+export const MIDDLEWARE_GLOBAL_ROOT = "@global";
 
 
 /** 空 description 工具的条件拼接默认开启。 */
@@ -162,6 +176,8 @@ export const Config: z<{
   catalogMaxEntries: number;
   enhanceEmptyDescriptions: boolean;
   resultTruncateBytes: number;
+  middleware: "off" | "project" | "all";
+  middlewarePolicy: Record<string, unknown>;
   ui: UiPlacementConfig;
 }> = z.object({
   enabled: z.boolean().default(true).description("是否启用本插件"),
@@ -171,6 +187,10 @@ export const Config: z<{
   catalogMaxEntries: z.number().default(DEFAULT_CATALOG_MAX_ENTRIES).description("目录注入条目上限").disabled(true),
   enhanceEmptyDescriptions: z.boolean().default(DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS).description("空描述工具条件拼接自定义描述"),
   resultTruncateBytes: z.number().default(DEFAULT_RESULT_TRUNCATE_BYTES).description("工具结果截断字节数").disabled(true),
+  middleware: z.union([z.const("off"), z.const("project"), z.const("all")]).default("project")
+    .description("MCP 中间层模式：off=直接注册 mcp__ 工具（默认兼容）；project=项目级走 ws_mcp_search/ws_mcp_call（推荐）；all=全部走中间层"),
+  middlewarePolicy: z.dict(z.any()).default({})
+    .description("中间层策略：{ allowTools: {<server>: [glob]}, denyTools: {<server>: [glob]} }，server 为裸名"),
   ui: UiConfigSchema,
 });
 
@@ -205,6 +225,12 @@ export class McpManager {
   /** 设置命名空间写入 sink（apply 时经 ctx.inject(["settings"]) 注入；注入不到则写不可用）。 */
   uiUpdate?: (patch: Record<string, unknown>) => Promise<unknown>;
   sseConnections?: Set<ServerResponse>;
+  /** 中间层模式（Config.middleware 归一化）。 */
+  middlewareMode: MiddlewareMode;
+  /** 中间层实例（连接池 + 目录 + 路由；惰性创建）。 */
+  middleware: McpMiddleware | undefined;
+  /** userDisabled 持久化路径。 */
+  userStatePath: string;
 
   constructor(ctx: Context, store: McpStore) {
     this.ctx = ctx;
@@ -225,6 +251,9 @@ export class McpManager {
     this.catalogCache = new Map();
     this.catalogCachePath = catalogCacheFile();
     this.uiConfigSource = () => ({ position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 });
+    this.middlewareMode = "off";
+    this.middleware = undefined;
+    this.userStatePath = userStateFile();
   }
 
   /** 读取 settings 命名空间中的 MCP UI 配置（供 /api/dsh-mcp/config 返回）。 */
@@ -291,8 +320,17 @@ export class McpManager {
     return () => this.listeners.delete(handler);
   }
 
+  /** coalesce 定时器（同一 tick 内多次状态变化合并为一次广播）。 */
+  private statusTimer: NodeJS.Timeout | undefined;
+
+  /** 状态变化广播（coalesce：同 tick 多次 emitStatus 只广播一次，防 SSE 风暴）。 */
   emitStatus(): void {
-    for (const handler of [...this.listeners]) handler();
+    if (this.statusTimer !== undefined) return;
+    this.statusTimer = setTimeout(() => {
+      this.statusTimer = undefined;
+      for (const handler of [...this.listeners]) handler();
+    }, 0);
+    this.statusTimer.unref?.();
   }
 
   /** 项目根发现：从 cwd 向上找 .git / .dsh / .mcp.json 标记，找不到用 cwd 本身。
@@ -323,6 +361,64 @@ export class McpManager {
     }
     return this.projectStore;
   }
+
+  /** 归一化项目根（realpath；失败回退 resolve）。中间层路由使用。 */
+  async normalizedProjectRoot(cwd: string | undefined): Promise<string | undefined> {
+    if (cwd === undefined || cwd === null || cwd === "") return undefined;
+    return this.findProjectRoot(cwd);
+  }
+
+  /** 中间层宿主：按 root 读取服务器配置。all 模式的虚拟 root "@global" 返回全局配置。 */
+  async projectServersFor(root: string): Promise<ServerConfig[] | undefined> {
+    if (root === MIDDLEWARE_GLOBAL_ROOT) return this.store.data.servers;
+    const store = await this.projectStoreFor(root);
+    return store?.data.servers;
+  }
+
+  /** 中间层宿主：全局服务器配置（all 模式使用）。 */
+  globalServers(): ServerConfig[] {
+    return this.store.data.servers;
+  }
+
+  /** 中间层宿主：持久化 userDisabled。 */
+  async saveUserState(units: Map<string, ProjectUnit>): Promise<void> {
+    await saveUserState(this.userStatePath, units);
+  }
+
+  /** 中间层宿主：root 的目录缓存文件路径。 */
+  catalogCachePathFor(root: string): string {
+    return catalogCacheFileFor(root);
+  }
+
+  /** 初始化中间层（apply 时按模式调用；幂等）。 */
+  async initMiddleware(mode: MiddlewareMode, policy: Record<string, unknown>): Promise<McpMiddleware> {
+    this.middlewareMode = mode;
+    if (this.middleware !== undefined) return this.middleware;
+    const mw = new McpMiddleware(
+      {
+        ctx: this.ctx,
+        logger: this.logger,
+        projectServersFor: (root) => this.projectServersFor(root),
+        globalServers: () => this.globalServers(),
+        normalizedProjectRoot: (cwd) => this.normalizedProjectRoot(cwd),
+        saveUserState: (units) => this.saveUserState(units),
+        emitStatus: () => this.emitStatus(),
+        catalogCachePath: (root) => this.catalogCachePathFor(root),
+      },
+      {
+        allowTools: (policy.allowTools as Record<string, string[]> | undefined) ?? undefined,
+        denyTools: (policy.denyTools as Record<string, string[]> | undefined) ?? undefined,
+      },
+    );
+    // 加载 userDisabled 并注入中间层实例（单元创建时合并；重启不丢）。
+    this.disabledByRoot = await loadUserState(this.userStatePath);
+    mw.disabledByRoot = this.disabledByRoot;
+    this.middleware = mw;
+    return mw;
+  }
+
+  /** userDisabled 映射（root → Set<server>），中间层单元创建时合并。 */
+  disabledByRoot: Map<string, Set<string>> = new Map();
 
   /** 读取/复用某项目根的 store（工作区缓存命中直接返回，不重复读盘）。 */
   async projectStoreFor(root: string | undefined): Promise<McpStore | undefined> {
@@ -370,8 +466,11 @@ export class McpManager {
   }
 
   /**
-   * 会话切换：按 cwd 发现项目根，停掉旧项目的项目级服务器，加载并连接
-   * 新项目的项目级服务器。全局服务器不受影响。
+   * 会话切换：只切 currentRoot + fire-and-forget 惰性启动（不 await 任何连接）。
+   * 变更点驱动（#111/#228）：POST /api/dsh-mcp/session 永不挂起——连接/发现
+   * 由中间层惰性驱动（per-root in-flight 去重），此处零连接副作用。
+   * 兼容语义：middleware=off（旧行为）时切走仍断开旧项目 supervisor；
+   * middleware=project/all 时项目级连接由中间层池常驻，切走不断开。
    */
   async setSession(cwd: string | undefined): Promise<void> {
     const root = cwd === undefined || cwd === null || cwd === "" ? undefined : await this.findProjectRoot(cwd);
@@ -379,16 +478,19 @@ export class McpManager {
     // 本就没有活动项目且新会话同样无项目（空 cwd）：保持幂等，避免反复
     // emitStatus → SSE → 客户端 refresh 的广播循环。
     if (root === undefined && this.projectStore === undefined) return;
-    for (const [name, supervisor] of [...this.supervisors]) {
-      if (supervisor.scope === SCOPE_PROJECT) {
-        this.supervisors.delete(name);
-        await supervisor.disconnect();
+    // off 模式（旧行为）：切走时断开旧项目 supervisor（不 await，避免挂起）。
+    if (this.middlewareMode === "off") {
+      for (const [name, supervisor] of [...this.supervisors]) {
+        if (supervisor.scope === SCOPE_PROJECT) {
+          this.supervisors.delete(name);
+          void supervisor.disconnect();
+        }
       }
     }
+    // 只切 currentRoot；项目级 supervisor 在中间层模式下由中间层接管。
     this.projectRoot = root;
     this.projectStore = undefined;
     if (root !== undefined) {
-      // projectStoreFor 内部做磁盘变更检测（外部修改 mcp.json 自动重读）。
       this.projectStore = await this.projectStoreFor(root);
     }
     // 全局配置同样重读（外部手动编辑 ~/.dsh/dsh-mcp.json）。
@@ -397,7 +499,19 @@ export class McpManager {
     } catch (error) {
       this.logger.warn(`dsh-mcp-manager: reload global config failed: ${String(error)}`);
     }
-    this.reconcileServers();
+    if (this.middlewareMode !== "off" && this.middleware !== undefined) {
+      // 中间层：仅触达单元（fire-and-forget 惰性连接在 projectUnitFor 内）。
+      // all 模式：无项目 cwd 也触达全局虚拟 root @global。
+      const target = root !== undefined ? root : (this.middlewareMode === "all" ? MIDDLEWARE_GLOBAL_ROOT : undefined);
+      if (target !== undefined) {
+        void this.middleware.projectUnitFor(target).then((unit) => {
+          if (unit !== undefined) this.middleware?.evictIfNeeded();
+        });
+      }
+    } else {
+      // 非中间层模式：异步 reconcile（不 await，避免挂起）。
+      this.reconcileServers();
+    }
     this.emitStatus();
   }
 
@@ -405,6 +519,8 @@ export class McpManager {
    * 重读磁盘配置（全局 + 当前项目）并同步连接集合。
    * 供「浮窗刷新」等读取路径调用：外部修改 mcp.json 后无需重启宿主。
    * 仅在配置或连接集合实际变化时广播，避免空转 SSE → 客户端 refresh 循环。
+   * 变更点驱动（#111）：读取路径不再调用本方法（GET /servers 纯读）；本方法
+   * 仅由 fs.watch 变更点与用户操作 API 调用。
    */
   async refreshFromDisk(): Promise<void> {
     let changed = false;
@@ -446,13 +562,22 @@ export class McpManager {
       let changed = false;
       for (const [name, supervisor] of [...this.supervisors]) {
         const want = desired.get(name);
-        if (want === undefined || want.server.enabled === false || want.scope !== supervisor.scope) {
+        // 中间层 project/all 模式：项目级（all 含全局）服务器由中间层接管
+        // （不注册 mcp__ 工具，避免双连接双进程）。
+        const middlewareTakes = this.middlewareMode !== "off" && (
+          supervisor.scope === SCOPE_PROJECT || (this.middlewareMode === "all" && supervisor.scope === SCOPE_GLOBAL)
+        );
+        if (want === undefined || want.server.enabled === false || want.scope !== supervisor.scope || middlewareTakes) {
           this.stop(name);
           changed = true;
         }
       }
       for (const [name, want] of desired) {
         if (want.server.enabled === false) continue;
+        // 中间层 project/all 模式：项目级（all 含全局）跳过 supervisor（由中间层惰性连接）。
+        if (this.middlewareMode !== "off" && (
+          want.scope === SCOPE_PROJECT || (this.middlewareMode === "all" && want.scope === SCOPE_GLOBAL)
+        )) continue;
         const existing = this.supervisors.get(name);
         if (existing === undefined || existing.scope !== want.scope) {
           this.start(name, want.scope);
@@ -504,6 +629,10 @@ export class McpManager {
     }
     store.upsert(config);
     await store.save();
+    if (this.middlewareMode !== "off" && scope === SCOPE_PROJECT) {
+      // 中间层：拆毁当前 root 单元（下次惰性重建读新配置）。
+      this.touchMiddlewareUnit();
+    }
     if (config.enabled !== false) this.start(config.name, scope);
     return config;
   }
@@ -516,6 +645,10 @@ export class McpManager {
     store.upsert(merged);
     await store.save();
     this.stop(name);
+    if (this.middlewareMode !== "off" && scope === SCOPE_PROJECT) {
+      // 中间层：拆毁当前 root 单元（下次惰性重建读新配置）。
+      this.touchMiddlewareUnit();
+    }
     if (merged.enabled !== false) {
       // 编辑后重新连接（即便此前未连接）
       this.start(name, scope);
@@ -526,14 +659,36 @@ export class McpManager {
   async remove(name: string, scope: string = SCOPE_GLOBAL): Promise<void> {
     const store = scope === SCOPE_PROJECT ? await this.projectStoreOrThrow() : this.store;
     this.stop(name);
+    if (this.middlewareMode !== "off" && scope === SCOPE_PROJECT) {
+      // 中间层：拆毁当前 root 单元（下次惰性重建读新配置）。
+      this.touchMiddlewareUnit();
+    }
     store.remove(name);
     await store.save();
+  }
+
+  /** 中间层辅助：拆毁当前 root 单元（配置变更后强制惰性重建）。 */
+  private touchMiddlewareUnit(): void {
+    const mw = this.middleware;
+    if (mw === undefined || this.projectRoot === undefined) return;
+    mw.teardownUnit(this.projectRoot);
   }
 
   async connect(name: string, scope: string = SCOPE_GLOBAL): Promise<void> {
     const store = scope === SCOPE_PROJECT ? await this.projectStoreOrThrow() : this.store;
     const server = store.find(name);
     if (server === undefined) throw new Error(`server "${name}" not found in ${scope} scope`);
+    // 中间层模式：项目级连接走中间层连接池（userDisabled 解除 + 惰性连接）。
+    if (this.middlewareMode !== "off" && scope === SCOPE_PROJECT && this.middleware !== undefined) {
+      const root = this.projectRoot;
+      if (root === undefined) throw new Error("no active project session (call session with a cwd first)");
+      const unit = await this.middleware.projectUnitFor(root);
+      if (unit === undefined) throw new Error(`workspace ${root} has no project MCP config`);
+      unit.userDisabled.delete(name);
+      await this.saveUserState(this.middleware.units);
+      await this.middleware.ensureConnected(root, name);
+      return;
+    }
     const existing = this.supervisors.get(name);
     if (existing !== undefined && existing.client !== undefined) return;
     if (existing !== undefined && existing.scope !== scope) throw new Error(`server "${name}" is registered in scope "${existing.scope}"`);
@@ -544,6 +699,16 @@ export class McpManager {
   }
 
   async disconnect(name: string): Promise<void> {
+    // 中间层模式：项目级断开 → userDisabled 持久化 + 连接池拆毁该连接。
+    if (this.middlewareMode !== "off" && this.middleware !== undefined) {
+      const unit = [...this.middleware.units.values()].find((entry) => entry.connections.has(name) || entry.userDisabled.has(name));
+      if (unit !== undefined) {
+        unit.userDisabled.add(name);
+        await this.saveUserState(this.middleware.units);
+        unit.connections.delete(name);
+        return;
+      }
+    }
     const supervisor = this.supervisors.get(name);
     if (supervisor === undefined) return;
     this.supervisors.delete(name);
@@ -588,6 +753,10 @@ export class McpManager {
   }
 
   async dispose(): Promise<void> {
+    if (this.statusTimer !== undefined) {
+      clearTimeout(this.statusTimer);
+      this.statusTimer = undefined;
+    }
     for (const supervisor of this.supervisors.values()) {
       supervisor.disposed = true;
       if (supervisor.reconnectTimer !== undefined) clearTimeout(supervisor.reconnectTimer);
@@ -595,6 +764,10 @@ export class McpManager {
       for (const dispose of supervisor.toolDisposers.values()) dispose();
     }
     this.supervisors = new Map();
+    if (this.middleware !== undefined) {
+      await this.middleware.dispose();
+      this.middleware = undefined;
+    }
   }
 }
 
@@ -656,7 +829,7 @@ export function normalizeServer(input: unknown): ServerConfig {
 /** 向 Agent 宣告插件（announceToAgent 开启时注入）。能力清单由动态目录
  * （<available_mcp_servers>，见 L1）承担，此处只说明管理界面与使用约束。 */
 export const MCP_GUIDANCE =
-  "本机已安装 dsh-mcp-manager 插件（DSH MCP 管理器）：会话界面右上角浮窗管理 MCP 服务器（全局配置 ~/.dsh/dsh-mcp.json；项目级配置 <项目根>/.dsh/mcp.json，跟随会话切换展示并连接对应项目的服务器；支持 stdio / streamable-http，可粘贴 mcpServers JSON 导入，不预设任何服务器）。已配置服务器的能力清单见会话内的 <available_mcp_servers>（仅描述能力，不代表连接状态）；服务器连接后其工具以 mcp__<server>__<tool> 注册可用。限制：MCP 工具在真实服务器上执行，先确认再操作；stdio 服务器的子进程继承宿主权限；工具结果可能含敏感信息。用户提到「MCP / mcp 服务 / 上下文服务器」时即指本插件，请据此协作。";
+  "本机已安装 dsh-mcp-manager 插件（DSH MCP 管理器）：会话界面右上角浮窗管理 MCP 服务器（全局配置 ~/.dsh/dsh-mcp.json；项目级配置 <项目根>/.dsh/mcp.json，跟随会话切换展示并连接对应项目的服务器；支持 stdio / streamable-http，可粘贴 mcpServers JSON 导入，不预设任何服务器）。已配置服务器的能力清单见会话内的 <available_mcp_servers>（仅描述能力，不代表连接状态）。项目级 MCP 工具经 ws_mcp_search/ws_mcp_call 调用（先用 ws_mcp_search 检索，再 ws_mcp_call 调用）；全局服务器连接后其工具以 mcp__<server>__<tool> 注册可用。限制：MCP 工具在真实服务器上执行，先确认再操作；stdio 服务器的子进程继承宿主权限；工具结果可能含敏感信息。用户提到「MCP / mcp 服务 / 上下文服务器」时即指本插件，请据此协作。";
 
 // -------------------------------------------------------------- 挂载
 
@@ -726,10 +899,40 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
   let disposeRoutes = () => {};
   let disposeSection = () => {};
   let disposeInjection = () => {};
+  let disposeMiddleware = () => {};
+  let watchCleanup: () => void = () => {};
 
   if (enabled) {
     await manager.startAll();
     await manager.loadCatalogCache();
+
+    // 中间层（ws_mcp_search / ws_mcp_call）：按 Config.middleware 模式注册。
+    // project 模式：项目级服务器不再注册 mcp__ 工具，改经中间层路由调用；
+    // 全局服务器仍 mcp__ 直呼（双轨迁移默认）。
+    // 默认值与 Config schema 一致（project）；宿主未 parse 原始 config 时兜底。
+    const middlewareMode = normalizeMiddlewareMode(config?.middleware ?? "project");
+    if (middlewareMode !== "off") {
+      const mw = await manager.initMiddleware(middlewareMode, (config?.middlewarePolicy as Record<string, unknown> | undefined) ?? {});
+      // 路由输入：exec.agent 当前 cwd = agent.session.header.cwd（实证已闭合）。
+      // all 模式：cwd 无项目（或无项目配置）时 fallback 到全局虚拟 root @global。
+      const resolveRoot = async (agent: unknown): Promise<string | undefined> => {
+        if (typeof agent !== "object" || agent === null) return undefined;
+        const session = (agent as { session?: { header?: { cwd?: unknown } } }).session;
+        const cwd = session?.header?.cwd;
+        const root = await manager.normalizedProjectRoot(typeof cwd === "string" ? cwd : undefined);
+        if (root !== undefined) return root;
+        if (middlewareMode === "all") {
+          const globalServers = manager.globalServers().filter((server) => server.enabled !== false);
+          if (globalServers.length > 0) return MIDDLEWARE_GLOBAL_ROOT;
+        }
+        return undefined;
+      };
+      disposeMiddleware = registerMiddlewareTools(manager.ctx, mw, resolveRoot);
+      // startAll 在中间层注册前执行（off 语义），此处立即 reconcile：停掉
+      // 项目级（all 含全局）supervisor（改由中间层接管），防同一 server 双进程。
+      manager.reconcileServers();
+      manager.logger.info(`dsh-mcp-manager: middleware mode=${middlewareMode}`);
+    }
 
     // L1 能力目录注入（history-based 去重，仿 dsh-tool-skill catalog）：
     // 决策逻辑在 resolveCatalogInjection（纯函数，可单测）。
@@ -783,6 +986,74 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
         if (manager.sseConnections !== undefined) manager.sseConnections.clear();
       };
     }, "dsh-mcp-manager: routes");
+
+    // 变更点驱动（#111）：fs.watch 监听全局与当前项目 mcp.json 配置目录，
+    // 外部编辑/落盘 → 防重入 reconcile（运行中排队补跑）。取代 mtime 轮询。
+    try {
+      const fs = await import("node:fs");
+      const watchers: Array<{ close(): void }> = [];
+      const watched = new Set<string>();
+      const watchConfig = (dir: string) => {
+        if (watched.has(dir)) return;
+        watched.add(dir);
+        let busy = false;
+        let rerun = false;
+        const run = () => {
+          if (busy) {
+            rerun = true;
+            return;
+          }
+          busy = true;
+          void (async () => {
+            try {
+              await manager.refreshFromDisk();
+            } finally {
+              busy = false;
+              if (rerun) {
+                rerun = false;
+                run();
+              }
+            }
+          })();
+        };
+        try {
+          const watcher = fs.watch(dir, { persistent: false }, () => run());
+          // 目录被删/重命名等场景 FSWatcher 会 emit error；无监听器会抛
+          // uncaught exception 崩溃宿主进程（P1 修复）。
+          watcher.on("error", () => {
+            // 目录消失/权限变化：移除 watcher（配置写路径仍会 reconcile）。
+            const index = watchers.indexOf(watcher);
+            if (index >= 0) watchers.splice(index, 1);
+            try {
+              watcher.close();
+            } catch {
+              // 已关闭
+            }
+          });
+          watchers.push(watcher);
+        } catch {
+          // watch 不可用（某些平台/只读目录）：降级无 watcher（写路径仍会 reconcile）。
+        }
+      };
+      watchConfig(dirname(manager.store.path));
+      if (manager.projectStore !== undefined) watchConfig(dirname(manager.projectStore.path));
+      // 会话切换时项目 store 变化 → 重新挂 watcher。
+      const unwatchProject = manager.onStatus(() => {
+        if (manager.projectStore !== undefined) watchConfig(dirname(manager.projectStore.path));
+      });
+      watchCleanup = () => {
+        unwatchProject();
+        for (const watcher of watchers.splice(0)) {
+          try {
+            watcher.close();
+          } catch {
+            // 已关闭
+          }
+        }
+      };
+    } catch {
+      // fs.watch 不可用：保持既有行为（写路径仍会 reconcile）。
+    }
     if (announceToAgent) {
       // 官方 SystemPrompt.section(opts) 签名（PromptSection）；此处传参满足其形状，
       // 经 unknown 中转以维持局部最小面写法。
@@ -798,6 +1069,8 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
     disposeInjection();
     disposeSection();
     disposeRoutes();
+    disposeMiddleware();
+    watchCleanup();
     void manager.dispose();
   }, "dsh-mcp-manager: dispose");
 }
@@ -841,6 +1114,36 @@ export {
 } from "./catalog.js";
 // mcpServers JSON 导入
 export { fromClaudeEntry, parseClaudeJson } from "./import.js";
+// 中间层（工作空间 MCP 路由：连接池 / 目录 / ws_mcp_search / ws_mcp_call）
+export {
+  McpMiddleware,
+  normalizeMiddlewareMode,
+  registerMiddlewareTools,
+  fullServerName,
+  parseFullServerName,
+  normalizeToolName,
+  normalizeArguments,
+  msgOf,
+  createRedactor,
+  globMatch,
+  policyAllows,
+  policyDenialReason,
+  scoreTool,
+  searchCatalog,
+  withTimeout,
+  userStateFile,
+  loadUserState,
+  saveUserState,
+  catalogCacheFileFor,
+  CONNECT_TIMEOUT_MS,
+  DISCOVERY_TIMEOUT_MS,
+  CALL_TIMEOUT_MS,
+  CATALOG_TTL_MS,
+  CATALOG_LRU_MAX,
+  MAX_TOOLS_PER_SERVER,
+  MAX_BYTES_PER_TOOL,
+  MAX_TOTAL_CATALOG_BYTES,
+} from "./middleware.js";
 // 路由
 export { ROUTES, makeRoutes, makeEventsRoute, makeHealthRoute, sseData, uiConfigChangedFrame, broadcastFrame } from "./routes.js";
 export { SCOPE_GLOBAL, SCOPE_PROJECT, normalizeScope } from "./scope.js";
