@@ -261,11 +261,18 @@ test('#187: repo-gate-assert 判定表全组合锁定（事件 × 切片清单 �
     assert.match(v.reason, /绕过|期望 success/, `${r} 判词须点名门禁绕过语义`)
   }
 
-  // PR + 空矩阵：整体 skipped 是唯一合法形态
-  assert.equal(run({ mutationPkgsJson: '[]', mutation: 'skipped' }).code, 0, '空矩阵 skipped 合法放行')
-  for (const r of ['success', 'failure', 'cancelled']) {
-    assert.equal(run({ mutationPkgsJson: '[]', mutation: r }).code, 1, `空矩阵 ${r} 必须红`)
+  // PR + 空切片：skipped / failure 均属合法缺席——GitHub 对零实例动态矩阵
+  // 实测回报 failure 而非官方口径 skipped（实证 run 32802575298：
+  // check-runs 无该 job 记录、jobs API total_count=9 无变异实例）
+  assert.equal(run({ mutationPkgsJson: '[]', mutation: 'skipped' }).code, 0, '空切片 skipped 合法放行')
+  assert.equal(run({ mutationPkgsJson: '[]', mutation: 'failure' }).code, 0,
+    '空切片 failure 合法放行（零实例动态矩阵实测形态，run 32802575298）')
+  for (const r of ['success', 'cancelled']) {
+    assert.equal(run({ mutationPkgsJson: '[]', mutation: r }).code, 1, `空切片 ${r} 必须红`)
   }
+  // 防回归对照：空切片放宽绝不外溢到非空切片——该跑没跑仍按门禁绕过判红
+  assert.equal(run({ mutation: 'failure' }).code, 1,
+    '非空切片 failure 必须仍红（空切片放宽不得削弱防绕过逻辑）')
 
   // 非 PR 事件：触发面收敛不变量——mutation-gate 必须 skipped；
   // 若出现其他结果说明 ci.yml if 的事件限制已失效，显性红防静默退化全量

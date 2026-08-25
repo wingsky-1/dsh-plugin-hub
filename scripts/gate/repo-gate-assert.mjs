@@ -18,10 +18,11 @@
  *   3) mutationPackages 解析失败 / 非数组 → 环境数据违约（exit 2，fail-closed）；
  *   4) pull_request 事件：
  *      - 切片非空 → mutation-gate 必须 success。skipped 视同「该跑没跑」的
- *        门禁静默绕过（与空矩阵合法 skip 在 job result 上无法区分，故按清单
+ *        门禁静默绕过（与空矩阵合法缺席在 job result 上无法区分，故按清单
  *        维度区分——这是 #187 收敛前旧判定存在的语义漏洞，此处堵死）；
- *      - 切片为空 → mutation-gate 必须 skipped（动态空矩阵整体不实例化的唯一
- *        合法形态；出现其他结果说明矩阵契约被破坏）；
+ *      - 切片为空 → skipped 或 failure 均属合法缺席（GitHub 对零实例动态矩阵
+ *        实测回报 failure 而非官方口径 skipped，实证 run 32802575298；
+ *        success/cancelled 说明矩阵契约被破坏）；
  *   5) 非 pull_request 事件（push / workflow_dispatch / 未来新增触发器）→
  *      mutation-gate 必须 skipped。这是 #187 的触发面收敛不变量：主干变异覆盖
  *      归 observe.yml 夜间全量、发版归 release.yml tag 管线全量；若非 skipped，
@@ -79,12 +80,19 @@ export function evaluateGate(input) {
         };
       }
     } else {
-      // 空矩阵 → 整体 skipped 是唯一合法形态
-      if (mutation !== 'skipped') {
+      // 空切片（合法缺席）：GitHub 对零实例动态矩阵实测回报 'failure' 而非官方
+      // 口径 'skipped'——实证 run 32802575298（commit 3012980，PR 仅改
+      // stryker.conf.d/<pkg>.json 不被任何包 filter 命中 → mutationPackages=[] →
+      // 矩阵零实例化：check-runs 无该 job 记录、jobs API total_count=9 无变异实例，
+      // needs.mutation-gate.result 却为 'failure'）。两种形态均放行；
+      // success/cancelled 仍属契约异常照旧判红。
+      // 注意与 job 级 if 整体跳过（非 PR 分支，result='skipped'）是不同机制，
+      // 该分支语义不受本实证影响、维持只收 skipped。
+      if (mutation !== 'skipped' && mutation !== 'failure') {
         return {
           ok: false,
           code: 1,
-          reason: `mutation-gate 空切片却得到结果 ${mutation}（期望 skipped）—— 动态矩阵契约破坏`,
+          reason: `mutation-gate 空切片却得到结果 ${mutation}（期望 skipped/failure）—— 动态矩阵契约破坏`,
         };
       }
     }
