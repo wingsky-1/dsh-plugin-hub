@@ -359,3 +359,70 @@ import { listAdapters, migrateLegacyV3 } from "../lib/index.js";
   assert.equal(await migrateLegacyV3(rootBad, badStore), 0, "写盘失败桶不计入迁移数");
   assert.ok(existsSync(join(badHist, "b.json")), "写盘失败原文件保留待重试");
 }
+
+// ---------------------------------------------------------------- #105② 历史存储卫生
+
+// readDay：文件不存在返回 []（ENOENT 容错，不再依赖 existsSync 预检）
+{
+  const root = mkdtempSync(join(tmpdir(), "dou-hist-readday-"));
+  const store = new HistoryStore({ root });
+  const entries = await store.readDay("p1", "n1", Date.now());
+  assert.deepEqual(entries, [], "readDay 文件不存在返回 []");
+}
+
+// readDay：prune 并发删文件竞态容错——文件在读取前被删不抛异常
+{
+  const root = mkdtempSync(join(tmpdir(), "dou-hist-race-"));
+  const store = new HistoryStore({ root });
+  const now = Date.now();
+  await store.append("p1", "n1", { time: now, data: { a: 1 } });
+  const dayFile = join(root, "p1", "n1", `${new Date(now).getFullYear()}-${String(new Date(now).getMonth() + 1).padStart(2, "0")}-${String(new Date(now).getDate()).padStart(2, "0")}.jsonl`);
+  await import("node:fs/promises").then((m) => m.rm(dayFile, { force: true }));
+  const entries = await store.readDay("p1", "n1", now);
+  assert.deepEqual(entries, [], "文件被并发删除后 readDay 返回 [] 而非抛异常");
+}
+
+// append 不再内联 prune：追加后目录内文件数不变（prune 已移出热路径）
+{
+  const root = mkdtempSync(join(tmpdir(), "dou-hist-noprune-"));
+  const store = new HistoryStore({ root, maxAgeMs: 0, maxSizeBytes: 0 });
+  const now = Date.now();
+  await store.append("p1", "n1", { time: now, data: { a: 1 } });
+  await store.append("p1", "n1", { time: now, data: { a: 2 } });
+  // maxAgeMs=0 / maxSizeBytes=0 下若 append 仍内联 prune，文件会立即被删；
+  // 现在 append 是纯 O(1) 追加，文件必须还在。
+  const { readdir } = await import("node:fs/promises");
+  const files = await readdir(join(root, "p1", "n1"));
+  assert.equal(files.length, 1, "append 不再触发 prune，文件保留");
+}
+
+// pruneAll：过期日文件被清理 + 停用适配器目录数据保留（语义锁死）
+{
+  const root = mkdtempSync(join(tmpdir(), "dou-hist-pruneall-"));
+  const store = new HistoryStore({ root, maxAgeMs: 30 * 86400000, maxSizeBytes: 20 * 1024 * 1024 });
+  const now = Date.now();
+  // 两个 provider：p1（启用）与 p2-disabled（停用孤儿目录）
+  await store.append("p1", "n1", { time: now, data: { a: 1 } });
+  await store.append("p2-disabled", "n1", { time: now, data: { b: 2 } });
+  // 写入一个 40 天前的过期文件（模拟历史残留）
+  const oldDay = new Date(now - 40 * 86400000);
+  const oldFile = `${oldDay.getFullYear()}-${String(oldDay.getMonth() + 1).padStart(2, "0")}-${String(oldDay.getDate()).padStart(2, "0")}.jsonl`;
+  const { writeFile, mkdir } = await import("node:fs/promises");
+  await mkdir(join(root, "p1", "n1"), { recursive: true });
+  await mkdir(join(root, "p2-disabled", "n1"), { recursive: true });
+  await writeFile(join(root, "p1", "n1", oldFile), '{"time":1,"data":{}}\n', "utf8");
+  await writeFile(join(root, "p2-disabled", "n1", oldFile), '{"time":1,"data":{}}\n', "utf8");
+
+  await store.pruneAll();
+
+  const { readdir, readFile } = await import("node:fs/promises");
+  const p1Files = await readdir(join(root, "p1", "n1"));
+  assert.ok(!p1Files.includes(oldFile), "p1 过期日文件被清理");
+  assert.equal(p1Files.length, 1, "p1 仅剩当日文件");
+  // 停用目录的过期文件同样受 retention 清理
+  const p2Files = await readdir(join(root, "p2-disabled", "n1"));
+  assert.ok(!p2Files.includes(oldFile), "停用目录过期文件同样被清理");
+  // 但停用目录的当日数据文件保留（不回删数据）
+  const p2Today = await readFile(join(root, "p2-disabled", "n1", p2Files[0]), "utf8");
+  assert.ok(p2Today.includes('"b":2'), "停用目录当日数据保留，用户回切可读");
+}

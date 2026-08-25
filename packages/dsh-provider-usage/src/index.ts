@@ -959,6 +959,14 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     void warmupFn();
   }
 
+  // 8.5 历史留存清理定时器（#105②：prune 移出 append 热路径，独立周期扫描全树）
+  let pruneTimer: ReturnType<typeof setInterval> | null = null;
+  const PRUNE_INTERVAL_MS = 10 * 60 * 1000; // 每 10 分钟一次全树扫描（写入有界、定期收敛）
+  pruneTimer = setInterval(() => {
+    void history.pruneAll().catch((err) => console.warn("[dsh-provider-usage] 历史留存清理失败:", err));
+  }, PRUNE_INTERVAL_MS);
+  (pruneTimer as { unref?: () => void }).unref?.();
+
   // 9. 设置面板命名空间（只读镜像；apiKey 不进 schema 避免回显）
   installSettingsNamespace(ctx, "dsh-provider-usage", Config, rawConfig, {
     setSource: () => {},
@@ -970,6 +978,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     () => () => {
       disposeRoutes();
       if (warmupTimer !== null) clearInterval(warmupTimer);
+      if (pruneTimer !== null) clearInterval(pruneTimer);
       for (const hr of hotReloaders) hr.stop();
       for (const res of sseClients) {
         try { res.end(); } catch { /* 忽略 */ }

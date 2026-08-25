@@ -17,7 +17,6 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
-import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { safeSegment } from "../contracts.js";
 
@@ -51,19 +50,24 @@ export class HistoryStore {
     return join(this.dirOf(provider, name), `${day}.jsonl`);
   }
 
-  /** 追加一条（O(1) appendFile）。 */
+  /** 追加一条（O(1) appendFile；#105②：prune 已移出热路径改独立定时器）。 */
   async append(provider: string, name: string, entry: HistoryEntry): Promise<void> {
     const file = this.fileOf(provider, name, entry.time);
     await mkdir(this.dirOf(provider, name), { recursive: true });
     await appendFile(file, `${JSON.stringify(entry)}\n`, { encoding: "utf8", mode: 0o600 });
-    await this.maybePrune(provider, name);
   }
 
-  /** 读取某日的条目（文件不存在返回空）。 */
+  /** 读取某日的条目（文件不存在返回空；并发删文件竞态容错返回空）。 */
   async readDay(provider: string, name: string, time: number): Promise<HistoryEntry[]> {
     const file = this.fileOf(provider, name, time);
-    if (!existsSync(file)) return [];
-    const raw = await readFile(file, "utf8");
+    let raw: string;
+    try {
+      raw = await readFile(file, "utf8");
+    } catch {
+      // #105②：ENOENT 容错——prune 在 existsSync 与 readFile 之间删掉过期文件时
+      // 返回空而非抛异常（此前会导致 /history 路由 500 崩溃路径）。
+      return [];
+    }
     return parseJsonl(raw);
   }
 
@@ -162,6 +166,40 @@ export class HistoryStore {
         total -= stat.size;
         await rm(join(dir, oldest), { force: true });
       } catch { /* 忽略 */ }
+    }
+  }
+
+  /**
+   * 全树留存清理（#105②：独立定时器调用，替代 append 热路径内联）。
+   *
+   * 扫描 root 下全部 provider/name 目录，对每目录执行 retention 清理
+   * （删过期日文件 + 超限时从最旧删）。**语义锁死：只按 retention 规则删除
+   * 过期/超限文件，绝不删除未注册目录的数据**——用户回切适配器仍需读取。
+   *
+   * 注：maxSizeBytes 语义为「单 (provider,name) 目录上界」（与 append 时代
+   * 的 maybePrune 一致）；全局磁盘上界 = 目录数 × 上限。停用适配器的孤儿
+   * 目录同样受 retention 清理（其过期/超限文件会被删，数据文件本身保留）。
+   */
+  async pruneAll(): Promise<void> {
+    let providers: string[];
+    try {
+      providers = await readdir(this.root);
+    } catch {
+      return;
+    }
+    for (const provider of providers) {
+      if (provider.startsWith(".") || provider === "legacy-v3.bak") continue;
+      const pdir = join(this.root, provider);
+      let names: string[];
+      try {
+        names = await readdir(pdir);
+      } catch {
+        continue;
+      }
+      for (const name of names) {
+        if (name.startsWith(".")) continue;
+        await this.maybePrune(provider, name);
+      }
     }
   }
 
