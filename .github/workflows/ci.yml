@@ -202,13 +202,14 @@ jobs:
   # smoke，lan-proxy 固定端口 EADDRINUSE 与 provider-usage K12 时序漂移是 flake
   # 根因；单次采集根治端口竞争，self-coverage.json 经 artifact 下发给 verdict。
   #
-  # needs 连坐语义（fail-closed 设计意图，勿「优化」掉）：
-  #   coverage 失败/缺席 → mutation-gate（needs 含本 job 且 if 不含 always()，
-  #   隐式 success() 前提生效）连带 skipped → mutation-verdict（if 显式要求
-  #   本 job success）连带 skipped → repo-gate 判定表对 hasMutations=true 的
-  #   PR 判红。即 coverage 失败必然整体红，不存在「cov 挂了但变异照跑」的半通
-  #   状态；coverage job 失败 ≈ smoke 失败（同一 c8 包裹），属 build-test 同级
-  #   硬信号，观察期语义不豁免本 job。
+  # 拓扑（复核裁决采纳并行选项 b）：本 job 与 mutation-gate 矩阵平行
+  # （wall-clock = max(install+build+cov, install+build+stryker)，严格优于串行）。
+  # fail-closed 链路（GHA needs 默认语义，勿「优化」掉）：coverage 失败/skip →
+  # mutation-verdict（if 显式要求本 job success）连带 skipped → repo-gate 判定表
+  # 对 hasMutations=true 的 PR 以 GATE_COVERAGE 维度优先点名「coverage 失败连坐」
+  # 整体判红。变异矩阵不受本 job 影响、独立跑完（报告照常产出），但整体仍红——
+  # 不存在「cov 挂了而门禁绿」的半通状态。coverage job 失败 ≈ smoke 失败（同一
+  # c8 包裹），属 build-test 同级硬信号，观察期语义不豁免本 job。
   coverage:
     name: Coverage collection (global single-run)
     needs: changes
@@ -269,15 +270,17 @@ jobs:
   #   归 release.yml tag 管线；非 PR 事件下整体 skipped，由 repo-gate 判定脚本
   #   按事件语义显式放行
   # - #217 解耦：本 job 只做基线 restore + stryker run + 报告上传，不再各自跑
-  #   pnpm cov / self-cov / 判分——双指标判分统一收敛到 mutation-verdict
+  #   pnpm cov / self-cov / 判分——双指标判分统一收敛到 mutation-verdict；
+  #   与 coverage job 平行无依赖（复核裁决选项 b），cov 失败不影响本矩阵跑完，
+  #   由 verdict 缺席 + repo-gate 判定表兜底整体红
   # - 基线来源（#204）：读仓库内 scripts/gate/baseline/ 版本化文件（git 跨 ref
   #   天然可见）；首夜/基线缺失时天然降级为全量变异，门禁语义不变仅变慢
   # 已知约束：GitHub Actions 的 matrix 不允许引用 env context，但可引用 needs outputs
   mutation-gate:
     name: Mutation gate (${{ matrix.package }})
-    needs: [changes, coverage]
-    # if 不含 always() 是刻意的：needs.coverage 失败/skip 时隐式 success() 前提
-    # 使本 job 连带 skipped（连坐 fail-closed，见 coverage job 注释）
+    needs: changes
+    # 与 coverage job 平行（无 needs 依赖）；if 精确锁定事件面与显式布尔切片，
+    # 空 slice 时 if 直接为假、矩阵不实例化（job result = skipped）
     if: github.event_name == 'pull_request' && needs.changes.outputs.hasMutations == 'true'
     strategy:
       fail-fast: false
@@ -352,8 +355,8 @@ jobs:
   #   在此汇合后逐包跑 scripts/gate/mutation-gate.mjs 双指标判分；
   # - if 用 always() 组合：矩阵 failure（实例级 stryker 非零退出）时仍运行
   #   聚合判分——已产出报告的包照常计账、缺报告的包由脚本 exit 2 fail-closed；
-  #   coverage 非 success（连坐缺席/失败）或矩阵 skipped（空切片/非 PR 连坐）
-  #   时连带 skipped，交 repo-gate 判定表按维度裁决；
+  #   coverage 非 success（失败/skip，本 job 是 fail-closed 链路的收敛点）或
+  #   矩阵 skipped（空切片）时连带 skipped，交 repo-gate 判定表按维度裁决；
   # - 判分链为纯 Node 内置模块（gauntlet config + mutation-report-lib），
   #   无需 pnpm install。
   mutation-verdict:

@@ -23,13 +23,15 @@
  *      hasMutations 与切片非空性交叉矛盾 → 环境数据违约（exit 2，fail-closed）；
  *   4) pull_request 且 hasMutations='true'（该跑必须真跑）：
  *      - coverage 必须 success。failure/cancelled =「coverage 失败连坐」——
- *        c8 全仓 smoke 同级硬信号，变异矩阵与 verdict 已按连坐语义 skipped；
+ *        c8 全仓 smoke 同级硬信号；矩阵与 coverage 平行不受连坐、会独立跑完，
+ *        但聚合判分 verdict 因 if 要求 coverage success 而连带缺席，整体照红；
  *        skipped = 结构性违约（hasMutations=true 却缺席，if 契约被改坏）；
- *      - 变异矩阵不得 skipped（coverage success 前提下 skipped = 门禁静默绕过，
+ *      - 变异矩阵不得 skipped（该维度与 coverage 平行，skipped = 门禁静默绕过，
  *        #187 堵语义漏洞；failure 容忍——实例级 stryker 非零退出由 verdict
  *        统一裁决，报告已 if: always() 下发）；
  *      - verdict 必须 success。skipped/failure/cancelled 一律红：skipped 点名
- *        「mutation 门禁绕过」，其余点名「判分未通过」；
+ *        「mutation 门禁绕过」，cancelled 点名「被取消（未完成判分）」，
+ *        failure 点名「判分未通过」；
  *   5) pull_request 且 hasMutations='false'（空切片合法缺席）：coverage 只收
  *      skipped（普通 job if=false 语义确定）；变异矩阵与 verdict 收
  *      skipped/failure（GitHub 对零实例动态矩阵实测回报 failure 而非官方口径
@@ -94,11 +96,11 @@ export function evaluateGate(input) {
   if (event === 'pull_request') {
     if (hasMutations === 'true') {
       // ── 该跑必须真跑：三段链逐维锁定 ──
-      // 维度一：coverage（全局单次采集）
+      // 维度一：coverage（全局单次采集，与变异矩阵平行）
       if (coverage !== 'success') {
         const why = coverage === 'skipped'
           ? 'coverage 作业缺席 —— hasMutations=true 却未运行，ci.yml if 契约疑似被改坏'
-          : 'coverage 失败连坐（c8 全仓 smoke 同级硬信号）：变异矩阵与 verdict 已按 needs 连坐语义 skipped';
+          : 'coverage 失败连坐（c8 全仓 smoke 同级硬信号）：聚合判分 verdict 将因 if 要求 coverage success 连带缺席';
         return { ok: false, code: 1, reason: `PR 变异链前置 coverage 结果 ${coverage}（期望 success）—— ${why}` };
       }
       // 维度二：变异矩阵（防静默绕过；failure 由 verdict 兜底裁决）
@@ -113,7 +115,9 @@ export function evaluateGate(input) {
       if (verdict !== 'success') {
         const why = verdict === 'skipped'
           ? '该跑没跑视为门禁绕过'
-          : '双指标判分未通过（覆盖率/变异率不达标或报告 artifact 链路违约）';
+          : verdict === 'cancelled'
+            ? '被取消（未完成判分）'
+            : '双指标判分未通过（覆盖率/变异率不达标或报告 artifact 链路违约）';
         return { ok: false, code: 1, reason: `mutation-verdict 结果 ${verdict}（期望 success）—— ${why}` };
       }
       return { ok: true, code: 0, reason: `PR 门禁：变更切片 + 全局覆盖率 + 增量变异（[${pkgs.join(', ')}]）双指标全部通过` };

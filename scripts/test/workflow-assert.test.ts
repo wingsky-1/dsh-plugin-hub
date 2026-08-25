@@ -328,6 +328,8 @@ test('#217+#187: repo-gate-assert 判定表全组合锁定（事件 × 切片 ×
     'verdict 该跑没跑同样按门禁绕过点名')
   assert.match(run({ verdict: 'failure' }).reason, /双指标|判分未通过/,
     'verdict failure 判词须点名判分未通过')
+  assert.match(run({ verdict: 'cancelled' }).reason, /被取消（未完成判分）/,
+    'verdict cancelled 判词须单列「被取消」，不得与判分未通过混用（复核小修）')
   assert.match(run({ event: 'push', mutation: 'success' }).reason, /收敛不变量/,
     '非 PR 下变异执行判词须点名收敛不变量')
 
@@ -394,12 +396,14 @@ test('#217+#187: repo-gate-assert CLI 退出码转发（GitHub Actions 判红依
   assert.equal(failRun.status, 1, 'PR 该跑没跑场景 CLI 必须 exit 1')
   assert.match(failRun.stderr, /::error::/, '违约判词必须带 ::error:: 注解前缀（PR 页面可见）')
   assert.match(failRun.stderr, /绕过/, '判词须点名门禁绕过语义')
-  // 连坐场景 exit 1 且判词区分「coverage 失败连坐」（#217 reason 分型）
+  // 连坐场景 exit 1 且判词区分「coverage 失败连坐」（#217 reason 分型）。
+  // env 取值贴合并行拓扑真实形态（复核裁决选项 b）：矩阵与 coverage 平行、
+  // cov 挂了矩阵照跑 success，verdict 因 if 要求 coverage success 连带 skipped
   const covFailRun = spawnSync(process.execPath, [script], {
     encoding: 'utf8',
     env: { ...process.env, ...envOf({
       event: 'pull_request', changes: 'success', buildTest: 'success',
-      coverage: 'failure', mutation: 'skipped', verdict: 'skipped',
+      coverage: 'failure', mutation: 'success', verdict: 'skipped',
       hasMutations: 'true', mutationPkgsJson: '["dsh-lan-proxy"]',
     }) },
   })
@@ -445,9 +449,10 @@ test('#178: 变异统计口径单一事实源——observe-check 与 mutation-ga
 
 // ── #217 变异/覆盖解耦：cov 全局单次采集 + artifact 跨 job 传递 + 聚合判分 ──
 // 三段式：coverage（全局单进程 cov+self-cov+guard 前移）∥ mutation-gate 矩阵
-// （仅基线+stryker+报告上传，needs coverage 连坐）→ mutation-verdict
-// （artifact 汇合后逐包判分）。flake 根因（矩阵 6 路并行各自全仓 smoke 的端口
-// 竞争与时序漂移）随剥离消除。
+// （仅基线+stryker+报告上传，needs 仅 changes、与 coverage 平行无依赖——复核
+// 裁决选项 b，wall-clock = max）→ mutation-verdict（artifact 汇合后逐包判分，
+// if 要求 coverage success：cov 失败时 verdict 连带缺席，repo-gate 判红兜底）。
+// flake 根因（矩阵 6 路并行各自全仓 smoke 的端口竞争与时序漂移）随剥离消除。
 
 test('#217: changes 输出显式布尔 hasMutations（禁止脆弱空切片判定形态）', () => {
   assert.ok(CI.includes('hasMutations: ${{ steps.pkgs.outputs.hasMutations }}'),
@@ -496,15 +501,20 @@ test('#217: coverage job 全局单次采集——if 精确、步骤链与 artifa
     'mutate-scope-guard 必须前移进 ci.yml PR 门禁')
 })
 
-test('#217: mutation-gate 剥离 cov——needs coverage 连坐且 if 不含 always()', () => {
+test('#217: mutation-gate 剥离 cov——与 coverage 平行（needs 仅 changes）、if 精确锁定', () => {
   const mg = CI.slice(CI.indexOf('\n  mutation-gate:'), CI.indexOf('\n  mutation-verdict:'))
-  assert.ok(/needs: \[changes, coverage\]/.test(mg),
-    'mutation-gate needs 必须含 coverage（连坐通道）')
+  // 复核裁决选项 b：矩阵与 coverage 平行无依赖（wall-clock = max）；
+  // cov 失败时矩阵照常跑完，由 verdict 缺席 + repo-gate 判定表兜底整体红
+  assert.ok(/^    needs: changes$/m.test(mg),
+    'mutation-gate needs 必须恰为 changes（不得挂 coverage 连坐——拓扑已裁决为并行）')
+  assert.ok(!mg.includes('needs: [changes, coverage'), '禁止恢复 mutation-gate → coverage 串行连坐拓扑')
   const m = /^    if: (.+)$/m.exec(mg)
   assert.ok(m, 'mutation-gate 声明 job 级 if')
-  assert.ok(!m[1].includes('always()'),
-    '矩阵 if 禁止 always()：needs.coverage 失败/skip 时依赖隐式 success() 前提连带 skipped（连坐 fail-closed），'
-    + '加了 always() 连坐即失效，cov 挂了变异照跑')
+  assert.equal(
+    m[1].trim(),
+    "github.event_name == 'pull_request' && needs.changes.outputs.hasMutations == 'true'",
+    '矩阵 if 必须精确锁定事件面与显式布尔切片',
+  )
   // cov 已剥离出矩阵（每实例重复全仓 smoke 是 flake 根因）
   assert.ok(!mg.includes('run: pnpm cov'), '矩阵不得再跑 pnpm cov（已收敛至 coverage job 单次）')
   assert.ok(!mg.includes('self-cov.mjs'), '矩阵不得再跑 self-cov.mjs')
@@ -529,11 +539,15 @@ test('#217: mutation-verdict 聚合收尾——artifact 汇合 + 逐包双指标
     'verdict if 必须精确为「always() 且 coverage success 且矩阵非 skipped」——'
     + '矩阵 failure 时仍聚合判分（缺报告包 exit 2 fail-closed）；coverage 非 success 或矩阵 skipped 时连带缺席',
   )
-  // artifact 下载：精确名 + pattern 双通道
-  assert.ok(mv.includes('name: self-coverage'), 'download 必须用精确 name self-coverage（pattern 匹配 0 个不报错）')
+  // artifact 下载：精确名 + pattern 双通道；download self-coverage 步骤块逐项精确断言
+  const dlIdx = mv.indexOf('- name: Download self-coverage artifact')
+  assert.ok(dlIdx > 0, 'self-coverage 下载步骤在位')
+  const dlBlock = mv.slice(dlIdx, mv.indexOf('- name:', dlIdx + 10))
+  assert.ok(dlBlock.includes('name: self-coverage'),
+    'download 必须用精确 name self-coverage（pattern 匹配 0 个不报错，精确名缺失才报错）')
+  assert.ok(/path: coverage\s*$/m.test(dlBlock),
+    'download path 必须恰为 coverage/（单文件 zip 根层级 = 文件本身，解压即还原 coverage/self-coverage.json）')
   assert.ok(mv.includes('pattern: mutation-report-*'), '各包 stryker 报告经 pattern 枚举下载')
-  assert.ok(mv.includes('coverage/self-coverage.json') || mv.includes('path: coverage'),
-    'download path 须还原 self-coverage.json 原始层级（单文件 zip 根 = 文件本身）')
   assert.ok(mv.includes('node scripts/gate/mutation-gate.mjs'), '逐包判分脚本调用在位')
   assert.ok(mv.includes("SLICE: ${{ needs.changes.outputs.mutationPackages }}"),
     'verdict 以 changes 切片清单驱动逐包判分')
