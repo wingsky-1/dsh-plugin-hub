@@ -16,7 +16,7 @@
 5. **模型配置读取：V1 配置链，放弃 V2**（评审 P0-1）：`LlmConfigurableProvider` 无标准化 `apiKey`/`baseURL` 字段（官方类型确认），V2 settings 命名空间读取不可行。永久方案 = 配置链（显式配置 → 环境变量 → `.credentials.yaml` → `auth.json`）。
 6. **新契约含 `version: 2` 判别信号**（评审 P0-1）：防止与旧契约形状猜测歧义。
 7. **新契约补 `providers` 和 `label`**（评审 P0-3）：复用现有 registry 的 provider 关联、启用选择、面板展示机制。
-8. **纪律**：用户代码报错不崩溃；不阻塞/不挂起连接（2s 超时、锁预检）。
+8. **纪律**：用户代码报错不崩溃；不阻塞/不挂起连接（取数强制超时、锁预检）。
 
 ## 1. 契约设计（评审修订版）
 
@@ -166,7 +166,7 @@ export function formatPanel({ entries, range, truncated, esc }) {
 
 | 文件 | 内容 |
 |------|------|
-| `src/core/guards.ts` | `safeFetchData`（2s 超时 + 序列化校验 + AbortSignal）、`safeFormat`（2s 错误隔离 + 类型校验）、`fetchWithTimeout`（AbortController） |
+| `src/core/guards.ts` | `safeFetchData`（5s 固定超时 + 序列化校验 + AbortSignal）、`safeFormat`（超时同源注入 + 类型校验）、`fetchWithTimeout`（AbortController） |
 | `src/core/history.ts` | 按天分片 JSONL HistoryStore（兼容读取旧 v3 格式） |
 | `src/pipeline/v2.ts` | 新契约管道：fetchData → 校验 → 落盘 → 格式化（formatCapsule/formatPanel）→ 返回 |
 | `src/hotreload.ts` | mtime+size 轮询热更新 + 校验和验证 + 原子切换 |

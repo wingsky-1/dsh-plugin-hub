@@ -3,7 +3,7 @@
  *
  * 职责：
  * 1. 组装 fetchData 入参（apiEndpoint/staticPath/apiKey/provider/timeoutMs/signal）
- * 2. safeFetchData 执行（2s 超时 + 序列化校验 + 错误隔离）
+ * 2. safeFetchData 执行（5s 固定超时 + 序列化校验 + 错误隔离）
  * 3. 落盘历史（按天分片 JSONL）
  * 4. safeFormat 执行 formatCapsule（宿主端渲染 HTML）
  * 5. 返回归一化结果（含 status/capsuleHtml）
@@ -70,7 +70,7 @@ export async function runV2Pipeline(ctx: V2PipelineContext): Promise<V2PipelineR
     signal: ctx.signal,
   };
 
-  // 2. safeFetchData（2s 超时 + 序列化 + 错误隔离）
+  // 2. safeFetchData（5s 固定超时 + 序列化 + 错误隔离）
   const fetched = await safeFetchData(async () => {
     const fetcher: typeof fetch = ctx.fetchImpl ?? fetch;
     return adapter.fetchData({ ...fetchCtx, fetch: fetcher } as unknown as FetchContext);
