@@ -99,6 +99,7 @@ export function renderFloatPanel(state: McpState, actions: UiActions): void {
 
   if (state.servers.length === 0) {
     state.floatPanel.appendChild(el("div", { class: "dm-status", text: "没有 MCP 服务器，点「管理」添加" }));
+    if (state.floatOpen) placePanel(state);
     return;
   }
   for (const scope of ["project", "global"]) {
@@ -111,6 +112,10 @@ export function renderFloatPanel(state: McpState, actions: UiActions): void {
     }
     state.floatPanel.appendChild(section);
   }
+  // qa F1 同构修复（#128）：bottom-* 锚点下面板高度增长不会自动改写 top——
+  // 内容渲染完成即同步重定位（DOM 已构建，offsetHeight 即时正确；SSE 刷新等
+  // 异步路径经 panel.ts 重渲本函数时同样覆盖），clampPointToViewport 兜底钳回。
+  if (state.floatOpen) placePanel(state);
 }
 
 /** 切换浮窗展开/收起。 */
@@ -120,8 +125,10 @@ export function toggleFloat(state: McpState, actions: UiActions, force?: boolean
   state.floatOpen = next;
   state.floatPanel.hidden = !next;
   if (next) {
-    placePanel(state);
+    // 先渲染再定位（F1 配套）：以真实内容高度定位，消除首帧小高度错位；
+    // 后续 SSE 刷新撑高/收缩由 renderFloatPanel 尾部的重定位兜底。
     renderFloatPanel(state, actions);
+    placePanel(state);
     // 聚焦面板本身，让后续点击外部时能通过 focusout 自动关闭。
     state.floatPanel.focus({ preventScroll: true });
   }

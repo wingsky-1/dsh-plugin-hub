@@ -249,6 +249,22 @@ const main = async () => {
     assert.match(clientSrc, /width:\s*14,\s*height:\s*14/, "SVG 尺寸 14x14（官方同款）");
   });
 
+  check("F1（qa 实测 #128）：浮窗面板内容更新后重定位 + toggleFloat 先渲染后定位", () => {
+    const src = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+    // renderFloatPanel 函数体内触发 placePanel 重定位：bottom-* 锚点下内容撑高后
+    // 不重排会稳定向下溢出视口（375x667 bottom-left 实测 y=561/bottom=1082 稳态）。
+    const renderStart = src.indexOf("function renderFloatPanel");
+    const toggleStart = src.indexOf("function toggleFloat");
+    assert.ok(renderStart >= 0 && toggleStart > renderStart, "产物含 renderFloatPanel/toggleFloat 标识符");
+    assert.ok(src.slice(renderStart, toggleStart).includes("placePanel(state)"),
+      "renderFloatPanel 内容渲染完成即触发 placePanel 重定位（bottom 锚点防溢出）");
+    // toggleFloat 内先渲染后定位：以真实内容高度定位，消除首帧小高度错位。
+    const tf = src.slice(toggleStart);
+    assert.ok(tf.indexOf("renderFloatPanel(state, actions)") >= 0
+      && tf.indexOf("renderFloatPanel(state, actions)") < tf.indexOf("placePanel(state)"),
+      "toggleFloat 先 renderFloatPanel 后 placePanel");
+  });
+
   console.log("Config schema（浮窗 UI 配置迁移到插件自身 Config.ui）");
   check("Config 导出且含 ui 子对象（默认值与合法值域）", () => {
     assert.ok(typeof Config === "function", "Config 是 schemastery schema（可调用）");
@@ -389,6 +405,21 @@ const main = async () => {
     assert.equal(panelZIndexFor(10), 40, "面板层级派生 base+30");
     assert.equal(panelZIndexFor(9000), 9030, "面板派生允许略超 base 上界（面板独立于 shell 层级预算）");
     assert.equal(Z_INDEX_PANEL_DELTA, 30, "派生量约定值");
+  });
+  check("F1（qa 实测 #128）：bottom 锚点首开小高度→数据撑高→重定位后不溢出", () => {
+    // 375x667 视口、bottom-right、胶囊 offsetY(blankY 同构取 8)/高 26px → 上缘 633。
+    const vw = 375;
+    const vh = 667;
+    const pillTop = vh - 26 - 8; // 633
+    const gap = 6;
+    const h1 = 40; // 打开瞬间小高度
+    const h2 = 500; // SSE 刷新撑高后
+    const p1 = clampPointToViewport(0, Math.max(6, pillTop - h1 - gap), 340, h1, vw, vh);
+    assert.ok(p1.y + h1 <= vh, "阶段1 小高度定位在视口内");
+    assert.ok(p1.y + h2 > vh, "对照：缺重定位时同坐标撑高必溢出（锁定 F1 根因）");
+    const p2 = clampPointToViewport(0, Math.max(6, pillTop - h2 - gap), 340, h2, vw, vh);
+    assert.ok(p2.y + h2 <= vh, "阶段2 内容更新后重定位，底缘不出视口");
+    assert.ok(p2.y >= 6 && p2.y < pillTop, "阶段2 保持底部锚点上弹语义");
   });
   check("panelTopForAnchor：底部锚点向上弹出 / 顶部锚点向下弹出", () => {
     // 底部锚点（pill 在视口下部）：面板向上，下缘贴近 pill 上缘（pTop - panelHeight - gap）

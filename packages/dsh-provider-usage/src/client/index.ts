@@ -394,6 +394,12 @@ function renderPanel(): void {
       }),
     ]),
   );
+
+  // qa F1（#128 实测）：bottom-* 锚点下面板高度增长不会自动改写 top——打开瞬间以
+  // 「加载中」小高度定位，异步数据撑高面板后若无重排路径则稳定向下溢出视口。
+  // 内容更新完成即同步重定位（DOM 已构建，offsetHeight 即时正确；数据到达为低频
+  // 路径，无需 rAF 合并），clampPointToViewport 继续兜底钳回视口内。
+  if (floatOpen) applyUiPlacement();
 }
 
 // ------------------------------------------------------------------ provider 变化
@@ -413,8 +419,10 @@ function toggleFloat(force?: boolean): void {
   floatOpen = next;
   floatPanel.hidden = !next;
   if (next) {
-    placePanel();
+    // 先渲染再定位（F1 配套）：以真实内容高度定位，消除首帧小高度错位；
+    // 后续异步数据撑高由 renderPanel 尾部的重定位兜底。
     renderPanel();
+    placePanel();
     // 展开面板只拉历史（每次都调）；胶囊文案由轮询维护，不重复调 stats
     void refreshHistory();
   }

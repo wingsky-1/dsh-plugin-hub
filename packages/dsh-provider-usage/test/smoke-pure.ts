@@ -490,6 +490,29 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
   assert.deepEqual(clampPointToViewport(-30, -50, 100, 80, 375, 667, 10), { x: 10, y: 10 }, "safeInset>0 按安全区内缩");
 }
 
+// ---------------------------------------------------------------- qa F1 场景：bottom 锚点首开→数据撑高→重定位后不溢出
+
+{
+  // 375x667 视口、bottom-left、胶囊 offsetY=48 / 高 26px → 胶囊上缘 593；
+  // 打开瞬间面板为「加载中」小高度（h1=60），数据到达后实测撑高至 h2≈521。
+  const vw = 375;
+  const vh = 667;
+  const pillTop = vh - 26 - 48; // 593
+  const gap = 10; // panelOffsetY
+  const h1 = 60;
+  const h2 = 521;
+  // 阶段 1：以小高度定位（toggleFloat 先渲染后定位，坐标即此值）
+  const p1 = clampPointToViewport(0, Math.max(6, pillTop - h1 - gap), 340, h1, vw, vh);
+  assert.ok(p1.y + h1 <= vh, "F1 阶段1 小高度定位在视口内");
+  // 反证对照：若无内容变化重定位（保持阶段 1 的 y），撑高后底缘必然溢出——
+  // 固化 qa 实测现象（y=561/bottom=1082 稳态同构），锁定根因防回退。
+  assert.ok(p1.y + h2 > vh, "F1 对照：缺重定位时同坐标撑高必溢出视口");
+  // 阶段 2：renderPanel 尾部重定位以真实高度重算 → 底缘回到视口内。
+  const p2 = clampPointToViewport(0, Math.max(6, pillTop - h2 - gap), 340, h2, vw, vh);
+  assert.ok(p2.y + h2 <= vh, "F1 阶段2 重定位后底缘不出视口（qa 复测口径）");
+  assert.ok(p2.y >= 6 && p2.y < pillTop, "F1 阶段2 顶缘保持底部锚点上弹语义");
+}
+
 // ---------------------------------------------------------------- 面板定位翻转规则
 
 {
