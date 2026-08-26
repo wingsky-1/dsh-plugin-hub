@@ -1,6 +1,6 @@
 {
   "name": "@wingsky-1/dsh-subagent-model-inherit",
-  "version": "0.0.1",
+  "version": "0.1.13",
   "description": "子 Agent 自动继承父会话当前模型与思考等级：agent/created 捕获父模型快照，agent/request 首次注入子请求（demo 演进包，独立发包观察期，暂不进聚合）",
   "type": "module",
   "main": "lib/index.js",
