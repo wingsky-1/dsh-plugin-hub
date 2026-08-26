@@ -318,8 +318,14 @@ or the plugin home; non-normalized forms (`../` traversal) are rejected with 400
 - **Hot reload is on by default** (`autoReload`, can be disabled explicitly); when
   enabled it polls mtime+size, atomically swaps in
   the new version only after validation passes, and keeps the old version on failure
-- **Timeout discipline**: fetchData gets a forced 5s timeout (fixed, not configurable) + AbortSignal; when the lock
-  is busy requests degrade to cache instead of queueing — page requests are never blocked
+- **Timeout discipline**: fetchData gets a forced 5s timeout (fixed, not configurable); on timeout the host
+  **actively aborts the real fetch** — the `signal` handed to fetchData is a merged signal (timeout guard ×
+  external cancellation, composed via manual cascading listeners for node>=20 compatibility). Adapters should
+  pass it through to the underlying fetch's `RequestInit.signal` so the request is truly interrupted on
+  timeout/cancellation instead of leaving a dangling socket; without pass-through the timeout only gives up
+  waiting and the request may still complete in the background. Zero-argument fetchData that ignores the
+  signal keeps working; fetching uses per-provider locks and concurrent requests on the same provider queue
+  up and reuse the first result — page requests are never blocked
 - **Fail-fast loading**: missing exports / wrong types / invalid names are rejected with
   diagnosable errors
 - **History**: daily-sharded JSONL (`0600` permissions) with automatic age/size pruning;
