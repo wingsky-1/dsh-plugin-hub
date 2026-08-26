@@ -1,18 +1,11 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-web-file-preview/lib/index.js:1255-1924"
+    "packages/dsh-web-file-preview/src/**/*.ts",
+    "!packages/dsh-web-file-preview/src/client/**",
+    "!packages/dsh-web-file-preview/src/types.ts"
   ],
   "testRunner": "tap",
-  "tap": {
-    "nodeArgs": ["-r", "./scripts/test/mutation-tap-bridge.cjs"],
-    "testFiles": [
-      "packages/dsh-web-file-preview/test/unit-grouping.test.ts",
-      "packages/dsh-web-file-preview/test/unit-link-resolver.test.ts",
-      "packages/dsh-web-file-preview/test/unit-relpath.test.ts",
-      "packages/dsh-web-file-preview/test/unit-routes.test.ts"
-    ]
-  },
   "mutator": {
     "excludedMutations": [
       "StringLiteral",
@@ -21,7 +14,9 @@
       "TemplateLiteral"
     ]
   },
-  "plugins": ["@stryker-mutator/tap-runner"],
+  "plugins": [
+    "@stryker-mutator/tap-runner"
+  ],
   "concurrency": 16,
   "timeoutMS": 60000,
   "dryRunTimeoutMinutes": 5,
@@ -30,13 +25,25 @@
     "clear-text",
     "json"
   ],
-  "jsonReporter": {
-    "fileName": "coverage/mutation/dsh-web-file-preview.json"
-  },
   "coverageAnalysis": "perTest",
   "tempDirName": ".stryker-tmp",
   "cleanTempDir": true,
+  "tap": {
+    "nodeArgs": [
+      "-r",
+      "./scripts/test/mutation-tap-bridge.cjs"
+    ],
+    "testFiles": [
+      "packages/dsh-web-file-preview/test/unit-grouping.test.ts",
+      "packages/dsh-web-file-preview/test/unit-link-resolver.test.ts",
+      "packages/dsh-web-file-preview/test/unit-relpath.test.ts",
+      "packages/dsh-web-file-preview/test/unit-routes.test.ts"
+    ]
+  },
+  "jsonReporter": {
+    "fileName": "coverage/mutation/dsh-web-file-preview.json"
+  },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-web-file-preview.json",
-  "_comment": "#152 接入：mutate 限定 lib/index.js 的 self-written 连续段 1255-1924（grouping/mime/git/basename-fallback/routes/relpath/client/link-resolver/index 八段，esbuild 路径注释 // lib/* 分界），排除头部 untildify 与 mime 库内联 vendor 段（1-30、75-1254，含 var __classPrivateFieldGet 垫片）、shared/loopback+host-utils 内联契约层副本（35-74，shared 由仓库级禁改规则保护且多包重复计账会使 score 横向不可比）、31-34 的 routes import 提升段（纯 ESM import 无可变异面）。client/link-resolver 为本仓自写代码且内联进 index.js 本体（wrapper 模式），有 unit-link-resolver.test.ts 直测故纳入——区别于 idle-archive 的独立 lib/client.js 不在 mutate 面。tap.nodeArgs 注入 mutation-tap-bridge.cjs（#151 全局生效）将未捕获异常转写 TAP not ok，RuntimeError 计 Killed。"
+  "_comment": "#276 方案 A：src 级单段（mutate 直指 src，文件 glob 声明，无行号无漂移）；测试经 src 入口加载插桩代码；incremental 基线随 observe 四班次重建。"
 }

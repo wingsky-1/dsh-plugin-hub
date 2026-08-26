@@ -16,16 +16,9 @@ name: Observe (nightly)
 
 on:
   schedule:
-    # UTC 18:43 = 北京时间 02:43，避开整点 GitHub Actions 高峰（夜间兜底）
-    - cron: '43 18 * * *'
-  push:
-    # #204 用户指示：基线更新不必等夜间——每次 PR 合入 main 即触发全量变异更新基线，
-    # 使基线始终跟随 main 最新状态，后续 PR 增量面仅含本次合入改动（避免一天改动
-    # 堆积导致次日所有 PR 增量慢）。
-    # paths-ignore（#204 修订）：基线 PR 合入只改 scripts/gate/baseline/** → 事件层
-    # 被过滤不触发 observe（防白跑 30min 全量变异）。
-    branches: [main]
-    paths-ignore: ['scripts/gate/baseline/**']
+    # 每日四班次全量变异与基线刷新（#276 方案 A 调度重设计）：北京 09:00/12:00/16:00/20:00
+    # = UTC 01:00/04:00/08:00/12:00，均避开整点 Actions 高峰
+    - cron: '0 1,4,8,12 * * *'
   workflow_dispatch:
 
 permissions:
@@ -34,9 +27,9 @@ permissions:
   pull-requests: write
 
 concurrency:
-  # #204 修订：按事件分组——push 触发可被新合入取代（cancel），schedule 兜底必须完整跑完
+  # #276 方案 A：四班次定时全量（无 push 触发），schedule 间无冲突可并行
   group: observe-${{ github.event_name }}
-  cancel-in-progress: ${{ github.event_name == 'push' }}
+  cancel-in-progress: false
 
 jobs:
   nightly:
@@ -77,69 +70,16 @@ jobs:
         run: pnpm crap
         continue-on-error: true   # 观察期：基线校准归 #42 二期
 
-      - name: Sync mutate segments（#276 方案 B：区间由产物分段锚点机器派生）
-        # mutate 行号是 bundle 产物的衍生数据，不得人工维护——build 后立即从
-        # 分段注释重算并写入 conf，夜间基线的行号必然与产物一致
-        run: node scripts/gate/sync-mutate-segments.mjs --write
-
-      - name: Mutation scope guard（F5：mutate 区间须落在 // lib/*.js 分段边界内）
-        run: node scripts/gate/mutate-scope-guard.mjs
-
-      - name: Resolve mutation suites（#220 按需基线：push 只跑变动包，其余事件全量）
+      - name: Resolve mutation suites（#276 方案 A：四班次全量）
         id: suite-plan
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BEFORE_SHA: ${{ github.event.before }}
         run: |
           set -e
-          # 全量清单（glob conf 目录为单一事实源）
-          list_all() { ls stryker.conf.d/dsh-*.json; }
-          # 非 push（schedule/dispatch 兜底校准）→ 全量；push 且 before 不可用 → fail-closed 全量
-          if [ "$EVENT_NAME" != "push" ]; then
-            list_all > /tmp/suites.txt
-            echo "mode=full" >> "$GITHUB_OUTPUT"
-          elif [ -z "$BEFORE_SHA" ] || echo "$BEFORE_SHA" | grep -qv '^[0-9a-f]\{40\}$'; then
-            echo '::notice::before SHA 不可用 —— fail-closed 全量'
-            list_all > /tmp/suites.txt
-            echo "mode=full" >> "$GITHUB_OUTPUT"
-          else
-            CHANGED="$(git diff --name-only "$BEFORE_SHA"..HEAD || true)"
-            # 产物全集级变化（shared 内联进每包 / 构建链）→ 全量
-            if printf '%s\n' "$CHANGED" | grep -qE '^(shared/|pnpm-lock\.yaml$|package\.json$|pnpm-workspace\.yaml$|tsconfig\.base\.json$)'; then
-              echo '::notice::shared/构建链变化 —— 全量刷新'
-              list_all > /tmp/suites.txt
-              echo "mode=full" >> "$GITHUB_OUTPUT"
-            else
-              # 变异工具链变化（scope-guard / collect / tap bridge）影响所有包的
-              # 执行链与基线语义 → 全量
-              if printf '%s\n' "$CHANGED" | grep -qE '^scripts/(gate/(mutation|collect-incremental|observe)|test/mutation-tap-bridge)'; then
-                echo '::notice::变异工具链变化 —— 全量刷新'
-                list_all > /tmp/suites.txt
-                echo "mode=full" >> "$GITHUB_OUTPUT"
-              else
-              # 逐包判定：packages/<pkg>/** 或该包段配置变化 → 该包全部段配置
-              : > /tmp/suites.txt
-              for pkgdir in packages/dsh-*; do
-                pkg="$(basename "$pkgdir")"
-                if printf '%s\n' "$CHANGED" | grep -qE "^packages/${pkg}/" ; then
-                  ls stryker.conf.d/"$pkg"-*.json stryker.conf.d/"$pkg".json 2>/dev/null >> /tmp/suites.txt || true
-                fi
-              done
-              # 段配置自身变化 → 对应包重跑（#273 教训：区间再均衡不改 packages/ 源码，
-              # 但 mutant 集合已变；从 CHANGED 提取 stryker.conf.d/dsh-xxx(-n)?.json 的包名）
-              for f in $(printf '%s\n' "$CHANGED" | grep -oE '^stryker\.conf\.d/dsh-[a-z0-9-]+(-[0-9]+)?\.json$' || true); do
-                pkg="$(basename "$f" .json | sed -E 's/-[0-9]+$//')"
-                ls stryker.conf.d/"$pkg"-*.json stryker.conf.d/"$pkg".json 2>/dev/null >> /tmp/suites.txt || true
-              done
-              sort -u /tmp/suites.txt -o /tmp/suites.txt
-              N="$(wc -l < /tmp/suites.txt)"
-              echo "mode=partial ($N 配置)" >> "$GITHUB_OUTPUT"
-              echo '::notice::按需基线：仅跑变动包配置'
-              fi
-            fi
-          fi
-          HAS=$([ -s /tmp/suites.txt ] && echo true || echo false)
-          echo "has_suites=$HAS" >> "$GITHUB_OUTPUT"
+          # 全量清单（glob conf 目录为单一事实源）——四班次定时全量变异，
+          # 无 push 裁剪分支（#220 按需基线的 push 触发已随 #276 方案 A 调度
+          # 重设计移除，见本文件 on: 节）
+          ls stryker.conf.d/dsh-*.json > /tmp/suites.txt
+          echo "mode=full" >> "$GITHUB_OUTPUT"
+          echo "has_suites=true" >> "$GITHUB_OUTPUT"
 
       - name: Mutation suites（串行执行计划内变异配置；单配置失败记账继续跑完，结尾统一判红）
         # id 供 collect 步骤区分「整套 skip（无产物无从收集）」与「部分失败
@@ -179,12 +119,29 @@ jobs:
         if: always() && steps.mutation-suites.outcome != 'skipped' && steps.suite-plan.outputs.has_suites == 'true'
         run: node scripts/gate/collect-incremental-baseline.mjs
 
-      - name: Open baseline PR（基线有变化时自动建 PR 合入 main）
+      - name: Baseline PR date gate（快照每日最多一次，防 git 膨胀 #276 方案 A）
+        # 四班次全量变异照常执行、基线文件照常 collect；但「基线快照 PR 合入 main」
+        # 限制为每自然日最多一次：检查 main 上 scripts/gate/baseline/ 最近一次提交
+        # 是否今天（UTC）。今日已有快照 → 标记 skip_pr，Open baseline PR 步骤跳过。
+        # 变异执行不受本闸限制（push 触发已移除，四班次各自完整产出报告与阈值判分）。
+        id: pr-gate
+        run: |
+          LAST=$(git log -1 --format=%cd --date=format:%Y-%m-%d -- scripts/gate/baseline/ 2>/dev/null || echo "")
+          TODAY=$(date -u +%Y-%m-%d)
+          if [ -n "$LAST" ] && [ "$LAST" = "$TODAY" ]; then
+            echo "今日（$TODAY）已有基线快照提交，本次跳过快照 PR（变异报告照常）"
+            echo "skip_pr=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "今日尚无基线快照，允许创建快照 PR"
+            echo "skip_pr=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open baseline PR（基线有变化时自动建 PR 合入 main；受每日日期闸约束）
         # create-pull-request 只在有 diff 时创建 PR（无变化 = no-op，不产生噪音提交）。
         # 受保护分支禁止 workflow 直接 push main → 走 PR + auto-merge 路径。
         # PR 由 bot 身份创建，auto-merge 需在 PR 创建后由后续步骤开启（该 action 本身
         # 不自动合并，仅建 PR；合并策略见下）。
-        if: always()
+        if: always() && steps.pr-gate.outputs.skip_pr == 'false'
         uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}

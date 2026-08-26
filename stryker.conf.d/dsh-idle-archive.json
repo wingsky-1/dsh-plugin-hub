@@ -1,18 +1,11 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-idle-archive/lib/index.js:1055-1060",
-    "packages/dsh-idle-archive/lib/index.js:1146-1375"
+    "packages/dsh-idle-archive/src/**/*.ts",
+    "!packages/dsh-idle-archive/src/client/**",
+    "!packages/dsh-idle-archive/src/types.ts"
   ],
   "testRunner": "tap",
-  "tap": {
-    "nodeArgs": ["-r", "./scripts/test/mutation-tap-bridge.cjs"],
-    "testFiles": [
-      "packages/dsh-idle-archive/test/smoke.ts",
-      "packages/dsh-idle-archive/test/unit-apply.test.ts",
-      "packages/dsh-idle-archive/test/client-shim.mjs"
-    ]
-  },
   "mutator": {
     "excludedMutations": [
       "StringLiteral",
@@ -21,8 +14,10 @@
       "TemplateLiteral"
     ]
   },
-  "plugins": ["@stryker-mutator/tap-runner"],
-  "concurrency": 4,
+  "plugins": [
+    "@stryker-mutator/tap-runner"
+  ],
+  "concurrency": 16,
   "timeoutMS": 60000,
   "dryRunTimeoutMinutes": 5,
   "reporters": [
@@ -30,13 +25,22 @@
     "clear-text",
     "json"
   ],
-  "jsonReporter": {
-    "fileName": "coverage/mutation/dsh-idle-archive.json"
-  },
   "coverageAnalysis": "perTest",
   "tempDirName": ".stryker-tmp",
   "cleanTempDir": true,
+  "tap": {
+    "nodeArgs": [
+      "-r",
+      "./scripts/test/mutation-tap-bridge.cjs"
+    ],
+    "testFiles": [
+      "packages/dsh-idle-archive/test/unit-apply.test.ts"
+    ]
+  },
+  "jsonReporter": {
+    "fileName": "coverage/mutation/dsh-idle-archive.json"
+  },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-idle-archive.json",
-  "_comment": "#151 打样结论：tap-runner 将「进程非零退出且 TAP 流无 not ok 行」分类为 RuntimeError（captureTapResult 抛错分支）而非 Killed，顶层 assert 直跑型测试下 score 恒为 0%。tap.nodeArgs 注入 scripts/test/mutation-tap-bridge.cjs 把未捕获异常转写为一行 TAP not ok 后退出，RuntimeError 即全部转化为 Killed（实验矩阵见 PR）。结构说明：阶段二『每包一个』采用 stryker.conf.d/<pkg>.json 独立完整配置（Stryker 无继承机制）；根 stryker.config.json 暂保留 dsh-notifier 试点入口（package.json mutation script 绑定），后续批次逐包迁入后再退役。mutate 限定本包 self-written 两段（esbuild 分段注释 // lib/index.js），排除头部 var __* 垫片、cosmokit/schemastery 内联 vendor（// node_modules 段）与 shared/* 内联契约层副本（shared 由仓库级禁改规则与共享测试批次保护，多包内联重复计账会使各包 score 横向不可比）。client-shim.mjs 测 lib/client.js 不在 mutate 面，纳入仅为 dryRun 全绿完整性。"
+  "_comment": "#276 方案 A：src 级单段（mutate 直指 src，文件 glob 声明，无行号无漂移）；测试经 src 入口加载插桩代码；incremental 基线随 observe 四班次重建。"
 }
