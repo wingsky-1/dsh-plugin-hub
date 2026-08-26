@@ -95,6 +95,36 @@ export const DEFAULT_CONFIG = {
   maxSizeMB: 20,
 };
 
+// 胶囊定位/层级/断点纯函数：实现在 placement-math.ts（零依赖单一事实源，
+// 客户端 bundle 与宿主端共用同一份），此处 re-export 保持导出面不变。
+import {
+  BREAKPOINT_NARROW_MAX,
+  BREAKPOINT_TABLET_MAX,
+  DEFAULT_Z_INDEX_BASE,
+  Z_INDEX_BASE_MIN,
+  Z_INDEX_BASE_MAX,
+  Z_INDEX_PANEL_DELTA,
+  breakpointForWidth,
+  clampPointToViewport,
+  clampZIndexBase,
+  panelZIndexFor,
+} from "./placement-math.js";
+export {
+  BREAKPOINT_NARROW_MAX,
+  BREAKPOINT_TABLET_MAX,
+  DEFAULT_Z_INDEX_BASE,
+  Z_INDEX_BASE_MIN,
+  Z_INDEX_BASE_MAX,
+  Z_INDEX_PANEL_DELTA,
+  breakpointForWidth,
+  clampPointToViewport,
+  clampZIndexBase,
+  panelZIndexFor,
+};
+export type { FloatBreakpoint, ViewportPoint } from "./placement-math.js";
+// 面板锚点判定同为纯函数，随定位数学一起从单一事实源 re-export。
+export { panelAnchorForPlacement } from "./placement-math.js";
+
 // ------------------------------------------------------------------ 胶囊位置 UI 配置
 
 /** 胶囊/面板位置配置（设置页「胶囊位置」区维护，持久化到 historyRoot/ui.json）。 */
@@ -107,16 +137,20 @@ export interface UiPlacementConfig {
   offsetY: number;
   /** 面板相对胶囊下缘的垂直间距 px。 */
   panelOffsetY: number;
+  /** 胶囊层级基准（clamp 1–9000；面板派生为基准+30）。 */
+  zIndexBase: number;
 }
 
 /** 默认胶囊/面板位置：右上角、右侧对齐（offsetX=0 贴容器右缘）；offsetY=48 让
  *  胶囊默认位于 dsh-mcp-manager 浮窗（默认 top-right、offsetY=8、高约 26px）下方，
- *  保证两胶囊默认互不重叠（issue #116，去避让后以固定默认值错开）。 */
+ *  保证两胶囊默认互不重叠（issue #116，去避让后以固定默认值错开；跨包避让契约，
+ *  不可回退——见两包 README 与 docs/DEVELOPMENT.md「浮窗移动端适配约定」）。 */
 export const DEFAULT_UI_CONFIG: UiPlacementConfig = {
   placement: "top-right",
   offsetX: 0,
   offsetY: 48,
   panelOffsetY: 10,
+  zIndexBase: DEFAULT_Z_INDEX_BASE,
 };
 
 const UI_PLACEMENTS: UiPlacementConfig["placement"][] = ["top-right", "top-left", "bottom-right", "bottom-left"];
@@ -136,12 +170,9 @@ export function normalizeUiConfig(raw: unknown): UiPlacementConfig {
     offsetX: clamp(src.offsetX, DEFAULT_UI_CONFIG.offsetX),
     offsetY: clamp(src.offsetY, DEFAULT_UI_CONFIG.offsetY),
     panelOffsetY: clamp(src.panelOffsetY, DEFAULT_UI_CONFIG.panelOffsetY),
+    // #128：层级基准 clamp 到 [1,9000]，非法回退默认（与 mcp-manager 同构语义）。
+    zIndexBase: clampZIndexBase(src.zIndexBase, DEFAULT_UI_CONFIG.zIndexBase),
   };
-}
-
-/** 面板垂直锚点规则：底部锚点（bottom-*）→ 向上弹出；顶部锚点（top-*）→ 向下弹出。 */
-export function panelAnchorForPlacement(placement: UiPlacementConfig["placement"] | undefined): "top" | "bottom" {
-  return placement === "bottom-right" || placement === "bottom-left" ? "bottom" : "top";
 }
 
 /** 面板垂直定位纯函数（供 smoke 断言翻转分支；clamp 到视口内，不溢出）。 */

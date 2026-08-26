@@ -87,33 +87,77 @@ export const DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS = true;
 
 /** MCP 浮窗 UI 配置（插件自身 Config 的 `ui` 子对象，标准 cordis 配置注入）。 */
 export interface UiPlacementConfig {
-  /** 浮窗胶囊锚点：右上 / 右下（默认 top-right = 历史行为）。 */
-  position: "top-right" | "bottom-right";
+  /** 浮窗胶囊锚点：右上 / 左上 / 右下 / 左下（默认 top-right = 历史行为）。 */
+  position: "top-right" | "top-left" | "bottom-right" | "bottom-left";
   /** 胶囊偏移：x 水平、y 垂直、blankY 空白会话垂直偏移。 */
   offset: { x: number; y: number; blankY: number };
+  /** 浮窗层级基准（clamp 1–9000；下拉面板派生为基准+30，模态管理面板独立不受影响）。 */
+  zIndexBase: number;
 }
 
-/** 默认浮窗 UI 配置（与升级前一致，无回归）。 */
+/** 默认浮窗 UI 配置（与升级前一致，无回归；层级基准引用 placement-math 单一事实源，
+ *  DEFAULT_Z_INDEX_BASE=10 对应 CSS 默认 z-index:10）。 */
 export const DEFAULT_UI_CONFIG: UiPlacementConfig = {
   position: "top-right",
   offset: { x: 8, y: 8, blankY: 40 },
+  zIndexBase: DEFAULT_Z_INDEX_BASE,
 };
 
+const UI_POSITIONS: UiPlacementConfig["position"][] = ["top-right", "top-left", "bottom-right", "bottom-left"];
+
+// 浮窗定位/层级/断点纯函数：实现在 placement-math.ts（零依赖单一事实源，
+// 客户端 bundle 与宿主端共用同一份），此处 re-export 保持导出面不变。
+import {
+  DEFAULT_Z_INDEX_BASE,
+  Z_INDEX_BASE_MIN,
+  Z_INDEX_BASE_MAX,
+  Z_INDEX_PANEL_DELTA,
+  BREAKPOINT_NARROW_MAX,
+  BREAKPOINT_TABLET_MAX,
+  clampZIndexBase,
+  panelZIndexFor,
+  breakpointForWidth,
+  clampPointToViewport,
+} from "./placement-math.js";
+export {
+  DEFAULT_Z_INDEX_BASE,
+  Z_INDEX_BASE_MIN,
+  Z_INDEX_BASE_MAX,
+  Z_INDEX_PANEL_DELTA,
+  BREAKPOINT_NARROW_MAX,
+  BREAKPOINT_TABLET_MAX,
+  clampZIndexBase,
+  panelZIndexFor,
+  breakpointForWidth,
+  clampPointToViewport,
+};
+export type { FloatBreakpoint, ViewportPoint } from "./placement-math.js";
+// 面板锚点判定同为纯函数，随定位数学一起从单一事实源 re-export。
+export { panelAnchorForPosition } from "./placement-math.js";
+
 const UiConfigSchema = z.object({
-  position: z.union([z.const("top-right"), z.const("bottom-right")]).default("top-right"),
+  position: z.union([
+    z.const("top-right"),
+    z.const("top-left"),
+    z.const("bottom-right"),
+    z.const("bottom-left"),
+  ]).default("top-right"),
   offset: z.object({
     x: z.number().default(8),
     y: z.number().default(8),
     blankY: z.number().default(40),
   }).default({ x: 8, y: 8, blankY: 40 }),
+  zIndexBase: z.number().default(DEFAULT_UI_CONFIG.zIndexBase)
+    .description("浮窗层级基准（1-9000），下拉面板自动取基准+30"),
 });
 
 /** 客户端消费的浮窗 UI 配置（GET /api/dsh-mcp/config 的扁平形状）。 */
 export interface ClientUiConfig {
-  position: "top-right" | "bottom-right";
+  position: "top-right" | "top-left" | "bottom-right" | "bottom-left";
   offsetX: number;
   offsetY: number;
   blankY: number;
+  zIndexBase: number;
 }
 
 /**
@@ -126,19 +170,17 @@ export function normalizeUiConfig(raw: unknown): ClientUiConfig {
   const ui = (
     typeof src.ui === "object" && src.ui !== null ? (src.ui as Record<string, unknown>) : src
   ) as Record<string, unknown>;
-  const position = ui.position === "bottom-right" ? "bottom-right" : "top-right";
+  const position = UI_POSITIONS.includes(ui.position as UiPlacementConfig["position"])
+    ? (ui.position as UiPlacementConfig["position"])
+    : DEFAULT_UI_CONFIG.position;
   const offset = (typeof ui.offset === "object" && ui.offset !== null ? ui.offset : {}) as Record<string, unknown>;
   const clampNum = (value: unknown, dflt: number): number =>
     typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.round(value)) : dflt;
   const offsetX = clampNum(ui.offsetX ?? offset.x, DEFAULT_UI_CONFIG.offset.x);
   const offsetY = clampNum(ui.offsetY ?? offset.y, DEFAULT_UI_CONFIG.offset.y);
   const blankY = clampNum(ui.blankY ?? offset.blankY, DEFAULT_UI_CONFIG.offset.blankY);
-  return { position, offsetX, offsetY, blankY };
-}
-
-/** 面板垂直锚点规则：底部锚点（bottom-right）→ 向上弹出；否则顶部锚点（向下弹出）。 */
-export function panelAnchorForPosition(position: string | undefined): "top" | "bottom" {
-  return position === "bottom-right" ? "bottom" : "top";
+  const zIndexBase = clampZIndexBase(ui.zIndexBase, DEFAULT_UI_CONFIG.zIndexBase);
+  return { position, offsetX, offsetY, blankY, zIndexBase };
 }
 
 /**
@@ -151,6 +193,7 @@ export function buildConfigUiPatch(raw: unknown): UiPlacementConfig {
   return {
     position: cfg.position,
     offset: { x: cfg.offsetX, y: cfg.offsetY, blankY: cfg.blankY },
+    zIndexBase: cfg.zIndexBase,
   };
 }
 
@@ -226,6 +269,8 @@ export class McpManager {
   /** 设置命名空间写入 sink（apply 时经 ctx.inject(["settings"]) 注入；注入不到则写不可用）。 */
   uiUpdate?: (patch: Record<string, unknown>) => Promise<unknown>;
   sseConnections?: Set<ServerResponse>;
+  /** SSE 心跳定时器清理函数（makeEventsRoute 注册；卸载 disposer 统一执行，#268）。 */
+  sseHeartbeatCleanups?: Set<() => void>;
   /** 中间层模式（Config.middleware 归一化）。 */
   middlewareMode: MiddlewareMode;
   /** 中间层实例（连接池 + 目录 + 路由；惰性创建）。 */
@@ -1012,6 +1057,10 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
       return () => {
         unsubscribeStatus();
         for (const dispose of disposers) dispose();
+        // 先清 SSE 心跳定时器（#268）：disposer 显式清 interval，不依赖
+        // 下方 res.destroy() 触发 close 的异步时序。
+        for (const stopHeartbeat of manager.sseHeartbeatCleanups ?? []) stopHeartbeat();
+        manager.sseHeartbeatCleanups?.clear();
         for (const res of manager.sseConnections ?? []) {
           try {
             res.destroy();
@@ -1181,7 +1230,7 @@ export {
   MAX_TOTAL_CATALOG_BYTES,
 } from "./middleware.js";
 // 路由
-export { ROUTES, makeRoutes, makeEventsRoute, makeHealthRoute, sseData, uiConfigChangedFrame, broadcastFrame } from "./routes.js";
+export { ROUTES, makeRoutes, makeEventsRoute, makeHealthRoute, sseData, uiConfigChangedFrame, broadcastFrame, SSE_HEARTBEAT_MS, SSE_PING_FRAME } from "./routes.js";
 export { SCOPE_GLOBAL, SCOPE_PROJECT, normalizeScope } from "./scope.js";
 // 仓库共享层（loopback 围栏 / writeJson / readJsonBody）
 export { isLoopbackRequest } from "../../../shared/loopback.js";
