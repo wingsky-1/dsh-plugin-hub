@@ -8,14 +8,30 @@
 [data-pane="conversation"]{position:relative}
 
 .dm-float{position:absolute;top:44px;right:14px;z-index:10;display:flex;align-items:center;gap:6px;padding:5px 11px;border:1px solid var(--dsw-alias-border-l1,#d7dae0);border-radius:99px;background:var(--dsw-alias-bg-base,#fdfdfd);color:var(--dsw-alias-label-primary,#1c1e26);font-size:12px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.10);font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
-.dm-float:hover{background:var(--dsw-alias-interactive-bg-hover,#f2f4f8)}
+/* 触控热区（#128，WCAG 2.2 AA ≥24px 底线）：伪元素外扩不占布局；narrow 档下方加大外扩至 ≈44px 主操作目标 */
+.dm-float::after{content:"";position:absolute;inset:-5px;border-radius:99px}
 .dm-float .dm-dot{width:7px;height:7px;border-radius:50%;display:inline-block}
-.dm-float-panel{position:fixed;top:44px;right:14px;width:min(400px,calc(100vw - 36px));max-height:min(70vh,560px);overflow:auto;background:var(--dsw-alias-bg-base,#fdfdfd);color:var(--dsw-alias-label-primary,#1c1e26);border:1px solid var(--dsw-alias-border-l1,#e2e4ea);border-radius:10px;box-shadow:0 10px 32px rgba(0,0,0,.18);z-index:70;padding:10px 12px;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
+.dm-float-panel{position:fixed;top:44px;right:14px;width:min(400px,calc(100vw - 36px));max-height:min(70vh,560px);max-height:min(70dvh,560px);overflow:auto;background:var(--dsw-alias-bg-base,#fdfdfd);color:var(--dsw-alias-label-primary,#1c1e26);border:1px solid var(--dsw-alias-border-l1,#e2e4ea);border-radius:10px;box-shadow:0 10px 32px rgba(0,0,0,.18);z-index:70;padding:10px 12px;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
+/* #128 移动端档位样式：由客户端按 conversationHost rect 宽度判定并写 data-dm-bp
+ * （JS 判定，非 @media——防桌面窄窗 / iPad Slide Over 误触发）；阈值见 src/placement-math.ts。
+ * dvh 级联回退：先声明 vh 兜底，再以 dvh 覆写（软键盘弹出时随 visualViewport 收缩）。 */
+.dm-float-panel[data-dm-bp="narrow"]{width:calc(100vw - 16px);max-height:calc(85vh - 88px);max-height:calc(85dvh - 88px);padding:10px}
+.dm-float-panel[data-dm-bp="tablet"]{width:min(400px,calc(100vw - 24px))}
+/* 窄屏卡片重排：服务器行允许换行，元信息折到操作按钮下方整行显示 */
+.dm-float-panel[data-dm-bp="narrow"] .dm-float-row{flex-wrap:wrap;row-gap:2px}
+.dm-float-panel[data-dm-bp="narrow"] .dm-float-row .dm-float-meta{flex-basis:100%;white-space:normal}
+.dm-float-panel[data-dm-bp="narrow"] .dm-float-actions{flex:1;justify-content:flex-end}
+/* 触控目标分层（#128）：narrow 档主操作 min-height 36px + 伪元素外扩 4px 命中区 ≈44px；
+   tablet 档 30px 过渡；wide 档维持现状。 */
+.dm-float-action{position:relative}
+.dm-float-panel[data-dm-bp="narrow"] .dm-float-action{min-height:36px;padding:6px 14px;font-size:12.5px}
+.dm-float-panel[data-dm-bp="narrow"] .dm-float-action::before{content:"";position:absolute;inset:-4px}
+.dm-float-panel[data-dm-bp="tablet"] .dm-float-action{min-height:30px;padding:4px 11px}
+.dm-float-panel[data-dm-bp="narrow"] .dm-float-head button{min-height:36px;padding:5px 12px;font-size:12.5px}
 .dm-float-panel[hidden]{display:none !important}
 .dm-float-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
 .dm-float-title{flex:1;font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dm-float-head button{border:1px solid var(--dsw-alias-border-l1,#d7dae0);background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#3a3f4b);border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer}
-.dm-float-head button:hover{background:var(--dsw-alias-interactive-bg-hover,#eef1f5)}
 .dm-float-group{margin-bottom:8px}
 .dm-float-group-title{font-size:10px;color:var(--dsw-alias-label-secondary,#8a8f9c);font-weight:600;margin:6px 0 4px}
 .dm-float-row{display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--dsw-alias-border-l1,#eef0f3);border-radius:8px;margin-bottom:6px;background:var(--dsw-alias-bg-layer-1,#fafbfc)}
@@ -23,7 +39,6 @@
 .dm-float-row .dm-float-meta{flex:1;font-size:11px;color:var(--dsw-alias-label-secondary,#8a8f9c);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dm-float-actions{flex:none;display:flex;gap:4px}
 .dm-float-action{border:1px solid var(--dsw-alias-border-l1,#d7dae0);background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#3a3f4b);border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer}
-.dm-float-action:hover{background:var(--dsw-alias-interactive-bg-hover,#eef1f5)}
 
 .dm-overlay{position:fixed;inset:0;background:var(--dsw-alias-bg-mask-2,rgba(8,10,16,.45));display:flex;align-items:center;justify-content:center;z-index:9999;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
 .dm-overlay[hidden]{display:none !important}
@@ -32,7 +47,6 @@
 .dm-head h2{margin:0;font-size:15px;font-weight:600}
 .dm-head .dm-counts{font-size:11px;color:var(--dsw-alias-label-secondary,#8a8f9c);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dm-head button{border:1px solid var(--dsw-alias-border-l1,#d7dae0);background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#3a3f4b);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer}
-.dm-head button:hover{background:var(--dsw-alias-interactive-bg-hover,#eef1f5)}
 .dm-tabs{display:flex;gap:2px;padding:0 12px;border-bottom:1px solid var(--dsw-alias-border-l1,#e5e7eb);background:var(--dsw-alias-bg-layer-1,#f7f8fa)}
 .dm-tab{border:none;background:transparent;color:var(--dsw-alias-label-secondary,#6b7280);padding:9px 14px;font-size:13px;cursor:pointer;border-bottom:2px solid transparent}
 .dm-tab[data-active]{color:var(--dsw-alias-label-primary,#1c1e26);font-weight:600;border-bottom-color:var(--dsw-alias-brand-primary,#4f6ef7)}
@@ -61,7 +75,6 @@
 .dm-server .dm-tools ul{margin:4px 0 0;padding-left:16px;font-size:11px;color:var(--dsw-alias-label-primary,#3a3f4b);font-family:ui-monospace,Consolas,monospace}
 .dm-actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
 .dm-actions button{border:1px solid var(--dsw-alias-border-l1,#d7dae0);background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#3a3f4b);border-radius:6px;padding:3px 9px;font-size:11px;cursor:pointer}
-.dm-actions button:hover{background:var(--dsw-alias-interactive-bg-hover,#eef1f5)}
 .dm-actions button.dm-danger{color:var(--dsw-alias-state-error-primary,#b42318);border-color:var(--dsw-alias-state-error-tertiary,#f0c4c1)}
 .dm-actions button.dm-primary{color:var(--dsw-alias-brand-primary,#1d4ed8);border-color:var(--dsw-alias-state-business-tertiary,#bcd1fb);background:var(--dsw-alias-state-business-secondary,#f5f8ff)}
 .dm-actions button:disabled{opacity:.5;cursor:not-allowed}
@@ -79,7 +92,6 @@
 .dm-check label{margin:0}
 .dm-form-actions{grid-column:1/-1;display:flex;gap:8px}
 .dm-form-actions button{border:1px solid var(--dsw-alias-border-l1,#d7dae0);background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#3a3f4b);border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer}
-.dm-form-actions button:hover{background:var(--dsw-alias-interactive-bg-hover,#eef1f5)}
 .dm-form-actions button.dm-primary{background:var(--dsw-alias-button-primary-fill,#4f6ef7);color:var(--dsw-alias-label-primary-foreground,#fff);border-color:var(--dsw-alias-button-primary-fill,#4f6ef7)}
 .dm-hint{font-size:11px;color:var(--dsw-alias-label-secondary,#8a8f9c)}
 .dm-paste-box{border:1px solid var(--dsw-alias-border-l1,#e5e7eb);border-radius:8px;padding:12px;background:var(--dsw-alias-bg-layer-1,#fafbfc);max-width:640px}
@@ -89,9 +101,7 @@
 /* 设置页插件卡（settings.plugin.item）——浮窗位置 / 偏移编辑区。
  * 前缀 dm-，颜色走 --dsw-alias-* 主题变量 + 浅色回退，明暗自适应。 */
 .dm-set-card{list-style:none;margin:0;padding:0;border:1px solid var(--dsw-alias-border-l2,#e2e5ea);border-radius:12px;background:var(--dsw-alias-bg-layer-3,#fbfbfc);overflow:hidden;transition:border-color .16s,background .16s}
-.dm-set-card:hover{border-color:var(--dsw-alias-label-dimmed,#9ba1a6)}
 .dm-set-head{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;background:transparent;border:none;cursor:pointer;text-align:left;color:var(--dsw-alias-label-primary,#1f2329)}
-.dm-set-head:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.04))}
 .dm-set-headText{display:flex;flex-direction:column;gap:4px;flex:1;min-width:0}
 .dm-set-name{display:block;font-size:15px;font-weight:600;line-height:1.4;color:var(--dsw-alias-label-primary,#1f2329)}
 .dm-set-description{display:block;font-size:13px;line-height:1.5;color:var(--dsw-alias-label-tertiary,#8a919c)}
@@ -108,5 +118,16 @@
 .dm-set-foot .dm-set-saved{font-size:12px;color:var(--dsw-alias-state-success-primary,#16a34a)}
 .dm-set-foot .dm-set-error{font-size:12px;color:var(--dsw-alias-state-danger-primary,#dc2626)}
 .dm-set-save{border:1px solid var(--dsw-alias-border-l1,#e2e5ea);background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#3a3f4b);border-radius:6px;padding:5px 14px;font-size:12px;cursor:pointer}
-.dm-set-save:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.06))}
 .dm-set-save:disabled{opacity:.5;cursor:not-allowed}
+
+/* #128 悬停态统一包裹 @media(hover:hover)：触屏设备不吸附悬停背景（规格第 7 条）。 */
+@media (hover: hover) {
+.dm-float-head button:hover{background:var(--dsw-alias-interactive-bg-hover,#eef1f5)}
+.dm-float-action:hover{background:var(--dsw-alias-interactive-bg-hover,#eef1f5)}
+.dm-head button:hover{background:var(--dsw-alias-interactive-bg-hover,#eef1f5)}
+.dm-actions button:hover{background:var(--dsw-alias-interactive-bg-hover,#eef1f5)}
+.dm-form-actions button:hover{background:var(--dsw-alias-interactive-bg-hover,#eef1f5)}
+.dm-set-card:hover{border-color:var(--dsw-alias-label-dimmed,#9ba1a6)}
+.dm-set-head:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.04))}
+.dm-set-save:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.06))}
+}

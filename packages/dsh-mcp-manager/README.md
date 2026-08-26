@@ -73,13 +73,26 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
 
 | 键 | 值域 | 默认 |
 | --- | --- | --- |
-| `position` | `top-right`（右上，默认）/ `bottom-right`（右下） | `top-right` |
+| `position` | `top-right`（右上，默认）/ `top-left`（左上）/ `bottom-right`（右下）/ `bottom-left`（左下） | `top-right` |
 | `offset.x` | 非负整数（水平偏移，单位 px） | `8` |
 | `offset.y` | 非负整数（垂直偏移，单位 px） | `8` |
 | `offset.blankY` | 非负整数（空白会话垂直偏移，单位 px） | `40` |
+| `zIndexBase` | 整数，clamp 到 1–9000（浮窗层级基准；下拉面板自动取基准 +30，模态管理面板不受影响） | `10` |
 
-当 `position = bottom-right` 时，下拉面板会**在胶囊上方展开**（底部锚点向上弹出），
-不溢出视口、内容完整可见可点击；`top-right` 时向下展开（历史行为，默认不变）。
+当 `position = bottom-right` 或 `bottom-left` 时，下拉面板会**在胶囊上方展开**（底部
+锚点向上弹出），不溢出视口、内容完整可见可点击；顶部锚点向下展开（历史行为，默认不变）。
+
+**移动端 / 平板端适配**（issue #128）：断点判定基准是会话容器（conversationHost）
+的视口宽度而非窗口媒体查询——窄屏（≤480px，手机竖屏 / 极窄分栏）下面板近全屏宽、
+服务器卡片重排、操作按钮触控目标加大到 ≈44px；平板档（≤834px）过渡；桌面维持现状。
+浮窗最终坐标经 JS 视口 clamp（safe-area 语义：宿主无 `viewport-fit=cover`，
+`env(safe-area-inset-*)` 恒 0 时自然退化为普通 clamp）；软键盘弹出经
+`visualViewport` resize 跟随，横竖屏切换后下一帧重算。
+
+**跨包避让契约（源自 issue #116，不可回退）**：本插件浮窗默认 `top-right` 且距顶
+8px、高约 26px；dsh-provider-usage 用量胶囊依赖这一默认位置以 `offsetY: 48`
+在其正下方让位（两胶囊默认互不重叠）。修改本插件默认锚点 / 垂直偏移会使该避让
+失效，属跨包行为契约，回退前须同步调整 provider-usage 默认值。
 
 在设置页保存后即时生效，**无需重启 dsh web**、也无需手动刷新页面：宿主端经既有
 SSE events 通道推送一变，客户端自动重新拉取 `/api/dsh-mcp/config` 并就地更新浮窗位置。

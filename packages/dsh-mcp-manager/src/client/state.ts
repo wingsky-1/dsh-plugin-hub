@@ -42,6 +42,8 @@ export interface McpUiConfig {
   offsetX: number;
   offsetY: number;
   blankY: number;
+  /** 层级基准（clamp 1-9000；下拉面板派生基准+30）。 */
+  zIndexBase: number;
 }
 
 /** MCP 管理器客户端全部可变状态。 */
@@ -118,7 +120,7 @@ export function createState(): McpState {
     currentCwd: undefined,
     projectRoot: undefined,
     updateFloatState: undefined,
-    mcpUiConfig: { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 },
+    mcpUiConfig: { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40, zIndexBase: 10 },
     API: { ...API },
   };
 }

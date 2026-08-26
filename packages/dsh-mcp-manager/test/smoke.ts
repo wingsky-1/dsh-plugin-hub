@@ -57,6 +57,15 @@ import {
   SCOPE_GLOBAL,
   SCOPE_PROJECT,
   sseData,
+  Z_INDEX_BASE_MIN,
+  Z_INDEX_BASE_MAX,
+  Z_INDEX_PANEL_DELTA,
+  BREAKPOINT_NARROW_MAX,
+  BREAKPOINT_TABLET_MAX,
+  breakpointForWidth,
+  clampPointToViewport,
+  clampZIndexBase,
+  panelZIndexFor,
   summarizeToolDescriptions,
   truncateText,
   uiConfigChangedFrame,
@@ -246,51 +255,73 @@ const main = async () => {
     const parsed = Config({});
     assert.equal(parsed.ui.position, "top-right", "ui.position 默认 top-right");
     assert.deepEqual(parsed.ui.offset, { x: 8, y: 8, blankY: 40 }, "ui.offset 默认 {x:8,y:8,blankY:40}");
+    assert.equal(parsed.ui.zIndexBase, 10, "#128 ui.zIndexBase 默认 10");
     assert.equal(DEFAULT_UI_CONFIG.position, "top-right", "DEFAULT_UI_CONFIG.position 与升级前一致");
     assert.deepEqual(DEFAULT_UI_CONFIG.offset, { x: 8, y: 8, blankY: 40 });
-    // 合法值域：bottom-right 透传
+    assert.equal(DEFAULT_UI_CONFIG.zIndexBase, 10, "#128 DEFAULT_UI_CONFIG.zIndexBase 与 CSS 默认 z-index 一致");
+    // 合法值域：四角全部透传（#128 补左上/左下）
+    for (const p of ["top-left", "bottom-left"] as const) {
+      const parsedP = Config({ ui: { position: p } });
+      assert.equal(parsedP.ui.position, p, `#128 ${p} 是合法 position`);
+    }
     const bottom = Config({ ui: { position: "bottom-right" } });
     assert.equal(bottom.ui.position, "bottom-right", "bottom-right 是合法 position");
   });
   check("normalizeUiConfig：默认 / 合法值透传 / 非法回退（不抛）", () => {
     // 未配置 → 默认
-    assert.deepEqual(normalizeUiConfig(undefined), { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 });
-    assert.deepEqual(normalizeUiConfig(null), { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 });
+    assert.deepEqual(normalizeUiConfig(undefined), { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40, zIndexBase: 10 });
+    assert.deepEqual(normalizeUiConfig(null), { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40, zIndexBase: 10 });
     // 新 Config.ui 嵌套形态
     assert.deepEqual(
       normalizeUiConfig({ ui: { position: "bottom-right", offset: { x: 12, y: 20, blankY: 60 } } }),
-      { position: "bottom-right", offsetX: 12, offsetY: 20, blankY: 60 },
+      { position: "bottom-right", offsetX: 12, offsetY: 20, blankY: 60, zIndexBase: 10 },
     );
     // 旧隐藏命名空间扁平形态（position/offset）→ 兼容
     assert.deepEqual(
       normalizeUiConfig({ position: "bottom-right", offset: { x: 5, y: 6, blankY: 50 } }),
-      { position: "bottom-right", offsetX: 5, offsetY: 6, blankY: 50 },
+      { position: "bottom-right", offsetX: 5, offsetY: 6, blankY: 50, zIndexBase: 10 },
     );
     // 客户端扁平形态（offsetX/offsetY/blankY）→ 兼容
     assert.deepEqual(
       normalizeUiConfig({ position: "bottom-right", offsetX: 3, offsetY: 4, blankY: 44 }),
-      { position: "bottom-right", offsetX: 3, offsetY: 4, blankY: 44 },
+      { position: "bottom-right", offsetX: 3, offsetY: 4, blankY: 44, zIndexBase: 10 },
+    );
+    // #128 zIndexBase clamp 边界：合法透传 / 越界压边界 / 非法回退默认
+    assert.deepEqual(
+      normalizeUiConfig({ position: "top-left", offsetX: 1, offsetY: 2, blankY: 3, zIndexBase: 5000 }),
+      { position: "top-left", offsetX: 1, offsetY: 2, blankY: 3, zIndexBase: 5000 },
+      "左上 + 合法层级基准透传",
     );
     // 非法/缺失 → 安全回退默认，不抛
-    assert.deepEqual(normalizeUiConfig({ position: "middle-left" }), { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 });
-    assert.deepEqual(normalizeUiConfig({ ui: { position: "nope", offset: { x: "abc" } } }), { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 });
-    assert.deepEqual(normalizeUiConfig({ offset: {} }), { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 });
+    assert.deepEqual(normalizeUiConfig({ position: "middle-left" }), { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40, zIndexBase: 10 });
+    assert.deepEqual(normalizeUiConfig({ ui: { position: "nope", offset: { x: "abc" } } }), { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40, zIndexBase: 10 });
+    assert.deepEqual(normalizeUiConfig({ offset: {} }), { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40, zIndexBase: 10 });
+    assert.equal(normalizeUiConfig({ zIndexBase: 0 }).zIndexBase, Z_INDEX_BASE_MIN, "#128 低于下界压到 1");
+    assert.equal(normalizeUiConfig({ zIndexBase: -50 }).zIndexBase, Z_INDEX_BASE_MIN, "#128 负数压到 1");
+    assert.equal(normalizeUiConfig({ zIndexBase: 9000 }).zIndexBase, Z_INDEX_BASE_MAX, "#128 上界 9000 透传");
+    assert.equal(normalizeUiConfig({ zIndexBase: 9001 }).zIndexBase, Z_INDEX_BASE_MAX, "#128 超上界压到 9000");
+    assert.equal(normalizeUiConfig({ zIndexBase: Number.NaN }).zIndexBase, 10, "#128 NaN 回退默认");
   });
   check("buildConfigUiPatch：客户端扁平形态 → Config.ui 嵌套补丁（写路径）", () => {
     // 客户端 POST 的扁平形态 → 宿主写入 Config.ui 的嵌套补丁
     assert.deepEqual(
       buildConfigUiPatch({ position: "bottom-right", offsetX: 12, offsetY: 20, blankY: 60 }),
-      { position: "bottom-right", offset: { x: 12, y: 20, blankY: 60 } },
+      { position: "bottom-right", offset: { x: 12, y: 20, blankY: 60 }, zIndexBase: 10 },
+    );
+    // #128 四角 + 层级基准写入嵌套补丁
+    assert.deepEqual(
+      buildConfigUiPatch({ position: "bottom-left", offsetX: 12, offsetY: 20, blankY: 60, zIndexBase: 77 }),
+      { position: "bottom-left", offset: { x: 12, y: 20, blankY: 60 }, zIndexBase: 77 },
     );
     // 缺省 → 安全回退默认
     assert.deepEqual(
       buildConfigUiPatch(undefined),
-      { position: "top-right", offset: { x: 8, y: 8, blankY: 40 } },
+      { position: "top-right", offset: { x: 8, y: 8, blankY: 40 }, zIndexBase: 10 },
     );
     // 非法 position → 回退 top-right；负偏移 clamp 到 0
     assert.deepEqual(
       buildConfigUiPatch({ position: "middle-left", offsetX: -5, offsetY: 3.6, blankY: 40 }),
-      { position: "top-right", offset: { x: 0, y: 4, blankY: 40 } },
+      { position: "top-right", offset: { x: 0, y: 4, blankY: 40 }, zIndexBase: 10 },
     );
   });
   check("README 含 position/offset 配置说明（键名与默认值，中英）", () => {
@@ -302,6 +333,9 @@ const main = async () => {
       assert.ok(text.includes("offset.x"), `${file} 未含 offset.x 键`);
       assert.ok(text.includes("offset.y"), `${file} 未含 offset.y 键`);
       assert.ok(text.includes("offset.blankY"), `${file} 未含 offset.blankY 键`);
+      assert.ok(text.includes("zIndexBase"), `#128 ${file} 未含 zIndexBase 键`);
+      assert.ok(text.includes("top-left") && text.includes("bottom-left"), `#128 ${file} 未含四角值域`);
+      assert.ok(/#116/.test(text), `#128 ${file} 未标注 #116 跨包避让契约`);
       const hotUpdatePhrase = file === "README.en.md" ? "without restarting" : "无需重启";
       assert.ok(text.includes(hotUpdatePhrase), `${file} 未声明「保存即热更新无需重启」`);
     }
@@ -322,10 +356,39 @@ const main = async () => {
   });
 
   console.log("面板定位翻转规则（底部锚点上弹 / 顶部锚点下弹）");
-  check("panelAnchorForPosition：bottom-right → bottom，其余 → top", () => {
+  check("panelAnchorForPosition：bottom-* → bottom，top-* / 缺省 → top（#128 四角化）", () => {
     assert.equal(panelAnchorForPosition("bottom-right"), "bottom");
+    assert.equal(panelAnchorForPosition("bottom-left"), "bottom", "#128 左下也是底部锚点");
     assert.equal(panelAnchorForPosition("top-right"), "top");
+    assert.equal(panelAnchorForPosition("top-left"), "top", "#128 左上是顶部锚点");
     assert.equal(panelAnchorForPosition(undefined), "top", "缺省按顶部锚点（历史行为）");
+  });
+  check("#128 断点判定纯函数分支翻转（基准=conversationHost rect 宽度）", () => {
+    assert.equal(breakpointForWidth(320), "narrow", "手机竖屏 narrow");
+    assert.equal(breakpointForWidth(BREAKPOINT_NARROW_MAX), "narrow", "480 边界归 narrow");
+    assert.equal(breakpointForWidth(BREAKPOINT_NARROW_MAX + 1), "tablet", "481 翻转 tablet");
+    assert.equal(breakpointForWidth(768), "tablet", "平板竖屏 tablet");
+    assert.equal(breakpointForWidth(BREAKPOINT_TABLET_MAX), "tablet", "834 边界归 tablet");
+    assert.equal(breakpointForWidth(BREAKPOINT_TABLET_MAX + 1), "wide", "835 翻转 wide");
+    assert.equal(breakpointForWidth(Number.NaN), "wide", "异常宽度按 wide 兜底");
+  });
+  check("#128 终坐标视口 clamp 纯函数（safe-area inset 恒 0 自然退化）", () => {
+    assert.deepEqual(clampPointToViewport(-30, -50, 100, 80, 375, 667), { x: 0, y: 0 }, "负坐标钳回视口原点");
+    assert.deepEqual(clampPointToViewport(400, 700, 100, 80, 375, 667), { x: 275, y: 587 }, "右/下溢出钳回视口内");
+    assert.deepEqual(clampPointToViewport(10, 20, 100, 80, 375, 667), { x: 10, y: 20 }, "视口内坐标不改变（桌面零回归）");
+    assert.deepEqual(clampPointToViewport(-30, -50, 100, 80, 375, 667, 10), { x: 10, y: 10 }, "safeInset>0 按安全区内缩");
+    assert.deepEqual(clampPointToViewport(0, 0, 9999, 9999, 375, 667), { x: 0, y: 0 }, "元素大于视口时钳到原点不倒挂");
+  });
+  check("#128 zIndexBase clamp 边界与面板派生", () => {
+    assert.equal(clampZIndexBase(5000, 10), 5000, "合法值透传");
+    assert.equal(clampZIndexBase(0, 10), Z_INDEX_BASE_MIN, "低于下界压到 1");
+    assert.equal(clampZIndexBase(-99, 10), Z_INDEX_BASE_MIN, "负数压到 1");
+    assert.equal(clampZIndexBase(9001, 10), Z_INDEX_BASE_MAX, "超上界压到 9000");
+    assert.equal(clampZIndexBase("junk", 10), 10, "非数字回退默认");
+    assert.equal(clampZIndexBase(7.6, 10), 8, "小数四舍五入");
+    assert.equal(panelZIndexFor(10), 40, "面板层级派生 base+30");
+    assert.equal(panelZIndexFor(9000), 9030, "面板派生允许略超 base 上界（面板独立于 shell 层级预算）");
+    assert.equal(Z_INDEX_PANEL_DELTA, 30, "派生量约定值");
   });
   check("panelTopForAnchor：底部锚点向上弹出 / 顶部锚点向下弹出", () => {
     // 底部锚点（pill 在视口下部）：面板向上，下缘贴近 pill 上缘（pTop - panelHeight - gap）
@@ -986,7 +1049,7 @@ const main = async () => {
         const read = fakeRes();
         await find(ROUTES.config).handler(fakeReq("GET", ROUTES.config), read);
         const readBack = JSON.parse(read.state.body);
-        assert.deepEqual(readBack, { position: "bottom-right", offsetX: 12, offsetY: 20, blankY: 60 });
+        assert.deepEqual(readBack, { position: "bottom-right", offsetX: 12, offsetY: 20, blankY: 60, zIndexBase: 10 });
       });
       await checkAsync("config POST 非 loopback → 403（写操作不开放远程页面）", async () => {
         const res = fakeRes();
