@@ -128,10 +128,35 @@ test('observe.yml: 夜间调度 + 双硬门禁执行点 + issues 写权限', () 
   assert.ok(OBSERVE.includes('observe-check.mjs'), '阈值校验+回落检测脚本执行点（F1/F6）')
 })
 
-test('#220 段式三方一致：observe glob ↔ stryker.conf.d 文件集 ↔ gauntlet 包集', () => {
-  // observe.yml 循环已 glob 化（#220 B）：不再硬编码包名单，新增配置自动纳入
-  assert.ok(OBSERVE.includes('for conf in stryker.conf.d/dsh-*.json'),
-    'observe 变异循环必须 glob stryker.conf.d/dsh-*.json 全集（#220 段拆分后配置数 > 包数）')
+test('#220: docs 不在 ci.yml global 过滤面——文档 PR 不触发变异切片', () => {
+  // gate/build/release 脚本均不消费 docs/ 内容；release-notes 校验仅在 release.yml。
+  // 若未来新增消费 docs 的门禁脚本，须把 'docs/**' 加回 global 组并同步本断言
+  const filterBlock = CI.slice(CI.indexOf('filters: |'), CI.indexOf("dsh-notifier:"))
+  assert.ok(!/^.*-\s'docs\/\*\*'/m.test(filterBlock),
+    "docs/** 不得出现在 global 过滤组——纯文档 PR 不应触发全量切片")
+  assert.ok(CI.includes('# docs/** 刻意不在 global 面'),
+    '过滤面旁必须保留理由注释（防后人「好心」加回）')
+})
+
+test('#220: observe 按需基线——push 裁剪、兜底全量、空计划跳过 collect', () => {
+  assert.ok(OBSERVE.includes('Resolve mutation suites'), 'suite-plan 步骤在位')
+  assert.ok(OBSERVE.includes("EVENT_NAME\"] = \"push") || OBSERVE.includes('[ "$EVENT_NAME" != "push" ]'),
+    '非 push 事件必须走全量清单')
+  assert.ok(OBSERVE.includes('grep -qv \'^[0-9a-f]\\{40\\}$\''),
+    'before SHA 不可用必须 fail-closed 全量')
+  assert.ok(OBSERVE.includes("^(shared/|pnpm-lock\\.yaml$"),
+    'shared/与构建链文件变化必须强制全量刷新（内联产物全集漂移）')
+  assert.ok(OBSERVE.includes("steps.suite-plan.outputs.has_suites == 'true'"),
+    '变异执行与 collect 必须以 has_suites 为前提——空计划不跑 collect 防 copied=0 误红')
+})
+
+test('#220 段式三方一致：observe 计划 ↔ stryker.conf.d 文件集 ↔ gauntlet 包集', () => {
+  // observe.yml 循环清单由 suite-plan 步骤产出（#220 按需基线）：全量模式 glob
+  // conf 目录，push 模式按变动包裁剪——循环本身从计划文件读取
+  assert.ok(OBSERVE.includes('list_all() { ls stryker.conf.d/dsh-*.json; }'),
+    'observe suite-plan 的全量清单必须以 glob stryker.conf.d/dsh-*.json 为单一事实源（新增配置自动纳入）')
+  assert.ok(OBSERVE.includes('while read -r conf; do'),
+    '变异循环必须从 suite-plan 清单文件逐行消费')
 
   // stryker.conf.d 实际文件集 → 基础包名集合（段配置 <pkg>-<n>.json 归并到 <pkg>）
   const confDir = join(ROOT, 'stryker.conf.d')
@@ -193,6 +218,20 @@ test('#178+#204: observe.yml 夜间保持全量——只收集仓库基线不读
   assert.ok(OBSERVE.includes('peter-evans/create-pull-request'), '使用业界标准 peter-evans/create-pull-request')
   assert.ok(OBSERVE.includes('contents: write'), 'observe.yml permissions 需 contents: write（自动 PR 创建需要）')
   assert.ok(OBSERVE.includes('pull-requests: write'), 'observe.yml permissions 需 pull-requests: write')
+})
+
+test('#276: mutate 区间机器派生——sync --write 先于 guard/stryker，入库行号允许漂移', () => {
+  for (const [name, wf] of [['ci.yml', CI], ['observe.yml', OBSERVE]]) {
+    assert.ok(wf.includes('node scripts/gate/sync-mutate-segments.mjs --write'),
+      `${name} 必须在 stryker run 前调用 sync --write（区间从产物分段锚点重算，#276 方案 B）`)
+    const syncIdx = wf.indexOf('sync-mutate-segments.mjs --write')
+    const runIdx = wf.indexOf('npx stryker run')
+    assert.ok(syncIdx > 0 && runIdx > syncIdx, `${name} 的 sync 步骤必须先于 stryker run`)
+  }
+  // 声明文件存在且为唯一分组事实源
+  const segDecl = JSON.parse(readFileSync(join(ROOT, 'scripts', 'data', 'mutation-segments.json'), 'utf8'))
+  const pkgs = Object.keys(segDecl).filter(k => k !== '$comment')
+  assert.ok(pkgs.length >= 7, 'mutation-segments.json 应覆盖全部带变异配置的包')
 })
 
 test('#178+#204: ci.yml PR 增量门禁——读仓库基线文件 + 按命中包切片 + 并入 repo-gate', () => {

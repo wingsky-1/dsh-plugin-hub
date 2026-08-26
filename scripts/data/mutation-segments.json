@@ -1,0 +1,130 @@
+{
+  "$comment": "#276 方案 B：mutate 区间声明式分组（单一事实源）。from/to 引用 esbuild 分段注释模块名（#k=第k次出现）；段终点：to＞lastLineText（段末连续3行片段，全产物最后一次出现）＞缺省下一任意锚前一行。行号运行时派生永不入库；改动后跑 node scripts/gate/sync-mutate-segments.mjs --check 校验一致性。",
+  "dsh-idle-archive": {
+    "confFiles": [
+      "dsh-idle-archive.json"
+    ],
+    "groups": [
+      {
+        "name": "seg1",
+        "from": "index.js"
+      },
+      {
+        "name": "seg2",
+        "from": "index.js#2",
+        "lastLineText": "}\n}, \"dsh-idle-archive\");\n}"
+      }
+    ]
+  },
+  "dsh-lan-proxy": {
+    "confFiles": [
+      "dsh-lan-proxy-1.json",
+      "dsh-lan-proxy-2.json",
+      "dsh-lan-proxy-3.json"
+    ],
+    "groups": [
+      {
+        "name": "seg1",
+        "from": "proxy.js#2"
+      },
+      {
+        "name": "seg2",
+        "from": "cert.js"
+      },
+      {
+        "name": "seg3",
+        "from": "index.js#2",
+        "lastLineText": "*          Dante - The Divine Comedy (Canto III)\n*)\n*/"
+      }
+    ]
+  },
+  "dsh-mcp-manager": {
+    "confFiles": [
+      "dsh-mcp-manager-1.json",
+      "dsh-mcp-manager-2.json",
+      "dsh-mcp-manager-3.json",
+      "dsh-mcp-manager-4.json",
+      "dsh-mcp-manager-5.json"
+    ],
+    "groups": [
+      {
+        "name": "seg1",
+        "from": "store.js"
+      },
+      {
+        "name": "seg2",
+        "from": "transport.js",
+        "lastLineText": "return value === SCOPE_PROJECT ? SCOPE_PROJECT : SCOPE_GLOBAL;\n}\n"
+      },
+      {
+        "name": "seg3",
+        "from": "protocol.js",
+        "toAny": "../../shared/loopback.js"
+      },
+      {
+        "name": "seg4",
+        "from": "import.js",
+        "lastLineText": "return join3(process.env.DSH_HOME ?? join3(homedir3(), \".dsh\"), \"dsh-mcp-catalog\", `${hash}.json`);\n}\n"
+      },
+      {
+        "name": "seg5",
+        "from": "index.js#2",
+        "lastLineText": "};\ntry {\nconst watcher = fs.watch(dir, { persistent: false }, () => run());"
+      }
+    ]
+  },
+  "dsh-notifier": {
+    "confFiles": [
+      "dsh-notifier.json"
+    ],
+    "groups": [
+      {
+        "name": "seg1",
+        "from": "message.js",
+        "lastLineText": "title: \"DSH：轮次完成\",\nmessage: (detail) => {\nconst turn = detail.turn ? `第 ${detail.turn} 轮` : \"\";"
+      }
+    ]
+  },
+  "dsh-provider-usage": {
+    "confFiles": [
+      "dsh-provider-usage-1.json",
+      "dsh-provider-usage-2.json"
+    ],
+    "groups": [
+      {
+        "name": "seg1",
+        "from": "contracts.js",
+        "lastLineText": "}\nif (isAlpha(html[j])) {\nlet k = j + 1;"
+      },
+      {
+        "name": "seg2",
+        "from": "sanitize.js",
+        "lastLineText": "maxAgeDays: import_schemastery.default.number().default(DEFAULT_CONFIG.maxAgeDays).description(\"历史数据保留天数\").disabled(true),\nmaxSizeMB: import_schemastery.default.number().default(DEFAULT_CONFIG.maxSizeMB).description(\"历史数据大小上限（MB）\").disabled(true)\n});"
+      }
+    ]
+  },
+  "dsh-subagent-model-inherit": {
+    "confFiles": [
+      "dsh-subagent-model-inherit.json"
+    ],
+    "groups": [
+      {
+        "name": "seg1",
+        "from": "index.js",
+        "lastLineText": "name,\nresolveInheritedSelection\n};"
+      }
+    ]
+  },
+  "dsh-web-file-preview": {
+    "confFiles": [
+      "dsh-web-file-preview.json"
+    ],
+    "groups": [
+      {
+        "name": "seg1",
+        "from": "grouping.js",
+        "lastLineText": "var inject = [\"webServer\"];\nvar DEFAULT_CONFIG = {\nenabled: true,"
+      }
+    ]
+  }
+}

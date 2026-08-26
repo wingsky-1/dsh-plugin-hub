@@ -2,10 +2,27 @@
 [![npm](https://img.shields.io/npm/v/@wingsky-1/dsh-provider-usage)](https://www.npmjs.com/package/@wingsky-1/dsh-provider-usage)
 [![GitHub Releases](https://img.shields.io/github/v/release/wingsky-1/dsh-plugin-hub)](https://github.com/wingsky-1/dsh-plugin-hub/releases)
 
-DSH（DeepSeek Harness）Web GUI 插件：**用量统计悬浮框**（v2 契约重构版）。
+DSH（DeepSeek Harness）Web GUI 插件：**多 provider 通用用量统计框架**（v2 适配器契约）。
 
-聊天界面右上角常驻悬浮胶囊，展示模型 provider 的用量信息；点击展开详情面板。
-渲染在**宿主端**完成——用户适配器返回 HTML，客户端只做注入。
+聊天界面右上角常驻悬浮胶囊，展示当前模型 provider 的用量信息；点击展开详情面板。
+内置两套适配器开箱即用——**DeepSeek 官方**（余额 + 峰谷倒计时徽标 + 每日用量推算）与
+**OpenCode Go**（官方 `/v1/usage` 三窗口用量）；其他任意数据源只需按 v2 契约写一个
+mjs 适配器文件即可接入（设置页检测/添加/切换热插拔，见「适配器开发指南」）。
+渲染在**宿主端**完成——适配器返回 HTML、客户端只做注入，密钥不进浏览器。
+
+## 核心优势
+
+- **通用框架 + 开箱即用**：一套 v2 适配器契约承载任意 provider；DeepSeek 官方与
+  OpenCode Go 两套适配器内置，装完即显示用量
+- **接入任意数据源只需一个 mjs 文件**：`fetchData` / `formatCapsule` / `formatPanel`
+  三个导出即完成接入；设置页检测/添加/切换热插拔，改文件自动热更新
+- **官方没有用量接口也能算**：DeepSeek 内置适配器以余额差守恒式推算每日用量
+  （充值/赠款扰动自动抵消、异常区间不计），附峰谷倒计时徽标与 15 日用量柱形面板
+- **密钥不出宿主**：取数在宿主端执行，密钥只在宿主端持有与使用、不下发浏览器
+  （推荐凭据链 / env 注入；显式 `apiKey` 配置会随宿主配置落盘并以 0600 保护）；
+  渲染输出双层净化（`esc()` 转义义务 + 结构化净化兜底），XSS 双重防线
+- **历史可回溯、性能有兜底**：按天分片 JSONL 落盘（0600）、超龄超量自动清理；
+  面板渲染进程内缓存 + stats 缓存 + 后台预热，数据未变时重复请求零重算
 
 ## 安装
 
@@ -253,10 +270,14 @@ plugins:
   协议型载体再按 WHATWG URL 语义剥除 Tab/LF/CR 后定位（jav&#9;ascript: 族同封）；
   净化只删不改并在宽松轮数上限内迭代收敛，超限 fail-closed 丢弃输出（约束最坏 CPU 成本）：
   解码副本仅用于定位、绝不回写输出，合法转义文本零损伤
-- **热更新安全**：默认关闭；开启后以 mtime+size 轮询检测变化，新版校验通过才原子切换，
+- **热更新安全**：默认开启（`autoReload`，可显式关闭）；开启后以 mtime+size 轮询检测变化，新版校验通过才原子切换，
   失败保留旧版并登记错误
-- **超时纪律**：fetchData 强制 5s 超时（固定值，不可配置）+ AbortSignal 传递；锁忙时不排队、直接降级返回缓存——
-  任何情况下不阻塞页面其他请求
+- **超时纪律**：fetchData 强制 5s 超时（固定值，不可配置）；宿主超时会**主动 abort 真实 fetch**——
+  下发给 fetchData 入参的 `signal` 是合并信号（超时兜底 × 外部取消经手动级联监听合成，
+  node>=20 全系兼容），适配器应把它透传给底层 fetch 的 `RequestInit.signal`，
+  超时/取消时真正中断请求、不悬挂 socket；不透传时超时仅放弃等待，请求可能仍在后台完成。
+  0 参声明的 fetchData 不读入参，完全兼容；取数锁为 per-provider 粒度，同 provider 并发请求
+  排队并复用首次取数结果——任何情况下不阻塞页面其他请求
 - **fail-fast 加载**：适配器缺导出/类型错/name 不合白名单 → 拒绝加载并登记可排障错误
 - **历史数据**：按天分片 JSONL 落盘（`0600` 权限），超龄/超量自动清理；
   原始 data 在落盘前经过序列化校验（不可序列化对象拒收）

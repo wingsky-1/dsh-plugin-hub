@@ -4,11 +4,41 @@
 
 A **MCP server management plugin** for DSH (DeepSeek Harness): a floating window in the
 top-right of the session UI + a tiered panel + quick onboarding (manual form + paste
-`mcpServers` JSON import, **no servers preconfigured**), supporting **project-level MCP
-that follows session switches**. Tools from connected servers are registered for the model
-to call directly as `mcp__<serverName>__<rawName>`. The MCP protocol client is
-implemented directly on top of `node:child_process` and the global `fetch` —
-nothing extra to install.
+`mcpServers` JSON import, **no servers preconfigured**). The MCP protocol client is
+implemented directly on top of `node:child_process` and the global `fetch` — nothing
+extra to install.
+
+Three middleware modes (`middleware`): `off` — all servers register directly as
+`mcp__<server>__<tool>` (legacy behavior); `project` (**default**) — project-level
+servers go through the middleware while global ones register directly; `all` — global
+servers go through the middleware too, falling back to the virtual global root
+`@global` when cwd has no project, collapsing the model surface to exactly two atomic
+tools. Note on when changes take effect: `middleware` / `middlewarePolicy` are read
+once at plugin startup — **changing them requires restarting `dsh web`**; the server
+lists across both config tiers hot-reload without a restart (add/remove/toggle/edit).
+
+## Core advantages
+
+- **Context cost under control**: project-level MCP is collapsed through the middleware
+  by default — the model surface carries only `ws_mcp_search` / `ws_mcp_call`, so no
+  matter how many project-level servers or tools the current workspace connects the
+  system prompt never balloons; `middleware: all` folds global servers in too for full
+  collapse
+- **Per-working-directory maintenance**: project-level config `<project root>/.dsh/mcp.json`
+  travels with the repo and can be committed to git for team sharing; global config
+  `<DSH_HOME>/dsh-mcp.json` stays always connected; switching sessions auto-loads the
+  MCP set of the current directory
+- **Workspace isolation**: the middleware routes by the session's cwd to the matching
+  connection pool, with server-full-name consistency checks against cross-workspace
+  crosstalk; same-named servers in different directories never clash
+- **Secure by default**: configs store only `${ENV}` references, never key material
+  (0600 permissions + atomic writes); stdio subprocess environments are sanitized so
+  host credential-shaped variables never leak through; directory summaries and error
+  paths go through a redactor
+- **Low-maintenance operations**: tiered status display (running / connecting / failed…);
+  bounded exponential-backoff auto-reconnect on disconnects; direct-connect `mcp__`
+  tools truncate results at 8KB and accept a per-server timeout override
+  (`toolCallTimeoutMs`), while middleware calls use a fixed 30s timeout
 
 ## Installation
 
@@ -65,10 +95,11 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
 | Server management | CRUD (project-level/global optional), connect / disconnect / reconnect; versioned JSON config, atomic write |
 | Two transports | stdio (local subprocess, env supports `${ENV}` references) and streamable-http (remote, header supports `${ENV}` references, auto-echoes `Mcp-Session-Id`) |
 | JSON import | Paste `mcpServers` JSON text to import (JSON format only; does not scan any application config files) |
-| Model tools | Tools from connected servers registered as `mcp__<server>__<tool>` (64 chars, `[A-Za-z0-9_-]`, hashed suffix on conflict) |
+| Model tools | Global servers register directly as `mcp__<server>__<tool>` (64 chars, `[A-Za-z0-9_-]`, hashed suffix on conflict); project-level servers go through the middleware's `ws_mcp_search` / `ws_mcp_call` by default (`middleware: project`, recommended), so workspaces never clash |
+| Workspace isolation | The middleware routes by the calling session's cwd to the matching workspace connection pool; server full-name consistency checks (`@<root>/<server>`) prevent cross-workspace crosstalk |
 | Reconnection | Exponential backoff (starts at 500ms, caps at 30s, gives up after 10 attempts and deregisters the tools) |
-| Result truncation | Tool results truncated at 8KB and marked (prevents oversized JSON from entering context in full) |
-| Timeout fallback | Tool call timeout defaults to 60s → 15s (overridable per server via `toolCallTimeoutMs`) |
+| Result truncation | Direct-connect tool results truncated at 8KB and marked (prevents oversized JSON from entering context in full) |
+| Timeout fallback | Direct-connect tool call timeout defaults to 60s → 15s (overridable per server via `toolCallTimeoutMs`); middleware calls use a fixed 30s timeout |
 
 ## Configuration (floating window position)
 

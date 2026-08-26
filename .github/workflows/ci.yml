@@ -66,7 +66,10 @@ jobs:
               - 'scripts/**'
               - 'agents/**'
               - '.github/**'
-              - 'docs/**'
+              # docs/** 刻意不在 global 面（#220）：gate/build/release 脚本均不消费
+              # docs/ 内容，文档 PR 无需变异切片与 smoke/typecheck（release-notes
+              # 校验仅存在于 tag 触发的 release.yml）。若未来新增消费 docs 的门禁
+              # 脚本，须同步加回此处——workflow-assert 契约已锁定该约定
               - 'package.json'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
@@ -269,6 +272,11 @@ jobs:
       # 校验 mutate 区间落在 // lib/*.js 分段边界内；须排在 build 之后（校验
       # 对象是 lib 产物分段注释），先 fail-loud 省 cov 时间。observe.yml 夜间
       # 执行点保留（双执行点：PR 早暴露 + 夜间兜底）。
+      - name: Sync mutate segments（#276 方案 B：区间由产物分段锚点机器派生）
+        # mutate 行号是 bundle 产物的衍生数据，不得人工维护——build 后立即从
+        # 分段注释重算并写入 conf，本次 stryker run 的行号必然与产物一致
+        run: node scripts/gate/sync-mutate-segments.mjs --write
+
       - name: Mutation scope guard（F5：mutate 区间须落在 // lib/*.js 分段边界内）
         run: node scripts/gate/mutate-scope-guard.mjs
 

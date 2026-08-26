@@ -7,29 +7,59 @@
  */
 
 /**
- * 对用户 fetchData 的调用包装：强制超时（管线注入固定 5s）+ 序列化校验 + 错误隔离。
+ * 对用户 fetchData 的调用包装：强制超时（管线注入固定 5s）+ 信号合流下发 +
+ * 序列化校验 + 错误隔离。
  *
- * @param fn 用户 fetchData
+ * 信号合流（issue #120 P0）：内部 AbortController 承担超时兜底；可选外部信号经
+ * **手动级联监听**并入同一 controller（不用 AbortSignal.any——engines node>=20
+ * 全系兼容），合并后的 signal 经 fn(signal) 下发给用户 fetchData。适配器把它
+ * 透传给底层 fetch 的 RequestInit.signal 即可在超时/外部取消时真正中断请求，
+ * 不再悬挂 socket；0 参声明的 fetchData 忽略入参，完全向后兼容。
+ *
+ * @param fn 用户 fetchData（入参为合并信号；0 参调用兼容）
  * @param timeoutMs 超时毫秒（生产管线恒传 fetchTimeoutMs=5000；签名默认值仅兜底）
+ * @param externalSignal 可选外部取消信号（如宿主请求断连），abort 时立即取消取数
  * @returns 成功返回 { data }；失败返回 { error }（绝不抛异常）。
  */
 export async function safeFetchData(
-  fn: () => Promise<unknown>,
+  fn: (signal: AbortSignal) => Promise<unknown>,
   timeoutMs = 2000,
+  externalSignal?: AbortSignal,
 ): Promise<{ data?: Record<string, unknown>; error?: string }> {
+  // 已 abort 的外部信号：入口同步短路（不建 controller、不发起 fn），
+  // 避免「abort 早于 race 监听器注册」的事件错失悬挂
+  if (externalSignal !== undefined && externalSignal.aborted) {
+    return { error: 'fetchData 已被取消' };
+  }
   const controller = new AbortController();
   let done = false;
-  const timer = setTimeout(() => {
+  let timedOut = false;
+  // 手动级联监听：外部信号 abort → 内部 controller 同步 abort（合并语义）；
+  // finally 中摘除监听，防止长生命周期外部信号累积监听器泄漏。
+  const cascadeAbort = (): void => {
     if (!done) controller.abort();
+  };
+  if (externalSignal !== undefined) {
+    externalSignal.addEventListener('abort', cascadeAbort, { once: true });
+  }
+  const timer = setTimeout(() => {
+    if (!done) {
+      timedOut = true;
+      controller.abort();
+    }
   }, timeoutMs);
   try {
-    // 用户 fetchData 入参中的 signal 由 caller 传入（见 pipeline），
-    // 这里只做兜底超时 abort。
+    // 合并信号下发给用户 fetchData：超时兜底与外部取消共用同一 signal，
+    // 底层 fetch 收到 abort 后中断真实请求（超时文案稳定为「fetchData 超时」）
+    const userP = Promise.resolve().then(() => fn(controller.signal));
+    // #120 接线配套：信号透传后，超时/外部取消判负的用户 promise 会随后收到
+    // abort 拒绝——挂一个空 catch 防 unhandled rejection（错误仍经下方 catch 上报）
+    userP.catch(() => {});
     const raw = await Promise.race([
-      fn(),
+      userP,
       new Promise<never>((_, reject) => {
         controller.signal.addEventListener('abort', () => {
-          reject(new Error('fetchData 超时'));
+          reject(new Error(timedOut ? 'fetchData 超时' : 'fetchData 已被取消'));
         }, { once: true });
       }),
     ]);
@@ -46,6 +76,10 @@ export async function safeFetchData(
   } finally {
     done = true;
     clearTimeout(timer);
+    // 摘除外部信号上的级联监听（取数已结束，后续外部 abort 与本次调用无关）
+    if (externalSignal !== undefined) {
+      externalSignal.removeEventListener('abort', cascadeAbort);
+    }
   }
 }
 
