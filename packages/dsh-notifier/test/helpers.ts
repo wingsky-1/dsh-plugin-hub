@@ -123,6 +123,8 @@ export async function waitForHistory(historyRoute, predicate, timeoutMs = 2000) 
  * opts.subagent：true 模拟子代理（写入 origin:'subagent'，与 DSH childSessionMeta 一致）；
  * opts.parentSession：模拟 fork/派生会话（只写 parentSession、不带 origin；
  *   是否委派 worker 由运行时归属面 fakeAgents 决定——issue #49）；
+ * opts.seedLength：header.seedLength（fork 型委派持久化形态含该字段，
+ *   完成判定不含它——仅用于构造注释宣称的完整 header 形态，issue #199 P2-5）；
  * opts.depth：header.delegationDepth（仅作附加，不作子代理判据）；
  * opts.cwd：header.cwd（模拟 headless CLI 会话「header 仅 {cwd}」形态）。
  */
@@ -135,6 +137,7 @@ export function agentWithTitle(id, title, opts = {}) {
   const header = {};
   if (opts.subagent) header.origin = "subagent";
   if (opts.parentSession !== undefined) header.parentSession = opts.parentSession;
+  if (opts.seedLength !== undefined) header.seedLength = opts.seedLength;
   if (opts.depth !== undefined) header.delegationDepth = opts.depth;
   if (opts.cwd !== undefined) header.cwd = opts.cwd;
   return {
@@ -168,6 +171,14 @@ export function fakeAgents(liveIds = [], ownedPairs = []) {
 /** 等待聚合窗口（doneMergeWindowMs 默认 3s）过期。 */
 export async function waitMergeWindow() {
   await new Promise((resolve) => setTimeout(resolve, 3200));
+}
+
+/**
+ * session/event 回调的 turn/end 载荷构造（issue #272 双源测试用）。
+ * 形态对齐官方 SessionEvent 信封的最小判定子集：{ type, data: { turn, reason } }。
+ */
+export function turnEndEvent(turn, kind = "completed") {
+  return { type: "turn/end", data: { turn, reason: { kind } } };
 }
 
 export { assert };

@@ -293,6 +293,11 @@ export interface SubagentOwnership {
  * （attached/inspect 检查点 agent 参数为 void 0 时仅 origin 生效），属已确认的
  * 接受边界（issue #49 2026-08-22 评论源码级确认），不做持久化推断补齐。
  *
+ * 运行时同型变体（issue #199 P2-1）：父 agent 先亡/被清理（如委派方提前结束、
+ * registry 逐出）时 `get(parent)` 同样返回 undefined，归属不成立 → 同样退报
+ * done。与冷 resume 共享同一保守语义的方向性代价：宁可多报一条主任务 kind=done，
+ * 不静默任何真实完成；两变体均不做持久化推断补齐。
+ *
  * @param agent Agent 对象（事件 payload.agent）。
  * @param ownership 运行时归属查询面（ctx.agents）。缺省（undefined，如测试
  *   fake ctx 未装配 agents 服务）时跳过信号二：仅 origin 判定，行为与本修复
