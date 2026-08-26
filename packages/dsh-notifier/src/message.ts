@@ -245,9 +245,13 @@ export function lastTurnEndOf(agent: Agent | undefined): { turn: number; kind: T
       if (ev?.type !== "turn/end") continue;
       const reason = ev.data?.reason;
       if (reason === undefined || reason === null || typeof reason !== "object") continue;
-      const turn = typeof ev.data?.turn === "number" ? ev.data.turn : NaN;
+      // 非有限 turn 的证据不可用（payload 跨宿主边界，不受信）：跳过该条
+      // 继续向前扫——若返回 {turn:NaN} 会被完成判定当作合法证据推进
+      // lastEndedTurn=NaN，此后真实完成因 x > NaN 恒 false 被永久吞掉
+      // （#284 复核闸 P1）。
+      if (typeof ev.data?.turn !== "number" || !Number.isFinite(ev.data.turn)) continue;
       const kind = String((reason as { kind?: unknown }).kind ?? "") as TurnEndKind;
-      return { turn, kind };
+      return { turn: ev.data.turn, kind };
     }
   } catch {
     // 事件日志读取失败不影响通知主流程

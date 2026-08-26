@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { assert, makeNotifier, agentWithTitle, fakeAgents, waitMergeWindow, fakeReq, makeRes, turnEndEvent } from "./helpers.ts";
-import { ROUTES } from "../lib/index.js";
+import { ROUTES, lastTurnEndOf } from "../lib/index.js";
 
 /** 带 info 收集的 logger 覆盖。 */
 function loggingOverride(infos) {
@@ -357,6 +357,38 @@ try {
     disposed({ agent: agentWithTitle("gc-1", "清理会话") });
     status({ agent: agentWithTitle("gc-1", "清理会话", { turnEnd: 3 }), status: "idle" }); // 状态机+辅源已清零：不通知
     assert.equal(countDone(), beforeWarn, "disposed 清理后辅源残留不误报");
+
+    // (d) 畸形载荷不毒化记忆（#284 复核闸 P1）：turn 非数字的推送 turn/end
+    //     直接 skip 不落记忆——修复前 {turn:NaN} 凭 ended===undefined 短路成
+    //     best、首轮误报一条并把 lastEndedTurn 推进为 NaN，此后真实完成因
+    //     x > NaN 恒 false 被永久吞掉。
+    status({ agent: agentWithTitle("mal-1", "畸形会话"), status: "running" }); // 无快照 turn/end（ended===undefined 场景）
+    sessionEvent({ id: "mal-1" }, { type: "turn/end", data: { turn: "x", reason: { kind: "completed" } } });
+    sessionEvent({ id: "mal-1" }, { type: "turn/end", data: { turn: Number.NaN, reason: { kind: "completed" } } });
+    status({ agent: agentWithTitle("mal-1", "畸形会话"), status: "idle" });
+    assert.equal(countDone(), beforeWarn, "(d) 畸形载荷不误报 done");
+    const malWarn = warns.find((t) => t.includes("mal-1"));
+    assert.ok(malWarn !== undefined && /完成判定跳过/.test(malWarn), "(d) 畸形证据不可用走跳过路径 warn");
+    assert.match(malWarn, /快照turn=- 推送turn=- 记忆turn=-/, "(d) 两源均无可信证据（记忆未被毒化）");
+    // 毒化回归反证：随后真实 turn=2 双源一致 completed 照常通知（修复前被 NaN 记忆吞掉）。
+    status({ agent: agentWithTitle("mal-1", "畸形会话", { turnEnd: 2 }), status: "running" });
+    sessionEvent({ id: "mal-1" }, turnEndEvent(2));
+    status({ agent: agentWithTitle("mal-1", "畸形会话", { turnEnd: 2 }), status: "idle" });
+    assert.equal(countDone(), beforeWarn + 1, "(d) 畸形载荷之后真实完成照常通知");
+    // lastTurnEndOf 快照侧同款加固：畸形条目跳过继续倒序扫描，取上一条合法证据。
+    const snapshotAgent = {
+      id: "mal-2",
+      session: {
+        header: undefined,
+        events: [
+          { type: "turn/end", data: { turn: 7, reason: { kind: "completed" } } },
+          { type: "turn/end", data: { turn: "x", reason: { kind: "completed" } } },
+          { type: "session/title", data: { title: "T" } },
+        ],
+      },
+    };
+    assert.deepEqual(lastTurnEndOf(snapshotAgent), { turn: 7, kind: "completed" }, "(d) lastTurnEndOf 跳过非有限 turn 条目");
+    assert.equal(lastTurnEndOf({ id: "mal-3", session: { header: undefined, events: [{ type: "turn/end", data: { turn: null, reason: { kind: "completed" } } }] } }), undefined, "(d) 仅畸形条目时返回 undefined");
   }
 } finally {
   rmSync(work, { recursive: true, force: true });

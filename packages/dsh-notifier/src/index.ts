@@ -364,8 +364,13 @@ export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Pro
         // 运行时防御同 lastTurnEndOf（payload 跨宿主边界，不受信）
         const sessionId = session?.id !== undefined ? String(session.id) : undefined;
         if (sessionId === undefined) return;
+        const turn = typeof event.data?.turn === "number" ? event.data.turn : NaN;
+        if (!Number.isFinite(turn)) return; // 非有限 turn 的证据不可用：直接 skip 不落记忆，
+        // 否则 {turn:NaN} 会在合并处凭 ended===undefined 短路成 best、经首轮
+        // rememberedTurn===undefined 放行误报后把 lastEndedTurn 推进为 NaN，
+        // 此后真实完成因 x > NaN 恒 false 被永久吞掉（#284 复核闸 P1）。
         eventStreamEnds.set(sessionId, {
-          turn: typeof event.data?.turn === "number" ? event.data.turn : NaN,
+          turn,
           kind: String((reason as { kind?: unknown }).kind ?? ""),
         });
       } catch (error) {
@@ -406,7 +411,11 @@ export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Pro
           // turn 相同即同一证据（同 turn 天然只通知一次）；快照一次性读滞后
           // 时由推送流兜底，不再固化为永久静默。
           const ended = lastTurnEndOf(agent);
-          const streamed = eventStreamEnds.get(agentId);
+          // 合并处对称守卫（#284 复核闸 P1 纵深）：仅接受 turn 有限的证据——
+          // 入口（lastTurnEndOf / session/event 处理器）已各自 skip 非有限
+          // turn，此处兜底保证任何畸形证据既不能成 best、也不能推进记忆。
+          const streamedRaw = eventStreamEnds.get(agentId);
+          const streamed = streamedRaw !== undefined && Number.isFinite(streamedRaw.turn) ? streamedRaw : undefined;
           const best =
             streamed !== undefined && (ended === undefined || (Number.isFinite(streamed.turn) && streamed.turn > ended.turn))
               ? streamed
