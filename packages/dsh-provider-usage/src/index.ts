@@ -85,8 +85,10 @@ export const DEFAULT_CONFIG = {
   // = 宿主缓存 + 客户端轮询（60s）+ 渲染余量，缓存减半使端到端 ≤95s 可达。
   cacheDurationMs: 30000,
   // #206 配套：2s→5s——commandcode 等三请求并行适配器在远端慢时 2s 频繁超时；
-  // safeFetchData 为 Promise.race+Abort 纯异步超时，不阻塞主进程；
-  // 全局 mutex 串行取数下多 provider 排队最坏 n×5s（warmup 周期 300s 内可消化）。
+  // safeFetchData 为 Promise.race+Abort 纯异步超时，不阻塞主进程（#120 起超时会
+  // 经合并信号真正 abort 底层 fetch）；
+  // #120 后取数锁为 per-provider 粒度，排队仅发生在同一 provider 内部，
+  // 最坏 n×5s 只限单 provider 的并发请求，跨 provider 完全并行。
   fetchTimeoutMs: 5000,
   autoReload: true,
   maxAgeDays: 30,
@@ -493,6 +495,11 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
         return;
       }
       if (hr.current !== null) {
+        // #120 缓存精准清前置：替换前先收集旧条目认领的 providers
+        // （替换后旧条目即从注册表消失；snapshot().infos 已按 name/provider 去重）
+        const oldProviders = registry.snapshot().infos
+          .filter((i) => i.file === resolved)
+          .flatMap((i) => i.providers);
         // #212：原子替换（冲突预检先行，撞名时旧条目保留并返回失败）；
         // 替换只更新代码不改写启用关系（enabled 保持语义在 registry.replaceByFile 内实现）
         const replaced = registry.replaceByFile(resolved, hr.current);
@@ -500,8 +507,14 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
           registry.recordError(key, "load", `热更新失败：${replaced.detail}`);
           return;
         }
-        cache.clear();
-        panelCache.clear(); // #105①：新版适配器代码语义已变，面板渲染缓存同清
+        // #120 缓存精准清 + 预热：范围 = 旧条目 ∪ 新条目认领 providers 的并集
+        // （覆盖改名/认领增减两种漂移），其余 provider 的缓存保持可用——
+        // 消除「一次热更、全部 provider 首拉必冷」的全局冷取诱因；
+        // 清后立即后台预热仍启用的 provider（fire-and-forget，不阻塞回调）。
+        const touchedProviders = new Set(oldProviders);
+        for (const p of hr.current.providers) touchedProviders.add(p);
+        purgeCachesForProviders(touchedProviders);
+        warmupProviders(touchedProviders);
         // #212：热更新结果持久化（合并语义落盘，保持后的启用关系写入 adapter-state.json）
         scheduleWriteAdapterState();
         console.warn(`[dsh-provider-usage] 热更新成功：${replaced.name}（${basename(resolved)}）`);
@@ -536,8 +549,20 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     }
   }
 
-  // 5. 互斥锁（缓存已在上方声明）
-  const mutex = new Mutex();
+  // 5. 互斥锁（缓存已在上方声明）——per-provider 粒度（issue #120）：
+  // 消除全局单锁的跨 provider 队头阻塞，慢 provider 取数不再拖累其它 provider 的
+  // /stats。锁按需惰性创建；卸载时逐锁 cancel 并清空 Map（见 effect 清理段）。
+  const providerLocks = new Map<string, Mutex>();
+
+  /** 取某 provider 的专用锁（不存在则建；Map 只增不减，量级 = 启用过的 provider 数）。 */
+  function lockOf(provider: string): Mutex {
+    let m = providerLocks.get(provider);
+    if (m === undefined) {
+      m = new Mutex();
+      providerLocks.set(provider, m);
+    }
+    return m;
+  }
 
   function cacheFresh(provider: string): V2PipelineResult | undefined {
     const entry = cache.get(provider);
@@ -547,6 +572,43 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       return undefined;
     }
     return entry;
+  }
+
+  /**
+   * 按 provider 精准清除面板渲染缓存（#105① 主失效的精准化，issue #120）：
+   * panelCache key 前缀 = `${provider}\u0000`（panelCacheKey 分隔符），前缀匹配即删。
+   * 其余 provider 的面板缓存保持可用——消除「一处取数、全局清空」的首拉必冷诱因；
+   * 主失效语义不变：仍是 append 落盘成功才清，TTL 仅兜底。
+   */
+  function purgePanelCacheForProvider(provider: string): void {
+    const prefix = `${provider}\u0000`;
+    for (const key of panelCache.keys()) {
+      if (key.startsWith(prefix)) panelCache.delete(key);
+    }
+  }
+
+  /**
+   * 按 providers 并集精准清除 stats 缓存与面板渲染缓存（issue #120）。
+   * 热更新挂点用：范围 = 新旧条目认领 providers 的并集（覆盖改名/认领变化），
+   * 其余 provider 的缓存保持可用。
+   */
+  function purgeCachesForProviders(providers: Iterable<string>): void {
+    for (const p of providers) {
+      cache.delete(p);
+      purgePanelCacheForProvider(p);
+    }
+  }
+
+  /**
+   * 后台预热指定 providers（fire-and-forget 铁律，issue #120）：一律 void 发起，
+   * 绝不 await 进调用方关键路径，更不得在持锁临界区内 await 预热
+   * （async-mutex 非可重入，违者自死锁）。仅预热当前有启用者的 provider，
+   * 未启用者由 getStats 自身的 no-adapter/no-enabled-adapter 帧语义兜底，无需打扰。
+   */
+  function warmupProviders(providers: Iterable<string>): void {
+    for (const p of providers) {
+      if (registry.getEntry(p) !== undefined) void getStats(p).catch(() => {});
+    }
   }
 
   /** 当前 provider 的启用适配器静态路径（config.staticPath 兜底）。 */
@@ -559,19 +621,18 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     const cached = cacheFresh(provider);
     if (cached !== undefined) return { ...cached, status: 'cached' };
 
-    if (mutex.isLocked()) {
-      // 到这里缓存必为空：cacheFresh 同步删除了过期条目，新鲜条目已在上方返回；
-      // 与持锁取数之间无 await 交错，不存在可复用的残留条目（防御性读取已删）。
-      // busy ≠ 未配置：适配器已就绪，仅上一次取数仍在进行（不报红，客户端按 stale 处理）
-      const entryName = registry.getEntry(provider)?.name ?? "unknown";
-      return {
-        ok: true, configured: true, reason: 'busy', error: null,
-        fetchedAt: Date.now(), provider, adapterName: entryName,
-        status: 'stale',
-      };
-    }
+    // issue #120 选型说明：per-provider 锁 + **锁内二次 cacheFresh 校验**
+    // （而非 isLocked busy 短路），理由：
+    // 1. 双重冷取防护等价——首个持锁者完成取数写缓存后，排队后继者在本校验点
+    //    即命中返回，check-then-act 窗口被关闭；
+    // 2. 数据质量更优——并发客户端拿到刚刷新的真数据帧而非 stale 占位帧，
+    //    reason='busy' 语义随之废除（客户端按 stale 处理的特判不再需要）；
+    // 3. 排队收敛在单 provider 内部——最坏 n×5s 仅限同一 provider 的并发请求，
+    //    跨 provider 完全并行（全局锁队头阻塞已消除）。
+    return lockOf(provider).runExclusive(async () => {
+      const cachedInLock = cacheFresh(provider);
+      if (cachedInLock !== undefined) return { ...cachedInLock, status: 'cached' };
 
-    return mutex.runExclusive(async () => {
       const entry = registry.getEntry(provider);
       if (entry === undefined) {
         const code = registry.hasCandidates(provider) ? "no-enabled-adapter" : "no-adapter";
@@ -600,10 +661,11 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       if (result.ok && result.status === 'fresh' && result.rawData !== undefined) {
         const historyEntry = { time: result.fetchedAt, data: result.rawData };
         await history.append(provider, entry.name, historyEntry).catch(() => {});
-        // #105① 主失效：新数据已落盘，/history 面板渲染缓存整体清除（TTL 仅兜底）。
+        // #105① 主失效（#120 精准化）：新数据已落盘，该 provider 的 /history
+        // 面板渲染缓存清除（其余 provider 不受牵连；TTL 仅兜底）。
         // 注意 stats 自身 TTL 命中期间不重跑本路径，故主失效实际由
         // warmup 周期 × stats TTL 复合门控（命中率按复合周期评估）。
-        panelCache.clear();
+        purgePanelCacheForProvider(provider);
       }
 
       cache.set(provider, result);
@@ -804,6 +866,9 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       if (!ok) return writeJson(res, 404, { error: "adapter not found" });
       cache.clear();
       panelCache.clear(); // #105①：启用关系已变，面板渲染缓存同清（切换/清空后一律重算）
+      // #120：清后立即后台预热该 provider 的启用适配器（fire-and-forget），
+      // 运行中才启用的 provider 不必等下一次 warmup 周期才热身；清空（clearing）不预热
+      if (!clearing) warmupProviders([provider]);
       // #212：清空用 override 显式落 null（合并语义会保留磁盘旧值，无法表达显式停用）
       if (clearing) scheduleWriteAdapterState({ [provider]: null });
       else scheduleWriteAdapterState();
@@ -885,6 +950,9 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       await ensureHotReload(file);
       cache.clear();
       panelCache.clear(); // #105①：候选/启用面已变，面板渲染缓存同清
+      // #120：清后立即后台预热新适配器认领的 providers（fire-and-forget；
+      // warmupProviders 内部只预热当前有启用者的 provider，未启用者自动跳过）
+      warmupProviders(adapter.providers);
       scheduleWriteAdapterState(); // #212：合并语义落盘（保留磁盘 null 停用标记）
       writeJson(res, 200, {
         ok: true,
@@ -968,24 +1036,21 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   // 8. 后台预热定时器（保持历史连续；无客户端访问时兜底）
   let warmupTimer: ReturnType<typeof setInterval> | null = null;
   if (config.warmupIntervalMs > 0) {
-    // #156：必须串行 await——并发发起时全部 getStats 的同步段（cacheFresh →
-    // isLocked → runExclusive）在事件循环同一轮内执行，注册序第一个 provider
-    // 拿到全局互斥锁后其余全部 busy 短路，多 provider 场景下永远只有第一个
-    // 能采样（夜间无 GUI 轮询时段其余 provider 断采数小时）。串行化后每个
-    // provider 依次持锁取数，busy 短路语义仅保留给并发的 /stats 客户端请求。
-    const warmupFn = async () => {
+    // #156 重评估（issue #120 per-provider 锁落地后）：原「必须串行 await」的
+    // 前提已消失——各 provider 持各自专用互斥锁，并行发起既不会互相 busy 短路，
+    // 也不会队头阻塞；串行循环反而让慢 provider 拖延后续 provider 的采样起点。
+    // 预热铁律（issue #120）：一律 void fire-and-forget，禁止持锁临界区内 await
+    // 预热（async-mutex 非可重入，违者自死锁）；单 provider 失败静默——错误帧
+    // 已写入 stats 缓存，客户端按 stale 呈现，无需额外处理。
+    const warmupFn = (): void => {
       for (const provider of registry.enabledProviders()) {
-        try {
-          await getStats(provider);
-        } catch {
-          // 单个 provider 失败不阻断后续 provider 的采样
-        }
+        void getStats(provider).catch(() => {});
       }
     };
     warmupTimer = setInterval(warmupFn, config.warmupIntervalMs);
     (warmupTimer as { unref?: () => void }).unref?.();
     // 启动时立即预热一次（所有启用 provider）
-    void warmupFn();
+    warmupFn();
   }
 
   // 8.5 历史留存清理定时器（#105②：prune 移出 append 热路径，独立周期扫描全树）
@@ -1015,7 +1080,11 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       sseClients.clear();
       cache.clear();
       panelCache.clear(); // #105①：卸载时面板渲染缓存一并释放
-      mutex.cancel();
+      // #120：per-provider 锁逐个 cancel（排队中的 runExclusive 以 cancelled 拒绝；
+      // HTTP handler 直调 await getStats 无 catch，rejection 由宿主路由层兜底，
+      // 预热/后台调用点自带 .catch 吞掉）并清空 Map，避免卸载后残留锁对象
+      for (const lock of providerLocks.values()) lock.cancel();
+      providerLocks.clear();
     },
     "dsh-provider-usage",
   );

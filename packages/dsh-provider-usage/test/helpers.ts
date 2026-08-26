@@ -57,3 +57,31 @@ export function judgePad(k: number): string {
   for (let i = 1; i < k; i++) s = "<met" + s + "a>";
   return s;
 }
+
+// ---------------------------------------------------------------- 全局 fetch 注入串行通道（#120）
+
+/**
+ * 全局 fetch 注入的进程内串行通道：所有需要临时替换 globalThis.fetch 的测试块
+ * 一律经本通道执行，promise 链保证窗口互不重叠——save/restore 恒配对，
+ * 杜绝 ESM TLA 并发求值下的交错驻留（A 窗口慢路径 await 期间 B 窗口把 A 的
+ * mock 当作 savedFetch 保存、恢复链错位后 mock 永久驻留，#120 实证）。
+ *
+ * @param body 注入体：经 set(mock) 更换全局 fetch（可多次），返回值透传给调用方；
+ *             退出时无论成败都恢复进入通道时刻的全局现场。
+ */
+export function injectGlobalFetch<T>(
+  body: (set: (m: unknown) => void) => Promise<T>,
+): Promise<T> {
+  const run = fetchChain.then(async (): Promise<T> => {
+    const saved = globalThis.fetch;
+    const set = (m: unknown): void => { globalThis.fetch = m as typeof fetch; };
+    try {
+      return await body(set);
+    } finally {
+      globalThis.fetch = saved;
+    }
+  });
+  fetchChain = run.then(() => undefined, () => undefined);
+  return run;
+}
+let fetchChain: Promise<unknown> = Promise.resolve();

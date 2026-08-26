@@ -58,7 +58,23 @@ export async function runV2Pipeline(ctx: V2PipelineContext): Promise<V2PipelineR
   const { adapter, provider } = ctx;
   const fetchedAt = Date.now();
 
-  // 1. 组装 fetchData 入参
+  // fail-fast（issue #120）：管道内部组装断言——组装前提非法时不发起任何取数，
+  // 直接产出既有 error 帧（stale + error），不让请求悬挂。这是管线自身的防御性
+  // 检查，不是对用户适配器的契约行为约束（不改 FetchContext 契约、不新增配置项）。
+  if (!(Number.isFinite(ctx.timeoutMs) && ctx.timeoutMs > 0)) {
+    return {
+      ok: false,
+      configured: true,
+      reason: 'fetch-failed',
+      error: `pipeline 组装非法：timeoutMs=${ctx.timeoutMs}`,
+      fetchedAt,
+      provider,
+      adapterName: adapter.name,
+      status: 'stale',
+    };
+  }
+
+  // 1. 组装 fetchData 入参（signal 由下方 safeFetchData 以合并信号注入，此处不预置）
   const fetchCtx: FetchContext = {
     apiEndpoint: ctx.config.apiEndpoint ?? '',
     staticPath: ctx.staticPath,
@@ -67,14 +83,17 @@ export async function runV2Pipeline(ctx: V2PipelineContext): Promise<V2PipelineR
     model: ctx.meta?.model,
     sessionId: ctx.meta?.sessionId,
     timeoutMs: ctx.timeoutMs,
-    signal: ctx.signal,
   };
 
-  // 2. safeFetchData（5s 固定超时 + 序列化 + 错误隔离）
-  const fetched = await safeFetchData(async () => {
+  // 2. safeFetchData（5s 固定超时 + 序列化 + 错误隔离）。
+  // issue #120 P0 接线：闭包接收合并信号（超时兜底 × ctx.signal 外部信号，手动级联合流）
+  // 并放进 adapter.fetchData 入参——适配器把 ctx.signal 透传给底层 fetch 即获得真取消能力
+  // （deepseek-official 直传 fetch、opencode-go 监听 signal 均立即受益）；
+  // 0 参 fetchData 忽略入参不受影响。
+  const fetched = await safeFetchData(async (signal) => {
     const fetcher: typeof fetch = ctx.fetchImpl ?? fetch;
-    return adapter.fetchData({ ...fetchCtx, fetch: fetcher } as unknown as FetchContext);
-  }, ctx.timeoutMs);
+    return adapter.fetchData({ ...fetchCtx, signal, fetch: fetcher } as unknown as FetchContext);
+  }, ctx.timeoutMs, ctx.signal);
 
   if (fetched.error !== undefined) {
     // #198 A 组：取数失败仍产出 stale 胶囊（空 data + status:'stale' + error），
