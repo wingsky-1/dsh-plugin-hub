@@ -76,6 +76,23 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-lan-proxy
 
 GUI settings entry: Settings → Plugins → "LAN Access" card (saved changes apply hot).
 
+### Configuration storage (single channel)
+
+- All configuration lives in the dsh official settings store (the
+  `dsh-lan-proxy` namespace registered via `settings.register`, persisted in the
+  host-managed settings document); composition-layer `cordis.patch.yml` config
+  acts as the base layer. Hot reload is driven by the official `scope.watch` —
+  no restart needed.
+- This plugin no longer maintains its own `~/.dsh/lan-proxy/config.json`. On
+  the first start after upgrading, a legacy config.json is migrated once into
+  the official store: the original file is atomically renamed and kept as
+  `config.json.migrated.bak`. If persisting into the official store fails, the
+  rename is rolled back and retried on next start; if the process exits before
+  the write completes (interrupted), the leftover backup is detected on next
+  start and its content is replayed into the store, with a log note.
+  Delete that backup manually once everything works. Editing
+  config.json afterwards has **no effect**.
+
 ## WebSocket Compression (wss event stream)
 
 - For WebSocket upgrades matching `wsCompressPaths` (default session event streams
@@ -170,7 +187,7 @@ curl http://<your-LAN-IP>:3081/api/dsh-lan-proxy/health
   dependency (when unavailable and no certificate file is configured, the HTTPS channel
   auto-degrades and shuts down)
 - When changing network segments causes the IP to change, the self-signed certificate must be
-  regenerated or config.json updated
+  regenerated or the settings (certificate file paths) updated
 - WebSockets matching `wsCompressPaths` go through "termination + compressed bridging" (one extra
   hop, extra compression CPU); enabling it is only recommended for high-traffic paths like events;
   all other WebSockets stay passthrough

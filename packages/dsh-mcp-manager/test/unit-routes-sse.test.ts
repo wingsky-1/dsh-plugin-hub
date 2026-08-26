@@ -27,6 +27,8 @@ const {
   McpStore,
   McpManager,
   normalizeServer,
+  SSE_HEARTBEAT_MS,
+  SSE_PING_FRAME,
 } = await import("../lib/index.js");
 
 // ---- 帧格式 ----
@@ -63,9 +65,16 @@ const fakeReq = (method, url, body, opts = {}) => ({
 });
 
 const fakeRes = () => {
-  const state = { status: 200, body: "", headers: {}, destroyed: false };
+  const state = { status: 200, body: "", headers: {}, destroyed: false, writableEnded: false };
   return {
     state,
+    // routes.ts 心跳回调读 res.destroyed / res.writableEnded 判定自愈清理。
+    get destroyed() {
+      return state.destroyed;
+    },
+    get writableEnded() {
+      return state.writableEnded;
+    },
     writeHead: (s, h) => {
       state.status = s;
       state.headers = h ?? {};
@@ -75,6 +84,7 @@ const fakeRes = () => {
     },
     end: (chunk) => {
       if (chunk) state.body += chunk.toString();
+      state.writableEnded = true;
     },
     setHeader: () => {},
     on: (event, cb) => {
@@ -139,6 +149,80 @@ const loopbackMethods = ["GET", "POST"];
     await new Promise((resolve) => setTimeout(resolve, 5));
     assert.equal(frames, 1);
     unsubscribe();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---- SSE 心跳（#268）：data ping 帧 / 间隔常量 / close 与卸载 disposer 清理 ----
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const countPing = (res) => (res.state.body.match(/data: \{"type":"ping"\}/g) ?? []).length;
+
+{
+  // 常量契约：间隔对齐 dsh-notifier HEARTBEAT_MS（30s）；心跳必须是 data 帧而非
+  // 注释帧——注释帧不触发客户端 onmessage，watchdog 无失活信号可依。
+  assert.equal(SSE_HEARTBEAT_MS, 30_000, "心跳间隔 30s（对齐 notifier）");
+  assert.equal(SSE_PING_FRAME, 'data: {"type":"ping"}\n\n', "心跳为 data ping 帧");
+
+  const { dir, manager } = setup();
+  try {
+    const route = makeEventsRoute(manager, { heartbeatMs: 10 });
+    const res = fakeRes();
+    route.handler(fakeReq("GET", ROUTES.events), res);
+    assert.equal(manager.sseHeartbeatCleanups?.size, 1, "心跳清理函数已登记 disposer 注册表");
+    await sleep(45);
+    const pingsAtClose = countPing(res);
+    assert.ok(pingsAtClose >= 1, `心跳 data ping 帧按间隔到达（实际 ${pingsAtClose} 帧）`);
+    // close：注销连接 + 清心跳定时器（防泄漏），此后不再有新帧。
+    res.state.onClose();
+    assert.equal(manager.sseConnections.size, 0, "close 后注销");
+    assert.equal(manager.sseHeartbeatCleanups.size, 0, "close 自删 cleanup");
+    await sleep(45);
+    assert.equal(countPing(res), pingsAtClose, "close 后心跳停止");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+{
+  // 卸载路径：插件 disposer 显式执行全部 cleanups（index.ts apply 清理同款），
+  // 不依赖 res.destroy() 触发 close 的异步时序。
+  const { dir, manager } = setup();
+  try {
+    const route = makeEventsRoute(manager, { heartbeatMs: 10 });
+    const resA = fakeRes();
+    const resB = fakeRes();
+    route.handler(fakeReq("GET", ROUTES.events), resA);
+    route.handler(fakeReq("GET", ROUTES.events), resB);
+    assert.equal(manager.sseConnections.size, 2);
+    assert.equal(manager.sseHeartbeatCleanups.size, 2, "每连接一条 cleanup");
+    for (const stopHeartbeat of [...manager.sseHeartbeatCleanups]) stopHeartbeat();
+    assert.equal(manager.sseHeartbeatCleanups.size, 0, "disposer 清空注册表");
+    await sleep(45);
+    // 清理发生在首个 interval 跳之前（同步路径），两连接均应零心跳帧。
+    assert.equal(countPing(resA), 0, "卸载后连接 A 心跳停止");
+    assert.equal(countPing(resB), 0, "卸载后连接 B 心跳停止");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+{
+  // 自愈路径：destroy() 后（模拟 close 事件丢失的极端场景）下一跳心跳看到
+  // destroyed 即自杀清理——不再写帧，且从 disposer 注册表自删。
+  const { dir, manager } = setup();
+  try {
+    const route = makeEventsRoute(manager, { heartbeatMs: 10 });
+    const res = fakeRes();
+    route.handler(fakeReq("GET", ROUTES.events), res);
+    await sleep(45);
+    const pingsAtDestroy = countPing(res);
+    assert.ok(pingsAtDestroy >= 1, "destroy 前心跳在写帧");
+    res.destroy(); // 不触发 onClose：走 destroyed 自愈而非 close 清理
+    await sleep(45);
+    assert.equal(countPing(res), pingsAtDestroy, "destroy 后心跳停止写帧");
+    assert.equal(manager.sseHeartbeatCleanups.size, 0, "自愈路径自删 cleanup");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
