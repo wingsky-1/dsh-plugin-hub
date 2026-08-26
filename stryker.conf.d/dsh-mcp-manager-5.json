@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-mcp-manager/lib/index.js:21263-22070"
+    "packages/dsh-mcp-manager/lib/index.js:21299-22113"
   ],
   "testRunner": "tap",
   "tap": {
