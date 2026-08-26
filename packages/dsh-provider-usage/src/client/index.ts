@@ -17,12 +17,23 @@ import {
   fetchStats,
   fetchHistory,
   fetchUiConfig,
+  DEFAULT_CLIENT_UI_CONFIG,
   FALLBACK_PROVIDER,
   UNKNOWN_PROVIDER_HINT,
   EVENTS_URL,
 } from "./core.js";
 import type { SessionsServiceLike, ConnectionHandleLike, StatsResponseV2, HistoryResponseV2, UiPlacementConfig } from "./core.js";
 import { SettingsPage } from "./settings.js";
+import {
+  BREAKPOINT_NARROW_MAX,
+  BREAKPOINT_TABLET_MAX,
+  DEFAULT_Z_INDEX_BASE,
+  breakpointForWidth,
+  clampPointToViewport,
+  clampZIndexBase,
+  panelAnchorForPlacement,
+  panelZIndexFor,
+} from "../placement-math.js";
 // React externals 路径：运行时由 dsh web factory require("react") 注入
 import * as React from "react";
 import STYLE from "./style.css";
@@ -103,7 +114,7 @@ let renderGeneration = 0;
 let lastAdapterVersion = 0;
 
 /** 胶囊/面板位置配置（设置页保存后经 SSE 即时刷新）。 */
-let uiConfig: UiPlacementConfig = { placement: "top-right", offsetX: 0, offsetY: 48, panelOffsetY: 10 };
+let uiConfig: UiPlacementConfig = { ...DEFAULT_CLIENT_UI_CONFIG };
 /** SSE 事件通道（ui-config-changed 监听）。 */
 let eventsSource: EventSource | null = null;
 
@@ -114,19 +125,36 @@ let eventsSource: EventSource | null = null;
 function repositionPill(pill: HTMLElement, target: HTMLElement): void {
   const rect = target.getBoundingClientRect();
   if (rect.width === 0 && rect.height === 0) return;
-  const isBottom = uiConfig.placement === "bottom-right" || uiConfig.placement === "bottom-left";
+  // 断点判定基准 = conversationHost rect 宽度（JS 判定，非 @media——防桌面窄窗 /
+  // iPad Slide Over 误触发）；data 属性驱动 CSS 档位样式（胶囊与面板同步）。
+  const bp = breakpointForWidth(rect.width);
+  if (pill.dataset.douBp !== bp) pill.dataset.douBp = bp;
+  if (floatPanel !== undefined && floatPanel.dataset.douBp !== bp) floatPanel.dataset.douBp = bp;
+  // 层级：胶囊取配置基准（clamp 1-9000），面板派生基准+30。
+  const zBase = clampZIndexBase(uiConfig.zIndexBase, DEFAULT_Z_INDEX_BASE);
+  pill.style.zIndex = String(zBase);
+  if (floatPanel !== undefined) floatPanel.style.zIndex = String(panelZIndexFor(zBase));
+  const isBottom = panelAnchorForPlacement(uiConfig.placement) === "bottom";
   const isLeft = uiConfig.placement === "top-left" || uiConfig.placement === "bottom-left";
   pill.style.position = "fixed";
   pill.style.bottom = "auto";
   // 水平：left 锚点 → 容器左缘 + offsetX；right 锚点 → 容器右缘 - 宽 - offsetX（右侧对齐贴右缘）
-  pill.style.left = isLeft
-    ? `${Math.max(0, rect.left + uiConfig.offsetX)}px`
-    : `${Math.max(0, rect.right - pill.offsetWidth - uiConfig.offsetX)}px`;
-  pill.style.right = "auto";
+  const rawLeft = isLeft
+    ? Math.max(0, rect.left + uiConfig.offsetX)
+    : Math.max(0, rect.right - pill.offsetWidth - uiConfig.offsetX);
   // 垂直：bottom 锚点 → 容器底 - 高 - offsetY（clamp 到视口上缘防溢出）；top 锚点 → 容器顶 + offsetY
-  pill.style.top = isBottom
-    ? `${Math.max(6, rect.bottom - pill.offsetHeight - uiConfig.offsetY)}px`
-    : `${Math.max(0, rect.top + uiConfig.offsetY)}px`;
+  const rawTop = isBottom
+    ? Math.max(6, rect.bottom - pill.offsetHeight - uiConfig.offsetY)
+    : Math.max(0, rect.top + uiConfig.offsetY);
+  // 终坐标视口 clamp（safe-area 语义：宿主无 viewport-fit=cover → inset 恒 0，
+  // 自然退化为普通 clamp，桌面行为不回归）。
+  const point = clampPointToViewport(
+    rawLeft, rawTop, pill.offsetWidth, pill.offsetHeight,
+    window.innerWidth, window.innerHeight,
+  );
+  pill.style.left = `${Math.round(point.x)}px`;
+  pill.style.top = `${Math.round(point.y)}px`;
+  pill.style.right = "auto";
 }
 
 /** 按当前配置重算胶囊/面板位置（滚动/缩放/配置变更时调用）。 */
@@ -366,6 +394,12 @@ function renderPanel(): void {
       }),
     ]),
   );
+
+  // qa F1（#128 实测）：bottom-* 锚点下面板高度增长不会自动改写 top——打开瞬间以
+  // 「加载中」小高度定位，异步数据撑高面板后若无重排路径则稳定向下溢出视口。
+  // 内容更新完成即同步重定位（DOM 已构建，offsetHeight 即时正确；数据到达为低频
+  // 路径，无需 rAF 合并），clampPointToViewport 继续兜底钳回视口内。
+  if (floatOpen) applyUiPlacement();
 }
 
 // ------------------------------------------------------------------ provider 变化
@@ -385,8 +419,10 @@ function toggleFloat(force?: boolean): void {
   floatOpen = next;
   floatPanel.hidden = !next;
   if (next) {
-    placePanel();
+    // 先渲染再定位（F1 配套）：以真实内容高度定位，消除首帧小高度错位；
+    // 后续异步数据撑高由 renderPanel 尾部的重定位兜底。
     renderPanel();
+    placePanel();
     // 展开面板只拉历史（每次都调）；胶囊文案由轮询维护，不重复调 stats
     void refreshHistory();
   }
@@ -398,17 +434,23 @@ function placePanel(): void {
   if (rect.width === 0 && rect.height === 0) return;
   // 翻转逻辑：底部锚点（bottom-*）→ 面板向上弹出（以胶囊上缘为基准，留配置面板间距
   // 并 clamp 到视口上缘，不溢出）；顶部锚点（top-*）→ 向下弹出（历史行为）。
-  const anchorBottom = uiConfig.placement === "bottom-right" || uiConfig.placement === "bottom-left";
-  floatPanel.style.top = anchorBottom
-    ? `${Math.max(6, rect.top - floatPanel.offsetHeight - uiConfig.panelOffsetY)}px`
-    : `${Math.max(6, rect.bottom + uiConfig.panelOffsetY)}px`;
-  if (uiConfig.placement === "top-left" || uiConfig.placement === "bottom-left") {
-    floatPanel.style.left = `${Math.max(10, Math.round(rect.left))}px`;
-    floatPanel.style.right = "auto";
-  } else {
-    floatPanel.style.right = `${Math.max(10, Math.round(window.innerWidth - rect.right))}px`;
-    floatPanel.style.left = "auto";
-  }
+  const anchorBottom = panelAnchorForPlacement(uiConfig.placement) === "bottom";
+  const isLeft = uiConfig.placement === "top-left" || uiConfig.placement === "bottom-left";
+  const rawTop = anchorBottom
+    ? Math.max(6, rect.top - floatPanel.offsetHeight - uiConfig.panelOffsetY)
+    : Math.max(6, rect.bottom + uiConfig.panelOffsetY);
+  // 水平：left 锚点面板左缘贴胶囊左缘；right 锚点等价换算为 left 后统一处理
+  // （与旧 right 定位相同的视觉结果），再经视口终 clamp 兜底。
+  const rawLeft = isLeft
+    ? Math.max(10, Math.round(rect.left))
+    : Math.max(10, Math.round(rect.right - floatPanel.offsetWidth));
+  const point = clampPointToViewport(
+    rawLeft, rawTop, floatPanel.offsetWidth, floatPanel.offsetHeight,
+    window.innerWidth, window.innerHeight,
+  );
+  floatPanel.style.left = `${Math.round(point.x)}px`;
+  floatPanel.style.top = `${Math.round(point.y)}px`;
+  floatPanel.style.right = "auto";
 }
 
 function mountFloat(): () => void {
@@ -429,24 +471,37 @@ function mountFloat(): () => void {
   let host: HTMLElement | null;
   const listeners: Array<() => void> = [];
 
+  /** rAF 合并调度：同帧多次 scroll/resize/vv-resize/orientationchange 只重算一次（#128）。 */
+  let placeRafId = 0;
+  const scheduleReposition = (): void => {
+    if (placeRafId !== 0) return;
+    placeRafId = requestAnimationFrame(() => {
+      placeRafId = 0;
+      if (host === null) return;
+      repositionPill(pill, host);
+      if (floatOpen) placePanel();
+    });
+  };
+  // orientationchange 后延迟一帧重算：横竖屏切换瞬间 rect 尚未更新（规格 #128 第 2 条）。
+  const onOrientationChange = (): void => { scheduleReposition(); };
+  // 软键盘弹出/收起：visualViewport resize 监听（iOS 13+ 全支持），fixed 元素跟随视口。
+  const onVisualViewportResize = (): void => { scheduleReposition(); };
+
   const attachListeners = (target: HTMLElement): void => {
     for (const stop of listeners) { try { stop(); } catch { /* 忽略 */ } }
     listeners.length = 0;
-    const onScroll = (): void => {
-      repositionPill(pill, target);
-      if (floatOpen) placePanel();
-    };
-    const onResize = (): void => {
-      repositionPill(pill, target);
-      if (floatOpen) placePanel();
-    };
-    target.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onResize);
+    target.addEventListener("scroll", scheduleReposition, { passive: true });
+    window.addEventListener("resize", scheduleReposition);
+    window.addEventListener("orientationchange", onOrientationChange);
+    window.visualViewport?.addEventListener("resize", onVisualViewportResize);
     listeners.push(() => {
-      target.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", onResize);
+      target.removeEventListener("scroll", scheduleReposition);
+      window.removeEventListener("resize", scheduleReposition);
+      window.removeEventListener("orientationchange", onOrientationChange);
+      window.visualViewport?.removeEventListener("resize", onVisualViewportResize);
     });
-    onScroll();
+    repositionPill(pill, target);
+    if (floatOpen) placePanel();
   };
 
   const place = (): boolean => {
@@ -462,7 +517,16 @@ function mountFloat(): () => void {
     return true;
   };
 
-  const observer = new MutationObserver(() => { place(); });
+  // MutationObserver 去抖：宿主 DOM 批量变更合并到一帧处理（#128 第 7 条）。
+  let observerRafId = 0;
+  const schedulePlace = (): void => {
+    if (observerRafId !== 0) return;
+    observerRafId = requestAnimationFrame(() => {
+      observerRafId = 0;
+      place();
+    });
+  };
+  const observer = new MutationObserver(schedulePlace);
   if (place()) {
     observer.observe(document.body, { childList: true, subtree: true });
   } else {
@@ -507,6 +571,8 @@ function mountFloat(): () => void {
   return () => {
     observer.disconnect();
     for (const stop of listeners) { try { stop(); } catch { /* 忽略 */ } }
+    if (placeRafId !== 0) { cancelAnimationFrame(placeRafId); placeRafId = 0; }
+    if (observerRafId !== 0) { cancelAnimationFrame(observerRafId); observerRafId = 0; }
     if (refreshTimer !== null) {
       clearInterval(refreshTimer);
       refreshTimer = null;

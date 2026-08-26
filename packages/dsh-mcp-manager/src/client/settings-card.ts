@@ -39,18 +39,19 @@ export function SettingsCard() {
   }
 
   const set = (patch: any) => setCfg((c: any) => (c !== null ? Object.assign({}, c, patch) : c));
-  const numInput = (key: string, label: string) =>
+  // 层级基准与偏移量分开钳制：层级 1-9000（#128），偏移维持 0-2000。
+  const numInput = (key: string, label: string, min = 0, max = 2000) =>
     React.createElement("label", { className: "dm-set-field" },
       label,
       React.createElement("input", {
         className: "dm-set-input",
         type: "number",
-        min: 0,
-        max: 2000,
+        min,
+        max,
         value: String(cfg[key]),
         onChange: (e: any) => {
           const v = Number(e.target.value);
-          set({ [key]: Number.isFinite(v) ? Math.min(2000, Math.max(0, Math.round(v))) : 0 });
+          set({ [key]: Number.isFinite(v) ? Math.min(max, Math.max(min, Math.round(v))) : min });
         },
       }),
     );
@@ -107,13 +108,16 @@ export function SettingsCard() {
           onChange: (e: any) => set({ position: e.target.value }),
         },
           React.createElement("option", { value: "top-right" }, "右上（top-right）"),
+          React.createElement("option", { value: "top-left" }, "左上（top-left）"),
           React.createElement("option", { value: "bottom-right" }, "右下（bottom-right）"),
+          React.createElement("option", { value: "bottom-left" }, "左下（bottom-left）"),
         ),
       ),
       React.createElement("div", { className: "dm-set-row" },
         numInput("offsetX", "水平偏移"),
         numInput("offsetY", "垂直偏移"),
         numInput("blankY", "空白偏移"),
+        numInput("zIndexBase", "层级基准", 1, 9000),
       ),
       React.createElement("div", { className: "dm-set-hint" },
         "保存即热更新：宿主经 SSE events 通道广播一变，所有标签页的浮窗即刻原位更新，无需重启 dsh web。"),

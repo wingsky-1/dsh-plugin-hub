@@ -40,6 +40,15 @@ import {
   DEFAULT_UI_CONFIG,
   panelAnchorForPlacement,
   panelTopForAnchor,
+  Z_INDEX_BASE_MIN,
+  Z_INDEX_BASE_MAX,
+  Z_INDEX_PANEL_DELTA,
+  BREAKPOINT_NARROW_MAX,
+  BREAKPOINT_TABLET_MAX,
+  breakpointForWidth,
+  clampPointToViewport,
+  clampZIndexBase,
+  panelZIndexFor,
 } from "../lib/index.js";
 
 // ---------------------------------------------------------------- esc
@@ -453,6 +462,55 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
   const bad = normalizeUiConfig({ placement: "middle", offsetX: "abc", offsetY: null, panelOffsetY: 44 });
   assert.equal(bad.placement, DEFAULT_UI_CONFIG.placement, "非法 placement 回退默认");
   assert.equal(bad.offsetX, DEFAULT_UI_CONFIG.offsetX, "非法 offsetX 回退默认");
+  // #128 zIndexBase clamp 边界（默认 40 对应 CSS z-index:40；面板派生 base+30）
+  assert.equal(DEFAULT_UI_CONFIG.zIndexBase, 40, "#128 默认层级基准 40 与 CSS 默认 z-index 一致");
+  assert.equal(normalizeUiConfig({ zIndexBase: 5000 }).zIndexBase, 5000, "#128 合法层级基准透传");
+  assert.equal(normalizeUiConfig({ zIndexBase: 0 }).zIndexBase, Z_INDEX_BASE_MIN, "#128 低于下界压到 1");
+  assert.equal(normalizeUiConfig({ zIndexBase: -99 }).zIndexBase, Z_INDEX_BASE_MIN, "#128 负数压到 1");
+  assert.equal(normalizeUiConfig({ zIndexBase: 9000 }).zIndexBase, Z_INDEX_BASE_MAX, "#128 上界 9000 透传");
+  assert.equal(normalizeUiConfig({ zIndexBase: 9001 }).zIndexBase, Z_INDEX_BASE_MAX, "#128 超上界压到 9000");
+  assert.equal(panelZIndexFor(40), 70, "#128 面板层级派生 base+30");
+}
+
+// ---------------------------------------------------------------- #128 断点与视口终 clamp
+
+{
+  // 断点判定基准 = conversationHost rect 宽度：分支翻转断言
+  assert.equal(breakpointForWidth(320), "narrow", "手机竖屏 narrow");
+  assert.equal(breakpointForWidth(BREAKPOINT_NARROW_MAX), "narrow", "480 边界归 narrow");
+  assert.equal(breakpointForWidth(BREAKPOINT_NARROW_MAX + 1), "tablet", "481 翻转 tablet");
+  assert.equal(breakpointForWidth(768), "tablet", "平板竖屏 tablet");
+  assert.equal(breakpointForWidth(BREAKPOINT_TABLET_MAX), "tablet", "834 边界归 tablet");
+  assert.equal(breakpointForWidth(BREAKPOINT_TABLET_MAX + 1), "wide", "835 翻转 wide");
+  assert.equal(breakpointForWidth(Number.NaN), "wide", "异常宽度按 wide 兜底");
+  // 终坐标视口 clamp：safe-area inset 缺省 0 自然退化（宿主无 viewport-fit=cover）
+  assert.deepEqual(clampPointToViewport(-30, -50, 100, 80, 375, 667), { x: 0, y: 0 }, "负坐标钳回视口原点");
+  assert.deepEqual(clampPointToViewport(400, 700, 100, 80, 375, 667), { x: 275, y: 587 }, "右/下溢出钳回视口内");
+  assert.deepEqual(clampPointToViewport(10, 20, 50, 40, 800, 600), { x: 10, y: 20 }, "视口内坐标不变（桌面零回归）");
+  assert.deepEqual(clampPointToViewport(-30, -50, 100, 80, 375, 667, 10), { x: 10, y: 10 }, "safeInset>0 按安全区内缩");
+}
+
+// ---------------------------------------------------------------- qa F1 场景：bottom 锚点首开→数据撑高→重定位后不溢出
+
+{
+  // 375x667 视口、bottom-left、胶囊 offsetY=48 / 高 26px → 胶囊上缘 593；
+  // 打开瞬间面板为「加载中」小高度（h1=60），数据到达后实测撑高至 h2≈521。
+  const vw = 375;
+  const vh = 667;
+  const pillTop = vh - 26 - 48; // 593
+  const gap = 10; // panelOffsetY
+  const h1 = 60;
+  const h2 = 521;
+  // 阶段 1：以小高度定位（toggleFloat 先渲染后定位，坐标即此值）
+  const p1 = clampPointToViewport(0, Math.max(6, pillTop - h1 - gap), 340, h1, vw, vh);
+  assert.ok(p1.y + h1 <= vh, "F1 阶段1 小高度定位在视口内");
+  // 反证对照：若无内容变化重定位（保持阶段 1 的 y），撑高后底缘必然溢出——
+  // 固化 qa 实测现象（y=561/bottom=1082 稳态同构），锁定根因防回退。
+  assert.ok(p1.y + h2 > vh, "F1 对照：缺重定位时同坐标撑高必溢出视口");
+  // 阶段 2：renderPanel 尾部重定位以真实高度重算 → 底缘回到视口内。
+  const p2 = clampPointToViewport(0, Math.max(6, pillTop - h2 - gap), 340, h2, vw, vh);
+  assert.ok(p2.y + h2 <= vh, "F1 阶段2 重定位后底缘不出视口（qa 复测口径）");
+  assert.ok(p2.y >= 6 && p2.y < pillTop, "F1 阶段2 顶缘保持底部锚点上弹语义");
 }
 
 // ---------------------------------------------------------------- 面板定位翻转规则

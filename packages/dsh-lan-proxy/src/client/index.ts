@@ -4,10 +4,12 @@
  * 行为：在「设置 → 插件」面板渲染 dsh-lan-proxy 配置卡片（settings.plugin.item
  * 插槽，idle 插件同款风格）：
  * - 启用开关 / LAN 端口 / HTTPS 开关与端口 / 证书与私钥文件 / 启动横幅开关；
- * - 点「保存」经宿主 RPC 通道写插件目录 config.json，宿主 watch 后立即重建
- *   转发器（保存即热更新，无需重启 dsh web）。
+ * - 点「保存」经 loopback HTTP 配置路由提交增量 patch，宿主端转写官方 settings
+ *   命名空间（scope.update/replace），scope.watch 触发转发器热更新（保存即热
+ *   更新，无需重启 dsh web）。
  *
- * 持久化与生效配置在宿主（~/.dsh/lan-proxy/config.json），多标签页共享。
+ * 配置单一事实源在宿主官方 settings 存储（issue #110）；卡片读取走 GET 快照
+ * （user 层 + effective 生效值 + 压缩协商计数），多标签页共享。
  */
 
 // 浏览器半区干净模块：只导出 apply/inject；React 由构建期 external 注入（经 factory
@@ -17,11 +19,11 @@
 import STYLE from "./style.css";
 import * as React from "react";
 
-var CHANNEL = "/dsh-lan-proxy";
+var CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
   var STYLE_ID = "dsh-lan-proxy-style";
-  var CSS_VERSION = "2";
+  var CSS_VERSION = "3";
 
-  /** 展示缺省值（与宿主 DEFAULT_OPTIONS 同构；持久化层未保存的键回落这些值）。 */
+  /** 展示缺省值（与宿主 DEFAULT_OPTIONS 同构；用户层未保存的键回落这些值）。 */
   var DEFAULTS: Record<string, any> = {
     enabled: true,
     port: 3081,
@@ -36,7 +38,6 @@ var CHANNEL = "/dsh-lan-proxy";
     httpCompressLevel: 1,
   };
 
-  var rpc: any = null;
   var disposed = false;
 
   // ------------------------------------------------------------ 样式
@@ -80,7 +81,8 @@ var CHANNEL = "/dsh-lan-proxy";
 
   /**
    * 设置面板插件项：启用 / LAN 端口 / HTTPS / 证书文件 / 启动横幅。
-   * 改动只在点「保存」后生效：宿主原子写 config.json 并立即重建转发器。
+   * 改动只在点「保存」后生效：经 loopback HTTP 路由写入官方 settings 存储，
+   * 宿主 scope.watch 立即重建转发器。
    */
   function SettingsCard() {
     var ReactHooks = React;
@@ -94,37 +96,47 @@ var CHANNEL = "/dsh-lan-proxy";
     var openState = useState(false);
     var open = openState[0];
     var setOpen = openState[1];
-    // HTTP 压缩运行快照（issue #33 子项 3）：state 响应附带，底部轻量状态行展示。
+    // HTTP 压缩运行快照（issue #33 子项 3）：GET 快照附带，底部轻量状态行展示。
     var compressDraft = useState(null);
     var compress = compressDraft[0];
     var setCompress = compressDraft[1];
     // 加载基线（issue #33 子项 2）：保存时只提交与基线不同的键（增量 diff），
-    // 未改动的键不提交——组合层设值不会被客户端默认值静默覆盖回写。
+    // 未改动的键不提交——组合层 base 设值不会被客户端默认值静默覆盖回写。
     var baseline: Record<string, any> | null = null;
+    // 乐观并发凭据（官方 descriptor.revision）：PUT 时回传，冲突时提示刷新。
+    var revision: any = null;
+
+    function loadCard(alive: { value: boolean }) {
+      fetch(CONFIG_ROUTE, { headers: { accept: "application/json" } })
+        .then(function (r: any) { return r.json(); })
+        .then(function (v: any) {
+          if (!alive.value) return;
+          var merged: Record<string, any> = {};
+          // 展示校准（issue #33 子项 2）：DEFAULTS 兜底 → 宿主生效值（组合层
+          // base 设值的键显示实际生效值）→ 用户层（上次在本卡片保存的内容，
+          // 作为编辑基线；descriptor.user 的键存在即用户设过值）。
+          for (var key in DEFAULTS) merged[key] = DEFAULTS[key];
+          var effective = (v && v.effective) || {};
+          for (var ek in DEFAULTS) {
+            if (effective[ek] !== undefined && effective[ek] !== null) merged[ek] = effective[ek];
+          }
+          var user = (v && v.user) || {};
+          for (var pk in user) merged[pk] = user[pk];
+          baseline = Object.assign({}, merged);
+          revision = (v && v.revision) || null;
+          setCompress((v && v.compress) || null);
+          setSettings(merged);
+        })
+        .catch(function (e: any) {
+          if (!alive.value) return;
+          setSaved("设置加载失败：" + ((e && e.message) || e));
+        });
+    }
 
     useEffect(function () {
-      var alive = true;
-      rpc("state", {}).then(function (v: any) {
-        if (!alive) return;
-        var merged: Record<string, any> = {};
-        // 展示校准（issue #33 子项 2）：DEFAULTS 兜底 → 宿主生效值（组合层
-        // cordis.patch.yml 设值的键显示实际生效值，而非默认值）→ 持久化层
-        // （用户上次在本卡片保存的内容，作为编辑基线）。
-        for (var key in DEFAULTS) merged[key] = DEFAULTS[key];
-        var effective = (v && v.effective) || {};
-        for (var ek in DEFAULTS) {
-          if (effective[ek] !== undefined && effective[ek] !== null) merged[ek] = effective[ek];
-        }
-        var persisted = (v && v.settings) || {};
-        for (var pk in persisted) merged[pk] = persisted[pk];
-        baseline = Object.assign({}, merged);
-        setCompress((v && v.compress) || null);
-        setSettings(merged);
-      }).catch(function (e: any) {
-        if (!alive) return;
-        setSaved("设置加载失败：" + ((e && e.message) || e));
-      });
-      return function () { alive = false; };
+      var alive = { value: true };
+      loadCard(alive);
+      return function () { alive.value = false; };
     }, []);
 
     if (!settings) {
@@ -155,8 +167,8 @@ var CHANNEL = "/dsh-lan-proxy";
         return;
       }
       // 增量提交（issue #33 子项 2）：只发送与加载基线不同的键，未改动的键
-      // 不提交——组合层设值不会被客户端默认值静默覆盖回写；宿主端把 diff
-      // 合并进 config.json 现有内容。
+      // 不提交——组合层 base 设值不会被客户端默认值静默覆盖回写；宿主端把
+      // patch 经 scope.update 增量合并进官方设置存储的用户层。
       var normalized: Record<string, any> = { port: portValue, httpsPort: httpsPortValue, httpCompressLevel: levelValue };
       var payload: Record<string, any> = {};
       for (var key in DEFAULTS) {
@@ -167,12 +179,28 @@ var CHANNEL = "/dsh-lan-proxy";
         setSaved("未修改");
         return;
       }
-      rpc("config", { settings: payload }).then(function () {
+      fetch(CONFIG_ROUTE, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ patch: payload, expectedRevision: revision }),
+      }).then(function (r: any) {
+        return r.json().then(function (body: any) {
+          if (!r.ok) {
+            var err = (body && body.error) || {};
+            throw new Error(err.details || err.code || ("HTTP " + r.status));
+          }
+          return body;
+        });
+      }).then(function (body: any) {
         baseline = Object.assign({}, settings);
+        revision = (body && body.revision) || revision;
         setSaved("已保存，已热更新");
         setTimeout(function () { setSaved(""); }, 2200);
       }).catch(function (e: any) {
-        setSaved("保存失败：" + (((e && e.details) || (e && e.message)) || e));
+        var msg = (e && e.message) || e;
+        setSaved(String(msg).indexOf("已被其他窗口修改") >= 0
+          ? "保存失败：" + msg + "（请关闭本卡片重新打开后重试）"
+          : "保存失败：" + msg);
       });
     }
 
@@ -325,7 +353,7 @@ var CHANNEL = "/dsh-lan-proxy";
           ),
         ),
         React.createElement("div", { className: "lp-set-hint" },
-          "保存即热更新（写入 ~/.dsh/lan-proxy/config.json，无需重启 dsh web）。" +
+          "保存即热更新（配置写入宿主统一设置存储，无需重启 dsh web）。" +
           "修改后内网设备访问新端口，旧端口立即失效。"),
         (function () {
           var compressLine = compressStatusLine(compress);
@@ -343,29 +371,21 @@ var CHANNEL = "/dsh-lan-proxy";
 
 export function apply(ctx: any) {
     try {
-      var connection = ctx.get("connection");
       var slots = ctx.get("slots");
-      if (!connection || !slots) {
-        console.warn("[dsh-lan-proxy] 缺少 connection/slots 服务，设置面板未挂载");
+      if (!slots) {
+        console.warn("[dsh-lan-proxy] 缺少 slots 服务，设置面板未挂载");
         return;
       }
-
-      rpc = function (endpoint: any, payload: any) {
-        return connection.rpc.call(CHANNEL, endpoint, payload || {}).then(function (result: any) {
-          if (!result.ok) throw new Error((result.error && (result.error.details || result.error.code)) || "rpc failed");
-          return result.value;
-        });
-      };
 
       injectStyle();
 
       // 设置面板插件项。
       // ⚠️ rc.7 起 settings.plugin.item 由 list(id) 改为 keyed(key)：
       //   - 旧版（<=rc.6）只看 `id`；
-      //   - rc.7 只看 `key`，且要求与宿主 serve 的命名空间一致（dsh-lan-proxy）。
+      //   - rc.7 只看 `key`，且要求与宿主端 serve 的命名空间一致（dsh-lan-proxy）。
       // 社区一致范式（见 ysr666/dsh-vision-router#165/#162）：**id 与 key 双写**，
       // 让新旧两代 slot 运行时都接受（多余字段被忽略）。key 必须等于宿主端
-      // installSettingsNamespace 注册的命名空间，才会被 configurable 面板派发。
+      // 注册进 settings 服务的命名空间，才会被 configurable 面板派发。
       slots.inject("settings.plugin.item", function () {
         return slots.register(
           { name: "settings.plugin.item", id: "dsh-lan-proxy", key: "dsh-lan-proxy", order: 50 },

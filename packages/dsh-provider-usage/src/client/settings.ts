@@ -158,20 +158,21 @@ function UiSection() {
     setSaving(false);
   };
 
-  const numInput = (key: "offsetX" | "offsetY" | "panelOffsetY", label: string): React.ReactNode =>
+  // 层级基准与偏移量分开钳制：层级 1-9000（#128），偏移维持 0-2000。
+  const numInput = (key: "offsetX" | "offsetY" | "panelOffsetY" | "zIndexBase", label: string, min = 0, max = 2000): React.ReactNode =>
     React.createElement(
       "label",
       { style: { marginRight: 12, whiteSpace: "nowrap" } },
       label,
       React.createElement("input", {
         type: "number",
-        min: 0,
-        max: 2000,
+        min,
+        max,
         value: String(cfg[key]),
         style: { width: 64, marginLeft: 6, padding: "2px 6px", border: "1px solid var(--dsw-alias-border-l2,#e8eaf0)", borderRadius: 4 },
         onChange: (e: unknown) => {
           const v = Number((e as { target: { value: string } }).target.value);
-          set({ [key]: Number.isFinite(v) ? Math.min(2000, Math.max(0, Math.round(v))) : 0 } as Partial<UiPlacementConfig>);
+          set({ [key]: Number.isFinite(v) ? Math.min(max, Math.max(min, Math.round(v))) : min } as Partial<UiPlacementConfig>);
         },
       }),
     );
@@ -200,6 +201,7 @@ function UiSection() {
       numInput("offsetX", "水平偏移"),
       numInput("offsetY", "垂直偏移"),
       numInput("panelOffsetY", "面板间距"),
+      numInput("zIndexBase", "层级基准", 1, 9000),
     ),
     React.createElement(
       "button",

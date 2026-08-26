@@ -281,6 +281,33 @@ dsh web 部署在 Linux 服务器，经局域网被多种设备 / 系统访问�
 （浏览器 DevTools 或浏览器自动化 MCP 均可）；宿主端逻辑须在三 OS 下可运行。
 构造的样例 fixture 放仓库外工作区，不纳入发布物。
 
+## 7. 浮窗移动端适配约定（#128，dsh-mcp-manager / dsh-provider-usage）
+
+带浮窗胶囊的插件共用以下跨包约定；判定与 clamp 逻辑以纯函数形式放在各包
+`src/placement-math.ts`（零依赖单一事实源：宿主端 re-export 供 smoke 断言、
+客户端直接内联），两包保持同构。
+
+1. **断点档位**：判定基准 = conversationHost 的 rect 宽度（JS 判定 + data 属性
+   `data-dm-bp` / `data-dou-bp` 切换样式），**不用窗口 @media**——防桌面窄窗 /
+   iPad Slide Over 误触发。阈值：narrow ≤480 < tablet ≤834 < wide。
+2. **z-index 基准**：单字段 `zIndexBase`（clamp 1–9000），面板派生基准 +30；
+   默认 mcp-manager=10、provider-usage=40 与各自 CSS 默认一致。模态管理类
+   overlay 不占用该预算。
+3. **终坐标视口 clamp（safe-area 语义）**：对算好的 fixed 坐标统一过
+   `clampPointToViewport`；宿主 viewport meta 无 `viewport-fit=cover`，
+   `env(safe-area-inset-*)` 恒 0 → safeInset 缺省 0 自然退化为普通 clamp。
+   禁止改宿主 viewport meta。
+4. **软键盘 / 旋转**：`visualViewport` resize 监听跟随键盘弹出收起；
+   `orientationchange` 后 rAF 一帧重算（切换瞬间 rect 未更新）。
+5. **触控目标分层**：伪元素外扩热区保 WCAG 2.2 AA ≥24px 底线；narrow 档主操作
+   min-height 36px + 外扩命中区 ≈44px。悬停态一律包 `@media(hover:hover)`。
+6. **滚动性能**：scroll/resize/vv-resize/orientationchange 统一 rAF 合并调度；
+   MutationObserver 回调去抖到帧。面板高度用 dvh 级联回退（先 vh 声明再 dvh 覆写）。
+7. **offsetY=48 跨包避让契约（源自 issue #116，不可回退）**：mcp-manager 浮窗
+   默认 top-right、距顶 8px、高约 26px；provider-usage 胶囊默认 offsetY=48 在其
+   正下方让位。任一侧默认锚点 / 垂直偏移的变更都属跨包行为契约变更，两包 README
+   与默认值必须联动评估调整。
+
 ---
 
 > **隔离环境浏览器验证**：客户端 UI 改动（`packages/*/src/client/**` 等）的隔离环境
