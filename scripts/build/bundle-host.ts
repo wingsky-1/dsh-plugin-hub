@@ -149,6 +149,11 @@ cleanFreeFloatingJs(libDir, true)
 // 子目录 lib/a/b.d.ts 引用为 ../../shared/（深度 +1 级）。
 function rewriteDtsPaths(dir, depth) {
   const prefix = '../'.repeat(depth + 1)
+  // rewriteRelativeImportExtensions 的 d.ts 缺口修正（#276 方案 A）：TS（5.9/7.x
+  // 实测一致）只把相对 .ts 后缀 specifier 回写到 JS emit，声明文件不回写——
+  // 源码 .ts 后缀原样进入 lib/*.d.ts，会指向发布包内不存在的文件。统一改回 .js。
+  // 对未启用该 flag / 未迁移的包无匹配，天然无操作。
+  const TS_SUFFIX = /(from\s+|import\s*\(\s*)(["'])(\.\.?\/[^"'\s]+)\.ts\2/g
   for (const f of readdirSync(dir, { withFileTypes: true })) {
     const abs = join(dir, f.name)
     if (f.isDirectory()) { rewriteDtsPaths(abs, depth + 1); continue }
@@ -156,6 +161,7 @@ function rewriteDtsPaths(dir, depth) {
     const p = join(dir, f.name)
     const t = readFileSync(p, 'utf8')
       .replace(/(?:\.\.\/)+shared\//g, `${prefix}shared/`)
+      .replace(TS_SUFFIX, '$1$2$3.js$2')
     writeFileSync(p, t)
   }
 }
