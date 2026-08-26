@@ -5,8 +5,8 @@
  * 禁止模块级全局变量，确保连续挂载/卸载无残留。
  */
 
-import { API } from "./constants.js";
-import { DEFAULT_Z_INDEX_BASE } from "../placement-math.js";
+import { API } from "./constants.ts";
+import { DEFAULT_Z_INDEX_BASE } from "../placement-math.ts";
 
 /** 单台 MCP 服务器面向 UI 的摘要形态。 */
 export interface McpServerSummary {

@@ -9,11 +9,11 @@
  */
 
 import { createHash } from "node:crypto";
-import { createTransport } from "./transport.js";
-import type { StdioTransport, HttpTransport } from "./transport.js";
-import { SCOPE_GLOBAL, SCOPE_PROJECT } from "./scope.js";
-import { MCPClient } from "./protocol.js";
-import type { ServerConfig } from "./types.js";
+import { createTransport } from "./transport.ts";
+import type { StdioTransport, HttpTransport } from "./transport.ts";
+import { SCOPE_GLOBAL, SCOPE_PROJECT } from "./scope.ts";
+import { MCPClient } from "./protocol.ts";
+import type { ServerConfig } from "./types.ts";
 import type { Context, LoggerService } from "@deepseek-ai/cordis";
 // 官方工具定义类型（仅 import type，编译期擦除；contract-check 禁止运行时值导入）。
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";

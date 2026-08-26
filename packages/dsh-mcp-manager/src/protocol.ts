@@ -11,7 +11,7 @@
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { ListToolsResultSchema, ResultSchema } from "@modelcontextprotocol/sdk/types.js";
-import type { StdioTransport, HttpTransport } from "./transport.js";
+import type { StdioTransport, HttpTransport } from "./transport.ts";
 
 /**
  * MCP 客户端适配器：包装官方 SDK Client。

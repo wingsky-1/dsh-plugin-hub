@@ -37,25 +37,25 @@ import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type {} from "@deepseek-ai/dsh-agent";
 import type {} from "@deepseek-ai/dsh-system-prompt";
 import type {} from "@deepseek-ai/dsh-tools";
-import type { ServerConfig } from "./types.js";
-import type { CatalogCache, CatalogDecision, CatalogMessage, SupervisorLite, CatalogAgent } from "./catalog.js";
+import type { ServerConfig } from "./types.ts";
+import type { CatalogCache, CatalogDecision, CatalogMessage, SupervisorLite, CatalogAgent } from "./catalog.ts";
 
 // 组合根内部使用的依赖（re-export 见文件底部）。
-import { defaultStorePath, McpStore } from "./store.js";
-import { DEFAULT_TOOL_CALL_TIMEOUT_MS, DEFAULT_RESULT_TRUNCATE_BYTES, ConnectionSupervisor } from "./supervisor.js";
+import { defaultStorePath, McpStore } from "./store.ts";
+import { DEFAULT_TOOL_CALL_TIMEOUT_MS, DEFAULT_RESULT_TRUNCATE_BYTES, ConnectionSupervisor } from "./supervisor.ts";
 import {
   SCOPE_GLOBAL,
   SCOPE_PROJECT,
   normalizeScope,
-} from "./scope.js";
+} from "./scope.ts";
 import {
   DEFAULT_ANNOUNCE_CATALOG,
   DEFAULT_CATALOG_MAX_ENTRIES,
   catalogCacheFile,
   summarizeToolDescriptions,
   resolveCatalogInjection,
-} from "./catalog.js";
-import { makeRoutes, makeEventsRoute, makeHealthRoute, sseData, uiConfigChangedFrame } from "./routes.js";
+} from "./catalog.ts";
+import { makeRoutes, makeEventsRoute, makeHealthRoute, sseData, uiConfigChangedFrame } from "./routes.ts";
 import {
   McpMiddleware,
   msgOf,
@@ -67,7 +67,7 @@ import {
   catalogCacheFileFor,
   type MiddlewareMode,
   type ProjectUnit,
-} from "./middleware.js";
+} from "./middleware.ts";
 
 /** 稳定的 cordis 插件名。 */
 export const name = "mcp-manager";
@@ -118,7 +118,7 @@ import {
   panelZIndexFor,
   breakpointForWidth,
   clampPointToViewport,
-} from "./placement-math.js";
+} from "./placement-math.ts";
 export {
   DEFAULT_Z_INDEX_BASE,
   Z_INDEX_BASE_MIN,
@@ -131,9 +131,9 @@ export {
   breakpointForWidth,
   clampPointToViewport,
 };
-export type { FloatBreakpoint, ViewportPoint } from "./placement-math.js";
+export type { FloatBreakpoint, ViewportPoint } from "./placement-math.ts";
 // 面板锚点判定同为纯函数，随定位数学一起从单一事实源 re-export。
-export { panelAnchorForPosition } from "./placement-math.js";
+export { panelAnchorForPosition } from "./placement-math.ts";
 
 const UiConfigSchema = z.object({
   position: z.union([
@@ -1164,11 +1164,11 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
 // 导出面与拆分前 lib/index.js 完全一致（smoke 验收契约）。
 
 // 存储
-export { defaultStorePath, McpStore } from "./store.js";
+export { defaultStorePath, McpStore } from "./store.ts";
 // 传输
-export { expandEnv, HttpTransport, parseSsePayload, StdioTransport, createTransport } from "./transport.js";
+export { expandEnv, HttpTransport, parseSsePayload, StdioTransport, createTransport } from "./transport.ts";
 // 协议
-export { MCPClient } from "./protocol.js";
+export { MCPClient } from "./protocol.ts";
 // 连接监督器 / 工具定义（含命名、截断、schema 校验）
 export {
   DEFAULT_TOOL_CALL_TIMEOUT_MS,
@@ -1180,7 +1180,7 @@ export {
   buildToolDefinition,
   ConnectionSupervisor,
   resolveReconnect,
-} from "./supervisor.js";
+} from "./supervisor.ts";
 // 能力目录 / 目录缓存
 export {
   DEFAULT_ANNOUNCE_CATALOG,
@@ -1196,9 +1196,9 @@ export {
   catalogHistory,
   renderMcpCatalogUpdate,
   resolveCatalogInjection,
-} from "./catalog.js";
+} from "./catalog.ts";
 // mcpServers JSON 导入
-export { fromClaudeEntry, parseClaudeJson } from "./import.js";
+export { fromClaudeEntry, parseClaudeJson } from "./import.ts";
 // 中间层（工作空间 MCP 路由：连接池 / 目录 / ws_mcp_search / ws_mcp_call）
 export {
   McpMiddleware,
@@ -1228,10 +1228,10 @@ export {
   MAX_TOOLS_PER_SERVER,
   MAX_BYTES_PER_TOOL,
   MAX_TOTAL_CATALOG_BYTES,
-} from "./middleware.js";
+} from "./middleware.ts";
 // 路由
-export { ROUTES, makeRoutes, makeEventsRoute, makeHealthRoute, sseData, uiConfigChangedFrame, broadcastFrame, SSE_HEARTBEAT_MS, SSE_PING_FRAME } from "./routes.js";
-export { SCOPE_GLOBAL, SCOPE_PROJECT, normalizeScope } from "./scope.js";
+export { ROUTES, makeRoutes, makeEventsRoute, makeHealthRoute, sseData, uiConfigChangedFrame, broadcastFrame, SSE_HEARTBEAT_MS, SSE_PING_FRAME } from "./routes.ts";
+export { SCOPE_GLOBAL, SCOPE_PROJECT, normalizeScope } from "./scope.ts";
 // 仓库共享层（loopback 围栏 / writeJson / readJsonBody）
 export { isLoopbackRequest } from "../../../shared/loopback.js";
 export { writeJson, readJsonBody } from "../../../shared/host-utils.js";

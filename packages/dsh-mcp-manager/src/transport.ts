@@ -14,7 +14,7 @@
 
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { ServerConfig } from "./types.js";
+import type { ServerConfig } from "./types.ts";
 
 // ------------------------------------------------- env 展开 / 子进程环境
 

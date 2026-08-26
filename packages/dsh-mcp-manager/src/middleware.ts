@@ -19,12 +19,12 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
-import type { ServerConfig } from "./types.js";
+import type { ServerConfig } from "./types.ts";
 import type { Context, LoggerService } from "@deepseek-ai/cordis";
 import type { ToolDefinition, PreToolDecision } from "@deepseek-ai/dsh-tools";
-import { MCPClient } from "./protocol.js";
-import type { StdioTransport, HttpTransport } from "./transport.js";
-import { createTransport } from "./transport.js";
+import { MCPClient } from "./protocol.ts";
+import type { StdioTransport, HttpTransport } from "./transport.ts";
+import { createTransport } from "./transport.ts";
 
 // ------------------------------------------------------------ 常量与类型
 

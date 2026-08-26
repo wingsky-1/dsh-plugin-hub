@@ -18,13 +18,13 @@
 import STYLE from "./style.css";
 import * as React from "react";
 
-import { createState, type McpState, type UiActions } from "./state.js";
-import { api } from "./dom.js";
-import { refresh, switchTab, close, showPanel } from "./panel.js";
-import { resetForm, beginEdit } from "./quick-add.js";
-import { toggleFloat, mountFloat } from "./float.js";
-import { bindSession } from "./session.js";
-import { SettingsCard } from "./settings-card.js";
+import { createState, type McpState, type UiActions } from "./state.ts";
+import { api } from "./dom.ts";
+import { refresh, switchTab, close, showPanel } from "./panel.ts";
+import { resetForm, beginEdit } from "./quick-add.ts";
+import { toggleFloat, mountFloat } from "./float.ts";
+import { bindSession } from "./session.ts";
+import { SettingsCard } from "./settings-card.ts";
 
 export function apply(ctx: any): void {
   const state: McpState = createState();
