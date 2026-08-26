@@ -47,6 +47,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        # #220 按需基线：push 事件需 before 对象可达以 diff 变动包（fail-closed 全量兜底）
+        with:
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@a8198c4bff370c8506180b035930dea56dbd5288 # v5
@@ -77,18 +80,62 @@ jobs:
       - name: Mutation scope guard（F5：mutate 区间须落在 // lib/*.js 分段边界内）
         run: node scripts/gate/mutate-scope-guard.mjs
 
-      - name: Mutation suites（全部变异配置串行全量；单配置失败记账继续跑完，结尾统一判红）
+      - name: Resolve mutation suites（#220 按需基线：push 只跑变动包，其余事件全量）
+        id: suite-plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -e
+          # 全量清单（glob conf 目录为单一事实源）
+          list_all() { ls stryker.conf.d/dsh-*.json; }
+          # 非 push（schedule/dispatch 兜底校准）→ 全量；push 且 before 不可用 → fail-closed 全量
+          if [ "$EVENT_NAME" != "push" ]; then
+            list_all > /tmp/suites.txt
+            echo "mode=full" >> "$GITHUB_OUTPUT"
+          elif [ -z "$BEFORE_SHA" ] || echo "$BEFORE_SHA" | grep -qv '^[0-9a-f]\{40\}$'; then
+            echo '::notice::before SHA 不可用 —— fail-closed 全量'
+            list_all > /tmp/suites.txt
+            echo "mode=full" >> "$GITHUB_OUTPUT"
+          else
+            CHANGED="$(git diff --name-only "$BEFORE_SHA"..HEAD || true)"
+            # 产物全集级变化（shared 内联进每包 / 构建链）→ 全量
+            if printf '%s\n' "$CHANGED" | grep -qE '^(shared/|pnpm-lock\.yaml$|package\.json$|pnpm-workspace\.yaml$|tsconfig\.base\.json$)'; then
+              echo '::notice::shared/构建链变化 —— 全量刷新'
+              list_all > /tmp/suites.txt
+              echo "mode=full" >> "$GITHUB_OUTPUT"
+            else
+              # 逐包判定：packages/<pkg>/** 或该包 conf 变化 → 该包全部段配置
+              : > /tmp/suites.txt
+              for pkgdir in packages/dsh-*; do
+                pkg="$(basename "$pkgdir")"
+                if printf '%s\n' "$CHANGED" | grep -qE "^packages/${pkg}/" ; then
+                  ls stryker.conf.d/"$pkg"-*.json stryker.conf.d/"$pkg".json 2>/dev/null >> /tmp/suites.txt || true
+                fi
+              done
+              # conf 自身变化 → 对应包重跑（glob 已被上面 ls 覆盖：conf 命中即包名匹配）
+              sort -u /tmp/suites.txt -o /tmp/suites.txt
+              N="$(wc -l < /tmp/suites.txt)"
+              echo "mode=partial ($N 配置)" >> "$GITHUB_OUTPUT"
+              echo '::notice::按需基线：仅跑变动包配置'
+            fi
+          fi
+          HAS=$([ -s /tmp/suites.txt ] && echo true || echo false)
+          echo "has_suites=$HAS" >> "$GITHUB_OUTPUT"
+
+      - name: Mutation suites（串行执行计划内变异配置；单配置失败记账继续跑完，结尾统一判红）
         # id 供 collect 步骤区分「整套 skip（无产物无从收集）」与「部分失败
         # （记账夜已产出的基线照常收集）」（#217）
         id: mutation-suites
+        if: steps.suite-plan.outputs.has_suites == 'true'
         # #178 逐包容错：strict 判红路径下 incremental 基线已先落盘（StrykerJS 源码核实），
         # 记账继续可让后续包照常产出报告与基线，避免单包连锁丢弃整夜数据。
-        # #220 B 方案：不再硬编码包名单 —— glob stryker.conf.d/dsh-*.json 全集
-        #（含拆分三包的段配置与未拆分包的包级配置），新增/退役配置自动纳入
+        # #220 B 方案：循环清单由 suite-plan 步骤产出（全量 glob 或按需裁剪），
+        # 本步骤不再关心名单来源
         run: |
           FAILED=0
           FAILED_CONFS=''
-          for conf in stryker.conf.d/dsh-*.json; do
+          while read -r conf; do
             name="$(basename "$conf" .json)"
             echo "::group::stryker $name"
             if npx stryker run "$conf"; then
@@ -99,7 +146,7 @@ jobs:
               FAILED=1
               FAILED_CONFS="$FAILED_CONFS $name"
             fi
-          done
+          done < /tmp/suites.txt
           if [ "$FAILED" -ne 0 ]; then
             echo "::error::以下变异套件失败，统一判红:$FAILED_CONFS"
             exit 1
@@ -109,9 +156,9 @@ jobs:
         # #204 方案 A（业界最佳实践）：夜间基线改「仓库内版本化文件」，替代 actions/cache
         # save。actions/cache 按 ref 隔离（PR 永远读不到 main 的缓存，社区广泛确认，
         # GitHub Community #58583），而 git 内容跨 ref 天然可见、可本地实证。
-        # if: always() && 非 skipped —— 部分失败夜已产出的基线文件照常收集；
-        # 但整套变异被 skip 时无任何产物，collect 不运行（防 copied=0 误红，#217）。
-        if: always() && steps.mutation-suites.outcome != 'skipped'
+        # if: always() && 非 skipped 且有计划 —— 部分失败夜已产出的基线文件照常收集；
+        # 但整套变异被 skip 或按需计划为空时无任何产物，collect 不运行（防 copied=0 误红，#217/#220）。
+        if: always() && steps.mutation-suites.outcome != 'skipped' && steps.suite-plan.outputs.has_suites == 'true'
         run: node scripts/gate/collect-incremental-baseline.mjs
 
       - name: Open baseline PR（基线有变化时自动建 PR 合入 main）
