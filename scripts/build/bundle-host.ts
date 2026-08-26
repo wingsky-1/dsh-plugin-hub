@@ -20,7 +20,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, r
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
-import { buildClient, copyClientResources } from './build-client.ts'
+import { buildClient, buildMermaidChunk, copyClientResources } from './build-client.ts'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 // 插件目录相对当前工作目录解析（pnpm --filter 场景 cwd=包目录传 .；仓库根场景传 packages/dsh-*）
@@ -118,6 +118,26 @@ if (clientSrc) {
     process.exit(1)
   }
   try { rmSync(join(libDir, 'client.js.map')) } catch { /* 无 map 则跳过 */ }
+
+  // 1b-mermaid. Mermaid 懒加载独立 chunk（issue #104，有 mermaid-entry.ts 的包才构建）：
+  // ESM 整库内联产物 lib/client-mermaid.js，客户端 md 出现 mermaid 块时才动态 import。
+  // 必须在 cleanFreeFloatingJs 之前产出——清理白名单（isTopEntry）已同步放行该文件名，
+  // 双保险防「游离产物清理误删新 chunk → 宿主路由 ENOENT」复发。
+  const mermaidEntry = join(pkgDir, 'src', 'client', 'mermaid-entry.ts')
+  if (existsSync(mermaidEntry)) {
+    try {
+      const { bytes, refs } = await buildMermaidChunk({ entry: mermaidEntry, outfile: join(libDir, 'client-mermaid.js') })
+      // minify 移除产物内 node_modules 注释 → license 归集链失明（详见
+      // build-client.buildMermaidChunk 注释）。sidecar 清单随包发布（files 白名单
+      // 已含 lib/），collect-licenses / pack-check 以它为该产物的唯一证据源。
+      writeFileSync(join(libDir, 'client-mermaid.deps.json'), JSON.stringify(refs, null, 1) + '\n')
+      console.log(`[bundle-host] ${process.argv[2]}: mermaid chunk 构建完成（lib/client-mermaid.js，${(bytes / 1024 / 1024).toFixed(2)}MB min，${refs.length} 个内联第三方库清单）`)
+    } catch (e) {
+      console.error(`[bundle-host] mermaid chunk 构建失败: ${e.message}`)
+      process.exit(1)
+    }
+    try { rmSync(join(libDir, 'client-mermaid.js.map')) } catch { /* 无 map 则跳过 */ }
+  }
 }
 
 // 1c. 资源文件复制：src/ 下非 TS 文件（如 toast.ps1）→ lib/（运行时从 lib 同目录定位）
@@ -129,12 +149,14 @@ for (const f of copiedResources) {
 // 1d. 递归清理游离产物：多模块 src（含 src/client/、src/core/ 等子目录）的 tsc 会
 // 逐个 emit lib/**/*.js + *.js.map；host 已内联为自包含 lib/index.js（client 由
 // build-client 生成 lib/client.js），其余 .js/.js.map（含子目录）均为游离物——
-// 保留顶层 index.js/client.js 与全部 .d.ts（类型 re-export 需要）。
+// 保留顶层 index.js/client.js/client-mermaid.js（issue #104 懒加载 chunk，
+// P0 白名单：缺它会被当游离产物删除 → 宿主路由 ENOENT 且既有门禁测不出）与
+// 全部 .d.ts（类型 re-export 需要）。
 function cleanFreeFloatingJs(dir, isRoot) {
   for (const f of readdirSync(dir, { withFileTypes: true })) {
     const abs = join(dir, f.name)
     if (f.isDirectory()) { cleanFreeFloatingJs(abs, false); continue }
-    const isTopEntry = isRoot && (f.name === 'index.js' || f.name === 'client.js')
+    const isTopEntry = isRoot && (f.name === 'index.js' || f.name === 'client.js' || f.name === 'client-mermaid.js')
     if (f.name.endsWith('.js') && !isTopEntry) {
       rmSync(abs, { force: true })
     } else if (f.name.endsWith('.js.map') || (f.name.endsWith('.map') && !(isRoot && f.name === 'index.js.map'))) {

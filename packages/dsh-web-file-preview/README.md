@@ -9,7 +9,7 @@ DSH 自带的“可点击文件引用”在点击产出文件 chip / 行内文�
 ## 能力
 
 - **图片预览**：`png / jpg / jpeg / gif / webp / svg / avif / bmp`；点击进入灯箱放大/平移（滚轮缩放 + 拖拽）。
-- **Markdown 预览**：`.md / .markdown` 默认渲染预览（marked + GFM 常用能力），可切「原始」。
+- **Markdown 预览**：`.md / .markdown` 默认渲染预览（marked + GFM 常用能力），可切「原始」；文内 ` ```mermaid ` 代码块渲染为图（首次出现时才懒加载 mermaid 引擎，普通预览首屏零额外开销），语法错误自动回退为代码块并提示。
 - **代码语法高亮**：`js/ts/py/java/…` 等 25+ 语言（highlight.js 子集）高亮，可切「原始」。
 - **文本预览**：`txt / log / csv / conf …` 等宽展示。
 - **Diff 视图（git）**：`.md/代码/文本` 若在 git 仓库且有未提交变更，顶栏多出第 3 个 **Diff** tab，红/绿展示 `git diff HEAD -- <file>`（未跟踪新文件给提示）。
@@ -25,7 +25,8 @@ DSH 自带的“可点击文件引用”在点击产出文件 chip / 行内文�
 - **后缀分组单一事实源**：`src/grouping.ts` 供宿主 `mime.ts` 与客户端 `renderer.ts`/`client.ts` 共用，杜绝双端各写一份后缀表导致漂移；`cleanRefChipPath`（@-mention chip 标签 → 干净路径的纯函数）同处，与 DSH 的 `formatFileMention` 互逆。
 - **跨包契约假设（`@` 引用）**：按 `data-ref-chip` 属性 + `title="@…"` 形态（由 DSH `ui-conversation` 产出）识别。若未来 DSH 调整该形态，`data-ref-chip` 门失效时 file chip 静默退回「点击无反应」（不会 404，属可接受降级）；若 DSH 提供干净路径属性（如 `data-ref-path`）则优先采用。
 - **依赖**：`marked` / `highlight.js` / `diff2html` / `untildify` 为构建期打包依赖（宿主/客户端分别内联进 `lib/index.js` 与 `lib/client.js`），**运行时零 npm 依赖**；Content-Type 用内置小型映射（无需 mime-db 大表，避免宿主第三方依赖内联的 ESM/CJS 兼容问题）。
-- **构建体积**：客户端 esbuild `--minify`，`client.js` min 后约 226KB（gzip ~68KB）。
+- **Mermaid 懒加载 chunk（issue #104）**：`mermaid` 整库内联为独立产物 `lib/client-mermaid.js`（ESM，minify），与 `client.js` 物理分离；宿主经 `GET /api/dsh-file-preview/mermaid`（loopback 围栏 + 弱 ETag 协商缓存）伺服。客户端仅在 md 渲染出 mermaid 代码块后才以运行时变量 URL 动态 import 拉取——普通 md / 文本 / 图片预览从不触发加载。minified 产物的 esbuild 路径注释会被移除，故构建期由 metafile 生成内联清单 sidecar `lib/client-mermaid.deps.json` 随包发布，作为 license 归集与 pack 断言的唯一证据源。
+- **构建体积**：客户端 esbuild `--minify`，`client.js` 约 550KB（gzip ~120KB）；`client-mermaid.js` 全量约 **3.29MB（gzip ~940KB）**——复核口径基线（验收不设体积硬阈值；仅首次遇到 mermaid 块时下载一次，浏览器模块缓存 + 304 协商后续零成本）。
 
 ## 安装
 
@@ -99,6 +100,7 @@ curl http://127.0.0.1:3080/api/dsh-file-preview/health
 - **不做重复兜底**：本插件的语义是“能打开 dsh web 页面即已持有高权限”，因此**不做**任意文件访问强校验、会话鉴权、敏感名拦截——访问控制由平台/用户负责，本插件不重复实现每一套。
 - **路径定位**：`/file` 按 `resolve(cwd, path)` 直接定位，不做“逃出 cwd”拦截（任意文件访问由平台/用户负责）。`~`/`~/` 前缀展开为用户主目录。
 - **渲染安全**：文件响应一律带 `X-Content-Type-Options: nosniff`；SVG 额外带 `Content-Security-Policy: sandbox`（顶层导航时不执行内嵌脚本）。Markdown / 代码渲染输出为 HTML 呈现层，`marked` / `highlight.js` 对正文做转义；本插件不承诺对渲染结果做 XSS 消毒——预览内容来自会话已见的文件，安全边界同“能打开 dsh web 即高权限”。
+- **Mermaid 图表（issue #104，新增用户可影响渲染面）**：md 文件内的 ` ```mermaid ` 块由 mermaid 引擎渲染。默认 `securityLevel: "strict"`（文本转义、禁用 click 交互回调）+ `htmlLabels: false`（标签走纯 SVG text）+ `startOnLoad: false`（仅手动按块渲染）；渲染产物 SVG 在插入 DOM 前再经 DOMPurify（svg profile）二次消毒——`foreignObject` 默认剔除、不开放 `securityLevel`/主题等配置项。主题仅随系统 `prefers-color-scheme` 在 default/dark 间自适应，不接受文档内容控制。与上条边界一致：图源来自会话已见文件，strict + 双层消毒是纵深而非安全承诺。
 - **`@` 引用不新增安全面**：`data-ref-chip`/`title` 仅经 `getAttribute` 读取并作为路径字符串拼 `URLSearchParams`，从不 `innerHTML` 渲染；清洗后的文件路径仍走 `/file` 既有 loopback/cwd 围栏（相对路径强制 cwd、绝对路径沿用既有进程可读范围），与「deliverable chip 预览」同一安全模型。
 
 ## 已知限制
@@ -106,5 +108,6 @@ curl http://127.0.0.1:3080/api/dsh-file-preview/health
 - 文本类超过 `maxTextBytes`（默认 512KB）返回 413+截断标记，不再整读全文（大文件流式/虚拟滚动未实现，见 W10 专项）。
 - 可点击范围较宽（凡路径 title / 本地 href / 内联路径文本都可能进预览），`data-ref-chip` 权威分支优先于通用嗅探，避免 `@` 引用误触发。
 - 文件夹 `@` 引用不开预览（仅提示），目录浏览能力不在本插件范畴。
-- client bundle 含 `marked` + `highlight.js` 子集 + `diff2html`，min 后约 226KB（gzip ~68KB）。
+- client bundle 含 `marked` + `highlight.js` 子集 + `diff2html`，min 后约 550KB（gzip ~120KB）。
+- Mermaid 懒加载 chunk 全量约 3.29MB min / ~940KB gzip（整库内联、不做按图类型裁剪——与业界惯例一致，见 issue #104 复核结论；首次渲染 mermaid 块时一次性拉取，低带宽首图延迟明显）。
 - 多会话切换以当前活跃会话 cwd 为准。
