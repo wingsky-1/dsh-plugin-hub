@@ -100,6 +100,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
 | Reconnection | Exponential backoff (starts at 500ms, caps at 30s, gives up after 10 attempts and deregisters the tools) |
 | Result truncation | Direct-connect tool results truncated at 8KB and marked (prevents oversized JSON from entering context in full) |
 | Timeout fallback | Direct-connect tool call timeout defaults to 60s → 15s (overridable per server via `toolCallTimeoutMs`); middleware calls use a fixed 30s timeout |
+| Push self-healing | Triple safeguard on the SSE channel: server sends a data ping heartbeat every 30s; client reconnects (closing the stale EventSource first) after 60s of frame silence (watchdog); connection is force-rebuilt when the page becomes visible again — half-open connections silently severed by mobile OS backgrounding heal on their own instead of piling up as zombies |
 
 ## Configuration (floating window position)
 

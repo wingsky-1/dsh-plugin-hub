@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-mcp-manager/lib/index.js:21299-22113"
+    "packages/dsh-mcp-manager/lib/index.js:21323-22142"
   ],
   "testRunner": "tap",
   "tap": {
@@ -47,5 +47,5 @@
   "cleanTempDir": true,
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-mcp-manager-5.json",
-  "_comment": "#220 B 再均衡新增：index 主体段（Config/apply/路由收尾），与 s4 于分段边界 21262/21263 处切分。"
+  "_comment": "#220 B 再均衡新增：index 主体段（Config/apply/路由收尾），与 s4 于分段边界 21322/21323 处切分（#268 净增使边界自 21262/21263 后移，sync-mutate-segments 重算）。"
 }
