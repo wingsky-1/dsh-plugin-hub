@@ -10,6 +10,7 @@ import { el, api } from "./dom.js";
 import { STATUS_ORDER, STATUS_TEXT, statusDot } from "./constants.js";
 import type { McpState, UiActions } from "./state.js";
 import {
+  DEFAULT_Z_INDEX_BASE,
   breakpointForWidth,
   clampPointToViewport,
   clampZIndexBase,
@@ -234,7 +235,7 @@ export function mountFloat(ctx: any, state: McpState, actions: UiActions): () =>
     if (pill.dataset.dmBp !== bp) pill.dataset.dmBp = bp;
     if (panel.dataset.dmBp !== bp) panel.dataset.dmBp = bp;
     // 层级：胶囊取配置基准（clamp 1-9000），下拉面板派生基准+30。
-    const zBase = clampZIndexBase(cfg.zIndexBase, 10);
+    const zBase = clampZIndexBase(cfg.zIndexBase, DEFAULT_Z_INDEX_BASE);
     pill.style.zIndex = String(zBase);
     panel.style.zIndex = String(panelZIndexFor(zBase));
     const isBottom = position === "bottom-right" || position === "bottom-left";

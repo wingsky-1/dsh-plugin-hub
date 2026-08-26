@@ -122,6 +122,7 @@
 
 /* #128 悬停态统一包裹 @media(hover:hover)：触屏设备不吸附悬停背景（规格第 7 条）。 */
 @media (hover: hover) {
+.dm-float:hover{background:var(--dsw-alias-interactive-bg-hover,#f2f4f8)}
 .dm-float-head button:hover{background:var(--dsw-alias-interactive-bg-hover,#eef1f5)}
 .dm-float-action:hover{background:var(--dsw-alias-interactive-bg-hover,#eef1f5)}
 .dm-head button:hover{background:var(--dsw-alias-interactive-bg-hover,#eef1f5)}

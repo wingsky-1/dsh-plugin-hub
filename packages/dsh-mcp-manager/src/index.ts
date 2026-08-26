@@ -95,11 +95,12 @@ export interface UiPlacementConfig {
   zIndexBase: number;
 }
 
-/** 默认浮窗 UI 配置（与升级前一致，无回归；zIndexBase=10 对应 CSS 默认 z-index:10）。 */
+/** 默认浮窗 UI 配置（与升级前一致，无回归；层级基准引用 placement-math 单一事实源，
+ *  DEFAULT_Z_INDEX_BASE=10 对应 CSS 默认 z-index:10）。 */
 export const DEFAULT_UI_CONFIG: UiPlacementConfig = {
   position: "top-right",
   offset: { x: 8, y: 8, blankY: 40 },
-  zIndexBase: 10,
+  zIndexBase: DEFAULT_Z_INDEX_BASE,
 };
 
 const UI_POSITIONS: UiPlacementConfig["position"][] = ["top-right", "top-left", "bottom-right", "bottom-left"];
@@ -107,6 +108,7 @@ const UI_POSITIONS: UiPlacementConfig["position"][] = ["top-right", "top-left", 
 // 浮窗定位/层级/断点纯函数：实现在 placement-math.ts（零依赖单一事实源，
 // 客户端 bundle 与宿主端共用同一份），此处 re-export 保持导出面不变。
 import {
+  DEFAULT_Z_INDEX_BASE,
   Z_INDEX_BASE_MIN,
   Z_INDEX_BASE_MAX,
   Z_INDEX_PANEL_DELTA,
@@ -118,6 +120,7 @@ import {
   clampPointToViewport,
 } from "./placement-math.js";
 export {
+  DEFAULT_Z_INDEX_BASE,
   Z_INDEX_BASE_MIN,
   Z_INDEX_BASE_MAX,
   Z_INDEX_PANEL_DELTA,

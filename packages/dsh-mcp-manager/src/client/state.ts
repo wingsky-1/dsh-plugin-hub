@@ -6,6 +6,7 @@
  */
 
 import { API } from "./constants.js";
+import { DEFAULT_Z_INDEX_BASE } from "../placement-math.js";
 
 /** 单台 MCP 服务器面向 UI 的摘要形态。 */
 export interface McpServerSummary {
@@ -120,7 +121,7 @@ export function createState(): McpState {
     currentCwd: undefined,
     projectRoot: undefined,
     updateFloatState: undefined,
-    mcpUiConfig: { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40, zIndexBase: 10 },
+    mcpUiConfig: { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40, zIndexBase: DEFAULT_Z_INDEX_BASE },
     API: { ...API },
   };
 }

@@ -5,6 +5,7 @@
  * 渲染由宿主端 formatCapsule/formatPanel 返回的 HTML 完成，客户端不再维护渲染器注册表。
  */
 import { ADAPTER_CONTRACT_VERSION } from "../contracts.js";
+import { DEFAULT_Z_INDEX_BASE } from "../placement-math.js";
 
 /** 宿主端 ROUTES（构建期经 __DSH_ROUTES__ 注入）。 */
 declare const __DSH_ROUTES__: Record<string, string> | undefined;
@@ -288,7 +289,7 @@ export const DEFAULT_CLIENT_UI_CONFIG: UiPlacementConfig = {
   offsetX: 0,
   offsetY: 48,
   panelOffsetY: 10,
-  zIndexBase: 40,
+  zIndexBase: DEFAULT_Z_INDEX_BASE,
 };
 
 /** 拉取当前胶囊位置配置（失败回退默认）。 */
