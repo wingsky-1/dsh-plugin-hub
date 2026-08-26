@@ -259,9 +259,15 @@ export const DEFAULT_WS_PROBE_INTERVAL_MS = 30_000;
  * 的单入口收敛形态）；unref 使探活不阻止进程退出。
  * @param ws 桥接任意一端的连接。
  * @param intervalMs 探活周期（= pong 宽限窗）。
+ * @param onHalfOpen 判死回调（调用方借此经 logger 输出半开判死日志，
+ *   与「正常关闭/业务错误」的 upstream error warn 区分；可省略）。
  * @returns 幂等清理函数。
  */
-function attachWsLivenessProbe(ws: WebSocket, intervalMs: number): () => void {
+function attachWsLivenessProbe(
+  ws: WebSocket,
+  intervalMs: number,
+  onHalfOpen?: (intervalMs: number) => void,
+): () => void {
   let alive = true;
   const markAlive = () => {
     alive = true;
@@ -271,7 +277,8 @@ function attachWsLivenessProbe(ws: WebSocket, intervalMs: number): () => void {
     // 连接已在收口路径（close 竞态）：不 ping 不判定，等 close 清理本探活。
     if (ws.readyState !== WebSocket.OPEN) return;
     if (!alive) {
-      ws.terminate(); // 半开确认：强拆使 close/error 语义成立，互断逻辑接管对端
+      onHalfOpen?.(intervalMs); // 先报后半开判死，再强拆使 close/error 语义成立
+      ws.terminate();
       return;
     }
     alive = false;
@@ -322,8 +329,13 @@ export function bridgeCompressedWs(
       stopProbes = undefined;
     };
     if (probeIntervalMs > 0) {
-      const stopBrowserProbe = attachWsLivenessProbe(browserWs, probeIntervalMs);
-      const stopUpstreamProbe = attachWsLivenessProbe(upstreamWs, probeIntervalMs);
+      // 半开判死日志：与既有 upstream error warn 同通道、可按文案区分
+      // 「半开判死强拆」与「正常关闭/业务错误」（issue #268 复核闸修补 2）。
+      const onHalfOpen = (intervalMs: number) => {
+        target.logger?.warn?.(`lan-proxy: ws-bridge half-open detected, terminating (intervalMs=${intervalMs})`);
+      };
+      const stopBrowserProbe = attachWsLivenessProbe(browserWs, probeIntervalMs, onHalfOpen);
+      const stopUpstreamProbe = attachWsLivenessProbe(upstreamWs, probeIntervalMs, onHalfOpen);
       stopProbes = () => {
         stopBrowserProbe();
         stopUpstreamProbe();

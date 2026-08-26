@@ -199,11 +199,12 @@ assert.equal(DEFAULT_OPTIONS.targetHost, "127.0.0.1");
   browserWs.on("ping", () => { pings.push(Date.now()); });
   await new Promise((r, j) => { browserWs.on("open", r); browserWs.on("error", j); });
 
-  // 断言 1：ping 帧按间隔发出（浏览器段 ≥2 帧且相邻间距贴近 interval）
+  // 断言 1：ping 帧按间隔发出（浏览器段 ≥2 帧且相邻间距贴近 interval：
+  // 下界 60ms 排除风暴式连发，上界 interval×10 宽松兜底慢机调度抖动防 flake）
   assert.ok(await waitFor(() => pings.length >= 2, 4000),
     `探活 ping 应按间隔到达浏览器端（4s 内仅收到 ${pings.length} 帧）`);
-  assert.ok(pings[1] - pings[0] >= 60,
-    `相邻 ping 间隔应贴近 interval=80ms（实际 ${pings[1] - pings[0]}ms，过密说明不是周期探活）`);
+  assert.ok(pings[1] - pings[0] >= 60 && pings[1] - pings[0] <= 800,
+    `相邻 ping 间隔应贴近 interval=80ms（实际 ${pings[1] - pings[0]}ms，过密非周期探活、过疏非按间隔发出）`);
   // 断言 3：pong 正常（两端 ws 库自动回 pong）→ 多周期后不误杀且消息双向可达
   assert.ok(await waitFor(() => upstreamPings >= 2, 4000),
     `上游段探活也应按间隔发 ping（4s 内上游仅收到 ${upstreamPings} 帧）`);
