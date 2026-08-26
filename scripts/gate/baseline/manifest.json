@@ -1,17 +1,22 @@
 {
-  "notifier": {
-    "size": 370802,
-    "mtime": "2026-08-26T00:59:25.098Z",
-    "sha256": "bd335c1b98c17f592e5fc37311153f1cc8c4de2ce70704614a2ff0b7446616bd"
+  "incremental-idle-archive.json": {
+    "size": 305395,
+    "mtime": "2026-08-26T02:51:19.951Z",
+    "sha256": "461b3ade166b9759752d67b8372dbb75d4cb87dea0cda8f771394f569e04019b"
   },
-  "idle-archive": {
-    "size": 305585,
-    "mtime": "2026-08-26T00:59:48.699Z",
-    "sha256": "1e14d54981673fdffa06deb7bd7e18c8af7fe6f2aa7ccf16482c2dd1f8d4a2db"
+  "incremental-lan-proxy-1.json": {
+    "size": 1459870,
+    "mtime": "2026-08-26T02:54:50.377Z",
+    "sha256": "456c1e76d55b6e401a0b49b46bbf0d5cba232267ad4eddd23787582ed59fac0b"
   },
-  "web-file-preview": {
-    "size": 726467,
-    "mtime": "2026-08-26T01:00:15.264Z",
-    "sha256": "169c159a3befecedc1cf1e57733f7fd7b13a49e2f6dfd4166c38120077412967"
+  "incremental-lan-proxy-2.json": {
+    "size": 1284954,
+    "mtime": "2026-08-26T02:55:15.115Z",
+    "sha256": "727c86dec1b3164803df3141b04e56f96274c1da13ded2b69e779ee9203478c7"
+  },
+  "incremental-lan-proxy-3.json": {
+    "size": 1634783,
+    "mtime": "2026-08-26T02:59:18.912Z",
+    "sha256": "236e83bcd2f236a47617d1b53feb1d71cf4dfda64966b0f0336c1d23bf1a48c0"
   }
 }
