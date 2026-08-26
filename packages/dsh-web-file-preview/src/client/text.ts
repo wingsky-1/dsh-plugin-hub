@@ -5,13 +5,13 @@
  * fileDiffUrl 仅被 probeDiff 使用，故归本模块（避免跨模块循环依赖）。
  */
 
-import { renderMarkdown } from "./md.js";
-import { highlightCode } from "./code.js";
-import { sanitizePreview } from "./rewrite.js";
-import { hydrateMermaid } from "./mermaid.js";
-import { applyHeadingIds, scrollToFragment } from "./anchor.js";
-import { el, errorView } from "./dom.js";
-import type { FilePreviewState } from "./state.js";
+import { renderMarkdown } from "./md.ts";
+import { highlightCode } from "./code.ts";
+import { sanitizePreview } from "./rewrite.ts";
+import { hydrateMermaid } from "./mermaid.ts";
+import { applyHeadingIds, scrollToFragment } from "./anchor.ts";
+import { el, errorView } from "./dom.ts";
+import type { FilePreviewState } from "./state.ts";
 import { html as diffToHtml } from "diff2html";
 import DOMPurify from "dompurify";
 

@@ -14,7 +14,7 @@
 
 import mime from "mime";
 
-import { groupOfPath } from "./grouping.js";
+import { groupOfPath } from "./grouping.ts";
 
 /** 预览分组。 */
 export type PreviewGroup = "image" | "text" | "renderedMd" | "renderedCode" | "other";

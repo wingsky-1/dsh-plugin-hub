@@ -11,13 +11,13 @@
 // 辅助函数统一来自仓库共享层（loopback 围栏 / writeJson / readJsonBody）。
 import { isLoopbackRequest } from "../../../shared/loopback.js";
 import { writeJson, readJsonBody } from "../../../shared/host-utils.js";
-import { parseClaudeJson } from "./import.js";
-import { SCOPE_PROJECT, normalizeScope } from "./scope.js";
-import type { ServerConfig } from "./types.js";
-import type { ClientUiConfig } from "./index.js";
+import { parseClaudeJson } from "./import.ts";
+import { SCOPE_PROJECT, normalizeScope } from "./scope.ts";
+import type { ServerConfig } from "./types.ts";
+import type { ClientUiConfig } from "./index.ts";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { ServerResponse } from "node:http";
-import type { McpStore } from "./store.js";
+import type { McpStore } from "./store.ts";
 
 /** routes 使用的 McpManager 最小面（避免 index↔routes 循环 import）。 */
 export interface RoutesManager {

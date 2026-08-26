@@ -1,19 +1,12 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-lan-proxy/lib/index.js:35967-36027"
+    "packages/dsh-lan-proxy/src/apply.ts",
+    "packages/dsh-lan-proxy/src/config.ts",
+    "!packages/dsh-lan-proxy/src/client/**",
+    "!packages/dsh-lan-proxy/src/types.ts"
   ],
   "testRunner": "tap",
-  "tap": {
-    "nodeArgs": [
-      "-r",
-      "./scripts/test/mutation-tap-bridge.cjs"
-    ],
-    "testFiles": [
-      "packages/dsh-lan-proxy/test/unit-apply.test.ts",
-      "packages/dsh-lan-proxy/test/unit-proxy.test.ts"
-    ]
-  },
   "mutator": {
     "excludedMutations": [
       "StringLiteral",
@@ -25,21 +18,31 @@
   "plugins": [
     "@stryker-mutator/tap-runner"
   ],
-  "concurrency": 4,
-  "timeoutMS": 15000,
+  "concurrency": 16,
+  "timeoutMS": 60000,
   "dryRunTimeoutMinutes": 5,
   "reporters": [
     "progress",
     "clear-text",
     "json"
   ],
-  "jsonReporter": {
-    "fileName": "coverage/mutation/dsh-lan-proxy-2.json"
-  },
   "coverageAnalysis": "perTest",
   "tempDirName": ".stryker-tmp",
   "cleanTempDir": true,
+  "tap": {
+    "nodeArgs": [
+      "-r",
+      "./scripts/test/mutation-tap-bridge.cjs"
+    ],
+    "testFiles": [
+      "packages/dsh-lan-proxy/test/unit-apply.src.test.ts",
+      "packages/dsh-lan-proxy/test/unit-proxy.src.test.ts"
+    ]
+  },
+  "jsonReporter": {
+    "fileName": "coverage/mutation/dsh-lan-proxy-2.json"
+  },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-lan-proxy-2.json",
-  "_comment": "#220 B 拆分：三段独立 matrix 并行；timeoutMS 维持 15000（#147 教训）；由 dsh-lan-proxy.json 派生，mutate 区间原样保留（provider-usage 两段历史重叠区间 2671-2792 由判分层 mutant id 去重处理）。"
+  "_comment": "#276 方案 A：src 级文件组分段（2）——mutate 为源文件名清单，密度均衡声明，无行号无漂移；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
 }

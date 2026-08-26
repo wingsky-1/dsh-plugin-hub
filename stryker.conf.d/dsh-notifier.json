@@ -1,22 +1,11 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-notifier/lib/index.js:255-505"
+    "packages/dsh-notifier/src/**/*.ts",
+    "!packages/dsh-notifier/src/client/**",
+    "!packages/dsh-notifier/src/types.ts"
   ],
   "testRunner": "tap",
-  "tap": {
-    "nodeArgs": [
-      "-r",
-      "./scripts/test/mutation-tap-bridge.cjs"
-    ],
-    "testFiles": [
-      "packages/dsh-notifier/test/unit-text.test.ts",
-      "packages/dsh-notifier/test/unit-sanitize.test.ts",
-      "packages/dsh-notifier/test/e2e-approval.test.ts",
-      "packages/dsh-notifier/test/e2e-done.test.ts",
-      "packages/dsh-notifier/test/e2e-question-turn.test.ts"
-    ]
-  },
   "mutator": {
     "excludedMutations": [
       "StringLiteral",
@@ -36,13 +25,28 @@
     "clear-text",
     "json"
   ],
-  "jsonReporter": {
-    "fileName": "coverage/mutation/dsh-notifier.json"
-  },
   "coverageAnalysis": "perTest",
   "tempDirName": ".stryker-tmp",
   "cleanTempDir": true,
+  "tap": {
+    "nodeArgs": [
+      "-r",
+      "./scripts/test/mutation-tap-bridge.cjs"
+    ],
+    "testFiles": [
+      "packages/dsh-notifier/test/e2e-approval.test.ts",
+      "packages/dsh-notifier/test/e2e-done.src.test.ts",
+      "packages/dsh-notifier/test/e2e-edge.src.test.ts",
+      "packages/dsh-notifier/test/e2e-question-turn.test.ts",
+      "packages/dsh-notifier/test/routes.src.test.ts",
+      "packages/dsh-notifier/test/unit-sanitize.src.test.ts",
+      "packages/dsh-notifier/test/unit-text.src.test.ts"
+    ]
+  },
+  "jsonReporter": {
+    "fileName": "coverage/mutation/dsh-notifier.json"
+  },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-notifier.json",
-  "_comment": "#85 observe.yml 六包夜间串行调度的 notifier 入口：内容与根 stryker.config.json 的试点配置一致（根配置保留作 pnpm mutation 手动入口，两者勿单侧漂移——workflow-assert 自测断言 conf.d 文件集与 gauntlet 包集一致）。阶段一试点：dsh-notifier 的 lib/index.js 构建产物无 node_modules 内联段，天然全量 self-written。mutate 构建产物而非 src 源码，因测试直接 import lib/index.js。试点范围缩小至 message.js 段（lib/index.js:255-504，对应 src/message.ts），排除高噪音字符串/数组/对象/模板字面量变异以控制总时长。#159 耗时优化批次：perTest 贡献精简 testFiles + concurrency 16 超订（e2e 定时器等待主导、CPU 占用低），6m54s→1m42s。"
+  "_comment": "#276 方案 A：src 级单段（mutate 直指 src，文件 glob 声明，无行号无漂移）；测试经 src 入口加载插桩代码；incremental 基线随 observe 四班次重建。"
 }

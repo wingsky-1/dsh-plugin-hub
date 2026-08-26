@@ -13,7 +13,7 @@
 // `<div title="完整路径"><span>裸文件名</span></div>`，旧实现逐节点命中即返回，
 // span 的裸文件名会抢在祖先完整路径之前被采用，文件移动后必然 404。
 
-import { isLikelySingleFilePath, cleanRefChipPath } from "../grouping.js";
+import { isLikelySingleFilePath, cleanRefChipPath } from "../grouping.ts";
 
 /** 点击闸门：放行（不做任何拦截）或进入链接解析。 */
 export type GateDecision = "pass" | "inspect";

@@ -21,8 +21,8 @@
  */
 
 import DOMPurify from "dompurify";
-import { runMermaidHydration, mermaidBaseConfig, type MermaidApiLike } from "./mermaid-core.js";
-import type { FilePreviewState } from "./state.js";
+import { runMermaidHydration, mermaidBaseConfig, type MermaidApiLike } from "./mermaid-core.ts";
+import type { FilePreviewState } from "./state.ts";
 
 /** 已加载的 mermaid API 引用（动态 import 自带模块缓存，此处仅存引用）。 */
 let loadedApi: MermaidApiLike | undefined;

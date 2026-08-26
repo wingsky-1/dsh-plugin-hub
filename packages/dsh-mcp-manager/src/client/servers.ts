@@ -6,9 +6,9 @@
  * panel/quick-add 模块，避免循环依赖。
  */
 
-import { el, api } from "./dom.js";
-import { STATUS_ORDER, STATUS_TEXT } from "./constants.js";
-import type { McpState, UiActions } from "./state.js";
+import { el, api } from "./dom.ts";
+import { STATUS_ORDER, STATUS_TEXT } from "./constants.ts";
+import type { McpState, UiActions } from "./state.ts";
 
 /** 服务器端点摘要：streamable-http 显示 URL，stdio 显示 command + args。 */
 export function endpointOf(server: any): string {

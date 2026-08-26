@@ -8,8 +8,8 @@
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { QUIET_ALLOW_KINDS, parseHHMM } from "./quiet-hours.js";
-import type { QuietHoursConfig } from "./quiet-hours.js";
+import { QUIET_ALLOW_KINDS, parseHHMM } from "./quiet-hours.ts";
+import type { QuietHoursConfig } from "./quiet-hours.ts";
 
 /** 通知配置（内存单一事实源，与落盘 JSON 同构）。 */
 export interface NotifyConfig {

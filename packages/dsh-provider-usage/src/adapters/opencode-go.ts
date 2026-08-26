@@ -16,8 +16,8 @@ import type {
   FetchContext,
   CapsuleInput,
   PanelInput,
-} from "../contracts.js";
-import { esc } from "../contracts.js";
+} from "../contracts.ts";
+import { esc } from "../contracts.ts";
 
 /** 内置适配器的 provider 名（如 "opencode-go"）。 */
 export const OPENCODE_GO_PROVIDER = "opencode-go";

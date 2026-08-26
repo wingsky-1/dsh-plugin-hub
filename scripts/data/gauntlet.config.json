@@ -30,7 +30,7 @@
         "fixedCovered": 74.13,
         "fixedDate": "2026-08-24",
         "fixedDuration": "6m56s",
-        "scope": "packages/dsh-notifier/lib/index.js:255-504（对应 src/message.ts）",
+        "scope": "src 级全量（#276 方案 A）；基线为 src 口径，由四班次 observe 重建",
         "threshold": 60
       },
       "dsh-idle-archive": {
@@ -44,7 +44,8 @@
         "baselineDuration": "12.7s",
         "baselineScope": "packages/dsh-idle-archive/lib/index.js:1055-1060+1146-1375（self-written 段；排除 esbuild 垫片、cosmokit/schemastery 内联 vendor、shared 契约层内联副本）",
         "config": "stryker.conf.d/dsh-idle-archive.json",
-        "threshold": 60
+        "threshold": 60,
+        "scope": "src 级全量（#276 方案 A）；基线为 src 口径，由四班次 observe 重建"
       },
       "dsh-web-file-preview": {
         "baselineScore": 42.6,
@@ -57,7 +58,8 @@
         "baselineDuration": "15s",
         "baselineScope": "packages/dsh-web-file-preview/lib/index.js:1255-1924（self-written 段；排除 untildify/mime 内联 vendor、shared 契约层内联副本与 routes import 提升段；client/link-resolver 内联进 index.js 本体故纳入）",
         "config": "stryker.conf.d/dsh-web-file-preview.json",
-        "threshold": 60
+        "threshold": 60,
+        "scope": "src 级全量（#276 方案 A）；基线为 src 口径，由四班次 observe 重建"
       },
       "dsh-mcp-manager": {
         "baselineScore": 58.74,
@@ -73,7 +75,8 @@
         "baselineScope": "packages/dsh-mcp-manager/lib/index.js:8610-8696+17322-17456+19271-19915+19964-21027（self-written 四段：store、transport+scope、protocol/supervisor/catalog、import/routes/index；排除 esbuild 垫片、zod/@modelcontextprotocol/sdk/ajv 等大段内联 vendor、shared 契约层内联副本与纯 import 提升段）",
         "config": "stryker.conf.d/dsh-mcp-manager-{1..5}.json（#220 B 段拆分+#269 实验后按 mutant 密度再均衡：s4 收窄至 import/routes/middleware，新增 s5=index 主体）",
         "hardeningNote": "#148 变异加固轮：6 个单测 commit 将 covered 由 29.37% 提升至 74.66%；耗时优化（#173）零杀伤 testFiles 移除 + conc8，3m52s→3m0s",
-        "threshold": 60
+        "threshold": 60,
+        "scope": "src 级三段（#276 方案 A）：seg1 manager+supervisor / seg2 middleware 族 / seg3 其余；基线为 src 口径，由四班次 observe 重建"
       },
       "dsh-provider-usage": {
         "baselineScore": 67.28,
@@ -89,7 +92,8 @@
         "baselineScope": "packages/dsh-provider-usage/lib/index.js:1372-2769+2805-3696（self-written 两段：contracts/registry/adapters-opencode-go/core-guards/sanitize/pipeline-v2/history/provider-config/hotreload 与 path-resolve/client-logic/index；排除 esbuild 垫片、cosmokit/schemastery/async-mutex/untildify 内联 vendor、shared 契约层内联副本与纯 import 提升段）",
         "config": "stryker.conf.d/dsh-provider-usage-{1,2}.json（#220 B 段拆分；#265 CI 返工校准后 seg1=1372-2811、seg2=2690-3727，重叠区间 2690-2811 由判分 mutant id 去重；timeoutMS 30000）",
         "hardeningNote": "#150 变异加固轮一阶段（PR #169）：covered 由 31.80% 提升至 52.87%；二阶段（PR #183）：提升至 67.28% ≥60 达标，全局 strict 随之开启",
-        "threshold": 60
+        "threshold": 60,
+        "scope": "src 级三段（#276 方案 A）：seg1 index+apply+config 族 / seg2 adapters×2 / seg3 contracts+sanitize+core+registry；基线为 src 口径，由四班次 observe 重建"
       },
       "dsh-lan-proxy": {
         "baselineScore": 52.43,
@@ -105,7 +109,8 @@
         "baselineScope": "packages/dsh-lan-proxy/lib/index.js:35657-35911+35912-35972+36058-36643（self-written 三段，对应 src/proxy.ts+cert.ts+index.ts 尾段；排除 esbuild 垫片、cosmokit/schemastery/ws/http-proxy/node-forge/selfsigned 内联 vendor、shared 契约层内联副本）",
         "config": "stryker.conf.d/dsh-lan-proxy-{1,2,3}.json（#220 B 段拆分，区间原样三段）",
         "hardeningNote": "#147 变异加固轮：covered 由 49.75% 提升至 62.52%，60% 第一阶达标",
-        "threshold": 60
+        "threshold": 60,
+        "scope": "src 级四段（#276 方案 A）：seg1 proxy / seg2 apply+config / seg3 config-routes+migrate / seg4 settings+cert+index；基线为 src 口径，由四班次 observe 重建"
       },
       "dsh-subagent-model-inherit": {
         "baselineScore": 96,
@@ -120,7 +125,8 @@
         "baselineScope": "packages/dsh-subagent-model-inherit/lib/index.js:1-60（self-written 全段：纯事件面插件，无 vendor/shared 内联）",
         "config": "stryker.conf.d/dsh-subagent-model-inherit.json",
         "hardeningNote": "#153 demo 修复评审 M1 后 96.00%（48/50）；剩余 3 个幸存为 ConditionalExpression-false 类，手动注入同款变体断言实际失败（exit=1），疑似 tap-runner + 顶层 await 分类问题（观察项，见 PR #240）",
-        "threshold": 60
+        "threshold": 60,
+        "scope": "src 级全量（#276 方案 A）；基线为 src 口径，由四班次 observe 重建"
       }
     }
   }

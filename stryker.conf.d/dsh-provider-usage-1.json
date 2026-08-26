@@ -1,22 +1,15 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-provider-usage/lib/index.js:1372-2811"
+    "packages/dsh-provider-usage/src/index.ts",
+    "packages/dsh-provider-usage/src/apply.ts",
+    "packages/dsh-provider-usage/src/user-adapters.ts",
+    "packages/dsh-provider-usage/src/ui-config.ts",
+    "packages/dsh-provider-usage/src/config.ts",
+    "!packages/dsh-provider-usage/src/client/**",
+    "!packages/dsh-provider-usage/src/types.ts"
   ],
   "testRunner": "tap",
-  "tap": {
-    "nodeArgs": [
-      "-r",
-      "./scripts/test/mutation-tap-bridge.cjs"
-    ],
-    "testFiles": [
-      "packages/dsh-provider-usage/test/unit-apply.test.ts",
-      "packages/dsh-provider-usage/test/unit-contract.test.ts",
-      "packages/dsh-provider-usage/test/unit-config.test.ts",
-      "packages/dsh-provider-usage/test/unit-history.test.ts",
-      "packages/dsh-provider-usage/test/unit-v1.test.ts"
-    ]
-  },
   "mutator": {
     "excludedMutations": [
       "StringLiteral",
@@ -29,20 +22,35 @@
     "@stryker-mutator/tap-runner"
   ],
   "concurrency": 16,
-  "timeoutMS": 30000,
+  "timeoutMS": 60000,
   "dryRunTimeoutMinutes": 5,
   "reporters": [
     "progress",
     "clear-text",
     "json"
   ],
-  "jsonReporter": {
-    "fileName": "coverage/mutation/dsh-provider-usage-1.json"
-  },
   "coverageAnalysis": "perTest",
   "tempDirName": ".stryker-tmp",
   "cleanTempDir": true,
+  "tap": {
+    "nodeArgs": [
+      "-r",
+      "./scripts/test/mutation-tap-bridge.cjs"
+    ],
+    "testFiles": [
+      "packages/dsh-provider-usage/test/unit-apply.src.test.ts",
+      "packages/dsh-provider-usage/test/unit-config.src.test.ts",
+      "packages/dsh-provider-usage/test/unit-contract.src.test.ts",
+      "packages/dsh-provider-usage/test/unit-deepseek-official.src.test.ts",
+      "packages/dsh-provider-usage/test/unit-history.src.test.ts",
+      "packages/dsh-provider-usage/test/unit-signal-lock.src.test.ts",
+      "packages/dsh-provider-usage/test/unit-v1.src.test.ts"
+    ]
+  },
+  "jsonReporter": {
+    "fileName": "coverage/mutation/dsh-provider-usage-1.json"
+  },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-provider-usage-1.json",
-  "_comment": "#220 B 拆分+timeoutMS 收紧(30000)：unit 实测 ~1s/文件；由 dsh-provider-usage.json 派生（#265 CI 返工校准：guards/v2 改动致 bundle 行号漂移，seg1 尾 2792→2811、seg2 起点 2671→2690 重对 sanitize 分段注释；两段重叠区间 2690-2811 由判分层 mutant id 去重处理）。"
+  "_comment": "#276 方案 A：src 级文件组分段（1）——mutate 为源文件名清单，密度均衡声明，无行号无漂移；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
 }

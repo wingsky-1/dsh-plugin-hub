@@ -11,9 +11,9 @@ import type { ServerResponse } from "node:http";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import { isLoopbackRequest } from "../../../shared/loopback.js";
 import { writeJson, readBody, errorMessage } from "../../../shared/host-utils.js";
-import type { NotifyConfig } from "./config.js";
-import type { HistoryStore } from "./history.js";
-import { buildSystemCommand } from "./message.js";
+import type { NotifyConfig } from "./config.ts";
+import type { HistoryStore } from "./history.ts";
+import { buildSystemCommand } from "./message.ts";
 
 /** 与客户端共享的路由常量（smoke 断言两端一致）。 */
 export const ROUTES = {

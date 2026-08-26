@@ -10,7 +10,7 @@
  *   - fail-closed 双闸：filter 失败 fallback 全量切片
  *   - build-test 矩阵恒全集构建（repo-gate 全局门禁依赖全量 lib 产物，评审 F1）
  *   - action 一律 pin commit SHA（供应链纪律，与 health-report.yml 既有惯例一致）
- *   - observe.yml：夜间调度、self-cov --check 与 mutate-scope-guard 执行点在位；
+ *   - observe.yml：四班次调度、self-cov --check 执行点在位；
  *     六包串行清单 ↔ stryker.conf.d 文件集 ↔ gauntlet mutation.packages 三方一致
  *   - changes 的 case 映射覆盖全部包（防新增包静默漏检，评审 F7）
  *   - #187 触发面收敛：mutation-gate 仅限 pull_request；repo-gate 判定走
@@ -124,7 +124,6 @@ test('observe.yml: 夜间调度 + 双硬门禁执行点 + issues 写权限', () 
   assert.ok(OBSERVE.includes('workflow_dispatch'), '支持手动 dispatch')
   assert.ok(OBSERVE.includes('issues: write'), '自动建 issue 需要 issues:write')
   assert.ok(OBSERVE.includes('self-cov.mjs --check'), 'self-written 覆盖率阈值校验执行点（#85 v3）')
-  assert.ok(OBSERVE.includes('mutate-scope-guard.mjs'), 'mutate 面守卫执行点（F5）')
   assert.ok(OBSERVE.includes('observe-check.mjs'), '阈值校验+回落检测脚本执行点（F1/F6）')
 })
 
@@ -138,22 +137,24 @@ test('#220: docs 不在 ci.yml global 过滤面——文档 PR 不触发变异�
     '过滤面旁必须保留理由注释（防后人「好心」加回）')
 })
 
-test('#220: observe 按需基线——push 裁剪、兜底全量、空计划跳过 collect', () => {
+test('#276 方案 A: observe 四班次全量——定时触发、无 push 裁剪、快照 PR 日期闸', () => {
+  assert.ok(OBSERVE.includes("'0 1,4,8,12 * * *'"),
+    '每日四班次（UTC 01/04/08/12 = 北京 09/12/16/20）全量变异')
   assert.ok(OBSERVE.includes('Resolve mutation suites'), 'suite-plan 步骤在位')
-  assert.ok(OBSERVE.includes("EVENT_NAME\"] = \"push") || OBSERVE.includes('[ "$EVENT_NAME" != "push" ]'),
-    '非 push 事件必须走全量清单')
-  assert.ok(OBSERVE.includes('grep -qv \'^[0-9a-f]\\{40\\}$\''),
-    'before SHA 不可用必须 fail-closed 全量')
-  assert.ok(OBSERVE.includes("^(shared/|pnpm-lock\\.yaml$"),
-    'shared/与构建链文件变化必须强制全量刷新（内联产物全集漂移）')
-  assert.ok(OBSERVE.includes("steps.suite-plan.outputs.has_suites == 'true'"),
+  assert.ok(OBSERVE.includes('ls stryker.conf.d/dsh-*.json > /tmp/suites.txt'),
+    'suite-plan 必须纯全量（glob conf 目录为单一事实源，无 push 裁剪分支）')
+  assert.ok(!OBSERVE.includes('EVENT_NAME'), 'observe 不得再依赖 push/事件类型（#276 方案 A 已移除 push 触发）')
+  assert.ok(OBSERVE.includes('steps.suite-plan.outputs.has_suites == \'true\''),
     '变异执行与 collect 必须以 has_suites 为前提——空计划不跑 collect 防 copied=0 误红')
+  assert.ok(OBSERVE.includes('skip_pr=true'), '快照 PR 日期闸（每日最多一次）在位')
+  assert.ok(OBSERVE.includes("steps.pr-gate.outputs.skip_pr == 'false'"),
+    'Open baseline PR 必须以日期闸放行为前提')
 })
 
 test('#220 段式三方一致：observe 计划 ↔ stryker.conf.d 文件集 ↔ gauntlet 包集', () => {
-  // observe.yml 循环清单由 suite-plan 步骤产出（#220 按需基线）：全量模式 glob
-  // conf 目录，push 模式按变动包裁剪——循环本身从计划文件读取
-  assert.ok(OBSERVE.includes('list_all() { ls stryker.conf.d/dsh-*.json; }'),
+  // observe.yml 循环清单由 suite-plan 步骤产出（#276 方案 A：四班次纯全量）；
+  // 循环本身从计划文件读取
+  assert.ok(OBSERVE.includes('ls stryker.conf.d/dsh-*.json'),
     'observe suite-plan 的全量清单必须以 glob stryker.conf.d/dsh-*.json 为单一事实源（新增配置自动纳入）')
   assert.ok(OBSERVE.includes('while read -r conf; do'),
     '变异循环必须从 suite-plan 清单文件逐行消费')
@@ -220,18 +221,30 @@ test('#178+#204: observe.yml 夜间保持全量——只收集仓库基线不读
   assert.ok(OBSERVE.includes('pull-requests: write'), 'observe.yml permissions 需 pull-requests: write')
 })
 
-test('#276: mutate 区间机器派生——sync --write 先于 guard/stryker，入库行号允许漂移', () => {
+test('#276 方案 A: src 级 mutate 退役产物行号机制——ci/observe 均不得再出现 sync/guard', () => {
   for (const [name, wf] of [['ci.yml', CI], ['observe.yml', OBSERVE]]) {
-    assert.ok(wf.includes('node scripts/gate/sync-mutate-segments.mjs --write'),
-      `${name} 必须在 stryker run 前调用 sync --write（区间从产物分段锚点重算，#276 方案 B）`)
-    const syncIdx = wf.indexOf('sync-mutate-segments.mjs --write')
-    const runIdx = wf.indexOf('npx stryker run')
-    assert.ok(syncIdx > 0 && runIdx > syncIdx, `${name} 的 sync 步骤必须先于 stryker run`)
+    assert.ok(!wf.includes('sync-mutate-segments.mjs'),
+      `${name} 不得再调用 sync-mutate-segments.mjs（src 级 mutate 无产物行号，已退役）`)
+    assert.ok(!wf.includes('mutate-scope-guard.mjs'),
+      `${name} 不得再调用 mutate-scope-guard.mjs（F5 守卫已随方案 A 退役）`)
   }
-  // 声明文件存在且为唯一分组事实源
-  const segDecl = JSON.parse(readFileSync(join(ROOT, 'scripts', 'data', 'mutation-segments.json'), 'utf8'))
-  const pkgs = Object.keys(segDecl).filter(k => k !== '$comment')
-  assert.ok(pkgs.length >= 7, 'mutation-segments.json 应覆盖全部带变异配置的包')
+  // 退役文件不得残留
+  for (const p of [
+    'scripts/gate/sync-mutate-segments.mjs',
+    'scripts/gate/mutate-scope-guard.mjs',
+    'scripts/data/mutation-segments.json',
+  ]) {
+    assert.ok(!existsSync(join(ROOT, p)), `${p} 应已删除（#276 方案 A 退役清点）`)
+  }
+  // 全部 conf 的 mutate 必须是 src 路径（无 lib/ 产物行号）
+  const confDir = join(ROOT, 'stryker.conf.d')
+  for (const f of readdirSync(confDir).filter((x) => x.endsWith('.json'))) {
+    const conf = JSON.parse(readFileSync(join(confDir, f), 'utf8'))
+    for (const m of conf.mutate ?? []) {
+      assert.ok(m.includes('/src/') && !m.includes('lib/index.js'),
+        `${f} 的 mutate "${m}" 必须是 src 路径（方案 A：文件 glob 声明，无产物行号）`)
+    }
+  }
 })
 
 test('#178+#204: ci.yml PR 增量门禁——读仓库基线文件 + 按命中包切片 + 并入 repo-gate', () => {
@@ -516,19 +529,18 @@ test('#217: coverage job 全局单次采集——if 精确、步骤链与 artifa
     "github.event_name == 'pull_request' && needs.changes.outputs.hasMutations == 'true'",
     'coverage if 必须精确为「仅 PR 且 hasMutations」',
   )
-  // 步骤链顺序：build → guard → cov → self-cov → upload
+  // 步骤链顺序：build → cov → self-cov → upload
   const buildIdx = cov.indexOf('- name: Build all packages')
-  const guardIdx = cov.indexOf('mutate-scope-guard.mjs')
   const covRunIdx = cov.indexOf('run: pnpm cov')
   const selfCovIdx = cov.indexOf('node scripts/gate/self-cov.mjs')
   const upIdx = cov.indexOf('Upload self-coverage artifact')
-  for (const [name, idx] of [['Build all packages', buildIdx], ['mutate-scope-guard', guardIdx],
+  for (const [name, idx] of [['Build all packages', buildIdx],
     ['pnpm cov', covRunIdx], ['self-cov.mjs', selfCovIdx], ['upload artifact', upIdx]]) {
     assert.ok(idx > 0, `coverage 步骤 ${name} 在位`)
   }
-  assert.ok(buildIdx < guardIdx && guardIdx < covRunIdx && covRunIdx < selfCovIdx && selfCovIdx < upIdx,
-    'coverage 步骤链必须按 build → guard → cov → self-cov → upload 排布（guard 校验 lib 分段、self-cov 读 c8 产物）')
-  assert.ok(!cov.slice(0, upIdx).includes('--check'), 'PR coverage 只落盘不判红（--check 阈值硬校验归 observe 夜间）')
+  assert.ok(buildIdx < covRunIdx && covRunIdx < selfCovIdx && selfCovIdx < upIdx,
+    'coverage 步骤链必须按 build → cov → self-cov → upload 排布（guard 已退役，self-cov 读 c8 产物）')
+  assert.ok(!cov.slice(0, upIdx).includes('--check'), 'PR coverage 只落盘不判红（--check 阈值硬校验归 observe 四班次）')
 
   // artifact 上传契约（fail-closed）
   const uploadBlock = cov.slice(upIdx)
@@ -536,11 +548,6 @@ test('#217: coverage job 全局单次采集——if 精确、步骤链与 artifa
   assert.ok(uploadBlock.includes('path: coverage/self-coverage.json'), '上传路径为固定产物路径')
   assert.ok(uploadBlock.includes('if-no-files-found: error'), '产物缺失必须 error（防下游静默空判分）')
   assert.ok(uploadBlock.includes('retention-days: 1'), '跨 job 传递产物 retention 收敛为 1 天')
-
-  // #217 顺路加固：mutate-scope-guard 前移进 PR 门禁（原只在 observe 夜间，
-  // 配置漂移注定合并后才暴露——实证 run 32869177152 / #235）
-  assert.ok(CI.includes('node scripts/gate/mutate-scope-guard.mjs'),
-    'mutate-scope-guard 必须前移进 ci.yml PR 门禁')
 })
 
 test('#217: mutation-gate 剥离 cov——与 coverage 平行（needs 仅 changes）、if 精确锁定', () => {

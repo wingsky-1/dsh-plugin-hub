@@ -7,11 +7,11 @@
  * panel → servers / quick-add / float。
  */
 
-import { el, api } from "./dom.js";
-import type { McpState, UiActions } from "./state.js";
-import { renderServers } from "./servers.js";
-import { buildQuickAdd } from "./quick-add.js";
-import { renderPill, renderFloatPanel } from "./float.js";
+import { el, api } from "./dom.ts";
+import type { McpState, UiActions } from "./state.ts";
+import { renderServers } from "./servers.ts";
+import { buildQuickAdd } from "./quick-add.ts";
+import { renderPill, renderFloatPanel } from "./float.ts";
 
 /** 模块级单飞去重句柄（invalidate 单飞：同一时刻只有一个 in-flight 拉取）。 */
 let inflight: Promise<boolean> | undefined;

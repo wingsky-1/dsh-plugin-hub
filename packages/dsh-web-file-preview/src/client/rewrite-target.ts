@@ -15,8 +15,8 @@
  *    （rewriteAnchor 对 null 结果追加 target=_blank 新标签兜底，绝不整页导航）。
  */
 
-import { groupOfPath } from "../grouping.js";
-import { resolveRelativePath, resolveAbsolutePath, splitReferenceFragment } from "../relpath.js";
+import { groupOfPath } from "../grouping.ts";
+import { resolveRelativePath, resolveAbsolutePath, splitReferenceFragment } from "../relpath.ts";
 
 /** 预览 API 路由（与宿主 ROUTES.file 一致，契约 smoke 校验字面量）。 */
 export const REWRITE_API_PATH = "/api/dsh-file-preview/file";

@@ -5,7 +5,7 @@
  * 禁止模块级全局变量，确保连续挂载/卸载无残留。
  */
 
-import type { GroupResult } from "./renderer.js";
+import type { GroupResult } from "./renderer.ts";
 
 /** 返回栈条目：保存上一文件路径/会话 cwd + 预览态快照，返回时原样还原。 */
 export interface NavEntry {

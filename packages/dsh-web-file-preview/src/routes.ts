@@ -26,9 +26,9 @@ import type { Stats } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { isLoopbackRequest } from "../../../shared/loopback.js";
 import { writeJson, errorMessage } from "../../../shared/host-utils.js";
-import { previewKindOf } from "./mime.js";
-import { computeGitDiff } from "./git.js";
-import { bareBasenameOf, findUniqueByBasename } from "./basename-fallback.js";
+import { previewKindOf } from "./mime.ts";
+import { computeGitDiff } from "./git.ts";
+import { bareBasenameOf, findUniqueByBasename } from "./basename-fallback.ts";
 // 官方路由对象类型（仅 import type，编译期擦除；contract-check 禁止运行时值导入）。
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 

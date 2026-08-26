@@ -11,404 +11,51 @@
  *
  * 双轨迁移：middleware 配置为 "off"（默认直呼）/ "project"（项目级走中间层，
  * 全局 mcp__ 直呼）/ "all"（全部走中间层）。
- * 由 lib/index.js 组合根 re-export。
+ *
+ * 职责拆分（#286 附加）：本文件保留连接池核心（McpMiddleware 类）并汇聚
+ * 转发全部公共符号——常量（middleware-const）、纯函数与目录检索
+ * （middleware-utils）、状态持久化（middleware-state）、工具注册
+ * （middleware-register）、类型（middleware-types）；index.ts / manager.ts
+ * 的 import 与 re-export 面保持不变。
  */
 
-import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { homedir } from "node:os";
-import type { ServerConfig } from "./types.js";
-import type { Context, LoggerService } from "@deepseek-ai/cordis";
-import type { ToolDefinition, PreToolDecision } from "@deepseek-ai/dsh-tools";
-import { MCPClient } from "./protocol.js";
-import type { StdioTransport, HttpTransport } from "./transport.js";
-import { createTransport } from "./transport.js";
+import { dirname } from "node:path";
+import type { ServerConfig } from "./types.ts";
+import { MCPClient } from "./protocol.ts";
+import { createTransport } from "./transport.ts";
+import {
+  CONNECT_TIMEOUT_MS,
+  DISCOVERY_TIMEOUT_MS,
+  CALL_TIMEOUT_MS,
+  CATALOG_TTL_MS,
+  MAX_TOOLS_PER_SERVER,
+  MAX_BYTES_PER_TOOL,
+  MAX_TOTAL_CATALOG_BYTES,
+} from "./middleware-const.ts";
+import {
+  withTimeout,
+  msgOf,
+  createRedactor,
+  parseFullServerName,
+  normalizeToolName,
+  normalizeArguments,
+  policyAllows,
+  policyDenialReason,
+  fullServerName,
+} from "./middleware-utils.ts";
+import type {
+  MiddlewareHost,
+  ProjectUnit,
+  MiddlewarePolicy,
+  ConnectionEntry,
+  CatalogTool,
+} from "./middleware-types.ts";
 
-// ------------------------------------------------------------ 常量与类型
 
-/** 中间层模式：off = 直呼（默认兼容）；project = 项目级走中间层；all = 全部走中间层。 */
-export type MiddlewareMode = "off" | "project" | "all";
-
-/** 归一化中间层模式（非法值回落 off）。 */
-export function normalizeMiddlewareMode(value: unknown): MiddlewareMode {
-  return value === "project" || value === "all" ? value : "off";
-}
-
-/** 连接超时（ms）。 */
-export const CONNECT_TIMEOUT_MS = 10_000;
-/** 工具发现（tools/list 全量）超时（ms）。 */
-export const DISCOVERY_TIMEOUT_MS = 10_000;
-/** 单次远端工具调用超时（ms）。 */
-export const CALL_TIMEOUT_MS = 30_000;
-/** 目录 TTL（ms）：24h。 */
-export const CATALOG_TTL_MS = 24 * 60 * 60 * 1000;
-/** 每工作空间目录 LRU 上限。 */
-export const CATALOG_LRU_MAX = 16;
-/** 目录安全边界：单服务器工具数上限。 */
-export const MAX_TOOLS_PER_SERVER = 512;
-/** 目录安全边界：单工具描述字节上限。 */
-export const MAX_BYTES_PER_TOOL = 4096;
-/** 目录安全边界：目录总字节上限。 */
-export const MAX_TOTAL_CATALOG_BYTES = 256 * 1024;
-
-/** 策略过滤模式。 */
-export interface MiddlewarePolicy {
-  /** server 名（裸名，不含 @root 前缀）→ 允许的工具 glob（空 = 全部允许）。 */
-  allowTools?: Record<string, string[]>;
-  /** server 名（裸名）→ 拒绝的工具 glob（deny 优先）。 */
-  denyTools?: Record<string, string[]>;
-}
-
-/** 连接池条目（每工作空间一套）。 */
-export interface ProjectUnit {
-  root: string;
-  /** server 名（裸名）→ 连接条目。 */
-  connections: Map<string, ConnectionEntry>;
-  /** 目录缓存（last-good：连接断不丢）。 */
-  catalog: Map<string, CatalogServer>;
-  /** 用户禁用集合（持久化）。 */
-  userDisabled: Set<string>;
-  /** 最近触达时间（LRU 淘汰依据）。 */
-  lastTouchedAt: number;
-  /** 连接/发现 in-flight 去重（server 名 → Promise）。 */
-  inFlight: Map<string, Promise<unknown>>;
-}
-
-/** 单服务器连接条目。 */
-export interface ConnectionEntry {
-  server: ServerConfig;
-  client: MCPClient | undefined;
-  transport: StdioTransport | HttpTransport | undefined;
-  /** 连接状态：connecting / connected / failed / disabled。 */
-  status: string;
-  error: unknown;
-  connectedAt: number | undefined;
-  /** 后台重连定时器。 */
-  reconnectTimer: NodeJS.Timeout | undefined;
-  /** 代际断开清理。 */
-  disposed: boolean;
-  /** 连续失败次数（有界指数退避依据；连接成功后清零）。 */
-  failedAttempts: number;
-}
-
-/** 目录中的单服务器条目。 */
-export interface CatalogServer {
-  /** 发现时间戳。 */
-  discoveredAt: number;
-  /** 工具列表（裸名 → 描述 + schema 摘要）。 */
-  tools: Map<string, CatalogTool>;
-  /** 发现失败原因（unavailable 段）。 */
-  unavailable?: string;
-}
-
-/** 目录中的单工具。 */
-export interface CatalogTool {
-  description: string;
-  inputSchema: Record<string, unknown>;
-}
-
-/** ws_mcp_search 单条命中。 */
-export interface SearchHit {
-  server: string;
-  tool: string;
-  description: string;
-  inputSchema: Record<string, unknown>;
-  score: number;
-  matchedTerms: string[];
-  fresh: boolean;
-}
-
-/** 中间层最小面（manager 提供）。 */
-export interface MiddlewareHost {
-  ctx: Pick<Context, "tools">;
-  logger: LoggerService;
-  /** 按 root 读取项目级服务器配置（惰性；root 无标记 → undefined）。 */
-  projectServersFor(root: string): Promise<ServerConfig[] | undefined>;
-  /** 全局服务器配置（走中间层 all 模式时使用）。 */
-  globalServers(): ServerConfig[];
-  /** 路由解析：cwd → 归一化项目根。 */
-  normalizedProjectRoot(cwd: string | undefined): Promise<string | undefined>;
-  /** 持久化 userDisabled。 */
-  saveUserState(units: Map<string, ProjectUnit>): Promise<void>;
-  /** 状态变化通知（SSE 标脏）。 */
-  emitStatus(): void;
-  /** 目录缓存文件路径（last-good 持久化）。 */
-  catalogCachePath(root: string): string;
-}
-
-// ------------------------------------------------------------ 纯函数
-
-/** server 全局唯一名：@<root>/<server>。 */
-export function fullServerName(root: string, server: string): string {
-  return `@${root}/${server}`;
-}
-
-/** 解析 @<root>/<server> 全名 → { root, server }；非法返回 undefined。
- * root 是绝对路径（以 / 开头），故从最后一个 `/` 分割（server 名不含 `/`）。 */
-export function parseFullServerName(name: string): { root: string; server: string } | undefined {
-  if (!name.startsWith("@")) return undefined;
-  const slash = name.lastIndexOf("/");
-  if (slash <= 1 || slash === name.length - 1) return undefined;
-  return { root: name.slice(1, slash), server: name.slice(slash + 1) };
-}
-
-/** 归一化 ws_mcp_call 的 tool 参数（模型可能传 mcp__<server>__<tool> 全名）。 */
-export function normalizeToolName(serverName: string, toolName: string): string {
-  const prefix = `mcp__${serverName}__`;
-  let name = toolName;
-  if (name.startsWith("mcp__")) {
-    while (name.startsWith(prefix)) name = name.slice(prefix.length);
-    if (name.startsWith("mcp__")) {
-      throw new Error(
-        `ws_mcp_call: tool 参数疑似其他 MCP server 的注册全名（${JSON.stringify(toolName)}，server="${serverName}"）；请传该 server 上的裸名`,
-      );
-    }
-  }
-  return name;
-}
-
-/** 归一化 ws_mcp_call 的 arguments 参数（模型可能把参数字典填成 JSON 字符串）。 */
-export function normalizeArguments(raw: unknown): unknown {
-  let value: unknown = raw ?? {};
-  let depth = 0;
-  while (typeof value === "string" && depth < 4) {
-    const trimmed = value.trim();
-    if (trimmed.length === 0) return {};
-    const head = trimmed.charCodeAt(0);
-    const isContainerJson = head === 123 /* { */ || head === 91 /* [ */;
-    const isQuotedJson = head === 34 /* " */;
-    if (!isContainerJson && !isQuotedJson) break;
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(trimmed);
-    } catch {
-      break;
-    }
-    if (parsed !== null && typeof parsed === "object") return parsed;
-    const inner = typeof parsed === "string" ? parsed.trim() : "";
-    const innerLooksContainer = inner.startsWith("{") || inner.startsWith("[");
-    if (!isQuotedJson || !innerLooksContainer) break;
-    value = parsed;
-    depth += 1;
-  }
-  return value;
-}
-
-/** 统一错误提取（Error/string/object 三态）。 */
-export function msgOf(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "string") return error;
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return String(error);
-  }
-}
-
-/** 凭据脱敏器：从服务器配置收集 secret 值，替换错误消息中的出现。 */
-export function createRedactor(servers: readonly ServerConfig[]): (error: unknown) => string {
-  const secrets = new Set<string>();
-  for (const server of servers) {
-    if (server.transport === "stdio") {
-      for (const value of Object.values(server.env ?? {})) if (value.length > 0) secrets.add(value);
-      const args = server.args ?? [];
-      for (let index = 0; index < args.length; index += 1) {
-        const argument = args[index] ?? "";
-        const equals = argument.indexOf("=");
-        const flag = equals < 0 ? argument : argument.slice(0, equals);
-        if (!/(?:token|secret|pass|key|auth|cookie|credential)/i.test(flag)) continue;
-        const value = equals < 0 ? args[index + 1] : argument.slice(equals + 1);
-        if (value !== undefined && value.length > 0) secrets.add(value);
-      }
-      continue;
-    }
-    for (const value of Object.values(server.headers ?? {})) if (value.length > 0) secrets.add(value);
-    const url = server.url;
-    if (typeof url === "string" && url !== "") {
-      secrets.add(url);
-      try {
-        const parsed = new URL(url);
-        if (parsed.username.length > 0) secrets.add(parsed.username);
-        if (parsed.password.length > 0) secrets.add(parsed.password);
-        for (const value of parsed.searchParams.values()) if (value.length > 0) secrets.add(value);
-      } catch {
-        // 非法 URL 忽略
-      }
-    }
-  }
-  const ordered = [...secrets].sort((left, right) => right.length - left.length);
-  return (error: unknown): string => {
-    let text: string;
-    try {
-      text = error instanceof Error ? error.message : String(error);
-    } catch {
-      text = "<unprintable error>";
-    }
-    for (const secret of ordered) text = text.split(secret).join("[REDACTED]");
-    return text;
-  };
-}
-
-/** 工具名匹配 glob（* 通配）。 */
-export function globMatch(pattern: string, name: string): boolean {
-  if (pattern === "*") return true;
-  if (!pattern.includes("*")) return pattern === name;
-  const escaped = pattern.split("*").map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*");
-  return new RegExp(`^${escaped}$`).test(name);
-}
-
-/** 策略裁决：deny 优先。serverKey 支持全名（@root/server）或裸名——全名优先匹配（工作空间隔离），未命中回落裸名。返回 true = 允许。 */
-export function policyAllows(policy: MiddlewarePolicy | undefined, serverKey: string, tool: string): boolean {
-  if (policy === undefined) return true;
-  const fullDeny = policy.denyTools?.[serverKey];
-  if (fullDeny !== undefined && fullDeny.some((pattern) => globMatch(pattern, tool))) return false;
-  const deny = policy.denyTools?.[bareServerName(serverKey)];
-  if (deny !== undefined && deny.some((pattern) => globMatch(pattern, tool))) return false;
-  const fullAllow = policy.allowTools?.[serverKey];
-  if (fullAllow !== undefined && fullAllow.length > 0) {
-    return fullAllow.some((pattern) => globMatch(pattern, tool));
-  }
-  const allow = policy.allowTools?.[bareServerName(serverKey)];
-  if (allow === undefined || allow.length === 0) return true;
-  return allow.some((pattern) => globMatch(pattern, tool));
-}
-
-/** 提取裸名（@root/server → server；无前缀原样返回）。 */
-export function bareServerName(name: string): string {
-  const parsed = parseFullServerName(name);
-  return parsed?.server ?? name;
-}
-
-/** 策略拒绝原因（供 denialReason 提示）。 */
-export function policyDenialReason(policy: MiddlewarePolicy | undefined, serverKey: string, tool: string): string | undefined {
-  if (policyAllows(policy, serverKey, tool)) return undefined;
-  const deny = policy?.denyTools?.[serverKey] ?? policy?.denyTools?.[bareServerName(serverKey)];
-  if (deny !== undefined && deny.some((pattern) => globMatch(pattern, tool))) {
-    return `ws_mcp_call: 工具 ${JSON.stringify(`${serverKey}/${tool}`)} 被 denyTools 策略拒绝`;
-  }
-  return `ws_mcp_call: 工具 ${JSON.stringify(`${serverKey}/${tool}`)} 不在 allowTools 白名单内，被策略拒绝`;
-}
-
-// ------------------------------------------------------------ 目录检索
-
-/** 简单分词（英文小写 + 中文保留）。 */
-function tokenize(text: string): string[] {
-  const lowered = text.toLowerCase();
-  const words = lowered.match(/[a-z0-9_]+|[\u4e00-\u9fff]+/gu) ?? [];
-  return words;
-}
-
-/** 跨字段打分：query 词命中 server 名 / 工具名 / description / 参数名。
- * 中文（无空格分词）：query 连续中文串在原始描述中 substring 匹配即可命中
- * （修复：原实现把连续中文当单个 token，中文召回率接近零）。 */
-export function scoreTool(query: string, server: string, toolName: string, tool: CatalogTool): { score: number; matchedTerms: string[] } {
-  if (query === "") return { score: 0, matchedTerms: [] };
-  const haystack = [
-    server,
-    toolName,
-    tool.description,
-    JSON.stringify(Object.keys(tool.inputSchema ?? {})),
-  ].join(" ").toLowerCase();
-  // 中文子串匹配（连续中文段直接 substring 命中原始文本）
-  const cjkQuery = query.match(/[\u4e00-\u9fff]+/gu) ?? [];
-  if (cjkQuery.length > 0) {
-    let score = 0;
-    const matchedTerms: string[] = [];
-    for (const segment of cjkQuery) {
-      if (segment.length < 2) continue;
-      if (haystack.includes(segment)) {
-        score += 2;
-        matchedTerms.push(segment);
-      }
-    }
-    if (score > 0) return { score, matchedTerms };
-  }
-  const terms = tokenize(query);
-  if (terms.length === 0) return { score: 0, matchedTerms: [] };
-  let score = 0;
-  const matchedTerms: string[] = [];
-  for (const term of terms) {
-    if (term.length < 2) continue;
-    if (haystack.includes(term)) {
-      score += 1;
-      matchedTerms.push(term);
-    }
-  }
-  return { score, matchedTerms };
-}
-
-/** 检索目录：query 为空 → 能力摘要表（每服务器前 N 个工具）。 */
-export function searchCatalog(
-  units: Map<string, ProjectUnit>,
-  root: string,
-  query: string,
-  limit: number,
-): { results: SearchHit[]; unavailable: Array<{ server: string; reason: string }> } {
-  const unit = units.get(root);
-  if (unit === undefined) return { results: [], unavailable: [] };
-  const results: SearchHit[] = [];
-  const unavailable: Array<{ server: string; reason: string }> = [];
-  for (const [serverName, catalog] of unit.catalog) {
-    if (catalog.unavailable !== undefined) {
-      unavailable.push({ server: fullServerName(root, serverName), reason: catalog.unavailable });
-      continue;
-    }
-    const fresh = Date.now() - catalog.discoveredAt <= CATALOG_TTL_MS;
-    const scored: Array<{ server: string; toolName: string; tool: CatalogTool; score: number; matchedTerms: string[] }> = [];
-    for (const [toolName, tool] of catalog.tools) {
-      const { score, matchedTerms } = scoreTool(query, serverName, toolName, tool);
-      if (query !== "" && score === 0) continue;
-      scored.push({ server: serverName, toolName, tool, score, matchedTerms });
-    }
-    scored.sort((a, b) => b.score - a.score || a.toolName.localeCompare(b.toolName));
-    for (const hit of scored.slice(0, limit)) {
-      results.push({
-        server: fullServerName(root, hit.server),
-        tool: hit.toolName,
-        description: hit.tool.description,
-        inputSchema: hit.tool.inputSchema,
-        score: hit.score,
-        matchedTerms: hit.matchedTerms,
-        fresh,
-      });
-    }
-  }
-  return { results, unavailable };
-}
 
 // ------------------------------------------------------------ 连接池
-
-/** 等待带超时（race 兜底）。 */
-export function withTimeout<T>(promise: Promise<T>, ms: number, message: string, signal?: AbortSignal): Promise<T> {
-  if (signal?.aborted === true) return Promise.reject(signal.reason ?? new Error("aborted"));
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error(message));
-    }, ms);
-    const onAbort = () => {
-      cleanup();
-      reject(signal?.reason ?? new Error("aborted"));
-    };
-    const cleanup = () => {
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", onAbort);
-    };
-    signal?.addEventListener("abort", onAbort, { once: true });
-    void promise.then(
-      (value) => {
-        cleanup();
-        resolve(value);
-      },
-      (error) => {
-        cleanup();
-        reject(error);
-      },
-    );
-  });
-}
 
 /**
  * 中间层：工作空间 MCP 连接池 + 目录 + 路由执行。
@@ -815,232 +462,50 @@ export class McpMiddleware {
   }
 }
 
-// ------------------------------------------------------------ 工具注册
+// ------------------------------------------------------------ 汇聚转发
+// 导出面与拆分前完全一致（index.ts / manager.ts / smoke 验收契约）。
 
-/**
- * 注册 ws_mcp_search / ws_mcp_call 两个中间层工具。
- * @param host 中间层宿主。
- * @param mw 中间层实例。
- * @param resolveRoot 路由：exec.agent → 归一化项目根（agent-less → undefined）。
- */
-export function registerMiddlewareTools(
-  ctx: Context,
-  mw: McpMiddleware,
-  resolveRoot: (agent: unknown) => Promise<string | undefined>,
-): () => void {
-  const disposers: Array<() => void> = [];
+// 常量与模式归一化
+export {
+  CONNECT_TIMEOUT_MS,
+  DISCOVERY_TIMEOUT_MS,
+  CALL_TIMEOUT_MS,
+  CATALOG_TTL_MS,
+  CATALOG_LRU_MAX,
+  MAX_TOOLS_PER_SERVER,
+  MAX_BYTES_PER_TOOL,
+  MAX_TOTAL_CATALOG_BYTES,
+  normalizeMiddlewareMode,
+} from "./middleware-const.ts";
+// 纯函数与目录检索
+export {
+  withTimeout,
+  fullServerName,
+  parseFullServerName,
+  normalizeToolName,
+  normalizeArguments,
+  msgOf,
+  createRedactor,
+  globMatch,
+  policyAllows,
+  bareServerName,
+  policyDenialReason,
+  scoreTool,
+  searchCatalog,
+} from "./middleware-utils.ts";
+// 状态持久化
+export { userStateFile, loadUserState, saveUserState, catalogCacheFileFor } from "./middleware-state.ts";
+// 工具注册
+export { registerMiddlewareTools } from "./middleware-register.ts";
+// 类型
+export type {
+  MiddlewareMode,
+  MiddlewarePolicy,
+  ProjectUnit,
+  ConnectionEntry,
+  CatalogServer,
+  CatalogTool,
+  SearchHit,
+  MiddlewareHost,
+} from "./middleware-types.ts";
 
-  const search: ToolDefinition = {
-    name: "ws_mcp_search",
-    description: "检索当前工作空间的 MCP 工具目录。先用本工具检索，再 ws_mcp_call 调用。空 query 返回能力摘要表。",
-    parameters: {
-      type: "object",
-      properties: {
-        query: { type: "string", description: "意图/关键词；空则列能力摘要" },
-        server: { type: "string", description: "可选：@<root>/<server> 全名过滤" },
-        limit: { type: "number", description: "返回条数上限（默认 5，上限 10）" },
-      },
-    },
-    output: {
-      schema: {
-        type: "object",
-        properties: {
-          results: { type: "array", items: {} },
-          unavailable: { type: "array", items: {} },
-        },
-        required: ["results", "unavailable"],
-        additionalProperties: false,
-      },
-      render(_args, value: unknown) {
-        const v = (value ?? {}) as { results?: Array<Record<string, unknown>>; unavailable?: Array<Record<string, unknown>> };
-        const lines = (v.results ?? []).map((hit) => {
-          const server = String(hit.server ?? "");
-          const tool = String(hit.tool ?? "");
-          const description = String(hit.description ?? "");
-          return `${server}/${tool}: ${description}`;
-        });
-        const body = lines.length > 0 ? lines.join("\n") : "（当前工作空间没有匹配的 MCP 工具）";
-        const unavailable = (v.unavailable ?? []).map((entry) => `${String(entry.server ?? "")}: ${String(entry.reason ?? "")}`);
-        return [{ type: "text", text: unavailable.length > 0 ? `${body}\n\n不可用服务器：\n${unavailable.join("\n")}` : body }];
-      },
-    },
-    isConcurrencySafe: () => true,
-    async execute(args: unknown, exec: { signal?: AbortSignal; agent?: unknown }) {
-      const root = await resolveRoot(exec.agent);
-      if (root === undefined) throw new Error("ws_mcp_search: 无法确定工作空间，请先选择工作区");
-      const params = (typeof args === "object" && args !== null ? args : {}) as Record<string, unknown>;
-      const query = typeof params.query === "string" ? params.query : "";
-      const serverFilter = typeof params.server === "string" ? params.server : undefined;
-      const requested = typeof params.limit === "number" ? Math.floor(params.limit) : 5;
-      const limit = Math.max(1, Math.min(requested, 10));
-      const unit = await mw.projectUnitFor(root);
-      if (unit === undefined) {
-        return { results: [], unavailable: [] };
-      }
-      // 等待 in-flight 连接/发现（预算内），再搜索。
-      const inflight = [...unit.inFlight.values()];
-      if (inflight.length > 0) {
-        try {
-          await withTimeout(Promise.allSettled(inflight), 8000, "等待连接/发现超时");
-        } catch {
-          // 超时不阻塞搜索（返回已有目录）
-        }
-      }
-      const { results, unavailable } = searchCatalog(mw.units, root, query, limit);
-      const filtered = serverFilter === undefined ? results : results.filter((hit) => hit.server === serverFilter);
-      return { results: filtered, unavailable };
-    },
-  };
-
-  const call: ToolDefinition = {
-    name: "ws_mcp_call",
-    description: "调用当前工作空间的一个 MCP 工具。server/tool 来自 ws_mcp_search 返回（已知时可直呼，免搜索）。",
-    parameters: {
-      type: "object",
-      properties: {
-        server: { type: "string", description: "必须：@<root>/<server> 全名（来自 ws_mcp_search）" },
-        tool: { type: "string", description: "必须：远端工具裸名（来自 ws_mcp_search）" },
-        arguments: { type: "object", additionalProperties: true, description: "参数，匹配 ws_mcp_search 返回的 inputSchema" },
-      },
-      required: ["server", "tool"],
-    },
-    output: {
-      schema: {
-        type: "object",
-        properties: {
-          content: { type: "array", items: {} },
-          structuredContent: {},
-        },
-        required: ["content"],
-        additionalProperties: false,
-      },
-      render(_args, value: unknown) {
-        const v = (value ?? {}) as { content?: unknown };
-        const content = Array.isArray(v.content) ? v.content : [];
-        const parts: string[] = [];
-        for (const block of content) {
-          if (typeof block !== "object" || block === null) {
-            parts.push("[unsupported MCP content]");
-            continue;
-          }
-          const rec = block as Record<string, unknown>;
-          if (rec.type === "text" && typeof rec.text === "string") {
-            parts.push(rec.text);
-            continue;
-          }
-          if (rec.type === "resource" || rec.type === "resource_link") {
-            parts.push("[resource: content discarded]");
-            continue;
-          }
-          parts.push(`[${String(rec.type ?? "unknown")} content]`);
-        }
-        return [{ type: "text", text: parts.length > 0 ? parts.join("\n") : "(MCP tool returned no content)" }];
-      },
-    },
-    isConcurrencySafe: () => true,
-    timeoutMs: CONNECT_TIMEOUT_MS + DISCOVERY_TIMEOUT_MS + CALL_TIMEOUT_MS + 5000,
-    async execute(args: unknown, exec: { signal?: AbortSignal; agent?: unknown }) {
-      const root = await resolveRoot(exec.agent);
-      if (root === undefined) throw new Error("ws_mcp_call: 无法确定工作空间，请先选择工作区");
-      const params = (typeof args === "object" && args !== null ? args : {}) as Record<string, unknown>;
-      const server = typeof params.server === "string" ? params.server : "";
-      const tool = typeof params.tool === "string" ? params.tool : "";
-      if (server === "" || tool === "") throw new Error("ws_mcp_call: server 与 tool 均为必填");
-      const parsed = parseFullServerName(server);
-      if (parsed === undefined || parsed.root !== root) {
-        throw new Error(
-          `ws_mcp_call: server ${JSON.stringify(server)} 不属于当前工作空间 ${JSON.stringify(root)}；路由一致性校验失败（防跨空间串台）`,
-        );
-      }
-      // 确保连接已建立（等待 in-flight + 单次连接）。
-      const unit = await mw.projectUnitFor(root);
-      if (unit === undefined) throw new Error(`ws_mcp_call: 工作空间 ${JSON.stringify(root)} 无项目级 MCP 配置`);
-      await mw.ensureConnected(root, parsed.server);
-      return mw.callTool(server, tool, params.arguments, exec.signal);
-    },
-  };
-
-  disposers.push(ctx.tools.register(search));
-  disposers.push(ctx.tools.register(call));
-
-  // 策略 guard 层（方案 v2）：tools/pre-execute 全局唯一执行点，防其他插件/
-  // 入口绕行 ws_mcp_call 直接调用远端工具。对 ws_mcp_call 的调用统一过策略
-  // （deny 优先）；其余工具放行（不干扰 mcp__ 直呼兼容路径）。
-  if (typeof ctx.on === "function") {
-    const guardDispose = ctx.on(
-      "tools/pre-execute",
-      async (exec: { name?: string; arguments?: unknown }, next: () => Promise<PreToolDecision>): Promise<PreToolDecision> => {
-        if (exec?.name !== "ws_mcp_call") return next();
-        const params = (typeof exec.arguments === "object" && exec.arguments !== null ? exec.arguments : {}) as Record<string, unknown>;
-        const server = typeof params.server === "string" ? params.server : "";
-        const tool = typeof params.tool === "string" ? params.tool : "";
-        const parsed = parseFullServerName(server);
-        if (parsed === undefined || parsed.server === "") return next();
-        // 策略键支持全名（@root/server）或裸名。
-        const policyKey = fullServerName(parsed.root, parsed.server);
-        if (!policyAllows(mw.policy, policyKey, tool)) {
-          const reason = policyDenialReason(mw.policy, policyKey, tool);
-          return { kind: "deny", reason: reason ?? `ws_mcp_call: 工具被策略拒绝` };
-        }
-        return next();
-      },
-    );
-    disposers.push(guardDispose);
-  }
-
-  return () => {
-    for (const dispose of disposers) dispose();
-  };
-}
-
-/** userDisabled 持久化文件路径。 */
-export function userStateFile() {
-  return join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), "dsh-mcp-user-state.json");
-}
-
-/** 加载 userDisabled（损坏/缺失 → 空）。 */
-export async function loadUserState(file: string): Promise<Map<string, Set<string>>> {
-  const out = new Map<string, Set<string>>();
-  try {
-    if (!existsSync(file)) return out;
-    const raw = await readFile(file, "utf8");
-    const parsed = JSON.parse(raw) as { disabled?: Record<string, string[]> } | null;
-    if (parsed && typeof parsed === "object" && typeof parsed.disabled === "object" && parsed.disabled !== null) {
-      for (const [root, names] of Object.entries(parsed.disabled)) {
-        if (Array.isArray(names)) out.set(root, new Set(names.filter((name) => typeof name === "string")));
-      }
-    }
-  } catch {
-    // 损坏忽略
-  }
-  return out;
-}
-
-/** 持久化 userDisabled（合并式：先读现有文件，内存 units 覆盖，保留已淘汰
- * root 的记录——防 LRU 淘汰/卸载后禁用记录被静默抹掉，P1 修复）。 */
-export async function saveUserState(file: string, units: Map<string, ProjectUnit>): Promise<void> {
-  const merged = await loadUserState(file);
-  for (const [root, unit] of units) {
-    if (unit.userDisabled.size > 0) merged.set(root, new Set(unit.userDisabled));
-    else merged.delete(root);
-  }
-  const disabled: Record<string, string[]> = {};
-  for (const [root, names] of merged) {
-    if (names.size > 0) disabled[root] = [...names].sort();
-  }
-  try {
-    const dir = dirname(file);
-    if (!existsSync(dir)) await mkdir(dir, { recursive: true });
-    const tmp = `${file}.${process.pid}.${Date.now().toString(36)}.tmp`;
-    await writeFile(tmp, JSON.stringify({ version: 1, disabled }, null, 2), "utf8");
-    await rename(tmp, file);
-  } catch {
-    // 落盘失败不阻塞主流程
-  }
-}
-
-/** 目录缓存文件路径（每工作空间一份；root 哈希防路径注入）。 */
-export function catalogCacheFileFor(root: string) {
-  const hash = createHash("sha256").update(root).digest("hex").slice(0, 16);
-  return join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), "dsh-mcp-catalog", `${hash}.json`);
-}

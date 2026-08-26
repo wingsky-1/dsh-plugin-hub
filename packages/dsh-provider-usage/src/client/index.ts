@@ -21,9 +21,9 @@ import {
   FALLBACK_PROVIDER,
   UNKNOWN_PROVIDER_HINT,
   EVENTS_URL,
-} from "./core.js";
-import type { SessionsServiceLike, ConnectionHandleLike, StatsResponseV2, HistoryResponseV2, UiPlacementConfig } from "./core.js";
-import { SettingsPage } from "./settings.js";
+} from "./core.ts";
+import type { SessionsServiceLike, ConnectionHandleLike, StatsResponseV2, HistoryResponseV2, UiPlacementConfig } from "./core.ts";
+import { SettingsPage } from "./settings.ts";
 import {
   BREAKPOINT_NARROW_MAX,
   BREAKPOINT_TABLET_MAX,
@@ -33,7 +33,7 @@ import {
   clampZIndexBase,
   panelAnchorForPlacement,
   panelZIndexFor,
-} from "../placement-math.js";
+} from "../placement-math.ts";
 // React externals 路径：运行时由 dsh web factory require("react") 注入
 import * as React from "react";
 import STYLE from "./style.css";

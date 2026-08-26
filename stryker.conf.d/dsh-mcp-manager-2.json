@@ -1,25 +1,15 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-mcp-manager/lib/index.js:17322-17456"
+    "packages/dsh-mcp-manager/src/middleware.ts",
+    "packages/dsh-mcp-manager/src/middleware-utils.ts",
+    "packages/dsh-mcp-manager/src/middleware-register.ts",
+    "packages/dsh-mcp-manager/src/middleware-state.ts",
+    "packages/dsh-mcp-manager/src/middleware-const.ts",
+    "!packages/dsh-mcp-manager/src/client/**",
+    "!packages/dsh-mcp-manager/src/types.ts"
   ],
   "testRunner": "tap",
-  "tap": {
-    "nodeArgs": [
-      "-r",
-      "./scripts/test/mutation-tap-bridge.cjs"
-    ],
-    "testFiles": [
-      "packages/dsh-mcp-manager/test/unit-hotspot.test.ts",
-      "packages/dsh-mcp-manager/test/unit-manager.test.ts",
-      "packages/dsh-mcp-manager/test/unit-store.test.ts",
-      "packages/dsh-mcp-manager/test/unit-transport.test.ts",
-      "packages/dsh-mcp-manager/test/unit-catalog.test.ts",
-      "packages/dsh-mcp-manager/test/unit-supervisor.test.ts",
-      "packages/dsh-mcp-manager/test/unit-routes-sse.test.ts",
-      "packages/dsh-mcp-manager/test/unit-manager2.test.ts"
-    ]
-  },
   "mutator": {
     "excludedMutations": [
       "StringLiteral",
@@ -39,13 +29,31 @@
     "clear-text",
     "json"
   ],
-  "jsonReporter": {
-    "fileName": "coverage/mutation/dsh-mcp-manager-2.json"
-  },
   "coverageAnalysis": "perTest",
   "tempDirName": ".stryker-tmp",
   "cleanTempDir": true,
+  "tap": {
+    "nodeArgs": [
+      "-r",
+      "./scripts/test/mutation-tap-bridge.cjs"
+    ],
+    "testFiles": [
+      "packages/dsh-mcp-manager/test/unit-apply.src.test.ts",
+      "packages/dsh-mcp-manager/test/unit-catalog.src.test.ts",
+      "packages/dsh-mcp-manager/test/unit-hotspot.src.test.ts",
+      "packages/dsh-mcp-manager/test/unit-manager.src.test.ts",
+      "packages/dsh-mcp-manager/test/unit-manager2.src.test.ts",
+      "packages/dsh-mcp-manager/test/unit-middleware.src.test.ts",
+      "packages/dsh-mcp-manager/test/unit-routes-sse.src.test.ts",
+      "packages/dsh-mcp-manager/test/unit-store.src.test.ts",
+      "packages/dsh-mcp-manager/test/unit-supervisor.src.test.ts",
+      "packages/dsh-mcp-manager/test/unit-transport.src.test.ts"
+    ]
+  },
+  "jsonReporter": {
+    "fileName": "coverage/mutation/dsh-mcp-manager-2.json"
+  },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-mcp-manager-2.json",
-  "_comment": "#220 B 拆分：四段独立 matrix 并行；由 dsh-mcp-manager.json 派生，mutate 区间原样保留（provider-usage 两段历史重叠区间 2671-2792 由判分层 mutant id 去重处理）。"
+  "_comment": "#276 方案 A：src 级文件组分段（2）——mutate 为源文件名清单，密度均衡声明，无行号无漂移；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
 }

@@ -5,7 +5,7 @@
  * 渲染分组：image → 图片灯箱；md → Markdown 渲染(可切原始)；code → 代码高亮
  * (可切原始)；text → 等宽；other → 不可预览。
  */
-import { groupOfPath, type GroupOfResult, type PreviewGroupKind } from "../grouping.js";
+import { groupOfPath, type GroupOfResult, type PreviewGroupKind } from "../grouping.ts";
 
 /** 渲染分组（与宿主/grouping 预览分组一致）。 */
 export type RenderGroup = PreviewGroupKind;

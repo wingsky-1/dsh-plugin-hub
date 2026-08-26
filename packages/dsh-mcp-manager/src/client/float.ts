@@ -6,9 +6,9 @@
  * 跨模块动作（showPanel / refresh）经 actions 注入，不直接引用 panel 模块。
  */
 
-import { el, api } from "./dom.js";
-import { STATUS_ORDER, STATUS_TEXT, statusDot } from "./constants.js";
-import type { McpState, UiActions } from "./state.js";
+import { el, api } from "./dom.ts";
+import { STATUS_ORDER, STATUS_TEXT, statusDot } from "./constants.ts";
+import type { McpState, UiActions } from "./state.ts";
 import {
   DEFAULT_Z_INDEX_BASE,
   breakpointForWidth,
@@ -16,7 +16,7 @@ import {
   clampZIndexBase,
   panelAnchorForPosition,
   panelZIndexFor,
-} from "../placement-math.js";
+} from "../placement-math.ts";
 
 /** 渲染浮窗胶囊（状态点 + 摘要计数）。 */
 export function renderPill(state: McpState): void {

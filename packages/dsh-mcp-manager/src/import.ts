@@ -7,7 +7,7 @@
  * 由 lib/index.js 组合根 re-export。
  */
 
-import type { ServerConfig } from "./types.js";
+import type { ServerConfig } from "./types.ts";
 
 // ------------------------------------------- mcpServers JSON 条目映射
 

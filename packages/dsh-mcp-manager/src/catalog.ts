@@ -10,7 +10,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import type { ServerConfig } from "./types.js";
+import type { ServerConfig } from "./types.ts";
 
 /** 目录条目。 */
 export interface CatalogEntry {
