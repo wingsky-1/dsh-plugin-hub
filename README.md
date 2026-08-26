@@ -10,16 +10,28 @@ DSH（DeepSeek Harness）Web GUI 插件集，npm 分发：一键装全家桶，�
 
 - 聚合包：`@wingsky-1/dsh-plugins-all`（一键装齐全部插件；观察期插件除外，见下文插件列表）
 - 单插件：`@wingsky-1/dsh-*`（按需安装）
-- 全部走 DSH 官方 profile 机制挂载（`dsh.bundle.patch`），不改 DSH 源码；发布物自包含，构建期内联打包
+
+## 核心优势
+
+- **安全内建于默认**：坚持最小暴露面与最小凭据流转——管理面只对本机开放，
+  密钥默认不明文落盘、不进浏览器；各插件的威胁模型与加固细节见其 README 安全章节
+- **上下文成本可控的 MCP 管理**：项目级 MCP 默认经中间层收敛为 `ws_mcp_search` /
+  `ws_mcp_call` 两个原子工具，项目级接入规模不再膨胀上下文（`middleware: all`
+  可把全局服务器也收进中间层）；分工作目录维护项目级/全局两级配置，
+  多仓库各配各的 MCP，互不串台
+- **可扩展的用量统计框架**：通用 v2 适配器契约，内置 DeepSeek 官方与 OpenCode Go
+  开箱即用；自写一个 mjs 文件即可接入任意数据源，设置页热插拔
+- **工程质量背书**：每个插件自带 smoke 断言（路由围栏 / 客户端契约），构建契约 +
+  打包校验等全部门禁在 CI 全量执行
 
 ## 插件列表
 
 | 包名 | 功能 | 文档 | 状态 |
 |---|---|---|---|
 | `@wingsky-1/dsh-notifier` | 审批/完成/错误事件通知（浏览器 Notification + 系统 toast） | [README](packages/dsh-notifier/README.md) | ✅ 已发布 |
-| `@wingsky-1/dsh-provider-usage` | 多 provider 用量悬浮框（按 Provider 适配器框架，内置 OpenCode Go） | [README](packages/dsh-provider-usage/README.md) | ✅ 已发布 |
+| `@wingsky-1/dsh-provider-usage` | 多 provider 用量统计悬浮框（通用适配器框架：内置 DeepSeek 官方与 OpenCode Go 开箱即用，自写 mjs 即可接入任意数据源） | [README](packages/dsh-provider-usage/README.md) | ✅ 已发布 |
 | `@wingsky-1/dsh-lan-proxy` | 局域网访问 dsh web UI（HTTP/HTTPS/WS 转发 + TLS + HTTP 响应压缩，Brotli/gzip 自适应） | [README](packages/dsh-lan-proxy/README.md) | ✅ 已发布 |
-| `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理器（stdio/HTTP，工具注册给模型） | [README](packages/dsh-mcp-manager/README.md) | ✅ 已发布 |
+| `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理器（stdio/HTTP；分工作目录维护项目级/全局两级配置，项目级 MCP 经中间层收敛、免于工具洪水） | [README](packages/dsh-mcp-manager/README.md) | ✅ 已发布 |
 | `@wingsky-1/dsh-idle-archive` | 会话闲置提醒归档 | [README](packages/dsh-idle-archive/README.md) | ✅ 已发布 |
 | `@wingsky-1/dsh-web-file-preview` | 点击对话文件链接在 web 端预览（图片/文本/Markdown/代码/Diff） | [README](packages/dsh-web-file-preview/README.md) | ✅ 已发布 |
 | `@wingsky-1/dsh-subagent-model-inherit` | 子 Agent 自动继承父会话模型与思考等级 | [README](packages/dsh-subagent-model-inherit/README.md) | 观察期（独立发包，暂不进聚合包） |
