@@ -15,12 +15,18 @@
 
 关键教训：**优化手段只作用于特定指标与特定场景**。例如构建产物复用（D）降计费分钟但对 wall-clock 无贡献；并发超订对等待主导型测试收益巨大、对 CPU 密集型收益有限。
 
-## 2. 场景切分：常态 vs 长尾
+## 2. 场景切分：常态 vs 重测
 
 | 场景 | 触发条件 | 耗时构成 | 优化杠杆 |
 |---|---|---|---|
 | 常态 | PR 未触及包的 mutate 面 | install+build 占大头（20-38s） | 已足够快，不值得再投入 |
-| 失效长尾 | 大改使大量 mutant 基线失效 | stryker 本体占大头（290-339s 实测） | 并发超订、mutate 段拆分 |
+| 基线失效重测 | 源码改动使 mutant 基线失效 | stryker 本体占大头 | 并发超订、mutate 段拆分 |
+
+**重测不是低频长尾**（2026-08-26 全量统计，近 66 个成功 PR run / 191 个 mutation job）：
+整体 p50=56s、p90=517s、max=803s，**超 2min 占 37%（70/191）**。按包均值：
+provider-usage **400s**（n=49，频率与耗时双高）、lan-proxy 204s、mcp-manager 140s
+（已 16 并发仍如此 → 瓶颈在 4 段大 mutate 面而非并发数）、notifier 75s、idle-archive 44s、web-file-preview 42s。
+活跃开发中的包高频处于重测态，「长尾」实为这些包的常态。
 
 ## 3. 手段清单与实测记录
 
@@ -28,9 +34,9 @@
 |---|---|---|---|---|
 | 1 | 增量基线仓库内文件化（#204/#178） | 已落地 | 常态 mutation job 分钟级 → **20-38s 全程** | actions/cache 按 ref 隔离不可用；基线必须入 git |
 | 2 | concurrency 超订（notifier 先例 #159） | 已落地（16×3 包） | notifier **6m54s → 1m42s** | 仅等待主导型收益巨大；见 §4.2 分级评估法 |
-| 3 | provider-usage 4→8（#249） | 已合并待首跑 | 未实测（纯配置改动不触发切片） | 观察项：score 一致 + timeout/error 不抬升；达标再评估 16 |
+| 3 | provider-usage 4→8（#249） | 已合并，增量命中场景首跑通过（23s pass） | 重测场景对比数据待自然触发 | 观察项：score 一致 + timeout/error 不抬升；达标再评估 16。该包重测高频（均值 400s），期望收益上修 |
 | 4 | lan-proxy / idle-archive 维持 4 | 决策维持 | — | #147 端口互踩实证 / testFiles 含固定端口 smoke.ts |
-| 5 | mutate 段拆分 CI matrix（B） | 缓行 | — | 失效长尾有 wall-clock 收益；代价：计费分钟×N、增量基线需按段重构、触 ci.yml 红线 |
+| 5 | mutate 段拆分 CI matrix（B） | 提案待裁定（ROI 上修） | — | 作用于三个高频慢包（provider-usage/lan-proxy/mcp-manager）；代价：计费分钟×N、基线与判分脚本按段重构、触 ci.yml 红线 |
 | 6 | 构建产物复用（build-all artifact，D） | 提案待裁定 | — | 只降计费分钟；wall-clock 持平、常态场景略变差（前置串行化） |
 | 7 | testFiles 最小集裁剪（C） | 暂缓 | — | per-test 覆盖分析已做关联，剩余空间在大测试文件整体跳过，成本高收益不确定 |
 
@@ -73,7 +79,7 @@ paths-filter 只匹配 `packages/<pkg>/**` 与全局路径，`stryker.conf.d/**`
 
 ## 5. 当前结论与后续候选
 
-- 已完成：常态场景优化到位（§3 #1/#2），瓶颈收敛为失效长尾；
-- 待验证：provider-usage 8 并发首跑（顺延观察）→ 达标评估 16；
-- 待裁定：B（长尾 wall-clock）vs D（计费分钟），二者目标指标不同、不互斥；
+- 已完成：常态场景优化到位（§3 #1/#2）；重测场景高频存在（§2 统计），是当前主瓶颈；
+- 待验证：provider-usage 8 并发的重测场景对比数据（等自然触发的源码 PR）→ 达标评估 16；
+- 待裁定：B（重测 wall-clock，作用于 provider-usage/lan-proxy/mcp-manager 三高频慢包）vs D（计费分钟），二者目标指标不同、不互斥；
 - 长期：若夜间全量基线刷新耗时增长，再评估 C。
