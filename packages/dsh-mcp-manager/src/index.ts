@@ -25,7 +25,6 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import type { ServerResponse } from "node:http";
-import z from "schemastery";
 import { installSettingsNamespace } from "../../../shared/settings-namespace.js";
 // 官方类型层（issue #16/#48，锁版见 pnpm-workspace catalog；仅 import type，
 // 编译期擦除，禁止运行时值导入——contract-check 有门禁）。
@@ -37,11 +36,17 @@ import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type {} from "@deepseek-ai/dsh-agent";
 import type {} from "@deepseek-ai/dsh-system-prompt";
 import type {} from "@deepseek-ai/dsh-tools";
-import type { ServerConfig } from "./types.ts";
+import type { ServerConfig, ClientUiConfig } from "./types.ts";
 import type { CatalogCache, CatalogDecision, CatalogMessage, SupervisorLite, CatalogAgent } from "./catalog.ts";
 
 // 组合根内部使用的依赖（re-export 见文件底部）。
 import { normalizeServer } from "./normalize.ts";
+import {
+  Config,
+  DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS,
+  normalizeUiConfig,
+  buildConfigUiPatch,
+} from "./config-schema.ts";
 import { defaultStorePath, McpStore } from "./store.ts";
 import { DEFAULT_TOOL_CALL_TIMEOUT_MS, DEFAULT_RESULT_TRUNCATE_BYTES, ConnectionSupervisor } from "./supervisor.ts";
 import {
@@ -80,43 +85,8 @@ export const inject = ["tools", "webServer", "systemPrompt"];
 export const MIDDLEWARE_GLOBAL_ROOT = "@global";
 
 
-/** 空 description 工具的条件拼接默认开启。 */
-export const DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS = true;
-
-/** MCP 浮窗 UI 配置（插件自身 Config 的 `ui` 子对象，标准 cordis 配置注入）。 */
-export interface UiPlacementConfig {
-  /** 浮窗胶囊锚点：右上 / 左上 / 右下 / 左下（默认 top-right = 历史行为）。 */
-  position: "top-right" | "top-left" | "bottom-right" | "bottom-left";
-  /** 胶囊偏移：x 水平、y 垂直、blankY 空白会话垂直偏移。 */
-  offset: { x: number; y: number; blankY: number };
-  /** 浮窗层级基准（clamp 1–9000；下拉面板派生为基准+30，模态管理面板独立不受影响）。 */
-  zIndexBase: number;
-}
-
-/** 默认浮窗 UI 配置（与升级前一致，无回归；层级基准引用 placement-math 单一事实源，
- *  DEFAULT_Z_INDEX_BASE=10 对应 CSS 默认 z-index:10）。 */
-export const DEFAULT_UI_CONFIG: UiPlacementConfig = {
-  position: "top-right",
-  offset: { x: 8, y: 8, blankY: 40 },
-  zIndexBase: DEFAULT_Z_INDEX_BASE,
-};
-
-const UI_POSITIONS: UiPlacementConfig["position"][] = ["top-right", "top-left", "bottom-right", "bottom-left"];
-
 // 浮窗定位/层级/断点纯函数：实现在 placement-math.ts（零依赖单一事实源，
 // 客户端 bundle 与宿主端共用同一份），此处 re-export 保持导出面不变。
-import {
-  DEFAULT_Z_INDEX_BASE,
-  Z_INDEX_BASE_MIN,
-  Z_INDEX_BASE_MAX,
-  Z_INDEX_PANEL_DELTA,
-  BREAKPOINT_NARROW_MAX,
-  BREAKPOINT_TABLET_MAX,
-  clampZIndexBase,
-  panelZIndexFor,
-  breakpointForWidth,
-  clampPointToViewport,
-} from "./placement-math.ts";
 export {
   DEFAULT_Z_INDEX_BASE,
   Z_INDEX_BASE_MIN,
@@ -128,114 +98,10 @@ export {
   panelZIndexFor,
   breakpointForWidth,
   clampPointToViewport,
-};
+} from "./placement-math.ts";
 export type { FloatBreakpoint, ViewportPoint } from "./placement-math.ts";
 // 面板锚点判定同为纯函数，随定位数学一起从单一事实源 re-export。
 export { panelAnchorForPosition } from "./placement-math.ts";
-
-const UiConfigSchema = z.object({
-  position: z.union([
-    z.const("top-right"),
-    z.const("top-left"),
-    z.const("bottom-right"),
-    z.const("bottom-left"),
-  ]).default("top-right"),
-  offset: z.object({
-    x: z.number().default(8),
-    y: z.number().default(8),
-    blankY: z.number().default(40),
-  }).default({ x: 8, y: 8, blankY: 40 }),
-  zIndexBase: z.number().default(DEFAULT_UI_CONFIG.zIndexBase)
-    .description("浮窗层级基准（1-9000），下拉面板自动取基准+30"),
-});
-
-/** 客户端消费的浮窗 UI 配置（GET /api/dsh-mcp/config 的扁平形状）。 */
-export interface ClientUiConfig {
-  position: "top-right" | "top-left" | "bottom-right" | "bottom-left";
-  offsetX: number;
-  offsetY: number;
-  blankY: number;
-  zIndexBase: number;
-}
-
-/**
- * 归一化浮窗 UI 配置（纯函数，可单测）。
- * 兼容三种形态：新 `Config.ui` 嵌套、旧隐藏命名空间的扁平 `position/offset`、
- * 客户端扁平 `position/offsetX/offsetY/blankY`。非法或缺失 → 安全回退默认，不抛。
- */
-export function normalizeUiConfig(raw: unknown): ClientUiConfig {
-  const src = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
-  const ui = (
-    typeof src.ui === "object" && src.ui !== null ? (src.ui as Record<string, unknown>) : src
-  ) as Record<string, unknown>;
-  const position = UI_POSITIONS.includes(ui.position as UiPlacementConfig["position"])
-    ? (ui.position as UiPlacementConfig["position"])
-    : DEFAULT_UI_CONFIG.position;
-  const offset = (typeof ui.offset === "object" && ui.offset !== null ? ui.offset : {}) as Record<string, unknown>;
-  const clampNum = (value: unknown, dflt: number): number =>
-    typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.round(value)) : dflt;
-  const offsetX = clampNum(ui.offsetX ?? offset.x, DEFAULT_UI_CONFIG.offset.x);
-  const offsetY = clampNum(ui.offsetY ?? offset.y, DEFAULT_UI_CONFIG.offset.y);
-  const blankY = clampNum(ui.blankY ?? offset.blankY, DEFAULT_UI_CONFIG.offset.blankY);
-  const zIndexBase = clampZIndexBase(ui.zIndexBase, DEFAULT_UI_CONFIG.zIndexBase);
-  return { position, offsetX, offsetY, blankY, zIndexBase };
-}
-
-/**
- * 把客户端扁平形态（{position, offsetX, offsetY, blankY}）归一化为写入 `Config.ui`
- * 的嵌套补丁（{position, offset:{x,y,blankY}}）。走 normalizeUiConfig 的净化为唯一
- * 入口：非法值安全回退默认，负数 clamp 到 0，四舍五入。
- */
-export function buildConfigUiPatch(raw: unknown): UiPlacementConfig {
-  const cfg = normalizeUiConfig(raw);
-  return {
-    position: cfg.position,
-    offset: { x: cfg.offsetX, y: cfg.offsetY, blankY: cfg.blankY },
-    zIndexBase: cfg.zIndexBase,
-  };
-}
-
-/** 面板垂直定位纯函数（供 smoke 断言翻转分支；clamp 到视口内，不溢出）。 */
-export function panelTopForAnchor(
-  anchor: "top" | "bottom",
-  pillTop: number,
-  pillBottom: number,
-  panelHeight: number,
-  gap: number,
-): number {
-  return anchor === "bottom" ? Math.max(6, pillTop - panelHeight - gap) : Math.max(6, pillBottom + gap);
-}
-
-/**
- * 插件 Config schema（标准 cordis 配置注入入口；含 `ui` 子对象）。
- * 迁移后 position/offset 走插件自身 Config 而非隐藏命名空间，设置页插件卡可编辑。
- */
-export const Config: z<{
-  enabled: boolean;
-  announceToAgent: boolean;
-  storePath: string;
-  announceCatalog: boolean;
-  catalogMaxEntries: number;
-  enhanceEmptyDescriptions: boolean;
-  resultTruncateBytes: number;
-  middleware: "off" | "project" | "all";
-  middlewarePolicy: Record<string, unknown>;
-  ui: UiPlacementConfig;
-}> = z.object({
-  enabled: z.boolean().default(true).description("是否启用本插件"),
-  announceToAgent: z.boolean().default(true).description("是否向 Agent 宣告插件（能力清单由 <available_mcp_servers> 承担）"),
-  storePath: z.string().description("全局服务器配置路径，留空用默认 <DSH_HOME>/dsh-mcp.json").disabled(true),
-  announceCatalog: z.boolean().default(DEFAULT_ANNOUNCE_CATALOG).description("是否注入 MCP 能力目录（<available_mcp_servers>）"),
-  catalogMaxEntries: z.number().default(DEFAULT_CATALOG_MAX_ENTRIES).description("目录注入条目上限").disabled(true),
-  enhanceEmptyDescriptions: z.boolean().default(DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS).description("空描述工具条件拼接自定义描述"),
-  resultTruncateBytes: z.number().default(DEFAULT_RESULT_TRUNCATE_BYTES).description("工具结果截断字节数").disabled(true),
-  middleware: z.union([z.const("off"), z.const("project"), z.const("all")]).default("project")
-    .description("MCP 中间层模式：off=直接注册 mcp__ 工具（默认兼容）；project=项目级走 ws_mcp_search/ws_mcp_call（推荐）；all=全部走中间层"),
-  middlewarePolicy: z.dict(z.any()).default({})
-    .description("中间层策略：{ allowTools: {<server>: [glob]}, denyTools: {<server>: [glob]} }，server 为裸名"),
-  ui: UiConfigSchema,
-});
-
 
 // ------------------------------------------------------------ 管理器
 
@@ -1110,6 +976,17 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
 
 // 服务器配置归一化（纯函数单一事实源）
 export { SERVER_NAME_PATTERN, normalizeServer } from "./normalize.ts";
+
+// 插件 Config schema 与配置归一化（类型自 types.ts 取）
+export {
+  DEFAULT_UI_CONFIG,
+  DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS,
+  normalizeUiConfig,
+  buildConfigUiPatch,
+  panelTopForAnchor,
+  Config,
+} from "./config-schema.ts";
+export type { UiPlacementConfig, ClientUiConfig } from "./types.ts";
 
 // 存储
 export { defaultStorePath, McpStore } from "./store.ts";

@@ -37,3 +37,22 @@ export interface ServerStatus {
   error?: string;
   [key: string]: unknown;
 }
+
+/** MCP 浮窗 UI 配置（插件自身 Config 的 `ui` 子对象，标准 cordis 配置注入）。 */
+export interface UiPlacementConfig {
+  /** 浮窗胶囊锚点：右上 / 左上 / 右下 / 左下（默认 top-right = 历史行为）。 */
+  position: "top-right" | "top-left" | "bottom-right" | "bottom-left";
+  /** 胶囊偏移：x 水平、y 垂直、blankY 空白会话垂直偏移。 */
+  offset: { x: number; y: number; blankY: number };
+  /** 浮窗层级基准（clamp 1–9000；下拉面板派生为基准+30，模态管理面板独立不受影响）。 */
+  zIndexBase: number;
+}
+
+/** 客户端消费的浮窗 UI 配置（GET /api/dsh-mcp/config 的扁平形状）。 */
+export interface ClientUiConfig {
+  position: "top-right" | "top-left" | "bottom-right" | "bottom-left";
+  offsetX: number;
+  offsetY: number;
+  blankY: number;
+  zIndexBase: number;
+}
