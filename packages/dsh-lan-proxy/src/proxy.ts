@@ -35,7 +35,9 @@ import type { Server as HttpsServer } from "node:https";
 import { isIP } from "node:net";
 import type { Socket, AddressInfo } from "node:net";
 import { constants as zlibConstants } from "node:zlib";
-import { WebSocket as WsClient, WebSocketServer } from "ws";
+// ws 库同时以两个名字绑定同一 WebSocket 类：WsClient 用于发起上游客户端连接，
+// WebSocket 用于两端共同类型面（含静态 readyState 常量 OPEN）。
+import { WebSocket as WsClient, WebSocketServer, WebSocket } from "ws";
 // 成熟开源压缩中间件（Express 生态事实标准）：协商 / Vary / Content-Length 删除 /
 // 背压 / 204·304·Range 豁免全部由库承担，构建期经 esbuild 内联（零运行时依赖）。
 import compression from "compression";
@@ -81,6 +83,11 @@ export interface LanProxyOptions {
   wsCompress?: {
     enabled: boolean;
     paths: readonly string[];
+    /**
+     * 桥接半开探活间隔 ms（issue #268 P0-1）；缺省 DEFAULT_WS_PROBE_INTERVAL_MS，
+     * 0 = 关闭。内部/测试注入口，非用户配置键。
+     */
+    probeIntervalMs?: number;
   };
   /**
    * HTTP 响应压缩（合并自 dsh-gzip，经 compression 中间件在转发层实现）：
@@ -230,12 +237,74 @@ export interface WsBridgeTarget {
   targetHost: string;
   targetPort: number;
   logger?: LanLogger;
+  /**
+   * 半开探活间隔 ms；缺省 {@link DEFAULT_WS_PROBE_INTERVAL_MS}；0 = 关闭探活。
+   * 生产走默认值，该字段主要供单测注入小间隔以确定性验证探活行为。
+   */
+  probeIntervalMs?: number;
+}
+
+/**
+ * WS 压缩桥接的半开探活间隔（issue #268 P0-1）：移动端切后台系统静默掐断 TCP
+ * 形成半开连接，两端都收不到 FIN/RST，close/error 事件永不触发 → 桥接僵死。
+ * 每 30s 对桥接两端各发一帧 ping；一个周期内未获 pong 即判定半开并 terminate。
+ */
+export const DEFAULT_WS_PROBE_INTERVAL_MS = 30_000;
+
+/**
+ * 给单个 WS 连接挂半开探活（ws 库官方 FAQ「检测并关闭坏连接」标准做法）：
+ * interval 每周期检查上一轮标记——已收到 pong 则再发下一轮 ping 并置脏；
+ * 未收到（isAlive 仍为脏）即判定半开，terminate 让 close 事件照常成立。
+ * 返回清理函数：清定时器 + 摘除 pong 监听器（对照 #278 SSE 心跳 stopHeartbeat
+ * 的单入口收敛形态）；unref 使探活不阻止进程退出。
+ * @param ws 桥接任意一端的连接。
+ * @param intervalMs 探活周期（= pong 宽限窗）。
+ * @param onHalfOpen 判死回调（调用方借此经 logger 输出半开判死日志，
+ *   与「正常关闭/业务错误」的 upstream error warn 区分；可省略）。
+ * @returns 幂等清理函数。
+ */
+function attachWsLivenessProbe(
+  ws: WebSocket,
+  intervalMs: number,
+  onHalfOpen?: (intervalMs: number) => void,
+): () => void {
+  let alive = true;
+  const markAlive = () => {
+    alive = true;
+  };
+  ws.on("pong", markAlive);
+  const timer = setInterval(() => {
+    // 连接已在收口路径（close 竞态）：不 ping 不判定，等 close 清理本探活。
+    if (ws.readyState !== WebSocket.OPEN) return;
+    if (!alive) {
+      onHalfOpen?.(intervalMs); // 先报后半开判死，再强拆使 close/error 语义成立
+      ws.terminate();
+      return;
+    }
+    alive = false;
+    try {
+      ws.ping();
+    } catch {
+      // send/ping 与 close 的竞态：等待 close 收口即可
+    }
+  }, intervalMs);
+  timer.unref?.();
+  return () => {
+    clearInterval(timer);
+    ws.off("pong", markAlive);
+  };
 }
 
 /**
  * WebSocket 压缩桥接：终结浏览器连接（permessage-deflate 压缩）× 明文连 DSH
  * （不协商压缩，DSH 即使未来开启也不双重压缩）。双向转发 text/binary 帧，
  * 任何一端关闭/出错即对端终止，避免泄漏。
+ *
+ * 半开探活（issue #268 P0-1）：对两端**各自独立**计时发 ping（{@link
+ * DEFAULT_WS_PROBE_INTERVAL_MS}，可经 {@link WsBridgeTarget.probeIntervalMs} 覆盖），
+ * 一个周期内未获 pong 即 terminate 该端——terminate 引发 close，下方既有互断
+ * 逻辑自然收口另一端。探活定时器/监听器随连接关闭释放：两端各自的 close/error
+ * 四路清理收敛到 stopAllProbes 单入口。
  */
 export function bridgeCompressedWs(
   req: IncomingMessage,
@@ -252,6 +321,26 @@ export function bridgeCompressedWs(
       perMessageDeflate: false,
       headers: { origin: `http://${target.targetHost}:${target.targetPort}` },
     });
+    // 半开探活：两端独立计时（各自 pong 判定），probeIntervalMs=0 显式关闭。
+    const probeIntervalMs = target.probeIntervalMs ?? DEFAULT_WS_PROBE_INTERVAL_MS;
+    let stopProbes: (() => void) | undefined;
+    const stopAllProbes = () => {
+      stopProbes?.();
+      stopProbes = undefined;
+    };
+    if (probeIntervalMs > 0) {
+      // 半开判死日志：与既有 upstream error warn 同通道、可按文案区分
+      // 「半开判死强拆」与「正常关闭/业务错误」（issue #268 复核闸修补 2）。
+      const onHalfOpen = (intervalMs: number) => {
+        target.logger?.warn?.(`lan-proxy: ws-bridge half-open detected, terminating (intervalMs=${intervalMs})`);
+      };
+      const stopBrowserProbe = attachWsLivenessProbe(browserWs, probeIntervalMs, onHalfOpen);
+      const stopUpstreamProbe = attachWsLivenessProbe(upstreamWs, probeIntervalMs, onHalfOpen);
+      stopProbes = () => {
+        stopBrowserProbe();
+        stopUpstreamProbe();
+      };
+    }
     // 浏览器 → DSH（握手成功后开始转发）。注意保留原始帧类型 isBinary：
     // ws 的 message 回调 data 恒为 Buffer，若不显式回传 binary 标志，send(Buffer)
     // 会被当二进制帧发出——events 流是文本 JSON，误发 binary 会被客户端拒绝。
@@ -264,16 +353,22 @@ export function bridgeCompressedWs(
     upstreamWs.on("message", (data, isBinary) => {
       if (browserWs.readyState === browserWs.OPEN) browserWs.send(data, { binary: isBinary });
     });
-    // 任一端关闭/出错 → 对端终止。
-    upstreamWs.on("close", () => browserWs.terminate());
+    // 任一端关闭/出错 → 对端终止；四路清理收敛到 stopAllProbes（幂等）。
+    upstreamWs.on("close", () => {
+      stopAllProbes();
+      browserWs.terminate();
+    });
     upstreamWs.on("error", (err) => {
+      stopAllProbes();
       target.logger?.warn?.(`lan-proxy: ws-bridge upstream error: ${err.message}`);
       browserWs.terminate();
     });
     browserWs.on("close", () => {
+      stopAllProbes();
       try { upstreamWs.close(); } catch { /* 已关闭 */ }
     });
     browserWs.on("error", () => {
+      stopAllProbes();
       try { upstreamWs.close(); } catch { /* 已关闭 */ }
     });
   });
@@ -421,7 +516,12 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
     // WebSocket 压缩桥接：命中白名单路径 → 终结 + permessage-deflate（浏览器段压缩、
     // DSH 段明文）。其余 WebSocket 由 http-proxy 接管 TCP 字节透传。
     if (options.wsCompress?.enabled && compressWsPath(options.wsCompress.paths, req.url)) {
-      bridgeCompressedWs(req, socket, head, { targetHost, targetPort, logger });
+      bridgeCompressedWs(req, socket, head, {
+        targetHost,
+        targetPort,
+        logger,
+        probeIntervalMs: options.wsCompress.probeIntervalMs,
+      });
       return;
     }
     proxy.ws(req, socket, head, forwardOptions(req));
