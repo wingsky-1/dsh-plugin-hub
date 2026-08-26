@@ -13,7 +13,7 @@ import { assert } from "./helpers.ts";
 import { mkdtempSync, writeFileSync, rmSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ROUTES, makeRoutes, serveFileRoute, apply } from "../lib/index.js";
+import { ROUTES, makeRoutes, serveFileRoute, apply } from "../src/index.ts";
 
 // ---------------------------------------------------------------- 帮助函数
 

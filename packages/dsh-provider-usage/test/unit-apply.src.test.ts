@@ -23,7 +23,7 @@ import {
   ADAPTER_CONTRACT_VERSION,
   fetchWithTimeout,
   userAdaptersFile,
-} from "../lib/index.js";
+} from "../src/index.ts";
 
 // ---------------------------------------------------------------- 工具：fakeReqs
 

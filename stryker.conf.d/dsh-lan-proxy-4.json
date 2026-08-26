@@ -36,8 +36,8 @@
       "./scripts/test/mutation-tap-bridge.cjs"
     ],
     "testFiles": [
-      "packages/dsh-lan-proxy/test/unit-apply.test.ts",
-      "packages/dsh-lan-proxy/test/unit-proxy.test.ts"
+      "packages/dsh-lan-proxy/test/unit-apply.src.test.ts",
+      "packages/dsh-lan-proxy/test/unit-proxy.src.test.ts"
     ]
   },
   "jsonReporter": {

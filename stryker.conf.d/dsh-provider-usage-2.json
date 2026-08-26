@@ -35,11 +35,11 @@
       "./scripts/test/mutation-tap-bridge.cjs"
     ],
     "testFiles": [
-      "packages/dsh-provider-usage/test/unit-apply.test.ts",
-      "packages/dsh-provider-usage/test/unit-config.test.ts",
-      "packages/dsh-provider-usage/test/unit-contract.test.ts",
-      "packages/dsh-provider-usage/test/unit-history.test.ts",
-      "packages/dsh-provider-usage/test/unit-v1.test.ts"
+      "packages/dsh-provider-usage/test/unit-apply.src.test.ts",
+      "packages/dsh-provider-usage/test/unit-config.src.test.ts",
+      "packages/dsh-provider-usage/test/unit-contract.src.test.ts",
+      "packages/dsh-provider-usage/test/unit-history.src.test.ts",
+      "packages/dsh-provider-usage/test/unit-v1.src.test.ts"
     ]
   },
   "jsonReporter": {

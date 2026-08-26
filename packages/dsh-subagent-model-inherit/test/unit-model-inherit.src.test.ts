@@ -17,7 +17,7 @@
  * effort；采样字段（temperature/maxTokens/stop）保留；fork 型会话不误伤。
  */
 import assert from "node:assert/strict";
-import { apply, resolveInheritedSelection, injectSelection, name, inject } from "../lib/index.js";
+import { apply, resolveInheritedSelection, injectSelection, name, inject } from "../src/index.ts";
 
 // ---------------------------------------------------------------- 测试基建
 

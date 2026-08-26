@@ -37,7 +37,7 @@ const {
   BREAKPOINT_TABLET_MAX,
   breakpointForWidth,
   clampPointToViewport,
-} = await import("../src/index.ts");
+} = await import("../lib/index.js");
 
 // ---- normalizeServer ----
 

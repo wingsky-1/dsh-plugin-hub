@@ -34,7 +34,7 @@
       "./scripts/test/mutation-tap-bridge.cjs"
     ],
     "testFiles": [
-      "packages/dsh-subagent-model-inherit/test/unit-model-inherit.test.ts"
+      "packages/dsh-subagent-model-inherit/test/unit-model-inherit.src.test.ts"
     ]
   },
   "jsonReporter": {

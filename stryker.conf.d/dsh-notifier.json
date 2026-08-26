@@ -34,10 +34,10 @@
       "./scripts/test/mutation-tap-bridge.cjs"
     ],
     "testFiles": [
-      "packages/dsh-notifier/test/unit-text.test.ts",
-      "packages/dsh-notifier/test/unit-sanitize.test.ts",
+      "packages/dsh-notifier/test/unit-text.src.test.ts",
+      "packages/dsh-notifier/test/unit-sanitize.src.test.ts",
       "packages/dsh-notifier/test/e2e-approval.test.ts",
-      "packages/dsh-notifier/test/e2e-done.test.ts",
+      "packages/dsh-notifier/test/e2e-done.src.test.ts",
       "packages/dsh-notifier/test/e2e-question-turn.test.ts"
     ]
   },

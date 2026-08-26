@@ -15,7 +15,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync, mkdirSync, utimesSync }
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const { McpStore, fromClaudeEntry, parseClaudeJson } = await import("../src/index.ts");
+const { McpStore, fromClaudeEntry, parseClaudeJson } = await import("../lib/index.js");
 
 function tempDir() {
   return mkdtempSync(join(tmpdir(), "dsh-mcp-store-"));

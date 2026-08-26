@@ -17,7 +17,7 @@ import {
   legacySampleToData,
   pickWindow,
   HistoryStore,
-} from "../lib/index.js";
+} from "../src/index.ts";
 
 // ---------------------------------------------------------------- parseJsonl
 
@@ -156,7 +156,7 @@ assert.equal(pickWindow({ percent: 5, resetsAt: 123 }, "r", "n", 10)?.resetsAt, 
 
 import { readdirSync, existsSync } from "node:fs";
 import { rename as renameAsync } from "node:fs/promises";
-import { listAdapters, migrateLegacyV3 } from "../lib/index.js";
+import { listAdapters, migrateLegacyV3 } from "../src/index.ts";
 
 // ---------------------------------------------------------------- 构造缺省值
 

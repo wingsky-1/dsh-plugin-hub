@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { assert, makeNotifier, agentWithTitle, fakeAgents, waitMergeWindow, fakeReq, makeRes, turnEndEvent } from "./helpers.ts";
-import { ROUTES, lastTurnEndOf } from "../lib/index.js";
+import { ROUTES, lastTurnEndOf } from "../src/index.ts";
 
 /** 带 info 收集的 logger 覆盖。 */
 function loggingOverride(infos) {

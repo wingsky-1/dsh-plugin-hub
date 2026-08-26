@@ -34,7 +34,7 @@
       "./scripts/test/mutation-tap-bridge.cjs"
     ],
     "testFiles": [
-      "packages/dsh-idle-archive/test/unit-apply.test.ts"
+      "packages/dsh-idle-archive/test/unit-apply.src.test.ts"
     ]
   },
   "jsonReporter": {
