@@ -317,3 +317,5 @@ export function sanitizeHtml(html: string): string {
   }
   return converged ? out : '';
 }
+
+// verify-src-matrix: 验证 PR 触发标记（#276 方案 A 效果验证，无行为变化）
