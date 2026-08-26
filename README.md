@@ -8,7 +8,7 @@
 
 DSH（DeepSeek Harness）Web GUI 插件集，npm 分发：一键装全家桶，或按需单装。
 
-- 聚合包：`@wingsky-1/dsh-plugins-all`（一键装齐全部插件）
+- 聚合包：`@wingsky-1/dsh-plugins-all`（一键装齐全部插件；观察期插件除外，见下文插件列表）
 - 单插件：`@wingsky-1/dsh-*`（按需安装）
 - 全部走 DSH 官方 profile 机制挂载（`dsh.bundle.patch`），不改 DSH 源码；发布物自包含，构建期内联打包
 
@@ -22,6 +22,12 @@ DSH（DeepSeek Harness）Web GUI 插件集，npm 分发：一键装全家桶，�
 | `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理器（stdio/HTTP，工具注册给模型） | [README](packages/dsh-mcp-manager/README.md) | ✅ 已发布 |
 | `@wingsky-1/dsh-idle-archive` | 会话闲置提醒归档 | [README](packages/dsh-idle-archive/README.md) | ✅ 已发布 |
 | `@wingsky-1/dsh-web-file-preview` | 点击对话文件链接在 web 端预览（图片/文本/Markdown/代码/Diff） | [README](packages/dsh-web-file-preview/README.md) | ✅ 已发布 |
+| `@wingsky-1/dsh-subagent-model-inherit` | 子 Agent 自动继承父会话模型与思考等级 | [README](packages/dsh-subagent-model-inherit/README.md) | 观察期（独立发包，暂不进聚合包） |
+
+> **观察期说明**：`@wingsky-1/dsh-subagent-model-inherit` 为实验性插件——它改变子 Agent
+> 的模型路由行为（继承父会话），具有全局影响。目前**独立发包**、**未包含在
+> `dsh-plugins-all` 聚合包中**，需单独安装；待收集足够使用反馈后再决定转正进聚合包、
+> 继续独立演进或退役。
 
 > **已停止维护**：`@wingsky-1/dsh-skill-explorer`（技能中心/skill 管理）已**不再维护**
 > （npm 已 deprecate，插件包与聚合包均已移除）。web UI 侧已有更优实现

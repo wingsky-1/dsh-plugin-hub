@@ -62,6 +62,9 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
 > `dsh plugin --profile web remove @wingsky-1/dsh-gzip` 卸载。
 >
 > dsh-memory（项目长期记忆）未包含在本聚合包内。
+>
+> `@wingsky-1/dsh-subagent-model-inherit`（子 Agent 模型继承，实验性）处于**观察期**，
+> 独立发包、暂不包含在本聚合包内；如需使用请单独安装，详见其 README。
 
 ## 单独安装
 
