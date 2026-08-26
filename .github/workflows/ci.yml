@@ -66,7 +66,10 @@ jobs:
               - 'scripts/**'
               - 'agents/**'
               - '.github/**'
-              - 'docs/**'
+              # docs/** 刻意不在 global 面（#220）：gate/build/release 脚本均不消费
+              # docs/ 内容，文档 PR 无需变异切片与 smoke/typecheck（release-notes
+              # 校验仅存在于 tag 触发的 release.yml）。若未来新增消费 docs 的门禁
+              # 脚本，须同步加回此处——workflow-assert 契约已锁定该约定
               - 'package.json'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
