@@ -18,9 +18,9 @@
  *         1 = strict 开启且存在 threshold 违约；
  *         2 = 环境/数据缺失错误
  */
-import { readFileSync, existsSync, writeFileSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { readMutationReport } from '../lib/mutation-report-lib.mjs';
+import { readMutationReport, readMutationReportsAgg } from '../lib/mutation-report-lib.mjs';
 
 const repoRoot = process.cwd();
 const argv = process.argv.slice(2);
@@ -55,21 +55,59 @@ if (existsSync(selfCovPath)) {
   } catch { /* 展示性字段，缺失不致命 */ }
 }
 
+// #220 B 方案：包可拆分为段式配置（<pkg>-<seg>.json），夜间变异产出
+// <pkg>-<seg>.json 段报告；此处按 conf 目录推导期望段数，聚合为包级口径
+// （mutant 位置键去重，与 mutation-gate.mjs 同一 lib 函数）。未拆分包仍读
+// 单报告 <pkg>.json。缺任一段报告 = 该包未完整执行，fail-closed。
+const confDir = join(repoRoot, 'stryker.conf.d');
+const reportDir = join(repoRoot, 'coverage', 'mutation');
+const segCounts = new Map();
+for (const f of readdirSync(confDir)) {
+  const m = f.match(/^(dsh-[a-z0-9-]+)-(\d+)\.json$/);
+  if (m) segCounts.set(m[1], Math.max(segCounts.get(m[1]) ?? 0, Number(m[2])));
+}
+
 for (const [pkg, cfg] of Object.entries(packages)) {
-  const reportPath = join(repoRoot, 'coverage', 'mutation', `${pkg}.json`);
-  // 缺失与损坏分开标注（#178）：逐包容错记账后单包失败不再中断整夜，
-  // 「文件不存在」= 该包本次未执行（非崩溃），「存在但解析失败」= 报告损坏
-  if (!existsSync(reportPath)) {
-    rows.push({ pkg, missing: true, missingLabel: '未执行' });
-    // F4 fail-closed：strict 开启后报告缺失 = 门禁被静默跳过，必须判红
-    if (mutationStrict) violations.push(`${pkg}: 变异报告缺失（${pkg}.json 不存在——该包未执行）`);
-    continue;
-  }
-  const r = readMutationReport(reportPath);
-  if (!r) {
-    rows.push({ pkg, missing: true, missingLabel: '报告损坏' });
-    if (mutationStrict) violations.push(`${pkg}: 变异报告损坏（${pkg}.json 存在但不可解析）`);
-    continue;
+  const expectedSegs = segCounts.get(pkg) ?? 0;
+  let r = null;
+  if (expectedSegs > 0) {
+    const segPaths = [];
+    for (let n = 1; n <= expectedSegs; n += 1) {
+      const p = join(reportDir, `${pkg}-${n}.json`);
+      if (!existsSync(p)) {
+        rows.push({ pkg, missing: true, missingLabel: `第 ${n} 段未执行` });
+        if (mutationStrict) violations.push(`${pkg}: 第 ${n} 段变异报告缺失（${pkg}-${n}.json 不存在——该段未执行）`);
+        r = null;
+        break;
+      }
+      segPaths.push(p);
+    }
+    if (segPaths.length === expectedSegs) {
+      r = readMutationReportsAgg(segPaths);
+      if (!r) {
+        rows.push({ pkg, missing: true, missingLabel: '报告损坏' });
+        if (mutationStrict) violations.push(`${pkg}: 段式报告不可解析（共 ${expectedSegs} 段）`);
+        continue;
+      }
+    } else {
+      continue;
+    }
+  } else {
+    const reportPath = join(reportDir, `${pkg}.json`);
+    // 缺失与损坏分开标注（#178）：逐包容错记账后单包失败不再中断整夜，
+    // 「文件不存在」= 该包本次未执行（非崩溃），「存在但解析失败」= 报告损坏
+    if (!existsSync(reportPath)) {
+      rows.push({ pkg, missing: true, missingLabel: '未执行' });
+      // F4 fail-closed：strict 开启后报告缺失 = 门禁被静默跳过，必须判红
+      if (mutationStrict) violations.push(`${pkg}: 变异报告缺失（${pkg}.json 不存在——该包未执行）`);
+      continue;
+    }
+    r = readMutationReport(reportPath);
+    if (!r) {
+      rows.push({ pkg, missing: true, missingLabel: '报告损坏' });
+      if (mutationStrict) violations.push(`${pkg}: 变异报告损坏（${pkg}.json 存在但不可解析）`);
+      continue;
+    }
   }
   const threshold = typeof cfg.threshold === 'number' ? cfg.threshold : null;
   // F8：notifier 的 baselineCovered=1.33 是 bridge 修正前的试点原始记录（legacyNote），

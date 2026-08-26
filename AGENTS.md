@@ -100,9 +100,14 @@ Conventional Commits（`type(scope): subject`；type：`feat` / `fix` / `docs` /
   tag 校验。
 - GitHub Release 更新说明**每版入库**为 `docs/release-notes/vX.Y.Z.md`，由发版 agent
   从上一 tag 至今的常规提交生成、**中文与英文各自成节分开呈现（不逐条混排）**、
-  **文件头提供语言跳转导航，锚点用显式 HTML 标记 + ASCII id**
-  （各渲染器标题 slug 规则不一，中文锚点不可靠。如：
-  头部 `> [中文](#zh) · [English](#en)`，分节前 `<a id="zh"></a>` / `<a id="en"></a>`）、
+  **文件头提供语言跳转导航，锚点用「双锚补位」写法**
+  （各渲染器标题 slug 规则不一，中文锚点不可靠；且 GitHub sanitizer 会把 HTML
+  `id`/`name` 一律改写为 `user-content-` 前缀致 `href="#zh"` 落空、Release 页
+  heading 又无自动 id——已实测。故 href 直写前缀形态、分节处双锚补位，GitHub
+  命中被改写的首个锚、第三方渲染器命中字面 id 的第二个锚，全场景可跳。如：
+  头部 `> [中文](#user-content-zh) · [English](#user-content-en)`，分节前
+  `<a id="zh"></a><a id="user-content-zh"></a>` /
+  `<a id="en"></a><a id="user-content-en"></a>`）、
   随 `chore(release):` 提交；
   管线优先引用该文件，缺失则回退 GitHub 自动 notes。**禁止 emoji**（覆盖文档与提交信息）。
 - 合并方式：CI 全绿后 squash merge（见 CONTRIBUTING.md 开发流程）。
