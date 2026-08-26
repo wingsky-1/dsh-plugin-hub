@@ -1,18 +1,13 @@
 // @ts-nocheck
 /**
- * dsh-lan-proxy — 宿主端（src/index.ts + shared/settings-namespace.js）结构化单测。
+ * dsh-lan-proxy — 宿主端（src/index.ts）结构化单测。
  *
  * 覆盖本批未覆盖热点（fnMap 可命中）：
- * - prepareTls（line 36302）：apply(httpsEnabled: true) → sync() → prepareTls
- * - setSource（line 36423）：installSettingsNamespace 的 hooks.setSource 回调
- * - isUnloading（line 36006，shared 层）：scope.watch 回调内调用
- * - warn（line 36015，shared 层）：settings 服务缺少 register 时调用
- *
- * 豁免（phantom 内层箭头，c8/V8 fnMap 不登记，任何测试不可标记为覆盖）：
- * - 36224（rpcHandler 内层 async 箭头）、36028（settings inject 回调）、
- *   35863（listen 内层回调）、36357（listen().then）、35714（bridge 内层）、
- *   35807（proxy error 回调）、36374（listen().catch）、36424（current=）、
- *   36502（lifecycle disposer，×2）、35872（https error 回调）
+ * - prepareTls：apply(httpsEnabled: true) → sync() → prepareTls
+ * - setSource / onScope：installLanProxySettings 的 hooks 回调
+ * - migrateFileConfig / applyConfigPatch：迁移与保存通道边界
+ * - isUnloading（包内复刻）：scope.watch 回调内调用
+ * - warnLog：settings 服务缺少 register 时调用
  */
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
@@ -20,8 +15,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
-  pluginDir, loadFileConfig, writeConfigFile, sanitizeSettings, validateSettings,
-  rpcHandler, ROUTES, CHANNEL, DEFAULT_OPTIONS,
+  pluginDir, sanitizeSettings, validateSettings,
+  migrateFileConfig, MIGRATED_BAK_NAME, applyConfigPatch, SETTINGS_NS,
+  ROUTES, DEFAULT_OPTIONS,
 } from "../lib/index.js";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -37,14 +33,6 @@ const { createServer } = await import("node:http");
   assert.ok(dir.startsWith(tmp), `pluginDir 在 DSH_HOME 内，实际 ${dir}`);
   process.env.DSH_HOME = prev;
   rmSync(tmp, { recursive: true, force: true });
-}
-
-// ===== loadFileConfig 更多边界 =====
-{
-  const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-loadcfg-"));
-  writeFileSync(join(dir, "config.json"), JSON.stringify(123));
-  assert.deepEqual(loadFileConfig(dir), {}, "number JSON → 空对象");
-  rmSync(dir, { recursive: true, force: true });
 }
 
 // ===== sanitizeSettings 更多边界 =====
@@ -69,48 +57,54 @@ const { createServer } = await import("node:http");
   assert.ok(badLevel.hint.includes("0-3"), "hint 含档位范围");
 }
 
-// ===== writeConfigFile 目录不存在时自动创建 =====
+// ===== migrateFileConfig 边界（#110） =====
 {
-  const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-write2-"));
+  // 非 object JSON：只改名标记、不写入。
+  const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-mig-"));
+  writeFileSync(join(dir, "config.json"), JSON.stringify(123));
+  const outcome = await migrateFileConfig(dir, { async update() { throw new Error("must not be called"); } });
+  assert.equal(outcome.skippedCorrupt, true, "number JSON → 只标记不写");
+  assert.equal(existsSync(join(dir, MIGRATED_BAK_NAME)), true, "bak 标记存在");
+  assert.equal(existsSync(join(dir, "config.json")), false);
   rmSync(dir, { recursive: true, force: true });
-  writeConfigFile(dir, { enabled: true });
-  assert.ok(existsSync(join(dir, "config.json")), "writeConfigFile 自动创建目录");
-  const parsed = JSON.parse(readFileSync(join(dir, "config.json"), "utf8"));
-  assert.equal(parsed.enabled, true);
-  rmSync(dir, { recursive: true, force: true });
+
+  // sanitize 拒绝（含非法值）：整体不写。
+  const dir2 = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-mig2-"));
+  writeFileSync(join(dir2, "config.json"), JSON.stringify({ port: 99999 }));
+  const outcome2 = await migrateFileConfig(dir2, { async update() { throw new Error("must not be called"); } });
+  assert.equal(outcome2.migrated, false, "含非法值不写入");
+  rmSync(dir2, { recursive: true, force: true });
 }
 
-// ===== rpcHandler 错误路径 =====
+// ===== applyConfigPatch 错误路径（#110） =====
 {
-  const handler = rpcHandler({
-    resolve: () => ({ enabled: true, host: "0.0.0.0", port: 3081, httpsEnabled: true, httpsPort: 3443, targetHost: "127.0.0.1", printBanner: true }),
-    fileConfig: () => ({}),
-    save: () => {},
+  const baseDeps = (over = {}) => ({
+    resolve: () => ({ enabled: true }),
+    readUser: () => ({ user: {}, revision: 1 }),
+    writable: () => true,
+    update: async () => {},
+    replace: async () => {},
+    compress: () => ({ httpCompressEnabled: true, httpCompressLevel: 1, httpCompressMounted: false, httpCompressStats: { compressed: 0, passthrough: 0 } }),
+    ...over,
   });
-  // 未知 endpoint
-  const unknown = await handler("unknown_endpoint", {});
-  assert.equal(unknown.ok, false);
-  assert.equal(unknown.error.code, "unknown");
-  assert.equal(unknown.error.details, "unknown_endpoint");
+  // settings 服务不可用
+  const na = await applyConfigPatch(baseDeps({ writable: () => false }), { patch: {} });
+  assert.equal(na.ok, false);
+  assert.equal(na.status, 503, "settings 不可用 → 503");
   // 非法 settings
-  const invalid = await handler("config", { settings: { port: 99999 } });
+  const invalid = await applyConfigPatch(baseDeps(), { patch: { port: 99999 } });
   assert.equal(invalid.ok, false);
-  assert.equal(invalid.error.code, "invalid");
-  // handler 内抛异常
-  const broken = rpcHandler({
-    resolve: () => { throw new Error("broken"); },
-    fileConfig: () => { throw new Error("broken"); },
-    save: () => {},
-  });
-  const errResult = await broken("state", {});
-  assert.equal(errResult.ok, false);
-  assert.equal(errResult.error.code, "error");
+  assert.equal(invalid.code, "invalid");
+  // handler 内抛异常 → 500
+  const broken = await applyConfigPatch(baseDeps({ update: async () => { throw new Error("broken"); } }), { patch: { port: 3000 } });
+  assert.equal(broken.ok, false);
+  assert.equal(broken.status, 500);
 }
 
-// ===== apply 集成：TLS 准备 + settings 命名空间（setSource/isUnloading/warn） =====
-// 构造 fake ctx 使 installSettingsNamespace 的 inject(["settings"]) 成功：
-// settings.register 返回 scope（带 get/watch），触发 setSource 回调；
-// scope.watch 触发 isUnloading(ctx) 调用。
+// ===== apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/isUnloading/warn） =====
+// 构造 fake ctx 使 installLanProxySettings 的 inject(["settings"]) 成功：
+// settings.register 返回 owner scope（get/watch/update/replace），触发 setSource
+// 与 onScope 回调；scope.watch 触发 isUnloading(ctx) 调用。
 {
   const applyHome = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-apply-tls-"));
   const prevHome = process.env.DSH_HOME;
@@ -119,18 +113,22 @@ const { createServer } = await import("node:http");
   const rpcHandles = [];
   const disposers = [];
   const scopeWatchCbs = [];
-  let setSourceCalled = false;
-  let onChangeCalled = false;
 
   const scope = {
     _val: { port: 0, wsCompressEnabled: false, httpCompressEnabled: false },
     get() { return this._val; },
+    async update(patch) { Object.assign(this._val, patch); },
+    async replace(section) { this._val = { ...section }; },
     watch(cb) {
       scopeWatchCbs.push(cb);
       // 立即触发一次，使 isUnloading(ctx) 被调用
       cb();
       return () => {};
     },
+  };
+  const settingsService = {
+    register(ns, schema, opts) { return scope; },
+    describe() { return [{ ns: SETTINGS_NS, user: {}, revision: 1 }]; },
   };
 
   const ctx = {
@@ -146,9 +144,7 @@ const { createServer } = await import("node:http");
       }
       if (services.includes("settings")) {
         const sctx = {
-          settings: {
-            register(ns, schema, opts) { return scope; },
-          },
+          settings: settingsService,
           effect(fn2) {
             const d = fn2();
             // 不立即执行 disposer（由外部清理时触发）
@@ -170,9 +166,10 @@ const { createServer } = await import("node:http");
   // 验证 health 路由注册（prepareTls 内部已同步调用）
   const healthRoute = routes.find((r) => r.path === ROUTES.health);
   assert.ok(healthRoute, "health 路由已注册");
+  assert.ok(routes.find((r) => r.path === ROUTES.config), "config 路由已注册");
+  assert.equal(rpcHandles.length, 0, "RPC 配置通道不再注册");
 
-  // 触发 setSource 后调用 health handler → resolve() → 命中重排后的 current
-  // （settings 命名空间来源已切换：wsCompress/httpCompress 以持久化层优先）
+  // 触发 setSource 后调用 health handler → resolve() → current 已切到 scope.get()
   let healthBody = "";
   healthRoute.handler(
     { method: "GET", socket: { remoteAddress: "127.0.0.1" }, headers: { host: "127.0.0.1:3080" }, url: ROUTES.health },
@@ -261,8 +258,11 @@ const { createServer } = await import("node:http");
   rmSync(applyHome, { recursive: true, force: true });
 }
 
-// ===== apply：enabled=false 不启动 =====
+// ===== apply：enabled=false 仍注册路由与迁移（#110 P0-2） =====
 {
+  const applyHome = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-apply-off-"));
+  const prevHome = process.env.DSH_HOME;
+  process.env.DSH_HOME = applyHome;
   const routes = [];
   const ctx = {
     logger: { info: () => {}, warn: () => {}, error: () => {} },
@@ -271,48 +271,47 @@ const { createServer } = await import("node:http");
     effect(fn) { return fn(); },
   };
   const { apply } = await import("../lib/index.js");
-  apply(ctx, { enabled: false });
-  assert.equal(routes.length, 0, "enabled=false 不注册任何路由");
+  apply(ctx, { enabled: false, httpsEnabled: false });
+  assert.ok(routes.find((r) => r.path === ROUTES.health), "enabled=false 仍注册 health 路由");
+  assert.ok(routes.find((r) => r.path === ROUTES.config), "enabled=false 仍注册 config 路由");
+  process.env.DSH_HOME = prevHome;
+  rmSync(applyHome, { recursive: true, force: true });
 }
 
-// ===== rpcHandler 成功路径与 config 合并语义（#147 变异加固） =====
+// ===== applyConfigPatch 成功语义与 tls 清除（#110，接续 #147 口径） =====
 {
-  let saved = null;
-  const handler = rpcHandler({
+  const state = { user: { host: "127.0.0.1", port: 3081 } as Record<string, unknown>, updates: [], replaces: [] };
+  const deps = {
     resolve: () => ({ enabled: true, host: "0.0.0.0", port: 3081, httpCompressLevel: 2 }),
-    fileConfig: () => ({ host: "127.0.0.1", port: 3081 }),
-    save: (s) => { saved = s; },
+    readUser: () => ({ user: { ...state.user }, revision: 4 }),
+    writable: () => true,
+    update: async (patch, rev) => {
+      state.updates.push({ patch, rev });
+      Object.assign(state.user, patch);
+    },
+    replace: async (section, rev) => {
+      state.replaces.push({ section, rev });
+      state.user = { ...section };
+    },
     compress: () => ({ compressed: 3, passthrough: 4 }),
-  });
-  // state：settings=文件层、effective=resolve()、compress 快照透传
-  const st = await handler("state", {});
-  assert.equal(st.ok, true, "state 成功");
-  assert.equal(st.value.settings.host, "127.0.0.1", "state.settings 来自 fileConfig");
-  assert.equal(st.value.effective.httpCompressLevel, 2, "state.effective 来自 resolve");
-  assert.deepEqual(st.value.compress, { compressed: 3, passthrough: 4 }, "state.compress 快照透传");
-  // deps.compress 缺省 → null
-  const handlerNoCompress = rpcHandler({
-    resolve: () => ({ enabled: true }), fileConfig: () => ({}), save: () => {},
-  });
-  const st2 = await handlerNoCompress("state", {});
-  assert.equal(st2.value.compress, null, "无 compress deps 时快照为 null");
-
-  // config 成功：merged = 文件层 ⊕ 提交项；save 落盘
-  const ok = await handler("config", { settings: { port: 4000 } });
+  };
+  // 合法提交：增量 update，未携带键保持原值
+  const ok = await applyConfigPatch(deps, { patch: { port: 4000 }, expectedRevision: 4 });
   assert.equal(ok.ok, true, "config 合法提交成功");
-  assert.equal(ok.value.settings.port, 4000, "merged 含新 port");
-  assert.equal(ok.value.settings.host, "127.0.0.1", "merged 保留旧 host");
-  assert.deepEqual(saved, ok.value.settings, "save 收到 merged");
-
-  // tls 空串清空语义：raw 显式 "" → merged 删除该键（回落自签名）
-  const clearTls = await handler("config", { settings: { tlsCertFile: "", tlsKeyFile: "", printBanner: false } });
+  assert.deepEqual(state.updates, [{ patch: { port: 4000 }, rev: 4 }]);
+  assert.equal(ok.value.revision, 4);
+  // tls 空串清空语义：raw 显式 "" → replace 整节剔除该键
+  state.user.tlsCertFile = "/a.pem";
+  state.user.tlsKeyFile = "/b.pem";
+  const clearTls = await applyConfigPatch(deps, { patch: { tlsCertFile: "", tlsKeyFile: "", printBanner: false } });
   assert.equal(clearTls.ok, true, "tls 双空串成对合法");
-  assert.ok(!("tlsCertFile" in saved) && !("tlsKeyFile" in saved), "空串提交从 merged 剔除两个 tls 键");
-
+  assert.equal(state.replaces.length, 1, "清除走 replace 整节替换");
+  assert.ok(!("tlsCertFile" in state.user) && !("tlsKeyFile" in state.user), "空串提交从用户层剔除两个 tls 键");
+  assert.equal(state.user.printBanner, false, "其余键并入新节");
   // tls-pair 校验：只给证书不给私钥
-  const halfPair = await handler("config", { settings: { tlsCertFile: "/tmp/a.pem" } });
+  const halfPair = await applyConfigPatch(deps, { patch: { tlsCertFile: "/tmp/a.pem" } });
   assert.equal(halfPair.ok, false, "单边 tls 被拒");
-  assert.equal(halfPair.error.code, "tls-pair", "tls-pair 错误码");
+  assert.equal(halfPair.code, "tls-pair", "tls-pair 错误码");
 }
 
 // ===== validateSettings 字段级边界矩阵（#147 变异加固） =====
@@ -397,7 +396,6 @@ const { createServer } = await import("node:http");
 // ===== Config schema 直测：schemastery 默认值与上界（#147 变异加固接续） =====
 {
   const { Config } = await import("../lib/index.js");
-  // 空对象 → 全默认值（BooleanLiteral default true / 数值默认）
   const defaults = Config({});
   assert.equal(defaults.enabled, true, "enabled 默认 true");
   assert.equal(defaults.httpsEnabled, true, "httpsEnabled 默认 true");
@@ -410,17 +408,6 @@ const { createServer } = await import("node:http");
   assert.throws(() => Config({ port: 65536 }), "port 超 schema 上界抛错");
   assert.throws(() => Config({ httpsPort: -1 }), "httpsPort 负数抛错");
   assert.throws(() => Config({ httpCompressLevel: 4 }), "压缩档位超 3 抛错");
-}
-
-// ===== loadFileConfig 坏 JSON 与非 object JSON（#147 变异加固接续） =====
-{
-  const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-loadcfg2-"));
-  writeFileSync(join(dir, "config.json"), "{not-json", "utf8");
-  assert.deepEqual(loadFileConfig(dir), {}, "语法坏 JSON → 空对象（catch 分支）");
-  writeFileSync(join(dir, "config.json"), "[1,2]", "utf8");
-  assert.deepEqual(loadFileConfig(dir), {}, "数组 JSON 无合法配置键 → 空对象");
-  process.env.DSH_HOME;
-  rmSync(dir, { recursive: true, force: true });
 }
 
 console.log("[unit-apply] all passed ✓");

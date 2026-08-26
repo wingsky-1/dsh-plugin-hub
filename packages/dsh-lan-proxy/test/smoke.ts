@@ -20,14 +20,15 @@ import { createServer, request as httpRequest } from "node:http";
 import { constants as zlibConstants } from "node:zlib";
 import { request as httpsRequest } from "node:https";
 import { connect } from "node:net";
-import { mkdtempSync, rmSync, existsSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, writeFileSync, readFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertClientProductContract, assertClientSourceContract } from "../../../test/smoke-lib.ts";
 
 const pkgDir = fileURLToPath(new URL("..", import.meta.url));
-import { apply, loadFileConfig, writeConfigFile, sanitizeSettings, validateSettings, rpcHandler, ROUTES, CHANNEL, pluginDir,
+import { apply, sanitizeSettings, validateSettings, ROUTES, pluginDir,
+  migrateFileConfig, MIGRATED_BAK_NAME, SETTINGS_NS, buildConfigRoutes, applyConfigPatch,
   hostnameAllowed, formatAuthority, rewriteHeaders, createLanProxy, isLoopbackTarget, DEFAULT_OPTIONS,
   compressWsPath, DEFAULT_WSS_COMPRESS_PATHS,
   ensureSelfSignedTls, certStillValid, toSanEntry, loadTlsFromFiles, SELF_SIGNED_KEY, SELF_SIGNED_CERT,
@@ -119,9 +120,55 @@ class FakeRes extends EventEmitter {
   }
 }
 
+/** 构造 fake owner scope + settings service（官方 settings 存储文档的内存形态）。 */
+function makeSettings(initialUser: Record<string, unknown> = {}) {
+  const state: any = {
+    user: { ...initialUser },
+    base: {},
+    revision: 1,
+    registeredNs: null as string | null,
+    updates: [] as any[],
+    replaces: [] as any[],
+    watchers: [] as Array<(next?: any, prev?: any) => void>,
+    watchDisposed: 0,
+  };
+  const scope = {
+    get: () => ({ ...state.base, ...state.user }),
+    watch: (cb: any) => {
+      state.watchers.push(cb);
+      return () => { state.watchDisposed += 1; };
+    },
+    update: async (patch: Record<string, unknown>, expectedRevision?: number) => {
+      state.updates.push({ patch, expectedRevision });
+      Object.assign(state.user, patch);
+      state.revision += 1;
+      const next = { ...state.base, ...state.user };
+      for (const cb of [...state.watchers]) cb(next, {});
+    },
+    replace: async (section: Record<string, unknown>, expectedRevision?: number) => {
+      state.replaces.push({ section, expectedRevision });
+      state.user = { ...section };
+      state.revision += 1;
+      const next = { ...state.base, ...state.user };
+      for (const cb of [...state.watchers]) cb(next, {});
+    },
+  };
+  const service = {
+    register(ns: string, _schema: unknown, opts: any) {
+      if (state.registeredNs !== null) throw new Error("duplicate register");
+      state.registeredNs = ns;
+      state.base = { ...(opts?.base ?? {}) };
+      return scope;
+    },
+    describe(_opts?: any) {
+      return [{ ns: state.registeredNs, user: JSON.parse(JSON.stringify(state.user)), revision: state.revision }];
+    },
+  };
+  return { state, scope, service };
+}
+
 /** fake webServer：prefixes/exact Map + register/registerFallback + port（转发器目标端口）。 */
-function makeWebServer() {
-  const prefixes = new Map();
+function makeWebServer() {  const prefixes = new Map();
   const exact = new Map();
   const ws = {
     prefixes,
@@ -388,43 +435,71 @@ const main = async () => {
     assert.throws(() => loadTlsFromFiles("/nonexistent/cert.pem", "/nonexistent/key.pem"));
   });
 
-  console.log("unit: loadFileConfig（插件目录 config.json）");
-  const cfgDir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-cfg-"));
-  writeFileSync(
-    join(cfgDir, "config.json"),
-    JSON.stringify({
-      enabled: true,
-      host: "0.0.0.0",
-      port: 4081,
-      httpsEnabled: true,
-      httpsPort: 4443,
-      tlsCertFile: "/x/cert.pem",
-      tlsKeyFile: "/x/key.pem",
-      targetHost: "127.0.0.1",
-      targetPort: 4080,
-      unknownKey: "dropped",
-    }),
-  );
-  const parsed = loadFileConfig(cfgDir);
-  check("parses valid keys", () => {
-    assert.equal(parsed.enabled, true);
-    assert.equal(parsed.host, "0.0.0.0");
-    assert.equal(parsed.port, 4081);
-    assert.equal(parsed.httpsPort, 4443);
-    assert.equal(parsed.tlsCertFile, "/x/cert.pem");
-    assert.equal(parsed.targetPort, 4080);
-  });
-  check("drops unknown keys", () => assert.equal(parsed.unknownKey, undefined));
-  writeFileSync(join(cfgDir, "config.json"), JSON.stringify({ port: "not-a-number", httpsPort: "x", enabled: "yes" }));
-  check("drops type-invalid values", () => assert.deepEqual(loadFileConfig(cfgDir), {}));
-  const emptyDir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-cfg-empty-"));
-  check("missing file -> empty object", () => assert.deepEqual(loadFileConfig(emptyDir), {}));
-  writeFileSync(join(emptyDir, "config.json"), "{broken json");
-  check("invalid JSON -> empty object", () => assert.deepEqual(loadFileConfig(emptyDir), {}));
-  writeFileSync(join(emptyDir, "config.json"), JSON.stringify(["array"]));
-  check("non-object JSON -> empty object", () => assert.deepEqual(loadFileConfig(emptyDir), {}));
-  rmSync(cfgDir, { recursive: true, force: true });
-  rmSync(emptyDir, { recursive: true, force: true });
+  console.log("unit: migrateFileConfig（存量 config.json 一次性迁移，rename-first marker）");
+  {
+    const cfgDir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-migrate-"));
+    /** fake owner scope：update 增量 merge 进内存 user 层（官方存储文档的 fake 形态）。 */
+    const makeScope = () => {
+      const state = { user: {} as Record<string, unknown>, updates: [] as Record<string, unknown>[] };
+      return {
+        state,
+        async update(patch: Record<string, unknown>) { state.updates.push(patch); Object.assign(state.user, patch); },
+      };
+    };
+    // 有效配置：改名 + 过滤未知键 + 增量写入官方存储。
+    writeFileSync(join(cfgDir, "config.json"), JSON.stringify({ port: 4081, printBanner: false, unknownKey: "dropped", httpCompressLevel: 6 }));
+    let scope = makeScope();
+    let outcome = await migrateFileConfig(cfgDir, scope);
+    check("迁移：原子改名为 .bak 且增量写入有效键（旧档位 6→3、未知键丢弃）", () => {
+      assert.equal(outcome.performed && outcome.migrated, true, `outcome=${JSON.stringify(outcome)}`);
+      assert.equal(existsSync(join(cfgDir, "config.json")), false, "config.json 已改名消失");
+      assert.equal(existsSync(join(cfgDir, MIGRATED_BAK_NAME)), true, ".bak 备份存在");
+      const bak = JSON.parse(readFileSync(join(cfgDir, MIGRATED_BAK_NAME), "utf8"));
+      assert.equal(bak.port, 4081, "bak 保留原始内容供用户回滚");
+      assert.deepEqual(scope.state.user, { port: 4081, printBanner: false, httpCompressLevel: 3 }, `写入官方存储的用户层=${JSON.stringify(scope.state.user)}`);
+    });
+    // 幂等：二次启动 config.json 不存在 → 跳过，不重复写。
+    scope = makeScope();
+    outcome = await migrateFileConfig(cfgDir, scope);
+    check("迁移幂等：二次启动（config.json 不存在）跳过且不写", () => {
+      assert.deepEqual(outcome, { performed: false, migrated: false, rolledBack: false, skippedCorrupt: false });
+      assert.equal(scope.state.updates.length, 0, "未产生第二次写入");
+    });
+    rmSync(cfgDir, { recursive: true, force: true });
+
+    // 损坏 / 非 object / 全非法值 JSON：只改名标记、不写入。
+    for (const [label, raw] of [
+      ["损坏 json 只标记不写", "{broken json"],
+      ["数组 json 只标记不写", JSON.stringify(["array"])],
+      ["含类型非法值只标记不写", JSON.stringify({ port: "not-a-number" })],
+    ] as Array<[string, string]>) {
+      const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-migrate-bad-"));
+      writeFileSync(join(dir, "config.json"), raw);
+      const s = makeScope();
+      const bad = await migrateFileConfig(dir, s);
+      check(`迁移：${label}（.bak 存在、scope 未被调用）`, () => {
+        assert.equal(bad.skippedCorrupt, true, `outcome=${JSON.stringify(bad)}`);
+        assert.equal(bad.migrated, false);
+        assert.equal(existsSync(join(dir, MIGRATED_BAK_NAME)), true, "仅改名标记");
+        assert.equal(s.state.updates.length, 0, "不写入 scope");
+      });
+      rmSync(dir, { recursive: true, force: true });
+    }
+
+    // 写入失败回滚：scope.update 抛错 → config.json 还原，下次启动可重试。
+    {
+      const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-migrate-rollback-"));
+      writeFileSync(join(dir, "config.json"), JSON.stringify({ port: 4099 }));
+      const failing = { updates: [] as unknown[], async update() { throw new Error("disk full"); } };
+      const rb = await migrateFileConfig(dir, failing as any);
+      check("迁移：写入失败回滚 rename（config.json 还原、下次启动重试）", () => {
+        assert.equal(rb.rolledBack, true, `outcome=${JSON.stringify(rb)}`);
+        assert.equal(existsSync(join(dir, "config.json")), true, "config.json 已还原");
+        assert.equal(failing.updates.length, 0);
+      });
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
 
   console.log("websocket: upgrade forwarding");
   const ws = await upgradeViaProxy();
@@ -714,7 +789,7 @@ const main = async () => {
     upstream.close();
   }
 
-  // ── sanitize / loadFileConfig 接受 httpCompress 新键 ─────────────────────
+  // ── sanitize 接受 httpCompress 新键 ──────────────────────────────────────
   console.log("unit: httpCompress 配置键");
   check("sanitize 接受 httpCompressEnabled/httpCompressLevel 档位", () => {
     const out = sanitizeSettings({ httpCompressEnabled: false, httpCompressLevel: 2 });
@@ -729,141 +804,258 @@ const main = async () => {
     assert.deepEqual(sanitizeSettings({ httpCompressLevel: 6 }), { httpCompressLevel: 3 });
     assert.deepEqual(sanitizeSettings({ httpCompressLevel: 9 }), { httpCompressLevel: 3 });
   });
-  check("loadFileConfig 解析档位键、旧值迁移并丢弃非法值", () => {
-    const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-httpc-"));
-    writeFileSync(join(dir, "config.json"), JSON.stringify({ httpCompressEnabled: false, httpCompressLevel: 6, httpCompressLevelBad: "x" }));
-    const parsed = loadFileConfig(dir);
-    assert.equal(parsed.httpCompressEnabled, false);
-    assert.equal(parsed.httpCompressLevel, 3, "旧档位 6 → 高（3）");
-    writeFileSync(join(dir, "config.json"), JSON.stringify({ httpCompressLevel: 12 }));
-    assert.deepEqual(loadFileConfig(dir), {});
-    rmSync(dir, { recursive: true, force: true });
-  });
 
 
-  console.log("unit: writeConfigFile（原子写）");
+  console.log("unit: applyConfigPatch（PUT /config 主体：校验 → 官方存储写入）");
   {
-    const cfgDir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-write-"));
-    writeConfigFile(cfgDir, { port: 4099, printBanner: false });
-    const raw = readFileSync(join(cfgDir, "config.json"), "utf8");
-    const parsed = JSON.parse(raw);
-    check("writes config.json with only given keys", () => assert.deepEqual(parsed, { port: 4099, printBanner: false }));
-    check("no tmp file left behind", () => assert.equal(existsSync(join(cfgDir, `config.json.tmp-${process.pid}`)), false));
-    rmSync(cfgDir, { recursive: true, force: true });
+    /** fake deps：update 增量 merge / replace 整节替换，内存即官方存储文档。 */
+    const makeDeps = (initialUser: Record<string, unknown> = {}, opts: { broken?: boolean; conflict?: boolean } = {}) => {
+      const state = {
+        user: { ...initialUser },
+        updates: [] as Array<{ patch: Record<string, unknown>; expectedRevision?: number }>,
+        replaces: [] as Array<{ section: Record<string, unknown>; expectedRevision?: number }>,
+      };
+      return {
+        state,
+        deps: {
+          resolve: () => ({ enabled: true, host: "0.0.0.0", port: 3081, httpsEnabled: true, httpsPort: 3443, targetHost: "127.0.0.1", printBanner: true }) as any,
+          readUser: () => ({ user: { ...state.user }, revision: 7 }),
+          writable: () => true,
+          update: async (patch: Record<string, unknown>, expectedRevision?: number) => {
+            if (opts.broken) throw new Error("disk full");
+            if (opts.conflict) throw Object.assign(new Error("stale"), { code: "SETTINGS_CONFLICT" });
+            state.updates.push({ patch, expectedRevision });
+            Object.assign(state.user, patch);
+          },
+          replace: async (section: Record<string, unknown>, expectedRevision?: number) => {
+            state.replaces.push({ section, expectedRevision });
+            state.user = { ...section };
+          },
+          compress: () => ({ httpCompressEnabled: true, httpCompressLevel: 1, httpCompressMounted: true, httpCompressStats: { compressed: 7, passthrough: 2 } }),
+        } as any,
+      };
+    };
+
+    // 合法 patch：validate/sanitize 后增量 update（expectedRevision 透传）。
+    let h = makeDeps({ tlsCertFile: "/x.pem" as unknown });
+    let r = await applyConfigPatch(h.deps, { patch: { port: 4099, printBanner: false }, expectedRevision: 7 });
+    check("patch 合法提交走 update 增量合并且透传 expectedRevision", () => {
+      assert.equal(r.ok, true);
+      assert.deepEqual(h.state.updates, [{ patch: { port: 4099, printBanner: false }, expectedRevision: 7 }]);
+      assert.deepEqual(h.state.user, { tlsCertFile: "/x.pem", port: 4099, printBanner: false }, "未提交键保持原值");
+      assert.deepEqual((r as any).value.revision, 7);
+    });
+
+    // 清除证书路径：raw 空字符串 → replace 整节（unset 语义），其余键保留。
+    h = makeDeps({ tlsCertFile: "/x.pem", tlsKeyFile: "/x-key.pem", port: 4000 });
+    r = await applyConfigPatch(h.deps, { patch: { tlsCertFile: "", tlsKeyFile: "", printBanner: false } });
+    check("tls 双空串触发 replace 整节替换并从用户层剔除两个键", () => {
+      assert.equal(r.ok, true, JSON.stringify(r));
+      assert.equal(h.state.replaces.length, 1, "走了 replace 路径");
+      assert.equal(h.state.updates.length, 0, "不走 update");
+      assert.deepEqual(h.state.user, { port: 4000, printBanner: false }, "tls 键已剔除、其余键保留");
+    });
+
+    // 校验失败：首个非法键定位 + 范围提示。
+    const badPort = await applyConfigPatch(makeDeps().deps, { patch: { port: 70000 } });
+    check("patch 非法端口 400 且 details 含键名与范围", () => {
+      assert.equal(badPort.ok, false);
+      assert.deepEqual((badPort as any).status === 400 && (badPort as any).code, "invalid");
+      assert.ok((badPort as any).details.includes("port") && (badPort as any).details.includes("1-65535"));
+    });
+    // tls 成对约束。
+    const lone = await applyConfigPatch(makeDeps().deps, { patch: { tlsCertFile: "/x.pem" } });
+    check("patch 单边证书被拒（tls-pair）", () => assert.equal(lone.ok === false && (lone as any).code, "tls-pair"));
+    // settings 服务不可用。
+    const unavail = makeDeps();
+    (unavail.deps as any).writable = () => false;
+    const na = await applyConfigPatch(unavail.deps, { patch: { port: 4000 } });
+    check("settings 服务不可用时写入 503 拒绝", () => assert.equal(na.ok === false && (na as any).status, 503));
+    // 写入异常与乐观并发冲突映射。
+    const broken = await applyConfigPatch(makeDeps({}, { broken: true }).deps, { patch: { port: 4000 } });
+    check("写入异常映射 500/error", () => assert.equal(broken.ok === false && (broken as any).status, 500) && assert.equal((broken as any).code, "error"));
+    const conflict = await applyConfigPatch(makeDeps({}, { conflict: true }).deps, { patch: { port: 4000 } });
+    check("SETTINGS_CONFLICT 映射 409/conflict", () => assert.equal(conflict.ok === false && (conflict as any).status, 409) && assert.equal((conflict as any).code, "conflict"));
   }
 
-  console.log("unit: rpcHandler");
+  console.log("unit: buildConfigRoutes（GET 快照 / PUT 写入 / 围栏）");
   {
-    let saved = null;
-    const handler = rpcHandler({
-      resolve: () => ({ enabled: true, host: "0.0.0.0", port: 3081, httpsEnabled: true, httpsPort: 3443, targetHost: "127.0.0.1", printBanner: true }),
-      fileConfig: () => ({ tlsCertFile: "/x.pem", tlsKeyFile: "/x-key.pem" }),
-      save: (s) => { saved = s; },
-      compress: () => ({ httpCompressEnabled: true, httpCompressLevel: 1, httpCompressMounted: true, httpCompressStats: { compressed: 7, passthrough: 2 } }),
+    let putPayload: any = null;
+    const deps = {
+      resolve: () => ({ enabled: false, host: "0.0.0.0", port: 3082, httpsEnabled: true, httpsPort: 3443, targetHost: "127.0.0.1", printBanner: true, wsCompressEnabled: true, wsCompressPaths: [], httpCompressEnabled: true, httpCompressLevel: 2 }) as any,
+      readUser: () => ({ user: { port: 3082 } as Record<string, unknown>, revision: 3 }),
+      writable: () => true,
+      update: async (patch: any, rev: any) => { putPayload = { kind: "update", patch, rev }; },
+      replace: async (section: any, rev: any) => { putPayload = { kind: "replace", section, rev }; },
+      compress: () => ({ httpCompressEnabled: true, httpCompressLevel: 1, httpCompressMounted: true, httpCompressStats: { compressed: 5, passthrough: 6 } }),
+    } as any;
+    const route = buildConfigRoutes(deps)[0];
+    const callRoute = (method: string, overrides: any = {}, body?: any) =>
+      Promise.resolve().then(async () => {
+        const req: any = Object.assign(
+          { method, socket: { remoteAddress: "127.0.0.1" }, headers: { host: "127.0.0.1:3080" } },
+          overrides,
+        );
+        if (body !== undefined) req._body = body;
+        const chunks: string[] = [];
+        let status = 0;
+        const res: any = {
+          writeHead(code: number) { status = code; },
+          end(c?: any) { if (c !== undefined) chunks.push(String(c)); },
+          getHeader() { return undefined; },
+          setHeader() {},
+        };
+        if (body !== undefined) {
+          // readBody 从 req 事件流读——这里直接给一个最小可读流形态。
+          const { EventEmitter } = await import("node:events");
+          const stream: any = new EventEmitter();
+          Object.assign(stream, req);
+          process.nextTick(() => {
+            stream.emit("data", Buffer.from(JSON.stringify(body)));
+            stream.emit("end");
+          });
+          await route.handler(stream, res);
+        } else {
+          await route.handler(req, res);
+        }
+        return { status: status || 200, body: chunks.join("") };
+      });
+
+    const forbidden = await callRoute("GET", { socket: { remoteAddress: "192.168.1.9" } });
+    check("config 路由非回环 403", () => assert.equal(forbidden.status, 403));
+    const notAllowed = await callRoute("POST", {}, { patch: {} });
+    check("config 路由 POST 405（仅 GET/PUT）", () => assert.equal(notAllowed.status, 405));
+
+    const got = await callRoute("GET");
+    check("GET 返回 user 层 + effective 生效值 + 压缩快照 + revision（只读面不收缩）", () => {
+      const payload = JSON.parse(got.body);
+      assert.equal(got.status, 200);
+      assert.deepEqual(payload.user, { port: 3082 });
+      assert.equal(payload.effective.port, 3082, "effective 生效值可见");
+      assert.equal(payload.compress.httpCompressStats.compressed, 5, "压缩协商计数可见");
+      assert.equal(payload.revision, 3);
+      assert.equal(payload.writable, true);
     });
-    const state = await handler("state", {});
-    check("state returns persisted + effective", () => {
-      assert.equal(state.ok, true);
-      assert.equal(state.value.settings.tlsCertFile, "/x.pem");
-      assert.equal(state.value.effective.port, 3081);
-      assert.equal(state.value.effective.printBanner, true);
+    const put = await callRoute("PUT", {}, { patch: { port: 4099 }, expectedRevision: 3 });
+    check("PUT 合法 patch 转 scope.update 并回传新 user 层", () => {
+      const payload = JSON.parse(put.body);
+      assert.equal(put.status, 200);
+      assert.equal(payload.ok, true);
+      assert.deepEqual(payload.user, { port: 3082 });
+      assert.equal(putPayload.kind, "update");
+      assert.equal(putPayload.rev, 3, "expectedRevision 透传");
     });
-    // issue #33 子项 3：state 附带压缩运行快照。
-    check("state 附带压缩快照（mounted + 协商计数）", () => {
-      assert.equal(state.value.compress.httpCompressMounted, true);
-      assert.equal(state.value.compress.httpCompressStats.compressed, 7);
-      assert.equal(state.value.compress.httpCompressStats.passthrough, 2);
+    const putBad = await callRoute("PUT", {}, { patch: { port: 70000 } });
+    check("PUT 非法 patch 400 带 error.details", () => {
+      const payload = JSON.parse(putBad.body);
+      assert.equal(putBad.status, 400);
+      assert.ok(payload.error.details.includes("port"));
     });
-    const handlerNoCompress = rpcHandler({
-      resolve: () => ({ enabled: true, host: "0.0.0.0", port: 3081, httpsEnabled: true, httpsPort: 3443, targetHost: "127.0.0.1", printBanner: true }),
-      fileConfig: () => ({}),
-      save: (s) => { saved = s; },
-    });
-    const stateNoCompress = await handlerNoCompress("state", {});
-    check("state 无 compress deps 时快照为 null（旧宿主兼容）", () => {
-      assert.equal(stateNoCompress.value.compress, null);
-    });
-    const ok = await handler("config", { settings: { enabled: false, port: 4099, tlsCertFile: "", tlsKeyFile: "", printBanner: false } });
-    check("config saves merged settings (empty certs cleared from merge)", () => {
-      assert.equal(ok.ok, true);
-      // 增量保存（issue #33 子项 2）：patch 合并进持久化层全量落盘；
-      // 空证书路径从合并视图删除（显式清除 = 恢复自签证书）。
-      assert.deepEqual(saved, { enabled: false, port: 4099, printBanner: false });
-    });
-    // issue #33 子项 2：增量 diff 合并——patch 未携带的已有键保持原值。
-    const incremental = await handler("config", { settings: { printBanner: false } });
-    check("config 增量合并保留持久化层未提交键", () => {
-      assert.equal(incremental.ok, true);
-      assert.deepEqual(saved, { tlsCertFile: "/x.pem", tlsKeyFile: "/x-key.pem", printBanner: false });
-    });
-    const bad = await handler("config", { settings: { port: "abc" } });
-    check("config rejects invalid values", () => assert.equal(bad.ok, false) && assert.equal(bad.error.code, "invalid"));
-    // issue #33 子项 1：错误 details 指明首个非法字段与合法范围。
-    const badPort = await handler("config", { settings: { port: 70000 } });
-    check("config 非法端口错误含键名与 1-65535 范围", () => {
-      assert.equal(badPort.ok, false);
-      assert.ok(badPort.error.details.includes("port"), `details 含字段名，实际「${badPort.error.details}」`);
-      assert.ok(badPort.error.details.includes("1-65535"), `details 含合法范围，实际「${badPort.error.details}」`);
-    });
-    const badLevel = await handler("config", { settings: { httpCompressLevel: 1.5 } });
-    check("config 非法档位错误含键名与 0-3 范围", () => {
-      assert.equal(badLevel.ok, false);
-      assert.ok(badLevel.error.details.includes("httpCompressLevel"), `实际「${badLevel.error.details}」`);
-      assert.ok(badLevel.error.details.includes("0-3"), `实际「${badLevel.error.details}」`);
-    });
-    const lone = await handler("config", { settings: { tlsCertFile: "/x.pem" } });
-    check("config rejects lone cert without key", () => assert.equal(lone.ok, false) && assert.equal(lone.error.code, "tls-pair"));
-    const unknown = await handler("nope", {});
-    check("unknown endpoint rejected", () => assert.equal(unknown.ok, false) && assert.equal(unknown.error.code, "unknown"));
   }
 
   // fake ctx + apply：转发器用一个高位随机端口（不碰 3081），DSH_HOME 隔离。
-  console.log("apply: 注册与围栏");
+  console.log("apply: 注册、围栏与 settings 命名空间接线");
   {
     const applyHome = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-apply-"));
     const prevHome = process.env.DSH_HOME;
     process.env.DSH_HOME = applyHome;
+    // 预置存量 config.json → apply 后应自动迁移进 fake 官方存储。
+    mkdirSync(join(applyHome, "lan-proxy"), { recursive: true });
+    writeFileSync(join(applyHome, "lan-proxy", "config.json"), JSON.stringify({ port: 19997 }));
+    const { state: settingsState, service } = makeSettings();
     const routes = [];
     const rpcHandles = [];
     const disposers = [];
-    let routeDisposed = 0;
     const ctx = {
       logger: { info: () => {}, warn: () => {}, error: () => {} },
       webServer: {
         port: 3080,
-        register(route) { routes.push(route); return () => { routeDisposed += 1; }; },
+        register(route) { routes.push(route); return () => {}; },
         tapIndex() { return () => {}; },
       },
       inject(services, fn) {
         if (services.includes("connection")) {
-          const connectionCtx = {
+          fn({
             connection: { rpc: { handle(channel, h, opts) { rpcHandles.push({ channel, h, opts }); return () => {}; } } },
             effect(fn2) { return fn2(); },
-          };
-          fn(connectionCtx);
+          });
+        }
+        if (services.includes("settings")) {
+          fn({ settings: service, effect(fn2) { const d = fn2(); if (typeof d === "function") disposers.push(d); return d; } });
         }
       },
       effect(fn) { const d = fn(); if (typeof d === "function") disposers.push(d); return d; },
     };
     apply(ctx, { host: "127.0.0.1", port: 19991, httpsEnabled: false });
-    const cleanup = () => { for (const d of disposers) { try { d(); } catch {} } };
-    check("RPC channel registered with loopback authority", () => {
-      assert.equal(rpcHandles.length >= 1, true);
-      assert.equal(rpcHandles[0].channel, CHANNEL);
-      assert.equal(rpcHandles[0].opts.authority, "loopback");
-    });
+    const cleanup = () => { for (const d of disposers.reverse()) { try { d(); } catch {} } };
+    check("RPC 配置通道不再注册（自建通道移除）", () => assert.equal(rpcHandles.length, 0));
     const healthRoute = routes.filter((r) => r.path === ROUTES.health)[0];
     check("health route registered", () => assert.ok(healthRoute));
-    // issue #33 子项 3：apply 注入 compress 快照，RPC state 可见压缩生效状态。
-    {
-      const liveState = await rpcHandles[0].h("state", {});
-      check("apply 下 RPC state 附带压缩快照且 mounted=true", () => {
-        assert.equal(liveState.ok, true);
-        assert.equal(liveState.value.compress.httpCompressMounted, true, "转发器已监听 → 压缩已挂载");
-        assert.equal(liveState.value.compress.httpCompressEnabled, true);
-        assert.equal(typeof liveState.value.compress.httpCompressStats.compressed, "number");
-      });
-    }
+    const configRoute = routes.filter((r) => r.path === ROUTES.config)[0];
+    check("config route registered", () => assert.ok(configRoute));
+    // 迁移是 async fire-and-forget：轮询等待（防 flake 纪律，不用固定 sleep）。
+    const migratedDeadline = Date.now() + 5000;
+    while (!existsSync(join(applyHome, "lan-proxy", MIGRATED_BAK_NAME)) && Date.now() < migratedDeadline) await sleep(25);
+    check("apply 后存量 config.json 自动迁移进官方存储（attach 即迁移）", () => {
+      assert.equal(existsSync(join(applyHome, "lan-proxy", MIGRATED_BAK_NAME)), true, ".bak 幂等标记存在");
+      assert.deepEqual(settingsState.updates, [{ patch: { port: 19997 }, expectedRevision: undefined }]);
+      assert.equal(settingsState.user.port, 19997, "user 层已写入");
+      assert.equal(settingsState.registeredNs, SETTINGS_NS);
+    });
+    // GET /config 快照（经真实路由 handler）：effective + compress + user + revision。
+    const callRoute = async (method: string, overrides: any = {}, body?: any) => {
+      const req: any = Object.assign(
+        { method, socket: { remoteAddress: "127.0.0.1" }, headers: { host: "127.0.0.1:3080" } },
+        overrides,
+      );
+      const chunks: string[] = [];
+      let status = 0;
+      const res: any = {
+        writeHead(code: number) { status = code; },
+        end(c?: any) { if (c !== undefined) chunks.push(String(c)); },
+        getHeader() { return undefined; },
+        setHeader() {},
+      };
+      if (body !== undefined) {
+        const { EventEmitter } = await import("node:events");
+        const stream: any = new EventEmitter();
+        Object.assign(stream, req);
+        process.nextTick(() => {
+          stream.emit("data", Buffer.from(JSON.stringify(body)));
+          stream.emit("end");
+        });
+        await configRoute.handler(stream, res);
+      } else {
+        await configRoute.handler(req, res);
+      }
+      return { status: status || 200, body: chunks.join("") };
+    };
+    const snapshot = await callRoute("GET");
+    check("GET /config 快照含 effective 生效值 + 压缩快照 + user 层 + revision", () => {
+      const payload = JSON.parse(snapshot.body);
+      assert.equal(snapshot.status, 200);
+      assert.equal(payload.ok, true);
+      assert.equal(payload.effective.port, 19997, "迁移后的生效端口可见");
+      assert.equal(payload.effective.host, "127.0.0.1", "组合层 entry 兜底生效");
+      assert.equal(payload.compress.httpCompressMounted, true, "转发器已监听 → 压缩已挂载");
+      assert.equal(typeof payload.compress.httpCompressStats.compressed, "number");
+      assert.deepEqual(payload.user, { port: 19997 });
+      assert.equal(typeof payload.revision, "number");
+      assert.equal(payload.writable, true);
+    });
+    const cfg403 = await callRoute("GET", { socket: { remoteAddress: "192.168.100.9" } });
+    check("config 路由非回环 403", () => assert.equal(cfg403.status, 403));
+    const cfg405 = await callRoute("DELETE");
+    check("config 路由 DELETE 405", () => assert.equal(cfg405.status, 405));
+    // PUT 写入：经路由 → deps.update（fake scope）→ watch 触发。
+    const put = await callRoute("PUT", {}, { patch: { printBanner: false }, expectedRevision: settingsState.revision });
+    check("PUT 经路由写入官方存储并触发 watch 回调", () => {
+      const payload = JSON.parse(put.body);
+      assert.equal(put.status, 200, put.body);
+      assert.equal(payload.ok, true);
+      assert.equal(settingsState.user.printBanner, false);
+      assert.equal(settingsState.watchers.length >= 1 && settingsState.watchDisposed, 0, "watch 已挂接未释放");
+    });
     const fakeReq = (overrides = {}) => Object.assign(
       { method: "GET", socket: { remoteAddress: "127.0.0.1" }, headers: { host: "127.0.0.1:3080" }, url: ROUTES.health },
       overrides,
@@ -892,6 +1084,41 @@ const main = async () => {
       assert.equal(payload.plugin, "dsh-lan-proxy");
     });
     cleanup();
+    process.env.DSH_HOME = prevHome;
+    rmSync(applyHome, { recursive: true, force: true });
+  }
+
+  // apply：settings 服务缺失 → 降级（卡片可读不可写，主体不受影响）。
+  console.log("apply: settings 服务缺失降级");
+  {
+    const applyHome = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-apply-nosettings-"));
+    const prevHome = process.env.DSH_HOME;
+    process.env.DSH_HOME = applyHome;
+    const routes = [];
+    const disposers = [];
+    const ctx = {
+      logger: { info: () => {}, warn: () => {}, error: () => {} },
+      webServer: { port: 3080, register(route) { routes.push(route); return () => {}; }, tapIndex() { return () => {}; } },
+      inject() {},
+      effect(fn) { const d = fn(); if (typeof d === "function") disposers.push(d); return d; },
+    };
+    apply(ctx, { host: "127.0.0.1", port: 19992, httpsEnabled: false });
+    const configRoute = routes.find((r) => r.path === ROUTES.config);
+    check("降级态：health 与 config 路由仍注册（卡片可读）", () => {
+      assert.ok(routes.find((r) => r.path === ROUTES.health));
+      assert.ok(configRoute);
+    });
+    const req = { method: "GET", socket: { remoteAddress: "127.0.0.1" }, headers: { host: "127.0.0.1:3080" } };
+    const chunks: string[] = [];
+    let status = 0;
+    configRoute.handler(req as any, { writeHead: (c: number) => { status = c; }, end: (c?: any) => { if (c !== undefined) chunks.push(String(c)); }, getHeader: () => undefined, setHeader: () => {} } as any);
+    check("降级态 GET：writable=false 且 effective 为组合层兜底", () => {
+      const payload = JSON.parse(chunks.join(""));
+      assert.equal(status, 200);
+      assert.equal(payload.writable, false);
+      assert.equal(payload.effective.port, 19992);
+    });
+    for (const d of [...disposers].reverse()) { try { d(); } catch {} }
     process.env.DSH_HOME = prevHome;
     rmSync(applyHome, { recursive: true, force: true });
   }
@@ -981,8 +1208,8 @@ const main = async () => {
     rmSync(applyHome, { recursive: true, force: true });
   }
 
-  // apply：运行中经 config.json 热关闭——压缩生效状态必须随 watch 翻转。
-  console.log("apply: 运行中热关闭（config.json watch → 压缩卸载）");
+  // apply：运行中经设置保存热关闭——scope.watch 必须驱动压缩生效状态翻转。
+  console.log("apply: 运行中热关闭（PUT /config → scope.watch → 压缩卸载）");
   const hotOffCase = async (label, patch, expectProxyOff) => {
     const applyHome = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-hotoff-"));
     const prevHome = process.env.DSH_HOME;
@@ -994,10 +1221,15 @@ const main = async () => {
     };
     ws.prefixes.set("/api", { kind: "prefix", path: "/api", handler: apiHandler });
     const disposers = [];
+    const { service } = makeSettings();
     const ctx = {
       logger: { info: () => {}, warn: () => {}, error: () => {} },
       webServer: ws,
-      inject() {},
+      inject(services, fn) {
+        if (services.includes("settings")) {
+          fn({ settings: service, effect(fn2) { const d = fn2(); if (typeof d === "function") disposers.push(d); return d; } });
+        }
+      },
       effect(fn) { const d = fn(); if (typeof d === "function") disposers.push(d); return d; },
     };
     apply(ctx, { host: "127.0.0.1", port: 19995, httpsEnabled: false });
@@ -1007,19 +1239,59 @@ const main = async () => {
       return JSON.parse(Buffer.concat(hRes._chunks).toString("utf8")).httpCompressMounted;
     };
     assert.ok(healthMounted() === true, "前置：压缩已生效");
-    // 运行中写 config.json 触发热更新；轮询等待 watch（150ms 防抖）生效，
-    // 不用固定 sleep（防 flake 纪律）。
-    writeConfigFile(pluginDir(), patch);
-    const deadline = Date.now() + 5000;
-    while (healthMounted() && Date.now() < deadline) await sleep(25);
-    check(`${label}：压缩卸载、webServer 原样`, () => {
-      assert.equal(healthMounted(), false, "health mounted=false");
-      assert.equal(ws.prefixes.get("/api").handler, apiHandler, "webServer handler 全程原样");
-      const hRes = new FakeRes();
-      ws.exact.get(ROUTES.health).handler(makeReq(), hRes);
-      const payload = JSON.parse(Buffer.concat(hRes._chunks).toString("utf8"));
-      if (expectProxyOff) assert.equal(payload.listening, false, "转发器已停");
+    // 运行中经配置路由保存（客户端同链路）：PUT → scope.update → watch 触发
+    // onChange=scheduleSync（3s 防抖）→ sync 重建。轮询等待生效，不用固定 sleep
+    // （防 flake 纪律）；deadline 覆盖 3s 防抖窗口。
+    const putBody = JSON.stringify({ patch });
+    const putStatus = await new Promise<number>((resolveRoute) => {
+      let status = 0;
+      const stream: any = new EventEmitter();
+      Object.assign(stream, makeReq({ method: "PUT" }));
+      const chunks: string[] = [];
+      const res: any = {
+        writeHead(code: number) { status = code; },
+        end(c?: any) {
+          if (c !== undefined) chunks.push(String(c));
+          resolveRoute(status || 200);
+        },
+        getHeader() { return undefined; },
+        setHeader() {},
+      };
+      process.nextTick(() => {
+        stream.emit("data", Buffer.from(putBody));
+        stream.emit("end");
+      });
+      void (async () => { await ws.exact.get(ROUTES.config).handler(stream, res); })();
     });
+    if (expectProxyOff) {
+      // 整插件关闭：listening 反映转发器实例存活，须等 watch 驱动 sync 重建才翻转。
+      const deadline = Date.now() + 12000;
+      const healthPayload = () => {
+        const hRes = new FakeRes();
+        ws.exact.get(ROUTES.health).handler(makeReq(), hRes);
+        return JSON.parse(Buffer.concat(hRes._chunks).toString("utf8"));
+      };
+      while (healthPayload().listening && Date.now() < deadline) await sleep(100);
+      check(`${label}：保存成功且 watch 热更新停掉转发器`, () => {
+        assert.equal(putStatus, 200, "PUT 保存回执成功");
+        const payload = healthPayload();
+        assert.equal(payload.listening, false, "转发器已停（scope.watch 热更新生效）");
+        assert.equal(payload.httpCompressMounted, false);
+        assert.equal(ws.prefixes.get("/api").handler, apiHandler, "webServer handler 全程原样");
+      });
+    } else {
+      // 只关压缩：生效值经 resolve() 立即可见（GET 快照不撒谎），转发器由
+      // watch 防抖后按新配置重建（不影响 listening）。
+      check(`${label}：保存成功且压缩生效状态随保存翻转`, () => {
+        assert.equal(putStatus, 200, "PUT 保存回执成功");
+        assert.equal(healthMounted(), false, "health mounted=false（生效配置即时可见）");
+        const hRes = new FakeRes();
+        ws.exact.get(ROUTES.health).handler(makeReq(), hRes);
+        const payload = JSON.parse(Buffer.concat(hRes._chunks).toString("utf8"));
+        assert.equal(payload.httpCompressEnabled, false);
+        assert.equal(ws.prefixes.get("/api").handler, apiHandler, "webServer handler 全程原样");
+      });
+    }
     for (const d of [...disposers].reverse()) {
       try { d(); } catch {}
     }
@@ -1029,23 +1301,44 @@ const main = async () => {
   await hotOffCase("热关 httpCompressEnabled=false", { httpCompressEnabled: false }, false);
   await hotOffCase("热关 enabled=false（整插件）", { enabled: false }, true);
 
-  // apply：enabled=false 整插件关闭 → 压缩与转发都不注册（启动态）。
+  // apply：enabled=false 启动态 → 转发器不启动，但路由与 settings 注册照常、
+  // 存量 config.json 迁移先行于 enabled 判定（issue #110 P0-2：禁用用户升级
+  // 同样迁移，重新启用不丢配置）。
   {
     const applyHome = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-apply-all-off-"));
     const prevHome = process.env.DSH_HOME;
     process.env.DSH_HOME = applyHome;
+    mkdirSync(join(applyHome, "lan-proxy"), { recursive: true });
+    writeFileSync(join(applyHome, "lan-proxy", "config.json"), JSON.stringify({ enabled: false, port: 19996 }));
+    const { service: offService } = makeSettings();
     const ws = makeWebServer();
+    const disposers = [];
     const ctx = {
       logger: { info: () => {}, warn: () => {}, error: () => {} },
       webServer: ws,
-      inject() {},
-      effect(fn) { return fn(); },
+      inject(services, fn) {
+        if (services.includes("settings")) {
+          fn({ settings: offService, effect(fn2) { return fn2(); } });
+        }
+      },
+      effect(fn) { const d = fn(); if (typeof d === "function") disposers.push(d); return d; },
     };
     apply(ctx, { enabled: false });
-    check("enabled=false：压缩与转发都不注册", () => {
-      assert.equal(ws.exact.size, 0);
-      assert.equal(ws.prefixes.size, 0);
+    const migratedDeadline = Date.now() + 5000;
+    while (!existsSync(join(applyHome, "lan-proxy", MIGRATED_BAK_NAME)) && Date.now() < migratedDeadline) await sleep(25);
+    const hRes = new FakeRes();
+    ws.exact.get(ROUTES.health).handler(makeReq(), hRes);
+    const payload = JSON.parse(Buffer.concat(hRes._chunks).toString("utf8"));
+    check("enabled=false：迁移仍执行、health/config 路由注册、转发器不启动", () => {
+      assert.equal(existsSync(join(applyHome, "lan-proxy", MIGRATED_BAK_NAME)), true, "禁用态也完成存量迁移");
+      assert.ok(ws.exact.has(ROUTES.health), "health 路由注册");
+      assert.ok(ws.exact.has(ROUTES.config), "config 路由注册");
+      assert.equal(payload.listening, false, "转发器未启动");
+      assert.equal(payload.enabled, false);
     });
+    for (const d of [...disposers].reverse()) {
+      try { d(); } catch {}
+    }
     process.env.DSH_HOME = prevHome;
     rmSync(applyHome, { recursive: true, force: true });
   }
@@ -1055,7 +1348,7 @@ const main = async () => {
     const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
     check("client source contract（IIFE/use strict/load id/SymbolTag/factory/load once）", () => assertClientSourceContract(pkgDir));
     check("client product contract（执行断言：arrive 可解析/apply/inject）", () => assertClientProductContract(pkgDir));
-    check("client shares CHANNEL with host", () => assert.ok(client.includes(CHANNEL)));
+    check("client shares CONFIG route with host", () => assert.ok(client.includes(ROUTES.config)));
     check("client renders settings card fields", () => {
       assert.ok(client.includes("LAN 端口"));
       assert.ok(client.includes("HTTPS 端口"));
