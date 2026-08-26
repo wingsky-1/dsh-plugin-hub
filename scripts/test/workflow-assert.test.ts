@@ -220,6 +220,20 @@ test('#178+#204: observe.yml 夜间保持全量——只收集仓库基线不读
   assert.ok(OBSERVE.includes('pull-requests: write'), 'observe.yml permissions 需 pull-requests: write')
 })
 
+test('#276: mutate 区间机器派生——sync --write 先于 guard/stryker，入库行号允许漂移', () => {
+  for (const [name, wf] of [['ci.yml', CI], ['observe.yml', OBSERVE]]) {
+    assert.ok(wf.includes('node scripts/gate/sync-mutate-segments.mjs --write'),
+      `${name} 必须在 stryker run 前调用 sync --write（区间从产物分段锚点重算，#276 方案 B）`)
+    const syncIdx = wf.indexOf('sync-mutate-segments.mjs --write')
+    const runIdx = wf.indexOf('npx stryker run')
+    assert.ok(syncIdx > 0 && runIdx > syncIdx, `${name} 的 sync 步骤必须先于 stryker run`)
+  }
+  // 声明文件存在且为唯一分组事实源
+  const segDecl = JSON.parse(readFileSync(join(ROOT, 'scripts', 'data', 'mutation-segments.json'), 'utf8'))
+  const pkgs = Object.keys(segDecl).filter(k => k !== '$comment')
+  assert.ok(pkgs.length >= 7, 'mutation-segments.json 应覆盖全部带变异配置的包')
+})
+
 test('#178+#204: ci.yml PR 增量门禁——读仓库基线文件 + 按命中包切片 + 并入 repo-gate', () => {
   // #204：直接读 scripts/gate/baseline/ 仓库内文件，替代 actions/cache restore（跨 ref 失效）
   assert.ok(CI.includes('Restore repo incremental baseline'), 'mutation-gate 基线读取步骤在位（读仓库内文件）')
