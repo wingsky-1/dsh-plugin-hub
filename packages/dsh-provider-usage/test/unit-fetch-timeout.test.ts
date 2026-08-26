@@ -9,7 +9,7 @@
  *   防未来调用点绕过封装退回无超时裸调）；
  * - 同步 spawn worker，校验退出码与 WORKER-PASS 标记。
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
@@ -36,9 +36,13 @@ const pkgDir = join(here, "..");
 // ---------------------------------------------------------------- 源码契约：client 层裸 fetch 审计
 
 {
-  const clientFiles = ["core.ts", "settings.ts", "index.ts"];
+  // 枚举 src/client 全部实现文件（未来新增文件自动入契约；.d.ts 声明与 .css 无调用面，排除）
+  const clientFiles = readdirSync(join(pkgDir, "src/client"))
+    .filter((f) => f.endsWith(".ts") && !f.endsWith(".d.ts"))
+    .sort();
+  assert.ok(clientFiles.includes("core.ts"), "client 目录枚举应命中 core.ts");
   for (const file of clientFiles) {
-    const src = readFileSync(join(pkgDir, `src/client/${file}`), "utf8");
+    const src = readFileSync(join(pkgDir, "src/client", file), "utf8");
     // \bfetch\( 不命中 fetchTimeout 标识符（其后跟 T 而非 "("）
     const calls = [...src.matchAll(/\bfetch\(/g)].length;
     if (file === "core.ts") {
