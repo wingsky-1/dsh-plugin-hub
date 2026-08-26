@@ -11,16 +11,32 @@ install them all at once as a single bundle, or pick individual plugins as neede
 
 - **Bundle package**: `@wingsky-1/dsh-plugins-all` — install everything in one shot
 - **Individual plugins**: `@wingsky-1/dsh-*` — install only what you need
-- All plugins mount through DSH's official profile mechanism (`dsh.bundle.patch`) — no DSH source changes; artifacts are self-contained with build-time inlining
+
+## Core advantages
+
+- **Security built into the defaults**: minimal exposure surface and minimal credential
+  flow — management surfaces answer only on loopback, keys by default never persist in
+  plaintext nor reach the browser; each plugin's threat model and hardening details live
+  in its README security section
+- **Context-cost-controlled MCP management**: project-level MCP is collapsed into the
+  two atomic tools `ws_mcp_search` / `ws_mcp_call` by default, so project-level scale
+  never balloons the context (`middleware: all` folds global servers into the middleware
+  too); per-working-directory project/global config tiers let each repo carry its own
+  MCP servers without cross-project interference
+- **Extensible usage-stats framework**: a generic v2 adapter contract with DeepSeek
+  official and OpenCode Go built in out of the box; write one mjs file to plug in any
+  data source, hot-swappable from the settings page
+- **Engineering-quality backing**: every plugin ships smoke assertions (route fences /
+  client contracts), plus build contract + pack checks + full gates run in CI
 
 ## Plugin list
 
 | Package | What it does | Docs | Status |
 |---|---|---|---|
 | `@wingsky-1/dsh-notifier` | Approval/completion/error event notifications (browser Notification + system toast) | [README](packages/dsh-notifier/README.md) | ✅ Published |
-| `@wingsky-1/dsh-provider-usage` | Multi-provider usage float pill (per-provider adapter framework, built-in OpenCode Go) | [README](packages/dsh-provider-usage/README.md) | ✅ Published |
+| `@wingsky-1/dsh-provider-usage` | Multi-provider usage float pill (generic adapter framework: DeepSeek official and OpenCode Go built in, plug in any data source with your own mjs) | [README](packages/dsh-provider-usage/README.md) | ✅ Published |
 | `@wingsky-1/dsh-lan-proxy` | Access the dsh web UI over LAN (HTTP/HTTPS/WS forwarding + TLS + HTTP response compression, Brotli/gzip) | [README](packages/dsh-lan-proxy/README.md) | ✅ Published |
-| `@wingsky-1/dsh-mcp-manager` | MCP server manager (stdio / HTTP, registers tools for the model) | [README](packages/dsh-mcp-manager/README.md) | ✅ Published |
+| `@wingsky-1/dsh-mcp-manager` | MCP server manager (stdio / HTTP; per-working-directory project/global config tiers, project-level MCP collapsed via middleware — no tool flood in the model surface) | [README](packages/dsh-mcp-manager/README.md) | ✅ Published |
 | `@wingsky-1/dsh-idle-archive` | Prompt to archive idle conversations | [README](packages/dsh-idle-archive/README.md) | ✅ Published |
 | `@wingsky-1/dsh-web-file-preview` | Click conversation file links to preview in the web UI (image / text / Markdown / code / Diff) | [README](packages/dsh-web-file-preview/README.md) | ✅ Published |
 
