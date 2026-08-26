@@ -1,0 +1,51 @@
+{
+  "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "mutate": [
+    "packages/dsh-mcp-manager/lib/index.js:19972-21286"
+  ],
+  "testRunner": "tap",
+  "tap": {
+    "nodeArgs": [
+      "-r",
+      "./scripts/test/mutation-tap-bridge.cjs",
+      "-r",
+      "./scripts/test/tmp-compile-cache-preload.cjs"
+    ],
+    "testFiles": [
+      "packages/dsh-mcp-manager/test/unit-hotspot.test.ts",
+      "packages/dsh-mcp-manager/test/unit-manager.test.ts",
+      "packages/dsh-mcp-manager/test/unit-store.test.ts",
+      "packages/dsh-mcp-manager/test/unit-transport.test.ts",
+      "packages/dsh-mcp-manager/test/unit-catalog.test.ts",
+      "packages/dsh-mcp-manager/test/unit-supervisor.test.ts",
+      "packages/dsh-mcp-manager/test/unit-routes-sse.test.ts",
+      "packages/dsh-mcp-manager/test/unit-manager2.test.ts"
+    ]
+  },
+  "mutator": {
+    "excludedMutations": [
+      "StringLiteral",
+      "ArrayLiteral",
+      "ObjectLiteral",
+      "TemplateLiteral"
+    ]
+  },
+  "plugins": [
+    "@stryker-mutator/tap-runner"
+  ],
+  "concurrency": 16,
+  "timeoutMS": 60000,
+  "dryRunTimeoutMinutes": 5,
+  "reporters": [
+    "progress",
+    "clear-text",
+    "json"
+  ],
+  "jsonReporter": {
+    "fileName": "coverage/mutation/baseline-cc-4.json"
+  },
+  "coverageAnalysis": "perTest",
+  "tempDirName": ".stryker-tmp",
+  "cleanTempDir": true,
+  "_comment": "#220 B 拆分+#269 重测实验再均衡：原 s4 按 esbuild 分段边界对半拆为 s4/s5——重测实证 s4 独占该包绝大多数 mutant（wall-clock 323s 而其余段均≈固定成本）；s4 = import/routes/middleware 三模块。区间行号由 sync-mutate-segments 按产物派生（#280），不手工维护。"
+}

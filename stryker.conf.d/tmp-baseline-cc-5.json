@@ -1,0 +1,51 @@
+{
+  "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "mutate": [
+    "packages/dsh-mcp-manager/lib/index.js:21323-22142"
+  ],
+  "testRunner": "tap",
+  "tap": {
+    "nodeArgs": [
+      "-r",
+      "./scripts/test/mutation-tap-bridge.cjs",
+      "-r",
+      "./scripts/test/tmp-compile-cache-preload.cjs"
+    ],
+    "testFiles": [
+      "packages/dsh-mcp-manager/test/unit-hotspot.test.ts",
+      "packages/dsh-mcp-manager/test/unit-manager.test.ts",
+      "packages/dsh-mcp-manager/test/unit-store.test.ts",
+      "packages/dsh-mcp-manager/test/unit-transport.test.ts",
+      "packages/dsh-mcp-manager/test/unit-catalog.test.ts",
+      "packages/dsh-mcp-manager/test/unit-supervisor.test.ts",
+      "packages/dsh-mcp-manager/test/unit-routes-sse.test.ts",
+      "packages/dsh-mcp-manager/test/unit-manager2.test.ts"
+    ]
+  },
+  "mutator": {
+    "excludedMutations": [
+      "StringLiteral",
+      "ArrayLiteral",
+      "ObjectLiteral",
+      "TemplateLiteral"
+    ]
+  },
+  "plugins": [
+    "@stryker-mutator/tap-runner"
+  ],
+  "concurrency": 16,
+  "timeoutMS": 60000,
+  "dryRunTimeoutMinutes": 5,
+  "reporters": [
+    "progress",
+    "clear-text",
+    "json"
+  ],
+  "jsonReporter": {
+    "fileName": "coverage/mutation/baseline-cc-5.json"
+  },
+  "coverageAnalysis": "perTest",
+  "tempDirName": ".stryker-tmp",
+  "cleanTempDir": true,
+  "_comment": "#220 B 再均衡新增：index 主体段（Config/apply/路由收尾），与 s4 于分段边界 21322/21323 处切分（#268 净增使边界自 21262/21263 后移，sync-mutate-segments 重算）。"
+}

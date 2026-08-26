@@ -25,36 +25,36 @@ import z from "schemastery";
 import type { Context } from "@deepseek-ai/cordis";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { ServerResponse } from "node:http";
-import type { UsageStatsAdapter } from "./contracts.js";
-import { describeUsageStatsAdapterShape, ADAPTER_CONTRACT_VERSION } from "./contracts.js";
-import { makeAdapterRegistry } from "./registry.js";
-import { openCodeGoAdapter, OPENCODE_GO_PROVIDER, OPENCODE_GO_ADAPTER_ID } from "./adapters/opencode-go.js";
-import { deepSeekOfficialAdapter, DEEPSEEK_OFFICIAL_PROVIDER, DEEPSEEK_OFFICIAL_ADAPTER_ID } from "./adapters/deepseek-official.js";
-import { runV2Pipeline, runV2PanelPipeline, panelCacheKey, isPanelCacheStale, type V2PipelineResult, type PanelCacheEntry } from "./pipeline/v2.js";
-import { HistoryStore, migrateLegacyV3 } from "./core/history.js";
-import { resolveProviderConfig } from "./provider-config.js";
-import { HotReloadableAdapter, loadAndValidateAdapter } from "./hotreload.js";
-import { resolvePath, pluginHome, expandHomePath } from "./path-resolve.js";
+import type { UsageStatsAdapter } from "./contracts.ts";
+import { describeUsageStatsAdapterShape, ADAPTER_CONTRACT_VERSION } from "./contracts.ts";
+import { makeAdapterRegistry } from "./registry.ts";
+import { openCodeGoAdapter, OPENCODE_GO_PROVIDER, OPENCODE_GO_ADAPTER_ID } from "./adapters/opencode-go.ts";
+import { deepSeekOfficialAdapter, DEEPSEEK_OFFICIAL_PROVIDER, DEEPSEEK_OFFICIAL_ADAPTER_ID } from "./adapters/deepseek-official.ts";
+import { runV2Pipeline, runV2PanelPipeline, panelCacheKey, isPanelCacheStale, type V2PipelineResult, type PanelCacheEntry } from "./pipeline/v2.ts";
+import { HistoryStore, migrateLegacyV3 } from "./core/history.ts";
+import { resolveProviderConfig } from "./provider-config.ts";
+import { HotReloadableAdapter, loadAndValidateAdapter } from "./hotreload.ts";
+import { resolvePath, pluginHome, expandHomePath } from "./path-resolve.ts";
 
 // ------------------------------------------------------------------ 对外 re-export
 // 注意：bundle-host 会把 tsc 产物中的子模块全部内联进 lib/index.js 并清理游离 .js，
 // smoke/lint 只能从 lib/index.js 导入，故契约与核心模块一律在此 re-export。
-export * from "./contracts.js";
-export * from "./registry.js";
-export * from "./adapters/opencode-go.js";
-export * from "./adapters/deepseek-official.js";
-export * from "./provider-config.js";
-export { HistoryStore, parseJsonl, startOfDay, migrateLegacyV3, legacySampleToData, listAdapters } from "./core/history.js";
-export type { HistoryEntry } from "./core/history.js";
-export { safeFetchData, safeFormat, fetchWithTimeout } from "./core/guards.js";
-export { sanitizeHtml } from "./sanitize.js";
+export * from "./contracts.ts";
+export * from "./registry.ts";
+export * from "./adapters/opencode-go.ts";
+export * from "./adapters/deepseek-official.ts";
+export * from "./provider-config.ts";
+export { HistoryStore, parseJsonl, startOfDay, migrateLegacyV3, legacySampleToData, listAdapters } from "./core/history.ts";
+export type { HistoryEntry } from "./core/history.ts";
+export { safeFetchData, safeFormat, fetchWithTimeout } from "./core/guards.ts";
+export { sanitizeHtml } from "./sanitize.ts";
 // 客户端行为纯函数（设置页列表拆分/徽标文案，经此透出供单元测试）。
-export { splitProviderList, providerBadgeText } from "./client-logic.js";
-export { runV2Pipeline, runV2PanelPipeline, capsuleHtmlFromHistory, panelCacheKey, normalizeRangeDay, isPanelCacheStale, PANEL_CACHE_TTL_MS } from "./pipeline/v2.js";
-export type { PanelCacheEntry } from "./pipeline/v2.js";
-export { HotReloadableAdapter, loadAndValidateAdapter, readStamp, stampEqual } from "./hotreload.js";
+export { splitProviderList, providerBadgeText } from "./client-logic.ts";
+export { runV2Pipeline, runV2PanelPipeline, capsuleHtmlFromHistory, panelCacheKey, normalizeRangeDay, isPanelCacheStale, PANEL_CACHE_TTL_MS } from "./pipeline/v2.ts";
+export type { PanelCacheEntry } from "./pipeline/v2.ts";
+export { HotReloadableAdapter, loadAndValidateAdapter, readStamp, stampEqual } from "./hotreload.ts";
 // 路径解析纯函数透出（供测试与调用方复用同一展开/解析规则，无行为变更）
-export { resolvePath, pluginHome, expandHomePath } from "./path-resolve.js";
+export { resolvePath, pluginHome, expandHomePath } from "./path-resolve.ts";
 
 // ------------------------------------------------------------------ 类型
 
@@ -108,7 +108,7 @@ import {
   clampPointToViewport,
   clampZIndexBase,
   panelZIndexFor,
-} from "./placement-math.js";
+} from "./placement-math.ts";
 export {
   BREAKPOINT_NARROW_MAX,
   BREAKPOINT_TABLET_MAX,
@@ -121,9 +121,9 @@ export {
   clampZIndexBase,
   panelZIndexFor,
 };
-export type { FloatBreakpoint, ViewportPoint } from "./placement-math.js";
+export type { FloatBreakpoint, ViewportPoint } from "./placement-math.ts";
 // 面板锚点判定同为纯函数，随定位数学一起从单一事实源 re-export。
-export { panelAnchorForPlacement } from "./placement-math.js";
+export { panelAnchorForPlacement } from "./placement-math.ts";
 
 // ------------------------------------------------------------------ 胶囊位置 UI 配置
 

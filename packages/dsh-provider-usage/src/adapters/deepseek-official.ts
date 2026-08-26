@@ -20,8 +20,8 @@ import type {
   FetchContext,
   CapsuleInput,
   PanelInput,
-} from "../contracts.js";
-import { esc } from "../contracts.js";
+} from "../contracts.ts";
+import { esc } from "../contracts.ts";
 
 /** 内置适配器认领的 provider 名（与会话模型 provider 精确匹配）。 */
 export const DEEPSEEK_OFFICIAL_PROVIDER = "deepseek-official";

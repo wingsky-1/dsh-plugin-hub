@@ -31,9 +31,9 @@ import { homedir, networkInterfaces } from "node:os";
 import { join } from "node:path";
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync } from "node:fs";
 import z from "schemastery";
-import { createLanProxy, DEFAULT_OPTIONS, isLoopbackTarget } from "./proxy.js";
-import type { TlsMaterials, LanProxy } from "./proxy.js";
-import { ensureSelfSignedTls, loadTlsFromFiles } from "./cert.js";
+import { createLanProxy, DEFAULT_OPTIONS, isLoopbackTarget } from "./proxy.ts";
+import type { TlsMaterials, LanProxy } from "./proxy.ts";
+import { ensureSelfSignedTls, loadTlsFromFiles } from "./cert.ts";
 import { isLoopbackRequest } from "../../../shared/loopback.js";
 import { writeJson, readBody, errorMessage } from "../../../shared/host-utils.js";
 // 官方类型层（issue #16/#48，锁版见 pnpm-workspace catalog；仅 import type，
@@ -987,5 +987,5 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
 }
 
 // 测试面 re-export（smoke 只依赖主入口，避免发布物保留内部模块）
-export { createLanProxy, hostnameAllowed, formatAuthority, rewriteHeaders, isLoopbackTarget, DEFAULT_OPTIONS, compressWsPath, isCompressible, resolveCompressionOptions } from "./proxy.js";
-export { ensureSelfSignedTls, certStillValid, toSanEntry, loadTlsFromFiles, SELF_SIGNED_KEY, SELF_SIGNED_CERT } from "./cert.js";
+export { createLanProxy, hostnameAllowed, formatAuthority, rewriteHeaders, isLoopbackTarget, DEFAULT_OPTIONS, compressWsPath, isCompressible, resolveCompressionOptions } from "./proxy.ts";
+export { ensureSelfSignedTls, certStillValid, toSanEntry, loadTlsFromFiles, SELF_SIGNED_KEY, SELF_SIGNED_CERT } from "./cert.ts";

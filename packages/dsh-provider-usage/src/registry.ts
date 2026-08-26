@@ -8,8 +8,8 @@
  *   区分 `no-adapter`（无候选）与 `no-enabled-adapter`（有候选但全禁用）
  */
 import { basename } from "node:path";
-import type { UsageStatsAdapter } from "./contracts.js";
-import { isUsageStatsAdapter, describeUsageStatsAdapterShape } from "./contracts.js";
+import type { UsageStatsAdapter } from "./contracts.ts";
+import { isUsageStatsAdapter, describeUsageStatsAdapterShape } from "./contracts.ts";
 
 /** 适配器来源。 */
 export type AdapterSource = "builtin" | "user-file";

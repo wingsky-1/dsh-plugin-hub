@@ -5,8 +5,8 @@
  * 灯箱状态（lboxEl/lboxImg/lboxScale/lboxTx/lboxTy）归入 state，不设模块级全局。
  */
 
-import { el, errorView } from "./dom.js";
-import type { FilePreviewState } from "./state.js";
+import { el, errorView } from "./dom.ts";
+import type { FilePreviewState } from "./state.ts";
 
 function clampy(v: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, v));

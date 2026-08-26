@@ -7,10 +7,10 @@
  * 用量可视化展示宿主端渲染的胶囊 HTML。
  */
 import * as React from "react";
-import { STATS_URL, ADAPTERS_URL, SELECT_URL, INSPECT_URL, ADD_URL, fetchTimeout, fetchUiConfig, saveUiConfig } from "./core.js";
-import type { UiPlacementConfig } from "./core.js";
-import { splitProviderList, providerBadgeText } from "../client-logic.js";
-import type { ProviderListItem } from "../client-logic.js";
+import { STATS_URL, ADAPTERS_URL, SELECT_URL, INSPECT_URL, ADD_URL, fetchTimeout, fetchUiConfig, saveUiConfig } from "./core.ts";
+import type { UiPlacementConfig } from "./core.ts";
+import { splitProviderList, providerBadgeText } from "../client-logic.ts";
+import type { ProviderListItem } from "../client-logic.ts";
 
 // ---------------------------------------------------------------- 类型
 

@@ -18,6 +18,17 @@
  * dryRun（无 mutant 注入）时测试应全绿，本钩子零输出；
  * 若确有断言失败则该次 run 记为 Failed（而非 Error），语义更准确。
  */
+
+// Node ≥24.12 compile cache（#276 方案 A）：缓存 strip-types/插桩产物的 V8 编译
+// 数据，跨 worker 进程复用。实测 src 级 mutate 全量 420s → 250s（-41%），且只影响
+// 加载耗时、不触及判分（killed 分布与不启用时完全一致）。默认目录跨进程共享；
+// 失败静默降级（旧版 Node 无此 API 时跳过，不影响变异执行）。
+try {
+  require("node:module").enableCompileCache();
+} catch {
+  // no-op：Node < 24.12 或沙箱环境不支持时直接退化为无缓存路径
+}
+
 process.on("uncaughtException", (err) => {
   process.stdout.write(`1..1\nnot ok 1 - uncaughtException: ${(err && err.message) || err}\n`);
   process.exit(1);

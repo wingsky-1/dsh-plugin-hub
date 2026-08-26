@@ -10,11 +10,11 @@
  *
  * 纪律：所有用户函数调用经 safe* 包装，错误不外抛。
  */
-import type { UsageStatsAdapter, FetchContext } from "../contracts.js";
-import { esc } from "../contracts.js";
-import type { HistoryStore } from "../core/history.js";
-import { safeFetchData, safeFormat } from "../core/guards.js";
-import { sanitizeHtml } from "../sanitize.js";
+import type { UsageStatsAdapter, FetchContext } from "../contracts.ts";
+import { esc } from "../contracts.ts";
+import type { HistoryStore } from "../core/history.ts";
+import { safeFetchData, safeFormat } from "../core/guards.ts";
+import { sanitizeHtml } from "../sanitize.ts";
 
 /** v2 管道执行结果。 */
 export interface V2PipelineResult {

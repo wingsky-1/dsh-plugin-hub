@@ -21,11 +21,11 @@
  *（package.json 声明 dsh.client.inlineBareImports: true，非宿主注入 external）。
  */
 
-import { ensureStyle } from "./dom.js";
-import { createState, type FilePreviewState } from "./state.js";
-import { finalizeSession, onKeyDown } from "./preview.js";
-import { onClickCapture } from "./intercept.js";
-import { wrapOpenPath } from "./wrapper.js";
+import { ensureStyle } from "./dom.ts";
+import { createState, type FilePreviewState } from "./state.ts";
+import { finalizeSession, onKeyDown } from "./preview.ts";
+import { onClickCapture } from "./intercept.ts";
+import { wrapOpenPath } from "./wrapper.ts";
 
 export function apply(ctx: any): void {
   const state: FilePreviewState = createState();

@@ -5,12 +5,12 @@
  * fileUrl 仅被 openPreview 使用，故归本模块（避免跨模块循环依赖）。
  */
 
-import { el, copyPathText, ensureStyle } from "./dom.js";
-import type { FilePreviewState, NavEntry } from "./state.js";
-import { fetchText, renderTabBody, probeDiff } from "./text.js";
-import { renderImage, closeLightbox } from "./image.js";
-import { renderGroupFor } from "./renderer.js";
-import { scrollToFragment } from "./anchor.js";
+import { el, copyPathText, ensureStyle } from "./dom.ts";
+import type { FilePreviewState, NavEntry } from "./state.ts";
+import { fetchText, renderTabBody, probeDiff } from "./text.ts";
+import { renderImage, closeLightbox } from "./image.ts";
+import { renderGroupFor } from "./renderer.ts";
+import { scrollToFragment } from "./anchor.ts";
 
 /** 文件预览 URL（F2-B）。 */
 export function fileUrl(path: string, cwd: string | undefined, state: FilePreviewState): string {

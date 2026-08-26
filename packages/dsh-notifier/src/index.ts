@@ -47,13 +47,13 @@ import type {} from "@deepseek-ai/dsh-session/types";
 import type {} from "@deepseek-ai/dsh-session-title";
 import type {} from "@deepseek-ai/dsh-user-approval";
 import { errorMessage } from "../../../shared/host-utils.js";
-import { CONFIG_KEYS, DEFAULT_CONFIG, configFile, historyFile, normalizeConfig, toastScriptPath } from "./config.js";
-import type { NotifierApplyConfig, NotifyConfig } from "./config.js";
-import { isInQuietHours } from "./quiet-hours.js";
-import { HISTORY_LIMIT, createHistoryStore } from "./history.js";
-import { NOTIFY_KINDS, sanitizeErrorText, sessionTitleOf, isSubagentOf, lastTurnEndOf } from "./message.js";
-import type { NotifyDetail } from "./message.js";
-import { ROUTES, buildRoutes, createSseHub, createSystemNotifier } from "./server.js";
+import { CONFIG_KEYS, DEFAULT_CONFIG, configFile, historyFile, normalizeConfig, toastScriptPath } from "./config.ts";
+import type { NotifierApplyConfig, NotifyConfig } from "./config.ts";
+import { isInQuietHours } from "./quiet-hours.ts";
+import { HISTORY_LIMIT, createHistoryStore } from "./history.ts";
+import { NOTIFY_KINDS, sanitizeErrorText, sessionTitleOf, isSubagentOf, lastTurnEndOf } from "./message.ts";
+import type { NotifyDetail } from "./message.ts";
+import { ROUTES, buildRoutes, createSseHub, createSystemNotifier } from "./server.ts";
 
 /** 稳定的 cordis 插件名。 */
 export const name = "notifier";
@@ -64,11 +64,11 @@ export const inject = ["webServer"];
 // ---------------------------------------------------------------- 导出面
 // 公共符号定义在各职责模块，此处统一 re-export——包导出面与拆分前完全一致。
 
-export { QUIET_ALLOW_KINDS, isInQuietHours, parseHHMM } from "./quiet-hours.js";
-export type { QuietHoursConfig } from "./quiet-hours.js";
-export { CONFIG_KEYS, DEFAULT_CONFIG, configFile, historyFile, normalizeConfig, toastScriptPath } from "./config.js";
-export type { NotifierApplyConfig, NotifyConfig } from "./config.js";
-export { HISTORY_LIMIT } from "./history.js";
+export { QUIET_ALLOW_KINDS, isInQuietHours, parseHHMM } from "./quiet-hours.ts";
+export type { QuietHoursConfig } from "./quiet-hours.ts";
+export { CONFIG_KEYS, DEFAULT_CONFIG, configFile, historyFile, normalizeConfig, toastScriptPath } from "./config.ts";
+export type { NotifierApplyConfig, NotifyConfig } from "./config.ts";
+export { HISTORY_LIMIT } from "./history.ts";
 export {
   buildSystemCommand,
   formatDuration,
@@ -77,9 +77,9 @@ export {
   prettyToolName,
   sanitizeErrorText,
   sessionTitleOf,
-} from "./message.js";
-export type { NotifyDetail } from "./message.js";
-export { ROUTES } from "./server.js";
+} from "./message.ts";
+export type { NotifyDetail } from "./message.ts";
+export { ROUTES } from "./server.ts";
 
 // 辅助函数统一来自仓库共享层（loopback 围栏 / writeJson / readBody / errorMessage）。
 export { isLoopbackRequest } from "../../../shared/loopback.js";

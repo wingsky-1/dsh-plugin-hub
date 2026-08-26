@@ -5,9 +5,9 @@
  * 不触底 host.openPath；否则放行原方法（原生打开）。
  */
 
-import type { FilePreviewState } from "./state.js";
-import { isPreviewablePath, activeCwd } from "./intercept.js";
-import { openPreview } from "./preview.js";
+import type { FilePreviewState } from "./state.ts";
+import { isPreviewablePath, activeCwd } from "./intercept.ts";
+import { openPreview } from "./preview.ts";
 
 /**
  * A：在 `workspaces.openPath` 调用点统一收口。

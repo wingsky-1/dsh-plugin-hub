@@ -6,11 +6,11 @@
  * 不构成环，因 intercept 不逆向引用 text）。
  */
 
-import { el } from "./dom.js";
-import type { FilePreviewState } from "./state.js";
-import { resolveFileLink, decideGate, SCOPE_SELECTORS } from "./link-resolver.js";
-import { groupOfPath } from "../grouping.js";
-import { openPreview } from "./preview.js";
+import { el } from "./dom.ts";
+import type { FilePreviewState } from "./state.ts";
+import { resolveFileLink, decideGate, SCOPE_SELECTORS } from "./link-resolver.ts";
+import { groupOfPath } from "../grouping.ts";
+import { openPreview } from "./preview.ts";
 
 /** 是否属于可 web 预览的分组（A：openPath 收口判定；B：静态路径判定；单一事实源 src/grouping.ts）。 */
 export function isPreviewablePath(value: string): boolean {

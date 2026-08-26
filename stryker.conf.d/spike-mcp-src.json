@@ -1,0 +1,51 @@
+{
+  "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "mutate": [
+    "packages/dsh-mcp-manager/src/**/*.ts",
+    "!packages/dsh-mcp-manager/src/client/**",
+    "!packages/dsh-mcp-manager/src/types.ts"
+  ],
+  "testRunner": "tap",
+  "tap": {
+    "nodeArgs": [
+      "-r",
+      "./scripts/test/mutation-tap-bridge.cjs"
+    ],
+    "testFiles": [
+      "packages/dsh-mcp-manager/test/srcspike-unit-hotspot.test.ts",
+      "packages/dsh-mcp-manager/test/srcspike-unit-manager.test.ts",
+      "packages/dsh-mcp-manager/test/srcspike-unit-store.test.ts",
+      "packages/dsh-mcp-manager/test/srcspike-unit-transport.test.ts",
+      "packages/dsh-mcp-manager/test/srcspike-unit-catalog.test.ts",
+      "packages/dsh-mcp-manager/test/srcspike-unit-supervisor.test.ts",
+      "packages/dsh-mcp-manager/test/srcspike-unit-routes-sse.test.ts",
+      "packages/dsh-mcp-manager/test/srcspike-unit-manager2.test.ts"
+    ]
+  },
+  "mutator": {
+    "excludedMutations": [
+      "StringLiteral",
+      "ArrayLiteral",
+      "ObjectLiteral",
+      "TemplateLiteral"
+    ]
+  },
+  "plugins": [
+    "@stryker-mutator/tap-runner"
+  ],
+  "concurrency": 16,
+  "timeoutMS": 60000,
+  "dryRunTimeoutMinutes": 5,
+  "reporters": [
+    "progress",
+    "clear-text",
+    "json"
+  ],
+  "jsonReporter": {
+    "fileName": "coverage/mutation/spike-mcp-src.json"
+  },
+  "coverageAnalysis": "perTest",
+  "tempDirName": ".stryker-tmp-spike",
+  "cleanTempDir": true,
+  "_comment": "#276 方案 A 二次 spike：mutate 直指 src（Node strip-types 加载插桩 TS），与 lib 段拆分 matrix 同 concurrency/excludedMutations 对照；不含 incremental，锚定当前快照。"
+}

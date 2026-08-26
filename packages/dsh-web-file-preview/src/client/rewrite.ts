@@ -24,8 +24,8 @@
  */
 
 import DOMPurify from "dompurify";
-import { splitReferenceFragment } from "../relpath.js";
-import { rewriteTarget, type RewriteOpts } from "./rewrite-target.js";
+import { splitReferenceFragment } from "../relpath.ts";
+import { rewriteTarget, type RewriteOpts } from "./rewrite-target.ts";
 
 /**
  * 清洗并重写 md 渲染产物。

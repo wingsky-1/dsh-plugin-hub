@@ -18,7 +18,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "n
 import { join } from "node:path";
 import { isIP } from "node:net";
 import { generate as generateSelfSigned } from "selfsigned";
-import type { TlsMaterials } from "./proxy.js";
+import type { TlsMaterials } from "./proxy.ts";
 
 /** 自签证书缓存文件名（目录由调用方决定，默认 <DSH_HOME>/lan-proxy）。 */
 export const SELF_SIGNED_KEY = "dsh-lan-proxy-key.pem";
