@@ -77,28 +77,31 @@ jobs:
       - name: Mutation scope guard（F5：mutate 区间须落在 // lib/*.js 分段边界内）
         run: node scripts/gate/mutate-scope-guard.mjs
 
-      - name: Mutation suites（六包串行全量；单包失败记账继续跑完，结尾统一判红）
+      - name: Mutation suites（全部变异配置串行全量；单配置失败记账继续跑完，结尾统一判红）
         # id 供 collect 步骤区分「整套 skip（无产物无从收集）」与「部分失败
         # （记账夜已产出的基线照常收集）」（#217）
         id: mutation-suites
         # #178 逐包容错：strict 判红路径下 incremental 基线已先落盘（StrykerJS 源码核实），
-        # 记账继续可让后续包照常产出报告与基线，避免单包连锁丢弃整夜数据
+        # 记账继续可让后续包照常产出报告与基线，避免单包连锁丢弃整夜数据。
+        # #220 B 方案：不再硬编码包名单 —— glob stryker.conf.d/dsh-*.json 全集
+        #（含拆分三包的段配置与未拆分包的包级配置），新增/退役配置自动纳入
         run: |
           FAILED=0
-          FAILED_PKGS=''
-          for pkg in notifier idle-archive web-file-preview mcp-manager provider-usage lan-proxy subagent-model-inherit; do
-            echo "::group::stryker dsh-$pkg"
-            if npx stryker run "stryker.conf.d/dsh-$pkg.json"; then
+          FAILED_CONFS=''
+          for conf in stryker.conf.d/dsh-*.json; do
+            name="$(basename "$conf" .json)"
+            echo "::group::stryker $name"
+            if npx stryker run "$conf"; then
               echo "::endgroup::"
             else
               echo "::endgroup::"
-              echo "::error::变异套件失败：dsh-$pkg（记账后继续执行其余包）"
+              echo "::error::变异套件失败：$name（记账后继续执行其余配置）"
               FAILED=1
-              FAILED_PKGS="$FAILED_PKGS $pkg"
+              FAILED_CONFS="$FAILED_CONFS $name"
             fi
           done
           if [ "$FAILED" -ne 0 ]; then
-            echo "::error::以下包变异套件失败，统一判红:$FAILED_PKGS"
+            echo "::error::以下变异套件失败，统一判红:$FAILED_CONFS"
             exit 1
           fi
 

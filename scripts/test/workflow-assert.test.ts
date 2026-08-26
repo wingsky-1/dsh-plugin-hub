@@ -128,34 +128,36 @@ test('observe.yml: 夜间调度 + 双硬门禁执行点 + issues 写权限', () 
   assert.ok(OBSERVE.includes('observe-check.mjs'), '阈值校验+回落检测脚本执行点（F1/F6）')
 })
 
-test('六包变异三方一致：observe 清单 ↔ stryker.conf.d 文件集 ↔ gauntlet 包集', () => {
-  // observe.yml 循环名单
-  const loopPkgs = [...OBSERVE.matchAll(/for pkg in ([\w -]+); do/g)]
-    .flatMap((m) => m[1].trim().split(/\s+/)).map((s) => `dsh-${s}`).sort()
+test('#220 段式三方一致：observe glob ↔ stryker.conf.d 文件集 ↔ gauntlet 包集', () => {
+  // observe.yml 循环已 glob 化（#220 B）：不再硬编码包名单，新增配置自动纳入
+  assert.ok(OBSERVE.includes('for conf in stryker.conf.d/dsh-*.json'),
+    'observe 变异循环必须 glob stryker.conf.d/dsh-*.json 全集（#220 段拆分后配置数 > 包数）')
 
-  // stryker.conf.d 实际文件集（评审 F2：配置文件缺失会让夜间循环首夜必红）
+  // stryker.conf.d 实际文件集 → 基础包名集合（段配置 <pkg>-<n>.json 归并到 <pkg>）
   const confDir = join(ROOT, 'stryker.conf.d')
   const confFiles = readdirSync(confDir).filter((f) => f.endsWith('.json')).sort()
-  assert.deepEqual(loopPkgs, confFiles.map((f) => f.replace(/\.json$/, '')),
-    `observe 变异循环与 stryker.conf.d 文件集不一致：loop=${loopPkgs.join(',')} conf=${confFiles.join(',')}`)
+  assert.ok(confFiles.length > 0, 'stryker.conf.d 非空')
+  const basePkgs = [...new Set(confFiles.map((f) => f.replace(/\.json$/, '').replace(/-\d+$/, '')))].sort()
 
-  // gauntlet mutation.packages 与 conf 文件集一致（不含 .json 后缀）
+  // gauntlet mutation.packages 与基础包名集一致
   const gauntPkgs = Object.keys(GAUNTLET?.mutation?.packages ?? {}).sort()
-  assert.deepEqual(gauntPkgs, confFiles.map((f) => f.replace(/\.json$/, '')).sort(),
+  assert.deepEqual(gauntPkgs, basePkgs,
     'gauntlet mutation.packages 应覆盖全部带变异配置的功能插件包')
 
-  // jsonReporter 输出路径 ↔ observe-check 读的报告名一致
+  // jsonReporter / incrementalFile 输出路径与配置文件名自洽
   for (const f of confFiles) {
     const conf = JSON.parse(readFileSync(join(confDir, f), 'utf8'))
     const out = conf?.jsonReporter?.fileName
     assert.ok(out && out.endsWith(`coverage/mutation/${f}`),
-      `${f} 的 jsonReporter 输出应为 coverage/mutation/${f}（observe-check 按此约定读取）`)
+      `${f} 的 jsonReporter 输出应为 coverage/mutation/${f}（mutation-gate.mjs 按此约定读取）`)
+    const inc = conf?.incrementalFile ?? ''
+    assert.ok(inc.endsWith(`incremental-${f.replace(/^dsh-/, '').replace(/\.json$/, '')}.json`),
+      `${f} 的 incrementalFile 应为 incremental-${f.replace(/^dsh-/, '').replace(/\.json$/, '')}.json（CI restore 步骤按此推导）`)
   }
 
-  // packages/ 目录集 ⊇ conf 文件集对应目录
-  for (const f of confFiles) {
-    const dir = join(ROOT, 'packages', f.replace(/\.json$/, ''))
-    assert.ok(existsSync(dir), `packages/${f.replace(/\.json$/, '')} 目录存在`)
+  // packages/ 目录集 ⊇ 基础包名集
+  for (const p of basePkgs) {
+    assert.ok(existsSync(join(ROOT, 'packages', p)), `packages/${p} 目录存在`)
   }
 })
 
@@ -204,10 +206,11 @@ test('#178+#204: ci.yml PR 增量门禁——读仓库基线文件 + 按命中�
   assert.ok(gateIdx > 0, 'mutation-gate job 在位')
   // #217 后矩阵只做基线 restore + stryker run + 报告上传，判分收敛到 mutation-verdict
   const mg = CI.slice(gateIdx, CI.indexOf('\n  mutation-verdict:'))
-  assert.ok(mg.includes('package: ${{ fromJSON(needs.changes.outputs.mutationPackages) }}'),
-    '动态 matrix ← changes.mutationPackages（命中包天然切片，未触包不实例化）')
-  assert.ok(mg.includes('scripts/gate/baseline/incremental-'), '读仓库基线文件路径 scripts/gate/baseline/incremental-<pkg>.json')
-  assert.ok(mg.includes('#dsh-'), '矩阵包名 dsh-<pkg> → 基线文件名 incremental-<pkg>.json 的映射在位')
+  assert.ok(mg.includes('combo: ${{ fromJSON(needs.changes.outputs.mutationCombos) }}'),
+    '动态 matrix ← changes.mutationCombos（#220 段式组合：[{package,seg}]，命中包按段实例化）')
+  assert.ok(mg.includes('scripts/gate/baseline/${BASENAME}.json'),
+    '读仓库基线文件路径 scripts/gate/baseline/incremental-<pkg|pkg-seg>.json（#220 段式命名）')
+  assert.ok(mg.includes('PKG="${MATRIX_PKG#dsh-}"'), '矩阵包名 dsh-<pkg> → 基线短名的映射在位')
   assert.ok(mg.includes('::notice::'), '基线缺失时须打 notice 标注全量降级（首夜属预期，防误判缺陷）')
   // build 必须全量（run #32790425132 教训）：mutate 区间行号锚定 esbuild 产物分段，
   // 产物结构依赖 workspace 内联链全集一致性
@@ -523,8 +526,8 @@ test('#217: mutation-gate 剥离 cov——与 coverage 平行（needs 仅 change
   assert.ok(upIdx > 0, 'stryker 报告上传步骤在位')
   const upBlock = mg.slice(upIdx)
   assert.ok(/if: always\(\)/.test(upBlock), '报告上传必须 if: always()（实例非零退出时报告照常下发统一判分）')
-  assert.ok(upBlock.includes('name: mutation-report-${{ matrix.package }}'),
-    '报告 artifact 名含 matrix.package 保证唯一（pattern 下游可枚举）')
+  assert.ok(upBlock.includes('name: mutation-report-${{ matrix.combo.package }}-s${{ matrix.combo.seg }}'),
+    '报告 artifact 名含 matrix.combo（package+seg）保证段实例唯一（pattern 下游可枚举）')
   assert.ok(upBlock.includes('if-no-files-found: error'), '报告缺失必须 error（verdict 缺报告 fail-closed 的前提）')
 })
 

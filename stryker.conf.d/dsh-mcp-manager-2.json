@@ -1,0 +1,51 @@
+{
+  "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "mutate": [
+    "packages/dsh-mcp-manager/lib/index.js:17322-17456"
+  ],
+  "testRunner": "tap",
+  "tap": {
+    "nodeArgs": [
+      "-r",
+      "./scripts/test/mutation-tap-bridge.cjs"
+    ],
+    "testFiles": [
+      "packages/dsh-mcp-manager/test/unit-hotspot.test.ts",
+      "packages/dsh-mcp-manager/test/unit-manager.test.ts",
+      "packages/dsh-mcp-manager/test/unit-store.test.ts",
+      "packages/dsh-mcp-manager/test/unit-transport.test.ts",
+      "packages/dsh-mcp-manager/test/unit-catalog.test.ts",
+      "packages/dsh-mcp-manager/test/unit-supervisor.test.ts",
+      "packages/dsh-mcp-manager/test/unit-routes-sse.test.ts",
+      "packages/dsh-mcp-manager/test/unit-manager2.test.ts"
+    ]
+  },
+  "mutator": {
+    "excludedMutations": [
+      "StringLiteral",
+      "ArrayLiteral",
+      "ObjectLiteral",
+      "TemplateLiteral"
+    ]
+  },
+  "plugins": [
+    "@stryker-mutator/tap-runner"
+  ],
+  "concurrency": 16,
+  "timeoutMS": 60000,
+  "dryRunTimeoutMinutes": 5,
+  "reporters": [
+    "progress",
+    "clear-text",
+    "json"
+  ],
+  "jsonReporter": {
+    "fileName": "coverage/mutation/dsh-mcp-manager-2.json"
+  },
+  "coverageAnalysis": "perTest",
+  "tempDirName": ".stryker-tmp",
+  "cleanTempDir": true,
+  "incremental": true,
+  "incrementalFile": "coverage/mutation/incremental-mcp-manager-2.json",
+  "_comment": "#220 B 拆分：四段独立 matrix 并行；由 dsh-mcp-manager.json 派生，mutate 区间原样保留（provider-usage 两段历史重叠区间 2671-2792 由判分层 mutant id 去重处理）。"
+}
