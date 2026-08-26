@@ -71,6 +71,19 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-lan-proxy
 
 GUI 设置入口：设置 → 插件 → 「局域网访问」卡片（保存即热更新）。
 
+### 配置存储（单一通道）
+
+- 全部配置存于 dsh 官方 settings 存储（`settings.register` 注册的
+  `dsh-lan-proxy` 命名空间，落盘在宿主统一管理的 settings 文档中），组合层
+  `cordis.patch.yml` 的 config 作为 base 层生效；热更新由官方 `scope.watch`
+  驱动，无需重启。
+- 本插件不再维护自建 `~/.dsh/lan-proxy/config.json`。升级后首次启动会自动把
+  存量 config.json 一次性迁移进官方存储：原文件原子改名保留为
+  `config.json.migrated.bak` 备份；若写入官方存储失败会自动还原改名、下次
+  启动重试；若进程在写入完成前退出（中断），下次启动检测到备份残留会自动
+  从备份重放写入并以日志提示。确认运行正常后可手动删除该备份。
+  此后手改 config.json **不再生效**。
+
 ## WebSocket 压缩（wss 事件流）
 
 - 对命中 `wsCompressPaths`（默认会话事件流 `/api/events.mux`、`/api/events.host`）
@@ -150,7 +163,7 @@ curl http://<本机局域网IP>:3081/api/dsh-lan-proxy/health
 ## 已知限制
 
 - HTTPS 自签名证书由内置库生成，无外部命令依赖（未配置证书文件且生成失败时，HTTPS 通道自动降级关闭）
-- 换网段导致 IP 变化时，自签名证书需重新生成或更新 config.json
+- 换网段导致 IP 变化时，自签名证书需重新生成或更新设置（证书文件路径）
 - 命中 `wsCompressPaths` 的 WebSocket 走「终结 + 压缩桥接」（多一跳、额外压缩 CPU），
   仅建议对 events 这类大流量路径开启；其余 WebSocket 保持透传
 
