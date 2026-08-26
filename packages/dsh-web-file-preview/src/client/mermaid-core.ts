@@ -10,14 +10,34 @@
  * 避免 node 测试环境拉入浏览器库。
  */
 
-/** mermaid 懒加载 chunk 暴露的最小 API 面（仅声明本插件实际用到的方法）。 */
+/**
+ * mermaid 懒加载 chunk 暴露的最小 API 面（仅声明本插件实际用到的方法）。
+ *
+ * ⚠️ mermaid@11 官方接口**没有 setTheme**（dist 类型与产物零命中，返工修正：
+ * 初版误声明可选 setTheme 致主题切换监听实为空操作）——明暗主题切换走业界
+ * 通行的 re-initialize 路线：重下发安全基线 + 新主题后对已渲染块就地重渲染
+ * （见 mermaid.ts watchMermaidTheme / rerenderForTheme）。
+ */
 export interface MermaidApiLike {
-  /** 幂等初始化：每次 hydration 开始调用，写入 securityLevel/theme 等安全配置。 */
+  /** 幂等初始化：写入 securityLevel/theme 等安全配置（hydration 开始与主题切换时调用）。 */
   initialize(config: Record<string, unknown>): unknown;
   /** 渲染单图为 SVG 字符串；图源语法错误时 reject（回退路径的触发点）。 */
   render(id: string, source: string): Promise<{ svg: string }>;
-  /** 明暗主题切换跟随（v11 提供；缺失时静默跳过，下次 initialize 生效）。 */
-  setTheme?(theme: string): unknown;
+}
+
+/**
+ * 安全基线配置（issue #104 批复口径）：strict（文本转义 + 禁 click 回调）+
+ * 关闭自动扫描 + htmlLabels:false（标签走纯 SVG text，缩小注入面）+
+ * 按 prefers-color-scheme 选主题。hydration 初始化与主题切换 re-initialize
+ * 共用同一构造器，防两处漂移。
+ */
+export function mermaidBaseConfig(theme: "dark" | "default"): Record<string, unknown> {
+  return {
+    startOnLoad: false,
+    securityLevel: "strict",
+    htmlLabels: false,
+    theme,
+  };
 }
 
 /**
@@ -56,14 +76,8 @@ export async function runMermaidHydration(sources: string[], io: HydrationIo): P
     for (let i = 0; i < sources.length; i++) io.onFallback(i, error);
     return;
   }
-  // 安全基线（issue #104 批复）：strict（文本转义 + 禁 click 回调）+ 关闭自动扫描 +
-  // htmlLabels:false（标签走纯 SVG text，缩小注入面）+ 按 prefers-color-scheme 选主题。
-  api.initialize({
-    startOnLoad: false,
-    securityLevel: "strict",
-    htmlLabels: false,
-    theme: io.themeOf(),
-  });
+  // 安全基线统一由 mermaidBaseConfig 构造（主题切换 re-initialize 共用，防漂移）。
+  api.initialize(mermaidBaseConfig(io.themeOf()));
   for (let i = 0; i < sources.length; i++) {
     if (!io.liveCheck()) return;
     try {

@@ -62,6 +62,12 @@ export interface FilePreviewState {
   /** Mermaid 全局单调 render id 计数（issue #104）：跨 Modal 递增不重置，
    * 保证同文档内 mermaid.render 的元素 id 永不冲突（mermaid 内部按 id 查找节点）。 */
   mermaidRenderId: number;
+  /** 当前活跃 mermaid hydration 注册表（issue #104 返工）：记录已渲染块元素与
+   * 图源，系统明暗切换时对存量图就地重渲染（mermaid v11 无 setTheme，走
+   * re-initialize 路线）。closeModal 与下次 hydration 覆盖清理，不跨 Modal 累积。 */
+  activeMermaidHydration:
+    | { seq: number; container: HTMLElement; entries: Array<{ el: HTMLElement; source: string }> }
+    | undefined;
 
   // 灯箱状态
   /** 灯箱根元素。 */
@@ -108,6 +114,7 @@ export function createState(): FilePreviewState {
     MAX_BACK: 32,
     sessionOriginFocus: undefined,
     mermaidRenderId: 0,
+    activeMermaidHydration: undefined,
     lboxEl: undefined,
     lboxImg: undefined,
     lboxScale: 1,

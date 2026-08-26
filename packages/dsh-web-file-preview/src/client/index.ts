@@ -43,9 +43,9 @@ export function apply(ctx: any): void {
     try { (window as any).__DSH_CWD_SESSIONS__ = ctx && ctx.get ? ctx.get("sessions") : undefined; } catch { /* 兼容 */ }
     // A：openPath 调用点收口。
     const restoreOpenPath = wrapOpenPath(ctx, state);
-    // issue #104：系统明暗切换时跟随 mermaid 主题（库已加载才 setTheme）；
-    // 解绑进同一 disposer，卸载无残留监听。
-    const unwatchMermaidTheme = watchMermaidTheme();
+    // issue #104：系统明暗切换时对已渲染 mermaid 图就地重渲染（v11 无 setTheme，
+    // re-initialize 路线，见 mermaid.ts）；解绑进同一 disposer，卸载无残留监听。
+    const unwatchMermaidTheme = watchMermaidTheme(state);
     ctx.effect(() => () => {
       state.disposed = true;
       unwatchMermaidTheme();

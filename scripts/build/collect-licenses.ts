@@ -110,14 +110,30 @@ export function inlinedRefsForLib(libDir) {
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name))
 }
 
-/** 在包安装目录内定位 license 文本文件（常见命名逐一尝试）。 */
+/**
+ * 在包安装目录内定位 license 文本文件。
+ *
+ * 大小写/变体不敏感（issue #104 返工）：readdir 后按 /^licen[cs]e(\.\w+)?$/i
+ * 匹配——原候选常量清单全大写变体，会漏收 khroma 等包内小写 license 文件、
+ * 且其 package.json 无 license 字段的库，产生「UNKNOWN + 未找到 license 文件」
+ * 合规空段。命中多个时按字典序取首个非空文本；无命中返回 null（调用方写
+ * UNKNOWN 段，pack-check 对该字样 fail-loud）。
+ */
 function findLicenseFile(installDir) {
-  const candidates = ['LICENSE', 'LICENSE.md', 'LICENCE', 'LICENCE.md', 'LICENSE.txt', 'LICENSE-MIT']
+  let candidates = []
+  try {
+    candidates = readdirSync(installDir)
+      .filter((f) => /^licen[cs]e(\.\w+)?$/i.test(f))
+      .sort()
+  } catch {
+    return null
+  }
   for (const c of candidates) {
-    const p = join(installDir, c)
-    if (existsSync(p)) {
-      const text = readFileSync(p, 'utf8').trim()
+    try {
+      const text = readFileSync(join(installDir, c), 'utf8').trim()
       if (text) return { file: c, text }
+    } catch {
+      /* 读失败尝试下一个候选 */
     }
   }
   return null
@@ -132,6 +148,29 @@ function pkgMeta(installDir) {
     return { version: '?', license: 'UNKNOWN' }
   }
 }
+
+/**
+ * 从 license 文本推断许可名（issue #104 返工）：部分库（如 khroma）package.json
+ * 无 license 字段但包内带小写 license 文件——文件已收时头部行不得再标 UNKNOWN
+ * （否则 pack-check 的合规空段断言会对「文本已在」的库误报）。按字样顺序判定，
+ * 未命中返回 null 维持原值。
+ */
+function detectLicenseName(text) {
+  if (/isc license/i.test(text)) return 'ISC'
+  if (/apache license/i.test(text)) return 'Apache-2.0'
+  if (/mit license/i.test(text)) return 'MIT'
+  if (/redistribution and use|bsd/i.test(text)) return 'BSD'
+  return null
+}
+
+/**
+ * 上游 npm 包未附带 license 文件的已知例外（issue #104 返工）：这些库以
+ * package.json 的 SPDX license 字段为授权凭证（业界通行口径，license-checker
+ * 同此），归集段写规范化声明而非占位符——pack-check 对「未找到 license 文件 /
+ * UNKNOWN / 安装目录未找到」字样 fail-loud，故上游缺失必须在此显式登记；
+ * 未登记的新命中会让门禁变红，强制人工核实上游仓库后补充。
+ */
+const DECLARED_LICENSE_ONLY = new Set(['fastdom', 'schemastery'])
 
 /**
  * 为单个插件包归集第三方 license，写 lib/THIRD-PARTY-LICENSES。
@@ -163,9 +202,22 @@ export function collectForPackage(pkgDir, root = ROOT) {
       continue
     }
     const meta = pkgMeta(installDir)
-    const head = `${name}@${meta.version} — ${meta.license}`
     const lic = findLicenseFile(installDir)
-    const body = lic ? lic.text : `[未找到 license 文件；该库声明许可证为 ${meta.license}]`
+    // 头部许可名兜底链：package.json license 字段 → license 文本字样推断 → UNKNOWN
+    //（文本已收但声明缺失时不得标 UNKNOWN，否则 pack-check 合规空段断言误报）。
+    const declared =
+      (meta.license && meta.license !== 'UNKNOWN' ? meta.license : null) ??
+      (lic ? detectLicenseName(lic.text) : null) ??
+      'UNKNOWN'
+    const head = `${name}@${meta.version} — ${declared}`
+    let body
+    if (lic) {
+      body = lic.text
+    } else if (declared !== 'UNKNOWN' && DECLARED_LICENSE_ONLY.has(name)) {
+      body = `上游 npm 包未附带 license 文件；以 package.json SPDX 声明为准（${declared}）。`
+    } else {
+      body = `[未找到 license 文件；该库声明许可证为 ${declared}]`
+    }
     sections.push(`\n${'='.repeat(69)}\n${head}\n来源：https://www.npmjs.com/package/${name}\n${'='.repeat(69)}\n\n${body}\n`)
   }
 

@@ -48,6 +48,9 @@ export function closeModal(state: FilePreviewState): void {
   state.diffText = undefined;
   state.diffUntracked = false;
   state.currentGroup = undefined;
+  // issue #104：清空 mermaid hydration 注册表（旧 Modal 的已渲染块引用不跨
+  // Modal 残留；在途重渲染由 openSeq 代数校验自行中止，见 mermaid.ts）。
+  state.activeMermaidHydration = undefined;
   // 还原背景滚动（与 openPreview 的 body 锁配对，评审 U1）。
   document.body.style.overflow = "";
   // 注：焦点还原 / 返回栈清空不在此处——这是导航式重建（openPreview 内调用）与

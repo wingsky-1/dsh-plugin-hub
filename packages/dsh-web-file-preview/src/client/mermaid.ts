@@ -21,10 +21,10 @@
  */
 
 import DOMPurify from "dompurify";
-import { runMermaidHydration, type MermaidApiLike } from "./mermaid-core.js";
+import { runMermaidHydration, mermaidBaseConfig, type MermaidApiLike } from "./mermaid-core.js";
 import type { FilePreviewState } from "./state.js";
 
-/** 已加载的 mermaid API 引用（供主题切换 setTheme；动态 import 自带模块缓存）。 */
+/** 已加载的 mermaid API 引用（动态 import 自带模块缓存，此处仅存引用）。 */
 let loadedApi: MermaidApiLike | undefined;
 
 /** 当前偏好主题（明暗自适应约定：prefers-color-scheme dark → dark，否则 default）。 */
@@ -35,21 +35,46 @@ function themeOf(): "dark" | "default" {
 }
 
 /**
- * 注册系统明暗切换监听：库已加载时实时 setTheme 跟随；未加载则无需动作
- * （下次 hydration 的 initialize 会读取最新主题）。返回解绑函数（apply disposer 用）。
+ * 注册系统明暗切换监听（apply disposer 负责解绑）。
+ *
+ * ⚠️ mermaid@11 官方接口没有 setTheme——主题切换走业界通行 re-initialize 路线：
+ * 重下发安全基线 + 新主题，并对当前 Modal 内已渲染块就地重渲染（rerenderForTheme）；
+ * 库未加载 / 无活跃图时零动作（下次 hydration 的 initialize 自然读取最新主题）。
  */
-export function watchMermaidTheme(): () => void {
+export function watchMermaidTheme(state: FilePreviewState): () => void {
   if (typeof window.matchMedia !== "function") return () => {};
   const mq = window.matchMedia("(prefers-color-scheme: dark)");
   const onChange = (): void => {
-    try {
-      loadedApi?.setTheme?.(themeOf());
-    } catch (error) {
-      console.warn("[dsh-web-file-preview] mermaid setTheme failed:", error);
-    }
+    void rerenderForTheme(state);
   };
   mq.addEventListener?.("change", onChange);
   return () => mq.removeEventListener?.("change", onChange);
+}
+
+/**
+ * 明暗切换后的存量图重渲染：对注册表内已渲染块逐个 render 并就地替换 innerHTML。
+ * 竞态与降级语义与首渲一致：Modal 已关闭/导航（openSeq 变化或容器脱离）即停；
+ * 单块重渲染失败保留旧配色图（console.warn），不破坏预览、不回退代码块。
+ */
+async function rerenderForTheme(state: FilePreviewState): Promise<void> {
+  const api = loadedApi;
+  const reg = state.activeMermaidHydration;
+  if (api === undefined || reg === undefined || reg.entries.length === 0) return;
+  if (state.openSeq !== reg.seq || !reg.container.isConnected) return;
+  api.initialize(mermaidBaseConfig(themeOf()));
+  for (const entry of reg.entries) {
+    if (!entry.el.isConnected) continue;
+    try {
+      const rendered = await api.render(`fwp-mermaid-${++state.mermaidRenderId}`, entry.source);
+      const svg = rendered?.svg ?? "";
+      if (typeof svg !== "string" || svg === "") throw new Error("mermaid returned empty svg");
+      // 渲染期间 Modal 被关闭/切 tab → 旧代结果不写回。
+      if (!entry.el.isConnected || state.openSeq !== reg.seq) return;
+      entry.el.innerHTML = sanitizeMermaidSvg(svg);
+    } catch (error) {
+      console.warn("[dsh-web-file-preview] mermaid theme rerender failed:", error);
+    }
+  }
 }
 
 /**
@@ -73,6 +98,14 @@ export function hydrateMermaid(container: HTMLElement, state: FilePreviewState):
     // 空源码由 render 报错自然走回退路径。
     const sources = Array.from(codes).map((c) => (c.textContent ?? "").trim());
     if (sources.length === 0) return;
+    // 活跃 hydration 注册表：供明暗切换对存量图重渲染；下次 hydration 覆盖、
+    // closeModal 清空，不跨 Modal 累积引用。
+    const registry = {
+      seq,
+      container,
+      entries: [] as Array<{ el: HTMLElement; source: string }>,
+    };
+    state.activeMermaidHydration = registry;
     void runMermaidHydration(sources, {
       loadModule: async () => {
         // 变量 URL 动态 import：必须保持非字面量形态，否则 esbuild 会静态解析
@@ -85,7 +118,10 @@ export function hydrateMermaid(container: HTMLElement, state: FilePreviewState):
       nextId: () => `fwp-mermaid-${++state.mermaidRenderId}`,
       liveCheck: () => state.openSeq === seq && container.isConnected,
       sanitizeSvg: sanitizeMermaidSvg,
-      onReplaced: (index, svgHtml) => replaceWithSvg(codes[index], svgHtml),
+      onReplaced: (index, svgHtml) => {
+        const holder = replaceWithSvg(codes[index], svgHtml);
+        if (holder !== undefined) registry.entries.push({ el: holder, source: sources[index] });
+      },
       onFallback: (index, error) => {
         console.warn(`[dsh-web-file-preview] mermaid block ${index} render failed:`, error);
         fallbackToCode(codes[index]);
@@ -105,14 +141,15 @@ function sanitizeMermaidSvg(svg: string): string {
   });
 }
 
-/** 成功路径：以消毒后的 SVG 替换整个 <pre> 围栏。 */
-function replaceWithSvg(code: HTMLElement | undefined, svgHtml: string): void {
+/** 成功路径：以消毒后的 SVG 替换整个 <pre> 围栏，返回容器（注册表记录用）。 */
+function replaceWithSvg(code: HTMLElement | undefined, svgHtml: string): HTMLElement | undefined {
   const pre = code?.parentElement;
-  if (!pre || !pre.parentElement) return;
+  if (!pre || !pre.parentElement) return undefined;
   const holder = document.createElement("div");
   holder.className = "fwp-mermaid";
   holder.innerHTML = svgHtml;
   pre.replaceWith(holder);
+  return holder;
 }
 
 /** 失败路径：保留原代码块并加可见提示（role="status"，对齐「降级不静默」约定）。 */

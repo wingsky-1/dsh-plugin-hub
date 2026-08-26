@@ -551,9 +551,12 @@ try {
 
   // ---- issue #104：client.js 行为哨兵 + 懒加载关键约束 ----
   {
-    // strict 安全基线与主题自适应随产物下发。
+    // strict 安全基线与主题自适应随产物下发；v11 无 setTheme（dist 类型与产物
+    // 零命中）——主题切换必须走 re-initialize 路线，产物不得出现该不存在 API
+    // 的调用点（返工回归哨兵，防「监听实为空操作」复发）。
     assert.ok(client.includes('"strict"'), "#104 client.js 含 securityLevel strict 基线");
     assert.ok(client.includes("prefers-color-scheme"), "#104 client.js 含明暗主题探测");
+    assert.ok(!client.includes("setTheme"), "#104 client.js 无 setTheme 调用（v11 不存在该 API）");
     // 变量 URL 动态 import 必须保留为运行时 import(<成员表达式>)——esbuild 对
     // 字面量/相对路径会静态内联（懒加载退化），此形态是批复架构的关键约束。
     assert.ok(/import\([$\w][\w$.]*\)/.test(client), "#104 client.js 保留变量 URL 动态 import");

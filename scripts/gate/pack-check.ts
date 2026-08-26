@@ -103,6 +103,15 @@ for (const p of plugins) {
           const lic = readFileSync(licPath, 'utf8')
           if (!lic.trim()) problems.push('THIRD-PARTY-LICENSES 为空')
           if (!/(MIT|BSD|Apache|ISC)/i.test(lic)) problems.push('THIRD-PARTY-LICENSES 缺 MIT/BSD/Apache/ISC 许可字样')
+          // 合规空段 fail-loud（issue #104 返工）：UNKNOWN / 未找到 license 文件 /
+          // 安装目录未找到 任一字样出现 = 存在「内联了副本却缺许可文本」的库，
+          // 原实现对此静默放行（khroma 小写 license 文件漏收即实证案例）。
+          if (/UNKNOWN|未找到 license 文件|安装目录未找到/.test(lic)) {
+            const bad = [...lic.matchAll(/={5,}\n([^\n]+)\n={5,}/g)]
+              .map((m) => m[1])
+              .filter((h) => h.includes('UNKNOWN'))
+            problems.push(`THIRD-PARTY-LICENSES 含未解析许可段${bad.length > 0 ? `（${bad.join('; ')}）` : ''}`)
+          }
           for (const n of inlined) {
             if (!lic.includes(n)) problems.push(`THIRD-PARTY-LICENSES 未覆盖被内联库 ${n}`)
           }
