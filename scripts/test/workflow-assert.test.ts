@@ -149,6 +149,9 @@ test('#276 方案 A: observe 四班次全量——定时触发、无 push 裁剪
   assert.ok(OBSERVE.includes('skip_pr=true'), '快照 PR 日期闸（每日最多一次）在位')
   assert.ok(OBSERVE.includes("steps.pr-gate.outputs.skip_pr == 'false'"),
     'Open baseline PR 必须以日期闸放行为前提')
+  assert.ok(OBSERVE.includes('scripts/gate/baseline/manifest.json'),
+    '日期闸须只匹配 manifest.json（基线实质变更记录）——避免 README 等静态文件重置闸')
+  assert.ok(OBSERVE.includes('--format=%ct'), '日期闸须用 committer Unix 时间戳 + date -u 转 UTC（杜绝时区混用跨日误判）')
 })
 
 test('#220 段式三方一致：observe 计划 ↔ stryker.conf.d 文件集 ↔ gauntlet 包集', () => {

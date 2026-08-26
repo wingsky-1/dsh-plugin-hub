@@ -121,14 +121,19 @@ jobs:
 
       - name: Baseline PR date gate（快照每日最多一次，防 git 膨胀 #276 方案 A）
         # 四班次全量变异照常执行、基线文件照常 collect；但「基线快照 PR 合入 main」
-        # 限制为每自然日最多一次：检查 main 上 scripts/gate/baseline/ 最近一次提交
-        # 是否今天（UTC）。今日已有快照 → 标记 skip_pr，Open baseline PR 步骤跳过。
-        # 变异执行不受本闸限制（push 触发已移除，四班次各自完整产出报告与阈值判分）。
+        # 限制为每自然日最多一次：检查 main 上基线的实质变更记录（manifest.json）
+        # 最近一次提交是否今天（UTC）。今日已有快照 → 标记 skip_pr，
+        # Open baseline PR 步骤跳过。变异执行不受本闸限制。
+        # 实现要点（#276 实证修正）：
+        #   1) 只匹配 manifest.json（collect 每次产出、含实质变更 hash），
+        #      避免 README.md 等随目录出现的静态文件重置日期闸；
+        #   2) 用 committer Unix 时间戳（%ct）+ `date -u -d` 转 UTC 日期，
+        #      杜绝 git log 本地时区与 date -u 混用导致的跨日误判。
         id: pr-gate
         run: |
-          LAST=$(git log -1 --format=%cd --date=format:%Y-%m-%d -- scripts/gate/baseline/ 2>/dev/null || echo "")
+          LAST_TS=$(git log -1 --format=%ct -- scripts/gate/baseline/manifest.json 2>/dev/null || echo "")
           TODAY=$(date -u +%Y-%m-%d)
-          if [ -n "$LAST" ] && [ "$LAST" = "$TODAY" ]; then
+          if [ -n "$LAST_TS" ] && [ "$(date -u -d "@$LAST_TS" +%Y-%m-%d)" = "$TODAY" ]; then
             echo "今日（$TODAY）已有基线快照提交，本次跳过快照 PR（变异报告照常）"
             echo "skip_pr=true" >> "$GITHUB_OUTPUT"
           else
