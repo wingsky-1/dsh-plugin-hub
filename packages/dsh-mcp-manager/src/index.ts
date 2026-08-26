@@ -761,6 +761,8 @@ export class McpManager {
     // 中间层模式（#228 回归修复）：被中间层接管的服务器从连接池 + 目录缓存
     // 投影状态与工具列表——此前只读 supervisors，项目级无 supervisor 条目恒
     // 兜底 "stopped"，浮窗/summary 与真实连接态脱节。返回形状不变。
+    // 注意不做 userDisabled 短路：all 模式全局 connect 走 supervisor 复活
+    // （#234 既有限制），短路会把「supervisor 实际已连接」反向投影成 stopped。
     const unit = this.middlewareUnitFor(server.name, scope);
     if (unit !== undefined) {
       const entry = unit.connections.get(server.name);
@@ -770,14 +772,10 @@ export class McpManager {
           ...server,
           scope,
           status: entry.status,
-          error: entry.error !== undefined ? msgOf(entry.error) : undefined,
+          // 目录发现失败（unavailable）时透出原因：解释 connected 却 0 工具。
+          error: entry.error !== undefined ? msgOf(entry.error) : catalog?.unavailable,
           tools: catalog !== undefined && catalog.unavailable === undefined ? [...catalog.tools.keys()] : [],
         };
-      }
-      // 用户手动断开（userDisabled）：连接条目已拆毁；状态对齐旧行为 stopped
-      // （浮窗「连接」按钮可经 manager.connect 解除禁用重新拉起），工具不展示。
-      if (unit.userDisabled.has(server.name)) {
-        return { ...server, scope, status: "stopped", error: undefined, tools: [] };
       }
     }
     const supervisor = this.supervisors.get(server.name);
