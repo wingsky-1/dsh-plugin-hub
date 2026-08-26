@@ -17,7 +17,11 @@
  *   running → idle 跃迁，per-agent 状态机，多会话互不误报；子代理
  *   （origin === 'subagent'，或 fork 型委派且运行时归属成立——见 message.ts
  *   isSubagentOf 双信号注释）走独立开关/事件类型 subagent-done；
- *   用户暂停/中断（turn/end reason aborted）固定静默
+ *   用户暂停/中断（turn/end reason aborted）固定静默。
+ *   完成判定为双源（issue #272）：idle 时从 agent.session.events 快照回读
+ *   最新 turn/end，与 session/event 推送流记忆的最新 turn/end 按 turn 取新者
+ *   作为本轮结束证据——快照一次性读滞后不再被 lastEndedTurn 固化为永久静默；
+ *   同一 turn 两源汇合于同一判定点，天然只通知一次。跳过路径输出可观测 warn。
  * - 任务错误：agent/error（{agent, turn, step, error}），60 秒滚动窗口合并
  * - 轮结束：agent/turn-stopping（serial，{agent, turn}，仅宿主通知，不跑模型）
  * - 会话销毁：agent/disposed（清理 per-agent 状态）
@@ -39,6 +43,7 @@ import { existsSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
+import type {} from "@deepseek-ai/dsh-session/types";
 import type {} from "@deepseek-ai/dsh-session-title";
 import type {} from "@deepseek-ai/dsh-user-approval";
 import { errorMessage } from "../../../shared/host-utils.js";
@@ -340,6 +345,41 @@ export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Pro
   }
 
   /**
+   * 完成判定辅源记忆（issue #272）：session/event 推送流记录的 per-session
+   * 最新 turn/end。主源在 idle 时从 agent.session.events 快照回读 turn/end，
+   * 该读是一次性快照——任何一次读滞后都会被下方 lastEndedTurn 的无条件推进
+   * 固化为「后续 turn 全部已处理」的永久静默（#272 报告场景的根因）。本推送
+   * 源 post-commit 逐条派发（官方 SessionEventMap 声明面），不依赖快照回读，
+   * 作为互补证据根治单点依赖。仅记最新一条：完成判定只关心「比已通知 turn
+   * 更新的闭合」，历史无用；agent/disposed 时随状态机一并清理。
+   */
+  const eventStreamEnds = new Map<string, { turn: number; kind: string }>(); // sessionId -> 最新推送 turn/end
+
+  disposers.push(
+    ctx.on("session/event", (session, event) => {
+      try {
+        if (event?.type !== "turn/end") return;
+        const reason = event.data?.reason;
+        if (reason === undefined || reason === null || typeof reason !== "object") return;
+        // 运行时防御同 lastTurnEndOf（payload 跨宿主边界，不受信）
+        const sessionId = session?.id !== undefined ? String(session.id) : undefined;
+        if (sessionId === undefined) return;
+        const turn = typeof event.data?.turn === "number" ? event.data.turn : NaN;
+        if (!Number.isFinite(turn)) return; // 非有限 turn 的证据不可用：直接 skip 不落记忆，
+        // 否则 {turn:NaN} 会在合并处凭 ended===undefined 短路成 best、经首轮
+        // rememberedTurn===undefined 放行误报后把 lastEndedTurn 推进为 NaN，
+        // 此后真实完成因 x > NaN 恒 false 被永久吞掉（#284 复核闸 P1）。
+        eventStreamEnds.set(sessionId, {
+          turn,
+          kind: String((reason as { kind?: unknown }).kind ?? ""),
+        });
+      } catch (error) {
+        ctx.logger.warn(`dsh-notifier: session/event 处理失败: ${errorMessage(error)}`);
+      }
+    })
+  );
+
+  /**
    * 任务完成：agent/status running → idle 跃迁（按 agent 分组）。
    * 分支不再被 notifyTaskDone 门控（否则 notifyTaskDone=false +
    * notifySubagentDone=true 时子代理完成被拦下）：进入即先取耗时并
@@ -364,9 +404,25 @@ export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Pro
           // 「abort 早于本轮 turn/start 落盘」时本轮无 turn/end（loop turn()
           // 首行 throwIfAborted 在 try 外），读到的 turn/end 是上一次运行的
           // ——无新 closure 宁可静默，不误报完成。
+          //
+          // 双源证据合并（issue #272）：快照回读（ended）与 session/event
+          // 推送流（streamed，post-commit 不受快照滞后影响）按 turn 取新者
+          // 作为本轮结束证据——两源看到的是同一 append-only 日志的同一事件，
+          // turn 相同即同一证据（同 turn 天然只通知一次）；快照一次性读滞后
+          // 时由推送流兜底，不再固化为永久静默。
           const ended = lastTurnEndOf(agent);
-          const hasNewEnd = ended !== undefined && (state.lastEndedTurn === undefined || ended.turn > state.lastEndedTurn);
-          if (ended !== undefined) state.lastEndedTurn = ended.turn;
+          // 合并处对称守卫（#284 复核闸 P1 纵深）：仅接受 turn 有限的证据——
+          // 入口（lastTurnEndOf / session/event 处理器）已各自 skip 非有限
+          // turn，此处兜底保证任何畸形证据既不能成 best、也不能推进记忆。
+          const streamedRaw = eventStreamEnds.get(agentId);
+          const streamed = streamedRaw !== undefined && Number.isFinite(streamedRaw.turn) ? streamedRaw : undefined;
+          const best =
+            streamed !== undefined && (ended === undefined || (Number.isFinite(streamed.turn) && streamed.turn > ended.turn))
+              ? streamed
+              : ended;
+          const rememberedTurn = state.lastEndedTurn;
+          const hasNewEnd = best !== undefined && (rememberedTurn === undefined || best.turn > rememberedTurn);
+          if (best !== undefined) state.lastEndedTurn = best.turn;
           // 非正常结束不判「完成」：本轮 turn/end 无新 closure（hasNewEnd）
           // 或 kind 属于 aborted/interrupted/error/blocked 时静默——失败由
           // agent/error 单独负责「任务出错」通知，被阻塞由对应事件负责，
@@ -379,7 +435,17 @@ export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Pro
           // max-tokens（输出被截断）与一切未知 kind 一律静默——避免把非正常
           // 结束误报为完成（与 DSH accountsForClaim 对未知 kind 保守不成功的
           // 语义对齐；失败由 agent/error 单独负责「任务出错」）。
-          if (!hasNewEnd || ended === undefined || ended.kind !== "completed") return;
+          if (!hasNewEnd || best === undefined || best.kind !== "completed") {
+            // P0 warn 兜底（issue #272）：跳过路径必须可观测——#272 的报告
+            // 场景正是该分支全程零日志，静默固化无从排查。warn 只进服务端
+            // 日志，不打扰用户；aborted 等设计内静默同样留痕（kind 字段区分）。
+            ctx.logger.warn(
+              `dsh-notifier: 完成判定跳过（不发 done）agent=${agentId} kind=${best?.kind ?? "none"} ` +
+                `快照turn=${ended !== undefined ? String(ended.turn) : "-"} 推送turn=${streamed !== undefined ? String(streamed.turn) : "-"} ` +
+                `记忆turn=${rememberedTurn ?? "-"}`,
+            );
+            return;
+          }
           const taskTitle = sessionTitleOf(agent);
           // 子代理判定（issue #49 双信号）：origin 命中即 spawn 型；未命中查
           // 运行时归属（fork 型委派 worker）；归属不成立/agents 服务缺位一律
@@ -400,11 +466,12 @@ export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Pro
     })
   );
 
-  /** 会话销毁时清理其状态机条目（含错误合并窗口与 turn 去重，防 Map/Set 无界增长）。 */
+  /** 会话销毁时清理其状态机条目（含错误合并窗口、推送源记忆与 turn 去重，防 Map/Set 无界增长）。 */
   disposers.push(
     ctx.on("agent/disposed", ({ agent }) => {
       if (agent?.id !== undefined) {
         agentStates.delete(agent.id);
+        eventStreamEnds.delete(agent.id);
         errorMerge.delete(agent.id);
         for (const key of [...turnNotified]) {
           if (key.startsWith(agent.id + ":")) turnNotified.delete(key);

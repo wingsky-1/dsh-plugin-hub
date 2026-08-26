@@ -30,6 +30,13 @@ const {
   panelTopForAnchor,
   SERVER_NAME_PATTERN,
   DEFAULT_UI_CONFIG,
+  Z_INDEX_BASE_MIN,
+  Z_INDEX_BASE_MAX,
+  panelZIndexFor,
+  BREAKPOINT_NARROW_MAX,
+  BREAKPOINT_TABLET_MAX,
+  breakpointForWidth,
+  clampPointToViewport,
 } = await import("../lib/index.js");
 
 // ---- normalizeServer ----
@@ -94,44 +101,68 @@ const {
   // 新嵌套形态。
   assert.deepEqual(
     normalizeUiConfig({ ui: { position: "bottom-right", offset: { x: 1.6, y: -3, blankY: 0 } } }),
-    { position: "bottom-right", offsetX: 2, offsetY: 0, blankY: 0 },
+    { position: "bottom-right", offsetX: 2, offsetY: 0, blankY: 0, zIndexBase: DEFAULT_UI_CONFIG.zIndexBase },
   );
   // 旧扁平 offset 形态。
   assert.deepEqual(
     normalizeUiConfig({ position: "top-right", offset: { x: 7, y: 8, blankY: 9 } }),
-    { position: "top-right", offsetX: 7, offsetY: 8, blankY: 9 },
+    { position: "top-right", offsetX: 7, offsetY: 8, blankY: 9, zIndexBase: DEFAULT_UI_CONFIG.zIndexBase },
   );
   // 客户端扁平 offsetX 形态优先于 offset.*。
   assert.deepEqual(
     normalizeUiConfig({ offsetX: 11, offsetY: 12, blankY: 13, offset: { x: 1, y: 2, blankY: 3 } }),
-    { position: "top-right", offsetX: 11, offsetY: 12, blankY: 13 },
+    { position: "top-right", offsetX: 11, offsetY: 12, blankY: 13, zIndexBase: DEFAULT_UI_CONFIG.zIndexBase },
   );
+  // #128 四角锚点透传 + zIndexBase clamp 边界（非法回退默认 / 越界压边界）。
+  for (const p of ["top-left", "bottom-left"] as const) {
+    assert.equal(normalizeUiConfig({ position: p }).position, p, `四角 ${p} 透传`);
+  }
+  assert.equal(normalizeUiConfig({ zIndexBase: 5000 }).zIndexBase, 5000, "合法层级基准透传");
+  assert.equal(normalizeUiConfig({ zIndexBase: 0 }).zIndexBase, Z_INDEX_BASE_MIN, "低于下界压到 1");
+  assert.equal(normalizeUiConfig({ zIndexBase: 99999 }).zIndexBase, Z_INDEX_BASE_MAX, "超上界压到 9000");
+  assert.equal(normalizeUiConfig({ zIndexBase: "x" }).zIndexBase, DEFAULT_UI_CONFIG.zIndexBase, "非数字回退默认");
+  assert.equal(panelZIndexFor(10), 40, "面板层级派生 base+30");
   // 非法输入回退默认。
   assert.deepEqual(normalizeUiConfig(undefined), { ...DEFAULT_UI_CONFIG.position ? {} : {}, ...DEFAULT_UI_CONFIG }.position !== undefined ? {
     position: DEFAULT_UI_CONFIG.position,
     offsetX: DEFAULT_UI_CONFIG.offset.x,
     offsetY: DEFAULT_UI_CONFIG.offset.y,
     blankY: DEFAULT_UI_CONFIG.offset.blankY,
+    zIndexBase: DEFAULT_UI_CONFIG.zIndexBase,
   } : normalizeUiConfig({}), "undefined 回退默认");
   assert.deepEqual(
     normalizeUiConfig("junk"),
-    { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 },
+    { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40, zIndexBase: 10 },
   );
   assert.deepEqual(
     normalizeUiConfig({ position: "left", offsetX: Number.NaN, offsetY: Infinity }),
-    { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 },
+    { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40, zIndexBase: 10 },
   );
   // ui 非对象按顶层处理。
   assert.equal(normalizeUiConfig({ ui: 5 }).offsetX, 8);
 
   assert.deepEqual(
-    buildConfigUiPatch({ position: "bottom-right", offsetX: 4, offsetY: 5, blankY: 6 }),
-    { position: "bottom-right", offset: { x: 4, y: 5, blankY: 6 } },
+    buildConfigUiPatch({ position: "bottom-right", offsetX: 4, offsetY: 5, blankY: 6, zIndexBase: 20 }),
+    { position: "bottom-right", offset: { x: 4, y: 5, blankY: 6 }, zIndexBase: 20 },
   );
 
   assert.equal(panelAnchorForPosition("bottom-right"), "bottom");
+  assert.equal(panelAnchorForPosition("bottom-left"), "bottom", "#128 左下也是底部锚点");
   assert.equal(panelAnchorForPosition("top-right"), "top");
+  assert.equal(panelAnchorForPosition("top-left"), "top", "#128 左上是顶部锚点");
   assert.equal(panelAnchorForPosition(undefined), "top");
+
+  // #128 断点判定纯函数分支翻转 + 视口终 clamp（safe-area inset 恒 0 自然退化）。
+  assert.equal(breakpointForWidth(320), "narrow");
+  assert.equal(breakpointForWidth(BREAKPOINT_NARROW_MAX), "narrow", "480 边界归 narrow");
+  assert.equal(breakpointForWidth(BREAKPOINT_NARROW_MAX + 1), "tablet", "481 翻转 tablet");
+  assert.equal(breakpointForWidth(BREAKPOINT_TABLET_MAX), "tablet", "834 边界归 tablet");
+  assert.equal(breakpointForWidth(BREAKPOINT_TABLET_MAX + 1), "wide", "835 翻转 wide");
+  assert.equal(breakpointForWidth(Number.NaN), "wide", "异常宽度按宽档兜底");
+  const clampedPoint = clampPointToViewport(-30, -50, 100, 80, 375, 667);
+  assert.deepEqual(clampedPoint, { x: 0, y: 0 }, "负坐标钳回视口原点");
+  assert.deepEqual(clampPointToViewport(400, 700, 100, 80, 375, 667), { x: 275, y: 587 }, "右/下溢出钳回视口内");
+  assert.deepEqual(clampPointToViewport(-30, -50, 100, 80, 375, 667, 10), { x: 10, y: 10 }, "safeInset>0 时按安全区内缩");
 
   assert.equal(panelTopForAnchor("bottom", 100, 120, 50, 10), 40, "bottom 锚点向上弹");
   assert.equal(panelTopForAnchor("bottom", 20, 30, 50, 10), 6, "bottom 溢出 clamp 到 6");
@@ -222,7 +253,7 @@ const quietServer = (name, extra = {}) => ({ name, transport: "stdio", command: 
   const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mgr2a-"));
   try {
     const { manager } = makeManager(dir);
-    assert.deepEqual(manager.uiConfig(), { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 });
+    assert.deepEqual(manager.uiConfig(), { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40, zIndexBase: 10 });
 
     // 写不可用抛错。
     await assert.rejects(() => manager.updateUiConfig({}), /not writable/);
@@ -237,11 +268,12 @@ const quietServer = (name, extra = {}) => ({ name, transport: "stdio", command: 
         offsetX: patch.ui.offset.x,
         offsetY: patch.ui.offset.y,
         blankY: patch.ui.offset.blankY,
+        zIndexBase: patch.ui.zIndexBase,
       });
     };
     const written = await manager.updateUiConfig({ position: "bottom-right", offsetX: 3.4, offsetY: -1, blankY: 100 });
-    assert.deepEqual(captured, { ui: { position: "bottom-right", offset: { x: 3, y: 0, blankY: 100 } } });
-    assert.deepEqual(written, { position: "bottom-right", offsetX: 3, offsetY: 0, blankY: 100 });
+    assert.deepEqual(captured, { ui: { position: "bottom-right", offset: { x: 3, y: 0, blankY: 100 }, zIndexBase: 10 } });
+    assert.deepEqual(written, { position: "bottom-right", offsetX: 3, offsetY: 0, blankY: 100, zIndexBase: 10 });
 
     // loadCatalogCache：缺失文件静默。
     manager.catalogCachePath = join(dir, "no-such-cache.json");

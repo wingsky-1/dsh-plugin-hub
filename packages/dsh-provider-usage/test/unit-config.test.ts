@@ -24,6 +24,14 @@ import {
   normalizeUiConfig,
   panelAnchorForPlacement,
   panelTopForAnchor,
+  Z_INDEX_BASE_MIN,
+  Z_INDEX_BASE_MAX,
+  panelZIndexFor,
+  BREAKPOINT_NARROW_MAX,
+  BREAKPOINT_TABLET_MAX,
+  breakpointForWidth,
+  clampPointToViewport,
+  clampZIndexBase,
   uiConfigFile,
   readAdapterState,
   parseUserAdapters,
@@ -423,9 +431,31 @@ assert.equal(normalizeUiConfig({ panelOffsetY: 7.2 }).panelOffsetY, 7, "panelOff
 // 完整合法配置原样归一
 assert.deepEqual(
   normalizeUiConfig({ placement: "bottom-left", offsetX: 10, offsetY: 20, panelOffsetY: 30 }),
-  { placement: "bottom-left", offsetX: 10, offsetY: 20, panelOffsetY: 30 },
-  "完整合法配置透传",
+  { placement: "bottom-left", offsetX: 10, offsetY: 20, panelOffsetY: 30, zIndexBase: DEFAULT_UI_CONFIG.zIndexBase },
+  "完整合法配置透传（缺省层级基准回退默认）",
 );
+
+// #128 zIndexBase clamp 矩阵：非法回退默认 / 越界压边界 / 合法透传
+assert.equal(normalizeUiConfig({}).zIndexBase, DEFAULT_UI_CONFIG.zIndexBase, "缺省 zIndexBase 回退默认 40");
+assert.equal(normalizeUiConfig({ zIndexBase: 500 }).zIndexBase, 500, "合法层级基准透传");
+assert.equal(normalizeUiConfig({ zIndexBase: 0 }).zIndexBase, Z_INDEX_BASE_MIN, "低于下界压到 1");
+assert.equal(normalizeUiConfig({ zIndexBase: -99 }).zIndexBase, Z_INDEX_BASE_MIN, "负数压到 1");
+assert.equal(normalizeUiConfig({ zIndexBase: 9000 }).zIndexBase, Z_INDEX_BASE_MAX, "上界 9000 透传");
+assert.equal(normalizeUiConfig({ zIndexBase: 99999 }).zIndexBase, Z_INDEX_BASE_MAX, "超上界压到 9000");
+assert.equal(normalizeUiConfig({ zIndexBase: "x" }).zIndexBase, DEFAULT_UI_CONFIG.zIndexBase, "非数字字符串回退默认");
+assert.equal(normalizeUiConfig({ zIndexBase: Number.NaN }).zIndexBase, DEFAULT_UI_CONFIG.zIndexBase, "NaN 回退默认");
+assert.equal(panelZIndexFor(40), 70, "面板层级派生 base+30");
+
+// #128 断点判定纯函数分支翻转 + 视口终 clamp（safe-area inset 恒 0 自然退化）
+assert.equal(breakpointForWidth(320), "narrow", "手机竖屏 narrow");
+assert.equal(breakpointForWidth(BREAKPOINT_NARROW_MAX), "narrow", "480 边界归 narrow");
+assert.equal(breakpointForWidth(BREAKPOINT_NARROW_MAX + 1), "tablet", "481 翻转 tablet");
+assert.equal(breakpointForWidth(BREAKPOINT_TABLET_MAX), "tablet", "834 边界归 tablet");
+assert.equal(breakpointForWidth(BREAKPOINT_TABLET_MAX + 1), "wide", "835 翻转 wide");
+assert.deepEqual(clampPointToViewport(-30, -50, 100, 80, 375, 667), { x: 0, y: 0 }, "负坐标钳回视口原点");
+assert.deepEqual(clampPointToViewport(400, 700, 100, 80, 375, 667), { x: 275, y: 587 }, "右/下溢出钳回视口内");
+assert.deepEqual(clampPointToViewport(10, 20, 50, 40, 800, 600), { x: 10, y: 20 }, "视口内坐标不变（桌面零回归）");
+assert.equal(clampZIndexBase(7.6, 40), 8, "clampZIndexBase 小数四舍五入");
 
 // panelAnchorForPlacement 全分支
 assert.equal(panelAnchorForPlacement("bottom-right"), "bottom", "bottom-right 向上弹出");
