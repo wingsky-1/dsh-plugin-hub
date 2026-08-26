@@ -1295,7 +1295,18 @@ const main = async () => {
       ws.exact.get(ROUTES.health).handler(makeReq(), hRes);
       return JSON.parse(Buffer.concat(hRes._chunks).toString("utf8")).httpCompressMounted;
     };
-    assert.ok(healthMounted() === true, "前置：压缩已生效");
+    // 前置条件用例化（qa 复核）：纳入 check() 统计且失败信息内联实际值；
+    // 前置不满足时跳过本 case 余下步骤（避免连锁误报掩盖真实原因）。
+    const mountedBefore = healthMounted();
+    check(`${label}：前置压缩已生效`, () => {
+      assert.equal(mountedBefore, true, `前置 health httpCompressMounted 应为 true，实际 ${mountedBefore}`);
+    });
+    if (!mountedBefore) {
+      for (const d of [...disposers].reverse()) { try { d(); } catch {} }
+      process.env.DSH_HOME = prevHome;
+      rmSync(applyHome, { recursive: true, force: true });
+      return;
+    }
     // 运行中经配置路由保存（客户端同链路）：PUT → scope.update → watch 触发
     // onChange=scheduleSync（3s 防抖）→ sync 重建。轮询等待生效，不用固定 sleep
     // （防 flake 纪律）；deadline 覆盖 3s 防抖窗口。
