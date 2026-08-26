@@ -21,20 +21,20 @@ import { isLoopbackRequest } from "../../../shared/loopback.js";
 import { writeJson, readJsonBody } from "../../../shared/host-utils.js";
 import { installSettingsNamespace } from "../../../shared/settings-namespace.js";
 import { Mutex } from "async-mutex";
-import z from "schemastery";
 import type { Context } from "@deepseek-ai/cordis";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { ServerResponse } from "node:http";
 import type { UsageStatsAdapter } from "./contracts.ts";
 import { describeUsageStatsAdapterShape, ADAPTER_CONTRACT_VERSION } from "./contracts.ts";
 import { makeAdapterRegistry } from "./registry.ts";
-import { openCodeGoAdapter, OPENCODE_GO_PROVIDER, OPENCODE_GO_ADAPTER_ID } from "./adapters/opencode-go.ts";
-import { deepSeekOfficialAdapter, DEEPSEEK_OFFICIAL_PROVIDER, DEEPSEEK_OFFICIAL_ADAPTER_ID } from "./adapters/deepseek-official.ts";
+import { openCodeGoAdapter } from "./adapters/opencode-go.ts";
+import { deepSeekOfficialAdapter } from "./adapters/deepseek-official.ts";
 import { runV2Pipeline, runV2PanelPipeline, panelCacheKey, isPanelCacheStale, type V2PipelineResult, type PanelCacheEntry } from "./pipeline/v2.ts";
 import { HistoryStore, migrateLegacyV3 } from "./core/history.ts";
 import { resolveProviderConfig } from "./provider-config.ts";
 import { HotReloadableAdapter, loadAndValidateAdapter } from "./hotreload.ts";
 import { resolvePath, pluginHome, expandHomePath } from "./path-resolve.ts";
+import { Config, normalizeConfig } from "./config.ts";
 
 // ------------------------------------------------------------------ 对外 re-export
 // 注意：bundle-host 会把 tsc 产物中的子模块全部内联进 lib/index.js 并清理游离 .js，
@@ -55,6 +55,9 @@ export type { PanelCacheEntry } from "./pipeline/v2.ts";
 export { HotReloadableAdapter, loadAndValidateAdapter, readStamp, stampEqual } from "./hotreload.ts";
 // 路径解析纯函数透出（供测试与调用方复用同一展开/解析规则，无行为变更）
 export { resolvePath, pluginHome, expandHomePath } from "./path-resolve.ts";
+// 配置归一化（#276 方案 A 阶段 3 拆出：默认值 / schemastery schema / normalizeConfig）
+export { DEFAULT_CONFIG, Config, normalizeConfig } from "./config.ts";
+export type { NormalizedConfig } from "./config.ts";
 
 // ------------------------------------------------------------------ 类型
 
@@ -71,28 +74,6 @@ export const ROUTES: Record<string, string> = {
   health: "/api/dsh-provider-usage/health",
   uiConfig: "/api/dsh-provider-usage/ui-config",
   events: "/api/dsh-provider-usage/events",
-};
-
-export const DEFAULT_CONFIG = {
-  adapter: "",
-  staticPath: "",
-  provider: OPENCODE_GO_PROVIDER,
-  apiEndpoint: "",
-  apiKey: "",
-  historyDir: "",
-  warmupIntervalMs: 300000,
-  // #198 H1：由 60000 下调至 30000——峰谷徽标倒计时跨时段边界的展示翻转延迟
-  // = 宿主缓存 + 客户端轮询（60s）+ 渲染余量，缓存减半使端到端 ≤95s 可达。
-  cacheDurationMs: 30000,
-  // #206 配套：2s→5s——commandcode 等三请求并行适配器在远端慢时 2s 频繁超时；
-  // safeFetchData 为 Promise.race+Abort 纯异步超时，不阻塞主进程（#120 起超时会
-  // 经合并信号真正 abort 底层 fetch）；
-  // #120 后取数锁为 per-provider 粒度，排队仅发生在同一 provider 内部，
-  // 最坏 n×5s 只限单 provider 的并发请求，跨 provider 完全并行。
-  fetchTimeoutMs: 5000,
-  autoReload: true,
-  maxAgeDays: 30,
-  maxSizeMB: 20,
 };
 
 // 胶囊定位/层级/断点纯函数：实现在 placement-math.ts（零依赖单一事实源，
@@ -213,68 +194,6 @@ export async function writeUiConfig(root: string, cfg: UiPlacementConfig): Promi
 /** 序列化一帧 SSE data 行（同 dsh-mcp-manager 的 sseData 语义）。 */
 export function sseData(payload: unknown): string {
   return `data: ${JSON.stringify(payload)}\n\n`;
-}
-
-export interface NormalizedConfig {
-  adapter: string;
-  staticPath: string;
-  provider: string;
-  apiEndpoint: string;
-  apiKey: string;
-  historyDir: string;
-  warmupIntervalMs: number;
-  cacheDurationMs: number;
-  fetchTimeoutMs: number;
-  autoReload: boolean;
-  maxAgeDays: number;
-  maxSizeMB: number;
-}
-
-export const Config: z<{
-  adapter: string;
-  staticPath: string;
-  provider: string;
-  apiEndpoint: string;
-  warmupIntervalMs: number;
-  cacheDurationMs: number;
-  fetchTimeoutMs: number;
-  autoReload: boolean;
-  maxAgeDays: number;
-  maxSizeMB: number;
-}> = z.object({
-  adapter: z.string().default("").description("用户适配器 mjs 文件路径（兼容配置声明；推荐经设置页「用量统计」添加）"),
-  staticPath: z.string().default("").description("API 路径（如 /v1/usage；config.adapter 模式用）"),
-  provider: z.string().default(OPENCODE_GO_PROVIDER).description("关联的模型 provider 名"),
-  apiEndpoint: z.string().default("").description("API 基础地址（可选，不填使用内置默认或模型配置链）").disabled(true),
-  warmupIntervalMs: z.number().default(DEFAULT_CONFIG.warmupIntervalMs).description("后台预热间隔毫秒").disabled(true),
-  cacheDurationMs: z.number().default(DEFAULT_CONFIG.cacheDurationMs).description("缓存新鲜度毫秒").disabled(true),
-  fetchTimeoutMs: z.number().default(DEFAULT_CONFIG.fetchTimeoutMs).description("取数超时毫秒").disabled(true),
-  autoReload: z.boolean().default(true).description("热更新开关（编辑适配器 mjs 后自动重新加载；默认开启，可显式 false 关闭）"),
-  maxAgeDays: z.number().default(DEFAULT_CONFIG.maxAgeDays).description("历史数据保留天数").disabled(true),
-  maxSizeMB: z.number().default(DEFAULT_CONFIG.maxSizeMB).description("历史数据大小上限（MB）").disabled(true),
-});
-
-export function normalizeConfig(input: unknown): NormalizedConfig {
-  const base = { ...DEFAULT_CONFIG };
-  if (typeof input !== "object" || input === null) return base;
-  const cfg = input as Record<string, unknown>;
-  if (typeof cfg.adapter === "string") base.adapter = cfg.adapter;
-  if (typeof cfg.staticPath === "string") base.staticPath = cfg.staticPath;
-  if (typeof cfg.provider === "string") base.provider = cfg.provider;
-  if (typeof cfg.apiEndpoint === "string") base.apiEndpoint = cfg.apiEndpoint;
-  if (typeof cfg.apiKey === "string") base.apiKey = cfg.apiKey;
-  if (typeof cfg.historyDir === "string") base.historyDir = cfg.historyDir;
-  if (Number.isFinite(cfg.warmupIntervalMs)) base.warmupIntervalMs = Math.max(60000, cfg.warmupIntervalMs as number);
-  if (Number.isFinite(cfg.cacheDurationMs)) base.cacheDurationMs = Math.max(5000, cfg.cacheDurationMs as number);
-  // fetchTimeoutMs 固定 5s（不开放配置）：远端慢时 2s 频繁超时（#206 配套）
-  if (typeof cfg.autoReload === "boolean") base.autoReload = cfg.autoReload;
-  // #184：maxAgeDays 仅接受正整数——<=0 会令 maybePrune 下界落在未来（历史被全量清理）、
-  // 面板查询区间 start>end 永空；非正整数一律视为非法回落默认值，上界 365 维持既有 clamp
-  if (Number.isInteger(cfg.maxAgeDays) && (cfg.maxAgeDays as number) > 0) {
-    base.maxAgeDays = Math.min(365, cfg.maxAgeDays as number);
-  }
-  if (Number.isFinite(cfg.maxSizeMB)) base.maxSizeMB = Math.min(500, cfg.maxSizeMB as number);
-  return base;
 }
 
 // ------------------------------------------------------------------ 用户适配器持久化（设置页 add/select 承载，免手改配置）
