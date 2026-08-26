@@ -160,6 +160,14 @@ const loopbackMethods = ["GET", "POST"];
 
     manager.supervisors.set("a", { status: "connected", tools: ["t1", "t2"] });
     manager.supervisors.set("b", { status: "failed", tools: [] });
+    // 中间层连接池计数（#228）：项目级连接不在 supervisors，health 单独投影。
+    manager.middlewareMode = "project";
+    manager.middleware = {
+      units: new Map([
+        ["/root-a", { connections: new Map([["x", { status: "connected" }], ["y", { status: "failed" }]]) }],
+        ["/root-b", { connections: new Map() }],
+      ]),
+    };
     const resOk = fakeRes();
     route.handler(fakeReq("GET", ROUTES.health), resOk);
     assert.equal(resOk.state.status, 200);
@@ -170,6 +178,11 @@ const loopbackMethods = ["GET", "POST"];
     assert.equal(payload.connected, 1);
     assert.equal(payload.tools, 2);
     assert.equal(payload.catalogCacheEntries, 1);
+    assert.deepEqual(
+      payload.middleware,
+      { mode: "project", units: 2, connections: 2, connected: 1 },
+      "health 补中间层连接计数",
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -70,6 +70,10 @@ import "./unit-apply.test.ts";
 import "./unit-hotspot.test.ts";
 // 中间层（#228：ws_mcp_search / ws_mcp_call + 连接池 + 目录 + 策略）
 import "./unit-middleware.test.ts";
+// 管理器方法面 / SSE+health 路由边界（#228 打回修复：装载断链自 PR#234 起既存，
+// 缺失期间这两个文件的用例只在 mutation 跑——smoke 门禁从未执行它们）
+import "./unit-manager2.test.ts";
+import "./unit-routes-sse.test.ts";
 
 const failures = [];
 const check = (label, fn) => {

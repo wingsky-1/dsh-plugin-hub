@@ -58,6 +58,7 @@ import {
 import { makeRoutes, makeEventsRoute, makeHealthRoute, sseData, uiConfigChangedFrame } from "./routes.js";
 import {
   McpMiddleware,
+  msgOf,
   normalizeMiddlewareMode,
   registerMiddlewareTools,
   userStateFile,
@@ -741,7 +742,42 @@ export class McpManager {
     };
   }
 
+  /**
+   * 中间层投影单元：该 server 在当前模式下由中间层接管时返回其所在单元，
+   * 否则 undefined（supervisor 路径照旧）。project 模式仅项目级走池；
+   * all 模式全局也经虚拟 root @global 走池（与 reconcileServers 的
+   * middlewareTakes 判定同口径）。
+   */
+  private middlewareUnitFor(serverName: string, scope: string): ProjectUnit | undefined {
+    const mw = this.middleware;
+    if (mw === undefined || this.middlewareMode === "off") return undefined;
+    const taken = scope === SCOPE_PROJECT || (this.middlewareMode === "all" && scope === SCOPE_GLOBAL);
+    if (!taken) return undefined;
+    const root = scope === SCOPE_PROJECT ? this.projectRoot : MIDDLEWARE_GLOBAL_ROOT;
+    return root === undefined ? undefined : mw.units.get(root);
+  }
+
   summarize(server: ServerConfig, scope: string): Record<string, unknown> {
+    // 中间层模式（#228 回归修复）：被中间层接管的服务器从连接池 + 目录缓存
+    // 投影状态与工具列表——此前只读 supervisors，项目级无 supervisor 条目恒
+    // 兜底 "stopped"，浮窗/summary 与真实连接态脱节。返回形状不变。
+    // 注意不做 userDisabled 短路：all 模式全局 connect 走 supervisor 复活
+    // （#234 既有限制），短路会把「supervisor 实际已连接」反向投影成 stopped。
+    const unit = this.middlewareUnitFor(server.name, scope);
+    if (unit !== undefined) {
+      const entry = unit.connections.get(server.name);
+      if (entry !== undefined) {
+        const catalog = unit.catalog.get(server.name);
+        return {
+          ...server,
+          scope,
+          status: entry.status,
+          // 目录发现失败（unavailable）时透出原因：解释 connected 却 0 工具。
+          error: entry.error !== undefined ? msgOf(entry.error) : catalog?.unavailable,
+          tools: catalog !== undefined && catalog.unavailable === undefined ? [...catalog.tools.keys()] : [],
+        };
+      }
+    }
     const supervisor = this.supervisors.get(server.name);
     return {
       ...server,

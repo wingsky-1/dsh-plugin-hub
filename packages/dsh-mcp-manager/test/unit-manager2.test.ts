@@ -660,6 +660,132 @@ function rmStatSafe(p) {
   }
 }
 
+// ---- 中间层模式 summary 投影（#228 回归：连接池状态投影到浮窗/summary）----
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mgr2mw-"));
+  try {
+    const { manager, store } = makeManager(dir);
+    const proj = join(dir, "proj");
+    mkdirSync(join(proj, ".git"), { recursive: true });
+    mkdirSync(join(proj, ".dsh"), { recursive: true });
+    writeFileSync(
+      join(proj, ".dsh", "mcp.json"),
+      JSON.stringify({ version: 1, servers: [{ name: "p1", transport: "stdio", command: "pcmd", enabled: true }] }),
+    );
+    // 先切中间层模式再 setSession（off 语义的 setSession 会 reconcile 启动
+    // 项目级真 supervisor 并异步重连，污染后续兜底投影断言）。
+    manager.middlewareMode = "project";
+    await manager.setSession(proj);
+    await manager.initMiddleware("project", {});
+    const mw = manager.middleware;
+    // 预置 userDisabled（initMiddleware 会以磁盘加载结果覆盖 disabledByRoot，
+    // 故必须在其后设置）：单元创建即合并，惰性 ensureConnected 直接短路——
+    // 连接条目完全由本测试手工注入，杜绝 spawn 真进程与后台重连污染。
+    mw.disabledByRoot.set(proj, new Set(["p1"]));
+    const unit = await mw.projectUnitFor(proj);
+    assert.ok(unit !== undefined);
+    // 注入连接池条目 + 目录缓存（模拟已握手成功，不 spawn 子进程）。
+    unit.connections.set("p1", {
+      server: undefined, client: undefined, transport: undefined,
+      status: "connected", error: undefined, connectedAt: Date.now(),
+      reconnectTimer: undefined, disposed: false, failedAttempts: 0,
+    });
+    unit.catalog.set("p1", {
+      discoveredAt: Date.now(),
+      tools: new Map([["t1", { description: "d1", inputSchema: {} }], ["t2", { description: "", inputSchema: {} }]]),
+    });
+
+    // 回归盲区主断言（#228 维护者实测补充验收）：中间层 connected →
+    // summary 显示 connected、tools 从 catalog 缓存填充出**非空列表**且与
+    // 目录一致（此前 summarize 只读 supervisors，项目级恒 stopped / 空数组，
+    // 而 ws_mcp_search 实测目录有货）。
+    const sum = manager.summary();
+    const p1 = sum.servers.find((s) => s.name === "p1");
+    assert.ok(p1 !== undefined, "项目级 server 在 summary 中");
+    assert.equal(p1.scope, "project");
+    assert.equal(p1.status, "connected");
+    assert.ok(Array.isArray(p1.tools) && p1.tools.length > 0, "summary.tools 非空（catalog 有货不得返回空数组）");
+    assert.deepEqual([...p1.tools].sort(), ["t1", "t2"], "summary.tools 与 catalog 目录一致");
+    assert.equal(sum.counts.connected, 1);
+    console.log("  ok   中间层 summary 投影: connected → connected + tools 非空且与目录一致");
+
+    // failed 态：error 详情投影（浮窗红字展示来源）。
+    const entry = unit.connections.get("p1");
+    entry.status = "failed";
+    entry.error = new Error("spawn pcmd ENOENT");
+    const failed = manager.summarize(manager.projectStore.find("p1"), "project");
+    assert.equal(failed.status, "failed");
+    assert.equal(failed.error, "spawn pcmd ENOENT");
+
+    // connecting 态投影。
+    entry.status = "connecting";
+    entry.error = undefined;
+    assert.equal(manager.summarize(manager.projectStore.find("p1"), "project").status, "connecting");
+
+    // connected + 目录发现失败（unavailable）→ 0 工具且透出原因到 error。
+    entry.status = "connected";
+    unit.catalog.set("p1", { discoveredAt: 0, tools: new Map(), unavailable: "discovery timed out" });
+    const unavail = manager.summarize(manager.projectStore.find("p1"), "project");
+    assert.equal(unavail.status, "connected");
+    assert.deepEqual(unavail.tools, []);
+    assert.equal(unavail.error, "discovery timed out", "unavailable reason 透出到 error");
+
+    // userDisabled（手动断开，无连接条目）→ 落回兜底：无 supervisor → stopped。
+    // （不做 userDisabled 短路：见 summarize 注释——all 模式 supervisor 复活场景
+    // 若短路会把实际已连接反向投影成 stopped。）
+    unit.connections.delete("p1");
+    unit.userDisabled.add("p1");
+    const stopped = manager.summarize(manager.projectStore.find("p1"), "project");
+    assert.equal(stopped.status, "stopped");
+    assert.deepEqual(stopped.tools, []);
+    assert.equal(stopped.error, undefined);
+
+    // 全局 scope 在 project 模式不受中间层影响（supervisor 双轨路径不变）。
+    store.upsert(normalizeServer(quietServer("g1")));
+    manager.supervisors.set("g1", { status: "connected", error: undefined, tools: ["gt"] });
+    const g = manager.summarize(store.find("g1"), "global");
+    assert.equal(g.status, "connected");
+    assert.deepEqual(g.tools, ["gt"]);
+
+    // all 模式：全局服务器经虚拟 root @global 走池 → 同样从池投影。
+    manager.middlewareMode = "all";
+    manager.supervisors.delete("g1");
+    mw.units.set("@global", {
+      root: "@global",
+      connections: new Map([["g1", {
+        server: undefined, client: undefined, transport: undefined,
+        status: "connected", error: undefined, connectedAt: Date.now(),
+        reconnectTimer: undefined, disposed: false, failedAttempts: 0,
+      }]]),
+      catalog: new Map([["g1", { discoveredAt: Date.now(), tools: new Map([["gt", { description: "", inputSchema: {} }]]) }]]),
+      userDisabled: new Set(),
+      lastTouchedAt: Date.now(),
+      inFlight: new Map(),
+    });
+    const gAll = manager.summarize(store.find("g1"), "global");
+    assert.equal(gAll.status, "connected", "all 模式全局经 @virtual root 投影");
+    assert.deepEqual(gAll.tools, ["gt"]);
+
+    // 反向投影回归（#228 打回 P1）：池中条目被拆且 userDisabled，但 supervisor
+    // 已复活连接（all 模式全局 connect 绕过中间层池的 #234 既有限制）→ 必须
+    // 如实投影 supervisor 状态，不得因 userDisabled 恒报 stopped。
+    const globalUnit = mw.units.get("@global");
+    globalUnit.connections.delete("g1");
+    globalUnit.userDisabled.add("g1");
+    manager.supervisors.set("g1", { status: "connected", error: undefined, tools: ["gt"] });
+    const revived = manager.summarize(store.find("g1"), "global");
+    assert.equal(revived.status, "connected", "supervisor 复活后如实投影（userDisabled 不短路）");
+    assert.deepEqual(revived.tools, ["gt"]);
+    // supervisor 消失后落回兜底 stopped。
+    manager.supervisors.delete("g1");
+    assert.equal(manager.summarize(store.find("g1"), "global").status, "stopped");
+    await mw.dispose();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 // ---- apply：配置分支 ----
 
 {
