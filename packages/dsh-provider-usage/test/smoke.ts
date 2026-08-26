@@ -196,12 +196,15 @@ for (const routePath of [ROUTES.stats, ROUTES.history, ROUTES.health, ROUTES.ada
   assert.equal(postPayload.ui.offsetX, 2000, "offsetX clamp 2000");
   assert.equal(postPayload.ui.offsetY, 0, "offsetY clamp 0");
   assert.equal(postPayload.ui.panelOffsetY, 10, "panelOffsetY 透传");
+  // #128：POST 缺省 zIndexBase 归一化为默认 40
+  assert.equal(postPayload.ui.zIndexBase, 40, "#128 zIndexBase 缺省归一化默认 40");
 
   // ui.json 已落盘（DSH_HOME 隔离目录内）
   const uiFile = join(process.env.DSH_HOME, "dsh-provider-usage", "ui.json");
   assert.ok(existsSync(uiFile), "ui.json 已落盘");
   const stored = JSON.parse(readFileSync(uiFile, "utf8"));
   assert.equal(stored.placement, "top-right", "落盘值已归一化");
+  assert.equal(stored.zIndexBase, 40, "#128 落盘 ui.json 含归一化 zIndexBase");
 }
 
 // ---------------------------------------------------------------- /stats v2 响应
@@ -675,6 +678,18 @@ export function formatPanel() { return "<p>x</p>"; }
   assert.ok(!clientSource.includes("mcpClearance"), "客户端源码已去除 MCP 避让（mcpClearance）");
   assert.ok(!clientSource.includes("data-dsh-mcp-float"), "客户端源码已去除 MCP 浮窗探测避让");
   assert.ok(clientSource.includes('.style.position = "fixed"'), "客户端源码用固定定位渲染胶囊");
+
+  // qa F1（#128 实测）：bottom-* 锚点首次打开以小高度定位、异步数据撑高面板后
+  // 无重排路径 → 稳定向下溢出视口。防回归：renderPanel 尾部触发重定位 +
+  // toggleFloat 先渲染后定位。
+  assert.ok(/function renderPanel[\s\S]*?if \(floatOpen\) applyUiPlacement\(\);/.test(clientSource),
+    "renderPanel 内容更新完成后触发 applyUiPlacement 重定位（bottom 锚点防溢出）");
+  {
+    const tfStart = clientSource.indexOf("function toggleFloat");
+    const tf = clientSource.slice(tfStart);
+    assert.ok(tf.indexOf("renderPanel()") >= 0 && tf.indexOf("renderPanel()") < tf.indexOf("placePanel()"),
+      "toggleFloat 先 renderPanel 后 placePanel（以真实内容高度定位）");
+  }
 
   // lib/index.js 导出 v2 契约面
   const hostLib = readFileSync(join(pkgDir, "lib/index.js"), "utf8");
