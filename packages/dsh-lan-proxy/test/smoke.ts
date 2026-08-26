@@ -168,7 +168,8 @@ function makeSettings(initialUser: Record<string, unknown> = {}) {
 }
 
 /** fake webServer：prefixes/exact Map + register/registerFallback + port（转发器目标端口）。 */
-function makeWebServer() {  const prefixes = new Map();
+function makeWebServer() {
+  const prefixes = new Map();
   const exact = new Map();
   const ws = {
     prefixes,
@@ -458,14 +459,51 @@ const main = async () => {
       assert.equal(bak.port, 4081, "bak 保留原始内容供用户回滚");
       assert.deepEqual(scope.state.user, { port: 4081, printBanner: false, httpCompressLevel: 3 }, `写入官方存储的用户层=${JSON.stringify(scope.state.user)}`);
     });
-    // 幂等：二次启动 config.json 不存在 → 跳过，不重复写。
+    // 幂等：config.json 与 .bak 都不存在（用户已清理备份的稳态）→ 跳过，不写。
+    // 注：正常迁移成功后 .bak 保留，二次启动会命中中断态重放（同值 merge 无害，
+    // 见下方用例）；真正「跳过」的稳态是备份被清理之后。
+    rmSync(join(cfgDir, MIGRATED_BAK_NAME));
     scope = makeScope();
     outcome = await migrateFileConfig(cfgDir, scope);
-    check("迁移幂等：二次启动（config.json 不存在）跳过且不写", () => {
-      assert.deepEqual(outcome, { performed: false, migrated: false, rolledBack: false, skippedCorrupt: false });
+    check("迁移幂等：config.json 与备份都不存在 → 跳过且不写", () => {
+      assert.deepEqual(outcome, { performed: false, migrated: false, rolledBack: false, skippedCorrupt: false, resumed: false });
       assert.equal(scope.state.updates.length, 0, "未产生第二次写入");
     });
     rmSync(cfgDir, { recursive: true, force: true });
+
+    // 中断态重放：.bak 存在且 config.json 不存在（改名成功后写入完成前进程被杀）
+    // → 视为未完成迁移，从 bak 重放「解析→sanitize→update」，配置不再永滞 bak。
+    // （正常迁移成功后 bak 保留，因此二次启动也会命中重放——同值 merge 无害。）
+    const resumeDir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-migrate-resume-"));
+    writeFileSync(join(resumeDir, MIGRATED_BAK_NAME), JSON.stringify({ port: 4077, printBanner: false }));
+    const warns: string[] = [];
+    scope = makeScope();
+    outcome = await migrateFileConfig(resumeDir, scope, { warn: (m) => warns.push(String(m)) });
+    check("中断重放：.bak 存在且 config.json 不存在 → 从 bak 重写官方存储且保留备份", () => {
+      assert.equal(outcome.resumed && outcome.migrated, true, `outcome=${JSON.stringify(outcome)}`);
+      assert.equal(scope.state.user.port, 4077, "滞留 .bak 的配置已重放进官方存储");
+      assert.equal(existsSync(join(resumeDir, MIGRATED_BAK_NAME)), true, "重放成功后保留 bak");
+      assert.ok(warns.some((m) => m.includes("重放写入设置")), `warn 明示恢复路径，实际 ${JSON.stringify(warns)}`);
+    });
+    // 二次启动（bak 未清理）→ 再次重放同值，无副作用、不抛错。
+    const again = await migrateFileConfig(resumeDir, scope);
+    check("中断重放幂等：二次启动重放同值无害", () => {
+      assert.equal(again.resumed && again.migrated, true);
+      assert.equal(scope.state.user.port, 4077);
+      assert.deepEqual(scope.state.updates[0], scope.state.updates[1], "两次重放内容一致");
+    });
+    // 重放遇损坏 bak：warn 手动恢复路径，不抛错。
+    const badBak = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-migrate-resume-bad-"));
+    writeFileSync(join(badBak, MIGRATED_BAK_NAME), "{not json");
+    const badWarns: string[] = [];
+    const badResume = await migrateFileConfig(badBak, makeScope(), { warn: (m) => badWarns.push(String(m)) });
+    check("中断重放：bak 损坏时 warn 手动恢复路径且不写入", () => {
+      assert.equal(badResume.resumed, true);
+      assert.equal(badResume.migrated, false);
+      assert.ok(badWarns.some((m) => m.includes("无法自动恢复")), `warn 含手动恢复指引，实际 ${JSON.stringify(badWarns)}`);
+    });
+    rmSync(resumeDir, { recursive: true, force: true });
+    rmSync(badBak, { recursive: true, force: true });
 
     // 损坏 / 非 object / 全非法值 JSON：只改名标记、不写入。
     for (const [label, raw] of [
@@ -866,14 +904,33 @@ const main = async () => {
     // tls 成对约束。
     const lone = await applyConfigPatch(makeDeps().deps, { patch: { tlsCertFile: "/x.pem" } });
     check("patch 单边证书被拒（tls-pair）", () => assert.equal(lone.ok === false && (lone as any).code, "tls-pair"));
+    // P2-1：单边空串 + 单侧非空字符串 → raw 层直接拒绝（不再被 sanitize 剔除绕过）。
+    const mixedClear = await applyConfigPatch(makeDeps({ port: 4000 }).deps, { patch: { tlsCertFile: "", tlsKeyFile: "/keep.pem" } });
+    const mixedSet = await applyConfigPatch(makeDeps().deps, { patch: { tlsCertFile: "/new.pem", tlsKeyFile: "" } });
+    check("patch 单边空串混非空值被拒（raw 层成对形态判定）", () => {
+      assert.equal(mixedClear.ok, false, JSON.stringify(mixedClear));
+      assert.equal((mixedClear as any).code, "tls-pair");
+      assert.equal((mixedClear as any).status, 400);
+      assert.equal(mixedSet.ok, false);
+      assert.equal((mixedSet as any).code, "tls-pair");
+    });
     // settings 服务不可用。
     const unavail = makeDeps();
     (unavail.deps as any).writable = () => false;
     const na = await applyConfigPatch(unavail.deps, { patch: { port: 4000 } });
     check("settings 服务不可用时写入 503 拒绝", () => assert.equal(na.ok === false && (na as any).status, 503));
-    // 写入异常与乐观并发冲突映射。
-    const broken = await applyConfigPatch(makeDeps({}, { broken: true }).deps, { patch: { port: 4000 } });
-    check("写入异常映射 500/error", () => assert.equal(broken.ok === false && (broken as any).status, 500) && assert.equal((broken as any).code, "error"));
+    // 写入异常与乐观并发冲突映射（P2-2：响应 details 固定文案，原文只进日志）。
+    const logWarns: string[] = [];
+    const brokenDeps = makeDeps({}, { broken: true });
+    (brokenDeps.deps as any).logWarn = (m: string) => logWarns.push(m);
+    const broken = await applyConfigPatch(brokenDeps.deps, { patch: { port: 4000 } });
+    check("写入异常映射 500/error 且 details 不泄露底层错误原文", () => {
+      assert.equal(broken.ok === false && (broken as any).status, 500);
+      assert.equal((broken as any).code, "error");
+      assert.equal((broken as any).details, "保存失败，请查看服务端日志");
+      assert.ok(!((broken as any).details.includes("disk full")), "details 不含 err.message 原文");
+      assert.ok(logWarns.some((m) => m.includes("disk full")), "err.message 走服务端日志");
+    });
     const conflict = await applyConfigPatch(makeDeps({}, { conflict: true }).deps, { patch: { port: 4000 } });
     check("SETTINGS_CONFLICT 映射 409/conflict", () => assert.equal(conflict.ok === false && (conflict as any).status, 409) && assert.equal((conflict as any).code, "conflict"));
   }

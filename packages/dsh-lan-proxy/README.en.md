@@ -86,8 +86,11 @@ GUI settings entry: Settings → Plugins → "LAN Access" card (saved changes ap
 - This plugin no longer maintains its own `~/.dsh/lan-proxy/config.json`. On
   the first start after upgrading, a legacy config.json is migrated once into
   the official store: the original file is atomically renamed and kept as
-  `config.json.migrated.bak` (a failed migration is rolled back and retried on
-  next start); delete that backup manually once everything works. Editing
+  `config.json.migrated.bak`. If persisting into the official store fails, the
+  rename is rolled back and retried on next start; if the process exits before
+  the write completes (interrupted), the leftover backup is detected on next
+  start and its content is replayed into the store, with a log note.
+  Delete that backup manually once everything works. Editing
   config.json afterwards has **no effect**.
 
 ## WebSocket Compression (wss event stream)

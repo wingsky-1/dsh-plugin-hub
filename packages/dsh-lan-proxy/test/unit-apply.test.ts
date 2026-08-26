@@ -95,10 +95,38 @@ const { createServer } = await import("node:http");
   const invalid = await applyConfigPatch(baseDeps(), { patch: { port: 99999 } });
   assert.equal(invalid.ok, false);
   assert.equal(invalid.code, "invalid");
-  // handler 内抛异常 → 500
-  const broken = await applyConfigPatch(baseDeps({ update: async () => { throw new Error("broken"); } }), { patch: { port: 3000 } });
+  // handler 内抛异常 → 500，details 固定文案（P2-2），原文走 logWarn
+  const logWarns: string[] = [];
+  const broken = await applyConfigPatch(
+    baseDeps({ update: async () => { throw new Error("broken-secret"); }, logWarn: (m) => logWarns.push(m) }),
+    { patch: { port: 3000 } },
+  );
   assert.equal(broken.ok, false);
   assert.equal(broken.status, 500);
+  assert.equal(broken.details, "保存失败，请查看服务端日志", "details 不泄露 err.message 原文");
+  assert.ok(logWarns.some((m) => m.includes("broken-secret")), "err.message 走服务端日志");
+}
+
+// ===== applyConfigPatch tls 成对形态（P2-1） =====
+{
+  const baseDeps = () => ({
+    resolve: () => ({ enabled: true }),
+    readUser: () => ({ user: {}, revision: 1 }),
+    writable: () => true,
+    update: async () => {},
+    replace: async () => {},
+    compress: () => ({ httpCompressEnabled: true, httpCompressLevel: 1, httpCompressMounted: false, httpCompressStats: { compressed: 0, passthrough: 0 } }),
+  });
+  // 单边空串混单侧非空字符串 → raw 层拒绝（sanitize 剔除空串后不再绕过成对校验）
+  for (const patch of [
+    { tlsCertFile: "", tlsKeyFile: "/keep.pem" },
+    { tlsCertFile: "/new.pem", tlsKeyFile: "" },
+  ]) {
+    const mixed = await applyConfigPatch(baseDeps(), { patch });
+    assert.equal(mixed.ok, false, `patch=${JSON.stringify(patch)} 应被拒`);
+    assert.equal(mixed.code, "tls-pair");
+    assert.equal(mixed.status, 400);
+  }
 }
 
 // ===== apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/isUnloading/warn） =====

@@ -406,21 +406,60 @@ export const MIGRATED_BAK_NAME = "config.json.migrated.bak";
 
 /** migrateFileConfig 的结果（导出供单测断言）。 */
 export interface MigrationOutcome {
-  /** 本次是否执行了改名标记（false = config.json 不存在，二次启动跳过）。 */
+  /** 本次是否执行了改名标记（false = config.json 不存在，或仅从中断态重放）。 */
   performed: boolean;
-  /** 是否有有效键写入了 owner scope。 */
+  /** 是否有有效键写入了 owner scope（含中断态重放成功）。 */
   migrated: boolean;
   /** 写入失败后是否已回滚改名（config.json 已还原）。 */
   rolledBack: boolean;
   /** 损坏/空 JSON：仅改名标记、不写入（防固化 schema 默认值）。 */
   skippedCorrupt: boolean;
+  /** 本次是否为中断态重放（.bak 存在且 config.json 不存在）。 */
+  resumed: boolean;
+}
+
+/**
+ * 中断态重放：上次「改名成功 → scope.update 完成前」进程被杀的现场是
+ * `.bak` 存在且 `config.json` 不存在——此时不能按幂等跳过（否则配置永滞
+ * .bak 且无提示），视为未完成迁移，从 bak 重放「解析→sanitize→scope.update」。
+ * 成功后保留 bak（update 同值 merge 幂等，后续启动重放无害）；损坏/无效/
+ * 写入失败则 warn 明示手动恢复路径。
+ */
+async function resumeMigrateFromBak(
+  bakPath: string,
+  scope: Pick<OwnerScopeLike, "update">,
+  logger?: { warn?: (...a: unknown[]) => void },
+): Promise<MigrationOutcome> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(bakPath, "utf8"));
+  } catch {
+    logger?.warn?.(`lan-proxy: 检测到上次未完成的迁移残留 ${MIGRATED_BAK_NAME}，但文件不是合法 JSON — 无法自动恢复，请手动检查该文件（原始 config.json 内容应在其内）或删除它`);
+    return { performed: false, migrated: false, rolledBack: false, skippedCorrupt: true, resumed: true };
+  }
+  const sanitized =
+    typeof parsed === "object" && parsed !== null ? sanitizeSettings(parsed) : null;
+  if (sanitized === null || Object.keys(sanitized).length === 0) {
+    logger?.warn?.(`lan-proxy: 上次未完成的迁移残留 ${MIGRATED_BAK_NAME} 无可迁移的有效键 — 已跳过，确认无误后可手动删除该文件`);
+    return { performed: false, migrated: false, rolledBack: false, skippedCorrupt: true, resumed: true };
+  }
+  try {
+    await scope.update(sanitized as Record<string, unknown>);
+    logger?.warn?.(`lan-proxy: 检测到上次未完成的迁移 — 已从 ${MIGRATED_BAK_NAME} 重放写入设置；确认运行正常后可手动删除该备份`);
+    return { performed: false, migrated: true, rolledBack: false, skippedCorrupt: false, resumed: true };
+  } catch (err) {
+    logger?.warn?.(`lan-proxy: 未完成的迁移从 ${MIGRATED_BAK_NAME} 重放写入设置失败（${errorMessage(err)}）— 配置仍保留在该备份中，请排查后重启重试，或手动将其内容恢复到设置`);
+    return { performed: false, migrated: false, rolledBack: false, skippedCorrupt: false, resumed: true };
+  }
 }
 
 /**
  * 存量 config.json 一次性迁移到官方 settings 命名空间（rename-first marker）。
  *
  * 时序（issue #110 修订路线）：
- * 1. `config.json` 不存在 → 直接返回（幂等：二次启动跳过）；
+ * 0. 中断态（`.bak` 存在且 `config.json` 不存在，即上次改名后写入未完成）→
+ *    从 bak 重放写入（见 resumeMigrateFromBak），不静默跳过；
+ * 1. `config.json` 不存在（且无中断态残留）→ 直接返回（幂等：二次启动跳过）；
  * 2. 先原子改名 `config.json` → `config.json.migrated.bak`（POSIX rename 原子；
  *    Windows 目标已存在会抛错，故先 unlink 旧 bak——bak 仅是保险副本，被新的
  *    用户手动恢复内容取代可接受）；改名成功即视为「已处理」，无论后续成败；
@@ -441,8 +480,11 @@ export async function migrateFileConfig(
 ): Promise<MigrationOutcome> {
   const cfgPath = join(configDir, "config.json");
   const bakPath = join(configDir, MIGRATED_BAK_NAME);
-  const idle: MigrationOutcome = { performed: false, migrated: false, rolledBack: false, skippedCorrupt: false };
-  if (!existsSync(cfgPath)) return idle;
+  // 中断态优先于幂等判定：config.json 与 .bak 同时不存在才是真正的已迁移稳态。
+  if (!existsSync(cfgPath)) {
+    if (existsSync(bakPath)) return resumeMigrateFromBak(bakPath, scope, logger);
+    return { performed: false, migrated: false, rolledBack: false, skippedCorrupt: false, resumed: false };
+  }
   // Windows 上 rename 到已存在目标会抛错；先移除历史 bak（见函数注释）。
   if (existsSync(bakPath)) unlinkSync(bakPath);
   renameSync(cfgPath, bakPath);
@@ -451,24 +493,24 @@ export async function migrateFileConfig(
     parsed = JSON.parse(readFileSync(bakPath, "utf8"));
   } catch {
     logger?.warn?.(`lan-proxy: 存量 config.json 不是合法 JSON — 仅标记为已迁移（${MIGRATED_BAK_NAME}），不写入设置`);
-    return { performed: true, migrated: false, rolledBack: false, skippedCorrupt: true };
+    return { performed: true, migrated: false, rolledBack: false, skippedCorrupt: true, resumed: false };
   }
   if (typeof parsed !== "object" || parsed === null) {
     logger?.warn?.(`lan-proxy: 存量 config.json 不是配置对象 — 仅标记为已迁移（${MIGRATED_BAK_NAME}），不写入设置`);
-    return { performed: true, migrated: false, rolledBack: false, skippedCorrupt: true };
+    return { performed: true, migrated: false, rolledBack: false, skippedCorrupt: true, resumed: false };
   }
   const sanitized = sanitizeSettings(parsed);
   if (sanitized === null) {
     // 含类型非法值：整体不写入（与保存通道同口径，宁可不迁也不迁一半）。
     logger?.warn?.(`lan-proxy: 存量 config.json 含非法配置值 — 仅标记为已迁移（${MIGRATED_BAK_NAME}），不写入设置`);
-    return { performed: true, migrated: false, rolledBack: false, skippedCorrupt: true };
+    return { performed: true, migrated: false, rolledBack: false, skippedCorrupt: true, resumed: false };
   }
   if (Object.keys(sanitized).length === 0) {
-    return { performed: true, migrated: false, rolledBack: false, skippedCorrupt: true };
+    return { performed: true, migrated: false, rolledBack: false, skippedCorrupt: true, resumed: false };
   }
   try {
     await scope.update(sanitized as Record<string, unknown>);
-    return { performed: true, migrated: true, rolledBack: false, skippedCorrupt: false };
+    return { performed: true, migrated: true, rolledBack: false, skippedCorrupt: false, resumed: false };
   } catch (err) {
     // 写入失败：回滚改名，让下次启动重试（数据始终存在于 config.json 或 bak 之一）。
     try {
@@ -477,7 +519,7 @@ export async function migrateFileConfig(
       logger?.warn?.(`lan-proxy: 迁移回滚失败（${errorMessage(rollbackErr)}）— 数据保留在 ${MIGRATED_BAK_NAME}，请手动恢复`);
     }
     logger?.warn?.(`lan-proxy: 存量 config.json 迁移写入设置失败（${errorMessage(err)}）— 已回滚，下次启动重试`);
-    return { performed: true, migrated: false, rolledBack: true, skippedCorrupt: false };
+    return { performed: true, migrated: false, rolledBack: true, skippedCorrupt: false, resumed: false };
   }
 }
 
@@ -499,6 +541,8 @@ export interface ConfigRouteDeps {
   replace(section: object, expectedRevision?: number): Promise<void>;
   /** HTTP 压缩运行快照。 */
   compress(): HttpCompressSnapshot;
+  /** 服务端日志兜底（写入异常原文只进日志，不进响应 details）。 */
+  logWarn?(message: string): void;
 }
 
 /** applyConfigPatch 的结果。 */
@@ -536,11 +580,22 @@ export async function applyConfigPatch(deps: ConfigRouteDeps, payload: unknown):
   if (sanitized === null) {
     return { ok: false, status: 400, code: "invalid", details: "非法配置值（未知键或类型错误）" };
   }
-  // 证书成对约束（sanitize 后判定，口径与历史版本一致）。
+  const rawSrc = (typeof rawPatch === "object" && rawPatch !== null ? rawPatch : {}) as Record<string, unknown>;
+  // 证书成对约束（P2-1）：raw 层先判「显式给出的两侧必须同形态」——一侧空串
+  // 而另一侧非空字符串时直接拒绝。否则单边空串经 sanitize 剔除后，剩余的单侧
+  // 值会绕过下方 sanitize 后的成对校验（如 {tlsCertFile:"", tlsKeyFile:"/x"}）。
+  const rawCert = typeof rawSrc.tlsCertFile === "string" ? rawSrc.tlsCertFile : undefined;
+  const rawKey = typeof rawSrc.tlsKeyFile === "string" ? rawSrc.tlsKeyFile : undefined;
+  const mixedTlsPair =
+    (rawCert === "" && (rawKey ?? "") !== "") ||
+    (rawKey === "" && (rawCert ?? "") !== "");
+  if (mixedTlsPair) {
+    return { ok: false, status: 400, code: "tls-pair", details: "证书文件与私钥文件必须成对提供（或都留空以使用自签名证书）" };
+  }
+  // 成对约束第二层（sanitize 后判定，口径与历史版本一致）：只给单侧值。
   if (Boolean(sanitized.tlsCertFile) !== Boolean(sanitized.tlsKeyFile)) {
     return { ok: false, status: 400, code: "tls-pair", details: "证书文件与私钥文件必须成对提供（或都留空以使用自签名证书）" };
   }
-  const rawSrc = (typeof rawPatch === "object" && rawPatch !== null ? rawPatch : {}) as Record<string, unknown>;
   const clearingTls = TLS_PAIR_KEYS.some((key) => rawSrc[key] === "");
   try {
     if (clearingTls) {
@@ -558,7 +613,10 @@ export async function applyConfigPatch(deps: ConfigRouteDeps, payload: unknown):
     if (code === "SETTINGS_CONFLICT") {
       return { ok: false, status: 409, code: "conflict", details: "设置已被其他窗口修改，请刷新后重试" };
     }
-    return { ok: false, status: 500, code: "error", details: errorMessage(err) };
+    // P2-2：对外收敛固定文案，不把底层异常原文（可能含路径等内部信息）回给
+    // 客户端；完整原因走服务端日志。
+    deps.logWarn?.(`lan-proxy: 配置保存写入设置存储失败 — ${errorMessage(err)}`);
+    return { ok: false, status: 500, code: "error", details: "保存失败，请查看服务端日志" };
   }
   return { ok: true, value: deps.readUser() };
 }
@@ -875,6 +933,8 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
       return scope.replace(section, expectedRevision);
     },
     compress: compressSnapshot,
+    // 写入异常原文只进终端日志（P2-2），响应 details 用固定文案。
+    logWarn: (message) => out.warn(message),
   };
 
   // 配置读写路由（loopback 围栏 + GET/PUT 白名单；客户端 fetch 同源访问）。
