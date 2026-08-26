@@ -12,7 +12,7 @@
  * - GET/POST /api/dsh-provider-usage/ui-config 胶囊位置配置（读取/保存，保存后 SSE 广播）
  * - GET /api/dsh-provider-usage/events  SSE 事件通道（ui-config-changed 等，客户端即时热更新）
  */
-import { readFile, writeFile, rename, unlink, mkdir, readdir } from "node:fs/promises";
+import { readFile, writeFile, rename } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -35,6 +35,7 @@ import { resolveProviderConfig } from "./provider-config.ts";
 import { HotReloadableAdapter, loadAndValidateAdapter } from "./hotreload.ts";
 import { resolvePath, pluginHome, expandHomePath } from "./path-resolve.ts";
 import { Config, normalizeConfig } from "./config.ts";
+import { normalizeUiConfig, readUiConfig, writeUiConfig, sseData } from "./ui-config.ts";
 
 // ------------------------------------------------------------------ 对外 re-export
 // 注意：bundle-host 会把 tsc 产物中的子模块全部内联进 lib/index.js 并清理游离 .js，
@@ -105,96 +106,9 @@ export {
 export type { FloatBreakpoint, ViewportPoint } from "./placement-math.ts";
 // 面板锚点判定同为纯函数，随定位数学一起从单一事实源 re-export。
 export { panelAnchorForPlacement } from "./placement-math.ts";
-
-// ------------------------------------------------------------------ 胶囊位置 UI 配置
-
-/** 胶囊/面板位置配置（设置页「胶囊位置」区维护，持久化到 historyRoot/ui.json）。 */
-export interface UiPlacementConfig {
-  /** 胶囊锚点：右上/左上/右下/左下（默认 top-right = 历史行为）。 */
-  placement: "top-right" | "top-left" | "bottom-right" | "bottom-left";
-  /** 胶囊水平偏移 px（对 left 或 right 生效）。 */
-  offsetX: number;
-  /** 胶囊垂直偏移 px（对 top 或 bottom 生效）。 */
-  offsetY: number;
-  /** 面板相对胶囊下缘的垂直间距 px。 */
-  panelOffsetY: number;
-  /** 胶囊层级基准（clamp 1–9000；面板派生为基准+30）。 */
-  zIndexBase: number;
-}
-
-/** 默认胶囊/面板位置：右上角、右侧对齐（offsetX=0 贴容器右缘）；offsetY=48 让
- *  胶囊默认位于 dsh-mcp-manager 浮窗（默认 top-right、offsetY=8、高约 26px）下方，
- *  保证两胶囊默认互不重叠（issue #116，去避让后以固定默认值错开；跨包避让契约，
- *  不可回退——见两包 README 与 docs/DEVELOPMENT.md「浮窗移动端适配约定」）。 */
-export const DEFAULT_UI_CONFIG: UiPlacementConfig = {
-  placement: "top-right",
-  offsetX: 0,
-  offsetY: 48,
-  panelOffsetY: 10,
-  zIndexBase: DEFAULT_Z_INDEX_BASE,
-};
-
-const UI_PLACEMENTS: UiPlacementConfig["placement"][] = ["top-right", "top-left", "bottom-right", "bottom-left"];
-
-/** 校验并归一化客户端提交的 UI 配置（非法值回退默认；offset 限制 0–2000）。 */
-export function normalizeUiConfig(raw: unknown): UiPlacementConfig {
-  const src = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
-  const placement = UI_PLACEMENTS.includes(src.placement as UiPlacementConfig["placement"])
-    ? (src.placement as UiPlacementConfig["placement"])
-    : DEFAULT_UI_CONFIG.placement;
-  const clamp = (v: unknown, dflt: number): number => {
-    const n = typeof v === "number" && Number.isFinite(v) ? v : Number(v);
-    return Number.isFinite(n) ? Math.min(2000, Math.max(0, Math.round(n))) : dflt;
-  };
-  return {
-    placement,
-    offsetX: clamp(src.offsetX, DEFAULT_UI_CONFIG.offsetX),
-    offsetY: clamp(src.offsetY, DEFAULT_UI_CONFIG.offsetY),
-    panelOffsetY: clamp(src.panelOffsetY, DEFAULT_UI_CONFIG.panelOffsetY),
-    // #128：层级基准 clamp 到 [1,9000]，非法回退默认（与 mcp-manager 同构语义）。
-    zIndexBase: clampZIndexBase(src.zIndexBase, DEFAULT_UI_CONFIG.zIndexBase),
-  };
-}
-
-/** 面板垂直定位纯函数（供 smoke 断言翻转分支；clamp 到视口内，不溢出）。 */
-export function panelTopForAnchor(
-  anchor: "top" | "bottom",
-  pillTop: number,
-  pillBottom: number,
-  panelHeight: number,
-  gap: number,
-): number {
-  return anchor === "bottom" ? Math.max(6, pillTop - panelHeight - gap) : Math.max(6, pillBottom + gap);
-}
-
-/** UI 配置持久化文件（historyRoot 下，0600）。 */
-export function uiConfigFile(root: string): string {
-  return join(root, "ui.json");
-}
-
-/** 读取 UI 配置（文件缺失/损坏回退默认）。 */
-export async function readUiConfig(root: string): Promise<UiPlacementConfig> {
-  try {
-    const text = await readFile(uiConfigFile(root), "utf8");
-    return normalizeUiConfig(JSON.parse(text));
-  } catch {
-    return { ...DEFAULT_UI_CONFIG };
-  }
-}
-
-/** 原子写 UI 配置（tmp + rename，0600；根目录缺失时先建）。 */
-export async function writeUiConfig(root: string, cfg: UiPlacementConfig): Promise<void> {
-  const file = uiConfigFile(root);
-  await mkdir(root, { recursive: true });
-  const tmp = `${file}.${Date.now()}.tmp`;
-  await writeFile(tmp, JSON.stringify(normalizeUiConfig(cfg)), { mode: 0o600 });
-  await rename(tmp, file);
-}
-
-/** 序列化一帧 SSE data 行（同 dsh-mcp-manager 的 sseData 语义）。 */
-export function sseData(payload: unknown): string {
-  return `data: ${JSON.stringify(payload)}\n\n`;
-}
+// 胶囊位置 UI 配置（#276 方案 A 阶段 3 拆出：纯函数 + 持久化读写）
+export { DEFAULT_UI_CONFIG, normalizeUiConfig, panelTopForAnchor, uiConfigFile, readUiConfig, writeUiConfig, sseData } from "./ui-config.ts";
+export type { UiPlacementConfig } from "./ui-config.ts";
 
 // ------------------------------------------------------------------ 用户适配器持久化（设置页 add/select 承载，免手改配置）
 
