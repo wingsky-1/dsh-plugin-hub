@@ -13,6 +13,7 @@
  * 已 abort 外部信号的同步短路、成功路径监听器摘除、管道组装 fail-fast 断言。
  */
 console.error("EVAL-ORDER-TAG: SIGNAL-LOCK");
+import { getEventListeners } from "node:events";
 import { assert } from "./helpers.ts";
 import {
   runV2Pipeline,
@@ -149,9 +150,11 @@ function mkAdapter(name, provider, fetchData) {
   const external = new AbortController();
   const r = await safeFetchData(async () => ({ ok: 1 }), 1000, external.signal);
   assert.equal(r.data?.ok, 1, "带外部信号的正常取数不受影响");
-  const before = external.signal.eventListenerList === undefined ? 0 : external.signal.eventListenerList.length;
-  external.abort(); // 若监听器未摘除，此 abort 会触发内部 controller（无观察者，但泄漏）
-  assert.ok(before >= 0, "外部信号可继续使用");
+  // 可观测代理：node:events#getEventListeners 直读 EventTarget 监听器表，锁死
+  // 「成功路径必须摘除内部 abort 监听器」（原 eventListenerList 非 Node AbortSignal
+  // 公开属性、before>=0 恒真弱断言，已按 hardener 纪律清除）
+  assert.equal(getEventListeners(external.signal, "abort").length, 0, "成功路径后外部信号无残留 abort 监听器");
+  external.abort(); // 监听器已摘除，此 abort 不产生任何副作用
   assert.equal(r.data?.ok, 1, "结果保持不变");
 }
 {

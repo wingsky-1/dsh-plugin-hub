@@ -1080,8 +1080,9 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       sseClients.clear();
       cache.clear();
       panelCache.clear(); // #105①：卸载时面板渲染缓存一并释放
-      // #120：per-provider 锁逐个 cancel（排队中的 runExclusive 以 cancelled 拒绝，
-      // 调用方 getStats 的 catch 已兜底）并清空 Map，避免卸载后残留锁对象
+      // #120：per-provider 锁逐个 cancel（排队中的 runExclusive 以 cancelled 拒绝；
+      // HTTP handler 直调 await getStats 无 catch，rejection 由宿主路由层兜底，
+      // 预热/后台调用点自带 .catch 吞掉）并清空 Map，避免卸载后残留锁对象
       for (const lock of providerLocks.values()) lock.cancel();
       providerLocks.clear();
     },
