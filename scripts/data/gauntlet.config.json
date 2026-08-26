@@ -71,7 +71,7 @@
         "baselineDate": "2026-08-24",
         "baselineDuration": "3m0s",
         "baselineScope": "packages/dsh-mcp-manager/lib/index.js:8610-8696+17322-17456+19271-19915+19964-21027（self-written 四段：store、transport+scope、protocol/supervisor/catalog、import/routes/index；排除 esbuild 垫片、zod/@modelcontextprotocol/sdk/ajv 等大段内联 vendor、shared 契约层内联副本与纯 import 提升段）",
-        "config": "stryker.conf.d/dsh-mcp-manager.json",
+        "config": "stryker.conf.d/dsh-mcp-manager-{1..4}.json（#220 B 段拆分，四段各自独立 matrix 实例）",
         "hardeningNote": "#148 变异加固轮：6 个单测 commit 将 covered 由 29.37% 提升至 74.66%；耗时优化（#173）零杀伤 testFiles 移除 + conc8，3m52s→3m0s",
         "threshold": 60
       },
@@ -87,7 +87,7 @@
         "baselineDate": "2026-08-25",
         "baselineDuration": "4m30s",
         "baselineScope": "packages/dsh-provider-usage/lib/index.js:1372-2769+2805-3696（self-written 两段：contracts/registry/adapters-opencode-go/core-guards/sanitize/pipeline-v2/history/provider-config/hotreload 与 path-resolve/client-logic/index；排除 esbuild 垫片、cosmokit/schemastery/async-mutex/untildify 内联 vendor、shared 契约层内联副本与纯 import 提升段）",
-        "config": "stryker.conf.d/dsh-provider-usage.json",
+        "config": "stryker.conf.d/dsh-provider-usage-{1,2}.json（#220 B 段拆分；seg1=1372-2792、seg2=2671-3727，重叠区间 2671-2792 由判分 mutant id 去重；timeoutMS 30000）",
         "hardeningNote": "#150 变异加固轮一阶段（PR #169）：covered 由 31.80% 提升至 52.87%；二阶段（PR #183）：提升至 67.28% ≥60 达标，全局 strict 随之开启",
         "threshold": 60
       },
@@ -103,13 +103,13 @@
         "baselineDate": "2026-08-25",
         "baselineDuration": "7m50s",
         "baselineScope": "packages/dsh-lan-proxy/lib/index.js:35657-35911+35912-35972+36058-36643（self-written 三段，对应 src/proxy.ts+cert.ts+index.ts 尾段；排除 esbuild 垫片、cosmokit/schemastery/ws/http-proxy/node-forge/selfsigned 内联 vendor、shared 契约层内联副本）",
-        "config": "stryker.conf.d/dsh-lan-proxy.json",
+        "config": "stryker.conf.d/dsh-lan-proxy-{1,2,3}.json（#220 B 段拆分，区间原样三段）",
         "hardeningNote": "#147 变异加固轮：covered 由 49.75% 提升至 62.52%，60% 第一阶达标",
         "threshold": 60
       },
       "dsh-subagent-model-inherit": {
-        "baselineScore": 96.0,
-        "baselineCovered": 96.0,
+        "baselineScore": 96,
+        "baselineCovered": 96,
         "baselineKilled": 48,
         "baselineSurvived": 2,
         "baselineTotal": 50,

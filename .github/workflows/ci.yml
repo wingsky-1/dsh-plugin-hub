@@ -25,6 +25,9 @@ jobs:
       hitPackages: ${{ steps.pkgs.outputs.hitPackages }}
       # 增量变异切片清单（#178）：hitPackages 剔除聚合包 dsh-plugins-all（无变异配置）
       mutationPackages: ${{ steps.pkgs.outputs.mutationPackages }}
+      # 变异 matrix 组合清单（#220 B 方案）：[{package, seg}] —— 拆分三包按
+      # stryker.conf.d/<pkg>-<n>.json 展开为多实例并行，未拆分包 seg=0 走包级配置
+      mutationCombos: ${{ steps.pkgs.outputs.mutationCombos }}
       # 切片是否含变异对象包（#217：显式布尔字符串 'true'/'false'）。GHA 表达式
       # 无取长度与管道能力，在 if 里对清单做取长判空或裸数组文本比较均脆弱；
       # 下游 if 一律用 needs.changes.outputs.hasMutations == 'true' 精确比较
@@ -95,11 +98,30 @@ jobs:
         run: |
           set -e
           # mutationPackages：hitPackages 剔除聚合包后的增量变异切片（#178）；
+          # mutationCombos（#220 B 方案）：切片按 stryker.conf.d/ 段配置展开为
+          #   matrix 组合 —— 存在 <pkg>-<n>.json 的包逐段实例化，否则 seg=0 走
+          #   包级配置；段数以 conf 目录为单一事实源，脚本不硬编码；
           # hasMutations（#217）：由同一清单推导的显式布尔，供下游 if 精确比较
+          combos_for() {
+            local pkg="$1" segs i out= first=1
+            segs=$(ls stryker.conf.d/"$pkg"-*.json 2>/dev/null | wc -l)
+            if [ "$segs" -gt 0 ]; then
+              out='['
+              for i in $(seq 1 "$segs"); do
+                [ $first -eq 1 ] && first=0 || out="$out,"
+                out="$out{\"package\":\"$pkg\",\"seg\":$i}"
+              done
+              echo "$out]"
+            else
+              echo "[{\"package\":\"$pkg\",\"seg\":0}]"
+            fi
+          }
           emit_outputs() {
             MUTS="$(printf '%s' "$1" | jq -c '[.[] | select(. != "dsh-plugins-all")]')"
+            COMBOS="$(printf '%s' "$MUTS" | jq -r '.[]' | while read -r p; do combos_for "$p"; done | jq -sc 'add // []')"
             echo "hitPackages=$1" >> "$GITHUB_OUTPUT"
             echo "mutationPackages=$MUTS" >> "$GITHUB_OUTPUT"
+            echo "mutationCombos=$COMBOS" >> "$GITHUB_OUTPUT"
             echo "hasMutations=$(printf '%s' "$MUTS" | jq -c 'length > 0')" >> "$GITHUB_OUTPUT"
           }
           # fail-closed 双闸：diff 基准不可用 或 filter 步骤失败 → 一律全量切片
@@ -280,15 +302,17 @@ jobs:
   #   天然可见）；首夜/基线缺失时天然降级为全量变异，门禁语义不变仅变慢
   # 已知约束：GitHub Actions 的 matrix 不允许引用 env context，但可引用 needs outputs
   mutation-gate:
-    name: Mutation gate (${{ matrix.package }})
+    name: Mutation gate (${{ matrix.combo.package }} · s${{ matrix.combo.seg }})
     needs: changes
     # 与 coverage job 平行（无 needs 依赖）；if 精确锁定事件面与显式布尔切片，
     # 空 slice 时 if 直接为假、矩阵不实例化（job result = skipped）
     if: github.event_name == 'pull_request' && needs.changes.outputs.hasMutations == 'true'
     strategy:
       fail-fast: false
+      # #220 B 方案：combo = {package, seg}；拆分三包逐段并行实例化，
+      # 未拆分包单实例（seg=0 走包级配置 <pkg>.json）
       matrix:
-        package: ${{ fromJSON(needs.changes.outputs.mutationPackages) }}
+        combo: ${{ fromJSON(needs.changes.outputs.mutationCombos) }}
     runs-on: ubuntu-latest
     # cov 已剥离：最坏情形 = 基线缺失降级全量变异（lan-proxy 全量实测 7m36s）
     # + install + 全量 build，30 分钟余量充足（原 45 分钟悬崖余量为 cov 所设）
@@ -317,30 +341,44 @@ jobs:
       - name: Build all packages（变异对象 lib 分段依赖全集一致的构建链）
         run: pnpm build
 
+      - name: Resolve combo paths（#220：seg=0 包级配置；seg>0 段式配置）
+        env:
+          MATRIX_PKG: ${{ matrix.combo.package }}
+          SEG: ${{ matrix.combo.seg }}
+        run: |
+          set -e
+          PKG="${MATRIX_PKG#dsh-}"
+          if [ "$SEG" = "0" ]; then
+            echo "CONF=stryker.conf.d/${MATRIX_PKG}.json" >> "$GITHUB_ENV"
+            echo "REPORT=${MATRIX_PKG}" >> "$GITHUB_ENV"
+            echo "BASENAME=incremental-${PKG}" >> "$GITHUB_ENV"
+          else
+            echo "CONF=stryker.conf.d/${MATRIX_PKG}-${SEG}.json" >> "$GITHUB_ENV"
+            echo "REPORT=${MATRIX_PKG}-${SEG}" >> "$GITHUB_ENV"
+            echo "BASENAME=incremental-${PKG}-${SEG}" >> "$GITHUB_ENV"
+          fi
+
       - name: Restore repo incremental baseline（#204：读仓库内基线文件，替代失效的 actions/cache）
-        # #204 方案 A：夜间 observe 把六包 incremental 基线提交进 scripts/gate/baseline/，
+        # #204 方案 A：夜间 observe 把全部 incremental 基线提交进 scripts/gate/baseline/，
         # PR checkout（merge commit 含 base/main 内容）直接读文件复制到
         # coverage/mutation/ —— git 跨 ref 天然可见，替代失效的 actions/cache
         # 跨 ref 通道（#204 实证：actions/cache 按 ref 隔离，PR 永远 miss main 缓存）。
-        # 矩阵包名 dsh-<pkg> → 基线文件名 incremental-<pkg>.json。
+        # 基线文件名随 combo 段号：incremental-<pkg>.json / incremental-<pkg>-<seg>.json。
         # 首夜/基线缺失时天然降级为全量变异（notice 标注属预期，非缺陷）。
         id: baseline
         run: |
           set -e
-          PKG="${MATRIX_PKG#dsh-}"
-          SRC="scripts/gate/baseline/incremental-${PKG}.json"
+          SRC="scripts/gate/baseline/${BASENAME}.json"
           if [ -f "$SRC" ]; then
             mkdir -p coverage/mutation
-            cp "$SRC" "coverage/mutation/incremental-${PKG}.json"
+            cp "$SRC" "coverage/mutation/${BASENAME}.json"
             echo "incremental 基线命中：$SRC（仓库内文件）"
           else
             echo '::notice::incremental 基线文件缺失 —— 本次降级为全量变异（首夜无基线属预期，非缺陷）'
           fi
-        env:
-          MATRIX_PKG: ${{ matrix.package }}
 
       - name: Incremental mutation（incremental 生效跳过未变 mutant）
-        run: npx stryker run stryker.conf.d/${{ matrix.package }}.json
+        run: npx stryker run "${CONF}"
 
       - name: Upload stryker report artifact（报告交 mutation-verdict 统一判分）
         # if: always()：实例非零退出（如内建阈值不足/崩溃）时已产出的报告照常
@@ -348,8 +386,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: mutation-report-${{ matrix.package }}
-          path: coverage/mutation/${{ matrix.package }}.json
+          name: mutation-report-${{ matrix.combo.package }}-s${{ matrix.combo.seg }}
+          path: coverage/mutation/${{ env.REPORT }}.json
           retention-days: 1
           if-no-files-found: error
 
@@ -399,8 +437,10 @@ jobs:
           path: coverage/mutation
 
       - name: Restore report layout（多 artifact 下载各建子目录，平铺回 coverage/mutation/）
+        # #220 B 方案：缺失检查按 combo 粒度 —— 拆分包每段报告都必须下发
+        # （段实例 if-no-files-found: error 已兜底，此处双保险 fail-closed）
         env:
-          SLICE: ${{ needs.changes.outputs.mutationPackages }}
+          COMBOS: ${{ needs.changes.outputs.mutationCombos }}
         run: |
           set -e
           test -f coverage/self-coverage.json || { echo '::error::self-coverage artifact 未下发 —— fail-closed'; exit 1; }
@@ -410,11 +450,14 @@ jobs:
             cp "$dir"/*.json coverage/mutation/
           done
           MISSING=0
-          for pkg in $(printf '%s' "$SLICE" | jq -r '.[]'); do
-            [ -f "coverage/mutation/${pkg}.json" ] || { echo "::error::${pkg} 变异报告 artifact 未下发 —— fail-closed"; MISSING=1; }
+          mapfile -t ROWS < <(printf '%s' "$COMBOS" | jq -r '.[] | "\(.package) \(.seg)"')
+          for row in "${ROWS[@]}"; do
+            pkg="${row% *}"; seg="${row#* }"
+            if [ "$seg" = "0" ]; then f="coverage/mutation/${pkg}.json"; else f="coverage/mutation/${pkg}-${seg}.json"; fi
+            [ -f "$f" ] || { echo "::error::${f} 报告 artifact 未下发 —— fail-closed"; MISSING=1; }
           done
           [ "$MISSING" -eq 0 ] || exit 1
-          echo 'artifact 层级还原完成：coverage/self-coverage.json + coverage/mutation/<pkg>.json'
+          echo 'artifact 层级还原完成：coverage/self-coverage.json + coverage/mutation/<pkg>[-<seg>].json'
 
       - name: Mutation gate verdict（逐包双指标判分：覆盖率恒硬 + 变异率受 strict 开关）
         # 记账模式：任一包判分失败继续跑完其余包，结尾统一判红（与夜间逐包容错纪律一致）

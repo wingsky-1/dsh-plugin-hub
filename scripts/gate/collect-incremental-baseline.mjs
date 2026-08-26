@@ -18,15 +18,16 @@
  * workflow 中 create-pull-request 步骤完成。
  */
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, copyFileSync, existsSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, copyFileSync, existsSync, statSync, writeFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 const repoRoot = process.cwd();
 const srcDir = join(repoRoot, 'coverage', 'mutation');
 const dstDir = join(repoRoot, 'scripts', 'gate', 'baseline');
 
-const PKGS = ['notifier', 'idle-archive', 'web-file-preview', 'mcp-manager', 'provider-usage', 'lan-proxy'];
-
+// #220 B 方案：不再固定六包名单 —— glob 全部 incremental-*.json（含拆分段的
+// incremental-<pkg>-<seg>.json 与未拆分包的 incremental-<pkg>.json），文件名
+// 即仓库内基线名；ci.yml mutation-gate restore 步骤按 conf 推导的段名逐一复制。
 if (!existsSync(srcDir)) {
   console.error(`collect-incremental-baseline: 源目录不存在：${srcDir}`);
   process.exit(1);
@@ -37,23 +38,19 @@ mkdirSync(dstDir, { recursive: true });
 const manifest = {};
 let copied = 0;
 
-for (const pkg of PKGS) {
-  const src = join(srcDir, `incremental-${pkg}.json`);
-  if (!existsSync(src)) {
-    console.warn(`collect-incremental-baseline: 缺少 ${pkg} 基线（跳过）：${src}`);
-    continue;
-  }
-  const dst = join(dstDir, `incremental-${pkg}.json`);
+for (const f of readdirSync(srcDir).filter((n) => /^incremental-.+\.json$/.test(n)).sort()) {
+  const src = join(srcDir, f);
+  const dst = join(dstDir, f);
   copyFileSync(src, dst);
   const st = statSync(src);
   const buf = readFileSync(src);
-  manifest[pkg] = {
+  manifest[f] = {
     size: buf.length,
     mtime: st.mtime.toISOString(),
     sha256: createHash('sha256').update(buf).digest('hex'),
   };
   copied++;
-  console.log(`collect-incremental-baseline: ${pkg} → scripts/gate/baseline/incremental-${pkg}.json (${buf.length} bytes)`);
+  console.log(`collect-incremental-baseline: ${f} → scripts/gate/baseline/${f} (${buf.length} bytes)`);
 }
 
 if (copied === 0) {
@@ -62,4 +59,4 @@ if (copied === 0) {
 }
 
 writeFileSync(join(dstDir, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
-console.log(`collect-incremental-baseline: 完成，${copied}/6 包基线就绪`);
+console.log(`collect-incremental-baseline: 完成，${copied} 份基线就绪`);

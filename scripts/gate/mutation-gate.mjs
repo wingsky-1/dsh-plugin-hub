@@ -28,9 +28,9 @@
  *
  * 退出码：0 = 通过；1 = 门禁违约；2 = 环境/数据缺失错误（fail-closed）
  */
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { readMutationReport } from '../lib/mutation-report-lib.mjs';
+import { readMutationReport, readMutationReportsAgg } from '../lib/mutation-report-lib.mjs';
 
 const repoRoot = process.cwd();
 const pkg = process.argv[2];
@@ -91,13 +91,44 @@ if (fnPct < covThreshold) {
 }
 
 // ── 指标二：变异测试率（covered 口径，受 mutation.strict 约束）──
-const reportPath = join(repoRoot, 'coverage', 'mutation', `${pkg}.json`);
-const r = readMutationReport(reportPath);
-if (!r) {
-  // stryker 步骤成功后报告必然存在；缺失 = 报告 artifact 未下发（链路异常）
-  // 而非门禁语义，一律判红
-  console.error(`mutation-gate: ${pkg} 变异报告缺失或不可解析（${reportPath}）—— stryker 报告 artifact 未下发，fail-closed`);
-  process.exit(2);
+// #220 B 方案：包可拆分为多个段配置（<pkg>-<seg>.json），各段独立 matrix 实例
+// 产出 <pkg>-<seg>.json 报告；此处按段报告聚合（mutant id 去重）为包级口径。
+// 未拆分包仍读单报告 <pkg>.json。任一段报告缺失即 fail-closed。
+const reportDir = join(repoRoot, 'coverage', 'mutation');
+let r = null;
+{
+  // 期望段数由 stryker.conf.d/ 实际存在的 <pkg>-<n>.json 推导（单一事实源）；
+  // 报告必须与段配置一一对应，缺任一段 = 链路异常，fail-closed
+  const confDir = join(repoRoot, 'stryker.conf.d');
+  const expectedSegs = readdirSync(confDir)
+    .map((f) => (f.match(new RegExp(`^${pkg}-(\\d+)\\.json$`)) ?? [])[1])
+    .filter(Boolean)
+    .map(Number)
+    .sort((a, b) => a - b);
+  const segPaths = expectedSegs.map((n) => {
+    const p = join(reportDir, `${pkg}-${n}.json`);
+    if (!existsSync(p)) {
+      console.error(`mutation-gate: ${pkg} 第 ${n} 段报告缺失（${p}）—— 段 matrix 实例未产出，fail-closed`);
+      process.exit(2);
+    }
+    return p;
+  });
+  if (segPaths.length > 0) {
+    r = readMutationReportsAgg(segPaths);
+    if (!r) {
+      console.error(`mutation-gate: ${pkg} 段式报告缺失或不可解析（${segPaths.length} 份中存在异常）—— fail-closed`);
+      process.exit(2);
+    }
+  } else {
+    const singlePath = join(reportDir, `${pkg}.json`);
+    r = readMutationReport(singlePath);
+    if (!r) {
+      // stryker 步骤成功后报告必然存在；缺失 = 报告 artifact 未下发（链路异常）
+      // 而非门禁语义，一律判红
+      console.error(`mutation-gate: ${pkg} 变异报告缺失或不可解析（${singlePath}）—— stryker 报告 artifact 未下发，fail-closed`);
+      process.exit(2);
+    }
+  }
 }
 console.log(
   `mutation-gate [${pkg}] 变异测试率: covered ${r.coveredScore}% vs threshold ${threshold}%`
