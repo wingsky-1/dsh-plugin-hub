@@ -2,11 +2,38 @@
 [![npm](https://img.shields.io/npm/v/@wingsky-1/dsh-provider-usage)](https://www.npmjs.com/package/@wingsky-1/dsh-provider-usage)
 [![GitHub Releases](https://img.shields.io/github/v/release/wingsky-1/dsh-plugin-hub)](https://github.com/wingsky-1/dsh-plugin-hub/releases)
 
-DSH (DeepSeek Harness) Web GUI plugin: **usage statistics float widget** (v2 contract rewrite).
+DSH (DeepSeek Harness) Web GUI plugin: a **generic multi-provider usage statistics
+framework** (v2 adapter contract).
 
 A persistent capsule at the top-right of the chat view shows usage for the current model
-provider; click it to open a detail panel. Rendering happens on the **host side** — user
-adapters return HTML, the client only injects it.
+provider; click it to open a detail panel. Two adapters work out of the box —
+**DeepSeek official** (balance + peak/valley countdown badge + daily usage estimation)
+and **OpenCode Go** (official `/v1/usage`, three windows); any other data source can be
+plugged in by writing one mjs adapter file against the v2 contract (detect/add/toggle on
+the settings page, see "Adapter development guide"). Rendering happens on the **host
+side** — adapters return HTML, the client only injects it, and API keys never reach
+the browser.
+
+## Core advantages
+
+- **Generic framework, works out of the box**: one v2 adapter contract carries any
+  provider; DeepSeek official and OpenCode Go adapters are built in — usage shows up
+  right after install
+- **Any data source takes one mjs file**: three exports (`fetchData` / `formatCapsule` /
+  `formatPanel`) complete an integration; detect/add/toggle hot-swappable from the
+  settings page, file edits auto hot-reload
+- **Daily usage even without a usage API**: the built-in DeepSeek adapter estimates
+  daily usage via a balance-difference conservation formula (top-up/grant disturbances
+  cancel out, abnormal windows excluded), plus a peak/valley countdown badge and a
+  15-day usage bar panel
+- **Keys never leave the host**: fetching runs host-side with keys kept and used only
+  on the host, never sent to the browser (credential-chain / env injection recommended;
+  an explicit `apiKey` config persists in host config files, 0600-protected); rendered
+  output goes through double sanitization (`esc()` escaping duty + structured
+  sanitization fallback) for a two-layer XSS defense
+- **Recoverable history, cache-backed performance**: daily-sharded JSONL persistence
+  (0600) with age/size auto-cleanup; in-process panel render cache + stats cache +
+  background warmup — repeated requests with unchanged data cost zero recompute
 
 > 中文文档：[README.md](README.md)（authoritative）。架构图解（flow / sequence charts）：
 > [docs/architecture.md](docs/architecture.md)；适配器开发引导：[docs/adapter-guide.md](docs/adapter-guide.md)。
@@ -288,7 +315,8 @@ or the plugin home; non-normalized forms (`../` traversal) are rejected with 400
   bound with fail-closed empty output beyond it (bounding worst-case CPU cost) — the
   decoded view is used solely for locating matches and never written back, so
   legitimately escaped text passes through untouched
-- **Hot reload is off by default**; when enabled it polls mtime+size, atomically swaps in
+- **Hot reload is on by default** (`autoReload`, can be disabled explicitly); when
+  enabled it polls mtime+size, atomically swaps in
   the new version only after validation passes, and keeps the old version on failure
 - **Timeout discipline**: fetchData gets a forced 5s timeout (fixed, not configurable); on timeout the host
   **actively aborts the real fetch** — the `signal` handed to fetchData is a merged signal (timeout guard ×
