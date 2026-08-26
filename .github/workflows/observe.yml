@@ -177,12 +177,13 @@ jobs:
       - name: Open baseline PR（基线有变化时自动建 PR 合入 main）
         # create-pull-request 只在有 diff 时创建 PR（无变化 = no-op，不产生噪音提交）。
         # 受保护分支禁止 workflow 直接 push main → 走 PR + auto-merge 路径。
-        # PR 由 bot 身份创建，auto-merge 需在 PR 创建后由后续步骤开启（该 action 本身
-        # 不自动合并，仅建 PR；合并策略见下）。
+        # token 用 OBSERVE_PAT（repo secret）：GITHUB_TOKEN 创建的 PR 不触发后续
+        # workflow runs（防递归机制），曾致基线快照 PR 的必需检查长期
+        # action_required、反复卡在人工批准——PAT 创建可正常触发 CI 与 auto-merge。
         if: always()
         uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.OBSERVE_PAT }}
           branch: ci/incremental-baseline
           base: main
           title: 'chore(ci): update incremental mutation baseline（基线快照）'
@@ -208,7 +209,7 @@ jobs:
         # 会失败并在日志提示，不影响夜间报告其余流程。
         if: always()
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.OBSERVE_PAT }}
         run: |
           PR=""
           for i in $(seq 1 12); do
