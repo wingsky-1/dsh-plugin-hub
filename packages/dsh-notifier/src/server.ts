@@ -139,8 +139,14 @@ export function createSystemNotifier(options: { getSoundEnabled: () => boolean; 
       const now = Date.now();
       if (now - lastSystemNotifyAt < SYSTEM_NOTIFY_THROTTLE_MS) return;
       lastSystemNotifyAt = now;
-      const safeTitle = String(title).slice(0, 64);
-      const safeMessage = String(message).slice(0, 256);
+      // 截断按码点而非 UTF-16 code unit：防 emoji 等代理对在边界被腰斩成
+      // 孤立代理（经 JSON/base64 后变成 U+FFFD 替换符显示，issue #238 配套）。
+      const truncateCodePoints = (s: string, max: number): string => {
+        const chars = Array.from(s);
+        return chars.length > max ? chars.slice(0, max).join("") : s;
+      };
+      const safeTitle = truncateCodePoints(String(title), 64);
+      const safeMessage = truncateCodePoints(String(message), 256);
       let child: ChildProcess | undefined;
       let bin = "";
       try {
@@ -154,12 +160,20 @@ export function createSystemNotifier(options: { getSoundEnabled: () => boolean; 
         // 关键：原生二进制缺失/不可执行（ENOENT 等）必须被下方 error 事件接住，
         // 绝不能冒泡成 unhandled 'error' 把宿主进程打挂——历史版本在 macOS 上因
         // 直接 spawn powershell 失败且未挂 error 监听而崩溃（见 issue #1）。
-        child = spawn(bin, argv.slice(1), process.platform === "win32" ? { windowsHide: true, stdio: "ignore" } : { stdio: "ignore" });
+        child = spawn(bin, argv.slice(1), process.platform === "win32" ? { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] } : { stdio: "ignore" });
       } catch (error) {
         warn(`dsh-notifier: 系统通知启动失败: ${errorMessage(error)}`);
         return;
       }
       if (!child) return; // 极端情况下 spawn 返回空（理论上不会），直接放弃，不碰 child
+      // Windows 分支限长收集 stderr：PS 的诊断（param 绑定失败、WinRT 异常等）
+      // 原先随 stdio ignore 全部丢弃，排查只能盲猜（issue #238）；只留尾部片段进日志。
+      let stderrTail = "";
+      if (process.platform === "win32" && child.stderr) {
+        child.stderr.on("data", (chunk: Buffer) => {
+          if (stderrTail.length < 512) stderrTail += chunk.toString("utf8");
+        });
+      }
       const killer = setTimeout(() => {
         try {
           child!.kill();
@@ -172,7 +186,8 @@ export function createSystemNotifier(options: { getSoundEnabled: () => boolean; 
       child.on("exit", (code) => {
         clearTimeout(killer);
         if (code !== 0 && code !== null) {
-          warn(`dsh-notifier: 系统通知退出码异常（exit ${code}）`);
+          const tail = stderrTail.trim();
+          warn(`dsh-notifier: 系统通知退出码异常（exit ${code}）${tail ? `：${tail.slice(-300)}` : ""}`);
         }
       });
       // 通道失败（二进制不在 PATH / 无桌面会话等）：非 Windows 记一次后置为不可用，

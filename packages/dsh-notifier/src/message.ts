@@ -116,9 +116,11 @@ export function sanitizeErrorText(text: unknown, maxLen = 300): string {
 
 /**
  * 构造系统通知命令参数（纯函数，smoke 可直接断言参数形态）。
- * - win32：spawn powershell -File toast.ps1 -Title=<t> -Message=<m> [-Silent]
- *   单 token 传参：封掉「消息以 - 开头被解析成参数名」与含空格的歧义，
- *   依旧零 shell 拼接面
+ * - win32：spawn powershell -File toast.ps1 -Payload <base64>。标题/正文/silent
+ *   打包为 base64(UTF-8 JSON) 单 token 传递（issue #238）——PS 5.1 的 -File 模式
+ *   对 `-Name=Value` 等号形式不做命名参数绑定，空格形式的裸 dash token 又会被
+ *   误认成下一个参数名；base64 字母表 [A-Za-z0-9+/=] 永不出现在 token 首、无空格
+ *   无引号，彻底脱离命令行 tokenizer 的歧义面，依旧零 shell 拼接面。
  * - darwin：osascript display notification（转义 \ 与 "，换行替换为空格防
  *   脚本语法；silent=false 时带系统提示音 "Glass"）
  * - 其余：notify-send（notifySendAvailable === false 时返回 null=通道不可用）
@@ -131,9 +133,8 @@ export function buildSystemCommand(
   options: { silent: boolean; notifySendAvailable?: boolean; toastScript: string }
 ): string[] | null {
   if (platform === "win32") {
-    const args = ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", options.toastScript, `-Title=${title}`, `-Message=${message}`];
-    if (options.silent) args.push("-Silent");
-    return ["powershell", ...args];
+    const payload = Buffer.from(JSON.stringify({ title, message, silent: options.silent }), "utf8").toString("base64");
+    return ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", options.toastScript, "-Payload", payload];
   }
   if (platform === "darwin") {
     const esc = (s: string) => s.replace(/\\/gu, "\\\\").replace(/"/gu, '\\"').replace(/\n/gu, " ");

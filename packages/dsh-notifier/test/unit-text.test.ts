@@ -23,11 +23,28 @@ assert.equal(prettyToolName("mcp__srv__a__b"), 'MCP 服务器 "srv" 的工具 "a
 assert.equal(prettyToolName(undefined), "?");
 
 // buildSystemCommand：Windows/macOS/Linux 参数形态（smoke 断言 spawn 参数）
+// Windows（issue #238）：固定前缀 + 单一 base64 payload token；前缀用 deepEqual
+// 全序列快照（includes 片段断言抓不住多余/错位 token）。
+const decodePayload = (argv: string[]) => JSON.parse(Buffer.from(argv[argv.length - 1], "base64").toString("utf8"));
 const winArgs = buildSystemCommand("win32", "标题", "内容 -x", { silent: true, toastScript: "t.ps1" });
-assert.equal(winArgs[0], "powershell");
-assert.ok(winArgs.includes("-Silent"), "silent 时追加 -Silent");
-assert.ok(winArgs.some((a) => a === "-Title=标题"), "单 token -Title= 传参");
-assert.ok(winArgs.some((a) => a === "-Message=内容 -x"), "含空格/前导 '-' 的消息单 token 不被拆");
+assert.equal(winArgs[winArgs.length - 2], "-Payload", "payload 参数名成对出现在末尾");
+assert.deepEqual(
+  winArgs.slice(0, -2),
+  ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "t.ps1"],
+  "win32 argv 固定前缀快照（末两位为 -Payload + 值）"
+);
+assert.match(winArgs[winArgs.length - 1], /^[A-Za-z0-9+/=]+$/, "payload 仅含 base64 字符集（永不被误认成参数名/不被拆 token）");
+assert.deepEqual(decodePayload(winArgs), { title: "标题", message: "内容 -x", silent: true }, "payload round-trip 深等于输入");
+// 边界用例：dash 开头 / 双引号 / 换行 / emoji——payload 形态不变、内容无损往返
+for (const c of [
+  { title: "-TODO-fix", message: "- item", silent: true },
+  { title: '说"话', message: "line\nbreak", silent: false },
+  { title: "🚀任务完成", message: "🎉🎉🎉", silent: true },
+]) {
+  const a = buildSystemCommand("win32", c.title, c.message, { silent: c.silent, toastScript: "t.ps1" });
+  assert.match(a[a.length - 1], /^[A-Za-z0-9+/=]+$/, "边界值下 payload 仍是纯 base64 token");
+  assert.deepEqual(decodePayload(a), c, "边界值 round-trip 无损");
+}
 const macArgs = buildSystemCommand("darwin", "标题", '说"话', { silent: false, toastScript: "t.ps1" });
 assert.equal(macArgs[0], "osascript");
 assert.match(macArgs.join(" "), /display notification/);
