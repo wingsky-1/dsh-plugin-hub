@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-mcp-manager/lib/index.js:19972-21262"
+    "packages/dsh-mcp-manager/lib/index.js:19972-21286"
   ],
   "testRunner": "tap",
   "tap": {
@@ -47,5 +47,5 @@
   "cleanTempDir": true,
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-mcp-manager-4.json",
-  "_comment": "#220 B 拆分+#269 重测实验再均衡：原 s4 (19972-22070) 按 esbuild 分段边界对半拆为 s4/s5——重测实证 s4 独占该包绝大多数 mutant（wall-clock 323s 而其余段均≈固定成本）；s4 = import/routes/middleware 三模块。"
+  "_comment": "#220 B 拆分+#269 重测实验再均衡：原 s4 按 esbuild 分段边界对半拆为 s4/s5——重测实证 s4 独占该包绝大多数 mutant（wall-clock 323s 而其余段均≈固定成本）；s4 = import/routes/middleware 三模块。区间行号由 sync-mutate-segments 按产物派生（#280），不手工维护。"
 }
