@@ -187,8 +187,21 @@ export function copyClientResources(pkgDir, libDir) {
     // .css 走客户端 text-loader 构建期内联（见 loader 配置），不再作为独立资源复制
     if (!/\.(ts|tsx|js|mjs|cjs|css)$/.test(f) && !f.startsWith('.') && existsSync(join(srcDir, f))) {
       cpSync(join(srcDir, f), join(libDir, f))
+      // .ps1 资源强制 UTF-8 BOM（issue #238）：Windows PowerShell 5.1 对无 BOM
+      // 文件按 ANSI 码页解码，非 ASCII 注释即解析失败。构建期机器兜底，
+      // 不依赖编辑器保存行为；已带 BOM 则原样跳过，重复构建不叠加双 BOM。
+      if (f.endsWith('.ps1')) ensureUtf8Bom(join(libDir, f))
       copied.push(f)
     }
   }
   return copied
+}
+
+/** 确保 .ps1 产物带 UTF-8 BOM；已带则原样返回 false，缺失/不完整则补写并返回 true。 */
+export function ensureUtf8Bom(filePath) {
+  const buf = readFileSync(filePath)
+  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) return false
+  const text = buf.toString('utf8').replace(/^\uFEFF/, '')
+  writeFileSync(filePath, '\uFEFF' + text, 'utf8')
+  return true
 }

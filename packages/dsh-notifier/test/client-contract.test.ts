@@ -24,3 +24,14 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   for (const literal of literals) assert.ok(expected.includes(literal), `client 出现未知路由: ${literal}`);
   for (const route of expected) assert.ok(literals.includes(route), `client 缺少路由: ${route}`);
 }
+
+// lib/toast.ps1 发布物完整性（issue #238）：必须带 UTF-8 BOM 且与源文件逐字节一致。
+// pwsh 7 在 CI 上解析通过抓不住 5.1 的 ANSI 码页问题，字节级断言是唯一机器兜底；
+// 构建期 copyClientResources 已强制补写，此处防回归（编辑器去 BOM / 复制链变更）。
+{
+  const stripBom = (buf) => (buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf ? buf.subarray(3) : buf);
+  const libBuf = readFileSync(new URL("../lib/toast.ps1", import.meta.url));
+  assert.ok(libBuf[0] === 0xef && libBuf[1] === 0xbb && libBuf[2] === 0xbf, "lib/toast.ps1 必须带 UTF-8 BOM（PS 5.1 按 ANSI 解码无 BOM 文件）");
+  const srcBuf = readFileSync(new URL("../src/toast.ps1", import.meta.url));
+  assert.deepEqual(stripBom(libBuf), stripBom(srcBuf), "lib/toast.ps1 剥离 BOM 后应与 src 源文件逐字节一致");
+}
