@@ -65,9 +65,16 @@ const fakeReq = (method, url, body, opts = {}) => ({
 });
 
 const fakeRes = () => {
-  const state = { status: 200, body: "", headers: {}, destroyed: false };
+  const state = { status: 200, body: "", headers: {}, destroyed: false, writableEnded: false };
   return {
     state,
+    // routes.ts 心跳回调读 res.destroyed / res.writableEnded 判定自愈清理。
+    get destroyed() {
+      return state.destroyed;
+    },
+    get writableEnded() {
+      return state.writableEnded;
+    },
     writeHead: (s, h) => {
       state.status = s;
       state.headers = h ?? {};
@@ -77,6 +84,7 @@ const fakeRes = () => {
     },
     end: (chunk) => {
       if (chunk) state.body += chunk.toString();
+      state.writableEnded = true;
     },
     setHeader: () => {},
     on: (event, cb) => {
@@ -195,6 +203,26 @@ const countPing = (res) => (res.state.body.match(/data: \{"type":"ping"\}/g) ?? 
     // 清理发生在首个 interval 跳之前（同步路径），两连接均应零心跳帧。
     assert.equal(countPing(resA), 0, "卸载后连接 A 心跳停止");
     assert.equal(countPing(resB), 0, "卸载后连接 B 心跳停止");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+{
+  // 自愈路径：destroy() 后（模拟 close 事件丢失的极端场景）下一跳心跳看到
+  // destroyed 即自杀清理——不再写帧，且从 disposer 注册表自删。
+  const { dir, manager } = setup();
+  try {
+    const route = makeEventsRoute(manager, { heartbeatMs: 10 });
+    const res = fakeRes();
+    route.handler(fakeReq("GET", ROUTES.events), res);
+    await sleep(45);
+    const pingsAtDestroy = countPing(res);
+    assert.ok(pingsAtDestroy >= 1, "destroy 前心跳在写帧");
+    res.destroy(); // 不触发 onClose：走 destroyed 自愈而非 close 清理
+    await sleep(45);
+    assert.equal(countPing(res), pingsAtDestroy, "destroy 后心跳停止写帧");
+    assert.equal(manager.sseHeartbeatCleanups.size, 0, "自愈路径自删 cleanup");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

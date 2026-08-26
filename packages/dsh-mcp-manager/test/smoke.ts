@@ -244,6 +244,8 @@ const main = async () => {
       "建连前先执行关旧兜底",
     );
     assert.match(clientSrc, /lastActivity\s*=\s*Date\.now\(\)/, "收到数据帧即喂狗");
+    // 心跳 ping 帧喂狗后早退，不得落入 else 触发 scheduleRefresh（否则 SSE 退化为隐性 30s 轮询）。
+    assert.match(clientSrc, /===\s*"ping"\)\s*return/, "ping 帧仅喂狗即早退");
     // 卸载清理：watchdog 定时器与 SSE 连接都要收掉（esbuild 产物 undefined 折叠为 void 0）。
     assert.match(clientSrc, /if\s*\(watchdog\s*!==\s*(?:void 0|undefined)\)\s*clearTimeout\(watchdog\)/, "卸载清 watchdog");
     assert.match(clientSrc, /closeEvents\(\);\s*document\.removeEventListener\("visibilitychange"/, "卸载关 SSE 并摘监听");

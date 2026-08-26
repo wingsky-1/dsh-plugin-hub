@@ -391,11 +391,21 @@ export function makeEventsRoute(manager: RoutesManager, options?: { heartbeatMs?
       res.write(": connected\n\n");
       res.write(sseData({ type: "summary" }));
       connections.add(res);
-      // 每连接一条心跳定时器：close 时清；destroyed 自愈检查兜底 close 丢失的
-      // 极端场景（向死管道空转即自杀），unref 使其不阻止进程退出。
-      const heartbeat = setInterval(() => {
+      // 每连接一条心跳定时器（notifier 为 hub 级单 interval——本包 makeEventsRoute
+      // 无 hub 对象可挂，per-connection 使 close 清理与泄漏防线在同一闭包内自洽）。
+      // 三路清理收敛到 stopHeartbeat：close 事件 / 插件卸载 disposer / destroyed
+      // 自愈（close 丢失的极端场景，向死管道空转即自杀退出）；unref 使其不阻止
+      // 进程退出。
+      const cleanups = manager.sseHeartbeatCleanups ??= new Set();
+      let heartbeat: ReturnType<typeof setInterval> | undefined;
+      const stopHeartbeat = (): void => {
+        if (heartbeat !== undefined) clearInterval(heartbeat);
+        heartbeat = undefined;
+        cleanups.delete(stopHeartbeat);
+      };
+      heartbeat = setInterval(() => {
         if (res.destroyed || res.writableEnded) {
-          clearInterval(heartbeat);
+          stopHeartbeat();
           return;
         }
         try {
@@ -405,11 +415,6 @@ export function makeEventsRoute(manager: RoutesManager, options?: { heartbeatMs?
         }
       }, heartbeatMs);
       heartbeat.unref();
-      const cleanups = manager.sseHeartbeatCleanups ??= new Set();
-      const stopHeartbeat = (): void => {
-        clearInterval(heartbeat);
-        cleanups.delete(stopHeartbeat);
-      };
       cleanups.add(stopHeartbeat);
       res.on("close", () => {
         stopHeartbeat();

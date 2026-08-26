@@ -163,6 +163,9 @@ export function apply(ctx: any): void {
           } catch {
             msg = undefined;
           }
+          // 心跳帧：仅喂狗即早退——若落入下方 else 触发 scheduleRefresh，SSE
+          // 会退化为隐性 30s 轮询（对齐 notifier 语义：ping 不驱动业务刷新）。
+          if (msg?.type === "ping") return;
           if (msg !== undefined && msg.type === "ui-config-changed") {
             // 配置变更（设置页保存 position/offset）→ 重新 GET /config 就地更新浮窗位置，
             // 非仅刷新 /servers；更新 mcpUiConfig 后重新定位胶囊与（若展开的）面板。
