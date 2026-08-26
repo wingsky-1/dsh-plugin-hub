@@ -84,12 +84,26 @@ export function apply(ctx: any): void {
     };
     attemptRefresh(0);
 
-    // 状态推送（SSE）：宿主状态变化（连接/重连/失败）→ 节流刷新；SSE 真正
-    // 关闭（非自动重连）才降级为 10s 轮询兜底。
+    // 状态推送（SSE）：宿主状态变化（连接/重连/失败）→ 节流刷新；SSE 放弃
+    // （连续 CLOSED 3 次）才降级为 10s 轮询兜底。
+    //
+    // 半开连接防护（#268，移植 dsh-notifier 0.1.8 方案）：移动端切后台系统
+    // 冻结 JS 并静默掐断 TCP，两端均收不到 FIN/RST，onerror/close 都不触发。
+    // 三路防线：
+    //   - 服务端 30s data ping 心跳（routes.ts SSE_HEARTBEAT_MS）供失活信号；
+    //   - 60s watchdog：超时无帧判定半开，关旧建新；
+    //   - visibilitychange 回前台：强制关旧 EventSource 重建。
     let es: any = undefined;
     let refreshTimer: any = undefined;
     let esFailures = 0;
     let pollTimer: any = undefined;
+    // watchdog 状态：收到任意数据帧即喂狗；超时 → 受控重建。
+    const WATCHDOG_MS = 60_000;
+    let lastActivity = 0;
+    let lastReconnectAt = 0;
+    let watchdog: any = undefined;
+    // SSE 已放弃 → 轮询接管，禁止任何路径再建 EventSource。
+    let eventsRetired = false;
     const scheduleRefresh = () => {
       if (refreshTimer !== undefined) return;
       refreshTimer = setTimeout(() => {
@@ -98,6 +112,11 @@ export function apply(ctx: any): void {
       }, 500);
     };
     const startPolling = () => {
+      eventsRetired = true;
+      if (watchdog !== undefined) {
+        clearTimeout(watchdog);
+        watchdog = undefined;
+      }
       if (pollTimer !== undefined) return;
       const tick = () => {
         pollTimer = setTimeout(() => {
@@ -107,48 +126,95 @@ export function apply(ctx: any): void {
       };
       tick();
     };
-    try {
-      es = new EventSource(state.API.events);
-      es.onmessage = (ev: MessageEvent) => {
-        let msg: any;
-        try {
-          msg = JSON.parse(String(ev.data));
-        } catch {
-          msg = undefined;
-        }
-        if (msg !== undefined && msg.type === "ui-config-changed") {
-          // 配置变更（设置页保存 position/offset）→ 重新 GET /config 就地更新浮窗位置，
-          // 非仅刷新 /servers；更新 mcpUiConfig 后重新定位胶囊与（若展开的）面板。
-          void api(state.API.config).then((cfg: any) => {
-            if (cfg !== null && typeof cfg === "object") state.mcpUiConfig = cfg;
-            state.updateFloatState?.();
-          }).catch(() => {});
+    // 关旧连接：所有重建路径共用此入口——覆盖 source 引用不 close 会逐步
+    // 耗尽浏览器同源并发连接、其余请求全部 pending（dsh-notifier 0.1.8 同款
+    // 事故），故 new EventSource 前必先关旧。
+    const closeEvents = () => {
+      if (es === undefined) return;
+      try {
+        es.close();
+      } catch (error) {
+        console.warn("[dsh-mcp-manager] 关闭旧 SSE 连接失败：", error);
+      }
+      es = undefined;
+    };
+    /** SSE 半开连接看门狗：60s 无任何帧（summary/ui-config-changed/ping）→ 主动重建。 */
+    const armWatchdog = () => {
+      if (watchdog !== undefined) clearTimeout(watchdog);
+      watchdog = setTimeout(() => {
+        if (Date.now() - lastActivity > WATCHDOG_MS) {
+          forceReconnect();
         } else {
-          scheduleRefresh();
+          armWatchdog(); // 期间有活动，续期再查
         }
-      };
-      es.onerror = () => {
-        // 宿主重启/热重载/网络抖动会主动断开旧连接，浏览器随即自动重连
-        // （readyState 回到 CONNECTING）——这种瞬时断连不是失败，不累计。
-        // 只有连接真正关闭（如路由 404）才计数，3 次后放弃 SSE 改轮询。
-        if (es !== undefined && es.readyState === EventSource.CLOSED) {
-          esFailures += 1;
-          if (esFailures >= 3) {
-            es.close();
-            es = undefined;
-            startPolling();
+      }, WATCHDOG_MS + 5000);
+    };
+    const connectEvents = () => {
+      closeEvents();
+      try {
+        es = new EventSource(state.API.events);
+        lastActivity = Date.now();
+        es.onmessage = (ev: MessageEvent) => {
+          // 收到任意数据帧即喂狗（含心跳 ping 帧）：链路活性证明。
+          lastActivity = Date.now();
+          let msg: any;
+          try {
+            msg = JSON.parse(String(ev.data));
+          } catch {
+            msg = undefined;
           }
-        }
-      };
-    } catch {
-      // EventSource 不可用：直接轮询兜底。
-      startPolling();
-    }
+          if (msg !== undefined && msg.type === "ui-config-changed") {
+            // 配置变更（设置页保存 position/offset）→ 重新 GET /config 就地更新浮窗位置，
+            // 非仅刷新 /servers；更新 mcpUiConfig 后重新定位胶囊与（若展开的）面板。
+            void api(state.API.config).then((cfg: any) => {
+              if (cfg !== null && typeof cfg === "object") state.mcpUiConfig = cfg;
+              state.updateFloatState?.();
+            }).catch(() => {});
+          } else {
+            scheduleRefresh();
+          }
+        };
+        es.onerror = () => {
+          // 宿主重启/热重载/网络抖动会主动断开旧连接，浏览器随即自动重连
+          // （readyState 回到 CONNECTING）——这种瞬时断连不是失败，不累计。
+          // 只有连接真正关闭（如路由 404）才计数，3 次后放弃 SSE 改轮询；
+          // 未达阈值时 CLOSED 后浏览器不再自动重连，交 watchdog 受控重建兜底。
+          if (es !== undefined && es.readyState === EventSource.CLOSED) {
+            esFailures += 1;
+            if (esFailures >= 3) {
+              closeEvents();
+              startPolling();
+            }
+          }
+        };
+        armWatchdog();
+      } catch {
+        // EventSource 不可用：直接轮询兜底。
+        startPolling();
+      }
+    };
+    // 受控重建入口（关旧 + 5s 节流）：visibilitychange / watchdog 两路共用，
+    // 避免赤裸 connect 重复建连。
+    const forceReconnect = () => {
+      if (eventsRetired) return;
+      const now = Date.now();
+      if (now - lastReconnectAt < 5000) return;
+      lastReconnectAt = now;
+      connectEvents();
+    };
 
-    // 切回本标签页/窗口时兜底刷新：隐藏期间错过的 SSE 广播不会重放，
-    // 恢复可见后主动拉一次，避免 UI 停留在过期状态（如项目级显示未连接）。
+    // 首次建连（后续重建一律走 forceReconnect 受控入口）。
+    connectEvents();
+
+    // 切回本标签页/窗口时兜底刷新 + 强制重建 SSE（#268）：隐藏期间错过的
+    // SSE 广播不会重放需补拉一次；后台期间连接可能已被静默掐断成半开，
+    // onerror/close 均不触发，重建代价低（服务端首帧即全量 summary），换推送
+    // 链路确定性复活。5s 节流挡快速切换的重复建连。
     const onVisible = () => {
-      if (!document.hidden) void refresh(state, actions).catch(() => {});
+      if (!document.hidden) {
+        forceReconnect();
+        void refresh(state, actions).catch(() => {});
+      }
     };
     document.addEventListener("visibilitychange", onVisible);
 
@@ -156,7 +222,8 @@ export function apply(ctx: any): void {
       clearTimeout(retryTimer);
       if (refreshTimer !== undefined) clearTimeout(refreshTimer);
       if (pollTimer !== undefined) clearTimeout(pollTimer);
-      if (es !== undefined) es.close();
+      if (watchdog !== undefined) clearTimeout(watchdog);
+      closeEvents();
       document.removeEventListener("visibilitychange", onVisible);
       for (const dispose of disposers.splice(0)) dispose();
       if (state.overlay !== undefined && state.overlay.parentElement !== null) state.overlay.remove();

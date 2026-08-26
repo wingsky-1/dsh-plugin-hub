@@ -9,6 +9,8 @@
 //   - McpStore 落盘/读回（临时目录）
 //   - makeRoutes：GET 列表 / POST 添加 / PATCH 更新 / DELETE 删除 /
 //     import/json 导入
+//   - SSE 半开防护（#268）：服务端 30s data ping 心跳 + 客户端 60s
+//     watchdog / 回前台强制重建（详见 unit-routes-sse 与下方产物断言）
 //   - apply：enabled:false 时不注册路由与提示词
 //
 // 运行：node dsh-mcp-manager/test/smoke.mjs
@@ -227,6 +229,33 @@ const main = async () => {
     const clientSrc = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
     assert.ok(clientSrc.includes("settings.plugin.item"), "settings.plugin.item 卡已注册");
     assert.ok(clientSrc.includes("dsh-mcp-manager"), "卡片 key/id 引用宿主命名空间 dsh-mcp-manager");
+  });
+
+  console.log("SSE 半开连接防护（#268：服务端心跳 + 客户端 watchdog + 回前台重建）");
+  check("客户端 watchdog：60s 失活重建 + 建连前先关旧（0.1.8 同款防泄漏）", () => {
+    const clientSrc = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+    assert.match(clientSrc, /WATCHDOG_MS\s*=\s*(?:60_?000|6e4|60000)/, "60s watchdog 常量存在");
+    assert.ok(clientSrc.includes("forceReconnect"), "受控重建入口 forceReconnect 存在");
+    assert.ok(clientSrc.includes("closeEvents"), "关旧连接入口 closeEvents 存在");
+    // 关旧建新：new EventSource 前必先关旧——覆盖 source 引用不 close 会耗尽
+    // 浏览器同源并发连接（dsh-notifier 0.1.8 同款事故）。
+    assert.ok(
+      clientSrc.indexOf("closeEvents()") >= 0 && clientSrc.indexOf("closeEvents()") < clientSrc.indexOf("new EventSource"),
+      "建连前先执行关旧兜底",
+    );
+    assert.match(clientSrc, /lastActivity\s*=\s*Date\.now\(\)/, "收到数据帧即喂狗");
+    // 卸载清理：watchdog 定时器与 SSE 连接都要收掉（esbuild 产物 undefined 折叠为 void 0）。
+    assert.match(clientSrc, /if\s*\(watchdog\s*!==\s*(?:void 0|undefined)\)\s*clearTimeout\(watchdog\)/, "卸载清 watchdog");
+    assert.match(clientSrc, /closeEvents\(\);\s*document\.removeEventListener\("visibilitychange"/, "卸载关 SSE 并摘监听");
+  });
+  check("回前台强制重建 SSE（visibilitychange → forceReconnect + 补拉）", () => {
+    const clientSrc = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+    assert.match(clientSrc, /addEventListener\("visibilitychange",\s*onVisible\)/, "visibilitychange 监听已挂");
+    assert.match(
+      clientSrc,
+      /onVisible\s*=\s*\(\)\s*=>\s*\{\s*if\s*\(!document\.hidden\)\s*\{\s*forceReconnect\(\)/,
+      "回前台路径先强制重建 SSE",
+    );
   });
 
   check("设置卡片样式对齐官方风格（#219：12px 圆角 / bg-layer-3 底 / border-l2 / 15px 名称字 / 13px 描述字 / 14 16 padding / gap 4）", () => {

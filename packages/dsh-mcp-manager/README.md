@@ -85,6 +85,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
 | 断线重连 | 有界指数退避（500ms 起、30s 上限、10 次后停止后台重试；用户手动连接或 ws_mcp_call 触发可再试） |
 | 结果截断 | 工具结果按 8KB 截断并标注（防超长 JSON 全量进上下文） |
 | 超时下探 | 工具调用超时默认 60s → 15s（可按服务器 `toolCallTimeoutMs` 覆盖） |
+| 状态推送自愈 | SSE 通道三重防护：服务端每 30s 发 data ping 心跳、客户端 60s 无帧即关旧建新（watchdog）、页面回前台强制重建连接——移动端切后台被系统静默掐断的半开连接可自愈，不堆积僵尸连接 |
 
 ## 配置（浮窗位置）
 

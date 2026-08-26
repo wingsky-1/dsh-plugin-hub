@@ -35,6 +35,11 @@ export interface RoutesManager {
   projectStoreOrThrow(): Promise<McpStore>;
   store: McpStore;
   sseConnections?: Set<ServerResponse>;
+  /**
+   * SSE 心跳定时器的逐连接清理函数（makeEventsRoute 注册；close 时自删）。
+   * 插件卸载时由 apply 的路由 disposer 统一执行，防 interval 泄漏（#268）。
+   */
+  sseHeartbeatCleanups?: Set<() => void>;
   supervisors: Map<string, { status: string; tools: string[] }>;
   catalogCache: Map<string, unknown>;
   /** 中间层模式（off/project/all；health 计数展示用，缺省 off）。 */
@@ -331,6 +336,16 @@ export function uiConfigChangedFrame(): string {
   return sseData({ type: "ui-config-changed" });
 }
 
+/**
+ * SSE 心跳间隔：30s data ping（对齐 dsh-notifier HEARTBEAT_MS 形态，#268）。
+ * 必须用 data 而非注释帧——注释帧既不触发客户端 onmessage 也不触发 onerror，
+ * 半开连接（移动端切后台系统冻结 JS 并静默掐断 TCP）时客户端零事件无法自愈；
+ * data 帧喂客户端 60s watchdog 使其能检测失活并关旧建新。
+ */
+export const SSE_HEARTBEAT_MS = 30_000;
+/** 心跳 ping 帧（内容固定，模块级缓存避免逐次序列化）。 */
+export const SSE_PING_FRAME = sseData({ type: "ping" });
+
 /** 向全部 SSE 连接写出一帧（逐连接 try/catch，掉线忽略）。 */
 export function broadcastFrame(connections: Set<ServerResponse> | undefined, frame: string): void {
   for (const res of connections ?? []) {
@@ -347,8 +362,14 @@ export function broadcastFrame(connections: Set<ServerResponse> | undefined, fra
  * 广播 `{ type: "summary" }` 帧（内容不随帧传输，浏览器收到后自行拉取）。
  * 连接集合挂在 manager.sseConnections 上（惰性创建），插件卸载时由
  * apply 的清理函数统一 destroy。
+ *
+ * 半开连接防护（#268，对齐 dsh-notifier）：写完初始帧后每 30s 向本连接写一条
+ * data ping 心跳——移动端切后台系统冻结 JS 并静默掐断 TCP，两端均收不到
+ * FIN/RST，无心跳则客户端 watchdog 无失活信号可依；close 时清定时器防泄漏，
+ * 清理函数同时登记 manager.sseHeartbeatCleanups 供插件卸载 disposer 兜底。
  */
-export function makeEventsRoute(manager: RoutesManager): WebRoute {
+export function makeEventsRoute(manager: RoutesManager, options?: { heartbeatMs?: number }): WebRoute {
+  const heartbeatMs = options?.heartbeatMs ?? SSE_HEARTBEAT_MS;
   return {
     kind: "exact",
     path: ROUTES.events,
@@ -370,7 +391,28 @@ export function makeEventsRoute(manager: RoutesManager): WebRoute {
       res.write(": connected\n\n");
       res.write(sseData({ type: "summary" }));
       connections.add(res);
+      // 每连接一条心跳定时器：close 时清；destroyed 自愈检查兜底 close 丢失的
+      // 极端场景（向死管道空转即自杀），unref 使其不阻止进程退出。
+      const heartbeat = setInterval(() => {
+        if (res.destroyed || res.writableEnded) {
+          clearInterval(heartbeat);
+          return;
+        }
+        try {
+          res.write(SSE_PING_FRAME);
+        } catch {
+          // 连接已断，等待 close 事件清理
+        }
+      }, heartbeatMs);
+      heartbeat.unref();
+      const cleanups = manager.sseHeartbeatCleanups ??= new Set();
+      const stopHeartbeat = (): void => {
+        clearInterval(heartbeat);
+        cleanups.delete(stopHeartbeat);
+      };
+      cleanups.add(stopHeartbeat);
       res.on("close", () => {
+        stopHeartbeat();
         connections.delete(res);
       });
     },

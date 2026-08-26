@@ -269,6 +269,8 @@ export class McpManager {
   /** 设置命名空间写入 sink（apply 时经 ctx.inject(["settings"]) 注入；注入不到则写不可用）。 */
   uiUpdate?: (patch: Record<string, unknown>) => Promise<unknown>;
   sseConnections?: Set<ServerResponse>;
+  /** SSE 心跳定时器清理函数（makeEventsRoute 注册；卸载 disposer 统一执行，#268）。 */
+  sseHeartbeatCleanups?: Set<() => void>;
   /** 中间层模式（Config.middleware 归一化）。 */
   middlewareMode: MiddlewareMode;
   /** 中间层实例（连接池 + 目录 + 路由；惰性创建）。 */
@@ -1055,6 +1057,10 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
       return () => {
         unsubscribeStatus();
         for (const dispose of disposers) dispose();
+        // 先清 SSE 心跳定时器（#268）：disposer 显式清 interval，不依赖
+        // 下方 res.destroy() 触发 close 的异步时序。
+        for (const stopHeartbeat of manager.sseHeartbeatCleanups ?? []) stopHeartbeat();
+        manager.sseHeartbeatCleanups?.clear();
         for (const res of manager.sseConnections ?? []) {
           try {
             res.destroy();
@@ -1224,7 +1230,7 @@ export {
   MAX_TOTAL_CATALOG_BYTES,
 } from "./middleware.js";
 // 路由
-export { ROUTES, makeRoutes, makeEventsRoute, makeHealthRoute, sseData, uiConfigChangedFrame, broadcastFrame } from "./routes.js";
+export { ROUTES, makeRoutes, makeEventsRoute, makeHealthRoute, sseData, uiConfigChangedFrame, broadcastFrame, SSE_HEARTBEAT_MS, SSE_PING_FRAME } from "./routes.js";
 export { SCOPE_GLOBAL, SCOPE_PROJECT, normalizeScope } from "./scope.js";
 // 仓库共享层（loopback 围栏 / writeJson / readJsonBody）
 export { isLoopbackRequest } from "../../../shared/loopback.js";
