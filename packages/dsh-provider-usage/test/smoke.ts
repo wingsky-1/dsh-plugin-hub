@@ -25,6 +25,7 @@ import "./unit-contract.test.ts";
 import "./unit-config.test.ts";
 import "./unit-history.test.ts";
 import "./unit-v1.test.ts";
+import "./unit-signal-lock.test.ts";
 import "./unit-apply.test.ts";
 import "./unit-detect.test.ts";
 import "./unit-refresh-revalidate.test.ts";
@@ -319,12 +320,12 @@ export function formatPanel() { return "<p>ok</p>"; }
   await new Promise((r) => setTimeout(r, 80));
 
   assert.equal(p2.adapterName, "good-stats", "用户适配器生效");
-  assert.equal(p2.status, "stale", "缺 API key 时 stale 态");
-  // fetchData 抛 no-api-key 前…实际上 fetchData 直接返回数据成功；
-  // 但 resolveProviderConfig 无 key → adapter.fetchData 正常返回 → fresh。
-  // 注意：内置 fetchOpenCodeGoV2 检查 key，但用户适配器自行决定。这里返回 42 → fresh
-  // （若行为不同以实际为准，断言放宽为 status 合法）
-  assert.ok(["fresh", "cached", "stale"].includes(p2.status));
+  // #120：per-provider 锁 + 锁内二次 cacheFresh 校验后，与启动预热并发的请求在锁上
+  // 排队并复用首次取数结果（fresh/cached 真数据帧）；旧实现「锁忙 → busy → stale
+  // 占位帧」语义已废除。缺 API key 时 resolveProviderConfig 无 key，但用户适配器
+  // 自行决定不依赖 key（此处直接返回 42）→ fresh 或其缓存命中 cached。
+  assert.ok(["fresh", "cached"].includes(p2.status), `并发期请求拿真数据帧（实际 ${p2.status}）`);
+  assert.notEqual(p2.status, "stale", "不再产生 busy 占位帧");
 }
 
 // ---------------------------------------------------------------- 卸载清理不抛错
@@ -764,7 +765,11 @@ export function formatPanel() { return "<p>user-panel</p>"; }
     const stats = routes.find((r) => r.path === ROUTES.stats);
     const failPayload = await getJSON(stats, `${ROUTES.stats}?provider=${DEEPSEEK_OFFICIAL_PROVIDER}`);
     assert.equal(failPayload.ok, false, "A1: 失败帧 ok=false");
-    assert.equal(failPayload.status, "stale", "A1: 失败帧 status=stale");
+    // #120：select 自带清缓存 + 「清后立即预热」挂点——本请求命中的是预热刚写入的
+    // 失败帧缓存（复用帧 status 标记为 cached；冷取直连则为 stale，两者皆合法），
+    // 失败语义由 ok/reason/error 承载不受影响
+    assert.ok(["stale", "cached"].includes(failPayload.status),
+      `A1: 失败帧 status ∈ {stale, cached}（实际 ${failPayload.status}）`);
     assert.equal(failPayload.reason, "fetch-failed");
     assert.ok(typeof failPayload.capsuleHtml === "string" && failPayload.capsuleHtml.length > 0, "A1: 失败帧 capsuleHtml 非空");
     assert.ok(failPayload.capsuleHtml.includes("DeepSeek 余额 --"), "A1: 空 data 渲染占位文案");
@@ -804,7 +809,10 @@ export function formatPanel() { return "<p>user-panel</p>"; }
     });
     const stats = routes.find((r) => r.path === ROUTES.stats);
     const payload = await getJSON(stats, `${ROUTES.stats}?provider=${DEEPSEEK_OFFICIAL_PROVIDER}`);
-    assert.equal(payload.status, "stale", "E4: 三级全空 → stale 帧");
+    // #120：select 自带「清缓存 + 立即预热」挂点——本请求命中的是预热刚写入的
+    // no-api-key 失败帧（复用帧 status=cached；冷取直连则为 stale，语义等价）
+    assert.ok(["stale", "cached"].includes(payload.status),
+      `E4: 三级全空 → 失败帧（实际 ${payload.status}）`);
     assert.equal(payload.error, "no-api-key", "E4: 错误码 no-api-key");
     assert.ok(payload.capsuleHtml?.includes("dou-peak"), "G8: no-api-key 下徽标仍渲染（纯本地时间计算）");
     assert.ok(!JSON.stringify(payload).includes("sk-"), "E4: 响应不含任何密钥形态子串");
@@ -874,12 +882,14 @@ export function formatPanel() { return "<p>user-panel</p>"; }
   }
 }
 
-// ---------------------------------------------------------------- #156 warmup 串行采样回归
+// ---------------------------------------------------------------- #156/#120 warmup 多 provider 采样回归
 
 /**
  * 回归：warmup 并发发起 + getStats 全局 mutex busy 短路 → 多 provider 只有
- * 注册序第一个能采样，其余零采样数小时。修复后 warmupFn 串行 await，
- * 全部 enabled provider 依次持锁取数。
+ * 注册序第一个能采样，其余零采样数小时（#156）。
+ * #120 演进：per-provider 锁落地后 warmup 改为并行 void fire-and-forget——
+ * 各 provider 持各自专用锁，并行发起互不 busy、互不阻塞；本用例保留
+ * 「每个启用 provider 都被采样」的主断言（40ms IO 延迟维持真实持锁窗口）。
  */
 {
   // 构造两个用户适配器（providers 互不相同），注册表指向绝对路径 mjs
@@ -920,7 +930,7 @@ export function formatPanel() { return "<p>ok</p>"; }
     },
   });
   await apply(ctx, { ...ISOLATED_CONFIG, warmupIntervalMs: 60000 });
-  // 启动即预热一次（串行 await）：给足两个 provider 依次取数的时间
+  // 启动即预热一次（并行 fire-and-forget）：给足两个 provider 并行取数的时间
   await new Promise((r) => setTimeout(r, 400));
 
   const statsRoute = routes.find((r) => r.path === ROUTES.stats);
@@ -938,13 +948,13 @@ export function formatPanel() { return "<p>ok</p>"; }
 
   assert.equal(pa.adapterName, "warm-a", "provider A 经 warmup 完成采样（适配器生效）");
   assert.notEqual(pa.status, "stale", `provider A 非 stale 短路（实际 ${pa.status}）`);
-  assert.equal(pb.adapterName, "warm-b", "provider B 经 warmup 完成采样——旧实现下 B 因 mutex busy 零采样（#156 主回归点）");
+  assert.equal(pb.adapterName, "warm-b", "provider B 经 warmup 完成采样——旧实现下 B 因全局 mutex busy 零采样（#156 主回归点；#120 后并行预热 + per-provider 锁保持该性质）");
   assert.notEqual(pb.status, "stale", `provider B 非 stale 短路（实际 ${pb.status}）`);
 
   for (const d of [...disposers].reverse()) {
     try { d(); } catch {}
   }
-  console.log("[smoke] #156 warmup 串行采样回归 ✓");
+  console.log("[smoke] #156/#120 warmup 多 provider 并行采样回归 ✓");
 }
 
 // ---------------------------------------------------------------- #105① /history 渲染缓存

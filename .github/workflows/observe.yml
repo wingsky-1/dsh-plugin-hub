@@ -105,7 +105,14 @@ jobs:
               list_all > /tmp/suites.txt
               echo "mode=full" >> "$GITHUB_OUTPUT"
             else
-              # 逐包判定：packages/<pkg>/** 或该包 conf 变化 → 该包全部段配置
+              # 变异工具链变化（scope-guard / collect / tap bridge）影响所有包的
+              # 执行链与基线语义 → 全量
+              if printf '%s\n' "$CHANGED" | grep -qE '^scripts/(gate/(mutation|collect-incremental|observe)|test/mutation-tap-bridge)'; then
+                echo '::notice::变异工具链变化 —— 全量刷新'
+                list_all > /tmp/suites.txt
+                echo "mode=full" >> "$GITHUB_OUTPUT"
+              else
+              # 逐包判定：packages/<pkg>/** 或该包段配置变化 → 该包全部段配置
               : > /tmp/suites.txt
               for pkgdir in packages/dsh-*; do
                 pkg="$(basename "$pkgdir")"
@@ -113,11 +120,17 @@ jobs:
                   ls stryker.conf.d/"$pkg"-*.json stryker.conf.d/"$pkg".json 2>/dev/null >> /tmp/suites.txt || true
                 fi
               done
-              # conf 自身变化 → 对应包重跑（glob 已被上面 ls 覆盖：conf 命中即包名匹配）
+              # 段配置自身变化 → 对应包重跑（#273 教训：区间再均衡不改 packages/ 源码，
+              # 但 mutant 集合已变；从 CHANGED 提取 stryker.conf.d/dsh-xxx(-n)?.json 的包名）
+              for f in $(printf '%s\n' "$CHANGED" | grep -oE '^stryker\.conf\.d/dsh-[a-z0-9-]+(-[0-9]+)?\.json$' || true); do
+                pkg="$(basename "$f" .json | sed -E 's/-[0-9]+$//')"
+                ls stryker.conf.d/"$pkg"-*.json stryker.conf.d/"$pkg".json 2>/dev/null >> /tmp/suites.txt || true
+              done
               sort -u /tmp/suites.txt -o /tmp/suites.txt
               N="$(wc -l < /tmp/suites.txt)"
               echo "mode=partial ($N 配置)" >> "$GITHUB_OUTPUT"
               echo '::notice::按需基线：仅跑变动包配置'
+              fi
             fi
           fi
           HAS=$([ -s /tmp/suites.txt ] && echo true || echo false)

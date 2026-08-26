@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-provider-usage/lib/index.js:2671-3727"
+    "packages/dsh-provider-usage/lib/index.js:2690-3727"
   ],
   "testRunner": "tap",
   "tap": {
@@ -44,5 +44,5 @@
   "cleanTempDir": true,
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-provider-usage-2.json",
-  "_comment": "#220 B 拆分+timeoutMS 收紧(30000)：unit 实测 ~1s/文件；由 dsh-provider-usage.json 派生，mutate 区间原样保留（provider-usage 两段历史重叠区间 2671-2792 由判分层 mutant id 去重处理）。"
+  "_comment": "#220 B 拆分+timeoutMS 收紧(30000)：unit 实测 ~1s/文件；由 dsh-provider-usage.json 派生（#265 CI 返工校准：guards/v2 改动致 bundle 行号漂移，seg1 尾 2792→2811、seg2 起点 2671→2690 重对 sanitize 分段注释；两段重叠区间 2690-2811 由判分层 mutant id 去重处理）。"
 }

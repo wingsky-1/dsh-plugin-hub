@@ -14,7 +14,7 @@ console.error("EVAL-ORDER-TAG: APPLY");
 import { join, dirname } from "node:path";
 import { tmpdir, homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { assert } from "./helpers.ts";
+import { assert, injectGlobalFetch } from "./helpers.ts";
 import {
   apply,
   ROUTES,
@@ -22,6 +22,7 @@ import {
   OPENCODE_GO_ADAPTER_ID,
   ADAPTER_CONTRACT_VERSION,
   fetchWithTimeout,
+  userAdaptersFile,
 } from "../lib/index.js";
 
 // ---------------------------------------------------------------- 工具：fakeReqs
@@ -437,98 +438,121 @@ const routeOf = (routes: Array<Record<string, unknown>>, path: string) =>
   assert.equal(typeof okBody.range.start, "number", "range.start 数字");
 }
 
-// ---------------------------------------------------------------- getStats：缓存命中 / busy / 未配置
+// ---------------------------------------------------------------- getStats：跨 provider 并行 / 锁内二次校验 / 未配置
 
 {
   const dir = mkdtempSync(join(tmpdir(), "dou-getstats-"));
-  // 隔离 DSH_HOME：避免读到真实环境的 user-adapters.json / adapter-state.json，
-  // 否则启动预热会对真实适配器逐个取数（每个最长 fetchTimeoutMs）长期持锁。
+  // 隔离 DSH_HOME：避免读到真实环境的 user-adapters.json / adapter-state.json
   const savedDshHome = process.env.DSH_HOME;
   process.env.DSH_HOME = join(dir, "dshhome");
   mkdirSync(process.env.DSH_HOME, { recursive: true });
   try {
-    // fetchData 带 IO 延迟（80ms）的适配器：为 busy 竞争提供持锁窗口
+    // 两个用户适配器（providers 互不相同）：
+    // - slow：80ms IO 延迟 + 调用计数（seq 经返回数据透出、formatCapsule 渲染）——
+    //   提供「全程仅一次真实取数」的证据载体；
+    // - fast：60ms 延迟 + 起止时间戳写 globalThis 探针——提供跨 provider 并行的窗口证据。
     const slowFile = join(dir, "slow.mjs");
     writeFileSync(slowFile, `
 export const version = ${ADAPTER_CONTRACT_VERSION};
 export const name = "slow-adp";
 export const providers = ["prov-slow"];
+let calls = 0;
 export async function fetchData() {
+  calls += 1;
+  const probe = (globalThis.__pp120 ??= []);
+  probe.push({ n: "A", t: Date.now(), k: "s", seq: calls });
   await new Promise((r) => setTimeout(r, 80));
-  return { v: 42 };
+  probe.push({ n: "A", t: Date.now(), k: "e" });
+  return { v: calls };
 }
-export function formatCapsule() { return "<span>s</span>"; }
+export function formatCapsule(input) { return "<span>" + input.data.v + "</span>"; }
 export function formatPanel() { return "<p>s</p>"; }
 `, "utf8");
-    const { ctx, routes } = makeCtx();
+    const fastFile = join(dir, "fast.mjs");
+    writeFileSync(fastFile, `
+export const version = ${ADAPTER_CONTRACT_VERSION};
+export const name = "fast-adp";
+export const providers = ["prov-fast"];
+export async function fetchData() {
+  const probe = (globalThis.__pp120 ??= []);
+  probe.push({ n: "B", t: Date.now(), k: "s" });
+  await new Promise((r) => setTimeout(r, 60));
+  probe.push({ n: "B", t: Date.now(), k: "e" });
+  return { v: 7 };
+}
+export function formatCapsule(input) { return "<span>" + input.data.v + "</span>"; }
+export function formatPanel() { return "<p>f</p>"; }
+`, "utf8");
+    // 清单写入 historyRoot（本块显式传了 historyDir → user-adapters.json 从那里读取）
+    mkdirSync(join(dir, "hist"), { recursive: true });
+    writeFileSync(userAdaptersFile(join(dir, "hist")), JSON.stringify({
+      adapters: [
+        { id: "slow-adp", label: "Slow", providers: ["prov-slow"], file: slowFile },
+        { id: "fast-adp", label: "Fast", providers: ["prov-fast"], file: fastFile },
+      ],
+    }), "utf8");
+    delete globalThis.__pp120;
+    const { ctx, routes, disposers } = makeCtx();
     await apply(ctx, {
-      adapter: slowFile, autoReload: false,
+      autoReload: false,
       apiKey: "sk", apiEndpoint: "http://127.0.0.1:9",
       historyDir: join(dir, "hist"),
     });
     const stats = routeOf(routes, ROUTES.stats) as { handler: (req: unknown, res: unknown) => Promise<void> };
     const selectR = routeOf(routes, ROUTES.select) as { handler: (req: unknown, res: unknown) => Promise<void> };
-    const clearCache = async (): Promise<void> => {
-      // select 成功路径自带 cache.clear()：清空再重启用，两次都触发清空
-      await selectR.handler(fakeReq({ method: "POST", body: JSON.stringify({ provider: "prov-slow", adapterName: null }) }), makeRes());
-      await selectR.handler(fakeReq({ method: "POST", body: JSON.stringify({ provider: "prov-slow", adapterName: "slow-adp" }) }), makeRes());
-    };
-    const askStats = async (): Promise<Record<string, unknown>> => {
+    const askStats = async (provider: string): Promise<Record<string, unknown>> => {
       const r = makeRes();
-      await stats.handler(fakeReq({ url: `${ROUTES.stats}?provider=prov-slow` }), r);
+      await stats.handler(fakeReq({ url: `${ROUTES.stats}?provider=${provider}` }), r);
       return JSON.parse(r._body()) as Record<string, unknown>;
     };
 
-    // 确定性等待启动预热结束：warmup 对 enabledProviders 串行取数，内置
-    // opencode-go 走真实网络（最长 fetchTimeoutMs=5000ms），prov-slow 是最后一个。
-    // 轮询中遇到 cached 即证明预热已对 prov-slow 写入缓存（整条链必然走完）；
-    // 遇到 busy 继续等；cached 出现后清缓存，随后的请求必为 fresh 且无飞行任务。
-    const deadline = Date.now() + 20000;
-    let warmed = false;
-    while (Date.now() < deadline) {
-      const b = await askStats();
-      if (b.reason === "busy") { await new Promise((r2) => setTimeout(r2, 40)); continue; }
-      warmed = true; // cached 或 fresh：预热已完成 prov-slow（链尾）
-      break;
-    }
-    assert.equal(warmed, true, "启动预热在时限内完成");
-    await clearCache();
+    // 场景1 跨 provider 并行 + 场景2 锁内二次校验（#120）：启动预热对各启用 provider
+    // 并行 fire-and-forget（各持各的 per-provider 锁）；紧随其后发起的两个客户端请求
+    // 在各自 provider 锁上排队，首个取数完成写缓存后经锁内二次 cacheFresh 校验命中，
+    // 全程仅 1 次真实取数（旧全局锁下 fast 必须等 slow 80ms 完成才能开始，且并发者
+    // 只能拿 busy 占位帧）。
+    const pFast = askStats("prov-fast");
+    const pSlow = askStats("prov-slow");
+    const [bFast, bSlow] = await Promise.all([pFast, pSlow]);
 
-    // 第一次取数：fresh + 历史落盘（此时无任何后台取数干扰）
-    const b1 = await askStats();
-    assert.equal(b1.status, "fresh", "清缓存后首次取数 fresh");
-    assert.equal(b1.capsuleHtml, "<span>s</span>", "胶囊来自适配器");
+    // 场景1 断言：slow/fast 取数时间窗重叠 = 无全局队头阻塞
+    const probe = (globalThis.__pp120 ?? []) as Array<{ n: string; t: number; k: string; seq?: number }>;
+    const win = (n: string): { s: number; e: number } => ({
+      s: probe.find((e) => e.n === n && e.k === "s")?.t ?? Number.NaN,
+      e: probe.find((e) => e.n === n && e.k === "e")?.t ?? Number.NaN,
+    });
+    const wa = win("A");
+    const wb = win("B");
+    assert.ok(!Number.isNaN(wa.s) && !Number.isNaN(wb.s), "两适配器探针成对出现");
+    assert.ok(Math.max(wa.s, wb.s) < Math.min(wa.e, wb.e),
+      `slow/fast 取数窗口重叠（A=${wa.s}-${wa.e} B=${wb.s}-${wb.e}）——跨 provider 并行取数`);
+
+    // 场景2 断言：并发请求命中锁内二次校验缓存（复用首次结果，fetchData 全程仅一次）
+    assert.equal(bSlow.status, "cached", `并发同 provider 请求复用缓存（实际 ${bSlow.status}）`);
+    assert.equal(bSlow.capsuleHtml, "<span>1</span>",
+      "capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）");
+    assert.notEqual(bSlow.reason, "busy", "#120 后 busy 短路语义废除，排队者拿真数据帧");
+    assert.equal(bFast.status, "cached", "另一 provider 的并发请求同样命中二次校验");
+    assert.equal(bFast.capsuleHtml, "<span>7</span>", "fast 数据保真");
+    const seqs = probe.filter((e) => e.n === "A" && e.k === "s").map((e) => e.seq);
+    assert.equal(seqs.length, 1, `slow.fetchData 仅执行一次（实际 ${seqs.length} 次）`);
+
+    // 场景3 fresh 产物落盘历史（fresh 语义经落盘侧验证）
     const histDir = join(dir, "hist", "prov-slow", "slow-adp");
     const landed = await pollUntil(() => existsSync(histDir) && readdirSync(histDir).length > 0);
     assert.equal(landed, true, "fresh 数据落盘历史 JSONL");
 
-    // 第二次：缓存命中（TTL 内）
-    const b2 = await askStats();
-    assert.equal(b2.status, "cached", "TTL 内二次请求 cached");
-
-    // busy：清缓存后发起长取数（fetchData 80ms），15ms 后并发同 provider 请求：
-    // 无缓存 + 锁忙 → reason=busy stale。此刻 warmup 已结束、60s 内不会重启，
-    // 竞争窗口完全由测试控制。
-    await clearCache();
-    const pFirst = stats.handler(fakeReq({ url: `${ROUTES.stats}?provider=prov-slow` }), makeRes());
-    void pFirst.catch(() => {});
-    await new Promise((r2) => setTimeout(r2, 15)); // 让首个请求进入 runExclusive 并持锁
-    const bBusy = await askStats();
-    assert.equal(bBusy.reason, "busy", "锁内并发请求报 busy");
-    assert.equal(bBusy.status, "stale", "busy 响应状态 stale");
-    assert.equal(bBusy.configured, true, "busy ≠ 未配置");
-    assert.equal(bBusy.adapterName, "slow-adp", "busy 响应携带目标 provider 启用适配器名");
-    await pFirst;
-
-    // no-enabled-adapter：候选存在但被显式清空（select 清空后 cache.clear()）
+    // 场景4 no-enabled-adapter：候选存在但被显式清空（select 清空路径，clearing 不预热）
     await selectR.handler(fakeReq({
       method: "POST",
       body: JSON.stringify({ provider: "prov-slow", adapterName: null }),
     }), makeRes());
-    const bNoEn = await askStats();
+    const bNoEn = await askStats("prov-slow");
     assert.equal(bNoEn.reason, "no-enabled-adapter", "候选存在但清空启用报 no-enabled-adapter");
     assert.equal(bNoEn.ok, false, "未配置语义 ok=false");
     assert.equal(bNoEn.configured, false, "configured=false");
+
+    for (const d of [...disposers].reverse()) { try { d(); } catch {} }
   } finally {
     if (savedDshHome === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = savedDshHome;
@@ -537,19 +561,20 @@ export function formatPanel() { return "<p>s</p>"; }
 
 // ---------------------------------------------------------------- fetchWithTimeout 边界（#150 二阶段）
 
-// 本文件是 tap 流程最后一个模块：fetchWithTimeout 硬编码读取全局 fetch，
-// 注入窗口必须放在不会再被后续模块 TLA 恢复改写的位置（此前置于 unit-contract，
-// 其 TLA 让 v1 先行求值并在注入窗口内改写全局 fetch，实证互相污染）。
+// fetchWithTimeout 边界（#150 二阶段）
+
+// 注入窗口纪律：fetchWithTimeout 硬编码读取全局 fetch。经 injectGlobalFetch
+// 串行通道（#120）与其他模块的注入窗口互斥，save/restore 恒配对——ESM TLA
+// 交错下不再可能把他人 mock 固化为「现场」（unit-v1 慢路径 × 本窗口交错驻留实证）。
 {
-  const savedFetch = globalThis.fetch;
-  try {
+  await injectGlobalFetch(async (set) => {
     // 快路径：远小于超时的延迟 -> 正常拿到注入实现的返回值
     let fastCalls = 0;
-    globalThis.fetch = (async (url: unknown, opts: { signal?: AbortSignal }) => {
+    set(async (url: unknown, opts: { signal?: AbortSignal }) => {
       fastCalls += 1;
       await new Promise((r) => setTimeout(r, 5));
       return { status: 200, ok: true, url, aborted: opts?.signal?.aborted ?? null };
-    }) as unknown as typeof fetch;
+    });
     const okRes = await fetchWithTimeout("https://gw.test/fast", 1000);
     assert.equal((okRes as unknown as { status: number }).status, 200, "快路径返回注入实现的响应");
     // 计数只作下界断言：飞行中的外部异步可能泄漏进窗口调用全局 fetch（绝对计数实证 flake）
@@ -563,11 +588,11 @@ export function formatPanel() { return "<p>s</p>"; }
     // 慢路径：超过 timeoutMs 的延迟 -> 返回时已观察到 abort
     // （delayMs 远大于 timeoutMs=20：防微任务风暴推迟 abort 定时器）
     let slowCalls = 0;
-    globalThis.fetch = (async (_url: unknown, opts: { signal?: AbortSignal } | undefined) => {
+    set(async (_url: unknown, opts: { signal?: AbortSignal } | undefined) => {
       slowCalls += 1;
       await new Promise((r) => setTimeout(r, 500));
       return { status: 200, ok: true, aborted: opts?.signal?.aborted ?? null };
-    }) as unknown as typeof fetch;
+    });
     const slowRes = await fetchWithTimeout("https://gw.test/slow", 20);
     assert.ok(slowCalls >= 1, "慢路径到达注入 fetch 至少一次");
     assert.equal((slowRes as unknown as { aborted: boolean }).aborted, true,
@@ -576,10 +601,8 @@ export function formatPanel() { return "<p>s</p>"; }
     // 默认参数形态：省略 timeoutMs 与 init 仍完成调用
     // （与 fast/slow 同理用下界断言：飞行中的外部异步可能泄漏进窗口调用全局 fetch）
     let defCalls = 0;
-    globalThis.fetch = (async () => { defCalls += 1; return { status: 204 }; }) as unknown as typeof fetch;
+    set(async () => { defCalls += 1; return { status: 204 }; });
     await fetchWithTimeout("https://gw.test/def");
     assert.ok(defCalls >= 1, "默认参数下仍走 fetch 至少一次");
-  } finally {
-    globalThis.fetch = savedFetch;
-  }
+  });
 }
