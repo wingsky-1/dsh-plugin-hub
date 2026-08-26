@@ -38,14 +38,16 @@
       "./scripts/test/mutation-tap-bridge.cjs"
     ],
     "testFiles": [
+      "packages/dsh-mcp-manager/test/unit-apply.src.test.ts",
+      "packages/dsh-mcp-manager/test/unit-catalog.src.test.ts",
       "packages/dsh-mcp-manager/test/unit-hotspot.src.test.ts",
       "packages/dsh-mcp-manager/test/unit-manager.src.test.ts",
-      "packages/dsh-mcp-manager/test/unit-store.src.test.ts",
-      "packages/dsh-mcp-manager/test/unit-transport.src.test.ts",
-      "packages/dsh-mcp-manager/test/unit-catalog.src.test.ts",
-      "packages/dsh-mcp-manager/test/unit-supervisor.src.test.ts",
+      "packages/dsh-mcp-manager/test/unit-manager2.src.test.ts",
+      "packages/dsh-mcp-manager/test/unit-middleware.src.test.ts",
       "packages/dsh-mcp-manager/test/unit-routes-sse.src.test.ts",
-      "packages/dsh-mcp-manager/test/unit-manager2.src.test.ts"
+      "packages/dsh-mcp-manager/test/unit-store.src.test.ts",
+      "packages/dsh-mcp-manager/test/unit-supervisor.src.test.ts",
+      "packages/dsh-mcp-manager/test/unit-transport.src.test.ts"
     ]
   },
   "jsonReporter": {

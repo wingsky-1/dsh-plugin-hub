@@ -34,7 +34,10 @@
       "./scripts/test/mutation-tap-bridge.cjs"
     ],
     "testFiles": [
-      "packages/dsh-idle-archive/test/unit-apply.src.test.ts"
+      "packages/dsh-idle-archive/test/unit-apply.src.test.ts",
+      "packages/dsh-idle-archive/test/unit-settings.src.test.ts",
+      "packages/dsh-idle-archive/test/unit-state.src.test.ts",
+      "packages/dsh-idle-archive/test/unit-title.src.test.ts"
     ]
   },
   "jsonReporter": {

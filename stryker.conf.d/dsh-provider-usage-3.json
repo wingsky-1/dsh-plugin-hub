@@ -47,7 +47,9 @@
       "packages/dsh-provider-usage/test/unit-apply.src.test.ts",
       "packages/dsh-provider-usage/test/unit-config.src.test.ts",
       "packages/dsh-provider-usage/test/unit-contract.src.test.ts",
+      "packages/dsh-provider-usage/test/unit-deepseek-official.src.test.ts",
       "packages/dsh-provider-usage/test/unit-history.src.test.ts",
+      "packages/dsh-provider-usage/test/unit-signal-lock.src.test.ts",
       "packages/dsh-provider-usage/test/unit-v1.src.test.ts"
     ]
   },
