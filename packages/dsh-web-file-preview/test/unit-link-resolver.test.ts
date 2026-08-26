@@ -8,7 +8,7 @@
  * 测试全部使用 ResolverNode DTO（最小节点投影），无 DOM 依赖。
  */
 import { assert } from "./helpers.ts";
-import { basenameOf, decideGate, resolveFileLink } from "../lib/index.js";
+import { basenameOf, decideGate, resolveFileLink } from "../src/index.ts";
 
 /** 构造最小节点投影。 */
 function n(text, tag, attrs, parent) {

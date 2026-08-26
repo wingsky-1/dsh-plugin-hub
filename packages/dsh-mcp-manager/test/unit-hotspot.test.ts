@@ -13,7 +13,7 @@ import { join } from "node:path";
 // ---- 路由 handlers：connect / disconnect / reconnect ----
 
 {
-  const { makeRoutes, ROUTES, McpStore, McpManager, SCOPE_GLOBAL, normalizeServer } = await import("../lib/index.js");
+  const { makeRoutes, ROUTES, McpStore, McpManager, SCOPE_GLOBAL, normalizeServer } = await import("../src/index.ts");
   const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-route-"));
   try {
     const store = new McpStore(join(dir, "mcp.json"));
@@ -104,7 +104,7 @@ import { join } from "node:path";
 // ---- 通过 apply 完整 settings 生命周期覆盖 bundled isUnloading ----
 
 {
-  const { apply } = await import("../lib/index.js");
+  const { apply } = await import("../src/index.ts");
   const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-bundled-"));
   try {
     let disposer = null;
@@ -170,7 +170,7 @@ import { join } from "node:path";
 // ---- 验证：apply 的 agent/pre-step 在 announceCatalog=true 时注册 ----
 
 {
-  const { apply } = await import("../lib/index.js");
+  const { apply } = await import("../src/index.ts");
   const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-pre-"));
   try {
     let preHandler = null;
@@ -217,7 +217,7 @@ import { join } from "node:path";
 // ---- 验证：apply 的 SSE broadcast 与 route disposer ----
 
 {
-  const { apply } = await import("../lib/index.js");
+  const { apply } = await import("../src/index.ts");
   const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-broadcast-"));
   try {
     const written = [];
@@ -262,7 +262,7 @@ import { join } from "node:path";
 // ---- 验证：apply 的 settings 注入（uiUpdate 写入路径） ----
 
 {
-  const { apply } = await import("../lib/index.js");
+  const { apply } = await import("../src/index.ts");
   const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-ui2-"));
   try {
     const ctx = {

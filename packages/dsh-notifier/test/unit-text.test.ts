@@ -7,7 +7,7 @@
  * （Windows/macOS/Linux 参数形态）、isLoopbackRequest 围栏判定。
  */
 import { assert, fakeReq } from "./helpers.ts";
-import { formatDuration, prettyToolName, sessionTitleOf, buildSystemCommand, isLoopbackRequest } from "../lib/index.js";
+import { formatDuration, prettyToolName, sessionTitleOf, buildSystemCommand, isLoopbackRequest } from "../src/index.ts";
 
 assert.equal(formatDuration(45000), "45 秒");
 assert.equal(formatDuration(135000), "2 分 15 秒");

@@ -22,10 +22,10 @@ import {
   hostnameAllowed, formatAuthority, rewriteHeaders, createLanProxy, isLoopbackTarget,
   DEFAULT_OPTIONS, compressWsPath, isCompressible, resolveCompressionOptions,
   ensureSelfSignedTls,
-} from "../lib/index.js";
+} from "../src/index.ts";
 import {
   toSanEntry, certStillValid, loadTlsFromFiles, SELF_SIGNED_KEY, SELF_SIGNED_CERT,
-} from "../lib/index.js";
+} from "../src/index.ts";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

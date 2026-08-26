@@ -29,7 +29,7 @@ const {
   normalizeServer,
   SSE_HEARTBEAT_MS,
   SSE_PING_FRAME,
-} = await import("../lib/index.js");
+} = await import("../src/index.ts");
 
 // ---- 帧格式 ----
 

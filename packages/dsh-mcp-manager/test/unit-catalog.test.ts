@@ -26,7 +26,7 @@ const {
   catalogHistory,
   renderMcpCatalogUpdate,
   resolveCatalogInjection,
-} = await import("../lib/index.js");
+} = await import("../src/index.ts");
 
 // ---- 常量 ----
 

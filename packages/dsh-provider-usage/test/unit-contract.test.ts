@@ -21,7 +21,7 @@ import {
   describeUsageStatsAdapterShape,
   ADAPTER_CONTRACT_VERSION,
   ERROR_CODES,
-} from "../lib/index.js";
+} from "../src/index.ts";
 
 // ---------------------------------------------------------------- safeSegment
 
@@ -323,7 +323,7 @@ import { tmpdir } from "node:os";
 import { makeAdapterRegistry, sanitizeHtml, safeFetchData, safeFormat,
   runV2Pipeline, runV2PanelPipeline, capsuleHtmlFromHistory, HistoryStore,
   HotReloadableAdapter, readStamp, stampEqual, miniChartSvgMarkup,
-  OPENCODE_GO_PROVIDER } from "../lib/index.js";
+  OPENCODE_GO_PROVIDER } from "../src/index.ts";
 
 /** 构造合法 v2 适配器（可覆写字段）。 */
 function mkAdapter(over: Record<string, unknown> = {}): Record<string, unknown> {

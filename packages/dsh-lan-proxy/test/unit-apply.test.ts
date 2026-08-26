@@ -18,7 +18,7 @@ import {
   pluginDir, sanitizeSettings, validateSettings,
   migrateFileConfig, MIGRATED_BAK_NAME, applyConfigPatch, SETTINGS_NS,
   ROUTES, DEFAULT_OPTIONS,
-} from "../lib/index.js";
+} from "../src/index.ts";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const { createServer } = await import("node:http");
@@ -186,7 +186,7 @@ const { createServer } = await import("node:http");
     effect(fn) { const d = fn(); if (typeof d === "function") disposers.push(d); return d; },
   };
 
-  const { apply } = await import("../lib/index.js");
+  const { apply } = await import("../src/index.ts");
   apply(ctx, { host: "127.0.0.1", port: 0, httpsEnabled: true, printBanner: false, wsCompressEnabled: false, httpCompressEnabled: false });
 
   await sleep(100);
@@ -234,7 +234,7 @@ const { createServer } = await import("node:http");
     },
     effect(fn) { const d = fn(); if (typeof d === "function") disposers.push(d); return d; },
   };
-  const { apply } = await import("../lib/index.js");
+  const { apply } = await import("../src/index.ts");
   apply(ctx, { host: "127.0.0.1", port: 0, httpsEnabled: false, printBanner: false, wsCompressEnabled: false, httpCompressEnabled: false });
   await sleep(50);
   for (const d of [...disposers].reverse()) { try { d(); } catch {} }
@@ -266,7 +266,7 @@ const { createServer } = await import("node:http");
     },
     effect(fn) { const d = fn(); if (typeof d === "function") disposers.push(d); return d; },
   };
-  const { apply } = await import("../lib/index.js");
+  const { apply } = await import("../src/index.ts");
   apply(ctx, { host: "127.0.0.1", port: 19998, httpsEnabled: false, printBanner: false, wsCompressEnabled: false, httpCompressEnabled: false });
   await sleep(200); // 等 listen 异步 reject
   // health 路由存在，但 listening: false
@@ -298,7 +298,7 @@ const { createServer } = await import("node:http");
     inject() {},
     effect(fn) { return fn(); },
   };
-  const { apply } = await import("../lib/index.js");
+  const { apply } = await import("../src/index.ts");
   apply(ctx, { enabled: false, httpsEnabled: false });
   assert.ok(routes.find((r) => r.path === ROUTES.health), "enabled=false 仍注册 health 路由");
   assert.ok(routes.find((r) => r.path === ROUTES.config), "enabled=false 仍注册 config 路由");
@@ -427,7 +427,7 @@ const { createServer } = await import("node:http");
 // （resumeMigrateFromBak / migrateFileConfig / applyConfigPatch / buildConfigRoutes /
 // installLanProxySettings / warnLog）的存活 mutant。
 {
-  const lib = await import("../lib/index.js");
+  const lib = await import("../src/index.ts");
   const { migrateFileConfig, MIGRATED_BAK_NAME, applyConfigPatch, buildConfigRoutes, SETTINGS_NS, ROUTES } = lib;
   // 本块所有 apply 调用统一 DSH_HOME 隔离 + disposer 回收（防转发器 server /
   // scheduleSync timer 句柄泄漏挂起事件循环，也防迁移触达真实 ~/.dsh/lan-proxy）。
@@ -743,7 +743,7 @@ const { createServer } = await import("node:http");
 
 // ===== Config schema 直测：schemastery 默认值与上界（#147 变异加固接续） =====
 {
-  const { Config } = await import("../lib/index.js");
+  const { Config } = await import("../src/index.ts");
   const defaults = Config({});
   assert.equal(defaults.enabled, true, "enabled 默认 true");
   assert.equal(defaults.httpsEnabled, true, "httpsEnabled 默认 true");

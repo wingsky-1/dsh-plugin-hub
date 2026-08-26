@@ -38,7 +38,7 @@ import {
   resolveAddAdapterFile,
   expandHomePath,
   resolveProviderConfig,
-} from "../lib/index.js";
+} from "../src/index.ts";
 
 // ================================================================ #150 二阶段：resolveAddAdapterFile 路径校验矩阵
 // 注意位置：本块必须位于本模块求值的最前部（同步段）。resolveAddAdapterFile/

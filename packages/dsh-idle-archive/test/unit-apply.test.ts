@@ -17,7 +17,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import assert from "node:assert/strict";
-import { apply, sanitizeSettings, defaultSettings } from "../lib/index.js";
+import { apply, sanitizeSettings, defaultSettings } from "../src/index.ts";
 
 /** 构造 apply() 兼容的 fake ctx（两路 inject：connection + settings）。 */
 function makeApplyCtx(opts = {}) {

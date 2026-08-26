@@ -44,7 +44,7 @@ import {
   HistoryStore,
   runV2Pipeline,
   runV2PanelPipeline,
-} from "../lib/index.js";
+} from "../src/index.ts";
 
 // ---------------------------------------------------------------- isHostProviderAdapter
 

@@ -23,7 +23,7 @@ const {
   SCOPE_GLOBAL,
   SCOPE_PROJECT,
   MCPClient,
-} = await import("../lib/index.js");
+} = await import("../src/index.ts");
 
 // ---- expandEnv ----
 

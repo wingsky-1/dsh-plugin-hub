@@ -8,7 +8,7 @@
  * splitReferenceFragment fragment 剥离分支。
  */
 import { assert } from "./helpers.ts";
-import { resolveRelativePath, resolveAbsolutePath, splitReferenceFragment } from "../lib/index.js";
+import { resolveRelativePath, resolveAbsolutePath, splitReferenceFragment } from "../src/index.ts";
 
 const BASE = "/home/u/work/src/a.md";
 

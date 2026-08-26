@@ -16,7 +16,7 @@ import {
   cleanRefChipPath,
   normalizeConfig,
   DEFAULT_CONFIG,
-} from "../lib/index.js";
+} from "../src/index.ts";
 
 // ---------------------------------------------------------------- extOf
 

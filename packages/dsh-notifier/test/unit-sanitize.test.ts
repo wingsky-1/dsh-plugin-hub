@@ -8,7 +8,7 @@
  * 评审修复回归。
  */
 import { assert } from "./helpers.ts";
-import { sanitizeErrorText } from "../lib/index.js";
+import { sanitizeErrorText } from "../src/index.ts";
 
 // 路径/令牌/密钥打码 + 截断
 assert.equal(sanitizeErrorText("failed /home/me/dev/x.yaml: EACCES"), "failed <path>: EACCES", "用户路径打码");

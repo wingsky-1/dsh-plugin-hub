@@ -21,7 +21,7 @@ const {
   resolveReconnect,
   RECONNECT_DEFAULTS,
   SCOPE_GLOBAL,
-} = await import("../lib/index.js");
+} = await import("../src/index.ts");
 
 function makeManagerLog() {
   const log = { registered: [], disposed: [], info: [], warn: [], error: [], emits: 0, catalog: [] };

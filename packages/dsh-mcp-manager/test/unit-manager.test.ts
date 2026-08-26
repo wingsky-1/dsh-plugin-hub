@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { McpManager, McpStore, SCOPE_GLOBAL, SCOPE_PROJECT, normalizeServer } from "../lib/index.js";
+import { McpManager, McpStore, SCOPE_GLOBAL, SCOPE_PROJECT, normalizeServer } from "../src/index.ts";
 
 /** 创建一个最小 mock store（临时文件，已加载）。 */
 function tempStore() {
@@ -179,7 +179,7 @@ function makeManager(store) {
     systemPrompt: { section: () => () => {} },
   };
   // 不抛即可（ctx.inject 不可用时静默降级）
-  const { apply } = await import("../lib/index.js");
+  const { apply } = await import("../src/index.ts");
   const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-ni-"));
   try {
     await apply(noInjectCtx, { enabled: false, storePath: join(dir, "mcp.json") });
@@ -211,7 +211,7 @@ function makeManager(store) {
     webServer: { register: () => () => {} },
     systemPrompt: { section: () => () => {} },
   };
-  const { apply } = await import("../lib/index.js");
+  const { apply } = await import("../src/index.ts");
   const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-sf-"));
   try {
     await apply(failSettingsCtx, { enabled: false, storePath: join(dir, "mcp.json") });
@@ -241,7 +241,7 @@ function makeManager(store) {
     webServer: { register: () => () => {} },
     systemPrompt: { section: () => () => {} },
   };
-  const { apply } = await import("../lib/index.js");
+  const { apply } = await import("../src/index.ts");
   const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-nr-"));
   try {
     await apply(noRegCtx, { enabled: false, storePath: join(dir, "mcp.json") });
