@@ -37,7 +37,7 @@ provider-usage **400s**（n=49，频率与耗时双高）、lan-proxy 204s、mcp
 | 3 | provider-usage 4→8（#249）+ timeoutMS 60s→30s（#257） | 已落地 | 同机基准 4→8 提速 **42%**（771.9s→449.9s），score/killed 与独立全量逐项一致；CI 首跑无假阳性 | 收紧只减假阳性 killed，方向安全；升 16 待 CI 自然场景数据 |
 | 4 | lan-proxy / idle-archive 维持 4 | 决策维持 | — | #147 端口互踩实证 / testFiles 含固定端口 smoke.ts |
 | 5 | mutate 段拆分 CI matrix（B） | **已落地（#257）** | 段式矩阵真实 CI 实例化正常；wall-clock 数据待段式基线就绪后回收 | 三慢包 provider-usage×2 / lan-proxy×3 / mcp-manager×4；判分聚合去重键教训见 §4.6；计费分钟×N 为已知代价 |
-| 6 | 构建产物复用（build-all artifact，D） | 提案待裁定 | — | 只降计费分钟；wall-clock 持平、常态场景略变差（前置串行化） |
+| 6 | 构建产物复用（build-all artifact，D） | **否决（维护者裁定）** | — | 收益模型失效：本仓为 PUBLIC，GitHub Actions 对公共仓库免费不限时长，「降计费分钟」不适用；剩余次要价值撑不起 ci.yml 改造面与红线流程。教训见 §4.7 |
 | 7 | testFiles 最小集裁剪（C） | 暂缓 | — | per-test 覆盖分析已做关联，剩余空间在大测试文件整体跳过，成本高收益不确定 |
 
 ## 4. 方法论：如何评估下一个提速手段
@@ -89,9 +89,13 @@ paths-filter 只匹配 `packages/<pkg>/**` 与全局路径，`stryker.conf.d/**`
 
 配套纪律：契约测试锁定 conf 文件集 ↔ jsonReporter/incrementalFile 命名 ↔ gauntlet 包集三方一致；期望段数由 conf 目录推导，缺任一段报告 exit 2 fail-closed。
 
+### 4.7 成本模型先核实：公共仓库 Actions 免费
+
+D 方案从「提案待裁定」到「否决」的根因不是工程问题，而是**收益模型前提失效**：「降计费分钟」仅对私有仓库成立（GitHub 托管 runner 按分钟计费），本仓 PUBLIC 完全免费。教训：评估任何成本节约型手段前，先核实本仓形态下该成本是否真实存在；对公共仓库，runner 分钟类优化一律不构成收益项。
+
 ## 5. 当前结论与后续候选
 
-- 已完成：常态场景优化到位（§3 #1/#2）；重测高频瓶颈的两大杠杆（并发超订 + 段拆分）均已落地；
-- 进行中：段式增量基线首次产出（夜间 observe glob 化后自动覆盖全部段配置）；就绪前段实例 notice 降级全量（慢但正确）；
-- 待回收：B 落地后的重测 wall-clock 对比（基线均值 provider-usage 400s / mcp-manager 140s）；provider-usage 升 16 决策；
-- 待裁定：D（计费分钟视角）；长期视基线刷新耗时再评估 C。
+- 已完成：常态场景优化到位（§3 #1/#2）；重测高频瓶颈的两大杠杆（并发超订 + 段拆分）均已落地；段式基线命中实测段实例 22-39s 无退化；
+- 进行中：重测场景 wall-clock 对比（实验 PR #269 模拟基线全失效降级，不合入）；
+- 已否决：D（§4.7 成本模型不适用）；provider-usage 升 16 已落地（#266），待自然场景三项判据复核；
+- 长期：若夜间全量基线刷新耗时增长，再评估 C。
