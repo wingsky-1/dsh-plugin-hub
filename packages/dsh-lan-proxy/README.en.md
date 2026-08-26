@@ -105,6 +105,13 @@ GUI settings entry: Settings → Plugins → "LAN Access" card (saved changes ap
 - Even if the DSH server later enables permessage-deflate itself, the DSH segment here never
   negotiates compression; the two segments are independent, so there is **no double compression
   and no conflict**.
+- **Half-open liveness probe (keep-alive)**: the bridge pings the browser segment and the DSH
+  segment **independently** every 30s; a ping with no pong by the next cycle (~30~60s of
+  silence) marks that side half-open and terminates it — close/error semantics therefore hold
+  even under half-open connections, and the existing mutual-teardown logic closes the other
+  end. When a mobile OS silently kills TCP in background, the bridge no longer deadlocks
+  (Refs #268). A termination logs `lan-proxy: ws-bridge half-open detected, terminating
+  (intervalMs=...)` at warn level, distinct from ordinary upstream error warnings.
 - All other WebSocket paths remain TCP byte passthrough (unaffected).
 
 ## HTTP Response Compression (Brotli/gzip, merged from dsh-gzip)

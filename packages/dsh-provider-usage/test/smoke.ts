@@ -30,6 +30,7 @@ import "./unit-apply.test.ts";
 import "./unit-detect.test.ts";
 import "./unit-refresh-revalidate.test.ts";
 import "./unit-deepseek-official.test.ts";
+import "./unit-fetch-timeout.test.ts";
 
 import {
   apply,

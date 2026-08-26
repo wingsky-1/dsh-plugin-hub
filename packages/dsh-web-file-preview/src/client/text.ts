@@ -8,6 +8,7 @@
 import { renderMarkdown } from "./md.ts";
 import { highlightCode } from "./code.ts";
 import { sanitizePreview } from "./rewrite.ts";
+import { hydrateMermaid } from "./mermaid.ts";
 import { applyHeadingIds, scrollToFragment } from "./anchor.ts";
 import { el, errorView } from "./dom.ts";
 import type { FilePreviewState } from "./state.ts";
@@ -74,6 +75,11 @@ export function renderTabBody(body: HTMLElement, state: FilePreviewState): void 
       applyHeadingIds(rendered);
       body.appendChild(rendered);
       upgradePreviewImages(rendered, state);
+      // issue #104：mermaid 代码块懒加载渲染（链尾后处理；无 mermaid 块零开销）。
+      // 放 sanitizePreview 之后——mermaid 生成的 SVG 是清洗后单独插入的，
+      // 不经过前置 DOMPurify（否则 <svg> 会被默认配置剥掉）；自身再过 svg profile
+      // 二次消毒（见 mermaid.ts）。竞态由 openSeq + isConnected 校验兜住。
+      hydrateMermaid(rendered, state);
       // issue #45：带 fragment 的文件引用（./f.md#g）在首次 md 渲染后定位小节；
       // 消费即清（切 tab / 返回不重复滚动；目标不存在则忽略）。
       const frag = state.pendingFrag;

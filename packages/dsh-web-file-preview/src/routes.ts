@@ -10,6 +10,10 @@
  *
  * GET /api/dsh-file-preview/health  健康检查。
  *
+ * GET /api/dsh-file-preview/mermaid  Mermaid 懒加载 chunk（issue #104）：
+ *   从包内 lib/client-mermaid.js 直出的静态资产端点（无用户输入路径、零穿越面），
+ *   客户端 md 出现 mermaid 代码块时才动态 import 拉取。
+ *
  * 约定：不校验路径是否属于某个已登记的工作区，也不做“逃出 cwd”拦截
  * （能打开 dsh web 本身即高权限，任意文件访问由平台/用户负责，本插件不做重复
  * 兜底）。仅按 `resolve(cwd, path)` 直接定位后读取。
@@ -33,6 +37,9 @@ export const ROUTES = {
   file: "/api/dsh-file-preview/file",
   diff: "/api/dsh-file-preview/diff",
   health: "/api/dsh-file-preview/health",
+  // Mermaid 懒加载 chunk（issue #104）：刻意不带 .js 后缀——客户端契约 smoke 的
+  // 路由字面量正则为 [a-z-]+（匹配不到带点字面量），带点路由名会静默漏检。
+  mermaid: "/api/dsh-file-preview/mermaid",
 };
 
 /** 宿主端配置面（apply normalizeConfig 后传入）。 */
@@ -201,7 +208,51 @@ export async function serveFileRoute(
 }
 
 /**
- * 组装全部按 loopback 围栏守护的路由（file + health）。
+ * Mermaid 懒加载 chunk 静态资产端点核心处理（已通过围栏校验后调用，issue #104）。
+ *
+ * 从本包 lib/ 同目录读取构建产物 client-mermaid.js（宿主 index.js 亦在 lib/，
+ * bundle 后 import.meta.url 即 lib/index.js → 相对定位不随部署路径漂移）。
+ * 无用户输入路径（不从请求读文件名）——零路径穿越面；协商缓存策略与 /file
+ * 一致（弱 ETag + no-cache），chunk 仅在 mermaid 块首次出现时拉取一次。
+ */
+export async function serveMermaidRoute(res: ServerResponse, req: IncomingMessage): Promise<void> {
+  const chunkUrl = new URL("./client-mermaid.js", import.meta.url);
+  let info: Stats;
+  try {
+    info = await stat(chunkUrl);
+  } catch {
+    writeJson(res, 404, { error: "mermaid chunk not built (client-mermaid.js missing)" });
+    return;
+  }
+  // ETag/304 与 /file 同策略：chunk 构建后不可变，浏览器模块缓存 + 协商 304
+  // 保证同一会话第二次遇到 mermaid 文档不重复下载。
+  const etag = `"${info.size}-${info.mtimeMs}"`;
+  const baseHeaders = {
+    "cache-control": "no-cache",
+    "etag": etag,
+    "referrer-policy": "no-referrer",
+    "x-content-type-options": "nosniff",
+  };
+  if (req.headers["if-none-match"] === etag) {
+    res.writeHead(304, baseHeaders);
+    res.end();
+    return;
+  }
+  try {
+    const body = await readFile(chunkUrl);
+    res.writeHead(200, {
+      ...baseHeaders,
+      "content-type": "text/javascript; charset=utf-8",
+      "content-length": String(body.length),
+    });
+    res.end(body);
+  } catch (error) {
+    writeJson(res, 500, { error: `read mermaid chunk failed: ${errorMessage(error)}` });
+  }
+}
+
+/**
+ * 组装全部按 loopback 围栏守护的路由（file + diff + health + mermaid）。
  * @param cfg - 配置。
  * @returns 可注册进 ctx.webServer 的路由数组。
  */
@@ -266,5 +317,22 @@ export function makeRoutes(cfg: PreviewConfig): WebRoute[] {
       }
     },
   };
-  return [fileRoute, diffRoute, healthRoute];
+  // Mermaid 懒加载 chunk（issue #104）：无用户输入路径的静态资产端点，
+  // 围栏语义与 file/diff 完全一致（非回环 403 / 方法非 GET 405）。
+  const mermaidRoute: WebRoute = {
+    kind: "exact",
+    path: ROUTES.mermaid,
+    handler: (req: IncomingMessage, res: ServerResponse): Promise<void> | void => {
+      if (!isLoopbackRequest(req)) {
+        writeJson(res, 403, { error: "forbidden: loopback-only" });
+        return;
+      }
+      if (req.method !== "GET") {
+        writeJson(res, 405, { error: `method not allowed: ${req.method}` });
+        return;
+      }
+      return serveMermaidRoute(res, req);
+    },
+  };
+  return [fileRoute, diffRoute, healthRoute, mermaidRoute];
 }

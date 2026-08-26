@@ -30,6 +30,7 @@
 import { build } from 'esbuild'
 import { cpSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
+import { extractInlinedModuleRefs } from './collect-licenses.ts'
 
 /** 契约外壳模板：零依赖干净模块 → 浏览器端 IIFE 产物（纯 JS，构建期生成不经 tsc）。 */
 function renderWrapper(entryRel) {
@@ -168,6 +169,53 @@ export async function buildClient({ src, outfile, packageName, extraDefine = {},
   }
   writeFileSync(outfile, code)
   return { code, mode }
+}
+
+/**
+ * 构建 Mermaid 懒加载独立 chunk（issue #104）。
+ *
+ * 与 lib/client.js（IIFE 契约产物）并列的第二个客户端产物 lib/client-mermaid.js：
+ * 以 ESM 格式把 mermaid 及全部依赖整库内联为自包含单文件（发布物自包含红线，
+ * 非 mermaid 原生 ESM 分发形态），由客户端在 md 出现 ` ```mermaid ` 块时以
+ * 「运行时变量 URL」动态 import 拉取——普通预览首屏零额外开销。
+ *
+ * - minify 必开：全量 minified ≈3.29MB / gzip ≈939KB（复核口径基线，验收不设
+ *   体积硬阈值，实测值记录于 PR 正文）；不开 minify 约 7MB+。
+ * - format 固定 ESM：浏览器端经 `import(chunkUrl)` 加载；client.js 自身仍是
+ *   IIFE，其内的变量 URL import() 被 esbuild 原样保留为运行时动态 import。
+ * - 该产物不是契约客户端（无 apply/inject/load 外壳），不走 buildClient 校验链。
+ * - ⚠️ minify 会移除 esbuild 的 node_modules 模块路径注释——license 归集链
+ *   （collect-licenses / pack-check 靠注释提取内联包名）对该产物失明。因此
+ *   开 metafile 从构建输入图提取真实被内联的第三方包名，由调用方写
+ *   lib/client-mermaid.deps.json sidecar 清单随包发布（唯一可靠证据源）。
+ *
+ * @param {object} opts
+ * @param {string} opts.entry   chunk 入口（src/client/mermaid-entry.ts）
+ * @param {string} opts.outfile 产物路径（lib/client-mermaid.js）
+ * @returns {Promise<{ bytes: number, refs: Array<{name: string, pnpmSeg: string|null}> }>}
+ *   产物字节数 + 被内联第三方包引用清单（bundle-host 落盘 sidecar 用）
+ */
+export async function buildMermaidChunk({ entry, outfile }) {
+  const r = await build({
+    entryPoints: [entry],
+    outfile,
+    bundle: true,
+    format: 'esm',
+    platform: 'browser',
+    target: 'es2020',
+    charset: 'utf8',
+    minify: true,
+    write: false,
+    metafile: true,
+    logLevel: 'warning',
+  })
+  const code = r.outputFiles[0].text
+  writeFileSync(outfile, code)
+  // metafile.inputs 键即各模块相对路径（含 node_modules 安装段），与产物注释
+  // 同构——直接复用注释提取器得到 {name, pnpmSeg} 清单（已排序、去重、
+  // @deepseek-ai/* 宿主注入模型排除）。
+  const inputs = Object.keys(r.metafile?.inputs ?? {}).join('\n')
+  return { bytes: Buffer.byteLength(code, 'utf8'), refs: extractInlinedModuleRefs(inputs) }
 }
 
 /**

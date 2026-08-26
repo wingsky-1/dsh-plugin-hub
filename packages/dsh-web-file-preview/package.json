@@ -74,6 +74,7 @@
     "dompurify": "^3.2.0",
     "highlight.js": "^11.12.0",
     "marked": "^18.0.9",
+    "mermaid": "^11.17.1",
     "untildify": "^6.0.0"
   }
 }

@@ -23,13 +23,34 @@ export const ADD_URL = __DSH_ROUTES__?.add ?? "/api/dsh-provider-usage/adapters/
 export const UI_CONFIG_URL = __DSH_ROUTES__?.uiConfig ?? "/api/dsh-provider-usage/ui-config";
 export const EVENTS_URL = __DSH_ROUTES__?.events ?? "/api/dsh-provider-usage/events";
 
+/** 客户端 fetch 默认超时毫秒（#268；与 dsh-mcp-manager api() 的 #111 先例对齐取 10s）。 */
+export const CLIENT_FETCH_TIMEOUT_MS = 10_000;
+
 /**
- * 客户端 fetch 封装（不做超时控制——宿主端 fetchData 已统一 5s 超时，
- * 客户端设 2s 硬超时会先于宿主端 abort 请求导致取数被误杀；
- * 请求挂起交由宿主端超时 + 响应返回控制）。
+ * 客户端 fetch 封装：带默认超时兜底（#268 修复点）。
+ *
+ * 两层超时的分工（勿混淆）：
+ * - 宿主端 fetchData 的 fetchTimeoutMs（固定 5s）：管「服务端 → 远端 provider API」
+ *   这一跳，与浏览器无关；
+ * - 本超时（10s）：管「浏览器 → dsh web」这一跳——移动端切后台后 TCP 被系统静默
+ *   掐断形成半开连接，回前台后在死连接上发起的请求可能挂到 TCP 重传超时（可达
+ *   15 分钟），此前该层无任何兜底。此处保证客户端侧有界等待、不悬挂页面。
+ *
+ * 取 10s 不误杀：正常链路（浏览器 → 宿主 → 远端）最迟约 5s 由宿主端返回或中止，
+ * 本兜底仅在「浏览器到 dsh web」传输层死亡时触发；此前取 2s 会先于宿主端 abort
+ * 导致取数被误杀，故不可低于宿主端上限。
+ *
+ * init.signal 存在时不启用超时兜底（调用方信号优先，避免双取消竞争；
+ * 与 dsh-mcp-manager api() 的 #111 先例同款语义）。timeoutMs 仅测试注入使用，
+ * 生产调用点一律走默认值。
  */
-export function fetchTimeout(url: string, init?: RequestInit): Promise<Response> {
-  return fetch(url, init);
+export function fetchTimeout(
+  url: string,
+  init?: RequestInit,
+  timeoutMs: number = CLIENT_FETCH_TIMEOUT_MS,
+): Promise<Response> {
+  if (init?.signal !== undefined) return fetch(url, init);
+  return fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
 }
 
 // ---------------------------------------------------------------- 响应类型

@@ -93,6 +93,12 @@ GUI 设置入口：设置 → 插件 → 「局域网访问」卡片（保存即
   经远程/慢链路访问流量大；permessage-deflate 实测约省 **75~79%**。
 - DSH 服务端即使未来自身开启 permessage-deflate，这里 DSH 段固定不协商压缩，
   两段各自独立，**不会双重压缩、不冲突**。
+- **半开探活（保活）**：桥接对浏览器段与 DSH 段**各自独立**每 30s 发一帧
+  WebSocket ping；一帧 ping 在下一个周期内未收到 pong（即约 30~60s 无响应）即判定
+  半开连接并强拆该端——close/error 语义由此在半开下也能成立，既有互断逻辑随即
+  收口另一端。移动端切后台被系统静默掐断 TCP 时，桥接不再僵死（issue #268）。
+  判定强拆时输出 warn 日志 `ws-bridge half-open detected, terminating (intervalMs=…)`，
+  与「正常关闭/业务错误」的 upstream error 日志可按文案区分。
 - 其余 WebSocket 路径保持 TCP 字节透传（不受影响）。
 
 ## HTTP 响应压缩（Brotli/gzip 自适应，合并自 dsh-gzip）
