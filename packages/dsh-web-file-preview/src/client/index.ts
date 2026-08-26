@@ -26,6 +26,7 @@ import { createState, type FilePreviewState } from "./state.js";
 import { finalizeSession, onKeyDown } from "./preview.js";
 import { onClickCapture } from "./intercept.js";
 import { wrapOpenPath } from "./wrapper.js";
+import { watchMermaidTheme } from "./mermaid.js";
 
 export function apply(ctx: any): void {
   const state: FilePreviewState = createState();
@@ -42,8 +43,12 @@ export function apply(ctx: any): void {
     try { (window as any).__DSH_CWD_SESSIONS__ = ctx && ctx.get ? ctx.get("sessions") : undefined; } catch { /* 兼容 */ }
     // A：openPath 调用点收口。
     const restoreOpenPath = wrapOpenPath(ctx, state);
+    // issue #104：系统明暗切换时跟随 mermaid 主题（库已加载才 setTheme）；
+    // 解绑进同一 disposer，卸载无残留监听。
+    const unwatchMermaidTheme = watchMermaidTheme();
     ctx.effect(() => () => {
       state.disposed = true;
+      unwatchMermaidTheme();
       document.removeEventListener("click", captureHandler, true);
       document.removeEventListener("keydown", onKeyDown);
       finalizeSession(state, "unmount");

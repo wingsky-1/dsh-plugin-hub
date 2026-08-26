@@ -123,17 +123,18 @@ assert.equal(normalizeConfig({ maxTextBytes: "x" }).maxTextBytes, DEFAULT_CONFIG
 // （见下方真实文件服务节）。
 
 const routes = makeRoutes({});
-assert.equal(routes.length, 3, "file + diff + health 三条路由");
+assert.equal(routes.length, 4, "file + diff + health + mermaid 四条路由");
 const routePaths = routes.map((r) => r.path);
 assert.equal(routePaths.includes(ROUTES.file), true);
 assert.equal(routePaths.includes(ROUTES.diff), true);
 assert.equal(routePaths.includes(ROUTES.health), true);
+assert.equal(routePaths.includes(ROUTES.mermaid), true, "#104 mermaid chunk 路由注册");
 for (const r of routes) assert.equal(r.kind, "exact");
 
 // ------------------------------------------------------------ 围栏
 
-function fakeReq(method, url, remoteAddress, host = "127.0.0.1") {
-  return { method, url, headers: { host }, socket: { remoteAddress } };
+function fakeReq(method, url, remoteAddress, host = "127.0.0.1", extraHeaders = {}) {
+  return { method, url, headers: { host, ...extraHeaders }, socket: { remoteAddress } };
 }
 function fakeRes() {
   const calls = { status: 0, headers: {}, data: null };
@@ -154,6 +155,7 @@ function git(dir, args) {
 
 const fileRoute = routes[0].handler;
 const healthRoute = routes[2].handler;
+const mermaidRoute = routes[3].handler;
 
 // 非回环 → 403
 {
@@ -172,6 +174,17 @@ const healthRoute = routes[2].handler;
   const res = fakeRes();
   healthRoute(fakeReq("GET", ROUTES.health, "8.8.8.8"), res);
   assert.equal(res._calls.status, 403, "health 非回环 403");
+}
+// mermaid 路由围栏（issue #104）：与 file/diff 同语义
+{
+  const res = fakeRes();
+  await mermaidRoute(fakeReq("GET", ROUTES.mermaid, "8.8.8.8"), res);
+  assert.equal(res._calls.status, 403, "mermaid 非回环 403");
+}
+{
+  const res = fakeRes();
+  await mermaidRoute(fakeReq("POST", ROUTES.mermaid, "127.0.0.1"), res);
+  assert.equal(res._calls.status, 405, "mermaid 非 GET 405");
 }
 
 // ------------------------------------------------------------ 真实文件服务
@@ -460,10 +473,37 @@ try {
   const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
   assertClientSourceContract(pkgDir);
   assertClientProductContract(pkgDir);
-  const expectedRoutes = [ROUTES.file, ROUTES.diff, ROUTES.health];
+  const expectedRoutes = [ROUTES.file, ROUTES.diff, ROUTES.health, ROUTES.mermaid];
   const literals = [...client.matchAll(/\/api\/dsh-file-preview\/[a-z-]+/g)].map((m) => m[0]);
   for (const literal of literals) assert.ok(expectedRoutes.includes(literal), `client 出现未知路由: ${literal}`);
   for (const route of expectedRoutes) assert.ok(literals.includes(route), `client 缺少路由: ${route}`);
+
+  // ---- issue #104：mermaid 懒加载 chunk 宿主路由真实可读（P0 断言）----
+  // 防「cleanFreeFloatingJs 把新 chunk 当游离产物删除 → 五连门禁全绿而功能坏」
+  // 复发（复核批复必改项）：断言宿主路由能真实读出 lib/client-mermaid.js 内容，
+  // 且直出字节与磁盘产物完全一致。
+  {
+    const onDisk = readFileSync(new URL("../lib/client-mermaid.js", import.meta.url), "utf8");
+    assert.ok(onDisk.includes("mermaid"), "lib/client-mermaid.js 存在且含 mermaid 产物特征");
+    assert.ok(onDisk.length > 100_000, `#104 mermaid chunk 为整库内联产物（实际 ${(onDisk.length / 1024 / 1024).toFixed(2)}MB）`);
+    const res = fakeRes();
+    await mermaidRoute(fakeReq("GET", ROUTES.mermaid, "127.0.0.1"), res);
+    assert.equal(res._calls.status, 200, "#104 mermaid 路由 200");
+    assert.ok(String(res._calls.headers["content-type"]).startsWith("text/javascript"), "#104 Content-Type text/javascript");
+    assert.equal(res._calls.data === undefined ? undefined : res._calls.data.toString(), onDisk, "#104 路由直出内容 === 磁盘 lib/client-mermaid.js");
+    // 协商缓存：同 ETag 二次请求命中 304
+    const etag = res._calls.headers.etag;
+    assert.ok(typeof etag === "string" && etag.length > 0, "#104 响应带弱 ETag");
+    const res304 = fakeRes();
+    await mermaidRoute(fakeReq("GET", ROUTES.mermaid, "127.0.0.1", "127.0.0.1", { "if-none-match": etag }), res304);
+    assert.equal(res304._calls.status, 304, "#104 If-None-Match 命中 304");
+    // 内联清单 sidecar（minified 产物注释被移除后的唯一证据源）与 license 归集覆盖
+    const depRefs: Array<{ name: string }> = JSON.parse(readFileSync(new URL("../lib/client-mermaid.deps.json", import.meta.url), "utf8"));
+    assert.ok(depRefs.some((r) => r.name === "mermaid"), "#104 deps 清单含 mermaid");
+    const thirdParty = readFileSync(new URL("../lib/THIRD-PARTY-LICENSES", import.meta.url), "utf8");
+    assert.ok(thirdParty.includes("mermaid@"), "#104 THIRD-PARTY-LICENSES 归集 mermaid（内联=分发副本）");
+    assert.ok(/ISC/i.test(thirdParty), "#104 license 清单含 ISC 字样（d3 系）");
+  }
 
   // ---- issue #45：引用 → 预览目标重写决策（rewrite-target，纯逻辑直测）----
   // rewrite-target 无 DOM 依赖，同 link-resolver 模式：esbuild 打成内存 ESM、
@@ -507,6 +547,111 @@ try {
   // （DOM 层真实行为由浏览器 MCP 实测覆盖，此处防产物回退丢实现）。
   for (const marker of ["data-fp-anchor", "data-fp-frag", 'setAttribute("target", "_blank")', "scrollIntoView"]) {
     assert.ok(client.includes(marker), `client.js 缺少 issue #45 标识: ${marker}`);
+  }
+
+  // ---- issue #104：client.js 行为哨兵 + 懒加载关键约束 ----
+  {
+    // strict 安全基线与主题自适应随产物下发。
+    assert.ok(client.includes('"strict"'), "#104 client.js 含 securityLevel strict 基线");
+    assert.ok(client.includes("prefers-color-scheme"), "#104 client.js 含明暗主题探测");
+    // 变量 URL 动态 import 必须保留为运行时 import(<成员表达式>)——esbuild 对
+    // 字面量/相对路径会静态内联（懒加载退化），此形态是批复架构的关键约束。
+    assert.ok(/import\([$\w][\w$.]*\)/.test(client), "#104 client.js 保留变量 URL 动态 import");
+    // chunk 不允许被静态内联回 client.js：dagre-d3-es 是 mermaid 强依赖，
+    // 若误内联必出现在产物中（懒加载失效哨兵）。
+    assert.ok(!client.includes("dagre-d3-es"), "#104 client.js 未内联 mermaid 库体");
+  }
+
+  // ---- issue #104：mermaid hydration 编排纯逻辑直测（mermaid-core，无 DOM）----
+  // 与 rewrite-target 同模式：esbuild 内存打包真实源码、经 data-URI 导入直测
+  // 成功替换 / 单块语法错误回退 / chunk 加载失败整体回退 / 代数失效中断。
+  {
+    const mcBundle = await esbuildBuild({
+      entryPoints: [join(pkgDir, "src/client/mermaid-core.ts")],
+      bundle: true,
+      format: "esm",
+      write: false,
+      logLevel: "silent",
+    });
+    const { runMermaidHydration } = await import(
+      `data:text/javascript;base64,${Buffer.from(mcBundle.outputFiles[0]!.text).toString("base64")}`
+    ) as typeof import("../src/client/mermaid-core.js");
+    /** 构造受控 IO：loadError 注入 chunk 拉取失败；renderErrors 以源码为键注入语法错误。 */
+    const mkIo = ({ loadError, renderErrors = {} } = {}) => {
+      const events = [];
+      let n = 0;
+      return {
+        events,
+        io: {
+          loadModule: () =>
+            loadError !== undefined
+              ? Promise.reject(loadError)
+              : Promise.resolve({
+                  initialize: (cfg) => events.push(["initialize", cfg]),
+                  render: (id, src) =>
+                    renderErrors[src] !== undefined
+                      ? Promise.reject(new Error(renderErrors[src]))
+                      : Promise.resolve({ svg: `<svg data-id="${id}"><path/></svg>` }),
+                }),
+          themeOf: () => "default",
+          nextId: () => `fwp-mermaid-${++n}`,
+          liveCheck: () => true,
+          sanitizeSvg: (svg) => `SANITIZED(${svg})`,
+          onReplaced: (i, html) => events.push(["replaced", i, html]),
+          onFallback: (i) => events.push(["fallback", i]),
+        },
+      };
+    };
+    // 用例 1：全成功——安全基线 initialize 一次 + 逐块消毒替换、零回退。
+    {
+      const t = mkIo({});
+      await runMermaidHydration(["graph TD;A-->B", "sequenceDiagram;A->>B:hi"], t.io);
+      assert.deepEqual(
+        t.events.filter((e) => e[0] === "initialize"),
+        [["initialize", { startOnLoad: false, securityLevel: "strict", htmlLabels: false, theme: "default" }]],
+        "#104 安全基线配置随 initialize 下发",
+      );
+      assert.deepEqual(t.events.filter((e) => e[0] === "replaced").map((e) => e[1]), [0, 1], "#104 全部块替换");
+      assert.ok(String(t.events.find((e) => e[0] === "replaced")[2]).startsWith("SANITIZED("), "#104 SVG 经二次消毒回调");
+      assert.equal(t.events.some((e) => e[0] === "fallback"), false, "#104 成功路径无回退");
+    }
+    // 用例 2：单块语法错误 → 该块回退、其余块继续（不中断不静默）。
+    {
+      const t = mkIo({ renderErrors: { bad: "syntax error in graph" } });
+      await runMermaidHydration(["bad", "good"], t.io);
+      assert.deepEqual(t.events.filter((e) => e[0] === "fallback").map((e) => e[1]), [0], "#104 语法错误块回退");
+      assert.deepEqual(t.events.filter((e) => e[0] === "replaced").map((e) => e[1]), [1], "#104 其余块继续渲染");
+    }
+    // 用例 3：chunk 加载失败 → 全部块回退、不外抛、不得触发 initialize。
+    {
+      const t = mkIo({ loadError: new Error("chunk fetch failed") });
+      await runMermaidHydration(["a", "b"], t.io);
+      assert.deepEqual(t.events.filter((e) => e[0] === "fallback").map((e) => e[1]), [0, 1], "#104 加载失败全部回退");
+      assert.equal(t.events.some((e) => e[0] === "initialize"), false, "#104 加载失败不触发 initialize");
+    }
+    // 用例 4：空 sources 直接返回（普通 md 零动作）。
+    {
+      const t = mkIo({});
+      await runMermaidHydration([], t.io);
+      assert.equal(t.events.length, 0, "#104 无 mermaid 块零开销");
+    }
+    // 用例 5：代数失效（Modal 关闭重开 / 切 tab）→ 中断后续写回。
+    {
+      const t = mkIo({});
+      let live = true;
+      t.io.liveCheck = () => live;
+      const baseLoad = t.io.loadModule;
+      t.io.loadModule = () =>
+        baseLoad().then((mod) => ({
+          ...mod,
+          render: () => {
+            live = false; // 首块渲染期间 Modal 被关闭/切换
+            return Promise.resolve({ svg: "<svg/>" });
+          },
+        }));
+      await runMermaidHydration(["a", "b"], t.io);
+      assert.equal(t.events.some((e) => e[0] === "replaced" || e[0] === "fallback"), false, "#104 代数失效后旧代结果不写回");
+    }
   }
 
   // ---- issue #37：链接解析两阶段算法（link-resolver，纯逻辑直测）----

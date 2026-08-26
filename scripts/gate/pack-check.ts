@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { executeClient } from '../lib/client-contract-lib.ts'
-import { extractInlinedPackages } from '../build/collect-licenses.ts'
+import { extractInlinedPackages, readMermaidChunkRefs } from '../build/collect-licenses.ts'
 import { AGGREGATE_NAME, checkAggregateConsistency, listPluginDirs, loadManifest, warnUnknownEntries } from '../lib/plugins-manifest-lib.ts'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -72,13 +72,28 @@ for (const p of plugins) {
 
     // 第三方 license 归集断言（issue #13）：产物内联了第三方库（esbuild 模块
     // 注释可证）⇒ 必须随包附 lib/THIRD-PARTY-LICENSES——存在、非空、含宽松系
-    // 许可字样（MIT/BSD/Apache），且覆盖每个被内联的包名。内联 = 分发库副本，
+    // 许可字样（MIT/BSD/Apache/ISC，issue #104 补 ISC：mermaid 传递依赖 d3 系
+    // 多为 ISC），且覆盖每个被内联的包名。内联 = 分发库副本，
     // 缺清单即合规缺口，fail-loud。
     {
       const inlined = new Set(extractInlinedPackages(idx))
+      // client.js 维持注释提取；client-mermaid.js（issue #104）minified 产物注释
+      // 已被移除，其内联证据来自构建期 metafile sidecar 清单 client-mermaid.deps.json。
       const clientJsPath = join(pkgRoot, 'lib', 'client.js')
       if (existsSync(clientJsPath)) {
         for (const n of extractInlinedPackages(readFileSync(clientJsPath, 'utf8'))) inlined.add(n)
+      }
+      const chunkPath = join(pkgRoot, 'lib', 'client-mermaid.js')
+      if (existsSync(chunkPath)) {
+        // chunk 在而清单缺 = 构建链断链或发布物裁剪 → 覆盖断言会静默失效，fail-loud。
+        try {
+          for (const r of readMermaidChunkRefs(join(pkgRoot, 'lib'))) inlined.add(r.name)
+        } catch (e) {
+          problems.push(`client-mermaid.deps.json 校验失败: ${String(e.message).split('\n')[0]}`)
+        }
+        if (!existsSync(join(pkgRoot, 'lib', 'client-mermaid.deps.json'))) {
+          problems.push('存在 lib/client-mermaid.js 但缺 client-mermaid.deps.json（内联清单 sidecar）')
+        }
       }
       if (inlined.size > 0) {
         const licPath = join(pkgRoot, 'lib', 'THIRD-PARTY-LICENSES')
@@ -87,7 +102,7 @@ for (const p of plugins) {
         } else {
           const lic = readFileSync(licPath, 'utf8')
           if (!lic.trim()) problems.push('THIRD-PARTY-LICENSES 为空')
-          if (!/(MIT|BSD|Apache)/i.test(lic)) problems.push('THIRD-PARTY-LICENSES 缺 MIT/BSD/Apache 许可字样')
+          if (!/(MIT|BSD|Apache|ISC)/i.test(lic)) problems.push('THIRD-PARTY-LICENSES 缺 MIT/BSD/Apache/ISC 许可字样')
           for (const n of inlined) {
             if (!lic.includes(n)) problems.push(`THIRD-PARTY-LICENSES 未覆盖被内联库 ${n}`)
           }

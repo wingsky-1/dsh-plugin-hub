@@ -61,16 +61,51 @@ export function extractInlinedPackages(source) {
   return extractInlinedModuleRefs(source).map(r => r.name)
 }
 
-/** 列出某包产物中被内联的第三方模块引用（index.js 与 client.js 并集，同名取首个含 pnpmSeg 者）。 */
+/**
+ * 读取 mermaid chunk 的内联清单 sidecar（issue #104）。
+ *
+ * client-mermaid.js 经 minify 后 esbuild 的 node_modules 路径注释被移除，
+ * 注释提取器对该产物失明——构建期改由 metafile 提取并落盘
+ * lib/client-mermaid.deps.json（随包发布，pack-check 同源消费）。文件不存在
+ * （无该产物的包）返回空数组；存在但内容非法 fail-loud 抛错，防「清单丢失 →
+ * license 覆盖断言静默失效」。
+ */
+export function readMermaidChunkRefs(libDir) {
+  const p = join(libDir, 'client-mermaid.deps.json')
+  if (!existsSync(p)) return []
+  let parsed
+  try {
+    parsed = JSON.parse(readFileSync(p, 'utf8'))
+  } catch (e) {
+    throw new Error(`client-mermaid.deps.json 非法 JSON: ${String(e.message).split('\n')[0]}`)
+  }
+  if (!Array.isArray(parsed) || parsed.some((r) => typeof r?.name !== 'string')) {
+    throw new Error('client-mermaid.deps.json 形态非法（期望 {name, pnpmSeg} 数组）')
+  }
+  return parsed
+}
+
+/** 列出某包产物中被内联的第三方模块引用（index.js / client.js / client-mermaid.js 并集，同名取首个含 pnpmSeg 者）。 */
 export function inlinedRefsForLib(libDir) {
   const byName = new Map()
-  for (const f of ['index.js', 'client.js']) {
+  // client-mermaid.js（issue #104）：mermaid 懒加载独立 chunk 同为构建期内联产物；
+  // 其 minified 产物注释被移除，包名证据来自构建期 metafile sidecar 清单
+  // （readMermaidChunkRefs），不入归集则 mermaid 全树的 license 缺收（合规缺口）。
+  for (const f of ['index.js', 'client.js', 'client-mermaid.js']) {
     const p = join(libDir, f)
     if (!existsSync(p)) continue
-    for (const r of extractInlinedModuleRefs(readFileSync(p, 'utf8'))) {
+    const source = readFileSync(p, 'utf8')
+    // client-mermaid.js 自身注释已失明，跳过注释提取、只认 sidecar（防字符串
+    // 残留被误当证据）；其余产物维持注释提取。sidecar 在循环外统一并入。
+    const refs = f === 'client-mermaid.js' ? [] : extractInlinedModuleRefs(source)
+    for (const r of refs) {
       if (!byName.has(r.name)) byName.set(r.name, r)
       else if (r.pnpmSeg && !byName.get(r.name).pnpmSeg) byName.set(r.name, r)
     }
+  }
+  for (const r of readMermaidChunkRefs(libDir)) {
+    if (!byName.has(r.name)) byName.set(r.name, r)
+    else if (r.pnpmSeg && !byName.get(r.name).pnpmSeg) byName.set(r.name, r)
   }
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name))
 }
