@@ -88,15 +88,31 @@ countdown badge, see below) work out of the box.
 
 The usage capsule (floating pill in the conversation corner) and its panel can be repositioned:
 Settings → Plugins → "用量统计" → "胶囊位置" — pick an anchor (top-right / top-left / bottom-right /
-bottom-left) and offsets (horizontal / vertical / panel gap), then hit Save. It takes effect
-**immediately across all devices** (persisted to `ui.json` and broadcast over SSE; no restart).
-Defaults: top-right / 0 / 48 / 10 — the capsule uses **fixed positioning** and never shifts with the
+bottom-left), offsets (horizontal / vertical / panel gap) and a z-index base, then hit Save. It takes
+effect **immediately across all devices** (persisted to `ui.json` and broadcast over SSE; no restart).
+Defaults: top-right / 0 / 48 / 10 / 40 — the capsule uses **fixed positioning** and never shifts with the
 scrolling conversation (no avoidance-related jitter; it stays put while scrolling); the horizontal 0
 keeps the capsule's right edge flush with the container's right edge (right-aligned); the vertical 48
 places the capsule just below the MCP-manager float (also top-right, 8px from the top) by default,
 so the two floats never overlap out of the box. The capsule and the MCP float do not probe or
 dodge each other — each is positioned solely by its own plugin config; the 10px panel gap keeps the
-panel tight under the capsule.
+panel tight under the capsule. The z-index base (default 40, matching the CSS default
+`z-index: 40`; the panel derives base + 30) is clamped to 1-9000.
+
+**Mobile / tablet adaptation** (issue #128): the breakpoint is decided from the conversation
+container's viewport width rather than a window media query — on narrow screens (<=480px,
+portrait phones / very narrow splits) the panel goes near full-width, cards reflow, and buttons
+get touch targets of about 44px; the tablet tier (<=834px) transitions; desktop is unchanged.
+Final capsule coordinates are clamped to the viewport in JS (safe-area semantics: the host has
+no `viewport-fit=cover`, so `env(safe-area-inset-*)` is always 0 and this degrades naturally to
+a plain clamp); the on-screen keyboard is followed via `visualViewport` resize, and orientation
+changes recompute on the next frame.
+
+**Cross-package avoidance contract (from issue #116, must not be reverted)**: this plugin's
+default `offsetY: 48` relies on the dsh-mcp-manager float's default position (`top-right`,
+8px from the top, ~26px tall) to sit right below it. Changing that default requires evaluating
+the MCP manager's default anchor / offsets in lockstep; reverting either side is a cross-package
+behavioral contract change.
 
 ## Built-in DeepSeek official adapter (deepseek-official-builtin)
 

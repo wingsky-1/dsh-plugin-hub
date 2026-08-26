@@ -278,7 +278,18 @@ export interface UiPlacementConfig {
   offsetX: number;
   offsetY: number;
   panelOffsetY: number;
+  /** 胶囊层级基准（clamp 1-9000；面板派生基准+30），#128。 */
+  zIndexBase: number;
 }
+
+/** 默认胶囊位置配置（offsetY=48 为 #116 跨包避让契约：位于 MCP 浮窗正下方，不可回退）。 */
+export const DEFAULT_CLIENT_UI_CONFIG: UiPlacementConfig = {
+  placement: "top-right",
+  offsetX: 0,
+  offsetY: 48,
+  panelOffsetY: 10,
+  zIndexBase: 40,
+};
 
 /** 拉取当前胶囊位置配置（失败回退默认）。 */
 export async function fetchUiConfig(): Promise<UiPlacementConfig> {
@@ -288,7 +299,7 @@ export async function fetchUiConfig(): Promise<UiPlacementConfig> {
     const body = (await res.json()) as { ui?: UiPlacementConfig };
     if (body.ui !== undefined) return body.ui;
   } catch { /* 忽略，走默认 */ }
-  return { placement: "top-right", offsetX: 0, offsetY: 48, panelOffsetY: 10 };
+  return { ...DEFAULT_CLIENT_UI_CONFIG };
 }
 
 /** 保存胶囊位置配置（宿主校验/落盘/广播）。 */

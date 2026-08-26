@@ -195,12 +195,15 @@ for (const routePath of [ROUTES.stats, ROUTES.history, ROUTES.health, ROUTES.ada
   assert.equal(postPayload.ui.offsetX, 2000, "offsetX clamp 2000");
   assert.equal(postPayload.ui.offsetY, 0, "offsetY clamp 0");
   assert.equal(postPayload.ui.panelOffsetY, 10, "panelOffsetY 透传");
+  // #128：POST 缺省 zIndexBase 归一化为默认 40
+  assert.equal(postPayload.ui.zIndexBase, 40, "#128 zIndexBase 缺省归一化默认 40");
 
   // ui.json 已落盘（DSH_HOME 隔离目录内）
   const uiFile = join(process.env.DSH_HOME, "dsh-provider-usage", "ui.json");
   assert.ok(existsSync(uiFile), "ui.json 已落盘");
   const stored = JSON.parse(readFileSync(uiFile, "utf8"));
   assert.equal(stored.placement, "top-right", "落盘值已归一化");
+  assert.equal(stored.zIndexBase, 40, "#128 落盘 ui.json 含归一化 zIndexBase");
 }
 
 // ---------------------------------------------------------------- /stats v2 响应
