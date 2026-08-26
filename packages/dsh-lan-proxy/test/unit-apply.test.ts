@@ -421,6 +421,326 @@ const { createServer } = await import("node:http");
   assert.equal(validateSettings({ httpCompressLevel: 9 }), null, "level 9 迁移后合法");
 }
 
+// ===== 变异加固块（round=3 CI 回归：迁移重放/路由面/校验分支断言进 tap 面） =====
+// 背景：smoke.ts 不在 stryker tap testFiles 内，其覆盖的行为在变异判定中全部
+// 存活/noCov。本块把关键行为断言移植到 unit-apply（tap 面内），杀灭新代码
+// （resumeMigrateFromBak / migrateFileConfig / applyConfigPatch / buildConfigRoutes /
+// installLanProxySettings / warnLog）的存活 mutant。
+{
+  const lib = await import("../lib/index.js");
+  const { migrateFileConfig, MIGRATED_BAK_NAME, applyConfigPatch, buildConfigRoutes, SETTINGS_NS, ROUTES } = lib;
+  // 本块所有 apply 调用统一 DSH_HOME 隔离 + disposer 回收（防转发器 server /
+  // scheduleSync timer 句柄泄漏挂起事件循环，也防迁移触达真实 ~/.dsh/lan-proxy）。
+  const prevHome = process.env.DSH_HOME;
+  const blockHome = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-mut-block-"));
+  process.env.DSH_HOME = blockHome;
+  const cleanupFns = [];
+  /** 构造最小 fake ctx：收集 lifecycle disposer；enabled 可关避免真实 listen。 */
+  const makeCtx = (over = {}) => {
+    const disposers = [];
+    const routes = [];
+    const ctx = {
+      logger: over.logger !== undefined ? over.logger : { info: () => {}, warn: () => {}, error: () => {} },
+      webServer: {
+        port: 3080,
+        register(route) { routes.push(route); return () => {}; },
+        tapIndex() { return () => {}; },
+      },
+      inject() {},
+      effect(fn) { const d = fn(); if (typeof d === "function") disposers.push(d); return d; },
+      ...over,
+      get _routes() { return routes; },
+      [Symbol.for("dispose")]() {
+        for (const d of [...disposers].reverse()) { try { d(); } catch {} }
+      },
+    };
+    cleanupFns.push(ctx[Symbol.for("dispose")]);
+    return ctx;
+  };
+  const disposeAll = () => {
+    for (const fn of cleanupFns.reverse()) { try { fn(); } catch {} }
+    process.env.DSH_HOME = prevHome;
+    rmSync(blockHome, { recursive: true, force: true });
+  };
+
+  // ---- A. warnLog 分支（ctx 形态降级不抛）----
+  {
+    // 经 apply 触发：ctx 无 logger 字段 / logger.warn 非 function —— 走降级路径不抛。
+    for (const logger of [{ warn: "not-a-function" }, undefined]) {
+      const ctx = makeCtx({ enabled: false, httpsEnabled: false });
+      if (logger === undefined) delete ctx.logger; else ctx.logger = logger;
+      lib.apply(ctx, { host: "127.0.0.1", port: 0, httpsEnabled: false, enabled: true });
+      assert.ok(ctx._routes.find((r) => r.path === ROUTES.health), `logger=${JSON.stringify(logger)} 降级不阻断注册`);
+    }
+  }
+
+  // ---- B. installLanProxySettings 全分支（inject 缺失/服务缺 register/register 抛错/detach 回落/watch 触发/isUnloading 门控）----
+  {
+    const makeScope = () => {
+      const st = { watchCbs: [], disposed: false };
+      return {
+        st,
+        scope: {
+          get() { return { port: 4321 }; },
+          watch(cb) { st.watchCbs.push(cb); return () => { st.disposed = true; }; },
+          async update() {},
+          async replace() {},
+        },
+      };
+    };
+    // B1: ctx.inject 缺失 → 降级不抛。
+    lib.apply(makeCtx({ port: 3081 }), { enabled: false, host: "127.0.0.1", httpsEnabled: false });
+    // B2: settings 服务存在但无 register → 降级；register 抛错 → 降级。
+    let caseIdx = 0;
+    for (const service of [undefined, {}, { register() { throw new Error("dup"); } }]) {
+      const label = service === undefined ? "missing" : service.register ? "throws" : "no-register";
+      const ctx = makeCtx({
+        inject(services, fn) {
+          if (services.includes("settings")) fn({ settings: service, effect(fn2) { return fn2(); } });
+        },
+      });
+      lib.apply(ctx, { host: "127.0.0.1", port: 0, httpsEnabled: false, enabled: true });
+      assert.equal(ctx._routes.length >= 2, true, `service 异常态（${label}#${caseIdx++}）不阻断 health/config 注册`);
+    }
+    // B3: attach → watch 挂接 → 非 unloading 态触发 cb 不抛；unloading 态执行 disposers 门控跳过。
+    {
+      const s = makeScope();
+      const fiberStates = [];
+      const ctx = makeCtx({
+        get fiber() { return { state: fiberStates[fiberStates.length - 1] }; },
+        inject(services, fn) {
+          if (services.includes("settings")) {
+            fn({ settings: { register(ns) { assert.equal(ns, SETTINGS_NS, "命名空间名"); return s.scope; } }, effect(fn2) { const d = fn2(); return d; } });
+          }
+        },
+      });
+      lib.apply(ctx, { host: "127.0.0.1", port: 0, httpsEnabled: false, printBanner: false });
+      assert.equal(s.st.watchCbs.length >= 1, true, "scope.watch 已挂接");
+      fiberStates.push("attached");
+      s.st.watchCbs[0]();
+      fiberStates.push("unloading");
+      ctx[Symbol.for("dispose")]();
+      fiberStates.pop();
+      assert.ok(true, "isUnloading 门控路径执行不抛错");
+    }
+  }
+
+  // ---- C. migrateFileConfig 全分支 outcome 精确断言（含中断重放四分支）----
+  {
+    const okScope = () => ({ updates: [], async update(p) { this.updates.push(p); return Promise.resolve(); } });
+    // C1: 双文件都不存在 → idle 六字段全 false。
+    const idleDir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-mut-idle-"));
+    const idleOut = await migrateFileConfig(idleDir, okScope());
+    assert.deepEqual(idleOut, { performed: false, migrated: false, rolledBack: false, skippedCorrupt: false, resumed: false }, "idle outcome 全 false");
+    rmSync(idleDir, { recursive: true, force: true });
+
+    // C2: 成功迁移 → performed+migrated，其余 false；损坏 JSON catch 分支；
+    //     非对象 JSON；sanitize null；空对象 sanitized（keys=0 → skippedCorrupt）。
+    const cases = [
+      ["success", JSON.stringify({ port: 4082 }), { performed: true, migrated: true, rolledBack: false, skippedCorrupt: false, resumed: false }],
+      ["broken-json", "{oops", { performed: true, migrated: false, rolledBack: false, skippedCorrupt: true, resumed: false }],
+      ["non-object", JSON.stringify([1]), { performed: true, migrated: false, rolledBack: false, skippedCorrupt: true, resumed: false }],
+      ["invalid-value", JSON.stringify({ port: "x" }), { performed: true, migrated: false, rolledBack: false, skippedCorrupt: true, resumed: false }],
+      ["empty-object", JSON.stringify({}), { performed: true, migrated: false, rolledBack: false, skippedCorrupt: true, resumed: false }],
+    ];
+    for (const [name, raw, expected] of cases) {
+      const dir = mkdtempSync(join(tmpdir(), `dsh-lan-proxy-mut-${name}-`));
+      writeFileSync(join(dir, "config.json"), raw);
+      const scope = okScope();
+      const out = await migrateFileConfig(dir, scope);
+      assert.deepEqual(out, expected, `case=${name} outcome`);
+      assert.equal(existsSync(join(dir, MIGRATED_BAK_NAME)), true, `case=${name} bak 标记`);
+      if (name === "success") assert.deepEqual(scope.updates, [{ port: 4082 }], "成功迁移写入键集");
+      else assert.equal(scope.updates.length, 0, `case=${name} 不写入`);
+      rmSync(dir, { recursive: true, force: true });
+    }
+
+    // C3: 写入失败回滚 → rolledBack；config.json 还原。
+    {
+      const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-mut-rollback-"));
+      writeFileSync(join(dir, "config.json"), JSON.stringify({ port: 4083 }));
+      const out = await migrateFileConfig(dir, { async update() { throw new Error("io"); } });
+      assert.deepEqual(out, { performed: true, migrated: false, rolledBack: true, skippedCorrupt: false, resumed: false });
+      assert.equal(existsSync(join(dir, "config.json")), true, "回滚后 config.json 还原");
+      rmSync(dir, { recursive: true, force: true });
+    }
+
+    // C4: 中断重放四分支（成功/损坏 bak/无效 bak/update 失败），resumed=true。
+    {
+      const goodDir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-mut-resume-ok-"));
+      writeFileSync(join(goodDir, MIGRATED_BAK_NAME), JSON.stringify({ printBanner: false }));
+      const scope = okScope();
+      const good = await migrateFileConfig(goodDir, scope);
+      assert.deepEqual(good, { performed: false, migrated: true, rolledBack: false, skippedCorrupt: false, resumed: true });
+      assert.deepEqual(scope.updates, [{ printBanner: false }]);
+      rmSync(goodDir, { recursive: true, force: true });
+
+      for (const [raw, expectMigrated] of [["{bad", false], [JSON.stringify({ nope: 1 }), false]]) {
+        const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-mut-resume-bad-"));
+        writeFileSync(join(dir, MIGRATED_BAK_NAME), raw);
+        const out = await migrateFileConfig(dir, okScope());
+        assert.equal(out.resumed, true, `resume bad (${raw}) resumed`);
+        assert.equal(out.migrated, expectMigrated);
+        rmSync(dir, { recursive: true, force: true });
+      }
+
+      const failDir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-mut-resume-fail-"));
+      writeFileSync(join(failDir, MIGRATED_BAK_NAME), JSON.stringify({ port: 4084 }));
+      const failOut = await migrateFileConfig(failDir, { async update() { throw new Error("io"); } });
+      assert.deepEqual(failOut, { performed: false, migrated: false, rolledBack: false, skippedCorrupt: false, resumed: true }, "重放失败不回滚（bak 保留）");
+      assert.equal(existsSync(join(failDir, MIGRATED_BAK_NAME)), true);
+      rmSync(failDir, { recursive: true, force: true });
+    }
+  }
+
+  // ---- D. applyConfigPatch 校验链与错误映射（expectedRevision/409/logWarn 缺省）----
+  {
+    let lastWrite = null;
+    const deps = (over = {}) => ({
+      resolve: () => ({ enabled: true }),
+      readUser: () => ({ user: { tlsCertFile: "/a.pem", tlsKeyFile: "/b.pem", port: 3000 }, revision: 9 }),
+      writable: () => true,
+      update: async (patch, rev) => { lastWrite = { kind: "update", patch, rev }; },
+      replace: async (section, rev) => { lastWrite = { kind: "replace", section, rev }; },
+      compress: () => ({ httpCompressEnabled: true, httpCompressLevel: 1, httpCompressMounted: false, httpCompressStats: { compressed: 0, passthrough: 0 } }),
+      ...over,
+    });
+    // D1: payload 非对象 → body={} → patch undefined → payload 定位错误。
+    for (const payload of [null, "str", 42]) {
+      const r = await applyConfigPatch(deps(), payload);
+      assert.equal(r.ok, false && r.status, `payload=${JSON.stringify(payload)} 拒绝`);
+      assert.equal(r.status, 400);
+      assert.equal(r.code, "invalid");
+      assert.equal(r.details.includes("(payload)") || r.details.includes("需为配置对象"), true, `payload=${JSON.stringify(payload)} details 指明载体形态`);
+    }
+    // D2: expectedRevision 非法形态 → 透传 undefined；合法整数透传原值。
+    {
+      const d = deps();
+      await applyConfigPatch(d, { patch: { port: 3100 }, expectedRevision: "7" });
+      assert.equal(lastWrite?.rev, undefined, "非数字 expectedRevision → undefined");
+      await applyConfigPatch(d, { patch: { port: 3100 }, expectedRevision: 1.5 });
+      assert.equal(lastWrite?.rev, undefined, "小数 expectedRevision → undefined");
+      await applyConfigPatch(d, { patch: { port: 3100 }, expectedRevision: 6 });
+      assert.equal(lastWrite?.rev, 6, "合法整数透传");
+    }
+    // D3: invalid details 含字段与范围。
+    {
+      const r = await applyConfigPatch(deps(), { patch: { httpsPort: 0 } });
+      assert.equal(r.code, "invalid");
+      assert.ok(r.details.includes("httpsPort") && r.details.includes("1-65535"));
+    }
+    // D4: conflict 409 映射（SETTINGS_CONFLICT code）。
+    {
+      const r = await applyConfigPatch(deps({ update: async () => { throw Object.assign(new Error("stale"), { code: "SETTINGS_CONFLICT" }); } }), { patch: { port: 3101 } });
+      assert.equal(r.status, 409);
+      assert.equal(r.code, "conflict");
+      assert.equal(r.ok, false);
+    }
+    // D5: logWarn 缺省（?. 短路）不抛错，仍返回固定文案。
+    {
+      const d = deps({ update: async () => { throw new Error("boom"); } });
+      delete d.logWarn;
+      const r = await applyConfigPatch(d, { patch: { port: 3102 } });
+      assert.equal(r.status, 500);
+      assert.equal(r.details, "保存失败，请查看服务端日志");
+    }
+    // D6: 清除证书路径走 replace 且剔除两键；普通 patch 走 update。
+    {
+      const d = deps();
+      const clear = await applyConfigPatch(d, { patch: { tlsCertFile: "", tlsKeyFile: "" } });
+      assert.equal(clear.ok, true);
+      assert.equal(lastWrite?.kind, "replace");
+      assert.ok(!("tlsCertFile" in lastWrite?.section ?? {}) && !("tlsKeyFile" in lastWrite?.section ?? {}), "清除后节不含 tls 键");
+      const upd = await applyConfigPatch(deps(), { patch: { port: 3103 } });
+      assert.equal(upd.ok, true);
+      assert.equal(typeof lastWrite === "object", true);
+    }
+  }
+
+  // ---- E. buildConfigRoutes 路由面（围栏/方法白名单/快照字段/readBody）----
+  {
+    const { buildConfigRoutes } = lib;
+    const lastWrite = { status: 0, body: "" };
+    const deps = {
+      resolve: () => ({ enabled: true, host: "0.0.0.0", port: 3200, httpsEnabled: true, httpsPort: 3443, targetHost: "127.0.0.1", printBanner: true, wsCompressEnabled: true, wsCompressPaths: [], httpCompressEnabled: true, httpCompressLevel: 1 }),
+      readUser: () => ({ user: { port: 3200 }, revision: 11 }),
+      writable: () => true,
+      update: async () => {},
+      replace: async () => {},
+      compress: () => ({ httpCompressEnabled: true, httpCompressLevel: 1, httpCompressMounted: false, httpCompressStats: { compressed: 2, passthrough: 3 } }),
+    };
+    const route = buildConfigRoutes(deps)[0];
+    const callRoute = async (method, overrides = {}, body) => {
+      const EventEmitter = (await import("node:events")).EventEmitter;
+      const stream = new EventEmitter();
+      Object.assign(stream, { method, socket: { remoteAddress: "127.0.0.1" }, headers: { host: "127.0.0.1:3080" }, ...overrides });
+      let status = 0;
+      const chunks = [];
+      const res = {
+        writeHead(c) { status = c; },
+        end(c) { if (c !== undefined) chunks.push(String(c)); },
+        getHeader() { return undefined; },
+        setHeader() {},
+      };
+      const done = body === undefined ? Promise.resolve() : new Promise((r) => process.nextTick(() => {
+        stream.emit("data", Buffer.from(typeof body === "string" ? body : JSON.stringify(body)));
+        stream.emit("end");
+        r();
+      }));
+      await route.handler(stream, res);
+      await done;
+      lastWrite.status = status;
+      lastWrite.body = chunks.join("");
+      return lastWrite;
+    };
+    // E1: 围栏与方法白名单。
+    assert.equal((await callRoute("GET", { socket: { remoteAddress: "10.0.0.9" } })).status, 403, "非回环 403");
+    assert.equal((await callRoute("DELETE")).status, 405, "DELETE 405");
+    assert.equal((await callRoute("POST", {}, { patch: {} })).status, 405, "POST 405");
+    // E2: GET 快照字段全集（user/effective/compress/revision/writable）。
+    {
+      const snap = JSON.parse((await callRoute("GET")).body);
+      assert.equal(snap.ok, true);
+      assert.deepEqual(snap.user, { port: 3200 });
+      assert.equal(snap.effective.port, 3200, "effective 生效值");
+      assert.equal(snap.compress.httpCompressStats.compressed, 2, "压缩协商计数");
+      assert.equal(snap.revision, 11);
+      assert.equal(snap.writable, true);
+    }
+    // E3: PUT 合法 → 200 + user 层回传；非法 → 400 error.details；坏 JSON → 400 invalid-json。
+    {
+      const okPut = JSON.parse((await callRoute("PUT", {}, { patch: { port: 3201 }, expectedRevision: 11 })).body);
+      assert.equal(okPut.ok, true);
+      const badPut = JSON.parse((await callRoute("PUT", {}, { patch: { port: 99999 } })).body);
+      assert.ok(badPut.error.details.includes("port"), "400 details 指明字段");
+      const badJson = JSON.parse((await callRoute("PUT", {}, "{not-json")).body);
+      assert.equal(badJson.error.code, "invalid-json", "坏 JSON 400 invalid-json");
+    }
+    // E4: writable=false → PUT 503（GET 仍可读）。
+    {
+      const roDeps = { ...deps, writable: () => false };
+      const roRoute = buildConfigRoutes(roDeps)[0];
+      const EventEmitter = (await import("node:events")).EventEmitter;
+      const stream = new EventEmitter();
+      Object.assign(stream, { method: "PUT", socket: { remoteAddress: "127.0.0.1" }, headers: { host: "127.0.0.1:3080" } });
+      let status = 0;
+      const chunks = [];
+      const done = new Promise((r) => process.nextTick(() => {
+        stream.emit("data", Buffer.from(JSON.stringify({ patch: { port: 1 } })));
+        stream.emit("end");
+        r();
+      }));
+      await roRoute.handler(stream, { writeHead(c) { status = c; }, end(c) { if (c !== undefined) chunks.push(String(c)); }, getHeader() { return undefined; }, setHeader() {} });
+      await done;
+      assert.equal(status, 503, "只读态 PUT 503");
+    }
+  }
+
+  // 块尾统一回收：lifecycle disposers（关转发器 server、清 scheduleSync timer）
+  // + DSH_HOME 还原，防句柄泄漏挂起事件循环。
+  disposeAll();
+}
+
 // ===== Config schema 直测：schemastery 默认值与上界（#147 变异加固接续） =====
 {
   const { Config } = await import("../lib/index.js");
