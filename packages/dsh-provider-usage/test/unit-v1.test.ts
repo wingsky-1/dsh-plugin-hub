@@ -21,7 +21,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { assert, judgeContained as pipeContained, judgePad as pad } from "./helpers.ts";
+import { assert, judgeContained as pipeContained, judgePad as pad, injectGlobalFetch } from "./helpers.ts";
 console.error("EVAL-ORDER-TAG: V1");
 import {
   ADAPTER_CONTRACT_VERSION_V1,
@@ -817,15 +817,16 @@ assert.equal(openCodeGoAdapter.formatPanel({
 
 {
   // mock 全局 fetch：记录入参并延迟 resolve，用 resolved 后的 signal.aborted
-  // 观察超时定时器是否真的触发了 abort（不悬挂、无网络）
-  const realFetch = globalThis.fetch;
+  // 观察超时定时器是否真的触发了 abort（不悬挂、无网络）。
+  // 经 injectGlobalFetch 串行通道（#120）：与其他模块的 fetch 注入窗口互斥，
+  // save/restore 恒配对，杜绝 ESM TLA 交错下的 mock 驻留污染。
   const calls = [];
-  try {
-    globalThis.fetch = async (url, opts) => {
+  await injectGlobalFetch(async (set) => {
+    set(async (url, opts) => {
       calls.push({ url, opts });
       await new Promise((res) => setTimeout(res, opts.delayMs ?? 0));
       return { marker: "mock", aborted: opts.signal.aborted, url, headers: opts.headers };
-    };
+    });
 
     // 快路径：远小于超时的延迟 -> 正常返回且 signal 未 abort
     const fast = await fetchWithTimeout("https://gw.test/x", 1000,
@@ -848,13 +849,11 @@ assert.equal(openCodeGoAdapter.formatPanel({
     assert.equal(slow.aborted, true, "超过 timeoutMs 后 controller.abort 已触发");
 
     // 默认参数形态：省略 timeoutMs 与 init 仍可完成快调用
-    globalThis.fetch = async (url, opts) => ({ marker: "def", aborted: opts.signal.aborted });
+    set(async (url, opts) => ({ marker: "def", aborted: opts.signal.aborted }));
     const def = await fetchWithTimeout("https://gw.test/z");
     assert.equal(def.marker, "def", "默认参数下仍走 fetch 并返回");
     assert.equal(def.aborted, false, "默认 10s 超时内完成不 abort");
-  } finally {
-    globalThis.fetch = realFetch;
-  }
+  });
 }
 
 // ---------------------------------------------------------------- trendOf 阈值与取整边界（#150 变异加固，经 formatPanel 观测）
