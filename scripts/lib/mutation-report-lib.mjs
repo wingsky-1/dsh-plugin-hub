@@ -50,10 +50,12 @@ export function readMutationReport(path) {
  * 多份段式报告聚合统计（#220 B 方案：mutate 段拆分为独立 matrix 实例后，
  * 同包多份 <pkg>-<seg>.json 聚合为一个包级口径再对 threshold 判分）。
  *
- * 去重约定：mutant 以「源文件路径 + mutant id」为唯一键——provider-usage
- * 两段存在历史重叠区间（2671-2792，#210 对齐后的原样保留），同一 mutant 会
- * 同时出现在两段报告中；状态冲突时取更保守值（NoCoverage > Survived >
- * Timeout > Killed），防聚合虚高。
+ * 去重约定：mutant 以「源文件路径 + 完整位置 + mutator + replacement」为唯一
+ * 键——Stryker JSON 报告的 mutant.id 是每份报告独立生成的序号（PR #257 实证：
+ * seg1 的 "434" 与 seg2 的 "213" 毫无对应关系），跨报告按 id 去重会把不同
+ * mutant 误合并、把分数打到假低；provider-usage 两段历史重叠区间（2671-2792，
+ * #210 对齐后的原样保留）的同位置 mutant 经位置键正确配对（实证状态冲突 0）。
+ * 状态冲突仍取更保守值（NoCoverage > Survived > Timeout > Killed）兜底。
  *
  * 任一报告缺失/不可解析 → 返回 null（调用方 fail-closed）。
  */
@@ -74,14 +76,15 @@ export function readMutationReportsAgg(paths) {
     }
     for (const [file, f] of Object.entries(report.files ?? {})) {
       for (const m of f.mutants ?? []) {
-        const key = `${file}::${m.id}`;
-        const prev = seen.get(key);
+        // id 是每份报告独立的序号（#257 实证），跨报告去重必须用完整位置
+        const k = `${file}::${m.location?.start?.line}:${m.location?.start?.column}:${m.location?.end?.line}:${m.location?.end?.column}::${m.mutatorName ?? ''}:${m.replacement ?? ''}`;
+        const prev = seen.get(k);
         if (prev === undefined) {
-          seen.set(key, m.status);
+          seen.set(k, m.status);
           continue;
         }
         const rank = { NoCoverage: 3, Survived: 2, Timeout: 1, Killed: 0 };
-        if ((rank[m.status] ?? 0) > (rank[prev] ?? 0)) seen.set(key, m.status);
+        if ((rank[m.status] ?? 0) > (rank[prev] ?? 0)) seen.set(k, m.status);
       }
     }
   }
