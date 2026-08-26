@@ -34,20 +34,21 @@ import { createLanProxy, DEFAULT_OPTIONS } from "./proxy.ts";
 import type { TlsMaterials, LanProxy } from "./proxy.ts";
 import { ensureSelfSignedTls, loadTlsFromFiles } from "./cert.ts";
 import { isLoopbackRequest } from "../../../shared/loopback.js";
-import { writeJson, readBody, errorMessage } from "../../../shared/host-utils.js";
+import { writeJson, errorMessage } from "../../../shared/host-utils.js";
 // 官方类型层（issue #16/#48，锁版见 pnpm-workspace catalog；仅 import type，
 // 编译期擦除，禁止运行时值导入——contract-check 有门禁）。dsh-host-webserver
 // 经 declare module 注入 ctx.webServer，必须引入其类型面。
 import type { Context } from "@deepseek-ai/cordis";
-import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 // 配置模型与校验（#276 方案 A 阶段 3 拆出至 config.ts）
-import { sanitizeSettings, validateSettings } from "./config.ts";
 import type { HttpCompressSnapshot, LanProxyConfig, ResolvedConfig } from "./config.ts";
 // 官方 settings 命名空间接线（#276 方案 A 阶段 3 拆出至 settings.ts）
 import { SETTINGS_NS, installLanProxySettings, warnLog } from "./settings.ts";
 import type { OwnerScopeLike, SettingsServiceLike } from "./settings.ts";
 // 存量 config.json 一次性迁移（#276 方案 A 阶段 3 拆出至 migrate.ts）
 import { migrateFileConfig } from "./migrate.ts";
+// loopback HTTP 配置路由（#276 方案 A 阶段 3 拆出至 config-routes.ts）
+import { ROUTES, buildConfigRoutes } from "./config-routes.ts";
+import type { ConfigRouteDeps } from "./config-routes.ts";
 
 // ------------------------------------------------------------------ 对外 re-export
 // 注意：bundle-host 会把 tsc 产物中的子模块全部内联进 lib/index.js 并清理游离 .js，
@@ -58,19 +59,14 @@ export { SETTINGS_NS, installLanProxySettings } from "./settings.ts";
 export type { LanProxySettingsHooks, OwnerScopeLike } from "./settings.ts";
 export { MIGRATED_BAK_NAME, migrateFileConfig } from "./migrate.ts";
 export type { MigrationOutcome } from "./migrate.ts";
+export { ROUTES, applyConfigPatch, buildConfigRoutes } from "./config-routes.ts";
+export type { ConfigRouteDeps, PatchResult } from "./config-routes.ts";
 
 /** 稳定的 cordis 插件名。 */
 export const name = "lan-proxy";
 
 /** 等回环 web 服务器绑定并初始化后再启动。 */
 export const inject = ["webServer"];
-
-/** 与客户端共享的路由（单一来源）。 */
-export const ROUTES = {
-  health: "/api/dsh-lan-proxy/health",
-  /** 配置读写路由：GET 快照 / PUT patch（loopback 围栏）。 */
-  config: "/api/dsh-lan-proxy/config",
-};
 
 /** WebSocket 压缩桥接默认路径白名单（会话事件流两个大流量端点）。 */
 export const DEFAULT_WSS_COMPRESS_PATHS: readonly string[] = ["/api/events.mux", "/api/events.host"];
@@ -99,153 +95,6 @@ function lanIpv4Addresses(): string[] {
 /** 插件目录（<DSH_HOME>/lan-proxy）：自签名证书缓存 + 存量迁移备份所在。 */
 export function pluginDir(): string {
   return join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), "lan-proxy");
-}
-
-// ---------------------------------------------------------------------------
-// loopback HTTP 配置路由（GET 快照 / PUT patch）
-// ---------------------------------------------------------------------------
-
-/** buildConfigRoutes 的依赖注入面（apply 内装配；smoke 用 fake 直接构造）。 */
-export interface ConfigRouteDeps {
-  /** 当前生效配置（含默认值兜底）。 */
-  resolve(): ResolvedConfig;
-  /** 用户层原始节与 revision（descriptor.user / descriptor.revision）。 */
-  readUser(): { user: Record<string, unknown>; revision?: number };
-  /** settings 服务是否可用（决定 PUT 是否可写）。 */
-  writable(): boolean;
-  /** 增量 merge patch 进用户层。 */
-  update(patch: object, expectedRevision?: number): Promise<void>;
-  /** 整节替换用户层（清除证书路径的 unset 语义）。 */
-  replace(section: object, expectedRevision?: number): Promise<void>;
-  /** HTTP 压缩运行快照。 */
-  compress(): HttpCompressSnapshot;
-  /** 服务端日志兜底（写入异常原文只进日志，不进响应 details）。 */
-  logWarn?(message: string): void;
-}
-
-/** applyConfigPatch 的结果。 */
-export type PatchResult =
-  | { ok: true; value: { user: Record<string, unknown>; revision?: number } }
-  | { ok: false; status: number; code: string; details: string };
-
-/** 清除证书路径时需要从用户层剔除的键（空字符串 = 显式清除，恢复自签名）。 */
-const TLS_PAIR_KEYS = ["tlsCertFile", "tlsKeyFile"] as const;
-
-/**
- * 配置保存纯函数（PUT /config 的主体，独立导出供 smoke 单测）：
- * validate 定位首个非法键 → sanitize 净化 → tls 成对校验 → 写入官方存储。
- * 默认走 update 增量 merge；仅当 raw patch 以空字符串表达「清除证书路径」时
- * 走 replace（update 是 merge 语义无法 unset，owner scope 无 mutate 面）：
- * 从当前用户层复制全节、剔除被清除的键后整节替换，其余语义不变。
- */
-export async function applyConfigPatch(deps: ConfigRouteDeps, payload: unknown): Promise<PatchResult> {
-  if (!deps.writable()) {
-    return { ok: false, status: 503, code: "settings-unavailable", details: "settings 服务不可用，无法保存配置" };
-  }
-  const body = (typeof payload === "object" && payload !== null ? payload : {}) as {
-    patch?: unknown;
-    expectedRevision?: unknown;
-  };
-  const expectedRevision =
-    typeof body.expectedRevision === "number" && Number.isInteger(body.expectedRevision) ? body.expectedRevision : undefined;
-  const rawPatch = body.patch;
-  // 先定位首个非法键（issue #33 子项 1）：错误文案指明字段与合法范围。
-  const invalid = validateSettings(rawPatch);
-  if (invalid !== null) {
-    return { ok: false, status: 400, code: "invalid", details: `配置项「${invalid.key}」非法：${invalid.hint}` };
-  }
-  const sanitized = sanitizeSettings(rawPatch);
-  if (sanitized === null) {
-    return { ok: false, status: 400, code: "invalid", details: "非法配置值（未知键或类型错误）" };
-  }
-  const rawSrc = (typeof rawPatch === "object" && rawPatch !== null ? rawPatch : {}) as Record<string, unknown>;
-  // 证书成对约束（P2-1）：raw 层先判「显式给出的两侧必须同形态」——一侧空串
-  // 而另一侧非空字符串时直接拒绝。否则单边空串经 sanitize 剔除后，剩余的单侧
-  // 值会绕过下方 sanitize 后的成对校验（如 {tlsCertFile:"", tlsKeyFile:"/x"}）。
-  const rawCert = typeof rawSrc.tlsCertFile === "string" ? rawSrc.tlsCertFile : undefined;
-  const rawKey = typeof rawSrc.tlsKeyFile === "string" ? rawSrc.tlsKeyFile : undefined;
-  const mixedTlsPair =
-    (rawCert === "" && (rawKey ?? "") !== "") ||
-    (rawKey === "" && (rawCert ?? "") !== "");
-  if (mixedTlsPair) {
-    return { ok: false, status: 400, code: "tls-pair", details: "证书文件与私钥文件必须成对提供（或都留空以使用自签名证书）" };
-  }
-  // 成对约束第二层（sanitize 后判定，口径与历史版本一致）：只给单侧值。
-  if (Boolean(sanitized.tlsCertFile) !== Boolean(sanitized.tlsKeyFile)) {
-    return { ok: false, status: 400, code: "tls-pair", details: "证书文件与私钥文件必须成对提供（或都留空以使用自签名证书）" };
-  }
-  const clearingTls = TLS_PAIR_KEYS.some((key) => rawSrc[key] === "");
-  try {
-    if (clearingTls) {
-      const { user } = deps.readUser();
-      const section: Record<string, unknown> = { ...user };
-      for (const key of TLS_PAIR_KEYS) {
-        if (rawSrc[key] === "") delete section[key];
-      }
-      await deps.replace({ ...section, ...(sanitized as Record<string, unknown>) }, expectedRevision);
-    } else {
-      await deps.update(sanitized as Record<string, unknown>, expectedRevision);
-    }
-  } catch (err) {
-    const code = (err as { code?: unknown })?.code;
-    if (code === "SETTINGS_CONFLICT") {
-      return { ok: false, status: 409, code: "conflict", details: "设置已被其他窗口修改，请刷新后重试" };
-    }
-    // P2-2：对外收敛固定文案，不把底层异常原文（可能含路径等内部信息）回给
-    // 客户端；完整原因走服务端日志。
-    deps.logWarn?.(`lan-proxy: 配置保存写入设置存储失败 — ${errorMessage(err)}`);
-    return { ok: false, status: 500, code: "error", details: "保存失败，请查看服务端日志" };
-  }
-  return { ok: true, value: deps.readUser() };
-}
-
-/**
- * 组装配置路由（GET 读快照 + PUT 写 patch；loopback 围栏 + 方法白名单）。
- * 导出供 smoke 单测（fake deps，不依赖网络）。
- */
-export function buildConfigRoutes(deps: ConfigRouteDeps): WebRoute[] {
-  const configRoute: WebRoute = {
-    kind: "exact",
-    path: ROUTES.config,
-    handler: async (req, res) => {
-      if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
-      if (req.method === "GET") {
-        const { user, revision } = deps.readUser();
-        writeJson(res, 200, {
-          ok: true,
-          user,
-          revision,
-          effective: deps.resolve(),
-          compress: deps.compress(),
-          writable: deps.writable(),
-        });
-        return;
-      }
-      if (req.method === "PUT") {
-        let body: unknown;
-        try {
-          body = await readBody(req, 64 * 1024);
-        } catch (error) {
-          const message = errorMessage(error);
-          if (message.includes("invalid JSON body")) {
-            writeJson(res, 400, { ok: false, error: { code: "invalid-json", details: `invalid JSON body: ${message}` } });
-            return;
-          }
-          // 超限路径：readBody 已 reject 并 destroy 连接（socket 已断无法再写响应）。
-          return;
-        }
-        const result = await applyConfigPatch(deps, body);
-        if (!result.ok) {
-          writeJson(res, result.status, { ok: false, error: { code: result.code, details: result.details } });
-          return;
-        }
-        writeJson(res, 200, { ok: true, user: result.value.user, revision: result.value.revision });
-        return;
-      }
-      writeJson(res, 405, { error: `method not allowed: ${req.method}` });
-    },
-  };
-  return [configRoute];
 }
 
 /**
