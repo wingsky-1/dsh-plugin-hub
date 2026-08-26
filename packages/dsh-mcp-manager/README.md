@@ -3,10 +3,30 @@
 [![GitHub Releases](https://img.shields.io/github/v/release/wingsky-1/dsh-plugin-hub)](https://github.com/wingsky-1/dsh-plugin-hub/releases)
 
 DSH（DeepSeek Harness）的 **MCP 服务器管理插件**：会话界面右上角浮窗 + 分级面板 +
-快速接入（手工表单 + 粘贴 mcpServers JSON 导入，**不预设任何服务器**），支持
-**项目级 MCP 跟随会话切换**。已连接服务器的工具以 `mcp__<serverName>__<rawName>`
-注册给模型直接调用。MCP 协议客户端基于 `node:child_process`
-与全局 `fetch` 直接实现，无需额外安装。
+快速接入（手工表单 + 粘贴 mcpServers JSON 导入，**不预设任何服务器**）。
+MCP 协议客户端基于 `node:child_process` 与全局 `fetch` 直接实现，无需额外安装。
+
+三档中间层模式（`middleware`）：`off`——全部服务器直呼 `mcp__<server>__<tool>`（旧行为）；
+`project`（**默认**）——项目级走中间层、全局仍直呼；`all`——全局也走中间层，
+cwd 无项目时回落全局虚拟 root `@global`，模型面完全收敛为两个原子工具。
+注意生效时机：`middleware` / `middlewarePolicy` 只在插件启动时读取，**变更后需重启
+`dsh web`**；两级配置文件中的服务器列表（增删/启停/改配置）支持热加载、即时生效，
+无需重启。
+
+## 核心优势
+
+- **上下文成本可控**：项目级 MCP 默认经中间层收敛，模型面只占 `ws_mcp_search` /
+  `ws_mcp_call` 两个原子工具位——当前工作空间的项目级接多少台服务器、多少个工具都
+  不膨胀系统提示词；`middleware: all` 可把全局服务器也收进中间层，实现全量收敛
+- **分工作目录维护**：项目级配置 `<项目根>/.dsh/mcp.json` 随仓库走、可提交 git 团队共享；
+  全局配置 `<DSH_HOME>/dsh-mcp.json` 常连；切换会话自动加载当前目录的 MCP 集
+- **工作空间隔离**：中间层以会话 cwd 路由到对应连接池，server 全名一致性校验防跨空间
+  串台；不同目录注入同名 server 也互不冲突
+- **安全的默认值**：配置只存 `${ENV}` 引用、不落盘密钥本身（0600 权限 + 原子写入）；
+  stdio 子进程环境净化，宿主凭据形状变量不透传；目录摘要与错误路径经 redactor 脱敏
+- **运维省心**：运行中/连接中/失败等分级状态一目了然；断线有界指数退避自动重连；
+  直连模式下工具结果按 8KB 截断、调用超时可按 server 覆盖（`toolCallTimeoutMs`），
+  中间层调用超时固定 30s
 
 ## 安装
 
@@ -99,11 +119,13 @@ SSE events 通道推送一变，客户端自动重新拉取 `/api/dsh-mcp/config
 
 ## 配置（中间层）
 
-项目级 MCP 经中间层访问（`middleware: project`，默认）：模型面恒定两个工具
-`ws_mcp_search`（先检索当前工作空间 MCP 工具）/ `ws_mcp_call`（按 `@<root>/<server>`
-全名调用），执行时按调用方会话当前 cwd 路由到对应工作空间连接池，不同工作空间
-注入不同 MCP、无命名冲突。切换 `middleware: off` 回到旧行为（项目级也直接注册
-`mcp__` 工具）；`middleware: all` 则全局服务器也走中间层。
+项目级 MCP 经中间层访问（`middleware: project`，默认）：项目级服务器不再注册
+`mcp__` 工具，改经模型面两个原子工具访问——`ws_mcp_search`（先检索当前工作空间 MCP
+工具）/ `ws_mcp_call`（按 `@<root>/<server>` 全名调用），执行时按调用方会话当前 cwd
+路由到对应工作空间连接池，不同工作空间注入不同 MCP、无命名冲突；全局服务器仍直呼
+`mcp__<server>__<tool>`。切换 `middleware: off` 回到旧行为（项目级也直接注册 `mcp__`
+工具）；`middleware: all` 则全局服务器也走中间层（cwd 无项目时回落全局虚拟 root
+`@global`），模型面完全收敛为两个原子工具。
 
 | 键 | 值域 | 默认 |
 | --- | --- | --- |
