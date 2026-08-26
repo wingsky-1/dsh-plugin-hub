@@ -34,9 +34,9 @@ provider-usage **400s**（n=49，频率与耗时双高）、lan-proxy 204s、mcp
 |---|---|---|---|---|
 | 1 | 增量基线仓库内文件化（#204/#178） | 已落地 | 常态 mutation job 分钟级 → **20-38s 全程** | actions/cache 按 ref 隔离不可用；基线必须入 git |
 | 2 | concurrency 超订（notifier 先例 #159） | 已落地（16×3 包） | notifier **6m54s → 1m42s** | 仅等待主导型收益巨大；见 §4.2 分级评估法 |
-| 3 | provider-usage 4→8（#249） | 已合并，增量命中场景首跑通过（23s pass） | 重测场景对比数据待自然触发 | 观察项：score 一致 + timeout/error 不抬升；达标再评估 16。该包重测高频（均值 400s），期望收益上修 |
+| 3 | provider-usage 4→8（#249）+ timeoutMS 60s→30s（#257） | 已落地 | 同机基准 4→8 提速 **42%**（771.9s→449.9s），score/killed 与独立全量逐项一致；CI 首跑无假阳性 | 收紧只减假阳性 killed，方向安全；升 16 待 CI 自然场景数据 |
 | 4 | lan-proxy / idle-archive 维持 4 | 决策维持 | — | #147 端口互踩实证 / testFiles 含固定端口 smoke.ts |
-| 5 | mutate 段拆分 CI matrix（B） | 提案待裁定（ROI 上修） | — | 作用于三个高频慢包（provider-usage/lan-proxy/mcp-manager）；代价：计费分钟×N、基线与判分脚本按段重构、触 ci.yml 红线 |
+| 5 | mutate 段拆分 CI matrix（B） | **已落地（#257）** | 段式矩阵真实 CI 实例化正常；wall-clock 数据待段式基线就绪后回收 | 三慢包 provider-usage×2 / lan-proxy×3 / mcp-manager×4；判分聚合去重键教训见 §4.6；计费分钟×N 为已知代价 |
 | 6 | 构建产物复用（build-all artifact，D） | 提案待裁定 | — | 只降计费分钟；wall-clock 持平、常态场景略变差（前置串行化） |
 | 7 | testFiles 最小集裁剪（C） | 暂缓 | — | per-test 覆盖分析已做关联，剩余空间在大测试文件整体跳过，成本高收益不确定 |
 
@@ -77,9 +77,21 @@ paths-filter 只匹配 `packages/<pkg>/**` 与全局路径，`stryker.conf.d/**`
 
 触 `.github/` workflow 的手段（B/D）走 needs-proposal-review 流程；纯 `stryker.conf.d` 调整可直接 PR。所有手段的效果数据回填 issue 台账，关闭前沉淀为本文档。
 
+### 4.6 跨报告聚合：mutant id 是报告内序号（#257 首跑实证）
+
+把 mutate 面拆成多份配置后，同包多份 Stryker JSON 报告聚合判分时**严禁用 mutant.id 做去重键**——id 是每份报告独立生成的全局序号（实证 seg1 的 "434" 与 seg2 的 "213" 毫无对应），按 id 去重会把跨段不同 mutant 误合并、冲突保守取值再二次压分，分数被打到假低（首跑 53.52/50.1/41.75 全红）。
+
+正确做法：以「源文件路径 + 完整位置（start/end line+column）+ mutatorName + replacement」为键。修复后在真实报告上验证的三个交叉证据：
+
+1. 三包真实聚合 64.82/63.67/64.37 全部回到阈值之上；
+2. covered 计数与独立同机全量基准逐项吻合（K1440/T36/S801）；
+3. 重叠区间 147 对同位置 mutant 状态冲突 0。
+
+配套纪律：契约测试锁定 conf 文件集 ↔ jsonReporter/incrementalFile 命名 ↔ gauntlet 包集三方一致；期望段数由 conf 目录推导，缺任一段报告 exit 2 fail-closed。
+
 ## 5. 当前结论与后续候选
 
-- 已完成：常态场景优化到位（§3 #1/#2）；重测场景高频存在（§2 统计），是当前主瓶颈；
-- 待验证：provider-usage 8 并发的重测场景对比数据（等自然触发的源码 PR）→ 达标评估 16；
-- 待裁定：B（重测 wall-clock，作用于 provider-usage/lan-proxy/mcp-manager 三高频慢包）vs D（计费分钟），二者目标指标不同、不互斥；
-- 长期：若夜间全量基线刷新耗时增长，再评估 C。
+- 已完成：常态场景优化到位（§3 #1/#2）；重测高频瓶颈的两大杠杆（并发超订 + 段拆分）均已落地；
+- 进行中：段式增量基线首次产出（夜间 observe glob 化后自动覆盖全部段配置）；就绪前段实例 notice 降级全量（慢但正确）；
+- 待回收：B 落地后的重测 wall-clock 对比（基线均值 provider-usage 400s / mcp-manager 140s）；provider-usage 升 16 决策；
+- 待裁定：D（计费分钟视角）；长期视基线刷新耗时再评估 C。
