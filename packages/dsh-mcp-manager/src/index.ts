@@ -41,6 +41,7 @@ import type { ServerConfig } from "./types.ts";
 import type { CatalogCache, CatalogDecision, CatalogMessage, SupervisorLite, CatalogAgent } from "./catalog.ts";
 
 // 组合根内部使用的依赖（re-export 见文件底部）。
+import { normalizeServer } from "./normalize.ts";
 import { defaultStorePath, McpStore } from "./store.ts";
 import { DEFAULT_TOOL_CALL_TIMEOUT_MS, DEFAULT_RESULT_TRUNCATE_BYTES, ConnectionSupervisor } from "./supervisor.ts";
 import {
@@ -74,9 +75,6 @@ export const name = "mcp-manager";
 
 /** 需要已初始化的工具注册表、web 服务器与提示词组装器。 */
 export const inject = ["tools", "webServer", "systemPrompt"];
-
-/** MCP 服务器名命名空间约束（与官方 dsh-mcp-client 一致）。 */
-export const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;
 
 /** 中间层 all 模式的全局虚拟 root（全局服务器经中间层访问时的路由 key）。 */
 export const MIDDLEWARE_GLOBAL_ROOT = "@global";
@@ -852,59 +850,6 @@ export class McpManager {
   }
 }
 
-/** 校验并规范化一条服务器配置。 */
-export function normalizeServer(input: unknown): ServerConfig {
-  if (typeof input !== "object" || input === null) throw new Error("server config must be an object");
-  const src = input as Record<string, unknown>;
-  const name = String(src.name ?? "").trim();
-  if (!SERVER_NAME_PATTERN.test(name)) {
-    throw new Error(`server name must match ${SERVER_NAME_PATTERN.source}`);
-  }
-  const transport = src.transport === "streamable-http" ? "streamable-http" : src.transport === "stdio" ? "stdio" : undefined;
-  if (transport === undefined) throw new Error('transport must be "stdio" or "streamable-http"');
-  if (transport === "stdio") {
-    if (typeof src.command !== "string" || (src.command as string).trim() === "") {
-      throw new Error("stdio server requires a command");
-    }
-  } else {
-    if (typeof src.url !== "string" || (src.url as string).trim() === "") {
-      throw new Error("streamable-http server requires a url");
-    }
-    try {
-      new URL(src.url as string);
-    } catch {
-      throw new Error(`invalid url: ${src.url}`);
-    }
-  }
-  const server: ServerConfig = {
-    name,
-    transport,
-    enabled: src.enabled !== false,
-    toolCallTimeoutMs: typeof src.toolCallTimeoutMs === "number" && (src.toolCallTimeoutMs as number) > 0
-      ? Math.floor(src.toolCallTimeoutMs as number)
-      : DEFAULT_TOOL_CALL_TIMEOUT_MS,
-    reconnect: (src.reconnect as Record<string, unknown> | undefined) ?? {},
-    // 能力目录的自定义描述（用户手写；MCP 协议无服务器级自描述，完整保留不截断）。
-    description: typeof src.description === "string" && (src.description as string).trim() !== ""
-      ? (src.description as string).trim()
-      : undefined,
-  };
-  if (transport === "stdio") {
-    server.command = src.command as string;
-    if (Array.isArray(src.args)) server.args = (src.args as unknown[]).map(String);
-    if (typeof src.cwd === "string" && (src.cwd as string) !== "") server.cwd = src.cwd as string;
-    if (typeof src.env === "object" && src.env !== null) {
-      server.env = Object.fromEntries(Object.entries(src.env as Record<string, unknown>).map(([key, value]) => [key, String(value)]));
-    }
-  } else {
-    server.url = src.url as string;
-    if (typeof src.headers === "object" && src.headers !== null) {
-      server.headers = Object.fromEntries(Object.entries(src.headers as Record<string, unknown>).map(([key, value]) => [key, String(value)]));
-    }
-  }
-  return server;
-}
-
 // -------------------------------------------------------------- 提示词
 
 /** 向 Agent 宣告插件（announceToAgent 开启时注入）。能力清单由动态目录
@@ -1162,6 +1107,9 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
 
 // ------------------------------------------------------------ re-export
 // 导出面与拆分前 lib/index.js 完全一致（smoke 验收契约）。
+
+// 服务器配置归一化（纯函数单一事实源）
+export { SERVER_NAME_PATTERN, normalizeServer } from "./normalize.ts";
 
 // 存储
 export { defaultStorePath, McpStore } from "./store.ts";
