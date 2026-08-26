@@ -42,6 +42,13 @@
 .fwp-rendered-md code{background:var(--dsw-alias-bg-layer-2,#eef0f3);border-radius:4px;padding:.1em .35em;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.9em}
 .fwp-rendered-md pre{background:var(--dsw-alias-bg-layer-1,#f7f8fa);border:1px solid var(--dsw-alias-border-l1,#e5e7eb);border-radius:8px;padding:12px;overflow:auto;margin:.5em 0}
 .fwp-rendered-md pre code{background:none;padding:0}
+/* issue #104：mermaid 渲染容器与失败回退。SVG 响应式收窄不溢出；背景/边框走
+   主题变量与代码围栏一致，明暗双态自适应（dark 主题下 mermaid 自身配色由
+   re-initialize 下发的 dark 主题负责，此处只管容器底色）。 */
+.fwp-mermaid{background:var(--dsw-alias-bg-base,#fff);border:1px solid var(--dsw-alias-border-l1,#e5e7eb);border-radius:8px;padding:12px;margin:.5em 0;overflow:auto;text-align:center}
+.fwp-mermaid svg{max-width:100%;height:auto}
+.fwp-mermaid-note{margin:.5em 0 0;font-size:12px;color:var(--dsw-alias-state-warning-primary,#b45309)}
+.fwp-mermaid-fallback{border-color:var(--dsw-alias-state-warning-primary,#e3b341)}
 .fwp-rendered-md table{border-collapse:collapse;margin:.5em 0;font-size:.9em}
 .fwp-rendered-md th,.fwp-rendered-md td{border:1px solid var(--dsw-alias-border-l1,#d4d8e0);padding:4px 8px}
 .fwp-rendered-code{width:100%}

@@ -100,6 +100,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
 | Reconnection | Exponential backoff (starts at 500ms, caps at 30s, gives up after 10 attempts and deregisters the tools) |
 | Result truncation | Direct-connect tool results truncated at 8KB and marked (prevents oversized JSON from entering context in full) |
 | Timeout fallback | Direct-connect tool call timeout defaults to 60s → 15s (overridable per server via `toolCallTimeoutMs`); middleware calls use a fixed 30s timeout |
+| Push self-healing | Triple safeguard on the SSE channel: server sends a data ping heartbeat every 30s; client reconnects (closing the stale EventSource first) after 60s of frame silence (watchdog); connection is force-rebuilt when the page becomes visible again — half-open connections silently severed by mobile OS backgrounding heal on their own instead of piling up as zombies |
 
 ## Configuration (floating window position)
 
@@ -109,14 +110,33 @@ plugin's own `Config` using standard cordis config injection — no config file 
 
 | Key | Allowed values | Default |
 | --- | --- | --- |
-| `position` | `top-right` (top-right, default) / `bottom-right` (bottom-right) | `top-right` |
+| `position` | `top-right` (top-right, default) / `top-left` (top-left) / `bottom-right` (bottom-right) / `bottom-left` (bottom-left) | `top-right` |
 | `offset.x` | Non-negative integer (horizontal offset, px) | `8` |
 | `offset.y` | Non-negative integer (vertical offset, px) | `8` |
 | `offset.blankY` | Non-negative integer (blank-session vertical offset, px) | `40` |
+| `zIndexBase` | Integer, clamped to 1-9000 (floating window z-index base; the dropdown panel automatically uses base + 30; the modal manager panel is unaffected) | `10` |
 
-When `position = bottom-right`, the dropdown panel expands **above the pill** (bottom
-anchor, popping upward), does not overflow the viewport, and content stays fully visible
-and clickable; at `top-right` it expands downward (historical behavior, unchanged default).
+When `position = bottom-right` or `bottom-left`, the dropdown panel expands **above the
+pill** (bottom anchor, popping upward), does not overflow the viewport, and content stays
+fully visible and clickable; at top anchors it expands downward (historical behavior,
+unchanged default).
+
+**Mobile / tablet adaptation** (issue #128): the breakpoint is decided from the
+conversation container's viewport width rather than a window media query — on narrow
+screens (<=480px, portrait phones / very narrow splits) the panel goes near full-width,
+server cards reflow, and action buttons get touch targets of about 44px; the tablet tier
+(<=834px) transitions; desktop is unchanged. Final floating coordinates are clamped to
+the viewport in JS (safe-area semantics: the host has no `viewport-fit=cover`, so
+`env(safe-area-inset-*)` is always 0 and this degrades naturally to a plain clamp);
+the on-screen keyboard is followed via `visualViewport` resize, and orientation changes
+recompute on the next frame.
+
+**Cross-package avoidance contract (from issue #116, must not be reverted)**: this
+plugin's pill defaults to `top-right` at 8px from the top and ~26px tall;
+dsh-provider-usage's usage capsule relies on that default position with `offsetY: 48`
+to sit right below it (no overlap by default). Changing this plugin's default anchor /
+vertical offsets breaks that avoidance — treat it as a cross-package behavioral contract
+and adjust provider-usage defaults in lockstep before reverting.
 
 Saving in the settings page takes effect immediately, **without restarting dsh web** and
 without manually refreshing the page: the host pushes a frame over the existing SSE events

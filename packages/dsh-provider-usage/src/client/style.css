@@ -30,8 +30,12 @@
   white-space: nowrap;
 }
 
-.dou-float:hover {
-  background: var(--dsw-alias-interactive-bg-hover, #f2f3f6);
+/* 触控热区（#128，WCAG 2.2 AA ≥24px 底线）：伪元素外扩不占布局；narrow 档下方加大外扩至 ≈44px 主操作目标 */
+.dou-float::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border-radius: 99px;
 }
 
 .dou-dot {
@@ -51,6 +55,7 @@
   right: 14px;
   width: min(340px, calc(100vw - 36px));
   max-height: min(72vh, 560px);
+  max-height: min(72dvh, 560px);
   overflow: auto;
   background: var(--dsw-alias-bg-base, #fdfdfd);
   color: var(--dsw-alias-label-primary, #1c1e26);
@@ -63,6 +68,48 @@
   font-size: 12px;
 }
 .dou-panel[hidden] { display: none !important; }
+
+/* #128 移动端档位样式：由客户端按 conversationHost rect 宽度判定并写 data-dou-bp
+   （JS 判定，非 @media——防桌面窄窗 / iPad Slide Over 误触发）；阈值见 src/placement-math.ts。
+   dvh 级联回退：先声明 vh 兜底，再以 dvh 覆写（软键盘弹出时随 visualViewport 收缩）。 */
+.dou-panel[data-dou-bp="narrow"] {
+  width: calc(100vw - 16px);
+  max-height: calc(88vh - 88px);
+  max-height: calc(88dvh - 88px);
+  padding: 10px 12px;
+}
+.dou-panel[data-dou-bp="tablet"] {
+  width: min(400px, calc(100vw - 24px));
+}
+/* 窄屏卡片重排：余额卡片头部允许换行，峰谷徽标不挤压数值 */
+.dou-panel[data-dou-bp="narrow"] .dou-cardHead {
+  flex-wrap: wrap;
+}
+.dou-panel[data-dou-bp="narrow"] .dou-cardMeta {
+  flex-wrap: wrap;
+}
+/* 触控目标分层（#128）：narrow 档主操作 min-height 36px + 伪元素外扩命中区 ≈44px；
+   tablet 档 30px 过渡；wide 档维持现状。 */
+.dou-btn {
+  position: relative;
+}
+.dou-panel[data-dou-bp="narrow"] .dou-btn {
+  min-height: 36px;
+  padding: 6px 14px;
+  font-size: 12.5px;
+}
+.dou-panel[data-dou-bp="narrow"] .dou-btn::before {
+  content: "";
+  position: absolute;
+  inset: -4px;
+}
+.dou-panel[data-dou-bp="tablet"] .dou-btn {
+  min-height: 30px;
+  padding: 5px 12px;
+}
+.dou-panel[data-dou-bp="narrow"] .dou-head .dou-title {
+  font-size: 13.5px;
+}
 
 .dou-head {
   display: flex;
@@ -144,7 +191,6 @@
   padding: 4px 10px;
   cursor: pointer;
 }
-.dou-btn:hover { background: var(--dsw-alias-interactive-bg-hover, #f2f3f6); }
 
 .dou-error {
   color: var(--dsw-alias-state-error-primary, #d64545);
@@ -198,7 +244,6 @@
   text-align: left;
   cursor: pointer;
 }
-.dou-provHead:hover { background: var(--dsw-alias-interactive-bg-hover, #f2f3f6); }
 .dou-provArrow {
   flex: none;
   display: inline-block;
@@ -368,4 +413,11 @@
 @media (max-width: 480px) {
   .dou-provBody { padding-left: 10px; }
   .dou-provBadge { max-width: 100%; }
+}
+
+/* #128 悬停态统一包裹 @media(hover:hover)：触屏设备不吸附悬停背景（规格第 7 条）。 */
+@media (hover: hover) {
+.dou-btn:hover { background: var(--dsw-alias-interactive-bg-hover, #f2f3f6); }
+.dou-provHead:hover { background: var(--dsw-alias-interactive-bg-hover, #f2f3f6); }
+.dou-float:hover { background: var(--dsw-alias-interactive-bg-hover, #f2f3f6); }
 }

@@ -9,7 +9,8 @@
 局域网访问 dsh web UI 的转发器：在 `0.0.0.0:<port>`（默认 HTTP 3081、
 HTTPS 3443）监听，把 HTTP/HTTPS 与 WebSocket/wss 转发到回环 web 服务器
 （默认 `127.0.0.1:3080`），重写 Host/Origin 以通过 /api 浏览器信任围栏。
-端口/证书/压缩路径等均可经 GUI 设置面板或 config.json 热更新。
+端口/证书/压缩路径等均可经 GUI 设置卡片热更新（配置存官方 settings 存储，
+issue #110 起不再使用自建 config.json）。
 
 ## 目录结构
 
@@ -42,9 +43,14 @@ HTTPS 3443）监听，把 HTTP/HTTPS 与 WebSocket/wss 转发到回环 web 服�
    - Host 头仅接受 IP 字面量或 localhost——防 DNS 重绑定
 3. **路由**：全部 loopback 围栏（非回环 403、方法不匹配 405）；health 路由
    `ROUTES.health` 必带；smoke 必须含 403/405 围栏用例。
-4. **配置热更新**：config.json watch（tmp+rename 原子写）+ GUI settings 命名空间
-   （`installSettingsNamespace`）。新增配置键须同步 schema 与
-   `FILE_CONFIG_VALIDATORS` 两处校验。
+4. **配置单一通道**（issue #110）：配置一律存官方 settings 存储——
+   `installLanProxySettings` 注册 `dsh-lan-proxy` 命名空间，读 `scope.get()`、
+   写经 loopback HTTP 配置路由（GET 快照 / PUT patch）转 `scope.update`/`replace`
+   （清除证书路径等 unset 语义走 replace），热更新统一由 `scope.watch` 驱动；
+   存量 `config.json` 由启动时一次性 marker 迁移收编（改名
+   `config.json.migrated.bak`），不得复活任何自建配置文件读写或 RPC 配置端点。
+   新增配置键须同步 schema 与 `FILE_CONFIG_VALIDATORS` 两处校验
+   （迁移过滤与保存校验共用同一键集）。
 5. **客户端契约**：路由常量与宿主 `src/index.ts` 的 `ROUTES` 单一来源（构建期
    `__DSH_ROUTES__` 注入）；客户端源码禁写 loader 痕迹（见 DEVELOPMENT.md §2）；
    React 走 externals（`react-shim.d.ts` + peer optional）。

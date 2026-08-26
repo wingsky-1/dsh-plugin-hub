@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-lan-proxy/lib/index.js:36058-36643"
+    "packages/dsh-lan-proxy/lib/index.js:36108-36826"
   ],
   "testRunner": "tap",
   "tap": {

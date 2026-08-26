@@ -6,13 +6,15 @@
  * disposed 清理）；完成风暴聚合（首条即时 + 窗口补发聚合条）；agent/error
  * 通知与滚动窗口合并（含窗口过期计数、0=关闭）；子代理完成场景（issue #49：
  * fork 型委派按运行时归属拆分——归属成立默认静默/开关联动 subagent-done、
- * 归属不成立保护用户 fork 主线走 done；spawn 型 origin 用例与 S2 开关组合）。
+ * 归属不成立保护用户 fork 主线走 done；spawn 型 origin 用例与 S2 开关组合）；
+ * issue #272 双源订阅（session/event 推送流互补：events 停滞形态兜底通知、
+ * 双源同 turn 去重）与跳过路径 warn 兜底。
  */
 import { join } from "node:path";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { assert, makeNotifier, agentWithTitle, fakeAgents, waitMergeWindow, fakeReq, makeRes } from "./helpers.ts";
-import { ROUTES } from "../lib/index.js";
+import { assert, makeNotifier, agentWithTitle, fakeAgents, waitMergeWindow, fakeReq, makeRes, turnEndEvent } from "./helpers.ts";
+import { ROUTES, lastTurnEndOf } from "../lib/index.js";
 
 /** 带 info 收集的 logger 覆盖。 */
 function loggingOverride(infos) {
@@ -145,7 +147,8 @@ try {
         { agents, ...loggingOverride(infos) }
       );
       const status = listeners.get("agent/status")[0];
-      const forkAgent = () => agentWithTitle("fork-worker", "fork 委派子任务", { parentSession: "main-parent", depth: 0, turnEnd: 1 });
+      // fork 型委派完整持久化 header 形态：parentSession + seedLength、无 origin、depth=0（#199 P2-5 对齐）
+      const forkAgent = () => agentWithTitle("fork-worker", "fork 委派子任务", { parentSession: "main-parent", seedLength: 3, depth: 0, turnEnd: 1 });
       status({ agent: forkAgent(), status: "running" });
       status({ agent: forkAgent(), status: "idle" });
       assert.equal(infos.length, 0, "A1：fork 型委派归属成立且默认关时完全静默");
@@ -166,7 +169,8 @@ try {
       const infos = [];
       const { listeners } = await makeNotifier(work, { configFile: onCfg }, { agents, ...loggingOverride(infos) });
       const status = listeners.get("agent/status")[0];
-      const forkAgent = () => agentWithTitle("fork-worker2", "fork 委派子任务B", { parentSession: "main-parent2", depth: 0, turnEnd: 1 });
+      // 同 A1：完整持久化 header 形态含 seedLength（#199 P2-5 对齐）
+      const forkAgent = () => agentWithTitle("fork-worker2", "fork 委派子任务B", { parentSession: "main-parent2", seedLength: 3, depth: 0, turnEnd: 1 });
       status({ agent: forkAgent(), status: "running" });
       status({ agent: forkAgent(), status: "idle" });
       assert.equal(infos.length, 1, "A2：开启开关时恰产生一条通知");
@@ -284,6 +288,107 @@ try {
       status({ agent: agentWithTitle("main-3", "主任务3", { turnEnd: 1 }), status: "running" });
       assert.equal(infos.length, 1, "running 仍不通知");
     }
+  }
+
+  // ── issue #272：完成判定双源订阅（session/event 推送流互补源）+ 跳过路径 warn 兜底 ──
+  {
+    const infos = [];
+    const warns = [];
+    // 关闭完成聚合：本块聚焦双源证据合并语义，每条完成即时通知便于计数
+    // （doneMergeWindowMs 是运行时配置，须经 configFile 文件传入）
+    const dualCfg = join(work, "dual-source.json");
+    writeFileSync(dualCfg, JSON.stringify({ doneMergeWindowMs: 0 }));
+    const { listeners } = await makeNotifier(
+      work,
+      { configFile: dualCfg },
+      { logger: { info: (t) => infos.push(t), warn: (t) => warns.push(t) } }
+    );
+    const status = listeners.get("agent/status")[0];
+    const sessionEvent = listeners.get("session/event")[0];
+    const disposed = listeners.get("agent/disposed")[0];
+    const countDone = () => infos.filter((t) => /dsh-notifier: done /.test(t)).length;
+
+    // (a) events 停滞形态反证（#272 报告场景）：agent.session.events 冻结在
+    //     turn=1（快照回读永远拿到旧证据，模拟一次性读滞后被固化的形态），
+    //     session/event 推送流正常逐轮派发。修复前：仅首轮通知、后续永久静默
+    //     且零日志；修复后：推送流兜底，逐轮通知。
+    for (let turn = 1; turn <= 4; turn += 1) {
+      status({ agent: agentWithTitle("stuck-a", "停滞会话", { turnEnd: 1 }), status: "running" });
+      sessionEvent({ id: "stuck-a" }, turnEndEvent(turn));
+      status({ agent: agentWithTitle("stuck-a", "停滞会话", { turnEnd: 1 }), status: "idle" });
+    }
+    assert.equal(countDone(), 4, "(a) events 停滞形态下 session/event 推送流兜底逐轮通知");
+
+    // (b) 双源去重：同一 turn 两源到达只通知一次——快照与推送指向同一
+    //     append-only 日志的同一事件，turn 相同即同一证据，合并为单次通知。
+    status({ agent: agentWithTitle("dedup-1", "去重会话", { turnEnd: 2 }), status: "running" });
+    sessionEvent({ id: "dedup-1" }, turnEndEvent(2));
+    status({ agent: agentWithTitle("dedup-1", "去重会话", { turnEnd: 2 }), status: "idle" });
+    assert.equal(countDone(), 5, "(b) 快照+推送同 turn 合并为单次通知");
+    sessionEvent({ id: "dedup-1" }, turnEndEvent(2)); // 已记忆 turn 的重复派发不再触发
+    status({ agent: agentWithTitle("dedup-1", "去重会话", { turnEnd: 2 }), status: "running" });
+    status({ agent: agentWithTitle("dedup-1", "去重会话", { turnEnd: 2 }), status: "idle" });
+    assert.equal(countDone(), 5, "(b) 已记忆 turn 的重复到达不重复通知");
+
+    // (c) 跳过路径 warn 兜底：无任何新证据的 idle 判定跳过必须可观测
+    //     （#272 报告场景「全程零日志」的反面）。
+    status({ agent: agentWithTitle("warn-1", "静默会话", { turnEnd: 1 }), status: "running" });
+    status({ agent: agentWithTitle("warn-1", "静默会话", { turnEnd: 1 }), status: "idle" }); // 首轮正常通知，lastEndedTurn=1
+    const beforeWarn = countDone();
+    status({ agent: agentWithTitle("warn-1", "静默会话", { turnEnd: 1 }), status: "running" });
+    status({ agent: agentWithTitle("warn-1", "静默会话", { turnEnd: 1 }), status: "idle" }); // 无新证据 → 跳过 + warn
+    assert.equal(countDone(), beforeWarn, "(c) 无新证据轮不发 done");
+    const warnLine = warns.find((t) => t.includes("warn-1"));
+    assert.ok(warnLine !== undefined, "(c) 跳过路径输出 warn 日志");
+    assert.match(warnLine, /完成判定跳过/, "(c) warn 标识跳过动作");
+    assert.match(warnLine, /快照turn=1/, "(c) warn 含快照源检测到的 turn");
+    assert.match(warnLine, /推送turn=-/, "(c) warn 含推送源检测值（无则为 -）");
+    assert.match(warnLine, /记忆turn=1/, "(c) warn 含记忆的 lastEndedTurn");
+
+    // 设计内静默同样留痕：aborted 中断不发 done，但 warn 带 kind=aborted 可核对。
+    status({ agent: agentWithTitle("abort-1", "中断会话", { turnEnd: 1, turnEndKind: "aborted" }), status: "running" });
+    status({ agent: agentWithTitle("abort-1", "中断会话", { turnEnd: 1, turnEndKind: "aborted" }), status: "idle" });
+    assert.equal(countDone(), beforeWarn, "aborted 中断不发 done");
+    assert.ok(warns.some((t) => t.includes("abort-1") && /kind=aborted/.test(t)), "aborted 静默留痕 kind=aborted");
+
+    // disposed 清理辅源记忆：销毁后推送残留 turn 不再参与判定（防 Map 无界增长）。
+    status({ agent: agentWithTitle("gc-1", "清理会话", { turnEnd: 3 }), status: "running" });
+    sessionEvent({ id: "gc-1" }, turnEndEvent(3));
+    disposed({ agent: agentWithTitle("gc-1", "清理会话") });
+    status({ agent: agentWithTitle("gc-1", "清理会话", { turnEnd: 3 }), status: "idle" }); // 状态机+辅源已清零：不通知
+    assert.equal(countDone(), beforeWarn, "disposed 清理后辅源残留不误报");
+
+    // (d) 畸形载荷不毒化记忆（#284 复核闸 P1）：turn 非数字的推送 turn/end
+    //     直接 skip 不落记忆——修复前 {turn:NaN} 凭 ended===undefined 短路成
+    //     best、首轮误报一条并把 lastEndedTurn 推进为 NaN，此后真实完成因
+    //     x > NaN 恒 false 被永久吞掉。
+    status({ agent: agentWithTitle("mal-1", "畸形会话"), status: "running" }); // 无快照 turn/end（ended===undefined 场景）
+    sessionEvent({ id: "mal-1" }, { type: "turn/end", data: { turn: "x", reason: { kind: "completed" } } });
+    sessionEvent({ id: "mal-1" }, { type: "turn/end", data: { turn: Number.NaN, reason: { kind: "completed" } } });
+    status({ agent: agentWithTitle("mal-1", "畸形会话"), status: "idle" });
+    assert.equal(countDone(), beforeWarn, "(d) 畸形载荷不误报 done");
+    const malWarn = warns.find((t) => t.includes("mal-1"));
+    assert.ok(malWarn !== undefined && /完成判定跳过/.test(malWarn), "(d) 畸形证据不可用走跳过路径 warn");
+    assert.match(malWarn, /快照turn=- 推送turn=- 记忆turn=-/, "(d) 两源均无可信证据（记忆未被毒化）");
+    // 毒化回归反证：随后真实 turn=2 双源一致 completed 照常通知（修复前被 NaN 记忆吞掉）。
+    status({ agent: agentWithTitle("mal-1", "畸形会话", { turnEnd: 2 }), status: "running" });
+    sessionEvent({ id: "mal-1" }, turnEndEvent(2));
+    status({ agent: agentWithTitle("mal-1", "畸形会话", { turnEnd: 2 }), status: "idle" });
+    assert.equal(countDone(), beforeWarn + 1, "(d) 畸形载荷之后真实完成照常通知");
+    // lastTurnEndOf 快照侧同款加固：畸形条目跳过继续倒序扫描，取上一条合法证据。
+    const snapshotAgent = {
+      id: "mal-2",
+      session: {
+        header: undefined,
+        events: [
+          { type: "turn/end", data: { turn: 7, reason: { kind: "completed" } } },
+          { type: "turn/end", data: { turn: "x", reason: { kind: "completed" } } },
+          { type: "session/title", data: { title: "T" } },
+        ],
+      },
+    };
+    assert.deepEqual(lastTurnEndOf(snapshotAgent), { turn: 7, kind: "completed" }, "(d) lastTurnEndOf 跳过非有限 turn 条目");
+    assert.equal(lastTurnEndOf({ id: "mal-3", session: { header: undefined, events: [{ type: "turn/end", data: { turn: null, reason: { kind: "completed" } } }] } }), undefined, "(d) 仅畸形条目时返回 undefined");
   }
 } finally {
   rmSync(work, { recursive: true, force: true });
