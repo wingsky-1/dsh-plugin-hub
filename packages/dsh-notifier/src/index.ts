@@ -422,7 +422,6 @@ export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Pro
               : ended;
           const rememberedTurn = state.lastEndedTurn;
           const hasNewEnd = best !== undefined && (rememberedTurn === undefined || best.turn > rememberedTurn);
-          if (best !== undefined) state.lastEndedTurn = best.turn;
           // 非正常结束不判「完成」：本轮 turn/end 无新 closure（hasNewEnd）
           // 或 kind 属于 aborted/interrupted/error/blocked 时静默——失败由
           // agent/error 单独负责「任务出错」通知，被阻塞由对应事件负责，
@@ -444,6 +443,10 @@ export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Pro
                 `快照turn=${ended !== undefined ? String(ended.turn) : "-"} 推送turn=${streamed !== undefined ? String(streamed.turn) : "-"} ` +
                 `记忆turn=${rememberedTurn ?? "-"}`,
             );
+            // B-3：非 completed 闭包照常消费——aborted/error/blocked/
+            // max-tokens/未知 kind 照旧跳过通知（不误报完成），但
+            // lastEndedTurn 照常推进（同 turn 再现 idle 不重复处理）。
+            if (best !== undefined) state.lastEndedTurn = best.turn;
             return;
           }
           const taskTitle = sessionTitleOf(agent);
@@ -451,11 +454,23 @@ export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Pro
           // 运行时归属（fork 型委派 worker）；归属不成立/agents 服务缺位一律
           // 保守走主任务分支——用户 fork 主线不被静默。三类 header 形态与
           // 冷 resume 保守边界见 isSubagentOf 注释。
-          if (isSubagentOf(agent, ctx.agents)) {
+          // 根因 A 安全化（issue #290）：agents 服务未注入（inject 仅
+          // ["webServer"]）时 cordis 严格属性访问会抛 cannot get property
+          // "agents" without inject——必须经 ctx.get(name, false) 安全读取
+          // （L258 userQuestions 同款先例），缺位返回 undefined → 走主任务分支，
+          // 不再触发 THROW truthy 误判。显式防御 typeof ctx.get 兼容 fake ctx。
+          const agents = typeof ctx.get === "function" ? ctx.get("agents", false) : undefined;
+          if (isSubagentOf(agent, agents)) {
             if (current.notifySubagentDone) enqueueDone("subagent-done", taskTitle, durationMs);
           } else if (current.notifyTaskDone) {
             enqueueDone("done", taskTitle, durationMs);
           }
+          // B-1：lastEndedTurn 提交后置三态化（issue #290）——推进移到分流
+          // 判定与入队之后：发出成功 / 免打扰拦截（suppressed） / 开关禁用
+          // （notifyTaskDone=false / notifySubagentDone=false 未入队）三态均
+          // 提交；批次成员按「入队成功」提交（enqueueDone 被调用即推进，与
+          // flushDoneMerge 成败解耦）；异常路径（外层 catch）不达此处不提交。
+          if (best !== undefined) state.lastEndedTurn = best.turn;
         } else if (status === "running") {
           state.runningSeen = true;
           state.startedAt = Date.now();
