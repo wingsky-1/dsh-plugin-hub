@@ -130,6 +130,36 @@ contract-check 禁止运行时值导入）。原自建类型层 `types/dsh.d.ts`
 - **测试**：`test/smoke.ts` 直跑，必含 403/405 围栏用例 + 客户端契约断言
   （`assertClientSourceContract` / `assertClientProductContract`）。
 
+### 事件订阅与 scope 语义（cordis dispatch 过滤）
+
+cordis `EventsService.dispatch` 对已注册监听器的过滤条件为
+`hook.global || !filter || filter.call(thisArg, hook.ctx)`（`hook` = 监听记录，
+`thisArg` = 派发载体）：
+
+- **`hook.global` 无条件放行**：注册第三参数 `{ global: true }`（cordis
+  `EventOptions.global`，官方语义 = "Receive the event regardless of context
+  filter checks"）使该监听器跳过一切 filter 检查；
+- **`!filter` 放行**：裸 `ctx.emit(name, ...)` 派发（`thisArg` 无
+  `[Context.filter]` 标签）对所有监听器放行；
+- **untagged listener ctx 放行**：宿主 dsh-scope 的 `scopeTarget(agent, agent)`
+  carrier 派发带 filter（`scopeOf(ctx) === undefined → true`）——**无 scope 标签
+  的 listener ctx 直接放行**。第三方 bundle 插件经 `cordis.patch.yml` 平铺
+  insert 挂载、ctx 无 `kScope` 标签时，agent 作用域事件默认可达，**无需**
+  `{global:true}` 即可收到（该假设已由真实 cordis Context 契约用例固化——
+  见 dsh-notifier `test/real-context.test.ts`，宿主若收紧 untagged 放行语义，
+  用例先红而非静默漏检）。
+
+**第三方 bundle 插件接收 agent 作用域事件的推荐做法**：
+
+- 默认挂载形态（untagged 平铺）下不加 `{ global: true }` 也能收到事件——它是
+  **消费端防御而非必需**：对「事件必须到达」的关键监听（如通知类插件的完成/
+  错误事件）建议加 `{ global: true }`，把事件到达与宿主 scope 分发语义解耦，
+  即使未来以 private-scoped 形态挂载（listener ctx 带 scope 标签且与事件
+  carrier 的 scope 不一致）仍全收（dsh-notifier 全部 `ctx.on` 均如此）；
+- **代价**：`global` 会收到**跨 scope** 的事件——消费端必须按「payload 自校验
+  + 事件内容过滤」处理（事件载荷跨宿主边界不受信，逐字段运行时校验），仅想靠
+  scope 过滤防串扰的监听不应加 `global`。
+
 ## 2. 客户端（`src/client/index.ts`）规范 — 干净模块
 
 **核心：源码只写干净模块，不写任何 loader 痕迹。**

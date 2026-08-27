@@ -30,6 +30,13 @@ export interface MermaidApiLike {
  * 关闭自动扫描 + htmlLabels:false（标签走纯 SVG text，缩小注入面）+
  * 按 prefers-color-scheme 选主题。hydration 初始化与主题切换 re-initialize
  * 共用同一构造器，防两处漂移。
+ *
+ * issue #292：追加 suppressErrorRendering:true——mermaid@11 失败路径（parse/draw
+ * 抛错）在默认 falsy 时会向 document.body 末尾追加自绘错误横幅
+ * `div#d<renderId>`（"Syntax error in text" + 版本号），且不随 Modal 关闭/文档
+ * 切换清理，属全局 DOM 污染。置 true 后失败路径只 `removeTempElements()+throw`，
+ * 由插件既有 fallbackToCode 原样兜底（该配置是 secure config，仅 initialize()
+ * 全局下发生效，图内 %%{init}%% 无法覆盖）。
  */
 export function mermaidBaseConfig(theme: "dark" | "default"): Record<string, unknown> {
   return {
@@ -37,6 +44,7 @@ export function mermaidBaseConfig(theme: "dark" | "default"): Record<string, unk
     securityLevel: "strict",
     htmlLabels: false,
     theme,
+    suppressErrorRendering: true,
   };
 }
 

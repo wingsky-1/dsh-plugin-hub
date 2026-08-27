@@ -8,6 +8,12 @@
 规则：完成定义 = 五连门禁全绿 + 验收标准逐条落实；不追求漂亮（cleaner 会来）；不改无关文件；
 遵循 docs/DEVELOPMENT.md 宿主端/客户端规范与
 [`dsh-plugin-hub-dev` 执行清单](../.dsh/skills/dsh-plugin-hub-dev/SKILL.md)。
+**调研兜底**：任务书要求采用新机制 / 调整性能参数，但未附「已验证手段 + 参考
+链接」支撑时，先自查官方文档与社区实践；仍无法确认则**暂停回报主控补全调研**
+——属任务书缺口（主控侧可逆事项），不触发失败升级计数、不打 `blocked-human`。
+与执行失败判别：依赖未实现、工具报错等执行失败按 `_protocol.md` 失败升级协议
+走死因聚类路径；任务书缺调研则按本条暂停回报。主控侧对应义务见
+`oss-pipeline/SKILL.md` §委派纪律「派发前调研义务」。
 禁止：修改 .github/、package.json、pnpm-lock.yaml、shared/ 契约层。
 交付规范（关闭语义，与 oss-pipeline 交付步同一规则）：
 | 关键字 | 适用条件 |
