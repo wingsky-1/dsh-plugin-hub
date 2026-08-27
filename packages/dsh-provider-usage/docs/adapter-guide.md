@@ -3,7 +3,8 @@
 > 适用插件：`@wingsky-1/dsh-provider-usage`（v2 契约重构版）。
 > 本文是 Agent 自主引导用户接入自定义数据源的权威流程手册。
 > 快速参考：契约细节见第 3 节；参考实现见内置适配器源码（`src/adapters/opencode-go.mjs`、
-> `src/adapters/deepseek-official.mjs`、`src/adapters/zai-coding-cn.mjs`，同目录 `.d.mts` 为类型契约）。
+> `src/adapters/deepseek-official.mjs`、`src/adapters/zai-coding-cn.mjs`）。
+> 用户只需编写**纯 JS 的 .mjs 文件**（零 import、完全自包含），无需关心任何类型声明。
 > 插件内部运行机制（取数管道 / 注册表 / 热更新 / 设置页交互）的图解见 [architecture.md](architecture.md)。
 
 ---
@@ -70,7 +71,9 @@
   `dou-miniChart` 等）仍按内置样式使用。
 - **内置源码 = 使用范例**（`packages/dsh-provider-usage/src/adapters/opencode-go.mjs`、
   `src/adapters/deepseek-official.mjs`、`src/adapters/zai-coding-cn.mjs`）：照其结构与
-  注入消费方式实现，而非仅凭文字脑补；`.d.mts` 声明文件（同目录）即类型契约。
+  注入消费方式实现，而非仅凭文字脑补。这些是**纯 JS 的 .mjs**（无任何 import）——
+  你的适配器也必须是这样的纯 JS 文件，**不要写 `import` / `import type`**（Node ESM
+  不认识 TS 语法，写了加载即失败）。
 - 除非用户在审核卡明确选择「简单表格」，否则按此基准实现。
 - 生成前在审核卡给出**渲染效果示意**：胶囊文案示例 + 面板卡片结构描述（见 2.3）。
 
@@ -143,6 +146,10 @@ plugins:
 ## 3. 契约规格速查（v2）
 
 ### 3.1 必填导出
+
+> **文件形态**：适配器是**纯 JS 的 .mjs 文件，零 import、完全自包含**（不 import 任何
+> 模块/类型——Node ESM 不认识 `import type` 等 TS 语法，写了加载即失败）。所有能力
+> （图表工具、转义、日界）都经入参 `utils` 注入，见 3.3。
 
 ```js
 export const version = 2;                          // 固定 2
