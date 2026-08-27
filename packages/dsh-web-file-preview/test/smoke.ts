@@ -34,6 +34,11 @@ import "./unit-routes.test.ts";
 
 const pkgDir = fileURLToPath(new URL("..", import.meta.url));
 
+// 防 flake 纪律（DEVELOPMENT.md §5）：DSH_HOME 隔离到临时目录，杜绝向真实 ~/.dsh
+// 写任何测试数据（本 smoke 以 fake ctx 直测宿主逻辑，不依赖 DSH_HOME 持久化，
+// 此处显式隔离作为基准约定）。
+process.env.DSH_HOME = mkdtempSync(join(tmpdir(), "fwp-dshhome-"));
+
 // ------------------------------------------------------------ 分组单一事实源（grouping）
 
 assert.deepEqual(groupOfPath("a.md").group, "md");
@@ -576,7 +581,7 @@ try {
       write: false,
       logLevel: "silent",
     });
-    const { runMermaidHydration } = await import(
+    const { runMermaidHydration, mermaidBaseConfig } = await import(
       `data:text/javascript;base64,${Buffer.from(mcBundle.outputFiles[0]!.text).toString("base64")}`
     ) as typeof import("../src/client/mermaid-core.js");
     /** 构造受控 IO：loadError 注入 chunk 拉取失败；renderErrors 以源码为键注入语法错误。 */
@@ -605,14 +610,28 @@ try {
         },
       };
     };
+    // 用例 0（issue #292）：mermaidBaseConfig 直测——返回对象含 suppressErrorRendering:true
+    // 且既有四项（startOnLoad/securityLevel/htmlLabels/theme）原值不变，default/dark 双主题无漂移。
+    {
+      assert.deepEqual(
+        mermaidBaseConfig("default"),
+        { startOnLoad: false, securityLevel: "strict", htmlLabels: false, theme: "default", suppressErrorRendering: true },
+        "#292 mermaidBaseConfig(\"default\") 含 suppressErrorRendering:true 且原四项不变",
+      );
+      assert.deepEqual(
+        mermaidBaseConfig("dark"),
+        { startOnLoad: false, securityLevel: "strict", htmlLabels: false, theme: "dark", suppressErrorRendering: true },
+        "#292 mermaidBaseConfig(\"dark\") 含 suppressErrorRendering:true 且原四项不变",
+      );
+    }
     // 用例 1：全成功——安全基线 initialize 一次 + 逐块消毒替换、零回退。
     {
       const t = mkIo({});
       await runMermaidHydration(["graph TD;A-->B", "sequenceDiagram;A->>B:hi"], t.io);
       assert.deepEqual(
         t.events.filter((e) => e[0] === "initialize"),
-        [["initialize", { startOnLoad: false, securityLevel: "strict", htmlLabels: false, theme: "default" }]],
-        "#104 安全基线配置随 initialize 下发",
+        [["initialize", { startOnLoad: false, securityLevel: "strict", htmlLabels: false, theme: "default", suppressErrorRendering: true }]],
+        "#104 安全基线配置随 initialize 下发（issue #292 追加 suppressErrorRendering:true）",
       );
       assert.deepEqual(t.events.filter((e) => e[0] === "replaced").map((e) => e[1]), [0, 1], "#104 全部块替换");
       assert.ok(String(t.events.find((e) => e[0] === "replaced")[2]).startsWith("SANITIZED("), "#104 SVG 经二次消毒回调");
