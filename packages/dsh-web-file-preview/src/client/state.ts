@@ -72,8 +72,9 @@ export interface FilePreviewState {
   // 灯箱/查看器状态（issue #293：openLightbox 泛化为 openViewer，内容不再限 <img>）
   /** 灯箱根元素。 */
   lboxEl: HTMLElement | undefined;
-  /** 查看器内容元素（<img> 或 mermaid 克隆 <svg>，泛化字段，原 lboxImg）。 */
-  lboxContent: HTMLElement | undefined;
+  /** 查看器内容元素（<img> 或 mermaid 克隆 <svg>，泛化字段，原 lboxImg；
+   * SVG 元素不在 HTML 命名空间，故用 Element 联合类型）。 */
+  lboxContent: HTMLElement | SVGElement | undefined;
   /** 查看器缩放比例。 */
   lboxScale: number;
   /** 查看器水平平移。 */

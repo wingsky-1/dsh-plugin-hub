@@ -577,7 +577,7 @@ try {
     assert.ok(client.includes("fwp-lbox-content"), "#293 client.js 含泛化查看器 content 类（E1）");
     assert.ok(!client.includes("fwp-lbox-img"), "#293 client.js 无残留 .fwp-lbox-img 专用类名（E1 已泛化）");
     assert.ok(client.includes("图片预览"), "#293 client.js 含图片预览 aria-label（B3）");
-    // 「图表预览」哨兵在 mermaid 接线（openViewer 图表路径）落地后补回——见 commit 3 后该块。
+    assert.ok(client.includes("图表预览"), "#293 client.js 含图表预览 aria-label（B3，mermaid 接线）");
     assert.ok(client.includes("noopener"), "#293 client.js 含外链 noopener 拦截（D1/D2）");
     assert.ok(client.includes("xlink:href"), "#293 client.js 含 xlink:href 外链读取（A4）");
     assert.ok(client.includes("translate("), "#293 client.js 含 transform 模板（A2 双路径共用）");

@@ -51,10 +51,11 @@ export function closeLightbox(state: FilePreviewState): void {
 }
 
 /**
- * 通用全屏查看器：接受任意 HTMLElement 内容（<img> / 克隆 <svg>），交互语义与
- * 图片灯箱逐字节一致（B1 零回归的可测接缝在 viewer-math.ts 的 viewerTransform）。
+ * 通用全屏查看器：接受任意内容元素（<img> / 克隆 <svg>，SVG 不在 HTML 命名空间，
+ * 用 HTMLElement|SVGElement 联合类型），交互语义与图片灯箱逐字节一致（B1 零回归的
+ * 可测接缝在 viewer-math.ts 的 viewerTransform）。
  */
-export function openViewer(content: HTMLElement, state: FilePreviewState, opts: ViewerOptions): void {
+export function openViewer(content: HTMLElement | SVGElement, state: FilePreviewState, opts: ViewerOptions): void {
   closeLightbox(state);
   state.lboxScale = 1; state.lboxTx = 0; state.lboxTy = 0;
   state.lboxRestoreFocus = opts.restoreFocusTo;
@@ -113,7 +114,9 @@ export function openViewer(content: HTMLElement, state: FilePreviewState, opts: 
   const pointers = new Map<number, { x: number; y: number }>();
   let dragStart = { x: 0, y: 0, tx: 0, ty: 0 };
   let pinchStart = { dist: 1, scale: 1 };
-  content.addEventListener("pointerdown", (e: PointerEvent) => {
+  // content 为 HTMLElement|SVGElement 联合类型：addEventListener 泛型重载在联合
+  // 类型下无法解析公共事件映射，回调显式断言为 EventListener（运行时无差异）。
+  content.addEventListener("pointerdown", ((e: PointerEvent) => {
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try { content.setPointerCapture(e.pointerId); } catch { /* 兼容 */ }
     if (pointers.size === 1) {
@@ -123,8 +126,8 @@ export function openViewer(content: HTMLElement, state: FilePreviewState, opts: 
       const pts = Array.from(pointers.values());
       pinchStart = { dist: distance2(pts[0], pts[1]) || 1, scale: state.lboxScale };
     }
-  });
-  content.addEventListener("pointermove", (e: PointerEvent) => {
+  }) as EventListener);
+  content.addEventListener("pointermove", ((e: PointerEvent) => {
     if (!pointers.has(e.pointerId)) return;
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pointers.size === 2) {
@@ -136,11 +139,11 @@ export function openViewer(content: HTMLElement, state: FilePreviewState, opts: 
       state.lboxTy = dragStart.ty + (e.clientY - dragStart.y);
       applyLboxTransform(state);
     }
-  });
-  const endPointer = (e: PointerEvent) => {
+  }) as EventListener);
+  const endPointer = ((e: PointerEvent) => {
     pointers.delete(e.pointerId);
     if (pointers.size === 0) lbox.classList.remove("dragging");
-  };
+  }) as EventListener;
   content.addEventListener("pointerup", endPointer);
   content.addEventListener("pointercancel", endPointer);
 
