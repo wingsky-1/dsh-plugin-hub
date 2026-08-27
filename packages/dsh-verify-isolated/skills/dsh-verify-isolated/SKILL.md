@@ -42,13 +42,13 @@ description: >
 
 ## 2. 一键脚本（推荐）
 
-脚本随本 skill 分发：插件安装后位于包内 `scripts/verify-isolated.sh`
-（`node_modules/@wingsky-1/dsh-verify-isolated/scripts/`，或用户级
-`$DSH_HOME/skills/dsh-verify-isolated/scripts/`）。
+脚本随本 skill 分发：插件安装后位于包内
+`skills/dsh-verify-isolated/scripts/verify-isolated.sh`
+（`node_modules/@wingsky-1/dsh-verify-isolated/skills/dsh-verify-isolated/scripts/`）。
 
 ```bash
 # 工作目录：worktree 根（非主 checkout）
-node_modules/@wingsky-1/dsh-verify-isolated/scripts/verify-isolated.sh --port 3456 <插件包路径>
+node_modules/@wingsky-1/dsh-verify-isolated/skills/dsh-verify-isolated/scripts/verify-isolated.sh --port 3456 <插件包路径>
 # 多包：... --port 3456 <包A路径> <包B路径>
 # 端口冲突：--port 0 让系统随机分配；--keep 保留临时环境便于排查
 # 跳过构建：--no-build（默认会先 pnpm build 各插件，保证 lib/ 或 dist/ 产物存在）

@@ -10,28 +10,41 @@ DSH 插件开发的**隔离环境浏览器验证** skill 插件：临时 `DSH_HO
 dsh plugin --profile web add @wingsky-1/dsh-verify-isolated
 ```
 
-安装后插件 `apply()` 经 `ctx.skills.registerProvider` 注册 `dsh-verify-isolated`
-skill，profile 内所有会话即可用（`/skill dsh-verify-isolated` 查看）。
+安装后 `dsh-verify-isolated` skill 自动注册为内置 skill，profile 内所有会话
+即可用（`/skill dsh-verify-isolated` 查看）。
+
+## 工作原理
+
+- **内置 skill 注册**：`cordis.patch.yml` 复用官方 `@deepseek-ai/dsh-skill-filesystem`
+  的 `bundledSkillDir` 配置，从包 manifest 解析本包 `skills/` 目录（参照
+  [archify-dsh](https://github.com/tt-a1i/archify) 模式）——官方 provider 发现并
+  注册 `skills/dsh-verify-isolated/SKILL.md`，无需自写注册代码；
+- **双重隔离**：`DSH_HOME=$(mktemp -d)` 隔离凭据/会话/home 级 patch；独立
+  `verify_<8位随机>` profile 隔离插件组合栈，不触碰用户 `web` profile；
+- **最小启动依赖**：profile bundles 含 `@deepseek-ai/dsh-base` +
+  `@deepseek-ai/dsh-web-app`（内置 bundle 按名从 dsh 安装目录解析，不走 npm）；
+- **一键脚本** `skills/dsh-verify-isolated/scripts/verify-isolated.sh`：建临时
+  DSH_HOME → 建 profile → 注入 web-app bundle → 构建并 link 本地插件 → 启动 →
+  退出 trap 自动清理。
+
+## 包结构
+
+```text
+skills/dsh-verify-isolated/
+  SKILL.md                        # skill 定义（frontmatter name=dsh-verify-isolated）
+  scripts/verify-isolated.sh      # 一键隔离验证脚本
+cordis.patch.yml                  # 复用官方 dsh-skill-filesystem + bundledSkillDir
+lib/index.js                      # 宿主门禁出口（name + 空 apply）
+```
 
 ## 使用
 
 skill 加载后按清单执行；也可直接调包内一键脚本：
 
 ```bash
-# 用户级安装（本机所有 dsh 项目可用）
-git clone https://github.com/wingsky-1/dsh-dev-utils.git "$DSH_HOME/skills/dsh-dev-utils"
-# 或插件包内脚本
-node_modules/@wingsky-1/dsh-verify-isolated/scripts/verify-isolated.sh --port 3456 <插件包路径>
+# 插件包内脚本（安装后）
+node_modules/@wingsky-1/dsh-verify-isolated/skills/dsh-verify-isolated/scripts/verify-isolated.sh --port 3456 <插件包路径>
 ```
-
-## 工作原理
-
-- **双重隔离**：`DSH_HOME=$(mktemp -d)` 隔离凭据/会话/home 级 patch；独立
-  `verify_<8位随机>` profile 隔离插件组合栈，不触碰用户 `web` profile；
-- **最小启动依赖**：profile bundles 含 `@deepseek-ai/dsh-base` +
-  `@deepseek-ai/dsh-web-app`（内置 bundle 按名从 dsh 安装目录解析，不走 npm）；
-- **一键脚本** `scripts/verify-isolated.sh`：建临时 DSH_HOME → 建 profile →
-  注入 web-app bundle → 构建并 link 本地插件 → 启动 → 退出 trap 自动清理。
 
 ## 安全模型
 

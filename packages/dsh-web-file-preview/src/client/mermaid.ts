@@ -23,6 +23,8 @@
 import DOMPurify from "dompurify";
 import { runMermaidHydration, mermaidBaseConfig, type MermaidApiLike } from "./mermaid-core.ts";
 import type { FilePreviewState } from "./state.ts";
+import { openViewer, closeLightbox } from "./viewer.ts";
+import { shouldOpenMermaidViewer, isExternalClickableAnchor } from "./viewer-math.ts";
 
 /** 已加载的 mermaid API 引用（动态 import 自带模块缓存，此处仅存引用）。 */
 let loadedApi: MermaidApiLike | undefined;
@@ -61,6 +63,10 @@ async function rerenderForTheme(state: FilePreviewState): Promise<void> {
   const reg = state.activeMermaidHydration;
   if (api === undefined || reg === undefined || reg.entries.length === 0) return;
   if (state.openSeq !== reg.seq || !reg.container.isConnected) return;
+  // issue #293 C9（P2）：主题切换时查看器若开着先关闭——查看器内克隆 SVG 是旧配色
+  // 快照（查看器只做视觉容器、不重渲染），直接关闭避免「陈旧主题残留」；随后
+  // rerenderForTheme 整体换图，用户重新点击打开新配色图（不自动重开）。
+  if (state.lboxEl !== undefined) closeLightbox(state);
   api.initialize(mermaidBaseConfig(themeOf()));
   for (const entry of reg.entries) {
     if (!entry.el.isConnected) continue;
@@ -120,7 +126,16 @@ export function hydrateMermaid(container: HTMLElement, state: FilePreviewState):
       sanitizeSvg: sanitizeMermaidSvg,
       onReplaced: (index, svgHtml) => {
         const holder = replaceWithSvg(codes[index], svgHtml);
-        if (holder !== undefined) registry.entries.push({ el: holder, source: sources[index] });
+        if (holder !== undefined) {
+          // issue #293 C1/C12：查看器触发绑定必须落 holder 级（.fwp-mermaid 容器，
+          // 不绑 SVG 子元素）——rerenderForTheme 用 holder.innerHTML 整体换图，
+          // 子元素绑定会随换图静默消失；holder 级监听在主题切换后依旧有效（P1-1）。
+          // 命中判定走 shouldOpenMermaidViewer 谓词（排除 fallback、svg 非空守卫）。
+          holder.addEventListener("click", () => {
+            if (shouldOpenMermaidViewer(holder)) openMermaidViewer(holder, state);
+          });
+          registry.entries.push({ el: holder, source: sources[index] });
+        }
       },
       onFallback: (index, error) => {
         console.warn(`[dsh-web-file-preview] mermaid block ${index} render failed:`, error);
@@ -162,4 +177,53 @@ function fallbackToCode(code: HTMLElement | undefined): void {
   note.setAttribute("role", "status");
   note.textContent = "图表渲染失败，已回退为代码展示";
   pre.parentElement.insertBefore(note, pre);
+}
+
+/**
+ * 打开 Mermaid 全屏查看器（issue #293 C1）：克隆 holder 内 SVG（不移动原节点，
+ * 保持 Modal 正文完好）传入通用查看器，交互（按钮/滚轮缩放、指针/单指拖拽、双指
+ * 捏合、Esc/遮罩/关闭退出、clamp 0.2–8）与图片灯箱逐字节对齐（viewer.ts）。
+ *
+ * E3 现状接受（注释显式记录）：mermaid SVG 根/defs 带 id，cloneNode(true) 后同文档
+ * 存在双份重复 id——依赖「查看器先于 Modal 关闭」生命周期（preview.ts closeModal
+ * 先 closeLightbox），查看器关闭后克隆体即移除；双份 id 期间仅影响 SVG 内部样式/
+ * 动画引用，查看器交互（缩放/平移）不受影响。不做 id 重写（避免破坏 mermaid 内部
+ * 引用关系），维护者复核确认此取舍。
+ */
+function openMermaidViewer(holder: HTMLElement, state: FilePreviewState): void {
+  const svg = holder.querySelector("svg");
+  if (svg === null) return;
+  const clone = svg.cloneNode(true) as SVGElement;
+  // E2 初始尺寸策略（显式决策）：按视口宽（≤90vw 且 ≤82vh，viewBox 保持纵横比），
+  // 不保持 Modal 内渲染宽度——查看器语义是看大图，视口基准更合理（样式见 style.css
+  // .fwp-lbox-content-svg，保证初始渲染不溢出 stage）。
+  clone.classList.add("fwp-lbox-content-svg");
+  openViewer(clone, state, { ariaLabel: "图表预览", restoreFocusTo: holder });
+}
+
+/**
+ * Modal 内 <a> 外链点击安全拦截（issue #293 D2，既存同域缺陷并入一并修）：
+ * strict 下 mermaid setLink 产出的 <a xlink:href>（DOMPurify svg profile 放行
+ * xlink:href、剥除 target）在预览 Modal 内直接点击会同 tab 整页导航离开 DSH web
+ * ——与查看器 stage 内同一机制（viewer.ts D1）。此处 document 捕获阶段只拦 Modal
+ * （state.overlay）内的外链锚点：preventDefault + 停传播，改 window.open
+ * ("_blank","noopener")。查看器（stage 内）由 openViewer 自带拦截负责；md 相对
+ * 引用（data-fp-ref / data-fp-anchor）不属绝对 http(s) 外链，不在此范围，保持
+ * 既有 Modal 内跳转/锚点委托行为。
+ */
+export function watchMermaidAnchorSafety(state: FilePreviewState): () => void {
+  const handler = (event: Event): void => {
+    if (state.disposed) return;
+    const target = event.target instanceof Node ? (event.target as Node) : null;
+    if (target === null || state.overlay === undefined || !state.overlay.contains(target)) return;
+    const elT = target instanceof Element ? (target as Element) : null;
+    if (elT === null || !isExternalClickableAnchor(elT)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const anchor = elT.closest("a");
+    const href = anchor !== null ? (anchor.getAttribute("xlink:href") || anchor.getAttribute("href")) : null;
+    if (href !== null && href !== "") window.open(href, "_blank", "noopener");
+  };
+  document.addEventListener("click", handler, true);
+  return () => document.removeEventListener("click", handler, true);
 }
