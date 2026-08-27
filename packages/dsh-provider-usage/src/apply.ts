@@ -22,7 +22,7 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isLoopbackRequest } from "../../../shared/loopback.js";
-import { writeJson, readJsonBody } from "../../../shared/host-utils.js";
+import { writeJson, readJsonBody, errorMessage } from "../../../shared/host-utils.js";
 import { installSettingsNamespace } from "../../../shared/settings-namespace.js";
 import { Mutex } from "async-mutex";
 import type { Context } from "@deepseek-ai/cordis";
@@ -40,7 +40,7 @@ import { HotReloadableAdapter } from "./hotreload.ts";
 import { resolvePath } from "./path-resolve.ts";
 import { Config, normalizeConfig } from "./config.ts";
 import { normalizeUiConfig, readUiConfig, writeUiConfig, sseData } from "./ui-config.ts";
-import { readAdapterState, readUserAdapters, userAdaptersFile, adapterStateFile, resolveAddAdapterFile, type UserAdapterRecord } from "./user-adapters.ts";
+import { readAdapterStateResult, readUserAdapters, userAdaptersFile, writeAdapterState, resolveAddAdapterFile, type UserAdapterRecord } from "./user-adapters.ts";
 
 export const ROUTES: Record<string, string> = {
   stats: "/api/dsh-provider-usage/stats",
@@ -57,9 +57,15 @@ export const ROUTES: Record<string, string> = {
 export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {}): Promise<void> {
   if (rawConfig.enabled === false) return; // 显式禁用：不注册任何路由
   const config = normalizeConfig(rawConfig);
+  const sanitizeDiagnostic = (s: string): string =>
+    s.split(process.env.DSH_HOME ?? join(homedir(), ".dsh")).join("~/.dsh").split(homedir()).join("~");
   const registry = makeAdapterRegistry({
-    sanitizePath: (s) => s.split(process.env.DSH_HOME ?? join(homedir(), ".dsh")).join("~/.dsh").split(homedir()).join("~"),
+    sanitizePath: sanitizeDiagnostic,
   });
+  const recordAdapterStateDiagnostic = (message: string): void => {
+    // recordError 同时单次 console.warn 并写入 health 最近错误，避免双重日志。
+    registry.recordError("adapter-state", "load", message);
+  };
 
   // -------------------------------------------------------- 历史存储与持久化根
   const historyRoot = config.historyDir || join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), "dsh-provider-usage");
@@ -164,14 +170,29 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
    */
   function scheduleWriteAdapterState(override?: Record<string, string | null>): void {
     stateChain = stateChain
+      // persistUserAdapter 的失败会由其自身登记；这里先恢复串行链，保证后续状态写仍可重试。
+      .catch(() => {})
       .then(async () => {
-        const saved = await readAdapterState(historyRoot);
-        const merged: Record<string, string | null> = { ...saved };
+        const saved = await readAdapterStateResult(historyRoot, {
+          diagnostic: recordAdapterStateDiagnostic,
+        });
+        if (saved.status === "unreadable") {
+          throw new Error(`读取旧 adapter-state.json 失败（${saved.detail ?? "未知错误"}），为避免覆盖旧状态已取消写入`);
+        }
+        const merged: Record<string, string | null> = { ...saved.state };
         for (const [provider, name] of Object.entries(registry.snapshot().enabled)) merged[provider] = name;
         if (override !== undefined) Object.assign(merged, override);
-        await writeFile(adapterStateFile(historyRoot), JSON.stringify(merged));
+        await writeAdapterState(
+          historyRoot,
+          merged,
+          (message) => recordAdapterStateDiagnostic(sanitizeDiagnostic(message)),
+        );
       })
-      .catch(() => {});
+      .catch((error: unknown) => {
+        const detail = sanitizeDiagnostic(errorMessage(error));
+        console.error(`[dsh-provider-usage] 启用选择落盘失败：${detail}`);
+        registry.recordError("adapter-state", "load", `启用选择落盘失败：${detail}`);
+      });
   }
 
   // 3. 热更新（config.adapter 声明 + 设置页登记的文件；autoReload=true 时生效）
@@ -231,10 +252,18 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   // 尚未按持久化状态纠正」的中间态写进 adapter-state.json，与恢复逻辑产生竞态。
 
   // 4. 恢复持久化的启用选择（adapter-state.json；null = 显式清空）
-  const savedEnabled = await readAdapterState(historyRoot);
-  for (const [provider, name] of Object.entries(savedEnabled)) {
-    if (name === null) registry.select(provider, null);
-    else registry.select(provider, name);
+  const savedEnabled = await readAdapterStateResult(historyRoot, {
+    diagnostic: recordAdapterStateDiagnostic,
+  });
+  for (const [provider, name] of Object.entries(savedEnabled.state)) {
+    const selected = registry.select(provider, name);
+    if (!selected) {
+      const safeProvider = JSON.stringify(provider.length > 128 ? `${provider.slice(0, 125)}...` : provider);
+      const safeName = JSON.stringify(name === null || name.length <= 128 ? name : `${name.slice(0, 125)}...`);
+      recordAdapterStateDiagnostic(
+        `恢复启用选择失败：provider ${safeProvider} 保存的适配器 ${safeName} 不在当前候选中（可能文件缺失或加载失败），未改写当前启用关系`,
+      );
+    }
   }
 
   if (config.autoReload) {

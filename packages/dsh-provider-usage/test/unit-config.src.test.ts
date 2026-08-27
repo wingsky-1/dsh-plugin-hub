@@ -12,7 +12,7 @@
  * parseUserAdapters 字段级异型值分支（length>0 非目标类型）、readAdapterState
  * 全分支、resolveAddAdapterFile 路径校验矩阵、normalizeUiConfig/面板锚点纯函数矩阵。
  */
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 console.error("EVAL-ORDER-TAG: CONFIG");
 import { join } from "node:path";
 import { tmpdir, homedir } from "node:os";
@@ -39,6 +39,12 @@ import {
   expandHomePath,
   resolveProviderConfig,
 } from "../src/index.ts";
+import {
+  ADAPTER_STATE_BACKUP_LIMIT,
+  adapterStateFile,
+  readAdapterStateResult,
+  writeAdapterState,
+} from "../src/user-adapters.ts";
 
 // ================================================================ #150 二阶段：resolveAddAdapterFile 路径校验矩阵
 // 注意位置：本块必须位于本模块求值的最前部（同步段）。resolveAddAdapterFile/
@@ -369,8 +375,12 @@ assert.deepEqual(parseUserAdapters('"str"'), [], "JSON 字符串返回空数组"
   const root = mkdtempSync(join(tmpdir(), "dou-state-"));
   assert.deepEqual(await readAdapterState(root), {}, "状态文件缺失返回空对象");
 
-  writeFileSync(join(root, "adapter-state.json"), "not json", "utf8");
+  const publicStateFile = join(root, "adapter-state.json");
+  writeFileSync(publicStateFile, "not json", "utf8");
   assert.deepEqual(await readAdapterState(root), {}, "坏 JSON 返回空对象");
+  assert.equal(readFileSync(publicStateFile, "utf8"), "not json", "公开读取 helper 保持坏文件原样不动");
+  assert.deepEqual(readdirSync(root).filter((name) => name.startsWith("adapter-state.json.bak-")), [],
+    "公开读取 helper 不产生隔离备份（保持既有无副作用语义）");
 
   // 合法映射 + null 显式清空 + 各非法形态逐个区分
   writeFileSync(join(root, "adapter-state.json"), JSON.stringify({
@@ -399,6 +409,212 @@ assert.deepEqual(parseUserAdapters('"str"'), [], "JSON 字符串返回空数组"
   // plain object 正常解析（拒绝路径不误伤合法映射）
   writeFileSync(join(root, "adapter-state.json"), '{"p9":"x"}', "utf8");
   assert.deepEqual(await readAdapterState(root), { p9: "x" }, "plain object 正常解析");
+}
+
+// ================================================================ #301：状态损坏留证 + 原子耐久写
+
+{
+  const root = mkdtempSync(join(tmpdir(), "dou-state-301-corrupt-"));
+  const file = adapterStateFile(root);
+  const diagnostics: string[] = [];
+  writeFileSync(file, "{broken", "utf8");
+
+  const result = await readAdapterStateResult(root, {
+    diagnostic: (message) => diagnostics.push(message),
+    now: () => 301,
+  });
+  const backup = `${file}.bak-301`;
+  assert.equal(result.status, "quarantined", "坏 JSON 被识别为已隔离状态");
+  assert.equal(result.backupFile, backup, "隔离文件名使用 .bak-<ts> 留证");
+  assert.equal(existsSync(file), false, "损坏目标文件已移出主路径");
+  assert.equal(readFileSync(backup, "utf8"), "{broken", "损坏原文完整保留在备份");
+  assert.ok(diagnostics.some((line) => line.includes("JSON 损坏") && line.includes("bak-301")),
+    "损坏隔离通过诊断通道可见");
+  assert.ok(diagnostics.some((line) => line.includes("仅供取证") && line.includes("不会自动恢复")
+    && line.includes(`最多保留 ${ADAPTER_STATE_BACKUP_LIMIT} 份`)),
+  "隔离诊断准确说明备份不会自动回灌且有界轮转");
+
+  writeFileSync(file, "{broken-again", "utf8");
+  const second = await readAdapterStateResult(root, {
+    diagnostic: (message) => diagnostics.push(message),
+    now: () => 301,
+  });
+  const secondBackup = `${file}.bak-301-1`;
+  assert.equal(second.backupFile, secondBackup, "同一时间戳碰撞时使用递增后缀且不覆盖旧备份");
+  assert.equal(readFileSync(backup, "utf8"), "{broken", "时间戳碰撞后首份损坏证据保持不变");
+  assert.equal(readFileSync(secondBackup, "utf8"), "{broken-again", "第二份损坏证据独立保留");
+
+  await writeAdapterState(root, { p301: "adapter-301", disabled: null }, () => {});
+  assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), { p301: "adapter-301", disabled: null },
+    "隔离后可原子写入新的合法状态");
+  assert.equal(readFileSync(backup, "utf8"), "{broken", "新写入不覆盖损坏现场备份");
+  assert.deepEqual(readdirSync(root).filter((name) => name.endsWith(".tmp")), [], "成功写入后无临时文件残留");
+  if (process.platform !== "win32") {
+    assert.equal(statSync(file).mode & 0o777, 0o600, "POSIX 状态文件权限限制为 0600");
+  }
+}
+
+{
+  const root = mkdtempSync(join(tmpdir(), "dou-state-301-rotation-"));
+  const file = adapterStateFile(root);
+  const diagnostics: string[] = [];
+  for (let timestamp = 401; timestamp < 401 + ADAPTER_STATE_BACKUP_LIMIT; timestamp += 1) {
+    writeFileSync(file, `{broken-${timestamp}`, "utf8");
+    await readAdapterStateResult(root, {
+      diagnostic: (message) => diagnostics.push(message),
+      now: () => timestamp,
+    });
+  }
+
+  // 系统时钟回拨时，本次新证据也必须受保护；旧集合中最早的一份先轮转。
+  writeFileSync(file, "{broken-clock-regression", "utf8");
+  const regressed = await readAdapterStateResult(root, {
+    diagnostic: (message) => diagnostics.push(message),
+    now: () => 1,
+  });
+  const regressedBackup = `${file}.bak-1`;
+  assert.equal(regressed.backupFile, regressedBackup, "时钟回拨仍为本次现场创建独立备份");
+  assert.equal(readFileSync(regressedBackup, "utf8"), "{broken-clock-regression",
+    "本次新隔离证据不因较小时间戳被轮转");
+  const afterRegression = readdirSync(root).filter((name) => name.startsWith("adapter-state.json.bak-")).sort();
+  assert.equal(afterRegression.length, ADAPTER_STATE_BACKUP_LIMIT, "取证备份数量严格受常量上限约束");
+  assert.equal(afterRegression.includes("adapter-state.json.bak-401"), false, "超过上限时轮转旧集合中最早备份");
+  assert.equal(afterRegression.includes("adapter-state.json.bak-1"), true, "轮转始终保护本次新备份");
+
+  writeFileSync(file, "{broken-406", "utf8");
+  await readAdapterStateResult(root, {
+    diagnostic: (message) => diagnostics.push(message),
+    now: () => 406,
+  });
+  assert.deepEqual(
+    readdirSync(root).filter((name) => name.startsWith("adapter-state.json.bak-")).sort(),
+    [402, 403, 404, 405, 406].map((timestamp) => `adapter-state.json.bak-${timestamp}`),
+    "后续隔离继续按时间戳轮转，仅保留最近有界集合",
+  );
+}
+
+{
+  const root = mkdtempSync(join(tmpdir(), "dou-state-301-shape-"));
+  const file = adapterStateFile(root);
+  const diagnostics: string[] = [];
+  writeFileSync(file, '["not","a","mapping"]', "utf8");
+
+  const result = await readAdapterStateResult(root, {
+    diagnostic: (message) => diagnostics.push(message),
+    now: () => 303,
+  });
+  const backup = `${file}.bak-303`;
+  assert.equal(result.status, "invalid-shape", "合法 JSON 的非法顶层形态被单独识别");
+  assert.equal(result.backupFile, backup, "非法顶层形态同样隔离留证");
+  assert.equal(existsSync(file), false, "非法形态目标文件已移出主路径，避免后续覆盖现场");
+  assert.equal(readFileSync(backup, "utf8"), '["not","a","mapping"]', "非法形态原文完整保留");
+  assert.ok(diagnostics.some((line) => line.includes("顶层结构无效") && line.includes("bak-303")),
+    "非法顶层形态通过诊断通道可见");
+}
+
+{
+  const root = mkdtempSync(join(tmpdir(), "dou-state-301-rotation-order-"));
+  const file = adapterStateFile(root);
+  const prefix = "adapter-state.json.bak-";
+  const valid = ["13", "9", "12", "10-12", "11", "10-2", "10"];
+  for (const suffix of valid) writeFileSync(`${file}.bak-${suffix}`, `evidence-${suffix}`, "utf8");
+  const decoys = [
+    `${prefix}x8`,
+    `${prefix}8-tail`,
+    `${prefix}10-x`,
+    `${prefix}9007199254740992`,
+    `${"x".repeat(prefix.length)}8`,
+  ];
+  for (const name of decoys) writeFileSync(join(root, name), `decoy-${name}`, "utf8");
+
+  writeFileSync(file, "{current-14", "utf8");
+  await readAdapterStateResult(root, { diagnostic: () => {}, now: () => 14 });
+
+  const expectedKept = ["10-12", "11", "12", "13", "14"]
+    .map((suffix) => `${prefix}${suffix}`)
+    .sort();
+  assert.deepEqual(
+    readdirSync(root).filter((name) => /^adapter-state\.json\.bak-(?:10-12|11|12|13|14)$/.test(name)).sort(),
+    expectedKept,
+    "轮转按数字时间戳及多位碰撞后缀排序，不依赖 readdir/字典序",
+  );
+  for (const suffix of ["9", "10", "10-2"]) {
+    assert.equal(existsSync(`${file}.bak-${suffix}`), false, `较旧合法备份 ${suffix} 已轮转`);
+  }
+  for (const name of decoys) {
+    assert.equal(existsSync(join(root, name)), true, `非本实现生成的相似文件 ${name} 不参与轮转`);
+  }
+}
+
+{
+  const root = mkdtempSync(join(tmpdir(), "dou-state-301-quarantine-fail-"));
+  const file = adapterStateFile(root);
+  const diagnostics: string[] = [];
+  writeFileSync(file, "not-json", "utf8");
+  const result = await readAdapterStateResult(root, {
+    diagnostic: (message) => diagnostics.push(message),
+    now: () => 302,
+    moveToBackup: async () => {
+      const error = new Error("simulated quarantine denial") as NodeJS.ErrnoException;
+      error.code = "EACCES";
+      throw error;
+    },
+  });
+  assert.equal(result.status, "unreadable", "隔离失败标为 unreadable，供写路径 fail-closed");
+  assert.equal(readFileSync(file, "utf8"), "not-json", "隔离失败时损坏原文件仍保留");
+  assert.ok(diagnostics.some((line) => line.includes("隔离失败")), "隔离失败通过诊断通道可见");
+}
+
+if (process.platform !== "win32") {
+  const root = mkdtempSync(join(tmpdir(), "dou-state-301-rotation-scan-fail-"));
+  const file = adapterStateFile(root);
+  const diagnostics: string[] = [];
+  writeFileSync(file, "{scan-failure", "utf8");
+  chmodSync(root, 0o300); // readFile/link/unlink 可用，readdir 因缺少 read 位失败。
+  let result: Awaited<ReturnType<typeof readAdapterStateResult>>;
+  try {
+    result = await readAdapterStateResult(root, {
+      diagnostic: (message) => diagnostics.push(message),
+      now: () => 501,
+    });
+  } finally {
+    chmodSync(root, 0o700);
+  }
+  assert.equal(result.status, "quarantined", "轮转扫描失败不撤销已经成功的隔离");
+  assert.equal(readFileSync(`${file}.bak-501`, "utf8"), "{scan-failure", "扫描失败时本次证据仍完整保留");
+  assert.ok(diagnostics.some((line) => line.includes("轮转扫描失败") && line.includes("现有备份保持不变")),
+    "轮转扫描失败经独立诊断可见");
+}
+
+{
+  const root = mkdtempSync(join(tmpdir(), "dou-state-301-rotation-delete-fail-"));
+  const file = adapterStateFile(root);
+  const diagnostics: string[] = [];
+  mkdirSync(`${file}.bak-1`); // 匹配命名但不可用 unlink 删除，稳定触发轮转失败。
+  for (const timestamp of [2, 3, 4, 5]) writeFileSync(`${file}.bak-${timestamp}`, `evidence-${timestamp}`, "utf8");
+  writeFileSync(file, "{delete-failure", "utf8");
+
+  const result = await readAdapterStateResult(root, {
+    diagnostic: (message) => diagnostics.push(message),
+    now: () => 6,
+  });
+  assert.equal(result.status, "quarantined", "旧备份删除失败不撤销已经成功的隔离");
+  assert.equal(readFileSync(`${file}.bak-6`, "utf8"), "{delete-failure", "删除失败时本次证据仍完整保留");
+  assert.ok(diagnostics.some((line) => line.includes("旧取证备份 adapter-state.json.bak-1 轮转失败")
+    && line.includes("现有备份保持不变")),
+  "旧备份删除失败经独立诊断可见且不误报本次隔离失败");
+}
+
+{
+  const root = mkdtempSync(join(tmpdir(), "dou-state-301-write-fail-"));
+  const diagnostics: string[] = [];
+  mkdirSync(adapterStateFile(root)); // 目标为目录，保证原子 rename 失败
+  await assert.rejects(() => writeAdapterState(root, { p301: "adapter-301" },
+    (message) => diagnostics.push(message)),
+    "原子替换失败必须向调用方抛出，禁止静默吞错");
+  assert.deepEqual(diagnostics, [], "rename 前失败不误走 post-commit 耐久性诊断");
+  assert.deepEqual(readdirSync(root).filter((name) => name.endsWith(".tmp")), [],
+    "失败写入清理临时文件，不留下半写状态");
 }
 
 // ================================================================ #150 二阶段：UI 配置与面板锚点纯函数矩阵
