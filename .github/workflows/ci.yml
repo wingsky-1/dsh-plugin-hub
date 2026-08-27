@@ -146,7 +146,14 @@ jobs:
             fi
           }
           emit_outputs() {
-            MUTS="$(printf '%s' "$1" | jq -c '[.[] | select(. != "dsh-plugins-all")]')"
+            # mutationPackages：剔除聚合包 + 无 stryker 配置的包（纯宿主 skill 包如
+            # dsh-verify-isolated 无变异配置，进 mutation 切片会让 verdict 假红）
+            MUTS="$(printf '%s' "$1" | python3 -c "
+import json,sys,os,glob
+pkgs=json.load(sys.stdin)
+keep=lambda p: p!='dsh-plugins-all' and (os.path.exists(f'stryker.conf.d/{p}.json') or glob.glob(f'stryker.conf.d/{p}-*.json'))
+print(json.dumps([p for p in pkgs if keep(p)]))
+")"
             COMBOS="$(printf '%s' "$MUTS" | jq -r '.[]' | while read -r p; do combos_for "$p"; done | jq -sc 'add // []')"
             echo "hitPackages=$1" >> "$GITHUB_OUTPUT"
             echo "allPackages=$ALL_PACKAGES" >> "$GITHUB_OUTPUT"
