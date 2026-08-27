@@ -128,6 +128,11 @@ jobs:
           # hasMutations（#217）：由同一清单推导的显式布尔，供下游 if 精确比较
           combos_for() {
             local pkg="$1" segs i out= first=1
+            # 无任何 stryker 配置的包（如纯宿主 skill 包 dsh-verify-isolated）不进
+            # 变异切片：既无段配置也无包级 <pkg>.json 时返回空（#306 防假红）
+            if [ ! -f "stryker.conf.d/$pkg.json" ] && ! ls stryker.conf.d/"$pkg"-*.json >/dev/null 2>&1; then
+              return 0
+            fi
             segs=$(ls stryker.conf.d/"$pkg"-*.json 2>/dev/null | wc -l)
             if [ "$segs" -gt 0 ]; then
               out='['
