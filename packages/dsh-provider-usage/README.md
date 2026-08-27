@@ -16,8 +16,9 @@ mjs 适配器文件即可接入（设置页检测/添加/切换热插拔，见�
   OpenCode Go 两套适配器内置，装完即显示用量
 - **接入任意数据源只需一个 mjs 文件**：`fetchData` / `formatCapsule` / `formatPanel`
   三个导出即完成接入；设置页检测/添加/切换热插拔，改文件自动热更新
-- **官方没有用量接口也能算**：DeepSeek 内置适配器以余额差守恒式推算每日用量
-  （充值/赠款扰动自动抵消、异常区间不计），附峰谷倒计时徽标与 15 日用量柱形面板
+- **官方没有用量接口也能算**：DeepSeek 内置适配器以区间记账法推算每日消耗
+  （纯消费区间 = 余额降幅，可与平台账单对账；充值独立列示不混算；异常区间不计），
+  余额折线充值时刻自动断轴平移，附峰谷倒计时徽标与 15 日用量柱形面板
 - **密钥不出宿主**：取数在宿主端执行，密钥只在宿主端持有与使用、不下发浏览器
   （推荐凭据链 / env 注入；显式 `apiKey` 配置会随宿主配置落盘并以 0600 保护）；
   渲染输出双层净化（`esc()` 转义义务 + 结构化净化兜底），XSS 双重防线
@@ -148,26 +149,34 @@ dsh-mcp-manager 浮窗的默认位置（`top-right`、距顶 8px、高约 26px�
   其余（如 USD）全量忽略；金额自官方字符串字段严格解析（非法/缺失 → `null`，杜绝 NaN 落盘）。
 - 无 CNY 条目（仅 USD 或空数组）时产出 `balance/toppedUp/grantedBalance = null` 的正常帧
   （不抛错），胶囊显示「DeepSeek 余额 --」占位。
-- `is_available=false` 表示账号不可用：该帧仍记录与展示余额，但**不作为每日用量的守恒端点**
-  ——相邻区间的用量推算跳过并在面板标注「服务不可用区间不计」，避免把封禁/清零误计为消耗。
+- `is_available=false` 表示账号不可用：该帧仍记录与展示余额，但**不参与每日消耗的区间记账**
+  ——相邻区间的推算跳过并在面板标注「含不可用区间不计」，避免把封禁/清零误计为消耗。
 
-### 每日用量推算（余额差守恒式）
+### 每日用量推算（区间记账法）
 
-官方 API 无任何用量接口，每日用量由相邻采样点的余额差推算：
+官方 API 无任何用量接口，每日消耗由相邻采样点逐区间记账推算。字段语义前提（实测确认）：
+`topped_up_balance` 是**充值账户当前剩余**（恒等式 `total = toppedUp + granted` 成立，
+消费时 toppedUp 与 total 同步下降），故不做任何代数相消，直接按区间性质分类：
 
-```
-usage = (totalPrev − totalCur) + ΔtoppedUp + Δgranted
-```
+| 相邻采样区间 | 判定 | 处理 |
+|---|---|---|
+| `toppedUp` 无增加且 `granted` 不变 | 纯消费区间 | 消耗 = 余额降幅，**可与平台账单对账** |
+| `toppedUp` 上涨 / `granted` 变动 | 扰动混合区间 | 消费漏计；提取「充值 +¥X」事件独立列示 |
+| 跨度 > 27h（采样中断）/ 任一端不可用 | 跳过区间 | 不计柱不计入汇总，面板注明 |
 
-充值 +X 入账（total −X、toppedUp +X）与赠款过期/退款 −G 出账（total −G、granted −G）
-两类非消耗扰动被公式自动抵消。分量缺失时**逐项独立退化**：缺 granted 只跳过该项继续做
-toppedUp 修正（反之亦然）；两者都缺退化为纯余额差（旧历史分片兼容），面板汇总行会提示
-「部分日期按净变动口径估算」。跨度过大（>27h，采样中断）的区间不计柱不计入汇总，防畸形巨柱。
+- 区间归属：计入结束端所在日——跨午夜隔夜消费不丢失；当日有 ≥1 个完整区间即出数
+  （冷启动自然成立，无跨日基线依赖）。
+- 展示分层：日柱 = 当日落账区间降幅之和；充值合计在汇总行独立展示为绿色
+  「另有充值 +¥X」，绝不与消耗混算；卡1 徽章同口径（近 24h 纯消费区间求和）。
+- 折线断轴（B2）：充值时刻做断轴平移——充值后各点按累计充值额整体下移抹平台阶，
+  断轴处画虚线连接两侧真实水位并注明金额，跳变显式可见可回溯。
 
 ### 双卡面板与峰谷徽标
 
-- 卡1：CNY 余额大头 + 近 24h 波动折线（统一时间锚、趋势箭头容差 ±0.005、降采样 ≤300 点）。
-- 卡2：近 15 个自然日每日用量柱形图（闭环基线口径；消耗蓝柱向上、净增绿柱向下、异常仅标注）。
+- 卡1：CNY 余额大头 + 消费徽章（区间记账口径，充值不误报为 ▲）+ 近 24h 波动折线
+  （统一时间锚、降采样 ≤300 点、充值时刻断轴平移）。
+- 卡2：近 15 个自然日每日消耗柱形图（区间记账口径；消耗蓝柱向上、净增绿柱向下、
+  异常仅标注；充值额在柱 title 与汇总行独立列示）。
 - 胶囊常驻**峰谷倒计时徽标**（纯本地时间计算，不依赖远端数据——取数失败时同样显示）：
   - 时段定义为 **UTC 工作日固定窗口** `01:00–04:00 / 06:00–10:00`（半开区间），
     来源 [api-docs.deepseek.com/quick_start/pricing](https://api-docs.deepseek.com/quick_start/pricing)，
@@ -225,7 +234,10 @@ toppedUp 修正（反之亦然）；两者都缺退化为纯余额差（旧历�
 
 ## 适配器开发指南（v2 契约）
 
-写一个 mjs 文件即可接入任意数据源（完整示例见 `examples/usage-adapter.example.mjs`）：
+写一个 mjs 文件即可接入任意数据源（参考实现见内置适配器源码 `src/adapters/opencode-go.mjs`、
+`src/adapters/deepseek-official.mjs`、`src/adapters/zai-coding-cn.mjs`；宿主端在
+`fetchData`/`formatPanel` 入参注入共享图表工具 `utils`（见 [docs/adapter-guide.md](docs/adapter-guide.md) §3.3）；
+agent 导向的接入手册见 [docs/adapter-guide.md](docs/adapter-guide.md)）：
 
 ```js
 // my-stats.mjs
@@ -250,8 +262,11 @@ export function formatCapsule({ data, status, esc }) {
   return `<span style="font-weight:600">${esc(data.visits ?? 0)} 次</span>`;
 }
 
-/** 必填：面板内容（宿主端执行，返回 HTML 字符串） */
-export function formatPanel({ entries, range, truncated, esc }) {
+/** 必填：面板内容（宿主端执行，返回 HTML 字符串）
+ *  入参还注入共享图表工具 `utils`（可选）：const U = utils || {} 后可直接
+ *  调 U.miniAreaSvg({...}) 画 SVG 迷你图（见 docs/adapter-guide.md §3.3） */
+export function formatPanel({ entries, range, truncated, esc, utils }) {
+  const U = utils || {};
   const rows = entries.slice(-60).map((e) =>
     `<tr><td>${esc(new Date(e.time).toLocaleString("zh-CN"))}</td><td>${esc(e.data.visits)}</td></tr>`).join("");
   return `<table>${rows}</table>`;

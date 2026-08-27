@@ -4,7 +4,7 @@
  *
  * 覆盖（对照验收清单分组）：
  * - B 组：取数归一化 / 多币种过滤 / 无 CNY 修订版行为 / 错误码 / 请求形态
- * - C 组：余额差守恒式 + 分量缺失逐项独立退化 + 可加性 + is_available=false 端点策略
+ * - C 组：区间记账分类（clean/disturbed/unavailable）+ 降幅口径 + is_available=false 端点策略
  * - E 组：三级密钥链（显式注入 → V1 链 env 推导 → DEEPSEEK_API_KEY 自查兜底）
  * - G 组：峰谷时段常量 / 半开区间 / 周末全谷 / 倒计时单调与钳制 / 徽标渲染
  * - K 组：原型对齐断言（严格解析 / 端点剥离 / 六态错误路径 / GAP 判定 / 分层渲染 /
@@ -37,7 +37,7 @@ import {
   peakBadgeHtml,
   parseAmount,
   resolveEndpoint,
-  calcUsageDs,
+  classifyIntervalDs,
   aggregateDaily,
   dayKey,
   lastNDayKeys,
@@ -288,188 +288,180 @@ assert.equal(parseAmount("Infinity"), null, "Infinity 非有限数 → null");
   }
 }
 
-// ================================================================ C/K4 守恒式 + 分量逐项独立退化
+// ================================================================ C/K4 区间记账分类（classifyIntervalDs，不做代数相消）
 
 {
-  const pt = (t, balance, toppedUp, granted) => ({ t, balance, toppedUp, granted });
+  const pt = (t, balance, toppedUp, granted, available = true) => ({ t, balance, toppedUp, granted, available });
 
-  // C1 纯消耗：prev{total:100,topped:90,granted:10} → cur{total:95,topped:90,granted:10}
-  const c1 = calcUsageDs(pt(0, 100, 90, 10), pt(1, 95, 90, 10));
-  assert.equal(c1.v, 5, "纯消耗 usage=5");
-  assert.equal(c1.kind, "adjusted", "分量存在（零变化）即 adjusted（原型口径）；extra 无充值/赠款注记");
-  assert.equal(c1.extra, "");
+  // C1 纯消费区间：topped/granted 不变 → clean，消耗 = 余额降幅（可与平台账单对账）
+  const c1 = classifyIntervalDs(pt(0, 100, 90, 10), pt(1, 95, 90, 10));
+  assert.equal(c1.type, "clean", "无扰动区间 → clean");
+  assert.equal(c1.drop, 5, "消耗 = 余额降幅 5");
 
-  // C2 充值扰动抵消：total 100→135、topped 90→130（充值 +40、消耗 5）→ usage=5
-  const c2 = calcUsageDs(pt(0, 100, 90, 10), pt(1, 135, 130, 10));
-  assert.equal(c2.v, 5, "充值 +40 相消后 usage=5 而非 −35");
-  assert.equal(c2.kind, "adjusted", "有修正分量 → kind=adjusted");
-  assert.ok(c2.extra.includes("充值"), "extra 注明充值额");
+  // C2 充值混合区间：topped 90→130（入账 +40，余额同步上涨）→ disturbed 提取事件额
+  const c2 = classifyIntervalDs(pt(0, 100, 90, 10), pt(1, 135, 130, 10));
+  assert.equal(c2.type, "disturbed", "充值上涨 → 扰动混合区间");
+  assert.equal(c2.topup, 40, "提取充值事件额 +40（不与消耗混算）");
 
-  // C3 赠款变动抵消：total 100→110、granted 10→20（零消耗）→ usage=0
-  const c3 = calcUsageDs(pt(0, 100, 90, 10), pt(1, 110, 90, 20));
-  assert.equal(c3.v, 0, "赠款 +10 到账相消后 usage=0 而非 −10");
-  assert.equal(c3.kind, "adjusted");
-  assert.ok(c3.extra.includes("赠款"), "extra 注明赠款变动");
+  // C3 赠款变动：granted 10→20 → disturbed
+  const c3 = classifyIntervalDs(pt(0, 100, 90, 10), pt(1, 110, 90, 20));
+  assert.equal(c3.type, "disturbed");
+  assert.equal(c3.grantDelta, 10);
 
-  // C4 退化①：cur 缺 granted 分量 → 按 Δtotal + ΔtoppedUp 继续产出（逐项独立，不整体放弃）
-  const c4 = calcUsageDs(pt(0, 100, 90, 10), pt(1, 96, 91, null));
-  assert.equal(c4.v, 5, "缺 granted 只跳该项：(100−96)+(91−90)=4+1=5");
-  assert.equal(c4.kind, "adjusted");
+  // C4 不可用端点：任一帧 is_available=false → 整段跳过
+  const c4 = classifyIntervalDs(pt(0, 100, 90, 10), pt(1, 95, 90, 10, false));
+  assert.equal(c4.type, "unavailable");
 
-  // 反向退化：cur 缺 toppedUp 但有 granted → 只做赠款修正
-  const c4b = calcUsageDs(pt(0, 100, 90, 10), pt(1, 96, null, 12));
-  assert.equal(c4b.v, 6, "缺 toppedUp 只跳该项：(100−96)+(12−10)=4+2=6");
-
-  // C5 退化②：cur 仅剩 total → usage=totalPrev−totalCur
-  const c5 = calcUsageDs(pt(0, 100, 90, 10), pt(1, 93, null, null));
-  assert.equal(c5.v, 7, "纯净变动口径：usage=7");
-  assert.equal(c5.kind, "net", "无任何修正 → kind=net");
-}
-
-{
-  // C7 同日分段求和一致性：3 个采样区间守恒值之和 === 全天总量口径（可加性）
-  const p0 = { t: MON(1, 0), balance: 100, toppedUp: 90, granted: 10 };
-  const p1 = { t: MON(5, 0), balance: 97, toppedUp: 90, granted: 10 };    // 区间1：纯消耗 3
-  const p2 = { t: MON(9, 0), balance: 96, toppedUp: 94, granted: 10 };    // 区间2：充值 +4、消耗 5
-  const p3 = { t: MON(13, 0), balance: 93, toppedUp: 94, granted: 12 };   // 区间3：赠款 +2、消耗 5
-  const seg = (a, b) => calcUsageDs(a, b).v;
-  assert.equal(seg(p0, p1), 3);
-  assert.equal(seg(p1, p2), 5);
-  assert.equal(seg(p2, p3), 5);
-  const sumSegs = seg(p0, p1) + seg(p1, p2) + seg(p2, p3);
-  const whole = seg(p0, p3);
-  assert.ok(Math.abs(sumSegs - whole) < 1e-9, `分段之和 ${sumSegs} === 总量 ${whole}`);
-  assert.equal(sumSegs, 13, "全天净消耗 13（3+5+5）");
+  // C5 分量缺失（旧分片 toppedUp/granted 为 null）→ 纯净变动口径仍可计
+  const c5 = classifyIntervalDs(pt(0, 100, null, null), pt(1, 93, null, null));
+  assert.equal(c5.type, "clean", "分量缺失退化为净变动口径");
+  assert.equal(c5.drop, 7);
 }
 
 // ================================================================ C/K5/K6/K7/K9 日聚合（闭环基线 / GAP / 分层 / skipFirst）
+// ================================================================ 日聚合 v2.3 区间记账（归属结束端日 / GAP 注记 / 分层 / 冷启动 / 充值列示）
 
 {
-  // K6 GAP 中断判定：相邻代表点跨度 >27h → 该日 status='gap'
+  // G1 GAP 区间不计消耗但保留提示注记（旧版产出 gap 柱状态；新口径按区间记账）
   const far = 30 * 3600000;
   const pts = [
     { t: MON(0, 0), balance: 100, toppedUp: 90, granted: 10 },
-    { t: MON(0, 0) + far, balance: 95, toppedUp: 90, granted: 10 }, // 跨度 30h > GAP_MS
+    { t: MON(23, 0) + far - MON(0, 0), balance: 95, toppedUp: 90, granted: 10 }, // 相距 30h
   ];
-  const recs = aggregateDaily(pts, [dayKey(MON(0, 0)), dayKey(MON(0, 0) + far)], false);
-  const gapRec = recs.find((r) => r.status === "gap");
-  assert.ok(gapRec !== undefined, "30h 间隔产出 gap 日");
-  assert.equal(gapRec.u, 0, "gap 日不计柱");
-  assert.equal(GAP_MS, 27 * 3600000, "GAP_MS=27h 移植不走样");
+  void far;
 }
 
 {
-  // K5 闭环基线：空槽日不改写基线（向前最近非空日的末点作下一有效日基线）。
-  // 构造注意：空槽两侧末点跨度须 ≤27h（否则先触发 K6 的 GAP 中断判定）——
-  // 本地周六 23:30 → 下周一 01:30 = 26h，中间周日为空槽日。
-  // 用本地时间构造采样点，dayKey 归属（宿主时区口径）与时区无关地确定。
-  const sat = new Date(2026, 7, 29, 23, 30).getTime(); // 本地周六
-  const mon = new Date(2026, 7, 31, 1, 30).getTime();  // 本地下周一
-  assert.ok(mon - sat <= GAP_MS && (mon - sat) / 3600000 === 26, "前提：跨度 26h ≤ GAP_MS");
+  // G1b 跨度 >27h 的区间落在某日 → 该日 ok/0 + 「中断」注记
+  const t0 = MON(22, 0);
+  const t1 = t0 + 30 * 3600000; // 周二 04:00（跨日）
   const pts = [
-    { t: sat, balance: 100, toppedUp: 90, granted: 10 },
-    { t: mon, balance: 94, toppedUp: 90, granted: 10 },
+    { t: t0, balance: 100, toppedUp: 90, granted: 10 },
+    { t: t1, balance: 95, toppedUp: 90, granted: 10 },
   ];
-  const keys = lastNDayKeys(15, mon);
-  const recs = aggregateDaily(pts, keys, false);
-  const satRec = recs.find((r) => r.key === dayKey(sat));
-  const sunRec = recs.find((r) => r.key === "2026-08-30");
-  const monRec = recs.find((r) => r.key === dayKey(mon));
-  assert.equal(satRec.status, "insufficient", "周六为窗口内首个有效日且窗口前无采样 → 样本不足不计柱");
-  assert.equal(sunRec.status, "empty", "周日无采样 → empty");
-  assert.equal(monRec.u, 6, "周一基线=周六末点（空槽不改写）：100−94=6");
-  assert.notEqual(monRec.status, "gap", "26h 跨度不触发中断判定");
+  const recs = aggregateDaily(pts, [dayKey(t1)], false);
+  assert.equal(recs[0].status, "ok", "中断区间不产生异常态");
+  assert.equal(recs[0].u, 0, "中断区间不计消耗");
+  assert.ok(String(recs[0].extra).includes("中断"), "注记数据中断段数");
 }
 
 {
-  // 窗口开始前的最后一个采样点作首日基线（本地时间构造保证日归属确定）
-  const before = new Date(2026, 7, 30, 20, 0).getTime(); // 本地周日 20:00（窗口开始前一天）
-  const today = new Date(2026, 7, 31, 8, 0).getTime();   // 本地周一 08:00
+  // G2 归属规则：区间计入结束端所在日——跨午夜隔夜消费不丢失（旧基线法整段掉落）
+  // 本地时区构造（dayKey 归组口径）：避免 UTC 助手与本地日切错位
+  const satNight = new Date(2026, 7, 29, 22, 30).getTime(); // 本地周六
+  const sunEarly = new Date(2026, 7, 30, 0, 30).getTime();  // 本地周日（隔夜段，2h ≤ GAP）
+  const sunNoon = new Date(2026, 7, 30, 10, 30).getTime();
   const pts = [
-    { t: before, balance: 50, toppedUp: 45, granted: 5 },
-    { t: today, balance: 47, toppedUp: 45, granted: 5 },
+    { t: satNight, balance: 100, toppedUp: 90, granted: 10 },
+    { t: sunEarly, balance: 99, toppedUp: 90, granted: 10 },  // 隔夜消耗 1 → 计入周日
+    { t: sunNoon, balance: 94, toppedUp: 90, granted: 10 },   // 周日内消耗 5
   ];
-  const recs = aggregateDaily(pts, [dayKey(today)], false);
-  assert.equal(recs.length, 1);
-  assert.equal(recs[0].status, "ok");
-  assert.equal(recs[0].u, 3, "首日基线取窗口前最后采样：50−47=3");
+  const recs = aggregateDaily(pts, [dayKey(satNight), dayKey(sunEarly)], false);
+  const satRec = recs.find((r) => r.key === dayKey(satNight));
+  const sunRec = recs.find((r) => r.key === dayKey(sunEarly));
+  assert.equal(satRec.status, "insufficient", "周六仅起点帧、无结束于当日的区间 → 无可计区间");
+  assert.equal(sunRec.status, "ok");
+  assert.equal(sunRec.u, 6, "周日合计 = 隔夜段 1 + 日内段 5（跨午夜连续归账）");
 }
 
 {
-  // C6 prev 缺失：单帧历史 → 当日柱 insufficient/0，不得把余额绝对值误计为用量
+  // G3 冷启动自然成立：当日 ≥2 帧即出数（无需旧版跨日基线/日内兜底标记）
+  const d0 = utc(2026, 8, 24, 9, 0);
+  const d1 = utc(2026, 8, 24, 15, 0);
+  const recs = aggregateDaily(
+    [
+      { t: d0, balance: 50, toppedUp: 50, granted: 0 },
+      { t: d1, balance: 47, toppedUp: 47, granted: 0 },
+    ],
+    [dayKey(d0)],
+    false,
+  );
+  assert.equal(recs[0].status, "ok", "冷启动首日按日内区间直接出数");
+  assert.equal(recs[0].u, 3, "消耗 = 日内区间降幅 50−47=3");
+  assert.equal(recs[0].intraday, undefined, "v2.3 无需 intraday 标记");
+}
+
+{
+  // C6 单帧历史：当日有帧但无可计区间 → insufficient（不得把余额绝对值误计为用量）
   const only = { t: MON(8, 0), balance: 88, toppedUp: 80, granted: 8 };
   const recs = aggregateDaily([only], [dayKey(MON(8, 0))], false);
-  assert.equal(recs[0].status, "insufficient", "无前驱 → 样本不足");
-  assert.equal(recs[0].u, 0, "不计柱");
+  assert.equal(recs[0].status, "insufficient", "无可计区间 → 样本不足");
+  assert.equal(recs[0].u, 0);
 }
 
 {
-  // K7 分层渲染：|u|≤TOL → 0(ok)；轻微负值 → neg 绿柱；大额负值 → anomaly 仅标注
-  const d1 = new Date(2026, 7, 24, 9, 0).getTime(); // 本地周一
-  const d2 = new Date(2026, 7, 25, 10, 0).getTime(); // 本地周二（跨日，25h ≤ GAP_MS）
-  const mk = (bPrev, bCur, top = 90, grant = 10) => [
-    { t: d1, balance: bPrev, toppedUp: top, granted: grant },
-    { t: d2, balance: bCur, toppedUp: top, granted: grant },
+  // G4 充值事件独立列示：充值区间漏计、事件额 toppedUpIn 汇出
+  const d0 = utc(2026, 8, 24, 10, 0);
+  const d1 = utc(2026, 8, 24, 11, 0);   // 充值 +45.62（余额 10→55.62）
+  const d2 = utc(2026, 8, 24, 12, 0);   // 纯消费 1 元
+  const pts = [
+    { t: d0, balance: 10, toppedUp: 10, granted: 0 },
+    { t: d1, balance: 55.62, toppedUp: 55.62, granted: 0 },
+    { t: d2, balance: 54.62, toppedUp: 55.62, granted: 0 },
   ];
-  const zero = aggregateDaily(mk(100, 100 - TOL / 2), [dayKey(d2)], false)[0];
+  const recs = aggregateDaily(pts, [dayKey(d2)], false);
+  assert.equal(recs[0].status, "ok");
+  assert.equal(Math.abs(recs[0].u - 1) < 1e-9, true, "仅纯消费区间落账 1 元（充值区间漏计）");
+  assert.ok(String(recs[0].extra).includes("充值 +¥45.62 未计入"), "充值额在 extra 注明");
+  assert.equal(recs[0].toppedUpIn, 45.62, "充值事件额供汇总行独立展示");
+}
+
+{
+  // G5 分层渲染映射到 clean 降幅之和：容差归零 / 轻微负值 neg 绿柱 / 大额负值异常
+  const d0 = utc(2026, 8, 25, 9, 0);
+  const d1 = utc(2026, 8, 25, 19, 0);
+  const mk = (bPrev, bCur) => [
+    { t: d0, balance: bPrev, toppedUp: 90, granted: 10 },
+    { t: d1, balance: bCur, toppedUp: 90, granted: 10 },
+  ];
+  const zero = aggregateDaily(mk(100, 100 - TOL / 2), [dayKey(d1)], false)[0];
   assert.equal(zero.status, "ok", "|u|≤TOL → ok");
   assert.equal(zero.u, 0, "容差内归零");
 
-  const gainSmall = aggregateDaily(mk(100, 100.5), [dayKey(d2)], false)[0];
-  assert.equal(gainSmall.neg, true, "轻微负值 → neg 标记（绿柱净增展示）");
-  assert.ok(gainSmall.u < 0 && gainSmall.u >= ANOMALY_NEG, "neg 值域 [−1, 0)");
-  assert.equal(gainSmall.status, "ok", "neg 仍属 ok 可展示");
+  const gainSmall = aggregateDaily(mk(100, 100.5), [dayKey(d1)], false)[0];
+  assert.equal(gainSmall.neg, true, "轻微负值（余额小涨且无扰动）→ neg 绿柱");
+  assert.ok(gainSmall.u < 0 && gainSmall.u >= ANOMALY_NEG);
 
-  const anom = aggregateDaily(mk(100, 102.5), [dayKey(d2)], false)[0];
-  assert.equal(anom.status, "anomaly", "v<−1 → anomaly 仅标注不画柱");
+  const anom = aggregateDaily(mk(100, 102.5), [dayKey(d1)], false)[0];
+  assert.equal(anom.status, "anomaly", "大额净增 → 异常标注");
   assert.equal(anom.u, 0);
   assert.ok(String(anom.note).includes("异常"));
-  assert.ok(TOL === 0.005 && ANOMALY_NEG === -1, "TOL/ANOMALY 常量移植不走样");
 }
 
 {
-  // K9 truncated=true 时首日不计（skipFirst）语义保留：
-  // 窗口前有基线时，非截断的首日照常推算；截断的首日强制 insufficient，
-  // 但其末点仍作为次日起的闭环基线（次日数值不受影响）。
-  const dBefore = new Date(2026, 7, 23, 20, 0).getTime(); // 本地周日（窗口前）
-  const d1 = new Date(2026, 7, 24, 9, 0).getTime();       // 本地周一
-  const d2 = new Date(2026, 7, 25, 9, 0).getTime();       // 本地周二
+  // G6 truncated 参数保留但不再弃首日（区间记账天然不受截断影响）
+  const d0 = utc(2026, 8, 26, 9, 0);
+  const d1 = utc(2026, 8, 26, 15, 0);
   const pts = [
-    { t: dBefore, balance: 50, toppedUp: 45, granted: 5 },
-    { t: d1, balance: 47, toppedUp: 45, granted: 5 },
-    { t: d2, balance: 45, toppedUp: 45, granted: 5 },
+    { t: d0, balance: 50, toppedUp: 50, granted: 0 },
+    { t: d1, balance: 46, toppedUp: 50, granted: 0 },
   ];
-  const keys = [dayKey(d1), dayKey(d2)];
-  const recTrunc = aggregateDaily(pts, keys, true);
-  assert.equal(recTrunc[0].status, "insufficient", "truncated 首日 skipFirst 不计");
-  assert.equal(recTrunc[0].u, 0);
-  assert.equal(recTrunc[1].u, 2, "次日起以首日末点为新基线：47−45=2");
-
-  const recFull = aggregateDaily(pts, keys, false);
-  assert.equal(recFull[0].status, "ok", "非截断时首日以窗口前采样为基线照常计算");
-  assert.equal(recFull[0].u, 3, "非截断首日：50−47=3");
+  const keys = [dayKey(d1)];
+  assert.deepEqual(
+    aggregateDaily(pts, keys, true).map((r) => [r.status, r.u]),
+    aggregateDaily(pts, keys, false).map((r) => [r.status, r.u]),
+    "truncated 与否结果一致（v2.3 无 skipFirst）",
+  );
 }
 
 {
-  // C8 is_available=false 的帧不作为守恒端点：跳过其相邻区间的用量推算
-  const d1 = MON(1, 0);
-  const d2 = utc(2026, 8, 25, 1, 0);
-  const d3 = utc(2026, 8, 26, 1, 0);
-  // 周二帧不可用：周一→周二 与 周二→周三 两个相邻区间都不计柱不计入汇总
+  // G7 不可用端点策略：is_available=false 帧两侧区间均跳过（帧值不可信），注记承载
+  const d0 = utc(2026, 8, 27, 8, 0);
+  const d1 = utc(2026, 8, 27, 9, 0);   // 该帧不可用：d0→d1 与 d1→d2 两段都跳过
+  const d2 = utc(2026, 8, 27, 10, 0);
   const pts = [
-    { t: d1, balance: 100, toppedUp: 90, granted: 10, available: true },
-    { t: d2, balance: 40, toppedUp: 90, granted: 10, available: false },
-    { t: d3, balance: 38, toppedUp: 90, granted: 10, available: true },
+    { t: d0, balance: 100, toppedUp: 90, granted: 10, available: true },
+    { t: d1, balance: 60, toppedUp: 90, granted: 10, available: false },
+    { t: d2, balance: 56, toppedUp: 90, granted: 10, available: true },
   ];
-  const recs = aggregateDaily(pts, [dayKey(d1), dayKey(d2), dayKey(d3)], false);
-  assert.equal(recs[0].status, "insufficient", "首日无窗口前基线 → 样本不足");
-  assert.equal(recs[1].status, "unavailable", "不可用端点相邻区间标注 unavailable");
-  assert.equal(recs[2].status, "unavailable", "前一帧不可用同样跳过推算");
-  assert.ok(recs.every((r) => r.u === 0 || r.status !== "ok" ? true : r.u >= 0), "无异常巨柱");
-  // 对照：全部可用时正常计算
+  const recs = aggregateDaily(pts, [dayKey(d2)], false);
+  assert.equal(recs[0].status, "ok", "跳过不产生异常态");
+  assert.equal(recs[0].u, 0, "不可用帧相邻区间不计（含本应可疑的 40 元降幅）");
+  assert.ok(String(recs[0].extra).includes("不可用区间不计"), "注记说明未计原因");
+  // 对照：全部可用时同日两段降幅均按 clean 落账（40+4=44；无不可用帧则账面降幅即口径）
   const okPts = pts.map((p) => ({ ...p, available: true }));
-  const okRecs = aggregateDaily(okPts, [dayKey(d1), dayKey(d2), dayKey(d3)], false);
-  assert.equal(okRecs[2].u, 2, "全可用时周三照常计 (100−40)+(40−38) 链式口径的当日差 2 元");
+  const okRecs = aggregateDaily(okPts, [dayKey(d2)], false);
+  assert.equal(okRecs[0].u, 44, "全可用时同日区间链式落账 40+4=44");
 }
 
 // ================================================================ K8 日聚合时区口径
@@ -511,7 +503,7 @@ assert.equal(parseAmount("Infinity"), null, "Infinity 非有限数 → null");
 {
   // G1 常量存在 + 源码注释附官方定价 URL 与核实日期
   assert.deepEqual(PEAK_WINDOWS_UTC.map(([s, e]) => [s, e]), [[60, 240], [360, 600]], "PEAK_WINDOWS_UTC=[[01:00,04:00],[06:00,10:00]]（分钟）");
-  const src = readFileSync(join(here, "..", "src", "adapters", "deepseek-official.ts"), "utf8");
+  const src = readFileSync(join(here, "..", "src", "adapters", "deepseek-official.mjs"), "utf8");
   assert.ok(src.includes("https://api-docs.deepseek.com/quick_start/pricing"), "注释附官方定价 URL");
   assert.ok(src.includes("2026-08-26"), "注释附核实日期");
 }
@@ -663,8 +655,9 @@ assert.equal(parseAmount("Infinity"), null, "Infinity 非有限数 → null");
   assert.ok(panel.includes('role="img"'), "SVG role=img");
   assert.ok(panel.includes("aria-label=\"近15日每日用量柱形图"), "aria-label 汇总口径");
   assert.ok(panel.includes("近 15 日消耗约 ¥"), "汇总行");
-  // 卡1 TOL 趋势箭头（98 − 100 < −TOL → ▼）
-  assert.ok(panel.includes("▼"), "趋势箭头 ▼（下降）");
+  // 卡1 消费徽章（v2.3 区间记账）：纯消费区间求和只统计消耗，本场景 100→98 → 「已用 ¥2.00」
+  assert.ok(panel.includes("已用 ¥"), "卡1 徽章显示消费金额而非余额涨跌");
+  assert.ok(!panel.includes("▲ +"), "余额上涨不再显示 ▲ 充值徽章");
 
   // D2 注入 >15 天历史仅呈现最近 15 个自然日（SVG 内日期槽位数 = 15）
   const manyEntries = [];
@@ -698,7 +691,7 @@ assert.equal(parseAmount("Infinity"), null, "Infinity 非有限数 → null");
     truncated: false,
     esc,
   });
-  assert.ok(panelGap.includes("部分日期按净变动口径估算") || panelGap.includes("数据中断"), "缺口场景出现口径提示");
+  assert.ok(panelGap.includes("未计") || panelGap.includes("中断不计"), "缺口场景出现未计提示（v2.3 区间记账）");
 
   // 降采样 ≤300 点（构造 400 点折线输入）
   const dense = [];
@@ -729,10 +722,29 @@ assert.equal(parseAmount("Infinity"), null, "Infinity 非有限数 → null");
     truncated: false,
     esc,
   });
-  assert.ok(panel.includes("服务不可用"), "不可用端点相邻区间标注「服务不可用」而非计入巨柱");
+  assert.ok(panel.includes("不可用区间不计"), "不可用端点相邻区间注记「含不可用区间不计」而非计入消耗");
   assert.ok(!panel.includes("消耗 ¥60"), "不可用帧的 60 元差额未被误计为用量");
   // 相邻两区间（周一→周二、周二→周三）均被跳过 → 汇总不含虚高值
   assert.ok(panel.includes("消耗约 ¥0.00"), "汇总仅含有效区间（本场景为 0）");
+}
+
+{
+  // v2.3 卡1 徽章消费口径：充值区间剔除后不再显示 ▲，余额上涨场景徽章显示消费≈0
+  const now = utc(2026, 8, 26, 12, 0);
+  const entries = [
+    { time: now - 5 * 3600000, data: { balance: 10, toppedUp: 10, grantedBalance: 0, isAvailable: true } },
+    { time: now, data: { balance: 55.62, toppedUp: 55.62, grantedBalance: 0, isAvailable: true } },
+  ];
+  const panel = deepSeekOfficialAdapter.formatPanel({
+    entries,
+    range: { start: now - 86400000, end: now },
+    truncated: false,
+    esc,
+  });
+  assert.ok(!panel.includes("▲"), "余额上涨（充值）不再显示 ▲ 徽章");
+  // 单一扰动区间下无可计账区间 → 消费未知（比强行声称 ≈0 更诚实）
+  assert.ok(panel.includes("— 消费未知"), "无可计区间时徽章显示消费未知");
+  assert.ok(panel.includes("另有充值 +¥45.62"), "徽章 title 注明未计入的充值额");
 }
 
 // ================================================================ A2 opencode-go 空 data 防御回归
@@ -771,6 +783,35 @@ assert.equal(parseAmount("Infinity"), null, "Infinity 非有限数 → null");
   assert.equal(result.rawData, undefined, "错误帧不带 rawData（不落盘前提）");
   // I2 错误文案无插值注入面：净化后无脚本执行面
   assert.ok(!result.capsuleHtml.includes("<script"), "capsuleHtml 无脚本载体");
+
+  // 带值降级：注入 history 时失败帧用最后一条成功数据渲染胶囊（数值不跌 "--"，
+  // 数据来源状态由客户端圆点 dou-dot-warn 表达）；status/error 语义不变。
+  const lastOk = { time: Date.now() - 600000, data: { isAvailable: true, balance: 88.88, toppedUp: 88.88, grantedBalance: 0 } };
+  const resultWithHistory = await runV2Pipeline({
+    adapter: deepSeekOfficialAdapter,
+    provider: DEEPSEEK_OFFICIAL_PROVIDER,
+    config: { apiEndpoint: "http://127.0.0.1:9", apiKey: "sk-pipe" },
+    staticPath: "",
+    timeoutMs: 2000,
+    fetchImpl: netFail,
+    history: { last: async () => lastOk },
+  });
+  assert.equal(resultWithHistory.status, "stale", "带值降级仍为 stale 帧");
+  assert.ok(resultWithHistory.capsuleHtml!.includes("¥88.88"), "胶囊渲染历史最后成功余额");
+  assert.ok(!resultWithHistory.capsuleHtml!.includes("DeepSeek 余额 --"), "不再跌无数据占位");
+
+  // history 兜底读失败视同无历史：回退空 data 占位，绝不因兜底读失败放大错误
+  const resultBadHistory = await runV2Pipeline({
+    adapter: deepSeekOfficialAdapter,
+    provider: DEEPSEEK_OFFICIAL_PROVIDER,
+    config: { apiEndpoint: "http://127.0.0.1:9", apiKey: "sk-pipe" },
+    staticPath: "",
+    timeoutMs: 2000,
+    fetchImpl: netFail,
+    history: { last: async () => { throw new Error("disk-boom"); } },
+  });
+  assert.equal(resultBadHistory.error, "network", "错误码保持原始取数错误");
+  assert.ok(resultBadHistory.capsuleHtml!.includes("DeepSeek 余额 --"), "兜底读失败回退占位");
 
   // 成功分支 fresh 帧 rawData 正常
   const okResult = await runV2Pipeline({

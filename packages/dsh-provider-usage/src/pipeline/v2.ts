@@ -12,6 +12,7 @@
  */
 import type { UsageStatsAdapter, FetchContext } from "../contracts.ts";
 import { esc } from "../contracts.ts";
+import { ADAPTER_UTILS } from "../charts.ts";
 import type { HistoryStore } from "../core/history.ts";
 import { safeFetchData, safeFormat } from "../core/guards.ts";
 import { sanitizeHtml } from "../sanitize.ts";
@@ -48,6 +49,13 @@ export interface V2PipelineContext {
   /** 注入的 fetch 实现（测试可替换）。 */
   fetchImpl?: typeof fetch;
   signal?: AbortSignal;
+  /**
+   * 历史存储（可选注入）：取数失败时读取最后一条成功数据供胶囊「带值降级」渲染。
+   * 错误帧绝不以 fresh 身份进历史，故 last 即最后一条成功帧；不传则维持空 data 占位行为。
+   */
+  history?: Pick<HistoryStore, "last">;
+  /** 共享图表工具注入（缺省回退 ADAPTER_UTILS；#215 注入面）。 */
+  utils?: import("../charts.ts").AdapterUtils;
 }
 
 /**
@@ -74,7 +82,8 @@ export async function runV2Pipeline(ctx: V2PipelineContext): Promise<V2PipelineR
     };
   }
 
-  // 1. 组装 fetchData 入参（signal 由下方 safeFetchData 以合并信号注入，此处不预置）
+  // 1. 组装 fetchData 入参（signal 由下方 safeFetchData 以合并信号注入，此处不预置；
+  //    #215 注入面：utils 一律强制注入 ADAPTER_UTILS——内置 mjs 与用户 mjs 均可消费共享图表工具）
   const fetchCtx: FetchContext = {
     apiEndpoint: ctx.config.apiEndpoint ?? '',
     staticPath: ctx.staticPath,
@@ -83,6 +92,7 @@ export async function runV2Pipeline(ctx: V2PipelineContext): Promise<V2PipelineR
     model: ctx.meta?.model,
     sessionId: ctx.meta?.sessionId,
     timeoutMs: ctx.timeoutMs,
+    utils: ctx.utils ?? ADAPTER_UTILS,
   };
 
   // 2. safeFetchData（5s 固定超时 + 序列化 + 错误隔离）。
@@ -96,12 +106,22 @@ export async function runV2Pipeline(ctx: V2PipelineContext): Promise<V2PipelineR
   }, ctx.timeoutMs, ctx.signal);
 
   if (fetched.error !== undefined) {
-    // #198 A 组：取数失败仍产出 stale 胶囊（空 data + status:'stale' + error），
-    // 让峰谷徽标等纯本地信息在错误帧常驻；不带 rawData → 上层不落盘历史（错误帧绝不以
-    // fresh 身份进历史）。formatCapsule 对该输入渲染「无数据」占位且不抛错（safeFormat 隔离）。
+    // #198 A 组：取数失败仍产出 stale 胶囊 + status:'stale' + error；
+    // 不带 rawData → 上层不落盘历史（错误帧绝不以 fresh 身份进历史）。
+    // 带值降级：注入 history 时读取最后一条成功数据喂给 formatCapsule——
+    // 数值部分始终渲染最后成功值（避免健康值跌成 "--"），数据来源状态交给
+    // 客户端圆点颜色表达（dou-dot-warn 黄点 = 陈旧降级，见 client pillDotLevel）。
+    // history 读取失败视同无历史（空 data 占位），绝不因兜底读失败而改变错误帧语义。
+    let failData: Record<string, unknown> = {};
+    if (ctx.history !== undefined) {
+      const lastEntry = await ctx.history.last(provider, adapter.name).catch(() => null);
+      if (lastEntry !== null && lastEntry.data && typeof lastEntry.data === "object") {
+        failData = lastEntry.data;
+      }
+    }
     const failCapsInput = {
       time: fetchedAt,
-      data: {},
+      data: failData,
       status: 'stale' as const,
       error: fetched.error,
       esc,
@@ -179,6 +199,8 @@ export async function runV2PanelPipeline(opts: {
     range,
     truncated: false,
     esc,
+    // #215 注入面：面板侧同注入共享图表工具（formatPanel 内 `const U = input.utils`）
+    utils: ADAPTER_UTILS,
   };
   const formatted = await safeFormat(() => adapter.formatPanel(panelInput), 'formatPanel', timeoutMs);
   if (formatted.error !== undefined) return { error: formatted.error };

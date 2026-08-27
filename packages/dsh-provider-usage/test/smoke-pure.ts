@@ -32,6 +32,7 @@ import {
   openCodeGoAdapter,
   parseUsageResponse,
   fetchOpenCodeGoV2,
+  zaiCodingCnAdapter,
   loadAndValidateAdapter,
   readStamp,
   stampEqual,
@@ -666,6 +667,93 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
     esc,
   });
   assert.ok(onePanel.includes("dou-chartEmpty"), "单点历史显示采集中提示");
+}
+
+// ---------------------------------------------------------------- #215 内置 zai-coding-cn 适配器
+// 响应形态按 2026-08-27 真实端点实测：{ code:200, data:{ level:"lite", limits:[
+//   {type:"CREDIT_LIMIT",unit:3,number:5,usage,currentValue,remaining,percentage},   // 5h 窗口
+//   {type:"CREDIT_LIMIT",unit:6,number:1,usage,currentValue,remaining,percentage,nextResetTime} // 周窗口
+// ]}}；percentage 为服务端权威口径（5h 刚重置 percentage=0、周用满 percentage=100）。
+
+{
+  const fakeRes = (status: number, body: unknown): Response =>
+    ({ status, ok: status >= 200 && status < 300, json: async () => body }) as unknown as Response;
+
+  const quotaBody = (code: number, data: unknown) => ({ code, data });
+
+  // 契约自检
+  assert.equal(isUsageStatsAdapter(zaiCodingCnAdapter), true, "zai 内置适配器通过 v2 契约校验");
+  assert.deepEqual(zaiCodingCnAdapter.providers, ["zai-coding-cn"], "认领 zai-coding-cn provider");
+  assert.equal(zaiCodingCnAdapter.name, "zai-coding-cn-builtin");
+
+  // fetchData：真实响应形态解析（5h unit3/number5 + 周 unit6/number1，percentage 权威）
+  const sample = quotaBody(200, {
+    level: "lite",
+    limits: [
+      { type: "CREDIT_LIMIT", unit: 3, number: 5, usage: 2000, currentValue: 0, remaining: 2000, percentage: 0 },
+      { type: "CREDIT_LIMIT", unit: 6, number: 1, usage: 2000, currentValue: 2026, remaining: 0, percentage: 100, nextResetTime: Date.now() + 7 * 86400000 },
+    ],
+  });
+  const savedFetch = globalThis.fetch;
+  globalThis.fetch = (async () => fakeRes(200, sample)) as unknown as typeof fetch;
+  try {
+    const out = await zaiCodingCnAdapter.fetchData({
+      apiEndpoint: "https://open.bigmodel.cn/api/coding/paas/v4",
+      staticPath: "", apiKey: "sk-test", provider: "zai-coding-cn", timeoutMs: 2000,
+    }) as Record<string, unknown>;
+    const wins = out.windows as Array<Record<string, unknown>>;
+    assert.equal(out.level, "lite", "level 套餐等级解析");
+    assert.equal(wins.length, 2, "两窗口（5h/周）");
+    assert.equal(wins[0].key, "5h", "unit=3 → 5h（按 unit 而非 number 判定）");
+    assert.equal(wins[1].key, "week", "unit=6 → 周");
+    assert.equal(wins[0].percent, 0, "5h 刚重置 percentage=0 权威优先");
+    assert.equal(wins[1].percent, 100, "周用满 percentage=100 权威优先");
+    assert.equal(typeof wins[1].nextResetTime, "number", "周窗口 nextResetTime 为 epochMs");
+
+    // 业务码校验：网关 200 + 业务 code 404 → bad-data
+    globalThis.fetch = (async () => fakeRes(200, quotaBody(404, null))) as unknown as typeof fetch;
+    await assert.rejects(
+      () => zaiCodingCnAdapter.fetchData({
+        apiEndpoint: "", staticPath: "", apiKey: "sk", provider: "p", timeoutMs: 2000,
+      }),
+      (e: unknown) => (e as Error).message === "bad-data",
+      "业务码 404 → bad-data（网关对未知路径回 HTTP 200 + 业务错误码）",
+    );
+  } finally {
+    globalThis.fetch = savedFetch;
+  }
+
+  // 胶囊：`5h 0% · 周 100% · Lite` + stale 带值降级尾注
+  const caps = zaiCodingCnAdapter.formatCapsule({
+    time: Date.now(),
+    data: { level: "lite", windows: [{ key: "5h", percent: 0 }, { key: "week", percent: 100 }] },
+    status: "fresh", esc,
+  });
+  assert.ok(caps.includes("5h 0%") && caps.includes("周 100%") && caps.includes("Lite"), "胶囊窗口短名百分比 + 套餐等级");
+  const capsStale = zaiCodingCnAdapter.formatCapsule({
+    time: Date.now(),
+    data: { level: "lite", windows: [{ key: "5h", percent: 79 }] },
+    status: "stale", esc,
+  });
+  assert.ok(capsStale.includes("79%") && capsStale.includes("(缓存)"), "stale 带值降级 + 缓存尾注");
+  const capsEmpty = zaiCodingCnAdapter.formatCapsule({ time: Date.now(), data: {}, status: "stale", esc });
+  assert.ok(capsEmpty.includes("无数据"), "空 data 占位");
+
+  // 面板：两窗口卡 + 工具卡条件渲染 + SVG
+  const now = Date.now();
+  const panel = zaiCodingCnAdapter.formatPanel({
+    entries: [
+      { time: now - 120000, data: { level: "lite", windows: [{ key: "5h", percent: 70 }, { key: "week", percent: 60 }] } },
+      { time: now, data: { level: "lite", windows: [{ key: "5h", percent: 79 }, { key: "week", percent: 79 }], tools: { percent: 45, currentValue: 4500, total: 10000 } } },
+    ],
+    range: { start: now - 3600000, end: now },
+    truncated: false, esc,
+  });
+  const cardCount = (panel.match(/<div class="dou-card">/g) || []).length;
+  assert.equal(cardCount, 3, "三张卡（5h/周/工具条件渲染）");
+  assert.ok(panel.includes("5h 滚动") && panel.includes("每周"), "两窗口卡名");
+  assert.ok(panel.includes("工具额度"), "工具卡存在");
+  assert.ok(panel.includes("<svg"), "含 SVG 迷你图");
 }
 
 // ---------------------------------------------------------------- registry v2

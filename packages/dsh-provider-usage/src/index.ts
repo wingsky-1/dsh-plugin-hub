@@ -24,8 +24,34 @@
 // smoke/lint 只能从 lib/index.js 导入，故契约与核心模块一律在此 re-export。
 export * from "./contracts.ts";
 export * from "./registry.ts";
-export * from "./adapters/opencode-go.ts";
-export * from "./adapters/deepseek-official.ts";
+// #215 共享图表工具库（AdapterUtils/ADAPTER_UTILS 等）——外部 TS 消费者可经 index 导入。
+// dayKey/lastNDayKeys 与 deepseek-official.mjs 文件级导出重名（测试导入面），
+// 此处显式排除，deepseek-official.mjs 的导出保留（同源副本，语义一致）。
+export {
+  fin,
+  escHtml,
+  escAttr,
+  niceDomain,
+  trendOf,
+  timeTicks,
+  resetTicks,
+  downsample,
+  smoothPath,
+  miniAreaSvg,
+  niceStep,
+  fmtPctTick,
+  timeTickStep,
+  fmtAxisTime,
+  axisLabelWidthPx,
+  toEpochMs,
+  ADAPTER_UTILS,
+} from "./charts.ts";
+export type { AdapterUtils } from "./charts.ts";
+// #215 内置适配器 mjs 化：.mjs 为权威实现，.d.mts 提供类型声明（bundle 后 index 内联
+// 保留具名导出面——unit-contract/unit-deepseek-official 等测试从 lib/index.js 导入不变）
+export * from "./adapters/opencode-go.mjs";
+export * from "./adapters/deepseek-official.mjs";
+export * from "./adapters/zai-coding-cn.mjs";
 export * from "./provider-config.ts";
 export { HistoryStore, parseJsonl, startOfDay, migrateLegacyV3, legacySampleToData, listAdapters } from "./core/history.ts";
 export type { HistoryEntry } from "./core/history.ts";

@@ -23,9 +23,10 @@ the browser.
   `formatPanel`) complete an integration; detect/add/toggle hot-swappable from the
   settings page, file edits auto hot-reload
 - **Daily usage even without a usage API**: the built-in DeepSeek adapter estimates
-  daily usage via a balance-difference conservation formula (top-up/grant disturbances
-  cancel out, abnormal windows excluded), plus a peak/valley countdown badge and a
-  15-day usage bar panel
+  daily consumption via interval bookkeeping (pure-consumption intervals = balance drops,
+  directly reconcilable with platform billing; top-ups listed separately, never mixed in;
+  abnormal intervals excluded). The balance line chart auto-breaks its axis at each
+  top-up, plus a peak/valley countdown badge and a 15-day usage bar panel
 - **Keys never leave the host**: fetching runs host-side with keys kept and used only
   on the host, never sent to the browser (credential-chain / env injection recommended;
   an explicit `apiKey` config persists in host config files, 0600-protected); rendered
@@ -157,33 +158,43 @@ Claims provider `deepseek-official` and talks to the DeepSeek official
   `balance/toppedUp/grantedBalance = null` (no throw); the capsule shows a
   "DeepSeek 余额 --" placeholder.
 - `is_available=false` marks an unavailable account: the frame is still recorded and its
-  balance displayed, but it **never serves as a conservation endpoint** for daily usage —
-  adjacent intervals skip usage derivation and are labeled as unavailable in the panel,
-  so bans/balance wipes are not mistaken for consumption.
+  balance displayed, but it **never participates in daily-consumption interval
+  bookkeeping** — adjacent intervals skip derivation and are labeled as excluded in the
+  panel, so bans/balance wipes are not mistaken for consumption.
 
-### Daily usage derivation (balance-delta conservation)
+### Daily consumption derivation (interval bookkeeping)
 
-The official API has no usage endpoint, so daily usage is derived from balance deltas
-between consecutive samples:
+The official API has no usage endpoint, so daily consumption is derived by interval
+bookkeeping between consecutive samples. Field-semantics prerequisite (verified):
+`topped_up_balance` is the **current remaining top-up account balance** (identity
+`total = toppedUp + granted` holds; while consuming, toppedUp and total decrease
+together) — so no algebraic cancellation is applied; intervals are classified directly:
 
-```
-usage = (totalPrev − totalCur) + ΔtoppedUp + Δgranted
-```
+| Adjacent sample interval | Classification | Handling |
+|---|---|---|
+| `toppedUp` unchanged and `granted` unchanged | Pure consumption | Consumption = balance drop, **reconcilable with platform billing** |
+| `toppedUp` increased / `granted` changed | Disturbed mixed | Consumption under-counted; a "+¥X top-up" event is extracted and listed separately |
+| Span > 27h (interruption) / either endpoint unavailable | Skipped | Excluded from bars and totals; noted in the panel |
 
-Top-ups (+X credited: total −X, toppedUp +X) and grant expiries/refunds (−G debited:
-total −G, granted −G) cancel out automatically. Missing components degrade
-**component-by-component**: without granted, only the toppedUp correction applies
-(and vice versa); with both missing it degrades to the raw balance delta (legacy history
-shards), and the panel summary notes that some days use the net-change caliber.
-Intervals spanning more than 27h (sampling interruption) are excluded from bars and
-totals to prevent malformed giant columns.
+- Interval attribution: booked to the day of the interval's end — overnight consumption
+  across midnight is never lost; any single complete interval in a day yields output
+  (cold start works naturally, no cross-day baseline dependency).
+- Presentation layering: the daily bar = sum of booked interval drops for that day;
+  top-up totals are shown separately in green ("+¥X recharged" beside the summary),
+  never mixed with consumption; card 1's badge uses the same caliber (sum of pure
+  consumption intervals over 24h).
+- Axis break (B2): at each top-up the line chart breaks its axis — points after the
+  top-up shift down by the accumulated amount to remove the step; a dashed connector
+  links both real water levels and labels the amount, keeping the jump explicit.
 
 ### Two-card panel and peak/valley badge
 
-- Card 1: CNY balance headline + 24h fluctuation line chart (unified time anchor,
-  trend arrow tolerance ±0.005, downsampling ≤300 points).
-- Card 2: daily usage bar chart over the last 15 calendar days (closed-loop baseline;
-  blue bars up for consumption, green bars down for net gains, anomalies labeled only).
+- Card 1: CNY balance headline + consumption badge (interval-bookkeeping caliber,
+  no false ▲ on top-ups) + 24h fluctuation line chart (unified time anchor,
+  downsampling ≤300 points, axis breaks at each top-up).
+- Card 2: daily consumption bar chart over the last 15 calendar days (interval
+  bookkeeping; blue bars up for consumption, green bars down for net gains, anomalies
+  labeled only; top-up amounts listed separately in bar titles and the summary row).
 - The capsule always carries a **peak/valley countdown badge** (pure local-time
   computation, independent of remote data — rendered even on fetch failures):
   - Windows are **fixed UTC weekday windows** `01:00–04:00 / 06:00–10:00`
@@ -252,9 +263,11 @@ repeated requests skip recomputation while data is unchanged:
 
 ## Adapter development guide (v2 contract)
 
-Any data source plugs in with one mjs file (full example:
-`examples/usage-adapter.example.mjs`; agent-oriented walkthrough:
-[docs/adapter-guide.md](docs/adapter-guide.md)):
+Any data source plugs in with one mjs file (reference implementations: built-in adapter
+sources `src/adapters/opencode-go.mjs`, `src/adapters/deepseek-official.mjs` and
+`src/adapters/zai-coding-cn.mjs`; the host injects a shared chart-tools `utils` object into
+`fetchData`/`formatPanel` inputs, see [docs/adapter-guide.md](docs/adapter-guide.md) §3.3;
+agent-oriented walkthrough: [docs/adapter-guide.md](docs/adapter-guide.md)):
 
 ```js
 // my-stats.mjs
@@ -279,8 +292,12 @@ export function formatCapsule({ data, status, esc }) {
   return `<span style="font-weight:600">${esc(data.visits ?? 0)} visits</span>`;
 }
 
-/** Required: panel content (host side, returns an HTML string) */
-export function formatPanel({ entries, range, truncated, esc }) {
+/** Required: panel content (host side, returns an HTML string)
+ *  Input also carries an optional shared chart-tools `utils` object: use
+ *  `const U = utils || {}` then call `U.miniAreaSvg({...})` for SVG charts
+ *  (see docs/adapter-guide.md §3.3). */
+export function formatPanel({ entries, range, truncated, esc, utils }) {
+  const U = utils || {};
   const rows = entries.slice(-60).map((e) =>
     `<tr><td>${esc(new Date(e.time).toLocaleString())}</td><td>${esc(e.data.visits)}</td></tr>`).join("");
   return `<table>${rows}</table>`;

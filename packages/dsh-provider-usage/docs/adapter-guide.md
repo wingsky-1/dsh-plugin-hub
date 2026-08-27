@@ -2,7 +2,9 @@
 
 > 适用插件：`@wingsky-1/dsh-provider-usage`（v2 契约重构版）。
 > 本文是 Agent 自主引导用户接入自定义数据源的权威流程手册。
-> 快速参考：契约细节见第 3 节；完整示例见 `examples/usage-adapter.example.mjs`。
+> 快速参考：契约细节见第 3 节；参考实现见内置适配器源码（`src/adapters/opencode-go.mjs`、
+> `src/adapters/deepseek-official.mjs`、`src/adapters/zai-coding-cn.mjs`）。
+> 用户只需编写**纯 JS 的 .mjs 文件**（零 import、完全自包含），无需关心任何类型声明。
 > 插件内部运行机制（取数管道 / 注册表 / 热更新 / 设置页交互）的图解见 [architecture.md](architecture.md)。
 
 ---
@@ -62,7 +64,16 @@
 
 **展示基准**（默认锚点，避免"简陋"返工）：
 - 默认对齐**内置 opencode-go 适配器**的展示水准：多窗口卡片 + SVG 迷你图（平滑面积图 / 100% 参考线 / 重置标记线 / 趋势 / 降采样 / 明暗自适应色板）+ 胶囊多窗口短名（如 `5h 3% · 周 1% · 月 1%`）。
-- **实现前先读内置适配器源码/示例作参照物**（`packages/dsh-provider-usage/src/adapters/opencode-go.ts` 与 `examples/usage-adapter.example.mjs`），照其结构与 CSS 类（`dou-card`/`dou-miniChart` 等）实现，而非仅凭文字脑补。
+- **使用注入的共享图表工具（`FetchContext.utils` / `PanelInput.utils`，#215）**：宿主端在
+  `fetchData`/`formatPanel` 入参注入 `utils`，内含 `miniAreaSvg`/`niceDomain`/`trendOf`/
+  `downsample`/`escHtml`/`escAttr`/`dayKey`/`lastNDayKeys` 等（见第 3.3 节工具清单）。
+  适配器内 `const U = input.utils` 后直接调用，无需复制图表代码；CSS 类（`dou-card`/
+  `dou-miniChart` 等）仍按内置样式使用。
+- **内置源码 = 使用范例**（`packages/dsh-provider-usage/src/adapters/opencode-go.mjs`、
+  `src/adapters/deepseek-official.mjs`、`src/adapters/zai-coding-cn.mjs`）：照其结构与
+  注入消费方式实现，而非仅凭文字脑补。这些是**纯 JS 的 .mjs**（无任何 import）——
+  你的适配器也必须是这样的纯 JS 文件，**不要写 `import` / `import type`**（Node ESM
+  不认识 TS 语法，写了加载即失败）。
 - 除非用户在审核卡明确选择「简单表格」，否则按此基准实现。
 - 生成前在审核卡给出**渲染效果示意**：胶囊文案示例 + 面板卡片结构描述（见 2.3）。
 
@@ -99,7 +110,7 @@
 - 密钥通过 `fetchData({ apiEndpoint, apiKey, ... })` 入参获取，**绝不写死在源码中**
 - `fetchData` 只返回展示所需的最小数据集（不返回全量原始日志）
 - 所有外部 API 数据拼入 HTML 模板前经 `esc()` 转义
-- **历史兼容**：修改展示或数据存储时考虑旧 JSONL 历史（见 3.3），`formatPanel` 对旧字段结构防御读取
+- **历史兼容**：修改展示或数据存储时考虑旧 JSONL 历史（见 3.4），`formatPanel` 对旧字段结构防御读取
 - **生成后验收（必做）**：用真实凭据跑一次 `fetchData` 并计时，总耗时须在固定 5s 超时内（含最慢可选请求的降级路径）；超预算先给可选请求加短超时降级再交审
 
 ### 2.5 步骤 5：引导用户接线
@@ -136,6 +147,10 @@ plugins:
 
 ### 3.1 必填导出
 
+> **文件形态**：适配器是**纯 JS 的 .mjs 文件，零 import、完全自包含**（不 import 任何
+> 模块/类型——Node ESM 不认识 `import type` 等 TS 语法，写了加载即失败）。所有能力
+> （图表工具、转义、日界）都经入参 `utils` 注入，见 3.3。
+
 ```js
 export const version = 2;                          // 固定 2
 export const name = "my-stats";                    // ^[A-Za-z0-9_-]{2,64}$
@@ -158,7 +173,33 @@ export const label = "我的统计";                      // 展示名
 export const retention = { maxAgeDays: 30, maxSizeMB: 20 };  // 留存策略
 ```
 
-### 3.3 关键约束
+### 3.3 注入的共享图表工具（`utils`，#215）
+
+宿主端在 `fetchData` 入参（`FetchContext.utils`）与 `formatPanel` 入参
+（`PanelInput.utils`）中注入共享工具集。**mjs 鸭子类型下字段可选**：适配器内
+`const U = input.utils || {}` 后优先消费，缺失时回退文件内兜底副本（内置适配器
+即按此写法，见其源码）。工具清单：
+
+| 工具 | 签名 | 说明 |
+|------|------|------|
+| `miniAreaSvg` | `({samples,color,lo,hi,resetsAt,resetPeriodMs,dateOnly}) => string` | 迷你面积图 SVG（平滑曲线/面积填充/100% 参考线/重置标记线/x 轴刻度/降采样） |
+| `niceDomain` | `(pcts:number[]) => [lo,hi]` | 百分比 y 域自适应（dmax≥90 抬到 100） |
+| `trendOf` | `(pcts:(number\|null)[]) => {delta,up,down}\|null` | 首末有效点趋势 |
+| `downsample` | `(points,maxPoints) => points` | 降采样（**peak 语义**=区间取最大，末点保留） |
+| `smoothPath` | `(pts) => string` | Catmull-Rom → 三次贝塞尔平滑路径 |
+| `resetTicks` | `(resetsAt,periodMs,t0,t1) => number[]` | 重置标记刻度（resetsAt 支持 ISO 字符串 / epochMs） |
+| `timeTicks` / `timeTickStep` | `(t0,t1,minGapMs) => number[]` | x 轴时间刻度 |
+| `fmtAxisTime` / `axisLabelWidthPx` | — | x 轴标签格式化 / 宽度估计 |
+| `fmtPctTick` | `(v:number) => string` | y 轴百分比刻度文案 |
+| `niceStep` | `(raw:number) => number` | 好看步长（1/2/5×10^k） |
+| `escHtml` / `escAttr` | `(s:unknown) => string` | HTML/属性上下文转义（含引号） |
+| `fin` | `(v,min?,max?) => number\|null` | 数值安全化 + clamp |
+| `dayKey` / `lastNDayKeys` | `(t) => string` / `(n,now) => string[]` | 本地时区日界（宿主时区口径） |
+
+> 示例（`formatPanel` 内消费）：`const U = input.utils || {}; const svg = U.miniAreaSvg({...})`。
+> 内置适配器全部按此消费方式编写——`opencode-go.mjs` 展示注入用法最全，可作模板。
+
+### 3.4 关键约束
 
 | 约束 | 说明 |
 |------|------|
@@ -191,7 +232,7 @@ export const retention = { maxAgeDays: 30, maxSizeMB: 20 };  // 留存策略
 | `/stats` 返回 `status:"stale"` + error | fetchData 抛错/超时：看 error 字段（no-api-key / unauthorized / http-xxx / network / timeout） |
 | 胶囊不显示 | provider 未启用适配器或无数据：`/health` 看 adapters 列表 |
 | 热更新不生效 | `autoReload` 被显式关闭 / 文件 mtime+size 未变化 / 新版本契约校验失败（保留旧版） |
-| 取数正常（胶囊有数据）但面板无图表/显示旧格式 | 历史 JSONL 是旧版字段结构，新 `formatPanel` 读不到：清历史或等新结构采样积累 ≥2 点（见 3.3 历史兼容） |
+| 取数正常（胶囊有数据）但面板无图表/显示旧格式 | 历史 JSONL 是旧版字段结构，新 `formatPanel` 读不到：清历史或等新结构采样积累 ≥2 点（见 3.4 历史兼容） |
 
 ---
 
@@ -211,3 +252,27 @@ export const retention = { maxAgeDays: 30, maxSizeMB: 20 };  // 留存策略
 | 历史 v3 多文件 JSON 桶 | 按天分片 JSONL（旧数据启动时自动迁移） |
 
 </details>
+
+---
+
+## 7. 内置适配器速览
+
+| 适配器 | provider | name | 数据源 | 展示 |
+|--------|----------|------|--------|------|
+| `opencode-go.mjs` | `opencode-go` | `opencode-go-builtin` | OpenCode Go 官方用量接口 | 三窗口迷你图卡片 + 胶囊短名百分比 |
+| `deepseek-official.mjs` | `deepseek-official` | `deepseek-official-builtin` | DeepSeek 官方余额接口（区间记账法） | 余额折线（B2 断轴）+ 近 15 日用量柱形图 + 峰谷徽标 |
+| `zai-coding-cn.mjs` | `zai-coding-cn` | `zai-coding-cn-builtin` | 智谱 Coding Plan (CN) 配额接口 | 5h/周双窗口迷你图 + 工具额度卡（条件渲染）+ 胶囊 `5h 79% · 周 79% · Lite` |
+
+**智谱 Coding Plan (CN) 接口实测备忘**（2026-08-27 真 key 实测，实现见 `zai-coding-cn.mjs`）：
+- 端点：`GET https://open.bigmodel.cn/api/monitor/usage/quota/limit`（**平台级固定路径，
+  不拼接 baseURL 的 /api/coding/paas/v4 段**；OpenTokenUsage 文档的 `/api/biz/monitor/...`
+  是错的；社区 opencode-glm-quota 同款三域名）。
+- 响应 `{ code: 200, data: { limits: [...], level: "lite" } }`：
+  - `CREDIT_LIMIT unit=3,number=5` → 5h 窗口（usage/currentValue/remaining/percentage/nextResetTime）；
+  - `CREDIT_LIMIT unit=6,number=1` → 周窗口（**按 unit 而非 number 判定**）；
+  - `percentage` 为**服务端权威口径**：5h 刚重置时 `usage=2000,currentValue=0,remaining=2000,
+    percentage=0`（用量 0%）；周用满时 `percentage=100`——勿用 remaining/total 自行推断
+    （remaining 是剩余量，混用会算反）；
+  - `TIME_LIMIT` → 工具配额类（本用户套餐无，面板条件渲染）；
+  - `data.level` = 套餐等级（lite/pro/max），替代国际站 subscription/list。
+- 网关对未知路径也回 HTTP 200 + `{code:404,...}`——**必须校验业务码** `raw.code !== 200 → bad-data`。
