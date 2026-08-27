@@ -31,8 +31,10 @@ import type { ServerResponse } from "node:http";
 import type { UsageStatsAdapter } from "./contracts.ts";
 import { describeUsageStatsAdapterShape, ADAPTER_CONTRACT_VERSION } from "./contracts.ts";
 import { makeAdapterRegistry } from "./registry.ts";
-import { openCodeGoAdapter } from "./adapters/opencode-go.ts";
-import { deepSeekOfficialAdapter } from "./adapters/deepseek-official.ts";
+// 内置适配器 #215 mjs 化：以 .mjs 为权威实现（配 .d.mts 类型声明，经 index re-export 供 TS 消费）
+import { openCodeGoAdapter } from "./adapters/opencode-go.mjs";
+import { deepSeekOfficialAdapter } from "./adapters/deepseek-official.mjs";
+import { zaiCodingCnAdapter } from "./adapters/zai-coding-cn.mjs";
 import { runV2Pipeline, runV2PanelPipeline, panelCacheKey, isPanelCacheStale, type V2PipelineResult, type PanelCacheEntry } from "./pipeline/v2.ts";
 import { HistoryStore, migrateLegacyV3 } from "./core/history.ts";
 import { resolveProviderConfig } from "./provider-config.ts";
@@ -82,6 +84,8 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   // #198：内置 DeepSeek 官方余额适配器（name=deepseek-official-builtin，与用户已装
   // user-file 原型 deepseek-official 可共存，注册顺序覆盖语义见 F 组验收）
   registry.register(deepSeekOfficialAdapter, "builtin");
+  // #215：内置智谱 Coding Plan (CN) 适配器（provider zai-coding-cn，接口实测见 zai-coding-cn.mjs 头注释）
+  registry.register(zaiCodingCnAdapter, "builtin");
 
   // 2. 加载用户适配器（两来源：config.adapter 兼容声明 + 设置页登记的清单）
   async function loadUserHostAdapterFile(file: string): Promise<unknown> {
@@ -354,6 +358,8 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
         config: { apiEndpoint: providerConfig.apiEndpoint, apiKey: providerConfig.apiKey },
         staticPath: staticPathOf(provider),
         timeoutMs: config.fetchTimeoutMs,
+        // 带值降级注入：取数失败时胶囊读最后一条成功历史渲染（数据来源状态由客户端圆点表达）
+        history,
       });
 
       // 落盘历史（成功时）

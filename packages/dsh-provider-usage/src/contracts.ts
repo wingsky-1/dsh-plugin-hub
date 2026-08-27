@@ -4,7 +4,12 @@
  * 版本策略：v1 旧契约（HostProviderAdapter / ClientProviderRenderer）在本版本中
  * 标记为 deprecated，保留引用兼容。v2 新契约（UsageStatsAdapter）为推荐标准。
  * 下一主要版本删除 v1 类型。
+ *
+ * #215 注入面（additive）：FetchContext/PanelInput 新增 optional `utils` 字段——
+ * 宿主注入的适配器共享工具（图表/转义/日界等，见 charts.ts）。mjs 鸭子类型下
+ * 字段可选，适配器 `const U = input.utils` 后优先消费，缺失时回退文件内私有副本。
  */
+import type { AdapterUtils } from "./charts.ts";
 
 // ------------------------------------------------------------------ 契约版本
 
@@ -54,6 +59,8 @@ export interface FetchContext {
   timeoutMs: number;
   /** 超时/卸载取消信号。 */
   signal?: AbortSignal;
+  /** 宿主注入的适配器共享工具（图表/转义/日界等；mjs 鸭子类型下可选）。 */
+  utils?: AdapterUtils;
 }
 
 /** formatCapsule 的入参。 */
@@ -80,6 +87,8 @@ export interface PanelInput {
   truncated: boolean;
   /** HTML 转义助手。 */
   esc: (s: unknown) => string;
+  /** 宿主注入的适配器共享工具（图表/转义/日界等；mjs 鸭子类型下可选）。 */
+  utils?: AdapterUtils;
 }
 
 /**

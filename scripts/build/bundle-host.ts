@@ -54,6 +54,28 @@ function walkFiles(dir, predicate) {
 }
 
 // 1. esbuild 内联 shared（tsc 产物 → 自包含单文件，临时文件再替换，避免占用原文件）
+// 0a. #215 内置适配器 mjs 化：tsc 只编译 src/**/*.ts，.mjs/.d.mts 不被 emit——
+//     在 esbuild bundle 前把 src/adapters/*.{mjs,d.mts} 拷贝进 lib/adapters/
+//     （esbuild 需读到 .mjs 内联；.d.mts 随包发布供 lib/index.d.ts 类型解析）。
+function copyAdapterModules(pkgDir) {
+  const srcAdapters = join(pkgDir, 'src', 'adapters')
+  const libAdapters = join(libDir, 'adapters')
+  if (!existsSync(srcAdapters)) return 0
+  mkdirSync(libAdapters, { recursive: true })
+  let n = 0
+  for (const f of readdirSync(srcAdapters)) {
+    if (/\.(mjs|d\.mts)$/.test(f)) {
+      cpSync(join(srcAdapters, f), join(libAdapters, f))
+      n += 1
+    }
+  }
+  return n
+}
+const adapterModulesCopied = copyAdapterModules(pkgDir)
+if (adapterModulesCopied > 0) {
+  console.log(`[bundle-host] ${process.argv[2]}: 内置适配器 mjs/d.mts 已拷贝进 lib/adapters/（${adapterModulesCopied} 个）`)
+}
+
 const tmpBundle = join(libDir, '.index.bundle.js')
 // 可选 banner（按包，dsh.bundle.bannerJs）：在 ESM 产物顶部注入代码。用于给内联的
 // CJS 库（如 ws）提供 require（createRequire），避免其内部动态 require Node 内置
