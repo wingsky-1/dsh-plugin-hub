@@ -570,6 +570,19 @@ try {
     assert.ok(!client.includes("dagre-d3-es"), "#104 client.js 未内联 mermaid 库体");
   }
 
+  // ---- issue #293：client.js 产物契约哨兵（泛化查看器 + 外链拦截）----
+  // 泛化重构后图片路径行为零回归的产物层证据：content 类（E1）、双 aria-label（B3）、
+  // 外链 noopener 拦截（D1/D2）随产物下发；旧 img 专用类名不得残留（漂移哨兵）。
+  {
+    assert.ok(client.includes("fwp-lbox-content"), "#293 client.js 含泛化查看器 content 类（E1）");
+    assert.ok(!client.includes("fwp-lbox-img"), "#293 client.js 无残留 .fwp-lbox-img 专用类名（E1 已泛化）");
+    assert.ok(client.includes("图片预览"), "#293 client.js 含图片预览 aria-label（B3）");
+    // 「图表预览」哨兵在 mermaid 接线（openViewer 图表路径）落地后补回——见 commit 3 后该块。
+    assert.ok(client.includes("noopener"), "#293 client.js 含外链 noopener 拦截（D1/D2）");
+    assert.ok(client.includes("xlink:href"), "#293 client.js 含 xlink:href 外链读取（A4）");
+    assert.ok(client.includes("translate("), "#293 client.js 含 transform 模板（A2 双路径共用）");
+  }
+
   // ---- issue #104：mermaid hydration 编排纯逻辑直测（mermaid-core，无 DOM）----
   // 与 rewrite-target 同模式：esbuild 内存打包真实源码、经 data-URI 导入直测
   // 成功替换 / 单块语法错误回退 / chunk 加载失败整体回退 / 代数失效中断。
