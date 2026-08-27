@@ -69,17 +69,20 @@ export interface FilePreviewState {
     | { seq: number; container: HTMLElement; entries: Array<{ el: HTMLElement; source: string }> }
     | undefined;
 
-  // 灯箱状态
+  // 灯箱/查看器状态（issue #293：openLightbox 泛化为 openViewer，内容不再限 <img>）
   /** 灯箱根元素。 */
   lboxEl: HTMLElement | undefined;
-  /** 灯箱图片元素。 */
-  lboxImg: HTMLImageElement | undefined;
-  /** 灯箱缩放比例。 */
+  /** 查看器内容元素（<img> 或 mermaid 克隆 <svg>，泛化字段，原 lboxImg；
+   * SVG 元素不在 HTML 命名空间，故用 Element 联合类型）。 */
+  lboxContent: HTMLElement | SVGElement | undefined;
+  /** 查看器缩放比例。 */
   lboxScale: number;
-  /** 灯箱水平平移。 */
+  /** 查看器水平平移。 */
   lboxTx: number;
-  /** 灯箱垂直平移。 */
+  /** 查看器垂直平移。 */
   lboxTy: number;
+  /** 查看器关闭后焦点还原目标（触发元素，若仍在 DOM；issue #293 C7 a11y）。 */
+  lboxRestoreFocus: HTMLElement | undefined;
 
   // 与宿主 ROUTES 一致的路径（单一来源见宿主 src/routes.ts）。
   API: {
@@ -116,10 +119,11 @@ export function createState(): FilePreviewState {
     mermaidRenderId: 0,
     activeMermaidHydration: undefined,
     lboxEl: undefined,
-    lboxImg: undefined,
+    lboxContent: undefined,
     lboxScale: 1,
     lboxTx: 0,
     lboxTy: 0,
+    lboxRestoreFocus: undefined,
     API: {
       file: "/api/dsh-file-preview/file",
       diff: "/api/dsh-file-preview/diff",

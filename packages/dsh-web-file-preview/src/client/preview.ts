@@ -8,7 +8,8 @@
 import { el, copyPathText, ensureStyle } from "./dom.ts";
 import type { FilePreviewState, NavEntry } from "./state.ts";
 import { fetchText, renderTabBody, probeDiff } from "./text.ts";
-import { renderImage, closeLightbox } from "./image.ts";
+import { renderImage } from "./image.ts";
+import { closeLightbox } from "./viewer.ts";
 import { renderGroupFor } from "./renderer.ts";
 import { scrollToFragment } from "./anchor.ts";
 

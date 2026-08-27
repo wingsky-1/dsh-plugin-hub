@@ -26,7 +26,7 @@ import { createState, type FilePreviewState } from "./state.ts";
 import { finalizeSession, onKeyDown } from "./preview.ts";
 import { onClickCapture } from "./intercept.ts";
 import { wrapOpenPath } from "./wrapper.ts";
-import { watchMermaidTheme } from "./mermaid.ts";
+import { watchMermaidTheme, watchMermaidAnchorSafety } from "./mermaid.ts";
 
 export function apply(ctx: any): void {
   const state: FilePreviewState = createState();
@@ -46,9 +46,12 @@ export function apply(ctx: any): void {
     // issue #104：系统明暗切换时对已渲染 mermaid 图就地重渲染（v11 无 setTheme，
     // re-initialize 路线，见 mermaid.ts）；解绑进同一 disposer，卸载无残留监听。
     const unwatchMermaidTheme = watchMermaidTheme(state);
+    // issue #293 D2：Modal 内 <a> 外链点击安全拦截（同 tab 导航防御，见 mermaid.ts）。
+    const unwatchAnchorSafety = watchMermaidAnchorSafety(state);
     ctx.effect(() => () => {
       state.disposed = true;
       unwatchMermaidTheme();
+      unwatchAnchorSafety();
       document.removeEventListener("click", captureHandler, true);
       document.removeEventListener("keydown", onKeyDown);
       finalizeSession(state, "unmount");
