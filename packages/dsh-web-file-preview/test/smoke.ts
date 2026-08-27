@@ -765,6 +765,99 @@ try {
     assert.equal(decideGate(probeNone, SCOPE_SELECTORS), "pass", "作用域外 → 放行");
   }
 
+  // ---- issue #293：viewer-math 查看器纯逻辑直测（无 DOM，验收 A 组）----
+  // 与 mermaid-core / link-resolver 同模式：esbuild 内存打包真实源码、经 data-URI
+  // 导入直测（clamp 边界 / transform 字符串逐字节一致 / 触发谓词 / 外链锚点谓词）。
+  // 谓词以最小投影注入（closest/querySelector/getAttribute/classList 语义）。
+  {
+    const vmBundle = await esbuildBuild({
+      entryPoints: [join(pkgDir, "src/client/viewer-math.ts")],
+      bundle: true, format: "esm", write: false, logLevel: "silent",
+    });
+    const { clampScale, viewerTransform, shouldOpenMermaidViewer, isExternalClickableAnchor } = await import(
+      `data:text/javascript;base64,${Buffer.from(vmBundle.outputFiles[0]!.text).toString("base64")}`
+    ) as typeof import("../src/client/viewer-math.js");
+    // 最小投影工厂：closest 支持 .class token 与 a 标签；querySelector 只认 svg。
+    const mkNode = (opts: any = {}): any => {
+      const { cls = "", tag = "", hasSvg = false, attrs = {}, parent = null } = opts;
+      return {
+        cls, tag, hasSvg, attrs, parent,
+        closest(sel: string) {
+          const matches = (n: any) => sel.startsWith(".")
+            ? n.cls.split(/\s+/).includes(sel.slice(1))
+            : sel === "a" && n.tag === "A";
+          for (let n: any = this; n !== null; n = n.parent) if (matches(n)) return n;
+          return null;
+        },
+        querySelector(sel: string) { return sel === "svg" && this.hasSvg ? {} : null; },
+        getAttribute(name: string) { return this.attrs[name] ?? null; },
+        classList: { contains: (t: string) => cls.split(/\s+/).includes(t) },
+      };
+    };
+    // A1 [硬性] clamp 边界 [0.2, 8]：边界恒等、越界收敛。
+    {
+      assert.equal(clampScale(0.2), 0.2, "A1 下边界恒等");
+      assert.equal(clampScale(1), 1, "A1 中值恒等");
+      assert.equal(clampScale(8), 8, "A1 上边界恒等");
+      assert.equal(clampScale(0.1), 0.2, "A1 越界收敛到下界");
+      assert.equal(clampScale(100), 8, "A1 越界收敛到上界");
+      assert.equal(clampScale(-3), 0.2, "A1 负值收敛到下界");
+      // 按钮 ×1.25 / ÷1.25、滚轮 ×1.12 / ×0.9、捏合 start×ratio 三路径连续作用恒在区间内。
+      let s = 1;
+      for (let i = 0; i < 20; i++) s = clampScale(s * 1.25);
+      assert.equal(s, 8, "A1 按钮放大 20 次收敛上界");
+      s = 1;
+      for (let i = 0; i < 20; i++) s = clampScale(s / 1.25);
+      assert.equal(s, 0.2, "A1 按钮缩小 20 次收敛下界");
+      s = 5;
+      for (let i = 0; i < 30; i++) s = clampScale(s * (i % 2 === 0 ? 1.12 : 0.9));
+      assert.ok(s >= 0.2 && s <= 8, "A1 滚轮正反交替后恒在区间内");
+      const ratios = [0.5, 1.5, 0.8, 2.2, 0.3, 3, 0.7];
+      s = 1;
+      for (const r of ratios) s = clampScale(s * r);
+      assert.ok(s >= 0.2 && s <= 8, "A1 捏合多轮后恒在区间内");
+    }
+    // A2 [硬性] transform 字符串逐字节一致（与图片灯箱原 applyLboxTransform 同格式）。
+    {
+      assert.equal(viewerTransform(0, 0, 1), "translate(0px, 0px) scale(1)", "A2 恒等变换字符串");
+      assert.equal(viewerTransform(-12.5, 3.25, 2.5), "translate(-12.5px, 3.25px) scale(2.5)", "A2 平移+缩放字符串逐字节一致");
+      assert.equal(viewerTransform(0.1, -0.1, 0.2), "translate(0.1px, -0.1px) scale(0.2)", "A2 边界值字符串");
+    }
+    // A3 [硬性] shouldOpenMermaidViewer：holder 级命中 + 排除 fallback + svg 非空守卫。
+    {
+      const holder = mkNode({ cls: "fwp-mermaid", hasSvg: true });
+      const svgChild = mkNode({ parent: holder });
+      assert.equal(shouldOpenMermaidViewer(svgChild), true, "A3 SVG 子元素命中 holder → true");
+      assert.equal(shouldOpenMermaidViewer(holder), true, "A3 点击 holder 自身 → true");
+      const noSvgHolder = mkNode({ cls: "fwp-mermaid", hasSvg: false });
+      assert.equal(shouldOpenMermaidViewer(noSvgHolder), false, "A3 无 svg 的 holder → false");
+      const fallbackHolder = mkNode({ cls: "fwp-mermaid fwp-mermaid-fallback", hasSvg: true });
+      assert.equal(shouldOpenMermaidViewer(fallbackHolder), false, "A3 fallback holder → false");
+      const plainDiv = mkNode({ cls: "", hasSvg: true });
+      assert.equal(shouldOpenMermaidViewer(plainDiv), false, "A3 非 mermaid 元素 → false");
+      assert.equal(shouldOpenMermaidViewer(null), false, "A3 null target → false");
+    }
+    // A4 [硬性] isExternalClickableAnchor：xlink:href 优先、fallback href、仅绝对 http(s)。
+    {
+      const a = (attrs: Record<string, string>, parent = null) => mkNode({ tag: "A", attrs, parent });
+      const svgInHolder = mkNode({ hasSvg: true });
+      assert.equal(isExternalClickableAnchor(a({ "xlink:href": "https://x" })), true, "A4 xlink:href 绝对 https → true");
+      assert.equal(isExternalClickableAnchor(a({ href: "https://x" })), true, "A4 href 绝对 https → true");
+      assert.equal(isExternalClickableAnchor(a({ "xlink:href": "https://x", href: "https://y" })), true, "A4 xlink:href 优先于 href");
+      assert.equal(isExternalClickableAnchor(a({ "xlink:href": "http://x" })), true, "A4 绝对 http → true");
+      assert.equal(isExternalClickableAnchor(a({ href: "HTTPS://X" })), true, "A4 scheme 大小写不敏感");
+      assert.equal(isExternalClickableAnchor(a({ href: "./x" })), false, "A4 相对链接不拦");
+      assert.equal(isExternalClickableAnchor(a({ href: "#section" })), false, "A4 内部锚点不拦");
+      assert.equal(isExternalClickableAnchor(a({ href: "ftp://x" })), false, "A4 非 http(s) 协议不拦");
+      assert.equal(isExternalClickableAnchor(a({})), false, "A4 无 href 不拦");
+      // 祖先链命中：svg > a > text，点击 text 命中 a。
+      const text = mkNode({ parent: a({ "xlink:href": "https://x" }, svgInHolder) });
+      assert.equal(isExternalClickableAnchor(text), true, "A4 祖先链 a 命中");
+      assert.equal(isExternalClickableAnchor(mkNode({ cls: "", hasSvg: true })), false, "A4 非 a 元素不拦");
+      assert.equal(isExternalClickableAnchor(null), false, "A4 null target → false");
+    }
+  }
+
   console.log("PASS dsh-web-file-preview smoke");
 } finally {
   rmSync(root, { recursive: true, force: true });
