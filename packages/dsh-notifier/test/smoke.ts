@@ -30,6 +30,9 @@ import "./e2e-question-turn.test.ts";
 // e2e：边缘路径与生命周期清理（#82 批次 4 热点补强）
 import "./e2e-edge.test.ts";
 
+// e2e：真实 cordis Context 形态（#290 C/D/E：未注入访问/事件可达契约/静态契约）
+import "./real-context.test.ts";
+
 // e2e：HTTP 路由 + 两端契约
 import "./routes.test.ts";
 import "./client-contract.test.ts";

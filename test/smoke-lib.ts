@@ -140,3 +140,76 @@ export function clientRouteLiterals(clientCode, pattern) {
   }
   return [...found]
 }
+
+/**
+ * 真实 cordis Context 形态断言工具（issue #290 C-1）。
+ *
+ * 断言真实 cordis（4.0.1）Context 的三项核心语义——与 fake-ctx 对拍，堵住
+ * 根因 A 穿透门禁的测试盲区（fake-ctx 曾把 agents 作普通属性注入，未注入访问
+ * 不抛错）：
+ *   ① 未注入服务访问抛 `cannot get property ... without inject`；
+ *   ② `ctx.get(name, false)` 缺位安全返回 `undefined`；
+ *   ③ `ctx.effect(fn)` 返回 disposer，disposer 触发真实清理语义。
+ *
+ * @param ctx 真实 cordis 的「运行时上下文」——必须是已激活的插件 fiber
+ *   context（fiber.runtime 为 truthy），否则未注入访问按 root 语义静默返回
+ *   undefined，断言①会红（调用方负责在插件回调内取 ctx）。
+ */
+export function assertRealCordisContextSemantics(ctx) {
+  // ① 未注入服务访问抛错（cordis 严格属性检查）
+  assert.throws(() => void ctx.agents, /cannot get property "agents" without inject/, '未注入服务访问必须抛 cannot get property ... without inject')
+  // ② ctx.get(name, false) 缺位安全返回 undefined
+  assert.strictEqual(ctx.get('agents', false), undefined, 'ctx.get(name, false) 缺位安全返回 undefined')
+  // ③ effect(fn) 返回 disposer 且触发真实清理
+  let cleaned = 0
+  const disposer = ctx.effect(() => () => { cleaned++ })
+  assert.strictEqual(typeof disposer, 'function', 'ctx.effect 返回 disposer 函数')
+  disposer()
+  assert.strictEqual(cleaned, 1, 'disposer 触发真实清理语义')
+  disposer() // 二次调用应 no-op（单次清理）
+  assert.strictEqual(cleaned, 1, 'disposer 二次调用 no-op')
+}
+
+/**
+ * 事件可达性契约断言（issue #290 D-1 / D-2 / D-3 + E-1 防御语义）。
+ *
+ * 把「依赖宿主 untagged listener ctx 放行」这一未文档化假设固化为可检测契约：
+ * 真实 cordis Context（无 kScope 标签、平铺挂载形态）注册 untagged 与
+ * `{ global: true }` 双监听，依次以三种派发形态验证：
+ *   (a) 裸 emit（无 scope filter）→ 双监听均收到（基础可达）；
+ *   (b) untagged 放行 filter → untagged 收到（宿主现状契约）；
+ *   (c) scope 收紧 filter（untagged 不再放行）→ untagged 被拒、global 仍收到
+ *       （{global:true} 消费端防御语义）。
+ * 全程硬断言、无 skip/容错吞错：宿主 scope 语义收紧时 (b) 先红（fail-closed），
+ * 而不是静默漏检。
+ *
+ * @param ctx 真实 cordis 插件 fiber context。
+ * @param ContextClass cordis 的 Context 构造器（取 Context.filter symbol 构造
+ *   scopeTarget 模拟 dsh-scope 派发形态；smoke-lib 不直接依赖 cordis 运行时）。
+ * @param name 事件名（agent/status、session/event）。
+ * @param payload 派发载荷。
+ */
+export function assertEventReachability(ctx, ContextClass, name, payload) {
+  const received = []
+  ctx.on(name, (arg) => received.push(['untagged', arg]))
+  ctx.on(name, (arg) => received.push(['global', arg]), { global: true })
+
+  // (a) 裸 emit：无 filter → 双监听均可达
+  received.length = 0
+  ctx.emit(name, payload)
+  assert.ok(received.some(([tag]) => tag === 'untagged'), `裸 emit 后 untagged listener 收到 ${name}`)
+  assert.ok(received.some(([tag]) => tag === 'global'), `裸 emit 后 global listener 收到 ${name}`)
+
+  // (b) 宿主 untagged 放行契约：filter 对无 scope 标签的 listener ctx 放行
+  received.length = 0
+  ctx.emit({ [ContextClass.filter]: () => true }, name, payload)
+  assert.ok(received.some(([tag]) => tag === 'untagged'), `untagged 放行语义下 untagged listener 收到 ${name}`)
+  assert.ok(received.some(([tag]) => tag === 'global'), `untagged 放行语义下 global listener 收到 ${name}`)
+
+  // (c) fail-closed 反证 + {global:true} 防御：scope 收紧（untagged 不再放行）
+  //     → untagged 被拒、global 仍收到
+  received.length = 0
+  ctx.emit({ [ContextClass.filter]: () => false }, name, payload)
+  assert.ok(!received.some(([tag]) => tag === 'untagged'), `scope 收紧时 untagged listener 必须被拒（${name}）`)
+  assert.ok(received.some(([tag]) => tag === 'global'), `scope 收紧时 global listener 仍收到（{global:true} 防御语义）`)
+}

@@ -43,12 +43,21 @@ export function makeRes() {
 
 /**
  * fake cordis ctx：路由表 + 事件监听器表 + effect（真实语义：fn 立即同步
- * 执行，返回值收集为 disposer）。
+ * 执行，返回值收集为 disposer）+ get/provide（服务读取面）。
+ *
+ * 未注入访问抛错镜像（issue #290 C-2）：Proxy 对未注入属性（如 ctx.agents）
+ * 抛与真实 cordis 同构的错误 `cannot get property "<name>" without inject`
+ * ——修复前形态（ctx.agents 直读）在 fake ctx 下同样红，杜绝根因 A 穿透
+ * 门禁的测试盲区。`ctx.get(name, false)` 缺位安全返回 undefined（镜像
+ * ReflectService.get 语义）；override 直接注入的「服务」属性（如 { agents }）
+ * 也经 get 读取面可达，兼容按属性注入的既有用例。
  */
 export function makeFakeCtx(overrides = {}) {
   const routes = [];
   const listeners = new Map();
-  const ctx = {
+  /** 服务读取面：provide 注册 + override 直接注入的服务属性。 */
+  const services = new Map();
+  const base = {
     logger: { warn: () => {}, info: () => {} },
     webServer: {
       register(route) {
@@ -65,8 +74,31 @@ export function makeFakeCtx(overrides = {}) {
       const disposer = fn();
       return typeof disposer === "function" ? disposer : () => {};
     },
+    get(name) {
+      if (services.has(name)) return services.get(name);
+      if (Object.prototype.hasOwnProperty.call(base, name)) return base[name];
+      return undefined;
+    },
+    provide(name, value) {
+      services.set(name, value);
+      return () => services.delete(name);
+    },
     ...overrides,
   };
+  // 未注入访问抛错镜像（真实 cordis 严格属性访问）：symbol/保留键（then/
+  // prototype）按真实 proxy 语义直接放行，其余未注入键抛错。
+  const ctx = new Proxy(base, {
+    get(target, prop) {
+      if (typeof prop === "symbol" || prop === "then" || prop === "prototype" || String(prop).startsWith("_")) {
+        return Reflect.get(target, prop);
+      }
+      if (Reflect.has(target, prop)) return Reflect.get(target, prop);
+      throw new Error(`cannot get property "${String(prop)}" without inject`);
+    },
+    has(target, prop) {
+      return Reflect.has(target, prop);
+    },
+  });
   return { ctx, routes, listeners };
 }
 
