@@ -50,7 +50,9 @@ test/                 共享测试工具（smoke-lib）
 客户端 UI 改动的浏览器实测统一用
 [dsh-dev-utils](https://github.com/wingsky-1/dsh-dev-utils) 的 `dsh-verify-isolated`
 skill（临时 `DSH_HOME` + 独立 `verify_<随机>` profile 双重隔离，一键脚本自动
-构建/挂载/启动/清理，不污染正在使用的 `web` profile）。
+构建/挂载/启动/清理，不污染正在使用的 `web` profile）。安装：
+`git clone https://github.com/wingsky-1/dsh-dev-utils.git "$DSH_HOME/skills/dsh-dev-utils"`
+（用户级，本机所有 dsh 项目可用；更新 `git -C ... pull`）。
 
 ## 输入安全
 

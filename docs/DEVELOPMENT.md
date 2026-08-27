@@ -344,4 +344,5 @@ dsh web 部署在 Linux 服务器，经局域网被多种设备 / 系统访问�
 > 搭建、浏览器 MCP 核验方法、证据归档与流程契约，统一走
 > [dsh-dev-utils](https://github.com/wingsky-1/dsh-dev-utils) 的 `dsh-verify-isolated`
 > skill（临时 `DSH_HOME` + 独立 `verify_<随机>` profile 双重隔离，一键脚本
-> `verify-isolated.sh` 自动构建/挂载/启动/清理）。
+> `dsh-verify-isolated/scripts/verify-isolated.sh` 自动构建/挂载/启动/清理；
+> 安装：`git clone https://github.com/wingsky-1/dsh-dev-utils.git "$DSH_HOME/skills/dsh-dev-utils"`）。
