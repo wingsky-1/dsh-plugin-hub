@@ -1,7 +1,7 @@
 {
   "name": "@wingsky-1/dsh-plugins-all",
   "version": "0.1.13",
-  "description": "DSH 插件全家桶聚合包：一键安装全部功能插件（idle-archive / notifier / provider-usage / mcp-manager / lan-proxy / web-file-preview）。装它 = 子包 dependencies 拉齐 + 聚合 cordis patch 激活。dsh-gzip 已退役（压缩合并进 lan-proxy），不再随全家桶分发。",
+  "description": "DSH 插件全家桶聚合包：一键安装全部功能插件（idle-archive / notifier / provider-usage / mcp-manager / lan-proxy / verify-isolated / web-file-preview）。装它 = 子包 dependencies 拉齐 + 聚合 cordis patch 激活。dsh-gzip 已退役（压缩合并进 lan-proxy），不再随全家桶分发。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -33,6 +33,7 @@
     "@wingsky-1/dsh-provider-usage": "workspace:*",
     "@wingsky-1/dsh-mcp-manager": "workspace:*",
     "@wingsky-1/dsh-lan-proxy": "workspace:*",
+    "@wingsky-1/dsh-verify-isolated": "workspace:*",
     "@wingsky-1/dsh-web-file-preview": "workspace:*"
   },
   "publishConfig": {

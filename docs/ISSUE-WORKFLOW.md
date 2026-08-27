@@ -47,7 +47,9 @@
    设 `DSH_HOME` / 轮询替代固定 sleep）。
 3. **修复分支**：命名 `fix/<主题>` 或 `feat/<主题>`（与 CONTRIBUTING.md 开发流程一致）。
 4. **验证证据**（涉及界面行为的改动——overlay / URL 重写 / Modal 内跳转 / 双主题 /
-   窄屏等）：在隔离环境实测后截图归档至
+   窄屏等）：用 [dsh-dev-utils](https://github.com/wingsky-1/dsh-dev-utils) 的
+   `dsh-verify-isolated` skill 在隔离环境实测（临时 `DSH_HOME` + 独立 profile 双重
+   隔离，一键脚本自动构建/挂载/启动/清理），截图归档至
    `packages/dsh-<name>/docs/archive/<issue号>-<行为描述>.png`（如
    `37-basename-fallback-overlay.png`）；截图只截插件 UI 本身（headless element
    screenshot），不带浏览器整窗，避免泄露本机环境。归档后双向引用：PR 正文贴图并

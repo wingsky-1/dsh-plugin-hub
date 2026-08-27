@@ -36,7 +36,7 @@ test/                 共享测试工具（smoke-lib）
 
 ## 开发隔离纪律（硬性）
 
-主 checkout 是 dsh link 模式的插件加载源——`dsh web` 运行时从其中读取 lib/ 产物。
+主 checkout 是插件加载源——`dsh web` 运行时从其中读取 lib/ 产物。
 **为保持本地环境稳定运行，禁止在主 checkout 中**：切分支、改代码、跑实验性 build、
 直接跑 smoke / 浏览器实测等验证动作。
 
@@ -47,6 +47,12 @@ test/                 共享测试工具（smoke-lib）
 独立验证（smoke / 浏览器实测 / 需启动 dsh 的验证）时使用**隔离环境**：`DSH_HOME`
 设到临时目录（如 `$(mktemp -d)`）、文件路径隔离，遵循
 [docs/DEVELOPMENT.md §5](docs/DEVELOPMENT.md#5-smoke-测试防-flake-纪律) 防 flake 纪律。
+客户端 UI 改动的浏览器实测统一用
+[dsh-dev-utils](https://github.com/wingsky-1/dsh-dev-utils) 的 `dsh-verify-isolated`
+skill（临时 `DSH_HOME` + 独立 `verify_<随机>` profile 双重隔离，一键脚本自动
+构建/挂载/启动/清理，不污染正在使用的 `web` profile）。安装：
+`git clone https://github.com/wingsky-1/dsh-dev-utils.git "$DSH_HOME/skills/dsh-dev-utils"`
+（用户级，本机所有 dsh 项目可用；更新 `git -C ... pull`）。
 
 ## 输入安全
 

@@ -32,6 +32,9 @@ jobs:
       # 无取长度与管道能力，在 if 里对清单做取长判空或裸数组文本比较均脆弱；
       # 下游 if 一律用 needs.changes.outputs.hasMutations == 'true' 精确比较
       hasMutations: ${{ steps.pkgs.outputs.hasMutations }}
+      # 全量包清单（单一事实源，从 plugins-manifest.json active + 聚合包派生）：
+      # 供 repo-gate 产物齐备断言等下游消费，空清单 fail-closed
+      allPackages: ${{ steps.pkgs.outputs.allPackages }}
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -89,6 +92,8 @@ jobs:
               - 'packages/dsh-lan-proxy/**'
             dsh-subagent-model-inherit:
               - 'packages/dsh-subagent-model-inherit/**'
+            dsh-verify-isolated:
+              - 'packages/dsh-verify-isolated/**'
             dsh-plugins-all:
               - 'packages/dsh-plugins-all/**'
 
@@ -100,6 +105,22 @@ jobs:
           BASE_SET: ${{ steps.base.outputs.base }}
         run: |
           set -e
+          # ── 单一事实源：切片/产物清单从 plugins-manifest.json 派生（#306 评审）──
+          # active 集（进聚合、参与切片）来自 manifest；聚合包 dsh-plugins-all 手工
+          # 补入（manifest.active 不含聚合包自身）。新增 active 包只改 manifest 一处，
+          # 全量列表（fallback / GLOBAL_HIT / 547 产物断言）自动跟随。
+          # 空清单 = exit 1（fail-closed：任何消费方不得在空清单下静默通过）。
+          read_manifest_active() {
+            python3 -c "import json,sys;print(json.dumps(json.load(open('scripts/data/plugins-manifest.json'))['active']))" \
+              || { echo '::error::读取 plugins-manifest.json 失败（fail-closed）'; exit 1; }
+          }
+          ALL_ACTIVE="$(read_manifest_active)"
+          ALL_PACKAGES="$(printf '%s' "$ALL_ACTIVE" | jq -c '. + ["dsh-plugins-all"]')"
+          if [ "$(printf '%s' "$ALL_PACKAGES" | jq 'length')" -eq 0 ]; then
+            echo '::error::包清单为空（fail-closed，禁止静默通过）'
+            exit 1
+          fi
+          echo "全量包清单（单一事实源）: $ALL_PACKAGES"
           # mutationPackages：hitPackages 剔除聚合包后的增量变异切片（#178）；
           # mutationCombos（#220 B 方案）：切片按 stryker.conf.d/ 段配置展开为
           #   matrix 组合 —— 存在 <pkg>-<n>.json 的包逐段实例化，否则 seg=0 走
@@ -107,6 +128,11 @@ jobs:
           # hasMutations（#217）：由同一清单推导的显式布尔，供下游 if 精确比较
           combos_for() {
             local pkg="$1" segs i out= first=1
+            # 无任何 stryker 配置的包（如纯宿主 skill 包 dsh-verify-isolated）不进
+            # 变异切片：既无段配置也无包级 <pkg>.json 时返回空（#306 防假红）
+            if [ ! -f "stryker.conf.d/$pkg.json" ] && ! ls stryker.conf.d/"$pkg"-*.json >/dev/null 2>&1; then
+              return 0
+            fi
             segs=$(ls stryker.conf.d/"$pkg"-*.json 2>/dev/null | wc -l)
             if [ "$segs" -gt 0 ]; then
               out='['
@@ -120,9 +146,12 @@ jobs:
             fi
           }
           emit_outputs() {
-            MUTS="$(printf '%s' "$1" | jq -c '[.[] | select(. != "dsh-plugins-all")]')"
+            # mutationPackages：剔除聚合包 + 无 stryker 配置的包（纯宿主 skill 包如
+            # dsh-verify-isolated 无变异配置，进 mutation 切片会让 verdict 假红）
+            MUTS="$(printf '%s' "$1" | python3 -c 'import json,sys,os,glob; pkgs=json.load(sys.stdin); keep=lambda p: p!="dsh-plugins-all" and (os.path.exists(f"stryker.conf.d/{p}.json") or glob.glob(f"stryker.conf.d/{p}-*.json")); print(json.dumps([p for p in pkgs if keep(p)]))')"
             COMBOS="$(printf '%s' "$MUTS" | jq -r '.[]' | while read -r p; do combos_for "$p"; done | jq -sc 'add // []')"
             echo "hitPackages=$1" >> "$GITHUB_OUTPUT"
+            echo "allPackages=$ALL_PACKAGES" >> "$GITHUB_OUTPUT"
             echo "mutationPackages=$MUTS" >> "$GITHUB_OUTPUT"
             echo "mutationCombos=$COMBOS" >> "$GITHUB_OUTPUT"
             echo "hasMutations=$(printf '%s' "$MUTS" | jq -c 'length > 0')" >> "$GITHUB_OUTPUT"
@@ -130,17 +159,17 @@ jobs:
           # fail-closed 双闸：diff 基准不可用 或 filter 步骤失败 → 一律全量切片
           if [ -z "$BASE_SET" ] || [ "$FILTER_OUTCOME" = "failure" ]; then
             echo '::notice::fallback 全量切片（fail-closed）'
-            emit_outputs '["dsh-notifier","dsh-idle-archive","dsh-web-file-preview","dsh-mcp-manager","dsh-provider-usage","dsh-lan-proxy","dsh-plugins-all"]'
+            emit_outputs "$ALL_PACKAGES"
             exit 0
           fi
           if [ "$GLOBAL_HIT" = "true" ]; then
             echo '::notice::全局路径命中 → 全量切片'
-            emit_outputs '["dsh-notifier","dsh-idle-archive","dsh-web-file-preview","dsh-mcp-manager","dsh-provider-usage","dsh-lan-proxy","dsh-plugins-all"]'
+            emit_outputs "$ALL_PACKAGES"
             exit 0
           fi
           HITS='['
           FIRST=1
-          for pkg in dsh-notifier dsh-idle-archive dsh-web-file-preview dsh-mcp-manager dsh-provider-usage dsh-lan-proxy dsh-plugins-all; do
+          for pkg in dsh-notifier dsh-idle-archive dsh-web-file-preview dsh-mcp-manager dsh-provider-usage dsh-lan-proxy dsh-verify-isolated dsh-plugins-all; do
             case "$pkg" in
               dsh-notifier)          V='${{ steps.filter.outputs.dsh-notifier }}' ;;
               dsh-idle-archive)      V='${{ steps.filter.outputs.dsh-idle-archive }}' ;;
@@ -148,6 +177,7 @@ jobs:
               dsh-mcp-manager)       V='${{ steps.filter.outputs.dsh-mcp-manager }}' ;;
               dsh-provider-usage)    V='${{ steps.filter.outputs.dsh-provider-usage }}' ;;
               dsh-lan-proxy)         V='${{ steps.filter.outputs.dsh-lan-proxy }}' ;;
+              dsh-verify-isolated)   V='${{ steps.filter.outputs.dsh-verify-isolated }}' ;;
               dsh-plugins-all)       V='${{ steps.filter.outputs.dsh-plugins-all }}' ;;
               *)                     V='false' ;;
             esac
@@ -180,6 +210,7 @@ jobs:
           - dsh-provider-usage
           - dsh-lan-proxy
           - dsh-subagent-model-inherit
+          - dsh-verify-isolated
           - dsh-plugins-all
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -540,11 +571,21 @@ jobs:
             mkdir -p "packages/$pkg"
             cp -r "$dir/." "packages/$pkg/"
           done
-          # 断言七个包产物齐备（缺任何一个即红——全局门禁的前提）
-          for pkg in dsh-notifier dsh-idle-archive dsh-web-file-preview dsh-mcp-manager dsh-provider-usage dsh-lan-proxy dsh-plugins-all; do
+          # 断言全部包产物齐备（缺任何一个即红——全局门禁的前提）。
+          # 清单从 needs.changes.outputs.allPackages（plugins-manifest.json 派生）驱动，
+          # 新增 active 包自动纳入；空清单 fail-closed（fail-closed gate assertion 已兜底，
+          # 此处显式防空防「零断言假绿」）。
+          ALL="$(printf '%s' "$ALL_PACKAGES" | jq -c '.')"
+          if [ "$(printf '%s' "$ALL" | jq 'length')" -eq 0 ]; then
+            echo '::error::allPackages 为空（fail-closed，禁止零断言通过）'
+            exit 1
+          fi
+          for pkg in $(printf '%s' "$ALL" | jq -r '.[]'); do
             test -f "packages/$pkg/lib/index.js" || { echo "::error::$pkg/lib/index.js 缺失"; exit 1; }
           done
-          echo '七包构建产物就位'
+          echo "全部包构建产物就位（$ALL）"
+        env:
+          ALL_PACKAGES: ${{ needs.changes.outputs.allPackages }}
 
       - name: Client contract（客户端契约）
         run: pnpm contract
