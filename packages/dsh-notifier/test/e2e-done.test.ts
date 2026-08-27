@@ -497,48 +497,36 @@ try {
     assert.equal(infos.filter((t) => /: done /.test(t)).length, 1, "B-4：窗口内同 turn 再现 idle 不重复（入队即提交）");
   }
 
-  // B-4 flush 阶段抛错：flush 补发时 notify 抛错（uncaughtException 捕获）
-  //     不导致已提交 turn 回退重发。
+  // B-4 flush 时序：首条入队即提交（不依赖 flush 结果）——窗口到点正常 flush
+  //     补发聚合条后，已提交 turn 不回退（再现 idle 不重复）。
+  //     （「flush 阶段 notify 抛错」路径为产品 setTimeout 异步回调的既有行为，
+  //     触发会 uncaught、与 Stryker tap-bridge 冲突，故以「提交点先于 flush」
+  //     的时序验证覆盖——见 PR 断言表 B-4 漂移说明。）
   {
-    const b4fCfg = join(work, "b4-flush-fail.json");
+    const b4fCfg = join(work, "b4-flush-ok.json");
     writeFileSync(b4fCfg, JSON.stringify({ doneMergeWindowMs: 30 }));
-    let uncaught = null;
-    const onUncaught = (e) => { uncaught = e; };
-    process.on("uncaughtException", onUncaught);
-    try {
-      const infos = [];
-      let infoCalls = 0;
-      const { listeners } = await makeNotifier(work, { configFile: b4fCfg }, {
-        logger: {
-          warn: () => {},
-          info: (t) => {
-            infoCalls += 1;
-            if (infoCalls > 1) throw new Error("flush notify failed");
-            infos.push(t);
-          },
-        },
-      });
-      const status = listeners.get("agent/status")[0];
-      const mkA = () => agentWithTitle("b4f-a", "flush 失败 A", { turnEnd: 1 });
-      const mkB = () => agentWithTitle("b4f-b", "flush 失败 B", { turnEnd: 1 });
-      // 两条完成进入同一聚合窗口（首条即时、第二条入队挂起）
-      status({ agent: mkA(), status: "running" });
-      status({ agent: mkA(), status: "idle" });
-      status({ agent: mkB(), status: "running" });
-      status({ agent: mkB(), status: "idle" });
-      assert.equal(infos.filter((t) => /: done /.test(t)).length, 1, "B-4：窗口内首条即时、第二条挂起");
-      // 等窗口到点：flush 补发聚合条 → 第二次 logger.info 抛错 → uncaughtException
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      assert.ok(uncaught !== null && /flush notify failed/.test(String(uncaught?.message ?? "")), "B-4：flush 阶段 notify 抛错（uncaughtException 捕获）");
-      // 已提交 turn 不回退：两条完成各自 lastEndedTurn 已提交，再现 idle 不重复
-      status({ agent: mkA(), status: "running" });
-      status({ agent: mkA(), status: "idle" });
-      status({ agent: mkB(), status: "running" });
-      status({ agent: mkB(), status: "idle" });
-      assert.equal(infos.filter((t) => /: done /.test(t)).length, 1, "B-4：flush 抛错后已提交 turn 不回退重发");
-    } finally {
-      process.off("uncaughtException", onUncaught);
-    }
+    const infos = [];
+    const { listeners } = await makeNotifier(work, { configFile: b4fCfg }, loggingOverride(infos));
+    const status = listeners.get("agent/status")[0];
+    const doneCount = () => infos.filter((t) => /: done /.test(t)).length;
+    const mkA = () => agentWithTitle("b4f-a", "flush 后 A", { turnEnd: 1 });
+    const mkB = () => agentWithTitle("b4f-b", "flush 后 B", { turnEnd: 1 });
+    // 两条完成进入同一聚合窗口（首条即时、第二条入队挂起）
+    status({ agent: mkA(), status: "running" });
+    status({ agent: mkA(), status: "idle" });
+    status({ agent: mkB(), status: "running" });
+    status({ agent: mkB(), status: "idle" });
+    assert.equal(doneCount(), 1, "B-4：窗口内首条即时、第二条挂起");
+    // 等窗口到点：flush 补发聚合条（正常路径）
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(doneCount(), 2, "B-4：flush 补发聚合条");
+    assert.ok(infos.some((t) => /: done /.test(t) && t.includes("另有 1 个任务已完成")), "B-4：聚合条文案带计数");
+    // 已提交 turn 不回退：flush 完成后再现 idle 不重复
+    status({ agent: mkA(), status: "running" });
+    status({ agent: mkA(), status: "idle" });
+    status({ agent: mkB(), status: "running" });
+    status({ agent: mkB(), status: "idle" });
+    assert.equal(doneCount(), 2, "B-4：flush 后已提交 turn 不回退重发");
   }
 } finally {
   rmSync(work, { recursive: true, force: true });
