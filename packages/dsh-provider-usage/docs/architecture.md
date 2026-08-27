@@ -87,7 +87,7 @@ flowchart TD
 | 文件 | 写入方 | 内容 |
 | --- | --- | --- |
 | `user-adapters.json` | 设置页 add | 用户适配器清单 `{version:1, adapters:[{id,label,providers,file}]}`，tmp+rename 原子写；POSIX mode 0600（Windows 依赖用户 ACL） |
-| `adapter-state.json` | select / add | provider → 启用适配器 name 映射（`null` 表示显式清空）；串行链经独占临时文件（POSIX 0600；Windows 依赖用户 ACL）、fsync、原子 rename（支持目录 fsync 的平台再同步目录）写入；坏 JSON 或非法顶层形态以 no-clobber 方式隔离为 `.bak-<ts>[-n]` 留证并告警 |
+| `adapter-state.json` | select / add | provider → 启用适配器 name 映射（`null` 表示显式清空）；串行链经独占临时文件（POSIX 0600；Windows 依赖用户 ACL）、文件 fsync、原子 rename（支持目录 fsync 的平台再同步目录）写入。rename 前失败按写入失败处理；rename 后目录 fsync 失败只报「已提交但耐久性未完全确认」。坏 JSON 或非法顶层形态以 no-clobber 方式隔离为 `.bak-<ts>[-n]`，仅留证、不自动恢复，最多轮转保留 5 份；隔离成功后按默认关系继续并允许后续状态重写，只有旧状态读取/隔离失败路径 fail-closed |
 
 关于末步的 `installSettingsNamespace`：它把插件 Config schema 以**只读镜像**形式暴露到设置面板 UI（`setSource`/`onChange` 均为空实现，纯展示；rc.7 的 keyed 渲染约束下不提供运行时写回）——真正的运行时管理由设置页 tab 经 `adapters.json / select / inspect / add` 路由承载，apiKey 不进 schema 故不回显。
 
@@ -248,7 +248,7 @@ sequenceDiagram
         SP->>AR: {file}
         AR->>V: 同上校验 + import
         AR->>RG: hasName 重名→409 / register(adapter, "user-file", file)
-        AR->>D: persistUserAdapter 幂等追加 user-adapters.json<br/>(tmp 写 + rename 原子替换, POSIX mode 0600, 串行链)<br/>+ scheduleWriteAdapterState → adapter-state.json<br/>(独占 tmp〔POSIX 0600〕+ fsync + rename；失败进入日志与 health 诊断)
+        AR->>D: persistUserAdapter 幂等追加 user-adapters.json<br/>(tmp 写 + rename 原子替换, POSIX mode 0600, 串行链)<br/>+ scheduleWriteAdapterState → adapter-state.json<br/>(独占 tmp〔POSIX 0600〕+ 文件 fsync + rename；rename 前失败进入写失败诊断，rename 后目录 fsync 失败进入独立耐久性诊断)
         AR-->>SP: 200 {ok:true, enabled 映射}
         Note over RG,D: 新登记的适配器默认成为该 provider 启用者；<br/>cache.clear() 使下一轮轮询立即用新适配器取数
         SP-->>U: 列表刷新，胶囊下个轮询周期即出新数据

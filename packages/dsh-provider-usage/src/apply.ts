@@ -182,7 +182,11 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
         const merged: Record<string, string | null> = { ...saved.state };
         for (const [provider, name] of Object.entries(registry.snapshot().enabled)) merged[provider] = name;
         if (override !== undefined) Object.assign(merged, override);
-        await writeAdapterState(historyRoot, merged);
+        await writeAdapterState(
+          historyRoot,
+          merged,
+          (message) => recordAdapterStateDiagnostic(sanitizeDiagnostic(message)),
+        );
       })
       .catch((error: unknown) => {
         const detail = sanitizeDiagnostic(errorMessage(error));

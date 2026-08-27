@@ -344,7 +344,8 @@ export function formatPanel() { return "<p>p</p>"; }
 }
 // ================================================================ #150 二阶段：apply 内部数据面与路由分支
 
-import { existsSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import fs, { existsSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 
 /** 构造标准 fake ctx：收集路由与 disposer。 */
 function makeCtx(over: {
@@ -509,6 +510,89 @@ function makeCtx(over: {
 
   for (const dispose of [...disposers].reverse()) { try { dispose(); } catch {} }
 }
+
+
+// ---------------------------------------------------------------- #301：rename 已提交后的目录 fsync 失败仅报耐久性告警
+
+if (process.platform !== "win32") {
+  const dir = mkdtempSync(join(tmpdir(), "dou-state-301-post-rename-"));
+  const historyDir = join(dir, "history");
+  const stateFile = adapterStateFile(historyDir);
+  const { ctx, routes, disposers } = makeCtx();
+  await apply(ctx, {
+    autoReload: false,
+    apiKey: "sk-test",
+    apiEndpoint: "http://127.0.0.1:9",
+    historyDir,
+  });
+
+  const health = routes.find((route) => route.path === ROUTES.health) as {
+    handler: (req: unknown, res: unknown) => void;
+  };
+  const select = routes.find((route) => route.path === ROUTES.select) as {
+    handler: (req: unknown, res: unknown) => Promise<void>;
+  };
+  const healthErrors = (): Array<{ key: string; message: string }> => {
+    const response = makeRes();
+    health.handler(fakeReq(), response);
+    return (JSON.parse(response._body()) as { errors?: Array<{ key: string; message: string }> }).errors ?? [];
+  };
+
+  const originalOpen = fs.promises.open;
+  let directorySyncAttempts = 0;
+  fs.promises.open = async (path, flags, ...rest) => {
+    if (String(path) === historyDir && flags === "r") {
+      directorySyncAttempts += 1;
+      const error = new Error("simulated parent directory fsync failure") as NodeJS.ErrnoException;
+      error.code = "EIO";
+      throw error;
+    }
+    return originalOpen(path, flags, ...rest);
+  };
+  syncBuiltinESMExports();
+
+  const warnings: string[] = [];
+  const writeErrors: string[] = [];
+  const originalWarn = console.warn;
+  const originalError = console.error;
+  console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(" ")); };
+  console.error = (...args: unknown[]) => { writeErrors.push(args.map(String).join(" ")); };
+  let response = makeRes();
+  let surfaced = false;
+  let committed = false;
+  try {
+    await select.handler(fakeReq({
+      method: "POST",
+      body: JSON.stringify({ provider: OPENCODE_GO_PROVIDER, adapterName: null }),
+    }), response);
+    assert.equal(response._code(), 200, "内存中的显式停用仍成功响应");
+    surfaced = await pollUntil(() => healthErrors().some((entry) =>
+      entry.key === "adapter-state" && entry.message.includes("耐久性未完全确认")));
+    committed = await pollUntil(() => {
+      try {
+        return JSON.parse(readFileSync(stateFile, "utf8"))[OPENCODE_GO_PROVIDER] === null;
+      } catch { return false; }
+    });
+  } finally {
+    console.warn = originalWarn;
+    console.error = originalError;
+    fs.promises.open = originalOpen;
+    syncBuiltinESMExports();
+  }
+
+  assert.equal(directorySyncAttempts, 1, "故障注入精确命中 rename 后的父目录 fsync");
+  assert.equal(committed, true, "目录 fsync 失败时原子 rename 的新状态仍已提交");
+  assert.equal(surfaced, true, "post-commit 失败进入 health 的独立耐久性诊断");
+  assert.equal(warnings.filter((line) => line.includes("耐久性未完全确认")).length, 1,
+    "post-commit 失败恰好输出一次 console.warn");
+  assert.deepEqual(writeErrors.filter((line) => line.includes("启用选择落盘失败")), [],
+    "post-commit 失败不误报 console.error 写入失败");
+  assert.equal(healthErrors().some((entry) => entry.message.includes("启用选择落盘失败")), false,
+    "post-commit 失败不污染 health 为写入失败");
+
+  for (const dispose of [...disposers].reverse()) { try { dispose(); } catch {} }
+}
+
 
 /** 合法用户适配器 mjs 文本。 */
 function adapterMjs(name: string, body = "{ v: 1 }"): string {

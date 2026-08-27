@@ -5,12 +5,15 @@
  * 保持不变（外部消费者仍从 lib/index.js 导入）。
  */
 
-import { copyFile, link, mkdir, open, readFile, rename, unlink } from "node:fs/promises";
+import { copyFile, link, mkdir, open, readFile, readdir, rename, unlink } from "node:fs/promises";
 import { constants, existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
-import { basename, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { expandHomePath, pluginHome, resolvePath } from "./path-resolve.ts";
+
+/** 损坏启用状态的取证备份上限；新隔离的现场始终保留，其余按文件名时间戳轮转。 */
+export const ADAPTER_STATE_BACKUP_LIMIT = 5;
 
 /** 用户适配器登记条目（add 路由写入、启动时合并加载）。 */
 export interface UserAdapterRecord {
@@ -136,6 +139,55 @@ async function moveToBackupNoClobber(file: string, backupBase: string): Promise<
   }
 }
 
+interface AdapterStateBackupEntry {
+  file: string;
+  timestamp: number;
+  suffix: number;
+}
+
+async function rotateAdapterStateBackups(
+  file: string,
+  protectedBackup: string,
+  diagnostic: (message: string) => void,
+): Promise<void> {
+  const directory = dirname(file);
+  const prefix = `${basename(file)}.bak-`;
+  let names: string[];
+  try {
+    names = await readdir(directory);
+  } catch (error: unknown) {
+    diagnostic(`adapter-state.json 取证备份轮转扫描失败（${thrownDetail(error)}）；现有备份保持不变`);
+    return;
+  }
+
+  const backups: AdapterStateBackupEntry[] = [];
+  for (const name of names) {
+    if (!name.startsWith(prefix)) continue;
+    const match = /^(\d+)(?:-(\d+))?$/.exec(name.slice(prefix.length));
+    if (match === null) continue;
+    const timestamp = Number(match[1]);
+    const suffix = Number(match[2] ?? 0);
+    if (!Number.isSafeInteger(timestamp) || !Number.isSafeInteger(suffix)) continue;
+    backups.push({ file: join(directory, name), timestamp, suffix });
+  }
+
+  const protectedPath = resolve(protectedBackup);
+  const removable = backups
+    .filter((entry) => resolve(entry.file) !== protectedPath)
+    .sort((left, right) =>
+      left.timestamp - right.timestamp
+      || left.suffix - right.suffix);
+  const removeCount = Math.max(0, removable.length - (ADAPTER_STATE_BACKUP_LIMIT - 1));
+  for (const entry of removable.slice(0, removeCount)) {
+    try {
+      await unlink(entry.file);
+    } catch (error: unknown) {
+      if (errorCode(error) === "ENOENT") continue;
+      diagnostic(`adapter-state.json 旧取证备份 ${basename(entry.file)} 轮转失败（${thrownDetail(error)}）；现有备份保持不变`);
+    }
+  }
+}
+
 async function quarantineAdapterState(
   file: string,
   reason: string,
@@ -148,7 +200,10 @@ async function quarantineAdapterState(
   const backupBase = `${file}.bak-${now()}`;
   try {
     const backupFile = await moveToBackup(file, backupBase);
-    diagnostic(`adapter-state.json ${reason}，已隔离留证为 ${basename(backupFile)}；本次按默认启用关系继续`);
+    await rotateAdapterStateBackups(file, backupFile, diagnostic);
+    diagnostic(
+      `adapter-state.json ${reason}，已隔离留证为 ${basename(backupFile)}；备份仅供取证、不会自动恢复，最多保留 ${ADAPTER_STATE_BACKUP_LIMIT} 份；本次按默认启用关系继续`,
+    );
     return { state: {}, status, detail, backupFile };
   } catch (quarantineError: unknown) {
     const quarantineDetail = `${reason}且隔离失败：${thrownDetail(quarantineError)}`;
@@ -161,7 +216,8 @@ async function quarantineAdapterState(
  * 读取持久化的启用映射并返回内部诊断状态。
  *
  * JSON 语法损坏或顶层形态无效时，以 no-clobber hard-link（不支持时 exclusive copy）
- * + unlink 隔离为 `.bak-<ts>[-n]` 留证，再按空状态继续；
+ * + unlink 隔离为 `.bak-<ts>[-n]` 留证，再按空状态继续。备份不会自动回灌，
+ * 仅保留最近 ADAPTER_STATE_BACKUP_LIMIT 份（始终保护本次新备份）；
  * 普通 I/O 失败则标为 unreadable，供写路径 fail-closed，避免把无法读取的旧状态覆盖掉。
  * 本函数仅供包内 apply 与源码级测试使用；公开兼容面仍为 readAdapterState(root)。
  */
@@ -260,11 +316,13 @@ async function syncParentDirectory(root: string): Promise<void> {
 /**
  * 原子、耐久写入启用映射：独占临时文件（POSIX 0600；Windows 依赖用户 ACL）
  * → fsync → rename → 目录 fsync。
- * 任一步失败都会清理临时文件并向调用方抛错；旧目标文件在 rename 前保持不变。
+ * rename 前失败会清理临时文件并向调用方抛错，旧目标文件保持不变；rename 成功后
+ * 目录 fsync 失败只表示崩溃耐久性未完全确认，已提交的新状态保持生效并经独立诊断上报。
  */
 export async function writeAdapterState(
   root: string,
   state: Record<string, string | null>,
+  durabilityDiagnostic: (message: string) => void,
 ): Promise<void> {
   const file = adapterStateFile(root);
   const tmp = `${file}.${process.pid}.${randomUUID()}.tmp`;
@@ -282,7 +340,18 @@ export async function writeAdapterState(
     }
     await rename(tmp, file);
     temporaryExists = false;
-    await syncParentDirectory(root);
+    try {
+      await syncParentDirectory(root);
+    } catch (error: unknown) {
+      const detail = thrownDetail(error);
+      try {
+        durabilityDiagnostic(
+          `adapter-state.json 已原子替换，但父目录 fsync 失败（${detail}）；新状态已提交，崩溃后的耐久性未完全确认`,
+        );
+      } catch {
+        // 诊断通道自身失败也不能把已经完成的 rename 反向误报为写入失败。
+      }
+    }
   } catch (error: unknown) {
     if (temporaryExists) await unlink(tmp).catch(() => {});
     throw error;
