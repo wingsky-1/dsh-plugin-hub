@@ -92,6 +92,9 @@ export function apply(ctx: Context): void {
   ctx.skills.registerProvider((control) => createProvider(control));
 }
 
+/** 插件名（verify-npm-layout 要求宿主导出 name）。 */
+export const name = "dsh-verify-isolated";
+
 /** cordis 注入声明：本插件需要 ctx.skills（skill 注册表）。 */
 export const inject = ["skills"];
 
