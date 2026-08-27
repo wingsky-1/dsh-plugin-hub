@@ -1,6 +1,12 @@
-# dsh-verify-isolated bundle patch：注册隔离验证 skill provider（宿主半）。
-# 插件 apply 时经 ctx.skills.registerProvider 注册 dsh-verify-isolated skill，
-# 使 profile 内会话可用该 skill（临时 DSH_HOME + 独立 profile 双重隔离验证）。
+# dsh-verify-isolated bundle patch：Opt-in filesystem Skill provider（参照 archify-dsh 模式）。
+# 复用官方 @deepseek-ai/dsh-skill-filesystem，用 bundledSkillDir 指向本包内 skills/
+# 目录——官方 provider 发现并注册 dsh-verify-isolated skill，无需自写注册代码。
+# bundledSkillDir 从安装后的 npm 身份解析（Loader baseUrl 锚定 profile），
+# 不以路径拼接猜测安装位置。
 - insert:
-    - id: skill-dsh-verify-isolated
-      name: '@wingsky-1/dsh-verify-isolated'
+    - id: dsh-verify-isolated-skill-filesystem
+      name: '@deepseek-ai/dsh-skill-filesystem'
+      config:
+        providerName: dsh-verify-isolated
+        includeDefaultRoots: false
+        bundledSkillDir: !!js process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@wingsky-1/dsh-verify-isolated/package.json')), 'skills')

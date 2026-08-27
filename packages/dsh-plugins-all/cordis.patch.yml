@@ -12,7 +12,7 @@
       name: '@wingsky-1/dsh-notifier'
     - id: ui-dsh-provider-usage
       name: '@wingsky-1/dsh-provider-usage'
-    - id: skill-dsh-verify-isolated
-      name: '@wingsky-1/dsh-verify-isolated'
+    - id: dsh-verify-isolated-skill-filesystem
+      name: '@deepseek-ai/dsh-skill-filesystem'
     - id: ui-dsh-web-file-preview
       name: '@wingsky-1/dsh-web-file-preview'

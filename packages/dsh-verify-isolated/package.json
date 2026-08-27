@@ -19,36 +19,16 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
-    },
-    "inject": [
-      "skills"
-    ]
+    }
   },
   "files": [
     "lib",
     "shared/**/*.d.ts",
-    "SKILL.md",
-    "scripts",
+    "skills",
     "cordis.patch.yml",
     "README.md",
     "LICENSE"
   ],
-  "peerDependencies": {
-    "@deepseek-ai/cordis": "*",
-    "@deepseek-ai/dsh-skill": "*"
-  },
-  "peerDependenciesMeta": {
-    "@deepseek-ai/cordis": {
-      "optional": true
-    },
-    "@deepseek-ai/dsh-skill": {
-      "optional": true
-    }
-  },
-  "devDependencies": {
-    "@deepseek-ai/cordis": "catalog:",
-    "@deepseek-ai/dsh-skill": "catalog:"
-  },
   "engines": {
     "node": ">=20.0.0"
   },
