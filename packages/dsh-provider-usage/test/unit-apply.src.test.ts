@@ -23,6 +23,7 @@ import {
   ADAPTER_CONTRACT_VERSION,
   fetchWithTimeout,
   userAdaptersFile,
+  adapterStateFile,
 } from "../src/index.ts";
 
 // ---------------------------------------------------------------- 工具：fakeReqs
@@ -343,7 +344,7 @@ export function formatPanel() { return "<p>p</p>"; }
 }
 // ================================================================ #150 二阶段：apply 内部数据面与路由分支
 
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 
 /** 构造标准 fake ctx：收集路由与 disposer。 */
 function makeCtx(over: {
@@ -364,6 +365,149 @@ function makeCtx(over: {
     },
   };
   return { ctx, routes, disposers };
+}
+
+// ---------------------------------------------------------------- #301：apply 内部恢复隔离坏状态且诊断单次可见
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dou-state-301-quarantine-apply-"));
+  const historyDir = join(dir, "history");
+  mkdirSync(historyDir, { recursive: true });
+  const stateFile = adapterStateFile(historyDir);
+  const cases = [
+    { raw: "{broken", marker: "JSON 损坏" },
+    { raw: '["not","a","mapping"]', marker: "顶层结构无效" },
+  ];
+  const backups: string[] = [];
+  for (const entry of cases) {
+    writeFileSync(stateFile, entry.raw, "utf8");
+    const { ctx, routes, disposers } = makeCtx();
+    const warnings: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(" ")); };
+    try {
+      await apply(ctx, {
+        autoReload: false,
+        apiKey: "sk-test",
+        apiEndpoint: "http://127.0.0.1:9",
+        historyDir,
+      });
+    } finally {
+      console.warn = originalWarn;
+    }
+
+    const health = routes.find((route) => route.path === ROUTES.health) as { handler: (req: unknown, res: unknown) => void };
+    const response = makeRes();
+    health.handler(fakeReq(), response);
+    const errors = (JSON.parse(response._body()) as { errors?: Array<{ key: string; message: string }> }).errors ?? [];
+    assert.equal(warnings.filter((line) => line.includes(entry.marker)).length, 1,
+      `${entry.marker} 恰好输出一次 console.warn`);
+    assert.ok(errors.some((error) => error.key === "adapter-state" && error.message.includes(entry.marker)),
+      `${entry.marker} 同时进入 health 诊断`);
+    assert.equal(existsSync(stateFile), false, `${entry.marker} 原文件已移出恢复路径`);
+    const backup = readdirSync(historyDir)
+      .filter((name) => name.startsWith("adapter-state.json.bak-"))
+      .find((name) => !backups.includes(name) && readFileSync(join(historyDir, name), "utf8") === entry.raw);
+    assert.ok(backup !== undefined, `${entry.marker} 原文完整保留在新取证备份`);
+    backups.push(backup ?? "missing");
+    for (const dispose of [...disposers].reverse()) { try { dispose(); } catch {} }
+  }
+  for (const [index, backup] of backups.entries()) {
+    assert.equal(readFileSync(join(historyDir, backup), "utf8"), cases[index]?.raw, "全部取证备份最终均保留");
+  }
+}
+
+// ---------------------------------------------------------------- #301：恢复缺失候选可见 + 写入失败可见且串行链可恢复
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dou-state-301-apply-"));
+  const historyDir = join(dir, "history");
+  mkdirSync(historyDir, { recursive: true });
+  const stateFile = adapterStateFile(historyDir);
+  writeFileSync(stateFile, JSON.stringify({ "ghost-provider": "missing-adapter" }), "utf8");
+
+  const { ctx, routes, disposers } = makeCtx();
+  const restoreWarnings: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => { restoreWarnings.push(args.map(String).join(" ")); };
+  try {
+    await apply(ctx, {
+      autoReload: false,
+      apiKey: "sk-test",
+      apiEndpoint: "http://127.0.0.1:9",
+      historyDir,
+    });
+  } finally {
+    console.warn = originalWarn;
+  }
+  const health = routes.find((route) => route.path === ROUTES.health) as { handler: (req: unknown, res: unknown) => void };
+  const select = routes.find((route) => route.path === ROUTES.select) as { handler: (req: unknown, res: unknown) => Promise<void> };
+  const healthErrors = (): Array<{ key: string; message: string }> => {
+    const response = makeRes();
+    health.handler(fakeReq(), response);
+    return (JSON.parse(response._body()) as { errors?: Array<{ key: string; message: string }> }).errors ?? [];
+  };
+
+  assert.ok(healthErrors().some((entry) =>
+    entry.key === "adapter-state" && entry.message.includes("missing-adapter") && entry.message.includes("不在当前候选")),
+  "启动恢复 select(false) 进入 health 诊断，不再静默回退默认启用者");
+  assert.equal(restoreWarnings.filter((line) =>
+    line.includes("missing-adapter") && line.includes("不在当前候选")).length, 1,
+  "启动恢复 select(false) 恰好输出一次 console.warn，避免重复诊断");
+
+  // 成功路径：发布物实际调度链写出合法 JSON、无 tmp 残留，POSIX 权限为 0600。
+  let response = makeRes();
+  await select.handler(fakeReq({
+    method: "POST",
+    body: JSON.stringify({ provider: OPENCODE_GO_PROVIDER, adapterName: OPENCODE_GO_ADAPTER_ID }),
+  }), response);
+  const persisted = await pollUntil(() => {
+    try {
+      return JSON.parse(readFileSync(stateFile, "utf8"))[OPENCODE_GO_PROVIDER] === OPENCODE_GO_ADAPTER_ID;
+    } catch { return false; }
+  });
+  assert.equal(persisted, true, "select 经串行链原子写入新的启用选择");
+  assert.deepEqual(readdirSync(historyDir).filter((name) => name.endsWith(".tmp")), [], "成功写入无 tmp 残留");
+  if (process.platform !== "win32") {
+    assert.equal(statSync(stateFile).mode & 0o777, 0o600, "POSIX 状态文件权限为 0600");
+  }
+
+  rmSync(stateFile, { force: true });
+  mkdirSync(stateFile); // 旧状态读取稳定报 EISDIR，构造 fail-closed 的持久化错误
+  response = makeRes();
+  const writeErrors: string[] = [];
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => { writeErrors.push(args.map(String).join(" ")); };
+  let surfaced = false;
+  try {
+    await select.handler(fakeReq({
+      method: "POST",
+      body: JSON.stringify({ provider: OPENCODE_GO_PROVIDER, adapterName: OPENCODE_GO_ADAPTER_ID }),
+    }), response);
+    assert.equal(response._code(), 200, "运行期 select 内存切换仍成功响应");
+    surfaced = await pollUntil(() => healthErrors().some((entry) =>
+      entry.key === "adapter-state" && entry.message.includes("启用选择落盘失败")));
+  } finally {
+    console.error = originalError;
+  }
+  assert.equal(surfaced, true, "异步写盘失败进入 health 诊断（同时由宿主 console.error 输出）");
+  assert.equal(writeErrors.filter((line) => line.includes("启用选择落盘失败")).length, 1,
+    "每次失败写入恰好输出一次 console.error");
+
+  rmSync(stateFile, { recursive: true, force: true });
+  response = makeRes();
+  await select.handler(fakeReq({
+    method: "POST",
+    body: JSON.stringify({ provider: OPENCODE_GO_PROVIDER, adapterName: OPENCODE_GO_ADAPTER_ID }),
+  }), response);
+  const recovered = await pollUntil(() => {
+    try {
+      return JSON.parse(readFileSync(stateFile, "utf8"))[OPENCODE_GO_PROVIDER] === OPENCODE_GO_ADAPTER_ID;
+    } catch { return false; }
+  });
+  assert.equal(recovered, true, "一次持久化失败不会毒化串行链，修复文件系统后后续选择可成功落盘");
+
+  for (const dispose of [...disposers].reverse()) { try { dispose(); } catch {} }
 }
 
 /** 合法用户适配器 mjs 文本。 */

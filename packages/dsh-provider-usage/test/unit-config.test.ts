@@ -12,7 +12,7 @@
  * parseUserAdapters 字段级异型值分支（length>0 非目标类型）、readAdapterState
  * 全分支、resolveAddAdapterFile 路径校验矩阵、normalizeUiConfig/面板锚点纯函数矩阵。
  */
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 console.error("EVAL-ORDER-TAG: CONFIG");
 import { join } from "node:path";
 import { tmpdir, homedir } from "node:os";
@@ -369,8 +369,12 @@ assert.deepEqual(parseUserAdapters('"str"'), [], "JSON 字符串返回空数组"
   const root = mkdtempSync(join(tmpdir(), "dou-state-"));
   assert.deepEqual(await readAdapterState(root), {}, "状态文件缺失返回空对象");
 
-  writeFileSync(join(root, "adapter-state.json"), "not json", "utf8");
+  const publicStateFile = join(root, "adapter-state.json");
+  writeFileSync(publicStateFile, "not json", "utf8");
   assert.deepEqual(await readAdapterState(root), {}, "坏 JSON 返回空对象");
+  assert.equal(readFileSync(publicStateFile, "utf8"), "not json", "发布物公开读取 helper 保持坏文件原样不动");
+  assert.deepEqual(readdirSync(root).filter((name) => name.startsWith("adapter-state.json.bak-")), [],
+    "发布物公开读取 helper 不产生隔离备份（保持既有无副作用语义）");
 
   // 合法映射 + null 显式清空 + 各非法形态逐个区分
   writeFileSync(join(root, "adapter-state.json"), JSON.stringify({
