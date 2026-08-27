@@ -1,0 +1,63 @@
+{
+  "name": "@wingsky-1/dsh-verify-isolated",
+  "version": "0.1.0",
+  "description": "DSH 插件开发的隔离环境浏览器验证 skill：临时 DSH_HOME + 独立 verify_<随机> profile 双重隔离，一键拉起隔离 dsh web（自动构建/挂载/启动/清理），不污染正在使用的 web profile",
+  "type": "module",
+  "main": "lib/index.js",
+  "scripts": {
+    "build": "node ../../scripts/build/clean-lib.ts && tsc -p tsconfig.json && node ../../scripts/build/bundle-host.ts .",
+    "test": "node test/smoke.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "inject": [
+      "skills"
+    ]
+  },
+  "files": [
+    "lib",
+    "shared/**/*.d.ts",
+    "SKILL.md",
+    "scripts",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-skill": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-skill": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "catalog:",
+    "@deepseek-ai/dsh-skill": "catalog:"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "MIT",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "skill",
+    "isolated",
+    "verification"
+  ]
+}

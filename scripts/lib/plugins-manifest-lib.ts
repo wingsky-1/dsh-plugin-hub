@@ -106,9 +106,10 @@ export function loadManifest(root) {
  * @param {{active: string[], retired: Array<{name: string}>}} manifest
  * @param {Record<string, string>} [aggDeps]     聚合包 package.json dependencies（缺省跳过 deps 段）
  * @param {string[]} [aggPatchIds]               聚合 cordis.patch.yml 的 insert id 集（缺省跳过 patch 段）
+ * @param {string[]} [expectedPatchIds]          期望的聚合 insert id 集；缺省回退「ui-<dir>」约定
  * @returns {string[]} 问题列表（空 = 通过）
  */
-export function checkAggregateConsistency({ dirNames, manifest, aggDeps, aggPatchIds }) {
+export function checkAggregateConsistency({ dirNames, manifest, aggDeps, aggPatchIds, expectedPatchIds }) {
   const problems = []
   const actual = new Set(dirNames)
   // 目录集语义：active（进聚合）∪ standalone（独立发包）都必须真实存在；
@@ -149,12 +150,15 @@ export function checkAggregateConsistency({ dirNames, manifest, aggDeps, aggPatc
     }
   }
 
-  // #3 聚合 patch insert id 集 == {ui-<dir>}（双向）
+  // #3 聚合 patch insert id 集 == 期望集（双向）。期望集显式传入时以其为准
+  // （pack-check 读各 active 子包 patch 的实际 insert id——客户端插件 ui-<dir>、
+  // 纯宿主插件如 dsh-verify-isolated 用 skill- 前缀）；缺省回退历史「ui-<dir>」
+  // 约定（防「门禁假设所有插件都有客户端」的过强断言）。
   if (aggPatchIds !== undefined) {
     // 重复行检测（Set 去重会吞掉「同 id 多行」漂移，单独比对长度闭合该缺口）
     const dupIds = aggPatchIds.filter((id, i) => aggPatchIds.indexOf(id) !== i)
     if (dupIds.length > 0) problems.push(`聚合 patch 存在重复 id 行: ${[...new Set(dupIds)].join(', ')}`)
-    const expectedIds = new Set(manifest.active.map((d) => `ui-${d}`))
+    const expectedIds = new Set(expectedPatchIds ?? manifest.active.map((d) => `ui-${d}`))
     const actualIds = new Set(aggPatchIds)
     for (const id of expectedIds) {
       if (!actualIds.has(id)) problems.push(`聚合 patch 缺 ${id}（active 在册但无聚合行）`)

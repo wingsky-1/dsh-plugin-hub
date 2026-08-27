@@ -5,6 +5,7 @@
     "dsh-mcp-manager",
     "dsh-notifier",
     "dsh-provider-usage",
+    "dsh-verify-isolated",
     "dsh-web-file-preview"
   ],
   "standalone": [

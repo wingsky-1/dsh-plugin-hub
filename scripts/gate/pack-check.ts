@@ -169,7 +169,16 @@ for (const p of plugins) {
     if (patch) {
       const aggRows = [...patch.matchAll(/^\s*- id:\s*(\S+)/gm)].map(m => m[1])
       const deps = JSON.parse(readFileSync(join(pkgRoot, 'package.json'), 'utf8')).dependencies ?? {}
-      problems.push(...checkAggregateConsistency({ dirNames: plugins, manifest, aggDeps: deps, aggPatchIds: aggRows }))
+      // 期望聚合 id 集 = 各 active 子包 cordis.patch.yml 的实际 insert id
+      // （客户端插件 ui-<dir>，纯宿主插件如 dsh-verify-isolated 用 skill- 前缀；
+      //   与 aggregate.ts「子包行原样拼接」语义一致，不硬编码 ui-）
+      const expectedPatchIds = []
+      for (const dir of manifest.active) {
+        const childPatch = join(ROOT, 'packages', dir, 'cordis.patch.yml')
+        const childText = existsSync(childPatch) ? readFileSync(childPatch, 'utf8') : ''
+        expectedPatchIds.push(...[...childText.matchAll(/^\s*-\s+id:\s*(\S+)/gm)].map(m => m[1]))
+      }
+      problems.push(...checkAggregateConsistency({ dirNames: plugins, manifest, aggDeps: deps, aggPatchIds: aggRows, expectedPatchIds }))
       if (/^\s*config:/m.test(patch)) problems.push('聚合行带 config（应走 schema 默认值）')
     }
     if (problems.length > 0) failed++

@@ -201,8 +201,15 @@ test('#9 正向全绿：真实仓库 manifest + 真实目录 + 真实聚合 deps
   const aggPkg = JSON.parse(readFileSync(join(root, 'packages', 'dsh-plugins-all', 'package.json'), 'utf8'))
   const patch = readFileSync(join(root, 'packages', 'dsh-plugins-all', 'cordis.patch.yml'), 'utf8')
   const aggRows = [...patch.matchAll(/^\s*- id:\s*(\S+)/gm)].map((m) => m[1])
+  // 期望 id 集 = 各 active 子包 patch 实际 insert id（不硬编码 ui-，纯宿主插件如
+  // dsh-verify-isolated 用 skill- 前缀；与 aggregate「原样拼接」语义一致）
+  const expectedPatchIds = []
+  for (const dir of manifest.active) {
+    const child = readFileSync(join(root, 'packages', dir, 'cordis.patch.yml'), 'utf8')
+    expectedPatchIds.push(...[...child.matchAll(/^\s*-\s+id:\s*(\S+)/gm)].map((m) => m[1]))
+  }
   assert.deepEqual(
-    checkAggregateConsistency({ dirNames: dirs, manifest, aggDeps: aggPkg.dependencies ?? {}, aggPatchIds: aggRows }),
+    checkAggregateConsistency({ dirNames: dirs, manifest, aggDeps: aggPkg.dependencies ?? {}, aggPatchIds: aggRows, expectedPatchIds }),
     [],
   )
 })
