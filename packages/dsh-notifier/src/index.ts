@@ -235,7 +235,7 @@ export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Pro
           askRemindTimers.delete(askKey);
         }
       }
-    })
+    }, { global: true })
   );
 
   /**
@@ -295,7 +295,7 @@ export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Pro
   disposers.push(
     ctx.on("internal/service", (name) => {
       if (name === "userQuestions") hookUserQuestions();
-    })
+    }, { global: true })
   );
 
   /**
@@ -376,7 +376,7 @@ export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Pro
       } catch (error) {
         ctx.logger.warn(`dsh-notifier: session/event 处理失败: ${errorMessage(error)}`);
       }
-    })
+    }, { global: true })
   );
 
   /**
@@ -478,7 +478,7 @@ export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Pro
       } catch (error) {
         ctx.logger.warn(`dsh-notifier: agent/status 处理失败: ${errorMessage(error)}`);
       }
-    })
+    }, { global: true })
   );
 
   /** 会话销毁时清理其状态机条目（含错误合并窗口、推送源记忆与 turn 去重，防 Map/Set 无界增长）。 */
@@ -492,7 +492,7 @@ export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Pro
           if (key.startsWith(agent.id + ":")) turnNotified.delete(key);
         }
       }
-    })
+    }, { global: true })
   );
 
   /** 合并错误表：per-agent 滚动窗口，窗口内后续错误不单独通知。 */
@@ -537,7 +537,7 @@ export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Pro
       } catch (error) {
         ctx.logger.warn(`dsh-notifier: agent/error 处理失败: ${errorMessage(error)}`);
       }
-    })
+    }, { global: true })
   );
 
   /** turn-stopping 已通知的 (agentId, turn) 去重（防同轮被反复 emit 时重复记录刷屏）。 */
@@ -560,7 +560,7 @@ export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Pro
       } catch (error) {
         ctx.logger.warn(`dsh-notifier: turn-stopping 处理失败: ${errorMessage(error)}`);
       }
-    })
+    }, { global: true })
   );
 
   // ------------------------------------------------------------ 路由注册
