@@ -2506,6 +2506,106 @@
           }
         },
         {
+          "id": "13",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: 带 charset 的 text: uncaughtException: 带 charset 的 text",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 65,
+              "line": 137
+            },
+            "start": {
+              "column": 9,
+              "line": 137
+            }
+          }
+        },
+        {
+          "id": "14",
+          "mutatorName": "LogicalOperator",
+          "replacement": "type.startsWith(\"text/\") || type !== \"text/event-stream\"",
+          "statusReason": "uncaughtException: SSE 豁免: uncaughtException: SSE 豁免",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 65,
+              "line": 137
+            },
+            "start": {
+              "column": 9,
+              "line": 137
+            }
+          }
+        },
+        {
+          "id": "18",
+          "mutatorName": "EqualityOperator",
+          "replacement": "type === \"text/event-stream\"",
+          "statusReason": "uncaughtException: 带 charset 的 text: uncaughtException: 带 charset 的 text",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 65,
+              "line": 137
+            },
+            "start": {
+              "column": 37,
+              "line": 137
+            }
+          }
+        },
+        {
+          "id": "0",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: problem+json: uncaughtException: problem+json",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 138
+            },
+            "start": {
+              "column": 63,
+              "line": 133
+            }
+          }
+        },
+        {
           "id": "1",
           "mutatorName": "MethodExpression",
           "replacement": "String(contentType).split(\";\", 1)[0].trim().toUpperCase()",
@@ -2531,9 +2631,9 @@
           }
         },
         {
-          "id": "5",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
+          "id": "6",
+          "mutatorName": "LogicalOperator",
+          "replacement": "(type.startsWith(\"application/json\") || type.endsWith(\"+json\")) && type.startsWith(\"text/\") && type !== \"text/event-stream\"",
           "statusReason": "uncaughtException: problem+json: uncaughtException: problem+json",
           "status": "Killed",
           "static": false,
@@ -2556,7 +2656,7 @@
           }
         },
         {
-          "id": "7",
+          "id": "5",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
           "statusReason": "uncaughtException: problem+json: uncaughtException: problem+json",
@@ -2571,8 +2671,8 @@
           ],
           "location": {
             "end": {
-              "column": 30,
-              "line": 136
+              "column": 66,
+              "line": 137
             },
             "start": {
               "column": 10,
@@ -2606,9 +2706,34 @@
           }
         },
         {
-          "id": "8",
-          "mutatorName": "LogicalOperator",
-          "replacement": "type.startsWith(\"application/json\") && type.endsWith(\"+json\")",
+          "id": "15",
+          "mutatorName": "MethodExpression",
+          "replacement": "type.endsWith(\"text/\")",
+          "statusReason": "uncaughtException: 带 charset 的 text: uncaughtException: 带 charset 的 text",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 33,
+              "line": 137
+            },
+            "start": {
+              "column": 9,
+              "line": 137
+            }
+          }
+        },
+        {
+          "id": "7",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
           "statusReason": "uncaughtException: problem+json: uncaughtException: problem+json",
           "status": "Killed",
           "static": false,
@@ -2631,9 +2756,9 @@
           }
         },
         {
-          "id": "0",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
+          "id": "8",
+          "mutatorName": "LogicalOperator",
+          "replacement": "type.startsWith(\"application/json\") && type.endsWith(\"+json\")",
           "statusReason": "uncaughtException: problem+json: uncaughtException: problem+json",
           "status": "Killed",
           "static": false,
@@ -2646,12 +2771,12 @@
           ],
           "location": {
             "end": {
-              "column": 2,
-              "line": 138
+              "column": 30,
+              "line": 136
             },
             "start": {
-              "column": 63,
-              "line": 133
+              "column": 10,
+              "line": 135
             }
           }
         },
@@ -2681,56 +2806,6 @@
           }
         },
         {
-          "id": "13",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: 带 charset 的 text: uncaughtException: 带 charset 的 text",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 65,
-              "line": 137
-            },
-            "start": {
-              "column": 9,
-              "line": 137
-            }
-          }
-        },
-        {
-          "id": "6",
-          "mutatorName": "LogicalOperator",
-          "replacement": "(type.startsWith(\"application/json\") || type.endsWith(\"+json\")) && type.startsWith(\"text/\") && type !== \"text/event-stream\"",
-          "statusReason": "uncaughtException: problem+json: uncaughtException: problem+json",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 66,
-              "line": 137
-            },
-            "start": {
-              "column": 10,
-              "line": 135
-            }
-          }
-        },
-        {
           "id": "11",
           "mutatorName": "MethodExpression",
           "replacement": "type.startsWith(\"+json\")",
@@ -2752,106 +2827,6 @@
             "start": {
               "column": 8,
               "line": 136
-            }
-          }
-        },
-        {
-          "id": "18",
-          "mutatorName": "EqualityOperator",
-          "replacement": "type === \"text/event-stream\"",
-          "statusReason": "uncaughtException: 带 charset 的 text: uncaughtException: 带 charset 的 text",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 65,
-              "line": 137
-            },
-            "start": {
-              "column": 37,
-              "line": 137
-            }
-          }
-        },
-        {
-          "id": "14",
-          "mutatorName": "LogicalOperator",
-          "replacement": "type.startsWith(\"text/\") || type !== \"text/event-stream\"",
-          "statusReason": "uncaughtException: SSE 豁免: uncaughtException: SSE 豁免",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 65,
-              "line": 137
-            },
-            "start": {
-              "column": 9,
-              "line": 137
-            }
-          }
-        },
-        {
-          "id": "9",
-          "mutatorName": "MethodExpression",
-          "replacement": "type.endsWith(\"application/json\")",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19878: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19878",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 45,
-              "line": 135
-            },
-            "start": {
-              "column": 10,
-              "line": 135
-            }
-          }
-        },
-        {
-          "id": "15",
-          "mutatorName": "MethodExpression",
-          "replacement": "type.endsWith(\"text/\")",
-          "statusReason": "uncaughtException: 带 charset 的 text: uncaughtException: 带 charset 的 text",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 33,
-              "line": 137
-            },
-            "start": {
-              "column": 9,
-              "line": 137
             }
           }
         },
@@ -2906,9 +2881,9 @@
           }
         },
         {
-          "id": "45",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof authority === \"string\"",
+          "id": "40",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
           "statusReason": "uncaughtException: bare IPv4: uncaughtException: bare IPv4",
           "status": "Killed",
           "static": false,
@@ -2921,12 +2896,12 @@
           ],
           "location": {
             "end": {
-              "column": 36,
-              "line": 184
+              "column": 2,
+              "line": 194
             },
             "start": {
-              "column": 7,
-              "line": 184
+              "column": 73,
+              "line": 183
             }
           }
         },
@@ -2956,9 +2931,9 @@
           }
         },
         {
-          "id": "40",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
+          "id": "45",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof authority === \"string\"",
           "statusReason": "uncaughtException: bare IPv4: uncaughtException: bare IPv4",
           "status": "Killed",
           "static": false,
@@ -2971,12 +2946,12 @@
           ],
           "location": {
             "end": {
-              "column": 2,
-              "line": 194
+              "column": 36,
+              "line": 184
             },
             "start": {
-              "column": 73,
-              "line": 183
+              "column": 7,
+              "line": 184
             }
           }
         },
@@ -3006,6 +2981,32 @@
           }
         },
         {
+          "id": "36",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 29,
+              "line": 174
+            },
+            "start": {
+              "column": 13,
+              "line": 174
+            }
+          }
+        },
+        {
           "id": "48",
           "mutatorName": "EqualityOperator",
           "replacement": "authority.length !== 0",
@@ -3027,6 +3028,27 @@
             "start": {
               "column": 40,
               "line": 184
+            }
+          }
+        },
+        {
+          "id": "9",
+          "mutatorName": "MethodExpression",
+          "replacement": "type.endsWith(\"application/json\")",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 1,
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 45,
+              "line": 135
+            },
+            "start": {
+              "column": 10,
+              "line": 135
             }
           }
         },
@@ -3056,56 +3078,6 @@
           }
         },
         {
-          "id": "50",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'startsWith'): uncaughtException: Cannot read properties of undefined (reading 'startsWith')",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 188
-            },
-            "start": {
-              "column": 7,
-              "line": 186
-            }
-          }
-        },
-        {
-          "id": "53",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "true",
-          "statusReason": "uncaughtException: 端口越界 → URL 解析失败 → 拒绝: uncaughtException: 端口越界 → URL 解析失败 → 拒绝",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 17,
-              "line": 189
-            },
-            "start": {
-              "column": 12,
-              "line": 189
-            }
-          }
-        },
-        {
           "id": "52",
           "mutatorName": "BlockStatement",
           "replacement": "{}",
@@ -3131,10 +3103,36 @@
           }
         },
         {
-          "id": "56",
-          "mutatorName": "LogicalOperator",
-          "replacement": "hostname === \"localhost\" && hostname === \"[::1]\"",
-          "statusReason": "uncaughtException: localhost 字面量放行: uncaughtException: localhost 字面量放行",
+          "id": "34",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 175
+            },
+            "start": {
+              "column": 69,
+              "line": 173
+            }
+          }
+        },
+        {
+          "id": "50",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'startsWith'): uncaughtException: Cannot read properties of undefined (reading 'startsWith')",
           "status": "Killed",
           "static": false,
           "testsCompleted": 1,
@@ -3146,12 +3144,38 @@
           ],
           "location": {
             "end": {
-              "column": 55,
-              "line": 191
+              "column": 4,
+              "line": 188
             },
             "start": {
               "column": 7,
-              "line": 191
+              "line": 186
+            }
+          }
+        },
+        {
+          "id": "37",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 29,
+              "line": 174
+            },
+            "start": {
+              "column": 13,
+              "line": 174
             }
           }
         },
@@ -3181,27 +3205,73 @@
           }
         },
         {
-          "id": "21",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "case 1:",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "id": "2",
+          "mutatorName": "MethodExpression",
+          "replacement": "String(contentType).split(\";\", 1)[0]",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 1,
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 59,
+              "line": 134
+            },
+            "start": {
+              "column": 16,
+              "line": 134
+            }
+          }
+        },
+        {
+          "id": "53",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "true",
+          "statusReason": "uncaughtException: 端口越界 → URL 解析失败 → 拒绝: uncaughtException: 端口越界 → URL 解析失败 → 拒绝",
           "status": "Killed",
           "static": false,
           "testsCompleted": 1,
           "killedBy": [
-            "0"
+            "1"
           ],
           "coveredBy": [
-            "0"
+            "1"
           ],
           "location": {
             "end": {
-              "column": 92,
-              "line": 157
+              "column": 17,
+              "line": 189
             },
             "start": {
-              "column": 5,
-              "line": 156
+              "column": 12,
+              "line": 189
+            }
+          }
+        },
+        {
+          "id": "64",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: bare IPv4: uncaughtException: bare IPv4",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 66,
+              "line": 192
+            },
+            "start": {
+              "column": 16,
+              "line": 192
             }
           }
         },
@@ -3209,6 +3279,31 @@
           "id": "55",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
+          "statusReason": "uncaughtException: localhost 字面量放行: uncaughtException: localhost 字面量放行",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 55,
+              "line": 191
+            },
+            "start": {
+              "column": 7,
+              "line": 191
+            }
+          }
+        },
+        {
+          "id": "56",
+          "mutatorName": "LogicalOperator",
+          "replacement": "hostname === \"localhost\" && hostname === \"[::1]\"",
           "statusReason": "uncaughtException: localhost 字面量放行: uncaughtException: localhost 字面量放行",
           "status": "Killed",
           "static": false,
@@ -3281,31 +3376,6 @@
           }
         },
         {
-          "id": "61",
-          "mutatorName": "EqualityOperator",
-          "replacement": "hostname !== \"[::1]\"",
-          "statusReason": "uncaughtException: DNS 域名拒绝（重绑定防护核心语义）: uncaughtException: DNS 域名拒绝（重绑定防护核心语义）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 55,
-              "line": 191
-            },
-            "start": {
-              "column": 35,
-              "line": 191
-            }
-          }
-        },
-        {
           "id": "58",
           "mutatorName": "EqualityOperator",
           "replacement": "hostname !== \"localhost\"",
@@ -3331,57 +3401,10 @@
           }
         },
         {
-          "id": "2",
-          "mutatorName": "MethodExpression",
-          "replacement": "String(contentType).split(\";\", 1)[0]",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 59,
-              "line": 134
-            },
-            "start": {
-              "column": 16,
-              "line": 134
-            }
-          }
-        },
-        {
-          "id": "38",
+          "id": "61",
           "mutatorName": "EqualityOperator",
-          "replacement": "isIP(host) !== 6",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 29,
-              "line": 174
-            },
-            "start": {
-              "column": 13,
-              "line": 174
-            }
-          }
-        },
-        {
-          "id": "75",
-          "mutatorName": "EqualityOperator",
-          "replacement": "isIP(bare) === 0",
-          "statusReason": "uncaughtException: bare IPv4: uncaughtException: bare IPv4",
+          "replacement": "hostname !== \"[::1]\"",
+          "statusReason": "uncaughtException: DNS 域名拒绝（重绑定防护核心语义）: uncaughtException: DNS 域名拒绝（重绑定防护核心语义）",
           "status": "Killed",
           "static": false,
           "testsCompleted": 1,
@@ -3393,58 +3416,12 @@
           ],
           "location": {
             "end": {
-              "column": 26,
-              "line": 193
+              "column": 55,
+              "line": 191
             },
             "start": {
-              "column": 10,
-              "line": 193
-            }
-          }
-        },
-        {
-          "id": "64",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: bare IPv4: uncaughtException: bare IPv4",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 66,
-              "line": 192
-            },
-            "start": {
-              "column": 16,
-              "line": 192
-            }
-          }
-        },
-        {
-          "id": "47",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 62,
-              "line": 184
-            },
-            "start": {
-              "column": 40,
-              "line": 184
+              "column": 35,
+              "line": 191
             }
           }
         },
@@ -3474,31 +3451,6 @@
           }
         },
         {
-          "id": "60",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19953: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19953",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 55,
-              "line": 191
-            },
-            "start": {
-              "column": 35,
-              "line": 191
-            }
-          }
-        },
-        {
           "id": "74",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
@@ -3524,32 +3476,6 @@
           }
         },
         {
-          "id": "76",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: lan-proxy: targetHost 仅允许回环地址（收到 \"127.0.0.1\"），拒绝启动——防止开放转发: uncaughtException: lan-proxy: targetHost 仅允许回环地址（收到 \"127.0.0.1\"），拒绝启动——防止开放转发",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 200
-            },
-            "start": {
-              "column": 57,
-              "line": 197
-            }
-          }
-        },
-        {
           "id": "42",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
@@ -3571,10 +3497,10 @@
           }
         },
         {
-          "id": "84",
-          "mutatorName": "MethodExpression",
-          "replacement": "host",
-          "statusReason": "uncaughtException: bracketed IPv6 loopback: uncaughtException: bracketed IPv6 loopback",
+          "id": "75",
+          "mutatorName": "EqualityOperator",
+          "replacement": "isIP(bare) === 0",
+          "statusReason": "uncaughtException: bare IPv4: uncaughtException: bare IPv4",
           "status": "Killed",
           "static": false,
           "testsCompleted": 1,
@@ -3586,12 +3512,33 @@
           ],
           "location": {
             "end": {
-              "column": 78,
-              "line": 198
+              "column": 26,
+              "line": 193
             },
             "start": {
-              "column": 61,
-              "line": 198
+              "column": 10,
+              "line": 193
+            }
+          }
+        },
+        {
+          "id": "47",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 1,
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 62,
+              "line": 184
+            },
+            "start": {
+              "column": 40,
+              "line": 184
             }
           }
         },
@@ -3616,6 +3563,31 @@
             },
             "start": {
               "column": 40,
+              "line": 198
+            }
+          }
+        },
+        {
+          "id": "85",
+          "mutatorName": "UnaryOperator",
+          "replacement": "+1",
+          "statusReason": "uncaughtException: bracketed IPv6 loopback: uncaughtException: bracketed IPv6 loopback",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 77,
+              "line": 198
+            },
+            "start": {
+              "column": 75,
               "line": 198
             }
           }
@@ -3647,9 +3619,9 @@
           }
         },
         {
-          "id": "85",
-          "mutatorName": "UnaryOperator",
-          "replacement": "+1",
+          "id": "84",
+          "mutatorName": "MethodExpression",
+          "replacement": "host",
           "statusReason": "uncaughtException: bracketed IPv6 loopback: uncaughtException: bracketed IPv6 loopback",
           "status": "Killed",
           "static": false,
@@ -3662,19 +3634,19 @@
           ],
           "location": {
             "end": {
-              "column": 77,
+              "column": 78,
               "line": 198
             },
             "start": {
-              "column": 75,
+              "column": 61,
               "line": 198
             }
           }
         },
         {
-          "id": "87",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
+          "id": "76",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
           "statusReason": "uncaughtException: lan-proxy: targetHost 仅允许回环地址（收到 \"127.0.0.1\"），拒绝启动——防止开放转发: uncaughtException: lan-proxy: targetHost 仅允许回环地址（收到 \"127.0.0.1\"），拒绝启动——防止开放转发",
           "status": "Killed",
           "static": false,
@@ -3688,106 +3660,12 @@
           ],
           "location": {
             "end": {
-              "column": 103,
-              "line": 199
+              "column": 2,
+              "line": 200
             },
             "start": {
-              "column": 10,
-              "line": 199
-            }
-          }
-        },
-        {
-          "id": "78",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 58,
-              "line": 198
-            },
-            "start": {
-              "column": 16,
-              "line": 198
-            }
-          }
-        },
-        {
-          "id": "88",
-          "mutatorName": "LogicalOperator",
-          "replacement": "(host === \"localhost\" || bare === \"127.0.0.1\" || bare === \"::1\") && bare === \"::ffff:127.0.0.1\"",
-          "statusReason": "uncaughtException: lan-proxy: targetHost 仅允许回环地址（收到 \"127.0.0.1\"），拒绝启动——防止开放转发: uncaughtException: lan-proxy: targetHost 仅允许回环地址（收到 \"127.0.0.1\"），拒绝启动——防止开放转发",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 103,
-              "line": 199
-            },
-            "start": {
-              "column": 10,
-              "line": 199
-            }
-          }
-        },
-        {
-          "id": "65",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 66,
-              "line": 192
-            },
-            "start": {
-              "column": 16,
-              "line": 192
-            }
-          }
-        },
-        {
-          "id": "66",
-          "mutatorName": "LogicalOperator",
-          "replacement": "hostname.startsWith(\"[\") || hostname.endsWith(\"]\")",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 66,
-              "line": 192
-            },
-            "start": {
-              "column": 16,
-              "line": 192
+              "column": 57,
+              "line": 197
             }
           }
         },
@@ -3818,27 +3696,6 @@
           }
         },
         {
-          "id": "67",
-          "mutatorName": "MethodExpression",
-          "replacement": "hostname.endsWith(\"[\")",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 40,
-              "line": 192
-            },
-            "start": {
-              "column": 16,
-              "line": 192
-            }
-          }
-        },
-        {
           "id": "89",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
@@ -3865,9 +3722,9 @@
           }
         },
         {
-          "id": "92",
+          "id": "88",
           "mutatorName": "LogicalOperator",
-          "replacement": "host === \"localhost\" && bare === \"127.0.0.1\"",
+          "replacement": "(host === \"localhost\" || bare === \"127.0.0.1\" || bare === \"::1\") && bare === \"::ffff:127.0.0.1\"",
           "statusReason": "uncaughtException: lan-proxy: targetHost 仅允许回环地址（收到 \"127.0.0.1\"），拒绝启动——防止开放转发: uncaughtException: lan-proxy: targetHost 仅允许回环地址（收到 \"127.0.0.1\"），拒绝启动——防止开放转发",
           "status": "Killed",
           "static": false,
@@ -3881,7 +3738,7 @@
           ],
           "location": {
             "end": {
-              "column": 54,
+              "column": 103,
               "line": 199
             },
             "start": {
@@ -3891,7 +3748,70 @@
           }
         },
         {
-          "id": "91",
+          "id": "66",
+          "mutatorName": "LogicalOperator",
+          "replacement": "hostname.startsWith(\"[\") || hostname.endsWith(\"]\")",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 1,
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 66,
+              "line": 192
+            },
+            "start": {
+              "column": 16,
+              "line": 192
+            }
+          }
+        },
+        {
+          "id": "67",
+          "mutatorName": "MethodExpression",
+          "replacement": "hostname.endsWith(\"[\")",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 1,
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 40,
+              "line": 192
+            },
+            "start": {
+              "column": 16,
+              "line": 192
+            }
+          }
+        },
+        {
+          "id": "65",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 1,
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 66,
+              "line": 192
+            },
+            "start": {
+              "column": 16,
+              "line": 192
+            }
+          }
+        },
+        {
+          "id": "87",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
           "statusReason": "uncaughtException: lan-proxy: targetHost 仅允许回环地址（收到 \"127.0.0.1\"），拒绝启动——防止开放转发: uncaughtException: lan-proxy: targetHost 仅允许回环地址（收到 \"127.0.0.1\"），拒绝启动——防止开放转发",
@@ -3907,33 +3827,7 @@
           ],
           "location": {
             "end": {
-              "column": 54,
-              "line": 199
-            },
-            "start": {
-              "column": 10,
-              "line": 199
-            }
-          }
-        },
-        {
-          "id": "93",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 30,
+              "column": 103,
               "line": 199
             },
             "start": {
@@ -3969,28 +3863,23 @@
           }
         },
         {
-          "id": "96",
+          "id": "21",
           "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: lan-proxy: targetHost 仅允许回环地址（收到 \"127.0.0.1\"），拒绝启动——防止开放转发: uncaughtException: lan-proxy: targetHost 仅允许回环地址（收到 \"127.0.0.1\"），拒绝启动——防止开放转发",
-          "status": "Killed",
+          "replacement": "case 1:",
+          "status": "Survived",
           "static": false,
           "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
           "coveredBy": [
-            "0",
-            "1"
+            "0"
           ],
           "location": {
             "end": {
-              "column": 54,
-              "line": 199
+              "column": 92,
+              "line": 157
             },
             "start": {
-              "column": 34,
-              "line": 199
+              "column": 5,
+              "line": 156
             }
           }
         },
@@ -4021,15 +3910,36 @@
           }
         },
         {
-          "id": "37",
+          "id": "60",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 1,
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 55,
+              "line": 191
+            },
+            "start": {
+              "column": 35,
+              "line": 191
+            }
+          }
+        },
+        {
+          "id": "91",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: lan-proxy: targetHost 仅允许回环地址（收到 \"127.0.0.1\"），拒绝启动——防止开放转发: uncaughtException: lan-proxy: targetHost 仅允许回环地址（收到 \"127.0.0.1\"），拒绝启动——防止开放转发",
           "status": "Killed",
           "static": false,
-          "testsCompleted": 2,
+          "testsCompleted": 1,
           "killedBy": [
-            "1"
+            "0"
           ],
           "coveredBy": [
             "0",
@@ -4037,19 +3947,19 @@
           ],
           "location": {
             "end": {
-              "column": 29,
-              "line": 174
+              "column": 54,
+              "line": 199
             },
             "start": {
-              "column": 13,
-              "line": 174
+              "column": 10,
+              "line": 199
             }
           }
         },
         {
-          "id": "97",
-          "mutatorName": "EqualityOperator",
-          "replacement": "bare !== \"127.0.0.1\"",
+          "id": "96",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
           "statusReason": "uncaughtException: lan-proxy: targetHost 仅允许回环地址（收到 \"127.0.0.1\"），拒绝启动——防止开放转发: uncaughtException: lan-proxy: targetHost 仅允许回环地址（收到 \"127.0.0.1\"），拒绝启动——防止开放转发",
           "status": "Killed",
           "static": false,
@@ -4068,6 +3978,32 @@
             },
             "start": {
               "column": 34,
+              "line": 199
+            }
+          }
+        },
+        {
+          "id": "92",
+          "mutatorName": "LogicalOperator",
+          "replacement": "host === \"localhost\" && bare === \"127.0.0.1\"",
+          "statusReason": "uncaughtException: lan-proxy: targetHost 仅允许回环地址（收到 \"127.0.0.1\"），拒绝启动——防止开放转发: uncaughtException: lan-proxy: targetHost 仅允许回环地址（收到 \"127.0.0.1\"），拒绝启动——防止开放转发",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 54,
+              "line": 199
+            },
+            "start": {
+              "column": 10,
               "line": 199
             }
           }
@@ -4099,9 +4035,60 @@
           }
         },
         {
-          "id": "109",
+          "id": "38",
           "mutatorName": "EqualityOperator",
-          "replacement": "out.origin === undefined",
+          "replacement": "isIP(host) !== 6",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 2,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 29,
+              "line": 174
+            },
+            "start": {
+              "column": 13,
+              "line": 174
+            }
+          }
+        },
+        {
+          "id": "105",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: 多键重写: uncaughtException: 多键重写",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 209
+            },
+            "start": {
+              "column": 108,
+              "line": 204
+            }
+          }
+        },
+        {
+          "id": "108",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
           "statusReason": "uncaughtException: 多键重写: uncaughtException: 多键重写",
           "status": "Killed",
           "static": false,
@@ -4149,65 +4136,15 @@
           }
         },
         {
-          "id": "105",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: 多键重写: uncaughtException: 多键重写",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 209
-            },
-            "start": {
-              "column": 108,
-              "line": 204
-            }
-          }
-        },
-        {
-          "id": "117",
-          "mutatorName": "LogicalOperator",
-          "replacement": "(!paths || paths.length === 0 || typeof url !== \"string\") && url.length === 0",
-          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'includes'): uncaughtException: Cannot read properties of undefined (reading 'includes')",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 82,
-              "line": 230
-            },
-            "start": {
-              "column": 7,
-              "line": 230
-            }
-          }
-        },
-        {
-          "id": "36",
+          "id": "93",
           "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "replacement": "false",
+          "statusReason": "uncaughtException: localhost 合法: uncaughtException: localhost 合法",
           "status": "Killed",
           "static": false,
-          "testsCompleted": 2,
+          "testsCompleted": 1,
           "killedBy": [
-            "1"
+            "0"
           ],
           "coveredBy": [
             "0",
@@ -4215,44 +4152,19 @@
           ],
           "location": {
             "end": {
-              "column": 29,
-              "line": 174
+              "column": 30,
+              "line": 199
             },
             "start": {
-              "column": 13,
-              "line": 174
+              "column": 10,
+              "line": 199
             }
           }
         },
         {
-          "id": "116",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'includes'): uncaughtException: Cannot read properties of undefined (reading 'includes')",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 82,
-              "line": 230
-            },
-            "start": {
-              "column": 7,
-              "line": 230
-            }
-          }
-        },
-        {
-          "id": "108",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
+          "id": "109",
+          "mutatorName": "EqualityOperator",
+          "replacement": "out.origin === undefined",
           "statusReason": "uncaughtException: 多键重写: uncaughtException: 多键重写",
           "status": "Killed",
           "static": false,
@@ -4275,27 +4187,28 @@
           }
         },
         {
-          "id": "115",
+          "id": "102",
           "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: 带查询串命中: uncaughtException: 带查询串命中",
+          "replacement": "false",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
           "status": "Killed",
           "static": false,
           "testsCompleted": 1,
           "killedBy": [
-            "1"
+            "0"
           ],
           "coveredBy": [
+            "0",
             "1"
           ],
           "location": {
             "end": {
-              "column": 82,
-              "line": 230
+              "column": 103,
+              "line": 199
             },
             "start": {
-              "column": 7,
-              "line": 230
+              "column": 76,
+              "line": 199
             }
           }
         },
@@ -4325,32 +4238,6 @@
           }
         },
         {
-          "id": "100",
-          "mutatorName": "EqualityOperator",
-          "replacement": "bare !== \"::1\"",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 72,
-              "line": 199
-            },
-            "start": {
-              "column": 58,
-              "line": 199
-            }
-          }
-        },
-        {
           "id": "119",
           "mutatorName": "LogicalOperator",
           "replacement": "(!paths || paths.length === 0) && typeof url !== \"string\"",
@@ -4376,83 +4263,6 @@
           }
         },
         {
-          "id": "34",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 2,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 175
-            },
-            "start": {
-              "column": 69,
-              "line": 173
-            }
-          }
-        },
-        {
-          "id": "121",
-          "mutatorName": "LogicalOperator",
-          "replacement": "!paths && paths.length === 0",
-          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'length'): uncaughtException: Cannot read properties of undefined (reading 'length')",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 230
-            },
-            "start": {
-              "column": 7,
-              "line": 230
-            }
-          }
-        },
-        {
-          "id": "99",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 72,
-              "line": 199
-            },
-            "start": {
-              "column": 58,
-              "line": 199
-            }
-          }
-        },
-        {
           "id": "118",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
@@ -4469,6 +4279,81 @@
           "location": {
             "end": {
               "column": 62,
+              "line": 230
+            },
+            "start": {
+              "column": 7,
+              "line": 230
+            }
+          }
+        },
+        {
+          "id": "116",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'includes'): uncaughtException: Cannot read properties of undefined (reading 'includes')",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 82,
+              "line": 230
+            },
+            "start": {
+              "column": 7,
+              "line": 230
+            }
+          }
+        },
+        {
+          "id": "115",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: 带查询串命中: uncaughtException: 带查询串命中",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 82,
+              "line": 230
+            },
+            "start": {
+              "column": 7,
+              "line": 230
+            }
+          }
+        },
+        {
+          "id": "117",
+          "mutatorName": "LogicalOperator",
+          "replacement": "(!paths || paths.length === 0 || typeof url !== \"string\") && url.length === 0",
+          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'includes'): uncaughtException: Cannot read properties of undefined (reading 'includes')",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 82,
               "line": 230
             },
             "start": {
@@ -4529,6 +4414,108 @@
           }
         },
         {
+          "id": "121",
+          "mutatorName": "LogicalOperator",
+          "replacement": "!paths && paths.length === 0",
+          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'length'): uncaughtException: Cannot read properties of undefined (reading 'length')",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 35,
+              "line": 230
+            },
+            "start": {
+              "column": 7,
+              "line": 230
+            }
+          }
+        },
+        {
+          "id": "97",
+          "mutatorName": "EqualityOperator",
+          "replacement": "bare !== \"127.0.0.1\"",
+          "statusReason": "uncaughtException: lan-proxy: targetHost 仅允许回环地址（收到 \"127.0.0.1\"），拒绝启动——防止开放转发: uncaughtException: lan-proxy: targetHost 仅允许回环地址（收到 \"127.0.0.1\"），拒绝启动——防止开放转发",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 54,
+              "line": 199
+            },
+            "start": {
+              "column": 34,
+              "line": 199
+            }
+          }
+        },
+        {
+          "id": "100",
+          "mutatorName": "EqualityOperator",
+          "replacement": "bare !== \"::1\"",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 72,
+              "line": 199
+            },
+            "start": {
+              "column": 58,
+              "line": 199
+            }
+          }
+        },
+        {
+          "id": "122",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "paths",
+          "statusReason": "uncaughtException: 带查询串命中: uncaughtException: 带查询串命中",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 13,
+              "line": 230
+            },
+            "start": {
+              "column": 7,
+              "line": 230
+            }
+          }
+        },
+        {
           "id": "124",
           "mutatorName": "EqualityOperator",
           "replacement": "paths.length !== 0",
@@ -4554,10 +4541,10 @@
           }
         },
         {
-          "id": "122",
+          "id": "130",
           "mutatorName": "BooleanLiteral",
-          "replacement": "paths",
-          "statusReason": "uncaughtException: 带查询串命中: uncaughtException: 带查询串命中",
+          "replacement": "true",
+          "statusReason": "uncaughtException: 空列表: uncaughtException: 空列表",
           "status": "Killed",
           "static": false,
           "testsCompleted": 1,
@@ -4569,11 +4556,11 @@
           ],
           "location": {
             "end": {
-              "column": 13,
+              "column": 96,
               "line": 230
             },
             "start": {
-              "column": 7,
+              "column": 91,
               "line": 230
             }
           }
@@ -4629,57 +4616,6 @@
           }
         },
         {
-          "id": "130",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "true",
-          "statusReason": "uncaughtException: 空列表: uncaughtException: 空列表",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 96,
-              "line": 230
-            },
-            "start": {
-              "column": 91,
-              "line": 230
-            }
-          }
-        },
-        {
-          "id": "79",
-          "mutatorName": "LogicalOperator",
-          "replacement": "host.startsWith(\"[\") || host.endsWith(\"]\")",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19816: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19816",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 2,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 58,
-              "line": 198
-            },
-            "start": {
-              "column": 16,
-              "line": 198
-            }
-          }
-        },
-        {
           "id": "132",
           "mutatorName": "BlockStatement",
           "replacement": "{}",
@@ -4705,9 +4641,9 @@
           }
         },
         {
-          "id": "80",
-          "mutatorName": "MethodExpression",
-          "replacement": "host.endsWith(\"[\")",
+          "id": "78",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
           "statusReason": "uncaughtException: bracketed IPv6 loopback: uncaughtException: bracketed IPv6 loopback",
           "status": "Killed",
           "static": false,
@@ -4721,7 +4657,7 @@
           ],
           "location": {
             "end": {
-              "column": 36,
+              "column": 58,
               "line": 198
             },
             "start": {
@@ -4734,9 +4670,13 @@
           "id": "123",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
-          "status": "Survived",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:20026: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:20026",
+          "status": "Killed",
           "static": false,
           "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
           "coveredBy": [
             "1"
           ],
@@ -4773,6 +4713,31 @@
           }
         },
         {
+          "id": "143",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19984: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19984",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 15,
+              "line": 279
+            },
+            "start": {
+              "column": 9,
+              "line": 279
+            }
+          }
+        },
+        {
           "id": "128",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
@@ -4790,6 +4755,82 @@
             "start": {
               "column": 66,
               "line": 230
+            }
+          }
+        },
+        {
+          "id": "144",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19987: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19987",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 15,
+              "line": 279
+            },
+            "start": {
+              "column": 9,
+              "line": 279
+            }
+          }
+        },
+        {
+          "id": "80",
+          "mutatorName": "MethodExpression",
+          "replacement": "host.endsWith(\"[\")",
+          "statusReason": "uncaughtException: bracketed IPv6 loopback: uncaughtException: bracketed IPv6 loopback",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 2,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 36,
+              "line": 198
+            },
+            "start": {
+              "column": 16,
+              "line": 198
+            }
+          }
+        },
+        {
+          "id": "145",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19984: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19984",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 6,
+              "line": 283
+            },
+            "start": {
+              "column": 17,
+              "line": 279
             }
           }
         },
@@ -4815,10 +4856,32 @@
           }
         },
         {
+          "id": "79",
+          "mutatorName": "LogicalOperator",
+          "replacement": "host.startsWith(\"[\") || host.endsWith(\"]\")",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 2,
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 58,
+              "line": 198
+            },
+            "start": {
+              "column": 16,
+              "line": 198
+            }
+          }
+        },
+        {
           "id": "148",
           "mutatorName": "BooleanLiteral",
           "replacement": "true",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19967: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19967",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:20001: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:20001",
           "status": "Killed",
           "static": false,
           "testsCompleted": 1,
@@ -4840,28 +4903,52 @@
           }
         },
         {
-          "id": "102",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: IPv4-mapped IPv6 loopback: uncaughtException: IPv4-mapped IPv6 loopback",
+          "id": "150",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19954: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19954",
           "status": "Killed",
           "static": false,
-          "testsCompleted": 2,
+          "testsCompleted": 1,
           "killedBy": [
             "1"
           ],
           "coveredBy": [
-            "0",
             "1"
           ],
           "location": {
             "end": {
-              "column": 103,
-              "line": 199
+              "column": 17,
+              "line": 286
             },
             "start": {
-              "column": 76,
-              "line": 199
+              "column": 7,
+              "line": 286
+            }
+          }
+        },
+        {
+          "id": "152",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19984: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19984",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 295
+            },
+            "start": {
+              "column": 16,
+              "line": 292
             }
           }
         },
@@ -4887,54 +4974,16 @@
           }
         },
         {
-          "id": "151",
-          "mutatorName": "OptionalChaining",
-          "replacement": "timer.unref()",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 18,
-              "line": 291
-            },
-            "start": {
-              "column": 3,
-              "line": 291
-            }
-          }
-        },
-        {
-          "id": "152",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 295
-            },
-            "start": {
-              "column": 16,
-              "line": 292
-            }
-          }
-        },
-        {
           "id": "153",
           "mutatorName": "CallExpression",
           "replacement": ";",
-          "status": "Survived",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19973: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19973",
+          "status": "Killed",
           "static": false,
           "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
           "coveredBy": [
             "1"
           ],
@@ -4946,77 +4995,6 @@
             "start": {
               "column": 5,
               "line": 293
-            }
-          }
-        },
-        {
-          "id": "154",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 31,
-              "line": 294
-            },
-            "start": {
-              "column": 5,
-              "line": 294
-            }
-          }
-        },
-        {
-          "id": "133",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "false",
-          "statusReason": "uncaughtException: 探活 ping 应按间隔到达浏览器端（4s 内仅收到 0 帧）: uncaughtException: 探活 ping 应按间隔到达浏览器端（4s 内仅收到 0 帧）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 19,
-              "line": 271
-            },
-            "start": {
-              "column": 15,
-              "line": 271
-            }
-          }
-        },
-        {
-          "id": "135",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "false",
-          "statusReason": "uncaughtException: 探活 ping 应按间隔到达浏览器端（4s 内仅收到 1 帧）: uncaughtException: 探活 ping 应按间隔到达浏览器端（4s 内仅收到 1 帧）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 17,
-              "line": 273
-            },
-            "start": {
-              "column": 13,
-              "line": 273
             }
           }
         },
@@ -5046,10 +5024,57 @@
           }
         },
         {
-          "id": "134",
+          "id": "151",
+          "mutatorName": "OptionalChaining",
+          "replacement": "timer.unref()",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 1,
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 18,
+              "line": 291
+            },
+            "start": {
+              "column": 3,
+              "line": 291
+            }
+          }
+        },
+        {
+          "id": "99",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: loopback IPv6: uncaughtException: loopback IPv6",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 2,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 72,
+              "line": 199
+            },
+            "start": {
+              "column": 58,
+              "line": 199
+            }
+          }
+        },
+        {
+          "id": "161",
           "mutatorName": "BlockStatement",
           "replacement": "{}",
-          "statusReason": "uncaughtException: 探活 ping 应按间隔到达浏览器端（4s 内仅收到 1 帧）: uncaughtException: 探活 ping 应按间隔到达浏览器端（4s 内仅收到 1 帧）",
+          "statusReason": "uncaughtException: WS 压缩桥接双向转发：上游回显到浏览器端（收到 []）: uncaughtException: WS 压缩桥接双向转发：上游回显到浏览器端（收到 []）",
           "status": "Killed",
           "static": false,
           "testsCompleted": 1,
@@ -5062,11 +5087,145 @@
           "location": {
             "end": {
               "column": 4,
-              "line": 274
+              "line": 374
             },
             "start": {
-              "column": 27,
-              "line": 272
+              "column": 55,
+              "line": 317
+            }
+          }
+        },
+        {
+          "id": "154",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 1,
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 31,
+              "line": 294
+            },
+            "start": {
+              "column": 5,
+              "line": 294
+            }
+          }
+        },
+        {
+          "id": "169",
+          "mutatorName": "OptionalChaining",
+          "replacement": "stopProbes()",
+          "statusReason": "uncaughtException: stopProbes is not a function: uncaughtException: stopProbes is not a function",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 21,
+              "line": 328
+            },
+            "start": {
+              "column": 7,
+              "line": 328
+            }
+          }
+        },
+        {
+          "id": "164",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "true",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 1,
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 31,
+              "line": 321
+            },
+            "start": {
+              "column": 26,
+              "line": 321
+            }
+          }
+        },
+        {
+          "id": "168",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 1,
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 6,
+              "line": 330
+            },
+            "start": {
+              "column": 33,
+              "line": 327
+            }
+          }
+        },
+        {
+          "id": "133",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "false",
+          "statusReason": "uncaughtException: 探活 ping 应按间隔到达浏览器端（4s 内仅收到 0 帧）: uncaughtException: 探活 ping 应按间隔到达浏览器端（4s 内仅收到 0 帧）",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 19,
+              "line": 271
+            },
+            "start": {
+              "column": 15,
+              "line": 271
+            }
+          }
+        },
+        {
+          "id": "170",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 1,
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 28,
+              "line": 331
+            },
+            "start": {
+              "column": 9,
+              "line": 331
             }
           }
         },
@@ -5096,31 +5255,6 @@
           }
         },
         {
-          "id": "139",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: 探活 ping 应按间隔到达浏览器端（4s 内仅收到 0 帧）: uncaughtException: 探活 ping 应按间隔到达浏览器端（4s 内仅收到 0 帧）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 41,
-              "line": 278
-            },
-            "start": {
-              "column": 9,
-              "line": 278
-            }
-          }
-        },
-        {
           "id": "138",
           "mutatorName": "BlockStatement",
           "replacement": "{}",
@@ -5146,9 +5280,59 @@
           }
         },
         {
-          "id": "141",
-          "mutatorName": "EqualityOperator",
-          "replacement": "ws.readyState === WebSocket.OPEN",
+          "id": "135",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "false",
+          "statusReason": "uncaughtException: 探活 ping 应按间隔到达浏览器端（4s 内仅收到 1 帧）: uncaughtException: 探活 ping 应按间隔到达浏览器端（4s 内仅收到 1 帧）",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 17,
+              "line": 273
+            },
+            "start": {
+              "column": 13,
+              "line": 273
+            }
+          }
+        },
+        {
+          "id": "134",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: 探活 ping 应按间隔到达浏览器端（4s 内仅收到 1 帧）: uncaughtException: 探活 ping 应按间隔到达浏览器端（4s 内仅收到 1 帧）",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 274
+            },
+            "start": {
+              "column": 27,
+              "line": 272
+            }
+          }
+        },
+        {
+          "id": "139",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
           "statusReason": "uncaughtException: 探活 ping 应按间隔到达浏览器端（4s 内仅收到 0 帧）: uncaughtException: 探活 ping 应按间隔到达浏览器端（4s 内仅收到 0 帧）",
           "status": "Killed",
           "static": false,
@@ -5196,34 +5380,9 @@
           }
         },
         {
-          "id": "161",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: WS 压缩桥接双向转发：上游回显到浏览器端（收到 []）: uncaughtException: WS 压缩桥接双向转发：上游回显到浏览器端（收到 []）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 374
-            },
-            "start": {
-              "column": 55,
-              "line": 317
-            }
-          }
-        },
-        {
-          "id": "143",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
+          "id": "141",
+          "mutatorName": "EqualityOperator",
+          "replacement": "ws.readyState === WebSocket.OPEN",
           "statusReason": "uncaughtException: 探活 ping 应按间隔到达浏览器端（4s 内仅收到 0 帧）: uncaughtException: 探活 ping 应按间隔到达浏览器端（4s 内仅收到 0 帧）",
           "status": "Killed",
           "static": false,
@@ -5236,37 +5395,12 @@
           ],
           "location": {
             "end": {
-              "column": 15,
-              "line": 279
+              "column": 41,
+              "line": 278
             },
             "start": {
               "column": 9,
-              "line": 279
-            }
-          }
-        },
-        {
-          "id": "169",
-          "mutatorName": "OptionalChaining",
-          "replacement": "stopProbes()",
-          "statusReason": "uncaughtException: stopProbes is not a function: uncaughtException: stopProbes is not a function",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 21,
-              "line": 328
-            },
-            "start": {
-              "column": 7,
-              "line": 328
+              "line": 278
             }
           }
         },
@@ -5274,7 +5408,7 @@
           "id": "175",
           "mutatorName": "BlockStatement",
           "replacement": "{}",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19957: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19957",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19950: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19950",
           "status": "Killed",
           "static": false,
           "testsCompleted": 1,
@@ -5296,119 +5430,6 @@
           }
         },
         {
-          "id": "164",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 31,
-              "line": 321
-            },
-            "start": {
-              "column": 26,
-              "line": 321
-            }
-          }
-        },
-        {
-          "id": "168",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 6,
-              "line": 330
-            },
-            "start": {
-              "column": 33,
-              "line": 327
-            }
-          }
-        },
-        {
-          "id": "149",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: 探活 ping 应按间隔到达浏览器端（4s 内仅收到 0 帧）: uncaughtException: 探活 ping 应按间隔到达浏览器端（4s 内仅收到 0 帧）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 6,
-              "line": 287
-            },
-            "start": {
-              "column": 9,
-              "line": 285
-            }
-          }
-        },
-        {
-          "id": "170",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 28,
-              "line": 331
-            },
-            "start": {
-              "column": 9,
-              "line": 331
-            }
-          }
-        },
-        {
-          "id": "150",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "statusReason": "uncaughtException: 探活 ping 应按间隔到达浏览器端（4s 内仅收到 0 帧）: uncaughtException: 探活 ping 应按间隔到达浏览器端（4s 内仅收到 0 帧）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 17,
-              "line": 286
-            },
-            "start": {
-              "column": 7,
-              "line": 286
-            }
-          }
-        },
-        {
           "id": "172",
           "mutatorName": "EqualityOperator",
           "replacement": "probeIntervalMs >= 0",
@@ -5426,56 +5447,6 @@
             "start": {
               "column": 9,
               "line": 331
-            }
-          }
-        },
-        {
-          "id": "144",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: 上游 pong 缺失应在一个宽限窗后触发 terminate 并级联关闭浏览器端（5s 未收到 close）: uncaughtException: 上游 pong 缺失应在一个宽限窗后触发 terminate 并级联关闭浏览器端（5s 未收到 close）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 15,
-              "line": 279
-            },
-            "start": {
-              "column": 9,
-              "line": 279
-            }
-          }
-        },
-        {
-          "id": "145",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: 上游 pong 缺失应在一个宽限窗后触发 terminate 并级联关闭浏览器端（5s 未收到 close）: uncaughtException: 上游 pong 缺失应在一个宽限窗后触发 terminate 并级联关闭浏览器端（5s 未收到 close）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 6,
-              "line": 283
-            },
-            "start": {
-              "column": 17,
-              "line": 279
             }
           }
         },
@@ -5530,10 +5501,10 @@
           }
         },
         {
-          "id": "147",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "statusReason": "uncaughtException: 上游 pong 缺失应在一个宽限窗后触发 terminate 并级联关闭浏览器端（5s 未收到 close）: uncaughtException: 上游 pong 缺失应在一个宽限窗后触发 terminate 并级联关闭浏览器端（5s 未收到 close）",
+          "id": "149",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: 探活 ping 应按间隔到达浏览器端（4s 内仅收到 0 帧）: uncaughtException: 探活 ping 应按间隔到达浏览器端（4s 内仅收到 0 帧）",
           "status": "Killed",
           "static": false,
           "testsCompleted": 1,
@@ -5545,12 +5516,54 @@
           ],
           "location": {
             "end": {
-              "column": 22,
-              "line": 281
+              "column": 6,
+              "line": 287
             },
             "start": {
-              "column": 7,
-              "line": 281
+              "column": 9,
+              "line": 285
+            }
+          }
+        },
+        {
+          "id": "177",
+          "mutatorName": "OptionalChaining",
+          "replacement": "target.logger.warn",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 1,
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 28,
+              "line": 335
+            },
+            "start": {
+              "column": 9,
+              "line": 335
+            }
+          }
+        },
+        {
+          "id": "176",
+          "mutatorName": "OptionalChaining",
+          "replacement": "target.logger?.warn(`lan-proxy: ws-bridge half-open detected, terminating (intervalMs=${intervalMs})`)",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 1,
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 113,
+              "line": 335
+            },
+            "start": {
+              "column": 9,
+              "line": 335
             }
           }
         },
@@ -5580,48 +5593,6 @@
           }
         },
         {
-          "id": "176",
-          "mutatorName": "OptionalChaining",
-          "replacement": "target.logger?.warn(`lan-proxy: ws-bridge half-open detected, terminating (intervalMs=${intervalMs})`)",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 113,
-              "line": 335
-            },
-            "start": {
-              "column": 9,
-              "line": 335
-            }
-          }
-        },
-        {
-          "id": "177",
-          "mutatorName": "OptionalChaining",
-          "replacement": "target.logger.warn",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 28,
-              "line": 335
-            },
-            "start": {
-              "column": 9,
-              "line": 335
-            }
-          }
-        },
-        {
           "id": "190",
           "mutatorName": "EqualityOperator",
           "replacement": "upstreamWs.readyState !== WsClient.OPEN",
@@ -5643,6 +5614,27 @@
             "start": {
               "column": 13,
               "line": 349
+            }
+          }
+        },
+        {
+          "id": "179",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 1,
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 8,
+              "line": 342
+            },
+            "start": {
+              "column": 26,
+              "line": 339
             }
           }
         },
@@ -5672,27 +5664,6 @@
           }
         },
         {
-          "id": "180",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 28,
-              "line": 340
-            },
-            "start": {
-              "column": 9,
-              "line": 340
-            }
-          }
-        },
-        {
           "id": "195",
           "mutatorName": "BlockStatement",
           "replacement": "{}",
@@ -5714,6 +5685,94 @@
             "start": {
               "column": 50,
               "line": 353
+            }
+          }
+        },
+        {
+          "id": "180",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 1,
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 28,
+              "line": 340
+            },
+            "start": {
+              "column": 9,
+              "line": 340
+            }
+          }
+        },
+        {
+          "id": "188",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 1,
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 52,
+              "line": 349
+            },
+            "start": {
+              "column": 13,
+              "line": 349
+            }
+          }
+        },
+        {
+          "id": "181",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 1,
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 29,
+              "line": 341
+            },
+            "start": {
+              "column": 9,
+              "line": 341
+            }
+          }
+        },
+        {
+          "id": "147",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "statusReason": "uncaughtException: 上游 pong 缺失应在一个宽限窗后触发 terminate 并级联关闭浏览器端（5s 未收到 close）: uncaughtException: 上游 pong 缺失应在一个宽限窗后触发 terminate 并级联关闭浏览器端（5s 未收到 close）",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 22,
+              "line": 281
+            },
+            "start": {
+              "column": 7,
+              "line": 281
             }
           }
         },
@@ -5743,73 +5802,6 @@
           }
         },
         {
-          "id": "204",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19824: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19824",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 23,
-              "line": 358
-            },
-            "start": {
-              "column": 7,
-              "line": 358
-            }
-          }
-        },
-        {
-          "id": "179",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 8,
-              "line": 342
-            },
-            "start": {
-              "column": 26,
-              "line": 339
-            }
-          }
-        },
-        {
-          "id": "188",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 52,
-              "line": 349
-            },
-            "start": {
-              "column": 13,
-              "line": 349
-            }
-          }
-        },
-        {
           "id": "198",
           "mutatorName": "EqualityOperator",
           "replacement": "browserWs.readyState !== browserWs.OPEN",
@@ -5831,27 +5823,6 @@
             "start": {
               "column": 11,
               "line": 354
-            }
-          }
-        },
-        {
-          "id": "181",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 29,
-              "line": 341
-            },
-            "start": {
-              "column": 9,
-              "line": 341
             }
           }
         },
@@ -5903,6 +5874,81 @@
             "start": {
               "column": 97,
               "line": 383
+            }
+          }
+        },
+        {
+          "id": "167",
+          "mutatorName": "LogicalOperator",
+          "replacement": "target.probeIntervalMs && DEFAULT_WS_PROBE_INTERVAL_MS",
+          "statusReason": "uncaughtException: 探活 ping 应按间隔到达浏览器端（4s 内仅收到 0 帧）: uncaughtException: 探活 ping 应按间隔到达浏览器端（4s 内仅收到 0 帧）",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 83,
+              "line": 325
+            },
+            "start": {
+              "column": 29,
+              "line": 325
+            }
+          }
+        },
+        {
+          "id": "218",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19965: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19965",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 34,
+              "line": 368
+            },
+            "start": {
+              "column": 11,
+              "line": 368
+            }
+          }
+        },
+        {
+          "id": "219",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19980: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19980",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 32,
+              "line": 368
+            },
+            "start": {
+              "column": 13,
+              "line": 368
             }
           }
         },
@@ -6001,27 +6047,49 @@
           }
         },
         {
-          "id": "167",
-          "mutatorName": "LogicalOperator",
-          "replacement": "target.probeIntervalMs && DEFAULT_WS_PROBE_INTERVAL_MS",
-          "statusReason": "uncaughtException: 探活 ping 应按间隔到达浏览器端（4s 内仅收到 0 帧）: uncaughtException: 探活 ping 应按间隔到达浏览器端（4s 内仅收到 0 帧）",
-          "status": "Killed",
+          "id": "204",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "status": "Survived",
           "static": false,
           "testsCompleted": 1,
-          "killedBy": [
-            "1"
-          ],
           "coveredBy": [
             "1"
           ],
           "location": {
             "end": {
-              "column": 83,
-              "line": 325
+              "column": 23,
+              "line": 358
             },
             "start": {
-              "column": 29,
-              "line": 325
+              "column": 7,
+              "line": 358
+            }
+          }
+        },
+        {
+          "id": "234",
+          "mutatorName": "LogicalOperator",
+          "replacement": "options.host && DEFAULT_OPTIONS.host",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 52,
+              "line": 390
+            },
+            "start": {
+              "column": 16,
+              "line": 390
             }
           }
         },
@@ -6051,6 +6119,84 @@
           }
         },
         {
+          "id": "238",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: lan-proxy: targetPort must be a valid port, got 3080: uncaughtException: lan-proxy: targetPort must be a valid port, got 3080",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 76,
+              "line": 395
+            },
+            "start": {
+              "column": 7,
+              "line": 395
+            }
+          }
+        },
+        {
+          "id": "236",
+          "mutatorName": "LogicalOperator",
+          "replacement": "options.httpsPort && DEFAULT_OPTIONS.httpsPort",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 67,
+              "line": 392
+            },
+            "start": {
+              "column": 21,
+              "line": 392
+            }
+          }
+        },
+        {
+          "id": "235",
+          "mutatorName": "LogicalOperator",
+          "replacement": "options.port && DEFAULT_OPTIONS.port",
+          "statusReason": "uncaughtException: 端口被占 → listening: false: uncaughtException: 端口被占 → listening: false",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 52,
+              "line": 391
+            },
+            "start": {
+              "column": 16,
+              "line": 391
+            }
+          }
+        },
+        {
           "id": "231",
           "mutatorName": "BlockStatement",
           "replacement": "{}",
@@ -6072,6 +6218,31 @@
             "start": {
               "column": 30,
               "line": 386
+            }
+          }
+        },
+        {
+          "id": "232",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "statusReason": "uncaughtException: Missing expected exception: 非回环 targetHost 拒绝启动（防开放转发）: uncaughtException: Missing expected exception: 非回环 targetHost 拒绝启动（防开放转发）",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 79,
+              "line": 387
+            },
+            "start": {
+              "column": 5,
+              "line": 387
             }
           }
         },
@@ -6126,112 +6297,9 @@
           }
         },
         {
-          "id": "232",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "statusReason": "uncaughtException: Missing expected exception: 非回环 targetHost 拒绝启动（防开放转发）: uncaughtException: Missing expected exception: 非回环 targetHost 拒绝启动（防开放转发）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 79,
-              "line": 387
-            },
-            "start": {
-              "column": 5,
-              "line": 387
-            }
-          }
-        },
-        {
-          "id": "235",
+          "id": "240",
           "mutatorName": "LogicalOperator",
-          "replacement": "options.port && DEFAULT_OPTIONS.port",
-          "statusReason": "uncaughtException: 端口被占 → listening: false: uncaughtException: 端口被占 → listening: false",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 52,
-              "line": 391
-            },
-            "start": {
-              "column": 16,
-              "line": 391
-            }
-          }
-        },
-        {
-          "id": "238",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: lan-proxy: targetPort must be a valid port, got 3080: uncaughtException: lan-proxy: targetPort must be a valid port, got 3080",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 76,
-              "line": 395
-            },
-            "start": {
-              "column": 7,
-              "line": 395
-            }
-          }
-        },
-        {
-          "id": "237",
-          "mutatorName": "LogicalOperator",
-          "replacement": "options.targetHost && DEFAULT_OPTIONS.targetHost",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 70,
-              "line": 393
-            },
-            "start": {
-              "column": 22,
-              "line": 393
-            }
-          }
-        },
-        {
-          "id": "239",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
+          "replacement": "(!Number.isInteger(targetPort) || targetPort < 1) && targetPort > 65535",
           "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
           "status": "Killed",
           "static": false,
@@ -6246,58 +6314,6 @@
           "location": {
             "end": {
               "column": 76,
-              "line": 395
-            },
-            "start": {
-              "column": 7,
-              "line": 395
-            }
-          }
-        },
-        {
-          "id": "241",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 54,
-              "line": 395
-            },
-            "start": {
-              "column": 7,
-              "line": 395
-            }
-          }
-        },
-        {
-          "id": "242",
-          "mutatorName": "LogicalOperator",
-          "replacement": "!Number.isInteger(targetPort) && targetPort < 1",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 54,
               "line": 395
             },
             "start": {
@@ -6333,10 +6349,10 @@
           }
         },
         {
-          "id": "246",
-          "mutatorName": "EqualityOperator",
-          "replacement": "targetPort >= 1",
-          "statusReason": "uncaughtException: lan-proxy: targetPort must be a valid port, got 3080: uncaughtException: lan-proxy: targetPort must be a valid port, got 3080",
+          "id": "241",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
           "status": "Killed",
           "static": false,
           "testsCompleted": 1,
@@ -6353,16 +6369,16 @@
               "line": 395
             },
             "start": {
-              "column": 40,
+              "column": 7,
               "line": 395
             }
           }
         },
         {
-          "id": "245",
+          "id": "246",
           "mutatorName": "EqualityOperator",
-          "replacement": "targetPort <= 1",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "replacement": "targetPort >= 1",
+          "statusReason": "uncaughtException: lan-proxy: targetPort must be a valid port, got 3080: uncaughtException: lan-proxy: targetPort must be a valid port, got 3080",
           "status": "Killed",
           "static": false,
           "testsCompleted": 1,
@@ -6411,15 +6427,15 @@
           }
         },
         {
-          "id": "227",
-          "mutatorName": "LogicalOperator",
-          "replacement": "options.targetHost && DEFAULT_OPTIONS.targetHost",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19965: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19965",
+          "id": "247",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
           "status": "Killed",
           "static": false,
-          "testsCompleted": 2,
+          "testsCompleted": 1,
           "killedBy": [
-            "1"
+            "0"
           ],
           "coveredBy": [
             "0",
@@ -6427,12 +6443,64 @@
           ],
           "location": {
             "end": {
-              "column": 62,
-              "line": 385
+              "column": 76,
+              "line": 395
             },
             "start": {
-              "column": 14,
-              "line": 385
+              "column": 58,
+              "line": 395
+            }
+          }
+        },
+        {
+          "id": "248",
+          "mutatorName": "EqualityOperator",
+          "replacement": "targetPort >= 65535",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 76,
+              "line": 395
+            },
+            "start": {
+              "column": 58,
+              "line": 395
+            }
+          }
+        },
+        {
+          "id": "256",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 36,
+              "line": 410
+            },
+            "start": {
+              "column": 7,
+              "line": 410
             }
           }
         },
@@ -6487,6 +6555,57 @@
           }
         },
         {
+          "id": "259",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 425
+            },
+            "start": {
+              "column": 38,
+              "line": 410
+            }
+          }
+        },
+        {
+          "id": "227",
+          "mutatorName": "LogicalOperator",
+          "replacement": "options.targetHost && DEFAULT_OPTIONS.targetHost",
+          "statusReason": "uncaughtException: Missing expected exception: 非回环 targetHost 拒绝启动（防开放转发）: uncaughtException: Missing expected exception: 非回环 targetHost 拒绝启动（防开放转发）",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 2,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 62,
+              "line": 385
+            },
+            "start": {
+              "column": 14,
+              "line": 385
+            }
+          }
+        },
+        {
           "id": "230",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
@@ -6509,6 +6628,27 @@
             "start": {
               "column": 7,
               "line": 386
+            }
+          }
+        },
+        {
+          "id": "260",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 1,
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 429
+            },
+            "start": {
+              "column": 46,
+              "line": 427
             }
           }
         },
@@ -6538,32 +6678,6 @@
           }
         },
         {
-          "id": "257",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 36,
-              "line": 410
-            },
-            "start": {
-              "column": 7,
-              "line": 410
-            }
-          }
-        },
-        {
           "id": "205",
           "mutatorName": "CallExpression",
           "replacement": ";",
@@ -6589,24 +6703,23 @@
           }
         },
         {
-          "id": "234",
-          "mutatorName": "LogicalOperator",
-          "replacement": "options.host && DEFAULT_OPTIONS.host",
+          "id": "261",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "false",
           "status": "Survived",
           "static": false,
-          "testsCompleted": 2,
+          "testsCompleted": 1,
           "coveredBy": [
-            "0",
             "1"
           ],
           "location": {
             "end": {
-              "column": 52,
-              "line": 390
+              "column": 84,
+              "line": 428
             },
             "start": {
-              "column": 16,
-              "line": 390
+              "column": 80,
+              "line": 428
             }
           }
         },
@@ -6636,84 +6749,9 @@
           }
         },
         {
-          "id": "218",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: 浏览器段 pong 缺失应触发探活 terminate 并级联关闭上游连接: uncaughtException: 浏览器段 pong 缺失应触发探活 terminate 并级联关闭上游连接",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 34,
-              "line": 368
-            },
-            "start": {
-              "column": 11,
-              "line": 368
-            }
-          }
-        },
-        {
-          "id": "219",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "statusReason": "uncaughtException: 浏览器段 pong 缺失应触发探活 terminate 并级联关闭上游连接: uncaughtException: 浏览器段 pong 缺失应触发探活 terminate 并级联关闭上游连接",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 32,
-              "line": 368
-            },
-            "start": {
-              "column": 13,
-              "line": 368
-            }
-          }
-        },
-        {
-          "id": "259",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 425
-            },
-            "start": {
-              "column": 38,
-              "line": 410
-            }
-          }
-        },
-        {
-          "id": "236",
+          "id": "237",
           "mutatorName": "LogicalOperator",
-          "replacement": "options.httpsPort && DEFAULT_OPTIONS.httpsPort",
+          "replacement": "options.targetHost && DEFAULT_OPTIONS.targetHost",
           "status": "Survived",
           "static": false,
           "testsCompleted": 2,
@@ -6723,19 +6761,19 @@
           ],
           "location": {
             "end": {
-              "column": 67,
-              "line": 392
+              "column": 70,
+              "line": 393
             },
             "start": {
-              "column": 21,
-              "line": 392
+              "column": 22,
+              "line": 393
             }
           }
         },
         {
-          "id": "240",
-          "mutatorName": "LogicalOperator",
-          "replacement": "(!Number.isInteger(targetPort) || targetPort < 1) && targetPort > 65535",
+          "id": "239",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
           "statusReason": "uncaughtException: Missing expected exception.: uncaughtException: Missing expected exception.",
           "status": "Killed",
           "static": false,
@@ -6759,44 +6797,28 @@
           }
         },
         {
-          "id": "260",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "status": "Survived",
+          "id": "242",
+          "mutatorName": "LogicalOperator",
+          "replacement": "!Number.isInteger(targetPort) && targetPort < 1",
+          "statusReason": "uncaughtException: Missing expected exception.: uncaughtException: Missing expected exception.",
+          "status": "Killed",
           "static": false,
-          "testsCompleted": 1,
+          "testsCompleted": 2,
+          "killedBy": [
+            "1"
+          ],
           "coveredBy": [
+            "0",
             "1"
           ],
           "location": {
             "end": {
-              "column": 4,
-              "line": 429
+              "column": 54,
+              "line": 395
             },
             "start": {
-              "column": 46,
-              "line": 427
-            }
-          }
-        },
-        {
-          "id": "261",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 84,
-              "line": 428
-            },
-            "start": {
-              "column": 80,
-              "line": 428
+              "column": 7,
+              "line": 395
             }
           }
         },
@@ -6848,32 +6870,6 @@
           }
         },
         {
-          "id": "247",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: Missing expected exception.: uncaughtException: Missing expected exception.",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 2,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 76,
-              "line": 395
-            },
-            "start": {
-              "column": 58,
-              "line": 395
-            }
-          }
-        },
-        {
           "id": "266",
           "mutatorName": "CallExpression",
           "replacement": ";",
@@ -6891,6 +6887,32 @@
             "start": {
               "column": 5,
               "line": 442
+            }
+          }
+        },
+        {
+          "id": "245",
+          "mutatorName": "EqualityOperator",
+          "replacement": "targetPort <= 1",
+          "statusReason": "uncaughtException: lan-proxy: targetPort must be a valid port, got 1: uncaughtException: lan-proxy: targetPort must be a valid port, got 1",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 2,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 54,
+              "line": 395
+            },
+            "start": {
+              "column": 40,
+              "line": 395
             }
           }
         },
@@ -6916,28 +6938,6 @@
           }
         },
         {
-          "id": "248",
-          "mutatorName": "EqualityOperator",
-          "replacement": "targetPort >= 65535",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 76,
-              "line": 395
-            },
-            "start": {
-              "column": 58,
-              "line": 395
-            }
-          }
-        },
-        {
           "id": "285",
           "mutatorName": "OptionalChaining",
           "replacement": "logger.warn(`lan-proxy: proxy error: ${err.message}`)",
@@ -6955,6 +6955,32 @@
             "start": {
               "column": 5,
               "line": 471
+            }
+          }
+        },
+        {
+          "id": "258",
+          "mutatorName": "OptionalChaining",
+          "replacement": "options.httpCompress.enabled",
+          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'enabled'): uncaughtException: Cannot read properties of undefined (reading 'enabled')",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 2,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 36,
+              "line": 410
+            },
+            "start": {
+              "column": 7,
+              "line": 410
             }
           }
         },
@@ -7005,16 +7031,34 @@
           }
         },
         {
-          "id": "256",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'level'): uncaughtException: Cannot read properties of undefined (reading 'level')",
-          "status": "Killed",
+          "id": "254",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "false",
+          "status": "Survived",
           "static": false,
           "testsCompleted": 2,
-          "killedBy": [
+          "coveredBy": [
+            "0",
             "1"
           ],
+          "location": {
+            "end": {
+              "column": 44,
+              "line": 400
+            },
+            "start": {
+              "column": 40,
+              "line": 400
+            }
+          }
+        },
+        {
+          "id": "257",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 2,
           "coveredBy": [
             "0",
             "1"
@@ -7098,54 +7142,6 @@
           }
         },
         {
-          "id": "254",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 44,
-              "line": 400
-            },
-            "start": {
-              "column": 40,
-              "line": 400
-            }
-          }
-        },
-        {
-          "id": "258",
-          "mutatorName": "OptionalChaining",
-          "replacement": "options.httpCompress.enabled",
-          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'enabled'): uncaughtException: Cannot read properties of undefined (reading 'enabled')",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 2,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 36,
-              "line": 410
-            },
-            "start": {
-              "column": 7,
-              "line": 410
-            }
-          }
-        },
-        {
           "id": "294",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
@@ -7196,27 +7192,6 @@
           }
         },
         {
-          "id": "263",
-          "mutatorName": "ArrowFunction",
-          "replacement": "() => undefined",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 110,
-              "line": 433
-            },
-            "start": {
-              "column": 9,
-              "line": 433
-            }
-          }
-        },
-        {
           "id": "299",
           "mutatorName": "ConditionalExpression",
           "replacement": "true",
@@ -7234,6 +7209,27 @@
             "start": {
               "column": 11,
               "line": 475
+            }
+          }
+        },
+        {
+          "id": "263",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 1,
+          "coveredBy": [
+            "0"
+          ],
+          "location": {
+            "end": {
+              "column": 110,
+              "line": 433
+            },
+            "start": {
+              "column": 9,
+              "line": 433
             }
           }
         },
@@ -7447,6 +7443,31 @@
           }
         },
         {
+          "id": "345",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19886: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19886",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 89,
+              "line": 518
+            },
+            "start": {
+              "column": 9,
+              "line": 518
+            }
+          }
+        },
+        {
           "id": "320",
           "mutatorName": "EqualityOperator",
           "replacement": "req.method !== \"OPTIONS\"",
@@ -7511,23 +7532,27 @@
           }
         },
         {
-          "id": "345",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
+          "id": "350",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19791: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19791",
+          "status": "Killed",
           "static": false,
           "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
           "coveredBy": [
             "1"
           ],
           "location": {
             "end": {
-              "column": 89,
-              "line": 518
+              "column": 10,
+              "line": 524
             },
             "start": {
-              "column": 9,
-              "line": 518
+              "column": 7,
+              "line": 519
             }
           }
         },
@@ -7626,31 +7651,6 @@
           }
         },
         {
-          "id": "346",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: 探活 ping 应按间隔到达浏览器端（4s 内仅收到 0 帧）: uncaughtException: 探活 ping 应按间隔到达浏览器端（4s 内仅收到 0 帧）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 89,
-              "line": 518
-            },
-            "start": {
-              "column": 9,
-              "line": 518
-            }
-          }
-        },
-        {
           "id": "359",
           "mutatorName": "LogicalOperator",
           "replacement": "options.httpsPort !== undefined || options.tls !== undefined",
@@ -7677,6 +7677,31 @@
           }
         },
         {
+          "id": "346",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: 探活 ping 应按间隔到达浏览器端（4s 内仅收到 0 帧）: uncaughtException: 探活 ping 应按间隔到达浏览器端（4s 内仅收到 0 帧）",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 89,
+              "line": 518
+            },
+            "start": {
+              "column": 9,
+              "line": 518
+            }
+          }
+        },
+        {
           "id": "349",
           "mutatorName": "BlockStatement",
           "replacement": "{}",
@@ -7698,28 +7723,6 @@
             "start": {
               "column": 91,
               "line": 518
-            }
-          }
-        },
-        {
-          "id": "358",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 67,
-              "line": 536
-            },
-            "start": {
-              "column": 7,
-              "line": 536
             }
           }
         },
@@ -7776,6 +7779,28 @@
           }
         },
         {
+          "id": "358",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 2,
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 67,
+              "line": 536
+            },
+            "start": {
+              "column": 7,
+              "line": 536
+            }
+          }
+        },
+        {
           "id": "360",
           "mutatorName": "ConditionalExpression",
           "replacement": "true",
@@ -7816,32 +7841,6 @@
             "start": {
               "column": 7,
               "line": 536
-            }
-          }
-        },
-        {
-          "id": "368",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 47,
-              "line": 539
-            },
-            "start": {
-              "column": 5,
-              "line": 539
             }
           }
         },
@@ -7898,6 +7897,28 @@
           }
         },
         {
+          "id": "364",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 2,
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 540
+            },
+            "start": {
+              "column": 69,
+              "line": 536
+            }
+          }
+        },
+        {
           "id": "372",
           "mutatorName": "CallExpression",
           "replacement": ";",
@@ -7924,9 +7945,9 @@
           }
         },
         {
-          "id": "364",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
+          "id": "366",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
           "status": "Survived",
           "static": false,
           "testsCompleted": 2,
@@ -7936,12 +7957,12 @@
           ],
           "location": {
             "end": {
-              "column": 4,
-              "line": 540
+              "column": 46,
+              "line": 538
             },
             "start": {
-              "column": 69,
-              "line": 536
+              "column": 5,
+              "line": 538
             }
           }
         },
@@ -7998,32 +8019,6 @@
           }
         },
         {
-          "id": "380",
-          "mutatorName": "ArrowFunction",
-          "replacement": "() => undefined",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 99,
-              "line": 552
-            },
-            "start": {
-              "column": 28,
-              "line": 552
-            }
-          }
-        },
-        {
           "id": "383",
           "mutatorName": "BooleanLiteral",
           "replacement": "httpsServer",
@@ -8050,7 +8045,7 @@
           }
         },
         {
-          "id": "366",
+          "id": "368",
           "mutatorName": "CallExpression",
           "replacement": ";",
           "status": "Survived",
@@ -8062,12 +8057,12 @@
           ],
           "location": {
             "end": {
-              "column": 46,
-              "line": 538
+              "column": 47,
+              "line": 539
             },
             "start": {
               "column": 5,
-              "line": 538
+              "line": 539
             }
           }
         },
@@ -8124,6 +8119,32 @@
           }
         },
         {
+          "id": "384",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19886: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19886",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 2,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 25,
+              "line": 554
+            },
+            "start": {
+              "column": 13,
+              "line": 554
+            }
+          }
+        },
+        {
           "id": "376",
           "mutatorName": "CallExpression",
           "replacement": ";",
@@ -8146,9 +8167,9 @@
           }
         },
         {
-          "id": "384",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
+          "id": "380",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
           "status": "Survived",
           "static": false,
           "testsCompleted": 2,
@@ -8158,12 +8179,12 @@
           ],
           "location": {
             "end": {
-              "column": 25,
-              "line": 554
+              "column": 99,
+              "line": 552
             },
             "start": {
-              "column": 13,
-              "line": 554
+              "column": 28,
+              "line": 552
             }
           }
         },
@@ -8250,6 +8271,31 @@
           }
         },
         {
+          "id": "398",
+          "mutatorName": "OptionalChaining",
+          "replacement": "httpsServer.close",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:20029: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:20029",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 29,
+              "line": 563
+            },
+            "start": {
+              "column": 11,
+              "line": 563
+            }
+          }
+        },
+        {
           "id": "396",
           "mutatorName": "OptionalChaining",
           "replacement": "logger.warn(`lan-proxy: https server failed (${err.message}) — serving HTTP only`)",
@@ -8267,27 +8313,6 @@
             "start": {
               "column": 11,
               "line": 562
-            }
-          }
-        },
-        {
-          "id": "398",
-          "mutatorName": "OptionalChaining",
-          "replacement": "httpsServer.close",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 29,
-              "line": 563
-            },
-            "start": {
-              "column": 11,
-              "line": 563
             }
           }
         },
@@ -8392,6 +8417,31 @@
           }
         },
         {
+          "id": "406",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0"
+          ],
+          "location": {
+            "end": {
+              "column": 107,
+              "line": 568
+            },
+            "start": {
+              "column": 35,
+              "line": 568
+            }
+          }
+        },
+        {
           "id": "305",
           "mutatorName": "BlockStatement",
           "replacement": "{}",
@@ -8408,31 +8458,6 @@
             "start": {
               "column": 72,
               "line": 482
-            }
-          }
-        },
-        {
-          "id": "409",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 89,
-              "line": 569
-            },
-            "start": {
-              "column": 11,
-              "line": 569
             }
           }
         },
@@ -8459,6 +8484,48 @@
             "start": {
               "column": 17,
               "line": 575
+            }
+          }
+        },
+        {
+          "id": "402",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 1,
+          "coveredBy": [
+            "0"
+          ],
+          "location": {
+            "end": {
+              "column": 10,
+              "line": 570
+            },
+            "start": {
+              "column": 51,
+              "line": 566
+            }
+          }
+        },
+        {
+          "id": "413",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 1,
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 54,
+              "line": 577
+            },
+            "start": {
+              "column": 37,
+              "line": 577
             }
           }
         },
@@ -8503,48 +8570,6 @@
           }
         },
         {
-          "id": "413",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 54,
-              "line": 577
-            },
-            "start": {
-              "column": 37,
-              "line": 577
-            }
-          }
-        },
-        {
-          "id": "402",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 10,
-              "line": 570
-            },
-            "start": {
-              "column": 51,
-              "line": 566
-            }
-          }
-        },
-        {
           "id": "416",
           "mutatorName": "ArrayDeclaration",
           "replacement": "[]",
@@ -8571,7 +8596,28 @@
           }
         },
         {
-          "id": "417",
+          "id": "403",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "false",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 1,
+          "coveredBy": [
+            "0"
+          ],
+          "location": {
+            "end": {
+              "column": 30,
+              "line": 567
+            },
+            "start": {
+              "column": 26,
+              "line": 567
+            }
+          }
+        },
+        {
+          "id": "419",
           "mutatorName": "BlockStatement",
           "replacement": "{}",
           "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
@@ -8587,33 +8633,12 @@
           ],
           "location": {
             "end": {
-              "column": 8,
-              "line": 586
+              "column": 10,
+              "line": 584
             },
             "start": {
-              "column": 32,
-              "line": 581
-            }
-          }
-        },
-        {
-          "id": "262",
-          "mutatorName": "ArrowFunction",
-          "replacement": "() => undefined",
-          "status": "Timeout",
-          "static": false,
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 16,
-              "line": 434
-            },
-            "start": {
-              "column": 24,
-              "line": 431
+              "column": 23,
+              "line": 582
             }
           }
         },
@@ -8644,97 +8669,30 @@
           }
         },
         {
-          "id": "421",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 32,
-              "line": 583
-            },
-            "start": {
-              "column": 15,
-              "line": 583
-            }
-          }
-        },
-        {
-          "id": "403",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 30,
-              "line": 567
-            },
-            "start": {
-              "column": 26,
-              "line": 567
-            }
-          }
-        },
-        {
-          "id": "350",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
+          "id": "262",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
           "status": "Timeout",
           "static": false,
           "coveredBy": [
+            "0",
             "1"
           ],
           "location": {
             "end": {
-              "column": 10,
-              "line": 524
+              "column": 16,
+              "line": 434
             },
             "start": {
-              "column": 7,
-              "line": 519
+              "column": 24,
+              "line": 431
             }
           }
         },
         {
-          "id": "406",
-          "mutatorName": "ArrowFunction",
-          "replacement": "() => undefined",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 107,
-              "line": 568
-            },
-            "start": {
-              "column": 35,
-              "line": 568
-            }
-          }
-        },
-        {
-          "id": "422",
-          "mutatorName": "EqualityOperator",
-          "replacement": "--remaining !== 0",
+          "id": "423",
+          "mutatorName": "UpdateOperator",
+          "replacement": "++remaining",
           "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
           "status": "Killed",
           "static": false,
@@ -8748,7 +8706,7 @@
           ],
           "location": {
             "end": {
-              "column": 32,
+              "column": 26,
               "line": 583
             },
             "start": {
@@ -8758,28 +8716,23 @@
           }
         },
         {
-          "id": "424",
+          "id": "409",
           "mutatorName": "CallExpression",
           "replacement": ";",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
+          "status": "Survived",
           "static": false,
           "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
           "coveredBy": [
-            "0",
-            "1"
+            "0"
           ],
           "location": {
             "end": {
-              "column": 44,
-              "line": 583
+              "column": 89,
+              "line": 569
             },
             "start": {
-              "column": 34,
-              "line": 583
+              "column": 11,
+              "line": 569
             }
           }
         },
@@ -8806,32 +8759,6 @@
             "start": {
               "column": 7,
               "line": 587
-            }
-          }
-        },
-        {
-          "id": "428",
-          "mutatorName": "ArrowFunction",
-          "replacement": "() => undefined",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 52,
-              "line": 596
-            },
-            "start": {
-              "column": 24,
-              "line": 596
             }
           }
         },
@@ -8880,6 +8807,28 @@
           }
         },
         {
+          "id": "428",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 2,
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 52,
+              "line": 596
+            },
+            "start": {
+              "column": 24,
+              "line": 596
+            }
+          }
+        },
+        {
           "id": "353",
           "mutatorName": "CallExpression",
           "replacement": ";",
@@ -8917,6 +8866,26 @@
             "start": {
               "column": 44,
               "line": 559
+            }
+          }
+        },
+        {
+          "id": "393",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Timeout",
+          "static": false,
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 27,
+              "line": 560
+            },
+            "start": {
+              "column": 15,
+              "line": 560
             }
           }
         },
@@ -8959,26 +8928,6 @@
             "start": {
               "column": 28,
               "line": 558
-            }
-          }
-        },
-        {
-          "id": "393",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Timeout",
-          "static": false,
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 27,
-              "line": 560
-            },
-            "start": {
-              "column": 15,
-              "line": 560
             }
           }
         },
@@ -9066,7 +9015,7 @@
           }
         },
         {
-          "id": "419",
+          "id": "417",
           "mutatorName": "BlockStatement",
           "replacement": "{}",
           "status": "Timeout",
@@ -9077,19 +9026,19 @@
           ],
           "location": {
             "end": {
-              "column": 10,
-              "line": 584
+              "column": 8,
+              "line": 586
             },
             "start": {
-              "column": 23,
-              "line": 582
+              "column": 32,
+              "line": 581
             }
           }
         },
         {
-          "id": "423",
-          "mutatorName": "UpdateOperator",
-          "replacement": "++remaining",
+          "id": "421",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
           "status": "Timeout",
           "static": false,
           "coveredBy": [
@@ -9098,11 +9047,53 @@
           ],
           "location": {
             "end": {
-              "column": 26,
+              "column": 32,
               "line": 583
             },
             "start": {
               "column": 15,
+              "line": 583
+            }
+          }
+        },
+        {
+          "id": "422",
+          "mutatorName": "EqualityOperator",
+          "replacement": "--remaining !== 0",
+          "status": "Timeout",
+          "static": false,
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 32,
+              "line": 583
+            },
+            "start": {
+              "column": 15,
+              "line": 583
+            }
+          }
+        },
+        {
+          "id": "424",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "status": "Timeout",
+          "static": false,
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 44,
+              "line": 583
+            },
+            "start": {
+              "column": 34,
               "line": 583
             }
           }
