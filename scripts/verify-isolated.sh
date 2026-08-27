@@ -81,5 +81,6 @@ fi
 
 echo "隔离环境就绪: DSH_HOME=$ISOLATED_HOME  profile=$PROFILE"
 echo "启动 dsh web 于 http://127.0.0.1:$PORT （Ctrl+C 退出并自动清理）"
-# 5. 前台启动（阻塞）；退出时 trap 自动清理
-exec dsh --profile "$PROFILE" --port "$PORT" --no-open
+# 5. 前台启动（阻塞）。不用 exec：exec 会替换 shell，dsh 被 Ctrl+C/SIGTERM 杀掉时
+#    EXIT trap 不触发、临时目录残留。前台子进程 + EXIT trap 保证任何退出都清理。
+dsh --profile "$PROFILE" --port "$PORT" --no-open

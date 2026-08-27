@@ -33,16 +33,31 @@
 
 ### 2.1 一键脚本（推荐）
 
+跨仓可复用的隔离验证能力已沉淀为 **dsh-dev-utils** 仓库的 `dsh-verify-isolated` skill
+（https://github.com/wingsky-1/dsh-dev-utils），本仓库文档与脚本与其保持同步。
+
+安装（用户级，本机所有 dsh 项目可用）：
+
 ```bash
-# 工作目录：worktree 根（非主 checkout）
-scripts/verify-isolated.sh --port 3456 packages/dsh-<name>
-# 多包：scripts/verify-isolated.sh --port 3456 packages/dsh-a packages/dsh-b
+git clone --depth 1 https://github.com/wingsky-1/dsh-dev-utils.git "$DSH_HOME/skills/dsh-dev-utils"
+```
+
+更新：`git -C "$DSH_HOME/skills/dsh-dev-utils" pull`（及时更新最佳实践见该仓库 README）。
+
+使用（工作目录：worktree 根，非主 checkout）：
+
+```bash
+"$DSH_HOME/skills/dsh-dev-utils/skills/dsh-verify-isolated/scripts/verify-isolated.sh" --port 3456 packages/dsh-<name>
+# 多包：... --port 3456 packages/dsh-a packages/dsh-b
 # 端口冲突：--port 0 让系统随机分配；--keep 保留临时环境便于排查
 ```
 
 脚本自动完成：建临时 `DSH_HOME` → 建 `verify_<8位随机>` profile → 注入内置
 `@deepseek-ai/dsh-web-app` bundle → 把本地插件 link 进 profile → 启动隔离
 `dsh web`（前台阻塞）。`Ctrl+C` 退出时 `trap` 自动删除临时 `DSH_HOME` 与 profile。
+
+> 仓库内副本 `scripts/verify-isolated.sh` 与 skill 内脚本保持一致（同一脚本的镜像，
+> 便于不装 skill 时直接用）；**权威版本以 dsh-dev-utils skill 为准**。
 
 ### 2.2 手动步骤（等价于脚本做的事）
 
