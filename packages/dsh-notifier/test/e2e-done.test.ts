@@ -13,7 +13,7 @@
 import { join } from "node:path";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { assert, makeNotifier, agentWithTitle, fakeAgents, waitMergeWindow, fakeReq, makeRes, turnEndEvent } from "./helpers.ts";
+import { assert, makeNotifier, agentWithTitle, fakeAgents, waitMergeWindow, fakeReq, makeRes, turnEndEvent, waitForHistory } from "./helpers.ts";
 import { ROUTES, lastTurnEndOf } from "../lib/index.js";
 
 /** 带 info 收集的 logger 覆盖。 */
@@ -389,6 +389,156 @@ try {
     };
     assert.deepEqual(lastTurnEndOf(snapshotAgent), { turn: 7, kind: "completed" }, "(d) lastTurnEndOf 跳过非有限 turn 条目");
     assert.equal(lastTurnEndOf({ id: "mal-3", session: { header: undefined, events: [{ type: "turn/end", data: { turn: null, reason: { kind: "completed" } } }] } }), undefined, "(d) 仅畸形条目时返回 undefined");
+  }
+
+  // ── issue #290：根因 A 安全化与提交后置三态化（A-2/A-3/B-1/B-2/B-4）──
+
+  // A-2：未提供 agents 时 completed 仍走 done 主分支且不抛（logger 无「处理失败」warn）
+  {
+    const infos = [];
+    const warns = [];
+    const a2Cfg = join(work, "a2-no-agents.json");
+    writeFileSync(a2Cfg, JSON.stringify({ doneMergeWindowMs: 0 }));
+    const { listeners } = await makeNotifier(
+      work,
+      { configFile: a2Cfg },
+      { logger: { info: (t) => infos.push(t), warn: (t) => warns.push(t) } }
+    );
+    const status = listeners.get("agent/status")[0];
+    const mk = () => agentWithTitle("a2-1", "无 agents 主任务", { turnEnd: 1 });
+    status({ agent: mk(), status: "running" });
+    status({ agent: mk(), status: "idle" });
+    assert.equal(infos.filter((t) => /: done /.test(t)).length, 1, "A-2：无 agents 时 completed 走 done 主分支");
+    assert.ok(!warns.some((t) => t.includes("agent/status 处理失败")), "A-2：无 'agent/status 处理失败' warn");
+  }
+
+  // A-3：agents 缺位时 fork 型（parentSession 无 origin、seedLength>0）保守走
+  //     主任务 done（即使 notifySubagentDone=true 也不误判 subagent-done）；
+  //     spawn 型（origin=subagent）仍按 origin 信号走 subagent 分支。
+  {
+    const a3Cfg = join(work, "a3-no-agents.json");
+    writeFileSync(a3Cfg, JSON.stringify({ doneMergeWindowMs: 0, notifySubagentDone: true }));
+    const infos = [];
+    const { listeners } = await makeNotifier(work, { configFile: a3Cfg }, loggingOverride(infos));
+    const status = listeners.get("agent/status")[0];
+    // fork 型：无 origin、带 parentSession + seedLength，归属服务缺位 → 保守走 done
+    const fork = () => agentWithTitle("a3-fork", "fork 型无 agents", { parentSession: "ghost-parent", seedLength: 3, turnEnd: 1 });
+    status({ agent: fork(), status: "running" });
+    status({ agent: fork(), status: "idle" });
+    assert.equal(infos.filter((t) => /: done /.test(t)).length, 1, "A-3：agents 缺位 fork 型保守走 done");
+    assert.ok(!infos.some((t) => /: subagent-done /.test(t)), "A-3：不误判 subagent-done");
+    // spawn 型：origin 信号不依赖 agents，仍走 subagent 分支
+    const spawn = () => agentWithTitle("a3-spawn", "spawn 子任务", { subagent: true, turnEnd: 2 });
+    status({ agent: spawn(), status: "running" });
+    status({ agent: spawn(), status: "idle" });
+    assert.equal(infos.filter((t) => /: subagent-done /.test(t)).length, 1, "A-3：spawn 型 origin 信号仍走 subagent 分支");
+  }
+
+  // B-1：开关禁用三态提交——notifyTaskDone=false 时 completed idle 不通知，
+  //     但 lastEndedTurn 照常提交，同 turn 再现 idle 不重复处理。
+  {
+    const b1Cfg = join(work, "b1-off.json");
+    writeFileSync(b1Cfg, JSON.stringify({ doneMergeWindowMs: 0, notifyTaskDone: false }));
+    const infos = [];
+    const warns = [];
+    const { listeners } = await makeNotifier(work, { configFile: b1Cfg }, { logger: { info: (t) => infos.push(t), warn: (t) => warns.push(t) } });
+    const status = listeners.get("agent/status")[0];
+    const mk = () => agentWithTitle("b1-1", "开关禁用任务", { turnEnd: 1 });
+    status({ agent: mk(), status: "running" });
+    status({ agent: mk(), status: "idle" });
+    assert.equal(infos.filter((t) => /: done /.test(t)).length, 0, "B-1：notifyTaskDone=false 主任务不通知");
+    // 同 turn 再现 idle：lastEndedTurn 已提交 → 无新证据 → skip（不重复处理）
+    status({ agent: mk(), status: "running" });
+    status({ agent: mk(), status: "idle" });
+    assert.equal(infos.filter((t) => /: done /.test(t)).length, 0, "B-1：开关禁用后同 turn 再现 idle 不重复");
+    assert.ok(warns.some((t) => t.includes("b1-1") && /完成判定跳过/.test(t)), "B-1：再现 idle 走跳过路径 warn 留痕");
+  }
+
+  // B-2：免打扰拦截后同 turn 再现 idle 不重复——quietHours 命中且 done 不在
+  //     allowKinds 时，idle completed → 仅一条 suppressed 历史、无系统通知；
+  //     同 turn 再现 idle → 不重复通知、不新增记录。
+  {
+    const qhAll = { enabled: true, start: "00:00", end: "23:59" };
+    const b2Cfg = join(work, "b2-quiet.json");
+    writeFileSync(b2Cfg, JSON.stringify({ doneMergeWindowMs: 0, quietHours: { ...qhAll, allowKinds: ["ask"] } }));
+    const infos = [];
+    const { listeners, routes } = await makeNotifier(work, { configFile: b2Cfg, historyFile: join(work, "b2-hist.jsonl") }, loggingOverride(infos));
+    const status = listeners.get("agent/status")[0];
+    const historyRoute = routes.find((r) => r.path === ROUTES.history);
+    const mk = () => agentWithTitle("b2-1", "免打扰完成", { turnEnd: 1 });
+    status({ agent: mk(), status: "running" });
+    status({ agent: mk(), status: "idle" });
+    assert.ok(!infos.some((t) => /dsh-notifier: done /.test(t) && !t.includes("被免打扰拦截")), "B-2：免打扰拦截不发出系统通知");
+    assert.ok(infos.some((t) => t.includes("被免打扰拦截")), "B-2：拦截记录日志");
+    const records = await waitForHistory(historyRoute, (r) => r.some((e) => e.kind === "done" && e.suppressed === "quiet"));
+    assert.equal(records.filter((e) => e.kind === "done" && e.suppressed === "quiet").length, 1, "B-2：仅一条 suppressed:quiet 历史");
+    // 同 turn 再现 idle：免打扰拦截也是三态提交之一（lastEndedTurn 已推进）→ 不重复
+    status({ agent: mk(), status: "running" });
+    status({ agent: mk(), status: "idle" });
+    const after = await waitForHistory(historyRoute, (r) => r.length > records.length, 500);
+    assert.equal(after.length, records.length, "B-2：同 turn 再现 idle 不新增历史记录");
+  }
+
+  // B-4：批次按「入队成功」提交、与聚合 flush 成败解耦——doneMergeWindowMs>0
+  //     时首条完成入队即推进 lastEndedTurn（窗口内同 turn 再现不重复）。
+  {
+    const b4Cfg = join(work, "b4-merge.json");
+    writeFileSync(b4Cfg, JSON.stringify({ doneMergeWindowMs: 5000 }));
+    const infos = [];
+    const { listeners } = await makeNotifier(work, { configFile: b4Cfg }, loggingOverride(infos));
+    const status = listeners.get("agent/status")[0];
+    const mk = () => agentWithTitle("b4-1", "合并窗口任务", { turnEnd: 1 });
+    status({ agent: mk(), status: "running" });
+    status({ agent: mk(), status: "idle" });
+    assert.equal(infos.filter((t) => /: done /.test(t)).length, 1, "B-4：首条完成即时通知并入队");
+    // 窗口未 flush 时同 turn 再现 idle：入队成功已提交 lastEndedTurn → 不重复
+    status({ agent: mk(), status: "running" });
+    status({ agent: mk(), status: "idle" });
+    assert.equal(infos.filter((t) => /: done /.test(t)).length, 1, "B-4：窗口内同 turn 再现 idle 不重复（入队即提交）");
+  }
+
+  // B-4 flush 阶段抛错：flush 补发时 notify 抛错（uncaughtException 捕获）
+  //     不导致已提交 turn 回退重发。
+  {
+    const b4fCfg = join(work, "b4-flush-fail.json");
+    writeFileSync(b4fCfg, JSON.stringify({ doneMergeWindowMs: 30 }));
+    let uncaught = null;
+    const onUncaught = (e) => { uncaught = e; };
+    process.on("uncaughtException", onUncaught);
+    try {
+      const infos = [];
+      let infoCalls = 0;
+      const { listeners } = await makeNotifier(work, { configFile: b4fCfg }, {
+        logger: {
+          warn: () => {},
+          info: (t) => {
+            infoCalls += 1;
+            if (infoCalls > 1) throw new Error("flush notify failed");
+            infos.push(t);
+          },
+        },
+      });
+      const status = listeners.get("agent/status")[0];
+      const mkA = () => agentWithTitle("b4f-a", "flush 失败 A", { turnEnd: 1 });
+      const mkB = () => agentWithTitle("b4f-b", "flush 失败 B", { turnEnd: 1 });
+      // 两条完成进入同一聚合窗口（首条即时、第二条入队挂起）
+      status({ agent: mkA(), status: "running" });
+      status({ agent: mkA(), status: "idle" });
+      status({ agent: mkB(), status: "running" });
+      status({ agent: mkB(), status: "idle" });
+      assert.equal(infos.filter((t) => /: done /.test(t)).length, 1, "B-4：窗口内首条即时、第二条挂起");
+      // 等窗口到点：flush 补发聚合条 → 第二次 logger.info 抛错 → uncaughtException
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      assert.ok(uncaught !== null && /flush notify failed/.test(String(uncaught?.message ?? "")), "B-4：flush 阶段 notify 抛错（uncaughtException 捕获）");
+      // 已提交 turn 不回退：两条完成各自 lastEndedTurn 已提交，再现 idle 不重复
+      status({ agent: mkA(), status: "running" });
+      status({ agent: mkA(), status: "idle" });
+      status({ agent: mkB(), status: "running" });
+      status({ agent: mkB(), status: "idle" });
+      assert.equal(infos.filter((t) => /: done /.test(t)).length, 1, "B-4：flush 抛错后已提交 turn 不回退重发");
+    } finally {
+      process.off("uncaughtException", onUncaught);
+    }
   }
 } finally {
   rmSync(work, { recursive: true, force: true });
