@@ -36,7 +36,7 @@ test/                 共享测试工具（smoke-lib）
 
 ## 开发隔离纪律（硬性）
 
-主 checkout 是 dsh link 模式的插件加载源——`dsh web` 运行时从其中读取 lib/ 产物。
+主 checkout 是插件加载源——`dsh web` 运行时从其中读取 lib/ 产物。
 **为保持本地环境稳定运行，禁止在主 checkout 中**：切分支、改代码、跑实验性 build、
 直接跑 smoke / 浏览器实测等验证动作。
 

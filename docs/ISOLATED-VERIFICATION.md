@@ -17,47 +17,83 @@
 
 **不需要**隔离验证的例外：纯文档改动、纯宿主端逻辑（不涉及 UI 渲染）、纯后端数据流变更。
 
-## 2. 环境搭建
+## 2. 环境搭建（双重隔离）
 
-验证使用完全隔离的临时环境，不干扰主 checkout 的 `dsh web` 运行实例。
+验证使用**全新临时 `DSH_HOME` + 独立 profile** 的双重隔离环境，
+与正在使用的真实 `~/.dsh`（含用户日常的 `web` profile）完全隔绝：
 
-### 2.1 最简启动
+| 隔离层 | 做法 | 隔离内容 |
+|--------|------|----------|
+| 第一层：临时 `DSH_HOME` | `DSH_HOME=$(mktemp -d)` | 凭据、会话、全部用户数据、home 级 `cordis.patch.yml` |
+| 第二层：独立 profile | `verify_<8位随机>`（非 `web`） | 插件组合栈（bundles）、profile 级 patch、插件依赖 |
+
+只建独立 profile 不够：profile 共享 home 级的凭据与会话；只有同时把 `DSH_HOME`
+指向临时目录，才能做到与用户正在使用的环境完全隔离。验证结束后删除临时
+`DSH_HOME` 与 `verify_*` profile，不留残留。
+
+### 2.1 一键脚本（推荐）
 
 ```bash
 # 工作目录：worktree 根（非主 checkout）
+scripts/verify-isolated.sh --port 3456 packages/dsh-<name>
+# 多包：scripts/verify-isolated.sh --port 3456 packages/dsh-a packages/dsh-b
+# 端口冲突：--port 0 让系统随机分配；--keep 保留临时环境便于排查
+```
+
+脚本自动完成：建临时 `DSH_HOME` → 建 `verify_<8位随机>` profile → 注入内置
+`@deepseek-ai/dsh-web-app` bundle → 把本地插件 link 进 profile → 启动隔离
+`dsh web`（前台阻塞）。`Ctrl+C` 退出时 `trap` 自动删除临时 `DSH_HOME` 与 profile。
+
+### 2.2 手动步骤（等价于脚本做的事）
+
+```bash
+# 工作目录：worktree 根（非主 checkout）
+# 1. 第一层隔离：全新临时 DSH_HOME
 DSH_HOME=$(mktemp -d)
 export DSH_HOME
 
-# 从主 checkout link 插件（已构建的 lib/ 产物）
-# 注意：主 checkout 路径不含 worktree 后缀
-dsh link /path/to/main-checkout/packages/dsh-<name>
+# 2. 第二层隔离：独立 profile（verify_<8位随机>，避免与真实环境冲突）
+PROFILE=verify_$(openssl rand -hex 4)
+dsh plugin --profile "$PROFILE" add --help >/dev/null   # 初始化 profile（含 dsh-base 模板）
 
-# 启动独立 dsh web，指定不冲突的端口
-dsh web --port 3456
+# 3. 注入内置 web-app bundle：@deepseek-ai/dsh-base、@deepseek-ai/dsh-web-app 按名
+#    从 dsh 安装目录解析，不进 dependencies、不走 npm
+node -e '
+  const fs = require("fs");
+  const p = process.argv[1];
+  const j = JSON.parse(fs.readFileSync(p, "utf8"));
+  const b = j.dsh.profile.bundles;
+  if (!b.includes("@deepseek-ai/dsh-web-app")) {
+    b.splice(b.indexOf("@deepseek-ai/dsh-base") + 1, 0, "@deepseek-ai/dsh-web-app");
+  }
+  fs.writeFileSync(p, JSON.stringify(j, null, 2));
+' "$DSH_HOME/profiles/$PROFILE/package.json"
+
+# 4. 挂载本地插件（主 checkout 的 packages/*，link 进 profile）
+dsh plugin --profile "$PROFILE" add /path/to/main-checkout/packages/dsh-<name>
+
+# 5. 启动隔离 dsh web（指定不冲突端口；--port 0 让系统随机）
+dsh --profile "$PROFILE" --port 3456
 ```
 
-### 2.2 关键原则
+### 2.3 关键原则
 
-- **DSH_HOME 设到临时目录**：`$(mktemp -d)` 生成唯一临时目录，防止测试数据污染
-  `~/.dsh` 真实用户配置，也避免多个验证实例间的竞态（见 DEVELOPMENT.md §5.2）。
-- **插件从主 checkout 的 `lib/` 加载**：`dsh link` 指向主 checkout 的 `packages/*/lib/` 产物，
-  确保访问的是构建后的成品，而非源文件。
-- **独立端口**：`--port <n>` 选择一个与运行中主 `dsh web` 不冲突的端口（如 3456）。
+- **DSH_HOME 设到临时目录**：`$(mktemp -d)` 生成唯一临时目录，隔离凭据、会话与
+  home 级 patch，防止测试数据污染 `~/.dsh` 真实用户配置（见 DEVELOPMENT.md §5.2）。
+- **独立 profile 命名 `verify_<8位随机>`**：不占用/不触碰用户正在使用的 `web`
+  profile；随机后缀避免多实例/多次验证间冲突。
+- **插件从主 checkout 的 `lib/` 加载**：`dsh plugin --profile <name> add` 指向主
+  checkout 的 `packages/*/`，以 `link:` 依赖挂载，确保访问构建后的成品（而非源文件）。
+- **最小启动依赖**：自定义 profile 要启动 web 界面，`dsh.profile.bundles` 必须含
+  `@deepseek-ai/dsh-base` + `@deepseek-ai/dsh-web-app`。这两个内置 bundle 从 dsh
+  安装目录按名解析，**不要**用 `dsh plugin add` 走 npm 安装（其依赖
+  `@deepseek-ai/dsh-frontend` 不在 registry，会 404）。
+- **独立端口**：`--port <n>` 选择与运行中主 `dsh web` 不冲突的端口（如 3456），
   **不要关闭或重启运行中的主 dsh web 进程**。
 - **不复制真实凭据**：隔离环境使用临时 `DSH_HOME`，不携带 `~/.dsh` 下的真实凭据、
   令牌、API 密钥等。若验证需要凭据，使用测试专用凭据或 mock 数据。
-- **验证完成后清理**：停止隔离 `dsh web` 进程（`kill %1` 或 `pkill -f "dsh web.*port 3456"`），
-  删除临时 `DSH_HOME` 目录（`rm -rf "$DSH_HOME"`）。
-
-### 2.3 多包验证
-
-若改动涉及多个包（如宿主端 + 客户端配合），需同时 link 所有相关包：
-
-```bash
-for pkg in dsh-notifier dsh-mcp-manager; do
-  dsh link /path/to/main-checkout/packages/$pkg
-done
-```
+- **验证完成后清理**：停止隔离 `dsh web` 进程后，删除临时 `DSH_HOME` 目录
+  （`rm -rf "$DSH_HOME"`），避免残留无用的 `verify_*` profile。
 
 ## 3. 验证方法
 
