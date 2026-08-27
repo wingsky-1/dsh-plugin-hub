@@ -32,16 +32,18 @@ const ROOT = join(import.meta.dirname, '../..')
 const CI = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8')
 const OBSERVE = readFileSync(join(ROOT, '.github/workflows/observe.yml'), 'utf8')
 const GAUNTLET = JSON.parse(readFileSync(join(ROOT, 'scripts/data/gauntlet.config.json'), 'utf8'))
+const MANIFEST = JSON.parse(readFileSync(join(ROOT, 'scripts/data/plugins-manifest.json'), 'utf8'))
 
-const ALL_PACKAGES = [
-  'dsh-notifier',
-  'dsh-idle-archive',
-  'dsh-web-file-preview',
-  'dsh-mcp-manager',
-  'dsh-provider-usage',
-  'dsh-lan-proxy',
-  'dsh-plugins-all',
-]
+// 包集合单一事实源（#306 评审）：从 plugins-manifest.json 派生，消除手写漂移。
+//  - MATRIX_PACKAGES：build-test 矩阵全集 = active ∪ standalone ∪ 聚合包
+//    （build 无条件覆盖所有要发布产物的包，repo-gate 全局门禁依赖全集 lib）
+//  - SLICE_PACKAGES：切片清单 = active ∪ 聚合包（standalone 不进聚合、不参与切片）
+//  - MUTATION_PACKAGES：变异对象包 = gauntlet mutation.packages（含 standalone）
+const AGGREGATE = 'dsh-plugins-all'
+const MATRIX_PACKAGES = [...MANIFEST.active, ...(MANIFEST.standalone ?? []), AGGREGATE]
+const SLICE_PACKAGES = [...MANIFEST.active, AGGREGATE]
+// 变异对象包：gauntlet mutation.packages（含 standalone，不含聚合/纯宿主 skill 包）
+const MUTATION_PACKAGES = Object.keys(GAUNTLET?.mutation?.packages ?? {})
 
 test('ci.yml: repo-gate 保持分支保护 required check 名', () => {
   const m = /repo-gate:\s*\n\s*name: (.+)/.exec(CI)
@@ -77,7 +79,7 @@ test('ci.yml: filter 失败 fallback 全量切片（fail-closed 双闸）', () =
 
 test('ci.yml: build-test 矩阵恒全集且 build 无条件（评审 F1：全局门禁依赖全量产物）', () => {
   const bt = CI.slice(CI.indexOf('\n  build-test:'), CI.indexOf('\n  repo-gate:'))
-  for (const pkg of ALL_PACKAGES) {
+  for (const pkg of MATRIX_PACKAGES) {
     assert.ok(bt.includes(`- ${pkg}\n`), `矩阵含 ${pkg}`)
   }
   // build 步骤不得带切片条件；smoke/typecheck 必须带切片条件且 --if-present（评审 F3）
@@ -96,13 +98,13 @@ test('ci.yml: build-test 矩阵恒全集且 build 无条件（评审 F1：全局
 
 test('ci.yml: changes case 映射覆盖全部包（防新增包静默漏检，评审 F7）', () => {
   const computeBlock = CI.slice(CI.indexOf('Compute hit packages'))
-  for (const pkg of ALL_PACKAGES) {
+  for (const pkg of SLICE_PACKAGES) {
     assert.ok(computeBlock.includes(`dsh-${pkg.slice(4)})`) || computeBlock.includes(`${pkg}) V=`),
       `case 分支缺 ${pkg} —— 新增包必须同步加映射分支`)
   }
-  // 循环遍历清单与 ALL_PACKAGES 一致
+  // 循环遍历清单与 SLICE_PACKAGES 一致（切片面只含 active ∪ 聚合，standalone 不进）
   const loopList = /for pkg in ([\w -]+); do/.exec(computeBlock)?.[1]?.trim().split(/\s+/).sort()
-  assert.deepEqual(loopList, [...ALL_PACKAGES].sort(), 'for 循环清单与包全集不一致')
+  assert.deepEqual(loopList, [...SLICE_PACKAGES].sort(), 'for 循环清单与切片包集不一致')
 })
 
 test('ci.yml/observe.yml: 第三方与官方 action 一律 pin commit SHA', () => {
@@ -361,7 +363,7 @@ test('#217+#187: repo-gate-assert 判定表全组合锁定（事件 × 切片 ×
           const v = run({
             event: ev,
             hasMutations: 'true',
-            mutationPkgsJson: JSON.stringify(ALL_PACKAGES),
+            mutationPkgsJson: JSON.stringify(MUTATION_PACKAGES),
             coverage: cov,
             mutation: mut,
             verdict: verd,
@@ -438,7 +440,7 @@ test('#217+#187: repo-gate-assert CLI 退出码转发（GitHub Actions 判红依
     env: { ...process.env, ...envOf({
       event: 'push', changes: 'success', buildTest: 'success',
       coverage: 'skipped', mutation: 'skipped', verdict: 'skipped',
-      hasMutations: 'true', mutationPkgsJson: JSON.stringify(ALL_PACKAGES),
+      hasMutations: 'true', mutationPkgsJson: JSON.stringify(MUTATION_PACKAGES),
     }) },
   })
   assert.equal(okRun.status, 0, 'push + 三段全 skipped 场景 CLI 必须 exit 0')
@@ -470,15 +472,66 @@ test('#217+#187: repo-gate-assert CLI 退出码转发（GitHub Actions 判红依
   assert.match(covFailRun.stderr, /coverage 失败连坐/, '连坐场景判词必须点名「coverage 失败连坐」，不得误报为门禁绕过')
 })
 
-test('#178: ci.yml 包名全集 ≡ gauntlet 变异六包 ∪ {dsh-plugins-all}（防清单漂移）', () => {
-  const mentioned = [...new Set(CI.match(/dsh-[a-z0-9-]+/g) ?? [])].sort()
-  const expected = [...new Set([
-    ...Object.keys(GAUNTLET?.mutation?.packages ?? {}),
-    'dsh-plugins-all',
-  ])].sort()
-  assert.deepEqual(mentioned, expected,
-    `ci.yml 出现的包名集合与 gauntlet mutation.packages ∪ {dsh-plugins-all} 不一致：`
-    + `ci=${mentioned.join(',')} gauntlet+all=${expected.join(',')}——新增包须同步全部清单`)
+test('#306: ci.yml 静态包名出现处 == MATRIX_PACKAGES（防清单漂移，替代旧 #178 全包名断言）', () => {
+  // 动态化后 ci.yml 的静态包名只应出现在显式清单：build-test matrix、for/case 切片分支。
+  // 全量列表（fallback/GLOBAL_HIT）与 547 产物断言已改为从 plugins-manifest.json 动态
+  // 驱动（见 #306 单一事实源），不再出现在静态文本中。故只约束剩余显式处：
+  //   - matrix 包名 == MATRIX_PACKAGES（active ∪ standalone ∪ 聚合）
+  //   - for/case 包名 == SLICE_PACKAGES（active ∪ 聚合）
+  const bt = CI.slice(CI.indexOf('\n  build-test:'), CI.indexOf('\n  repo-gate:'))
+  const matrixNames = [...bt.matchAll(/^\s*- (dsh-[a-z0-9-]+)\s*$/gm)].map((m) => m[1]).sort()
+  assert.deepEqual(matrixNames, [...MATRIX_PACKAGES].sort(),
+    `build-test matrix 包名与 MATRIX_PACKAGES 不一致：matrix=${matrixNames.join(',')} expected=${MATRIX_PACKAGES.join(',')}`)
+  const computeBlock = CI.slice(CI.indexOf('Compute hit packages'))
+  const loopList = /for pkg in ([\w -]+); do/.exec(computeBlock)?.[1]?.trim().split(/\s+/).sort()
+  assert.deepEqual(loopList, [...SLICE_PACKAGES].sort(),
+    `for 循环包名与 SLICE_PACKAGES 不一致：loop=${loopList?.join(',')} expected=${SLICE_PACKAGES.join(',')}`)
+})
+
+test('#306: repo-gate 产物断言必须动态驱动且空清单 fail-closed（防静默漏检）', () => {
+  const restoreBlock = CI.slice(CI.indexOf('- name: Restore package outputs'))
+  // 产物断言从 needs.changes.outputs.allPackages 驱动（manifest 单一事实源）
+  assert.ok(/ALL_PACKAGES: \${{ needs\.changes\.outputs\.allPackages }}/.test(restoreBlock),
+    '产物断言必须注入 needs.changes.outputs.allPackages')
+  assert.ok(/for pkg in \$\(printf '%s' "\$ALL" \| jq -r '\.\[\]'\)/.test(restoreBlock),
+    '产物断言必须从 allPackages 动态循环（禁止静态包名清单）')
+  // 禁止回归为静态包名清单（评审发现：曾漏 verify-isolated 与 standalone）
+  assert.ok(!/for pkg in dsh-[a-z0-9-]+ dsh-[a-z0-9-]+/.test(restoreBlock),
+    '产物断言不得出现静态包名列表（曾漏 verify-isolated）')
+  // 空清单 fail-closed：禁止零断言假绿
+  assert.ok(/allPackages 为空（fail-closed/.test(restoreBlock),
+    '产物断言必须显式防空清单（fail-closed，防零断言通过）')
+})
+
+test('#306: 全量列表动态化——fallback/GLOBAL_HIT 从 manifest 派生且空清单 fail-closed', () => {
+  const computeBlock = CI.slice(CI.indexOf('Compute hit packages'))
+  // 单一事实源：从 plugins-manifest.json 读 active 集
+  assert.ok(/read_manifest_active/.test(computeBlock), '必须存在从 manifest 读 active 集的函数')
+  assert.ok(/plugins-manifest\.json/.test(computeBlock), '必须读 plugins-manifest.json')
+  assert.ok(/dsh-plugins-all/.test(computeBlock), '聚合包手工补入清单')
+  // fallback / GLOBAL_HIT 都用动态清单，不得再出现静态全量列表
+  const fallbackIdx = computeBlock.indexOf('fallback 全量切片')
+  const globalIdx = computeBlock.indexOf('全局路径命中 → 全量切片')
+  for (const idx of [fallbackIdx, globalIdx]) {
+    const after = computeBlock.slice(idx, idx + 120)
+    assert.ok(/emit_outputs "\$ALL_PACKAGES"/.test(after), '全量列表必须 emit_outputs "$ALL_PACKAGES"（动态）')
+  }
+  // 空清单 fail-closed（防 manifest 读失败 → 空切片 → 假绿）
+  assert.ok(/包清单为空（fail-closed/.test(computeBlock), '空清单必须显式 fail-closed')
+})
+
+test('#306: 切片面真静默防回归——每个 active/standalone 包都有切片消费路径', () => {
+  // 评审发现：verify-isolated 无 stryker 配置且不在切片 for/case 时，smoke 永不跑且
+  // 无下游校验（真静默）。约束：for/case 切片必须覆盖 SLICE_PACKAGES（active ∪ 聚合），
+  // 且每个 SLICE_PACKAGES 包在 for/case 中有分支；standalone 包（不进聚合）至少进
+  // build matrix（由 #306 静态包名测试覆盖）。此处锁「切片面不漏 active 包」。
+  const computeBlock = CI.slice(CI.indexOf('Compute hit packages'))
+  const loopList = /for pkg in ([\w -]+); do/.exec(computeBlock)?.[1]?.trim().split(/\s+/).sort()
+  for (const pkg of SLICE_PACKAGES) {
+    assert.ok(loopList?.includes(pkg), `切片 for 循环缺 ${pkg} —— smoke/typecheck 将永不执行（真静默）`)
+    assert.ok(computeBlock.includes(`${pkg}) V=`) || computeBlock.includes(`dsh-${pkg.slice(4)})`),
+      `切片 case 分支缺 ${pkg}`)
+  }
 })
 
 test('#178: 六份 stryker 配置开增量且 incrementalFile 无点前缀', () => {
