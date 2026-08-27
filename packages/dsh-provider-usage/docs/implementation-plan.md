@@ -160,7 +160,7 @@ export function formatPanel({ entries, range, truncated, esc }) {
 | `src/index.ts`（1748 行） | 删旧契约注册表/collectStats 旧路径；改为：新契约加载 + 管道化 fetcher + 热更新 + 新配置项 | 大 |
 | `src/contracts.ts`（432 行） | **删除旧接口**，只留新契约 + 错误码 + 工具类型（`esc`、`isUsageStatsAdapter`） | 大 |
 | `src/registry.ts`（331 行） | 简化为新契约加载器 + provider 关联 + enabled 选择 | 中 |
-| `src/adapters/opencode-go.ts` | 重写为新 mjs 格式（内置实现） | 大 |
+| `src/adapters/opencode-go.mjs`（+ `.d.mts`） | 重写为 mjs 格式（内置实现；#215 图表函数走注入 utils） | 大 |
 
 ### 2.4 新增
 
@@ -173,7 +173,7 @@ export function formatPanel({ entries, range, truncated, esc }) {
 | `src/provider-config.ts` | 模型配置读取（V1：配置链，显式配置 → 环境变量 → .credentials.yaml → auth.json） |
 | `src/sanitize.ts` | HTML 结构化净化（DOMPurify 内联 / 白名单过滤） |
 | `docs/implementation-plan.md` | 本文件 |
-| `examples/usage-adapter.example.mjs` | 完整可运行新契约示例（含 `esc` 用法、status/error 分支、主题变量） |
+| `src/adapters/*.mjs`（+ 同名 `.d.mts`） | 内置适配器（参考实现；原独立示例文件已移除，接入参照内置源码与 docs/adapter-guide.md） |
 
 ## 3. 实施阶段（7 阶段，约 8-10 天）
 
@@ -198,7 +198,7 @@ export function formatPanel({ entries, range, truncated, esc }) {
 
 ### 阶段 4：适配器加载与管道（2 天）
 
-- `src/adapters/opencode-go.ts`：重写为新契约格式
+- `src/adapters/opencode-go.mjs`：重写为新契约格式（#215 mjs 化 + 注入 utils 消费）
 - `src/pipeline/v2.ts`：新契约管道（fetchData → 校验 → 落盘 → formatCapsule/formatPanel → 返回）
 - `src/index.ts`：`collectStats` 简化为调用 `runV2Pipeline`
 - `src/registry.ts`：简化为新契约加载器 + provider 关联 + fail-fast 校验
@@ -225,7 +225,7 @@ export function formatPanel({ entries, range, truncated, esc }) {
 - 全量回归：`pnpm build && pnpm contract && pnpm test && pnpm pack:check`
 - `README.md`：`## 安全模型` 章节（适配器全权限、密钥配置链、HTML 转义义务、loopback 围栏边界）
 - 配置项说明更新
-- `examples/usage-adapter.example.mjs`：完整示例
+- 适配器参考实现（见 `src/adapters/`，原独立示例文件已移除）
 - 容错矩阵
 
 ## 4. 割接与兼容策略

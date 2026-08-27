@@ -430,11 +430,12 @@ export function formatPanel() { return "<p>p</p>"; }
     assert.equal(payload.adapter.name, "manage-stats");
     assert.ok(payload.enabled[OPENCODE_GO_PROVIDER] === "manage-stats", "新增适配器成为该 provider 启用者");
 
-    // adapters.json 现在有三条候选（两个内置 + 用户；#198 新增 deepseek-official-builtin）
+    // adapters.json 现在有四条候选（三个内置 + 用户；#198 新增 deepseek-official-builtin、
+    // #215 新增 zai-coding-cn-builtin）
     const adaptersRoute = routes.find((r) => r.path === ROUTES.adapters);
     let meta;
     adaptersRoute.handler(fakeReq(), { writeHead: () => {}, end: (c) => { meta = JSON.parse(c); } });
-    assert.equal(meta.host.length, 3, "候选列表含两个内置 + 用户");
+    assert.equal(meta.host.length, 4, "候选列表含三个内置 + 用户");
   }
 
   // add：重复 name → 409

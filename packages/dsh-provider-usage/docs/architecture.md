@@ -382,7 +382,7 @@ flowchart TD
 | `src/hotreload.ts` | mtime+size 轮询热更新 + 原子切换 |
 | `src/provider-config.ts` | 密钥五级解析链 |
 | `src/sanitize.ts` | HTML 结构化净化 |
-| `src/adapters/opencode-go.ts` | 内置适配器 opencode-go-builtin：OpenCode Go `/v1/usage` 三窗口用量 |
+| `src/adapters/opencode-go.mjs`（+ `.d.mts`） | 内置适配器 opencode-go-builtin：OpenCode Go `/v1/usage` 三窗口用量（#215 mjs 化；另见 deepseek-official.mjs / zai-coding-cn.mjs） |
 | `src/client/index.ts` | 客户端入口：胶囊/面板挂载、轮询、provider 检测 |
 | `src/client/settings.ts` | 设置页 tab：适配器管理（检测/添加/切换/停用） |
 | `src/client/core.ts` | 客户端数据层：fetch 封装、响应类型、会话 provider 解析 |
