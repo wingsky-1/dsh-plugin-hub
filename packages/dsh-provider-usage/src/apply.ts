@@ -349,7 +349,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   }
 
   // 5. 数据获取核心
-  async function getStats(provider: string): Promise<V2PipelineResult> {
+  async function getStats(provider: string, signal?: AbortSignal): Promise<V2PipelineResult> {
     const cached = cacheFresh(provider);
     if (cached !== undefined) return { ...cached, status: 'cached' };
 
@@ -361,6 +361,11 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     //    reason='busy' 语义随之废除（客户端按 stale 处理的特判不再需要）；
     // 3. 排队收敛在单 provider 内部——最坏 n×5s 仅限同一 provider 的并发请求，
     //    跨 provider 完全并行（全局锁队头阻塞已消除）。
+    //
+    // #308 断连感知：signal 仅在**已入锁**的取数段生效（safeFetchData 级联
+    // abort → 锁内 fetch 真正中断、锁快速释放）。排队等待锁的任务不受 signal
+    // 影响（async-mutex 排队不可取消）——但排队者入锁后经锁内二次 cacheFresh
+    // 立即拿到刚刷新的数据返回，队列不会无限堆积。
     return lockOf(provider).runExclusive(async () => {
       const cachedInLock = cacheFresh(provider);
       if (cachedInLock !== undefined) return { ...cachedInLock, status: 'cached' };
@@ -387,6 +392,9 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
         config: { apiEndpoint: providerConfig.apiEndpoint, apiKey: providerConfig.apiKey },
         staticPath: staticPathOf(provider),
         timeoutMs: config.fetchTimeoutMs,
+        // #308：把请求级断连信号传进锁内取数——客户端断连/超时 abort 时
+        // safeFetchData 级联中断 fetch，锁内取数立即退出，不再占锁至自然 5s 超时。
+        signal,
         // 带值降级注入：取数失败时胶囊读最后一条成功历史渲染（数据来源状态由客户端圆点表达）
         history,
       });
@@ -425,6 +433,10 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   }
 
   // 7. 路由注册
+  // #308 断连感知统一形态（stats/history 共用）：请求级 AbortController——客户端
+  // 提前断连（fetch abort / 半开超时）时经 res close 触发 abort，取数链路级联
+  // 中断、锁快速释放；settled 标志 + destroyed/writableEnded 双检查保证超时/
+  // 断连与正常完成二选一写响应，杜绝双写竞态。
   const statsRoute: WebRoute = {
     kind: "exact",
     path: ROUTES.stats,
@@ -433,21 +445,40 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       if (req.method !== "GET") return writeJson(res, 405, { error: `method not allowed: ${req.method}` });
       const url = new URL(req.url ?? "/", "http://localhost");
       const prov = url.searchParams.get("provider") ?? config.provider;
-      const result = await getStats(prov);
-      writeJson(res, 200, {
-        plugin: "dsh-provider-usage",
-        version: ADAPTER_CONTRACT_VERSION,
-        provider: result.provider,
-        adapterName: result.adapterName,
-        status: result.status,
-        capsuleHtml: result.capsuleHtml,
-        ok: result.ok,
-        configured: result.configured,
-        reason: result.reason,
-        error: result.error,
-        fetchedAt: result.fetchedAt,
-        adapterVersion: 0,
-      });
+      const controller = new AbortController();
+      let settled = false;
+      const finish = (status: number, body: unknown): void => {
+        if (settled) return;
+        settled = true;
+        if (!res.destroyed && !res.writableEnded) writeJson(res, status, body);
+      };
+      // 客户端提前断连（writableEnded=false）→ 取消取数；正常完成时 close 无害跳过。
+      // 守卫 typeof on：smoke 契约桩无 on 方法（仅断言响应形状），跳过断连监听。
+      if (typeof res.on === "function") {
+        res.on("close", () => {
+          if (!res.writableEnded) controller.abort();
+        });
+      }
+      try {
+        const result = await getStats(prov, controller.signal);
+        finish(200, {
+          plugin: "dsh-provider-usage",
+          version: ADAPTER_CONTRACT_VERSION,
+          provider: result.provider,
+          adapterName: result.adapterName,
+          status: result.status,
+          capsuleHtml: result.capsuleHtml,
+          ok: result.ok,
+          configured: result.configured,
+          reason: result.reason,
+          error: result.error,
+          fetchedAt: result.fetchedAt,
+          adapterVersion: 0,
+        });
+      } catch {
+        // getStats 正常不抛（取数错误收敛为 error 帧）；此处兜底锁 cancel 等异常路径。
+        finish(504, { error: "stats timeout" });
+      }
     },
   };
 
