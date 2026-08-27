@@ -341,5 +341,7 @@ dsh web 部署在 Linux 服务器，经局域网被多种设备 / 系统访问�
 ---
 
 > **隔离环境浏览器验证**：客户端 UI 改动（`packages/*/src/client/**` 等）的隔离环境
-> 搭建、浏览器 MCP 核验方法、证据归档与流程契约，已独立为
-> [ISOLATED-VERIFICATION.md](ISOLATED-VERIFICATION.md)，从本节切分并扩展。
+> 搭建、浏览器 MCP 核验方法、证据归档与流程契约，统一走
+> [dsh-dev-utils](https://github.com/wingsky-1/dsh-dev-utils) 的 `dsh-verify-isolated`
+> skill（临时 `DSH_HOME` + 独立 `verify_<随机>` profile 双重隔离，一键脚本
+> `verify-isolated.sh` 自动构建/挂载/启动/清理）。

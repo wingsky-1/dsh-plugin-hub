@@ -47,6 +47,10 @@ test/                 共享测试工具（smoke-lib）
 独立验证（smoke / 浏览器实测 / 需启动 dsh 的验证）时使用**隔离环境**：`DSH_HOME`
 设到临时目录（如 `$(mktemp -d)`）、文件路径隔离，遵循
 [docs/DEVELOPMENT.md §5](docs/DEVELOPMENT.md#5-smoke-测试防-flake-纪律) 防 flake 纪律。
+客户端 UI 改动的浏览器实测统一用
+[dsh-dev-utils](https://github.com/wingsky-1/dsh-dev-utils) 的 `dsh-verify-isolated`
+skill（临时 `DSH_HOME` + 独立 `verify_<随机>` profile 双重隔离，一键脚本自动
+构建/挂载/启动/清理，不污染正在使用的 `web` profile）。
 
 ## 输入安全
 

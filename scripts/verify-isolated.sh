@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 隔离环境浏览器验证一键脚本（docs/ISOLATED-VERIFICATION.md 配套）。
+# 隔离环境浏览器验证一键脚本（dsh-dev-utils 的 dsh-verify-isolated skill 配套）。
 #
 # 用途：在不污染真实 ~/.dsh（含正在使用的 web profile）的前提下，拉起一个
 # 完全隔离的 dsh web 实例，用于客户端 UI 改动的浏览器实测。
@@ -16,32 +16,34 @@
 #     dsh.profile.bundles（紧跟 @deepseek-ai/dsh-base 之后），再添加用户插件。
 #
 # 用法：
-#   scripts/verify-isolated.sh [--port <port>] [--keep] [-- <pkg-path>...]
+#   verify-isolated.sh [--port <port>] [--keep] [--no-build] [-- <pkg-path>...]
 #
 #   默认：端口 3456（--port 0 让系统随机），结束后自动清理临时 DSH_HOME 与 profile。
 #   --keep     结束后保留临时 DSH_HOME（不删，方便排查；路径会打印）
-#   --         之后的位置参数为要挂载的本地插件路径（主 checkout 的 packages/*）
+#   --no-build 跳过挂载前的 pnpm build（默认会构建每个插件，保证 lib/ 或 dist/ 产物存在）
+#   --         之后的位置参数为要挂载的本地插件路径（相对路径基于当前 cwd 解析）
 #
-# 示例：
-#   scripts/verify-isolated.sh packages/dsh-mcp-manager
-#   scripts/verify-isolated.sh --port 0 packages/dsh-notifier packages/dsh-mcp-manager
+# 示例（在插件仓库根执行）：
+#   verify-isolated.sh packages/dsh-mcp-manager
+#   verify-isolated.sh --port 0 packages/dsh-notifier packages/dsh-mcp-manager
+# 绝对路径亦可：
+#   verify-isolated.sh /path/to/repo/packages/dsh-mcp-manager
 set -euo pipefail
 
 PORT=3456
 KEEP=0
+BUILD=1
 PKGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --port) PORT="$2"; shift 2 ;;
     --keep) KEEP=1; shift ;;
+    --no-build) BUILD=0; shift ;;
     --) shift; PKGS+=("$@"); break ;;
     -*) echo "未知选项: $1" >&2; exit 2 ;;
     *) PKGS+=("$1"); shift ;;
   esac
 done
-
-# 仓库根（脚本位于 <root>/scripts/）
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # 1. 第一层隔离：全新临时 DSH_HOME（隔离全部用户数据）
 ISOLATED_HOME="$(mktemp -d)"
@@ -74,9 +76,23 @@ node -e '
   fs.writeFileSync(p, JSON.stringify(j, null, 2));
 ' "$DSH_HOME/profiles/$PROFILE/package.json"
 
-# 4. 挂载本地插件（主 checkout 的 packages/*，link 进 profile）
+# 4. 挂载本地插件（相对路径基于当前 cwd，dsh 官方会锚定到调用目录；绝对路径原样使用）
 if [[ ${#PKGS[@]} -gt 0 ]]; then
-  dsh plugin --profile "$PROFILE" add "${PKGS[@]/#/$ROOT/}" >/dev/null
+  # 4a. 先构建每个插件（默认）：dsh 直读构建产物（hub 的 lib/、xiaozhuge 的 dist/），
+  #     不 build 则 link 到的源码目录缺产物、启动即 ERR_MODULE_NOT_FOUND
+  if [[ "$BUILD" -eq 1 ]]; then
+    for pkg in "${PKGS[@]}"; do
+      # 支持相对路径（基于当前 cwd）与绝对路径；目录或仓库根均可
+      pkg_abs="$(cd "$(pwd)" && realpath -m "$pkg")"
+      if [[ -f "$pkg_abs/package.json" ]] && grep -q '"build"' "$pkg_abs/package.json"; then
+        echo "构建插件: $pkg_abs"
+        (cd "$pkg_abs" && pnpm build)
+      else
+        echo "跳过构建（无 build 脚本）: $pkg_abs"
+      fi
+    done
+  fi
+  dsh plugin --profile "$PROFILE" add "${PKGS[@]}" >/dev/null
 fi
 
 echo "隔离环境就绪: DSH_HOME=$ISOLATED_HOME  profile=$PROFILE"
