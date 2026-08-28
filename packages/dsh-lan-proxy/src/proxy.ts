@@ -90,6 +90,12 @@ export interface LanProxyOptions {
     probeIntervalMs?: number;
   };
   /**
+   * WS 压缩协商策略（issue #308）：浏览器段是否协商 permessage-deflate /
+   * 按 UA 片段拒绝。iOS Safari 启用压缩即失败（uWebSockets.js #76 实证），
+   * 默认拦截 iPhone/iPad/iPod；缺省取 {@link DEFAULT_DEFLATE_POLICY}。
+   */
+  wsDeflatePolicy?: DeflatePolicy;
+  /**
    * HTTP 响应压缩（合并自 dsh-gzip，经 compression 中间件在转发层实现）：
    * 对可压缩响应（JSON / 文本；SSE 豁免）按 Accept-Encoding 协商——含 br 时优先
    * 输出 Brotli（compression@1.8+ 支持），否则回退 gzip；options.level 仅作用
@@ -121,6 +127,30 @@ export interface LanProxy {
   targetAuthority: string;
   /** HTTP 响应压缩协商计数（未启用压缩时恒为 0）。 */
   httpCompressStats(): { compressed: number; passthrough: number };
+  /**
+   * 断连原因计数快照（issue #308 / 承载清单①轻量版）：转发层是全部连接的
+   * 唯一观测点，统计各类异常断开供诊断「手机端切后台 / 中继超时 / 业务错误」
+   * 的占比（health 与 GET /config 展示）。数值为进程启动/转发器重建后的累计。
+   */
+  connStats(): ConnStats;
+}
+
+/** 断连原因计数（转发层观测；见 {@link LanProxy.connStats}）。 */
+export interface ConnStats {
+  /** 桥接路径：任一端 close（正常或异常收口）。 */
+  wsBridgeClosed: number;
+  /** 桥接路径：半开探活判死强拆（iOS 后台冻结 / 中继静默掐断的特征信号）。 */
+  wsBridgeHalfOpen: number;
+  /** 桥接路径：upstream 错误（连接被掐 / 协议错误）。 */
+  wsBridgeErrors: number;
+  /** 透传路径：socket 异常销毁（未走正常关闭握手）。 */
+  wsPassthroughDestroyed: number;
+  /** 透传路径：socket error（ECONNRESET 等）。 */
+  wsPassthroughErrors: number;
+  /** HTTP 转发：客户端提前断开 → 上游响应 aborted。 */
+  httpClientAborted: number;
+  /** HTTP 转发：代理错误（上游不可达 / 转发中断）。 */
+  httpProxyErrors: number;
 }
 
 /**
@@ -141,6 +171,35 @@ export function isCompressible(contentType: unknown): boolean {
 export interface CompressionOptions {
   level?: number;
   brotli?: { params: Record<string, number> };
+}
+
+/** WS 压缩协商策略：浏览器段开关 + UA 拒绝片段。 */
+export interface DeflatePolicy {
+  /** 浏览器段是否允许协商 permessage-deflate（false = 全局关闭压缩）。 */
+  browser?: boolean;
+  /** UA 字符串包含任一片段 → 该端强制不协商压缩。 */
+  uaDeny?: readonly string[];
+}
+
+/** 默认 WS 压缩策略（单一事实源）：浏览器段可协商，但 iOS 三件套强制不协商。 */
+export const DEFAULT_DEFLATE_POLICY: Readonly<DeflatePolicy> = Object.freeze({
+  browser: true,
+  uaDeny: Object.freeze(["iPhone", "iPad", "iPod"]),
+});
+
+/**
+ * 按策略判定某 UA 是否允许协商 WS 压缩（纯函数，可单测）。
+ * 任一环节未配置均取宽松语义：无策略 = 放行；browser=false = 拒绝；
+ * uaDeny 为空/UA 缺失 = 放行；UA 命中任一 deny 片段 = 拒绝。
+ * @param policy 协商策略（缺省按放行处理）。
+ * @param userAgent 入站 `user-agent` 请求头（可缺失）。
+ */
+export function deflateAllowedByPolicy(policy: DeflatePolicy | undefined, userAgent: string | undefined): boolean {
+  if (policy?.browser === false) return false;
+  const deny = policy?.uaDeny;
+  if (deny === undefined || deny.length === 0) return true;
+  if (typeof userAgent !== "string" || userAgent.length === 0) return true;
+  return !deny.some((frag) => userAgent.includes(frag));
 }
 
 /**
@@ -242,6 +301,17 @@ export interface WsBridgeTarget {
    * 生产走默认值，该字段主要供单测注入小间隔以确定性验证探活行为。
    */
   probeIntervalMs?: number;
+  /**
+   * 浏览器段压缩协商策略（issue #308）：iOS Safari 启用 permessage-deflate 即
+   * 失败，默认经 {@link DEFAULT_DEFLATE_POLICY} 拦截 iPhone/iPad/iPod。
+   */
+  deflatePolicy?: DeflatePolicy;
+  /**
+   * 断连分类打点回调（issue #308 测量）：桥接任一端 close/error/半开判死时
+   * 以分类上报；缺省不记录。半开判死（halfOpen）是 iOS 后台冻结 / 中继静默
+   * 掐断的特征信号，用于诊断「手机端切后台后连接挂起」占比。
+   */
+  onDisconnect?: (kind: "close" | "error" | "halfOpen") => void;
 }
 
 /**
@@ -313,7 +383,15 @@ export function bridgeCompressedWs(
   target: WsBridgeTarget,
 ): void {
   // 浏览器段：终结 + permessage-deflate（浏览器默认协商并自动解压）。
-  const wss = new WebSocketServer({ noServer: true, perMessageDeflate: { threshold: 1024 } });
+  // #308：iOS Safari 启用 permessage-deflate 即失败（uWebSockets.js #76 实证），
+  // 按 wsDeflatePolicy 判定该 UA 是否允许协商——命中 deny（默认 iPhone/iPad/iPod）
+  // 或 browser=false 时浏览器段不协商压缩（帧仍由桥接转发，只是明文），
+  // 规避 iOS 端 WS 握手失败/连接被掐。
+  const deflateAllowed = deflateAllowedByPolicy(target.deflatePolicy, req.headers["user-agent"]);
+  const wss = new WebSocketServer({
+    noServer: true,
+    perMessageDeflate: deflateAllowed ? { threshold: 1024 } : false,
+  });
   wss.handleUpgrade(req, socket, head, (browserWs) => {
     // DSH 段：明文（本机/内网），固定不协商 permessage-deflate。
     const upstreamUrl = `ws://${target.targetHost}:${target.targetPort}${req.url}`;
@@ -333,6 +411,7 @@ export function bridgeCompressedWs(
       // 「半开判死强拆」与「正常关闭/业务错误」（issue #268 复核闸修补 2）。
       const onHalfOpen = (intervalMs: number) => {
         target.logger?.warn?.(`lan-proxy: ws-bridge half-open detected, terminating (intervalMs=${intervalMs})`);
+        target.onDisconnect?.("halfOpen");
       };
       const stopBrowserProbe = attachWsLivenessProbe(browserWs, probeIntervalMs, onHalfOpen);
       const stopUpstreamProbe = attachWsLivenessProbe(upstreamWs, probeIntervalMs, onHalfOpen);
@@ -354,21 +433,27 @@ export function bridgeCompressedWs(
       if (browserWs.readyState === browserWs.OPEN) browserWs.send(data, { binary: isBinary });
     });
     // 任一端关闭/出错 → 对端终止；四路清理收敛到 stopAllProbes（幂等）。
+    // 断连分类打点（issue #308 测量）：close/error/halfOpen 各有独立计数。
+    const report = (kind: "close" | "error" | "halfOpen") => target.onDisconnect?.(kind);
     upstreamWs.on("close", () => {
       stopAllProbes();
+      report("close");
       browserWs.terminate();
     });
     upstreamWs.on("error", (err) => {
       stopAllProbes();
+      report("error");
       target.logger?.warn?.(`lan-proxy: ws-bridge upstream error: ${err.message}`);
       browserWs.terminate();
     });
     browserWs.on("close", () => {
       stopAllProbes();
+      report("close");
       try { upstreamWs.close(); } catch { /* 已关闭 */ }
     });
     browserWs.on("error", () => {
       stopAllProbes();
+      report("error");
       try { upstreamWs.close(); } catch { /* 已关闭 */ }
     });
   });
@@ -403,6 +488,22 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
   // filter 复用 dsh-gzip 的 isCompressible 语义（SSE 豁免）；计数为「协商计数」：
   // filter 放行 ≠ 最终一定压缩（库还会按阈值/状态码二次判定），诊断口径见 README。
   const compressStats = { compressed: 0, passthrough: 0 };
+  /** 断连原因计数（issue #308；见 LanProxy.connStats 文档）。 */
+  const connStats: ConnStats = {
+    wsBridgeClosed: 0,
+    wsBridgeHalfOpen: 0,
+    wsBridgeErrors: 0,
+    wsPassthroughDestroyed: 0,
+    wsPassthroughErrors: 0,
+    httpClientAborted: 0,
+    httpProxyErrors: 0,
+  };
+  /** 桥接路径打点回调（bridgeCompressedWs 的 target 注入，避免直接耦合计数对象）。 */
+  const onBridgeDisconnect: NonNullable<WsBridgeTarget["onDisconnect"]> = (kind) => {
+    if (kind === "halfOpen") connStats.wsBridgeHalfOpen += 1;
+    else if (kind === "error") connStats.wsBridgeErrors += 1;
+    else connStats.wsBridgeClosed += 1;
+  };
   // 本地直接生成的响应（403 围栏 / PNA 预检 / 502 网关错误）标记：不进入压缩
   // 协商计数，避免 health 诊断数字被非转发流量污染（实测 403+预检即 +2）。
   const LOCAL_RESPONSE = Symbol("lan-proxy.localResponse");
@@ -457,17 +558,47 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
     // extend 进出站头对象，不做窄化处理，运行时无需收窄。
     headers: rewriteHeaders(req.headers, targetAuthority) as Record<string, string>,
   });
-  // 上游响应中途断开（dsh web 崩溃/重启）：pipe 不传播错误，必须显式终止下游，
-  // 否则客户端无限悬挂（实测复现）。headers 已发出时 destroy 断连，客户端视作
-  // 响应截断自行重试；连接池槽位随上游 socket 销毁自动释放。
+  // #308 断连传播：客户端提前断开（移动端切后台系统静默掐断 TCP / fetch abort / 
+  // 超时中断）时，http-proxy@1.18 只监听 req 'aborted'——请求体被消费完成后该
+  // 事件永不触发，上游（dsh web）收不到中断信号，宿主端 handler 继续跑完
+  // （锁内取数最长 5s 才释放），且 agent keep-alive 槽位被半开连接占用、累积后
+  // 新请求排队。此处监听 req 'close'（任意断连路径都会触发）并在响应未开始时
+  // destroy 上游请求：宿主的 res 'close' 随之触发（provider-usage #308 接线依赖
+  // 这一点取消取数），agent 槽位同步释放。
+  // 注意：req 'close' 在 Node 中对 IncomingMessage 是「请求体读完 + 连接准备
+  // 复用」也会触发，**不等价于客户端断连**——故以 `proxyResReceived` 为闸：
+  // 仅当「未收到上游响应头」时 close 才视为断连（收到响应后客户端 close 属
+  // 正常完成/响应截断，交由 proxyRes aborted 处理）。实测复现：若用
+  // res.writableEnded 判定，正常请求会在转发完成前被误杀（socket hang up）。
+  const proxyResReceived = new WeakSet<ServerResponse>();
   proxy.on("proxyRes", (proxyRes, _req, res) => {
-    const abortDownstream = () => res.destroy();
+    proxyResReceived.add(res);
+    const abortDownstream = () => {
+      connStats.httpClientAborted += 1;
+      res.destroy();
+    };
     proxyRes.on("aborted", abortDownstream);
     proxyRes.on("error", abortDownstream);
+  });
+  proxy.on("proxyReq", (proxyReq, req, res) => {
+    // 监听底层 TCP socket 的 close（而非 req 的 close——后者在 Node 中对
+    // IncomingMessage 是「请求体读完可复用连接」即触发，正常请求也会命中，
+    // 实测复现误杀；socket close 才反映真实连接断开/客户端 abort）。
+    // 已收到上游响应头（proxyResReceived）后不再算断连——此时客户端 close
+    // 属正常完成或响应截断，交由 proxyRes aborted 处理。
+    const sock = req.socket;
+    const onSockClose = () => {
+      if (proxyResReceived.has(res)) return;
+      proxyReq.destroy();
+    };
+    sock.on("close", onSockClose);
+    proxyReq.on("close", () => sock.off("close", onSockClose));
+    proxyReq.on("error", () => sock.off("close", onSockClose));
   });
   // 转发错误收口（上游不可达 / 客户端提前断开等）：HTTP 请求回 502 bad gateway
   // （本地响应，不计入压缩协商）；WS 升级路径第三个参数是对端 socket，直接断开。
   proxy.on("error", (err, _req, res) => {
+    connStats.httpProxyErrors += 1;
     logger.warn?.(`lan-proxy: proxy error: ${err.message}`);
     if ("writeHead" in res) {
       markLocal(res);
@@ -521,10 +652,27 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
         targetPort,
         logger,
         probeIntervalMs: options.wsCompress.probeIntervalMs,
+        deflatePolicy: options.wsDeflatePolicy ?? DEFAULT_DEFLATE_POLICY,
+        onDisconnect: onBridgeDisconnect,
       });
       return;
     }
-    proxy.ws(req, socket, head, forwardOptions(req));
+    // 透传路径（纯字节流，无法改写已协商帧）：按 deflate 策略删除升级请求头的
+    // sec-websocket-extensions——上游（DSH）不确认压缩则浏览器段不会启用压缩。
+    // 仅对 UA 命中 deny 的端删（桌面 Chrome 等保留压缩协商，不影响省流量）。
+    const opts = forwardOptions(req);
+    if (!deflateAllowedByPolicy(options.wsDeflatePolicy ?? DEFAULT_DEFLATE_POLICY, req.headers["user-agent"])) {
+      delete opts.headers["sec-websocket-extensions"];
+    }
+    // 透传路径断连观测（issue #308）：TCP 字节流看不到 WS close 帧，以 socket
+    // destroyed（未走正常关闭握手）与 error（ECONNRESET 等）近似「被掐断」。
+    socket.on("close", () => {
+      if (socket.destroyed) connStats.wsPassthroughDestroyed += 1;
+    });
+    socket.on("error", () => {
+      connStats.wsPassthroughErrors += 1;
+    });
+    proxy.ws(req, socket, head, opts);
   };
 
   const server = createServer(withCompress(handleRequest));
@@ -594,5 +742,6 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
     close,
     targetAuthority,
     httpCompressStats: () => ({ ...compressStats }),
+    connStats: () => ({ ...connStats }),
   };
 }
