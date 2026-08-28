@@ -8,7 +8,7 @@
  * config-routes.ts / settings.ts / migrate.ts / apply.ts。
  */
 import z from "schemastery";
-import { DEFAULT_OPTIONS, isLoopbackTarget } from "./proxy.ts";
+import { DEFAULT_OPTIONS, DEFAULT_DEFLATE_POLICY, isLoopbackTarget, type DeflatePolicy } from "./proxy.ts";
 
 /** 插件配置（loader 应用 schema 默认值后传入；apply 内仍有合并兜底）。 */
 export interface LanProxyConfig {
@@ -31,6 +31,11 @@ export interface LanProxyConfig {
   wsCompressEnabled?: boolean;
   /** 参与 WebSocket 压缩桥接的路径白名单。 */
   wsCompressPaths?: string[];
+  /** WebSocket 压缩协商策略（issue #308 防手机端连接异常）。
+   *  - browser：浏览器段是否允许协商 permessage-deflate（false = 全局关闭压缩）；
+   *  - uaDeny：UA 片段命中则强制不协商（iOS Safari 启用压缩即失败，
+   *    uWebSockets.js #76 实证；默认拦截 iPhone/iPad/iPod，覆盖桌面 Chrome 等）。 */
+  wsDeflatePolicy?: { browser?: boolean; uaDeny?: string[] };
   /** HTTP 响应压缩总开关（默认 true；合并自 dsh-gzip）。经 compression 中间件按 Accept-Encoding 协商，Brotli/gzip 双生效。 */
   httpCompressEnabled?: boolean;
   /** 压缩档位预设 0..3（默认 1 低）：0 默认 / 1 低 / 2 中 / 3 高，对 gzip 与 Brotli 同时生效。 */
@@ -90,6 +95,19 @@ export const Config: z<LanProxyConfig> = z.object({
   /** 参与 WebSocket 压缩桥接的路径白名单（默认：会话事件流两个端点）。 */
   wsCompressPaths: z.array(z.string()).default(["/api/events.mux", "/api/events.host"]),
   /**
+   * WS 压缩协商策略（默认：浏览器段可协商，但 iPhone/iPad/iPod UA 强制不协商——
+   * iOS Safari 启用 permessage-deflate 即失败，uWebSockets.js #76 实证，issue #308）。
+   * browser=false 全局关压缩；uaDeny 片段命中即降级为明文帧（对这类端省去
+   * compress 字节流的解压负担，连接更稳）。热更新经 scope.watch 生效。
+   */
+  wsDeflatePolicy: z.object({
+    browser: z.boolean().default(true),
+    uaDeny: z.array(z.string()).default([...(DEFAULT_DEFLATE_POLICY.uaDeny ?? [])]),
+  }).default({
+    browser: DEFAULT_DEFLATE_POLICY.browser ?? true,
+    uaDeny: [...(DEFAULT_DEFLATE_POLICY.uaDeny ?? [])],
+  }),
+  /**
    * HTTP 响应 gzip 压缩总开关（默认开；合并自 dsh-gzip）：对 /api、/plugins、
    * 静态资源等可压缩响应做应用层 gzip。安装失败仅 warn 降级，不阻断转发。
    */
@@ -116,6 +134,12 @@ const FILE_CONFIG_VALIDATORS: Record<string, (v: unknown) => boolean> = {
   printBanner: (v) => typeof v === "boolean",
   wsCompressEnabled: (v) => typeof v === "boolean",
   wsCompressPaths: (v) => Array.isArray(v) && v.every((s) => typeof s === "string"),
+  wsDeflatePolicy: (v) => {
+    if (typeof v !== "object" || v === null) return false;
+    const rec = v as Record<string, unknown>;
+    return (rec.browser === undefined || typeof rec.browser === "boolean") &&
+      (rec.uaDeny === undefined || (Array.isArray(rec.uaDeny) && rec.uaDeny.every((s) => typeof s === "string")));
+  },
   httpCompressEnabled: (v) => typeof v === "boolean",
   httpCompressLevel: (v) => typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 3,
 };
@@ -159,6 +183,7 @@ const SETTING_FIELD_HINTS: Record<string, string> = {
   printBanner: "需为布尔值",
   wsCompressEnabled: "需为布尔值",
   wsCompressPaths: "需为字符串数组（路径白名单）",
+  wsDeflatePolicy: "需为 { browser?: boolean, uaDeny?: string[] }（UA 片段数组）",
   httpCompressEnabled: "需为布尔值",
   httpCompressLevel: "需为 0-3 的档位整数（4-9 自动迁移为高档 3）",
 };
@@ -208,6 +233,7 @@ export interface ResolvedConfig {
   printBanner: boolean;
   wsCompressEnabled: boolean;
   wsCompressPaths: readonly string[];
+  wsDeflatePolicy: DeflatePolicy;
   httpCompressEnabled: boolean;
   httpCompressLevel: number;
 }
