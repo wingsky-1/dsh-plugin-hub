@@ -92,6 +92,8 @@ jobs:
               - 'packages/dsh-lan-proxy/**'
             dsh-subagent-model-inherit:
               - 'packages/dsh-subagent-model-inherit/**'
+            dsh-codegraph:
+              - 'packages/dsh-codegraph/**'
             dsh-verify-isolated:
               - 'packages/dsh-verify-isolated/**'
             dsh-plugins-all:
@@ -210,6 +212,7 @@ jobs:
           - dsh-provider-usage
           - dsh-lan-proxy
           - dsh-subagent-model-inherit
+          - dsh-codegraph
           - dsh-verify-isolated
           - dsh-plugins-all
     runs-on: ubuntu-latest
