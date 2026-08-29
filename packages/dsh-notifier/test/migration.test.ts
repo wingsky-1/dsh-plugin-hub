@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { assert, makeNotifier, makeFakeSettings, makeFakeCtx } from "./helpers.ts";
-import { ROUTES, apply } from "../lib/index.js";
+import { ROUTES, apply, migrateLegacyConfig, MIGRATED_BAK_SUFFIX, CORRUPTED_BAK_SUFFIX } from "../lib/index.js";
 
 const work = mkdtempSync(join(tmpdir(), "dnotify-migrate-"));
 /** 轮询直到谓词成立（替代固定 sleep：迁移是 onScope 内异步 fire-and-forget）。 */
@@ -152,6 +152,122 @@ try {
     const paths = routes.map((r) => r.path);
     for (const route of Object.values(ROUTES)) assert.ok(paths.includes(route), `E7：禁用态仍注册路由 ${route}`);
     assert.equal(fakeSettings.getUser().notifyTaskError, false, "E7：禁用态仍迁移旧配置");
+  }
+
+  // E8：migrateLegacyConfig outcome 精确断言（直测，对照 stryker 幸存名单——
+  // 布尔结果字段翻转/逻辑运算符/条件分支的存活变异体由 outcome 深比较杀灭）
+  {
+    const dir = mkdtempSync(join(tmpdir(), "dnotify-migrate-outcome-"));
+    const deps = (userHasValues = false, failUpdate = false) => {
+      const updates = [];
+      return {
+        updates,
+        hasUserValues: () => userHasValues,
+        async update(patch) {
+          if (failUpdate) throw new Error("io boom");
+          updates.push(patch);
+        },
+      };
+    };
+    const IDLE = { performed: false, migrated: false, rolledBack: false, skippedCorrupt: false, skippedIdempotent: true, resumed: false };
+    const CORRUPT_ONLY = { performed: false, migrated: false, rolledBack: false, skippedCorrupt: true, skippedIdempotent: true, resumed: false };
+    // idle：json 与 bak 都不存在
+    {
+      const d = deps();
+      const legacy = join(dir, "idle.json");
+      const out = await migrateLegacyConfig(legacy, d);
+      assert.deepEqual(out, IDLE, "E8：双文件不存在 → idle outcome 全 false/skippedIdempotent");
+      assert.equal(d.updates.length, 0, "E8：idle 不写入");
+    }
+    // 损坏标记态：只有 .corrupted.bak → 幂等跳过
+    {
+      const d = deps();
+      const legacy = join(dir, "corrupt-only.json");
+      writeFileSync(legacy + CORRUPTED_BAK_SUFFIX, "{oops");
+      const out = await migrateLegacyConfig(legacy, d);
+      assert.deepEqual(out, CORRUPT_ONLY, "E8：损坏标记态 → skippedCorrupt+skippedIdempotent");
+      assert.equal(d.updates.length, 0, "E8：损坏标记态不写入");
+    }
+    // migrated.bak 存在 + user 层已有值 → 幂等跳过（E2）
+    {
+      const d = deps(true);
+      const legacy = join(dir, "bak-user.json");
+      writeFileSync(legacy + MIGRATED_BAK_SUFFIX, JSON.stringify({ notifyAsk: false }));
+      const out = await migrateLegacyConfig(legacy, d);
+      assert.deepEqual(out, IDLE, "E8：bak 存在 + user 有值 → 幂等跳过");
+      assert.equal(d.updates.length, 0, "E8：幂等跳过不写入");
+    }
+    // 中断态重放成功：bak 存在 + user 空 + bak 合法 → resumed+migrated
+    {
+      const d = deps(false);
+      const legacy = join(dir, "resume-ok.json");
+      writeFileSync(legacy + MIGRATED_BAK_SUFFIX, JSON.stringify({ notifySound: false }));
+      const out = await migrateLegacyConfig(legacy, d);
+      assert.deepEqual(out, { performed: false, migrated: true, rolledBack: false, skippedCorrupt: false, skippedIdempotent: false, resumed: true }, "E8：中断态重放成功 outcome");
+      assert.deepEqual(d.updates, [{ notifySound: false }], "E8：重放写入键集");
+    }
+    // 中断态重放失败：bak 非法 JSON → skippedCorrupt+resumed，不写入
+    {
+      const d = deps(false);
+      const legacy = join(dir, "resume-bad.json");
+      writeFileSync(legacy + MIGRATED_BAK_SUFFIX, "{bad json");
+      const out = await migrateLegacyConfig(legacy, d);
+      assert.deepEqual(out, { performed: false, migrated: false, rolledBack: false, skippedCorrupt: true, skippedIdempotent: false, resumed: true }, "E8：中断态 bak 损坏 → 标记跳过");
+      assert.equal(d.updates.length, 0, "E8：损坏 bak 不写入");
+    }
+    // 中断态重放失败：bak 无有效键 → skippedCorrupt+resumed
+    {
+      const d = deps(false);
+      const legacy = join(dir, "resume-empty.json");
+      writeFileSync(legacy + MIGRATED_BAK_SUFFIX, JSON.stringify({ evilKey: 1 }));
+      const out = await migrateLegacyConfig(legacy, d);
+      assert.equal(out.resumed, true, "E8：无有效键重放标记 resumed");
+      assert.equal(out.migrated, false, "E8：无有效键重放不迁移");
+      assert.equal(out.skippedCorrupt, true, "E8：无有效键重放标记 corrupted");
+      assert.equal(d.updates.length, 0, "E8：无有效键不写入");
+    }
+    // 损坏 json：只标记 .corrupted.bak，不写入（E4）
+    {
+      const d = deps();
+      const legacy = join(dir, "broken.json");
+      writeFileSync(legacy, "{ not json !!!");
+      const out = await migrateLegacyConfig(legacy, d);
+      assert.deepEqual(out, { performed: true, migrated: false, rolledBack: false, skippedCorrupt: true, skippedIdempotent: false, resumed: false }, "E8：损坏 json outcome");
+      assert.ok(existsSync(legacy + CORRUPTED_BAK_SUFFIX), "E8：损坏 json 改名 corrupted.bak");
+      assert.equal(d.updates.length, 0, "E8：损坏 json 不写入");
+    }
+    // 非对象 json → 只标记（E4b）
+    {
+      const d = deps();
+      const legacy = join(dir, "nonobj.json");
+      writeFileSync(legacy, "123");
+      const out = await migrateLegacyConfig(legacy, d);
+      assert.equal(out.performed, true, "E8：非对象 json performed");
+      assert.equal(out.skippedCorrupt, true, "E8：非对象 json 标记 corrupted");
+      assert.equal(d.updates.length, 0, "E8：非对象 json 不写入");
+    }
+    // 合法 json → renamed-first 后写入，outcome migrated+performed（E1）
+    {
+      const d = deps();
+      const legacy = join(dir, "valid.json");
+      writeFileSync(legacy, JSON.stringify({ notifyAsk: false, quietHours: { enabled: true, start: "23:00", end: "07:00" } }));
+      const out = await migrateLegacyConfig(legacy, d);
+      assert.deepEqual(out, { performed: true, migrated: true, rolledBack: false, skippedCorrupt: false, skippedIdempotent: false, resumed: false }, "E8：合法 json outcome");
+      assert.ok(existsSync(legacy + MIGRATED_BAK_SUFFIX), "E8：合法 json 改名 migrated.bak");
+      assert.ok(!existsSync(legacy), "E8：原 json 已改名");
+      assert.deepEqual(d.updates[0], { notifyAsk: false, quietHours: { enabled: true, start: "23:00", end: "07:00" } }, "E8：写入键集 = sanitize 白名单");
+    }
+    // 写入失败 → 回滚改名（E6）：json 还原 + rolledBack
+    {
+      const d = deps(false, true);
+      const legacy = join(dir, "rollback.json");
+      writeFileSync(legacy, JSON.stringify({ notifyAsk: true }));
+      const out = await migrateLegacyConfig(legacy, d, { warn: () => {} });
+      assert.deepEqual(out, { performed: true, migrated: false, rolledBack: true, skippedCorrupt: false, skippedIdempotent: false, resumed: false }, "E8：写入失败回滚 outcome");
+      assert.ok(existsSync(legacy), "E8：回滚后原 json 还原");
+      assert.ok(!existsSync(legacy + MIGRATED_BAK_SUFFIX), "E8：回滚后 migrated.bak 已还原为 json");
+    }
+    rmSync(dir, { recursive: true, force: true });
   }
 } finally {
   rmSync(work, { recursive: true, force: true });
