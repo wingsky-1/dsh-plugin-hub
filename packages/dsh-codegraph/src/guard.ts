@@ -15,6 +15,7 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { resolveCodegraphPath } from "./install.ts";
 
 /** 沿 cwd 向上找 .git 标记（文件或目录，worktree 的 .git 文件也识别）——findProjectRoot 同款逻辑。 */
 export function findGitRoot(cwd: string | undefined): string | undefined {
@@ -39,7 +40,12 @@ export function syncCodegraph(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<boolean> {
   return new Promise((resolvePromise) => {
-    execFile("codegraph", ["sync", projectPath], { env, timeout: 30000 }, (error) => {
+    const bin = resolveCodegraphPath(env);
+    if (bin === undefined) {
+      resolvePromise(false);
+      return;
+    }
+    execFile(bin, ["sync", projectPath], { env, timeout: 30000 }, (error) => {
       resolvePromise(error === null);
     });
   });
@@ -52,8 +58,13 @@ export function exploreCodegraph(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<string> {
   return new Promise((resolvePromise) => {
+    const bin = resolveCodegraphPath(env);
+    if (bin === undefined) {
+      resolvePromise("codegraph CLI 未安装（PATH 未找到）。请先安装：npm install -g @colbymchenry/codegraph");
+      return;
+    }
     execFile(
-      "codegraph",
+      bin,
       ["explore", query, "--path", projectPath],
       { env, timeout: 30000, maxBuffer: 1024 * 1024 },
       (error, stdout, stderr) => {

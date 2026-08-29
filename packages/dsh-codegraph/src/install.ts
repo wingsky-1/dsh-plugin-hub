@@ -9,22 +9,31 @@
  * - 安装命令默认 `npm install -g @colbymchenry/codegraph`（npm 全局，幂等），
  *   可用 config.installCommand 覆盖（如 install.sh 直链）。
  */
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 /** codegraph CLI 是否在 PATH（探测）。 */
 export function isCodegraphInstalled(env: NodeJS.ProcessEnv = process.env): boolean {
-  // 用 PATH 逐目录探测 codegraph 可执行文件（兼容 worktree 会话的 PATH 差异）。
-  // 不直接 spawn "codegraph --version"——未装时 spawn ENOENT 抛错噪音大。
+  return resolveCodegraphPath(env) !== undefined;
+}
+
+/** 解析 codegraph CLI 绝对路径（PATH 逐目录探测；未找到返回 undefined）。
+ * 供 guard 等执行方使用绝对路径调用，避免裸 `codegraph` 受 dsh 进程 PATH
+ * 与用户 shell PATH 差异影响。Windows 分隔符（;）一并处理。 */
+export function resolveCodegraphPath(env: NodeJS.ProcessEnv = process.env): string | undefined {
   const path = env.PATH ?? process.env.PATH ?? "";
-  return path.split(":").some((dir) => {
+  const dirs = path.split(path.includes(";") ? ";" : ":");
+  for (const dir of dirs) {
+    if (dir === "") continue;
     try {
-      return existsSync(join(dir, "codegraph")) || existsSync(join(dir, "codegraph.exe"));
+      if (existsSync(join(dir, "codegraph"))) return join(dir, "codegraph");
+      if (existsSync(join(dir, "codegraph.exe"))) return join(dir, "codegraph.exe");
     } catch {
-      return false;
+      // 目录不可读/权限问题：跳过该目录继续探测。
     }
-  });
+  }
+  return undefined;
 }
 
 /** 执行安装命令（autoInstall=true 时）。返回是否成功。 */
@@ -33,10 +42,11 @@ export function runInstall(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<boolean> {
   return new Promise((resolve) => {
-    // 安装命令按 shell 执行（npm/curl 都是 shell 命令形态）。
-    execFile(command.split(" ")[0], command.split(" ").slice(1), { env }, (error) => {
-      resolve(error === null);
-    });
+    // 安装命令按 shell 执行（npm/curl 是 shell 命令形态，可能含引号/管道/
+    // 多个参数——execFile 直接 split 会切错，用 sh -c 交给 shell 解析）。
+    const child = spawn("sh", ["-c", command], { env, stdio: "ignore" });
+    child.on("error", () => resolve(false));
+    child.on("close", (code) => resolve(code === 0));
   });
 }
 

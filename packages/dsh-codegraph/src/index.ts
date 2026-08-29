@@ -23,12 +23,10 @@
  * 依赖：dsh-mcp-manager（提供 ctx.mcpManager service；未启用时降级）。
  */
 import type { Context } from "@deepseek-ai/cordis";
-// 类型面：mcpManager service 类型用本地最小声明（不 import dsh-mcp-manager 包——
-// 解耦构建时序：CI 并行 build 各包时依赖包 lib 可能未就绪；运行时经 ctx.get 探测）。
-interface McpManagerServiceLite {
-  registerServer(server: Record<string, unknown>): Promise<{ name: string; existing: boolean }>;
-  unregisterServer(name: string): Promise<void>;
-}
+// 类型面：mcpManager service 类型从 shared/ 引（单一事实源，构建期内联随包复制，
+// 不依赖 mcp-manager 包构建时序）；运行时经 ctx.get("mcpManager") 探测（cordis
+// 可选依赖标准姿势，inject 不支持可选）。
+import type { McpManagerService } from "../../../shared/mcp-manager-service.js";
 import { installGuidance, isCodegraphInstalled, runInstall } from "./install.ts";
 import { findGitRoot, guardedExplore } from "./guard.ts";
 import { registerDisciplineHook } from "./discipline.ts";
@@ -130,10 +128,11 @@ export async function apply(ctx: Context, config: CodegraphConfig = {}): Promise
   }
 
   // 2. 注册 MCP 服务器（经 mcp-manager 核心服务；未启用时纯提示降级）。
-  const mcpManager = (ctx as unknown as { get(name: string): McpManagerServiceLite | undefined }).get("mcpManager");
+  //    用完整 service 面：注册后可经 getStatus/getTools 感知连接状态与工具列表。
+  const mcpManager = (ctx as unknown as { get(name: string): McpManagerService | undefined }).get("mcpManager");
   if (mcpManager !== undefined && isCodegraphInstalled()) {
     try {
-      await mcpManager.registerServer({
+      const { existing } = await mcpManager.registerServer({
         name: "codegraph",
         transport: "stdio",
         command: "codegraph",
@@ -141,6 +140,13 @@ export async function apply(ctx: Context, config: CodegraphConfig = {}): Promise
         toolCallTimeoutMs: 60000,
         reconnect: {},
       });
+      if (!existing) {
+        // 注册即连接：查询状态确认连接进度（connecting/connected 皆正常，failed 需提示）。
+        const status = mcpManager.getStatus("codegraph");
+        if (status !== undefined && status.status === "failed") {
+          ctx.logger.warn(`dsh-codegraph: codegraph MCP 服务器连接失败：${status.error ?? "未知原因"}`);
+        }
+      }
     } catch (error) {
       ctx.logger.warn(`dsh-codegraph: 注册 codegraph MCP 服务器失败：${String(error)}`);
     }

@@ -42,12 +42,12 @@ export function registerDisciplineHook(ctx: Context): () => void {
       const decision = await next();
       if (injected) return decision;
       injected = true;
-      // 追加一条 user 消息承载纪律（与 mcp-manager 目录注入同构）。
-      (messages as unknown as Array<{ role: string; content: string }>).push({
-        role: "user",
-        content: DISCIPLINE_TEXT,
-      });
-      return { kind: "enter", messages } as unknown as ReturnType<typeof next>;
+      // 不可变注入：返回新数组（不动传入 messages 引用），符合 PreStepDecision
+      // 契约——mcp-manager 的 resolveCatalogInjection 同款构造式返回。
+      const nextMessages = Array.isArray(messages)
+        ? [...messages, { role: "user", content: DISCIPLINE_TEXT }]
+        : messages;
+      return { kind: "enter", messages: nextMessages } as unknown as ReturnType<typeof next>;
     });
   });
   return disposer;
