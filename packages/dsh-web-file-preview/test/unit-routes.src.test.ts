@@ -13,7 +13,7 @@ import { assert } from "./helpers.ts";
 import { mkdtempSync, writeFileSync, rmSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ROUTES, makeRoutes, serveFileRoute, apply } from "../src/index.ts";
+import { ROUTES, makeRoutes, serveFileRoute, apply, createTokenStore, resetServeTokenStore, DEFAULT_TOKEN_TTL_MS, DEFAULT_TOKEN_MAX, allocServeToken, serveTokenRoute, releaseServeToken, serveContentTypeOf } from "../src/index.ts";
 
 // ---------------------------------------------------------------- 帮助函数
 
@@ -22,10 +22,13 @@ function fakeReq(method, url, remoteAddress, host = "127.0.0.1") {
 }
 function fakeRes() {
   const calls = { status: 0, headers: {}, data: null };
+  const listeners = {};
   return {
     _calls: calls,
     writeHead(status, headers) { calls.status = status; calls.headers = headers || {}; return this; },
-    end(data) { calls.data = data; },
+    end(data) { if (data !== undefined) calls.data = data; },
+    write(chunk) { calls.data = calls.data === null ? Buffer.from(chunk) : Buffer.concat([Buffer.from(calls.data), Buffer.from(chunk)]); return true; },
+    on(evt, fn) { (listeners[evt] = listeners[evt] || []).push(fn); return this; },
   };
 }
 function rawReqForFiles(headers = {}) {
@@ -112,7 +115,7 @@ try {
   // apply
   // ================================================================
 
-  // apply 启用 → effect 回调执行，4 条路由注册（file/diff/health/mermaid），清理正常
+  // apply 启用 → effect 回调执行，7 条路由注册（file/diff/health/mermaid/alloc/serve/release），清理正常
   {
     const disposerCalls = [];
     const fakeCtx = {
@@ -131,16 +134,19 @@ try {
     apply(fakeCtx, {});
     // 验证 effect 回调已执行、路由已注册
     const routePaths = disposerCalls.filter((x) => typeof x === "string");
-    assert.equal(routePaths.length, 4, "apply 启用 → 4 条路由注册（#104 + mermaid）");
+    assert.equal(routePaths.length, 7, "apply 启用 → 7 条路由注册（#104 mermaid + #73 serve 三件套）");
     assert.ok(routePaths.includes(ROUTES.file), "file 路由已注册");
     assert.ok(routePaths.includes(ROUTES.diff), "diff 路由已注册");
     assert.ok(routePaths.includes(ROUTES.health), "health 路由已注册");
     assert.ok(routePaths.includes(ROUTES.mermaid), "#104 mermaid 路由已注册");
+    assert.ok(routePaths.includes(ROUTES.serve), "#73 serve 路由已注册");
+    assert.ok(routePaths.includes(ROUTES.alloc), "#73 alloc 路由已注册");
+    assert.ok(routePaths.includes(ROUTES.release), "#73 release 路由已注册");
     // 触发清理
     const cleanup = disposerCalls.find((x) => typeof x === "function");
     if (cleanup) cleanup();
     const disposedCount = disposerCalls.filter((x) => x === "disposed").length;
-    assert.equal(disposedCount, 4, "disposer 清理 4 条路由");
+    assert.equal(disposedCount, 7, "disposer 清理 7 条路由");
   }
 
   // apply 禁用 → 不注册任何路由，effect 不被调用
@@ -169,6 +175,90 @@ try {
     assert.match(loggerError[0], /注册路由失败/, "logger.error 消息含失败提示");
     // 异常后清理仍可被调用（空数组迭代）
     if (disposeFn) disposeFn();
+  }
+
+  // ================================================================
+  // issue #73：serve token store 生命周期（B 组，src 直测供变异覆盖）
+  // ================================================================
+  {
+    // 默认值声明（B3b/B4b 实现层可调项，README 记录）
+    assert.equal(DEFAULT_TOKEN_TTL_MS, 30 * 60 * 1000, "#73 默认 TTL 30min");
+    assert.equal(DEFAULT_TOKEN_MAX, 64, "#73 默认上限 64");
+    // 可注入时钟：分配 / 命中刷新 / TTL 回收 / release / 幂等
+    let fakeNow = 1000;
+    const store = createTokenStore({ now: () => fakeNow, ttlMs: 10_000, maxTokens: 2, activeWindowMs: 200 });
+    resetServeTokenStore(store);
+    try {
+      const t1 = store.alloc(root);
+      assert.ok(t1 !== null && /^[0-9a-f]{32}$/.test(t1), "#73 token 为 32 位 hex");
+      assert.equal(store.size(), 1, "#73 分配后 size=1");
+      // 命中刷新：get 后 9s（< TTL）仍存活
+      fakeNow += 9_000;
+      assert.ok(store.get(t1) !== undefined, "#73 TTL 内命中存活");
+      // 过期回收：再拨 10.1s（自上次命中闲置 > 10s TTL）→ undefined
+      fakeNow += 10_100;
+      assert.equal(store.get(t1), undefined, "#73 闲置超 TTL 回收");
+      // release 幂等
+      const t2 = store.alloc(root);
+      assert.equal(store.release(t2), true, "#73 release 存在返回 true");
+      assert.equal(store.release(t2), false, "#73 重复 release 返回 false（幂等）");
+      // LRU：达上限淘汰非活跃最旧、保留活跃
+      // 时序：a 分配 → 命中 → 再命中（保持活跃窗口）；b 分配后闲置滑出窗口
+      const a = store.alloc(root);        // a.lastHit=20100
+      fakeNow += 30;
+      store.get(a);                        // a.lastHit=20130
+      fakeNow += 180;
+      const b = store.alloc(root);         // b.lastHit=20310（a 距 20130=180 ≤ 200 仍活跃）
+      fakeNow += 30;
+      store.get(a);                        // a.lastHit=20340
+      fakeNow += 180;
+      const c = store.alloc(root);         // 达上限 → a 活跃（20340→20520 距 180 ≤ 200）、b 非活跃（20310→20520 距 210 > 200）
+      assert.ok(c !== null, "#73 达上限腾出空位");
+      assert.ok(store.get(a) !== undefined, "#73 活跃 a 保留");
+      assert.equal(store.get(b), undefined, "#73 非活跃最旧 b 淘汰");
+    } finally {
+      resetServeTokenStore();
+    }
+  }
+
+  // ================================================================
+  // issue #73：serve 路由行为（alloc/serve/release 直测，供变异覆盖）
+  // ================================================================
+  {
+    resetServeTokenStore();
+    writeFileSync(join(root, "page.html"), "<!doctype html><p>u</p>\n", "utf8");
+    const mkUrl = (u) => new URL(`http://127.0.0.1${u}`);
+    // alloc：200 + token/rest；非 html 400
+    const ar = fakeRes();
+    await allocServeToken(ar, mkUrl(`${ROUTES.alloc}?cwd=${encodeURIComponent(root)}&path=page.html`), {});
+    assert.equal(ar._calls.status, 200, "#73 alloc 200");
+    const pa = JSON.parse(ar._calls.data);
+    assert.equal(pa.rest, "page.html", "#73 alloc rest 相对路径");
+    const bad = fakeRes();
+    await allocServeToken(bad, mkUrl(`${ROUTES.alloc}?cwd=${encodeURIComponent(root)}&path=doc.txt`), {});
+    assert.equal(bad._calls.status, 400, "#73 alloc 非 html 400");
+    // serve：正常 200 + Content-Type text/html；越界 ../ 404；未知 token 404
+    const ok = fakeRes();
+    await serveTokenRoute(ok, { headers: {} }, mkUrl(`${ROUTES.serve}/${pa.token}/page.html`), {});
+    assert.equal(ok._calls.status, 200, "#73 serve 200");
+    assert.match(String(ok._calls.headers["content-type"]), /^text\/html/, "#73 serve Content-Type text/html");
+    const esc = fakeRes();
+    await serveTokenRoute(esc, { headers: {} }, mkUrl(`${ROUTES.serve}/${pa.token}/../doc.txt`), {});
+    assert.equal(esc._calls.status, 404, "#73 serve 越界 404");
+    const unk = fakeRes();
+    await serveTokenRoute(unk, { headers: {} }, mkUrl(`${ROUTES.serve}/ffffffffffffffffffffffffffffffff/page.html`), {});
+    assert.equal(unk._calls.status, 404, "#73 serve 未知 token 404");
+    // release 后同 token → 404
+    const rr = fakeRes();
+    releaseServeToken(rr, mkUrl(`${ROUTES.release}?token=${pa.token}`));
+    assert.equal(rr._calls.status, 200, "#73 release 200");
+    const after = fakeRes();
+    await serveTokenRoute(after, { headers: {} }, mkUrl(`${ROUTES.serve}/${pa.token}/page.html`), {});
+    assert.equal(after._calls.status, 404, "#73 release 后 404");
+    // serveContentTypeOf：html→text/html、css→text/css、未知→octet-stream
+    assert.match(serveContentTypeOf("a.html"), /^text\/html/, "#73 MIME html");
+    assert.match(serveContentTypeOf("a.css"), /^text\/css/, "#73 MIME css");
+    assert.match(serveContentTypeOf("a.q7x9z"), /^application\/octet-stream/, "#73 MIME 未知");
   }
 
   console.log("PASS unit-routes");
