@@ -11,7 +11,7 @@ DSH 自带的“可点击文件引用”在点击产出文件 chip / 行内文�
 - **图片预览**：`png / jpg / jpeg / gif / webp / svg / avif / bmp`；点击进入灯箱放大/平移（滚轮缩放 + 拖拽）。
 - **Markdown 预览**：`.md / .markdown` 默认渲染预览（marked + GFM 常用能力），可切「原始」；文内 ` ```mermaid ` 代码块渲染为图（首次出现时才懒加载 mermaid 引擎，普通预览首屏零额外开销），语法错误自动回退为代码块并提示。
 - **代码语法高亮**：`js/ts/py/java/…` 等 25+ 语言（highlight.js 子集）高亮，可切「原始」。
-- **HTML 预览（issue #73）**：`.html / .htm` 走「serve 路由 + `<iframe sandbox>`」静态伺服——HTML 与同目录 / `../` 相对路径的 css/js/img 资源按浏览器原生解析正常加载渲染；**不执行 `<script>`**（sandbox 无 `allow-scripts`，首版边界）；可切「原始」tab 查看源码。
+- **HTML 预览（issue #73）**：`.html / .htm` 走「serve 路由 + `<iframe sandbox>`」静态伺服——HTML 与相对路径的 css/js/img 资源按浏览器原生解析正常加载渲染（root = HTML 文件所在目录，root 内任意深度相对引用含 `../` 均可达；根 HTML 引用 root 外资源因 token 前缀语义不可达，属安全边界）；**不执行 `<script>`**（sandbox 无 `allow-scripts`，首版边界）；可切「原始」tab 查看源码。
 - **文本预览**：`txt / log / csv / conf …` 等宽展示。
 - **Diff 视图（git）**：`.md/代码/文本/HTML` 若在 git 仓库且有未提交变更，顶栏多出第 3 个 **Diff** tab，红/绿展示 `git diff HEAD -- <file>`（未跟踪新文件给提示）。
 - Modal 内动作：**预览/原始/Diff**、**复制路径**、**在新标签打开**、**关闭**（Esc / 点遮罩）。
@@ -26,7 +26,7 @@ DSH 自带的“可点击文件引用”在点击产出文件 chip / 行内文�
 - **客户端**：双机制拦截（`workspaces.openPath` 调用点收口 + document 捕获静态拦截）+ 分组渲染（`renderGroupFor`）+ 三 tab（预览/原始/Diff，Diff 仅 git 有变更才显示）。md 用 `marked`、代码用 `highlight.js` 子集、Diff 用 `diff2html`；HTML 预览 tab 渲染 `<iframe sandbox>`（无 `allow-scripts` / 无 `allow-same-origin`），`src = /serve/<token>/<encodeURI(rest)>`，关闭 Modal 时上报 release。
 - **后缀分组单一事实源**：`src/grouping.ts` 供宿主 `mime.ts` 与客户端 `renderer.ts`/`client.ts` 共用，杜绝双端各写一份后缀表导致漂移；`.html/.htm` 自 issue #73 起为独立 **html 渲染组**（宿主产出 `renderedHtml` kind，双端一致）；`cleanRefChipPath`（@-mention chip 标签 → 干净路径的纯函数）同处，与 DSH 的 `formatFileMention` 互逆。
 - **跨包契约假设（`@` 引用）**：按 `data-ref-chip` 属性 + `title="@…"` 形态（由 DSH `ui-conversation` 产出）识别。若未来 DSH 调整该形态，`data-ref-chip` 门失效时 file chip 静默退回「点击无反应」（不会 404，属可接受降级）；若 DSH 提供干净路径属性（如 `data-ref-path`）则优先采用。
-- **依赖**：`marked` / `highlight.js` / `diff2html` / `untildify` 为构建期打包依赖（宿主/客户端分别内联进 `lib/index.js` 与 `lib/client.js`），**运行时零 npm 依赖**；Content-Type 用内置小型映射（无需 mime-db 大表，避免宿主第三方依赖内联的 ESM/CJS 兼容问题）。
+- **依赖**：`marked` / `highlight.js` / `diff2html` / `untildify` / `mime` 为构建期打包依赖（宿主/客户端分别内联进 `lib/index.js` 与 `lib/client.js`），**运行时零 npm 依赖**；图片与 serve 子资源 Content-Type 由 `mime` 库提供（mime-db 全表，issue #12/#47 approved，构建期内联，消除自写映射表漂移）。
 - **Mermaid 懒加载 chunk（issue #104）**：`mermaid` 整库内联为独立产物 `lib/client-mermaid.js`（ESM，minify），与 `client.js` 物理分离；宿主经 `GET /api/dsh-file-preview/mermaid`（loopback 围栏 + 弱 ETag 协商缓存）伺服。客户端仅在 md 渲染出 mermaid 代码块后才以运行时变量 URL 动态 import 拉取——普通 md / 文本 / 图片预览从不触发加载。minified 产物的 esbuild 路径注释会被移除，故构建期由 metafile 生成内联清单 sidecar `lib/client-mermaid.deps.json` 随包发布，作为 license 归集与 pack 断言的唯一证据源。
 - **构建体积**：客户端 esbuild `--minify`，`client.js` 约 550KB（gzip ~120KB）；`client-mermaid.js` 全量约 **3.29MB（gzip ~940KB）**——复核口径基线（验收不设体积硬阈值；仅首次遇到 mermaid 块时下载一次，浏览器模块缓存 + 304 协商后续零成本）。
 
@@ -117,7 +117,7 @@ curl http://127.0.0.1:3080/api/dsh-file-preview/health
 ## 已知限制
 
 - 文本类超过 `maxTextBytes`（默认 512KB）返回 413+截断标记，不再整读全文（大文件流式/虚拟滚动未实现，见 W10 专项）。
-- HTML 预览（issue #73）已知限制：iframe 内 `fetch`/XHR 在 opaque origin 下因 CORS 被阻断（属预期，静态子资源加载不受影响）；**根绝对路径**（`<script src="/assets/app.js">`）不支持——浏览器按服务器 origin 解析会请求 dsh web 根，与 token 虚拟伺服不一致（支持需注入 `<base>` = 改写 HTML，属更高风险选项，另行决策）；iframe 内导航（SPA 路由 / 页面跳转）不进 Modal 返回栈；**预览长期不交互可能失效**（serve token idle TTL 30min 兜底回收，关闭 Modal 会显式释放）。
+- HTML 预览（issue #73）已知限制：iframe 内 `fetch`/XHR 在 opaque origin 下因 CORS 被阻断（属预期，静态子资源加载不受影响）；**根绝对路径**（`<script src="/assets/app.js">`）不支持——浏览器按服务器 origin 解析会请求 dsh web 根，与 token 虚拟伺服不一致（支持需注入 `<base>` = 改写 HTML，属更高风险选项，另行决策）；iframe 内导航（SPA 路由 / 页面跳转）不进 Modal 返回栈；**预览长期不交互可能失效**（serve token idle TTL 30min 兜底回收，关闭 Modal 会显式释放）；**预览期间 root 目录被移动/删除后预览失效**（只读伺服不落盘语义，需重新打开）。
 - 可点击范围较宽（凡路径 title / 本地 href / 内联路径文本都可能进预览），`data-ref-chip` 权威分支优先于通用嗅探，避免 `@` 引用误触发。
 - 文件夹 `@` 引用不开预览（仅提示），目录浏览能力不在本插件范畴。
 - client bundle 含 `marked` + `highlight.js` 子集 + `diff2html`，min 后约 550KB（gzip ~120KB）。

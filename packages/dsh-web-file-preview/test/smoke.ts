@@ -614,7 +614,7 @@ try {
         assert.equal(payload.ok, true, "#73 alloc ok:true");
         assert.ok(typeof payload.token === "string" && /^[0-9a-f]{32}$/.test(payload.token), "#73 token 为 128-bit 随机 hex");
         assert.equal(payload.rest, "index.html", "#73 rest 为相对 root 的 POSIX 相对路径");
-        assert.equal(payload.root, serveRoot, "#73 root 为 HTML 所在目录");
+        assert.equal(payload.root, undefined, "#73 alloc 不返回 root（P2-3：多余信息面移除）");
         token = payload.token;
       }
       // alloc 非 html → 400；不存在 → 404；缺参 → 400
@@ -676,16 +676,53 @@ try {
         await serveRouteHandler(fakeReq("GET", `${ROUTES.serve}/${token}/`, "127.0.0.1"), res);
         assert.equal(res._calls.status, 404, "#73 serve 根路径（目录）→ 404");
       }
+      // P2-4 对照：有效 token + 空 rest → 404（与未知 token 404 同码，不泄露区分信息）
+      {
+        const res = fakeRes();
+        await serveRouteHandler(fakeReq("GET", `${ROUTES.serve}/${token}`, "127.0.0.1"), res);
+        assert.equal(res._calls.status, 404, "#73 有效 token 空 rest → 404（C3 对照）");
+      }
       {
         const res = fakeRes();
         await serveRouteHandler(fakeReq("GET", serveUrl(token, "subdir"), "127.0.0.1"), res);
         assert.equal(res._calls.status, 404, "#73 serve 已知目录 → 404（不做目录列表）");
       }
-      // C4：root 越界（.. 逃逸到 root 外存在的文件）→ 404——与 /file「逃逸 200」刻意相反
+      // C4：root 越界（逃逸到 root 外存在的文件）→ 404——与 /file「逃逸 200」刻意相反。
+      // 注意：字面 `../` 会被 URL 解析器折叠（`/serve/<token>/../x` → `/serve/x`，token 段
+      // 被吃→404 来自未知 token，属「折叠语义」而非越界分支，测试会失真）——故用
+      // `%2e%2e%2f` 编码形态断言：解码后还原 `../` 段，必须命中 realpath 越界分支（评审 P2-1）。
       {
         const res = fakeRes();
-        await serveRouteHandler(fakeReq("GET", serveUrl(token, `../${outsideName}`), "127.0.0.1"), res);
-        assert.equal(res._calls.status, 404, "#73 serve 越界 → 404（与 /file 逃逸 200 对照）");
+        await serveRouteHandler(fakeReq("GET", serveUrl(token, `..%2f${outsideName}`), "127.0.0.1"), res);
+        assert.equal(res._calls.status, 404, "#73 serve 越界（%2e%2e 编码）→ 404（与 /file 逃逸 200 对照）");
+      }
+      // P1-1 回归：符号链接目录下 HTML 预览全链路（alloc→serve）必须 200——
+      // root 与 rest 基于同一 realpath 归一基，rest 不得含 `..` 段。
+      {
+        const linkName = `fwp-serve-link-${Date.now()}`;
+        const linkDir = join(serveParent, linkName);
+        let linked = false;
+        try {
+          symlinkSync(serveRoot, linkDir); // serveRoot 真实目录 → 链接目录
+          linked = true;
+        } catch { /* 平台 symlink 受限 → 跳过 */ }
+        if (linked) {
+          try {
+            const res = fakeRes();
+            await allocRoute(fakeReq("GET", allocOf("index.html", linkDir), "127.0.0.1"), res);
+            assert.equal(res._calls.status, 200, "#73 符号链接目录 alloc 200");
+            const p = JSON.parse(res._calls.data);
+            assert.ok(!p.rest.includes(".."), `#73 符号链接目录 rest 不含 ..（实际 ${p.rest}）`);
+            const sres = fakeRes();
+            await serveRouteHandler(fakeReq("GET", serveUrl(p.token, p.rest), "127.0.0.1"), sres);
+            assert.equal(sres._calls.status, 200, "#73 符号链接目录 serve 200（P1-1 回归）");
+            assert.equal(sres._calls.data.toString("utf8"), "<!doctype html><h1>hi</h1>\n", "#73 符号链接目录内容一致");
+          } finally {
+            rmSync(linkDir, { recursive: true, force: true });
+          }
+        } else {
+          console.log("  (跳过 P1-1 符号链接目录断言：symlink 不可用)");
+        }
       }
       // C2：编码攻击面——rest 以 / 开头、含 \0、交替分隔符 \、%2e%2e 解码段、绝对路径
       {
@@ -876,6 +913,13 @@ try {
           assert.equal(res._calls.status, 200, "#73 子目录资源 200");
           assert.equal(res._calls.data.toString("utf8"), "body{color:red}\n", "#73 子目录内容正确");
         }
+        // P1-2 语义：root 内子目录 HTML 的 `../` 引用（折叠后仍落在 token 前缀内）可达——
+        // 浏览器把 subdir/page.html 的 ../style.css 折叠为 /serve/<token>/style.css。
+        {
+          const res = fakeRes();
+          await serveRouteHandler(fakeReq("GET", serveUrl(liveToken, "assets/../index.html"), "127.0.0.1"), res);
+          assert.equal(res._calls.status, 200, "#73 root 内 ../ 折叠引用 200（token 段保留）");
+        }
       }
       rmSync(outside, { force: true });
     } finally {
@@ -888,9 +932,11 @@ try {
   // 生命周期接线随产物下发；产物层证据防「实现回退丢安全约束」。
   {
     assert.ok(client.includes("fwp-html-frame"), "#73 client.js 含 html iframe 类名");
-    assert.ok(client.includes("sandbox"), "#73 client.js 含 sandbox 属性装配");
-    // G4：sandbox 以空 token 集装配（sandbox:""）——绝无 allow-scripts/allow-same-origin 值形态
-    assert.ok(/sandbox:\s*""/.test(client), "#73 client.js sandbox 空集装配（G4）");
+    assert.ok(client.includes("sandbox"), "#73 client.js 含 sandbox 装配");
+    // G4/J1/J9（qa 实测红线回归哨兵）：sandbox 必须经 setAttribute("sandbox","")
+    // 显式装配——`node.sandbox=""` 反射赋值不产生属性（同源+脚本执行）。产物层
+    // 断言 setAttribute 形态存在、且无 allow-scripts/allow-same-origin 值。
+    assert.ok(client.includes('setAttribute("sandbox"'), "#73 client.js 经 setAttribute 显式装配 sandbox（G4 回归哨兵）");
     assert.ok(!client.includes('sandbox:"allow-scripts'), "#73 client.js 无 allow-scripts 装配值（J1）");
     assert.ok(!client.includes('sandbox:"allow-same-origin'), "#73 client.js 无 allow-same-origin 装配值（J9）");
     assert.ok(client.includes("no-referrer"), "#73 client.js 含 referrerpolicy no-referrer（iframe 侧）");

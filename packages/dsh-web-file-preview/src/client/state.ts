@@ -15,6 +15,9 @@ export interface NavEntry {
   rawText?: string;
   diffText?: string;
   diffUntracked?: boolean;
+  /** issue #73：html 预览 serve token/src 快照——返回时直接复用 iframe（免重新 alloc）。 */
+  serveToken?: string;
+  serveSrc?: string;
 }
 
 /** 文件预览客户端全部可变状态。 */

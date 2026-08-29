@@ -283,8 +283,11 @@ async function resolveAllocTarget(cwd: string | undefined, path: string): Promis
 }
 
 /**
- * token 分配（spec A5）：root = HTML 文件所在目录（realpath 归一，闭合符号链接），
- * rest = 磁盘绝对路径相对 root 的 POSIX 相对路径。返回 token + rest。
+ * token 分配（spec A5）：root = HTML 文件所在目录（realpath 归一，闭合符号链接）。
+ * rest = 磁盘绝对路径相对 root 的 POSIX 相对路径——root 与 rest 必须基于**同一份
+ * realpath 归一后的路径**（评审 P1-1）：HTML 所在目录是符号链接时（macOS
+ * /tmp→/private/tmp、软链 worktree、iCloud 挂载均常态），若 rest 用未归一路径
+ * 计算会含 `..` 段，serve 侧 realpath 判定必 404。
  */
 export async function allocServeToken(
   res: ServerResponse,
@@ -298,9 +301,18 @@ export async function allocServeToken(
     writeJson(res, target.status, { error: target.error });
     return;
   }
+  // 先对目标文件 realpath 归一（闭合文件级符号链接），再取目录归一为 root——
+  // 两侧同源，rest 恒为 root 内 POSIX 相对路径（无 `..`）。
+  let realFile: string;
+  try {
+    realFile = await realpath(target.absPath);
+  } catch {
+    writeJson(res, 404, { error: `not found: ${path}` });
+    return;
+  }
   let root: string;
   try {
-    root = await realpath(dirname(target.absPath));
+    root = await realpath(dirname(realFile));
   } catch {
     writeJson(res, 404, { error: `not found: ${path}` });
     return;
@@ -312,9 +324,11 @@ export async function allocServeToken(
     writeJson(res, 429, { error: "too many active previews, close some previews first" });
     return;
   }
-  // rest 恒等于「磁盘绝对路径相对 root 的 POSIX 相对路径」（spec 四、资源解析）。
-  const rest = relative(root, target.absPath).split(sep).join("/");
-  writeJson(res, 200, { ok: true, token, rest, root });
+  // rest 恒等于「realpath 归一后的磁盘绝对路径相对 root 的 POSIX 相对路径」
+  // （spec 四、资源解析）。注意：响应不带 root——客户端只消费 token/rest，
+  // root 属多余信息面（评审 P2-3，与 A3「不泄露区分信息」精神一致）。
+  const rest = relative(root, realFile).split(sep).join("/");
+  writeJson(res, 200, { ok: true, token, rest });
 }
 
 /** serve 单资源 Content-Type（E1）：html → text/html；其余按 mime 库；未知 octet-stream。 */
@@ -394,6 +408,7 @@ export async function serveTokenRoute(
     return;
   }
   // 超限检查先于 ETag/304（与 /file 同语义，D2）：413 响应不缓存（no-store）。
+  // 响应头与 /file 413 一致（nosniff + no-referrer，评审 P2-5）。
   if (cfg.maxAssetBytes !== undefined && info.size > cfg.maxAssetBytes) {
     res.writeHead(413, {
       "content-type": "application/json; charset=utf-8",
@@ -428,9 +443,17 @@ export async function serveTokenRoute(
   //  - 不依赖 dest 的 pipe 协议（测试 fakeRes 无需实现 .on）；
   //  - 错误处理确定：headersSent 前可回写 500，之后销毁连接；
   //  - 返回 promise 在流结束时 resolve——调用方 await 即代表响应完整发出
-  //    （测试无需轮询等待）。
+  //    （测试无需轮询等待）；
+  //  - 断连兜底（评审 P1-3）：客户端中止请求 → res close → 销毁读流并 resolve，
+  //    否则流停在 pause() 泄漏 fd、promise 悬挂。
   return new Promise<void>((resolvePromise) => {
     const stream = createReadStream(real);
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      resolvePromise();
+    };
     res.writeHead(200, {
       ...baseHeaders,
       "content-type": serveContentTypeOf(rest),
@@ -440,15 +463,18 @@ export async function serveTokenRoute(
       if (!res.write(chunk)) stream.pause(); // 背压：下游写不动时暂停读
     });
     res.on("drain", () => stream.resume());
-    stream.on("end", () => { res.end(); resolvePromise(); });
+    stream.on("end", () => { res.end(); finish(); });
     stream.on("error", () => {
       if (!res.headersSent) {
         writeJson(res, 500, { error: "read failed" });
       } else if (typeof (res as any).destroy === "function") {
         (res as any).destroy();
       }
-      resolvePromise();
+      finish();
     });
+    // 断连/关闭兜底：res close（浏览器中止、连接重置）→ 销毁读流、解除悬挂。
+    res.on("close", () => { stream.destroy(); finish(); });
+    stream.on("close", () => { if (!settled) finish(); });
   });
 }
 

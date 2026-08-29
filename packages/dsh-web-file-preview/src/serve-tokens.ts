@@ -64,9 +64,15 @@ export function createTokenStore(options?: TokenStoreOptions): TokenStore {
   /** token → 条目（模块级单例由调用方持有）。 */
   const entries = new Map<string, ServeTokenEntry>();
 
+  /** 上次 sweep 见过的最大时钟值（评审 P2-2：时钟回拨兜底——回拨时以 max 计算
+   * cutoff，防止 lastHit 恒大于 cutoff 导致 TTL 永不回收；NTP 校正/休眠唤醒场景）。 */
+  let maxClockSeen = now();
+
   /** 懒回收：删除所有闲置超时的 token（alloc/get 时调用，O(n)，n ≤ maxTokens）。 */
   function sweepExpired(): void {
-    const cutoff = now() - ttlMs;
+    const current = now();
+    if (current > maxClockSeen) maxClockSeen = current;
+    const cutoff = maxClockSeen - ttlMs;
     for (const [token, entry] of entries) {
       if (entry.lastHit < cutoff) entries.delete(token);
     }
@@ -74,7 +80,9 @@ export function createTokenStore(options?: TokenStoreOptions): TokenStore {
 
   /** 该 token 是否处于活跃窗口内（LRU 淘汰候选排除活跃预览）。 */
   function isActive(entry: ServeTokenEntry): boolean {
-    return now() - entry.lastHit <= activeWindowMs;
+    const current = now();
+    if (current > maxClockSeen) maxClockSeen = current;
+    return maxClockSeen - entry.lastHit <= activeWindowMs;
   }
 
   /** LRU 淘汰：移除最久未用且非活跃的 token；返回是否腾出空位。 */

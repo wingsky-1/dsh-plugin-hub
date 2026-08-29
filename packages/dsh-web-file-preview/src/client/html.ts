@@ -74,16 +74,25 @@ export function renderHtmlPreview(body: HTMLElement, state: FilePreviewState, se
     });
 }
 
-/** 构造 sandbox iframe（G4：sandbox 属性精确为空集——无 allow-scripts、无 allow-same-origin）。 */
+/**
+ * 构造 sandbox iframe（G4：sandbox 属性精确为空集——无 allow-scripts、无
+ * allow-same-origin）。
+ *
+ * 必须用 `setAttribute("sandbox", "")` 显式装配（qa 浏览器实测红线缺陷）：
+ * `el()` 的 attrs 对非 class/text/html/dataset/data-* 键走 `node[key]=value`
+ * 属性反射赋值，`iframe.sandbox=""` 是 DOMTokenList 反射赋值——**空串不会产生
+ * sandbox 属性**，iframe 变同源、脚本在父页面执行（J1/J9 隔离失效的经典坑）。
+ * 显式 setAttribute 保证空集 sandbox 真正生效。
+ */
 function makeHtmlFrame(src: string): HTMLElement {
   const frame = el("iframe", {
     class: "fwp-html-frame",
     attrs: {
-      sandbox: "", // 空 token 集 = 最严格隔离；绝不同时开 allow-scripts + allow-same-origin（J9）
       referrerpolicy: "no-referrer",
       title: "HTML 预览（沙箱内渲染，不执行脚本）",
     },
   });
+  frame.setAttribute("sandbox", ""); // 空 token 集 = 最严格隔离；绝不同时开 allow-scripts + allow-same-origin（J9）
   frame.src = src;
   return frame;
 }

@@ -50,14 +50,10 @@ export function closeModal(state: FilePreviewState): void {
   state.diffText = undefined;
   state.diffUntracked = false;
   state.currentGroup = undefined;
-  // issue #73：html 预览关闭 → 上报 release 释放 serve token（B5）；未释放由宿主
-  // TTL/LRU 兜底回收，release 失败静默（幂等，不阻塞关闭流程）。
-  if (state.serveToken !== undefined) {
-    const token = state.serveToken;
-    state.serveToken = undefined;
-    state.serveSrc = undefined;
-    void fetch(releaseUrl(token, state), { method: "GET" }).catch(() => { /* 忽略 */ });
-  }
+  // 注（issue #73 评审 P2-6）：serveToken/serveSrc **不在此清理**——closeModal 是
+  // 导航式重建（openPreview 内调用）与终态关闭共用的清理函数，release 只发生在
+  // finalizeSession（终态关闭，见下）；导航重建时 token 随 backStack 快照保留，
+  // 返回可复用 iframe；残留 token 由宿主 TTL/LRU 兜底回收。
   // issue #104：清空 mermaid hydration 注册表（旧 Modal 的已渲染块引用不跨
   // Modal 残留；在途重渲染由 openSeq 代数校验自行中止，见 mermaid.ts）。
   state.activeMermaidHydration = undefined;
@@ -71,8 +67,16 @@ export function closeModal(state: FilePreviewState): void {
  * 终态关闭：还原焦点到首次触发元素、清空返回栈，再走 closeModal 清理资源。
  * 只在真正的关闭语义入口调用（关闭按钮 / 遮罩 / Esc 非灯箱 / 插件卸载），
  * 与 openPreview 内部的导航式重建（closeModal 不清栈、不动焦点）区分开来。
+ * issue #73：仅在此上报 release 当前 html 预览 token（B5）——导航式重建不清
+ * token（随 backStack 快照保留供返回复用）；未释放由宿主 TTL/LRU 兜底回收。
  */
 export function finalizeSession(state: FilePreviewState, reason: "close" | "unmount"): void {
+  if (state.serveToken !== undefined) {
+    const token = state.serveToken;
+    state.serveToken = undefined;
+    state.serveSrc = undefined;
+    void fetch(releaseUrl(token, state), { method: "GET" }).catch(() => { /* 忽略 */ });
+  }
   if (reason === "unmount") {
     // 卸载时 overlay 仍可还原焦点到会话（若在 DOM 中）。
     if (state.sessionOriginFocus !== undefined) {
@@ -119,6 +123,8 @@ export function openPreview(
       path: state.currentPath, cwd: state.currentCwd,
       previewMode: state.previewMode, rawText: state.rawText,
       diffText: state.diffText, diffUntracked: state.diffUntracked,
+      // issue #73：html 预览 token/src 快照——返回时 iframe 直接复用（免重新 alloc）
+      serveToken: state.serveToken, serveSrc: state.serveSrc,
     });
     if (state.backStack.length > state.MAX_BACK) state.backStack.shift();
   }
@@ -297,6 +303,9 @@ export function openPreview(
     state.rawText = prev.rawText;
     state.diffText = prev.diffText;
     state.diffUntracked = prev.diffUntracked ?? false;
+    // issue #73：返回还原 html 预览 token/src 快照——iframe 直接复用（免重新 alloc）。
+    state.serveToken = prev.serveToken;
+    state.serveSrc = prev.serveSrc;
     // Diff tab 在跳转前可能已被探测/添加；返回时按其 snapshot 状态重建 tab 栏。
     if (prev.diffText !== undefined || prev.diffUntracked) addDiffTab();
     syncTabActive();
