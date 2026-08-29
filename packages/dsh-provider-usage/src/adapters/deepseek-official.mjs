@@ -730,7 +730,7 @@ function formatPanelImpl(input) {
       <span class="dou-cardCur">${balance !== null && Number.isFinite(balance) ? `¥${balance.toFixed(2)}` : "--"}</span>
       ${trendHtml}
     </div>
-    <p class="dou-cardLimit">DeepSeek 官方（CNY） · 近 24 小时波动${rechargeHint}</p>
+    <p class="dou-cardLimit" title="${ea("DeepSeek 官方（CNY）")}">近 24 小时波动${rechargeHint}</p>
   </div>`;
 
   let chartHtml = "";
