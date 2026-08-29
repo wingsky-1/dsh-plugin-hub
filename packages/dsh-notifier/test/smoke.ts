@@ -35,6 +35,7 @@ import "./real-context.test.ts";
 
 // e2e：HTTP 路由 + 两端契约
 import "./routes.test.ts";
+import "./migration.test.ts";
 import "./client-contract.test.ts";
 
 console.log("dsh-notifier smoke: OK");

@@ -1,6 +1,10 @@
 // @ts-nocheck
 /**
- * dsh-notifier — smoke 测试共享辅助（fake ctx / fake req/res / 轮询）。
+ * dsh-notifier — smoke 测试共享辅助（fake ctx / fake req/res / fake settings / 轮询）。
+ *
+ * issue #76 后配置走官方 settings 命名空间：makeNotifier 注入 fake settings 服务
+ * （register/describe/update），apply 的组合层配置经 sanitizeSettings 过滤后作为
+ * 命名空间 base 层；user 层可由测试经 ctxOverrides.settings 预置或 PUT 写入断言。
  *
  * 无副作用模块：不创建临时目录、不触发 apply；work 目录由各测试文件
  * 自建自清（隔离文件路径，防 flake——见 docs/DEVELOPMENT.md §5）。
@@ -8,6 +12,7 @@
 import { join } from "node:path";
 import assert from "node:assert/strict";
 import { apply } from "../lib/index.js";
+import { normalizeConfig, sanitizeSettings, SETTINGS_NS } from "../lib/index.js";
 
 /** loopback 合法请求构造（remoteAddress 可覆盖）。 */
 export function fakeReq(overrides = {}) {
@@ -42,8 +47,84 @@ export function makeRes() {
 }
 
 /**
+ * fake settings 服务（官方 SettingsServiceLike 最小面：register/describe/update）。
+ * register 返回 owner scope（get/watch/update），解析值 = normalizeConfig(base+user)；
+ * update 可选做 revision 乐观并发（expectedRevision 不匹配抛 SETTINGS_CONFLICT）。
+ * @param options.base 组合层通知配置（apply entry，sanitize 后）。
+ * @param options.user 预置 user 层（GET user 断言 / 迁移目标）。
+ * @param options.log 可选记录 update 调用的钩子（断言「只提交变更键」）。
+ */
+export function makeFakeSettings(options = {}) {
+  const base = options.base && typeof options.base === "object" ? options.base : {};
+  let user = { ...((options.user && typeof options.user === "object") ? options.user : {}) };
+  let revision = 0;
+  const scopeWatchCbs = [];
+  const updateCalls = [];
+  const log = options.log || (() => {});
+
+  const scope = {
+    get() {
+      return normalizeConfig({ ...base, ...user });
+    },
+    watch(cb) {
+      scopeWatchCbs.push(cb);
+      return () => {
+        const i = scopeWatchCbs.indexOf(cb);
+        if (i !== -1) scopeWatchCbs.splice(i, 1);
+      };
+    },
+    update(patch) {
+      const prev = normalizeConfig({ ...base, ...user });
+      Object.assign(user, patch);
+      revision += 1;
+      updateCalls.push({ patch: JSON.parse(JSON.stringify(patch)), via: "scope" });
+      log({ via: "scope", patch });
+      fireWatch(prev);
+    },
+  };
+  const service = {
+    register(ns, schema, opts) {
+      return scope;
+    },
+    describe(opts = {}) {
+      return [{ ns: SETTINGS_NS, user: { ...user }, revision }];
+    },
+    async update(ns, patch, expectedRevision) {
+      if (expectedRevision !== undefined && expectedRevision !== revision) {
+        throw Object.assign(new Error("settings conflict"), { code: "SETTINGS_CONFLICT", expected: expectedRevision, actual: revision });
+      }
+      const prev = normalizeConfig({ ...base, ...user });
+      Object.assign(user, patch);
+      revision += 1;
+      updateCalls.push({ patch: JSON.parse(JSON.stringify(patch)), via: "service" });
+      log({ via: "service", patch });
+      fireWatch(prev);
+    },
+  };
+  /** 提交后触发 scope.watch 回调（官方语义：异步串行；测试同步即可）。 */
+  function fireWatch(prev) {
+    for (const cb of [...scopeWatchCbs]) {
+      try {
+        cb(normalizeConfig({ ...base, ...user }), prev);
+      } catch {
+        // 回调异常不阻断（与官方 contained-watcher 语义一致）
+      }
+    }
+  }
+  return {
+    scope,
+    service,
+    getUser: () => ({ ...user }),
+    getRevision: () => revision,
+    getUpdateCalls: () => updateCalls,
+    setUser(next) { user = { ...next }; },
+  };
+}
+
+/**
  * fake cordis ctx：路由表 + 事件监听器表 + effect（真实语义：fn 立即同步
- * 执行，返回值收集为 disposer）+ get/provide（服务读取面）。
+ * 执行，返回值收集为 disposer）+ get/provide（服务读取面）+ inject（服务注入面，
+ * 供 installNotifierSettings 挂 settings）。
  *
  * 未注入访问抛错镜像（issue #290 C-2）：Proxy 对未注入属性（如 ctx.agents）
  * 抛与真实 cordis 同构的错误 `cannot get property "<name>" without inject`
@@ -87,6 +168,21 @@ export function makeFakeCtx(overrides = {}) {
       services.set(name, value);
       return () => services.delete(name);
     },
+    inject(serviceNames, fn) {
+      // 服务面注入（installNotifierSettings 经此挂 settings）：仅处理已注册服务
+      if (Array.isArray(serviceNames) && serviceNames.includes("settings")) {
+        const settings = services.get("settings");
+        if (!settings) return;
+        const sctx = {
+          settings,
+          effect(f2) {
+            const d = f2();
+            return typeof d === "function" ? d : () => {};
+          },
+        };
+        fn(sctx);
+      }
+    },
     ...overrides,
   };
   // 未注入访问抛错镜像（真实 cordis 严格属性访问）：symbol/保留键（then/
@@ -116,14 +212,23 @@ export function makeLoggingCtx() {
 }
 
 /**
- * apply 一份 notifier（默认 enabled + work 内独立配置/历史文件路径）。
+ * apply 一份 notifier。issue #76 后配置走 fake settings 命名空间：
  * @param workDir 该测试文件的临时目录。
- * @param config apply 配置覆盖（configFile/toastScript/historyFile 已给默认）。
- * @param ctxOverrides makeFakeCtx 覆盖（如注入 get / 自定义 logger）。
+ * @param config apply 配置覆盖（通知字段作为组合层 entry/base；enabled /
+ *   configFile/toastScript/historyFile 为装配覆盖）。
+ * @param ctxOverrides makeFakeCtx 覆盖（如注入 settings 服务 / 自定义 logger）。
+ * @returns 附带 fake settings 句柄（getUser/getUpdateCalls 断言写入面）。
  */
-export async function makeNotifier(workDir, config = {}, ctxOverrides = {}) {
-  const { ctx, routes, listeners, effects } = makeFakeCtx(ctxOverrides);
-  await apply(ctx, {
+export function makeNotifier(workDir, config = {}, ctxOverrides = {}) {
+  const entry = (sanitizeSettings(config) ?? {}) || {};
+  const settingsOpts = ctxOverrides.settings || {};
+  const fakeSettings = makeFakeSettings({ base: entry, ...settingsOpts });
+  const { ctx, routes, listeners, effects } = makeFakeCtx({
+    ...ctxOverrides,
+    settings: undefined, // 确保 override 的 settings 字段不污染服务读取面
+  });
+  ctx.provide("settings", fakeSettings.service);
+  apply(ctx, {
     enabled: true,
     configFile: join(workDir, "config.json"),
     toastScript: join(workDir, "toast.ps1"),
@@ -131,7 +236,7 @@ export async function makeNotifier(workDir, config = {}, ctxOverrides = {}) {
     ...config,
   });
   return {
-    ctx, routes, listeners,
+    ctx, routes, listeners, settings: fakeSettings,
     /** 卸载面：执行全部 effect disposer（sse.dispose / 定时器清理）。
      *  每个测试场景结束后调用，避免 30s unref 心跳在进程存活期内残留（P2-5）。 */
     dispose: () => {

@@ -17,8 +17,10 @@ const work = mkdtempSync(join(tmpdir(), "dnotify-unit-config-"));
 try {
   const DEFAULT_CONFIG_UNTOUCHED = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
 
-  // 路径契约（config.ts 导出；apply 未覆盖路径时由宿主按此位置读写）
-  assert.equal(configFile(), join(homedir(), ".dsh", "dsh-notifier.json"), "配置路径固定到 ~/.dsh/dsh-notifier.json");
+  // 路径契约（config.ts 导出）：configFile 是存量自建 json 的迁移源路径（issue #76 后
+  // 配置走官方 settings 存储，configFile 不再读写，仅迁移读取/改名）；historyFile 与
+  // toast 脚本路径不变。
+  assert.equal(configFile(), join(homedir(), ".dsh", "dsh-notifier.json"), "配置迁移源路径固定到 ~/.dsh/dsh-notifier.json");
   assert.equal(historyFile(), join(homedir(), ".dsh", "dsh-notifier-history.jsonl"), "历史路径固定到 ~/.dsh/dsh-notifier-history.jsonl");
   assert.ok(toastScriptPath().endsWith(join("lib", "toast.ps1")), "toast 脚本随包 lib/ 下");
 
