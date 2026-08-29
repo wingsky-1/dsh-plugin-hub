@@ -29,8 +29,13 @@ const {
   policyDenialReason,
   scoreTool,
   searchCatalog,
+  searchCatalogMulti,
+  listCatalog,
+  findToolDetail,
   McpMiddleware,
   CATALOG_TTL_MS,
+  LIST_DEFAULT_TOOLS_PER_SERVER,
+  LIST_MAX_TOOLS_PER_SERVER,
   userStateFile,
   loadUserState,
   saveUserState,
@@ -257,4 +262,215 @@ function makeHost(serversByRoot = new Map()) {
   await mw.persistCatalog(ROOT);
   assert.equal(readFileSync(file, "utf8"), before, "空采集不覆盖已有缓存（保留 last-good）");
   await mw.dispose();
+}
+
+// ---- searchCatalogMulti：多单元合并检索（all 模式） ----
+{
+  const unit = {
+    root: ROOT,
+    connections: new Map(),
+    catalog: new Map([
+      ["ctx", {
+        discoveredAt: Date.now(),
+        tools: new Map([
+          ["use_ctx", { description: "查询 context7 文档", inputSchema: {} }],
+          ["search", { description: "search tool", inputSchema: {} }],
+        ]),
+      }],
+    ]),
+    userDisabled: new Set(),
+    lastTouchedAt: Date.now(),
+    inFlight: new Map(),
+  };
+  const globalUnit = {
+    ...unit,
+    root: "@global",
+    catalog: new Map([
+      ["gctx", {
+        discoveredAt: Date.now(),
+        tools: new Map([
+          ["use_g", { description: "全局工具", inputSchema: {} }],
+          ["other", { description: "无关", inputSchema: {} }],
+        ]),
+      }],
+    ]),
+  };
+  const units = new Map([[ROOT, unit], ["@global", globalUnit]]);
+  // 合并查询命中两个单元（项目 root + @global）。
+  const multi = searchCatalogMulti(units, [ROOT, "@global"], "use", 10);
+  assert.ok(multi.results.some((hit) => hit.server === fullServerName(ROOT, "ctx")), "命中项目单元");
+  assert.ok(multi.results.some((hit) => hit.server === fullServerName("@global", "gctx")), "命中 @global 单元");
+  // 空查询能力摘要同样合并。
+  const summary = searchCatalogMulti(units, [ROOT, "@global"], "", 10);
+  assert.equal(summary.results.length, 4, "合并摘要含全部工具");
+  // 单 root 包装与 multi 单元素等价。
+  const single = searchCatalog(units, ROOT, "文档", 10);
+  assert.deepEqual(single.results, searchCatalogMulti(units, [ROOT], "文档", 10).results);
+  // 无此单元 → 空。
+  const none = searchCatalogMulti(units, ["/no/such"], "x", 10);
+  assert.equal(none.results.length, 0);
+  assert.equal(none.unavailable.length, 0);
+}
+
+// ---- listCatalog：完整清单 / 过滤 / 空返回 / 截断 / unavailable / disabled ----
+{
+  const mkTools = (count) => {
+    const tools = new Map();
+    for (let i = 0; i < count; i += 1) tools.set(`t${i}`, { description: `desc${i}`, inputSchema: {} });
+    return tools;
+  };
+  const unit = {
+    root: ROOT,
+    connections: new Map(),
+    catalog: new Map([
+      // 2 个工具（无截断）
+      ["ctx", { discoveredAt: Date.now(), tools: mkTools(2) }],
+      // 用户已禁用（工具来自 last-good 目录）
+      ["off", { discoveredAt: Date.now(), tools: mkTools(1) }],
+      // 发现失败
+      ["down", { discoveredAt: 0, tools: new Map(), unavailable: "连接失败" }],
+    ]),
+    userDisabled: new Set(["off"]),
+    lastTouchedAt: Date.now(),
+    inFlight: new Map(),
+  };
+  const globalUnit = {
+    ...unit,
+    root: "@global",
+    catalog: new Map([["gctx", { discoveredAt: Date.now(), tools: mkTools(3) }]]),
+    userDisabled: new Set(),
+  };
+  const units = new Map([[ROOT, unit], ["@global", globalUnit]]);
+
+  // 完整清单（project 模式：单 root）
+  const listed = listCatalog(units, [ROOT], undefined, 50, "project", "empty");
+  assert.equal(listed.workspace, ROOT);
+  assert.equal(listed.mode, "project");
+  assert.equal(listed.totalServers, 3, "全部服务器（含 disabled/unavailable）");
+  assert.equal(listed.totalTools, 3, "工具数不含 unavailable 服务器");
+  assert.equal(listed.toolsTruncated, false);
+  const ctxEntry = listed.servers.find((s) => s.server === fullServerName(ROOT, "ctx"));
+  assert.deepEqual(ctxEntry.tools.map((t) => t.tool), ["t0", "t1"]);
+  assert.equal(ctxEntry.toolsTruncated, false);
+  assert.equal(ctxEntry.disabled, undefined);
+  const offEntry = listed.servers.find((s) => s.server === fullServerName(ROOT, "off"));
+  assert.equal(offEntry.disabled, true, "userDisabled → disabled: true");
+  const downEntry = listed.servers.find((s) => s.server === fullServerName(ROOT, "down"));
+  assert.equal(downEntry.unavailable, "连接失败", "发现失败附原因");
+  assert.deepEqual(downEntry.tools, []);
+  assert.equal(listed.message, undefined, "非空返回无 message");
+
+  // server 过滤（裸名）
+  const filteredBare = listCatalog(units, [ROOT], "ctx", 50, "project", "empty");
+  assert.equal(filteredBare.totalServers, 1);
+  assert.equal(filteredBare.servers[0].server, fullServerName(ROOT, "ctx"));
+  // server 过滤（全名）
+  const filteredFull = listCatalog(units, [ROOT], fullServerName(ROOT, "ctx"), 50, "project", "empty");
+  assert.equal(filteredFull.totalServers, 1);
+  // 全名 root 不属于当前 roots → 路由一致性错误
+  assert.throws(() => listCatalog(units, [ROOT], "@/other/root/ctx", 50, "project", "empty"), /不属于当前工作空间/);
+
+  // all 模式：合并 @global 单元
+  const all = listCatalog(units, [ROOT, "@global"], undefined, 50, "all", "empty");
+  assert.equal(all.mode, "all");
+  assert.equal(all.totalServers, 4, "项目 root + @global 合并");
+  assert.equal(all.workspace, ROOT);
+  assert.ok(all.servers.some((s) => s.server === fullServerName("@global", "gctx")), "含 @global 服务器");
+  assert.equal(all.totalTools, 6);
+
+  // perServerLimit 截断 → toolsTruncated（per-server + 全局汇总）
+  const truncated = listCatalog(units, [ROOT], undefined, 1, "project", "empty");
+  const ctxT = truncated.servers.find((s) => s.server === fullServerName(ROOT, "ctx"));
+  assert.equal(ctxT.tools.length, 1, "截断到 1 条");
+  assert.equal(ctxT.toolsTruncated, true, "per-server toolsTruncated");
+  assert.equal(truncated.toolsTruncated, true, "全局 toolsTruncated");
+  const offT = truncated.servers.find((s) => s.server === fullServerName(ROOT, "off"));
+  assert.equal(offT.toolsTruncated, false, "未超限不置位");
+
+  // 空返回 → message（project / all 区分）
+  const empty = listCatalog(new Map(), [ROOT], undefined, 50, "project", "无项目级 MCP 配置提示");
+  assert.equal(empty.totalServers, 0);
+  assert.equal(empty.totalTools, 0);
+  assert.equal(empty.message, "无项目级 MCP 配置提示");
+  assert.equal(empty.toolsTruncated, false);
+  // 常量值
+  assert.equal(LIST_DEFAULT_TOOLS_PER_SERVER, 50);
+  assert.equal(LIST_MAX_TOOLS_PER_SERVER, 500);
+}
+
+// ---- findToolDetail：精确命中 / 完整 schema / 错误三分 / tool 归一化 ----
+{
+  const schema = { type: "object", properties: { query: { type: "string" }, mode: { type: "string", enum: ["a", "b"] } }, required: ["query"] };
+  const unit = {
+    root: ROOT,
+    connections: new Map(),
+    catalog: new Map([
+      ["ctx", {
+        discoveredAt: Date.now(),
+        tools: new Map([
+          ["use_ctx", { description: "查询 context7 文档", inputSchema: schema }],
+        ]),
+      }],
+      ["down", { discoveredAt: 0, tools: new Map(), unavailable: "连接失败" }],
+    ]),
+    userDisabled: new Set(),
+    lastTouchedAt: Date.now(),
+    inFlight: new Map(),
+  };
+  const units = new Map([[ROOT, unit]]);
+  // 精确命中：完整 schema + fresh + server/tool 原样
+  const detail = findToolDetail(units, ROOT, fullServerName(ROOT, "ctx"), "use_ctx");
+  assert.equal(detail.server, fullServerName(ROOT, "ctx"));
+  assert.equal(detail.tool, "use_ctx");
+  assert.equal(detail.description, "查询 context7 文档");
+  assert.deepEqual(detail.inputSchema, schema, "完整 inputSchema（含 enum/required）");
+  assert.equal(detail.fresh, true);
+  assert.equal(detail.disabled, undefined);
+  // tool 归一化（mcp__ 前缀剥离）
+  const normalized = findToolDetail(units, ROOT, fullServerName(ROOT, "ctx"), "mcp__ctx__use_ctx");
+  assert.equal(normalized.tool, "use_ctx");
+  assert.deepEqual(normalized.inputSchema, schema);
+  // 跨 server 前缀 → 疑似其他
+  assert.throws(() => findToolDetail(units, ROOT, fullServerName(ROOT, "ctx"), "mcp__other__tool"), /疑似其他/);
+  // 错误三分 1：server 发现失败（附原因）
+  assert.throws(
+    () => findToolDetail(units, ROOT, fullServerName(ROOT, "down"), "x"),
+    /发现失败.*连接失败/,
+  );
+  // 错误三分 2：服务器未发现
+  assert.throws(
+    () => findToolDetail(units, ROOT, fullServerName(ROOT, "nope"), "x"),
+    /未连接或未发现/,
+  );
+  // 错误三分 2b：单元未激活
+  assert.throws(
+    () => findToolDetail(units, "/no/such", fullServerName("/no/such", "ctx"), "x"),
+    /未连接或未发现/,
+  );
+  // 错误三分 3：工具不存在
+  assert.throws(
+    () => findToolDetail(units, ROOT, fullServerName(ROOT, "ctx"), "nope"),
+    /tool 不存在/,
+  );
+  // 路由一致性：参数 root ≠ 路由 root → 拒绝
+  assert.throws(
+    () => findToolDetail(units, ROOT, fullServerName("@global", "ctx"), "x"),
+    /不属于当前工作空间/,
+  );
+  // 用户禁用 → detail 标注 disabled
+  const disabledUnit = {
+    ...unit,
+    userDisabled: new Set(["ctx"]),
+  };
+  const disabledDetail = findToolDetail(new Map([[ROOT, disabledUnit]]), ROOT, fullServerName(ROOT, "ctx"), "use_ctx");
+  assert.equal(disabledDetail.disabled, true, "用户禁用标注 disabled");
+  // 禁用且目录空 → 未连接（附禁用说明）
+  const disabledEmpty = {
+    ...disabledUnit,
+    catalog: new Map([["ctx", { discoveredAt: 0, tools: new Map() }]]),
+  };
+  assert.throws(
+    () => findToolDetail(new Map([[ROOT, disabledEmpty]]), ROOT, fullServerName(ROOT, "ctx"), "x"),
+    /已被用户禁用/,
+  );
 }
