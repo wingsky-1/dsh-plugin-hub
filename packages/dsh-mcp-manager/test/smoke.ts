@@ -1874,6 +1874,62 @@ const main = async () => {
     rmSync(dir, { recursive: true, force: true });
   }
 
+  // ---- 核心化 service（#329 阶段1）：runtimeRegistry / registerServer / unregisterServer ----
+  // 用 enabled:false 的服务器（不连接、不 spawn 子进程，避免重连悬挂）验证登记语义。
+
+  {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-service-"));
+    try {
+      const store = new McpStore(join(dir, "mcp.json"));
+      store.data = { version: 1, servers: [] };
+      const manager = new McpManager({ logger: { warn: () => {}, info: () => {} } }, store);
+      const quiet = () => ({ transport: "stdio", command: "echo", args: ["ok"], enabled: false });
+
+      // registerServer：新注册 → existing:false，条目进 runtimeRegistry。
+      const r1 = await manager.registerServer({ name: "svc-a", ...quiet() });
+      assert.equal(r1.existing, false);
+      assert.ok(manager.runtimeRegistry.has("svc-a"), "runtime 条目已登记");
+      assert.ok(!store.find("svc-a"), "不落盘（store 无条目）");
+
+      // 幂等：同名再注册 → existing:true 不抛错。
+      const r2 = await manager.registerServer({ name: "svc-a", ...quiet() });
+      assert.equal(r2.existing, true, "同名幂等返回 existing");
+
+      // 与 store 同名冲突：store 已有 → existing:true（不覆盖持久化条目）。
+      store.upsert(normalizeServer({ name: "svc-store", ...quiet() }));
+      const r3 = await manager.registerServer({ name: "svc-store", ...quiet() });
+      assert.equal(r3.existing, true, "store 同名返回 existing");
+
+      // 双轨合并：reconcile 后 runtime + store 条目都在 registry（enabled:false 不 spawn）。
+      manager.reconcileServers();
+      assert.ok(manager.runtimeRegistry.has("svc-a"), "runtime 条目在 registry");
+      assert.ok(store.find("svc-store") !== undefined, "store 条目保留");
+
+      // unregisterServer：移除 runtime 条目；store 条目不受影响。
+      await manager.unregisterServer("svc-a");
+      assert.ok(!manager.runtimeRegistry.has("svc-a"), "runtime 条目已移除");
+      assert.ok(store.find("svc-store") !== undefined, "store 条目保留");
+
+      // 卸载清理：dispose() 清空全部 supervisor（含 runtime）。
+      await manager.registerServer({ name: "svc-b", ...quiet() });
+      assert.ok(manager.runtimeRegistry.has("svc-b"));
+      await manager.dispose();
+      assert.equal(manager.supervisors.size, 0, "dispose 清空全部 supervisor");
+
+      // 中间层 all 模式：runtime 条目豁免中间层跳过（reconcile 不杀 runtime supervisor）。
+      // 回归（QA 复审发现）：all 模式 reconcile 会把 runtime supervisor 停掉且不重建。
+      manager.middlewareMode = "all";
+      await manager.registerServer({ name: "svc-all", transport: "stdio", command: "echo", args: ["x"], enabled: false });
+      manager.reconcileServers();
+      assert.ok(manager.runtimeRegistry.has("svc-all"), "all 模式 runtime 条目保留");
+      manager.middlewareMode = "off";
+
+      console.log("  ok   核心化 service: register/unregister/双轨/卸载清理");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
   if (failures.length > 0) {
     console.error(`\n${failures.length} check(s) failed: ${failures.join(", ")}`);
     process.exit(1);

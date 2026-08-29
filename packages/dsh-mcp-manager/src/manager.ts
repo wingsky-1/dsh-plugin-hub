@@ -71,6 +71,12 @@ export class McpManager {
   middleware: McpMiddleware | undefined;
   /** userDisabled 持久化路径。 */
   userStatePath: string;
+  /** 运行时注册表（内存态，不落盘）：供其他插件经 ctx.mcpManager 注入服务器。
+   * 双轨 reconcile：store.data.servers（持久化）+ runtimeRegistry（运行时）。
+   * 同名冲突策略：runtime 优先（运行时注入是「当前会话」语义）。 */
+  runtimeRegistry: Map<string, ServerConfig>;
+  /** registerServer 串行队列（防 reconcileBusy 吞注册；多插件并发注册排队）。 */
+  private registerQueue: Promise<void>;
 
   constructor(ctx: Context, store: McpStore) {
     this.ctx = ctx;
@@ -94,6 +100,8 @@ export class McpManager {
     this.middlewareMode = "off";
     this.middleware = undefined;
     this.userStatePath = userStateFile();
+    this.runtimeRegistry = new Map();
+    this.registerQueue = Promise.resolve();
   }
 
   /** 读取 settings 命名空间中的 MCP UI 配置（供 /api/dsh-mcp/config 返回）。 */
@@ -399,12 +407,19 @@ export class McpManager {
           if (!desired.has(server.name)) desired.set(server.name, { server, scope: SCOPE_PROJECT });
         }
       }
+      // 双轨合并：runtimeRegistry（内存态，运行时注入）并入 desired，同名 runtime 优先。
+      // 中间层 project/all 模式：runtime 仅全局 supervisor 路径（不拆单元、不走中间层连接池）。
+      for (const [name, server] of this.runtimeRegistry) {
+        desired.set(name, { server, scope: SCOPE_GLOBAL });
+      }
       let changed = false;
       for (const [name, supervisor] of [...this.supervisors]) {
         const want = desired.get(name);
+        // runtime 条目豁免中间层接管（走全局 supervisor 路径，不被中间层停掉/跳过）。
+        const isRuntime = this.runtimeRegistry.has(name);
         // 中间层 project/all 模式：项目级（all 含全局）服务器由中间层接管
-        // （不注册 mcp__ 工具，避免双连接双进程）。
-        const middlewareTakes = this.middlewareMode !== "off" && (
+        // （不注册 mcp__ 工具，避免双连接双进程）。runtime 条目例外。
+        const middlewareTakes = !isRuntime && this.middlewareMode !== "off" && (
           supervisor.scope === SCOPE_PROJECT || (this.middlewareMode === "all" && supervisor.scope === SCOPE_GLOBAL)
         );
         if (want === undefined || want.server.enabled === false || want.scope !== supervisor.scope || middlewareTakes) {
@@ -414,8 +429,11 @@ export class McpManager {
       }
       for (const [name, want] of desired) {
         if (want.server.enabled === false) continue;
+        // runtime 条目豁免中间层跳过（走全局 supervisor 路径，reconcile 不杀 runtime）。
+        const isRuntime = this.runtimeRegistry.has(name);
         // 中间层 project/all 模式：项目级（all 含全局）跳过 supervisor（由中间层惰性连接）。
-        if (this.middlewareMode !== "off" && (
+        // runtime 条目例外。
+        if (!isRuntime && this.middlewareMode !== "off" && (
           want.scope === SCOPE_PROJECT || (this.middlewareMode === "all" && want.scope === SCOPE_GLOBAL)
         )) continue;
         const existing = this.supervisors.get(name);
@@ -436,13 +454,32 @@ export class McpManager {
     }
   }
 
-  start(name: string, scope: string = SCOPE_GLOBAL): void {
-    const store = scope === SCOPE_PROJECT ? this.projectStore : this.store;
-    if (store === undefined) return;
-    const server = store.find(name);
+  /**
+   * 启动服务器监督器。
+   * @param name 服务器名
+   * @param scope 作用域（全局/项目）
+   * @param directConfig 运行时 config 直传（registerServer 注入路径；缺省读 store）。
+   *   修 P0（评审③）：同名 runtime 优先生效——store 已有同名时，直传 config 优先于 store 版本。
+   */
+  start(name: string, scope: string = SCOPE_GLOBAL, directConfig?: ServerConfig): void {
+    let server = directConfig;
+    if (server === undefined) {
+      const store = scope === SCOPE_PROJECT ? this.projectStore : this.store;
+      if (store === undefined) return;
+      server = store.find(name);
+    }
     if (server === undefined) return;
     const existing = this.supervisors.get(name);
-    if (existing !== undefined && existing.client !== undefined) return;
+    if (existing !== undefined && existing.client !== undefined) {
+      // 已连接：若现有 config 与直传 config 不同（runtime 注入覆盖 store），重建。
+      if (directConfig !== undefined && existing.server !== directConfig) {
+        existing.disposed = true;
+        const supervisor = new ConnectionSupervisor(this, directConfig, scope);
+        this.supervisors.set(name, supervisor);
+        void supervisor.connect();
+      }
+      return;
+    }
     if (existing !== undefined && existing.scope !== scope) {
       // 同名服务器跨 scope 冲突：工具名会重复，拒绝启动
       this.logger.warn(`dsh-mcp-manager: server "${name}" already registered in scope "${existing.scope}" — skipping "${scope}"`);
@@ -459,6 +496,47 @@ export class McpManager {
     if (supervisor === undefined) return;
     this.supervisors.delete(name);
     void supervisor.disconnect();
+  }
+
+  /**
+   * 运行时注册服务器（内存态，不落盘）。
+   * 供其他插件经 ctx.mcpManager 注入（官方 storageDomain service 模式）。
+   * - 同名已存在（store 或 runtime）：返回 { name, existing: true }，不抛错；
+   * - 注册即连接（走 start 的 config 直传分支，同名 runtime 优先）；
+   * - 串行队列防 reconcileBusy 吞注册；多插件并发注册排队。
+   */
+  async registerServer(server: Record<string, unknown>): Promise<{ name: string; existing: boolean }> {
+    const config = normalizeServer(server);
+    const run = this.registerQueue.then(async () => {
+      if (this.runtimeRegistry.has(config.name) || this.store.find(config.name) !== undefined) {
+        return { name: config.name, existing: true };
+      }
+      this.runtimeRegistry.set(config.name, config);
+      if (this.middlewareMode !== "off") {
+        // 中间层模式：runtime 服务器走全局 supervisor 路径（不落盘，不拆单元）。
+      }
+      if (config.enabled !== false) this.start(config.name, SCOPE_GLOBAL, config);
+      return { name: config.name, existing: false };
+    });
+    this.registerQueue = run.then(() => undefined, () => undefined);
+    return run;
+  }
+
+  /**
+   * 运行时注销（不影响 store 持久化条目；同名 store 条目回落）。
+   * - 销毁 supervisor（stop，不碰 store）；
+   * - 移除 runtimeRegistry 条目 → 下次 reconcile 回落 store 配置。
+   */
+  async unregisterServer(name: string): Promise<void> {
+    const run = this.registerQueue.then(async () => {
+      if (this.runtimeRegistry.has(name)) {
+        this.stop(name);
+        this.runtimeRegistry.delete(name);
+        this.reconcileServers();
+      }
+    });
+    this.registerQueue = run.then(() => undefined, () => undefined);
+    return run;
   }
 
   async add(server: Record<string, unknown>, scope: string = SCOPE_GLOBAL): Promise<ServerConfig> {
@@ -514,9 +592,12 @@ export class McpManager {
     mw.teardownUnit(this.projectRoot);
   }
 
-  async connect(name: string, scope: string = SCOPE_GLOBAL): Promise<void> {
-    const store = scope === SCOPE_PROJECT ? await this.projectStoreOrThrow() : this.store;
-    const server = store.find(name);
+  async connect(name: string, scope: string = SCOPE_GLOBAL, directConfig?: ServerConfig): Promise<void> {
+    let server = directConfig;
+    if (server === undefined) {
+      const store = scope === SCOPE_PROJECT ? await this.projectStoreOrThrow() : this.store;
+      server = store.find(name);
+    }
     if (server === undefined) throw new Error(`server "${name}" not found in ${scope} scope`);
     // 中间层模式：项目级连接走中间层连接池（userDisabled 解除 + 惰性连接）。
     if (this.middlewareMode !== "off" && scope === SCOPE_PROJECT && this.middleware !== undefined) {
