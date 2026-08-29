@@ -46,6 +46,18 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
   const manager = new McpManager(ctx, store);
   manager.enhancement = { enhanceEmptyDescriptions, resultTruncateBytes };
 
+  // 核心化服务（官方 storageDomain 模式）：对外暴露 ctx.mcpManager，供其他插件
+  // 运行时注入 MCP 服务器（registerServer / unregisterServer，不落盘）。
+  // 提供时机：store.load 之后（manager 已就绪）。卸载由 mcp-manager 自身 dispose()
+  // 全量清理（含 runtime 条目与 supervisor）。
+  // 兼容：fake ctx（单元测试 mock）可能无 provide，可选调用静默降级。
+  if (typeof (ctx as unknown as { provide?: unknown }).provide === "function") {
+    ctx.provide("mcpManager", {
+      registerServer: (server: Record<string, unknown>) => manager.registerServer(server),
+      unregisterServer: (name: string) => manager.unregisterServer(name),
+    });
+  }
+
   // 插件自身 Config schema（标准 cordis 配置注入路径）：position/offset 不再藏于
   // 隐藏命名空间，设置页插件卡可编辑；配置变更经既有 SSE events 通道广播一帧，
   // 客户端收到后重新 GET /api/dsh-mcp/config 就地更新浮窗位置（无需重启/轮询）。

@@ -73,6 +73,10 @@ export type { UiPlacementConfig, ClientUiConfig } from "./types.ts";
 // 管理器 / 中间层全局虚拟 root
 export { McpManager, MIDDLEWARE_GLOBAL_ROOT } from "./manager.ts";
 
+// 核心化 service（官方 storageDomain 模式）：ctx.mcpManager 类型面 + 声明合并。
+export type { McpManagerServerInput, McpManagerService } from "./service.ts";
+import "./service.ts";
+
 // 存储
 export { defaultStorePath, McpStore } from "./store.ts";
 // 传输
