@@ -33,6 +33,9 @@ export interface NotifyConfig {
   doneMergeWindowMs: number;
   /** 通知历史按天自动清理（0 = 不按时间清理，仅行数上限滚动）。 */
   historyMaxAgeDays: number;
+  /** SSE 连接表上限（同机同时在线的服务端未释放句柄数；超限淘汰最老连接，
+   *  防半开幽灵连接只增不减耗尽资源）。 */
+  maxConnections: number;
 }
 
 /** 布尔配置键联合（normalizeConfig 白名单与客户端渲染依赖它）。 */
@@ -72,6 +75,9 @@ export const DEFAULT_CONFIG: NotifyConfig = {
   doneMergeWindowMs: 3000,
   /** 通知历史按天自动清理（0=不按时间清理，仅靠行数上限滚动）。 */
   historyMaxAgeDays: 0,
+  /** SSE 连接表上限默认 16：覆盖多设备×多页签 + 幽灵余量；超出淘汰最老连接，
+   *  客户端断开后自动重连 + since 补拉，无感知。 */
+  maxConnections: 16,
 };
 
 /** 布尔配置键（单一事实源：normalizeConfig 白名单与客户端渲染依赖它）。 */
@@ -112,6 +118,9 @@ export function normalizeConfig(input: unknown): NotifyConfig {
   if (Number.isFinite(src.historyMaxAgeDays) && (src.historyMaxAgeDays as number) >= 0 && (src.historyMaxAgeDays as number) <= 3650) {
     base.historyMaxAgeDays = Math.round(src.historyMaxAgeDays as number);
   }
+  if (Number.isFinite(src.maxConnections) && (src.maxConnections as number) >= 1 && (src.maxConnections as number) <= 1024) {
+    base.maxConnections = Math.round(src.maxConnections as number);
+  }
   if (typeof src.quietHours === "object" && src.quietHours !== null) {
     const qh = src.quietHours as Record<string, unknown>;
     if (typeof qh.enabled === "boolean") base.quietHours.enabled = qh.enabled;
@@ -130,7 +139,7 @@ export function normalizeConfig(input: unknown): NotifyConfig {
   for (const key of Object.keys(src)) {
     if ((CONFIG_KEYS as readonly string[]).includes(key)) continue;
     // 已归一化过的键不再透传（否则非法值会以原样覆盖归一化结果）
-    if (key === "quietHours" || key === "errorMergeWindowMs" || key === "askRemindMin" || key === "doneMergeWindowMs" || key === "historyMaxAgeDays") continue;
+    if (key === "quietHours" || key === "errorMergeWindowMs" || key === "askRemindMin" || key === "doneMergeWindowMs" || key === "historyMaxAgeDays" || key === "maxConnections") continue;
     out[key] = src[key];
   }
   return out;

@@ -168,6 +168,141 @@ try {
     assert.ok(!rec4.text.includes('"type":"notify"'), "非法 since 按 0 处理");
   }
 
+  // #330 SSE 连接生命周期：上限淘汰最老 / close+error 幂等清理 /
+  // write-false 背压不误杀 / 写失败连续 3 次判死 / 配置改小实时生效（下次注册收缩）。
+  // 每个场景独立 makeNotifier 实例（隔离连接表，防跨块串扰）。
+  {
+    /** 可触发 close/error、可配置 write 行为的 fake res（events 路由用）。 */
+    function sseRes(opts = {}) {
+      const listeners = {};
+      const state = { destroyed: false, writes: 0 };
+      return {
+        state,
+        writeHead() {},
+        write() {
+          state.writes += 1;
+          if (opts.throwAfter !== undefined && state.writes > opts.throwAfter) throw new Error("EPIPE");
+          if (opts.falseAfter !== undefined && state.writes > opts.falseAfter) return false;
+          return true;
+        },
+        on(evt, cb) {
+          (listeners[evt] = listeners[evt] || []).push(cb);
+          return this;
+        },
+        emit(evt) {
+          for (const cb of listeners[evt] || []) cb();
+        },
+        destroy() {
+          state.destroyed = true;
+        },
+        get destroyed() {
+          return state.destroyed;
+        },
+        writableEnded: false,
+        socket: { setKeepAlive() {} },
+      };
+    }
+    /** 独立实例路由查找（每次全新连接表）。 */
+    async function freshRoutes(mark, maxConnections) {
+      const cfg = join(work, `sse-${mark}-cfg.json`);
+      writeFileSync(cfg, JSON.stringify({ maxConnections }));
+      const out = await makeNotifier(work, { configFile: cfg, historyFile: join(work, `sse-${mark}.jsonl`) });
+      const near = (p) => out.routes.find((r) => r.path === p);
+      return { ev: near(ROUTES.events), he: near(ROUTES.health), te: near(ROUTES.test), cfgR: near(ROUTES.config) };
+    }
+    async function connCount(he) {
+      const { rec, res } = makeRes();
+      await he.handler(fakeReq({}), res);
+      return JSON.parse(rec.text).sseConnections;
+    }
+
+    // (a) 上限淘汰最老：上限 2，注册 3 条 → 连接数收敛 2、最老被 destroy
+    {
+      const { ev, he } = await freshRoutes("a", 2);
+      const r1 = sseRes();
+      const r2 = sseRes();
+      const r3 = sseRes();
+      await ev.handler(fakeReq({}), r1);
+      await ev.handler(fakeReq({}), r2);
+      await ev.handler(fakeReq({}), r3);
+      assert.equal(await connCount(he), 2, "注册 3 条超上限，连接数收敛到 2");
+      assert.equal(r1.state.destroyed, true, "最老连接被 destroy（淘汰）");
+      assert.equal(r2.state.destroyed, false, "较新连接保留");
+      assert.equal(r3.state.destroyed, false, "最新连接保留");
+    }
+
+    // (b) close/error 幂等清理：多次触发只移除一次
+    {
+      const { ev, he } = await freshRoutes("b", 4);
+      const r = sseRes();
+      await ev.handler(fakeReq({}), r);
+      assert.equal(await connCount(he), 1, "注册后连接数为 1");
+      r.emit("close");
+      r.emit("error");
+      r.emit("close"); // 重复触发，幂等
+      assert.equal(await connCount(he), 0, "close/error 多次触发只移除一次");
+      assert.equal(r.state.destroyed, true, "close 后连接被销毁");
+    }
+
+    // (c) write 返回 false（背压）不误杀：多次广播连接仍在
+    {
+      const { ev, he, te } = await freshRoutes("c", 4);
+      const r = sseRes({ falseAfter: 1 }); // 初始 connected 写成功，之后均返回 false
+      await ev.handler(fakeReq({}), r);
+      for (let i = 0; i < 5; i += 1) await te.handler(fakeReq({ method: "POST" }), makeRes().res);
+      assert.equal(await connCount(he), 1, "write 返回 false 视为背压，5 次广播不误杀");
+      assert.equal(r.state.destroyed, false, "背压连接未被销毁");
+    }
+
+    // (d) 写失败连续 3 次判死：前 2 次保留，第 3 次销毁
+    {
+      const { ev, he, te } = await freshRoutes("d", 4);
+      const r = sseRes({ throwAfter: 1 }); // 初始 connected 写成功，之后每次写抛错
+      await ev.handler(fakeReq({}), r);
+      await te.handler(fakeReq({ method: "POST" }), makeRes().res); // failStreak=1
+      await te.handler(fakeReq({ method: "POST" }), makeRes().res); // failStreak=2
+      assert.equal(await connCount(he), 1, "连续 2 次写失败未达阈值，连接保留");
+      await te.handler(fakeReq({ method: "POST" }), makeRes().res); // failStreak=3 → 销毁
+      assert.equal(await connCount(he), 0, "连续 3 次写失败判死销毁");
+      assert.equal(r.state.destroyed, true, "判死连接被销毁");
+    }
+
+    // (e) maxConnections 配置改小实时生效：下次注册即收缩到新上限
+    {
+      const { ev, he, cfgR } = await freshRoutes("e", 16);
+      const r1 = sseRes();
+      const r2 = sseRes();
+      const r3 = sseRes();
+      await ev.handler(fakeReq({}), r1);
+      await ev.handler(fakeReq({}), r2);
+      await ev.handler(fakeReq({}), r3);
+      assert.equal(await connCount(he), 3, "默认上限 16 下注册 3 条不淘汰");
+      // PUT maxConnections=2（内存生效 + 落盘，沿用现有 bodyReq 模式）
+      const text = JSON.stringify({ maxConnections: 2 });
+      const putReq = {
+        method: "PUT",
+        url: "/",
+        socket: { remoteAddress: "127.0.0.1" },
+        headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
+        on(event, cb) {
+          if (event === "data") setTimeout(() => cb(Buffer.from(text)), 0);
+          else if (event === "end") setTimeout(cb, 1);
+          return this;
+        },
+        destroy() {},
+      };
+      const { rec, res } = makeRes();
+      await cfgR.handler(putReq, res);
+      assert.equal(JSON.parse(rec.text).maxConnections, 2, "PUT 后配置生效");
+      // 新注册触发 enforceLimit → 收缩到 2（淘汰最老 r1、r2）
+      const r4 = sseRes();
+      await ev.handler(fakeReq({}), r4);
+      assert.equal(await connCount(he), 2, "配置改小后下次注册即收缩到新上限 2");
+      assert.equal(r1.state.destroyed, true, "最老连接被淘汰");
+      assert.equal(r4.state.destroyed, false, "新注册保留");
+    }
+  }
+
   // history：测试通知已落盘，GET 可查（独立 history 文件，无跨块串扰）
   {
     // appendHistory 是 fire-and-forget；轮询直到落盘，不再依赖固定 sleep 的时序假设
