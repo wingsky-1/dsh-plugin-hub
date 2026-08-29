@@ -12,6 +12,7 @@ import { renderImage } from "./image.ts";
 import { closeLightbox } from "./viewer.ts";
 import { renderGroupFor } from "./renderer.ts";
 import { scrollToFragment } from "./anchor.ts";
+import { renderHtmlPreview, releaseUrl } from "./html.ts";
 
 /** 文件预览 URL（F2-B）。 */
 export function fileUrl(path: string, cwd: string | undefined, state: FilePreviewState): string {
@@ -49,6 +50,10 @@ export function closeModal(state: FilePreviewState): void {
   state.diffText = undefined;
   state.diffUntracked = false;
   state.currentGroup = undefined;
+  // 注（issue #73 评审 P2-6）：serveToken/serveSrc **不在此清理**——closeModal 是
+  // 导航式重建（openPreview 内调用）与终态关闭共用的清理函数，release 只发生在
+  // finalizeSession（终态关闭，见下）；导航重建时 token 随 backStack 快照保留，
+  // 返回可复用 iframe；残留 token 由宿主 TTL/LRU 兜底回收。
   // issue #104：清空 mermaid hydration 注册表（旧 Modal 的已渲染块引用不跨
   // Modal 残留；在途重渲染由 openSeq 代数校验自行中止，见 mermaid.ts）。
   state.activeMermaidHydration = undefined;
@@ -62,8 +67,16 @@ export function closeModal(state: FilePreviewState): void {
  * 终态关闭：还原焦点到首次触发元素、清空返回栈，再走 closeModal 清理资源。
  * 只在真正的关闭语义入口调用（关闭按钮 / 遮罩 / Esc 非灯箱 / 插件卸载），
  * 与 openPreview 内部的导航式重建（closeModal 不清栈、不动焦点）区分开来。
+ * issue #73：仅在此上报 release 当前 html 预览 token（B5）——导航式重建不清
+ * token（随 backStack 快照保留供返回复用）；未释放由宿主 TTL/LRU 兜底回收。
  */
 export function finalizeSession(state: FilePreviewState, reason: "close" | "unmount"): void {
+  if (state.serveToken !== undefined) {
+    const token = state.serveToken;
+    state.serveToken = undefined;
+    state.serveSrc = undefined;
+    void fetch(releaseUrl(token, state), { method: "GET" }).catch(() => { /* 忽略 */ });
+  }
   if (reason === "unmount") {
     // 卸载时 overlay 仍可还原焦点到会话（若在 DOM 中）。
     if (state.sessionOriginFocus !== undefined) {
@@ -110,6 +123,8 @@ export function openPreview(
       path: state.currentPath, cwd: state.currentCwd,
       previewMode: state.previewMode, rawText: state.rawText,
       diffText: state.diffText, diffUntracked: state.diffUntracked,
+      // issue #73：html 预览 token/src 快照——返回时 iframe 直接复用（免重新 alloc）
+      serveToken: state.serveToken, serveSrc: state.serveSrc,
     });
     if (state.backStack.length > state.MAX_BACK) state.backStack.shift();
   }
@@ -131,7 +146,8 @@ export function openPreview(
   // U8 v2：记录当前文件与会话 cwd（md 相对引用解析基 + Modal 内跳转）。
   state.currentPath = path;
   state.currentCwd = cwd;
-  state.previewMode = group.group === "md" || group.group === "code" ? "preview" : "raw";
+  // issue #73：html 组默认「预览」tab（iframe sandbox），与 md/code 同语义。
+  state.previewMode = group.group === "md" || group.group === "code" || group.group === "html" ? "preview" : "raw";
   state.rawText = undefined;
   state.diffText = undefined;
   state.diffUntracked = false;
@@ -163,7 +179,8 @@ export function openPreview(
   // 三态 tab 栏：预览 / 原始 / Diff（Diff 仅当 git 有变化时动态追加）。
   const tabs = el("div", { class: "fwp-tabs" });
   const tabDefs: Array<{ label: string; mode: "preview" | "raw" }> = [];
-  if (group.group === "md" || group.group === "code") {
+  if (group.group === "md" || group.group === "code" || group.group === "html") {
+    // issue #73：html 组与 md/code 同三-tab（预览=iframe sandbox / 原始=/file 源码）。
     tabDefs.push({ label: "预览", mode: "preview" }, { label: "原始", mode: "raw" });
   }
   if (group.group === "text") {
@@ -275,12 +292,20 @@ export function openPreview(
 
   if (group.group === "image") {
     renderImage(url, body, seq, abort.signal, state);
+  } else if (group.group === "html") {
+    // issue #73：html 组「预览」tab = serve 虚拟伺服 iframe；原始/Diff 仍走
+    // fetchText/probeDiff（原始 tab 首次 fetch /file 时惰性拉取原文）。
+    renderHtmlPreview(body, state, seq, abort.signal);
+    probeDiff(path, cwd, seq, addDiffTab, addUnavailableDiffTab, abort.signal, state);
   } else if (isBack && prev !== undefined) {
     // 返回：直接用快照还原预览态（tab/原文/diff），免重新拉取、无闪烁。
     state.previewMode = prev.previewMode;
     state.rawText = prev.rawText;
     state.diffText = prev.diffText;
     state.diffUntracked = prev.diffUntracked ?? false;
+    // issue #73：返回还原 html 预览 token/src 快照——iframe 直接复用（免重新 alloc）。
+    state.serveToken = prev.serveToken;
+    state.serveSrc = prev.serveSrc;
     // Diff tab 在跳转前可能已被探测/添加；返回时按其 snapshot 状态重建 tab 栏。
     if (prev.diffText !== undefined || prev.diffUntracked) addDiffTab();
     syncTabActive();

@@ -15,6 +15,9 @@ export interface NavEntry {
   rawText?: string;
   diffText?: string;
   diffUntracked?: boolean;
+  /** issue #73：html 预览 serve token/src 快照——返回时直接复用 iframe（免重新 alloc）。 */
+  serveToken?: string;
+  serveSrc?: string;
 }
 
 /** 文件预览客户端全部可变状态。 */
@@ -59,6 +62,10 @@ export interface FilePreviewState {
   MAX_BACK: number;
   /** 首次打开预览时的触发元素（a11y：终态关闭时还原焦点）。 */
   sessionOriginFocus: HTMLElement | undefined;
+  /** issue #73：当前 html 预览的 serve token（closeModal 时上报 release 释放）。 */
+  serveToken: string | undefined;
+  /** issue #73：当前 html 预览的 iframe src（重建/切 tab 复用，免重复 alloc）。 */
+  serveSrc: string | undefined;
   /** Mermaid 全局单调 render id 计数（issue #104）：跨 Modal 递增不重置，
    * 保证同文档内 mermaid.render 的元素 id 永不冲突（mermaid 内部按 id 查找节点）。 */
   mermaidRenderId: number;
@@ -90,6 +97,9 @@ export interface FilePreviewState {
     diff: string;
     health: string;
     mermaid: string;
+    serve: string;
+    alloc: string;
+    release: string;
   };
 }
 
@@ -116,6 +126,8 @@ export function createState(): FilePreviewState {
     backStack: [],
     MAX_BACK: 32,
     sessionOriginFocus: undefined,
+    serveToken: undefined,
+    serveSrc: undefined,
     mermaidRenderId: 0,
     activeMermaidHydration: undefined,
     lboxEl: undefined,
@@ -129,6 +141,9 @@ export function createState(): FilePreviewState {
       diff: "/api/dsh-file-preview/diff",
       health: "/api/dsh-file-preview/health",
       mermaid: "/api/dsh-file-preview/mermaid",
+      serve: "/api/dsh-file-preview/serve",
+      alloc: "/api/dsh-file-preview/alloc",
+      release: "/api/dsh-file-preview/release",
     },
   };
 }

@@ -22,10 +22,13 @@ function fakeReq(method, url, remoteAddress, host = "127.0.0.1") {
 }
 function fakeRes() {
   const calls = { status: 0, headers: {}, data: null };
+  const listeners = {};
   return {
     _calls: calls,
     writeHead(status, headers) { calls.status = status; calls.headers = headers || {}; return this; },
-    end(data) { calls.data = data; },
+    end(data) { if (data !== undefined) calls.data = data; },
+    write(chunk) { calls.data = calls.data === null ? Buffer.from(chunk) : Buffer.concat([Buffer.from(calls.data), Buffer.from(chunk)]); return true; },
+    on(evt, fn) { (listeners[evt] = listeners[evt] || []).push(fn); return this; },
   };
 }
 function rawReqForFiles(headers = {}) {
@@ -112,7 +115,7 @@ try {
   // apply
   // ================================================================
 
-  // apply 启用 → effect 回调执行，4 条路由注册（file/diff/health/mermaid），清理正常
+  // apply 启用 → effect 回调执行，7 条路由注册（file/diff/health/mermaid/alloc/serve/release），清理正常
   {
     const disposerCalls = [];
     const fakeCtx = {
@@ -131,16 +134,19 @@ try {
     apply(fakeCtx, {});
     // 验证 effect 回调已执行、路由已注册
     const routePaths = disposerCalls.filter((x) => typeof x === "string");
-    assert.equal(routePaths.length, 4, "apply 启用 → 4 条路由注册（#104 + mermaid）");
+    assert.equal(routePaths.length, 7, "apply 启用 → 7 条路由注册（#104 mermaid + #73 serve 三件套）");
     assert.ok(routePaths.includes(ROUTES.file), "file 路由已注册");
     assert.ok(routePaths.includes(ROUTES.diff), "diff 路由已注册");
     assert.ok(routePaths.includes(ROUTES.health), "health 路由已注册");
     assert.ok(routePaths.includes(ROUTES.mermaid), "#104 mermaid 路由已注册");
+    assert.ok(routePaths.includes(ROUTES.serve), "#73 serve 路由已注册");
+    assert.ok(routePaths.includes(ROUTES.alloc), "#73 alloc 路由已注册");
+    assert.ok(routePaths.includes(ROUTES.release), "#73 release 路由已注册");
     // 触发清理
     const cleanup = disposerCalls.find((x) => typeof x === "function");
     if (cleanup) cleanup();
     const disposedCount = disposerCalls.filter((x) => x === "disposed").length;
-    assert.equal(disposedCount, 4, "disposer 清理 4 条路由");
+    assert.equal(disposedCount, 7, "disposer 清理 7 条路由");
   }
 
   // apply 禁用 → 不注册任何路由，effect 不被调用
