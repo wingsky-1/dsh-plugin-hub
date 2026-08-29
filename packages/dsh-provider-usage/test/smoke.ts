@@ -10,12 +10,13 @@
  * - /health 快照形状
  * - 客户端 bundle 契约面与路由一致性
  */
-import { readFileSync, mkdtempSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { readFileSync, mkdtempSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertClientProductContract, assertClientSourceContract } from "../../../test/smoke-lib.ts";
 import { tmpdir } from "node:os";
 import assert from "node:assert/strict";
+import { callHandler, pollUntil } from "./helpers.ts";
 
 // 纯函数断言区先行执行（无 @ts-nocheck、强类型）
 import "./smoke-pure.ts";
@@ -170,28 +171,18 @@ for (const routePath of [ROUTES.stats, ROUTES.history, ROUTES.health, ROUTES.ada
   assert.ok(uiRoute !== undefined && evRoute !== undefined, "ui-config/events 路由存在");
 
   // GET 返回默认配置
-  let payload;
-  uiRoute.handler(fakeReq({ method: "GET" }), {
-    writeHead: () => {},
-    end: (chunk) => { payload = JSON.parse(chunk); },
-  });
-  await new Promise((r) => setTimeout(r, 30));
+  const payload = await callHandler(uiRoute, fakeReq({ method: "GET" }));
   assert.equal(payload.ok, true, "ui-config GET ok");
   assert.equal(payload.ui.placement, "top-right", "默认 placement top-right");
 
   // POST 保存：非法 placement 回退默认、offset clamp、落盘 ui.json
-  let postPayload;
-  uiRoute.handler(
+  const postPayload = await callHandler(
+    uiRoute,
     fakeReq({
       method: "POST",
       body: JSON.stringify({ placement: "middle", offsetX: 99999, offsetY: -5, panelOffsetY: 10 }),
     }),
-    {
-      writeHead: () => {},
-      end: (chunk) => { postPayload = JSON.parse(chunk); },
-    },
   );
-  await new Promise((r) => setTimeout(r, 50));
   assert.equal(postPayload.ok, true, "ui-config POST ok");
   assert.equal(postPayload.ui.placement, "top-right", "非法 placement 回退默认");
   assert.equal(postPayload.ui.offsetX, 2000, "offsetX clamp 2000");
@@ -212,17 +203,10 @@ for (const routePath of [ROUTES.stats, ROUTES.history, ROUTES.health, ROUTES.ada
 {
   const { ctx, routes } = makeFakeCtx();
   await apply(ctx, { ...ISOLATED_CONFIG });
-  // 等待启动预热完成（避免命中"锁忙"降级分支）
-  await new Promise((r) => setTimeout(r, 300));
+  // #120 后无「锁忙 busy 占位帧」（busy 短路语义已废除），预热并发请求在
+  // per-provider 锁上排队拿真数据帧 → 无需固定 sleep 等预热完成，直接 await handler。
   const stats = routes.find((r) => r.path === ROUTES.stats);
-  let payload;
-  const res = {
-    writeHead: () => {},
-    end: (chunk) => { payload = JSON.parse(chunk); },
-  };
-  stats.handler(fakeReq({ url: `${ROUTES.stats}?provider=${OPENCODE_GO_PROVIDER}` }), res);
-  // 等待 async handler 完成
-  await new Promise((r) => setTimeout(r, 50));
+  const payload = await callHandler(stats, fakeReq({ url: `${ROUTES.stats}?provider=${OPENCODE_GO_PROVIDER}` }));
 
   assert.equal(payload.plugin, "dsh-provider-usage");
   assert.equal(payload.version, ADAPTER_CONTRACT_VERSION, "响应带契约版本 v2");
@@ -241,13 +225,7 @@ for (const routePath of [ROUTES.stats, ROUTES.history, ROUTES.health, ROUTES.ada
   const { ctx, routes } = makeFakeCtx();
   await apply(ctx, { ...ISOLATED_CONFIG });
   const historyRoute = routes.find((r) => r.path === ROUTES.history);
-  let payload;
-  const res = {
-    writeHead: () => {},
-    end: (chunk) => { payload = JSON.parse(chunk); },
-  };
-  historyRoute.handler(fakeReq({ url: `${ROUTES.history}?provider=${OPENCODE_GO_PROVIDER}&days=7` }), res);
-  await new Promise((r) => setTimeout(r, 50));
+  const payload = await callHandler(historyRoute, fakeReq({ url: `${ROUTES.history}?provider=${OPENCODE_GO_PROVIDER}&days=7` }));
 
   assert.equal(payload.plugin, "dsh-provider-usage");
   assert.equal(payload.version, ADAPTER_CONTRACT_VERSION);
@@ -262,10 +240,7 @@ for (const routePath of [ROUTES.stats, ROUTES.history, ROUTES.health, ROUTES.ada
   const { ctx, routes } = makeFakeCtx();
   await apply(ctx, { ...ISOLATED_CONFIG });
   const health = routes.find((r) => r.path === ROUTES.health);
-  let payload;
-  const res = { writeHead: () => {}, end: (chunk) => { payload = JSON.parse(chunk); } };
-  health.handler(fakeReq(), res);
-  await new Promise((r) => setTimeout(r, 20));
+  const payload = await callHandler(health, fakeReq());
 
   assert.equal(payload.ok, true);
   assert.equal(payload.version, ADAPTER_CONTRACT_VERSION);
@@ -289,10 +264,7 @@ for (const routePath of [ROUTES.stats, ROUTES.history, ROUTES.health, ROUTES.ada
   const { ctx, routes } = makeFakeCtx();
   await apply(ctx, { ...ISOLATED_CONFIG, adapter: badFile });
   const health = routes.find((r) => r.path === ROUTES.health);
-  let payload;
-  const res = { writeHead: () => {}, end: (chunk) => { payload = JSON.parse(chunk); } };
-  health.handler(fakeReq(), res);
-  await new Promise((r) => setTimeout(r, 20));
+  const payload = await callHandler(health, fakeReq());
 
   // fail-fast：非法适配器被拒收并登记错误，插件本身不崩溃
   assert.ok(
@@ -315,10 +287,7 @@ export function formatPanel() { return "<p>ok</p>"; }
   const ctx2 = makeFakeCtx();
   await apply(ctx2.ctx, { ...ISOLATED_CONFIG, adapter: goodFile, provider: OPENCODE_GO_PROVIDER });
   const stats = ctx2.routes.find((r) => r.path === ROUTES.stats);
-  let p2;
-  const res2 = { writeHead: () => {}, end: (chunk) => { p2 = JSON.parse(chunk); } };
-  stats.handler(fakeReq({ url: `${ROUTES.stats}?provider=${OPENCODE_GO_PROVIDER}` }), res2);
-  await new Promise((r) => setTimeout(r, 80));
+  const p2 = await callHandler(stats, fakeReq({ url: `${ROUTES.stats}?provider=${OPENCODE_GO_PROVIDER}` }));
 
   assert.equal(p2.adapterName, "good-stats", "用户适配器生效");
   // #120：per-provider 锁 + 锁内二次 cacheFresh 校验后，与启动预热并发的请求在锁上
@@ -369,8 +338,7 @@ export function formatPanel() { return "<p>p</p>"; }
   // adapters.json：初始含内置适配器 + modelProviders
   {
     const adaptersRoute = routes.find((r) => r.path === ROUTES.adapters);
-    let payload;
-    adaptersRoute.handler(fakeReq(), { writeHead: () => {}, end: (c) => { payload = JSON.parse(c); } });
+    const payload = await callHandler(adaptersRoute, fakeReq());
     assert.equal(payload.version, 2, "adapters.json 带契约版本 v2");
     assert.ok(payload.host.some((a) => a.name === OPENCODE_GO_ADAPTER_ID), "内置 opencode-go 在候选列表");
     assert.ok(Array.isArray(payload.modelProviders), "modelProviders 来自 llm 服务");
@@ -380,10 +348,8 @@ export function formatPanel() { return "<p>p</p>"; }
   // inspect：合法文件回显导出信息（不注册）
   {
     const inspectRoute = routes.find((r) => r.path === ROUTES.inspect);
-    let payload;
-    inspectRoute.handler(withBody(JSON.stringify({ file: goodFile })), { writeHead: () => {}, end: (c) => { payload = JSON.parse(c); } });
-    await new Promise((r) => setTimeout(r, 60));
-    if (payload.ok !== true) console.log("INSPECT PAYLOAD:", JSON.stringify(payload)); assert.equal(payload.ok, true, "inspect 合法文件 ok");
+    const payload = await callHandler(inspectRoute, withBody(JSON.stringify({ file: goodFile })));
+    assert.equal(payload.ok, true, "inspect 合法文件 ok");
     assert.equal(payload.adapter.name, "manage-stats", "inspect 回显 name");
     assert.deepEqual(payload.adapter.providers, ["opencode-go"], "inspect 回显 providers");
   }
@@ -393,9 +359,7 @@ export function formatPanel() { return "<p>p</p>"; }
     const badFile = join(dir, "bad.mjs");
     writeFileSync(badFile, `export const version = 2; export const name = "only-name";`, "utf8");
     const inspectRoute = routes.find((r) => r.path === ROUTES.inspect);
-    let payload;
-    inspectRoute.handler(withBody(JSON.stringify({ file: badFile })), { writeHead: () => {}, end: (c) => { payload = JSON.parse(c); } });
-    await new Promise((r) => setTimeout(r, 60));
+    const payload = await callHandler(inspectRoute, withBody(JSON.stringify({ file: badFile })));
     assert.equal(payload.error, "invalid-adapter", "非法文件 inspect 返回 invalid-adapter");
     assert.ok(payload.detail.includes("契约校验失败"), "detail 含可排障信息");
   }
@@ -403,9 +367,7 @@ export function formatPanel() { return "<p>p</p>"; }
   // inspect：未规整相对路径（../ 穿越形态）→ 400 invalid-file
   {
     const inspectRoute = routes.find((r) => r.path === ROUTES.inspect);
-    let payload;
-    inspectRoute.handler(withBody(JSON.stringify({ file: "../evil.mjs" })), { writeHead: () => {}, end: (c) => { payload = JSON.parse(c); } });
-    await new Promise((r) => setTimeout(r, 40));
+    const payload = await callHandler(inspectRoute, withBody(JSON.stringify({ file: "../evil.mjs" })));
     assert.equal(payload.error, "invalid-file", "未规整相对路径 inspect 400");
   }
 
@@ -413,9 +375,7 @@ export function formatPanel() { return "<p>p</p>"; }
   // 但 import 阶段失败登记 adapter-load-failed）
   {
     const inspectRoute = routes.find((r) => r.path === ROUTES.inspect);
-    let payload;
-    inspectRoute.handler(withBody(JSON.stringify({ file: "/etc/hostname" })), { writeHead: () => {}, end: (c) => { payload = JSON.parse(c); } });
-    await new Promise((r) => setTimeout(r, 60));
+    const payload = await callHandler(inspectRoute, withBody(JSON.stringify({ file: "/etc/hostname" })));
     assert.ok(payload.error === "adapter-load-failed" || payload.error === "invalid-adapter" || payload.error === "invalid-file",
       `非 JS 文件加载失败（实际 ${payload.error}）`);
   }
@@ -423,9 +383,7 @@ export function formatPanel() { return "<p>p</p>"; }
   // add：成功登记 + 成为启用者 + 持久化到 user-adapters.json
   {
     const addRoute = routes.find((r) => r.path === ROUTES.add);
-    let payload;
-    addRoute.handler(withBody(JSON.stringify({ file: goodFile })), { writeHead: () => {}, end: (c) => { payload = JSON.parse(c); } });
-    await new Promise((r) => setTimeout(r, 80));
+    const payload = await callHandler(addRoute, withBody(JSON.stringify({ file: goodFile })));
     assert.equal(payload.ok, true, "add 成功");
     assert.equal(payload.adapter.name, "manage-stats");
     assert.ok(payload.enabled[OPENCODE_GO_PROVIDER] === "manage-stats", "新增适配器成为该 provider 启用者");
@@ -433,17 +391,14 @@ export function formatPanel() { return "<p>p</p>"; }
     // adapters.json 现在有四条候选（三个内置 + 用户；#198 新增 deepseek-official-builtin、
     // #215 新增 zai-coding-cn-builtin）
     const adaptersRoute = routes.find((r) => r.path === ROUTES.adapters);
-    let meta;
-    adaptersRoute.handler(fakeReq(), { writeHead: () => {}, end: (c) => { meta = JSON.parse(c); } });
+    const meta = await callHandler(adaptersRoute, fakeReq());
     assert.equal(meta.host.length, 4, "候选列表含三个内置 + 用户");
   }
 
   // add：重复 name → 409
   {
     const addRoute = routes.find((r) => r.path === ROUTES.add);
-    let payload;
-    addRoute.handler(withBody(JSON.stringify({ file: goodFile })), { writeHead: () => {}, end: (c) => { payload = JSON.parse(c); } });
-    await new Promise((r) => setTimeout(r, 60));
+    const payload = await callHandler(addRoute, withBody(JSON.stringify({ file: goodFile })));
     assert.equal(payload.error, "duplicate-name", "重复 name add 409");
   }
 
@@ -453,15 +408,10 @@ export function formatPanel() { return "<p>p</p>"; }
   {
     const adaptersRoute = routes.find((r) => r.path === ROUTES.adapters);
     const healthRoute = routes.find((r) => r.path === ROUTES.health);
-    const readAdapters = (): Promise<{ host: Array<{ name: string; label: string; file: string | null; enabled: boolean }>; enabled: Record<string, string>; errors: Array<{ key: string; message: string }> }> => {
-      let p;
-      adaptersRoute.handler(fakeReq(), { writeHead: () => {}, end: (c) => { p = JSON.parse(c); } });
-      return Promise.resolve(p);
-    };
+    const readAdapters = async (): Promise<{ host: Array<{ name: string; label: string; file: string | null; enabled: boolean }>; enabled: Record<string, string>; errors: Array<{ key: string; message: string }> }> =>
+      callHandler(adaptersRoute, fakeReq());
     const readHealth = async (): Promise<Array<{ key: string; message: string }>> => {
-      let p;
-      healthRoute.handler(fakeReq(), { writeHead: () => {}, end: (c) => { p = JSON.parse(c); } });
-      await new Promise((r) => setTimeout(r, 20));
+      const p = await callHandler(healthRoute, fakeReq());
       return p?.errors ?? [];
     };
     // 改文件（label 文案变化，mtime+size 均变）
@@ -492,33 +442,33 @@ export function formatPanel() { return "<p>p2</p>"; }
   // select：切换回内置
   {
     const selectRoute = routes.find((r) => r.path === ROUTES.select);
-    let payload;
-    selectRoute.handler(withBody(JSON.stringify({ provider: OPENCODE_GO_PROVIDER, adapterName: OPENCODE_GO_ADAPTER_ID })), { writeHead: () => {}, end: (c) => { payload = JSON.parse(c); } });
-    await new Promise((r) => setTimeout(r, 40));
+    const payload = await callHandler(selectRoute, withBody(JSON.stringify({ provider: OPENCODE_GO_PROVIDER, adapterName: OPENCODE_GO_ADAPTER_ID })));
     assert.equal(payload.ok, true, "select 成功");
     const adaptersRoute = routes.find((r) => r.path === ROUTES.adapters);
-    let meta;
-    adaptersRoute.handler(fakeReq(), { writeHead: () => {}, end: (c) => { meta = JSON.parse(c); } });
+    const meta = await callHandler(adaptersRoute, fakeReq());
     assert.ok(meta.enabled[OPENCODE_GO_PROVIDER] === OPENCODE_GO_ADAPTER_ID, "切换回内置生效");
+    // 等后台预热完成：select 切回内置会 fire-and-forget 预热（异步写失败帧进缓存）。
+    // 若不等它落定，后续 select 清空后再查 /stats 会命中预热残留帧（fetch-failed）
+    // 而非 no-enabled-adapter。以 health.cacheSize ≥ 1 为预热帧已写入缓存的就绪信号。
+    const healthRoute = routes.find((r) => r.path === ROUTES.health);
+    await pollUntil(async () => {
+      const h = await callHandler(healthRoute, fakeReq());
+      return h?.cacheSize >= 1 ? h : undefined;
+    }, 4000, 50);
   }
 
   // select：清空（null）→ 该 provider 无启用
   {
     const selectRoute = routes.find((r) => r.path === ROUTES.select);
-    let payload;
-    selectRoute.handler(withBody(JSON.stringify({ provider: OPENCODE_GO_PROVIDER, adapterName: null })), { writeHead: () => {}, end: (c) => { payload = JSON.parse(c); } });
-    await new Promise((r) => setTimeout(r, 40));
+    const payload = await callHandler(selectRoute, withBody(JSON.stringify({ provider: OPENCODE_GO_PROVIDER, adapterName: null })));
     assert.equal(payload.ok, true, "清空 select 成功");
     const adaptersRoute = routes.find((r) => r.path === ROUTES.adapters);
-    let meta;
-    adaptersRoute.handler(fakeReq(), { writeHead: () => {}, end: (c) => { meta = JSON.parse(c); } });
+    const meta = await callHandler(adaptersRoute, fakeReq());
     assert.equal(meta.enabled[OPENCODE_GO_PROVIDER], undefined, "清空后无启用");
 
     // 清空后 /stats 返回 no-enabled-adapter（默认 provider 已被清空）
     const stats = routes.find((r) => r.path === ROUTES.stats);
-    let s;
-    stats.handler(fakeReq({ url: `${ROUTES.stats}?provider=${OPENCODE_GO_PROVIDER}` }), { writeHead: () => {}, end: (c) => { s = JSON.parse(c); } });
-    await new Promise((r) => setTimeout(r, 60));
+    const s = await callHandler(stats, fakeReq({ url: `${ROUTES.stats}?provider=${OPENCODE_GO_PROVIDER}` }));
     assert.equal(s.reason, "no-enabled-adapter", "有候选但清空 → no-enabled-adapter");
   }
 }
@@ -541,20 +491,19 @@ export function formatPanel() { return "<p>a1</p>"; }
   const { ctx, routes } = makeFakeCtx();
   mkdirSync(histDir, { recursive: true }); // 清单/状态落盘目录（消除 warmup 时序依赖，对齐 #212-B）
   await apply(ctx, { ...ISOLATED_CONFIG, provider: "p212", adapter: aFile, historyDir: histDir });
-  await new Promise((r) => setTimeout(r, 300)); // 启动稳定（含 hr.start 初始同步）
+  // 启动稳定：apply 末尾 warmupFn() 启动即预热采样（fire-and-forget），预热成功帧会
+  // 落盘历史 jsonl → 以「p212-a 历史目录出现 jsonl」为就绪信号，不用固定 sleep 等启动。
+  await pollUntil(() => {
+    try { return readdirSync(join(histDir, "p212", "p212-a")).some((f) => f.endsWith(".jsonl")); } catch { return false; }
+  }, 4000, 50);
 
   const adaptersRoute = routes.find((r) => r.path === ROUTES.adapters);
   const selectRoute = routes.find((r) => r.path === ROUTES.select);
-  const readAdapters = (): { host: Array<{ name: string; label: string; enabled: boolean }>; enabled: Record<string, string> } => {
-    let p;
-    adaptersRoute.handler(fakeReq(), { writeHead: () => {}, end: (c) => { p = JSON.parse(c); } });
-    return p;
-  };
+  const readAdapters = async (): Promise<{ host: Array<{ name: string; label: string; enabled: boolean }>; enabled: Record<string, string> }> =>
+    callHandler(adaptersRoute, fakeReq());
   // 用户显式停用（select provider null）
   {
-    let payload;
-    selectRoute.handler(fakeReq({ method: "POST", body: JSON.stringify({ provider: "p212", adapterName: null }) }), { writeHead: () => {}, end: (c) => { payload = JSON.parse(c); } });
-    await new Promise((r) => setTimeout(r, 60));
+    const payload = await callHandler(selectRoute, fakeReq({ method: "POST", body: JSON.stringify({ provider: "p212", adapterName: null }) }));
     assert.equal(payload.ok, true, "显式停用成功");
   }
   // 改文件触发热更新（label 变化可观测新版生效）
@@ -573,7 +522,7 @@ export function formatPanel() { return "<p>a2</p>"; }
   const deadline = Date.now() + 6000;
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 200));
-    snap = readAdapters();
+    snap = await readAdapters();
     if (snap.host.some((a) => a.name === "p212-a" && a.label === "A v2")) { hot = true; break; }
   }
   assert.ok(hot, "停用的适配器文件编辑后热更新生效");
@@ -628,10 +577,10 @@ export function formatPanel() { return "<p>2</p>"; }
   const addRoute = routes.find((r) => r.path === ROUTES.add);
   // add 登记第二个文件（纳入热更监视）
   {
-    let payload;
     // #313：async handler 必须 await（writeJson 在 resolve 前同步调用 end 回调）——
-    // 旧「固定 sleep(80ms) 后读 payload」在 CI 慢 runner 下偶发 undefined 崩
-    await addRoute.handler(fakeReq({ method: "POST", body: JSON.stringify({ file: f2 }) }), { writeHead: () => {}, end: (c) => { payload = JSON.parse(c); } });
+    // 旧「固定 sleep(80ms) 后读 payload」在 CI 慢 runner 下偶发 undefined 崩。
+    // 统一走 callHandler（async handler await、同步 handler 立即返回）。
+    const payload = await callHandler(addRoute, fakeReq({ method: "POST", body: JSON.stringify({ file: f2 }) }));
     assert.equal(payload?.ok, true, "第二个适配器登记成功");
   }
   // 把 one.mjs 的导出 name 改为 u-two（与另一 user-file 撞名）→ 触发热更冲突路径
@@ -650,15 +599,13 @@ export function formatPanel() { return "<p>x</p>"; }
   const deadline = Date.now() + 6000;
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 200));
-    let p;
-    healthRoute.handler(fakeReq(), { writeHead: () => {}, end: (c) => { p = JSON.parse(c); } });
+    const p = await callHandler(healthRoute, fakeReq());
     const found = (p?.errors ?? []).find((e) => e.kind === "load" && e.message.includes("热更新失败") && e.message.includes("u-two"));
     if (found !== undefined) { conflictErr = found; break; }
   }
   assert.ok(conflictErr !== null, "改名撞名应产生明确的冲突报错且 health 可见（#212-B）");
   // 旧条目保留：one.mjs 仍以旧名 u-one 在候选列表，u-two 归属不变
-  let meta;
-  adaptersRoute.handler(fakeReq(), { writeHead: () => {}, end: (c) => { meta = JSON.parse(c); } });
+  const meta = await callHandler(adaptersRoute, fakeReq());
   const oneEntry = meta.host.find((a) => a.file === "one.mjs");
   assert.ok(oneEntry !== undefined && oneEntry.name === "u-one", "撞名后 one.mjs 旧条目保留、未静默丢失（#212-B）");
   assert.ok(meta.host.some((a) => a.name === "u-two" && a.file === "two.mjs"), "既有 u-two 条目不受牵连");
@@ -731,12 +678,7 @@ export function formatPanel() { return "<p>user-panel</p>"; }
 
   const historyRoot = join(process.env.DSH_HOME, "dsh-provider-usage");
   const withBody = (body) => fakeReq({ method: "POST", body });
-  const getJSON = async (route, url) => {
-    let payload;
-    await route.handler(fakeReq({ url }), { writeHead: () => {}, end: (c) => { payload = JSON.parse(c); } });
-    await new Promise((r) => setTimeout(r, 30));
-    return payload;
-  };
+  const getJSON = async (route, url) => callHandler(route, fakeReq({ url }));
 
   // ---- 场景 1：纯 builtin（warmup 关闭避免缓存/锁竞争，手动触发取数）----
   {
@@ -759,14 +701,10 @@ export function formatPanel() { return "<p>user-panel</p>"; }
     assert.ok(dsBuiltin !== undefined && dsBuiltin.source === "builtin", "F1: 候选含 builtin 条目且 source=builtin");
 
     // 启动即预热会把失败帧写进缓存（warmupIntervalMs 有下限 clamp 无法关闭）；
-    // select 语义自带 cache.clear()，重选 builtin 后下一次 stats 即全新取数
-    await new Promise((r) => setTimeout(r, 350));
+    // select 语义自带 cache.clear()，重选 builtin 后下一次 stats 即全新取数。
+    // 预热为 fire-and-forget，无需固定 sleep 等其完成——select 本身 await（callHandler）。
     const selectRoute1 = routes.find((r) => r.path === ROUTES.select);
-    await new Promise((resolve) => {
-      selectRoute1.handler(withBody(JSON.stringify({ provider: DEEPSEEK_OFFICIAL_PROVIDER, adapterName: DEEPSEEK_OFFICIAL_ADAPTER_ID })), {
-        writeHead: () => {}, end: (c) => resolve(JSON.parse(c)),
-      });
-    });
+    await callHandler(selectRoute1, withBody(JSON.stringify({ provider: DEEPSEEK_OFFICIAL_PROVIDER, adapterName: DEEPSEEK_OFFICIAL_ADAPTER_ID })));
 
     // A1：取数失败（不可达回环）→ HTTP 形状仍 200 由路由保证；ok=false / status=stale / capsuleHtml 非空
     const stats = routes.find((r) => r.path === ROUTES.stats);
@@ -806,14 +744,9 @@ export function formatPanel() { return "<p>user-panel</p>"; }
       },
     });
     await apply(ctx, { apiKey: "", apiEndpoint: "http://127.0.0.1:9", provider: DEEPSEEK_OFFICIAL_PROVIDER, warmupIntervalMs: 0 });
-    // 等预热完成后 select 清缓存，确保下一次 stats 走全新取数路径（同场景 1）
-    await new Promise((r) => setTimeout(r, 350));
+    // 预热为 fire-and-forget，select 自带 cache.clear() + 清后立即预热挂点，无需固定 sleep 等预热。
     const selectRoute2 = routes.find((r) => r.path === ROUTES.select);
-    await new Promise((resolve) => {
-      selectRoute2.handler(withBody(JSON.stringify({ provider: DEEPSEEK_OFFICIAL_PROVIDER, adapterName: DEEPSEEK_OFFICIAL_ADAPTER_ID })), {
-        writeHead: () => {}, end: (c) => resolve(JSON.parse(c)),
-      });
-    });
+    await callHandler(selectRoute2, withBody(JSON.stringify({ provider: DEEPSEEK_OFFICIAL_PROVIDER, adapterName: DEEPSEEK_OFFICIAL_ADAPTER_ID })));
     const stats = routes.find((r) => r.path === ROUTES.stats);
     const payload = await getJSON(stats, `${ROUTES.stats}?provider=${DEEPSEEK_OFFICIAL_PROVIDER}`);
     // #120：select 自带「清缓存 + 立即预热」挂点——本请求命中的是预热刚写入的
@@ -839,13 +772,7 @@ export function formatPanel() { return "<p>user-panel</p>"; }
     await apply(ctx, { ...ISOLATED_CONFIG, provider: DEEPSEEK_OFFICIAL_PROVIDER, warmupIntervalMs: 0 });
 
     const addRoute = routes.find((r) => r.path === ROUTES.add);
-    const addPayload = await new Promise((resolve) => {
-      addRoute.handler(withBody(JSON.stringify({ file: userFile })), {
-        writeHead: () => {},
-        end: (c) => resolve(JSON.parse(c)),
-      });
-    });
-    await new Promise((r) => setTimeout(r, 60));
+    const addPayload = await callHandler(addRoute, withBody(JSON.stringify({ file: userFile })));
     assert.equal(addPayload.ok, true, `K12: user-file 原型注册成功（${JSON.stringify(addPayload).slice(0, 120)}）`);
     assert.equal(addPayload.enabled[DEEPSEEK_OFFICIAL_PROVIDER], "deepseek-official",
       "F2: 后注册的 user-file 认领同名 provider 时成为启用者");
@@ -874,9 +801,11 @@ export function formatPanel() { return "<p>user-panel</p>"; }
     assert.ok(finalFresh.capsuleHtml?.includes("USER ¥42.50"), "A5: 用户版胶囊文案渲染");
     assert.ok(!JSON.stringify(finalFresh).includes("sk-smoke-test"), "E5: stats 响应不含密钥");
 
-    // A5：成功帧正常落盘历史（对照 A3 的失败帧不落盘）
-    await new Promise((r) => setTimeout(r, 80));
+    // A5：成功帧正常落盘历史（对照 A3 的失败帧不落盘）——轮询等待落盘，不用固定 sleep
     const userHistDir = join(historyRoot, DEEPSEEK_OFFICIAL_PROVIDER, "deepseek-official");
+    await pollUntil(() => {
+      try { return readdirSync(userHistDir).some((f) => f.endsWith(".jsonl")); } catch { return false; }
+    }, 4000, 50);
     assert.ok(existsSync(userHistDir), "A5: fresh 帧已按 (provider, adapterName) 落盘历史目录");
 
     // history 路由对用户版可用（面板管线不崩）
@@ -937,19 +866,16 @@ export function formatPanel() { return "<p>ok</p>"; }
     },
   });
   await apply(ctx, { ...ISOLATED_CONFIG, warmupIntervalMs: 60000 });
-  // 启动即预热一次（并行 fire-and-forget）：给足两个 provider 并行取数的时间
-  await new Promise((r) => setTimeout(r, 400));
+  // 启动即预热一次（并行 fire-and-forget）：两个 provider 取数采样完成的历史落盘
+  // 即为就绪信号（fetchData 成功帧会 append 历史 jsonl），轮询等待而非固定 sleep。
+  const histRoot = join(process.env.DSH_HOME, "dsh-provider-usage");
+  const warmupLanded = (prov: string, name: string): boolean => {
+    try { return readdirSync(join(histRoot, prov, name)).some((f) => f.endsWith(".jsonl")); } catch { return false; }
+  };
+  await pollUntil(() => warmupLanded("prov-a", "warm-a") && warmupLanded("prov-b", "warm-b"), 4000, 50);
 
   const statsRoute = routes.find((r) => r.path === ROUTES.stats);
-  const queryProvider = async (provider) => {
-    let payload;
-    statsRoute.handler(
-      fakeReq({ url: `${ROUTES.stats}?provider=${provider}` }),
-      { writeHead: () => {}, end: (chunk) => { payload = JSON.parse(chunk); } },
-    );
-    await new Promise((r) => setTimeout(r, 30));
-    return payload;
-  };
+  const queryProvider = async (provider) => callHandler(statsRoute, fakeReq({ url: `${ROUTES.stats}?provider=${provider}` }));
   const pa = await queryProvider("prov-a");
   const pb = await queryProvider("prov-b");
 
@@ -1073,7 +999,10 @@ const disposeAll = (disposers) => {
     historyDir: join(dir, "hist"),
     cacheDurationMs: 5000, // stats 缓存 5s 到龄：让「重取→append→面板缓存全清」可在测试窗口触发
   });
-  await new Promise((r) => setTimeout(r, 800)); // 启动预热完成（getStats fresh → append#0 → 清空缓存）
+  // 启动预热完成（getStats fresh → append#0 → 清空缓存）：以历史 jsonl 落盘为就绪信号
+  await pollUntil(() => {
+    try { return readdirSync(join(dir, "hist", "cache-prov", "cache-spy-a")).some((f) => f.endsWith(".jsonl")); } catch { return false; }
+  }, 4000, 50);
 
   const historyRoute = routes.find((r) => r.path === ROUTES.history);
   const statsRoute = routes.find((r) => r.path === ROUTES.stats);
@@ -1085,7 +1014,9 @@ const disposeAll = (disposers) => {
   assert.ok(String(h1.panelHtml).includes('data-calls="1"'), "冷算渲染首版");
 
   // AC#1+#2 时钟推进 ≥1s 后仍命中同一 key：panelHtml/error 逐字节一致、管道计数不增
-  await new Promise((r) => setTimeout(r, 1100));
+  // （有意时间流逝断言，验证 key 不含时钟；轮询等时钟条件而非固定 sleep）
+  const tClock = Date.now();
+  await pollUntil(() => Date.now() - tClock >= 1000, 4000, 50);
   const h2 = await getHistory(historyRoute, "cache-prov", 7);
   assert.equal(globalThis.__SPY_A, 1, "命中路径不重跑管道（query+formatPanel 计数均不增）");
   assert.equal(h2.panelHtml, h1.panelHtml, "二次响应 panelHtml 与首次逐字节一致");
@@ -1105,10 +1036,14 @@ const disposeAll = (disposers) => {
   assert.equal(globalThis.__SPY_A, 2, "days=7 条目未被 days=30 冲掉，仍命中");
   assert.equal(h7b.panelHtml, h1.panelHtml, "days=7 回放原条目");
 
-  // AC#3 主失效：等 stats TTL(5s) 到龄 → GET /stats 重取 fresh → append 落盘 → 面板缓存全清
-  await new Promise((r) => setTimeout(r, 5200));
+  // AC#3 主失效：等 stats TTL(5s) 到龄 → 轮询 stats 直到返回 fresh（到龄重取 fresh →
+  // append 落盘 → 面板缓存全清）；事件驱动，避免固定 sleep 5200。
   const nBefore = Number(h1.panelHtml.match(/data-n="(\d+)"/)[1]);
-  await callRoute(statsRoute, { url: `${ROUTES.stats}?provider=cache-prov` });
+  const freshSeen = await pollUntil(async () => {
+    const s = await callRoute(statsRoute, { url: `${ROUTES.stats}?provider=cache-prov` });
+    return s?.status === "fresh" ? s : undefined;
+  }, 8000, 200);
+  assert.ok(freshSeen !== undefined, "stats TTL 到龄后重取 fresh（append 落盘触发面板缓存全清）");
   const h3 = await getHistory(historyRoute, "cache-prov", 7);
   assert.equal(globalThis.__SPY_A, 3, "append 落盘后缓存整体清除、完整管道重跑");
   const nAfter = Number(h3.panelHtml.match(/data-n="(\d+)"/)[1]);
@@ -1129,7 +1064,9 @@ const disposeAll = (disposers) => {
     adapter: fileA,
     historyDir: join(dir, "hist"),
   });
-  await new Promise((r) => setTimeout(r, 800));
+  await pollUntil(() => {
+    try { return readdirSync(join(dir, "hist", "sel-prov", "sel-spy-a")).some((f) => f.endsWith(".jsonl")); } catch { return false; }
+  }, 4000, 50);
 
   const historyRoute = routes.find((r) => r.path === ROUTES.history);
   const addRoute = routes.find((r) => r.path === ROUTES.add);
@@ -1187,7 +1124,9 @@ export function formatPanel(input) {
     adapter: errFile,
     historyDir: join(dir, "hist"),
   });
-  await new Promise((r) => setTimeout(r, 800));
+  await pollUntil(() => {
+    try { return readdirSync(join(dir, "hist", "err-prov", "err-spy")).some((f) => f.endsWith(".jsonl")); } catch { return false; }
+  }, 4000, 50);
 
   const historyRoute = routes.find((r) => r.path === ROUTES.history);
   const addRoute = routes.find((r) => r.path === ROUTES.add);
@@ -1197,8 +1136,10 @@ export function formatPanel(input) {
   assert.ok(e1.error !== null && String(e1.error).length > 0, "error 非 undefined 语义经 null 化下发");
 
   // 关键：两次错误请求之间【无任何 clear 挂点动作】——若错误入了缓存，
-  // 第二次会在剩余 TTL 内复读旧错误（计数维持 1）；未入缓存则必然重算
-  await new Promise((r) => setTimeout(r, 1100));
+  // 第二次会在剩余 TTL 内复读旧错误（计数维持 1）；未入缓存则必然重算。
+  // 有意时间流逝窗口：轮询等时钟推进 ≥1.1s，而非固定 sleep。
+  const tErr = Date.now();
+  await pollUntil(() => Date.now() - tErr >= 1100, 4000, 50);
   const e2 = await getHistory(historyRoute, "err-prov", 7);
   assert.equal(globalThis.__SPY_ERR, 2, "错误响应不入缓存：第二次仍完整重算而非复读旧错误");
   assert.equal(e2.ok, false);
@@ -1241,7 +1182,9 @@ export function formatPanel(input) {
     adapter: mainFile,
     historyDir: join(dir, "hist"),
   });
-  await new Promise((r) => setTimeout(r, 800));
+  await pollUntil(() => {
+    try { return readdirSync(join(dir, "hist", "add-prov", "add-spy-a")).some((f) => f.endsWith(".jsonl")); } catch { return false; }
+  }, 4000, 50);
 
   const historyRoute = routes.find((r) => r.path === ROUTES.history);
   const addRoute = routes.find((r) => r.path === ROUTES.add);
@@ -1275,7 +1218,9 @@ export function formatPanel(input) {
     autoReload: true,
     historyDir: join(dir, "hist"),
   });
-  await new Promise((r) => setTimeout(r, 900));
+  await pollUntil(() => {
+    try { return readdirSync(join(dir, "hist", "hr-prov", "hr-spy")).some((f) => f.endsWith(".jsonl")); } catch { return false; }
+  }, 4000, 50);
 
   const historyRoute = routes.find((r) => r.path === ROUTES.history);
   const w1 = await getHistory(historyRoute, "hr-prov", 7);
@@ -1332,7 +1277,10 @@ export function formatPanel(input) {
     adapter: mutFile,
     historyDir: join(dir, "hist"),
   });
-  await new Promise((r) => setTimeout(r, 800)); // 预热保证历史至少 1 条
+  // 预热保证历史至少 1 条：以历史 jsonl 落盘为就绪信号
+  await pollUntil(() => {
+    try { return readdirSync(join(dir, "hist", "mut-prov", "mut-spy")).some((f) => f.endsWith(".jsonl")); } catch { return false; }
+  }, 4000, 50);
 
   const historyRoute = routes.find((r) => r.path === ROUTES.history);
   const m1 = await getHistory(historyRoute, "mut-prov", 7);
@@ -1351,13 +1299,15 @@ export function formatPanel(input) {
 {
   const { ctx, routes, disposers } = makeCollectingCtx();
   await apply(ctx, { ...ISOLATED_CONFIG, historyDir: join(mkdtempSync(join(tmpdir(), "dou-105-etag-")), "hist") });
-  await new Promise((r) => setTimeout(r, 300));
   const historyRoute = routes.find((r) => r.path === ROUTES.history);
 
   let code = 0;
   let hdrs = {};
   let raw = "";
-  historyRoute.handler(
+  // async handler 统一 await（等响应位）：writeJson 在 resolve 前同步触发 end 回调，
+  // await 完成后 code/hdrs/raw 已就绪，无需固定 sleep。
+  await callHandler(
+    historyRoute,
     fakeReq({
       url: `${ROUTES.history}?days=7`,
       headers: {
@@ -1372,7 +1322,6 @@ export function formatPanel(input) {
       end: (chunk) => { raw = chunk; },
     },
   );
-  await new Promise((r) => setTimeout(r, 100));
 
   assert.equal(code, 200, "携带 If-None-Match/If-Modified-Since 一律完整 200，不做 304 短路");
   for (const k of Object.keys(hdrs)) {

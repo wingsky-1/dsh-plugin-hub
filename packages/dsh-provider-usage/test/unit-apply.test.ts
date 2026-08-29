@@ -689,7 +689,7 @@ export async function fetchData() {
   calls += 1;
   const probe = (globalThis.__pp120 ??= []);
   probe.push({ n: "A", t: Date.now(), k: "s", seq: calls });
-  await new Promise((r) => setTimeout(r, 80));
+  await new Promise((r) => setTimeout(r, 80)); // 有意延迟：slow 适配器 fixture（80ms 真实 IO 窗口，验证持锁）
   probe.push({ n: "A", t: Date.now(), k: "e" });
   return { v: calls };
 }
@@ -704,7 +704,7 @@ export const providers = ["prov-fast"];
 export async function fetchData() {
   const probe = (globalThis.__pp120 ??= []);
   probe.push({ n: "B", t: Date.now(), k: "s" });
-  await new Promise((r) => setTimeout(r, 60));
+  await new Promise((r) => setTimeout(r, 60)); // 有意延迟：fast 适配器 fixture（60ms 真实 IO 窗口，验证跨 provider 并行）
   probe.push({ n: "B", t: Date.now(), k: "e" });
   return { v: 7 };
 }
@@ -800,7 +800,7 @@ export function formatPanel() { return "<p>f</p>"; }
     let fastCalls = 0;
     set(async (url: unknown, opts: { signal?: AbortSignal }) => {
       fastCalls += 1;
-      await new Promise((r) => setTimeout(r, 5));
+      await new Promise((r) => setTimeout(r, 5)); // 有意延迟：fetch mock 快路径（5ms）
       return { status: 200, ok: true, url, aborted: opts?.signal?.aborted ?? null };
     });
     const okRes = await fetchWithTimeout("https://gw.test/fast", 1000);
@@ -818,7 +818,7 @@ export function formatPanel() { return "<p>f</p>"; }
     let slowCalls = 0;
     set(async (_url: unknown, opts: { signal?: AbortSignal } | undefined) => {
       slowCalls += 1;
-      await new Promise((r) => setTimeout(r, 500));
+      await new Promise((r) => setTimeout(r, 500)); // 有意延迟：fetch mock 慢路径（500ms，验证 abort 触发）
       return { status: 200, ok: true, aborted: opts?.signal?.aborted ?? null };
     });
     const slowRes = await fetchWithTimeout("https://gw.test/slow", 20);
