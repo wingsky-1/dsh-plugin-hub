@@ -55,7 +55,6 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "catalog:",
-    "@deepseek-ai/dsh-agent": "catalog:",
-    "@wingsky-1/dsh-mcp-manager": "workspace:*"
+    "@deepseek-ai/dsh-agent": "catalog:"
   }
 }

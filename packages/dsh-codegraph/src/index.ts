@@ -23,8 +23,12 @@
  * 依赖：dsh-mcp-manager（提供 ctx.mcpManager service；未启用时降级）。
  */
 import type { Context } from "@deepseek-ai/cordis";
-// 类型面：mcpManager service 类型（来自 dsh-mcp-manager 的 service.ts 声明合并）。
-import type { McpManagerService } from "@wingsky-1/dsh-mcp-manager";
+// 类型面：mcpManager service 类型用本地最小声明（不 import dsh-mcp-manager 包——
+// 解耦构建时序：CI 并行 build 各包时依赖包 lib 可能未就绪；运行时经 ctx.get 探测）。
+interface McpManagerServiceLite {
+  registerServer(server: Record<string, unknown>): Promise<{ name: string; existing: boolean }>;
+  unregisterServer(name: string): Promise<void>;
+}
 import { installGuidance, isCodegraphInstalled, runInstall } from "./install.ts";
 import { findGitRoot, guardedExplore } from "./guard.ts";
 import { registerDisciplineHook } from "./discipline.ts";
@@ -126,7 +130,7 @@ export async function apply(ctx: Context, config: CodegraphConfig = {}): Promise
   }
 
   // 2. 注册 MCP 服务器（经 mcp-manager 核心服务；未启用时纯提示降级）。
-  const mcpManager = (ctx as unknown as { get(name: string): McpManagerService | undefined }).get("mcpManager");
+  const mcpManager = (ctx as unknown as { get(name: string): McpManagerServiceLite | undefined }).get("mcpManager");
   if (mcpManager !== undefined && isCodegraphInstalled()) {
     try {
       await mcpManager.registerServer({
