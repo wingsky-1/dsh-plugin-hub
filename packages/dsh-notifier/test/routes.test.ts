@@ -14,12 +14,14 @@ import { assert, makeNotifier, fakeReq, makeRes, waitForHistory } from "./helper
 import { ROUTES } from "../lib/index.js";
 
 const work = mkdtempSync(join(tmpdir(), "dnotify-routes-"));
+let mainNotifier;
 try {
   const storeFile = join(work, "config.json");
 
   // 独立 history 文件：隔离其他测试块的 fire-and-forget 异步写盘，
   // 避免跨 apply 实例对同一 history.jsonl 的 read-modify-write 竞态把 test 挤出末尾（issue #17）。
-  const { routes } = await makeNotifier(work, { configFile: storeFile, historyFile: join(work, "history-route.jsonl") });
+  mainNotifier = await makeNotifier(work, { configFile: storeFile, historyFile: join(work, "history-route.jsonl") });
+  const { routes } = mainNotifier;
   const configRoute = routes.find((r) => r.path === ROUTES.config);
   const eventsRoute = routes.find((r) => r.path === ROUTES.events);
   const healthRoute = routes.find((r) => r.path === ROUTES.health);
@@ -56,6 +58,7 @@ try {
     assert.equal(body.ok, true);
     assert.equal(body.plugin, "dsh-notifier");
     assert.equal(typeof body.config.notifyAsk, "boolean", "health 返回配置摘要");
+    assert.equal(body.config.maxConnections, 16, "health 摘要含 maxConnections（与默认配置一致）");
     assert.equal(typeof body.sseConnections, "number");
   }
 
@@ -147,7 +150,8 @@ try {
 
   // events ?since 回放（独立上下文，seq 从 1 起）：断线补拉不丢尾部事件
   {
-    const { routes: routes2 } = await makeNotifier(work, { historyFile: join(work, "history-since.jsonl") });
+    const notifier2 = await makeNotifier(work, { historyFile: join(work, "history-since.jsonl") });
+    const { routes: routes2 } = notifier2;
     const eventsRoute2 = routes2.find((r) => r.path === ROUTES.events);
     const testRoute2 = routes2.find((r) => r.path === ROUTES.test);
     await testRoute2.handler(fakeReq({ method: "POST" }), makeRes().res); // seq=1
@@ -166,6 +170,7 @@ try {
     const { rec: rec4, res: res4 } = makeRes();
     await eventsRoute2.handler(fakeReq({ url: "/api/dsh-notifier/events?since=abc" }), res4);
     assert.ok(!rec4.text.includes('"type":"notify"'), "非法 since 按 0 处理");
+    notifier2.dispose();
   }
 
   // #330 SSE 连接生命周期：上限淘汰最老 / close+error 幂等清理 /
@@ -175,7 +180,9 @@ try {
     /** 可触发 close/error、可配置 write 行为的 fake res（events 路由用）。 */
     function sseRes(opts = {}) {
       const listeners = {};
-      const state = { destroyed: false, writes: 0 };
+      const state = { destroyed: false, writes: 0, destroyCalls: 0 };
+      // presetDestroyed：模拟「对端已断但 close 事件漏发」的残留连接（P2-6 兜底分支用）
+      if (opts.presetDestroyed) state.destroyed = true;
       return {
         state,
         writeHead() {},
@@ -194,6 +201,7 @@ try {
         },
         destroy() {
           state.destroyed = true;
+          state.destroyCalls += 1; // 调用计数：区分幂等 evict 与重复销毁（P2-4）
         },
         get destroyed() {
           return state.destroyed;
@@ -208,7 +216,7 @@ try {
       writeFileSync(cfg, JSON.stringify({ maxConnections }));
       const out = await makeNotifier(work, { configFile: cfg, historyFile: join(work, `sse-${mark}.jsonl`) });
       const near = (p) => out.routes.find((r) => r.path === p);
-      return { ev: near(ROUTES.events), he: near(ROUTES.health), te: near(ROUTES.test), cfgR: near(ROUTES.config) };
+      return { ev: near(ROUTES.events), he: near(ROUTES.health), te: near(ROUTES.test), cfgR: near(ROUTES.config), dispose: out.dispose };
     }
     async function connCount(he) {
       const { rec, res } = makeRes();
@@ -218,7 +226,7 @@ try {
 
     // (a) 上限淘汰最老：上限 2，注册 3 条 → 连接数收敛 2、最老被 destroy
     {
-      const { ev, he } = await freshRoutes("a", 2);
+      const { ev, he, dispose } = await freshRoutes("a", 2);
       const r1 = sseRes();
       const r2 = sseRes();
       const r3 = sseRes();
@@ -229,11 +237,13 @@ try {
       assert.equal(r1.state.destroyed, true, "最老连接被 destroy（淘汰）");
       assert.equal(r2.state.destroyed, false, "较新连接保留");
       assert.equal(r3.state.destroyed, false, "最新连接保留");
+      assert.equal(r1.state.destroyCalls, 1, "淘汰只销毁一次（evict 幂等）");
+      dispose(); // 停心跳，防 30s unref 定时器残留（P2-5）
     }
 
     // (b) close/error 幂等清理：多次触发只移除一次
     {
-      const { ev, he } = await freshRoutes("b", 4);
+      const { ev, he, dispose } = await freshRoutes("b", 4);
       const r = sseRes();
       await ev.handler(fakeReq({}), r);
       assert.equal(await connCount(he), 1, "注册后连接数为 1");
@@ -242,21 +252,24 @@ try {
       r.emit("close"); // 重复触发，幂等
       assert.equal(await connCount(he), 0, "close/error 多次触发只移除一次");
       assert.equal(r.state.destroyed, true, "close 后连接被销毁");
+      assert.equal(r.state.destroyCalls, 1, "幂等：close/error/close 只触发一次 destroy");
+      dispose();
     }
 
     // (c) write 返回 false（背压）不误杀：多次广播连接仍在
     {
-      const { ev, he, te } = await freshRoutes("c", 4);
+      const { ev, he, te, dispose } = await freshRoutes("c", 4);
       const r = sseRes({ falseAfter: 1 }); // 初始 connected 写成功，之后均返回 false
       await ev.handler(fakeReq({}), r);
       for (let i = 0; i < 5; i += 1) await te.handler(fakeReq({ method: "POST" }), makeRes().res);
       assert.equal(await connCount(he), 1, "write 返回 false 视为背压，5 次广播不误杀");
       assert.equal(r.state.destroyed, false, "背压连接未被销毁");
+      dispose();
     }
 
     // (d) 写失败连续 3 次判死：前 2 次保留，第 3 次销毁
     {
-      const { ev, he, te } = await freshRoutes("d", 4);
+      const { ev, he, te, dispose } = await freshRoutes("d", 4);
       const r = sseRes({ throwAfter: 1 }); // 初始 connected 写成功，之后每次写抛错
       await ev.handler(fakeReq({}), r);
       await te.handler(fakeReq({ method: "POST" }), makeRes().res); // failStreak=1
@@ -265,11 +278,12 @@ try {
       await te.handler(fakeReq({ method: "POST" }), makeRes().res); // failStreak=3 → 销毁
       assert.equal(await connCount(he), 0, "连续 3 次写失败判死销毁");
       assert.equal(r.state.destroyed, true, "判死连接被销毁");
+      dispose();
     }
 
     // (e) maxConnections 配置改小实时生效：下次注册即收缩到新上限
     {
-      const { ev, he, cfgR } = await freshRoutes("e", 16);
+      const { ev, he, cfgR, dispose } = await freshRoutes("e", 16);
       const r1 = sseRes();
       const r2 = sseRes();
       const r3 = sseRes();
@@ -299,7 +313,22 @@ try {
       await ev.handler(fakeReq({}), r4);
       assert.equal(await connCount(he), 2, "配置改小后下次注册即收缩到新上限 2");
       assert.equal(r1.state.destroyed, true, "最老连接被淘汰");
+      assert.equal(r2.state.destroyed, true, "次老连接同样被淘汰（收缩到上限 2）");
       assert.equal(r4.state.destroyed, false, "新注册保留");
+      dispose();
+    }
+
+    // (f) destroyed/writableEnded 兜底分支：preset destroyed=true 后广播 → 立即 evict
+    {
+      const { ev, he, te, dispose } = await freshRoutes("f", 4);
+      const r = sseRes({ presetDestroyed: true }); // 对端已断但 close 事件漏发的残留
+      await ev.handler(fakeReq({}), r);
+      assert.equal(await connCount(he), 1, "preset destroyed 注册后仍在表（注册路径不做预判）");
+      await te.handler(fakeReq({ method: "POST" }), makeRes().res); // 广播 → writeFrame 命中兜底分支
+      assert.equal(await connCount(he), 0, "广播命中 destroyed 兜底分支，立即 evict");
+      assert.equal(r.state.destroyed, true, "兜底分支销毁连接");
+      assert.equal(r.state.destroyCalls, 1, "兜底 evict 只销毁一次");
+      dispose();
     }
   }
 
@@ -333,7 +362,7 @@ try {
     writeFileSync(hcfg, JSON.stringify({ historyMaxAgeDays: 7 }));
     // 预置一条 10 天前的旧记录
     writeFileSync(hfile, JSON.stringify({ ts: Date.now() - 10 * 86400000, kind: "done", title: "旧记录", message: "10 天前" }) + "\n");
-    const { routes } = await makeNotifier(work, { historyFile: hfile, configFile: hcfg });
+    const { routes, dispose: disposeClean } = await makeNotifier(work, { historyFile: hfile, configFile: hcfg });
     const h = routes.find((r) => r.path === ROUTES.history);
     const t = routes.find((r) => r.path === ROUTES.test);
     // 触发一条新通知（test 路由 → 落盘；写时会按 7 天 cutoff 剔除旧行）
@@ -353,7 +382,9 @@ try {
     const { rec: recEmpty, res: resEmpty } = makeRes();
     await h.handler(fakeReq({}), resEmpty);
     assert.equal(JSON.parse(recEmpty.text).records.length, 0, "清空后 GET 为空");
+    disposeClean(); // 停心跳（P2-5）
   }
 } finally {
+  mainNotifier.dispose(); // 停心跳（P2-5：30s unref 定时器不在测试进程存活期残留）
   rmSync(work, { recursive: true, force: true });
 }

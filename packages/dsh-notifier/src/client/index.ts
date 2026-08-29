@@ -397,7 +397,10 @@ import STYLE from "./style.css";
           var field = el("div", { class: "dn-row", style: "min-height:36px" });
           field.appendChild(el("span", { style: "flex:1", text: label + "（ms，0=关）" }));
           var input = el("input", { type: "number", min: "0", step: "1000", value: String(config[objKey] || 0), style: "width:84px;background:var(--dsw-alias-bg-layer-1,#f5f6f8);color:inherit;border:1px solid var(--dsw-alias-border-l1,#e2e5ea);border-radius:6px;padding:3px 6px;margin:6px 0", onChange: function () {
-            var v = parseInt(input.value, 10);
+            // Number 而非 parseInt：1e2/0x10 等非十进制写法在 parseInt(v,10) 下解析不精确
+            // （0x10 → 0 回默认），Number 按 JS 字面量语义精确取值；空串→0 与
+            // parseInt 空串→NaN→回退 0 的结果一致（下方校验兜底）。
+            var v = Number(input.value);
             config[objKey] = Number.isFinite(v) && v >= 0 && v <= max ? v : 0;
             saveConfig(config);
           } });
@@ -412,7 +415,8 @@ import STYLE from "./style.css";
           var field = el("div", { class: "dn-row", style: "min-height:36px" });
           field.appendChild(el("span", { style: "flex:1", text: "最大连接数（条，超出淘汰最老）" }));
           var input = el("input", { type: "number", min: "1", max: "1024", step: "1", value: String(config.maxConnections || 16), style: "width:84px;background:var(--dsw-alias-bg-layer-1,#f5f6f8);color:inherit;border:1px solid var(--dsw-alias-border-l1,#e2e5ea);border-radius:6px;padding:3px 6px;margin:6px 0", onChange: function () {
-            var v = parseInt(input.value, 10);
+            // 同上：Number 保 1e2/0x10 精确解析；空串→0 不满足 >=1 校验，回默认 16（同 parseInt 语义）。
+            var v = Number(input.value);
             config.maxConnections = Number.isFinite(v) && v >= 1 && v <= 1024 ? v : 16;
             saveConfig(config);
           } });
