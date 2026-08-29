@@ -8,16 +8,19 @@ MCP 协议客户端基于 `node:child_process` 与全局 `fetch` 直接实现，
 
 三档中间层模式（`middleware`）：`off`——全部服务器直呼 `mcp__<server>__<tool>`（旧行为）；
 `project`（**默认**）——项目级走中间层、全局仍直呼；`all`——全局也走中间层，
-cwd 无项目时回落全局虚拟 root `@global`，模型面完全收敛为两个原子工具。
+cwd 无项目时回落全局虚拟 root `@global`，模型面完全收敛为四个原子工具
+（`ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call`）。
 注意生效时机：`middleware` / `middlewarePolicy` 只在插件启动时读取，**变更后需重启
 `dsh web`**；两级配置文件中的服务器列表（增删/启停/改配置）支持热加载、即时生效，
 无需重启。
 
 ## 核心优势
 
-- **上下文成本可控**：项目级 MCP 默认经中间层收敛，模型面只占 `ws_mcp_search` /
-  `ws_mcp_call` 两个原子工具位——当前工作空间的项目级接多少台服务器、多少个工具都
-  不膨胀系统提示词；`middleware: all` 可把全局服务器也收进中间层，实现全量收敛
+- **上下文成本可控**：项目级 MCP 默认经中间层收敛，模型面只占 `ws_mcp_list` /
+  `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call` 四个原子工具位——当前工作空间
+  的项目级接多少台服务器、多少个工具都不膨胀系统提示词；`middleware: all` 可把
+  全局服务器也收进中间层，实现全量收敛（两级发现：`ws_mcp_list` 完整盘点 →
+  `ws_mcp_detail` 按需拉完整 schema）
 - **分工作目录维护**：项目级配置 `<项目根>/.dsh/mcp.json` 随仓库走、可提交 git 团队共享；
   全局配置 `<DSH_HOME>/dsh-mcp.json` 常连；切换会话自动加载当前目录的 MCP 集
 - **工作空间隔离**：中间层以会话 cwd 路由到对应连接池，server 全名一致性校验防跨空间
@@ -80,7 +83,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
 | 服务器管理 | 增删改查（可选项目级/全局）、连接 / 断开 / 重连；配置版本化 JSON，原子写入 |
 | 两种传输 | stdio（本地子进程，env 支持 `${ENV}` 引用）与 streamable-http（远程，header 支持 `${ENV}` 引用，自动回传 `Mcp-Session-Id`） |
 | JSON 导入 | 粘贴 mcpServers JSON 文本导入（仅 JSON 格式；不扫描任何应用配置文件） |
-| 模型工具 | 全局服务器工具以 `mcp__<server>__<tool>` 注册（64 字符、`[A-Za-z0-9_-]`、冲突时哈希后缀）；项目级服务器默认经中间层 `ws_mcp_search` / `ws_mcp_call` 访问（`middleware: project`，推荐），不同工作空间互不冲突 |
+| 模型工具 | 全局服务器工具以 `mcp__<server>__<tool>` 注册（64 字符、`[A-Za-z0-9_-]`、冲突时哈希后缀）；项目级服务器默认经中间层 `ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call` 访问（`middleware: project`，推荐），不同工作空间互不冲突 |
 | 工作空间隔离 | 中间层按调用方会话当前 cwd 路由到对应工作空间的连接池；server 全名 `@<root>/<server>` 一致性校验防跨空间串台 |
 | 断线重连 | 有界指数退避（500ms 起、30s 上限、10 次后停止后台重试；用户手动连接或 ws_mcp_call 触发可再试） |
 | 结果截断 | 工具结果按 8KB 截断并标注（防超长 JSON 全量进上下文） |
@@ -121,12 +124,22 @@ SSE events 通道推送一变，客户端自动重新拉取 `/api/dsh-mcp/config
 ## 配置（中间层）
 
 项目级 MCP 经中间层访问（`middleware: project`，默认）：项目级服务器不再注册
-`mcp__` 工具，改经模型面两个原子工具访问——`ws_mcp_search`（先检索当前工作空间 MCP
-工具）/ `ws_mcp_call`（按 `@<root>/<server>` 全名调用），执行时按调用方会话当前 cwd
-路由到对应工作空间连接池，不同工作空间注入不同 MCP、无命名冲突；全局服务器仍直呼
-`mcp__<server>__<tool>`。切换 `middleware: off` 回到旧行为（项目级也直接注册 `mcp__`
-工具）；`middleware: all` 则全局服务器也走中间层（cwd 无项目时回落全局虚拟 root
-`@global`），模型面完全收敛为两个原子工具。
+`mcp__` 工具，改经模型面四个原子工具访问（两级发现，业界标准形态）——
+`ws_mcp_list`（完整盘点当前工作空间全部服务器 + 每台完整工具清单，不受
+`ws_mcp_search` 的 limit 截断；支持 `server` 全名/裸名过滤，`perServerLimit`
+每服务器工具条数上限默认 50 / 上限 500，超限置 `toolsTruncated`；空返回附明确
+`message`）/ `ws_mcp_detail`（按 `@<root>/<server>` + tool 裸名精确查询单工具
+完整 `inputSchema`，错误三分：发现失败附原因 / 服务器未连接或未发现 / 工具
+不存在）/ `ws_mcp_search`（关键词检索，先搜后调，输出 `truncated` 标志提示结果是否因
+limit 截断）/ `ws_mcp_call`（按 `@<root>/<server>` 全名调用，参数 schema 用
+`ws_mcp_detail` 核对），执行时按调用方会话当前 cwd 路由到对应工作空间
+连接池，不同工作空间注入不同 MCP、无命名冲突；全局服务器仍直呼
+`mcp__<server>__<tool>`。切换 `middleware: off` 回到旧行为（项目级也直接注册
+`mcp__` 工具）；`middleware: all` 则全局服务器也走中间层（cwd 无项目时回落全局
+虚拟 root `@global`），模型面完全收敛为四个原子工具——此时 list/search/detail
+合并查询「项目 root 单元 + `@global` 单元」，call 放行 `@global` root（全局配置
+跨工作空间共享，语义成立）。注：all 模式全局服务器增删改后需重启或触发会话
+触达才刷新目录（既有行为）。
 
 | 键 | 值域 | 默认 |
 | --- | --- | --- |
@@ -154,6 +167,11 @@ SSE events 通道推送一变，客户端自动重新拉取 `/api/dsh-mcp/config
 - **工作空间隔离（中间层）**：路由以调用方会话当前 cwd 为唯一输入；server
   全名一致性校验（参数声明的 root ≠ 路由 root → 拒绝）防跨空间串台；
   策略 guard（allowTools/denyTools，deny 优先）按 `@<root>/<server>` 全名或裸名配置（全名优先，工作空间隔离）
+- **中间层工具只读边界**：`ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` 纯读
+  本地目录缓存（不触达远端服务器、不执行工具），不经过策略 guard；`ws_mcp_call`
+  是唯一执行远端工具并受策略约束（deny 优先）的入口；`ws_mcp_call` 错误消息按
+  「显式 + 下一步」规范给出（确认 server 连接 / 用 `ws_mcp_detail` 核对参数 /
+  检查策略配置）
 - **凭据脱敏**：目录摘要与错误路径经 redactor 把 env/headers/URL 用户信息等
   凭据形状替换为 `[REDACTED]`
 - 能力目录注入含来源标注与"不代表当前连接状态"说明
@@ -173,6 +191,8 @@ node test/smoke.mjs
 
 - 不订阅 MCP 的 `tools/list_changed` 通知（无 SSE 长连接）；工具列表变化在
   重连 / 手动刷新时重新同步
+- 中间层目录是「采集边界内的 last-good 快照」（单服务器 ≤512 工具 / ≤256KB 总量），
+  发现失败时 list 透出 `unavailable` 原因
 - 仅桥接工具能力；MCP 的 resources 与 prompts 尚无 harness 消费接口
 - 依赖 Node ≥ 20
 

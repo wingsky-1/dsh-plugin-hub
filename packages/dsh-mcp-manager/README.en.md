@@ -12,18 +12,20 @@ Three middleware modes (`middleware`): `off` — all servers register directly a
 `mcp__<server>__<tool>` (legacy behavior); `project` (**default**) — project-level
 servers go through the middleware while global ones register directly; `all` — global
 servers go through the middleware too, falling back to the virtual global root
-`@global` when cwd has no project, collapsing the model surface to exactly two atomic
-tools. Note on when changes take effect: `middleware` / `middlewarePolicy` are read
+`@global` when cwd has no project, collapsing the model surface to exactly four atomic
+tools (`ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call`).
+Note on when changes take effect: `middleware` / `middlewarePolicy` are read
 once at plugin startup — **changing them requires restarting `dsh web`**; the server
 lists across both config tiers hot-reload without a restart (add/remove/toggle/edit).
 
 ## Core advantages
 
 - **Context cost under control**: project-level MCP is collapsed through the middleware
-  by default — the model surface carries only `ws_mcp_search` / `ws_mcp_call`, so no
-  matter how many project-level servers or tools the current workspace connects the
-  system prompt never balloons; `middleware: all` folds global servers in too for full
-  collapse
+  by default — the model surface carries only `ws_mcp_list` / `ws_mcp_detail` /
+  `ws_mcp_search` / `ws_mcp_call`, so no matter how many project-level servers or tools
+  the current workspace connects the system prompt never balloons; `middleware: all`
+  folds global servers in too for full collapse (two-level discovery: `ws_mcp_list`
+  for a full inventory → `ws_mcp_detail` to pull the complete schema on demand)
 - **Per-working-directory maintenance**: project-level config `<project root>/.dsh/mcp.json`
   travels with the repo and can be committed to git for team sharing; global config
   `<DSH_HOME>/dsh-mcp.json` stays always connected; switching sessions auto-loads the
@@ -95,7 +97,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
 | Server management | CRUD (project-level/global optional), connect / disconnect / reconnect; versioned JSON config, atomic write |
 | Two transports | stdio (local subprocess, env supports `${ENV}` references) and streamable-http (remote, header supports `${ENV}` references, auto-echoes `Mcp-Session-Id`) |
 | JSON import | Paste `mcpServers` JSON text to import (JSON format only; does not scan any application config files) |
-| Model tools | Global servers register directly as `mcp__<server>__<tool>` (64 chars, `[A-Za-z0-9_-]`, hashed suffix on conflict); project-level servers go through the middleware's `ws_mcp_search` / `ws_mcp_call` by default (`middleware: project`, recommended), so workspaces never clash |
+| Model tools | Global servers register directly as `mcp__<server>__<tool>` (64 chars, `[A-Za-z0-9_-]`, hashed suffix on conflict); project-level servers go through the middleware's `ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call` by default (`middleware: project`, recommended), so workspaces never clash |
 | Workspace isolation | The middleware routes by the calling session's cwd to the matching workspace connection pool; server full-name consistency checks (`@<root>/<server>`) prevent cross-workspace crosstalk |
 | Reconnection | Exponential backoff (starts at 500ms, caps at 30s, gives up after 10 attempts and deregisters the tools) |
 | Result truncation | Direct-connect tool results truncated at 8KB and marked (prevents oversized JSON from entering context in full) |
@@ -143,6 +145,36 @@ without manually refreshing the page: the host pushes a frame over the existing 
 channel, and the client automatically re-fetches `/api/dsh-mcp/config` and updates the
 floating position in place.
 
+## Configuration (middleware)
+
+Project-level MCP goes through the middleware (`middleware: project`, default):
+project-level servers no longer register `mcp__` tools; instead the model surface carries
+four atomic tools (two-level discovery, the standard MCP ecosystem shape) —
+`ws_mcp_list` (full inventory of the current workspace's servers and each server's
+complete tool list, not truncated by `ws_mcp_search`'s `limit`; supports `server`
+full-name/bare-name filtering; `perServerLimit` caps tools per server at 50 by default
+/ 500 max, setting `toolsTruncated` when exceeded; empty results carry an explicit
+`message`) / `ws_mcp_detail` (exact single-tool lookup by `@<root>/<server>` + bare tool
+name, returning the complete `inputSchema`; three-way errors: discovery failed with
+reason / server not connected or not found / tool does not exist) / `ws_mcp_search` (keyword search, search first then call; returns a `truncated` flag
+when results hit the `limit`) / `ws_mcp_call` (invoke by `@<root>/<server>`, verify
+argument schema with `ws_mcp_detail`), routed by the calling session's current cwd to
+the matching workspace connection pool, so different workspaces inject different MCPs
+without name clashes; global servers still register directly as `mcp__<server>__<tool>`. Switch
+`middleware: off` to restore the legacy behavior (project-level also registers `mcp__`);
+`middleware: all` routes global servers through the middleware too (falling back to the
+virtual global root `@global` when cwd has no project), collapsing the model surface to
+exactly four atomic tools — list/search/detail then merge queries across the "project
+root unit + `@global` unit", and call allows the `@global` root (global config is shared
+across workspaces, so the semantics hold). Note: in `all` mode, global server
+add/remove/edit refreshes the `@global` unit only after a restart or a session touch
+(existing behavior).
+
+| Key | Allowed values | Default |
+| --- | --- | --- |
+| `middleware` | `off` / `project` (recommended) / `all` | `project` |
+| `middlewarePolicy` | `{ allowTools: {<serverKey>: [glob]}, denyTools: {<serverKey>: [glob]} }` (serverKey is `@<root>/<server>` full name (workspace isolation) or bare name (shared across workspaces); full name wins; deny-first) | `{}` |
+
 ## Routes (all loopback-fenced)
 
 | Route | Description |
@@ -163,6 +195,12 @@ floating position in place.
   process's permissions; only configure trusted servers
 - **MCP tools execute on the real server — confirm before acting**; tool results are returned
   as-is and may contain sensitive information; treat tool descriptions/results as untrusted input
+- **Middleware tool read-only boundary**: `ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search`
+  only read the local catalog cache (never touch remote servers or execute tools) and bypass
+  the policy guard; `ws_mcp_call` is the only entry point that executes remote tools and is
+  governed by the policy (deny-first); `ws_mcp_call` error messages follow an
+  "explicit + next step" style (confirm the server connection / verify the argument schema
+  with `ws_mcp_detail` / check the policy configuration)
 - The capability catalog injection includes source annotations and a "does not represent current
   connection status" note
 
@@ -181,6 +219,9 @@ node test/smoke.mjs
 
 - Does not subscribe to the MCP `tools/list_changed` notification (no long-lived SSE
   connection); tool list changes are re-synced on reconnect / manual refresh
+- The middleware catalog is a "last-good snapshot within collection bounds" (≤512 tools /
+  ≤256KB total per server); on discovery failure `ws_mcp_list` surfaces the `unavailable`
+  reason
 - Only bridges tool capabilities; MCP resources and prompts have no harness consumption
   interface yet
 - Requires Node ≥ 20
