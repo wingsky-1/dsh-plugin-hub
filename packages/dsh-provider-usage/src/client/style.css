@@ -62,7 +62,7 @@
   border: 1px solid var(--dsw-alias-border-l1, #e2e4ea);
   border-radius: 10px;
   box-shadow: 0 10px 32px rgba(0, 0, 0, 0.18);
-  z-index: 70;
+  z-index: 40;
   padding: 12px 14px;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   font-size: 12px;

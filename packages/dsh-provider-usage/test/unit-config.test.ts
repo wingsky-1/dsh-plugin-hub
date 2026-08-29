@@ -448,7 +448,7 @@ assert.equal(normalizeUiConfig({ zIndexBase: 9000 }).zIndexBase, Z_INDEX_BASE_MA
 assert.equal(normalizeUiConfig({ zIndexBase: 99999 }).zIndexBase, Z_INDEX_BASE_MAX, "超上界压到 9000");
 assert.equal(normalizeUiConfig({ zIndexBase: "x" }).zIndexBase, DEFAULT_UI_CONFIG.zIndexBase, "非数字字符串回退默认");
 assert.equal(normalizeUiConfig({ zIndexBase: Number.NaN }).zIndexBase, DEFAULT_UI_CONFIG.zIndexBase, "NaN 回退默认");
-assert.equal(panelZIndexFor(40), 70, "面板层级派生 base+30");
+assert.equal(panelZIndexFor(40), 70, "子浮层派生扩展点 base+30（B5，主面板与胶囊取配置值）");
 
 // #128 断点判定纯函数分支翻转 + 视口终 clamp（safe-area inset 恒 0 自然退化）
 assert.equal(breakpointForWidth(320), "narrow", "手机竖屏 narrow");

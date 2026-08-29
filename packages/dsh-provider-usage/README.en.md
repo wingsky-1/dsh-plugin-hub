@@ -125,7 +125,8 @@ places the capsule just below the MCP-manager float (also top-right, 8px from th
 so the two floats never overlap out of the box. The capsule and the MCP float do not probe or
 dodge each other — each is positioned solely by its own plugin config; the 10px panel gap keeps the
 panel tight under the capsule. The z-index base (default 40, matching the CSS default
-`z-index: 40`; the panel derives base + 30) is clamped to 1-9000.
+`z-index: 40`; **the pill and the main panel opened on click both use this same config
+value**) is clamped to 1-9000.
 
 **Mobile / tablet adaptation** (issue #128): the breakpoint is decided from the conversation
 container's viewport width rather than a window media query — on narrow screens (<=480px,

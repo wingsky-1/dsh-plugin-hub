@@ -31,7 +31,8 @@ import {
   clampPointToViewport,
   clampZIndexBase,
   panelAnchorForPlacement,
-  panelZIndexFor,
+  composerDockedAtBottom,
+  bottomAnchorEdge,
 } from "../placement-math.ts";
 // React externals 路径：运行时由 dsh web factory require("react") 注入
 import * as React from "react";
@@ -127,10 +128,11 @@ function repositionPill(pill: HTMLElement, target: HTMLElement): void {
   const bp = breakpointForWidth(rect.width);
   if (pill.dataset.douBp !== bp) pill.dataset.douBp = bp;
   if (floatPanel !== undefined && floatPanel.dataset.douBp !== bp) floatPanel.dataset.douBp = bp;
-  // 层级：胶囊取配置基准（clamp 1-9000），面板派生基准+30。
+  // 层级：胶囊与点击后弹出的主面板 computed z-index 一律取配置基准（clamp 1-9000），
+  // 不再派生 +30（维护者 2026-08-28 要求 #128，B2）；面板内子浮层可派生见 panelZIndexFor。
   const zBase = clampZIndexBase(uiConfig.zIndexBase, DEFAULT_Z_INDEX_BASE);
   pill.style.zIndex = String(zBase);
-  if (floatPanel !== undefined) floatPanel.style.zIndex = String(panelZIndexFor(zBase));
+  if (floatPanel !== undefined) floatPanel.style.zIndex = String(zBase);
   const isBottom = panelAnchorForPlacement(uiConfig.placement) === "bottom";
   const isLeft = uiConfig.placement === "top-left" || uiConfig.placement === "bottom-left";
   pill.style.position = "fixed";
@@ -139,9 +141,17 @@ function repositionPill(pill: HTMLElement, target: HTMLElement): void {
   const rawLeft = isLeft
     ? Math.max(0, rect.left + uiConfig.offsetX)
     : Math.max(0, rect.right - pill.offsetWidth - uiConfig.offsetX);
-  // 垂直：bottom 锚点 → 容器底 - 高 - offsetY（clamp 到视口上缘防溢出）；top 锚点 → 容器顶 + offsetY
+  // 垂直：bottom 锚点 → 容器底 - 高 - offsetY（clamp 到视口上缘防溢出）；top 锚点 → 容器顶 + offsetY。
+  // #128 重开回归修复：bottom-* 在断点非 wide 且 composer seat 贴底时，把下边界换成
+  // seat.top（胶囊上移到输入区上方，避免遮挡输入卡片）；否则维持 container.bottom（桌面零回归）。
+  let bottomEdge = rect.bottom;
+  if (isBottom && bp !== "wide") {
+    const seat = document.querySelector<HTMLElement>("[data-composer-seat]");
+    const seatRect = seat !== null ? seat.getBoundingClientRect() : null;
+    bottomEdge = bottomAnchorEdge(rect.bottom, seatRect?.top ?? null, composerDockedAtBottom(seatRect, rect));
+  }
   const rawTop = isBottom
-    ? Math.max(6, rect.bottom - pill.offsetHeight - uiConfig.offsetY)
+    ? Math.max(6, bottomEdge - pill.offsetHeight - uiConfig.offsetY)
     : Math.max(0, rect.top + uiConfig.offsetY);
   // 终坐标视口 clamp（safe-area 语义：宿主无 viewport-fit=cover → inset 恒 0，
   // 自然退化为普通 clamp，桌面行为不回归）。
