@@ -192,7 +192,7 @@ const main = async () => {
   });
   check("client source contract（load id/IIFE/use strict/load once）", () => assertClientSourceContract(pkgDir));
   check("client product contract（执行断言：arrive 可解析/apply/inject）", () => assertClientProductContract(pkgDir));
-  await checkAsync("中间层工具注册（ws_mcp_search / ws_mcp_call + 路由一致性）", async () => {
+  await checkAsync("中间层工具注册（ws_mcp_search / ws_mcp_call / ws_mcp_list / ws_mcp_detail + 路由一致性）", async () => {
     const { registerMiddlewareTools, McpMiddleware, fullServerName, parseFullServerName } = await import("../lib/index.js");
     const registered = [];
     const ctx = { tools: { register: (def) => { registered.push(def); return () => {}; } } };
@@ -212,17 +212,109 @@ const main = async () => {
       return cwd === "/proj" ? "/proj" : undefined;
     });
     const names = registered.map((def) => def.name).sort();
-    assert.deepEqual(names, ["ws_mcp_call", "ws_mcp_search"], "两个中间层工具注册");
+    assert.deepEqual(names, ["ws_mcp_call", "ws_mcp_detail", "ws_mcp_list", "ws_mcp_search"], "四个中间层工具注册");
     assert.match(registered.find((d) => d.name === "ws_mcp_search").description, /ws_mcp_call/, "search 描述引导先搜后调");
+    assert.match(registered.find((d) => d.name === "ws_mcp_list").description, /ws_mcp_detail/, "list 描述引导两级发现");
+    assert.match(registered.find((d) => d.name === "ws_mcp_detail").description, /inputSchema/, "detail 描述说明完整 schema");
     // 路由：agent-less → 显式失败
     const searchDef = registered.find((d) => d.name === "ws_mcp_search");
     const callDef = registered.find((d) => d.name === "ws_mcp_call");
+    const listDef = registered.find((d) => d.name === "ws_mcp_list");
+    const detailDef = registered.find((d) => d.name === "ws_mcp_detail");
     await assert.rejects(() => searchDef.execute({}, { agent: undefined }), /无法确定工作空间/);
+    await assert.rejects(() => listDef.execute({}, { agent: undefined }), /无法确定工作空间/);
+    await assert.rejects(() => detailDef.execute({}, { agent: undefined }), /无法确定工作空间/);
     // 路由：有 agent 但 cwd 无项目 → 显式失败（ws_mcp_call 缺 server 参数先报必填）
     await assert.rejects(() => callDef.execute({}, { agent: { session: { header: { cwd: "/other" } } } }), /无法确定工作空间|server 与 tool 均为必填/);
+    // 空返回提示：无项目配置 → list 返回 message
+    const emptyList = await listDef.execute({}, { agent: { session: { header: { cwd: "/proj" } } } });
+    assert.equal(emptyList.totalServers, 0);
+    assert.equal(emptyList.totalTools, 0);
+    assert.match(emptyList.message, /没有可用 MCP 服务器|没有项目级 MCP 配置/, "空返回明确提示");
+    // detail 必填校验
+    await assert.rejects(() => detailDef.execute({}, { agent: { session: { header: { cwd: "/proj" } } } }), /server 与 tool 均为必填/);
     // server 全名解析往返
     const full = fullServerName("/proj", "ctx");
     assert.deepEqual(parseFullServerName(full), { root: "/proj", server: "ctx" });
+    dispose();
+  });
+  await checkAsync("中间层 all 模式：@global 覆盖（list/search 可见全局，call 放行 @global）", async () => {
+    const { registerMiddlewareTools, McpMiddleware, fullServerName, MIDDLEWARE_GLOBAL_ROOT } = await import("../lib/index.js");
+    const registered = [];
+    const ctx = { tools: { register: (def) => { registered.push(def); return () => {}; } } };
+    const host = {
+      ctx,
+      logger: { info: () => {}, warn: () => {}, error: () => {} },
+      projectServersFor: async (root) => {
+        if (root === MIDDLEWARE_GLOBAL_ROOT) return [{ name: "gctx", transport: "stdio", command: "npx", enabled: true }];
+        return [{ name: "ctx", transport: "stdio", command: "npx", enabled: true }];
+      },
+      globalServers: () => [{ name: "gctx", transport: "stdio", command: "npx", enabled: true }],
+      normalizedProjectRoot: async (cwd) => (cwd === "/proj" ? "/proj" : undefined),
+      saveUserState: async () => {},
+      emitStatus: () => {},
+      catalogCachePath: () => "/tmp/cache.json",
+    };
+    const mw = new McpMiddleware(host, {});
+    // 预置目录（模拟 last-good 已发现；不 spawn 子进程）。
+    const projUnit = {
+      root: "/proj",
+      connections: new Map(),
+      catalog: new Map([["ctx", {
+        discoveredAt: Date.now(),
+        tools: new Map([["use_ctx", { description: "项目工具", inputSchema: {} }]]),
+      }]]),
+      userDisabled: new Set(),
+      lastTouchedAt: Date.now(),
+      inFlight: new Map(),
+    };
+    const globalUnit = {
+      root: MIDDLEWARE_GLOBAL_ROOT,
+      connections: new Map(),
+      catalog: new Map([["gctx", {
+        discoveredAt: Date.now(),
+        tools: new Map([["use_g", { description: "全局工具", inputSchema: {} }]]),
+      }]]),
+      userDisabled: new Set(),
+      lastTouchedAt: Date.now(),
+      inFlight: new Map(),
+    };
+    mw.units.set("/proj", projUnit);
+    mw.units.set(MIDDLEWARE_GLOBAL_ROOT, globalUnit);
+    const dispose = registerMiddlewareTools(ctx, mw, async (agent) => {
+      const cwd = agent?.session?.header?.cwd;
+      return cwd === "/proj" ? "/proj" : undefined;
+    }, "all");
+    const names = registered.map((def) => def.name).sort();
+    assert.deepEqual(names, ["ws_mcp_call", "ws_mcp_detail", "ws_mcp_list", "ws_mcp_search"], "all 模式注册四个工具");
+    const searchDef = registered.find((d) => d.name === "ws_mcp_search");
+    const callDef = registered.find((d) => d.name === "ws_mcp_call");
+    const listDef = registered.find((d) => d.name === "ws_mcp_list");
+    const detailDef = registered.find((d) => d.name === "ws_mcp_detail");
+    const agent = { session: { header: { cwd: "/proj" } } };
+    // list：项目 root + @global 合并可见
+    const listed = await listDef.execute({}, { agent });
+    assert.ok(listed.servers.some((s) => s.server === fullServerName("/proj", "ctx")), "list 含项目服务器");
+    assert.ok(listed.servers.some((s) => s.server === fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx")), "all 模式 list 含 @global 服务器");
+    assert.equal(listed.mode, "all");
+    // search：合并查询命中 @global 工具
+    const found = await searchDef.execute({ query: "全局" }, { agent });
+    assert.ok(found.results.some((hit) => hit.server === fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx")), "all 模式 search 含 @global 命中");
+    // detail：@global 可查
+    const detail = await detailDef.execute({ server: fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx"), tool: "use_g" }, { agent });
+    assert.equal(detail.server, fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx"));
+    assert.equal(detail.tool, "use_g");
+    // call：all 模式放行 @global root（预置 client 无法调用——此处断言路由放行后
+    // 落到连接/调用错误而非「不属于当前工作空间」路由拒绝）。
+    await assert.rejects(
+      () => callDef.execute({ server: fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx"), tool: "use_g" }, { agent }),
+      /未连接|未就绪|连接失败|已禁用/,
+    );
+    // call：非当前 root 的项目 root 仍拒绝（防跨空间串台）。
+    await assert.rejects(
+      () => callDef.execute({ server: fullServerName("/other", "ctx"), tool: "use_ctx" }, { agent }),
+      /不属于当前工作空间/,
+    );
     dispose();
   });
   check("client 注册 settings.plugin.item 卡（id/key = 宿主命名空间 dsh-mcp-manager）", () => {
