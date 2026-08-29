@@ -74,8 +74,10 @@ export type { UiPlacementConfig, ClientUiConfig } from "./types.ts";
 export { McpManager, MIDDLEWARE_GLOBAL_ROOT } from "./manager.ts";
 
 // 核心化 service（官方 storageDomain 模式）：ctx.mcpManager 类型面 + 声明合并。
+// 副作用导入写 .js 形态（NodeNext）：tsc 对 .ts 的 rewrite 不作用于声明文件，
+// 写 .js 才能让 lib/index.d.ts 里的 import 被消费方解析（修阶段1 类型面 bug）。
 export type { McpManagerServerInput, McpManagerService } from "./service.ts";
-import "./service.ts";
+import "./service.js";
 
 // 存储
 export { defaultStorePath, McpStore } from "./store.ts";

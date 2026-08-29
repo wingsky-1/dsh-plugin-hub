@@ -45,7 +45,7 @@ export function syncCodegraph(
   });
 }
 
-/** 执行 codegraph explore（CLI 形态，与 MCP 工具同输出）。 */
+/** 执行 codegraph explore（CLI 形态，与 MCP 工具同输出；-p/--path 指定项目）。 */
 export function exploreCodegraph(
   query: string,
   projectPath: string,
@@ -54,7 +54,7 @@ export function exploreCodegraph(
   return new Promise((resolvePromise) => {
     execFile(
       "codegraph",
-      ["explore", query, "--project", projectPath],
+      ["explore", query, "--path", projectPath],
       { env, timeout: 30000, maxBuffer: 1024 * 1024 },
       (error, stdout, stderr) => {
         if (error !== null) {
