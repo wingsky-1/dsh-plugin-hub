@@ -65,7 +65,8 @@ export function registerMiddlewareTools(
 
   const search: ToolDefinition = {
     name: "ws_mcp_search",
-    description: "检索当前工作空间的 MCP 工具目录。先用本工具检索，再 ws_mcp_call 调用。空 query 返回能力摘要表。",
+    description:
+      "检索当前工作空间的 MCP 工具目录（关键词命中 server 名/工具名/描述/参数名，返回命中条目）。先用本工具检索，再 ws_mcp_call 调用；完整盘点请用 ws_mcp_list（本工具仅关键词检索）。空 query 返回能力摘要表。",
     parameters: {
       type: "object",
       properties: {
@@ -80,19 +81,21 @@ export function registerMiddlewareTools(
         properties: {
           results: { type: "array", items: {} },
           unavailable: { type: "array", items: {} },
+          truncated: { type: "boolean", description: "结果是否因 limit 截断（results 达到 limit 时为 true，提示模型可能未列全）" },
         },
-        required: ["results", "unavailable"],
+        required: ["results", "unavailable", "truncated"],
         additionalProperties: false,
       },
       render(_args, value: unknown) {
-        const v = (value ?? {}) as { results?: Array<Record<string, unknown>>; unavailable?: Array<Record<string, unknown>> };
+        const v = (value ?? {}) as { results?: Array<Record<string, unknown>>; unavailable?: Array<Record<string, unknown>>; truncated?: unknown };
         const lines = (v.results ?? []).map((hit) => {
           const server = String(hit.server ?? "");
           const tool = String(hit.tool ?? "");
           const description = String(hit.description ?? "");
           return `${server}/${tool}: ${description}`;
         });
-        const body = lines.length > 0 ? lines.join("\n") : "（当前工作空间没有匹配的 MCP 工具）";
+        let body = lines.length > 0 ? lines.join("\n") : "（当前工作空间没有匹配的 MCP 工具）";
+        if (v.truncated === true) body += "\n（结果已达 limit，可能未列全——可调大 limit 或用 ws_mcp_list 完整盘点）";
         const unavailable = (v.unavailable ?? []).map((entry) => `${String(entry.server ?? "")}: ${String(entry.reason ?? "")}`);
         return [{ type: "text", text: unavailable.length > 0 ? `${body}\n\n不可用服务器：\n${unavailable.join("\n")}` : body }];
       },
@@ -120,19 +123,26 @@ export function registerMiddlewareTools(
       }
       const { results, unavailable } = searchCatalogMulti(mw.units, roots, query, limit);
       const filtered = serverFilter === undefined ? results : results.filter((hit) => hit.server === serverFilter);
-      return { results: filtered, unavailable };
+      // truncated：结果达到 limit 即置 true（提示模型可能未列全；可按需调大 limit 或改用 ws_mcp_list）。
+      const truncated = filtered.length >= limit;
+      return { results: filtered, unavailable, truncated };
     },
   };
 
   const call: ToolDefinition = {
     name: "ws_mcp_call",
-    description: "调用当前工作空间的一个 MCP 工具。server/tool 来自 ws_mcp_search 返回（已知时可直呼，免搜索）。",
+    description:
+      "调用当前工作空间的一个 MCP 工具（在真实服务器上执行，先确认再操作）。server/tool 来自 ws_mcp_search 或 ws_mcp_list；参数 schema 用 ws_mcp_detail 查询（已知时可直呼，免搜索）。",
     parameters: {
       type: "object",
       properties: {
-        server: { type: "string", description: "必须：@<root>/<server> 全名（来自 ws_mcp_search）" },
-        tool: { type: "string", description: "必须：远端工具裸名（来自 ws_mcp_search）" },
-        arguments: { type: "object", additionalProperties: true, description: "参数，匹配 ws_mcp_search 返回的 inputSchema" },
+        server: { type: "string", description: "必须：@<root>/<server> 全名（来自 ws_mcp_search / ws_mcp_list）" },
+        tool: { type: "string", description: "必须：远端工具裸名（来自 ws_mcp_search / ws_mcp_list）" },
+        arguments: {
+          type: "object",
+          additionalProperties: true,
+          description: "参数，匹配 ws_mcp_detail 返回的 inputSchema（properties/required/enum/description）；拿不准时先用 ws_mcp_detail 核对",
+        },
       },
       required: ["server", "tool"],
     },
@@ -197,13 +207,13 @@ export function registerMiddlewareTools(
   const list: ToolDefinition = {
     name: "ws_mcp_list",
     description:
-      "完整盘点当前工作空间的 MCP 服务器与每台服务器全部工具（不受关键词/limit 截断；工具数受 perServerLimit 保护）。先 ws_mcp_list 全量盘点，再 ws_mcp_detail 查单工具完整 schema，需要执行时 ws_mcp_call。空返回 message 说明原因（未配置或发现中）。",
+      "列出当前工作空间全部 MCP 服务器与每台服务器的完整工具清单（不受检索 limit 截断）。返回服务器全名、工具名与描述，供盘点与后续 ws_mcp_detail / ws_mcp_call 使用。不返回 inputSchema——查单个工具完整 schema 请用 ws_mcp_detail。all 模式下含全局服务器。",
     parameters: {
       type: "object",
       properties: {
         server: {
           type: "string",
-          description: "可选：@<root>/<server> 全名或裸名过滤（全名 root 不属于当前工作空间 → 抛路由一致性错误）",
+          description: `可选：@<root>/<server> 全名或裸名过滤，只列出该服务器的工具（全名 root 不属于当前工作空间 → 抛路由一致性错误）`,
         },
         perServerLimit: {
           type: "number",
@@ -288,12 +298,12 @@ export function registerMiddlewareTools(
   const detail: ToolDefinition = {
     name: "ws_mcp_detail",
     description:
-      "按 @<root>/<server> + tool 裸名精确查询单个 MCP 工具的完整详情（完整 inputSchema：properties/required/enum/description），不受关键词与 limit 截断。server/tool 来自 ws_mcp_list / ws_mcp_search 返回。错误三分：server 发现失败（附原因）/ server 未连接或未发现 / tool 不存在。",
+      "按 @<root>/<server> 全名 + 工具裸名精确查询单个 MCP 工具的完整参数 schema（inputSchema：properties/required/enum/description）。供 ws_mcp_call 前核对参数。不做关键词检索——找工具用 ws_mcp_list 或 ws_mcp_search。",
     parameters: {
       type: "object",
       properties: {
         server: { type: "string", description: "必须：@<root>/<server> 全名（来自 ws_mcp_list / ws_mcp_search）" },
-        tool: { type: "string", description: "必须：远端工具裸名（兼容 mcp__<server>__<tool> 前缀）" },
+        tool: { type: "string", description: "必须：远端工具裸名（来自 ws_mcp_list / ws_mcp_search；兼容 mcp__<server>__<tool> 前缀）" },
       },
       required: ["server", "tool"],
     },

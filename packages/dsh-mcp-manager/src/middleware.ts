@@ -352,24 +352,24 @@ export class McpMiddleware {
     }
     const unit = this.units.get(parsed.root);
     if (unit === undefined) {
-      throw new Error(`ws_mcp_call: 工作空间 ${JSON.stringify(parsed.root)} 未激活；请先 ws_mcp_search`);
+      throw new Error(`ws_mcp_call: 工作空间 ${JSON.stringify(parsed.root)} 未激活；请先 ws_mcp_search 或 ws_mcp_list`);
     }
     const entry = unit.connections.get(parsed.server);
     if (entry === undefined || entry.status === "failed") {
       if (unit.userDisabled.has(parsed.server)) {
-        throw new Error(`ws_mcp_call: server ${JSON.stringify(fullName)} 已被用户禁用`);
+        throw new Error(`ws_mcp_call: server ${JSON.stringify(fullName)} 已被用户禁用；可先在 GUI「MCP」浮窗中重新连接`);
       }
-      throw new Error(`ws_mcp_call: server ${JSON.stringify(fullName)} 未连接或连接失败，请先 ws_mcp_search`);
+      throw new Error(`ws_mcp_call: server ${JSON.stringify(fullName)} 未连接或连接失败，请先 ws_mcp_search 或 ws_mcp_list 确认 server 已连接`);
     }
     if (entry.status === "connecting") {
-      throw new Error(`ws_mcp_call: server ${JSON.stringify(fullName)} 连接仍在进行，请稍后重试`);
+      throw new Error(`ws_mcp_call: server ${JSON.stringify(fullName)} 连接仍在进行，请稍后重试；连接完成后再调用`);
     }
     const tool = normalizeToolName(parsed.server, toolRaw);
     // 策略键支持全名（@root/server，工作空间隔离）或裸名（跨空间共用）。
     const policyKey = fullServerName(parsed.root, parsed.server);
     if (!policyAllows(this.policy, policyKey, tool)) {
       const reason = policyDenialReason(this.policy, policyKey, tool);
-      throw new Error(reason ?? `ws_mcp_call: 工具 ${JSON.stringify(`${policyKey}/${tool}`)} 被策略拒绝`);
+      throw new Error(`${reason ?? `ws_mcp_call: 工具 ${JSON.stringify(`${policyKey}/${tool}`)} 被策略拒绝`}；如需放行请调整 middlewarePolicy 配置`);
     }
     const catalog = unit.catalog.get(parsed.server);
     const stale =
@@ -378,7 +378,7 @@ export class McpMiddleware {
       // stale：仍可调用（目录只是提示），但 schema 可能过期——在结果前置提示。
     }
     if (entry.client === undefined) {
-      throw new Error(`ws_mcp_call: server ${JSON.stringify(fullName)} 未就绪（client 缺失）`);
+      throw new Error(`ws_mcp_call: server ${JSON.stringify(fullName)} 未就绪（client 缺失）；请稍后重试或重新连接`);
     }
     const args = normalizeArguments(rawArgs);
     try {
@@ -388,12 +388,12 @@ export class McpMiddleware {
           timeoutMs: CALL_TIMEOUT_MS,
         }),
         CALL_TIMEOUT_MS + 2000,
-        `ws_mcp_call: 调用超时（${CALL_TIMEOUT_MS}ms），可重试`,
+        `ws_mcp_call: 调用超时（${CALL_TIMEOUT_MS}ms），可重试；若反复超时请用 ws_mcp_detail 核对参数或检查服务器状态`,
         signal,
       );
       const resultObj = result as { content?: unknown; isError?: unknown; structuredContent?: unknown } | undefined;
       if (resultObj?.isError === true) {
-        throw new Error(this.hostRedact(`ws_mcp_call: 远端工具返回错误：${msgOf(resultObj.content)}`));
+        throw new Error(this.hostRedact(`ws_mcp_call: 远端工具返回错误：${msgOf(resultObj.content)}；可先用 ws_mcp_detail 核对参数 schema 后重试`));
       }
       if (stale) {
         // schema 可能已过期：结果前置提示（不改变调用结果结构）。
@@ -404,7 +404,7 @@ export class McpMiddleware {
       return resultObj;
     } catch (error) {
       if (signal?.aborted === true) throw signal.reason;
-      throw new Error(this.hostRedact(`ws_mcp_call: ${JSON.stringify(`${parsed.server}/${tool}`)} 调用失败：${msgOf(error)}`));
+      throw new Error(this.hostRedact(`ws_mcp_call: ${JSON.stringify(`${parsed.server}/${tool}`)} 调用失败：${msgOf(error)}；可先用 ws_mcp_detail 核对参数 schema，或确认服务器已连接后重试`));
     }
   }
 

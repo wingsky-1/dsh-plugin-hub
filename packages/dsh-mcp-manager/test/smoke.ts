@@ -214,13 +214,31 @@ const main = async () => {
     const names = registered.map((def) => def.name).sort();
     assert.deepEqual(names, ["ws_mcp_call", "ws_mcp_detail", "ws_mcp_list", "ws_mcp_search"], "四个中间层工具注册");
     assert.match(registered.find((d) => d.name === "ws_mcp_search").description, /ws_mcp_call/, "search 描述引导先搜后调");
-    assert.match(registered.find((d) => d.name === "ws_mcp_list").description, /ws_mcp_detail/, "list 描述引导两级发现");
+    assert.match(registered.find((d) => d.name === "ws_mcp_search").description, /ws_mcp_list/, "search 描述互引完整盘点");
+    assert.match(registered.find((d) => d.name === "ws_mcp_call").description, /ws_mcp_detail/, "call 描述互引参数 schema 查询");
+    assert.match(registered.find((d) => d.name === "ws_mcp_list").description, /ws_mcp_detail/, "list 描述互引 detail");
+    assert.match(registered.find((d) => d.name === "ws_mcp_list").description, /不返回 inputSchema/, "list 描述写明不做什么");
     assert.match(registered.find((d) => d.name === "ws_mcp_detail").description, /inputSchema/, "detail 描述说明完整 schema");
+    assert.match(registered.find((d) => d.name === "ws_mcp_detail").description, /不做关键词检索/, "detail 描述写明不做什么");
+    // Anthropic 规范：parameters 每个字段都带 description。
+    for (const def of registered) {
+      const props = def.parameters?.properties ?? {};
+      for (const [key, prop] of Object.entries(props)) {
+        assert.ok(typeof prop.description === "string" && prop.description !== "", `参数 ${def.name}.${key} 带 description`);
+      }
+    }
+    // search 输出 schema 含 truncated 字段。
+    const searchSchemaProps = registered.find((d) => d.name === "ws_mcp_search").output.schema.properties;
+    assert.equal(typeof searchSchemaProps.truncated, "object", "search 输出含 truncated 字段");
     // 路由：agent-less → 显式失败
     const searchDef = registered.find((d) => d.name === "ws_mcp_search");
     const callDef = registered.find((d) => d.name === "ws_mcp_call");
     const listDef = registered.find((d) => d.name === "ws_mcp_list");
     const detailDef = registered.find((d) => d.name === "ws_mcp_detail");
+    // search 输出补 truncated 字段：空目录 → false。
+    const emptySearch = await searchDef.execute({}, { agent: { session: { header: { cwd: "/proj" } } } });
+    assert.equal(emptySearch.truncated, false, "空目录 truncated=false");
+    assert.deepEqual(emptySearch.unavailable, []);
     await assert.rejects(() => searchDef.execute({}, { agent: undefined }), /无法确定工作空间/);
     await assert.rejects(() => listDef.execute({}, { agent: undefined }), /无法确定工作空间/);
     await assert.rejects(() => detailDef.execute({}, { agent: undefined }), /无法确定工作空间/);
@@ -300,6 +318,7 @@ const main = async () => {
     // search：合并查询命中 @global 工具
     const found = await searchDef.execute({ query: "全局" }, { agent });
     assert.ok(found.results.some((hit) => hit.server === fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx")), "all 模式 search 含 @global 命中");
+    assert.equal(found.truncated, false, "all 模式 search 未达 limit → truncated=false");
     // detail：@global 可查
     const detail = await detailDef.execute({ server: fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx"), tool: "use_g" }, { agent });
     assert.equal(detail.server, fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx"));

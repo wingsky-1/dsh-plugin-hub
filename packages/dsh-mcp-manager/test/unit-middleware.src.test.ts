@@ -176,11 +176,20 @@ function makeHost(serversByRoot = new Map()) {
   );
   // 未知 server 形态
   await assert.rejects(() => mw.callTool("ctx", "use_ctx", {}, undefined), /格式应为/);
-  // 未连接（enabled:false 不触发连接）
+  // 未连接（enabled:false 不触发连接）→ 错误含下一步提示（ws_mcp_search 或 ws_mcp_list）
   await assert.rejects(
     () => mw.callTool(fullServerName(ROOT, "ctx"), "use_ctx", {}, undefined),
-    /未连接|连接失败/,
+    /未连接或连接失败，请先 ws_mcp_search 或 ws_mcp_list 确认 server 已连接/,
   );
+  // userDisabled → 错误含下一步提示
+  mw.disabledByRoot.set(ROOT, new Set(["ctx"]));
+  const disabledUnit = await mw.projectUnitFor(ROOT);
+  disabledUnit.userDisabled.add("ctx");
+  await assert.rejects(
+    () => mw.callTool(fullServerName(ROOT, "ctx"), "use_ctx", {}, undefined),
+    /已被用户禁用；可先在 GUI「MCP」浮窗中重新连接/,
+  );
+  disabledUnit.userDisabled.delete("ctx");
   await mw.dispose();
 }
 

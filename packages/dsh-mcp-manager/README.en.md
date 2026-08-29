@@ -156,11 +156,11 @@ full-name/bare-name filtering; `perServerLimit` caps tools per server at 50 by d
 / 500 max, setting `toolsTruncated` when exceeded; empty results carry an explicit
 `message`) / `ws_mcp_detail` (exact single-tool lookup by `@<root>/<server>` + bare tool
 name, returning the complete `inputSchema`; three-way errors: discovery failed with
-reason / server not connected or not found / tool does not exist) / `ws_mcp_search`
-(keyword search, search first then call) / `ws_mcp_call` (invoke by
-`@<root>/<server>`), routed by the calling session's current cwd to the matching
-workspace connection pool, so different workspaces inject different MCPs without name
-clashes; global servers still register directly as `mcp__<server>__<tool>`. Switch
+reason / server not connected or not found / tool does not exist) / `ws_mcp_search` (keyword search, search first then call; returns a `truncated` flag
+when results hit the `limit`) / `ws_mcp_call` (invoke by `@<root>/<server>`, verify
+argument schema with `ws_mcp_detail`), routed by the calling session's current cwd to
+the matching workspace connection pool, so different workspaces inject different MCPs
+without name clashes; global servers still register directly as `mcp__<server>__<tool>`. Switch
 `middleware: off` to restore the legacy behavior (project-level also registers `mcp__`);
 `middleware: all` routes global servers through the middleware too (falling back to the
 virtual global root `@global` when cwd has no project), collapsing the model surface to
@@ -198,7 +198,9 @@ add/remove/edit refreshes the `@global` unit only after a restart or a session t
 - **Middleware tool read-only boundary**: `ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search`
   only read the local catalog cache (never touch remote servers or execute tools) and bypass
   the policy guard; `ws_mcp_call` is the only entry point that executes remote tools and is
-  governed by the policy (deny-first)
+  governed by the policy (deny-first); `ws_mcp_call` error messages follow an
+  "explicit + next step" style (confirm the server connection / verify the argument schema
+  with `ws_mcp_detail` / check the policy configuration)
 - The capability catalog injection includes source annotations and a "does not represent current
   connection status" note
 

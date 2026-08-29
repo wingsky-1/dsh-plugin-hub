@@ -130,8 +130,9 @@ SSE events 通道推送一变，客户端自动重新拉取 `/api/dsh-mcp/config
 每服务器工具条数上限默认 50 / 上限 500，超限置 `toolsTruncated`；空返回附明确
 `message`）/ `ws_mcp_detail`（按 `@<root>/<server>` + tool 裸名精确查询单工具
 完整 `inputSchema`，错误三分：发现失败附原因 / 服务器未连接或未发现 / 工具
-不存在）/ `ws_mcp_search`（关键词检索，先搜后调）/ `ws_mcp_call`（按
-`@<root>/<server>` 全名调用），执行时按调用方会话当前 cwd 路由到对应工作空间
+不存在）/ `ws_mcp_search`（关键词检索，先搜后调，输出 `truncated` 标志提示结果是否因
+limit 截断）/ `ws_mcp_call`（按 `@<root>/<server>` 全名调用，参数 schema 用
+`ws_mcp_detail` 核对），执行时按调用方会话当前 cwd 路由到对应工作空间
 连接池，不同工作空间注入不同 MCP、无命名冲突；全局服务器仍直呼
 `mcp__<server>__<tool>`。切换 `middleware: off` 回到旧行为（项目级也直接注册
 `mcp__` 工具）；`middleware: all` 则全局服务器也走中间层（cwd 无项目时回落全局
@@ -168,7 +169,9 @@ SSE events 通道推送一变，客户端自动重新拉取 `/api/dsh-mcp/config
   策略 guard（allowTools/denyTools，deny 优先）按 `@<root>/<server>` 全名或裸名配置（全名优先，工作空间隔离）
 - **中间层工具只读边界**：`ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` 纯读
   本地目录缓存（不触达远端服务器、不执行工具），不经过策略 guard；`ws_mcp_call`
-  是唯一执行远端工具并受策略约束（deny 优先）的入口
+  是唯一执行远端工具并受策略约束（deny 优先）的入口；`ws_mcp_call` 错误消息按
+  「显式 + 下一步」规范给出（确认 server 连接 / 用 `ws_mcp_detail` 核对参数 /
+  检查策略配置）
 - **凭据脱敏**：目录摘要与错误路径经 redactor 把 env/headers/URL 用户信息等
   凭据形状替换为 `[REDACTED]`
 - 能力目录注入含来源标注与"不代表当前连接状态"说明
