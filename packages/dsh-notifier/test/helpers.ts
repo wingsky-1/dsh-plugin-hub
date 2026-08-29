@@ -182,6 +182,37 @@ export function agentWithTitle(id, title, opts = {}) {
 }
 
 /**
+ * 完成轮两态时序构造（阶段二单源 push + 快照兜底收敛后必需，issue #290）：
+ * 真实宿主中 agent/status running 派发于本轮 turn 开始——本轮 turn/end 尚未
+ * post-commit 落盘，session.events 最新条目为上一轮（或空）；idle 派发于本轮
+ * turn/end 落盘之后。单源收敛的 runningBaseline 冻结判据（idle 快照 ≤ running
+ * 基线 = 本轮无新 closure = abort-early 陈旧快照，冻结不误报）依赖该时序——
+ * 旧测试「running 与 idle 同一构造（events 已含本轮 closure）」在单源语义下会
+ * 被正确识别为无新 closure 而静默（abort 早于本轮 turn/start 落盘的形态）。
+ * 故所有「本轮完成」用例必须区分 running/idle 两态事件面：
+ *   - running 态 = 上一轮 turn/end（prevTurn，可缺省 = 首轮无 closure）
+ *   - idle 态 = 本轮 turn/end（thisTurn，lastTurnEndOf 只取最新一条，单条等价）
+ * 每次调用返回全新 { running, idle } 两态（agent/status 事件不持有引用）。
+ *
+ * @param id agent/session id
+ * @param title 任务标题（agentWithTitle 同款）
+ * @param headerOpts agentWithTitle 的 header 选项（subagent/parentSession/seedLength/depth/cwd）
+ * @param thisTurn 本轮 turn/end：{ turn, kind? }（写入 idle 态；kind 默认 completed）
+ * @param prevTurn 上一轮 turn/end：{ turn, kind? }（写入 running 态；缺省 = 首轮）
+ */
+export function turnPair(id, title, headerOpts = {}, thisTurn, prevTurn) {
+  const running = agentWithTitle(
+    id,
+    title,
+    prevTurn !== undefined
+      ? { ...headerOpts, turnEnd: prevTurn.turn, turnEndKind: prevTurn.kind ?? "completed" }
+      : headerOpts
+  );
+  const idle = agentWithTitle(id, title, { ...headerOpts, turnEnd: thisTurn.turn, turnEndKind: thisTurn.kind ?? "completed" });
+  return { running, idle };
+}
+
+/**
  * 运行时归属模拟面（issue #49）：ctx.agents 判定所需最小实现。
  * @param liveIds live registry 中存在的父/子 agent id 数组。
  * @param ownedPairs 归属关系对 [childId, ownerId]：isOwnedBy(childId, owner)

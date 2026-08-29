@@ -68,7 +68,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-notifier
 
 - **向你提问**（默认开）：`ask_user_question` / GUI 提问弹窗触发时通知
 - **审批提醒**：真实审批路径 `approval/request` 触发时通知，含任务标题、工具中文名、申请理由与操作提示
-- **完成提醒**：任务从运行到空闲（`agent/status` running → idle）时通知，含任务标题与耗时；完成判定为双源——idle 时从会话事件快照回读最新 `turn/end`，与 `session/event` 推送流记忆的最新 `turn/end` 取新者为结束证据（issue #272：快照一次性读滞后不再固化为永久静默，同一轮次两源只通知一次，判定被跳过时输出可观测 warn 日志）；子代理完成走独立开关 `notifySubagentDone`（默认关；子代理含 `origin: subagent` 的 spawn 型与运行时归属成立的 fork 型委派——无归属的 fork 主线会话不受影响，仍报主任务完成）；用户停止生成/中断/任务失败/被阻塞时不通知完成（本轮 `turn/end` reason 为 `aborted`/`interrupted`/`error`/`blocked` 时固定静默——失败任务由错误提醒单独负责「任务出错」，避免同一轮既报错又误报完成）
+- **完成提醒**：任务从运行到空闲（`agent/status` running → idle）时通知，含任务标题与耗时；完成判定为**单源 push + 快照兜底**——以 `session/event` 推送流记忆的最新 `turn/end` 为主证据（post-commit 同步派发、恒定新鲜），快照回读（`lastTurnEndOf`）仅在 push 缺失（插件中途挂载 / 重载窗口内已派发但新 fiber 未记忆）时兜底（issue #290 阶段二：快照一次性读滞后不再固化为永久静默，同一轮次只通知一次，判定被跳过时输出标识证据来源的可观测 warn 日志）；子代理完成走独立开关 `notifySubagentDone`（默认关；子代理含 `origin: subagent` 的 spawn 型与运行时归属成立的 fork 型委派——无归属的 fork 主线会话不受影响，仍报主任务完成）；用户停止生成/中断/任务失败/被阻塞时不通知完成（本轮 `turn/end` reason 为 `aborted`/`interrupted`/`error`/`blocked` 时固定静默——失败任务由错误提醒单独负责「任务出错」，避免同一轮既报错又误报完成）
 - **错误提醒**：任务出错（`agent/error`）时通知，含任务标题、出错轮次/步骤、错误信息（前 300 字符）；同类错误 60 秒窗口内自动合并
 - **轮次完成**（默认关）：`agent/turn-stopping` 时通知
 - **双通道**：
@@ -119,9 +119,15 @@ context filter checks」）。取舍如下（issue #290）：
   "errorMergeWindowMs": 60000,
   "askRemindMin": 5,
   "doneMergeWindowMs": 3000,
-  "historyMaxAgeDays": 0
+  "historyMaxAgeDays": 0,
+  "maxConnections": 16
 }
 ```
+
+> `maxConnections`：SSE 连接表上限（默认 16，范围 1~1024）。含义为**服务端未释放句柄数**，
+> 非「在线设备数」——半开连接（设备息屏/切网/NAT 静默掐断）在传输层回收前会短暂残留，
+> 上限保证连接表有界，超出部分淘汰最老连接（客户端自动重连 + since 补拉，无感知）。
+> 多设备×多页签同时在线超过该值时可在面板调大。
 
 ## 路由（全部 loopback 围栏）
 

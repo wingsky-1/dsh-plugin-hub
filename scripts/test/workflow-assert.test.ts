@@ -139,6 +139,33 @@ test('#220: docs 不在 ci.yml global 过滤面——文档 PR 不触发变异�
     '过滤面旁必须保留理由注释（防后人「好心」加回）')
 })
 
+test('#322: 每个带 stryker 配置的包在 path-filter 均有段配置通配映射（防回归）', () => {
+  // 有 stryker 配置的包 = stryker.conf.d 文件集归并出的基础包名（段级 <pkg>-<n>.json
+  // 归并到 <pkg>），与 #220 段式三方一致测试同一口径
+  const confDir = join(ROOT, 'stryker.conf.d')
+  const confFiles = readdirSync(confDir).filter((f) => f.endsWith('.json'))
+  const basePkgs = [...new Set(confFiles.map((f) => f.replace(/\.json$/, '').replace(/-\d+$/, '')))].sort()
+
+  const filtersBlock = CI.slice(CI.indexOf('filters: |'), CI.indexOf('- name: Compute hit packages'))
+  for (const pkg of basePkgs) {
+    // 定位包面条目：从 `<pkg>:` 到下一个 `            dsh-` 条目（filters 缩进 12 空格）
+    const start = filtersBlock.indexOf(`            ${pkg}:`)
+    assert.ok(start > 0, `ci.yml path-filter 缺包面条目 ${pkg}（#322：段配置变更需命中该包面）`)
+    const after = filtersBlock.indexOf('\n            dsh-', start + pkg.length)
+    const entry = filtersBlock.slice(start, after > 0 ? after : undefined)
+    // 现有 packages/<pkg>/** 映射必须保留（本断言只追加 stryker 段配置通配，不动 case 结构）
+    assert.ok(entry.includes(`- 'packages/${pkg}/**'`),
+      `${pkg} 包面必须保留 packages/${pkg}/** 行（#322 只追加不替换）`)
+    // stryker.conf.d 通配：包级 <pkg>.json 与段级 <pkg>-<n>.json 均以 <pkg> 前缀被覆盖
+    const hasGlob = entry.split('\n').some((l) => {
+      const m = /-\s'(stryker\.conf\.d\/[^']+)'/.exec(l.trim())
+      return !!m && m[1].startsWith(`stryker.conf.d/${pkg}`)
+    })
+    assert.ok(hasGlob,
+      `${pkg} 包面缺 stryker.conf.d 段配置通配映射（#322：改段配置必须触发该包 mutation，不得全 skip）`)
+  }
+})
+
 test('#276 方案 A: observe 四班次全量——定时触发、无 push 裁剪、快照 PR 日期闸', () => {
   assert.ok(OBSERVE.includes("'0 1,4,8,12 * * *'"),
     '每日四班次（UTC 01/04/08/12 = 北京 09/12/16/20）全量变异')

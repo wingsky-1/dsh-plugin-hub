@@ -115,7 +115,7 @@ import STYLE from "./style.css";
         return res.json();
       })
       .then(function (data) {
-        toast("测试通知已发送（在线 " + data.sseConnections + " 个连接）");
+        toast("测试通知已发送（服务端未释放句柄 " + data.sseConnections + " 条）");
       })
       .catch(function (error) {
         toast("发送测试通知失败：" + error.message + accessHint(error));
@@ -406,6 +406,19 @@ import STYLE from "./style.css";
         }
         mergeField("errorMergeWindowMs", "错误合并窗口", 3600000);
         mergeField("doneMergeWindowMs", "完成聚合窗口", 60000);
+        // #330 SSE 连接上限：条（1~1024，默认 16）。超出上限自动淘汰最老连接
+        // （客户端断开后自动重连 + since 补拉，无感知）；多设备多页签超限时调大。
+        (function () {
+          var field = el("div", { class: "dn-row", style: "min-height:36px" });
+          field.appendChild(el("span", { style: "flex:1", text: "最大连接数（条，超出淘汰最老）" }));
+          var input = el("input", { type: "number", min: "1", max: "1024", step: "1", value: String(config.maxConnections || 16), style: "width:84px;background:var(--dsw-alias-bg-layer-1,#f5f6f8);color:inherit;border:1px solid var(--dsw-alias-border-l1,#e2e5ea);border-radius:6px;padding:3px 6px;margin:6px 0", onChange: function () {
+            var v = parseInt(input.value, 10);
+            config.maxConnections = Number.isFinite(v) && v >= 1 && v <= 1024 ? v : 16;
+            saveConfig(config);
+          } });
+          field.appendChild(input);
+          mergeSection.appendChild(field);
+        })();
         body.appendChild(mergeSection);
 
         var quiet = el("div", { class: "dn-section" });

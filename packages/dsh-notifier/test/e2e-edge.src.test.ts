@@ -10,7 +10,7 @@
 import { join } from "node:path";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { assert, makeNotifier, makeFakeCtx, agentWithTitle, makeRes, fakeReq, waitForHistory } from "./helpers.ts";
+import { assert, makeNotifier, makeFakeCtx, agentWithTitle, makeRes, fakeReq, waitForHistory, turnPair } from "./helpers.ts";
 import { ROUTES, apply } from "../src/index.ts";
 
 const work = mkdtempSync(join(tmpdir(), "dnotify-e2e-edge-"));
@@ -129,8 +129,9 @@ try {
     assert.ok(warns.some((w) => w.includes("通知失败")), "approval notify 失败时 warn 记录");
 
     // agent/status：idle → notify 抛错 → catch → warn
-    status({ agent: agentWithTitle("fail-2", "出错任务", { turnEnd: 1 }), status: "running" });
-    status({ agent: agentWithTitle("fail-2", "出错任务", { turnEnd: 1 }), status: "idle" });
+    const fail2 = turnPair("fail-2", "出错任务", {}, { turn: 1 });
+    status({ agent: fail2.running, status: "running" });
+    status({ agent: fail2.idle, status: "idle" });
     assert.ok(warns.some((w) => w.includes("agent/status")), "status notify 失败时 warn 记录");
 
     // agent/error：notify 抛错 → catch → warn
@@ -151,12 +152,14 @@ try {
     });
     const status = listeners.get("agent/status")[0];
     // 主任务完成 → done 通知，doneBatch 开始
-    status({ agent: agentWithTitle("mk-1", "主任务", { turnEnd: 1 }), status: "running" });
-    status({ agent: agentWithTitle("mk-1", "主任务", { turnEnd: 1 }), status: "idle" });
+    const mk1 = turnPair("mk-1", "主任务", {}, { turn: 1 });
+    status({ agent: mk1.running, status: "running" });
+    status({ agent: mk1.idle, status: "idle" });
     assert.equal(infos.filter((t) => /done/.test(t)).length, 1, "首条 done 即时通知");
     // 子代理完成 → kind 不同 → flushDoneMerge（count=1 不补发）+ 即时 subagent-done
-    status({ agent: agentWithTitle("mk-2", "子代理", { subagent: true, turnEnd: 1 }), status: "running" });
-    status({ agent: agentWithTitle("mk-2", "子代理", { subagent: true, turnEnd: 1 }), status: "idle" });
+    const mk2 = turnPair("mk-2", "子代理", { subagent: true }, { turn: 1 });
+    status({ agent: mk2.running, status: "running" });
+    status({ agent: mk2.idle, status: "idle" });
     const doneCount = infos.filter((t) => /: done /.test(t)).length;
     const subCount = infos.filter((t) => /: subagent-done /.test(t)).length;
     assert.equal(doneCount, 1, "类型切换后 done 不重复");

@@ -1937,6 +1937,17 @@ const main = async () => {
       assert.ok(manager.runtimeRegistry.has("svc-all"), "all 模式 runtime 条目保留");
       manager.middlewareMode = "off";
 
+      // 查询面（#329 评审修正：MCP 应能感知连接状态与工具列表）：
+      // summary() 并入 runtime 条目，getStatus/list 的数据源可见运行时注册的服务器。
+      await manager.registerServer({ name: "svc-q", ...quiet() });
+      const sum = manager.summary();
+      const qEntry = (sum.servers ?? []).find((s) => s.name === "svc-q");
+      assert.ok(qEntry !== undefined, "summary 含 runtime 条目（查询面可见）");
+      assert.equal(qEntry.scope, "global", "runtime 条目 scope 为 global");
+      assert.equal(qEntry.status, "disabled", "enabled:false → disabled 状态");
+      // 工具列表：enabled:false 不 spawn → 空数组（不抛）。
+      assert.deepEqual(qEntry.tools, [], "disabled 服务器工具列表为空");
+
       console.log("  ok   核心化 service: register/unregister/双轨/卸载清理");
     } finally {
       rmSync(dir, { recursive: true, force: true });

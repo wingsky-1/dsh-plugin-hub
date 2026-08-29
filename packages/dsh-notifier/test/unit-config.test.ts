@@ -70,6 +70,18 @@ try {
   assert.equal(normalizeConfig({ errorMergeWindowMs: -1 }).errorMergeWindowMs, DEFAULT_CONFIG.errorMergeWindowMs, "负数错误窗口回默认");
   assert.equal(normalizeConfig({ historyMaxAgeDays: 30 }).historyMaxAgeDays, 30, "按天清理可配");
   assert.equal(normalizeConfig({ historyMaxAgeDays: 0 }).historyMaxAgeDays, 0, "按天清理 0=关");
+
+  // #330 SSE 连接上限：默认 16，范围 1~1024，非法值丢弃回默认；未知键透传排除表不吞它
+  assert.equal(DEFAULT_CONFIG.maxConnections, 16, "maxConnections 默认 16");
+  assert.equal(normalizeConfig(undefined).maxConnections, 16, "无输入回默认 16");
+  assert.equal(normalizeConfig({ maxConnections: 8 }).maxConnections, 8, "上限可配");
+  assert.equal(normalizeConfig({ maxConnections: 1 }).maxConnections, 1, "下限 1 可配");
+  assert.equal(normalizeConfig({ maxConnections: 0 }).maxConnections, DEFAULT_CONFIG.maxConnections, "0 非法回默认");
+  assert.equal(normalizeConfig({ maxConnections: -3 }).maxConnections, DEFAULT_CONFIG.maxConnections, "负数非法回默认");
+  assert.equal(normalizeConfig({ maxConnections: 1025 }).maxConnections, DEFAULT_CONFIG.maxConnections, "超上界 1024 非法回默认");
+  assert.equal(normalizeConfig({ maxConnections: 16.6 }).maxConnections, 17, "小数取整");
+  assert.equal(normalizeConfig({ maxConnections: "8" }).maxConnections, DEFAULT_CONFIG.maxConnections, "字符串非法回默认");
+  assert.equal(normalizeConfig({ maxConnections: 4, bogus: 1 }).bogus, 1, "未知键仍透传（排除表不吞其他键）");
 } finally {
   rmSync(work, { recursive: true, force: true });
 }

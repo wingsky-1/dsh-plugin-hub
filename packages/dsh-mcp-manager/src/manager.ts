@@ -652,6 +652,11 @@ export class McpManager {
         servers.push(this.summarize(server, SCOPE_PROJECT));
       }
     }
+    // 查询面完整性（#329 评审修正）：runtime 条目并入 summary，
+    // 否则 getStatus/list 看不到运行时注册的服务器（消费方无法感知状态）。
+    for (const server of this.runtimeRegistry.values()) {
+      servers.push(this.summarize(server, SCOPE_GLOBAL));
+    }
     const byStatus: Record<string, number> = { connected: 0, connecting: 0, reconnecting: 0, disabled: 0, stopped: 0, failed: 0 };
     for (const server of servers) byStatus[server.status as string] = (byStatus[server.status as string] ?? 0) + 1;
     return {

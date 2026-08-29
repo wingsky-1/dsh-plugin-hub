@@ -7,13 +7,20 @@
  * 通知与滚动窗口合并（含窗口过期计数、0=关闭）；子代理完成场景（issue #49：
  * fork 型委派按运行时归属拆分——归属成立默认静默/开关联动 subagent-done、
  * 归属不成立保护用户 fork 主线走 done；spawn 型 origin 用例与 S2 开关组合）；
- * issue #272 双源订阅（session/event 推送流互补：events 停滞形态兜底通知、
- * 双源同 turn 去重）与跳过路径 warn 兜底。
+ * issue #290 阶段二单源收敛（session/event push 为主证据 + lastTurnEndOf
+ * 快照仅 push 缺失兜底 + runningBaseline 冻结 abort-early 陈旧快照）与
+ * 跳过路径 warn（证据源字段）；D-1/D-2 重载窗口后首轮 live turn 仍通知、
+ * 重载不引入假阳性。
+ *
+ * 时序约定（helpers.turnPair / agentWithTitle 联用）：所有「本轮完成」用例
+ * 必须区分 running/idle 两态事件面——running 态 events 为上一轮 closure
+ * （或空），idle 态为本轮 closure（见 helpers.turnPair 注释）；「running 与
+ * idle 同构造（idle 无推进）」即 abort-early 无新 closure 形态，必须静默。
  */
 import { join } from "node:path";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { assert, makeNotifier, agentWithTitle, fakeAgents, waitMergeWindow, fakeReq, makeRes, turnEndEvent, waitForHistory } from "./helpers.ts";
+import { assert, makeNotifier, agentWithTitle, fakeAgents, waitMergeWindow, fakeReq, makeRes, turnEndEvent, waitForHistory, turnPair } from "./helpers.ts";
 import { ROUTES, lastTurnEndOf } from "../src/index.ts";
 
 /** 带 info 收集的 logger 覆盖。 */
@@ -72,11 +79,13 @@ try {
 
     // 完成风暴聚合：窗口内第二条完成不即时，3s 后补发聚合条（防并行收尾刷屏）
     await waitMergeWindow(); // 窗口清零（error/turn 无完成窗口）
-    status({ agent: agentWithTitle("storm-1", "并行任务A", { turnEnd: 1 }), status: "running" });
-    status({ agent: agentWithTitle("storm-1", "并行任务A", { turnEnd: 1 }), status: "idle" });
+    const stormA = turnPair("storm-1", "并行任务A", {}, { turn: 1 });
+    status({ agent: stormA.running, status: "running" });
+    status({ agent: stormA.idle, status: "idle" });
     assert.equal(infos.length, 5, "聚合窗口首条即时通知");
-    status({ agent: agentWithTitle("storm-2", "并行任务B", { turnEnd: 1 }), status: "running" });
-    status({ agent: agentWithTitle("storm-2", "并行任务B", { turnEnd: 1 }), status: "idle" });
+    const stormB = turnPair("storm-2", "并行任务B", {}, { turn: 1 });
+    status({ agent: stormB.running, status: "running" });
+    status({ agent: stormB.idle, status: "idle" });
     assert.equal(infos.length, 5, "窗口内第二条挂起不即时发");
     await waitMergeWindow();
     assert.equal(infos.length, 6, "窗口到点补发聚合条");
@@ -148,9 +157,10 @@ try {
       );
       const status = listeners.get("agent/status")[0];
       // fork 型委派完整持久化 header 形态：parentSession + seedLength、无 origin、depth=0（#199 P2-5 对齐）
-      const forkAgent = () => agentWithTitle("fork-worker", "fork 委派子任务", { parentSession: "main-parent", seedLength: 3, depth: 0, turnEnd: 1 });
-      status({ agent: forkAgent(), status: "running" });
-      status({ agent: forkAgent(), status: "idle" });
+      // 本轮完成时序：running 态无 closure（首轮）、idle 态 turn=1 completed（helpers.turnPair）
+      const forkPair = () => turnPair("fork-worker", "fork 委派子任务", { parentSession: "main-parent", seedLength: 3, depth: 0 }, { turn: 1 });
+      status({ agent: forkPair().running, status: "running" });
+      status({ agent: forkPair().idle, status: "idle" });
       assert.equal(infos.length, 0, "A1：fork 型委派归属成立且默认关时完全静默");
       // 通知历史复核（AC 验证入口）：静默路径不触发任何 appendHistory，读全量应为空
       const historyRoute = routes.find((r) => r.path === ROUTES.history);
@@ -169,10 +179,10 @@ try {
       const infos = [];
       const { listeners } = await makeNotifier(work, { configFile: onCfg }, { agents, ...loggingOverride(infos) });
       const status = listeners.get("agent/status")[0];
-      // 同 A1：完整持久化 header 形态含 seedLength（#199 P2-5 对齐）
-      const forkAgent = () => agentWithTitle("fork-worker2", "fork 委派子任务B", { parentSession: "main-parent2", seedLength: 3, depth: 0, turnEnd: 1 });
-      status({ agent: forkAgent(), status: "running" });
-      status({ agent: forkAgent(), status: "idle" });
+      // 同 A1：完整持久化 header 形态含 seedLength（#199 P2-5 对齐）+ 本轮完成时序
+      const forkPair = () => turnPair("fork-worker2", "fork 委派子任务B", { parentSession: "main-parent2", seedLength: 3, depth: 0 }, { turn: 1 });
+      status({ agent: forkPair().running, status: "running" });
+      status({ agent: forkPair().idle, status: "idle" });
       assert.equal(infos.length, 1, "A2：开启开关时恰产生一条通知");
       assert.match(infos[0], /subagent-done/, "A2：事件类型为 subagent-done");
       assert.match(infos[0], /子任务「fork 委派子任务B」已完成/, "A2：文案带任务标题");
@@ -188,9 +198,9 @@ try {
       const infos = [];
       const { listeners } = await makeNotifier(work, { configFile: join(work, "sub-fork-orphan.json") }, { agents, ...loggingOverride(infos) });
       const status = listeners.get("agent/status")[0];
-      const mk = () => agentWithTitle("fork-orphan", "孤儿 fork 会话", { parentSession: "ghost-parent", turnEnd: 1 });
-      status({ agent: mk(), status: "running" });
-      status({ agent: mk(), status: "idle" });
+      const mk = () => turnPair("fork-orphan", "孤儿 fork 会话", { parentSession: "ghost-parent" }, { turn: 1 });
+      status({ agent: mk().running, status: "running" });
+      status({ agent: mk().idle, status: "idle" });
       assert.equal(infos.length, 1, "B1：父 id 不存在时不被静默");
       assert.match(infos[0], /dsh-notifier: done /, "B1：发 kind=done 而非 subagent-done");
     }
@@ -202,9 +212,9 @@ try {
       const infos = [];
       const { listeners } = await makeNotifier(work, { configFile: join(work, "sub-fork-unowned.json") }, { agents, ...loggingOverride(infos) });
       const status = listeners.get("agent/status")[0];
-      const mk = () => agentWithTitle("fork-x", "无归属 fork 会话", { parentSession: "unrelated-parent", seedLength: 3, turnEnd: 1 });
-      status({ agent: mk(), status: "running" });
-      status({ agent: mk(), status: "idle" });
+      const mk = () => turnPair("fork-x", "无归属 fork 会话", { parentSession: "unrelated-parent", seedLength: 3 }, { turn: 1 });
+      status({ agent: mk().running, status: "running" });
+      status({ agent: mk().idle, status: "idle" });
       assert.equal(infos.length, 1, "B1：isOwnedBy=false 时归属不成立，不被静默");
       assert.match(infos[0], /dsh-notifier: done /, "B1：发 kind=done 而非 subagent-done");
     }
@@ -215,9 +225,9 @@ try {
       const infos = [];
       const { listeners } = await makeNotifier(work, { configFile: join(work, "sub-headless.json") }, loggingOverride(infos));
       const status = listeners.get("agent/status")[0];
-      const mk = () => agentWithTitle("headless-1", "headless CLI 会话", { cwd: "/tmp/dsh-cli", turnEnd: 1 });
-      status({ agent: mk(), status: "running" });
-      status({ agent: mk(), status: "idle" });
+      const mk = () => turnPair("headless-1", "headless CLI 会话", { cwd: "/tmp/dsh-cli" }, { turn: 1 });
+      status({ agent: mk().running, status: "running" });
+      status({ agent: mk().idle, status: "idle" });
       assert.equal(infos.length, 1, "D1：headless 会话保持主任务分支现状");
       assert.match(infos[0], /dsh-notifier: done /);
     }
@@ -227,8 +237,9 @@ try {
       const infos = [];
       const { listeners } = await makeNotifier(work, { configFile: join(work, "sub-main.json") }, loggingOverride(infos));
       const status = listeners.get("agent/status")[0];
-      status({ agent: agentWithTitle("main-x", "主任务", { turnEnd: 1 }), status: "running" });
-      status({ agent: agentWithTitle("main-x", "主任务", { turnEnd: 1 }), status: "idle" });
+      const pair = turnPair("main-x", "主任务", {}, { turn: 1 });
+      status({ agent: pair.running, status: "running" });
+      status({ agent: pair.idle, status: "idle" });
       assert.equal(infos.length, 1, "主会话完成走 done");
       assert.match(infos[0], /dsh-notifier: done /);
     }
@@ -238,11 +249,13 @@ try {
       const infos = [];
       const { listeners } = await makeNotifier(work, { configFile: join(work, "sub-default.json") }, loggingOverride(infos));
       const status = listeners.get("agent/status")[0];
-      status({ agent: agentWithTitle("sub-1", "子任务A", { subagent: true, turnEnd: 1 }), status: "running" });
-      status({ agent: agentWithTitle("sub-1", "子任务A", { subagent: true, turnEnd: 1 }), status: "idle" });
+      const subPair = turnPair("sub-1", "子任务A", { subagent: true }, { turn: 1 });
+      status({ agent: subPair.running, status: "running" });
+      status({ agent: subPair.idle, status: "idle" });
       assert.equal(infos.length, 0, "notifySubagentDone 默认关：子代理完成不通知");
-      status({ agent: agentWithTitle("main-1", "主任务", { turnEnd: 1 }), status: "running" });
-      status({ agent: agentWithTitle("main-1", "主任务", { turnEnd: 1 }), status: "idle" });
+      const mainPair = turnPair("main-1", "主任务", {}, { turn: 1 });
+      status({ agent: mainPair.running, status: "running" });
+      status({ agent: mainPair.idle, status: "idle" });
       assert.equal(infos.length, 1, "主任务完成不受子代理开关影响");
       assert.match(infos[0], /done/);
     }
@@ -254,8 +267,9 @@ try {
       const infos = [];
       const { listeners } = await makeNotifier(work, { configFile: onCfg }, loggingOverride(infos));
       const status = listeners.get("agent/status")[0];
-      status({ agent: agentWithTitle("sub-2", "子任务B", { subagent: true, turnEnd: 1 }), status: "running" });
-      status({ agent: agentWithTitle("sub-2", "子任务B", { subagent: true, turnEnd: 1 }), status: "idle" });
+      const subPair = turnPair("sub-2", "子任务B", { subagent: true }, { turn: 1 });
+      status({ agent: subPair.running, status: "running" });
+      status({ agent: subPair.idle, status: "idle" });
       assert.equal(infos.length, 1);
       assert.match(infos[0], /subagent-done/, "子代理完成用独立事件类型");
       assert.match(infos[0], /子任务「子任务B」已完成/, "subagent-done 文案带任务标题");
@@ -263,8 +277,9 @@ try {
       assert.ok(!infos[0].includes("sub-2"), "子代理完成通知不暴露会话 id");
       // 等 subagent-done 的 3s 聚合窗口结束（否则主任务完成会被聚合挂起）
       await waitMergeWindow();
-      status({ agent: agentWithTitle("main-2", "主任务2", { turnEnd: 1 }), status: "running" });
-      status({ agent: agentWithTitle("main-2", "主任务2", { turnEnd: 1 }), status: "idle" });
+      const mainPair = turnPair("main-2", "主任务2", {}, { turn: 1 });
+      status({ agent: mainPair.running, status: "running" });
+      status({ agent: mainPair.idle, status: "idle" });
       assert.equal(infos.length, 2, "主任务仍走 done 类型");
       assert.match(infos[1], /done/);
     }
@@ -276,31 +291,34 @@ try {
       const infos = [];
       const { listeners } = await makeNotifier(work, { configFile: s2Cfg }, loggingOverride(infos));
       const status = listeners.get("agent/status")[0];
-      status({ agent: agentWithTitle("sub-3", "子任务C", { subagent: true, turnEnd: 1 }), status: "running" });
-      status({ agent: agentWithTitle("sub-3", "子任务C", { subagent: true, turnEnd: 1 }), status: "idle" });
+      const subPair = turnPair("sub-3", "子任务C", { subagent: true }, { turn: 1 });
+      status({ agent: subPair.running, status: "running" });
+      status({ agent: subPair.idle, status: "idle" });
       assert.equal(infos.length, 1, "notifyTaskDone=false 不拦截子代理完成（S2）");
       assert.match(infos[0], /subagent-done/);
-      status({ agent: agentWithTitle("main-3", "主任务3", { turnEnd: 1 }), status: "running" });
-      status({ agent: agentWithTitle("main-3", "主任务3", { turnEnd: 1 }), status: "idle" });
+      const mainPair = turnPair("main-3", "主任务3", {}, { turn: 1 });
+      status({ agent: mainPair.running, status: "running" });
+      status({ agent: mainPair.idle, status: "idle" });
       assert.equal(infos.length, 1, "notifyTaskDone=false 主任务不通知");
       // 既有 bug 修复回归：notifyTaskDone=false 时 idle 无条件重置状态，
       // 之后重开开关不会把旧的 running 误报为完成
-      status({ agent: agentWithTitle("main-3", "主任务3", { turnEnd: 1 }), status: "running" });
+      status({ agent: agentWithTitle("main-3", "主任务3"), status: "running" });
       assert.equal(infos.length, 1, "running 仍不通知");
     }
   }
 
-  // ── issue #272：完成判定双源订阅（session/event 推送流互补源）+ 跳过路径 warn 兜底 ──
+  // ── issue #290 阶段二：证据面单源收敛（session/event push 主源 + lastTurnEndOf
+  //    快照仅 push 缺失兜底 + runningBaseline 冻结）+ 跳过路径 warn 兜底 ──
   {
     const infos = [];
     const warns = [];
-    // 关闭完成聚合：本块聚焦双源证据合并语义，每条完成即时通知便于计数
+    // 关闭完成聚合：本块聚焦单源证据合并语义，每条完成即时通知便于计数
     // （doneMergeWindowMs 是运行时配置，须经 configFile 文件传入）
-    const dualCfg = join(work, "dual-source.json");
-    writeFileSync(dualCfg, JSON.stringify({ doneMergeWindowMs: 0 }));
+    const singleCfg = join(work, "single-source.json");
+    writeFileSync(singleCfg, JSON.stringify({ doneMergeWindowMs: 0 }));
     const { listeners } = await makeNotifier(
       work,
-      { configFile: dualCfg },
+      { configFile: singleCfg },
       { logger: { info: (t) => infos.push(t), warn: (t) => warns.push(t) } }
     );
     const status = listeners.get("agent/status")[0];
@@ -308,46 +326,55 @@ try {
     const disposed = listeners.get("agent/disposed")[0];
     const countDone = () => infos.filter((t) => /dsh-notifier: done /.test(t)).length;
 
-    // (a) events 停滞形态反证（#272 报告场景）：agent.session.events 冻结在
-    //     turn=1（快照回读永远拿到旧证据，模拟一次性读滞后被固化的形态），
-    //     session/event 推送流正常逐轮派发。修复前：仅首轮通知、后续永久静默
-    //     且零日志；修复后：推送流兜底，逐轮通知。
+    // (a) push 恒定新鲜为主证据（#272 报告场景反证，阶段二 A-2）：agent.session
+    //     .events 冻结在 turn=1（快照一次性读滞后被 lastEndedTurn 固化的形态——
+    //     running/idle 同构造恰模拟 events 停滞），session/event 推送流正常逐轮
+    //     派发。单源收敛后判定只采信 push（不读快照）→ 逐轮通知 4 条，不再
+    //     依赖双源按 turn 取新。
     for (let turn = 1; turn <= 4; turn += 1) {
       status({ agent: agentWithTitle("stuck-a", "停滞会话", { turnEnd: 1 }), status: "running" });
       sessionEvent({ id: "stuck-a" }, turnEndEvent(turn));
       status({ agent: agentWithTitle("stuck-a", "停滞会话", { turnEnd: 1 }), status: "idle" });
     }
-    assert.equal(countDone(), 4, "(a) events 停滞形态下 session/event 推送流兜底逐轮通知");
+    assert.equal(countDone(), 4, "(a) events 停滞形态下 push 主证据逐轮通知（快照冻结不影响）");
 
-    // (b) 双源去重：同一 turn 两源到达只通知一次——快照与推送指向同一
-    //     append-only 日志的同一事件，turn 相同即同一证据，合并为单次通知。
+    // (b) 同 turn 去重（A-3）：push 与快照指向同一 append-only 日志的同一事件，
+    //     turn 相同即同一证据——采信 push 后合并为单次通知；已记忆 turn 的重复
+    //     派发不重复通知。
     status({ agent: agentWithTitle("dedup-1", "去重会话", { turnEnd: 2 }), status: "running" });
     sessionEvent({ id: "dedup-1" }, turnEndEvent(2));
     status({ agent: agentWithTitle("dedup-1", "去重会话", { turnEnd: 2 }), status: "idle" });
-    assert.equal(countDone(), 5, "(b) 快照+推送同 turn 合并为单次通知");
+    assert.equal(countDone(), 5, "(b) push+快照同 turn 合并为单次通知");
     sessionEvent({ id: "dedup-1" }, turnEndEvent(2)); // 已记忆 turn 的重复派发不再触发
     status({ agent: agentWithTitle("dedup-1", "去重会话", { turnEnd: 2 }), status: "running" });
     status({ agent: agentWithTitle("dedup-1", "去重会话", { turnEnd: 2 }), status: "idle" });
     assert.equal(countDone(), 5, "(b) 已记忆 turn 的重复到达不重复通知");
 
-    // (c) 跳过路径 warn 兜底：无任何新证据的 idle 判定跳过必须可观测
-    //     （#272 报告场景「全程零日志」的反面）。
-    status({ agent: agentWithTitle("warn-1", "静默会话", { turnEnd: 1 }), status: "running" });
-    status({ agent: agentWithTitle("warn-1", "静默会话", { turnEnd: 1 }), status: "idle" }); // 首轮正常通知，lastEndedTurn=1
+    // (c) 跳过路径 warn 兜底（E-1）：无新证据的 idle 判定跳过必须可观测，且
+    //     warn 字段标识证据来源（单源语义：证据源=push / 快照兜底 / 快照冻结）。
+    //     首轮为真实完成时序（running 无 closure → idle turn=1 completed 通知），
+    //     第二轮 events 仍停 turn=1（abort-early 形态）→ 快照 ≤ running 基线
+    //     被冻结 → 跳过 + warn（证据源=快照冻结）。
+    const w1 = turnPair("warn-1", "静默会话", {}, { turn: 1 });
+    status({ agent: w1.running, status: "running" });
+    status({ agent: w1.idle, status: "idle" }); // 首轮正常通知，lastEndedTurn=1
     const beforeWarn = countDone();
     status({ agent: agentWithTitle("warn-1", "静默会话", { turnEnd: 1 }), status: "running" });
-    status({ agent: agentWithTitle("warn-1", "静默会话", { turnEnd: 1 }), status: "idle" }); // 无新证据 → 跳过 + warn
+    status({ agent: agentWithTitle("warn-1", "静默会话", { turnEnd: 1 }), status: "idle" }); // 无新 closure → 快照冻结 + warn
     assert.equal(countDone(), beforeWarn, "(c) 无新证据轮不发 done");
     const warnLine = warns.find((t) => t.includes("warn-1"));
     assert.ok(warnLine !== undefined, "(c) 跳过路径输出 warn 日志");
     assert.match(warnLine, /完成判定跳过/, "(c) warn 标识跳过动作");
+    assert.match(warnLine, /证据源=快照冻结/, "(c) warn 证据源标识快照冻结（abort-early 陈旧快照）");
     assert.match(warnLine, /快照turn=1/, "(c) warn 含快照源检测到的 turn");
     assert.match(warnLine, /推送turn=-/, "(c) warn 含推送源检测值（无则为 -）");
     assert.match(warnLine, /记忆turn=1/, "(c) warn 含记忆的 lastEndedTurn");
 
-    // 设计内静默同样留痕：aborted 中断不发 done，但 warn 带 kind=aborted 可核对。
-    status({ agent: agentWithTitle("abort-1", "中断会话", { turnEnd: 1, turnEndKind: "aborted" }), status: "running" });
-    status({ agent: agentWithTitle("abort-1", "中断会话", { turnEnd: 1, turnEndKind: "aborted" }), status: "idle" });
+    // 设计内静默同样留痕：aborted 中断不发 done，但 warn 带 kind=aborted 可核对
+    // （真实时序：本轮 aborted closure 落盘 → 白名单拒绝，非快照冻结）。
+    const a1 = turnPair("abort-1", "中断会话", {}, { turn: 1, kind: "aborted" });
+    status({ agent: a1.running, status: "running" });
+    status({ agent: a1.idle, status: "idle" });
     assert.equal(countDone(), beforeWarn, "aborted 中断不发 done");
     assert.ok(warns.some((t) => t.includes("abort-1") && /kind=aborted/.test(t)), "aborted 静默留痕 kind=aborted");
 
@@ -358,19 +385,17 @@ try {
     status({ agent: agentWithTitle("gc-1", "清理会话", { turnEnd: 3 }), status: "idle" }); // 状态机+辅源已清零：不通知
     assert.equal(countDone(), beforeWarn, "disposed 清理后辅源残留不误报");
 
-    // (d) 畸形载荷不毒化记忆（#284 复核闸 P1）：turn 非数字的推送 turn/end
-    //     直接 skip 不落记忆——修复前 {turn:NaN} 凭 ended===undefined 短路成
-    //     best、首轮误报一条并把 lastEndedTurn 推进为 NaN，此后真实完成因
-    //     x > NaN 恒 false 被永久吞掉。
-    status({ agent: agentWithTitle("mal-1", "畸形会话"), status: "running" }); // 无快照 turn/end（ended===undefined 场景）
+    // (d) 畸形载荷不毒化记忆（#284 复核闸 P1，B-2）：turn 非数字的推送 turn/end
+    //     直接 skip 不落记忆——任何畸形证据既不能成 best、也不能推进记忆。
+    status({ agent: agentWithTitle("mal-1", "畸形会话"), status: "running" }); // 无快照 turn/end（pushed/快照均缺失形态）
     sessionEvent({ id: "mal-1" }, { type: "turn/end", data: { turn: "x", reason: { kind: "completed" } } });
     sessionEvent({ id: "mal-1" }, { type: "turn/end", data: { turn: Number.NaN, reason: { kind: "completed" } } });
     status({ agent: agentWithTitle("mal-1", "畸形会话"), status: "idle" });
     assert.equal(countDone(), beforeWarn, "(d) 畸形载荷不误报 done");
     const malWarn = warns.find((t) => t.includes("mal-1"));
     assert.ok(malWarn !== undefined && /完成判定跳过/.test(malWarn), "(d) 畸形证据不可用走跳过路径 warn");
-    assert.match(malWarn, /快照turn=- 推送turn=- 记忆turn=-/, "(d) 两源均无可信证据（记忆未被毒化）");
-    // 毒化回归反证：随后真实 turn=2 双源一致 completed 照常通知（修复前被 NaN 记忆吞掉）。
+    assert.match(malWarn, /证据源=无 快照turn=- 推送turn=- 记忆turn=-/, "(d) 无任何可信证据（记忆未被毒化）");
+    // 毒化回归反证：随后真实 turn=2 push completed 照常通知（修复前被 NaN 记忆吞掉）。
     status({ agent: agentWithTitle("mal-1", "畸形会话", { turnEnd: 2 }), status: "running" });
     sessionEvent({ id: "mal-1" }, turnEndEvent(2));
     status({ agent: agentWithTitle("mal-1", "畸形会话", { turnEnd: 2 }), status: "idle" });
@@ -405,9 +430,9 @@ try {
       { logger: { info: (t) => infos.push(t), warn: (t) => warns.push(t) } }
     );
     const status = listeners.get("agent/status")[0];
-    const mk = () => agentWithTitle("a2-1", "无 agents 主任务", { turnEnd: 1 });
-    status({ agent: mk(), status: "running" });
-    status({ agent: mk(), status: "idle" });
+    const pair = turnPair("a2-1", "无 agents 主任务", {}, { turn: 1 });
+    status({ agent: pair.running, status: "running" });
+    status({ agent: pair.idle, status: "idle" });
     assert.equal(infos.filter((t) => /: done /.test(t)).length, 1, "A-2：无 agents 时 completed 走 done 主分支");
     assert.ok(!warns.some((t) => t.includes("agent/status 处理失败")), "A-2：无 'agent/status 处理失败' warn");
   }
@@ -422,15 +447,15 @@ try {
     const { listeners } = await makeNotifier(work, { configFile: a3Cfg }, loggingOverride(infos));
     const status = listeners.get("agent/status")[0];
     // fork 型：无 origin、带 parentSession + seedLength，归属服务缺位 → 保守走 done
-    const fork = () => agentWithTitle("a3-fork", "fork 型无 agents", { parentSession: "ghost-parent", seedLength: 3, turnEnd: 1 });
-    status({ agent: fork(), status: "running" });
-    status({ agent: fork(), status: "idle" });
+    const forkPair = () => turnPair("a3-fork", "fork 型无 agents", { parentSession: "ghost-parent", seedLength: 3 }, { turn: 1 });
+    status({ agent: forkPair().running, status: "running" });
+    status({ agent: forkPair().idle, status: "idle" });
     assert.equal(infos.filter((t) => /: done /.test(t)).length, 1, "A-3：agents 缺位 fork 型保守走 done");
     assert.ok(!infos.some((t) => /: subagent-done /.test(t)), "A-3：不误判 subagent-done");
     // spawn 型：origin 信号不依赖 agents，仍走 subagent 分支
-    const spawn = () => agentWithTitle("a3-spawn", "spawn 子任务", { subagent: true, turnEnd: 2 });
-    status({ agent: spawn(), status: "running" });
-    status({ agent: spawn(), status: "idle" });
+    const spawnPair = () => turnPair("a3-spawn", "spawn 子任务", { subagent: true }, { turn: 2 });
+    status({ agent: spawnPair().running, status: "running" });
+    status({ agent: spawnPair().idle, status: "idle" });
     assert.equal(infos.filter((t) => /: subagent-done /.test(t)).length, 1, "A-3：spawn 型 origin 信号仍走 subagent 分支");
   }
 
@@ -443,13 +468,14 @@ try {
     const warns = [];
     const { listeners } = await makeNotifier(work, { configFile: b1Cfg }, { logger: { info: (t) => infos.push(t), warn: (t) => warns.push(t) } });
     const status = listeners.get("agent/status")[0];
-    const mk = () => agentWithTitle("b1-1", "开关禁用任务", { turnEnd: 1 });
-    status({ agent: mk(), status: "running" });
-    status({ agent: mk(), status: "idle" });
+    const pair = turnPair("b1-1", "开关禁用任务", {}, { turn: 1 });
+    status({ agent: pair.running, status: "running" });
+    status({ agent: pair.idle, status: "idle" });
     assert.equal(infos.filter((t) => /: done /.test(t)).length, 0, "B-1：notifyTaskDone=false 主任务不通知");
-    // 同 turn 再现 idle：lastEndedTurn 已提交 → 无新证据 → skip（不重复处理）
-    status({ agent: mk(), status: "running" });
-    status({ agent: mk(), status: "idle" });
+    // 同 turn 再现 idle：lastEndedTurn 已提交 → 无新证据 → skip（不重复处理）；
+    // 构造为「events 仍停 turn=1」的 abort-early 形态（快照 ≤ running 基线冻结）
+    status({ agent: agentWithTitle("b1-1", "开关禁用任务", { turnEnd: 1 }), status: "running" });
+    status({ agent: agentWithTitle("b1-1", "开关禁用任务", { turnEnd: 1 }), status: "idle" });
     assert.equal(infos.filter((t) => /: done /.test(t)).length, 0, "B-1：开关禁用后同 turn 再现 idle 不重复");
     assert.ok(warns.some((t) => t.includes("b1-1") && /完成判定跳过/.test(t)), "B-1：再现 idle 走跳过路径 warn 留痕");
   }
@@ -465,16 +491,16 @@ try {
     const { listeners, routes } = await makeNotifier(work, { configFile: b2Cfg, historyFile: join(work, "b2-hist.jsonl") }, loggingOverride(infos));
     const status = listeners.get("agent/status")[0];
     const historyRoute = routes.find((r) => r.path === ROUTES.history);
-    const mk = () => agentWithTitle("b2-1", "免打扰完成", { turnEnd: 1 });
-    status({ agent: mk(), status: "running" });
-    status({ agent: mk(), status: "idle" });
+    const pair = turnPair("b2-1", "免打扰完成", {}, { turn: 1 });
+    status({ agent: pair.running, status: "running" });
+    status({ agent: pair.idle, status: "idle" });
     assert.ok(!infos.some((t) => /dsh-notifier: done /.test(t) && !t.includes("被免打扰拦截")), "B-2：免打扰拦截不发出系统通知");
     assert.ok(infos.some((t) => t.includes("被免打扰拦截")), "B-2：拦截记录日志");
     const records = await waitForHistory(historyRoute, (r) => r.some((e) => e.kind === "done" && e.suppressed === "quiet"));
     assert.equal(records.filter((e) => e.kind === "done" && e.suppressed === "quiet").length, 1, "B-2：仅一条 suppressed:quiet 历史");
     // 同 turn 再现 idle：免打扰拦截也是三态提交之一（lastEndedTurn 已推进）→ 不重复
-    status({ agent: mk(), status: "running" });
-    status({ agent: mk(), status: "idle" });
+    status({ agent: agentWithTitle("b2-1", "免打扰完成", { turnEnd: 1 }), status: "running" });
+    status({ agent: agentWithTitle("b2-1", "免打扰完成", { turnEnd: 1 }), status: "idle" });
     const after = await waitForHistory(historyRoute, (r) => r.length > records.length, 500);
     assert.equal(after.length, records.length, "B-2：同 turn 再现 idle 不新增历史记录");
   }
@@ -487,13 +513,13 @@ try {
     const infos = [];
     const { listeners } = await makeNotifier(work, { configFile: b4Cfg }, loggingOverride(infos));
     const status = listeners.get("agent/status")[0];
-    const mk = () => agentWithTitle("b4-1", "合并窗口任务", { turnEnd: 1 });
-    status({ agent: mk(), status: "running" });
-    status({ agent: mk(), status: "idle" });
+    const pair = turnPair("b4-1", "合并窗口任务", {}, { turn: 1 });
+    status({ agent: pair.running, status: "running" });
+    status({ agent: pair.idle, status: "idle" });
     assert.equal(infos.filter((t) => /: done /.test(t)).length, 1, "B-4：首条完成即时通知并入队");
     // 窗口未 flush 时同 turn 再现 idle：入队成功已提交 lastEndedTurn → 不重复
-    status({ agent: mk(), status: "running" });
-    status({ agent: mk(), status: "idle" });
+    status({ agent: agentWithTitle("b4-1", "合并窗口任务", { turnEnd: 1 }), status: "running" });
+    status({ agent: agentWithTitle("b4-1", "合并窗口任务", { turnEnd: 1 }), status: "idle" });
     assert.equal(infos.filter((t) => /: done /.test(t)).length, 1, "B-4：窗口内同 turn 再现 idle 不重复（入队即提交）");
   }
 
@@ -509,24 +535,69 @@ try {
     const { listeners } = await makeNotifier(work, { configFile: b4fCfg }, loggingOverride(infos));
     const status = listeners.get("agent/status")[0];
     const doneCount = () => infos.filter((t) => /: done /.test(t)).length;
-    const mkA = () => agentWithTitle("b4f-a", "flush 后 A", { turnEnd: 1 });
-    const mkB = () => agentWithTitle("b4f-b", "flush 后 B", { turnEnd: 1 });
+    const pairA = () => turnPair("b4f-a", "flush 后 A", {}, { turn: 1 });
+    const pairB = () => turnPair("b4f-b", "flush 后 B", {}, { turn: 1 });
     // 两条完成进入同一聚合窗口（首条即时、第二条入队挂起）
-    status({ agent: mkA(), status: "running" });
-    status({ agent: mkA(), status: "idle" });
-    status({ agent: mkB(), status: "running" });
-    status({ agent: mkB(), status: "idle" });
+    status({ agent: pairA().running, status: "running" });
+    status({ agent: pairA().idle, status: "idle" });
+    status({ agent: pairB().running, status: "running" });
+    status({ agent: pairB().idle, status: "idle" });
     assert.equal(doneCount(), 1, "B-4：窗口内首条即时、第二条挂起");
     // 等窗口到点：flush 补发聚合条（正常路径）
     await new Promise((resolve) => setTimeout(resolve, 100));
     assert.equal(doneCount(), 2, "B-4：flush 补发聚合条");
     assert.ok(infos.some((t) => /: done /.test(t) && t.includes("另有 1 个任务已完成")), "B-4：聚合条文案带计数");
-    // 已提交 turn 不回退：flush 完成后再现 idle 不重复
-    status({ agent: mkA(), status: "running" });
-    status({ agent: mkA(), status: "idle" });
-    status({ agent: mkB(), status: "running" });
-    status({ agent: mkB(), status: "idle" });
+    // 已提交 turn 不回退：flush 完成后再现 idle（无新 closure 形态）不重复
+    status({ agent: agentWithTitle("b4f-a", "flush 后 A", { turnEnd: 1 }), status: "running" });
+    status({ agent: agentWithTitle("b4f-a", "flush 后 A", { turnEnd: 1 }), status: "idle" });
+    status({ agent: agentWithTitle("b4f-b", "flush 后 B", { turnEnd: 1 }), status: "running" });
+    status({ agent: agentWithTitle("b4f-b", "flush 后 B", { turnEnd: 1 }), status: "idle" });
     assert.equal(doneCount(), 2, "B-4：flush 后已提交 turn 不回退重发");
+  }
+
+  // ── issue #290 阶段二：重载窗口后首轮 live turn 仍通知（D-1）与
+  //    重载不引入假阳性（D-2）——独立实例模拟插件重载（新 fiber 的
+  //    agentStates / eventStreamEnds 记忆为空）──
+  {
+    // D-1：重载窗口后首轮 live turn 仍通知（快照兜底补证）。
+    // 构造：上一轮 turn=1 已落盘（重载前已派发、新 fiber 未记忆，push 缺失），
+    // 本轮 live turn=2 completed 落盘后 running→idle——快照较 running 基线推进，
+    // 走快照兜底补证 → 恰一条 done，不因记忆重置静默。
+    const d1Cfg = join(work, "d1-reload.json");
+    writeFileSync(d1Cfg, JSON.stringify({ doneMergeWindowMs: 0 }));
+    const infos1 = [];
+    const warns1 = [];
+    const { listeners: l1 } = await makeNotifier(
+      work,
+      { configFile: d1Cfg, historyFile: join(work, "d1-hist.jsonl") },
+      { logger: { info: (t) => infos1.push(t), warn: (t) => warns1.push(t) } }
+    );
+    const status1 = l1.get("agent/status")[0];
+    const d1 = turnPair("d1-1", "重载后任务", {}, { turn: 2 }, { turn: 1 }); // prev=1（重载前 closure）、this=2（本轮 live）
+    status1({ agent: d1.running, status: "running" });
+    status1({ agent: d1.idle, status: "idle" });
+    assert.equal(infos1.filter((t) => /: done /.test(t)).length, 1, "D-1：重载后首轮 live turn 经快照兜底通知（恰一条）");
+    assert.ok(!warns1.some((t) => t.includes("d1-1")), "D-1：重载后首轮 live turn 不走跳过路径（无 warn）");
+
+    // D-2：重载后 abort-early（本轮无新 closure）idle 仍静默——running 基线
+    //     捕获上一轮 turn=1 completed，idle 时快照仍 turn=1（≤ 基线）→ 冻结，
+    //     不因记忆重置把旧证据当新轮完成。
+    const d2Cfg = join(work, "d2-reload-abort.json");
+    writeFileSync(d2Cfg, JSON.stringify({ doneMergeWindowMs: 0 }));
+    const infos2 = [];
+    const warns2 = [];
+    const { listeners: l2 } = await makeNotifier(
+      work,
+      { configFile: d2Cfg, historyFile: join(work, "d2-hist.jsonl") },
+      { logger: { info: (t) => infos2.push(t), warn: (t) => warns2.push(t) } }
+    );
+    const status2 = l2.get("agent/status")[0];
+    status2({ agent: agentWithTitle("d2-1", "重载后中断", { turnEnd: 1 }), status: "running" });
+    status2({ agent: agentWithTitle("d2-1", "重载后中断", { turnEnd: 1 }), status: "idle" });
+    assert.equal(infos2.filter((t) => /: done /.test(t)).length, 0, "D-2：重载后 abort-early 静默（不把旧证据当新轮完成）");
+    const d2Warn = warns2.find((t) => t.includes("d2-1"));
+    assert.ok(d2Warn !== undefined && /完成判定跳过/.test(d2Warn), "D-2：重载后 abort-early 跳过路径 warn 留痕");
+    assert.match(d2Warn, /证据源=快照冻结/, "D-2：warn 标识快照冻结（陈旧快照拦截）");
   }
 } finally {
   rmSync(work, { recursive: true, force: true });

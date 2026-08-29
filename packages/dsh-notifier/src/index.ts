@@ -18,10 +18,13 @@
  *   （origin === 'subagent'，或 fork 型委派且运行时归属成立——见 message.ts
  *   isSubagentOf 双信号注释）走独立开关/事件类型 subagent-done；
  *   用户暂停/中断（turn/end reason aborted）固定静默。
- *   完成判定为双源（issue #272）：idle 时从 agent.session.events 快照回读
- *   最新 turn/end，与 session/event 推送流记忆的最新 turn/end 按 turn 取新者
- *   作为本轮结束证据——快照一次性读滞后不再被 lastEndedTurn 固化为永久静默；
- *   同一 turn 两源汇合于同一判定点，天然只通知一次。跳过路径输出可观测 warn。
+ *   完成判定为单源 push + 快照兜底（issue #290 阶段二）：idle 判定以
+ *   session/event 推送流记忆（eventStreamEnds，post-commit 同步派发、恒定
+ *   新鲜）为主证据源；快照回读（lastTurnEndOf）仅在 push 缺失（插件中途
+ *   挂载 / 重载窗口内已派发但新 fiber 未记忆）时作兜底——快照一次性读滞后
+ *   不再被 lastEndedTurn 固化为永久静默；同一 turn 两源汇合于同一判定点，
+ *   天然只通知一次。abort-early（本轮无新 closure）陈旧快照经 running 基线
+ *   守卫拦截，不误报完成。跳过路径输出可观测 warn（标识证据来源）。
  * - 任务错误：agent/error（{agent, turn, step, error}），60 秒滚动窗口合并
  * - 轮结束：agent/turn-stopping（serial，{agent, turn}，仅宿主通知，不跑模型）
  * - 会话销毁：agent/disposed（清理 per-agent 状态）
@@ -122,7 +125,7 @@ export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Pro
 
   // ------------------------------------------------------------ 组装各职责模块
 
-  const sse = createSseHub();
+  const sse = createSseHub({ getMaxConnections: () => current.maxConnections });
   const system = createSystemNotifier({
     getSoundEnabled: () => current.notifySound,
     toastScript,
@@ -182,7 +185,7 @@ export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Pro
    * 归属成立）走独立开关 notifySubagentDone 与独立事件类型 subagent-done；
    * 用户暂停/中断（turn/end reason aborted）固定静默。
    */
-  const agentStates = new Map<string, { runningSeen: boolean; startedAt: number; lastEndedTurn?: number }>(); // agentId -> { runningSeen, startedAt, lastEndedTurn }
+  const agentStates = new Map<string, { runningSeen: boolean; startedAt: number; lastEndedTurn?: number; runningBaseline?: { turn: number; kind: string } }>(); // agentId -> { runningSeen, startedAt, lastEndedTurn, runningBaseline }
 
   /**
    * 审批请求：approval/request waterfall（源码核验：真实审批由 dsh-sandbox
@@ -405,21 +408,34 @@ export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Pro
           // 首行 throwIfAborted 在 try 外），读到的 turn/end 是上一次运行的
           // ——无新 closure 宁可静默，不误报完成。
           //
-          // 双源证据合并（issue #272）：快照回读（ended）与 session/event
-          // 推送流（streamed，post-commit 不受快照滞后影响）按 turn 取新者
-          // 作为本轮结束证据——两源看到的是同一 append-only 日志的同一事件，
-          // turn 相同即同一证据（同 turn 天然只通知一次）；快照一次性读滞后
-          // 时由推送流兜底，不再固化为永久静默。
-          const ended = lastTurnEndOf(agent);
+          // 证据面收敛——单源 push + 快照兜底（issue #290 阶段二）：
+          // 完成判定证据主源 = session/event 推送流（eventStreamEnds，
+          // post-commit 同步派发、恒定新鲜）：eventStreamEnds 有该 session
+          // 记录时直接采信 push、不读快照。快照回读（lastTurnEndOf）仅在
+          // push 缺失（插件于 agent 运行中途挂载 / 重载窗口内已派发但新
+          // fiber 未记忆）时作兜底——不再「按 turn 取新」双源互补。
+          //
+          // abort-early 陈旧快照冻结（C-1）：兜底快照必须较 running 基线
+          // 推进才视为「本轮新 closure」——abort 早于本轮 turn/start 落盘
+          // 时本轮无新 turn/end，快照读到的仍是上一次运行的 completed；若
+          // 快照 turn ≤ running 基线（本轮无推进），把陈旧快照冻结、不作
+          // 本轮证据（宁静静默，不误报完成）。状态机记忆为空（重载后首次
+          // idle）时同样成立：记忆重置不把旧证据当新轮完成（D-2）。
+          const streamedRaw = eventStreamEnds.get(agentId);
           // 合并处对称守卫（#284 复核闸 P1 纵深）：仅接受 turn 有限的证据——
           // 入口（lastTurnEndOf / session/event 处理器）已各自 skip 非有限
           // turn，此处兜底保证任何畸形证据既不能成 best、也不能推进记忆。
-          const streamedRaw = eventStreamEnds.get(agentId);
-          const streamed = streamedRaw !== undefined && Number.isFinite(streamedRaw.turn) ? streamedRaw : undefined;
-          const best =
-            streamed !== undefined && (ended === undefined || (Number.isFinite(streamed.turn) && streamed.turn > ended.turn))
-              ? streamed
-              : ended;
+          const pushed = streamedRaw !== undefined && Number.isFinite(streamedRaw.turn) ? streamedRaw : undefined;
+          // 快照兜底仅在 push 缺失时读取（单源 push 为主证据，不读快照）。
+          const snapshot = pushed === undefined ? lastTurnEndOf(agent) : undefined;
+          const baselineTurn = state.runningBaseline?.turn;
+          const stale =
+            pushed === undefined &&
+            snapshot !== undefined &&
+            baselineTurn !== undefined &&
+            snapshot.turn <= baselineTurn;
+          const best = pushed ?? (stale ? undefined : snapshot);
+          const evidenceSource = pushed !== undefined ? "push" : snapshot !== undefined ? (stale ? "快照冻结" : "快照兜底") : "无";
           const rememberedTurn = state.lastEndedTurn;
           const hasNewEnd = best !== undefined && (rememberedTurn === undefined || best.turn > rememberedTurn);
           // 非正常结束不判「完成」：本轮 turn/end 无新 closure（hasNewEnd）
@@ -440,7 +456,8 @@ export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Pro
             // 日志，不打扰用户；aborted 等设计内静默同样留痕（kind 字段区分）。
             ctx.logger.warn(
               `dsh-notifier: 完成判定跳过（不发 done）agent=${agentId} kind=${best?.kind ?? "none"} ` +
-                `快照turn=${ended !== undefined ? String(ended.turn) : "-"} 推送turn=${streamed !== undefined ? String(streamed.turn) : "-"} ` +
+                `证据源=${evidenceSource} 快照turn=${snapshot !== undefined ? String(snapshot.turn) : "-"} ` +
+                `推送turn=${pushed !== undefined ? String(pushed.turn) : "-"} ` +
                 `记忆turn=${rememberedTurn ?? "-"}`,
             );
             // B-3：非 completed 闭包照常消费——aborted/error/blocked/
@@ -474,6 +491,11 @@ export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Pro
         } else if (status === "running") {
           state.runningSeen = true;
           state.startedAt = Date.now();
+          // 记录本轮开始前的快照基线（abort-early 冻结判据）：running 时
+          // 快照最新 turn/end 即「本轮之前已落盘」的证据；idle 时快照若
+          // 仍未推进（≤ 基线），说明本次 running→idle 无新 closure（abort
+          // 早于 turn/start），陈旧快照不得当本轮新证据（C-1/D-2）。
+          state.runningBaseline = lastTurnEndOf(agent);
         }
       } catch (error) {
         ctx.logger.warn(`dsh-notifier: agent/status 处理失败: ${errorMessage(error)}`);

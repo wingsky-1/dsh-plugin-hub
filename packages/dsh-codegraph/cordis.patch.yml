@@ -1,0 +1,12 @@
+# dsh-codegraph bundle patch：向 web profile 的插件名册插入 codegraph 纪律插件。
+# 主机端（exports "."）在宿主进程运行：探测 codegraph CLI（未装则注入引导安装
+# 命令，不自动执行）、经 mcp-manager 核心服务（ctx.mcpManager，需 dsh-mcp-manager
+# 已启用）运行时注册 codegraph MCP 服务器（不落盘）、注册纪律工具
+# （codegraph_explore 封装：查询前强制 sync + 校验/补全 projectPath）、
+# 监听 agent/created 按会话 cwd 条件注入 worktree 开发纪律（非 git 仓不启用）。
+# 无客户端半（纯宿主基础设施，无 UI）。配置走 schema 默认值（见 src/index.ts）。
+# 依赖：dsh-mcp-manager（提供 ctx.mcpManager service；未启用时回退自带 stdio
+# 客户端或纯提示）。
+- insert:
+    - id: ui-dsh-codegraph
+      name: '@wingsky-1/dsh-codegraph'
