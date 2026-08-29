@@ -629,9 +629,10 @@ export function formatPanel() { return "<p>2</p>"; }
   // add 登记第二个文件（纳入热更监视）
   {
     let payload;
-    addRoute.handler(fakeReq({ method: "POST", body: JSON.stringify({ file: f2 }) }), { writeHead: () => {}, end: (c) => { payload = JSON.parse(c); } });
-    await new Promise((r) => setTimeout(r, 80));
-    assert.equal(payload.ok, true, "第二个适配器登记成功");
+    // #313：async handler 必须 await（writeJson 在 resolve 前同步调用 end 回调）——
+    // 旧「固定 sleep(80ms) 后读 payload」在 CI 慢 runner 下偶发 undefined 崩
+    await addRoute.handler(fakeReq({ method: "POST", body: JSON.stringify({ file: f2 }) }), { writeHead: () => {}, end: (c) => { payload = JSON.parse(c); } });
+    assert.equal(payload?.ok, true, "第二个适配器登记成功");
   }
   // 把 one.mjs 的导出 name 改为 u-two（与另一 user-file 撞名）→ 触发热更冲突路径
   writeFileSync(f1, `
