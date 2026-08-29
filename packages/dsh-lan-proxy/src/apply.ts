@@ -12,7 +12,7 @@ import { mkdirSync } from "node:fs";
 import type { Context } from "@deepseek-ai/cordis";
 import { isLoopbackRequest } from "../../../shared/loopback.js";
 import { writeJson, errorMessage } from "../../../shared/host-utils.js";
-import { createLanProxy, DEFAULT_OPTIONS } from "./proxy.ts";
+import { createLanProxy, DEFAULT_OPTIONS, DEFAULT_DEFLATE_POLICY } from "./proxy.ts";
 import type { TlsMaterials, LanProxy } from "./proxy.ts";
 import { ensureSelfSignedTls, loadTlsFromFiles } from "./cert.ts";
 import type { HttpCompressSnapshot, LanProxyConfig, ResolvedConfig } from "./config.ts";
@@ -95,6 +95,7 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
       printBanner: value.printBanner ?? true,
       wsCompressEnabled: value.wsCompressEnabled ?? true,
       wsCompressPaths: value.wsCompressPaths ?? DEFAULT_WSS_COMPRESS_PATHS,
+      wsDeflatePolicy: value.wsDeflatePolicy ?? DEFAULT_DEFLATE_POLICY,
       httpCompressEnabled: value.httpCompressEnabled ?? true,
       httpCompressLevel: value.httpCompressLevel ?? 1,
     };
@@ -173,6 +174,7 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
           enabled: value.wsCompressEnabled !== false,
           paths: value.wsCompressPaths ?? DEFAULT_WSS_COMPRESS_PATHS,
         },
+        wsDeflatePolicy: value.wsDeflatePolicy ?? DEFAULT_DEFLATE_POLICY,
         httpCompress: {
           enabled: httpCompressEnabled,
           level: value.httpCompressLevel,
@@ -347,6 +349,8 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
         wsCompressPaths: v.wsCompressPaths,
         // —— HTTP 响应压缩（转发层 compression 中间件）：配置 + 生效状态 + 协商计数 ——
         ...compress,
+        // —— 断连原因计数（issue #308；转发器重建后重置）——
+        connStats: activeProxy?.connStats() ?? null,
         configDir,
       });
     },

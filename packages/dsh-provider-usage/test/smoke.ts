@@ -629,9 +629,10 @@ export function formatPanel() { return "<p>2</p>"; }
   // add 登记第二个文件（纳入热更监视）
   {
     let payload;
-    addRoute.handler(fakeReq({ method: "POST", body: JSON.stringify({ file: f2 }) }), { writeHead: () => {}, end: (c) => { payload = JSON.parse(c); } });
-    await new Promise((r) => setTimeout(r, 80));
-    assert.equal(payload.ok, true, "第二个适配器登记成功");
+    // #313：async handler 必须 await（writeJson 在 resolve 前同步调用 end 回调）——
+    // 旧「固定 sleep(80ms) 后读 payload」在 CI 慢 runner 下偶发 undefined 崩
+    await addRoute.handler(fakeReq({ method: "POST", body: JSON.stringify({ file: f2 }) }), { writeHead: () => {}, end: (c) => { payload = JSON.parse(c); } });
+    assert.equal(payload?.ok, true, "第二个适配器登记成功");
   }
   // 把 one.mjs 的导出 name 改为 u-two（与另一 user-file 撞名）→ 触发热更冲突路径
   writeFileSync(f1, `
@@ -680,6 +681,10 @@ export function formatPanel() { return "<p>x</p>"; }
   assert.ok(!clientSource.includes("mcpClearance"), "客户端源码已去除 MCP 避让（mcpClearance）");
   assert.ok(!clientSource.includes("data-dsh-mcp-float"), "客户端源码已去除 MCP 浮窗探测避让");
   assert.ok(clientSource.includes('.style.position = "fixed"'), "客户端源码用固定定位渲染胶囊");
+  // issue #308：SSE 长连接已移除（移动端切后台半开僵死占用连接池的根因），
+  // ui-config 改为启动拉取 + 60s 轮询 + 回前台即时拉取（syncUiConfig）。
+  assert.ok(!clientSource.includes("new EventSource("), "客户端已移除 SSE 长连接（EventSource）");
+  assert.ok(clientSource.includes("syncUiConfig"), "客户端以 syncUiConfig 轮询代偿 ui-config 同步");
 
   // qa F1（#128 实测）：bottom-* 锚点首次打开以小高度定位、异步数据撑高面板后
   // 无重排路径 → 稳定向下溢出视口。防回归：renderPanel 尾部触发重定位 +

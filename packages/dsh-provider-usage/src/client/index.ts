@@ -20,7 +20,6 @@ import {
   DEFAULT_CLIENT_UI_CONFIG,
   FALLBACK_PROVIDER,
   UNKNOWN_PROVIDER_HINT,
-  EVENTS_URL,
 } from "./core.ts";
 import type { SessionsServiceLike, ConnectionHandleLike, StatsResponseV2, HistoryResponseV2, UiPlacementConfig } from "./core.ts";
 import { SettingsPage } from "./settings.ts";
@@ -113,10 +112,8 @@ let renderGeneration = 0;
 /** 用户适配器版本（变化即全量重置，防新数据旧模板混搭）。 */
 let lastAdapterVersion = 0;
 
-/** 胶囊/面板位置配置（设置页保存后经 SSE 即时刷新）。 */
+/** 胶囊/面板位置配置（设置页保存后经 60s 轮询 + 回前台即时刷新）。 */
 let uiConfig: UiPlacementConfig = { ...DEFAULT_CLIENT_UI_CONFIG };
-/** SSE 事件通道（ui-config-changed 监听）。 */
-let eventsSource: EventSource | null = null;
 
 /** 按当前配置重算胶囊位置（模块级：mountFloat 与配置变更共用）。
  *  固定定位（fixed）：胶囊钉在会话容器视口（rect）内，滚动内容滑动不改变其位置，
@@ -542,29 +539,32 @@ function mountFloat(): () => void {
   renderPill();
   void refreshStats();
 
-  // 胶囊位置配置：启动拉取一次 + SSE 订阅即时热更新（设置页保存即生效，跨端同步）
-  void fetchUiConfig().then((cfg) => {
-    uiConfig = cfg;
-    applyUiPlacement();
-  });
-  try {
-    eventsSource = new EventSource(EVENTS_URL);
-    eventsSource.onmessage = (ev: MessageEvent) => {
-      try {
-        const msg = JSON.parse(String(ev.data)) as { type?: string };
-        if (msg.type === "ui-config-changed") {
-          void fetchUiConfig().then((cfg) => {
-            uiConfig = cfg;
-            applyUiPlacement();
-          });
-        }
-      } catch { /* 忽略畸形帧 */ }
-    };
-  } catch { /* EventSource 不可用：静默降级，下次挂载重新拉取 */ }
+  // #308：胶囊位置配置改为「启动拉取一次 + 60s 轮询 + 回前台即时拉取」，
+  // 移除常驻 SSE（/api/dsh-provider-usage/events）。动机：SSE 是 EventSource
+  // 长连接，移动端切后台系统冻结 JS 并静默掐断 TCP 后形成半开连接——浏览器侧
+  // 不触发 error/close，连接持续占用同源 6 连接池，回前台后新请求全部 stalled
+  // 超时（与 mcp-manager 的 #268 同根因，此处直接不再持有长连接，从源头消除）。
+  // ui-config 变更的即时性由「设置页保存后跨端同步」降级为≤60s 收敛，UI 可接受；
+  // 拉取本身经 fetchTimeout 10s 兜底，半开时不悬挂。
+  const syncUiConfig = (): void => {
+    void fetchUiConfig()
+      .then((cfg) => {
+        uiConfig = cfg;
+        applyUiPlacement();
+      })
+      .catch(() => { /* 网络/超时：保留旧配置，下次轮询重试 */ });
+  };
+  syncUiConfig();
 
-  refreshTimer = setInterval(() => { void refreshStats(); }, REFRESH_MS);
+  refreshTimer = setInterval(() => {
+    void refreshStats();
+    syncUiConfig();
+  }, REFRESH_MS);
   const onVisible = (): void => {
-    if (document.visibilityState === "visible") void refreshStats();
+    if (document.visibilityState === "visible") {
+      void refreshStats();
+      syncUiConfig();
+    }
   };
   document.addEventListener("visibilitychange", onVisible);
 
@@ -578,10 +578,6 @@ function mountFloat(): () => void {
       refreshTimer = null;
     }
     document.removeEventListener("visibilitychange", onVisible);
-    if (eventsSource !== null) {
-      eventsSource.close();
-      eventsSource = null;
-    }
     pill.remove();
     panel.remove();
     floatPill = undefined;

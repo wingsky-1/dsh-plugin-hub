@@ -21,7 +21,7 @@ import { constants as zlibConstants } from "node:zlib";
 import {
   hostnameAllowed, formatAuthority, rewriteHeaders, createLanProxy, isLoopbackTarget,
   DEFAULT_OPTIONS, compressWsPath, isCompressible, resolveCompressionOptions,
-  ensureSelfSignedTls,
+  ensureSelfSignedTls, deflateAllowedByPolicy, DEFAULT_DEFLATE_POLICY,
 } from "../src/index.ts";
 import {
   toSanEntry, certStillValid, loadTlsFromFiles, SELF_SIGNED_KEY, SELF_SIGNED_CERT,
@@ -125,6 +125,43 @@ assert.deepEqual(resolveCompressionOptions(null), {}, "null → 默认");
 assert.equal(DEFAULT_OPTIONS.host, "0.0.0.0");
 assert.equal(DEFAULT_OPTIONS.port, 3081);
 assert.equal(DEFAULT_OPTIONS.targetHost, "127.0.0.1");
+
+// ===== deflateAllowedByPolicy（issue #308：WS 压缩协商策略；纯函数） =====
+{
+  // 无策略（缺省宽松）：放行
+  assert.equal(deflateAllowedByPolicy(undefined, "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)"), true, "无策略 → 放行");
+  assert.equal(deflateAllowedByPolicy({}, undefined), true, "空策略 + 无 UA → 放行");
+  // browser=false 全局关
+  assert.equal(deflateAllowedByPolicy({ browser: false }, "Chrome/120"), false, "browser=false → 全局拒绝");
+  // uaDeny 命中（默认 iOS 三件套）
+  assert.equal(deflateAllowedByPolicy(DEFAULT_DEFLATE_POLICY, "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)"), false, "默认策略拦截 iPhone");
+  assert.equal(deflateAllowedByPolicy(DEFAULT_DEFLATE_POLICY, "Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)"), false, "默认策略拦截 iPad");
+  assert.equal(deflateAllowedByPolicy(DEFAULT_DEFLATE_POLICY, "Mozilla/5.0 (iPod touch; CPU iPhone OS 17_0)"), false, "默认策略拦截 iPod");
+  assert.equal(deflateAllowedByPolicy(DEFAULT_DEFLATE_POLICY, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120"), true, "桌面 Chrome 放行");
+  assert.equal(deflateAllowedByPolicy(DEFAULT_DEFLATE_POLICY, "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Safari/605.1.15"), true, "桌面 Safari 放行");
+  // uaDeny 空数组 → 放行
+  assert.equal(deflateAllowedByPolicy({ uaDeny: [] }, "iPhone"), true, "uaDeny 空数组 → 放行");
+  // UA 缺失
+  assert.equal(deflateAllowedByPolicy(DEFAULT_DEFLATE_POLICY, undefined), true, "UA 缺失 → 放行");
+  // 自定义 deny 片段
+  assert.equal(deflateAllowedByPolicy({ uaDeny: ["Android"] }, "Mozilla/5.0 (Linux; Android 14)"), false, "自定义 deny 命中 Android");
+}
+
+// ===== ConnStats 结构（issue #308：断连计数快照兼容性） =====
+{
+  const proxy = createLanProxy({
+    host: "127.0.0.1",
+    port: 0,
+    targetHost: "127.0.0.1",
+    targetPort: 65534, // 不可达上游：仅用于拿实例结构，不实际转发
+  });
+  const c = proxy.connStats();
+  for (const key of ["wsBridgeClosed", "wsBridgeHalfOpen", "wsBridgeErrors", "wsPassthroughDestroyed", "wsPassthroughErrors", "httpClientAborted", "httpProxyErrors"] as const) {
+    assert.equal(typeof c[key], "number", `connStats.${key} 为数字`);
+    assert.equal(c[key], 0, `connStats.${key} 初始为 0`);
+  }
+  proxy.close();
+}
 
 // ===== bridgeCompressedWs（WebSocket 压缩桥接）：经真实 LAN 代理间接测试 =====
 // 起一个 WS 回显上游 → 创建 LAN 代理（wsCompress 启用，路径命中）→
