@@ -68,6 +68,8 @@ import {
   clampPointToViewport,
   clampZIndexBase,
   panelZIndexFor,
+  composerDockedAtBottom,
+  bottomAnchorEdge,
   summarizeToolDescriptions,
   truncateText,
   uiConfigChangedFrame,
@@ -593,16 +595,27 @@ const main = async () => {
     assert.deepEqual(clampPointToViewport(-30, -50, 100, 80, 375, 667, 10), { x: 10, y: 10 }, "safeInset>0 按安全区内缩");
     assert.deepEqual(clampPointToViewport(0, 0, 9999, 9999, 375, 667), { x: 0, y: 0 }, "元素大于视口时钳到原点不倒挂");
   });
-  check("#128 zIndexBase clamp 边界与面板派生", () => {
+  check("#128 重开：zIndexBase clamp 边界、主面板与胶囊同值、composer seat 贴底纯函数", () => {
     assert.equal(clampZIndexBase(5000, 10), 5000, "合法值透传");
     assert.equal(clampZIndexBase(0, 10), Z_INDEX_BASE_MIN, "低于下界压到 1");
     assert.equal(clampZIndexBase(-99, 10), Z_INDEX_BASE_MIN, "负数压到 1");
     assert.equal(clampZIndexBase(9001, 10), Z_INDEX_BASE_MAX, "超上界压到 9000");
     assert.equal(clampZIndexBase("junk", 10), 10, "非数字回退默认");
     assert.equal(clampZIndexBase(7.6, 10), 8, "小数四舍五入");
-    assert.equal(panelZIndexFor(10), 40, "面板层级派生 base+30");
-    assert.equal(panelZIndexFor(9000), 9030, "面板派生允许略超 base 上界（面板独立于 shell 层级预算）");
-    assert.equal(Z_INDEX_PANEL_DELTA, 30, "派生量约定值");
+    // B1/B2：主面板与胶囊同取配置值（不再派生 +30，维护者 2026-08-28 要求）
+    assert.equal(panelZIndexFor(10), 40, "子浮层派生扩展点 base+30（B5，不占主面板预算）");
+    assert.equal(Z_INDEX_PANEL_DELTA, 30, "子浮层派生量约定值");
+    // D1-D4：composerDockedAtBottom / bottomAnchorEdge 矩阵
+    const container = { top: 0, bottom: 844 };
+    assert.equal(composerDockedAtBottom({ top: 670, bottom: 844 }, container), true, "seat 贴底 → docked=true");
+    assert.equal(composerDockedAtBottom({ top: 670, bottom: 843 }, { top: 0, bottom: 844 }), false, "距底缘 1px 未贴底 → false");
+    assert.equal(composerDockedAtBottom({ top: 300, bottom: 500 }, { top: 0, bottom: 844 }), false, "seat 居中未贴底 → false");
+    assert.equal(composerDockedAtBottom(null, container), false, "seat null → false");
+    assert.equal(composerDockedAtBottom({ top: 670, bottom: 844 }, null), false, "container null → false");
+    assert.equal(bottomAnchorEdge(844, 670, true), 670, "docked → seatTop");
+    assert.equal(bottomAnchorEdge(844, 670, false), 844, "未 docked → containerBottom");
+    assert.equal(bottomAnchorEdge(844, null, true), 844, "seatTop=null → containerBottom");
+    assert.equal(bottomAnchorEdge(844, Number.NaN, true), 844, "seatTop 非有限数 → containerBottom（无 NaN）");
   });
   check("F1（qa 实测 #128）：bottom 锚点首开小高度→数据撑高→重定位后不溢出", () => {
     // 375x667 视口、bottom-right、胶囊 offsetY(blankY 同构取 8)/高 26px → 上缘 633。
@@ -1935,6 +1948,10 @@ const main = async () => {
     process.exit(1);
   }
   console.log("\nall checks passed");
+  // 显式退出（成功路径）：SDK 端到端块 spawn 的 stdio 子进程句柄残留会导致事件循环
+  // 不空、进程挂起不退出（本地 Node 24.19 复现，基线与 CI 差异），断言全过后强制收尾，
+  // 保证 `pnpm test` 与连续 10 次零 flake 验证可完成；失败路径已在上方 exit(1)。
+  process.exit(0);
 };
 
 main().catch((error) => {

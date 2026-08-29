@@ -101,7 +101,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
 | `offset.x` | 非负整数（水平偏移，单位 px） | `8` |
 | `offset.y` | 非负整数（垂直偏移，单位 px） | `8` |
 | `offset.blankY` | 非负整数（空白会话垂直偏移，单位 px） | `40` |
-| `zIndexBase` | 整数，clamp 到 1–9000（浮窗层级基准；下拉面板自动取基准 +30，模态管理面板不受影响） | `10` |
+| `zIndexBase` | 整数，clamp 到 1–9000（浮窗层级基准；**胶囊与点击后弹出的主面板同取该配置值**，模态管理面板不受影响） | `10` |
 
 当 `position = bottom-right` 或 `bottom-left` 时，下拉面板会**在胶囊上方展开**（底部
 锚点向上弹出），不溢出视口、内容完整可见可点击；顶部锚点向下展开（历史行为，默认不变）。

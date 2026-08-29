@@ -15,7 +15,10 @@
 export const Z_INDEX_BASE_MIN = 1;
 /** 层级基准值域上界（避开宿主 shell 的模态/遮罩层）。 */
 export const Z_INDEX_BASE_MAX = 9000;
-/** 下拉面板相对胶囊的层级派生量（胶囊 base、面板 base+30，保证面板盖住自身胶囊）。 */
+/**
+ * 面板内子浮层（设置卡片等次级层）的层级派生量（#128 重开：主面板与胶囊同取
+ * 配置值，派生 +30 仅保留给面板内子浮层作为扩展点，不占用 zIndexBase 预算）。
+ */
 export const Z_INDEX_PANEL_DELTA = 30;
 
 /** 默认层级基准（mcp-manager 包：对应 CSS 默认 z-index:10，升级前行为不回归）。 */
@@ -30,7 +33,11 @@ export function clampZIndexBase(value: unknown, dflt: number): number {
   return Math.min(Z_INDEX_BASE_MAX, Math.max(Z_INDEX_BASE_MIN, Math.round(value)));
 }
 
-/** 面板层级派生纯函数：面板 z-index = 胶囊基准 + 30。 */
+/**
+ * 面板内子浮层层级派生纯函数（#128 重开：主面板与胶囊 computed z-index 一律取
+ * 配置 zIndexBase，不再派生 +30——维护者 2026-08-28 要求）；本函数仅作为面板内
+ * 次级层（设置卡片等）的派生扩展点，不占用 zIndexBase 预算。
+ */
 export function panelZIndexFor(base: number): number {
   return clampZIndexBase(base, DEFAULT_Z_INDEX_BASE) + Z_INDEX_PANEL_DELTA;
 }
@@ -87,4 +94,36 @@ export function clampPointToViewport(
     x: Math.min(Math.max(x, ins), hiX),
     y: Math.min(Math.max(y, ins), hiY),
   };
+}
+
+// ---- bottom-* 锚点移动端修正（#128 重开回归）--------------------------------
+
+/** 参与贴底判定的矩形最小结构（DOMRect 子集：仅需 top/bottom）。 */
+export interface RectLike { top: number; bottom: number; }
+
+/**
+ * composer seat 贴底判定纯函数（供 smoke 断言）：seat 非空且 seat.bottom 与
+ * container.bottom 在容差内（seat 贴住容器底缘=视口底缘）即为贴底。容差 0.5px：
+ * 恰好贴底（差 0）→ true；距底缘 1px → false（D4 断言语义）。
+ */
+export function composerDockedAtBottom(
+  seatRect: RectLike | null | undefined,
+  containerRect: RectLike | null | undefined,
+): boolean {
+  if (seatRect == null || containerRect == null) return false;
+  return Math.abs(seatRect.bottom - containerRect.bottom) <= 0.5;
+}
+
+/**
+ * bottom-* 锚点下边界纯函数（供 smoke 断言）：贴底时返回 seat 上缘（胶囊上移到
+ * 输入区上方，避免遮挡）；否则返回容器底（桌面 / 未贴底零回归）；seatTop 缺失
+ * 或非有限数时回落容器底（不产生 NaN 坐标）。
+ */
+export function bottomAnchorEdge(
+  containerBottom: number,
+  seatTop: number | null | undefined,
+  docked: boolean,
+): number {
+  if (docked && typeof seatTop === "number" && Number.isFinite(seatTop)) return seatTop;
+  return containerBottom;
 }

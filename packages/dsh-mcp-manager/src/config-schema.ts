@@ -37,7 +37,7 @@ const UiConfigSchema = z.object({
     blankY: z.number().default(40),
   }).default({ x: 8, y: 8, blankY: 40 }),
   zIndexBase: z.number().default(DEFAULT_UI_CONFIG.zIndexBase)
-    .description("浮窗层级基准（1-9000），下拉面板自动取基准+30"),
+    .description("浮窗层级基准（1-9000），胶囊与点击后弹出的主面板同取该配置值"),
 });
 
 /**
