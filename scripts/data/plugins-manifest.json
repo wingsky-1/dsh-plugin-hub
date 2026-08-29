@@ -9,7 +9,8 @@
     "dsh-web-file-preview"
   ],
   "standalone": [
-    "dsh-subagent-model-inherit"
+    "dsh-subagent-model-inherit",
+    "dsh-codegraph"
   ],
   "retired": [
     {
