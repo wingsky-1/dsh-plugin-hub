@@ -15,6 +15,7 @@
  * - disconnect：timer 清理、close 失败吞、最终 stopped
  */
 import assert from "node:assert/strict";
+import { pollUntil } from "./helpers.ts";
 
 const {
   ConnectionSupervisor,
@@ -150,8 +151,8 @@ const failServer = { name: "srv", transport: "stdio", command: "dsh-mcp-missing-
   assert.ok(sup.reconnectTimer !== undefined, "重连 timer 已安排");
   assert.equal(sup.reconnectTimer._idleTimeout, 10, "首次退避 = initialDelayMs");
 
-  // 等待重连循环自行耗尽预算（10ms + 20ms + 误差）。
-  await new Promise((r) => setTimeout(r, 220));
+  // 轮询等重连循环自行耗尽预算（10ms + 20ms + 误差），事件驱动替代固定 sleep。
+  await pollUntil("预算耗尽 status==='failed'", () => sup.status === "failed");
   assert.equal(sup.status, "failed", "预算耗尽 → failed");
   assert.match(sup.error.message, /gave up after 2 attempts/);
   assert.ok(Date.now() - t0 >= 25, "确实经历了退避等待");
@@ -207,13 +208,22 @@ const failServer = { name: "srv", transport: "stdio", command: "dsh-mcp-missing-
   await sup.syncChain;
   assert.deepEqual(log.disposed, ["tool:t"], "代际工具注销");
   assert.deepEqual(sup.tools, []);
-  await new Promise((r) => setTimeout(r, 10));
+  // transport.close 是 fire-and-forget 异步：轮询等其落定（事件驱动替代固定 sleep）。
+  await pollUntil("transport.close 调用", () => log.info.includes("closed"));
   assert.ok(log.info.includes("closed"), "transport.close 调用");
 
   // close 抛错吞掉不炸 teardown。
-  sup.client = { transport: { close: async () => { throw new Error("close boom"); } } };
+  let closeSettled = 0;
+  sup.client = {
+    transport: {
+      close: async () => {
+        closeSettled += 1;
+        throw new Error("close boom");
+      },
+    },
+  };
   sup.teardownGeneration(new Error("x"), false);
-  await new Promise((r) => setTimeout(r, 10));
+  await pollUntil("close 抛错已落定被吞", () => closeSettled === 1);
   assert.equal(sup.status, "failed");
 
   // disposed 短路：清理任务与状态更新都不做。

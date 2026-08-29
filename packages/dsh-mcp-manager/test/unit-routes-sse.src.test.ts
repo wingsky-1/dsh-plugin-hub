@@ -15,6 +15,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { callHandler, pollUntil, assertNoGrowth } from "./helpers.ts";
 
 const {
   makeRoutes,
@@ -140,14 +141,20 @@ const loopbackMethods = ["GET", "POST"];
       broadcastFrame(manager.sseConnections, sseData({ type: "summary" }));
     });
     manager.emitStatus();
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    assert.equal(frames, 1);
+    // emitStatus 是 coalesce 异步（setTimeout 0）：轮询等广播落定（事件驱动替代固定 sleep）。
+    await pollUntil("广播落定 frames===1", () => frames === 1);
     // close 注销。
     resOk.state.onClose();
     assert.equal(manager.sseConnections.size, 0, "close 后注销");
+    // 二次广播应执行但不再写帧（连接已注销）——哨兵确认广播落定后断言帧数不变。
+    let landed = 0;
+    const offSentinel = manager.onStatus(() => {
+      landed += 1;
+    });
     manager.emitStatus();
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    assert.equal(frames, 1);
+    await pollUntil("二次广播落定", () => landed >= 1);
+    offSentinel();
+    assert.equal(frames, 1, "close 注销后广播不再写帧");
     unsubscribe();
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -156,7 +163,6 @@ const loopbackMethods = ["GET", "POST"];
 
 // ---- SSE 心跳（#268）：data ping 帧 / 间隔常量 / close 与卸载 disposer 清理 ----
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const countPing = (res) => (res.state.body.match(/data: \{"type":"ping"\}/g) ?? []).length;
 
 {
@@ -171,15 +177,14 @@ const countPing = (res) => (res.state.body.match(/data: \{"type":"ping"\}/g) ?? 
     const res = fakeRes();
     route.handler(fakeReq("GET", ROUTES.events), res);
     assert.equal(manager.sseHeartbeatCleanups?.size, 1, "心跳清理函数已登记 disposer 注册表");
-    await sleep(45);
+    // 等心跳帧到达阈值（事件驱动轮询替代固定 sleep 等后台数据）。
+    await pollUntil("心跳 data ping 帧到达", () => countPing(res) >= 1);
     const pingsAtClose = countPing(res);
-    assert.ok(pingsAtClose >= 1, `心跳 data ping 帧按间隔到达（实际 ${pingsAtClose} 帧）`);
     // close：注销连接 + 清心跳定时器（防泄漏），此后不再有新帧。
     res.state.onClose();
     assert.equal(manager.sseConnections.size, 0, "close 后注销");
     assert.equal(manager.sseHeartbeatCleanups.size, 0, "close 自删 cleanup");
-    await sleep(45);
-    assert.equal(countPing(res), pingsAtClose, "close 后心跳停止");
+    await assertNoGrowth("close 后心跳停止", () => countPing(res), pingsAtClose);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -199,10 +204,10 @@ const countPing = (res) => (res.state.body.match(/data: \{"type":"ping"\}/g) ?? 
     assert.equal(manager.sseHeartbeatCleanups.size, 2, "每连接一条 cleanup");
     for (const stopHeartbeat of [...manager.sseHeartbeatCleanups]) stopHeartbeat();
     assert.equal(manager.sseHeartbeatCleanups.size, 0, "disposer 清空注册表");
-    await sleep(45);
-    // 清理发生在首个 interval 跳之前（同步路径），两连接均应零心跳帧。
-    assert.equal(countPing(resA), 0, "卸载后连接 A 心跳停止");
-    assert.equal(countPing(resB), 0, "卸载后连接 B 心跳停止");
+    // 清理发生在首个 interval 跳之前（同步路径），两连接均应零心跳帧：
+    // 观察窗口内持续断言（事件驱动轮询替代固定 sleep 等后台停止）。
+    await assertNoGrowth("卸载后连接 A 心跳停止", () => countPing(resA), 0);
+    await assertNoGrowth("卸载后连接 B 心跳停止", () => countPing(resB), 0);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -216,12 +221,10 @@ const countPing = (res) => (res.state.body.match(/data: \{"type":"ping"\}/g) ?? 
     const route = makeEventsRoute(manager, { heartbeatMs: 10 });
     const res = fakeRes();
     route.handler(fakeReq("GET", ROUTES.events), res);
-    await sleep(45);
+    await pollUntil("destroy 前心跳在写帧", () => countPing(res) >= 1);
     const pingsAtDestroy = countPing(res);
-    assert.ok(pingsAtDestroy >= 1, "destroy 前心跳在写帧");
     res.destroy(); // 不触发 onClose：走 destroyed 自愈而非 close 清理
-    await sleep(45);
-    assert.equal(countPing(res), pingsAtDestroy, "destroy 后心跳停止写帧");
+    await assertNoGrowth("destroy 后心跳停止写帧", () => countPing(res), pingsAtDestroy);
     assert.equal(manager.sseHeartbeatCleanups.size, 0, "自愈路径自删 cleanup");
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -281,45 +284,38 @@ const countPing = (res) => (res.state.body.match(/data: \{"type":"ping"\}/g) ?? 
     const find = (path) => routes.find((r) => r.path === path);
 
     // session：非 POST 405。
-    const sesGuard = fakeRes();
-    await find(ROUTES.session).handler(fakeReq("GET", ROUTES.session), sesGuard);
-    assert.equal(sesGuard.state.status, 405);
+    const sesGuard = await callHandler(find(ROUTES.session), fakeReq("GET", ROUTES.session));
+    assert.equal(sesGuard.status, 405);
 
     // session：body 无 cwd 字符串 → 400。
-    const sesBad = fakeRes();
-    await find(ROUTES.session).handler(fakeReq("POST", ROUTES.session, {}), sesBad);
-    assert.equal(sesBad.state.status, 400);
-    const sesNoBody = fakeRes();
-    await find(ROUTES.session).handler(fakeReq("POST", ROUTES.session), sesNoBody);
-    assert.equal(sesNoBody.state.status, 400);
+    const sesBad = await callHandler(find(ROUTES.session), fakeReq("POST", ROUTES.session, {}));
+    assert.equal(sesBad.status, 400);
+    const sesNoBody = await callHandler(find(ROUTES.session), fakeReq("POST", ROUTES.session));
+    assert.equal(sesNoBody.status, 400);
 
     // servers：PATCH 缺 name → 400；DELETE 缺 name → 400。
     for (const method of ["PATCH", "DELETE"]) {
-      const res = fakeRes();
-      await find(ROUTES.servers).handler(fakeReq(method, ROUTES.servers), res);
-      assert.equal(res.state.status, 400, `${method} 缺 name → 400`);
-      assert.match(res.state.body, /name query parameter is required/);
+      const res = await callHandler(find(ROUTES.servers), fakeReq(method, ROUTES.servers));
+      assert.equal(res.status, 400, `${method} 缺 name → 400`);
+      assert.match(JSON.stringify(res.payload), /name query parameter is required/);
     }
 
     // servers：PUT → 405。
-    const resPut = fakeRes();
-    await find(ROUTES.servers).handler(fakeReq("PUT", ROUTES.servers), resPut);
-    assert.equal(resPut.state.status, 405);
+    const resPut = await callHandler(find(ROUTES.servers), fakeReq("PUT", ROUTES.servers));
+    assert.equal(resPut.status, 405);
 
     // DELETE 存在的服务器 → 200 ok:true。
-    const resDel = fakeRes();
-    await find(ROUTES.servers).handler(fakeReq("DELETE", `${ROUTES.servers}?name=dup-a`), resDel);
-    assert.equal(resDel.state.status, 200);
-    assert.equal(JSON.parse(resDel.state.body).ok, true, "delete 返回 ok:true");
+    const resDel = await callHandler(find(ROUTES.servers), fakeReq("DELETE", `${ROUTES.servers}?name=dup-a`));
+    assert.equal(resDel.status, 200);
+    assert.equal(resDel.payload.ok, true, "delete 返回 ok:true");
 
     // PATCH 不存在的服务器 → 400 not found。
-    const resPatchMissing = fakeRes();
-    await find(ROUTES.servers).handler(
+    const resPatchMissing = await callHandler(
+      find(ROUTES.servers),
       fakeReq("PATCH", `${ROUTES.servers}?name=ghost`, { command: "x" }),
-      resPatchMissing,
     );
-    assert.equal(resPatchMissing.state.status, 400);
-    assert.match(resPatchMissing.state.body, /not found/);
+    assert.equal(resPatchMissing.status, 400);
+    assert.match(JSON.stringify(resPatchMissing.payload), /not found/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -334,35 +330,31 @@ const countPing = (res) => (res.state.body.match(/data: \{"type":"ping"\}/g) ?? 
     const importRoute = routes.find((r) => r.path === ROUTES.importJson);
 
     // 非 POST 405。
-    const guard = fakeRes();
-    await importRoute.handler(fakeReq("GET", ROUTES.importJson), guard);
-    assert.equal(guard.state.status, 405);
+    const guard = await callHandler(importRoute, fakeReq("GET", ROUTES.importJson));
+    assert.equal(guard.status, 405);
 
     // body 缺 json 字符串 → 400。
-    const badBody = fakeRes();
-    await importRoute.handler(fakeReq("POST", ROUTES.importJson, { json: 42 }), badBody);
-    assert.equal(badBody.state.status, 400);
-    assert.match(badBody.state.body, /must include a json string/);
+    const badBody = await callHandler(importRoute, fakeReq("POST", ROUTES.importJson, { json: 42 }));
+    assert.equal(badBody.status, 400);
+    assert.match(JSON.stringify(badBody.payload), /must include a json string/);
 
     // 同名导入默认 skip；overwrite=true 更新；非法条目整体 400。
     const payload = JSON.stringify({ "dup-a": { command: "echo2" }, fresh: { url: "http://f/" } });
-    const resSkip = fakeRes();
-    await importRoute.handler(fakeReq("POST", ROUTES.importJson, { json: payload }), resSkip);
-    assert.equal(resSkip.state.status, 200);
-    let out = JSON.parse(resSkip.state.body);
-    assert.deepEqual(out.skipped, ["dup-a"], "同名默认跳过");
-    assert.deepEqual(out.imported, ["fresh"]);
+    const resSkip = await callHandler(importRoute, fakeReq("POST", ROUTES.importJson, { json: payload }));
+    assert.equal(resSkip.status, 200);
+    assert.deepEqual(resSkip.payload.skipped, ["dup-a"], "同名默认跳过");
+    assert.deepEqual(resSkip.payload.imported, ["fresh"]);
 
-    const resOverwrite = fakeRes();
-    await importRoute.handler(fakeReq("POST", ROUTES.importJson, { json: payload, overwrite: true }), resOverwrite);
-    out = JSON.parse(resOverwrite.state.body);
-    assert.deepEqual(out.imported.sort(), ["dup-a", "fresh"], "overwrite 全部导入");
+    const resOverwrite = await callHandler(
+      importRoute,
+      fakeReq("POST", ROUTES.importJson, { json: payload, overwrite: true }),
+    );
+    assert.deepEqual(resOverwrite.payload.imported.sort(), ["dup-a", "fresh"], "overwrite 全部导入");
     assert.equal(manager.store.find("dup-a").command, "echo2", "overwrite 后配置更新");
 
-    const resInvalid = fakeRes();
-    await importRoute.handler(fakeReq("POST", ROUTES.importJson, { json: '{"bad":1}' }), resInvalid);
-    assert.equal(resInvalid.state.status, 400);
-    assert.match(resInvalid.state.body, /entry must be an object/, "非法条目整体 400");
+    const resInvalid = await callHandler(importRoute, fakeReq("POST", ROUTES.importJson, { json: '{"bad":1}' }));
+    assert.equal(resInvalid.status, 400);
+    assert.match(JSON.stringify(resInvalid.payload), /entry must be an object/, "非法条目整体 400");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

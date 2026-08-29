@@ -6,6 +6,67 @@ import assert from "node:assert/strict";
 
 export { assert };
 
+// ---------------------------------------------------------------- 时序工具（#315 批次 A）
+//
+// 防 flake 纪律（docs/DEVELOPMENT.md §5 + issue #315）：
+// - 同步调用 async handler 后「固定 sleep 再读外联 payload」是 CI 慢 runner 下
+//   偶发超时读 undefined 的根因（#313 实证）。统一改 await handler：
+//   writeJson 在 resolve 前同步触发 end 回调，await 完成后 payload 必已就绪。
+// - 真后台异步数据（预热采样 / 历史落盘 / 热更新 / TTL 到龄）一律 pollUntil
+//   轮询可观测条件，禁止固定 sleep 假设异步完成时刻。
+
+/**
+ * 统一路由调用封装（等响应语义位专用）。
+ *
+ * - async handler：await 其 promise；writeJson 在 resolve 前同步调用 res.end，
+ *   故 await 完成后 payload 已由默认 end 回调填充。
+ * - 同步 handler（health / adapters 等）：立即返回，payload 同步就绪。
+ *
+ * @param route 路由对象（含 handler(req, res)）
+ * @param req 构造好的 fake 请求
+ * @param resExt 可选 res 覆盖项（如需要捕获 writeHead 状态码 / 原始 chunk 时传入）
+ * @returns Promise<payload>（async handler）或 payload（同步 handler）
+ */
+export function callHandler<T = unknown>(
+  route: { handler: (req: unknown, res: unknown) => unknown },
+  req: unknown,
+  resExt: Record<string, unknown> = {},
+): Promise<T> | T {
+  let payload: T = undefined as unknown as T;
+  const res = {
+    writeHead: () => {},
+    end: (chunk: unknown) => { payload = JSON.parse(String(chunk)) as T; },
+    ...resExt,
+  };
+  const ret = route.handler(req, res);
+  if (ret && typeof (ret as Promise<unknown>).then === "function") {
+    return (ret as Promise<unknown>).then(() => payload);
+  }
+  return payload; // 同步 handler：end 已同步触发
+}
+
+/**
+ * 轮询直到条件成立或超时（真后台异步数据位专用，替代固定 sleep）。
+ *
+ * @param cond 条件函数；返回真值即结束（可 async）
+ * @param deadlineMs 轮询截止（默认 5000ms）
+ * @param tickMs 两次探测间隔（默认 50ms）
+ * @returns 条件成立时的返回值；超时未成立返回 undefined
+ */
+export async function pollUntil<T = boolean>(
+  cond: () => T | Promise<T>,
+  deadlineMs = 5000,
+  tickMs = 50,
+): Promise<T | undefined> {
+  const deadline = Date.now() + deadlineMs;
+  for (;;) {
+    const v = await cond();
+    if (v) return v;
+    if (Date.now() >= deadline) return v;
+    await new Promise((r) => setTimeout(r, tickMs));
+  }
+}
+
 // ---------------------------------------------------------------- sanitizeHtml 统一判定标准 v2（测试侧单一事实源）
 //
 // 本节是 sanitizeHtml 安全判据的唯一测试侧实现：smoke-pure / unit-v1 等一律
