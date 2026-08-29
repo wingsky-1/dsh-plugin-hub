@@ -15,11 +15,12 @@
 //
 // 运行：node dsh-mcp-manager/test/smoke.mjs
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { assertClientProductContract, assertClientSourceContract } from "../../../test/smoke-lib.ts";
+import { pollUntil } from "./helpers.ts";
 
 const pkgDir = join(dirname(fileURLToPath(import.meta.url)), "..");
 import {
@@ -902,15 +903,15 @@ const main = async () => {
       store.data.servers = [normalizeServer({ name: "a", transport: "stdio", command: "echo" })];
       await store.save();
       assert.equal(await store.reloadIfChanged(), false, "无外部变更不重读");
-      // 外部修改（模拟 git pull / 手动编辑 mcp.json）
-      await new Promise((r) => setTimeout(r, 20)); // mtime 毫秒精度保护
+      // 外部修改（模拟 git pull / 手动编辑 mcp.json）——显式拨未来 mtime，
+      // 避免与 save() 基线同毫秒导致 reloadIfChanged 检测不到（事件驱动替代固定 sleep）。
       writeFileSync(path, JSON.stringify({ version: 1, servers: [{ name: "b", transport: "stdio", command: "echo", enabled: true }] }));
+      utimesSync(path, Date.now() / 1000 + 10, Date.now() / 1000 + 10);
       assert.equal(await store.reloadIfChanged(), true, "外部修改触发重读");
       assert.equal(store.data.servers.length, 1);
       assert.equal(store.data.servers[0].name, "b", "重读后数据来自磁盘");
       assert.equal(await store.reloadIfChanged(), false, "重读后基线推进");
-      // 外部删除 → 清空配置
-      await new Promise((r) => setTimeout(r, 20));
+      // 外部删除 → 清空配置（删除后 stat 失败 current=0，与基线 mtime 恒异，无需等待）。
       rmSync(path);
       assert.equal(await store.reloadIfChanged(), true, "删除触发重读");
       assert.deepEqual(store.data.servers, [], "删除 = 清空配置");
@@ -1098,11 +1099,12 @@ const main = async () => {
       });
 
       await checkAsync("外部新增 disabled 服务器 → refreshFromDisk 重读并进 summary（不 spawn）", async () => {
-        await new Promise((r) => setTimeout(r, 20));
+        // 显式拨未来 mtime，避免与 setSession 基线同毫秒导致 reloadIfChanged 检测不到。
         writeFileSync(cfg, JSON.stringify({
           version: 1,
           servers: [normalizeServer({ name: "p1", transport: "stdio", command: "true", enabled: false })],
         }));
+        utimesSync(cfg, Date.now() / 1000 + 10, Date.now() / 1000 + 10);
         await manager.refreshFromDisk();
         const names = manager.summary().servers.filter((s) => s.scope === SCOPE_PROJECT).map((s) => s.name);
         assert.deepEqual(names, ["p1"], "外部新增出现在面板数据");
@@ -1110,17 +1112,24 @@ const main = async () => {
       });
 
       await checkAsync("外部移除配置 → 已连接 supervisor 被断开", async () => {
-        await new Promise((r) => setTimeout(r, 20));
         writeFileSync(cfg, JSON.stringify({ version: 1, servers: [] }));
+        utimesSync(cfg, Date.now() / 1000 + 10, Date.now() / 1000 + 10);
         await manager.refreshFromDisk();
         assert.equal(disconnected, 1, "ghost 被断开");
         assert.equal(manager.supervisors.has("ghost"), false);
       });
 
       await checkAsync("无配置变化时 refreshFromDisk 不广播（防 SSE 空转循环）", async () => {
-        // 前一测试的 emitStatus 是 coalesce 异步（setTimeout 0），先等其落定，
+        // 前一测试的 emitStatus 是 coalesce 异步（setTimeout 0）：哨兵主动 emit 一次
+        // 并轮询等其落定（事件驱动替代固定 sleep），再注册本测试计数监听，
         // 避免上一轮广播误入本测试的监听计数。
-        await new Promise((r) => setTimeout(r, 10));
+        let settled = 0;
+        const offSentinel = manager.onStatus(() => {
+          settled += 1;
+        });
+        manager.emitStatus();
+        await pollUntil("coalesce 广播落定", () => settled >= 1);
+        offSentinel();
         let emitted = 0;
         manager.onStatus(() => {
           emitted += 1;

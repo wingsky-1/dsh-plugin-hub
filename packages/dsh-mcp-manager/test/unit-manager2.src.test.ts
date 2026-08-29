@@ -18,6 +18,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pollUntil } from "./helpers.ts";
 
 const {
   apply,
@@ -334,12 +335,17 @@ function rmStatSafe(p) {
       count += 1;
     });
     manager.emitStatus();
-    // emitStatus 是 coalesce 异步（setTimeout 0），等待宏任务落定。
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    assert.equal(count, 1);
+    // emitStatus 是 coalesce 异步（setTimeout 0）：轮询等广播 handler 落定（事件驱动）。
+    await pollUntil("onStatus 广播落定", () => count === 1);
     off();
+    // 注销后再广播：哨兵确认广播仍发生（事件驱动），原监听不再被调用。
+    let sentinel = 0;
+    const offSentinel = manager.onStatus(() => {
+      sentinel += 1;
+    });
     manager.emitStatus();
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await pollUntil("注销后广播仍发出", () => sentinel === 1);
+    offSentinel();
     assert.equal(count, 1, "注销后不再回调");
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -563,16 +569,16 @@ function rmStatSafe(p) {
     const { utimesSync } = await import("node:fs");
     utimesSync(join(dir, "global.json"), future, future);
     await manager.refreshFromDisk();
-    // emitStatus 是 coalesce 异步（setTimeout 0），等待宏任务落定。
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    assert.ok(broadcasts >= 1, "配置变化广播一次");
+    // emitStatus 是 coalesce 异步（setTimeout 0）：轮询等广播落定且无未决 coalesce
+    //（statusTimer 清空 = 广播 handler 已全部执行），再取基线（事件驱动）。
+    await pollUntil("配置变化广播落定", () => broadcasts >= 1 && manager.statusTimer === undefined);
     assert.ok(store.data.servers.some((s) => s.name === "fresh"), "重读生效");
 
-    // 无变化时不广播。
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    // 无变化时不广播：先取基线（上一广播已完全落定），再 refreshFromDisk
+    //（无变化 → 不 emitStatus），轮询确认无未决广播后断言计数不变。
     const before = broadcasts;
     await manager.refreshFromDisk();
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await pollUntil("无变化后无未决广播", () => manager.statusTimer === undefined);
     assert.equal(broadcasts, before, "无变化不广播");
   } finally {
     rmSync(dir, { recursive: true, force: true });
