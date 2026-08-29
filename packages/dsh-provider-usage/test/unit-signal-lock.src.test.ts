@@ -130,7 +130,7 @@ function mkAdapter(name, provider, fetchData) {
   const external = new AbortController();
   const t0 = Date.now();
   const pending = safeFetchData(() => new Promise(() => {}), 10_000, external.signal);
-  setTimeout(() => external.abort(), 5);
+  setTimeout(() => external.abort(), 5); // 触发用定时器：驱动外部 abort 事件（非等待语义）
   const r = await pending;
   assert.equal(r.error, "fetchData 已被取消", "外部取消走专用错误文案");
   assert.ok(Date.now() - t0 < 2000, `外部取消立即生效（实际 ${Date.now() - t0}ms），不等 10s 超时`);
@@ -167,10 +167,10 @@ function mkAdapter(name, provider, fetchData) {
   const pending = safeFetchData((_signal) => new Promise((_res, rej) => {
     external.signal.addEventListener("abort", () => rej(new Error("AbortError: canceled")), { once: true });
   }), 10_000, external.signal);
-  setTimeout(() => external.abort(), 5);
+  setTimeout(() => external.abort(), 5); // 触发用定时器：驱动外部 abort 事件（非等待语义）
   const r = await pending;
   assert.equal(r.error, "fetchData 已被取消", "外部取消正常上报");
-  await new Promise((res) => setTimeout(res, 30)); // 给潜在 unhandledRejection 留出暴露窗口
+  await new Promise((res) => setTimeout(res, 30)); // 有意延迟：给潜在 unhandledRejection 留出暴露窗口（fixture）
 }
 
 // ---------------------------------------------------------------- fail-fast：管道内部组装断言

@@ -824,7 +824,7 @@ assert.equal(openCodeGoAdapter.formatPanel({
   await injectGlobalFetch(async (set) => {
     set(async (url, opts) => {
       calls.push({ url, opts });
-      await new Promise((res) => setTimeout(res, opts.delayMs ?? 0));
+      await new Promise((res) => setTimeout(res, opts.delayMs ?? 0)); // 有意延迟：fetch mock 内按 delayMs 延迟（fixture）
       return { marker: "mock", aborted: opts.signal.aborted, url, headers: opts.headers };
     });
 
