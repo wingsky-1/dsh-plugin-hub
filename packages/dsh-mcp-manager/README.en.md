@@ -116,7 +116,7 @@ plugin's own `Config` using standard cordis config injection — no config file 
 | `offset.x` | Non-negative integer (horizontal offset, px) | `8` |
 | `offset.y` | Non-negative integer (vertical offset, px) | `8` |
 | `offset.blankY` | Non-negative integer (blank-session vertical offset, px) | `40` |
-| `zIndexBase` | Integer, clamped to 1-9000 (floating window z-index base; the dropdown panel automatically uses base + 30; the modal manager panel is unaffected) | `10` |
+| `zIndexBase` | Integer, clamped to 1-9000 (floating window z-index base; **the pill and the main panel opened on click both use this same config value**; the modal manager panel is unaffected) | `10` |
 
 When `position = bottom-right` or `bottom-left`, the dropdown panel expands **above the
 pill** (bottom anchor, popping upward), does not overflow the viewport, and content stays

@@ -50,6 +50,8 @@ import {
   clampPointToViewport,
   clampZIndexBase,
   panelZIndexFor,
+  composerDockedAtBottom,
+  bottomAnchorEdge,
 } from "../lib/index.js";
 
 // ---------------------------------------------------------------- esc
@@ -463,14 +465,46 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
   const bad = normalizeUiConfig({ placement: "middle", offsetX: "abc", offsetY: null, panelOffsetY: 44 });
   assert.equal(bad.placement, DEFAULT_UI_CONFIG.placement, "非法 placement 回退默认");
   assert.equal(bad.offsetX, DEFAULT_UI_CONFIG.offsetX, "非法 offsetX 回退默认");
-  // #128 zIndexBase clamp 边界（默认 40 对应 CSS z-index:40；面板派生 base+30）
+  // #128 重开：胶囊与主面板 computed z-index 均取配置值（不再派生 +30，维护者 2026-08-28
+  // 要求 B1/B2）；默认 40 对应 CSS 默认 z-index:40。panelZIndexFor 仅作面板内子浮层
+  // 派生扩展点（B5，不占用 zIndexBase 预算）。
   assert.equal(DEFAULT_UI_CONFIG.zIndexBase, 40, "#128 默认层级基准 40 与 CSS 默认 z-index 一致");
   assert.equal(normalizeUiConfig({ zIndexBase: 5000 }).zIndexBase, 5000, "#128 合法层级基准透传");
   assert.equal(normalizeUiConfig({ zIndexBase: 0 }).zIndexBase, Z_INDEX_BASE_MIN, "#128 低于下界压到 1");
   assert.equal(normalizeUiConfig({ zIndexBase: -99 }).zIndexBase, Z_INDEX_BASE_MIN, "#128 负数压到 1");
   assert.equal(normalizeUiConfig({ zIndexBase: 9000 }).zIndexBase, Z_INDEX_BASE_MAX, "#128 上界 9000 透传");
   assert.equal(normalizeUiConfig({ zIndexBase: 9001 }).zIndexBase, Z_INDEX_BASE_MAX, "#128 超上界压到 9000");
-  assert.equal(panelZIndexFor(40), 70, "#128 面板层级派生 base+30");
+  assert.equal(clampZIndexBase(40, DEFAULT_UI_CONFIG.zIndexBase), 40, "#128 主面板与胶囊同取配置值（不再派生 +30）");
+  assert.equal(panelZIndexFor(40), 70, "#128 子浮层派生扩展点 base+30（B5，不占主面板预算）");
+}
+
+// ---------------------------------------------------------------- #128 重开：composer seat 贴底判定
+
+{
+  const container = { top: 0, bottom: 844 };
+  // D2：seat 贴底 → true
+  assert.equal(composerDockedAtBottom({ top: 670, bottom: 844 }, container), true, "seat 贴底 → docked=true");
+  // D4：恰好贴底（差 0）→ true；距底缘 1px → false
+  assert.equal(composerDockedAtBottom({ top: 670, bottom: 844 }, { top: 0, bottom: 844 }), true, "恰好贴底（差 0）→ true");
+  assert.equal(composerDockedAtBottom({ top: 670, bottom: 843 }, { top: 0, bottom: 844 }), false, "距底缘 1px 未贴底 → false");
+  // D2：居中 / 未贴底 → false
+  assert.equal(composerDockedAtBottom({ top: 300, bottom: 500 }, { top: 0, bottom: 844 }), false, "seat 居中未贴底 → false");
+  assert.equal(composerDockedAtBottom({ top: 670, bottom: 800 }, { top: 0, bottom: 844 }), false, "seat 距底缘 >0.5px → false");
+  // D2：seat 为 null → false；container 为 null → false
+  assert.equal(composerDockedAtBottom(null, container), false, "seat null → false");
+  assert.equal(composerDockedAtBottom(undefined, container), false, "seat undefined → false");
+  assert.equal(composerDockedAtBottom({ top: 670, bottom: 844 }, null), false, "container null → false");
+  // 非有限数不产生误判
+  assert.equal(composerDockedAtBottom({ top: 0, bottom: Number.NaN }, container), false, "seat.bottom NaN → false");
+}
+
+{
+  // D3：bottomAnchorEdge 矩阵
+  assert.equal(bottomAnchorEdge(844, 670, true), 670, "docked → seatTop");
+  assert.equal(bottomAnchorEdge(844, 670, false), 844, "未 docked → containerBottom");
+  assert.equal(bottomAnchorEdge(844, null, true), 844, "docked 但 seatTop=null → containerBottom");
+  assert.equal(bottomAnchorEdge(844, undefined, true), 844, "docked 但 seatTop=undefined → containerBottom");
+  assert.equal(bottomAnchorEdge(844, Number.NaN, true), 844, "seatTop 非有限数 → containerBottom（不产生 NaN）");
 }
 
 // ---------------------------------------------------------------- #128 断点与视口终 clamp

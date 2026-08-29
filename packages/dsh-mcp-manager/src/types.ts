@@ -44,7 +44,7 @@ export interface UiPlacementConfig {
   position: "top-right" | "top-left" | "bottom-right" | "bottom-left";
   /** 胶囊偏移：x 水平、y 垂直、blankY 空白会话垂直偏移。 */
   offset: { x: number; y: number; blankY: number };
-  /** 浮窗层级基准（clamp 1–9000；下拉面板派生为基准+30，模态管理面板独立不受影响）。 */
+  /** 浮窗层级基准（clamp 1–9000；胶囊与点击后弹出的主面板同取该配置值，模态管理面板独立不受影响）。 */
   zIndexBase: number;
 }
 

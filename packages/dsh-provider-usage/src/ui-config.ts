@@ -19,7 +19,7 @@ export interface UiPlacementConfig {
   offsetY: number;
   /** 面板相对胶囊下缘的垂直间距 px。 */
   panelOffsetY: number;
-  /** 胶囊层级基准（clamp 1–9000；面板派生为基准+30）。 */
+  /** 层级基准（clamp 1–9000；胶囊与点击后弹出的主面板 computed z-index 均取该配置值，#128 重开）。 */
   zIndexBase: number;
 }
 

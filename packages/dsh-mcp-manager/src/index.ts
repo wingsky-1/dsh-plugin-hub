@@ -45,8 +45,10 @@ export {
   panelZIndexFor,
   breakpointForWidth,
   clampPointToViewport,
+  composerDockedAtBottom,
+  bottomAnchorEdge,
 } from "./placement-math.ts";
-export type { FloatBreakpoint, ViewportPoint } from "./placement-math.ts";
+export type { FloatBreakpoint, ViewportPoint, RectLike } from "./placement-math.ts";
 // 面板锚点判定同为纯函数，随定位数学一起从单一事实源 re-export。
 export { panelAnchorForPosition } from "./placement-math.ts";
 

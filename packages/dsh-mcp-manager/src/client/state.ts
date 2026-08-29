@@ -43,7 +43,7 @@ export interface McpUiConfig {
   offsetX: number;
   offsetY: number;
   blankY: number;
-  /** 层级基准（clamp 1-9000；下拉面板派生基准+30）。 */
+  /** 层级基准（clamp 1-9000；胶囊与点击后弹出的主面板同取该配置值）。 */
   zIndexBase: number;
 }
 

@@ -15,7 +15,8 @@ import {
   clampPointToViewport,
   clampZIndexBase,
   panelAnchorForPosition,
-  panelZIndexFor,
+  composerDockedAtBottom,
+  bottomAnchorEdge,
 } from "../placement-math.ts";
 
 /** 渲染浮窗胶囊（状态点 + 摘要计数）。 */
@@ -226,7 +227,7 @@ export function mountFloat(ctx: any, state: McpState, actions: UiActions): () =>
   /**
    * 按 settings.yaml 配置把胶囊定位到对话容器四角之一（双轴：left/right × top/bottom）。
    * 同时：按会话容器宽度判定断点档位写 data 属性（CSS 按档位切换触控/布局样式）、
-   * 应用层级基准（胶囊 base、面板派生 +30）、终坐标视口 clamp。
+   * 应用层级基准（胶囊与主面板同取配置值）、终坐标视口 clamp。
    */
   const updateFloat = () => {
     const best = conversationHost();
@@ -241,10 +242,11 @@ export function mountFloat(ctx: any, state: McpState, actions: UiActions): () =>
     const bp = breakpointForWidth(rect.width);
     if (pill.dataset.dmBp !== bp) pill.dataset.dmBp = bp;
     if (panel.dataset.dmBp !== bp) panel.dataset.dmBp = bp;
-    // 层级：胶囊取配置基准（clamp 1-9000），下拉面板派生基准+30。
+    // 层级：胶囊与点击后弹出的主面板 computed z-index 一律取配置基准（clamp 1-9000），
+    // 不再派生 +30（维护者 2026-08-28 要求 #128，B2）；面板内子浮层可派生见 panelZIndexFor。
     const zBase = clampZIndexBase(cfg.zIndexBase, DEFAULT_Z_INDEX_BASE);
     pill.style.zIndex = String(zBase);
-    panel.style.zIndex = String(panelZIndexFor(zBase));
+    panel.style.zIndex = String(zBase);
     const isBottom = position === "bottom-right" || position === "bottom-left";
     const isLeft = position === "top-left" || position === "bottom-left";
     const offsetX = typeof cfg.offsetX === "number" ? cfg.offsetX : 8;
@@ -255,8 +257,17 @@ export function mountFloat(ctx: any, state: McpState, actions: UiActions): () =>
       ? rect.left + offsetX
       : rect.right - pill.offsetWidth - offsetX;
     // 垂直：bottom 锚点 → 容器底 - 高 - y（clamp 到视口上缘防溢出）；top 锚点 → 容器顶 + y。
+    // #128 重开回归修复：bottom-* 在断点非 wide 且 composer seat 贴底时，把下边界换成
+    // seat.top（胶囊上移到输入区上方，避免遮挡输入卡片/底部状态条）；否则维持
+    // container.bottom（桌面零回归）。
+    let bottomEdge = rect.bottom;
+    if (isBottom && bp !== "wide") {
+      const seat = document.querySelector<HTMLElement>("[data-composer-seat]");
+      const seatRect = seat !== null ? seat.getBoundingClientRect() : null;
+      bottomEdge = bottomAnchorEdge(rect.bottom, seatRect?.top ?? null, composerDockedAtBottom(seatRect, rect));
+    }
     const rawTop = isBottom
-      ? Math.max(6, rect.bottom - pill.offsetHeight - y)
+      ? Math.max(6, bottomEdge - pill.offsetHeight - y)
       : rect.top + y;
     // 终坐标视口 clamp（safe-area 语义；inset 缺省 0 自然退化，桌面行为不回归）。
     const point = clampPointToViewport(

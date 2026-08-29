@@ -85,9 +85,11 @@ export {
   breakpointForWidth,
   clampPointToViewport,
   clampZIndexBase,
+  composerDockedAtBottom,
+  bottomAnchorEdge,
   panelZIndexFor,
 } from "./placement-math.ts";
-export type { FloatBreakpoint, ViewportPoint } from "./placement-math.ts";
+export type { FloatBreakpoint, ViewportPoint, RectLike } from "./placement-math.ts";
 // 面板锚点判定同为纯函数，随定位数学一起从单一事实源 re-export。
 export { panelAnchorForPlacement } from "./placement-math.ts";
 // 胶囊位置 UI 配置（#276 方案 A 阶段 3 拆出：纯函数 + 持久化读写）

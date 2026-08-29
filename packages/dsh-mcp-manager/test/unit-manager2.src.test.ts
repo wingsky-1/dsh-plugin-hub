@@ -122,7 +122,7 @@ const {
   assert.equal(normalizeUiConfig({ zIndexBase: 0 }).zIndexBase, Z_INDEX_BASE_MIN, "低于下界压到 1");
   assert.equal(normalizeUiConfig({ zIndexBase: 99999 }).zIndexBase, Z_INDEX_BASE_MAX, "超上界压到 9000");
   assert.equal(normalizeUiConfig({ zIndexBase: "x" }).zIndexBase, DEFAULT_UI_CONFIG.zIndexBase, "非数字回退默认");
-  assert.equal(panelZIndexFor(10), 40, "面板层级派生 base+30");
+  assert.equal(panelZIndexFor(10), 40, "子浮层派生扩展点 base+30（B5，主面板与胶囊取配置值）");
   // 非法输入回退默认。
   assert.deepEqual(normalizeUiConfig(undefined), { ...DEFAULT_UI_CONFIG.position ? {} : {}, ...DEFAULT_UI_CONFIG }.position !== undefined ? {
     position: DEFAULT_UI_CONFIG.position,

@@ -11,7 +11,7 @@
 /* 触控热区（#128，WCAG 2.2 AA ≥24px 底线）：伪元素外扩不占布局；narrow 档下方加大外扩至 ≈44px 主操作目标 */
 .dm-float::after{content:"";position:absolute;inset:-5px;border-radius:99px}
 .dm-float .dm-dot{width:7px;height:7px;border-radius:50%;display:inline-block}
-.dm-float-panel{position:fixed;top:44px;right:14px;width:min(400px,calc(100vw - 36px));max-height:min(70vh,560px);max-height:min(70dvh,560px);overflow:auto;background:var(--dsw-alias-bg-base,#fdfdfd);color:var(--dsw-alias-label-primary,#1c1e26);border:1px solid var(--dsw-alias-border-l1,#e2e4ea);border-radius:10px;box-shadow:0 10px 32px rgba(0,0,0,.18);z-index:70;padding:10px 12px;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
+.dm-float-panel{position:fixed;top:44px;right:14px;width:min(400px,calc(100vw - 36px));max-height:min(70vh,560px);max-height:min(70dvh,560px);overflow:auto;background:var(--dsw-alias-bg-base,#fdfdfd);color:var(--dsw-alias-label-primary,#1c1e26);border:1px solid var(--dsw-alias-border-l1,#e2e4ea);border-radius:10px;box-shadow:0 10px 32px rgba(0,0,0,.18);z-index:10;padding:10px 12px;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:12px}
 /* #128 移动端档位样式：由客户端按 conversationHost rect 宽度判定并写 data-dm-bp
  * （JS 判定，非 @media——防桌面窄窗 / iPad Slide Over 误触发）；阈值见 src/placement-math.ts。
  * dvh 级联回退：先声明 vh 兜底，再以 dvh 覆写（软键盘弹出时随 visualViewport 收缩）。 */

@@ -300,7 +300,7 @@ export interface UiPlacementConfig {
   offsetX: number;
   offsetY: number;
   panelOffsetY: number;
-  /** 胶囊层级基准（clamp 1-9000；面板派生基准+30），#128。 */
+  /** 层级基准（clamp 1-9000；胶囊与点击后弹出的主面板 computed z-index 均取该配置值，#128 重开）。 */
   zIndexBase: number;
 }
 
