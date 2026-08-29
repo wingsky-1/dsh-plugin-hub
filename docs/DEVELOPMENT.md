@@ -320,7 +320,9 @@ dsh web 部署在 Linux 服务器，经局域网被多种设备 / 系统访问�
 1. **断点档位**：判定基准 = conversationHost 的 rect 宽度（JS 判定 + data 属性
    `data-dm-bp` / `data-dou-bp` 切换样式），**不用窗口 @media**——防桌面窄窗 /
    iPad Slide Over 误触发。阈值：narrow ≤480 < tablet ≤834 < wide。
-2. **z-index 基准**：单字段 `zIndexBase`（clamp 1–9000），面板派生基准 +30；
+2. **z-index 基准**：单字段 `zIndexBase`（clamp 1–9000），**胶囊与点击后弹出的
+   主面板 computed z-index 均取该配置值**（#128 重开维护者要求，不再派生 +30）；
+   面板内子浮层（设置卡片等次级层）允许实现侧派生（不占用 zIndexBase 预算）；
    默认 mcp-manager=10、provider-usage=40 与各自 CSS 默认一致。模态管理类
    overlay 不占用该预算。
 3. **终坐标视口 clamp（safe-area 语义）**：对算好的 fixed 坐标统一过
