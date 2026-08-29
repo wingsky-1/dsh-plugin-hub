@@ -140,13 +140,14 @@ export function digestCatalogEntries(entries: CatalogEntry[]): string {
 
 /** 渲染能力目录消息（source 标记供定位替换）。
  * 按条目 scope 区分调用引导（#228 双轨迁移）：
- * - 含 project 条目 → 引导经 ws_mcp_search/ws_mcp_call（项目级走中间层）；
+ * - 含 project 条目 → 引导经 ws_mcp_list/ws_mcp_search/ws_mcp_detail/ws_mcp_call
+ *   （项目级走中间层；完整盘点用 ws_mcp_list，查完整 schema 用 ws_mcp_detail）；
  * - 仅 global 条目 → 保持 mcp__ 直呼引导（全局服务器不经中间层检索）。
  */
 export function renderMcpCatalogMessage(entries: CatalogEntry[]): CatalogMessage {
   const hasProject = entries.some((entry) => entry.scope === "project");
   const guidance = hasProject
-    ? "任务匹配某服务器能力时，先用 `ws_mcp_search` 检索当前工作空间的 MCP 工具，再用 `ws_mcp_call` 调用（server/tool 取自检索结果）。**项目级服务器一律经这两个工具访问，不直接调用其 mcp__ 前缀工具**；全局服务器的 `mcp__<server>__<tool>` 工具仍可直接调用（见工具列表）。"
+    ? "任务匹配某服务器能力时，先用 `ws_mcp_search` 检索当前工作空间的 MCP 工具，再用 `ws_mcp_call` 调用（server/tool 取自检索结果）。**项目级服务器一律经这些工具访问，不直接调用其 mcp__ 前缀工具**；完整盘点全部服务器与工具清单用 `ws_mcp_list`，查单个工具的完整 inputSchema 用 `ws_mcp_detail`；全局服务器的 `mcp__<server>__<tool>` 工具仍可直接调用（见工具列表）。"
     : "任务匹配某服务器能力时，直接调用其 `mcp__<server>__<tool>` 工具（具体工具名与参数见工具列表）。";
   const lines = [
     "<system-reminder>",
