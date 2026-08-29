@@ -149,10 +149,12 @@ export function makeRoutes(manager: RoutesManager, cwd = process.cwd()): WebRout
         }
         if (method === "GET") {
           try {
-            await maybeSession(url);
             // 变更点驱动（#111/#228）：GET /servers 是纯读快照，零副作用——
             // 磁盘变更由 fs.watch 事件驱动 reconcile，状态从内存 store 读。
             // 历史 refreshFromDisk 副作用（mtime 轮询 + reconcile）已移除。
+            // cwd 查询参数不处理（#324）：GET 带 cwd 曾触发 setSession → emitStatus
+            // → SSE 广播 → 客户端再 GET 的自激循环（多页面互踩）。会话切换只走
+            // POST /api/dsh-mcp/session；此处忽略 cwd 以恢复纯读语义。
             writeJson(res, 200, manager.summary());
           } catch (error) {
             handleError(res, error);

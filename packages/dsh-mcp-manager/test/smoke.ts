@@ -1168,10 +1168,14 @@ const main = async () => {
         assert.equal(res.state.status, 200);
         assert.equal(managerState.sessionCwd, "C:/proj");
       });
-      await checkAsync("GET servers?cwd= 触发会话切换", async () => {
+      await checkAsync("GET servers?cwd= 不触发会话切换（#324 纯读）", async () => {
+        // #324：GET /servers 是纯读快照，cwd 参数被忽略（不再触发 setSession）。
+        // 会话切换只走 POST /api/dsh-mcp/session。
+        await find(ROUTES.session).handler(fakeReq("POST", ROUTES.session, { cwd: "C:/proj" }), fakeRes());
         const res = fakeRes();
         await find(ROUTES.servers).handler(fakeReq("GET", `${ROUTES.servers}?cwd=C:/other`), res);
-        assert.equal(managerState.sessionCwd, "C:/other");
+        assert.equal(res.state.status, 200);
+        assert.equal(managerState.sessionCwd, "C:/proj", "GET 不应改变会话 cwd");
       });
       await checkAsync("POST servers scope=project 透传 scope", async () => {
         const res = fakeRes();

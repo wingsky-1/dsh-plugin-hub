@@ -31,10 +31,10 @@ export function refresh(state: McpState, actions: UiActions): Promise<boolean> {
 /** 实际拉取（单飞内部）。 */
 async function doRefresh(state: McpState, actions: UiActions): Promise<boolean> {
   try {
-    const suffix = typeof state.currentCwd === "string" && state.currentCwd !== ""
-      ? `?cwd=${encodeURIComponent(state.currentCwd)}`
-      : "";
-    const payload = await api(`${state.API.servers}${suffix}`);
+    // #324：GET /servers 不再带 cwd——服务端已忽略该参数（纯读快照，零副作用），
+    // 会话切换只走 POST /api/dsh-mcp/session（bindSession cwd 变化时触发）。
+    // 带 cwd 曾触发服务端 setSession → 广播 → 客户端再刷新的自激循环。
+    const payload = await api(state.API.servers);
     state.servers = payload.servers ?? [];
     state.counts = payload.counts ?? {};
     state.projectRoot = payload.projectRoot;
