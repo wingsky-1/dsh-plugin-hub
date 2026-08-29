@@ -649,6 +649,9 @@ assert.equal(parseAmount("Infinity"), null, "Infinity 非有限数 → null");
   assert.ok(panel.includes("<svg"), "内嵌 SVG 图表");
   assert.ok(panel.includes("近 15 日用量"), "卡2 柱形图卡");
   assert.ok(panel.includes("近 24 小时波动"), "卡1 余额波动卡");
+  // #345 卡片头部精简：来源标识折叠进 title 悬停提示，不占主行同排挤压
+  assert.ok(panel.includes('title="DeepSeek 官方（CNY）"'), "卡1 来源标识折叠进 title 悬停提示");
+  assert.ok(!panel.includes("DeepSeek 官方（CNY） · 近 24 小时波动"), "卡1 主行不再拼接来源标识");
   // D3 主题变量 + 浅色回退
   assert.ok(panel.includes("var(--dsw-alias-") && panel.includes("#3b82f6"), "主题变量 + 浅色回退形态");
   // K10 卡2 结构细节
