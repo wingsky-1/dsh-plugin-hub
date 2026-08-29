@@ -1,11 +1,12 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-provider-usage/src/contracts.ts",
-    "packages/dsh-provider-usage/src/sanitize.ts",
-    "packages/dsh-provider-usage/src/registry.ts",
-    "packages/dsh-provider-usage/src/provider-config.ts",
-    "packages/dsh-provider-usage/src/core/guards.ts",
+    "packages/dsh-provider-usage/src/core/history.ts",
+    "packages/dsh-provider-usage/src/pipeline/v2.ts",
+    "packages/dsh-provider-usage/src/hotreload.ts",
+    "packages/dsh-provider-usage/src/placement-math.ts",
+    "packages/dsh-provider-usage/src/path-resolve.ts",
+    "packages/dsh-provider-usage/src/client-logic.ts",
     "!packages/dsh-provider-usage/src/client/**",
     "!packages/dsh-provider-usage/src/types.ts"
   ],
@@ -48,9 +49,9 @@
     ]
   },
   "jsonReporter": {
-    "fileName": "coverage/mutation/dsh-provider-usage-3.json"
+    "fileName": "coverage/mutation/dsh-provider-usage-4.json"
   },
   "incremental": true,
-  "incrementalFile": "coverage/mutation/incremental-provider-usage-3.json",
-  "_comment": "#276 方案 A：src 级文件组分段（3）契约/注册/配置面——#316 拆段后收敛为本组五文件（contracts/sanitize/registry/provider-config/guards）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+  "incrementalFile": "coverage/mutation/incremental-provider-usage-4.json",
+  "_comment": "#276 方案 A：src 级文件组分段（4）历史/管线/热更面——#316 拆分自原 s3（history/v2/hotreload/placement-math/path-resolve/client-logic）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
 }
