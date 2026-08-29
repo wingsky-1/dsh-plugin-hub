@@ -475,6 +475,8 @@ export {
   MAX_TOOLS_PER_SERVER,
   MAX_BYTES_PER_TOOL,
   MAX_TOTAL_CATALOG_BYTES,
+  LIST_DEFAULT_TOOLS_PER_SERVER,
+  LIST_MAX_TOOLS_PER_SERVER,
   normalizeMiddlewareMode,
 } from "./middleware-const.ts";
 // 纯函数与目录检索
@@ -492,6 +494,9 @@ export {
   policyDenialReason,
   scoreTool,
   searchCatalog,
+  searchCatalogMulti,
+  listCatalog,
+  findToolDetail,
 } from "./middleware-utils.ts";
 // 状态持久化
 export { userStateFile, loadUserState, saveUserState, catalogCacheFileFor } from "./middleware-state.ts";
@@ -506,6 +511,10 @@ export type {
   CatalogServer,
   CatalogTool,
   SearchHit,
+  ListToolEntry,
+  ListServerEntry,
+  ListCatalogResult,
+  ToolDetail,
   MiddlewareHost,
 } from "./middleware-types.ts";
 

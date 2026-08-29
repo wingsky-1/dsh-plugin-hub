@@ -109,7 +109,8 @@ export {
 } from "./catalog.ts";
 // mcpServers JSON 导入
 export { fromClaudeEntry, parseClaudeJson } from "./import.ts";
-// 中间层（工作空间 MCP 路由：连接池 / 目录 / ws_mcp_search / ws_mcp_call）
+// 中间层（工作空间 MCP 路由：连接池 / 目录 / ws_mcp_search / ws_mcp_call /
+// ws_mcp_list / ws_mcp_detail）
 export {
   McpMiddleware,
   normalizeMiddlewareMode,
@@ -125,6 +126,9 @@ export {
   policyDenialReason,
   scoreTool,
   searchCatalog,
+  searchCatalogMulti,
+  listCatalog,
+  findToolDetail,
   withTimeout,
   userStateFile,
   loadUserState,
@@ -138,6 +142,18 @@ export {
   MAX_TOOLS_PER_SERVER,
   MAX_BYTES_PER_TOOL,
   MAX_TOTAL_CATALOG_BYTES,
+  LIST_DEFAULT_TOOLS_PER_SERVER,
+  LIST_MAX_TOOLS_PER_SERVER,
+} from "./middleware.ts";
+export type {
+  MiddlewareMode,
+  MiddlewarePolicy,
+  ProjectUnit,
+  SearchHit,
+  ListToolEntry,
+  ListServerEntry,
+  ListCatalogResult,
+  ToolDetail,
 } from "./middleware.ts";
 // 路由
 export { ROUTES, makeRoutes, makeEventsRoute, makeHealthRoute, sseData, uiConfigChangedFrame, broadcastFrame, SSE_HEARTBEAT_MS, SSE_PING_FRAME } from "./routes.ts";

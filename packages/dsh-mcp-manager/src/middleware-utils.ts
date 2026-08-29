@@ -5,8 +5,17 @@
  * ts 取；被连接池类、工具注册与 manager 共享。
  */
 
-import { CATALOG_TTL_MS } from "./middleware-const.ts";
-import type { CatalogTool, MiddlewarePolicy, ProjectUnit, SearchHit } from "./middleware-types.ts";
+import { CATALOG_TTL_MS, LIST_DEFAULT_TOOLS_PER_SERVER } from "./middleware-const.ts";
+import type {
+  CatalogTool,
+  ListCatalogResult,
+  ListServerEntry,
+  ListToolEntry,
+  MiddlewarePolicy,
+  ProjectUnit,
+  SearchHit,
+  ToolDetail,
+} from "./middleware-types.ts";
 import type { ServerConfig } from "./types.ts";
 
 // ------------------------------------------------------------ 命名与容错
@@ -25,15 +34,16 @@ export function parseFullServerName(name: string): { root: string; server: strin
   return { root: name.slice(1, slash), server: name.slice(slash + 1) };
 }
 
-/** 归一化 ws_mcp_call 的 tool 参数（模型可能传 mcp__<server>__<tool> 全名）。 */
-export function normalizeToolName(serverName: string, toolName: string): string {
+/** 归一化中间层工具的 tool 参数（模型可能传 mcp__<server>__<tool> 全名）。
+ * @param caller 调用方工具名（错误文案前缀；ws_mcp_call / ws_mcp_detail 复用）。 */
+export function normalizeToolName(serverName: string, toolName: string, caller = "ws_mcp_call"): string {
   const prefix = `mcp__${serverName}__`;
   let name = toolName;
   if (name.startsWith("mcp__")) {
     while (name.startsWith(prefix)) name = name.slice(prefix.length);
     if (name.startsWith("mcp__")) {
       throw new Error(
-        `ws_mcp_call: tool 参数疑似其他 MCP server 的注册全名（${JSON.stringify(toolName)}，server="${serverName}"）；请传该 server 上的裸名`,
+        `${caller}: tool 参数疑似其他 MCP server 的注册全名（${JSON.stringify(toolName)}，server="${serverName}"）；请传该 server 上的裸名`,
       );
     }
   }
@@ -212,7 +222,8 @@ export function scoreTool(query: string, server: string, toolName: string, tool:
   return { score, matchedTerms };
 }
 
-/** 检索目录：query 为空 → 能力摘要表（每服务器前 N 个工具）。 */
+/** 检索目录：query 为空 → 能力摘要表（每服务器前 N 个工具）。
+ * 单 root 实现（searchCatalogMulti 循环调用；兼容既有测试）。 */
 export function searchCatalog(
   units: Map<string, ProjectUnit>,
   root: string,
@@ -249,6 +260,170 @@ export function searchCatalog(
     }
   }
   return { results, unavailable };
+}
+
+/** 多单元合并检索（all 模式：项目 root 单元 + @global 单元合并查询）。
+ * 与 searchCatalog 同语义，仅数据源扩展为多个 root；off/project 模式行为不变。 */
+export function searchCatalogMulti(
+  units: Map<string, ProjectUnit>,
+  roots: readonly string[],
+  query: string,
+  limit: number,
+): { results: SearchHit[]; unavailable: Array<{ server: string; reason: string }> } {
+  const results: SearchHit[] = [];
+  const unavailable: Array<{ server: string; reason: string }> = [];
+  for (const root of roots) {
+    const single = searchCatalog(units, root, query, limit);
+    results.push(...single.results);
+    unavailable.push(...single.unavailable);
+  }
+  // 跨单元排序（评分降序，工具名升序）——与单单元检索同序。
+  results.sort((a, b) => b.score - a.score || a.tool.localeCompare(b.tool));
+  return { results, unavailable };
+}
+
+/**
+ * 完整盘点：列出当前工作空间全部服务器 + 每台完整工具清单（不受关键词/limit
+ * 截断服务器，工具数受 perServerLimit 保护）。
+ * @param units 连接池单元集合。
+ * @param roots 参与盘点的 root 列表（all 模式含 @global）。
+ * @param serverFilter 可选：@<root>/<server> 全名或裸名过滤。
+ * @param toolLimit 每服务器工具条数上限（>0；超过置 toolsTruncated）。
+ * @param emptyHint 空返回时的 message（按模式区分场景）。
+ * @throws 全名 root 不属于当前 roots → 路由一致性错误（与 ws_mcp_call 口径一致）。
+ */
+export function listCatalog(
+  units: Map<string, ProjectUnit>,
+  roots: readonly string[],
+  serverFilter: string | undefined,
+  toolLimit: number,
+  mode: string,
+  emptyHint: string,
+): ListCatalogResult {
+  const safeLimit = Number.isFinite(toolLimit) && toolLimit > 0 ? Math.floor(toolLimit) : LIST_DEFAULT_TOOLS_PER_SERVER;
+  let rootSet: Set<string> | undefined;
+  if (serverFilter !== undefined && serverFilter.startsWith("@")) {
+    const parsed = parseFullServerName(serverFilter);
+    if (parsed === undefined || !roots.includes(parsed.root)) {
+      throw new Error(
+        `ws_mcp_list: server ${JSON.stringify(serverFilter)} 不属于当前工作空间（${JSON.stringify(roots)}）；路由一致性校验失败（防跨空间串台）`,
+      );
+    }
+    rootSet = new Set([parsed.root]);
+  }
+  const servers: ListServerEntry[] = [];
+  let totalTools = 0;
+  let anyTruncated = false;
+  for (const root of roots) {
+    if (rootSet !== undefined && !rootSet.has(root)) continue;
+    const unit = units.get(root);
+    if (unit === undefined) continue;
+    for (const [serverName, catalog] of unit.catalog) {
+      if (serverFilter !== undefined && serverName !== serverFilter && fullServerName(root, serverName) !== serverFilter) continue;
+      const entry: ListServerEntry = {
+        server: fullServerName(root, serverName),
+        tools: [],
+        toolsTruncated: false,
+      };
+      if (unit.userDisabled.has(serverName)) entry.disabled = true;
+      if (catalog.unavailable !== undefined) {
+        entry.unavailable = catalog.unavailable;
+      } else {
+        const tools: ListToolEntry[] = [];
+        let truncated = false;
+        let index = 0;
+        for (const [toolName, tool] of catalog.tools) {
+          if (index >= safeLimit) {
+            truncated = true;
+            break;
+          }
+          tools.push({ tool: toolName, description: tool.description });
+          index += 1;
+        }
+        entry.tools = tools;
+        entry.toolsTruncated = truncated;
+        if (truncated) anyTruncated = true;
+        totalTools += tools.length;
+      }
+      servers.push(entry);
+    }
+  }
+  // 稳定排序（root 出现序 + 服务器名）：跨单元合并不依赖 Map 插入序。
+  const rootIndex = new Map(roots.map((root, index) => [root, index]));
+  servers.sort((a, b) => {
+    const ra = parseFullServerName(a.server)?.root ?? "";
+    const rb = parseFullServerName(b.server)?.root ?? "";
+    const oa = rootIndex.get(ra) ?? Number.MAX_SAFE_INTEGER;
+    const ob = rootIndex.get(rb) ?? Number.MAX_SAFE_INTEGER;
+    if (oa !== ob) return oa - ob;
+    const sa = parseFullServerName(a.server)?.server ?? a.server;
+    const sb = parseFullServerName(b.server)?.server ?? b.server;
+    return sa.localeCompare(sb);
+  });
+  const result: ListCatalogResult = {
+    workspace: roots[0] ?? "@global",
+    mode,
+    servers,
+    totalServers: servers.length,
+    totalTools,
+    toolsTruncated: anyTruncated,
+  };
+  if (servers.length === 0) result.message = emptyHint;
+  return result;
+}
+
+/**
+ * 单工具详情：按 @<root>/<server> + tool 裸名精确命中，返回完整 inputSchema。
+ * 错误三分：
+ * 1. server 发现失败（catalog.unavailable）→ 附原因；
+ * 2. 单元/服务器未发现 → 「server 未连接或未发现」；
+ * 3. 工具不存在 → 「tool 不存在」。
+ * @param units 连接池单元集合。
+ * @param root 目标 root（all 模式可为 @global）。
+ * @param server @<root>/<server> 全名。
+ * @param tool 远端工具裸名（兼容 mcp__ 前缀，复用 normalizeToolName）。
+ */
+export function findToolDetail(
+  units: Map<string, ProjectUnit>,
+  root: string,
+  server: string,
+  tool: string,
+): ToolDetail {
+  const parsed = parseFullServerName(server);
+  if (parsed === undefined || parsed.root !== root) {
+    throw new Error(
+      `ws_mcp_detail: server ${JSON.stringify(server)} 不属于当前工作空间 ${JSON.stringify(root)}；路由一致性校验失败（防跨空间串台）`,
+    );
+  }
+  const unit = units.get(root);
+  if (unit === undefined) {
+    throw new Error(`ws_mcp_detail: server 未连接或未发现：${JSON.stringify(server)}`);
+  }
+  const catalog = unit.catalog.get(parsed.server);
+  if (catalog === undefined || catalog.tools.size === 0) {
+    if (catalog?.unavailable !== undefined) {
+      throw new Error(`ws_mcp_detail: server 发现失败：${JSON.stringify(server)}（${catalog.unavailable}）`);
+    }
+    if (unit.userDisabled.has(parsed.server)) {
+      throw new Error(`ws_mcp_detail: server 未连接或未发现：${JSON.stringify(server)}（已被用户禁用）`);
+    }
+    throw new Error(`ws_mcp_detail: server 未连接或未发现：${JSON.stringify(server)}`);
+  }
+  const toolName = normalizeToolName(parsed.server, tool, "ws_mcp_detail");
+  const found = catalog.tools.get(toolName);
+  if (found === undefined) {
+    throw new Error(`ws_mcp_detail: tool 不存在：${JSON.stringify(`${server}/${toolName}`)}`);
+  }
+  const fresh = Date.now() - catalog.discoveredAt <= CATALOG_TTL_MS;
+  const detail: ToolDetail = {
+    server,
+    tool: toolName,
+    description: found.description,
+    inputSchema: found.inputSchema,
+    fresh,
+  };
+  if (unit.userDisabled.has(parsed.server)) detail.disabled = true;
+  return detail;
 }
 
 /** 等待带超时（race 兜底）。 */
