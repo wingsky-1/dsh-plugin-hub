@@ -263,13 +263,18 @@ export function searchCatalog(
 }
 
 /** 多单元合并检索（all 模式：项目 root 单元 + @global 单元合并查询）。
- * 与 searchCatalog 同语义，仅数据源扩展为多个 root；off/project 模式行为不变。 */
+ * 与 searchCatalog 同语义，仅数据源扩展为多个 root；off/project 模式行为不变。
+ * 单 root 直接委托 searchCatalog（保持原顺序，不引入跨单元排序变化）；
+ * 多 root 合并后统一排序并按全局 limit 截断。 */
 export function searchCatalogMulti(
   units: Map<string, ProjectUnit>,
   roots: readonly string[],
   query: string,
   limit: number,
 ): { results: SearchHit[]; unavailable: Array<{ server: string; reason: string }> } {
+  if (roots.length === 1) {
+    return searchCatalog(units, roots[0] as string, query, limit);
+  }
   const results: SearchHit[] = [];
   const unavailable: Array<{ server: string; reason: string }> = [];
   for (const root of roots) {
@@ -279,7 +284,8 @@ export function searchCatalogMulti(
   }
   // 跨单元排序（评分降序，工具名升序）——与单单元检索同序。
   results.sort((a, b) => b.score - a.score || a.tool.localeCompare(b.tool));
-  return { results, unavailable };
+  // 合并后统一截断（limit 为全局上限，而非每 root 上限）。
+  return { results: results.slice(0, limit), unavailable };
 }
 
 /**

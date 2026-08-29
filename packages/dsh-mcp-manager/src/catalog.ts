@@ -142,12 +142,14 @@ export function digestCatalogEntries(entries: CatalogEntry[]): string {
  * 按条目 scope 区分调用引导（#228 双轨迁移）：
  * - 含 project 条目 → 引导经 ws_mcp_list/ws_mcp_search/ws_mcp_detail/ws_mcp_call
  *   （项目级走中间层；完整盘点用 ws_mcp_list，查完整 schema 用 ws_mcp_detail）；
- * - 仅 global 条目 → 保持 mcp__ 直呼引导（全局服务器不经中间层检索）。
+ * - 仅 global 条目 → 默认保持 mcp__ 直呼引导（全局服务器不经中间层检索）；
+ *   all 模式（mode === "all"）下全局也走中间层 → 同样引导经中间层工具访问。
  */
-export function renderMcpCatalogMessage(entries: CatalogEntry[]): CatalogMessage {
+export function renderMcpCatalogMessage(entries: CatalogEntry[], mode?: string): CatalogMessage {
   const hasProject = entries.some((entry) => entry.scope === "project");
-  const guidance = hasProject
-    ? "任务匹配某服务器能力时，先用 `ws_mcp_search` 检索当前工作空间的 MCP 工具，再用 `ws_mcp_call` 调用（server/tool 取自检索结果）。**项目级服务器一律经这些工具访问，不直接调用其 mcp__ 前缀工具**；完整盘点全部服务器与工具清单用 `ws_mcp_list`，查单个工具的完整 inputSchema 用 `ws_mcp_detail`；全局服务器的 `mcp__<server>__<tool>` 工具仍可直接调用（见工具列表）。"
+  const viaMiddleware = hasProject || mode === "all";
+  const guidance = viaMiddleware
+    ? "任务匹配某服务器能力时，先用 `ws_mcp_search` 检索当前工作空间的 MCP 工具，再用 `ws_mcp_call` 调用（server/tool 取自检索结果）。**服务器一律经这些工具访问，不直接调用其 mcp__ 前缀工具**；完整盘点全部服务器与工具清单用 `ws_mcp_list`，查单个工具的完整 inputSchema 用 `ws_mcp_detail`。"
     : "任务匹配某服务器能力时，直接调用其 `mcp__<server>__<tool>` 工具（具体工具名与参数见工具列表）。";
   const lines = [
     "<system-reminder>",
@@ -227,8 +229,8 @@ export function catalogHistory(agent: CatalogAgent | undefined): CatalogHistoryR
 }
 
 /** 渲染"目录更新"消息（历史旧目录无法删除，新消息声明作废——与 tool-skill 同语义）。 */
-export function renderMcpCatalogUpdate(entries: CatalogEntry[]): CatalogMessage {
-  const body = renderMcpCatalogMessage(entries);
+export function renderMcpCatalogUpdate(entries: CatalogEntry[], mode?: string): CatalogMessage {
+  const body = renderMcpCatalogMessage(entries, mode);
   const inner = body.content![0].text!.split("\n").slice(3).join("\n");
   const text = [
     "<system-reminder>",
@@ -261,7 +263,8 @@ export function resolveCatalogInjection(
   supervisors: Map<string, SupervisorLite>,
   maxEntries = DEFAULT_CATALOG_MAX_ENTRIES,
   cache?: CatalogCache,
-  agent?: CatalogAgent
+  agent?: CatalogAgent,
+  mode?: string,
 ): CatalogDecision {
   if (decision.kind === "reject") return decision;
   const entries = composeCatalogEntries(supervisors, maxEntries, cache);
@@ -286,7 +289,7 @@ export function resolveCatalogInjection(
       messages: decision.messages.filter((message) => message.id !== existing.id),
     };
   }
-  const catalog = history.published ? renderMcpCatalogUpdate(entries) : renderMcpCatalogMessage(entries);
+  const catalog = history.published ? renderMcpCatalogUpdate(entries, mode) : renderMcpCatalogMessage(entries, mode);
   return {
     kind: "enter",
     messages: existing === undefined ? [...decision.messages, catalog] : decision.messages.map((message) => (message.id === existing.id ? catalog : message)),

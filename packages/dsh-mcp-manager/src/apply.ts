@@ -143,7 +143,8 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
           supervisors as Map<string, SupervisorLite>,
           catalogMaxEntries,
           manager.catalogCache,
-          agent as unknown as CatalogAgent | undefined
+          agent as unknown as CatalogAgent | undefined,
+          middlewareMode,
         ) as unknown as PreStepDecision;
       });
     }

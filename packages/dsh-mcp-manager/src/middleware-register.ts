@@ -57,10 +57,11 @@ export function registerMiddlewareTools(
 ): () => void {
   const disposers: Array<() => void> = [];
 
-  /** all 模式可见单元集合：项目 root + @global（评审 A 全局可见性修复）。 */
+  /** all 模式可见单元集合：项目 root + @global（评审 A 全局可见性修复）。
+   * root 本身为 @global 时去重（防 all 模式无项目 cwd 下服务器翻倍）。 */
   const visibleRoots = (root: string | undefined): string[] => {
     if (root === undefined) return [];
-    return mode === "all" ? [root, "@global"] : [root];
+    return mode === "all" ? (root === "@global" ? ["@global"] : [root, "@global"]) : [root];
   };
 
   const search: ToolDefinition = {
@@ -109,22 +110,22 @@ export function registerMiddlewareTools(
       const serverFilter = typeof params.server === "string" ? params.server : undefined;
       const requested = typeof params.limit === "number" ? Math.floor(params.limit) : 5;
       const limit = Math.max(1, Math.min(requested, 10));
+      const roots = visibleRoots(root);
       const unit = await mw.projectUnitFor(root);
       if (unit === undefined) {
-        return { results: [], unavailable: [] };
+        return { results: [], unavailable: [], truncated: false };
       }
-      // 等待 in-flight 连接/发现（预算内），再搜索。
-      await waitForDiscovery(unit);
-      const roots = visibleRoots(root);
-      // all 模式：@global 单元可能尚未触达（无 cwd 会话已由 resolveRoot 触达；
-      // 有 cwd 会话需显式触达一次，保证全局服务器目录可用）。
+      // 等待 in-flight 连接/发现（预算内），再搜索。all 模式对可见全部单元
+      // （含 @global 首次触达）都等待——否则全局目录首次为空（P1-3 修复）。
       for (const visible of roots) {
-        if (visible !== root) await mw.projectUnitFor(visible);
+        const visibleUnit = visible === root ? unit : await mw.projectUnitFor(visible);
+        if (visibleUnit !== undefined) await waitForDiscovery(visibleUnit);
       }
       const { results, unavailable } = searchCatalogMulti(mw.units, roots, query, limit);
+      // truncated 基于过滤前结果判定（serverFilter 过滤后误报的修正，P2-3）：
+      // 过滤前已达 limit 上限即提示可能未列全。
+      const truncated = results.length >= limit;
       const filtered = serverFilter === undefined ? results : results.filter((hit) => hit.server === serverFilter);
-      // truncated：结果达到 limit 即置 true（提示模型可能未列全；可按需调大 limit 或改用 ws_mcp_list）。
-      const truncated = filtered.length >= limit;
       return { results: filtered, unavailable, truncated };
     },
   };
@@ -270,22 +271,30 @@ export function registerMiddlewareTools(
       const serverFilter = typeof params.server === "string" && params.server !== "" ? params.server : undefined;
       const requested = typeof params.perServerLimit === "number" ? Math.floor(params.perServerLimit) : LIST_DEFAULT_TOOLS_PER_SERVER;
       const toolLimit = Math.max(1, Math.min(requested, LIST_MAX_TOOLS_PER_SERVER));
+      const roots = visibleRoots(root);
       const unit = await mw.projectUnitFor(root);
       if (unit === undefined) {
-        return {
-          workspace: root,
-          mode,
-          servers: [],
-          totalServers: 0,
-          totalTools: 0,
-          toolsTruncated: false,
-          message: "当前工作空间没有项目级 MCP 配置（可在 <项目根>/.dsh/mcp.json 添加服务器，或切换工作区）",
-        };
+        // project 模式无项目配置 → 空返回提示；all 模式回退只盘点 @global 单元。
+        if (mode !== "all") {
+          return {
+            workspace: root,
+            mode,
+            servers: [],
+            totalServers: 0,
+            totalTools: 0,
+            toolsTruncated: false,
+            message: "当前工作空间没有项目级 MCP 配置（可在 <项目根>/.dsh/mcp.json 添加服务器，或切换工作区）",
+          };
+        }
+        const globalUnit = await mw.projectUnitFor("@global");
+        if (globalUnit !== undefined) await waitForDiscovery(globalUnit);
+        return listCatalog(mw.units, ["@global"], serverFilter, toolLimit, mode, "当前工作空间没有可用 MCP 服务器（项目级与全局均未发现；若刚添加配置，请稍后重试）");
       }
-      await waitForDiscovery(unit);
-      const roots = visibleRoots(root);
+      // 等待 in-flight 连接/发现（预算内），再搜索。all 模式对可见全部单元
+      // （含 @global 首次触达）都等待——否则全局目录首次为空（P1-3 修复）。
       for (const visible of roots) {
-        if (visible !== root) await mw.projectUnitFor(visible);
+        const visibleUnit = visible === root ? unit : await mw.projectUnitFor(visible);
+        if (visibleUnit !== undefined) await waitForDiscovery(visibleUnit);
       }
       const emptyHint =
         mode === "all"

@@ -312,9 +312,12 @@ function makeHost(serversByRoot = new Map()) {
   // 空查询能力摘要同样合并。
   const summary = searchCatalogMulti(units, [ROOT, "@global"], "", 10);
   assert.equal(summary.results.length, 4, "合并摘要含全部工具");
-  // 单 root 包装与 multi 单元素等价。
+  // 单 root 包装与 multi 单元素等价（且顺序一致——multi 单 root 委托 searchCatalog，P2-2）。
   const single = searchCatalog(units, ROOT, "文档", 10);
   assert.deepEqual(single.results, searchCatalogMulti(units, [ROOT], "文档", 10).results);
+  // 多 root 合并后统一按全局 limit 截断（P2-3：limit 为全局上限）。
+  const capped = searchCatalogMulti(units, [ROOT, "@global"], "", 2);
+  assert.equal(capped.results.length, 2, "多 root 合并后按全局 limit 截断");
   // 无此单元 → 空。
   const none = searchCatalogMulti(units, ["/no/such"], "x", 10);
   assert.equal(none.results.length, 0);
