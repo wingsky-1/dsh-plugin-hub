@@ -1,0 +1,61 @@
+{
+  "name": "@wingsky-1/dsh-codegraph",
+  "version": "0.1.0",
+  "description": "codegraph MCP + worktree 开发纪律：探测/引导安装 codegraph CLI，经 mcp-manager 核心服务运行时注册 MCP 服务器，工具层强制「查询前 sync + projectPath」，非 git 仓不启用（#329 阶段2）",
+  "type": "module",
+  "main": "lib/index.js",
+  "scripts": {
+    "build": "node ../../scripts/build/clean-lib.ts && tsc -p tsconfig.json && node ../../scripts/build/bundle-host.ts .",
+    "test": "node test/smoke.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepublishOnly": "pnpm run typecheck && pnpm run build && pnpm test"
+  },
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "lib",
+    "shared/**/*.d.ts",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wingsky-1/dsh-plugin-hub.git",
+    "directory": "packages/dsh-codegraph"
+  },
+  "bugs": {
+    "url": "https://github.com/wingsky-1/dsh-plugin-hub/issues"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "codegraph",
+    "mcp",
+    "worktree"
+  ],
+  "author": "wingsky-1",
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "catalog:",
+    "@deepseek-ai/dsh-agent": "catalog:",
+    "@wingsky-1/dsh-mcp-manager": "workspace:*"
+  }
+}
