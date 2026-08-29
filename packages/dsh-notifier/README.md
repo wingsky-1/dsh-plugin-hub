@@ -119,9 +119,15 @@ context filter checks」）。取舍如下（issue #290）：
   "errorMergeWindowMs": 60000,
   "askRemindMin": 5,
   "doneMergeWindowMs": 3000,
-  "historyMaxAgeDays": 0
+  "historyMaxAgeDays": 0,
+  "maxConnections": 16
 }
 ```
+
+> `maxConnections`：SSE 连接表上限（默认 16，范围 1~1024）。含义为**服务端未释放句柄数**，
+> 非「在线设备数」——半开连接（设备息屏/切网/NAT 静默掐断）在传输层回收前会短暂残留，
+> 上限保证连接表有界，超出部分淘汰最老连接（客户端自动重连 + since 补拉，无感知）。
+> 多设备×多页签同时在线超过该值时可在面板调大。
 
 ## 路由（全部 loopback 围栏）
 

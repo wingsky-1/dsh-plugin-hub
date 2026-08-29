@@ -29,23 +29,33 @@ function sseData(payload: unknown): string {
   return `data: ${JSON.stringify(payload)}\n\n`;
 }
 
+/** 写失败判死阈值：连续 ≥3 次（心跳周期 30s × 3 ≈ 90s）写不动即销毁。
+ *  仅「抛错 / destroyed / writableEnded」计数；write 返回 false 视为背压（见 writeFrame）。 */
+const MAX_WRITE_FAILS = 3;
+
 /** SSE 推送枢纽：连接表、滚动缓冲广播、心跳。 */
 export interface SseHub {
-  /** 已连接响应集合（events 路由注册、close 时移除）。 */
-  connections: Set<ServerResponse>;
+  /** 注册一条 SSE 连接：入表 + 挂 close/error 监听 + 连接上限淘汰最老。 */
+  register(res: ServerResponse): void;
   /** 广播一帧：附加递增 seq、入滚动缓冲、推给所有连接。 */
   broadcast(payload: Record<string, unknown>): void;
   /** 断线补拉：滚动缓冲中 seq 更大的帧（独立于 /history 截断）。 */
   framesSince(since: number): Array<Record<string, unknown> & { seq: number }>;
-  /** 当前连接数（/health 展示）。 */
+  /** 当前连接数（/health 展示；语义=服务端未释放句柄数，含静默半开残留）。 */
   size(): number;
   /** 停止心跳定时器。 */
   dispose(): void;
 }
 
-/** 创建 SSE 枢纽并启动心跳。 */
-export function createSseHub(): SseHub {
-  const connections = new Set<ServerResponse>();
+/**
+ * 创建 SSE 枢纽并启动心跳。
+ * @param options.getMaxConnections 连接上限实时读取器（配置改动即时生效，无需重启；
+ *   超限时淘汰最老连接，让连接表有界——静默半开连接只增不减的根治手段）。
+ */
+export function createSseHub(options: { getMaxConnections: () => number }): SseHub {
+  const { getMaxConnections } = options;
+  /** 连接表：Map<响应, 写状态>。Map 迭代序 = 插入序，超限淘汰时第一项即最老。 */
+  const connState = new Map<ServerResponse, { failStreak: number; lastOkWriteAt: number }>();
 
   /** SSE 已派发帧的滚动缓冲（断线回补用；上限 RECENT_LIMIT，独立于 /history 的
    *  200 条截断，避免补拉时尾部事件被截掉）。 */
@@ -53,17 +63,80 @@ export function createSseHub(): SseHub {
   let notifySeq = 0;
   const recentFrames: Array<Record<string, unknown> & { seq: number }> = [];
 
+  /** 移除一条连接（幂等）：先出表再 destroy，destroy 触发的 close 回调再次 evict 无害。 */
+  function evict(res: ServerResponse) {
+    if (connState.delete(res)) {
+      try {
+        res.destroy();
+      } catch {
+        // 忽略
+      }
+    }
+  }
+
+  /** 连接上限收缩：超限淘汰最老（注册序最早）的连接，直到表不超限。
+   *  register 与心跳各调用一次——配置调小后无需新注册，30s 内即收敛。 */
+  function enforceLimit() {
+    const limit = getMaxConnections();
+    while (connState.size > limit) {
+      const oldest = connState.keys().next().value;
+      if (oldest === undefined) break;
+      evict(oldest);
+    }
+  }
+
+  /** 注册一条 SSE 连接：入表 + close/error 监听 + 上限淘汰 + socket keepalive 兜底。 */
+  function register(res: ServerResponse) {
+    connState.set(res, { failStreak: 0, lastOkWriteAt: Date.now() });
+    // close 是正常断连路径；error 是补 close 的缺口（现有代码缺失：不监听 error，
+    // 部分路径会抛 unhandled error，且连接残留）。两者都收口到 evict（幂等）。
+    res.on("close", () => evict(res));
+    res.on("error", () => evict(res));
+    // TCP keepalive：仅对「空闲连接」生效探测；SSE 每 30s 心跳使连接从不空闲，
+    // 故对活跃写连接不触发（真正探测死连接的是 TCP 重传，分钟级）——仅兜底长空闲。
+    try {
+      res.socket?.setKeepAlive(true, 60000);
+    } catch {
+      // 忽略
+    }
+    enforceLimit();
+  }
+
+  /**
+   * 统一写帧：成功则刷新写状态；失败累计 failStreak，连续 ≥3 次判死销毁。
+   * write 返回 false 一律视为背压（TCP 接收窗口关闭，对端暂停消费），**不是断连
+   * 证据**——弱网/浏览器冻结后台 tab 等健康连接可能长时间不消费，误判会造成无谓
+   * 重连。仅「抛错 / destroyed / writableEnded」才判死。
+   * @returns 是否成功写出。
+   */
+  function writeFrame(res: ServerResponse, text: string): boolean {
+    const entry = connState.get(res);
+    if (entry === undefined) return false;
+    if (res.destroyed || res.writableEnded) {
+      // 已销毁/已结束的响应：close 事件可能漏发，这里兜底直接清理
+      evict(res);
+      return false;
+    }
+    try {
+      res.write(text);
+      entry.failStreak = 0;
+      entry.lastOkWriteAt = Date.now();
+      return true;
+    } catch {
+      entry.failStreak += 1;
+      if (entry.failStreak >= MAX_WRITE_FAILS) evict(res);
+      return false;
+    }
+  }
+
   function broadcast(payload: Record<string, unknown>) {
     const frame: Record<string, unknown> & { seq: number } = Object.assign({}, payload, { seq: ++notifySeq });
     recentFrames.push(frame);
     if (recentFrames.length > RECENT_LIMIT) recentFrames.shift();
     const text = sseData(frame);
-    for (const res of connections) {
-      try {
-        res.write(text);
-      } catch {
-        // 连接已断，等待 close 清理
-      }
+    for (const res of connState.keys()) {
+      // 迭代中 evict 当前项安全（JS Map 迭代器按访问序号推进，删除不影响后续项）
+      writeFrame(res, text);
     }
   }
 
@@ -75,26 +148,24 @@ export function createSseHub(): SseHub {
    * SSE 心跳：每 30s 发一条 data 型 ping 帧。必须用 data 而非注释帧——注释帧
    * 既不触发客户端 onmessage 也不触发 onerror，半开连接（断网/合盖/NAT 静默
    * 掐断）时客户端零事件，无法自愈；data 帧让客户端的 watchdog 能检测失活。
+   * 顺带做连接上限收缩（配置调小即收敛）与写失败判死扫描。
    */
   const HEARTBEAT_MS = 30000;
   const heartbeatTimer = setInterval(() => {
     const frame = sseData({ type: "ping" });
-    for (const res of connections) {
-      try {
-        res.write(frame);
-      } catch {
-        // 等待 close 清理
-      }
+    for (const res of connState.keys()) {
+      writeFrame(res, frame);
     }
+    enforceLimit();
   }, HEARTBEAT_MS);
   // unref：心跳不阻止进程退出（服务端有主循环；测试/无连接时不会被句柄吊死）
   heartbeatTimer.unref();
 
   return {
-    connections,
+    register,
     broadcast,
     framesSince,
-    size: () => connections.size,
+    size: () => connState.size,
     dispose: () => clearInterval(heartbeatTimer),
   };
 }
@@ -295,14 +366,14 @@ export function buildRoutes(deps: RouteDeps): WebRoute[] {
           }
         }
       }
-      sse.connections.add(res);
-      res.on("close", () => {
-        sse.connections.delete(res);
-      });
+      // 入表 + 挂 close/error 监听 + 连接上限淘汰，全部收口在 sse.register
+      sse.register(res);
     },
   };
 
-  /** 健康检查：插件是否加载、配置摘要、SSE 连接数。 */
+  /** 健康检查：插件是否加载、配置摘要、SSE 连接数。
+   *  sseConnections 语义 = 服务端未释放的 SSE 句柄数（含静默半开残留，分钟级回收），
+   *  非「在线设备数」；上限见 config.maxConnections（淘汰最老）。 */
   const healthRoute: WebRoute = {
     kind: "exact",
     path: ROUTES.health,
@@ -324,6 +395,7 @@ export function buildRoutes(deps: RouteDeps): WebRoute[] {
           notifyWhenVisible: current.notifyWhenVisible,
           notifySound: current.notifySound,
           quietHours: current.quietHours,
+          maxConnections: current.maxConnections,
         },
         sseConnections: sse.size(),
       });
@@ -333,6 +405,7 @@ export function buildRoutes(deps: RouteDeps): WebRoute[] {
   /**
    * 测试通知：POST 触发一条测试通知（绕过免打扰，测试意图是验证通道本身）。
    * 系统通知 + SSE 广播同时走一遍，客户端收到 kind=test 的帧无条件弹窗。
+   * 返回的 sseConnections 语义同 /health = 服务端未释放句柄数（非设备数）。
    */
   const testRoute: WebRoute = {
     kind: "exact",

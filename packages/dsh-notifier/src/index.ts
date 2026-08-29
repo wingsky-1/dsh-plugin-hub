@@ -122,7 +122,7 @@ export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Pro
 
   // ------------------------------------------------------------ 组装各职责模块
 
-  const sse = createSseHub();
+  const sse = createSseHub({ getMaxConnections: () => current.maxConnections });
   const system = createSystemNotifier({
     getSoundEnabled: () => current.notifySound,
     toastScript,
