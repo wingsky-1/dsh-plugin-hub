@@ -415,9 +415,11 @@ export class McpManager {
       let changed = false;
       for (const [name, supervisor] of [...this.supervisors]) {
         const want = desired.get(name);
+        // runtime 条目豁免中间层接管（走全局 supervisor 路径，不被中间层停掉/跳过）。
+        const isRuntime = this.runtimeRegistry.has(name);
         // 中间层 project/all 模式：项目级（all 含全局）服务器由中间层接管
-        // （不注册 mcp__ 工具，避免双连接双进程）。
-        const middlewareTakes = this.middlewareMode !== "off" && (
+        // （不注册 mcp__ 工具，避免双连接双进程）。runtime 条目例外。
+        const middlewareTakes = !isRuntime && this.middlewareMode !== "off" && (
           supervisor.scope === SCOPE_PROJECT || (this.middlewareMode === "all" && supervisor.scope === SCOPE_GLOBAL)
         );
         if (want === undefined || want.server.enabled === false || want.scope !== supervisor.scope || middlewareTakes) {
@@ -427,8 +429,11 @@ export class McpManager {
       }
       for (const [name, want] of desired) {
         if (want.server.enabled === false) continue;
+        // runtime 条目豁免中间层跳过（走全局 supervisor 路径，reconcile 不杀 runtime）。
+        const isRuntime = this.runtimeRegistry.has(name);
         // 中间层 project/all 模式：项目级（all 含全局）跳过 supervisor（由中间层惰性连接）。
-        if (this.middlewareMode !== "off" && (
+        // runtime 条目例外。
+        if (!isRuntime && this.middlewareMode !== "off" && (
           want.scope === SCOPE_PROJECT || (this.middlewareMode === "all" && want.scope === SCOPE_GLOBAL)
         )) continue;
         const existing = this.supervisors.get(name);

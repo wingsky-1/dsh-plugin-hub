@@ -1916,6 +1916,14 @@ const main = async () => {
       await manager.dispose();
       assert.equal(manager.supervisors.size, 0, "dispose 清空全部 supervisor");
 
+      // 中间层 all 模式：runtime 条目豁免中间层跳过（reconcile 不杀 runtime supervisor）。
+      // 回归（QA 复审发现）：all 模式 reconcile 会把 runtime supervisor 停掉且不重建。
+      manager.middlewareMode = "all";
+      await manager.registerServer({ name: "svc-all", transport: "stdio", command: "echo", args: ["x"], enabled: false });
+      manager.reconcileServers();
+      assert.ok(manager.runtimeRegistry.has("svc-all"), "all 模式 runtime 条目保留");
+      manager.middlewareMode = "off";
+
       console.log("  ok   核心化 service: register/unregister/双轨/卸载清理");
     } finally {
       rmSync(dir, { recursive: true, force: true });
