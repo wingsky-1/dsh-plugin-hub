@@ -29,8 +29,11 @@ function sseData(payload: unknown): string {
   return `data: ${JSON.stringify(payload)}\n\n`;
 }
 
-/** 写失败判死阈值：连续 ≥3 次（心跳周期 30s × 3 ≈ 90s）写不动即销毁。
- *  仅「抛错 / destroyed / writableEnded」计数；write 返回 false 视为背压（见 writeFrame）。 */
+/** 写失败判死阈值：连续 ≥3 次写不动即销毁（理论 throw 兜底路径）。
+ *  注意：真实 ServerResponse 对已断对端 write() 几乎不抛错（数据静默入队），
+ *  死连接主力清理是 close / error（register 收口）与 destroyed/writableEnded 兜底，
+ *  failStreak 仅兜底「抛错」这一理论路径——阈值 3 对应约 3 个广播/心跳周期，
+ *  非严格 90s。write 返回 false 一律视为背压（见 writeFrame）。 */
 const MAX_WRITE_FAILS = 3;
 
 /** SSE 推送枢纽：连接表、滚动缓冲广播、心跳。 */
@@ -55,7 +58,7 @@ export interface SseHub {
 export function createSseHub(options: { getMaxConnections: () => number }): SseHub {
   const { getMaxConnections } = options;
   /** 连接表：Map<响应, 写状态>。Map 迭代序 = 插入序，超限淘汰时第一项即最老。 */
-  const connState = new Map<ServerResponse, { failStreak: number; lastOkWriteAt: number }>();
+  const connState = new Map<ServerResponse, { failStreak: number }>();
 
   /** SSE 已派发帧的滚动缓冲（断线回补用；上限 RECENT_LIMIT，独立于 /history 的
    *  200 条截断，避免补拉时尾部事件被截掉）。 */
@@ -87,7 +90,7 @@ export function createSseHub(options: { getMaxConnections: () => number }): SseH
 
   /** 注册一条 SSE 连接：入表 + close/error 监听 + 上限淘汰 + socket keepalive 兜底。 */
   function register(res: ServerResponse) {
-    connState.set(res, { failStreak: 0, lastOkWriteAt: Date.now() });
+    connState.set(res, { failStreak: 0 });
     // close 是正常断连路径；error 是补 close 的缺口（现有代码缺失：不监听 error，
     // 部分路径会抛 unhandled error，且连接残留）。两者都收口到 evict（幂等）。
     res.on("close", () => evict(res));
@@ -120,7 +123,6 @@ export function createSseHub(options: { getMaxConnections: () => number }): SseH
     try {
       res.write(text);
       entry.failStreak = 0;
-      entry.lastOkWriteAt = Date.now();
       return true;
     } catch {
       entry.failStreak += 1;
