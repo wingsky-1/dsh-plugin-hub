@@ -80,7 +80,9 @@ export function createSseHub(options: { getMaxConnections: () => number }): SseH
   /** 连接上限收缩：超限淘汰最老（注册序最早）的连接，直到表不超限。
    *  register 与心跳各调用一次——配置调小后无需新注册，30s 内即收敛。 */
   function enforceLimit() {
-    const limit = getMaxConnections();
+    // 防御非法上限：normalizeConfig 已保证 [1,1024]，此处仅兜底未来直接注入
+    // 闭包传入 <1 值导致 while 条件恒真空转的问题（与 oldest===undefined break 双保险）。
+    const limit = Math.max(1, getMaxConnections());
     while (connState.size > limit) {
       const oldest = connState.keys().next().value;
       if (oldest === undefined) break;
@@ -358,7 +360,13 @@ export function buildRoutes(deps: RouteDeps): WebRoute[] {
         "cache-control": "no-cache",
         connection: "keep-alive",
       });
-      res.write(": connected\n\n");
+      // 预存在缺口随手修（#334 评审遗留 P2-9）：connected 锚点写失败（对端已断）
+      // 直接返回、不再 register——已断连接入表只会成为靠心跳/广播兜底清理的残留。
+      try {
+        res.write(": connected\n\n");
+      } catch {
+        return;
+      }
       if (since > 0) {
         for (const frame of sse.framesSince(since)) {
           try {
