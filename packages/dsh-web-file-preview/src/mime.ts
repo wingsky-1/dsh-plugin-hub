@@ -8,6 +8,8 @@
  *  - image        → 浏览器可解码的图片（直接 <img>）
  *  - renderedMd   → Markdown（marked 渲染，可切原始）
  *  - renderedCode → 代码类（highlight.js 高亮，可切原始）
+ *  - renderedHtml → HTML（issue #73：客户端走 serve 路由 iframe sandbox 渲染；
+ *                   /file 仍以 text/plain 直出源码，防止顶层访问成为同源脚本通道）
  *  - text         → 其它纯文本（等宽 <pre>）
  *  - other        → 其余二进制，提示不可预览
  */
@@ -17,7 +19,7 @@ import mime from "mime";
 import { groupOfPath } from "./grouping.ts";
 
 /** 预览分组。 */
-export type PreviewGroup = "image" | "text" | "renderedMd" | "renderedCode" | "other";
+export type PreviewGroup = "image" | "text" | "renderedMd" | "renderedCode" | "renderedHtml" | "other";
 
 /** 判定结果。 */
 export interface PreviewKind {
@@ -41,6 +43,12 @@ export function previewKindOf(path: string): PreviewKind {
   }
   if (group === "md") {
     return { group: "renderedMd", ext, contentType: "text/markdown; charset=utf-8" };
+  }
+  if (group === "html") {
+    // E2（issue #73）：/file 对 .html/.htm 必须保持 text/plain——若改为 text/html，
+    // 新标签/顶层直接访问 file?path=foo.html 会变成同源顶层脚本执行通道。
+    // HTML 的真实渲染走 serve 路由（text/html + iframe sandbox，见 routes.ts）。
+    return { group: "renderedHtml", ext, contentType: "text/plain; charset=utf-8" };
   }
   if (group === "code") {
     return { group: "renderedCode", ext, contentType: "text/plain; charset=utf-8" };

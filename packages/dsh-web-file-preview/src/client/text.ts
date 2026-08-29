@@ -11,6 +11,7 @@ import { sanitizePreview } from "./rewrite.ts";
 import { hydrateMermaid } from "./mermaid.ts";
 import { applyHeadingIds, scrollToFragment } from "./anchor.ts";
 import { el, errorView } from "./dom.ts";
+import { renderHtmlPreview } from "./html.ts";
 import type { FilePreviewState } from "./state.ts";
 import { html as diffToHtml } from "diff2html";
 import DOMPurify from "dompurify";
@@ -21,6 +22,14 @@ export function fileDiffUrl(path: string, cwd: string | undefined, state: FilePr
   if (cwd !== undefined && cwd !== "") params.set("cwd", cwd);
   params.set("path", path);
   return `${state.API.diff}?${params.toString()}`;
+}
+
+/** 原文 URL（/file；供 html 组原始 tab 惰性拉取，G2）。 */
+export function fileUrlOf(state: FilePreviewState): string {
+  const params = new URLSearchParams();
+  if (state.currentCwd !== undefined && state.currentCwd !== "") params.set("cwd", state.currentCwd);
+  params.set("path", state.currentPath);
+  return `${state.API.file}?${params.toString()}`;
 }
 
 /**
@@ -44,7 +53,7 @@ export function fetchText(url: string, body: HTMLElement, seq: number, signal: A
     .catch(() => { if (seq === state.openSeq) errorView(body, "请求失败（无法访问文件预览服务）", url); });
 }
 
-/** 按当前模式渲染文本类正文（预览=md渲染/代码高亮；原始=等宽 pre；Diff=git diff）。 */
+/** 按当前模式渲染文本类正文（预览=md渲染/代码高亮/iframe；原始=等宽 pre；Diff=git diff）。 */
 export function renderTabBody(body: HTMLElement, state: FilePreviewState): void {
   const group = state.currentGroup;
   if (group === undefined) return;
@@ -53,8 +62,19 @@ export function renderTabBody(body: HTMLElement, state: FilePreviewState): void 
     renderDiff(body, state);
     return;
   }
+  // issue #73：html 组「预览」模式 = serve iframe（不依赖 rawText；原始 tab 才拉取）。
+  if (state.previewMode === "preview" && group.group === "html") {
+    renderHtmlPreview(body, state, state.openSeq, state.activeAbort !== undefined ? state.activeAbort.signal : new AbortController().signal);
+    return;
+  }
   const text = state.rawText;
   if (text === undefined) {
+    // issue #73：html 组打开时默认「预览」tab 不拉取 /file（iframe 直出）；
+    // 首次切到「原始」/「Diff 不可用兜底」时惰性 fetch 原文（G2）。
+    if (group.group === "html" && state.currentPath !== "") {
+      fetchText(fileUrlOf(state), body, state.openSeq, state.activeAbort !== undefined ? state.activeAbort.signal : new AbortController().signal, state);
+      return;
+    }
     body.appendChild(el("div", { class: "fwp-state", text: "加载中…" }));
     return;
   }

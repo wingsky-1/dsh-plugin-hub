@@ -12,7 +12,7 @@
  * - serveFileRoute：文本直出（UTF-8）、图片二进制直出、缺参 400、逃逸可读、
  *   文件不存在 404、不可预览类型 415、文本超限截断
  */
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync, readFileSync, existsSync, renameSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync, readFileSync, existsSync, renameSync, readdirSync, symlinkSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join, dirname, basename } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -20,8 +20,8 @@ import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import {
   ROUTES, makeRoutes, serveFileRoute, previewKindOf, computeGitDiff,
-  normalizeConfig, DEFAULT_CONFIG, groupOfPath, isLikelySingleFilePath, resolveRelativePath,
-  cleanRefChipPath, resolveAbsolutePath, splitReferenceFragment,
+  normalizeConfig, DEFAULT_CONFIG, groupOfPath, groupOfExt, isLikelySingleFilePath, resolveRelativePath,
+  cleanRefChipPath, resolveAbsolutePath, splitReferenceFragment, serveTokenRoute,
 } from "../lib/index.js";
 import { build as esbuildBuild } from "esbuild";
 import { assertClientProductContract, assertClientSourceContract } from "../../../test/smoke-lib.ts";
@@ -47,11 +47,18 @@ assert.deepEqual(groupOfPath("c.png").group, "image");
 assert.deepEqual(groupOfPath("d.txt").group, "text");
 assert.deepEqual(groupOfPath("e.xyz").group, "other");
 assert.deepEqual(groupOfPath("dir/a.JPG").group, "image", "扩展名大小写不敏感");
+// issue #73 F1：.html/.htm 从 code 组迁出，新增 html 渲染组
+assert.deepEqual(groupOfPath("a.html").group, "html", "#73 .html → html 渲染组");
+assert.deepEqual(groupOfPath("b.HTM").group, "html", "#73 .HTM 大小写归一 → html 渲染组");
+assert.equal(groupOfPath("a.html").ext, "html", "#73 html 扩展名回传");
+assert.equal(groupOfExt("css"), "code", "#73 css 仍属 code 组（未受影响）");
 
 // previewKindOf 由 grouping 派生：md→renderedMd、code→renderedCode，双端一致。
 assert.equal(previewKindOf("a.md").group === "renderedMd", groupOfPath("a.md").group === "md", "md 双端分组一致");
 assert.equal(previewKindOf("a.js").group === "renderedCode", groupOfPath("a.js").group === "code", "code 双端分组一致");
 assert.equal(previewKindOf("a.txt").group === "text", groupOfPath("a.txt").group === "text", "text 双端分组一致");
+// issue #73 F3：html 双端一致——previewKindOf 产出新 kind renderedHtml ↔ groupOfPath html。
+assert.equal(previewKindOf("a.html").group === "renderedHtml", groupOfPath("a.html").group === "html", "#73 html 双端分组一致");
 
 // 点击识别的"单文件路径"判定（结构化拒绝多路径拼接的展示标签；bug 回归）：
 // 上下文注入折叠摘要把两个文件用逗号拼成一个展示字符串（~/.dsh/AGENTS.md, AGENTS.md），
@@ -105,9 +112,13 @@ assert.equal(previewKindOf("foo.png").group, "image");
 assert.equal(previewKindOf("dir/a.JPG").group, "image", "扩展名大小写不敏感");
 assert.equal(previewKindOf("a.md").group, "renderedMd", "Markdown 渲染组");
 assert.equal(previewKindOf("a.js").group, "renderedCode", "代码渲染组");
+assert.equal(previewKindOf("a.html").group, "renderedHtml", "#73 HTML 渲染组（新 kind）");
 assert.equal(previewKindOf("hello.md").contentType, "text/markdown; charset=utf-8");
 assert.equal(previewKindOf("a.txt").group, "text");
 assert.equal(previewKindOf("a.exe").group, "other");
+// issue #73 E2：/file 对 .html/.htm 保持 text/plain（防顶层访问成为同源脚本执行通道）
+assert.equal(previewKindOf("a.html").contentType, "text/plain; charset=utf-8", "#73 /file 对 html 保持 text/plain");
+assert.equal(previewKindOf("a.htm").contentType, "text/plain; charset=utf-8", "#73 /file 对 htm 保持 text/plain");
 // issue #12：图片组 Content-Type 改由 mime 库提供——精确值逐项断言（原自写表等价映射）。
 assert.equal(previewKindOf("a.png").contentType, "image/png");
 assert.equal(previewKindOf("a.webp").contentType, "image/webp");
@@ -121,6 +132,12 @@ assert.equal(normalizeConfig({ enabled: false }).enabled, false);
 assert.equal(normalizeConfig({ maxTextBytes: 1234 }).maxTextBytes, 1234);
 assert.equal(normalizeConfig({ maxTextBytes: -1 }).maxTextBytes, DEFAULT_CONFIG.maxTextBytes, "非法上限丢弃");
 assert.equal(normalizeConfig({ maxTextBytes: "x" }).maxTextBytes, DEFAULT_CONFIG.maxTextBytes, "非数字丢弃");
+// issue #73 I1：maxAssetBytes 配置键——合法正数接受、非法丢弃回默认
+assert.equal(normalizeConfig(undefined).maxAssetBytes, DEFAULT_CONFIG.maxAssetBytes, "#73 默认资源上限");
+assert.equal(normalizeConfig({ maxAssetBytes: 2048 }).maxAssetBytes, 2048, "#73 合法正数接受");
+assert.equal(normalizeConfig({ maxAssetBytes: 0 }).maxAssetBytes, DEFAULT_CONFIG.maxAssetBytes, "#73 零丢弃");
+assert.equal(normalizeConfig({ maxAssetBytes: -5 }).maxAssetBytes, DEFAULT_CONFIG.maxAssetBytes, "#73 负数丢弃");
+assert.equal(normalizeConfig({ maxAssetBytes: "big" }).maxAssetBytes, DEFAULT_CONFIG.maxAssetBytes, "#73 非数字丢弃");
 
 // ------------------------------------------------------------ ~ 波浪号展开
 // 宿主端用 untildify（业界标准、零依赖、跨平台）做 ~ 展开，具体语义由第三方
@@ -128,13 +145,19 @@ assert.equal(normalizeConfig({ maxTextBytes: "x" }).maxTextBytes, DEFAULT_CONFIG
 // （见下方真实文件服务节）。
 
 const routes = makeRoutes({});
-assert.equal(routes.length, 4, "file + diff + health + mermaid 四条路由");
+assert.equal(routes.length, 7, "file + diff + health + mermaid + alloc + serve + release 七条路由");
 const routePaths = routes.map((r) => r.path);
 assert.equal(routePaths.includes(ROUTES.file), true);
 assert.equal(routePaths.includes(ROUTES.diff), true);
 assert.equal(routePaths.includes(ROUTES.health), true);
 assert.equal(routePaths.includes(ROUTES.mermaid), true, "#104 mermaid chunk 路由注册");
-for (const r of routes) assert.equal(r.kind, "exact");
+// issue #73 A1：serve 为 prefix 路由（/serve/<token>/ 下任意子路径均被接管）；其余 exact
+assert.equal(routePaths.includes(ROUTES.serve), true, "#73 serve 路由注册");
+assert.equal(routePaths.includes(ROUTES.alloc), true, "#73 alloc 路由注册");
+assert.equal(routePaths.includes(ROUTES.release), true, "#73 release 路由注册");
+const serveRoute = routes.find((r) => r.path === ROUTES.serve);
+assert.equal(serveRoute !== undefined && serveRoute.kind, "prefix", "#73 serve 路由 kind 为 prefix（A1）");
+for (const r of routes) if (r.path !== ROUTES.serve) assert.equal(r.kind, "exact");
 
 // ------------------------------------------------------------ 围栏
 
@@ -143,15 +166,25 @@ function fakeReq(method, url, remoteAddress, host = "127.0.0.1", extraHeaders = 
 }
 function fakeRes() {
   const calls = { status: 0, headers: {}, data: null };
+  const listeners = {};
   return {
     _calls: calls,
     writeHead(status, headers) { calls.status = status; calls.headers = headers || {}; return this; },
-    end(data) { calls.data = data; },
+    end(data) { if (data !== undefined) calls.data = data; }, // 流式 end() 无参：保留 write 累积
+    // 流式直出（serve 路由）支持：write 累积 buffer，end 时拼装完整 data
+    write(chunk) { calls.data = calls.data === null ? Buffer.from(chunk) : Buffer.concat([Buffer.from(calls.data), Buffer.from(chunk)]); return true; },
+    on(evt, fn) { (listeners[evt] = listeners[evt] || []).push(fn); return this; },
+    emit(evt, ...args) { for (const fn of listeners[evt] || []) fn(...args); return this; },
   };
 }
 /** 文件路由所需的最小 req（headers 可自定义）。 */
 function rawReqForFiles(headers = {}) {
   return { headers };
+}
+
+/** 目录条目（serve 零落盘断言用）。 */
+function readdirOf(dir) {
+  try { return readdirSync(dir); } catch { return []; }
 }
 
 function git(dir, args) {
@@ -161,6 +194,9 @@ function git(dir, args) {
 const fileRoute = routes[0].handler;
 const healthRoute = routes[2].handler;
 const mermaidRoute = routes[3].handler;
+const allocRoute = routes[4].handler;
+const serveRouteHandler = routes[5].handler;
+const releaseRoute = routes[6].handler;
 
 // 非回环 → 403
 {
@@ -190,6 +226,37 @@ const mermaidRoute = routes[3].handler;
   const res = fakeRes();
   await mermaidRoute(fakeReq("POST", ROUTES.mermaid, "127.0.0.1"), res);
   assert.equal(res._calls.status, 405, "mermaid 非 GET 405");
+}
+// issue #73 A2：serve/alloc/release 路由围栏与既有路由同语义（非回环 403 / 非 GET 405）
+{
+  const res = fakeRes();
+  await serveRouteHandler(fakeReq("GET", ROUTES.serve + "/tok/x.html", "8.8.8.8"), res);
+  assert.equal(res._calls.status, 403, "#73 serve 非回环 403");
+}
+{
+  const res = fakeRes();
+  await serveRouteHandler(fakeReq("POST", ROUTES.serve + "/tok/x.html", "127.0.0.1"), res);
+  assert.equal(res._calls.status, 405, "#73 serve 非 GET 405");
+}
+{
+  const res = fakeRes();
+  await allocRoute(fakeReq("GET", ROUTES.alloc + "?cwd=/tmp&path=a.html", "8.8.8.8"), res);
+  assert.equal(res._calls.status, 403, "#73 alloc 非回环 403");
+}
+{
+  const res = fakeRes();
+  await allocRoute(fakeReq("POST", ROUTES.alloc + "?cwd=/tmp&path=a.html", "127.0.0.1"), res);
+  assert.equal(res._calls.status, 405, "#73 alloc 非 GET 405");
+}
+{
+  const res = fakeRes();
+  releaseRoute(fakeReq("GET", ROUTES.release + "?token=x", "8.8.8.8"), res);
+  assert.equal(res._calls.status, 403, "#73 release 非回环 403");
+}
+{
+  const res = fakeRes();
+  releaseRoute(fakeReq("POST", ROUTES.release + "?token=x", "127.0.0.1"), res);
+  assert.equal(res._calls.status, 405, "#73 release 非 GET 405");
 }
 
 // ------------------------------------------------------------ 真实文件服务
@@ -478,7 +545,7 @@ try {
   const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
   assertClientSourceContract(pkgDir);
   assertClientProductContract(pkgDir);
-  const expectedRoutes = [ROUTES.file, ROUTES.diff, ROUTES.health, ROUTES.mermaid];
+  const expectedRoutes = [ROUTES.file, ROUTES.diff, ROUTES.health, ROUTES.mermaid, ROUTES.serve, ROUTES.alloc, ROUTES.release];
   const literals = [...client.matchAll(/\/api\/dsh-file-preview\/[a-z-]+/g)].map((m) => m[0]);
   for (const literal of literals) assert.ok(expectedRoutes.includes(literal), `client 出现未知路由: ${literal}`);
   for (const route of expectedRoutes) assert.ok(literals.includes(route), `client 缺少路由: ${route}`);
@@ -508,6 +575,327 @@ try {
     const thirdParty = readFileSync(new URL("../lib/THIRD-PARTY-LICENSES", import.meta.url), "utf8");
     assert.ok(thirdParty.includes("mermaid@"), "#104 THIRD-PARTY-LICENSES 归集 mermaid（内联=分发副本）");
     assert.ok(/ISC/i.test(thirdParty), "#104 license 清单含 ISC 字样（d3 系）");
+  }
+
+  // ---- issue #73：serve token 虚拟伺服（A/B/C/D/E 组）----
+  // 隔离 serve 用独立临时目录（不污染上方 root 的既有断言）。零落盘断言需要
+  // 「serveRoot 的父目录无新增文件」——父目录必须是本用例专属的 mkdtemp 隔离
+  // 目录（直接以 tmpdir 为父会在 pnpm -r 并行测试时被其他包的临时目录误报）。
+  {
+    const serveParent = mkdtempSync(join(tmpdir(), "fwp-serve-parent-"));
+    const serveRoot = join(serveParent, "webroot");
+    mkdirSync(serveRoot, { recursive: true });
+    try {
+      mkdirSync(join(serveRoot, "assets"), { recursive: true });
+      writeFileSync(join(serveRoot, "index.html"), "<!doctype html><h1>hi</h1>\n", "utf8");
+      writeFileSync(join(serveRoot, "assets", "app.css"), "body{color:red}\n", "utf8");
+      writeFileSync(join(serveRoot, "assets", "app.js"), "console.log('x')\n", "utf8");
+      writeFileSync(join(serveRoot, "pic.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]), "utf8");
+      writeFileSync(join(serveRoot, "blob.q7x9z"), "opaque", "utf8");
+      writeFileSync(join(serveRoot, "dir.txt"), "dir content", "utf8");
+      mkdirSync(join(serveRoot, "subdir"));
+      writeFileSync(join(serveRoot, "subdir", "page.html"), "<p>page</p>", "utf8");
+      // 越界目标：root 外真实文件（C4 对照：/file 逃逸 200，serve 越界 404）
+      const outside = join(serveParent, `fwp-serve-outside-${Date.now()}.txt`);
+      writeFileSync(outside, "outside", "utf8");
+      const outsideName = basename(outside);
+
+      const serveUrl = (token, rest) => `http://127.0.0.1${ROUTES.serve}/${token}/${rest}`;
+      const allocOf = (p, cwd = serveRoot) =>
+        `http://127.0.0.1${ROUTES.alloc}?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(p)}`;
+
+      // A5：alloc 返回 200 + 随机 token + rest（相对 root 的 POSIX 相对路径）
+      let token = "";
+      {
+        const res = fakeRes();
+        await allocRoute(fakeReq("GET", allocOf("index.html"), "127.0.0.1"), res);
+        assert.equal(res._calls.status, 200, "#73 alloc 200");
+        const payload = JSON.parse(res._calls.data);
+        assert.equal(payload.ok, true, "#73 alloc ok:true");
+        assert.ok(typeof payload.token === "string" && /^[0-9a-f]{32}$/.test(payload.token), "#73 token 为 128-bit 随机 hex");
+        assert.equal(payload.rest, "index.html", "#73 rest 为相对 root 的 POSIX 相对路径");
+        assert.equal(payload.root, serveRoot, "#73 root 为 HTML 所在目录");
+        token = payload.token;
+      }
+      // alloc 非 html → 400；不存在 → 404；缺参 → 400
+      {
+        const res = fakeRes();
+        await allocRoute(fakeReq("GET", allocOf("assets/app.css"), "127.0.0.1"), res);
+        assert.equal(res._calls.status, 400, "#73 alloc 非 html → 400");
+      }
+      {
+        const res = fakeRes();
+        await allocRoute(fakeReq("GET", allocOf("nope.html"), "127.0.0.1"), res);
+        assert.equal(res._calls.status, 404, "#73 alloc 不存在 → 404");
+      }
+      {
+        const res = fakeRes();
+        await allocRoute(fakeReq("GET", `${ROUTES.alloc}?cwd=${encodeURIComponent(serveRoot)}`, "127.0.0.1"), res);
+        assert.equal(res._calls.status, 400, "#73 alloc 缺 path → 400");
+      }
+      // A3：未知 token → 404（不泄露区分信息）
+      {
+        const res = fakeRes();
+        await serveRouteHandler(fakeReq("GET", serveUrl("deadbeefdeadbeefdeadbeefdeadbeef", "index.html"), "127.0.0.1"), res);
+        assert.equal(res._calls.status, 404, "#73 未知 token → 404");
+      }
+      // E1：serve 独立 MIME 判定——html→text/html、css→text/css、js→text/javascript、
+      //     png→image/png、未知→octet-stream
+      {
+        const cases = [
+          ["index.html", /^text\/html/],
+          ["assets/app.css", /^text\/css/],
+          ["assets/app.js", /^text\/javascript/],
+          ["pic.png", /^image\/png/],
+          ["blob.q7x9z", /^application\/octet-stream/],
+        ];
+        for (const [rest, re] of cases) {
+          const res = fakeRes();
+          await serveRouteHandler(fakeReq("GET", serveUrl(token, rest), "127.0.0.1"), res);
+          assert.equal(res._calls.status, 200, `#73 serve ${rest} 200`);
+          assert.match(String(res._calls.headers["content-type"]), re, `#73 serve ${rest} Content-Type`);
+        }
+      }
+      // A4：serve 响应一律 nosniff + referrer-policy no-referrer
+      {
+        const res = fakeRes();
+        await serveRouteHandler(fakeReq("GET", serveUrl(token, "index.html"), "127.0.0.1"), res);
+        assert.equal(res._calls.headers["x-content-type-options"], "nosniff", "#73 serve 带 nosniff");
+        assert.equal(res._calls.headers["referrer-policy"], "no-referrer", "#73 serve 带 no-referrer");
+      }
+      // E3：serve 字节直出不改写（body === 磁盘原文件）
+      {
+        const res = fakeRes();
+        await serveRouteHandler(fakeReq("GET", serveUrl(token, "index.html"), "127.0.0.1"), res);
+        assert.equal(res._calls.data.toString("utf8"), "<!doctype html><h1>hi</h1>\n", "#73 serve 不重写 HTML（字节一致）");
+        assert.equal(String(res._calls.headers["content-length"]), String(Buffer.byteLength("<!doctype html><h1>hi</h1>\n")), "#73 Content-Length 正确");
+      }
+      // C3：目录请求 → 404（根路径 / 已知目录，不做目录列表）
+      {
+        const res = fakeRes();
+        await serveRouteHandler(fakeReq("GET", `${ROUTES.serve}/${token}/`, "127.0.0.1"), res);
+        assert.equal(res._calls.status, 404, "#73 serve 根路径（目录）→ 404");
+      }
+      {
+        const res = fakeRes();
+        await serveRouteHandler(fakeReq("GET", serveUrl(token, "subdir"), "127.0.0.1"), res);
+        assert.equal(res._calls.status, 404, "#73 serve 已知目录 → 404（不做目录列表）");
+      }
+      // C4：root 越界（.. 逃逸到 root 外存在的文件）→ 404——与 /file「逃逸 200」刻意相反
+      {
+        const res = fakeRes();
+        await serveRouteHandler(fakeReq("GET", serveUrl(token, `../${outsideName}`), "127.0.0.1"), res);
+        assert.equal(res._calls.status, 404, "#73 serve 越界 → 404（与 /file 逃逸 200 对照）");
+      }
+      // C2：编码攻击面——rest 以 / 开头、含 \0、交替分隔符 \、%2e%2e 解码段、绝对路径
+      {
+        const attackCases = [
+          `/etc/passwd`,            // 以 / 开头（URL 解析后变成路径段）
+          `a%2f..%2f${outsideName}`, // %2f 编码斜杠
+          `..%2f${outsideName}`,     // %2e%2e 编码点
+          `subdir/../../${outsideName}`,
+          `a\\b.html`,               // Windows 交替分隔符
+          `index.html%00`,           // \0 注入（NUL 编码）
+        ];
+        for (const rest of attackCases) {
+          const res = fakeRes();
+          await serveRouteHandler(fakeReq("GET", serveUrl(token, rest), "127.0.0.1"), res);
+          assert.ok(res._calls.status === 404 || res._calls.status === 400, `#73 攻击面 ${rest} → 404/400（实际 ${res._calls.status}）`);
+          assert.ok(res._calls.status !== 500, `#73 攻击面 ${rest} 不 5xx`);
+        }
+      }
+      // B5：release 后同 token → 404（幂等：重复 release 仍 200）
+      {
+        const res = fakeRes();
+        releaseRoute(fakeReq("GET", `${ROUTES.release}?token=${token}`, "127.0.0.1"), res);
+        assert.equal(res._calls.status, 200, "#73 release 200");
+        const res2 = fakeRes();
+        await serveRouteHandler(fakeReq("GET", serveUrl(token, "index.html"), "127.0.0.1"), res2);
+        assert.equal(res2._calls.status, 404, "#73 release 后同 token → 404");
+        const res3 = fakeRes();
+        releaseRoute(fakeReq("GET", `${ROUTES.release}?token=${token}`, "127.0.0.1"), res3);
+        assert.equal(res3._calls.status, 200, "#73 重复 release 幂等 200");
+      }
+      // B2：只读伺服、零落盘——serve 后 serveParent 下无新增文件（token 为内存态）
+      {
+        const before = new Set(readdirOf(serveParent));
+        const res = fakeRes();
+        await allocRoute(fakeReq("GET", allocOf("subdir/page.html"), "127.0.0.1"), res);
+        const p2 = JSON.parse(res._calls.data);
+        // alloc root = HTML 所在目录（serveRoot/subdir）→ rest 为相对该 root 的路径
+        assert.equal(p2.rest, "page.html", "#73 子目录 html 的 rest 相对其所在目录");
+        const res2 = fakeRes();
+        await serveRouteHandler(fakeReq("GET", serveUrl(p2.token, p2.rest), "127.0.0.1"), res2);
+        assert.equal(res2._calls.status, 200, "#73 多级目录伺服 200");
+        const after = new Set(readdirOf(serveParent));
+        for (const name of after) assert.ok(before.has(name), `#73 serve 零落盘：父目录无新增 ${name}`);
+      }
+      // B1：多 root 并存、互不串扰——两个不同 root 的 token 各自只能访问各自 root
+      {
+        const rootB = mkdtempSync(join(tmpdir(), "fwp-serve-b-"));
+        try {
+          writeFileSync(join(rootB, "index.html"), "<p>B</p>", "utf8");
+          const ra = fakeRes();
+          await allocRoute(fakeReq("GET", allocOf("index.html", serveRoot), "127.0.0.1"), ra);
+          const pa = JSON.parse(ra._calls.data);
+          const rb = fakeRes();
+          await allocRoute(fakeReq("GET", allocOf("index.html", rootB), "127.0.0.1"), rb);
+          const pb = JSON.parse(rb._calls.data);
+          assert.notEqual(pa.token, pb.token, "#73 两 root 的 token 互不相同");
+          const resA = fakeRes();
+          await serveRouteHandler(fakeReq("GET", serveUrl(pa.token, "index.html"), "127.0.0.1"), resA);
+          assert.equal(resA._calls.data.toString("utf8"), "<!doctype html><h1>hi</h1>\n", "#73 token A 只服务 root A");
+          const resB = fakeRes();
+          await serveRouteHandler(fakeReq("GET", serveUrl(pb.token, "index.html"), "127.0.0.1"), resB);
+          assert.equal(resB._calls.data.toString("utf8"), "<p>B</p>", "#73 token B 只服务 root B");
+          const cross = fakeRes();
+          await serveRouteHandler(fakeReq("GET", serveUrl(pa.token, "../b-index.html"), "127.0.0.1"), cross);
+          assert.equal(cross._calls.status, 404, "#73 token A 无法经 ../ 访问 root B");
+        } finally {
+          rmSync(rootB, { recursive: true, force: true });
+        }
+      }
+      // B3a：idle TTL——注入短 TTL + 可控时钟：命中刷新续存 / 到期回收后 404
+      {
+        // 用 createTokenStore + resetServeTokenStore 注入时钟（拨表断言）
+        const { createTokenStore: mkStore, resetServeTokenStore: resetStore } = await import("../lib/index.js");
+        let fakeNow = 1_000_000;
+        const store = mkStore({ now: () => fakeNow, ttlMs: 10_000, maxTokens: 8, activeWindowMs: 5_000 });
+        resetStore(store);
+        try {
+          const t1 = store.alloc(serveRoot);
+          assert.ok(t1 !== null, "#73 B3a 注入 store 分配成功");
+          assert.equal(store.size(), 1, "#73 B3a 分配后 1 个 token");
+          // 命中刷新：get 后拨表前进 9s（< TTL）仍存活
+          fakeNow += 9_000;
+          const hit = store.get(t1);
+          assert.ok(hit !== undefined && hit.root === serveRoot, "#73 B3a TTL 内 get 存活（命中刷新）");
+          // 再拨 9s（上次 get 后 9s < 10s TTL）仍存活——证明 get 刷新了 lastHit
+          fakeNow += 9_000;
+          assert.ok(store.get(t1) !== undefined, "#73 B3a 命中刷新后 TTL 重新计时");
+          // 闲置超过 TTL：拨 11s 后 get → 回收 → undefined
+          fakeNow += 11_000;
+          assert.equal(store.get(t1), undefined, "#73 B3a 闲置超 TTL → 回收");
+          // 经 serve 路由验证到期 404
+          const t2 = store.alloc(serveRoot);
+          fakeNow += 11_000;
+          const res = fakeRes();
+          await serveRouteHandler(fakeReq("GET", serveUrl(t2, "index.html"), "127.0.0.1"), res);
+          assert.equal(res._calls.status, 404, "#73 B3a 到期 token 经 serve 路由 → 404");
+        } finally {
+          resetStore();
+        }
+      }
+      // B4a：LRU 不淘汰活跃——达上限时活跃 token 保留、最久未用的非活跃 token 被淘汰
+      {
+        const { createTokenStore: mkStore, resetServeTokenStore: resetStore } = await import("../lib/index.js");
+        let fakeNow = 2_000_000;
+        // activeWindowMs=1s：t1 在窗口内（活跃），t2 老化出窗口（非活跃最旧）
+        const store = mkStore({ now: () => fakeNow, ttlMs: 60_000, maxTokens: 3, activeWindowMs: 1_000 });
+        resetStore(store);
+        try {
+          const t1 = store.alloc(serveRoot);
+          const t2 = store.alloc(serveRoot);
+          // 标记 t1 活跃（近 activeWindowMs 内有 serve 命中）
+          fakeNow += 500;
+          store.get(t1);
+          fakeNow += 600; // t2 自分配起闲置 1.1s > 1s 窗口 → 非活跃；t1 活跃
+          const t3 = store.alloc(serveRoot);
+          assert.ok(t3 !== null, "#73 B4a 第三次分配成功");
+          assert.equal(store.size(), 3, "#73 B4a 上限 3 已满");
+          // 再分配一个 → 必须淘汰非活跃最旧 t2，保留活跃 t1
+          fakeNow += 300; // t1 距上次命中 900ms < 1s 仍活跃；t3 刚分配亦活跃
+          const t4 = store.alloc(serveRoot);
+          assert.ok(t4 !== null, "#73 B4a 达上限时腾出空位分配成功");
+          assert.ok(store.get(t1) !== undefined, "#73 B4a 活跃 token 不被淘汰");
+          assert.equal(store.get(t2), undefined, "#73 B4a 最久未用的非活跃 token 被淘汰");
+          assert.equal(store.size(), 3, "#73 B4a 淘汰后仍为上限");
+        } finally {
+          resetStore();
+        }
+      }
+      // C1：realpath 双向校验——闭合符号链接逃逸（root/link -> root 外敏感文件）→ 404
+      {
+        // B5 已释放初始 token——重新分配有效 token 供 C1/D1/D2/子目录用例使用。
+        const ra = fakeRes();
+        await allocRoute(fakeReq("GET", allocOf("index.html"), "127.0.0.1"), ra);
+        const pa = JSON.parse(ra._calls.data);
+        const liveToken = pa.token;
+        // POSIX 上断言；Windows symlink 受限按现有「跳过」惯例（try/catch 建链失败即跳过）
+        let linked = false;
+        try {
+          const symlink = join(serveRoot, "escape-link");
+          rmSync(symlink, { force: true });
+          symlinkSync(outside, symlink);
+          linked = true;
+        } catch { /* Windows 权限受限 → 跳过 */ }
+        if (linked) {
+          const res = fakeRes();
+          await serveRouteHandler(fakeReq("GET", serveUrl(liveToken, "escape-link"), "127.0.0.1"), res);
+          assert.equal(res._calls.status, 404, "#73 符号链接逃逸（root/link -> root 外）→ 404");
+        } else {
+          console.log("  (跳过 C1 符号链接断言：symlink 不可用)");
+        }
+        // 对照：同 token 正常文件仍 200（证明 404 源于链接逃逸而非 token 失效）
+        {
+          const res = fakeRes();
+          await serveRouteHandler(fakeReq("GET", serveUrl(liveToken, "index.html"), "127.0.0.1"), res);
+          assert.equal(res._calls.status, 200, "#73 C1 对照：有效 token 正常文件 200");
+        }
+        // D1：流式直出——>1MB 资源 Content-Length == stat.size 且 body 完整
+        {
+          const bigName = "big.bin";
+          const bigSize = 2 * 1024 * 1024 + 123;
+          const bigBuf = Buffer.alloc(bigSize, 7);
+          writeFileSync(join(serveRoot, bigName), bigBuf);
+          const res = fakeRes();
+          await serveRouteHandler(fakeReq("GET", serveUrl(liveToken, bigName), "127.0.0.1"), res);
+          assert.equal(res._calls.status, 200, "#73 大文件 200");
+          assert.equal(String(res._calls.headers["content-length"]), String(bigSize), "#73 Content-Length == stat.size");
+          assert.ok(Buffer.isBuffer(res._calls.data) && res._calls.data.length === bigSize, "#73 body 完整直出");
+          rmSync(join(serveRoot, bigName), { force: true });
+        }
+        // D2：单资源超 maxAssetBytes → 413 + truncated + no-store（先 stat 判大小、不整读）
+        {
+          // 用 serve 路由 cfg 注入小上限（模拟 maxAssetBytes 配置生效；默认 512KB 太大）
+          const smallCfg = { maxAssetBytes: 64 };
+          writeFileSync(join(serveRoot, "big.html"), "<p>" + "x".repeat(100) + "</p>", "utf8");
+          const res = fakeRes();
+          await serveTokenRoute(res, fakeReq("GET", serveUrl(liveToken, "big.html"), "127.0.0.1"), new URL(serveUrl(liveToken, "big.html")), smallCfg);
+          assert.equal(res._calls.status, 413, "#73 超限 → 413");
+          assert.equal(res._calls.headers["cache-control"], "no-store", "#73 413 不缓存");
+          const payload = JSON.parse(res._calls.data);
+          assert.equal(payload.truncated, true, "#73 413 带 truncated 标记");
+          assert.equal(payload.max, 64, "#73 413 带 max 值（maxAssetBytes）");
+          rmSync(join(serveRoot, "big.html"), { force: true });
+        }
+        // 子目录相对伺服（G3 前置）：root 内多级路径正常
+        {
+          const res = fakeRes();
+          await serveRouteHandler(fakeReq("GET", serveUrl(liveToken, "assets/app.css"), "127.0.0.1"), res);
+          assert.equal(res._calls.status, 200, "#73 子目录资源 200");
+          assert.equal(res._calls.data.toString("utf8"), "body{color:red}\n", "#73 子目录内容正确");
+        }
+      }
+      rmSync(outside, { force: true });
+    } finally {
+      rmSync(serveParent, { recursive: true, force: true });
+    }
+  }
+
+  // ---- issue #73：client.js 产物契约哨兵（HTML iframe sandbox 预览）----
+  // iframe 渲染 + sandbox 空集（无 allow-scripts/allow-same-origin，G4）+ token
+  // 生命周期接线随产物下发；产物层证据防「实现回退丢安全约束」。
+  {
+    assert.ok(client.includes("fwp-html-frame"), "#73 client.js 含 html iframe 类名");
+    assert.ok(client.includes("sandbox"), "#73 client.js 含 sandbox 属性装配");
+    // G4：sandbox 以空 token 集装配（sandbox:""）——绝无 allow-scripts/allow-same-origin 值形态
+    assert.ok(/sandbox:\s*""/.test(client), "#73 client.js sandbox 空集装配（G4）");
+    assert.ok(!client.includes('sandbox:"allow-scripts'), "#73 client.js 无 allow-scripts 装配值（J1）");
+    assert.ok(!client.includes('sandbox:"allow-same-origin'), "#73 client.js 无 allow-same-origin 装配值（J9）");
+    assert.ok(client.includes("no-referrer"), "#73 client.js 含 referrerpolicy no-referrer（iframe 侧）");
+    assert.ok(client.includes("serve"), "#73 client.js 含 serve 路由前缀拼接");
+    assert.ok(client.includes("HTML 预览"), "#73 client.js 含 html 预览标题文案");
   }
 
   // ---- issue #45：引用 → 预览目标重写决策（rewrite-target，纯逻辑直测）----

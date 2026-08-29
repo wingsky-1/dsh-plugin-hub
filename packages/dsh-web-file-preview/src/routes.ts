@@ -5,7 +5,8 @@
  *   - loopback 围栏（非回环 403，方法非 GET 405）；
  *   - 路径按 cwd 解析（resolve，不做“逃出 cwd”拦截）；
  *   - 图片 → 二进制直出（Content-Type: image/*，供 <img> 同源加载）；
- *   - 文本/代码/Markdown → UTF-8 直出；超过 maxTextBytes 返回 413 + truncated（文档截断，C6/W10）。
+ *   - 文本/代码/Markdown/HTML → UTF-8 直出（HTML 也保持 text/plain，见 E2）；
+ *     超过 maxTextBytes 返回 413 + truncated（文档截断，C6/W10）。
  *   - 其余类型 → 415 提示不可预览。
  *
  * GET /api/dsh-file-preview/health  健康检查。
@@ -14,21 +15,42 @@
  *   从包内 lib/client-mermaid.js 直出的静态资产端点（无用户输入路径、零穿越面），
  *   客户端 md 出现 mermaid 代码块时才动态 import 拉取。
  *
+ * GET /api/dsh-file-preview/alloc?cwd=&path=  serve token 分配（issue #73）：
+ *   把「HTML 文件所在目录」登记为只读 root，返回随机 token + 相对 root 的
+ *   POSIX 相对路径（rest）；仅 .html/.htm 可分配（其余 400）。
+ *
+ * GET /api/dsh-file-preview/serve/<token>/<rest>  HTML 虚拟静态伺服（issue #73，
+ *   prefix 路由，spec A 组）：
+ *   - token → root 目录映射（进程级单例，见 serve-tokens.ts）；
+ *   - realpath 双向根越界防护（闭合符号链接逃逸，C1）+ 编码攻击面拒绝（C2）；
+ *   - 目录请求 404 不做目录列表（C3）；root 越界 404（C4，与 /file 刻意相反）；
+ *   - 流式直出 + Content-Length（D1）；超过 maxAssetBytes → 413 + no-store（D2）；
+ *   - 独立 MIME 判定：html → text/html，其余按 mime 库（E1）。
+ *
+ * GET /api/dsh-file-preview/release?token=  serve token 显式释放（B5，幂等）：
+ *   客户端 closeModal 上报；未释放由 TTL/LRU 兜底回收。
+ *
  * 约定：不校验路径是否属于某个已登记的工作区，也不做“逃出 cwd”拦截
  * （能打开 dsh web 本身即高权限，任意文件访问由平台/用户负责，本插件不做重复
  * 兜底）。仅按 `resolve(cwd, path)` 直接定位后读取。
+ * 例外：/serve 把目录映射成 web root，是安全模型变更点——必须做严格 root 越界
+ * 防护（realpath 双向校验 + 编码攻击面拒绝），与 /file 的“不做逃出拦截”刻意相反。
  */
 
 import untildify from "untildify";
-import { resolve, isAbsolute } from "node:path";
-import { stat, readFile } from "node:fs/promises";
+import { resolve, isAbsolute, join, relative, dirname, sep } from "node:path";
+import { stat, readFile, realpath } from "node:fs/promises";
+import { createReadStream } from "node:fs";
 import type { Stats } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import mime from "mime";
 import { isLoopbackRequest } from "../../../shared/loopback.js";
 import { writeJson, errorMessage } from "../../../shared/host-utils.js";
 import { previewKindOf } from "./mime.ts";
 import { computeGitDiff } from "./git.ts";
 import { bareBasenameOf, findUniqueByBasename } from "./basename-fallback.ts";
+import { extOf, groupOfPath } from "./grouping.ts";
+import { createTokenStore, type TokenStore } from "./serve-tokens.ts";
 // 官方路由对象类型（仅 import type，编译期擦除；contract-check 禁止运行时值导入）。
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 
@@ -40,6 +62,11 @@ export const ROUTES = {
   // Mermaid 懒加载 chunk（issue #104）：刻意不带 .js 后缀——客户端契约 smoke 的
   // 路由字面量正则为 [a-z-]+（匹配不到带点字面量），带点路由名会静默漏检。
   mermaid: "/api/dsh-file-preview/mermaid",
+  // issue #73：HTML 虚拟静态伺服。serve 为 prefix kind（无尾斜杠，接管
+  // /serve/<token>/… 任意子路径）；alloc/release 为 exact kind。
+  serve: "/api/dsh-file-preview/serve",
+  alloc: "/api/dsh-file-preview/alloc",
+  release: "/api/dsh-file-preview/release",
 };
 
 /** 宿主端配置面（apply normalizeConfig 后传入）。 */
@@ -47,6 +74,8 @@ export interface PreviewConfig {
   enabled?: boolean;
   /** 文本类预览最大字节数；超过返回 413+truncated（C6 落地，非预留）。 */
   maxTextBytes?: number;
+  /** serve 单资源最大字节数（issue #73 D2/D3）；超过返回 413+truncated+no-store。 */
+  maxAssetBytes?: number;
 }
 
 function queryParam(url: URL, key: string): string | undefined {
@@ -137,7 +166,7 @@ export async function serveFileRoute(
   // 带缓存标签的超限文件会永远命中「未变化」绕过 413，用户看不到超限提示。
   // 413 响应不缓存（no-store），避免客户端把超限状态当可复用缓存。
   if (
-    (kind.group === "text" || kind.group === "renderedMd" || kind.group === "renderedCode") &&
+    (kind.group === "text" || kind.group === "renderedMd" || kind.group === "renderedCode" || kind.group === "renderedHtml") &&
     cfg.maxTextBytes !== undefined &&
     info.size > cfg.maxTextBytes
   ) {
@@ -191,7 +220,7 @@ export async function serveFileRoute(
     }
     return;
   }
-  if (kind.group === "text" || kind.group === "renderedMd" || kind.group === "renderedCode") {
+  if (kind.group === "text" || kind.group === "renderedMd" || kind.group === "renderedCode" || kind.group === "renderedHtml") {
     try {
       const body = await readFile(resolved, "utf8");
       res.writeHead(200, {
@@ -205,6 +234,233 @@ export async function serveFileRoute(
     return;
   }
   writeJson(res, 415, { error: `unsupported preview type: .${kind.ext}` });
+}
+
+// ---------------------------------------------------------------- issue #73：serve token 虚拟伺服
+
+/**
+ * 进程级懒起单例 token 存储（issue #73 B1）：同进程内多会话 / 多 root 并存。
+ * 惰性创建（首个 alloc 才建），插件生命周期内不销毁（内存态，进程退出即消失）。
+ */
+let tokenStore: TokenStore | undefined;
+
+/** 取进程级单例 token 存储（测试可经 resetServeTokenStore 重置注入自定义实例）。 */
+export function getTokenStore(): TokenStore {
+  if (tokenStore === undefined) tokenStore = createTokenStore();
+  return tokenStore;
+}
+
+/** 重置单例（测试注入短 TTL / 时钟 / 上限用；生产不调用）。 */
+export function resetServeTokenStore(store?: TokenStore): void {
+  tokenStore = store;
+}
+
+/** 分配前校验路径：必须是存在的文件且属于 html 渲染组（.html/.htm）。 */
+async function resolveAllocTarget(cwd: string | undefined, path: string): Promise<
+  { ok: true; absPath: string } | { ok: false; status: number; error: string }
+> {
+  if (path === undefined || path === "") {
+    return { ok: false, status: 400, error: "missing path" };
+  }
+  if (!isAbsolute(untildify(path)) && (cwd === undefined || cwd === "")) {
+    return { ok: false, status: 400, error: "missing cwd (relative path requires cwd)" };
+  }
+  const expandedPath = untildify(path);
+  const resolved = isAbsolute(expandedPath) ? resolve(expandedPath) : resolve(cwd as string, expandedPath);
+  if (groupOfPath(resolved).group !== "html") {
+    return { ok: false, status: 400, error: "alloc only supports html preview" };
+  }
+  let info: Stats;
+  try {
+    info = await stat(resolved);
+  } catch {
+    return { ok: false, status: 404, error: `not found: ${path}` };
+  }
+  if (!info.isFile()) {
+    return { ok: false, status: 400, error: `not a file: ${path}` };
+  }
+  return { ok: true, absPath: resolved };
+}
+
+/**
+ * token 分配（spec A5）：root = HTML 文件所在目录（realpath 归一，闭合符号链接），
+ * rest = 磁盘绝对路径相对 root 的 POSIX 相对路径。返回 token + rest。
+ */
+export async function allocServeToken(
+  res: ServerResponse,
+  url: URL,
+  cfg: PreviewConfig
+): Promise<void> {
+  const cwd = queryParam(url, "cwd");
+  const path = queryParam(url, "path") ?? "";
+  const target = await resolveAllocTarget(cwd, path);
+  if (!target.ok) {
+    writeJson(res, target.status, { error: target.error });
+    return;
+  }
+  let root: string;
+  try {
+    root = await realpath(dirname(target.absPath));
+  } catch {
+    writeJson(res, 404, { error: `not found: ${path}` });
+    return;
+  }
+  const store = getTokenStore();
+  const token = store.alloc(root);
+  if (token === null) {
+    // 全部活跃且达上限：拒绝新分配（防泄漏优先于可用性），客户端提示稍后再试。
+    writeJson(res, 429, { error: "too many active previews, close some previews first" });
+    return;
+  }
+  // rest 恒等于「磁盘绝对路径相对 root 的 POSIX 相对路径」（spec 四、资源解析）。
+  const rest = relative(root, target.absPath).split(sep).join("/");
+  writeJson(res, 200, { ok: true, token, rest, root });
+}
+
+/** serve 单资源 Content-Type（E1）：html → text/html；其余按 mime 库；未知 octet-stream。 */
+export function serveContentTypeOf(rest: string): string {
+  const ext = extOf(rest);
+  if (ext === "html" || ext === "htm") return "text/html; charset=utf-8";
+  const type = mime.getType(ext);
+  return type !== null ? type : "application/octet-stream";
+}
+
+/**
+ * serve 路由核心（spec A/C/D/E 组；已通过围栏校验后调用）。
+ * 语义与 /file 刻意相反：root 越界一律 404（把目录映射成 web root 的安全模型变更点）。
+ */
+export async function serveTokenRoute(
+  res: ServerResponse,
+  req: IncomingMessage,
+  url: URL,
+  cfg: PreviewConfig
+): Promise<void> {
+  // /serve/<token>/<rest>：prefix 路由 path 之后形如 "/<token>/<rest>"——先剥前导斜杠。
+  const afterPrefix = url.pathname.slice(ROUTES.serve.length).replace(/^\//, "");
+  const slash = afterPrefix.indexOf("/");
+  const token = slash === -1 ? afterPrefix : afterPrefix.slice(0, slash);
+  const rest = slash === -1 ? "" : afterPrefix.slice(slash + 1);
+  if (token === "" || rest === "" || rest.startsWith("/") || rest.includes("\\")) {
+    writeJson(res, 404, { error: "not found" });
+    return;
+  }
+  const store = getTokenStore();
+  const entry = store.get(token);
+  if (entry === undefined) {
+    writeJson(res, 404, { error: "not found" }); // A3：未知/过期 token 一律 404，不泄露区分信息
+    return;
+  }
+  // rest 编码攻击面：pathname 保留百分号编码（%2e%2e / %2f 不会先被 URL 解析器还原），
+  // 先 decodeURIComponent 还原（失败=非法编码 → 404），再做「.. / .」段与 NUL 拒绝（C2）。
+  let decodedRest: string;
+  try {
+    decodedRest = decodeURIComponent(rest);
+  } catch {
+    writeJson(res, 404, { error: "not found" });
+    return;
+  }
+  if (decodedRest.includes("\0")) {
+    writeJson(res, 404, { error: "not found" });
+    return;
+  }
+  const segments = decodedRest.split("/");
+  if (segments.some((seg) => seg === ".." || seg === ".")) {
+    writeJson(res, 404, { error: "not found" });
+    return;
+  }
+  // 拼接 + realpath 双向校验（C1）：root 在分配时已 realpath；这里对目标再次
+  // realpath 后判定仍落在 root 内——闭合符号链接逃逸（root/link -> /etc）。
+  const candidate = join(entry.root, ...segments);
+  let real: string;
+  try {
+    real = await realpath(candidate);
+  } catch {
+    writeJson(res, 404, { error: "not found" });
+    return;
+  }
+  if (real !== entry.root && !real.startsWith(entry.root + sep)) {
+    writeJson(res, 404, { error: "not found" }); // C4：越界 404
+    return;
+  }
+  let info: Stats;
+  try {
+    info = await stat(real);
+  } catch {
+    writeJson(res, 404, { error: "not found" });
+    return;
+  }
+  if (!info.isFile()) {
+    writeJson(res, 404, { error: "not found" }); // C3：目录请求 404，不做目录列表
+    return;
+  }
+  // 超限检查先于 ETag/304（与 /file 同语义，D2）：413 响应不缓存（no-store）。
+  if (cfg.maxAssetBytes !== undefined && info.size > cfg.maxAssetBytes) {
+    res.writeHead(413, {
+      "content-type": "application/json; charset=utf-8",
+      "referrer-policy": "no-referrer",
+      "x-content-type-options": "nosniff",
+      "cache-control": "no-store",
+    });
+    res.end(
+      JSON.stringify({
+        error: `asset too large to serve (${info.size} bytes; limit ${cfg.maxAssetBytes})`,
+        truncated: true,
+        size: info.size,
+        max: cfg.maxAssetBytes,
+      })
+    );
+    return;
+  }
+  const etag = `"${info.size}-${info.mtimeMs}"`;
+  const baseHeaders: Record<string, string> = {
+    "cache-control": "no-cache",
+    "etag": etag,
+    "referrer-policy": "no-referrer", // A4：防外部资源收到含 token 的 Referer
+    "x-content-type-options": "nosniff", // A4：防 MIME 嗅探/类型混淆
+  };
+  if (req.headers["if-none-match"] === etag) {
+    res.writeHead(304, baseHeaders);
+    res.end();
+    return;
+  }
+  // 流式直出（D1）：createReadStream + Content-Length，不整读进内存。
+  // 手动管道（data/end/error 事件 + res.write）而非 stream.pipe(res)：
+  //  - 不依赖 dest 的 pipe 协议（测试 fakeRes 无需实现 .on）；
+  //  - 错误处理确定：headersSent 前可回写 500，之后销毁连接；
+  //  - 返回 promise 在流结束时 resolve——调用方 await 即代表响应完整发出
+  //    （测试无需轮询等待）。
+  return new Promise<void>((resolvePromise) => {
+    const stream = createReadStream(real);
+    res.writeHead(200, {
+      ...baseHeaders,
+      "content-type": serveContentTypeOf(rest),
+      "content-length": String(info.size),
+    });
+    stream.on("data", (chunk) => {
+      if (!res.write(chunk)) stream.pause(); // 背压：下游写不动时暂停读
+    });
+    res.on("drain", () => stream.resume());
+    stream.on("end", () => { res.end(); resolvePromise(); });
+    stream.on("error", () => {
+      if (!res.headersSent) {
+        writeJson(res, 500, { error: "read failed" });
+      } else if (typeof (res as any).destroy === "function") {
+        (res as any).destroy();
+      }
+      resolvePromise();
+    });
+  });
+}
+
+/** token 显式释放（B5，幂等）：客户端 closeModal 上报；未知 token 也返回 ok（无探测面）。 */
+export function releaseServeToken(res: ServerResponse, url: URL): void {
+  const token = queryParam(url, "token");
+  if (token === undefined || token === "") {
+    writeJson(res, 400, { error: "missing token" });
+    return;
+  }
+  getTokenStore().release(token);
+  writeJson(res, 200, { ok: true });
 }
 
 /**
@@ -334,5 +590,53 @@ export function makeRoutes(cfg: PreviewConfig): WebRoute[] {
       return serveMermaidRoute(res, req);
     },
   };
-  return [fileRoute, diffRoute, healthRoute, mermaidRoute];
+  // issue #73：serve token 分配（exact）。
+  const allocRoute: WebRoute = {
+    kind: "exact",
+    path: ROUTES.alloc,
+    handler: (req: IncomingMessage, res: ServerResponse): Promise<void> | void => {
+      if (!isLoopbackRequest(req)) {
+        writeJson(res, 403, { error: "forbidden: loopback-only" });
+        return;
+      }
+      if (req.method !== "GET") {
+        writeJson(res, 405, { error: `method not allowed: ${req.method}` });
+        return;
+      }
+      return allocServeToken(res, new URL(req.url ?? "/", "http://localhost"), cfg);
+    },
+  };
+  // issue #73：HTML 虚拟静态伺服（prefix：/serve/<token>/ 下任意子路径均被接管，A1）。
+  const serveRoute: WebRoute = {
+    kind: "prefix",
+    path: ROUTES.serve,
+    handler: (req: IncomingMessage, res: ServerResponse): Promise<void> | void => {
+      if (!isLoopbackRequest(req)) {
+        writeJson(res, 403, { error: "forbidden: loopback-only" });
+        return;
+      }
+      if (req.method !== "GET") {
+        writeJson(res, 405, { error: `method not allowed: ${req.method}` });
+        return;
+      }
+      return serveTokenRoute(res, req, new URL(req.url ?? "/", "http://localhost"), cfg);
+    },
+  };
+  // issue #73：serve token 显式释放（exact，幂等）。
+  const releaseRoute: WebRoute = {
+    kind: "exact",
+    path: ROUTES.release,
+    handler: (req: IncomingMessage, res: ServerResponse): void => {
+      if (!isLoopbackRequest(req)) {
+        writeJson(res, 403, { error: "forbidden: loopback-only" });
+        return;
+      }
+      if (req.method !== "GET") {
+        writeJson(res, 405, { error: `method not allowed: ${req.method}` });
+        return;
+      }
+      releaseServeToken(res, new URL(req.url ?? "/", "http://localhost"));
+    },
+  };
+  return [fileRoute, diffRoute, healthRoute, mermaidRoute, allocRoute, serveRoute, releaseRoute];
 }

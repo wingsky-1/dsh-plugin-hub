@@ -31,6 +31,8 @@ export const inject = ["webServer"];
 export const DEFAULT_CONFIG: Required<PreviewConfig> = {
   enabled: true,
   maxTextBytes: 512 * 1024,
+  // issue #73 D3：与 maxTextBytes 对称（512KB）——serve 单资源上限，超限 413。
+  maxAssetBytes: 512 * 1024,
 };
 
 /** 归一化配置：只接受合法值，非法丢弃回默认。 */
@@ -44,6 +46,13 @@ export function normalizeConfig(config: PreviewConfig | undefined): PreviewConfi
       config.maxTextBytes > 0
     ) {
       result.maxTextBytes = config.maxTextBytes;
+    }
+    if (
+      typeof config.maxAssetBytes === "number" &&
+      Number.isFinite(config.maxAssetBytes) &&
+      config.maxAssetBytes > 0
+    ) {
+      result.maxAssetBytes = config.maxAssetBytes;
     }
   }
   return result;
@@ -77,6 +86,9 @@ export function apply(ctx: Context, config?: PreviewConfig): void {
 
 // 路由常量 / 纯函数透出（smoke、客户端契约、诊断共用）。
 export { ROUTES, makeRoutes, serveFileRoute, previewKindOf, computeGitDiff };
+// issue #73：serve token 虚拟伺服（smoke 直测 + 诊断）。
+export { serveTokenRoute, allocServeToken, releaseServeToken, serveContentTypeOf, getTokenStore, resetServeTokenStore } from "./routes.ts";
+export { createTokenStore, DEFAULT_TOKEN_TTL_MS, DEFAULT_TOKEN_MAX, DEFAULT_ACTIVE_WINDOW_MS, type TokenStore, type TokenStoreOptions } from "./serve-tokens.ts";
 // 预览分组判定（单一事实源，宿主/客户端共用；经此透出供 smoke 断言双端一致）。
 export { groupOfPath, groupOfExt, extOf, isPreviewablePath, isLikelySingleFilePath, cleanRefChipPath } from "./grouping.ts";
 // Markdown 相对/绝对引用展开与 fragment 拆分（U8 v2 + issue #45；纯函数，经此透出供 smoke 断言）。

@@ -86,6 +86,8 @@
 .fwp-diff2html .d2h-info{background:rgba(59,130,246,.10);color:#1d4ed8}
 .fwp-diff2html .d2h-code-line-prefix{user-select:none}
 .fwp-diff2html .d2h-emptyplaceholder{display:none}
+/* issue #73：HTML 预览 iframe（sandbox 静态伺服）——占满正文、白底渲染、无边框。 */
+.fwp-html-frame{width:100%;height:62vh;min-height:320px;border:1px solid var(--dsw-alias-border-l1,#e5e7eb);border-radius:8px;background:#fff;display:block;flex:none}
 @media (max-width:640px){.fwp-diff2html{font-size:11px;line-height:1.45}.fwp-diff2html .d2h-code-line,.fwp-diff2html .d2h-code-linenumber{font-size:11px;line-height:1.45}}
 /* 触控目标与安全区（评审 U7）：触屏设备按钮/标签加高到 ≥44px；灯箱工具栏避开
    灵动岛/刘海（safe-area-inset-top）；底部内容不贴 Home 指示条。 */

@@ -7,7 +7,7 @@
  */
 
 /** 预览分组：web 端能否渲染 + 渲染方式。 */
-export type PreviewGroupKind = "image" | "md" | "code" | "text" | "other";
+export type PreviewGroupKind = "image" | "md" | "code" | "text" | "html" | "other";
 
 /** 分组判定结果。 */
 export interface GroupOfResult {
@@ -22,12 +22,19 @@ export const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "
 /** Markdown 渲染组。 */
 export const MD_EXTS = new Set(["md", "markdown"]);
 
+/**
+ * HTML 渲染组（issue #73）：`.html/.htm` 从代码组迁出——走「serve 路由 + iframe
+ * sandbox」静态伺服渲染，而非高亮源码直出。`/file` 仍以 text/plain 服务原始源码
+ * （E2：保持 text/plain，避免顶层导航成为同源脚本执行通道）。
+ */
+export const HTML_EXTS = new Set(["html", "htm"]);
+
 /** 代码渲染组（与客户端语言映射一致，见 src/code.ts）。 */
 export const CODE_EXTS = new Set([
   "js", "mjs", "cjs", "ts", "tsx", "jsx", "py", "java", "c", "cc", "cpp",
   "h", "hh", "hpp", "cs", "go", "rs", "php", "rb", "kotlin", "kt", "swift",
   "dart", "scala", "sh", "bash", "zsh", "sql", "diff", "patch", "dockerfile",
-  "ini", "toml", "yaml", "yml", "json", "jsonl", "xml", "html", "htm", "css",
+  "ini", "toml", "yaml", "yml", "json", "jsonl", "xml", "css",
   "scss", "less", "vue", "svelte", "groovy", "perl", "r",
 ]);
 
@@ -48,6 +55,7 @@ export function extOf(path: string): string {
 export function groupOfExt(ext: string): PreviewGroupKind {
   if (IMAGE_EXTS.has(ext)) return "image";
   if (MD_EXTS.has(ext)) return "md";
+  if (HTML_EXTS.has(ext)) return "html";
   if (CODE_EXTS.has(ext)) return "code";
   if (TEXT_EXTS.has(ext)) return "text";
   return "other";
