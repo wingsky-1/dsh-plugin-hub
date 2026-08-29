@@ -156,3 +156,13 @@ smoke 全部无网络、无真实凭据，本地可直接运行；新功能/修�
     「按此执行」仅授权 agent 代打 zone 标签；approved / api-approved 永不代打。
 - `.dsh/mcp.json` 为浏览器验证 MCP（playwright / chrome-devtools，headless）；
   chrome-devtools 需系统已安装 Chrome，属可选的本地验证工具，非 CI 必需。
+- **codegraph 开发纪律**（`dsh-codegraph` 插件，standalone 观察期）：
+  - 工具层已强制「查询前 sync + projectPath」——`codegraph_explore` 会自动先 sync
+    目标 worktree 索引再查（新鲜度硬保证），projectPath 缺省补全为当前会话 worktree，
+    无法自动时拒绝并提示；**不要**绕过它去手动查过期索引；
+  - worktree 流程：`git worktree add` 后先 `codegraph init <worktree>` 建索引（每
+    worktree 独立），开发中查询由工具自动 sync，任务结束清理 worktree 时
+    `.codegraph/` 随目录删除（已 gitignore，不入库）；
+  - 非 git 仓（日常维护/讨论空间）不启用、不注入纪律；git 仓会话才注入。
+  - 边界：未 init 目录查询返回引导；索引只覆盖 init/sync 时的文件；正在编辑的
+    文件一律 Read 原文，不依赖图谱。
