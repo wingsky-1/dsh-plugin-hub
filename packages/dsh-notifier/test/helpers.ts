@@ -57,6 +57,8 @@ export function makeFakeCtx(overrides = {}) {
   const listeners = new Map();
   /** 服务读取面：provide 注册 + override 直接注入的服务属性。 */
   const services = new Map();
+  /** effect 收集的 disposer（卸载面：sse.dispose / 定时器清理等，P2-5 用）。 */
+  const effects = [];
   const base = {
     logger: { warn: () => {}, info: () => {} },
     webServer: {
@@ -72,7 +74,9 @@ export function makeFakeCtx(overrides = {}) {
     },
     effect(fn) {
       const disposer = fn();
-      return typeof disposer === "function" ? disposer : () => {};
+      const d = typeof disposer === "function" ? disposer : () => {};
+      effects.push(d);
+      return d;
     },
     get(name) {
       if (services.has(name)) return services.get(name);
@@ -99,7 +103,7 @@ export function makeFakeCtx(overrides = {}) {
       return Reflect.has(target, prop);
     },
   });
-  return { ctx, routes, listeners };
+  return { ctx, routes, listeners, effects };
 }
 
 /** 收集 logger.info 的 ctx（通知触发的观测面）。 */
@@ -118,7 +122,7 @@ export function makeLoggingCtx() {
  * @param ctxOverrides makeFakeCtx 覆盖（如注入 get / 自定义 logger）。
  */
 export async function makeNotifier(workDir, config = {}, ctxOverrides = {}) {
-  const { ctx, routes, listeners } = makeFakeCtx(ctxOverrides);
+  const { ctx, routes, listeners, effects } = makeFakeCtx(ctxOverrides);
   await apply(ctx, {
     enabled: true,
     configFile: join(workDir, "config.json"),
@@ -126,7 +130,16 @@ export async function makeNotifier(workDir, config = {}, ctxOverrides = {}) {
     historyFile: join(workDir, "history.jsonl"),
     ...config,
   });
-  return { ctx, routes, listeners };
+  return {
+    ctx, routes, listeners,
+    /** 卸载面：执行全部 effect disposer（sse.dispose / 定时器清理）。
+     *  每个测试场景结束后调用，避免 30s unref 心跳在进程存活期内残留（P2-5）。 */
+    dispose: () => {
+      for (const d of effects) {
+        try { d(); } catch { /* 忽略 */ }
+      }
+    },
+  };
 }
 
 /**
