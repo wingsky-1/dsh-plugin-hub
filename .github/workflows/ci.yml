@@ -80,18 +80,28 @@ jobs:
               - 'AGENTS.md'
             dsh-notifier:
               - 'packages/dsh-notifier/**'
+              # #322：stryker 段配置变更须命中本包面（段配置是 mutation 单一事实源，
+              # 不映射则配置类 PR 的 mutation 矩阵全 skip、无法自证）。模式遵循
+              # 包级 <pkg>.json 与段级 <pkg>-<n>.json 两种形态的通配覆盖
+              - 'stryker.conf.d/dsh-notifier*.json'
             dsh-idle-archive:
               - 'packages/dsh-idle-archive/**'
+              - 'stryker.conf.d/dsh-idle-archive*.json'
             dsh-web-file-preview:
               - 'packages/dsh-web-file-preview/**'
+              - 'stryker.conf.d/dsh-web-file-preview*.json'
             dsh-mcp-manager:
               - 'packages/dsh-mcp-manager/**'
+              - 'stryker.conf.d/dsh-mcp-manager-*.json'
             dsh-provider-usage:
               - 'packages/dsh-provider-usage/**'
+              - 'stryker.conf.d/dsh-provider-usage-*.json'
             dsh-lan-proxy:
               - 'packages/dsh-lan-proxy/**'
+              - 'stryker.conf.d/dsh-lan-proxy-*.json'
             dsh-subagent-model-inherit:
               - 'packages/dsh-subagent-model-inherit/**'
+              - 'stryker.conf.d/dsh-subagent-model-inherit*.json'
             dsh-codegraph:
               - 'packages/dsh-codegraph/**'
             dsh-verify-isolated:
