@@ -74,10 +74,10 @@
         "baselineDate": "2026-08-24",
         "baselineDuration": "3m0s",
         "baselineScope": "packages/dsh-mcp-manager/lib/index.js:8610-8696+17322-17456+19271-19915+19964-21027（self-written 四段：store、transport+scope、protocol/supervisor/catalog、import/routes/index；排除 esbuild 垫片、zod/@modelcontextprotocol/sdk/ajv 等大段内联 vendor、shared 契约层内联副本与纯 import 提升段）",
-        "config": "stryker.conf.d/dsh-mcp-manager-{1..5}.json（#342 v4：s1/s2/s3 全拆重排为 m-1..m-5；types.ts / service.ts type-only 显式排除）",
+        "config": "stryker.conf.d/dsh-mcp-manager-{manager,entry,supervisor,middleware,routes,runtime}.json（#342 二期：功能命名——核心 manager / 入口 entry / 监督 supervisor / 中间件 middleware / 路由 routes / 运行时 runtime；manager.ts 单文件 134s 物理极限维持）",
         "hardeningNote": "#148 变异加固轮：6 个单测 commit 将 covered 由 29.37% 提升至 74.66%；耗时优化（#173）零杀伤 testFiles 移除 + conc8，3m52s→3m0s",
         "threshold": 60,
-        "scope": "src 级五段（#342 v4）：m-1 manager+index+normalize+import / m-2 supervisor+middleware-state+store+scope / m-3 middleware+middleware-utils+middleware-const / m-4 middleware-register+routes / m-5 catalog+apply+transport+placement-math+config-schema+protocol+middleware-types；基线为 src 口径，由四班次 observe 重建"
+        "scope": "src 级六段（#342 二期）：manager manager.ts / entry index+normalize+import / supervisor supervisor+middleware-state+store+scope / middleware middleware+middleware-utils+middleware-const / routes middleware-register+routes / runtime catalog+apply+transport+placement-math+config-schema+protocol+middleware-types；基线为 src 口径，由四班次 observe 重建"
       },
       "dsh-provider-usage": {
         "baselineScore": 67.28,

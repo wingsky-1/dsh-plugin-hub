@@ -1,10 +1,8 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-mcp-manager/src/manager.ts",
-    "packages/dsh-mcp-manager/src/index.ts",
-    "packages/dsh-mcp-manager/src/normalize.ts",
-    "packages/dsh-mcp-manager/src/import.ts",
+    "packages/dsh-mcp-manager/src/middleware-register.ts",
+    "packages/dsh-mcp-manager/src/routes.ts",
     "!packages/dsh-mcp-manager/src/client/**",
     "!packages/dsh-mcp-manager/src/types.ts",
     "!packages/dsh-mcp-manager/src/service.ts"
@@ -51,9 +49,9 @@
     ]
   },
   "jsonReporter": {
-    "fileName": "coverage/mutation/dsh-mcp-manager-1.json"
+    "fileName": "coverage/mutation/dsh-mcp-manager-routes.json"
   },
   "incremental": true,
-  "incrementalFile": "coverage/mutation/incremental-mcp-manager-1.json",
-  "_comment": "#342 v4：src 级文件组分段（1）——manager+index+normalize+import；types.ts / service.ts（type-only）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+  "incrementalFile": "coverage/mutation/incremental-mcp-manager-routes.json",
+  "_comment": "#342 \u4e8c\u671f\uff1asrc \u7ea7\u6587\u4ef6\u7ec4\u529f\u80fd\u547d\u540d\u6bb5\uff08routes\uff09\u2014\u2014middleware-register+routes\uff1btypes.ts / service.ts\uff08type-only\uff09\u663e\u5f0f\u6392\u9664\uff1b\u6d4b\u8bd5\u5168\u5957\u8dd1\uff08perTest \u5173\u8054\uff09\uff1bincremental \u57fa\u7ebf\u968f observe \u56db\u73ed\u6b21\u91cd\u5efa\u3002"
 }
