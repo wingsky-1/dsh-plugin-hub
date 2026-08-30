@@ -13,6 +13,8 @@ import { isLoopbackRequest } from "../../../shared/loopback.js";
 import { writeJson, readJsonBody } from "../../../shared/host-utils.js";
 import { parseClaudeJson } from "./import.ts";
 import { SCOPE_PROJECT, normalizeScope } from "./scope.ts";
+import { parseFullServerName, MIDDLEWARE_GLOBAL_ROOT } from "./middleware-utils.ts";
+import { normalizeMiddlewareMode } from "./middleware-const.ts";
 import type { ServerConfig } from "./types.ts";
 import type { ClientUiConfig } from "./index.ts";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
@@ -32,8 +34,16 @@ export interface RoutesManager {
   connect(name: string, scope?: string): Promise<void>;
   disconnect(name: string): Promise<void>;
   reconnect(name: string, scope?: string): Promise<void>;
+  /** 设置/解除单个工具禁用（工具级，独立于服务器级 enabled）。 */
+  setToolDisabled?(root: string, server: string, tool: string, disabled: boolean): Promise<void>;
+  /** 中间层模式热切换（apply 注入；缺省不可用）。 */
+  setMiddlewareMode?(mode: string): Promise<void>;
   projectStoreOrThrow(): Promise<McpStore>;
   store: McpStore;
+  /** 当前会话项目根（tool-disable 路由一致性校验用）。 */
+  projectRoot?: string;
+  /** 设置命名空间写入 sink（apply 注入；config 写路由落盘用）。 */
+  uiUpdate?: (patch: Record<string, unknown>) => Promise<unknown>;
   sseConnections?: Set<ServerResponse>;
   /**
    * SSE 心跳定时器的逐连接清理函数（makeEventsRoute 注册；close 时自删）。
@@ -61,6 +71,7 @@ export const ROUTES = {
   importJson: "/api/dsh-mcp/import/json",
   events: "/api/dsh-mcp/events",
   health: "/api/dsh-mcp/health",
+  toolDisable: "/api/dsh-mcp/tool-disable",
 };
 
 const MAX_JSON_BODY_BYTES = 2 * 1024 * 1024;
@@ -99,16 +110,17 @@ export function makeRoutes(manager: RoutesManager, cwd = process.cwd()): WebRout
       kind: "exact",
       path: ROUTES.config,
       handler: async (req, res) => {
-        // GET：只读 UI 配置（允许非 loopback，供远程页面读取非敏感的展示配置）。
+        // GET：只读 UI 配置 + 中间层模式（允许非 loopback，供远程页面读取非敏感的展示配置）。
         if (req.method === "GET") {
           try {
-            writeJson(res, 200, manager.uiConfig());
+            writeJson(res, 200, { ...manager.uiConfig(), middleware: manager.middlewareMode ?? "off" });
           } catch (error) {
             handleError(res, error);
           }
           return;
         }
-        // POST：写入浮窗 UI 配置（position / offset）。写操作只对 loopback 开放；
+        // POST：写入浮窗 UI 配置（position / offset），或热切换中间层模式
+        // （middleware: off/project/all）。写操作只对 loopback 开放；
         // 经设置命名空间落盘（Config.ui），触发 scope.watch → onChange → SSE 广播一帧，
         // 客户端收到后重新 GET /config 就地更新浮窗位置，无需重启/轮询。
         if (req.method === "POST") {
@@ -128,6 +140,18 @@ export function makeRoutes(manager: RoutesManager, cwd = process.cwd()): WebRout
             return;
           }
           try {
+            const rec = body as Record<string, unknown>;
+            if (typeof rec.middleware === "string") {
+              // 中间层模式热切换：先热生效（当前进程立即切换），再落盘（重启保留）。
+              if (typeof manager.setMiddlewareMode === "function") {
+                await manager.setMiddlewareMode(rec.middleware);
+              }
+              if (typeof manager.uiUpdate === "function") {
+                await manager.uiUpdate({ middleware: normalizeMiddlewareMode(rec.middleware) });
+              }
+              writeJson(res, 200, { ...manager.uiConfig(), middleware: manager.middlewareMode ?? "off" });
+              return;
+            }
             writeJson(res, 200, await manager.updateUiConfig(body));
           } catch (error) {
             handleError(res, error);
@@ -321,6 +345,52 @@ export function makeRoutes(manager: RoutesManager, cwd = process.cwd()): WebRout
           return;
         }
         writeJson(res, 200, { imported, skipped, summary: manager.summary() });
+      },
+    },
+    {
+      kind: "exact",
+      path: ROUTES.toolDisable,
+      handler: async (req, res) => {
+        if (!guard(req, res, "PATCH")) return;
+        const url = new URL(req.url ?? "/", "http://localhost");
+        const body = await readJsonBody(req);
+        if (body === undefined || typeof body !== "object" || body === null) {
+          writeJson(res, 400, { error: "invalid JSON body" });
+          return;
+        }
+        const rec = body as Record<string, unknown>;
+        const server = typeof rec.server === "string" ? rec.server : "";
+        const tool = typeof rec.tool === "string" ? rec.tool : "";
+        const disabled = rec.disabled === true;
+        if (server === "" || tool === "") {
+          writeJson(res, 400, { error: "server 与 tool 均为必填" });
+          return;
+        }
+        // 路由一致性：server 全名 root 必须属于当前工作空间（或 all 模式 @global）。
+        const parsed = parseFullServerName(server);
+        if (parsed === undefined) {
+          writeJson(res, 400, { error: "server 格式非法，应为 @<root>/<server>" });
+          return;
+        }
+        const root = parsed.root === MIDDLEWARE_GLOBAL_ROOT ? parsed.root : parsed.root;
+        const cwdParam = queryParam(url, "cwd");
+        if (cwdParam !== undefined && cwdParam !== "") await manager.setSession(cwdParam);
+        const sessionRoot = manager.projectRoot;
+        const allowed = root === MIDDLEWARE_GLOBAL_ROOT || root === sessionRoot;
+        if (!allowed) {
+          writeJson(res, 400, { error: `server ${JSON.stringify(server)} 不属于当前工作空间；路由一致性校验失败（防跨空间串台）` });
+          return;
+        }
+        if (typeof manager.setToolDisabled !== "function") {
+          writeJson(res, 400, { error: "tool-disable not writable: middleware unavailable" });
+          return;
+        }
+        try {
+          await manager.setToolDisabled(root, parsed.server, tool, disabled);
+          writeJson(res, 200, { ok: true, summary: manager.summary() });
+        } catch (error) {
+          handleError(res, error);
+        }
       },
     },
   ];

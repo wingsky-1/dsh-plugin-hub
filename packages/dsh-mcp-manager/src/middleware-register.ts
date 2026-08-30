@@ -28,8 +28,26 @@ import {
   fullServerName,
   policyAllows,
   policyDenialReason,
+  isToolDenied,
+  toolDisabledReason,
+  MIDDLEWARE_GLOBAL_ROOT,
 } from "./middleware-utils.ts";
-import type { MiddlewareMode } from "./middleware-types.ts";
+import type { MiddlewareMode, DisabledToolsMap } from "./middleware-types.ts";
+
+/** 空 query 搜索无命中时的可归因提示（纯 render 文案，C 项）。 */
+const SEARCH_EMPTY_HINT =
+  "（当前工作空间没有匹配的 MCP 工具；可用 ws_mcp_list 完整盘点全部服务器与工具，确认 server 名/工具名后再检索）";
+
+/** 项目级可见服务器名列表（A1 归因文案用；排序去重）。 */
+function visibleProjectServers(mw: McpMiddleware, root: string): string[] {
+  const names: string[] = [];
+  for (const unit of mw.units.values()) {
+    if (unit.root === root) {
+      for (const serverName of unit.catalog.keys()) names.push(serverName);
+    }
+  }
+  return [...new Set(names)].sort();
+}
 
 /** 等待 in-flight 连接/发现（8s 预算，与 search 对齐；超时不阻塞返回已有目录）。 */
 async function waitForDiscovery(unit: NonNullable<Awaited<ReturnType<McpMiddleware["projectUnitFor"]>>>): Promise<void> {
@@ -54,8 +72,39 @@ export function registerMiddlewareTools(
   mw: McpMiddleware,
   resolveRoot: (agent: unknown) => Promise<string | undefined>,
   mode: MiddlewareMode = "project",
+  options: {
+    /** 工具级禁用映射（root → server → Set<tool>）；缺省取 mw.disabledTools。 */
+    disabledTools?: DisabledToolsMap;
+  } = {},
 ): () => void {
   const disposers: Array<() => void> = [];
+  const disabledTools = options.disabledTools ?? mw.disabledTools;
+
+  /**
+   * 路由一致性校验（detail/call 共用；A2）：目标 root 必须等于当前 root，
+   * 或 all 模式下的 @global（全局配置跨工作空间共享，语义成立）。
+   * project 模式传全局级服务器 → 引导改用 mcp__ 直呼（全局 mcp__ 工具在该
+   * 模式下仍注册可用）；非 global 的其他 root 硬拒绝（防跨空间串台）。
+   * @returns 校验通过的 root；抛错则拒绝。
+   */
+  const checkRoot = async (caller: string, server: string, root: string): Promise<string | undefined> => {
+    const parsed = parseFullServerName(server);
+    if (parsed === undefined || (parsed.root !== root && parsed.root !== MIDDLEWARE_GLOBAL_ROOT)) {
+      throw new Error(
+        `${caller}: server ${JSON.stringify(server)} 不属于当前工作空间 ${JSON.stringify(root)}；路由一致性校验失败（防跨空间串台）`,
+      );
+    }
+    if (parsed.root === MIDDLEWARE_GLOBAL_ROOT && mode !== "all") {
+      const bare = parsed.server;
+      const known = mw.host.isGlobalServer(bare) || mw.units.get(MIDDLEWARE_GLOBAL_ROOT)?.catalog.has(bare) === true;
+      if (known) {
+        throw new Error(
+          `${caller}: server ${JSON.stringify(server)} 是全局级（global scope）服务器，中间层只覆盖项目级服务器；请直接用 mcp__${bare}__<tool> 前缀工具调用（project 模式全局工具仍直呼注册）`,
+        );
+      }
+    }
+    return parsed.root;
+  };
 
   /** all 模式可见单元集合：项目 root + @global（评审 A 全局可见性修复）。
    * root 本身为 @global 时去重（防 all 模式无项目 cwd 下服务器翻倍）。 */
@@ -95,7 +144,7 @@ export function registerMiddlewareTools(
           const description = String(hit.description ?? "");
           return `${server}/${tool}: ${description}`;
         });
-        let body = lines.length > 0 ? lines.join("\n") : "（当前工作空间没有匹配的 MCP 工具）";
+        let body = lines.length > 0 ? lines.join("\n") : SEARCH_EMPTY_HINT;
         if (v.truncated === true) body += "\n（结果已达 limit，可能未列全——可调大 limit 或用 ws_mcp_list 完整盘点）";
         const unavailable = (v.unavailable ?? []).map((entry) => `${String(entry.server ?? "")}: ${String(entry.reason ?? "")}`);
         return [{ type: "text", text: unavailable.length > 0 ? `${body}\n\n不可用服务器：\n${unavailable.join("\n")}` : body }];
@@ -190,17 +239,14 @@ export function registerMiddlewareTools(
       const tool = typeof params.tool === "string" ? params.tool : "";
       if (server === "" || tool === "") throw new Error("ws_mcp_call: server 与 tool 均为必填");
       const parsed = parseFullServerName(server);
-      // all 模式放行 @global root（全局配置跨工作空间共享，语义成立）；
-      // 仍拒绝非当前 root 的其他项目 root（防跨空间串台）。
-      const allowedRoot = mode === "all" ? "@global" : undefined;
-      if (parsed === undefined || (parsed.root !== root && parsed.root !== allowedRoot)) {
-        throw new Error(
-          `ws_mcp_call: server ${JSON.stringify(server)} 不属于当前工作空间 ${JSON.stringify(root)}；路由一致性校验失败（防跨空间串台）`,
-        );
+      if (parsed === undefined) throw new Error("ws_mcp_call: server 参数格式非法，应为 @<root>/<server>");
+      const targetRoot = await checkRoot("ws_mcp_call", server, root);
+      if (targetRoot === undefined) {
+        throw new Error(`ws_mcp_call: server ${JSON.stringify(server)} 不属于当前工作空间 ${JSON.stringify(root)}；路由一致性校验失败（防跨空间串台）`);
       }
-      const unit = await mw.projectUnitFor(parsed.root);
-      if (unit === undefined) throw new Error(`ws_mcp_call: 工作空间 ${JSON.stringify(parsed.root)} 无项目级 MCP 配置`);
-      await mw.ensureConnected(parsed.root, parsed.server);
+      const unit = await mw.projectUnitFor(targetRoot);
+      if (unit === undefined) throw new Error(`ws_mcp_call: 工作空间 ${JSON.stringify(targetRoot)} 无项目级 MCP 配置`);
+      await mw.ensureConnected(targetRoot, parsed.server);
       return mw.callTool(server, tool, params.arguments, exec.signal);
     },
   };
@@ -288,7 +334,7 @@ export function registerMiddlewareTools(
         }
         const globalUnit = await mw.projectUnitFor("@global");
         if (globalUnit !== undefined) await waitForDiscovery(globalUnit);
-        return listCatalog(mw.units, ["@global"], serverFilter, toolLimit, mode, "当前工作空间没有可用 MCP 服务器（项目级与全局均未发现；若刚添加配置，请稍后重试）");
+        return listCatalog(mw.units, ["@global"], serverFilter, toolLimit, mode, "当前工作空间没有可用 MCP 服务器（项目级与全局均未发现；若刚添加配置，请稍后重试）", disabledTools);
       }
       // 等待 in-flight 连接/发现（预算内），再搜索。all 模式对可见全部单元
       // （含 @global 首次触达）都等待——否则全局目录首次为空（P1-3 修复）。
@@ -296,11 +342,20 @@ export function registerMiddlewareTools(
         const visibleUnit = visible === root ? unit : await mw.projectUnitFor(visible);
         if (visibleUnit !== undefined) await waitForDiscovery(visibleUnit);
       }
-      const emptyHint =
-        mode === "all"
-          ? "当前工作空间没有可用 MCP 服务器（项目级与全局均未发现；若刚添加配置，请稍后重试）"
-          : "当前工作空间没有可用 MCP 服务器（未配置项目级服务器；若刚添加配置，请稍后重试）";
-      return listCatalog(mw.units, roots, serverFilter, toolLimit, mode, emptyHint);
+      const result = listCatalog(mw.units, roots, serverFilter, toolLimit, mode, "", disabledTools);
+      // A1：带 serverFilter 过滤后 0 命中 → message 可归因（不谎报「未配置」）。
+      if (result.servers.length === 0 && serverFilter !== undefined) {
+        const visible = visibleProjectServers(mw, root);
+        const visibleText = visible.length > 0 ? `可见项目级服务器：${visible.join(" / ")}；` : "当前工作空间无已发现的项目级服务器；";
+        result.message =
+          `没有匹配 server=${JSON.stringify(serverFilter)} 的项目级服务器。${visibleText}全局级服务器不在此列出，请用 mcp__<server>__<tool> 前缀工具访问`;
+      } else if (result.servers.length === 0) {
+        result.message =
+          mode === "all"
+            ? "当前工作空间没有可用 MCP 服务器（项目级与全局均未发现；若刚添加配置，请稍后重试）"
+            : "当前工作空间没有可用 MCP 服务器（未配置项目级服务器；若刚添加配置，请稍后重试）";
+      }
+      return result;
     },
   };
 
@@ -349,17 +404,15 @@ export function registerMiddlewareTools(
       const server = typeof params.server === "string" ? params.server : "";
       const tool = typeof params.tool === "string" ? params.tool : "";
       if (server === "" || tool === "") throw new Error("ws_mcp_detail: server 与 tool 均为必填");
-      // all 模式放行 @global root（与 ws_mcp_call 同口径）。
-      const parsed = parseFullServerName(server);
-      const allowedRoot = mode === "all" ? "@global" : undefined;
-      if (parsed === undefined || (parsed.root !== root && parsed.root !== allowedRoot)) {
+      const targetRoot = await checkRoot("ws_mcp_detail", server, root);
+      if (targetRoot === undefined) {
         throw new Error(
           `ws_mcp_detail: server ${JSON.stringify(server)} 不属于当前工作空间 ${JSON.stringify(root)}；路由一致性校验失败（防跨空间串台）`,
         );
       }
-      const unit = await mw.projectUnitFor(parsed.root);
+      const unit = await mw.projectUnitFor(targetRoot);
       if (unit !== undefined) await waitForDiscovery(unit);
-      return findToolDetail(mw.units, parsed.root, server, tool);
+      return findToolDetail(mw.units, targetRoot, server, tool);
     },
   };
 
@@ -368,25 +421,63 @@ export function registerMiddlewareTools(
   disposers.push(ctx.tools.register(list));
   disposers.push(ctx.tools.register(detail));
 
-  // 策略 guard 层（方案 v2）：tools/pre-execute 全局唯一执行点，防其他插件/
-  // 入口绕行 ws_mcp_call 直接调用远端工具。对 ws_mcp_call 的调用统一过策略
-  // （deny 优先）；其余工具放行（不干扰 mcp__ 直呼兼容路径；ws_mcp_list /
-  // ws_mcp_detail 纯读本地目录，与 ws_mcp_search 一致不触达策略 guard）。
+  // 策略 + 工具级禁用 guard 层（P0-1 三入口之二）：tools/pre-execute 全局唯一
+  // 执行点，防其他插件/入口绕行 ws_mcp_call 直接调用远端工具。
+  // 覆盖两类工具名：
+  //   - ws_mcp_call：统一过「禁用表 + 策略」（deny 优先），与 callTool 内裁决一致；
+  //   - mcp__<server>__<tool> 直呼前缀工具：从注册名反解 (root, server, tool)
+  //     后过禁用表（策略不适用于直呼路径——中间层策略只约束 ws_mcp_call）。
+  // 其他工具放行（ws_mcp_list / ws_mcp_detail / ws_mcp_search 纯读本地目录不触达）。
+  // 路由 root 解析（P0-3）：exec.agent?.session?.header?.cwd → 归一化项目根；
+  // exec.agent 缺失/无法解析 → 按最宽可见范围放行（只查 @global 记录，保持
+  // 既有降级行为；project 模式无法禁用的全局工具在浮窗 global 组有提示）。
   if (typeof ctx.on === "function") {
     const guardDispose = ctx.on(
       "tools/pre-execute",
-      async (exec: { name?: string; arguments?: unknown }, next: () => Promise<PreToolDecision>): Promise<PreToolDecision> => {
-        if (exec?.name !== "ws_mcp_call") return next();
-        const params = (typeof exec.arguments === "object" && exec.arguments !== null ? exec.arguments : {}) as Record<string, unknown>;
-        const server = typeof params.server === "string" ? params.server : "";
-        const tool = typeof params.tool === "string" ? params.tool : "";
-        const parsed = parseFullServerName(server);
-        if (parsed === undefined || parsed.server === "") return next();
-        // 策略键支持全名（@root/server）或裸名。
-        const policyKey = fullServerName(parsed.root, parsed.server);
-        if (!policyAllows(mw.policy, policyKey, tool)) {
-          const reason = policyDenialReason(mw.policy, policyKey, tool);
-          return { kind: "deny", reason: reason ?? `ws_mcp_call: 工具被策略拒绝` };
+      async (
+        exec: { name?: string; arguments?: unknown; agent?: unknown },
+        next: () => Promise<PreToolDecision>,
+      ): Promise<PreToolDecision> => {
+        const name = exec?.name;
+        if (typeof name !== "string" || name === "") return next();
+        // 路径一：ws_mcp_call 显式参数（与 execute 同源校验）。
+        if (name === "ws_mcp_call") {
+          const params = (typeof exec.arguments === "object" && exec.arguments !== null ? exec.arguments : {}) as Record<string, unknown>;
+          const server = typeof params.server === "string" ? params.server : "";
+          const tool = typeof params.tool === "string" ? params.tool : "";
+          const parsed = parseFullServerName(server);
+          if (parsed === undefined || parsed.server === "") return next();
+          const policyKey = fullServerName(parsed.root, parsed.server);
+          if (isToolDenied(disabledTools, mw.policy, policyKey, tool)) {
+            if (!policyAllows(mw.policy, policyKey, tool)) {
+              return { kind: "deny", reason: policyDenialReason(mw.policy, policyKey, tool) ?? "ws_mcp_call: 工具被策略拒绝" };
+            }
+            return { kind: "deny", reason: toolDisabledReason(policyKey, tool) };
+          }
+          return next();
+        }
+        // 路径二：mcp__ 前缀直呼工具（registered 名 = mcp__<server>__<tool>；
+        // 超长哈希后缀名不可逆 → 按未知 server 处理，不禁用/不误禁，P2）。
+        if (name.startsWith("mcp__")) {
+          const rest = name.slice("mcp__".length);
+          const separator = rest.indexOf("__");
+          if (separator <= 0) return next();
+          const server = rest.slice(0, separator);
+          const tool = rest.slice(separator + 2);
+          if (tool === "") return next();
+          const root = await resolveRoot(exec.agent);
+          if (root === undefined) {
+            // 无法解析会话 root：按最宽可见范围放行（仅 @global 共享记录生效）。
+            if (disabledTools?.get(MIDDLEWARE_GLOBAL_ROOT)?.get(server)?.has(tool) === true) {
+              return { kind: "deny", reason: toolDisabledReason(`@${MIDDLEWARE_GLOBAL_ROOT}/${server}`, tool) };
+            }
+            return next();
+          }
+          const serverKey = fullServerName(root, server);
+          if (isToolDenied(disabledTools, undefined, serverKey, tool)) {
+            return { kind: "deny", reason: toolDisabledReason(serverKey, tool) };
+          }
+          return next();
         }
         return next();
       },

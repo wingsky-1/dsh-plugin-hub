@@ -15,6 +15,7 @@ import type {
   ProjectUnit,
   SearchHit,
   ToolDetail,
+  DisabledToolsMap,
 } from "./middleware-types.ts";
 import type { ServerConfig } from "./types.ts";
 
@@ -23,6 +24,26 @@ import type { ServerConfig } from "./types.ts";
 /** server 全局唯一名：@<root>/<server>。 */
 export function fullServerName(root: string, server: string): string {
   return `@${root}/${server}`;
+}
+
+/** 中间层全局虚拟 root（全局服务器经中间层访问时的路由 key；与 manager 常量同值）。 */
+export const MIDDLEWARE_GLOBAL_ROOT = "@global";
+
+/** 从持久化载荷解析 disabledTools 三层结构（损坏/缺失 → 空；容错不抛）。 */
+export function parseDisabledTools(raw: unknown): DisabledToolsMap {
+  const out: DisabledToolsMap = new Map();
+  if (typeof raw !== "object" || raw === null) return out;
+  for (const [root, servers] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof servers !== "object" || servers === null) continue;
+    const serverMap = new Map<string, Set<string>>();
+    for (const [server, tools] of Object.entries(servers as Record<string, unknown>)) {
+      if (!Array.isArray(tools)) continue;
+      const set = new Set<string>(tools.filter((tool): tool is string => typeof tool === "string" && tool !== ""));
+      if (set.size > 0) serverMap.set(server, set);
+    }
+    if (serverMap.size > 0) out.set(root, serverMap);
+  }
+  return out;
 }
 
 /** 解析 @<root>/<server> 全名 → { root, server }；非法返回 undefined。
@@ -164,6 +185,49 @@ export function bareServerName(name: string): string {
   return parsed?.server ?? name;
 }
 
+/**
+ * 单一裁决：工具是否被用户禁用（工具级禁用，独立于服务器级 enabled）。
+ *
+ * 三入口统一调用（P0-1）：ws_mcp_call（callTool，先查禁用再查策略）、
+ * pre-execute guard（mcp__ 前缀工具）、纪律裸名（dsh-codegraph 侧声明语义）。
+ *
+ * 语义（P0-2 方案 A，零耦合）：禁用**只作用于 mcp-manager 管辖的 mcp__ 前缀
+ * 工具**；纪律裸名（如 codegraph_explore）不受影响，由 dsh-codegraph 侧（#363）
+ * 自行声明。禁用原因文案与浮窗 UI 均需同步声明该语义。
+ *
+ * 判定（P1 三层结构 + P2 超长名）：
+ * 1. 目标 root 直接命中 → 查该 root 记录（project 模式按会话 root 隔离）；
+ * 2. 未命中且目标 root 非 @global → 回落 @global 共享记录（全局工具跨工作空间
+ *    key=@global；对项目 root 的查询是「该 root 无记录」的探测，永不误禁）；
+ * 3. 哈希后缀名（>64 字符或含非法字符）不可逆 → 按「未知 server」处理：
+ *    不禁用、不误禁（publicToolName 无法反解出 (server, tool)）。
+ *
+ * @param disabledTools 禁用映射（root → server → Set<tool>）。
+ * @param policy 中间层策略（allowTools/denyTools；工具级禁用之外的第二道闸，
+ *    仅 ws_mcp_call 路径检查，与既有语义一致）。
+ * @param serverKey @<root>/<server> 全名或裸名（策略键；与 policyAllows 同形态）。
+ * @param tool 远端工具裸名。
+ * @returns true = 拒绝执行（被禁用或策略 deny）。
+ */
+export function isToolDenied(
+  disabledTools: DisabledToolsMap | undefined,
+  policy: MiddlewarePolicy | undefined,
+  serverKey: string,
+  tool: string,
+): boolean {
+  const parsed = parseFullServerName(serverKey);
+  if (parsed !== undefined) {
+    const server = parsed.server;
+    const set = disabledTools?.get(parsed.root)?.get(server);
+    if (set !== undefined && set.size > 0 && set.has(tool)) return true;
+    if (parsed.root !== MIDDLEWARE_GLOBAL_ROOT) {
+      const globalSet = disabledTools?.get(MIDDLEWARE_GLOBAL_ROOT)?.get(server);
+      if (globalSet !== undefined && globalSet.size > 0 && globalSet.has(tool)) return true;
+    }
+  }
+  return !policyAllows(policy, serverKey, tool);
+}
+
 /** 策略拒绝原因（供 denialReason 提示）。 */
 export function policyDenialReason(policy: MiddlewarePolicy | undefined, serverKey: string, tool: string): string | undefined {
   if (policyAllows(policy, serverKey, tool)) return undefined;
@@ -172,6 +236,11 @@ export function policyDenialReason(policy: MiddlewarePolicy | undefined, serverK
     return `ws_mcp_call: 工具 ${JSON.stringify(`${serverKey}/${tool}`)} 被 denyTools 策略拒绝`;
   }
   return `ws_mcp_call: 工具 ${JSON.stringify(`${serverKey}/${tool}`)} 不在 allowTools 白名单内，被策略拒绝`;
+}
+
+/** 工具级禁用的拒绝原因文案（三入口统一；P0-2 语义声明）。 */
+export function toolDisabledReason(serverKey: string, tool: string): string {
+  return `ws_mcp_call: 工具 ${JSON.stringify(`${serverKey}/${tool}`)} 已被用户在「MCP」浮窗禁用；工具级禁用只作用于 mcp__ 前缀工具，纪律裸名不受影响（如需恢复请到浮窗重新勾选）`;
 }
 
 // ------------------------------------------------------------ 目录检索
@@ -296,6 +365,8 @@ export function searchCatalogMulti(
  * @param serverFilter 可选：@<root>/<server> 全名或裸名过滤。
  * @param toolLimit 每服务器工具条数上限（>0；超过置 toolsTruncated）。
  * @param emptyHint 空返回时的 message（按模式区分场景）。
+ * @param disabledTools 用户工具级禁用映射（root → server → Set<tool>）；
+ *    命中条目在工具行标注禁用（供模型感知）。
  * @throws 全名 root 不属于当前 roots → 路由一致性错误（与 ws_mcp_call 口径一致）。
  */
 export function listCatalog(
@@ -305,6 +376,7 @@ export function listCatalog(
   toolLimit: number,
   mode: string,
   emptyHint: string,
+  disabledTools?: DisabledToolsMap,
 ): ListCatalogResult {
   const safeLimit = Number.isFinite(toolLimit) && toolLimit > 0 ? Math.floor(toolLimit) : LIST_DEFAULT_TOOLS_PER_SERVER;
   let rootSet: Set<string> | undefined;
@@ -343,7 +415,11 @@ export function listCatalog(
             truncated = true;
             break;
           }
-          tools.push({ tool: toolName, description: tool.description });
+          // 工具级禁用标注（与服务器级 disabled 并列；查询面供模型感知）。
+          const rootTools = disabledTools?.get(root)?.get(serverName);
+          const globalTools = root === MIDDLEWARE_GLOBAL_ROOT ? undefined : disabledTools?.get(MIDDLEWARE_GLOBAL_ROOT)?.get(serverName);
+          const disabledByUser = (rootTools !== undefined && rootTools.has(toolName)) || (globalTools !== undefined && globalTools.has(toolName));
+          tools.push({ tool: toolName, description: tool.description, disabled: disabledByUser || undefined });
           index += 1;
         }
         entry.tools = tools;

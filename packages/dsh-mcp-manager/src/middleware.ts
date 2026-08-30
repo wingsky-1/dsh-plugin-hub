@@ -44,6 +44,8 @@ import {
   policyAllows,
   policyDenialReason,
   fullServerName,
+  isToolDenied,
+  toolDisabledReason,
 } from "./middleware-utils.ts";
 import type {
   MiddlewareHost,
@@ -51,6 +53,7 @@ import type {
   MiddlewarePolicy,
   ConnectionEntry,
   CatalogTool,
+  DisabledToolsMap,
 } from "./middleware-types.ts";
 
 
@@ -69,6 +72,8 @@ export class McpMiddleware {
   policy: MiddlewarePolicy;
   /** 用户禁用映射（root → Set<server>），单元创建时合并。 */
   disabledByRoot: Map<string, Set<string>> = new Map();
+  /** 工具级禁用（root → server → Set<tool>；root=@global 跨工作空间共享）。 */
+  disabledTools: DisabledToolsMap = new Map();
 
   constructor(host: MiddlewareHost, policy: MiddlewarePolicy = {}) {
     this.host = host;
@@ -365,11 +370,15 @@ export class McpMiddleware {
       throw new Error(`ws_mcp_call: server ${JSON.stringify(fullName)} 连接仍在进行，请稍后重试；连接完成后再调用`);
     }
     const tool = normalizeToolName(parsed.server, toolRaw);
-    // 策略键支持全名（@root/server，工作空间隔离）或裸名（跨空间共用）。
+    // 工具级禁用（先查禁用表再查策略；P0-1 三入口统一走 isToolDenied）。
     const policyKey = fullServerName(parsed.root, parsed.server);
-    if (!policyAllows(this.policy, policyKey, tool)) {
-      const reason = policyDenialReason(this.policy, policyKey, tool);
-      throw new Error(`${reason ?? `ws_mcp_call: 工具 ${JSON.stringify(`${policyKey}/${tool}`)} 被策略拒绝`}；如需放行请调整 middlewarePolicy 配置`);
+    if (isToolDenied(this.disabledTools, this.policy, policyKey, tool)) {
+      // 策略拒绝与禁用拒绝文案区分（策略拒绝附「调整 middlewarePolicy 配置」下一步）。
+      if (!policyAllows(this.policy, policyKey, tool)) {
+        const reason = policyDenialReason(this.policy, policyKey, tool);
+        throw new Error(`${reason ?? `ws_mcp_call: 工具 ${JSON.stringify(`${policyKey}/${tool}`)} 被策略拒绝`}；如需放行请调整 middlewarePolicy 配置`);
+      }
+      throw new Error(toolDisabledReason(policyKey, tool));
     }
     const catalog = unit.catalog.get(parsed.server);
     const stale =
@@ -492,14 +501,18 @@ export {
   policyAllows,
   bareServerName,
   policyDenialReason,
+  isToolDenied,
+  toolDisabledReason,
+  parseDisabledTools,
   scoreTool,
   searchCatalog,
   searchCatalogMulti,
   listCatalog,
   findToolDetail,
+  MIDDLEWARE_GLOBAL_ROOT,
 } from "./middleware-utils.ts";
 // 状态持久化
-export { userStateFile, loadUserState, saveUserState, catalogCacheFileFor } from "./middleware-state.ts";
+export { userStateFile, loadUserState, saveUserState, catalogCacheFileFor, loadDisabledTools, saveDisabledTools } from "./middleware-state.ts";
 // 工具注册
 export { registerMiddlewareTools } from "./middleware-register.ts";
 // 类型
@@ -516,5 +529,6 @@ export type {
   ListCatalogResult,
   ToolDetail,
   MiddlewareHost,
+  DisabledToolsMap,
 } from "./middleware-types.ts";
 

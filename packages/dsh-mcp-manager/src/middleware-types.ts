@@ -13,6 +13,9 @@ import type { ServerConfig } from "./types.ts";
 /** 中间层模式：off = 直呼（默认兼容）；project = 项目级走中间层；all = 全部走中间层。 */
 export type MiddlewareMode = "off" | "project" | "all";
 
+/** 用户已禁用的工具集合（root → server → tool 列表）。root 为 @global 时跨工作空间共享。 */
+export type DisabledToolsMap = Map<string, Map<string, Set<string>>>;
+
 /** 策略过滤模式。 */
 export interface MiddlewarePolicy {
   /** server 名（裸名，不含 @root 前缀）→ 允许的工具 glob（空 = 全部允许）。 */
@@ -84,6 +87,8 @@ export interface SearchHit {
 export interface ListToolEntry {
   tool: string;
   description: string;
+  /** 工具级被用户禁用（独立于服务器级 enabled；仅在禁用时置位）。 */
+  disabled?: boolean;
 }
 
 /** ws_mcp_list 的单个服务器条目。 */
@@ -144,4 +149,6 @@ export interface MiddlewareHost {
   emitStatus(): void;
   /** 目录缓存文件路径（last-good 持久化）。 */
   catalogCachePath(root: string): string;
+  /** 该 server 是否全局级（双源：store.data.servers + runtimeRegistry；codegraph 为 runtime 注册）。 */
+  isGlobalServer(name: string): boolean;
 }

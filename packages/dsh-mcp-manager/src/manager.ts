@@ -29,8 +29,10 @@ import {
   loadUserState,
   saveUserState,
   catalogCacheFileFor,
+  loadDisabledTools,
+  saveDisabledTools,
 } from "./middleware.ts";
-import type { MiddlewareMode, ProjectUnit } from "./middleware.ts";
+import type { MiddlewareMode, ProjectUnit, DisabledToolsMap } from "./middleware.ts";
 
 /** 中间层 all 模式的全局虚拟 root（全局服务器经中间层访问时的路由 key）。 */
 export const MIDDLEWARE_GLOBAL_ROOT = "@global";
@@ -223,6 +225,12 @@ export class McpManager {
     return store?.data.servers;
   }
 
+  /** 中间层宿主：该 server 是否全局级（双源：store + runtimeRegistry）。
+   * codegraph 等 runtime 注册的服务器不落 store，单源会误判「非全局」——P1 修正。 */
+  isGlobalServer(name: string): boolean {
+    return this.store.data.servers.some((server) => server.name === name) || this.runtimeRegistry.has(name);
+  }
+
   /** 中间层宿主：全局服务器配置（all 模式使用）。 */
   globalServers(): ServerConfig[] {
     return this.store.data.servers;
@@ -252,6 +260,7 @@ export class McpManager {
         saveUserState: (units) => this.saveUserState(units),
         emitStatus: () => this.emitStatus(),
         catalogCachePath: (root) => this.catalogCachePathFor(root),
+        isGlobalServer: (name) => this.isGlobalServer(name),
       },
       {
         allowTools: (policy.allowTools as Record<string, string[]> | undefined) ?? undefined,
@@ -261,12 +270,44 @@ export class McpManager {
     // 加载 userDisabled 并注入中间层实例（单元创建时合并；重启不丢）。
     this.disabledByRoot = await loadUserState(this.userStatePath);
     mw.disabledByRoot = this.disabledByRoot;
+    // 加载工具级禁用（三层结构；合并式写盘，绝不整表覆盖）。
+    this.disabledTools = await loadDisabledTools(this.userStatePath);
+    mw.disabledTools = this.disabledTools;
     this.middleware = mw;
     return mw;
   }
 
   /** userDisabled 映射（root → Set<server>），中间层单元创建时合并。 */
   disabledByRoot: Map<string, Set<string>> = new Map();
+
+  /** 工具级禁用（root → server → Set<tool>）；root=@global 跨工作空间共享。 */
+  disabledTools: DisabledToolsMap = new Map();
+
+  /** 中间层模式热切换（apply 注入；设置页「中间层模式」下拉调用）。 */
+  setMiddlewareMode?: (mode: MiddlewareMode) => Promise<void>;
+
+  /**
+   * 设置/解除单个工具禁用（宿主 API PATCH /api/dsh-mcp/tool-disable 调用）。
+   * 合并式写盘（先读现有文件再覆盖本 root 段，绝不整表覆盖）——
+   * 防多工作空间互相抹掉禁用记录。
+   * @param root 目标 root（全局服务器用 MIDDLEWARE_GLOBAL_ROOT）。
+   * @param server 服务器裸名。
+   * @param tool 远端工具裸名。
+   * @param disabled true=禁用 / false=解除。
+   * 工具级禁用独立于服务器级 enabled：服务器级复活不清工具级状态。
+   */
+  async setToolDisabled(root: string, server: string, tool: string, disabled: boolean): Promise<void> {
+    const tools = this.disabledTools.get(root) ?? new Map<string, Set<string>>();
+    const set = tools.get(server) ?? new Set<string>();
+    if (disabled) set.add(tool);
+    else set.delete(tool);
+    if (set.size > 0) tools.set(server, set);
+    else tools.delete(server);
+    if (tools.size > 0) this.disabledTools.set(root, tools);
+    else this.disabledTools.delete(root);
+    await saveDisabledTools(this.userStatePath, this.disabledTools);
+    this.emitStatus();
+  }
 
   /** 读取/复用某项目根的 store（工作区缓存命中直接返回，不重复读盘）。 */
   async projectStoreFor(root: string | undefined): Promise<McpStore | undefined> {
