@@ -211,6 +211,12 @@ let agentsService:
   | { list(): Array<{ session?: { id?: string; events?: unknown[] } }> }
   | undefined;
 
+/** 通知中心服务（可选增强：探测到才接入；未装 dsh-notifier 通知中心时行为不变）。 */
+let notifierService: {
+  registerKind?(reg: { id: string; label: string }): void;
+  send?(req: { source: string; kind: string; severity: string; body: string; title?: string }): Promise<unknown>;
+} | undefined;
+
 /**
  * sessionQuery 服务（live + 持久化会话统一读取；readTitle 折叠日志最新标题——
  * 旧会话（实例重启后）不在 live agents，必须走持久化数据源）。
@@ -285,6 +291,25 @@ export async function handler(endpoint: string, payload: Record<string, unknown>
         await writeState(st);
         return { ok: true, value: { snoozed: st.snoozed } };
       }
+      case "notifyDue": {
+        // 通知中心接入（M1，issue #366）：客户端弹窗前 fire-and-forget 触发。
+        // 未装通知中心 / kind 未确认 → 自动走 suppressed 落史 / 静默，不打扰。
+        const count = payload && Number.isFinite(payload.count) ? Math.max(0, Math.round(payload.count as number)) : 0;
+        if (notifierService && typeof notifierService.send === "function" && count > 0) {
+          void notifierService
+            .send({
+              source: "@wingsky-1/dsh-idle-archive",
+              kind: "idle-archive:due",
+              severity: "info",
+              title: "会话闲置待归档",
+              body: `检测到 ${count} 个超过闲置阈值的会话，可在归档面板处理。`,
+            })
+            .catch(() => {
+              // 通知失败静默（不影响归档主流程）
+            });
+        }
+        return { ok: true, value: { sent: count > 0 && notifierService !== undefined } };
+      }
       case "titles": {
         const ids = Array.isArray(payload && payload.sessionIds) ? (payload as Record<string, unknown>).sessionIds as unknown[] : [];
         const wanted = new Set(ids.filter((x): x is string => typeof x === "string"));
@@ -348,6 +373,29 @@ export function apply(ctx: Context, config: IdleArchiveConfig = {}): void {
       writeJson(res, 200, { ok: true, plugin: "dsh-idle-archive" });
     },
   });
+
+  // 通知中心接入（M1，issue #366）：可选增强——探测 'wingsky.notifier'（提供方为
+  // dsh-notifier 的 ctx.provide，storageDomain 模式）。存在则注册动态 kind
+  // 'idle-archive:due'（用户确认前通知自动 suppressed；确认后客户端弹窗时经
+  // notifyDue RPC 触发 browser/system 通知）。探测失败/缺服务 → 行为不变。
+  try {
+    let probe: unknown;
+    if (typeof ctx.get === "function") {
+      probe = ctx.get("wingsky.notifier", false);
+    } else {
+      probe = (ctx as unknown as Record<string, unknown>)["wingsky.notifier"];
+    }
+    if (probe && typeof probe === "object") {
+      const svc = probe as { registerKind?: (reg: { id: string; label: string }) => void };
+      if (typeof svc.registerKind === "function") {
+        notifierService = svc;
+        svc.registerKind({ id: "idle-archive:due", label: "会话闲置待归档" });
+      }
+    }
+  } catch {
+    // 探测失败静默（通知中心缺位时不影响归档主流程）
+    notifierService = undefined;
+  }
 
   // GUI 设置面板（设置 → 插件 → dsh-idle-archive）：注册 rc.7 settings 命名空间，
   // 使 configurable 面板 serve `dsh-idle-archive` 并分发本卡。
