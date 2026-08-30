@@ -33,8 +33,55 @@ export function renderPill(state: McpState): void {
   state.floatPill.innerHTML = `<span class="dm-dot" style="background:${dot}"></span><span>${label}</span>`;
 }
 
+/**
+ * 工具级禁用开关（PATCH /api/dsh-mcp/tool-disable）。
+ * 语义（#362 交互拍板 2b）：折叠式 details 展开后 checkbox 列表，逐个启停；
+ * 点击调宿主 API 持久化 + 刷新。project 模式全局组不渲染 checkbox
+ * （runtime 注册的全局工具在 project 模式走 supervisor 不经中间层，无法禁用）。
+ */
+function toolCheckbox(server: any, tool: string, disabled: boolean, state: McpState, actions: UiActions): any {
+  const label = el("label", { class: "dm-float-tool" });
+  const input = el("input", {
+    type: "checkbox",
+    checked: disabled,
+    dataset: { dshMcpTool: tool },
+  });
+  input.addEventListener("change", () => {
+    void api(state.API.toolDisable, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        server: `@${server.scope === "global" ? "@global" : state.projectRoot ?? ""}/${server.name}`,
+        tool,
+        disabled: input.checked,
+      }),
+    }).then(() => actions.refresh())
+      .catch((error: any) => {
+        input.checked = !input.checked;
+        console.warn("[dsh-mcp-manager] tool-disable failed:", error);
+      });
+  });
+  label.appendChild(input);
+  label.appendChild(document.createTextNode(tool));
+  return label;
+}
+
+/** 折叠式工具清单（方案 2b）：summary 显示「工具（N）」，展开后 checkbox 列表。 */
+function renderFloatTools(server: any, state: McpState, actions: UiActions): any {
+  const tools = Array.isArray(server.tools) ? server.tools : [];
+  const disabledSet = new Set(Array.isArray(server.disabledTools) ? server.disabledTools : []);
+  const details = el("details", { class: "dm-float-tools" });
+  details.appendChild(el("summary", { text: `工具（${tools.length}）` }));
+  const list = el("div", { class: "dm-float-tool-list" });
+  for (const tool of tools) {
+    list.appendChild(toolCheckbox(server, tool, disabledSet.has(tool), state, actions));
+  }
+  details.appendChild(list);
+  return details;
+}
+
 /** 浮窗面板里的一行服务器。 */
-function renderFloatRow(server: any, state: McpState, actions: UiActions): any {
+function renderFloatRow(server: any, state: McpState, actions: UiActions, opts: { tools: boolean } = { tools: true }): any {
   const row = el("div", { class: "dm-float-row" });
   row.appendChild(el("span", { class: "dm-dot", style: `background:${statusDot(server.status)}` }));
   row.appendChild(el("span", { class: "dm-float-name", text: server.name, title: server.name }));
@@ -83,10 +130,13 @@ function renderFloatRow(server: any, state: McpState, actions: UiActions): any {
     actionsEl.appendChild(disable);
   }
   row.appendChild(actionsEl);
+  // 工具清单：project 模式全局组只读提示（切 all 可管理全局工具）。
+  if (opts.tools) row.appendChild(renderFloatTools(server, state, actions));
   return row;
 }
 
-/** 渲染浮窗下拉面板（项目/全局分组 + 状态 + 快捷操作）。 */
+/** 渲染浮窗下拉面板（#362 交互拍板 1a：项目级 / 全局级两大分组，各自内部再按状态）。
+ * project 模式：显示全局服务器但不显示工具开关，提示「切 all 模式可管理全局工具」。 */
 export function renderFloatPanel(state: McpState, actions: UiActions): void {
   if (state.floatPanel === undefined) return;
   state.floatPanel.textContent = "";
@@ -103,13 +153,31 @@ export function renderFloatPanel(state: McpState, actions: UiActions): void {
     if (state.floatOpen) placePanel(state);
     return;
   }
+  const isAll = state.middlewareMode === "all";
+  const toolsEnabled = (scope: string) => scope === "project" || isAll;
   for (const scope of ["project", "global"]) {
     const list = state.servers.filter((server: any) => server.scope === scope);
     if (list.length === 0) continue;
     const section = el("section", { class: "dm-float-group" });
     section.appendChild(el("div", { class: "dm-float-group-title", text: scope === "project" ? "项目级" : "全局" }));
-    for (const server of [...list].sort((a: any, b: any) => a.name.localeCompare(b.name))) {
-      section.appendChild(renderFloatRow(server, state, actions));
+    // 各自内部再按状态分组（状态序：运行中 → 连接中 → 重连中 → 未连接 → 已停用 → 失败）。
+    const byStatus = new Map<string, any[]>();
+    for (const group of STATUS_ORDER) byStatus.set(group.key, []);
+    for (const server of list) {
+      const bucket = byStatus.get(server.status);
+      if (bucket !== undefined) bucket.push(server);
+      else if (byStatus.has("stopped")) byStatus.get("stopped")!.push(server);
+    }
+    for (const group of STATUS_ORDER) {
+      const bucket = byStatus.get(group.key) ?? [];
+      if (bucket.length === 0) continue;
+      for (const server of [...bucket].sort((a: any, b: any) => a.name.localeCompare(b.name))) {
+        section.appendChild(renderFloatRow(server, state, actions, { tools: toolsEnabled(scope) }));
+      }
+    }
+    if (scope === "global" && !isAll) {
+      // project 模式：全局工具不经中间层（supervisor 直呼），无法工具级禁用。
+      section.appendChild(el("div", { class: "dm-float-hint", text: "全局工具开关需在 all 模式（中间层全量接管）下管理——切 all 模式可管理全局工具" }));
     }
     state.floatPanel.appendChild(section);
   }

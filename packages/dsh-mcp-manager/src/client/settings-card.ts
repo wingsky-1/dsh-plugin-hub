@@ -20,6 +20,7 @@ export function SettingsCard() {
   const useState = React.useState;
   const useEffect = React.useEffect;
   const [cfg, setCfg] = useState(null) as any;
+  const [middleware, setMiddleware] = useState("project");
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null) as any;
@@ -27,7 +28,10 @@ export function SettingsCard() {
   useEffect(() => {
     let live = true;
     api(API.config).then((c: any) => {
-      if (live && c !== null && typeof c === "object") setCfg(c);
+      if (live && c !== null && typeof c === "object") {
+        setCfg(c);
+        if (typeof c.middleware === "string") setMiddleware(c.middleware);
+      }
     }).catch(() => {});
     return () => {
       live = false;
@@ -59,12 +63,14 @@ export function SettingsCard() {
     setSaving(true);
     setMsg(null);
     try {
+      const payload: any = { ...cfg };
+      if (middleware !== (cfg.middleware ?? "project")) payload.middleware = middleware;
       await api(API.config, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(cfg),
+        body: JSON.stringify(payload),
       });
-      setMsg({ ok: true, text: "已保存——浮窗位置即时生效（无需重启）" });
+      setMsg({ ok: true, text: "已保存——浮窗位置与中间层模式即时生效（无需重启）" });
       setTimeout(() => setMsg(null), 2400);
     } catch (e) {
       setMsg({ ok: false, text: `保存失败：${e instanceof Error ? e.message : String(e)}` });
@@ -114,13 +120,26 @@ export function SettingsCard() {
         ),
       ),
       React.createElement("div", { className: "dm-set-row" },
+        React.createElement("label", { htmlFor: "dm-set-middleware" }, "中间层模式"),
+        React.createElement("select", {
+          id: "dm-set-middleware",
+          className: "dm-set-input",
+          value: middleware,
+          onChange: (e: any) => setMiddleware(e.target.value),
+        },
+          React.createElement("option", { value: "project" }, "project（项目级走中间层，推荐）"),
+          React.createElement("option", { value: "all" }, "all（全局也走中间层）"),
+          React.createElement("option", { value: "off" }, "off（全部直呼 mcp__ 工具）"),
+        ),
+      ),
+      React.createElement("div", { className: "dm-set-row" },
         numInput("offsetX", "水平偏移"),
         numInput("offsetY", "垂直偏移"),
         numInput("blankY", "空白偏移"),
         numInput("zIndexBase", "层级基准", 1, 9000),
       ),
       React.createElement("div", { className: "dm-set-hint" },
-        "保存即热更新：宿主经 SSE events 通道广播一变，所有标签页的浮窗即刻原位更新，无需重启 dsh web。"),
+        "保存即热更新：浮窗位置即时生效；中间层模式切换即时生效并持久化（无需重启 dsh web）。"),
       React.createElement("div", { className: "dm-set-foot" },
         msg !== null
           ? React.createElement("span", { className: msg.ok ? "dm-set-saved" : "dm-set-error" }, msg.text)

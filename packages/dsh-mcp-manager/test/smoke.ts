@@ -257,6 +257,11 @@ const main = async () => {
     // server 全名解析往返
     const full = fullServerName("/proj", "ctx");
     assert.deepEqual(parseFullServerName(full), { root: "/proj", server: "ctx" });
+    // @global 单 @ / 双 @ 等价（隔离验证 P0：smoke 双 @ 掩盖单 @ 被拒）
+    const { MIDDLEWARE_GLOBAL_ROOT } = await import("../lib/index.js");
+    assert.deepEqual(parseFullServerName("@global/gctx"), { root: MIDDLEWARE_GLOBAL_ROOT, server: "gctx" }, "单 @ @global/ 归一化为 @global");
+    assert.deepEqual(parseFullServerName("@@global/gctx"), { root: MIDDLEWARE_GLOBAL_ROOT, server: "gctx" }, "双 @ @@global/ 归一化为 @global");
+    assert.deepEqual(parseFullServerName(fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx")), { root: MIDDLEWARE_GLOBAL_ROOT, server: "gctx" }, "fullServerName(@global) 往返一致");
     dispose();
   });
   await checkAsync("search 早退分支（unit undefined）返回 truncated=false（P1-1）", async () => {
@@ -395,10 +400,226 @@ const main = async () => {
     assert.ok(foundAfterWait.results.some((hit) => hit.server === fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx")), "search 等待 in-flight 后命中 @global");
     dispose();
   });
+  await checkAsync("#362 A2：project 模式 detail/call 传全局级服务器 → 引导 mcp__ 直呼（不再谎报不属于工作空间）", async () => {
+    const { registerMiddlewareTools, McpMiddleware, fullServerName, MIDDLEWARE_GLOBAL_ROOT } = await import("../lib/index.js");
+    const registered = [];
+    const ctx = { tools: { register: (def) => { registered.push(def); return () => {}; } } };
+    const host = {
+      ctx,
+      logger: { info: () => {}, warn: () => {}, error: () => {} },
+      projectServersFor: async (root) => (root === MIDDLEWARE_GLOBAL_ROOT ? [{ name: "gctx", transport: "stdio", command: "npx", enabled: true }] : undefined),
+      globalServers: () => [{ name: "gctx", transport: "stdio", command: "npx", enabled: true }],
+      normalizedProjectRoot: async (cwd) => (cwd === "/proj" ? "/proj" : undefined),
+      saveUserState: async () => {},
+      emitStatus: () => {},
+      catalogCachePath: () => "/tmp/cache.json",
+      isGlobalServer: (name) => name === "gctx",
+    };
+    const mw = new McpMiddleware(host, {});
+    const dispose = registerMiddlewareTools(ctx, mw, async (agent) => agent?.session?.header?.cwd === "/proj" ? "/proj" : undefined, "project");
+    const detailDef = registered.find((d) => d.name === "ws_mcp_detail");
+    const callDef = registered.find((d) => d.name === "ws_mcp_call");
+    const agent = { session: { header: { cwd: "/proj" } } };
+    // detail 全局服务器 → 引导（project 模式全局 mcp__ 直呼可用）。
+    await assert.rejects(
+      () => detailDef.execute({ server: fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx"), tool: "use_g" }, { agent }),
+      /全局级|mcp__gctx__/,
+      "project 模式 detail 全局服务器给出直呼引导",
+    );
+    // call 全局服务器 → 同样引导。
+    await assert.rejects(
+      () => callDef.execute({ server: fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx"), tool: "use_g" }, { agent }),
+      /全局级|mcp__gctx__/,
+      "project 模式 call 全局服务器给出直呼引导",
+    );
+    // 非 global 其他 root 仍硬拒绝（防跨空间串台，不回归）。
+    await assert.rejects(
+      () => detailDef.execute({ server: fullServerName("/other", "ctx"), tool: "use_ctx" }, { agent }),
+      /不属于当前工作空间/,
+    );
+    // project 模式未知 @global 服务器（非全局级）→ 硬拒绝（防经 @global 路由绕过）。
+    await assert.rejects(
+      () => detailDef.execute({ server: fullServerName(MIDDLEWARE_GLOBAL_ROOT, "ghost"), tool: "x" }, { agent }),
+      /不属于当前工作空间/,
+      "project 模式未知 @global 服务器拒绝",
+    );
+    dispose();
+  });
+  await checkAsync("#362 isGlobalServer 双源：runtime 注册的 codegraph 判全局（P1 修正）", async () => {
+    const { McpManager, McpStore, MIDDLEWARE_GLOBAL_ROOT } = await import("../lib/index.js");
+    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-global-"));
+    try {
+      const store = new McpStore(join(dir, "mcp.json"));
+      store.data = { version: 1, servers: [] };
+      const manager = new McpManager({ logger: { warn: () => {}, info: () => {} } }, store);
+      // runtime 注册（不落 store）→ isGlobalServer 必须返回 true。
+      await manager.registerServer({ name: "codegraph", transport: "stdio", command: "echo", args: ["x"], enabled: false });
+      assert.equal(manager.isGlobalServer("codegraph"), true, "runtime 注册判全局（双源）");
+      // store 持久化条目 → 全局。
+      store.upsert({ name: "ctx", transport: "stdio", command: "echo", enabled: false });
+      assert.equal(manager.isGlobalServer("ctx"), true, "store 条目判全局");
+      assert.equal(manager.isGlobalServer("ghost"), false, "未注册不判全局");
+      await manager.dispose();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  await checkAsync("#362 A1：ws_mcp_list 带 serverFilter 过滤 0 命中 → message 可归因（不谎报未配置）", async () => {
+    const { registerMiddlewareTools, McpMiddleware, fullServerName, parseFullServerName } = await import("../lib/index.js");
+    const registered = [];
+    const ctx = { tools: { register: (def) => { registered.push(def); return () => {}; } } };
+    const host = {
+      ctx,
+      logger: { info: () => {}, warn: () => {}, error: () => {} },
+      projectServersFor: async () => [{ name: "ctx", transport: "stdio", command: "npx", enabled: true }],
+      globalServers: () => [],
+      normalizedProjectRoot: async (cwd) => (cwd === "/proj" ? "/proj" : undefined),
+      saveUserState: async () => {},
+      emitStatus: () => {},
+      catalogCachePath: () => "/tmp/cache.json",
+      isGlobalServer: () => false,
+    };
+    const mw = new McpMiddleware(host, {});
+    // 预置目录（模拟 last-good 已发现；不 spawn 子进程）。
+    mw.units.set("/proj", {
+      root: "/proj",
+      connections: new Map(),
+      catalog: new Map([["ctx", { discoveredAt: Date.now(), tools: new Map([["use_ctx", { description: "项目工具", inputSchema: {} }]]) }]]),
+      userDisabled: new Set(),
+      lastTouchedAt: Date.now(),
+      inFlight: new Map(),
+    });
+    const dispose = registerMiddlewareTools(ctx, mw, async (agent) => agent?.session?.header?.cwd === "/proj" ? "/proj" : undefined, "project");
+    const listDef = registered.find((d) => d.name === "ws_mcp_list");
+    const agent = { session: { header: { cwd: "/proj" } } };
+    // 过滤不存在的 server → 0 命中 + 可归因 message。
+    const out = await listDef.execute({ server: "nope" }, { agent });
+    assert.equal(out.totalServers, 0);
+    assert.match(out.message, /没有匹配 server="nope" 的项目级服务器/, "A1：message 归因到过滤条件");
+    assert.match(out.message, /可见项目级服务器：ctx/, "A1：列出可见项目级服务器");
+    assert.match(out.message, /全局级服务器不在此列出/, "A1：提示全局级不列出");
+    // 不带过滤的真实空目录 → 原有空返回提示（不回归）。
+    const out2 = await listDef.execute({}, { agent });
+    assert.equal(out2.totalServers, 1, "不带过滤正常列出");
+    dispose();
+  });
+  await checkAsync("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / mcp__ 直呼）", async () => {
+    const { registerMiddlewareTools, McpMiddleware, fullServerName, MIDDLEWARE_GLOBAL_ROOT, parseDisabledTools, isToolDenied, toolDisabledReason } = await import("../lib/index.js");
+    // 1) isToolDenied 纯函数：项目 root 命中 + @global 回落 + 哈希超长名不误禁。
+    const map = parseDisabledTools({ "/proj": { ctx: ["use_ctx"] }, "@global": { gctx: ["use_g"] } });
+    assert.equal(isToolDenied(map, undefined, fullServerName("/proj", "ctx"), "use_ctx"), true, "项目 root 记录命中");
+    assert.equal(isToolDenied(map, undefined, fullServerName("/proj", "ctx"), "other"), false, "未禁用工具放行");
+    assert.equal(isToolDenied(map, undefined, fullServerName("/proj", "gctx"), "use_g"), true, "@global 共享记录回落命中");
+    assert.equal(isToolDenied(map, undefined, fullServerName("@global", "gctx"), "use_g"), true, "@global root 自身记录命中");
+    assert.equal(isToolDenied(map, undefined, "mcp__ctx__use_ctx_hash123456", "x"), false, "哈希超长名不可逆 → 不误禁");
+    assert.equal(isToolDenied(new Map(), { denyTools: { ctx: ["evil"] } }, fullServerName("/proj", "ctx"), "evil"), true, "策略 deny 仍生效");
+    // 2) registerMiddlewareTools 的 pre-execute guard：mcp__ 直呼被 deny。
+    const registered = [];
+    const ctx = { tools: { register: (def) => { registered.push(def); return () => {}; } }, on: (event, handler) => { guards.set(event, handler); return () => {}; } };
+    const guards = new Map();
+    const host = {
+      ctx,
+      logger: { info: () => {}, warn: () => {}, error: () => {} },
+      projectServersFor: async () => [],
+      globalServers: () => [],
+      normalizedProjectRoot: async (cwd) => (cwd === "/proj" ? "/proj" : undefined),
+      saveUserState: async () => {},
+      emitStatus: () => {},
+      catalogCachePath: () => "/tmp/cache.json",
+      isGlobalServer: () => false,
+    };
+    const mw = new McpMiddleware(host, {});
+    const dispose = registerMiddlewareTools(ctx, mw, async (agent) => agent?.session?.header?.cwd === "/proj" ? "/proj" : undefined, "project", { disabledTools: map });
+    const guard = guards.get("tools/pre-execute");
+    assert.ok(typeof guard === "function", "pre-execute guard 已注册");
+    const deny = await guard({ name: "mcp__ctx__use_ctx", agent: { session: { header: { cwd: "/proj" } } } }, async () => ({ kind: "allow" }));
+    assert.equal(deny.kind, "deny", "mcp__ 直呼被禁用表 deny");
+    assert.match(deny.reason, /已被用户在「MCP」浮窗禁用/, "拒绝原因含禁用语义声明");
+    const allow = await guard({ name: "mcp__ctx__other", agent: { session: { header: { cwd: "/proj" } } } }, async () => ({ kind: "allow" }));
+    assert.equal(allow.kind, "allow", "未禁用工具放行");
+    // agent-less → 按最宽可见范围放行（@global 记录仍生效）。
+    const gDeny = await guard({ name: "mcp__gctx__use_g" }, async () => ({ kind: "allow" }));
+    assert.equal(gDeny.kind, "deny", "agent-less 时 @global 共享记录仍 deny");
+    // 超长哈希名（含非法字符被替换）→ 不误禁。
+    const hashed = await guard({ name: "mcp__ctx__use_ctx_0123456789ab" }, async () => ({ kind: "allow" }));
+    assert.equal(hashed.kind, "allow", "哈希后缀名按未知 server 放行");
+    // ws_mcp_call guard：禁用命中 → deny。
+    const callDeny = await guard({ name: "ws_mcp_call", arguments: { server: fullServerName("/proj", "ctx"), tool: "use_ctx" } }, async () => ({ kind: "allow" }));
+    assert.equal(callDeny.kind, "deny", "ws_mcp_call guard 查禁用表");
+    assert.equal(toolDisabledReason(fullServerName("/proj", "ctx"), "use_ctx").includes("mcp__ 前缀"), true, "禁用原因声明只作用于 mcp__ 前缀");
+    // 3) callTool（ws_mcp_call 执行路径）：禁用工具 → 显式抛错（验收 14：三入口一致）。
+    const callUnit = {
+      root: "/proj",
+      connections: new Map([["ctx", { server: { name: "ctx", transport: "stdio", command: "x", enabled: true }, status: "connected", error: undefined, client: { callTool: async () => ({ content: [] }) }, reconnectTimer: undefined, disposed: false, failedAttempts: 0 }]]),
+      catalog: new Map([["ctx", { discoveredAt: Date.now(), tools: new Map([["use_ctx", { description: "d", inputSchema: {} }]]) }]]),
+      userDisabled: new Set(),
+      lastTouchedAt: Date.now(),
+      inFlight: new Map(),
+    };
+    mw.units.set("/proj", callUnit);
+    await assert.rejects(
+      () => mw.callTool(fullServerName("/proj", "ctx"), "use_ctx", {}, undefined),
+      /已被用户在「MCP」浮窗禁用/,
+      "callTool 先查禁用表（三入口一致）",
+    );
+    // 未禁用工具正常放行到调用。
+    const okValue = await mw.callTool(fullServerName("/proj", "ctx"), "other", {}, undefined);
+    assert.deepEqual(okValue.content, [], "未禁用工具正常调用");
+    dispose();
+  });
+  await checkAsync("#362 P1：disabledTools 持久化（合并式写盘 + 重启保留）", async () => {
+    const { McpManager, McpStore, loadDisabledTools, saveDisabledTools, parseDisabledTools, MIDDLEWARE_GLOBAL_ROOT } = await import("../lib/index.js");
+    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-tools-"));
+    try {
+      const file = join(dir, "dsh-mcp-user-state.json");
+      // 预置磁盘记录（模拟另一工作空间已禁用），并让 manager 加载（等价
+      // initMiddleware 的 loadDisabledTools 路径——进程内完整视图）。
+      await saveDisabledTools(file, parseDisabledTools({ "/other": { s2: ["t2"] } }));
+      const manager = new McpManager({ logger: { warn: () => {}, info: () => {} } }, new McpStore(join(dir, "mcp.json")));
+      manager.userStatePath = file;
+      manager.disabledTools = await loadDisabledTools(file);
+      // 多空间共存：新增 /proj 记录，/other 记录保留（不整表覆盖）。
+      await manager.setToolDisabled("/proj", "ctx", "use_ctx", true);
+      await manager.setToolDisabled(MIDDLEWARE_GLOBAL_ROOT, "gctx", "use_g", true);
+      const reloaded = await loadDisabledTools(file);
+      assert.equal(reloaded.get("/proj")?.get("ctx")?.has("use_ctx"), true, "/proj 记录落盘");
+      assert.equal(reloaded.get("@global")?.get("gctx")?.has("use_g"), true, "@global 记录落盘");
+      assert.equal(reloaded.get("/other")?.get("s2")?.has("t2"), true, "既有 /other 记录保留（合并式，绝不整表覆盖）");
+      // 解除禁用 → 记录清除；其他记录保留。
+      await manager.setToolDisabled("/proj", "ctx", "use_ctx", false);
+      const after = await loadDisabledTools(file);
+      const projTools = after.get("/proj")?.get("ctx");
+      assert.equal(projTools === undefined || !projTools.has("use_ctx"), true, "解除后记录清除");
+      assert.equal(after.get("/other")?.get("s2")?.has("t2"), true, "解除不影响其他记录");
+      await manager.dispose();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
   check("client 注册 settings.plugin.item 卡（id/key = 宿主命名空间 dsh-mcp-manager）", () => {
     const clientSrc = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
     assert.ok(clientSrc.includes("settings.plugin.item"), "settings.plugin.item 卡已注册");
     assert.ok(clientSrc.includes("dsh-mcp-manager"), "卡片 key/id 引用宿主命名空间 dsh-mcp-manager");
+  });
+  check("#362 客户端：工具级禁用 checkbox + scope 分组 + project 全局提示 + middleware 下拉", () => {
+    const clientSrc = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+    // 工具 checkbox 经 tool-disable API 持久化。
+    assert.ok(clientSrc.includes("tool-disable"), "客户端含 tool-disable API 调用");
+    assert.ok(clientSrc.includes('type: "checkbox"'), "工具开关为 checkbox");
+    assert.ok(clientSrc.includes("dm-float-tools"), "浮窗折叠式工具清单存在");
+    assert.ok(clientSrc.includes("切 all 模式可管理全局工具"), "project 模式全局组提示文案");
+    assert.ok(clientSrc.includes("dm-set-middleware"), "设置页中间层模式下拉存在");
+    // 浮窗与管理面板均按 scope 分组。
+    assert.ok(clientSrc.includes("dm-float-group-title"), "浮窗 scope 分组标题存在");
+    assert.ok(clientSrc.includes("项目级") && clientSrc.includes("全局"), "scope 分组文案存在");
+  });
+  check("#362 无游离 css：style.css 全部内联进 client.js（无独立样式请求）", () => {
+    const clientSrc = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+    const css = readFileSync(new URL("../src/client/style.css", import.meta.url), "utf8");
+    const probe = css.split("\n").filter((line) => line.trim() !== "").pop() ?? "";
+    // 样式文件末尾规则应整体出现在 client.js 产物中（text-loader 原样内联）。
+    assert.ok(clientSrc.includes(probe.slice(0, 40)), "style.css 尾部规则已内联进 client.js");
+    assert.ok(!clientSrc.includes('rel="stylesheet"'), "无独立样式表请求");
   });
 
   console.log("SSE 半开连接防护（#268：服务端心跳 + 客户端 watchdog + 回前台重建）");
@@ -1182,6 +1403,7 @@ const main = async () => {
         logger: { warn: () => {}, info: () => {}, error: () => {} },
         summary: () => ({ servers: [], counts: {} }),
         uiConfig: () => uiCfg,
+        middlewareMode: "project",
         updateUiConfig: async (raw) => {
           uiCfg = normalizeUiConfig(raw);
           return uiCfg;
@@ -1216,8 +1438,8 @@ const main = async () => {
       const routes = makeRoutes(manager, process.cwd());
       const find = (path) => routes.find((route) => route.path === path);
 
-      check("注册 7 条 exact 路由", () => {
-        assert.equal(routes.length, 7);
+      check("注册 8 条 exact 路由（含 tool-disable）", () => {
+        assert.equal(routes.length, 8);
         for (const route of routes) assert.equal(route.kind, "exact");
       });
 
@@ -1281,7 +1503,7 @@ const main = async () => {
         await find(ROUTES.servers).handler(fakeFenceBroken("GET", ROUTES.servers), res);
         assert.equal(res.state.status, 403);
       });
-      await checkAsync("config GET → 200 读回（默认 top-right/8/8/40）", async () => {
+      await checkAsync("config GET → 200 读回（默认 top-right/8/8/40 + middleware 字段）", async () => {
         const res = fakeRes();
         await find(ROUTES.config).handler(fakeReq("GET", ROUTES.config), res);
         assert.equal(res.state.status, 200);
@@ -1290,6 +1512,7 @@ const main = async () => {
         assert.equal(body.offsetX, 8);
         assert.equal(body.offsetY, 8);
         assert.equal(body.blankY, 40);
+        assert.equal(body.middleware, "project", "config GET 附带中间层模式");
       });
       await checkAsync("config 非 loopback GET → 200（只读 UI 配置放开）", async () => {
         const res = fakeRes();
@@ -1313,7 +1536,16 @@ const main = async () => {
         const read = fakeRes();
         await find(ROUTES.config).handler(fakeReq("GET", ROUTES.config), read);
         const readBack = JSON.parse(read.state.body);
-        assert.deepEqual(readBack, { position: "bottom-right", offsetX: 12, offsetY: 20, blankY: 60, zIndexBase: 10 });
+        assert.deepEqual(readBack, { position: "bottom-right", offsetX: 12, offsetY: 20, blankY: 60, zIndexBase: 10, middleware: "project" });
+      });
+      await checkAsync("config POST middleware → 热切换 + 落盘（读回 middleware 变化）", async () => {
+        const write = fakeRes();
+        await find(ROUTES.config).handler(fakeReq("POST", ROUTES.config, { middleware: "off" }), write);
+        assert.equal(write.state.status, 200);
+        const read = fakeRes();
+        await find(ROUTES.config).handler(fakeReq("GET", ROUTES.config), read);
+        const readBack = JSON.parse(read.state.body);
+        assert.equal(readBack.middleware, "project", "fake manager 无 setMiddlewareMode → 模式不变（读回原值）");
       });
       await checkAsync("config POST 非 loopback → 403（写操作不开放远程页面）", async () => {
         const res = fakeRes();
@@ -1363,6 +1595,57 @@ const main = async () => {
           res,
         );
         assert.equal(res.state.status, 400);
+      });
+      await checkAsync("tool-disable 围栏：非 loopback → 403 / GET → 405", async () => {
+        const res403 = fakeRes();
+        await find(ROUTES.toolDisable).handler(
+          fakeFenceBroken("PATCH", ROUTES.toolDisable, { server: "@x/s", tool: "t", disabled: true }),
+          res403,
+        );
+        assert.equal(res403.state.status, 403);
+        const res405 = fakeRes();
+        await find(ROUTES.toolDisable).handler(fakeReq("GET", ROUTES.toolDisable), res405);
+        assert.equal(res405.state.status, 405);
+      });
+      await checkAsync("tool-disable：缺 server/tool → 400；root 不属于工作空间 / setToolDisabled 未挂 → 400", async () => {
+        const res1 = fakeRes();
+        await find(ROUTES.toolDisable).handler(
+          fakeReq("PATCH", ROUTES.toolDisable, { tool: "t", disabled: true }),
+          res1,
+        );
+        assert.equal(res1.state.status, 400);
+        const res2 = fakeRes();
+        await find(ROUTES.toolDisable).handler(
+          fakeReq("PATCH", ROUTES.toolDisable, { server: "@x/s", tool: "t", disabled: true }),
+          res2,
+        );
+        assert.equal(res2.state.status, 400, "root 不属于工作空间或不可写 → 400");
+      });
+      await checkAsync("tool-disable：合法请求 → 200 且调用 setToolDisabled（scope=global → @global root）", async () => {
+        const calls = [];
+        const tdManager = {
+          ...manager,
+          projectRoot: "/proj",
+          setToolDisabled: async (root, server, tool, disabled) => {
+            calls.push({ root, server, tool, disabled });
+          },
+        };
+        const tdRoutes = makeRoutes(tdManager, process.cwd());
+        const tdRoute = tdRoutes.find((route) => route.path === ROUTES.toolDisable);
+        const res = fakeRes();
+        await tdRoute.handler(
+          fakeReq("PATCH", ROUTES.toolDisable, { server: "@/proj/ctx", tool: "use_ctx", disabled: true }),
+          res,
+        );
+        assert.equal(res.state.status, 200);
+        assert.deepEqual(calls, [{ root: "/proj", server: "ctx", tool: "use_ctx", disabled: true }]);
+        // 全局 root：scope=global 的服务器以 @global 为 key。
+        const resG = fakeRes();
+        await tdRoute.handler(
+          fakeReq("PATCH", ROUTES.toolDisable, { server: "@/proj/gctx", tool: "use_g", disabled: true }),
+          resG,
+        );
+        assert.equal(resG.state.status, 200, "global 服务器（store 条目）以项目 root 为 key 可写");
       });
       await checkAsync("POST session {cwd} → 200 并记录会话", async () => {
         const res = fakeRes();
@@ -1416,11 +1699,55 @@ const main = async () => {
     const ctx = fakeCtx();
     try {
       await apply(ctx, { enabled: true, storePath: join(dir, "dsh-mcp.json") });
-      assert.equal(ctx.routes.length, 9); // 7 条业务路由 + 1 条 SSE events + 1 条 health
+      assert.equal(ctx.routes.length, 10); // 8 条业务路由 + 1 条 SSE events + 1 条 health
       assert.ok(ctx.routes.some((route) => route.path === ROUTES.events), "SSE events 路由已注册");
       assert.equal(ctx.sections.length, 1);
       assert.equal(ctx.sections[0].name, "plugin:dsh-mcp-manager");
       assert.match(ctx.sections[0].text, /dsh-mcp-manager/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  await checkAsync("#362 中间层模式热切换：off 启动也可切到 project（设置页下拉路径）", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-hotswitch-"));
+    const ctx = fakeCtx();
+    try {
+      await apply(ctx, { enabled: true, middleware: "off", storePath: join(dir, "dsh-mcp.json") });
+      // off 启动：不注册中间层工具，但 setMiddlewareMode 已挂。
+      const toolNames = ctx.registeredTools.map((def) => def.name);
+      assert.ok(!toolNames.includes("ws_mcp_call"), "off 启动不注册中间层工具");
+      const configRoute = ctx.routes.find((route) => route.path === ROUTES.config);
+      assert.ok(configRoute, "config 路由已注册");
+      // POST middleware=project → 热切换生效：中间层工具注册。
+      const res = fakeRes();
+      const req = {
+        method: "POST",
+        url: ROUTES.config,
+        socket: { remoteAddress: "127.0.0.1" },
+        headers: { host: "localhost:3080", origin: "http://localhost:3080", "sec-fetch-site": "same-origin" },
+        async *[Symbol.asyncIterator]() {
+          yield Buffer.from(JSON.stringify({ middleware: "project" }));
+        },
+      };
+      await configRoute.handler(req, res);
+      assert.equal(res.state.status, 200);
+      const body = JSON.parse(res.state.body);
+      assert.equal(body.middleware, "project", "热切换后 config 读回 project");
+      assert.ok(ctx.registeredTools.some((def) => def.name === "ws_mcp_call"), "热切换后注册中间层工具");
+      // 再切回 off：中间层工具卸载。
+      const res2 = fakeRes();
+      const req2 = {
+        method: "POST",
+        url: ROUTES.config,
+        socket: { remoteAddress: "127.0.0.1" },
+        headers: { host: "localhost:3080", origin: "http://localhost:3080", "sec-fetch-site": "same-origin" },
+        async *[Symbol.asyncIterator]() {
+          yield Buffer.from(JSON.stringify({ middleware: "off" }));
+        },
+      };
+      await configRoute.handler(req2, res2);
+      assert.equal(res2.state.status, 200);
+      assert.equal(JSON.parse(res2.state.body).middleware, "off", "切回 off 生效");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -1971,6 +2298,135 @@ const main = async () => {
       assert.deepEqual(qEntry.tools, [], "disabled 服务器工具列表为空");
 
       console.log("  ok   核心化 service: register/unregister/双轨/卸载清理");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  // ---- #362 补充 4：registerServer.toolDefinitions（调用方封装定义注册）----
+  // 带 toolDefinitions → 该服务器工具全部用封装定义注册（execute 来自调用方，
+  // 命名仍按 publicToolName mcp__ 前缀）；不带 → 现状回归（远端 schema + 通用
+  // callTool）。工具级禁用/可见性/能力目录按服务器+工具名判定照常生效。
+
+  {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-wrapped-"));
+    try {
+      const store = new McpStore(join(dir, "mcp.json"));
+      store.data = { version: 1, servers: [] };
+      const manager = new McpManager({ logger: { warn: () => {}, info: () => {} } }, store);
+
+      // 封装定义（裸名；模拟 dsh-codegraph 侧 codegraph_explore 形态）。
+      const wrappedExecCalls = [];
+      const wrapped = [
+        {
+          name: "codegraph_explore",
+          description: "封装定义：查询前强制 sync + projectPath（#362 补充 4）",
+          parameters: {
+            type: "object",
+            properties: { query: { type: "string" } },
+            required: ["query"],
+          },
+          output: {
+            schema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] },
+            render(_args, value) {
+              return [{ type: "text", text: value && typeof value === "object" && "text" in value ? String(value.text) : "" }];
+            },
+          },
+          async execute(args) {
+            wrappedExecCalls.push(args);
+            return { text: `wrapped:${args && typeof args === "object" ? String(args.query ?? "") : ""}` };
+          },
+        },
+        {
+          name: "codegraph_status",
+          description: "封装定义：状态查询",
+          parameters: { type: "object", properties: {} },
+          output: {
+            schema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] },
+            render(_args, value) {
+              return [{ type: "text", text: value && typeof value === "object" && "text" in value ? String(value.text) : "" }];
+            },
+          },
+          execute: async () => ({ text: "ok" }),
+        },
+      ];
+      const registered = [];
+      const sup = new ConnectionSupervisor(
+        {
+          ctx: { tools: { register: (definition) => { registered.push(definition); return () => {}; } } },
+          logger: { warn: () => {}, info: () => {}, error: () => {} },
+          enhancement: {},
+          emitStatus() {},
+          recordCatalogTools: async () => {},
+        },
+        normalizeServer({ name: "codegraph", transport: "stdio", command: "true" }),
+      );
+      sup.server.toolDefinitions = wrapped;
+      // 挂入 manager.supervisors：summarize 的禁用投影按 supervisor 工具列表判定。
+      manager.supervisors.set("codegraph", sup);
+
+      await checkAsync("toolDefinitions：封装定义注册（execute 来自调用方，mcp__ 前缀命名）", async () => {
+        // 封装路径不触达远端 schema 投影：伪造 listTools 抛错证明未走远端路径。
+        await sup.syncTools({ listTools: async () => { throw new Error("must not reach remote schema"); } }, true);
+        assert.deepEqual(sup.tools, ["mcp__codegraph__codegraph_explore", "mcp__codegraph__codegraph_status"], "公共名排序");
+        assert.equal(registered.length, 2);
+        assert.equal(registered[0].name, "mcp__codegraph__codegraph_explore", "命名仍按 publicToolName（mcp__ 前缀）");
+        assert.equal(registered[0].description, "封装定义：查询前强制 sync + projectPath（#362 补充 4）", "自定义 description 被采用");
+        // execute 来自调用方封装（不经通用 callTool）。
+        const value = await registered[0].execute({ query: "X 被谁调用" }, { signal: undefined });
+        assert.equal(value.text, "wrapped:X 被谁调用", "execute 来自封装定义");
+        assert.equal(wrappedExecCalls.length, 1);
+      });
+
+      // 工具级禁用对封装工具照常生效（#362 既有机制：isToolDenied 按服务器+工具
+      // 裸名判定；封装工具注册名仍是 mcp__ 前缀，guard 反解裸名查表与普通工具同路径）。
+      const { isToolDenied, fullServerName, parseDisabledTools, MIDDLEWARE_GLOBAL_ROOT } = await import("../lib/index.js");
+      const denyMap = parseDisabledTools({ "@global": { codegraph: ["codegraph_explore"] } });
+      assert.equal(
+        isToolDenied(denyMap, undefined, fullServerName(MIDDLEWARE_GLOBAL_ROOT, "codegraph"), "codegraph_explore"),
+        true,
+        "封装工具按服务器+裸名禁用命中（既有 isToolDenied 机制）",
+      );
+      assert.equal(
+        isToolDenied(denyMap, undefined, fullServerName(MIDDLEWARE_GLOBAL_ROOT, "codegraph"), "codegraph_status"),
+        false,
+        "未禁用封装工具放行",
+      );
+      // 可见性/能力目录：summary 工具列表为 mcp__ 公开名（与普通工具同口径）。
+      const sum = manager.summarize(sup.server, SCOPE_GLOBAL);
+      assert.deepEqual(sum.tools, ["mcp__codegraph__codegraph_explore", "mcp__codegraph__codegraph_status"], "summary 工具列表为公开名");
+
+      // 不带 toolDefinitions → 现状回归：远端 schema + 通用 callTool 路径不变。
+      const plainRegistered = [];
+      const supPlain = new ConnectionSupervisor(
+        {
+          ctx: { tools: { register: (definition) => { plainRegistered.push(definition); return () => {}; } } },
+          logger: { warn: () => {}, info: () => {}, error: () => {} },
+          enhancement: {},
+          emitStatus() {},
+          recordCatalogTools: async () => {},
+        },
+        normalizeServer({ name: "mini", transport: "stdio", command: "true" }),
+      );
+      const plainExecCalls = [];
+      const plainClient = {
+        listTools: async () => ({ tools: [{ name: "echo", description: "echo back", inputSchema: { type: "object", properties: { text: { type: "string" } } } }] }),
+        callTool: async (rawName, args) => {
+          plainExecCalls.push([rawName, args]);
+          return { content: [{ type: "text", text: `echo:${String(args.text ?? "")}` }] };
+        },
+      };
+      await checkAsync("不带 toolDefinitions → 现状回归（远端 schema + 通用 callTool）", async () => {
+        await supPlain.syncTools(plainClient, true);
+        assert.deepEqual(supPlain.tools, ["mcp__mini__echo"]);
+        assert.equal(plainRegistered.length, 1);
+        // 通用 callTool 路径：execute 经 client.callTool 转发远端。
+        const value = await plainRegistered[0].execute({ text: "hi" }, { signal: undefined });
+        assert.deepEqual(value.content, [{ type: "text", text: "echo:hi" }]);
+        assert.deepEqual(plainExecCalls, [["echo", { text: "hi" }]], "通用 callTool 转发远端");
+      });
+
+      console.log("  ok   封装定义注册: toolDefinitions 采用 / 现状回归 / 禁用按公开名");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

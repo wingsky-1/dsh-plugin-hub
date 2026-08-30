@@ -16,12 +16,13 @@ import { McpManager, MIDDLEWARE_GLOBAL_ROOT } from "./manager.ts";
 import { defaultStorePath, McpStore } from "./store.ts";
 import { DEFAULT_RESULT_TRUNCATE_BYTES } from "./supervisor.ts";
 import { normalizeMiddlewareMode, registerMiddlewareTools } from "./middleware.ts";
+import type { MiddlewareMode } from "./middleware-types.ts";
 import { makeRoutes, makeEventsRoute, makeHealthRoute, sseData, uiConfigChangedFrame } from "./routes.ts";
 
 /** 向 Agent 宣告插件（announceToAgent 开启时注入）。能力清单由动态目录
  * （<available_mcp_servers>，见 L1）承担，此处只说明管理界面与使用约束。 */
 export const MCP_GUIDANCE =
-  "本机已安装 dsh-mcp-manager 插件（DSH MCP 管理器）：会话界面右上角浮窗管理 MCP 服务器（全局配置 ~/.dsh/dsh-mcp.json；项目级配置 <项目根>/.dsh/mcp.json，跟随会话切换展示并连接对应项目的服务器；支持 stdio / streamable-http，可粘贴 mcpServers JSON 导入，不预设任何服务器）。已配置服务器的能力清单见会话内的 <available_mcp_servers>（仅描述能力，不代表连接状态）。项目级 MCP 工具经 ws_mcp_list/ws_mcp_search 检索（先 ws_mcp_list 完整盘点服务器与工具，再按需 ws_mcp_detail 查完整 inputSchema），经 ws_mcp_call 调用（先用 ws_mcp_search 检索，再 ws_mcp_call 调用；已知 server/tool 时可直呼免搜索）；全局服务器连接后其工具以 mcp__<server>__<tool> 注册可用。限制：MCP 工具在真实服务器上执行，先确认再操作；stdio 服务器的子进程继承宿主权限；工具结果可能含敏感信息。用户提到「MCP / mcp 服务 / 上下文服务器」时即指本插件，请据此协作。";
+  "本机已安装 dsh-mcp-manager 插件（DSH MCP 管理器）：会话界面右上角浮窗管理 MCP 服务器（全局配置 ~/.dsh/dsh-mcp.json；项目级配置 <项目根>/.dsh/mcp.json，跟随会话切换展示并连接对应项目的服务器；支持 stdio / streamable-http，可粘贴 mcpServers JSON 导入，不预设任何服务器）。已配置服务器的能力清单见会话内的 <available_mcp_servers>（仅描述能力，不代表连接状态）。项目级 MCP 工具经 ws_mcp_list/ws_mcp_search 检索（先 ws_mcp_list 完整盘点服务器与工具，再按需 ws_mcp_detail 查完整 inputSchema），经 ws_mcp_call 调用（先用 ws_mcp_search 检索，再 ws_mcp_call 调用；已知 server/tool 时可直呼免搜索）；全局服务器连接后其工具以 mcp__<server>__<tool> 注册可用。工具可被用户在「MCP」浮窗禁用（禁用原因会说明，且工具级禁用只作用于 mcp__ 前缀工具）。限制：MCP 工具在真实服务器上执行，先确认再操作；stdio 服务器的子进程继承宿主权限；工具结果可能含敏感信息。用户提到「MCP / mcp 服务 / 上下文服务器」时即指本插件，请据此协作。";
 
 /**
  * 挂载 MCP 管理器：加载存储、启动已启用服务器、注册路由与提示词。
@@ -53,7 +54,7 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
   // 兼容：fake ctx（单元测试 mock）可能无 provide，可选调用静默降级。
   if (typeof (ctx as unknown as { provide?: unknown }).provide === "function") {
     ctx.provide("mcpManager", {
-      // 注入面（内存态不落盘，同名幂等）
+      // 注入面（内存态不落盘，同名幂等；toolDefinitions 可选封装定义透传 supervisor）
       registerServer: (server: Record<string, unknown>) => manager.registerServer(server),
       unregisterServer: (name: string) => manager.unregisterServer(name),
       // 控制面（通用 MCP 生命周期：注册即连、注销即断的补充控制）
@@ -139,23 +140,44 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
     // 全局服务器仍 mcp__ 直呼（双轨迁移默认）。
     // 默认值与 Config schema 一致（project）；宿主未 parse 原始 config 时兜底。
     const middlewareMode = normalizeMiddlewareMode(config?.middleware ?? "project");
+    // 中间层模式热切换（设置页「中间层模式」下拉；initMiddleware 幂等已有，
+    // off↔project/all 需重新注册/卸载中间层工具——dispose 后重建）。
+    // 注册在模式分支之外：启动即 off 时也能从设置页切到 project/all。
+    const resolveRoot = async (agent: unknown): Promise<string | undefined> => {
+      if (typeof agent !== "object" || agent === null) return undefined;
+      const session = (agent as { session?: { header?: { cwd?: unknown } } }).session;
+      const cwd = session?.header?.cwd;
+      const root = await manager.normalizedProjectRoot(typeof cwd === "string" ? cwd : undefined);
+      if (root !== undefined) return root;
+      if (manager.middlewareMode === "all") {
+        const globalServers = manager.globalServers().filter((server) => server.enabled !== false);
+        if (globalServers.length > 0) return MIDDLEWARE_GLOBAL_ROOT;
+      }
+      return undefined;
+    };
+    manager.setMiddlewareMode = async (mode: MiddlewareMode): Promise<void> => {
+      if (normalizeMiddlewareMode(mode) === manager.middlewareMode) return;
+      const next = normalizeMiddlewareMode(mode);
+      manager.middlewareMode = next;
+      disposeMiddleware();
+      if (next !== "off") {
+        const mw = await manager.initMiddleware(next, (config?.middlewarePolicy as Record<string, unknown> | undefined) ?? {});
+        disposeMiddleware = registerMiddlewareTools(manager.ctx, mw, resolveRoot, next, {
+          disabledTools: manager.disabledTools,
+        });
+      }
+      // off ↔ project/all：重注册/卸载中间层工具后 reconcile，恢复 supervisor
+      // 接管（all 模式含全局）或停掉（off 语义）——防同一 server 双进程。
+      manager.reconcileServers();
+      manager.logger.info(`dsh-mcp-manager: middleware mode=${next} (hot-switched)`);
+    };
     if (middlewareMode !== "off") {
       const mw = await manager.initMiddleware(middlewareMode, (config?.middlewarePolicy as Record<string, unknown> | undefined) ?? {});
       // 路由输入：exec.agent 当前 cwd = agent.session.header.cwd（实证已闭合）。
       // all 模式：cwd 无项目（或无项目配置）时 fallback 到全局虚拟 root @global。
-      const resolveRoot = async (agent: unknown): Promise<string | undefined> => {
-        if (typeof agent !== "object" || agent === null) return undefined;
-        const session = (agent as { session?: { header?: { cwd?: unknown } } }).session;
-        const cwd = session?.header?.cwd;
-        const root = await manager.normalizedProjectRoot(typeof cwd === "string" ? cwd : undefined);
-        if (root !== undefined) return root;
-        if (middlewareMode === "all") {
-          const globalServers = manager.globalServers().filter((server) => server.enabled !== false);
-          if (globalServers.length > 0) return MIDDLEWARE_GLOBAL_ROOT;
-        }
-        return undefined;
-      };
-      disposeMiddleware = registerMiddlewareTools(manager.ctx, mw, resolveRoot, middlewareMode);
+      disposeMiddleware = registerMiddlewareTools(manager.ctx, mw, resolveRoot, middlewareMode, {
+        disabledTools: manager.disabledTools,
+      });
       // startAll 在中间层注册前执行（off 语义），此处立即 reconcile：停掉
       // 项目级（all 含全局）supervisor（改由中间层接管），防同一 server 双进程。
       manager.reconcileServers();
@@ -182,7 +204,8 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
           catalogMaxEntries,
           manager.catalogCache,
           agent as unknown as CatalogAgent | undefined,
-          middlewareMode,
+          // 热切换后目录文案按当前模式渲染（#362 设置页中间层模式下拉）。
+          manager.middlewareMode,
         ) as unknown as PreStepDecision;
       });
     }

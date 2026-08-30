@@ -341,6 +341,85 @@ const failServer = { name: "srv", transport: "stdio", command: "dsh-mcp-missing-
   assert.deepEqual(supEmpty.tools, ["mcp__z__t"]);
 }
 
+// ---- syncTools：封装定义路径（#362 补充 4：registerServer.toolDefinitions）----
+
+{
+  // 有 toolDefinitions → 全部用封装定义注册：execute 来自调用方、命名 mcp__ 前缀、
+  // 不触达远端 schema 投影（伪造 listTools 抛错证明未走远端路径）。
+  const execCalls = [];
+  const wrappedServer = {
+    name: "cg",
+    transport: "stdio",
+    command: "echo",
+    enabled: true,
+    toolDefinitions: [
+      {
+        name: "codegraph_explore",
+        description: "wrapped-desc",
+        parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
+        output: {
+          schema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] },
+          render(_args, value) {
+            return [{ type: "text", text: value && typeof value === "object" && "text" in value ? String(value.text) : "" }];
+          },
+        },
+        async execute(args) {
+          execCalls.push(args);
+          return { text: "wrapped-ok" };
+        },
+      },
+    ],
+  };
+  // 独立收集器：保留完整定义以便调用 execute 断言「来自封装」。
+  const { log } = makeManagerLog();
+  const defs = [];
+  const wrappedMgr = makeManagerLog();
+  wrappedMgr.manager.ctx.tools.register = (def) => {
+    defs.push(def);
+    return () => log.disposed.push(def.name);
+  };
+  const supW = new ConnectionSupervisor(wrappedMgr.manager, wrappedServer);
+  await supW.syncTools(
+    {
+      listTools: async () => {
+        throw new Error("must not reach remote schema");
+      },
+    },
+    true,
+  );
+  assert.deepEqual(supW.tools, ["mcp__cg__codegraph_explore"], "封装定义：公共名 mcp__ 前缀");
+  assert.equal(defs.length, 1);
+  assert.equal(defs[0].name, "mcp__cg__codegraph_explore", "注册名 mcp__ 前缀");
+  assert.equal(defs[0].description, "wrapped-desc", "自定义 description 被采用");
+  assert.equal(supW.toolMeta.get("mcp__cg__codegraph_explore").description, "wrapped-desc", "描述元数据取封装定义");
+  assert.equal(supW.toolDisposers.size, 1);
+
+  // execute 来自封装定义（不经通用 callTool）。
+  const value = await defs[0].execute({ query: "X 被谁调用" }, { signal: undefined });
+  assert.equal(value.text, "wrapped-ok", "execute 来自调用方封装");
+  assert.deepEqual(execCalls, [{ query: "X 被谁调用" }], "封装 execute 收到调用参数");
+
+  // 重复封装工具名 → 抛错（与远端路径同口径）。
+  const dupMgr = makeManagerLog();
+  const supDup = new ConnectionSupervisor(dupMgr.manager, { name: "cg", transport: "stdio", command: "echo", enabled: true });
+  supDup.server.toolDefinitions = [
+    { name: "t", description: "a", parameters: {} },
+    { name: "t", description: "b", parameters: {} },
+  ];
+  await assert.rejects(
+    () => supDup.syncTools({ listTools: async () => ({ tools: [] }) }, false),
+    /duplicate wrapped tool/,
+  );
+  // 缺 name 的封装定义 → 抛错。
+  const noNameMgr = makeManagerLog();
+  const supNoName = new ConnectionSupervisor(noNameMgr.manager, { name: "cg", transport: "stdio", command: "echo", enabled: true });
+  supNoName.server.toolDefinitions = [{ description: "no name", parameters: {} }];
+  await assert.rejects(
+    () => supNoName.syncTools({ listTools: async () => ({ tools: [] }) }, false),
+    /without a name/,
+  );
+}
+
 // ---- disconnect：timer / close 抛错 / 终态 ----
 
 {

@@ -14,9 +14,10 @@ servers go through the middleware while global ones register directly; `all` —
 servers go through the middleware too, falling back to the virtual global root
 `@global` when cwd has no project, collapsing the model surface to exactly four atomic
 tools (`ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call`).
-Note on when changes take effect: `middleware` / `middlewarePolicy` are read
-once at plugin startup — **changing them requires restarting `dsh web`**; the server
-lists across both config tiers hot-reload without a restart (add/remove/toggle/edit).
+`middleware` / `middlewarePolicy` can be hot-switched from the settings page (saved
+immediately and persisted, no restart needed), or set in the config file (read at plugin
+startup); the server lists across both config tiers hot-reload without a restart
+(add/remove/toggle/edit).
 
 ## Core advantages
 
@@ -154,13 +155,16 @@ four atomic tools (two-level discovery, the standard MCP ecosystem shape) —
 complete tool list, not truncated by `ws_mcp_search`'s `limit`; supports `server`
 full-name/bare-name filtering; `perServerLimit` caps tools per server at 50 by default
 / 500 max, setting `toolsTruncated` when exceeded; empty results carry an explicit
-`message`) / `ws_mcp_detail` (exact single-tool lookup by `@<root>/<server>` + bare tool
+`message`, and when a `server` filter matches nothing the message attributes the miss to
+the filter and lists the visible project-level servers) / `ws_mcp_detail` (exact single-tool lookup by `@<root>/<server>` + bare tool
 name, returning the complete `inputSchema`; three-way errors: discovery failed with
 reason / server not connected or not found / tool does not exist) / `ws_mcp_search` (keyword search, search first then call; returns a `truncated` flag
 when results hit the `limit`) / `ws_mcp_call` (invoke by `@<root>/<server>`, verify
 argument schema with `ws_mcp_detail`), routed by the calling session's current cwd to
 the matching workspace connection pool, so different workspaces inject different MCPs
-without name clashes; global servers still register directly as `mcp__<server>__<tool>`. Switch
+without name clashes; global servers still register directly as `mcp__<server>__<tool>`
+(in `project` mode, passing a global-scope server to detail/call returns a
+"use `mcp__` directly" hint). Switch
 `middleware: off` to restore the legacy behavior (project-level also registers `mcp__`);
 `middleware: all` routes global servers through the middleware too (falling back to the
 virtual global root `@global` when cwd has no project), collapsing the model surface to
@@ -170,17 +174,84 @@ across workspaces, so the semantics hold). Note: in `all` mode, global server
 add/remove/edit refreshes the `@global` unit only after a restart or a session touch
 (existing behavior).
 
+The middleware mode can be hot-switched from the settings page (Settings → Plugins →
+MCP Manager → middleware mode dropdown); saving takes effect immediately and persists,
+no `dsh web` restart needed.
+
 | Key | Allowed values | Default |
 | --- | --- | --- |
 | `middleware` | `off` / `project` (recommended) / `all` | `project` |
 | `middlewarePolicy` | `{ allowTools: {<serverKey>: [glob]}, denyTools: {<serverKey>: [glob]} }` (serverKey is `@<root>/<server>` full name (workspace isolation) or bare name (shared across workspaces); full name wins; deny-first) | `{}` |
+
+### Per-tool disable (floating window)
+
+- Expanding the "Tools (N)" details of a server card shows a **checkbox list**; toggling
+  each tool persists via `PATCH /api/dsh-mcp/tool-disable` (stored under
+  `<DSH_HOME>/dsh-mcp-user-state.json` → `disabledTools`, merged write, survives restarts);
+- Semantics: in `project` mode only project-level servers' `mcp__` tools can be disabled;
+  in `all` mode global servers' `mcp__` tools can be disabled too; everything is enabled
+  by default;
+- Per-tool disable is **independent of the server-level `enabled` switch** (re-enabling a
+  server does not clear its tool-level state);
+- It **only applies to `mcp__`-prefixed tools**: discipline bare-name tools (e.g.
+  dsh-codegraph's `codegraph_explore`) are not affected (declared on the dsh-codegraph
+  side in #363);
+- Overlong tool names (>64 chars, hashed suffix) are irreversible → treated as unknown
+  server, neither disabled nor mistakenly denied;
+- In `project` mode the floating window shows global servers without tool switches (they
+  run through supervisors directly, bypassing the middleware), with a hint
+  "switch to all mode to manage global tools";
+- Both the floating window and the management panel group servers by
+  "project-level / global" (each group further ordered by connection status).
 
 ## Routes (all loopback-fenced)
 
 | Route | Description |
 | --- | --- |
 | `/api/dsh-mcp/health` | Health check (note: differs from the directory name) |
+| `/api/dsh-mcp/tool-disable` | Per-tool disable toggle (PATCH, loopback-only) |
 | `/api/dsh-mcp/*` | Server management / connection control / tool listing / SSE events, etc. |
+
+## Runtime registration (registerServer.toolDefinitions)
+
+Other plugins can register MCP servers at runtime via `ctx.mcpManager.registerServer`
+(in-memory only, not persisted; idempotent for same names). The registration input
+supports an optional `toolDefinitions` field (caller-provided wrapped tool definitions,
+`ToolDefinition[]`; tool names are **bare names**, e.g. dsh-codegraph's
+`codegraph_explore`):
+
+- **With `toolDefinitions`**: all tools of that server are registered **from the wrapped
+  definitions** — `execute` comes from the caller (e.g. dsh-codegraph runs
+  `codegraph sync` first, then forwards to the underlying CLI internally), skipping the
+  remote schema projection and the generic `callTool`; the underlying real implementation
+  is never exposed;
+- **Without**: current behavior is preserved (remote schema + generic `callTool`), zero
+  impact on other servers;
+- **Naming is still decided by the manager's existing mechanism**: the model-visible name
+  is `mcp__<server>__<tool>` (`publicToolName`, 64-char / hash-suffix rules unchanged);
+  in `all` mode calls go through `ws_mcp_call` with bare names;
+- **Per-tool disable / visibility / capability catalog still apply to wrapped tools**
+  (judged by server + tool name, same as `mcp__`-prefixed tools);
+- Consumed only by the runtime registration surface (runtimeRegistry) — never persisted
+  to the store, never passed through mcpServers imports.
+
+```ts
+await ctx.mcpManager.registerServer({
+  name: "codegraph",
+  transport: "stdio",
+  command: "codegraph",
+  args: ["serve", "--mcp"],
+  toolDefinitions: [
+    {
+      name: "codegraph_explore",          // bare name
+      description: "Query the codegraph code graph (sync first, then query)",
+      parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
+      output: { schema: { ... }, render(args, value) { ... } },
+      execute: async (args) => { await sync(); return forwarded; }, // internal forwarding, never exposed
+    },
+  ],
+});
+```
 
 ## Data and Security
 
@@ -201,6 +272,13 @@ add/remove/edit refreshes the `@global` unit only after a restart or a session t
   governed by the policy (deny-first); `ws_mcp_call` error messages follow an
   "explicit + next step" style (confirm the server connection / verify the argument schema
   with `ws_mcp_detail` / check the policy configuration)
+- **Per-tool disable (three entry points consistent)**: `ws_mcp_call` (callTool checks the
+  disable table before the policy), the pre-execute guard (`mcp__`-prefixed direct calls),
+  and discipline bare-name tools (dsh-codegraph side, #363) all go through the single
+  `isToolDenied` decision; disabling only affects `mcp__`-prefixed tools, and the denial
+  reason carries that semantic note; records live under `<DSH_HOME>/dsh-mcp-user-state.json`
+  → `disabledTools` (the `@global` key is shared across workspaces; merged writes never
+  overwrite the whole table)
 - The capability catalog injection includes source annotations and a "does not represent current
   connection status" note
 
