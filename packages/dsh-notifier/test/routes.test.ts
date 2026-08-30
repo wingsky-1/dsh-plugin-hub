@@ -18,7 +18,7 @@
 import { join } from "node:path";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { assert, makeNotifier, fakeReq, makeRes, waitForHistory, turnPair } from "./helpers.ts";
+import { assert, makeNotifier, fakeReq, makeRes, waitForHistory, turnPair, quietWindowNow } from "./helpers.ts";
 import { ROUTES } from "../lib/index.js";
 
 const work = mkdtempSync(join(tmpdir(), "dnotify-routes-"));
@@ -559,7 +559,9 @@ try {
 
   // D3：被免打扰拦截（suppressed: "quiet"）的记录在历史中标记（独立上下文）
   {
-    const qhAll = { enabled: true, start: "00:00", end: "23:59" };
+    // #181 动态窗口：写死 "00:00"/"23:59" 在半开区间镜下 23:59 这一分钟不命中
+    // （UTC 边缘必炸，run 33282203798 同源隐患）；围绕当前时间 ±2 分钟恒命中。
+    const qhAll = quietWindowNow();
     const { routes, listeners } = makeNotifier(work, { quietHours: { ...qhAll, allowKinds: ["ask"] }, historyFile: join(work, "history-quiet.jsonl") });
     const h = routes.find((r) => r.path === ROUTES.history);
     const status = listeners.get("agent/status")[0];

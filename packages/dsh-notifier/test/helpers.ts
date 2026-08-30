@@ -349,6 +349,23 @@ export function fakeAgents(liveIds = [], ownedPairs = []) {
   };
 }
 
+/**
+ * 免打扰窗口动态构造（#181 既定模式）：写死 "00:00"/"23:59" 假设全天覆盖，
+ * 但 isInQuietHours 是半开区间 [start, end)，23:59 这一分钟（minutes=1439）
+ * 恒不命中——CI（UTC 时区）在 23:58 开跑的慢 runner 恰好把断言推进到 23:59
+ * 这一分钟时，quietHours 判定失效、通知未被拦截（run 33282203798 根因）。
+ * 围绕当前时间 ±halfSpanMinutes 构造，任何时区/任何时刻运行恒命中；
+ * now 邻近 00:00 时 start > end，天然走实现的跨午夜分支（quiet-hours.ts）。
+ * @param halfSpanMinutes 窗口半宽（分钟，默认 2）
+ */
+export function quietWindowNow(halfSpanMinutes = 2) {
+  const hhmm = (offsetMinutes) => {
+    const t = new Date(Date.now() + offsetMinutes * 60_000);
+    return `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
+  };
+  return { enabled: true, start: hhmm(-halfSpanMinutes), end: hhmm(halfSpanMinutes) };
+}
+
 /** 等待聚合窗口（doneMergeWindowMs 默认 3s）过期。 */
 export async function waitMergeWindow() {
   await new Promise((resolve) => setTimeout(resolve, 3200));

@@ -10,7 +10,7 @@
 import { join } from "node:path";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { assert, makeNotifier, makeFakeCtx, agentWithTitle, makeRes, fakeReq, waitForHistory, turnPair } from "./helpers.ts";
+import { assert, makeNotifier, makeFakeCtx, agentWithTitle, makeRes, fakeReq, waitForHistory, turnPair, quietWindowNow } from "./helpers.ts";
 import { ROUTES, apply } from "../lib/index.js";
 
 const work = mkdtempSync(join(tmpdir(), "dnotify-e2e-edge-"));
@@ -236,7 +236,9 @@ try {
   }
 // ── 10. 免打扰拦截 + 勾选 error 豁免 → 窗口内再报错必须通知 ──
   {
-    const qhAll = { enabled: true, start: "00:00", end: "23:59" };
+    // #181 动态窗口：写死 "00:00"/"23:59" 在半开区间镜下 23:59 这一分钟不命中
+    // （UTC 边缘必炸，run 33282203798 根因）；围绕当前时间 ±2 分钟恒命中。
+    const qhAll = quietWindowNow();
     // 免打扰开启，allowKinds 不含 error
     const infos = [];
     const { listeners, routes } = await makeNotifier(work, { errorMergeWindowMs: 60000, quietHours: { ...qhAll, allowKinds: ["ask"] }, historyFile: join(work, "qh-error-hist-1.jsonl") }, {
@@ -300,7 +302,9 @@ try {
 
   // ── 12. 多个错误持续到达时窗口不无限顺延（免打扰拦截不开窗 → 每次独立落 quiet 历史） ──
   {
-    const qhAll = { enabled: true, start: "00:00", end: "23:59" };
+    // #181 动态窗口：写死 "00:00"/"23:59" 在半开区间镜下 23:59 这一分钟不命中
+    // （UTC 边缘必炸，run 33282203798 根因）；围绕当前时间 ±2 分钟恒命中。
+    const qhAll = quietWindowNow();
     const infos = [];
     const { listeners } = await makeNotifier(work, {  errorMergeWindowMs: 60000, quietHours: { ...qhAll, allowKinds: [] } , historyFile: join(work, "no-extend-hist.jsonl") }, {
       logger: { warn: () => {}, info: (t) => infos.push(t) },

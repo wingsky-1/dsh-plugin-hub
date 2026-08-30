@@ -20,7 +20,7 @@
 import { join } from "node:path";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { assert, makeNotifier, agentWithTitle, fakeAgents, waitMergeWindow, fakeReq, makeRes, turnEndEvent, waitForHistory, turnPair } from "./helpers.ts";
+import { assert, makeNotifier, agentWithTitle, fakeAgents, waitMergeWindow, fakeReq, makeRes, turnEndEvent, waitForHistory, turnPair, quietWindowNow } from "./helpers.ts";
 import { ROUTES, lastTurnEndOf } from "../lib/index.js";
 
 /** 带 info 收集的 logger 覆盖。 */
@@ -466,7 +466,9 @@ try {
   //     allowKinds 时，idle completed → 仅一条 suppressed 历史、无系统通知；
   //     同 turn 再现 idle → 不重复通知、不新增记录。
   {
-    const qhAll = { enabled: true, start: "00:00", end: "23:59" };
+    // #181 动态窗口：写死 "00:00"/"23:59" 在半开区间镜下 23:59 这一分钟不命中
+    // （UTC 边缘必炸，run 33282203798 根因）；围绕当前时间 ±2 分钟恒命中。
+    const qhAll = quietWindowNow();
     const infos = [];
     const { listeners, routes } = await makeNotifier(work, { doneMergeWindowMs: 0, quietHours: { ...qhAll, allowKinds: ["ask"] }, historyFile: join(work, "b2-hist.jsonl") }, loggingOverride(infos));
     const status = listeners.get("agent/status")[0];
