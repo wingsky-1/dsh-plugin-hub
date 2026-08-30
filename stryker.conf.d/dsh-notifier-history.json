@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-notifier/src/index.ts",
-    "packages/dsh-notifier/src/server.ts",
+    "packages/dsh-notifier/src/history.ts",
+    "packages/dsh-notifier/src/quiet-hours.ts",
     "!packages/dsh-notifier/src/client/**",
     "!packages/dsh-notifier/src/types.ts"
   ],
@@ -47,9 +47,9 @@
     ]
   },
   "jsonReporter": {
-    "fileName": "coverage/mutation/dsh-notifier-1.json"
+    "fileName": "coverage/mutation/dsh-notifier-history.json"
   },
   "incremental": true,
-  "incrementalFile": "coverage/mutation/incremental-notifier-1.json",
-  "_comment": "#342 v4：src 级文件组分段（1）——index+server（事件/连接域）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+  "incrementalFile": "coverage/mutation/incremental-notifier-history.json",
+  "_comment": "#342 \u4e8c\u671f\uff1a\u529f\u80fd\u547d\u540d\u6bb5\uff08history\uff09\u2014\u2014history+quiet-hours\uff08\u5386\u53f2/\u9759\u9ed8\u65f6\u6bb5\u57df\uff0c21s\uff09\uff1b\u6d4b\u8bd5\u5168\u5957\u8dd1\uff08perTest \u5173\u8054\uff09\uff1bincremental \u57fa\u7ebf\u968f observe \u56db\u73ed\u6b21\u91cd\u5efa\u3002"
 }
