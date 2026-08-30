@@ -80,7 +80,7 @@ async function checkAsync(label, fn) {
 
 // ---- 契约 ----
 check("契约: name = codegraph", () => assert.equal(name, "codegraph"));
-check("契约: inject 包含 agents", () => assert.ok(inject.includes("agents")));
+check("契约: inject 包含 mcpManager", () => assert.ok(inject.includes("mcpManager")));
 
 // ---- 工具注册定义（#356 回归）----
 // 根因：注册定义误用 MCP 风格字段 inputSchema，而 dsh-tools 契约要求 parameters，
@@ -182,7 +182,7 @@ check("契约: inject 包含 agents", () => assert.ok(inject.includes("agents"))
 // ---- apply ----
 {
   const makeCtx = (overrides = {}) => {
-    const state = { disposers: [], registered: [], hooks: [], logs: [], tools: [], sections: [], createdCbs: [] };
+    const state = { disposers: [], registered: [], hooks: [], logs: [], tools: [], preStepCbs: [] };
     const ctx = {
       logger: { warn: (m) => state.logs.push(`warn:${m}`), info: (m) => state.logs.push(`info:${m}`) },
       // inject 强依赖：ctx.mcpManager 直接可用（不再 get 探测）。
@@ -196,16 +196,14 @@ check("契约: inject 包含 agents", () => assert.ok(inject.includes("agents"))
       // inject 强依赖：ctx.tools 直接可用（纪律工具注册；此前未 inject 导致 cordis
       // Proxy 抛 "cannot get property tools without inject" 启动失败）。
       tools: { register: (d) => { state.tools.push(d); return () => {}; } },
-      // inject 强依赖：ctx.systemPrompt（纪律段注册，agent scope 继承）。
-      systemPrompt: { section: (opts) => { state.sections.push(opts); return () => {}; } },
-      on: (event, cb) => { if (event === "agent/created") state.createdCbs.push(cb); return () => {}; },
+      on: (event, cb) => { if (event === "agent/pre-step") state.preStepCbs.push(cb); return () => {}; },
       effect: (fn) => { const d = fn(); state.disposers.push(d); return d; },
     };
     return { ctx, state };
   };
 
-  check("契约: inject 含 agents/mcpManager/tools/systemPrompt（强依赖声明）", () => {
-    for (const svc of ["agents", "mcpManager", "tools", "systemPrompt"]) {
+  check("契约: inject 含 mcpManager/tools（强依赖声明）", () => {
+    for (const svc of ["mcpManager", "tools"]) {
       assert.ok(inject.includes(svc), `inject 应含 ${svc}，实际 ${JSON.stringify(inject)}`);
     }
   });
@@ -281,43 +279,62 @@ check("契约: inject 包含 agents", () => assert.ok(inject.includes("agents"))
     rmSync(dir, { recursive: true, force: true });
   });
 
-  // #359：纪律注入迁移到 systemPrompt.section（order 161，agent scope 注册，
-  // 非 git 不注册）——替代原 pre-step user 消息注入。
+  // #359 三轮（B2）：纪律注入为根 ctx pre-step user 消息型（面板可见，同官方
+  // dsh-tool-skill 载体）；git 仓注入、非 git 不注入；幂等查会话历史
+  // （agent.session.events，官方 dsh-time-context 模式）。内容与 mcp 目录正交。
   {
-    // 模拟 agent/created：git 仓会话 → 注册纪律段；非 git 会话 → 不注册。
-    // 注意：目录在 checkAsync 内部自建自删（防 flake 纪律——共享外层目录 +
-    // 未 await 的异步断言会在 finally 清理后执行 findGitRoot 而失败）。
-    const emitCreated = (state, cwd) => {
-      for (const cb of state.createdCbs) {
-        cb({ agent: { session: { header: { cwd } }, ctx: { systemPrompt: { section: (opts) => { state.sections.push(opts); return () => {}; } } } } });
+    const runPreStep = async (state, messages, cwd, events = []) => {
+      const next = async () => ({ kind: "enter", messages });
+      let result;
+      for (const cb of state.preStepCbs ?? []) {
+        result = await cb({ agent: { id: "a1", session: { header: { cwd }, events } }, messages, signal: { throwIfAborted: () => {} } }, next);
       }
+      return result;
     };
-    checkAsync("discipline: git 仓会话注册纪律段（order 161，MCP 目录段之后）", async () => {
+    checkAsync("discipline: git 仓会话 pre-step 注入纪律消息（面板可见）", async () => {
       const dir = mkdtempSync(join(tmpdir(), "cg-disc-git-"));
       mkdirSync(join(dir, "repo", ".git"), { recursive: true });
       try {
         const { ctx, state } = makeCtx();
-        const { registerDisciplineHook, DISCIPLINE_SECTION_NAME, DISCIPLINE_SECTION_ORDER } = await import(pathToFileURL(join(pkgDir, "lib/index.js")).href);
+        const { registerDisciplineHook } = await import(pathToFileURL(join(pkgDir, "lib/index.js")).href);
         registerDisciplineHook(ctx);
-        emitCreated(state, join(dir, "repo"));
-        assert.equal(state.sections.length, 1, "git 仓注册 1 个纪律段");
-        assert.equal(state.sections[0].name, DISCIPLINE_SECTION_NAME);
-        assert.equal(state.sections[0].order, DISCIPLINE_SECTION_ORDER);
-        assert.ok(state.sections[0].order > 160, "纪律段必须在 MCP 目录段（160）之后");
-        assert.ok(typeof state.sections[0].text === "string" && state.sections[0].text.includes("codegraph_explore"));
+        assert.equal((state.preStepCbs ?? []).length, 1, "注册了 pre-step 监听器");
+        const decision = await runPreStep(state, [{ id: "m1", role: "user", content: [{ type: "text", text: "hi" }], source: { kind: "user" } }], join(dir, "repo"));
+        assert.equal(decision.kind, "enter");
+        assert.equal(decision.messages.length, 2, "追加 1 条纪律消息");
+        const injected = decision.messages[1];
+        assert.equal(injected.role, "user");
+        assert.equal(injected.source.kind, "plugin", "source.kind=plugin → GUI 上下文注入面板可见");
+        assert.equal(injected.source.plugin, "codegraph");
+        assert.ok(injected.content[0].text.includes("codegraph_explore"), "纪律文本含工具名");
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
     });
-    checkAsync("discipline: 非 git 会话不注册纪律段（零注入）", async () => {
+    checkAsync("discipline: 会话历史已注入 → 不重复注入（幂等）", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "cg-disc-idem-"));
+      mkdirSync(join(dir, "repo", ".git"), { recursive: true });
+      try {
+        const { ctx, state } = makeCtx();
+        const { registerDisciplineHook } = await import(pathToFileURL(join(pkgDir, "lib/index.js")).href);
+        registerDisciplineHook(ctx);
+        // 会话历史已有纪律消息（source.kind=plugin && plugin=codegraph）
+        const events = [{ type: "user/message", data: { source: { kind: "plugin", plugin: "codegraph" } } }];
+        const decision = await runPreStep(state, [{ id: "m1", role: "user", content: [{ type: "text", text: "hi" }], source: { kind: "user" } }], join(dir, "repo"), events);
+        assert.equal(decision.messages.length, 1, "历史已注入 → 不再追加");
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+    checkAsync("discipline: 非 git 会话不注入纪律（零注入）", async () => {
       const dir = mkdtempSync(join(tmpdir(), "cg-disc-nongit-"));
       mkdirSync(join(dir, "nongit"), { recursive: true });
       try {
         const { ctx, state } = makeCtx();
         const { registerDisciplineHook } = await import(pathToFileURL(join(pkgDir, "lib/index.js")).href);
         registerDisciplineHook(ctx);
-        emitCreated(state, join(dir, "nongit"));
-        assert.equal(state.sections.length, 0, "非 git 不注册纪律段");
+        const decision = await runPreStep(state, [{ id: "m1", role: "user", content: [{ type: "text", text: "hi" }], source: { kind: "user" } }], join(dir, "nongit"));
+        assert.equal(decision.messages.length, 1, "非 git 不注入纪律");
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
