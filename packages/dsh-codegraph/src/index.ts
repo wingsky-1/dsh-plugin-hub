@@ -12,8 +12,8 @@
  *   索引静默过期」与「漏传 projectPath 查错对象」；
  * - **agent 钩子**：agent/created + 会话 cwd 判定，git 仓（主 checkout /
  *   worktree）才注入纪律（~200 tokens/次）；非 git 仓（日常维护/讨论空间）
- *   不注入——多工作空间天然区分；
- * - **requireGit**：非 git 仓不启用（默认），可配置覆盖。
+ *   不注入——多工作空间天然区分（按会话 cwd 判定，由 discipline/guard 承担，
+ *   不在 apply 阶段读取 ctx.session——apply 无会话概念）。
  *
  * 安全模型（详见 README「安全模型」一节）：不自动执行第三方安装命令（默认）、
  * stdio 子进程继承宿主权限、索引为本地 SQLite 无加密、工具在真实服务器上执行。
@@ -27,14 +27,15 @@ import type { Context } from "@deepseek-ai/cordis";
 // shared/mcp-manager-service.d.ts，类型单一事实源仍在 shared/，消费入口走包）。
 import type { McpManagerService } from "@wingsky-1/dsh-mcp-manager";
 import { installGuidance, isCodegraphInstalled, runInstall } from "./install.ts";
-import { findGitRoot, guardedExplore } from "./guard.ts";
+import { guardedExplore } from "./guard.ts";
 import { registerDisciplineHook } from "./discipline.ts";
 
 /** Stable cordis plugin name. */
 export const name = "codegraph";
 
-/** 需要的宿主服务：agents（agent/created 事件）+ mcpManager（MCP 注册/管理/使用）。 */
-export const inject = ["agents", "mcpManager"];
+/** 需要的宿主服务：agents（agent/created 事件）、mcpManager（MCP 注册/管理/使用）、
+ *  tools（纪律工具注册）。均经 inject 强依赖声明——缺失时 cordis 内核自动停用本插件。 */
+export const inject = ["agents", "mcpManager", "tools"];
 
 // 内部模块 re-export（公共测试面 + 其他插件可复用纯函数）。
 export { isCodegraphInstalled, installGuidance, runInstall } from "./install.ts";
@@ -53,22 +54,18 @@ export interface CodegraphConfig {
   syncBeforeQuery?: boolean;
   /** 不传 projectPath 时拒绝调用（默认 true：自动补全 + 拒绝兜底）。 */
   requireProjectPath?: boolean;
-  /** 非 git 仓不启用（默认 true）。 */
-  requireGit?: boolean;
   /** 注入纪律到 agent（默认 true）。 */
   injectDiscipline?: boolean;
 }
 
 const DEFAULT_INSTALL_COMMAND = "npm install -g @colbymchenry/codegraph";
 
-/** 注册纪律工具（ctx.tools）。返回 disposer。 */
+/** 注册纪律工具（ctx.tools，inject 保证在场）。返回 disposer。 */
 function registerGuardTool(
   ctx: Context,
   cfg: Required<Pick<CodegraphConfig, "syncBeforeQuery" | "requireProjectPath">>,
 ): () => void {
-  // ctx.tools 为官方 dsh-tools 服务；此处仅在其存在时注册（防御降级）。
-  const tools = (ctx as unknown as { tools?: { register(d: unknown): () => void } }).tools;
-  if (tools === undefined || typeof tools.register !== "function") return () => {};
+  const tools = (ctx as unknown as { tools: { register(d: unknown): () => void } }).tools;
   return tools.register({
     name: "codegraph_explore",
     description:
@@ -83,10 +80,28 @@ function registerGuardTool(
       },
       required: ["query"],
     },
-    output: { type: "text" },
+    // 官方 ToolOutputDefinition 契约（dsh-tools）：output 必含 schema + render。
+    // execute 返回 canonical JSON 值，render 投影为模型可读的 ContentBlock[]。
+    output: {
+      schema: {
+        type: "object",
+        properties: {
+          text: { type: "string" },
+        },
+        required: ["text"],
+        additionalProperties: false,
+      },
+      render(_args: unknown, value?: unknown) {
+        const text = value && typeof value === "object" && "text" in value
+          ? String((value as { text?: unknown }).text ?? "")
+          : "";
+        return [{ type: "text", text }];
+      },
+    },
+    // canonical 值：{ text }；guardedExplore 返回纯文本（含拒绝引导），不抛错。
     execute: async (args: { query: string; projectPath?: string }, exec: { agent?: { session?: { header?: { cwd?: string } } } }) => {
       const cwd = exec?.agent?.session?.header?.cwd;
-      return { content: [{ type: "text", text: await guardedExplore(args, cwd) }] };
+      return { text: await guardedExplore(args, cwd) };
     },
   });
 }
@@ -100,14 +115,14 @@ export async function apply(ctx: Context, config: CodegraphConfig = {}): Promise
   const installCommand = config.installCommand ?? DEFAULT_INSTALL_COMMAND;
   const syncBeforeQuery = config.syncBeforeQuery !== false;
   const requireProjectPath = config.requireProjectPath !== false;
-  const requireGit = config.requireGit !== false;
   const injectDiscipline = config.injectDiscipline !== false;
 
   if (!enabled) return;
 
-  // 0. requireGit：当前会话 cwd 非 git 仓 → 不启用（静默跳过）。
-  const sessionCwd = (ctx as unknown as { session?: { header?: { cwd?: string } } })?.session?.header?.cwd;
-  if (requireGit && findGitRoot(sessionCwd) === undefined) return;
+  // 注：不做 apply 阶段会话判定——apply（插件加载时）无「当前会话」概念，且
+  // ctx.session 需 inject 才能访问（cordis Proxy）。「非 git 仓不注入纪律」由
+  // discipline（agent 会话 cwd 判 git）与 guard（工具执行时按 exec 会话 cwd
+  // 补全 projectPath，非 git 拒绝）在会话级无条件承担，无需配置开关。
 
   // 1. 探测 codegraph CLI；未装 → autoInstall 或引导。
   if (!isCodegraphInstalled()) {
