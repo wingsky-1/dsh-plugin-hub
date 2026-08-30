@@ -29,10 +29,14 @@ export const DISCIPLINE_SECTION_NAME = "plugin:dsh-codegraph";
 
 /** 注入给 agent 的 worktree 开发纪律文案（~200 tokens，保持精简）。
  * 只保留目录注入覆盖不到的**差异化纪律**（#359 去重）：
- * - 用裸 codegraph_explore（纪律工具：自动补全 projectPath + 强制 sync），
- *   不是 mcp__codegraph__codegraph_explore（官方 MCP 工具要手动传 projectPath）；
+ * - 用裸 codegraph_* 纪律工具（自动补全 projectPath + 强制 sync），
+ *   不是 mcp__codegraph__ 前缀的官方工具（要手动传 projectPath）；
  * - 自动 sync 语义（worktree 索引新鲜度）；
- * - 无索引时返回引导（init 由 agent/用户决策）。
+ * - 无索引时返回引导（init 由 agent/用户决策）；
+ * - P0-2 语义声明（#363）：工具级禁用只作用于 mcp-manager 管辖的 mcp__ 前缀
+ *   工具，本插件裸名纪律工具不受影响；
+ * - 双轨说明（#363）：codegraph_impact（纪律裸名）与 mcp__codegraph__impact
+ *   （官方直呼）功能相同，优先用裸名纪律版。
  * "codegraph 可用"等能力声明由 mcp-manager 能力目录（<available_mcp_servers>）
  * 承担，不在此重复。 */
 export const DISCIPLINE_TEXT = [
@@ -40,9 +44,16 @@ export const DISCIPLINE_TEXT = [
   "`codegraph_explore`（裸名，不是 mcp__codegraph__ 前缀的官方工具）——它会",
   "自动补全 projectPath 为当前会话 worktree 并先 sync 再查，返回的源码视为已读，",
   "不必再 grep 复核；",
+  "- 专属裸名工具：改代码前看影响面用 `codegraph_impact`；单符号源码/调用 trail",
+  "  用 `codegraph_node`；「谁调用 X」用 `codegraph_callers`、「X 调用了谁」用",
+  "  `codegraph_callees`；不知道精确符号名用 `codegraph_search`；找文件路径/项目",
+  "  结构用 `codegraph_files`（同样自动 sync + projectPath 补全）；",
   "- worktree 内新建/改动文件需 sync 后才进索引——查询结果以工具自动 sync 为准；",
   "- 正在编辑的文件一律 Read 原文，不依赖图谱；",
-  "- 没有 .codegraph 索引的目录会返回引导（codegraph init <path>），索引与否是用户决定。",
+  "- 没有 .codegraph 索引的目录会返回引导（codegraph init <path>），索引与否是用户决定；",
+  "- 工具级禁用只作用于 mcp-manager 管辖的 mcp__ 前缀工具，本插件裸名纪律工具不受影响；",
+  "- 双轨说明：codegraph_impact（纪律裸名，强制 sync + projectPath 自动补全）与",
+  "  mcp__codegraph__impact（官方直呼，需手动传 projectPath）功能相同，优先用裸名纪律版。",
 ].join("\n");
 
 /** 按会话 cwd 判定是否注入纪律（纯函数，便于单测）。 */

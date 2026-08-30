@@ -1,5 +1,6 @@
 /**
- * 纪律工具注册定义（codegraph_explore）——独立纯函数，便于测试与复用。
+ * 纪律工具注册定义（codegraph_explore + #363 新增 6 个裸名纪律工具）——独立纯函数，
+ * 便于测试与复用。
  *
  * 契约要点（#356 回归）：
  * - 参数 schema 字段名必须是 `parameters`（@deepseek-ai/dsh-llm 的 ToolSchema
@@ -7,19 +8,46 @@
  *   投影时 `snapshotJsonValue(undefined)` 抛
  *   "tool \"<name>\" parameters must be lossless JSON before schema projection"；
  * - output 必含 schema + render（ToolOutputDefinition 契约），execute 返回
- *   canonical JSON 值，render 投影为模型可读的 ContentBlock[]。
+ *   canonical JSON 值，render 投影为模型可读的 ContentBlock[]；
+ * - 参数 schema 与 CLI 1.6.0 实测对齐（#363 补充：无 file/line 幽灵参数、
+ *   files 用 filter 而非 path、search 映射 query 子命令）。
  */
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
-import { guardedExplore } from "./guard.ts";
+import { guardedCodegraph, runCodegraph } from "./guard.ts";
 
-/** 构建 codegraph_explore 工具注册定义（纯函数，无副作用）。 */
-export function buildGuardToolDefinition(): ToolDefinition {
+/** 统一的 output 契约（canonical 值 { text }，render 投影为 ContentBlock[]）。 */
+const TEXT_OUTPUT: ToolDefinition["output"] = {
+  schema: {
+    type: "object",
+    properties: {
+      text: { type: "string" },
+    },
+    required: ["text"],
+    additionalProperties: false,
+  },
+  render(_args: unknown, value?: unknown) {
+    const text = value && typeof value === "object" && "text" in value
+      ? String((value as { text?: unknown }).text ?? "")
+      : "";
+    return [{ type: "text", text }];
+  },
+};
+
+/** 从 execute 上下文取会话 cwd（缺省 undefined）。 */
+function sessionCwd(exec: { agent?: { session?: { header?: { cwd?: string } } } }): string | undefined {
+  return exec?.agent?.session?.header?.cwd;
+}
+
+/** 构建 codegraph_explore 工具注册定义（纯函数，无副作用）。
+ * 兼容旧名 buildGuardToolDefinition（#329/#356 公共导出面）。 */
+export function buildExploreToolDefinition(): ToolDefinition {
   return {
     name: "codegraph_explore",
     description:
       "查询 codegraph 代码图谱（本地索引，返回相关符号源码 + 调用路径）。" +
       "自动先 sync 目标 worktree 索引再查（新鲜度硬保证）；projectPath 缺省补全为当前" +
-      "会话 worktree；无索引/无法确定 projectPath 时拒绝并提示。结构类代码问题优先用它。",
+      "会话 worktree；无索引/无法确定 projectPath 时拒绝并提示。结构类代码问题优先用它。" +
+      "只需单符号源码/调用关系用 codegraph_node；找文件结构用 codegraph_files。",
     parameters: {
       type: "object",
       properties: {
@@ -28,31 +56,227 @@ export function buildGuardToolDefinition(): ToolDefinition {
       },
       required: ["query"],
     },
-    // 官方 ToolOutputDefinition 契约（dsh-tools）：output 必含 schema + render。
-    // execute 返回 canonical JSON 值，render 投影为模型可读的 ContentBlock[]。
-    output: {
-      schema: {
-        type: "object",
-        properties: {
-          text: { type: "string" },
-        },
-        required: ["text"],
-        additionalProperties: false,
-      },
-      render(_args: unknown, value?: unknown) {
-        const text = value && typeof value === "object" && "text" in value
-          ? String((value as { text?: unknown }).text ?? "")
-          : "";
-        return [{ type: "text", text }];
-      },
-    },
+    output: TEXT_OUTPUT,
+    // 只读查询，可与其他工具调用并行（不修改共享状态）。
+    isConcurrencySafe: () => true,
     // canonical 值：{ text }；guardedExplore 返回纯文本（含拒绝引导），不抛错。
     execute: async (
       args: { query: string; projectPath?: string },
       exec: { agent?: { session?: { header?: { cwd?: string } } } },
     ) => {
-      const cwd = exec?.agent?.session?.header?.cwd;
-      return { text: await guardedExplore(args, cwd) };
+      const cwd = sessionCwd(exec);
+      const text = await guardedCodegraph(args, cwd, async (projectPath) => {
+        return runCodegraph(["explore", args.query, "--path", projectPath]);
+      }, "codegraph_explore");
+      return { text };
     },
   };
+}
+
+/**
+ * 通用构建器：一个裸名纪律工具（映射某个 codegraph CLI 子命令）。
+ * @param name 工具名（裸名，如 codegraph_impact）
+ * @param description 工具描述（含「何时用此工具 / 何时用另一工具」互引，#363 验收 11）
+ * @param params 参数 schema（与 CLI 实测对齐）
+ * @param required 必填参数名
+ * @param buildArgs 由工具参数构建 CLI 子命令参数（不含 -p/--path，guardedCodegraph 追加）
+ * @param toolLabel 提示语中的工具显示名（默认取 name）
+ */
+function buildCliTool(
+  name: string,
+  description: string,
+  params: ToolDefinition["parameters"],
+  required: string[],
+  buildArgs: (args: Record<string, unknown>) => string[],
+  toolLabel?: string,
+): ToolDefinition {
+  const label = toolLabel ?? name;
+  return {
+    name,
+    description,
+    parameters: {
+      type: "object",
+      properties: params,
+      required,
+    },
+    output: TEXT_OUTPUT,
+    // 只读查询，可与其他工具调用并行（不修改共享状态）。
+    isConcurrencySafe: () => true,
+    execute: async (
+      args: Record<string, unknown>,
+      exec: { agent?: { session?: { header?: { cwd?: string } } } },
+    ) => {
+      const cwd = sessionCwd(exec);
+      const text = await guardedCodegraph(
+        { projectPath: typeof args.projectPath === "string" ? args.projectPath : undefined },
+        cwd,
+        async (projectPath) => runCodegraph([...buildArgs(args), "--path", projectPath]),
+        label,
+      );
+      return { text };
+    },
+  };
+}
+
+/**
+ * codegraph_impact：修改/删除某符号的影响面（调用方及其下游）。
+ * CLI: codegraph impact <symbol> [-d depth] [-p path]（1.6.0 实测无 --file）。
+ */
+export function buildImpactToolDefinition(): ToolDefinition {
+  return buildCliTool(
+    "codegraph_impact",
+    "分析「修改/删除某符号会影响哪些代码」（调用方及其下游）。改代码前用它看影响面。" +
+      "symbol 必填；同名符号先用 codegraph_search 找归属、传限定名；depth 默认 2（1-5），" +
+      "越大结果越全但越慢。只想看单符号源码与直接调用/被调关系用 codegraph_node；" +
+      "找「谁调用 X」用 codegraph_callers。",
+    {
+      symbol: { type: "string", description: "目标符号名（同名时传完整限定名）" },
+      depth: { type: "number", description: "遍历深度（默认 2，范围 1-5；越大结果越全但越慢）", minimum: 1, maximum: 5 },
+      projectPath: { type: "string", description: "目标 worktree 路径（缺省补全为当前会话 worktree）" },
+    },
+    ["symbol"],
+    (args) => {
+      const cmd = ["impact", String(args.symbol)];
+      if (typeof args.depth === "number") cmd.push("--depth", String(args.depth));
+      return cmd;
+    },
+  );
+}
+
+/**
+ * codegraph_node：单符号源码 + 调用/被调 trail（符号模式），或按文件读源码 +
+ * 符号表与依赖方（文件模式）。CLI: codegraph node [symbol] [-f file] [--offset] [--limit]
+ * [--symbols-only]（1.6.0 实测无 --line）。symbol 与 file 二选一（都传 → symbol 优先；
+ * 都不传 → 报错给用法）。
+ */
+export function buildNodeToolDefinition(): ToolDefinition {
+  return buildCliTool(
+    "codegraph_node",
+    "查单个符号的源码与调用/被调 trail（符号模式），或按行号读文件并附符号表与依赖方" +
+      "（文件模式）。**symbol 与 file 二选一**：查符号用 symbol；读文件用 file" +
+      "（可带 offset/limit 分页；只要符号表用 symbolsOnly）。都传以 symbol 优先；" +
+      "都不传报错给用法。查影响面用 codegraph_impact；查谁调用用 codegraph_callers。",
+    {
+      symbol: { type: "string", description: "符号名（符号模式；与 file 二选一，都传以 symbol 优先）" },
+      file: { type: "string", description: "文件路径（文件模式；与 symbol 二选一，如 'src/auth.ts'）" },
+      offset: { type: "number", description: "文件模式：1-based 起始行（分页）", minimum: 1 },
+      limit: { type: "number", description: "文件模式：最大行数（分页）", minimum: 1 },
+      symbolsOnly: { type: "boolean", description: "文件模式：只要符号表 + 依赖方，不读源码" },
+      projectPath: { type: "string", description: "目标 worktree 路径（缺省补全为当前会话 worktree）" },
+    },
+    [],
+    (args) => {
+      const cmd = ["node"];
+      if (typeof args.symbol === "string" && args.symbol !== "") {
+        cmd.push(String(args.symbol));
+      } else if (typeof args.file === "string" && args.file !== "") {
+        cmd.push("--file", String(args.file));
+        if (typeof args.offset === "number") cmd.push("--offset", String(args.offset));
+        if (typeof args.limit === "number") cmd.push("--limit", String(args.limit));
+        if (args.symbolsOnly === true) cmd.push("--symbols-only");
+      }
+      return cmd;
+    },
+  );
+}
+
+/** 构建 callers/callees 通用注册（CLI: codegraph callers|callees <symbol> [-l limit]）。 */
+function buildCallersCalleesTool(name: "codegraph_callers" | "codegraph_callees"): ToolDefinition {
+  const sub = name === "codegraph_callers" ? "callers" : "callees";
+  const description = name === "codegraph_callers"
+    ? "列出所有调用「符号 X」的函数/方法。查「X 被谁用、改它影响谁」；limit 默认 20、上限 100。" +
+      "想看符号本身源码用 codegraph_node；看 X 调用了谁用 codegraph_callees。"
+    : "列出「符号 X」调用的所有函数/方法。查「X 依赖谁」；limit 默认 20、上限 100。" +
+      "想看符号本身源码用 codegraph_node；看谁调用 X 用 codegraph_callers。";
+  return buildCliTool(
+    name,
+    description,
+    {
+      symbol: { type: "string", description: "目标符号名（同名时传完整限定名）" },
+      limit: { type: "number", description: "最大结果数（默认 20，范围 1-100）", minimum: 1, maximum: 100 },
+      projectPath: { type: "string", description: "目标 worktree 路径（缺省补全为当前会话 worktree）" },
+    },
+    ["symbol"],
+    (args) => {
+      const cmd = [sub, String(args.symbol)];
+      if (typeof args.limit === "number") cmd.push("--limit", String(args.limit));
+      return cmd;
+    },
+  );
+}
+
+/** codegraph_callers：谁调用了某符号（CLI 1.6.0 实测无 --file）。 */
+export function buildCallersToolDefinition(): ToolDefinition {
+  return buildCallersCalleesTool("codegraph_callers");
+}
+
+/** codegraph_callees：某符号调用了谁（CLI 1.6.0 实测无 --file）。 */
+export function buildCalleesToolDefinition(): ToolDefinition {
+  return buildCallersCalleesTool("codegraph_callees");
+}
+
+/**
+ * codegraph_search：按关键词搜索符号（映射 CLI query 子命令——CLI 1.6.0 无 search
+ * 子命令，`codegraph search` 会回到顶层帮助；query 即「搜索符号」）。
+ * kind 为过滤枚举（function/method/class/interface/type/variable/route/component），
+ * 非法 kind 等价不过滤（CLI 实测 -k bogus → No results found）。
+ */
+export function buildSearchToolDefinition(): ToolDefinition {
+  return buildCliTool(
+    "codegraph_search",
+    "按关键词搜索代码库符号（函数/类/变量等），返回位置与摘要。不知道精确符号名时用它找；" +
+      "找到后用 codegraph_node 查详情、callers/callees 查关系。kind 限定符号种类" +
+      "（function/method/class/interface/type/variable/route/component）；limit 默认 10。",
+    {
+      query: { type: "string", description: "搜索关键词（符号名/片段）" },
+      kind: {
+        type: "string",
+        description: "限定符号种类：function/method/class/interface/type/variable/route/component",
+        enum: ["function", "method", "class", "interface", "type", "variable", "route", "component"],
+      },
+      limit: { type: "number", description: "最大结果数（默认 10）", minimum: 1 },
+      projectPath: { type: "string", description: "目标 worktree 路径（缺省补全为当前会话 worktree）" },
+    },
+    ["query"],
+    (args) => {
+      const cmd = ["query", String(args.query)];
+      if (typeof args.kind === "string") cmd.push("--kind", args.kind);
+      if (typeof args.limit === "number") cmd.push("--limit", String(args.limit));
+      return cmd;
+    },
+  );
+}
+
+/**
+ * codegraph_files：从索引列出项目文件结构（tree/flat/grouped）。CLI: codegraph files
+ * [-p path] [--filter dir] [--pattern glob] [--format tree|flat|grouped] [--max-depth n]
+ * （1.6.0 实测参数名：filter 而非 path）。只覆盖已索引文件。
+ */
+export function buildFilesToolDefinition(): ToolDefinition {
+  return buildCliTool(
+    "codegraph_files",
+    "从索引列出项目文件结构（tree/flat/grouped）。找文件路径或了解项目结构时用；" +
+      "filter 只列该目录下文件；pattern 按 glob 过滤；maxDepth 限制 tree 深度。" +
+      "注意：只覆盖已索引文件（index/sync 时存在的文件）。",
+    {
+      filter: { type: "string", description: "只列该目录下的文件（如 'src'）" },
+      pattern: { type: "string", description: "按 glob 模式过滤文件（如 '*.ts'）" },
+      format: {
+        type: "string",
+        description: "输出格式：tree（默认）/ flat / grouped",
+        enum: ["tree", "flat", "grouped"],
+      },
+      maxDepth: { type: "number", description: "tree 格式的最大目录深度", minimum: 1 },
+      projectPath: { type: "string", description: "目标 worktree 路径（缺省补全为当前会话 worktree）" },
+    },
+    [],
+    (args) => {
+      const cmd = ["files"];
+      if (typeof args.filter === "string") cmd.push("--filter", args.filter);
+      if (typeof args.pattern === "string") cmd.push("--pattern", args.pattern);
+      if (typeof args.format === "string") cmd.push("--format", args.format);
+      if (typeof args.maxDepth === "number") cmd.push("--max-depth", String(args.maxDepth));
+      return cmd;
+    },
+  );
 }

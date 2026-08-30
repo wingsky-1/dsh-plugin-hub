@@ -29,7 +29,15 @@ import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
 import type { McpManagerService } from "@wingsky-1/dsh-mcp-manager";
 import { installGuidance, isCodegraphInstalled, runInstall } from "./install.ts";
 import { registerDisciplineHook } from "./discipline.ts";
-import { buildGuardToolDefinition } from "./tool-definition.ts";
+import {
+  buildCalleesToolDefinition,
+  buildCallersToolDefinition,
+  buildExploreToolDefinition,
+  buildFilesToolDefinition,
+  buildImpactToolDefinition,
+  buildNodeToolDefinition,
+  buildSearchToolDefinition,
+} from "./tool-definition.ts";
 
 /** Stable cordis plugin name. */
 export const name = "codegraph";
@@ -41,9 +49,30 @@ export const inject = ["agents", "mcpManager", "tools", "systemPrompt"];
 
 // 内部模块 re-export（公共测试面 + 其他插件可复用纯函数）。
 export { isCodegraphInstalled, installGuidance, runInstall } from "./install.ts";
-export { findGitRoot, isGitRepo, syncCodegraph, exploreCodegraph, guardedExplore } from "./guard.ts";
+export {
+  findGitRoot,
+  isGitRepo,
+  syncCodegraph,
+  syncCodegraphCached,
+  runCodegraph,
+  guardedCodegraph,
+  guardedExplore,
+  isNoResultOutput,
+  resetSyncCache,
+  SYNC_TTL_MS,
+} from "./guard.ts";
 export { shouldInject, DISCIPLINE_TEXT, DISCIPLINE_SECTION_NAME, DISCIPLINE_SECTION_ORDER, registerDisciplineHook } from "./discipline.ts";
-export { buildGuardToolDefinition } from "./tool-definition.ts";
+export {
+  buildExploreToolDefinition,
+  buildImpactToolDefinition,
+  buildNodeToolDefinition,
+  buildCallersToolDefinition,
+  buildCalleesToolDefinition,
+  buildSearchToolDefinition,
+  buildFilesToolDefinition,
+} from "./tool-definition.ts";
+// 兼容旧名（#329/#356 公共导出面，避免破坏既有消费方）。
+export { buildExploreToolDefinition as buildGuardToolDefinition } from "./tool-definition.ts";
 
 /** 插件配置。 */
 export interface CodegraphConfig {
@@ -65,10 +94,24 @@ const DEFAULT_INSTALL_COMMAND = "npm install -g @colbymchenry/codegraph";
  * 注册定义以官方 ToolDefinition 类型约束（不再用 unknown 断言）——
  * 参数 schema 字段名是 `parameters`（ToolSchema 契约），此前误用 MCP 风格的
  * `inputSchema` 导致 schema 投影抛 "parameters must be lossless JSON"（#356）。
+ *
+ * #363：7 个裸名纪律工具（explore + impact/node/callers/callees/search/files）
+ * 全部注册，共用 guardedCodegraph 通用守护执行器。
  */
-function registerGuardTool(ctx: Context): () => void {
+function registerGuardTools(ctx: Context): () => void {
   const tools = (ctx as unknown as { tools: { register(d: ToolDefinition): () => void } }).tools;
-  return tools.register(buildGuardToolDefinition());
+  const disposers = [
+    buildExploreToolDefinition(),
+    buildImpactToolDefinition(),
+    buildNodeToolDefinition(),
+    buildCallersToolDefinition(),
+    buildCalleesToolDefinition(),
+    buildSearchToolDefinition(),
+    buildFilesToolDefinition(),
+  ].map((definition) => tools.register(definition));
+  return () => {
+    for (const dispose of disposers) dispose();
+  };
 }
 
 /**
@@ -131,7 +174,7 @@ export async function apply(ctx: Context, config: CodegraphConfig = {}): Promise
 
   // 3. 纪律工具（工具层硬纪律：强制 sync + projectPath——纪律行为固化为默认，
   //    不提供关闭开关，保证「查询前 sync + projectPath 校验」不被配置绕过）。
-  const disposeTool = registerGuardTool(ctx);
+  const disposeTool = registerGuardTools(ctx);
 
   // 4. agent 纪律钩子（git 仓会话才注入）。
   const disposeHook = injectDiscipline ? registerDisciplineHook(ctx) : () => {};
