@@ -21,6 +21,9 @@ coverage/
 .stryker-tmp/
 .maintenance-drafts/
 
+# codegraph 本地索引（每 worktree 独立，不入库；任务结束随目录清理）
+.codegraph/
+
 # 测试运行时污染兜底（#218）：DSH_HOME 未正确注入时产生的 undefined 路径与历史数据
 packages/*/undefined/
 **/*.jsonl
