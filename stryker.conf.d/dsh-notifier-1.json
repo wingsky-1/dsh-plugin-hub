@@ -1,7 +1,8 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-notifier/src/**/*.ts",
+    "packages/dsh-notifier/src/index.ts",
+    "packages/dsh-notifier/src/server.ts",
     "!packages/dsh-notifier/src/client/**",
     "!packages/dsh-notifier/src/types.ts"
   ],
@@ -46,9 +47,9 @@
     ]
   },
   "jsonReporter": {
-    "fileName": "coverage/mutation/dsh-notifier.json"
+    "fileName": "coverage/mutation/dsh-notifier-1.json"
   },
   "incremental": true,
-  "incrementalFile": "coverage/mutation/incremental-notifier.json",
-  "_comment": "#276 方案 A：src 级单段（mutate 直指 src，文件 glob 声明，无行号无漂移）；测试经 src 入口加载插桩代码；incremental 基线随 observe 四班次重建。"
+  "incrementalFile": "coverage/mutation/incremental-notifier-1.json",
+  "_comment": "#342 v4：src 级文件组分段（1）——index+server（事件/连接域）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
 }
