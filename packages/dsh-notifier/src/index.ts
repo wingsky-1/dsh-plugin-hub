@@ -62,6 +62,8 @@ import { CONFIG_KEYS, DEFAULT_CONFIG, configFile, historyFile, normalizeConfig, 
 import type { NotifierApplyConfig, NotifyConfig } from "./config.ts";
 import { isInQuietHours } from "./quiet-hours.ts";
 import { HISTORY_LIMIT, createHistoryStore } from "./history.ts";
+import { createDoneBatcher } from "./aggregate.ts";
+import type { DoneBatcher } from "./aggregate.ts";
 import { NOTIFY_KINDS, sanitizeErrorText, sessionTitleOf, isSubagentOf, lastTurnEndOf } from "./message.ts";
 import type { NotifyDetail } from "./message.ts";
 import { SETTINGS_NS, installNotifierSettings } from "./settings.ts";
@@ -325,50 +327,16 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
   );
 
   /**
-   * 完成通知风暴聚合（done / subagent-done）：
-   * 首条「完成」立即原样通知（单条场景零感知延迟）；同时起 doneMergeWindowMs
-   * 窗口（0=关闭聚合），窗口内到达的后续完成只累积标题与计数，窗口到点**补发
-   * 一条聚合通知**（「另有 N 个任务已完成」）——并行子代理收尾时 10 条刷屏收敛
-   * 为首条 + 1 条汇总。窗口定时器 unref，卸载时由全局 disposer 清空。
+   * 完成通知风暴聚合（done / subagent-done）：M0 纯搬移为独立模块
+   * （src/aggregate.ts createDoneBatcher），语义与搬移前完全一致——首条
+   * 「完成」立即原样通知 + 起 doneMergeWindowMs 窗口（0=关闭聚合），窗口内
+   * 后续完成只累积标题与计数，窗口到点**补发一条聚合通知**。窗口定时器
+   * unref，卸载时由全局 disposer 调 dispose() 清空。
    */
-  let doneBatch: { kind: string; count: number; titles: string[] } | null = null;
-  let doneBatchTimer: NodeJS.Timeout | null = null;
-  function enqueueDone(kind: string, title: string | undefined, durationMs: number) {
-    const label = title ?? (kind === "subagent-done" ? "子任务" : "任务");
-    const mergeMs = current.doneMergeWindowMs;
-    if (mergeMs <= 0) {
-      // 完成聚合已关闭：每条完成即时通知（不合并）
-      notify(kind, { taskTitle: label, durationMs });
-      return;
-    }
-    if (doneBatch === null) {
-      notify(kind, { taskTitle: label, durationMs });
-      doneBatch = { kind, count: 1, titles: [label] };
-      doneBatchTimer = setTimeout(flushDoneMerge, mergeMs);
-      doneBatchTimer.unref();
-      return;
-    }
-    if (doneBatch.kind !== kind) {
-      flushDoneMerge();
-      enqueueDone(kind, title, durationMs);
-      return;
-    }
-    doneBatch.count += 1;
-    doneBatch.titles.push(label);
-    if (doneBatch.titles.length > 4) doneBatch.titles = doneBatch.titles.slice(-4);
-  }
-  function flushDoneMerge() {
-    if (doneBatchTimer !== null) {
-      clearTimeout(doneBatchTimer);
-      doneBatchTimer = null;
-    }
-    const batch = doneBatch;
-    doneBatch = null;
-    // 窗口内还有后续完成 → 补发聚合条（首波已单独通知，这里汇总其余）
-    if (batch !== null && batch.count > 1) {
-      notify(batch.kind, { taskTitle: batch.titles.slice(1).join("、"), mergedCount: batch.count - 1 });
-    }
-  }
+  const doneBatcher: DoneBatcher = createDoneBatcher({
+    getWindowMs: () => current.doneMergeWindowMs,
+    notify,
+  });
 
   /**
    * 完成判定辅源记忆（issue #272）：session/event 推送流记录的 per-session
@@ -501,15 +469,15 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
           // 不再触发 THROW truthy 误判。显式防御 typeof ctx.get 兼容 fake ctx。
           const agents = typeof ctx.get === "function" ? ctx.get("agents", false) : undefined;
           if (isSubagentOf(agent, agents)) {
-            if (current.notifySubagentDone) enqueueDone("subagent-done", taskTitle, durationMs);
+            if (current.notifySubagentDone) doneBatcher.enqueue("subagent-done", taskTitle, durationMs);
           } else if (current.notifyTaskDone) {
-            enqueueDone("done", taskTitle, durationMs);
+            doneBatcher.enqueue("done", taskTitle, durationMs);
           }
           // B-1：lastEndedTurn 提交后置三态化（issue #290）——推进移到分流
           // 判定与入队之后：发出成功 / 免打扰拦截（suppressed） / 开关禁用
           // （notifyTaskDone=false / notifySubagentDone=false 未入队）三态均
-          // 提交；批次成员按「入队成功」提交（enqueueDone 被调用即推进，与
-          // flushDoneMerge 成败解耦）；异常路径（外层 catch）不达此处不提交。
+          // 提交；批次成员按「入队成功」提交（doneBatcher.enqueue 被调用即推进，
+          // 与 flushDoneMerge 成败解耦）；异常路径（外层 catch）不达此处不提交。
           if (best !== undefined) state.lastEndedTurn = best.turn;
         } else if (status === "running") {
           state.runningSeen = true;
@@ -696,14 +664,10 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
   ctx.effect(
     () => () => {
       sse.dispose();
-      // M4 定时器清理：审批提醒、完成风暴窗口
+      // M4 定时器清理：审批提醒、完成风暴窗口（聚合批处理器内部）
       for (const t of askRemindTimers.values()) clearTimeout(t);
       askRemindTimers.clear();
-      if (doneBatchTimer !== null) {
-        clearTimeout(doneBatchTimer);
-        doneBatchTimer = null;
-      }
-      doneBatch = null;
+      doneBatcher.dispose();
       turnNotified.clear();
       for (const dispose of disposers) {
         try {
