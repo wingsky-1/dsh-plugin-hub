@@ -55,38 +55,43 @@ if (existsSync(selfCovPath)) {
   } catch { /* 展示性字段，缺失不致命 */ }
 }
 
-// #220 B 方案：包可拆分为段式配置（<pkg>-<seg>.json），夜间变异产出
-// <pkg>-<seg>.json 段报告；此处按 conf 目录推导期望段数，聚合为包级口径
-// （mutant 位置键去重，与 mutation-gate.mjs 同一 lib 函数）。未拆分包仍读
-// 单报告 <pkg>.json。缺任一段报告 = 该包未完整执行，fail-closed。
+// #220 B 方案：包可拆分为段式配置（<pkg>-<后缀>.json，后缀即功能段名，
+// 数字段名亦兼容——#342 二期功能命名改造），夜间变异产出 <pkg>-<后缀>.json
+// 段报告；此处按 conf 目录枚举段后缀，聚合为包级口径（mutant 位置键去重，
+// 与 mutation-gate.mjs 同一 lib 函数）。未拆分包仍读单报告 <pkg>.json。
+// 缺任一段报告 = 该包未完整执行，fail-closed。
 const confDir = join(repoRoot, 'stryker.conf.d');
 const reportDir = join(repoRoot, 'coverage', 'mutation');
-const segCounts = new Map();
+const segNamesByPkg = new Map(); // pkg → 段后缀数组（未排序）
 for (const f of readdirSync(confDir)) {
-  const m = f.match(/^(dsh-[a-z0-9-]+)-(\d+)\.json$/);
-  if (m) segCounts.set(m[1], Math.max(segCounts.get(m[1]) ?? 0, Number(m[2])));
+  const m = f.match(/^(dsh-[a-z0-9-]+)-(.+)\.json$/);
+  if (m) {
+    const list = segNamesByPkg.get(m[1]) ?? [];
+    list.push(m[2]);
+    segNamesByPkg.set(m[1], list);
+  }
 }
 
 for (const [pkg, cfg] of Object.entries(packages)) {
-  const expectedSegs = segCounts.get(pkg) ?? 0;
+  const expectedSegs = (segNamesByPkg.get(pkg) ?? []).sort();
   let r = null;
-  if (expectedSegs > 0) {
+  if (expectedSegs.length > 0) {
     const segPaths = [];
-    for (let n = 1; n <= expectedSegs; n += 1) {
+    for (const n of expectedSegs) {
       const p = join(reportDir, `${pkg}-${n}.json`);
       if (!existsSync(p)) {
-        rows.push({ pkg, missing: true, missingLabel: `第 ${n} 段未执行` });
-        if (mutationStrict) violations.push(`${pkg}: 第 ${n} 段变异报告缺失（${pkg}-${n}.json 不存在——该段未执行）`);
+        rows.push({ pkg, missing: true, missingLabel: `段 ${n} 未执行` });
+        if (mutationStrict) violations.push(`${pkg}: 段 ${n} 变异报告缺失（${pkg}-${n}.json 不存在——该段未执行）`);
         r = null;
         break;
       }
       segPaths.push(p);
     }
-    if (segPaths.length === expectedSegs) {
+    if (segPaths.length === expectedSegs.length) {
       r = readMutationReportsAgg(segPaths);
       if (!r) {
         rows.push({ pkg, missing: true, missingLabel: '报告损坏' });
-        if (mutationStrict) violations.push(`${pkg}: 段式报告不可解析（共 ${expectedSegs} 段）`);
+        if (mutationStrict) violations.push(`${pkg}: 段式报告不可解析（共 ${expectedSegs.length} 段）`);
         continue;
       }
     } else {

@@ -97,18 +97,18 @@ if (fnPct < covThreshold) {
 const reportDir = join(repoRoot, 'coverage', 'mutation');
 let r = null;
 {
-  // 期望段数由 stryker.conf.d/ 实际存在的 <pkg>-<n>.json 推导（单一事实源）；
-  // 报告必须与段配置一一对应，缺任一段 = 链路异常，fail-closed
+  // 期望段名由 stryker.conf.d/ 实际存在的 <pkg>-<后缀>.json 推导（单一事实源；
+  // 后缀即功能段名，数字段名亦兼容——#342 二期功能命名改造）；报告必须与段
+  // 配置一一对应，缺任一段 = 链路异常，fail-closed
   const confDir = join(repoRoot, 'stryker.conf.d');
   const expectedSegs = readdirSync(confDir)
-    .map((f) => (f.match(new RegExp(`^${pkg}-(\\d+)\\.json$`)) ?? [])[1])
+    .map((f) => (f.match(new RegExp(`^${pkg}-(.+)\\.json$`)) ?? [])[1])
     .filter(Boolean)
-    .map(Number)
-    .sort((a, b) => a - b);
+    .sort();
   const segPaths = expectedSegs.map((n) => {
     const p = join(reportDir, `${pkg}-${n}.json`);
     if (!existsSync(p)) {
-      console.error(`mutation-gate: ${pkg} 第 ${n} 段报告缺失（${p}）—— 段 matrix 实例未产出，fail-closed`);
+      console.error(`mutation-gate: ${pkg} 段 ${n} 报告缺失（${p}）—— 段 matrix 实例未产出，fail-closed`);
       process.exit(2);
     }
     return p;

@@ -45,6 +45,31 @@ const SLICE_PACKAGES = [...MANIFEST.active, AGGREGATE]
 // 变异对象包：gauntlet mutation.packages（含 standalone，不含聚合/纯宿主 skill 包）
 const MUTATION_PACKAGES = Object.keys(GAUNTLET?.mutation?.packages ?? {})
 
+// ── 段配置文件名归并（#342 二期：数字段名 s1/s2 废弃，改为功能段名；二者兼容）──
+// 包级单段配置 <pkg>.json 与段式配置 <pkg>-<后缀>.json（后缀=功能段名或数字段名）
+// 统一归并为基础包名：对已知包集合（gauntlet mutation.packages）做最长前缀匹配。
+// 所有需要「conf 文件集 ↔ 包集」一致的断言共用本函数，避免三处漂移（评审 P1-2）。
+function basePkgOfConf(f) {
+  const name = f.replace(/\.json$/, '')
+  const hit = MUTATION_PACKAGES
+    .filter((p) => name === p || name.startsWith(`${p}-`))
+    .sort((a, b) => b.length - a.length)
+  return hit[0]
+}
+// 段式配置的后缀（如 dsh-notifier-server.json → server；dsh-lan-proxy-1.json → 1）
+function segSuffixOfConf(f) {
+  const name = f.replace(/\.json$/, '')
+  const base = basePkgOfConf(f)
+  return base && name !== base ? name.slice(base.length + 1) : undefined
+}
+// 有 stryker 配置的包集合（conf 文件集归并；段式/包级统一）
+function strykerPkgs() {
+  return [...new Set(readdirSync(join(ROOT, 'stryker.conf.d'))
+    .filter((f) => f.endsWith('.json'))
+    .map(basePkgOfConf)
+    .filter(Boolean))].sort()
+}
+
 test('ci.yml: repo-gate 保持分支保护 required check 名', () => {
   const m = /repo-gate:\s*\n\s*name: (.+)/.exec(CI)
   assert.ok(m, '存在 repo-gate 作业且声明 name')
@@ -140,11 +165,10 @@ test('#220: docs 不在 ci.yml global 过滤面——文档 PR 不触发变异�
 })
 
 test('#322: 每个带 stryker 配置的包在 path-filter 均有段配置通配映射（防回归）', () => {
-  // 有 stryker 配置的包 = stryker.conf.d 文件集归并出的基础包名（段级 <pkg>-<n>.json
-  // 归并到 <pkg>），与 #220 段式三方一致测试同一口径
-  const confDir = join(ROOT, 'stryker.conf.d')
-  const confFiles = readdirSync(confDir).filter((f) => f.endsWith('.json'))
-  const basePkgs = [...new Set(confFiles.map((f) => f.replace(/\.json$/, '').replace(/-\d+$/, '')))].sort()
+  // 有 stryker 配置的包 = stryker.conf.d 文件集归并出的基础包名（段式
+  // <pkg>-<后缀>.json 与包级 <pkg>.json 归并到 <pkg>，功能段名/数字段名统一——
+  // basePkgOfConf 共享函数），与 #220 段式三方一致测试同一口径
+  const basePkgs = strykerPkgs()
 
   const filtersBlock = CI.slice(CI.indexOf('filters: |'), CI.indexOf('- name: Compute hit packages'))
   for (const pkg of basePkgs) {
@@ -191,11 +215,12 @@ test('#220 段式三方一致：observe 计划 ↔ stryker.conf.d 文件集 ↔ 
   assert.ok(OBSERVE.includes('while read -r conf; do'),
     '变异循环必须从 suite-plan 清单文件逐行消费')
 
-  // stryker.conf.d 实际文件集 → 基础包名集合（段配置 <pkg>-<n>.json 归并到 <pkg>）
+  // stryker.conf.d 实际文件集 → 基础包名集合（段配置 <pkg>-<后缀>.json 与包级
+  // <pkg>.json 统一归并到 <pkg>——功能段名/数字段名兼容，basePkgOfConf 共享函数）
   const confDir = join(ROOT, 'stryker.conf.d')
   const confFiles = readdirSync(confDir).filter((f) => f.endsWith('.json')).sort()
   assert.ok(confFiles.length > 0, 'stryker.conf.d 非空')
-  const basePkgs = [...new Set(confFiles.map((f) => f.replace(/\.json$/, '').replace(/-\d+$/, '')))].sort()
+  const basePkgs = strykerPkgs()
 
   // gauntlet mutation.packages 与基础包名集一致
   const gauntPkgs = Object.keys(GAUNTLET?.mutation?.packages ?? {}).sort()
@@ -219,34 +244,36 @@ test('#220 段式三方一致：observe 计划 ↔ stryker.conf.d 文件集 ↔ 
   }
 })
 
-// ── #342 v4 §4.3/§4.4：段号连续 + mutate 面防空段回归 ──
-// 段号连续：combos_for 按 stryker.conf.d/<pkg>-*.json 文件数展开 seq 1 N，
-// 跳号（如缺 dsh-a-2.json）会让矩阵实例指向不存在配置，fail-closed 前先静态拦截。
-// 防空段：provider-2 空段实证（mutate 指向不存在的 adapters/*.ts，0 mutant）——
+// ── #342 二期 §契约：功能段名唯一 + mutate 面防空段回归 ──
+// 段名唯一：combos_for 按 stryker.conf.d/<pkg>-*.json 文件名枚举后缀展开矩阵，
+// 段文件名即矩阵实例（功能段名如 dsh-notifier-server.json → seg=server；数字段名
+// dsh-lan-proxy-1.json → seg=1 亦兼容）。重名/孤儿段（同时存在 <pkg>.json 与
+// <pkg>-*.json）/跳号会让矩阵指向不存在配置或白跑孤儿全量，fail-closed 前先静态拦截。
+// 防空段：provider 空段实证（mutate 指向不存在的 adapters/*.ts，0 mutant）——
 // 每段 mutate 正向条目必须至少 glob 到 1 个现存文件。
-test('#342: 各包 stryker 段号从 1 连续无空洞（防跳号矩阵）', () => {
+test('#342 二期: 各包 stryker 段文件名唯一且无孤儿段（防矩阵重名/孤儿全量）', () => {
   const confDir = join(ROOT, 'stryker.conf.d')
   const confFiles = readdirSync(confDir).filter((f) => f.endsWith('.json'))
   assert.ok(confFiles.length > 0, 'stryker.conf.d 非空')
-  // 包级单段配置（<pkg>.json）走 seg=0，不参与段号序列；段式配置 <pkg>-<n>.json 独立成组
-  const segSets = new Map() // base-pkg → Set<seg>
+  // 包级单段配置（<pkg>.json）走 seg="0"，不参与段名序列；段式配置 <pkg>-<后缀>.json 独立成组
+  const segSets = new Map() // base-pkg → Set<segName>
   const hasPkgLevel = new Set()
   for (const f of confFiles) {
-    const m = /^dsh-(.+?)(?:-(\d+))?\.json$/.exec(f)
-    if (!m) continue
-    const [, base, seg] = m
+    const base = basePkgOfConf(f)
+    if (!base) continue
+    const seg = segSuffixOfConf(f)
     if (seg) {
+      assert.ok(/^[a-z0-9-]+$/.test(seg),
+        `${f} 段名必须是 kebab-case 字母数字连字符（combos_for 以文件名枚举矩阵，非法字符会破坏路径拼接）`)
       if (!segSets.has(base)) segSets.set(base, new Set())
-      segSets.get(base).add(Number(seg))
+      segSets.get(base).add(seg)
     } else {
       hasPkgLevel.add(base)
     }
   }
   for (const [base, segs] of segSets) {
-    const arr = [...segs].sort((a, b) => a - b)
-    const expect = Array.from({ length: arr.length }, (_, i) => i + 1)
-    assert.deepEqual(arr, expect,
-      `${base} 段号必须为 1..${arr.length} 连续无空洞（combos_for 按 seq 1 N 展开，跳号即矩阵指向不存在配置）`)
+    assert.ok(segs.size === [...segs].length,
+      `${base} 段名必须唯一（文件名即矩阵实例，重名会让 combo 指向同一配置）`)
     assert.ok(!hasPkgLevel.has(base),
       `${base} 存在段式配置时不得残留包级孤儿 <pkg>.json（v4 §4.1：否则 observe 每班次白跑一段孤儿全量）`)
   }
@@ -700,7 +727,7 @@ test('#217: mutation-gate 剥离 cov——与 coverage 平行（needs 仅 change
   assert.ok(upIdx > 0, 'stryker 报告上传步骤在位')
   const upBlock = mg.slice(upIdx)
   assert.ok(/if: always\(\)/.test(upBlock), '报告上传必须 if: always()（实例非零退出时报告照常下发统一判分）')
-  assert.ok(upBlock.includes('name: mutation-report-${{ matrix.combo.package }}-s${{ matrix.combo.seg }}'),
+  assert.ok(upBlock.includes('name: mutation-report-${{ matrix.combo.package }}-${{ matrix.combo.seg }}'),
     '报告 artifact 名含 matrix.combo（package+seg）保证段实例唯一（pattern 下游可枚举）')
   assert.ok(upBlock.includes('if-no-files-found: error'), '报告缺失必须 error（verdict 缺报告 fail-closed 的前提）')
 })

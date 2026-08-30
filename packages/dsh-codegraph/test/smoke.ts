@@ -802,28 +802,43 @@ check("契约: inject 包含 mcpManager", () => assert.ok(inject.includes("mcpMa
 
   // #363 补充 3：apply 不再调用 ctx.tools.register（撤销自注册）——
   // fake ctx 无 tools 成员，apply 不应触碰它。
+  // 注：apply 只在 isCodegraphInstalled()（真实 PATH 探测）为真时才调
+  // registerServer——必须用 fake codegraph 目录隔离 PATH 模拟「已装」，
+  // 否则 CI runner（无 codegraph CLI）会走未装分支导致 registerCalls=0
+  // （#365 引入时在 coverage job 从未真正执行过，CI 跑 coverage 全量时才暴露）。
   registerAsync("apply: 不再调用 ctx.tools.register（撤销自注册，#363 补充 3）", async () => {
-    const { ctx, state } = makeCtx();
-    await apply(ctx, {});
-    assert.equal(state.tools.length, 0, "不应有任何 tools.register 调用");
-    assert.equal(state.registerCalls.length, 1, "registerServer 被调用一次");
+    const dir = mkdtempSync(join(tmpdir(), "cg-applynor-"));
+    writeFileSync(join(dir, "codegraph"), "#!/bin/sh\n");
+    await withGlobalPath(dir, async () => {
+      const { ctx, state } = makeCtx();
+      await apply(ctx, {});
+      assert.equal(state.tools.length, 0, "不应有任何 tools.register 调用");
+      assert.equal(state.registerCalls.length, 1, "registerServer 被调用一次");
+    });
+    rmSync(dir, { recursive: true, force: true });
   });
 
   // #363 补充 3：registerServer 携带 toolDefinitions —— 8 个封装定义交给
   // mcp-manager 注册（manager 侧 #362 补充 4 消费）。
+  // 同上：需 fake codegraph 目录模拟「已装」，保证 registerServer 走注册分支。
   registerAsync("apply: registerServer 携带 toolDefinitions（8 个封装定义）", async () => {
-    const { ctx, state } = makeCtx();
-    await apply(ctx, {});
-    assert.ok(Array.isArray(state.registerCalls[0]?.toolDefinitions), "registerServer 入参应有 toolDefinitions");
-    const defs = state.registerCalls[0].toolDefinitions;
-    assert.equal(defs.length, 8, "8 个封装定义");
-    const names = defs.map((d) => d.name).sort();
-    assert.deepEqual(names, ["codegraph_callees", "codegraph_callers", "codegraph_explore", "codegraph_files", "codegraph_impact", "codegraph_node", "codegraph_search", "codegraph_status"]);
-    for (const definition of defs) {
-      assert.ok(definition.parameters, `parameters 必须存在（非 inputSchema，${definition.name}）`);
-      assert.equal(definition.inputSchema, undefined, `inputSchema 不应存在（${definition.name}）`);
-      assert.equal(typeof definition.execute, "function", `execute 应为函数（${definition.name}）`);
-    }
+    const dir = mkdtempSync(join(tmpdir(), "cg-applydefs-"));
+    writeFileSync(join(dir, "codegraph"), "#!/bin/sh\n");
+    await withGlobalPath(dir, async () => {
+      const { ctx, state } = makeCtx();
+      await apply(ctx, {});
+      assert.ok(Array.isArray(state.registerCalls[0]?.toolDefinitions), "registerServer 入参应有 toolDefinitions");
+      const defs = state.registerCalls[0].toolDefinitions;
+      assert.equal(defs.length, 8, "8 个封装定义");
+      const names = defs.map((d) => d.name).sort();
+      assert.deepEqual(names, ["codegraph_callees", "codegraph_callers", "codegraph_explore", "codegraph_files", "codegraph_impact", "codegraph_node", "codegraph_search", "codegraph_status"]);
+      for (const definition of defs) {
+        assert.ok(definition.parameters, `parameters 必须存在（非 inputSchema，${definition.name}）`);
+        assert.equal(definition.inputSchema, undefined, `inputSchema 不应存在（${definition.name}）`);
+        assert.equal(typeof definition.execute, "function", `execute 应为函数（${definition.name}）`);
+      }
+    });
+    rmSync(dir, { recursive: true, force: true });
   });
 
   // enabled:false → 不做事

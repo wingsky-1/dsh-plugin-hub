@@ -25,8 +25,9 @@ jobs:
       hitPackages: ${{ steps.pkgs.outputs.hitPackages }}
       # 增量变异切片清单（#178）：hitPackages 剔除聚合包 dsh-plugins-all（无变异配置）
       mutationPackages: ${{ steps.pkgs.outputs.mutationPackages }}
-      # 变异 matrix 组合清单（#220 B 方案）：[{package, seg}] —— 拆分三包按
-      # stryker.conf.d/<pkg>-<n>.json 展开为多实例并行，未拆分包 seg=0 走包级配置
+      # 变异 matrix 组合清单（#220 B 方案）：[{package, seg}] —— 拆分包按
+      # stryker.conf.d/<pkg>-<后缀>.json（功能段名/数字段名统一）展开为多实例
+      # 并行，未拆分包 seg="0" 走包级配置（#342 二期功能命名改造）
       mutationCombos: ${{ steps.pkgs.outputs.mutationCombos }}
       # 切片是否含变异对象包（#217：显式布尔字符串 'true'/'false'）。GHA 表达式
       # 无取长度与管道能力，在 if 里对清单做取长判空或裸数组文本比较均脆弱；
@@ -135,26 +136,31 @@ jobs:
           echo "全量包清单（单一事实源）: $ALL_PACKAGES"
           # mutationPackages：hitPackages 剔除聚合包后的增量变异切片（#178）；
           # mutationCombos（#220 B 方案）：切片按 stryker.conf.d/ 段配置展开为
-          #   matrix 组合 —— 存在 <pkg>-<n>.json 的包逐段实例化，否则 seg=0 走
-          #   包级配置；段数以 conf 目录为单一事实源，脚本不硬编码；
+          #   matrix 组合 —— 存在 <pkg>-<后缀>.json 的包逐段实例化（后缀即
+          #   功能段名，如 dsh-notifier-server.json → seg=server；数字段名
+          #   dsh-lan-proxy-1.json → seg=1 亦兼容），否则 seg=0 走包级配置；
+          #   段名以 conf 目录文件名为单一事实源，脚本不硬编码；
           # hasMutations（#217）：由同一清单推导的显式布尔，供下游 if 精确比较
           combos_for() {
-            local pkg="$1" segs i out= first=1
+            local pkg="$1" seg_name out= first=1 conf
             # 无任何 stryker 配置的包（如纯宿主 skill 包 dsh-verify-isolated）不进
             # 变异切片：既无段配置也无包级 <pkg>.json 时返回空（#306 防假红）
             if [ ! -f "stryker.conf.d/$pkg.json" ] && ! ls stryker.conf.d/"$pkg"-*.json >/dev/null 2>&1; then
               return 0
             fi
-            segs=$(ls stryker.conf.d/"$pkg"-*.json 2>/dev/null | wc -l)
-            if [ "$segs" -gt 0 ]; then
-              out='['
-              for i in $(seq 1 "$segs"); do
-                [ $first -eq 1 ] && first=0 || out="$out,"
-                out="$out{\"package\":\"$pkg\",\"seg\":$i}"
-              done
-              echo "$out]"
+            # 段式配置：逐个枚举 stryker.conf.d/<pkg>-*.json，seg = 文件名剥
+            # <pkg>- 前缀后的后缀（功能名 / 数字名统一；空 = 包级单段 seg=0）
+            out='['
+            for conf in $(ls stryker.conf.d/"$pkg"-*.json 2>/dev/null | sort); do
+              seg_name="$(basename "$conf" .json | sed "s/^${pkg}-//")"
+              if [ -z "$seg_name" ]; then continue; fi
+              [ $first -eq 1 ] && first=0 || out="$out,"
+              out="$out{\"package\":\"$pkg\",\"seg\":\"$seg_name\"}"
+            done
+            if [ "$first" -eq 1 ]; then
+              echo "[{\"package\":\"$pkg\",\"seg\":\"0\"}]"
             else
-              echo "[{\"package\":\"$pkg\",\"seg\":0}]"
+              echo "$out]"
             fi
           }
           emit_outputs() {
@@ -350,15 +356,15 @@ jobs:
   #   天然可见）；首夜/基线缺失时天然降级为全量变异，门禁语义不变仅变慢
   # 已知约束：GitHub Actions 的 matrix 不允许引用 env context，但可引用 needs outputs
   mutation-gate:
-    name: Mutation gate (${{ matrix.combo.package }} · s${{ matrix.combo.seg }})
+    name: Mutation gate (${{ matrix.combo.package }} · ${{ matrix.combo.seg }})
     needs: changes
     # 与 coverage job 平行（无 needs 依赖）；if 精确锁定事件面与显式布尔切片，
     # 空 slice 时 if 直接为假、矩阵不实例化（job result = skipped）
     if: github.event_name == 'pull_request' && needs.changes.outputs.hasMutations == 'true'
     strategy:
       fail-fast: false
-      # #220 B 方案：combo = {package, seg}；拆分三包逐段并行实例化，
-      # 未拆分包单实例（seg=0 走包级配置 <pkg>.json）
+      # #220 B 方案：combo = {package, seg}；改造后 seg=功能段名（数字段名亦兼容），
+      # 多段包逐段并行实例化，未拆分包单实例（seg="0" 走包级配置 <pkg>.json）
       matrix:
         combo: ${{ fromJSON(needs.changes.outputs.mutationCombos) }}
     runs-on: ubuntu-latest
@@ -389,7 +395,7 @@ jobs:
       - name: Build all packages（变异对象 lib 分段依赖全集一致的构建链）
         run: pnpm build
 
-      - name: Resolve combo paths（#220：seg=0 包级配置；seg>0 段式配置）
+      - name: Resolve combo paths（#220 + #342 二期：seg="0" 包级配置；seg=功能段名/数字段名）
         env:
           MATRIX_PKG: ${{ matrix.combo.package }}
           SEG: ${{ matrix.combo.seg }}
@@ -434,7 +440,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: mutation-report-${{ matrix.combo.package }}-s${{ matrix.combo.seg }}
+          name: mutation-report-${{ matrix.combo.package }}-${{ matrix.combo.seg }}
           path: coverage/mutation/${{ env.REPORT }}.json
           retention-days: 1
           if-no-files-found: error
