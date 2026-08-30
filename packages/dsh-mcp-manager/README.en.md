@@ -212,6 +212,47 @@ no `dsh web` restart needed.
 | `/api/dsh-mcp/tool-disable` | Per-tool disable toggle (PATCH, loopback-only) |
 | `/api/dsh-mcp/*` | Server management / connection control / tool listing / SSE events, etc. |
 
+## Runtime registration (registerServer.toolDefinitions)
+
+Other plugins can register MCP servers at runtime via `ctx.mcpManager.registerServer`
+(in-memory only, not persisted; idempotent for same names). The registration input
+supports an optional `toolDefinitions` field (caller-provided wrapped tool definitions,
+`ToolDefinition[]`; tool names are **bare names**, e.g. dsh-codegraph's
+`codegraph_explore`):
+
+- **With `toolDefinitions`**: all tools of that server are registered **from the wrapped
+  definitions** — `execute` comes from the caller (e.g. dsh-codegraph runs
+  `codegraph sync` first, then forwards to the underlying CLI internally), skipping the
+  remote schema projection and the generic `callTool`; the underlying real implementation
+  is never exposed;
+- **Without**: current behavior is preserved (remote schema + generic `callTool`), zero
+  impact on other servers;
+- **Naming is still decided by the manager's existing mechanism**: the model-visible name
+  is `mcp__<server>__<tool>` (`publicToolName`, 64-char / hash-suffix rules unchanged);
+  in `all` mode calls go through `ws_mcp_call` with bare names;
+- **Per-tool disable / visibility / capability catalog still apply to wrapped tools**
+  (judged by server + tool name, same as `mcp__`-prefixed tools);
+- Consumed only by the runtime registration surface (runtimeRegistry) — never persisted
+  to the store, never passed through mcpServers imports.
+
+```ts
+await ctx.mcpManager.registerServer({
+  name: "codegraph",
+  transport: "stdio",
+  command: "codegraph",
+  args: ["serve", "--mcp"],
+  toolDefinitions: [
+    {
+      name: "codegraph_explore",          // bare name
+      description: "Query the codegraph code graph (sync first, then query)",
+      parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
+      output: { schema: { ... }, render(args, value) { ... } },
+      execute: async (args) => { await sync(); return forwarded; }, // internal forwarding, never exposed
+    },
+  ],
+});
+```
+
 ## Data and Security
 
 - Server config: `<DSH_HOME>/dsh-mcp.json` (stores only `${ENV}` references, **never the

@@ -54,7 +54,7 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
   // 兼容：fake ctx（单元测试 mock）可能无 provide，可选调用静默降级。
   if (typeof (ctx as unknown as { provide?: unknown }).provide === "function") {
     ctx.provide("mcpManager", {
-      // 注入面（内存态不落盘，同名幂等）
+      // 注入面（内存态不落盘，同名幂等；toolDefinitions 可选封装定义透传 supervisor）
       registerServer: (server: Record<string, unknown>) => manager.registerServer(server),
       unregisterServer: (name: string) => manager.unregisterServer(name),
       // 控制面（通用 MCP 生命周期：注册即连、注销即断的补充控制）

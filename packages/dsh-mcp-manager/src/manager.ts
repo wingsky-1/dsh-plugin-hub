@@ -15,6 +15,7 @@ import { homedir } from "node:os";
 import type { ServerResponse } from "node:http";
 import type { Context, LoggerService } from "@deepseek-ai/cordis";
 import type { ServerConfig, ClientUiConfig } from "./types.ts";
+import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
 import type { CatalogCache } from "./catalog.ts";
 import { normalizeServer } from "./normalize.ts";
 import { normalizeUiConfig, buildConfigUiPatch } from "./config-schema.ts";
@@ -555,9 +556,14 @@ export class McpManager {
    * - 同名已存在（store 或 runtime）：返回 { name, existing: true }，不抛错；
    * - 注册即连接（走 start 的 config 直传分支，同名 runtime 优先）；
    * - 串行队列防 reconcileBusy 吞注册；多插件并发注册排队。
+   * @param options 注册入参；`toolDefinitions` 可选——提供时该服务器工具
+   *   全部用调用方封装定义注册（supervisor 跳过远端 schema 投影，execute
+   *   来自调用方；命名仍按 publicToolName 的 mcp__ 前缀规则）。
    */
-  async registerServer(server: Record<string, unknown>): Promise<{ name: string; existing: boolean }> {
-    const config = normalizeServer(server);
+  async registerServer(options: Record<string, unknown>): Promise<{ name: string; existing: boolean }> {
+    const { toolDefinitions, ...rest } = options;
+    const config = normalizeServer(rest);
+    if (Array.isArray(toolDefinitions)) config.toolDefinitions = toolDefinitions as ToolDefinition[];
     const run = this.registerQueue.then(async () => {
       if (this.runtimeRegistry.has(config.name) || this.store.find(config.name) !== undefined) {
         return { name: config.name, existing: true };

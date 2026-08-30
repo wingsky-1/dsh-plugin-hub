@@ -2303,6 +2303,135 @@ const main = async () => {
     }
   }
 
+  // ---- #362 补充 4：registerServer.toolDefinitions（调用方封装定义注册）----
+  // 带 toolDefinitions → 该服务器工具全部用封装定义注册（execute 来自调用方，
+  // 命名仍按 publicToolName mcp__ 前缀）；不带 → 现状回归（远端 schema + 通用
+  // callTool）。工具级禁用/可见性/能力目录按服务器+工具名判定照常生效。
+
+  {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-wrapped-"));
+    try {
+      const store = new McpStore(join(dir, "mcp.json"));
+      store.data = { version: 1, servers: [] };
+      const manager = new McpManager({ logger: { warn: () => {}, info: () => {} } }, store);
+
+      // 封装定义（裸名；模拟 dsh-codegraph 侧 codegraph_explore 形态）。
+      const wrappedExecCalls = [];
+      const wrapped = [
+        {
+          name: "codegraph_explore",
+          description: "封装定义：查询前强制 sync + projectPath（#362 补充 4）",
+          parameters: {
+            type: "object",
+            properties: { query: { type: "string" } },
+            required: ["query"],
+          },
+          output: {
+            schema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] },
+            render(_args, value) {
+              return [{ type: "text", text: value && typeof value === "object" && "text" in value ? String(value.text) : "" }];
+            },
+          },
+          async execute(args) {
+            wrappedExecCalls.push(args);
+            return { text: `wrapped:${args && typeof args === "object" ? String(args.query ?? "") : ""}` };
+          },
+        },
+        {
+          name: "codegraph_status",
+          description: "封装定义：状态查询",
+          parameters: { type: "object", properties: {} },
+          output: {
+            schema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] },
+            render(_args, value) {
+              return [{ type: "text", text: value && typeof value === "object" && "text" in value ? String(value.text) : "" }];
+            },
+          },
+          execute: async () => ({ text: "ok" }),
+        },
+      ];
+      const registered = [];
+      const sup = new ConnectionSupervisor(
+        {
+          ctx: { tools: { register: (definition) => { registered.push(definition); return () => {}; } } },
+          logger: { warn: () => {}, info: () => {}, error: () => {} },
+          enhancement: {},
+          emitStatus() {},
+          recordCatalogTools: async () => {},
+        },
+        normalizeServer({ name: "codegraph", transport: "stdio", command: "true" }),
+      );
+      sup.server.toolDefinitions = wrapped;
+      // 挂入 manager.supervisors：summarize 的禁用投影按 supervisor 工具列表判定。
+      manager.supervisors.set("codegraph", sup);
+
+      await checkAsync("toolDefinitions：封装定义注册（execute 来自调用方，mcp__ 前缀命名）", async () => {
+        // 封装路径不触达远端 schema 投影：伪造 listTools 抛错证明未走远端路径。
+        await sup.syncTools({ listTools: async () => { throw new Error("must not reach remote schema"); } }, true);
+        assert.deepEqual(sup.tools, ["mcp__codegraph__codegraph_explore", "mcp__codegraph__codegraph_status"], "公共名排序");
+        assert.equal(registered.length, 2);
+        assert.equal(registered[0].name, "mcp__codegraph__codegraph_explore", "命名仍按 publicToolName（mcp__ 前缀）");
+        assert.equal(registered[0].description, "封装定义：查询前强制 sync + projectPath（#362 补充 4）", "自定义 description 被采用");
+        // execute 来自调用方封装（不经通用 callTool）。
+        const value = await registered[0].execute({ query: "X 被谁调用" }, { signal: undefined });
+        assert.equal(value.text, "wrapped:X 被谁调用", "execute 来自封装定义");
+        assert.equal(wrappedExecCalls.length, 1);
+      });
+
+      // 工具级禁用对封装工具照常生效（#362 既有机制：isToolDenied 按服务器+工具
+      // 裸名判定；封装工具注册名仍是 mcp__ 前缀，guard 反解裸名查表与普通工具同路径）。
+      const { isToolDenied, fullServerName, parseDisabledTools, MIDDLEWARE_GLOBAL_ROOT } = await import("../lib/index.js");
+      const denyMap = parseDisabledTools({ "@global": { codegraph: ["codegraph_explore"] } });
+      assert.equal(
+        isToolDenied(denyMap, undefined, fullServerName(MIDDLEWARE_GLOBAL_ROOT, "codegraph"), "codegraph_explore"),
+        true,
+        "封装工具按服务器+裸名禁用命中（既有 isToolDenied 机制）",
+      );
+      assert.equal(
+        isToolDenied(denyMap, undefined, fullServerName(MIDDLEWARE_GLOBAL_ROOT, "codegraph"), "codegraph_status"),
+        false,
+        "未禁用封装工具放行",
+      );
+      // 可见性/能力目录：summary 工具列表为 mcp__ 公开名（与普通工具同口径）。
+      const sum = manager.summarize(sup.server, SCOPE_GLOBAL);
+      assert.deepEqual(sum.tools, ["mcp__codegraph__codegraph_explore", "mcp__codegraph__codegraph_status"], "summary 工具列表为公开名");
+
+      // 不带 toolDefinitions → 现状回归：远端 schema + 通用 callTool 路径不变。
+      const plainRegistered = [];
+      const supPlain = new ConnectionSupervisor(
+        {
+          ctx: { tools: { register: (definition) => { plainRegistered.push(definition); return () => {}; } } },
+          logger: { warn: () => {}, info: () => {}, error: () => {} },
+          enhancement: {},
+          emitStatus() {},
+          recordCatalogTools: async () => {},
+        },
+        normalizeServer({ name: "mini", transport: "stdio", command: "true" }),
+      );
+      const plainExecCalls = [];
+      const plainClient = {
+        listTools: async () => ({ tools: [{ name: "echo", description: "echo back", inputSchema: { type: "object", properties: { text: { type: "string" } } } }] }),
+        callTool: async (rawName, args) => {
+          plainExecCalls.push([rawName, args]);
+          return { content: [{ type: "text", text: `echo:${String(args.text ?? "")}` }] };
+        },
+      };
+      await checkAsync("不带 toolDefinitions → 现状回归（远端 schema + 通用 callTool）", async () => {
+        await supPlain.syncTools(plainClient, true);
+        assert.deepEqual(supPlain.tools, ["mcp__mini__echo"]);
+        assert.equal(plainRegistered.length, 1);
+        // 通用 callTool 路径：execute 经 client.callTool 转发远端。
+        const value = await plainRegistered[0].execute({ text: "hi" }, { signal: undefined });
+        assert.deepEqual(value.content, [{ type: "text", text: "echo:hi" }]);
+        assert.deepEqual(plainExecCalls, [["echo", { text: "hi" }]], "通用 callTool 转发远端");
+      });
+
+      console.log("  ok   封装定义注册: toolDefinitions 采用 / 现状回归 / 禁用按公开名");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
   if (failures.length > 0) {
     console.error(`\n${failures.length} check(s) failed: ${failures.join(", ")}`);
     process.exit(1);

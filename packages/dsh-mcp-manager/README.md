@@ -173,6 +173,40 @@ limit 截断）/ `ws_mcp_call`（按 `@<root>/<server>` 全名调用，参数 sc
 | `/api/dsh-mcp/tool-disable` | 工具级禁用开关（PATCH，loopback-only） |
 | `/api/dsh-mcp/*` | 服务器管理 / 连接控制 / 工具清单 / SSE 事件等 |
 
+## 运行时注入（registerServer.toolDefinitions）
+
+其他插件可经 `ctx.mcpManager.registerServer` 运行时注册 MCP 服务器（内存态不落盘，
+同名幂等）。注册入参支持可选 `toolDefinitions`（调用方封装工具定义，`ToolDefinition[]`，
+工具名用**裸名**，如 dsh-codegraph 的 `codegraph_explore`）：
+
+- **有 `toolDefinitions`**：该服务器工具**全部用封装定义注册**——execute 来自调用方
+  （如 dsh-codegraph 先 `codegraph sync` 再内部转发底层 CLI），跳过远端 schema 投影与
+  通用 callTool，底层真实实现不外泄；
+- **没有**：维持现状（远端 schema + 通用 callTool），其他服务器零影响；
+- **命名仍由 manager 现有机制决定**：模型可见名为 `mcp__<server>__<tool>`（`publicToolName`，
+  64 字符 / 哈希后缀规则不变）；all 模式经 `ws_mcp_call` 用裸名调用；
+- **工具级禁用 / 可见性 / 能力目录对封装工具照常生效**（按服务器 + 工具名判定，与
+  `mcp__` 前缀工具同口径）；
+- 仅运行时注入面（runtimeRegistry）消费，不随 store 落盘、不随 mcpServers 导入透传。
+
+```ts
+await ctx.mcpManager.registerServer({
+  name: "codegraph",
+  transport: "stdio",
+  command: "codegraph",
+  args: ["serve", "--mcp"],
+  toolDefinitions: [
+    {
+      name: "codegraph_explore",          // 裸名
+      description: "查询 codegraph 代码图谱（先 sync 再查）",
+      parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
+      output: { schema: { ... }, render(args, value) { ... } },
+      execute: async (args) => { await sync(); return forwarded; }, // 内部转发，不外泄
+    },
+  ],
+});
+```
+
 ## 数据与安全
 
 - 服务器配置：`<DSH_HOME>/dsh-mcp.json`（仅存 `${ENV}` 引用，**不落盘密钥本身**）；

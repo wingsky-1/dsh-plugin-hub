@@ -426,28 +426,54 @@ export class ConnectionSupervisor {
     this.reconnectTimer.unref?.();
   }
 
-  /** 拉取工具列表并整体替换注册（代际安全：先取后换）。 */
+  /**
+   * 拉取工具列表并整体替换注册（代际安全：先取后换）。
+   * 封装定义路径（registerServer.toolDefinitions）：服务器配置带 toolDefinitions
+   * 时**全部用调用方封装定义注册**——execute 来自调用方（先 sync → 内部转发底层
+   * 实现），跳过远端 schema 投影与通用 callTool；模型可见名仍按 publicToolName
+   * （mcp__ 前缀），禁用/可见性/能力目录按服务器+工具名判定照常生效（#362）。
+   * 无 toolDefinitions：现状不变（远端 schema + 通用 callTool）。
+   */
   async syncTools(client: MCPClient, startup: boolean): Promise<void> {
     const definitions = new Map<string, ToolDefinition>();
     const toolMeta = new Map<string, { description?: unknown }>();
-    let cursor;
-    do {
-      const response = await client.listTools(cursor);
-      const responseObj = response as { tools?: unknown[]; nextCursor?: unknown } | undefined;
-      const tools = responseObj?.tools ?? [];
-      for (const tool of tools) {
-        const publicName = publicToolName(this.server.name, (tool as Record<string, unknown>).name as string);
-        if (definitions.has(publicName)) {
-          throw new Error(`server "${this.server.name}" listed tool "${(tool as Record<string, unknown>).name}" more than once — invalid tool list`);
+    const wrapped = this.server.toolDefinitions;
+    if (Array.isArray(wrapped) && wrapped.length > 0) {
+      // 封装定义路径：裸名 → 公开名（mcp__ 前缀）；重复名抛错（与远端路径一致）。
+      for (const definition of wrapped) {
+        const rawName = typeof definition?.name === "string" ? definition.name : "";
+        if (rawName === "") {
+          throw new Error(`server "${this.server.name}" has a toolDefinition without a name — invalid wrapped tool list`);
         }
-        definitions.set(publicName, buildToolDefinition(client, tool as Record<string, unknown>, this.server, this.manager.enhancement));
-        // 工具描述元数据（保留供 GUI 展示；不再用于能力目录——目录是纯静态数据源，
-        // 聚合连接后数据会让 digest 随连接状态抖动而反复注入）。
-        toolMeta.set(publicName, { description: (tool as Record<string, unknown>).description ?? "" });
+        const publicName = publicToolName(this.server.name, rawName);
+        if (definitions.has(publicName)) {
+          throw new Error(`server "${this.server.name}" has duplicate wrapped tool "${rawName}" — invalid wrapped tool list`);
+        }
+        // 复制并改写 name 为公开名（mcp__ 前缀）：ctx.tools.register 按
+        // definition.name 注册，调用方封装定义本身保持裸名不被改动。
+        definitions.set(publicName, { ...definition, name: publicName });
+        // 描述元数据（保留供 GUI 展示；与远端路径同口径）。
+        toolMeta.set(publicName, { description: definition.description ?? "" });
       }
-      cursor = responseObj?.nextCursor as string | undefined;
-    } while (cursor !== undefined && cursor !== null && cursor !== "");
-
+    } else {
+      let cursor;
+      do {
+        const response = await client.listTools(cursor);
+        const responseObj = response as { tools?: unknown[]; nextCursor?: unknown } | undefined;
+        const tools = responseObj?.tools ?? [];
+        for (const tool of tools) {
+          const publicName = publicToolName(this.server.name, (tool as Record<string, unknown>).name as string);
+          if (definitions.has(publicName)) {
+            throw new Error(`server "${this.server.name}" listed tool "${(tool as Record<string, unknown>).name}" more than once — invalid tool list`);
+          }
+          definitions.set(publicName, buildToolDefinition(client, tool as Record<string, unknown>, this.server, this.manager.enhancement));
+          // 工具描述元数据（保留供 GUI 展示；不再用于能力目录——目录是纯静态数据源，
+          // 聚合连接后数据会让 digest 随连接状态抖动而反复注入）。
+          toolMeta.set(publicName, { description: (tool as Record<string, unknown>).description ?? "" });
+        }
+        cursor = responseObj?.nextCursor as string | undefined;
+      } while (cursor !== undefined && cursor !== null && cursor !== "");
+    }
     for (const dispose of this.toolDisposers.values()) dispose();
     const disposers = new Map<string, () => void>();
     try {
