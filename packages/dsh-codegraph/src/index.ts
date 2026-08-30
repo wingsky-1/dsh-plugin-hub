@@ -1,15 +1,19 @@
 /**
  * dsh-codegraph — codegraph MCP + worktree 开发纪律（宿主端）。
  *
- * 目标（issue #329 阶段2）：把 codegraph（@colbymchenry/codegraph，本地代码
- * 图谱 MCP）与配套 worktree 开发纪律打包成 dsh 插件一键交付：
+ * 目标（issue #329 阶段2 + #363 补充 3 架构收敛）：把 codegraph
+ * （@colbymchenry/codegraph，本地代码图谱 MCP）与配套 worktree 开发纪律打包成
+ * dsh 插件一键交付：
  * - **探测 + 引导安装**：codegraph CLI 未装 → 注入引导（输出安装命令，不自动
  *   执行；autoInstall=true 时自动装，幂等容错：装前再探测、失败仅 warn）；
  * - **运行时注册**：经 mcp-manager 核心服务（ctx.mcpManager）registerServer 注册
  *   codegraph MCP 服务器（stdio: codegraph serve --mcp，内存态不落盘）；
- * - **纪律工具**（工具层硬纪律，核心价值）：codegraph_explore 封装——查询前
- *   强制 sync + 校验/补全 projectPath（自动补全 + 拒绝兜底），杜绝「worktree
- *   索引静默过期」与「漏传 projectPath 查错对象」；
+ * - **封装定义经 mcp-manager 注册（#363 补充 3）**：8 个封装工具
+ *   （codegraph_explore / impact / node / callers / callees / search / files /
+ *   status）经 registerServer 的 `toolDefinitions` 通道交给 manager 注册
+ *   （#362 补充 4），**本插件不再 ctx.tools.register 任何裸名工具**。每个封装
+ *   execute 先 `codegraph sync <path>`（TTL 30s 缓存）再内部转发底层真实
+ *   codegraph CLI（guardedCodegraph 管线），底层实现完全内部化；
  * - **agent 钩子**：agent/created + 会话 cwd 判定，git 仓（主 checkout /
  *   worktree）才注入纪律（~200 tokens/次）；非 git 仓（日常维护/讨论空间）
  *   不注入——多工作空间天然区分（按会话 cwd 判定，由 discipline/guard 承担，
@@ -37,15 +41,16 @@ import {
   buildImpactToolDefinition,
   buildNodeToolDefinition,
   buildSearchToolDefinition,
+  buildStatusToolDefinition,
 } from "./tool-definition.ts";
 
 /** Stable cordis plugin name. */
 export const name = "codegraph";
 
 /** 需要的宿主服务：agents（agent/created 事件）、mcpManager（MCP 注册/管理/使用）、
- *  tools（纪律工具注册）、systemPrompt（纪律段注册）。均经 inject 强依赖声明——
+ *  systemPrompt（纪律段注册）。均经 inject 强依赖声明——
  *  缺失时 cordis 内核自动停用本插件。 */
-export const inject = ["agents", "mcpManager", "tools", "systemPrompt"];
+export const inject = ["agents", "mcpManager", "systemPrompt"];
 
 // 内部模块 re-export（公共测试面 + 其他插件可复用纯函数）。
 export { isCodegraphInstalled, installGuidance, runInstall } from "./install.ts";
@@ -71,6 +76,7 @@ export {
   buildCalleesToolDefinition,
   buildSearchToolDefinition,
   buildFilesToolDefinition,
+  buildStatusToolDefinition,
 } from "./tool-definition.ts";
 // 兼容旧名（#329/#356 公共导出面，避免破坏既有消费方）。
 export { buildExploreToolDefinition as buildGuardToolDefinition } from "./tool-definition.ts";
@@ -90,18 +96,30 @@ export interface CodegraphConfig {
 const DEFAULT_INSTALL_COMMAND = "npm install -g @colbymchenry/codegraph";
 
 /**
- * 注册纪律工具（ctx.tools，inject 保证在场）。返回 disposer。
- *
- * 注册定义以官方 ToolDefinition 类型约束（不再用 unknown 断言）——
- * 参数 schema 字段名是 `parameters`（ToolSchema 契约），此前误用 MCP 风格的
- * `inputSchema` 导致 schema 投影抛 "parameters must be lossless JSON"（#356）。
- *
- * #363：7 个裸名纪律工具（explore + impact/node/callers/callees/search/files）
- * 全部注册，共用 guardedCodegraph 通用守护执行器。
+ * registerServer 入参的局部宽松类型（#363 补充 3 临时面）：
+ * mcp-manager 侧（task/362 补充 4）合入 toolDefinitions 字段后，本类型将
+ * 收紧为 McpManagerServerInput & { toolDefinitions: ToolDefinition[] }。
  */
-function registerGuardTools(ctx: Context): () => void {
-  const tools = (ctx as unknown as { tools: { register(d: ToolDefinition): () => void } }).tools;
-  const disposers = [
+type RegisterServerInput = {
+  name: string;
+  transport: "stdio" | "streamable-http";
+  command?: string;
+  args?: string[];
+  url?: string;
+  headers?: Record<string, string>;
+  env?: Record<string, string>;
+  cwd?: string;
+  enabled?: boolean;
+  toolCallTimeoutMs?: number;
+  reconnect?: Record<string, unknown>;
+  description?: string;
+  toolDefinitions: ToolDefinition[];
+};
+
+/** 8 个 codegraph 封装工具定义（经 mcp-manager 的 registerServer.toolDefinitions
+ *  通道注册，#363 补充 3）。execute 均先 sync 再内部转发底层 CLI。 */
+export function buildCodegraphToolDefinitions(): ToolDefinition[] {
+  return [
     buildExploreToolDefinition(),
     buildImpactToolDefinition(),
     buildNodeToolDefinition(),
@@ -109,14 +127,12 @@ function registerGuardTools(ctx: Context): () => void {
     buildCalleesToolDefinition(),
     buildSearchToolDefinition(),
     buildFilesToolDefinition(),
-  ].map((definition) => tools.register(definition));
-  return () => {
-    for (const dispose of disposers) dispose();
-  };
+    buildStatusToolDefinition(),
+  ];
 }
 
 /**
- * 挂载入口：探测/安装 → 注册 MCP 服务器 → 纪律工具 → agent 钩子。
+ * 挂载入口：探测/安装 → 经 mcp-manager 注册 MCP 服务器（携带封装定义）→ agent 钩子。
  */
 export async function apply(ctx: Context, config: CodegraphConfig = {}): Promise<void> {
   const enabled = config.enabled !== false;
@@ -148,19 +164,28 @@ export async function apply(ctx: Context, config: CodegraphConfig = {}): Promise
     }
   }
 
-  // 2. 注册 MCP 服务器（经 mcp-manager 核心服务，inject 强依赖保证可用）。
+  // 2. 经 mcp-manager 注册 MCP 服务器（inject 强依赖保证可用）+ 封装定义
+  //    （#363 补充 3：工具经 registerServer.toolDefinitions 交给 manager 注册，
+  //    本插件不再 ctx.tools.register）。toolDefinitions 字段由 #362 补充 4 在
+  //    mcp-manager 侧实现；本 worktree 构建时该类型尚未发布，用局部类型兼容
+  //    （RegisterServerInput 宽松面），合入 #362 后收紧为 McpManagerServerInput。
   //    用完整 service 面：注册后可经 getStatus/getTools 感知连接状态与工具列表。
   const mcpManager = (ctx as unknown as { mcpManager: McpManagerService }).mcpManager;
+  const toolDefinitions = buildCodegraphToolDefinitions();
   if (isCodegraphInstalled()) {
     try {
-      const { existing } = await mcpManager.registerServer({
+      // #363 补充 3：封装定义经 mcp-manager 注册（manager 侧 #362 补充 4 消费）。
+      // 类型面暂缺 toolDefinitions —— 局部宽松入参类型兼容，合入 #362 后收紧。
+      const registerInput: RegisterServerInput = {
         name: "codegraph",
         transport: "stdio",
         command: "codegraph",
         args: ["serve", "--mcp"],
         toolCallTimeoutMs: 60000,
         reconnect: {},
-      });
+        toolDefinitions,
+      };
+      const { existing } = await (mcpManager.registerServer as (input: RegisterServerInput) => Promise<{ name: string; existing: boolean }>)(registerInput);
       if (!existing) {
         // 注册即连接：查询状态确认连接进度（connecting/connected 皆正常，failed 需提示）。
         const status = mcpManager.getStatus("codegraph");
@@ -173,17 +198,12 @@ export async function apply(ctx: Context, config: CodegraphConfig = {}): Promise
     }
   }
 
-  // 3. 纪律工具（工具层硬纪律：强制 sync + projectPath——纪律行为固化为默认，
-  //    不提供关闭开关，保证「查询前 sync + projectPath 校验」不被配置绕过）。
-  const disposeTool = registerGuardTools(ctx);
-
-  // 4. agent 纪律钩子（git 仓会话才注入）。
+  // 3. agent 纪律钩子（git 仓会话才注入）。
   const disposeHook = injectDiscipline ? registerDisciplineHook(ctx) : () => {};
 
   // 卸载清理（effect disposer）。
   ctx.effect(() => {
     return () => {
-      disposeTool();
       disposeHook();
       // 卸载时注销 MCP 服务器（不影响 store 持久化条目；inject 保证 mcpManager 在场）。
       void mcpManager.unregisterServer("codegraph").catch(() => {});

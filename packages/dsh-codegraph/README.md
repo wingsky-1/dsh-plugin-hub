@@ -9,20 +9,22 @@ codegraph MCP + worktree 开发纪律 —— 把 [codegraph](https://github.com/
 - **运行时注册**：经 dsh-mcp-manager 核心服务（`ctx.mcpManager`）注册 codegraph MCP 服务器
   （`codegraph serve --mcp`，内存态不落盘）；MCP 的注册/管理/使用基于 mcp-manager 接入
   （inject 强依赖，见「依赖」节）。
-- **工具层硬纪律**（核心价值）：7 个裸名纪律工具——`codegraph_explore`（既有）+
-  `codegraph_impact` / `codegraph_node` / `codegraph_callers` / `codegraph_callees` /
-  `codegraph_search` / `codegraph_files`（#363 新增）——统一经 `guardedCodegraph`
-  通用守护执行器：查询前强制 `codegraph sync`（新鲜度硬保证，worktree 索引不过期；
-  30s 内同 projectPath 不重复 sync 的 TTL 缓存，查询结果不缓存）+ 校验/补全
-  `projectPath`（缺省补全为当前会话 worktree，自动不了则拒绝并提示）。杜绝
-  「worktree 索引静默过期」与「漏传 projectPath 查错对象」。
+- **封装定义经 mcp-manager 注册（架构收敛，#363 补充 3）**：dsh-codegraph **不再自注册
+  任何裸名工具**——8 个封装工具（`codegraph_explore` / `codegraph_impact` /
+  `codegraph_node` / `codegraph_callers` / `codegraph_callees` / `codegraph_search` /
+  `codegraph_files` / `codegraph_status`）经 `registerServer.toolDefinitions` 通道
+  （#362 补充 4）交给 mcp-manager 统一注册管理。每个封装 execute **先 `codegraph sync`
+  （新鲜度硬保证，worktree 索引不过期；30s 内同 projectPath 不重复 sync 的 TTL 缓存，
+  查询结果不缓存）+ 校验/补全 `projectPath`**（缺省补全为当前会话 worktree，自动不了则
+  拒绝并提示），再内部转发底层真实 codegraph CLI（底层实现完全内部化，模型只见封装工具）。
+  杜绝「worktree 索引静默过期」与「漏传 projectPath 查错对象」。
 - **agent 纪律钩子**：`agent/created` + 会话 cwd 判定，git 仓（主 checkout / worktree）会话
   才注入 worktree 开发纪律——以 systemPrompt 段注入（order 161，恒在 mcp-manager
   能力目录段之后，agent scope 注册沿 scope 链自动继承给子 agent）；非 git 仓
   （日常维护/讨论空间）不注入——多工作空间天然区分（按会话 cwd 判定，无需配置）。
-  纪律文案含：**工具级禁用只作用于 mcp-manager 管辖的 mcp__ 前缀工具，本插件裸名
-  纪律工具不受影响**；双轨说明（codegraph_impact 纪律裸名与 mcp__codegraph__impact
-  官方直呼功能相同，优先用裸名纪律版）。
+  纪律文案声明：**codegraph 工具全部经 mcp-manager 统一管理（project 模式 mcp__ 前缀 /
+  all 模式 ws_mcp_call 裸名）；本插件不直接注册工具，仅提供封装（先 sync + worktree
+  纪律），工具级禁用经 mcp-manager 对封装工具生效**。
 
 ## 安装
 
@@ -71,9 +73,9 @@ codegraph init ../dsh-hub-task-<n>                 # 建该 worktree 索引（�
 - **索引为本地 SQLite 无加密**：`.codegraph/` 含全部源码结构，多用户机器上注意目录权限。
 - **外部二进制非自包含**：codegraph 是独立安装的二进制，不随本插件发布；本插件只探测 +
   引导安装（发布物自包含，无运行时 npm 依赖）。
-- **工具在真实服务器上执行**：`codegraph_explore` 等 7 个纪律工具会真实查询本地索引，先确认再操作。
+- **工具在真实服务器上执行**：codegraph 封装工具会真实查询本地索引，先确认再操作。
 
-## 裸名纪律工具
+## 封装工具（经 mcp-manager 注册）
 
 | 工具 | 用途 | 参数（与 CLI 1.6.0 实测对齐） |
 |---|---|---|
@@ -84,9 +86,16 @@ codegraph init ../dsh-hub-task-<n>                 # 建该 worktree 索引（�
 | `codegraph_callees` | X 调用了谁 | `symbol`(必填)、`limit`?(1-100, 默认20)、`projectPath`? |
 | `codegraph_search` | 按关键词搜符号（映射 CLI `query` 子命令） | `query`(必填)、`kind`?、`limit`?(默认10)、`projectPath`? |
 | `codegraph_files` | 从索引列项目文件结构 | `filter`?、`pattern`?、`format`?(tree/flat/grouped)、`maxDepth`?、`projectPath`? |
+| `codegraph_status` | 查看索引状态与统计 | `path`?(位置参数，缺省补全当前 worktree) |
 
 > 参数 schema 与 CLI 实测对齐：impact/callers/callees 无 `file`、node 无 `line`、
-> files 用 `filter`（CLI 的 `--filter`）而非 `path`。
+> files 用 `filter`（CLI 的 `--filter`）而非 `path`、status 的 path 为位置参数。
+
+> **注册形态**：8 个封装定义经 `registerServer.toolDefinitions` 交给 mcp-manager
+> 注册（#362 补充 4）。project 模式下工具以 `mcp__codegraph__<tool>` 前缀注册、
+> 项目级服务器经中间层 `ws_mcp_call` 裸名调用；all 模式全部经 `ws_mcp_call` 裸名
+> 调用。本插件不直接注册工具，仅提供封装（先 sync + worktree 纪律）；工具级禁用
+> 经 mcp-manager 对封装工具生效。
 
 ## 依赖
 

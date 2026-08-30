@@ -1,6 +1,13 @@
 /**
- * 纪律工具注册定义（codegraph_explore + #363 新增 6 个裸名纪律工具）——独立纯函数，
- * 便于测试与复用。
+ * codegraph 封装工具定义（8 个：codegraph_explore + impact/node/callers/callees/
+ * search/files/status）——独立纯函数，便于测试与复用。
+ *
+ * 定位（issue #363 补充 3 架构收敛）：dsh-codegraph **不再自注册任何裸名工具**，
+ * 本文件产出的是「封装定义」——execute 先 `codegraph sync <path>`（TTL 30s
+ * 缓存）再内部转发底层真实 codegraph CLI（guardedCodegraph 管线），底层实现
+ * 完全内部化，模型只见封装工具。定义经 mcp-manager 的
+ * `registerServer.toolDefinitions` 通道注册（#362 补充 4），本插件不直接
+ * `ctx.tools.register`。
  *
  * 契约要点（#356 回归）：
  * - 参数 schema 字段名必须是 `parameters`（@deepseek-ai/dsh-llm 的 ToolSchema
@@ -9,8 +16,9 @@
  *   "tool \"<name>\" parameters must be lossless JSON before schema projection"；
  * - output 必含 schema + render（ToolOutputDefinition 契约），execute 返回
  *   canonical JSON 值，render 投影为模型可读的 ContentBlock[]；
- * - 参数 schema 与 CLI 1.6.0 实测对齐（#363 补充：无 file/line 幽灵参数、
- *   files 用 filter 而非 path、search 映射 query 子命令）。
+ * - 参数 schema 与 CLI 1.6.0 实测对齐（#363：impact/callers/callees 无 file、
+ *   node 无 line、files 用 filter 而非 path、search 映射 query 子命令、
+ *   status 用位置参数 path 而非 --path）。
  */
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
 import { findAmbiguousCandidates, guardedCodegraph, runCodegraph } from "./guard.ts";
@@ -38,7 +46,7 @@ function sessionCwd(exec: { agent?: { session?: { header?: { cwd?: string } } } 
   return exec?.agent?.session?.header?.cwd;
 }
 
-/** 构建 codegraph_explore 工具注册定义（纯函数，无副作用）。
+/** 构建 codegraph_explore 封装定义（纯函数，无副作用）。
  * 兼容旧名 buildGuardToolDefinition（#329/#356 公共导出面）。 */
 export function buildExploreToolDefinition(): ToolDefinition {
   return {
@@ -59,7 +67,7 @@ export function buildExploreToolDefinition(): ToolDefinition {
     output: TEXT_OUTPUT,
     // 只读查询，可与其他工具调用并行（不修改共享状态）。
     isConcurrencySafe: () => true,
-    // canonical 值：{ text }；guardedExplore 返回纯文本（含拒绝引导），不抛错。
+    // canonical 值：{ text }；guardedCodegraph 返回纯文本（含拒绝引导），不抛错。
     execute: async (
       args: { query: string; projectPath?: string },
       exec: { agent?: { session?: { header?: { cwd?: string } } } },
@@ -74,7 +82,13 @@ export function buildExploreToolDefinition(): ToolDefinition {
 }
 
 /**
- * 通用构建器：一个裸名纪律工具（映射某个 codegraph CLI 子命令）。
+ * codegraph_status：查看索引状态与统计（同步检查当前 worktree 索引）。
+ * CLI: codegraph status [path]（1.6.0 实测 path 是**位置参数**，非 --path；
+ * -j/--json 输出 JSON）。任何查询前可先确认索引状态。
+ */
+
+/**
+ * 通用构建器：一个裸名封装工具（映射某个 codegraph CLI 子命令）。
  * @param name 工具名（裸名，如 codegraph_impact）
  * @param description 工具描述（含「何时用此工具 / 何时用另一工具」互引，#363 验收 11）
  * @param params 参数 schema（与 CLI 实测对齐）
@@ -304,6 +318,30 @@ export function buildFilesToolDefinition(): ToolDefinition {
       if (typeof args.pattern === "string") cmd.push("--pattern", args.pattern);
       if (typeof args.format === "string") cmd.push("--format", args.format);
       if (typeof args.maxDepth === "number") cmd.push("--max-depth", String(args.maxDepth));
+      return cmd;
+    },
+  );
+}
+
+/**
+ * codegraph_status：查看索引状态与统计（当前 worktree 的索引健康度、文件/符号数、
+ * 待同步变更数）。CLI: `codegraph status [path]`（1.6.0 实测 path 是**位置参数**，
+ * 非 --path；`-j/--json` 输出 JSON，查询前可先确认索引状态）。
+ * 参数对齐 CLI 实测：无 file/line。
+ */
+export function buildStatusToolDefinition(): ToolDefinition {
+  return buildCliTool(
+    "codegraph_status",
+    "查看当前 codegraph 索引的状态与统计（索引是否完整、文件/符号数、待同步变更数、" +
+      "是否需要重索引）。不确定索引是否新鲜/完整时先用它；查询类工具会自动 sync，" +
+      "无需手动 sync。path 为位置参数（缺省补全为当前会话 worktree）。",
+    {
+      path: { type: "string", description: "目标 worktree 路径（缺省补全为当前会话 worktree；位置参数）" },
+    },
+    [],
+    (args) => {
+      const cmd = ["status"];
+      if (typeof args.path === "string" && args.path !== "") cmd.push(args.path);
       return cmd;
     },
   );
