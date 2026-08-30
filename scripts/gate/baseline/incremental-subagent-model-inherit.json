@@ -184,31 +184,6 @@
           }
         },
         {
-          "id": "3",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: #6 应取父日志 header config: uncaughtException: #6 应取父日志 header config",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 92
-            },
-            "start": {
-              "column": 31,
-              "line": 57
-            }
-          }
-        },
-        {
           "id": "1",
           "mutatorName": "ArrayDeclaration",
           "replacement": "[]",
@@ -230,6 +205,31 @@
             "start": {
               "column": 23,
               "line": 45
+            }
+          }
+        },
+        {
+          "id": "3",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: #6 应取父日志 header config: uncaughtException: #6 应取父日志 header config",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 92
+            },
+            "start": {
+              "column": 31,
+              "line": 57
             }
           }
         },
@@ -509,10 +509,10 @@
           }
         },
         {
-          "id": "17",
+          "id": "18",
           "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: #6 应取父日志 header config: uncaughtException: #6 应取父日志 header config",
+          "replacement": "false",
+          "statusReason": "uncaughtException: 显式指定不同模型应跳过: uncaughtException: 显式指定不同模型应跳过",
           "status": "Killed",
           "static": false,
           "testsCompleted": 1,
@@ -559,10 +559,10 @@
           }
         },
         {
-          "id": "20",
+          "id": "17",
           "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: 仅 provider 不同也应跳过: uncaughtException: 仅 provider 不同也应跳过",
+          "replacement": "true",
+          "statusReason": "uncaughtException: #6 应取父日志 header config: uncaughtException: #6 应取父日志 header config",
           "status": "Killed",
           "static": false,
           "testsCompleted": 1,
@@ -574,8 +574,8 @@
           ],
           "location": {
             "end": {
-              "column": 55,
-              "line": 71
+              "column": 49,
+              "line": 72
             },
             "start": {
               "column": 5,
@@ -609,10 +609,10 @@
           }
         },
         {
-          "id": "18",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: 显式指定不同模型应跳过: uncaughtException: 显式指定不同模型应跳过",
+          "id": "21",
+          "mutatorName": "EqualityOperator",
+          "replacement": "child.options.provider === parent.options.provider",
+          "statusReason": "uncaughtException: 仅 provider 不同也应跳过: uncaughtException: 仅 provider 不同也应跳过",
           "status": "Killed",
           "static": false,
           "testsCompleted": 1,
@@ -624,8 +624,33 @@
           ],
           "location": {
             "end": {
-              "column": 49,
-              "line": 72
+              "column": 55,
+              "line": 71
+            },
+            "start": {
+              "column": 5,
+              "line": 71
+            }
+          }
+        },
+        {
+          "id": "20",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: 仅 provider 不同也应跳过: uncaughtException: 仅 provider 不同也应跳过",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0"
+          ],
+          "location": {
+            "end": {
+              "column": 55,
+              "line": 71
             },
             "start": {
               "column": 5,
@@ -655,31 +680,6 @@
             "start": {
               "column": 5,
               "line": 72
-            }
-          }
-        },
-        {
-          "id": "21",
-          "mutatorName": "EqualityOperator",
-          "replacement": "child.options.provider === parent.options.provider",
-          "statusReason": "uncaughtException: 仅 provider 不同也应跳过: uncaughtException: 仅 provider 不同也应跳过",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 55,
-              "line": 71
-            },
-            "start": {
-              "column": 5,
-              "line": 71
             }
           }
         },
@@ -734,31 +734,6 @@
           }
         },
         {
-          "id": "27",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'provider'): uncaughtException: Cannot read properties of undefined (reading 'provider')",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 27,
-              "line": 82
-            },
-            "start": {
-              "column": 7,
-              "line": 82
-            }
-          }
-        },
-        {
           "id": "25",
           "mutatorName": "OptionalChaining",
           "replacement": "parent.session.requestHeader().config",
@@ -784,10 +759,10 @@
           }
         },
         {
-          "id": "26",
+          "id": "27",
           "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: #6 应取父日志 header config: uncaughtException: #6 应取父日志 header config",
+          "replacement": "false",
+          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'provider'): uncaughtException: Cannot read properties of undefined (reading 'provider')",
           "status": "Killed",
           "static": false,
           "testsCompleted": 1,
@@ -809,9 +784,9 @@
           }
         },
         {
-          "id": "28",
-          "mutatorName": "EqualityOperator",
-          "replacement": "logged !== undefined",
+          "id": "26",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
           "statusReason": "uncaughtException: #6 应取父日志 header config: uncaughtException: #6 应取父日志 header config",
           "status": "Killed",
           "static": false,
@@ -884,6 +859,31 @@
           }
         },
         {
+          "id": "28",
+          "mutatorName": "EqualityOperator",
+          "replacement": "logged !== undefined",
+          "statusReason": "uncaughtException: #6 应取父日志 header config: uncaughtException: #6 应取父日志 header config",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0"
+          ],
+          "location": {
+            "end": {
+              "column": 27,
+              "line": 82
+            },
+            "start": {
+              "column": 7,
+              "line": 82
+            }
+          }
+        },
+        {
           "id": "32",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
@@ -905,60 +905,10 @@
           }
         },
         {
-          "id": "33",
-          "mutatorName": "EqualityOperator",
-          "replacement": "logged.reasoningEffort !== undefined",
-          "statusReason": "uncaughtException: #6 应取父日志 header config: uncaughtException: #6 应取父日志 header config",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 45,
-              "line": 88
-            },
-            "start": {
-              "column": 9,
-              "line": 88
-            }
-          }
-        },
-        {
           "id": "37",
           "mutatorName": "ConditionalExpression",
           "replacement": "true",
           "statusReason": "uncaughtException: 覆盖 provider/model/effort，其余采样字段原样保留: uncaughtException: 覆盖 provider/model/effort，其余采样字段原样保留",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 48,
-              "line": 109
-            },
-            "start": {
-              "column": 9,
-              "line": 109
-            }
-          }
-        },
-        {
-          "id": "38",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: effort 键应彻底缺席而非 undefined 残留: uncaughtException: effort 键应彻底缺席而非 undefined 残留",
           "status": "Killed",
           "static": false,
           "testsCompleted": 1,
@@ -1005,10 +955,35 @@
           }
         },
         {
-          "id": "39",
+          "id": "33",
           "mutatorName": "EqualityOperator",
-          "replacement": "selection.reasoningEffort !== undefined",
-          "statusReason": "uncaughtException: 覆盖 provider/model/effort，其余采样字段原样保留: uncaughtException: 覆盖 provider/model/effort，其余采样字段原样保留",
+          "replacement": "logged.reasoningEffort !== undefined",
+          "statusReason": "uncaughtException: #6 应取父日志 header config: uncaughtException: #6 应取父日志 header config",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0"
+          ],
+          "location": {
+            "end": {
+              "column": 45,
+              "line": 88
+            },
+            "start": {
+              "column": 9,
+              "line": 88
+            }
+          }
+        },
+        {
+          "id": "38",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: effort 键应彻底缺席而非 undefined 残留: uncaughtException: effort 键应彻底缺席而非 undefined 残留",
           "status": "Killed",
           "static": false,
           "testsCompleted": 1,
@@ -1026,56 +1001,6 @@
             "start": {
               "column": 9,
               "line": 109
-            }
-          }
-        },
-        {
-          "id": "43",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: 缺 agents 服务时不得注册监听: uncaughtException: 缺 agents 服务时不得注册监听",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 38,
-              "line": 130
-            },
-            "start": {
-              "column": 7,
-              "line": 130
-            }
-          }
-        },
-        {
-          "id": "42",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: 应注册 agent/created 监听: uncaughtException: 应注册 agent/created 监听",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 38,
-              "line": 130
-            },
-            "start": {
-              "column": 7,
-              "line": 130
             }
           }
         },
@@ -1105,10 +1030,10 @@
           }
         },
         {
-          "id": "48",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: #8 应在子 scope 安装恰好一个 waterfall: uncaughtException: #8 应在子 scope 安装恰好一个 waterfall",
+          "id": "39",
+          "mutatorName": "EqualityOperator",
+          "replacement": "selection.reasoningEffort !== undefined",
+          "statusReason": "uncaughtException: 覆盖 provider/model/effort，其余采样字段原样保留: uncaughtException: 覆盖 provider/model/effort，其余采样字段原样保留",
           "status": "Killed",
           "static": false,
           "testsCompleted": 1,
@@ -1120,19 +1045,44 @@
           ],
           "location": {
             "end": {
-              "column": 4,
-              "line": 148
+              "column": 48,
+              "line": 109
             },
             "start": {
-              "column": 42,
-              "line": 132
+              "column": 9,
+              "line": 109
             }
           }
         },
         {
-          "id": "44",
-          "mutatorName": "EqualityOperator",
-          "replacement": "ctx.get(\"agents\") !== undefined",
+          "id": "42",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: 应注册 agent/created 监听: uncaughtException: 应注册 agent/created 监听",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0"
+          ],
+          "location": {
+            "end": {
+              "column": 38,
+              "line": 130
+            },
+            "start": {
+              "column": 7,
+              "line": 130
+            }
+          }
+        },
+        {
+          "id": "43",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
           "statusReason": "uncaughtException: 缺 agents 服务时不得注册监听: uncaughtException: 缺 agents 服务时不得注册监听",
           "status": "Killed",
           "static": false,
@@ -1180,9 +1130,34 @@
           }
         },
         {
-          "id": "51",
+          "id": "44",
           "mutatorName": "EqualityOperator",
-          "replacement": "parentSessionId !== undefined",
+          "replacement": "ctx.get(\"agents\") !== undefined",
+          "statusReason": "uncaughtException: 缺 agents 服务时不得注册监听: uncaughtException: 缺 agents 服务时不得注册监听",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0"
+          ],
+          "location": {
+            "end": {
+              "column": 38,
+              "line": 130
+            },
+            "start": {
+              "column": 7,
+              "line": 130
+            }
+          }
+        },
+        {
+          "id": "48",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
           "statusReason": "uncaughtException: #8 应在子 scope 安装恰好一个 waterfall: uncaughtException: #8 应在子 scope 安装恰好一个 waterfall",
           "status": "Killed",
           "static": false,
@@ -1190,6 +1165,27 @@
           "killedBy": [
             "0"
           ],
+          "coveredBy": [
+            "0"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 148
+            },
+            "start": {
+              "column": 42,
+              "line": 132
+            }
+          }
+        },
+        {
+          "id": "50",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 1,
           "coveredBy": [
             "0"
           ],
@@ -1205,12 +1201,16 @@
           }
         },
         {
-          "id": "50",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
+          "id": "51",
+          "mutatorName": "EqualityOperator",
+          "replacement": "parentSessionId !== undefined",
+          "statusReason": "uncaughtException: #8 应在子 scope 安装恰好一个 waterfall: uncaughtException: #8 应在子 scope 安装恰好一个 waterfall",
+          "status": "Killed",
           "static": false,
           "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
           "coveredBy": [
             "0"
           ],
@@ -1301,10 +1301,10 @@
           }
         },
         {
-          "id": "58",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: 首请求应注入父快照（含 effort），保留采样字段: uncaughtException: 首请求应注入父快照（含 effort），保留采样字段",
+          "id": "61",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "false",
+          "statusReason": "uncaughtException: #9 第二次请求应整体原样放行（injected 标志，含 provider/model）: uncaughtException: #9 第二次请求应整体原样放行（injected 标志，含 provider/model）",
           "status": "Killed",
           "static": false,
           "testsCompleted": 1,
@@ -1316,12 +1316,12 @@
           ],
           "location": {
             "end": {
-              "column": 6,
-              "line": 147
+              "column": 22,
+              "line": 145
             },
             "start": {
-              "column": 61,
-              "line": 140
+              "column": 18,
+              "line": 145
             }
           }
         },
@@ -1351,10 +1351,10 @@
           }
         },
         {
-          "id": "61",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "false",
-          "statusReason": "uncaughtException: #9 第二次请求应整体原样放行（injected 标志，含 provider/model）: uncaughtException: #9 第二次请求应整体原样放行（injected 标志，含 provider/model）",
+          "id": "59",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: 首请求应注入父快照（含 effort），保留采样字段: uncaughtException: 首请求应注入父快照（含 effort），保留采样字段",
           "status": "Killed",
           "static": false,
           "testsCompleted": 1,
@@ -1366,12 +1366,12 @@
           ],
           "location": {
             "end": {
-              "column": 22,
-              "line": 145
+              "column": 19,
+              "line": 144
             },
             "start": {
-              "column": 18,
-              "line": 145
+              "column": 11,
+              "line": 144
             }
           }
         },
@@ -1401,9 +1401,9 @@
           }
         },
         {
-          "id": "59",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
+          "id": "58",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
           "statusReason": "uncaughtException: 首请求应注入父快照（含 effort），保留采样字段: uncaughtException: 首请求应注入父快照（含 effort），保留采样字段",
           "status": "Killed",
           "static": false,
@@ -1416,12 +1416,12 @@
           ],
           "location": {
             "end": {
-              "column": 19,
-              "line": 144
+              "column": 6,
+              "line": 147
             },
             "start": {
-              "column": 11,
-              "line": 144
+              "column": 61,
+              "line": 140
             }
           }
         }
