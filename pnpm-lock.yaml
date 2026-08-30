@@ -83,6 +83,12 @@ importers:
       '@deepseek-ai/dsh-agent':
         specifier: 'catalog:'
         version: 0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-llm@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1))(@deepseek-ai/dsh-session@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-llm@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-system-prompt@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-llm@0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)))
+      '@deepseek-ai/dsh-llm':
+        specifier: 'catalog:'
+        version: 0.1.1-rc.2(@deepseek-ai/cordis@4.0.1)
+      '@deepseek-ai/dsh-tools':
+        specifier: 'catalog:'
+        version: 0.1.1-rc.2(f7d8e59091784496c02afcf19f5662a6)
       '@wingsky-1/dsh-mcp-manager':
         specifier: workspace:*
         version: link:../dsh-mcp-manager

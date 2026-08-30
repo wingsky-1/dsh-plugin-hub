@@ -23,12 +23,13 @@
  * ctx.get 探测；MCP 注册/管理/使用本来就是 mcp-manager 的能力，本插件基于它接入）。
  */
 import type { Context } from "@deepseek-ai/cordis";
+import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
 // 类型面：mcpManager service 类型从 mcp-manager 包引（该包 re-export
 // shared/mcp-manager-service.d.ts，类型单一事实源仍在 shared/，消费入口走包）。
 import type { McpManagerService } from "@wingsky-1/dsh-mcp-manager";
 import { installGuidance, isCodegraphInstalled, runInstall } from "./install.ts";
-import { guardedExplore } from "./guard.ts";
 import { registerDisciplineHook } from "./discipline.ts";
+import { buildGuardToolDefinition } from "./tool-definition.ts";
 
 /** Stable cordis plugin name. */
 export const name = "codegraph";
@@ -41,6 +42,7 @@ export const inject = ["agents", "mcpManager", "tools"];
 export { isCodegraphInstalled, installGuidance, runInstall } from "./install.ts";
 export { findGitRoot, isGitRepo, syncCodegraph, exploreCodegraph, guardedExplore } from "./guard.ts";
 export { shouldInject, DISCIPLINE_TEXT, registerDisciplineHook } from "./discipline.ts";
+export { buildGuardToolDefinition } from "./tool-definition.ts";
 
 /** 插件配置。 */
 export interface CodegraphConfig {
@@ -50,60 +52,22 @@ export interface CodegraphConfig {
   autoInstall?: boolean;
   /** 自定义安装命令（默认 npm install -g @colbymchenry/codegraph）。 */
   installCommand?: string;
-  /** 查询前强制 sync（默认 true）。 */
-  syncBeforeQuery?: boolean;
-  /** 不传 projectPath 时拒绝调用（默认 true：自动补全 + 拒绝兜底）。 */
-  requireProjectPath?: boolean;
   /** 注入纪律到 agent（默认 true）。 */
   injectDiscipline?: boolean;
 }
 
 const DEFAULT_INSTALL_COMMAND = "npm install -g @colbymchenry/codegraph";
 
-/** 注册纪律工具（ctx.tools，inject 保证在场）。返回 disposer。 */
-function registerGuardTool(
-  ctx: Context,
-  cfg: Required<Pick<CodegraphConfig, "syncBeforeQuery" | "requireProjectPath">>,
-): () => void {
-  const tools = (ctx as unknown as { tools: { register(d: unknown): () => void } }).tools;
-  return tools.register({
-    name: "codegraph_explore",
-    description:
-      "查询 codegraph 代码图谱（本地索引，返回相关符号源码 + 调用路径）。" +
-      "自动先 sync 目标 worktree 索引再查（新鲜度硬保证）；projectPath 缺省补全为当前" +
-      "会话 worktree；无索引/无法确定 projectPath 时拒绝并提示。结构类代码问题优先用它。",
-    inputSchema: {
-      type: "object",
-      properties: {
-        query: { type: "string", description: "代码问题/符号名（如：X 被谁调用）" },
-        projectPath: { type: "string", description: "目标 worktree 路径（缺省补全为当前会话 worktree）" },
-      },
-      required: ["query"],
-    },
-    // 官方 ToolOutputDefinition 契约（dsh-tools）：output 必含 schema + render。
-    // execute 返回 canonical JSON 值，render 投影为模型可读的 ContentBlock[]。
-    output: {
-      schema: {
-        type: "object",
-        properties: {
-          text: { type: "string" },
-        },
-        required: ["text"],
-        additionalProperties: false,
-      },
-      render(_args: unknown, value?: unknown) {
-        const text = value && typeof value === "object" && "text" in value
-          ? String((value as { text?: unknown }).text ?? "")
-          : "";
-        return [{ type: "text", text }];
-      },
-    },
-    // canonical 值：{ text }；guardedExplore 返回纯文本（含拒绝引导），不抛错。
-    execute: async (args: { query: string; projectPath?: string }, exec: { agent?: { session?: { header?: { cwd?: string } } } }) => {
-      const cwd = exec?.agent?.session?.header?.cwd;
-      return { text: await guardedExplore(args, cwd) };
-    },
-  });
+/**
+ * 注册纪律工具（ctx.tools，inject 保证在场）。返回 disposer。
+ *
+ * 注册定义以官方 ToolDefinition 类型约束（不再用 unknown 断言）——
+ * 参数 schema 字段名是 `parameters`（ToolSchema 契约），此前误用 MCP 风格的
+ * `inputSchema` 导致 schema 投影抛 "parameters must be lossless JSON"（#356）。
+ */
+function registerGuardTool(ctx: Context): () => void {
+  const tools = (ctx as unknown as { tools: { register(d: ToolDefinition): () => void } }).tools;
+  return tools.register(buildGuardToolDefinition());
 }
 
 /**
@@ -113,8 +77,6 @@ export async function apply(ctx: Context, config: CodegraphConfig = {}): Promise
   const enabled = config.enabled !== false;
   const autoInstall = config.autoInstall === true;
   const installCommand = config.installCommand ?? DEFAULT_INSTALL_COMMAND;
-  const syncBeforeQuery = config.syncBeforeQuery !== false;
-  const requireProjectPath = config.requireProjectPath !== false;
   const injectDiscipline = config.injectDiscipline !== false;
 
   if (!enabled) return;
@@ -166,8 +128,9 @@ export async function apply(ctx: Context, config: CodegraphConfig = {}): Promise
     }
   }
 
-  // 3. 纪律工具（工具层硬纪律：强制 sync + projectPath）。
-  const disposeTool = registerGuardTool(ctx, { syncBeforeQuery, requireProjectPath });
+  // 3. 纪律工具（工具层硬纪律：强制 sync + projectPath——纪律行为固化为默认，
+  //    不提供关闭开关，保证「查询前 sync + projectPath 校验」不被配置绕过）。
+  const disposeTool = registerGuardTool(ctx);
 
   // 4. agent 纪律钩子（git 仓会话才注入）。
   const disposeHook = injectDiscipline ? registerDisciplineHook(ctx) : () => {};
