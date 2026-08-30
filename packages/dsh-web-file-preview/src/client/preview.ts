@@ -13,6 +13,14 @@ import { closeLightbox } from "./viewer.ts";
 import { renderGroupFor } from "./renderer.ts";
 import { scrollToFragment } from "./anchor.ts";
 import { renderHtmlPreview, releaseUrl } from "./html.ts";
+import {
+  fullscreenSupported,
+  isFullscreenActive,
+  fullscreenLabel,
+  shouldInterceptEscapeAsFullscreenExit,
+  exitFullscreenQuiet,
+} from "./fullscreen-math.ts";
+import { textFitsSnapshot } from "./render-limit.ts";
 
 /** 文件预览 URL（F2-B）。 */
 export function fileUrl(path: string, cwd: string | undefined, state: FilePreviewState): string {
@@ -24,6 +32,11 @@ export function fileUrl(path: string, cwd: string | undefined, state: FilePrevie
 
 /** 关闭 Modal 并清理资源（导航式重建用，不清栈、不动焦点）。 */
 export function closeModal(state: FilePreviewState): void {
+  // issue #344：全屏态清理——先退出全屏再移除 overlay，防止 fullscreenElement
+  // 短暂指向已移除节点；幂等（非全屏调用无副作用）。导航重建（openPreview 内调用）
+  // 同样在此退全屏——「导航即退全屏」语义。
+  exitFullscreenQuiet(document);
+  state.fsActive = false;
   closeLightbox(state);
   // 使所有在途请求代数失效并取消，防止旧请求覆写新打开的状态或回写被移除的 DOM。
   state.openSeq++;
@@ -61,6 +74,72 @@ export function closeModal(state: FilePreviewState): void {
   document.body.style.overflow = "";
   // 注：焦点还原 / 返回栈清空不在此处——这是导航式重建（openPreview 内调用）与
   // 终态关闭共用的"资源清理"函数；焦点还原与栈复位放在 finalizeSession()（终态入口）。
+}
+
+// ---- issue #344：全屏按钮状态同步（真全屏 + 视口放大降级态共用）----
+
+/**
+ * 同步 overlay 的降级态 class（.fwp-fs）与按钮文案/aria：
+ * - 真全屏（fullscreenchange 触发）：浏览器原声渲染 fullscreenElement（overlay），
+ *   .fwp-fs 不需要；降级态（能力缺失/请求被拒）靠 .fwp-fs 撑满视口。
+ * - state.fsActive 为「当前是否全屏（含降级）」的单一事实源，供 Esc 协调与同步用。
+ */
+export function syncFullscreenState(state: FilePreviewState): void {
+  const active = isFullscreenActive(document) || state.fsActive;
+  const supported = state.fsSupported;
+  if (state.overlay !== undefined) {
+    state.overlay.classList.toggle("fwp-fs", active && !isFullscreenActive(document));
+  }
+  const btn = state.overlay?.querySelector<HTMLButtonElement>(".fwp-fs-btn");
+  const label = fullscreenLabel(active, supported);
+  if (btn !== null && btn !== undefined) {
+    btn.textContent = label;
+    btn.setAttribute("aria-label", label);
+    btn.setAttribute("title", label);
+    btn.setAttribute("aria-pressed", String(active));
+    btn.classList.toggle("fwp-fs-on", active);
+  }
+}
+
+/**
+ * 全屏按钮点击：在全屏/退出全屏（能力缺失降级为视口放大态）之间切换。
+ * - 进入：能力探测通过 → 同步手势栈内调用 overlay.requestFullscreen()（可被拒 →
+ *   .catch 降级为 .fwp-fs 视口放大态）；能力缺失 → 直接降级 .fwp-fs。
+ * - 退出：exitFullscreen（原生）或摘除 .fwp-fs（降级态），并同步 state.fsActive。
+ */
+function toggleFullscreen(state: FilePreviewState, btn: HTMLButtonElement): void {
+  const overlay = state.overlay;
+  if (overlay === undefined) return;
+  const supported = fullscreenSupported(document, overlay);
+  state.fsSupported = supported;
+  const alreadyActive = isFullscreenActive(document) || state.fsActive;
+  if (alreadyActive) {
+    // 退出全屏：原生路径 exitFullscreen（fullscreenchange 会同步）；降级路径摘 class。
+    state.fsActive = false;
+    exitFullscreenQuiet(document);
+    syncFullscreenState(state);
+    return;
+  }
+  if (supported) {
+    try {
+      const p = overlay.requestFullscreen();
+      if (p !== undefined && typeof (p as Promise<void>).catch === "function") {
+        void (p as Promise<void>).catch(() => {
+          // 请求被拒（策略/手势丢失/iframe 无 allow-fullscreen）→ 降级为视口放大态。
+          state.fsActive = true;
+          syncFullscreenState(state);
+        });
+      }
+    } catch {
+      // requestFullscreen 本身抛错（如 DOM 非法）→ 降级。
+      state.fsActive = true;
+      syncFullscreenState(state);
+    }
+    return;
+  }
+  // 能力缺失（iOS Safari 非 video / fullscreenEnabled=false）→ 视口放大降级态。
+  state.fsActive = true;
+  syncFullscreenState(state);
 }
 
 /**
@@ -119,10 +198,19 @@ export function openPreview(
   // 以 overlay !== undefined（当前是否已有打开的 Modal）判断"是否在浏览链内"，
   // 避免重开会话时（overlay 为 undefined）把上次残留路径误压栈。
   if (!isBack && state.overlay !== undefined && state.currentPath !== "" && state.currentPath !== path) {
+    // issue #344：返回栈快照防御——超大 rawText/diffText 不入栈（仅存 path，返回时
+    // 重新拉取），防 MAX_BACK=32 × 20M 常驻内存。rawText 长度超出阈值时整个快照
+    // 退化为「仅路径」条目（返回分支按 rawText/diffText === undefined 重新拉取）。
+    const rawLen = typeof state.rawText === "string" ? state.rawText.length : 0;
+    const diffLen = typeof state.diffText === "string" ? state.diffText.length : 0;
+    const keepRaw = textFitsSnapshot(rawLen);
+    const keepDiff = textFitsSnapshot(diffLen);
     state.backStack.push({
       path: state.currentPath, cwd: state.currentCwd,
-      previewMode: state.previewMode, rawText: state.rawText,
-      diffText: state.diffText, diffUntracked: state.diffUntracked,
+      previewMode: state.previewMode,
+      rawText: keepRaw ? state.rawText : undefined,
+      diffText: keepDiff ? state.diffText : undefined,
+      diffUntracked: state.diffUntracked,
       // issue #73：html 预览 token/src 快照——返回时 iframe 直接复用（免重新 alloc）
       serveToken: state.serveToken, serveSrc: state.serveSrc,
     });
@@ -173,6 +261,17 @@ export function openPreview(
   copyBtn.addEventListener("click", () => copyPathText(path, copyBtn));
   const newTabBtn = el("button", { text: "在新标签打开原文" });
   newTabBtn.addEventListener("click", () => { window.open(url, "_blank", "noopener"); });
+  // issue #344：全屏按钮——置顶于关闭前，点击在全屏/视口放大降级态之间切换；
+  // 全屏目标为父文档 overlay（非 iframe），文档级 fullscreenchange 同步按钮态。
+  // 初始文案按能力探测设定（document.documentElement 作探针，requestFullscreen 挂
+  // Element.prototype；overlay 此时尚未创建，用 documentElement 等价探测）。
+  state.fsSupported = fullscreenSupported(document, document.documentElement as any);
+  const fsBtn = el("button", {
+    text: fullscreenLabel(false, state.fsSupported),
+    attrs: { "aria-label": fullscreenLabel(false, state.fsSupported), title: fullscreenLabel(false, state.fsSupported) },
+  });
+  fsBtn.classList.add("fwp-fs-btn");
+  fsBtn.addEventListener("click", () => toggleFullscreen(state, fsBtn));
   const closeBtn = el("button", { text: "关闭" });
   closeBtn.addEventListener("click", () => finalizeSession(state, "close"));
 
@@ -230,7 +329,7 @@ export function openPreview(
 
   const head = el("div", { class: "fwp-head" }, [
     el("div", { class: "fwp-title", text: path, attrs: { title: path } }),
-    el("div", { class: "fwp-actions" }, [backBtn, copyBtn, newTabBtn, closeBtn]),
+    el("div", { class: "fwp-actions" }, [backBtn, copyBtn, newTabBtn, fsBtn, closeBtn]),
   ]);
   const card = el("div", { class: "fwp-card" }, [head, tabs, body]);
   // a11y（评审 U11）：dialog 语义 + 打开聚焦 + Tab 陷阱配合 onKeyDown。
@@ -309,6 +408,15 @@ export function openPreview(
     // Diff tab 在跳转前可能已被探测/添加；返回时按其 snapshot 状态重建 tab 栏。
     if (prev.diffText !== undefined || prev.diffUntracked) addDiffTab();
     syncTabActive();
+    // issue #344：返回栈快照防御——大文件 rawText 未入栈（undefined）时不能直接
+    // renderTabBody（会卡「加载中…」），改为重新拉取（与前进打开同一路径）。
+    // 仅文本类分组（md/code/text）需要 rawText；image/html 走各自分支（html 预览
+    // 用 iframe、rawText 本可为 undefined 由惰性拉取兜底），不在此干预。
+    if (state.rawText === undefined && (group.group === "md" || group.group === "code" || group.group === "text")) {
+      fetchText(url, body, seq, abort.signal, state);
+      probeDiff(path, cwd, seq, addDiffTab, addUnavailableDiffTab, abort.signal, state);
+      return;
+    }
     renderTabBody(body, state);
   } else {
     fetchText(url, body, seq, abort.signal, state);
@@ -327,6 +435,15 @@ export function onKeyDown(this: any, event: KeyboardEvent): void {
   const state = (onKeyDown as any).__state as FilePreviewState | undefined;
   if (state === undefined) return;
   if (event.key === "Escape") {
+    // issue #344：全屏态下第一次 Esc 只退出全屏（不关闭 Modal）——浏览器（Safari/
+    // Firefox）会把 Esc keydown 派发给页面，本分支保证「先退全屏、再关」语义一致；
+    // 原生全屏退出由 fullscreenchange 同步按钮态。
+    if (shouldInterceptEscapeAsFullscreenExit(state.fsActive, event.key)) {
+      state.fsActive = false;
+      exitFullscreenQuiet(document);
+      syncFullscreenState(state);
+      return;
+    }
     if (state.lboxEl !== undefined) closeLightbox(state);
     else finalizeSession(state, "close");
     return;

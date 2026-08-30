@@ -91,6 +91,12 @@ export interface FilePreviewState {
   /** 查看器关闭后焦点还原目标（触发元素，若仍在 DOM；issue #293 C7 a11y）。 */
   lboxRestoreFocus: HTMLElement | undefined;
 
+  // issue #344：全屏按钮状态
+  /** 当前是否处于全屏态（真全屏或 CSS 视口放大降级态）。 */
+  fsActive: boolean;
+  /** 全屏是否受支持（fullscreenEnabled + requestFullscreen 探测结果）。 */
+  fsSupported: boolean;
+
   // 与宿主 ROUTES 一致的路径（单一来源见宿主 src/routes.ts）。
   API: {
     file: string;
@@ -136,6 +142,8 @@ export function createState(): FilePreviewState {
     lboxTx: 0,
     lboxTy: 0,
     lboxRestoreFocus: undefined,
+    fsActive: false,
+    fsSupported: false,
     API: {
       file: "/api/dsh-file-preview/file",
       diff: "/api/dsh-file-preview/diff",

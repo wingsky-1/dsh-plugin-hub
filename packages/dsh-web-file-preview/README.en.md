@@ -77,7 +77,8 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-web-file-preview
 | Key | Default | Description |
 |---|---|---|
 | `enabled` | `true` | When off, no routes are registered |
-| `maxTextBytes` | `524288` (512KB) | Max bytes for text-like (text/markdown/code) previews; exceeding it returns `413` + `truncated` marker (`Cache-Control: no-store`), and the client prompts "file too large" and can open the original in a new tab |
+| `maxTextBytes` | `20971520` (20MB) | Max bytes for text-like (text/markdown/code/html) previews; exceeding it returns `413` + `truncated` marker (`Cache-Control: no-store`), and the client prompts "file too large" and can open the original in a new tab (issue #344: default raised 512KB→20MB; the client degrades >1MB text to a plain truncated `<pre>` to avoid blocking the main thread) |
+| `maxAssetBytes` | `20971520` (20MB) | Max bytes per single asset (html/css/js/img of HTML previews) served by the virtual serve route; exceeding it returns `413` + `truncated` + `no-store` (symmetric with `maxTextBytes`, issue #73 + #344); SVG carries `Content-Security-Policy: sandbox` like `/file` |
 
 ## Verification
 
@@ -97,7 +98,7 @@ curl http://127.0.0.1:3080/api/dsh-file-preview/health
 
 ## Known Limitations
 
-- Text-like content exceeding `maxTextBytes` (default 512KB) returns 413 + truncation marker and no longer reads the whole file (streaming/virtual-scroll for large files is not implemented, see the W10 initiative).
+- Text-like content exceeding `maxTextBytes` (default 20MB) returns 413 + truncation marker and no longer reads the whole file (streaming/virtual-scroll for large files is not implemented, see the W10 initiative); the client degrades >1MB oversized text to a plain truncated `<pre>` (the Raw tab / opening the original in a new tab shows the full content).
 - The clickable scope is rather broad (any path title / local href / inline path text may enter preview); the `data-ref-chip` authoritative branch takes priority over generic sniffing to prevent false triggers from `@`-mentions.
 - Folder `@`-references do not open a preview (only a notice); directory browsing is outside this plugin's scope.
 - The client bundle includes `marked` + a `highlight.js` subset + `diff2html`, ~226KB minified (gzip ~68KB).

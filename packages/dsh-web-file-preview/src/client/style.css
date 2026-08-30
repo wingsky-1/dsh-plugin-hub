@@ -114,3 +114,22 @@
    半透明暖黄在明暗两态下均可辨识；动画结束透明回落，不残留状态。 */
 .fwp-frag-hit{animation:fwp-frag-flash 1.6s ease-out;border-radius:4px}
 @keyframes fwp-frag-flash{0%{background-color:rgba(255,196,66,.42)}70%{background-color:rgba(255,196,66,.18)}100%{background-color:transparent}}
+/* issue #344：全屏按钮——高亮标识当前可操作；aria-pressed 真全屏/放大态常亮。 */
+.fwp-fs-btn{font-weight:600}
+.fwp-fs-btn.fwp-fs-on{border-color:var(--dsw-alias-brand-primary,#4f6ef7);color:var(--dsw-alias-brand-primary,#4f6ef7);background:var(--dsw-alias-interactive-bg-hover,#eef1f5)}
+/* issue #344：真全屏态——overlay 为 fullscreenElement，卡片撑满视口（浏览器原声
+   全屏渲染 fullscreenElement 子树，其余内容不显示）；灯箱挂载点由 viewer.ts 跟随。 */
+.fwp-overlay:fullscreen .fwp-card{width:100vw;max-width:100vw;max-height:100dvh;border-radius:0;box-shadow:none}
+.fwp-overlay:fullscreen .fwp-body{flex:1;align-items:stretch;justify-content:stretch}
+.fwp-overlay:fullscreen .fwp-html-frame{height:100%}
+/* issue #344：视口放大降级态（iOS Safari 无 requestFullscreen / 请求被拒）——
+   给 overlay 加 .fwp-fs，卡片撑满视口；与真全屏视觉一致，仅非浏览器原声全屏。 */
+.fwp-overlay.fwp-fs .fwp-card{width:100vw;max-width:100vw;max-height:100dvh;border-radius:0;box-shadow:none}
+.fwp-overlay.fwp-fs .fwp-body{flex:1;align-items:stretch;justify-content:stretch}
+.fwp-overlay.fwp-fs .fwp-html-frame{height:100%}
+/* issue #344：窄屏工具栏——5 按钮不溢出：允许换行 + 压缩内边距（触控加高保留）。 */
+@media (max-width:640px){
+  .fwp-head{flex-wrap:wrap}
+  .fwp-actions{flex-wrap:wrap}
+  .fwp-actions button{padding:3px 7px;font-size:11px}
+}

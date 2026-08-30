@@ -454,11 +454,17 @@ export async function serveTokenRoute(
       settled = true;
       resolvePromise();
     };
-    res.writeHead(200, {
+    const contentType = serveContentTypeOf(rest);
+    const headers: Record<string, string> = {
       ...baseHeaders,
-      "content-type": serveContentTypeOf(rest),
+      "content-type": contentType,
       "content-length": String(info.size),
-    });
+    };
+    // issue #344 对称修复（评审 P3）：serve 对 SVG 补 CSP sandbox——与 /file 一致，
+    // 防止该 serve URL 被顶层导航打开时 SVG 内嵌 <script> 执行（maxAssetBytes 提至
+    // 20M 后暴露面放大；loopback 围栏 + 128-bit token 已缓解，但语义应对齐）。
+    if (contentType === "image/svg+xml") headers["content-security-policy"] = "sandbox";
+    res.writeHead(200, headers);
     stream.on("data", (chunk) => {
       if (!res.write(chunk)) stream.pause(); // 背压：下游写不动时暂停读
     });
