@@ -64,12 +64,14 @@ import { isInQuietHours } from "./quiet-hours.ts";
 import { HISTORY_LIMIT, createHistoryStore } from "./history.ts";
 import { createDoneBatcher } from "./aggregate.ts";
 import type { DoneBatcher } from "./aggregate.ts";
-import { NOTIFY_KINDS, sanitizeErrorText, sessionTitleOf, isSubagentOf, lastTurnEndOf } from "./message.ts";
+import { sanitizeErrorText, sessionTitleOf, isSubagentOf, lastTurnEndOf } from "./message.ts";
 import type { NotifyDetail } from "./message.ts";
 import { SETTINGS_NS, installNotifierSettings } from "./settings.ts";
 import type { OwnerScopeLike, SettingsServiceLike } from "./settings.ts";
 import { migrateLegacyConfig } from "./migrate.ts";
 import { ROUTES, buildRoutes, createSseHub, createSystemNotifier } from "./server.ts";
+import { createNotifierService } from "./service.ts";
+import type { NotifierServiceInternal } from "./service.ts";
 
 /** 稳定的 cordis 插件名。 */
 export const name = "notifier";
@@ -158,6 +160,31 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
     warn: (message) => ctx.logger.warn(message),
   });
 
+  // ------------------------------------------------------------ 通知中心 service（M1）
+
+  /**
+   * 通知中心核心服务：'wingsky.notifier'（M1，issue #366）。
+   * - 内置事件源经 service.sendKind 走完整文案管线（等价搬移前 notify 语义）；
+   * - 外部调用方（hub 插件）经 ctx['wingsky.notifier'].send 发送（缺省广播）；
+   * - 动态 kind 注册 → 待确认 → 确认后放行（suppressed 落史复用免打扰路径）。
+   * 依赖注入与旧装配层完全同源（sse/system/history/current/enabled），
+   * 无新状态面；卸载随 fiber disposer 统一清理（service 本身无定时器）。
+   */
+  const notifierService: NotifierServiceInternal = createNotifierService({
+    current: () => current,
+    enabled: () => config.enabled !== false,
+    sse,
+    system,
+    history: historyStore,
+    logger: ctx.logger,
+  });
+  // 暴露服务（官方 storageDomain 模式，mcp-manager 同款）：fake ctx 无 provide
+  // 时静默降级（单测 mock 兼容）。重复 provide 同名服务 cordis 会抛错——本插件
+  // 单实例无竞态；若出现，属装配错误应显式失败。
+  if (typeof (ctx as unknown as { provide?: unknown }).provide === "function") {
+    (ctx as unknown as { provide: (name: string, svc: unknown) => void }).provide("wingsky.notifier", notifierService);
+  }
+
   /** 通知历史追加（fire-and-forget 落盘，见 history.ts）。 */
   function appendHistory(entry: { ts: number; kind: string; title: string; message: string; suppressed?: string }) {
     historyStore.append(entry);
@@ -166,37 +193,16 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
   // ------------------------------------------------------------ 通知主入口
 
   /**
-   * 通知入口：总开关判定（enabled，H3）→ 免打扰检查（被拦截也记录「未发出」
-   * 历史）→ 系统通知 → SSE 广播 → 历史落盘。
-   * @param kind ask / done / error / turn-end。
+   * 通知入口（M1：委托通知中心 service，行为与搬移前完全一致）。
+   * - enabled 总开关（H3）、免打扰检查（suppressed 落史）、fail-soft 逐频道
+   *   分发、历史落盘全部收敛到 service.sendKind（单一管线，评审 #1）；
+   * - 返回 boolean 语义保持：results 中存在任一 ok 频道 = 真正发出。
+   * @param kind ask / done / error / turn-end 等内置 kind。
    * @param detail {tool?, taskTitle?, reason?, durationMs?, turn?, step?, message?, mergedCount?}（不含工具参数）。
    */
   function notify(kind: string, detail: NotifyDetail = {}): boolean {
-    // enabled 下沉到 notify() 入口（H2/H3）：禁用态不通知，但路由/命名空间/
-    // 迁移照常注册——由各事件处理器的开关判定 + 本总开关共同收敛。
-    if (config.enabled === false) return false;
-    const spec = NOTIFY_KINDS[kind];
-    const ts = Date.now();
-    const title = spec?.title ?? "DSH 通知";
-    const message = spec?.message({ ...detail, ts }) ?? detail.message ?? "";
-    const suppressedByQuiet = (() => {
-      if (!isInQuietHours(new Date(), current.quietHours)) return false;
-      // 免打扰紧急例外：allowKinds 中的 kind（如 ask/question——卡住的审批需要叫醒）仍放行
-      const allows = current.quietHours.allowKinds ?? [];
-      return !allows.includes(kind);
-    })();
-    if (suppressedByQuiet) {
-      // 免打扰拦截：**仍落一条「未发出」历史 + 日志**，让用户能核对「到底发没发」
-      ctx.logger.info(`dsh-notifier: ${kind} 被免打扰拦截（未发出）：${message.replace(/\n/g, " / ")}`);
-      appendHistory({ ts, kind, title, message, suppressed: "quiet" });
-      return false;
-    }
-    const payload = { type: "notify", kind, title, message, ts };
-    if (current.systemNotify) system.notify(title, message);
-    if (current.browserNotify) sse.broadcast(payload);
-    ctx.logger.info(`dsh-notifier: ${kind} ${message.replace(/\n/g, " / ")}`);
-    appendHistory({ ts, kind, title, message });
-    return true;
+    const results = notifierService.sendKind(kind, detail);
+    return results.some((r) => r.status === "ok");
   }
 
   // ------------------------------------------------------------ 事件监听
