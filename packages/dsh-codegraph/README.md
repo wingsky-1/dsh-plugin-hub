@@ -38,9 +38,10 @@ cd your-project && codegraph init
 | `enabled` | `true` | 总开关 |
 | `autoInstall` | `false` | 未装 codegraph CLI 时自动安装（默认仅引导；开启需知悉供应链风险） |
 | `installCommand` | `npm install -g @colbymchenry/codegraph` | 自定义安装命令 |
-| `syncBeforeQuery` | `true` | 查询前强制 sync |
-| `requireProjectPath` | `true` | 不传 projectPath 时拒绝调用（自动补全 + 拒绝兜底） |
 | `injectDiscipline` | `true` | 注入纪律到 git 仓会话 |
+
+> 工具层纪律（查询前强制 sync + projectPath 校验/补全）是核心价值，固化为默认行为，
+> 不提供关闭开关——保证「worktree 索引不过期」「不漏传 projectPath」不被配置绕过。
 
 ## Worktree 开发流程
 

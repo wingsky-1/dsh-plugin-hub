@@ -8,13 +8,15 @@
 //   - findGitRoot / isGitRepo（.git 目录 / .git 文件(worktree) / 非 git 三分支）
 //   - shouldInject（cwd 判定）
 //   - guardedExplore（无 projectPath → 补全/拒绝；无索引 → 引导；sync 失败 → 拒绝）
+//   - 工具注册定义（#356 回归）：buildGuardToolDefinition 字段名契约
+//     （parameters 而非 inputSchema）+ 真实 dsh-tools 注册投影不抛错
 //   - apply（enabled:false / 不读 ctx.session 回归 / 探测未装引导 / 注册 / 纪律工具注册）
 //
 // 运行：node dsh-codegraph/test/smoke.ts
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const pkgDir = join(new URL("..", import.meta.url).pathname);
@@ -23,6 +25,38 @@ const { apply, name, inject } = mod;
 const { isCodegraphInstalled, installGuidance } = mod;
 const { findGitRoot, isGitRepo, guardedExplore } = mod;
 const { shouldInject, DISCIPLINE_TEXT } = mod;
+const { buildGuardToolDefinition } = mod;
+
+// 解析真实 dsh-tools + cordis（#356 回归投影断言用）。
+// 候选顺序：依赖树解析 → DSH_TOOLS_PATH / DSH_CORDIS_PATH 环境变量 → Volta 全局
+// 安装布局。全部失败时警告而非静默跳过（避免"测试通过但覆盖缺失"的假象）。
+// 先例：dsh-mcp-manager test/smoke.ts 的 dsh-tools 解析（同款候选策略）。
+async function resolveModule(name, envVar) {
+  const candidates = [];
+  try {
+    candidates.push(import.meta.resolve(name));
+  } catch {
+    // 不在依赖树，继续尝试其他候选
+  }
+  if (typeof process.env[envVar] === "string" && process.env[envVar] !== "") {
+    candidates.push(pathToFileURL(process.env[envVar]).href);
+  }
+  try {
+    const voltaPackages = join(dirname(dirname(dirname(process.execPath))), "packages");
+    candidates.push(pathToFileURL(join(voltaPackages, "@deepseek-ai", "dsh", "node_modules", "@deepseek-ai", "dsh", "node_modules", "@deepseek-ai", name, "lib", "index.js")).href);
+  } catch {
+    // 非 Volta 环境，跳过布局候选
+  }
+  let lastError;
+  for (const url of candidates) {
+    try {
+      return await import(url);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  return { error: lastError };
+}
 
 const failures = [];
 function check(label, fn) {
@@ -47,6 +81,53 @@ async function checkAsync(label, fn) {
 // ---- 契约 ----
 check("契约: name = codegraph", () => assert.equal(name, "codegraph"));
 check("契约: inject 包含 agents", () => assert.ok(inject.includes("agents")));
+
+// ---- 工具注册定义（#356 回归）----
+// 根因：注册定义误用 MCP 风格字段 inputSchema，而 dsh-tools 契约要求 parameters，
+// 导致 schema 投影时 parameters===undefined → 抛 "must be lossless JSON"。
+{
+  const definition = buildGuardToolDefinition();
+  check("工具定义: 使用 parameters 字段（非 inputSchema，#356）", () => {
+    assert.ok(definition.parameters, "parameters 必须存在");
+    assert.equal(definition.inputSchema, undefined, "inputSchema 不应存在");
+  });
+  check("工具定义: parameters 为合法对象 schema", () => {
+    assert.equal(definition.parameters.type, "object");
+    assert.ok(definition.parameters.properties.query, "query 属性存在");
+    assert.ok(definition.parameters.properties.projectPath, "projectPath 属性存在");
+    assert.deepEqual(definition.parameters.required, ["query"]);
+  });
+  check("工具定义: output 契约完整（schema + render）", () => {
+    assert.ok(definition.output, "output 必须存在");
+    assert.ok(definition.output.schema, "output.schema 必须存在");
+    assert.equal(typeof definition.output.render, "function", "output.render 必须是函数");
+  });
+
+  // 真实 dsh-tools 注册 + 投影：注册定义后调用 schemas() 不抛错（堵住 mock 盲区——
+  // 此前 smoke 的 tools.register 是 mock，不触发真实 schemaOf 投影，契约字段错误溜过门禁）。
+  checkAsync("工具定义: 真实 dsh-tools 注册 + schemas() 投影不抛错（#356 回归）", async () => {
+    const dshTools = await resolveModule("@deepseek-ai/dsh-tools", "DSH_TOOLS_PATH");
+    const cordis = await resolveModule("@deepseek-ai/cordis", "DSH_CORDIS_PATH");
+    if (dshTools.error || cordis.error) {
+      console.warn(`smoke: @deepseek-ai/dsh-tools / @deepseek-ai/cordis 不可解析（dsh-tools: ${dshTools.error?.message ?? "无候选"}；cordis: ${cordis.error?.message ?? "无候选"}）——真实投影断言跳过；可设置 DSH_TOOLS_PATH / DSH_CORDIS_PATH`);
+      return;
+    }
+    const { Context } = cordis;
+    const ToolRuntime = dshTools.default ?? dshTools.ToolRuntime;
+    const ctx = new Context();
+    ctx.provide("systemPrompt", {
+      tools: () => () => {},
+      section: () => () => {},
+    });
+    const tools = new ToolRuntime(ctx, { mode: "native" });
+    tools.register(buildGuardToolDefinition());
+    const schemas = tools.schemas();
+    assert.equal(schemas.length, 1, "投影出 1 个工具");
+    assert.equal(schemas[0].name, "codegraph_explore");
+    assert.ok(schemas[0].parameters, "投影 parameters 存在");
+    assert.equal(schemas[0].parameters.properties.query.type, "string");
+  });
+}
 
 // ---- install.ts ----
 {
@@ -114,7 +195,7 @@ check("契约: inject 包含 agents", () => assert.ok(inject.includes("agents"))
       },
       // inject 强依赖：ctx.tools 直接可用（纪律工具注册；此前未 inject 导致 cordis
       // Proxy 抛 "cannot get property tools without inject" 启动失败）。
-      tools: { register: (d) => { state.tools.push(d.name); return () => {}; } },
+      tools: { register: (d) => { state.tools.push(d); return () => {}; } },
       on: () => () => {},
       effect: (fn) => { const d = fn(); state.disposers.push(d); return d; },
     };
@@ -134,6 +215,17 @@ check("契约: inject 包含 agents", () => assert.ok(inject.includes("agents"))
     const { ctx, state } = makeCtx(); // fake ctx 无 session 字段
     await apply(ctx, {});
     assert.ok(state.disposers.length >= 1, "apply 正常完成并注册 effect disposer");
+  });
+
+  // #356 回归：apply 注册的纪律工具定义必须用 parameters（非 inputSchema）字段。
+  checkAsync("apply: 纪律工具注册定义用 parameters 字段（#356 回归）", async () => {
+    const { ctx, state } = makeCtx();
+    await apply(ctx, {});
+    assert.equal(state.tools.length, 1, "注册了 1 个工具");
+    const definition = state.tools[0];
+    assert.equal(definition.name, "codegraph_explore");
+    assert.ok(definition.parameters, "parameters 必须存在（非 inputSchema）");
+    assert.equal(definition.inputSchema, undefined, "inputSchema 不应存在");
   });
 
   // enabled:false → 不做事

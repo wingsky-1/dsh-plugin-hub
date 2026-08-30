@@ -10,7 +10,9 @@
  * 多工作空间天然区分：每个会话独立判定，互不影响。
  */
 import type { Context } from "@deepseek-ai/cordis";
+import type { UserMessage } from "@deepseek-ai/dsh-llm";
 import type {} from "@deepseek-ai/dsh-agent";
+import { randomUUID } from "node:crypto";
 import { findGitRoot } from "./guard.ts";
 
 /** 注入给 agent 的 worktree 开发纪律文案（~200 tokens，保持精简）。 */
@@ -29,6 +31,16 @@ export function shouldInject(cwd: string | undefined): boolean {
   return findGitRoot(cwd) !== undefined;
 }
 
+/** 构造纪律注入消息（完整 UserMessage 契约：id + content block + source）。 */
+function disciplineMessage(): UserMessage {
+  return {
+    id: randomUUID() as UserMessage["id"],
+    role: "user",
+    content: [{ type: "text", text: DISCIPLINE_TEXT }],
+    source: { kind: "plugin", plugin: "codegraph", form: "instructions" },
+  };
+}
+
 /** 注册 agent/created 钩子（按 cwd 条件注入纪律）。返回 disposer。 */
 export function registerDisciplineHook(ctx: Context): () => void {
   const disposer = ctx.on("agent/created", ({ agent }) => {
@@ -38,16 +50,19 @@ export function registerDisciplineHook(ctx: Context): () => void {
     // 在子 agent 自己的 scope 注册 pre-step：首轮向 messages 追加纪律文本
     // （~200 tokens/次，非每 step），随 scope 自动清理。
     let injected = false;
-    agent.ctx.on("agent/pre-step", async ({ messages }, next) => {
+    agent.ctx.on("agent/pre-step", async ({ messages, signal }, next) => {
       const decision = await next();
-      if (injected) return decision;
+      signal.throwIfAborted();
+      // 尊重 reject 决策（如其他监听器拒绝进入本轮 step），不覆盖为 enter；
+      // 已注入过 → 原样放行（幂等，防重复注入）。
+      if (decision.kind === "reject" || injected) return decision;
       injected = true;
       // 不可变注入：返回新数组（不动传入 messages 引用），符合 PreStepDecision
       // 契约——mcp-manager 的 resolveCatalogInjection 同款构造式返回。
       const nextMessages = Array.isArray(messages)
-        ? [...messages, { role: "user", content: DISCIPLINE_TEXT }]
+        ? [...messages, disciplineMessage()]
         : messages;
-      return { kind: "enter", messages: nextMessages } as unknown as ReturnType<typeof next>;
+      return { kind: "enter", messages: nextMessages };
     });
   });
   return disposer;
