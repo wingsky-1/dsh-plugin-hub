@@ -1077,6 +1077,19 @@ const main = async () => {
         assert.equal(manager.projectStore, current);
       });
 
+      // #359：运行时注入（registerServer 的 runtimeRegistry）并入目录数据源——
+      // dsh-codegraph 等插件运行时注册的服务器必须在 <available_mcp_servers> 里。
+      // 放在块尾：避免注入污染前面用例对"仅 store"目录的断言。
+      await checkAsync("运行时注入（runtimeRegistry）并入目录数据源（#359）", async () => {
+        await manager.registerServer(normalizeServer({ name: "rt1", transport: "stdio", command: "true", ...noReconnect }));
+        const names = [...(await manager.catalogServersFor("")).keys()];
+        assert.deepEqual(names, ["g1", "rt1"]);
+        // 同名 runtime 优先于 store（与 reconcile 双轨一致）——目录仍含该名。
+        await manager.registerServer(normalizeServer({ name: "g1", transport: "stdio", command: "true", ...noReconnect }));
+        const g1 = (await manager.catalogServersFor("")).get("g1");
+        assert.equal(g1 !== undefined && g1.server !== undefined, true, "g1 仍在目录中");
+      });
+
       await manager.dispose();
     } finally {
       rmSync(base, { recursive: true, force: true });

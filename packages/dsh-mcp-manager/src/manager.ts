@@ -294,12 +294,22 @@ export class McpManager {
    * 连接状态、跟随"当前工作区"）——切换工作区会断开/连接项目级服务器，导致
    * 别的会话的目录集合抖动、每次抖动注入一条目录更新消息。按 cwd 计算后：
    * 工作区 MCP 没变化 → digest 不变 → 不重新注入。
+   *
+   * 运行时注入（registerServer 的 runtimeRegistry，内存态）同样并入目录数据源
+   * （#359）：dsh-codegraph 等插件经运行时注入注册的服务器，连接成功、工具可用，
+   * 但此前不在目录里——模型看不到能力，只能自己翻 CLI。同名 runtime 优先
+   * （与 reconcile 双轨一致）。
    */
   async catalogServersFor(cwd: string | undefined): Promise<Map<string, { server: ServerConfig; scope: string }>> {
     const servers = new Map<string, { server: ServerConfig; scope: string }>();
     for (const server of this.store.data.servers) {
       if (server.enabled === false) continue;
       servers.set(server.name, { server, scope: SCOPE_GLOBAL });
+    }
+    // 运行时注入（registerServer 内存态）：并入目录数据源，同名 runtime 优先。
+    for (const [name, server] of this.runtimeRegistry) {
+      if (server.enabled === false) continue;
+      servers.set(name, { server, scope: SCOPE_GLOBAL });
     }
     const root = cwd === undefined || cwd === null || cwd === "" ? undefined : await this.findProjectRoot(cwd);
     const store = root === undefined ? undefined : await this.projectStoreFor(root);

@@ -14,8 +14,9 @@ codegraph MCP + worktree 开发纪律 —— 把 [codegraph](https://github.com/
   worktree，自动不了则拒绝并提示）。杜绝「worktree 索引静默过期」与「漏传 projectPath
   查错对象」。
 - **agent 纪律钩子**：`agent/created` + 会话 cwd 判定，git 仓（主 checkout / worktree）会话
-  才注入 worktree 开发纪律（~200 tokens/次）；非 git 仓（日常维护/讨论空间）不注入——
-  多工作空间天然区分（按会话 cwd 判定，无需配置）。
+  才注入 worktree 开发纪律——以 systemPrompt 段注入（order 161，恒在 mcp-manager
+  能力目录段之后，agent scope 注册沿 scope 链自动继承给子 agent）；非 git 仓
+  （日常维护/讨论空间）不注入——多工作空间天然区分（按会话 cwd 判定，无需配置）。
 
 ## 安装
 
