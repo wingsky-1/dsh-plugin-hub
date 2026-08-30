@@ -47,12 +47,19 @@ export function parseDisabledTools(raw: unknown): DisabledToolsMap {
 }
 
 /** 解析 @<root>/<server> 全名 → { root, server }；非法返回 undefined。
- * root 是绝对路径（以 / 开头），故从最后一个 `/` 分割（server 名不含 `/`）。 */
+ * root 是绝对路径（以 / 开头），故从最后一个 `/` 分割（server 名不含 `/`）。
+ * 特殊形态兼容：`@global/<server>`（单 @，人类/文档/A2 指引形态）归一化为
+ * root=`@global`（MIDDLEWARE_GLOBAL_ROOT）；`@@global/<server>`（双 @，内部
+ * fullServerName 产物）同样归一化为 `@global`——两种输入等价，杜绝「单 @ 被
+ * 路由拒绝、双 @ 放行」的语义分裂（隔离验证 P0 发现，smoke 双 @ 掩盖单 @ 被拒）。 */
 export function parseFullServerName(name: string): { root: string; server: string } | undefined {
   if (!name.startsWith("@")) return undefined;
   const slash = name.lastIndexOf("/");
   if (slash <= 1 || slash === name.length - 1) return undefined;
-  return { root: name.slice(1, slash), server: name.slice(slash + 1) };
+  const rawRoot = name.slice(1, slash);
+  // @global/<s> → rawRoot="global"；@@global/<s> → rawRoot="@global"。
+  const root = rawRoot === "global" || rawRoot === "@global" ? MIDDLEWARE_GLOBAL_ROOT : rawRoot;
+  return { root, server: name.slice(slash + 1) };
 }
 
 /** 归一化中间层工具的 tool 参数（模型可能传 mcp__<server>__<tool> 全名）。

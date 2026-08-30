@@ -257,6 +257,11 @@ const main = async () => {
     // server 全名解析往返
     const full = fullServerName("/proj", "ctx");
     assert.deepEqual(parseFullServerName(full), { root: "/proj", server: "ctx" });
+    // @global 单 @ / 双 @ 等价（隔离验证 P0：smoke 双 @ 掩盖单 @ 被拒）
+    const { MIDDLEWARE_GLOBAL_ROOT } = await import("../lib/index.js");
+    assert.deepEqual(parseFullServerName("@global/gctx"), { root: MIDDLEWARE_GLOBAL_ROOT, server: "gctx" }, "单 @ @global/ 归一化为 @global");
+    assert.deepEqual(parseFullServerName("@@global/gctx"), { root: MIDDLEWARE_GLOBAL_ROOT, server: "gctx" }, "双 @ @@global/ 归一化为 @global");
+    assert.deepEqual(parseFullServerName(fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx")), { root: MIDDLEWARE_GLOBAL_ROOT, server: "gctx" }, "fullServerName(@global) 往返一致");
     dispose();
   });
   await checkAsync("search 早退分支（unit undefined）返回 truncated=false（P1-1）", async () => {
