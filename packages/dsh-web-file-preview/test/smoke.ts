@@ -553,11 +553,19 @@ try {
   const literals = [...client.matchAll(/\/api\/dsh-file-preview\/[a-z-]+/g)].map((m) => m[0]);
   for (const literal of literals) assert.ok(expectedRoutes.includes(literal), `client 出现未知路由: ${literal}`);
   for (const route of expectedRoutes) assert.ok(literals.includes(route), `client 缺少路由: ${route}`);
-  // issue #344 哨兵断言（防实现回退丢按钮）：全屏按钮文案/类名与降级态类必须存在于
-  // 客户端产物（fullscreenLabel 文案 + fwp-fs-btn 选择器 + fwp-fs 降级类）。
-  assert.ok(client.includes("全屏") && client.includes("退出全屏"), "#344 client 含全屏按钮文案（fullscreenLabel）");
-  assert.ok(client.includes("fwp-fs-btn"), "#344 client 含全屏按钮类名选择器");
-  assert.ok(client.includes("fwp-fs"), "#344 client 含视口放大降级类");
+  // issue #344 哨兵断言（防实现回退丢按钮）：断言**唯一字面量**（评审 F7）——
+  // 「退出全屏/放大预览/退出放大」仅存在于 fullscreenLabel（不会被 css 中文注释/
+  // 类名子串满足）；fwp-fs-btn 是按钮选择器唯一词。`.fwp-fs{` 带花括号前缀避免与
+  // fwp-fs-btn/fwp-fs-on 子串混淆（css 经 text-loader 原样内联进 client.js）。
+  assert.ok(client.includes("退出全屏"), "#344 client 含「退出全屏」文案（fullscreenLabel 唯一字面量）");
+  assert.ok(client.includes("放大预览") && client.includes("退出放大"), "#344 client 含降级态文案（放大预览/退出放大）");
+  assert.ok(client.includes('classList.add("fwp-fs-btn")') || client.includes(".fwp-fs-btn{"), "#344 client 含全屏按钮类名");
+  assert.ok(client.includes(".fwp-fs{") || client.includes(".fwp-fs "), "#344 client 含视口放大降级类（带选择器上下文）");
+  // issue #344（评审 F1/F2 防回退哨兵）：diff 渲染路径必须接入 render-limit 谓词
+  // （renderDiff 超限降级）与返回栈 hadDiff 重探逻辑——minify 保留属性名（hadDiff）
+  // 与导出函数名（exceedsTextRenderLimit），产物层可断言，防「修了一半」回归。
+  assert.ok(client.includes("exceedsTextRenderLimit"), "#344 client 含渲染阈值谓词引用（F1 diff 降级接入）");
+  assert.ok(client.includes("hadDiff"), "#344 client 含返回栈 diff 恢复标志（F2 重探逻辑）");
 
   // ---- issue #104：mermaid 懒加载 chunk 宿主路由真实可读（P0 断言）----
   // 防「cleanFreeFloatingJs 把新 chunk 当游离产物删除 → 五连门禁全绿而功能坏」
@@ -916,7 +924,7 @@ try {
         }
         // D2：单资源超 maxAssetBytes → 413 + truncated + no-store（先 stat 判大小、不整读）
         {
-          // 用 serve 路由 cfg 注入小上限（模拟 maxAssetBytes 配置生效；默认 512KB 太大）
+          // 用 serve 路由 cfg 注入小上限（模拟 maxAssetBytes 配置生效；默认 20M 太大）
           const smallCfg = { maxAssetBytes: 64 };
           writeFileSync(join(serveRoot, "big.html"), "<p>" + "x".repeat(100) + "</p>", "utf8");
           const res = fakeRes();

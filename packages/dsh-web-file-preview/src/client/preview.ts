@@ -32,10 +32,15 @@ export function fileUrl(path: string, cwd: string | undefined, state: FilePrevie
 
 /** 关闭 Modal 并清理资源（导航式重建用，不清栈、不动焦点）。 */
 export function closeModal(state: FilePreviewState): void {
-  // issue #344：全屏态清理——先退出全屏再移除 overlay，防止 fullscreenElement
-  // 短暂指向已移除节点；幂等（非全屏调用无副作用）。导航重建（openPreview 内调用）
-  // 同样在此退全屏——「导航即退全屏」语义。
-  exitFullscreenQuiet(document);
+  // issue #344：全屏态清理——仅当全屏元素是本插件 overlay（或其子树）时才退全屏，
+  // 避免越权退出与插件无关的页面全屏（评审 F5：closeModal 被首次打开/导航重建/
+  // 卸载共用，无条件 exitFullscreen 会误伤第三方插件的全屏）。幂等（非全屏无副作用）；
+  // 导航重建（openPreview 内调用）同样在此退全屏——「导航即退全屏」语义。
+  const fullscreenEl = document.fullscreenElement;
+  if (fullscreenEl !== null && fullscreenEl !== undefined &&
+      state.overlay !== undefined && fullscreenEl.contains(state.overlay)) {
+    exitFullscreenQuiet(document);
+  }
   state.fsActive = false;
   closeLightbox(state);
   // 使所有在途请求代数失效并取消，防止旧请求覆写新打开的状态或回写被移除的 DOM。
@@ -121,17 +126,26 @@ function toggleFullscreen(state: FilePreviewState, btn: HTMLButtonElement): void
     return;
   }
   if (supported) {
+    // 异步请求可能在 Modal 导航重建/关闭后才 settle——capture 发起时的 overlay
+    // 引用做守卫，避免把「新打开的预览」误置为降级放大态（评审 F4）。
+    const requestOverlay = overlay;
     try {
       const p = overlay.requestFullscreen();
       if (p !== undefined && typeof (p as Promise<void>).catch === "function") {
         void (p as Promise<void>).catch(() => {
-          // 请求被拒（策略/手势丢失/iframe 无 allow-fullscreen）→ 降级为视口放大态。
+          // 请求被拒（策略/手势丢失/iframe 无 allow-fullscreen）→ 降级为视口放大态；
+          // 同时回落 fsSupported=false——否则按钮误显「退出全屏」而非「退出放大」
+          //（fullscreenLabel(true,true) 与降级态语义不符，评审 F4 文案错误）。
+          if (state.overlay !== requestOverlay) return;
+          state.fsSupported = false;
           state.fsActive = true;
           syncFullscreenState(state);
         });
       }
     } catch {
-      // requestFullscreen 本身抛错（如 DOM 非法）→ 降级。
+      if (state.overlay !== requestOverlay) return;
+      // requestFullscreen 本身抛错（如 DOM 非法）→ 降级，文案同步回落。
+      state.fsSupported = false;
       state.fsActive = true;
       syncFullscreenState(state);
     }
@@ -211,6 +225,10 @@ export function openPreview(
       rawText: keepRaw ? state.rawText : undefined,
       diffText: keepDiff ? state.diffText : undefined,
       diffUntracked: state.diffUntracked,
+      // issue #344（评审 F2）：跳转前 Diff tab 是否已存在——基于「当时是否有 diff
+      // 内容」判定（diffText 有值 或 未跟踪），与是否入栈（keepDiff）无关；返回时
+      // 据此决定是否补一次 probeDiff（大 diff 未入栈时重探恢复）。
+      hadDiff: (typeof state.diffText === "string" && state.diffText.length > 0) || state.diffUntracked,
       // issue #73：html 预览 token/src 快照——返回时 iframe 直接复用（免重新 alloc）
       serveToken: state.serveToken, serveSrc: state.serveSrc,
     });
@@ -302,6 +320,9 @@ export function openPreview(
     });
     tabs.appendChild(diffTab);
     syncTabActive();
+    // issue #344（评审 F3）：探测完成时若用户已在 diff 模式（返回恢复场景、大 diff
+    // 重探后），立即用刚拉到的 diffText 重渲染正文，避免残留「无可用 diff」陈旧内容。
+    if (state.previewMode === "diff") renderTabBody(body, state);
   };
   // 评审 U9：探测失败不再静默——tab 栏给出「Diff 不可用」禁用态，避免用户误以为
   // 「没有变化」；与「确实无 diff（不出现 tab）」区分开。
@@ -405,8 +426,14 @@ export function openPreview(
     // issue #73：返回还原 html 预览 token/src 快照——iframe 直接复用（免重新 alloc）。
     state.serveToken = prev.serveToken;
     state.serveSrc = prev.serveSrc;
-    // Diff tab 在跳转前可能已被探测/添加；返回时按其 snapshot 状态重建 tab 栏。
-    if (prev.diffText !== undefined || prev.diffUntracked) addDiffTab();
+    // Diff tab 重建（评审 F2）：快照有 diffText/untracked → 直接重建；大 diff 未入栈
+    //（hadDiff=true 且 diffText/diffUntracked 均缺）→ 补一次 probeDiff 重探，防止
+    // 跳转前存在的 Diff 永久丢失（旧逻辑两者都漏，导致 diff tab 静默消失）。
+    if (prev.diffText !== undefined || prev.diffUntracked) {
+      addDiffTab();
+    } else if (prev.hadDiff) {
+      probeDiff(path, cwd, seq, addDiffTab, addUnavailableDiffTab, abort.signal, state);
+    }
     syncTabActive();
     // issue #344：返回栈快照防御——大文件 rawText 未入栈（undefined）时不能直接
     // renderTabBody（会卡「加载中…」），改为重新拉取（与前进打开同一路径）。
@@ -414,7 +441,6 @@ export function openPreview(
     // 用 iframe、rawText 本可为 undefined 由惰性拉取兜底），不在此干预。
     if (state.rawText === undefined && (group.group === "md" || group.group === "code" || group.group === "text")) {
       fetchText(url, body, seq, abort.signal, state);
-      probeDiff(path, cwd, seq, addDiffTab, addUnavailableDiffTab, abort.signal, state);
       return;
     }
     renderTabBody(body, state);

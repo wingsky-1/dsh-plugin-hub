@@ -77,7 +77,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-web-file-preview
 | Key | 默认 | 说明 |
 |---|---|---|
 | `enabled` | `true` | 关闭则不注册任何路由 |
-| `maxTextBytes` | `20971520` (20MB) | 文本类（text/markdown/code/html 源码）预览最大字节数；超限返回 `413` + `truncated` 标记（`Cache-Control: no-store`），客户端提示「文件过大」，可在新标签打开原文（issue #344：默认 512KB→20M；客户端对 >1MB 超大文本降级为纯 `<pre>` 截断渲染，防主线程阻塞） |
+| `maxTextBytes` | `20971520` (20MB) | 文本类（text/markdown/code/html 源码）预览最大字节数；超限返回 `413` + `truncated` 标记（`Cache-Control: no-store`），客户端提示「文件过大」，可在新标签打开原文（issue #344：默认 512KB→20M；客户端对超大文本 >1M 字符（UTF-16 码元）降级为纯 `<pre>` 截断渲染，防主线程阻塞） |
 | `maxAssetBytes` | `20971520` (20MB) | serve 单资源（HTML 预览的 html/css/js/img 等）最大字节数；超限返回 `413` + `truncated` 标记（`Cache-Control: no-store`），客户端提示（与 `maxTextBytes` 对称，issue #73 PR 声明 + #344 同步提升）；SVG 与 /file 一致补 `Content-Security-Policy: sandbox` |
 
 ## 验证

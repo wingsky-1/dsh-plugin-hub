@@ -77,7 +77,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-web-file-preview
 | Key | Default | Description |
 |---|---|---|
 | `enabled` | `true` | When off, no routes are registered |
-| `maxTextBytes` | `20971520` (20MB) | Max bytes for text-like (text/markdown/code/html) previews; exceeding it returns `413` + `truncated` marker (`Cache-Control: no-store`), and the client prompts "file too large" and can open the original in a new tab (issue #344: default raised 512KB→20MB; the client degrades >1MB text to a plain truncated `<pre>` to avoid blocking the main thread) |
+| `maxTextBytes` | `20971520` (20MB) | Max bytes for text-like (text/markdown/code/html) previews; exceeding it returns `413` + `truncated` marker (`Cache-Control: no-store`), and the client prompts "file too large" and can open the original in a new tab (issue #344: default raised 512KB→20MB; the client degrades oversized text >1M chars (UTF-16 code units) to a plain truncated `<pre>` to avoid blocking the main thread) |
 | `maxAssetBytes` | `20971520` (20MB) | Max bytes per single asset (html/css/js/img of HTML previews) served by the virtual serve route; exceeding it returns `413` + `truncated` + `no-store` (symmetric with `maxTextBytes`, issue #73 + #344); SVG carries `Content-Security-Policy: sandbox` like `/file` |
 
 ## Verification

@@ -194,6 +194,14 @@ export function renderDiff(body: HTMLElement, state: FilePreviewState): void {
     body.appendChild(el("div", { class: "fwp-state", text: "无可用 diff" }));
     return;
   }
+  // issue #344（评审 P1 F1）：diff 同样受渲染阈值约束——大 diff（git 输出上限 32MB）
+  // 走 diff2html 同步生成 DOM 表格会秒级阻塞主线程，与 md/code 的超大文本同源问题；
+  // 降级为截断 <pre> + 提示（原始 diff 仍在 state.diffText，切 tab 后可回看）。
+  if (exceedsTextRenderLimit(d.length)) {
+    const truncated = d.slice(0, TEXT_RENDER_LIMIT_CODEPOINTS);
+    body.appendChild(el("pre", { class: "fwp-diff", text: `${truncated}\n\n…（diff 过大，已截断显示）` }));
+    return;
+  }
   try {
     const out = diffToHtml(d, {
       drawFileList: false,

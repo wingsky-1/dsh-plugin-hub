@@ -454,7 +454,10 @@ export async function serveTokenRoute(
       settled = true;
       resolvePromise();
     };
-    const contentType = serveContentTypeOf(rest);
+    // issue #344（评审 F10）：Content-Type/CSP 判定基于**解码后**路径（decodedRest）
+    // ——与 realpath 落盘文件同源；URL 编码形态（如 icon%2esvg）判不到扩展名会退
+    // octet-stream 且漏 CSP，与真实文件类型不符（方向安全但判定基准应一致）。
+    const contentType = serveContentTypeOf(decodedRest);
     const headers: Record<string, string> = {
       ...baseHeaders,
       "content-type": contentType,

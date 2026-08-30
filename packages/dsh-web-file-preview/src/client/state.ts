@@ -15,6 +15,8 @@ export interface NavEntry {
   rawText?: string;
   diffText?: string;
   diffUntracked?: boolean;
+  /** issue #344（评审 F2）：跳转前 Diff tab 是否已存在（diffText 未入栈时靠它判定返回需重探）。 */
+  hadDiff: boolean;
   /** issue #73：html 预览 serve token/src 快照——返回时直接复用 iframe（免重新 alloc）。 */
   serveToken?: string;
   serveSrc?: string;
