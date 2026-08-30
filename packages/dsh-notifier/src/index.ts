@@ -102,6 +102,23 @@ export {
 export type { NotifyDetail } from "./message.ts";
 export { ROUTES, applyConfigPatch } from "./server.ts";
 export type { PatchResult, RouteDeps } from "./server.ts";
+export {
+  BUILTIN_CHANNELS,
+  KIND_SEVERITY,
+  createNotifierService,
+  getNotifierService,
+} from "./service.ts";
+export type {
+  ChannelCapabilities,
+  KindRegistration,
+  NotifyChannel,
+  NotifyRequest,
+  NotifyResult,
+  NotifierService,
+  NotifierServiceDeps,
+  NotifierServiceInternal,
+  NotifySeverity,
+} from "./service.ts";
 
 // 辅助函数统一来自仓库共享层（loopback 围栏 / writeJson / readBody / errorMessage）。
 export { isLoopbackRequest } from "../../../shared/loopback.js";
