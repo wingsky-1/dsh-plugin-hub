@@ -78,18 +78,24 @@ export function registerMiddlewareTools(
   } = {},
 ): () => void {
   const disposers: Array<() => void> = [];
+  // 单一事实源：options 显式传入时同步到 mw（guard 与 callTool 同源，防漂移）。
   const disabledTools = options.disabledTools ?? mw.disabledTools;
+  if (options.disabledTools !== undefined) mw.disabledTools = disabledTools;
 
   /**
    * 路由一致性校验（detail/call 共用；A2）：目标 root 必须等于当前 root，
    * 或 all 模式下的 @global（全局配置跨工作空间共享，语义成立）。
    * project 模式传全局级服务器 → 引导改用 mcp__ 直呼（全局 mcp__ 工具在该
-   * 模式下仍注册可用）；非 global 的其他 root 硬拒绝（防跨空间串台）。
+   * 模式下仍注册可用）；非 global 的其他 root / 未知 @global 服务器一律硬拒绝
+   * （防跨空间串台与 project 模式经 @global 路由绕过）。
    * @returns 校验通过的 root；抛错则拒绝。
    */
   const checkRoot = async (caller: string, server: string, root: string): Promise<string | undefined> => {
     const parsed = parseFullServerName(server);
-    if (parsed === undefined || (parsed.root !== root && parsed.root !== MIDDLEWARE_GLOBAL_ROOT)) {
+    if (parsed === undefined) {
+      throw new Error(`${caller}: server 参数格式非法，应为 @<root>/<server>`);
+    }
+    if (parsed.root !== root && parsed.root !== MIDDLEWARE_GLOBAL_ROOT) {
       throw new Error(
         `${caller}: server ${JSON.stringify(server)} 不属于当前工作空间 ${JSON.stringify(root)}；路由一致性校验失败（防跨空间串台）`,
       );
@@ -102,6 +108,9 @@ export function registerMiddlewareTools(
           `${caller}: server ${JSON.stringify(server)} 是全局级（global scope）服务器，中间层只覆盖项目级服务器；请直接用 mcp__${bare}__<tool> 前缀工具调用（project 模式全局工具仍直呼注册）`,
         );
       }
+      throw new Error(
+        `${caller}: server ${JSON.stringify(server)} 不属于当前工作空间 ${JSON.stringify(root)}；路由一致性校验失败（防跨空间串台）`,
+      );
     }
     return parsed.root;
   };

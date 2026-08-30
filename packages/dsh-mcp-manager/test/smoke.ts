@@ -432,6 +432,12 @@ const main = async () => {
       () => detailDef.execute({ server: fullServerName("/other", "ctx"), tool: "use_ctx" }, { agent }),
       /不属于当前工作空间/,
     );
+    // project 模式未知 @global 服务器（非全局级）→ 硬拒绝（防经 @global 路由绕过）。
+    await assert.rejects(
+      () => detailDef.execute({ server: fullServerName(MIDDLEWARE_GLOBAL_ROOT, "ghost"), tool: "x" }, { agent }),
+      /不属于当前工作空间/,
+      "project 模式未知 @global 服务器拒绝",
+    );
     dispose();
   });
   await checkAsync("#362 isGlobalServer 双源：runtime 注册的 codegraph 判全局（P1 修正）", async () => {
@@ -536,6 +542,24 @@ const main = async () => {
     const callDeny = await guard({ name: "ws_mcp_call", arguments: { server: fullServerName("/proj", "ctx"), tool: "use_ctx" } }, async () => ({ kind: "allow" }));
     assert.equal(callDeny.kind, "deny", "ws_mcp_call guard 查禁用表");
     assert.equal(toolDisabledReason(fullServerName("/proj", "ctx"), "use_ctx").includes("mcp__ 前缀"), true, "禁用原因声明只作用于 mcp__ 前缀");
+    // 3) callTool（ws_mcp_call 执行路径）：禁用工具 → 显式抛错（验收 14：三入口一致）。
+    const callUnit = {
+      root: "/proj",
+      connections: new Map([["ctx", { server: { name: "ctx", transport: "stdio", command: "x", enabled: true }, status: "connected", error: undefined, client: { callTool: async () => ({ content: [] }) }, reconnectTimer: undefined, disposed: false, failedAttempts: 0 }]]),
+      catalog: new Map([["ctx", { discoveredAt: Date.now(), tools: new Map([["use_ctx", { description: "d", inputSchema: {} }]]) }]]),
+      userDisabled: new Set(),
+      lastTouchedAt: Date.now(),
+      inFlight: new Map(),
+    };
+    mw.units.set("/proj", callUnit);
+    await assert.rejects(
+      () => mw.callTool(fullServerName("/proj", "ctx"), "use_ctx", {}, undefined),
+      /已被用户在「MCP」浮窗禁用/,
+      "callTool 先查禁用表（三入口一致）",
+    );
+    // 未禁用工具正常放行到调用。
+    const okValue = await mw.callTool(fullServerName("/proj", "ctx"), "other", {}, undefined);
+    assert.deepEqual(okValue.content, [], "未禁用工具正常调用");
     dispose();
   });
   await checkAsync("#362 P1：disabledTools 持久化（合并式写盘 + 重启保留）", async () => {
