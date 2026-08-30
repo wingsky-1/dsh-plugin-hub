@@ -104,13 +104,24 @@ check("契约: inject 包含 agents", () => assert.ok(inject.includes("agents"))
     const state = { disposers: [], registered: [], hooks: [], logs: [] };
     const ctx = {
       logger: { warn: (m) => state.logs.push(`warn:${m}`), info: (m) => state.logs.push(`info:${m}`) },
-      get: (name) => (overrides.mcpManager ? { registerServer: async () => ({ name, existing: false }), unregisterServer: async () => {} } : undefined),
+      // inject 强依赖：ctx.mcpManager 直接可用（不再 get 探测）。
+      mcpManager: overrides.mcpManager ?? {
+        registerServer: async () => { state.registered.push("codegraph"); return { name: "codegraph", existing: false }; },
+        unregisterServer: async () => {},
+        getStatus: () => undefined,
+        getTools: () => [],
+        list: () => [],
+      },
       on: () => () => {},
       effect: (fn) => { const d = fn(); state.disposers.push(d); return d; },
       session: overrides.session,
     };
     return { ctx, state };
   };
+
+  check("契约: inject 含 mcpManager（强依赖声明）", () =>
+    assert.ok(inject.includes("mcpManager"), `inject 应含 mcpManager，实际 ${JSON.stringify(inject)}`),
+  );
 
   // enabled:false → 不做事
   checkAsync("apply: enabled:false 静默返回", async () => {
@@ -144,7 +155,7 @@ check("契约: inject 包含 agents", () => assert.ok(inject.includes("agents"))
     rmSync(dir, { recursive: true, force: true });
   });
 
-  // mcpManager 存在 + codegraph 已装（PATH 指向 fake）→ 注册服务器
+  // mcpManager（inject 保证在场）+ codegraph 已装（PATH 指向 fake）→ 注册服务器
   checkAsync("apply: mcpManager + 已装 → registerServer", async () => {
     const dir = mkdtempSync(join(tmpdir(), "cg-apply2-"));
     mkdirSync(join(dir, ".git"), { recursive: true });
@@ -152,10 +163,13 @@ check("契约: inject 包含 agents", () => assert.ok(inject.includes("agents"))
     let registered = false;
     const ctx = {
       logger: { warn: () => {}, info: () => {} },
-      get: (n) => n === "mcpManager" ? {
+      mcpManager: {
         registerServer: async () => { registered = true; return { name: "codegraph", existing: false }; },
         unregisterServer: async () => {},
-      } : undefined,
+        getStatus: () => ({ name: "codegraph", transport: "stdio", scope: "global", status: "connected", tools: [], enabled: true }),
+        getTools: () => [],
+        list: () => [],
+      },
       on: () => () => {},
       effect: (fn) => { const d = fn(); return d; },
       session: { header: { cwd: dir } },

@@ -1,10 +1,11 @@
 /**
- * mcp-manager 核心服务类型面（跨包共享，单一事实源）。
+ * mcp-manager 核心服务类型面（单一事实源）。
  *
  * 供 mcp-manager 提供方（src/service.ts re-export + declare module 合并）
- * 与消费方插件（如 dsh-codegraph）经 `../../../shared/mcp-manager-service.js`
- * 引用——纯类型，esbuild 构建期内联、随包复制（d.ts X1），无运行时依赖、
- * 无跨包构建时序问题（CI 并行 build 各包时依赖包 lib 未就绪也能编译）。
+ * 与消费方插件（如 dsh-codegraph）引用——消费方**从 mcp-manager 包引类型**
+ * （`import type { McpManagerService } from "@wingsky-1/dsh-mcp-manager"`），
+ * 本文件是类型定义的唯一事实源，mcp-manager 包 re-export 之。纯类型，
+ * esbuild 构建期内联、随包复制（d.ts X1）。
  *
  * 服务面（通用 MCP 能力 + 运行时注入专用面）：
  * - 注入面：registerServer / unregisterServer（内存态不落盘，同名幂等）；
