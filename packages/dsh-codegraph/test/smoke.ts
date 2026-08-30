@@ -9,12 +9,14 @@
 //   - shouldInject（cwd 判定）
 //   - guardedExplore / guardedCodegraph（无 projectPath → 补全/拒绝；无索引 →
 //     引导；sync 失败 → 拒绝；CLI 未装；空结果 vs 命令失败；TTL 缓存）
-//   - 工具注册定义（#356 回归）：buildGuardToolDefinition 字段名契约
-//     （parameters 而非 inputSchema）+ 真实 dsh-tools 注册投影不抛错
-//   - #363：6 个新工具注册定义契约（parameters、output schema+render、
-//     参数 schema 与 CLI 对齐无幽灵参数）+ 真实 dsh-tools 投影 7 个工具
-//   - apply（enabled:false / 不读 ctx.session 回归 / 探测未装引导 / 注册 /
-//     纪律工具注册 7 个 / discipline 文案含新工具 + 禁用声明 + 双轨说明）
+//   - 封装工具定义（#363 补充 3）：8 个定义契约（parameters、output schema+
+//     render、isConcurrencySafe）、参数 schema 与 CLI 对齐无幽灵参数、
+//     真实 dsh-tools 投影 8 个工具不抛错
+//   - 封装 execute（#363 补充 3）：先 sync 再转发底层 CLI（fake 计数：调用 1
+//     次 sync 1 次；TTL 30s 内不重复）；异常分支/空结果区分（改测封装 execute）
+//   - apply（enabled:false / 不读 ctx.session 回归 / 探测未装引导 / 不再调用
+//     ctx.tools.register / registerServer 携带 toolDefinitions / 8 个封装定义 /
+//     discipline 文案含「工具经 mcp-manager 统一管理」声明）
 //
 // 运行：node dsh-codegraph/test/smoke.ts
 import assert from "node:assert/strict";
@@ -29,7 +31,7 @@ const { apply, name, inject } = mod;
 const { isCodegraphInstalled, installGuidance } = mod;
 const { findGitRoot, isGitRepo, guardedExplore, guardedCodegraph, syncCodegraphCached, runCodegraph, isNoResultOutput, findAmbiguousCandidates, resetSyncCache } = mod;
 const { shouldInject, DISCIPLINE_TEXT } = mod;
-const { buildGuardToolDefinition, buildImpactToolDefinition, buildNodeToolDefinition, buildCallersToolDefinition, buildCalleesToolDefinition, buildSearchToolDefinition, buildFilesToolDefinition } = mod;
+const { buildGuardToolDefinition, buildImpactToolDefinition, buildNodeToolDefinition, buildCallersToolDefinition, buildCalleesToolDefinition, buildSearchToolDefinition, buildFilesToolDefinition, buildStatusToolDefinition, buildCodegraphToolDefinitions } = mod;
 
 // 解析真实 dsh-tools + cordis（#356 回归投影断言用）。
 // 候选顺序：依赖树解析 → DSH_TOOLS_PATH / DSH_CORDIS_PATH 环境变量 → Volta 全局
@@ -88,13 +90,31 @@ function registerAsync(label, fn) {
   asyncChecks.push(checkAsync(label, fn));
 }
 
+// 全局 PATH 互斥（防 flake 纪律 #218）：多个异步测试会临时改全局 process.env.PATH
+// （execute 内部 resolveCodegraphPath 读全局 PATH），并发修改互相踩踏（如 fake
+// 被真实 CLI 覆盖、被 /nonexistent 覆盖）。所有改 PATH 的测试经本队列串行执行。
+let pathLock = Promise.resolve();
+function withGlobalPath(path, fn) {
+  const run = pathLock.then(async () => {
+    const prev = process.env.PATH;
+    process.env.PATH = path;
+    try {
+      return await fn();
+    } finally {
+      process.env.PATH = prev;
+    }
+  });
+  pathLock = run.catch(() => {});
+  return run;
+}
+
 // ---- 契约 ----
 check("契约: name = codegraph", () => assert.equal(name, "codegraph"));
 check("契约: inject 包含 agents", () => assert.ok(inject.includes("agents")));
 
-// ---- 工具注册定义（#356 回归）----
-// 根因：注册定义误用 MCP 风格字段 inputSchema，而 dsh-tools 契约要求 parameters，
-// 导致 schema 投影时 parameters===undefined → 抛 "must be lossless JSON"。
+// ---- 封装工具定义（#363 补充 3 架构收敛）----
+// 定位：dsh-codegraph 不再自注册裸名工具，8 个封装定义经 mcp-manager 的
+// registerServer.toolDefinitions 注册；execute 先 sync 再内部转发底层 CLI。
 {
   const builders = [
     ["codegraph_explore", buildGuardToolDefinition],
@@ -104,32 +124,36 @@ check("契约: inject 包含 agents", () => assert.ok(inject.includes("agents"))
     ["codegraph_callees", buildCalleesToolDefinition],
     ["codegraph_search", buildSearchToolDefinition],
     ["codegraph_files", buildFilesToolDefinition],
+    ["codegraph_status", buildStatusToolDefinition],
   ];
-  check("#363: 7 个裸名纪律工具定义齐全", () => {
+  check("#363 补充 3: 8 个封装定义齐全", () => {
     const names = builders.map(([n]) => n);
-    for (const n of ["codegraph_explore", "codegraph_impact", "codegraph_node", "codegraph_callers", "codegraph_callees", "codegraph_search", "codegraph_files"]) {
+    for (const n of ["codegraph_explore", "codegraph_impact", "codegraph_node", "codegraph_callers", "codegraph_callees", "codegraph_search", "codegraph_files", "codegraph_status"]) {
       assert.ok(names.includes(n), `缺 ${n}`);
     }
   });
 
   for (const [toolName, builder] of builders) {
     const definition = builder();
-    check(`工具定义 ${toolName}: 使用 parameters 字段（非 inputSchema，#356）`, () => {
+    check(`封装定义 ${toolName}: 使用 parameters 字段（非 inputSchema，#356）`, () => {
       assert.ok(definition.parameters, "parameters 必须存在");
       assert.equal(definition.inputSchema, undefined, "inputSchema 不应存在");
     });
-    check(`工具定义 ${toolName}: parameters 为合法对象 schema`, () => {
+    check(`封装定义 ${toolName}: parameters 为合法对象 schema`, () => {
       assert.equal(definition.parameters.type, "object");
       assert.ok(definition.parameters.properties, "properties 必须存在");
     });
-    check(`工具定义 ${toolName}: output 契约完整（schema + render）`, () => {
+    check(`封装定义 ${toolName}: output 契约完整（schema + render）`, () => {
       assert.ok(definition.output, "output 必须存在");
       assert.ok(definition.output.schema, "output.schema 必须存在");
       assert.equal(typeof definition.output.render, "function", "output.render 必须是函数");
     });
-    check(`工具定义 ${toolName}: isConcurrencySafe 函数返回 true`, () => {
+    check(`封装定义 ${toolName}: isConcurrencySafe 函数返回 true`, () => {
       assert.equal(typeof definition.isConcurrencySafe, "function", "isConcurrencySafe 应为函数");
       assert.equal(definition.isConcurrencySafe({}), true, "调用应返回 true（只读查询可并行）");
+    });
+    check(`封装定义 ${toolName}: execute 为函数`, () => {
+      assert.equal(typeof definition.execute, "function", "execute 应为函数（先 sync 再转发底层 CLI）");
     });
   }
 
@@ -165,10 +189,18 @@ check("契约: inject 包含 agents", () => assert.ok(inject.includes("agents"))
     assert.equal(p.line, undefined);
     assert.ok(p.filter && p.pattern && p.format && p.maxDepth && p.projectPath);
   });
+  check("参数对齐: status 用 path（位置参数）、无 file/line", () => {
+    const def = buildStatusToolDefinition();
+    const p = def.parameters.properties;
+    assert.equal(p.file, undefined, "status 不应有 file");
+    assert.equal(p.line, undefined, "status 不应有 line");
+    assert.ok(p.path, "status 用 path（CLI 位置参数）");
+    assert.deepEqual(def.parameters.required, []);
+  });
 
   // 真实 dsh-tools 注册 + 投影：注册定义后调用 schemas() 不抛错（堵住 mock 盲区——
   // 此前 smoke 的 tools.register 是 mock，不触发真实 schemaOf 投影，契约字段错误溜过门禁）。
-  registerAsync("工具定义: 真实 dsh-tools 注册 7 个 + schemas() 投影不抛错（#356 回归）", async () => {
+  registerAsync("封装定义: 真实 dsh-tools 注册 8 个 + schemas() 投影不抛错（#356 回归）", async () => {
     const dshTools = await resolveModule("@deepseek-ai/dsh-tools", "DSH_TOOLS_PATH");
     const cordis = await resolveModule("@deepseek-ai/cordis", "DSH_CORDIS_PATH");
     if (dshTools.error || cordis.error) {
@@ -185,9 +217,9 @@ check("契约: inject 包含 agents", () => assert.ok(inject.includes("agents"))
     const tools = new ToolRuntime(ctx, { mode: "native" });
     for (const [, builder] of builders) tools.register(builder());
     const schemas = tools.schemas();
-    assert.equal(schemas.length, 7, "投影出 7 个工具");
+    assert.equal(schemas.length, 8, "投影出 8 个工具");
     const names = schemas.map((s) => s.name).sort();
-    assert.deepEqual(names, ["codegraph_callees", "codegraph_callers", "codegraph_explore", "codegraph_files", "codegraph_impact", "codegraph_node", "codegraph_search"]);
+    assert.deepEqual(names, ["codegraph_callees", "codegraph_callers", "codegraph_explore", "codegraph_files", "codegraph_impact", "codegraph_node", "codegraph_search", "codegraph_status"]);
     for (const s of schemas) {
       assert.ok(s.parameters, `投影 parameters 存在（${s.name}）`);
     }
@@ -509,15 +541,11 @@ check("契约: inject 包含 agents", () => assert.ok(inject.includes("agents"))
     // 而本分支的 checkAsync 与之并发（都 await 挂起）——显式传快照 env 隔离。
     // 合并为单个 checkAsync：真实 CLI 的 sync 有锁（并发 sync 冲突），须串行。
     const realEnv = { ...process.env };
-    // 建索引（真实 CLI）——固定全局 PATH 为快照（避免与 apply 的 PATH 修改并发交错）
-    const prevGlobalPath = process.env.PATH;
-    process.env.PATH = realEnv.PATH ?? "";
-    try {
+    // 建索引（真实 CLI）——固定全局 PATH 为快照（避免与其他 PATH 修改并发交错）
+    await withGlobalPath(realEnv.PATH ?? "", async () => {
       const { execFileSync } = await import("node:child_process");
       execFileSync("codegraph", ["init", repo], { stdio: "ignore" });
-    } finally {
-      process.env.PATH = prevGlobalPath;
-    }
+    });
     resetSyncCache();
     registerAsync("真实 CLI: 6 子命令输出与 CLI 一致（串行）", async () => {
       try {
@@ -590,11 +618,8 @@ check("契约: inject 包含 agents", () => assert.ok(inject.includes("agents"))
           "export function hello(name: string): string { return `hi2 ${name}`; }\n",
         );
         // 文件新增需 sync 后才进索引（与纪律语义一致）——显式 sync 一次。
-        // execute 内部 sync 用全局 process.env——临时固定为真实 PATH 快照，
-        // 避免与 apply 区块的 PATH 修改测试并发交错（finally 恢复）。
-        const prevGlobalPath = process.env.PATH;
-        process.env.PATH = realEnv.PATH ?? "";
-        try {
+        // execute 内部 sync 用全局 process.env——经互斥队列固定为真实 PATH 快照。
+        await withGlobalPath(realEnv.PATH ?? "", async () => {
           const { execFileSync: execSync2 } = await import("node:child_process");
           execSync2("codegraph", ["sync", repo], { stdio: "ignore" });
           resetSyncCache();
@@ -613,9 +638,7 @@ check("契约: inject 包含 agents", () => assert.ok(inject.includes("agents"))
             { agent: { session: { header: { cwd: repo } } } },
           );
           assert.ok(uniqText.includes("Impact of changing"), `唯一符号实际: ${uniqText.slice(0, 80)}`);
-        } finally {
-          process.env.PATH = prevGlobalPath;
-        }
+        });
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
@@ -623,23 +646,137 @@ check("契约: inject 包含 agents", () => assert.ok(inject.includes("agents"))
   }
 }
 
+// ---- 封装 execute：先 sync 再转发底层 CLI（#363 补充 3 验收 15/16）----
+// fake CLI 计数：execute 内部先 sync（TTL 30s 缓存）再执行查询子命令；
+// 底层 CLI 只被封装内部调用（模型只见封装工具）。
+// 注：execute 内部 sync/查询均用全局 process.env 解析 CLI（同真实 CLI 分支），
+// 故临时固定全局 PATH 为 fake 目录 + 原 PATH，finally 恢复。
+{
+  registerAsync("封装 execute: 调用 1 次 sync 1 次（先 sync 再转发）；TTL 30s 内不重复", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "cg-exe-"));
+    const repo = join(dir, "repo");
+    mkdirSync(join(repo, ".git"), { recursive: true });
+    mkdirSync(join(repo, ".codegraph"), { recursive: true });
+    // fake codegraph：sync 追加计数 + 查询输出递增序号（区分 sync 与查询调用）
+    writeFileSync(
+      join(dir, "codegraph"),
+      [
+        "#!/bin/sh",
+        `if [ "$1" = sync ]; then echo "sync" >> ${dir}/sync.log; exit 0; fi`,
+        `count=$(cat ${dir}/qcount 2>/dev/null || echo 0); count=$((count+1)); echo "$count" > ${dir}/qcount; echo "result-$count"`,
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+    resetSyncCache();
+    const def = buildImpactToolDefinition();
+    const exec = { agent: { session: { header: { cwd: repo } } } };
+    const call = () => def.execute({ symbol: "x", projectPath: repo }, exec);
+    await withGlobalPath(`${dir}:${process.env.PATH ?? ""}`, async () => {
+      // impact 带软消歧：每次 execute 内部先 query（计数 1）再 impact（计数 2）
+      const first = await call();
+      const second = await call();
+      assert.equal(first.text.trim(), "result-2", "首次 execute 先软消歧 query 再转发 impact");
+      assert.equal(second.text.trim(), "result-4", "第二次 execute 查询不缓存");
+      const syncLines = String(readFileSync(join(dir, "sync.log"))).trim().split("\n").filter(Boolean);
+      assert.equal(syncLines.length, 1, `2 次 execute 只 sync 1 次（TTL 生效），实际 ${syncLines.length}`);
+      const amb = await call();
+      assert.equal(amb.text.trim(), "result-6", "第三次 execute 软消歧内部 query + impact 各计一次");
+      const syncLines2 = String(readFileSync(join(dir, "sync.log"))).trim().split("\n").filter(Boolean);
+      assert.equal(syncLines2.length, 1, `3 次 execute 仍只 sync 1 次（TTL 生效），实际 ${syncLines2.length}`);
+    });
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  // 异常分支/空结果区分（#363 补充 3：保留原断言，改测封装 execute 而非独立工具）
+  registerAsync("封装 execute: 非 git 无 projectPath → 纪律拦截提示", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "cg-exe-nogit-"));
+    mkdirSync(join(dir, "nongit"), { recursive: true });
+    resetSyncCache();
+    const def = buildImpactToolDefinition();
+    const { text } = await def.execute(
+      { symbol: "x" },
+      { agent: { session: { header: { cwd: join(dir, "nongit") } } } },
+    );
+    assert.ok(text.includes("被纪律拦截"), `实际: ${text.slice(0, 60)}`);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  registerAsync("封装 execute: 无 .codegraph 索引 → 引导 init", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "cg-exe-noindex-"));
+    mkdirSync(join(dir, "repo", ".git"), { recursive: true });
+    resetSyncCache();
+    const def = buildImpactToolDefinition();
+    const { text } = await def.execute(
+      { symbol: "x", projectPath: join(dir, "repo") },
+      { agent: { session: { header: { cwd: join(dir, "repo") } } } },
+    );
+    assert.ok(text.includes("codegraph init"), `实际: ${text.slice(0, 60)}`);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  registerAsync("封装 execute: 符号未找到 → 空结果提示（非错误）", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "cg-exe-empty-"));
+    const repo = join(dir, "repo");
+    mkdirSync(join(repo, ".git"), { recursive: true });
+    mkdirSync(join(repo, ".codegraph"), { recursive: true });
+    writeFileSync(
+      join(dir, "codegraph"),
+      "#!/bin/sh\nif [ \"$1\" = sync ]; then exit 0; fi\necho 'ℹ Symbol \"NoSuch\" not found'\n",
+      { mode: 0o755 },
+    );
+    resetSyncCache();
+    const def = buildImpactToolDefinition();
+    await withGlobalPath(`${dir}:${process.env.PATH ?? ""}`, async () => {
+      const { text } = await def.execute(
+        { symbol: "NoSuch", projectPath: repo },
+        { agent: { session: { header: { cwd: repo } } } },
+      );
+      assert.ok(text.includes("查询无结果"), `实际: ${text.slice(0, 60)}`);
+      assert.ok(text.includes("codegraph_search"), `实际: ${text.slice(0, 60)}`);
+    });
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  registerAsync("封装 execute: 命令失败（stderr+退出码 1）→ 错误提示", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "cg-exe-fail-"));
+    const repo = join(dir, "repo");
+    mkdirSync(join(repo, ".git"), { recursive: true });
+    mkdirSync(join(repo, ".codegraph"), { recursive: true });
+    writeFileSync(
+      join(dir, "codegraph"),
+      "#!/bin/sh\nif [ \"$1\" = sync ]; then exit 0; fi\necho 'error: unknown option' >&2; exit 1\n",
+      { mode: 0o755 },
+    );
+    resetSyncCache();
+    const def = buildImpactToolDefinition();
+    await withGlobalPath(`${dir}:${process.env.PATH ?? ""}`, async () => {
+      const { text } = await def.execute(
+        { symbol: "x", projectPath: repo },
+        { agent: { session: { header: { cwd: repo } } } },
+      );
+      assert.ok(text.includes("执行失败"), `实际: ${text.slice(0, 60)}`);
+      assert.ok(!text.includes("查询无结果"), "命令失败不应误判为空结果");
+    });
+    rmSync(dir, { recursive: true, force: true });
+  });
+}
+
 // ---- apply ----
 {
   const makeCtx = (overrides = {}) => {
-    const state = { disposers: [], registered: [], hooks: [], logs: [], tools: [], sections: [], createdCbs: [] };
+    const state = { disposers: [], registered: [], hooks: [], logs: [], tools: [], registerCalls: [], sections: [], createdCbs: [] };
     const ctx = {
       logger: { warn: (m) => state.logs.push(`warn:${m}`), info: (m) => state.logs.push(`info:${m}`) },
-      // inject 强依赖：ctx.mcpManager 直接可用（不再 get 探测）。
+      // inject 强依赖：ctx.mcpManager 直接可用（不再 get 探测）。registerServer
+      // 记录完整入参（含 toolDefinitions，#363 补充 3）。
       mcpManager: overrides.mcpManager ?? {
-        registerServer: async () => { state.registered.push("codegraph"); return { name: "codegraph", existing: false }; },
+        registerServer: async (input) => { state.registered.push("codegraph"); state.registerCalls.push(input); return { name: "codegraph", existing: false }; },
         unregisterServer: async () => {},
         getStatus: () => undefined,
         getTools: () => [],
         list: () => [],
       },
-      // inject 强依赖：ctx.tools 直接可用（纪律工具注册；此前未 inject 导致 cordis
-      // Proxy 抛 "cannot get property tools without inject" 启动失败）。
-      tools: { register: (d) => { state.tools.push(d); return () => {}; } },
+      // 注意：不再提供 ctx.tools——#363 补充 3 撤销自注册，apply 不应触碰 tools。
       // inject 强依赖：ctx.systemPrompt（纪律段注册，agent scope 继承）。
       systemPrompt: { section: (opts) => { state.sections.push(opts); return () => {}; } },
       on: (event, cb) => { if (event === "agent/created") state.createdCbs.push(cb); return () => {}; },
@@ -648,10 +785,11 @@ check("契约: inject 包含 agents", () => assert.ok(inject.includes("agents"))
     return { ctx, state };
   };
 
-  check("契约: inject 含 agents/mcpManager/tools/systemPrompt（强依赖声明）", () => {
-    for (const svc of ["agents", "mcpManager", "tools", "systemPrompt"]) {
+  check("契约: inject 含 agents/mcpManager/systemPrompt、不含 tools（撤销自注册）", () => {
+    for (const svc of ["agents", "mcpManager", "systemPrompt"]) {
       assert.ok(inject.includes(svc), `inject 应含 ${svc}，实际 ${JSON.stringify(inject)}`);
     }
+    assert.ok(!inject.includes("tools"), "inject 不应再含 tools（#363 补充 3 撤销自注册）");
   });
 
   // 回归（启动崩溃根因）：apply 不读取 ctx.session（无 session 字段也能 apply）。
@@ -663,16 +801,29 @@ check("契约: inject 包含 agents", () => assert.ok(inject.includes("agents"))
     assert.ok(state.disposers.length >= 1, "apply 正常完成并注册 effect disposer");
   });
 
-  // #356 回归：apply 注册的纪律工具定义必须用 parameters（非 inputSchema）字段。
-  registerAsync("apply: 纪律工具注册定义用 parameters 字段（#356 回归）", async () => {
+  // #363 补充 3：apply 不再调用 ctx.tools.register（撤销自注册）——
+  // fake ctx 无 tools 成员，apply 不应触碰它。
+  registerAsync("apply: 不再调用 ctx.tools.register（撤销自注册，#363 补充 3）", async () => {
     const { ctx, state } = makeCtx();
     await apply(ctx, {});
-    assert.equal(state.tools.length, 7, "注册了 7 个纪律工具（explore + #363 六个）");
-    const names = state.tools.map((d) => d.name).sort();
-    assert.deepEqual(names, ["codegraph_callees", "codegraph_callers", "codegraph_explore", "codegraph_files", "codegraph_impact", "codegraph_node", "codegraph_search"]);
-    for (const definition of state.tools) {
+    assert.equal(state.tools.length, 0, "不应有任何 tools.register 调用");
+    assert.equal(state.registerCalls.length, 1, "registerServer 被调用一次");
+  });
+
+  // #363 补充 3：registerServer 携带 toolDefinitions —— 8 个封装定义交给
+  // mcp-manager 注册（manager 侧 #362 补充 4 消费）。
+  registerAsync("apply: registerServer 携带 toolDefinitions（8 个封装定义）", async () => {
+    const { ctx, state } = makeCtx();
+    await apply(ctx, {});
+    assert.ok(Array.isArray(state.registerCalls[0]?.toolDefinitions), "registerServer 入参应有 toolDefinitions");
+    const defs = state.registerCalls[0].toolDefinitions;
+    assert.equal(defs.length, 8, "8 个封装定义");
+    const names = defs.map((d) => d.name).sort();
+    assert.deepEqual(names, ["codegraph_callees", "codegraph_callers", "codegraph_explore", "codegraph_files", "codegraph_impact", "codegraph_node", "codegraph_search", "codegraph_status"]);
+    for (const definition of defs) {
       assert.ok(definition.parameters, `parameters 必须存在（非 inputSchema，${definition.name}）`);
       assert.equal(definition.inputSchema, undefined, `inputSchema 不应存在（${definition.name}）`);
+      assert.equal(typeof definition.execute, "function", `execute 应为函数（${definition.name}）`);
     }
   });
 
@@ -683,47 +834,43 @@ check("契约: inject 包含 agents", () => assert.ok(inject.includes("agents"))
     assert.equal(state.disposers.length, 0);
   });
 
-  // 正常路径：codegraph 未装（PATH 空）→ 引导日志，注册降级
+  // 正常路径：codegraph 未装（PATH 空）→ 引导日志，MCP 服务器注册降级
   registerAsync("apply: codegraph 未装 → 引导日志", async () => {
     const { ctx, state } = makeCtx();
-    // 隔离 PATH（不探测到真实 codegraph）
-    const prevPath = process.env.PATH;
-    process.env.PATH = "/nonexistent";
-    try {
+    // 隔离 PATH（不探测到真实 codegraph）；经互斥队列避免与其他 PATH 测试踩踏。
+    await withGlobalPath("/nonexistent", async () => {
       await apply(ctx, {});
-    } finally {
-      process.env.PATH = prevPath;
-    }
+    });
     assert.ok(state.logs.some((l) => l.includes("codegraph CLI 未安装") || l.includes("安装")), "有引导日志");
-    assert.ok(state.disposers.length >= 1, "仍有 effect disposer（工具/钩子照常注册）");
+    assert.equal(state.registerCalls.length, 0, "未装 codegraph → 不注册 MCP 服务器");
+    assert.ok(state.disposers.length >= 1, "仍有 effect disposer（纪律钩子照常注册）");
   });
 
-  // mcpManager（inject 保证在场）+ codegraph 已装（PATH 指向 fake）→ 注册服务器
-  registerAsync("apply: mcpManager + 已装 → registerServer", async () => {
+  // mcpManager（inject 保证在场）+ codegraph 已装（PATH 指向 fake）→ registerServer
+  // 携带 toolDefinitions（8 个封装定义）
+  registerAsync("apply: mcpManager + 已装 → registerServer 携带 toolDefinitions", async () => {
     const dir = mkdtempSync(join(tmpdir(), "cg-apply2-"));
     writeFileSync(join(dir, "codegraph"), "#!/bin/sh\n");
-    let registered = false;
+    let registeredInput;
     const ctx = {
       logger: { warn: () => {}, info: () => {} },
       mcpManager: {
-        registerServer: async () => { registered = true; return { name: "codegraph", existing: false }; },
+        registerServer: async (input) => { registeredInput = input; return { name: "codegraph", existing: false }; },
         unregisterServer: async () => {},
         getStatus: () => ({ name: "codegraph", transport: "stdio", scope: "global", status: "connected", tools: [], enabled: true }),
         getTools: () => [],
         list: () => [],
       },
-      tools: { register: () => () => {} },
       on: () => () => {},
       effect: (fn) => { const d = fn(); return d; },
     };
-    const prevPath = process.env.PATH;
-    process.env.PATH = dir;
-    try {
+    await withGlobalPath(dir, async () => {
       await apply(ctx, {});
-    } finally {
-      process.env.PATH = prevPath;
-    }
-    assert.equal(registered, true, "registerServer 被调用");
+    });
+    assert.ok(registeredInput, "registerServer 被调用");
+    assert.equal(registeredInput.name, "codegraph");
+    assert.ok(Array.isArray(registeredInput.toolDefinitions), "入参携带 toolDefinitions");
+    assert.equal(registeredInput.toolDefinitions.length, 8, "8 个封装定义");
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -751,14 +898,15 @@ check("契约: inject 包含 agents", () => assert.ok(inject.includes("agents"))
         assert.equal(state.sections[0].order, DISCIPLINE_SECTION_ORDER);
         assert.ok(state.sections[0].order > 160, "纪律段必须在 MCP 目录段（160）之后");
         assert.ok(typeof state.sections[0].text === "string" && state.sections[0].text.includes("codegraph_explore"));
-        // #363 验收 6：纪律文案含新工具引导 + P0-2 声明 + 双轨说明
+        // #363 验收 6/18：纪律文案含全部工具引导 + 「工具经 mcp-manager 统一管理」声明
         const text = state.sections[0].text;
-        for (const tool of ["codegraph_impact", "codegraph_node", "codegraph_callers", "codegraph_callees", "codegraph_search", "codegraph_files"]) {
+        for (const tool of ["codegraph_impact", "codegraph_node", "codegraph_callers", "codegraph_callees", "codegraph_search", "codegraph_files", "codegraph_status"]) {
           assert.ok(text.includes(tool), `纪律文案应引导 ${tool}`);
         }
-        assert.ok(text.includes("工具级禁用只作用于 mcp-manager 管辖的 mcp__ 前缀工具"), "含禁用只作用于 mcp__ 声明");
-        assert.ok(text.includes("双轨说明"), "含双轨说明");
-        assert.ok(text.includes("mcp__codegraph__impact"), "双轨说明提到官方工具名");
+        assert.ok(text.includes("全部经 mcp-manager 统一管理"), "含「工具经 mcp-manager 统一管理」声明");
+        assert.ok(text.includes("本插件不直接注册工具"), "含「本插件不直接注册工具」声明");
+        assert.ok(!text.includes("mcp__codegraph__impact"), "不再有双轨说明（去 mcp__ 官方工具直呼）");
+        assert.ok(!text.includes("裸名纪律工具"), "不再有裸名 vs mcp__ 双轨措辞");
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
