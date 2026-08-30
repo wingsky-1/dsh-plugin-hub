@@ -1616,6 +1616,32 @@ const main = async () => {
         );
         assert.equal(res2.state.status, 400, "root 不属于工作空间或不可写 → 400");
       });
+      await checkAsync("tool-disable：合法请求 → 200 且调用 setToolDisabled（scope=global → @global root）", async () => {
+        const calls = [];
+        const tdManager = {
+          ...manager,
+          projectRoot: "/proj",
+          setToolDisabled: async (root, server, tool, disabled) => {
+            calls.push({ root, server, tool, disabled });
+          },
+        };
+        const tdRoutes = makeRoutes(tdManager, process.cwd());
+        const tdRoute = tdRoutes.find((route) => route.path === ROUTES.toolDisable);
+        const res = fakeRes();
+        await tdRoute.handler(
+          fakeReq("PATCH", ROUTES.toolDisable, { server: "@/proj/ctx", tool: "use_ctx", disabled: true }),
+          res,
+        );
+        assert.equal(res.state.status, 200);
+        assert.deepEqual(calls, [{ root: "/proj", server: "ctx", tool: "use_ctx", disabled: true }]);
+        // 全局 root：scope=global 的服务器以 @global 为 key。
+        const resG = fakeRes();
+        await tdRoute.handler(
+          fakeReq("PATCH", ROUTES.toolDisable, { server: "@/proj/gctx", tool: "use_g", disabled: true }),
+          resG,
+        );
+        assert.equal(resG.state.status, 200, "global 服务器（store 条目）以项目 root 为 key 可写");
+      });
       await checkAsync("POST session {cwd} → 200 并记录会话", async () => {
         const res = fakeRes();
         await find(ROUTES.session).handler(fakeReq("POST", ROUTES.session, { cwd: "C:/proj" }), res);
@@ -1673,6 +1699,50 @@ const main = async () => {
       assert.equal(ctx.sections.length, 1);
       assert.equal(ctx.sections[0].name, "plugin:dsh-mcp-manager");
       assert.match(ctx.sections[0].text, /dsh-mcp-manager/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  await checkAsync("#362 中间层模式热切换：off 启动也可切到 project（设置页下拉路径）", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-hotswitch-"));
+    const ctx = fakeCtx();
+    try {
+      await apply(ctx, { enabled: true, middleware: "off", storePath: join(dir, "dsh-mcp.json") });
+      // off 启动：不注册中间层工具，但 setMiddlewareMode 已挂。
+      const toolNames = ctx.registeredTools.map((def) => def.name);
+      assert.ok(!toolNames.includes("ws_mcp_call"), "off 启动不注册中间层工具");
+      const configRoute = ctx.routes.find((route) => route.path === ROUTES.config);
+      assert.ok(configRoute, "config 路由已注册");
+      // POST middleware=project → 热切换生效：中间层工具注册。
+      const res = fakeRes();
+      const req = {
+        method: "POST",
+        url: ROUTES.config,
+        socket: { remoteAddress: "127.0.0.1" },
+        headers: { host: "localhost:3080", origin: "http://localhost:3080", "sec-fetch-site": "same-origin" },
+        async *[Symbol.asyncIterator]() {
+          yield Buffer.from(JSON.stringify({ middleware: "project" }));
+        },
+      };
+      await configRoute.handler(req, res);
+      assert.equal(res.state.status, 200);
+      const body = JSON.parse(res.state.body);
+      assert.equal(body.middleware, "project", "热切换后 config 读回 project");
+      assert.ok(ctx.registeredTools.some((def) => def.name === "ws_mcp_call"), "热切换后注册中间层工具");
+      // 再切回 off：中间层工具卸载。
+      const res2 = fakeRes();
+      const req2 = {
+        method: "POST",
+        url: ROUTES.config,
+        socket: { remoteAddress: "127.0.0.1" },
+        headers: { host: "localhost:3080", origin: "http://localhost:3080", "sec-fetch-site": "same-origin" },
+        async *[Symbol.asyncIterator]() {
+          yield Buffer.from(JSON.stringify({ middleware: "off" }));
+        },
+      };
+      await configRoute.handler(req2, res2);
+      assert.equal(res2.state.status, 200);
+      assert.equal(JSON.parse(res2.state.body).middleware, "off", "切回 off 生效");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

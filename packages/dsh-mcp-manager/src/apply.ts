@@ -140,43 +140,44 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
     // 全局服务器仍 mcp__ 直呼（双轨迁移默认）。
     // 默认值与 Config schema 一致（project）；宿主未 parse 原始 config 时兜底。
     const middlewareMode = normalizeMiddlewareMode(config?.middleware ?? "project");
+    // 中间层模式热切换（设置页「中间层模式」下拉；initMiddleware 幂等已有，
+    // off↔project/all 需重新注册/卸载中间层工具——dispose 后重建）。
+    // 注册在模式分支之外：启动即 off 时也能从设置页切到 project/all。
+    const resolveRoot = async (agent: unknown): Promise<string | undefined> => {
+      if (typeof agent !== "object" || agent === null) return undefined;
+      const session = (agent as { session?: { header?: { cwd?: unknown } } }).session;
+      const cwd = session?.header?.cwd;
+      const root = await manager.normalizedProjectRoot(typeof cwd === "string" ? cwd : undefined);
+      if (root !== undefined) return root;
+      if (manager.middlewareMode === "all") {
+        const globalServers = manager.globalServers().filter((server) => server.enabled !== false);
+        if (globalServers.length > 0) return MIDDLEWARE_GLOBAL_ROOT;
+      }
+      return undefined;
+    };
+    manager.setMiddlewareMode = async (mode: MiddlewareMode): Promise<void> => {
+      if (normalizeMiddlewareMode(mode) === manager.middlewareMode) return;
+      const next = normalizeMiddlewareMode(mode);
+      manager.middlewareMode = next;
+      disposeMiddleware();
+      if (next !== "off") {
+        const mw = await manager.initMiddleware(next, (config?.middlewarePolicy as Record<string, unknown> | undefined) ?? {});
+        disposeMiddleware = registerMiddlewareTools(manager.ctx, mw, resolveRoot, next, {
+          disabledTools: manager.disabledTools,
+        });
+      }
+      // off ↔ project/all：重注册/卸载中间层工具后 reconcile，恢复 supervisor
+      // 接管（all 模式含全局）或停掉（off 语义）——防同一 server 双进程。
+      manager.reconcileServers();
+      manager.logger.info(`dsh-mcp-manager: middleware mode=${next} (hot-switched)`);
+    };
     if (middlewareMode !== "off") {
       const mw = await manager.initMiddleware(middlewareMode, (config?.middlewarePolicy as Record<string, unknown> | undefined) ?? {});
       // 路由输入：exec.agent 当前 cwd = agent.session.header.cwd（实证已闭合）。
       // all 模式：cwd 无项目（或无项目配置）时 fallback 到全局虚拟 root @global。
-      const resolveRoot = async (agent: unknown): Promise<string | undefined> => {
-        if (typeof agent !== "object" || agent === null) return undefined;
-        const session = (agent as { session?: { header?: { cwd?: unknown } } }).session;
-        const cwd = session?.header?.cwd;
-        const root = await manager.normalizedProjectRoot(typeof cwd === "string" ? cwd : undefined);
-        if (root !== undefined) return root;
-        if (middlewareMode === "all") {
-          const globalServers = manager.globalServers().filter((server) => server.enabled !== false);
-          if (globalServers.length > 0) return MIDDLEWARE_GLOBAL_ROOT;
-        }
-        return undefined;
-      };
       disposeMiddleware = registerMiddlewareTools(manager.ctx, mw, resolveRoot, middlewareMode, {
         disabledTools: manager.disabledTools,
       });
-      // 中间层模式热切换（设置页「中间层模式」下拉；initMiddleware 幂等已有，
-      // off↔project/all 需重新注册/卸载中间层工具——dispose 后重建）。
-      manager.setMiddlewareMode = async (mode: MiddlewareMode): Promise<void> => {
-        if (normalizeMiddlewareMode(mode) === manager.middlewareMode) return;
-        const next = normalizeMiddlewareMode(mode);
-        manager.middlewareMode = next;
-        disposeMiddleware();
-        if (next !== "off") {
-          const mw = await manager.initMiddleware(next, (config?.middlewarePolicy as Record<string, unknown> | undefined) ?? {});
-          disposeMiddleware = registerMiddlewareTools(manager.ctx, mw, resolveRoot, next, {
-            disabledTools: manager.disabledTools,
-          });
-        }
-        // off ↔ project/all：重注册/卸载中间层工具后 reconcile，恢复 supervisor
-        // 接管（all 模式含全局）或停掉（off 语义）——防同一 server 双进程。
-        manager.reconcileServers();
-        manager.logger.info(`dsh-mcp-manager: middleware mode=${next} (hot-switched)`);
-      };
       // startAll 在中间层注册前执行（off 语义），此处立即 reconcile：停掉
       // 项目级（all 含全局）supervisor（改由中间层接管），防同一 server 双进程。
       manager.reconcileServers();
@@ -203,7 +204,8 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
           catalogMaxEntries,
           manager.catalogCache,
           agent as unknown as CatalogAgent | undefined,
-          middlewareMode,
+          // 热切换后目录文案按当前模式渲染（#362 设置页中间层模式下拉）。
+          manager.middlewareMode,
         ) as unknown as PreStepDecision;
       });
     }
