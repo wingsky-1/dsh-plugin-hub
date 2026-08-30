@@ -32,8 +32,32 @@ export function actionButton(label: any, onClick: any, primary = false, danger =
   });
 }
 
+/** 工具级禁用 checkbox（PATCH /api/dsh-mcp/tool-disable；#362 交互拍板 2b）。 */
+function toolCheckbox(server: any, tool: string, disabled: boolean, state: McpState, actions: UiActions): any {
+  const label = el("label", { class: "dm-tool" });
+  const input = el("input", { type: "checkbox", checked: disabled });
+  input.addEventListener("change", () => {
+    void api(state.API.toolDisable, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        server: `@${server.scope === "global" ? "@global" : state.projectRoot ?? ""}/${server.name}`,
+        tool,
+        disabled: input.checked,
+      }),
+    }).then(() => actions.refresh())
+      .catch((error: any) => {
+        input.checked = !input.checked;
+        console.warn("[dsh-mcp-manager] tool-disable failed:", error);
+      });
+  });
+  label.appendChild(input);
+  label.appendChild(document.createTextNode(tool));
+  return label;
+}
+
 /** 渲染单台服务器卡片。 */
-export function renderServer(server: any, state: McpState, actions: UiActions): any {
+export function renderServer(server: any, state: McpState, actions: UiActions, opts: { tools: boolean } = { tools: true }): any {
   const article = el("article", { class: "dm-server" });
   const header = el("header");
   header.appendChild(el("span", { class: "dm-name", text: server.name }));
@@ -53,7 +77,17 @@ export function renderServer(server: any, state: McpState, actions: UiActions): 
     article.appendChild(el("div", { class: "dm-err", text: server.error }));
   }
 
-  if (toolCount > 0) {
+  if (toolCount > 0 && opts.tools) {
+    const details = el("details", { class: "dm-tools" });
+    details.appendChild(el("summary", { text: `工具（${toolCount}）` }));
+    const list = el("ul");
+    const disabledSet = new Set(Array.isArray(server.disabledTools) ? server.disabledTools : []);
+    for (const tool of server.tools) {
+      list.appendChild(el("li", {}, [toolCheckbox(server, tool, disabledSet.has(tool), state, actions)]));
+    }
+    details.appendChild(list);
+    article.appendChild(details);
+  } else if (toolCount > 0 && !opts.tools) {
     const details = el("details", { class: "dm-tools" });
     details.appendChild(el("summary", { text: `工具（${toolCount}）` }));
     const list = el("ul");
@@ -114,7 +148,8 @@ export function renderServer(server: any, state: McpState, actions: UiActions): 
   return article;
 }
 
-/** 渲染服务器列表页（按状态分组）。 */
+/** 渲染服务器列表页（#362 交互拍板 1a：项目级 / 全局级两大分组，各自内部再按状态）。
+ * project 模式：全局组显示服务器但无工具 checkbox（提示切 all 模式可管理全局工具）。 */
 export function renderServers(state: McpState, actions: UiActions): void {
   if (state.bodyEl === undefined) return;
   state.bodyEl.textContent = "";
@@ -122,25 +157,29 @@ export function renderServers(state: McpState, actions: UiActions): void {
     state.bodyEl.appendChild(el("div", { class: "dm-status", text: "还没有配置 MCP 服务器。切到「快速接入」页添加，或粘贴 mcpServers JSON 导入。" }));
     return;
   }
-  for (const group of STATUS_ORDER) {
-    const list = state.servers.filter((server: any) => server.status === group.key);
+  const isAll = state.middlewareMode === "all";
+  const toolsEnabled = (scope: string) => scope === "project" || isAll;
+  for (const scope of ["project", "global"]) {
+    const list = state.servers.filter((server: any) => server.scope === scope);
     if (list.length === 0) continue;
     const section = el("section", { class: "dm-group" });
     const title = el("h3");
-    title.appendChild(el("span", { class: "dm-dot", style: `background:${group.dot}` }));
-    title.appendChild(document.createTextNode(group.title));
+    title.appendChild(document.createTextNode(scope === "project" ? "项目级" : "全局级"));
     title.appendChild(el("span", { class: "dm-count", text: `${list.length}` }));
     section.appendChild(title);
-    for (const server of list.sort((a: any, b: any) => a.name.localeCompare(b.name))) {
-      section.appendChild(renderServer(server, state, actions));
+    for (const group of STATUS_ORDER) {
+      const grouped = list.filter((server: any) => server.status === group.key);
+      if (grouped.length === 0) continue;
+      const sub = el("div", { class: "dm-subgroup" });
+      sub.appendChild(el("h4", { class: "dm-subgroup-title", text: `${group.title}（${grouped.length}）` }));
+      for (const server of grouped.sort((a: any, b: any) => a.name.localeCompare(b.name))) {
+        sub.appendChild(renderServer(server, state, actions, { tools: toolsEnabled(scope) }));
+      }
+      section.appendChild(sub);
     }
-    state.bodyEl.appendChild(section);
-  }
-  const others = state.servers.filter((server: any) => !STATUS_ORDER.some((group) => group.key === server.status));
-  if (others.length > 0) {
-    const section = el("section", { class: "dm-group" });
-    section.appendChild(el("h3", { text: "其他" }));
-    for (const server of others) section.appendChild(renderServer(server, state, actions));
+    if (scope === "global" && !isAll) {
+      section.appendChild(el("div", { class: "dm-status", text: "全局工具开关需在 all 模式（中间层全量接管）下管理——切 all 模式可管理全局工具" }));
+    }
     state.bodyEl.appendChild(section);
   }
 }

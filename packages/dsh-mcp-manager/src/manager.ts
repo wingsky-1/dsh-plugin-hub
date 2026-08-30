@@ -715,6 +715,7 @@ export class McpManager {
       projectRoot: this.projectRoot ?? undefined,
       servers,
       counts: byStatus,
+      middlewareMode: this.middlewareMode,
     };
   }
 
@@ -744,23 +745,32 @@ export class McpManager {
       const entry = unit.connections.get(server.name);
       if (entry !== undefined) {
         const catalog = unit.catalog.get(server.name);
+        const disabledTools = this.disabledTools.get(unit.root)?.get(server.name);
+        const globalTools = unit.root === MIDDLEWARE_GLOBAL_ROOT ? undefined : this.disabledTools.get(MIDDLEWARE_GLOBAL_ROOT)?.get(server.name);
+        const tools = catalog !== undefined && catalog.unavailable === undefined ? [...catalog.tools.keys()] : [];
+        const disabledList = tools.filter((tool) => (disabledTools?.has(tool) ?? false) || (globalTools?.has(tool) ?? false));
         return {
           ...server,
           scope,
           status: entry.status,
           // 目录发现失败（unavailable）时透出原因：解释 connected 却 0 工具。
           error: entry.error !== undefined ? msgOf(entry.error) : catalog?.unavailable,
-          tools: catalog !== undefined && catalog.unavailable === undefined ? [...catalog.tools.keys()] : [],
+          tools,
+          disabledTools: disabledList.length > 0 ? disabledList : undefined,
         };
       }
     }
     const supervisor = this.supervisors.get(server.name);
+    const supervisorTools = supervisor?.tools ?? [];
+    const disabledForServer = this.disabledTools.get(MIDDLEWARE_GLOBAL_ROOT)?.get(server.name) ?? this.disabledTools.get(this.projectRoot ?? "")?.get(server.name);
+    const supervisorDisabled = disabledForServer !== undefined ? supervisorTools.filter((tool) => disabledForServer.has(tool)) : [];
     return {
       ...server,
       scope,
       status: supervisor?.status ?? (server.enabled === false ? "disabled" : "stopped"),
       error: supervisor?.error !== undefined ? (supervisor.error as Error).message : undefined,
-      tools: supervisor?.tools ?? [],
+      tools: supervisorTools,
+      disabledTools: supervisorDisabled.length > 0 ? supervisorDisabled : undefined,
     };
   }
 

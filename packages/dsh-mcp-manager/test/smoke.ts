@@ -572,6 +572,26 @@ const main = async () => {
     assert.ok(clientSrc.includes("settings.plugin.item"), "settings.plugin.item 卡已注册");
     assert.ok(clientSrc.includes("dsh-mcp-manager"), "卡片 key/id 引用宿主命名空间 dsh-mcp-manager");
   });
+  check("#362 客户端：工具级禁用 checkbox + scope 分组 + project 全局提示 + middleware 下拉", () => {
+    const clientSrc = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+    // 工具 checkbox 经 tool-disable API 持久化。
+    assert.ok(clientSrc.includes("tool-disable"), "客户端含 tool-disable API 调用");
+    assert.ok(clientSrc.includes('type: "checkbox"'), "工具开关为 checkbox");
+    assert.ok(clientSrc.includes("dm-float-tools"), "浮窗折叠式工具清单存在");
+    assert.ok(clientSrc.includes("切 all 模式可管理全局工具"), "project 模式全局组提示文案");
+    assert.ok(clientSrc.includes("dm-set-middleware"), "设置页中间层模式下拉存在");
+    // 浮窗与管理面板均按 scope 分组。
+    assert.ok(clientSrc.includes("dm-float-group-title"), "浮窗 scope 分组标题存在");
+    assert.ok(clientSrc.includes("项目级") && clientSrc.includes("全局"), "scope 分组文案存在");
+  });
+  check("#362 无游离 css：style.css 全部内联进 client.js（无独立样式请求）", () => {
+    const clientSrc = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+    const css = readFileSync(new URL("../src/client/style.css", import.meta.url), "utf8");
+    const probe = css.split("\n").filter((line) => line.trim() !== "").pop() ?? "";
+    // 样式文件末尾规则应整体出现在 client.js 产物中（text-loader 原样内联）。
+    assert.ok(clientSrc.includes(probe.slice(0, 40)), "style.css 尾部规则已内联进 client.js");
+    assert.ok(!clientSrc.includes('rel="stylesheet"'), "无独立样式表请求");
+  });
 
   console.log("SSE 半开连接防护（#268：服务端心跳 + 客户端 watchdog + 回前台重建）");
   check("客户端 watchdog：60s 失活重建 + 建连前先关旧（0.1.8 同款防泄漏）", () => {
