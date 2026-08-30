@@ -14,10 +14,10 @@
  *   （#362 补充 4），**本插件不再 ctx.tools.register 任何裸名工具**。每个封装
  *   execute 先 `codegraph sync <path>`（TTL 30s 缓存）再内部转发底层真实
  *   codegraph CLI（guardedCodegraph 管线），底层实现完全内部化；
- * - **agent 钩子**：agent/created + 会话 cwd 判定，git 仓（主 checkout /
- *   worktree）才注入纪律（~200 tokens/次）；非 git 仓（日常维护/讨论空间）
- *   不注入——多工作空间天然区分（按会话 cwd 判定，由 discipline/guard 承担，
- *   不在 apply 阶段读取 ctx.session——apply 无会话概念）。
+ * - **agent 钩子**：agent/pre-step + 会话 cwd 判定，git 仓（主 checkout /
+ *   worktree）才注入纪律（~200 tokens/次，根 ctx 注册保证在 mcp 目录注入之后）；
+ *   非 git 仓（日常维护/讨论空间）不注入——多工作空间天然区分（按会话 cwd 判定，
+ *   由 discipline/guard 承担，不在 apply 阶段读取 ctx.session——apply 无会话概念）。
  *
  * 安全模型（详见 README「安全模型」一节）：不自动执行第三方安装命令（默认）、
  * stdio 子进程继承宿主权限、索引为本地 SQLite 无加密、工具在真实服务器上执行。
@@ -30,7 +30,7 @@ import type { Context } from "@deepseek-ai/cordis";
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
 // 类型面：mcpManager service 类型从 mcp-manager 包引（该包 re-export
 // shared/mcp-manager-service.d.ts，类型单一事实源仍在 shared/，消费入口走包）。
-import type { McpManagerService } from "@wingsky-1/dsh-mcp-manager";
+import type { McpManagerServerInput, McpManagerService } from "@wingsky-1/dsh-mcp-manager";
 import { installGuidance, isCodegraphInstalled, runInstall } from "./install.ts";
 import { registerDisciplineHook } from "./discipline.ts";
 import {
@@ -47,10 +47,11 @@ import {
 /** Stable cordis plugin name. */
 export const name = "codegraph";
 
-/** 需要的宿主服务：agents（agent/created 事件）、mcpManager（MCP 注册/管理/使用）、
- *  systemPrompt（纪律段注册）。均经 inject 强依赖声明——
- *  缺失时 cordis 内核自动停用本插件。 */
-export const inject = ["agents", "mcpManager", "systemPrompt"];
+/** 需要的宿主服务：mcpManager（MCP 注册/管理/使用；封装定义经其注册）。
+ *  均经 inject 强依赖声明——缺失时 cordis 内核自动停用本插件。
+ *  注：纪律注入为根 ctx agent/pre-step 监听（#359 B2），不依赖 agents/systemPrompt；
+ *  工具经 mcp-manager 注册（#363 补充 3），不再依赖 tools。 */
+export const inject = ["mcpManager"];
 
 // 内部模块 re-export（公共测试面 + 其他插件可复用纯函数）。
 export { isCodegraphInstalled, installGuidance, runInstall } from "./install.ts";
@@ -66,8 +67,9 @@ export {
   findAmbiguousCandidates,
   resetSyncCache,
   SYNC_TTL_MS,
+  exploreCodegraph,
 } from "./guard.ts";
-export { shouldInject, DISCIPLINE_TEXT, DISCIPLINE_SECTION_NAME, DISCIPLINE_SECTION_ORDER, registerDisciplineHook } from "./discipline.ts";
+export { shouldInject, DISCIPLINE_TEXT, registerDisciplineHook } from "./discipline.ts";
 export {
   buildExploreToolDefinition,
   buildImpactToolDefinition,
@@ -94,27 +96,6 @@ export interface CodegraphConfig {
 }
 
 const DEFAULT_INSTALL_COMMAND = "npm install -g @colbymchenry/codegraph";
-
-/**
- * registerServer 入参的局部宽松类型（#363 补充 3 临时面）：
- * mcp-manager 侧（task/362 补充 4）合入 toolDefinitions 字段后，本类型将
- * 收紧为 McpManagerServerInput & { toolDefinitions: ToolDefinition[] }。
- */
-type RegisterServerInput = {
-  name: string;
-  transport: "stdio" | "streamable-http";
-  command?: string;
-  args?: string[];
-  url?: string;
-  headers?: Record<string, string>;
-  env?: Record<string, string>;
-  cwd?: string;
-  enabled?: boolean;
-  toolCallTimeoutMs?: number;
-  reconnect?: Record<string, unknown>;
-  description?: string;
-  toolDefinitions: ToolDefinition[];
-};
 
 /** 8 个 codegraph 封装工具定义（经 mcp-manager 的 registerServer.toolDefinitions
  *  通道注册，#363 补充 3）。execute 均先 sync 再内部转发底层 CLI。 */
@@ -166,17 +147,16 @@ export async function apply(ctx: Context, config: CodegraphConfig = {}): Promise
 
   // 2. 经 mcp-manager 注册 MCP 服务器（inject 强依赖保证可用）+ 封装定义
   //    （#363 补充 3：工具经 registerServer.toolDefinitions 交给 manager 注册，
-  //    本插件不再 ctx.tools.register）。toolDefinitions 字段由 #362 补充 4 在
-  //    mcp-manager 侧实现；本 worktree 构建时该类型尚未发布，用局部类型兼容
-  //    （RegisterServerInput 宽松面），合入 #362 后收紧为 McpManagerServerInput。
+  //    本插件不再 ctx.tools.register）。toolDefinitions? 可选字段来自官方
+  //    McpManagerServerInput（#364 合入 main，shared/mcp-manager-service.d.ts
+  //    单一事实源；#363 补充 3 的临时 RegisterServerInput 已删除）。
   //    用完整 service 面：注册后可经 getStatus/getTools 感知连接状态与工具列表。
   const mcpManager = (ctx as unknown as { mcpManager: McpManagerService }).mcpManager;
   const toolDefinitions = buildCodegraphToolDefinitions();
   if (isCodegraphInstalled()) {
     try {
       // #363 补充 3：封装定义经 mcp-manager 注册（manager 侧 #362 补充 4 消费）。
-      // 类型面暂缺 toolDefinitions —— 局部宽松入参类型兼容，合入 #362 后收紧。
-      const registerInput: RegisterServerInput = {
+      const registerInput: McpManagerServerInput = {
         name: "codegraph",
         transport: "stdio",
         command: "codegraph",
@@ -185,7 +165,7 @@ export async function apply(ctx: Context, config: CodegraphConfig = {}): Promise
         reconnect: {},
         toolDefinitions,
       };
-      const { existing } = await (mcpManager.registerServer as (input: RegisterServerInput) => Promise<{ name: string; existing: boolean }>)(registerInput);
+      const { existing } = await mcpManager.registerServer(registerInput);
       if (!existing) {
         // 注册即连接：查询状态确认连接进度（connecting/connected 皆正常，failed 需提示）。
         const status = mcpManager.getStatus("codegraph");

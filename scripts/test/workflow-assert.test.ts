@@ -24,7 +24,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync, readdirSync, existsSync } from 'node:fs'
+import { readFileSync, readdirSync, existsSync, globSync } from 'node:fs'
 import { join, basename } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
@@ -216,6 +216,51 @@ test('#220 段式三方一致：observe 计划 ↔ stryker.conf.d 文件集 ↔ 
   // packages/ 目录集 ⊇ 基础包名集
   for (const p of basePkgs) {
     assert.ok(existsSync(join(ROOT, 'packages', p)), `packages/${p} 目录存在`)
+  }
+})
+
+// ── #342 v4 §4.3/§4.4：段号连续 + mutate 面防空段回归 ──
+// 段号连续：combos_for 按 stryker.conf.d/<pkg>-*.json 文件数展开 seq 1 N，
+// 跳号（如缺 dsh-a-2.json）会让矩阵实例指向不存在配置，fail-closed 前先静态拦截。
+// 防空段：provider-2 空段实证（mutate 指向不存在的 adapters/*.ts，0 mutant）——
+// 每段 mutate 正向条目必须至少 glob 到 1 个现存文件。
+test('#342: 各包 stryker 段号从 1 连续无空洞（防跳号矩阵）', () => {
+  const confDir = join(ROOT, 'stryker.conf.d')
+  const confFiles = readdirSync(confDir).filter((f) => f.endsWith('.json'))
+  assert.ok(confFiles.length > 0, 'stryker.conf.d 非空')
+  // 包级单段配置（<pkg>.json）走 seg=0，不参与段号序列；段式配置 <pkg>-<n>.json 独立成组
+  const segSets = new Map() // base-pkg → Set<seg>
+  const hasPkgLevel = new Set()
+  for (const f of confFiles) {
+    const m = /^dsh-(.+?)(?:-(\d+))?\.json$/.exec(f)
+    if (!m) continue
+    const [, base, seg] = m
+    if (seg) {
+      if (!segSets.has(base)) segSets.set(base, new Set())
+      segSets.get(base).add(Number(seg))
+    } else {
+      hasPkgLevel.add(base)
+    }
+  }
+  for (const [base, segs] of segSets) {
+    const arr = [...segs].sort((a, b) => a - b)
+    const expect = Array.from({ length: arr.length }, (_, i) => i + 1)
+    assert.deepEqual(arr, expect,
+      `${base} 段号必须为 1..${arr.length} 连续无空洞（combos_for 按 seq 1 N 展开，跳号即矩阵指向不存在配置）`)
+    assert.ok(!hasPkgLevel.has(base),
+      `${base} 存在段式配置时不得残留包级孤儿 <pkg>.json（v4 §4.1：否则 observe 每班次白跑一段孤儿全量）`)
+  }
+})
+
+test('#342: 每段 mutate 正向条目至少 glob 到 1 个现存文件（防空段回归）', () => {
+  const confDir = join(ROOT, 'stryker.conf.d')
+  for (const f of readdirSync(confDir).filter((x) => x.endsWith('.json'))) {
+    const conf = JSON.parse(readFileSync(join(confDir, f), 'utf8'))
+    const positives = (conf.mutate ?? []).filter((m) => !m.startsWith('!'))
+    assert.ok(positives.length > 0,
+      `${f} 无 mutate 正向条目（防空段回归：provider-2 空段即 mutate 指向不存在的 adapters/*.ts，0 mutant）`)
+    assert.ok(positives.some((m) => globSync(m, { cwd: ROOT }).length > 0),
+      `${f} mutate 正向条目全部 glob 不到现存文件（防空段回归：v4 §4.4）`)
   }
 })
 

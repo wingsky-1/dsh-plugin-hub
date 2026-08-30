@@ -15,6 +15,7 @@ export const API = {
   config: "/api/dsh-mcp/config",
   events: "/api/dsh-mcp/events",
   health: "/api/dsh-mcp/health",
+  toolDisable: "/api/dsh-mcp/tool-disable",
 };
 
 /** 状态分组排序（按优先级降序）。 */

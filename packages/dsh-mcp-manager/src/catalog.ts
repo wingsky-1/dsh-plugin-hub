@@ -144,13 +144,22 @@ export function digestCatalogEntries(entries: CatalogEntry[]): string {
  *   （项目级走中间层；完整盘点用 ws_mcp_list，查完整 schema 用 ws_mcp_detail）；
  * - 仅 global 条目 → 默认保持 mcp__ 直呼引导（全局服务器不经中间层检索）；
  *   all 模式（mode === "all"）下全局也走中间层 → 同样引导经中间层工具访问。
+ * 口径统一（#362 评审修正）：project 模式全局服务器仍以 mcp__ 直呼注册可用，
+ * 目录引导区分「经中间层访问」与「mcp__ 直呼」两类服务器，不混用。
  */
 export function renderMcpCatalogMessage(entries: CatalogEntry[], mode?: string): CatalogMessage {
   const hasProject = entries.some((entry) => entry.scope === "project");
-  const viaMiddleware = hasProject || mode === "all";
-  const guidance = viaMiddleware
-    ? "任务匹配某服务器能力时，先用 `ws_mcp_search` 检索当前工作空间的 MCP 工具，再用 `ws_mcp_call` 调用（server/tool 取自检索结果）。**服务器一律经这些工具访问，不直接调用其 mcp__ 前缀工具**；完整盘点全部服务器与工具清单用 `ws_mcp_list`，查单个工具的完整 inputSchema 用 `ws_mcp_detail`。"
-    : "任务匹配某服务器能力时，直接调用其 `mcp__<server>__<tool>` 工具（具体工具名与参数见工具列表）。";
+  const projectGuidance =
+    "项目级服务器一律经中间层工具访问：先用 `ws_mcp_search` 检索当前工作空间的 MCP 工具，再用 `ws_mcp_call` 调用（server/tool 取自检索结果；完整盘点全部服务器与工具清单用 `ws_mcp_list`，查单个工具的完整 inputSchema 用 `ws_mcp_detail`）。**项目级服务器不直接调用其 mcp__ 前缀工具**。";
+  const globalGuidance =
+    mode === "all"
+      ? "全局服务器同样经中间层访问（all 模式全局不注册 mcp__ 工具）：先用 `ws_mcp_search` 检索，再经 `ws_mcp_call` 调用，与项目级同一套 `ws_mcp_*` 工具。"
+      : "全局服务器仍以 `mcp__<server>__<tool>` 前缀工具直呼调用（project 模式全局不经中间层检索）。";
+  const guidance = hasProject
+    ? `${projectGuidance}${globalGuidance}`
+    : mode === "all"
+      ? globalGuidance
+      : `任务匹配某服务器能力时，直接调用其 \`mcp__<server>__<tool>\` 工具（具体工具名与参数见工具列表）。${globalGuidance}`;
   const lines = [
     "<system-reminder>",
     "本会话已配置以下 MCP 服务器（**仅描述能力，不代表当前连接状态**；服务器在 GUI「MCP」浮窗中连接后，其工具才会注册可用）：",

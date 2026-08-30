@@ -1,0 +1,59 @@
+{
+  "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "mutate": [
+    "packages/dsh-notifier/src/message.ts",
+    "packages/dsh-notifier/src/config.ts",
+    "packages/dsh-notifier/src/migrate.ts",
+    "packages/dsh-notifier/src/settings.ts",
+    "packages/dsh-notifier/src/history.ts",
+    "packages/dsh-notifier/src/quiet-hours.ts",
+    "!packages/dsh-notifier/src/client/**",
+    "!packages/dsh-notifier/src/types.ts"
+  ],
+  "testRunner": "tap",
+  "mutator": {
+    "excludedMutations": [
+      "StringLiteral",
+      "ArrayLiteral",
+      "ObjectLiteral",
+      "TemplateLiteral"
+    ]
+  },
+  "plugins": [
+    "@stryker-mutator/tap-runner"
+  ],
+  "concurrency": 16,
+  "timeoutMS": 60000,
+  "dryRunTimeoutMinutes": 5,
+  "reporters": [
+    "progress",
+    "clear-text",
+    "json"
+  ],
+  "coverageAnalysis": "perTest",
+  "tempDirName": ".stryker-tmp",
+  "cleanTempDir": true,
+  "tap": {
+    "nodeArgs": [
+      "-r",
+      "./scripts/test/mutation-tap-bridge.cjs"
+    ],
+    "testFiles": [
+      "packages/dsh-notifier/test/e2e-approval.test.ts",
+      "packages/dsh-notifier/test/e2e-done.src.test.ts",
+      "packages/dsh-notifier/test/e2e-edge.src.test.ts",
+      "packages/dsh-notifier/test/e2e-question-turn.test.ts",
+      "packages/dsh-notifier/test/migration.src.test.ts",
+      "packages/dsh-notifier/test/routes.src.test.ts",
+      "packages/dsh-notifier/test/unit-config.src.test.ts",
+      "packages/dsh-notifier/test/unit-sanitize.src.test.ts",
+      "packages/dsh-notifier/test/unit-text.src.test.ts"
+    ]
+  },
+  "jsonReporter": {
+    "fileName": "coverage/mutation/dsh-notifier-2.json"
+  },
+  "incremental": true,
+  "incrementalFile": "coverage/mutation/incremental-notifier-2.json",
+  "_comment": "#342 v4：src 级文件组分段（2）——message/config/migrate/settings/history/quiet-hours（判定/配置域）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+}

@@ -15,6 +15,7 @@ import { homedir } from "node:os";
 import type { ServerResponse } from "node:http";
 import type { Context, LoggerService } from "@deepseek-ai/cordis";
 import type { ServerConfig, ClientUiConfig } from "./types.ts";
+import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
 import type { CatalogCache } from "./catalog.ts";
 import { normalizeServer } from "./normalize.ts";
 import { normalizeUiConfig, buildConfigUiPatch } from "./config-schema.ts";
@@ -29,8 +30,10 @@ import {
   loadUserState,
   saveUserState,
   catalogCacheFileFor,
+  loadDisabledTools,
+  saveDisabledTools,
 } from "./middleware.ts";
-import type { MiddlewareMode, ProjectUnit } from "./middleware.ts";
+import type { MiddlewareMode, ProjectUnit, DisabledToolsMap } from "./middleware.ts";
 
 /** 中间层 all 模式的全局虚拟 root（全局服务器经中间层访问时的路由 key）。 */
 export const MIDDLEWARE_GLOBAL_ROOT = "@global";
@@ -223,6 +226,12 @@ export class McpManager {
     return store?.data.servers;
   }
 
+  /** 中间层宿主：该 server 是否全局级（双源：store + runtimeRegistry）。
+   * codegraph 等 runtime 注册的服务器不落 store，单源会误判「非全局」——P1 修正。 */
+  isGlobalServer(name: string): boolean {
+    return this.store.data.servers.some((server) => server.name === name) || this.runtimeRegistry.has(name);
+  }
+
   /** 中间层宿主：全局服务器配置（all 模式使用）。 */
   globalServers(): ServerConfig[] {
     return this.store.data.servers;
@@ -252,6 +261,7 @@ export class McpManager {
         saveUserState: (units) => this.saveUserState(units),
         emitStatus: () => this.emitStatus(),
         catalogCachePath: (root) => this.catalogCachePathFor(root),
+        isGlobalServer: (name) => this.isGlobalServer(name),
       },
       {
         allowTools: (policy.allowTools as Record<string, string[]> | undefined) ?? undefined,
@@ -261,12 +271,44 @@ export class McpManager {
     // 加载 userDisabled 并注入中间层实例（单元创建时合并；重启不丢）。
     this.disabledByRoot = await loadUserState(this.userStatePath);
     mw.disabledByRoot = this.disabledByRoot;
+    // 加载工具级禁用（三层结构；合并式写盘，绝不整表覆盖）。
+    this.disabledTools = await loadDisabledTools(this.userStatePath);
+    mw.disabledTools = this.disabledTools;
     this.middleware = mw;
     return mw;
   }
 
   /** userDisabled 映射（root → Set<server>），中间层单元创建时合并。 */
   disabledByRoot: Map<string, Set<string>> = new Map();
+
+  /** 工具级禁用（root → server → Set<tool>）；root=@global 跨工作空间共享。 */
+  disabledTools: DisabledToolsMap = new Map();
+
+  /** 中间层模式热切换（apply 注入；设置页「中间层模式」下拉调用）。 */
+  setMiddlewareMode?: (mode: MiddlewareMode) => Promise<void>;
+
+  /**
+   * 设置/解除单个工具禁用（宿主 API PATCH /api/dsh-mcp/tool-disable 调用）。
+   * 合并式写盘（先读现有文件再覆盖本 root 段，绝不整表覆盖）——
+   * 防多工作空间互相抹掉禁用记录。
+   * @param root 目标 root（全局服务器用 MIDDLEWARE_GLOBAL_ROOT）。
+   * @param server 服务器裸名。
+   * @param tool 远端工具裸名。
+   * @param disabled true=禁用 / false=解除。
+   * 工具级禁用独立于服务器级 enabled：服务器级复活不清工具级状态。
+   */
+  async setToolDisabled(root: string, server: string, tool: string, disabled: boolean): Promise<void> {
+    const tools = this.disabledTools.get(root) ?? new Map<string, Set<string>>();
+    const set = tools.get(server) ?? new Set<string>();
+    if (disabled) set.add(tool);
+    else set.delete(tool);
+    if (set.size > 0) tools.set(server, set);
+    else tools.delete(server);
+    if (tools.size > 0) this.disabledTools.set(root, tools);
+    else this.disabledTools.delete(root);
+    await saveDisabledTools(this.userStatePath, this.disabledTools);
+    this.emitStatus();
+  }
 
   /** 读取/复用某项目根的 store（工作区缓存命中直接返回，不重复读盘）。 */
   async projectStoreFor(root: string | undefined): Promise<McpStore | undefined> {
@@ -514,9 +556,14 @@ export class McpManager {
    * - 同名已存在（store 或 runtime）：返回 { name, existing: true }，不抛错；
    * - 注册即连接（走 start 的 config 直传分支，同名 runtime 优先）；
    * - 串行队列防 reconcileBusy 吞注册；多插件并发注册排队。
+   * @param options 注册入参；`toolDefinitions` 可选——提供时该服务器工具
+   *   全部用调用方封装定义注册（supervisor 跳过远端 schema 投影，execute
+   *   来自调用方；命名仍按 publicToolName 的 mcp__ 前缀规则）。
    */
-  async registerServer(server: Record<string, unknown>): Promise<{ name: string; existing: boolean }> {
-    const config = normalizeServer(server);
+  async registerServer(options: Record<string, unknown>): Promise<{ name: string; existing: boolean }> {
+    const { toolDefinitions, ...rest } = options;
+    const config = normalizeServer(rest);
+    if (Array.isArray(toolDefinitions)) config.toolDefinitions = toolDefinitions as ToolDefinition[];
     const run = this.registerQueue.then(async () => {
       if (this.runtimeRegistry.has(config.name) || this.store.find(config.name) !== undefined) {
         return { name: config.name, existing: true };
@@ -674,6 +721,7 @@ export class McpManager {
       projectRoot: this.projectRoot ?? undefined,
       servers,
       counts: byStatus,
+      middlewareMode: this.middlewareMode,
     };
   }
 
@@ -703,23 +751,32 @@ export class McpManager {
       const entry = unit.connections.get(server.name);
       if (entry !== undefined) {
         const catalog = unit.catalog.get(server.name);
+        const disabledTools = this.disabledTools.get(unit.root)?.get(server.name);
+        const globalTools = unit.root === MIDDLEWARE_GLOBAL_ROOT ? undefined : this.disabledTools.get(MIDDLEWARE_GLOBAL_ROOT)?.get(server.name);
+        const tools = catalog !== undefined && catalog.unavailable === undefined ? [...catalog.tools.keys()] : [];
+        const disabledList = tools.filter((tool) => (disabledTools?.has(tool) ?? false) || (globalTools?.has(tool) ?? false));
         return {
           ...server,
           scope,
           status: entry.status,
           // 目录发现失败（unavailable）时透出原因：解释 connected 却 0 工具。
           error: entry.error !== undefined ? msgOf(entry.error) : catalog?.unavailable,
-          tools: catalog !== undefined && catalog.unavailable === undefined ? [...catalog.tools.keys()] : [],
+          tools,
+          disabledTools: disabledList.length > 0 ? disabledList : undefined,
         };
       }
     }
     const supervisor = this.supervisors.get(server.name);
+    const supervisorTools = supervisor?.tools ?? [];
+    const disabledForServer = this.disabledTools.get(MIDDLEWARE_GLOBAL_ROOT)?.get(server.name) ?? this.disabledTools.get(this.projectRoot ?? "")?.get(server.name);
+    const supervisorDisabled = disabledForServer !== undefined ? supervisorTools.filter((tool) => disabledForServer.has(tool)) : [];
     return {
       ...server,
       scope,
       status: supervisor?.status ?? (server.enabled === false ? "disabled" : "stopped"),
       error: supervisor?.error !== undefined ? (supervisor.error as Error).message : undefined,
-      tools: supervisor?.tools ?? [],
+      tools: supervisorTools,
+      disabledTools: supervisorDisabled.length > 0 ? supervisorDisabled : undefined,
     };
   }
 

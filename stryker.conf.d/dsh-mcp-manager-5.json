@@ -1,9 +1,13 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-mcp-manager/src/middleware.ts",
-    "packages/dsh-mcp-manager/src/middleware-utils.ts",
-    "packages/dsh-mcp-manager/src/middleware-const.ts",
+    "packages/dsh-mcp-manager/src/catalog.ts",
+    "packages/dsh-mcp-manager/src/apply.ts",
+    "packages/dsh-mcp-manager/src/transport.ts",
+    "packages/dsh-mcp-manager/src/placement-math.ts",
+    "packages/dsh-mcp-manager/src/config-schema.ts",
+    "packages/dsh-mcp-manager/src/protocol.ts",
+    "packages/dsh-mcp-manager/src/middleware-types.ts",
     "!packages/dsh-mcp-manager/src/client/**",
     "!packages/dsh-mcp-manager/src/types.ts",
     "!packages/dsh-mcp-manager/src/service.ts"
@@ -50,9 +54,9 @@
     ]
   },
   "jsonReporter": {
-    "fileName": "coverage/mutation/dsh-mcp-manager-3.json"
+    "fileName": "coverage/mutation/dsh-mcp-manager-5.json"
   },
   "incremental": true,
-  "incrementalFile": "coverage/mutation/incremental-mcp-manager-3.json",
-  "_comment": "#342 v4：src 级文件组分段（3）——middleware+middleware-utils+middleware-const；types.ts / service.ts（type-only）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+  "incrementalFile": "coverage/mutation/incremental-mcp-manager-5.json",
+  "_comment": "#342 v4：src 级文件组分段（5）——catalog+apply+transport+placement-math+config-schema+protocol+middleware-types；types.ts / service.ts（type-only）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
 }

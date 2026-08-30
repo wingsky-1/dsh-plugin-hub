@@ -6,6 +6,8 @@
  * （type-only，编译期擦除）。
  */
 
+import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
+
 /** MCP 服务器配置（归一化后）。 */
 export interface ServerConfig {
   name: string;
@@ -17,6 +19,14 @@ export interface ServerConfig {
   reconnect?: Record<string, unknown>;
   /** 能力目录的自定义描述（用户手写）。 */
   description?: string;
+  /**
+   * 调用方封装工具定义（registerServer 运行时注入面专用，如 dsh-codegraph）：
+   * 提供时该服务器工具**全部用封装定义注册**（execute 来自调用方，跳过远端
+   * schema 投影与通用 callTool）；缺省走现状（远端 schema + 通用 callTool）。
+   * 工具名为裸名；模型可见名仍由 publicToolName（mcp__ 前缀）决定。
+   * 仅内存态（runtimeRegistry）消费，不随 store 落盘、不随 import 透传。
+   */
+  toolDefinitions?: ToolDefinition[];
   // stdio 传输字段
   command?: string;
   args?: string[];

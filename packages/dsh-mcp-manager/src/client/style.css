@@ -132,3 +132,14 @@
 .dm-set-head:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.04))}
 .dm-set-save:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.06))}
 }
+
+/* #362 工具级禁用：折叠式 details + checkbox 列表（浮窗与管理面板共用视觉）。 */
+.dm-float-tools{margin:4px 0 0 16px}
+.dm-float-tools summary{font-size:11px;color:var(--dsw-alias-label-secondary,#525866);cursor:pointer;user-select:none}
+.dm-float-tool-list{display:flex;flex-direction:column;gap:2px;margin:4px 0 0;max-height:140px;overflow:auto}
+.dm-float-tool,.dm-tool{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--dsw-alias-label-primary,#3a3f4b);font-family:ui-monospace,Consolas,monospace;cursor:pointer;line-height:1.6}
+.dm-float-tool input,.dm-tool input{width:13px;height:13px;margin:0;accent-color:var(--dsw-alias-state-info-primary,#3b82f6);flex:none}
+.dm-float-hint{font-size:10.5px;color:var(--dsw-alias-label-tertiary,#8a919c);line-height:1.5;padding:4px 8px 2px}
+.dm-subgroup{margin:6px 0 10px}
+.dm-subgroup-title{margin:0 0 4px;font-size:11px;font-weight:600;color:var(--dsw-alias-label-secondary,#525866)}
+.dm-group>h3 .dm-count{font-size:11px;color:var(--dsw-alias-label-tertiary,#8a919c);font-weight:600}

@@ -38,6 +38,7 @@ async function doRefresh(state: McpState, actions: UiActions): Promise<boolean> 
     state.servers = payload.servers ?? [];
     state.counts = payload.counts ?? {};
     state.projectRoot = payload.projectRoot;
+    if (typeof payload.middlewareMode === "string") state.middlewareMode = payload.middlewareMode;
     renderPill(state);
     if (state.floatOpen) renderFloatPanel(state, actions);
     const countsEl = document.querySelector(".dm-counts");

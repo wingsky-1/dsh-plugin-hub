@@ -132,6 +132,9 @@ export {
   globMatch,
   policyAllows,
   policyDenialReason,
+  isToolDenied,
+  toolDisabledReason,
+  parseDisabledTools,
   scoreTool,
   searchCatalog,
   searchCatalogMulti,
@@ -141,6 +144,8 @@ export {
   userStateFile,
   loadUserState,
   saveUserState,
+  loadDisabledTools,
+  saveDisabledTools,
   catalogCacheFileFor,
   CONNECT_TIMEOUT_MS,
   DISCOVERY_TIMEOUT_MS,
@@ -162,6 +167,7 @@ export type {
   ListServerEntry,
   ListCatalogResult,
   ToolDetail,
+  DisabledToolsMap,
 } from "./middleware.ts";
 // 路由
 export { ROUTES, makeRoutes, makeEventsRoute, makeHealthRoute, sseData, uiConfigChangedFrame, broadcastFrame, SSE_HEARTBEAT_MS, SSE_PING_FRAME } from "./routes.ts";

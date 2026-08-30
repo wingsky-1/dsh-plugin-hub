@@ -8,13 +8,17 @@
  * esbuild 构建期内联、随包复制（d.ts X1）。
  *
  * 服务面（通用 MCP 能力 + 运行时注入专用面）：
- * - 注入面：registerServer / unregisterServer（内存态不落盘，同名幂等）；
+ * - 注入面：registerServer / unregisterServer（内存态不落盘，同名幂等；
+ *   registerServer 支持可选 toolDefinitions——调用方封装定义，见下）；
  * - 控制面：connect / disconnect / reconnect（通用 MCP 生命周期，注册即连、
  *   注销即断的补充控制）；
  * - 查询面：getStatus / getTools / list（连接状态、工具列表、全量摘要——
  *   「作为 MCP 应能感知连接状态与工具列表」，评审③ MVP 裁剪为纯注入面是
  *   过度裁剪，查询面是消费方感知服务状态所必需）。
  */
+
+/** 封装工具定义（官方 dsh-tools 契约；类型面引用，编译期擦除）。 */
+import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
 
 /** 服务器连接状态（与 manager summarize 投影一致）。 */
 export type McpServerStatus =
@@ -59,6 +63,14 @@ export interface McpManagerServerInput {
   toolCallTimeoutMs?: number;
   reconnect?: Record<string, unknown>;
   description?: string;
+  /**
+   * 可选：调用方封装工具定义（裸名；如 dsh-codegraph 的 codegraph_explore）。
+   * 提供时该服务器工具全部用封装定义注册（execute 来自调用方，跳过远端
+   * schema 与通用 callTool）；缺省维持现状（远端 schema + mcp__ 前缀 +
+   * 通用 callTool）。模型可见名仍由 manager 命名机制决定（mcp__ 前缀）；
+   * 工具级禁用/可见性/能力目录照常生效。仅内存态消费，不落盘。
+   */
+  toolDefinitions?: ToolDefinition[];
 }
 
 /** ctx.mcpManager service 面（完整：注入 + 控制 + 查询）。 */

@@ -18,13 +18,14 @@ codegraph MCP + worktree 开发纪律 —— 把 [codegraph](https://github.com/
   查询结果不缓存）+ 校验/补全 `projectPath`**（缺省补全为当前会话 worktree，自动不了则
   拒绝并提示），再内部转发底层真实 codegraph CLI（底层实现完全内部化，模型只见封装工具）。
   杜绝「worktree 索引静默过期」与「漏传 projectPath 查错对象」。
-- **agent 纪律钩子**：`agent/created` + 会话 cwd 判定，git 仓（主 checkout / worktree）会话
-  才注入 worktree 开发纪律——以 systemPrompt 段注入（order 161，恒在 mcp-manager
-  能力目录段之后，agent scope 注册沿 scope 链自动继承给子 agent）；非 git 仓
-  （日常维护/讨论空间）不注入——多工作空间天然区分（按会话 cwd 判定，无需配置）。
-  纪律文案声明：**codegraph 工具全部经 mcp-manager 统一管理（project 模式 mcp__ 前缀 /
-  all 模式 ws_mcp_call 裸名）；本插件不直接注册工具，仅提供封装（先 sync + worktree
-  纪律），工具级禁用经 mcp-manager 对封装工具生效**。
+- **agent 纪律钩子**：`agent/pre-step` + 会话 cwd 判定，git 仓（主 checkout / worktree）会话
+  才注入 worktree 开发纪律——以 pre-step user 消息注入（官方 dsh-tool-skill 同款载体，
+  出现在 GUI「上下文注入」面板，幂等查会话历史）；非 git 仓（日常维护/讨论空间）不注入——
+  多工作空间天然区分（按会话 cwd 判定，无需配置）。纪律内容与 mcp 能力目录正交
+  （纪律讲工具用法，目录讲服务器清单），无先后依赖。纪律文案声明：**codegraph 工具全部
+  经 mcp-manager 统一管理（project 模式 mcp__ 前缀 / all 模式 ws_mcp_call 裸名）；
+  本插件不直接注册工具，仅提供封装（先 sync + worktree 纪律），工具级禁用经 mcp-manager
+  对封装工具生效**。
 
 ## 安装
 
