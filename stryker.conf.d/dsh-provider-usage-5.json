@@ -1,10 +1,14 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-provider-usage/src/index.ts",
-    "packages/dsh-provider-usage/src/user-adapters.ts",
-    "packages/dsh-provider-usage/src/ui-config.ts",
-    "packages/dsh-provider-usage/src/config.ts",
+    "packages/dsh-provider-usage/src/core/history.ts",
+    "packages/dsh-provider-usage/src/pipeline/v2.ts",
+    "packages/dsh-provider-usage/src/hotreload.ts",
+    "packages/dsh-provider-usage/src/placement-math.ts",
+    "packages/dsh-provider-usage/src/path-resolve.ts",
+    "packages/dsh-provider-usage/src/client-logic.ts",
+    "packages/dsh-provider-usage/src/provider-config.ts",
+    "packages/dsh-provider-usage/src/charts.ts",
     "!packages/dsh-provider-usage/src/client/**",
     "!packages/dsh-provider-usage/src/types.ts"
   ],
@@ -47,9 +51,9 @@
     ]
   },
   "jsonReporter": {
-    "fileName": "coverage/mutation/dsh-provider-usage-1.json"
+    "fileName": "coverage/mutation/dsh-provider-usage-5.json"
   },
   "incremental": true,
-  "incrementalFile": "coverage/mutation/incremental-provider-usage-1.json",
-  "_comment": "#342 v4：src 级文件组分段（1）——index+user-adapters+ui-config+config（配置/入口面）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+  "incrementalFile": "coverage/mutation/incremental-provider-usage-5.json",
+  "_comment": "#342 v4：src 级文件组分段（5）——history/v2/hotreload/placement-math/path-resolve/client-logic/provider-config/charts（历史/管线/热更/图表面；charts 纳入修复变异盲区）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
 }
