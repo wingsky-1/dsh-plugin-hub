@@ -127,6 +127,10 @@ assert.equal(previewKindOf("a.avif").contentType, "image/avif");
 assert.equal(previewKindOf("dir/a.JPG").contentType, "image/jpeg", "大小写不敏感且走 mime 库");
 
 assert.equal(normalizeConfig(undefined).enabled, true, "默认启用");
+// issue #344 A2 [硬性]：默认上限硬编码断言 20M——现有 normalizeConfig(undefined) 断言是
+// 自引用（拿 DEFAULT_CONFIG 比自己），实现回退/错值不会红，这里显式钉死数值。
+assert.equal(DEFAULT_CONFIG.maxTextBytes, 20 * 1024 * 1024, "#344 默认文本上限 = 20M（硬断言）");
+assert.equal(DEFAULT_CONFIG.maxAssetBytes, 20 * 1024 * 1024, "#344 默认资源上限 = 20M（硬断言）");
 assert.equal(normalizeConfig(undefined).maxTextBytes, DEFAULT_CONFIG.maxTextBytes, "默认文本上限");
 assert.equal(normalizeConfig({ enabled: false }).enabled, false);
 assert.equal(normalizeConfig({ maxTextBytes: 1234 }).maxTextBytes, 1234);
@@ -549,6 +553,19 @@ try {
   const literals = [...client.matchAll(/\/api\/dsh-file-preview\/[a-z-]+/g)].map((m) => m[0]);
   for (const literal of literals) assert.ok(expectedRoutes.includes(literal), `client 出现未知路由: ${literal}`);
   for (const route of expectedRoutes) assert.ok(literals.includes(route), `client 缺少路由: ${route}`);
+  // issue #344 哨兵断言（防实现回退丢按钮）：断言**唯一字面量**（评审 F7）——
+  // 「退出全屏/放大预览/退出放大」仅存在于 fullscreenLabel（不会被 css 中文注释/
+  // 类名子串满足）；fwp-fs-btn 是按钮选择器唯一词。`.fwp-fs{` 带花括号前缀避免与
+  // fwp-fs-btn/fwp-fs-on 子串混淆（css 经 text-loader 原样内联进 client.js）。
+  assert.ok(client.includes("退出全屏"), "#344 client 含「退出全屏」文案（fullscreenLabel 唯一字面量）");
+  assert.ok(client.includes("放大预览") && client.includes("退出放大"), "#344 client 含降级态文案（放大预览/退出放大）");
+  assert.ok(client.includes('classList.add("fwp-fs-btn")') || client.includes(".fwp-fs-btn{"), "#344 client 含全屏按钮类名");
+  assert.ok(client.includes(".fwp-fs{") || client.includes(".fwp-fs "), "#344 client 含视口放大降级类（带选择器上下文）");
+  // issue #344（评审 F1/F2 防回退哨兵）：diff 渲染路径必须接入 render-limit 谓词
+  // （renderDiff 超限降级）与返回栈 hadDiff 重探逻辑——minify 保留属性名（hadDiff）
+  // 与导出函数名（exceedsTextRenderLimit），产物层可断言，防「修了一半」回归。
+  assert.ok(client.includes("exceedsTextRenderLimit"), "#344 client 含渲染阈值谓词引用（F1 diff 降级接入）");
+  assert.ok(client.includes("hadDiff"), "#344 client 含返回栈 diff 恢复标志（F2 重探逻辑）");
 
   // ---- issue #104：mermaid 懒加载 chunk 宿主路由真实可读（P0 断言）----
   // 防「cleanFreeFloatingJs 把新 chunk 当游离产物删除 → 五连门禁全绿而功能坏」
@@ -879,6 +896,19 @@ try {
           await serveRouteHandler(fakeReq("GET", serveUrl(liveToken, "index.html"), "127.0.0.1"), res);
           assert.equal(res._calls.status, 200, "#73 C1 对照：有效 token 正常文件 200");
         }
+        // issue #344 对称修复：serve 对 SVG 补 CSP sandbox（与 /file 一致），防顶层
+        // 导航时 SVG 内嵌 <script> 执行；非 SVG 资源不带该头。
+        {
+          writeFileSync(join(serveRoot, "icon.svg"), "<svg xmlns='http://www.w3.org/2000/svg'/>", "utf8");
+          const resSvg = fakeRes();
+          await serveRouteHandler(fakeReq("GET", serveUrl(liveToken, "icon.svg"), "127.0.0.1"), resSvg);
+          assert.equal(resSvg._calls.status, 200, "#344 SVG serve 200");
+          assert.equal(resSvg._calls.headers["content-security-policy"], "sandbox", "#344 SVG serve 带 CSP sandbox（对称修复）");
+          const resCss = fakeRes();
+          await serveRouteHandler(fakeReq("GET", serveUrl(liveToken, "assets/app.css"), "127.0.0.1"), resCss);
+          assert.equal(resCss._calls.headers["content-security-policy"], undefined, "#344 非 SVG 不带 CSP");
+          rmSync(join(serveRoot, "icon.svg"), { force: true });
+        }
         // D1：流式直出——>1MB 资源 Content-Length == stat.size 且 body 完整
         {
           const bigName = "big.bin";
@@ -894,7 +924,7 @@ try {
         }
         // D2：单资源超 maxAssetBytes → 413 + truncated + no-store（先 stat 判大小、不整读）
         {
-          // 用 serve 路由 cfg 注入小上限（模拟 maxAssetBytes 配置生效；默认 512KB 太大）
+          // 用 serve 路由 cfg 注入小上限（模拟 maxAssetBytes 配置生效；默认 20M 太大）
           const smallCfg = { maxAssetBytes: 64 };
           writeFileSync(join(serveRoot, "big.html"), "<p>" + "x".repeat(100) + "</p>", "utf8");
           const res = fakeRes();
@@ -1303,6 +1333,77 @@ try {
       assert.equal(isExternalClickableAnchor(mkNode({ cls: "", hasSvg: true })), false, "A4 非 a 元素不拦");
       assert.equal(isExternalClickableAnchor(null), false, "A4 null target → false");
     }
+  }
+
+  // ---- issue #344：fullscreen-math 全屏纯逻辑直测（无 DOM，验收 A1/A1b）----
+  // 同 viewer-math 模式：esbuild 内存打包真实源码经 data-URI 直测，谓词以最小
+  // Document/Element 投影注入（fullscreenEnabled/fullscreenElement/requestFullscreen/
+  // exitFullscreen 语义），不依赖真实 DOM。
+  {
+    const fsBundle = await esbuildBuild({
+      entryPoints: [join(pkgDir, "src/client/fullscreen-math.ts")],
+      bundle: true, format: "esm", write: false, logLevel: "silent",
+    });
+    const {
+      fullscreenSupported, isFullscreenActive, fullscreenLabel,
+      shouldInterceptEscapeAsFullscreenExit, exitFullscreenQuiet,
+    } = await import(
+      `data:text/javascript;base64,${Buffer.from(fsBundle.outputFiles[0]!.text).toString("base64")}`
+    ) as typeof import("../src/client/fullscreen-math.js");
+    // A1 能力探测：fullscreenEnabled=true 且 target 有 requestFullscreen → supported。
+    {
+      const docOk = { fullscreenEnabled: true, fullscreenElement: null };
+      const targetOk = { requestFullscreen: () => Promise.resolve() };
+      assert.equal(fullscreenSupported(docOk, targetOk), true, "A1 能力齐全 → supported");
+      assert.equal(fullscreenSupported({ fullscreenEnabled: false, fullscreenElement: null }, targetOk), false, "A1 fullscreenEnabled=false → 不支持");
+      assert.equal(fullscreenSupported(docOk, { requestFullscreen: undefined } as any), false, "A1 元素无 requestFullscreen → 不支持");
+      assert.equal(fullscreenSupported({ fullscreenEnabled: true, fullscreenElement: null } as any, targetOk), true, "A1 fullscreenElement 可缺省");
+    }
+    // A1 全屏态判定：fullscreenElement 非空 → active。
+    {
+      assert.equal(isFullscreenActive({ fullscreenEnabled: true, fullscreenElement: null }), false, "A1 非全屏 → inactive");
+      assert.equal(isFullscreenActive({ fullscreenEnabled: true, fullscreenElement: {} }), true, "A1 有全屏元素 → active");
+      assert.equal(isFullscreenActive({} as any), false, "A1 缺 fullscreenElement → inactive");
+    }
+    // A1 按钮文案：supported/active 四象限。
+    {
+      assert.equal(fullscreenLabel(false, true), "全屏", "A1 支持且非全屏 → 全屏");
+      assert.equal(fullscreenLabel(true, true), "退出全屏", "A1 支持且全屏 → 退出全屏");
+      assert.equal(fullscreenLabel(false, false), "放大预览", "A1 不支持且非全屏 → 放大预览");
+      assert.equal(fullscreenLabel(true, false), "退出放大", "A1 不支持且放大 → 退出放大");
+    }
+    // A1 [硬性] Esc 协调：全屏态 Esc 拦截（不关 Modal）；非全屏/非 Esc 不拦。
+    {
+      assert.equal(shouldInterceptEscapeAsFullscreenExit(true, "Escape"), true, "A1 全屏+Esc → 拦截（只退全屏）");
+      assert.equal(shouldInterceptEscapeAsFullscreenExit(false, "Escape"), false, "A1 非全屏+Esc → 不拦（走关闭）");
+      assert.equal(shouldInterceptEscapeAsFullscreenExit(true, "Tab"), false, "A1 全屏+非 Esc → 不拦");
+      assert.equal(shouldInterceptEscapeAsFullscreenExit(false, "Tab"), false, "A1 非全屏+非 Esc → 不拦");
+    }
+    // A1 幂等退出：有 exitFullscreen 则调用；无则 no-op。
+    {
+      let called = 0;
+      exitFullscreenQuiet({ exitFullscreen: () => { called++; return Promise.resolve(); } });
+      assert.equal(called, 1, "A1 有 exitFullscreen → 调用一次");
+      assert.doesNotThrow(() => exitFullscreenQuiet({} as any), "A1 无 exitFullscreen → 不抛错");
+    }
+  }
+
+  // ---- issue #344：render-limit 渲染防御阈值直测（无 DOM，验收 A2b）----
+  {
+    const rlBundle = await esbuildBuild({
+      entryPoints: [join(pkgDir, "src/client/render-limit.ts")],
+      bundle: true, format: "esm", write: false, logLevel: "silent",
+    });
+    const { exceedsTextRenderLimit, textFitsSnapshot, TEXT_RENDER_LIMIT_CODEPOINTS, SNAPSHOT_TEXT_LIMIT_CODEPOINTS } = await import(
+      `data:text/javascript;base64,${Buffer.from(rlBundle.outputFiles[0]!.text).toString("base64")}`
+    ) as typeof import("../src/client/render-limit.js");
+    // A2b 渲染降级阈值：>1M → 降级；=1M / 以下 → 正常渲染。
+    assert.equal(exceedsTextRenderLimit(TEXT_RENDER_LIMIT_CODEPOINTS), false, "A2b 恰好 1M → 不降级");
+    assert.equal(exceedsTextRenderLimit(TEXT_RENDER_LIMIT_CODEPOINTS + 1), true, "A2b 超过 1M → 降级");
+    assert.equal(exceedsTextRenderLimit(0), false, "A2b 空文本 → 不降级");
+    // A2b backStack 快照防御：>1M 不入栈；=1M / 以下入栈。
+    assert.equal(textFitsSnapshot(SNAPSHOT_TEXT_LIMIT_CODEPOINTS), true, "A2b 恰好 1M → 入栈");
+    assert.equal(textFitsSnapshot(SNAPSHOT_TEXT_LIMIT_CODEPOINTS + 1), false, "A2b 超过 1M → 不入栈");
   }
 
   console.log("PASS dsh-web-file-preview smoke");

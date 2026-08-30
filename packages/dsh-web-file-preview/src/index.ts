@@ -30,9 +30,11 @@ export const inject = ["webServer"];
 /** 默认配置。 */
 export const DEFAULT_CONFIG: Required<PreviewConfig> = {
   enabled: true,
-  maxTextBytes: 512 * 1024,
-  // issue #73 D3：与 maxTextBytes 对称（512KB）——serve 单资源上限，超限 413。
-  maxAssetBytes: 512 * 1024,
+  // issue #344：文本类预览上限 512KB → 20M（超限仍 413 + truncated，语义不变；
+  // 客户端对超大文本降级为纯 <pre> 截断渲染，见 render-limit.ts）。
+  maxTextBytes: 20 * 1024 * 1024,
+  // issue #73 D3 + #344：与 maxTextBytes 对称（20M）——serve 单资源上限，超限 413。
+  maxAssetBytes: 20 * 1024 * 1024,
 };
 
 /** 归一化配置：只接受合法值，非法丢弃回默认。 */

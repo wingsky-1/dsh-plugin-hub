@@ -77,8 +77,8 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-web-file-preview
 | Key | 默认 | 说明 |
 |---|---|---|
 | `enabled` | `true` | 关闭则不注册任何路由 |
-| `maxTextBytes` | `524288` (512KB) | 文本类（text/markdown/code/html 源码）预览最大字节数；超限返回 `413` + `truncated` 标记（`Cache-Control: no-store`），客户端提示「文件过大」，可在新标签打开原文 |
-| `maxAssetBytes` | `524288` (512KB) | serve 单资源（HTML 预览的 html/css/js/img 等）最大字节数；超限返回 `413` + `truncated` 标记（`Cache-Control: no-store`），客户端提示（与 `maxTextBytes` 对称，issue #73 PR 声明） |
+| `maxTextBytes` | `20971520` (20MB) | 文本类（text/markdown/code/html 源码）预览最大字节数；超限返回 `413` + `truncated` 标记（`Cache-Control: no-store`），客户端提示「文件过大」，可在新标签打开原文（issue #344：默认 512KB→20M；客户端对超大文本 >1M 字符（UTF-16 码元）降级为纯 `<pre>` 截断渲染，防主线程阻塞） |
+| `maxAssetBytes` | `20971520` (20MB) | serve 单资源（HTML 预览的 html/css/js/img 等）最大字节数；超限返回 `413` + `truncated` 标记（`Cache-Control: no-store`），客户端提示（与 `maxTextBytes` 对称，issue #73 PR 声明 + #344 同步提升）；SVG 与 /file 一致补 `Content-Security-Policy: sandbox` |
 
 ## 验证
 
@@ -116,7 +116,7 @@ curl http://127.0.0.1:3080/api/dsh-file-preview/health
 
 ## 已知限制
 
-- 文本类超过 `maxTextBytes`（默认 512KB）返回 413+截断标记，不再整读全文（大文件流式/虚拟滚动未实现，见 W10 专项）。
+- 文本类超过 `maxTextBytes`（默认 20MB）返回 413+截断标记，不再整读全文（大文件流式/虚拟滚动未实现，见 W10 专项）；客户端对 >1MB 的超大文本降级为纯 `<pre>` 截断渲染（原始 tab / 新标签可看全文）。
 - HTML 预览（issue #73）已知限制：iframe 内 `fetch`/XHR 在 opaque origin 下因 CORS 被阻断（属预期，静态子资源加载不受影响）；**根绝对路径**（`<script src="/assets/app.js">`）不支持——浏览器按服务器 origin 解析会请求 dsh web 根，与 token 虚拟伺服不一致（支持需注入 `<base>` = 改写 HTML，属更高风险选项，另行决策）；iframe 内导航（SPA 路由 / 页面跳转）不进 Modal 返回栈；**预览长期不交互可能失效**（serve token idle TTL 30min 兜底回收，关闭 Modal 会显式释放）；**预览期间 root 目录被移动/删除后预览失效**（只读伺服不落盘语义，需重新打开）。
 - 可点击范围较宽（凡路径 title / 本地 href / 内联路径文本都可能进预览），`data-ref-chip` 权威分支优先于通用嗅探，避免 `@` 引用误触发。
 - 文件夹 `@` 引用不开预览（仅提示），目录浏览能力不在本插件范畴。

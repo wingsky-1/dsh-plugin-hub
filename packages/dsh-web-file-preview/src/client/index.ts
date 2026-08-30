@@ -23,10 +23,11 @@
 
 import { ensureStyle } from "./dom.ts";
 import { createState, type FilePreviewState } from "./state.ts";
-import { finalizeSession, onKeyDown } from "./preview.ts";
+import { finalizeSession, onKeyDown, syncFullscreenState } from "./preview.ts";
 import { onClickCapture } from "./intercept.ts";
 import { wrapOpenPath } from "./wrapper.ts";
 import { watchMermaidTheme, watchMermaidAnchorSafety } from "./mermaid.ts";
+import { isFullscreenActive } from "./fullscreen-math.ts";
 
 export function apply(ctx: any): void {
   const state: FilePreviewState = createState();
@@ -48,10 +49,18 @@ export function apply(ctx: any): void {
     const unwatchMermaidTheme = watchMermaidTheme(state);
     // issue #293 D2：Modal 内 <a> 外链点击安全拦截（同 tab 导航防御，见 mermaid.ts）。
     const unwatchAnchorSafety = watchMermaidAnchorSafety(state);
+    // issue #344：全屏态同步——浏览器元素全屏进入/退出（含 Esc 原生退全屏）触发
+    // fullscreenchange，据此刷新 state.fsActive 并同步按钮文案/aria/降级 class；
+    // 与 onKeyDown 同生命周期挂/卸（webkit 前缀兼容 Safari <16.4 之前的旧事件名）。
+    const syncFs = () => { state.fsActive = isFullscreenActive(document); syncFullscreenState(state); };
+    document.addEventListener("fullscreenchange", syncFs);
+    document.addEventListener("webkitfullscreenchange", syncFs);
     ctx.effect(() => () => {
       state.disposed = true;
       unwatchMermaidTheme();
       unwatchAnchorSafety();
+      document.removeEventListener("fullscreenchange", syncFs);
+      document.removeEventListener("webkitfullscreenchange", syncFs);
       document.removeEventListener("click", captureHandler, true);
       document.removeEventListener("keydown", onKeyDown);
       finalizeSession(state, "unmount");

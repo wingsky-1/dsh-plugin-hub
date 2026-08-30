@@ -15,6 +15,7 @@ import { renderHtmlPreview } from "./html.ts";
 import type { FilePreviewState } from "./state.ts";
 import { html as diffToHtml } from "diff2html";
 import DOMPurify from "dompurify";
+import { exceedsTextRenderLimit, TEXT_RENDER_LIMIT_CODEPOINTS } from "./render-limit.ts";
 
 /** git diff 探测 URL（F2-B）。 */
 export function fileDiffUrl(path: string, cwd: string | undefined, state: FilePreviewState): string {
@@ -80,6 +81,14 @@ export function renderTabBody(body: HTMLElement, state: FilePreviewState): void 
   }
   if (state.previewMode === "raw" || group.group === "text") {
     body.appendChild(el("pre", { text }));
+    return;
+  }
+  // issue #344：超大文本渲染防御——>1MB 文本若走 marked/highlight 同步渲染会秒级
+  // 阻塞主线程（20M 上限放行后必现）；降级为「纯 <pre> 截断 + 提示」，原文完整仍
+  // 可在「原始」tab / 新标签查看。此处为启发式阈值（UTF-16 码元数，非字节）。
+  if (exceedsTextRenderLimit(text.length)) {
+    const truncated = text.slice(0, TEXT_RENDER_LIMIT_CODEPOINTS);
+    body.appendChild(el("pre", { text: `${truncated}\n\n…（文件过大，已截断显示。可在「原始」tab 或「在新标签打开原文」查看完整内容）` }));
     return;
   }
   try {
@@ -183,6 +192,14 @@ export function renderDiff(body: HTMLElement, state: FilePreviewState): void {
   const d = state.diffText ?? "";
   if (d === "") {
     body.appendChild(el("div", { class: "fwp-state", text: "无可用 diff" }));
+    return;
+  }
+  // issue #344（评审 P1 F1）：diff 同样受渲染阈值约束——大 diff（git 输出上限 32MB）
+  // 走 diff2html 同步生成 DOM 表格会秒级阻塞主线程，与 md/code 的超大文本同源问题；
+  // 降级为截断 <pre> + 提示（原始 diff 仍在 state.diffText，切 tab 后可回看）。
+  if (exceedsTextRenderLimit(d.length)) {
+    const truncated = d.slice(0, TEXT_RENDER_LIMIT_CODEPOINTS);
+    body.appendChild(el("pre", { class: "fwp-diff", text: `${truncated}\n\n…（diff 过大，已截断显示）` }));
     return;
   }
   try {

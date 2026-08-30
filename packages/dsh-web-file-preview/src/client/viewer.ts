@@ -161,5 +161,12 @@ export function openViewer(content: HTMLElement | SVGElement, state: FilePreview
     if (href !== null && href !== "") window.open(href, "_blank", "noopener");
   }, true);
 
-  document.body.appendChild(lbox);
+  // issue #344：全屏态下灯箱挂载到全屏元素（overlay）内——元素全屏时浏览器只渲染
+  // fullscreenElement 子树，挂 body 会黑屏不可见；非全屏保持 body（零回归）。
+  const fullscreenTarget = document.fullscreenElement;
+  if (fullscreenTarget !== null && fullscreenTarget !== undefined) {
+    fullscreenTarget.appendChild(lbox);
+  } else {
+    document.body.appendChild(lbox);
+  }
 }
