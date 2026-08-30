@@ -5,10 +5,8 @@
  * 图谱 MCP）与配套 worktree 开发纪律打包成 dsh 插件一键交付：
  * - **探测 + 引导安装**：codegraph CLI 未装 → 注入引导（输出安装命令，不自动
  *   执行；autoInstall=true 时自动装，幂等容错：装前再探测、失败仅 warn）；
- * - **运行时注册**：经 mcp-manager 核心服务（ctx.mcpManager，阶段1 新增）
- *   registerServer 注册 codegraph MCP 服务器（stdio: codegraph serve --mcp，
- *   内存态不落盘）；mcp-manager 未启用时回退自带 stdio 客户端（复用
- *   shared/ 的 transport/protocol）或纯提示；
+ * - **运行时注册**：经 mcp-manager 核心服务（ctx.mcpManager）registerServer 注册
+ *   codegraph MCP 服务器（stdio: codegraph serve --mcp，内存态不落盘）；
  * - **纪律工具**（工具层硬纪律，核心价值）：codegraph_explore 封装——查询前
  *   强制 sync + 校验/补全 projectPath（自动补全 + 拒绝兜底），杜绝「worktree
  *   索引静默过期」与「漏传 projectPath 查错对象」；
@@ -20,13 +18,14 @@
  * 安全模型（详见 README「安全模型」一节）：不自动执行第三方安装命令（默认）、
  * stdio 子进程继承宿主权限、索引为本地 SQLite 无加密、工具在真实服务器上执行。
  *
- * 依赖：dsh-mcp-manager（提供 ctx.mcpManager service；未启用时降级）。
+ * 依赖：dsh-mcp-manager（提供 ctx.mcpManager service）。经 inject 声明强依赖——
+ * mcp-manager 未启用时 cordis 内核自动停用本插件，启用后自动激活（无需手动
+ * ctx.get 探测；MCP 注册/管理/使用本来就是 mcp-manager 的能力，本插件基于它接入）。
  */
 import type { Context } from "@deepseek-ai/cordis";
-// 类型面：mcpManager service 类型从 shared/ 引（单一事实源，构建期内联随包复制，
-// 不依赖 mcp-manager 包构建时序）；运行时经 ctx.get("mcpManager") 探测（cordis
-// 可选依赖标准姿势，inject 不支持可选）。
-import type { McpManagerService } from "../../../shared/mcp-manager-service.js";
+// 类型面：mcpManager service 类型从 mcp-manager 包引（该包 re-export
+// shared/mcp-manager-service.d.ts，类型单一事实源仍在 shared/，消费入口走包）。
+import type { McpManagerService } from "@wingsky-1/dsh-mcp-manager";
 import { installGuidance, isCodegraphInstalled, runInstall } from "./install.ts";
 import { findGitRoot, guardedExplore } from "./guard.ts";
 import { registerDisciplineHook } from "./discipline.ts";
@@ -34,8 +33,8 @@ import { registerDisciplineHook } from "./discipline.ts";
 /** Stable cordis plugin name. */
 export const name = "codegraph";
 
-/** 需要的宿主服务：agents（agent/created 事件）；mcpManager 经 ctx.get 探测（非 inject）。 */
-export const inject = ["agents"];
+/** 需要的宿主服务：agents（agent/created 事件）+ mcpManager（MCP 注册/管理/使用）。 */
+export const inject = ["agents", "mcpManager"];
 
 // 内部模块 re-export（公共测试面 + 其他插件可复用纯函数）。
 export { isCodegraphInstalled, installGuidance, runInstall } from "./install.ts";
@@ -127,10 +126,10 @@ export async function apply(ctx: Context, config: CodegraphConfig = {}): Promise
     }
   }
 
-  // 2. 注册 MCP 服务器（经 mcp-manager 核心服务；未启用时纯提示降级）。
+  // 2. 注册 MCP 服务器（经 mcp-manager 核心服务，inject 强依赖保证可用）。
   //    用完整 service 面：注册后可经 getStatus/getTools 感知连接状态与工具列表。
-  const mcpManager = (ctx as unknown as { get(name: string): McpManagerService | undefined }).get("mcpManager");
-  if (mcpManager !== undefined && isCodegraphInstalled()) {
+  const mcpManager = (ctx as unknown as { mcpManager: McpManagerService }).mcpManager;
+  if (isCodegraphInstalled()) {
     try {
       const { existing } = await mcpManager.registerServer({
         name: "codegraph",
@@ -150,8 +149,6 @@ export async function apply(ctx: Context, config: CodegraphConfig = {}): Promise
     } catch (error) {
       ctx.logger.warn(`dsh-codegraph: 注册 codegraph MCP 服务器失败：${String(error)}`);
     }
-  } else if (isCodegraphInstalled()) {
-    ctx.logger.info("dsh-codegraph: dsh-mcp-manager 未启用，跳过 MCP 服务器注册（纪律工具仍可用）");
   }
 
   // 3. 纪律工具（工具层硬纪律：强制 sync + projectPath）。
@@ -165,10 +162,8 @@ export async function apply(ctx: Context, config: CodegraphConfig = {}): Promise
     return () => {
       disposeTool();
       disposeHook();
-      // 卸载时注销 MCP 服务器（不影响 store 持久化条目）。
-      if (mcpManager !== undefined) {
-        void mcpManager.unregisterServer("codegraph").catch(() => {});
-      }
+      // 卸载时注销 MCP 服务器（不影响 store 持久化条目；inject 保证 mcpManager 在场）。
+      void mcpManager.unregisterServer("codegraph").catch(() => {});
     };
   });
 }

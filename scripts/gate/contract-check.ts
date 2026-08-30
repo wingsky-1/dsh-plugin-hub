@@ -74,10 +74,11 @@ if (checked === 0) {
   console.log('（当前无带客户端插件的包）')
 }
 
-// @deepseek-ai/* 官方包仅允许 import type（issue #16）：值导入会进宿主端 bundle
-// 或被 build-client 内联，破坏发布物自包含。类型擦除由 tsc verbatimModuleSyntax
-// 保证；此门禁防的是「未来有人写成运行时导入」。多行 import 也覆盖：
-// 以 import 开头且非 import type 的语句体内出现 @deepseek-ai 模块名即报。
+// @deepseek-ai/* 官方包与 @wingsky-1/* 工作区包仅允许 import type（issue #16 +
+// #329）：值导入会进宿主端 bundle 或被 build-client 内联，破坏发布物自包含。
+// 类型擦除由 tsc verbatimModuleSyntax 保证；此门禁防的是「未来有人写成运行时导入」。
+// 多行 import 也覆盖：以 import 开头且非 import type 的语句体内出现
+// @deepseek-ai|@wingsky-1 模块名即报。
 {
   const offenders = []
   for (const p of pluginDirs) {
@@ -94,13 +95,13 @@ if (checked === 0) {
         // 主形态：静态 import（非 import type）。注意 `import { type X } from` 的
         // inline 修饰符会被命中——这是有意 fail-closed：verbatimModuleSyntax 下该
         // 语句仍保留副作用导入语义，应改写成整句 import type。
-        for (const m of code.matchAll(/(^|\n)\s*import\s+(?!type\b)(?:[^;'"]|'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")*?from\s*['"](@deepseek-ai\/[^'"]+)['"]|(^|\n)\s*import\s+['"](@deepseek-ai\/[^'"]+)['"]/g)) {
+        for (const m of code.matchAll(/(^|\n)\s*import\s+(?!type\b)(?:[^;'"]|'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")*?from\s*['"](@(?:deepseek-ai|wingsky-1)\/[^'"]+)['"]|(^|\n)\s*import\s+['"](@(?:deepseek-ai|wingsky-1)\/[^'"]+)['"]/g)) {
           const spec = m[2] ?? m[4]
           if (spec) offenders.push(`${p}/src${file.slice(srcDir.length)} → ${spec}`)
         }
         // 补充形态：export ... from / 动态 import() / require()（同样产生运行时引用；
         // export type ... from 为纯类型放行）
-        for (const m of code.matchAll(/(?:export\s+(?!type\b)(?:\*(?:\s+as\s+\w+)?|\{[^}]*\})\s*from\s*|import\(\s*|require\(\s*)['"](@deepseek-ai\/[^'"]+)['"]/g)) {
+        for (const m of code.matchAll(/(?:export\s+(?!type\b)(?:\*(?:\s+as\s+\w+)?|\{[^}]*\})\s*from\s*|import\(\s*|require\(\s*)['"](@(?:deepseek-ai|wingsky-1)\/[^'"]+)['"]/g)) {
           offenders.push(`${p}/src${file.slice(srcDir.length)} → ${m[1]}`)
         }
       }
@@ -109,10 +110,10 @@ if (checked === 0) {
   }
   if (offenders.length > 0) {
     failed++
-    console.log('FAIL @deepseek-ai 仅类型导入 | 检测到运行时值导入（须改为 import type）:')
+    console.log('FAIL @deepseek-ai/@wingsky-1 仅类型导入 | 检测到运行时值导入（须改为 import type）:')
     for (const o of offenders) console.log(`     ${o}`)
   } else {
-    console.log('PASS @deepseek-ai 仅类型导入 | src 下无运行时值导入')
+    console.log('PASS @deepseek-ai/@wingsky-1 仅类型导入 | src 下无运行时值导入')
   }
 }
 

@@ -7,7 +7,8 @@ codegraph MCP + worktree 开发纪律 —— 把 [codegraph](https://github.com/
 
 - **探测 + 引导安装**：自动探测 codegraph CLI；未装时注入引导（输出安装命令，默认不自动执行）。
 - **运行时注册**：经 dsh-mcp-manager 核心服务（`ctx.mcpManager`）注册 codegraph MCP 服务器
-  （`codegraph serve --mcp`，内存态不落盘）；mcp-manager 未启用时纪律工具仍可用。
+  （`codegraph serve --mcp`，内存态不落盘）；MCP 的注册/管理/使用基于 mcp-manager 接入
+  （inject 强依赖，见「依赖」节）。
 - **工具层硬纪律**（核心价值）：`codegraph_explore` 封装——查询前强制 `codegraph sync`
   （新鲜度硬保证，worktree 索引不过期）+ 校验/补全 `projectPath`（缺省补全为当前会话
   worktree，自动不了则拒绝并提示）。杜绝「worktree 索引静默过期」与「漏传 projectPath
@@ -68,5 +69,7 @@ codegraph init ../dsh-hub-task-<n>                 # 建该 worktree 索引（�
 
 ## 依赖
 
-- dsh-mcp-manager（提供 `ctx.mcpManager` service；未启用时纪律工具仍可用，仅 MCP 服务器不注册）
+- **dsh-mcp-manager**（提供 `ctx.mcpManager` service）：**强依赖**（inject 声明）。
+  MCP 的注册/管理/使用基于 mcp-manager 接入；mcp-manager 未启用时本插件由 cordis
+  内核自动停用（启用后自动激活），不单独降级。
 - codegraph CLI（`@colbymchenry/codegraph`，探测 + 引导安装）
