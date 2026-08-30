@@ -35,13 +35,14 @@ import { buildGuardToolDefinition } from "./tool-definition.ts";
 export const name = "codegraph";
 
 /** 需要的宿主服务：agents（agent/created 事件）、mcpManager（MCP 注册/管理/使用）、
- *  tools（纪律工具注册）。均经 inject 强依赖声明——缺失时 cordis 内核自动停用本插件。 */
-export const inject = ["agents", "mcpManager", "tools"];
+ *  tools（纪律工具注册）、systemPrompt（纪律段注册）。均经 inject 强依赖声明——
+ *  缺失时 cordis 内核自动停用本插件。 */
+export const inject = ["agents", "mcpManager", "tools", "systemPrompt"];
 
 // 内部模块 re-export（公共测试面 + 其他插件可复用纯函数）。
 export { isCodegraphInstalled, installGuidance, runInstall } from "./install.ts";
 export { findGitRoot, isGitRepo, syncCodegraph, exploreCodegraph, guardedExplore } from "./guard.ts";
-export { shouldInject, DISCIPLINE_TEXT, registerDisciplineHook } from "./discipline.ts";
+export { shouldInject, DISCIPLINE_TEXT, DISCIPLINE_SECTION_NAME, DISCIPLINE_SECTION_ORDER, registerDisciplineHook } from "./discipline.ts";
 export { buildGuardToolDefinition } from "./tool-definition.ts";
 
 /** 插件配置。 */
