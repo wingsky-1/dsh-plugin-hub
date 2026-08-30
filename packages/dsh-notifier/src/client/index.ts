@@ -2,9 +2,9 @@
  * dsh-notifier — 浏览器端（自包含）。
  *
  * 行为（issue #76）：
- * - 在「设置 → 插件」面板渲染 dsh-notifier 配置卡片（settings.plugin.item 插槽，
- *   id+key 双写兼容 rc.7 前后两代运行时）——侧边栏「通知」入口/浮层/角标/拖拽
- *   全部移除（B1-B6）；
+ * - 在「设置」面板注册独立 tab「通知中心」（settings.section 插槽，issue #366
+ *   M1：参照 provider-usage「用量统计」tab；不做 plugin.item 双插槽重复展示）
+ *   ——侧边栏「通知」入口/浮层/角标/拖拽全部移除（B1-B6）；
  * - 通知半区（C1-C9）保留并与 DOM 解耦：SSE /events 订阅 + 60s 看门狗 +
  *   visibilitychange 重建 + 多标签租约 + 音频手势解锁，不依赖任何插件 DOM；
  * - 历史记录最近 10 条收进卡片（D1-D2）；卡片动作区含清理记录（两段式确认）/
@@ -422,7 +422,7 @@ import * as React from "react";
   }
 
   /**
-   * 设置面板插件项（settings.plugin.item 插槽渲染的 React 卡片）。
+   * 设置面板独立 tab「通知中心」（settings.section 插槽渲染的 React 卡片）。
    * 字段全量（A1）+ 基线 diff 只提变更键（A4）+ 历史最近 10 条（D1/D2）+
    * 动作区（清理记录两段式 / 请求权限 / 测试通知，A6/A7）+ 三端降级文案（A5/A8）。
    * 保存走 PUT {patch, expectedRevision}（乐观并发，冲突时提示刷新）。
@@ -776,19 +776,23 @@ export function apply(ctx: any) {
         document.removeEventListener("click", onFirstClick);
       }, { capture: true });
 
-      // 设置面板插件项（settings.plugin.item；id+key 双写兼容 rc.7 前后两代运行时）
+      // 设置面板独立 tab「通知中心」（settings.section，issue #366 M1）。
+      // 参照 dsh-provider-usage「用量统计」tab 的接线（slots.inject + register，
+      // 独立顶层页）；label 为导航显示文本。旧运行时若不声明该插槽，inject
+      // 回调不执行 → tab 不挂载、通知半区照常工作（与 provider-usage 同语义，
+      // 不做 plugin.item 双插槽重复展示——评审 B P0）。
       var slots = ctx.get("slots");
       if (slots && typeof slots.inject === "function") {
-        slots.inject("settings.plugin.item", function () {
+        slots.inject("settings.section", function () {
           return slots.register(
-            { name: "settings.plugin.item", id: "dsh-notifier", key: "dsh-notifier", order: 70 },
+            { name: "settings.section", id: "dsh-notifier", order: 70, label: "通知中心" },
             function () {
               return React.createElement(SettingsCard, null);
             }
           );
         });
       } else {
-        console.warn("[dsh-notifier] 缺少 slots 服务，设置卡片未挂载（通知半区照常工作）");
+        console.warn("[dsh-notifier] 缺少 slots 服务，设置 tab 未挂载（通知半区照常工作）");
       }
 
       // ⚠️ 清理必须写在 ctx.effect 返回的 disposer 里。
@@ -816,6 +820,6 @@ export function apply(ctx: any) {
   }
 
 // ---- 客户端契约：apply/inject 由 build-client 经 factory 装配（干净模块，React externals）----
-// 设置卡片是 React 组件（settings.plugin.item 插槽由宿主 React 渲染）；通知半区
+// 设置卡片是 React 组件（settings.section 独立 tab 插槽由宿主 React 渲染）；通知半区
 // 不依赖任何 DOM（C6），slot 缺失时照常工作。
 export const inject: string[] = ["slots"];

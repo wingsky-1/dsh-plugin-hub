@@ -49,8 +49,10 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   }
   // C6：SSE 启动不依赖任何插件 DOM（apply 直接 startEvents，无 mount 等待）
   assert.ok(src.includes("startEvents()"), "C6：apply 直接启动 SSE（不依赖侧边栏挂载）");
-  // 卡片挂载经 slots（官方设置页 settings.plugin.item 插槽，id+key 双写）
-  assert.ok(src.includes("settings.plugin.item"), "A 组：卡片注册到官方设置页插槽");
+  // 独立 tab 挂载经 slots（官方设置页 settings.section 插槽，issue #366 M1；
+  // 参照 provider-usage「用量统计」tab，不双注册 plugin.item 卡片）
+  assert.ok(src.includes("settings.section"), "A 组：设置注册到官方设置页独立 tab 插槽");
+  assert.ok(!src.includes('inject("settings.plugin.item"'), "A 组：不双注册 plugin.item 卡片（评审 B P0）");
 }
 
 // lib/toast.ps1 发布物完整性（issue #238）：必须带 UTF-8 BOM 且与源文件逐字节一致。
