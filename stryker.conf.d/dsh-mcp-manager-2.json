@@ -1,13 +1,13 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-mcp-manager/src/middleware.ts",
-    "packages/dsh-mcp-manager/src/middleware-utils.ts",
-    "packages/dsh-mcp-manager/src/middleware-register.ts",
+    "packages/dsh-mcp-manager/src/supervisor.ts",
     "packages/dsh-mcp-manager/src/middleware-state.ts",
-    "packages/dsh-mcp-manager/src/middleware-const.ts",
+    "packages/dsh-mcp-manager/src/store.ts",
+    "packages/dsh-mcp-manager/src/scope.ts",
     "!packages/dsh-mcp-manager/src/client/**",
-    "!packages/dsh-mcp-manager/src/types.ts"
+    "!packages/dsh-mcp-manager/src/types.ts",
+    "!packages/dsh-mcp-manager/src/service.ts"
   ],
   "testRunner": "tap",
   "mutator": {
@@ -55,5 +55,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-mcp-manager-2.json",
-  "_comment": "#276 方案 A：src 级文件组分段（2）——mutate 为源文件名清单，密度均衡声明，无行号无漂移；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+  "_comment": "#342 v4：src 级文件组分段（2）——supervisor+middleware-state+store+scope；types.ts / service.ts（type-only）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
 }
