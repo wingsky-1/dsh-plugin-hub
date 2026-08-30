@@ -8,7 +8,7 @@
 //   - findGitRoot / isGitRepo（.git 目录 / .git 文件(worktree) / 非 git 三分支）
 //   - shouldInject（cwd 判定）
 //   - guardedExplore（无 projectPath → 补全/拒绝；无索引 → 引导；sync 失败 → 拒绝）
-//   - apply（enabled:false / requireGit 非 git 跳过 / 探测未装引导 / 注册降级 / 纪律工具注册）
+//   - apply（enabled:false / 不读 ctx.session 回归 / 探测未装引导 / 注册 / 纪律工具注册）
 //
 // 运行：node dsh-codegraph/test/smoke.ts
 import assert from "node:assert/strict";
@@ -101,7 +101,7 @@ check("契约: inject 包含 agents", () => assert.ok(inject.includes("agents"))
 // ---- apply ----
 {
   const makeCtx = (overrides = {}) => {
-    const state = { disposers: [], registered: [], hooks: [], logs: [] };
+    const state = { disposers: [], registered: [], hooks: [], logs: [], tools: [] };
     const ctx = {
       logger: { warn: (m) => state.logs.push(`warn:${m}`), info: (m) => state.logs.push(`info:${m}`) },
       // inject 强依赖：ctx.mcpManager 直接可用（不再 get 探测）。
@@ -112,16 +112,29 @@ check("契约: inject 包含 agents", () => assert.ok(inject.includes("agents"))
         getTools: () => [],
         list: () => [],
       },
+      // inject 强依赖：ctx.tools 直接可用（纪律工具注册；此前未 inject 导致 cordis
+      // Proxy 抛 "cannot get property tools without inject" 启动失败）。
+      tools: { register: (d) => { state.tools.push(d.name); return () => {}; } },
       on: () => () => {},
       effect: (fn) => { const d = fn(); state.disposers.push(d); return d; },
-      session: overrides.session,
     };
     return { ctx, state };
   };
 
-  check("契约: inject 含 mcpManager（强依赖声明）", () =>
-    assert.ok(inject.includes("mcpManager"), `inject 应含 mcpManager，实际 ${JSON.stringify(inject)}`),
-  );
+  check("契约: inject 含 agents/mcpManager/tools（强依赖声明）", () => {
+    for (const svc of ["agents", "mcpManager", "tools"]) {
+      assert.ok(inject.includes(svc), `inject 应含 ${svc}，实际 ${JSON.stringify(inject)}`);
+    }
+  });
+
+  // 回归（启动崩溃根因）：apply 不读取 ctx.session（无 session 字段也能 apply）。
+  // 此前 apply 读 ctx.session 但未 inject session → cordis Proxy 抛
+  // "cannot get property session without inject" → dsh web 启动失败。
+  checkAsync("apply: 不读取 ctx.session（无 session 也能 apply，回归启动崩溃）", async () => {
+    const { ctx, state } = makeCtx(); // fake ctx 无 session 字段
+    await apply(ctx, {});
+    assert.ok(state.disposers.length >= 1, "apply 正常完成并注册 effect disposer");
+  });
 
   // enabled:false → 不做事
   checkAsync("apply: enabled:false 静默返回", async () => {
@@ -130,35 +143,24 @@ check("契约: inject 包含 agents", () => assert.ok(inject.includes("agents"))
     assert.equal(state.disposers.length, 0);
   });
 
-  // requireGit + 非 git cwd → 跳过（不注册、不注入）
-  checkAsync("apply: requireGit 非 git cwd → 跳过", async () => {
-    const { ctx, state } = makeCtx({ session: { header: { cwd: "/tmp" } } });
-    await apply(ctx, { requireGit: true });
-    assert.equal(state.disposers.length, 0, "非 git 不启用");
-  });
-
-  // 正常路径：git cwd + codegraph 未装（PATH 空）→ 引导日志，注册降级
-  checkAsync("apply: git cwd + 未装 → 引导日志", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "cg-apply-"));
-    mkdirSync(join(dir, ".git"), { recursive: true });
-    const { ctx, state } = makeCtx({ session: { header: { cwd: dir } } });
+  // 正常路径：codegraph 未装（PATH 空）→ 引导日志，注册降级
+  checkAsync("apply: codegraph 未装 → 引导日志", async () => {
+    const { ctx, state } = makeCtx();
     // 隔离 PATH（不探测到真实 codegraph）
     const prevPath = process.env.PATH;
     process.env.PATH = "/nonexistent";
     try {
-      await apply(ctx, { requireGit: true });
+      await apply(ctx, {});
     } finally {
       process.env.PATH = prevPath;
     }
     assert.ok(state.logs.some((l) => l.includes("codegraph CLI 未安装") || l.includes("安装")), "有引导日志");
     assert.ok(state.disposers.length >= 1, "仍有 effect disposer（工具/钩子照常注册）");
-    rmSync(dir, { recursive: true, force: true });
   });
 
   // mcpManager（inject 保证在场）+ codegraph 已装（PATH 指向 fake）→ 注册服务器
   checkAsync("apply: mcpManager + 已装 → registerServer", async () => {
     const dir = mkdtempSync(join(tmpdir(), "cg-apply2-"));
-    mkdirSync(join(dir, ".git"), { recursive: true });
     writeFileSync(join(dir, "codegraph"), "#!/bin/sh\n");
     let registered = false;
     const ctx = {
@@ -170,14 +172,14 @@ check("契约: inject 包含 agents", () => assert.ok(inject.includes("agents"))
         getTools: () => [],
         list: () => [],
       },
+      tools: { register: () => () => {} },
       on: () => () => {},
       effect: (fn) => { const d = fn(); return d; },
-      session: { header: { cwd: dir } },
     };
     const prevPath = process.env.PATH;
     process.env.PATH = dir;
     try {
-      await apply(ctx, { requireGit: true });
+      await apply(ctx, {});
     } finally {
       process.env.PATH = prevPath;
     }

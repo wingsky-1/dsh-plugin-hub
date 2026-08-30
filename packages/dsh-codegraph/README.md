@@ -15,8 +15,7 @@ codegraph MCP + worktree 开发纪律 —— 把 [codegraph](https://github.com/
   查错对象」。
 - **agent 纪律钩子**：`agent/created` + 会话 cwd 判定，git 仓（主 checkout / worktree）会话
   才注入 worktree 开发纪律（~200 tokens/次）；非 git 仓（日常维护/讨论空间）不注入——
-  多工作空间天然区分。
-- **requireGit**：非 git 仓不启用（默认），可配置覆盖。
+  多工作空间天然区分（按会话 cwd 判定，无需配置）。
 
 ## 安装
 
@@ -41,7 +40,6 @@ cd your-project && codegraph init
 | `installCommand` | `npm install -g @colbymchenry/codegraph` | 自定义安装命令 |
 | `syncBeforeQuery` | `true` | 查询前强制 sync |
 | `requireProjectPath` | `true` | 不传 projectPath 时拒绝调用（自动补全 + 拒绝兜底） |
-| `requireGit` | `true` | 非 git 仓不启用 |
 | `injectDiscipline` | `true` | 注入纪律到 git 仓会话 |
 
 ## Worktree 开发流程
