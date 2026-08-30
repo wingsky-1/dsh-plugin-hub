@@ -27,7 +27,7 @@ const pkgDir = join(new URL("..", import.meta.url).pathname);
 const mod = await import(pathToFileURL(join(pkgDir, "lib/index.js")).href);
 const { apply, name, inject } = mod;
 const { isCodegraphInstalled, installGuidance } = mod;
-const { findGitRoot, isGitRepo, guardedExplore, guardedCodegraph, syncCodegraphCached, runCodegraph, isNoResultOutput, resetSyncCache } = mod;
+const { findGitRoot, isGitRepo, guardedExplore, guardedCodegraph, syncCodegraphCached, runCodegraph, isNoResultOutput, findAmbiguousCandidates, resetSyncCache } = mod;
 const { shouldInject, DISCIPLINE_TEXT } = mod;
 const { buildGuardToolDefinition, buildImpactToolDefinition, buildNodeToolDefinition, buildCallersToolDefinition, buildCalleesToolDefinition, buildSearchToolDefinition, buildFilesToolDefinition } = mod;
 
@@ -422,6 +422,71 @@ check("契约: inject 包含 agents", () => assert.ok(inject.includes("agents"))
     assert.equal(syncLines.length, 1, `3 次调用只 sync 1 次（TTL 生效），实际 ${syncLines.length}`);
     rmSync(dir, { recursive: true, force: true });
   });
+
+  // 软消歧（#363）：findAmbiguousCandidates 从 query 输出解析同名跨文件候选
+  check("findAmbiguousCandidates: 同名跨文件解析", () => {
+    const out = [
+      "",
+      'Search Results for "hello":',
+      "",
+      "function    hello",
+      "  src/a.ts:3",
+      "  (sig)",
+      "",
+      "function    hello",
+      "  src/b.ts:7",
+      "  (sig)",
+      "",
+    ].join("\n");
+    const files = findAmbiguousCandidates(out, "hello");
+    assert.deepEqual(files, ["src/a.ts", "src/b.ts"]);
+  });
+  check("findAmbiguousCandidates: 单文件/无同名不歧义", () => {
+    const single = "\nfunction    hello\n  src/a.ts:3\n\nfunction    world\n  src/b.ts:1\n";
+    assert.deepEqual(findAmbiguousCandidates(single, "hello"), ["src/a.ts"]);
+    assert.deepEqual(findAmbiguousCandidates(single, "world"), ["src/b.ts"]);
+  });
+
+  // P2-2：未知子命令形态（stderr 有 error 但退出码 0）→ 归入失败提示
+  registerAsync("guardedCodegraph: stderr 非空 + exit 0 → 失败提示（非空 stdout 误判）", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "cg-unk-"));
+    const repo = join(dir, "repo");
+    mkdirSync(join(repo, ".git"), { recursive: true });
+    mkdirSync(join(repo, ".codegraph"), { recursive: true });
+    writeFileSync(join(dir, "codegraph"), "#!/bin/sh\nif [ \"$1\" = sync ]; then exit 0; fi\necho \"error: unknown command 'search'\" >&2; exit 0\n", { mode: 0o755 });
+    const fakeEnv = { PATH: `${dir}:${process.env.PATH ?? ""}` };
+    resetSyncCache();
+    const out = await guardedCodegraph(
+      { projectPath: repo },
+      undefined,
+      async () => runCodegraph(["search", "x"], fakeEnv),
+      "codegraph_search",
+      fakeEnv,
+    );
+    assert.ok(out.includes("执行失败"), `实际: ${out.slice(0, 80)}`);
+    assert.ok(!out.includes("查询无结果"), "不应误判为空结果");
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  // P2-1：node 文件模式文件不存在 → 空结果提示（No indexed file matches）
+  registerAsync("guardedCodegraph: node 文件不存在 → 空结果提示", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "cg-nf-"));
+    const repo = join(dir, "repo");
+    mkdirSync(join(repo, ".git"), { recursive: true });
+    mkdirSync(join(repo, ".codegraph"), { recursive: true });
+    writeFileSync(join(dir, "codegraph"), "#!/bin/sh\nif [ \"$1\" = sync ]; then exit 0; fi\necho 'No indexed file matches \"src/nonexistent.ts\"'\n", { mode: 0o755 });
+    const fakeEnv = { PATH: `${dir}:${process.env.PATH ?? ""}` };
+    resetSyncCache();
+    const out = await guardedCodegraph(
+      { projectPath: repo },
+      undefined,
+      async () => runCodegraph(["node", "--file", "src/nonexistent.ts"], fakeEnv),
+      "codegraph_node",
+      fakeEnv,
+    );
+    assert.ok(out.includes("查询无结果"), `实际: ${out.slice(0, 80)}`);
+    rmSync(dir, { recursive: true, force: true });
+  });
 }
 
 // ---- 真实 codegraph CLI 分支（#363 验收 4：输出与 CLI 一致）----
@@ -440,14 +505,20 @@ check("契约: inject 包含 agents", () => assert.ok(inject.includes("agents"))
       "export function hello(name: string): string { return `hi ${name}`; }\n\nexport function main(): void { hello('world'); }\n",
     );
     const repo = join(dir, "repo");
-    // 建索引（真实 CLI）
-    const { execFileSync } = await import("node:child_process");
-    execFileSync("codegraph", ["init", repo], { stdio: "ignore" });
-    resetSyncCache();
     // 捕获当前 PATH 快照：apply 区块测试会临时改全局 PATH（/nonexistent），
     // 而本分支的 checkAsync 与之并发（都 await 挂起）——显式传快照 env 隔离。
     // 合并为单个 checkAsync：真实 CLI 的 sync 有锁（并发 sync 冲突），须串行。
     const realEnv = { ...process.env };
+    // 建索引（真实 CLI）——固定全局 PATH 为快照（避免与 apply 的 PATH 修改并发交错）
+    const prevGlobalPath = process.env.PATH;
+    process.env.PATH = realEnv.PATH ?? "";
+    try {
+      const { execFileSync } = await import("node:child_process");
+      execFileSync("codegraph", ["init", repo], { stdio: "ignore" });
+    } finally {
+      process.env.PATH = prevGlobalPath;
+    }
+    resetSyncCache();
     registerAsync("真实 CLI: 6 子命令输出与 CLI 一致（串行）", async () => {
       try {
         const impact = await guardedCodegraph(
@@ -511,6 +582,40 @@ check("契约: inject 包含 agents", () => assert.ok(inject.includes("agents"))
           realEnv,
         );
         assert.ok(missing.includes("查询无结果"), `未找到实际: ${missing.slice(0, 80)}`);
+
+        // 软消歧（#363 验收 10）：造同名符号 → impact execute 先 query 列候选 →
+        // 跨文件同名 → 返回「传完整限定名」提示（不执行原 impact）。
+        writeFileSync(
+          join(repo, "src", "b.ts"),
+          "export function hello(name: string): string { return `hi2 ${name}`; }\n",
+        );
+        // 文件新增需 sync 后才进索引（与纪律语义一致）——显式 sync 一次。
+        // execute 内部 sync 用全局 process.env——临时固定为真实 PATH 快照，
+        // 避免与 apply 区块的 PATH 修改测试并发交错（finally 恢复）。
+        const prevGlobalPath = process.env.PATH;
+        process.env.PATH = realEnv.PATH ?? "";
+        try {
+          const { execFileSync: execSync2 } = await import("node:child_process");
+          execSync2("codegraph", ["sync", repo], { stdio: "ignore" });
+          resetSyncCache();
+          const def = buildImpactToolDefinition();
+          const { text: ambText } = await def.execute(
+            { symbol: "hello", projectPath: repo },
+            { agent: { session: { header: { cwd: repo } } } },
+          );
+          assert.ok(ambText.includes("多个文件存在"), `消歧实际: ${ambText.slice(0, 80)}`);
+          assert.ok(ambText.includes("src/a.ts") && ambText.includes("src/b.ts"), `消歧实际: ${ambText.slice(0, 80)}`);
+          assert.ok(ambText.includes("完整限定名"), `消歧实际: ${ambText.slice(0, 80)}`);
+
+          // 限定名/唯一符号不触发消歧（execute 正常执行原查询）
+          const { text: uniqText } = await def.execute(
+            { symbol: "main", projectPath: repo },
+            { agent: { session: { header: { cwd: repo } } } },
+          );
+          assert.ok(uniqText.includes("Impact of changing"), `唯一符号实际: ${uniqText.slice(0, 80)}`);
+        } finally {
+          process.env.PATH = prevGlobalPath;
+        }
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }

@@ -58,6 +58,7 @@ export {
   guardedCodegraph,
   guardedExplore,
   isNoResultOutput,
+  findAmbiguousCandidates,
   resetSyncCache,
   SYNC_TTL_MS,
 } from "./guard.ts";

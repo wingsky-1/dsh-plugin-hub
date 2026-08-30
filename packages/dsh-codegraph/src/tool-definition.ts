@@ -13,7 +13,7 @@
  *   files 用 filter 而非 path、search 映射 query 子命令）。
  */
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
-import { guardedCodegraph, runCodegraph } from "./guard.ts";
+import { findAmbiguousCandidates, guardedCodegraph, runCodegraph } from "./guard.ts";
 
 /** 统一的 output 契约（canonical 值 { text }，render 投影为 ContentBlock[]）。 */
 const TEXT_OUTPUT: ToolDefinition["output"] = {
@@ -80,7 +80,10 @@ export function buildExploreToolDefinition(): ToolDefinition {
  * @param params 参数 schema（与 CLI 实测对齐）
  * @param required 必填参数名
  * @param buildArgs 由工具参数构建 CLI 子命令参数（不含 -p/--path，guardedCodegraph 追加）
- * @param toolLabel 提示语中的工具显示名（默认取 name）
+ * @param opts.toolLabel 提示语中的工具显示名（默认取 name）
+ * @param opts.symbolParam 需要同名软消歧的符号参数名（#363）：execute 内先
+ *   `codegraph query <symbol>` 列候选，跨文件同名 ≥2 → 返回「传完整限定名」提示
+ *   （CLI 对同名符号合并输出不报错，不消歧模型会拿到无提示的混合结果）
  */
 function buildCliTool(
   name: string,
@@ -88,9 +91,9 @@ function buildCliTool(
   params: ToolDefinition["parameters"],
   required: string[],
   buildArgs: (args: Record<string, unknown>) => string[],
-  toolLabel?: string,
+  opts: { toolLabel?: string; symbolParam?: string } = {},
 ): ToolDefinition {
-  const label = toolLabel ?? name;
+  const label = opts.toolLabel ?? name;
   return {
     name,
     description,
@@ -107,10 +110,32 @@ function buildCliTool(
       exec: { agent?: { session?: { header?: { cwd?: string } } } },
     ) => {
       const cwd = sessionCwd(exec);
+      const projectPath = typeof args.projectPath === "string" ? args.projectPath : undefined;
+      // 同名歧义软消歧（#363）：符号参数有值 → 先 query 列候选。
+      if (opts.symbolParam !== undefined) {
+        const symbol = args[opts.symbolParam];
+        if (typeof symbol === "string" && symbol !== "") {
+          const candidates = await guardedCodegraph(
+            { projectPath },
+            cwd,
+            async (p) => runCodegraph(["query", symbol, "--limit", "50", "--path", p]),
+            label,
+          );
+          // 空结果（guardedCodegraph 已转中文提示）→ 无候选，不消歧。
+          if (!candidates.includes("查询无结果") && !candidates.includes("执行失败")) {
+            const files = findAmbiguousCandidates(candidates, symbol);
+            if (files.length >= 2) {
+              return {
+                text: `${label}：符号 ${symbol} 在多个文件存在（候选：${files.join("、")}）。请传完整限定名消歧，或用 codegraph_search 确认归属。`,
+              };
+            }
+          }
+        }
+      }
       const text = await guardedCodegraph(
-        { projectPath: typeof args.projectPath === "string" ? args.projectPath : undefined },
+        { projectPath },
         cwd,
-        async (projectPath) => runCodegraph([...buildArgs(args), "--path", projectPath]),
+        async (p) => runCodegraph([...buildArgs(args), "--path", p]),
         label,
       );
       return { text };
@@ -140,6 +165,7 @@ export function buildImpactToolDefinition(): ToolDefinition {
       if (typeof args.depth === "number") cmd.push("--depth", String(args.depth));
       return cmd;
     },
+    { symbolParam: "symbol" },
   );
 }
 
@@ -177,6 +203,7 @@ export function buildNodeToolDefinition(): ToolDefinition {
       }
       return cmd;
     },
+    { symbolParam: "symbol" },
   );
 }
 
@@ -202,6 +229,7 @@ function buildCallersCalleesTool(name: "codegraph_callers" | "codegraph_callees"
       if (typeof args.limit === "number") cmd.push("--limit", String(args.limit));
       return cmd;
     },
+    { symbolParam: "symbol" },
   );
 }
 

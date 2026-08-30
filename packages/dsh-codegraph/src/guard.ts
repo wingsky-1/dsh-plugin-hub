@@ -113,7 +113,26 @@ export function isNoResultOutput(stdout: string): boolean {
   if (/No (callers|callees|files) found/i.test(stdout)) return true;
   if (/not found in the codebase/i.test(stdout)) return true;
   if (/No relevant code found/i.test(stdout)) return true;
+  if (/No indexed file matches/i.test(stdout)) return true;
   return false;
+}
+
+/**
+ * 从 query 输出解析同名候选：返回与 symbol **完全同名**的条目所在文件路径列表（去重）。
+ * 供 execute 层软消歧（#363）——CLI 对同名符号合并输出不报错（实测 impact 混
+ * 多个定义、node 列多个定义），模型会拿到无提示的混合结果；先 query 列候选，
+ * 跨文件同名 ≥2 → 返回「传完整限定名」提示。
+ * 解析 query 文本块结构（CLI 1.6.0 实测）：
+ *   \n<kind>    <name>\n  <file>:<line>\n  [signature]\n
+ */
+export function findAmbiguousCandidates(queryOutput: string, symbol: string): string[] {
+  const files = new Set<string>();
+  const re = /\n([A-Za-z]+)\s+([^\s]+)\n\s+([^\s:]+):(\d+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(queryOutput)) !== null) {
+    if (m[2] === symbol) files.add(m[3]);
+  }
+  return [...files];
 }
 
 /** 执行 codegraph explore（CLI 形态，与 MCP 工具同输出；-p/--path 指定项目）。 */
@@ -199,6 +218,11 @@ export async function guardedCodegraph(
     }
     const detail = stderr.trim() !== "" ? stderr.trim() : stdout.trim();
     return `${toolName} 执行失败：${detail || String(code)}。请检查 codegraph CLI 是否可用。`;
+  }
+  // 6. 边角：CLI 1.6.0 实测「未知子命令」（如 `codegraph search foo`）stderr 有
+  //    error 但退出码 0——stderr 非空即视为失败，避免空 stdout 被当成功返回。
+  if (stderr.trim() !== "") {
+    return `${toolName} 执行失败：${stderr.trim()}。请检查 codegraph CLI 是否可用。`;
   }
   if (isNoResultOutput(stdout)) {
     return `${toolName}：查询无结果。可先用 codegraph_search 查有效符号名，或确认已 sync。`;
