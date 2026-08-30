@@ -30,8 +30,8 @@
         "fixedCovered": 74.13,
         "fixedDate": "2026-08-24",
         "fixedDuration": "6m56s",
-        "config": "stryker.conf.d/dsh-notifier-{1,2}.json（#342 v4：单段拆 2 段——事件/连接域 vs 判定/配置域）",
-        "scope": "src 级两段（#342 v4）：n-1 index+server / n-2 message+config+migrate+settings+history+quiet-hours；基线为 src 口径，由四班次 observe 重建",
+        "config": "stryker.conf.d/dsh-notifier-{server,message,config,history}.json（#342 二期：功能命名——事件/连接域 server / 消息构造 message / 配置迁移 config / 历史静默 history；message.ts 单文件 145s 物理极限维持）",
+        "scope": "src 级四段（#342 二期）：server index+server / message message.ts / config config+migrate+settings / history history+quiet-hours；基线为 src 口径，由四班次 observe 重建",
         "threshold": 60
       },
       "dsh-idle-archive": {
