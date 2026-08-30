@@ -2,11 +2,20 @@
  * dsh-notifier — 审批/完成/错误事件通知（宿主端）。
  *
  * 本文件只做装配：apply + 事件订阅 + 生命周期清理。职责划分：
- * - config.ts     配置契约/默认值/normalizeConfig/路径
+ * - config.ts      配置契约/默认值/validateSettings/sanitizeSettings/迁移源路径
  * - quiet-hours.ts 免打扰判定（parseHHMM / isInQuietHours）
- * - message.ts    通知文案单表/脱敏/格式化/agent 事件读取（纯函数）
- * - history.ts    通知历史 jsonl 存储（滚动/按天清理/原子写）
- * - server.ts     SSE 枢纽 + 系统通知通道 + HTTP 路由
+ * - message.ts     通知文案单表/脱敏/格式化/agent 事件读取（纯函数）
+ * - history.ts     通知历史 jsonl 存储（滚动/按天清理/原子写）
+ * - settings.ts    官方 settings 命名空间接线（installNotifierSettings，issue #76）
+ * - migrate.ts     存量自建 json 一次性迁移（E1-E7/R1）
+ * - server.ts      SSE 枢纽 + 系统通知通道 + HTTP 路由
+ *
+ * 配置（issue #76）：官方 settings 命名空间为唯一事实源（settings.yaml 单一
+ * 存储）；组合层通知配置作为命名空间 base 层；旧 `~/.dsh/dsh-notifier.json`
+ * 启动时一次性迁移（改名 .migrated.bak / 损坏 .corrupted.bak）。enabled 为
+ * 组合层开关：禁用态仍注册路由+命名空间+迁移（H2/H3），notify() 入口判定。
+ * 读取面经描述器（describe redactSecrets）取 user/revision，写入面经
+ * service.update(ns, patch, expectedRevision) 乐观并发。
  *
  * 事件源（均经源码核验）：
  * - 审批请求：approval/request waterfall（ApprovalService.request 派发；
@@ -35,27 +44,29 @@
  * - 浏览器通知：SSE（text/event-stream，mcp-manager 同款模式）推帧，
  *   客户端 Notification API 展示（页面隐藏时）
  *
- * 配置：~/.dsh/dsh-notifier.json（PUT /config 可改，落盘）
+ * 配置路径（issue #76 后）：官方 settings 命名空间（设置 → 插件 → dsh-notifier
+ * 卡片 PUT /config 写，落盘官方 settings.yaml）；旧 ~/.dsh/dsh-notifier.json 仅
+ * 作为存量迁移源，迁移后改名归档，不再读写。
  * 安全：通知文本只含工具名/会话标识/申请理由等元信息，不含工具参数（防敏感信息外泄）。
  */
 // 官方类型层（issue #16，锁 0.1.1-rc.2；仅 import type，编译期擦除，
 // 禁止运行时值导入——contract-check 有门禁）。session/title 事件键由
 // dsh-session-title 经 declare module 注入 SessionEventMap，必须引入其类型面。
-import { readFile, writeFile, mkdir, rename } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import { dirname } from "node:path";
 import type { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import type {} from "@deepseek-ai/dsh-session/types";
 import type {} from "@deepseek-ai/dsh-session-title";
 import type {} from "@deepseek-ai/dsh-user-approval";
 import { errorMessage } from "../../../shared/host-utils.js";
-import { CONFIG_KEYS, DEFAULT_CONFIG, configFile, historyFile, normalizeConfig, toastScriptPath } from "./config.ts";
+import { CONFIG_KEYS, DEFAULT_CONFIG, configFile, historyFile, normalizeConfig, sanitizeSettings, toastScriptPath } from "./config.ts";
 import type { NotifierApplyConfig, NotifyConfig } from "./config.ts";
 import { isInQuietHours } from "./quiet-hours.ts";
 import { HISTORY_LIMIT, createHistoryStore } from "./history.ts";
 import { NOTIFY_KINDS, sanitizeErrorText, sessionTitleOf, isSubagentOf, lastTurnEndOf } from "./message.ts";
 import type { NotifyDetail } from "./message.ts";
+import { SETTINGS_NS, installNotifierSettings } from "./settings.ts";
+import type { OwnerScopeLike, SettingsServiceLike } from "./settings.ts";
+import { migrateLegacyConfig } from "./migrate.ts";
 import { ROUTES, buildRoutes, createSseHub, createSystemNotifier } from "./server.ts";
 
 /** 稳定的 cordis 插件名。 */
@@ -69,9 +80,12 @@ export const inject = ["webServer"];
 
 export { QUIET_ALLOW_KINDS, isInQuietHours, parseHHMM } from "./quiet-hours.ts";
 export type { QuietHoursConfig } from "./quiet-hours.ts";
-export { CONFIG_KEYS, DEFAULT_CONFIG, configFile, historyFile, normalizeConfig, toastScriptPath } from "./config.ts";
-export type { NotifierApplyConfig, NotifyConfig } from "./config.ts";
+export { CONFIG_KEYS, DEFAULT_CONFIG, configFile, historyFile, normalizeConfig, sanitizeSettings, validateSettings, toastScriptPath } from "./config.ts";
+export type { NotifierApplyConfig, NotifyConfig, SettingInvalid } from "./config.ts";
 export { HISTORY_LIMIT } from "./history.ts";
+export { SETTINGS_NS, installNotifierSettings } from "./settings.ts";
+export { migrateLegacyConfig, MIGRATED_BAK_SUFFIX, CORRUPTED_BAK_SUFFIX } from "./migrate.ts";
+export type { MigrationOutcome } from "./migrate.ts";
 export {
   buildSystemCommand,
   formatDuration,
@@ -82,7 +96,8 @@ export {
   sessionTitleOf,
 } from "./message.ts";
 export type { NotifyDetail } from "./message.ts";
-export { ROUTES } from "./server.ts";
+export { ROUTES, applyConfigPatch } from "./server.ts";
+export type { PatchResult, RouteDeps } from "./server.ts";
 
 // 辅助函数统一来自仓库共享层（loopback 围栏 / writeJson / readBody / errorMessage）。
 export { isLoopbackRequest } from "../../../shared/loopback.js";
@@ -91,35 +106,39 @@ export { writeJson, readBody, errorMessage } from "../../../shared/host-utils.js
 /**
  * 挂载 dsh-notifier。
  * @param ctx 宿主插件上下文。
- * @param config 配置（enabled / configFile 覆盖 / toastScript 覆盖）。
+ * @param config 配置（enabled / configFile 迁移源 / toastScript 覆盖）。
  */
-export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Promise<void> {
-  if (config.enabled === false) return;
+export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
+  // 组合层通知配置（settings 命名空间的 base 层；enabled 是组合层开关，不进
+  // user 层）。注意：应用配置现在只读 settings 命名空间解析值 + 本 entry。
+  const entry = (sanitizeSettings(config) ?? {}) as Record<string, unknown>;
   const storeFile = typeof config.configFile === "string" ? config.configFile : configFile();
   const toastScript = typeof config.toastScript === "string" ? config.toastScript : toastScriptPath();
   const historyPath = typeof config.historyFile === "string" ? config.historyFile : historyFile();
 
-  /** 当前配置（内存单一事实源，PUT 后落盘）。 */
-  let current = normalizeConfig(undefined);
-
-  async function loadConfig() {
+  /**
+   * 当前配置（运行时镜像，与 settings 命名空间解析值保持同步）。
+   * settings attach 后由 setSource 指向 scope.get()，变更经 onChange 刷新；
+   * 服务缺失时回落组合层 entry（normalizeConfig 兜底默认值）。
+   */
+  let current: NotifyConfig = normalizeConfig(entry);
+  /** settings 读取来源 thunk（attach 后为 scope.get()）。 */
+  let source: () => NotifyConfig = () => current;
+  /** settings 服务 attach 状态（writable / readUser 依据）。 */
+  let attachedService: SettingsServiceLike | undefined;
+  /** attach 后的 owner scope（迁移写入面）。 */
+  let attachedScope: OwnerScopeLike | undefined;
+  /** 读取 settings user 层（描述器 redactSecrets 后取 user/revision）。 */
+  function readUser(): { user: Record<string, unknown>; revision?: number } {
+    if (!attachedService) return { user: {}, revision: undefined };
     try {
-      if (!existsSync(storeFile)) return;
-      const data = JSON.parse(await readFile(storeFile, "utf8"));
-      current = normalizeConfig(data);
-    } catch (error) {
-      ctx.logger.warn(`dsh-notifier: 配置读取失败（使用默认）: ${errorMessage(error)}`);
-    }
-  }
-
-  async function saveConfig() {
-    try {
-      await mkdir(dirname(storeFile), { recursive: true });
-      const tmp = `${storeFile}.${process.pid}.${Date.now().toString(36)}.tmp`;
-      await writeFile(tmp, JSON.stringify(current, null, 2), "utf8");
-      await rename(tmp, storeFile);
-    } catch (error) {
-      ctx.logger.warn(`dsh-notifier: 配置落盘失败: ${errorMessage(error)}`);
+      const descriptor = attachedService.describe({ redactSecrets: true }).find((d) => d.ns === SETTINGS_NS);
+      return {
+        user: (descriptor?.user && typeof descriptor.user === "object" ? descriptor.user : {}) as Record<string, unknown>,
+        revision: descriptor?.revision,
+      };
+    } catch {
+      return { user: {}, revision: undefined };
     }
   }
 
@@ -145,11 +164,15 @@ export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Pro
   // ------------------------------------------------------------ 通知主入口
 
   /**
-   * 通知入口：免打扰检查（被拦截也记录「未发出」历史）→ 系统通知 → SSE 广播 → 历史落盘。
+   * 通知入口：总开关判定（enabled，H3）→ 免打扰检查（被拦截也记录「未发出」
+   * 历史）→ 系统通知 → SSE 广播 → 历史落盘。
    * @param kind ask / done / error / turn-end。
    * @param detail {tool?, taskTitle?, reason?, durationMs?, turn?, step?, message?, mergedCount?}（不含工具参数）。
    */
   function notify(kind: string, detail: NotifyDetail = {}): boolean {
+    // enabled 下沉到 notify() 入口（H2/H3）：禁用态不通知，但路由/命名空间/
+    // 迁移照常注册——由各事件处理器的开关判定 + 本总开关共同收敛。
+    if (config.enabled === false) return false;
     const spec = NOTIFY_KINDS[kind];
     const ts = Date.now();
     const title = spec?.title ?? "DSH 通知";
@@ -591,11 +614,16 @@ export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Pro
   // （webServer.register）会在 cordis isolate 链就绪前访问服务，触发
   // "Cyclic __proto__ value"（loader isolate 处理），导致插件激活失败。
   const routes = buildRoutes({
-    getConfig: () => current,
-    putConfig: async (raw) => {
-      current = normalizeConfig(raw);
-      await saveConfig();
-      return current;
+    // effective = settings 命名空间解析值（attach 后 current 已指向 scope.get()）
+    resolve: () => current,
+    readUser,
+    writable: () => attachedService !== undefined,
+    update: (patch: object, expectedRevision?: number) => {
+      const service = attachedService;
+      if (!service) return Promise.reject(new Error("settings service unavailable"));
+      // 乐观并发（F4）必须经 service.update(ns, ...)（SettingsProvider 公开
+      // 方法，write 内做 revision 校验）——scope.update 会丢弃该参数。
+      return service.update(SETTINGS_NS, patch, expectedRevision);
     },
     logger: ctx.logger,
     sse,
@@ -618,9 +646,49 @@ export async function apply(ctx: Context, config: NotifierApplyConfig = {}): Pro
     "dsh-notifier: routes"
   );
 
+  // ------------------------------------------------------------ settings 接线 + 存量迁移
+
+  // GUI 设置卡片数据面 + 存量迁移（issue #76）：settings 命名空间 attach 后——
+  //   1. onScope 内先做存量 dsh-notifier.json 迁移（前置于一切 enabled 判定，
+  //      禁用用户升级/禁用态同样迁移，E7）；
+  //   2. setSource 把读取来源切到 scope.get()（schema defaults → base(entry) →
+  //      user 层的官方解析顺序，无双轨合并）；
+  //   3. 热更新统一由 scope.watch 驱动 onChange 刷新 current 镜像。
+  // 服务缺失（未注入 settings）时：writable=false → PUT 503，路由/通知保持降级
+  // 可用（current 恒为组合层 entry 归一化值），与 lan-proxy 同语义。
+  installNotifierSettings(ctx, entry, {
+    setSource: (s) => {
+      source = s;
+      current = s();
+    },
+    onChange: () => {
+      current = source();
+    },
+    onScope: (scope, service) => {
+      attachedScope = scope;
+      attachedService = service;
+      // 迁移（rename-first 幂等；损坏/中断/回滚均在 migrate.ts 内处理并 warn，
+      // 失败不阻塞启动——E6）。hasUserValues 判定「user 层已有值 = 迁移已完成」。
+      void migrateLegacyConfig(
+        storeFile,
+        {
+          update: (patch) => service.update(SETTINGS_NS, patch),
+          hasUserValues: () => {
+            const { user } = readUser();
+            return user !== undefined && Object.keys(user).length > 0;
+          },
+        },
+        ctx.logger
+      ).catch((err) => {
+        ctx.logger.warn(`dsh-notifier: 存量配置迁移异常 — ${errorMessage(err)}`);
+      });
+    },
+  });
+
   // ------------------------------------------------------------ 启动与清理
 
-  await loadConfig();
+  // 配置源已就绪（entry 归一化）；若 settings 已 attach（inject 回调同步触发），
+  // current 已指向 scope.get()。无需 loadConfig（自建 json 读写链路已废弃）。
 
   // ⚠️ 清理必须放在 effect **返回的 disposer** 里，不能写在 fn 主体：
   // ctx.effect(fn) 的 fn 在 apply 时立即同步执行，只有返回值才在 fiber

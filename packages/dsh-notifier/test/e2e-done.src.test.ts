@@ -20,7 +20,7 @@
 import { join } from "node:path";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { assert, makeNotifier, agentWithTitle, fakeAgents, waitMergeWindow, fakeReq, makeRes, turnEndEvent, waitForHistory, turnPair } from "./helpers.ts";
+import { assert, makeNotifier, agentWithTitle, fakeAgents, waitMergeWindow, fakeReq, makeRes, turnEndEvent, waitForHistory, turnPair, quietWindowNow } from "./helpers.ts";
 import { ROUTES, lastTurnEndOf } from "../src/index.ts";
 
 /** 带 info 收集的 logger 覆盖。 */
@@ -95,10 +95,8 @@ try {
 
   // 错误合并窗口过期后通知并携带合并计数（独立实例：20ms 窗口）
   {
-    const mergeCfg = join(work, "merge-observed.json");
-    writeFileSync(mergeCfg, JSON.stringify({ errorMergeWindowMs: 20 }));
     const infos = [];
-    const { listeners } = await makeNotifier(work, { configFile: mergeCfg }, loggingOverride(infos));
+    const { listeners } = await makeNotifier(work, { errorMergeWindowMs: 20 }, loggingOverride(infos));
     const error = listeners.get("agent/error")[0];
 
     error({ agent: { id: "session-1" }, turn: 1, step: 1, error: new Error("e1") });
@@ -114,10 +112,8 @@ try {
 
   // 合并 0=关闭：错误不合并、完成不聚合（每条即时）
   {
-    const cfg0 = join(work, "merge-off.json");
-    writeFileSync(cfg0, JSON.stringify({ errorMergeWindowMs: 0, doneMergeWindowMs: 0 }));
     const infos = [];
-    const { listeners } = await makeNotifier(work, { configFile: cfg0 }, loggingOverride(infos));
+    const { listeners } = await makeNotifier(work, { errorMergeWindowMs: 0, doneMergeWindowMs: 0 }, loggingOverride(infos));
     const error = listeners.get("agent/error")[0];
     const status = listeners.get("agent/status")[0];
 
@@ -152,7 +148,7 @@ try {
       const infos = [];
       const { listeners, routes } = await makeNotifier(
         work,
-        { configFile: join(work, "sub-fork-owned.json"), historyFile: join(work, "history-a1.jsonl") },
+        { historyFile: join(work, "history-a1.jsonl") },
         { agents, ...loggingOverride(infos) }
       );
       const status = listeners.get("agent/status")[0];
@@ -173,11 +169,9 @@ try {
     // A2：同一场景开启 notifySubagentDone=true → 恰一条 subagent-done（文案含
     //     任务标题与耗时），且不得同时出现 kind=done。
     {
-      const onCfg = join(work, "sub-fork-on.json");
-      writeFileSync(onCfg, JSON.stringify({ notifySubagentDone: true }));
-      const agents = fakeAgents(["main-parent2", "fork-worker2"], [["fork-worker2", "main-parent2"]]);
+            const agents = fakeAgents(["main-parent2", "fork-worker2"], [["fork-worker2", "main-parent2"]]);
       const infos = [];
-      const { listeners } = await makeNotifier(work, { configFile: onCfg }, { agents, ...loggingOverride(infos) });
+      const { listeners } = await makeNotifier(work, { notifySubagentDone: true }, { agents, ...loggingOverride(infos) });
       const status = listeners.get("agent/status")[0];
       // 同 A1：完整持久化 header 形态含 seedLength（#199 P2-5 对齐）+ 本轮完成时序
       const forkPair = () => turnPair("fork-worker2", "fork 委派子任务B", { parentSession: "main-parent2", seedLength: 3, depth: 0 }, { turn: 1 });
@@ -196,7 +190,7 @@ try {
     {
       const agents = fakeAgents(["fork-orphan"], []);
       const infos = [];
-      const { listeners } = await makeNotifier(work, { configFile: join(work, "sub-fork-orphan.json") }, { agents, ...loggingOverride(infos) });
+      const { listeners } = await makeNotifier(work, { }, { agents, ...loggingOverride(infos) });
       const status = listeners.get("agent/status")[0];
       const mk = () => turnPair("fork-orphan", "孤儿 fork 会话", { parentSession: "ghost-parent" }, { turn: 1 });
       status({ agent: mk().running, status: "running" });
@@ -210,7 +204,7 @@ try {
     {
       const agents = fakeAgents(["unrelated-parent", "fork-x"], []); // 无 (fork-x, unrelated-parent) 归属对
       const infos = [];
-      const { listeners } = await makeNotifier(work, { configFile: join(work, "sub-fork-unowned.json") }, { agents, ...loggingOverride(infos) });
+      const { listeners } = await makeNotifier(work, { }, { agents, ...loggingOverride(infos) });
       const status = listeners.get("agent/status")[0];
       const mk = () => turnPair("fork-x", "无归属 fork 会话", { parentSession: "unrelated-parent", seedLength: 3 }, { turn: 1 });
       status({ agent: mk().running, status: "running" });
@@ -223,7 +217,7 @@ try {
     //     皆否，保持现状按主任务分支处理（本 issue 不改变其分类）。
     {
       const infos = [];
-      const { listeners } = await makeNotifier(work, { configFile: join(work, "sub-headless.json") }, loggingOverride(infos));
+      const { listeners } = await makeNotifier(work, { }, loggingOverride(infos));
       const status = listeners.get("agent/status")[0];
       const mk = () => turnPair("headless-1", "headless CLI 会话", { cwd: "/tmp/dsh-cli" }, { turn: 1 });
       status({ agent: mk().running, status: "running" });
@@ -235,7 +229,7 @@ try {
     // 反例 2（原 #7 回归防护保留）：主会话（无 header / 无 origin）必须走 done。
     {
       const infos = [];
-      const { listeners } = await makeNotifier(work, { configFile: join(work, "sub-main.json") }, loggingOverride(infos));
+      const { listeners } = await makeNotifier(work, { }, loggingOverride(infos));
       const status = listeners.get("agent/status")[0];
       const pair = turnPair("main-x", "主任务", {}, { turn: 1 });
       status({ agent: pair.running, status: "running" });
@@ -247,7 +241,7 @@ try {
     // 默认关：子代理完成不通知，主任务完成不受影响
     {
       const infos = [];
-      const { listeners } = await makeNotifier(work, { configFile: join(work, "sub-default.json") }, loggingOverride(infos));
+      const { listeners } = await makeNotifier(work, { }, loggingOverride(infos));
       const status = listeners.get("agent/status")[0];
       const subPair = turnPair("sub-1", "子任务A", { subagent: true }, { turn: 1 });
       status({ agent: subPair.running, status: "running" });
@@ -262,10 +256,8 @@ try {
 
     // 开启 notifySubagentDone：子代理完成用独立事件类型 subagent-done（标题/耗时）
     {
-      const onCfg = join(work, "sub-on.json");
-      writeFileSync(onCfg, JSON.stringify({ notifySubagentDone: true }));
-      const infos = [];
-      const { listeners } = await makeNotifier(work, { configFile: onCfg }, loggingOverride(infos));
+            const infos = [];
+      const { listeners } = await makeNotifier(work, { notifySubagentDone: true }, loggingOverride(infos));
       const status = listeners.get("agent/status")[0];
       const subPair = turnPair("sub-2", "子任务B", { subagent: true }, { turn: 1 });
       status({ agent: subPair.running, status: "running" });
@@ -286,10 +278,8 @@ try {
 
     // S2 回归：notifyTaskDone=false + notifySubagentDone=true 时子代理完成仍通知
     {
-      const s2Cfg = join(work, "sub-s2.json");
-      writeFileSync(s2Cfg, JSON.stringify({ notifyTaskDone: false, notifySubagentDone: true }));
-      const infos = [];
-      const { listeners } = await makeNotifier(work, { configFile: s2Cfg }, loggingOverride(infos));
+            const infos = [];
+      const { listeners } = await makeNotifier(work, { notifyTaskDone: false, notifySubagentDone: true }, loggingOverride(infos));
       const status = listeners.get("agent/status")[0];
       const subPair = turnPair("sub-3", "子任务C", { subagent: true }, { turn: 1 });
       status({ agent: subPair.running, status: "running" });
@@ -313,12 +303,10 @@ try {
     const infos = [];
     const warns = [];
     // 关闭完成聚合：本块聚焦单源证据合并语义，每条完成即时通知便于计数
-    // （doneMergeWindowMs 是运行时配置，须经 configFile 文件传入）
-    const singleCfg = join(work, "single-source.json");
-    writeFileSync(singleCfg, JSON.stringify({ doneMergeWindowMs: 0 }));
+    // （doneMergeWindowMs 是运行时配置，经组合层 entry 传入）
     const { listeners } = await makeNotifier(
       work,
-      { configFile: singleCfg },
+      { doneMergeWindowMs: 0 },
       { logger: { info: (t) => infos.push(t), warn: (t) => warns.push(t) } }
     );
     const status = listeners.get("agent/status")[0];
@@ -422,11 +410,9 @@ try {
   {
     const infos = [];
     const warns = [];
-    const a2Cfg = join(work, "a2-no-agents.json");
-    writeFileSync(a2Cfg, JSON.stringify({ doneMergeWindowMs: 0 }));
     const { listeners } = await makeNotifier(
       work,
-      { configFile: a2Cfg },
+      { doneMergeWindowMs: 0 },
       { logger: { info: (t) => infos.push(t), warn: (t) => warns.push(t) } }
     );
     const status = listeners.get("agent/status")[0];
@@ -441,10 +427,8 @@ try {
   //     主任务 done（即使 notifySubagentDone=true 也不误判 subagent-done）；
   //     spawn 型（origin=subagent）仍按 origin 信号走 subagent 分支。
   {
-    const a3Cfg = join(work, "a3-no-agents.json");
-    writeFileSync(a3Cfg, JSON.stringify({ doneMergeWindowMs: 0, notifySubagentDone: true }));
     const infos = [];
-    const { listeners } = await makeNotifier(work, { configFile: a3Cfg }, loggingOverride(infos));
+    const { listeners } = await makeNotifier(work, { doneMergeWindowMs: 0, notifySubagentDone: true }, loggingOverride(infos));
     const status = listeners.get("agent/status")[0];
     // fork 型：无 origin、带 parentSession + seedLength，归属服务缺位 → 保守走 done
     const forkPair = () => turnPair("a3-fork", "fork 型无 agents", { parentSession: "ghost-parent", seedLength: 3 }, { turn: 1 });
@@ -462,11 +446,9 @@ try {
   // B-1：开关禁用三态提交——notifyTaskDone=false 时 completed idle 不通知，
   //     但 lastEndedTurn 照常提交，同 turn 再现 idle 不重复处理。
   {
-    const b1Cfg = join(work, "b1-off.json");
-    writeFileSync(b1Cfg, JSON.stringify({ doneMergeWindowMs: 0, notifyTaskDone: false }));
     const infos = [];
     const warns = [];
-    const { listeners } = await makeNotifier(work, { configFile: b1Cfg }, { logger: { info: (t) => infos.push(t), warn: (t) => warns.push(t) } });
+    const { listeners } = await makeNotifier(work, { doneMergeWindowMs: 0, notifyTaskDone: false }, { logger: { info: (t) => infos.push(t), warn: (t) => warns.push(t) } });
     const status = listeners.get("agent/status")[0];
     const pair = turnPair("b1-1", "开关禁用任务", {}, { turn: 1 });
     status({ agent: pair.running, status: "running" });
@@ -484,11 +466,11 @@ try {
   //     allowKinds 时，idle completed → 仅一条 suppressed 历史、无系统通知；
   //     同 turn 再现 idle → 不重复通知、不新增记录。
   {
-    const qhAll = { enabled: true, start: "00:00", end: "23:59" };
-    const b2Cfg = join(work, "b2-quiet.json");
-    writeFileSync(b2Cfg, JSON.stringify({ doneMergeWindowMs: 0, quietHours: { ...qhAll, allowKinds: ["ask"] } }));
+    // #181 动态窗口：写死 "00:00"/"23:59" 在半开区间镜下 23:59 这一分钟不命中
+    // （UTC 边缘必炸，run 33282203798 根因）；围绕当前时间 ±2 分钟恒命中。
+    const qhAll = quietWindowNow();
     const infos = [];
-    const { listeners, routes } = await makeNotifier(work, { configFile: b2Cfg, historyFile: join(work, "b2-hist.jsonl") }, loggingOverride(infos));
+    const { listeners, routes } = await makeNotifier(work, { doneMergeWindowMs: 0, quietHours: { ...qhAll, allowKinds: ["ask"] }, historyFile: join(work, "b2-hist.jsonl") }, loggingOverride(infos));
     const status = listeners.get("agent/status")[0];
     const historyRoute = routes.find((r) => r.path === ROUTES.history);
     const pair = turnPair("b2-1", "免打扰完成", {}, { turn: 1 });
@@ -508,10 +490,8 @@ try {
   // B-4：批次按「入队成功」提交、与聚合 flush 成败解耦——doneMergeWindowMs>0
   //     时首条完成入队即推进 lastEndedTurn（窗口内同 turn 再现不重复）。
   {
-    const b4Cfg = join(work, "b4-merge.json");
-    writeFileSync(b4Cfg, JSON.stringify({ doneMergeWindowMs: 5000 }));
     const infos = [];
-    const { listeners } = await makeNotifier(work, { configFile: b4Cfg }, loggingOverride(infos));
+    const { listeners } = await makeNotifier(work, { doneMergeWindowMs: 5000 }, loggingOverride(infos));
     const status = listeners.get("agent/status")[0];
     const pair = turnPair("b4-1", "合并窗口任务", {}, { turn: 1 });
     status({ agent: pair.running, status: "running" });
@@ -529,10 +509,8 @@ try {
   //     触发会 uncaught、与 Stryker tap-bridge 冲突，故以「提交点先于 flush」
   //     的时序验证覆盖——见 PR 断言表 B-4 漂移说明。）
   {
-    const b4fCfg = join(work, "b4-flush-ok.json");
-    writeFileSync(b4fCfg, JSON.stringify({ doneMergeWindowMs: 30 }));
     const infos = [];
-    const { listeners } = await makeNotifier(work, { configFile: b4fCfg }, loggingOverride(infos));
+    const { listeners } = await makeNotifier(work, { doneMergeWindowMs: 30 }, loggingOverride(infos));
     const status = listeners.get("agent/status")[0];
     const doneCount = () => infos.filter((t) => /: done /.test(t)).length;
     const pairA = () => turnPair("b4f-a", "flush 后 A", {}, { turn: 1 });

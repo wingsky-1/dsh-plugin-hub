@@ -7,7 +7,7 @@
  * notifyAsk=false 不通知；免打扰紧急例外 allowKinds（M4）。
  */
 import { join } from "node:path";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { assert, makeNotifier, agentWithTitle } from "./helpers.ts";
 
@@ -56,12 +56,10 @@ try {
     assert.equal(infos.length, 3, "next 抛错前通知已发出");
   }
 
-  // notifyAsk=false（configFile）时 approval/request 不通知、不短路
+  // notifyAsk=false（组合层 entry）时 approval/request 不通知、不短路
   {
-    const askOffCfg = join(work, "ask-off.json");
-    writeFileSync(askOffCfg, JSON.stringify({ notifyAsk: false }));
     const infos = [];
-    const { listeners } = await makeNotifier(work, { configFile: askOffCfg }, loggingOverride(infos));
+    const { listeners } = await makeNotifier(work, { notifyAsk: false }, loggingOverride(infos));
     const approval = listeners.get("approval/request")[0];
     const outcome = await approval({ toolName: "bash", agent: { id: "session-1" } }, async () => "allowed-once");
     assert.equal(outcome, "allowed-once", "不短路");
@@ -78,20 +76,16 @@ try {
       return `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
     };
     const qhOn = { enabled: true, start: hhmm(-2), end: hhmm(2) };
-    const cfgAsk = join(work, "qh-ask.json");
-    writeFileSync(cfgAsk, JSON.stringify({ quietHours: { ...qhOn, allowKinds: ["ask"] } }));
     const infos = [];
-    const { listeners } = await makeNotifier(work, { configFile: cfgAsk, historyFile: join(work, "history-qh1.jsonl") }, loggingOverride(infos));
+    const { listeners } = await makeNotifier(work, { quietHours: { ...qhOn, allowKinds: ["ask"] }, historyFile: join(work, "history-qh1.jsonl") }, loggingOverride(infos));
     const approval = listeners.get("approval/request")[0];
     await approval({ toolName: "pwsh", agent: agentWithTitle("qh-1", "免打扰审批", { turnEnd: 1 }) }, async () => "ok");
     assert.equal(infos.length, 1, "免打扰期间 ask 仍通知（紧急例外 allowKinds）");
     assert.match(infos[0], /ask/);
 
     // allowKinds 为空/不含 ask：免打扰生效则静默
-    const cfgNone = join(work, "qh-none.json");
-    writeFileSync(cfgNone, JSON.stringify({ quietHours: { ...qhOn, allowKinds: [] } }));
     const infos2 = [];
-    const { listeners: listeners2 } = await makeNotifier(work, { configFile: cfgNone, historyFile: join(work, "history-qh2.jsonl") }, loggingOverride(infos2));
+    const { listeners: listeners2 } = await makeNotifier(work, { quietHours: { ...qhOn, allowKinds: [] }, historyFile: join(work, "history-qh2.jsonl") }, loggingOverride(infos2));
     await listeners2.get("approval/request")[0]({ toolName: "pwsh", agent: { id: "qh-2" } }, async () => "ok");
     assert.equal(infos2.filter((t) => !t.includes("被免打扰拦截")).length, 0, "无 allowKinds 时免打扰不产生实际通知");
     assert.ok(infos2.some((t) => t.includes("被免打扰拦截")), "被拦截仍记录日志（可核对发没发）");

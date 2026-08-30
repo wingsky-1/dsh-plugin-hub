@@ -38,7 +38,9 @@
       "packages/dsh-notifier/test/e2e-done.src.test.ts",
       "packages/dsh-notifier/test/e2e-edge.src.test.ts",
       "packages/dsh-notifier/test/e2e-question-turn.test.ts",
+      "packages/dsh-notifier/test/migration.src.test.ts",
       "packages/dsh-notifier/test/routes.src.test.ts",
+      "packages/dsh-notifier/test/unit-config.src.test.ts",
       "packages/dsh-notifier/test/unit-sanitize.src.test.ts",
       "packages/dsh-notifier/test/unit-text.src.test.ts"
     ]

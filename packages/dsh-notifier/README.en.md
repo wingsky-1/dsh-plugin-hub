@@ -57,7 +57,7 @@ loopback interface (`127.0.0.1` / `localhost`) are accepted. Therefore, when you
 403 and the notification channels do not work — this is the expected behavior of the security
 guardrail, not a plugin fault; the page will show a guidance hint.
 
-Pick one of the following access forms (both the panel and the README surface a hint for each):
+Pick one of the following access forms (both the settings card and the README surface a hint for each):
 
 | Form | How to access | Notes |
 |---|---|---|
@@ -82,10 +82,19 @@ Pick one of the following access forms (both the panel and the README surface a 
 - **Do-not-disturb window**: supports crossing midnight (e.g. 22:00 → 08:00); an **urgent exception** can be set (`allowKinds`: still remind approval / question / error during DND)
 - **Approval timeout re-reminder**: when an approval waits longer than `askRemindMin` minutes (default 5, 0 disables) without being handled, remind again
 - **Completion-storm aggregation**: when multiple tasks / subagents finish at once, auto-aggregate into "N other tasks have completed" to avoid notification spam
-- **Panel diagnostics**: the config panel shows the browser notification permission status and a secure-context hint
-- **Unread badge**: when there are unread notifications, the sidebar "Notifications" entry shows a red dot count, which clears as soon as the panel is opened
+- **Settings-card diagnostics**: the plugin card under Settings → Plugins → dsh-notifier shows the browser notification permission status and a secure-context hint, plus the 10 most recent notification records, a "Send test notification" button, and a "Clear history" entry
 
-## Configuration (~/.dsh/dsh-notifier.json, editable in the GUI "Notifications" panel)
+## Configuration (official settings storage, editable via Settings → Plugins → dsh-notifier)
+
+Configuration is stored in the **official settings store** (`<DSH_HOME>/settings.yaml`,
+namespace `dsh-notifier`), read/written through the plugin card under
+Settings → Plugins → dsh-notifier (issue #76). The legacy self-maintained
+`~/.dsh/dsh-notifier.json` is **migrated once at startup** into the official store;
+the original file is renamed `dsh-notifier.json.migrated.bak` (corrupt files are
+renamed `.corrupted.bak` without being written). The self-maintained read/write path
+is retired.
+
+Example values (defaults):
 
 ```json
 {
@@ -103,19 +112,30 @@ Pick one of the following access forms (both the panel and the README surface a 
   "errorMergeWindowMs": 60000,
   "askRemindMin": 5,
   "doneMergeWindowMs": 3000,
-  "historyMaxAgeDays": 0
+  "historyMaxAgeDays": 0,
+  "maxConnections": 16
 }
 ```
+
+> `maxConnections`: SSE connection-table cap (default 16, range 1–1024). It counts
+> **server-side unreleased handles**, not "online devices" — half-open connections
+> (device screen off / network switch / silent NAT cut) linger briefly until the
+> transport layer reaps them; the cap keeps the connection table bounded, evicting
+> the oldest connection beyond the limit (clients auto-reconnect with `since`
+> replay, transparent). If more devices×tabs are concurrently online, raise it in
+> the card.
 
 ## Routes (all behind the loopback fence)
 
 | Route | Method | Notes |
 |---|---|---|
-| `/api/dsh-notifier/config` | GET/PUT | Read / save config |
-| `/api/dsh-notifier/events` | GET | SSE notification frames (browser EventSource subscription) |
+| `/api/dsh-notifier/config` | GET/PUT | **GET** returns `{ok, user, revision, effective, writable}` (`user` = official settings user layer, `revision` for optimistic concurrency, `effective` = resolved config); **PUT** accepts `{patch, expectedRevision?}` (incremental patch, optional `expectedRevision`), returns `{ok, user, revision}` |
+| `/api/dsh-notifier/events` | GET | SSE notification frames (browser EventSource subscription; `?since=<seq>` replays missed frames after reconnect) |
 | `/api/dsh-notifier/test` | POST | Test notification (bypasses Do-Not-Disturb) |
 | `/api/dsh-notifier/history` | GET / **DELETE** | GET recent notification records (up to 200, filtered by `historyMaxAgeDays`; entries suppressed by DND are flagged `suppressed`); **DELETE clears** |
 | `/api/dsh-notifier/health` | GET | Health check |
+
+Error mapping (PUT /config): invalid config key → 400 (`{ok:false, error:{error:"配置校验失败: <key>", hint}}`); stale `expectedRevision` conflict → 409 (`code:"SETTINGS_CONFLICT"`); settings service unavailable → 503 (`code:"settings-unavailable"`); write failure → 500 (root cause only in server logs).
 
 ## Type dependencies
 
@@ -142,11 +162,11 @@ be able to resolve these official packages (skipping type checking is unaffected
   - Proven false-positive-prone, deliberately not covered: IPv4 (same shape as UA version numbers), phone numbers (same shape as order IDs), credit cards (13-digit millisecond timestamps match at 100%)
 - System notification failures are silent (logs only), and do not affect the main flow; a missing / non-executable native binary (ENOENT etc.) is caught by the `error` event and **never bubbles up as an unhandled error that crashes the host process** (see issue #1)
 - **The two channels are delivered to different machines (don't confuse them)**:
-  - **Browser notifications** are pushed to **the browser client you are actually using** (your Mac / phone both count), and pop a native notification via the browser's Notification API; they require permission and by default only pop when the page is hidden (the panel can enable "also when visible"). No matter which machine dsh web runs on, as long as browser notifications are allowed you receive them on your own Mac.
-  - **System notifications (host toast)** are popped on the desktop of **the machine dsh web runs on**: if dsh web runs on a Linux server (headless, no desktop session) or some other machine, the toast appears on **that server**, not your Mac — the panel / health reflects whether the channel is available. To also get the system toast on your Mac, run dsh web directly on your Mac (it then uses macOS `osascript`); macOS has no `notify-send`, and the system notification is already implemented via `osascript` (zero dependencies, nothing to install)
+  - **Browser notifications** are pushed to **the browser client you are actually using** (your Mac / phone both count), and pop a native notification via the browser's Notification API; they require permission and by default only pop when the page is hidden (the settings card can enable "also when visible"). No matter which machine dsh web runs on, as long as browser notifications are allowed you receive them on your own Mac.
+  - **System notifications (host toast)** are popped on the desktop of **the machine dsh web runs on**: if dsh web runs on a Linux server (headless, no desktop session) or some other machine, the toast appears on **that server**, not your Mac — the settings card / health reflects whether the channel is available. To also get the system toast on your Mac, run dsh web directly on your Mac (it then uses macOS `osascript`); macOS has no `notify-send`, and the system notification is already implemented via `osascript` (zero dependencies, nothing to install)
 - **iOS difference**: Safari's normal tabs have no Web Notifications API (only the "Add to Home Screen" PWA does); on iOS the available channels are "in-page banner + sound when the page is visible" and system notifications after HTTPS + A2HS
 - Browser notifications require a **secure context** (HTTPS or localhost); LAN HTTP access automatically routes through the fallback channel (banner / sound / title reminder)
-- Browser notification permission is requested within a gesture (when clicking the sidebar "Notifications" entry or a panel button)
+- Browser notification permission is requested within a gesture (via the "Request notification permission" button on the Settings → Plugins → dsh-notifier card)
 - Windows system notifications are implemented via a PowerShell WinRT script, with the command passed as a parameter array and title/body packed into a single base64 (UTF-8 JSON) payload argument (no shell concatenation surface, and immune to PS 5.1 command-line argument parsing ambiguities, see issue #238); the script idempotently registers the AppUserModelId `DSH.dsh-notifier` on startup (HKCU, no admin required) — an unregistered AUMID gets toasts silently dropped by Windows 10/11. The AUMID follows the `Company.Product` convention to avoid collisions in the public namespace (`HKCU\SOFTWARE\Classes\AppUserModelId`) where same-named apps overwrite each other's display names; a legacy `DSH` key registered by older versions is harmless leftover (just an empty registry entry, does not affect new toasts) and can be removed manually with `Remove-Item -Path "HKCU:\SOFTWARE\Classes\AppUserModelId\DSH"` if desired
 
 ## Verification

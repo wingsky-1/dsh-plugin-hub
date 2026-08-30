@@ -10,7 +10,7 @@
 import { join } from "node:path";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { assert, makeNotifier, makeFakeCtx, agentWithTitle, makeRes, fakeReq, waitForHistory, turnPair } from "./helpers.ts";
+import { assert, makeNotifier, makeFakeCtx, agentWithTitle, makeRes, fakeReq, waitForHistory, turnPair, quietWindowNow } from "./helpers.ts";
 import { ROUTES, apply } from "../lib/index.js";
 
 const work = mkdtempSync(join(tmpdir(), "dnotify-e2e-edge-"));
@@ -40,7 +40,7 @@ try {
         return () => {};
       },
     });
-    await apply(ctx, { enabled: true, configFile: join(work, "lifecycle-cfg.json"), toastScript: join(work, "lifecycle-toast.ps1"), historyFile: join(work, "lifecycle-history.jsonl") });
+    await apply(ctx, { enabled: true, toastScript: join(work, "lifecycle-toast.ps1"), historyFile: join(work, "lifecycle-history.jsonl") });
     assert.equal(routeDispCalled.size, 5, "5 条路由注册");
     // 调用所有 effect disposer（清理顺序）
     for (const disp of effectDisposers) disp();
@@ -52,10 +52,10 @@ try {
 
   // ── 2. readBody async-iterator 分支（config PUT 走 web streams）──
   {
-    const { routes } = await makeNotifier(work, { configFile: join(work, "async-iter-cfg.json"), historyFile: join(work, "async-iter-hist.jsonl") });
+    const { routes } = await makeNotifier(work, { historyFile: join(work, "async-iter-hist.jsonl") });
     const configRoute = routes.find((r) => r.path === ROUTES.config);
     // 构造 async-iterable req（有 Symbol.asyncIterator，无 .on）
-    const body = JSON.stringify({ notifyAsk: false });
+    const body = JSON.stringify({ patch: { notifyAsk: false } });
     const chunks = [Buffer.from(body)];
     let idx = 0;
     const asyncIterReq = {
@@ -74,7 +74,7 @@ try {
     const { rec, res } = makeRes();
     await configRoute.handler(asyncIterReq, res);
     assert.equal(rec.status, 200);
-    assert.equal(JSON.parse(rec.text).notifyAsk, false, "async-iterator 分支解析成功");
+    assert.equal(JSON.parse(rec.text).user.notifyAsk, false, "async-iterator 分支解析成功");
   }
 
   // ── 3. 审批超时提醒（askRemindMin > 0 分支）──
@@ -88,9 +88,8 @@ try {
       return timer;
     };
     try {
-      writeFileSync(join(work, "ask-remind-cfg.json"), JSON.stringify({ askRemindMin: 1 }));
-      const infos = [];
-      const { listeners } = await makeNotifier(work, { configFile: join(work, "ask-remind-cfg.json"), historyFile: join(work, "ask-remind-hist.jsonl") }, {
+            const infos = [];
+      const { listeners } = await makeNotifier(work, { askRemindMin: 1, historyFile: join(work, "ask-remind-hist.jsonl") }, {
         logger: { warn: (m) => { infos.push(`warn: ${m}`); }, info: (t) => infos.push(t) },
       });
       // 清理 apply 阶段的 timer 记录（execFile timeout 等）
@@ -111,8 +110,7 @@ try {
   {
     const warns = [];
     // 启用 notifyTurnEnd 以使 turn-stopping 进入通知路径（默认关）
-    writeFileSync(join(work, "fail-cfg.json"), JSON.stringify({ notifyTurnEnd: true }));
-    const { listeners } = await makeNotifier(work, { configFile: join(work, "fail-cfg.json"), historyFile: join(work, "fail-hist.jsonl") }, {
+    const { listeners } = await makeNotifier(work, { notifyTurnEnd: true, historyFile: join(work, "fail-hist.jsonl") }, {
       logger: {
         info: () => { throw new Error("notify failed"); },
         warn: (m) => { warns.push(m); },
@@ -146,8 +144,7 @@ try {
   // ── 5. 完成聚合类型切换（done → subagent-done 混合）──
   {
     const infos = [];
-    writeFileSync(join(work, "merge-kind-cfg.json"), JSON.stringify({ doneMergeWindowMs: 500, notifySubagentDone: true }));
-    const { listeners } = await makeNotifier(work, { configFile: join(work, "merge-kind-cfg.json"), historyFile: join(work, "merge-kind-hist.jsonl") }, {
+    const { listeners } = await makeNotifier(work, { doneMergeWindowMs: 500, notifySubagentDone: true, historyFile: join(work, "merge-kind-hist.jsonl") }, {
       logger: { warn: () => {}, info: (t) => infos.push(t) },
     });
     const status = listeners.get("agent/status")[0];
@@ -169,8 +166,7 @@ try {
   // ── 6. error 合并窗口 ≥3 条 shift（lastMessages 收尾 2 条）──
   {
     const infos = [];
-    writeFileSync(join(work, "merge-shift-cfg.json"), JSON.stringify({ errorMergeWindowMs: 1000 }));
-    const { listeners } = await makeNotifier(work, { configFile: join(work, "merge-shift-cfg.json"), historyFile: join(work, "merge-shift-hist.jsonl") }, {
+    const { listeners } = await makeNotifier(work, { errorMergeWindowMs: 1000, historyFile: join(work, "merge-shift-hist.jsonl") }, {
       logger: { warn: () => {}, info: (t) => infos.push(t) },
     });
     const error = listeners.get("agent/error")[0];
@@ -193,8 +189,7 @@ try {
   // ── 7. agent/disposed 清理 turnNotified 前缀 ──
   {
     const infos = [];
-    writeFileSync(join(work, "disp-turn-cfg.json"), JSON.stringify({ notifyTurnEnd: true }));
-    const { listeners } = await makeNotifier(work, { configFile: join(work, "disp-turn-cfg.json"), historyFile: join(work, "disp-turn-hist.jsonl") }, {
+    const { listeners } = await makeNotifier(work, { notifyTurnEnd: true, historyFile: join(work, "disp-turn-hist.jsonl") }, {
       logger: { warn: () => {}, info: (t) => infos.push(t) },
     });
     const turnStop = listeners.get("agent/turn-stopping")[0];
@@ -217,7 +212,7 @@ try {
 
   // ── 8. hookUserQuestions：ctx.get 抛出 → 静默容错 ──
   {
-    const { listeners } = await makeNotifier(work, { configFile: join(work, "hook-fail-cfg.json"), historyFile: join(work, "hook-fail-hist.jsonl") }, {
+    const { listeners } = await makeNotifier(work, { historyFile: join(work, "hook-fail-hist.jsonl") }, {
       get: () => { throw new Error("service not ready"); },
       logger: { warn: () => {}, info: () => {} },
     });
@@ -232,7 +227,7 @@ try {
   // ── 9. 无状态 idle：无 running 记录时 idle 不误报 ──
   {
     const infos = [];
-    const { listeners } = await makeNotifier(work, { configFile: join(work, "noop-idle-cfg.json"), historyFile: join(work, "noop-idle-hist.jsonl") }, {
+    const { listeners } = await makeNotifier(work, { historyFile: join(work, "noop-idle-hist.jsonl") }, {
       logger: { warn: () => {}, info: (t) => infos.push(t) },
     });
     const status = listeners.get("agent/status")[0];
@@ -241,12 +236,12 @@ try {
   }
 // ── 10. 免打扰拦截 + 勾选 error 豁免 → 窗口内再报错必须通知 ──
   {
-    const qhAll = { enabled: true, start: "00:00", end: "23:59" };
-    const cfg = join(work, "qh-error-1.json");
+    // #181 动态窗口：写死 "00:00"/"23:59" 在半开区间镜下 23:59 这一分钟不命中
+    // （UTC 边缘必炸，run 33282203798 根因）；围绕当前时间 ±2 分钟恒命中。
+    const qhAll = quietWindowNow();
     // 免打扰开启，allowKinds 不含 error
-    writeFileSync(cfg, JSON.stringify({ errorMergeWindowMs: 60000, quietHours: { ...qhAll, allowKinds: ["ask"] } }));
     const infos = [];
-    const { listeners, routes } = await makeNotifier(work, { configFile: cfg, historyFile: join(work, "qh-error-hist-1.jsonl") }, {
+    const { listeners, routes } = await makeNotifier(work, { errorMergeWindowMs: 60000, quietHours: { ...qhAll, allowKinds: ["ask"] }, historyFile: join(work, "qh-error-hist-1.jsonl") }, {
       logger: { warn: () => {}, info: (t) => infos.push(t) },
     });
     const error = listeners.get("agent/error")[0];
@@ -262,9 +257,9 @@ try {
     const hist1 = await waitForHistory(historyRoute, (r) => r.some((e) => e.kind === "error" && e.suppressed === "quiet"));
     assert.ok(hist1.some((e) => e.kind === "error" && e.suppressed === "quiet"), "被拦截的错误落 suppressed:quiet 历史");
 
-    // 保存配置，开启 error 豁免（通过 PUT /config 模拟面板操作）
+    // 保存配置，开启 error 豁免（通过 PUT /config 模拟面板操作；issue #76 新契约 {patch}）
     const { rec: putRec, res: putRes } = makeRes();
-    const newBody = Buffer.from(JSON.stringify({ quietHours: { ...qhAll, allowKinds: ["ask", "error"] } }));
+    const newBody = Buffer.from(JSON.stringify({ patch: { quietHours: { ...qhAll, allowKinds: ["ask", "error"] } } }));
     await configRoute.handler({
       method: "PUT",
       url: "/",
@@ -284,10 +279,8 @@ try {
 
   // ── 11. 合并被吞的错误落 suppressed: "merged" 历史 ──
   {
-    const cfg = join(work, "merged-hist-cfg.json");
-    writeFileSync(cfg, JSON.stringify({ errorMergeWindowMs: 60000 }));
     const infos = [];
-    const { listeners, routes } = await makeNotifier(work, { configFile: cfg, historyFile: join(work, "merged-hist.jsonl") }, {
+    const { listeners, routes } = await makeNotifier(work, { errorMergeWindowMs: 60000, historyFile: join(work, "merged-hist.jsonl") }, {
       logger: { warn: () => {}, info: (t) => infos.push(t) },
     });
     const error = listeners.get("agent/error")[0];
@@ -309,11 +302,11 @@ try {
 
   // ── 12. 多个错误持续到达时窗口不无限顺延（免打扰拦截不开窗 → 每次独立落 quiet 历史） ──
   {
-    const qhAll = { enabled: true, start: "00:00", end: "23:59" };
-    const cfg = join(work, "no-extend-cfg.json");
-    writeFileSync(cfg, JSON.stringify({ errorMergeWindowMs: 60000, quietHours: { ...qhAll, allowKinds: [] } }));
+    // #181 动态窗口：写死 "00:00"/"23:59" 在半开区间镜下 23:59 这一分钟不命中
+    // （UTC 边缘必炸，run 33282203798 根因）；围绕当前时间 ±2 分钟恒命中。
+    const qhAll = quietWindowNow();
     const infos = [];
-    const { listeners } = await makeNotifier(work, { configFile: cfg, historyFile: join(work, "no-extend-hist.jsonl") }, {
+    const { listeners } = await makeNotifier(work, {  errorMergeWindowMs: 60000, quietHours: { ...qhAll, allowKinds: [] } , historyFile: join(work, "no-extend-hist.jsonl") }, {
       logger: { warn: () => {}, info: (t) => infos.push(t) },
     });
     const error = listeners.get("agent/error")[0];

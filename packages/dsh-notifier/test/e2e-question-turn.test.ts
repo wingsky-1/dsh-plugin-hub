@@ -7,7 +7,7 @@
  * 开启后同一 (agent,turn) 去重、新轮次正常通知（serial 事件无 next 不抛错）。
  */
 import { join } from "node:path";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { assert, makeNotifier } from "./helpers.ts";
 
@@ -17,7 +17,7 @@ try {
   {
     const infos = [];
     let fakeService = null;
-    const { listeners } = await makeNotifier(work, { configFile: join(work, "question.json") }, {
+    const { listeners } = await makeNotifier(work, { }, {
       logger: { warn: () => {}, info: (t) => infos.push(t) },
       get: (name) => (name === "userQuestions" ? fakeService : undefined),
     });
@@ -52,10 +52,9 @@ try {
     assert.equal(infos.length, infoCountBefore + 1, "解包重包不叠层，通知只发一次");
 
     // notifyQuestion=false 不通知（用独立的 service 实例，避免闭包捕获上一实例的配置）
-    writeFileSync(join(work, "question-off.json"), JSON.stringify({ notifyQuestion: false }));
     let fakeService2 = null;
     const infos2 = [];
-    const { listeners: listeners2 } = await makeNotifier(work, { configFile: join(work, "question-off.json"), historyFile: join(work, "history-q2.jsonl") }, {
+    const { listeners: listeners2 } = await makeNotifier(work, { notifyQuestion: false, historyFile: join(work, "history-q2.jsonl") }, {
       logger: { warn: () => {}, info: (t) => infos2.push(t) },
       get: (name) => (name === "userQuestions" ? fakeService2 : undefined),
     });
@@ -70,7 +69,7 @@ try {
   // （该断言依赖默认配置实例 + 开启 notifyTurnEnd 的对照实例）
   {
     const infos = [];
-    const { listeners } = await makeNotifier(work, { configFile: join(work, "turn-default.json"), historyFile: join(work, "history-t1.jsonl") }, { logger: { warn: () => {}, info: (t) => infos.push(t) } });
+    const { listeners } = await makeNotifier(work, { historyFile: join(work, "history-t1.jsonl") }, { logger: { warn: () => {}, info: (t) => infos.push(t) } });
     const turnStop = listeners.get("agent/turn-stopping")[0];
     assert.ok(turnStop, "turn-stopping 监听器已注册");
     let threw = false;
@@ -82,11 +81,9 @@ try {
     assert.equal(threw, false, "serial 事件（无 next 参数）下监听器不抛错");
     assert.equal(infos.length, 0, "turn-stopping 默认不通知");
 
-    // 开启 notifyTurnEnd 后 turn-stopping 通知(配置经 configFile 生效,apply 参数不接收通知开关)
-    const turnEndCfg = join(work, "notify-turn-end.json");
-    writeFileSync(turnEndCfg, JSON.stringify({ notifyTurnEnd: true }));
+    // 开启 notifyTurnEnd 后 turn-stopping 通知（配置经组合层 entry 生效）
     const infosOn = [];
-    const { listeners: listenersOn } = await makeNotifier(work, { configFile: turnEndCfg, historyFile: join(work, "history-t2.jsonl") }, { logger: { warn: () => {}, info: (t) => infosOn.push(t) } });
+    const { listeners: listenersOn } = await makeNotifier(work, { notifyTurnEnd: true, historyFile: join(work, "history-t2.jsonl") }, { logger: { warn: () => {}, info: (t) => infosOn.push(t) } });
     const turnStopOn = listenersOn.get("agent/turn-stopping")[0];
     const agentWithEvents = { id: "session-1", session: { events: [{ type: "session/title", data: { title: "优化 notifier 插件" } }] } };
     await turnStopOn({ agent: agentWithEvents, turn: 4 });

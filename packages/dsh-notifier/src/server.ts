@@ -12,6 +12,7 @@ import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import { isLoopbackRequest } from "../../../shared/loopback.js";
 import { writeJson, readBody, errorMessage } from "../../../shared/host-utils.js";
 import type { NotifyConfig } from "./config.ts";
+import { sanitizeSettings, validateSettings } from "./config.ts";
 import type { HistoryStore } from "./history.ts";
 import { buildSystemCommand } from "./message.ts";
 
@@ -279,10 +280,14 @@ export function createSystemNotifier(options: { getSoundEnabled: () => boolean; 
 
 /** buildRoutes 的依赖注入面（全部由 index.ts 装配层提供）。 */
 export interface RouteDeps {
-  /** 当前配置读取器（GET / health / test / 免打扰判断共用实时值）。 */
-  getConfig: () => NotifyConfig;
-  /** PUT /config：归一化并落盘后返回生效配置。 */
-  putConfig: (raw: unknown) => Promise<NotifyConfig>;
+  /** 当前生效配置（schemastery 解析值，含默认值兜底；GET /config 的 effective）。 */
+  resolve(): NotifyConfig;
+  /** settings user 层原始节与 revision（describe({redactSecrets:true}) 读取）。 */
+  readUser(): { user: Record<string, unknown>; revision?: number };
+  /** settings 服务是否可用（决定 PUT 是否可写：writable:false → 503）。 */
+  writable(): boolean;
+  /** 增量 merge patch 进 settings user 层（乐观并发经 expectedRevision）。 */
+  update(patch: object, expectedRevision?: number): Promise<void>;
   /** 日志出口。 */
   logger: { warn: (message: string) => void; info: (message: string) => void };
   /** SSE 推送枢纽。 */
@@ -293,12 +298,59 @@ export interface RouteDeps {
   history: HistoryStore;
 }
 
+/** applyConfigPatch 的结果。 */
+export type PatchResult =
+  | { ok: true; value: { user: Record<string, unknown>; revision?: number } }
+  | { ok: false; status: number; code: string; response: Record<string, unknown> };
+
+/**
+ * 配置保存纯函数（PUT /config 的主体，独立导出供 smoke 单测）：
+ * validateSettings 定位首个非法键（400 + hint）→ sanitizeSettings 净化 →
+ * 经 settings 服务 update 增量写入（expectedRevision 可选做乐观并发）。
+ * 错误映射（R3）：SETTINGS_CONFLICT → 409 固定文案；settings 缺失 → 503
+ * settings-unavailable；写入异常原文只进服务端日志（P2-2），响应收敛固定文案。
+ */
+export async function applyConfigPatch(deps: RouteDeps, payload: unknown): Promise<PatchResult> {
+  if (!deps.writable()) {
+    return { ok: false, status: 503, code: "settings-unavailable", response: { error: "设置服务不可用", code: "settings-unavailable" } };
+  }
+  const body = (typeof payload === "object" && payload !== null ? payload : {}) as {
+    patch?: unknown;
+    expectedRevision?: unknown;
+  };
+  const expectedRevision =
+    typeof body.expectedRevision === "number" && Number.isInteger(body.expectedRevision) ? body.expectedRevision : undefined;
+  const rawPatch = body.patch;
+  // 先定位首个非法键（H6）：错误文案指明字段与合法范围，不再静默丢弃回默认
+  const invalid = validateSettings(rawPatch);
+  if (invalid !== null) {
+    return { ok: false, status: 400, code: "invalid", response: { error: `配置校验失败: ${invalid.key}`, hint: invalid.hint } };
+  }
+  const sanitized = sanitizeSettings(rawPatch);
+  if (sanitized === null || Object.keys(sanitized).length === 0) {
+    return { ok: false, status: 400, code: "invalid", response: { error: "配置校验失败: patch", hint: "需至少包含一个有效配置键" } };
+  }
+  try {
+    await deps.update(sanitized as Record<string, unknown>, expectedRevision);
+  } catch (err) {
+    const code = (err as { code?: unknown })?.code;
+    if (code === "SETTINGS_CONFLICT") {
+      return { ok: false, status: 409, code: "conflict", response: { error: "版本冲突", code: "SETTINGS_CONFLICT" } };
+    }
+    // P2-2：对外收敛固定文案，不把底层异常原文（可能含路径等内部信息）回给
+    // 客户端；完整原因走服务端日志。
+    deps.logger.warn(`dsh-notifier: 配置保存写入设置存储失败 — ${errorMessage(err)}`);
+    return { ok: false, status: 500, code: "error", response: { error: "保存失败，请查看服务端日志" } };
+  }
+  return { ok: true, value: deps.readUser() };
+}
+
 /**
  * 构造五条路由（loopback 围栏 + 方法白名单是每条路由的必项）。
  * @returns WebRoute 数组（调用方逐条 register，收集 disposer）。
  */
 export function buildRoutes(deps: RouteDeps): WebRoute[] {
-  const { getConfig, putConfig, logger, sse, system, history } = deps;
+  const { resolve, readUser, writable, update, logger, sse, system, history } = deps;
 
   const configRoute: WebRoute = {
     kind: "exact",
@@ -306,7 +358,14 @@ export function buildRoutes(deps: RouteDeps): WebRoute[] {
     handler: async (req, res) => {
       if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
       if (req.method === "GET") {
-        writeJson(res, 200, getConfig());
+        const { user, revision } = readUser();
+        writeJson(res, 200, {
+          ok: true,
+          user,
+          revision,
+          effective: resolve(),
+          writable: writable(),
+        });
         return;
       }
       if (req.method === "PUT") {
@@ -317,7 +376,7 @@ export function buildRoutes(deps: RouteDeps): WebRoute[] {
           const message = errorMessage(error);
           if (message.includes("invalid JSON body")) {
             // 非法 JSON：连接尚存，返回可读 400，避免请求「无响应挂起」
-            writeJson(res, 400, { error: `invalid JSON body: ${message}` });
+            writeJson(res, 400, { ok: false, error: { code: "invalid-json", details: `invalid JSON body: ${message}` } });
             return;
           }
           // 超限路径：readBody 已 reject 并 destroy 连接（防超大 body 占内存），
@@ -325,8 +384,12 @@ export function buildRoutes(deps: RouteDeps): WebRoute[] {
           logger.warn(`dsh-notifier: 配置请求体读取失败: ${message}`);
           return;
         }
-        const updated = await putConfig(body);
-        writeJson(res, 200, updated);
+        const result = await applyConfigPatch(deps, body);
+        if (!result.ok) {
+          writeJson(res, result.status, { ok: false, error: result.response });
+          return;
+        }
+        writeJson(res, 200, { ok: true, user: result.value.user, revision: result.value.revision });
         return;
       }
       writeJson(res, 405, { error: `method not allowed: ${req.method}` });
@@ -390,7 +453,7 @@ export function buildRoutes(deps: RouteDeps): WebRoute[] {
     handler: (req, res) => {
       if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
       if (req.method !== "GET") return writeJson(res, 405, { error: `method not allowed: ${req.method}` });
-      const current = getConfig();
+      const current = resolve();
       writeJson(res, 200, {
         ok: true,
         plugin: "dsh-notifier",
@@ -426,8 +489,8 @@ export function buildRoutes(deps: RouteDeps): WebRoute[] {
       const title = "DSH：测试通知";
       const message = "通知链路工作正常（此通知来自测试按钮）";
       const payload = { type: "notify", kind: "test", title, message, ts: Date.now() };
-      if (getConfig().systemNotify) system.notify(title, message);
-      if (getConfig().browserNotify) sse.broadcast(payload);
+      if (resolve().systemNotify) system.notify(title, message);
+      if (resolve().browserNotify) sse.broadcast(payload);
       logger.info("dsh-notifier: test 测试通知已发送");
       history.append({ ts: payload.ts, kind: "test", title, message });
       writeJson(res, 200, { ok: true, sseConnections: sse.size() });

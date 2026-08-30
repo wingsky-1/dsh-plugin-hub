@@ -1,9 +1,11 @@
 /**
- * dsh-notifier — 配置契约与归一化。
+ * dsh-notifier — 配置契约与校验。
  *
- * 内存单一事实源（NotifyConfig，与落盘 JSON 同构）、默认值、白名单归一化
- * 与配置/历史/toast 脚本路径。未知键透传、非法值丢弃回默认的语义都在
- * normalizeConfig 一处收敛。
+ * 配置模型（NotifyConfig）由官方 settings 命名空间承载（issue #76）：
+ * 默认值、白名单净化与「首个非法键 + hint」校验在此收敛。读取来源为
+ * 命名空间解析值（scope.get()），提交面（PUT /config / 存量迁移）经
+ * validateSettings / sanitizeSettings 校验——非法值 400 拒绝 + hint，
+ * 不再静默丢弃回默认（H6）。
  */
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -83,7 +85,7 @@ export const DEFAULT_CONFIG: NotifyConfig = {
 /** 布尔配置键（单一事实源：normalizeConfig 白名单与客户端渲染依赖它）。 */
 export const CONFIG_KEYS: readonly BooleanKeys[] = ["notifyAsk", "notifyQuestion", "notifyTaskDone", "notifySubagentDone", "notifyTaskError", "notifyTurnEnd", "systemNotify", "browserNotify", "notifyWhenVisible", "notifySound"];
 
-/** 配置存储路径。 */
+/** 配置存储路径（旧版自建 json；issue #76 后仅作存量迁移源，不再读写）。 */
 export function configFile() {
   return join(homedir(), ".dsh", "dsh-notifier.json");
 }
@@ -141,6 +143,130 @@ export function normalizeConfig(input: unknown): NotifyConfig {
     // 已归一化过的键不再透传（否则非法值会以原样覆盖归一化结果）
     if (key === "quietHours" || key === "errorMergeWindowMs" || key === "askRemindMin" || key === "doneMergeWindowMs" || key === "historyMaxAgeDays" || key === "maxConnections") continue;
     out[key] = src[key];
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- 写入校验（H6）
+// PUT /config 与存量迁移共用的「已知键 → 校验器」表；任一已知键非法即整体
+// 拒绝（400 + hint / 迁移仅标记不写入），不再静默丢弃回默认。与 lan-proxy
+// 的 FILE_CONFIG_VALIDATORS 同形态（零依赖，未引入 schemastery）。
+
+function isBoolean(v: unknown): boolean {
+  return typeof v === "boolean";
+}
+
+/** HH:MM 时段串（00:00-23:59）是否合法。 */
+function isHHMM(v: unknown): boolean {
+  return typeof v === "string" && /^\d{2}:\d{2}$/u.test(v) && parseHHMM(v) >= 0;
+}
+
+function isNonNegNumber(max: number): (v: unknown) => boolean {
+  return (v) => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= max;
+}
+
+/** SSE 连接上限校验（1-1024 的整数，与 normalizeConfig 范围一致；#334）。 */
+function isConnLimit(v: unknown): boolean {
+  return typeof v === "number" && Number.isFinite(v) && Number.isInteger(v) && v >= 1 && v <= 1024;
+}
+
+function isAllowKinds(v: unknown): boolean {
+  return Array.isArray(v) && v.every((k) => typeof k === "string" && (QUIET_ALLOW_KINDS as readonly string[]).includes(k));
+}
+
+/** quietHours 整组校验（enabled/start/end/allowKinds 任一层非法即整组拒绝）。 */
+function isQuietHours(v: unknown): boolean {
+  if (typeof v !== "object" || v === null) return false;
+  const qh = v as Record<string, unknown>;
+  return (
+    (qh.enabled === undefined || isBoolean(qh.enabled)) &&
+    (qh.start === undefined || isHHMM(qh.start)) &&
+    (qh.end === undefined || isHHMM(qh.end)) &&
+    (qh.allowKinds === undefined || isAllowKinds(qh.allowKinds))
+  );
+}
+
+/** 已知配置键 → 校验器（遍历顺序即「首个非法键」口径）。 */
+const SETTING_VALIDATORS: Record<string, (v: unknown) => boolean> = {
+  notifyAsk: isBoolean,
+  notifyQuestion: isBoolean,
+  notifyTaskDone: isBoolean,
+  notifySubagentDone: isBoolean,
+  notifyTaskError: isBoolean,
+  notifyTurnEnd: isBoolean,
+  systemNotify: isBoolean,
+  browserNotify: isBoolean,
+  notifyWhenVisible: isBoolean,
+  notifySound: isBoolean,
+  quietHours: isQuietHours,
+  errorMergeWindowMs: isNonNegNumber(3600000),
+  askRemindMin: isNonNegNumber(600),
+  doneMergeWindowMs: isNonNegNumber(60000),
+  historyMaxAgeDays: isNonNegNumber(3650),
+  maxConnections: isConnLimit,
+};
+
+/** 各配置键的合法范围描述（validateSettings 400 hint 用；与 SETTING_VALIDATORS 平行维护）。 */
+const SETTING_HINTS: Record<string, string> = {
+  notifyAsk: "需为布尔值",
+  notifyQuestion: "需为布尔值",
+  notifyTaskDone: "需为布尔值",
+  notifySubagentDone: "需为布尔值",
+  notifyTaskError: "需为布尔值",
+  notifyTurnEnd: "需为布尔值",
+  systemNotify: "需为布尔值",
+  browserNotify: "需为布尔值",
+  notifyWhenVisible: "需为布尔值",
+  notifySound: "需为布尔值",
+  quietHours: "需为 { enabled?: boolean, start?: \"HH:MM\", end?: \"HH:MM\", allowKinds?: kind[] }",
+  errorMergeWindowMs: "需为 0-3600000 的整数（毫秒）",
+  askRemindMin: "需为 0-600 的整数（分钟）",
+  doneMergeWindowMs: "需为 0-60000 的整数（毫秒）",
+  historyMaxAgeDays: "需为 0-3650 的整数（天）",
+};
+
+/** validateSettings 的结果：null = 全部合法。 */
+export interface SettingInvalid {
+  /** 首个非法的配置键名。 */
+  key: string;
+  /** 该键的合法范围描述（面向用户的文案）。 */
+  hint: string;
+}
+
+/**
+ * 校验提交的配置（写入前，不净化）：返回首个非法键与其合法范围，全部合法
+ * 返回 null（H6：非法值 400 拒绝 + hint，不再静默丢弃回默认）。遍历顺序
+ * 与 sanitizeSettings 一致（SETTING_VALIDATORS 键序）。导出供 smoke 单测。
+ */
+export function validateSettings(raw: unknown): SettingInvalid | null {
+  if (typeof raw !== "object" || raw === null) return { key: "(payload)", hint: "需为配置对象" };
+  const src = raw as Record<string, unknown>;
+  for (const key of Object.keys(SETTING_VALIDATORS)) {
+    const value = src[key];
+    if (value === undefined || value === null) continue;
+    if (!SETTING_VALIDATORS[key](value)) {
+      return { key, hint: SETTING_HINTS[key] ?? "类型非法" };
+    }
+  }
+  return null;
+}
+
+/**
+ * 净化提交的配置（PUT 保存通道与存量迁移共用）：只接受已知键；任一已知键
+ * 类型非法 → 整体拒绝（返回 null，避免静默丢键造成「保存了但没生效」的
+ * 困惑；迁移场景则等价于「无有效键 → 只标记不写入」）。未知键丢弃（写入
+ * 通道白名单语义——不把组合层装配键如 configFile 等混入 user 层；与
+ * lan-proxy sanitizeSettings 同口径，normalizeConfig 的透传仅服务读取渲染）。
+ */
+export function sanitizeSettings(raw: unknown): Partial<NotifyConfig> | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const src = raw as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(SETTING_VALIDATORS)) {
+    const value = src[key];
+    if (value === undefined || value === null) continue;
+    if (!SETTING_VALIDATORS[key](value)) return null;
+    out[key] = value;
   }
   return out;
 }
