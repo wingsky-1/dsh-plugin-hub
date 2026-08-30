@@ -2,10 +2,12 @@
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
     "packages/dsh-mcp-manager/src/manager.ts",
-    "packages/dsh-mcp-manager/src/supervisor.ts",
     "packages/dsh-mcp-manager/src/index.ts",
+    "packages/dsh-mcp-manager/src/normalize.ts",
+    "packages/dsh-mcp-manager/src/import.ts",
     "!packages/dsh-mcp-manager/src/client/**",
-    "!packages/dsh-mcp-manager/src/types.ts"
+    "!packages/dsh-mcp-manager/src/types.ts",
+    "!packages/dsh-mcp-manager/src/service.ts"
   ],
   "testRunner": "tap",
   "mutator": {
@@ -53,5 +55,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-mcp-manager-1.json",
-  "_comment": "#276 方案 A：src 级文件组分段（1）——mutate 为源文件名清单，密度均衡声明，无行号无漂移；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+  "_comment": "#342 v4：src 级文件组分段（1）——manager+index+normalize+import；types.ts / service.ts（type-only）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
 }
