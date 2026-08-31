@@ -51,7 +51,15 @@ export function isFullscreenActive(doc: DocumentLike): boolean {
  * 全屏按钮文案（验收 A1）：全屏态「退出全屏」，非全屏态「全屏」；
  * 浏览器不支持全屏时后缀「（放大）」表示走视口放大降级态，避免误导。
  */
-export function fullscreenLabel(isActive: boolean, supported: boolean): string {
+export function fullscreenLabel(
+  isActive: boolean,
+  supported: boolean,
+  t?: (key: string, params?: Record<string, unknown>) => string,
+): string {
+  if (t !== undefined) {
+    if (!supported) return isActive ? t("zoomFallbackActive") : t("zoomFallbackIdle");
+    return isActive ? t("fsExit") : t("fsEnter");
+  }
   if (!supported) return isActive ? "退出放大" : "放大预览";
   return isActive ? "退出全屏" : "全屏";
 }

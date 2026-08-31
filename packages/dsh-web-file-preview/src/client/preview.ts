@@ -12,6 +12,7 @@ import { renderImage } from "./image.ts";
 import { closeLightbox } from "./viewer.ts";
 import { renderGroupFor } from "./renderer.ts";
 import { scrollToFragment } from "./anchor.ts";
+import { t } from "./i18n.ts";
 import { renderHtmlPreview, releaseUrl } from "./html.ts";
 import {
   fullscreenSupported,
@@ -96,7 +97,7 @@ export function syncFullscreenState(state: FilePreviewState): void {
     state.overlay.classList.toggle("fwp-fs", active && !isFullscreenActive(document));
   }
   const btn = state.overlay?.querySelector<HTMLButtonElement>(".fwp-fs-btn");
-  const label = fullscreenLabel(active, supported);
+  const label = fullscreenLabel(active, supported, t);
   if (btn !== null && btn !== undefined) {
     btn.textContent = label;
     btn.setAttribute("aria-label", label);
@@ -259,13 +260,13 @@ export function openPreview(
   state.diffUntracked = false;
 
   const body = el("div", { class: "fwp-body" });
-  body.appendChild(el("div", { class: "fwp-state", text: "加载中…" }));
+  body.appendChild(el("div", { class: "fwp-state", text: t("loading") }));
 
   // 返回栈：顶栏「← 返回」按钮——栈非空才显示；点击弹出上一文件，用 isBack 重开
   //（openPreview 不再压栈），并按保存的快照还原预览态（tab/原文/diff 免重新拉取）。
   const backBtn = el("button", {
-    class: "fwp-nav-back", text: "← 返回",
-    attrs: { "aria-label": "返回上一个预览" },
+    class: "fwp-nav-back", text: t("navBack"),
+    attrs: { "aria-label": t("navBackAria") },
   });
   backBtn.style.display = state.backStack.length > 0 ? "" : "none";
   backBtn.addEventListener("click", () => {
@@ -275,9 +276,9 @@ export function openPreview(
     openPreview(state, prevEntry.path, prevEntry.cwd, true, prevEntry);
   });
 
-  const copyBtn = el("button", { text: "复制路径" });
+  const copyBtn = el("button", { text: t("copyPath") });
   copyBtn.addEventListener("click", () => copyPathText(path, copyBtn));
-  const newTabBtn = el("button", { text: "在新标签打开原文" });
+  const newTabBtn = el("button", { text: t("openRawTab") });
   newTabBtn.addEventListener("click", () => { window.open(url, "_blank", "noopener"); });
   // issue #344：全屏按钮——置顶于关闭前，点击在全屏/视口放大降级态之间切换；
   // 全屏目标为父文档 overlay（非 iframe），文档级 fullscreenchange 同步按钮态。
@@ -285,12 +286,12 @@ export function openPreview(
   // Element.prototype；overlay 此时尚未创建，用 documentElement 等价探测）。
   state.fsSupported = fullscreenSupported(document, document.documentElement as any);
   const fsBtn = el("button", {
-    text: fullscreenLabel(false, state.fsSupported),
-    attrs: { "aria-label": fullscreenLabel(false, state.fsSupported), title: fullscreenLabel(false, state.fsSupported) },
+    text: fullscreenLabel(false, state.fsSupported, t),
+    attrs: { "aria-label": fullscreenLabel(false, state.fsSupported, t), title: fullscreenLabel(false, state.fsSupported, t) },
   });
   fsBtn.classList.add("fwp-fs-btn");
   fsBtn.addEventListener("click", () => toggleFullscreen(state, fsBtn));
-  const closeBtn = el("button", { text: "关闭" });
+  const closeBtn = el("button", { text: t("close") });
   closeBtn.addEventListener("click", () => finalizeSession(state, "close"));
 
   // 三态 tab 栏：预览 / 原始 / Diff（Diff 仅当 git 有变化时动态追加）。
@@ -298,10 +299,10 @@ export function openPreview(
   const tabDefs: Array<{ label: string; mode: "preview" | "raw" }> = [];
   if (group.group === "md" || group.group === "code" || group.group === "html") {
     // issue #73：html 组与 md/code 同三-tab（预览=iframe sandbox / 原始=/file 源码）。
-    tabDefs.push({ label: "预览", mode: "preview" }, { label: "原始", mode: "raw" });
+    tabDefs.push({ label: t("tabPreview"), mode: "preview" }, { label: t("tabRaw"), mode: "raw" });
   }
   if (group.group === "text") {
-    tabDefs.push({ label: "内容", mode: "raw" });
+    tabDefs.push({ label: t("tabContent"), mode: "raw" });
   }
   const syncTabActive = () => {
     for (const raw of Array.from(tabs.children)) {
@@ -331,9 +332,9 @@ export function openPreview(
     if (diffTab !== undefined || unavailableDiffTab !== undefined) return;
     unavailableDiffTab = el("button", {
       class: "fwp-tab fwp-tab-disabled",
-      text: "Diff 不可用",
+      text: t("diffUnavailable"),
       disabled: true,
-      title: "git diff 探测失败（网络或仓库异常），可能无法显示变更",
+      title: t("diffProbeFail"),
     });
     tabs.appendChild(unavailableDiffTab);
   };

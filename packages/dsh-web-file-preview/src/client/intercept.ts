@@ -9,6 +9,7 @@
 import { el } from "./dom.ts";
 import type { FilePreviewState } from "./state.ts";
 import { resolveFileLink, decideGate, SCOPE_SELECTORS } from "./link-resolver.ts";
+import { t } from "./i18n.ts";
 import { groupOfPath } from "../grouping.ts";
 import { openPreview } from "./preview.ts";
 
@@ -76,7 +77,7 @@ export function showFolderNotice(): void {
   }
   const notice = el("div", {
     class: "fwp-folder-notice",
-    text: "文件夹无法在 web 端预览，请使用文件树打开",
+    text: t("dirNoPreview"),
     attrs: { role: "status", "data-dsh-web-file-preview-notice": "" },
   });
   notice.addEventListener("click", () => {
