@@ -59,6 +59,15 @@
 }
 .lp-set-input:focus { outline: none; border-color: var(--dsw-alias-state-info-primary, #3b82f6); }
 .lp-set-hint { font-size: 11px; color: var(--dsw-alias-label-tertiary, #8a919c); line-height: 1.5; }
+/* injectToken 开启态安全警示（issue #380）：常驻提醒「LAN 免 token = 信任整个局域网」。 */
+.lp-set-warn {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--dsw-alias-state-danger-primary, #dc2626);
+  border: 1px solid var(--dsw-alias-state-danger-border, rgba(220, 38, 38, 0.35));
+  border-radius: 7px;
+  padding: 7px 9px;
+}
 /* HTTP 压缩运行状态行（issue #33 子项 3）：轻量一行，随 state 快照刷新。 */
 .lp-set-status {
   font-size: 11px;

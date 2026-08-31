@@ -108,7 +108,25 @@ export interface LanProxyOptions {
     /** 压缩档位预设：0 默认 / 1 低 / 2 中 / 3 高（对 gzip 与 Brotli 双生效）。 */
     level?: number;
   };
+  /**
+   * 自动注入启动令牌（issue #380）：提供时，LAN 设备首次访问 `GET /`（无会话
+   * cookie）由转发层自动补当前 launch token——上游铸造持久会话 cookie，固定
+   * 设备免手工拿 token；带失效 cookie 的同类请求在上游 401 后重放一次自愈。
+   * getToken 动态读取（不缓存）：dsh web 重启后 token 变化自动跟随；返回
+   * undefined（connection 服务未就绪/读取失败）时逐请求降级为不注入。
+   */
+  injectToken?: TokenProvider;
   logger?: LanLogger;
+}
+
+/**
+ * 当前 dsh web 进程 launch token 的动态提供者最小面（issue #380）。
+ * apply 侧封装自官方 connection 服务的公开方法 `authenticatedUrl(baseUrl)`
+ * （@deepseek-ai/dsh-client-connection 公开 d.ts API，不依赖私有字段）。
+ */
+export interface TokenProvider {
+  /** 返回当前 launch token；不可用时返回 undefined（逐请求降级为不注入）。 */
+  getToken(): string | undefined;
 }
 
 /** 监听结果：httpPort 必有；httpsPort 仅在 HTTPS 成功启用时给出。 */
@@ -265,6 +283,69 @@ export function rewriteHeaders(headers: IncomingHttpHeaders, targetAuthority: st
   out.host = targetAuthority;
   if (out.origin !== undefined) out.origin = `http://${targetAuthority}`;
   return out;
+}
+
+// ---- injectToken（issue #380）：launch token 自动注入的判定与改写 ----
+// 上游（dsh-client-connection.authorizeIndex）的铸造入口只有 `GET /` 且查询串
+// 恰带一个 token 参数；带 token 的请求一律以 303 结束（匹配→铸 cookie，或
+// 有效 cookie→清参重定向）。因此：
+//   * 对「无会话 cookie」的 GET / 注入 token → 一次跳转即登录；
+//   * 对「已带会话 cookie」的请求**绝不注入**——否则有效 cookie 用户会被
+//     无限 303（浏览器每次都带 cookie、代理每次都注入）。该排除是正确性
+//     必需而非优化，重构时不得移除（smoke 用例锁死意图）。
+//   * 失效 cookie（签名 secret 重置等）会让上述排除变成 401 死锁——对这类
+//     请求在上游 401 后重放一次（带 token），上游 token 分支优先验签、直接
+//     重铸 cookie，浏览器自愈。
+
+/** 上游浏览器会话 cookie 名前缀（dsh-client-connection COOKIE_PREFIX）。 */
+const DSH_AUTH_COOKIE_PREFIX = "dsh-auth-";
+
+/**
+ * 判断请求是否携带 dsh 浏览器会话 cookie（issue #380）。
+ * 按 RFC 6265 口径精确解析：`;` 分段、取 `=` 前名字并 trim、名字前缀匹配——
+ * 禁止整头子串匹配（其他 cookie 的值含该子串会造成误判）。
+ * 导出供纯函数单测。
+ */
+export function hasDshAuthCookie(cookieHeader: string | string[] | undefined): boolean {
+  const segments = Array.isArray(cookieHeader) ? cookieHeader : cookieHeader !== undefined ? [cookieHeader] : [];
+  for (const head of segments) {
+    for (const segment of head.split(";")) {
+      const eq = segment.indexOf("=");
+      if (eq === -1) continue;
+      if (segment.slice(0, eq).trim().startsWith(DSH_AUTH_COOKIE_PREFIX)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * 注入候选判定：GET 且出站路径恰为 `/` 且查询串尚无 token 参数。
+ * 与上游铸造条件（`GET /`、单一 token）严格对齐；其余请求一律不注入
+ * （带 token 的非根请求上游也回 401，注入无意义）。导出供纯函数单测。
+ */
+export function isTokenMintCandidate(method: string | undefined, url: string | undefined): boolean {
+  if (method !== "GET" || url === undefined) return false;
+  try {
+    const parsed = new URL(url, "http://lan-proxy.local");
+    return parsed.pathname === "/" && parsed.searchParams.getAll("token").length === 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 把 token 并入请求 URL 的 query（`token` 参数；已存在时覆盖）。解析失败
+ * 返回 undefined（调用方降级为不注入）。导出供纯函数单测。
+ */
+export function withLaunchToken(url: string | undefined, token: string): string | undefined {
+  if (url === undefined) return undefined;
+  try {
+    const parsed = new URL(url, "http://lan-proxy.local");
+    parsed.searchParams.set("token", token);
+    return `${parsed.pathname}${parsed.search}`;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -571,7 +652,10 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
   // 正常完成/响应截断，交由 proxyRes aborted 处理）。实测复现：若用
   // res.writableEnded 判定，正常请求会在转发完成前被误杀（socket hang up）。
   const proxyResReceived = new WeakSet<ServerResponse>();
-  proxy.on("proxyRes", (proxyRes, _req, res) => {
+  /** injectToken 重放上下文（issue #380）：失效 cookie 候选请求经
+   *  selfHandleResponse 转发，上游 401 时带 token 重放一次自愈。 */
+  const replayContexts = new WeakMap<ServerResponse, { originalUrl: string; token: string }>();
+  proxy.on("proxyRes", (proxyRes, req, res) => {
     proxyResReceived.add(res);
     const abortDownstream = () => {
       connStats.httpClientAborted += 1;
@@ -579,6 +663,33 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
     };
     proxyRes.on("aborted", abortDownstream);
     proxyRes.on("error", abortDownstream);
+    const replay = replayContexts.get(res);
+    if (replay === undefined) return;
+    replayContexts.delete(res);
+    if (proxyRes.statusCode === 401) {
+      // 失效 cookie（签名 secret 重置等）：上游验签失败回 401。排干 401 响应体
+      // （keep-alive 槽位可复用），以注入 token 的等价请求重放一次——上游 token
+      // 分支优先于 cookie 校验，直接重铸 cookie，303 + Set-Cookie 透传回浏览器。
+      // 重放请求 URL 已带 token 参数，不再满足候选条件，天然封顶一次。
+      proxyRes.resume();
+      const nextUrl = withLaunchToken(replay.originalUrl, replay.token);
+      if (nextUrl !== undefined) {
+        req.url = nextUrl;
+        proxy.web(req, res, forwardOptions(req));
+        return;
+      }
+      // token 并入失败（怪异 URL，理论不可达）：继续走下方手动透传 401。
+    }
+    // 非 401（有效 cookie 的正常 200 等）或重放改写失败：手动透传上游响应
+    // （selfHandleResponse 下 http-proxy 不自动写头）。hop-by-hop 头交由 Node
+    // 自行管理，显式删除；body 原样字节 pipe（压缩由入口 compression 中间件
+    // 在 res 层协商，不受影响）。
+    const headers = { ...proxyRes.headers };
+    delete headers.connection;
+    delete headers["keep-alive"];
+    delete headers["transfer-encoding"];
+    res.writeHead(proxyRes.statusCode ?? 502, headers);
+    proxyRes.pipe(res);
   });
   proxy.on("proxyReq", (proxyReq, req, res) => {
     // 监听底层 TCP socket 的 close（而非 req 的 close——后者在 Node 中对
@@ -632,6 +743,28 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
       });
       res.end();
       return;
+    }
+    // injectToken（issue #380）：铸造候选（`GET /`、无 token 参数、无会话
+    // cookie）→ 注入当前 token 后正常透传，上游一次跳转即铸会话；失效候选
+    // （已带会话 cookie——可能已失效）→ selfHandleResponse 转发，上游 401 时
+    // 带 token 重放一次自愈（proxyRes 监听器内处理）。provider 未就绪或读取
+    // 失败一律降级为普通透传（行为与未开启一致）。注入必须放在 hostnameAllowed
+    // 围栏之后（DNS 重绑定防护前置，见文件头注 2）。
+    const tokenOptions = options.injectToken;
+    if (tokenOptions !== undefined && isTokenMintCandidate(req.method, req.url)) {
+      const token = tokenOptions.getToken();
+      if (token !== undefined) {
+        if (!hasDshAuthCookie(req.headers.cookie)) {
+          // 铸造候选：URL 注入 token（改写失败则原样透传，fail-safe）。
+          const injected = withLaunchToken(req.url, token);
+          if (injected !== undefined) req.url = injected;
+        } else {
+          // 失效候选：selfHandle 转发，401 → 重放自愈；非 401 → 手动透传。
+          replayContexts.set(res, { originalUrl: req.url ?? "/", token });
+          proxy.web(req, res, { ...forwardOptions(req), selfHandleResponse: true });
+          return;
+        }
+      }
     }
     // 围栏（hostnameAllowed / rewriteHeaders）前置完成后，http-proxy 接管转发。
     proxy.web(req, res, forwardOptions(req));
