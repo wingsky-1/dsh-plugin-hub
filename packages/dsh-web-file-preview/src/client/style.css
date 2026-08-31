@@ -7,7 +7,11 @@
 
 .fwp-overlay{position:fixed;inset:0;background:var(--dsw-alias-bg-mask-2,rgba(8,10,16,.45));display:flex;align-items:center;justify-content:center;z-index:9999;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;overscroll-behavior:contain}
 .fwp-overlay[hidden]{display:none !important}
-.fwp-card{width:min(860px,94vw);max-width:94vw;max-height:86vh;display:flex;flex-direction:column;background:var(--dsw-alias-bg-base,#fdfdfd);color:var(--dsw-alias-label-primary,#1c1e26);border-radius:12px;box-shadow:0 18px 60px rgba(0,0,0,.35);overflow:hidden}
+/* issue #388：卡片设计值收敛为 --fwp-card-* 变量（单一事实源）——末尾「布局主权
+   对轰块」以 !important 引用同一变量恢复设计值；≤640px 的 safe-area 感知高度上限
+   也走变量覆写（对轰 important 声明间比 specificity，普通 media 规则压不过，
+   必须借变量让响应式分支穿透 !important）。 */
+.fwp-card{--fwp-card-w:min(860px,94vw);--fwp-card-mh:86vh;width:var(--fwp-card-w);max-width:var(--fwp-card-w);max-height:var(--fwp-card-mh);display:flex;flex-direction:column;background:var(--dsw-alias-bg-base,#fdfdfd);color:var(--dsw-alias-label-primary,#1c1e26);border-radius:12px;box-shadow:0 18px 60px rgba(0,0,0,.35);overflow:hidden}
 .fwp-head{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--dsw-alias-border-l1,#e5e7eb);background:var(--dsw-alias-bg-layer-1,#f7f8fa);flex:none}
 .fwp-title{flex:1;font-size:12px;font-family:ui-monospace,Consolas,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-secondary,#525866)}
 .fwp-actions{display:flex;gap:6px;flex:none}
@@ -102,7 +106,7 @@
   .fwp-folder-notice{bottom:calc(24px + env(safe-area-inset-bottom,0px))}
 }
 @media (max-width:640px){
-  .fwp-card{max-height:calc(100dvh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px) - 24px)}
+  .fwp-card{--fwp-card-mh:calc(100dvh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px) - 24px)}
   .fwp-body{padding-bottom:calc(14px + env(safe-area-inset-bottom,0px))}
 }
 /* issue #3：folder 引用点击的轻量 toast 提示——底部居中、主题变量 + 浅色回退、
@@ -117,19 +121,51 @@
 /* issue #344：全屏按钮——高亮标识当前可操作；aria-pressed 真全屏/放大态常亮。 */
 .fwp-fs-btn{font-weight:600}
 .fwp-fs-btn.fwp-fs-on{border-color:var(--dsw-alias-brand-primary,#4f6ef7);color:var(--dsw-alias-brand-primary,#4f6ef7);background:var(--dsw-alias-interactive-bg-hover,#eef1f5)}
-/* issue #344：真全屏态——overlay 为 fullscreenElement，卡片撑满视口（浏览器原声
-   全屏渲染 fullscreenElement 子树，其余内容不显示）；灯箱挂载点由 viewer.ts 跟随。 */
-.fwp-overlay:fullscreen .fwp-card{width:100vw;max-width:100vw;max-height:100dvh;border-radius:0;box-shadow:none}
-.fwp-overlay:fullscreen .fwp-body{flex:1;align-items:stretch;justify-content:stretch}
-.fwp-overlay:fullscreen .fwp-html-frame{height:100%}
-/* issue #344：视口放大降级态（iOS Safari 无 requestFullscreen / 请求被拒）——
-   给 overlay 加 .fwp-fs，卡片撑满视口；与真全屏视觉一致，仅非浏览器原声全屏。 */
-.fwp-overlay.fwp-fs .fwp-card{width:100vw;max-width:100vw;max-height:100dvh;border-radius:0;box-shadow:none}
-.fwp-overlay.fwp-fs .fwp-body{flex:1;align-items:stretch;justify-content:stretch}
-.fwp-overlay.fwp-fs .fwp-html-frame{height:100%}
+/* issue #344/#388：真全屏态与视口放大降级态规则已并入文件末尾「布局主权对轰块」
+   （id 提权版，含宿主 dsh-web-mobile 模板劫持的恢复声明）——见文件末尾注释。 */
 /* issue #344：窄屏工具栏——5 按钮不溢出：允许换行 + 压缩内边距（触控加高保留）。 */
 @media (max-width:640px){
   .fwp-head{flex-wrap:wrap}
   .fwp-actions{flex-wrap:wrap}
   .fwp-actions button{padding:3px 7px;font-size:11px}
 }
+
+/* ---- issue #388：布局主权对轰块（置于样式表末尾）----
+ *
+ * 根因：宿主 dsh-web-mobile（@media max-width:1023px）有一套通用
+ * 「[aria-modal="true"]:has(> :first-child > :last-child > button):not(:has([role=navigation])):not(:has([class*=ZuhsRW]))」
+ * 对话框模板规则（实测 2026-08-31，dsh web client rev 7e6138486036，6 条命中本
+ * 卡片、4 条带 !important）：卡片带 aria-modal="true"（#344 a11y 增强）且
+ * .fwp-card>.fwp-head>…>.fwp-actions>button 结构命中 :has 链，被钉——
+ * position:absolute !important + left:8px/top:12px !important（脱离 flex 居中）、
+ * width/max-width:min(-32px+100vw,720px) !important、max-height:min(800px,100dvh-24px-safe)、
+ * height:auto、border-radius:14px、animation:dsh-web-mobile-sheet-in、
+ * head padding:10px 12px 8px/gap:6px（flex-direction:row !important 同值）、
+ * .fwp-title display:none !important（文件名被藏）、.fwp-html-frame padding:0 12px 24px。
+ * 叠加后插件全屏态规则 (0,3,0) 打不过宿主（:has/:not 参数计入实为 (0,8,1)+important）
+ * → 「点全屏整个预览框没全屏」；非全屏态同样错位。宽窗口（≥1024px）宿主规则不激活。
+ *
+ * 处置：卡片挂固定 id #fwp-dialog-card（preview.ts；Modal 经 state.overlay 单例、
+ * openPreview 先 closeModal 后重建，同时刻至多一个实例，id 随元素移除无需清理），
+ * id (1,0,0) 按位恒压宿主 (0,8,1)；对宿主钉住的插件已声明布局属性逐一 !important
+ * 恢复设计值——值经 --fwp-card-* 变量引用（单一事实源，含 ≤640px safe-area 响应式
+ * 分支穿透）；对轰块放样式表末尾，规避 preview.ts 记录的「宿主可能不把注入样式表
+ * 首部规则纳入 CSSOM」怪癖（同 specificity 平局时源序靠后亦占先）。
+ * 不对轰（与插件语义一致或无重要）：宿主 .fwp-body{flex:1 1 auto;min-height:0}、
+ * card/head 的 flex-direction（同值）、head width:100%/align-items:center（同值/无害）。
+ * 上游治本建议（宿主模板规则误伤第三方 modal）见 issue #388。
+ */
+#fwp-dialog-card{position:static !important;margin:0 !important;width:var(--fwp-card-w) !important;max-width:var(--fwp-card-w) !important;height:auto !important;max-height:var(--fwp-card-mh) !important;border-radius:12px !important;animation:none !important}
+#fwp-dialog-card>.fwp-head{padding:10px 14px !important;gap:10px !important}
+#fwp-dialog-card>.fwp-head>.fwp-title{display:block !important}
+#fwp-dialog-card .fwp-html-frame{padding:0 !important}
+/* issue #344/#388：全屏/降级态——卡片占满视口。合并选择器列表（:fullscreen 真全屏
+ * 与 .fwp-fs 视口放大降级视觉一致）。用固定 height 而非仅 max-height 是有意设计：
+ * 真全屏下浏览器只渲染 fullscreenElement（overlay）子树，卡片按内容自适应不满高时
+ * 露出的就是 overlay 自身的半透明遮罩底（视觉「还是没全屏」）；height:100vh→100dvh
+ * 双声明兜底不支持 dvh 的旧浏览器（dvh 解析失败整条丢弃 → vh 生效），两条均
+ * !important（important 声明间不看顺序比 specificity——同值平局时源序后者胜，
+ * 故支持 dvh 的浏览器取 100dvh）。 */
+.fwp-overlay:fullscreen #fwp-dialog-card,.fwp-overlay.fwp-fs #fwp-dialog-card{position:static !important;margin:0 !important;width:100vw !important;max-width:100vw !important;height:100vh !important;height:100dvh !important;max-height:100dvh !important;border-radius:0 !important;box-shadow:none !important;animation:none !important}
+.fwp-overlay:fullscreen #fwp-dialog-card>.fwp-body,.fwp-overlay.fwp-fs #fwp-dialog-card>.fwp-body{flex:1 !important;align-items:stretch;justify-content:stretch}
+.fwp-overlay:fullscreen #fwp-dialog-card .fwp-html-frame,.fwp-overlay.fwp-fs #fwp-dialog-card .fwp-html-frame{height:100% !important;padding:0 !important}
