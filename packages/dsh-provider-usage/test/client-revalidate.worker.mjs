@@ -2,7 +2,7 @@
 /**
  * dsh-provider-usage — 行为级 worker：refreshStats 取数前 provider 复检（issue #71 方案 A1）。
  *
- * 背景：宿主 currentProvideInfo.subscribe 仅在切换会话（list.current 变化）/ roster
+ * 背景：宿主 sessions.list 订阅仅在切换会话（list.current 变化）/ roster
  * 注册卸载时 fire；**会话内切模型/provider 不产生任何宿主信号**，而旧 refreshStats
  * 每 60s 只重拉旧 provider 的 /stats、从不复检 → 轮询零自愈（#71 主根因）。
  *
@@ -10,7 +10,7 @@
  * mini-DOM stub + mock fetch/sessions，无网络无 DOM 依赖）：
  * - A1 核心：会话内切模型（宿主信号不 fire）→ 手动触发轮询回调 →
  *   refreshStats 取数前复检 → /stats?provider=<新> 被请求、胶囊/面板跟随新 provider；
- * - 切换会话跨 provider（currentProvideInfo fire）→ 立即拉新 provider（不等轮询）；
+ * - 切换会话跨 provider（sessions.list fire）→ 立即拉新 provider（不等轮询）；
  * - 切换会话同 provider → 维护者补充需求：仍立即刷一次 stats；
  * - 初次挂载：检测先行，首拉即新 provider（FALLBACK 不泄漏进任何 /stats 请求）。
  *
@@ -225,47 +225,47 @@ const origSetInterval = globalThis.setInterval;
 globalThis.setInterval = (fn, ms) => { intervals.push({ fn, ms }); return intervals.length; };
 globalThis.clearInterval = () => {};
 
-// ---------------------------------------------------------------- fake sessions/connection/ctx
+// ---------------------------------------------------------------- fake sessions/remote/ctx
 
 function makeFakeServices(initialProvider) {
   const state = {
     listCurrent: "s1",
     byId: { s1: {} },
-    infoSessionId: "s1",
-    providerBySession: { s1: initialProvider },
+    // 0.1.2-alpha.2：行携带 per-session modelSelection 投影（lastUsed 为主槽位）
+    projectionBySession: { s1: { provider: initialProvider, model: "model-x" } },
   };
-  const infoSubs = [];
   const listSubs = [];
   const sessions = {
-    currentProvideInfo: {
-      getSnapshot: () => ({ sessionId: state.infoSessionId }),
-      subscribe: (fn) => { infoSubs.push(fn); return () => { const i = infoSubs.indexOf(fn); if (i >= 0) infoSubs.splice(i, 1); }; },
-    },
     list: {
-      getSnapshot: () => ({ current: state.listCurrent, ids: Object.keys(state.byId), byId: state.byId }),
+      getSnapshot: () => ({
+        current: state.listCurrent,
+        ids: Object.keys(state.byId),
+        byId: Object.fromEntries(
+          Object.entries(state.byId).map(([id, base]) => {
+            const proj = state.projectionBySession[id];
+            return [
+              id,
+              proj === undefined
+                ? base
+                : { ...base, projections: { values: { modelSelection: { lastUsed: proj } } } },
+            ];
+          }),
+        ),
+      }),
       subscribe: (fn) => { listSubs.push(fn); return () => { const i = listSubs.indexOf(fn); if (i >= 0) listSubs.splice(i, 1); }; },
-    },
-  };
-  const modelsCalls = [];
-  const connection = {
-    api: {
-      sessions: {
-        models: async ({ sessionId }) => {
-          modelsCalls.push(sessionId);
-          const provider = state.providerBySession[sessionId];
-          if (provider === undefined) return { result: { ok: false, error: { code: "no-model" } } };
-          return { result: { ok: true, value: { current: { provider, model: "model-x" } } } };
-        },
-      },
     },
   };
   return {
     state,
     sessions,
-    connection,
-    modelsCalls,
+    // 0.1.2-alpha.2：ctx.remote 网关（兜底 modelCatalog；剧本主路径走投影，无需兜底命中）
+    remote: {
+      session: {
+        modelCatalog: async () => ({ ok: true, value: { default: { provider: "mock-catalog-default" } } }),
+      },
+    },
     /** 模拟宿主 publishCurrent：仅切换会话/roster 变化时 fire（#71 已实证边界）。 */
-    fireSessionChanged() { for (const fn of [...infoSubs]) fn(); for (const fn of [...listSubs]) fn(); },
+    fireSessionChanged() { for (const fn of [...listSubs]) fn(); },
   };
 }
 
@@ -274,7 +274,7 @@ function makeCtx(svc) {
   const ctx = {
     get(key) {
       if (key === "sessions") return svc.sessions;
-      if (key === "connection") return svc.connection;
+      if (key === "remote") return svc.remote; // 0.1.2-alpha.2：ctx.remote 网关（兜底 modelCatalog）
       return undefined; // slots 缺席 → settings section try/catch 跳过
     },
     effect(fn) {
@@ -334,7 +334,7 @@ client.apply(ctx);
 // 手动触发一次轮询回调 → refreshStats 取数前复检 → 使用新 provider
 {
   const before = statsCalls.length;
-  svc.state.providerBySession.s1 = "mock-b"; // 会话内切换：models RPC 结果已变
+  svc.state.projectionBySession.s1 = { provider: "mock-b", model: "model-x" }; // 会话内切换：行投影 lastUsed 已变
   const pollTimer = intervals.find((t) => t.ms === 60000);
   assert.ok(pollTimer, "60s 轮询定时器已注册");
   pollTimer.fn();
@@ -360,8 +360,7 @@ client.apply(ctx);
 {
   svc.state.byId.s2 = {};
   svc.state.listCurrent = "s2";
-  svc.state.infoSessionId = "s2";
-  svc.state.providerBySession.s2 = "mock-b";
+  svc.state.projectionBySession.s2 = { provider: "mock-b", model: "model-x" };
   const before = statsCalls.length;
   svc.fireSessionChanged(); // 宿主信号：切换会话时 fire
   await until(() => statsCalls.length > before, "同 provider 切换会话仍立即刷新 stats");
@@ -373,8 +372,7 @@ client.apply(ctx);
 {
   svc.state.byId.s3 = {};
   svc.state.listCurrent = "s3";
-  svc.state.infoSessionId = "s3";
-  svc.state.providerBySession.s3 = "mock-a";
+  svc.state.projectionBySession.s3 = { provider: "mock-a", model: "model-x" };
   const before = statsCalls.length;
   svc.fireSessionChanged();
   await until(

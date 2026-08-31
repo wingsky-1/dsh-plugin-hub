@@ -24,6 +24,7 @@ import DOMPurify from "dompurify";
 import { runMermaidHydration, mermaidBaseConfig, type MermaidApiLike } from "./mermaid-core.ts";
 import type { FilePreviewState } from "./state.ts";
 import { openViewer, closeLightbox } from "./viewer.ts";
+import { t } from "./i18n.ts";
 import { shouldOpenMermaidViewer, isExternalClickableAnchor } from "./viewer-math.ts";
 
 /** 已加载的 mermaid API 引用（动态 import 自带模块缓存，此处仅存引用）。 */
@@ -175,7 +176,7 @@ function fallbackToCode(code: HTMLElement | undefined): void {
   const note = document.createElement("div");
   note.className = "fwp-mermaid-note";
   note.setAttribute("role", "status");
-  note.textContent = "图表渲染失败，已回退为代码展示";
+  note.textContent = t("mermaidFailNote");
   pre.parentElement.insertBefore(note, pre);
 }
 
@@ -198,7 +199,7 @@ function openMermaidViewer(holder: HTMLElement, state: FilePreviewState): void {
   // 不保持 Modal 内渲染宽度——查看器语义是看大图，视口基准更合理（样式见 style.css
   // .fwp-lbox-content-svg，保证初始渲染不溢出 stage）。
   clone.classList.add("fwp-lbox-content-svg");
-  openViewer(clone, state, { ariaLabel: "图表预览", restoreFocusTo: holder });
+  openViewer(clone, state, { ariaLabel: t("chartAria"), restoreFocusTo: holder });
 }
 
 /**

@@ -2,8 +2,9 @@
  * dsh-web-file-preview — 客户端 DOM 工具函数。
  *
  * DOM 元素创建、样式注入、剪贴板操作、错误视图等纯 DOM 操作。
- * 仅 export 纯函数，不依赖任何状态。
+ * 仅 export 纯函数；i18n 文案经共享 i18n.ts 的 t（活绑定）。
  */
+import { t } from "./i18n.ts";
 
 /** 创建带属性/子节点的 DOM 元素。 */
 export function el(tag: string, attrs: any = {}, children?: any[]): any {
@@ -39,11 +40,11 @@ export function ensureStyle(): void {
 export function copyPathText(text: string, btn: HTMLElement): void {
   const flash = (label: string): void => {
     btn.textContent = label;
-    window.setTimeout(() => { btn.textContent = "复制路径"; }, 1200);
+    window.setTimeout(() => { btn.textContent = t("copyPath"); }, 1200);
   };
   try {
     if (typeof navigator.clipboard?.writeText === "function" && window.isSecureContext === true) {
-      navigator.clipboard.writeText(text).then(() => flash("已复制"), () => flash("复制失败"));
+      navigator.clipboard.writeText(text).then(() => flash(t("copied")), () => flash(t("copyFail")));
       return;
     }
     const ta = document.createElement("textarea");
@@ -55,9 +56,9 @@ export function copyPathText(text: string, btn: HTMLElement): void {
     ta.select();
     const copied = document.execCommand("copy");
     ta.remove();
-    flash(copied ? "已复制" : "复制失败");
+    flash(copied ? t("copied") : t("copyFail"));
   } catch {
-    flash("复制失败");
+    flash(t("copyFail"));
   }
 }
 
@@ -66,7 +67,7 @@ export function errorView(body: HTMLElement, msg: string, url: string | undefine
   body.textContent = "";
   body.appendChild(el("div", { class: "fwp-state fwp-err", text: msg }));
   if (url !== undefined) {
-    const open = el("button", { class: "fwp-err-open", text: "在新标签打开原文" });
+    const open = el("button", { class: "fwp-err-open", text: t("openRawTab") });
     open.addEventListener("click", () => { window.open(url, "_blank", "noopener"); });
     body.appendChild(open);
   }

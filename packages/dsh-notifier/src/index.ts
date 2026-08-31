@@ -62,12 +62,16 @@ import { CONFIG_KEYS, DEFAULT_CONFIG, configFile, historyFile, normalizeConfig, 
 import type { NotifierApplyConfig, NotifyConfig } from "./config.ts";
 import { isInQuietHours } from "./quiet-hours.ts";
 import { HISTORY_LIMIT, createHistoryStore } from "./history.ts";
-import { NOTIFY_KINDS, sanitizeErrorText, sessionTitleOf, isSubagentOf, lastTurnEndOf } from "./message.ts";
+import { createDoneBatcher } from "./aggregate.ts";
+import type { DoneBatcher } from "./aggregate.ts";
+import { sanitizeErrorText, sessionTitleOf, isSubagentOf, lastTurnEndOf } from "./message.ts";
 import type { NotifyDetail } from "./message.ts";
 import { SETTINGS_NS, installNotifierSettings } from "./settings.ts";
 import type { OwnerScopeLike, SettingsServiceLike } from "./settings.ts";
 import { migrateLegacyConfig } from "./migrate.ts";
 import { ROUTES, buildRoutes, createSseHub, createSystemNotifier } from "./server.ts";
+import { createNotifierService } from "./service.ts";
+import type { NotifierServiceInternal } from "./service.ts";
 
 /** 稳定的 cordis 插件名。 */
 export const name = "notifier";
@@ -98,6 +102,23 @@ export {
 export type { NotifyDetail } from "./message.ts";
 export { ROUTES, applyConfigPatch } from "./server.ts";
 export type { PatchResult, RouteDeps } from "./server.ts";
+export {
+  BUILTIN_CHANNELS,
+  KIND_SEVERITY,
+  createNotifierService,
+  getNotifierService,
+} from "./service.ts";
+export type {
+  ChannelCapabilities,
+  KindRegistration,
+  NotifyChannel,
+  NotifyRequest,
+  NotifyResult,
+  NotifierService,
+  NotifierServiceDeps,
+  NotifierServiceInternal,
+  NotifySeverity,
+} from "./service.ts";
 
 // 辅助函数统一来自仓库共享层（loopback 围栏 / writeJson / readBody / errorMessage）。
 export { isLoopbackRequest } from "../../../shared/loopback.js";
@@ -156,6 +177,31 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
     warn: (message) => ctx.logger.warn(message),
   });
 
+  // ------------------------------------------------------------ 通知中心 service（M1）
+
+  /**
+   * 通知中心核心服务：'wingsky.notifier'（M1，issue #366）。
+   * - 内置事件源经 service.sendKind 走完整文案管线（等价搬移前 notify 语义）；
+   * - 外部调用方（hub 插件）经 ctx['wingsky.notifier'].send 发送（缺省广播）；
+   * - 动态 kind 注册 → 待确认 → 确认后放行（suppressed 落史复用免打扰路径）。
+   * 依赖注入与旧装配层完全同源（sse/system/history/current/enabled），
+   * 无新状态面；卸载随 fiber disposer 统一清理（service 本身无定时器）。
+   */
+  const notifierService: NotifierServiceInternal = createNotifierService({
+    current: () => current,
+    enabled: () => config.enabled !== false,
+    sse,
+    system,
+    history: historyStore,
+    logger: ctx.logger,
+  });
+  // 暴露服务（官方 storageDomain 模式，mcp-manager 同款）：fake ctx 无 provide
+  // 时静默降级（单测 mock 兼容）。重复 provide 同名服务 cordis 会抛错——本插件
+  // 单实例无竞态；若出现，属装配错误应显式失败。
+  if (typeof (ctx as unknown as { provide?: unknown }).provide === "function") {
+    (ctx as unknown as { provide: (name: string, svc: unknown) => void }).provide("wingsky.notifier", notifierService);
+  }
+
   /** 通知历史追加（fire-and-forget 落盘，见 history.ts）。 */
   function appendHistory(entry: { ts: number; kind: string; title: string; message: string; suppressed?: string }) {
     historyStore.append(entry);
@@ -164,37 +210,16 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
   // ------------------------------------------------------------ 通知主入口
 
   /**
-   * 通知入口：总开关判定（enabled，H3）→ 免打扰检查（被拦截也记录「未发出」
-   * 历史）→ 系统通知 → SSE 广播 → 历史落盘。
-   * @param kind ask / done / error / turn-end。
+   * 通知入口（M1：委托通知中心 service，行为与搬移前完全一致）。
+   * - enabled 总开关（H3）、免打扰检查（suppressed 落史）、fail-soft 逐频道
+   *   分发、历史落盘全部收敛到 service.sendKind（单一管线，评审 #1）；
+   * - 返回 boolean 语义保持：results 中存在任一 ok 频道 = 真正发出。
+   * @param kind ask / done / error / turn-end 等内置 kind。
    * @param detail {tool?, taskTitle?, reason?, durationMs?, turn?, step?, message?, mergedCount?}（不含工具参数）。
    */
   function notify(kind: string, detail: NotifyDetail = {}): boolean {
-    // enabled 下沉到 notify() 入口（H2/H3）：禁用态不通知，但路由/命名空间/
-    // 迁移照常注册——由各事件处理器的开关判定 + 本总开关共同收敛。
-    if (config.enabled === false) return false;
-    const spec = NOTIFY_KINDS[kind];
-    const ts = Date.now();
-    const title = spec?.title ?? "DSH 通知";
-    const message = spec?.message({ ...detail, ts }) ?? detail.message ?? "";
-    const suppressedByQuiet = (() => {
-      if (!isInQuietHours(new Date(), current.quietHours)) return false;
-      // 免打扰紧急例外：allowKinds 中的 kind（如 ask/question——卡住的审批需要叫醒）仍放行
-      const allows = current.quietHours.allowKinds ?? [];
-      return !allows.includes(kind);
-    })();
-    if (suppressedByQuiet) {
-      // 免打扰拦截：**仍落一条「未发出」历史 + 日志**，让用户能核对「到底发没发」
-      ctx.logger.info(`dsh-notifier: ${kind} 被免打扰拦截（未发出）：${message.replace(/\n/g, " / ")}`);
-      appendHistory({ ts, kind, title, message, suppressed: "quiet" });
-      return false;
-    }
-    const payload = { type: "notify", kind, title, message, ts };
-    if (current.systemNotify) system.notify(title, message);
-    if (current.browserNotify) sse.broadcast(payload);
-    ctx.logger.info(`dsh-notifier: ${kind} ${message.replace(/\n/g, " / ")}`);
-    appendHistory({ ts, kind, title, message });
-    return true;
+    const results = notifierService.sendKind(kind, detail);
+    return results.some((r) => r.status === "ok");
   }
 
   // ------------------------------------------------------------ 事件监听
@@ -325,50 +350,16 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
   );
 
   /**
-   * 完成通知风暴聚合（done / subagent-done）：
-   * 首条「完成」立即原样通知（单条场景零感知延迟）；同时起 doneMergeWindowMs
-   * 窗口（0=关闭聚合），窗口内到达的后续完成只累积标题与计数，窗口到点**补发
-   * 一条聚合通知**（「另有 N 个任务已完成」）——并行子代理收尾时 10 条刷屏收敛
-   * 为首条 + 1 条汇总。窗口定时器 unref，卸载时由全局 disposer 清空。
+   * 完成通知风暴聚合（done / subagent-done）：M0 纯搬移为独立模块
+   * （src/aggregate.ts createDoneBatcher），语义与搬移前完全一致——首条
+   * 「完成」立即原样通知 + 起 doneMergeWindowMs 窗口（0=关闭聚合），窗口内
+   * 后续完成只累积标题与计数，窗口到点**补发一条聚合通知**。窗口定时器
+   * unref，卸载时由全局 disposer 调 dispose() 清空。
    */
-  let doneBatch: { kind: string; count: number; titles: string[] } | null = null;
-  let doneBatchTimer: NodeJS.Timeout | null = null;
-  function enqueueDone(kind: string, title: string | undefined, durationMs: number) {
-    const label = title ?? (kind === "subagent-done" ? "子任务" : "任务");
-    const mergeMs = current.doneMergeWindowMs;
-    if (mergeMs <= 0) {
-      // 完成聚合已关闭：每条完成即时通知（不合并）
-      notify(kind, { taskTitle: label, durationMs });
-      return;
-    }
-    if (doneBatch === null) {
-      notify(kind, { taskTitle: label, durationMs });
-      doneBatch = { kind, count: 1, titles: [label] };
-      doneBatchTimer = setTimeout(flushDoneMerge, mergeMs);
-      doneBatchTimer.unref();
-      return;
-    }
-    if (doneBatch.kind !== kind) {
-      flushDoneMerge();
-      enqueueDone(kind, title, durationMs);
-      return;
-    }
-    doneBatch.count += 1;
-    doneBatch.titles.push(label);
-    if (doneBatch.titles.length > 4) doneBatch.titles = doneBatch.titles.slice(-4);
-  }
-  function flushDoneMerge() {
-    if (doneBatchTimer !== null) {
-      clearTimeout(doneBatchTimer);
-      doneBatchTimer = null;
-    }
-    const batch = doneBatch;
-    doneBatch = null;
-    // 窗口内还有后续完成 → 补发聚合条（首波已单独通知，这里汇总其余）
-    if (batch !== null && batch.count > 1) {
-      notify(batch.kind, { taskTitle: batch.titles.slice(1).join("、"), mergedCount: batch.count - 1 });
-    }
-  }
+  const doneBatcher: DoneBatcher = createDoneBatcher({
+    getWindowMs: () => current.doneMergeWindowMs,
+    notify,
+  });
 
   /**
    * 完成判定辅源记忆（issue #272）：session/event 推送流记录的 per-session
@@ -501,15 +492,15 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
           // 不再触发 THROW truthy 误判。显式防御 typeof ctx.get 兼容 fake ctx。
           const agents = typeof ctx.get === "function" ? ctx.get("agents", false) : undefined;
           if (isSubagentOf(agent, agents)) {
-            if (current.notifySubagentDone) enqueueDone("subagent-done", taskTitle, durationMs);
+            if (current.notifySubagentDone) doneBatcher.enqueue("subagent-done", taskTitle, durationMs);
           } else if (current.notifyTaskDone) {
-            enqueueDone("done", taskTitle, durationMs);
+            doneBatcher.enqueue("done", taskTitle, durationMs);
           }
           // B-1：lastEndedTurn 提交后置三态化（issue #290）——推进移到分流
           // 判定与入队之后：发出成功 / 免打扰拦截（suppressed） / 开关禁用
           // （notifyTaskDone=false / notifySubagentDone=false 未入队）三态均
-          // 提交；批次成员按「入队成功」提交（enqueueDone 被调用即推进，与
-          // flushDoneMerge 成败解耦）；异常路径（外层 catch）不达此处不提交。
+          // 提交；批次成员按「入队成功」提交（doneBatcher.enqueue 被调用即推进，
+          // 与 flushDoneMerge 成败解耦）；异常路径（外层 catch）不达此处不提交。
           if (best !== undefined) state.lastEndedTurn = best.turn;
         } else if (status === "running") {
           state.runningSeen = true;
@@ -696,14 +687,10 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
   ctx.effect(
     () => () => {
       sse.dispose();
-      // M4 定时器清理：审批提醒、完成风暴窗口
+      // M4 定时器清理：审批提醒、完成风暴窗口（聚合批处理器内部）
       for (const t of askRemindTimers.values()) clearTimeout(t);
       askRemindTimers.clear();
-      if (doneBatchTimer !== null) {
-        clearTimeout(doneBatchTimer);
-        doneBatchTimer = null;
-      }
-      doneBatch = null;
+      doneBatcher.dispose();
       turnNotified.clear();
       for (const dispose of disposers) {
         try {

@@ -10,6 +10,7 @@
  * 时也要渲染 html 预览）。
  */
 import { el, errorView } from "./dom.ts";
+import { t } from "./i18n.ts";
 import type { FilePreviewState } from "./state.ts";
 
 /** issue #73：serve token 分配 URL。 */
@@ -46,7 +47,7 @@ export function renderHtmlPreview(body: HTMLElement, state: FilePreviewState, se
     body.appendChild(makeHtmlFrame(state.serveSrc));
     return;
   }
-  body.appendChild(el("div", { class: "fwp-state", text: "加载中…" }));
+  body.appendChild(el("div", { class: "fwp-state", text: t("loading") }));
   const url = allocUrl(state.currentPath, state.currentCwd, state);
   void fetch(url, { signal: abort })
     .then(async (res) => {
@@ -60,7 +61,7 @@ export function renderHtmlPreview(body: HTMLElement, state: FilePreviewState, se
       const data = await res.json().catch(() => null);
       if (seq !== state.openSeq) return;
       if (data === null || typeof data.token !== "string" || typeof data.rest !== "string") {
-        errorView(body, "HTML 预览启动失败（响应异常）", rawFileUrl(state.currentPath, state.currentCwd, state));
+        errorView(body, t("htmlBootFail"), rawFileUrl(state.currentPath, state.currentCwd, state));
         return;
       }
       state.serveToken = data.token;
@@ -70,7 +71,7 @@ export function renderHtmlPreview(body: HTMLElement, state: FilePreviewState, se
       body.appendChild(makeHtmlFrame(state.serveSrc));
     })
     .catch(() => {
-      if (seq === state.openSeq) errorView(body, "请求失败（无法访问文件预览服务）", rawFileUrl(state.currentPath, state.currentCwd, state));
+      if (seq === state.openSeq) errorView(body, t("fetchFail"), rawFileUrl(state.currentPath, state.currentCwd, state));
     });
 }
 
@@ -89,7 +90,7 @@ function makeHtmlFrame(src: string): HTMLElement {
     class: "fwp-html-frame",
     attrs: {
       referrerpolicy: "no-referrer",
-      title: "HTML 预览（沙箱内渲染，不执行脚本）",
+      title: t("htmlSandboxTitle"),
     },
   });
   frame.setAttribute("sandbox", ""); // 空 token 集 = 最严格隔离；绝不同时开 allow-scripts + allow-same-origin（J9）

@@ -16,6 +16,7 @@ import type { FilePreviewState } from "./state.ts";
 import { html as diffToHtml } from "diff2html";
 import DOMPurify from "dompurify";
 import { exceedsTextRenderLimit, TEXT_RENDER_LIMIT_CODEPOINTS } from "./render-limit.ts";
+import { t } from "./i18n.ts";
 
 /** git diff 探测 URL（F2-B）。 */
 export function fileDiffUrl(path: string, cwd: string | undefined, state: FilePreviewState): string {
@@ -51,7 +52,7 @@ export function fetchText(url: string, body: HTMLElement, seq: number, signal: A
       if (seq !== state.openSeq) return;
       renderTabBody(body, state);
     })
-    .catch(() => { if (seq === state.openSeq) errorView(body, "请求失败（无法访问文件预览服务）", url); });
+    .catch(() => { if (seq === state.openSeq) errorView(body, t("fetchFail"), url); });
 }
 
 /** 按当前模式渲染文本类正文（预览=md渲染/代码高亮/iframe；原始=等宽 pre；Diff=git diff）。 */
@@ -76,7 +77,7 @@ export function renderTabBody(body: HTMLElement, state: FilePreviewState): void 
       fetchText(fileUrlOf(state), body, state.openSeq, state.activeAbort !== undefined ? state.activeAbort.signal : new AbortController().signal, state);
       return;
     }
-    body.appendChild(el("div", { class: "fwp-state", text: "加载中…" }));
+    body.appendChild(el("div", { class: "fwp-state", text: t("loading") }));
     return;
   }
   if (state.previewMode === "raw" || group.group === "text") {
@@ -186,12 +187,12 @@ export function probeDiff(path: string, cwd: string | undefined, seq: number, on
 /** 渲染 git diff（diff2html：行号/折叠/配色。兜底用 pre 原样展示）。 */
 export function renderDiff(body: HTMLElement, state: FilePreviewState): void {
   if (state.diffUntracked) {
-    body.appendChild(el("div", { class: "fwp-state", text: "未跟踪的新文件（git 无基线，无法对比；完整内容见“内容/原始”）" }));
+    body.appendChild(el("div", { class: "fwp-state", text: t("untrackedNoDiff") }));
     return;
   }
   const d = state.diffText ?? "";
   if (d === "") {
-    body.appendChild(el("div", { class: "fwp-state", text: "无可用 diff" }));
+    body.appendChild(el("div", { class: "fwp-state", text: t("noDiff") }));
     return;
   }
   // issue #344（评审 P1 F1）：diff 同样受渲染阈值约束——大 diff（git 输出上限 32MB）

@@ -14,6 +14,7 @@
  */
 
 import { el } from "./dom.ts";
+import { t } from "./i18n.ts";
 import type { FilePreviewState } from "./state.ts";
 import { clampScale, viewerTransform, isExternalClickableAnchor } from "./viewer-math.ts";
 
@@ -69,18 +70,18 @@ export function openViewer(content: HTMLElement | SVGElement, state: FilePreview
   stage.appendChild(content);
 
   const zoomIn = el("button", { text: "＋" });
-  zoomIn.setAttribute("aria-label", "放大");
-  zoomIn.setAttribute("title", "放大");
+  zoomIn.setAttribute("aria-label", t("zoomIn"));
+  zoomIn.setAttribute("title", t("zoomIn"));
   zoomIn.addEventListener("click", () => { state.lboxScale = clampScale(state.lboxScale * 1.25); applyLboxTransform(state); });
   const zoomOut = el("button", { text: "－" });
-  zoomOut.setAttribute("aria-label", "缩小");
-  zoomOut.setAttribute("title", "缩小");
+  zoomOut.setAttribute("aria-label", t("zoomOut"));
+  zoomOut.setAttribute("title", t("zoomOut"));
   zoomOut.addEventListener("click", () => { state.lboxScale = clampScale(state.lboxScale / 1.25); applyLboxTransform(state); });
-  const reset = el("button", { text: "重置" });
-  reset.setAttribute("aria-label", "重置缩放");
+  const reset = el("button", { text: t("reset") });
+  reset.setAttribute("aria-label", t("resetZoom"));
   reset.addEventListener("click", () => { state.lboxScale = 1; state.lboxTx = 0; state.lboxTy = 0; applyLboxTransform(state); });
   const closeBtn = el("button", { text: "×" });
-  closeBtn.setAttribute("aria-label", "关闭灯箱");
+  closeBtn.setAttribute("aria-label", t("closeLightbox"));
   closeBtn.addEventListener("click", () => closeLightbox(state));
   const toolbar = el("div", { class: "fwp-lbox-toolbar" }, [zoomIn, zoomOut, reset, closeBtn]);
 

@@ -613,6 +613,14 @@ const main = async () => {
     assert.ok(clientSrc.includes("dm-float-group-title"), "浮窗 scope 分组标题存在");
     assert.ok(clientSrc.includes("项目级") && clientSrc.includes("全局"), "scope 分组文案存在");
   });
+  check("client i18n 接线哨兵（issue #348）", () => {
+    const clientSrc = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+    assert.ok(clientSrc.includes('"mcpManager"'), "i18n 命名空间 NS 进产物");
+    assert.ok(clientSrc.includes("locale.register"), "locale.register（字典注册）进产物");
+    assert.ok(clientSrc.includes("bindLocale"), "bindLocale（t 活绑定装配）进产物");
+    assert.ok(clientSrc.includes("locale: NS"), "slots.register locale 参数进产物");
+    assert.ok(clientSrc.includes("Running") && clientSrc.includes("stConnected"), "en/zh 双语字典 + STATUS_TEXT key 化进产物");
+  });
   check("#362 无游离 css：style.css 全部内联进 client.js（无独立样式请求）", () => {
     const clientSrc = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
     const css = readFileSync(new URL("../src/client/style.css", import.meta.url), "utf8");

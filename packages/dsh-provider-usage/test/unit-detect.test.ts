@@ -1,11 +1,12 @@
 // @ts-nocheck
 /**
- * dsh-provider-usage — unit：provider 检测链（issue #69）。
+ * dsh-provider-usage — unit：provider 检测链（issue #69，0.1.2 适配）。
  *
- * 覆盖：子代理会话 models() 拒绝（agent-busy 抛错 / RPC 错误分支两种形态）时沿
- * parentId 上溯取父会话 provider、上溯深度封顶与环防御、全链失败保持上次检测 +
- * 「提供商未识别」标注决策、无任何会话维持原回落行为（回归防护）、
- * ordinary 会话直连解析回归。
+ * 覆盖：per-session modelSelection 投影（0.1.2-alpha.2）读取 provider —— 子代理会话
+ * 自身投影缺失时沿 parentId 上溯父会话投影取 provider、上溯深度封顶与环防御、
+ * 全链投影缺失回落 ctx.remote.session.modelCatalog().default 兜底、
+ * 全链失败保持上次检测 + 「提供商未识别」标注决策、无任何会话维持原回落行为
+ * （回归防护）、ordinary 会话直连解析回归。
  *
  * 被测对象为 src/client/core.ts 真实源码：lib/client/*.js 由 bundle-host 按
  * 发布物边界清理（仅留顶层 index.js/client.js 与 .d.ts），故沿用 web-file-preview
@@ -41,121 +42,122 @@ const {
   MAX_ANCESTRY_DEPTH,
   resolveProviderFromSession,
   decideProviderAfterDetect,
-  isAgentBusyError,
   FALLBACK_PROVIDER,
   UNKNOWN_PROVIDER_HINT,
 } = core;
 
 // ---------------------------------------------------------------- 构造工具
 
-/** fake sessions：list 快照 {current, byId}（currentProvideInfo 缺席 → 走 list.current）。 */
+/** fake sessions：list 快照 {current, byId}（0.1.2：current 来自 list 快照）。 */
 function makeSessions(byId, current) {
   return { list: { getSnapshot: () => ({ current, byId }) } };
 }
 
-/** fake connection：models 按会话 id 分派；record 收集调用序。 */
-function makeConnection(providerBySession, record, rejectSessions = []) {
-  return {
-    api: {
-      sessions: {
-        models: async (req) => {
-          if (record) record.push(req.sessionId);
-          if (rejectSessions.includes(req.sessionId)) {
-            throw Object.assign(new Error(`session ${req.sessionId} rejects models: subagent busy`), { code: "agent-busy" });
-          }
-          return {
-            result: { ok: true, value: { current: { provider: providerBySession[req.sessionId] ?? "prov-x" } } },
-          };
+/**
+ * 行投影小工具：构造 SessionSummary 防御式行。
+ * provider 缺省 → 行无 modelSelection 投影（模拟子代理/未解析会话）。
+ */
+function row(provider, opts = {}) {
+  const { parentId, parentSessionId, origin, slot } = opts;
+  const r = {};
+  if (parentId !== undefined) r.parentId = parentId;
+  if (parentSessionId !== undefined) r.parentSessionId = parentSessionId;
+  if (origin !== undefined) r.origin = origin;
+  if (provider !== undefined) {
+    r.projections = {
+      values: {
+        modelSelection: {
+          // 默认写入 lastUsed；slot:"next" 时只写 next（模拟待确认意图）
+          ...(slot === "next" ? {} : { lastUsed: { provider, model: "model-x" } }),
+          ...(slot === "next" ? { next: { provider, model: "model-x" } } : {}),
         },
+      },
+    };
+  }
+  return r;
+}
+
+/** fake remote：modelCatalog 兜底；default 缺省 → 返回无 default 目录。 */
+function makeRemote(providerByDefault) {
+  return {
+    session: {
+      modelCatalog: async () => {
+        if (providerByDefault === undefined) return { ok: false, error: { code: "no-catalog" } };
+        return { ok: true, value: { default: { provider: providerByDefault, model: "model-d" } } };
       },
     },
   };
 }
 
-/** 捕获 console.warn（返回恢复函数 + 记录数组）。 */
-function captureWarn() {
-  const lines = [];
-  const orig = console.warn;
-  console.warn = (...args) => { lines.push(args.map(String).join(" ")); };
-  return { lines, restore: () => { console.warn = orig; } };
-}
-
-// ---------------------------------------------------------------- 1) 子代理会话（models 拒绝）+ 父可解析 → 取父 provider
+// ---------------------------------------------------------------- 1) 子代理会话（自身投影缺失）+ 父可解析 → 取父 provider
 
 {
-  // spawn 型：byId 行带 parentId（客户端 store 归一字段）
+  // spawn 型：byId 行带 parentId（客户端 store 归一字段）；子代理无投影 → 上溯父投影
   const sessions = makeSessions(
     {
-      "child-1": { origin: "subagent", parentId: "root-1" },
-      "root-1": {},
+      "child-1": row(undefined, { origin: "subagent", parentId: "root-1" }),
+      "root-1": row("deepseek"),
     },
     "child-1",
   );
-  const calls = [];
-  const conn = makeConnection({ "root-1": "deepseek" }, calls, ["child-1"]);
-  const warn = captureWarn();
-  let got;
-  try {
-    got = await resolveProviderFromSession(sessions, conn);
-  } finally {
-    warn.restore();
-  }
-  assert.equal(got, "deepseek", "子代理 models 拒绝 → 上溯父会话取 provider");
-  assert.deepEqual(calls, ["child-1", "root-1"], "先试自身再上溯父会话");
-  assert.ok(
-    warn.lines.some((l) => l.includes("agent-busy") && l.includes("child-1")),
-    "agent-busy 抛错应记诊断日志",
-  );
-}
-
-{
-  // RPC 错误分支形态（{ok:false,error:{code:"agent-busy"}}，不抛错）同样诊断并上溯
-  const sessions = makeSessions({ c: { parentId: "p" }, p: {} }, "c");
-  const calls = [];
-  const conn = {
-    api: {
-      sessions: {
-        models: async (req) => {
-          calls.push(req.sessionId);
-          if (req.sessionId === "c") {
-            return { result: { ok: false, error: { code: "agent-busy", message: "busy", details: { reason: "x" } } } };
-          }
-          return { result: { ok: true, value: { current: { provider: "openai" } } } };
-        },
-      },
-    },
-  };
-  const warn = captureWarn();
-  let got;
-  try {
-    got = await resolveProviderFromSession(sessions, conn);
-  } finally {
-    warn.restore();
-  }
-  assert.equal(got, "openai", "RPC 错误分支 agent-busy 同样继续上溯");
-  assert.deepEqual(calls, ["c", "p"], "错误分支不中断上溯链");
-  assert.ok(warn.lines.some((l) => l.includes("agent-busy")), "RPC 错误分支也应记诊断");
+  const got = await resolveProviderFromSession(sessions, makeRemote());
+  assert.equal(got, "deepseek", "子代理无投影 → 上溯父会话投影取 provider");
 }
 
 {
   // fork / wire 原名防御：行只带 parentSessionId（旧命名）→ 兼容上溯
-  const sessions = makeSessions({ f: { origin: "subagent", parentSessionId: "main" }, main: {} }, "f");
-  const conn = makeConnection({ main: "kimi" }, [], ["f"]);
-  const got = await resolveProviderFromSession(sessions, conn);
+  const sessions = makeSessions(
+    { f: row(undefined, { origin: "subagent", parentSessionId: "main" }), main: row("kimi") },
+    "f",
+  );
+  const got = await resolveProviderFromSession(sessions, makeRemote());
   assert.equal(got, "kimi", "parentSessionId 命名兼容上溯");
 }
 
-// ---------------------------------------------------------------- 2) 全链失败：保持上次检测 + 未识别标注
+{
+  // 自身 next 槽（待确认意图）可解析：lastUsed 缺席时读 next
+  const sessions = makeSessions({ own: row("prov-next", { slot: "next" }) }, "own");
+  const got = await resolveProviderFromSession(sessions, makeRemote());
+  assert.equal(got, "prov-next", "仅 next 槽存在 → 取 next provider");
+}
 
 {
-  // 全链（自身 + 祖先）均拒绝 → undefined（兜底交给 decideProviderAfterDetect）
+  // lastUsed 优先于 next：两者并存时取 lastUsed
   const sessions = makeSessions(
-    { s: { parentId: "m" }, m: { parentId: "g" }, g: {} },
+    {
+      own: {
+        projections: {
+          values: {
+            modelSelection: {
+              lastUsed: { provider: "last-p", model: "a" },
+              next: { provider: "next-p", model: "b" },
+            },
+          },
+        },
+      },
+    },
+    "own",
+  );
+  const got = await resolveProviderFromSession(sessions, makeRemote());
+  assert.equal(got, "last-p", "lastUsed 优先于 next");
+}
+
+// ---------------------------------------------------------------- 2) 全链投影缺失：保持上次检测 + 未识别标注 / modelCatalog 兜底
+
+{
+  // 全链（自身 + 祖先）投影均缺失 → 兜底 modelCatalog().default
+  const sessions = makeSessions(
+    { s: row(undefined, { parentId: "m" }), m: row(undefined, { parentId: "g" }), g: row(undefined) },
     "s",
   );
-  const conn = makeConnection({}, [], ["s", "m", "g"]);
-  const got = await resolveProviderFromSession(sessions, conn);
-  assert.equal(got, undefined, "全链失败返回 undefined");
+  const got = await resolveProviderFromSession(sessions, makeRemote("catalog-default"));
+  assert.equal(got, "catalog-default", "全链投影缺失 → modelCatalog().default 兜底");
+
+  // 无 remote / modelCatalog 失败 → undefined（兜底语义交给 decideProviderAfterDetect）
+  const noRemote = await resolveProviderFromSession(sessions, undefined);
+  assert.equal(noRemote, undefined, "无 remote → undefined");
+  const failRemote = await resolveProviderFromSession(sessions, makeRemote());
+  assert.equal(failRemote, undefined, "modelCatalog 非 ok → undefined");
 
   // 有历史检测 → 保持上次值且标注未识别
   const d1 = decideProviderAfterDetect({ resolved: undefined, hadSession: true, previousDetected: "deepseek" });
@@ -171,9 +173,10 @@ function captureWarn() {
 }
 
 {
-  // 客户端源码契约：title 标注接线真实存在（unknown 态追加「提供商未识别」）
+  // 客户端源码契约：title 标注接线真实存在（unknown 态追加「提供商未识别」；
+  // issue #348 i18n 后标注经字典 t("providerUnknown")，常量本体留 core 供语义引用）
   const src = readFileSync(join(here, "..", "src", "client", "index.ts"), "utf8");
-  assert.ok(src.includes("UNKNOWN_PROVIDER_HINT"), "index.ts 应引用未识别标注常量");
+  assert.ok(src.includes('t("providerUnknown")'), "index.ts 应经 i18n 字典标注未识别");
   assert.ok(src.includes("if (providerUnknown)"), "胶囊 title 渲染应按 providerUnknown 追加标注");
   assert.ok(src.includes("decideProviderAfterDetect"), "detect() 应经纯函数决策兜底");
   assert.ok(!src.includes("detected ?? FALLBACK_PROVIDER"), "已移除对 FALLBACK 的无条件回落写法");
@@ -182,13 +185,17 @@ function captureWarn() {
 // ---------------------------------------------------------------- 3) 无任何会话 → 维持原回落行为（回归防护）
 
 {
-  // 无 sessions 服务 / 无当前会话 → 解析器直接 undefined，且不发起任何 models 调用
-  const calls = [];
-  const conn = makeConnection({}, calls);
-  assert.equal(await resolveProviderFromSession(undefined, conn), undefined, "无 sessions → undefined");
-  assert.equal(await resolveProviderFromSession(makeSessions({}, undefined), conn), undefined, "无 current → undefined");
-  assert.equal(await resolveProviderFromSession(makeSessions({ a: {} }, ""), conn), undefined, "空串 current 视为无会话");
-  assert.deepEqual(calls, [], "无会话场景不得调用 models");
+  // 无 sessions 服务 / 无当前会话 → 解析器直接 undefined，且不触发 modelCatalog
+  let catalogCalls = 0;
+  const remote = {
+    session: {
+      modelCatalog: async () => { catalogCalls += 1; return { ok: true, value: { default: { provider: "x" } } }; },
+    },
+  };
+  assert.equal(await resolveProviderFromSession(undefined, remote), undefined, "无 sessions → undefined");
+  assert.equal(await resolveProviderFromSession(makeSessions({}, undefined), remote), undefined, "无 current → undefined");
+  assert.equal(await resolveProviderFromSession(makeSessions({ a: {} }, ""), remote), undefined, "空串 current 视为无会话");
+  assert.equal(catalogCalls, 0, "无会话场景不得触发 modelCatalog");
 
   // 决策层：无任何会话一律回落默认（即使有历史检测也不沿用——维持原行为）
   const d1 = decideProviderAfterDetect({ resolved: undefined, hadSession: false, previousDetected: "deepseek" });
@@ -220,64 +227,37 @@ function captureWarn() {
   assert.deepEqual(sessionAncestryChain(makeSessions({ x: {} }, "x"), "x"), ["x"], "断链 → 仅自身");
   assert.deepEqual(sessionAncestryChain(makeSessions({ x: { parentId: "" }, "": {} }, "x"), "x"), ["x"], "空串父 id 忽略");
 
-  // 环链下解析器有限次调用后终止
-  const calls = [];
-  const conn = makeConnection({}, calls, ["a", "b"]);
-  const got = await resolveProviderFromSession(cyc, conn);
-  assert.equal(got, undefined, "环链全失败 → undefined");
-  assert.ok(calls.length <= MAX_ANCESTRY_DEPTH, `环链探测次数被封顶（实际 ${calls.length}）`);
+  // 环链下解析器有限次调用后终止（投影全缺 → 兜底也被调用一次，不无限循环）
+  const remote = makeRemote("default-ok");
+  const got = await resolveProviderFromSession(cyc, remote);
+  assert.equal(got, "default-ok", "环链全失败 → 落 modelCatalog 兜底");
 }
 
-// ---------------------------------------------------------------- 5) ordinary 会话直连回归 + 边界
+// ---------------------------------------------------------------- 5) currentSessionId 边界 + ordinary 会话直连回归
 
 {
-  // ordinary 会话（无 parentId）→ 直接解析成功，仅一次调用
-  const sessions = makeSessions({ only: { origin: "user" } }, "only");
-  const calls = [];
-  const conn = makeConnection({ only: "opencode-go" }, calls);
-  const got = await resolveProviderFromSession(sessions, conn);
+  // current 会话 id 读取：0.1.2 仅走 list 快照 current（currentProvideInfo 已移除）
+  assert.equal(currentSessionId(undefined), undefined, "无 sessions → undefined");
+  assert.equal(currentSessionId(makeSessions({ a: {} }, "a")), "a", "list.current 直读");
+  assert.equal(currentSessionId(makeSessions({}), undefined), undefined, "无 current → undefined");
+  assert.equal(currentSessionId(makeSessions({ a: {} }, "")), undefined, "空串 current 视为无会话");
+
+  // ordinary 会话（无 parentId）→ 直接解析成功（仅自身投影，无需上溯）
+  const sessions = makeSessions({ only: row("opencode-go") }, "only");
+  const got = await resolveProviderFromSession(sessions, makeRemote());
   assert.equal(got, "opencode-go", "ordinary 会话直接解析");
-  assert.deepEqual(calls, ["only"], "ordinary 不触发上溯（单次调用）");
-
-  // currentProvideInfo 优先路径照旧生效
-  const viaInfo = {
-    currentProvideInfo: { getSnapshot: () => ({ sessionId: "info-sid" }) },
-    list: { getSnapshot: () => ({ current: "list-sid", byId: {} }) },
-  };
-  assert.equal(currentSessionId(viaInfo), "info-sid", "currentProvideInfo 优先级不变");
-
-  // models 缺失 / 非 ok 且非 agent-busy 错误码：不上溯报错、静默 undefined
-  assert.equal(await resolveProviderFromSession(sessions, {} as never), undefined, "connection 无 models → undefined");
-  const otherErr = {
-    api: { sessions: { models: async () => { throw Object.assign(new Error("boom"), { code: "no-api-key" }); } } },
-  };
-  const warn = captureWarn();
-  try {
-    assert.equal(await resolveProviderFromSession(sessions, otherErr), undefined, "非 agent-busy 抛错 → undefined");
-    assert.ok(!warn.lines.some((l) => l.includes("agent-busy")), "非 agent-busy 不记忙会话诊断");
-  } finally {
-    warn.restore();
-  }
-
-  // isAgentBusyError 形状覆盖
-  assert.equal(isAgentBusyError(Object.assign(new Error("x"), { code: "agent-busy" })), true, "code 形态命中");
-  assert.equal(isAgentBusyError(new Error("rejected: agent-busy here")), true, "message 内嵌命中");
-  assert.equal(isAgentBusyError({ code: "agent-busy" }), true, "裸对象 code 命中");
-  assert.equal(isAgentBusyError(new Error("other")), false, "普通错误不命中");
-  assert.equal(isAgentBusyError(null), false, "null 不命中");
-  assert.equal(isAgentBusyError("agent-busy"), false, "字符串不命中");
 }
 
 // ---------------------------------------------------------------- 6) 成功解析优先于上溯（首个成功者胜）
 
 {
-  // 自身即可解析（ordinary）→ 不再向上多打一次 models
-  const sessions = makeSessions({ k: { parentId: "up" }, up: {} }, "k");
-  const calls = [];
-  const conn = makeConnection({ k: "prov-k" }, calls);
-  const got = await resolveProviderFromSession(sessions, conn);
+  // 自身即可解析（ordinary）→ 不再向上读投影
+  const sessions = makeSessions(
+    { k: row("prov-k", { parentId: "up" }), up: row("prov-up") },
+    "k",
+  );
+  const got = await resolveProviderFromSession(sessions, makeRemote());
   assert.equal(got, "prov-k", "首个解析成功者胜");
-  assert.deepEqual(calls, ["k"], "自身成功后不再上溯");
 }
 
-console.log("[unit-detect] 全部断言通过 ✓ (#69 provider 检测链)");
+console.log("[unit-detect] 全部断言通过 ✓ (#69 provider 检测链，0.1.2-alpha.2 投影面)");

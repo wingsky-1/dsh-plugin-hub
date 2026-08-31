@@ -561,11 +561,21 @@ try {
   assert.ok(client.includes("放大预览") && client.includes("退出放大"), "#344 client 含降级态文案（放大预览/退出放大）");
   assert.ok(client.includes('classList.add("fwp-fs-btn")') || client.includes(".fwp-fs-btn{"), "#344 client 含全屏按钮类名");
   assert.ok(client.includes(".fwp-fs{") || client.includes(".fwp-fs "), "#344 client 含视口放大降级类（带选择器上下文）");
+  // i18n 接入哨兵（issue #348）：NS / register / bind / 双语字典进产物
+  assert.ok(client.includes('"filePreview"'), "i18n 命名空间 NS 进产物");
+  assert.ok(client.includes("locale.register"), "locale.register（字典注册）进产物");
+  assert.ok(client.includes("bindLocale"), "bindLocale（t 活绑定装配）进产物");
+  assert.ok(client.includes("Copy path") && client.includes("copyPath"), "en/zh 双语字典进产物");
   // issue #344（评审 F1/F2 防回退哨兵）：diff 渲染路径必须接入 render-limit 谓词
   // （renderDiff 超限降级）与返回栈 hadDiff 重探逻辑——minify 保留属性名（hadDiff）
   // 与导出函数名（exceedsTextRenderLimit），产物层可断言，防「修了一半」回归。
   assert.ok(client.includes("exceedsTextRenderLimit"), "#344 client 含渲染阈值谓词引用（F1 diff 降级接入）");
   assert.ok(client.includes("hadDiff"), "#344 client 含返回栈 diff 恢复标志（F2 重探逻辑）");
+  // 0.1.2 适配（#323 Phase 1.3）：openPath 收口迁移到 ctx.remote.session.openWorkspacePath——
+  // client 必须引用新调用面、不得再包装已删除的 workspaces.openPath。
+  assert.ok(client.includes("openWorkspacePath"), "#323 client 含 openWorkspacePath 收口（0.1.2 迁移）");
+  assert.ok(client.includes('get("remote")'), "#323 client 经 ctx.get(\"remote\") 取 Remote 网关");
+  assert.ok(!/\bws\.openPath\b/.test(client), "#323 不得再包装已删除的 workspaces.openPath");
 
   // ---- issue #104：mermaid 懒加载 chunk 宿主路由真实可读（P0 断言）----
   // 防「cleanFreeFloatingJs 把新 chunk 当游离产物删除 → 五连门禁全绿而功能坏」

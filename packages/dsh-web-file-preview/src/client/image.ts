@@ -8,6 +8,7 @@
  */
 
 import { el, errorView } from "./dom.ts";
+import { t } from "./i18n.ts";
 import type { FilePreviewState } from "./state.ts";
 import { openViewer } from "./viewer.ts";
 
@@ -18,7 +19,7 @@ import { openViewer } from "./viewer.ts";
 export function openLightbox(src: string, state: FilePreviewState, trigger?: HTMLElement): void {
   const img = el("img", { alt: "preview" });
   img.src = src;
-  openViewer(img, state, { ariaLabel: "图片预览", restoreFocusTo: trigger });
+  openViewer(img, state, { ariaLabel: t("imageAria"), restoreFocusTo: trigger });
 }
 
 /** 把已获取的图片 blob 渲染进正文（建 objectURL + 灯箱点击）。 */
@@ -28,8 +29,8 @@ export function renderBlobImage(blob: Blob, body: HTMLElement, url: string, stat
   body.textContent = "";
   const img = el("img", { class: "fwp-preview-img" });
   img.alt = "preview";
-  img.title = "点击放大";
-  img.addEventListener("error", () => errorView(body, "图片解码失败（文件已获取，但无法作为图片显示）", url));
+  img.title = t("imageZoomHint");
+  img.addEventListener("error", () => errorView(body, t("imageDecodeFail"), url));
   img.addEventListener("click", () => openLightbox(objectUrl, state, img));
   img.src = objectUrl;
   body.appendChild(img);
@@ -50,5 +51,5 @@ export function renderImage(url: string, body: HTMLElement, seq: number, signal:
       if (seq !== state.openSeq) return;
       renderBlobImage(blob, body, url, state);
     })
-    .catch(() => { if (seq === state.openSeq) errorView(body, "请求失败（无法访问文件预览服务）", url); });
+    .catch(() => { if (seq === state.openSeq) errorView(body, t("fetchFail"), url); });
 }

@@ -25,6 +25,22 @@ import { resetForm, beginEdit } from "./quick-add.ts";
 import { toggleFloat, mountFloat, renderFloatPanel } from "./float.ts";
 import { bindSession } from "./session.ts";
 import { SettingsCard } from "./settings-card.ts";
+import { bindLocale } from "./i18n.ts";
+import { zh, en, type McpLocaleKey } from "./locales.ts";
+// 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
+// lib/types/*.d.ts 相对导入保留 .ts 后缀，declare module 增强的模块名解析会判
+// TS2664（microsoft/TypeScript#63960 同类；上游修复发布物后此行可删）。
+import type { LocaleNamespaceMap } from "@deepseek-ai/dsh-client-ui-slots";
+
+// i18n（issue #348）：字典命名空间 + LocaleNamespaceMap 声明合并（官方 ui-jobs 同款）。
+const NS = "mcpManager";
+
+declare module "@deepseek-ai/dsh-client-ui-slots" {
+  interface LocaleNamespaceMap {
+    /** dsh-mcp-manager 浮窗/面板/表单/设置卡文案。 */
+    "mcpManager": McpLocaleKey;
+  }
+}
 
 export function apply(ctx: any): void {
   const state: McpState = createState();
@@ -39,6 +55,23 @@ export function apply(ctx: any): void {
   };
 
   try {
+    // i18n（issue #348）：注册本插件字典；t 经共享 i18n.ts 活绑定（多文件 client 共用），
+    // 语言切换 subscribe 重绑（浮窗/面板下次渲染即生效）。
+    const locale: any = ctx.get("locale");
+    if (locale && typeof locale.register === "function") {
+      try {
+        locale.register(NS, { zh: zh, en: en });
+        bindLocale(locale, NS);
+        if (typeof locale.subscribe === "function" && typeof locale.getSnapshot === "function") {
+          locale.subscribe(function () {
+            bindLocale(locale, NS);
+          });
+        }
+      } catch (error) {
+        console.warn("[dsh-mcp-manager] locale 注册失败：", error);
+      }
+    }
+
     // 注入样式（仅首次；容错：重复 apply 不重复创建）
     if (document.querySelector('style[data-dsh-mcp-manager-style]') === null) {
       const style = document.createElement("style");
@@ -55,7 +88,7 @@ export function apply(ctx: any): void {
     const slots = ctx.get("slots");
     if (slots && typeof slots.inject === "function") {
       slots.inject("settings.plugin.item", () => slots.register(
-        { name: "settings.plugin.item", id: "dsh-mcp-manager", key: "dsh-mcp-manager", order: 60 },
+        { name: "settings.plugin.item", id: "dsh-mcp-manager", key: "dsh-mcp-manager", order: 60, locale: NS },
         () => React.createElement(SettingsCard, null),
       ));
     }
@@ -248,5 +281,5 @@ export function apply(ctx: any): void {
 
 // ---- 客户端契约：apply/inject 由 build-client 经 factory 装配（干净模块）----
 // 注入 sessions 服务以跟随当前会话（cwd 切换项目级 MCP）；slots 服务用于
-// 注册设置页插件卡（settings.plugin.item）。
-export const inject: string[] = ["sessions", "slots"];
+// 注册设置页插件卡（settings.plugin.item）；locale 服务用于字典注册与 t 装配。
+export const inject: string[] = ["sessions", "slots", "locale"];

@@ -11,6 +11,8 @@ import { STATS_URL, ADAPTERS_URL, SELECT_URL, INSPECT_URL, ADD_URL, fetchTimeout
 import type { UiPlacementConfig } from "./core.ts";
 import { splitProviderList, providerBadgeText } from "../client-logic.ts";
 import type { ProviderListItem } from "../client-logic.ts";
+import { t } from "./i18n.ts";
+import type { ProviderUsageLocaleKey } from "./locales.ts";
 
 // ---------------------------------------------------------------- 类型
 
@@ -106,11 +108,13 @@ const titleStyle: Object = {
   margin: "0 0 6px",
 };
 
-const STATUS_LABEL: Record<string, string> = {
-  fresh: "实时",
-  cached: "缓存",
-  stale: "陈旧（已降级）",
-};
+/** 状态 → 文案（i18n：渲染期求值，t 装配后才可见文案而非 key）。 */
+function statusLabel(status: string | undefined): string {
+  if (status === "fresh") return t("statusFresh");
+  if (status === "cached") return t("statusCached");
+  if (status === "stale") return t("statusStale");
+  return t("statusUnconfigured");
+}
 
 /** 状态 → 颜色（主题变量 + 浅色回退）。 */
 function statusColor(status: string | undefined): string {
@@ -119,12 +123,13 @@ function statusColor(status: string | undefined): string {
   return "var(--dsw-alias-state-error-primary,#d64545)";
 }
 
-/** 胶囊位置配置区：锚点 + 偏移输入，保存即热更新（宿主落盘 + SSE 广播）。 */
-const PLACEMENT_OPTIONS: Array<{ value: UiPlacementConfig["placement"]; label: string }> = [
-  { value: "top-right", label: "右上" },
-  { value: "top-left", label: "左上" },
-  { value: "bottom-right", label: "右下" },
-  { value: "bottom-left", label: "左下" },
+/** 胶囊位置配置区：锚点 + 偏移输入，保存即热更新（宿主落盘 + SSE 广播）。
+ *  label 存字典 key（i18n：渲染期经 t 求值，模块加载时 t 尚未装配）。 */
+const PLACEMENT_OPTIONS: Array<{ value: UiPlacementConfig["placement"]; key: ProviderUsageLocaleKey }> = [
+  { value: "top-right", key: "posTopRight" },
+  { value: "top-left", key: "posTopLeft" },
+  { value: "bottom-right", key: "posBottomRight" },
+  { value: "bottom-left", key: "posBottomLeft" },
 ];
 
 function UiSection() {
@@ -151,9 +156,9 @@ function UiSection() {
     setMsg(null);
     try {
       await saveUiConfig(cfg);
-      setMsg({ ok: true, text: "已保存——胶囊位置即时生效（所有设备）" });
+      setMsg({ ok: true, text: t("uiSavedOk") });
     } catch (e) {
-      setMsg({ ok: false, text: `保存失败：${e instanceof Error ? e.message : String(e)}` });
+      setMsg({ ok: false, text: t("uiSaveFail", { msg: e instanceof Error ? e.message : String(e) }) });
     }
     setSaving(false);
   };
@@ -180,11 +185,11 @@ function UiSection() {
   return React.createElement(
     "div",
     { style: sectionStyle },
-    React.createElement("h4", { style: titleStyle }, "胶囊位置"),
+    React.createElement("h4", { style: titleStyle }, t("uiTitle")),
     React.createElement(
       "div",
       { style: { marginBottom: 8 } },
-      "锚点：",
+      t("uiAnchor"),
       React.createElement(
         "select",
         {
@@ -192,16 +197,16 @@ function UiSection() {
           style: { marginLeft: 6, padding: "2px 6px", border: "1px solid var(--dsw-alias-border-l2,#e8eaf0)", borderRadius: 4 },
           onChange: (e: unknown) => set({ placement: (e as { target: { value: UiPlacementConfig["placement"] } }).target.value }),
         },
-        PLACEMENT_OPTIONS.map((o) => React.createElement("option", { key: o.value, value: o.value }, o.label)),
+        PLACEMENT_OPTIONS.map((o) => React.createElement("option", { key: o.value, value: o.value }, t(o.key))),
       ),
     ),
     React.createElement(
       "div",
       { style: { marginBottom: 8 } },
-      numInput("offsetX", "水平偏移"),
-      numInput("offsetY", "垂直偏移"),
-      numInput("panelOffsetY", "面板间距"),
-      numInput("zIndexBase", "层级基准", 1, 9000),
+      numInput("offsetX", t("offsetX")),
+      numInput("offsetY", t("offsetY")),
+      numInput("panelOffsetY", t("panelOffsetY")),
+      numInput("zIndexBase", t("zIndexBase"), 1, 9000),
     ),
     React.createElement(
       "button",
@@ -213,7 +218,7 @@ function UiSection() {
           void save();
         },
       },
-      saving ? "保存中…" : "保存",
+      saving ? t("savingNow") : t("save"),
     ),
     msg !== null
       ? React.createElement(
@@ -231,9 +236,9 @@ function UsageSection({ statsByProvider }: { statsByProvider: Record<string, Sta
   return React.createElement(
     "div",
     { style: sectionStyle },
-    React.createElement("h4", { style: titleStyle }, "用量可视化"),
+    React.createElement("h4", { style: titleStyle }, t("usageTitle")),
     providers.length === 0
-      ? React.createElement("div", { style: { color: "var(--dsw-alias-label-tertiary,#9aa0ab)" } }, "暂无启用的 provider")
+      ? React.createElement("div", { style: { color: "var(--dsw-alias-label-tertiary,#9aa0ab)" } }, t("noProviders"))
       : providers.map((provider) => {
           const s = statsByProvider[provider];
           const dot = React.createElement("span", {
@@ -250,9 +255,9 @@ function UsageSection({ statsByProvider }: { statsByProvider: Record<string, Sta
           });
           // 适配器名与 provider 同名时省略，避免「rjkrjk」式连读
           const adapterPart = s?.adapterName && s.adapterName !== provider ? `${s.adapterName} · ` : "";
-          const meta = `${adapterPart}${STATUS_LABEL[s?.status ?? ""] ?? "未配置"}${
+          const meta = `${adapterPart}${statusLabel(s?.status)}${
             typeof s?.fetchedAt === "number"
-              ? ` · 更新于 ${new Date(s.fetchedAt).toLocaleTimeString("zh-CN", { hour12: false })}`
+              ? ` · ${t("updatedAt", { t: new Date(s.fetchedAt).toLocaleTimeString("zh-CN", { hour12: false }) })}`
               : ""
           }`;
           return React.createElement(
@@ -280,7 +285,7 @@ function UsageSection({ statsByProvider }: { statsByProvider: Record<string, Sta
                 : React.createElement(
                     "div",
                     { style: { color: "var(--dsw-alias-label-tertiary,#9aa0ab)" } },
-                    "暂无数据",
+                    t("noData"),
                   ),
           );
         }),
@@ -330,6 +335,7 @@ function ProviderItem({
       setTimeout(() => setCopied(false), 2000);
     }
   };
+  const badge = providerBadgeText(item, t as (key: string, params?: Record<string, unknown>) => string);
 
   /** 检测文件：inspect 路由回显导出信息，不注册（确认后才 add）。 */
   const doInspect = async (): Promise<void> => {
@@ -341,7 +347,7 @@ function ProviderItem({
     try {
       const r = await onInspect(file.trim());
       if (r.ok) setInspected(r.adapter ?? null);
-      else setInspErr(r.detail ?? "检测失败");
+      else setInspErr(r.detail ?? t("inspectFail"));
     } finally {
       setInspecting(false);
     }
@@ -360,7 +366,7 @@ function ProviderItem({
       setInspErr(null);
     } else {
       setAddErr(true);
-      setAddMsg(r.detail ?? "添加失败");
+      setAddMsg(r.detail ?? t("addFail"));
     }
     setAdding(false);
   };
@@ -388,12 +394,12 @@ function ProviderItem({
         React.createElement(
           "span",
           { className: "dou-adapterMeta" },
-          `${c.name} · ${c.source === "builtin" ? "内置" : "自定义"}${c.file ? ` · ${c.file}` : ""}`,
+          `${c.name} · ${c.source === "builtin" ? t("adapterBuiltin") : t("adapterCustom")}${c.file ? ` · ${c.file}` : ""}`,
         ),
       ),
       React.createElement(
         "label",
-        { className: "dou-switchWrap", title: enabled ? "停用该适配器（仅影响用量取数）" : "启用该适配器" },
+        { className: "dou-switchWrap", title: enabled ? t("switchOffTitle") : t("switchOnTitle") },
         React.createElement("input", {
           type: "checkbox",
           className: "dou-switch",
@@ -408,7 +414,7 @@ function ProviderItem({
         React.createElement("span", { className: "dou-switchTrack", "aria-hidden": "true" }),
       ),
       err !== undefined
-        ? React.createElement("div", { className: "dou-provErr" }, `最近一次错误：${err.message}`)
+        ? React.createElement("div", { className: "dou-provErr" }, t("lastError", { msg: err.message }))
         : null,
     );
   });
@@ -419,10 +425,10 @@ function ProviderItem({
       : React.createElement(
           "div",
           { className: "dou-inspectCard" },
-          React.createElement("div", { className: "dou-inspectRow" }, React.createElement("span", { className: "dou-inspectK" }, "适配器名"), React.createElement("span", { className: "dou-inspectV" }, inspected.name)),
-          React.createElement("div", { className: "dou-inspectRow" }, React.createElement("span", { className: "dou-inspectK" }, "展示名"), React.createElement("span", { className: "dou-inspectV" }, inspected.label)),
-          React.createElement("div", { className: "dou-inspectRow" }, React.createElement("span", { className: "dou-inspectK" }, "归属提供商"), React.createElement("span", { className: "dou-inspectV" }, inspected.providers.join("、") || item.provider)),
-          React.createElement("div", { className: "dou-inspectRow" }, React.createElement("span", { className: "dou-inspectK" }, "契约版本"), React.createElement("span", { className: "dou-inspectV" }, `version ${inspected.version} ✓`)),
+          React.createElement("div", { className: "dou-inspectRow" }, React.createElement("span", { className: "dou-inspectK" }, t("inspectKName")), React.createElement("span", { className: "dou-inspectV" }, inspected.name)),
+          React.createElement("div", { className: "dou-inspectRow" }, React.createElement("span", { className: "dou-inspectK" }, t("inspectKLabel")), React.createElement("span", { className: "dou-inspectV" }, inspected.label)),
+          React.createElement("div", { className: "dou-inspectRow" }, React.createElement("span", { className: "dou-inspectK" }, t("inspectKProviders")), React.createElement("span", { className: "dou-inspectV" }, inspected.providers.join("、") || item.provider)),
+          React.createElement("div", { className: "dou-inspectRow" }, React.createElement("span", { className: "dou-inspectK" }, t("inspectKVersion")), React.createElement("span", { className: "dou-inspectV" }, `version ${inspected.version} ✓`)),
         );
 
   const addForm = React.createElement(
@@ -434,8 +440,8 @@ function ProviderItem({
       React.createElement(
         "span",
         { className: "dou-addLabel" },
-        "文件路径",
-        React.createElement("span", { className: "dou-addOnly" }, "（唯一输入——name/展示名/归属提供商从文件导出自动读取）"),
+        t("filePath"),
+        React.createElement("span", { className: "dou-addOnly" }, t("filePathOnly")),
       ),
     ),
     React.createElement("input", {
@@ -451,7 +457,7 @@ function ProviderItem({
       React.createElement(
         "button",
         { type: "button", className: "dou-btn", disabled: busy || inspecting || file.trim() === "", onClick: doInspect },
-        inspecting ? "检测中…" : "检测文件",
+        inspecting ? t("detecting") : t("detectFile"),
       ),
       React.createElement(
         "button",
@@ -460,11 +466,11 @@ function ProviderItem({
           className: "dou-btn",
           disabled: busy || adding || inspected === null,
           onClick: submitAdd,
-          title: inspected === null ? "请先通过「检测文件」后再确认添加" : undefined,
+          title: inspected === null ? t("detectFirst") : undefined,
         },
-        adding ? "添加中…" : "确认添加",
+        adding ? t("adding") : t("confirmAdd"),
       ),
-      React.createElement("button", { type: "button", className: "dou-btn", disabled: busy || adding, onClick: toggleAdd }, "取消"),
+      React.createElement("button", { type: "button", className: "dou-btn", disabled: busy || adding, onClick: toggleAdd }, t("cancel")),
     ),
     inspErr !== null ? React.createElement("div", { className: "dou-provErr" }, inspErr) : null,
     inspectCard,
@@ -490,7 +496,7 @@ function ProviderItem({
       React.createElement(
         "span",
         { className: `dou-provBadge${item.enabledId === null ? " dou-provBadgeOff" : ""}` },
-        providerBadgeText(item),
+        badge,
       ),
     ),
     !open
@@ -504,7 +510,7 @@ function ProviderItem({
                 React.createElement(
                   "div",
                   { key: "hint", className: "dou-hint" },
-                  "该提供商暂无候选适配器——可通过下方 [+ 添加适配器] 注入本地适配器文件；也可复制引导指令，让 Agent 帮你创建适配器。",
+                  t("noCandidates"),
                 ),
                 React.createElement(
                   "div",
@@ -512,7 +518,7 @@ function ProviderItem({
                   React.createElement(
                     "button",
                     { type: "button", className: "dou-btn", disabled: busy, onClick: onCopyGuide },
-                    copied ? "已复制 ✓" : "复制引导指令",
+                    copied ? t("copied") : t("copyGuide"),
                   ),
                 ),
               ]
@@ -523,7 +529,7 @@ function ProviderItem({
             React.createElement(
               "button",
               { type: "button", className: "dou-btn", disabled: busy, onClick: toggleAdd },
-              showAddForm ? "收起" : "+ 添加适配器",
+              showAddForm ? t("collapse") : t("addAdapter"),
             ),
           ),
           !showAddForm ? null : addForm,
@@ -603,18 +609,18 @@ function ProviderListSection({
   return React.createElement(
     "div",
     { style: sectionStyle },
-    React.createElement("h4", { style: titleStyle }, "提供商"),
+    React.createElement("h4", { style: titleStyle }, t("provTitle")),
     React.createElement(
       "div",
       { className: "dou-hint" },
-      `提供商列表与模型配置页保持一致（共 ${main.length} 个）；展开某个提供商以切换适配器开关或添加新适配器。`,
+      t("provListHint", { n: main.length }),
     ),
     fileErrors.length > 0
       ? fileErrors.map(([k, e]) =>
           React.createElement(
             "div",
             { key: k, className: "dou-provErr" },
-            `用户文件 ${k.slice(5)} 加载失败：${e.message}`,
+            t("fileLoadFail", { f: k.slice(5), msg: e.message }),
           ),
         )
       : null,
@@ -622,14 +628,14 @@ function ProviderListSection({
       ? React.createElement(
           "div",
           { className: "dou-hint" },
-          "未发现已配置的提供商（adapters.json 不可达或模型配置页尚未配置提供商）。可复制引导指令，让 Agent 帮你接入数据源并创建适配器。",
+          t("noProvHint"),
           React.createElement(
             "div",
             { className: "dou-provActions" },
             React.createElement(
               "button",
               { type: "button", className: "dou-btn", disabled: busy, onClick: onCopyGlobalGuide },
-              copiedGlobal ? "已复制 ✓" : "复制引导指令",
+              copiedGlobal ? t("copied") : t("copyGuide"),
             ),
           ),
         )
@@ -638,11 +644,11 @@ function ProviderListSection({
       ? React.createElement(
           "div",
           null,
-          React.createElement("h4", { style: titleStyle }, "自定义提供商"),
+          React.createElement("h4", { style: titleStyle }, t("customProvTitle")),
           React.createElement(
             "div",
             { className: "dou-hint" },
-            "以下 providers 未出现在 dsh 模型配置页（模型暂选不到该提供商，先登记适配器；在模型页补建后即可选用），不计入上方数量。",
+            t("customProvHint"),
           ),
           accordion(extra),
         )

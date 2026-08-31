@@ -20,12 +20,37 @@
 import * as React from "react";
 // 样式：独立 style.css（见同目录），build-client 的 .css text-loader 构建期内联为字符串
 import STYLE from "./style.css";
+// i18n（issue #348）：复用官方 dsh-client-locale——zh/en 双语字典，LocaleNamespaceMap
+// 声明合并进官方 ui-slots 类型面；仅 import type（编译期擦除，无运行时依赖）。
+import { zh, en, type IdleArchiveLocaleKey } from "./locales.ts";
+// 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
+// lib/types/*.d.ts 相对导入保留 .ts 后缀（renderer.ts / store.ts，磁盘只有 .d.ts），
+// declare module 增强的模块名解析（不走过 import 的解析缓存）会判 TS2664 cannot be
+// found（microsoft/TypeScript#63960 顺序依赖同类问题；TS 5.9/6/7 实测一致）。待上游
+// 修复发布物后此行可删。
+import type { LocaleNamespaceMap } from "@deepseek-ai/dsh-client-ui-slots";
+
+declare module "@deepseek-ai/dsh-client-ui-slots" {
+  interface LocaleNamespaceMap {
+    /** dsh-idle-archive 弹窗/设置卡文案。 */
+    "settings.idleArchive": IdleArchiveLocaleKey;
+  }
+}
+
+/** 本插件字典命名空间（宿主 locale 服务注册用）。 */
+const NS = "settings.idleArchive";
 
   var CHANNEL = "/dsh-idle-archive";
   var MODAL_ID = "dsh-idle-archive-modal";
   var STYLE_ID = "dsh-idle-archive-style";
   var CSS_VERSION = "1";
   var DEFAULTS = { enabled: true, idleHours: 72, snoozeHours: 24, scanMinutes: 60, maxRows: 50 };
+
+  /** i18n 翻译函数（apply 时由 ctx.locale.bind(NS) 装配；未装配回落 key 本体，行为零变化）。 */
+  var t: any = function (key: string, params?: any) {
+    if (params === undefined) return key;
+    return String(key); // 未装配时占位插值忽略（正常路径早已装配）
+  };
 
   /** 全局运行态（apply 内部使用）。 */
   var state: Record<string, any> = { settings: null, snoozed: {}, candidates: [], modalOpen: false };
@@ -56,13 +81,13 @@ import STYLE from "./style.css";
   /** 相对时间描述。 */
   function fmtRelative(ts: any) {
     var diff = Date.now() - ts;
-    if (diff < 60 * 1000) return "刚刚";
+    if (diff < 60 * 1000) return t("justNow");
     var min = Math.floor(diff / 60000);
-    if (min < 60) return min + " 分钟前";
+    if (min < 60) return t("minutesAgo", { n: min });
     var h = Math.floor(min / 60);
-    if (h < 24) return h + " 小时前";
+    if (h < 24) return t("hoursAgo", { n: h });
     var d = Math.floor(h / 24);
-    if (d < 30) return d + " 天前";
+    if (d < 30) return t("daysAgo", { n: d });
     return new Date(ts).toLocaleDateString();
   }
 
@@ -93,13 +118,13 @@ import STYLE from "./style.css";
   function doArchive(id: any) {
     if (!workspaces) return;
     (workspaces as any).archiveSession(id).then(function () {
-      toast("已归档会话");
+      toast(t("archivedOk"));
       state.candidates = state.candidates.filter(function (c: any) { return c.id !== id; });
       // 归档后清掉该会话的静默标记（下次扫描不会再出现，已归档者天然跳过）。
       rpc("clearSnooze", { sessionId: id }).catch(function () {});
       renderModal();
     }).catch(function (e: any) {
-      toast("归档失败：" + (e && e.message || e), true);
+      toast(t("archivedFail", { msg: (e && e.message || e) }), true);
     });
   }
 
@@ -137,20 +162,20 @@ import STYLE from "./style.css";
         title.title = row.title;
         var time = document.createElement("div");
         time.className = "dia-row-time";
-        time.textContent = "最后对话 " + fmtRelative(row.updatedAt) + "（" + new Date(row.updatedAt).toLocaleString() + "）";
+        time.textContent = t("rowLastSeen", { rel: fmtRelative(row.updatedAt), abs: new Date(row.updatedAt).toLocaleString() });
         main.appendChild(title);
         main.appendChild(time);
 
         var archiveBtn = document.createElement("button");
         archiveBtn.type = "button";
         archiveBtn.className = "dia-btn dia-btn-archive";
-        archiveBtn.textContent = "归档";
+        archiveBtn.textContent = t("archive");
         archiveBtn.addEventListener("click", function () { doArchive(row.id); });
 
         var snoozeBtn = document.createElement("button");
         snoozeBtn.type = "button";
         snoozeBtn.className = "dia-btn";
-        snoozeBtn.textContent = "暂不归档";
+        snoozeBtn.textContent = t("snoozeRow");
         snoozeBtn.addEventListener("click", function () { doSnooze([row.id], (state.settings && state.settings.snoozeHours) || DEFAULTS.snoozeHours); });
 
         el.appendChild(main);
@@ -178,12 +203,12 @@ import STYLE from "./style.css";
     var head = document.createElement("div");
     head.className = "dia-head";
     var headText = document.createElement("span");
-    headText.textContent = "会话闲置提醒";
+    headText.textContent = t("modalTitle");
     var closeBtn = document.createElement("button");
     closeBtn.type = "button";
     closeBtn.className = "dia-close";
     closeBtn.textContent = "×";
-    closeBtn.title = "全部暂不归档（Y 小时内不再提醒）";
+    closeBtn.title = t("closeTitle");
     closeBtn.addEventListener("click", function () { doSnooze(state.candidates.map(function (c: any) { return c.id; }), 1); });
     head.appendChild(headText);
     head.appendChild(closeBtn);
@@ -191,8 +216,11 @@ import STYLE from "./style.css";
     var hours = (state.settings && state.settings.idleHours) || DEFAULTS.idleHours;
     var desc = document.createElement("div");
     desc.className = "dia-desc";
-    desc.textContent = "以下 " + candidates.length + " 个会话超过 " + hours + " 小时未对话。归档后从会话列表隐藏，会话记录仍保留；" +
-      "「暂不归档」后 " + ((state.settings && state.settings.snoozeHours) || DEFAULTS.snoozeHours) + " 小时内不再提醒该会话。";
+    desc.textContent = t("desc", {
+      count: candidates.length,
+      hours: hours,
+      snooze: (state.settings && state.settings.snoozeHours) || DEFAULTS.snoozeHours,
+    });
 
     var list = document.createElement("div");
     list.className = "dia-list";
@@ -201,11 +229,11 @@ import STYLE from "./style.css";
     foot.className = "dia-foot";
     var hint = document.createElement("span");
     hint.className = "dia-hint";
-    hint.textContent = "× / Esc：仅关闭（1 小时内不重复提醒）；「全部暂不归档」：按静默时长不提醒";
+    hint.textContent = t("hint");
     var allBtn = document.createElement("button");
     allBtn.type = "button";
     allBtn.className = "dia-all";
-    allBtn.textContent = "全部暂不归档";
+    allBtn.textContent = t("allSnooze");
     allBtn.addEventListener("click", function () {
         var hours = (state.settings && state.settings.snoozeHours) || DEFAULTS.snoozeHours;
         doSnooze(state.candidates.map(function (c: any) { return c.id; }), hours);
@@ -277,6 +305,15 @@ import STYLE from "./style.css";
     if (document.visibilityState !== "visible") return;
     var list = collectCandidates(false);
     if (!list.length) return;
+    // 通知中心接入（issue #366 M1）：弹窗前 fire-and-forget 触发 notifyDue——
+    // 通知中心未装 / kind 未确认时服务端自动 suppressed/静默，不影响弹窗主流程。
+    try {
+      rpc("notifyDue", { count: list.length }).catch(function () {
+        // 通知失败静默（弹窗照常）
+      });
+    } catch (error) {
+      // rpc 初始化异常（connection 未就绪）也静默
+    }
     var ids = list.map(function (c: any) { return c.id; });
     rpc("titles", { sessionIds: ids }).then(function (v: any) {
       if (disposed || state.modalOpen) return;
@@ -344,7 +381,7 @@ import STYLE from "./style.css";
     }, []);
 
     if (!settings) {
-      return React.createElement("li", { className: "dia-set-card" }, "会话闲置提醒：加载中…");
+      return React.createElement("li", { className: "dia-set-card" }, t("settingsLoading"));
     }
 
     function patch(p: any) {
@@ -356,11 +393,11 @@ import STYLE from "./style.css";
       rpc("config", { settings: settings }).then(function (v: any) {
         state.settings = v.settings;
         setSettings(v.settings);
-        setSaved("已保存");
+        setSaved(t("savedOk"));
         scheduleSoon();
         setTimeout(function () { setSaved(""); }, 1800);
       }).catch(function (e: any) {
-        setSaved("保存失败：" + (e && e.message || e));
+        setSaved(t("savedFail", { msg: (e && e.message || e) }));
       });
     }
 
@@ -369,12 +406,12 @@ import STYLE from "./style.css";
       setSaved("");
       if (disposed || state.modalOpen) return;
       if (!state.settings || !state.settings.enabled) {
-        toast("会话闲置提醒已禁用");
+        toast(t("disabledHint"));
         return;
       }
       var list = collectCandidates(true);
       if (!list.length) {
-        toast("暂无需要归档的会话");
+        toast(t("noCandidates"));
         return;
       }
       rpc("titles", { sessionIds: list.map(function (c: any) { return c.id; }) }).then(function (v: any) {
@@ -398,8 +435,8 @@ import STYLE from "./style.css";
         onClick: function () { setOpen(!open); },
       },
         React.createElement("span", { className: "dia-set-headText" },
-          React.createElement("span", { className: "dia-set-name" }, "会话闲置提醒"),
-          React.createElement("span", { className: "dia-set-description" }, "闲置阈值 / 静默时长 / 扫描间隔 / 立即检查"),
+          React.createElement("span", { className: "dia-set-name" }, t("settingsName")),
+          React.createElement("span", { className: "dia-set-description" }, t("settingsDescription")),
         ),
         React.createElement("svg", {
           className: "dia-set-chevron" + (open ? " dia-set-chevronOpen" : ""),
@@ -418,7 +455,7 @@ import STYLE from "./style.css";
       ),
       open ? React.createElement("div", { className: "dia-set-body" },
         React.createElement("div", { className: "dia-set-row" },
-          React.createElement("label", null, "启用"),
+          React.createElement("label", null, t("enable")),
           React.createElement("input", {
             type: "checkbox",
             checked: settings.enabled,
@@ -426,7 +463,7 @@ import STYLE from "./style.css";
           }),
         ),
         React.createElement("div", { className: "dia-set-row" },
-          React.createElement("label", null, "闲置阈值（小时）"),
+          React.createElement("label", null, t("idleHours")),
           React.createElement("input", {
             className: "dia-set-input",
             type: "number",
@@ -437,7 +474,7 @@ import STYLE from "./style.css";
           }),
         ),
         React.createElement("div", { className: "dia-set-row" },
-          React.createElement("label", null, "拒绝后静默（小时）"),
+          React.createElement("label", null, t("snoozeHours")),
           React.createElement("input", {
             className: "dia-set-input",
             type: "number",
@@ -448,7 +485,7 @@ import STYLE from "./style.css";
           }),
         ),
         React.createElement("div", { className: "dia-set-row" },
-          React.createElement("label", null, "扫描间隔（分钟）"),
+          React.createElement("label", null, t("scanMinutes")),
           React.createElement("select", {
             className: "dia-set-input",
             value: settings.scanMinutes,
@@ -463,8 +500,8 @@ import STYLE from "./style.css";
         React.createElement("div", { className: "dia-set-foot" },
           React.createElement("span", { className: "dia-set-saved" }, saved),
           React.createElement("span", { style: { display: "flex", gap: 8 } },
-            React.createElement("button", { type: "button", className: "dia-set-check", onClick: checkNow }, "立即检查"),
-            React.createElement("button", { type: "button", className: "dia-set-save", onClick: save }, "保存"),
+            React.createElement("button", { type: "button", className: "dia-set-check", onClick: checkNow }, t("checkNow")),
+            React.createElement("button", { type: "button", className: "dia-set-save", onClick: save }, t("save")),
           ),
         ),
       ) : null,
@@ -492,6 +529,17 @@ import STYLE from "./style.css";
       };
 
       injectStyle();
+
+      // i18n（issue #348）：注册本插件字典；t 绑定官方 locale 服务（未装配回落 key 本体）。
+      var locale: any = ctx.get("locale");
+      if (locale && typeof locale.register === "function") {
+        try {
+          locale.register(NS, { zh: zh, en: en });
+          t = locale.bind(NS);
+        } catch (e) {
+          console.warn("[dsh-idle-archive] locale 注册失败：", e);
+        }
+      }
 
       // 先按默认配置可用，宿主状态加载后覆盖（配置/snooze 持久化在宿主）。
       state.settings = DEFAULTS;
@@ -524,11 +572,21 @@ import STYLE from "./style.css";
       if (slots) {
         slots.inject("settings.plugin.item", function () {
           return slots.register(
-            { name: "settings.plugin.item", id: "dsh-idle-archive", key: "dsh-idle-archive", order: 45 },
+            { name: "settings.plugin.item", id: "dsh-idle-archive", key: "dsh-idle-archive", order: 45, locale: NS },
             function () {
               return React.createElement(SettingsCard, null);
             }
           );
+        });
+      }
+
+      // i18n 切语言重绘：locale 快照变化 → 重绑 t 并重建弹窗（原生 DOM 通道按 revision 刷新）。
+      var unsubLocale: any = null;
+      if (locale && typeof locale.subscribe === "function" && typeof locale.getSnapshot === "function") {
+        unsubLocale = locale.subscribe(function () {
+          try { t = locale.bind(NS); } catch (e) { /* 忽略 */ }
+          if (state.modalOpen) { closeModal(); state.candidates = state.candidates.slice(); }
+          scheduleSoon();
         });
       }
 
@@ -541,6 +599,7 @@ import STYLE from "./style.css";
           document.removeEventListener("visibilitychange", onVisibility);
           if (unsubSessions) unsubSessions();
           if (unsubWorkspaces) unsubWorkspaces();
+          if (unsubLocale) unsubLocale();
           if (modalEl) modalEl.remove();
           var style = document.getElementById(STYLE_ID);
           if (style) style.remove();
@@ -552,4 +611,4 @@ import STYLE from "./style.css";
   }
 
   // ---- 浏览器半区契约：apply/inject 由 build-client 经 factory 装配（干净模块）----
-  export const inject: string[] = ["slots"];
+  export const inject: string[] = ["slots", "locale"];

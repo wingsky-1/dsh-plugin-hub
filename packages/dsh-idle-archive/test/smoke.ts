@@ -282,5 +282,12 @@ assertClientProductContract(pkgDir);
 // CHANNEL 一致性（宿主与客户端单一来源）
 assert.ok(client.includes('"/dsh-idle-archive"'), "客户端 CHANNEL 与宿主一致");
 
+// i18n 接入哨兵（issue #348）：双语字典 + 官方 locale 双通道接线进产物
+assert.ok(client.includes('"settings.idleArchive"'), "i18n 命名空间 NS 进产物");
+assert.ok(client.includes("locale.register"), "locale.register（字典注册）进产物");
+assert.ok(client.includes("locale.bind"), "locale.bind（原生 DOM 通道 t 绑定）进产物");
+assert.ok(client.includes("just now") && client.includes("justNow"), "en/zh 双语字典进产物");
+assert.ok(client.includes("locale: NS"), "slots.register locale 参数（React 通道）进产物");
+
 console.log("PASS: dsh-idle-archive smoke（handler / apply / 围栏 / 契约）");
 cleanup();

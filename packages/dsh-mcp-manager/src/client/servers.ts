@@ -8,6 +8,7 @@
 
 import { el, api } from "./dom.ts";
 import { STATUS_ORDER, STATUS_TEXT } from "./constants.ts";
+import { t } from "./i18n.ts";
 import type { McpState, UiActions } from "./state.ts";
 
 /** 服务器端点摘要：streamable-http 显示 URL，stdio 显示 command + args。 */
@@ -26,7 +27,7 @@ export function actionButton(label: any, onClick: any, primary = false, danger =
       try {
         await onClick();
       } catch (error) {
-        window.alert(`操作失败：${error instanceof Error ? error.message : String(error)}`);
+        window.alert(t("actionFail", { msg: error instanceof Error ? error.message : String(error) }));
       }
     },
   });
@@ -65,11 +66,11 @@ export function renderServer(server: any, state: McpState, actions: UiActions, o
     class: `dm-badge ${server.transport === "streamable-http" ? "dm-http" : "dm-stdio"}`,
     text: server.transport === "streamable-http" ? "HTTP" : "stdio",
   }));
-  header.appendChild(el("span", { class: "dm-badge", text: server.scope === "project" ? "项目" : "全局" }));
-  const statusBadge = el("span", { class: `dm-badge dm-st-${server.status}`, text: STATUS_TEXT[server.status] ?? server.status });
+  header.appendChild(el("span", { class: "dm-badge", text: server.scope === "project" ? t("badgeScopeProject") : t("badgeScopeGlobal") }));
+  const statusBadge = el("span", { class: `dm-badge dm-st-${server.status}`, text: STATUS_TEXT[server.status] !== undefined ? t(STATUS_TEXT[server.status]) : server.status });
   header.appendChild(statusBadge);
   const toolCount = Array.isArray(server.tools) ? server.tools.length : 0;
-  header.appendChild(el("span", { class: "dm-count", text: `${toolCount} 工具` }));
+  header.appendChild(el("span", { class: "dm-count", text: t("toolsCountPlain", { n: toolCount }) }));
   article.appendChild(header);
 
   article.appendChild(el("div", { class: "dm-endpoint", text: endpointOf(server) }));
@@ -79,7 +80,7 @@ export function renderServer(server: any, state: McpState, actions: UiActions, o
 
   if (toolCount > 0 && opts.tools) {
     const details = el("details", { class: "dm-tools" });
-    details.appendChild(el("summary", { text: `工具（${toolCount}）` }));
+    details.appendChild(el("summary", { text: t("toolsCount", { n: toolCount }) }));
     const list = el("ul");
     const disabledSet = new Set(Array.isArray(server.disabledTools) ? server.disabledTools : []);
     for (const tool of server.tools) {
@@ -89,7 +90,7 @@ export function renderServer(server: any, state: McpState, actions: UiActions, o
     article.appendChild(details);
   } else if (toolCount > 0 && !opts.tools) {
     const details = el("details", { class: "dm-tools" });
-    details.appendChild(el("summary", { text: `工具（${toolCount}）` }));
+    details.appendChild(el("summary", { text: t("toolsCount", { n: toolCount }) }));
     const list = el("ul");
     for (const tool of server.tools) list.appendChild(el("li", { text: tool }));
     details.appendChild(list);
@@ -100,16 +101,16 @@ export function renderServer(server: any, state: McpState, actions: UiActions, o
   const busy = server.status === "connecting" || server.status === "reconnecting";
   const scopeQuery = `&scope=${server.scope}`;
   if (server.status === "connected") {
-    actionsEl.appendChild(actionButton("断开", async () => {
+    actionsEl.appendChild(actionButton(t("disconnect"), async () => {
       await api(`${state.API.disconnect}?name=${encodeURIComponent(server.name)}${scopeQuery}`, { method: "POST" });
       await actions.refresh();
     }));
-    actionsEl.appendChild(actionButton("重连", async () => {
+    actionsEl.appendChild(actionButton(t("reconnect"), async () => {
       await api(`${state.API.reconnect}?name=${encodeURIComponent(server.name)}${scopeQuery}`, { method: "POST" });
       await actions.refresh();
     }));
   } else if (server.status === "disabled") {
-    actionsEl.appendChild(actionButton("启用并连接", async () => {
+    actionsEl.appendChild(actionButton(t("enableAndConnect"), async () => {
       await api(`${state.API.servers}?name=${encodeURIComponent(server.name)}${scopeQuery}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
@@ -119,14 +120,14 @@ export function renderServer(server: any, state: McpState, actions: UiActions, o
       await actions.refresh();
     }, true));
   } else {
-    actionsEl.appendChild(actionButton("连接", async () => {
+    actionsEl.appendChild(actionButton(t("connect"), async () => {
       await api(`${state.API.connect}?name=${encodeURIComponent(server.name)}${scopeQuery}`, { method: "POST" });
       await actions.refresh();
     }, true));
   }
   // 禁用开关：非 disabled 状态可一键禁用（宿主断开并注销工具）
   if (server.status !== "disabled") {
-    actionsEl.appendChild(actionButton("禁用", async () => {
+    actionsEl.appendChild(actionButton(t("disable"), async () => {
       await api(`${state.API.servers}?name=${encodeURIComponent(server.name)}${scopeQuery}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
@@ -136,9 +137,9 @@ export function renderServer(server: any, state: McpState, actions: UiActions, o
       await actions.refresh();
     }));
   }
-  actionsEl.appendChild(actionButton("编辑", () => actions.beginEdit(server)));
-  actionsEl.appendChild(actionButton("删除", async () => {
-    if (!window.confirm(`删除 MCP 服务器「${server.name}」？`)) return;
+  actionsEl.appendChild(actionButton(t("edit"), () => actions.beginEdit(server)));
+  actionsEl.appendChild(actionButton(t("delete"), async () => {
+    if (!window.confirm(t("confirmDelete", { name: server.name }))) return;
     await api(`${state.API.servers}?name=${encodeURIComponent(server.name)}${scopeQuery}`, { method: "DELETE" });
     if (state.editingName === server.name) actions.resetForm();
     await actions.refresh();
@@ -154,7 +155,7 @@ export function renderServers(state: McpState, actions: UiActions): void {
   if (state.bodyEl === undefined) return;
   state.bodyEl.textContent = "";
   if (state.servers.length === 0) {
-    state.bodyEl.appendChild(el("div", { class: "dm-status", text: "还没有配置 MCP 服务器。切到「快速接入」页添加，或粘贴 mcpServers JSON 导入。" }));
+    state.bodyEl.appendChild(el("div", { class: "dm-status", text: t("serversEmpty") }));
     return;
   }
   const isAll = state.middlewareMode === "all";
@@ -164,21 +165,21 @@ export function renderServers(state: McpState, actions: UiActions): void {
     if (list.length === 0) continue;
     const section = el("section", { class: "dm-group" });
     const title = el("h3");
-    title.appendChild(document.createTextNode(scope === "project" ? "项目级" : "全局级"));
+    title.appendChild(document.createTextNode(scope === "project" ? t("groupProject") : t("groupGlobal")));
     title.appendChild(el("span", { class: "dm-count", text: `${list.length}` }));
     section.appendChild(title);
     for (const group of STATUS_ORDER) {
       const grouped = list.filter((server: any) => server.status === group.key);
       if (grouped.length === 0) continue;
       const sub = el("div", { class: "dm-subgroup" });
-      sub.appendChild(el("h4", { class: "dm-subgroup-title", text: `${group.title}（${grouped.length}）` }));
+      sub.appendChild(el("h4", { class: "dm-subgroup-title", text: t("statusGroupCount", { status: t(group.titleKey), n: grouped.length }) }));
       for (const server of grouped.sort((a: any, b: any) => a.name.localeCompare(b.name))) {
         sub.appendChild(renderServer(server, state, actions, { tools: toolsEnabled(scope) }));
       }
       section.appendChild(sub);
     }
     if (scope === "global" && !isAll) {
-      section.appendChild(el("div", { class: "dm-status", text: "全局工具开关需在 all 模式（中间层全量接管）下管理——切 all 模式可管理全局工具" }));
+      section.appendChild(el("div", { class: "dm-status", text: t("globalToolHint") }));
     }
     state.bodyEl.appendChild(section);
   }
