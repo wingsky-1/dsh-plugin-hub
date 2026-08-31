@@ -64,10 +64,11 @@
 
 ### 1.3 dsh-web-file-preview（软破坏 · 必改 · 补降级）
 > 评审 P0-4：`openWorkspacePath({path})→{opened:true}` 属实，但漏 `canOpenWorkspacePath()` 探测与 RemoteError/signal 错误面。
-- [ ] `src/client/wrapper.ts` openPath 包装 → `ctx.remote.session.openWorkspacePath`（`{path}` → `{opened}`），**配官方 `canOpenWorkspacePath()` 探测降级**
-- [ ] 处理 RemoteError / signal 错误面（RemoteResult 解包 + 失败语义）
-- [ ] 清理 `dsh.client.inject` 中 `dsh-client-runtime` 死引用
-- [ ] 对话内文件链接点击预览（intercept → /api/fwp/）回归不破坏
+> 实施（2026-08-31）：上游 alpha.2 实测确认——对话 `openFile()` 统一经 `ctx.remote.session.openWorkspacePath({path})`（ui-chat `apply.ts:120-126`），调用方检查 `result.ok`。
+- [x] `src/client/wrapper.ts` openPath 包装 → `ctx.remote.session.openWorkspacePath`（命中预览分组 → 返回 `{ok:true,value:{opened:false}}` 不触底原生；否则放行原方法）；**RemoteError/signal 面由调用方处理、原样透传**（上游调用方检查 `result.ok`，错误语义自然保留）
+- [x] 降级说明：`openWorkspacePath` 缺失 → 包装整体跳过（防御式，与旧无 `workspaces.openPath` 时行为一致）；上游 `canOpenWorkspacePath()` 为宿主能力探测（types.d.ts:326-335 证实），客户端拦截不依赖它——已有能力探测由上游调用方使用
+- [x] 清理 `dsh.client.inject` 中 `dsh-client-runtime` 死引用（已在 1.1 完成）
+- [x] 对话内文件链接点击预览（intercept → /api/fwp/）回归不破坏（smoke 契约断言 + 全测试绿）
 
 ### 1.4 dsh-idle-archive（自查）
 - [x] 核对 `src/client` import 面——**无任何 `@deepseek-ai` 运行时 import**（评审实证），仅需清理死引用
