@@ -1,6 +1,6 @@
 {
   "name": "@wingsky-1/dsh-mcp-manager",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "DSH MCP 管理器：Web 侧边栏「MCP」入口，面板按状态分级展示 MCP 服务器（运行中/连接中/已配置/失败），支持快速接入（stdio / streamable-http 表单）与粘贴 mcpServers JSON 导入。已连接服务器的工具以 mcp__<server>__<tool> 注册给模型直接调用。",
   "type": "module",
   "main": "lib/index.js",
@@ -51,11 +51,12 @@
     "schemastery": "^3.18.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "*",
-    "@deepseek-ai/dsh-host-webserver": "*",
-    "@deepseek-ai/dsh-agent": "*",
-    "@deepseek-ai/dsh-tools": "*",
-    "@deepseek-ai/dsh-system-prompt": "*"
+    "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/dsh-host-webserver": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-agent": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-tools": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-system-prompt": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-llm": "0.1.1-rc.2"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {
@@ -71,6 +72,9 @@
       "optional": true
     },
     "@deepseek-ai/dsh-system-prompt": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-llm": {
       "optional": true
     }
   },
