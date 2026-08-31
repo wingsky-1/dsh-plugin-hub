@@ -33,9 +33,15 @@ DSH（DeepSeek Harness）Web GUI 插件集，npm 分发：一键装全家桶，�
 | `@wingsky-1/dsh-lan-proxy` | 局域网访问 dsh web UI（HTTP/HTTPS/WS 转发 + TLS + HTTP 响应压缩，Brotli/gzip 自适应） | [README](packages/dsh-lan-proxy/README.md) | ✅ 已发布 |
 | `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理器（stdio/HTTP；分工作目录维护项目级/全局两级配置，项目级 MCP 经中间层收敛、免于工具洪水） | [README](packages/dsh-mcp-manager/README.md) | ✅ 已发布 |
 | `@wingsky-1/dsh-idle-archive` | 会话闲置提醒归档 | [README](packages/dsh-idle-archive/README.md) | ✅ 已发布 |
-| `@wingsky-1/dsh-web-file-preview` | 点击对话文件链接在 web 端预览（图片/文本/Markdown/代码/Diff） | [README](packages/dsh-web-file-preview/README.md) | ✅ 已发布 |
+| `@wingsky-1/dsh-web-file-preview` | 点击对话文件链接在 web 端预览（图片/文本/Markdown/代码/Diff/Mermaid） | [README](packages/dsh-web-file-preview/README.md) | ✅ 已发布 |
+| `@wingsky-1/dsh-verify-isolated` | DSH 插件开发的隔离环境浏览器验证 skill（临时 DSH_HOME + 独立 profile 双重隔离） | [README](packages/dsh-verify-isolated/README.md) | ✅ 已发布 |
+| `@wingsky-1/dsh-codegraph` | codegraph 本地代码图谱 MCP + worktree 开发纪律（经 mcp-manager 运行时注册） | [README](packages/dsh-codegraph/README.md) | ✅ 已发布（独立发包，暂不进聚合包） |
 | `@wingsky-1/dsh-subagent-model-inherit` | 子 Agent 自动继承父会话模型与思考等级 | [README](packages/dsh-subagent-model-inherit/README.md) | 观察期（独立发包，暂不进聚合包） |
 
+> **独立发包说明**：`@wingsky-1/dsh-codegraph` 为**独立发包**、**未包含在
+> `dsh-plugins-all` 聚合包中**，需单独安装（它经 mcp-manager 运行时注册 codegraph MCP，
+> 请先装 `dsh-mcp-manager` 或聚合包再配合使用）。
+>
 > **观察期说明**：`@wingsky-1/dsh-subagent-model-inherit` 为实验性插件——它改变子 Agent
 > 的模型路由行为（继承父会话），具有全局影响。目前**独立发包**、**未包含在
 > `dsh-plugins-all` 聚合包中**，需单独安装；待收集足够使用反馈后再决定转正进聚合包、
@@ -150,21 +156,6 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
 同时装 `dsh-plugins-all` 与任一 `@wingsky-1/dsh-lan-proxy` 等独立包会导致同名 entry
 重复，`dsh web` 启动时报 duplicate 错误（可发现，不代表损坏）。需要调整时：
 卸载聚合包，或卸载对应独立包，重启即可。
-
-### 从 0.1.x 升级（patch id 迁移）
-
-0.1.5 起独立包 patch `id` 由旧短名（如 `notifier`、`lan-proxy`、`dsh-gzip`）统一改为
-`ui-<name>`（如 `ui-dsh-notifier`）。若你此前单独安装过独立包，profile 中可能残留旧
-`id` 行——建议确认后通过以下命令检测，并重装对应包拉取新 patch：
-
-```sh
-# 检测 profile 中是否仍引用旧 id（home 级与 profile 级）
-grep -rnE '^\s*id:\s*(dsh-gzip|dsh-idle-archive|lan-proxy|mcp-manager|notifier|opencode-usage|ui-dsh-opencode-usage)\s*$' \
-  "$DSH_HOME/cordis.patch.yml" ~/.dsh/profiles/*/cordis.patch.yml 2>/dev/null
-# 有输出 → 重装覆盖拉取新配置（默认装 latest，即当前最新版）
-dsh plugin --profile web remove @wingsky-1/<包>
-dsh plugin --profile web add @wingsky-1/<包>@latest
-```
 
 ## 相关项目
 

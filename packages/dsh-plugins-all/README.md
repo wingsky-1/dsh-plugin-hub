@@ -56,6 +56,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
 | `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理器（stdio/HTTP，工具注册给模型） |
 | `@wingsky-1/dsh-idle-archive` | 会话闲置提醒归档 |
 | `@wingsky-1/dsh-web-file-preview` | 点击对话文件链接在 web 端预览（图片/文本/Markdown/代码/Diff） |
+| `@wingsky-1/dsh-verify-isolated` | 插件开发隔离验证 skill（临时 DSH_HOME + 独立 profile 双重隔离） |
 
 > `@wingsky-1/dsh-gzip` 已退役：HTTP 响应压缩合并进 dsh-lan-proxy，不再随全家桶
 > 分发。此前单独安装过 dsh-gzip 的用户升级后请执行
@@ -65,6 +66,10 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
 >
 > `@wingsky-1/dsh-subagent-model-inherit`（子 Agent 模型继承，实验性）处于**观察期**，
 > 独立发包、暂不包含在本聚合包内；如需使用请单独安装，详见其 README。
+>
+> `@wingsky-1/dsh-codegraph`（codegraph MCP + worktree 开发纪律）为**独立发包**，
+> 暂不包含在本聚合包内；如需使用请先安装本聚合包或 `dsh-mcp-manager` 后单独安装
+> `dsh-codegraph`。
 
 ## 单独安装
 

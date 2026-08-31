@@ -38,7 +38,19 @@ install them all at once as a single bundle, or pick individual plugins as neede
 | `@wingsky-1/dsh-lan-proxy` | Access the dsh web UI over LAN (HTTP/HTTPS/WS forwarding + TLS + HTTP response compression, Brotli/gzip) | [README](packages/dsh-lan-proxy/README.md) | ✅ Published |
 | `@wingsky-1/dsh-mcp-manager` | MCP server manager (stdio / HTTP; per-working-directory project/global config tiers, project-level MCP collapsed via middleware — no tool flood in the model surface) | [README](packages/dsh-mcp-manager/README.md) | ✅ Published |
 | `@wingsky-1/dsh-idle-archive` | Prompt to archive idle conversations | [README](packages/dsh-idle-archive/README.md) | ✅ Published |
-| `@wingsky-1/dsh-web-file-preview` | Click conversation file links to preview in the web UI (image / text / Markdown / code / Diff) | [README](packages/dsh-web-file-preview/README.md) | ✅ Published |
+| `@wingsky-1/dsh-web-file-preview` | Click conversation file links to preview in the web UI (image / text / Markdown / code / Diff / Mermaid) | [README](packages/dsh-web-file-preview/README.md) | ✅ Published |
+| `@wingsky-1/dsh-verify-isolated` | Isolated-environment browser verification skill for DSH plugin development (temp DSH_HOME + independent profile, double isolation) | [README](packages/dsh-verify-isolated/README.md) | ✅ Published |
+| `@wingsky-1/dsh-codegraph` | codegraph local code-graph MCP + worktree development discipline (registered at runtime via mcp-manager) | [README](packages/dsh-codegraph/README.md) | ✅ Published (standalone, not in the bundle) |
+| `@wingsky-1/dsh-subagent-model-inherit` | Child agents automatically inherit parent-session model and reasoning effort | [README](packages/dsh-subagent-model-inherit/README.md) | Observation (standalone, not in the bundle) |
+
+> **Standalone note**: `@wingsky-1/dsh-codegraph` is published **standalone** and is **not
+> included in `dsh-plugins-all`**; install it separately (it registers the codegraph MCP at
+> runtime via mcp-manager, so install `dsh-mcp-manager` or the bundle first).
+>
+> **Observation note**: `@wingsky-1/dsh-subagent-model-inherit` is experimental — it changes
+> child-agent model routing (inherits the parent session). It is published **standalone** and
+> **not included in `dsh-plugins-all`**; install it separately until enough feedback decides
+> promotion into the bundle, continued standalone evolution, or retirement.
 
 > **No longer maintained**: `@wingsky-1/dsh-skill-explorer` (skill-center / skill management) is
 > **discontinued** (deprecated on npm; the plugin package and the bundle package have been removed).
@@ -158,22 +170,6 @@ Each individual package and the bundle share the same patch `id` (`ui-*`). **Ins
 results in duplicate same-name entries, and `dsh web` fails to start with a *duplicate* error
 (detectable, not corrupting). To adjust: uninstall the bundle, or uninstall the corresponding
 individual package, then restart.
-
-### Upgrading from 0.1.x (patch id migration)
-
-Since 0.1.5, individual package patch `id`s changed from the old short names (e.g. `notifier`,
-`lan-proxy`, `dsh-gzip`) to `ui-<name>` (e.g. `ui-dsh-notifier`). If you previously installed
-individual packages, your profile may still contain old `id` lines — detect and reinstall the
-affected packages to pull the new patch:
-
-```sh
-# Detect whether old ids are still referenced in the profile (home-level and profile-level)
-grep -rnE '^\s*id:\s*(dsh-gzip|dsh-idle-archive|lan-proxy|mcp-manager|notifier|opencode-usage|ui-dsh-opencode-usage)\s*$' \
-  "$DSH_HOME/cordis.patch.yml" ~/.dsh/profiles/*/cordis.patch.yml 2>/dev/null
-# If output exists → reinstall to overwrite and pull the new config (default = latest)
-dsh plugin --profile web remove @wingsky-1/<package>
-dsh plugin --profile web add @wingsky-1/<package>@latest
-```
 
 ## Related projects
 
