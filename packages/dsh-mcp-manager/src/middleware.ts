@@ -46,6 +46,7 @@ import {
   fullServerName,
   isToolDenied,
   toolDisabledReason,
+  MIDDLEWARE_GLOBAL_ROOT,
 } from "./middleware-utils.ts";
 import type {
   MiddlewareHost,
@@ -155,6 +156,25 @@ export class McpMiddleware {
         const prefix = `mcp__${serverName}__`;
         if (Array.isArray(registered) && registered.some((schema) => typeof schema?.name === "string" && (schema.name as string).startsWith(prefix))) {
           this.host.logger.warn(`dsh-mcp-manager(${serverName}@${root}): server 已由其他插件（如官方 dsh-mcp-client）注册 mcp__ 工具，跳过本实例连接（防双进程）`);
+          // F5（#382）：命中多为热更新/模式切换窗口期——旧实例 mcp__ 注册尚未
+          // 注销（dispose 为 fire-and-forget）。确保存在可挂重试定时器的 entry
+          // （首次连接无旧 entry → 落 failed 占位；旧 entry 保留其退避语义），
+          // 安排一次有界延迟重试，避免窗口期「一次定终身」掉线；重试经
+          // ensureConnected（尊重 userDisabled + in-flight 去重），再命中仍跳过
+          // （官方 client 真接管场景不空转）。
+          const retryEntry = unit.connections.get(serverName) ?? {
+            server,
+            client: undefined,
+            transport: undefined,
+            status: "failed",
+            error: undefined,
+            connectedAt: undefined,
+            reconnectTimer: undefined,
+            disposed: false,
+            failedAttempts: 0,
+          };
+          unit.connections.set(serverName, retryEntry);
+          this.scheduleProbeRetry(root, serverName);
           return;
         }
       } catch {
@@ -173,6 +193,7 @@ export class McpMiddleware {
       reconnectTimer: undefined,
       disposed: false,
       failedAttempts: entry?.failedAttempts ?? 0,
+      probeRetried: entry?.probeRetried ?? false,
     };
     unit.connections.set(serverName, newEntry);
     const closeHandler = (error: Error) => {
@@ -193,6 +214,7 @@ export class McpMiddleware {
       newEntry.status = "connected";
       newEntry.connectedAt = Date.now();
       newEntry.failedAttempts = 0;
+      newEntry.probeRetried = false;
       this.host.logger.info(`dsh-mcp-manager(${serverName}@${root}): connected`);
       this.host.emitStatus();
     } catch (error) {
@@ -225,6 +247,30 @@ export class McpMiddleware {
       if (entry.disposed) return;
       void this.connectInternal(root, serverName);
     }, delayMs);
+    entry.reconnectTimer.unref?.();
+  }
+
+  /**
+   * 防双进程探测命中后的一次性有界重试（#382 F5）。定时器复用 entry.reconnectTimer
+   * 槽位（teardownUnit/disconnect 路径统一清理）；重试经 ensureConnected——它
+   * 查 userDisabled + in-flight 去重，不会复活用户已断开的服务器、不与手动重连
+   * 并发冲突。每代 entry 只重试一次（probeRetried 标记；连接成功复位），官方
+   * dsh-mcp-client 真接管时不会反复空转。
+   */
+  private scheduleProbeRetry(root: string, serverName: string): void {
+    const unit = this.units.get(root);
+    if (unit === undefined) return;
+    const entry = unit.connections.get(serverName);
+    if (entry === undefined || entry.disposed) return;
+    if (entry.reconnectTimer !== undefined) return;
+    if (entry.probeRetried === true) return;
+    entry.probeRetried = true;
+    const PROBE_RETRY_DELAY_MS = 3000;
+    entry.reconnectTimer = setTimeout(() => {
+      entry.reconnectTimer = undefined;
+      if (entry.disposed) return;
+      void this.ensureConnected(root, serverName);
+    }, PROBE_RETRY_DELAY_MS);
     entry.reconnectTimer.unref?.();
   }
 
@@ -430,12 +476,15 @@ export class McpMiddleware {
     return servers;
   }
 
-  /** LRU 淘汰：无活动引用（lastTouchedAt 最旧）且超过上限时淘汰最旧单元。 */
+  /** LRU 淘汰：无活动引用（lastTouchedAt 最旧）且超过上限时淘汰最旧单元。
+   * @global 单元豁免（#382 F3）：全局服务器常连语义不随多项目切换被淘汰
+   * （supervisor 时代全局永不淘汰，池接管后需显式豁免保持等价语义）。 */
   evictIfNeeded(maxUnits = 16): void {
     while (this.units.size > maxUnits) {
       let oldestKey: string | undefined;
       let oldestAt = Infinity;
       for (const [root, unit] of this.units) {
+        if (root === MIDDLEWARE_GLOBAL_ROOT) continue;
         if (unit.lastTouchedAt < oldestAt) {
           oldestAt = unit.lastTouchedAt;
           oldestKey = root;

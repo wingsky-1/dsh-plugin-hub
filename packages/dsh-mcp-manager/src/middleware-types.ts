@@ -54,6 +54,8 @@ export interface ConnectionEntry {
   disposed: boolean;
   /** 连续失败次数（有界指数退避依据；连接成功后清零）。 */
   failedAttempts: number;
+  /** 防双进程探测命中后的重试已排（#382 F5：只重试一次；连接成功后复位）。 */
+  probeRetried?: boolean;
 }
 
 /** 目录中的单服务器条目。 */

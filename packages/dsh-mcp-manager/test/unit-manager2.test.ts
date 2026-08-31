@@ -484,6 +484,72 @@ function rmStatSafe(p) {
   }
 }
 
+// ---- #382 F2/F3/F4/F5：runtime 回退重连 + all 模式池接管 + 防双进程探测重试 ----
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mgr2g-"));
+  const prevHome = process.env.DSH_HOME;
+  try {
+    process.env.DSH_HOME = dir;
+    const { manager, store, log } = makeManager(dir);
+
+    // F2：runtime 注入条目（不落 store）——reconnect 不再抛 not found，
+    // 断开后按 runtimeRegistry 配置经 supervisor 复活。
+    manager.runtimeRegistry.set("rt", normalizeServer(quietServer("rt")));
+    await manager.reconnect("rt");
+    assert.ok(manager.supervisors.has("rt"), "runtime 条目 reconnect 复活（F2 回退 runtimeRegistry）");
+    // F2 否定：project scope 不回退 runtime（挂错 scope 会被下次 reconcile
+    // 无声停掉）——runtime 条目按 project 查询照旧抛 not found。
+    manager.projectStore = new McpStore(join(dir, "p.json"));
+    await manager.projectStore.load();
+    await assert.rejects(() => manager.connect("rt", "project"), /not found/);
+
+    // F3：all 模式 start 全局非 runtime → 不建 supervisor、不注册 mcp__ 工具，
+    // 改触达 @global 单元惰性连接（连接条目最终出现在池中）。
+    manager.middlewareMode = "all";
+    await manager.initMiddleware("all", {});
+    store.upsert(normalizeServer(quietServer("g2")));
+    manager.start("g2", "global");
+    assert.ok(!manager.supervisors.has("g2"), "all 模式全局 start 不建 supervisor（F3 下沉）");
+    assert.equal(log.registered.filter((name) => String(name).startsWith("mcp__g2__")).length, 0, "不注册 mcp__ 前缀工具");
+    await pollUntil("@global 单元连接条目建立", () => manager.middleware.units.get("@global")?.connections.has("g2") === true);
+
+    // F4：all 模式 connect 全局走池（userDisabled 解除 + ensureConnected），
+    // 不复活 supervisor。
+    manager.middleware.units.get("@global").userDisabled.add("g2");
+    await manager.connect("g2");
+    assert.ok(!manager.supervisors.has("g2"), "connect 不复活 supervisor（F4 走池）");
+    assert.ok(!manager.middleware.units.get("@global").userDisabled.has("g2"), "userDisabled 已解除");
+
+    // F5：防双进程探测命中 → 落 failed 占位 entry + 一次性重试定时器。
+    manager.ctx.tools.schemas = () => [{ name: "mcp__g3__t" }];
+    store.upsert(normalizeServer(quietServer("g3")));
+    manager.start("g3", "global");
+    await pollUntil("探测命中占位 entry", () => {
+      const probeEntry = manager.middleware.units.get("@global")?.connections.get("g3");
+      return probeEntry !== undefined && probeEntry.probeRetried === true;
+    });
+    const probeEntry = manager.middleware.units.get("@global").connections.get("g3");
+    assert.ok(probeEntry.reconnectTimer !== undefined, "重试定时器已排（F5 有界重试）");
+    // 一次性语义：probeRetried 已置位，再次 ensureConnected 命中探测不重排。
+    await manager.middleware.ensureConnected("@global", "g3");
+    assert.ok(probeEntry.reconnectTimer !== undefined, "重试定时器保持（probeRetried 一次性）");
+    // 否定用例：userDisabled 已写时，重试路径（ensureConnected）不连接。
+    manager.middleware.units.get("@global").userDisabled.add("g3");
+    await manager.middleware.ensureConnected("@global", "g3");
+    assert.equal(
+      manager.middleware.units.get("@global").connections.get("g3").status,
+      "failed",
+      "userDisabled 命中不重连（重试经 ensureConnected 的禁用语义保证）",
+    );
+    await manager.dispose();
+  } finally {
+    if (prevHome === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = prevHome;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 // ---- add / update（scope project 抛错路径在 unit-manager 已覆盖，此处补全局） ----
 
 {
@@ -805,16 +871,23 @@ function rmStatSafe(p) {
     assert.equal(gAll.status, "connected", "all 模式全局经 @virtual root 投影");
     assert.deepEqual(gAll.tools, ["gt"]);
 
-    // 反向投影回归（#228 打回 P1）：池中条目被拆且 userDisabled，但 supervisor
-    // 已复活连接（all 模式全局 connect 绕过中间层池的 #234 既有限制）→ 必须
-    // 如实投影 supervisor 状态，不得因 userDisabled 恒报 stopped。
+    // 反向投影迁移（#382 F4）：池中条目被拆且 userDisabled → userDisabled 短路
+    // 投影 stopped。all 模式全局 connect 已改走中间层池（不再 supervisor 复活），
+    // 短路不再误伤真实连接；supervisor 残留（理论不该存在）也不误显示其连接态。
     const globalUnit = mw.units.get("@global");
     globalUnit.connections.delete("g1");
     globalUnit.userDisabled.add("g1");
     manager.supervisors.set("g1", { status: "connected", error: undefined, tools: ["gt"] });
-    const revived = manager.summarize(store.find("g1"), "global");
-    assert.equal(revived.status, "connected", "supervisor 复活后如实投影（userDisabled 不短路）");
-    assert.deepEqual(revived.tools, ["gt"]);
+    const disabledProjection = manager.summarize(store.find("g1"), "global");
+    assert.equal(disabledProjection.status, "stopped", "userDisabled 短路（#382：池接管后断开即 stopped）");
+    assert.deepEqual(disabledProjection.tools, []);
+    // runtime 注入条目豁免短路（middlewareTakes 判定）：同名 runtime supervisor
+    // 走 supervisor 投影，如实显示连接态。
+    manager.runtimeRegistry.set("g1", store.find("g1"));
+    const runtimeProjection = manager.summarize(store.find("g1"), "global");
+    assert.equal(runtimeProjection.status, "connected", "runtime 条目豁免短路（supervisor 路径）");
+    assert.deepEqual(runtimeProjection.tools, ["gt"]);
+    manager.runtimeRegistry.delete("g1");
     // supervisor 消失后落回兜底 stopped。
     manager.supervisors.delete("g1");
     assert.equal(manager.summarize(store.find("g1"), "global").status, "stopped");
