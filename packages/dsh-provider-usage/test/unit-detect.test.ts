@@ -1,10 +1,11 @@
 // @ts-nocheck
 /**
- * dsh-provider-usage — unit：provider 检测链（issue #69，0.1.2 适配）。
+ * dsh-provider-usage — unit：provider 检测链（issue #69；#383 投影形状修正）。
  *
- * 覆盖：per-session modelSelection 投影（0.1.2-alpha.2）读取 provider —— 子代理会话
- * 自身投影缺失时沿 parentId 上溯父会话投影取 provider、上溯深度封顶与环防御、
- * 全链投影缺失回落 ctx.remote.session.modelCatalog().default 兜底、
+ * 覆盖：per-session modelSelection 投影（0.1.2 list 行拍平 projectionValues）读取
+ * provider —— 子代理会话自身投影缺失时沿 parentId 上溯父会话投影取 provider、
+ * 上溯深度封顶与环防御、全链投影缺失回落 ctx.remote.session.modelCatalog().default
+ * 兜底、wire 形状（projections.values）不得被误读（#383 反向断言）、
  * 全链失败保持上次检测 + 「提供商未识别」标注决策、无任何会话维持原回落行为
  * （回归防护）、ordinary 会话直连解析回归。
  *
@@ -54,7 +55,7 @@ function makeSessions(byId, current) {
 }
 
 /**
- * 行投影小工具：构造 SessionSummary 防御式行。
+ * 行投影小工具：构造 SessionSummary 防御式行（#383：拍平 projectionValues 形状）。
  * provider 缺省 → 行无 modelSelection 投影（模拟子代理/未解析会话）。
  */
 function row(provider, opts = {}) {
@@ -64,13 +65,11 @@ function row(provider, opts = {}) {
   if (parentSessionId !== undefined) r.parentSessionId = parentSessionId;
   if (origin !== undefined) r.origin = origin;
   if (provider !== undefined) {
-    r.projections = {
-      values: {
-        modelSelection: {
-          // 默认写入 lastUsed；slot:"next" 时只写 next（模拟待确认意图）
-          ...(slot === "next" ? {} : { lastUsed: { provider, model: "model-x" } }),
-          ...(slot === "next" ? { next: { provider, model: "model-x" } } : {}),
-        },
+    r.projectionValues = {
+      modelSelection: {
+        // 默认写入 lastUsed；slot:"next" 时只写 next（模拟待确认意图）
+        ...(slot === "next" ? {} : { lastUsed: { provider, model: "model-x" } }),
+        ...(slot === "next" ? { next: { provider, model: "model-x" } } : {}),
       },
     };
   }
@@ -122,16 +121,14 @@ function makeRemote(providerByDefault) {
 }
 
 {
-  // lastUsed 优先于 next：两者并存时取 lastUsed
+  // lastUsed 优先于 next：两者并存时取 lastUsed（#383：拍平 projectionValues 形状）
   const sessions = makeSessions(
     {
       own: {
-        projections: {
-          values: {
-            modelSelection: {
-              lastUsed: { provider: "last-p", model: "a" },
-              next: { provider: "next-p", model: "b" },
-            },
+        projectionValues: {
+          modelSelection: {
+            lastUsed: { provider: "last-p", model: "a" },
+            next: { provider: "next-p", model: "b" },
           },
         },
       },
@@ -140,6 +137,24 @@ function makeRemote(providerByDefault) {
   );
   const got = await resolveProviderFromSession(sessions, makeRemote());
   assert.equal(got, "last-p", "lastUsed 优先于 next");
+}
+
+{
+  // #383 反向断言：wire 形状（projections.values）不得被误读——store 行只认拍平的
+  // projectionValues；仅携带 wire 形状的行必须视为无投影 → 走 modelCatalog 兜底
+  const sessions = makeSessions(
+    {
+      own: {
+        projections: {
+          asOfSeq: 7,
+          values: { modelSelection: { lastUsed: { provider: "wire-p", model: "a" } } },
+        },
+      },
+    },
+    "own",
+  );
+  const got = await resolveProviderFromSession(sessions, makeRemote("catalog-fallback"));
+  assert.equal(got, "catalog-fallback", "wire 形状（projections.values）不被读取 → 落兜底");
 }
 
 // ---------------------------------------------------------------- 2) 全链投影缺失：保持上次检测 + 未识别标注 / modelCatalog 兜底
@@ -260,4 +275,4 @@ function makeRemote(providerByDefault) {
   assert.equal(got, "prov-k", "首个解析成功者胜");
 }
 
-console.log("[unit-detect] 全部断言通过 ✓ (#69 provider 检测链，0.1.2-alpha.2 投影面)");
+console.log("[unit-detect] 全部断言通过 ✓ (#69 检测链；#383 projectionValues 形状修正)");
