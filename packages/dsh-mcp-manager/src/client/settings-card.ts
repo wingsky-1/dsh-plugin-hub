@@ -9,6 +9,7 @@
 import * as React from "react";
 import { API } from "./constants.ts";
 import { api } from "./dom.ts";
+import { t } from "./i18n.ts";
 
 /**
  * 设置页插件卡（settings.plugin.item）：浮窗位置 / 偏移编辑区。
@@ -39,7 +40,7 @@ export function SettingsCard() {
   }, []);
 
   if (cfg === null) {
-    return React.createElement("li", { className: "dm-set-card" }, "MCP 管理器：加载中…");
+    return React.createElement("li", { className: "dm-set-card" }, t("settingsLoading"));
   }
 
   const set = (patch: any) => setCfg((c: any) => (c !== null ? Object.assign({}, c, patch) : c));
@@ -70,10 +71,10 @@ export function SettingsCard() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
       });
-      setMsg({ ok: true, text: "已保存——浮窗位置与中间层模式即时生效（无需重启）" });
+      setMsg({ ok: true, text: t("settingsSavedOk") });
       setTimeout(() => setMsg(null), 2400);
     } catch (e) {
-      setMsg({ ok: false, text: `保存失败：${e instanceof Error ? e.message : String(e)}` });
+      setMsg({ ok: false, text: t("saveFail", { msg: e instanceof Error ? e.message : String(e) }) });
     }
     setSaving(false);
   };
@@ -86,8 +87,8 @@ export function SettingsCard() {
       onClick: () => setOpen(!open),
     },
       React.createElement("span", { className: "dm-set-headText" },
-        React.createElement("span", { className: "dm-set-name" }, "MCP 管理器（dsh-mcp-manager）"),
-        React.createElement("span", { className: "dm-set-description" }, "浮窗位置 / 水平·垂直·空白偏移"),
+        React.createElement("span", { className: "dm-set-name" }, t("settingsName")),
+        React.createElement("span", { className: "dm-set-description" }, t("settingsDescription")),
       ),
       React.createElement("svg", {
         className: "dm-set-chevron" + (open ? " dm-set-chevronOpen" : ""),
@@ -106,40 +107,40 @@ export function SettingsCard() {
     ),
     open ? React.createElement("div", { className: "dm-set-body" },
       React.createElement("div", { className: "dm-set-row" },
-        React.createElement("label", { htmlFor: "dm-set-position" }, "锚点"),
+        React.createElement("label", { htmlFor: "dm-set-position" }, t("anchorLabel")),
         React.createElement("select", {
           id: "dm-set-position",
           className: "dm-set-input",
           value: cfg.position,
           onChange: (e: any) => set({ position: e.target.value }),
         },
-          React.createElement("option", { value: "top-right" }, "右上（top-right）"),
-          React.createElement("option", { value: "top-left" }, "左上（top-left）"),
-          React.createElement("option", { value: "bottom-right" }, "右下（bottom-right）"),
-          React.createElement("option", { value: "bottom-left" }, "左下（bottom-left）"),
+          React.createElement("option", { value: "top-right" }, t("posTopRight")),
+          React.createElement("option", { value: "top-left" }, t("posTopLeft")),
+          React.createElement("option", { value: "bottom-right" }, t("posBottomRight")),
+          React.createElement("option", { value: "bottom-left" }, t("posBottomLeft")),
         ),
       ),
       React.createElement("div", { className: "dm-set-row" },
-        React.createElement("label", { htmlFor: "dm-set-middleware" }, "中间层模式"),
+        React.createElement("label", { htmlFor: "dm-set-middleware" }, t("modeLabel")),
         React.createElement("select", {
           id: "dm-set-middleware",
           className: "dm-set-input",
           value: middleware,
           onChange: (e: any) => setMiddleware(e.target.value),
         },
-          React.createElement("option", { value: "project" }, "project（项目级走中间层，推荐）"),
-          React.createElement("option", { value: "all" }, "all（全局也走中间层）"),
-          React.createElement("option", { value: "off" }, "off（全部直呼 mcp__ 工具）"),
+          React.createElement("option", { value: "project" }, t("modeProject")),
+          React.createElement("option", { value: "all" }, t("modeAll")),
+          React.createElement("option", { value: "off" }, t("modeOff")),
         ),
       ),
       React.createElement("div", { className: "dm-set-row" },
-        numInput("offsetX", "水平偏移"),
-        numInput("offsetY", "垂直偏移"),
-        numInput("blankY", "空白偏移"),
-        numInput("zIndexBase", "层级基准", 1, 9000),
+        numInput("offsetX", t("offsetX")),
+        numInput("offsetY", t("offsetY")),
+        numInput("blankY", t("blankY")),
+        numInput("zIndexBase", t("zIndexBase"), 1, 9000),
       ),
       React.createElement("div", { className: "dm-set-hint" },
-        "保存即热更新：浮窗位置即时生效；中间层模式切换即时生效并持久化（无需重启 dsh web）。"),
+        t("settingsHint")),
       React.createElement("div", { className: "dm-set-foot" },
         msg !== null
           ? React.createElement("span", { className: msg.ok ? "dm-set-saved" : "dm-set-error" }, msg.text)
@@ -149,7 +150,7 @@ export function SettingsCard() {
           className: "dm-set-save",
           disabled: saving,
           onClick: () => { void save(); },
-        }, saving ? "保存中…" : "保存"),
+        }, saving ? t("savingNow") : t("save")),
       ),
     ) : null,
   );

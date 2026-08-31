@@ -8,6 +8,7 @@
 
 import { el, api } from "./dom.ts";
 import { STATUS_ORDER, STATUS_TEXT, statusDot } from "./constants.ts";
+import { t } from "./i18n.ts";
 import type { McpState, UiActions } from "./state.ts";
 import {
   DEFAULT_Z_INDEX_BASE,
@@ -71,7 +72,7 @@ function renderFloatTools(server: any, state: McpState, actions: UiActions): any
   const tools = Array.isArray(server.tools) ? server.tools : [];
   const disabledSet = new Set(Array.isArray(server.disabledTools) ? server.disabledTools : []);
   const details = el("details", { class: "dm-float-tools" });
-  details.appendChild(el("summary", { text: `工具（${tools.length}）` }));
+  details.appendChild(el("summary", { text: t("toolsCount", { n: tools.length }) }));
   const list = el("div", { class: "dm-float-tool-list" });
   for (const tool of tools) {
     list.appendChild(toolCheckbox(server, tool, disabledSet.has(tool), state, actions));
@@ -86,18 +87,18 @@ function renderFloatRow(server: any, state: McpState, actions: UiActions, opts: 
   row.appendChild(el("span", { class: "dm-dot", style: `background:${statusDot(server.status)}` }));
   row.appendChild(el("span", { class: "dm-float-name", text: server.name, title: server.name }));
   const tools = Array.isArray(server.tools) ? server.tools.length : 0;
-  row.appendChild(el("span", { class: "dm-float-meta", text: `${STATUS_TEXT[server.status] ?? server.status} · ${tools} 工具` }));
+  row.appendChild(el("span", { class: "dm-float-meta", text: t("serverMeta", { status: STATUS_TEXT[server.status] !== undefined ? t(STATUS_TEXT[server.status]) : server.status, tools }) }));
   const actionsEl = el("div", { class: "dm-float-actions" });
   const action = el("button", { class: "dm-float-action" });
   if (server.status === "connected") {
-    action.textContent = "断开";
+    action.textContent = t("disconnect");
     action.addEventListener("click", () => {
       void api(`${state.API.disconnect}?name=${encodeURIComponent(server.name)}&scope=${server.scope}`, { method: "POST" })
         .then(() => actions.refresh())
         .catch((error: any) => console.warn("[dsh-mcp-manager] disconnect failed:", error));
     });
   } else if (server.status === "disabled") {
-    action.textContent = "启用";
+    action.textContent = t("enable");
     action.addEventListener("click", () => {
       void api(`${state.API.servers}?name=${encodeURIComponent(server.name)}&scope=${server.scope}`, {
         method: "PATCH",
@@ -107,7 +108,7 @@ function renderFloatRow(server: any, state: McpState, actions: UiActions, opts: 
         .catch((error: any) => console.warn("[dsh-mcp-manager] enable failed:", error));
     });
   } else {
-    action.textContent = "连接";
+    action.textContent = t("connect");
     action.addEventListener("click", () => {
       void api(`${state.API.connect}?name=${encodeURIComponent(server.name)}&scope=${server.scope}`, { method: "POST" })
         .then(() => actions.refresh())
@@ -118,7 +119,7 @@ function renderFloatRow(server: any, state: McpState, actions: UiActions, opts: 
   // 禁用开关：非 disabled 状态可一键禁用（PATCH enabled:false → 宿主断开并注销工具）
   if (server.status !== "disabled") {
     const disable = el("button", { class: "dm-float-action" });
-    disable.textContent = "禁用";
+    disable.textContent = t("disable");
     disable.addEventListener("click", () => {
       void api(`${state.API.servers}?name=${encodeURIComponent(server.name)}&scope=${server.scope}`, {
         method: "PATCH",
@@ -143,13 +144,13 @@ export function renderFloatPanel(state: McpState, actions: UiActions): void {
   const head = el("div", { class: "dm-float-head" });
   const projectName = typeof state.projectRoot === "string" && state.projectRoot !== ""
     ? (state.projectRoot.split(/[\\/]/).filter(Boolean).pop() ?? state.projectRoot)
-    : "全局会话";
+    : t("floatGlobalSession");
   head.appendChild(el("span", { class: "dm-float-title", text: projectName }));
-  head.appendChild(el("button", { text: "管理", onclick: () => { toggleFloat(state, actions, false); actions.showPanel(); } }));
+  head.appendChild(el("button", { text: t("floatManage"), onclick: () => { toggleFloat(state, actions, false); actions.showPanel(); } }));
   state.floatPanel.appendChild(head);
 
   if (state.servers.length === 0) {
-    state.floatPanel.appendChild(el("div", { class: "dm-status", text: "没有 MCP 服务器，点「管理」添加" }));
+    state.floatPanel.appendChild(el("div", { class: "dm-status", text: t("floatEmpty") }));
     if (state.floatOpen) placePanel(state);
     return;
   }
@@ -159,7 +160,7 @@ export function renderFloatPanel(state: McpState, actions: UiActions): void {
     const list = state.servers.filter((server: any) => server.scope === scope);
     if (list.length === 0) continue;
     const section = el("section", { class: "dm-float-group" });
-    section.appendChild(el("div", { class: "dm-float-group-title", text: scope === "project" ? "项目级" : "全局" }));
+    section.appendChild(el("div", { class: "dm-float-group-title", text: scope === "project" ? t("groupProject") : t("groupGlobal") }));
     // 各自内部再按状态分组（状态序：运行中 → 连接中 → 重连中 → 未连接 → 已停用 → 失败）。
     const byStatus = new Map<string, any[]>();
     for (const group of STATUS_ORDER) byStatus.set(group.key, []);
@@ -177,7 +178,7 @@ export function renderFloatPanel(state: McpState, actions: UiActions): void {
     }
     if (scope === "global" && !isAll) {
       // project 模式：全局工具不经中间层（supervisor 直呼），无法工具级禁用。
-      section.appendChild(el("div", { class: "dm-float-hint", text: "全局工具开关需在 all 模式（中间层全量接管）下管理——切 all 模式可管理全局工具" }));
+      section.appendChild(el("div", { class: "dm-float-hint", text: t("globalToolHint") }));
     }
     state.floatPanel.appendChild(section);
   }
@@ -267,8 +268,8 @@ export function mountFloat(ctx: any, state: McpState, actions: UiActions): () =>
   const pill = el("button", {
     type: "button",
     class: "dm-float",
-    "aria-label": "MCP 管理器",
-    title: "MCP 管理器（点击展开）",
+    "aria-label": t("floatAriaLabel"),
+    title: t("floatTitle"),
   });
   pill.dataset.dshMcpFloat = "";
   pill.addEventListener("click", () => toggleFloat(state, actions));
