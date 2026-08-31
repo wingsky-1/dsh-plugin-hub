@@ -84,30 +84,43 @@ export interface HistoryResponseV2 {
   range: { start: number; end: number };
 }
 
-// ---------------------------------------------------------------- 会话/提供者检测
+// ---------------------------------------------------------------- 会话/提供者检测（0.1.2 适配）
 
-export interface SessionMaybeProvide {
-  sessionId?: string;
-  hooks?: Record<string, unknown>;
-  props?: Record<string, unknown>;
+/**
+ * 会话行的 modelSelection 投影值（dsh 0.1.2-alpha.2 SessionProjectionMap）：
+ * lastUsed = 上次实际使用；next = 待确认意图（pending），二者均可能缺失。
+ */
+export interface ModelSelectionLike {
+  provider?: string;
+  model?: string;
 }
 
-export interface ConnectionHandleLike {
-  api?: {
-    sessions?: {
-      models?(req: { sessionId: string }): Promise<{
-        result?: {
-          ok?: boolean;
-          value?: { current?: { provider?: string; model?: string } };
-          /** RPC 业务错误形态（{ok:false,error:{code,...}}；agent-busy 即此形态或抛错携带 code）。 */
-          error?: { code?: string; message?: string } | unknown;
-        };
-      }>;
-    };
+export interface ModelSelectionProjectionLike {
+  lastUsed?: ModelSelectionLike | null;
+  next?: ModelSelectionLike | null;
+}
+
+/** 会话行投影 hints（宿主 list 快照 per-session 投影，0.1.2-alpha.2 SessionProjectionHints）。 */
+export interface SessionRowProjectionsLike {
+  values?: {
+    modelSelection?: ModelSelectionProjectionLike;
   };
 }
 
-/** sessions.list 快照中的单行（客户端 store 形态，防御式可选字段）。 */
+/**
+ * 客户端 ctx.remote（dsh 0.1.2 Typert Remote 网关）防御式面：
+ * 仅声明 provider 检测实际消费的 `session.modelCatalog`（全局目录，兜底 provider）。
+ */
+export interface RemoteLike {
+  session?: {
+    modelCatalog?(): Promise<
+      | { ok: true; value?: { default?: { provider?: string } } }
+      | { ok: false; error?: unknown }
+    >;
+  };
+}
+
+/** sessions.list 快照中的单行（0.1.2-alpha.2 SessionSummary 防御式形态）。 */
 export interface SessionListRowLike {
   id?: string;
   /** 子代理行标记（spawn/fork 两类子代理均由宿主 store 写入）。 */
@@ -118,6 +131,8 @@ export interface SessionListRowLike {
    */
   parentId?: string;
   parentSessionId?: string;
+  /** per-session modelSelection 投影（0.1.2-alpha.2 SessionProjectionHints）。 */
+  projections?: SessionRowProjectionsLike;
 }
 
 /** sessions.list 快照形态（{current, ids, byId}，与宿主 client-runtime 一致）。 */
@@ -128,18 +143,11 @@ export interface SessionListSnapshotLike {
 }
 
 export interface SessionsServiceLike {
-  currentProvideInfo?: {
-    getSnapshot(): SessionMaybeProvide;
-    subscribe?(fn: () => void): () => void;
-  };
   list?: { getSnapshot?(): SessionListSnapshotLike; subscribe?(fn: () => void): () => void };
 }
 
 export function currentSessionId(sessions: SessionsServiceLike | undefined): string | undefined {
-  if (!sessions) return undefined;
-  const info = sessions.currentProvideInfo?.getSnapshot?.();
-  if (info && typeof info.sessionId === "string" && info.sessionId.length > 0) return info.sessionId;
-  if (typeof sessions.list?.getSnapshot === "function") {
+  if (typeof sessions?.list?.getSnapshot === "function") {
     const cur = sessions.list.getSnapshot()?.current;
     if (typeof cur === "string" && cur.length > 0) return cur;
   }
@@ -182,47 +190,46 @@ export function sessionAncestryChain(
   return chain;
 }
 
-/** agent-busy 错误识别：抛错携带 code/message，或 RPC 错误分支对象。 */
-export function isAgentBusyError(error: unknown): boolean {
-  if (error === null || typeof error !== "object") return false;
-  if ((error as { code?: unknown }).code === "agent-busy") return true;
-  const msg = (error as { message?: unknown }).message;
-  return typeof msg === "string" && msg.includes("agent-busy");
-}
-
-/** agent-busy 诊断日志（排障信号，不影响返回值语义）。 */
-function logAgentBusyDiagnosis(sessionId: string): void {
-  console.warn(
-    `[dsh-provider-usage] 会话 ${sessionId} 为忙着的子代理会话（agent-busy），provider 检测沿父会话上溯`,
-  );
+/**
+ * 从会话行读取 per-session modelSelection 投影的 provider（0.1.2-alpha.2 投影面）：
+ * lastUsed 优先（上次实际使用），next 次之（待确认意图）；均缺失返回 undefined。
+ * 纯同步快照读取，不触发任何 RPC。
+ */
+function providerFromProjection(row: SessionListRowLike | undefined): string | undefined {
+  const ms = row?.projections?.values?.modelSelection;
+  const sel = ms?.lastUsed ?? ms?.next;
+  return typeof sel?.provider === "string" && sel.provider.length > 0 ? sel.provider : undefined;
 }
 
 /**
- * 解析当前展示会话的 provider（issue #69 方案 A+B 的检测半区）：
- * 从当前会话沿 parentId 上溯（封顶深度 3、防环），首个 models() 解析成功者胜；
- * 子代理会话 models() 抛/返 agent-busy 时记一条诊断日志。全链失败返回 undefined，
- * 兜底语义（保持上次检测 / 回落默认）由调用方 decideProviderAfterDetect 决定。
+ * 解析当前展示会话的 provider（issue #69 方案 A+B 检测半区，0.1.2 适配）：
+ * 主判据 = 沿 parentId 上溯链（封顶 3、防环），逐会话读 per-session modelSelection 投影
+ * （lastUsed/next 的 provider），首个非空者胜——与旧 models() 按会话查询语义等价；
+ * 全链投影缺失 → 兜底读 ctx.remote.session.modelCatalog() 的 default.provider（全局目录，
+ * 一次调用，RemoteResult 解包）。全链失败返回 undefined，兜底语义由
+ * decideProviderAfterDetect 决定（保持上次检测 / 回落默认）。
  */
 export async function resolveProviderFromSession(
   sessions: SessionsServiceLike | undefined,
-  connection: ConnectionHandleLike | undefined,
+  remote: RemoteLike | undefined,
 ): Promise<string | undefined> {
   const sessionId = currentSessionId(sessions);
   if (sessionId === undefined) return undefined;
-  const models = connection?.api?.sessions?.models;
-  if (typeof models !== "function") return undefined;
+  const byId = sessions?.list?.getSnapshot?.()?.byId;
   for (const sid of sessionAncestryChain(sessions, sessionId)) {
+    const provider = providerFromProjection(byId?.[sid]);
+    if (provider !== undefined) return provider;
+  }
+  // 兜底：全局 modelCatalog 的 default（RemoteResult 解包，仅投影全缺时一次）
+  const modelCatalog = remote?.session?.modelCatalog;
+  if (typeof modelCatalog === "function") {
     try {
-      const res = await models({ sessionId: sid });
-      const result = res?.result;
-      const value = result?.value;
-      if (result?.ok === true && value && typeof value.current?.provider === "string") {
-        return value.current.provider;
+      const res = await modelCatalog();
+      if (res?.ok === true && typeof res.value?.default?.provider === "string") {
+        return res.value.default.provider;
       }
-      // RPC 业务错误形态（不抛错）：agent-busy 同样记诊断后继续上溯
-      if (isAgentBusyError((result as { error?: unknown } | undefined)?.error)) logAgentBusyDiagnosis(sid);
-    } catch (error) {
-      if (isAgentBusyError(error)) logAgentBusyDiagnosis(sid);
+    } catch {
+      // 目录读取失败按全链失败处理（不抛给调用方）
     }
   }
   return undefined;

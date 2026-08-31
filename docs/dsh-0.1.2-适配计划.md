@@ -1,9 +1,11 @@
 # dsh 0.1.2 适配计划（0.2.0 分支）
 
 > 分支：`0.2.0`（基点 `main` v0.1.14 收官版 `fdf8f94`）
-> 适配基线：上游 `dsh-v0.1.2-alpha.1`（2026-08-27，pre-release，未发 npm）→ 正式 `0.1.2`
-> 相关 issue：#323（适配主线）· #366（通知中心）· #348（i18n）· #325（mcp-manager 观察）
+> 适配基线：上游 `dsh-v0.1.2-alpha.2`（2026-08-31 确认：**最终目标即 alpha.2**，npm 已发布 `0.1.2-alpha.2`，官方依赖面全量 `^0.1.2-alpha.2`）
+> 相关 issue：#323（适配主线）· #366（通知中心，暂缓）· #348（i18n）· #325（mcp-manager 观察）
 > 更新规则：逐项完成打 `[x]`，勾选即视为已过对应验收。
+
+> **维护者指示（2026-08-31）**：① 最终目标 = **完成 0.1.2-alpha.2 适配**（不设正式版前置）；② Phase 2（通知中心 M2/M3）暂缓，聚焦适配；③ Phase 5（发版）等维护者全量验证后执行。
 
 ---
 
@@ -52,12 +54,13 @@
 - [x] client 契约 smoke 断言核对——契约门禁仅断言 `dsh.client ⇒ exports["./client"]` 联动、不校验 inject 具体内容，清理后 6 包 build + smoke 全绿（2026-08-31）
 
 ### 1.2 dsh-provider-usage（软破坏 · 必改 · 逻辑重设计）
-> 评审 P0-1/P0-2：`default` 属 `ModelCatalog` 而非投影；`modelCatalog()` 返回 `Promise<RemoteResult<ModelCatalog>>` 需解包、无参全量目录（per-session 语义已不存在）；`ctx.remote` 依赖面须补。
-- [ ] **逻辑重设计**：per-session `modelSelection` 投影（`lastUsed`/`next`，见 `SessionProjectionMap`）为主判据 → `modelCatalog().default` 仅兜底；会话上溯（子代理 parentId）改为「投影按会话取、目录全局取」两数据面适配，**不能只换函数名**
-- [ ] 依赖面：客户端取 `ctx.remote` 补 inject `@deepseek-ai/dsh-api-gateway/client`（其 inject typert-registry + client-connection）；`RemoteResult` 解包 + `isRemoteFailure` 错误判别
-- [ ] 单测适配：`unit-detect.test.ts` 的 `makeConnection` fake（`connection.api.sessions.models`）→ 投影/目录 fake 结构（已定位测试锚点）
-- [ ] 类型面以 npm tarball lib diff（0.1.2-alpha.2）实证 `ctx.remote` 形态后再动手
-- [ ] provider 检测恢复——胶囊不再回落「未识别/默认」；smoke 断言
+> 评审 P0-1/P0-2：`default` 属 `ModelCatalog` 而非投影；`modelCatalog()` 返回 `RemoteResult` 需解包、无参全量目录（per-session 语义已不存在）；`ctx.remote` 依赖面须补。
+> 实施（2026-08-31）：上游 alpha.2 实测确认——**per-session `modelSelection` 投影就在 `ctx.sessions.list` 快照行**（`byId[sid].projections.values.modelSelection.lastUsed/next`），主判据无需 Remote；`modelCatalog().default` 仅在全链投影缺失时兜底。
+- [x] **逻辑重设计**：`resolveProviderFromSession` 改为投影优先——沿 parentId 上溯链逐会话读 `modelSelection`（lastUsed 优先、next 次之），首个非空者胜；全链缺失兜底 `ctx.remote.session.modelCatalog()` 的 `default`（RemoteResult 解包）。上游实测：投影按会话取（lastUsed/next 字段，`model-selection-projection.ts`）、目录全局取（`ModelCatalog.default`，`types.ts:140-146`）
+- [x] 依赖面：客户端 `connection` 体面废弃 → `remote = ctx.get("remote")`（上游 api-gateway `apply` 提供 `ctx.remote`，inject 面 `/client` 依赖 typert-protocol + client-connection）；`RemoteResult={ok,value}|{ok,error}`（`typert/protocol/src/types.ts:74-76`）
+- [x] 单测适配：`unit-detect.test.ts` 的 `makeConnection`（`connection.api.sessions.models`）→ 行投影 fake + `makeRemote` modelCatalog 兜底；worker 剧本 `client-revalidate.worker.mjs` 改 `projectionBySession`；`currentProvideInfo` 分支移除（上游已无此服务）
+- [x] 类型面实证：上游 `dsh-v0.1.2-alpha.2` 源码（`/tmp/dsh-harness-src`）逐项核对后实施
+- [x] provider 检测恢复——unit-detect 投影面 10 组断言 + worker 场景 1-5 + smoke 全绿（0.1.2-alpha.2 语义）
 
 ### 1.3 dsh-web-file-preview（软破坏 · 必改 · 补降级）
 > 评审 P0-4：`openWorkspacePath({path})→{opened:true}` 属实，但漏 `canOpenWorkspacePath()` 探测与 RemoteError/signal 错误面。

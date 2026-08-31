@@ -5,7 +5,7 @@
  * - 胶囊框架挂载与定位（dou-float 按钮：状态点 + HTML 内容区）
  * - 面板框架挂载（head/内容区/foot，内容区注入宿主返回的 panelHtml）
  * - 60s 轮询 /stats + 可见性刷新（每次取数前先复检会话当前 provider，#71 A1 自愈）
- * - provider 会话检测（宿主 currentProvideInfo 订阅：切换会话即时跟随）
+ * - provider 会话检测（sessions.list 快照订阅：切换会话即时跟随，0.1.2-alpha.2）
  * - 设置面板 section 注册（settings.ts React 组件）
  *
  * 纪律：任何异常只 warn，绝不让 GUI 启动失败；请求带超时不挂起。
@@ -21,7 +21,7 @@ import {
   FALLBACK_PROVIDER,
   UNKNOWN_PROVIDER_HINT,
 } from "./core.ts";
-import type { SessionsServiceLike, ConnectionHandleLike, StatsResponseV2, HistoryResponseV2, UiPlacementConfig } from "./core.ts";
+import type { SessionsServiceLike, RemoteLike, StatsResponseV2, HistoryResponseV2, UiPlacementConfig } from "./core.ts";
 import { SettingsPage } from "./settings.ts";
 import {
   BREAKPOINT_NARROW_MAX,
@@ -96,7 +96,7 @@ function injectStyle(): void {
 // ------------------------------------------------------------------ 状态
 
 let sessions: SessionsServiceLike | undefined;
-let connection: ConnectionHandleLike | undefined;
+let remote: RemoteLike | undefined;
 
 /** 当前生效 provider。 */
 let currentProvider: string = FALLBACK_PROVIDER;
@@ -241,7 +241,7 @@ async function revalidateProvider(): Promise<boolean> {
   if (sessions === undefined) return false;
   // 先同步取会话在场快照（区分「无任何会话」与「有会话但不可解析」，await 前读取防竞态）
   const hadSession = currentSessionId(sessions) !== undefined;
-  const resolved = await resolveProviderFromSession(sessions, connection);
+  const resolved = await resolveProviderFromSession(sessions, remote);
   const decision = decideProviderAfterDetect({
     resolved,
     hadSession,
@@ -606,7 +606,7 @@ export function apply(ctx: any): void {
     if (document.body === null) return;
 
     sessions = ctx.get("sessions") as SessionsServiceLike | undefined;
-    connection = ctx.get("connection") as ConnectionHandleLike | undefined;
+    remote = ctx.get("remote") as RemoteLike | undefined;
 
     // 设置面板独立 tab「用量统计」（settings.section）；独立 try/catch 不连坐浮窗
     let disposeSettingsSection: (() => void) | undefined;
@@ -647,11 +647,10 @@ export function apply(ctx: any): void {
         if (floatPill !== undefined) void refreshStats();
       })();
     };
-    const maybe = sessions?.currentProvideInfo;
+    // 0.1.2-alpha.2：客户端 sessions 订阅统一走 list 快照（currentProvideInfo 已移除）。
+    const maybe = sessions?.list;
     if (maybe !== undefined && typeof maybe.subscribe === "function") {
       unsubSessions = maybe.subscribe(detect);
-    } else if (sessions?.list !== undefined && typeof sessions.list.subscribe === "function") {
-      unsubSessions = sessions.list.subscribe(detect);
     }
     void detect();
 
@@ -666,7 +665,7 @@ export function apply(ctx: any): void {
       detectedProvider = undefined;
       providerUnknown = false;
       sessions = undefined;
-      connection = undefined;
+      remote = undefined;
     }, "dsh-provider-usage: float");
   } catch (error) {
     console.warn("[dsh-provider-usage] 悬浮框挂载失败", error);
