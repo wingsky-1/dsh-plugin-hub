@@ -19,10 +19,15 @@ import {
   fetchUiConfig,
   DEFAULT_CLIENT_UI_CONFIG,
   FALLBACK_PROVIDER,
-  UNKNOWN_PROVIDER_HINT,
 } from "./core.ts";
 import type { SessionsServiceLike, RemoteLike, StatsResponseV2, HistoryResponseV2, UiPlacementConfig } from "./core.ts";
 import { SettingsPage } from "./settings.ts";
+import { t, bindLocale } from "./i18n.ts";
+import { zh, en, type ProviderUsageLocaleKey } from "./locales.ts";
+// 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
+// lib/types/*.d.ts 相对导入保留 .ts 后缀，declare module 增强的模块名解析会判
+// TS2664（microsoft/TypeScript#63960 同类；上游修复发布物后此行可删）。
+import type { LocaleNamespaceMap } from "@deepseek-ai/dsh-client-ui-slots";
 import {
   BREAKPOINT_NARROW_MAX,
   BREAKPOINT_TABLET_MAX,
@@ -37,6 +42,16 @@ import {
 // React externals 路径：运行时由 dsh web factory require("react") 注入
 import * as React from "react";
 import STYLE from "./style.css";
+
+// i18n（issue #348）：字典命名空间 + LocaleNamespaceMap 声明合并（官方 ui-jobs 同款）。
+const NS = "providerUsage";
+
+declare module "@deepseek-ai/dsh-client-ui-slots" {
+  interface LocaleNamespaceMap {
+    /** dsh-provider-usage 胶囊/面板/设置 tab 文案。 */
+    "providerUsage": ProviderUsageLocaleKey;
+  }
+}
 
 const REFRESH_MS = 60000; // 轮询间隔
 const PILL_PREFIX = "dou-"; // 样式类名前缀
@@ -74,10 +89,10 @@ function el(tag: string, attrs: Record<string, unknown> | undefined, children?: 
 function fmtAge(ts: number | undefined): string {
   if (typeof ts !== "number" || !Number.isFinite(ts)) return "";
   const diff = Date.now() - ts;
-  if (diff < 60000) return "刚刚";
-  if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小时前`;
-  return `${Math.floor(diff / 86400000)} 天前`;
+  if (diff < 60000) return t("justNow");
+  if (diff < 3600000) return t("minutesAgo", { n: Math.floor(diff / 60000) });
+  if (diff < 86400000) return t("hoursAgo", { n: Math.floor(diff / 3600000) });
+  return t("daysAgo", { n: Math.floor(diff / 86400000) });
 }
 
 /** 样式注入（幂等）。 */
@@ -209,16 +224,16 @@ function renderPill(): void {
   if (stats !== null) {
     let title: string;
     if (!stats.configured) {
-      title = `${currentProvider} · 未配置适配器，点击查看接入引导`;
+      title = `${currentProvider} · ${t("pillNotConfigured")}`;
     } else if (stats.error !== null && stats.error !== undefined) {
-      title = `用量获取失败：${stats.error}`;
+      title = t("pillFetchFail", { msg: stats.error });
     } else if ((stats as { reason?: string | null }).reason === "busy") {
-      title = `${stats.adapterName} · 取数进行中，稍候自动刷新`;
+      title = `${stats.adapterName} · ${t("pillBusy")}`;
     } else {
-      title = `${stats.adapterName} · ${stats.status === "stale" ? "数据陈旧" : stats.status === "cached" ? "缓存" : "实时"} · 更新于 ${fmtAge(stats.fetchedAt)}`;
+      title = `${stats.adapterName} · ${stats.status === "stale" ? t("pillStale") : stats.status === "cached" ? t("pillCached") : t("pillFresh")} · ${t("pillUpdatedAt", { t: fmtAge(stats.fetchedAt) })}`;
     }
     // issue #69 方案 B：有会话但 provider 未确认 → title 显式标注（不再静默展示可能不对的数据）
-    if (providerUnknown) title += ` · ${UNKNOWN_PROVIDER_HINT}`;
+    if (providerUnknown) title += ` · ${t("providerUnknown")}`;
     floatPill.title = title;
   }
   if (labelEl !== null) {
@@ -305,45 +320,45 @@ async function refreshHistory(): Promise<void> {
 /** 错误码/原因 → 面板提示文案（覆盖 error 码与 reason 降级码）。 */
 function errorMessage(code: string | undefined | null): string {
   switch (code) {
-    case "no-api-key": return "未找到 API Key（走 {PROVIDER}_API_KEY 环境变量或 .credentials.yaml）。";
-    case "unauthorized": return "API Key 无效或已过期（401/403）。";
-    case "timeout": return "请求超时，请重试。";
-    case "network": return "网络错误，请检查连接后重试。";
+    case "no-api-key": return t("errNoApiKey", { p: "{PROVIDER}" });
+    case "unauthorized": return t("errUnauthorized");
+    case "timeout": return t("errTimeout");
+    case "network": return t("errNetwork");
     case "bad-data":
-    case "bad-json": return "数据格式异常，请检查服务商接口或适配器返回。";
-    case "adapter-load-failed": return "自定义适配器加载失败，请检查文件路径与契约（设置页可见错误明细）。";
+    case "bad-json": return t("errBadData");
+    case "adapter-load-failed": return t("errAdapterLoadFailed");
     // reason 降级码（error 为 null 但 ok=false 的形态）
-    case "busy": return "上一次取数仍在进行，稍候自动刷新。";
-    case "no-enabled-adapter": return "该提供商有候选适配器但均未启用，请在设置面板「用量统计」启用。";
-    case "no-adapter": return "该提供商未配置适配器，请在设置面板「用量统计」添加。";
+    case "busy": return t("errBusy");
+    case "no-enabled-adapter": return t("errNoEnabledAdapter");
+    case "no-adapter": return t("errNoAdapter");
     default:
-      if (typeof code === "string" && code.startsWith("http-")) return `服务返回 ${code.slice(5)}，请检查中转站状态。`;
-      return `用量获取失败：${code || "暂无数据"}。`;
+      if (typeof code === "string" && code.startsWith("http-")) return t("errHttpStatus", { code: code.slice(5) });
+      return t("errGeneric", { code: code || t("noDataShort") });
   }
 }
 
 /** 无启用适配器引导（v1 D11 语义）：说明文案 + 复制一句话指令，让 Agent 按文档自主接入。 */
 function showNoAdapterGuide(box: HTMLElement): void {
   box.appendChild(
-    el("p", { class: PILL_PREFIX + "error", text: "该提供商暂无启用的适配器。" }),
+    el("p", { class: PILL_PREFIX + "error", text: t("noAdapterTitle") }),
   );
   box.appendChild(
     el("p", {
       class: PILL_PREFIX + "hint",
-      text: "在设置面板「用量统计」的适配器管理中启用一个候选适配器；也可复制下方引导指令，让 Agent 帮你接入用量数据源。",
+      text: t("noAdapterHint"),
     }),
   );
   const guide = `请为提供商 ${currentProvider} 创建用量统计适配器（v2 契约）：以该提供商在模型配置中的 API 端点（baseUrl）为起点，自行确认用量接口与鉴权方式，自主设计适配器方案（name/展示名/接口路径），先给我审核方案（含 API 端点），确认后生成 .mjs 文件、告诉保存路径并引导我在「用量统计」设置页添加适配器。按用量统计适配器开发引导文档（https://github.com/wingsky-1/dsh-plugin-hub/blob/main/packages/dsh-provider-usage/docs/adapter-guide.md）执行引导流程。`;
   const btn = el("button", {
     type: "button",
     class: PILL_PREFIX + "btn",
-    text: "复制引导指令",
+    text: t("copyGuide"),
     onClick: () => {
       void navigator.clipboard
         .writeText(guide)
-        .then(() => { btn.textContent = "已复制 ✓"; })
-        .catch(() => { btn.textContent = "复制失败"; });
-      setTimeout(() => { btn.textContent = "复制引导指令"; }, 2000);
+        .then(() => { btn.textContent = t("copied"); })
+        .catch(() => { btn.textContent = t("copyFail"); });
+      setTimeout(() => { btn.textContent = t("copyGuide"); }, 2000);
     },
   });
   box.appendChild(btn);
@@ -357,8 +372,8 @@ function renderPanel(): void {
   const label = stats?.adapterName ?? currentProvider;
   floatPanel.appendChild(
     el("div", { class: PILL_PREFIX + "head" }, [
-      el("h3", { class: PILL_PREFIX + "title", text: `${label} 用量` }),
-      el("button", { class: PILL_PREFIX + "btn", type: "button", text: "刷新", onClick: () => { void refreshStats(); } }),
+      el("h3", { class: PILL_PREFIX + "title", text: t("panelTitle", { provider: label }) }),
+      el("button", { class: PILL_PREFIX + "btn", type: "button", text: t("refresh"), onClick: () => { void refreshStats(); } }),
     ]),
   );
 
@@ -377,7 +392,7 @@ function renderPanel(): void {
   if (hasPanelHtml) {
     panelContentBox.innerHTML = lastHistory!.panelHtml ?? "";
     if (lastHistory!.error) {
-      panelContentBox.appendChild(el("p", { class: PILL_PREFIX + "hint", text: `提示：${errorMessage(lastHistory!.error)}` }));
+      panelContentBox.appendChild(el("p", { class: PILL_PREFIX + "hint", text: t("hintPrefix") + errorMessage(lastHistory!.error) }));
     }
   } else if (unconfigured) {
     showNoAdapterGuide(panelContentBox);
@@ -388,7 +403,7 @@ function renderPanel(): void {
     const reason = (stats as { reason?: string | null }).reason;
     panelContentBox.appendChild(el("p", { class: PILL_PREFIX + "error", text: errorMessage(stats.error || reason) }));
   } else {
-    panelContentBox.appendChild(el("p", { class: PILL_PREFIX + "hint", text: "加载中…" }));
+    panelContentBox.appendChild(el("p", { class: PILL_PREFIX + "hint", text: t("loading") }));
   }
 
   // foot
@@ -462,7 +477,7 @@ function placePanel(): void {
 
 function mountFloat(): () => void {
   injectStyle();
-  const pill = el("button", { type: "button", class: PILL_PREFIX + "float", "aria-label": "用量统计" });
+  const pill = el("button", { type: "button", class: PILL_PREFIX + "float", "aria-label": t("ariaPill") });
   pill.dataset.douFloat = "";
   pill.hidden = true; // 初始隐藏，首次数据到达后显示
   pill.appendChild(el("span", { class: PILL_PREFIX + "dot dou-dot-off" }));
@@ -608,6 +623,25 @@ export function apply(ctx: any): void {
     sessions = ctx.get("sessions") as SessionsServiceLike | undefined;
     remote = ctx.get("remote") as RemoteLike | undefined;
 
+    // i18n（issue #348）：注册本插件字典；t 经共享 i18n.ts 活绑定（多文件 client 共用），
+    // 语言切换 subscribe 重绑（胶囊/面板/设置 tab 下次渲染即生效）。
+    let unsubLocale: (() => void) | undefined;
+    const locale: any = ctx.get("locale");
+    if (locale && typeof locale.register === "function") {
+      try {
+        locale.register(NS, { zh: zh, en: en });
+        bindLocale(locale, NS);
+        if (typeof locale.subscribe === "function" && typeof locale.getSnapshot === "function") {
+          unsubLocale = locale.subscribe(function () {
+            bindLocale(locale, NS);
+            renderPill(); // 胶囊 title 立即按新语言重绘（面板随下次渲染生效）
+          });
+        }
+      } catch (error) {
+        console.warn("[dsh-provider-usage] locale 注册失败：", error);
+      }
+    }
+
     // 设置面板独立 tab「用量统计」（settings.section）；独立 try/catch 不连坐浮窗
     let disposeSettingsSection: (() => void) | undefined;
     try {
@@ -615,7 +649,7 @@ export function apply(ctx: any): void {
       if (slots && typeof slots.inject === "function") {
         const injected: unknown = slots.inject("settings.section", function () {
           return slots.register(
-            { name: "settings.section", id: "dsh-provider-usage", order: 90, label: "用量统计" },
+            { name: "settings.section", id: "dsh-provider-usage", order: 90, label: t("settingsTab"), locale: NS },
             function () {
               return React.createElement(SettingsPage, null);
             },
@@ -660,6 +694,7 @@ export function apply(ctx: any): void {
         disposeSettingsSection = undefined;
       }
       if (unsubSessions !== undefined) unsubSessions();
+      if (unsubLocale !== undefined) unsubLocale();
       disposeFloat();
       renderGeneration += 1;
       detectedProvider = undefined;
@@ -673,4 +708,4 @@ export function apply(ctx: any): void {
 }
 
 // ---- 客户端契约：apply/inject 由 build-client 经 factory 装配（干净模块）----
-export const inject: string[] = [];
+export const inject: string[] = ["locale"];

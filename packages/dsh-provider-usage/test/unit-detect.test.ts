@@ -173,9 +173,10 @@ function makeRemote(providerByDefault) {
 }
 
 {
-  // 客户端源码契约：title 标注接线真实存在（unknown 态追加「提供商未识别」）
+  // 客户端源码契约：title 标注接线真实存在（unknown 态追加「提供商未识别」；
+  // issue #348 i18n 后标注经字典 t("providerUnknown")，常量本体留 core 供语义引用）
   const src = readFileSync(join(here, "..", "src", "client", "index.ts"), "utf8");
-  assert.ok(src.includes("UNKNOWN_PROVIDER_HINT"), "index.ts 应引用未识别标注常量");
+  assert.ok(src.includes('t("providerUnknown")'), "index.ts 应经 i18n 字典标注未识别");
   assert.ok(src.includes("if (providerUnknown)"), "胶囊 title 渲染应按 providerUnknown 追加标注");
   assert.ok(src.includes("decideProviderAfterDetect"), "detect() 应经纯函数决策兜底");
   assert.ok(!src.includes("detected ?? FALLBACK_PROVIDER"), "已移除对 FALLBACK 的无条件回落写法");

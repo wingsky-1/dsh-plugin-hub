@@ -620,6 +620,16 @@ export function formatPanel() { return "<p>x</p>"; }
   assertClientSourceContract(pkgDir);
   assertClientProductContract(pkgDir);
 
+  // i18n 接入哨兵（issue #348）：NS / register / bind / slots locale 参数 / 双语字典进产物
+  {
+    const client = readFileSync(join(pkgDir, "lib", "client.js"), "utf8");
+    assert.ok(client.includes('"providerUsage"'), "i18n 命名空间 NS 进产物");
+    assert.ok(client.includes("locale.register"), "locale.register（字典注册）进产物");
+    assert.ok(client.includes("bindLocale"), "bindLocale（t 活绑定装配）进产物");
+    assert.ok(client.includes("locale: NS"), "slots.register locale 参数进产物");
+    assert.ok(client.includes("just now") && client.includes("justNow"), "en/zh 双语字典进产物");
+  }
+
   // 客户端源码为干净模块（只 export apply/inject，无 loader 痕迹）
   const clientSource = readFileSync(join(pkgDir, "src/client/index.ts"), "utf8");
   assert.ok(!clientSource.includes("__ModuleLoader__"), "客户端源码不得含 loader 痕迹");

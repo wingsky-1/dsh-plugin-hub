@@ -61,6 +61,8 @@
   "license": "MIT",
   "devDependencies": {
     "@deepseek-ai/cordis": "catalog:",
+    "@deepseek-ai/dsh-client-store": "catalog:",
+    "@deepseek-ai/dsh-client-ui-slots": "catalog:",
     "@deepseek-ai/dsh-host-webserver": "catalog:",
     "async-mutex": "^0.5.0",
     "schemastery": "^3.18.0",

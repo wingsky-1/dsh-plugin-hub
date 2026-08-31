@@ -55,7 +55,15 @@ export function splitProviderList(input: ProviderListInput): { main: ProviderLis
   return { main, extra };
 }
 
-/** 折叠态徽标文案（适配器级语义：显示「已启用: <adapter-name>」或「未启用适配器」）。 */
-export function providerBadgeText(item: Pick<ProviderListItem, "enabledId">): string {
+/** 折叠态徽标文案（适配器级语义：显示「已启用: <adapter-name>」或「未启用适配器」）。
+ *  i18n（issue #348）：传 t 时走字典（badgeEnabled/badgeOff）；缺省保持中文原文
+ *  （共享模块零 client 依赖，宿主 bundle 不引入字典；兼容既有调用方与测试）。 */
+export function providerBadgeText(
+  item: Pick<ProviderListItem, "enabledId">,
+  t?: (key: string, params?: Record<string, unknown>) => string,
+): string {
+  if (t !== undefined) {
+    return item.enabledId !== null ? t("badgeEnabled", { name: item.enabledId }) : t("badgeOff");
+  }
   return item.enabledId !== null ? `已启用: ${item.enabledId}` : "未启用适配器";
 }
