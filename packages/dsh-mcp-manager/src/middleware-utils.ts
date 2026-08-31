@@ -423,10 +423,15 @@ export function listCatalog(
             break;
           }
           // 工具级禁用标注（与服务器级 disabled 并列；查询面供模型感知）。
+          // 条件赋值而非 `disabled: x || undefined`——显式 undefined 键会被宿主
+          // lossless JSON 输出校验（dsh-util-values walkJsonValue）判非法
+          // （#381：ws_mcp_list 报 "value is not lossless JSON"）。
           const rootTools = disabledTools?.get(root)?.get(serverName);
           const globalTools = root === MIDDLEWARE_GLOBAL_ROOT ? undefined : disabledTools?.get(MIDDLEWARE_GLOBAL_ROOT)?.get(serverName);
           const disabledByUser = (rootTools !== undefined && rootTools.has(toolName)) || (globalTools !== undefined && globalTools.has(toolName));
-          tools.push({ tool: toolName, description: tool.description, disabled: disabledByUser || undefined });
+          const toolEntry: ListToolEntry = { tool: toolName, description: tool.description };
+          if (disabledByUser) toolEntry.disabled = true;
+          tools.push(toolEntry);
           index += 1;
         }
         entry.tools = tools;
