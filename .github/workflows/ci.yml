@@ -85,9 +85,6 @@ jobs:
               # 不映射则配置类 PR 的 mutation 矩阵全 skip、无法自证）。模式遵循
               # 包级 <pkg>.json 与段级 <pkg>-<n>.json 两种形态的通配覆盖
               - 'stryker.conf.d/dsh-notifier*.json'
-            dsh-idle-archive:
-              - 'packages/dsh-idle-archive/**'
-              - 'stryker.conf.d/dsh-idle-archive*.json'
             dsh-web-file-preview:
               - 'packages/dsh-web-file-preview/**'
               - 'stryker.conf.d/dsh-web-file-preview*.json'
@@ -100,9 +97,6 @@ jobs:
             dsh-lan-proxy:
               - 'packages/dsh-lan-proxy/**'
               - 'stryker.conf.d/dsh-lan-proxy-*.json'
-            dsh-subagent-model-inherit:
-              - 'packages/dsh-subagent-model-inherit/**'
-              - 'stryker.conf.d/dsh-subagent-model-inherit*.json'
             dsh-codegraph:
               - 'packages/dsh-codegraph/**'
             dsh-verify-isolated:
@@ -187,10 +181,9 @@ jobs:
           fi
           HITS='['
           FIRST=1
-          for pkg in dsh-notifier dsh-idle-archive dsh-web-file-preview dsh-mcp-manager dsh-provider-usage dsh-lan-proxy dsh-verify-isolated dsh-plugins-all; do
+          for pkg in dsh-notifier dsh-web-file-preview dsh-mcp-manager dsh-provider-usage dsh-lan-proxy dsh-verify-isolated dsh-plugins-all; do
             case "$pkg" in
               dsh-notifier)          V='${{ steps.filter.outputs.dsh-notifier }}' ;;
-              dsh-idle-archive)      V='${{ steps.filter.outputs.dsh-idle-archive }}' ;;
               dsh-web-file-preview)  V='${{ steps.filter.outputs.dsh-web-file-preview }}' ;;
               dsh-mcp-manager)       V='${{ steps.filter.outputs.dsh-mcp-manager }}' ;;
               dsh-provider-usage)    V='${{ steps.filter.outputs.dsh-provider-usage }}' ;;
@@ -222,12 +215,10 @@ jobs:
       matrix:
         package:
           - dsh-notifier
-          - dsh-idle-archive
           - dsh-web-file-preview
           - dsh-mcp-manager
           - dsh-provider-usage
           - dsh-lan-proxy
-          - dsh-subagent-model-inherit
           - dsh-codegraph
           - dsh-verify-isolated
           - dsh-plugins-all

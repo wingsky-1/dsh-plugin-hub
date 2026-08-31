@@ -37,20 +37,13 @@ install them all at once as a single bundle, or pick individual plugins as neede
 | `@wingsky-1/dsh-provider-usage` | Multi-provider usage float pill (generic adapter framework: DeepSeek official and OpenCode Go built in, plug in any data source with your own mjs) | [README](packages/dsh-provider-usage/README.md) | ✅ Published |
 | `@wingsky-1/dsh-lan-proxy` | Access the dsh web UI over LAN (HTTP/HTTPS/WS forwarding + TLS + HTTP response compression, Brotli/gzip) | [README](packages/dsh-lan-proxy/README.md) | ✅ Published |
 | `@wingsky-1/dsh-mcp-manager` | MCP server manager (stdio / HTTP; per-working-directory project/global config tiers, project-level MCP collapsed via middleware — no tool flood in the model surface) | [README](packages/dsh-mcp-manager/README.md) | ✅ Published |
-| `@wingsky-1/dsh-idle-archive` | Prompt to archive idle conversations | [README](packages/dsh-idle-archive/README.md) | ✅ Published |
 | `@wingsky-1/dsh-web-file-preview` | Click conversation file links to preview in the web UI (image / text / Markdown / code / Diff / Mermaid) | [README](packages/dsh-web-file-preview/README.md) | ✅ Published |
 | `@wingsky-1/dsh-verify-isolated` | Isolated-environment browser verification skill for DSH plugin development (temp DSH_HOME + independent profile, double isolation) | [README](packages/dsh-verify-isolated/README.md) | ✅ Published |
 | `@wingsky-1/dsh-codegraph` | codegraph local code-graph MCP + worktree development discipline (registered at runtime via mcp-manager) | [README](packages/dsh-codegraph/README.md) | ✅ Published (standalone, not in the bundle) |
-| `@wingsky-1/dsh-subagent-model-inherit` | Child agents automatically inherit parent-session model and reasoning effort | [README](packages/dsh-subagent-model-inherit/README.md) | Observation (standalone, not in the bundle) |
 
 > **Standalone note**: `@wingsky-1/dsh-codegraph` is published **standalone** and is **not
 > included in `dsh-plugins-all`**; install it separately (it registers the codegraph MCP at
 > runtime via mcp-manager, so install `dsh-mcp-manager` or the bundle first).
->
-> **Observation note**: `@wingsky-1/dsh-subagent-model-inherit` is experimental — it changes
-> child-agent model routing (inherits the parent session). It is published **standalone** and
-> **not included in `dsh-plugins-all`**; install it separately until enough feedback decides
-> promotion into the bundle, continued standalone evolution, or retirement.
 
 > **No longer maintained**: `@wingsky-1/dsh-skill-explorer` (skill-center / skill management) is
 > **discontinued** (deprecated on npm; the plugin package and the bundle package have been removed).
@@ -58,6 +51,21 @@ install them all at once as a single bundle, or pick individual plugins as neede
 > `@linxin666/dsh-client-ui-skill-explorer` (`dsh-web-ui` repository `packages/dsh-skill-explorer`),
 > which supports symlink detection, safe handling of linked skills, and more.
 > Use the built-in skill center in the web UI instead — please do not install this package.
+>
+> **No longer maintained**: `@wingsky-1/dsh-idle-archive` (idle-conversation archiving prompt) and
+> `@wingsky-1/dsh-subagent-model-inherit` (child agents inherit parent-session model and reasoning
+> effort) are both **discontinued**. The former because the community offers more mature session
+> lifecycle-management / archiving implementations (e.g.
+> [dsh-session-pruner](https://github.com/mrzhangkris/dsh-session-pruner)); the latter because
+> official dsh-subagent 0.1.2-alpha.2 natively implements `resolveChildAgentOptions` (child agents
+> inherit the parent session's model / reasoning effort / output-token limit). Both packages have
+> been removed from this repository and deprecated on npm — please do not install them; uninstall
+> if you had installed them before:
+>
+> ```sh
+> dsh plugin --profile web remove @wingsky-1/dsh-idle-archive
+> dsh plugin --profile web remove @wingsky-1/dsh-subagent-model-inherit
+> ```
 
 > dsh-memory (project long-term memory) is not included yet; it is planned.
 
