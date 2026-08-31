@@ -56,7 +56,7 @@ var CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
     tlsKeyFile: "",
     printBanner: true,
     wsCompressEnabled: true,
-    wsCompressPaths: ["/api/events.mux", "/api/events.host"],
+    wsCompressPaths: ["/api/remote.mux"],
     httpCompressEnabled: true,
     httpCompressLevel: 1,
     injectToken: true,
@@ -347,7 +347,7 @@ var CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
             id: "lp-set-ws-paths",
             className: "lp-set-input",
             type: "text",
-            placeholder: "/api/events.mux, /api/events.host",
+            placeholder: "/api/remote.mux",
             value: (settings.wsCompressPaths || []).join(", "),
             onChange: function (e: any) {
               const parts = e.target.value.split(",").map((s: string) => s.trim()).filter(Boolean);

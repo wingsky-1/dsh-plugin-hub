@@ -76,9 +76,10 @@ export interface LanProxyOptions {
   /**
    * WebSocket 压缩桥接：对命中 `paths` 的 WS 升级做「终结 + permessage-deflate」，
    * 浏览器段压缩、DSH 段明文；其余 WebSocket 继续由 http-proxy 做 TCP 字节透传。
-   * 默认作用于大流量的 `events.mux` / `events.host`（会话事件流）。DSH 服务端即使
+   * 默认作用于大流量的 `/api/remote.mux`（dsh 0.1.2 起 api-gateway 拥有的
+   * Remote 流 mux 通道，取代旧 events.mux/events.host）。DSH 服务端即使
    * 未来自身开启 permessage-deflate，这里 DSH 段固定不协商、浏览器段独立协商，
-   * 天然避免双重压缩。
+   * 天然避免双重压缩。桥接上游连接的入站头透传见 {@link bridgeUpstreamHeaders}。
    */
   wsCompress?: {
     enabled: boolean;
@@ -276,7 +277,8 @@ export function isLoopbackTarget(host: string): boolean {
   return host === "localhost" || bare === "127.0.0.1" || bare === "::1" || bare === "::ffff:127.0.0.1";
 }
 
-/** 为上游一跳重建请求头（Host/Origin 重写）。导出供纯函数单测锁定行为；
+/**
+ * 为上游一跳重建请求头（Host/Origin 重写）。导出供纯函数单测锁定行为；
  *  实际转发路径上作为 http-proxy 的每请求 headers 覆盖传入（前置校验不外移）。 */
 export function rewriteHeaders(headers: IncomingHttpHeaders, targetAuthority: string): IncomingHttpHeaders {
   const out = { ...headers };
@@ -349,6 +351,46 @@ export function withLaunchToken(url: string | undefined, token: string): string 
 }
 
 /**
+ * 压缩桥接上游连接剥离的入站头：hop-by-hop 头（RFC 7230 §6.1，代理不得转发）
+ * 与 WS 握手专有头（RFC 6455 §4.1，ws 库客户端按上游握手自行生成——透传浏览器段
+ * 的同名头会产生重复头，直接破坏上游握手）。
+ */
+const BRIDGE_UPSTREAM_HEADER_DENY: ReadonlySet<string> = new Set([
+  "connection", "upgrade", "keep-alive", "proxy-connection", "te", "trailer", "transfer-encoding",
+  "sec-websocket-accept", "sec-websocket-extensions", "sec-websocket-key",
+  "sec-websocket-protocol", "sec-websocket-version",
+]);
+
+/**
+ * 为压缩桥接的上游连接重建请求头（纯函数，导出供单测锁定行为）。
+ *
+ * 与 HTTP/WS 透传路径的 {@link rewriteHeaders} 不同：桥接是「终结浏览器连接 →
+ * 新建上游连接」，入站头必须显式随行转发。dsh 0.1.2 起 `/api/remote.mux` 的升级
+ * 处理在 Host/Origin 围栏之外还要校验 authority 绑定的浏览器会话 Cookie
+ * （connection.requestRejection → isAuthenticated），丢弃 Cookie 即 401 拒绝
+ * 升级、桥接表现为连不上（issue #379）。因此这里透传全部入站头（含 Cookie
+ * 等认证凭据），仅做两类例外：
+ *   - 覆盖 Host/Origin 为回环目标 authority（/api 浏览器信任围栏的校验条件，
+ *     与 rewriteHeaders 语义一致）；
+ *   - 剥离 {@link BRIDGE_UPSTREAM_HEADER_DENY} 集合中的头。
+ * @param headers 入站升级请求头。
+ * @param targetAuthority 回环目标 authority（host:port）。
+ * @returns 上游连接请求头（ws 库 headers 选项的键值面）。
+ */
+export function bridgeUpstreamHeaders(headers: IncomingHttpHeaders, targetAuthority: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    const lower = key.toLowerCase();
+    if (lower === "host" || lower === "origin" || BRIDGE_UPSTREAM_HEADER_DENY.has(lower)) continue;
+    if (value === undefined) continue;
+    out[lower] = Array.isArray(value) ? value.join(", ") : value;
+  }
+  out.host = targetAuthority;
+  out.origin = `http://${targetAuthority}`;
+  return out;
+}
+
+/**
  * 默认配置（单一事实源）：schema 默认值、resolve 兜底、createLanProxy 参数
  * 默认值统一引用本常量，避免默认端口/主机多处硬编码漂移。
  * 注意：cordis.patch.yml 中的 port: 3081 属 bundle 层显式配置，与默认值
@@ -362,7 +404,7 @@ const MAX_UPSTREAM_SOCKETS = 64;
 /**
  * 判断某 WS 升级请求路径是否命中「需压缩桥接」白名单。
  * 仅比较 pathname（忽略查询串）。导出供纯函数单测锁定行为。
- * @param paths 压缩白名单（默认含 /api/events.mux、/api/events.host）。
+ * @param paths 压缩白名单（默认含 /api/remote.mux）。
  * @param url 原始请求 URL（可能带查询串）。
  * @returns 是否命中。
  */
@@ -475,10 +517,13 @@ export function bridgeCompressedWs(
   });
   wss.handleUpgrade(req, socket, head, (browserWs) => {
     // DSH 段：明文（本机/内网），固定不协商 permessage-deflate。
+    // 入站头透传（Cookie 等认证凭据；issue #379——0.1.2 起 /api/remote.mux 升级
+    // 需 Cookie 认证），Host/Origin 覆盖为回环目标，hop-by-hop 与 sec-websocket-*
+    // 剥离（ws 库自生成）。
     const upstreamUrl = `ws://${target.targetHost}:${target.targetPort}${req.url}`;
     const upstreamWs = new WsClient(upstreamUrl, {
       perMessageDeflate: false,
-      headers: { origin: `http://${target.targetHost}:${target.targetPort}` },
+      headers: bridgeUpstreamHeaders(req.headers, formatAuthority(target.targetHost, target.targetPort)),
     });
     // 半开探活：两端独立计时（各自 pong 判定），probeIntervalMs=0 显式关闭。
     const probeIntervalMs = target.probeIntervalMs ?? DEFAULT_WS_PROBE_INTERVAL_MS;

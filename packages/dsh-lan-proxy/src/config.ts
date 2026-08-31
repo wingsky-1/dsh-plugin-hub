@@ -96,12 +96,12 @@ export const Config: z<LanProxyConfig> = z.object({
   printBanner: z.boolean().default(true),
   /**
    * WebSocket 压缩桥接总开关（默认开）：对 wsCompressPaths 命中的 WS 升级做
-   * 「终结 + permessage-deflate」——浏览器段压缩、DSH 段明文，大流量会话事件流
-   * （events.mux/events.host）经远程/慢链路访问时显著省流量。
+   * 「终结 + permessage-deflate」——浏览器段压缩、DSH 段明文，大流量 Remote 流
+   * mux 通道（remote.mux）经远程/慢链路访问时显著省流量。
    */
   wsCompressEnabled: z.boolean().default(true),
-  /** 参与 WebSocket 压缩桥接的路径白名单（默认：会话事件流两个端点）。 */
-  wsCompressPaths: z.array(z.string()).default(["/api/events.mux", "/api/events.host"]),
+  /** 参与 WebSocket 压缩桥接的路径白名单（默认：api-gateway 的 Remote 流 mux 端点）。 */
+  wsCompressPaths: z.array(z.string()).default(["/api/remote.mux"]),
   /**
    * WS 压缩协商策略（默认：浏览器段可协商，但 iPhone/iPad/iPod UA 强制不协商——
    * iOS Safari 启用 permessage-deflate 即失败，uWebSockets.js #76 实证，issue #308）。

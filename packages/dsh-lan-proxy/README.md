@@ -65,7 +65,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-lan-proxy
 | `httpsEnabled` | `true` | 是否并存 HTTPS |
 | `tlsCertFile` / `tlsKeyFile` | 无 | 自定义证书（mkcert 等） |
 | `wsCompressEnabled` | `true` | 是否对命中 `wsCompressPaths` 的 WebSocket 做压缩桥接 |
-| `wsCompressPaths` | `/api/events.mux, /api/events.host` | 参与 WebSocket 压缩的路径白名单 |
+| `wsCompressPaths` | `/api/remote.mux` | 参与 WebSocket 压缩的路径白名单 |
 | `httpCompressEnabled` | `true` | HTTP 响应压缩总开关（Brotli/gzip 自适应协商，合并自 dsh-gzip） |
 | `httpCompressLevel` | `1` | 压缩档位预设 0..3：`0` 默认 / `1` 低（gzip 1 / br 2，最快）· `2` 中（gzip 5 / br 5，均衡）/ `3` 高（gzip 9 / br 9，最高压缩比），对 gzip 与 Brotli **同时生效**；旧配置整数 4..9 自动迁移为 3 |
 | `injectToken` | `true` | 自动注入启动令牌（issue #380）：LAN 设备首次访问 `GET /` 由转发层自动补当前 token 铸造会话 cookie，固定设备免手工拿 token；带失效 cookie 的请求在上游 401 后自动重放自愈。安全语义见「安全模型」 |
@@ -87,10 +87,11 @@ GUI 设置入口：设置 → 插件 → 「局域网访问」卡片（保存即
 
 ## WebSocket 压缩（wss 事件流）
 
-- 对命中 `wsCompressPaths`（默认会话事件流 `/api/events.mux`、`/api/events.host`）
+- 对命中 `wsCompressPaths`（默认 `/api/remote.mux`——dsh 0.1.2 起 api-gateway
+  拥有的 Remote 流 mux 端点，取代旧 `/api/events.mux`、`/api/events.host`）
   的 WebSocket 升级，lan-proxy 做**终结 + permessage-deflate**：浏览器段压缩
   （浏览器自动协商并解压）、DSH 段明文，再双向桥接转发。
-- 收益：events.mux/events.host 是 dsh 实时事件流（会话轨迹/进度），未压缩时
+- 收益：remote.mux 承载 dsh 实时事件流与会话轨迹/进度等大流量帧，未压缩时
   经远程/慢链路访问流量大；permessage-deflate 实测约省 **75~79%**。
 - DSH 服务端即使未来自身开启 permessage-deflate，这里 DSH 段固定不协商压缩，
   两段各自独立，**不会双重压缩、不冲突**。
@@ -145,6 +146,10 @@ GUI 设置入口：设置 → 插件 → 「局域网访问」卡片（保存即
 - **凭据面**：dsh settings RPC 仅回环可读写；通过本插件访问的远程设备在
   浏览器信任围栏内可读写服务器 settings（**含凭据类数据**）——确保你的局域网
   可信，或禁用该插件
+- **桥接头透传**：WS 压缩桥接的上游连接透传入站头（Cookie 等认证凭据——dsh
+  0.1.2 起 `/api/remote.mux` 升级需 Cookie 认证，丢弃即 401 连不上），仅覆盖
+  Host/Origin 为回环目标、剥离 hop-by-hop 与 WS 握手专有头；上游被 `targetHost`
+  强制约束为回环，凭据不离开本机进程边界
 - **私钥权限**：自动生成的自签名私钥落盘 0600
 - **开放端口提醒**：0.0.0.0 监听对局域网所有设备可见
 - **HTTP 响应压缩**：压缩在转发层完成，只作用于「本插件与局域网客户端之间」
@@ -196,7 +201,7 @@ curl http://<本机局域网IP>:3081/api/dsh-lan-proxy/health
 - HTTPS 自签名证书由内置库生成，无外部命令依赖（未配置证书文件且生成失败时，HTTPS 通道自动降级关闭）
 - 换网段导致 IP 变化时，自签名证书需重新生成或更新设置（证书文件路径）
 - 命中 `wsCompressPaths` 的 WebSocket 走「终结 + 压缩桥接」（多一跳、额外压缩 CPU），
-  仅建议对 events 这类大流量路径开启；其余 WebSocket 保持透传
+  仅建议对 remote.mux 这类大流量路径开启；其余 WebSocket 保持透传
 
 ## License
 
