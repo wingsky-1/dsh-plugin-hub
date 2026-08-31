@@ -277,6 +277,15 @@ import STYLE from "./style.css";
     if (document.visibilityState !== "visible") return;
     var list = collectCandidates(false);
     if (!list.length) return;
+    // 通知中心接入（issue #366 M1）：弹窗前 fire-and-forget 触发 notifyDue——
+    // 通知中心未装 / kind 未确认时服务端自动 suppressed/静默，不影响弹窗主流程。
+    try {
+      rpc("notifyDue", { count: list.length }).catch(function () {
+        // 通知失败静默（弹窗照常）
+      });
+    } catch (error) {
+      // rpc 初始化异常（connection 未就绪）也静默
+    }
     var ids = list.map(function (c: any) { return c.id; });
     rpc("titles", { sessionIds: ids }).then(function (v: any) {
       if (disposed || state.modalOpen) return;

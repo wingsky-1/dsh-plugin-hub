@@ -38,4 +38,7 @@ import "./routes.test.ts";
 import "./migration.test.ts";
 import "./client-contract.test.ts";
 
+// M1：通知中心 service 契约（severity 映射 / send 受理 / 动态 kind 待确认 / 防冒认 / fail-soft）
+import "./service-contract.test.ts";
+
 console.log("dsh-notifier smoke: OK");
