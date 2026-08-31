@@ -79,10 +79,15 @@
 - [ ] 一次性 Token 鉴权 / webserver 原生 gzip 与独立端口 + 自签 TLS 转发交互实测
 - [ ] 清理死引用（归入 1.1）；`crypto.randomUUID` polyfill 可留可删（幂等）
 
-### 1.6 dsh-subagent-model-inherit（可选增强 · 实施前补核上游）
+### 1.6 dsh-subagent-model-inherit（评估结论）
 > 评审：上游源码已 clone 但 `model-selection-settings` 未核，实施前补核官方 `dsh-subagent` 命名空间/卡片范式。
-- [ ] 补核官方 `subagent-model-selection`（`model-selection-settings` 命名空间 + `ui-settings-plugins` 的 `SubagentModelSelectionCard`），评估合并/共存/维持（关联 #246）
-- [ ] 输出决策结论
+> 结论（2026-08-31，对照 dsh-v0.1.2-alpha.2 源码）：**官方已原生吸收本插件核心能力，本包在 0.2.0 线维持现状即可（不升级、不转聚合），标记「被上游 0.1.2 吸收」。**
+- [x] 补核官方 `model-selection-settings`：`enabled + allowedModels` 白名单、默认关（`tool-subagent/src/model-selection-settings.ts`）——这是**独立的新能力**（受限模型路由控制），与「继承父模型」不同目标
+- [x] **两处断裂点 alpha.2 已原生修复**（实证）：
+  - `AgentOptions` 已含 `reasoningEffort`（`core/agent/src/runtime-types.ts:31`）；
+  - 官方 `parentAgentOptionsForDelegation` + `resolveChildAgentOptions`（`subagent/src/child-agent.ts:68-119`）子创建即继承父 provider/model/reasoningEffort/maxTokens，真实接入 `continuation.ts:421` 与 `subagent-in-process-driver/index.ts:137`；官方 `installModelSelection`（`core/agent/src/model-selection.ts`）与本插件 `injectSelection` 的 waterfall 语义同构
+- [x] **决策结论**：本包是 demo 演进包（README 已声明 standalone 观察期、不进聚合包）——0.2.0 线**维持现状、不升级能力、不转聚合**；与官方 `subagent-model-selection` 无冲突（目标不同），无需合并；README 增补「alpha.2 起官方已原生支持，本包为 0.1.x 线兼容保留」说明
+- [x] 输出决策结论（见上；本包 host 面用 `dsh-agent`/`dsh-llm`/`dsh-session` 均保留，**0.1.2 兼容无需改码**）
 
 ## Phase 2 — 通知中心续期（#366）
 
