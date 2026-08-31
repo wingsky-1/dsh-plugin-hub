@@ -18,6 +18,29 @@
 // 样式：独立 style.css（见同目录），build-client 的 .css text-loader 构建期内联为字符串
 import STYLE from "./style.css";
 import * as React from "react";
+// i18n（issue #348）：复用官方 dsh-client-locale——zh/en 双语字典，LocaleNamespaceMap
+// 声明合并进官方 ui-slots 类型面；仅 import type（编译期擦除，无运行时依赖）。
+import { zh, en, type NotifierLocaleKey } from "./locales.ts";
+// 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
+// lib/types/*.d.ts 相对导入保留 .ts 后缀，declare module 增强的模块名解析会判
+// TS2664（microsoft/TypeScript#63960 同类；上游修复发布物后此行可删）。
+import type { LocaleNamespaceMap } from "@deepseek-ai/dsh-client-ui-slots";
+
+declare module "@deepseek-ai/dsh-client-ui-slots" {
+  interface LocaleNamespaceMap {
+    /** dsh-notifier 设置卡/历史列表/权限降级说明文案。 */
+    "notifier": NotifierLocaleKey;
+  }
+}
+
+/** 本插件字典命名空间（宿主 locale 服务注册用）。 */
+const NS = "notifier";
+
+  /** i18n 翻译函数（apply 时由 ctx.locale.bind(NS) 装配；未装配回落 key 本体，行为零变化）。 */
+  var t: any = function (key: string, params?: any) {
+    if (params === undefined) return key;
+    return String(key); // 未装配时占位插值忽略（正常路径早已装配）
+  };
 
   var ROUTES = {
     config: "/api/dsh-notifier/config",
@@ -35,28 +58,30 @@ import * as React from "react";
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" rx="5" fill="#0f9d6e"/><path fill="#fff" d="M12 4a1 1 0 0 1 1 1v.55A5.5 5.5 0 0 1 17.5 11v2.3l1.45 1.45a1 1 0 0 1-.7 1.7H5.75a1 1 0 0 1-.7-1.7L6.5 13.3V11A5.5 5.5 0 0 1 11 5.55V5a1 1 0 0 1 1-1zm-2.5 13a2.5 2.5 0 0 0 5 0h-5z"/></svg>'
     );
 
+  // i18n：label 列存字典 key（渲染期 t 求值，模块加载时 t 尚未装配）。
   var EVENT_KEYS = [
-    ["notifyAsk", "审批等待"],
-    ["notifyQuestion", "向你提问"],
-    ["notifyTaskDone", "任务完成"],
-    ["notifySubagentDone", "子任务完成"],
-    ["notifyTaskError", "任务出错"],
-    ["notifyTurnEnd", "轮次完成"],
+    ["notifyAsk", "evtAsk"],
+    ["notifyQuestion", "evtQuestion"],
+    ["notifyTaskDone", "evtTaskDone"],
+    ["notifySubagentDone", "evtSubagentDone"],
+    ["notifyTaskError", "evtTaskError"],
+    ["notifyTurnEnd", "evtTurnEnd"],
   ];
   var CHANNEL_KEYS = [
-    ["systemNotify", "系统通知"],
-    ["browserNotify", "浏览器通知"],
-    ["notifyWhenVisible", "页面可见时也弹"],
-    ["notifySound", "通知声音"],
+    ["systemNotify", "chSystemNotify"],
+    ["browserNotify", "chBrowserNotify"],
+    ["notifyWhenVisible", "chWhenVisible"],
+    ["notifySound", "chSound"],
   ];
-  var KIND_LABELS: Record<string, string> = {
-    ask: "审批等待",
-    question: "向你提问",
-    done: "任务完成",
-    "subagent-done": "子任务完成",
-    error: "任务出错",
-    "turn-end": "轮次完成",
-    test: "测试",
+  /** kind → 字典 key（未知 kind 回落 kind 本体显示，数据不翻译）。 */
+  var KIND_KEYS: Record<string, string> = {
+    ask: "kAsk",
+    question: "kQuestion",
+    done: "kDone",
+    "subagent-done": "kSubagentDone",
+    error: "kError",
+    "turn-end": "kTurnEnd",
+    test: "kTest",
   };
 
   function injectStyle() {
@@ -88,7 +113,7 @@ import * as React from "react";
   function accessHint(error: any) {
     var text = String((error && error.message) || "");
     if (text.indexOf("403") === -1) return "";
-    return "（若为局域网直连访问，通知服务仅允许回环调用而被拒：请用 dsh-lan-proxy 的 https://<局域网IP>:3443 或 ssh -L 3080:127.0.0.1:3080 隧道访问后刷新）";
+    return t("lanAccessHint");
   }
 
   /**
@@ -437,8 +462,10 @@ import * as React from "react";
     var meta = useState(null); // { user, revision, effective, writable }
     var metaValue = meta[0];
     var setMeta = meta[1];
-    var saved = useState("");
-    var setSaved = saved[1];
+    // 保存反馈（i18n 重构：msg + err 结构化状态，不能用文案内容判断错误态）
+    var savedDraft = useState(null);
+    var saved = savedDraft[0];
+    var setSaved = function (msg: string, err?: boolean) { savedDraft[1](msg ? { msg: msg, err: err === true } : null); };
     var historyDraft = useState(null);
     var history = historyDraft[0];
     var setHistory = historyDraft[1];
@@ -465,11 +492,11 @@ import * as React from "react";
           baseline = Object.assign({}, effective);
           setMeta({ user: v.user || {}, revision: v.revision, effective: effective, writable: v.writable !== false });
           runtimeConfig = effective; // SSE 展示面同步
-          if (v.writable === false) setSaved("设置服务不可用");
+          if (v.writable === false) setSaved(t("settingsUnavailable"), true);
         })
         .catch(function (e: any) {
           if (!alive.value) return;
-          setSaved("设置加载失败：" + ((e && e.message) || e) + accessHint(e));
+          setSaved(t("loadFail", { msg: (e && e.message) || e, hint: accessHint(e) }), true);
         });
     }
 
@@ -481,7 +508,7 @@ import * as React from "react";
     }, []);
 
     if (!settings) {
-      return React.createElement("li", { className: "dn-set-card" }, "通知：加载中…");
+      return React.createElement("li", { className: "dn-set-card" }, t("settingsLoading"));
     }
 
     function patch(p: any) {
@@ -505,7 +532,7 @@ import * as React from "react";
     function save() {
       var payload = diffPayload();
       if (Object.keys(payload).length === 0) {
-        setSaved("未修改");
+        setSaved(t("unchanged"));
         return;
       }
       fetch(ROUTES.config, {
@@ -523,13 +550,13 @@ import * as React from "react";
       }).then(function (body: any) {
         baseline = Object.assign({}, settings);
         setMeta({ user: (body && body.user) || {}, revision: (body && body.revision) || undefined, effective: settings, writable: true });
-        setSaved("已保存");
+        setSaved(t("savedOk"));
         setTimeout(function () { setSaved(""); }, 2200);
       }).catch(function (e: any) {
         var msg = (e && e.message) || e;
         setSaved(String(msg).indexOf("版本冲突") >= 0
-          ? "保存失败：" + msg + "（请关闭本卡片重新打开后重试）"
-          : "保存失败：" + msg);
+          ? t("saveFailConflict", { msg: msg })
+          : t("saveFail", { msg: msg }), true);
       });
     }
 
@@ -541,10 +568,10 @@ import * as React from "react";
         })
         .then(function (data) {
           // 服务端返回 {ok, sseConnections}：连接数语义 = 未释放句柄（#334 诊断保留）
-          toast("测试通知已发送（服务端未释放句柄 " + (data && data.sseConnections) + " 条）");
+          toast(t("testSent", { n: (data && data.sseConnections) }));
         })
         .catch(function (error) {
-          toast("发送测试通知失败：" + error.message + accessHint(error));
+          toast(t("testFail", { msg: error.message, hint: accessHint(error) }));
         });
     }
 
@@ -561,11 +588,11 @@ import * as React from "react";
           return r.json();
         })
         .then(function (data: any) {
-          toast("已清空 " + (data.removed || 0) + " 条通知记录");
+          toast(t("cleared", { n: (data.removed || 0) }));
           loadHistory({ value: true });
         })
         .catch(function (error) {
-          toast("清空失败：" + error.message + accessHint(error));
+          toast(t("clearFail", { msg: error.message, hint: accessHint(error) }));
         });
     }
 
@@ -600,30 +627,30 @@ import * as React from "react";
       });
     }
 
-    var eventChildren = EVENT_KEYS.map(function (kv) { return row(kv[1], switchControl(kv[0])); });
-    var channelChildren = CHANNEL_KEYS.map(function (kv) { return row(kv[1], switchControl(kv[0])); });
+    var eventChildren = EVENT_KEYS.map(function (kv) { return row(t(kv[1]), switchControl(kv[0])); });
+    var channelChildren = CHANNEL_KEYS.map(function (kv) { return row(t(kv[1]), switchControl(kv[0])); });
     var numberChildren = [
-      row("错误合并窗口（ms，0=关）", React.createElement("input", {
+      row(t("errMergeWindow"), React.createElement("input", {
         type: "number", min: 0, step: 1000, className: "dn-set-input",
         value: settings.errorMergeWindowMs,
         onChange: function (e: any) { patch({ errorMergeWindowMs: Number(e.target.value) }); },
       })),
-      row("完成聚合窗口（ms，0=关）", React.createElement("input", {
+      row(t("doneAggWindow"), React.createElement("input", {
         type: "number", min: 0, step: 1000, className: "dn-set-input",
         value: settings.doneMergeWindowMs,
         onChange: function (e: any) { patch({ doneMergeWindowMs: Number(e.target.value) }); },
       })),
-      row("审批二次提醒（分钟，0=关）", React.createElement("input", {
+      row(t("approveRemind"), React.createElement("input", {
         type: "number", min: 0, step: 1, className: "dn-set-input",
         value: settings.askRemindMin,
         onChange: function (e: any) { patch({ askRemindMin: Number(e.target.value) }); },
       })),
-      row("历史保留天数（0=不按天清理）", React.createElement("input", {
+      row(t("historyRetention"), React.createElement("input", {
         type: "number", min: 0, step: 1, className: "dn-set-input",
         value: settings.historyMaxAgeDays,
         onChange: function (e: any) { patch({ historyMaxAgeDays: Number(e.target.value) }); },
       })),
-      row("最大连接数（条，超出淘汰最老）", React.createElement("input", {
+      row(t("maxConnections"), React.createElement("input", {
         type: "number", min: 1, max: 1024, step: 1, className: "dn-set-input",
         value: settings.maxConnections,
         onChange: function (e: any) { patch({ maxConnections: Number(e.target.value) }); },
@@ -632,25 +659,25 @@ import * as React from "react";
 
     var qh = settings.quietHours || {};
     var quietChildren = [
-      row("启用免打扰", React.createElement("input", {
+      row(t("dndEnable"), React.createElement("input", {
         type: "checkbox",
         checked: qh.enabled === true,
         onChange: function (e: any) { patch({ quietHours: Object.assign({}, qh, { enabled: e.target.checked }) }); },
       })),
-      row("开始时间", React.createElement("input", {
+      row(t("dndStart"), React.createElement("input", {
         type: "time", className: "dn-set-input",
         value: qh.start || "22:00",
         onChange: function (e: any) { patch({ quietHours: Object.assign({}, qh, { start: e.target.value }) }); },
       })),
-      row("结束时间", React.createElement("input", {
+      row(t("dndEnd"), React.createElement("input", {
         type: "time", className: "dn-set-input",
         value: qh.end || "08:00",
         onChange: function (e: any) { patch({ quietHours: Object.assign({}, qh, { end: e.target.value }) }); },
       })),
     ];
-    var ALLOW_CHOICES = [["ask", "审批"], ["question", "提问"], ["error", "出错"]];
+    var ALLOW_CHOICES = [["ask", "allowAsk"], ["question", "allowQuestion"], ["error", "allowError"]];
     quietChildren.push(React.createElement("div", { className: "dn-set-row", key: "allow" },
-      React.createElement("span", { className: "dn-set-label" }, "免打扰仍提醒"),
+      React.createElement("span", { className: "dn-set-label" }, t("dndStillLabel")),
       React.createElement("div", { className: "dn-set-allows" },
         ALLOW_CHOICES.map(function (ac) {
           var kindText = ac[0], kindLabel = ac[1];
@@ -666,7 +693,7 @@ import * as React from "react";
                 patch({ quietHours: Object.assign({}, qh, { allowKinds: next }) });
               },
             }),
-            React.createElement("span", null, kindLabel),
+            React.createElement("span", null, t(kindLabel)),
           );
         }),
       ),
@@ -676,45 +703,45 @@ import * as React from "react";
     var degradation: any[] = [];
     if (metaValue && metaValue.writable === false) {
       degradation.push(React.createElement("div", { className: "dn-set-note", key: "settings-unavailable" },
-        "设置服务不可用：当前无法保存配置（settings 服务未挂载）。插件通知功能不受影响，但更改将被拒绝。"));
+        t("settingsSvcDown")));
     }
     if ("Notification" in window) {
       if (!isSecureContext()) {
         degradation.push(React.createElement("div", { className: "dn-set-note", key: "insecure" },
-          "当前为局域网 HTTP 访问（非安全上下文），浏览器禁止系统级弹窗，已启用「页面内横幅 + 提示音 + 标题提醒」降级通道。如需系统弹窗，请改用 dsh-lan-proxy 的 https://<局域网IP>:3443 或 localhost 隧道访问（如 ssh -L 3080:127.0.0.1:3080）后刷新页面。"));
+          t("httpDegraded")));
       } else {
         var permText = "";
-        if (Notification.permission === "granted") permText = "浏览器通知权限：已授权 ✓";
-        else if (Notification.permission === "denied") permText = "浏览器通知权限：已拒绝（请在浏览器站点设置中允许本页通知）";
-        else permText = "浏览器通知权限：未授权（点击下方按钮在浏览器弹窗中允许）";
+        if (Notification.permission === "granted") permText = t("permGranted");
+        else if (Notification.permission === "denied") permText = t("permDenied");
+        else permText = t("permDefault");
         degradation.push(React.createElement("div", { className: "dn-set-note", key: "perm" }, permText));
       }
     } else {
       degradation.push(React.createElement("div", { className: "dn-set-note", key: "noapi" },
-        "当前设备不支持系统级通知（如 iOS Safari 普通标签页无 Web Notifications）。可用通道：页面可见时的横幅 + 提示音（需保持页面打开），或经 dsh-lan-proxy 的 https://<局域网IP>:3443 访问并「添加到主屏幕」后获得 PWA 级通知能力。"));
+        t("iosUnsupported")));
     }
 
     // 动作区（A6/A7）
     var actions = React.createElement("div", { className: "dn-set-actions" },
       React.createElement("button", { type: "button", className: "dn-set-btn" + (clearArmedValue ? " dn-set-btnDanger" : ""), onClick: confirmClear },
-        clearArmedValue ? "确认清理记录？" : "清理记录"),
+        clearArmedValue ? t("clearConfirm") : t("clearLabel")),
       ("Notification" in window && Notification.permission === "default")
         ? React.createElement("button", { type: "button", className: "dn-set-btn", onClick: function () {
-            requestPermission(function () { setSaved("权限请求完成，请刷新查看状态"); });
-          } }, "请求通知权限")
+            requestPermission(function () { setSaved(t("permRequested")); });
+          } }, t("requestPerm"))
         : null,
-      React.createElement("button", { type: "button", className: "dn-set-btn", onClick: sendTest }, "发送测试通知"),
+      React.createElement("button", { type: "button", className: "dn-set-btn", onClick: sendTest }, t("sendTest")),
     );
 
     // 历史列表（D1/D2）
     var historyEl = React.createElement("div", { className: "dn-set-section" },
-      React.createElement("div", { className: "dn-set-title" }, "通知记录（最近 10 条）"),
+      React.createElement("div", { className: "dn-set-title" }, t("historyTitle")),
       React.createElement("button", {
         type: "button", className: "dn-set-btn dn-set-btnSmall",
         onClick: function () { loadHistory({ value: true }); },
-      }, "刷新"),
+      }, t("refresh")),
       !history || history.length === 0
-        ? React.createElement("div", { className: "dn-set-note" }, "暂无通知记录（点「发送测试通知」可生成一条）")
+        ? React.createElement("div", { className: "dn-set-note" }, t("historyEmpty"))
         : React.createElement("ul", { className: "dn-set-history" },
             history.map(function (r: any, i: number) {
               var d = new Date(r.ts);
@@ -723,9 +750,9 @@ import * as React from "react";
               return React.createElement("li", { className: "dn-set-historyItem", key: String(r.ts) + "-" + i },
                 React.createElement("div", { className: "dn-set-historyHead" },
                   React.createElement("span", { className: "dn-set-historyTime" }, time),
-                  React.createElement("span", { className: "dn-set-historyKind" }, KIND_LABELS[r.kind] || r.kind),
+                  React.createElement("span", { className: "dn-set-historyKind" }, KIND_KEYS[r.kind] !== undefined ? t(KIND_KEYS[r.kind]) : r.kind),
                   r.suppressed === "quiet"
-                    ? React.createElement("span", { className: "dn-set-historySuppressed" }, "免打扰拦截未发出")
+                    ? React.createElement("span", { className: "dn-set-historySuppressed" }, t("historySuppressed"))
                     : null,
                 ),
                 React.createElement("div", { className: "dn-set-historyText" }, r.title + "：" + r.message),
@@ -736,20 +763,20 @@ import * as React from "react";
 
     return React.createElement("li", { className: "dn-set-card" },
       React.createElement("div", { className: "dn-set-head" },
-        React.createElement("span", { className: "dn-set-name" }, "通知（dsh-notifier）"),
-        React.createElement("span", { className: "dn-set-description" }, "审批/完成/错误事件通知 · 事件开关 / 通道 / 合并去重 / 免打扰 / 历史清理"),
+        React.createElement("span", { className: "dn-set-name" }, t("settingsName")),
+        React.createElement("span", { className: "dn-set-description" }, t("settingsDescription")),
       ),
       React.createElement("div", { className: "dn-set-body" },
-        section("通知事件", eventChildren),
-        section("通知通道", channelChildren),
-        section("合并/去重", numberChildren),
-        section("免打扰时段", quietChildren),
+        section(t("secEvents"), eventChildren),
+        section(t("secChannels"), channelChildren),
+        section(t("secDedup"), numberChildren),
+        section(t("secDnd"), quietChildren),
         historyEl,
-        section("动作", actions),
+        section(t("secActions"), actions),
         React.createElement("div", { className: "dn-set-notes" }, degradation),
         React.createElement("div", { className: "dn-set-foot" },
-          saved ? React.createElement("span", { className: saved.indexOf("失败") >= 0 || saved.indexOf("不可用") >= 0 ? "dn-set-error" : "dn-set-saved" }, saved) : null,
-          React.createElement("button", { type: "button", className: "dn-set-save", onClick: save }, "保存"),
+          saved ? React.createElement("span", { className: saved.err ? "dn-set-error" : "dn-set-saved" }, saved.msg) : null,
+          React.createElement("button", { type: "button", className: "dn-set-save", onClick: save }, t("save")),
         ),
       ),
     );
@@ -760,6 +787,22 @@ import * as React from "react";
 export function apply(ctx: any) {
     try {
       injectStyle();
+
+      // i18n（issue #348）：注册本插件字典；t 绑定官方 locale 服务（未装配回落 key 本体）。
+      var locale: any = ctx.get("locale");
+      if (locale && typeof locale.register === "function") {
+        try {
+          locale.register(NS, { zh: zh, en: en });
+          t = locale.bind(NS);
+          if (typeof locale.subscribe === "function" && typeof locale.getSnapshot === "function") {
+            locale.subscribe(function () {
+              try { t = locale.bind(NS); } catch (e) { /* 忽略 */ }
+            });
+          }
+        } catch (e) {
+          console.warn("[dsh-notifier] locale 注册失败：", e);
+        }
+      }
 
       // 通知半区（SSE / 浏览器通知）：不依赖任何插件 DOM（C6），直接启动
       var disposeEvents: { close: () => void; reconnect: () => void } | null = startEvents();
@@ -785,7 +828,7 @@ export function apply(ctx: any) {
       if (slots && typeof slots.inject === "function") {
         slots.inject("settings.section", function () {
           return slots.register(
-            { name: "settings.section", id: "dsh-notifier", order: 70, label: "通知中心" },
+            { name: "settings.section", id: "dsh-notifier", order: 70, label: t("tabLabel"), locale: NS },
             function () {
               return React.createElement(SettingsCard, null);
             }
@@ -822,4 +865,4 @@ export function apply(ctx: any) {
 // ---- 客户端契约：apply/inject 由 build-client 经 factory 装配（干净模块，React externals）----
 // 设置卡片是 React 组件（settings.section 独立 tab 插槽由宿主 React 渲染）；通知半区
 // 不依赖任何 DOM（C6），slot 缺失时照常工作。
-export const inject: string[] = ["slots"];
+export const inject: string[] = ["slots", "locale"];
