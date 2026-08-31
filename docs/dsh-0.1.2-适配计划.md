@@ -7,13 +7,32 @@
 
 ---
 
+## 评审结论（独立子 agent 对抗性评审，2026-08-31）
+
+> **总体判定：需修订后实施。** 方向正确、基线事实大体属实；但 Phase 1.2 存在真实语义错误（modelSelection 投影字段 / modelCatalog 返回形态 / ctx.remote 依赖面），1.1 清理清单有遗漏，Phase 2/3 有重复造轮子与并行冲突风险。本文件已按 P0/P1 全部修订。
+
+- **P0 修订**：
+  1. 1.2 检测逻辑重写：per-session `modelSelection` 投影（`lastUsed`/`next`）为主判据、`modelCatalog().default` 仅兜底（`default` 属目录而非投影，见 api-session-controller `types.d.ts:79-126`）；上溯逻辑需适配「投影按会话取 / 目录全局取」两种数据面，不能只换函数名。
+  2. 1.2 补 `ctx.remote` 依赖面：客户端取 `ctx.remote` 须 inject `@deepseek-ai/dsh-api-gateway/client`（其自身 inject typert-registry + client-connection）；`RemoteResult` 解包 + `isRemoteFailure` 错误判别（api-gateway `client/index.d.ts`）。
+  3. 1.1 清单补全：**notifier、provider-usage 两包 inject 也含 `dsh-client-runtime`**（实测 6 包；#323 称 notifier `inject:[]` 与仓库实际不符）——逐包核对 package.json，不照抄 #323。
+  4. 1.3 补降级机制：官方 `canOpenWorkspacePath()` 探测 + `openWorkspacePath` 的 RemoteError / signal 错误面处理（`types.d.ts:326-335`）。
+  5. Phase 3 先核 t seat 真实机制：ui-slots `slots.register` 的 locale 参数 vs 官方 `ctx.slots.installLocale`，确认后再设计双通道，避免白做。
+- **P1 修订**：
+  - alpha.1→alpha.2 之间 locale 客户端面从无到有，正式 0.1.2 仍可能再破坏——1.2/1.3 **逻辑重设计先行**，函数名级改动等正式版再定。
+  - M3 自建 webhook 与官方 `dsh-webhook`/`dsh-webhook-github` 重复——**先评估复用**再定自建（0.1.2-alpha.2 deps 已确认官方包存在）。
+  - 性能：全量 `modelCatalog()` 数据面大于原 per-session 查询，**投影优先**。
+  - M2/M3 与 i18n 同改 notifier 客户端，并行冲突放大——**串行或明确文件边界**。
+  - alpha.2 框架版本变动（cordis ^4.0.2 / schemastery ^3.18.2）——计划补 **S1 框架稳定性核对**项。
+
+---
+
 ## 基线事实
 
-- 上游 dsh npm `latest` = `0.1.1-rc.2`（现 catalog 锁定基线）；`0.1.2` 尚未正式发 npm，alpha 线已到 `0.1.2-alpha.2`。
-- 破坏性变更核心（#323 复核 `dsh-v0.1.1-rc.2 → dsh-v0.1.2-alpha.1`）：
+- 上游 dsh npm `latest` = `0.1.1-rc.2`（现 catalog 锁定基线）；`0.1.2` 尚未正式发 npm，alpha 线已到 `0.1.2-alpha.2`（tags：`dsh-v0.1.2-alpha.1` / `dsh-v0.1.2-alpha.2` 均已存在）。
+- 破坏性变更核心（#323 复核 `dsh-v0.1.1-rc.2 → dsh-v0.1.2-alpha.1`，评审已对照上游源码确认）：
   - `@deepseek-ai/dsh-client-runtime` 包删除（`ClientContext`/`createScope`/`SessionRuntime` 等迁移至 `dsh-api-session-controller/client` / `dsh-client-store` / `dsh-client-ui-renderer`）；
   - `@deepseek-ai/dsh-host-apiproxy` 包删除（`IApiClient`/`SessionsApi`/`session.models` 移除，传输层改 Typert Remote 网关 `ctx.remote`）；
-  - `ctx.connection.api` 移除；`ctx.workspaces.openPath` 移除（→ `ctx.remote.session.openWorkspacePath`）；`session.models` RPC 移除（→ `ctx.remote.session.modelCatalog()` / `selectModel` / `modelSelection` 投影）。
+  - `ctx.connection.api` 移除；`ctx.workspaces.openPath` 移除（→ `ctx.remote.session.openWorkspacePath`）；`session.models` RPC 移除（→ `ctx.remote.session.modelCatalog()` / `modelSelection` 投影）。
 - 本仓库结构：10 个包全部 `0.1.14`；catalog 类型层锁 `@deepseek-ai/*@0.1.1-rc.2`；`minimumReleaseAgeExclude` 同步维护。
 - 兼容保留契约：cordis `apply(ctx)`/`inject`/`ctx.get`、插槽 `settings.section`/`settings.plugin.item`(keyed)/`shell.overlay`/`sidebar.footer.action`/`conversation.input.right`、host 面 `dsh-host-webserver`/`dsh-settings`/`dsh-skill`/`dsh-agent`/`dsh-tools`/`dsh-session`、`ctx.locale.register`。
 
@@ -23,56 +42,73 @@
 
 - [x] 开 `0.2.0` 分支（独立 worktree `../dsh-hub-0.2.0`），基点 = main（v0.1.14 收官版）
 - [x] 合入本地通知插件改动：`task/366-notify-center`（#366 通知中心化 M0/M1，5 提交，--no-ff，零冲突，+828/−93）
-- [ ] 验证基线：worktree 内 `pnpm install && pnpm build && pnpm test`（重点 dsh-notifier / dsh-idle-archive）——确认 0.2.0 在 `0.1.1-rc.2` 下全绿，作为后续适配对照基线
+- [x] 验证基线：worktree 内 `pnpm install && pnpm build && pnpm test` 已跑——0.2.0 在 `0.1.1-rc.2` 下**全包构建成功、测试全绿**（含 dsh-notifier / dsh-idle-archive），作为后续适配对照基线
 
 ## Phase 1 — 上游契约对齐（适配主线，对应 #323）
 
-### 1.1 死引用清理（lan-proxy / mcp-manager / web-file-preview / idle-archive）
-- [ ] 移除各包 `dsh.client.inject` 中 `@deepseek-ai/dsh-client-runtime` 死引用（软忽略但应清理）
+### 1.1 死引用清理（**6 包**：lan-proxy / mcp-manager / web-file-preview / idle-archive / notifier / provider-usage）
+> 评审 P0-3：逐包核对 package.json（实测 6 包 inject 均含 `dsh-client-runtime`，**不照抄 #323**——其称 notifier `inject:[]` 与仓库实际不符）。
+- [ ] 逐包核对并移除 `dsh.client.inject` 中 `@deepseek-ai/dsh-client-runtime` 死引用（各包 client 均无实际 import 该包符号，属软忽略清理，已实证）
 - [ ] client 契约 smoke 断言补充/更新，确认注入意图失效已清
 
-### 1.2 dsh-provider-usage（软破坏 · 必改）
-- [ ] `src/client/core.ts` `connection?.api?.sessions?.models` → `ctx.remote.session`（`modelCatalog()` / `modelSelection` 投影 `lastUsed`/`next`/`default`），会话上溯（子代理 parentId）逻辑保留
-- [ ] 类型面以 npm tarball lib diff 实证 `ctx.remote` 形态后再动手
+### 1.2 dsh-provider-usage（软破坏 · 必改 · 逻辑重设计）
+> 评审 P0-1/P0-2：`default` 属 `ModelCatalog` 而非投影；`modelCatalog()` 返回 `Promise<RemoteResult<ModelCatalog>>` 需解包、无参全量目录（per-session 语义已不存在）；`ctx.remote` 依赖面须补。
+- [ ] **逻辑重设计**：per-session `modelSelection` 投影（`lastUsed`/`next`，见 `SessionProjectionMap`）为主判据 → `modelCatalog().default` 仅兜底；会话上溯（子代理 parentId）改为「投影按会话取、目录全局取」两数据面适配，**不能只换函数名**
+- [ ] 依赖面：客户端取 `ctx.remote` 补 inject `@deepseek-ai/dsh-api-gateway/client`（其 inject typert-registry + client-connection）；`RemoteResult` 解包 + `isRemoteFailure` 错误判别
+- [ ] 单测适配：`unit-detect.test.ts` 的 `makeConnection` fake（`connection.api.sessions.models`）→ 投影/目录 fake 结构（已定位测试锚点）
+- [ ] 类型面以 npm tarball lib diff（0.1.2-alpha.2）实证 `ctx.remote` 形态后再动手
 - [ ] provider 检测恢复——胶囊不再回落「未识别/默认」；smoke 断言
 
-### 1.3 dsh-web-file-preview（软破坏 · 必改）
-- [ ] `src/client/wrapper.ts` openPath 包装 → `ctx.remote.session.openWorkspacePath`（`{path}` → `{opened}`），或确认接受降级
+### 1.3 dsh-web-file-preview（软破坏 · 必改 · 补降级）
+> 评审 P0-4：`openWorkspacePath({path})→{opened:true}` 属实，但漏 `canOpenWorkspacePath()` 探测与 RemoteError/signal 错误面。
+- [ ] `src/client/wrapper.ts` openPath 包装 → `ctx.remote.session.openWorkspacePath`（`{path}` → `{opened}`），**配官方 `canOpenWorkspacePath()` 探测降级**
+- [ ] 处理 RemoteError / signal 错误面（RemoteResult 解包 + 失败语义）
 - [ ] 清理 `dsh.client.inject` 中 `dsh-client-runtime` 死引用
 - [ ] 对话内文件链接点击预览（intercept → /api/fwp/）回归不破坏
 
 ### 1.4 dsh-idle-archive（自查）
-- [ ] 核对 `src/client` import 面是否硬引用已删包（无则仅清理死引用）
-- [ ] 若硬引用：迁移到 `dsh-client-store` / `dsh-client-ui-renderer` 等价面
+- [x] 核对 `src/client` import 面——**无任何 `@deepseek-ai` 运行时 import**（评审实证），仅需清理死引用
+- [ ] 清理 `dsh.client.inject` 中 `dsh-client-runtime` 死引用（归入 1.1）
 
 ### 1.5 dsh-lan-proxy（实测）
+> 评审：token 鉴权交互只能实测，静态无法判定。
 - [ ] 一次性 Token 鉴权 / webserver 原生 gzip 与独立端口 + 自签 TLS 转发交互实测
-- [ ] 清理死引用；`crypto.randomUUID` polyfill 可留可删（幂等）
+- [ ] 清理死引用（归入 1.1）；`crypto.randomUUID` polyfill 可留可删（幂等）
 
-### 1.6 dsh-subagent-model-inherit（可选增强）
-- [ ] 对照官方 `subagent-model-selection` 命名空间/卡片范式（`dsh-subagent` 的 `model-selection-settings`）评估合并/共存/维持（关联 #246）
+### 1.6 dsh-subagent-model-inherit（可选增强 · 实施前补核上游）
+> 评审：上游源码已 clone 但 `model-selection-settings` 未核，实施前补核官方 `dsh-subagent` 命名空间/卡片范式。
+- [ ] 补核官方 `subagent-model-selection`（`model-selection-settings` 命名空间 + `ui-settings-plugins` 的 `SubagentModelSelectionCard`），评估合并/共存/维持（关联 #246）
 - [ ] 输出决策结论
 
-## Phase 2 — 通知中心续期（#366，可与 Phase 1 并行）
+## Phase 2 — 通知中心续期（#366，与 Phase 1 并行需注意冲突面）
+
+> 评审 P1：M2/M3 与 i18n 同改 notifier 客户端，**并行冲突放大——建议串行或明确文件边界**（如 i18n 只碰 locales.ts / 渲染消费点，M2/M3 只碰频道/面板/端口）。
+> 评审 P1：M3 自建 webhook 与官方 `dsh-webhook`/`dsh-webhook-github` 重复——**先评估官方包复用**再定自建。
 
 - [ ] M2：bark 频道 + severity→level 映射 + 投递状态面板（kindRoutes 例外行 UI）+ 凭据脱敏
-- [ ] M3：127.0.0.1 独立端口入口 + per-caller token + 受限模型工具（默认关）+ webhook（默认关）
+- [ ] M3 前置：评估官方 `dsh-webhook`/`dsh-webhook-github`（0.1.2-alpha.2 deps 已确认存在）复用可行性 → 决策自建/复用
+- [ ] M3：127.0.0.1 独立端口入口 + per-caller token + 受限模型工具（默认关）+ webhook（默认关，按上项决策）
 - [ ] 收尾：关闭 #366 跟踪 issue
 
 ## Phase 3 — 插件集 i18n（#348，需 approved 后启动）
 
 > 红线：catalog 新增官方类型依赖（`dsh-client-locale`），方案获批（approved）前不实施；approved 永不代打。
+> 评审 P0-5：实施前**先核 t seat 真实机制**——ui-slots `slots.register` 的 locale 参数 vs 官方 `ctx.slots.installLocale`，确认后再定双通道设计，避免白做。
 
 - [ ] 前置：issue #348 由维护者亲手打 `approved`
+- [ ] **机制核实**：对照官方样板（`ui-settings-plugin-inventory`）确认 t 注入机制（`slots.register(..., locale: NS)` vs `ctx.slots.installLocale`）后锁定双通道方案
 - [ ] 6 个客户端包落地（idle-archive / lan-proxy / mcp-manager / notifier / provider-usage / web-file-preview）：
   - `src/client/locales.ts`（zh 为 key 源 + `en satisfies keyof typeof zh` 锁双语平衡）
   - `declare module` 合并 `LocaleNamespaceMap`（每插件一 ns）
   - `inject` 加 `'locale'`；`ctx.effect(() => ctx.locale.register(NS, {zh,en}))`
-  - React slots 走 props `{t}` + `locale: NS` + label thunk；原生 DOM 走 `ctx.locale.bind(NS)` + subscribe 按 revision 重绘
+  - React slots 走 props `{t}` + label thunk；原生 DOM 走 `ctx.locale.bind(NS)` + subscribe 按 revision 重绘（以机制核实结论为准）
 - [ ] notifier 边界：通知类型 kind 走客户端字典、动态数据原样；`toast.ps1` 固定文案保留并文档明示
 
 ## Phase 4 — 版本对齐与全量回归（硬依赖：上游 0.1.2 正式发 npm）
 
+> 评审 P1：alpha.2 框架版本变动（cordis ^4.0.2 / schemastery ^3.18.2）——**先补 S1 框架稳定性核对**（比对 alpha.1→alpha.2→正式版的框架依赖是否变动），再全量 bump。
+
+- [ ] **S1 框架稳定性核对**：catalog 涉及的 cordis / schemastery / react 在 alpha.1→alpha.2→正式 0.1.2 版本面核对
 - [ ] 上游 0.1.2 发布后：catalog `@deepseek-ai/*` 全量 bump + `minimumReleaseAgeExclude` 同步
 - [ ] 全量门禁：`pnpm build && pnpm test && pnpm contract && pnpm pack:check` + cov/crap 观察
 - [ ] 隔离浏览器实测（dsh-verify-isolated）：全插件 + 窄屏 iPad/iOS 移动端
