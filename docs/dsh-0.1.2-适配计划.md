@@ -99,18 +99,21 @@
 - [ ] M3：127.0.0.1 独立端口入口 + per-caller token + 受限模型工具（默认关）+ webhook（默认关，按上项决策）（**暂缓**）
 - [ ] 收尾：关闭 #366 跟踪 issue（**暂缓**）
 
-## Phase 3 — 插件集 i18n（#348，需 approved 后启动）
+## Phase 3 — 插件集 i18n（#348，维护者已口头授权 2026-08-31，待补 approved 标签后动 catalog）
 
 > 红线：catalog 新增官方类型依赖（`dsh-client-locale`），方案获批（approved）前不实施；approved 永不代打。
 > 评审 P0-5：实施前**先核 t seat 真实机制**——ui-slots `slots.register` 的 locale 参数 vs 官方 `ctx.slots.installLocale`，确认后再定双通道设计，避免白做。
 
-- [ ] 前置：issue #348 由维护者亲手打 `approved`
-- [ ] **机制核实**：对照官方样板（`ui-settings-plugin-inventory`）确认 t 注入机制（`slots.register(..., locale: NS)` vs `ctx.slots.installLocale`）后锁定双通道方案
+- [x] 前置：issue #348 由维护者亲手打 `approved`（**已留痕维护者口头授权** issue-comment-5474320874；approved 标签仍待补）
+- [x] **机制核实（评审 P0-5，对照官方样板 `ui-settings-plugin-inventory`，2026-08-31）**：
+  - 官方 t seat = **`slots.register({..., locale: NS}, Component)`** 注入类型化 `t`（`PluginInventorySettingsTabProps` 用 `PropsLocale<'settings.pluginInventory'>` + `{t}` 消费）——**非** `ctx.slots.installLocale`（alpha.2 无此独立 API），「双通道」设计成立；
+  - `LocaleNamespaceMap` 在 `@deepseek-ai/dsh-client-ui-slots` 声明合并（样板 `index.ts:18-27`）；`ctx.effect(() => ctx.locale.register(NS, {zh,en}))`；
+  - 原生 DOM 场景用 `ctx.locale.bind(NS)` 显式绑定（样板 `index.ts:46` `presetName` 用例）。
 - [ ] 6 个客户端包落地（idle-archive / lan-proxy / mcp-manager / notifier / provider-usage / web-file-preview）：
   - `src/client/locales.ts`（zh 为 key 源 + `en satisfies keyof typeof zh` 锁双语平衡）
-  - `declare module` 合并 `LocaleNamespaceMap`（每插件一 ns）
+  - `declare module` 合并 `LocaleNamespaceMap`（每插件一 ns，于 `@deepseek-ai/dsh-client-ui-slots`）
   - `inject` 加 `'locale'`；`ctx.effect(() => ctx.locale.register(NS, {zh,en}))`
-  - React slots 走 props `{t}` + label thunk；原生 DOM 走 `ctx.locale.bind(NS)` + subscribe 按 revision 重绘（以机制核实结论为准）
+  - React slots 走 props `{t}` + `slots.register({locale: NS})` + label thunk；原生 DOM 走 `ctx.locale.bind(NS)` + subscribe 按 revision 重绘（机制已核实）
 - [ ] notifier 边界：通知类型 kind 走客户端字典、动态数据原样；`toast.ps1` 固定文案保留并文档明示
 
 ## Phase 4 — 版本对齐与全量回归（目标：上游 0.1.2-alpha.2，已完成）
