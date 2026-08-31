@@ -91,10 +91,10 @@
         "baselineDate": "2026-08-25",
         "baselineDuration": "4m30s",
         "baselineScope": "packages/dsh-provider-usage/lib/index.js:1372-2769+2805-3696（self-written 两段：contracts/registry/adapters-opencode-go/core-guards/sanitize/pipeline-v2/history/provider-config/hotreload 与 path-resolve/client-logic/index；排除 esbuild 垫片、cosmokit/schemastery/async-mutex/untildify 内联 vendor、shared 契约层内联副本与纯 import 提升段）",
-        "config": "stryker.conf.d/dsh-provider-usage-{1..5}.json（#342 v4：重排为 p-1..p-5，删除 adapters 空段，charts.ts 纳入修复变异盲区）",
+        "config": "stryker.conf.d/dsh-provider-usage-{entry,apply,contracts,sanitize,registry,pipeline}.json（#342 二期：功能命名——入口 entry / 主流程 apply / 契约 contracts / 净化 sanitize / 注册表 registry / 管线 pipeline；apply.ts 单文件 120s 贴线维持）",
         "hardeningNote": "#150 变异加固轮一阶段（PR #169）：covered 由 31.80% 提升至 52.87%；二阶段（PR #183）：提升至 67.28% ≥60 达标，全局 strict 随之开启",
         "threshold": 60,
-        "scope": "src 级五段（#342 v4）：p-1 index+user-adapters+ui-config+config / p-2 apply 单列 / p-3 contracts+core/guards / p-4 sanitize+registry / p-5 history+v2+hotreload+placement-math+path-resolve+client-logic+provider-config+charts；基线为 src 口径，由四班次 observe 重建"
+        "scope": "src 级六段（#342 二期）：entry index+user-adapters+ui-config+config / apply apply.ts / contracts contracts+core/guards / sanitize sanitize.ts / registry registry.ts / pipeline history+v2+hotreload+placement-math+path-resolve+client-logic+provider-config+charts；基线为 src 口径，由四班次 observe 重建"
       },
       "dsh-lan-proxy": {
         "baselineScore": 52.43,

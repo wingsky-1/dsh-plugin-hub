@@ -1,0 +1,59 @@
+{
+  "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "mutate": [
+    "packages/dsh-provider-usage/src/core/history.ts",
+    "packages/dsh-provider-usage/src/pipeline/v2.ts",
+    "packages/dsh-provider-usage/src/hotreload.ts",
+    "packages/dsh-provider-usage/src/placement-math.ts",
+    "packages/dsh-provider-usage/src/path-resolve.ts",
+    "packages/dsh-provider-usage/src/client-logic.ts",
+    "packages/dsh-provider-usage/src/provider-config.ts",
+    "packages/dsh-provider-usage/src/charts.ts",
+    "!packages/dsh-provider-usage/src/client/**",
+    "!packages/dsh-provider-usage/src/types.ts"
+  ],
+  "testRunner": "tap",
+  "mutator": {
+    "excludedMutations": [
+      "StringLiteral",
+      "ArrayLiteral",
+      "ObjectLiteral",
+      "TemplateLiteral"
+    ]
+  },
+  "plugins": [
+    "@stryker-mutator/tap-runner"
+  ],
+  "concurrency": 16,
+  "timeoutMS": 60000,
+  "dryRunTimeoutMinutes": 5,
+  "reporters": [
+    "progress",
+    "clear-text",
+    "json"
+  ],
+  "coverageAnalysis": "perTest",
+  "tempDirName": ".stryker-tmp",
+  "cleanTempDir": true,
+  "tap": {
+    "nodeArgs": [
+      "-r",
+      "./scripts/test/mutation-tap-bridge.cjs"
+    ],
+    "testFiles": [
+      "packages/dsh-provider-usage/test/unit-apply.src.test.ts",
+      "packages/dsh-provider-usage/test/unit-config.src.test.ts",
+      "packages/dsh-provider-usage/test/unit-contract.src.test.ts",
+      "packages/dsh-provider-usage/test/unit-deepseek-official.src.test.ts",
+      "packages/dsh-provider-usage/test/unit-history.src.test.ts",
+      "packages/dsh-provider-usage/test/unit-signal-lock.src.test.ts",
+      "packages/dsh-provider-usage/test/unit-v1.src.test.ts"
+    ]
+  },
+  "jsonReporter": {
+    "fileName": "coverage/mutation/dsh-provider-usage-pipeline.json"
+  },
+  "incremental": true,
+  "incrementalFile": "coverage/mutation/incremental-provider-usage-pipeline.json",
+  "_comment": "#342 v4\uff1asrc \u7ea7\u6587\u4ef6\u7ec4\u5206\u6bb5\uff085\uff09\u2014\u2014history/v2/hotreload/placement-math/path-resolve/client-logic/provider-config/charts\uff08\u5386\u53f2/\u7ba1\u7ebf/\u70ed\u66f4/\u56fe\u8868\u9762\uff1bcharts \u7eb3\u5165\u4fee\u590d\u53d8\u5f02\u76f2\u533a\uff09\uff1b\u6d4b\u8bd5\u5168\u5957\u8dd1\uff08perTest \u5173\u8054\uff09\uff1bincremental \u57fa\u7ebf\u968f observe \u56db\u73ed\u6b21\u91cd\u5efa\u3002"
+}
