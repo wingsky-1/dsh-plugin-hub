@@ -532,8 +532,10 @@ function rmStatSafe(p) {
     const probeEntry = manager.middleware.units.get("@global").connections.get("g3");
     assert.ok(probeEntry.reconnectTimer !== undefined, "重试定时器已排（F5 有界重试）");
     // 一次性语义：probeRetried 已置位，再次 ensureConnected 命中探测不重排。
+    // 注意不断言 reconnectTimer（慢机 3s 窗口内定时器可能已触发置 undefined）——
+    // probeRetried 是持久标记（连接成功才复位），探测命中路径不重排，恒保持。
     await manager.middleware.ensureConnected("@global", "g3");
-    assert.ok(probeEntry.reconnectTimer !== undefined, "重试定时器保持（probeRetried 一次性）");
+    assert.equal(probeEntry.probeRetried, true, "再次探测命中不重排（probeRetried 保持一次性）");
     // 否定用例：userDisabled 已写时，重试路径（ensureConnected）不连接。
     manager.middleware.units.get("@global").userDisabled.add("g3");
     await manager.middleware.ensureConnected("@global", "g3");
@@ -542,6 +544,62 @@ function rmStatSafe(p) {
       "failed",
       "userDisabled 命中不重连（重试经 ensureConnected 的禁用语义保证）",
     );
+    await manager.dispose();
+  } finally {
+    if (prevHome === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = prevHome;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---- #392 遗留①②③：remove/update 清目录幽灵条目 + disconnect 显式 scope 定位 ----
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mgr2m-"));
+  const prevHome = process.env.DSH_HOME;
+  try {
+    process.env.DSH_HOME = dir;
+    const { manager, store } = makeManager(dir);
+    manager.middlewareMode = "all";
+    await manager.initMiddleware("all", {});
+    const mw = manager.middleware;
+
+    // #392 遗留①：remove 后目录（unit.catalog）残留幽灵条目清除——此前 dropMiddleware
+    // Connection 只拆 connections 不清 catalog，TTL 内 ws_mcp_list 仍显示已删服务器。
+    store.upsert(normalizeServer(quietServer("ghost")));
+    manager.start("ghost", "global");
+    await pollUntil("@global 单元连接条目建立", () => mw.units.get("@global")?.connections.has("ghost") === true);
+    // 手动塞目录条目模拟「已 discover」残留（真实 remove 前目录必然存在）。
+    mw.units.get("@global").catalog.set("ghost", { discoveredAt: Date.now(), tools: new Map([["t", { description: "d", inputSchema: {} }]]) });
+    assert.ok(mw.units.get("@global").catalog.has("ghost"), "目录条目存在（模拟 discover 残留）");
+    await manager.remove("ghost");
+    assert.equal(mw.units.get("@global").connections.has("ghost"), false, "remove 后连接被拆");
+    assert.equal(mw.units.get("@global").catalog.has("ghost"), false, "remove 后目录条目被清（#392 幽灵条目消除）");
+    assert.equal(store.find("ghost"), undefined, "remove 落盘");
+
+    // #392 遗留③：disconnect 显式 scope=project 定位项目单元，不误写 @global 单元。
+    // 构造：全局 store 与项目 store 同名 "dup"（项目级由中间层项目单元接管）。
+    store.upsert(normalizeServer(quietServer("dup")));
+    const proj = join(dir, "proj");
+    mkdirSync(join(proj, ".dsh"), { recursive: true });
+    writeFileSync(
+      join(proj, ".dsh", "mcp.json"),
+      JSON.stringify({ version: 1, servers: [{ name: "dup", transport: "stdio", command: "dcmd", enabled: true }] }),
+    );
+    await manager.setSession(proj);
+    await manager.connect("dup", "project");
+    const projUnit = mw.units.get(proj);
+    assert.ok(projUnit, "项目单元已创建");
+    // 项目级 disconnect：显式 scope=project → 写项目单元 userDisabled（此前无 scope
+    // 时 all 模式全局同名会把项目级 disconnect 错定位 @global）。
+    await manager.disconnect("dup", "project");
+    assert.ok(projUnit.userDisabled.has("dup"), "scope=project 断开写项目单元");
+    assert.ok(!mw.units.get("@global").userDisabled.has("dup"), "不误写 @global 单元（#392 同名跨 scope 修正）");
+    // 全局 disconnect 显式 scope=global → 写 @global 单元。
+    await manager.connect("dup", "global");
+    await manager.disconnect("dup", "global");
+    assert.ok(mw.units.get("@global").userDisabled.has("dup"), "scope=global 断开写 @global 单元");
+
     await manager.dispose();
   } finally {
     if (prevHome === undefined) delete process.env.DSH_HOME;
