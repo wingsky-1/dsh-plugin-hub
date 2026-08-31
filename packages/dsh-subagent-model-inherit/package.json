@@ -1,6 +1,6 @@
 {
   "name": "@wingsky-1/dsh-subagent-model-inherit",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "子 Agent 自动继承父会话当前模型与思考等级：agent/created 捕获父模型快照，agent/request 首次注入子请求（demo 演进包，独立发包观察期，暂不进聚合）",
   "type": "module",
   "main": "lib/index.js",
@@ -57,5 +57,25 @@
     "@deepseek-ai/dsh-agent": "catalog:",
     "@deepseek-ai/dsh-llm": "catalog:",
     "@deepseek-ai/dsh-session": "catalog:"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/dsh-agent": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-llm": "0.1.1-rc.2",
+    "@deepseek-ai/dsh-session": "0.1.1-rc.2"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-agent": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-llm": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-session": {
+      "optional": true
+    }
   }
 }
