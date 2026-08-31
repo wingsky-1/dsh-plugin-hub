@@ -751,7 +751,7 @@ const { createServer } = await import("node:http");
   assert.equal(defaults.wsCompressEnabled, true, "wsCompressEnabled 默认 true");
   assert.equal(defaults.httpCompressEnabled, true, "httpCompressEnabled 默认 true");
   assert.equal(defaults.httpCompressLevel, 1, "httpCompressLevel 默认低档 1");
-  assert.deepEqual(defaults.wsCompressPaths, ["/api/events.mux", "/api/events.host"], "ws 压缩路径默认两会话端点");
+  assert.deepEqual(defaults.wsCompressPaths, ["/api/remote.mux"], "ws 压缩路径默认 Remote 流 mux 端点");
   // 端口上界 65535 由 schema max 强制
   assert.throws(() => Config({ port: 65536 }), "port 超 schema 上界抛错");
   assert.throws(() => Config({ httpsPort: -1 }), "httpsPort 负数抛错");

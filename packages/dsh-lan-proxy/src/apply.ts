@@ -22,8 +22,8 @@ import { migrateFileConfig } from "./migrate.ts";
 import { ROUTES, buildConfigRoutes } from "./config-routes.ts";
 import type { ConfigRouteDeps } from "./config-routes.ts";
 
-/** WebSocket 压缩桥接默认路径白名单（会话事件流两个大流量端点）。 */
-export const DEFAULT_WSS_COMPRESS_PATHS: readonly string[] = ["/api/events.mux", "/api/events.host"];
+/** WebSocket 压缩桥接默认路径白名单（dsh 0.1.2 起 api-gateway 拥有的 Remote 流 mux 端点）。 */
+export const DEFAULT_WSS_COMPRESS_PATHS: readonly string[] = ["/api/remote.mux"];
 
 /**
  * 终端横幅输出（用户可感知信息走原生 console：cordis logger 只进内存 buffer，

@@ -642,27 +642,27 @@ const main = async () => {
   });
 
   console.log("unit: WebSocket 压缩桥接配置");
-  // 默认白名单包含会话事件流两个端点。
-  check("默认压缩白名单含 events.mux / events.host", () => {
-    assert.deepEqual(DEFAULT_WSS_COMPRESS_PATHS, ["/api/events.mux", "/api/events.host"]);
+  // 默认白名单为 api-gateway 的 Remote 流 mux 端点（dsh 0.1.2 起取代 events.mux/events.host）。
+  check("默认压缩白名单为 remote.mux", () => {
+    assert.deepEqual(DEFAULT_WSS_COMPRESS_PATHS, ["/api/remote.mux"]);
   });
   // compressWsPath：命中 / 未命中 / 查询串忽略 / 传入 undefined 拒绝。
   check("compressWsPath 命中默认 path 忽略查询串", () =>
-    assert.equal(compressWsPath(DEFAULT_WSS_COMPRESS_PATHS, "/api/events.mux?days=30"), true));
+    assert.equal(compressWsPath(DEFAULT_WSS_COMPRESS_PATHS, "/api/remote.mux?x=1"), true));
   check("compressWsPath 命中非默认 path", () => {
     assert.equal(compressWsPath(["/api/events.mux", "/api/events.host"], "/api/events.host"), true);
     assert.equal(compressWsPath(["/custom/ws"], "/custom/ws"), true);
   });
   check("compressWsPath 未命中 / 空列表 / undefined", () => {
     assert.equal(compressWsPath(DEFAULT_WSS_COMPRESS_PATHS, "/api/other"), false);
-    assert.equal(compressWsPath([], "/api/events.mux"), false);
-    assert.equal(compressWsPath(undefined, "/api/events.mux"), false);
+    assert.equal(compressWsPath([], "/api/remote.mux"), false);
+    assert.equal(compressWsPath(undefined, "/api/remote.mux"), false);
     assert.equal(compressWsPath(DEFAULT_WSS_COMPRESS_PATHS, undefined), false);
   });
   // sanitize：接受 wsCompressEnabled / wsCompressPaths（字符串数组），非法整体拒绝。
   check("sanitize 接受 ws 压缩配置", () => {
-    const out = sanitizeSettings({ wsCompressEnabled: false, wsCompressPaths: ["/api/events.mux"] });
-    assert.deepEqual(out, { wsCompressEnabled: false, wsCompressPaths: ["/api/events.mux"] });
+    const out = sanitizeSettings({ wsCompressEnabled: false, wsCompressPaths: ["/api/remote.mux"] });
+    assert.deepEqual(out, { wsCompressEnabled: false, wsCompressPaths: ["/api/remote.mux"] });
   });
   check("sanitize 拒绝非字符串数组 paths", () =>
     assert.equal(sanitizeSettings({ wsCompressPaths: [1, 2] }), null));

@@ -19,7 +19,7 @@ import { X509Certificate, createHash } from "node:crypto";
 import { constants as zlibConstants } from "node:zlib";
 
 import {
-  hostnameAllowed, formatAuthority, rewriteHeaders, createLanProxy, isLoopbackTarget,
+  hostnameAllowed, formatAuthority, rewriteHeaders, bridgeUpstreamHeaders, createLanProxy, isLoopbackTarget,
   DEFAULT_OPTIONS, compressWsPath, isCompressible, resolveCompressionOptions,
   ensureSelfSignedTls,
 } from "../lib/index.js";
@@ -101,6 +101,38 @@ assert.deepEqual(rewriteHeaders({ host: ["a", "b"], origin: ["http://a"] }, "127
   assert.equal(src.host, "old:1", "入参 headers 不被就地修改");
 }
 
+// bridgeUpstreamHeaders（issue #379：压缩桥接上游连接入站头透传）
+assert.deepEqual(bridgeUpstreamHeaders({
+  host: "192.168.1.50:3081",
+  origin: "http://192.168.1.50:3081",
+  cookie: "dsh-auth-x=v1.aaa",
+  "x-custom": "v",
+  connection: "Upgrade",
+  upgrade: "websocket",
+  "sec-websocket-key": "AAA=",
+  "sec-websocket-version": "13",
+  "sec-websocket-extensions": "permessage-deflate",
+}, "127.0.0.1:3080"), {
+  cookie: "dsh-auth-x=v1.aaa",
+  "x-custom": "v",
+  host: "127.0.0.1:3080",
+  origin: "http://127.0.0.1:3080",
+}, "透传认证/自定义头，重写 Host/Origin，剥离 hop-by-hop 与 WS 握手专有头");
+assert.deepEqual(bridgeUpstreamHeaders({}, "127.0.0.1:3080"), {
+  host: "127.0.0.1:3080",
+  origin: "http://127.0.0.1:3080",
+}, "空头仍产出回环 Host/Origin（无条件带 origin 与桥接既有行为一致）");
+assert.deepEqual(bridgeUpstreamHeaders({ cookie: ["a=1", "b=2"] }, "127.0.0.1:1"), {
+  cookie: "a=1, b=2",
+  host: "127.0.0.1:1",
+  origin: "http://127.0.0.1:1",
+}, "多值头（string[]）合并为逗号串");
+{
+  const src = { cookie: "c=1" };
+  bridgeUpstreamHeaders(src, "127.0.0.1:2");
+  assert.deepEqual(src, { cookie: "c=1" }, "入参 headers 不被就地修改");
+}
+
 // compressWsPath
 assert.equal(compressWsPath(["/a", "/b"], "/a?query=1"), true, "带查询串命中");
 assert.equal(compressWsPath(["/a", "/b"], "/c"), false, "未命中");
@@ -146,11 +178,11 @@ assert.equal(DEFAULT_OPTIONS.targetHost, "127.0.0.1");
 
   const proxy = createLanProxy({
     host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: upPort,
-    wsCompress: { enabled: true, paths: ["/api/events.mux", "/api/events.host"] },
+    wsCompress: { enabled: true, paths: ["/api/remote.mux"] },
   });
   const { httpPort } = await proxy.listen();
 
-  const browserWs = new WsClient(`ws://127.0.0.1:${httpPort}/api/events.mux`);
+  const browserWs = new WsClient(`ws://127.0.0.1:${httpPort}/api/remote.mux`);
   const received = [];
   browserWs.on("message", (data) => { received.push(data.toString()); });
   await new Promise((r, j) => { browserWs.on("open", r); browserWs.on("error", j); });
@@ -160,6 +192,63 @@ assert.equal(DEFAULT_OPTIONS.targetHost, "127.0.0.1");
 
   assert.ok(received.includes("hello-via-ws-bridge"),
     `WS 压缩桥接双向转发：上游回显到浏览器端（收到 ${JSON.stringify(received)}）`);
+
+  await proxy.close();
+  wss.close();
+  upServer.close();
+}
+
+// ===== 桥接上游连接入站头透传（issue #379 端到端） =====
+// dsh 0.1.2 起 /api/remote.mux 升级处理需 Cookie 认证（connection.requestRejection
+// → isAuthenticated），桥接若丢弃入站头即 401 拒绝升级、表现为连不上。
+// 上游记录 upgrade 请求头；浏览器端模拟真实浏览器（带 cookie + 自定义头 +
+// 协商 permessage-deflate）连压缩路径，断言：cookie/自定义头原样透传、
+// Host/Origin 重写为回环目标、浏览器段 WS 握手头不透传（无重复头）、
+// 浏览器段压缩帧经桥接解压后上游回显可达（压缩与认证互不干扰）。
+{
+  const { WebSocketServer, WebSocket: WsClient } = await import("ws");
+
+  const upPort = 19850 + Math.floor(Math.random() * 100);
+  const upServer = createServer();
+  const wss = new WebSocketServer({ noServer: true });
+  let upgradeHeaders = null;
+  upServer.on("upgrade", (req, socket, head) => {
+    upgradeHeaders = req.headers;
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      ws.on("message", (data, isBinary) => ws.send(data, { binary: isBinary }));
+    });
+  });
+  await new Promise((r) => upServer.listen(upPort, "127.0.0.1", r));
+
+  const proxy = createLanProxy({
+    host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: upPort,
+    wsCompress: { enabled: true, paths: ["/api/remote.mux"], probeIntervalMs: 0 },
+  });
+  const { httpPort } = await proxy.listen();
+
+  const browserWs = new WsClient(`ws://127.0.0.1:${httpPort}/api/remote.mux`, {
+    perMessageDeflate: { threshold: 0 }, // 真实浏览器默认协商压缩：强制每一帧都走压缩路径
+    headers: {
+      cookie: "dsh-auth-test=v1.issue379",
+      "x-lan-proxy-probe": "issue-379",
+    },
+  });
+  const echoed = new Promise((resolve) => browserWs.once("message", (d) => resolve(d.toString())));
+  await new Promise((r, j) => { browserWs.on("open", r); browserWs.on("error", j); });
+  browserWs.send("headers-probe");
+  assert.equal(await echoed, "headers-probe", "带认证头的桥接连接双向可达（压缩帧解压后转发）");
+  browserWs.close();
+
+  assert.ok(upgradeHeaders, "上游已收到桥接的升级请求");
+  assert.equal(upgradeHeaders.cookie, "dsh-auth-test=v1.issue379",
+    "cookie 原样透传到上游（认证凭据不丢，issue #379 核心语义）");
+  assert.equal(upgradeHeaders["x-lan-proxy-probe"], "issue-379", "自定义头同样透传");
+  assert.equal(upgradeHeaders.host, `127.0.0.1:${upPort}`, "host 重写为回环目标 authority");
+  assert.equal(upgradeHeaders.origin, `http://127.0.0.1:${upPort}`, "origin 重写为回环 http 目标");
+  assert.equal(typeof upgradeHeaders["sec-websocket-key"], "string",
+    "sec-websocket-key 为 ws 库自生成的单一字符串（浏览器段握手头已剥离、无重复头）");
+  assert.equal(upgradeHeaders["sec-websocket-extensions"], undefined,
+    "浏览器段 permessage-deflate 协商头不透传（DSH 段固定明文，避免双重压缩）");
 
   await proxy.close();
   wss.close();
