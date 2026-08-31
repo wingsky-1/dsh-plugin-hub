@@ -356,7 +356,8 @@ export function withLaunchToken(url: string | undefined, token: string): string 
  * 的同名头会产生重复头，直接破坏上游握手）。
  */
 const BRIDGE_UPSTREAM_HEADER_DENY: ReadonlySet<string> = new Set([
-  "connection", "upgrade", "keep-alive", "proxy-connection", "te", "trailer", "transfer-encoding",
+  "connection", "upgrade", "keep-alive", "proxy-connection", "proxy-authorization", "proxy-authenticate",
+  "te", "trailer", "transfer-encoding",
   "sec-websocket-accept", "sec-websocket-extensions", "sec-websocket-key",
   "sec-websocket-protocol", "sec-websocket-version",
 ]);
@@ -519,8 +520,10 @@ export function bridgeCompressedWs(
     // DSH 段：明文（本机/内网），固定不协商 permessage-deflate。
     // 入站头透传（Cookie 等认证凭据；issue #379——0.1.2 起 /api/remote.mux 升级
     // 需 Cookie 认证），Host/Origin 覆盖为回环目标，hop-by-hop 与 sec-websocket-*
-    // 剥离（ws 库自生成）。
-    const upstreamUrl = `ws://${target.targetHost}:${target.targetPort}${req.url}`;
+    // 剥离（ws 库自生成）。upstreamUrl 经 formatAuthority 拼接：IPv6 targetHost
+    // （::1）裸拼接会产出非法 URL（ws 库同步抛 SyntaxError → 本回调无 try/catch
+    // 即进程级崩溃），方括号形态才合法（#379 复核 M3 修复）。
+    const upstreamUrl = `ws://${formatAuthority(target.targetHost, target.targetPort)}${req.url}`;
     const upstreamWs = new WsClient(upstreamUrl, {
       perMessageDeflate: false,
       headers: bridgeUpstreamHeaders(req.headers, formatAuthority(target.targetHost, target.targetPort)),
