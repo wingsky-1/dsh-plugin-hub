@@ -68,6 +68,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-lan-proxy
 | `wsCompressPaths` | `/api/events.mux, /api/events.host` | 参与 WebSocket 压缩的路径白名单 |
 | `httpCompressEnabled` | `true` | HTTP 响应压缩总开关（Brotli/gzip 自适应协商，合并自 dsh-gzip） |
 | `httpCompressLevel` | `1` | 压缩档位预设 0..3：`0` 默认 / `1` 低（gzip 1 / br 2，最快）· `2` 中（gzip 5 / br 5，均衡）/ `3` 高（gzip 9 / br 9，最高压缩比），对 gzip 与 Brotli **同时生效**；旧配置整数 4..9 自动迁移为 3 |
+| `injectToken` | `true` | 自动注入启动令牌（issue #380）：LAN 设备首次访问 `GET /` 由转发层自动补当前 token 铸造会话 cookie，固定设备免手工拿 token；带失效 cookie 的请求在上游 401 后自动重放自愈。安全语义见「安全模型」 |
 
 GUI 设置入口：设置 → 插件 → 「局域网访问」卡片（保存即热更新）。
 
@@ -152,6 +153,30 @@ GUI 设置入口：设置 → 插件 → 「局域网访问」卡片（保存即
   对**直连回环 web** 的请求生效；经本插件转发的请求按设计视为受信（见凭据面）。
   注意：health 响应携带的诊断元数据——`configDir` 绝对路径与压缩协商计数——
   会随转发原样到达局域网设备，对其可见
+- **injectToken 自动注入（issue #380）**：dsh web 的浏览器会话认证（launch token
+  + 持久签名 cookie）无法关闭，token 每次重启变化且只打印在本机终端——固定
+  局域网设备拿不到实时 token。本插件经官方 connection 服务的**公开 API**
+  `authenticatedUrl()` 动态读取当前 token，仅在铸造入口（`GET /`、无会话 cookie）
+  自动补上：LAN 设备零操作进入。安全取舍与缓解：
+  - **等效「信任整个局域网」**：开启后任何能网络到达本端口的客户端都免 token
+    获得完整 dsh 控制权（bash 直通宿主机）。仅在可信家庭/办公内网开启；
+    不可信网段务必关闭（设置卡片开关）。
+  - **默认开启（维护者决策）**：业界同类先例（Home Assistant `trusted_networks`
+    认证 provider、qBittorrent WebUI 「Bypass authentication for clients」）默认
+    需显式配置；本插件按家用固定内网场景默认开启，以「启动横幅警示行 + 设置
+    卡片常驻警示 + 本节说明」作缓解。
+  - **关闭不吊销已发 cookie**：会话 cookie 有效期内（默认 30 天）已登录设备
+    在关闭后仍可直接进入；需立即收回访问时清空 dsh credentials 存储。
+  - **失效 cookie 自愈**：cookie 失效（credentials 重置等）的设备原本会陷入
+    401 死锁（Max-Age 内浏览器不删 cookie、又拿不到新 token）；转发层在检测到
+    上游 401 后自动带 token 重放一次，上游直接重铸 cookie，设备无感恢复。
+  - **cross-site 残余面**：公网恶意页面对 `http://<LAN-IP>:3081/` 发起的跨站
+    GET 可被白铸 cookie，但读不到响应（CORS opaque）、后续请求因
+    `SameSite=Strict` 不携带 cookie、`POST /api` 被 sec-fetch-site 围栏拒绝——
+    链条闭合；token 与 cookie 均不出现在浏览器地址栏/历史。
+  - **不注入范围**：仅 `GET /` 且无 token 参数的请求；WebSocket、非根路径、
+    已带 token 的请求、provider 不可用时全部原样透传（行为与未开启一致）。
+    自建口令页（信任收窄为「知道口令」）为后续演进方向。
 
 ## 验证
 

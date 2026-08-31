@@ -98,8 +98,63 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
       wsDeflatePolicy: value.wsDeflatePolicy ?? DEFAULT_DEFLATE_POLICY,
       httpCompressEnabled: value.httpCompressEnabled ?? true,
       httpCompressLevel: value.httpCompressLevel ?? 1,
+      injectToken: value.injectToken ?? true,
     };
   };
+
+  // ---- injectToken（issue #380）：launch token 动态提供者 ----
+  // 官方 connection 服务（@deepseek-ai/dsh-client-connection）以 cordis 服务
+  // "connection" 提供；公开方法 authenticatedUrl(baseUrl) 返回带当前 launch
+  // token 的 URL。token 进程内恒定、跨重启变化——getter 每次现读不缓存，重启
+  // 后自动跟随新值。服务晚于转发器 attach 是常态：getter 在 attach 前返回
+  // undefined，逐请求降级为不注入（与未开启一致），attach 后自动生效。
+  /** 官方 connection 服务最小类型面（公开 API；仅取 token 所需）。 */
+  interface ConnectionLike {
+    authenticatedUrl(baseUrl: string): string;
+  }
+  /** connection 内层 attach 后就绪的 token 读取器（未 attach 前 undefined）。 */
+  let readLaunchToken: (() => string | undefined) | undefined;
+  /** 提供者状态（absent/ready/error），变化时各 warn 一次——不造节流器。 */
+  let tokenProviderState: "absent" | "ready" | "error" = "absent";
+  const setTokenProviderState = (next: "ready" | "error"): void => {
+    if (tokenProviderState === next) return;
+    tokenProviderState = next;
+    if (next === "error") {
+      out.warn("injectToken: 读取 dsh web launch token 失败 — 自动注入逐请求降级关闭（官方行为面变更？请按 dsh-upgrade 流程复核）");
+    } else {
+      out.info("injectToken: launch token 提供者就绪 — LAN 设备首次访问将自动铸造会话");
+    }
+  };
+  /** 转发器消费的提供者：转发器随配置重建，getter 引用保持同一份（禁快照）。 */
+  const tokenProvider = { getToken: (): string | undefined => readLaunchToken?.() ?? undefined };
+  if (typeof (ctx as unknown as { inject?: unknown })?.inject === "function") {
+    (ctx as unknown as { inject: (services: string[], fn: (c: unknown) => void) => void }).inject(
+      ["connection"],
+      (connectionCtx: unknown) => {
+        const connection = (connectionCtx as { connection?: ConnectionLike } | undefined)?.connection;
+        if (connection === undefined || typeof connection.authenticatedUrl !== "function") {
+          setTokenProviderState("error");
+          return;
+        }
+        readLaunchToken = () => {
+          try {
+            // 官方公开 API：返回「根 URL + ?token=当前 launch token」。
+            const mint = connection.authenticatedUrl("http://lan-proxy.local");
+            const token = new URL(mint).searchParams.get("token");
+            if (token === null || token === "") {
+              setTokenProviderState("error");
+              return undefined;
+            }
+            setTokenProviderState("ready");
+            return token;
+          } catch {
+            setTokenProviderState("error");
+            return undefined;
+          }
+        };
+      },
+    );
+  }
 
   /**
    * HTTP 压缩运行快照（issue #33 子项 3）：health 与 GET /config 共用的单一来源，
@@ -179,6 +234,9 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
           enabled: httpCompressEnabled,
           level: value.httpCompressLevel,
         },
+        // 自动注入启动令牌（issue #380）：仅开关开启时交给转发器；提供者 getter
+        // 跨重建共享（connection 服务 attach 前返回 undefined，逐请求降级）。
+        injectToken: value.injectToken ? tokenProvider : undefined,
       },
       ctx.logger,
     );
@@ -197,6 +255,11 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
         }
         for (const ip of lanIpv4Addresses()) {
           lines.push(`LAN access http://${ip}:${httpPort}${httpsPort !== undefined ? ` · https://${ip}:${httpsPort}` : ""}`);
+        }
+        // injectToken 开启警示（issue #380）：开启 = LAN 内设备免 token 直入，
+        // 横幅每次监听结果变化都带此行，保持可感知。
+        if (value.injectToken) {
+          lines.push("injectToken: ON — 局域网设备免 token 直接进入（等效信任整个 LAN，关闭见 设置 → 插件 → dsh-lan-proxy）");
         }
         const banner = lines.map((line) => `  ${line}`).join("\n");
         if (value.printBanner !== false && banner !== lastBanner) {
