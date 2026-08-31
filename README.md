@@ -50,7 +50,13 @@ DSH（DeepSeek Harness）Web GUI 插件集，npm 分发：一键装全家桶，�
 > **不再维护**。前者因社区已有更成熟的会话生命周期管理/归档实现（如
 > [dsh-session-pruner](https://github.com/mrzhangkris/dsh-session-pruner)），后者因官方
 > dsh-subagent 0.1.2-alpha.2 已原生实现 `resolveChildAgentOptions`（子 Agent 继承父会话
-> 模型/思考等级/输出上限）。两包均已从仓库移除，请勿再安装。
+> 模型/思考等级/输出上限）。两包均已从仓库移除、npm 已标 deprecated，请勿再安装；
+> 此前安装过的用户请卸载：
+>
+> ```sh
+> dsh plugin --profile web remove @wingsky-1/dsh-idle-archive
+> dsh plugin --profile web remove @wingsky-1/dsh-subagent-model-inherit
+> ```
 
 > dsh-memory（项目长期记忆）暂未包含，规划中。
 

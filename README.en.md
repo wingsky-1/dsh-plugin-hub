@@ -59,7 +59,13 @@ install them all at once as a single bundle, or pick individual plugins as neede
 > [dsh-session-pruner](https://github.com/mrzhangkris/dsh-session-pruner)); the latter because
 > official dsh-subagent 0.1.2-alpha.2 natively implements `resolveChildAgentOptions` (child agents
 > inherit the parent session's model / reasoning effort / output-token limit). Both packages have
-> been removed from this repository — please do not install them.
+> been removed from this repository and deprecated on npm — please do not install them; uninstall
+> if you had installed them before:
+>
+> ```sh
+> dsh plugin --profile web remove @wingsky-1/dsh-idle-archive
+> dsh plugin --profile web remove @wingsky-1/dsh-subagent-model-inherit
+> ```
 
 > dsh-memory (project long-term memory) is not included yet; it is planned.
 
