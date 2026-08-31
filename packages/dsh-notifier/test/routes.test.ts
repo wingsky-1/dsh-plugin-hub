@@ -147,6 +147,85 @@ try {
     assert.equal(rec.status, 200, "缺省 expectedRevision 的 PUT 成功");
   }
 
+  // ===== M2：Bark channels 凭据脱敏与掩码回填（issue #366，评审 P0-1/P0-2）=====
+  {
+    function bodyReq(payload) {
+      const text = JSON.stringify(payload);
+      return {
+        method: "PUT",
+        url: "/",
+        socket: { remoteAddress: "127.0.0.1" },
+        headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
+        on(event, cb) {
+          if (event === "data") setTimeout(() => cb(Buffer.from(text)), 0);
+          else if (event === "end") setTimeout(cb, 1);
+          return this;
+        },
+        destroy() {},
+      };
+    }
+    const SECRET = "realSecretKey42";
+
+    // PUT 写入含 deviceKey 的 channels：user 层持明文，响应已掩码（单一出口）
+    const put1 = makeRes();
+    await configRoute.handler(bodyReq({ patch: { channels: [{ id: "phone", type: "bark", baseUrl: "https://api.day.app", deviceKey: SECRET, enabled: true }] } }), put1.res);
+    assert.equal(put1.rec.status, 200, "合法 channels PUT 成功");
+    const put1Body = JSON.parse(put1.rec.text);
+    assert.ok(!JSON.stringify(put1Body).includes(SECRET), "PUT 响应不含 deviceKey 明文（评审 P0-1：PUT 成功响应也是出口）");
+    assert.equal(put1Body.user.channels[0].deviceKey, "********", "PUT 响应 user 已掩码");
+    assert.equal(settings.getUser().channels[0].deviceKey, SECRET, "settings user 层持明文（服务端回填依据）");
+
+    // GET：user + effective 双出口深度扫描无明文
+    const get1 = makeRes();
+    await configRoute.handler(fakeReq({}), get1.res);
+    const get1Body = JSON.parse(get1.rec.text);
+    assert.ok(!JSON.stringify(get1Body).includes(SECRET), "GET 响应全文深度扫描不含 deviceKey 明文");
+    assert.equal(get1Body.user.channels[0].deviceKey, "********", "GET user 出口掩码");
+    assert.equal(get1Body.effective.channels[0].deviceKey, "********", "GET effective 出口掩码");
+    assert.equal(get1Body.effective.channels[0].baseUrl, "https://api.day.app", "非凭据字段不受影响");
+
+    // 掩码回填：同 id 实例提交掩码 → user 层 key 保持原值（先回填再校验）
+    const put2 = makeRes();
+    await configRoute.handler(bodyReq({ patch: { channels: [{ id: "phone", type: "bark", baseUrl: "https://api.day.app", deviceKey: "********", enabled: false, group: "dsh" }] } }), put2.res);
+    assert.equal(put2.rec.status, 200, "掩码提交（未修改语义）成功");
+    const afterUnmask = settings.getUser().channels[0];
+    assert.equal(afterUnmask.deviceKey, SECRET, "掩码按 id 回填 user 层原值（未覆盖为掩码字面量）");
+    assert.equal(afterUnmask.enabled, false, "其余字段正常更新");
+    assert.equal(afterUnmask.group, "dsh", "新增可选参数正常更新");
+
+    // 乱序多实例：掩码仍按 id 对齐（防下标串凭据）
+    const put3 = makeRes();
+    await configRoute.handler(bodyReq({ patch: { channels: [{ id: "phone", type: "bark", baseUrl: "https://api.day.app", deviceKey: SECRET, enabled: true }, { id: "pad", type: "bark", baseUrl: "https://api.day.app", deviceKey: "padKey777", enabled: true }] } }), put3.res);
+    assert.equal(put3.rec.status, 200);
+    const put4 = makeRes();
+    await configRoute.handler(bodyReq({ patch: { channels: [{ id: "pad", type: "bark", baseUrl: "https://api.day.app", deviceKey: "********", enabled: true }, { id: "phone", type: "bark", baseUrl: "https://api.day.app", deviceKey: "********", enabled: true }] } }), put4.res);
+    assert.equal(put4.rec.status, 200, "乱序掩码 PUT 成功");
+    const userChs = settings.getUser().channels;
+    const byId = Object.fromEntries(userChs.map((c) => [c.id, c.deviceKey]));
+    assert.equal(byId.phone, SECRET, "phone 的 key 未被串改");
+    assert.equal(byId.pad, "padKey777", "pad 的 key 未被串改");
+
+    // 改 key：非掩码新值直接生效
+    const put5 = makeRes();
+    await configRoute.handler(bodyReq({ patch: { channels: [{ id: "phone", type: "bark", baseUrl: "https://api.day.app", deviceKey: "rotatedKey9", enabled: true }, { id: "pad", type: "bark", baseUrl: "https://api.day.app", deviceKey: "********", enabled: true }] } }), put5.res);
+    assert.equal(put5.rec.status, 200, "混合提交（改 key + 掩码未改）成功");
+    const byId2 = Object.fromEntries(settings.getUser().channels.map((c) => [c.id, c.deviceKey]));
+    assert.equal(byId2.phone, "rotatedKey9", "非掩码新 key 生效（key 轮换）");
+    assert.equal(byId2.pad, "padKey777", "掩码实例保持原 key");
+
+    // 新实例带掩码 → 400（掩码只允许表达「未修改」）
+    const put6 = makeRes();
+    await configRoute.handler(bodyReq({ patch: { channels: [{ id: "brand-new", type: "bark", baseUrl: "https://api.day.app", deviceKey: "********", enabled: true }] } }), put6.res);
+    assert.equal(put6.rec.status, 400, "新实例带掩码 400 拒绝");
+    assert.ok(JSON.parse(put6.rec.text).error.hint.includes("掩码"), "400 hint 指引真实 key");
+
+    // 重复 id → 400（校验器查重）
+    const put7 = makeRes();
+    await configRoute.handler(bodyReq({ patch: { channels: [{ id: "dup", type: "bark", baseUrl: "https://api.day.app", deviceKey: "k1", enabled: true }, { id: "dup", type: "bark", baseUrl: "https://api.day.app", deviceKey: "k2", enabled: true }] } }), put7.res);
+    assert.equal(put7.rec.status, 400, "重复 id 400");
+    assert.equal(JSON.parse(put7.rec.text).error.error, "配置校验失败: channels", "400 指明 channels 键");
+  }
+
   // config PUT 容错：非法 JSON → 400；超大 body → 不挂起、无未处理拒绝（J3/J4）
   {
     function rawBodyReq(text) {
