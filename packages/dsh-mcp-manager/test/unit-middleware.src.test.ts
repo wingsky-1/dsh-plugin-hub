@@ -408,6 +408,34 @@ function makeHost(serversByRoot = new Map()) {
   // 常量值
   assert.equal(LIST_DEFAULT_TOOLS_PER_SERVER, 50);
   assert.equal(LIST_MAX_TOOLS_PER_SERVER, 500);
+
+  // #381 回归：未禁用工具条目**不写** disabled 键（显式 undefined 键会被宿主
+  // lossless JSON 输出校验判非法 → ws_mcp_list 报 "value is not lossless JSON"）。
+  for (const tool of ctxEntry.tools) {
+    assert.equal(Object.hasOwn(tool, "disabled"), false, `未禁用条目不写 disabled 键（${tool.tool}）`);
+  }
+  assert.equal(Object.hasOwn(offEntry, "disabled"), true, "服务器级禁用仍写 disabled 键");
+
+  // #381 回归：工具级禁用路径——禁用条目写 disabled: true，未禁用条目无键。
+  const disabledMap = new Map([[ROOT, new Map([["ctx", new Set(["t0"])]])]]);
+  const withDisabled = listCatalog(units, [ROOT], undefined, 50, "project", "empty", disabledMap);
+  const ctxWD = withDisabled.servers.find((s) => s.server === fullServerName(ROOT, "ctx"));
+  assert.equal(ctxWD.tools[0].disabled, true, "t0 被禁用 → disabled: true");
+  assert.equal(Object.hasOwn(ctxWD.tools[0], "disabled"), true);
+  assert.equal(Object.hasOwn(ctxWD.tools[1], "disabled"), false, "t1 未禁用 → 无 disabled 键");
+
+  // #381 回归：模拟宿主 lossless 校验（递归断言输出树无 undefined 值键/元素）。
+  const assertLossless = (value, path) => {
+    if (value === undefined) throw new Error(`lossless 违规：${path} 为 undefined`);
+    if (value === null || typeof value !== "object") return;
+    if (Array.isArray(value)) {
+      value.forEach((item, i) => assertLossless(item, `${path}[${i}]`));
+      return;
+    }
+    for (const [key, entry] of Object.entries(value)) assertLossless(entry, `${path}.${key}`);
+  };
+  assertLossless(listed, "listed");
+  assertLossless(withDisabled, "withDisabled");
 }
 
 // ---- findToolDetail：精确命中 / 完整 schema / 错误三分 / tool 归一化 ----

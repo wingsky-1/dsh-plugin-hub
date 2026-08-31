@@ -30,6 +30,9 @@ export const zh = {
   level1: "低（最快：gzip 1 / br 2）",
   level2: "中（均衡：gzip 5 / br 5）",
   level3: "高（最高压缩比：gzip 9 / br 9）",
+  injectToken: "局域网免 token 直入",
+  injectTokenOnHint:
+    "已开启：局域网内任何能访问该端口的设备都无需登录 token 即可完整控制 dsh（含终端命令执行），等效信任整个局域网。仅在可信家庭/办公内网开启；关闭后已登录设备的会话在有效期内仍然有效（约 30 天），不即时吊销。",
   bodyHint:
     "保存即热更新（配置写入宿主统一设置存储，无需重启 dsh web）。修改后内网设备访问新端口，旧端口立即失效。",
   // HTTP 压缩状态行
@@ -73,6 +76,9 @@ export const en: Record<LanProxyLocaleKey, string> = {
   level1: "Low (fastest: gzip 1 / br 2)",
   level2: "Medium (balanced: gzip 5 / br 5)",
   level3: "High (best ratio: gzip 9 / br 9)",
+  injectToken: "Token-free LAN access",
+  injectTokenOnHint:
+    "On: any device that can reach this port on the LAN gets full control of dsh (including terminal command execution) without a login token — equivalent to trusting the entire LAN. Only enable on trusted home/office networks; after turning off, already-signed-in devices stay valid until session expiry (~30 days), no instant revocation.",
   bodyHint:
     "Saving hot-reloads the forwarder (config goes to the host settings store, no restart needed). After the port changes, LAN devices use the new port and the old one stops immediately.",
   compressOff: "HTTP response compression: off",

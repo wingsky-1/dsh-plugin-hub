@@ -56,6 +56,6 @@ export type { ConfigRouteDeps, PatchResult } from "./config-routes.ts";
 export { apply, pluginDir, DEFAULT_WSS_COMPRESS_PATHS } from "./apply.ts";
 
 // 测试面 re-export（smoke 只依赖主入口，避免发布物保留内部模块）
-export { createLanProxy, hostnameAllowed, formatAuthority, rewriteHeaders, isLoopbackTarget, DEFAULT_OPTIONS, compressWsPath, isCompressible, resolveCompressionOptions, deflateAllowedByPolicy, DEFAULT_DEFLATE_POLICY } from "./proxy.ts";
-export type { ConnStats, DeflatePolicy, LanProxy } from "./proxy.ts";
+export { createLanProxy, hostnameAllowed, formatAuthority, rewriteHeaders, bridgeUpstreamHeaders, isLoopbackTarget, DEFAULT_OPTIONS, compressWsPath, isCompressible, resolveCompressionOptions, deflateAllowedByPolicy, DEFAULT_DEFLATE_POLICY, hasDshAuthCookie, isTokenMintCandidate, withLaunchToken } from "./proxy.ts";
+export type { ConnStats, DeflatePolicy, LanProxy, TokenProvider } from "./proxy.ts";
 export { ensureSelfSignedTls, certStillValid, toSanEntry, loadTlsFromFiles, SELF_SIGNED_KEY, SELF_SIGNED_CERT } from "./cert.ts";

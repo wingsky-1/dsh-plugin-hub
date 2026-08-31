@@ -38,7 +38,7 @@ const NS = "settings.lanProxy";
 
 var CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
   var STYLE_ID = "dsh-lan-proxy-style";
-  var CSS_VERSION = "3";
+  var CSS_VERSION = "4";
 
   /** i18n 翻译函数（apply 时由 ctx.locale.bind(NS) 装配；未装配回落 key 本体，行为零变化）。 */
   var t: any = function (key: string, params?: any) {
@@ -56,9 +56,10 @@ var CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
     tlsKeyFile: "",
     printBanner: true,
     wsCompressEnabled: true,
-    wsCompressPaths: ["/api/events.mux", "/api/events.host"],
+    wsCompressPaths: ["/api/remote.mux"],
     httpCompressEnabled: true,
     httpCompressLevel: 1,
+    injectToken: true,
   };
 
   var disposed = false;
@@ -346,7 +347,7 @@ var CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
             id: "lp-set-ws-paths",
             className: "lp-set-input",
             type: "text",
-            placeholder: "/api/events.mux, /api/events.host",
+            placeholder: "/api/remote.mux",
             value: (settings.wsCompressPaths || []).join(", "),
             onChange: function (e: any) {
               const parts = e.target.value.split(",").map((s: string) => s.trim()).filter(Boolean);
@@ -377,6 +378,18 @@ var CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
             React.createElement("option", { value: "3" }, t("level3")),
           ),
         ),
+        // injectToken（issue #380）：默认开启——LAN 设备免 token 直入；开启态
+        // 持久显示安全警示（评审要求：横幅一次性警示不足，卡片常驻提醒）。
+        React.createElement("div", { className: "lp-set-row" },
+          React.createElement("label", { htmlFor: "lp-set-inject-token" }, t("injectToken")),
+          React.createElement("input", {
+            id: "lp-set-inject-token",
+            type: "checkbox",
+            checked: settings.injectToken,
+            onChange: function (e: any) { patch({ injectToken: e.target.checked }); },
+          }),
+        ),
+        settings.injectToken ? React.createElement("div", { className: "lp-set-warn" }, t("injectTokenOnHint")) : null,
         React.createElement("div", { className: "lp-set-hint" }, t("bodyHint")),
         (function () {
           var compressLine = compressStatusLine(compress);

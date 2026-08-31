@@ -45,6 +45,21 @@ function dshHomePath() {
 }
 
 /**
+ * 剥 mcp__<server>__ 前缀还原裸名（#382 F4 展示口径统一）。前缀不匹配（不可
+ * 剥）原样返回；剥后为空或仍以 mcp__ 开头（跨 server 注册名）原样返回。超长
+ * 哈希名剥出截断键——与 guard 层（tools/pre-execute 路径二按注册名反解）结果
+ * 相同，禁用表键口径统一生效。
+ */
+function stripMcpPrefix(registeredName: string, serverName: string): string {
+  const prefix = `mcp__${serverName}__`;
+  if (!registeredName.startsWith(prefix)) return registeredName;
+  let name = registeredName;
+  while (name.startsWith(prefix)) name = name.slice(prefix.length);
+  if (name === "" || name.startsWith("mcp__")) return registeredName;
+  return name;
+}
+
+/**
  * 管理器：持有全局存储 + 当前会话项目的项目级存储、每个服务器的监督器
  * 与状态通知。全局服务器常连；项目级服务器（<项目根>/.dsh/mcp.json）只在
  * 当前会话 cwd 属于该项目时连接（跟随会话切换）。
@@ -467,13 +482,9 @@ export class McpManager {
       let changed = false;
       for (const [name, supervisor] of [...this.supervisors]) {
         const want = desired.get(name);
-        // runtime 条目豁免中间层接管（走全局 supervisor 路径，不被中间层停掉/跳过）。
-        const isRuntime = this.runtimeRegistry.has(name);
-        // 中间层 project/all 模式：项目级（all 含全局）服务器由中间层接管
-        // （不注册 mcp__ 工具，避免双连接双进程）。runtime 条目例外。
-        const middlewareTakes = !isRuntime && this.middlewareMode !== "off" && (
-          supervisor.scope === SCOPE_PROJECT || (this.middlewareMode === "all" && supervisor.scope === SCOPE_GLOBAL)
-        );
+        // 中间层接管（与 start 同口径单一事实源 middlewareTakes）：停掉不该以
+        // supervisor 形态存在的连接。runtime 条目豁免（判定恒 false，不被停）。
+        const middlewareTakes = this.middlewareTakes(name, supervisor.scope);
         if (want === undefined || want.server.enabled === false || want.scope !== supervisor.scope || middlewareTakes) {
           this.stop(name);
           changed = true;
@@ -481,17 +492,15 @@ export class McpManager {
       }
       for (const [name, want] of desired) {
         if (want.server.enabled === false) continue;
-        // runtime 条目豁免中间层跳过（走全局 supervisor 路径，reconcile 不杀 runtime）。
-        const isRuntime = this.runtimeRegistry.has(name);
-        // 中间层 project/all 模式：项目级（all 含全局）跳过 supervisor（由中间层惰性连接）。
-        // runtime 条目例外。
-        if (!isRuntime && this.middlewareMode !== "off" && (
-          want.scope === SCOPE_PROJECT || (this.middlewareMode === "all" && want.scope === SCOPE_GLOBAL)
-        )) continue;
+        // project 模式项目级：由中间层单元管理（touchMiddlewareUnit 惰性重建），
+        // 不经 start；all 模式全局照常 start——start 内部下沉接管（触达 @global）。
+        if (this.middlewareMode === "project" && want.scope === SCOPE_PROJECT) continue;
         const existing = this.supervisors.get(name);
         if (existing === undefined || existing.scope !== want.scope) {
           this.start(name, want.scope);
-          changed = true;
+          // all 模式全局接管路径（start 内部触达池）不建 supervisor——池连接
+          // 变化由 connectInternal emitStatus 上报，不计入 supervisor 集合变化。
+          if (!this.middlewareTakes(name, want.scope)) changed = true;
         }
       }
       return changed;
@@ -519,8 +528,30 @@ export class McpManager {
       const store = scope === SCOPE_PROJECT ? this.projectStore : this.store;
       if (store === undefined) return;
       server = store.find(name);
+      // F2（#382）：runtime 注入条目不落 store——global scope 查不到时回退
+      // runtimeRegistry（双轨合并，与 summary/catalogServersFor 同口径），修
+      // codegraph 等动态注册服务器「浮窗重连断开后连不回」。仅限 global：
+      // project 回退会把 runtime 条目挂错 scope，被下次 reconcile 无声停掉。
+      if (server === undefined && scope === SCOPE_GLOBAL) {
+        const runtime = this.runtimeRegistry.get(name);
+        if (runtime !== undefined) {
+          this.logger.warn(`dsh-mcp-manager: server "${name}" not in store; using runtime registry entry`);
+          server = runtime;
+        }
+      }
     }
     if (server === undefined) return;
+    // F3（#382）：中间层接管判定下沉到 start（与 reconcileServers 同口径，见
+    // middlewareTakes）。all 模式全局非 runtime 不建 supervisor——杜绝「先建
+    // supervisor 再被 reconcile 停掉」的竞态窗口（热更新后 mcp__ 注册残留 →
+    // 中间层防双进程探测命中且无重试 → 掉线），改触达 @global 单元惰性连接；
+    // 中间层模式项目级不建 supervisor，拆项目单元惰性重建。startAll / add /
+    // update / reconcile 各入口自动收敛，无需逐处特判。
+    if (this.middlewareTakes(name, scope)) {
+      if (scope === SCOPE_PROJECT) this.touchMiddlewareUnit();
+      else this.touchGlobalUnit(name);
+      return;
+    }
     const existing = this.supervisors.get(name);
     if (existing !== undefined && existing.client !== undefined) {
       // 已连接：若现有 config 与直传 config 不同（runtime 注入覆盖 store），重建。
@@ -541,6 +572,57 @@ export class McpManager {
     const supervisor = new ConnectionSupervisor(this, server, scope);
     this.supervisors.set(name, supervisor);
     void supervisor.connect();
+  }
+
+  /**
+   * 中间层接管判定（start / reconcileServers 单一口径）：中间层模式的项目级，
+   * 或 all 模式下非 runtime 注入的全局级。runtime 条目豁免（始终走 supervisor
+   * 路径，注册 mcp__ 工具）。
+   */
+  private middlewareTakes(name: string, scope: string): boolean {
+    if (this.middlewareMode === "off" || this.middleware === undefined) return false;
+    if (scope === SCOPE_PROJECT) return true;
+    return this.middlewareMode === "all" && scope === SCOPE_GLOBAL && !this.runtimeRegistry.has(name);
+  }
+
+  /**
+   * 触达 @global 单元并确保该全局服务器连接（all 模式 start 接管路径）。
+   * projectUnitFor 首次触达会连带惰性连接全部全局服务器，等价 startAll 语义；
+   * userDisabled 命中不连（与浮窗断开语义一致）。
+   */
+  private touchGlobalUnit(name: string): void {
+    const mw = this.middleware;
+    if (mw === undefined) return;
+    void mw.projectUnitFor(MIDDLEWARE_GLOBAL_ROOT)
+      .then((unit) => {
+        if (unit === undefined || unit.userDisabled.has(name)) return;
+        void mw.ensureConnected(MIDDLEWARE_GLOBAL_ROOT, name);
+      })
+      .catch(() => {});
+  }
+
+  /**
+   * 拆除中间层池中该 server 的连接（update/remove 配置变更后强制重建；
+   * 不写 userDisabled——与 disconnect 的禁用语义区分）。此前 update/remove 仅
+   * 处理项目单元，all 模式全局池连接与目录残留导致「已删服务器仍可调用」。
+   */
+  private dropMiddlewareConnection(name: string): void {
+    const mw = this.middleware;
+    if (mw === undefined) return;
+    let dropped = false;
+    for (const unit of mw.units.values()) {
+      const entry = unit.connections.get(name);
+      if (entry === undefined) continue;
+      dropped = true;
+      entry.disposed = true;
+      if (entry.reconnectTimer !== undefined) clearTimeout(entry.reconnectTimer);
+      const client = entry.client;
+      entry.client = undefined;
+      entry.transport = undefined;
+      if (client !== undefined && client.transport !== undefined) void client.transport.close().catch(() => {});
+      unit.connections.delete(name);
+    }
+    if (dropped) this.emitStatus();
   }
 
   stop(name: string): void {
@@ -620,9 +702,10 @@ export class McpManager {
     store.upsert(merged);
     await store.save();
     this.stop(name);
-    if (this.middlewareMode !== "off" && scope === SCOPE_PROJECT) {
-      // 中间层：拆毁当前 root 单元（下次惰性重建读新配置）。
-      this.touchMiddlewareUnit();
+    if (this.middlewareMode !== "off") {
+      // 中间层：拆池内旧配置连接（项目/全局单元统一处理；#382 此前只拆项目
+      // 单元，all 模式全局旧连接残留导致编辑不生效）。
+      this.dropMiddlewareConnection(name);
     }
     if (merged.enabled !== false) {
       // 编辑后重新连接（即便此前未连接）
@@ -634,9 +717,10 @@ export class McpManager {
   async remove(name: string, scope: string = SCOPE_GLOBAL): Promise<void> {
     const store = scope === SCOPE_PROJECT ? await this.projectStoreOrThrow() : this.store;
     this.stop(name);
-    if (this.middlewareMode !== "off" && scope === SCOPE_PROJECT) {
-      // 中间层：拆毁当前 root 单元（下次惰性重建读新配置）。
-      this.touchMiddlewareUnit();
+    if (this.middlewareMode !== "off") {
+      // 中间层：拆池内连接 + 目录随单元重建收敛（#382 此前只拆项目单元，
+      // all 模式全局删除后池连接残留——ws_mcp_call 仍可调用已删服务器）。
+      this.dropMiddlewareConnection(name);
     }
     store.remove(name);
     await store.save();
@@ -654,11 +738,23 @@ export class McpManager {
     if (server === undefined) {
       const store = scope === SCOPE_PROJECT ? await this.projectStoreOrThrow() : this.store;
       server = store.find(name);
+      // F2（#382）：与 start 同款回退——runtime 注入条目不落 store，global
+      // scope 查不到时回退 runtimeRegistry，修 codegraph 浮窗重连必失败。
+      if (server === undefined && scope === SCOPE_GLOBAL) {
+        const runtime = this.runtimeRegistry.get(name);
+        if (runtime !== undefined) {
+          this.logger.warn(`dsh-mcp-manager: server "${name}" not in store; using runtime registry entry`);
+          server = runtime;
+        }
+      }
     }
     if (server === undefined) throw new Error(`server "${name}" not found in ${scope} scope`);
-    // 中间层模式：项目级连接走中间层连接池（userDisabled 解除 + 惰性连接）。
-    if (this.middlewareMode !== "off" && scope === SCOPE_PROJECT && this.middleware !== undefined) {
-      const root = this.projectRoot;
+    // F4（#382）：被中间层接管的服务器连接走连接池（userDisabled 解除 + 惰性
+    // 连接）——此前只有项目级走池，all 模式全局走 supervisor 复活（注册 mcp__
+    // 前缀工具），既导致浮窗带前缀展示，又让中间层防双进程探测持续命中、永不
+    // 接管。runtime 条目豁免（middlewareTakes 判定），仍走 supervisor 路径。
+    if (this.middlewareTakes(name, scope) && this.middleware !== undefined) {
+      const root = scope === SCOPE_PROJECT ? this.projectRoot : MIDDLEWARE_GLOBAL_ROOT;
       if (root === undefined) throw new Error("no active project session (call session with a cwd first)");
       const unit = await this.middleware.projectUnitFor(root);
       if (unit === undefined) throw new Error(`workspace ${root} has no project MCP config`);
@@ -677,13 +773,32 @@ export class McpManager {
   }
 
   async disconnect(name: string): Promise<void> {
-    // 中间层模式：项目级断开 → userDisabled 持久化 + 连接池拆毁该连接。
+    // 中间层模式：userDisabled 持久化 + 连接池拆毁该连接。
+    // #382：定位按接管口径显式进行——all 模式全局（store 配置且非 runtime）固定
+    // 定位 @global 单元（此前按 units 遍历序找第一个命中，同名服务器同时存在于
+    // 项目与 @global 单元时可能写错单元）；runtime 注入条目不经池，落 supervisor。
+    // 拆连接前关 transport（此前直接 delete 丢 entry，stdio 子进程/socket 泄漏）。
     if (this.middlewareMode !== "off" && this.middleware !== undefined) {
-      const unit = [...this.middleware.units.values()].find((entry) => entry.connections.has(name) || entry.userDisabled.has(name));
-      if (unit !== undefined) {
-        unit.userDisabled.add(name);
+      let targetUnit: ProjectUnit | undefined;
+      if (this.middlewareMode === "all" && this.store.find(name) !== undefined && !this.runtimeRegistry.has(name)) {
+        targetUnit = this.middleware.units.get(MIDDLEWARE_GLOBAL_ROOT);
+      } else {
+        targetUnit = [...this.middleware.units.values()].find((unit) => unit.connections.has(name) || unit.userDisabled.has(name));
+      }
+      if (targetUnit !== undefined) {
+        targetUnit.userDisabled.add(name);
         await this.saveUserState(this.middleware.units);
-        unit.connections.delete(name);
+        const entry = targetUnit.connections.get(name);
+        if (entry !== undefined) {
+          entry.disposed = true;
+          if (entry.reconnectTimer !== undefined) clearTimeout(entry.reconnectTimer);
+          const client = entry.client;
+          entry.client = undefined;
+          entry.transport = undefined;
+          if (client !== undefined && client.transport !== undefined) void client.transport.close().catch(() => {});
+          targetUnit.connections.delete(name);
+        }
+        this.emitStatus();
         return;
       }
     }
@@ -734,8 +849,9 @@ export class McpManager {
   private middlewareUnitFor(serverName: string, scope: string): ProjectUnit | undefined {
     const mw = this.middleware;
     if (mw === undefined || this.middlewareMode === "off") return undefined;
-    const taken = scope === SCOPE_PROJECT || (this.middlewareMode === "all" && scope === SCOPE_GLOBAL);
-    if (!taken) return undefined;
+    // 与 start/reconcileServers 同口径（#382 F4）：runtime 条目豁免（走 supervisor
+    // 投影），all 模式全局才映射 @global 单元。
+    if (!this.middlewareTakes(serverName, scope)) return undefined;
     const root = scope === SCOPE_PROJECT ? this.projectRoot : MIDDLEWARE_GLOBAL_ROOT;
     return root === undefined ? undefined : mw.units.get(root);
   }
@@ -744,8 +860,6 @@ export class McpManager {
     // 中间层模式（#228 回归修复）：被中间层接管的服务器从连接池 + 目录缓存
     // 投影状态与工具列表——此前只读 supervisors，项目级无 supervisor 条目恒
     // 兜底 "stopped"，浮窗/summary 与真实连接态脱节。返回形状不变。
-    // 注意不做 userDisabled 短路：all 模式全局 connect 走 supervisor 复活
-    // （#234 既有限制），短路会把「supervisor 实际已连接」反向投影成 stopped。
     const unit = this.middlewareUnitFor(server.name, scope);
     if (unit !== undefined) {
       const entry = unit.connections.get(server.name);
@@ -765,9 +879,20 @@ export class McpManager {
           disabledTools: disabledList.length > 0 ? disabledList : undefined,
         };
       }
+      // #382 F4：userDisabled 短路——池中已断开（用户浮窗断开）的服务器不再落
+      // supervisor 分支（all 模式全局经池接管后 supervisor 不复存在；同名 runtime
+      // 残留时也不误显示其连接态）。#234 注释前提（全局 connect 走 supervisor 复活）
+      // 随 F4 消失。
+      if (unit.userDisabled.has(server.name)) {
+        return { ...server, scope, status: "stopped", error: undefined, tools: [] };
+      }
     }
     const supervisor = this.supervisors.get(server.name);
-    const supervisorTools = supervisor?.tools ?? [];
+    // #382 F4：展示口径统一裸名——剥 mcp__<server>__ 前缀（与中间层投影分支、
+    // 工具级禁用表键、guard 层反解口径一致；此前浮窗禁用提交带前缀名而 guard
+    // 查裸名，禁用静默无效）。超长哈希名剥出截断键，与 guard 路径二反解结果
+    // 相同，禁用链路一致生效；前缀不匹配（不可剥）原样返回。
+    const supervisorTools = (supervisor?.tools ?? []).map((tool) => stripMcpPrefix(tool, server.name));
     const disabledForServer = this.disabledTools.get(MIDDLEWARE_GLOBAL_ROOT)?.get(server.name) ?? this.disabledTools.get(this.projectRoot ?? "")?.get(server.name);
     const supervisorDisabled = disabledForServer !== undefined ? supervisorTools.filter((tool) => disabledForServer.has(tool)) : [];
     return {

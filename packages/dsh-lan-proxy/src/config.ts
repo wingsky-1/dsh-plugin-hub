@@ -40,6 +40,14 @@ export interface LanProxyConfig {
   httpCompressEnabled?: boolean;
   /** 压缩档位预设 0..3（默认 1 低）：0 默认 / 1 低 / 2 中 / 3 高，对 gzip 与 Brotli 同时生效。 */
   httpCompressLevel?: number;
+  /**
+   * 自动注入启动令牌（issue #380，默认 true）：LAN 设备首次访问 `GET /` 时
+   * 由转发层自动补当前 dsh web launch token，上游铸造持久会话 cookie——固定
+   * 局域网设备免手工拿 token（token 每次重启变化，只打印在本机终端）。
+   * 开启 = 任何能网络到达本端口的客户端都免 token 获得完整控制权（等效信任
+   * 整个 LAN）；关闭不吊销已发 cookie。详见 README「安全模型」。
+   */
+  injectToken?: boolean;
 }
 
 /** HTTP 压缩运行快照（issue #33 子项 3：GUI 可见的压缩生效状态）。 */
@@ -88,12 +96,12 @@ export const Config: z<LanProxyConfig> = z.object({
   printBanner: z.boolean().default(true),
   /**
    * WebSocket 压缩桥接总开关（默认开）：对 wsCompressPaths 命中的 WS 升级做
-   * 「终结 + permessage-deflate」——浏览器段压缩、DSH 段明文，大流量会话事件流
-   * （events.mux/events.host）经远程/慢链路访问时显著省流量。
+   * 「终结 + permessage-deflate」——浏览器段压缩、DSH 段明文，大流量 Remote 流
+   * mux 通道（remote.mux）经远程/慢链路访问时显著省流量。
    */
   wsCompressEnabled: z.boolean().default(true),
-  /** 参与 WebSocket 压缩桥接的路径白名单（默认：会话事件流两个端点）。 */
-  wsCompressPaths: z.array(z.string()).default(["/api/events.mux", "/api/events.host"]),
+  /** 参与 WebSocket 压缩桥接的路径白名单（默认：api-gateway 的 Remote 流 mux 端点）。 */
+  wsCompressPaths: z.array(z.string()).default(["/api/remote.mux"]),
   /**
    * WS 压缩协商策略（默认：浏览器段可协商，但 iPhone/iPad/iPod UA 强制不协商——
    * iOS Safari 启用 permessage-deflate 即失败，uWebSockets.js #76 实证，issue #308）。
@@ -114,6 +122,12 @@ export const Config: z<LanProxyConfig> = z.object({
   httpCompressEnabled: z.boolean().default(true),
   /** 压缩档位预设 0..3（默认 1 低）：0 默认 / 1 低 / 2 中 / 3 高，对 gzip 与 Brotli 同时生效（见 proxy.resolveCompressionOptions 映射）。 */
   httpCompressLevel: z.natural().max(3).default(1),
+  /**
+   * 自动注入启动令牌（默认开，issue #380）：LAN 设备首次访问 `GET /` 由转发层
+   * 自动补当前 launch token 铸造会话 cookie，固定设备免手工拿 token。安全语义
+   * 见 README「安全模型」——开启等效把 LAN 视为可信网络。
+   */
+  injectToken: z.boolean().default(true),
 });
 
 /**
@@ -142,6 +156,7 @@ const FILE_CONFIG_VALIDATORS: Record<string, (v: unknown) => boolean> = {
   },
   httpCompressEnabled: (v) => typeof v === "boolean",
   httpCompressLevel: (v) => typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 3,
+  injectToken: (v) => typeof v === "boolean",
 };
 
 /**
@@ -186,6 +201,7 @@ const SETTING_FIELD_HINTS: Record<string, string> = {
   wsDeflatePolicy: "需为 { browser?: boolean, uaDeny?: string[] }（UA 片段数组）",
   httpCompressEnabled: "需为布尔值",
   httpCompressLevel: "需为 0-3 的档位整数（4-9 自动迁移为高档 3）",
+  injectToken: "需为布尔值",
 };
 
 /** validateSettings 的校验结果：null = 全部合法。 */
@@ -236,4 +252,6 @@ export interface ResolvedConfig {
   wsDeflatePolicy: DeflatePolicy;
   httpCompressEnabled: boolean;
   httpCompressLevel: number;
+  /** 自动注入启动令牌（issue #380；默认 true）。 */
+  injectToken: boolean;
 }

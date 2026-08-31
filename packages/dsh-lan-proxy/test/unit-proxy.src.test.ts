@@ -7,6 +7,7 @@
  * - createLanProxy 转发错误处理（不可达上游 → 502，proxy error 分支）
  * - createLanProxy HTTPS 降级（HTTPS 端口被占 → HTTP-only）
  * - createLanProxy 围栏与参数校验（非回环 targetHost / 非法 targetPort）
+ * - injectToken（issue #380）：token 注入判定纯函数 + 端到端注入与 401 重放自愈
  * - 纯函数边界用例（hostnameAllowed / isLoopbackTarget / formatAuthority /
  *   rewriteHeaders / compressWsPath / isCompressible / resolveCompressionOptions）
  */
@@ -19,9 +20,10 @@ import { X509Certificate, createHash } from "node:crypto";
 import { constants as zlibConstants } from "node:zlib";
 
 import {
-  hostnameAllowed, formatAuthority, rewriteHeaders, createLanProxy, isLoopbackTarget,
+  hostnameAllowed, formatAuthority, rewriteHeaders, bridgeUpstreamHeaders, createLanProxy, isLoopbackTarget,
   DEFAULT_OPTIONS, compressWsPath, isCompressible, resolveCompressionOptions,
   ensureSelfSignedTls, deflateAllowedByPolicy, DEFAULT_DEFLATE_POLICY,
+  hasDshAuthCookie, isTokenMintCandidate, withLaunchToken,
 } from "../src/index.ts";
 import {
   toSanEntry, certStillValid, loadTlsFromFiles, SELF_SIGNED_KEY, SELF_SIGNED_CERT,
@@ -101,12 +103,188 @@ assert.deepEqual(rewriteHeaders({ host: ["a", "b"], origin: ["http://a"] }, "127
   assert.equal(src.host, "old:1", "入参 headers 不被就地修改");
 }
 
+// bridgeUpstreamHeaders（issue #379：压缩桥接上游连接入站头透传）
+assert.deepEqual(bridgeUpstreamHeaders({
+  host: "192.168.1.50:3081",
+  origin: "http://192.168.1.50:3081",
+  cookie: "dsh-auth-x=v1.aaa",
+  "x-custom": "v",
+  connection: "Upgrade",
+  upgrade: "websocket",
+  "sec-websocket-key": "AAA=",
+  "sec-websocket-version": "13",
+  "sec-websocket-extensions": "permessage-deflate",
+}, "127.0.0.1:3080"), {
+  cookie: "dsh-auth-x=v1.aaa",
+  "x-custom": "v",
+  host: "127.0.0.1:3080",
+  origin: "http://127.0.0.1:3080",
+}, "透传认证/自定义头，重写 Host/Origin，剥离 hop-by-hop 与 WS 握手专有头");
+assert.deepEqual(bridgeUpstreamHeaders({}, "127.0.0.1:3080"), {
+  host: "127.0.0.1:3080",
+  origin: "http://127.0.0.1:3080",
+}, "空头仍产出回环 Host/Origin（无条件带 origin 与桥接既有行为一致）");
+assert.deepEqual(bridgeUpstreamHeaders({ cookie: ["a=1", "b=2"] }, "127.0.0.1:1"), {
+  cookie: "a=1, b=2",
+  host: "127.0.0.1:1",
+  origin: "http://127.0.0.1:1",
+}, "多值头（string[]）合并为逗号串");
+{
+  const src = { cookie: "c=1" };
+  bridgeUpstreamHeaders(src, "127.0.0.1:2");
+  assert.deepEqual(src, { cookie: "c=1" }, "入参 headers 不被就地修改");
+}
+
 // compressWsPath
 assert.equal(compressWsPath(["/a", "/b"], "/a?query=1"), true, "带查询串命中");
 assert.equal(compressWsPath(["/a", "/b"], "/c"), false, "未命中");
 assert.equal(compressWsPath([], "/a"), false, "空列表");
 assert.equal(compressWsPath(undefined, "/a"), false, "undefined 列表");
 assert.equal(compressWsPath(["/a"], ""), false, "空 url");
+
+// ===== injectToken 纯函数（issue #380） =====
+// hasDshAuthCookie：按 RFC 6265 名字精确分段（禁整头子串匹配）
+assert.equal(hasDshAuthCookie(undefined), false, "无 Cookie 头 → false");
+assert.equal(hasDshAuthCookie(""), false, "空 Cookie 头 → false");
+assert.equal(hasDshAuthCookie("dsh-auth-abc=1"), true, "单 cookie 前缀命中");
+assert.equal(hasDshAuthCookie("a=1; dsh-auth-abc=1; b=2"), true, "多 cookie 中段命中");
+assert.equal(hasDshAuthCookie("a=1;dsh-auth-abc=1"), true, "无空格分段命中");
+assert.equal(hasDshAuthCookie(" x = 1 ; dsh-auth-x=y "), true, "名字两侧空格 trim 后命中");
+assert.equal(hasDshAuthCookie("theme=dsh-auth-x"), false, "值含前缀但名字不含 → 不命中（防 includes 误判）");
+assert.equal(hasDshAuthCookie("Xdsh-auth-a=1"), false, "名字仅后缀含前缀 → 不命中");
+assert.equal(hasDshAuthCookie("dsh-auth-=novalue"), true, "空值 cookie 名前缀仍命中");
+assert.equal(hasDshAuthCookie("nodalue"), false, "无 = 段跳过");
+assert.equal(hasDshAuthCookie(["a=1", "dsh-auth-b=2"]), true, "string[] 多值头命中");
+
+// isTokenMintCandidate：GET 且路径恰为 / 且无 token 参数
+assert.equal(isTokenMintCandidate("GET", "/"), true, "GET / → 候选");
+assert.equal(isTokenMintCandidate("GET", "/?foo=bar"), true, "GET / 带其他 query → 候选");
+assert.equal(isTokenMintCandidate("GET", "/?token=own"), false, "已带 token → 非候选");
+assert.equal(isTokenMintCandidate("GET", "/foo"), false, "非根路径 → 非候选");
+assert.equal(isTokenMintCandidate("POST", "/"), false, "POST → 非候选");
+assert.equal(isTokenMintCandidate("HEAD", "/"), false, "HEAD → 非候选（上游只认 GET 铸造）");
+assert.equal(isTokenMintCandidate(undefined, "/"), false, "method 缺失 → 非候选");
+assert.equal(isTokenMintCandidate("GET", undefined), false, "url 缺失 → 非候选");
+
+// withLaunchToken：token 并入 query（保留原 query；解析失败 undefined）
+assert.equal(withLaunchToken("/", "T1"), "/?token=T1", "根路径注入");
+assert.equal(withLaunchToken("/?a=1", "T1"), "/?a=1&token=T1", "保留原 query");
+assert.equal(withLaunchToken("/?token=old", "T1"), "/?token=T1", "已带 token 时覆盖");
+assert.equal(withLaunchToken(undefined, "T1"), undefined, "url 缺失 → undefined");
+
+// ===== injectToken 端到端（issue #380）：注入 + 401 重放自愈 =====
+// mock 上游语义（对齐 dsh-client-connection.authorizeIndex 行为契约）：
+//   带 token=T0K3N 的 GET / → 303 + Set-Cookie（铸造）；无 token →
+//   有效 cookie（dsh-auth-good）→ 200；否则 401。seen 记录上游实际收到的
+//   url / sec-fetch-site / cookie，作为注入与透传断言的单一事实源。
+{
+  const seen = [];
+  const upPort = 21000 + Math.floor(Math.random() * 100);
+  const upServer = createServer((req, res) => {
+    const url = req.url ?? "/";
+    seen.push({ url, secFetchSite: req.headers["sec-fetch-site"], cookie: req.headers.cookie ?? "" });
+    const token = new URL(url, "http://upstream.invalid").searchParams.get("token");
+    if (token === "T0K3N") {
+      res.writeHead(303, { location: "/", "set-cookie": "dsh-auth-minted=1; Path=/; Max-Age=3600" });
+      res.end();
+      return;
+    }
+    if (req.headers.cookie?.includes("dsh-auth-good")) {
+      res.writeHead(200, { "content-type": "text/html" });
+      res.end("<html>ok</html>");
+      return;
+    }
+    res.writeHead(401, { "content-type": "text/plain" });
+    res.end("unauthorized");
+  });
+  await new Promise((r) => upServer.listen(upPort, "127.0.0.1", r));
+
+  // 可变闭包 provider：覆盖「provider 后到」时序（转发器先起、token 后就绪）。
+  let token: string | undefined = "T0K3N";
+  const proxy = createLanProxy({
+    host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: upPort,
+    injectToken: { getToken: () => token },
+  });
+  const { httpPort } = await proxy.listen();
+  const get = (path, headers = {}, method = "GET") =>
+    new Promise((resolve, reject) => {
+      const req = httpRequest(
+        { hostname: "127.0.0.1", port: httpPort, path, method, headers: { host: "127.0.0.1", ...headers } },
+        (res2) => {
+          let body = "";
+          res2.on("data", (c) => (body += c));
+          res2.on("end", () => resolve({ status: res2.statusCode, headers: res2.headers, body }));
+        },
+      );
+      req.on("error", reject);
+      req.end();
+    });
+  const last = () => seen[seen.length - 1];
+
+  // 1. 铸造候选（无 cookie GET /）→ 注入 token，上游收 ?token=T0K3N，客户端得 303
+  {
+    const r = await get("/");
+    assert.equal(last().url, "/?token=T0K3N", `铸造候选应注入当前 token（实际 ${last().url}）`);
+    assert.equal(r.status, 303, "铸造候选最终得到上游 303（Set-Cookie 透传）");
+    assert.ok(String(r.headers["set-cookie"] ?? "").includes("dsh-auth-minted"), "303 响应携带铸造 Set-Cookie");
+  }
+  // 2. 有效 cookie → 绝不注入（否则无限 303），200 原样透传（selfHandle 手动管道）
+  {
+    const r = await get("/", { cookie: "dsh-auth-good=1" });
+    assert.equal(last().url, "/", "有效 cookie 请求不得注入（打破 303 循环的正确性必需）");
+    assert.equal(r.status, 200, "有效 cookie → 上游 200 透传");
+    assert.equal(r.body, "<html>ok</html>", "selfHandle 管道 body 完整");
+    assert.equal(r.headers["content-type"], "text/html", "selfHandle 管道响应头保留");
+  }
+  // 3. 失效 cookie → 上游 401 → 重放一次（带 token）→ 客户端得 303 自愈
+  {
+    const r = await get("/", { cookie: "dsh-auth-stale=1" });
+    assert.equal(seen[seen.length - 2].url, "/", "失效 cookie 首跳不注入（候选排除）");
+    assert.equal(last().url, "/?token=T0K3N", "401 后应带 token 重放一次");
+    assert.equal(r.status, 303, "重放后客户端得到 303（重铸 cookie 自愈）");
+    assert.ok(String(r.headers["set-cookie"] ?? "").includes("dsh-auth-minted"), "重放 303 携带新铸造 Set-Cookie");
+  }
+  // 4. 已带 token → 不重复注入（保留用户 token，候选条件排除）
+  {
+    const r = await get("/?token=MINE", { cookie: "dsh-auth-good=1" });
+    assert.equal(last().url, "/?token=MINE", "已带 token 的请求不被覆盖");
+    assert.equal(r.status, 200, "已带 token + 有效 cookie → 正常 200");
+  }
+  // 5. POST / → 不注入
+  {
+    const r = await get("/", {}, "POST");
+    assert.equal(last().url, "/", "POST 不注入");
+    assert.equal(r.status, 401, "POST 无 cookie → 上游 401 原样透传");
+  }
+  // 6. 非根路径 → 不注入
+  {
+    const r = await get("/foo");
+    assert.equal(last().url, "/foo", "非根路径不注入");
+    assert.equal(r.status, 401, "非根路径无 cookie → 401 原样透传");
+  }
+  // 7. provider 未就绪（返回 undefined）→ 降级不注入（行为与未开启一致）
+  {
+    token = undefined;
+    const r = await get("/");
+    assert.equal(last().url, "/", "provider 未就绪 → 不注入");
+    assert.equal(r.status, 401, "降级路径 401 原样透传");
+    token = "T0K3N";
+  }
+  // 8. sec-fetch-site 头透传不被注入逻辑破坏
+  {
+    await get("/", { "sec-fetch-site": "same-origin" });
+    assert.equal(last().secFetchSite, "same-origin", "sec-fetch-site 原样透传");
+  }
+  // 9. 值含 dsh-auth- 前缀的其它 cookie → 名字精确解析不误判，仍注入
+  {
+    const r = await get("/", { cookie: "theme=dsh-auth-x" });
+    assert.equal(last().url, "/?token=T0K3N", "值含前缀的无关 cookie 不阻断注入");
+    assert.equal(r.status, 303, "注入链路正常完成");
+  }
+
+  await proxy.close();
+  upServer.close();
+}
 
 // isCompressible
 assert.equal(isCompressible("application/problem+json"), true, "problem+json");
@@ -183,11 +361,11 @@ assert.equal(DEFAULT_OPTIONS.targetHost, "127.0.0.1");
 
   const proxy = createLanProxy({
     host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: upPort,
-    wsCompress: { enabled: true, paths: ["/api/events.mux", "/api/events.host"] },
+    wsCompress: { enabled: true, paths: ["/api/remote.mux"] },
   });
   const { httpPort } = await proxy.listen();
 
-  const browserWs = new WsClient(`ws://127.0.0.1:${httpPort}/api/events.mux`);
+  const browserWs = new WsClient(`ws://127.0.0.1:${httpPort}/api/remote.mux`);
   const received = [];
   browserWs.on("message", (data) => { received.push(data.toString()); });
   await new Promise((r, j) => { browserWs.on("open", r); browserWs.on("error", j); });
@@ -197,6 +375,63 @@ assert.equal(DEFAULT_OPTIONS.targetHost, "127.0.0.1");
 
   assert.ok(received.includes("hello-via-ws-bridge"),
     `WS 压缩桥接双向转发：上游回显到浏览器端（收到 ${JSON.stringify(received)}）`);
+
+  await proxy.close();
+  wss.close();
+  upServer.close();
+}
+
+// ===== 桥接上游连接入站头透传（issue #379 端到端） =====
+// dsh 0.1.2 起 /api/remote.mux 升级处理需 Cookie 认证（connection.requestRejection
+// → isAuthenticated），桥接若丢弃入站头即 401 拒绝升级、表现为连不上。
+// 上游记录 upgrade 请求头；浏览器端模拟真实浏览器（带 cookie + 自定义头 +
+// 协商 permessage-deflate）连压缩路径，断言：cookie/自定义头原样透传、
+// Host/Origin 重写为回环目标、浏览器段 WS 握手头不透传（无重复头）、
+// 浏览器段压缩帧经桥接解压后上游回显可达（压缩与认证互不干扰）。
+{
+  const { WebSocketServer, WebSocket: WsClient } = await import("ws");
+
+  const upPort = 19850 + Math.floor(Math.random() * 100);
+  const upServer = createServer();
+  const wss = new WebSocketServer({ noServer: true });
+  let upgradeHeaders = null;
+  upServer.on("upgrade", (req, socket, head) => {
+    upgradeHeaders = req.headers;
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      ws.on("message", (data, isBinary) => ws.send(data, { binary: isBinary }));
+    });
+  });
+  await new Promise((r) => upServer.listen(upPort, "127.0.0.1", r));
+
+  const proxy = createLanProxy({
+    host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: upPort,
+    wsCompress: { enabled: true, paths: ["/api/remote.mux"], probeIntervalMs: 0 },
+  });
+  const { httpPort } = await proxy.listen();
+
+  const browserWs = new WsClient(`ws://127.0.0.1:${httpPort}/api/remote.mux`, {
+    perMessageDeflate: { threshold: 0 }, // 真实浏览器默认协商压缩：强制每一帧都走压缩路径
+    headers: {
+      cookie: "dsh-auth-test=v1.issue379",
+      "x-lan-proxy-probe": "issue-379",
+    },
+  });
+  const echoed = new Promise((resolve) => browserWs.once("message", (d) => resolve(d.toString())));
+  await new Promise((r, j) => { browserWs.on("open", r); browserWs.on("error", j); });
+  browserWs.send("headers-probe");
+  assert.equal(await echoed, "headers-probe", "带认证头的桥接连接双向可达（压缩帧解压后转发）");
+  browserWs.close();
+
+  assert.ok(upgradeHeaders, "上游已收到桥接的升级请求");
+  assert.equal(upgradeHeaders.cookie, "dsh-auth-test=v1.issue379",
+    "cookie 原样透传到上游（认证凭据不丢，issue #379 核心语义）");
+  assert.equal(upgradeHeaders["x-lan-proxy-probe"], "issue-379", "自定义头同样透传");
+  assert.equal(upgradeHeaders.host, `127.0.0.1:${upPort}`, "host 重写为回环目标 authority");
+  assert.equal(upgradeHeaders.origin, `http://127.0.0.1:${upPort}`, "origin 重写为回环 http 目标");
+  assert.equal(typeof upgradeHeaders["sec-websocket-key"], "string",
+    "sec-websocket-key 为 ws 库自生成的单一字符串（浏览器段握手头已剥离、无重复头）");
+  assert.equal(upgradeHeaders["sec-websocket-extensions"], undefined,
+    "浏览器段 permessage-deflate 协商头不透传（DSH 段固定明文，避免双重压缩）");
 
   await proxy.close();
   wss.close();

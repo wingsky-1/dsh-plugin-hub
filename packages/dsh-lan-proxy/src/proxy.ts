@@ -76,9 +76,10 @@ export interface LanProxyOptions {
   /**
    * WebSocket 压缩桥接：对命中 `paths` 的 WS 升级做「终结 + permessage-deflate」，
    * 浏览器段压缩、DSH 段明文；其余 WebSocket 继续由 http-proxy 做 TCP 字节透传。
-   * 默认作用于大流量的 `events.mux` / `events.host`（会话事件流）。DSH 服务端即使
+   * 默认作用于大流量的 `/api/remote.mux`（dsh 0.1.2 起 api-gateway 拥有的
+   * Remote 流 mux 通道，取代旧 events.mux/events.host）。DSH 服务端即使
    * 未来自身开启 permessage-deflate，这里 DSH 段固定不协商、浏览器段独立协商，
-   * 天然避免双重压缩。
+   * 天然避免双重压缩。桥接上游连接的入站头透传见 {@link bridgeUpstreamHeaders}。
    */
   wsCompress?: {
     enabled: boolean;
@@ -108,7 +109,25 @@ export interface LanProxyOptions {
     /** 压缩档位预设：0 默认 / 1 低 / 2 中 / 3 高（对 gzip 与 Brotli 双生效）。 */
     level?: number;
   };
+  /**
+   * 自动注入启动令牌（issue #380）：提供时，LAN 设备首次访问 `GET /`（无会话
+   * cookie）由转发层自动补当前 launch token——上游铸造持久会话 cookie，固定
+   * 设备免手工拿 token；带失效 cookie 的同类请求在上游 401 后重放一次自愈。
+   * getToken 动态读取（不缓存）：dsh web 重启后 token 变化自动跟随；返回
+   * undefined（connection 服务未就绪/读取失败）时逐请求降级为不注入。
+   */
+  injectToken?: TokenProvider;
   logger?: LanLogger;
+}
+
+/**
+ * 当前 dsh web 进程 launch token 的动态提供者最小面（issue #380）。
+ * apply 侧封装自官方 connection 服务的公开方法 `authenticatedUrl(baseUrl)`
+ * （@deepseek-ai/dsh-client-connection 公开 d.ts API，不依赖私有字段）。
+ */
+export interface TokenProvider {
+  /** 返回当前 launch token；不可用时返回 undefined（逐请求降级为不注入）。 */
+  getToken(): string | undefined;
 }
 
 /** 监听结果：httpPort 必有；httpsPort 仅在 HTTPS 成功启用时给出。 */
@@ -258,12 +277,116 @@ export function isLoopbackTarget(host: string): boolean {
   return host === "localhost" || bare === "127.0.0.1" || bare === "::1" || bare === "::ffff:127.0.0.1";
 }
 
-/** 为上游一跳重建请求头（Host/Origin 重写）。导出供纯函数单测锁定行为；
+/**
+ * 为上游一跳重建请求头（Host/Origin 重写）。导出供纯函数单测锁定行为；
  *  实际转发路径上作为 http-proxy 的每请求 headers 覆盖传入（前置校验不外移）。 */
 export function rewriteHeaders(headers: IncomingHttpHeaders, targetAuthority: string): IncomingHttpHeaders {
   const out = { ...headers };
   out.host = targetAuthority;
   if (out.origin !== undefined) out.origin = `http://${targetAuthority}`;
+  return out;
+}
+
+// ---- injectToken（issue #380）：launch token 自动注入的判定与改写 ----
+// 上游（dsh-client-connection.authorizeIndex）的铸造入口只有 `GET /` 且查询串
+// 恰带一个 token 参数；带 token 的请求一律以 303 结束（匹配→铸 cookie，或
+// 有效 cookie→清参重定向）。因此：
+//   * 对「无会话 cookie」的 GET / 注入 token → 一次跳转即登录；
+//   * 对「已带会话 cookie」的请求**绝不注入**——否则有效 cookie 用户会被
+//     无限 303（浏览器每次都带 cookie、代理每次都注入）。该排除是正确性
+//     必需而非优化，重构时不得移除（smoke 用例锁死意图）。
+//   * 失效 cookie（签名 secret 重置等）会让上述排除变成 401 死锁——对这类
+//     请求在上游 401 后重放一次（带 token），上游 token 分支优先验签、直接
+//     重铸 cookie，浏览器自愈。
+
+/** 上游浏览器会话 cookie 名前缀（dsh-client-connection COOKIE_PREFIX）。 */
+const DSH_AUTH_COOKIE_PREFIX = "dsh-auth-";
+
+/**
+ * 判断请求是否携带 dsh 浏览器会话 cookie（issue #380）。
+ * 按 RFC 6265 口径精确解析：`;` 分段、取 `=` 前名字并 trim、名字前缀匹配——
+ * 禁止整头子串匹配（其他 cookie 的值含该子串会造成误判）。
+ * 导出供纯函数单测。
+ */
+export function hasDshAuthCookie(cookieHeader: string | string[] | undefined): boolean {
+  const segments = Array.isArray(cookieHeader) ? cookieHeader : cookieHeader !== undefined ? [cookieHeader] : [];
+  for (const head of segments) {
+    for (const segment of head.split(";")) {
+      const eq = segment.indexOf("=");
+      if (eq === -1) continue;
+      if (segment.slice(0, eq).trim().startsWith(DSH_AUTH_COOKIE_PREFIX)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * 注入候选判定：GET 且出站路径恰为 `/` 且查询串尚无 token 参数。
+ * 与上游铸造条件（`GET /`、单一 token）严格对齐；其余请求一律不注入
+ * （带 token 的非根请求上游也回 401，注入无意义）。导出供纯函数单测。
+ */
+export function isTokenMintCandidate(method: string | undefined, url: string | undefined): boolean {
+  if (method !== "GET" || url === undefined) return false;
+  try {
+    const parsed = new URL(url, "http://lan-proxy.local");
+    return parsed.pathname === "/" && parsed.searchParams.getAll("token").length === 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 把 token 并入请求 URL 的 query（`token` 参数；已存在时覆盖）。解析失败
+ * 返回 undefined（调用方降级为不注入）。导出供纯函数单测。
+ */
+export function withLaunchToken(url: string | undefined, token: string): string | undefined {
+  if (url === undefined) return undefined;
+  try {
+    const parsed = new URL(url, "http://lan-proxy.local");
+    parsed.searchParams.set("token", token);
+    return `${parsed.pathname}${parsed.search}`;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 压缩桥接上游连接剥离的入站头：hop-by-hop 头（RFC 7230 §6.1，代理不得转发）
+ * 与 WS 握手专有头（RFC 6455 §4.1，ws 库客户端按上游握手自行生成——透传浏览器段
+ * 的同名头会产生重复头，直接破坏上游握手）。
+ */
+const BRIDGE_UPSTREAM_HEADER_DENY: ReadonlySet<string> = new Set([
+  "connection", "upgrade", "keep-alive", "proxy-connection", "te", "trailer", "transfer-encoding",
+  "sec-websocket-accept", "sec-websocket-extensions", "sec-websocket-key",
+  "sec-websocket-protocol", "sec-websocket-version",
+]);
+
+/**
+ * 为压缩桥接的上游连接重建请求头（纯函数，导出供单测锁定行为）。
+ *
+ * 与 HTTP/WS 透传路径的 {@link rewriteHeaders} 不同：桥接是「终结浏览器连接 →
+ * 新建上游连接」，入站头必须显式随行转发。dsh 0.1.2 起 `/api/remote.mux` 的升级
+ * 处理在 Host/Origin 围栏之外还要校验 authority 绑定的浏览器会话 Cookie
+ * （connection.requestRejection → isAuthenticated），丢弃 Cookie 即 401 拒绝
+ * 升级、桥接表现为连不上（issue #379）。因此这里透传全部入站头（含 Cookie
+ * 等认证凭据），仅做两类例外：
+ *   - 覆盖 Host/Origin 为回环目标 authority（/api 浏览器信任围栏的校验条件，
+ *     与 rewriteHeaders 语义一致）；
+ *   - 剥离 {@link BRIDGE_UPSTREAM_HEADER_DENY} 集合中的头。
+ * @param headers 入站升级请求头。
+ * @param targetAuthority 回环目标 authority（host:port）。
+ * @returns 上游连接请求头（ws 库 headers 选项的键值面）。
+ */
+export function bridgeUpstreamHeaders(headers: IncomingHttpHeaders, targetAuthority: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    const lower = key.toLowerCase();
+    if (lower === "host" || lower === "origin" || BRIDGE_UPSTREAM_HEADER_DENY.has(lower)) continue;
+    if (value === undefined) continue;
+    out[lower] = Array.isArray(value) ? value.join(", ") : value;
+  }
+  out.host = targetAuthority;
+  out.origin = `http://${targetAuthority}`;
   return out;
 }
 
@@ -281,7 +404,7 @@ const MAX_UPSTREAM_SOCKETS = 64;
 /**
  * 判断某 WS 升级请求路径是否命中「需压缩桥接」白名单。
  * 仅比较 pathname（忽略查询串）。导出供纯函数单测锁定行为。
- * @param paths 压缩白名单（默认含 /api/events.mux、/api/events.host）。
+ * @param paths 压缩白名单（默认含 /api/remote.mux）。
  * @param url 原始请求 URL（可能带查询串）。
  * @returns 是否命中。
  */
@@ -394,10 +517,13 @@ export function bridgeCompressedWs(
   });
   wss.handleUpgrade(req, socket, head, (browserWs) => {
     // DSH 段：明文（本机/内网），固定不协商 permessage-deflate。
+    // 入站头透传（Cookie 等认证凭据；issue #379——0.1.2 起 /api/remote.mux 升级
+    // 需 Cookie 认证），Host/Origin 覆盖为回环目标，hop-by-hop 与 sec-websocket-*
+    // 剥离（ws 库自生成）。
     const upstreamUrl = `ws://${target.targetHost}:${target.targetPort}${req.url}`;
     const upstreamWs = new WsClient(upstreamUrl, {
       perMessageDeflate: false,
-      headers: { origin: `http://${target.targetHost}:${target.targetPort}` },
+      headers: bridgeUpstreamHeaders(req.headers, formatAuthority(target.targetHost, target.targetPort)),
     });
     // 半开探活：两端独立计时（各自 pong 判定），probeIntervalMs=0 显式关闭。
     const probeIntervalMs = target.probeIntervalMs ?? DEFAULT_WS_PROBE_INTERVAL_MS;
@@ -571,7 +697,10 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
   // 正常完成/响应截断，交由 proxyRes aborted 处理）。实测复现：若用
   // res.writableEnded 判定，正常请求会在转发完成前被误杀（socket hang up）。
   const proxyResReceived = new WeakSet<ServerResponse>();
-  proxy.on("proxyRes", (proxyRes, _req, res) => {
+  /** injectToken 重放上下文（issue #380）：失效 cookie 候选请求经
+   *  selfHandleResponse 转发，上游 401 时带 token 重放一次自愈。 */
+  const replayContexts = new WeakMap<ServerResponse, { originalUrl: string; token: string }>();
+  proxy.on("proxyRes", (proxyRes, req, res) => {
     proxyResReceived.add(res);
     const abortDownstream = () => {
       connStats.httpClientAborted += 1;
@@ -579,6 +708,33 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
     };
     proxyRes.on("aborted", abortDownstream);
     proxyRes.on("error", abortDownstream);
+    const replay = replayContexts.get(res);
+    if (replay === undefined) return;
+    replayContexts.delete(res);
+    if (proxyRes.statusCode === 401) {
+      // 失效 cookie（签名 secret 重置等）：上游验签失败回 401。排干 401 响应体
+      // （keep-alive 槽位可复用），以注入 token 的等价请求重放一次——上游 token
+      // 分支优先于 cookie 校验，直接重铸 cookie，303 + Set-Cookie 透传回浏览器。
+      // 重放请求 URL 已带 token 参数，不再满足候选条件，天然封顶一次。
+      proxyRes.resume();
+      const nextUrl = withLaunchToken(replay.originalUrl, replay.token);
+      if (nextUrl !== undefined) {
+        req.url = nextUrl;
+        proxy.web(req, res, forwardOptions(req));
+        return;
+      }
+      // token 并入失败（怪异 URL，理论不可达）：继续走下方手动透传 401。
+    }
+    // 非 401（有效 cookie 的正常 200 等）或重放改写失败：手动透传上游响应
+    // （selfHandleResponse 下 http-proxy 不自动写头）。hop-by-hop 头交由 Node
+    // 自行管理，显式删除；body 原样字节 pipe（压缩由入口 compression 中间件
+    // 在 res 层协商，不受影响）。
+    const headers = { ...proxyRes.headers };
+    delete headers.connection;
+    delete headers["keep-alive"];
+    delete headers["transfer-encoding"];
+    res.writeHead(proxyRes.statusCode ?? 502, headers);
+    proxyRes.pipe(res);
   });
   proxy.on("proxyReq", (proxyReq, req, res) => {
     // 监听底层 TCP socket 的 close（而非 req 的 close——后者在 Node 中对
@@ -632,6 +788,28 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
       });
       res.end();
       return;
+    }
+    // injectToken（issue #380）：铸造候选（`GET /`、无 token 参数、无会话
+    // cookie）→ 注入当前 token 后正常透传，上游一次跳转即铸会话；失效候选
+    // （已带会话 cookie——可能已失效）→ selfHandleResponse 转发，上游 401 时
+    // 带 token 重放一次自愈（proxyRes 监听器内处理）。provider 未就绪或读取
+    // 失败一律降级为普通透传（行为与未开启一致）。注入必须放在 hostnameAllowed
+    // 围栏之后（DNS 重绑定防护前置，见文件头注 2）。
+    const tokenOptions = options.injectToken;
+    if (tokenOptions !== undefined && isTokenMintCandidate(req.method, req.url)) {
+      const token = tokenOptions.getToken();
+      if (token !== undefined) {
+        if (!hasDshAuthCookie(req.headers.cookie)) {
+          // 铸造候选：URL 注入 token（改写失败则原样透传，fail-safe）。
+          const injected = withLaunchToken(req.url, token);
+          if (injected !== undefined) req.url = injected;
+        } else {
+          // 失效候选：selfHandle 转发，401 → 重放自愈；非 401 → 手动透传。
+          replayContexts.set(res, { originalUrl: req.url ?? "/", token });
+          proxy.web(req, res, { ...forwardOptions(req), selfHandleResponse: true });
+          return;
+        }
+      }
     }
     // 围栏（hostnameAllowed / rewriteHeaders）前置完成后，http-proxy 接管转发。
     proxy.web(req, res, forwardOptions(req));
