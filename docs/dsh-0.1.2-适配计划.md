@@ -48,8 +48,8 @@
 
 ### 1.1 死引用清理（**6 包**：lan-proxy / mcp-manager / web-file-preview / idle-archive / notifier / provider-usage）
 > 评审 P0-3：逐包核对 package.json（实测 6 包 inject 均含 `dsh-client-runtime`，**不照抄 #323**——其称 notifier `inject:[]` 与仓库实际不符）。
-- [ ] 逐包核对并移除 `dsh.client.inject` 中 `@deepseek-ai/dsh-client-runtime` 死引用（各包 client 均无实际 import 该包符号，属软忽略清理，已实证）
-- [ ] client 契约 smoke 断言补充/更新，确认注入意图失效已清
+- [x] 逐包核对并移除 `dsh.client.inject` 中 `@deepseek-ai/dsh-client-runtime` 死引用（实测 6 包：lan-proxy / mcp-manager / web-file-preview / idle-archive / notifier / provider-usage；各包 client 均无实际 import，属软忽略清理；已实证）
+- [x] client 契约 smoke 断言核对——契约门禁仅断言 `dsh.client ⇒ exports["./client"]` 联动、不校验 inject 具体内容，清理后 6 包 build + smoke 全绿（2026-08-31）
 
 ### 1.2 dsh-provider-usage（软破坏 · 必改 · 逻辑重设计）
 > 评审 P0-1/P0-2：`default` 属 `ModelCatalog` 而非投影；`modelCatalog()` 返回 `Promise<RemoteResult<ModelCatalog>>` 需解包、无参全量目录（per-session 语义已不存在）；`ctx.remote` 依赖面须补。
@@ -80,15 +80,15 @@
 - [ ] 补核官方 `subagent-model-selection`（`model-selection-settings` 命名空间 + `ui-settings-plugins` 的 `SubagentModelSelectionCard`），评估合并/共存/维持（关联 #246）
 - [ ] 输出决策结论
 
-## Phase 2 — 通知中心续期（#366，与 Phase 1 并行需注意冲突面）
+## Phase 2 — 通知中心续期（#366）
 
-> 评审 P1：M2/M3 与 i18n 同改 notifier 客户端，**并行冲突放大——建议串行或明确文件边界**（如 i18n 只碰 locales.ts / 渲染消费点，M2/M3 只碰频道/面板/端口）。
-> 评审 P1：M3 自建 webhook 与官方 `dsh-webhook`/`dsh-webhook-github` 重复——**先评估官方包复用**再定自建。
+> **维护者指示（2026-08-31）：本阶段暂缓，不做——当前聚焦适配**（Phase 1 契约对齐优先）。原 M2/M3 工作项保留待命，待适配完成后另行排期。
+> 原备注（评审 P1）：M2/M3 与 i18n 同改 notifier 客户端，并行冲突放大——后续如重启建议串行或明确文件边界；M3 自建 webhook 与官方 `dsh-webhook`/`dsh-webhook-github` 重复——先评估官方包复用再定自建。
 
-- [ ] M2：bark 频道 + severity→level 映射 + 投递状态面板（kindRoutes 例外行 UI）+ 凭据脱敏
-- [ ] M3 前置：评估官方 `dsh-webhook`/`dsh-webhook-github`（0.1.2-alpha.2 deps 已确认存在）复用可行性 → 决策自建/复用
-- [ ] M3：127.0.0.1 独立端口入口 + per-caller token + 受限模型工具（默认关）+ webhook（默认关，按上项决策）
-- [ ] 收尾：关闭 #366 跟踪 issue
+- [ ] M2：bark 频道 + severity→level 映射 + 投递状态面板（kindRoutes 例外行 UI）+ 凭据脱敏（**暂缓**）
+- [ ] M3 前置：评估官方 `dsh-webhook`/`dsh-webhook-github`（0.1.2-alpha.2 deps 已确认存在）复用可行性 → 决策自建/复用（**暂缓**）
+- [ ] M3：127.0.0.1 独立端口入口 + per-caller token + 受限模型工具（默认关）+ webhook（默认关，按上项决策）（**暂缓**）
+- [ ] 收尾：关闭 #366 跟踪 issue（**暂缓**）
 
 ## Phase 3 — 插件集 i18n（#348，需 approved 后启动）
 
@@ -115,9 +115,11 @@
 
 ## Phase 5 — 发版（v0.2.0）
 
-- [ ] 全包版本升 0.2.0（推 `v0.2.0` tag 触发发布管线，不绕过 tag 校验）
-- [ ] release-notes `docs/release-notes/v0.2.0.md`（中英分节 + 双锚补位）
-- [ ] 0.2.0 独立演进，Phase 1/2 改动不回灌 main（0.1.x 线冻结）
+> **维护者指示（2026-08-31）：本阶段等维护者全量验证完成后执行**，时间由维护者决定，不预设排期。
+
+- [ ] 全包版本升 0.2.0（推 `v0.2.0` tag 触发发布管线，不绕过 tag 校验）（**待维护者全量验证后执行**）
+- [ ] release-notes `docs/release-notes/v0.2.0.md`（中英分节 + 双锚补位）（**待维护者全量验证后执行**）
+- [ ] 0.2.0 独立演进，Phase 1 适配改动不回灌 main（0.1.x 线冻结）
 
 ---
 
