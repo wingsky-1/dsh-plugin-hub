@@ -1417,7 +1417,14 @@ const main = async () => {
     check("client source contract（IIFE/use strict/load id/SymbolTag/factory/load once）", () => assertClientSourceContract(pkgDir));
     check("client product contract（执行断言：arrive 可解析/apply/inject）", () => assertClientProductContract(pkgDir));
     check("client shares CONFIG route with host", () => assert.ok(client.includes(ROUTES.config)));
-    check("client renders settings card fields", () => {
+    check("client i18n 接线 + 设置卡字段字典覆盖（issue #348）", () => {
+      // i18n 哨兵：NS / register / bind / slots locale 参数 / 双语字典进产物
+      assert.ok(client.includes('"settings.lanProxy"'), "i18n 命名空间 NS 进产物");
+      assert.ok(client.includes("locale.register"), "locale.register（字典注册）进产物");
+      assert.ok(client.includes("locale.bind"), "locale.bind（t 装配）进产物");
+      assert.ok(client.includes("locale: NS"), "slots.register locale 参数进产物");
+      assert.ok(client.includes("Enabled") && client.includes("enable"), "en/zh 双语字典进产物");
+      // zh 字典覆盖卡片全部字段（渲染正确性由 client-shim 执行断言 + 浏览器实测保证）
       assert.ok(client.includes("LAN 端口"));
       assert.ok(client.includes("HTTPS 端口"));
       assert.ok(client.includes("证书文件"));
@@ -1427,9 +1434,9 @@ const main = async () => {
     });
     // issue #33 子项 1：客户端 save() 前本地校验，错误指明字段与范围。
     check("client 本地校验文案指明字段与合法范围", () => {
-      assert.ok(client.includes("LAN 端口（HTTP）需为 1-65535 的整数"), "端口范围提示");
-      assert.ok(client.includes("HTTPS 端口需为 1-65535 的整数"), "HTTPS 端口范围提示");
-      assert.ok(client.includes("压缩档位需为 0-3 的整数"), "档位范围提示");
+      assert.ok(client.includes('t("portRangeFail")'), "端口范围提示（i18n key）");
+      assert.ok(client.includes('t("httpsPortRangeFail")'), "HTTPS 端口范围提示（i18n key）");
+      assert.ok(client.includes('t("levelRangeFail")'), "档位范围提示（i18n key）");
       assert.ok(client.includes("Number.isInteger"), "本地整数校验");
     });
     // issue #33 子项 2：effective 校准展示 + 增量 diff 提交。
@@ -1442,8 +1449,8 @@ const main = async () => {
     // issue #33 子项 3：压缩状态 GUI 可见（卡片底部轻量状态行）。
     check("client 渲染压缩状态行", () => {
       assert.ok(client.includes("compressStatusLine"), "状态行文案函数");
-      assert.ok(client.includes("HTTP 响应压缩：已启用 · 协商 "), "已启用 + 协商计数文案");
-      assert.ok(client.includes("HTTP 响应压缩：已关闭"), "关闭态文案");
+      assert.ok(client.includes('t("compressOn"'), "已启用 + 协商计数文案（i18n key）");
+      assert.ok(client.includes('t("compressOff"'), "关闭态文案（i18n key）");
       assert.ok(client.includes("lp-set-status"), "状态行样式类");
     });
     // issue #33 子项 4：可达性——label/input 经 htmlFor+id 全关联，数字输入带 inputMode。

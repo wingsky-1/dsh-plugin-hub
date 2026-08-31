@@ -18,10 +18,33 @@
 // 样式：独立 style.css（见同目录），build-client 的 .css text-loader 构建期内联为字符串
 import STYLE from "./style.css";
 import * as React from "react";
+// i18n（issue #348）：复用官方 dsh-client-locale——zh/en 双语字典，LocaleNamespaceMap
+// 声明合并进官方 ui-slots 类型面；仅 import type（编译期擦除，无运行时依赖）。
+import { zh, en, type LanProxyLocaleKey } from "./locales.ts";
+// 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
+// lib/types/*.d.ts 相对导入保留 .ts 后缀，declare module 增强的模块名解析会判
+// TS2664（microsoft/TypeScript#63960 同类；上游修复发布物后此行可删）。
+import type { LocaleNamespaceMap } from "@deepseek-ai/dsh-client-ui-slots";
+
+declare module "@deepseek-ai/dsh-client-ui-slots" {
+  interface LocaleNamespaceMap {
+    /** dsh-lan-proxy 设置卡文案。 */
+    "settings.lanProxy": LanProxyLocaleKey;
+  }
+}
+
+/** 本插件字典命名空间（宿主 locale 服务注册用）。 */
+const NS = "settings.lanProxy";
 
 var CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
   var STYLE_ID = "dsh-lan-proxy-style";
   var CSS_VERSION = "3";
+
+  /** i18n 翻译函数（apply 时由 ctx.locale.bind(NS) 装配；未装配回落 key 本体，行为零变化）。 */
+  var t: any = function (key: string, params?: any) {
+    if (params === undefined) return key;
+    return String(key); // 未装配时占位插值忽略（正常路径早已装配）
+  };
 
   /** 展示缺省值（与宿主 DEFAULT_OPTIONS 同构；用户层未保存的键回落这些值）。 */
   var DEFAULTS: Record<string, any> = {
@@ -73,10 +96,10 @@ var CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
   /** HTTP 压缩状态行文案（issue #33 子项 3）；无快照返回 null（不渲染该行）。 */
   function compressStatusLine(c: any): string | null {
     if (!c || typeof c !== "object") return null;
-    if (c.httpCompressEnabled === false) return "HTTP 响应压缩：已关闭";
-    if (c.httpCompressMounted !== true) return "HTTP 响应压缩：未生效";
+    if (c.httpCompressEnabled === false) return t("compressOff");
+    if (c.httpCompressMounted !== true) return t("compressInactive");
     var stats = c.httpCompressStats || {};
-    return "HTTP 响应压缩：已启用 · 协商 " + (stats.compressed || 0) + " 次 · 直通 " + (stats.passthrough || 0) + " 次";
+    return t("compressOn", { neg: stats.compressed || 0, pass: stats.passthrough || 0 });
   }
 
   /**
@@ -91,8 +114,10 @@ var CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
     var draft = useState(null);
     var settings = draft[0];
     var setSettings = draft[1];
-    var saved = useState("");
-    var setSaved = saved[1];
+    // 保存反馈（i18n 重构：msg + err 结构化状态，不能用文案内容判断错误态）
+    var savedDraft = useState(null);
+    var saved = savedDraft[0];
+    var setSaved = function (msg: string, err?: boolean) { savedDraft[1](msg ? { msg: msg, err: err === true } : null); };
     var openState = useState(false);
     var open = openState[0];
     var setOpen = openState[1];
@@ -129,7 +154,7 @@ var CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
         })
         .catch(function (e: any) {
           if (!alive.value) return;
-          setSaved("设置加载失败：" + ((e && e.message) || e));
+          setSaved(t("loadFail", { msg: (e && e.message) || e }), true);
         });
     }
 
@@ -140,7 +165,7 @@ var CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
     }, []);
 
     if (!settings) {
-      return React.createElement("li", { className: "lp-set-card" }, "局域网访问：加载中…");
+      return React.createElement("li", { className: "lp-set-card" }, t("settingsLoading"));
     }
 
     function patch(p: any) {
@@ -153,17 +178,17 @@ var CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
       // 指明字段与合法范围——不依赖宿主整体拒绝后才报错。
       var portValue = Number(settings.port);
       if (!Number.isInteger(portValue) || portValue < 1 || portValue > 65535) {
-        setSaved("保存失败：LAN 端口（HTTP）需为 1-65535 的整数");
+        setSaved(t("portRangeFail"), true);
         return;
       }
       var httpsPortValue = Number(settings.httpsPort);
       if (!Number.isInteger(httpsPortValue) || httpsPortValue < 1 || httpsPortValue > 65535) {
-        setSaved("保存失败：HTTPS 端口需为 1-65535 的整数");
+        setSaved(t("httpsPortRangeFail"), true);
         return;
       }
       var levelValue = Number(settings.httpCompressLevel);
       if (!Number.isInteger(levelValue) || levelValue < 0 || levelValue > 3) {
-        setSaved("保存失败：压缩档位需为 0-3 的整数");
+        setSaved(t("levelRangeFail"), true);
         return;
       }
       // 增量提交（issue #33 子项 2）：只发送与加载基线不同的键，未改动的键
@@ -176,7 +201,7 @@ var CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
         if (baseline === null || !sameSetting(key, cur, baseline[key])) payload[key] = cur;
       }
       if (Object.keys(payload).length === 0) {
-        setSaved("未修改");
+        setSaved(t("unchanged"));
         return;
       }
       fetch(CONFIG_ROUTE, {
@@ -194,13 +219,13 @@ var CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
       }).then(function (body: any) {
         baseline = Object.assign({}, settings);
         revision = (body && body.revision) || revision;
-        setSaved("已保存，已热更新");
+        setSaved(t("savedOk"));
         setTimeout(function () { setSaved(""); }, 2200);
       }).catch(function (e: any) {
         var msg = (e && e.message) || e;
         setSaved(String(msg).indexOf("已被其他窗口修改") >= 0
-          ? "保存失败：" + msg + "（请关闭本卡片重新打开后重试）"
-          : "保存失败：" + msg);
+          ? t("saveFailConflict", { msg: msg })
+          : t("saveFail", { msg: msg }), true);
       });
     }
 
@@ -212,8 +237,8 @@ var CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
         onClick: function () { setOpen(!open); },
       },
         React.createElement("span", { className: "lp-set-headText" },
-          React.createElement("span", { className: "lp-set-name" }, "局域网访问（dsh-lan-proxy）"),
-          React.createElement("span", { className: "lp-set-description" }, "LAN 端口 / HTTPS / 证书 / 响应压缩 / 启动横幅"),
+          React.createElement("span", { className: "lp-set-name" }, t("settingsName")),
+          React.createElement("span", { className: "lp-set-description" }, t("settingsDescription")),
         ),
         React.createElement("svg", {
           className: "lp-set-chevron" + (open ? " lp-set-chevronOpen" : ""),
@@ -232,7 +257,7 @@ var CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
       ),
       open ? React.createElement("div", { className: "lp-set-body" },
         React.createElement("div", { className: "lp-set-row" },
-          React.createElement("label", { htmlFor: "lp-set-enabled" }, "启用"),
+          React.createElement("label", { htmlFor: "lp-set-enabled" }, t("enable")),
           React.createElement("input", {
             id: "lp-set-enabled",
             type: "checkbox",
@@ -241,7 +266,7 @@ var CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
           }),
         ),
         React.createElement("div", { className: "lp-set-row" },
-          React.createElement("label", { htmlFor: "lp-set-port" }, "LAN 端口（HTTP）"),
+          React.createElement("label", { htmlFor: "lp-set-port" }, t("lanPort")),
           React.createElement("input", {
             id: "lp-set-port",
             className: "lp-set-input",
@@ -254,7 +279,7 @@ var CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
           }),
         ),
         React.createElement("div", { className: "lp-set-row" },
-          React.createElement("label", { htmlFor: "lp-set-https-enabled" }, "HTTPS 并存"),
+          React.createElement("label", { htmlFor: "lp-set-https-enabled" }, t("httpsCoexist")),
           React.createElement("input", {
             id: "lp-set-https-enabled",
             type: "checkbox",
@@ -263,7 +288,7 @@ var CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
           }),
         ),
         React.createElement("div", { className: "lp-set-row" },
-          React.createElement("label", { htmlFor: "lp-set-https-port" }, "HTTPS 端口"),
+          React.createElement("label", { htmlFor: "lp-set-https-port" }, t("httpsPort")),
           React.createElement("input", {
             id: "lp-set-https-port",
             className: "lp-set-input",
@@ -276,29 +301,29 @@ var CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
           }),
         ),
         React.createElement("div", { className: "lp-set-row" },
-          React.createElement("label", { htmlFor: "lp-set-cert" }, "证书文件（PEM）"),
+          React.createElement("label", { htmlFor: "lp-set-cert" }, t("certFile")),
           React.createElement("input", {
             id: "lp-set-cert",
             className: "lp-set-input",
             type: "text",
-            placeholder: "留空 = 自动生成自签名证书",
+            placeholder: t("certPlaceholder"),
             value: settings.tlsCertFile,
             onChange: function (e: any) { patch({ tlsCertFile: e.target.value }); },
           }),
         ),
         React.createElement("div", { className: "lp-set-row" },
-          React.createElement("label", { htmlFor: "lp-set-key" }, "私钥文件（PEM）"),
+          React.createElement("label", { htmlFor: "lp-set-key" }, t("keyFile")),
           React.createElement("input", {
             id: "lp-set-key",
             className: "lp-set-input",
             type: "text",
-            placeholder: "与证书文件成对",
+            placeholder: t("keyPlaceholder"),
             value: settings.tlsKeyFile,
             onChange: function (e: any) { patch({ tlsKeyFile: e.target.value }); },
           }),
         ),
         React.createElement("div", { className: "lp-set-row" },
-          React.createElement("label", { htmlFor: "lp-set-banner" }, "启动时打印访问地址"),
+          React.createElement("label", { htmlFor: "lp-set-banner" }, t("printBanner")),
           React.createElement("input", {
             id: "lp-set-banner",
             type: "checkbox",
@@ -307,7 +332,7 @@ var CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
           }),
         ),
         React.createElement("div", { className: "lp-set-row" },
-          React.createElement("label", { htmlFor: "lp-set-ws-compress" }, "WebSocket 压缩（事件流）"),
+          React.createElement("label", { htmlFor: "lp-set-ws-compress" }, t("wsCompress")),
           React.createElement("input", {
             id: "lp-set-ws-compress",
             type: "checkbox",
@@ -316,7 +341,7 @@ var CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
           }),
         ),
         React.createElement("div", { className: "lp-set-row" },
-          React.createElement("label", { htmlFor: "lp-set-ws-paths" }, "压缩路径（逗号分隔）"),
+          React.createElement("label", { htmlFor: "lp-set-ws-paths" }, t("wsPaths")),
           React.createElement("input", {
             id: "lp-set-ws-paths",
             className: "lp-set-input",
@@ -330,7 +355,7 @@ var CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
           }),
         ),
         React.createElement("div", { className: "lp-set-row" },
-          React.createElement("label", { htmlFor: "lp-set-http-compress" }, "HTTP 响应压缩（Brotli/gzip）"),
+          React.createElement("label", { htmlFor: "lp-set-http-compress" }, t("httpCompress")),
           React.createElement("input", {
             id: "lp-set-http-compress",
             type: "checkbox",
@@ -339,29 +364,27 @@ var CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
           }),
         ),
         React.createElement("div", { className: "lp-set-row" },
-          React.createElement("label", { htmlFor: "lp-set-level" }, "压缩档位"),
+          React.createElement("label", { htmlFor: "lp-set-level" }, t("compressLevel")),
           React.createElement("select", {
             id: "lp-set-level",
             className: "lp-set-input",
             value: String(settings.httpCompressLevel),
             onChange: function (e: any) { patch({ httpCompressLevel: Number(e.target.value) }); },
           },
-            React.createElement("option", { value: "0" }, "默认（gzip 6 / br 4）"),
-            React.createElement("option", { value: "1" }, "低（最快：gzip 1 / br 2）"),
-            React.createElement("option", { value: "2" }, "中（均衡：gzip 5 / br 5）"),
-            React.createElement("option", { value: "3" }, "高（最高压缩比：gzip 9 / br 9）"),
+            React.createElement("option", { value: "0" }, t("level0")),
+            React.createElement("option", { value: "1" }, t("level1")),
+            React.createElement("option", { value: "2" }, t("level2")),
+            React.createElement("option", { value: "3" }, t("level3")),
           ),
         ),
-        React.createElement("div", { className: "lp-set-hint" },
-          "保存即热更新（配置写入宿主统一设置存储，无需重启 dsh web）。" +
-          "修改后内网设备访问新端口，旧端口立即失效。"),
+        React.createElement("div", { className: "lp-set-hint" }, t("bodyHint")),
         (function () {
           var compressLine = compressStatusLine(compress);
           return compressLine ? React.createElement("div", { className: "lp-set-status" }, compressLine) : null;
         })(),
         React.createElement("div", { className: "lp-set-foot" },
-          saved ? React.createElement("span", { className: saved.indexOf("失败") >= 0 ? "lp-set-error" : "lp-set-saved" }, saved) : null,
-          React.createElement("button", { type: "button", className: "lp-set-save", onClick: save }, "保存"),
+          saved ? React.createElement("span", { className: saved.err ? "lp-set-error" : "lp-set-saved" }, saved.msg) : null,
+          React.createElement("button", { type: "button", className: "lp-set-save", onClick: save }, t("save")),
         ),
       ) : null,
     );
@@ -379,6 +402,23 @@ export function apply(ctx: any) {
 
       injectStyle();
 
+      // i18n（issue #348）：注册本插件字典；t 绑定官方 locale 服务（未装配回落 key 本体）。
+      var locale: any = ctx.get("locale");
+      var unsubLocale: any = null;
+      if (locale && typeof locale.register === "function") {
+        try {
+          locale.register(NS, { zh: zh, en: en });
+          t = locale.bind(NS);
+          if (typeof locale.subscribe === "function" && typeof locale.getSnapshot === "function") {
+            unsubLocale = locale.subscribe(function () {
+              try { t = locale.bind(NS); } catch (e) { /* 忽略 */ }
+            });
+          }
+        } catch (e) {
+          console.warn("[dsh-lan-proxy] locale 注册失败：", e);
+        }
+      }
+
       // 设置面板插件项。
       // ⚠️ rc.7 起 settings.plugin.item 由 list(id) 改为 keyed(key)：
       //   - 旧版（<=rc.6）只看 `id`；
@@ -388,7 +428,7 @@ export function apply(ctx: any) {
       // 注册进 settings 服务的命名空间，才会被 configurable 面板派发。
       slots.inject("settings.plugin.item", function () {
         return slots.register(
-          { name: "settings.plugin.item", id: "dsh-lan-proxy", key: "dsh-lan-proxy", order: 50 },
+          { name: "settings.plugin.item", id: "dsh-lan-proxy", key: "dsh-lan-proxy", order: 50, locale: NS },
           function () {
             return React.createElement(SettingsCard, null);
           }
@@ -399,6 +439,7 @@ export function apply(ctx: any) {
       ctx.effect(function () {
         return function () {
           disposed = true;
+          if (unsubLocale) unsubLocale();
           var style = document.getElementById(STYLE_ID);
           if (style) style.remove();
         };
@@ -410,4 +451,4 @@ export function apply(ctx: any) {
 
 // ---- 客户端契约：apply/inject 由 build-client 经 factory 装配（干净模块，React externals）----
 // 设置卡片是 React 组件（settings.plugin.item 插槽由宿主 React 渲染）。
-export const inject: string[] = ["slots"];
+export const inject: string[] = ["slots", "locale"];

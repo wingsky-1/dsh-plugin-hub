@@ -86,6 +86,8 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "catalog:",
+    "@deepseek-ai/dsh-client-store": "catalog:",
+    "@deepseek-ai/dsh-client-ui-slots": "catalog:",
     "@deepseek-ai/dsh-host-webserver": "catalog:",
     "@types/compression": "^1.7.5",
     "@types/ws": "^8.18.1",
