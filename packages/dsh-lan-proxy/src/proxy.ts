@@ -352,13 +352,15 @@ export function withLaunchToken(url: string | undefined, token: string): string 
 
 /**
  * 压缩桥接上游连接剥离的入站头：hop-by-hop 头（RFC 7230 §6.1，代理不得转发）
- * 与 WS 握手专有头（RFC 6455 §4.1，ws 库客户端按上游握手自行生成——透传浏览器段
- * 的同名头会产生重复头，直接破坏上游握手）。
+ * 与 WS 握手请求侧专有头（RFC 6455 §4.1，ws 库客户端按上游握手自行生成——透传
+ * 浏览器段的同名头会产生重复头，直接破坏上游握手）。
+ * 注意：sec-websocket-accept 是响应头、请求侧不可达，故不在剥离集；deny 集仅针对
+ * 请求侧可达头（hop-by-hop + WS 握手请求头）。
  */
 const BRIDGE_UPSTREAM_HEADER_DENY: ReadonlySet<string> = new Set([
   "connection", "upgrade", "keep-alive", "proxy-connection", "proxy-authorization", "proxy-authenticate",
   "te", "trailer", "transfer-encoding",
-  "sec-websocket-accept", "sec-websocket-extensions", "sec-websocket-key",
+  "sec-websocket-extensions", "sec-websocket-key",
   "sec-websocket-protocol", "sec-websocket-version",
 ]);
 
