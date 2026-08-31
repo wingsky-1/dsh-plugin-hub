@@ -620,13 +620,17 @@ export function apply(ctx: any): void {
     injectStyle();
     if (document.body === null) return;
 
-    sessions = ctx.get("sessions") as SessionsServiceLike | undefined;
-    remote = ctx.get("remote") as RemoteLike | undefined;
+    // #383 根因修复：客户端插件服务须经 inject 数组声明（"sessions"/"remote"/
+    // "remote.session"/"slots"）且经 ctx 直接属性访问——官方 dsh-client-ui-chat /
+    // model-selection 同款 ctx.sessions / ctx.remote。此前 inject 仅 locale 且误用
+    // 宿主风格 ctx.get 取服务，sessions/remote 未注入导致检测恒空（胶囊不跟随会话）。
+    sessions = ctx.sessions as SessionsServiceLike | undefined;
+    remote = ctx.remote as RemoteLike | undefined;
 
     // i18n（issue #348）：注册本插件字典；t 经共享 i18n.ts 活绑定（多文件 client 共用），
     // 语言切换 subscribe 重绑（胶囊/面板/设置 tab 下次渲染即生效）。
     let unsubLocale: (() => void) | undefined;
-    const locale: any = ctx.get("locale");
+    const locale: any = ctx.locale;
     if (locale && typeof locale.register === "function") {
       try {
         locale.register(NS, { zh: zh, en: en });
@@ -645,7 +649,7 @@ export function apply(ctx: any): void {
     // 设置面板独立 tab「用量统计」（settings.section）；独立 try/catch 不连坐浮窗
     let disposeSettingsSection: (() => void) | undefined;
     try {
-      const slots = ctx.get("slots");
+      const slots = ctx.slots;
       if (slots && typeof slots.inject === "function") {
         const injected: unknown = slots.inject("settings.section", function () {
           return slots.register(
@@ -708,4 +712,8 @@ export function apply(ctx: any): void {
 }
 
 // ---- 客户端契约：apply/inject 由 build-client 经 factory 装配（干净模块）----
-export const inject: string[] = ["locale"];
+// #383 根因修复：inject 声明 apply 消费的 ctx 服务（加载顺序 + 服务可用性）——
+// 此前只声明 locale，sessions/remote/remote.session/slots 未注入导致检测恒空、
+// 设置面板注册抛「cannot get property ... without inject」。对齐官方
+// dsh-client-ui-model-selection 的 inject 面（sessions/remote/remote.session/slots）。
+export const inject: string[] = ["locale", "sessions", "remote", "remote.session", "slots"];
