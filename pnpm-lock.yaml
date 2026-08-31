@@ -99,24 +99,6 @@ importers:
         specifier: workspace:*
         version: link:../dsh-mcp-manager
 
-  packages/dsh-idle-archive:
-    devDependencies:
-      '@deepseek-ai/cordis':
-        specifier: 'catalog:'
-        version: 4.0.2
-      '@deepseek-ai/dsh-client-store':
-        specifier: 'catalog:'
-        version: 0.1.2-alpha.2(@deepseek-ai/cordis@4.0.2)
-      '@deepseek-ai/dsh-client-ui-slots':
-        specifier: 'catalog:'
-        version: 0.1.2-alpha.2(@deepseek-ai/cordis@4.0.2)
-      '@deepseek-ai/dsh-host-webserver':
-        specifier: 'catalog:'
-        version: 0.1.2-alpha.2(@deepseek-ai/cordis@4.0.2)(supports-color@7.2.0)
-      schemastery:
-        specifier: ^3.18.0
-        version: 3.18.0
-
   packages/dsh-lan-proxy:
     dependencies:
       schemastery:
@@ -207,9 +189,6 @@ importers:
 
   packages/dsh-plugins-all:
     dependencies:
-      '@wingsky-1/dsh-idle-archive':
-        specifier: workspace:*
-        version: link:../dsh-idle-archive
       '@wingsky-1/dsh-lan-proxy':
         specifier: workspace:*
         version: link:../dsh-lan-proxy
@@ -252,21 +231,6 @@ importers:
       untildify:
         specifier: ^6.0.0
         version: 6.0.0
-
-  packages/dsh-subagent-model-inherit:
-    devDependencies:
-      '@deepseek-ai/cordis':
-        specifier: 'catalog:'
-        version: 4.0.2
-      '@deepseek-ai/dsh-agent':
-        specifier: 'catalog:'
-        version: 0.1.2-alpha.2(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-llm@0.1.2-alpha.2(@deepseek-ai/cordis@4.0.2))(@deepseek-ai/dsh-session@0.1.2-alpha.2(@deepseek-ai/cordis@4.0.2))(@deepseek-ai/dsh-system-prompt@0.1.2-alpha.2(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-llm@0.1.2-alpha.2(@deepseek-ai/cordis@4.0.2)))(@deepseek-ai/dsh-typert-protocol@0.1.2-alpha.2(@deepseek-ai/cordis@4.0.2))
-      '@deepseek-ai/dsh-llm':
-        specifier: 'catalog:'
-        version: 0.1.2-alpha.2(@deepseek-ai/cordis@4.0.2)
-      '@deepseek-ai/dsh-session':
-        specifier: 'catalog:'
-        version: 0.1.2-alpha.2(@deepseek-ai/cordis@4.0.2)
 
   packages/dsh-verify-isolated: {}
 
