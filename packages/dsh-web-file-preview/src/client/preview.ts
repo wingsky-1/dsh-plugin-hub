@@ -354,6 +354,13 @@ export function openPreview(
     el("div", { class: "fwp-actions" }, [backBtn, copyBtn, newTabBtn, fsBtn, closeBtn]),
   ]);
   const card = el("div", { class: "fwp-card" }, [head, tabs, body]);
+  // issue #388：卡片固定 id——宿主 dsh-web-mobile（≤1023px）的 [aria-modal] 对话框
+  // 模板规则（带 !important，:has/:not 参数计入实为 (0,8,1)）会劫持本卡片的定位/
+  // 尺寸并把 .fwp-title display:none，插件全屏态规则 (0,3,0) 打不过 →「点全屏整个
+  // 预览框没全屏」。id (1,0,0) 稳压，配合 style.css 末尾「布局主权对轰块」恢复
+  // 设计值。Modal 单例（state.overlay 同时刻至多一个，openPreview 先 closeModal
+  // 后重建），id 随元素移除，卸载无需清理。
+  card.id = "fwp-dialog-card";
   // a11y（评审 U11）：dialog 语义 + 打开聚焦 + Tab 陷阱配合 onKeyDown。
   card.setAttribute("role", "dialog");
   card.setAttribute("aria-modal", "true");

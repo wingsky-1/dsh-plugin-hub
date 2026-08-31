@@ -70,7 +70,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-lan-proxy
 | `httpsEnabled` | `true` | Whether to run HTTPS alongside |
 | `tlsCertFile` / `tlsKeyFile` | none | Custom certificate (mkcert, etc.) |
 | `wsCompressEnabled` | `true` | Whether to apply compressed bridging to WebSockets matching `wsCompressPaths` |
-| `wsCompressPaths` | `/api/events.mux, /api/events.host` | Path allowlist participating in WebSocket compression |
+| `wsCompressPaths` | `/api/remote.mux` | Path allowlist participating in WebSocket compression |
 | `httpCompressEnabled` | `true` | Master switch for HTTP response compression (Brotli/gzip negotiation, merged from dsh-gzip) |
 | `httpCompressLevel` | `1` | Compression preset 0..3: `0` default / `1` low (gzip 1 / br 2, fastest) · `2` medium (gzip 5 / br 5, balanced) / `3` high (gzip 9 / br 9, best ratio) — effective for **both** gzip and Brotli; legacy integer values 4..9 are migrated to 3 automatically |
 
@@ -95,11 +95,12 @@ GUI settings entry: Settings → Plugins → "LAN Access" card (saved changes ap
 
 ## WebSocket Compression (wss event stream)
 
-- For WebSocket upgrades matching `wsCompressPaths` (default session event streams
+- For WebSocket upgrades matching `wsCompressPaths` (default `/api/remote.mux` — the
+  Remote-stream mux endpoint owned by api-gateway since dsh 0.1.2, replacing the old
   `/api/events.mux`, `/api/events.host`), lan-proxy performs **termination + permessage-deflate**:
   the browser segment is compressed (the browser negotiates and decompresses automatically),
   the DSH segment is plaintext, then both directions are bridged and forwarded.
-- Benefit: events.mux/events.host are dsh's real-time event streams (session traces/progress);
+- Benefit: remote.mux carries dsh's real-time event streams and session traces/progress;
   uncompressed, traffic is heavy over remote/slow links — permessage-deflate measures roughly
   **75~79%** savings in practice.
 - Even if the DSH server later enables permessage-deflate itself, the DSH segment here never
@@ -166,6 +167,12 @@ GUI settings entry: Settings → Plugins → "LAN Access" card (saved changes ap
 - **Credential surface**: dsh settings RPC is readable/writable on loopback only; remote devices
   reached through this plugin can read/write server settings (including **credential-class data**)
   within the browser trust perimeter — make sure your LAN is trusted, or disable this plugin
+- **Bridge header passthrough**: the WS compressed bridge forwards inbound headers (including
+  authentication cookies — since dsh 0.1.2 `/api/remote.mux` upgrades require cookie
+  authentication, dropping them results in 401 and connection failure), overriding only
+  Host/Origin to the loopback target and stripping hop-by-hop and WebSocket handshake-only
+  headers; the upstream is forced to loopback by `targetHost`, so credentials never leave the
+  local process boundary
 - **Private key permission**: auto-generated self-signed private keys are written with 0600
 - **Open port reminder**: `0.0.0.0` listening is visible to every device on the LAN
 - **HTTP response compression**: compression happens at the forwarding layer and only applies
@@ -196,7 +203,7 @@ curl http://<your-LAN-IP>:3081/api/dsh-lan-proxy/health
 - When changing network segments causes the IP to change, the self-signed certificate must be
   regenerated or the settings (certificate file paths) updated
 - WebSockets matching `wsCompressPaths` go through "termination + compressed bridging" (one extra
-  hop, extra compression CPU); enabling it is only recommended for high-traffic paths like events;
+  hop, extra compression CPU); enabling it is only recommended for high-traffic paths like remote.mux;
   all other WebSockets stay passthrough
 
 ## License
