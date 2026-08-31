@@ -10,8 +10,7 @@ actions/cache 跨 ref 通道（actions/cache 按 ref 隔离，PR 永远 miss mai
 详见 #204）。
 
 文件：
-- `incremental-<pkg>.json`：单段包基线（notifier / idle-archive /
-  web-file-preview / subagent-model-inherit）
+- `incremental-<pkg>.json`：单段包基线（notifier / web-file-preview）
 - `incremental-<pkg>-<seg>.json`：分段包基线（mcp-manager×3 / provider-usage×3 /
   lan-proxy×4）
 - `manifest.json`：各基线文件 size / mtime / sha256，供判断基线是否有实质变化

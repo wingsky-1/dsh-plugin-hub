@@ -1,6 +1,5 @@
 {
   "active": [
-    "dsh-idle-archive",
     "dsh-lan-proxy",
     "dsh-mcp-manager",
     "dsh-notifier",
@@ -9,7 +8,6 @@
     "dsh-web-file-preview"
   ],
   "standalone": [
-    "dsh-subagent-model-inherit",
     "dsh-codegraph"
   ],
   "retired": [
@@ -27,6 +25,16 @@
       "name": "dsh-skill-explorer",
       "reason": "停止维护；web UI 侧已有更优实现（符号链接识别、链接技能安全处理）",
       "successor": "@linxin666/dsh-client-ui-skill-explorer"
+    },
+    {
+      "name": "dsh-idle-archive",
+      "reason": "停止维护；官方 workspace.archiveSession 仅提供归档原语，社区已有更成熟的会话生命周期管理/归档实现，本包不再维护",
+      "successor": ""
+    },
+    {
+      "name": "dsh-subagent-model-inherit",
+      "reason": "停止维护；官方 dsh-subagent 0.1.2-alpha.2 已原生实现 resolveChildAgentOptions（子 Agent 继承父会话模型/思考等级/输出上限），本包功能被官方覆盖",
+      "successor": ""
     }
   ]
 }
