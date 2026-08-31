@@ -132,6 +132,20 @@ assert.deepEqual(bridgeUpstreamHeaders({ cookie: ["a=1", "b=2"] }, "127.0.0.1:1"
   bridgeUpstreamHeaders(src, "127.0.0.1:2");
   assert.deepEqual(src, { cookie: "c=1" }, "入参 headers 不被就地修改");
 }
+// 分支补充：大写键名归一化小写、undefined 值跳过、hop-by-hop 全集与 WS 握手头剥离
+assert.deepEqual(bridgeUpstreamHeaders({
+  Cookie: "c=1",
+  "X-Undefined": undefined,
+  "Proxy-Authorization": "Basic x",
+  te: "trailers",
+  trailer: "x-foo",
+  "transfer-encoding": "chunked",
+  "sec-websocket-protocol": "chat",
+}, "127.0.0.1:3080"), {
+  cookie: "c=1",
+  host: "127.0.0.1:3080",
+  origin: "http://127.0.0.1:3080",
+}, "大写键名归一化、undefined 跳过、Proxy-Authorization/te/trailer/transfer-encoding/sec-websocket-protocol 剥离");
 
 // compressWsPath
 assert.equal(compressWsPath(["/a", "/b"], "/a?query=1"), true, "带查询串命中");
