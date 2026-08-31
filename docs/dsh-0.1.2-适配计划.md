@@ -72,12 +72,12 @@
 
 ### 1.4 dsh-idle-archive（自查）
 - [x] 核对 `src/client` import 面——**无任何 `@deepseek-ai` 运行时 import**（评审实证），仅需清理死引用
-- [ ] 清理 `dsh.client.inject` 中 `dsh-client-runtime` 死引用（归入 1.1）
+- [x] 清理 `dsh.client.inject` 中 `dsh-client-runtime` 死引用（已在 1.1 完成，2026-08-31）
 
 ### 1.5 dsh-lan-proxy（实测）
 > 评审：token 鉴权交互只能实测，静态无法判定。
-- [ ] 一次性 Token 鉴权 / webserver 原生 gzip 与独立端口 + 自签 TLS 转发交互实测
-- [ ] 清理死引用（归入 1.1）；`crypto.randomUUID` polyfill 可留可删（幂等）
+- [ ] 一次性 Token 鉴权 / webserver 原生 gzip 与独立端口 + 自签 TLS 转发交互实测（需隔离环境，归入 Phase 5 前检查）
+- [x] 清理死引用（已在 1.1 完成）；`crypto.randomUUID` polyfill 可留可删（幂等）
 
 ### 1.6 dsh-subagent-model-inherit（评估结论）
 > 评审：上游源码已 clone 但 `model-selection-settings` 未核，实施前补核官方 `dsh-subagent` 命名空间/卡片范式。
@@ -113,14 +113,15 @@
   - React slots 走 props `{t}` + label thunk；原生 DOM 走 `ctx.locale.bind(NS)` + subscribe 按 revision 重绘（以机制核实结论为准）
 - [ ] notifier 边界：通知类型 kind 走客户端字典、动态数据原样；`toast.ps1` 固定文案保留并文档明示
 
-## Phase 4 — 版本对齐与全量回归（硬依赖：上游 0.1.2 正式发 npm）
+## Phase 4 — 版本对齐与全量回归（目标：上游 0.1.2-alpha.2，已完成）
 
-> 评审 P1：alpha.2 框架版本变动（cordis ^4.0.2 / schemastery ^3.18.2）——**先补 S1 框架稳定性核对**（比对 alpha.1→alpha.2→正式版的框架依赖是否变动），再全量 bump。
+> 评审 P1：alpha.2 框架版本变动（cordis ^4.0.2 / schemastery ^3.18.2）——**先补 S1 框架稳定性核对**再全量 bump。
+> 实施（2026-08-31）：catalog 全量 bump 到 **0.1.2-alpha.2**，全门禁通过。
 
-- [ ] **S1 框架稳定性核对**：catalog 涉及的 cordis / schemastery / react 在 alpha.1→alpha.2→正式 0.1.2 版本面核对
-- [ ] 上游 0.1.2 发布后：catalog `@deepseek-ai/*` 全量 bump + `minimumReleaseAgeExclude` 同步
-- [ ] 全量门禁：`pnpm build && pnpm test && pnpm contract && pnpm pack:check` + cov/crap 观察
-- [ ] 隔离浏览器实测（dsh-verify-isolated）：全插件 + 窄屏 iPad/iOS 移动端
+- [x] **S1 框架稳定性核对**（npm pack lib diff 实证）：cordis 4.0.1→4.0.2 **lib 字节一致零破坏**；schemastery 3.18.0→3.18.2 lib 字节一致（注意：裸 `schemastery` npm 最新仍 3.18.0，`3.18.2` 是 `@deepseek-ai/schemastery` scoped 包——本仓库依赖裸包，保持 `^3.18.0` 不升）
+- [x] 上游 0.1.2-alpha.2 发布后：catalog `@deepseek-ai/*` 全量 bump（cordis 4.0.2 + 9 类型层包 0.1.2-alpha.2）+ `minimumReleaseAgeExclude` 同步（pnpm install 自动补 8 条）
+- [x] 全量门禁（alpha.2 类型层）：`pnpm build` 10 包全过、`pnpm test` 全绿、`pnpm contract` 客户端契约 6 包全过、`pnpm pack:check` 全过（2026-08-31）
+- [ ] 隔离浏览器实测（dsh-verify-isolated）：全插件 + 窄屏 iPad/iOS 移动端（待维护者本地验证，归入 Phase 5 前检查）
 
 ## Phase 5 — 发版（v0.2.0）
 
