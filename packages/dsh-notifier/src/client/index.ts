@@ -527,8 +527,10 @@ const NS = "notifier";
     var delArmedDraft = useState(null as string | null);
     var delArmedId = delArmedDraft[0];
     var setDelArmedId = delArmedDraft[1];
-    // 加载基线（A4）：保存时只提交与基线不同的键（增量 diff），未改动的键不提交
-    var baseline: Record<string, any> | null = null;
+    // 加载基线（A4）：保存时只提交与基线不同的键（增量 diff），未改动的键不提交。
+    // 用 useRef 持久化：组件每次渲染局部变量会重置为 null，导致 save() 闭包里读不到
+    // 基线而永远判定「无变化」。
+    var baselineRef = ReactHooks.useRef(null as Record<string, any> | null);
 
     function loadHistory(alive: { value: boolean }) {
       fetchHistory().then(function (records) {
@@ -556,7 +558,7 @@ const NS = "notifier";
           if (!alive.value) return;
           var effective = (v && v.effective) || {};
           setSettings(Object.assign({}, effective));
-          baseline = Object.assign({}, effective);
+          baselineRef.current = Object.assign({}, effective);
           setMeta({ user: v.user || {}, revision: v.revision, effective: effective, writable: v.writable !== false });
           runtimeConfig = effective; // SSE 展示面同步
           if (v.writable === false) setSaved(t("settingsUnavailable"), true);
@@ -580,18 +582,24 @@ const NS = "notifier";
       return React.createElement("li", { className: "dn-set-card" }, t("settingsLoading"));
     }
 
+    /** 函数式 setState 写设置（防 stale closure：同帧多次 onChange 后写覆盖先写）。
+     *  p 为对象时浅合并；为函数时以最新 prev 计算（prev => next）。 */
     function patch(p: any) {
-      setSettings(Object.assign({}, settings, p));
+      setSettings(function (prev: any) {
+        if (typeof p === "function") return p(prev);
+        return Object.assign({}, prev, p);
+      });
       setSaved("");
     }
 
     /** 基线 diff：只提交与加载基线不同的键（A4，防组合层 base 被默认值回写覆盖）。 */
     function diffPayload(): Record<string, any> {
       var payload: Record<string, any> = {};
+      var baseLine = baselineRef.current;
       for (var key in settings) {
-        if (baseline === null) break;
+        if (baseLine === null) break;
         var cur = settings[key];
-        var base = baseline[key];
+        var base = baseLine[key];
         var same = JSON.stringify(cur) === JSON.stringify(base);
         if (!same) payload[key] = cur;
       }
@@ -617,7 +625,7 @@ const NS = "notifier";
           return body;
         });
       }).then(function (body: any) {
-        baseline = Object.assign({}, settings);
+        baselineRef.current = Object.assign({}, settings);
         setMeta({ user: (body && body.user) || {}, revision: (body && body.revision) || undefined, effective: settings, writable: true });
         setSaved(t("savedOk"));
         setTimeout(function () { setSaved(""); }, 2200);
@@ -643,36 +651,42 @@ const NS = "notifier";
 
     // ---- M2 频道编辑（settings.channels 不可变操作；deviceKey 掩码语义见服务端）----
 
-    /** 更新第 idx 个频道实例（浅合并 patch）。 */
+    /** 更新第 idx 个频道实例（浅合并 patch；函数式基于最新 channels，防后写覆盖）。 */
     function chPatch(idx: number, part: Record<string, any>) {
-      var list = (settings.channels || []).slice();
-      list[idx] = Object.assign({}, list[idx], part);
-      patch({ channels: list });
+      patch(function (prev: any) {
+        var list = (prev.channels || []).slice();
+        list[idx] = Object.assign({}, list[idx], part);
+        return Object.assign({}, prev, { channels: list });
+      });
     }
 
-    /** 删除第 idx 个频道实例。 */
+    /** 删除第 idx 个频道实例（函数式基于最新 channels）。 */
     function chRemove(idx: number) {
-      var list = (settings.channels || []).slice();
-      list.splice(idx, 1);
-      patch({ channels: list });
+      patch(function (prev: any) {
+        var list = (prev.channels || []).slice();
+        list.splice(idx, 1);
+        return Object.assign({}, prev, { channels: list });
+      });
     }
 
     /** 新增 Bark 实例：自动分配未占用的 id（bark-1…），默认禁用（出站授权显式授予）。 */
     function chAdd() {
-      var list = settings.channels || [];
-      var seq = 1;
-      var taken = new Set(list.map(function (c: any) { return String(c.id); }));
-      while (taken.has("bark-" + seq)) seq += 1;
-      var id = "bark-" + seq;
-      patch({
-        channels: list.concat([{
-          id: id,
-          name: t("chNewBarkName") + " " + seq,
-          type: "bark",
-          baseUrl: "",
-          deviceKey: "",
-          enabled: false,
-        }]),
+      patch(function (prev: any) {
+        var list = prev.channels || [];
+        var seq = 1;
+        var taken = new Set(list.map(function (c: any) { return String(c.id); }));
+        while (taken.has("bark-" + seq)) seq += 1;
+        var id = "bark-" + seq;
+        return Object.assign({}, prev, {
+          channels: list.concat([{
+            id: id,
+            name: t("chNewBarkName") + " " + seq,
+            type: "bark",
+            baseUrl: "",
+            deviceKey: "",
+            enabled: false,
+          }]),
+        });
       });
       setDelArmedId(null);
     }
@@ -685,12 +699,29 @@ const NS = "notifier";
       return routes[kind];
     }
 
-    /** 写/清 kind 路由条目（ids=null 删除条目恢复默认）。 */
+    /** 写/清 kind 路由条目（ids=null 删除条目恢复默认；函数式基于最新 kindRoutes）。 */
     function routeSetKind(kind: string, ids: string[] | null) {
-      var routes = Object.assign({}, settings.kindRoutes || {});
-      if (ids === null || ids.length === 0) delete routes[kind];
-      else routes[kind] = ids;
-      patch({ kindRoutes: routes });
+      patch(function (prev: any) {
+        var routes = Object.assign({}, prev.kindRoutes || {});
+        if (ids === null || ids.length === 0) delete routes[kind];
+        else routes[kind] = ids;
+        return Object.assign({}, prev, { kindRoutes: routes });
+      });
+    }
+
+    /** 路由复选组单框切换（函数式：基于最新 kindRoutes/channels 计算，防同帧勾选后写覆盖）。 */
+    function routeToggle(kind: string, oid: string, checked: boolean) {
+      patch(function (prev: any) {
+        var routes = Object.assign({}, prev.kindRoutes || {});
+        var all = ["browser", "system"].concat((prev.channels || []).map(function (c: any) { return "bark:" + String(c.id); }));
+        var cur = routes[kind] === undefined ? all.slice() : routes[kind].slice();
+        var at = cur.indexOf(oid);
+        if (checked && at === -1) cur.push(oid);
+        else if (!checked && at !== -1) cur.splice(at, 1);
+        if (cur.length === 0) delete routes[kind];
+        else routes[kind] = cur;
+        return Object.assign({}, prev, { kindRoutes: routes });
+      });
     }
 
     /** 动态 kind 确认（POST /kinds；完成后刷新清单并提示）。 */
@@ -749,9 +780,12 @@ const NS = "notifier";
         type: "checkbox",
         checked: settings[key] === true,
         onChange: function (e: any) {
-          var next = Object.assign({}, settings);
-          next[key] = e.target.checked;
-          setSettings(next);
+          setSettings(function (prev: any) {
+            var next = Object.assign({}, prev);
+            next[key] = e.target.checked;
+            return next;
+          });
+          setSaved("");
         },
       });
     }
@@ -923,11 +957,7 @@ const NS = "notifier";
               type: "checkbox",
               checked: checked,
               onChange: function (e: any) {
-                var cur = routes === undefined ? options.map(function (x) { return x.id; }) : routes.slice();
-                var at = cur.indexOf(o.id);
-                if (e.target.checked && at === -1) cur.push(o.id);
-                else if (!e.target.checked && at !== -1) cur.splice(at, 1);
-                routeSetKind(kind, cur);
+                routeToggle(kind, o.id, e.target.checked);
               },
             }),
             React.createElement("span", null, o.label),
