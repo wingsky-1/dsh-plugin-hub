@@ -58,7 +58,7 @@ import type {} from "@deepseek-ai/dsh-session/types";
 import type {} from "@deepseek-ai/dsh-session-title";
 import type {} from "@deepseek-ai/dsh-user-approval";
 import { errorMessage } from "../../../shared/host-utils.js";
-import { CONFIG_KEYS, DEFAULT_CONFIG, configFile, historyFile, normalizeConfig, sanitizeSettings, toastScriptPath } from "./config.ts";
+import { CONFIG_KEYS, DEFAULT_CONFIG, configFile, historyFile, statusFile, normalizeConfig, sanitizeSettings, toastScriptPath } from "./config.ts";
 import type { NotifierApplyConfig, NotifyConfig } from "./config.ts";
 import { isInQuietHours } from "./quiet-hours.ts";
 import { HISTORY_LIMIT, createHistoryStore } from "./history.ts";
@@ -71,7 +71,9 @@ import type { OwnerScopeLike, SettingsServiceLike } from "./settings.ts";
 import { migrateLegacyConfig } from "./migrate.ts";
 import { ROUTES, buildRoutes, createSseHub, createSystemNotifier } from "./server.ts";
 import { createNotifierService } from "./service.ts";
-import type { NotifierServiceInternal } from "./service.ts";
+import type { NotifierServiceInternal, NotifyChannel, NotifySentEvent } from "./service.ts";
+import { createStatusStore } from "./status.ts";
+import { createBarkChannel, createBarkGate } from "./channel-bark.ts";
 
 /** 稳定的 cordis 插件名。 */
 export const name = "notifier";
@@ -84,11 +86,14 @@ export const inject = ["webServer"];
 
 export { QUIET_ALLOW_KINDS, isInQuietHours, parseHHMM } from "./quiet-hours.ts";
 export type { QuietHoursConfig } from "./quiet-hours.ts";
-export { CONFIG_KEYS, DEFAULT_CONFIG, configFile, historyFile, normalizeConfig, sanitizeSettings, validateSettings, toastScriptPath, normalizeBarkBaseUrl, redactConfigView, unmaskChannels, SECRET_MASK, BARK_ID_PATTERN, BARK_RESERVED_KEYS } from "./config.ts";
+export { CONFIG_KEYS, DEFAULT_CONFIG, configFile, historyFile, statusFile, normalizeConfig, sanitizeSettings, validateSettings, toastScriptPath, normalizeBarkBaseUrl, redactConfigView, unmaskChannels, SECRET_MASK, BARK_ID_PATTERN, BARK_RESERVED_KEYS } from "./config.ts";
 export type { NotifierApplyConfig, NotifyConfig, SettingInvalid, BarkChannelConfig } from "./config.ts";
 export { HISTORY_LIMIT } from "./history.ts";
 export { SETTINGS_NS, installNotifierSettings } from "./settings.ts";
 export { migrateLegacyConfig, MIGRATED_BAK_SUFFIX, CORRUPTED_BAK_SUFFIX } from "./migrate.ts";
+export { createStatusStore } from "./status.ts";
+export type { StatusStore, ChannelStatusEntry } from "./status.ts";
+export { createBarkChannel, createBarkGate, SEVERITY_LEVEL, BARK_TIMEOUT_MS, BARK_RETRIES, BARK_MAX_INFLIGHT } from "./channel-bark.ts";
 export type { MigrationOutcome } from "./migrate.ts";
 export {
   buildSystemCommand,
@@ -176,6 +181,64 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
     maxAgeDays: () => current.historyMaxAgeDays,
     warn: (message) => ctx.logger.warn(message),
   });
+  const statusPath = typeof config.statusFile === "string" ? config.statusFile : statusFile();
+  const statusStore = createStatusStore({
+    file: statusPath,
+    warn: (message) => ctx.logger.warn(message),
+  });
+
+  // ------------------------------------------------------------ 出站频道（M2：bark）
+
+  /** Bark 实例级在途限流门（按 cfg.id 键控；同 id 跨配置变更延续门状态）。 */
+  const barkGates = new Map<string, ReturnType<typeof createBarkGate>>();
+  function gateFor(id: string) {
+    let gate = barkGates.get(id);
+    if (!gate) {
+      gate = createBarkGate();
+      barkGates.set(id, gate);
+    }
+    return gate;
+  }
+
+  /**
+   * 配置驱动的出站频道（enabled 的 bark 实例）：每次 dispatch 现取现建——
+   * 配置热更新（PUT /config）即时生效；在途投递持有旧实例自然结束（终稿 §10）。
+   * channel 实例是轻量闭包，重建无负担；限流门按 id 延续（评审 P1）。
+   */
+  function outboundChannels(): Array<{ id: string; channel: NotifyChannel }> {
+    return (current.channels ?? [])
+      .filter((c) => c.type === "bark" && c.enabled)
+      .map((c) => ({ id: `bark:${c.id}`, channel: createBarkChannel(c, gateFor(c.id)) }));
+  }
+
+  /** 投递终态事件（'wingsky-notify/sent'）：宿主无事件总线时静默跳过（探测面）。 */
+  function emitSent(payload: NotifySentEvent): void {
+    try {
+      (ctx as unknown as { emit?: (name: string, ...args: unknown[]) => void }).emit?.("wingsky-notify/sent", payload);
+    } catch {
+      // 事件派发失败不影响投递语义（终态仍可见于 status 文件与历史）
+    }
+  }
+
+  /** settings user 层增量写入（PUT /config 与 kind 确认共用的写通道）。 */
+  function updateConfig(patch: object, expectedRevision?: number): Promise<void> {
+    const service = attachedService;
+    if (!service) return Promise.reject(new Error("settings service unavailable"));
+    // 乐观并发（F4）必须经 service.update(ns, ...)（SettingsProvider 公开
+    // 方法，write 内做 revision 校验）——scope.update 会丢弃该参数。
+    return service.update(SETTINGS_NS, patch, expectedRevision);
+  }
+
+  /** 动态 kind 确认 → 配置 allowKinds（M2：确认态持久化，修复 M1 内存态丢失）。 */
+  async function confirmKindToConfig(kind: string, confirmed: boolean): Promise<void> {
+    const allowed = new Set<string>(Array.isArray(current.allowKinds) ? current.allowKinds : []);
+    if (confirmed) allowed.add(kind);
+    else allowed.delete(kind);
+    await updateConfig({ allowKinds: [...allowed] });
+    // 官方 scope.watch 回调是「提交后异步串行」——POST /kinds 响应里的确认态
+    // 要立即可见，这里主动同步镜像（watch 回调随后幂等刷新一次）。
+    current = source();
+  }
 
   // ------------------------------------------------------------ 通知中心 service（M1）
 
@@ -194,6 +257,14 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
     system,
     history: historyStore,
     logger: ctx.logger,
+    outboundChannels,
+    recordStatus: (channelId, status, error) => statusStore.record(channelId, status, error),
+    emitSent,
+    setConfirm: (kind, confirmed) => {
+      confirmKindToConfig(kind, confirmed).catch((err) => {
+        ctx.logger.warn(`dsh-notifier: kind 确认写入失败 — ${errorMessage(err)}`);
+      });
+    },
   });
   // 暴露服务（官方 storageDomain 模式，mcp-manager 同款）：fake ctx 无 provide
   // 时静默降级（单测 mock 兼容）。重复 provide 同名服务 cordis 会抛错——本插件
@@ -609,17 +680,15 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
     resolve: () => current,
     readUser,
     writable: () => attachedService !== undefined,
-    update: (patch: object, expectedRevision?: number) => {
-      const service = attachedService;
-      if (!service) return Promise.reject(new Error("settings service unavailable"));
-      // 乐观并发（F4）必须经 service.update(ns, ...)（SettingsProvider 公开
-      // 方法，write 内做 revision 校验）——scope.update 会丢弃该参数。
-      return service.update(SETTINGS_NS, patch, expectedRevision);
-    },
+    update: updateConfig,
     logger: ctx.logger,
     sse,
     system,
     history: historyStore,
+    sendTest: (channelId?: string) => notifierService.sendKind("test", {}, { bypassQuiet: true, onlyChannel: channelId }),
+    statusReader: () => statusStore.read(),
+    listKinds: () => notifierService.listKinds(),
+    setConfirm: confirmKindToConfig,
   });
   const disposeRoutes = ctx.effect(
     () => {

@@ -23,6 +23,8 @@ export const ROUTES = {
   health: "/api/dsh-notifier/health",
   test: "/api/dsh-notifier/test",
   history: "/api/dsh-notifier/history",
+  status: "/api/dsh-notifier/status",
+  kinds: "/api/dsh-notifier/kinds",
 };
 
 /** SSE 帧。 */
@@ -296,6 +298,14 @@ export interface RouteDeps {
   system: SystemNotifier;
   /** 通知历史存储。 */
   history: HistoryStore;
+  /** 测试通知（收敛到 service 管线；channelId 可选指定单频道——per-channel 测试）。 */
+  sendTest(channelId?: string): Array<{ channelId: string; status: string; error?: string }>;
+  /** 频道投递状态读取（GET /status；per-channel 最近投递终态）。 */
+  statusReader(): Promise<Record<string, unknown>>;
+  /** 动态 kind 清单（GET /kinds；含确认态）。 */
+  listKinds(): Array<{ id: string; label: string; confirmed: boolean }>;
+  /** 动态 kind 确认写入（POST /kinds；持久化到配置 allowKinds）。 */
+  setConfirm(kind: string, confirmed: boolean): Promise<void>;
 }
 
 /** applyConfigPatch 的结果。 */
@@ -370,7 +380,7 @@ export async function applyConfigPatch(deps: RouteDeps, payload: unknown): Promi
  * @returns WebRoute 数组（调用方逐条 register，收集 disposer）。
  */
 export function buildRoutes(deps: RouteDeps): WebRoute[] {
-  const { resolve, readUser, writable, update, logger, sse, system, history } = deps;
+  const { resolve, readUser, writable, update, logger, sse, history, sendTest, statusReader, listKinds, setConfirm } = deps;
 
   const configRoute: WebRoute = {
     kind: "exact",
@@ -499,23 +509,96 @@ export function buildRoutes(deps: RouteDeps): WebRoute[] {
 
   /**
    * 测试通知：POST 触发一条测试通知（绕过免打扰，测试意图是验证通道本身）。
-   * 系统通知 + SSE 广播同时走一遍，客户端收到 kind=test 的帧无条件弹窗。
+   * M2 收敛到 service 管线（sendKind('test')）：内置 browser/system 与配置驱动
+   * 频道（bark）走同一分发路径——测试才有意义（验证真实投递链路），历史落盘
+   * 与终态上报（status/sent 事件）同源。body 可选 {channelId}：指定单频道测试
+   * （设置页频道卡「测试」按钮）。固定文案模板，不引入自由文本面（评审定案）。
    * 返回的 sseConnections 语义同 /health = 服务端未释放句柄数（非设备数）。
    */
   const testRoute: WebRoute = {
     kind: "exact",
     path: ROUTES.test,
-    handler: (req, res) => {
+    handler: async (req, res) => {
       if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
       if (req.method !== "POST") return writeJson(res, 405, { error: `method not allowed: ${req.method}` });
-      const title = "DSH：测试通知";
-      const message = "通知链路工作正常（此通知来自测试按钮）";
-      const payload = { type: "notify", kind: "test", title, message, ts: Date.now() };
-      if (resolve().systemNotify) system.notify(title, message);
-      if (resolve().browserNotify) sse.broadcast(payload);
-      logger.info("dsh-notifier: test 测试通知已发送");
-      history.append({ ts: payload.ts, kind: "test", title, message });
-      writeJson(res, 200, { ok: true, sseConnections: sse.size() });
+      let channelId: string | undefined;
+      try {
+        // body 可选：无 body / 测试桩无流 → channelId 保持 undefined（全频道测试）
+        const parsed = (await readBody(req, 4 * 1024)) as { channelId?: unknown } | null;
+        if (parsed && typeof parsed === "object" && typeof parsed.channelId === "string" && parsed.channelId.length > 0) {
+          channelId = parsed.channelId;
+        }
+      } catch (error) {
+        const message = errorMessage(error);
+        if (message.includes("invalid JSON body")) {
+          writeJson(res, 400, { ok: false, error: { code: "invalid-json", details: `invalid JSON body: ${message}` } });
+          return;
+        }
+        // 其余（无 body 流的桩请求 / 超限 destroy）：body 可选语义，按全频道测试继续
+        logger.warn(`dsh-notifier: 测试通知请求体读取失败（按无 body 处理）: ${message}`);
+      }
+      const results = sendTest(channelId);
+      writeJson(res, 200, { ok: true, sseConnections: sse.size(), results });
+    },
+  };
+
+  /**
+   * 频道投递状态：GET 返回 per-channel 最近投递终态（status 文件内存镜像）。
+   * 设置页频道卡状态区消费（ok 灰 / failed 高亮 + 错误摘要——已脱敏）。
+   */
+  const statusRoute: WebRoute = {
+    kind: "exact",
+    path: ROUTES.status,
+    handler: async (req, res) => {
+      if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
+      if (req.method !== "GET") return writeJson(res, 405, { error: `method not allowed: ${req.method}` });
+      const channels = await statusReader();
+      writeJson(res, 200, { ok: true, channels });
+    },
+  };
+
+  /**
+   * 动态 kind 清单与确认：GET 返回注册表（含确认态，确认态持久化在配置
+   * allowKinds）；POST {kind, confirmed} 写确认（仅注册表内已注册的动态 kind）。
+   * 确认动作只发生在用户主动打开设置页时（终稿 §5.1：注册即弹窗打扰不允许）。
+   */
+  const kindsRoute: WebRoute = {
+    kind: "exact",
+    path: ROUTES.kinds,
+    handler: async (req, res) => {
+      if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
+      if (req.method === "GET") {
+        writeJson(res, 200, { ok: true, kinds: listKinds() });
+        return;
+      }
+      if (req.method === "POST") {
+        let body: unknown;
+        try {
+          body = await readBody(req, 4 * 1024);
+        } catch (error) {
+          const message = errorMessage(error);
+          if (message.includes("invalid JSON body")) {
+            writeJson(res, 400, { ok: false, error: { code: "invalid-json", details: `invalid JSON body: ${message}` } });
+            return;
+          }
+          logger.warn(`dsh-notifier: kind 确认请求体读取失败: ${message}`);
+          return;
+        }
+        const { kind, confirmed } = (typeof body === "object" && body !== null ? body : {}) as { kind?: unknown; confirmed?: unknown };
+        if (typeof kind !== "string" || kind.length === 0 || typeof confirmed !== "boolean") {
+          writeJson(res, 400, { ok: false, error: { code: "invalid", details: "需为 { kind: string, confirmed: boolean }" } });
+          return;
+        }
+        const known = listKinds().some((k) => k.id === kind);
+        if (!known) {
+          writeJson(res, 404, { ok: false, error: { code: "not-found", details: `未注册的动态 kind: ${kind}` } });
+          return;
+        }
+        await setConfirm(kind, confirmed);
+        writeJson(res, 200, { ok: true, kinds: listKinds() });
+        return;
+      }
+      writeJson(res, 405, { error: `method not allowed: ${req.method}` });
     },
   };
 
@@ -539,5 +622,5 @@ export function buildRoutes(deps: RouteDeps): WebRoute[] {
     },
   };
 
-  return [configRoute, eventsRoute, healthRoute, testRoute, historyRoute];
+  return [configRoute, eventsRoute, healthRoute, testRoute, historyRoute, statusRoute, kindsRoute];
 }

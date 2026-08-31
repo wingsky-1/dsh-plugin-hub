@@ -41,7 +41,7 @@ try {
       },
     });
     await apply(ctx, { enabled: true, toastScript: join(work, "lifecycle-toast.ps1"), historyFile: join(work, "lifecycle-history.jsonl") });
-    assert.equal(routeDispCalled.size, 5, "5 条路由注册");
+    assert.equal(routeDispCalled.size, 7, "7 条路由注册（M2 增 status/kinds）");
     // 调用所有 effect disposer（清理顺序）
     for (const disp of effectDisposers) disp();
     // 路由 disposer 被触发（从 set 移除）

@@ -48,6 +48,8 @@ const NS = "notifier";
     health: "/api/dsh-notifier/health",
     test: "/api/dsh-notifier/test",
     history: "/api/dsh-notifier/history",
+    status: "/api/dsh-notifier/status",
+    kinds: "/api/dsh-notifier/kinds",
   };
   var STYLE_ID = "dsh-notifier-style";
   var CSS_VERSION = "76";

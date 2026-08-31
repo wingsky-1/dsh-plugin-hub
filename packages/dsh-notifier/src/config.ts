@@ -93,6 +93,8 @@ export interface NotifierApplyConfig {
   configFile?: string;
   toastScript?: string;
   historyFile?: string;
+  /** 频道投递状态文件覆盖（默认 ~/.dsh/dsh-notifier-status.json；测试隔离用）。 */
+  statusFile?: string;
 }
 
 /** 默认配置。 */
@@ -143,6 +145,11 @@ export function configFile() {
 /** 通知历史文件路径（jsonl 追加；与配置同目录）。 */
 export function historyFile() {
   return join(homedir(), ".dsh", "dsh-notifier-history.jsonl");
+}
+
+/** 频道投递状态文件路径（M2：per-channel 最近投递终态；与配置同目录）。 */
+export function statusFile() {
+  return join(homedir(), ".dsh", "dsh-notifier-status.json");
 }
 
 /** toast 脚本路径（本插件 lib 下）。 */
