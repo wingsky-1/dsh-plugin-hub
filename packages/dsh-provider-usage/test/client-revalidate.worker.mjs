@@ -247,7 +247,7 @@ function makeFakeServices(initialProvider) {
               id,
               proj === undefined
                 ? base
-                : { ...base, projections: { values: { modelSelection: { lastUsed: proj } } } },
+                : { ...base, projectionValues: { modelSelection: { lastUsed: proj } } },
             ];
           }),
         ),

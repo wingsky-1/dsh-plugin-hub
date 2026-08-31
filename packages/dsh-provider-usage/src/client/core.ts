@@ -100,11 +100,14 @@ export interface ModelSelectionProjectionLike {
   next?: ModelSelectionLike | null;
 }
 
-/** 会话行投影 hints（宿主 list 快照 per-session 投影，0.1.2-alpha.2 SessionProjectionHints）。 */
-export interface SessionRowProjectionsLike {
-  values?: {
-    modelSelection?: ModelSelectionProjectionLike;
-  };
+/**
+ * 会话行投影值（#383：0.1.2 客户端 list 快照行 SessionSummary.projectionValues——
+ * 对象层把 per-session ProjectionValueStore.values() 拍平挂回行，键=投影键）。
+ * 注意与 wire session.list 原始行的 `projections: {asOfSeq, values}` baseline block
+ * 形状区分：store 行只有拍平的 projectionValues，不存在 projections 字段。
+ */
+export interface SessionRowProjectionValuesLike {
+  modelSelection?: ModelSelectionProjectionLike;
 }
 
 /**
@@ -131,8 +134,8 @@ export interface SessionListRowLike {
    */
   parentId?: string;
   parentSessionId?: string;
-  /** per-session modelSelection 投影（0.1.2-alpha.2 SessionProjectionHints）。 */
-  projections?: SessionRowProjectionsLike;
+  /** per-session 投影值 map（0.1.2 list 行 SessionSummary.projectionValues；键=投影键，#383）。 */
+  projectionValues?: SessionRowProjectionValuesLike;
 }
 
 /** sessions.list 快照形态（{current, ids, byId}，与宿主 client-runtime 一致）。 */
@@ -191,12 +194,12 @@ export function sessionAncestryChain(
 }
 
 /**
- * 从会话行读取 per-session modelSelection 投影的 provider（0.1.2-alpha.2 投影面）：
- * lastUsed 优先（上次实际使用），next 次之（待确认意图）；均缺失返回 undefined。
- * 纯同步快照读取，不触发任何 RPC。
+ * 从会话行读取 per-session modelSelection 投影的 provider（0.1.2 投影面，#383 修正）：
+ * 读 list 快照行拍平的 projectionValues.modelSelection（lastUsed 优先 = 上次实际使用，
+ * next 次之 = 待确认意图）；均缺失返回 undefined。纯同步快照读取，不触发任何 RPC。
  */
 function providerFromProjection(row: SessionListRowLike | undefined): string | undefined {
-  const ms = row?.projections?.values?.modelSelection;
+  const ms = row?.projectionValues?.modelSelection;
   const sel = ms?.lastUsed ?? ms?.next;
   return typeof sel?.provider === "string" && sel.provider.length > 0 ? sel.provider : undefined;
 }
