@@ -6,6 +6,8 @@
  * provider —— 子代理会话自身投影缺失时沿 parentId 上溯父会话投影取 provider、
  * 上溯深度封顶与环防御、全链投影缺失回落 ctx.remote.session.modelCatalog().default
  * 兜底、wire 形状（projections.values）不得被误读（#383 反向断言）、
+ * **next 优先于 lastUsed**（#383 追加：会话内切模型只更新 next，读 lastUsed 优先
+ * 会滞留旧 provider）、
  * 全链失败保持上次检测 + 「提供商未识别」标注决策、无任何会话维持原回落行为
  * （回归防护）、ordinary 会话直连解析回归。
  *
@@ -57,6 +59,8 @@ function makeSessions(byId, current) {
 /**
  * 行投影小工具：构造 SessionSummary 防御式行（#383：拍平 projectionValues 形状）。
  * provider 缺省 → 行无 modelSelection 投影（模拟子代理/未解析会话）。
+ * 槽位语义（宿主 wire view：next = pending ?? lastUsed）：默认只写 lastUsed；
+ * slot:"next" 只写 next（模拟仅待确认意图）；两者并存场景在用例内联构造。
  */
 function row(provider, opts = {}) {
   const { parentId, parentSessionId, origin, slot } = opts;
@@ -121,7 +125,8 @@ function makeRemote(providerByDefault) {
 }
 
 {
-  // lastUsed 优先于 next：两者并存时取 lastUsed（#383：拍平 projectionValues 形状）
+  // next 优先于 lastUsed：两者并存时取 next（#383 追加根因——会话内切模型只更新
+  // pending 的 next，lastUsed 等真正发请求才随动，读 lastUsed 优先造成「切模型不跟随」）
   const sessions = makeSessions(
     {
       own: {
@@ -136,7 +141,7 @@ function makeRemote(providerByDefault) {
     "own",
   );
   const got = await resolveProviderFromSession(sessions, makeRemote());
-  assert.equal(got, "last-p", "lastUsed 优先于 next");
+  assert.equal(got, "next-p", "next 优先于 lastUsed（会话内切模型紧跟当前选择）");
 }
 
 {
