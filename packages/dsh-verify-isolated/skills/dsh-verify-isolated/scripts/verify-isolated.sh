@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 隔离环境浏览器验证一键脚本（dsh-dev-utils 的 dsh-verify-isolated skill 配套）。
+# 隔离环境浏览器验证一键脚本（dsh-verify-isolated 插件包配套，随本 skill 分发）。
 #
 # 用途：在不污染真实 ~/.dsh（含正在使用的 web profile）的前提下，拉起一个
 # 完全隔离的 dsh web 实例，用于客户端 UI 改动的浏览器实测。

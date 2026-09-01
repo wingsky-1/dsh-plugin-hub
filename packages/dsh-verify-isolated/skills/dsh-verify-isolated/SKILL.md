@@ -42,17 +42,26 @@ description: >
 
 ## 2. 一键脚本（推荐）
 
-脚本随本 skill 分发：插件安装后位于包内
-`skills/dsh-verify-isolated/scripts/verify-isolated.sh`
-（`node_modules/@wingsky-1/dsh-verify-isolated/skills/dsh-verify-isolated/scripts/`）。
+脚本随本 skill 分发，相对本 skill 的**资源基础目录**恒为 `scripts/verify-isolated.sh`。
+资源基础目录 = 加载本 skill 时系统注入的 `<skill_resources>` 块中
+`Base directory for this skill:` 一行的**绝对路径**（本 skill 所在目录，安装形态
+自适应：npm 副本安装、`link:` 开发态挂载、仓库 checkout 内浏览均自动指向 skill
+实际所在位置，跟随 `cordis.patch.yml` 的 `bundledSkillDir` 解析，不以路径拼接猜测）。
 
 ```bash
 # 工作目录：worktree 根（非主 checkout）
-node_modules/@wingsky-1/dsh-verify-isolated/skills/dsh-verify-isolated/scripts/verify-isolated.sh --port 3456 <插件包路径>
+# SKILL_BASE 取注入的「Base directory for this skill:」后面的绝对路径：
+SKILL_BASE="<Base directory for this skill 一行的绝对路径，见上方 skill_resources>"
+bash "$SKILL_BASE/scripts/verify-isolated.sh" --port 3456 <插件包路径>
 # 多包：... --port 3456 <包A路径> <包B路径>
 # 端口冲突：--port 0 让系统随机分配；--keep 保留临时环境便于排查
 # 跳过构建：--no-build（默认会先 pnpm build 各插件，保证 lib/ 或 dist/ 产物存在）
 ```
+
+若注入的 base 不可用或不确信，先自证脚本位置再执行
+（`ls "$SKILL_BASE/scripts/verify-isolated.sh"`），或直接用 glob 全局搜索
+`verify-isolated.sh` 取其真实绝对路径——脚本从任意 cwd 以绝对路径调用
+（自包含、不依赖自身位置）；`SKILL_BASE` 里的尖括号是占位说明，不是可执行值。
 
 脚本自动完成：建临时 `DSH_HOME` → 建 `verify_<8位随机>` profile → 注入内置
 `@deepseek-ai/dsh-web-app` bundle → **构建并**把本地插件 link 进 profile → 启动隔离
