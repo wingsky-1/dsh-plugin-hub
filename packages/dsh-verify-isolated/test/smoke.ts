@@ -28,6 +28,11 @@ const fm = parseFrontmatter(raw);
 assert.equal(fm.name, "dsh-verify-isolated", "SKILL.md frontmatter name");
 assert.match(fm.description ?? "", /隔离环境/, "description 含隔离环境");
 
+// 防回归（#428）：脚本定位必须走 skill 资源 base（注入的 Base directory），不得
+// 写死 npm 副本形态的 node_modules 路径——link:/checkout 形态下该路径不存在
+assert.ok(!raw.includes("node_modules/@wingsky-1"),
+  "SKILL.md 不得写死 node_modules/@wingsky-1 路径（应经 skill 资源 base 定位）");
+
 // ---- 2. 一键脚本随 skill 分发 ----
 const scriptFile = join(SKILL_DIR, "scripts", "verify-isolated.sh");
 assert.ok(existsSync(scriptFile), "一键脚本随 skill 目录分发");
