@@ -78,8 +78,9 @@ npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-provider-usage
 内置适配器 `opencode-go-builtin`（OpenCode Go 官方 `/v1/usage` 三窗口用量）与
 `deepseek-official-builtin`（DeepSeek 官方余额 + 峰谷倒计时徽标，见下节）开箱即用。
 
-> provider 跟随语义：切换会话即时刷新；会话内切模型/provider 无宿主推送信号，
-> 由每次取数前的复检兜底自愈——最长一个轮询周期内跟随（#71）。
+> provider 跟随语义（0.1.2 投影面，#383）：切换会话即时刷新；会话内切模型经宿主
+> modelSelection 投影帧（control frame type:projection）实时推送、客户端**切完即重拉**；
+> 信号缺失最坏场景由每次取数前的复检兜底自愈（#71）——最长一个轮询周期内收敛。
 
 > **图解文档**：完整的流程图 / 时序图（启动装配、`/stats` 取数全链路、`/history` 面板、自定义适配器注入三条路径与热更新、客户端交互、密钥解析链）见 [docs/architecture.md](docs/architecture.md)。
 
