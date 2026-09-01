@@ -59,7 +59,7 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
       unregisterServer: (name: string) => manager.unregisterServer(name),
       // 控制面（通用 MCP 生命周期：注册即连、注销即断的补充控制）
       connect: (name: string, scope?: string) => manager.connect(name, scope),
-      disconnect: (name: string) => manager.disconnect(name),
+      disconnect: (name: string, scope?: string) => manager.disconnect(name, scope),
       reconnect: (name: string, scope?: string) => manager.reconnect(name, scope),
       // 查询面（服务状态感知：连接状态 / 工具列表 / 全量摘要）
       getStatus: (name: string) => {
@@ -100,12 +100,27 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
       }
     }
   };
+  // #389：把 settings 命名空间合并面（含用户层保存的 middleware）同步到运行时。
+  // 保存路径（routes POST config middleware 分支）写 settings 用户层；apply 启动
+  // 读的是组合层 config.middleware（不含用户层覆盖）→ 重启后模式回退 project。
+  // 此函数在 settings 注入完成/变化（onChange）与 apply 主体就绪（setMiddlewareMode
+  // 赋值后）两处调用：前者覆盖运行期变更，后者覆盖启动时 settings 已就绪的场景。
+  const syncMiddlewareFromSettings = (): void => {
+    if (typeof manager.setMiddlewareMode !== "function") return;
+    const source = manager.uiConfigSource();
+    const persisted = typeof source === "object" && source !== null ? (source as Record<string, unknown>).middleware : undefined;
+    if (typeof persisted !== "string") return;
+    const next = normalizeMiddlewareMode(persisted);
+    if (next === manager.middlewareMode) return;
+    void manager.setMiddlewareMode(next).catch((error: unknown) => manager.logger.warn(`dsh-mcp-manager: sync middleware from settings failed: ${String(error)}`));
+  };
   installSettingsNamespace(ctx, "dsh-mcp-manager", Config, config ?? {}, {
     setSource: (source) => {
       manager.uiConfigSource = source as () => any;
     },
     onChange: () => {
       broadcastUiConfigChanged();
+      syncMiddlewareFromSettings();
     },
   });
 
@@ -142,7 +157,17 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
     // 全局服务器掉线。重排后 all 模式启动直接走 @global 单元惰性连接，不建
     // supervisor；project 模式全局照旧 supervisor。
     // 默认值与 Config schema 一致（project）；宿主未 parse 原始 config 时兜底。
-    const middlewareMode = normalizeMiddlewareMode(config?.middleware ?? "project");
+    // #389 M2：settings 合并面（scope.get()）就绪时直接取持久化的 middleware 模式，
+    // 避免「先按 config 默认 project 起 supervisor、再热切换 all」的启动抖动（连→断→连）。
+    // settings 不可用/未注入时 uiConfigSource 为默认值（无 middleware）→ 回落 config。
+    const settingsSource = manager.uiConfigSource();
+    const persistedMiddleware =
+      typeof settingsSource === "object" && settingsSource !== null
+        ? (settingsSource as Record<string, unknown>).middleware
+        : undefined;
+    const middlewareMode = normalizeMiddlewareMode(
+      typeof persistedMiddleware === "string" ? persistedMiddleware : config?.middleware ?? "project",
+    );
     // 路由输入：exec.agent 当前 cwd = agent.session.header.cwd（实证已闭合）。
     // all 模式：cwd 无项目（或无项目配置）时 fallback 到全局虚拟 root @global。
     const resolveRoot = async (agent: unknown): Promise<string | undefined> => {
@@ -188,6 +213,11 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
       manager.reconcileServers();
       manager.logger.info(`dsh-mcp-manager: middleware mode=${next} (hot-switched)`);
     };
+    // #389：启动阶段把 settings 持久化的 middleware 模式同步到运行时——apply 主体
+    // 完成、setMiddlewareMode 已挂载后主动同步一次（onChange 若早于此处触发会被
+    // typeof 守卫跳过，这里兜底）。settings 不可用时 uiConfigSource 无 middleware，
+    // 读取结果为 undefined → 保持 config 默认，行为与历史一致。
+    syncMiddlewareFromSettings();
 
     // L1 能力目录注入（history-based 去重，仿 dsh-tool-skill catalog）：
     // 决策逻辑在 resolveCatalogInjection（纯函数，可单测）。

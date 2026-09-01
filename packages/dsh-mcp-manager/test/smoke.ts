@@ -1647,6 +1647,22 @@ const main = async () => {
         );
         assert.equal(res.state.status, 200);
         assert.deepEqual(calls, [{ root: "/proj", server: "ctx", tool: "use_ctx", disabled: true }]);
+        // #392 遗留④：带 mcp__ 前缀的 tool 名剥前缀后入禁用表（旧客户端/手工 API 提交
+        // 带前缀名仍生效；此前原样存键 → guard 查裸名不命中，禁用静默无效）。
+        const resPrefix = fakeRes();
+        await tdRoute.handler(
+          fakeReq("PATCH", ROUTES.toolDisable, { server: "@/proj/ctx", tool: "mcp__ctx__use_ctx", disabled: true }),
+          resPrefix,
+        );
+        assert.equal(resPrefix.state.status, 200);
+        assert.deepEqual(calls[calls.length - 1], { root: "/proj", server: "ctx", tool: "use_ctx", disabled: true }, "前缀名剥前缀入禁用表");
+        // 跨 server 前缀（剥后仍 mcp__ 开头）→ 400（防错禁他 server 工具）。
+        const resCross = fakeRes();
+        await tdRoute.handler(
+          fakeReq("PATCH", ROUTES.toolDisable, { server: "@/proj/ctx", tool: "mcp__other__t", disabled: true }),
+          resCross,
+        );
+        assert.equal(resCross.state.status, 400, "跨 server 前缀拒绝");
         // 全局 root：scope=global 的服务器以 @global 为 key。
         const resG = fakeRes();
         await tdRoute.handler(
@@ -1818,6 +1834,57 @@ const main = async () => {
       assert.equal(written.blankY, 60);
       // 落盘：this 正确时 settings.update 内部 this.write 已把 Config.ui 补丁合并进 scope。
       assert.deepEqual(scopeValue.ui.offset, { x: 12, y: 20, blankY: 60 }, "settings.update 落盘（this.write 生效）");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // #389：settings 用户层持久化的 middleware 模式，apply 启动后同步到运行时——
+  // 保存路径（config POST middleware 分支）写 settings 用户层，而 apply 读组合层
+  // config.middleware（不含用户层覆盖）→ 重启后回退 project。此处 settings 注入
+  // 完成后 onChange 触发 syncMiddlewareFromSettings，把持久化值热切换生效。
+  await checkAsync("#389：settings 持久化 middleware → apply 后运行时同步", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-mw389-"));
+    // scope.get() 返回 settings 合并面：含用户层保存的 middleware: "all"（config 缺省 project）。
+    let scopeValue = { ui: { position: "top-right", offset: { x: 8, y: 8, blankY: 40 } }, middleware: "all" };
+    const settingsStub = {
+      register(ns, schema, opts) {
+        return { get: () => ({ ...scopeValue }), watch: () => {} };
+      },
+      async write(ns, patch) {
+        scopeValue = { ...(scopeValue ?? {}), ...(patch ?? {}) };
+      },
+      update(ns, patch) {
+        if (!this || typeof this.write !== "function") {
+          throw new TypeError("settings.update 被以错误 this 调用");
+        }
+        return this.write(ns, patch);
+      },
+    };
+    const sctx = { settings: settingsStub, effect: (fn) => { const d = fn(); return () => {}; } };
+    const ctx = fakeCtx({
+      inject: (keys, cb) => {
+        if (Array.isArray(keys) && keys.includes("settings")) cb(sctx);
+        return () => {};
+      },
+    });
+    const localReq = (method, url, body) => ({
+      method,
+      url,
+      socket: { remoteAddress: "127.0.0.1" },
+      headers: { host: "localhost:3080", origin: "http://localhost:3080", "sec-fetch-site": "same-origin" },
+      async *[Symbol.asyncIterator]() {
+        if (body !== undefined) yield Buffer.from(JSON.stringify(body));
+      },
+    });
+    try {
+      await apply(ctx, { enabled: true, storePath: join(dir, "dsh-mcp.json") });
+      const configRoute = ctx.routes.find((route) => route.path === ROUTES.config);
+      assert.ok(configRoute, "config 路由已注册");
+      const read = fakeRes();
+      await configRoute.handler(localReq("GET", ROUTES.config), read);
+      const body = JSON.parse(read.state.body);
+      assert.equal(body.middleware, "all", "settings 持久化 middleware 启动后同步（#389 重启恢复）");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

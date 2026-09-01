@@ -21,7 +21,7 @@ import { normalizeServer } from "./normalize.ts";
 import { normalizeUiConfig, buildConfigUiPatch } from "./config-schema.ts";
 import { McpStore } from "./store.ts";
 import { ConnectionSupervisor } from "./supervisor.ts";
-import { SCOPE_GLOBAL, SCOPE_PROJECT } from "./scope.ts";
+import { SCOPE_GLOBAL, SCOPE_PROJECT, normalizeScope } from "./scope.ts";
 import { catalogCacheFile, summarizeToolDescriptions } from "./catalog.ts";
 import {
   McpMiddleware,
@@ -283,12 +283,21 @@ export class McpManager {
         denyTools: (policy.denyTools as Record<string, string[]> | undefined) ?? undefined,
       },
     );
-    // 加载 userDisabled 并注入中间层实例（单元创建时合并；重启不丢）。
-    this.disabledByRoot = await loadUserState(this.userStatePath);
-    mw.disabledByRoot = this.disabledByRoot;
-    // 加载工具级禁用（三层结构；合并式写盘，绝不整表覆盖）。
-    this.disabledTools = await loadDisabledTools(this.userStatePath);
-    mw.disabledTools = this.disabledTools;
+    try {
+      // 加载 userDisabled 并注入中间层实例（单元创建时合并；重启不丢）。
+      this.disabledByRoot = await loadUserState(this.userStatePath);
+      mw.disabledByRoot = this.disabledByRoot;
+      // 加载工具级禁用（三层结构；合并式写盘，绝不整表覆盖）。
+      this.disabledTools = await loadDisabledTools(this.userStatePath);
+      mw.disabledTools = this.disabledTools;
+    } catch (error) {
+      // #392 遗留⑤：加载失败时清理半初始化状态——this.middleware 保持未赋值
+      // （不会被后续逻辑当已初始化实例使用），middlewareMode 回退 off 防误用。
+      this.disabledByRoot = new Map();
+      this.disabledTools = new Map();
+      this.middlewareMode = "off";
+      throw error;
+    }
     this.middleware = mw;
     return mw;
   }
@@ -598,7 +607,11 @@ export class McpManager {
         if (unit === undefined || unit.userDisabled.has(name)) return;
         void mw.ensureConnected(MIDDLEWARE_GLOBAL_ROOT, name);
       })
-      .catch(() => {});
+      .catch((error: unknown) => {
+        // #392 遗留⑥：不再静默吞错——projectUnitFor 失败时打 warn 日志，
+        // 否则该服务器永不连接且无迹可查（ensureConnected 调用面仍会尝试）。
+        this.logger.warn(`dsh-mcp-manager: touchGlobalUnit(${name}) failed: ${String(error)}`);
+      });
   }
 
   /**
@@ -612,15 +625,25 @@ export class McpManager {
     let dropped = false;
     for (const unit of mw.units.values()) {
       const entry = unit.connections.get(name);
-      if (entry === undefined) continue;
-      dropped = true;
-      entry.disposed = true;
-      if (entry.reconnectTimer !== undefined) clearTimeout(entry.reconnectTimer);
-      const client = entry.client;
-      entry.client = undefined;
-      entry.transport = undefined;
-      if (client !== undefined && client.transport !== undefined) void client.transport.close().catch(() => {});
-      unit.connections.delete(name);
+      if (entry !== undefined) {
+        dropped = true;
+        entry.disposed = true;
+        if (entry.reconnectTimer !== undefined) clearTimeout(entry.reconnectTimer);
+        const client = entry.client;
+        entry.client = undefined;
+        entry.transport = undefined;
+        if (client !== undefined && client.transport !== undefined) void client.transport.close().catch(() => {});
+        unit.connections.delete(name);
+      }
+      // #392 遗留①：目录条目随连接一并拆除——remove/update 后已删服务器不再以
+      // 幽灵条目出现在 ws_mcp_list / ws_mcp_search（此前只拆连接，目录 TTL 内残留）。
+      // 内存目录先行删除；磁盘 last-good 缓存异步同步（防重启后 loadCatalogCache
+      // 把幽灵条目载回——persistCatalog 空采集不写盘，remove 后目录可能为空，必须
+      // 显式清盘而非依赖全量覆盖写）。
+      if (unit.catalog.delete(name)) {
+        dropped = true;
+        void mw.removeCatalogEntry(unit.root, name).catch(() => {});
+      }
     }
     if (dropped) this.emitStatus();
   }
@@ -772,15 +795,22 @@ export class McpManager {
     await supervisor.connect();
   }
 
-  async disconnect(name: string): Promise<void> {
+  async disconnect(name: string, scope?: string): Promise<void> {
     // 中间层模式：userDisabled 持久化 + 连接池拆毁该连接。
     // #382：定位按接管口径显式进行——all 模式全局（store 配置且非 runtime）固定
     // 定位 @global 单元（此前按 units 遍历序找第一个命中，同名服务器同时存在于
     // 项目与 @global 单元时可能写错单元）；runtime 注入条目不经池，落 supervisor。
+    // #392：scope 显式传入时按 scope 精确定位单元——项目级固定定位当前项目 root
+    // 单元，避免同名全局服务器把项目级 disconnect 错写进 @global 单元。
     // 拆连接前关 transport（此前直接 delete 丢 entry，stdio 子进程/socket 泄漏）。
     if (this.middlewareMode !== "off" && this.middleware !== undefined) {
       let targetUnit: ProjectUnit | undefined;
-      if (this.middlewareMode === "all" && this.store.find(name) !== undefined && !this.runtimeRegistry.has(name)) {
+      const scoped = normalizeScope(scope ?? "");
+      if (scoped === SCOPE_PROJECT) {
+        // 项目级：定位当前项目 root 单元（同名跨 scope 修正——此前 all 模式
+        // 误用全局 store 定位 @global，同名项目级服务器被写错单元）。
+        targetUnit = this.projectRoot !== undefined ? this.middleware.units.get(this.projectRoot) : undefined;
+      } else if (this.middlewareMode === "all" && this.store.find(name) !== undefined && !this.runtimeRegistry.has(name)) {
         targetUnit = this.middleware.units.get(MIDDLEWARE_GLOBAL_ROOT);
       } else {
         targetUnit = [...this.middleware.units.values()].find((unit) => unit.connections.has(name) || unit.userDisabled.has(name));
@@ -809,7 +839,9 @@ export class McpManager {
   }
 
   async reconnect(name: string, scope: string = SCOPE_GLOBAL): Promise<void> {
-    await this.disconnect(name);
+    // #392：断开与连接同口径传 scope——reconnect(scope) 时断开也按同一单元定位，
+    // 避免 disconnect 走默认全局定位与 connect 的项目定位不一致。
+    await this.disconnect(name, scope);
     await this.connect(name, scope);
   }
 

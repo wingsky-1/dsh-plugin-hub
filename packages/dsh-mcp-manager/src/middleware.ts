@@ -19,7 +19,7 @@
  * 的 import 与 re-export 面保持不变。
  */
 
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
 import type { ServerConfig } from "./types.ts";
@@ -352,6 +352,34 @@ export class McpMiddleware {
       await rename(tmp, file);
     } catch (error) {
       this.host.logger.warn(`dsh-mcp-manager: catalog cache write failed: ${msgOf(error)}`);
+    }
+  }
+
+  /**
+   * 从磁盘 last-good 目录缓存中清除单服务器条目（remove/update 后调用；#392 遗留①）。
+   * persistCatalog 是全量覆盖且空采集不写盘——remove 后该 root 目录可能已空，若不显式
+   * 清盘，磁盘缓存仍残留已删服务器条目，插件重启/@global 单元重建时 loadCatalogCache
+   * 把幽灵条目载回（ws_mcp_list 再次列出）。这里读现有缓存、删条目、写回；条目删空则
+   * 删除缓存文件。内存目录由调用方（dropMiddlewareConnection）先行删除。
+   */
+  async removeCatalogEntry(root: string, serverName: string): Promise<void> {
+    const file = this.host.catalogCachePath(root);
+    try {
+      if (!existsSync(file)) return;
+      const raw = await readFile(file, "utf8");
+      const parsed = JSON.parse(raw) as { version?: unknown; root?: unknown; entries?: Record<string, unknown> } | null;
+      if (parsed === null || typeof parsed !== "object" || typeof parsed.entries !== "object" || parsed.entries === null) return;
+      if (!(serverName in parsed.entries)) return;
+      delete parsed.entries[serverName];
+      if (Object.keys(parsed.entries).length === 0) {
+        await rm(file, { force: true }).catch(() => {});
+        return;
+      }
+      const tmp = `${file}.${process.pid}.${Date.now().toString(36)}.tmp`;
+      await writeFile(tmp, JSON.stringify({ version: 1, root, entries: parsed.entries }, null, 2), "utf8");
+      await rename(tmp, file);
+    } catch (error) {
+      this.host.logger.warn(`dsh-mcp-manager: catalog cache remove failed: ${msgOf(error)}`);
     }
   }
 

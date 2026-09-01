@@ -13,7 +13,7 @@ import { isLoopbackRequest } from "../../../shared/loopback.js";
 import { writeJson, readJsonBody } from "../../../shared/host-utils.js";
 import { parseClaudeJson } from "./import.ts";
 import { SCOPE_PROJECT, normalizeScope } from "./scope.ts";
-import { parseFullServerName, MIDDLEWARE_GLOBAL_ROOT } from "./middleware-utils.ts";
+import { parseFullServerName, MIDDLEWARE_GLOBAL_ROOT, normalizeToolName } from "./middleware-utils.ts";
 import { normalizeMiddlewareMode } from "./middleware-const.ts";
 import type { ServerConfig } from "./types.ts";
 import type { ClientUiConfig } from "./index.ts";
@@ -32,7 +32,7 @@ export interface RoutesManager {
   update(name: string, patch: Record<string, unknown>, scope?: string): Promise<ServerConfig>;
   remove(name: string, scope?: string): Promise<void>;
   connect(name: string, scope?: string): Promise<void>;
-  disconnect(name: string): Promise<void>;
+  disconnect(name: string, scope?: string): Promise<void>;
   reconnect(name: string, scope?: string): Promise<void>;
   /** 设置/解除单个工具禁用（工具级，独立于服务器级 enabled）。 */
   setToolDisabled?(root: string, server: string, tool: string, disabled: boolean): Promise<void>;
@@ -282,7 +282,7 @@ export function makeRoutes(manager: RoutesManager, cwd = process.cwd()): WebRout
         }
         try {
           await maybeSession(url);
-          await manager.disconnect(name);
+          await manager.disconnect(name, scopeParam(url));
           writeJson(res, 200, { ok: true, summary: manager.summary() });
         } catch (error) {
           handleError(res, error);
@@ -386,7 +386,11 @@ export function makeRoutes(manager: RoutesManager, cwd = process.cwd()): WebRout
           return;
         }
         try {
-          await manager.setToolDisabled(root, parsed.server, tool, disabled);
+          // #392 遗留④：tool 参数先归一化（剥 mcp__<server>__ 前缀）再入禁用表——
+          // 旧客户端/手工 API 可能提交带前缀名，此前原样存键导致 guard 层查裸名不命中、
+          // 禁用静默无效。跨 server 前缀（剥后仍 mcp__ 开头）由 normalizeToolName 抛错。
+          const toolName = normalizeToolName(parsed.server, tool, "tool-disable");
+          await manager.setToolDisabled(root, parsed.server, toolName, disabled);
           writeJson(res, 200, { ok: true, summary: manager.summary() });
         } catch (error) {
           handleError(res, error);
