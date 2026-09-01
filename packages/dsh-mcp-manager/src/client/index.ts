@@ -251,11 +251,17 @@ export function apply(ctx: any): void {
     // SSE 广播不会重放需补拉一次；后台期间连接可能已被静默掐断成半开，
     // onerror/close 均不触发，重建代价低（服务端首帧即全量 summary），换推送
     // 链路确定性复活。5s 节流挡快速切换的重复建连。
+    //
+    // #412：仅重建 SSE 不够——宿主中间层连接池里的项目级 MCP 连接同样可能被
+    // 切后台掐成半开（transport onClose 不触发，entry 卡在 connected），此时
+    // GET /servers 纯读只是重复显示僵死状态。故切回前台额外 POST resume 让宿主
+    // 对当前工作空间连接做受控重建（对齐 SSE forceReconnect 语义），再重新拉取
+    // 真实状态。resume 与 forceReconnect 共用 5s 节流挡快速切换。
     const onVisible = () => {
-      if (!document.hidden) {
-        forceReconnect();
-        void refresh(state, actions).catch(() => {});
-      }
+      if (document.hidden) return;
+      forceReconnect();
+      void api(state.API.resume, { method: "POST" }).catch(() => {});
+      void refresh(state, actions).catch(() => {});
     };
     document.addEventListener("visibilitychange", onVisible);
 
