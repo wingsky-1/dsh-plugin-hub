@@ -105,7 +105,7 @@ CI 日志 / diff / 测试全文只在 subagent 上下文出现，禁止进入主
    （可能是维护者并发操作或转向信号）
 4. `git fetch origin --quiet` 后所有分支比对一律以 `origin/main` 为基；实施段②
    建 worktree **无条件**从 `origin/main` 拉出任务分支
-   （`git worktree add ../wt-<n> -b task/<n> origin/main`），
+   （`git worktree add ../dsh-hub-task-<n> -b task/<n> origin/main`），
    禁止依赖本地 main 的新鲜度
 
 ## 快速道（fast lane）
@@ -138,7 +138,7 @@ merge --auto --squash → 清理。保留 loop/building 单标签便于在途识
    来源校验：issue author 为维护者，或 labeling actor 为维护者——必须 --paginate 且按
    标签名过滤：`gh api repos/{repo}/issues/<n>/timeline --paginate \
      --jq '[.[] | select(.event=="labeled" and .label.name=="zone/auto") | .actor.login] | unique'`
-② **隔离**：`git worktree add ../wt-<n> -b task/<n>`；禁止多任务共用同一 checkout；
+② **隔离**：`git worktree add ../dsh-hub-task-<n> -b task/<n>`；禁止多任务共用同一 checkout；
    主 checkout 是 link 加载源，禁止在其中切分支/改码/build。
 ③ **规格**：issue 无「验收标准」清单则委派 spec-writer（规程
    [agents/spec-writer.md](../../../agents/spec-writer.md)）补写为可断言清单
