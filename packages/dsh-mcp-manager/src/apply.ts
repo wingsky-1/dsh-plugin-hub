@@ -59,7 +59,7 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
       unregisterServer: (name: string) => manager.unregisterServer(name),
       // 控制面（通用 MCP 生命周期：注册即连、注销即断的补充控制）
       connect: (name: string, scope?: string) => manager.connect(name, scope),
-      disconnect: (name: string) => manager.disconnect(name),
+      disconnect: (name: string, scope?: string) => manager.disconnect(name, scope),
       reconnect: (name: string, scope?: string) => manager.reconnect(name, scope),
       // 查询面（服务状态感知：连接状态 / 工具列表 / 全量摘要）
       getStatus: (name: string) => {
@@ -157,7 +157,17 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
     // 全局服务器掉线。重排后 all 模式启动直接走 @global 单元惰性连接，不建
     // supervisor；project 模式全局照旧 supervisor。
     // 默认值与 Config schema 一致（project）；宿主未 parse 原始 config 时兜底。
-    const middlewareMode = normalizeMiddlewareMode(config?.middleware ?? "project");
+    // #389 M2：settings 合并面（scope.get()）就绪时直接取持久化的 middleware 模式，
+    // 避免「先按 config 默认 project 起 supervisor、再热切换 all」的启动抖动（连→断→连）。
+    // settings 不可用/未注入时 uiConfigSource 为默认值（无 middleware）→ 回落 config。
+    const settingsSource = manager.uiConfigSource();
+    const persistedMiddleware =
+      typeof settingsSource === "object" && settingsSource !== null
+        ? (settingsSource as Record<string, unknown>).middleware
+        : undefined;
+    const middlewareMode = normalizeMiddlewareMode(
+      typeof persistedMiddleware === "string" ? persistedMiddleware : config?.middleware ?? "project",
+    );
     // 路由输入：exec.agent 当前 cwd = agent.session.header.cwd（实证已闭合）。
     // all 模式：cwd 无项目（或无项目配置）时 fallback 到全局虚拟 root @global。
     const resolveRoot = async (agent: unknown): Promise<string | undefined> => {

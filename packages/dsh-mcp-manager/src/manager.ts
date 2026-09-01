@@ -637,7 +637,13 @@ export class McpManager {
       }
       // #392 遗留①：目录条目随连接一并拆除——remove/update 后已删服务器不再以
       // 幽灵条目出现在 ws_mcp_list / ws_mcp_search（此前只拆连接，目录 TTL 内残留）。
-      if (unit.catalog.delete(name)) dropped = true;
+      // 内存目录先行删除；磁盘 last-good 缓存异步同步（防重启后 loadCatalogCache
+      // 把幽灵条目载回——persistCatalog 空采集不写盘，remove 后目录可能为空，必须
+      // 显式清盘而非依赖全量覆盖写）。
+      if (unit.catalog.delete(name)) {
+        dropped = true;
+        void mw.removeCatalogEntry(unit.root, name).catch(() => {});
+      }
     }
     if (dropped) this.emitStatus();
   }

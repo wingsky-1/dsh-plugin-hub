@@ -15,7 +15,7 @@
  *   settings 注入 uiUpdate、effect disposer
  */
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pollUntil } from "./helpers.ts";
@@ -530,10 +530,11 @@ function rmStatSafe(p) {
       return probeEntry !== undefined && probeEntry.probeRetried === true;
     });
     const probeEntry = manager.middleware.units.get("@global").connections.get("g3");
+    // 首个断言紧跟 pollUntil（同一同步块内 probeRetried 置位即已排定时器），可断
+    // reconnectTimer 存在；此后跨 await 的断言改用 probeRetried 持久标记——慢机 3s
+    // 窗口内定时器可能已触发置 undefined，但 probeRetried 连接成功前不复位。
     assert.ok(probeEntry.reconnectTimer !== undefined, "重试定时器已排（F5 有界重试）");
     // 一次性语义：probeRetried 已置位，再次 ensureConnected 命中探测不重排。
-    // 注意不断言 reconnectTimer（慢机 3s 窗口内定时器可能已触发置 undefined）——
-    // probeRetried 是持久标记（连接成功才复位），探测命中路径不重排，恒保持。
     await manager.middleware.ensureConnected("@global", "g3");
     assert.equal(probeEntry.probeRetried, true, "再次探测命中不重排（probeRetried 保持一次性）");
     // 否定用例：userDisabled 已写时，重试路径（ensureConnected）不连接。
@@ -577,6 +578,28 @@ function rmStatSafe(p) {
     assert.equal(mw.units.get("@global").catalog.has("ghost"), false, "remove 后目录条目被清（#392 幽灵条目消除）");
     assert.equal(store.find("ghost"), undefined, "remove 落盘");
 
+    // #392 遗留①（M1 复核）：remove 后磁盘 last-good 目录缓存同步清除——此前只清内存
+    // unit.catalog，磁盘缓存残留 → 插件重启/@global 单元重建时 loadCatalogCache 把
+    // 幽灵条目载回。先 persistCatalog 写盘（含 ghost），remove 后等待异步清盘完成，
+    // 断言磁盘缓存不再含 ghost 条目。
+    store.upsert(normalizeServer(quietServer("ghost")));
+    manager.start("ghost", "global");
+    await pollUntil("@global 单元连接条目建立", () => mw.units.get("@global")?.connections.has("ghost") === true);
+    mw.units.get("@global").catalog.set("ghost", { discoveredAt: Date.now(), tools: new Map([["t", { description: "d", inputSchema: {} }]]) });
+    await mw.persistCatalog("@global");
+    const cacheFile = mw.host.catalogCachePath("@global");
+    assert.ok(readFileSync(cacheFile, "utf8").includes("ghost"), "磁盘目录缓存写入 ghost 条目");
+    await manager.remove("ghost");
+    // dropMiddlewareConnection 内 removeCatalogEntry 为 fire-and-forget，轮询磁盘收敛。
+    await pollUntil("磁盘目录缓存已清除 ghost", () => {
+      try {
+        return !readFileSync(cacheFile, "utf8").includes("ghost");
+      } catch {
+        return true; // 缓存文件整体被删（目录已空）也算清除
+      }
+    });
+    assert.ok(mw.units.get("@global").catalog.has("ghost") === false, "remove 后内存目录亦清");
+
     // #392 遗留③：disconnect 显式 scope=project 定位项目单元，不误写 @global 单元。
     // 构造：全局 store 与项目 store 同名 "dup"（项目级由中间层项目单元接管）。
     store.upsert(normalizeServer(quietServer("dup")));
@@ -595,6 +618,13 @@ function rmStatSafe(p) {
     await manager.disconnect("dup", "project");
     assert.ok(projUnit.userDisabled.has("dup"), "scope=project 断开写项目单元");
     assert.ok(!mw.units.get("@global").userDisabled.has("dup"), "不误写 @global 单元（#392 同名跨 scope 修正）");
+    // #392 遗留③（S1 复核）：reconnect 透传 scope——项目级 reconnect 不再误写 @global。
+    // 此前 reconnect 内部 disconnect(name) 不带 scope，all 模式 + 全局同名时项目级
+    // reconnect 会把全局同名服务器误写进 @global userDisabled 并持久化。
+    await manager.connect("dup", "project");
+    await manager.reconnect("dup", "project");
+    assert.ok(!mw.units.get("@global").userDisabled.has("dup"), "reconnect(scope=project) 不误写 @global 单元（S1）");
+    assert.ok(projUnit.userDisabled.has("dup") === false, "reconnect 后项目单元 userDisabled 已解除");
     // 全局 disconnect 显式 scope=global → 写 @global 单元。
     await manager.connect("dup", "global");
     await manager.disconnect("dup", "global");
