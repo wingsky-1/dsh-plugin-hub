@@ -41,6 +41,12 @@ const TEXT_OUTPUT: ToolDefinition["output"] = {
   },
 };
 
+/** 公共样板文案单一事实源（防描述漂移；#414）：各工具参数/描述统一引用，
+ * 不再手抄。projectPath 语义：显式传入优先，缺省补全为当前会话 worktree。 */
+const SHARED = {
+  projectPath: "目标 worktree 路径（缺省补全为当前会话 worktree）",
+};
+
 /** 从 execute 上下文取会话 cwd（缺省 undefined）。 */
 function sessionCwd(exec: { agent?: { session?: { header?: { cwd?: string } } } }): string | undefined {
   return exec?.agent?.session?.header?.cwd;
@@ -52,15 +58,15 @@ export function buildExploreToolDefinition(): ToolDefinition {
   return {
     name: "codegraph_explore",
     description:
-      "查询 codegraph 代码图谱（本地索引，返回相关符号源码 + 调用路径）。" +
-      "自动先 sync 目标 worktree 索引再查（新鲜度硬保证）；projectPath 缺省补全为当前" +
-      "会话 worktree；无索引/无法确定 projectPath 时拒绝并提示。结构类代码问题优先用它。" +
-      "只需单符号源码/调用关系用 codegraph_node；找文件结构用 codegraph_files。",
+      "查询 codegraph 代码图谱（本地索引）：返回命中符号的定义源码与调用路径。" +
+      "会自动先 sync 目标 worktree 索引；projectPath 缺省补全为当前会话 worktree；" +
+      "无索引/无法定位时拒绝并返回引导。结构/依赖类问题（谁调用 X、改 X 影响谁、找符号定义）优先用它。" +
+      "NOT 用于逐字文本搜索——那是 grep 的事；本工具查调用图/符号定义。查单个符号源码/调用关系用 codegraph_node；列文件结构用 codegraph_files。",
     parameters: {
       type: "object",
       properties: {
         query: { type: "string", description: "代码问题/符号名（如：X 被谁调用）" },
-        projectPath: { type: "string", description: "目标 worktree 路径（缺省补全为当前会话 worktree）" },
+        projectPath: { type: "string", description: SHARED.projectPath },
       },
       required: ["query"],
     },
@@ -166,12 +172,12 @@ export function buildImpactToolDefinition(): ToolDefinition {
     "codegraph_impact",
     "分析「修改/删除某符号会影响哪些代码」（调用方及其下游）。改代码前用它看影响面。" +
       "symbol 必填；同名符号先用 codegraph_search 找归属、传限定名；depth 默认 2（1-5），" +
-      "越大结果越全但越慢。只想看单符号源码与直接调用/被调关系用 codegraph_node；" +
+      "越大结果越全但越慢。NOT 用于全文搜词——查文本位置用 grep。只想看单符号源码与直接调用/被调关系用 codegraph_node；" +
       "找「谁调用 X」用 codegraph_callers。",
     {
       symbol: { type: "string", description: "目标符号名（同名时传完整限定名）" },
       depth: { type: "number", description: "遍历深度（默认 2，范围 1-5；越大结果越全但越慢）", minimum: 1, maximum: 5 },
-      projectPath: { type: "string", description: "目标 worktree 路径（缺省补全为当前会话 worktree）" },
+      projectPath: { type: "string", description: SHARED.projectPath },
     },
     ["symbol"],
     (args) => {
@@ -195,14 +201,15 @@ export function buildNodeToolDefinition(): ToolDefinition {
     "查单个符号的源码与调用/被调 trail（符号模式），或按行号读文件并附符号表与依赖方" +
       "（文件模式）。**symbol 与 file 二选一**：查符号用 symbol；读文件用 file" +
       "（可带 offset/limit 分页；只要符号表用 symbolsOnly）。都传以 symbol 优先；" +
-      "都不传报错给用法。查影响面用 codegraph_impact；查谁调用用 codegraph_callers。",
+      "都不传报错给用法。NOT 用于全文搜词——查文本位置用 grep；本工具按符号/文件读源码。" +
+      "查影响面用 codegraph_impact；查谁调用用 codegraph_callers。",
     {
       symbol: { type: "string", description: "符号名（符号模式；与 file 二选一，都传以 symbol 优先）" },
       file: { type: "string", description: "文件路径（文件模式；与 symbol 二选一，如 'src/auth.ts'）" },
       offset: { type: "number", description: "文件模式：1-based 起始行（分页）", minimum: 1 },
       limit: { type: "number", description: "文件模式：最大行数（分页）", minimum: 1 },
       symbolsOnly: { type: "boolean", description: "文件模式：只要符号表 + 依赖方，不读源码" },
-      projectPath: { type: "string", description: "目标 worktree 路径（缺省补全为当前会话 worktree）" },
+      projectPath: { type: "string", description: SHARED.projectPath },
     },
     [],
     (args) => {
@@ -226,16 +233,16 @@ function buildCallersCalleesTool(name: "codegraph_callers" | "codegraph_callees"
   const sub = name === "codegraph_callers" ? "callers" : "callees";
   const description = name === "codegraph_callers"
     ? "列出所有调用「符号 X」的函数/方法。查「X 被谁用、改它影响谁」；limit 默认 20、上限 100。" +
-      "想看符号本身源码用 codegraph_node；看 X 调用了谁用 codegraph_callees。"
+      "NOT 用于全文搜词——查文本位置用 grep；本工具按符号查调用者。想看符号本身源码用 codegraph_node；看 X 调用了谁用 codegraph_callees。"
     : "列出「符号 X」调用的所有函数/方法。查「X 依赖谁」；limit 默认 20、上限 100。" +
-      "想看符号本身源码用 codegraph_node；看谁调用 X 用 codegraph_callers。";
+      "NOT 用于全文搜词——查文本位置用 grep；本工具按符号查被调者。想看符号本身源码用 codegraph_node；看谁调用 X 用 codegraph_callers。";
   return buildCliTool(
     name,
     description,
     {
       symbol: { type: "string", description: "目标符号名（同名时传完整限定名）" },
       limit: { type: "number", description: "最大结果数（默认 20，范围 1-100）", minimum: 1, maximum: 100 },
-      projectPath: { type: "string", description: "目标 worktree 路径（缺省补全为当前会话 worktree）" },
+      projectPath: { type: "string", description: SHARED.projectPath },
     },
     ["symbol"],
     (args) => {
@@ -267,7 +274,8 @@ export function buildSearchToolDefinition(): ToolDefinition {
   return buildCliTool(
     "codegraph_search",
     "按关键词搜索代码库符号（函数/类/变量等），返回位置与摘要。不知道精确符号名时用它找；" +
-      "找到后用 codegraph_node 查详情、callers/callees 查关系。kind 限定符号种类" +
+      "找到后用 codegraph_node 查详情、callers/callees 查关系。NOT 用于查调用关系——那是 callers/callees；" +
+      "本工具按名找符号。kind 限定符号种类" +
       "（function/method/class/interface/type/variable/route/component）；limit 默认 10。",
     {
       query: { type: "string", description: "搜索关键词（符号名/片段）" },
@@ -277,7 +285,7 @@ export function buildSearchToolDefinition(): ToolDefinition {
         enum: ["function", "method", "class", "interface", "type", "variable", "route", "component"],
       },
       limit: { type: "number", description: "最大结果数（默认 10）", minimum: 1 },
-      projectPath: { type: "string", description: "目标 worktree 路径（缺省补全为当前会话 worktree）" },
+      projectPath: { type: "string", description: SHARED.projectPath },
     },
     ["query"],
     (args) => {
@@ -299,6 +307,7 @@ export function buildFilesToolDefinition(): ToolDefinition {
     "codegraph_files",
     "从索引列出项目文件结构（tree/flat/grouped）。找文件路径或了解项目结构时用；" +
       "filter 只列该目录下文件；pattern 按 glob 过滤；maxDepth 限制 tree 深度。" +
+      "NOT 用于查调用关系——那是 callers/callees；本工具只列文件结构。" +
       "注意：只覆盖已索引文件（index/sync 时存在的文件）。",
     {
       filter: { type: "string", description: "只列该目录下的文件（如 'src'）" },
@@ -309,7 +318,7 @@ export function buildFilesToolDefinition(): ToolDefinition {
         enum: ["tree", "flat", "grouped"],
       },
       maxDepth: { type: "number", description: "tree 格式的最大目录深度", minimum: 1 },
-      projectPath: { type: "string", description: "目标 worktree 路径（缺省补全为当前会话 worktree）" },
+      projectPath: { type: "string", description: SHARED.projectPath },
     },
     [],
     (args) => {
@@ -332,9 +341,8 @@ export function buildFilesToolDefinition(): ToolDefinition {
 export function buildStatusToolDefinition(): ToolDefinition {
   return buildCliTool(
     "codegraph_status",
-    "查看当前 codegraph 索引的状态与统计（索引是否完整、文件/符号数、待同步变更数、" +
-      "是否需要重索引）。不确定索引是否新鲜/完整时先用它；查询类工具会自动 sync，" +
-      "无需手动 sync。path 为位置参数（缺省补全为当前会话 worktree）。",
+    "查看当前 codegraph 索引的状态与统计（是否完整、文件/符号数、待同步变更数、是否需要重索引）。" +
+      "本工具只查状态不执行查询；索引新鲜度由查询类工具自动维护。path 为位置参数。",
     {
       path: { type: "string", description: "目标 worktree 路径（缺省补全为当前会话 worktree；位置参数）" },
     },

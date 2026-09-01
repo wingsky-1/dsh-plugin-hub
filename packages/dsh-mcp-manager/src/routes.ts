@@ -38,6 +38,8 @@ export interface RoutesManager {
   setToolDisabled?(root: string, server: string, tool: string, disabled: boolean): Promise<void>;
   /** 中间层模式热切换（apply 注入；缺省不可用）。 */
   setMiddlewareMode?(mode: string): Promise<void>;
+  /** 切回前台受控重建当前工作空间连接（apply 注入；缺省不可用）。 */
+  resumeReconnect?(): Promise<void>;
   projectStoreOrThrow(): Promise<McpStore>;
   store: McpStore;
   /** 当前会话项目根（tool-disable 路由一致性校验用）。 */
@@ -65,6 +67,7 @@ export const ROUTES = {
   servers: "/api/dsh-mcp/servers",
   config: "/api/dsh-mcp/config",
   session: "/api/dsh-mcp/session",
+  resume: "/api/dsh-mcp/resume",
   connect: "/api/dsh-mcp/servers/connect",
   disconnect: "/api/dsh-mcp/servers/disconnect",
   reconnect: "/api/dsh-mcp/servers/reconnect",
@@ -243,6 +246,20 @@ export function makeRoutes(manager: RoutesManager, cwd = process.cwd()): WebRout
         }
         try {
           await manager.setSession((body as Record<string, unknown>).cwd as string);
+          writeJson(res, 200, { ok: true, summary: manager.summary() });
+        } catch (error) {
+          handleError(res, error);
+        }
+      },
+    },
+    {
+      kind: "exact",
+      path: ROUTES.resume,
+      handler: async (req, res) => {
+        if (!guard(req, res, "POST")) return;
+        try {
+          if (typeof manager.resumeReconnect !== "function") throw new Error("resumeReconnect unavailable");
+          await manager.resumeReconnect();
           writeJson(res, 200, { ok: true, summary: manager.summary() });
         } catch (error) {
           handleError(res, error);
