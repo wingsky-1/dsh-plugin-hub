@@ -54,7 +54,6 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
 | `@wingsky-1/dsh-provider-usage` | 多 provider 用量悬浮框（适配器框架，内置 OpenCode Go） |
 | `@wingsky-1/dsh-lan-proxy` | 局域网访问 dsh web UI（HTTP/HTTPS/WS + TLS + HTTP 响应 gzip 压缩） |
 | `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理器（stdio/HTTP，工具注册给模型） |
-| `@wingsky-1/dsh-idle-archive` | 会话闲置提醒归档 |
 | `@wingsky-1/dsh-web-file-preview` | 点击对话文件链接在 web 端预览（图片/文本/Markdown/代码/Diff） |
 | `@wingsky-1/dsh-verify-isolated` | 插件开发隔离验证 skill（临时 DSH_HOME + 独立 profile 双重隔离） |
 
@@ -62,10 +61,13 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
 > 分发。此前单独安装过 dsh-gzip 的用户升级后请执行
 > `dsh plugin --profile web remove @wingsky-1/dsh-gzip` 卸载。
 >
-> dsh-memory（项目长期记忆）未包含在本聚合包内。
+> `@wingsky-1/dsh-idle-archive`（会话闲置提醒归档）与
+> `@wingsky-1/dsh-subagent-model-inherit`（子 Agent 模型继承）均已**退役**，不再随
+> 全家桶分发：前者因社区已有更成熟的会话生命周期管理/归档实现，后者因官方
+> dsh-subagent 0.1.2-alpha.2 已原生实现 `resolveChildAgentOptions`。此前安装过的用户
+> 请执行 `dsh plugin --profile web remove <包名>` 卸载。
 >
-> `@wingsky-1/dsh-subagent-model-inherit`（子 Agent 模型继承，实验性）处于**观察期**，
-> 独立发包、暂不包含在本聚合包内；如需使用请单独安装，详见其 README。
+> dsh-memory（项目长期记忆）未包含在本聚合包内。
 >
 > `@wingsky-1/dsh-codegraph`（codegraph MCP + worktree 开发纪律）为**独立发包**，
 > 暂不包含在本聚合包内；如需使用请先安装本聚合包或 `dsh-mcp-manager` 后单独安装

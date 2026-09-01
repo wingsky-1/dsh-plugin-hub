@@ -642,27 +642,27 @@ const main = async () => {
   });
 
   console.log("unit: WebSocket 压缩桥接配置");
-  // 默认白名单包含会话事件流两个端点。
-  check("默认压缩白名单含 events.mux / events.host", () => {
-    assert.deepEqual(DEFAULT_WSS_COMPRESS_PATHS, ["/api/events.mux", "/api/events.host"]);
+  // 默认白名单为 api-gateway 的 Remote 流 mux 端点（dsh 0.1.2 起取代 events.mux/events.host）。
+  check("默认压缩白名单为 remote.mux", () => {
+    assert.deepEqual(DEFAULT_WSS_COMPRESS_PATHS, ["/api/remote.mux"]);
   });
   // compressWsPath：命中 / 未命中 / 查询串忽略 / 传入 undefined 拒绝。
   check("compressWsPath 命中默认 path 忽略查询串", () =>
-    assert.equal(compressWsPath(DEFAULT_WSS_COMPRESS_PATHS, "/api/events.mux?days=30"), true));
+    assert.equal(compressWsPath(DEFAULT_WSS_COMPRESS_PATHS, "/api/remote.mux?x=1"), true));
   check("compressWsPath 命中非默认 path", () => {
     assert.equal(compressWsPath(["/api/events.mux", "/api/events.host"], "/api/events.host"), true);
     assert.equal(compressWsPath(["/custom/ws"], "/custom/ws"), true);
   });
   check("compressWsPath 未命中 / 空列表 / undefined", () => {
     assert.equal(compressWsPath(DEFAULT_WSS_COMPRESS_PATHS, "/api/other"), false);
-    assert.equal(compressWsPath([], "/api/events.mux"), false);
-    assert.equal(compressWsPath(undefined, "/api/events.mux"), false);
+    assert.equal(compressWsPath([], "/api/remote.mux"), false);
+    assert.equal(compressWsPath(undefined, "/api/remote.mux"), false);
     assert.equal(compressWsPath(DEFAULT_WSS_COMPRESS_PATHS, undefined), false);
   });
   // sanitize：接受 wsCompressEnabled / wsCompressPaths（字符串数组），非法整体拒绝。
   check("sanitize 接受 ws 压缩配置", () => {
-    const out = sanitizeSettings({ wsCompressEnabled: false, wsCompressPaths: ["/api/events.mux"] });
-    assert.deepEqual(out, { wsCompressEnabled: false, wsCompressPaths: ["/api/events.mux"] });
+    const out = sanitizeSettings({ wsCompressEnabled: false, wsCompressPaths: ["/api/remote.mux"] });
+    assert.deepEqual(out, { wsCompressEnabled: false, wsCompressPaths: ["/api/remote.mux"] });
   });
   check("sanitize 拒绝非字符串数组 paths", () =>
     assert.equal(sanitizeSettings({ wsCompressPaths: [1, 2] }), null));
@@ -1458,15 +1458,22 @@ const main = async () => {
       const expectedIds = [
         "lp-set-enabled", "lp-set-port", "lp-set-https-enabled", "lp-set-https-port",
         "lp-set-cert", "lp-set-key", "lp-set-banner", "lp-set-ws-compress",
-        "lp-set-ws-paths", "lp-set-http-compress", "lp-set-level",
+        "lp-set-ws-paths", "lp-set-http-compress", "lp-set-level", "lp-set-inject-token",
       ];
       const forIds = [...client.matchAll(/htmlFor:\s*"([^"]+)"/g)].map((m: any) => m[1]);
-      assert.deepEqual([...forIds].sort(), [...expectedIds].sort(), "11 行全部 htmlFor 关联");
+      assert.deepEqual([...forIds].sort(), [...expectedIds].sort(), "12 行全部 htmlFor 关联");
       for (const fid of forIds) {
         assert.ok(new RegExp(`id:\\s*"${fid}"`).test(client), `控件侧存在同名 id「${fid}」`);
       }
       const inputModeCount = [...client.matchAll(/inputMode:\s*"numeric"/g)].length;
       assert.equal(inputModeCount, 2, "port/httpsPort 两个 number 输入均带 inputMode=numeric");
+    });
+    // issue #380：injectToken 开关渲染 + 开启态常驻安全警示（评审要求：横幅一次性警示不足）。
+    check("client 渲染 injectToken 开关与开启态警示", () => {
+      assert.ok(client.includes('t("injectToken")'), "开关 label（i18n key）");
+      assert.ok(client.includes('t("injectTokenOnHint")'), "开启态警示文案（i18n key）");
+      assert.ok(client.includes("lp-set-warn"), "警示样式类");
+      assert.ok(client.includes("injectToken: true"), "DEFAULTS 缺省开启（前向兼容：存量用户升级即生效）");
     });
   }
 

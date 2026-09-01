@@ -634,6 +634,21 @@ export function formatPanel() { return "<p>x</p>"; }
   const clientSource = readFileSync(join(pkgDir, "src/client/index.ts"), "utf8");
   assert.ok(!clientSource.includes("__ModuleLoader__"), "客户端源码不得含 loader 痕迹");
   assert.ok(clientSource.includes("export function apply"), "客户端入口导出 apply");
+  // #383 根因回归：客户端插件服务经 ctx 直接属性注入且须声明进 inject 数组
+  // （官方 dsh-client-ui-chat/model-selection 同款 ctx.sessions / ctx.remote /
+  // ctx.slots / ctx.locale）。此前误用 ctx.get("sessions") 且 inject 仅 locale，
+  // sessions/remote 未注入导致检测恒空（胶囊不跟随会话）。
+  assert.ok(!/ctx\.get\(["']/.test(clientSource), "客户端源码不得用 ctx.get() 取服务（服务经直接属性注入，#383）");
+  for (const [prop, service] of [["sessions", "ctx.sessions"], ["remote", "ctx.remote"], ["locale", "ctx.locale"], ["slots", "ctx.slots"]]) {
+    assert.ok(clientSource.includes(service), `客户端 apply 经直接属性 ${service} 访问 ${prop} 服务`);
+  }
+  {
+    const injectLine = clientSource.match(/export const inject[^\n]*/)?.[0] ?? "";
+    assert.ok(injectLine.includes('"sessions"'), "inject 数组必须声明 sessions（否则服务不可用，#383）");
+    assert.ok(injectLine.includes('"remote"'), "inject 数组必须声明 remote（否则服务不可用，#383）");
+    assert.ok(injectLine.includes('"remote.session"'), "inject 数组必须声明 remote.session（modelCatalog 兜底，#383）");
+    assert.ok(injectLine.includes('"slots"'), "inject 数组必须声明 slots（否则 ctx.slots 访问抛 without inject，#383）");
+  }
   // issue #116：避让已去除——客户端不再探测 MCP 浮窗做动态偏移，改为固定定位（位置只由配置决定）
   assert.ok(!clientSource.includes("mcpClearance"), "客户端源码已去除 MCP 避让（mcpClearance）");
   assert.ok(!clientSource.includes("data-dsh-mcp-float"), "客户端源码已去除 MCP 浮窗探测避让");

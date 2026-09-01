@@ -247,7 +247,7 @@ function makeFakeServices(initialProvider) {
               id,
               proj === undefined
                 ? base
-                : { ...base, projections: { values: { modelSelection: { lastUsed: proj } } } },
+                : { ...base, projectionValues: { modelSelection: { lastUsed: proj } } },
             ];
           }),
         ),
@@ -271,11 +271,16 @@ function makeFakeServices(initialProvider) {
 
 function makeCtx(svc) {
   const disposers = [];
+  // #383：客户端插件服务经 ctx 直接属性注入（ctx.sessions / ctx.remote /
+  // ctx.locale / ctx.slots），fake 对齐真实 fiber ctx 语义（不再模拟 get）。
   const ctx = {
-    get(key) {
-      if (key === "sessions") return svc.sessions;
-      if (key === "remote") return svc.remote; // 0.1.2-alpha.2：ctx.remote 网关（兜底 modelCatalog）
-      return undefined; // slots 缺席 → settings section try/catch 跳过
+    sessions: svc.sessions,
+    remote: svc.remote, // 0.1.2-alpha.2：ctx.remote 网关（兜底 modelCatalog）
+    slots: undefined, // slots 缺席 → settings section try/catch 跳过
+    locale: {
+      register: () => {},
+      subscribe: () => () => {},
+      getSnapshot: () => ({}),
     },
     effect(fn) {
       const d = fn();

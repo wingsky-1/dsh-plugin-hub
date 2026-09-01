@@ -3,7 +3,7 @@
  *
  * 形态对表同仓 dsh-mcp-manager（service.ts）：提供方在 src/service.ts
  * 经 createNotifierService + ctx.provide('wingsky.notifier') 注册；
- * 消费方（其他 hub 插件，如 dsh-idle-archive）从本包引类型：
+ * 消费方（其他 hub 插件）从本包引类型：
  *
  *   import type { NotifierService } from '@wingsky-1/dsh-notifier';
  *   export const inject = ['wingsky.notifier'];

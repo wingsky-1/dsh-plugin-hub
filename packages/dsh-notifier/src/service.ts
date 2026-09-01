@@ -35,7 +35,7 @@ export type NotifySeverity = "info" | "success" | "warning" | "failure";
 
 /** 通知请求（外部调用方通用入口）。 */
 export interface NotifyRequest {
-  /** 调用方标识，如 '@wingsky-1/dsh-idle-archive'。 */
+  /** 调用方标识（source-short 与 kind 前缀同源，如 '@wingsky-1/dsh-notifier'）。 */
   source: string;
   /** kind：内置七 kind 或经 registerKind 注册的动态 kind（'<source-short>:<id>'）。 */
   kind: string;

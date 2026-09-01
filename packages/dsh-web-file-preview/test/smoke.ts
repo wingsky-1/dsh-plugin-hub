@@ -576,6 +576,22 @@ try {
   assert.ok(client.includes("openWorkspacePath"), "#323 client 含 openWorkspacePath 收口（0.1.2 迁移）");
   assert.ok(client.includes('get("remote")'), "#323 client 经 ctx.get(\"remote\") 取 Remote 网关");
   assert.ok(!/\bws\.openPath\b/.test(client), "#323 不得再包装已删除的 workspaces.openPath");
+  // issue #388 哨兵断言（防「布局主权对轰」实现回退）：宿主 dsh-web-mobile 窄视口
+  // [aria-modal] 模板规则劫持卡片（根因见 issue）——修复 = 卡片固定 id + style.css
+  // 末尾对轰块。断言 JS 产物含 id 字面量（minify 保留字符串属性赋值）、CSS 产物含
+  // id 选择器对轰块、--fwp-card-* 变量名出现 ≥2 次（基础块定义 + 对轰块/media 覆写
+  // 引用，防两块脱钩后对轰 important 落回错误值）、全屏与降级双选择器都在（防只改一半）。
+  assert.ok(client.includes('"fwp-dialog-card"'), "#388 client 含卡片固定 id 赋值字面量");
+  assert.ok(client.includes("#fwp-dialog-card{"), "#388 client 含布局主权对轰块（id 选择器）");
+  assert.ok(client.includes("position:static !important"), "#388 对轰块含 position:static !important（对抗宿主 absolute !important）");
+  {
+    const varHits = client.match(/--fwp-card-(w|mh)/g)?.length ?? 0;
+    assert.ok(varHits >= 4, `#388 设计值变量单一事实源（基础定义+media 覆写+对轰引用，实际 ${varHits} 处）`);
+  }
+  assert.ok(
+    client.includes(".fwp-overlay:fullscreen #fwp-dialog-card") && client.includes(".fwp-overlay.fwp-fs #fwp-dialog-card"),
+    "#388 全屏/降级双选择器都在（合并选择器列表，防只改一半）",
+  );
 
   // ---- issue #104：mermaid 懒加载 chunk 宿主路由真实可读（P0 断言）----
   // 防「cleanFreeFloatingJs 把新 chunk 当游离产物删除 → 五连门禁全绿而功能坏」

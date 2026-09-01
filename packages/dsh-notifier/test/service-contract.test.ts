@@ -185,8 +185,8 @@ function makeService(cfgOverrides = {}, hooks = {}) {
 {
   // 未确认 → suppressed 落史，零触达
   const { service, sse, history } = makeService();
-  service.registerKind({ id: "idle-archive:due", label: "会话闲置待归档" });
-  const r = await service.send({ source: "@wingsky-1/dsh-idle-archive", kind: "idle-archive:due", severity: "info", body: "3 个会话闲置" });
+  service.registerKind({ id: "demo:ready", label: "示例事务就绪" });
+  const r = await service.send({ source: "@example/demo-consumer", kind: "demo:ready", severity: "info", body: "3 个事务就绪" });
   assert.equal(r[0].status, "skipped");
   assert.equal(r[0].error, "kind-pending");
   assert.equal(sse.frames.length, 0, "待确认 kind 不得触达频道");
@@ -197,11 +197,11 @@ function makeService(cfgOverrides = {}, hooks = {}) {
 {
   // confirmKind 后放行
   const { service, sse } = makeService();
-  service.registerKind({ id: "idle-archive:due", label: "会话闲置待归档" });
-  service.confirmKind("idle-archive:due", true);
-  const r = await service.send({ source: "@wingsky-1/dsh-idle-archive", kind: "idle-archive:due", severity: "info", body: "3 个会话闲置" });
+  service.registerKind({ id: "demo:ready", label: "示例事务就绪" });
+  service.confirmKind("demo:ready", true);
+  const r = await service.send({ source: "@example/demo-consumer", kind: "demo:ready", severity: "info", body: "3 个事务就绪" });
   assert.ok(r.some((x) => x.status === "ok"));
-  assert.ok(sse.frames.some((f) => f.kind === "idle-archive:due"));
+  assert.ok(sse.frames.some((f) => f.kind === "demo:ready"));
   console.log("③b confirmKind 后放行: OK");
 }
 

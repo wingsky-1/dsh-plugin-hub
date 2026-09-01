@@ -2400,9 +2400,10 @@ const main = async () => {
         false,
         "未禁用封装工具放行",
       );
-      // 可见性/能力目录：summary 工具列表为 mcp__ 公开名（与普通工具同口径）。
+      // 可见性/能力目录：summary 工具列表为裸名（#382 F4 展示口径统一：剥
+      // mcp__ 前缀，与中间层投影分支/禁用表键/guard 反解口径一致）。
       const sum = manager.summarize(sup.server, SCOPE_GLOBAL);
-      assert.deepEqual(sum.tools, ["mcp__codegraph__codegraph_explore", "mcp__codegraph__codegraph_status"], "summary 工具列表为公开名");
+      assert.deepEqual(sum.tools, ["codegraph_explore", "codegraph_status"], "summary 工具列表为裸名（#382 剥前缀口径）");
 
       // 不带 toolDefinitions → 现状回归：远端 schema + 通用 callTool 路径不变。
       const plainRegistered = [];

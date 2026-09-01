@@ -32,25 +32,31 @@ DSH（DeepSeek Harness）Web GUI 插件集，npm 分发：一键装全家桶，�
 | `@wingsky-1/dsh-provider-usage` | 多 provider 用量统计悬浮框（通用适配器框架：内置 DeepSeek 官方与 OpenCode Go 开箱即用，自写 mjs 即可接入任意数据源） | [README](packages/dsh-provider-usage/README.md) | ✅ 已发布 |
 | `@wingsky-1/dsh-lan-proxy` | 局域网访问 dsh web UI（HTTP/HTTPS/WS 转发 + TLS + HTTP 响应压缩，Brotli/gzip 自适应） | [README](packages/dsh-lan-proxy/README.md) | ✅ 已发布 |
 | `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理器（stdio/HTTP；分工作目录维护项目级/全局两级配置，项目级 MCP 经中间层收敛、免于工具洪水） | [README](packages/dsh-mcp-manager/README.md) | ✅ 已发布 |
-| `@wingsky-1/dsh-idle-archive` | 会话闲置提醒归档 | [README](packages/dsh-idle-archive/README.md) | ✅ 已发布 |
 | `@wingsky-1/dsh-web-file-preview` | 点击对话文件链接在 web 端预览（图片/文本/Markdown/代码/Diff/Mermaid） | [README](packages/dsh-web-file-preview/README.md) | ✅ 已发布 |
 | `@wingsky-1/dsh-verify-isolated` | DSH 插件开发的隔离环境浏览器验证 skill（临时 DSH_HOME + 独立 profile 双重隔离） | [README](packages/dsh-verify-isolated/README.md) | ✅ 已发布 |
 | `@wingsky-1/dsh-codegraph` | codegraph 本地代码图谱 MCP + worktree 开发纪律（经 mcp-manager 运行时注册） | [README](packages/dsh-codegraph/README.md) | ✅ 已发布（独立发包，暂不进聚合包） |
-| `@wingsky-1/dsh-subagent-model-inherit` | 子 Agent 自动继承父会话模型与思考等级 | [README](packages/dsh-subagent-model-inherit/README.md) | 观察期（独立发包，暂不进聚合包） |
 
 > **独立发包说明**：`@wingsky-1/dsh-codegraph` 为**独立发包**、**未包含在
 > `dsh-plugins-all` 聚合包中**，需单独安装（它经 mcp-manager 运行时注册 codegraph MCP，
 > 请先装 `dsh-mcp-manager` 或聚合包再配合使用）。
->
-> **观察期说明**：`@wingsky-1/dsh-subagent-model-inherit` 为实验性插件——它改变子 Agent
-> 的模型路由行为（继承父会话），具有全局影响。目前**独立发包**、**未包含在
-> `dsh-plugins-all` 聚合包中**，需单独安装；待收集足够使用反馈后再决定转正进聚合包、
-> 继续独立演进或退役。
 
 > **已停止维护**：`@wingsky-1/dsh-skill-explorer`（技能中心/skill 管理）已**不再维护**
 > （npm 已 deprecate，插件包与聚合包均已移除）。web UI 侧已有更优实现
 > `@linxin666/dsh-client-ui-skill-explorer`（`dsh-web-ui` 仓库 `packages/dsh-skill-explorer`），
 > 支持符号链接识别、链接技能安全处理等，请直接使用 web UI 内置技能中心，勿再安装本包。
+>
+> **已停止维护**：`@wingsky-1/dsh-idle-archive`（会话闲置提醒归档）与
+> `@wingsky-1/dsh-subagent-model-inherit`（子 Agent 自动继承父会话模型与思考等级）均已
+> **不再维护**。前者因社区已有更成熟的会话生命周期管理/归档实现（如
+> [dsh-session-pruner](https://github.com/mrzhangkris/dsh-session-pruner)），后者因官方
+> dsh-subagent 0.1.2-alpha.2 已原生实现 `resolveChildAgentOptions`（子 Agent 继承父会话
+> 模型/思考等级/输出上限）。两包均已从仓库移除、npm 已标 deprecated，请勿再安装；
+> 此前安装过的用户请卸载：
+>
+> ```sh
+> dsh plugin --profile web remove @wingsky-1/dsh-idle-archive
+> dsh plugin --profile web remove @wingsky-1/dsh-subagent-model-inherit
+> ```
 
 > dsh-memory（项目长期记忆）暂未包含，规划中。
 

@@ -3,8 +3,8 @@ name: dsh-plugin-hub-dev
 description: >
   DSH 插件开发与修改规范——**公开仓库 github/dsh-plugin-hub 专用**（项目级 skill）。
   修改/新增 dsh-plugin-hub 仓库内插件（@wingsky-1/dsh-*，含 dsh-notifier /
-  dsh-lan-proxy / dsh-mcp-manager / dsh-skill-explorer / dsh-opencode-usage /
-  dsh-gzip / dsh-idle-archive / dsh-web-file-preview）的宿主端（src/index.ts）或
+  dsh-lan-proxy / dsh-mcp-manager / dsh-provider-usage / dsh-verify-isolated /
+  dsh-web-file-preview / dsh-codegraph）的宿主端（src/index.ts）或
   客户端（src/client/）代码前加载。触发信号：用户要求改/加/修 hub 插件源码、客户端
   干净模块、拆 CSS、src/client 目录、inlineBareImports、构建/契约门禁。
   Do NOT trigger for: 非 dsh-plugin-hub 的第三方 dsh 插件开发、纯文档讨论。
