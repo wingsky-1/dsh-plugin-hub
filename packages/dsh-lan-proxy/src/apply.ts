@@ -15,6 +15,9 @@ import { writeJson, errorMessage } from "../../../shared/host-utils.js";
 import { createLanProxy, DEFAULT_OPTIONS, DEFAULT_DEFLATE_POLICY } from "./proxy.ts";
 import type { TlsMaterials, LanProxy } from "./proxy.ts";
 import { ensureSelfSignedTls, loadTlsFromFiles } from "./cert.ts";
+// 配置层值依赖单向 apply → config：默认白名单常量（单一事实源）与存量归一化纯函数
+// 均定义于 config.ts，本模块消费并 re-export（保持 apply.ts 既有导出面不变）。
+import { normalizeLegacyWsCompressPaths, DEFAULT_WSS_COMPRESS_PATHS } from "./config.ts";
 import type { HttpCompressSnapshot, LanProxyConfig, ResolvedConfig } from "./config.ts";
 import { SETTINGS_NS, installLanProxySettings, warnLog } from "./settings.ts";
 import type { OwnerScopeLike, SettingsServiceLike } from "./settings.ts";
@@ -22,8 +25,8 @@ import { migrateFileConfig } from "./migrate.ts";
 import { ROUTES, buildConfigRoutes } from "./config-routes.ts";
 import type { ConfigRouteDeps } from "./config-routes.ts";
 
-/** WebSocket 压缩桥接默认路径白名单（dsh 0.1.2 起 api-gateway 拥有的 Remote 流 mux 端点）。 */
-export const DEFAULT_WSS_COMPRESS_PATHS: readonly string[] = ["/api/remote.mux"];
+// 重新导出默认压缩白名单（定义见 config.ts），保持 `from "./apply.ts"` 的既有消费面。
+export { DEFAULT_WSS_COMPRESS_PATHS };
 
 /**
  * 终端横幅输出（用户可感知信息走原生 console：cordis logger 只进内存 buffer，
@@ -94,7 +97,10 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
       targetPort: value.targetPort,
       printBanner: value.printBanner ?? true,
       wsCompressEnabled: value.wsCompressEnabled ?? true,
-      wsCompressPaths: value.wsCompressPaths ?? DEFAULT_WSS_COMPRESS_PATHS,
+      // 存量迁移（issue #395 M2）：显式保存过旧默认白名单
+      // ["/api/events.mux", "/api/events.host"] 的 settings 用户层值升级后仍要
+      // 归一化为新默认 ["/api/remote.mux"]，否则压缩桥接对新 mux 端点静默失效。
+      wsCompressPaths: normalizeLegacyWsCompressPaths(value.wsCompressPaths) ?? DEFAULT_WSS_COMPRESS_PATHS,
       wsDeflatePolicy: value.wsDeflatePolicy ?? DEFAULT_DEFLATE_POLICY,
       httpCompressEnabled: value.httpCompressEnabled ?? true,
       httpCompressLevel: value.httpCompressLevel ?? 1,

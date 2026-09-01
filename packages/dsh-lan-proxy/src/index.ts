@@ -40,8 +40,9 @@ export const inject = ["webServer"];
 // ------------------------------------------------------------------ 对外 re-export
 // 注意：bundle-host 会把 tsc 产物中的子模块全部内联进 lib/index.js 并清理游离 .js，
 // smoke/lint 只能从 lib/index.js 导入，故契约与核心模块一律在此 re-export。
-// 配置模型与校验（#276 方案 A 阶段 3 拆出：schema / 校验 / 净化 / 类型面）
-export { Config, sanitizeSettings, validateSettings } from "./config.ts";
+// 配置模型与校验（#276 方案 A 阶段 3 拆出：schema / 校验 / 净化 / 类型面；
+// normalizeLegacyWsCompressPaths 为 #395 M2 存量白名单归一化纯函数）
+export { Config, sanitizeSettings, validateSettings, normalizeLegacyWsCompressPaths } from "./config.ts";
 export type { HttpCompressSnapshot, LanProxyConfig, ResolvedConfig, SettingInvalid } from "./config.ts";
 // 官方 settings 命名空间接线（#276 方案 A 阶段 3 拆出）
 export { SETTINGS_NS, installLanProxySettings } from "./settings.ts";

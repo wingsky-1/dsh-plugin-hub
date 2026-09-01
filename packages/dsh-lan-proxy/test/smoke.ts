@@ -30,7 +30,7 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
 import { apply, sanitizeSettings, validateSettings, ROUTES, pluginDir,
   migrateFileConfig, MIGRATED_BAK_NAME, SETTINGS_NS, buildConfigRoutes, applyConfigPatch,
   hostnameAllowed, formatAuthority, rewriteHeaders, createLanProxy, isLoopbackTarget, DEFAULT_OPTIONS,
-  compressWsPath, DEFAULT_WSS_COMPRESS_PATHS,
+  compressWsPath, DEFAULT_WSS_COMPRESS_PATHS, normalizeLegacyWsCompressPaths,
   ensureSelfSignedTls, certStillValid, toSanEntry, loadTlsFromFiles, SELF_SIGNED_KEY, SELF_SIGNED_CERT,
   isCompressible, resolveCompressionOptions } from "../lib/index.js";
 
@@ -537,6 +537,32 @@ const main = async () => {
       });
       rmSync(dir, { recursive: true, force: true });
     }
+
+    // M2（#395）：迁移含旧默认白名单的 config.json → 写入归一化后的新值；
+    // 自定义白名单（含废弃端点的组合）迁移后原样保留。
+    {
+      const m2Dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-migrate-m2-"));
+      writeFileSync(join(m2Dir, "config.json"), JSON.stringify({ wsCompressPaths: ["/api/events.host", "/api/events.mux"] }));
+      const m2Scope = makeScope();
+      const m2 = await migrateFileConfig(m2Dir, m2Scope);
+      check("迁移：含旧默认白名单的 config.json 写入归一化后的 remote.mux", () => {
+        assert.equal(m2.migrated, true, `outcome=${JSON.stringify(m2)}`);
+        assert.deepEqual(m2Scope.state.user, { wsCompressPaths: ["/api/remote.mux"] },
+          `写入官方存储的用户层=${JSON.stringify(m2Scope.state.user)}`);
+      });
+      rmSync(m2Dir, { recursive: true, force: true });
+
+      const m2CustomDir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-migrate-m2c-"));
+      writeFileSync(join(m2CustomDir, "config.json"), JSON.stringify({ wsCompressPaths: ["/api/events.mux", "/api/custom/ws"] }));
+      const m2CustomScope = makeScope();
+      const m2c = await migrateFileConfig(m2CustomDir, m2CustomScope);
+      check("迁移：自定义白名单（含废弃端点组合）原样保留不改写", () => {
+        assert.equal(m2c.migrated, true, `outcome=${JSON.stringify(m2c)}`);
+        assert.deepEqual(m2CustomScope.state.user, { wsCompressPaths: ["/api/events.mux", "/api/custom/ws"] },
+          `写入官方存储的用户层=${JSON.stringify(m2CustomScope.state.user)}`);
+      });
+      rmSync(m2CustomDir, { recursive: true, force: true });
+    }
   }
 
   console.log("websocket: upgrade forwarding");
@@ -666,6 +692,19 @@ const main = async () => {
   });
   check("sanitize 拒绝非字符串数组 paths", () =>
     assert.equal(sanitizeSettings({ wsCompressPaths: [1, 2] }), null));
+  // normalizeLegacyWsCompressPaths（#395 M2）：旧默认乱序等价归一化，自定义不动。
+  check("normalizeLegacyWsCompressPaths 旧默认无序等价归一化到 remote.mux", () => {
+    assert.deepEqual(normalizeLegacyWsCompressPaths(["/api/events.mux", "/api/events.host"]), ["/api/remote.mux"]);
+    assert.deepEqual(normalizeLegacyWsCompressPaths(["/api/events.host", "/api/events.mux"]), ["/api/remote.mux"], "顺序不同也等价");
+    assert.deepEqual(normalizeLegacyWsCompressPaths(["/api/events.mux", "/api/events.host"]), [...DEFAULT_WSS_COMPRESS_PATHS], "与默认常量同源");
+  });
+  check("normalizeLegacyWsCompressPaths 自定义/undefined/空数组原样", () => {
+    assert.deepEqual(normalizeLegacyWsCompressPaths(["/api/custom/ws"]), ["/api/custom/ws"]);
+    assert.deepEqual(normalizeLegacyWsCompressPaths(["/api/events.mux", "/api/custom/ws"]), ["/api/events.mux", "/api/custom/ws"], "含废弃端点的自定义组合不改写");
+    assert.equal(normalizeLegacyWsCompressPaths(undefined), undefined);
+    assert.deepEqual(normalizeLegacyWsCompressPaths([]), []);
+    assert.deepEqual(normalizeLegacyWsCompressPaths(["/api/events.mux", "/api/events.mux"]), ["/api/events.mux", "/api/events.mux"], "重复元素非等价");
+  });
 
   // ── HTTP 响应压缩（转发层 compression 中间件）：纯函数 ────────────────────
   console.log("unit: HTTP 压缩纯函数（isCompressible / normalizeLevel）");

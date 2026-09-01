@@ -146,6 +146,14 @@ assert.deepEqual(bridgeUpstreamHeaders({
   host: "127.0.0.1:3080",
   origin: "http://127.0.0.1:3080",
 }, "大写键名归一化、undefined 跳过、Proxy-Authorization/te/trailer/transfer-encoding/sec-websocket-protocol 剥离");
+// L2（#395）：sec-websocket-accept 是响应头、请求侧不可达，不在剥离集——入站若
+// 恰好携带该头则原样透传（deny 集仅针对请求侧可达头，防回归误加回剥离集）。
+assert.deepEqual(bridgeUpstreamHeaders({ "sec-websocket-accept": "ABC=", cookie: "c=1" }, "127.0.0.1:3080"), {
+  "sec-websocket-accept": "ABC=",
+  cookie: "c=1",
+  host: "127.0.0.1:3080",
+  origin: "http://127.0.0.1:3080",
+}, "sec-websocket-accept 不再被剥离（响应头请求侧不可达）");
 
 // compressWsPath
 assert.equal(compressWsPath(["/a", "/b"], "/a?query=1"), true, "带查询串命中");
@@ -264,6 +272,58 @@ assert.equal(DEFAULT_OPTIONS.targetHost, "127.0.0.1");
   assert.equal(upgradeHeaders["sec-websocket-extensions"], undefined,
     "浏览器段 permessage-deflate 协商头不透传（DSH 段固定明文，避免双重压缩）");
 
+  await proxy.close();
+  wss.close();
+  upServer.close();
+}
+
+// ===== 无 cookie 的 WS 桥接升级被上游 401 拒绝（issue #395 L4 组合链路） =====
+// 背景：#380 的 token 注入只作用于 HTTP handleRequest，WS 桥接（bridgeCompressedWs）
+// 仅透传入站头、本身不铸造 cookie；dsh 0.1.2 起 /api/remote.mux 升级需会话 Cookie
+// 认证（connection.requestRejection → isAuthenticated），无 cookie 的上游回 401 且
+// 不进入 upgrade 握手 → 桥接表现为连不上。本用例锁定「无 cookie 连压缩路径 → 浏览器
+// 端最终 error/close 而非维持 open」防回归。对照：带 cookie 的升级仍成功（上方
+// #379 端到端用例已断言双向可达，此处不再重复）。
+{
+  const { WebSocket: WsClient, WebSocketServer } = await import("ws");
+
+  const upPort = 21050 + Math.floor(Math.random() * 40);
+  const upServer = createServer();
+  const wss = new WebSocketServer({ noServer: true });
+  let noCookieUpgrades = 0;
+  upServer.on("upgrade", (req, socket, head) => {
+    // 模拟 dsh 行为：无 dsh-auth cookie → 不进入 upgrade 握手，写 HTTP 401 并销毁。
+    if (!req.headers.cookie?.includes("dsh-auth-")) {
+      noCookieUpgrades += 1;
+      socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      ws.on("message", (data, isBinary) => ws.send(data, { binary: isBinary }));
+    });
+  });
+  await new Promise((r) => upServer.listen(upPort, "127.0.0.1", r));
+
+  const proxy = createLanProxy({
+    host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: upPort,
+    wsCompress: { enabled: true, paths: ["/api/remote.mux"], probeIntervalMs: 0 },
+  });
+  const { httpPort } = await proxy.listen();
+
+  // 浏览器端无 cookie 连压缩路径：不期望成功 open，断言最终以 error/close 失败。
+  const events = [];
+  const browserWs = new WsClient(`ws://127.0.0.1:${httpPort}/api/remote.mux`);
+  browserWs.on("open", () => events.push("open"));
+  browserWs.on("error", () => events.push("error"));
+  browserWs.on("close", (code) => events.push(`close:${code}`));
+  assert.ok(await waitFor(() => events.some((e) => e === "error" || e.startsWith("close:")), 5000),
+    `无 cookie 的桥接升级应在限时内失败（error/close 而非 open），实际事件 ${JSON.stringify(events)}`);
+  assert.notEqual(browserWs.readyState, WsClient.OPEN,
+    `失败后浏览器端不得保持 OPEN（实际 readyState=${browserWs.readyState}）`);
+  assert.ok(noCookieUpgrades >= 1, "上游确实收到并拒绝了无 cookie 的升级请求（401 拒绝路径触发）");
+
+  browserWs.close();
   await proxy.close();
   wss.close();
   upServer.close();
