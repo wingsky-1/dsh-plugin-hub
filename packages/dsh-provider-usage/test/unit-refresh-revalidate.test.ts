@@ -26,11 +26,16 @@ const pkgDir = join(here, "..");
     /async function refreshStats[\s\S]*?await revalidateProvider\(\)/.test(src),
     "refreshStats 取数前先复检 provider（A1 主接线）",
   );
-  // detect 变化分支 → onProviderChanged 立即重拉；未变分支 → renderPill 后仍立即补刷一次
+  // detect 变化分支 → onProviderChanged 立即重拉；未变分支 → renderPill 后仅 current
+  // 会话切换时补刷（#419 diff 语义：投影/运行态噪声帧不刷，收敛高频 /stats 调用）
   assert.ok(/const changed = await revalidateProvider\(\);[\s\S]*?onProviderChanged\(\)/.test(src),
     "detect 复检变化 → 立即重拉（切换会话即时跟随）");
-  assert.ok(/renderPill\(\);[\s\S]*?floatPill !== undefined\) void refreshStats\(\)/.test(src),
-    "detect 未变分支立即补刷 stats（维护者补充需求：切换会话即刷）");
+  assert.ok(/renderPill\(\);[\s\S]*?currentSessionId\(sessions\)[\s\S]*?lastDetectCurrent/.test(src),
+    "detect 未变分支按 current diff 判定是否补刷（#419 去高频）");
+  // #419：modelCatalog 兜底走缓存 loader（官方 catalog 同款），不再裸调跟随帧频率
+  assert.ok(src.includes("makeCatalogCache()"), "客户端持有 catalog 缓存实例");
+  assert.ok(src.includes("catalogCache.load"), "resolveProviderFromSession 注入缓存 loader");
+  assert.ok(src.includes("catalogCache.reset()"), "卸载时失效目录缓存");
 }
 
 // ---------------------------------------------------------------- 子进程行为级剧本
