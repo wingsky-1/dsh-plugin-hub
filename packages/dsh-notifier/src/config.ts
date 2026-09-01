@@ -10,7 +10,7 @@
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { QUIET_ALLOW_KINDS, parseHHMM } from "./quiet-hours.ts";
+import { parseHHMM } from "./quiet-hours.ts";
 import type { QuietHoursConfig } from "./quiet-hours.ts";
 
 // ---------------------------------------------------------------- 频道实例（M2）
@@ -298,9 +298,11 @@ export function normalizeConfig(input: unknown): NotifyConfig {
     // 避免「配置保存成功但免打扰永不生效」的静默失败
     if (typeof qh.start === "string" && /^\d{2}:\d{2}$/u.test(qh.start) && parseHHMM(qh.start) >= 0) base.quietHours.start = qh.start;
     if (typeof qh.end === "string" && /^\d{2}:\d{2}$/u.test(qh.end) && parseHHMM(qh.end) >= 0) base.quietHours.end = qh.end;
-    // 紧急例外 kind 白名单过滤
+    // 免打扰豁免 kind（issue #421：放开白名单——不再按 QUIET_ALLOW_KINDS 过滤未知
+    // 项，与顶层 allowKinds 同款 normalizeAllowKinds 边界：非空、≤64 字符、去重、≤128 项。
+    // 豁免判定仅 includes 匹配，语义由 UI 引导，服务端不约束 kind 集合）
     if (Array.isArray(qh.allowKinds)) {
-      base.quietHours.allowKinds = qh.allowKinds.filter((k): k is string => typeof k === "string" && (QUIET_ALLOW_KINDS as readonly string[]).includes(k));
+      base.quietHours.allowKinds = normalizeAllowKinds(qh.allowKinds);
     }
   }
   // M2 三键：推送频道实例 / kind 稀疏路由 / 动态 kind 确认清单
@@ -343,8 +345,12 @@ function isConnLimit(v: unknown): boolean {
   return typeof v === "number" && Number.isFinite(v) && Number.isInteger(v) && v >= 1 && v <= 1024;
 }
 
+/** 免打扰豁免整组写入校验（issue #421：放开白名单为「非空字符串 ≤64 字符、≤128 项」，
+ *  与顶层 allowKinds 的 isConfirmedKinds 同口径——避免「手改配置能生效、UI 保存却 400」
+ *  的读写分裂；未知 kind 项合法保留（豁免判定仅 includes 匹配，不做语义约束）。 */
 function isAllowKinds(v: unknown): boolean {
-  return Array.isArray(v) && v.every((k) => typeof k === "string" && (QUIET_ALLOW_KINDS as readonly string[]).includes(k));
+  if (!Array.isArray(v) || v.length > 128) return false;
+  return v.every((k) => typeof k === "string" && k.length > 0 && k.length <= 64);
 }
 
 /** quietHours 整组校验（enabled/start/end/allowKinds 任一层非法即整组拒绝）。 */
@@ -460,7 +466,7 @@ const SETTING_HINTS: Record<string, string> = {
   browserNotify: "需为布尔值",
   notifyWhenVisible: "需为布尔值",
   notifySound: "需为布尔值",
-  quietHours: "需为 { enabled?: boolean, start?: \"HH:MM\", end?: \"HH:MM\", allowKinds?: kind[] }",
+  quietHours: "需为 { enabled?: boolean, start?: \"HH:MM\", end?: \"HH:MM\", allowKinds?: string[] }（allowKinds 每项为非空字符串 ≤64 字符、至多 128 项）",
   errorMergeWindowMs: "需为 0-3600000 的整数（毫秒）",
   askRemindMin: "需为 0-600 的整数（分钟）",
   doneMergeWindowMs: "需为 0-60000 的整数（毫秒）",

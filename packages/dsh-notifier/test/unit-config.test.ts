@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { mkdtempSync, rmSync } from "node:fs";
 import { assert } from "./helpers.ts";
-import { normalizeConfig, parseHHMM, isInQuietHours, DEFAULT_CONFIG, configFile, historyFile, toastScriptPath, normalizeBarkBaseUrl, redactConfigView, unmaskChannels, SECRET_MASK, BARK_ID_PATTERN, validateSettings, sanitizeSettings } from "../lib/index.js";
+import { normalizeConfig, parseHHMM, isInQuietHours, DEFAULT_CONFIG, configFile, historyFile, toastScriptPath, normalizeBarkBaseUrl, redactConfigView, unmaskChannels, SECRET_MASK, BARK_ID_PATTERN, validateSettings, sanitizeSettings, QUIET_ALLOW_KINDS } from "../lib/index.js";
 
 const work = mkdtempSync(join(tmpdir(), "dnotify-unit-config-"));
 try {
@@ -65,11 +65,18 @@ try {
   assert.equal(isInQuietHours(new Date(2026, 0, 1, 9, 0), { enabled: true, start: "09:00", end: "17:00" }), true, "同日内");
   assert.equal(isInQuietHours(new Date(2026, 0, 1, 8, 0), { enabled: true, start: "09:00", end: "17:00" }), false);
 
+  // #421：QUIET_ALLOW_KINDS 扩至全部 6 个内置事件（豁免候选全量）
+  assert.deepEqual([...QUIET_ALLOW_KINDS], ["ask", "question", "done", "subagent-done", "error", "turn-end"], "#421：QUIET_ALLOW_KINDS 覆盖全部内置事件 kind");
+
   // M4 配置归一化：askRemindMin / quietHours.allowKinds
   assert.equal(normalizeConfig({ askRemindMin: 3 }).askRemindMin, 3, "审批提醒分钟可配");
   assert.equal(normalizeConfig({ askRemindMin: 0 }).askRemindMin, 0, "0=关闭审批提醒");
   assert.equal(normalizeConfig({ askRemindMin: "x" }).askRemindMin, DEFAULT_CONFIG.askRemindMin, "非法提醒分钟回默认 5");
-  assert.deepEqual(normalizeConfig({ quietHours: { allowKinds: ["ask", "bogus", "error"] } }).quietHours.allowKinds, ["ask", "error"], "allowKinds 白名单过滤");
+  // #421：quietHours.allowKinds 放开白名单（全部内置事件可豁免）——未知 kind 项保留、
+  // 空串/超长项过滤、去重
+  assert.deepEqual(normalizeConfig({ quietHours: { allowKinds: ["ask", "done", "error"] } }).quietHours.allowKinds, ["ask", "done", "error"], "放开后 done 等全部内置事件可豁免");
+  assert.deepEqual(normalizeConfig({ quietHours: { allowKinds: ["ask", "bogus", "error"] } }).quietHours.allowKinds, ["ask", "bogus", "error"], "放开后未知 kind 保留（豁免仅 includes 匹配）");
+  assert.deepEqual(normalizeConfig({ quietHours: { allowKinds: ["ask", "", "x".repeat(65), "ask"] } }).quietHours.allowKinds, ["ask"], "边界：空串/超长过滤、去重");
 
   // 合并/清理配置：doneMergeWindowMs / errorMergeWindowMs(0=关) / historyMaxAgeDays
   assert.equal(normalizeConfig({ doneMergeWindowMs: 0 }).doneMergeWindowMs, 0, "完成聚合窗口 0=关闭");
@@ -174,6 +181,10 @@ try {
   assert.equal(validateSettings({ kindRoutes: { error: [] } })?.key, "kindRoutes", "空数组 kindRoutes 拒绝");
   assert.equal(validateSettings({ allowKinds: ["a:b"] }), null, "合法 allowKinds 通过");
   assert.equal(validateSettings({ allowKinds: [42] })?.key, "allowKinds", "非字符串 allowKinds 拒绝");
+  // #421：quietHours.allowKinds 写入校验放开（与顶层 allowKinds 同口径：非空字符串 ≤64、≤128）
+  assert.equal(validateSettings({ quietHours: { enabled: true, allowKinds: ["ask", "done", "turn-end"] } }), null, "放开后全部内置事件可写入豁免");
+  assert.equal(validateSettings({ quietHours: { allowKinds: [42] } })?.key, "quietHours", "quietHours.allowKinds 非字符串拒绝（整组 400）");
+  assert.equal(validateSettings({ quietHours: { allowKinds: [""] } })?.key, "quietHours", "quietHours.allowKinds 空串拒绝");
   const sanitizedCh = sanitizeSettings({ channels: [{ ...okCh, volume: "0.7" }] });
   assert.ok(sanitizedCh && Array.isArray(sanitizedCh.channels) && sanitizedCh.channels.length === 1, "sanitizeSettings channels 往返");
   assert.deepEqual(sanitizeSettings({ futureKey: 1 }), {}, "未来键写入白名单语义不变（读取归一化才透传）");

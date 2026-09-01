@@ -108,6 +108,31 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   assert.ok(!locales.includes("secActions:"), "#418：locales 字典已删 secActions 键");
 }
 
+// ---- issue #421：免打扰豁免扩至全部内置事件（候选 6 项 + 跟随已启用 + 恢复默认）----
+{
+  const src = readFileSync(new URL("../src/client/index.ts", import.meta.url), "utf8");
+  const locales = readFileSync(new URL("../src/client/locales.ts", import.meta.url), "utf8");
+  const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+
+  // 单一事实源：EVENT_KIND_MAP 覆盖全部 6 个内置事件 kind（notifyKey → kind）
+  assert.ok(src.includes("EVENT_KIND_MAP"), "#421：事件开关键→kind 映射（单一事实源）");
+  for (const [notifyKey, kind] of [["notifyAsk", "ask"], ["notifyQuestion", "question"], ["notifyTaskDone", "done"], ["notifySubagentDone", "subagent-done"], ["notifyTaskError", "error"], ["notifyTurnEnd", "turn-end"]]) {
+    assert.ok(src.includes(`${notifyKey}: "${kind}"`), `#421：${notifyKey} → ${kind}`);
+  }
+  // 候选由 EVENT_KEYS 派生（不新建平行表 ALLOW_CHOICES）
+  assert.ok(!src.includes("ALLOW_CHOICES"), "#421：旧 3 项硬编码 ALLOW_CHOICES 已移除");
+  // 快捷按钮 + 未启用弱化（关键 class/函数进源码与产物）
+  assert.ok(src.includes("dn-set-allowDim"), "#421：未启用事件弱化样式");
+  assert.ok(src.includes("allowFollowEnabled") && src.includes("allowResetDefault"), "#421：跟随已启用/恢复默认按钮");
+  assert.ok(src.includes("dn-set-allowActions"), "#421：快捷按钮行 class");
+  assert.ok(client.includes("dn-set-allowDim") && client.includes("dn-set-allowActions"), "#421：豁免区新 class 进产物");
+  // 文案键：新增三个（中英双语）
+  assert.ok(locales.includes('allowFollowEnabled: "跟随已启用事件"') && locales.includes('allowFollowEnabled: "Follow enabled events"'), "#421：跟随已启用文案双语");
+  assert.ok(locales.includes('allowResetDefault:') && locales.includes("allowResetDefault:"), "#421：恢复默认文案双语");
+  // 旧 allowXxx 豁免 label 键移除（候选复用 KIND_KEYS 事件文案）
+  assert.ok(!locales.includes("allowAsk:") && !locales.includes("allowQuestion:") && !locales.includes("allowError:"), "#421：旧 allowXxx 豁免 label 键已删");
+}
+
 // lib/toast.ps1 发布物完整性（issue #238）：必须带 UTF-8 BOM 且与源文件逐字节一致。
 // pwsh 7 在 CI 上解析通过抓不住 5.1 的 ANSI 码页问题，字节级断言是唯一机器兜底；
 // 构建期 copyClientResources 已强制补写，此处防回归（编辑器去 BOM / 复制链变更）。
