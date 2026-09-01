@@ -44,7 +44,7 @@
     "access": "public"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-skill-filesystem": "0.1.2-alpha.2"
+    "@deepseek-ai/dsh-skill-filesystem": "0.1.2-alpha.3"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-skill-filesystem": {
