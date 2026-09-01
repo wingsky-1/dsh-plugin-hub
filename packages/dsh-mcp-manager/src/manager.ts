@@ -234,11 +234,24 @@ export class McpManager {
     return this.findProjectRoot(cwd);
   }
 
-  /** 中间层宿主：按 root 读取服务器配置。all 模式的虚拟 root "@global" 返回全局配置。 */
+  /**
+   * 中间层宿主：按 root 读取服务器配置。all 模式的虚拟 root "@global" 返回
+   * 全局配置 **+ runtime 注入条目**（#413：runtime 封装定义服务器由中间层接管，
+   * 数据源必须可见；独立合并，不污染 store.data.servers 持久化数组）。
+   */
   async projectServersFor(root: string): Promise<ServerConfig[] | undefined> {
-    if (root === MIDDLEWARE_GLOBAL_ROOT) return this.store.data.servers;
+    if (root === MIDDLEWARE_GLOBAL_ROOT) {
+      const servers = [...this.store.data.servers];
+      for (const server of this.runtimeRegistry.values()) servers.push(server);
+      return servers;
+    }
     const store = await this.projectStoreFor(root);
     return store?.data.servers;
+  }
+
+  /** 中间层宿主：该 server 是否 runtime 注入（目录不写盘判定；#413）。 */
+  isRuntimeServer(name: string): boolean {
+    return this.runtimeRegistry.has(name);
   }
 
   /** 中间层宿主：该 server 是否全局级（双源：store + runtimeRegistry）。
@@ -277,6 +290,7 @@ export class McpManager {
         emitStatus: () => this.emitStatus(),
         catalogCachePath: (root) => this.catalogCachePathFor(root),
         isGlobalServer: (name) => this.isGlobalServer(name),
+        isRuntimeServer: (name) => this.isRuntimeServer(name),
       },
       {
         allowTools: (policy.allowTools as Record<string, string[]> | undefined) ?? undefined,
@@ -511,7 +525,8 @@ export class McpManager {
         }
       }
       // 双轨合并：runtimeRegistry（内存态，运行时注入）并入 desired，同名 runtime 优先。
-      // 中间层 project/all 模式：runtime 仅全局 supervisor 路径（不拆单元、不走中间层连接池）。
+      // 中间层模式：#413 起 all 模式 runtime 归一中台（同 store 全局走 @global 单元），
+      // project 模式 runtime 仍全局 supervisor 路径。
       for (const [name, server] of this.runtimeRegistry) {
         desired.set(name, { server, scope: SCOPE_GLOBAL });
       }
@@ -519,7 +534,7 @@ export class McpManager {
       for (const [name, supervisor] of [...this.supervisors]) {
         const want = desired.get(name);
         // 中间层接管（与 start 同口径单一事实源 middlewareTakes）：停掉不该以
-        // supervisor 形态存在的连接。runtime 条目豁免（判定恒 false，不被停）。
+        // supervisor 形态存在的连接（#413：all 模式 runtime 亦被接管，同样停）。
         const middlewareTakes = this.middlewareTakes(name, supervisor.scope);
         if (want === undefined || want.server.enabled === false || want.scope !== supervisor.scope || middlewareTakes) {
           this.stop(name);
@@ -612,13 +627,14 @@ export class McpManager {
 
   /**
    * 中间层接管判定（start / reconcileServers 单一口径）：中间层模式的项目级，
-   * 或 all 模式下非 runtime 注入的全局级。runtime 条目豁免（始终走 supervisor
-   * 路径，注册 mcp__ 工具）。
+   * 或 all 模式的全局级（**含 runtime 注入条目**，#413 消除豁免——all 模式
+   * 统一无 mcp__ 前缀直呼，runtime 封装定义服务器经中间层目录投影 + callTool
+   * 直呼执行；project / off 模式 runtime 照旧 supervisor 路径注册 mcp__ 工具）。
    */
   private middlewareTakes(name: string, scope: string): boolean {
     if (this.middlewareMode === "off" || this.middleware === undefined) return false;
     if (scope === SCOPE_PROJECT) return true;
-    return this.middlewareMode === "all" && scope === SCOPE_GLOBAL && !this.runtimeRegistry.has(name);
+    return this.middlewareMode === "all" && scope === SCOPE_GLOBAL;
   }
 
   /**
@@ -701,9 +717,14 @@ export class McpManager {
         return { name: config.name, existing: true };
       }
       this.runtimeRegistry.set(config.name, config);
-      if (this.middlewareMode !== "off") {
-        // 中间层模式：runtime 服务器走全局 supervisor 路径（不落盘，不拆单元）。
-      }
+      // #413 时序显式化：注册即连接走 start 的 config 直传分支；start 内部按
+      // middlewareTakes 判定（all 模式全局 → 触达 @global 单元，不建 supervisor、
+      // 不注册 mcp__；project/off 或中间层未就绪 → supervisor 路径）。中间层
+      // 未就绪窗口（provide→initMiddleware 之间的 async 空隙）暂落 supervisor，
+      // 由 apply 的 reconcileServers（initMiddleware 后无条件执行）按同口径收敛
+      // （stop supervisor + 重定向 @global 单元）；若收敛瞬间旧 mcp__ 注册尚未
+      // 注销（dispose fire-and-forget），中间层防双进程探测命中 → F5 有界重试
+      // 兜底，与 #382 热切换窗口同语义。
       if (config.enabled !== false) this.start(config.name, SCOPE_GLOBAL, config);
       return { name: config.name, existing: false };
     });
@@ -802,7 +823,8 @@ export class McpManager {
     // F4（#382）：被中间层接管的服务器连接走连接池（userDisabled 解除 + 惰性
     // 连接）——此前只有项目级走池，all 模式全局走 supervisor 复活（注册 mcp__
     // 前缀工具），既导致浮窗带前缀展示，又让中间层防双进程探测持续命中、永不
-    // 接管。runtime 条目豁免（middlewareTakes 判定），仍走 supervisor 路径。
+    // 接管。project/off 模式 runtime 仍走 supervisor 路径（#413：仅 all 模式
+    // 归一中间层）。
     if (this.middlewareTakes(name, scope) && this.middleware !== undefined) {
       const root = scope === SCOPE_PROJECT ? this.projectRoot : MIDDLEWARE_GLOBAL_ROOT;
       if (root === undefined) throw new Error("no active project session (call session with a cwd first)");
@@ -827,9 +849,10 @@ export class McpManager {
 
   async disconnect(name: string, scope?: string): Promise<void> {
     // 中间层模式：userDisabled 持久化 + 连接池拆毁该连接。
-    // #382：定位按接管口径显式进行——all 模式全局（store 配置且非 runtime）固定
-    // 定位 @global 单元（此前按 units 遍历序找第一个命中，同名服务器同时存在于
-    // 项目与 @global 单元时可能写错单元）；runtime 注入条目不经池，落 supervisor。
+    // #382：定位按接管口径显式进行——all 模式全局（store 配置）固定定位 @global
+    // 单元（此前按 units 遍历序找第一个命中，同名服务器同时存在于项目与 @global
+    // 单元时可能写错单元）；#413：all 模式 runtime 注入条目同样在 @global 单元
+    // （虚拟连接），走遍历兜底定位。
     // #392：scope 显式传入时按 scope 精确定位单元——项目级固定定位当前项目 root
     // 单元，避免同名全局服务器把项目级 disconnect 错写进 @global 单元。
     // 拆连接前关 transport（此前直接 delete 丢 entry，stdio 子进程/socket 泄漏）。
@@ -911,8 +934,8 @@ export class McpManager {
   private middlewareUnitFor(serverName: string, scope: string): ProjectUnit | undefined {
     const mw = this.middleware;
     if (mw === undefined || this.middlewareMode === "off") return undefined;
-    // 与 start/reconcileServers 同口径（#382 F4）：runtime 条目豁免（走 supervisor
-    // 投影），all 模式全局才映射 @global 单元。
+    // 与 start/reconcileServers 同口径（#382 F4 + #413）：all 模式全局（含
+    // runtime 注入条目）映射 @global 单元。
     if (!this.middlewareTakes(serverName, scope)) return undefined;
     const root = scope === SCOPE_PROJECT ? this.projectRoot : MIDDLEWARE_GLOBAL_ROOT;
     return root === undefined ? undefined : mw.units.get(root);

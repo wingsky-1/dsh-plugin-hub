@@ -23,6 +23,7 @@ import { mkdir, readFile, rename, writeFile, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
 import type { ServerConfig } from "./types.ts";
+import type { ToolDefinition, ToolOutputDefinition } from "@deepseek-ai/dsh-tools";
 import { MCPClient } from "./protocol.ts";
 import { createTransport } from "./transport.ts";
 import {
@@ -155,6 +156,30 @@ export class McpMiddleware {
     const servers = await this.host.projectServersFor(root);
     const server = servers?.find((entry) => entry.name === serverName);
     if (server === undefined || server.enabled === false) return;
+    // #413：封装定义服务器（runtime 注入 toolDefinitions，如 codegraph）——
+    // execute 为调用方 JS 直呼 CLI，不经远端 MCP callTool，**不 spawn transport**。
+    // 中间层以「虚拟连接」（无 client/transport，status=connected）+ 目录从
+    // toolDefinitions 投影存在；执行走 callTool 的封装直呼分支。
+    if (Array.isArray(server.toolDefinitions) && server.toolDefinitions.length > 0) {
+      const existingWrapped = unit.connections.get(serverName);
+      if (existingWrapped !== undefined && (existingWrapped.status === "connected" || existingWrapped.status === "connecting")) return;
+      const wrappedEntry: ConnectionEntry = {
+        server,
+        client: undefined,
+        transport: undefined,
+        status: "connected",
+        error: undefined,
+        connectedAt: Date.now(),
+        reconnectTimer: undefined,
+        disposed: false,
+        failedAttempts: 0,
+      };
+      unit.connections.set(serverName, wrappedEntry);
+      this.projectWrappedCatalog(root, serverName, server);
+      this.host.logger.info(`dsh-mcp-manager(${serverName}@${root}): wrapped (toolDefinitions) connected`);
+      this.host.emitStatus();
+      return;
+    }
     // 与官方 dsh-mcp-client 并存（方案 E2）：运行时探测官方/其他插件是否已注册
     // 同名 server 的 mcp__ 工具（说明该 server 已有其他实例连接）→ 跳过本实例，
     // 防同一 server 双进程。探测失败（tools.schemas 不可用）不阻塞连接。
@@ -323,6 +348,28 @@ export class McpMiddleware {
     }
   }
 
+  /**
+   * #413：从封装定义（toolDefinitions）投影目录，替代远端 discover。
+   * 封装 execute 为调用方 JS 直呼（不经远端 MCP），目录数据源即调用方定义：
+   * name/description 直取；dsh-tools 的 parameters（ToolSchema）即 JSON Schema
+   * 形态，直接作 CatalogTool.inputSchema（与 supervisor 封装分支同口径）。
+   */
+  private projectWrappedCatalog(root: string, serverName: string, server: ServerConfig): void {
+    const unit = this.units.get(root);
+    if (unit === undefined) return;
+    const tools = new Map<string, CatalogTool>();
+    if (Array.isArray(server.toolDefinitions)) {
+      for (const def of server.toolDefinitions) {
+        if (typeof def?.name !== "string" || def.name === "") continue;
+        tools.set(def.name, {
+          description: typeof def.description === "string" ? def.description : "",
+          inputSchema: (def.parameters ?? {}) as Record<string, unknown>,
+        });
+      }
+    }
+    unit.catalog.set(serverName, { discoveredAt: Date.now(), tools });
+  }
+
   /** 凭据脱敏（连接/发现/调用错误路径统一使用；P1 修复）。 */
   private redact(error: unknown): string {
     return createRedactor(this.allServers())(error);
@@ -349,6 +396,9 @@ export class McpMiddleware {
     let anyTools = false;
     const payload: Record<string, unknown> = {};
     for (const [serverName, catalog] of unit.catalog) {
+      // #413：runtime 注入条目（内存态，不落盘）目录只驻内存——防卸载/重启后
+      // 幽灵条目被 loadCatalogCache 载回（与 removeCatalogEntry 清理同类问题）。
+      if (this.host.isRuntimeServer?.(serverName) === true) continue;
       if (catalog.tools.size === 0) continue;
       anyTools = true;
       payload[serverName] = {
@@ -432,12 +482,15 @@ export class McpMiddleware {
     }
   }
 
-  /** 执行 ws_mcp_call：路由 + 一致性校验 + 策略 + 调用。 */
+  /** 执行 ws_mcp_call：路由 + 一致性校验 + 策略 + 调用。
+   * @param agent 调用方会话 agent（透传给封装定义的 execute，供 session cwd
+   *   解析；#413 封装直呼分支需要）。 */
   async callTool(
     fullName: string,
     toolRaw: string,
     rawArgs: unknown,
     signal: AbortSignal | undefined,
+    agent?: unknown,
   ): Promise<unknown> {
     const parsed = parseFullServerName(fullName);
     if (parsed === undefined) {
@@ -474,10 +527,38 @@ export class McpMiddleware {
     if (stale) {
       // stale：仍可调用（目录只是提示），但 schema 可能过期——在结果前置提示。
     }
+    const args = normalizeArguments(rawArgs);
+    // #413 封装直呼分支：runtime 注入的封装定义服务器（toolDefinitions）——
+    // execute 为调用方 JS（不经远端 client.callTool）。禁用/策略已在上面统一
+    // 裁决（isToolDenied），此处直接调调用方 execute；输出经封装 output.render
+    // 投影为 ContentBlock[]（与 supervisor 封装分支 / dsh-tools 同口径）。
+    const wrapped = entry.server?.toolDefinitions;
+    if (Array.isArray(wrapped) && wrapped.length > 0) {
+      const def = wrapped.find((d) => d?.name === tool);
+      if (def === undefined) {
+        throw new Error(`ws_mcp_call: 工具 ${JSON.stringify(`${parsed.server}/${tool}`)} 不存在（封装定义服务器）`);
+      }
+      try {
+        // 封装定义契约：execute(args, exec) 的 exec 为完整 ToolRunContext，但
+        // 中间层只能提供最小面（agent 透传，session cwd 解析用）——经 unknown
+        // 中转（消费方封装定义只读 exec.agent，契约面见 dsh-codegraph）。
+        const execCtx = { agent } as unknown as Parameters<NonNullable<ToolDefinition["execute"]>>[1];
+        const value = await def.execute(
+          typeof args === "object" && args !== null ? args : {},
+          execCtx,
+        );
+        const content = typeof def.output?.render === "function"
+          ? def.output.render(args, value as unknown as Parameters<NonNullable<ToolOutputDefinition["render"]>>[1])
+          : [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value ?? {}) }];
+        return { content, structuredContent: value };
+      } catch (error) {
+        if (signal?.aborted === true) throw signal.reason;
+        throw new Error(this.hostRedact(`ws_mcp_call: ${JSON.stringify(`${parsed.server}/${tool}`)} 封装调用失败：${msgOf(error)}`));
+      }
+    }
     if (entry.client === undefined) {
       throw new Error(`ws_mcp_call: server ${JSON.stringify(fullName)} 未就绪（client 缺失）；请稍后重试或重新连接`);
     }
-    const args = normalizeArguments(rawArgs);
     try {
       const result = await withTimeout(
         entry.client.callTool(tool, typeof args === "object" && args !== null ? args : {}, {

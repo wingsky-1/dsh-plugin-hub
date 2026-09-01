@@ -564,3 +564,85 @@ function makeHost(serversByRoot = new Map()) {
   if (after.reconnectTimer !== undefined) clearTimeout(after.reconnectTimer);
   await mw.dispose();
 }
+
+// ---- #413：runtime 封装定义服务器（toolDefinitions）中间层直呼 ----
+{
+  const wrappedTool = {
+    name: "cg_node",
+    description: "查符号（封装定义）",
+    parameters: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] },
+    output: {
+      schema: { type: "object", properties: { text: { type: "string" } }, required: ["text"], additionalProperties: false },
+      render: (args, value) => [{ type: "text", text: `rendered:${value.text}` }],
+    },
+    isConcurrencySafe: () => true,
+    execute: async (args, exec) => {
+      const cwd = exec?.agent?.session?.header?.cwd;
+      return { text: `node(${args.symbol})@${cwd ?? "no-cwd"}` };
+    },
+  };
+  const wrappedServer = { name: "cg", transport: "stdio", command: "codegraph", enabled: true, toolDefinitions: [wrappedTool] };
+  const { host, log } = makeHost(new Map([["@global", [wrappedServer]]]));
+  const mw = new McpMiddleware(host, {});
+  await mw.projectUnitFor("@global");
+  await mw.ensureConnected("@global", "cg");
+  const unit = mw.units.get("@global");
+  assert.ok(unit, "@global 单元已创建");
+  const entry = unit.connections.get("cg");
+  assert.ok(entry, "封装定义服务器虚拟连接已建立");
+  assert.equal(entry.status, "connected", "虚拟连接状态 connected");
+  assert.equal(entry.client, undefined, "不建远端 client（封装 execute 不经远端）");
+  assert.equal(entry.transport, undefined, "不 spawn transport");
+  // 目录从 toolDefinitions 投影（name/description/parameters → inputSchema）。
+  const catalog = unit.catalog.get("cg");
+  assert.ok(catalog, "目录已投影");
+  assert.equal(catalog.tools.has("cg_node"), true, "封装工具名投影进目录");
+  assert.equal(catalog.tools.get("cg_node").description, "查符号（封装定义）");
+  assert.deepEqual(catalog.tools.get("cg_node").inputSchema, { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, "parameters 直接作 inputSchema");
+
+  // callTool 封装直呼：execute 被调用 + output.render 投影 content + agent 透传。
+  const result = await mw.callTool(fullServerName("@global", "cg"), "cg_node", { symbol: "foo" }, undefined, { session: { header: { cwd: "/proj" } } });
+  assert.deepEqual(result, { content: [{ type: "text", text: "rendered:node(foo)@/proj" }], structuredContent: { text: "node(foo)@/proj" } }, "封装直呼：execute + render + agent 透传");
+  // agent 缺省 → cwd 解析 undefined。
+  const noAgent = await mw.callTool(fullServerName("@global", "cg"), "cg_node", { symbol: "bar" }, undefined);
+  assert.deepEqual(noAgent.structuredContent, { text: "node(bar)@no-cwd" }, "agent 缺省不崩（封装侧自处理）");
+
+  // 工具级禁用前置：禁用表命中 → 抛禁用错误（不经 execute）。
+  mw.disabledTools.set("@global", new Map([["cg", new Set(["cg_node"])]]));
+  await assert.rejects(
+    () => mw.callTool(fullServerName("@global", "cg"), "cg_node", { symbol: "x" }, undefined, { session: { header: { cwd: "/p" } } }),
+    /已被用户在「MCP」浮窗禁用/,
+  );
+  mw.disabledTools.delete("@global");
+
+  // 不存在的封装工具名 → 明确报错。
+  await assert.rejects(
+    () => mw.callTool(fullServerName("@global", "cg"), "nope", {}, undefined),
+    /不存在（封装定义服务器）/,
+  );
+
+  // persistCatalog 跳过 runtime 条目（isRuntimeServer 命中 → 不写盘）。
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mw-wrapped-"));
+  const persistHost = {
+    ...host,
+    isRuntimeServer: (name) => name === "cg",
+    catalogCachePath: (root) => join(dir, `${root.replace(/[^a-z0-9]/gi, "_")}.json`),
+  };
+  const mw2 = new McpMiddleware(persistHost, {});
+  const unit2 = {
+    root: "@global",
+    connections: new Map([["cg", entry]]),
+    catalog: new Map([["cg", catalog], ["storeSrv", { discoveredAt: Date.now(), tools: new Map([["t1", { description: "d", inputSchema: {} }]]) }]]),
+    userDisabled: new Set(),
+    lastTouchedAt: Date.now(),
+    inFlight: new Map(),
+  };
+  mw2.units.set("@global", unit2);
+  await mw2.persistCatalog("@global");
+  const { readFileSync } = await import("node:fs");
+  const persisted = readFileSync(persistHost.catalogCachePath("@global"), "utf8");
+  assert.equal(persisted.includes("cg"), false, "runtime 条目不写盘");
+  assert.equal(persisted.includes("storeSrv"), true, "store 条目照常写盘");
+  await mw2.dispose();
+  await mw.dispose();
+}

@@ -256,7 +256,9 @@ export function registerMiddlewareTools(
       const unit = await mw.projectUnitFor(targetRoot);
       if (unit === undefined) throw new Error(`ws_mcp_call: 工作空间 ${JSON.stringify(targetRoot)} 无项目级 MCP 配置`);
       await mw.ensureConnected(targetRoot, parsed.server);
-      return mw.callTool(server, tool, params.arguments, exec.signal);
+      // #413：透传 exec.agent 给 callTool（封装直呼分支的 execute 依赖
+      // agent.session.header.cwd 做 projectPath 补全）。
+      return mw.callTool(server, tool, params.arguments, exec.signal, exec.agent);
     },
   };
 
