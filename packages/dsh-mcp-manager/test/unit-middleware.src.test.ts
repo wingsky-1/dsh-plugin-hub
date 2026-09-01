@@ -514,3 +514,53 @@ function makeHost(serversByRoot = new Map()) {
     /已被用户禁用/,
   );
 }
+
+// ---- #412 force 受控重建：半开 connected entry 不短路 ----
+{
+  const servers = [{ name: "ctx", transport: "stdio", command: "npx", enabled: true }];
+  const { host } = makeHost(new Map([[ROOT, servers]]));
+  // 防双进程探测命中（避免真实 spawn；重建落 failed 占位 + 排重试）
+  host.ctx.tools.schemas = () => [{ name: "mcp__ctx__t" }];
+  const mw = new McpMiddleware(host, {});
+  // 直接构造单元（不走 projectUnitFor 惰性连接，测试全程不 spawn）
+  const unit = {
+    root: ROOT,
+    connections: new Map(),
+    catalog: new Map(),
+    userDisabled: new Set(),
+    lastTouchedAt: Date.now(),
+    inFlight: new Map(),
+  };
+  mw.units.set(ROOT, unit);
+  // 预置「半开死连接」：status 卡 connected、transport 已静默断链（模拟移动端
+  // 切后台掐断 TCP 后 onClose 不触发）。
+  const deadTransport = { close: () => { deadTransport.closed = true; return Promise.resolve(); }, closed: false };
+  const deadEntry = {
+    server: servers[0],
+    client: {},
+    transport: deadTransport,
+    status: "connected",
+    error: undefined,
+    connectedAt: Date.now(),
+    reconnectTimer: undefined,
+    disposed: false,
+    failedAttempts: 0,
+  };
+  unit.connections.set("ctx", deadEntry);
+
+  // 非 force：connected 短路——entry 引用与 transport 原样保留（惰性路径防重复建连）。
+  await mw.ensureConnected(ROOT, "ctx");
+  assert.equal(unit.connections.get("ctx"), deadEntry, "非 force 短路保留原 entry");
+  assert.equal(deadTransport.closed, false, "非 force 不 close 旧 transport");
+
+  // force：忽略 connected 状态受控重建——旧 transport 被 close、entry 置 failed
+  // + 重试排程（探测命中防双进程路径复用 entry，不再短路）。
+  await mw.ensureConnected(ROOT, "ctx", { force: true });
+  assert.equal(deadTransport.closed, true, "force 关闭旧 transport（半开 socket 不泄漏）");
+  const after = unit.connections.get("ctx");
+  assert.equal(after.status, "failed", "force 重建置 failed（防 probeRetry 对 connected 短路死循环）");
+  assert.equal(after.transport, undefined, "旧 transport 已清空（重建代际）");
+  assert.equal(after.probeRetried, true, "重试已排（probeRetried 一次性标记）");
+  if (after.reconnectTimer !== undefined) clearTimeout(after.reconnectTimer);
+  await mw.dispose();
+}
