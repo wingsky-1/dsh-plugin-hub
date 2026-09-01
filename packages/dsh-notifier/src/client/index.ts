@@ -52,7 +52,8 @@ const NS = "notifier";
     kinds: "/api/dsh-notifier/kinds",
   };
   var STYLE_ID = "dsh-notifier-style";
-  var CSS_VERSION = "402-1";
+  // 合并 #418/#421 后统一 bump（两分支各自 418-1/421-1，取更新值保证样式重注入）
+  var CSS_VERSION = "421-2";
   // 浏览器通知图标（内联 SVG data URL，零外部资源；铃铛造型）。
   var NOTIFY_ICON =
     "data:image/svg+xml;utf8," +
@@ -69,6 +70,17 @@ const NS = "notifier";
     ["notifyTaskError", "evtTaskError"],
     ["notifyTurnEnd", "evtTurnEnd"],
   ];
+  /** 事件开关键 → 通知 kind（单一事实源；免打扰豁免候选/「跟随已启用」由此派生，
+   *  与服务端 EVENT_KEYS 对应的事件源 kind 一致：ask/question/done/subagent-done/
+   *  error/turn-end）。 */
+  var EVENT_KIND_MAP: Record<string, string> = {
+    notifyAsk: "ask",
+    notifyQuestion: "question",
+    notifyTaskDone: "done",
+    notifySubagentDone: "subagent-done",
+    notifyTaskError: "error",
+    notifyTurnEnd: "turn-end",
+  };
   /** kind → 字典 key（未知 kind 回落 kind 本体显示，数据不翻译）。 */
   var KIND_KEYS: Record<string, string> = {
     ask: "kAsk",
@@ -532,6 +544,11 @@ const NS = "notifier";
     var activeTabDraft = useState("events" as "events" | "channels");
     var activeTab = activeTabDraft[0];
     var setActiveTab = activeTabDraft[1];
+    // #418：浏览器通知权限状态行在频道卡内——Notification.permission 非 React state，
+    // 请求权限完成后 bump 一次触发重渲染刷新状态行文案/隐藏按钮。
+    var permTickDraft = useState(0);
+    var permTick = permTickDraft[0];
+    var setPermTick = permTickDraft[1];
     // 加载基线（A4）：保存时只提交与基线不同的键（增量 diff），未改动的键不提交。
     // 用 useRef 持久化：组件每次渲染局部变量会重置为 null，导致 save() 闭包里读不到
     // 基线而永远判定「无变化」。
@@ -853,6 +870,35 @@ const NS = "notifier";
     }
 
     /**
+     * 浏览器通知权限状态行（#418：从全局降级区移入「浏览器通知」频道卡）。
+     * 三态文案 + 未授权时的「请求通知权限」按钮（手势内请求，完成后刷新状态）；
+     * 非安全上下文/无 Notification API 时返回 null（对应降级文案仍在全局 notes）。
+     */
+    function browserPermLine() {
+      if (!("Notification" in window) || !isSecureContext()) return null;
+      var text = "";
+      var pending = false;
+      if (Notification.permission === "granted") text = t("permGranted");
+      else if (Notification.permission === "denied") text = t("permDenied");
+      else {
+        text = t("permDefault");
+        pending = true;
+      }
+      return React.createElement("div", { className: "dn-ch-perm" },
+        React.createElement("span", { className: "dn-ch-permText" }, text),
+        pending ? React.createElement("button", {
+          type: "button", className: "dn-set-btn dn-set-btnSmall",
+          onClick: function () {
+            requestPermission(function () {
+              setSaved(t("permRequested"));
+              setPermTick(permTick + 1); // 触发重渲染刷新权限状态行
+            });
+          },
+        }, t("requestPerm")) : null,
+      );
+    }
+
+    /**
      * 内置频道卡（browser/system）：开关 + 行为参数 + 状态行 + per-channel 测试。
      * #402 第 1 条：整卡 details 可折叠——非受控 + key remount 形态（key 含 enabled，
      * open 仅 mount 生效），未启用默认收起、启用默认展开；手动开合完全交 DOM，
@@ -889,6 +935,8 @@ const NS = "notifier";
         ),
         extras,
         statusLine(channelId),
+        // #418：浏览器通知权限状态行归入浏览器频道卡（权限授权入口同卡就近可达）
+        channelId === "browser" ? browserPermLine() : null,
         React.createElement("div", { className: "dn-ch-actions" }, testBtn(channelId)),
       );
     }
@@ -1105,31 +1153,59 @@ const NS = "notifier";
         onChange: function (e: any) { patch({ quietHours: Object.assign({}, qh, { end: e.target.value }) }); },
       })),
     ];
-    var ALLOW_CHOICES = [["ask", "allowAsk"], ["question", "allowQuestion"], ["error", "allowError"]];
+    // 免打扰豁免候选（issue #421：扩至全部 6 个内置事件 kind，label 复用事件文案
+    // KIND_KEYS 字典；由 EVENT_KEYS + EVENT_KIND_MAP 派生，不新建平行表）。
+    // 事件开关（notifyXxx）与豁免正交：未启用事件弱化显示 + 说明，勾选态保留照常
+    // 写入（服务端判定只看 quietHours.allowKinds.includes(kind)，不看开关）。
+    var quietAllowChoices = EVENT_KEYS.map(function (kv) {
+      var notifyKey = kv[0];
+      var kind = EVENT_KIND_MAP[notifyKey];
+      var enabled = settings[notifyKey] === true;
+      return { kind: kind, notifyKey: notifyKey, enabled: enabled, labelKey: KIND_KEYS[kind] || "k" + kind };
+    });
+    var allows = qh.allowKinds || [];
+    function setAllowKinds(next: string[]) {
+      patch({ quietHours: Object.assign({}, qh, { allowKinds: next }) });
+    }
+    /** 跟随已启用事件：一键把当前 notifyXxx=true 的对应 kind 全选为豁免。 */
+    function allowFollowEnabled() {
+      setAllowKinds(quietAllowChoices.filter(function (c) { return c.enabled; }).map(function (c) { return c.kind; }));
+    }
+    /** 恢复默认豁免（ask/question/error——高频阻塞型，卡着的任务需要叫醒）。 */
+    function allowResetDefault() {
+      setAllowKinds(["ask", "question", "error"]);
+    }
     quietChildren.push(React.createElement("div", { className: "dn-set-row", key: "allow" },
       React.createElement("span", { className: "dn-set-label" }, t("dndStillLabel")),
       React.createElement("div", { className: "dn-set-allows" },
-        ALLOW_CHOICES.map(function (ac) {
-          var kindText = ac[0], kindLabel = ac[1];
-          var allows = qh.allowKinds || [];
-          return React.createElement("label", { className: "dn-set-allow", key: kindText },
+        quietAllowChoices.map(function (c) {
+          var checked = allows.indexOf(c.kind) !== -1;
+          return React.createElement("label", { className: "dn-set-allow" + (c.enabled ? "" : " dn-set-allowDim"), key: c.kind },
             React.createElement("input", {
               type: "checkbox",
-              checked: allows.indexOf(kindText) !== -1,
+              checked: checked,
               onChange: function (e: any) {
                 var next = allows.slice();
-                if (e.target.checked && next.indexOf(kindText) === -1) next.push(kindText);
-                else if (!e.target.checked && next.indexOf(kindText) !== -1) next.splice(next.indexOf(kindText), 1);
-                patch({ quietHours: Object.assign({}, qh, { allowKinds: next }) });
+                if (e.target.checked && next.indexOf(c.kind) === -1) next.push(c.kind);
+                else if (!e.target.checked && next.indexOf(c.kind) !== -1) next.splice(next.indexOf(c.kind), 1);
+                setAllowKinds(next);
               },
             }),
-            React.createElement("span", null, t(kindLabel)),
+            React.createElement("span", null, t(c.labelKey)),
+            c.enabled ? null : React.createElement("span", { className: "dn-set-allowHint" }, t("allowDisabledHint")),
           );
         }),
       ),
+      React.createElement("div", { className: "dn-set-allowActions" },
+        React.createElement("button", { type: "button", className: "dn-set-btn dn-set-btnSmall", onClick: allowFollowEnabled },
+          t("allowFollowEnabled")),
+        React.createElement("button", { type: "button", className: "dn-set-btn dn-set-btnSmall", onClick: allowResetDefault },
+          t("allowResetDefault")),
+      ),
     ));
 
-    // 三端降级文案（A5/A8）
+    // 三端降级文案（A5/A8；#418：浏览器通知权限状态行已移入「浏览器通知」频道卡，
+    // 这里只保留服务不可用 / 非安全上下文 / 平台不支持三条全局降级说明）
     var degradation: any[] = [];
     if (metaValue && metaValue.writable === false) {
       degradation.push(React.createElement("div", { className: "dn-set-note", key: "settings-unavailable" },
@@ -1139,37 +1215,31 @@ const NS = "notifier";
       if (!isSecureContext()) {
         degradation.push(React.createElement("div", { className: "dn-set-note", key: "insecure" },
           t("httpDegraded")));
-      } else {
-        var permText = "";
-        if (Notification.permission === "granted") permText = t("permGranted");
-        else if (Notification.permission === "denied") permText = t("permDenied");
-        else permText = t("permDefault");
-        degradation.push(React.createElement("div", { className: "dn-set-note", key: "perm" }, permText));
       }
     } else {
       degradation.push(React.createElement("div", { className: "dn-set-note", key: "noapi" },
         t("iosUnsupported")));
     }
 
-    // 动作区（A6/A7）
+    // 动作区（A6/A7；#418：并入「通知记录」分区头部，与刷新按钮并排——不再单列
+    // 「动作」分区；请求权限按钮随权限状态行一起归入「浏览器通知」频道卡）
     var actions = React.createElement("div", { className: "dn-set-actions" },
       React.createElement("button", { type: "button", className: "dn-set-btn" + (clearArmedValue ? " dn-set-btnDanger" : ""), onClick: confirmClear },
         clearArmedValue ? t("clearConfirm") : t("clearLabel")),
-      ("Notification" in window && Notification.permission === "default")
-        ? React.createElement("button", { type: "button", className: "dn-set-btn", onClick: function () {
-            requestPermission(function () { setSaved(t("permRequested")); });
-          } }, t("requestPerm"))
-        : null,
       React.createElement("button", { type: "button", className: "dn-set-btn", onClick: function () { sendTest(); } }, t("sendTest")),
     );
 
-    // 历史列表（D1/D2）；key 供 eventsPane 数组子项对齐（#402 复核项）
+    // 历史列表（D1/D2）+ 动作（#418：清理/发送测试并入本分区头部与刷新并排，key 供
+    // eventsPane 数组子项对齐（#402 复核项））
     var historyEl = React.createElement("div", { className: "dn-set-section", key: "history" },
       React.createElement("div", { className: "dn-set-title" }, t("historyTitle")),
-      React.createElement("button", {
-        type: "button", className: "dn-set-btn dn-set-btnSmall",
-        onClick: function () { loadHistory({ value: true }); },
-      }, t("refresh")),
+      React.createElement("div", { className: "dn-set-historyTools" },
+        actions,
+        React.createElement("button", {
+          type: "button", className: "dn-set-btn dn-set-btnSmall",
+          onClick: function () { loadHistory({ value: true }); },
+        }, t("refresh")),
+      ),
       !history || history.length === 0
         ? React.createElement("div", { className: "dn-set-note" }, t("historyEmpty"))
         : React.createElement("ul", { className: "dn-set-history" },
@@ -1215,13 +1285,6 @@ const NS = "notifier";
       }, t("secChannels")),
     );
 
-    // 「通知频道」tab 内的就近保存（#402 第 6 条）：复用 save()（全量草稿语义，与
-    // foot 保存一致且幂等）；saved 为全局反馈状态，两处同源渲染。
-    var tabSave = React.createElement("div", { className: "dn-ch-saveRow", key: "tab-save" },
-      saved ? React.createElement("span", { className: saved.err ? "dn-set-error" : "dn-set-saved" }, saved.msg) : null,
-      React.createElement("button", { type: "button", className: "dn-set-save", onClick: save }, t("save")),
-    );
-
     // 事件 tab 内容（tab 本身已表意，事件开关不再包 section 标题；子分区保留各自标题）
     var eventsPane = [
       eventChildren,
@@ -1231,12 +1294,11 @@ const NS = "notifier";
       ),
       section(t("secDnd"), quietChildren),
       historyEl,
-      section(t("secActions"), actions),
     ];
-    // 频道 tab 内容：频道卡组（内置 + Bark）+ 添加按钮 + 就近保存
+    // 频道 tab 内容：频道卡组（内置 + Bark）+ 添加按钮（#418：无就近保存——
+    // 与 foot 保存同一份全量草稿，双保存按钮视觉重复；域级拆分属 #405 跟踪）
     var channelsPane = [
       channelsChildren,
-      tabSave,
     ];
 
     // #402 第 4 条：去掉设置卡 title/副标题（对应两个文案键已从字典删除，

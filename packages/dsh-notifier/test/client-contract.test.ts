@@ -74,16 +74,63 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   // 第 1 条：频道卡 details 折叠形态（key 含 enabled —— 非受控 + key remount）
   assert.ok(src.includes('React.createElement("details"'), "#402：频道卡为 details 可折叠");
   assert.ok(src.includes('failBadge('), "#402：投递失败徽标上提卡头（收起可见）");
-  // 第 2 条：卡内双 tab + kind 徽标 + 就近保存（关键 class 进产物）
+  // 第 2 条：卡内双 tab + kind 徽标（关键 class 进产物）
   assert.ok(src.includes("dn-set-tabs") && src.includes("dn-set-tabActive"), "#402：卡内双 tab 结构");
   assert.ok(src.includes("dn-set-tabBadge"), "#402：待确认 kind 的 tab 徽标");
-  assert.ok(src.includes("dn-ch-saveRow"), "#402：「通知频道」tab 就近保存");
-  assert.ok(client.includes("dn-set-tabs") && client.includes("dn-ch-saveRow"), "#402：tab/保存 class 进产物");
+  assert.ok(client.includes("dn-set-tabs"), "#402：tab class 进产物");
   // 第 4 条：设置卡 title/副标题移除（源码与字典两侧）
   assert.ok(!src.includes("settingsName") && !src.includes("settingsDescription"), "#402：设置卡 title/副标题渲染已删");
   assert.ok(!locales.includes("settingsName:") && !locales.includes("settingsDescription:"), "#402：locales 字典 settingsName/settingsDescription 已删");
   // 第 2 条配套：术语统一（「通知频道」/「选择频道」，消除与旧「投递频道」混用）
   assert.ok(locales.includes('secChannels: "通知频道"') && locales.includes('routePick: "选择频道"'), "#402：tab 术语统一为「通知频道」");
+}
+
+// ---- issue #418：设置面板布局收敛（去重复保存 / 权限入浏览器卡 / 动作并入历史区）----
+{
+  const src = readFileSync(new URL("../src/client/index.ts", import.meta.url), "utf8");
+  const locales = readFileSync(new URL("../src/client/locales.ts", import.meta.url), "utf8");
+  const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+
+  // 1. 频道 tab 去就近保存：单一保存入口（foot），且源码/产物/样式三处无 dn-ch-saveRow
+  assert.ok(!src.includes("dn-ch-saveRow"), "#418：频道 tab 就近保存行已移除");
+  assert.ok(!client.includes("dn-ch-saveRow"), "#418：产物无就近保存 class");
+  assert.ok(!src.includes("tabSave"), "#418：tabSave 变量已移除");
+  // 2. 浏览器通知权限状态行移入浏览器频道卡（browserPermLine 只挂在 browser 卡）
+  assert.ok(src.includes("browserPermLine"), "#418：浏览器权限状态行归入频道卡");
+  assert.ok(src.includes('channelId === "browser" ? browserPermLine()'), "#418：权限行只渲染于浏览器卡");
+  assert.ok(src.includes("dn-ch-perm"), "#418：权限行 class 进源码");
+  assert.ok(client.includes("dn-ch-perm"), "#418：权限行 class 进产物");
+  // 权限状态行不再出现在全局降级区（perm 三态文案仅存于 browserPermLine 分支）
+  assert.ok(!src.includes('key: "perm"'), "#418：全局降级区不再渲染权限状态");
+  // 3. 动作并入历史区（清理/发送测试在 historyTools 内与刷新并排）；「动作」分区标题移除
+  assert.ok(src.includes("dn-set-historyTools"), "#418：历史区工具行（动作+刷新）");
+  assert.ok(!src.includes("secActions"), "#418：源码无「动作」分区标题引用");
+  assert.ok(!locales.includes("secActions:"), "#418：locales 字典已删 secActions 键");
+}
+
+// ---- issue #421：免打扰豁免扩至全部内置事件（候选 6 项 + 跟随已启用 + 恢复默认）----
+{
+  const src = readFileSync(new URL("../src/client/index.ts", import.meta.url), "utf8");
+  const locales = readFileSync(new URL("../src/client/locales.ts", import.meta.url), "utf8");
+  const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+
+  // 单一事实源：EVENT_KIND_MAP 覆盖全部 6 个内置事件 kind（notifyKey → kind）
+  assert.ok(src.includes("EVENT_KIND_MAP"), "#421：事件开关键→kind 映射（单一事实源）");
+  for (const [notifyKey, kind] of [["notifyAsk", "ask"], ["notifyQuestion", "question"], ["notifyTaskDone", "done"], ["notifySubagentDone", "subagent-done"], ["notifyTaskError", "error"], ["notifyTurnEnd", "turn-end"]]) {
+    assert.ok(src.includes(`${notifyKey}: "${kind}"`), `#421：${notifyKey} → ${kind}`);
+  }
+  // 候选由 EVENT_KEYS 派生（不新建平行表 ALLOW_CHOICES）
+  assert.ok(!src.includes("ALLOW_CHOICES"), "#421：旧 3 项硬编码 ALLOW_CHOICES 已移除");
+  // 快捷按钮 + 未启用弱化（关键 class/函数进源码与产物）
+  assert.ok(src.includes("dn-set-allowDim"), "#421：未启用事件弱化样式");
+  assert.ok(src.includes("allowFollowEnabled") && src.includes("allowResetDefault"), "#421：跟随已启用/恢复默认按钮");
+  assert.ok(src.includes("dn-set-allowActions"), "#421：快捷按钮行 class");
+  assert.ok(client.includes("dn-set-allowDim") && client.includes("dn-set-allowActions"), "#421：豁免区新 class 进产物");
+  // 文案键：新增三个（中英双语）
+  assert.ok(locales.includes('allowFollowEnabled: "跟随已启用事件"') && locales.includes('allowFollowEnabled: "Follow enabled events"'), "#421：跟随已启用文案双语");
+  assert.ok(locales.includes('allowResetDefault:') && locales.includes("allowResetDefault:"), "#421：恢复默认文案双语");
+  // 旧 allowXxx 豁免 label 键移除（候选复用 KIND_KEYS 事件文案）
+  assert.ok(!locales.includes("allowAsk:") && !locales.includes("allowQuestion:") && !locales.includes("allowError:"), "#421：旧 allowXxx 豁免 label 键已删");
 }
 
 // lib/toast.ps1 发布物完整性（issue #238）：必须带 UTF-8 BOM 且与源文件逐字节一致。

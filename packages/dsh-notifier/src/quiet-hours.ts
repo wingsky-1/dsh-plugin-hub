@@ -15,8 +15,15 @@ export interface QuietHoursConfig {
   allowKinds?: string[];
 }
 
-/** 免打扰紧急例外可选 kind（面板展示与此白名单一致）。 */
-export const QUIET_ALLOW_KINDS = ["ask", "question", "error"] as const;
+/**
+ * 免打扰豁免可选 kind（issue #421：扩至全部内置事件，支持选择「所有已启用的事件通知」）。
+ * 与客户端 EVENT_KEYS 的事件 kind 集合一致（ask/question/done/subagent-done/error/turn-end）；
+ * 默认豁免保持 ask/question/error（高频阻塞型——卡着的任务需要叫醒），done 类有
+ * doneMergeWindowMs 聚合防刷屏治理、不默认豁免（避免升级后默认行为漂移）。
+ * 注意：本常量同时是 config.ts 免打扰豁免写入白名单的**兜底语义提示**（放开后仅作
+ * 展示/默认候选，不再过滤未知项——见 config.ts normalizeConfig）。
+ */
+export const QUIET_ALLOW_KINDS = ["ask", "question", "done", "subagent-done", "error", "turn-end"] as const;
 
 /** "HH:MM" → 分钟数（校验 0-23 时 / 0-59 分）。 */
 export function parseHHMM(text: string): number {
