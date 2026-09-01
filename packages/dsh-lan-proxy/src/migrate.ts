@@ -9,11 +9,23 @@
 import { existsSync, readFileSync, renameSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { errorMessage } from "../../../shared/host-utils.js";
-import { sanitizeSettings } from "./config.ts";
+import { sanitizeSettings, normalizeLegacyWsCompressPaths } from "./config.ts";
 import type { OwnerScopeLike } from "./settings.ts";
 
 /** 迁移备份文件名（同时是幂等标记：存在即「已处理过」）。 */
 export const MIGRATED_BAK_NAME = "config.json.migrated.bak";
+
+/**
+ * 迁移写入前的最后一收口（issue #395 M2）：sanitize 后再对 wsCompressPaths 应用
+ * 旧白名单归一化——显式保存过旧默认 ["/api/events.mux", "/api/events.host"] 的
+ * 存量 config.json 迁移后同样写入新默认 ["/api/remote.mux"]；自定义白名单原样保留。
+ */
+function normalizeMigratedWsCompressPaths(sanitized: ReturnType<typeof sanitizeSettings>): ReturnType<typeof sanitizeSettings> {
+  if (sanitized === null || sanitized.wsCompressPaths === undefined) return sanitized;
+  const normalized = normalizeLegacyWsCompressPaths(sanitized.wsCompressPaths);
+  if (normalized === undefined) return sanitized;
+  return { ...sanitized, wsCompressPaths: [...normalized] };
+}
 
 /** migrateFileConfig 的结果（导出供单测断言）。 */
 export interface MigrationOutcome {
@@ -48,12 +60,13 @@ async function resumeMigrateFromBak(
     logger?.warn?.(`lan-proxy: 检测到上次未完成的迁移残留 ${MIGRATED_BAK_NAME}，但文件不是合法 JSON — 无法自动恢复，请手动检查该文件（原始 config.json 内容应在其内）或删除它`);
     return { performed: false, migrated: false, rolledBack: false, skippedCorrupt: true, resumed: true };
   }
-  const sanitized =
+  const sanitized0 =
     typeof parsed === "object" && parsed !== null ? sanitizeSettings(parsed) : null;
-  if (sanitized === null || Object.keys(sanitized).length === 0) {
+  if (sanitized0 === null || Object.keys(sanitized0).length === 0) {
     logger?.warn?.(`lan-proxy: 上次未完成的迁移残留 ${MIGRATED_BAK_NAME} 无可迁移的有效键 — 已跳过，确认无误后可手动删除该文件`);
     return { performed: false, migrated: false, rolledBack: false, skippedCorrupt: true, resumed: true };
   }
+  const sanitized = normalizeMigratedWsCompressPaths(sanitized0);
   try {
     await scope.update(sanitized as Record<string, unknown>);
     logger?.warn?.(`lan-proxy: 检测到上次未完成的迁移 — 已从 ${MIGRATED_BAK_NAME} 重放写入设置；确认运行正常后可手动删除该备份`);
@@ -110,15 +123,16 @@ export async function migrateFileConfig(
     logger?.warn?.(`lan-proxy: 存量 config.json 不是配置对象 — 仅标记为已迁移（${MIGRATED_BAK_NAME}），不写入设置`);
     return { performed: true, migrated: false, rolledBack: false, skippedCorrupt: true, resumed: false };
   }
-  const sanitized = sanitizeSettings(parsed);
-  if (sanitized === null) {
+  const sanitized0 = sanitizeSettings(parsed);
+  if (sanitized0 === null) {
     // 含类型非法值：整体不写入（与保存通道同口径，宁可不迁也不迁一半）。
     logger?.warn?.(`lan-proxy: 存量 config.json 含非法配置值 — 仅标记为已迁移（${MIGRATED_BAK_NAME}），不写入设置`);
     return { performed: true, migrated: false, rolledBack: false, skippedCorrupt: true, resumed: false };
   }
-  if (Object.keys(sanitized).length === 0) {
+  if (Object.keys(sanitized0).length === 0) {
     return { performed: true, migrated: false, rolledBack: false, skippedCorrupt: true, resumed: false };
   }
+  const sanitized = normalizeMigratedWsCompressPaths(sanitized0);
   try {
     await scope.update(sanitized as Record<string, unknown>);
     return { performed: true, migrated: true, rolledBack: false, skippedCorrupt: false, resumed: false };
