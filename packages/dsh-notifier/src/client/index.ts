@@ -1163,8 +1163,8 @@ const NS = "notifier";
       React.createElement("button", { type: "button", className: "dn-set-btn", onClick: function () { sendTest(); } }, t("sendTest")),
     );
 
-    // 历史列表（D1/D2）
-    var historyEl = React.createElement("div", { className: "dn-set-section" },
+    // 历史列表（D1/D2）；key 供 eventsPane 数组子项对齐（#402 复核项）
+    var historyEl = React.createElement("div", { className: "dn-set-section", key: "history" },
       React.createElement("div", { className: "dn-set-title" }, t("historyTitle")),
       React.createElement("button", {
         type: "button", className: "dn-set-btn dn-set-btnSmall",
@@ -1217,7 +1217,7 @@ const NS = "notifier";
 
     // 「通知频道」tab 内的就近保存（#402 第 6 条）：复用 save()（全量草稿语义，与
     // foot 保存一致且幂等）；saved 为全局反馈状态，两处同源渲染。
-    var tabSave = React.createElement("div", { className: "dn-ch-saveRow" },
+    var tabSave = React.createElement("div", { className: "dn-ch-saveRow", key: "tab-save" },
       saved ? React.createElement("span", { className: saved.err ? "dn-set-error" : "dn-set-saved" }, saved.msg) : null,
       React.createElement("button", { type: "button", className: "dn-set-save", onClick: save }, t("save")),
     );
