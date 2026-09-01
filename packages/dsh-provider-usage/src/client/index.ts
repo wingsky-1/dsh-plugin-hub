@@ -653,7 +653,10 @@ export function apply(ctx: any): void {
       if (slots && typeof slots.inject === "function") {
         const injected: unknown = slots.inject("settings.section", function () {
           return slots.register(
-            { name: "settings.section", id: "dsh-provider-usage", order: 90, label: t("settingsTab"), locale: NS },
+            // label 传 thunk（SlotLabel = string | (() => string)）：宿主 nav rows 每次读取经
+            // resolveSlotLabel 求值 + shell 订阅 locale 重渲染，切语言即跟随（#402 第 5 条；
+            // 注册期求值字符串快照是旧行为）。thunk 保持最小 t(key) 形态，不包任何可能抛错的逻辑。
+            { name: "settings.section", id: "dsh-provider-usage", order: 90, label: () => t("settingsTab"), locale: NS },
             function () {
               return React.createElement(SettingsPage, null);
             },
