@@ -18,12 +18,12 @@
  * 实例配置显式 level 覆盖映射；severity 缺省且无显式配置时不携带 level。
  */
 import { SECRET_MASK } from "./config.ts";
-import type { BarkChannelConfig } from "./config.ts";
+import type { BarkChannelConfig, BarkLevel } from "./config.ts";
 import type { NotifyChannel, NotifySeverity } from "./service.ts";
 import { sanitizeErrorText } from "./message.ts";
 
 /** severity → Bark level 静态映射（契约测试锁定；critical 需苹果特批故不映射）。 */
-export const SEVERITY_LEVEL: Readonly<Record<NotifySeverity, "active" | "timeSensitive" | "passive" | "critical">> = {
+export const SEVERITY_LEVEL: Readonly<Record<NotifySeverity, BarkLevel>> = {
   failure: "timeSensitive",
   warning: "active",
   success: "active",
@@ -57,7 +57,7 @@ class BarkHttpError extends Error {
 }
 
 /** createBarkChannel 已知的顶层配置键（透传键 = 此集合之外的 string/number 键）。 */
-const BARK_KNOWN_TOP_KEYS: readonly string[] = ["id", "name", "type", "baseUrl", "deviceKey", "enabled", "sound", "level", "group", "icon", "url", "badge"];
+const BARK_KNOWN_TOP_KEYS: readonly string[] = ["id", "name", "type", "baseUrl", "deviceKey", "enabled", "sound", "level", "levels", "group", "icon", "url", "badge"];
 
 /**
  * Bark 频道实例工厂。
@@ -144,13 +144,13 @@ export function createBarkChannel(cfg: BarkChannelConfig, gate: BarkGate): Notif
     // 码点；正文 4096 码点兜底截断）。框架层 truncateCodePoints 统一执行。
     capabilities: { titleMaxLen: 64, maxBodyLen: 4096 },
     send(payload) {
-      // 组装 body：必填三键 + severity→level（显式配置覆盖映射）+ 可选参数 + 透传键
+      // 组装 body：必填三键 + 紧急度（levels[kind] > level > severity 映射）+ 可选参数 + 透传键
       const body: Record<string, unknown> = {
         device_key: cfg.deviceKey,
         title: payload.title,
         body: payload.body,
       };
-      const level = cfg.level ?? (payload.severity ? SEVERITY_LEVEL[payload.severity] : undefined);
+      const level = cfg.levels?.[payload.kind] ?? cfg.level ?? (payload.severity ? SEVERITY_LEVEL[payload.severity] : undefined);
       if (level) body.level = level;
       if (cfg.sound !== undefined) body.sound = cfg.sound;
       if (cfg.group !== undefined) body.group = cfg.group;

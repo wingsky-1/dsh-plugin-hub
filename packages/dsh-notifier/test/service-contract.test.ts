@@ -306,10 +306,30 @@ function fakeOutbound(id, mode = "sync") {
     const ch2 = createBarkChannel({ ...cfg, level: "critical" }, createBarkGate());
     await ch2.send({ title: "T", body: "B", kind: "error", ts: 2, severity: "failure" });
     assert.equal(JSON.parse(calls[2].init.body).level, "critical", "显式 level 覆盖映射");
+
+    // levels（kind→level 稀疏映射矩阵）：优先级 levels[kind] > level > severity 映射
+    const ch3 = createBarkChannel({ ...cfg, level: "critical", levels: { error: "timeSensitive", question: "active" } }, createBarkGate());
+    await ch3.send({ title: "T", body: "B", kind: "error", ts: 3, severity: "failure" });
+    assert.equal(JSON.parse(calls[3].init.body).level, "timeSensitive", "levels[kind] 优先于实例级 level");
+    await ch3.send({ title: "T", body: "B", kind: "question", ts: 4, severity: "info" });
+    assert.equal(JSON.parse(calls[4].init.body).level, "active", "levels[kind] 命中（question→active）");
+    await ch3.send({ title: "T", body: "B", kind: "done", ts: 5, severity: "success" });
+    assert.equal(JSON.parse(calls[5].init.body).level, "critical", "levels 未命中 kind 回退实例级 level");
+    assert.equal("levels" in JSON.parse(calls[5].init.body), false, "levels 矩阵不进 Bark body（防配置泄漏 P0）");
+    // severity 缺失 + levels 命中 → 有 level；severity 缺失 + levels 未命中 → body 无 level
+    await ch3.send({ title: "T", body: "B", kind: "question", ts: 6 });
+    assert.equal(JSON.parse(calls[6].init.body).level, "active", "severity 缺失 + levels 命中仍出 level");
+    const ch4 = createBarkChannel(cfg, createBarkGate());
+    await ch4.send({ title: "T", body: "B", kind: "question", ts: 7 });
+    assert.equal("level" in JSON.parse(calls[7].init.body), false, "severity 缺失且无覆盖 → body 无 level");
+    // 动态 kind 键（含特殊字符）作 levels 键正常命中
+    const ch5 = createBarkChannel({ ...cfg, levels: { "idle-archive:due": "timeSensitive" } }, createBarkGate());
+    await ch5.send({ title: "T", body: "B", kind: "idle-archive:due", ts: 8, severity: "info" });
+    assert.equal(JSON.parse(calls[8].init.body).level, "timeSensitive", "动态 kind 键命中");
   } finally {
     globalThis.fetch = origFetch;
   }
-  console.log("⑥ bark payload/level 映射/透传: OK");
+  console.log("⑥ bark payload/level 映射/levels 矩阵/透传: OK");
 }
 
 {

@@ -15,6 +15,9 @@ import type { QuietHoursConfig } from "./quiet-hours.ts";
 
 // ---------------------------------------------------------------- 频道实例（M2）
 
+/** Bark 紧急度级别（Bark API V2 level 枚举；config 契约单点，channel-bark 复用）。 */
+export type BarkLevel = "active" | "timeSensitive" | "passive" | "critical";
+
 /**
  * Bark 推送频道实例（同类型可配多实例；地址与 device key 由用户在设置页自填）。
  * 可选参数未配置的字段发送时不携带；未知 string/number 键原样透传（Bark 参数
@@ -35,7 +38,9 @@ export interface BarkChannelConfig {
   enabled: boolean;
   /** 可选参数（Bark API V2；level 缺省由 severity 映射，显式配置则覆盖映射）。 */
   sound?: string;
-  level?: "active" | "timeSensitive" | "passive" | "critical";
+  level?: BarkLevel;
+  /** 按事件（kind）紧急度稀疏映射：命中优先于 level 与 severity 映射（见 channel-bark）。 */
+  levels?: Record<string, BarkLevel>;
   group?: string;
   icon?: string;
   url?: string;
@@ -178,6 +183,27 @@ export function normalizeBarkBaseUrl(raw: unknown): string | null {
 }
 
 /**
+ * Bark levels（kind→level 稀疏映射）归一化：对象形状、键 ≤64 字符、值枚举校验、
+ * 项数 ≤64、剔除原型污染类键（__proto__/constructor/prototype）。非法键丢弃。
+ * 空对象/非法返回 undefined（读取口径：等价未配置）。
+ */
+export function normalizeBarkLevels(v: unknown): Record<string, BarkLevel> | undefined {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return undefined;
+  const src = v as Record<string, unknown>;
+  const out: Record<string, BarkLevel> = {};
+  for (const kind of Object.keys(src)) {
+    if (Object.keys(out).length >= 64) break;
+    if (kind.length === 0 || kind.length > 64) continue;
+    if (kind === "__proto__" || kind === "constructor" || kind === "prototype") continue;
+    const level = src[kind];
+    if (level === "active" || level === "timeSensitive" || level === "passive" || level === "critical") {
+      out[kind] = level;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
  * 单个 Bark 实例归一化：形状/类型不对返回 null（读取时丢弃）。
  * 已知可选参数按类型过滤；未知 string/number 键透传（保留键剔除，评审 P1）；
  * 同实例内 id 必须匹配 BARK_ID_PATTERN（掩码回填与 kindRoutes 的稳定对齐键）。
@@ -201,6 +227,8 @@ function normalizeBarkChannel(v: unknown): BarkChannelConfig | null {
   if (typeof src.name === "string" && src.name.length > 0 && src.name.length <= 64) out.name = src.name;
   if (src.sound === undefined || typeof src.sound === "string") { if (typeof src.sound === "string") out.sound = src.sound; }
   if (src.level === "active" || src.level === "timeSensitive" || src.level === "passive" || src.level === "critical") out.level = src.level;
+  const levels = normalizeBarkLevels(src.levels);
+  if (levels !== undefined) out.levels = levels;
   if (typeof src.group === "string") out.group = src.group;
   if (typeof src.icon === "string") out.icon = src.icon;
   if (typeof src.url === "string") out.url = src.url;
@@ -208,7 +236,7 @@ function normalizeBarkChannel(v: unknown): BarkChannelConfig | null {
   // 未知键透传：string/number 值原样保留（Bark 未来参数前向兼容）；保留键一律剔除
   for (const key of Object.keys(src)) {
     if (key === "id" || key === "type" || key === "baseUrl" || key === "deviceKey" || key === "enabled") continue;
-    if (key === "name" || key === "sound" || key === "level" || key === "group" || key === "icon" || key === "url" || key === "badge") continue;
+    if (key === "name" || key === "sound" || key === "level" || key === "levels" || key === "group" || key === "icon" || key === "url" || key === "badge") continue;
     if ((BARK_RESERVED_KEYS as readonly string[]).includes(key)) continue;
     const value = src[key];
     if (typeof value === "string" || typeof value === "number") out[key] = value;
@@ -365,16 +393,32 @@ function isQuietHours(v: unknown): boolean {
   );
 }
 
+/** levels（kind→level）写入严格校验：对象形状、键 ≤64、值枚举、项数 ≤64、剔原型键。任一项非法即 400。 */
+function isBarkLevelsStrict(v: unknown): boolean {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
+  const src = v as Record<string, unknown>;
+  const keys = Object.keys(src);
+  if (keys.length > 64) return false;
+  for (const kind of keys) {
+    if (kind.length === 0 || kind.length > 64) return false;
+    if (kind === "__proto__" || kind === "constructor" || kind === "prototype") return false;
+    const level = src[kind];
+    if (level !== "active" && level !== "timeSensitive" && level !== "passive" && level !== "critical") return false;
+  }
+  return true;
+}
+
 /** 已知 Bark 实例可选参数的类型校验表（与 normalizeBarkChannel 的过滤键平行维护）。 */
 function isBarkChannelParam(key: string, value: unknown): boolean {
   if (key === "name") return typeof value === "string" && value.length > 0 && value.length <= 64;
   if (key === "sound" || key === "group" || key === "icon" || key === "url") return typeof value === "string";
   if (key === "level") return value === "active" || value === "timeSensitive" || value === "passive" || value === "critical";
+  if (key === "levels") return isBarkLevelsStrict(value);
   if (key === "badge") return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 999999;
   return typeof value === "string" || typeof value === "number"; // 未知键透传
 }
 
-const BARK_KNOWN_PARAM_KEYS: readonly string[] = ["name", "sound", "level", "group", "icon", "url", "badge"];
+const BARK_KNOWN_PARAM_KEYS: readonly string[] = ["name", "sound", "level", "levels", "group", "icon", "url", "badge"];
 
 /** 单个 Bark 实例写入校验（严格口径：任一项非法即整组 400）。 */
 function isBarkChannel(v: unknown): boolean {
@@ -472,7 +516,7 @@ const SETTING_HINTS: Record<string, string> = {
   doneMergeWindowMs: "需为 0-60000 的整数（毫秒）",
   historyMaxAgeDays: "需为 0-3650 的整数（天）",
   maxConnections: "需为 1-1024 的整数",
-  channels: "需为 { id, type:'bark', baseUrl, deviceKey, enabled } 实例数组（id 为 2-32 位小写字母/数字/连字符且不重复；baseUrl 为无凭据的 http(s) 地址；至多 16 实例）",
+  channels: "需为 { id, type:'bark', baseUrl, deviceKey, enabled } 实例数组（id 为 2-32 位小写字母/数字/连字符且不重复；baseUrl 为无凭据的 http(s) 地址；至多 16 实例；可选 levels 为 { kind: 级别 } 映射，键至多 64 字符、至多 64 项，级别限 active/timeSensitive/passive/critical）",
   kindRoutes: "需为 { kind: channelId[] } 对象（至多 64 个 kind，每项至多 16 个 channelId）",
   allowKinds: "需为非空字符串数组（至多 128 项，每项至多 64 字符）",
 };

@@ -177,6 +177,26 @@ try {
   assert.equal(validateSettings({ channels: [{ ...okCh, device_key: "x" }] })?.key, "channels", "保留键写入口径拒绝");
   assert.equal(validateSettings({ channels: [{ ...okCh, baseUrl: "ftp://h" }] })?.key, "channels", "非法 scheme 拒绝");
   assert.equal(validateSettings({ channels: [{ ...okCh, deviceKey: "" }] })?.key, "channels", "空 deviceKey 拒绝");
+
+  // levels（kind→level 稀疏映射矩阵）：归一化保留合法 / 丢弃非法值 / 剔原型键 / 不进透传
+  const lvCh = { ...okCh, levels: { question: "timeSensitive", error: "active", "subagent-done": "active" } };
+  const mergedLv = normalizeConfig({ channels: [lvCh] }).channels[0] as Record<string, unknown>;
+  assert.deepEqual(mergedLv.levels, { question: "timeSensitive", error: "active", "subagent-done": "active" }, "合法 levels 归一化保留");
+  const badLv = normalizeConfig({ channels: [{ ...okCh, levels: { question: "timeSensitive", bogus: "urgent", "": "active", x: "x".repeat(65) } }] }).channels[0] as Record<string, unknown>;
+  assert.deepEqual(badLv.levels, { question: "timeSensitive" }, "非法值/空键/超长键丢弃");
+  const protoLv = normalizeConfig({ channels: [{ ...okCh, levels: JSON.parse('{"__proto__":"critical","constructor":"active","prototype":"passive","question":"active"}') }] }).channels[0] as Record<string, unknown>;
+  assert.deepEqual(protoLv.levels, { question: "active" }, "原型污染类键剔除");
+  const noLv = normalizeConfig({ channels: [{ ...okCh, levels: {} }] }).channels[0] as Record<string, unknown>;
+  assert.equal("levels" in noLv, false, "空对象 levels 归一化为缺省");
+  const opaqueLv = normalizeConfig({ channels: [{ ...okCh, levels: { question: "active" }, volume: "0.7" }] }).channels[0] as Record<string, unknown>;
+  assert.equal(opaqueLv.volume, "0.7", "levels 键不干扰未知参数透传");
+  // levels 写入校验（严格口径：任一项非法整组 400）
+  assert.equal(validateSettings({ channels: [lvCh] }), null, "合法 levels 通过");
+  assert.equal(validateSettings({ channels: [{ ...okCh, levels: { question: "loud" } }] })?.key, "channels", "非法 level 值拒绝");
+  assert.equal(validateSettings({ channels: [{ ...okCh, levels: { "": "active" } }] })?.key, "channels", "空 kind 键拒绝");
+  assert.equal(validateSettings({ channels: [{ ...okCh, levels: JSON.parse('{"q":"active","__proto__":"critical"}') }] })?.key, "channels", "原型键拒绝");
+  const many = Object.fromEntries(Array.from({ length: 65 }, function (_, i) { return ["k" + i, "active"]; }));
+  assert.equal(validateSettings({ channels: [{ ...okCh, levels: many }] })?.key, "channels", "超 64 项 levels 拒绝");
   assert.equal(validateSettings({ kindRoutes: { error: ["browser"] } }), null, "合法 kindRoutes 通过");
   assert.equal(validateSettings({ kindRoutes: { error: [] } })?.key, "kindRoutes", "空数组 kindRoutes 拒绝");
   assert.equal(validateSettings({ allowKinds: ["a:b"] }), null, "合法 allowKinds 通过");

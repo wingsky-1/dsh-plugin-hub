@@ -157,7 +157,23 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
 | `icon` | 图标 URL（**需手机网络可达**，非服务器可达；SVG 需 iOS 17+；留空用 Bark 默认） |
 | `url` | 点击通知跳转 URL |
 | `badge` | App 角标数字 |
-| `level` | 紧急度覆盖；缺省按事件 severity 自动映射：`failure→timeSensitive`、`warning/success→active`、`info→passive` |
+| `level` | 实例级紧急度覆盖；缺省按事件 severity 自动映射：`failure→timeSensitive`、`warning/success→active`、`info→passive` |
+| `levels` | 按事件（kind）紧急度稀疏映射（见下） |
+
+`levels`（kind→level 稀疏映射矩阵）：为具体事件类型指定 Bark 紧急度，
+**优先于实例级 `level` 与 severity 自动映射**；未配置的类型走默认。适合「提问必响、
+子任务完成静音」这类按事件差异化诉求：
+
+```json
+{ "id": "phone", "type": "bark", "baseUrl": "https://api.day.app", "deviceKey": "…",
+  "enabled": true, "levels": { "question": "timeSensitive", "subagent-done": "passive" } }
+```
+
+- 键为事件 kind（内置 `ask/question/done/subagent-done/error/turn-end/test` 或动态 kind，任意字符串）；
+  值限 `active` / `timeSensitive` / `passive` / `critical`；至多 64 项、每键至多 64 字符。
+- 完整优先级：`levels[kind]` > `level` > severity 映射 > 不携带。
+- ⚠️ `critical` 需苹果特殊授权（普通 App 无法申请），未获授权时 Bark 可能降级/拒绝。
+- 与 `kindRoutes`（kind→channelId[] 路由）正交：路由决定「投给哪些频道」，`levels` 决定「在本实例上多响」。
 
 投递可靠性：10s 硬超时、网络错误/5xx 重试 ×2（4xx 不重试）、实例级在途并发 ≤2
 （内置频道不受限）；成功判定双查 HTTP 2xx + 响应体 `code===200`。
