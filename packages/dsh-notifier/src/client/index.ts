@@ -52,7 +52,7 @@ const NS = "notifier";
     kinds: "/api/dsh-notifier/kinds",
   };
   var STYLE_ID = "dsh-notifier-style";
-  var CSS_VERSION = "366-2";
+  var CSS_VERSION = "402-1";
   // 浏览器通知图标（内联 SVG data URL，零外部资源；铃铛造型）。
   var NOTIFY_ICON =
     "data:image/svg+xml;utf8," +
@@ -527,6 +527,11 @@ const NS = "notifier";
     var delArmedDraft = useState(null as string | null);
     var delArmedId = delArmedDraft[0];
     var setDelArmedId = delArmedDraft[1];
+    // #402 第 2 条：设置卡内双 tab（通知事件 / 通知频道）。切 tab 仅条件拼接
+    // children——全部表单/瞬态 state 都在本组件顶层，切换零丢失。
+    var activeTabDraft = useState("events" as "events" | "channels");
+    var activeTab = activeTabDraft[0];
+    var setActiveTab = activeTabDraft[1];
     // 加载基线（A4）：保存时只提交与基线不同的键（增量 diff），未改动的键不提交。
     // 用 useRef 持久化：组件每次渲染局部变量会重置为 null，导致 save() 闭包里读不到
     // 基线而永远判定「无变化」。
@@ -839,7 +844,21 @@ const NS = "notifier";
       }, t("chTest"));
     }
 
-    /** 内置频道卡（browser/system）：开关 + 行为参数 + 状态行 + per-channel 测试。 */
+    /** 投递失败徽标（#402 第 1 条）：最近投递失败时上提至卡头 summary 行，收起态仍可见。 */
+    function failBadge(channelKey: string) {
+      var st = statusMap[channelKey];
+      if (!st || !st.lastTs || st.lastStatus !== "failed") return null;
+      return React.createElement("span", { className: "dn-ch-failBadge" },
+        t("chLastFail") + " · " + padTime(st.lastTs));
+    }
+
+    /**
+     * 内置频道卡（browser/system）：开关 + 行为参数 + 状态行 + per-channel 测试。
+     * #402 第 1 条：整卡 details 可折叠——非受控 + key remount 形态（key 含 enabled，
+     * open 仅 mount 生效），未启用默认收起、启用默认展开；手动开合完全交 DOM，
+     * 无受控时序坑；启停切换重挂载重置折叠态（预期行为）。summary 内 enable
+     * checkbox 依赖 HTML 规范豁免（点击 interactive content 不触发 summary 激活）。
+     */
     function builtinCard(cfgKey: string, label: string, channelId: string) {
       var on = settings[cfgKey] === true;
       // 频道行为参数归卡：browser→页面可见时也弹；system→提示音（toast 链路共用）
@@ -850,10 +869,12 @@ const NS = "notifier";
       if (channelId === "system") {
         extras.push(row(t("chSound"), switchControl("notifySound")));
       }
-      return React.createElement("div", { className: "dn-ch-card" + (on ? " dn-ch-on" : ""), key: "ch-" + channelId },
-        React.createElement("div", { className: "dn-ch-head" },
+      return React.createElement("details",
+        { className: "dn-ch-card" + (on ? " dn-ch-on" : ""), key: "ch-" + channelId + ":" + on, open: on },
+        React.createElement("summary", { className: "dn-ch-head" },
           React.createElement("span", { className: "dn-ch-dot" + (on ? " on" : "") }),
           React.createElement("span", { className: "dn-ch-name" }, label),
+          failBadge(channelId),
           React.createElement("label", { className: "dn-ch-enable" },
             React.createElement("input", {
               type: "checkbox", checked: on,
@@ -872,7 +893,11 @@ const NS = "notifier";
       );
     }
 
-    /** Bark 实例卡：name/baseUrl/deviceKey（掩码）+ 高级参数折叠 + 状态行 + 测试/删除。 */
+    /**
+     * Bark 实例卡：name/baseUrl/deviceKey（掩码）+ 高级参数折叠 + 状态行 + 测试/删除。
+     * #402 第 1 条：整卡 details 可折叠（形态同 builtinCard——非受控 + key remount），
+     * 未启用默认收起；最近投递失败徽标上提 summary 行。
+     */
     function barkCard(ch: any, idx: number) {
       var channelKey = "bark:" + String(ch.id);
       var armed = delArmedId === ch.id;
@@ -893,11 +918,17 @@ const NS = "notifier";
           onChange: function (e: any) { chPatch(idx, { level: e.target.value || undefined }); },
         }, levelOpts)),
       );
-      return React.createElement("div", { className: "dn-ch-card" + (ch.enabled ? " dn-ch-on" : ""), key: channelKey },
-        React.createElement("div", { className: "dn-ch-head" },
+      return React.createElement("details",
+        {
+          className: "dn-ch-card" + (ch.enabled ? " dn-ch-on" : ""),
+          key: channelKey + ":" + (ch.enabled === true),
+          open: ch.enabled === true,
+        },
+        React.createElement("summary", { className: "dn-ch-head" },
           React.createElement("span", { className: "dn-ch-dot" + (ch.enabled ? " on" : "") }),
           React.createElement("span", { className: "dn-ch-name" }, ch.name || ch.id),
           React.createElement("span", { className: "dn-ch-id" }, ch.id),
+          failBadge(channelKey),
           React.createElement("label", { className: "dn-ch-enable" },
             React.createElement("input", {
               type: "checkbox", checked: ch.enabled === true,
@@ -1160,21 +1191,60 @@ const NS = "notifier";
           ),
     );
 
-    return React.createElement("li", { className: "dn-set-card" },
-      React.createElement("div", { className: "dn-set-head" },
-        React.createElement("span", { className: "dn-set-name" }, t("settingsName")),
-        React.createElement("span", { className: "dn-set-description" }, t("settingsDescription")),
+    // ---- #402 第 2 条：卡内双 tab（通知事件 / 通知频道）----
+
+    // 待确认动态 kind 计数（「通知事件」tab 徽标——确认流是 M2 安全设计，不可被 tab 埋没）
+    var pendingKinds = kindsList.filter(function (k: any) { return !k.confirmed; }).length;
+
+    // tab 栏：两个普通 button（不引入 role=tablist 管理成本）；「通知事件」带 kind 徽标
+    var tabbar = React.createElement("div", { className: "dn-set-tabs" },
+      React.createElement("button", {
+        type: "button",
+        className: "dn-set-tab" + (activeTab === "events" ? " dn-set-tabActive" : ""),
+        onClick: function () { setActiveTab("events"); },
+      },
+        t("secEvents"),
+        pendingKinds > 0
+          ? React.createElement("span", { className: "dn-set-tabBadge" }, String(pendingKinds))
+          : null,
       ),
+      React.createElement("button", {
+        type: "button",
+        className: "dn-set-tab" + (activeTab === "channels" ? " dn-set-tabActive" : ""),
+        onClick: function () { setActiveTab("channels"); },
+      }, t("secChannels")),
+    );
+
+    // 「通知频道」tab 内的就近保存（#402 第 6 条）：复用 save()（全量草稿语义，与
+    // foot 保存一致且幂等）；saved 为全局反馈状态，两处同源渲染。
+    var tabSave = React.createElement("div", { className: "dn-ch-saveRow" },
+      saved ? React.createElement("span", { className: saved.err ? "dn-set-error" : "dn-set-saved" }, saved.msg) : null,
+      React.createElement("button", { type: "button", className: "dn-set-save", onClick: save }, t("save")),
+    );
+
+    // 事件 tab 内容（tab 本身已表意，事件开关不再包 section 标题；子分区保留各自标题）
+    var eventsPane = [
+      eventChildren,
+      React.createElement("details", { className: "dn-ch-adv dn-sec-adv", key: "adv-params" },
+        React.createElement("summary", null, t("secDedup")),
+        numberChildren,
+      ),
+      section(t("secDnd"), quietChildren),
+      historyEl,
+      section(t("secActions"), actions),
+    ];
+    // 频道 tab 内容：频道卡组（内置 + Bark）+ 添加按钮 + 就近保存
+    var channelsPane = [
+      channelsChildren,
+      tabSave,
+    ];
+
+    // #402 第 4 条：去掉设置卡 title/副标题（对应两个文案键已从字典删除，
+    // tab 名「通知中心」表意足够）；顶部直接是 tab 栏。
+    return React.createElement("li", { className: "dn-set-card" },
+      tabbar,
       React.createElement("div", { className: "dn-set-body" },
-        section(t("secChannels"), channelsChildren),
-        section(t("secEvents"), eventChildren),
-        React.createElement("details", { className: "dn-ch-adv dn-sec-adv", key: "adv-params" },
-          React.createElement("summary", null, t("secDedup")),
-          numberChildren,
-        ),
-        section(t("secDnd"), quietChildren),
-        historyEl,
-        section(t("secActions"), actions),
+        activeTab === "channels" ? channelsPane : eventsPane,
         React.createElement("div", { className: "dn-set-notes" }, degradation),
         React.createElement("div", { className: "dn-set-foot" },
           saved ? React.createElement("span", { className: saved.err ? "dn-set-error" : "dn-set-saved" }, saved.msg) : null,
@@ -1230,7 +1300,11 @@ export function apply(ctx: any) {
       if (slots && typeof slots.inject === "function") {
         slots.inject("settings.section", function () {
           return slots.register(
-            { name: "settings.section", id: "dsh-notifier", order: 70, label: t("tabLabel"), locale: NS },
+            // label 传 thunk（#402 第 5 条）：宿主 nav rows 每次读取经 resolveSlotLabel
+            // 求值 + shell 订阅 locale 重渲染，切语言即跟随（注册期求值字符串快照是旧行为）。
+            // t 为本模块 var 活绑定（apply 内 locale.subscribe 回调重绑），thunk 保持最小
+            // t(key) 形态、不包任何可能抛错的逻辑（thunk 抛错会炸宿主 nav 渲染）。
+            { name: "settings.section", id: "dsh-notifier", order: 70, label: () => t("tabLabel"), locale: NS },
             function () {
               return React.createElement(SettingsCard, null);
             }

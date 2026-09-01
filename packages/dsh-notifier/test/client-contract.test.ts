@@ -61,6 +61,31 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   assert.ok(client.includes("Approval pending") && client.includes("evtAsk"), "en/zh 双语字典进产物");
 }
 
+// ---- issue #402：设置页 UI/UX 打磨（折叠 / 双 tab / 去 title / label thunk / 就近保存）----
+{
+  const src = readFileSync(new URL("../src/client/index.ts", import.meta.url), "utf8");
+  const locales = readFileSync(new URL("../src/client/locales.ts", import.meta.url), "utf8");
+  const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+
+  // 第 5 条：settings.section label 为 thunk（源码级 includes 断言——esbuild 产物文本
+  // 形态对 minify 脆弱，thunk 行为交浏览器实测「切语言 tab 文案跟随」锁定）
+  assert.ok(src.includes('label: () => t("tabLabel")'), "#402：notifier settings.section label 为 thunk（切语言跟随）");
+  assert.ok(!src.includes('label: t("tabLabel")'), "#402：不再注册求值快照 label");
+  // 第 1 条：频道卡 details 折叠形态（key 含 enabled —— 非受控 + key remount）
+  assert.ok(src.includes('React.createElement("details"'), "#402：频道卡为 details 可折叠");
+  assert.ok(src.includes('failBadge('), "#402：投递失败徽标上提卡头（收起可见）");
+  // 第 2 条：卡内双 tab + kind 徽标 + 就近保存（关键 class 进产物）
+  assert.ok(src.includes("dn-set-tabs") && src.includes("dn-set-tabActive"), "#402：卡内双 tab 结构");
+  assert.ok(src.includes("dn-set-tabBadge"), "#402：待确认 kind 的 tab 徽标");
+  assert.ok(src.includes("dn-ch-saveRow"), "#402：「通知频道」tab 就近保存");
+  assert.ok(client.includes("dn-set-tabs") && client.includes("dn-ch-saveRow"), "#402：tab/保存 class 进产物");
+  // 第 4 条：设置卡 title/副标题移除（源码与字典两侧）
+  assert.ok(!src.includes("settingsName") && !src.includes("settingsDescription"), "#402：设置卡 title/副标题渲染已删");
+  assert.ok(!locales.includes("settingsName:") && !locales.includes("settingsDescription:"), "#402：locales 字典 settingsName/settingsDescription 已删");
+  // 第 2 条配套：术语统一（「通知频道」/「选择频道」，消除与旧「投递频道」混用）
+  assert.ok(locales.includes('secChannels: "通知频道"') && locales.includes('routePick: "选择频道"'), "#402：tab 术语统一为「通知频道」");
+}
+
 // lib/toast.ps1 发布物完整性（issue #238）：必须带 UTF-8 BOM 且与源文件逐字节一致。
 // pwsh 7 在 CI 上解析通过抓不住 5.1 的 ANSI 码页问题，字节级断言是唯一机器兜底；
 // 构建期 copyClientResources 已强制补写，此处防回归（编辑器去 BOM / 复制链变更）。
