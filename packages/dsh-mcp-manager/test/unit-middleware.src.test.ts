@@ -646,3 +646,40 @@ function makeHost(serversByRoot = new Map()) {
   await mw2.dispose();
   await mw.dispose();
 }
+
+// ---- #413：空 toolDefinitions / 封装调用超时兜底 ----
+{
+  // 空 toolDefinitions：连接照建、目录 0 工具、调用报「不存在」。
+  const emptyWrapped = { name: "cg", transport: "stdio", command: "codegraph", enabled: true, toolDefinitions: [] };
+  const { host } = makeHost(new Map([["@global", [emptyWrapped]]]));
+  const mw = new McpMiddleware(host, {});
+  await mw.projectUnitFor("@global");
+  await mw.ensureConnected("@global", "cg");
+  const unit = mw.units.get("@global");
+  assert.equal(unit.connections.get("cg")?.status, "connected", "空 toolDefinitions 仍建虚拟连接");
+  assert.equal(unit.catalog.get("cg")?.tools.size, 0, "空 toolDefinitions 目录 0 工具");
+  await assert.rejects(
+    () => mw.callTool(fullServerName("@global", "cg"), "anything", {}, undefined),
+    /不存在（封装定义服务器）/,
+  );
+  await mw.dispose();
+
+  // 封装 execute 挂起 → withTimeout 超时兜底（不无限等待）。
+  const hangingTool = {
+    name: "hang",
+    description: "挂起",
+    parameters: { type: "object", properties: {} },
+    output: { schema: { type: "object", properties: { text: { type: "string" } }, required: ["text"], additionalProperties: false }, render: (a, v) => [{ type: "text", text: v.text }] },
+    execute: async () => new Promise(() => {}), // 永不 resolve
+  };
+  const hangingServer = { name: "hg", transport: "stdio", command: "x", enabled: true, toolDefinitions: [hangingTool] };
+  const { host: host2 } = makeHost(new Map([["@global", [hangingServer]]]));
+  const mw3 = new McpMiddleware(host2, {});
+  await mw3.projectUnitFor("@global");
+  await mw3.ensureConnected("@global", "hg");
+  await assert.rejects(
+    () => mw3.callTool(fullServerName("@global", "hg"), "hang", {}, undefined),
+    /封装调用超时/,
+  );
+  await mw3.dispose();
+}

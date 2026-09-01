@@ -735,18 +735,23 @@ export class McpManager {
   /**
    * 运行时注销（不影响 store 持久化条目；同名 store 条目回落）。
    * - 销毁 supervisor（stop，不碰 store）；
+   * - **先删 runtimeRegistry 再拆中间层连接**（#413 QA P2-1）：drop 时数据源
+   *   （projectServersFor 含 runtime）已不再返回该服务器，任何并发
+   *   ensureConnected/connect 都查不到配置而无法重建虚拟连接——堵死注销后
+   *   瞬时复活窗口，且不写 userDisabled（避免持久化污染导致同名 re-register
+   *   被静默阻止连接，与 disconnect 的「用户主动断开」语义区分）；
    * - 拆中间层连接与目录条目（#413：all 模式 runtime 归一中台后虚拟连接在
    *   @global 单元，须显式清理，否则 unregister 后 ws_mcp_list/call 残留幽灵）；
-   * - 移除 runtimeRegistry 条目 → 下次 reconcile 回落 store 配置。
+   * - reconcile 回落 store 配置。
    */
   async unregisterServer(name: string): Promise<void> {
     const run = this.registerQueue.then(async () => {
       if (this.runtimeRegistry.has(name)) {
         this.stop(name);
+        this.runtimeRegistry.delete(name);
         if (this.middlewareMode !== "off" && this.middleware !== undefined) {
           this.dropMiddlewareConnection(name);
         }
-        this.runtimeRegistry.delete(name);
         this.reconcileServers();
       }
     });

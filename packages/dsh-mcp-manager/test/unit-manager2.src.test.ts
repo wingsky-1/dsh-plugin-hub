@@ -622,6 +622,11 @@ function rmStatSafe(p) {
     await manager.initMiddleware("project", {});
     await manager.registerServer({ name: "cg", transport: "stdio", command: "codegraph", args: ["serve", "--mcp"], toolDefinitions: [wrappedTool] });
     assert.ok(manager.supervisors.has("cg"), "project 模式 runtime 仍 supervisor 路径（#413 只归一 all）");
+    // off 模式注销：supervisor 销毁 + registry 清除（无中间层连接，无需 drop）。
+    manager.middlewareMode = "off";
+    await manager.unregisterServer("cg");
+    assert.ok(!manager.runtimeRegistry.has("cg"), "off 模式注销后 registry 清除");
+    assert.ok(!manager.supervisors.has("cg"), "off 模式注销后 supervisor 销毁");
     await manager.dispose();
   } finally {
     if (prevHome === undefined) delete process.env.DSH_HOME;

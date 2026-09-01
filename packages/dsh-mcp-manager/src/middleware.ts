@@ -160,7 +160,9 @@ export class McpMiddleware {
     // execute 为调用方 JS 直呼 CLI，不经远端 MCP callTool，**不 spawn transport**。
     // 中间层以「虚拟连接」（无 client/transport，status=connected）+ 目录从
     // toolDefinitions 投影存在；执行走 callTool 的封装直呼分支。
-    if (Array.isArray(server.toolDefinitions) && server.toolDefinitions.length > 0) {
+    // 判定用 Array.isArray（空数组也算封装声明——调用方显式声明无工具，
+    // 不应回退远端 spawn）。
+    if (Array.isArray(server.toolDefinitions)) {
       const existingWrapped = unit.connections.get(serverName);
       if (existingWrapped !== undefined && (existingWrapped.status === "connected" || existingWrapped.status === "connecting")) return;
       const wrappedEntry: ConnectionEntry = {
@@ -533,7 +535,7 @@ export class McpMiddleware {
     // 裁决（isToolDenied），此处直接调调用方 execute；输出经封装 output.render
     // 投影为 ContentBlock[]（与 supervisor 封装分支 / dsh-tools 同口径）。
     const wrapped = entry.server?.toolDefinitions;
-    if (Array.isArray(wrapped) && wrapped.length > 0) {
+    if (Array.isArray(wrapped)) {
       const def = wrapped.find((d) => d?.name === tool);
       if (def === undefined) {
         throw new Error(`ws_mcp_call: 工具 ${JSON.stringify(`${parsed.server}/${tool}`)} 不存在（封装定义服务器）`);
@@ -543,9 +545,16 @@ export class McpMiddleware {
         // 中间层只能提供最小面（agent 透传，session cwd 解析用）——经 unknown
         // 中转（消费方封装定义只读 exec.agent，契约面见 dsh-codegraph）。
         const execCtx = { agent } as unknown as Parameters<NonNullable<ToolDefinition["execute"]>>[1];
-        const value = await def.execute(
-          typeof args === "object" && args !== null ? args : {},
-          execCtx,
+        // #413 QA P2-2：封装 execute 补超时兜底（与远端分支同预算 CALL_TIMEOUT_MS，
+        // 封装实现挂起时不无限等待）。
+        const value = await withTimeout(
+          def.execute(
+            typeof args === "object" && args !== null ? args : {},
+            execCtx,
+          ),
+          CALL_TIMEOUT_MS + 2000,
+          `ws_mcp_call: 封装调用超时（${CALL_TIMEOUT_MS}ms），可重试；若反复超时请检查插件状态`,
+          signal,
         );
         const content = typeof def.output?.render === "function"
           ? def.output.render(args, value as unknown as Parameters<NonNullable<ToolOutputDefinition["render"]>>[1])
