@@ -612,6 +612,11 @@ const main = async () => {
     // 浮窗与管理面板均按 scope 分组。
     assert.ok(clientSrc.includes("dm-float-group-title"), "浮窗 scope 分组标题存在");
     assert.ok(clientSrc.includes("项目级") && clientSrc.includes("全局"), "scope 分组文案存在");
+    // #401 勾选 = 禁用：勾选态自绘为红色 ×（非原生蓝色 ✓），工具名同步标红。
+    assert.ok(clientSrc.includes("appearance:none"), "工具 checkbox 自绘（appearance:none）");
+    assert.ok(clientSrc.includes("input:checked::after"), "勾选态用 ::after 绘制 ×");
+    assert.ok(clientSrc.includes("state-error-primary"), "勾选态使用错误红主题变量");
+    assert.ok(clientSrc.includes(":has(input:checked)"), "已禁用工具名同步标红");
   });
   check("client i18n 接线哨兵（issue #348）", () => {
     const clientSrc = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");

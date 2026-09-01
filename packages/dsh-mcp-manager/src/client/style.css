@@ -133,12 +133,22 @@
 .dm-set-save:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.06))}
 }
 
-/* #362 工具级禁用：折叠式 details + checkbox 列表（浮窗与管理面板共用视觉）。 */
+/* #362 工具级禁用：折叠式 details + checkbox 列表（浮窗与管理面板共用视觉）。
+ * #401 视觉语义修复：勾选 = 禁用，故勾选态自绘为红色 ×（非原生蓝色 ✓），
+ * 未勾选为中性空框；已禁用工具名同步标红，明暗自适应（--dsw-alias-* 变量）。 */
 .dm-float-tools{margin:4px 0 0 16px}
 .dm-float-tools summary{font-size:11px;color:var(--dsw-alias-label-secondary,#525866);cursor:pointer;user-select:none}
 .dm-float-tool-list{display:flex;flex-direction:column;gap:2px;margin:4px 0 0;max-height:140px;overflow:auto}
 .dm-float-tool,.dm-tool{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--dsw-alias-label-primary,#3a3f4b);font-family:ui-monospace,Consolas,monospace;cursor:pointer;line-height:1.6}
-.dm-float-tool input,.dm-tool input{width:13px;height:13px;margin:0;accent-color:var(--dsw-alias-state-info-primary,#3b82f6);flex:none}
+/* 自绘 checkbox：勾选（禁用）显示红色 ×，与「勾选 = 禁用」语义一致（#401）。 */
+.dm-float-tool input,.dm-tool input{width:13px;height:13px;margin:0;flex:none;appearance:none;-webkit-appearance:none;border:1px solid var(--dsw-alias-border-l2,#c3c8d2);border-radius:3px;background:var(--dsw-alias-bg-base,#fff);cursor:pointer;position:relative;box-sizing:border-box}
+.dm-float-tool input:checked,.dm-tool input:checked{border-color:var(--dsw-alias-state-error-primary,#b42318);background:var(--dsw-alias-state-error-secondary,#fef2f2)}
+.dm-float-tool input:checked::after,.dm-tool input:checked::after{content:"";position:absolute;left:50%;top:50%;width:8px;height:8px;transform:translate(-50%,-50%);background:linear-gradient(45deg,transparent 43%,var(--dsw-alias-state-error-primary,#b42318) 43%,var(--dsw-alias-state-error-primary,#b42318) 57%,transparent 57%),linear-gradient(-45deg,transparent 43%,var(--dsw-alias-state-error-primary,#b42318) 43%,var(--dsw-alias-state-error-primary,#b42318) 57%,transparent 57%)}
+.dm-float-tool input:hover,.dm-tool input:hover{border-color:var(--dsw-alias-state-info-primary,#3b82f6)}
+.dm-float-tool input:checked:hover,.dm-tool input:checked:hover{border-color:var(--dsw-alias-state-error-primary,#b42318)}
+.dm-float-tool input:focus-visible,.dm-tool input:focus-visible{outline:2px solid var(--dsw-alias-state-info-primary,#3b82f6);outline-offset:1px}
+/* 已禁用工具名同步标红，强化「禁用」辨识（#401）。 */
+.dm-float-tool:has(input:checked),.dm-tool:has(input:checked){color:var(--dsw-alias-state-error-primary,#b42318)}
 .dm-float-hint{font-size:10.5px;color:var(--dsw-alias-label-tertiary,#8a919c);line-height:1.5;padding:4px 8px 2px}
 .dm-subgroup{margin:6px 0 10px}
 .dm-subgroup-title{margin:0 0 4px;font-size:11px;font-weight:600;color:var(--dsw-alias-label-secondary,#525866)}
