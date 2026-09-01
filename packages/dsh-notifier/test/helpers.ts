@@ -233,6 +233,7 @@ export function makeNotifier(workDir, config = {}, ctxOverrides = {}) {
     configFile: join(workDir, "config.json"),
     toastScript: join(workDir, "toast.ps1"),
     historyFile: join(workDir, "history.jsonl"),
+    statusFile: join(workDir, "status.json"),
     ...config,
   });
   return {

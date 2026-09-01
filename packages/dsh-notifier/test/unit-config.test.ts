@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { mkdtempSync, rmSync } from "node:fs";
 import { assert } from "./helpers.ts";
-import { normalizeConfig, parseHHMM, isInQuietHours, DEFAULT_CONFIG, configFile, historyFile, toastScriptPath } from "../lib/index.js";
+import { normalizeConfig, parseHHMM, isInQuietHours, DEFAULT_CONFIG, configFile, historyFile, toastScriptPath, normalizeBarkBaseUrl, redactConfigView, unmaskChannels, SECRET_MASK, BARK_ID_PATTERN, validateSettings, sanitizeSettings } from "../lib/index.js";
 
 const work = mkdtempSync(join(tmpdir(), "dnotify-unit-config-"));
 try {
@@ -91,6 +91,92 @@ try {
   assert.equal(normalizeConfig({ maxConnections: 16.6 }).maxConnections, 17, "小数取整");
   assert.equal(normalizeConfig({ maxConnections: "8" }).maxConnections, DEFAULT_CONFIG.maxConnections, "字符串非法回默认");
   assert.equal(normalizeConfig({ maxConnections: 4, bogus: 1 }).bogus, 1, "未知键仍透传（排除表不吞其他键）");
+
+  // ===== M2：channels / kindRoutes / allowKinds 三键（issue #366）=====
+  assert.deepEqual(DEFAULT_CONFIG.channels, [], "channels 默认空");
+  assert.deepEqual(DEFAULT_CONFIG.kindRoutes, {}, "kindRoutes 默认空");
+  assert.deepEqual(DEFAULT_CONFIG.allowKinds, [], "allowKinds 默认空");
+
+  // baseUrl 规范化（SSRF 姿态：scheme 白名单 + 凭据拒绝 + query/hash 丢弃）
+  assert.equal(normalizeBarkBaseUrl("http://127.0.0.1:40280"), "http://127.0.0.1:40280", "origin 原样");
+  assert.equal(normalizeBarkBaseUrl("http://127.0.0.1:40280/"), "http://127.0.0.1:40280", "尾斜杠去除");
+  assert.equal(normalizeBarkBaseUrl("https://api.day.app/push?x=1#frag"), "https://api.day.app/push", "query/hash 丢弃");
+  assert.equal(normalizeBarkBaseUrl("ftp://example.com"), null, "非 http(s) scheme 拒绝");
+  assert.equal(normalizeBarkBaseUrl("http://user:pass@example.com"), null, "带凭据 URL 拒绝");
+  assert.equal(normalizeBarkBaseUrl("not a url"), null, "不可解析拒绝");
+  assert.equal(normalizeBarkBaseUrl(""), null, "空串拒绝");
+  assert.equal(normalizeBarkBaseUrl(42), null, "非字符串拒绝");
+
+  // 实例归一化：合法保留 / 非法丢弃 / id 去重首个胜出 / 未知参数透传 / 保留键剔除
+  const okCh = { id: "phone", type: "bark", baseUrl: "https://api.day.app", deviceKey: "realKey123", enabled: false, sound: "minuet", group: "dsh" };
+  const mergedCh = normalizeConfig({ channels: [okCh, { id: "bad id", type: "bark", baseUrl: "https://h", deviceKey: "k", enabled: true }, "junk", null] });
+  assert.equal(mergedCh.channels.length, 1, "非法实例丢弃，合法实例保留");
+  assert.equal(mergedCh.channels[0].baseUrl, "https://api.day.app");
+  assert.equal(mergedCh.channels[0].sound, "minuet", "可选参数保留");
+  const dupCh = normalizeConfig({ channels: [{ id: "a1", type: "bark", baseUrl: "https://h", deviceKey: "k1", enabled: true }, { id: "a1", type: "bark", baseUrl: "https://h", deviceKey: "k2", enabled: false }] });
+  assert.equal(dupCh.channels.length, 1, "重复 id 去重");
+  assert.equal(dupCh.channels[0].deviceKey, "k1", "重复 id 首个胜出");
+  const opaqueCh = normalizeConfig({ channels: [{ id: "a1", type: "bark", baseUrl: "https://h", deviceKey: "k", enabled: true, volume: "0.7", device_key: "evil", ciphertext: "x" }] }).channels[0] as Record<string, unknown>;
+  assert.equal(opaqueCh.volume, "0.7", "未知 string 参数透传（Bark 前向兼容）");
+  assert.equal("device_key" in opaqueCh, false, "保留键 device_key 剔除");
+  assert.equal("ciphertext" in opaqueCh, false, "保留键 ciphertext 剔除");
+  assert.ok(BARK_ID_PATTERN.test("phone") && BARK_ID_PATTERN.test("bark-01"), "id 格式合法样例");
+  assert.ok(!BARK_ID_PATTERN.test("Bad") && !BARK_ID_PATTERN.test("a") && !BARK_ID_PATTERN.test("-x"), "id 格式拒绝大写/单位/连字符开头");
+
+  // kindRoutes / allowKinds 归一化
+  const mergedRoutes = normalizeConfig({ kindRoutes: { error: ["browser", "system", "browser"], turnEnd: ["browser"], badKind: "x", empty: [] } });
+  assert.deepEqual(mergedRoutes.kindRoutes.error, ["browser", "system"], "kindRoutes 值去重");
+  assert.deepEqual(mergedRoutes.kindRoutes.turnEnd, ["browser"]);
+  assert.equal("badKind" in mergedRoutes.kindRoutes, false, "非数组值丢弃");
+  assert.equal("empty" in mergedRoutes.kindRoutes, false, "空数组丢弃");
+  assert.deepEqual(normalizeConfig({ allowKinds: ["idle-archive:due", "", "x".repeat(65), "idle-archive:due"] }).allowKinds, ["idle-archive:due"], "allowKinds 去重与长度过滤");
+
+  // 透传排除表同步：三键非法值不得以原样透传覆盖归一化结果（L144 坑回归）
+  const opaque = normalizeConfig({ channels: "junk", kindRoutes: 5, allowKinds: true, bogus: 1 });
+  assert.deepEqual(opaque.channels, [], "channels 非法回默认且不透传");
+  assert.deepEqual(opaque.kindRoutes, {}, "kindRoutes 非法回默认且不透传");
+  assert.deepEqual(opaque.allowKinds, [], "allowKinds 非法回默认且不透传");
+  assert.equal(opaque.bogus, 1, "其他未知键仍透传");
+
+  // ===== M2：凭据脱敏与掩码回填（评审 P0-1/P0-2）=====
+  const withSecret = { channels: [{ id: "phone", type: "bark", baseUrl: "https://api.day.app", deviceKey: "realKey123", enabled: true }], notifyAsk: true };
+  const redacted = redactConfigView(withSecret);
+  assert.equal(redacted.channels[0].deviceKey, SECRET_MASK, "deviceKey 掩码");
+  assert.equal(withSecret.channels[0].deviceKey, "realKey123", "深拷贝不污染输入");
+  assert.equal(redacted.notifyAsk, true, "其余字段原样");
+  assert.deepEqual(redactConfigView({ a: 1 }), { a: 1 }, "无 channels 输入原样");
+  assert.equal(redactConfigView(undefined), null, "null 输入兜底");
+
+  const userChs = [{ id: "phone", deviceKey: "realKey123" }, { id: "pad", deviceKey: "padKey456" }];
+  const unmasked = unmaskChannels(
+    [{ id: "pad", deviceKey: SECRET_MASK, baseUrl: "https://h", type: "bark", enabled: true }, { id: "phone", deviceKey: SECRET_MASK, baseUrl: "https://h", type: "bark", enabled: true }, { id: "new1", deviceKey: "freshKey", baseUrl: "https://h", type: "bark", enabled: false }],
+    userChs,
+  );
+  assert.ok(unmasked.ok, "回填成功");
+  if (unmasked.ok) {
+    assert.equal(unmasked.channels[0].deviceKey, "padKey456", "乱序掩码按 id 对齐回填（防下标串凭据）");
+    assert.equal(unmasked.channels[1].deviceKey, "realKey123", "乱序掩码按 id 对齐回填 2");
+    assert.equal(unmasked.channels[2].deviceKey, "freshKey", "新实例非掩码 key 保留");
+  }
+  assert.ok(!unmaskChannels([{ id: "brand-new", deviceKey: SECRET_MASK }], userChs).ok, "新实例带掩码拒绝");
+  assert.ok(!unmaskChannels([{ id: "brand-new", deviceKey: SECRET_MASK }], []).ok, "user 层空时新实例掩码拒绝");
+  const plainPatch = unmaskChannels([{ id: "phone", deviceKey: "plain" }], userChs);
+  assert.ok(plainPatch.ok && (plainPatch as { channels: Array<{ deviceKey: string }> }).channels[0].deviceKey === "plain", "非掩码 patch 原样通过");
+  assert.ok(unmaskChannels(undefined, userChs).ok, "非数组输入兜底 ok");
+
+  // 写入校验：channels 整组（重复 id 400 口径 / 保留键拒绝 / baseUrl scheme）
+  assert.equal(validateSettings({ channels: [okCh] }), null, "合法实例通过");
+  assert.equal(validateSettings({ channels: [okCh, { ...okCh, id: "phone" }] })?.key, "channels", "重复 id 拒绝");
+  assert.equal(validateSettings({ channels: [{ ...okCh, device_key: "x" }] })?.key, "channels", "保留键写入口径拒绝");
+  assert.equal(validateSettings({ channels: [{ ...okCh, baseUrl: "ftp://h" }] })?.key, "channels", "非法 scheme 拒绝");
+  assert.equal(validateSettings({ channels: [{ ...okCh, deviceKey: "" }] })?.key, "channels", "空 deviceKey 拒绝");
+  assert.equal(validateSettings({ kindRoutes: { error: ["browser"] } }), null, "合法 kindRoutes 通过");
+  assert.equal(validateSettings({ kindRoutes: { error: [] } })?.key, "kindRoutes", "空数组 kindRoutes 拒绝");
+  assert.equal(validateSettings({ allowKinds: ["a:b"] }), null, "合法 allowKinds 通过");
+  assert.equal(validateSettings({ allowKinds: [42] })?.key, "allowKinds", "非字符串 allowKinds 拒绝");
+  const sanitizedCh = sanitizeSettings({ channels: [{ ...okCh, volume: "0.7" }] });
+  assert.ok(sanitizedCh && Array.isArray(sanitizedCh.channels) && sanitizedCh.channels.length === 1, "sanitizeSettings channels 往返");
+  assert.deepEqual(sanitizeSettings({ futureKey: 1 }), {}, "未来键写入白名单语义不变（读取归一化才透传）");
 } finally {
   rmSync(work, { recursive: true, force: true });
 }

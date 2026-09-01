@@ -166,6 +166,158 @@
   .dn-set-card .dn-set-input { width: 100%; }
 }
 
+/* ============ M2 频道卡 / 路由 / 动态 kind（issue #366）============ */
+
+/* 文本输入与下拉比数字输入宽（URL/key 等长内容） */
+.dn-set-card .dn-set-inputText { width: 220px; max-width: 100%; }
+.dn-set-card .dn-set-select { width: 220px; max-width: 100%; }
+
+/* 频道卡：内嵌子卡（启用态左侧强调边） */
+.dn-set-card .dn-ch-card {
+  border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin: 8px 0;
+  background: var(--dsw-alias-bg-layer-1, #f5f6f8);
+}
+.dn-set-card .dn-ch-card.dn-ch-on {
+  border-left: 3px solid var(--dsw-alias-state-success-primary, #0f9d6e);
+}
+.dn-set-card .dn-ch-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  flex-wrap: wrap;
+}
+.dn-set-card .dn-ch-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dsw-alias-border-l2, #d3d8df);
+  flex: none;
+}
+.dn-set-card .dn-ch-dot.on { background: var(--dsw-alias-state-success-primary, #0f9d6e); }
+.dn-set-card .dn-ch-name { font-weight: 600; }
+.dn-set-card .dn-ch-id {
+  color: var(--dsw-alias-label-tertiary, #8a919c);
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+}
+.dn-set-card .dn-ch-enable {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  color: var(--dsw-alias-label-secondary, #5f6672);
+  font-size: 11px;
+}
+.dn-set-card .dn-ch-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.dn-set-card .dn-ch-add { margin-top: 8px; }
+
+/* 频道投递状态行（签名元素：ok 灰 / failed 高亮） */
+.dn-set-card .dn-ch-status {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary, #8a919c);
+  margin-top: 6px;
+  padding-left: 8px;
+  border-left: 2px solid var(--dsw-alias-border-l1, #e2e5ea);
+  line-height: 1.5;
+  word-break: break-all;
+}
+.dn-set-card .dn-ch-statusOk {
+  border-left-color: var(--dsw-alias-state-success-primary, #0f9d6e);
+  color: var(--dsw-alias-label-secondary, #5f6672);
+}
+.dn-set-card .dn-ch-statusFail {
+  border-left-color: var(--dsw-alias-state-error-primary, #d92d20);
+  color: var(--dsw-alias-state-error-primary, #d92d20);
+}
+
+/* 折叠区（Bark 高级参数 / 合并去重参数） */
+.dn-set-card .dn-ch-adv {
+  margin-top: 6px;
+  border-top: 1px dashed var(--dsw-alias-border-l1, #e2e5ea);
+  padding-top: 4px;
+}
+.dn-set-card .dn-ch-adv > summary {
+  cursor: pointer;
+  color: var(--dsw-alias-label-secondary, #5f6672);
+  font-size: 11px;
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  user-select: none;
+}
+.dn-set-card .dn-sec-adv { margin-top: 10px; }
+
+/* 事件行 + 路由控件（kindRoutes 单源） */
+.dn-set-card .dn-event-row { border-bottom: none; padding-bottom: 2px; }
+.dn-set-card .dn-route-cell { margin: 0 0 6px; }
+.dn-set-card .dn-route-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
+  background: var(--dsw-alias-bg-layer-1, #f5f6f8);
+  color: var(--dsw-alias-label-secondary, #5f6672);
+  border-radius: 6px;
+  padding: 2px 10px;
+  min-height: 26px;
+  cursor: pointer;
+  font-size: 11px;
+}
+.dn-set-card .dn-route-btnOpen { border-color: var(--dsw-alias-state-info-primary, #2f6fed); }
+.dn-set-card .dn-route-cap {
+  color: var(--dsw-alias-label-tertiary, #8a919c);
+}
+.dn-set-card .dn-route-summary { font-weight: 600; }
+.dn-set-card .dn-route-edit {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border: 1px dashed var(--dsw-alias-border-l1, #e2e5ea);
+  border-radius: 6px;
+}
+.dn-set-card .dn-route-editHead {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary, #8a919c);
+  margin-bottom: 4px;
+}
+.dn-set-card .dn-route-actions { margin-top: 6px; display: flex; gap: 8px; }
+.dn-set-card .dn-route-stale {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--dsw-alias-state-warning-primary, #f79009);
+}
+
+/* 动态 kind 清单（待确认 → 允许/拒绝） */
+.dn-set-card .dn-kinds-block { margin-top: 10px; }
+.dn-set-card .dn-kinds-title { font-weight: 600; font-size: 12px; }
+.dn-set-card .dn-kind-row { border-bottom: 1px solid var(--dsw-alias-border-l1, #e2e5ea); }
+.dn-set-card .dn-kind-id { font-size: 11px; }
+.dn-set-card .dn-kind-badge {
+  font-size: 10px;
+  border-radius: 8px;
+  padding: 0 6px;
+  border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
+  color: var(--dsw-alias-label-tertiary, #8a919c);
+  flex: none;
+}
+.dn-set-card .dn-kind-ok {
+  border-color: var(--dsw-alias-state-success-primary, #0f9d6e);
+  color: var(--dsw-alias-state-success-primary, #0f9d6e);
+}
+.dn-set-card .dn-kind-pending {
+  border-color: var(--dsw-alias-state-warning-primary, #f79009);
+  color: var(--dsw-alias-state-warning-primary, #f79009);
+}
+
 /* ============ 通知展示（横幅 / toast，issue #76 保留） ============ */
 
 .dn-toast {

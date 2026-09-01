@@ -327,6 +327,12 @@ export function isSubagentOf(agent: Agent | undefined, ownership?: SubagentOwner
  * 正文不重复时间戳。
  */
 export const NOTIFY_KINDS: Record<string, { title: string; message: (detail: NotifyDetail) => string }> = {
+  // test：M2 起纳入 service 管线（/test 收敛，isBuiltinKind 由此表判定）——
+  // 之前 test 直连 sse/system 不经管线，收敛后缺条目会被误判动态 kind 抑制。
+  test: {
+    title: "DSH：测试通知",
+    message: () => "通知链路工作正常（此通知来自测试按钮）",
+  },
   ask: {
     title: "DSH：等待审批",
     message: (detail) => {
