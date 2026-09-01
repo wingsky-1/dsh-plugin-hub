@@ -546,7 +546,7 @@ const main = async () => {
     // ws_mcp_call guard：禁用命中 → deny。
     const callDeny = await guard({ name: "ws_mcp_call", arguments: { server: fullServerName("/proj", "ctx"), tool: "use_ctx" } }, async () => ({ kind: "allow" }));
     assert.equal(callDeny.kind, "deny", "ws_mcp_call guard 查禁用表");
-    assert.equal(toolDisabledReason(fullServerName("/proj", "ctx"), "use_ctx").includes("mcp__ 前缀"), true, "禁用原因声明只作用于 mcp__ 前缀");
+    assert.equal(toolDisabledReason(fullServerName("/proj", "ctx"), "use_ctx").includes("mcp-manager 管辖"), true, "禁用原因声明覆盖 mcp__ 与中间层工具（#413）");
     // 3) callTool（ws_mcp_call 执行路径）：禁用工具 → 显式抛错（验收 14：三入口一致）。
     const callUnit = {
       root: "/proj",

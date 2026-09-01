@@ -11,7 +11,8 @@ extra to install.
 Three middleware modes (`middleware`): `off` — all servers register directly as
 `mcp__<server>__<tool>` (legacy behavior); `project` (**default**) — project-level
 servers go through the middleware while global ones register directly; `all` — global
-servers go through the middleware too, falling back to the virtual global root
+servers (including runtime-injected wrapped-definition servers such as codegraph) go
+through the middleware too, falling back to the virtual global root
 `@global` when cwd has no project, collapsing the model surface to exactly four atomic
 tools (`ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call`).
 `middleware` / `middlewarePolicy` can be hot-switched from the settings page (saved
@@ -98,7 +99,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
 | Server management | CRUD (project-level/global optional), connect / disconnect / reconnect; versioned JSON config, atomic write |
 | Two transports | stdio (local subprocess, env supports `${ENV}` references) and streamable-http (remote, header supports `${ENV}` references, auto-echoes `Mcp-Session-Id`) |
 | JSON import | Paste `mcpServers` JSON text to import (JSON format only; does not scan any application config files) |
-| Model tools | Global servers register directly as `mcp__<server>__<tool>` (64 chars, `[A-Za-z0-9_-]`, hashed suffix on conflict); project-level servers go through the middleware's `ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call` by default (`middleware: project`, recommended), so workspaces never clash |
+| Model tools | Global servers register directly as `mcp__<server>__<tool>` (64 chars, `[A-Za-z0-9_-]`, hashed suffix on conflict); project-level servers go through the middleware's `ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call` by default (`middleware: project`, recommended), so workspaces never clash; with `middleware: all`, global and runtime-injected servers (e.g. codegraph) also go through the middleware with no `mcp__` prefix |
 | Workspace isolation | The middleware routes by the calling session's cwd to the matching workspace connection pool; server full-name consistency checks (`@<root>/<server>`) prevent cross-workspace crosstalk |
 | Reconnection | Exponential backoff (starts at 500ms, caps at 30s, gives up after 10 attempts and deregisters the tools) |
 | Result truncation | Direct-connect tool results truncated at 8KB and marked (prevents oversized JSON from entering context in full) |
@@ -166,7 +167,8 @@ without name clashes; global servers still register directly as `mcp__<server>__
 (in `project` mode, passing a global-scope server to detail/call returns a
 "use `mcp__` directly" hint). Switch
 `middleware: off` to restore the legacy behavior (project-level also registers `mcp__`);
-`middleware: all` routes global servers through the middleware too (falling back to the
+`middleware: all` routes global servers (including runtime-injected wrapped-definition
+servers such as codegraph) through the middleware too (falling back to the
 virtual global root `@global` when cwd has no project), collapsing the model surface to
 exactly four atomic tools — list/search/detail then merge queries across the "project
 root unit + `@global` unit", and call allows the `@global` root (global config is shared
@@ -188,14 +190,15 @@ no `dsh web` restart needed.
 - Expanding the "Tools (N)" details of a server card shows a **checkbox list**; toggling
   each tool persists via `PATCH /api/dsh-mcp/tool-disable` (stored under
   `<DSH_HOME>/dsh-mcp-user-state.json` → `disabledTools`, merged write, survives restarts);
-- Semantics: in `project` mode only project-level servers' `mcp__` tools can be disabled;
-  in `all` mode global servers' `mcp__` tools can be disabled too; everything is enabled
-  by default;
+- Semantics: in `project` mode only project-level servers' middleware-routed tools can be
+  disabled; in `all` mode global servers' (including runtime-injected such as codegraph)
+  middleware-routed tools can be disabled too; everything is enabled by default;
 - Per-tool disable is **independent of the server-level `enabled` switch** (re-enabling a
   server does not clear its tool-level state);
-- It **only applies to `mcp__`-prefixed tools**: discipline bare-name tools (e.g.
-  dsh-codegraph's `codegraph_explore`) are not affected (declared on the dsh-codegraph
-  side in #363);
+- It **applies to all mcp-manager-managed MCP tools** (`mcp__`-prefixed direct calls and
+  middleware `ws_mcp_*` calls consistently; runtime wrapped tools in `all` mode are
+  covered too); discipline bare-name tools (e.g. dsh-codegraph's `codegraph_explore`)
+  are not affected (declared on the dsh-codegraph side in #363);
 - Overlong tool names (>64 chars, hashed suffix) are irreversible → treated as unknown
   server, neither disabled nor mistakenly denied;
 - In `project` mode the floating window shows global servers without tool switches (they

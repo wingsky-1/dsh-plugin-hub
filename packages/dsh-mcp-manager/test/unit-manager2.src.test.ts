@@ -553,6 +553,88 @@ function rmStatSafe(p) {
   }
 }
 
+// ---- #413：all 模式 runtime 注入（toolDefinitions）归一中台 ----
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mgr2w-"));
+  const prevHome = process.env.DSH_HOME;
+  try {
+    process.env.DSH_HOME = dir;
+    const { manager, store, log } = makeManager(dir);
+    const wrappedTool = {
+      name: "cg_node",
+      description: "查符号",
+      parameters: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] },
+      output: { schema: { type: "object", properties: { text: { type: "string" } }, required: ["text"], additionalProperties: false }, render: (a, v) => [{ type: "text", text: v.text }] },
+      execute: async (args) => ({ text: `node(${args.symbol})` }),
+    };
+    manager.middlewareMode = "all";
+    await manager.initMiddleware("all", {});
+    const mw = manager.middleware;
+
+    // 经 registerServer 注入（带 toolDefinitions）→ start 内部 middlewareTakes
+    // 判定接管 → 触达 @global 单元虚拟连接，不建 supervisor、不注册 mcp__ 工具。
+    await manager.registerServer({ name: "cg", transport: "stdio", command: "codegraph", args: ["serve", "--mcp"], toolDefinitions: [wrappedTool] });
+    assert.ok(manager.runtimeRegistry.has("cg"), "runtime 条目已注册");
+    assert.ok(!manager.supervisors.has("cg"), "all 模式 runtime 不建 supervisor（#413 归一）");
+    assert.equal(log.registered.filter((name) => String(name).startsWith("mcp__cg__")).length, 0, "不注册 mcp__ 前缀工具");
+    await pollUntil("@global 单元虚拟连接建立", () => mw.units.get("@global")?.connections.has("cg") === true);
+    const entry = mw.units.get("@global").connections.get("cg");
+    assert.equal(entry.status, "connected", "虚拟连接 connected");
+    assert.equal(entry.client, undefined, "无远端 client（封装直呼）");
+    // 目录投影自 toolDefinitions。
+    assert.ok(mw.units.get("@global").catalog.get("cg")?.tools.has("cg_node"), "目录投影封装工具");
+
+    // 查询面：summary 从 @global 单元投影（connected + tools），不落 supervisor。
+    const summaryServer = manager.summary().servers.find((s) => s.name === "cg");
+    assert.equal(summaryServer?.status, "connected", "summary 投影 connected（@global 单元）");
+    assert.deepEqual([...summaryServer.tools].sort(), ["cg_node"], "summary 工具列表来自目录投影");
+
+    // unregisterServer 清理 @global 单元虚拟连接与目录（防 unregister 后幽灵残留）。
+    await manager.unregisterServer("cg");
+    assert.ok(!manager.runtimeRegistry.has("cg"), "runtime 条目已注销");
+    assert.equal(mw.units.get("@global")?.connections.has("cg"), false, "虚拟连接已拆");
+    assert.equal(mw.units.get("@global")?.catalog.has("cg"), false, "目录条目已清（防幽灵）");
+    await manager.dispose();
+  } finally {
+    if (prevHome === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = prevHome;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---- #413：all 模式 runtime（toolDefinitions）注销后 project 模式保留 supervisor ----
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mgr2w2-"));
+  const prevHome = process.env.DSH_HOME;
+  try {
+    process.env.DSH_HOME = dir;
+    const { manager } = makeManager(dir);
+    const wrappedTool = {
+      name: "cg_node",
+      description: "查符号",
+      parameters: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] },
+      output: { schema: { type: "object", properties: { text: { type: "string" } }, required: ["text"], additionalProperties: false }, render: (a, v) => [{ type: "text", text: v.text }] },
+      execute: async (args) => ({ text: `node(${args.symbol})` }),
+    };
+    manager.middlewareMode = "project";
+    await manager.initMiddleware("project", {});
+    await manager.registerServer({ name: "cg", transport: "stdio", command: "codegraph", args: ["serve", "--mcp"], toolDefinitions: [wrappedTool] });
+    assert.ok(manager.supervisors.has("cg"), "project 模式 runtime 仍 supervisor 路径（#413 只归一 all）");
+    // off 模式注销：supervisor 销毁 + registry 清除（无中间层连接，无需 drop）。
+    manager.middlewareMode = "off";
+    await manager.unregisterServer("cg");
+    assert.ok(!manager.runtimeRegistry.has("cg"), "off 模式注销后 registry 清除");
+    assert.ok(!manager.supervisors.has("cg"), "off 模式注销后 supervisor 销毁");
+    await manager.dispose();
+  } finally {
+    if (prevHome === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = prevHome;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 // ---- #392 遗留①②③：remove/update 清目录幽灵条目 + disconnect 显式 scope 定位 ----
 
 {
@@ -969,12 +1051,13 @@ function rmStatSafe(p) {
     const disabledProjection = manager.summarize(store.find("g1"), "global");
     assert.equal(disabledProjection.status, "stopped", "userDisabled 短路（#382：池接管后断开即 stopped）");
     assert.deepEqual(disabledProjection.tools, []);
-    // runtime 注入条目豁免短路（middlewareTakes 判定）：同名 runtime supervisor
-    // 走 supervisor 投影，如实显示连接态。
+    // #413：all 模式 runtime 注入条目不再豁免——归一中台（middlewareTakes 判定
+    // 与 store 全局同口径），从 @global 单元投影；同名 runtime supervisor 残留
+    // 不误显示其连接态（与 store 全局行为一致）。
     manager.runtimeRegistry.set("g1", store.find("g1"));
     const runtimeProjection = manager.summarize(store.find("g1"), "global");
-    assert.equal(runtimeProjection.status, "connected", "runtime 条目豁免短路（supervisor 路径）");
-    assert.deepEqual(runtimeProjection.tools, ["gt"]);
+    assert.equal(runtimeProjection.status, "stopped", "#413：all 模式 runtime 条目归一中台（@global 单元投影，userDisabled → stopped）");
+    assert.deepEqual(runtimeProjection.tools, []);
     manager.runtimeRegistry.delete("g1");
     // supervisor 消失后落回兜底 stopped。
     manager.supervisors.delete("g1");
