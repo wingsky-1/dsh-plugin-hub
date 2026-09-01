@@ -52,8 +52,8 @@ const NS = "notifier";
     kinds: "/api/dsh-notifier/kinds",
   };
   var STYLE_ID = "dsh-notifier-style";
-  // 合并 #418/#421 后统一 bump（两分支各自 418-1/421-1，取更新值保证样式重注入）
-  var CSS_VERSION = "421-2";
+  // 合并 #418/#421/#426 后统一 bump（保证新样式重注入；426-1 > 421-2）
+  var CSS_VERSION = "426-1";
   // 浏览器通知图标（内联 SVG data URL，零外部资源；铃铛造型）。
   var NOTIFY_ICON =
     "data:image/svg+xml;utf8," +
@@ -539,6 +539,10 @@ const NS = "notifier";
     var delArmedDraft = useState(null as string | null);
     var delArmedId = delArmedDraft[0];
     var setDelArmedId = delArmedDraft[1];
+    // M2 levels：每个频道「待添加映射」草稿（kind + level；按频道 id 键控）
+    var levelsNewDraft = useState({} as Record<string, { kind: string; level: string }>);
+    var levelsNew = levelsNewDraft[0];
+    var setLevelsNew = levelsNewDraft[1];
     // #402 第 2 条：设置卡内双 tab（通知事件 / 通知频道）。切 tab 仅条件拼接
     // children——全部表单/瞬态 state 都在本组件顶层，切换零丢失。
     var activeTabDraft = useState("events" as "events" | "channels");
@@ -678,6 +682,22 @@ const NS = "notifier";
       patch(function (prev: any) {
         var list = (prev.channels || []).slice();
         list[idx] = Object.assign({}, list[idx], part);
+        return Object.assign({}, prev, { channels: list });
+      });
+    }
+
+    /** 写/删某实例的 levels 映射（kind→level；level 为空删除该 kind；函数式基于最新 channels）。 */
+    function chLevelsSet(idx: number, kind: string, level: string) {
+      if (!kind || kind === "__proto__" || kind === "constructor" || kind === "prototype") return;
+      patch(function (prev: any) {
+        var list = (prev.channels || []).slice();
+        var ch = Object.assign({}, list[idx]);
+        var levels = Object.assign({}, ch.levels || {});
+        if (level) levels[kind] = level;
+        else delete levels[kind];
+        if (Object.keys(levels).length === 0) delete ch.levels;
+        else ch.levels = levels;
+        list[idx] = ch;
         return Object.assign({}, prev, { channels: list });
       });
     }
@@ -953,6 +973,69 @@ const NS = "notifier";
       ["active", "timeSensitive", "passive", "critical"].forEach(function (lv: string) {
         levelOpts.push(React.createElement("option", { value: lv, key: lv }, lv));
       });
+      // levels（kind→level）编辑：kind 建议 = 内置 7 kind + 动态已注册 kind；datalist id 按实例唯一
+      var suggestKinds: string[] = Object.keys(KIND_KEYS);
+      (kindsList || []).forEach(function (k: any) {
+        if (suggestKinds.indexOf(String(k.id)) === -1) suggestKinds.push(String(k.id));
+      });
+      var dlId = "dn-levels-suggest-" + String(ch.id);
+      var levels = ch.levels || {};
+      var levelKeys = Object.keys(levels);
+      var levelsRows: any[] = levelKeys.map(function (kind) {
+        return React.createElement("div", { className: "dn-levels-row", key: "lv-" + kind },
+          React.createElement("span", { className: "dn-levels-kind" },
+            KIND_KEYS[kind] !== undefined ? t(KIND_KEYS[kind]) + " (" + kind + ")" : kind),
+          React.createElement("select", {
+            className: "dn-set-input dn-set-select",
+            value: levels[kind] || "",
+            onChange: function (e: any) { chLevelsSet(idx, kind, e.target.value); },
+          }, levelOpts),
+          React.createElement("button", {
+            type: "button", className: "dn-set-btn dn-set-btnSmall",
+            onClick: function () { chLevelsSet(idx, kind, ""); },
+          }, t("chLevelsRemove")),
+        );
+      });
+      var newRow = levelsNew[String(ch.id)] || { kind: "", level: "active" };
+      var newKindKnown = suggestKinds.indexOf(newRow.kind) !== -1;
+      var addRow = React.createElement("div", { className: "dn-levels-add", key: "lv-add" },
+        React.createElement("input", {
+          type: "text", className: "dn-set-input dn-set-inputText", list: dlId,
+          placeholder: t("chLevelsKindPlaceholder"),
+          value: newRow.kind,
+          onChange: function (e: any) {
+            setLevelsNew(Object.assign({}, levelsNew, { [String(ch.id)]: { kind: e.target.value, level: newRow.level } }));
+          },
+        }),
+        React.createElement("select", {
+          className: "dn-set-input dn-set-select",
+          value: newRow.level,
+          onChange: function (e: any) {
+            setLevelsNew(Object.assign({}, levelsNew, { [String(ch.id)]: { kind: newRow.kind, level: e.target.value } }));
+          },
+        }, levelOpts),
+        React.createElement("button", {
+          type: "button", className: "dn-set-btn dn-set-btnSmall",
+          onClick: function () {
+            if (newRow.kind) {
+              chLevelsSet(idx, newRow.kind, newRow.level);
+              setLevelsNew(Object.assign({}, levelsNew, { [String(ch.id)]: { kind: "", level: "active" } }));
+            }
+          },
+        }, t("chLevelsAdd")),
+        newRow.kind && !newKindKnown
+          ? React.createElement("span", { className: "dn-set-hint" }, t("chLevelsUnknown"))
+          : null,
+      );
+      var levelsEditor = React.createElement("details", { className: "dn-levels-edit", key: "levels-" + ch.id },
+        React.createElement("summary", null, t("chLevelsMap")),
+        React.createElement("div", { className: "dn-set-note" }, t("chLevelsHint")),
+        levelKeys.length === 0 ? React.createElement("div", { className: "dn-set-note" }, t("chLevelsEmpty")) : levelsRows,
+        addRow,
+        React.createElement("datalist", { id: dlId },
+          suggestKinds.map(function (k) { return React.createElement("option", { value: k, key: k }, k); }),
+        ),
+      );
       var adv = React.createElement("details", { className: "dn-ch-adv", key: "adv-" + ch.id },
         React.createElement("summary", null, t("chAdvanced")),
         row(t("chBarkSound"), textInput(ch.sound, function (v: string) { chPatch(idx, { sound: v }); })),
@@ -964,7 +1047,8 @@ const NS = "notifier";
           className: "dn-set-input dn-set-select",
           value: ch.level || "",
           onChange: function (e: any) { chPatch(idx, { level: e.target.value || undefined }); },
-        }, levelOpts)),
+        }, levelOpts), t("chBarkLevelHint")),
+        levelsEditor,
       );
       return React.createElement("details",
         {

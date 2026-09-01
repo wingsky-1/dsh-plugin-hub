@@ -416,6 +416,45 @@
   color: var(--dsw-alias-state-warning-primary, #f79009);
 }
 
+/* levels（kind→level 稀疏映射矩阵）编辑区 */
+.dn-set-card .dn-levels-edit {
+  margin-top: 8px;
+  padding: 6px 8px;
+  border: 1px dashed var(--dsw-alias-border-l1, #e2e5ea);
+  border-radius: 6px;
+}
+.dn-set-card .dn-levels-edit > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary, #1f2329);
+}
+.dn-set-card .dn-levels-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+.dn-set-card .dn-levels-kind {
+  flex: 0 1 160px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.dn-set-card .dn-levels-row .dn-set-select { flex: 1 1 auto; min-width: 0; }
+.dn-set-card .dn-levels-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.dn-set-card .dn-levels-add .dn-set-inputText { flex: 1 1 120px; min-width: 90px; }
+.dn-set-card .dn-levels-add .dn-set-select { flex: 1 1 110px; min-width: 90px; }
+
+
 /* 动态 kind 清单（待确认 → 允许/拒绝） */
 .dn-set-card .dn-kinds-block { margin-top: 10px; }
 .dn-set-card .dn-kinds-title { font-weight: 600; font-size: 12px; }
