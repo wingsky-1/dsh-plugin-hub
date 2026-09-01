@@ -101,6 +101,23 @@
   cursor: pointer;
   color: var(--dsw-alias-label-secondary, #5f6672);
 }
+/* #421：免打扰豁免候选——未启用事件弱化（勾选态保留，仅样式提示「事件未启用」） */
+.dn-set-card .dn-set-allowDim {
+  opacity: 0.55;
+  color: var(--dsw-alias-label-tertiary, #8a919c);
+}
+.dn-set-card .dn-set-allowHint {
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary, #8a919c);
+}
+/* #421：豁免候选快捷按钮行（跟随已启用 / 恢复默认） */
+.dn-set-card .dn-set-allowActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+  width: 100%;
+}
 
 .dn-set-card .dn-set-note {
   color: var(--dsw-alias-label-tertiary, #8a919c);

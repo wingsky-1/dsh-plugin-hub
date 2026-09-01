@@ -52,7 +52,7 @@ const NS = "notifier";
     kinds: "/api/dsh-notifier/kinds",
   };
   var STYLE_ID = "dsh-notifier-style";
-  var CSS_VERSION = "402-1";
+  var CSS_VERSION = "421-1";
   // 浏览器通知图标（内联 SVG data URL，零外部资源；铃铛造型）。
   var NOTIFY_ICON =
     "data:image/svg+xml;utf8," +
@@ -69,6 +69,17 @@ const NS = "notifier";
     ["notifyTaskError", "evtTaskError"],
     ["notifyTurnEnd", "evtTurnEnd"],
   ];
+  /** 事件开关键 → 通知 kind（单一事实源；免打扰豁免候选/「跟随已启用」由此派生，
+   *  与服务端 EVENT_KEYS 对应的事件源 kind 一致：ask/question/done/subagent-done/
+   *  error/turn-end）。 */
+  var EVENT_KIND_MAP: Record<string, string> = {
+    notifyAsk: "ask",
+    notifyQuestion: "question",
+    notifyTaskDone: "done",
+    notifySubagentDone: "subagent-done",
+    notifyTaskError: "error",
+    notifyTurnEnd: "turn-end",
+  };
   /** kind → 字典 key（未知 kind 回落 kind 本体显示，数据不翻译）。 */
   var KIND_KEYS: Record<string, string> = {
     ask: "kAsk",
@@ -1105,27 +1116,54 @@ const NS = "notifier";
         onChange: function (e: any) { patch({ quietHours: Object.assign({}, qh, { end: e.target.value }) }); },
       })),
     ];
-    var ALLOW_CHOICES = [["ask", "allowAsk"], ["question", "allowQuestion"], ["error", "allowError"]];
+    // 免打扰豁免候选（issue #421：扩至全部 6 个内置事件 kind，label 复用事件文案
+    // KIND_KEYS 字典；由 EVENT_KEYS + EVENT_KIND_MAP 派生，不新建平行表）。
+    // 事件开关（notifyXxx）与豁免正交：未启用事件弱化显示 + 说明，勾选态保留照常
+    // 写入（服务端判定只看 quietHours.allowKinds.includes(kind)，不看开关）。
+    var quietAllowChoices = EVENT_KEYS.map(function (kv) {
+      var notifyKey = kv[0];
+      var kind = EVENT_KIND_MAP[notifyKey];
+      var enabled = settings[notifyKey] === true;
+      return { kind: kind, notifyKey: notifyKey, enabled: enabled, labelKey: KIND_KEYS[kind] || "k" + kind };
+    });
+    var allows = qh.allowKinds || [];
+    function setAllowKinds(next: string[]) {
+      patch({ quietHours: Object.assign({}, qh, { allowKinds: next }) });
+    }
+    /** 跟随已启用事件：一键把当前 notifyXxx=true 的对应 kind 全选为豁免。 */
+    function allowFollowEnabled() {
+      setAllowKinds(quietAllowChoices.filter(function (c) { return c.enabled; }).map(function (c) { return c.kind; }));
+    }
+    /** 恢复默认豁免（ask/question/error——高频阻塞型，卡着的任务需要叫醒）。 */
+    function allowResetDefault() {
+      setAllowKinds(["ask", "question", "error"]);
+    }
     quietChildren.push(React.createElement("div", { className: "dn-set-row", key: "allow" },
       React.createElement("span", { className: "dn-set-label" }, t("dndStillLabel")),
       React.createElement("div", { className: "dn-set-allows" },
-        ALLOW_CHOICES.map(function (ac) {
-          var kindText = ac[0], kindLabel = ac[1];
-          var allows = qh.allowKinds || [];
-          return React.createElement("label", { className: "dn-set-allow", key: kindText },
+        quietAllowChoices.map(function (c) {
+          var checked = allows.indexOf(c.kind) !== -1;
+          return React.createElement("label", { className: "dn-set-allow" + (c.enabled ? "" : " dn-set-allowDim"), key: c.kind },
             React.createElement("input", {
               type: "checkbox",
-              checked: allows.indexOf(kindText) !== -1,
+              checked: checked,
               onChange: function (e: any) {
                 var next = allows.slice();
-                if (e.target.checked && next.indexOf(kindText) === -1) next.push(kindText);
-                else if (!e.target.checked && next.indexOf(kindText) !== -1) next.splice(next.indexOf(kindText), 1);
-                patch({ quietHours: Object.assign({}, qh, { allowKinds: next }) });
+                if (e.target.checked && next.indexOf(c.kind) === -1) next.push(c.kind);
+                else if (!e.target.checked && next.indexOf(c.kind) !== -1) next.splice(next.indexOf(c.kind), 1);
+                setAllowKinds(next);
               },
             }),
-            React.createElement("span", null, t(kindLabel)),
+            React.createElement("span", null, t(c.labelKey)),
+            c.enabled ? null : React.createElement("span", { className: "dn-set-allowHint" }, t("allowDisabledHint")),
           );
         }),
+      ),
+      React.createElement("div", { className: "dn-set-allowActions" },
+        React.createElement("button", { type: "button", className: "dn-set-btn dn-set-btnSmall", onClick: allowFollowEnabled },
+          t("allowFollowEnabled")),
+        React.createElement("button", { type: "button", className: "dn-set-btn dn-set-btnSmall", onClick: allowResetDefault },
+          t("allowResetDefault")),
       ),
     ));
 
