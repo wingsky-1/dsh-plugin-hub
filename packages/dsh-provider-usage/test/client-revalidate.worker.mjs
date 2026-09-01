@@ -407,6 +407,24 @@ client.apply(ctx);
   console.log("[client-revalidate.worker] 场景3 切换会话（同 provider）立即刷 stats ✓");
 }
 
+// 场景 3b（#419 核心）：会话运行期间快照噪声帧（projection 写入 / running bit 等——
+// current 不变）→ detect 复检但不补刷 stats，请求数不增长
+{
+  const before = statsCalls.length;
+  // 模拟投影逐条写入（如 sessionListMetadata/title 更新）：current 不变
+  svc.state.projectionBySession.s2 = {
+    lastUsed: { provider: "mock-b", model: "model-x" },
+    next: { provider: "mock-b", model: "model-x" },
+  };
+  svc.fireSessionChanged();
+  svc.fireSessionChanged(); // 多帧噪声
+  svc.fireSessionChanged();
+  // 给 detect 异步体一个结算窗口 + 让 refreshStats 若误触发有暴露窗口
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal(statsCalls.length, before, "快照噪声帧（current 不变）不触发 /stats（#419 diff 语义）");
+  console.log("[client-revalidate.worker] 场景3b 快照噪声帧不刷 stats ✓");
+}
+
 // 场景 4：切换会话 s3 跨 provider（b→a）→ fire 后立即拉新 provider，不等轮询
 {
   svc.state.byId.s3 = {};
@@ -423,6 +441,22 @@ client.apply(ctx);
   );
   assert.ok(statsCalls.length > before, "fire 后确有新请求（即时性：非轮询驱动）");
   console.log("[client-revalidate.worker] 场景4 切换会话跨 provider 即时跟随 ✓");
+}
+
+// 场景 4b（#419 回归）：current 切走（undefined）再切回——即使 provider 相同也立即补刷
+{
+  svc.state.listCurrent = undefined;
+  svc.fireSessionChanged();
+  await until(() => statsCalls.length > 0 && pillLabel()?.innerHTML !== "", "无会话回落渲染", 3000);
+  const before = statsCalls.length;
+  svc.state.listCurrent = "s3";
+  svc.state.projectionBySession.s3 = {
+    lastUsed: { provider: "mock-a", model: "model-x" },
+    next: { provider: "mock-a", model: "model-x" },
+  };
+  svc.fireSessionChanged();
+  await until(() => statsCalls.length > before, "current 变化（同 provider）立即补刷", 3000);
+  console.log("[client-revalidate.worker] 场景4b current 变化立即补刷（#419 diff 判定） ✓");
 }
 
 // 场景 5：卸载清理不抛错

@@ -208,17 +208,80 @@ function providerFromProjection(row: SessionListRowLike | undefined): string | u
   return typeof sel?.provider === "string" && sel.provider.length > 0 ? sel.provider : undefined;
 }
 
+/** modelCatalog 兜底缓存 TTL（#419）：与宿主 stats 缓存同量级（30s）。
+ *  全链投影缺失时兜底 RPC 从「跟随快照帧频率」收敛为「每 TTL 一次」。 */
+export const CATALOG_CACHE_TTL_MS = 30_000;
+
+/**
+ * 全局目录 default.provider 读取器（#419 抽象）：返回 undefined = 不可用/失败。
+ * 默认实现读 remote.session.modelCatalog（RemoteResult 解包）；调用方可注入带缓存的
+ * 实现（makeCatalogCache），对齐官方 dsh-client-ui-model-selection 的 catalog 消费
+ * 语义（ready 命中 + inflight 共享 + 显式失效，从不裸调）。
+ */
+export type CatalogLoader = (remote: RemoteLike | undefined) => Promise<string | undefined>;
+
+/** 默认 catalog loader：裸调 remote.session.modelCatalog（无缓存，纯函数语义）。 */
+export async function defaultCatalogLoader(remote: RemoteLike | undefined): Promise<string | undefined> {
+  const modelCatalog = remote?.session?.modelCatalog;
+  if (typeof modelCatalog !== "function") return undefined;
+  try {
+    const res = await modelCatalog();
+    if (res?.ok === true && typeof res.value?.default?.provider === "string") {
+      return res.value.default.provider;
+    }
+  } catch {
+    // 目录读取失败按不可用处理（不抛给调用方）
+  }
+  return undefined;
+}
+
+/**
+ * 官方 catalog 同款缓存工厂（#419）：ready 命中 + inflight 并发共享 +
+ * 失败不缓存（下次重试）+ 显式 reset 失效。默认 TTL 见 CATALOG_CACHE_TTL_MS。
+ * 与官方 dsh-client-ui-model-selection 的 Catalog.load() 三防护等价
+ * （store ready 命中 / inflight 共享 / 仅 miss 时打 RPC）。
+ */
+export function makeCatalogCache(
+  ttlMs: number = CATALOG_CACHE_TTL_MS,
+): { load: CatalogLoader; reset: () => void } {
+  let cached: { provider: string; at: number } | null = null;
+  let inflight: Promise<string | undefined> | null = null;
+  return {
+    load(remote) {
+      if (cached !== null && Date.now() - cached.at <= ttlMs) {
+        return Promise.resolve(cached.provider);
+      }
+      if (inflight !== null) return inflight;
+      inflight = defaultCatalogLoader(remote)
+        .then((provider) => {
+          if (provider !== undefined) cached = { provider, at: Date.now() };
+          return provider;
+        })
+        .finally(() => {
+          inflight = null;
+        });
+      return inflight;
+    },
+    reset() {
+      cached = null;
+      inflight = null;
+    },
+  };
+}
+
 /**
  * 解析当前展示会话的 provider（issue #69 方案 A+B 检测半区，0.1.2 适配）：
  * 主判据 = 沿 parentId 上溯链（封顶 3、防环），逐会话读 per-session modelSelection 投影
  * （lastUsed/next 的 provider），首个非空者胜——与旧 models() 按会话查询语义等价；
- * 全链投影缺失 → 兜底读 ctx.remote.session.modelCatalog() 的 default.provider（全局目录，
- * 一次调用，RemoteResult 解包）。全链失败返回 undefined，兜底语义由
- * decideProviderAfterDetect 决定（保持上次检测 / 回落默认）。
+ * 全链投影缺失 → 兜底读全局目录 default.provider（默认裸调 modelCatalog；
+ * #419：客户端可注入缓存版 loader，避免跟随快照帧频率裸打 RPC）。
+ * 全链失败返回 undefined，兜底语义由 decideProviderAfterDetect 决定
+ * （保持上次检测 / 回落默认）。
  */
 export async function resolveProviderFromSession(
   sessions: SessionsServiceLike | undefined,
   remote: RemoteLike | undefined,
+  catalogLoader: CatalogLoader = defaultCatalogLoader,
 ): Promise<string | undefined> {
   const sessionId = currentSessionId(sessions);
   if (sessionId === undefined) return undefined;
@@ -227,17 +290,11 @@ export async function resolveProviderFromSession(
     const provider = providerFromProjection(byId?.[sid]);
     if (provider !== undefined) return provider;
   }
-  // 兜底：全局 modelCatalog 的 default（RemoteResult 解包，仅投影全缺时一次）
-  const modelCatalog = remote?.session?.modelCatalog;
-  if (typeof modelCatalog === "function") {
-    try {
-      const res = await modelCatalog();
-      if (res?.ok === true && typeof res.value?.default?.provider === "string") {
-        return res.value.default.provider;
-      }
-    } catch {
-      // 目录读取失败按全链失败处理（不抛给调用方）
-    }
+  // 兜底：全局目录 default.provider（loader 注入；仅投影全缺时一次）
+  try {
+    return await catalogLoader(remote);
+  } catch {
+    // 目录读取失败按全链失败处理（不抛给调用方）
   }
   return undefined;
 }
