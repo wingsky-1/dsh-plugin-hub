@@ -48,11 +48,11 @@ test/                 共享测试工具（smoke-lib）
 设到临时目录（如 `$(mktemp -d)`）、文件路径隔离，遵循
 [docs/DEVELOPMENT.md §5](docs/DEVELOPMENT.md#5-smoke-测试防-flake-纪律) 防 flake 纪律。
 客户端 UI 改动的浏览器实测统一用
-[dsh-dev-utils](https://github.com/wingsky-1/dsh-dev-utils) 的 `dsh-verify-isolated`
+`@wingsky-1/dsh-verify-isolated` 插件包注册的 `dsh-verify-isolated`
 skill（临时 `DSH_HOME` + 独立 `verify_<随机>` profile 双重隔离，一键脚本自动
 构建/挂载/启动/清理，不污染正在使用的 `web` profile）。安装：
-`git clone https://github.com/wingsky-1/dsh-dev-utils.git "$DSH_HOME/skills/dsh-dev-utils"`
-（用户级，本机所有 dsh 项目可用；更新 `git -C ... pull`）。
+`dsh plugin --profile web add @wingsky-1/dsh-verify-isolated`
+（profile 内所有会话可用；脚本相对 skill 注入的资源 base 定位，安装形态自适应）。
 
 ## 输入安全
 

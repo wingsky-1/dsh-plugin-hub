@@ -39,11 +39,14 @@ lib/index.js                      # 宿主门禁出口（name + 空 apply）
 
 ## 使用
 
-skill 加载后按清单执行；也可直接调包内一键脚本：
+skill 加载后按清单执行；也可直接调包内一键脚本。脚本相对 skill 的资源基础目录
+（加载 skill 时注入的 `Base directory for this skill:` 绝对路径）恒为
+`scripts/verify-isolated.sh`，安装形态自适应（npm 副本 / `link:` 开发态 / 仓库内
+浏览均可用），详见 SKILL.md §2：
 
 ```bash
-# 插件包内脚本（安装后）
-node_modules/@wingsky-1/dsh-verify-isolated/skills/dsh-verify-isolated/scripts/verify-isolated.sh --port 3456 <插件包路径>
+# SKILL_BASE = 加载 skill 时注入的「Base directory for this skill:」绝对路径
+bash "$SKILL_BASE/scripts/verify-isolated.sh" --port 3456 <插件包路径>
 ```
 
 ## 安全模型

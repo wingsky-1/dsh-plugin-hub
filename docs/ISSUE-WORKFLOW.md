@@ -47,7 +47,7 @@
    设 `DSH_HOME` / 轮询替代固定 sleep）。
 3. **修复分支**：命名 `fix/<主题>` 或 `feat/<主题>`（与 CONTRIBUTING.md 开发流程一致）。
 4. **验证证据**（涉及界面行为的改动——overlay / URL 重写 / Modal 内跳转 / 双主题 /
-   窄屏等）：用 [dsh-dev-utils](https://github.com/wingsky-1/dsh-dev-utils) 的
+   窄屏等）：用 `@wingsky-1/dsh-verify-isolated` 插件包注册的
    `dsh-verify-isolated` skill 在隔离环境实测（临时 `DSH_HOME` + 独立 profile 双重
    隔离，一键脚本自动构建/挂载/启动/清理），截图归档至
    `packages/dsh-<name>/docs/archive/<issue号>-<行为描述>.png`（如
