@@ -1,9 +1,9 @@
 # 跨 skill 工作流共享纪律（唯一事实源）
 
 > 用途：阶段式 commit、文档同步、commit-only 工作模式、跨 skill 交接指针的**唯一事实源**。
-> 各 skill（review / hub-dev / dev / open-source）在对应节「引用本文件」，**不各自内联**
+> 各 skill（review / hub-dev / dev / opensource-contributions）在对应节「引用本文件」，**不各自内联**
 > 重复定义——改一处生效，避免多 skill 漂移。
-> 来源：dsh-plugin-review + dsh-notifier 工作流复盘（OPTIMIZATION-NOTES-2026-08）。
+> 来源：dsh-plugin-review + dsh-notifier 工作流复盘。
 
 ---
 
@@ -31,7 +31,7 @@
 - 何时用：长周期分阶段实施、多轮追加需求、用户想先攒批再统一验收时，默认推荐。
 - 长周期多里程碑实施可**用会话级 create_goal 承接**（跨轮自动推进），里程碑各自门禁收口。
 - 何时切正式发布：用户明确说「发布 / push / 打 tag」时，才切到
-  `dsh-plugin-open-source` 的正式发布模式（bump + tag + push + npm）。
+  `opensource-contributions` 的正式发布模式（bump + tag + push + npm）。
 - 红线：agent 不代 push、不代发布、不代重启 dsh web（重启由用户/平台执行）。
 
 ## 4. 跨 skill 交接指针（职责分层）
@@ -39,12 +39,12 @@
 ```
 review（评审/计划） → 落地计划 + REVIEW-AND-PLAN 交接物 → 用户批准
    → 转入 hub-dev（公开仓）/ dev（主仓） 实施（§3 commit-only）
-   → 完成实施 → open-source（发布，由用户显式触发）
+   → 完成实施 → opensource-contributions（发布，由用户显式触发）
 ```
 
 - review 是纯只读：只产出计划与交接物，**不内联**实施细节（commit/门禁/常见坑）。
 - 实施细节（阶段 commit、运行时确认、配置四同步、实施坑）由 dev/hub-dev 承载；
-  发布衔接由 open-source 承载——各 skill 见对应节，不越界。
+  发布衔接由 opensource-contributions 承载——各 skill 见对应节，不越界。
 
 ## 5. 实施期高频坑 checklist（评审→实施过渡常见）
 

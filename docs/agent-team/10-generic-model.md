@@ -68,7 +68,7 @@ comm_mode: auto       # auto | explicit
 并行任务出现改动交叉时，不必然串行——允许**结构化协商**而非自由聊天：
 
 ```
-任务A持有者 ──team_negotiate(对象任务B, 提议: yield|merge|serialize-file)──▶ 账本
+任务A持有者 ──team_negotiate(对象任务B, 提议: yield|merge|file-order)──▶ 账本
 任务B持有者 ──响应（接受/反提议）──▶ Tier-0 裁决生效，约束写回账本
 ```
 
@@ -130,7 +130,7 @@ DoD 不是装饰性结构：judge 角色 handoff 时，**运行时强制将所�
 | A11 | 整体形态=提示词+内置工具 | ✅ v2 新增，参照 omo/CC Agent Teams（§2） |
 | A12 | 用户只与主控对话 | ✅ 单入口原则（§3.2） |
 | A13 | 交叉任务需要沟通 | ✅ 恢复为结构化协商 negotiation（§3.1.5），不开自由聊天 |
-| A14 | 产品形态=dsh 插件 | ✅ 定案：MCP server（team_* 工具）+ 宿主端插件（路由/Console），见 11 文档 §2 |
+| A14 | 产品形态=dsh 插件 | ✅ 定案（修订）：原生会话工具（team_*）+ 宿主端插件（路由/Console）；不引入 MCP server，见 11 文档 §2 |
 
 ## 7. 两轮对抗评审已采纳的修复项
 
