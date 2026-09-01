@@ -32,7 +32,7 @@ S0 基线：当前版本 + 目标 rc 发现
 ## S0 基线与目标发现（亲做，不委托）
 
 1. **当前版本**：`dsh --version`；读 `~/.local/node/lib/node_modules/@deepseek-ai/dsh/package.json` 的 `version` 与 `dependencies`（重点 `@deepseek-ai/dsh-*` 与 cordis / schemastery / react）。
-2. **目标 rc 发现**：`npm view @deepseek-ai/dsh versions --json` + `dist-tags`；注意 `latest` 可能滞后，升级常需**显式 pin** 目标 rc（如 `0.1.0-rc.8`）。
+2. **目标 rc 发现**：`npm view @deepseek-ai/dsh versions --json` + `dist-tags`；注意 `latest` 可能滞后，升级常需**显式 pin** 目标 rc（如 `0.1.2-alpha.3`）。
 3. **目标 rc 依赖清单**：`npm view @deepseek-ai/dsh@<target> dependencies --json` —— 记录所有 `@deepseek-ai/dsh-*` 是否从当前 rc 升到目标 rc（通常全量升），以及 cordis / cordis-plugin-* / schemastery / react 是否变动。
 4. **profile 插件清单**：读 `$DSH_HOME/profiles/<profile>/package.json` 的 `dependencies` 与 `dsh.profile.bundles`，区分三类：
    - **link 插件**：值为 `link:/abs/path/...`（符号链接，指向 `github/dsh-plugin-hub/packages/*`）。

@@ -10,6 +10,7 @@ A collection of plugins for the **DSH (DeepSeek Harness)** web GUI, distributed 
 install them all at once as a single bundle, or pick individual plugins as needed.
 
 - **Bundle package**: `@wingsky-1/dsh-plugins-all` — install everything in one shot
+  (except plugins in observation; see plugin list below)
 - **Individual plugins**: `@wingsky-1/dsh-*` — install only what you need
 
 ## Core advantages

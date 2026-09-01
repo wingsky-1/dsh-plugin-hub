@@ -9,6 +9,8 @@
 
 > **修订（2026-09-01，发版准备）**：适配基线锚定升级到 **0.1.2-alpha.3**（官方 alpha 线最新，dist-tag `alpha` 已指向）。已完成 alpha.2→alpha.3 影响分析（见会话结论）：插件消费面 lib 完全一致，唯一差异为 `dsh-client-connection` 导出面不变的行为变更（超时 abort+重试→warn 保留），cordis/schemastery/react 版本未变。catalog 与各包 peer 精确 pin 已同步升到 `0.1.2-alpha.3`（task/0.2.0-prep worktree）。Phase 5 发版仍待维护者全量验证后执行，且依赖 #402 解决。
 
+> **状态（v0.2.0 发版后）：计划已完成并归档。** 未勾选条目说明：Phase 2 M2/M3 为维护者暂缓项（#366 跟踪）、Phase 1.5/4 实测项归入发版验证、Phase 5 三项已由 v0.2.0 发版完成（#431）。本文件保留为历史记录，不再更新。
+
 ---
 
 ## 评审结论（独立子 agent 对抗性评审，2026-08-31）
@@ -78,7 +80,7 @@
 
 ### 1.5 dsh-lan-proxy（实测）
 > 评审：token 鉴权交互只能实测，静态无法判定。
-- [ ] 一次性 Token 鉴权 / webserver 原生 gzip 与独立端口 + 自签 TLS 转发交互实测（需隔离环境，归入 Phase 5 前检查）
+- [ ] 一次性 Token 鉴权 / webserver 原生 gzip 与独立端口 + 自签 TLS 转发交互实测（已由发版验证覆盖；需隔离环境，原归入 Phase 5 前检查）
 - [x] 清理死引用（已在 1.1 完成）；`crypto.randomUUID` polyfill 可留可删（幂等）
 
 ### 1.6 dsh-subagent-model-inherit（评估结论）
@@ -101,7 +103,7 @@
 - [ ] M3：127.0.0.1 独立端口入口 + per-caller token + 受限模型工具（默认关）+ webhook（默认关，按上项决策）（**暂缓**）
 - [ ] 收尾：关闭 #366 跟踪 issue（**暂缓**）
 
-## Phase 3 — 插件集 i18n（#348，维护者已口头授权 2026-08-31，待补 approved 标签后动 catalog）
+## Phase 3 — 插件集 i18n（#348，已实施并随 0.2.0 发布）
 
 > 红线：catalog 新增官方类型依赖（`dsh-client-locale`），方案获批（approved）前不实施；approved 永不代打。
 > 评审 P0-5：实施前**先核 t seat 真实机制**——ui-slots `slots.register` 的 locale 参数 vs 官方 `ctx.slots.installLocale`，确认后再定双通道设计，避免白做。
@@ -111,12 +113,12 @@
   - 官方 t seat = **`slots.register({..., locale: NS}, Component)`** 注入类型化 `t`（`PluginInventorySettingsTabProps` 用 `PropsLocale<'settings.pluginInventory'>` + `{t}` 消费）——**非** `ctx.slots.installLocale`（alpha.2 无此独立 API），「双通道」设计成立；
   - `LocaleNamespaceMap` 在 `@deepseek-ai/dsh-client-ui-slots` 声明合并（样板 `index.ts:18-27`）；`ctx.effect(() => ctx.locale.register(NS, {zh,en}))`；
   - 原生 DOM 场景用 `ctx.locale.bind(NS)` 显式绑定（样板 `index.ts:46` `presetName` 用例）。
-- [ ] 6 个客户端包落地（idle-archive / lan-proxy / mcp-manager / notifier / provider-usage / web-file-preview）：
+- [x] 6 个客户端包落地（idle-archive / lan-proxy / mcp-manager / notifier / provider-usage / web-file-preview）：
   - `src/client/locales.ts`（zh 为 key 源 + `en satisfies keyof typeof zh` 锁双语平衡）
   - `declare module` 合并 `LocaleNamespaceMap`（每插件一 ns，于 `@deepseek-ai/dsh-client-ui-slots`）
   - `inject` 加 `'locale'`；`ctx.effect(() => ctx.locale.register(NS, {zh,en}))`
   - React slots 走 props `{t}` + `slots.register({locale: NS})` + label thunk；原生 DOM 走 `ctx.locale.bind(NS)` + subscribe 按 revision 重绘（机制已核实）
-- [ ] notifier 边界：通知类型 kind 走客户端字典、动态数据原样；`toast.ps1` 固定文案保留并文档明示
+- [x] notifier 边界：通知类型 kind 走客户端字典、动态数据原样；`toast.ps1` 固定文案保留并文档明示
 
 ## Phase 4 — 版本对齐与全量回归（目标：上游 0.1.2-alpha.2，已完成）
 
@@ -126,15 +128,15 @@
 - [x] **S1 框架稳定性核对**（npm pack lib diff 实证）：cordis 4.0.1→4.0.2 **lib 字节一致零破坏**；schemastery 3.18.0→3.18.2 lib 字节一致（注意：裸 `schemastery` npm 最新仍 3.18.0，`3.18.2` 是 `@deepseek-ai/schemastery` scoped 包——本仓库依赖裸包，保持 `^3.18.0` 不升）
 - [x] 上游 0.1.2-alpha.2 发布后：catalog `@deepseek-ai/*` 全量 bump（cordis 4.0.2 + 9 类型层包 0.1.2-alpha.2）+ `minimumReleaseAgeExclude` 同步（pnpm install 自动补 8 条）
 - [x] 全量门禁（alpha.2 类型层）：`pnpm build` 10 包全过、`pnpm test` 全绿、`pnpm contract` 客户端契约 6 包全过、`pnpm pack:check` 全过（2026-08-31）
-- [ ] 隔离浏览器实测（dsh-verify-isolated）：全插件 + 窄屏 iPad/iOS 移动端（待维护者本地验证，归入 Phase 5 前检查）
+- [ ] 隔离浏览器实测（dsh-verify-isolated）：全插件 + 窄屏 iPad/iOS 移动端（已由发版验证覆盖；待维护者本地验证，原归入 Phase 5 前检查）
 
 ## Phase 5 — 发版（v0.2.0）
 
 > **维护者指示（2026-08-31）：本阶段等维护者全量验证完成后执行**，时间由维护者决定，不预设排期。
 
-- [ ] 全包版本升 0.2.0（推 `v0.2.0` tag 触发发布管线，不绕过 tag 校验）（**待维护者全量验证后执行**）
-- [ ] release-notes `docs/release-notes/v0.2.0.md`（中英分节 + 双锚补位）（**待维护者全量验证后执行**）
-- [ ] 0.2.0 独立演进，Phase 1 适配改动不回灌 main（0.1.x 线冻结）
+- [x] 全包版本升 0.2.0（推 `v0.2.0` tag 触发发布管线，不绕过 tag 校验）——已由 v0.2.0 发版完成（#431）
+- [x] release-notes `docs/release-notes/v0.2.0.md`（中英分节 + 双锚补位）——已由 v0.2.0 发版完成（#431）
+- [x] 0.2.0 独立演进，Phase 1 适配改动不回灌 main（0.1.x 线冻结）——已由 v0.2.0 发版完成（#431）
 
 ---
 

@@ -84,8 +84,9 @@ grep -rhoE "from ['\"](@deepseek-ai/[a-z0-9-]+|cordis|schemastery|cosmokit)['\"]
 ```bash
 # 解析真实仓库（@dsh-external/xxx 只是 pnpm 别名，非 npm 包）
 grep -n "dsh-mobile-nav\|dsh-web-mobile" ~/.dsh/profiles/web/package.json
-# → "github:mexiaosqwq/dsh-web-mobile#v1.0.0"
+# → 已转 npm 版本化：dsh-web-mobile@^2.3.0（原 github:mexiaosqwq/dsh-web-mobile#v1.0.0 形态退役）
 
+# 以下 github-pin 解析命令保留，供仍以 github: 形式安装的插件使用：
 # 仓库本体 + 是否 fork（parent）
 gh repo view mexiaosqwq/dsh-web-mobile --json nameWithOwner,description,isFork,parent,licenseInfo
 # 全部 tag / release（看是否有更新）
@@ -96,6 +97,7 @@ gh api repos/mexiaosqwq/dsh-web-mobile/contents/package.json?ref=v1.5.0 | node -
 ```
 
 > 注意：github-pin 插件的 peer 如 `@deepseek-ai/dsh-client-*@^0.1.0-rc.6`，semver caret+prerelease 下**包含** rc.8（同 base 0.1.0），故目标 rc 满足。
+> 解析仓库本体 / peerDependencies 的方法论与 github-pin 时代一致，仅示例插件的安装形态已从 `github:` 迁移为 npm 版本化。
 
 ---
 
@@ -124,7 +126,7 @@ dsh plugin --profile web list
 # 窄屏（iPad/iOS）实测移动端插件（mobile-nav）。
 
 # Phase 5 升版本化插件（dsh 稳定后）
-dsh plugin --profile web add @linxin666/dsh-client-ui-skill-explorer@0.2.5
+dsh plugin --profile web add @linxin666/dsh-client-ui-skill-explorer@0.3.10
 dsh plugin --profile web install
 
 # 回滚
@@ -142,6 +144,6 @@ dsh plugin --profile web install
 - [ ] `dsh plugin --profile web list` 各插件版本/pin 符合预期
 - [ ] 浏览器 Console 无 `client-runtime` / `client-connection` 加载错误
 - [ ] 各 link 插件均加载（MCP 浮窗、notifier、lan-proxy、provider-usage、web-file-preview）
-- [ ] 版本化插件仍正常：skill-explorer、archify-dsh、smooth-stream、mobile-nav
+- [ ] 版本化插件仍正常：skill-explorer（@linxin666/dsh-client-ui-skill-explorer）、archify-dsh、dsh-web-mobile（mobile-nav）
 - [ ] **窄屏实测（最关键）**：iPad / iOS 访问，验证 mobile-nav 抽屉/侧栏适配
 - [ ] 明暗双主题下插件 UI 正常（不硬编码配色）

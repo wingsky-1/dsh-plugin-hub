@@ -78,7 +78,6 @@ A + B。用户点名维度时以其为准（如「增加安装影响分析」→
 
 每个子 Agent **看不到本会话上下文**，prompt 必须包含：
 1. **绝对路径清单**：目标插件全部源码 + 仓库规范 + 共享层（如 hub 的
-1. **绝对路径清单**：目标插件全部源码 + 仓库规范 + 共享层（如 hub 的
    `shared/loopback.js`、pnpm-workspace catalog 官方类型层）+ 用于对照的同事插件。
 2. **维度重点**：该维度的审查方向与证据要求的提示（复制 [references/dimensions.md](references/dimensions.md) 对应节）。
 3. **输出格式模板**（一并告诉它）：逐条发现格式固定为

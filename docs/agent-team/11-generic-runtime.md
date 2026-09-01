@@ -52,8 +52,8 @@ model-facing 工具的实例；工具 schema 经 JSON 克隆规范化进入模�
 - 跨平台迁移靠 runtime/ 纯库解耦预留：届时另写一层 MCP 绑定即可，核心零改动
   （MCP 是传输协议不是能力本身，等真有跨平台需求再上）
 
-落地风险（G0 第一项 spike）：hub 现有插件均为 Web UI 型，尚无注册会话工具先例；
-需先验证 `tools` 注入方式、schema 声明、权限与工具呈现（卡片）集成。
+落地先例（G0 第一项 spike）：hub 已有先例——dsh-mcp-manager 注册 ws_mcp_search/call/list/detail
+四个原生会话工具（middleware-register.ts 的 ctx.tools.register）；G0 直接复用注入方式。
 
 ### 2.1 内置工具集（协议唯一入口）
 

@@ -83,7 +83,7 @@
 
 ## F. 安全专项（涉密钥/凭据/网络执行/SSRF）
 
-按 `security-audit-methodology` 的威胁模型视角：默认拒绝、最小权限、防御纵深、
+按 `secure-software-engineering` 的威胁模型视角：默认拒绝、最小权限、防御纵深、
 修一类而非一例。特别检查：SSRF/webhook URL 任意化、令牌进出日志、子进程注入面、
 配置文件权限位（0600）、通知/历史落盘敏感内容。
 

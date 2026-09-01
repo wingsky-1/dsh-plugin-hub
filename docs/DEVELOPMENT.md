@@ -33,14 +33,15 @@ pnpm typecheck    # 全仓类型检查
 > Node 版本：本地直跑 TS 需 **≥23.6**（type stripping 门槛）；CI 固定 Node 24。
 > 阈值与 strict 开关见 `scripts/data/gauntlet.config.json`（唯一事实源）。其中
 > `coverage.selfWrittenFunctions` 记录 self-written 函数覆盖基线：self-cov 口径
-> （去 esbuild 内联 vendor 段与 `__` 运行时垫片后仅计自写函数），当前处于**观察期**
-> （只记录不判红），`threshold` 为阶段二目标值，待基线校准（issue #42 二期）后再
-> 接入 CI 硬卡点。
+> （去 esbuild 内联 vendor 段与 `__` 运行时垫片后仅计自写函数），已接入 observe.yml
+> 夜间硬校验（`self-cov.mjs --check`，strict=true）；threshold=60 为当前硬阈值，
+> 80% 为阶段二目标。
 
 ### 变异测试与增量链路（#178 / #187）
 
 变异配置集中在 `stryker.conf.d/dsh-<pkg>.json`（未拆分包）与 `stryker.conf.d/dsh-<pkg>-<段名>.json`
-（拆分包，段名=功能域，如 `dsh-notifier-server.json`；#342 二期弃用数字段号）。mutate 区间、
+（拆分包，段名=功能域，如 `dsh-notifier-server.json`；除 dsh-lan-proxy（待迁移功能段名）外
+已弃用数字段号）。mutate 区间、
 testFiles、阈值口径与 `gauntlet.config.json` 三方一致，由 workflow-assert 自测锚定。增量链路：
 
 **全量分工总述**：PR 门管变更切片；夜间 observe 门管主干全量；发版前
@@ -66,8 +67,8 @@ release.yml tag 管线跑全量门禁——全量只在这三处语义中的后�
   3. `mutation-verdict`（聚合判分收尾）：下载 self-coverage 与各包 stryker 报告
      artifact 后逐包跑双指标判分（scripts/gate/mutation-gate.mjs）——测试覆盖率
      self-written 函数 ≥ threshold 恒硬；变异测试率 covered ≥ per-package
-     threshold 受全局 `mutation.strict` 约束（false 期间仅标注，#150 达标翻转后
-     自动变硬）。矩阵实例级 failure 时 verdict 仍聚合判分（缺报告的包 exit 2
+     threshold 受全局 `mutation.strict` 约束（strict 已开启，按 per-package
+     threshold 判红）。矩阵实例级 failure 时 verdict 仍聚合判分（缺报告的包 exit 2
      fail-closed）。
 
   成败并入 repo-gate 聚合闸（判定逻辑见 scripts/gate/repo-gate-assert.mjs，
