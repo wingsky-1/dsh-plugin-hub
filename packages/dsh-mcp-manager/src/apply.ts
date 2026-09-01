@@ -20,9 +20,10 @@ import type { MiddlewareMode } from "./middleware-types.ts";
 import { makeRoutes, makeEventsRoute, makeHealthRoute, sseData, uiConfigChangedFrame } from "./routes.ts";
 
 /** 向 Agent 宣告插件（announceToAgent 开启时注入）。能力清单由动态目录
- * （<available_mcp_servers>，见 L1）承担，此处只说明管理界面与使用约束。 */
+ * （<available_mcp_servers>，见 L1）承担，此处只保留插件存在、安全边界与术语约定，
+ * 不再复述 UI 配置路径与调用流程（那部分由能力目录与中间层工具描述承担）。 */
 export const MCP_GUIDANCE =
-  "本机已安装 dsh-mcp-manager 插件（DSH MCP 管理器）：会话界面右上角浮窗管理 MCP 服务器（全局配置 ~/.dsh/dsh-mcp.json；项目级配置 <项目根>/.dsh/mcp.json，跟随会话切换展示并连接对应项目的服务器；支持 stdio / streamable-http，可粘贴 mcpServers JSON 导入，不预设任何服务器）。已配置服务器的能力清单见会话内的 <available_mcp_servers>（仅描述能力，不代表连接状态）。项目级 MCP 工具经 ws_mcp_list/ws_mcp_search 检索（先 ws_mcp_list 完整盘点服务器与工具，再按需 ws_mcp_detail 查完整 inputSchema），经 ws_mcp_call 调用（先用 ws_mcp_search 检索，再 ws_mcp_call 调用；已知 server/tool 时可直呼免搜索）；全局服务器连接后其工具以 mcp__<server>__<tool> 注册可用。工具可被用户在「MCP」浮窗禁用（禁用原因会说明，且工具级禁用只作用于 mcp__ 前缀工具）。限制：MCP 工具在真实服务器上执行，先确认再操作；stdio 服务器的子进程继承宿主权限；工具结果可能含敏感信息。用户提到「MCP / mcp 服务 / 上下文服务器」时即指本插件，请据此协作。";
+  "本机已安装 dsh-mcp-manager（DSH MCP 管理器）：统一管理 MCP 服务器连接，不预设任何服务器。MCP 工具在真实服务器上执行，stdio 子进程继承宿主权限，结果可能含敏感信息——涉及写/敏感操作先向用户说明并征得同意。用户提到「MCP / mcp 服务 / 上下文服务器」即指本插件；已配置服务器与调用规则见会话内的能力目录。";
 
 /**
  * 挂载 MCP 管理器：加载存储、启动已启用服务器、注册路由与提示词。
