@@ -47,6 +47,9 @@ const {
   decideProviderAfterDetect,
   FALLBACK_PROVIDER,
   UNKNOWN_PROVIDER_HINT,
+  makeCatalogCache,
+  defaultCatalogLoader,
+  CATALOG_CACHE_TTL_MS,
 } = core;
 
 // ---------------------------------------------------------------- 构造工具
@@ -280,4 +283,101 @@ function makeRemote(providerByDefault) {
   assert.equal(got, "prov-k", "首个解析成功者胜");
 }
 
-console.log("[unit-detect] 全部断言通过 ✓ (#69 检测链；#383 projectionValues 形状修正)");
+// ---------------------------------------------------------------- 7) modelCatalog 兜底缓存（#419：官方 catalog 同款）
+
+{
+  // 重复 detect（全链投影缺失）→ 缓存命中，RPC 只打一次
+  let calls = 0;
+  const remote = {
+    session: {
+      modelCatalog: async () => { calls += 1; return { ok: true, value: { default: { provider: "cached-p" } } }; },
+    },
+  };
+  const cache = makeCatalogCache();
+  const sessions = makeSessions({ s: row(undefined) }, "s");
+  const a = await resolveProviderFromSession(sessions, remote, cache.load);
+  const b = await resolveProviderFromSession(sessions, remote, cache.load);
+  const c = await resolveProviderFromSession(sessions, remote, cache.load);
+  assert.equal(a, "cached-p", "首次兜底解析成功");
+  assert.equal(b, "cached-p", "重复检测缓存命中");
+  assert.equal(c, "cached-p", "第三次仍命中");
+  assert.equal(calls, 1, "三次检测只打一次 modelCatalog RPC（缓存收敛）");
+}
+
+{
+  // 并发共享 inflight：同一时刻多个检测只打一次 RPC
+  let calls = 0;
+  const remote = {
+    session: {
+      modelCatalog: async () => { calls += 1; return { ok: true, value: { default: { provider: "inflight-p" } } }; },
+    },
+  };
+  const cache = makeCatalogCache();
+  const sessions = makeSessions({ s: row(undefined) }, "s");
+  const results = await Promise.all([
+    resolveProviderFromSession(sessions, remote, cache.load),
+    resolveProviderFromSession(sessions, remote, cache.load),
+    resolveProviderFromSession(sessions, remote, cache.load),
+  ]);
+  assert.deepEqual(results, ["inflight-p", "inflight-p", "inflight-p"], "并发检测全部解析成功");
+  assert.equal(calls, 1, "并发检测共享同一 inflight（官方 Catalog.load 语义）");
+}
+
+{
+  // 失败不缓存：下次重试；reset 后重拉
+  let calls = 0;
+  const remote = {
+    session: {
+      modelCatalog: async () => {
+        calls += 1;
+        if (calls === 1) return { ok: false, error: { code: "boom" } };
+        return { ok: true, value: { default: { provider: "ok-p" } } };
+      },
+    },
+  };
+  const cache = makeCatalogCache();
+  const sessions = makeSessions({ s: row(undefined) }, "s");
+  assert.equal(await resolveProviderFromSession(sessions, remote, cache.load), undefined, "失败 → undefined");
+  assert.equal(await resolveProviderFromSession(sessions, remote, cache.load), "ok-p", "失败不缓存 → 下次重试成功");
+  assert.equal(calls, 2, "失败帧不写入缓存");
+  // reset 后（provider 检测结果变化挂点）强制重拉
+  const before = calls;
+  await resolveProviderFromSession(sessions, remote, cache.load);
+  cache.reset();
+  await resolveProviderFromSession(sessions, remote, cache.load);
+  assert.equal(calls, before + 1, "reset 后再次裸调");
+}
+
+{
+  // TTL 过期 → 重拉；TTL 常量对齐宿主 stats 缓存量级（30s）
+  let calls = 0;
+  const remote = {
+    session: {
+      modelCatalog: async () => { calls += 1; return { ok: true, value: { default: { provider: "ttl-p" } } }; },
+    },
+  };
+  const cache = makeCatalogCache(50); // 短 TTL 便于测试
+  const sessions = makeSessions({ s: row(undefined) }, "s");
+  await resolveProviderFromSession(sessions, remote, cache.load);
+  await new Promise((r) => setTimeout(r, 60));
+  await resolveProviderFromSession(sessions, remote, cache.load);
+  assert.equal(calls, 2, "TTL 过期后重拉");
+  assert.equal(CATALOG_CACHE_TTL_MS, 30000, "默认 TTL 30s（与宿主 stats 缓存同量级）");
+}
+
+{
+  // 默认 loader（无缓存）语义不变：裸调 remote
+  let calls = 0;
+  const remote = {
+    session: {
+      modelCatalog: async () => { calls += 1; return { ok: true, value: { default: { provider: "bare-p" } } }; },
+    },
+  };
+  assert.equal(await defaultCatalogLoader(remote), "bare-p", "默认 loader 解析 default.provider");
+  assert.equal(await defaultCatalogLoader(remote), "bare-p", "重复调用仍裸调");
+  assert.equal(calls, 2, "默认 loader 每次裸调（无缓存语义）");
+  assert.equal(await defaultCatalogLoader(undefined), undefined, "无 remote → undefined");
+  assert.equal(await defaultCatalogLoader({ session: {} }), undefined, "无 modelCatalog → undefined");
+}
+
+console.log("[unit-detect] 全部断言通过 ✓ (#69 检测链；#383 projectionValues 形状修正；#419 modelCatalog 缓存)");

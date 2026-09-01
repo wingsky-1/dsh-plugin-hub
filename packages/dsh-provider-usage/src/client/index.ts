@@ -14,6 +14,7 @@ import {
   resolveProviderFromSession,
   decideProviderAfterDetect,
   currentSessionId,
+  makeCatalogCache,
   fetchStats,
   fetchHistory,
   fetchUiConfig,
@@ -119,6 +120,12 @@ let currentProvider: string = FALLBACK_PROVIDER;
 let detectedProvider: string | undefined;
 /** true = 有会话但 provider 未能确认（胶囊 title 标注「提供商未识别」）。 */
 let providerUnknown = false;
+/** #419：上次 detect 时的快照 current id——区分「切换会话」与「投影/运行态噪声帧」，
+ *  仅前者触发立即补刷 stats（维护者需求 #71），后者只刷胶囊 title。 */
+let lastDetectCurrent: string | undefined;
+/** #419：全局目录 default.provider 兜底缓存（官方 catalog 同款：ready 命中 +
+ *  inflight 共享 + TTL 失效），避免全链投影缺失时跟随快照帧频率裸打 modelCatalog RPC。 */
+const catalogCache = makeCatalogCache();
 /** 最近一次 /stats 响应。 */
 let lastStats: StatsResponseV2 | null = null;
 /** 最近一次 /history 响应。 */
@@ -256,7 +263,7 @@ async function revalidateProvider(): Promise<boolean> {
   if (sessions === undefined) return false;
   // 先同步取会话在场快照（区分「无任何会话」与「有会话但不可解析」，await 前读取防竞态）
   const hadSession = currentSessionId(sessions) !== undefined;
-  const resolved = await resolveProviderFromSession(sessions, remote);
+  const resolved = await resolveProviderFromSession(sessions, remote, catalogCache.load);
   const decision = decideProviderAfterDetect({
     resolved,
     hadSession,
@@ -674,18 +681,31 @@ export function apply(ctx: any): void {
     // （issue #69：子代理会话 models() 必拒（agent-busy），检测沿 parentId 上溯父会话；
     //   全链失败保持上次检测结果并标注未识别，仅「从未成功」才回落默认——不再无条件回落）
     // 检测半区已抽为 revalidateProvider（A1，issue #71）：与 refreshStats 取数前复检共用。
+    //
+    // #419 diff 语义（对齐官方 dsh-client-ui-session 的 publishCurrent）：sessions.list
+    // 快照在会话运行期间高频更新（running bit / projection 逐条写入 / 子代理地址等），
+    // 订阅回调只响应「current 会话切换」类结构性变化——立即补刷 stats（维护者需求
+    // #71）；其余噪声帧仅重渲染胶囊 title（unknown 标注等），数据刷新交给 60s 轮询，
+    // 消除 agent 活跃期间的 /stats 高频调用。
     let unsubSessions: (() => void) | undefined;
     const detect = (): void => {
       void (async () => {
+        // #419：先取快照 current（结构性判定基准），await 前读取防竞态
+        const cur = currentSessionId(sessions);
         const changed = await revalidateProvider();
         if (changed) {
+          lastDetectCurrent = cur; // 已立即重拉（onProviderChanged），同步判定基准
           onProviderChanged(); // provider 变了 → 立即重拉（切换会话即时跟随）
           return;
         }
         renderPill(); // provider 未变但未知标注可能变化 → 刷胶囊 title
-        // 维护者补充需求（issue #71）：切换会话即使 provider 相同也立即刷一次 stats，
-        // 不等 60s 轮询 / visibilitychange（浮窗在场才刷；roster 变化触发的 detect 同样受益）
-        if (floatPill !== undefined) void refreshStats();
+        // #419：仅在 current 会话切换（含空 ↔ 有值）时立即补刷；投影/运行态噪声
+        // 帧（current 不变）不打断轮询节奏——宿主 30s 缓存命中时请求本身仍照发，
+        // 逐帧补刷会放大为高频 HTTP（本 issue 根因）。
+        if (cur !== lastDetectCurrent) {
+          lastDetectCurrent = cur;
+          if (floatPill !== undefined) void refreshStats();
+        }
       })();
     };
     // 0.1.2-alpha.2：客户端 sessions 订阅统一走 list 快照（currentProvideInfo 已移除）。
@@ -706,6 +726,8 @@ export function apply(ctx: any): void {
       renderGeneration += 1;
       detectedProvider = undefined;
       providerUnknown = false;
+      lastDetectCurrent = undefined;
+      catalogCache.reset(); // 失效目录缓存：热卸载/重挂载后兜底目录重拉（#419）
       sessions = undefined;
       remote = undefined;
     }, "dsh-provider-usage: float");
