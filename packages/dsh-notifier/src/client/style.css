@@ -18,18 +18,44 @@
   color: var(--dsw-alias-label-primary, #1f2329);
   background: var(--dsw-alias-bg-base, #ffffff);
 }
-.dn-set-card .dn-set-head {
+/* #402 第 4 条：设置卡 title/副标题已移除；顶部为卡内双 tab 栏。 */
+/* #402 第 2 条：卡内双 tab（通知事件 / 通知频道）——普通 button 形态，
+   触控目标 min-height ≥32px 对齐仓库约定；pending kind 徽标提示确认流。 */
+.dn-set-card .dn-set-tabs {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 10px 14px;
+  gap: 4px;
+  padding: 8px 14px 0;
   border-bottom: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
   background: var(--dsw-alias-bg-layer-1, #f5f6f8);
 }
-.dn-set-card .dn-set-name { font-weight: 600; }
-.dn-set-card .dn-set-description {
-  font-size: 11px;
-  color: var(--dsw-alias-label-tertiary, #8a919c);
+.dn-set-card .dn-set-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 12px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, #5f6672);
+  font-size: 12px;
+  cursor: pointer;
+}
+.dn-set-card .dn-set-tabActive {
+  border-bottom-color: var(--dsw-alias-state-info-primary, #2f6fed);
+  color: var(--dsw-alias-label-primary, #1f2329);
+  font-weight: 600;
+}
+.dn-set-card .dn-set-tabBadge {
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--dsw-alias-state-error-primary, #d92d20);
+  color: #fff;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
 }
 .dn-set-card .dn-set-body { padding: 6px 14px 12px; }
 
@@ -172,7 +198,8 @@
 .dn-set-card .dn-set-inputText { width: 220px; max-width: 100%; }
 .dn-set-card .dn-set-select { width: 220px; max-width: 100%; }
 
-/* 频道卡：内嵌子卡（启用态左侧强调边） */
+/* 频道卡：内嵌子卡（启用态左侧强调边）。#402 第 1 条：整卡 <details> 可折叠——
+   summary 即卡头（状态点/名称/失败徽标/启用开关），收起只保留摘要行。 */
 .dn-set-card .dn-ch-card {
   border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
   border-radius: 8px;
@@ -180,6 +207,12 @@
   margin: 8px 0;
   background: var(--dsw-alias-bg-layer-1, #f5f6f8);
 }
+.dn-set-card .dn-ch-card > summary {
+  cursor: pointer;
+  list-style: none; /* 去默认 marker（Chrome/FF）；Safari 另见 -webkit 规则 */
+  user-select: none;
+}
+.dn-set-card .dn-ch-card > summary::-webkit-details-marker { display: none; }
 .dn-set-card .dn-ch-card.dn-ch-on {
   border-left: 3px solid var(--dsw-alias-state-success-primary, #0f9d6e);
 }
@@ -190,6 +223,19 @@
   min-height: 28px;
   flex-wrap: wrap;
 }
+/* 卡头 chevron（双边线三角，open 翻转；currentColor 继承文字色） */
+.dn-set-card .dn-ch-head::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.12s ease;
+  flex: none;
+  opacity: 0.6;
+}
+.dn-set-card .dn-ch-card[open] > .dn-ch-head::before { transform: rotate(45deg); }
 .dn-set-card .dn-ch-dot {
   width: 8px;
   height: 8px;
@@ -212,6 +258,24 @@
   cursor: pointer;
   color: var(--dsw-alias-label-secondary, #5f6672);
   font-size: 11px;
+}
+/* #402 第 1 条：最近投递失败徽标（上提卡头 summary 行，收起态可见；红底白字小徽标） */
+.dn-set-card .dn-ch-failBadge {
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--dsw-alias-state-error-primary, #d92d20);
+  color: #fff;
+  font-size: 10px;
+  line-height: 1.6;
+  word-break: break-all;
+}
+/* #402 第 6 条：「通知频道」tab 内就近保存行（复用 foot 保存同款按钮） */
+.dn-set-card .dn-ch-saveRow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
 }
 .dn-set-card .dn-ch-actions {
   display: flex;
@@ -240,20 +304,45 @@
   color: var(--dsw-alias-state-error-primary, #d92d20);
 }
 
-/* 折叠区（Bark 高级参数 / 合并去重参数） */
+/* 折叠区（Bark 高级参数 / 合并去重参数）。#402 第 3 条：入口按钮化——
+   圆角边框 + 底色对齐 .dn-route-btn 视觉语言，chevron 双边线三角 open 翻转。 */
 .dn-set-card .dn-ch-adv {
   margin-top: 6px;
   border-top: 1px dashed var(--dsw-alias-border-l1, #e2e5ea);
-  padding-top: 4px;
+  padding-top: 6px;
 }
 .dn-set-card .dn-ch-adv > summary {
   cursor: pointer;
+  list-style: none;
   color: var(--dsw-alias-label-secondary, #5f6672);
   font-size: 11px;
-  min-height: 24px;
-  display: flex;
+  min-height: 26px;
+  display: inline-flex;
   align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-1, #f5f6f8);
   user-select: none;
+}
+.dn-set-card .dn-ch-adv > summary::-webkit-details-marker { display: none; }
+.dn-set-card .dn-ch-adv > summary::before {
+  content: "";
+  width: 4px;
+  height: 4px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.12s ease;
+  flex: none;
+}
+.dn-set-card .dn-ch-adv[open] > summary::before { transform: rotate(45deg); }
+@media (hover: hover) {
+  .dn-set-card .dn-ch-adv > summary:hover {
+    color: var(--dsw-alias-label-primary, #1f2329);
+    border-color: var(--dsw-alias-border-l2, #d3d8df);
+  }
 }
 .dn-set-card .dn-sec-adv { margin-top: 10px; }
 
