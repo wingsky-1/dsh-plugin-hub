@@ -7,6 +7,8 @@
 
 > **维护者指示（2026-08-31）**：① 最终目标 = **完成 0.1.2-alpha.2 适配**（不设正式版前置）；② Phase 2（通知中心 M2/M3）暂缓，聚焦适配；③ Phase 5（发版）等维护者全量验证后执行。
 
+> **修订（2026-09-01，发版准备）**：适配基线锚定升级到 **0.1.2-alpha.3**（官方 alpha 线最新，dist-tag `alpha` 已指向）。已完成 alpha.2→alpha.3 影响分析（见会话结论）：插件消费面 lib 完全一致，唯一差异为 `dsh-client-connection` 导出面不变的行为变更（超时 abort+重试→warn 保留），cordis/schemastery/react 版本未变。catalog 与各包 peer 精确 pin 已同步升到 `0.1.2-alpha.3`（task/0.2.0-prep worktree）。Phase 5 发版仍待维护者全量验证后执行，且依赖 #402 解决。
+
 ---
 
 ## 评审结论（独立子 agent 对抗性评审，2026-08-31）
