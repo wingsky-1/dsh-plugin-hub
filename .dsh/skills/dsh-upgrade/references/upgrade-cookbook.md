@@ -69,7 +69,7 @@ git log --oneline dsh-v0.1.0-rc.7..dsh-v0.1.0-rc.8 | grep -iE "breaking|migrat" 
 ```bash
 cd <dsh-plugin-hub clone>
 # 每个插件的 client.inject 注入项
-for p in dsh-gzip dsh-idle-archive dsh-lan-proxy dsh-mcp-manager dsh-notifier dsh-opencode-usage dsh-web-file-preview; do
+for p in dsh-lan-proxy dsh-mcp-manager dsh-notifier dsh-provider-usage dsh-verify-isolated dsh-web-file-preview dsh-codegraph; do
   echo "--- $p ---"
   node -e "const p=require('./packages/$p/package.json');console.log(JSON.stringify(p.dsh&&p.dsh.client&&p.dsh.client.inject||[]))"
 done
@@ -141,7 +141,7 @@ dsh plugin --profile web install
 - [ ] `dsh --version` 显示目标 rc
 - [ ] `dsh plugin --profile web list` 各插件版本/pin 符合预期
 - [ ] 浏览器 Console 无 `client-runtime` / `client-connection` 加载错误
-- [ ] 7 个 link 插件均加载（MCP 浮窗、notifier、lan-proxy、idle-archive、opencode-usage、gzip、web-file-preview）
+- [ ] 各 link 插件均加载（MCP 浮窗、notifier、lan-proxy、provider-usage、web-file-preview）
 - [ ] 版本化插件仍正常：skill-explorer、archify-dsh、smooth-stream、mobile-nav
 - [ ] **窄屏实测（最关键）**：iPad / iOS 访问，验证 mobile-nav 抽屉/侧栏适配
 - [ ] 明暗双主题下插件 UI 正常（不硬编码配色）

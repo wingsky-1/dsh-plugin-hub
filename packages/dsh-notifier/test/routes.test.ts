@@ -33,16 +33,18 @@ try {
   const healthRoute = routes.find((r) => r.path === ROUTES.health);
   const testRoute = routes.find((r) => r.path === ROUTES.test);
   const historyRoute = routes.find((r) => r.path === ROUTES.history);
-  assert.ok(configRoute && eventsRoute && healthRoute && testRoute && historyRoute, "五条路由已注册");
+  const statusRoute = routes.find((r) => r.path === ROUTES.status);
+  const kindsRoute = routes.find((r) => r.path === ROUTES.kinds);
+  assert.ok(configRoute && eventsRoute && healthRoute && testRoute && historyRoute && statusRoute && kindsRoute, "七条路由已注册（M2 增 status/kinds）");
 
-  // 403（J1）
-  for (const route of [configRoute, eventsRoute, healthRoute, testRoute, historyRoute]) {
+  // 403（J1）——含 M2 新路由（围栏必项，评审缺口项）
+  for (const route of [configRoute, eventsRoute, healthRoute, testRoute, historyRoute, statusRoute, kindsRoute]) {
     const { rec, res } = makeRes();
     await route.handler(fakeReq({ socket: { remoteAddress: "10.0.0.2" } }), res);
     assert.equal(rec.status, 403);
   }
 
-  // 405（J2）：test 路由仅 POST；history 路由仅 GET；health 仅 GET
+  // 405（J2）：test 路由仅 POST；history 路由仅 GET；health 仅 GET；status 仅 GET；kinds 仅 GET/POST
   {
     const { rec, res } = makeRes();
     await testRoute.handler(fakeReq({}), res);
@@ -53,6 +55,12 @@ try {
     const { rec: rec3, res: res3 } = makeRes();
     await healthRoute.handler(fakeReq({ method: "DELETE" }), res3);
     assert.equal(rec3.status, 405);
+    const { rec: rec4, res: res4 } = makeRes();
+    await statusRoute.handler(fakeReq({ method: "POST" }), res4);
+    assert.equal(rec4.status, 405);
+    const { rec: rec5, res: res5 } = makeRes();
+    await kindsRoute.handler(fakeReq({ method: "DELETE" }), res5);
+    assert.equal(rec5.status, 405);
   }
 
   // health：配置摘要与 sseConnections
@@ -145,6 +153,155 @@ try {
     const { rec, res } = makeRes();
     await configRoute.handler(bodyReq({ patch: { notifyQuestion: false } }), res);
     assert.equal(rec.status, 200, "缺省 expectedRevision 的 PUT 成功");
+  }
+
+  // ===== M2：Bark channels 凭据脱敏与掩码回填（issue #366，评审 P0-1/P0-2）=====
+  {
+    function bodyReq(payload) {
+      const text = JSON.stringify(payload);
+      return {
+        method: "PUT",
+        url: "/",
+        socket: { remoteAddress: "127.0.0.1" },
+        headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
+        on(event, cb) {
+          if (event === "data") setTimeout(() => cb(Buffer.from(text)), 0);
+          else if (event === "end") setTimeout(cb, 1);
+          return this;
+        },
+        destroy() {},
+      };
+    }
+    const SECRET = "realSecretKey42";
+
+    // PUT 写入含 deviceKey 的 channels：user 层持明文，响应已掩码（单一出口）
+    const put1 = makeRes();
+    await configRoute.handler(bodyReq({ patch: { channels: [{ id: "phone", type: "bark", baseUrl: "https://api.day.app", deviceKey: SECRET, enabled: false }] } }), put1.res);
+    assert.equal(put1.rec.status, 200, "合法 channels PUT 成功");
+    const put1Body = JSON.parse(put1.rec.text);
+    assert.ok(!JSON.stringify(put1Body).includes(SECRET), "PUT 响应不含 deviceKey 明文（评审 P0-1：PUT 成功响应也是出口）");
+    assert.equal(put1Body.user.channels[0].deviceKey, "********", "PUT 响应 user 已掩码");
+    assert.equal(settings.getUser().channels[0].deviceKey, SECRET, "settings user 层持明文（服务端回填依据）");
+
+    // GET：user + effective 双出口深度扫描无明文
+    const get1 = makeRes();
+    await configRoute.handler(fakeReq({}), get1.res);
+    const get1Body = JSON.parse(get1.rec.text);
+    assert.ok(!JSON.stringify(get1Body).includes(SECRET), "GET 响应全文深度扫描不含 deviceKey 明文");
+    assert.equal(get1Body.user.channels[0].deviceKey, "********", "GET user 出口掩码");
+    assert.equal(get1Body.effective.channels[0].deviceKey, "********", "GET effective 出口掩码");
+    assert.equal(get1Body.effective.channels[0].baseUrl, "https://api.day.app", "非凭据字段不受影响");
+
+    // 掩码回填：同 id 实例提交掩码 → user 层 key 保持原值（先回填再校验）
+    const put2 = makeRes();
+    await configRoute.handler(bodyReq({ patch: { channels: [{ id: "phone", type: "bark", baseUrl: "https://api.day.app", deviceKey: "********", enabled: false, group: "dsh" }] } }), put2.res);
+    assert.equal(put2.rec.status, 200, "掩码提交（未修改语义）成功");
+    const afterUnmask = settings.getUser().channels[0];
+    assert.equal(afterUnmask.deviceKey, SECRET, "掩码按 id 回填 user 层原值（未覆盖为掩码字面量）");
+    assert.equal(afterUnmask.enabled, false, "其余字段正常更新");
+    assert.equal(afterUnmask.group, "dsh", "新增可选参数正常更新");
+
+    // 乱序多实例：掩码仍按 id 对齐（防下标串凭据）
+    const put3 = makeRes();
+    await configRoute.handler(bodyReq({ patch: { channels: [{ id: "phone", type: "bark", baseUrl: "https://api.day.app", deviceKey: SECRET, enabled: false }, { id: "pad", type: "bark", baseUrl: "https://api.day.app", deviceKey: "padKey777", enabled: false }] } }), put3.res);
+    assert.equal(put3.rec.status, 200);
+    const put4 = makeRes();
+    await configRoute.handler(bodyReq({ patch: { channels: [{ id: "pad", type: "bark", baseUrl: "https://api.day.app", deviceKey: "********", enabled: false }, { id: "phone", type: "bark", baseUrl: "https://api.day.app", deviceKey: "********", enabled: false }] } }), put4.res);
+    assert.equal(put4.rec.status, 200, "乱序掩码 PUT 成功");
+    const userChs = settings.getUser().channels;
+    const byId = Object.fromEntries(userChs.map((c) => [c.id, c.deviceKey]));
+    assert.equal(byId.phone, SECRET, "phone 的 key 未被串改");
+    assert.equal(byId.pad, "padKey777", "pad 的 key 未被串改");
+
+    // 改 key：非掩码新值直接生效
+    const put5 = makeRes();
+    await configRoute.handler(bodyReq({ patch: { channels: [{ id: "phone", type: "bark", baseUrl: "https://api.day.app", deviceKey: "rotatedKey9", enabled: false }, { id: "pad", type: "bark", baseUrl: "https://api.day.app", deviceKey: "********", enabled: false }] } }), put5.res);
+    assert.equal(put5.rec.status, 200, "混合提交（改 key + 掩码未改）成功");
+    const byId2 = Object.fromEntries(settings.getUser().channels.map((c) => [c.id, c.deviceKey]));
+    assert.equal(byId2.phone, "rotatedKey9", "非掩码新 key 生效（key 轮换）");
+    assert.equal(byId2.pad, "padKey777", "掩码实例保持原 key");
+
+    // 新实例带掩码 → 400（掩码只允许表达「未修改」）
+    const put6 = makeRes();
+    await configRoute.handler(bodyReq({ patch: { channels: [{ id: "brand-new", type: "bark", baseUrl: "https://api.day.app", deviceKey: "********", enabled: false }] } }), put6.res);
+    assert.equal(put6.rec.status, 400, "新实例带掩码 400 拒绝");
+    assert.ok(JSON.parse(put6.rec.text).error.hint.includes("掩码"), "400 hint 指引真实 key");
+
+    // 重复 id → 400（校验器查重）
+    const put7 = makeRes();
+    await configRoute.handler(bodyReq({ patch: { channels: [{ id: "dup", type: "bark", baseUrl: "https://api.day.app", deviceKey: "k1", enabled: false }, { id: "dup", type: "bark", baseUrl: "https://api.day.app", deviceKey: "k2", enabled: false }] } }), put7.res);
+    assert.equal(put7.rec.status, 400, "重复 id 400");
+    assert.equal(JSON.parse(put7.rec.text).error.error, "配置校验失败: channels", "400 指明 channels 键");
+  }
+
+  // ===== M2：/test 收敛 service 管线 + /status + /kinds（issue #366）=====
+  {
+    function postReq(payload) {
+      const text = JSON.stringify(payload);
+      return {
+        method: "POST",
+        url: "/",
+        socket: { remoteAddress: "127.0.0.1" },
+        headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
+        on(event, cb) {
+          if (event === "data") setTimeout(() => cb(Buffer.from(text)), 0);
+          else if (event === "end") setTimeout(cb, 1);
+          return this;
+        },
+        destroy() {},
+      };
+    }
+    // GET /status 初始空表
+    const st1 = makeRes();
+    await statusRoute.handler(fakeReq({}), st1.res);
+    assert.equal(st1.rec.status, 200);
+    const st1Body = JSON.parse(st1.rec.text);
+    assert.equal(st1Body.ok, true);
+    assert.deepEqual(st1Body.channels, {}, "初始状态空表");
+
+    // POST /test（无 body）：收敛后返回受理 results（内置频道按开关）
+    const t1 = makeRes();
+    await testRoute.handler(postReq({}), t1.res);
+    assert.equal(t1.rec.status, 200, "测试通知成功");
+    const t1Body = JSON.parse(t1.rec.text);
+    assert.equal(t1Body.ok, true);
+    assert.ok(Array.isArray(t1Body.results), "收敛后响应含受理 results");
+    assert.ok(t1Body.results.some((x) => x.channelId === "browser" && x.status === "ok"), "test kind 走 service 管线投递");
+
+    // 投递终态落盘：内置频道同步终态，内存镜像即时可见（落盘 debounce 合并）
+    const st2 = makeRes();
+    await statusRoute.handler(fakeReq({}), st2.res);
+    const st2Body = JSON.parse(st2.rec.text);
+    assert.equal(st2Body.channels.browser?.lastStatus, "ok", "/test 后 browser 频道状态 ok");
+    assert.equal(st2Body.channels.system?.lastStatus, "ok", "/test 后 system 频道状态 ok");
+
+    // GET /kinds 初始空 + POST 未注册 kind → 404
+    const k1 = makeRes();
+    await kindsRoute.handler(fakeReq({}), k1.res);
+    assert.deepEqual(JSON.parse(k1.rec.text).kinds, [], "初始动态 kind 清单空");
+    const k2 = makeRes();
+    await kindsRoute.handler(postReq({ kind: "nope:x", confirmed: true }), k2.res);
+    assert.equal(k2.rec.status, 404, "未注册 kind 确认 404");
+    const k3 = makeRes();
+    await kindsRoute.handler(postReq({ kind: "bad" }), k3.res);
+    assert.equal(k3.rec.status, 400, "非法 body 400");
+
+    // 全链路：插件注册 kind → 待确认 → POST 确认 → user 层 allowKinds 落盘
+    const notifier = mainNotifier.ctx.get("wingsky.notifier", false);
+    assert.ok(notifier, "fake ctx 可读取 wingsky.notifier 服务");
+    notifier.registerKind({ id: "e2e:due", label: "E2E 到期" });
+    const k4 = makeRes();
+    await kindsRoute.handler(fakeReq({}), k4.res);
+    const kinds1 = JSON.parse(k4.rec.text).kinds;
+    assert.ok(kinds1.some((k) => k.id === "e2e:due" && k.confirmed === false), "注册后待确认");
+    const k5 = makeRes();
+    await kindsRoute.handler(postReq({ kind: "e2e:due", confirmed: true }), k5.res);
+    assert.equal(k5.rec.status, 200, "确认成功");
+    assert.equal(JSON.parse(k5.rec.text).kinds.find((k) => k.id === "e2e:due").confirmed, true, "响应内确认态即时可见");
+    assert.deepEqual(settings.getUser().allowKinds, ["e2e:due"], "确认态持久化到配置 allowKinds（重启保持）");
+    // 确认后 send 放行（M1 的 suppressed 解除）
+    const send1 = await notifier.send({ source: "e2e", kind: "e2e:due", severity: "info", body: "到期提醒" });
+    assert.ok(send1.some((x) => x.status === "ok"), "确认后动态 kind 正常投递");
   }
 
   // config PUT 容错：非法 JSON → 400；超大 body → 不挂起、无未处理拒绝（J3/J4）

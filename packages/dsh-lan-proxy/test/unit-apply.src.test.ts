@@ -17,7 +17,7 @@ import { join } from "node:path";
 import {
   pluginDir, sanitizeSettings, validateSettings,
   migrateFileConfig, MIGRATED_BAK_NAME, applyConfigPatch, SETTINGS_NS,
-  ROUTES, DEFAULT_OPTIONS,
+  ROUTES, DEFAULT_OPTIONS, normalizeLegacyWsCompressPaths, DEFAULT_WSS_COMPRESS_PATHS,
 } from "../src/index.ts";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -42,6 +42,22 @@ const { createServer } = await import("node:http");
   assert.equal(sanitizeSettings({ httpCompressLevel: -1 }), null, "httpCompressLevel 负值 → null");
   assert.equal(sanitizeSettings({ httpCompressLevel: 1.5 }), null, "httpCompressLevel 非整数 → null");
   assert.deepEqual(sanitizeSettings({}), {}, "空对象 → 空");
+}
+
+// ===== normalizeLegacyWsCompressPaths（#395 M2 存量白名单归一化纯函数） =====
+{
+  // 旧默认无序等价（忽略顺序、元素完全一致）→ 归一化为新默认 remote.mux
+  assert.deepEqual(normalizeLegacyWsCompressPaths(["/api/events.mux", "/api/events.host"]), ["/api/remote.mux"], "旧默认正序 → remote.mux");
+  assert.deepEqual(normalizeLegacyWsCompressPaths(["/api/events.host", "/api/events.mux"]), ["/api/remote.mux"], "旧默认乱序同样等价 → remote.mux");
+  // 归一化目标与默认常量同源（单一事实源）
+  assert.deepEqual(normalizeLegacyWsCompressPaths(["/api/events.mux", "/api/events.host"]), [...DEFAULT_WSS_COMPRESS_PATHS], "归一化目标与 DEFAULT_WSS_COMPRESS_PATHS 同源");
+  // 自定义白名单（含废弃端点的组合）原样保留，不强制改写
+  assert.deepEqual(normalizeLegacyWsCompressPaths(["/api/custom/ws"]), ["/api/custom/ws"], "自定义白名单原样");
+  assert.deepEqual(normalizeLegacyWsCompressPaths(["/api/events.mux", "/api/custom/ws"]), ["/api/events.mux", "/api/custom/ws"], "含废弃端点的自定义组合原样");
+  assert.deepEqual(normalizeLegacyWsCompressPaths(["/api/events.mux", "/api/events.mux"]), ["/api/events.mux", "/api/events.mux"], "重复元素非等价原样");
+  // undefined / 空数组原样
+  assert.equal(normalizeLegacyWsCompressPaths(undefined), undefined, "undefined 原样");
+  assert.deepEqual(normalizeLegacyWsCompressPaths([]), [], "空数组原样");
 }
 
 // ===== validateSettings 更多边界 =====
@@ -143,7 +159,7 @@ const { createServer } = await import("node:http");
   const scopeWatchCbs = [];
 
   const scope = {
-    _val: { port: 0, wsCompressEnabled: false, httpCompressEnabled: false },
+    _val: { port: 0, wsCompressEnabled: false, httpCompressEnabled: false, wsCompressPaths: ["/api/events.host", "/api/events.mux"] },
     get() { return this._val; },
     async update(patch) { Object.assign(this._val, patch); },
     async replace(section) { this._val = { ...section }; },
@@ -206,6 +222,19 @@ const { createServer } = await import("node:http");
   const hp = JSON.parse(healthBody);
   assert.equal(hp.ok, true, "health 200");
   assert.equal(hp.wsCompressEnabled, false, "settings 来源生效（wsCompressEnabled=false 透传）");
+  // M2（#395）：resolve() 归一化旧默认白名单（乱序等价）→ health 快照可见新值。
+  assert.deepEqual(hp.wsCompressPaths, ["/api/remote.mux"],
+    `resolve() 应把旧默认白名单归一化为 remote.mux，实际 ${JSON.stringify(hp.wsCompressPaths)}`);
+  // 自定义白名单（含废弃端点的组合）原样保留，不强制改写。
+  scope._val.wsCompressPaths = ["/api/custom/ws", "/api/events.mux"];
+  let healthBody2 = "";
+  healthRoute.handler(
+    { method: "GET", socket: { remoteAddress: "127.0.0.1" }, headers: { host: "127.0.0.1:3080" }, url: ROUTES.health },
+    { writeHead: () => {}, end: (c) => { healthBody2 = String(c); } },
+  );
+  const hp2 = JSON.parse(healthBody2);
+  assert.deepEqual(hp2.wsCompressPaths, ["/api/custom/ws", "/api/events.mux"],
+    `自定义白名单不被强制改写，实际 ${JSON.stringify(hp2.wsCompressPaths)}`);
 
   // 执行 lifecycle 清理：触发 scope.watch 的 disposer 与 isUnloading
   for (const d of [...disposers].reverse()) {

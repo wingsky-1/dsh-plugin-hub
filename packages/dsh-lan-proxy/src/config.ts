@@ -10,6 +10,14 @@
 import z from "schemastery";
 import { DEFAULT_OPTIONS, DEFAULT_DEFLATE_POLICY, isLoopbackTarget, type DeflatePolicy } from "./proxy.ts";
 
+/**
+ * WebSocket 压缩桥接默认路径白名单（dsh 0.1.2 起 api-gateway 拥有的 Remote 流
+ * mux 端点）。单一事实源：Config schema 默认值、apply resolve() 兜底与
+ * normalizeLegacyWsCompressPaths 的归一化目标均与本常量同源（客户端 placeholder
+ * 属构建期注入的展示文案，值保持一致）。
+ */
+export const DEFAULT_WSS_COMPRESS_PATHS: readonly string[] = ["/api/remote.mux"];
+
 /** 插件配置（loader 应用 schema 默认值后传入；apply 内仍有合并兜底）。 */
 export interface LanProxyConfig {
   enabled?: boolean;
@@ -101,7 +109,7 @@ export const Config: z<LanProxyConfig> = z.object({
    */
   wsCompressEnabled: z.boolean().default(true),
   /** 参与 WebSocket 压缩桥接的路径白名单（默认：api-gateway 的 Remote 流 mux 端点）。 */
-  wsCompressPaths: z.array(z.string()).default(["/api/remote.mux"]),
+  wsCompressPaths: z.array(z.string()).default([...DEFAULT_WSS_COMPRESS_PATHS]),
   /**
    * WS 压缩协商策略（默认：浏览器段可协商，但 iPhone/iPad/iPod UA 强制不协商——
    * iOS Safari 启用 permessage-deflate 即失败，uWebSockets.js #76 实证，issue #308）。
@@ -178,6 +186,32 @@ export function sanitizeSettings(raw: unknown): Partial<LanProxyConfig> | null {
     (out as Record<string, unknown>)[key] = value;
   }
   return out;
+}
+
+/**
+ * 旧版默认 WS 压缩白名单（dsh 0.1.2 之前的事件流端点对）。显式保存过该值的
+ * settings 用户层升级后原样保留，`/api/remote.mux` 不再命中 → 压缩静默失效
+ * （issue #395 M2 根因）。
+ */
+const LEGACY_WSS_COMPRESS_PATHS: readonly string[] = ["/api/events.mux", "/api/events.host"];
+
+/**
+ * 存量 WS 压缩白名单归一化（issue #395 M2）：当白名单与旧默认
+ * LEGACY_WSS_COMPRESS_PATHS 无序等价（忽略顺序、元素完全一致）时，归一化为
+ * 新默认 DEFAULT_WSS_COMPRESS_PATHS（与 schema 默认值/客户端 placeholder 同源）；
+ * 否则原样返回——undefined、空数组、含自定义路径的组合一律不做改写（尊重用户
+ * 自定义，含废弃端点的自定义白名单同样保留）。导出供 resolve()、
+ * migrateFileConfig() 与单测复用。
+ */
+export function normalizeLegacyWsCompressPaths(paths: readonly string[] | undefined): readonly string[] | undefined {
+  if (paths === undefined) return undefined;
+  if (paths.length !== LEGACY_WSS_COMPRESS_PATHS.length) return paths;
+  const rest = new Set(LEGACY_WSS_COMPRESS_PATHS);
+  for (const path of paths) {
+    if (!rest.has(path)) return paths;
+    rest.delete(path);
+  }
+  return [...DEFAULT_WSS_COMPRESS_PATHS];
 }
 
 /**

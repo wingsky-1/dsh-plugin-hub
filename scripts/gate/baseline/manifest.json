@@ -1,9 +1,4 @@
 {
-  "incremental-idle-archive.json": {
-    "size": 240519,
-    "mtime": "2026-08-31T01:21:49.748Z",
-    "sha256": "600758ee6e7ad5c6bd0fa2aa4d7e383cb3a88df7f609f35241f4f48e815dfdb8"
-  },
   "incremental-lan-proxy-1.json": {
     "size": 399678,
     "mtime": "2026-08-31T01:24:37.068Z",
@@ -103,11 +98,6 @@
     "size": 536017,
     "mtime": "2026-08-31T01:49:56.347Z",
     "sha256": "3e33491b65e0ced0c0e7a1d88ebaadc34bdc612b9ab324e6df53a13b21cddd0e"
-  },
-  "incremental-subagent-model-inherit.json": {
-    "size": 63432,
-    "mtime": "2026-08-31T01:50:00.993Z",
-    "sha256": "2494e1a8a81937928dee6d3d636efc49e099fcf574aa737abf66599570e2ea83"
   },
   "incremental-web-file-preview.json": {
     "size": 928608,

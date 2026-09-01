@@ -108,7 +108,7 @@ context filter checks」）。取舍如下（issue #290）：
 `dsh-notifier.json.migrated.bak`（损坏则改名 `.corrupted.bak`，不写入），
 自建读写链路已废弃。
 
-配置项示例（默认值）：
+配置项示例（默认值；`channels` / `kindRoutes` / `allowKinds` 为 M2 新增键）：
 
 ```json
 {
@@ -127,7 +127,10 @@ context filter checks」）。取舍如下（issue #290）：
   "askRemindMin": 5,
   "doneMergeWindowMs": 3000,
   "historyMaxAgeDays": 0,
-  "maxConnections": 16
+  "maxConnections": 16,
+  "channels": [],
+  "kindRoutes": {},
+  "allowKinds": []
 }
 ```
 
@@ -137,14 +140,44 @@ context filter checks」）。取舍如下（issue #290）：
 > 多设备×多页签同时在线超过该值时可在面板调大；若**长期持续超限**（淘汰后客户端重连、
 > 再次被淘汰的 churn 循环），说明该值低于峰值并发连接数，应调大到不小于峰值再观察。
 
+### Bark 推送频道（M2，issue #366）
+
+设置 tab「通知中心 → 投递频道 → 添加 Bark 推送」配置（也可直接编辑上述配置 JSON）。
+每实例字段：`id`（自动生成后锁定）、`name`（显示名）、`baseUrl`（Bark 服务器地址，
+http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `********`，提交掩码 =
+保持原值）、`enabled`（默认 **false**——出站授权须显式开启）。
+
+可选参数（全部缺省不发送；未知 string/number 键原样透传，Bark 未来参数前向兼容；
+`device_key`/`device_keys`/`ciphertext` 为保留键不可透传）：
+
+| 字段 | 说明 |
+|---|---|
+| `sound` | 铃声名（Bark Sounds 列表） |
+| `group` | 分组（同组在手机上折叠） |
+| `icon` | 图标 URL（**需手机网络可达**，非服务器可达；SVG 需 iOS 17+；留空用 Bark 默认） |
+| `url` | 点击通知跳转 URL |
+| `badge` | App 角标数字 |
+| `level` | 紧急度覆盖；缺省按事件 severity 自动映射：`failure→timeSensitive`、`warning/success→active`、`info→passive` |
+
+投递可靠性：10s 硬超时、网络错误/5xx 重试 ×2（4xx 不重试）、实例级在途并发 ≤2
+（内置频道不受限）；成功判定双查 HTTP 2xx + 响应体 `code===200`。
+投递终态（成功/失败 + 脱敏错误摘要）落盘 `~/.dsh/dsh-notifier-status.json` 并经
+`wingsky-notify/sent` 事件广播（cordis Events），设置页频道卡状态行实时可见。
+
+`kindRoutes`：kind → channelId[] 稀疏路由（如 `{ "error": ["browser", "system", "bark:phone"] }`）；
+未声明条目的 kind 广播全部启用频道；设置页事件区可双向编辑（与频道卡共享同一份配置）。
+`allowKinds`：已确认的动态 kind 清单（其他插件注册的通知类型经你确认后持久化于此）。
+
 ## 路由（全部 loopback 围栏）
 
 | 路由 | 方法 | 说明 |
 |---|---|---|
-| `/api/dsh-notifier/config` | GET/PUT | **GET** 返回 `{ok, user, revision, effective, writable}`（`user` 为官方 settings 用户层、`revision` 供乐观并发、`effective` 为生效配置）；**PUT** 接收 `{patch, expectedRevision?}`（增量 patch，`expectedRevision` 可选做乐观并发），返回 `{ok, user, revision}` |
+| `/api/dsh-notifier/config` | GET/PUT | **GET** 返回 `{ok, user, revision, effective, writable}`（`user` 为官方 settings 用户层、`revision` 供乐观并发、`effective` 为生效配置；**凭据字段（deviceKey）一律掩码**）；**PUT** 接收 `{patch, expectedRevision?}`（增量 patch，`expectedRevision` 可选做乐观并发），返回 `{ok, user, revision}`（同样掩码） |
 | `/api/dsh-notifier/events` | GET | SSE 通知帧（浏览器 EventSource 订阅；`?since=<seq>` 断线补拉） |
-| `/api/dsh-notifier/test` | POST | 测试通知（绕过免打扰） |
+| `/api/dsh-notifier/test` | POST | 测试通知（收敛到 service 管线，绕过免打扰；body 可选 `{channelId}` 指定单频道测试） |
 | `/api/dsh-notifier/history` | GET / **DELETE** | GET 最近通知记录（最多 200 条，`historyMaxAgeDays` 过滤 / 被免打扰拦截的标记 `suppressed`）；**DELETE 清空** |
+| `/api/dsh-notifier/status` | GET | 频道投递状态（per-channel 最近投递终态 + 连续失败计数，错误摘要已脱敏） |
+| `/api/dsh-notifier/kinds` | GET / POST | GET 动态 kind 清单（含确认态）；POST `{kind, confirmed}` 写确认（持久化到 `allowKinds`） |
 | `/api/dsh-notifier/health` | GET | 健康检查 |
 
 错误映射（PUT /config）：非法配置键 → 400（`{ok:false, error:{error:"配置校验失败: <键>", hint}}`）；版本冲突（`expectedRevision` 过期）→ 409（`code:"SETTINGS_CONFLICT"`）；settings 服务缺失 → 503（`code:"settings-unavailable"`）；写入异常 → 500（底层原因只进服务端日志）。
@@ -180,6 +213,11 @@ context filter checks」）。取舍如下（issue #290）：
 - 浏览器通知需要**安全上下文**（HTTPS 或 localhost）；局域网 HTTP 访问自动走降级通道（横幅/提示音/标题提醒）
 - 浏览器通知权限为手势内请求（设置 → 插件 → dsh-notifier 卡片的「请求通知权限」按钮）
 - Windows 系统通知通过 PowerShell WinRT 脚本实现，命令以参数数组传递、标题/正文打包为 base64(UTF-8 JSON) 经单一 payload 参数传入（无 shell 拼接面，且规避 PS 5.1 命令行参数解析歧义，见 issue #238）；脚本启动时幂等注册 AppUserModelId `DSH.dsh-notifier`（HKCU，无需管理员权限）——未注册的 AUMID 在 Win10/11 上 toast 会被系统静默丢弃。AUMID 采用 `Company.Product` 形态，避免在公共命名空间（`HKCU\SOFTWARE\Classes\AppUserModelId`）与其他同名软件冲突互覆；历史版本注册的旧键 `DSH` 残留无害（仅一个空注册表条目，不影响新 toast），如需清理可手动执行 `Remove-Item -Path "HKCU:\SOFTWARE\Classes\AppUserModelId\DSH"`
+- **Bark 频道凭据与出站安全（M2）**：
+  - **device key 不落 URL**：推送走 `POST {baseUrl}/push` + JSON body（`device_key` 字段）——反代 access log 默认只记 URL 与 header，正文不落日志
+  - **响应掩码单一出口**：GET /config 的 user+effective 与 PUT 成功响应中的 `deviceKey` 一律掩码 `********`；提交整值掩码 = 保持原值（按实例 id 对齐回填，防止数组顺序变化串凭据）
+  - **错误出口统一脱敏**：Bark 4xx 响应体会回显 key 原文（实测）——错误文本先按 device key 字面替换再过通用脱敏表，logger / `NotifyResult.error` / status 文件 / sent 事件四路出口全部覆盖
+  - **SSRF 姿态**：`baseUrl` 限 http/https scheme、拒绝带凭据 URL（`user:pass@host`）、丢弃 query/hash。**不做域名白名单**——baseUrl 指向内网自建 bark-server 是合法场景；已知残余风险：局域网内可访问 dsh web 的调用方（经 lan-proxy 反代可穿透 loopback 围栏，见部署文档）可借 `/test` 触发一次对 `baseUrl` 的出站 POST（半盲，响应错误摘要仅回显脱敏后片段）。对该风险敏感的部署可将插件 `enabled` 关闭或用独立端口方案（后续版本）
 
 ## 验证
 

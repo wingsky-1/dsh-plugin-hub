@@ -48,9 +48,11 @@ const NS = "notifier";
     health: "/api/dsh-notifier/health",
     test: "/api/dsh-notifier/test",
     history: "/api/dsh-notifier/history",
+    status: "/api/dsh-notifier/status",
+    kinds: "/api/dsh-notifier/kinds",
   };
   var STYLE_ID = "dsh-notifier-style";
-  var CSS_VERSION = "76";
+  var CSS_VERSION = "366-2";
   // 浏览器通知图标（内联 SVG data URL，零外部资源；铃铛造型）。
   var NOTIFY_ICON =
     "data:image/svg+xml;utf8," +
@@ -66,12 +68,6 @@ const NS = "notifier";
     ["notifySubagentDone", "evtSubagentDone"],
     ["notifyTaskError", "evtTaskError"],
     ["notifyTurnEnd", "evtTurnEnd"],
-  ];
-  var CHANNEL_KEYS = [
-    ["systemNotify", "chSystemNotify"],
-    ["browserNotify", "chBrowserNotify"],
-    ["notifyWhenVisible", "chWhenVisible"],
-    ["notifySound", "chSound"],
   ];
   /** kind → 字典 key（未知 kind 回落 kind 本体显示，数据不翻译）。 */
   var KIND_KEYS: Record<string, string> = {
@@ -446,11 +442,56 @@ const NS = "notifier";
       });
   }
 
+  /** 拉取频道投递状态（M2：per-channel 最近投递终态）。 */
+  function fetchStatus(): Promise<any> {
+    return fetch(ROUTES.status, { headers: { accept: "application/json" } })
+      .then(function (r: any) { return r.json(); })
+      .then(function (data: any) { return (data && data.channels) || {}; })
+      .catch(function () { return {}; });
+  }
+
+  /** 拉取动态 kind 清单（M2：注册表 + 确认态）。 */
+  function fetchKinds(): Promise<any[]> {
+    return fetch(ROUTES.kinds, { headers: { accept: "application/json" } })
+      .then(function (r: any) { return r.json(); })
+      .then(function (data: any) { return (data && data.kinds) || []; })
+      .catch(function () { return []; });
+  }
+
+  /** 动态 kind 确认（M2：POST /kinds {kind, confirmed}）。 */
+  function postKind(kind: string, confirmed: boolean): Promise<any> {
+    return fetch(ROUTES.kinds, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: kind, confirmed: confirmed }),
+    }).then(function (r: any) {
+      return r.json().then(function (body: any) {
+        if (!r.ok) throw new Error((body && body.error && (body.error.details || body.error.error)) || "HTTP " + r.status);
+        return body;
+      });
+    });
+  }
+
+  /** 测试通知（M2：channelId 可选——per-channel 测试，收敛到 service 管线）。 */
+  function sendTestReq(channelId?: string): Promise<any> {
+    return fetch(ROUTES.test, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(channelId ? { channelId: channelId } : {}),
+    }).then(function (r: any) {
+      return r.json().then(function (body: any) {
+        if (!r.ok) throw new Error((body && body.error) || "HTTP " + r.status);
+        return body;
+      });
+    });
+  }
+
   /**
    * 设置面板独立 tab「通知中心」（settings.section 插槽渲染的 React 卡片）。
-   * 字段全量（A1）+ 基线 diff 只提变更键（A4）+ 历史最近 10 条（D1/D2）+
-   * 动作区（清理记录两段式 / 请求权限 / 测试通知，A6/A7）+ 三端降级文案（A5/A8）。
-   * 保存走 PUT {patch, expectedRevision}（乐观并发，冲突时提示刷新）。
+   * M2 重设计（issue #366）：频道卡分区（browser/system/bark×n，状态灯 + per-channel
+   * 测试）+ 事件路由复选组（kindRoutes 单源双向编辑）+ 动态 kind 确认清单 +
+   * 高级参数折叠；字段全量 + 基线 diff 只提变更键 + 历史最近 10 条 + 动作区 +
+   * 三端降级文案。保存走 PUT {patch, expectedRevision}（乐观并发，冲突提示刷新）。
    */
   function SettingsCard() {
     var ReactHooks = React;
@@ -472,8 +513,24 @@ const NS = "notifier";
     var clearArmed = useState(false);
     var clearArmedValue = clearArmed[0];
     var setClearArmed = clearArmed[1];
-    // 加载基线（A4）：保存时只提交与基线不同的键（增量 diff），未改动的键不提交
-    var baseline: Record<string, any> | null = null;
+    // M2：频道投递状态（/status channels map，键=bark:<id>）/ 动态 kind 清单（/kinds）
+    var statusDraft = useState({} as Record<string, any>);
+    var statusMap = statusDraft[0];
+    var setStatusMap = statusDraft[1];
+    var kindsDraft = useState([] as any[]);
+    var kindsList = kindsDraft[0];
+    var setKindsList = kindsDraft[1];
+    // M2：路由编辑展开行（一次只展开一个 kind）与频道删除两段确认（实例 id）
+    var openRouteDraft = useState(null as string | null);
+    var openRoute = openRouteDraft[0];
+    var setOpenRoute = openRouteDraft[1];
+    var delArmedDraft = useState(null as string | null);
+    var delArmedId = delArmedDraft[0];
+    var setDelArmedId = delArmedDraft[1];
+    // 加载基线（A4）：保存时只提交与基线不同的键（增量 diff），未改动的键不提交。
+    // 用 useRef 持久化：组件每次渲染局部变量会重置为 null，导致 save() 闭包里读不到
+    // 基线而永远判定「无变化」。
+    var baselineRef = ReactHooks.useRef(null as Record<string, any> | null);
 
     function loadHistory(alive: { value: boolean }) {
       fetchHistory().then(function (records) {
@@ -483,13 +540,25 @@ const NS = "notifier";
       });
     }
 
+    function loadStatus(alive: { value: boolean }) {
+      fetchStatus().then(function (map: any) {
+        if (alive.value) setStatusMap(map);
+      });
+    }
+
+    function loadKinds(alive: { value: boolean }) {
+      fetchKinds().then(function (list: any[]) {
+        if (alive.value) setKindsList(list);
+      });
+    }
+
     function loadCard(alive: { value: boolean }) {
       fetchConfig()
         .then(function (v: any) {
           if (!alive.value) return;
           var effective = (v && v.effective) || {};
           setSettings(Object.assign({}, effective));
-          baseline = Object.assign({}, effective);
+          baselineRef.current = Object.assign({}, effective);
           setMeta({ user: v.user || {}, revision: v.revision, effective: effective, writable: v.writable !== false });
           runtimeConfig = effective; // SSE 展示面同步
           if (v.writable === false) setSaved(t("settingsUnavailable"), true);
@@ -504,6 +573,8 @@ const NS = "notifier";
       var alive = { value: true };
       loadCard(alive);
       loadHistory(alive);
+      loadStatus(alive);
+      loadKinds(alive);
       return function () { alive.value = false; };
     }, []);
 
@@ -511,18 +582,24 @@ const NS = "notifier";
       return React.createElement("li", { className: "dn-set-card" }, t("settingsLoading"));
     }
 
+    /** 函数式 setState 写设置（防 stale closure：同帧多次 onChange 后写覆盖先写）。
+     *  p 为对象时浅合并；为函数时以最新 prev 计算（prev => next）。 */
     function patch(p: any) {
-      setSettings(Object.assign({}, settings, p));
+      setSettings(function (prev: any) {
+        if (typeof p === "function") return p(prev);
+        return Object.assign({}, prev, p);
+      });
       setSaved("");
     }
 
     /** 基线 diff：只提交与加载基线不同的键（A4，防组合层 base 被默认值回写覆盖）。 */
     function diffPayload(): Record<string, any> {
       var payload: Record<string, any> = {};
+      var baseLine = baselineRef.current;
       for (var key in settings) {
-        if (baseline === null) break;
+        if (baseLine === null) break;
         var cur = settings[key];
-        var base = baseline[key];
+        var base = baseLine[key];
         var same = JSON.stringify(cur) === JSON.stringify(base);
         if (!same) payload[key] = cur;
       }
@@ -548,7 +625,7 @@ const NS = "notifier";
           return body;
         });
       }).then(function (body: any) {
-        baseline = Object.assign({}, settings);
+        baselineRef.current = Object.assign({}, settings);
         setMeta({ user: (body && body.user) || {}, revision: (body && body.revision) || undefined, effective: settings, writable: true });
         setSaved(t("savedOk"));
         setTimeout(function () { setSaved(""); }, 2200);
@@ -560,18 +637,102 @@ const NS = "notifier";
       });
     }
 
-    function sendTest() {
-      fetch(ROUTES.test, { method: "POST" })
-        .then(function (res) {
-          if (!res.ok) throw new Error("HTTP " + res.status);
-          return res.json();
+    /** 发送测试通知（M2：channelId 可选——per-channel 测试；完成后刷新状态行）。 */
+    function sendTest(channelId?: string) {
+      sendTestReq(channelId)
+        .then(function (data: any) {
+          toast(t(channelId ? "testChannelOk" : "testSent", channelId ? undefined : { n: (data && data.sseConnections) }));
+          loadStatus({ value: true });
         })
-        .then(function (data) {
-          // 服务端返回 {ok, sseConnections}：连接数语义 = 未释放句柄（#334 诊断保留）
-          toast(t("testSent", { n: (data && data.sseConnections) }));
-        })
-        .catch(function (error) {
+        .catch(function (error: any) {
           toast(t("testFail", { msg: error.message, hint: accessHint(error) }));
+        });
+    }
+
+    // ---- M2 频道编辑（settings.channels 不可变操作；deviceKey 掩码语义见服务端）----
+
+    /** 更新第 idx 个频道实例（浅合并 patch；函数式基于最新 channels，防后写覆盖）。 */
+    function chPatch(idx: number, part: Record<string, any>) {
+      patch(function (prev: any) {
+        var list = (prev.channels || []).slice();
+        list[idx] = Object.assign({}, list[idx], part);
+        return Object.assign({}, prev, { channels: list });
+      });
+    }
+
+    /** 删除第 idx 个频道实例（函数式基于最新 channels）。 */
+    function chRemove(idx: number) {
+      patch(function (prev: any) {
+        var list = (prev.channels || []).slice();
+        list.splice(idx, 1);
+        return Object.assign({}, prev, { channels: list });
+      });
+    }
+
+    /** 新增 Bark 实例：自动分配未占用的 id（bark-1…），默认禁用（出站授权显式授予）。 */
+    function chAdd() {
+      patch(function (prev: any) {
+        var list = prev.channels || [];
+        var seq = 1;
+        var taken = new Set(list.map(function (c: any) { return String(c.id); }));
+        while (taken.has("bark-" + seq)) seq += 1;
+        var id = "bark-" + seq;
+        return Object.assign({}, prev, {
+          channels: list.concat([{
+            id: id,
+            name: t("chNewBarkName") + " " + seq,
+            type: "bark",
+            baseUrl: "",
+            deviceKey: "",
+            enabled: false,
+          }]),
+        });
+      });
+      setDelArmedId(null);
+    }
+
+    // ---- M2 路由（kindRoutes 单源；事件行与频道卡双向编辑同一份配置）----
+
+    /** 当前 kind 的路由数组（undefined = 跟随默认广播）。 */
+    function routeOf(kind: string): string[] | undefined {
+      var routes = settings.kindRoutes || {};
+      return routes[kind];
+    }
+
+    /** 写/清 kind 路由条目（ids=null 删除条目恢复默认；函数式基于最新 kindRoutes）。 */
+    function routeSetKind(kind: string, ids: string[] | null) {
+      patch(function (prev: any) {
+        var routes = Object.assign({}, prev.kindRoutes || {});
+        if (ids === null || ids.length === 0) delete routes[kind];
+        else routes[kind] = ids;
+        return Object.assign({}, prev, { kindRoutes: routes });
+      });
+    }
+
+    /** 路由复选组单框切换（函数式：基于最新 kindRoutes/channels 计算，防同帧勾选后写覆盖）。 */
+    function routeToggle(kind: string, oid: string, checked: boolean) {
+      patch(function (prev: any) {
+        var routes = Object.assign({}, prev.kindRoutes || {});
+        var all = ["browser", "system"].concat((prev.channels || []).map(function (c: any) { return "bark:" + String(c.id); }));
+        var cur = routes[kind] === undefined ? all.slice() : routes[kind].slice();
+        var at = cur.indexOf(oid);
+        if (checked && at === -1) cur.push(oid);
+        else if (!checked && at !== -1) cur.splice(at, 1);
+        if (cur.length === 0) delete routes[kind];
+        else routes[kind] = cur;
+        return Object.assign({}, prev, { kindRoutes: routes });
+      });
+    }
+
+    /** 动态 kind 确认（POST /kinds；完成后刷新清单并提示）。 */
+    function confirmOne(kind: string, confirmed: boolean) {
+      postKind(kind, confirmed)
+        .then(function () {
+          toast(t("kindConfirmOk"));
+          return loadKinds({ value: true }) as any;
+        })
+        .catch(function (e: any) {
+          toast(t("kindConfirmFail", { msg: (e && e.message) || e }));
         });
     }
 
@@ -596,7 +757,6 @@ const NS = "notifier";
         });
     }
 
-    var rows: any[] = [];
     var sectionCount = 0;
     function section(title: string, children: any[]) {
       sectionCount += 1;
@@ -620,15 +780,254 @@ const NS = "notifier";
         type: "checkbox",
         checked: settings[key] === true,
         onChange: function (e: any) {
-          var next = Object.assign({}, settings);
-          next[key] = e.target.checked;
-          setSettings(next);
+          setSettings(function (prev: any) {
+            var next = Object.assign({}, prev);
+            next[key] = e.target.checked;
+            return next;
+          });
+          setSaved("");
         },
       });
     }
 
-    var eventChildren = EVENT_KEYS.map(function (kv) { return row(t(kv[1]), switchControl(kv[0])); });
-    var channelChildren = CHANNEL_KEYS.map(function (kv) { return row(t(kv[1]), switchControl(kv[0])); });
+    function textInput(value: any, onChange: (v: string) => void, opts?: { type?: string; placeholder?: string }) {
+      return React.createElement("input", {
+        type: (opts && opts.type) || "text",
+        className: "dn-set-input dn-set-inputText",
+        value: value === undefined || value === null ? "" : String(value),
+        placeholder: opts && opts.placeholder,
+        onChange: function (e: any) { onChange(e.target.value); },
+      });
+    }
+
+    function numInput(value: any, onChange: (v: number | undefined) => void) {
+      return React.createElement("input", {
+        type: "number", step: 1, className: "dn-set-input",
+        value: value === undefined || value === null ? "" : String(value),
+        onChange: function (e: any) { onChange(e.target.value === "" ? undefined : Number(e.target.value)); },
+      });
+    }
+
+    function padTime(ts: number) {
+      var d = new Date(ts);
+      var pad = function (n: number) { return n < 10 ? "0" + n : String(n); };
+      return pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+    }
+
+    /** 频道状态行（M2 签名元素）：ok 灰 / failed 高亮带错误摘要 / 从未投递弱化。 */
+    function statusLine(channelKey: string) {
+      var st = statusMap[channelKey];
+      var cls = "dn-ch-status";
+      var text = t("chNeverSent");
+      if (st && st.lastTs) {
+        if (st.lastStatus === "ok") {
+          cls += " dn-ch-statusOk";
+          text = t("chLastOk");
+        } else {
+          cls += " dn-ch-statusFail";
+          text = t("chLastFail") + (st.lastError ? "：" + st.lastError : "");
+        }
+        text += " · " + padTime(st.lastTs);
+      }
+      return React.createElement("div", { className: cls }, text);
+    }
+
+    function testBtn(channelId?: string) {
+      return React.createElement("button", {
+        type: "button", className: "dn-set-btn dn-set-btnSmall",
+        onClick: function () { sendTest(channelId); },
+      }, t("chTest"));
+    }
+
+    /** 内置频道卡（browser/system）：开关 + 行为参数 + 状态行 + per-channel 测试。 */
+    function builtinCard(cfgKey: string, label: string, channelId: string) {
+      var on = settings[cfgKey] === true;
+      // 频道行为参数归卡：browser→页面可见时也弹；system→提示音（toast 链路共用）
+      var extras: any[] = [];
+      if (channelId === "browser") {
+        extras.push(row(t("chWhenVisible"), switchControl("notifyWhenVisible")));
+      }
+      if (channelId === "system") {
+        extras.push(row(t("chSound"), switchControl("notifySound")));
+      }
+      return React.createElement("div", { className: "dn-ch-card" + (on ? " dn-ch-on" : ""), key: "ch-" + channelId },
+        React.createElement("div", { className: "dn-ch-head" },
+          React.createElement("span", { className: "dn-ch-dot" + (on ? " on" : "") }),
+          React.createElement("span", { className: "dn-ch-name" }, label),
+          React.createElement("label", { className: "dn-ch-enable" },
+            React.createElement("input", {
+              type: "checkbox", checked: on,
+              onChange: function (e: any) {
+                var p: Record<string, any> = {};
+                p[cfgKey] = e.target.checked;
+                patch(p);
+              },
+            }),
+            React.createElement("span", null, on ? t("chEnabled") : t("chDisabled")),
+          ),
+        ),
+        extras,
+        statusLine(channelId),
+        React.createElement("div", { className: "dn-ch-actions" }, testBtn(channelId)),
+      );
+    }
+
+    /** Bark 实例卡：name/baseUrl/deviceKey（掩码）+ 高级参数折叠 + 状态行 + 测试/删除。 */
+    function barkCard(ch: any, idx: number) {
+      var channelKey = "bark:" + String(ch.id);
+      var armed = delArmedId === ch.id;
+      var levelOpts: any[] = [React.createElement("option", { value: "", key: "auto" }, t("chLevelAuto"))];
+      ["active", "timeSensitive", "passive", "critical"].forEach(function (lv: string) {
+        levelOpts.push(React.createElement("option", { value: lv, key: lv }, lv));
+      });
+      var adv = React.createElement("details", { className: "dn-ch-adv", key: "adv-" + ch.id },
+        React.createElement("summary", null, t("chAdvanced")),
+        row(t("chBarkSound"), textInput(ch.sound, function (v: string) { chPatch(idx, { sound: v }); })),
+        row(t("chBarkGroup"), textInput(ch.group, function (v: string) { chPatch(idx, { group: v }); }), t("chBarkGroupHint")),
+        row(t("chBarkIcon"), textInput(ch.icon, function (v: string) { chPatch(idx, { icon: v }); }), t("chBarkIconHint")),
+        row(t("chBarkUrl"), textInput(ch.url, function (v: string) { chPatch(idx, { url: v }); })),
+        row(t("chBarkBadge"), numInput(ch.badge, function (v: number | undefined) { chPatch(idx, { badge: v }); })),
+        row(t("chBarkLevel"), React.createElement("select", {
+          className: "dn-set-input dn-set-select",
+          value: ch.level || "",
+          onChange: function (e: any) { chPatch(idx, { level: e.target.value || undefined }); },
+        }, levelOpts)),
+      );
+      return React.createElement("div", { className: "dn-ch-card" + (ch.enabled ? " dn-ch-on" : ""), key: channelKey },
+        React.createElement("div", { className: "dn-ch-head" },
+          React.createElement("span", { className: "dn-ch-dot" + (ch.enabled ? " on" : "") }),
+          React.createElement("span", { className: "dn-ch-name" }, ch.name || ch.id),
+          React.createElement("span", { className: "dn-ch-id" }, ch.id),
+          React.createElement("label", { className: "dn-ch-enable" },
+            React.createElement("input", {
+              type: "checkbox", checked: ch.enabled === true,
+              onChange: function (e: any) { chPatch(idx, { enabled: e.target.checked }); },
+            }),
+            React.createElement("span", null, ch.enabled ? t("chEnabled") : t("chDisabled")),
+          ),
+        ),
+        row(t("chBarkName"), textInput(ch.name, function (v: string) { chPatch(idx, { name: v }); }, { placeholder: t("chBarkNamePlaceholder") })),
+        row(t("chBarkBaseUrl"), textInput(ch.baseUrl, function (v: string) { chPatch(idx, { baseUrl: v }); }, { placeholder: "https://api.day.app" }), t("chBarkBaseUrlHint")),
+        row(t("chBarkDeviceKey"), textInput(ch.deviceKey, function (v: string) { chPatch(idx, { deviceKey: v }); }, { type: "password", placeholder: "********" }), t("chBarkDeviceKeyHint")),
+        adv,
+        statusLine(channelKey),
+        React.createElement("div", { className: "dn-ch-actions" },
+          testBtn(channelKey),
+          React.createElement("button", {
+            type: "button",
+            className: "dn-set-btn dn-set-btnSmall" + (armed ? " dn-set-btnDanger" : ""),
+            onClick: function () {
+              if (armed) {
+                chRemove(idx);
+                setDelArmedId(null);
+              } else {
+                setDelArmedId(ch.id);
+                setTimeout(function () { setDelArmedId(null); }, 3000);
+              }
+            },
+          }, armed ? t("chDeleteConfirm") : t("chDelete")),
+        ),
+      );
+    }
+
+    /**
+     * 事件行路由控件（kindRoutes 单源）：摘要按钮 + 展开复选组。
+     * 未定义条目 = 跟随默认（全部启用频道广播）；勾选即写稀疏条目；
+     * 「跟随默认」删除条目。双源视图与频道卡共享同一份 kindRoutes。
+     */
+    function routeCell(kind: string) {
+      var routes = routeOf(kind);
+      var options: Array<{ id: string; label: string }> = [
+        { id: "browser", label: t("chBrowserNotify") },
+        { id: "system", label: t("chSystemNotify") },
+      ].concat((settings.channels || []).map(function (c: any) {
+        return { id: "bark:" + String(c.id), label: c.name || c.id };
+      }));
+      var stale = (routes || []).filter(function (id: string) {
+        return !options.some(function (o) { return o.id === id; });
+      });
+      var isOpen = openRoute === kind;
+      var summary = routes === undefined || routes.length === 0 ? t("routeAllDefault") : t("routeCustomize") + " · " + String(routes.length);
+      var body: any = null;
+      if (isOpen) {
+        var checks = options.map(function (o) {
+          var checked = routes === undefined || routes.indexOf(o.id) !== -1;
+          return React.createElement("label", { className: "dn-set-allow", key: o.id },
+            React.createElement("input", {
+              type: "checkbox",
+              checked: checked,
+              onChange: function (e: any) {
+                routeToggle(kind, o.id, e.target.checked);
+              },
+            }),
+            React.createElement("span", null, o.label),
+          );
+        });
+        body = React.createElement("div", { className: "dn-route-edit" },
+          React.createElement("div", { className: "dn-route-editHead" }, t("routePick")),
+          React.createElement("div", { className: "dn-set-allows" }, checks),
+          React.createElement("div", { className: "dn-route-actions" },
+            React.createElement("button", {
+              type: "button", className: "dn-set-btn dn-set-btnSmall",
+              onClick: function () { routeSetKind(kind, null); },
+            }, t("routeFollowDefault")),
+          ),
+          stale.length > 0 ? React.createElement("div", { className: "dn-route-stale" }, t("routeStaleHint")) : null,
+        );
+      }
+      return React.createElement("div", { className: "dn-route-cell", key: "route-" + kind },
+        React.createElement("button", {
+          type: "button", className: "dn-route-btn" + (isOpen ? " dn-route-btnOpen" : ""),
+          onClick: function () { setOpenRoute(isOpen ? null : kind); },
+        },
+          React.createElement("span", { className: "dn-route-cap" }, t("routePick")),
+          React.createElement("span", { className: "dn-route-summary" }, summary),
+        ),
+        body,
+      );
+    }
+
+    // 事件区：内置事件行（开关 + 路由）+ 动态 kind 确认清单
+    var eventChildren: any[] = [];
+    EVENT_KEYS.forEach(function (kv) {
+      var key = kv[0], labelKey = kv[1];
+      eventChildren.push(React.createElement("div", { className: "dn-set-row dn-event-row", key: "ev-" + key },
+        React.createElement("span", { className: "dn-set-label" }, t(labelKey)),
+        switchControl(key),
+      ));
+      eventChildren.push(routeCell(key));
+    });
+    var kindRows: any[] = kindsList.map(function (k: any) {
+      return React.createElement("div", { className: "dn-set-row dn-kind-row", key: k.id },
+        React.createElement("span", { className: "dn-set-label dn-kind-id" }, k.label && k.label !== k.id ? k.label + "（" + k.id + "）" : k.id),
+        k.confirmed
+          ? React.createElement("span", { className: "dn-kind-badge dn-kind-ok" }, t("kindAllowed"))
+          : React.createElement("span", { className: "dn-kind-badge dn-kind-pending" }, t("kindPending")),
+        k.confirmed ? null : React.createElement("button", {
+          type: "button", className: "dn-set-btn dn-set-btnSmall",
+          onClick: function () { confirmOne(k.id, true); },
+        }, t("kindAllow")),
+        k.confirmed ? null : React.createElement("button", {
+          type: "button", className: "dn-set-btn dn-set-btnSmall dn-set-btnDanger",
+          onClick: function () { confirmOne(k.id, false); },
+        }, t("kindDeny")),
+      );
+    });
+    eventChildren.push(React.createElement("div", { className: "dn-kinds-block", key: "kinds" },
+      React.createElement("div", { className: "dn-kinds-title" }, t("kindsTitle")),
+      React.createElement("div", { className: "dn-set-note" }, t("kindsHint")),
+      kindsList.length === 0 ? React.createElement("div", { className: "dn-set-note" }, t("kindsEmpty")) : kindRows,
+    ));
+
+    // 频道区：内置两卡 + bark 实例卡 + 添加按钮
+    var channelsChildren: any[] = [
+      builtinCard("browserNotify", t("chBrowserNotify"), "browser"),
+      builtinCard("systemNotify", t("chSystemNotify"), "system"),
+    ].concat((settings.channels || []).map(function (c: any, i: number) { return barkCard(c, i); }));
+    channelsChildren.push(React.createElement("div", { className: "dn-ch-add", key: "ch-add" },
+      React.createElement("button", { type: "button", className: "dn-set-btn", onClick: chAdd }, t("chAddBark")),
+    ));
+
     var numberChildren = [
       row(t("errMergeWindow"), React.createElement("input", {
         type: "number", min: 0, step: 1000, className: "dn-set-input",
@@ -730,7 +1129,7 @@ const NS = "notifier";
             requestPermission(function () { setSaved(t("permRequested")); });
           } }, t("requestPerm"))
         : null,
-      React.createElement("button", { type: "button", className: "dn-set-btn", onClick: sendTest }, t("sendTest")),
+      React.createElement("button", { type: "button", className: "dn-set-btn", onClick: function () { sendTest(); } }, t("sendTest")),
     );
 
     // 历史列表（D1/D2）
@@ -767,9 +1166,12 @@ const NS = "notifier";
         React.createElement("span", { className: "dn-set-description" }, t("settingsDescription")),
       ),
       React.createElement("div", { className: "dn-set-body" },
+        section(t("secChannels"), channelsChildren),
         section(t("secEvents"), eventChildren),
-        section(t("secChannels"), channelChildren),
-        section(t("secDedup"), numberChildren),
+        React.createElement("details", { className: "dn-ch-adv dn-sec-adv", key: "adv-params" },
+          React.createElement("summary", null, t("secDedup")),
+          numberChildren,
+        ),
         section(t("secDnd"), quietChildren),
         historyEl,
         section(t("secActions"), actions),

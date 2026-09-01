@@ -25,6 +25,7 @@ import type { HistoryStore } from "./history.ts";
 import type { NotifyConfig } from "./config.ts";
 import { isInQuietHours } from "./quiet-hours.ts";
 import { NOTIFY_KINDS } from "./message.ts";
+import { sanitizeErrorText } from "./message.ts";
 import type { NotifyDetail } from "./message.ts";
 
 // ---------------------------------------------------------------- 消息模型
@@ -34,7 +35,7 @@ export type NotifySeverity = "info" | "success" | "warning" | "failure";
 
 /** 通知请求（外部调用方通用入口）。 */
 export interface NotifyRequest {
-  /** 调用方标识，如 '@wingsky-1/dsh-idle-archive'。 */
+  /** 调用方标识（source-short 与 kind 前缀同源，如 '@wingsky-1/dsh-notifier'）。 */
   source: string;
   /** kind：内置七 kind 或经 registerKind 注册的动态 kind（'<source-short>:<id>'）。 */
   kind: string;
@@ -78,8 +79,12 @@ export interface NotifyChannel {
   /** 即 channelId，唯一。 */
   name: string;
   capabilities: ChannelCapabilities;
-  /** 投递一条已解析消息；抛错即该频道 failed（fail-soft）。 */
-  send(payload: { title: string; body: string; kind: string; ts: number }): void | Promise<void>;
+  /**
+   * 投递一条已解析消息；同步抛错即该频道受理 failed；返回 promise 时其决议
+   * 为投递终态（resolve=成功 / reject=失败，错误须已脱敏），调用方据此记录
+   * status 与 sent 事件（受理结果不受终态影响——铁律 1）。
+   */
+  send(payload: { title: string; body: string; kind: string; ts: number; severity?: NotifySeverity }): void | Promise<void>;
 }
 
 // ---------------------------------------------------------------- Service 契约
@@ -107,7 +112,7 @@ export interface NotifierServiceInternal extends NotifierService {
    * @returns 受理结果（调用方以 results.some(r => r.status === 'ok') 判定
    *   是否真正发出——与旧 notify() 的 boolean 语义逐点对齐）。
    */
-  sendKind(kind: string, detail?: NotifyDetail, opts?: { bypassQuiet?: boolean }): NotifyResult[];
+  sendKind(kind: string, detail?: NotifyDetail, opts?: { bypassQuiet?: boolean; onlyChannel?: string }): NotifyResult[];
 }
 
 // ---------------------------------------------------------------- severity 映射（评审 #1）
@@ -139,6 +144,30 @@ export interface NotifierServiceDeps {
   history: HistoryStore;
   /** 日志出口。 */
   logger: { warn: (m: string) => void; info: (m: string) => void };
+  /** 配置驱动的出站频道（M2：bark 实例；enabled 过滤后返回，每次 dispatch 现取）。 */
+  outboundChannels(): Array<{ id: string; channel: NotifyChannel }>;
+  /** 频道投递终态落盘（status 文件；错误文本已由调用方脱敏）。 */
+  recordStatus(channelId: string, status: "ok" | "failed", error?: string): void;
+  /** 投递终态事件（'wingsky-notify/sent'；装配层 try/catch 包裹，缺服务静默跳过）。 */
+  emitSent(payload: NotifySentEvent): void;
+  /** 动态 kind 确认写入（持久化到配置 allowKinds；fire-and-forget）。 */
+  setConfirm(kind: string, confirmed: boolean): void;
+}
+
+/** 投递终态事件负载（'wingsky-notify/sent'；旁观插件订阅面，铁律 1 的事件半边）。 */
+export interface NotifySentEvent {
+  kind: string;
+  /** 消息标题（模板渲染后）。 */
+  title: string;
+  /** 消息正文（模板渲染后）。 */
+  message: string;
+  /** 投递频道 id。 */
+  channelId: string;
+  /** 投递终态。 */
+  status: "ok" | "failed";
+  /** 失败摘要（已脱敏；ok 时缺省）。 */
+  error?: string;
+  ts: number;
 }
 
 /** 内置频道 id。 */
@@ -164,10 +193,10 @@ function truncateCodePoints(s: string, max: number): string {
  * system.notify（自带 1s 节流与 30s 超时杀进程，语义不变）。
  */
 export function createNotifierService(deps: NotifierServiceDeps): NotifierServiceInternal {
-  const { current, enabled, sse, system, history, logger } = deps;
+  const { current, enabled, sse, system, history, logger, outboundChannels, recordStatus, emitSent, setConfirm } = deps;
 
-  /** 动态 kind 注册表（id → label / confirmed）。 */
-  const kindRegistry = new Map<string, { label: string; confirmed: boolean }>();
+  /** 动态 kind 注册表（id → label；确认态持久化在配置 allowKinds——M2 修复 M1 内存态重启丢失）。 */
+  const kindRegistry = new Map<string, { label: string }>();
   /** 插件贡献频道注册表（name → channel；默认未启用，MVP 仅存表）。 */
   const channelRegistry = new Map<string, NotifyChannel>();
 
@@ -176,10 +205,12 @@ export function createNotifierService(deps: NotifierServiceDeps): NotifierServic
     return Object.prototype.hasOwnProperty.call(NOTIFY_KINDS, kind);
   }
 
-  /** 动态 kind 是否获用户确认（未注册或未确认 → 抑制）。 */
+  /** 动态 kind 是否获用户确认（确认态持久化在配置 allowKinds；未注册/未确认 → 抑制）。 */
   function isKindConfirmed(kind: string): boolean {
     if (isBuiltinKind(kind)) return true;
-    return kindRegistry.get(kind)?.confirmed === true;
+    if (!kindRegistry.has(kind)) return false;
+    const allowed = current().allowKinds;
+    return Array.isArray(allowed) && allowed.includes(kind);
   }
 
   /** 历史追加（与搬移前一致：fire-and-forget）。 */
@@ -191,13 +222,88 @@ export function createNotifierService(deps: NotifierServiceDeps): NotifierServic
     }
   }
 
-  /** 当前启用的内置频道（browser / system 是否投递由配置开关决定）。 */
-  function enabledChannels(): Array<{ id: string; channel: NotifyChannel }> {
+  /** 全部可投递频道：内置（按开关）+ 配置驱动实例（enabled 过滤由装配层保证）。 */
+  function allChannels(): Array<{ id: string; channel: NotifyChannel }> {
     const cfg = current();
     const out: Array<{ id: string; channel: NotifyChannel }> = [];
     if (cfg.browserNotify) out.push({ id: BUILTIN_CHANNELS.browser, channel: browserChannel });
     if (cfg.systemNotify) out.push({ id: BUILTIN_CHANNELS.system, channel: systemChannel });
+    try {
+      out.push(...outboundChannels());
+    } catch (error) {
+      logger.warn(`dsh-notifier: 出站频道读取失败（fail-soft 跳过）: ${error instanceof Error ? error.message : String(error)}`);
+    }
     return out;
+  }
+
+  /**
+   * 路由解析（终稿 §4.6）：实际投递集合 = 启用频道 ∩ (kindRoutes[kind] ?? '*')。
+   * 缺省（无条目）= 广播全部启用频道；稀疏条目命中才投递；条目里指向已删除
+   * 频道（配置 channels 中不存在）的 id 记入 stale（skipped + warn，不影响其他）。
+   * onlyChannel（per-channel 测试）直接命中单频道并绕过路由。
+   */
+  function resolveRoutes(kind: string, onlyChannel?: string): { targets: Array<{ id: string; channel: NotifyChannel }>; stale: string[] } {
+    let pool = allChannels();
+    if (onlyChannel) {
+      return { targets: pool.filter((t) => t.id === onlyChannel), stale: [] };
+    }
+    const routes = current().kindRoutes?.[kind];
+    if (!Array.isArray(routes) || routes.length === 0) {
+      return { targets: pool, stale: [] };
+    }
+    const set = new Set(routes);
+    const targets = pool.filter((t) => set.has(t.id));
+    const known = new Set<string>([BUILTIN_CHANNELS.browser, BUILTIN_CHANNELS.system]);
+    for (const c of current().channels ?? []) known.add(`bark:${c.id}`);
+    const stale = routes.filter((id) => !known.has(id));
+    return { targets, stale };
+  }
+
+  /**
+   * 单频道投递：受理同步返回（铁律 1）；投递终态经 status 落盘 + sent 事件
+   * 异步可见（bark 的 promise 决议；内置频道同步完成即终态）。错误出口统一
+   * sanitizeErrorText（评审 P0-4：NotifyResult.error / status / 事件三路都过）。
+   */
+  function deliver(kind: string, title: string, message: string, ts: number, severity: NotifySeverity | undefined, target: { id: string; channel: NotifyChannel }): NotifyResult {
+    const { id, channel } = target;
+    const finalizeError = (err: unknown): string => sanitizeErrorText(err instanceof Error ? err.message : String(err), 300);
+    try {
+      const safeTitle = truncateCodePoints(String(title), channel.capabilities.titleMaxLen > 0 ? channel.capabilities.titleMaxLen : channel.capabilities.maxBodyLen);
+      const safeBody = truncateCodePoints(String(message), channel.capabilities.maxBodyLen);
+      const outcome = channel.send({ title: safeTitle, body: safeBody, kind, ts, severity });
+      const emitOk = () => {
+        try {
+          recordStatus(id, "ok");
+          emitSent({ kind, title: safeTitle, message: safeBody, channelId: id, status: "ok", ts });
+        } catch {
+          // 终态上报失败不影响受理语义
+        }
+      };
+      const emitFail = (err: unknown) => {
+        const e = finalizeError(err);
+        try {
+          recordStatus(id, "failed", e);
+          emitSent({ kind, title: safeTitle, message: safeBody, channelId: id, status: "failed", error: e, ts });
+        } catch {
+          // 同上
+        }
+      };
+      if (outcome && typeof (outcome as Promise<void>).then === "function") {
+        (outcome as Promise<void>).then(emitOk, emitFail);
+      } else {
+        emitOk();
+      }
+      return { channelId: id, status: "ok" };
+    } catch (error) {
+      const e = finalizeError(error);
+      try {
+        recordStatus(id, "failed", e);
+        emitSent({ kind, title, message, channelId: id, status: "failed", error: e, ts });
+      } catch {
+        // 同上
+      }
+      return { channelId: id, status: "failed", error: e };
+    }
   }
 
   /** 内置 browser 频道：包一层 SSE hub（帧契约 {type,kind,title,message,ts,seq} 不变）。 */
@@ -224,7 +330,7 @@ export function createNotifierService(deps: NotifierServiceDeps): NotifierServic
    * send() 在调用前完成确认检查后直接投递 body（不经模板）。
    * @returns 受理结果数组（投递终态经历史落盘与 wingsky-notify/sent 事件可见）。
    */
-  function sendKind(kind: string, detail: NotifyDetail = {}, opts?: { bypassQuiet?: boolean }): NotifyResult[] {
+  function sendKind(kind: string, detail: NotifyDetail = {}, opts?: { bypassQuiet?: boolean; onlyChannel?: string }): NotifyResult[] {
     if (enabled() === false) {
       return [{ channelId: "*", status: "skipped", error: "enabled=false" }];
     }
@@ -254,17 +360,15 @@ export function createNotifierService(deps: NotifierServiceDeps): NotifierServic
       return [{ channelId: "*", status: "skipped", error: "quiet" }];
     }
 
-    // 逐频道 fail-soft 投递（MVP 仅内置频道；第三方频道未启用不投递）
-    for (const { id, channel } of enabledChannels()) {
-      try {
-        const safeTitle = truncateCodePoints(String(title), channel.capabilities.titleMaxLen > 0 ? channel.capabilities.titleMaxLen : channel.capabilities.maxBodyLen);
-        const safeBody = truncateCodePoints(String(message), channel.capabilities.maxBodyLen);
-        channel.send({ title: safeTitle, body: safeBody, kind, ts });
-        results.push({ channelId: id, status: "ok" });
-      } catch (error) {
-        logger.warn(`dsh-notifier: 频道 ${id} 投递失败: ${error instanceof Error ? error.message : String(error)}`);
-        results.push({ channelId: id, status: "failed", error: error instanceof Error ? error.message : String(error) });
-      }
+    // 路由解析 + 逐频道投递（受理同步返回；终态经 deliver 异步落盘/事件）
+    const { targets, stale } = resolveRoutes(kind, opts?.onlyChannel);
+    for (const id of stale) {
+      logger.warn(`dsh-notifier: kindRoutes[${kind}] 指向已删除频道 ${id}，记 skipped`);
+      results.push({ channelId: id, status: "skipped", error: "stale-route" });
+    }
+    const severity = KIND_SEVERITY[kind];
+    for (const target of targets) {
+      results.push(deliver(kind, title, message, ts, severity, target));
     }
     logger.info(`dsh-notifier: ${kind} ${message.replace(/\n/g, " / ")}`);
     appendHistory({ ts, kind, title, message });
@@ -283,16 +387,19 @@ export function createNotifierService(deps: NotifierServiceDeps): NotifierServic
       // 防冒认：动态 id 必须带 ':' 且前缀非内置 kind 名
       const sep = id.indexOf(":");
       if (sep <= 0 || isBuiltinKind(id.slice(0, sep))) return;
-      kindRegistry.set(id, { label: typeof reg.label === "string" ? reg.label : id, confirmed: false });
+      kindRegistry.set(id, { label: typeof reg.label === "string" ? reg.label : id });
     },
 
     confirmKind(kind: string, confirmed: boolean) {
       if (!kindRegistry.has(kind)) return;
-      kindRegistry.get(kind)!.confirmed = confirmed;
+      // 确认态持久化到配置 allowKinds（M2：修复 M1 内存态重启丢失）；fire-and-forget
+      setConfirm(kind, confirmed);
     },
 
     listKinds() {
-      return [...kindRegistry.entries()].map(([id, v]) => ({ id, label: v.label, confirmed: v.confirmed }));
+      const allowed = current().allowKinds;
+      const allowedSet = Array.isArray(allowed) ? new Set(allowed) : new Set<string>();
+      return [...kindRegistry.entries()].map(([id, v]) => ({ id, label: v.label, confirmed: allowedSet.has(id) }));
     },
 
     registerChannel(ch: NotifyChannel) {
@@ -313,26 +420,24 @@ export function createNotifierService(deps: NotifierServiceDeps): NotifierServic
       if (isBuiltinKind(kind)) {
         return sendKind(kind, { message: req.body });
       }
-      if (!isKindConfirmed(kind)) {
-        const ts = Date.now();
-        appendHistory({ ts, kind, title: req.title ?? "DSH 通知", message: req.body, suppressed: "kind-pending" });
-        return [{ channelId: "*", status: "skipped", error: "kind-pending" }];
-      }
-      // 动态 kind：不经过 NOTIFY_KINDS 文案模板，title/body 直通
       const ts = Date.now();
       const title = req.title ?? "DSH 通知";
-      const results: NotifyResult[] = [];
-      for (const { id, channel } of enabledChannels()) {
-        try {
-          const safeTitle = truncateCodePoints(String(title), channel.capabilities.titleMaxLen > 0 ? channel.capabilities.titleMaxLen : channel.capabilities.maxBodyLen);
-          const safeBody = truncateCodePoints(String(req.body ?? ""), channel.capabilities.maxBodyLen);
-          channel.send({ title: safeTitle, body: safeBody, kind, ts });
-          results.push({ channelId: id, status: "ok" });
-        } catch (error) {
-          results.push({ channelId: id, status: "failed", error: error instanceof Error ? error.message : String(error) });
-        }
+      const body = String(req.body ?? "");
+      if (!isKindConfirmed(kind)) {
+        appendHistory({ ts, kind, title, message: body, suppressed: "kind-pending" });
+        return [{ channelId: "*", status: "skipped", error: "kind-pending" }];
       }
-      appendHistory({ ts, kind, title, message: req.body });
+      // 动态 kind：不经过 NOTIFY_KINDS 文案模板，title/body 直通；severity 直通
+      const { targets, stale } = resolveRoutes(kind);
+      const results: NotifyResult[] = [];
+      for (const id of stale) {
+        logger.warn(`dsh-notifier: kindRoutes[${kind}] 指向已删除频道 ${id}，记 skipped`);
+        results.push({ channelId: id, status: "skipped", error: "stale-route" });
+      }
+      for (const target of targets) {
+        results.push(deliver(kind, title, body, ts, req.severity, target));
+      }
+      appendHistory({ ts, kind, title, message: body });
       return results;
     },
   };
