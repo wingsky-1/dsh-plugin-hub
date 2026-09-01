@@ -1,6 +1,6 @@
 {
   "name": "@wingsky-1/dsh-mcp-manager",
-  "version": "0.1.14",
+  "version": "0.2.0",
   "description": "DSH MCP 管理器：Web 侧边栏「MCP」入口，面板按状态分级展示 MCP 服务器（运行中/连接中/已配置/失败），支持快速接入（stdio / streamable-http 表单）与粘贴 mcpServers JSON 导入。已连接服务器的工具以 mcp__<server>__<tool> 注册给模型直接调用。",
   "type": "module",
   "main": "lib/index.js",
