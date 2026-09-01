@@ -245,9 +245,9 @@ export function policyDenialReason(policy: MiddlewarePolicy | undefined, serverK
   return `ws_mcp_call: 工具 ${JSON.stringify(`${serverKey}/${tool}`)} 不在 allowTools 白名单内，被策略拒绝`;
 }
 
-/** 工具级禁用的拒绝原因文案（三入口统一；P0-2 语义声明）。 */
+/** 工具级禁用的拒绝原因文案（三入口统一；P0-2 语义声明，#413 覆盖中间层工具）。 */
 export function toolDisabledReason(serverKey: string, tool: string): string {
-  return `ws_mcp_call: 工具 ${JSON.stringify(`${serverKey}/${tool}`)} 已被用户在「MCP」浮窗禁用；工具级禁用只作用于 mcp__ 前缀工具，纪律裸名不受影响（如需恢复请到浮窗重新勾选）`;
+  return `ws_mcp_call: 工具 ${JSON.stringify(`${serverKey}/${tool}`)} 已被用户在「MCP」浮窗禁用；工具级禁用作用于 mcp-manager 管辖的全部 MCP 工具（mcp__ 前缀直呼与中间层 ws_mcp_* 一致生效），纪律裸名不受影响（如需恢复请到浮窗重新勾选）`;
 }
 
 // ------------------------------------------------------------ 目录检索

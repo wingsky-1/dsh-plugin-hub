@@ -160,6 +160,15 @@
 }
 
 .dn-set-card .dn-set-history { list-style: none; margin: 4px 0 0; padding: 0; }
+/* #418：历史分区头部工具行——动作按钮（清理/发送测试）与刷新并排 */
+.dn-set-card .dn-set-historyTools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+.dn-set-card .dn-set-historyTools .dn-set-actions { margin-top: 0; }
 .dn-set-card .dn-set-historyItem {
   padding: 5px 0;
   border-bottom: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
@@ -286,13 +295,18 @@
   line-height: 1.6;
   word-break: break-all;
 }
-/* #402 第 6 条：「通知频道」tab 内就近保存行（复用 foot 保存同款按钮） */
-.dn-set-card .dn-ch-saveRow {
+/* #418：浏览器通知权限状态行（移入「浏览器通知」频道卡；授权按钮同卡就近可达） */
+.dn-set-card .dn-ch-perm {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
   gap: 8px;
-  margin-top: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  font-size: 11px;
+}
+.dn-set-card .dn-ch-permText {
+  color: var(--dsw-alias-label-tertiary, #8a919c);
+  line-height: 1.5;
 }
 .dn-set-card .dn-ch-actions {
   display: flex;

@@ -153,4 +153,6 @@ export interface MiddlewareHost {
   catalogCachePath(root: string): string;
   /** 该 server 是否全局级（双源：store.data.servers + runtimeRegistry；codegraph 为 runtime 注册）。 */
   isGlobalServer(name: string): boolean;
+  /** 该 server 是否 runtime 注入（registerServer 内存态；目录不写盘判定，#413）。 */
+  isRuntimeServer(name: string): boolean;
 }

@@ -7,8 +7,9 @@ DSH（DeepSeek Harness）的 **MCP 服务器管理插件**：会话界面右上�
 MCP 协议客户端基于 `node:child_process` 与全局 `fetch` 直接实现，无需额外安装。
 
 三档中间层模式（`middleware`）：`off`——全部服务器直呼 `mcp__<server>__<tool>`（旧行为）；
-`project`（**默认**）——项目级走中间层、全局仍直呼；`all`——全局也走中间层，
-cwd 无项目时回落全局虚拟 root `@global`，模型面完全收敛为四个原子工具
+`project`（**默认**）——项目级走中间层、全局仍直呼；`all`——全局也走中间层
+（含运行时注入的封装定义服务器如 codegraph），cwd 无项目时回落全局虚拟 root
+`@global`，模型面完全收敛为四个原子工具
 （`ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call`）。
 `middleware` / `middlewarePolicy` 可在设置页热切换（保存即生效并持久化），
 也可在配置文件中设置（插件启动时读取）；两级配置文件中的服务器列表（增删/启停/改配置）支持热加载、即时生效，无需重启。
@@ -82,7 +83,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
 | 服务器管理 | 增删改查（可选项目级/全局）、连接 / 断开 / 重连；配置版本化 JSON，原子写入 |
 | 两种传输 | stdio（本地子进程，env 支持 `${ENV}` 引用）与 streamable-http（远程，header 支持 `${ENV}` 引用，自动回传 `Mcp-Session-Id`） |
 | JSON 导入 | 粘贴 mcpServers JSON 文本导入（仅 JSON 格式；不扫描任何应用配置文件） |
-| 模型工具 | 全局服务器工具以 `mcp__<server>__<tool>` 注册（64 字符、`[A-Za-z0-9_-]`、冲突时哈希后缀）；项目级服务器默认经中间层 `ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call` 访问（`middleware: project`，推荐），不同工作空间互不冲突 |
+| 模型工具 | 全局服务器工具以 `mcp__<server>__<tool>` 注册（64 字符、`[A-Za-z0-9_-]`、冲突时哈希后缀）；项目级服务器默认经中间层 `ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call` 访问（`middleware: project`，推荐），不同工作空间互不冲突；`middleware: all` 时全局与运行时注入服务器（如 codegraph）也统一经中间层访问，不注册 `mcp__` 前缀 |
 | 工作空间隔离 | 中间层按调用方会话当前 cwd 路由到对应工作空间的连接池；server 全名 `@<root>/<server>` 一致性校验防跨空间串台 |
 | 断线重连 | 有界指数退避（500ms 起、30s 上限、10 次后停止后台重试；用户手动连接或 ws_mcp_call 触发可再试） |
 | 结果截断 | 工具结果按 8KB 截断并标注（防超长 JSON 全量进上下文） |
@@ -136,7 +137,8 @@ limit 截断）/ `ws_mcp_call`（按 `@<root>/<server>` 全名调用，参数 sc
 连接池，不同工作空间注入不同 MCP、无命名冲突；全局服务器仍直呼
 `mcp__<server>__<tool>`（project 模式 detail/call 传全局级服务器会给出直呼引导）。
 切换 `middleware: off` 回到旧行为（项目级也直接注册
-`mcp__` 工具）；`middleware: all` 则全局服务器也走中间层（cwd 无项目时回落全局
+`mcp__` 工具）；`middleware: all` 则全局服务器（含运行时注入的封装定义服务器，
+如 dsh-codegraph 的 toolDefinitions）也走中间层（cwd 无项目时回落全局
 虚拟 root `@global`），模型面完全收敛为四个原子工具——此时 list/search/detail
 合并查询「项目 root 单元 + `@global` 单元」，call 放行 `@global` root（全局配置
 跨工作空间共享，语义成立）。注：all 模式全局服务器增删改后需重启或触发会话
@@ -155,11 +157,12 @@ limit 截断）/ `ws_mcp_call`（按 `@<root>/<server>` 全名调用，参数 sc
 - 服务器卡片的「工具（N）」折叠区展开后为 **checkbox 列表**，逐个启停，点击即
   经 `PATCH /api/dsh-mcp/tool-disable` 持久化（落盘 `<DSH_HOME>/dsh-mcp-user-state.json`
   的 `disabledTools`，合并写盘、重启保留）；
-- 语义：**project 模式只能禁用项目级服务器的 mcp__ 工具；all 模式才能禁用全局
-  服务器的 mcp__ 工具**；默认全部启用；
+- 语义：**project 模式只能禁用项目级服务器经中间层的工具；all 模式可禁用全局
+  服务器（含 runtime 注入如 codegraph）经中间层的工具**；默认全部启用；
 - 工具级禁用**独立于服务器级 enabled 开关**（服务器级复活不清工具级状态）；
-- **只作用于 mcp__ 前缀工具**：纪律裸名（如 dsh-codegraph 的 `codegraph_explore`）
-  不受影响（dsh-codegraph 侧由 #363 声明）；
+- **作用于 mcp-manager 管辖的全部 MCP 工具**（mcp__ 前缀直呼与中间层 ws_mcp_*
+  一致生效，all 模式 runtime 封装工具同样受控）；纪律裸名（dsh-codegraph 的
+  `codegraph_explore` 等裸名直呼形态）不受影响（dsh-codegraph 侧由 #363 声明）；
 - 超长工具名（>64 字符哈希后缀）不可逆 → 按未知 server 处理，不禁用/不误禁；
 - project 模式浮窗显示全局服务器但无工具开关（全局工具此时经 supervisor 直呼，
   不经中间层），提示「切 all 模式可管理全局工具」；

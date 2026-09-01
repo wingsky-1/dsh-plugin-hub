@@ -546,7 +546,7 @@ const main = async () => {
     // ws_mcp_call guard：禁用命中 → deny。
     const callDeny = await guard({ name: "ws_mcp_call", arguments: { server: fullServerName("/proj", "ctx"), tool: "use_ctx" } }, async () => ({ kind: "allow" }));
     assert.equal(callDeny.kind, "deny", "ws_mcp_call guard 查禁用表");
-    assert.equal(toolDisabledReason(fullServerName("/proj", "ctx"), "use_ctx").includes("mcp__ 前缀"), true, "禁用原因声明只作用于 mcp__ 前缀");
+    assert.equal(toolDisabledReason(fullServerName("/proj", "ctx"), "use_ctx").includes("mcp-manager 管辖"), true, "禁用原因声明覆盖 mcp__ 与中间层工具（#413）");
     // 3) callTool（ws_mcp_call 执行路径）：禁用工具 → 显式抛错（验收 14：三入口一致）。
     const callUnit = {
       root: "/proj",
@@ -654,13 +654,20 @@ const main = async () => {
     assert.match(clientSrc, /if\s*\(watchdog\s*!==\s*(?:void 0|undefined)\)\s*clearTimeout\(watchdog\)/, "卸载清 watchdog");
     assert.match(clientSrc, /closeEvents\(\);\s*document\.removeEventListener\("visibilitychange"/, "卸载关 SSE 并摘监听");
   });
-  check("回前台强制重建 SSE（visibilitychange → forceReconnect + 补拉）", () => {
+  check("回前台强制重建 SSE + 受控重建连接（visibilitychange → forceReconnect + resume + 补拉）", () => {
     const clientSrc = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
     assert.match(clientSrc, /addEventListener\("visibilitychange",\s*onVisible\)/, "visibilitychange 监听已挂");
     assert.match(
       clientSrc,
-      /onVisible\s*=\s*\(\)\s*=>\s*\{\s*if\s*\(!document\.hidden\)\s*\{\s*forceReconnect\(\)/,
+      /onVisible\s*=\s*\(\)\s*=>\s*\{\s*if\s*\(document\.hidden\)\s*return;\s*forceReconnect\(\)/,
       "回前台路径先强制重建 SSE",
+    );
+    // #412：切回前台额外 POST resume 驱动宿主受控重建当前工作空间连接（半开
+    // 死连接卡 connected 时纯读 refresh 无法恢复）。
+    assert.match(
+      clientSrc,
+      /api\(state\.API\.resume,\s*\{\s*method:\s*"POST"\s*\}\)/,
+      "回前台路径调用 resume 驱动宿主重建当前工作空间连接",
     );
   });
 
@@ -1408,7 +1415,7 @@ const main = async () => {
   {
     const { store, cleanup } = tempStore();
     try {
-      const managerState = { sessionCwd: undefined, lastScope: undefined };
+      const managerState = { sessionCwd: undefined, lastScope: undefined, resumed: 0 };
       // 浮窗 UI 配置（可变，验证 config 读/写回传）。
       let uiCfg = { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 };
       const manager = {
@@ -1447,12 +1454,16 @@ const main = async () => {
         connect: async () => {},
         disconnect: async () => {},
         reconnect: async () => {},
+        // #412 resume：切回前台受控重建当前工作空间连接（记录调用次数供路由断言）。
+        resumeReconnect: async () => {
+          managerState.resumed += 1;
+        },
       };
       const routes = makeRoutes(manager, process.cwd());
       const find = (path) => routes.find((route) => route.path === path);
 
-      check("注册 8 条 exact 路由（含 tool-disable）", () => {
-        assert.equal(routes.length, 8);
+      check("注册 9 条 exact 路由（含 tool-disable / resume）", () => {
+        assert.equal(routes.length, 9);
         for (const route of routes) assert.equal(route.kind, "exact");
       });
 
@@ -1620,6 +1631,19 @@ const main = async () => {
         await find(ROUTES.toolDisable).handler(fakeReq("GET", ROUTES.toolDisable), res405);
         assert.equal(res405.state.status, 405);
       });
+      await checkAsync("resume：POST 合法 → 200 + 调用 resumeReconnect；围栏 403 / GET 405", async () => {
+        const before = managerState.resumed;
+        const res = fakeRes();
+        await find(ROUTES.resume).handler(fakeReq("POST", ROUTES.resume), res);
+        assert.equal(res.state.status, 200);
+        assert.equal(managerState.resumed, before + 1, "resumeReconnect 被调用（#412 切回前台恢复入口）");
+        const res403 = fakeRes();
+        await find(ROUTES.resume).handler(fakeFenceBroken("POST", ROUTES.resume), res403);
+        assert.equal(res403.state.status, 403);
+        const res405 = fakeRes();
+        await find(ROUTES.resume).handler(fakeReq("GET", ROUTES.resume), res405);
+        assert.equal(res405.state.status, 405);
+      });
       await checkAsync("tool-disable：缺 server/tool → 400；root 不属于工作空间 / setToolDisabled 未挂 → 400", async () => {
         const res1 = fakeRes();
         await find(ROUTES.toolDisable).handler(
@@ -1728,7 +1752,7 @@ const main = async () => {
     const ctx = fakeCtx();
     try {
       await apply(ctx, { enabled: true, storePath: join(dir, "dsh-mcp.json") });
-      assert.equal(ctx.routes.length, 10); // 8 条业务路由 + 1 条 SSE events + 1 条 health
+      assert.equal(ctx.routes.length, 11); // 9 条业务路由 + 1 条 SSE events + 1 条 health
       assert.ok(ctx.routes.some((route) => route.path === ROUTES.events), "SSE events 路由已注册");
       assert.equal(ctx.sections.length, 1);
       assert.equal(ctx.sections[0].name, "plugin:dsh-mcp-manager");

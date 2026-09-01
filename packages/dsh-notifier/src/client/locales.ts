@@ -69,7 +69,7 @@ export const zh = {
   clearConfirm: "确认清理记录？",
   clearLabel: "清理记录",
   requestPerm: "请求通知权限",
-  permRequested: "权限请求完成，请刷新查看状态",
+  permRequested: "权限请求完成",
   sendTest: "发送测试通知",
   refresh: "刷新",
   // 历史区
@@ -82,7 +82,6 @@ export const zh = {
   secChannels: "通知频道",
   secDedup: "合并/去重",
   secDnd: "免打扰时段",
-  secActions: "动作",
   tabLabel: "通知中心",
   save: "保存",
   // ===== M2 频道卡（issue #366）=====
@@ -188,7 +187,7 @@ export const en: Record<NotifierLocaleKey, string> = {
   clearConfirm: "Clear history?",
   clearLabel: "Clear history",
   requestPerm: "Request permission",
-  permRequested: "Permission requested — refresh to see the status",
+  permRequested: "Permission request completed",
   sendTest: "Send test notification",
   refresh: "Refresh",
   historyTitle: "History (last 10)",
@@ -198,7 +197,6 @@ export const en: Record<NotifierLocaleKey, string> = {
   secChannels: "Channels",
   secDedup: "Merge / dedup",
   secDnd: "Do-not-disturb",
-  secActions: "Actions",
   tabLabel: "Notification center",
   save: "Save",
   chEnabled: "Enabled",
