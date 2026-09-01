@@ -88,7 +88,8 @@ export interface HistoryResponseV2 {
 
 /**
  * 会话行的 modelSelection 投影值（dsh 0.1.2-alpha.2 SessionProjectionMap）：
- * lastUsed = 上次实际使用；next = 待确认意图（pending），二者均可能缺失。
+ * lastUsed = 上次实际使用的选择；next = 当前选择/待确认意图（宿主 view：
+ * next = pending ?? lastUsed，**next 是检测主判据**），二者均可能缺失。
  */
 export interface ModelSelectionLike {
   provider?: string;
@@ -195,12 +196,15 @@ export function sessionAncestryChain(
 
 /**
  * 从会话行读取 per-session modelSelection 投影的 provider（0.1.2 投影面，#383 修正）：
- * 读 list 快照行拍平的 projectionValues.modelSelection（lastUsed 优先 = 上次实际使用，
- * next 次之 = 待确认意图）；均缺失返回 undefined。纯同步快照读取，不触发任何 RPC。
+ * 读 list 快照行拍平的 projectionValues.modelSelection，**next 优先**（= 当前选择/待确认
+ * 意图，宿主 view 语义 next = pending ?? lastUsed）——会话内切模型只更新 pending 的
+ * next，lastUsed 要等真正发起请求才随动，读 lastUsed 优先会造成「切模型不跟随」；
+ * lastUsed 仅作兜底（next 缺失时取上次实际使用）；均缺失返回 undefined。
+ * 纯同步快照读取，不触发任何 RPC。
  */
 function providerFromProjection(row: SessionListRowLike | undefined): string | undefined {
   const ms = row?.projectionValues?.modelSelection;
-  const sel = ms?.lastUsed ?? ms?.next;
+  const sel = ms?.next ?? ms?.lastUsed;
   return typeof sel?.provider === "string" && sel.provider.length > 0 ? sel.provider : undefined;
 }
 

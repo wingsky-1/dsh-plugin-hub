@@ -231,8 +231,15 @@ function makeFakeServices(initialProvider) {
   const state = {
     listCurrent: "s1",
     byId: { s1: {} },
-    // 0.1.2-alpha.2：行携带 per-session modelSelection 投影（lastUsed 为主槽位）
-    projectionBySession: { s1: { provider: initialProvider, model: "model-x" } },
+    // 0.1.2-alpha.2：行携带 per-session modelSelection 投影——双槽位形状
+    // { lastUsed, next }（宿主 wire view：next = pending ?? lastUsed）。
+    // #383 追加：会话内切模型只更新 next（pending），lastUsed 等真发请求才随动
+    projectionBySession: {
+      s1: {
+        lastUsed: { provider: initialProvider, model: "model-x" },
+        next: { provider: initialProvider, model: "model-x" },
+      },
+    },
   };
   const listSubs = [];
   const sessions = {
@@ -247,7 +254,7 @@ function makeFakeServices(initialProvider) {
               id,
               proj === undefined
                 ? base
-                : { ...base, projectionValues: { modelSelection: { lastUsed: proj } } },
+                : { ...base, projectionValues: { modelSelection: proj } },
             ];
           }),
         ),
@@ -336,17 +343,22 @@ client.apply(ctx);
 }
 
 // 场景 2（A1 核心）：会话内切模型 a→b——sessionId/list.current 均不变，宿主信号【不 fire】，
-// 手动触发一次轮询回调 → refreshStats 取数前复检 → 使用新 provider
+// 手动触发一次轮询回调 → refreshStats 取数前复检 → 使用新 provider。
+// #383 追加根因：切模型只更新 next（pending），lastUsed 保持旧值（等真发请求才随动）——
+// 修复后胶囊应跟随 next 的新 provider，而非滞留 lastUsed
 {
   const before = statsCalls.length;
-  svc.state.projectionBySession.s1 = { provider: "mock-b", model: "model-x" }; // 会话内切换：行投影 lastUsed 已变
+  svc.state.projectionBySession.s1 = {
+    lastUsed: { provider: "mock-a", model: "model-x" }, // 上次实际使用仍为 a（未发新请求）
+    next: { provider: "mock-b", model: "model-x" }, // 当前选择已切到 b（pending）
+  };
   const pollTimer = intervals.find((t) => t.ms === 60000);
   assert.ok(pollTimer, "60s 轮询定时器已注册");
   pollTimer.fn();
 
   await until(
     () => lastProviderOf(statsCalls) === "mock-b" && pillLabel()?.innerHTML.includes("MOCK-B"),
-    "轮询周期内 refreshStats 自愈到 mock-b",
+    "轮询周期内 refreshStats 自愈到 mock-b（next 优先，不滞留 lastUsed）",
   );
   const afterSwitch = statsCalls.slice(before);
   assert.ok(
@@ -358,14 +370,17 @@ client.apply(ctx);
     const box = deepFind([docBody], ".dou-charts");
     return box !== null && String(box.innerHTML).includes('data-p="mock-b"');
   }, "面板内容跟随 mock-b");
-  console.log("[client-revalidate.worker] 场景2 A1 轮询自愈 a→b（含面板） ✓");
+  console.log("[client-revalidate.worker] 场景2 A1 轮询自愈 a→b（next 优先，含面板） ✓");
 }
 
 // 场景 3（维护者补充需求）：切换会话 s2，provider 相同（mock-b）→ 仍立即刷一次 stats
 {
   svc.state.byId.s2 = {};
   svc.state.listCurrent = "s2";
-  svc.state.projectionBySession.s2 = { provider: "mock-b", model: "model-x" };
+  svc.state.projectionBySession.s2 = {
+    lastUsed: { provider: "mock-b", model: "model-x" },
+    next: { provider: "mock-b", model: "model-x" },
+  };
   const before = statsCalls.length;
   svc.fireSessionChanged(); // 宿主信号：切换会话时 fire
   await until(() => statsCalls.length > before, "同 provider 切换会话仍立即刷新 stats");
@@ -377,7 +392,10 @@ client.apply(ctx);
 {
   svc.state.byId.s3 = {};
   svc.state.listCurrent = "s3";
-  svc.state.projectionBySession.s3 = { provider: "mock-a", model: "model-x" };
+  svc.state.projectionBySession.s3 = {
+    lastUsed: { provider: "mock-a", model: "model-x" },
+    next: { provider: "mock-a", model: "model-x" },
+  };
   const before = statsCalls.length;
   svc.fireSessionChanged();
   await until(

@@ -649,6 +649,18 @@ export function formatPanel() { return "<p>x</p>"; }
     assert.ok(injectLine.includes('"remote.session"'), "inject 数组必须声明 remote.session（modelCatalog 兜底，#383）");
     assert.ok(injectLine.includes('"slots"'), "inject 数组必须声明 slots（否则 ctx.slots 访问抛 without inject，#383）");
   }
+  // #383 追加根因：modelSelection 投影读取必须 next 优先（看宿主 view 语义
+  // next = pending ?? lastUsed——会话内切模型只更新 next，lastUsed 等真发请求才随动；
+  // 读 lastUsed 优先会造成「切模型胶囊不跟随」，回归防线放契约层）
+  {
+    const coreSource = readFileSync(join(pkgDir, "src/client/core.ts"), "utf8");
+    const readLine = coreSource.split("\n").find((l) => l.includes("?.next ?? ms?.lastUsed") || l.includes("ms?.lastUsed ?? ms?.next"));
+    assert.ok(readLine !== undefined, "core.ts providerFromProjection 存在投影读取行");
+    assert.ok(
+      /ms\?\.next \?\? ms\?\.lastUsed/.test(readLine ?? ""),
+      `投影读取必须 next 优先（当前行：${(readLine ?? "").trim()}）`,
+    );
+  }
   // issue #116：避让已去除——客户端不再探测 MCP 浮窗做动态偏移，改为固定定位（位置只由配置决定）
   assert.ok(!clientSource.includes("mcpClearance"), "客户端源码已去除 MCP 避让（mcpClearance）");
   assert.ok(!clientSource.includes("data-dsh-mcp-float"), "客户端源码已去除 MCP 浮窗探测避让");
