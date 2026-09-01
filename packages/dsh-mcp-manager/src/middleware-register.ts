@@ -191,7 +191,7 @@ export function registerMiddlewareTools(
   const call: ToolDefinition = {
     name: "ws_mcp_call",
     description:
-      "调用当前工作空间的一个 MCP 工具（在真实服务器上执行，先确认再操作）。server/tool 来自 ws_mcp_search 或 ws_mcp_list；参数 schema 用 ws_mcp_detail 查询（已知时可直呼，免搜索）。",
+      "调用当前工作空间的一个 MCP 工具（在真实服务器上执行）。参数 schema 先用 ws_mcp_detail 核对（已知 server/tool 时可直呼免搜索）；涉及写/敏感操作前先向用户说明并征得同意。",
     parameters: {
       type: "object",
       properties: {
@@ -263,7 +263,7 @@ export function registerMiddlewareTools(
   const list: ToolDefinition = {
     name: "ws_mcp_list",
     description:
-      "列出当前工作空间全部 MCP 服务器与每台服务器的完整工具清单（不受检索 limit 截断）。返回服务器全名、工具名与描述，供盘点与后续 ws_mcp_detail / ws_mcp_call 使用。不返回 inputSchema——查单个工具完整 schema 请用 ws_mcp_detail。all 模式下含全局服务器。",
+      "列出当前工作空间全部 MCP 服务器与每台服务器的完整工具清单（不受检索 limit 截断），供盘点。返回服务器全名、工具名与描述。不返回 inputSchema——查单个工具完整 schema 用 ws_mcp_detail。all 模式下含全局服务器。",
     parameters: {
       type: "object",
       properties: {

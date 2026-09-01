@@ -109,8 +109,12 @@ export class McpMiddleware {
     return unit;
   }
 
-  /** 连接一个服务器（in-flight 去重；失败后台重连）。 */
-  async ensureConnected(root: string, serverName: string): Promise<void> {
+  /** 连接一个服务器（in-flight 去重；失败后台重连）。
+   * @param opts.force 用户显式连接（浮窗「连接」/切回前台恢复）时 true：忽略
+   *  entry 当前状态（含半开卡在 connected 的死连接），总是受控重建；惰性/重试
+   *  路径缺省 false，保持「已 connected 则短路」防重复建连。
+   */
+  async ensureConnected(root: string, serverName: string, opts: { force?: boolean } = {}): Promise<void> {
     const unit = this.units.get(root);
     if (unit === undefined) return;
     if (unit.userDisabled.has(serverName)) return;
@@ -119,7 +123,7 @@ export class McpMiddleware {
     if (server === undefined || server.enabled === false) return;
     const existing = unit.inFlight.get(serverName);
     if (existing !== undefined) return existing as Promise<void>;
-    const promise = this.connectInternal(root, serverName);
+    const promise = this.connectInternal(root, serverName, opts);
     unit.inFlight.set(serverName, promise);
     try {
       await promise;
@@ -128,13 +132,17 @@ export class McpMiddleware {
     }
   }
 
-  private async connectInternal(root: string, serverName: string): Promise<void> {
+  private async connectInternal(root: string, serverName: string, opts: { force?: boolean } = {}): Promise<void> {
     const unit = this.units.get(root);
     if (unit === undefined) return;
+    const force = opts.force === true;
     const entry = unit.connections.get(serverName);
-    if (entry !== undefined && (entry.status === "connected" || entry.status === "connecting")) return;
-    // 重连路径：旧 entry（failed）的 transport 先 close，防 streamable-http
-    // 半开 socket 累积泄漏（P1 修复）。
+    // 非 force：已 connected/connecting 短路，防重复建连。
+    // force（用户显式「连接」/切回前台恢复）：忽略当前状态，总是受控重建——
+    // 修半开死连接卡在 connected 后 connect/refresh 均短路失效（#412）。
+    if (!force && entry !== undefined && (entry.status === "connected" || entry.status === "connecting")) return;
+    // 重连路径：旧 entry（failed，或 force 重建的死连接）的 transport 先 close，
+    // 防 streamable-http 半开 socket 累积泄漏（P1 修复）。
     if (entry !== undefined) {
       const oldClient = entry.client;
       const oldTransport = entry.transport;
@@ -162,6 +170,9 @@ export class McpMiddleware {
           // 安排一次有界延迟重试，避免窗口期「一次定终身」掉线；重试经
           // ensureConnected（尊重 userDisabled + in-flight 去重），再命中仍跳过
           // （官方 client 真接管场景不空转）。
+          // #412 force 重建：复用旧 entry 可能是 connected 死连接，必须置
+          // failed——否则 probeRetry 3s 后 ensureConnected（无 force）对
+          // connected 短路，重试永不执行（死循环）。
           const retryEntry = unit.connections.get(serverName) ?? {
             server,
             client: undefined,
@@ -173,6 +184,9 @@ export class McpMiddleware {
             disposed: false,
             failedAttempts: 0,
           };
+          retryEntry.status = "failed";
+          retryEntry.client = undefined;
+          retryEntry.transport = undefined;
           unit.connections.set(serverName, retryEntry);
           this.scheduleProbeRetry(root, serverName);
           return;

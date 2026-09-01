@@ -440,6 +440,33 @@ export class McpManager {
   }
 
   /**
+   * 切回前台恢复：对当前工作空间连接的受控重建（对齐 SSE forceReconnect，#412）。
+   * 移动端切后台会静默掐断 TCP（半开，双方收不到 FIN/RST → transport onClose 不触发），
+   * 连接池 entry 可能卡在 connected 而实际已死；此入口忽略当前状态 force 重建
+   * 当前工作空间单元（当前项目 root；all 模式无项目时回退 @global）内所有非
+   * userDisabled 连接。force 重建健康连接一次代价低（本地 stdio / http 重连毫秒级），
+   * 与 SSE 每次切回前台 forceReconnect 的语义对称。调用方：POST /api/dsh-mcp/resume
+   *（客户端 visibilitychange 回前台触发）。
+   */
+  async resumeReconnect(): Promise<void> {
+    const mw = this.middleware;
+    if (mw === undefined || this.middlewareMode === "off") return;
+    const root = this.projectRoot ?? (this.middlewareMode === "all" ? MIDDLEWARE_GLOBAL_ROOT : undefined);
+    if (root === undefined) return;
+    const unit = mw.units.get(root);
+    if (unit === undefined) return;
+    const targets = [...unit.connections.keys()].filter((name) => !unit.userDisabled.has(name));
+    await Promise.all(
+      targets.map((name) =>
+        mw.ensureConnected(root, name, { force: true }).catch(() => {
+          // ensureConnected 内部已捕获连接失败并落 failed + 退避重连；这里只兜底
+          // 防未处理 reject，单个服务器恢复失败不阻断其余。
+        }),
+      ),
+    );
+  }
+
+  /**
    * 重读磁盘配置（全局 + 当前项目）并同步连接集合。
    * 供「浮窗刷新」等读取路径调用：外部修改 mcp.json 后无需重启宿主。
    * 仅在配置或连接集合实际变化时广播，避免空转 SSE → 客户端 refresh 循环。
@@ -783,7 +810,10 @@ export class McpManager {
       if (unit === undefined) throw new Error(`workspace ${root} has no project MCP config`);
       unit.userDisabled.delete(name);
       await this.saveUserState(this.middleware.units);
-      await this.middleware.ensureConnected(root, name);
+      // force 受控重建（#412）：用户显式「连接」即使 entry 半开卡在 connected
+      // 也强制重建——此前 ensureConnected 对 connected 短路，半开死连接点「连接」
+      // 无效（切回前台/刷新均无恢复入口）。
+      await this.middleware.ensureConnected(root, name, { force: true });
       return;
     }
     const existing = this.supervisors.get(name);

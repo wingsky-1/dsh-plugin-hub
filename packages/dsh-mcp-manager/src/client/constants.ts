@@ -16,6 +16,7 @@ export const API = {
   reconnect: "/api/dsh-mcp/servers/reconnect",
   importJson: "/api/dsh-mcp/import/json",
   session: "/api/dsh-mcp/session",
+  resume: "/api/dsh-mcp/resume",
   config: "/api/dsh-mcp/config",
   events: "/api/dsh-mcp/events",
   health: "/api/dsh-mcp/health",
