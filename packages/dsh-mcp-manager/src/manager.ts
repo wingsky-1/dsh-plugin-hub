@@ -735,12 +735,17 @@ export class McpManager {
   /**
    * 运行时注销（不影响 store 持久化条目；同名 store 条目回落）。
    * - 销毁 supervisor（stop，不碰 store）；
+   * - 拆中间层连接与目录条目（#413：all 模式 runtime 归一中台后虚拟连接在
+   *   @global 单元，须显式清理，否则 unregister 后 ws_mcp_list/call 残留幽灵）；
    * - 移除 runtimeRegistry 条目 → 下次 reconcile 回落 store 配置。
    */
   async unregisterServer(name: string): Promise<void> {
     const run = this.registerQueue.then(async () => {
       if (this.runtimeRegistry.has(name)) {
         this.stop(name);
+        if (this.middlewareMode !== "off" && this.middleware !== undefined) {
+          this.dropMiddlewareConnection(name);
+        }
         this.runtimeRegistry.delete(name);
         this.reconcileServers();
       }

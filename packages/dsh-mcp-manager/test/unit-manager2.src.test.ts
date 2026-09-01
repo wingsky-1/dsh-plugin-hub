@@ -590,11 +590,36 @@ function rmStatSafe(p) {
     assert.equal(summaryServer?.status, "connected", "summary 投影 connected（@global 单元）");
     assert.deepEqual([...summaryServer.tools].sort(), ["cg_node"], "summary 工具列表来自目录投影");
 
-    // project 模式 runtime 不归一（保持 supervisor 路径；工具注册由 supervisor
-    // 连接后经 syncTools 完成——测试不真连，仅断言 supervisor 形态）。
+    // unregisterServer 清理 @global 单元虚拟连接与目录（防 unregister 后幽灵残留）。
+    await manager.unregisterServer("cg");
+    assert.ok(!manager.runtimeRegistry.has("cg"), "runtime 条目已注销");
+    assert.equal(mw.units.get("@global")?.connections.has("cg"), false, "虚拟连接已拆");
+    assert.equal(mw.units.get("@global")?.catalog.has("cg"), false, "目录条目已清（防幽灵）");
+    await manager.dispose();
+  } finally {
+    if (prevHome === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = prevHome;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---- #413：all 模式 runtime（toolDefinitions）注销后 project 模式保留 supervisor ----
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mgr2w2-"));
+  const prevHome = process.env.DSH_HOME;
+  try {
+    process.env.DSH_HOME = dir;
+    const { manager } = makeManager(dir);
+    const wrappedTool = {
+      name: "cg_node",
+      description: "查符号",
+      parameters: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] },
+      output: { schema: { type: "object", properties: { text: { type: "string" } }, required: ["text"], additionalProperties: false }, render: (a, v) => [{ type: "text", text: v.text }] },
+      execute: async (args) => ({ text: `node(${args.symbol})` }),
+    };
     manager.middlewareMode = "project";
     await manager.initMiddleware("project", {});
-    manager.runtimeRegistry.delete("cg");
     await manager.registerServer({ name: "cg", transport: "stdio", command: "codegraph", args: ["serve", "--mcp"], toolDefinitions: [wrappedTool] });
     assert.ok(manager.supervisors.has("cg"), "project 模式 runtime 仍 supervisor 路径（#413 只归一 all）");
     await manager.dispose();
