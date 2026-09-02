@@ -22,10 +22,13 @@ codegraph MCP + worktree 开发纪律 —— 把 [codegraph](https://github.com/
   才注入 worktree 开发纪律——以 pre-step user 消息注入（官方 dsh-tool-skill 同款载体，
   出现在 GUI「上下文注入」面板，幂等查会话历史）；非 git 仓（日常维护/讨论空间）不注入——
   多工作空间天然区分（按会话 cwd 判定，无需配置）。纪律内容与 mcp 能力目录正交
-  （纪律讲工具用法，目录讲服务器清单），无先后依赖。纪律文案声明：**codegraph 工具全部
-  经 mcp-manager 统一管理（project 模式 mcp__ 前缀 / all 模式 ws_mcp_call 裸名）；
-  本插件不直接注册工具，仅提供封装（先 sync + worktree 纪律），工具级禁用经 mcp-manager
-  对封装工具生效**。
+  （纪律讲工具用法，目录讲服务器清单），无先后依赖。纪律为**场景决策表**（#417 A 项）：
+  结构类查询（谁调用 X / 改 X 影响谁 / 符号定义与调用链）优先用 codegraph，按场景选
+  `codegraph_impact` / `node` / `callers` / `callees` / `search` / `files` / `status`，
+  全文搜词才用 grep、正在编辑的文件 Read 原文。
+- **能力目录描述（A2，#417）**：注册时携带服务器级 `description`——`available_mcp_servers`
+  条目优先取它（缺省会 fallback 到工具描述摘要，恰好是 `codegraph_files` 的「列文件结构」，
+  埋没 explore/impact/callers 核心能力）；补上后目录如实展示结构类查询能力。
 
 ## 安装
 

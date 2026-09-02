@@ -25,32 +25,23 @@ import type {} from "@deepseek-ai/dsh-agent";
 import { randomUUID } from "node:crypto";
 import { findGitRoot } from "./guard.ts";
 
-/** 注入给 agent 的 worktree 开发纪律文案（~200 tokens，保持精简）。
+/** 注入给 agent 的 worktree 开发纪律文案（≤250 tokens，紧凑决策表）。
  * 只保留目录注入覆盖不到的**差异化纪律**（#359 去重 / B2 正交化）：
- * - codegraph 工具全部经 mcp-manager 统一管理（#363 补充 3 架构收敛：
- *   本插件不直接注册裸名工具，8 个封装定义经 registerServer.toolDefinitions
- *   交给 manager 注册；project 模式 mcp__ 前缀 / all 模式 ws_mcp_call 裸名），
- *   模型按惯例用 `codegraph_explore` 等封装工具名直呼即可；
+ * - 场景→首选工具→兜底的决策表（#417 A 项：删实现细节，模型按场景选工具）；
  * - 自动 sync 语义（worktree 索引新鲜度）；
- * - 无索引时返回引导（init 由 agent/用户决策）；
- * - 工具级禁用经 mcp-manager 对封装工具生效（#362 机制）。
- * "codegraph 可用"等能力声明由 mcp-manager 能力目录（<available_mcp_servers>）
- * 承担，不在此重复；与目录**无先后依赖**（内容正交）。 */
+ * - 无索引时返回引导（init 由 agent/用户决策）。
+ * "codegraph 可用/注册形态"等能力声明由 mcp-manager 能力目录
+ * （<available_mcp_servers>）承担，不在此重复；与目录**无先后依赖**（内容正交）。 */
 export const DISCIPLINE_TEXT = [
-  "【codegraph 开发纪律】结构类查询（X 被谁调用/依赖关系/符号位置）优先用",
-  "`codegraph_explore`——它会自动补全 projectPath 为当前会话 worktree 并先 sync",
-  "再查，返回的源码视为已读，不必再 grep 复核；",
-  "- 专属工具：改代码前看影响面用 `codegraph_impact`；单符号源码/调用 trail 用",
-  "  `codegraph_node`；「谁调用 X」用 `codegraph_callers`、「X 调用了谁」用",
-  "  `codegraph_callees`；不知道精确符号名用 `codegraph_search`；找文件路径/项目",
-  "  结构用 `codegraph_files`；确认索引状态用 `codegraph_status`（同样自动 sync +",
-  "  projectPath 补全）；",
-  "- worktree 内新建/改动文件需 sync 后才进索引——查询结果以工具自动 sync 为准；",
-  "- 正在编辑的文件一律 Read 原文，不依赖图谱；",
-  "- 没有 .codegraph 索引的目录会返回引导（codegraph init <path>），索引与否是用户决定；",
-  "- codegraph 工具全部经 mcp-manager 统一管理（project 模式 mcp__ 前缀、all 模式",
-  "  ws_mcp_call 裸名）；本插件不直接注册工具，仅提供封装（先 sync + worktree 纪律），",
-  "  工具级禁用经 mcp-manager 对封装工具生效。",
+  "【codegraph 开发纪律】git 仓内结构类查询优先用 codegraph（工具自动 sync",
+  "当前 worktree 索引并补全 projectPath）：",
+  "- 谁调用 X / 改 X 影响谁 → `codegraph_impact`（或 `codegraph_explore` 综合查）；",
+  "- 单符号源码 + 调用/被调 trail、读文件 → `codegraph_node`；",
+  "- 「谁调用 X」→ `codegraph_callers`；「X 调用了谁」→ `codegraph_callees`；",
+  "- 记不清精确符号名 → `codegraph_search`；找文件路径/项目结构 → `codegraph_files`；",
+  "- 查索引状态 → `codegraph_status`；",
+  "- 全文搜词才用 grep；正在编辑的文件一律 Read 原文，不依赖图谱；",
+  "- 没有 .codegraph 索引的目录会返回引导（codegraph init <path>），索引与否是用户决定。",
 ].join("\n");
 
 /** 按会话 cwd 判定是否注入纪律（纯函数，便于单测）。 */
