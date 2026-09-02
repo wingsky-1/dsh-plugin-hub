@@ -31,6 +31,9 @@ import "./unit-grouping.test.ts";
 import "./unit-relpath.test.ts";
 import "./unit-link-resolver.test.ts";
 import "./unit-routes.test.ts";
+import "./unit-serve-tokens.test.ts";
+import "./unit-basename-fallback.test.ts";
+import "./unit-git.test.ts";
 
 const pkgDir = fileURLToPath(new URL("..", import.meta.url));
 

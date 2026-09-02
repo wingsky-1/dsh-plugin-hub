@@ -397,6 +397,34 @@ test('#276 方案 A: src 级 mutate 退役产物行号机制——ci/observe 两
   assert.strictEqual(ls.stdout.trim(), '', 'git ls-files stryker.config.json 应为空（根配置不得重新被版本库追踪，#439 防回归）')
 })
 
+test('#423: 变异测试单份维护——禁 *.src.test.ts 回潮 + lib→src hook 注入', () => {
+  assert.ok(CI.includes('Forbid legacy src tests'),
+    'ci.yml repo-gate 必须含 Forbid legacy src tests 步骤（#423 防双份回潮）')
+  assert.ok(CI.includes('run: node scripts/gate/forbid-src-tests.mjs'),
+    'Forbid legacy src tests 必须调用 scripts/gate/forbid-src-tests.mjs')
+  assert.ok(existsSync(join(ROOT, 'scripts/gate/forbid-src-tests.mjs')),
+    'forbid-src-tests.mjs 脚本必须存在')
+  assert.ok(existsSync(join(ROOT, 'scripts/test/mutation-lib-to-src-hook.mjs')),
+    'mutation-lib-to-src-hook.mjs 必须存在（#423 方案 A 重定向入口）')
+  assert.ok(existsSync(join(ROOT, 'scripts/test/mutation-lib-to-src-loader.mjs')),
+    'mutation-lib-to-src-loader.mjs 必须存在（#423 方案 A resolve hook）')
+
+  const confDir = join(ROOT, 'stryker.conf.d')
+  for (const f of readdirSync(confDir).filter((x) => x.endsWith('.json'))) {
+    const conf = JSON.parse(readFileSync(join(confDir, f), 'utf8'))
+    const files = conf.tap?.testFiles ?? []
+    for (const tf of files) {
+      assert.ok(!tf.includes('.src.test.ts'),
+        `${f} 的 testFiles 不得引用 *.src.test.ts（#423 方案 A：复用单份 *.test.ts）`)
+    }
+    const nodeArgs = conf.tap?.nodeArgs ?? []
+    assert.ok(nodeArgs.includes('--import'),
+      `${f} 的 tap.nodeArgs 必须含 --import（注入 lib→src hook）`)
+    assert.ok(nodeArgs.includes('./scripts/test/mutation-lib-to-src-hook.mjs'),
+      `${f} 的 tap.nodeArgs 必须注入 mutation-lib-to-src-hook.mjs`)
+  }
+})
+
 test('#178+#204: ci.yml PR 增量门禁——读仓库基线文件 + 按命中包切片 + 并入 repo-gate', () => {
   // #204：直接读 scripts/gate/baseline/ 仓库内文件，替代 actions/cache restore（跨 ref 失效）
   assert.ok(CI.includes('Restore repo incremental baseline'), 'mutation-gate 基线读取步骤在位（读仓库内文件）')

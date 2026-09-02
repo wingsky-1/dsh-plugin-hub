@@ -32,11 +32,13 @@
   "tap": {
     "nodeArgs": [
       "-r",
-      "./scripts/test/mutation-tap-bridge.cjs"
+      "./scripts/test/mutation-tap-bridge.cjs",
+      "--import",
+      "./scripts/test/mutation-lib-to-src-hook.mjs"
     ],
     "testFiles": [
-      "packages/dsh-lan-proxy/test/unit-apply.src.test.ts",
-      "packages/dsh-lan-proxy/test/unit-proxy.src.test.ts"
+      "packages/dsh-lan-proxy/test/unit-apply.test.ts",
+      "packages/dsh-lan-proxy/test/unit-proxy.test.ts"
     ]
   },
   "jsonReporter": {

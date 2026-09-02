@@ -31,18 +31,20 @@
   "tap": {
     "nodeArgs": [
       "-r",
-      "./scripts/test/mutation-tap-bridge.cjs"
+      "./scripts/test/mutation-tap-bridge.cjs",
+      "--import",
+      "./scripts/test/mutation-lib-to-src-hook.mjs"
     ],
     "testFiles": [
       "packages/dsh-notifier/test/e2e-approval.test.ts",
-      "packages/dsh-notifier/test/e2e-done.src.test.ts",
-      "packages/dsh-notifier/test/e2e-edge.src.test.ts",
+      "packages/dsh-notifier/test/e2e-done.test.ts",
+      "packages/dsh-notifier/test/e2e-edge.test.ts",
       "packages/dsh-notifier/test/e2e-question-turn.test.ts",
-      "packages/dsh-notifier/test/migration.src.test.ts",
-      "packages/dsh-notifier/test/routes.src.test.ts",
-      "packages/dsh-notifier/test/unit-config.src.test.ts",
-      "packages/dsh-notifier/test/unit-sanitize.src.test.ts",
-      "packages/dsh-notifier/test/unit-text.src.test.ts"
+      "packages/dsh-notifier/test/migration.test.ts",
+      "packages/dsh-notifier/test/routes.test.ts",
+      "packages/dsh-notifier/test/unit-config.test.ts",
+      "packages/dsh-notifier/test/unit-sanitize.test.ts",
+      "packages/dsh-notifier/test/unit-text.test.ts"
     ]
   },
   "jsonReporter": {
@@ -50,5 +52,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-notifier-message.json",
-  "_comment": "#342 \u4e8c\u671f\uff1a\u529f\u80fd\u547d\u540d\u6bb5\uff08message\uff09\u2014\u2014message.ts \u5355\u6587\u4ef6\uff08145s \u5168\u91cf\uff0cper-mutant \u6210\u672c\u4e3b\u5bfc\u7684\u7269\u7406\u6781\u9650\uff0c\u7ef4\u6301\u73b0\u72b6\uff09\uff1b\u6d4b\u8bd5\u5168\u5957\u8dd1\uff08perTest \u5173\u8054\uff09\uff1bincremental \u57fa\u7ebf\u968f observe \u56db\u73ed\u6b21\u91cd\u5efa\u3002"
+  "_comment": "#342 二期：功能命名段（message）——message.ts 单文件（145s 全量，per-mutant 成本主导的物理极限，维持现状）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
 }

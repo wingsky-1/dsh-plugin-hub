@@ -32,16 +32,18 @@
   "tap": {
     "nodeArgs": [
       "-r",
-      "./scripts/test/mutation-tap-bridge.cjs"
+      "./scripts/test/mutation-tap-bridge.cjs",
+      "--import",
+      "./scripts/test/mutation-lib-to-src-hook.mjs"
     ],
     "testFiles": [
-      "packages/dsh-provider-usage/test/unit-apply.src.test.ts",
-      "packages/dsh-provider-usage/test/unit-config.src.test.ts",
-      "packages/dsh-provider-usage/test/unit-contract.src.test.ts",
-      "packages/dsh-provider-usage/test/unit-deepseek-official.src.test.ts",
-      "packages/dsh-provider-usage/test/unit-history.src.test.ts",
-      "packages/dsh-provider-usage/test/unit-signal-lock.src.test.ts",
-      "packages/dsh-provider-usage/test/unit-v1.src.test.ts"
+      "packages/dsh-provider-usage/test/unit-apply.test.ts",
+      "packages/dsh-provider-usage/test/unit-config.test.ts",
+      "packages/dsh-provider-usage/test/unit-contract.test.ts",
+      "packages/dsh-provider-usage/test/unit-deepseek-official.test.ts",
+      "packages/dsh-provider-usage/test/unit-history.test.ts",
+      "packages/dsh-provider-usage/test/unit-signal-lock.test.ts",
+      "packages/dsh-provider-usage/test/unit-v1.test.ts"
     ]
   },
   "jsonReporter": {
@@ -49,5 +51,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-provider-usage-contracts.json",
-  "_comment": "#342 v4\uff1asrc \u7ea7\u6587\u4ef6\u7ec4\u5206\u6bb5\uff083\uff09\u2014\u2014contracts+core/guards\uff08\u5951\u7ea6\u9762\uff09\uff1b\u6d4b\u8bd5\u5168\u5957\u8dd1\uff08perTest \u5173\u8054\uff09\uff1bincremental \u57fa\u7ebf\u968f observe \u56db\u73ed\u6b21\u91cd\u5efa\u3002"
+  "_comment": "#342 v4：src 级文件组分段（3）——contracts+core/guards（契约面）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
 }

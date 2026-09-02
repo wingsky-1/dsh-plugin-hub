@@ -237,6 +237,8 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
 
 ## 验证
 
+测试单份维护、变异自动覆盖：单元测试只维护 `test/*.test.ts`（`import "../lib/index.js"` 测产物）；stryker 经 lib→src hook 复用同一份断言，无需手工同步副本。
+
 ```sh
 # 健康检查（回环）
 curl -s http://127.0.0.1:3080/api/dsh-notifier/health

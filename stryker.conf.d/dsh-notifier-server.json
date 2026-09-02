@@ -32,18 +32,20 @@
   "tap": {
     "nodeArgs": [
       "-r",
-      "./scripts/test/mutation-tap-bridge.cjs"
+      "./scripts/test/mutation-tap-bridge.cjs",
+      "--import",
+      "./scripts/test/mutation-lib-to-src-hook.mjs"
     ],
     "testFiles": [
       "packages/dsh-notifier/test/e2e-approval.test.ts",
-      "packages/dsh-notifier/test/e2e-done.src.test.ts",
-      "packages/dsh-notifier/test/e2e-edge.src.test.ts",
+      "packages/dsh-notifier/test/e2e-done.test.ts",
+      "packages/dsh-notifier/test/e2e-edge.test.ts",
       "packages/dsh-notifier/test/e2e-question-turn.test.ts",
-      "packages/dsh-notifier/test/migration.src.test.ts",
-      "packages/dsh-notifier/test/routes.src.test.ts",
-      "packages/dsh-notifier/test/unit-config.src.test.ts",
-      "packages/dsh-notifier/test/unit-sanitize.src.test.ts",
-      "packages/dsh-notifier/test/unit-text.src.test.ts"
+      "packages/dsh-notifier/test/migration.test.ts",
+      "packages/dsh-notifier/test/routes.test.ts",
+      "packages/dsh-notifier/test/unit-config.test.ts",
+      "packages/dsh-notifier/test/unit-sanitize.test.ts",
+      "packages/dsh-notifier/test/unit-text.test.ts"
     ]
   },
   "jsonReporter": {
