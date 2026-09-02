@@ -25,7 +25,8 @@ description: >
 
 ## 回顾段（元循环汇总出口）
 
-- 采集 `.dsh/retro/history.jsonl`（oss-pipeline 熔断时落盘的失败上下文）：
+- 采集 `.dsh/retro/history.jsonl`（oss-pipeline 熔断时落盘的失败上下文；
+  目录与文件由 oss-pipeline 首次熔断时自动创建，日常缺失属正常）：
   统计同一 rule / 同类失败的复现频次；**同一 rule 30 天内出现在 ≥3 个不同 PR**
   → 判定「同类问题重复」，在报告中产出规程修订提案建议；
 - **blocked-human 滞留清单**：列出打标超 72h 未恢复的 issue 及其 `suspended_at`

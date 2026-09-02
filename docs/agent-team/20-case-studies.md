@@ -72,9 +72,9 @@
 
 | 来源 | 候选点 | 状态 |
 |---|---|---|
-| Magentic-One | stall counter 熔断（连续无进展检测） | 待议（建议 G1 采纳，成本低收益实） |
+| Magentic-One | stall counter 熔断（连续无进展检测） | 不实现（DISCUSSION Q1 裁决：仅记录演进方向） |
 | Magentic-One | facts/progress 双账本 | 不采纳（我们的黑板+事件流已覆盖，避免双记账） |
-| MetaGPT | 强接口角色的 briefing 必填小节模板 | 待议（G2，随向导做） |
+| MetaGPT | 强接口角色的 briefing 必填小节模板 | 已吸收（11 文档 §7.1 Role Spec 已定义 briefing.sections_required） |
 | Anthropic | effort 分级派单（heavy/light 精简路径） | 待议（有真实 token 收益后再上） |
 | Anthropic | 自包含简报 / 15x token 成本警示 | 已吸收（并发池上限的依据之一） |
 | Devin 等 | Gate 待办内嵌计划内容可视化 | 待议（G1 小改，体验收益明显） |

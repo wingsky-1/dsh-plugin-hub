@@ -3,7 +3,7 @@
 > 用途：评审与实施的「实测验证」证据检核表——**P0/P1 级断言（阻断/安全洞/数据损坏/
 > 明显功能错）必须给实测证据，禁止只引代码推理**；P2/P3 允许静态证据并标注「未验证」。
 > 各 skill（dsh-plugin-review / dsh-plugin-hub-dev）在验证节引用本文件，
-> 不各自内联。来源：dsh-web-file-preview / dsh-notifier 工作流复盘（OPTIMIZATION-NOTES-2026-08）。
+> 不各自内联。来源：dsh-web-file-preview / dsh-notifier 工作流复盘。
 
 ---
 
