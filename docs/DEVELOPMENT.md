@@ -20,7 +20,7 @@ pnpm build        # 全仓构建 = pnpm -r build（各包：clean-lib → tsc �
 pnpm contract     # 客户端契约（node scripts/gate/contract-check.ts）
 pnpm test         # 全量 smoke（Node ≥23.6 原生 type stripping 直跑）
 pnpm cov          # 覆盖率采集（c8 包裹 smoke，测量对象 = lib 编译产物）
-pnpm crap         # 单函数 CRAP 检查（先跑 cov；观察期只记录，--strict 为未来硬卡点）
+pnpm crap         # 单函数 CRAP 检查（先跑 cov；阈值唯一事实源 scripts/data/gauntlet.config.json 的 crap.threshold / crap.strict，观察期仅记录，翻期可置 true 判红）
 node scripts/gate/self-cov.mjs
                   # self-written 覆盖率口径报告（先跑 cov；读 coverage/coverage-final.json，
                   # 去 esbuild 内联 vendor 段与 __ 运行时垫片后仅计自写函数/行/分支，

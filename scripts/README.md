@@ -17,7 +17,7 @@
 - `gate/verify-npm-layout.ts` — npm 发布布局校验。
 - `gate/verify-docs.ts` — 文档/description 校验（缺 .md、占位符残留）。
 - `gate/aggregate.ts` — 聚合 `cordis.patch.yml` 生成 + 一致性校验（`--check` 供 CI）。
-- `gate/crap-check.mjs` — 单函数 CRAP 复杂度检查（观察期只记录，`--strict` 为未来硬卡点）。
+- `gate/crap-check.mjs` — 单函数 CRAP 复杂度检查（阈值唯一事实源 scripts/data/gauntlet.config.json 的 crap.threshold / crap.strict，观察期仅记录，翻期可置 true 判红）
 
 ## lib/（纯共享库，只被 import，不被 `node` 直接调用）
 

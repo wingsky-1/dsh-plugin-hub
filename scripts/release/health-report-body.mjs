@@ -12,6 +12,9 @@ function readJson(path) {
 
 const summary = readJson('coverage/coverage-summary.json');
 const crap = readJson('coverage/crap-report.json');
+const gauntlet = readJson('scripts/data/gauntlet.config.json');
+const crapStrict = Boolean(crap?.strict ?? gauntlet?.crap?.strict);
+const crapMode = crapStrict ? 'strict 判红' : '观察期（仅记录）';
 
 const lines = [];
 lines.push('## 机器信号段（自动生成，勿改）');
@@ -29,7 +32,7 @@ if (summary?.total) {
 if (crap) {
   const pct = crap.totalFns ? Math.round((crap.coveredFns / crap.totalFns) * 100) : 0;
   lines.push(
-    `- CRAP（阈值 ${crap.threshold}，观察期模式）：函数 ${crap.totalFns} 个，已覆盖 ` +
+    `- CRAP（阈值 ${crap.threshold}，${crapMode}，strict 来源 scripts/data/gauntlet.config.json: crap.strict）：函数 ${crap.totalFns} 个，已覆盖 ` +
     `${pct}%；超阈热点 ${crap.hotspots.length} 个`,
   );
   const top = crap.hotspots.slice(0, 5);
@@ -49,7 +52,7 @@ lines.push('');
 
 lines.push('## 人工判断段（留给维护者填写）');
 lines.push('- 这些信号是否构成「Agent 在原地打转」的结论？');
-lines.push('- 阈值收紧/放宽建议：<由人决定>（两周观察期后校准 crap-check 阈值与 --strict 开关）');
+lines.push('- 阈值收紧/放宽建议：<由人决定>（依据 scripts/data/gauntlet.config.json 的 crap.threshold / crap.strict 调整）');
 lines.push('- 是否需要重划包边界：<由人决定>');
 
 console.log(lines.join('\n'));

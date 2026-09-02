@@ -14,8 +14,8 @@
  *   - --body-file <path>   输出 markdown 报告
  *   - --marker-file <path> 输出回落追评正文；无回落时输出空文件
  *
- * 退出码：0 = 正常（含"未达标但 strict=false"的观察期情形）；
- *         1 = strict 开启且存在 threshold 违约；
+ * 退出码：0 = 正常（含未达标但对应 config strict=false 的观察期情形）；
+ *         1 = 对应 gauntlet.config.json 中 strict=true 且存在 threshold 违约；
  *         2 = 环境/数据缺失错误
  */
 import { readFileSync, existsSync, writeFileSync, readdirSync } from 'node:fs';

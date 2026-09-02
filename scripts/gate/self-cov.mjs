@@ -17,8 +17,9 @@
  *   node scripts/gate/self-cov.mjs --json    # 仅 stdout JSON 摘要（依然落盘，除非 --dry-run）
  *   node scripts/gate/self-cov.mjs --dry-run # 预览，不落盘
  *
- * 观察期模式：本脚本只记录不判红；gauntlet.config.json 的
- * coverage.selfWrittenFunctions 字段记录基线，不做硬卡点。
+ * strict 由 gauntlet.config.json 的 coverage.selfWrittenFunctions.strict 决定；
+ * --check 生效时，低于 coverage.selfWrittenFunctions.threshold 且 strict=true 判红，
+ * strict=false 则保持观察期，仅告警不判红。
  */
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve, isAbsolute } from 'node:path';
