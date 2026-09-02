@@ -91,9 +91,11 @@ release.yml tag 管线跑全量门禁——全量只在这三处语义中的后�
   官方 `--force` 参数，勿改配置文件）。
 - **测试单份维护（#423 方案 A）**：变异测试复用 `packages/*/test/*.test.ts`，
   测试单份维护、变异自动覆盖。`*.test.ts` 仍 `import "../lib/index.js"`
-  （普通 `pnpm test`/smoke 测构建产物）；stryker 宿主内经
-  `scripts/test/mutation-lib-to-src-hook.mjs`（`--import`）把
-  `packages/<pkg>/lib/index.js` 重定向到同包 `src/index.ts`，变异发生在源码上。
+  （普通 `pnpm test`/smoke 测构建产物）；Stryker 宿主内经
+  `scripts/test/mutation-lib-to-src-hook.mjs`（`--import`）在 `nextResolve` 前把
+  `packages/<pkg>/lib/<relative-file>.(js|ts)` 重定向到**同包**
+  `packages/<pkg>/src/<relative-file>.ts`，支持任意层级的相对路径与 file URL，
+  并拒绝 shared、node_modules、client 产物、跨包与 `..` 越界。
   仓库出现任何遗留 src 副本测试文件（含未跟踪）即 `scripts/gate/forbid-src-tests.mjs`
   判红（ci.yml repo-gate 步骤「Forbid legacy src tests」）。
 

@@ -36,7 +36,7 @@
 - `test/build-client.test.ts` — build-client 脚本自测。
 - `test/collect-licenses.test.ts` — collect-licenses 脚本自测。
 - `test/crap-check.test.ts` — crap-check 脚本自测（config.strict 单一开关）。
-- `test/mutation-lib-to-src-hook.mjs` / `mutation-lib-to-src-loader.mjs` — #423 方案 A：stryker 宿主把 `packages/<pkg>/lib/index.js` 重定向到同包 `src/index.ts`。
+- `test/mutation-lib-to-src-hook.mjs` / `mutation-lib-to-src-loader.mjs` — #423 方案 A：Stryker 宿主将同包 `packages/<pkg>/lib/<relative-file>.(js|ts)` 重定向到 `src/<relative-file>.ts`；只处理相对/file URL，保留 packages 边界并排除 shared、node_modules、client 与路径穿越。
 
 ## data/（配置数据）
 
