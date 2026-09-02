@@ -137,6 +137,10 @@ try {
   assert.equal("badKind" in mergedRoutes.kindRoutes, false, "非数组值丢弃");
   assert.equal("empty" in mergedRoutes.kindRoutes, false, "空数组丢弃");
   assert.deepEqual(normalizeConfig({ allowKinds: ["idle-archive:due", "", "x".repeat(65), "idle-archive:due"] }).allowKinds, ["idle-archive:due"], "allowKinds 去重与长度过滤");
+  // #427：allowKinds 128 项上限——normalize 截断（>128 保留前 128 项）
+  const overCap = Array.from({ length: 130 }, (_, i) => "kind-" + i);
+  assert.equal(normalizeConfig({ allowKinds: overCap }).allowKinds.length, 128, "顶层 allowKinds 超 128 项截断到 128");
+  assert.equal(normalizeConfig({ quietHours: { allowKinds: overCap } }).quietHours.allowKinds.length, 128, "quietHours.allowKinds 超 128 项截断到 128");
 
   // 透传排除表同步：三键非法值不得以原样透传覆盖归一化结果（L144 坑回归）
   const opaque = normalizeConfig({ channels: "junk", kindRoutes: 5, allowKinds: true, bogus: 1 });
@@ -205,6 +209,13 @@ try {
   assert.equal(validateSettings({ quietHours: { enabled: true, allowKinds: ["ask", "done", "turn-end"] } }), null, "放开后全部内置事件可写入豁免");
   assert.equal(validateSettings({ quietHours: { allowKinds: [42] } })?.key, "quietHours", "quietHours.allowKinds 非字符串拒绝（整组 400）");
   assert.equal(validateSettings({ quietHours: { allowKinds: [""] } })?.key, "quietHours", "quietHours.allowKinds 空串拒绝");
+  // #427：allowKinds 128 项上限——写入校验 >128 拒绝、恰好 128 通过（isAllowKinds / isConfirmedKinds 同口径）
+  const capPlus1 = Array.from({ length: 129 }, (_, i) => "k" + i);
+  assert.equal(validateSettings({ allowKinds: capPlus1 })?.key, "allowKinds", "顶层 allowKinds 超 128 项拒绝");
+  assert.equal(validateSettings({ quietHours: { allowKinds: capPlus1 } })?.key, "quietHours", "quietHours.allowKinds 超 128 项拒绝（整组 400）");
+  const cap128 = Array.from({ length: 128 }, (_, i) => "k" + i);
+  assert.equal(validateSettings({ allowKinds: cap128 }), null, "顶层 allowKinds 恰 128 项通过");
+  assert.equal(validateSettings({ quietHours: { allowKinds: cap128 } }), null, "quietHours.allowKinds 恰 128 项通过");
   const sanitizedCh = sanitizeSettings({ channels: [{ ...okCh, volume: "0.7" }] });
   assert.ok(sanitizedCh && Array.isArray(sanitizedCh.channels) && sanitizedCh.channels.length === 1, "sanitizeSettings channels 往返");
   assert.deepEqual(sanitizeSettings({ futureKey: 1 }), {}, "未来键写入白名单语义不变（读取归一化才透传）");
