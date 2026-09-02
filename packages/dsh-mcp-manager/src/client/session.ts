@@ -8,6 +8,24 @@
 import { api } from "./dom.ts";
 import type { McpState, UiActions } from "./state.ts";
 
+/**
+ * 强制重绑当前会话（绕过 bindSession 的 cwd 未变短路）。
+ *
+ * #412 复报根因：宿主 dsh web 重启后 `projectRoot`/中间层单元清空，而旧页面
+ * 未重载时 bindSession 不重跑（cwd 未变），`visibilitychange → resume` 只重建
+ * @global、项目级连接无法恢复。切回前台显式重发 POST /session（同 cwd）让宿主
+ * `setSession` 恢复 projectRoot + `projectUnitFor` 惰性连接；宿主幂等短路
+ * （同 cwd 且 projectStore 已加载）天然挡重复，无副作用、不引 #324 自激循环
+ * （GET /servers 纯读不回写会话）。
+ */
+export function rebindSession(state: McpState): Promise<unknown> {
+  return api(state.API.session, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ cwd: typeof state.currentCwd === "string" ? state.currentCwd : "" }),
+  }).catch(() => {});
+}
+
 /** 跟随当前会话：cwd 变化 → 通知宿主切换项目级 MCP + 刷新浮窗。 */
 export function bindSession(ctx: any, state: McpState, actions: UiActions): () => void {
   const list = ctx.sessions?.list;

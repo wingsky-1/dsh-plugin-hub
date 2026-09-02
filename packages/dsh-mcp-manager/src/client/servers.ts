@@ -100,13 +100,18 @@ export function renderServer(server: any, state: McpState, actions: UiActions, o
   const actionsEl = el("div", { class: "dm-actions" });
   const busy = server.status === "connecting" || server.status === "reconnecting";
   const scopeQuery = `&scope=${server.scope}`;
+  // #412 复报：宿主 dsh web 重启后 projectRoot 丢失，connect/reconnect 路由的
+  // maybeSession 需 cwd 才能恢复会话（否则 middleware connect(scope=project) 抛
+  // "no active project session"）。带上当前会话 cwd，宿主 setSession 幂等短路，
+  // 正常时零副作用。
+  const cwdQuery = typeof state.currentCwd === "string" && state.currentCwd !== "" ? `&cwd=${encodeURIComponent(state.currentCwd)}` : "";
   if (server.status === "connected") {
     actionsEl.appendChild(actionButton(t("disconnect"), async () => {
       await api(`${state.API.disconnect}?name=${encodeURIComponent(server.name)}${scopeQuery}`, { method: "POST" });
       await actions.refresh();
     }));
     actionsEl.appendChild(actionButton(t("reconnect"), async () => {
-      await api(`${state.API.reconnect}?name=${encodeURIComponent(server.name)}${scopeQuery}`, { method: "POST" });
+      await api(`${state.API.reconnect}?name=${encodeURIComponent(server.name)}${scopeQuery}${cwdQuery}`, { method: "POST" });
       await actions.refresh();
     }));
   } else if (server.status === "disabled") {
@@ -116,12 +121,12 @@ export function renderServer(server: any, state: McpState, actions: UiActions, o
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ enabled: true }),
       });
-      await api(`${state.API.connect}?name=${encodeURIComponent(server.name)}${scopeQuery}`, { method: "POST" });
+      await api(`${state.API.connect}?name=${encodeURIComponent(server.name)}${scopeQuery}${cwdQuery}`, { method: "POST" });
       await actions.refresh();
     }, true));
   } else {
     actionsEl.appendChild(actionButton(t("connect"), async () => {
-      await api(`${state.API.connect}?name=${encodeURIComponent(server.name)}${scopeQuery}`, { method: "POST" });
+      await api(`${state.API.connect}?name=${encodeURIComponent(server.name)}${scopeQuery}${cwdQuery}`, { method: "POST" });
       await actions.refresh();
     }, true));
   }

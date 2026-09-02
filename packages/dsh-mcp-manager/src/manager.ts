@@ -461,15 +461,27 @@ export class McpManager {
    * userDisabled 连接。force 重建健康连接一次代价低（本地 stdio / http 重连毫秒级），
    * 与 SSE 每次切回前台 forceReconnect 的语义对称。调用方：POST /api/dsh-mcp/resume
    *（客户端 visibilitychange 回前台触发）。
+   *
+   * 目标集合从「单元已有 entry」扩为「配置中全部 enabled 服务器」（#412 复报）：
+   * - 宿主 dsh web 重启/状态丢失后 units 清空、entry 全失——只按 connections.keys()
+   *   重建拿不到任何目标；先 projectUnitFor 确保单元创建（其内部惰性连接全部
+   *   enabled 服务器是兜底），再对配置全集 force 重建（覆盖半开卡 connected、
+   *   entry 缺失、从未连接过的服务器）。
+   * - 仍尊重 userDisabled（用户断开的不复活）与 all 模式 @global 回退。
    */
   async resumeReconnect(): Promise<void> {
     const mw = this.middleware;
     if (mw === undefined || this.middlewareMode === "off") return;
     const root = this.projectRoot ?? (this.middlewareMode === "all" ? MIDDLEWARE_GLOBAL_ROOT : undefined);
     if (root === undefined) return;
-    const unit = mw.units.get(root);
+    // 单元缺失（宿主重启/状态丢失）先创建：projectUnitFor 负责惰性连接兜底。
+    const unit = mw.units.get(root) ?? (await mw.projectUnitFor(root));
     if (unit === undefined) return;
-    const targets = [...unit.connections.keys()].filter((name) => !unit.userDisabled.has(name));
+    // 目标 = 配置全集（本项目/全局的全部 enabled 服务器），而非仅已有 entry。
+    const servers = await this.projectServersFor(root);
+    const targets = (servers ?? [])
+      .filter((server: ServerConfig) => server.enabled !== false && !unit.userDisabled.has(server.name))
+      .map((server: ServerConfig) => server.name);
     await Promise.all(
       targets.map((name) =>
         mw.ensureConnected(root, name, { force: true }).catch(() => {

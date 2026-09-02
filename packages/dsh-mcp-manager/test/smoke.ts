@@ -654,7 +654,7 @@ const main = async () => {
     assert.match(clientSrc, /if\s*\(watchdog\s*!==\s*(?:void 0|undefined)\)\s*clearTimeout\(watchdog\)/, "卸载清 watchdog");
     assert.match(clientSrc, /closeEvents\(\);\s*document\.removeEventListener\("visibilitychange"/, "卸载关 SSE 并摘监听");
   });
-  check("回前台强制重建 SSE + 受控重建连接（visibilitychange → forceReconnect + resume + 补拉）", () => {
+  check("回前台强制重建 SSE + 受控重建连接（visibilitychange → rebindSession → forceReconnect + resume + 补拉）", () => {
     const clientSrc = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
     assert.match(clientSrc, /addEventListener\("visibilitychange",\s*onVisible\)/, "visibilitychange 监听已挂");
     assert.match(
@@ -662,13 +662,22 @@ const main = async () => {
       /onVisible\s*=\s*\(\)\s*=>\s*\{\s*if\s*\(document\.hidden\)\s*return;\s*forceReconnect\(\)/,
       "回前台路径先强制重建 SSE",
     );
-    // #412：切回前台额外 POST resume 驱动宿主受控重建当前工作空间连接（半开
-    // 死连接卡 connected 时纯读 refresh 无法恢复）。
+    // #412：切回前台先 rebindSession（宿主重启后 projectRoot 丢失，旧页面
+    // bindSession 不重跑——强制 POST /session 恢复 projectRoot + 惰性连接），
+    // 再 POST resume 驱动宿主受控重建当前工作空间连接（半开死连接卡 connected
+    // 时纯读 refresh 无法恢复）。
     assert.match(
       clientSrc,
-      /api\(state\.API\.resume,\s*\{\s*method:\s*"POST"\s*\}\)/,
-      "回前台路径调用 resume 驱动宿主重建当前工作空间连接",
+      /rebindSession\(state\)\.then\(\(\)\s*=>\s*api\(state\.API\.resume,\s*\{\s*method:\s*"POST"\s*\}\)\)/,
+      "回前台路径先重绑会话再 resume（#412 复报：宿主重启场景恢复）",
     );
+    // iOS bfcache 恢复（pageshow persisted）等价切回前台，走同一恢复路径。
+    assert.match(clientSrc, /addEventListener\("pageshow",\s*onPageShow\)/, "pageshow 监听已挂（bfcache 恢复）");
+    assert.match(clientSrc, /event\?\.persisted\s*===\s*true\s*\)\s*onVisible\(\)/, "pageshow persisted 才触发恢复");
+    // 宿主重启而页面始终可见（无 visibilitychange）：SSE 自动重连成功即核对宿主
+    // 会话状态（onopen → maybeRecoverSession → GET /servers 校验 projectRoot）。
+    assert.match(clientSrc, /es\.onopen\s*=\s*\(\)\s*=>\s*\{/, "SSE 连接建立时挂 onopen 探测");
+    assert.match(clientSrc, /maybeRecoverSession\(\)/, "onopen 触发宿主会话恢复探测");
   });
 
   check("设置卡片样式对齐官方风格（#219：12px 圆角 / bg-layer-3 底 / border-l2 / 15px 名称字 / 13px 描述字 / 14 16 padding / gap 4）", () => {

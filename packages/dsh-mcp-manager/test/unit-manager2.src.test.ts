@@ -553,6 +553,74 @@ function rmStatSafe(p) {
   }
 }
 
+// ---- #412 复报：resumeReconnect 配置全集重建（单元缺失 / entry 缺失场景） ----
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mgr2r-"));
+  try {
+    const { manager } = makeManager(dir);
+    const projRoot = join(dir, "proj");
+    mkdirSync(projRoot, { recursive: true });
+    const projStore = new McpStore(join(projRoot, ".dsh", "mcp.json"));
+    // 内存态配置（不落盘）：p1 启用、p2 禁用、p3 启用。
+    projStore.data = {
+      version: 1,
+      servers: [
+        normalizeServer(quietServer("p1")),
+        normalizeServer(quietServer("p2", { enabled: false })),
+        normalizeServer(quietServer("p3")),
+      ],
+    };
+    manager.projectStores.set(projRoot, projStore);
+    manager.projectRoot = projRoot;
+    manager.middlewareMode = "project";
+
+    // stub 中间层：units 为空（模拟宿主重启后单元/entry 全清），记录调用面。
+    const calls = [];
+    const fakeMw = {
+      units: new Map(),
+      projectUnitFor: async (root) => {
+        const unit = {
+          root,
+          connections: new Map(),
+          catalog: new Map(),
+          userDisabled: new Set(),
+          lastTouchedAt: Date.now(),
+          inFlight: new Map(),
+        };
+        fakeMw.units.set(root, unit);
+        calls.push(["projectUnitFor", root]);
+        return unit;
+      },
+      ensureConnected: async (root, name, opts) => {
+        calls.push(["ensureConnected", root, name, opts]);
+      },
+    };
+    manager.middleware = fakeMw;
+
+    // 单元缺失：resumeReconnect 应先 projectUnitFor 创建单元，再按配置全集 force 重建。
+    await manager.resumeReconnect();
+    assert.ok(calls.some((c) => c[0] === "projectUnitFor" && c[1] === projRoot), "单元缺失时先 projectUnitFor 确保单元创建");
+    const recon = calls.filter((c) => c[0] === "ensureConnected");
+    assert.deepEqual(
+      recon.map((c) => c[2]).sort(),
+      ["p1", "p3"],
+      "目标=配置全集 enabled（排除 disabled 的 p2、不依赖已有 entry）",
+    );
+    assert.ok(recon.every((c) => c[3] && c[3].force === true), "全部 force 受控重建（#412）");
+
+    // 单元已存在但 entry 缺失：仍按配置全集重建（不重复 projectUnitFor）。
+    calls.length = 0;
+    fakeMw.units.get(projRoot).userDisabled.add("p3");
+    await manager.resumeReconnect();
+    const recon2 = calls.filter((c) => c[0] === "ensureConnected");
+    assert.deepEqual(recon2.map((c) => c[2]), ["p1"], "userDisabled 过滤（p3 已禁用不复活）");
+    assert.ok(!calls.some((c) => c[0] === "projectUnitFor"), "单元已存在不再重复创建");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 // ---- #413：all 模式 runtime 注入（toolDefinitions）归一中台 ----
 
 {

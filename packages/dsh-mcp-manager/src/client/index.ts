@@ -23,7 +23,7 @@ import { api } from "./dom.ts";
 import { refresh, switchTab, close, showPanel } from "./panel.ts";
 import { resetForm, beginEdit } from "./quick-add.ts";
 import { toggleFloat, mountFloat, renderFloatPanel } from "./float.ts";
-import { bindSession } from "./session.ts";
+import { bindSession, rebindSession } from "./session.ts";
 import { SettingsCard } from "./settings-card.ts";
 import { bindLocale } from "./i18n.ts";
 import { zh, en, type McpLocaleKey } from "./locales.ts";
@@ -182,11 +182,34 @@ export function apply(ctx: any): void {
         }
       }, WATCHDOG_MS + 5000);
     };
+    // SSE 重连探测（#412 复报 P1）：宿主 dsh web 重启而页面始终可见（无
+    // visibilitychange）时，EventSource 自动重连成功即是宿主状态丢失信号——
+    // 此时 GET /servers 中 projectRoot 为 undefined，项目级连接连不上。每次
+    // SSE（重）连接成功都核对一次：宿主 projectRoot 丢失但当前会话有 cwd →
+    // 强制重绑会话 + resume（10s 节流挡自动重连风暴/高频 summary 帧）。
+    let lastRecoverAt = 0;
+    const maybeRecoverSession = () => {
+      const now = Date.now();
+      if (now - lastRecoverAt < 10_000) return;
+      void api(state.API.servers).then((payload: any) => {
+        if (payload?.projectRoot !== undefined) return; // 宿主状态正常
+        const cwd = state.currentCwd;
+        if (typeof cwd !== "string" || cwd === "") return;
+        lastRecoverAt = Date.now();
+        void rebindSession(state)
+          .then(() => api(state.API.resume, { method: "POST" }))
+          .catch(() => {});
+      }).catch(() => {});
+    };
     const connectEvents = () => {
       closeEvents();
       try {
         es = new EventSource(state.API.events);
         lastActivity = Date.now();
+        es.onopen = () => {
+          // 连接建立（初始/自动重连）即校验宿主会话状态。
+          maybeRecoverSession();
+        };
         es.onmessage = (ev: MessageEvent) => {
           // 收到任意数据帧即喂狗（含心跳 ping 帧）：链路活性证明。
           lastActivity = Date.now();
@@ -257,13 +280,28 @@ export function apply(ctx: any): void {
     // GET /servers 纯读只是重复显示僵死状态。故切回前台额外 POST resume 让宿主
     // 对当前工作空间连接做受控重建（对齐 SSE forceReconnect 语义），再重新拉取
     // 真实状态。resume 与 forceReconnect 共用 5s 节流挡快速切换。
+    //
+    // #412 复报：宿主 dsh web 重启后 projectRoot/中间层单元清空，而旧页面未重载
+    // 时 bindSession 不重跑（cwd 未变短路）——resume 只重建 @global、项目级连接
+    // 无法恢复（切目录才会触发 setSession → projectUnitFor → 惰性连接）。切回前台
+    // 先强制重绑会话（POST /session 同 cwd，宿主 setSession 幂等短路零副作用，
+    // 重启后则恢复 projectRoot + projectUnitFor 惰性连接双保险），再 resume。
     const onVisible = () => {
       if (document.hidden) return;
       forceReconnect();
-      void api(state.API.resume, { method: "POST" }).catch(() => {});
+      void rebindSession(state)
+        .then(() => api(state.API.resume, { method: "POST" }))
+        .catch(() => {});
       void refresh(state, actions).catch(() => {});
     };
     document.addEventListener("visibilitychange", onVisible);
+    // iOS Safari bfcache 恢复（back/forward cache 命中时 visibilitychange 可能
+    // 不触发，ESLint: accept 无 listener 场景）：pageshow(persisted) 等价切回
+    // 前台，走同一恢复路径。
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event?.persisted === true) onVisible();
+    };
+    window.addEventListener("pageshow", onPageShow);
 
     ctx.effect(() => () => {
       clearTimeout(retryTimer);
@@ -272,6 +310,7 @@ export function apply(ctx: any): void {
       if (watchdog !== undefined) clearTimeout(watchdog);
       closeEvents();
       document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("pageshow", onPageShow);
       for (const dispose of disposers.splice(0)) dispose();
       if (state.overlay !== undefined && state.overlay.parentElement !== null) state.overlay.remove();
       // 重置全部模块级状态，但保留 mcpUiConfig（原始 dispose 不重置它，避免
