@@ -16,6 +16,11 @@
  *
  * 噪音过滤：esbuild 内联的 node_modules 依赖段与 `__` 前缀垫片函数不计入统计
  *   （发布物自包含导致依赖代码进 bundle，但它们不是本仓自写代码）。
+ *
+ * 阈值与判红开关唯一事实源 = scripts/data/gauntlet.config.json 的
+ *   crap.threshold / crap.strict（`--threshold` 仅作临时覆盖，strict 无 argv 覆盖）。
+ *   crap.strict=false：超阈热点 exit 0，仅落盘 coverage/crap-report.json（观察期）；
+ *   crap.strict=true：超阈热点 exit 1。翻期只改 config，不改本脚本。
  */
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -24,7 +29,7 @@ import * as acorn from 'acorn';
 const repoRoot = process.cwd();
 const configPath = join(repoRoot, 'scripts', 'data', 'gauntlet.config.json');
 const config = existsSync(configPath) ? JSON.parse(readFileSync(configPath, 'utf8')) : {};
-/** 阈值唯一事实源 = scripts/data/gauntlet.config.json；--threshold 仅作临时覆盖。 */
+/** 阈值与 strict 唯一事实源 = scripts/data/gauntlet.config.json；--threshold 仅作临时覆盖。 */
 const DEFAULT_THRESHOLD = config.crap?.threshold ?? 12;
 const argv = process.argv.slice(2);
 const idx = argv.indexOf('--threshold');
@@ -33,7 +38,7 @@ if (!Number.isFinite(threshold) || threshold <= 0) {
   console.error('crap-check: invalid --threshold');
   process.exit(2);
 }
-const strict = argv.includes('--strict');
+const strict = Boolean(config.crap?.strict);
 
 const coveragePath = join(repoRoot, 'coverage', 'coverage-final.json');
 if (!existsSync(coveragePath)) {
@@ -210,5 +215,5 @@ if (strict) {
   }
   console.log('crap-check: [strict] 无超阈热点，OK');
 } else {
-  console.log('crap-check: OK（观察期模式：明细已落盘 coverage/crap-report.json）');
+  console.log(`crap-check: OK（strict=false 观察期，strict 来源 gauntlet.config.json: crap.strict，明细已落盘 coverage/crap-report.json）`);
 }
