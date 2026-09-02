@@ -39,7 +39,10 @@
       "packages/dsh-web-file-preview/test/unit-grouping.test.ts",
       "packages/dsh-web-file-preview/test/unit-link-resolver.test.ts",
       "packages/dsh-web-file-preview/test/unit-relpath.test.ts",
-      "packages/dsh-web-file-preview/test/unit-routes.test.ts"
+      "packages/dsh-web-file-preview/test/unit-routes.test.ts",
+      "packages/dsh-web-file-preview/test/unit-serve-tokens.test.ts",
+      "packages/dsh-web-file-preview/test/unit-basename-fallback.test.ts",
+      "packages/dsh-web-file-preview/test/unit-git.test.ts"
     ]
   },
   "jsonReporter": {

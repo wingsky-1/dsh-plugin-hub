@@ -13,7 +13,7 @@ import { assert } from "./helpers.ts";
 import { mkdtempSync, writeFileSync, rmSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ROUTES, makeRoutes, serveFileRoute, apply } from "../lib/index.js";
+import { ROUTES, makeRoutes, serveFileRoute, apply, serveContentTypeOf, allocServeToken, releaseServeToken, serveTokenRoute } from "../lib/index.js";
 
 // ---------------------------------------------------------------- 帮助函数
 
@@ -175,6 +175,48 @@ try {
     assert.match(loggerError[0], /注册路由失败/, "logger.error 消息含失败提示");
     // 异常后清理仍可被调用（空数组迭代）
     if (disposeFn) disposeFn();
+  }
+
+  // ================================================================
+  // serve 三件套轻分支（#423 补强：serveContentTypeOf / release / alloc / serve 缺参）
+  // ================================================================
+
+  // serveContentTypeOf：html/htm → text/html；已知 ext 走 mime；未知 → octet-stream
+  {
+    assert.equal(serveContentTypeOf("page.html"), "text/html; charset=utf-8", "serveContentTypeOf html");
+    assert.equal(serveContentTypeOf("page.HTM"), "text/html; charset=utf-8", "serveContentTypeOf htm（大小写归一）");
+    assert.equal(serveContentTypeOf("a.css"), "text/css", "serveContentTypeOf 已知 ext（css）");
+    assert.equal(serveContentTypeOf("x.q7x9z"), "application/octet-stream", "serveContentTypeOf 未知 ext → octet-stream");
+  }
+
+  // release 缺参 → 400；未知 token 幂等 200
+  {
+    const res = fakeRes();
+    releaseServeToken(res, new URL(`http://127.0.0.1${ROUTES.release}`));
+    assert.equal(res._calls.status, 400, "release 缺 token → 400");
+    const res2 = fakeRes();
+    releaseServeToken(res2, new URL(`http://127.0.0.1${ROUTES.release}?token=deadbeefdeadbeefdeadbeefdeadbeef`));
+    assert.equal(res2._calls.status, 200, "release 未知 token 幂等 200");
+  }
+
+  // alloc 缺 path → 400；非 html → 400；不存在 → 404
+  {
+    const res = fakeRes();
+    await allocServeToken(res, new URL(`http://127.0.0.1${ROUTES.alloc}?cwd=${encodeURIComponent(root)}`), {});
+    assert.equal(res._calls.status, 400, "alloc 缺 path → 400");
+    const res2 = fakeRes();
+    await allocServeToken(res2, new URL(`http://127.0.0.1${ROUTES.alloc}?cwd=${encodeURIComponent(root)}&path=doc.txt`), {});
+    assert.equal(res2._calls.status, 400, "alloc 非 html → 400");
+    const res3 = fakeRes();
+    await allocServeToken(res3, new URL(`http://127.0.0.1${ROUTES.alloc}?cwd=${encodeURIComponent(root)}&path=nope.html`), {});
+    assert.equal(res3._calls.status, 404, "alloc 不存在 → 404");
+  }
+
+  // serve 未知 token → 404（不泄露区分信息）
+  {
+    const res = fakeRes();
+    await serveTokenRoute(res, fakeReq("GET", `${ROUTES.serve}/deadbeefdeadbeefdeadbeefdeadbeef/index.html`, "127.0.0.1"), new URL(`http://127.0.0.1${ROUTES.serve}/deadbeefdeadbeefdeadbeefdeadbeef/index.html`), {});
+    assert.equal(res._calls.status, 404, "serve 未知 token → 404");
   }
 
   console.log("PASS unit-routes");

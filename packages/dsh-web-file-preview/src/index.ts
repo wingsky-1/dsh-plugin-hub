@@ -88,6 +88,8 @@ export function apply(ctx: Context, config?: PreviewConfig): void {
 
 // 路由常量 / 纯函数透出（smoke、客户端契约、诊断共用）。
 export { ROUTES, makeRoutes, serveFileRoute, previewKindOf, computeGitDiff };
+// issue #41：basename 兜底纯函数（issue #423 补强：单测直测变异覆盖）。
+export { bareBasenameOf, findUniqueByBasename } from "./basename-fallback.ts";
 // issue #73：serve token 虚拟伺服（smoke 直测 + 诊断）。
 export { serveTokenRoute, allocServeToken, releaseServeToken, serveContentTypeOf, getTokenStore, resetServeTokenStore } from "./routes.ts";
 export { createTokenStore, DEFAULT_TOKEN_TTL_MS, DEFAULT_TOKEN_MAX, DEFAULT_ACTIVE_WINDOW_MS, type TokenStore, type TokenStoreOptions } from "./serve-tokens.ts";
