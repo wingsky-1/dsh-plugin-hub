@@ -12,9 +12,6 @@ catalogs:
     '@deepseek-ai/dsh-agent':
       specifier: 0.1.2-alpha.3
       version: 0.1.2-alpha.3
-    '@deepseek-ai/dsh-client-store':
-      specifier: 0.1.2-alpha.3
-      version: 0.1.2-alpha.3
     '@deepseek-ai/dsh-client-ui-slots':
       specifier: 0.1.2-alpha.3
       version: 0.1.2-alpha.3
@@ -53,9 +50,6 @@ importers:
       '@stryker-mutator/tap-runner':
         specifier: 10.0.0
         version: 10.0.0(@stryker-mutator/core@10.0.0(@types/node@26.4.0))
-      '@types/http-proxy':
-        specifier: ^1.17.17
-        version: 1.17.17
       '@types/node':
         specifier: ^26.2.0
         version: 26.4.0
@@ -68,15 +62,6 @@ importers:
       esbuild:
         specifier: ^0.28.2
         version: 0.28.2
-      http-proxy:
-        specifier: 1.18.1
-        version: 1.18.1(debug@4.4.3(supports-color@7.2.0))
-      mime:
-        specifier: ^4.1.0
-        version: 4.1.0
-      selfsigned:
-        specifier: ^2.4.1
-        version: 2.4.1
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -108,9 +93,6 @@ importers:
       '@deepseek-ai/cordis':
         specifier: 'catalog:'
         version: 4.0.2
-      '@deepseek-ai/dsh-client-store':
-        specifier: 'catalog:'
-        version: 0.1.2-alpha.3(@deepseek-ai/cordis@4.0.2)
       '@deepseek-ai/dsh-client-ui-slots':
         specifier: 'catalog:'
         version: 0.1.2-alpha.3(@deepseek-ai/cordis@4.0.2)
@@ -120,12 +102,21 @@ importers:
       '@types/compression':
         specifier: ^1.7.5
         version: 1.8.1
+      '@types/http-proxy':
+        specifier: ^1.17.17
+        version: 1.17.17
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
       compression:
         specifier: ^1.8.1
         version: 1.8.1(supports-color@7.2.0)
+      http-proxy:
+        specifier: 1.18.1
+        version: 1.18.1(debug@4.4.3(supports-color@7.2.0))
+      selfsigned:
+        specifier: ^2.4.1
+        version: 2.4.1
       ws:
         specifier: ^8.21.3
         version: 8.21.3
@@ -138,18 +129,12 @@ importers:
       '@deepseek-ai/dsh-agent':
         specifier: 'catalog:'
         version: 0.1.2-alpha.3(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-llm@0.1.2-alpha.3(@deepseek-ai/cordis@4.0.2))(@deepseek-ai/dsh-session@0.1.2-alpha.3(@deepseek-ai/cordis@4.0.2))(@deepseek-ai/dsh-system-prompt@0.1.2-alpha.3(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-llm@0.1.2-alpha.3(@deepseek-ai/cordis@4.0.2)))(@deepseek-ai/dsh-typert-protocol@0.1.2-alpha.3(@deepseek-ai/cordis@4.0.2))
-      '@deepseek-ai/dsh-client-store':
-        specifier: 'catalog:'
-        version: 0.1.2-alpha.3(@deepseek-ai/cordis@4.0.2)
       '@deepseek-ai/dsh-client-ui-slots':
         specifier: 'catalog:'
         version: 0.1.2-alpha.3(@deepseek-ai/cordis@4.0.2)
       '@deepseek-ai/dsh-host-webserver':
         specifier: 'catalog:'
         version: 0.1.2-alpha.3(@deepseek-ai/cordis@4.0.2)(supports-color@7.2.0)
-      '@deepseek-ai/dsh-llm':
-        specifier: 'catalog:'
-        version: 0.1.2-alpha.3(@deepseek-ai/cordis@4.0.2)
       '@deepseek-ai/dsh-system-prompt':
         specifier: 'catalog:'
         version: 0.1.2-alpha.3(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-llm@0.1.2-alpha.3(@deepseek-ai/cordis@4.0.2))
@@ -168,9 +153,6 @@ importers:
       '@deepseek-ai/dsh-agent':
         specifier: 'catalog:'
         version: 0.1.2-alpha.3(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-llm@0.1.2-alpha.3(@deepseek-ai/cordis@4.0.2))(@deepseek-ai/dsh-session@0.1.2-alpha.3(@deepseek-ai/cordis@4.0.2))(@deepseek-ai/dsh-system-prompt@0.1.2-alpha.3(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-llm@0.1.2-alpha.3(@deepseek-ai/cordis@4.0.2)))(@deepseek-ai/dsh-typert-protocol@0.1.2-alpha.3(@deepseek-ai/cordis@4.0.2))
-      '@deepseek-ai/dsh-client-store':
-        specifier: 'catalog:'
-        version: 0.1.2-alpha.3(@deepseek-ai/cordis@4.0.2)
       '@deepseek-ai/dsh-client-ui-slots':
         specifier: 'catalog:'
         version: 0.1.2-alpha.3(@deepseek-ai/cordis@4.0.2)
@@ -213,9 +195,6 @@ importers:
       '@deepseek-ai/cordis':
         specifier: 'catalog:'
         version: 4.0.2
-      '@deepseek-ai/dsh-client-store':
-        specifier: 'catalog:'
-        version: 0.1.2-alpha.3(@deepseek-ai/cordis@4.0.2)
       '@deepseek-ai/dsh-client-ui-slots':
         specifier: 'catalog:'
         version: 0.1.2-alpha.3(@deepseek-ai/cordis@4.0.2)
@@ -239,9 +218,6 @@ importers:
       '@deepseek-ai/cordis':
         specifier: 'catalog:'
         version: 4.0.2
-      '@deepseek-ai/dsh-client-store':
-        specifier: 'catalog:'
-        version: 0.1.2-alpha.3(@deepseek-ai/cordis@4.0.2)
       '@deepseek-ai/dsh-client-ui-slots':
         specifier: 'catalog:'
         version: 0.1.2-alpha.3(@deepseek-ai/cordis@4.0.2)
@@ -266,6 +242,9 @@ importers:
       mermaid:
         specifier: ^11.17.1
         version: 11.17.2
+      mime:
+        specifier: ^4.1.0
+        version: 4.1.0
       untildify:
         specifier: ^6.0.0
         version: 6.0.0
@@ -502,11 +481,6 @@ packages:
     peerDependencies:
       '@deepseek-ai/cordis': ^4.0.2
       '@deepseek-ai/dsh-invariants': ^0.1.2-alpha.3
-
-  '@deepseek-ai/dsh-client-store@0.1.2-alpha.3':
-    resolution: {integrity: sha512-zpanPBS/Zf+41FHuY1lPxrKQ/Du16UvEdZ3oRhQlnEOchPnY1x50Z5bv1ngvk/mSieTf5XW05pYZQjZdx6R1cA==}
-    peerDependencies:
-      '@deepseek-ai/cordis': ^4.0.2
 
   '@deepseek-ai/dsh-client-ui-slots@0.1.2-alpha.3':
     resolution: {integrity: sha512-2kG7nkDzplB9srByplo4D5GI5C7Hk/H+OZ/lt+rhwSIDQrZb5C4lfBv/XXeAj7i7DE1XBgKnvIfq6kg1XA/eBA==}
@@ -1817,9 +1791,6 @@ packages:
     resolution: {integrity: sha512-IKXpvIzjnC9XTAUbVBcMfGS0EPaIXtW6v+zr+RRp+hqULEpo0owZax6wyRwPOJbWbzjYspQwusTsfVr0ifh4uQ==}
     engines: {node: '>=0.10.0'}
 
-  immer@10.2.0:
-    resolution: {integrity: sha512-d/+XTN3zfODyjr89gM3mPq1WNX2B8pYsu7eORitdwyA2sBubnTl3laYlBk4sXY5FUa5qTZGBDPJICVbvqzjlbw==}
-
   import-meta-resolve@4.2.0:
     resolution: {integrity: sha512-Iqv2fzaTQN28s/FwZAoFq0ZSs/7hMAHJVX+w8PZl3cY19Pxk6jFFalxQoIfW2826i/fDLXv8IiEZRIT0lDuWcg==}
 
@@ -2322,11 +2293,6 @@ packages:
     peerDependencies:
       browserslist: '>= 4.21.0'
 
-  use-sync-external-store@1.2.0:
-    resolution: {integrity: sha512-eEgnFxGQ1Ife9bzYs6VLi8/4X6CObHMw9Qr9tPY43iKwsPw8xE8+EFsf/2cFZ5S3esXgpWgtSCtLNS41F+sKPA==}
-    peerDependencies:
-      react: ^16.8.0 || ^17.0.0 || ^18.0.0
-
   uuid@14.0.2:
     resolution: {integrity: sha512-xZe/16rV4aa+HGSOCiY2YeLT1OybRLrrkL/Rqaq7p7GMVXjFh+6wN4oMYgjFmnSnhY8t6Xpdl2l9qmnHYuMHwQ==}
     hasBin: true
@@ -2408,21 +2374,6 @@ packages:
 
   zod@4.5.4:
     resolution: {integrity: sha512-sC95tT5iHHH9gtpj6A81kh+NEaRAUFN+qlUPDUbRfOMvNf5QCBqsb3WgvnpVtK5Y+4UfA6KqufotuTvMGiTlsA==}
-
-  zustand@4.4.7:
-    resolution: {integrity: sha512-QFJWJMdlETcI69paJwhSMJz7PPWjVP8Sjhclxmxmxv/RYI7ZOvR5BHX+ktH0we9gTWQMxcne8q1OY8xxz604gw==}
-    engines: {node: '>=12.7.0'}
-    peerDependencies:
-      '@types/react': '>=16.8'
-      immer: '>=9.0'
-      react: '>=16.8'
-    peerDependenciesMeta:
-      '@types/react':
-        optional: true
-      immer:
-        optional: true
-      react:
-        optional: true
 
 snapshots:
 
@@ -2679,15 +2630,6 @@ snapshots:
   '@deepseek-ai/dsh-brand@0.1.2-alpha.3(@deepseek-ai/cordis@4.0.2)':
     dependencies:
       '@deepseek-ai/cordis': 4.0.2
-
-  '@deepseek-ai/dsh-client-store@0.1.2-alpha.3(@deepseek-ai/cordis@4.0.2)':
-    dependencies:
-      '@deepseek-ai/cordis': 4.0.2
-      immer: 10.2.0
-      zustand: 4.4.7(immer@10.2.0)
-    transitivePeerDependencies:
-      - '@types/react'
-      - react
 
   '@deepseek-ai/dsh-client-ui-slots@0.1.2-alpha.3(@deepseek-ai/cordis@4.0.2)':
     dependencies:
@@ -4007,8 +3949,6 @@ snapshots:
     dependencies:
       safer-buffer: 2.1.2
 
-  immer@10.2.0: {}
-
   import-meta-resolve@4.2.0: {}
 
   inherits@2.0.4: {}
@@ -4477,8 +4417,6 @@ snapshots:
       escalade: 3.2.0
       picocolors: 1.1.1
 
-  use-sync-external-store@1.2.0: {}
-
   uuid@14.0.2: {}
 
   v8-to-istanbul@9.3.0:
@@ -4535,9 +4473,3 @@ snapshots:
       zod: 4.5.4
 
   zod@4.5.4: {}
-
-  zustand@4.4.7(immer@10.2.0):
-    dependencies:
-      use-sync-external-store: 1.2.0
-    optionalDependencies:
-      immer: 10.2.0

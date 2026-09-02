@@ -42,10 +42,8 @@
   ],
   "devDependencies": {
     "@deepseek-ai/cordis": "catalog:",
-    "@deepseek-ai/dsh-client-store": "catalog:",
     "@deepseek-ai/dsh-client-ui-slots": "catalog:",
     "@deepseek-ai/dsh-host-webserver": "catalog:",
-    "@deepseek-ai/dsh-llm": "catalog:",
     "@deepseek-ai/dsh-agent": "catalog:",
     "@deepseek-ai/dsh-system-prompt": "catalog:",
     "@deepseek-ai/dsh-tools": "catalog:",
@@ -56,8 +54,7 @@
     "@deepseek-ai/dsh-host-webserver": "0.1.2-alpha.3",
     "@deepseek-ai/dsh-agent": "0.1.2-alpha.3",
     "@deepseek-ai/dsh-tools": "0.1.2-alpha.3",
-    "@deepseek-ai/dsh-system-prompt": "0.1.2-alpha.3",
-    "@deepseek-ai/dsh-llm": "0.1.2-alpha.3"
+    "@deepseek-ai/dsh-system-prompt": "0.1.2-alpha.3"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {
@@ -73,9 +70,6 @@
       "optional": true
     },
     "@deepseek-ai/dsh-system-prompt": {
-      "optional": true
-    },
-    "@deepseek-ai/dsh-llm": {
       "optional": true
     }
   },

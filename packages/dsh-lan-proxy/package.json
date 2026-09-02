@@ -86,12 +86,14 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "catalog:",
-    "@deepseek-ai/dsh-client-store": "catalog:",
     "@deepseek-ai/dsh-client-ui-slots": "catalog:",
     "@deepseek-ai/dsh-host-webserver": "catalog:",
     "@types/compression": "^1.7.5",
+    "@types/http-proxy": "^1.17.17",
     "@types/ws": "^8.18.1",
     "compression": "^1.8.1",
+    "http-proxy": "1.18.1",
+    "selfsigned": "^2.4.1",
     "ws": "^8.21.3"
   }
 }
