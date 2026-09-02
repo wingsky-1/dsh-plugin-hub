@@ -18,6 +18,7 @@
 - `gate/verify-docs.ts` — 文档/description 校验（缺 .md、占位符残留）。
 - `gate/aggregate.ts` — 聚合 `cordis.patch.yml` 生成 + 一致性校验（`--check` 供 CI）。
 - `gate/crap-check.mjs` — 单函数 CRAP 复杂度检查（阈值唯一事实源 scripts/data/gauntlet.config.json 的 crap.threshold / crap.strict，观察期仅记录，翻期可置 true 判红）
+- `gate/forbid-src-tests.mjs` — #423 防双份回潮：扫 packages 下全部 `*.src.test.ts`（含未跟踪），命中即 exit 1。
 
 ## lib/（纯共享库，只被 import，不被 `node` 直接调用）
 
@@ -34,7 +35,8 @@
 
 - `test/build-client.test.ts` — build-client 脚本自测。
 - `test/collect-licenses.test.ts` — collect-licenses 脚本自测。
-- `test/plugins-manifest.test.ts` — plugins-manifest-lib 自测。
+- `test/crap-check.test.ts` — crap-check 脚本自测（config.strict 单一开关）。
+- `test/mutation-lib-to-src-hook.mjs` / `mutation-lib-to-src-loader.mjs` — #423 方案 A：stryker 宿主把 `packages/<pkg>/lib/index.js` 重定向到同包 `src/index.ts`。
 
 ## data/（配置数据）
 

@@ -38,19 +38,21 @@
   "tap": {
     "nodeArgs": [
       "-r",
-      "./scripts/test/mutation-tap-bridge.cjs"
+      "./scripts/test/mutation-tap-bridge.cjs",
+      "--import",
+      "./scripts/test/mutation-lib-to-src-hook.mjs"
     ],
     "testFiles": [
-      "packages/dsh-mcp-manager/test/unit-apply.src.test.ts",
-      "packages/dsh-mcp-manager/test/unit-catalog.src.test.ts",
-      "packages/dsh-mcp-manager/test/unit-hotspot.src.test.ts",
-      "packages/dsh-mcp-manager/test/unit-manager.src.test.ts",
-      "packages/dsh-mcp-manager/test/unit-manager2.src.test.ts",
-      "packages/dsh-mcp-manager/test/unit-middleware.src.test.ts",
-      "packages/dsh-mcp-manager/test/unit-routes-sse.src.test.ts",
-      "packages/dsh-mcp-manager/test/unit-store.src.test.ts",
-      "packages/dsh-mcp-manager/test/unit-supervisor.src.test.ts",
-      "packages/dsh-mcp-manager/test/unit-transport.src.test.ts"
+      "packages/dsh-mcp-manager/test/unit-apply.test.ts",
+      "packages/dsh-mcp-manager/test/unit-catalog.test.ts",
+      "packages/dsh-mcp-manager/test/unit-hotspot.test.ts",
+      "packages/dsh-mcp-manager/test/unit-manager.test.ts",
+      "packages/dsh-mcp-manager/test/unit-manager2.test.ts",
+      "packages/dsh-mcp-manager/test/unit-middleware.test.ts",
+      "packages/dsh-mcp-manager/test/unit-routes-sse.test.ts",
+      "packages/dsh-mcp-manager/test/unit-store.test.ts",
+      "packages/dsh-mcp-manager/test/unit-supervisor.test.ts",
+      "packages/dsh-mcp-manager/test/unit-transport.test.ts"
     ]
   },
   "jsonReporter": {
@@ -58,5 +60,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-mcp-manager-runtime.json",
-  "_comment": "#342 \u4e8c\u671f\uff1asrc \u7ea7\u6587\u4ef6\u7ec4\u529f\u80fd\u547d\u540d\u6bb5\uff08runtime\uff09\u2014\u2014catalog+apply+transport+placement-math+config-schema+protocol+middleware-types\uff1btypes.ts / service.ts\uff08type-only\uff09\u663e\u5f0f\u6392\u9664\uff1b\u6d4b\u8bd5\u5168\u5957\u8dd1\uff08perTest \u5173\u8054\uff09\uff1bincremental \u57fa\u7ebf\u968f observe \u56db\u73ed\u6b21\u91cd\u5efa\u3002"
+  "_comment": "#342 二期：src 级文件组功能命名段（runtime）——catalog+apply+transport+placement-math+config-schema+protocol+middleware-types；types.ts / service.ts（type-only）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
 }

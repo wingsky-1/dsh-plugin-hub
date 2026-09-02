@@ -31,13 +31,15 @@
   "tap": {
     "nodeArgs": [
       "-r",
-      "./scripts/test/mutation-tap-bridge.cjs"
+      "./scripts/test/mutation-tap-bridge.cjs",
+      "--import",
+      "./scripts/test/mutation-lib-to-src-hook.mjs"
     ],
     "testFiles": [
-      "packages/dsh-web-file-preview/test/unit-grouping.src.test.ts",
-      "packages/dsh-web-file-preview/test/unit-link-resolver.src.test.ts",
-      "packages/dsh-web-file-preview/test/unit-relpath.src.test.ts",
-      "packages/dsh-web-file-preview/test/unit-routes.src.test.ts"
+      "packages/dsh-web-file-preview/test/unit-grouping.test.ts",
+      "packages/dsh-web-file-preview/test/unit-link-resolver.test.ts",
+      "packages/dsh-web-file-preview/test/unit-relpath.test.ts",
+      "packages/dsh-web-file-preview/test/unit-routes.test.ts"
     ]
   },
   "jsonReporter": {

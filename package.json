@@ -13,6 +13,7 @@
     "verify:npmlayout": "node scripts/gate/verify-npm-layout.ts",
     "aggregate:check": "node scripts/gate/aggregate.ts --check",
     "test:scripts": "node --test scripts/test/*.test.ts",
+    "test:src-tests": "node scripts/gate/forbid-src-tests.mjs",
     "docs:check": "node scripts/gate/verify-docs.ts",
     "typecheck": "pnpm -r --if-present run typecheck",
     "cov": "c8 --reporter=json --reporter=json-summary --reporter=text pnpm -r --if-present test",

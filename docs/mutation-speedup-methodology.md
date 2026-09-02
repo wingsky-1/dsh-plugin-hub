@@ -130,7 +130,10 @@ D 方案从「提案待裁定」到「否决」的根因不是工程问题，而
 1. 全仓相对 import 统一 `.ts` 后缀 + tsconfig `rewriteRelativeImportExtensions`（源码写 `.ts`，emit 自动回写 `.js`）；
 2. **d.ts 不回写是上游行为**（TS 5.9/7.x 实测）：`rewriteRelativeImportExtensions` 只回写 JS emit，声明文件仍带 `.ts`——需构建期修正（本仓在 bundle-host d.ts X1 改写处统一处理）；
 3. 全 src 必须**可擦除语法**（`--erasableSyntaxOnly` 通过）：Node strip-only 模式拒绝 enum / namespace / 构造器参数属性等非可擦除语法（provider-usage hotreload.ts 实证踩坑）；
-4. 变异测试必须**直连 src 入口**（插桩代码由测试加载）：测试从 `import ../lib/index.js` 改为 `../src/index.ts`；smoke/契约保持 lib 口径（双轨，cov/crap 不受影响）。
+4. 变异测试必须**直连 src 入口**（插桩代码由测试加载）：#423 方案 A 起，
+     `*.test.ts` 仍写 `import "../lib/index.js"`（smoke 测产物），stryker 宿主
+     内经 `mutation-lib-to-src-hook.mjs` 把 `packages/<pkg>/lib/index.js`
+     重定向到同包 `src/index.ts`；不再维护 `*.src.test.ts` 双份。
 
 **开销与对策**：
 - src 级每 mutant 开销比 bundle 高 ~50%（sandbox 内 TS 转译加载）；`enableCompileCache()`（Node ≥24.12，bridge `-r` 注入）实测 -41%，把倍率从 ×1.47 压到 ×1.10；

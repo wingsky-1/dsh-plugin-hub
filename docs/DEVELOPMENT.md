@@ -89,6 +89,13 @@ release.yml tag 管线跑全量门禁——全量只在这三处语义中的后�
   承接，非 PR 事件下三段 job 整体 skipped（repo-gate 判定表显式放行）。
 - 本地手动入口：`npx stryker run stryker.conf.d/dsh-<pkg>.json`（临时强制全量用
   官方 `--force` 参数，勿改配置文件）。
+- **测试单份维护（#423 方案 A）**：变异测试复用 `packages/*/test/*.test.ts`，
+  不再维护 `*.src.test.ts` 双份。`*.test.ts` 仍 `import "../lib/index.js"`
+  （普通 `pnpm test`/smoke 测构建产物）；stryker 宿主内经
+  `scripts/test/mutation-lib-to-src-hook.mjs`（`--import`）把
+  `packages/<pkg>/lib/index.js` 重定向到同包 `src/index.ts`，变异发生在源码上。
+  仓库出现任何 `*.src.test.ts`（含未跟踪）即 `scripts/gate/forbid-src-tests.mjs`
+  判红（ci.yml repo-gate 步骤「Forbid legacy src tests」）。
 
 目录结构：
 
