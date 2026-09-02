@@ -1251,9 +1251,15 @@ const NS = "notifier";
     function setAllowKinds(next: string[]) {
       patch({ quietHours: Object.assign({}, qh, { allowKinds: next }) });
     }
-    /** 跟随已启用事件：一键把当前 notifyXxx=true 的对应 kind 全选为豁免。 */
+    /** 跟随已启用事件：一键把当前 notifyXxx=true 的对应 kind 全选为豁免（函数式更新——
+     *  setSettings(prev=>...) 读最新快照计算，避免连点/同帧先改开关后旧闭包漏勾最新态）。 */
     function allowFollowEnabled() {
-      setAllowKinds(quietAllowChoices.filter(function (c) { return c.enabled; }).map(function (c) { return c.kind; }));
+      setSettings(function (prev: any) {
+        var nextQh = prev.quietHours || {};
+        var next = EVENT_KEYS.filter(function (kv) { return prev[kv[0]] === true; }).map(function (kv) { return EVENT_KIND_MAP[kv[0]]; });
+        return Object.assign({}, prev, { quietHours: Object.assign({}, nextQh, { allowKinds: next }) });
+      });
+      setSaved("");
     }
     /** 恢复默认豁免（ask/question/error——高频阻塞型，卡着的任务需要叫醒）。 */
     function allowResetDefault() {

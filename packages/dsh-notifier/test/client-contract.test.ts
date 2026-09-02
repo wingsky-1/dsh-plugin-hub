@@ -100,11 +100,12 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   assert.ok(src.includes('channelId === "browser" ? browserPermLine()'), "#418：权限行只渲染于浏览器卡");
   assert.ok(src.includes("dn-ch-perm"), "#418：权限行 class 进源码");
   assert.ok(client.includes("dn-ch-perm"), "#418：权限行 class 进产物");
-  // 权限状态行不再出现在全局降级区（perm 三态文案仅存于 browserPermLine 分支）
-  assert.ok(!src.includes('key: "perm"'), "#418：全局降级区不再渲染权限状态");
+  // 权限状态行不再出现在全局降级区（perm 三态文案仅存于 browserPermLine 分支）；
+  // 带相邻特征串锚定，避免注释里出现 key: "perm" 即误伤
+  assert.ok(!src.includes('className: "dn-set-note", key: "perm"'), "#418：全局降级区不再渲染权限状态");
   // 3. 动作并入历史区（清理/发送测试在 historyTools 内与刷新并排）；「动作」分区标题移除
   assert.ok(src.includes("dn-set-historyTools"), "#418：历史区工具行（动作+刷新）");
-  assert.ok(!src.includes("secActions"), "#418：源码无「动作」分区标题引用");
+  assert.ok(!src.includes('t("secActions")'), "#418：源码无「动作」分区标题引用");
   assert.ok(!locales.includes("secActions:"), "#418：locales 字典已删 secActions 键");
 }
 
