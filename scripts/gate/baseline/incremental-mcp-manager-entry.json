@@ -2699,6 +2699,37 @@
           }
         },
         {
+          "id": "112",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "status": "Survived",
+          "testsCompleted": 10,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9"
+          ],
+          "location": {
+            "end": {
+              "column": 61,
+              "line": 33
+            },
+            "start": {
+              "column": 23,
+              "line": 33
+            }
+          }
+        },
+        {
           "id": "113",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -2751,14 +2782,24 @@
               "line": 33
             }
           }
-        },
+        }
+      ],
+      "source": "/**\n * dsh-mcp-manager — 主机端（组合根）。\n *\n * 管理本机的 MCP（Model Context Protocol）服务器并桥接到 DSH：\n *  - 服务器配置持久化在 `~/.dsh/dsh-mcp.json`（版本化，原子写入）；\n *  - 每个服务器一个连接监督器（supervisor）：stdio / streamable-http 两种\n *    传输，指数退避重连，断开后按预算放弃；\n *  - 已连接服务器的工具以 `mcp__<serverName>__<rawName>` 注册进\n *    `ctx.tools`，模型可直接调用（与官方 dsh-mcp-client 同名契约）；\n *  - `/api/dsh-mcp/*` 路由（loopback-only）供 web GUI 分级展示、快速\n *    接入、粘贴 mcpServers JSON 导入；\n *  - 零运行时依赖：MCP 协议客户端（JSON-RPC over stdio / streamable-http）\n *    直接基于 node:child_process 与全局 fetch 实现。\n *\n * 激活：安装进 profile（见 cordis.patch.yml 注释），重启一次 dsh web 后，\n * 侧边栏出现「MCP」入口。\n *\n * 结构：职责按模块拆分（store / transport / protocol / supervisor /\n * routes / catalog / import / normalize / config-schema / manager / apply），\n * 本文件保留插件契约转发（apply）与全部公共符号 re-export（导出面不变）。\n */\n\n// 类型面加载（declare module 合并）：dsh-agent 注入 agent/* 事件（含 pre-step\n// waterfall）、dsh-tools 注入 ctx.tools、dsh-system-prompt 注入 ctx.systemPrompt。\nimport type {} from \"@deepseek-ai/dsh-agent\";\nimport type {} from \"@deepseek-ai/dsh-system-prompt\";\nimport type {} from \"@deepseek-ai/dsh-tools\";\n\n/** 稳定的 cordis 插件名。 */\nexport const name = \"mcp-manager\";\n\n/** 需要已初始化的工具注册表、web 服务器与提示词组装器。 */\nexport const inject = [\"tools\", \"webServer\", \"systemPrompt\"];\n\n// 浮窗定位/层级/断点纯函数：实现在 placement-math.ts（零依赖单一事实源，\n// 客户端 bundle 与宿主端共用同一份），此处 re-export 保持导出面不变。\nexport {\n  DEFAULT_Z_INDEX_BASE,\n  Z_INDEX_BASE_MIN,\n  Z_INDEX_BASE_MAX,\n  Z_INDEX_PANEL_DELTA,\n  BREAKPOINT_NARROW_MAX,\n  BREAKPOINT_TABLET_MAX,\n  clampZIndexBase,\n  panelZIndexFor,\n  breakpointForWidth,\n  clampPointToViewport,\n  composerDockedAtBottom,\n  bottomAnchorEdge,\n} from \"./placement-math.ts\";\nexport type { FloatBreakpoint, ViewportPoint, RectLike } from \"./placement-math.ts\";\n// 面板锚点判定同为纯函数，随定位数学一起从单一事实源 re-export。\nexport { panelAnchorForPosition } from \"./placement-math.ts\";\n\n// ------------------------------------------------------------ re-export\n// 导出面与拆分前 lib/index.js 完全一致（smoke 验收契约）。\n\n// 插件契约转发（apply 主流程 + 宣告文本实现于 apply.ts）\nexport { apply, MCP_GUIDANCE } from \"./apply.ts\";\n\n// 服务器配置归一化（纯函数单一事实源）\nexport { SERVER_NAME_PATTERN, normalizeServer } from \"./normalize.ts\";\n\n// 插件 Config schema 与配置归一化（类型自 types.ts 取）\nexport {\n  DEFAULT_UI_CONFIG,\n  DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS,\n  normalizeUiConfig,\n  buildConfigUiPatch,\n  panelTopForAnchor,\n  Config,\n} from \"./config-schema.ts\";\nexport type { UiPlacementConfig, ClientUiConfig } from \"./types.ts\";\n\n// 管理器 / 中间层全局虚拟 root\nexport { McpManager, MIDDLEWARE_GLOBAL_ROOT } from \"./manager.ts\";\n\n// 核心化 service（官方 storageDomain 模式）：ctx.mcpManager 类型面 + 声明合并。\n// 仅类型导出（无副作用导入）：消费方 import 类型时 tsc 会解析 service.d.ts，\n// 其内的 declare module 合并自动生效；副作用导入会让 stryker sandbox 解析\n// src/service.js 失败（sandbox 只有 .ts），也避免 .d.ts 里残留 .ts 引用。\nexport type { McpManagerServerInput, McpManagerService } from \"./service.ts\";\n\n// 存储\nexport { defaultStorePath, McpStore } from \"./store.ts\";\n// 传输\nexport { expandEnv, HttpTransport, parseSsePayload, StdioTransport, createTransport } from \"./transport.ts\";\n// 协议\nexport { MCPClient } from \"./protocol.ts\";\n// 连接监督器 / 工具定义（含命名、截断、schema 校验）\nexport {\n  DEFAULT_TOOL_CALL_TIMEOUT_MS,\n  RECONNECT_DEFAULTS,\n  DEFAULT_RESULT_TRUNCATE_BYTES,\n  publicToolName,\n  truncateText,\n  assertSupportedOutputSchema,\n  buildToolDefinition,\n  ConnectionSupervisor,\n  resolveReconnect,\n} from \"./supervisor.ts\";\n// 能力目录 / 目录缓存\nexport {\n  DEFAULT_ANNOUNCE_CATALOG,\n  DEFAULT_CATALOG_MAX_ENTRIES,\n  catalogCacheFile,\n  summarizeToolDescriptions,\n  composeCatalogEntries,\n  digestCatalogEntries,\n  renderMcpCatalogMessage,\n  escapeCatalogText,\n  findCatalogMessage,\n  readCatalogEntries,\n  catalogHistory,\n  renderMcpCatalogUpdate,\n  resolveCatalogInjection,\n} from \"./catalog.ts\";\n// mcpServers JSON 导入\nexport { fromClaudeEntry, parseClaudeJson } from \"./import.ts\";\n// 中间层（工作空间 MCP 路由：连接池 / 目录 / ws_mcp_search / ws_mcp_call /\n// ws_mcp_list / ws_mcp_detail）\nexport {\n  McpMiddleware,\n  normalizeMiddlewareMode,\n  registerMiddlewareTools,\n  fullServerName,\n  parseFullServerName,\n  normalizeToolName,\n  normalizeArguments,\n  msgOf,\n  createRedactor,\n  globMatch,\n  policyAllows,\n  policyDenialReason,\n  isToolDenied,\n  toolDisabledReason,\n  parseDisabledTools,\n  scoreTool,\n  searchCatalog,\n  searchCatalogMulti,\n  listCatalog,\n  findToolDetail,\n  withTimeout,\n  userStateFile,\n  loadUserState,\n  saveUserState,\n  loadDisabledTools,\n  saveDisabledTools,\n  catalogCacheFileFor,\n  CONNECT_TIMEOUT_MS,\n  DISCOVERY_TIMEOUT_MS,\n  CALL_TIMEOUT_MS,\n  CATALOG_TTL_MS,\n  CATALOG_LRU_MAX,\n  MAX_TOOLS_PER_SERVER,\n  MAX_BYTES_PER_TOOL,\n  MAX_TOTAL_CATALOG_BYTES,\n  LIST_DEFAULT_TOOLS_PER_SERVER,\n  LIST_MAX_TOOLS_PER_SERVER,\n} from \"./middleware.ts\";\nexport type {\n  MiddlewareMode,\n  MiddlewarePolicy,\n  ProjectUnit,\n  SearchHit,\n  ListToolEntry,\n  ListServerEntry,\n  ListCatalogResult,\n  ToolDetail,\n  DisabledToolsMap,\n} from \"./middleware.ts\";\n// 路由\nexport { ROUTES, makeRoutes, makeEventsRoute, makeHealthRoute, sseData, uiConfigChangedFrame, broadcastFrame, SSE_HEARTBEAT_MS, SSE_PING_FRAME } from \"./routes.ts\";\nexport { SCOPE_GLOBAL, SCOPE_PROJECT, normalizeScope } from \"./scope.ts\";\n// 仓库共享层（loopback 围栏 / writeJson / readJsonBody）\nexport { isLoopbackRequest } from \"../../../shared/loopback.js\";\nexport { writeJson, readJsonBody } from \"../../../shared/host-utils.js\";\n"
+    },
+    "packages/dsh-mcp-manager/src/normalize.ts": {
+      "language": "typescript",
+      "mutants": [
         {
-          "id": "112",
-          "mutatorName": "ArrayDeclaration",
-          "replacement": "[]",
-          "status": "Survived",
+          "id": "116",
+          "mutatorName": "Regex",
+          "replacement": "/[A-Za-z0-9_-]{1,32}$/",
+          "statusReason": "uncaughtException: The input did not match the regular expression /\\^/. Input:: uncaughtException: The input did not match the regular expression /\\^/. Input:",
+          "status": "Killed",
+          "testsCompleted": 5,
           "static": false,
-          "testsCompleted": 10,
+          "killedBy": [
+            "4"
+          ],
           "coveredBy": [
             "0",
             "1",
@@ -2773,21 +2814,49 @@
           ],
           "location": {
             "end": {
-              "column": 61,
-              "line": 33
+              "column": 59,
+              "line": 13
             },
             "start": {
-              "column": 23,
-              "line": 33
+              "column": 36,
+              "line": 13
             }
           }
-        }
-      ],
-      "source": "/**\n * dsh-mcp-manager — 主机端（组合根）。\n *\n * 管理本机的 MCP（Model Context Protocol）服务器并桥接到 DSH：\n *  - 服务器配置持久化在 `~/.dsh/dsh-mcp.json`（版本化，原子写入）；\n *  - 每个服务器一个连接监督器（supervisor）：stdio / streamable-http 两种\n *    传输，指数退避重连，断开后按预算放弃；\n *  - 已连接服务器的工具以 `mcp__<serverName>__<rawName>` 注册进\n *    `ctx.tools`，模型可直接调用（与官方 dsh-mcp-client 同名契约）；\n *  - `/api/dsh-mcp/*` 路由（loopback-only）供 web GUI 分级展示、快速\n *    接入、粘贴 mcpServers JSON 导入；\n *  - 零运行时依赖：MCP 协议客户端（JSON-RPC over stdio / streamable-http）\n *    直接基于 node:child_process 与全局 fetch 实现。\n *\n * 激活：安装进 profile（见 cordis.patch.yml 注释），重启一次 dsh web 后，\n * 侧边栏出现「MCP」入口。\n *\n * 结构：职责按模块拆分（store / transport / protocol / supervisor /\n * routes / catalog / import / normalize / config-schema / manager / apply），\n * 本文件保留插件契约转发（apply）与全部公共符号 re-export（导出面不变）。\n */\n\n// 类型面加载（declare module 合并）：dsh-agent 注入 agent/* 事件（含 pre-step\n// waterfall）、dsh-tools 注入 ctx.tools、dsh-system-prompt 注入 ctx.systemPrompt。\nimport type {} from \"@deepseek-ai/dsh-agent\";\nimport type {} from \"@deepseek-ai/dsh-system-prompt\";\nimport type {} from \"@deepseek-ai/dsh-tools\";\n\n/** 稳定的 cordis 插件名。 */\nexport const name = \"mcp-manager\";\n\n/** 需要已初始化的工具注册表、web 服务器与提示词组装器。 */\nexport const inject = [\"tools\", \"webServer\", \"systemPrompt\"];\n\n// 浮窗定位/层级/断点纯函数：实现在 placement-math.ts（零依赖单一事实源，\n// 客户端 bundle 与宿主端共用同一份），此处 re-export 保持导出面不变。\nexport {\n  DEFAULT_Z_INDEX_BASE,\n  Z_INDEX_BASE_MIN,\n  Z_INDEX_BASE_MAX,\n  Z_INDEX_PANEL_DELTA,\n  BREAKPOINT_NARROW_MAX,\n  BREAKPOINT_TABLET_MAX,\n  clampZIndexBase,\n  panelZIndexFor,\n  breakpointForWidth,\n  clampPointToViewport,\n  composerDockedAtBottom,\n  bottomAnchorEdge,\n} from \"./placement-math.ts\";\nexport type { FloatBreakpoint, ViewportPoint, RectLike } from \"./placement-math.ts\";\n// 面板锚点判定同为纯函数，随定位数学一起从单一事实源 re-export。\nexport { panelAnchorForPosition } from \"./placement-math.ts\";\n\n// ------------------------------------------------------------ re-export\n// 导出面与拆分前 lib/index.js 完全一致（smoke 验收契约）。\n\n// 插件契约转发（apply 主流程 + 宣告文本实现于 apply.ts）\nexport { apply, MCP_GUIDANCE } from \"./apply.ts\";\n\n// 服务器配置归一化（纯函数单一事实源）\nexport { SERVER_NAME_PATTERN, normalizeServer } from \"./normalize.ts\";\n\n// 插件 Config schema 与配置归一化（类型自 types.ts 取）\nexport {\n  DEFAULT_UI_CONFIG,\n  DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS,\n  normalizeUiConfig,\n  buildConfigUiPatch,\n  panelTopForAnchor,\n  Config,\n} from \"./config-schema.ts\";\nexport type { UiPlacementConfig, ClientUiConfig } from \"./types.ts\";\n\n// 管理器 / 中间层全局虚拟 root\nexport { McpManager, MIDDLEWARE_GLOBAL_ROOT } from \"./manager.ts\";\n\n// 核心化 service（官方 storageDomain 模式）：ctx.mcpManager 类型面 + 声明合并。\n// 仅类型导出（无副作用导入）：消费方 import 类型时 tsc 会解析 service.d.ts，\n// 其内的 declare module 合并自动生效；副作用导入会让 stryker sandbox 解析\n// src/service.js 失败（sandbox 只有 .ts），也避免 .d.ts 里残留 .ts 引用。\nexport type { McpManagerServerInput, McpManagerService } from \"./service.ts\";\n\n// 存储\nexport { defaultStorePath, McpStore } from \"./store.ts\";\n// 传输\nexport { expandEnv, HttpTransport, parseSsePayload, StdioTransport, createTransport } from \"./transport.ts\";\n// 协议\nexport { MCPClient } from \"./protocol.ts\";\n// 连接监督器 / 工具定义（含命名、截断、schema 校验）\nexport {\n  DEFAULT_TOOL_CALL_TIMEOUT_MS,\n  RECONNECT_DEFAULTS,\n  DEFAULT_RESULT_TRUNCATE_BYTES,\n  publicToolName,\n  truncateText,\n  assertSupportedOutputSchema,\n  buildToolDefinition,\n  ConnectionSupervisor,\n  resolveReconnect,\n} from \"./supervisor.ts\";\n// 能力目录 / 目录缓存\nexport {\n  DEFAULT_ANNOUNCE_CATALOG,\n  DEFAULT_CATALOG_MAX_ENTRIES,\n  catalogCacheFile,\n  summarizeToolDescriptions,\n  composeCatalogEntries,\n  digestCatalogEntries,\n  renderMcpCatalogMessage,\n  escapeCatalogText,\n  findCatalogMessage,\n  readCatalogEntries,\n  catalogHistory,\n  renderMcpCatalogUpdate,\n  resolveCatalogInjection,\n} from \"./catalog.ts\";\n// mcpServers JSON 导入\nexport { fromClaudeEntry, parseClaudeJson } from \"./import.ts\";\n// 中间层（工作空间 MCP 路由：连接池 / 目录 / ws_mcp_search / ws_mcp_call /\n// ws_mcp_list / ws_mcp_detail）\nexport {\n  McpMiddleware,\n  normalizeMiddlewareMode,\n  registerMiddlewareTools,\n  fullServerName,\n  parseFullServerName,\n  normalizeToolName,\n  normalizeArguments,\n  msgOf,\n  createRedactor,\n  globMatch,\n  policyAllows,\n  policyDenialReason,\n  isToolDenied,\n  toolDisabledReason,\n  parseDisabledTools,\n  scoreTool,\n  searchCatalog,\n  searchCatalogMulti,\n  listCatalog,\n  findToolDetail,\n  withTimeout,\n  userStateFile,\n  loadUserState,\n  saveUserState,\n  loadDisabledTools,\n  saveDisabledTools,\n  catalogCacheFileFor,\n  CONNECT_TIMEOUT_MS,\n  DISCOVERY_TIMEOUT_MS,\n  CALL_TIMEOUT_MS,\n  CATALOG_TTL_MS,\n  CATALOG_LRU_MAX,\n  MAX_TOOLS_PER_SERVER,\n  MAX_BYTES_PER_TOOL,\n  MAX_TOTAL_CATALOG_BYTES,\n  LIST_DEFAULT_TOOLS_PER_SERVER,\n  LIST_MAX_TOOLS_PER_SERVER,\n} from \"./middleware.ts\";\nexport type {\n  MiddlewareMode,\n  MiddlewarePolicy,\n  ProjectUnit,\n  SearchHit,\n  ListToolEntry,\n  ListServerEntry,\n  ListCatalogResult,\n  ToolDetail,\n  DisabledToolsMap,\n} from \"./middleware.ts\";\n// 路由\nexport { ROUTES, makeRoutes, makeEventsRoute, makeHealthRoute, sseData, uiConfigChangedFrame, broadcastFrame, SSE_HEARTBEAT_MS, SSE_PING_FRAME } from \"./routes.ts\";\nexport { SCOPE_GLOBAL, SCOPE_PROJECT, normalizeScope } from \"./scope.ts\";\n// 仓库共享层（loopback 围栏 / writeJson / readJsonBody）\nexport { isLoopbackRequest } from \"../../../shared/loopback.js\";\nexport { writeJson, readJsonBody } from \"../../../shared/host-utils.js\";\n"
-    },
-    "packages/dsh-mcp-manager/src/normalize.ts": {
-      "language": "typescript",
-      "mutants": [
+        },
+        {
+          "id": "117",
+          "mutatorName": "Regex",
+          "replacement": "/^[A-Za-z0-9_-]{1,32}/",
+          "statusReason": "uncaughtException: The input did not match the regular expression /server name must match/. Input:: uncaughtException: The input did not match the regular expression /server name must match/. Input:",
+          "status": "Killed",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9"
+          ],
+          "location": {
+            "end": {
+              "column": 59,
+              "line": 13
+            },
+            "start": {
+              "column": 36,
+              "line": 13
+            }
+          }
+        },
         {
           "id": "118",
           "mutatorName": "Regex",
@@ -2913,6 +2982,90 @@
           }
         },
         {
+          "id": "122",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: The input did not match the regular expression /must be an object/. Input:: uncaughtException: The input did not match the regular expression /must be an object/. Input:",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 50,
+              "line": 17
+            },
+            "start": {
+              "column": 7,
+              "line": 17
+            }
+          }
+        },
+        {
+          "id": "123",
+          "mutatorName": "LogicalOperator",
+          "replacement": "typeof input !== \"object\" && input === null",
+          "statusReason": "uncaughtException: The input did not match the regular expression /must be an object/. Input:: uncaughtException: The input did not match the regular expression /must be an object/. Input:",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 50,
+              "line": 17
+            },
+            "start": {
+              "column": 7,
+              "line": 17
+            }
+          }
+        },
+        {
+          "id": "124",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: The input did not match the regular expression /must be an object/. Input:: uncaughtException: The input did not match the regular expression /must be an object/. Input:",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 32,
+              "line": 17
+            },
+            "start": {
+              "column": 7,
+              "line": 17
+            }
+          }
+        },
+        {
           "id": "125",
           "mutatorName": "EqualityOperator",
           "replacement": "typeof input === \"object\"",
@@ -2959,6 +3112,34 @@
           }
         },
         {
+          "id": "127",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: The input did not match the regular expression /must be an object/. Input:: uncaughtException: The input did not match the regular expression /must be an object/. Input:",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 50,
+              "line": 17
+            },
+            "start": {
+              "column": 36,
+              "line": 17
+            }
+          }
+        },
+        {
           "id": "128",
           "mutatorName": "EqualityOperator",
           "replacement": "input !== null",
@@ -2987,6 +3168,31 @@
           }
         },
         {
+          "id": "129",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "statusReason": "uncaughtException: The input did not match the regular expression /must be an object/. Input:: uncaughtException: The input did not match the regular expression /must be an object/. Input:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 103,
+              "line": 17
+            },
+            "start": {
+              "column": 52,
+              "line": 17
+            }
+          }
+        },
+        {
           "id": "130",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -3001,6 +3207,34 @@
             "start": {
               "column": 68,
               "line": 17
+            }
+          }
+        },
+        {
+          "id": "131",
+          "mutatorName": "MethodExpression",
+          "replacement": "String(src.name ?? \"\")",
+          "statusReason": "uncaughtException: server name must match ^[A-Za-z0-9_-]{1,32}$: uncaughtException: server name must match ^[A-Za-z0-9_-]{1,32}$",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 45,
+              "line": 19
+            },
+            "start": {
+              "column": 16,
+              "line": 19
             }
           }
         },
@@ -3107,6 +3341,84 @@
           }
         },
         {
+          "id": "136",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: The input did not match the regular expression /server name must match/. Input:: uncaughtException: The input did not match the regular expression /server name must match/. Input:",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 38,
+              "line": 20
+            },
+            "start": {
+              "column": 7,
+              "line": 20
+            }
+          }
+        },
+        {
+          "id": "137",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: The input did not match the regular expression /server name must match/. Input:: uncaughtException: The input did not match the regular expression /server name must match/. Input:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 22
+            },
+            "start": {
+              "column": 40,
+              "line": 20
+            }
+          }
+        },
+        {
+          "id": "138",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "statusReason": "uncaughtException: The input did not match the regular expression /server name must match/. Input:: uncaughtException: The input did not match the regular expression /server name must match/. Input:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 77,
+              "line": 21
+            },
+            "start": {
+              "column": 5,
+              "line": 21
+            }
+          }
+        },
+        {
           "id": "139",
           "mutatorName": "StringLiteral",
           "replacement": "``",
@@ -3134,6 +3446,34 @@
           "static": false,
           "killedBy": [
             "2"
+          ],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 56,
+              "line": 23
+            },
+            "start": {
+              "column": 21,
+              "line": 23
+            }
+          }
+        },
+        {
+          "id": "141",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: transport must be \"stdio\" or \"streamable-http\": uncaughtException: transport must be \"stdio\" or \"streamable-http\"",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
           ],
           "coveredBy": [
             "2",
@@ -3212,6 +3552,34 @@
             },
             "start": {
               "column": 59,
+              "line": 23
+            }
+          }
+        },
+        {
+          "id": "145",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: The input did not match the regular expression /transport must be/. Input:: uncaughtException: The input did not match the regular expression /transport must be/. Input:",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 104,
+              "line": 23
+            },
+            "start": {
+              "column": 79,
               "line": 23
             }
           }
@@ -3337,6 +3705,34 @@
           }
         },
         {
+          "id": "151",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: The input did not match the regular expression /transport must be/. Input:: uncaughtException: The input did not match the regular expression /transport must be/. Input:",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 30,
+              "line": 24
+            },
+            "start": {
+              "column": 7,
+              "line": 24
+            }
+          }
+        },
+        {
           "id": "152",
           "mutatorName": "EqualityOperator",
           "replacement": "transport !== undefined",
@@ -3365,6 +3761,31 @@
           }
         },
         {
+          "id": "153",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "statusReason": "uncaughtException: The input did not match the regular expression /transport must be/. Input:: uncaughtException: The input did not match the regular expression /transport must be/. Input:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 98,
+              "line": 24
+            },
+            "start": {
+              "column": 32,
+              "line": 24
+            }
+          }
+        },
+        {
           "id": "154",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -3379,6 +3800,34 @@
             "start": {
               "column": 48,
               "line": 24
+            }
+          }
+        },
+        {
+          "id": "155",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: stdio server requires a command: uncaughtException: stdio server requires a command",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 28,
+              "line": 25
+            },
+            "start": {
+              "column": 7,
+              "line": 25
             }
           }
         },
@@ -3457,6 +3906,34 @@
           }
         },
         {
+          "id": "159",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: Missing expected exception.: uncaughtException: Missing expected exception.",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 29
+            },
+            "start": {
+              "column": 30,
+              "line": 25
+            }
+          }
+        },
+        {
           "id": "160",
           "mutatorName": "ConditionalExpression",
           "replacement": "true",
@@ -3476,6 +3953,90 @@
           "location": {
             "end": {
               "column": 81,
+              "line": 26
+            },
+            "start": {
+              "column": 9,
+              "line": 26
+            }
+          }
+        },
+        {
+          "id": "161",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: Missing expected exception.: uncaughtException: Missing expected exception.",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 81,
+              "line": 26
+            },
+            "start": {
+              "column": 9,
+              "line": 26
+            }
+          }
+        },
+        {
+          "id": "162",
+          "mutatorName": "LogicalOperator",
+          "replacement": "typeof src.command !== \"string\" && (src.command as string).trim() === \"\"",
+          "statusReason": "uncaughtException: The input did not match the regular expression /requires a command/. Input:: uncaughtException: The input did not match the regular expression /requires a command/. Input:",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 81,
+              "line": 26
+            },
+            "start": {
+              "column": 9,
+              "line": 26
+            }
+          }
+        },
+        {
+          "id": "163",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: The input did not match the regular expression /requires a command/. Input:: uncaughtException: The input did not match the regular expression /requires a command/. Input:",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 40,
               "line": 26
             },
             "start": {
@@ -3531,6 +4092,34 @@
           }
         },
         {
+          "id": "166",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: Missing expected exception.: uncaughtException: Missing expected exception.",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 81,
+              "line": 26
+            },
+            "start": {
+              "column": 44,
+              "line": 26
+            }
+          }
+        },
+        {
           "id": "167",
           "mutatorName": "EqualityOperator",
           "replacement": "(src.command as string).trim() !== \"\"",
@@ -3559,6 +4148,34 @@
           }
         },
         {
+          "id": "168",
+          "mutatorName": "MethodExpression",
+          "replacement": "src.command as string",
+          "statusReason": "uncaughtException: Missing expected exception.: uncaughtException: Missing expected exception.",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 74,
+              "line": 26
+            },
+            "start": {
+              "column": 44,
+              "line": 26
+            }
+          }
+        },
+        {
           "id": "169",
           "mutatorName": "StringLiteral",
           "replacement": "\"Stryker was here!\"",
@@ -3573,6 +4190,56 @@
             "start": {
               "column": 79,
               "line": 26
+            }
+          }
+        },
+        {
+          "id": "170",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: Missing expected exception.: uncaughtException: Missing expected exception.",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 6,
+              "line": 28
+            },
+            "start": {
+              "column": 83,
+              "line": 26
+            }
+          }
+        },
+        {
+          "id": "171",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "statusReason": "uncaughtException: Missing expected exception.: uncaughtException: Missing expected exception.",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 58,
+              "line": 27
+            },
+            "start": {
+              "column": 7,
+              "line": 27
             }
           }
         },
@@ -3595,6 +4262,162 @@
           }
         },
         {
+          "id": "173",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: Missing expected exception.: uncaughtException: Missing expected exception.",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 38
+            },
+            "start": {
+              "column": 10,
+              "line": 29
+            }
+          }
+        },
+        {
+          "id": "174",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: streamable-http server requires a url: uncaughtException: streamable-http server requires a url",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 73,
+              "line": 30
+            },
+            "start": {
+              "column": 9,
+              "line": 30
+            }
+          }
+        },
+        {
+          "id": "175",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: The input did not match the regular expression /requires a url/. Input:: uncaughtException: The input did not match the regular expression /requires a url/. Input:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 73,
+              "line": 30
+            },
+            "start": {
+              "column": 9,
+              "line": 30
+            }
+          }
+        },
+        {
+          "id": "176",
+          "mutatorName": "LogicalOperator",
+          "replacement": "typeof src.url !== \"string\" && (src.url as string).trim() === \"\"",
+          "statusReason": "uncaughtException: The input did not match the regular expression /requires a url/. Input:: uncaughtException: The input did not match the regular expression /requires a url/. Input:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 73,
+              "line": 30
+            },
+            "start": {
+              "column": 9,
+              "line": 30
+            }
+          }
+        },
+        {
+          "id": "177",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: The input did not match the regular expression /requires a url/. Input:: uncaughtException: The input did not match the regular expression /requires a url/. Input:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 36,
+              "line": 30
+            },
+            "start": {
+              "column": 9,
+              "line": 30
+            }
+          }
+        },
+        {
+          "id": "178",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof src.url === \"string\"",
+          "statusReason": "uncaughtException: streamable-http server requires a url: uncaughtException: streamable-http server requires a url",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 36,
+              "line": 30
+            },
+            "start": {
+              "column": 9,
+              "line": 30
+            }
+          }
+        },
+        {
           "id": "179",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -3608,6 +4431,78 @@
             },
             "start": {
               "column": 28,
+              "line": 30
+            }
+          }
+        },
+        {
+          "id": "180",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 73,
+              "line": 30
+            },
+            "start": {
+              "column": 40,
+              "line": 30
+            }
+          }
+        },
+        {
+          "id": "181",
+          "mutatorName": "EqualityOperator",
+          "replacement": "(src.url as string).trim() !== \"\"",
+          "statusReason": "uncaughtException: streamable-http server requires a url: uncaughtException: streamable-http server requires a url",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 73,
+              "line": 30
+            },
+            "start": {
+              "column": 40,
+              "line": 30
+            }
+          }
+        },
+        {
+          "id": "182",
+          "mutatorName": "MethodExpression",
+          "replacement": "src.url as string",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 66,
+              "line": 30
+            },
+            "start": {
+              "column": 40,
               "line": 30
             }
           }
@@ -3631,6 +4526,56 @@
           }
         },
         {
+          "id": "184",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: The input did not match the regular expression /requires a url/. Input:: uncaughtException: The input did not match the regular expression /requires a url/. Input:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 6,
+              "line": 32
+            },
+            "start": {
+              "column": 75,
+              "line": 30
+            }
+          }
+        },
+        {
+          "id": "185",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "statusReason": "uncaughtException: The input did not match the regular expression /requires a url/. Input:: uncaughtException: The input did not match the regular expression /requires a url/. Input:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 64,
+              "line": 31
+            },
+            "start": {
+              "column": 7,
+              "line": 31
+            }
+          }
+        },
+        {
           "id": "186",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -3645,6 +4590,82 @@
             "start": {
               "column": 23,
               "line": 31
+            }
+          }
+        },
+        {
+          "id": "187",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: Missing expected exception.: uncaughtException: Missing expected exception.",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 6,
+              "line": 35
+            },
+            "start": {
+              "column": 9,
+              "line": 33
+            }
+          }
+        },
+        {
+          "id": "188",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: Missing expected exception.: uncaughtException: Missing expected exception.",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 6,
+              "line": 37
+            },
+            "start": {
+              "column": 13,
+              "line": 35
+            }
+          }
+        },
+        {
+          "id": "189",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "statusReason": "uncaughtException: Missing expected exception.: uncaughtException: Missing expected exception.",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 50,
+              "line": 36
+            },
+            "start": {
+              "column": 7,
+              "line": 36
             }
           }
         },
@@ -3797,6 +4818,143 @@
           }
         },
         {
+          "id": "196",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: The expression evaluated to a falsy value:: uncaughtException: The expression evaluated to a falsy value:",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 106,
+              "line": 43
+            },
+            "start": {
+              "column": 24,
+              "line": 43
+            }
+          }
+        },
+        {
+          "id": "197",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: 正数 timeout floor: uncaughtException: 正数 timeout floor",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 106,
+              "line": 43
+            },
+            "start": {
+              "column": 24,
+              "line": 43
+            }
+          }
+        },
+        {
+          "id": "198",
+          "mutatorName": "LogicalOperator",
+          "replacement": "typeof src.toolCallTimeoutMs === \"number\" || src.toolCallTimeoutMs as number > 0",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 106,
+              "line": 43
+            },
+            "start": {
+              "column": 24,
+              "line": 43
+            }
+          }
+        },
+        {
+          "id": "199",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 65,
+              "line": 43
+            },
+            "start": {
+              "column": 24,
+              "line": 43
+            }
+          }
+        },
+        {
+          "id": "200",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof src.toolCallTimeoutMs !== \"number\"",
+          "statusReason": "uncaughtException: 正数 timeout floor: uncaughtException: 正数 timeout floor",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 65,
+              "line": 43
+            },
+            "start": {
+              "column": 24,
+              "line": 43
+            }
+          }
+        },
+        {
           "id": "201",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -3815,6 +4973,115 @@
           }
         },
         {
+          "id": "202",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 106,
+              "line": 43
+            },
+            "start": {
+              "column": 69,
+              "line": 43
+            }
+          }
+        },
+        {
+          "id": "203",
+          "mutatorName": "EqualityOperator",
+          "replacement": "src.toolCallTimeoutMs as number >= 0",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 106,
+              "line": 43
+            },
+            "start": {
+              "column": 69,
+              "line": 43
+            }
+          }
+        },
+        {
+          "id": "204",
+          "mutatorName": "EqualityOperator",
+          "replacement": "src.toolCallTimeoutMs as number <= 0",
+          "statusReason": "uncaughtException: 正数 timeout floor: uncaughtException: 正数 timeout floor",
+          "status": "Killed",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 106,
+              "line": 43
+            },
+            "start": {
+              "column": 69,
+              "line": 43
+            }
+          }
+        },
+        {
+          "id": "205",
+          "mutatorName": "LogicalOperator",
+          "replacement": "src.reconnect as Record<string, unknown> | undefined && {}",
+          "statusReason": "uncaughtException: Expected values to be strictly deep-equal:: uncaughtException: Expected values to be strictly deep-equal:",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 76,
+              "line": 46
+            },
+            "start": {
+              "column": 16,
+              "line": 46
+            }
+          }
+        },
+        {
           "id": "206",
           "mutatorName": "ConditionalExpression",
           "replacement": "true",
@@ -3824,6 +5091,34 @@
           "static": false,
           "killedBy": [
             "2"
+          ],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 98,
+              "line": 48
+            },
+            "start": {
+              "column": 18,
+              "line": 48
+            }
+          }
+        },
+        {
+          "id": "207",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: description trim: uncaughtException: description trim",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
           ],
           "coveredBy": [
             "2",
@@ -3945,6 +5240,75 @@
           }
         },
         {
+          "id": "212",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 98,
+              "line": 48
+            },
+            "start": {
+              "column": 57,
+              "line": 48
+            }
+          }
+        },
+        {
+          "id": "213",
+          "mutatorName": "EqualityOperator",
+          "replacement": "(src.description as string).trim() === \"\"",
+          "statusReason": "uncaughtException: description trim: uncaughtException: description trim",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 98,
+              "line": 48
+            },
+            "start": {
+              "column": 57,
+              "line": 48
+            }
+          }
+        },
+        {
+          "id": "214",
+          "mutatorName": "MethodExpression",
+          "replacement": "src.description as string",
+          "status": "Survived",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 91,
+              "line": 48
+            },
+            "start": {
+              "column": 57,
+              "line": 48
+            }
+          }
+        },
+        {
           "id": "215",
           "mutatorName": "StringLiteral",
           "replacement": "\"Stryker was here!\"",
@@ -3959,6 +5323,59 @@
             "start": {
               "column": 96,
               "line": 48
+            }
+          }
+        },
+        {
+          "id": "216",
+          "mutatorName": "MethodExpression",
+          "replacement": "src.description as string",
+          "statusReason": "uncaughtException: description trim: uncaughtException: description trim",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 43,
+              "line": 49
+            },
+            "start": {
+              "column": 9,
+              "line": 49
+            }
+          }
+        },
+        {
+          "id": "217",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 28,
+              "line": 52
+            },
+            "start": {
+              "column": 7,
+              "line": 52
             }
           }
         },
@@ -4093,6 +5510,165 @@
           }
         },
         {
+          "id": "223",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: Expected values to be strictly deep-equal:: uncaughtException: Expected values to be strictly deep-equal:",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 32,
+              "line": 54
+            },
+            "start": {
+              "column": 9,
+              "line": 54
+            }
+          }
+        },
+        {
+          "id": "224",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 66,
+              "line": 55
+            },
+            "start": {
+              "column": 9,
+              "line": 55
+            }
+          }
+        },
+        {
+          "id": "225",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 66,
+              "line": 55
+            },
+            "start": {
+              "column": 9,
+              "line": 55
+            }
+          }
+        },
+        {
+          "id": "226",
+          "mutatorName": "LogicalOperator",
+          "replacement": "typeof src.cwd === \"string\" || src.cwd as string !== \"\"",
+          "status": "Survived",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 66,
+              "line": 55
+            },
+            "start": {
+              "column": 9,
+              "line": 55
+            }
+          }
+        },
+        {
+          "id": "227",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 36,
+              "line": 55
+            },
+            "start": {
+              "column": 9,
+              "line": 55
+            }
+          }
+        },
+        {
+          "id": "228",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof src.cwd !== \"string\"",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 36,
+              "line": 55
+            },
+            "start": {
+              "column": 9,
+              "line": 55
+            }
+          }
+        },
+        {
           "id": "229",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -4106,6 +5682,53 @@
             },
             "start": {
               "column": 28,
+              "line": 55
+            }
+          }
+        },
+        {
+          "id": "230",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 66,
+              "line": 55
+            },
+            "start": {
+              "column": 40,
+              "line": 55
+            }
+          }
+        },
+        {
+          "id": "231",
+          "mutatorName": "EqualityOperator",
+          "replacement": "src.cwd as string === \"\"",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 66,
+              "line": 55
+            },
+            "start": {
+              "column": 40,
               "line": 55
             }
           }
@@ -4138,6 +5761,34 @@
           "static": false,
           "killedBy": [
             "2"
+          ],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 56,
+              "line": 56
+            },
+            "start": {
+              "column": 9,
+              "line": 56
+            }
+          }
+        },
+        {
+          "id": "234",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: Expected values to be strictly deep-equal:: uncaughtException: Expected values to be strictly deep-equal:",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
           ],
           "coveredBy": [
             "2",
@@ -4259,6 +5910,154 @@
           }
         },
         {
+          "id": "239",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 56,
+              "line": 56
+            },
+            "start": {
+              "column": 40,
+              "line": 56
+            }
+          }
+        },
+        {
+          "id": "240",
+          "mutatorName": "EqualityOperator",
+          "replacement": "src.env === null",
+          "statusReason": "uncaughtException: Expected values to be strictly deep-equal:: uncaughtException: Expected values to be strictly deep-equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 56,
+              "line": 56
+            },
+            "start": {
+              "column": 40,
+              "line": 56
+            }
+          }
+        },
+        {
+          "id": "241",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: Expected values to be strictly deep-equal:: uncaughtException: Expected values to be strictly deep-equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 6,
+              "line": 58
+            },
+            "start": {
+              "column": 58,
+              "line": 56
+            }
+          }
+        },
+        {
+          "id": "242",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "statusReason": "uncaughtException: Iterator value undefined is not an entry object: uncaughtException: Iterator value undefined is not an entry object",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 132,
+              "line": 57
+            },
+            "start": {
+              "column": 94,
+              "line": 57
+            }
+          }
+        },
+        {
+          "id": "243",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "statusReason": "uncaughtException: Expected values to be strictly deep-equal:: uncaughtException: Expected values to be strictly deep-equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 132,
+              "line": 57
+            },
+            "start": {
+              "column": 112,
+              "line": 57
+            }
+          }
+        },
+        {
+          "id": "244",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 64
+            },
+            "start": {
+              "column": 10,
+              "line": 59
+            }
+          }
+        },
+        {
           "id": "245",
           "mutatorName": "ConditionalExpression",
           "replacement": "true",
@@ -4268,6 +6067,32 @@
           "static": false,
           "killedBy": [
             "6"
+          ],
+          "coveredBy": [
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 64,
+              "line": 61
+            },
+            "start": {
+              "column": 9,
+              "line": 61
+            }
+          }
+        },
+        {
+          "id": "246",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: headers 值 String 化: uncaughtException: headers 值 String 化",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
           ],
           "coveredBy": [
             "4",
@@ -4337,6 +6162,32 @@
           }
         },
         {
+          "id": "249",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof src.headers !== \"object\"",
+          "statusReason": "uncaughtException: headers 值 String 化: uncaughtException: headers 值 String 化",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 40,
+              "line": 61
+            },
+            "start": {
+              "column": 9,
+              "line": 61
+            }
+          }
+        },
+        {
           "id": "250",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -4355,1623 +6206,15 @@
           }
         },
         {
-          "id": "137",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: The input did not match the regular expression /server name must match/. Input:: uncaughtException: The input did not match the regular expression /server name must match/. Input:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 22
-            },
-            "start": {
-              "column": 40,
-              "line": 20
-            }
-          }
-        },
-        {
-          "id": "153",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "statusReason": "uncaughtException: The input did not match the regular expression /transport must be/. Input:: uncaughtException: The input did not match the regular expression /transport must be/. Input:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 98,
-              "line": 24
-            },
-            "start": {
-              "column": 32,
-              "line": 24
-            }
-          }
-        },
-        {
-          "id": "138",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "statusReason": "uncaughtException: The input did not match the regular expression /server name must match/. Input:: uncaughtException: The input did not match the regular expression /server name must match/. Input:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 77,
-              "line": 21
-            },
-            "start": {
-              "column": 5,
-              "line": 21
-            }
-          }
-        },
-        {
-          "id": "129",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "statusReason": "uncaughtException: The input did not match the regular expression /must be an object/. Input:: uncaughtException: The input did not match the regular expression /must be an object/. Input:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 103,
-              "line": 17
-            },
-            "start": {
-              "column": 52,
-              "line": 17
-            }
-          }
-        },
-        {
-          "id": "151",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: The input did not match the regular expression /transport must be/. Input:: uncaughtException: The input did not match the regular expression /transport must be/. Input:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 30,
-              "line": 24
-            },
-            "start": {
-              "column": 7,
-              "line": 24
-            }
-          }
-        },
-        {
-          "id": "145",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: The input did not match the regular expression /transport must be/. Input:: uncaughtException: The input did not match the regular expression /transport must be/. Input:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 104,
-              "line": 23
-            },
-            "start": {
-              "column": 79,
-              "line": 23
-            }
-          }
-        },
-        {
-          "id": "127",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: The input did not match the regular expression /must be an object/. Input:: uncaughtException: The input did not match the regular expression /must be an object/. Input:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 50,
-              "line": 17
-            },
-            "start": {
-              "column": 36,
-              "line": 17
-            }
-          }
-        },
-        {
-          "id": "136",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: The input did not match the regular expression /server name must match/. Input:: uncaughtException: The input did not match the regular expression /server name must match/. Input:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 38,
-              "line": 20
-            },
-            "start": {
-              "column": 7,
-              "line": 20
-            }
-          }
-        },
-        {
-          "id": "124",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: The input did not match the regular expression /must be an object/. Input:: uncaughtException: The input did not match the regular expression /must be an object/. Input:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 32,
-              "line": 17
-            },
-            "start": {
-              "column": 7,
-              "line": 17
-            }
-          }
-        },
-        {
-          "id": "122",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: The input did not match the regular expression /must be an object/. Input:: uncaughtException: The input did not match the regular expression /must be an object/. Input:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 50,
-              "line": 17
-            },
-            "start": {
-              "column": 7,
-              "line": 17
-            }
-          }
-        },
-        {
-          "id": "123",
-          "mutatorName": "LogicalOperator",
-          "replacement": "typeof input !== \"object\" && input === null",
-          "statusReason": "uncaughtException: The input did not match the regular expression /must be an object/. Input:: uncaughtException: The input did not match the regular expression /must be an object/. Input:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 50,
-              "line": 17
-            },
-            "start": {
-              "column": 7,
-              "line": 17
-            }
-          }
-        },
-        {
-          "id": "131",
-          "mutatorName": "MethodExpression",
-          "replacement": "String(src.name ?? \"\")",
-          "statusReason": "uncaughtException: server name must match ^[A-Za-z0-9_-]{1,32}$: uncaughtException: server name must match ^[A-Za-z0-9_-]{1,32}$",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 45,
-              "line": 19
-            },
-            "start": {
-              "column": 16,
-              "line": 19
-            }
-          }
-        },
-        {
-          "id": "141",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: transport must be \"stdio\" or \"streamable-http\": uncaughtException: transport must be \"stdio\" or \"streamable-http\"",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 56,
-              "line": 23
-            },
-            "start": {
-              "column": 21,
-              "line": 23
-            }
-          }
-        },
-        {
-          "id": "170",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: Missing expected exception.: uncaughtException: Missing expected exception.",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 6,
-              "line": 28
-            },
-            "start": {
-              "column": 83,
-              "line": 26
-            }
-          }
-        },
-        {
-          "id": "159",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: Missing expected exception.: uncaughtException: Missing expected exception.",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 29
-            },
-            "start": {
-              "column": 30,
-              "line": 25
-            }
-          }
-        },
-        {
-          "id": "162",
-          "mutatorName": "LogicalOperator",
-          "replacement": "typeof src.command !== \"string\" && (src.command as string).trim() === \"\"",
-          "statusReason": "uncaughtException: The input did not match the regular expression /requires a command/. Input:: uncaughtException: The input did not match the regular expression /requires a command/. Input:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 81,
-              "line": 26
-            },
-            "start": {
-              "column": 9,
-              "line": 26
-            }
-          }
-        },
-        {
-          "id": "171",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "statusReason": "uncaughtException: Missing expected exception.: uncaughtException: Missing expected exception.",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 58,
-              "line": 27
-            },
-            "start": {
-              "column": 7,
-              "line": 27
-            }
-          }
-        },
-        {
-          "id": "173",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: Missing expected exception.: uncaughtException: Missing expected exception.",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 38
-            },
-            "start": {
-              "column": 10,
-              "line": 29
-            }
-          }
-        },
-        {
-          "id": "175",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: The input did not match the regular expression /requires a url/. Input:: uncaughtException: The input did not match the regular expression /requires a url/. Input:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 73,
-              "line": 30
-            },
-            "start": {
-              "column": 9,
-              "line": 30
-            }
-          }
-        },
-        {
-          "id": "174",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: streamable-http server requires a url: uncaughtException: streamable-http server requires a url",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 73,
-              "line": 30
-            },
-            "start": {
-              "column": 9,
-              "line": 30
-            }
-          }
-        },
-        {
-          "id": "155",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: stdio server requires a command: uncaughtException: stdio server requires a command",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 28,
-              "line": 25
-            },
-            "start": {
-              "column": 7,
-              "line": 25
-            }
-          }
-        },
-        {
-          "id": "161",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: Missing expected exception.: uncaughtException: Missing expected exception.",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 81,
-              "line": 26
-            },
-            "start": {
-              "column": 9,
-              "line": 26
-            }
-          }
-        },
-        {
-          "id": "176",
-          "mutatorName": "LogicalOperator",
-          "replacement": "typeof src.url !== \"string\" && (src.url as string).trim() === \"\"",
-          "statusReason": "uncaughtException: The input did not match the regular expression /requires a url/. Input:: uncaughtException: The input did not match the regular expression /requires a url/. Input:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 73,
-              "line": 30
-            },
-            "start": {
-              "column": 9,
-              "line": 30
-            }
-          }
-        },
-        {
-          "id": "185",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "statusReason": "uncaughtException: The input did not match the regular expression /requires a url/. Input:: uncaughtException: The input did not match the regular expression /requires a url/. Input:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 64,
-              "line": 31
-            },
-            "start": {
-              "column": 7,
-              "line": 31
-            }
-          }
-        },
-        {
-          "id": "177",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: The input did not match the regular expression /requires a url/. Input:: uncaughtException: The input did not match the regular expression /requires a url/. Input:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 36,
-              "line": 30
-            },
-            "start": {
-              "column": 9,
-              "line": 30
-            }
-          }
-        },
-        {
-          "id": "178",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof src.url === \"string\"",
-          "statusReason": "uncaughtException: streamable-http server requires a url: uncaughtException: streamable-http server requires a url",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 36,
-              "line": 30
-            },
-            "start": {
-              "column": 9,
-              "line": 30
-            }
-          }
-        },
-        {
-          "id": "181",
-          "mutatorName": "EqualityOperator",
-          "replacement": "(src.url as string).trim() !== \"\"",
-          "statusReason": "uncaughtException: streamable-http server requires a url: uncaughtException: streamable-http server requires a url",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 73,
-              "line": 30
-            },
-            "start": {
-              "column": 40,
-              "line": 30
-            }
-          }
-        },
-        {
-          "id": "184",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: The input did not match the regular expression /requires a url/. Input:: uncaughtException: The input did not match the regular expression /requires a url/. Input:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 6,
-              "line": 32
-            },
-            "start": {
-              "column": 75,
-              "line": 30
-            }
-          }
-        },
-        {
-          "id": "188",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: Missing expected exception.: uncaughtException: Missing expected exception.",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 6,
-              "line": 37
-            },
-            "start": {
-              "column": 13,
-              "line": 35
-            }
-          }
-        },
-        {
-          "id": "116",
-          "mutatorName": "Regex",
-          "replacement": "/[A-Za-z0-9_-]{1,32}$/",
-          "statusReason": "uncaughtException: The input did not match the regular expression /\\^/. Input:: uncaughtException: The input did not match the regular expression /\\^/. Input:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 5,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8",
-            "9"
-          ],
-          "location": {
-            "end": {
-              "column": 59,
-              "line": 13
-            },
-            "start": {
-              "column": 36,
-              "line": 13
-            }
-          }
-        },
-        {
-          "id": "187",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: Missing expected exception.: uncaughtException: Missing expected exception.",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 6,
-              "line": 35
-            },
-            "start": {
-              "column": 9,
-              "line": 33
-            }
-          }
-        },
-        {
-          "id": "117",
-          "mutatorName": "Regex",
-          "replacement": "/^[A-Za-z0-9_-]{1,32}/",
-          "statusReason": "uncaughtException: The input did not match the regular expression /server name must match/. Input:: uncaughtException: The input did not match the regular expression /server name must match/. Input:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 5,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8",
-            "9"
-          ],
-          "location": {
-            "end": {
-              "column": 59,
-              "line": 13
-            },
-            "start": {
-              "column": 36,
-              "line": 13
-            }
-          }
-        },
-        {
-          "id": "189",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "statusReason": "uncaughtException: Missing expected exception.: uncaughtException: Missing expected exception.",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 50,
-              "line": 36
-            },
-            "start": {
-              "column": 7,
-              "line": 36
-            }
-          }
-        },
-        {
-          "id": "166",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: Missing expected exception.: uncaughtException: Missing expected exception.",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 81,
-              "line": 26
-            },
-            "start": {
-              "column": 44,
-              "line": 26
-            }
-          }
-        },
-        {
-          "id": "163",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: The input did not match the regular expression /requires a command/. Input:: uncaughtException: The input did not match the regular expression /requires a command/. Input:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 40,
-              "line": 26
-            },
-            "start": {
-              "column": 9,
-              "line": 26
-            }
-          }
-        },
-        {
-          "id": "168",
-          "mutatorName": "MethodExpression",
-          "replacement": "src.command as string",
-          "statusReason": "uncaughtException: Missing expected exception.: uncaughtException: Missing expected exception.",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 74,
-              "line": 26
-            },
-            "start": {
-              "column": 44,
-              "line": 26
-            }
-          }
-        },
-        {
-          "id": "182",
-          "mutatorName": "MethodExpression",
-          "replacement": "src.url as string",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 66,
-              "line": 30
-            },
-            "start": {
-              "column": 40,
-              "line": 30
-            }
-          }
-        },
-        {
-          "id": "204",
-          "mutatorName": "EqualityOperator",
-          "replacement": "src.toolCallTimeoutMs as number <= 0",
-          "statusReason": "uncaughtException: 正数 timeout floor: uncaughtException: 正数 timeout floor",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 2,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 106,
-              "line": 43
-            },
-            "start": {
-              "column": 69,
-              "line": 43
-            }
-          }
-        },
-        {
-          "id": "180",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 73,
-              "line": 30
-            },
-            "start": {
-              "column": 40,
-              "line": 30
-            }
-          }
-        },
-        {
-          "id": "213",
-          "mutatorName": "EqualityOperator",
-          "replacement": "(src.description as string).trim() === \"\"",
-          "statusReason": "uncaughtException: description trim: uncaughtException: description trim",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 98,
-              "line": 48
-            },
-            "start": {
-              "column": 57,
-              "line": 48
-            }
-          }
-        },
-        {
-          "id": "202",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 2,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 106,
-              "line": 43
-            },
-            "start": {
-              "column": 69,
-              "line": 43
-            }
-          }
-        },
-        {
-          "id": "203",
-          "mutatorName": "EqualityOperator",
-          "replacement": "src.toolCallTimeoutMs as number >= 0",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 2,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 106,
-              "line": 43
-            },
-            "start": {
-              "column": 69,
-              "line": 43
-            }
-          }
-        },
-        {
-          "id": "197",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: 正数 timeout floor: uncaughtException: 正数 timeout floor",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 106,
-              "line": 43
-            },
-            "start": {
-              "column": 24,
-              "line": 43
-            }
-          }
-        },
-        {
-          "id": "212",
+          "id": "251",
           "mutatorName": "ConditionalExpression",
           "replacement": "true",
           "status": "Survived",
-          "static": false,
           "testsCompleted": 1,
-          "coveredBy": [
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 98,
-              "line": 48
-            },
-            "start": {
-              "column": 57,
-              "line": 48
-            }
-          }
-        },
-        {
-          "id": "196",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: The expression evaluated to a falsy value:: uncaughtException: The expression evaluated to a falsy value:",
-          "status": "Killed",
           "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 106,
-              "line": 43
-            },
-            "start": {
-              "column": 24,
-              "line": 43
-            }
-          }
-        },
-        {
-          "id": "200",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof src.toolCallTimeoutMs !== \"number\"",
-          "statusReason": "uncaughtException: 正数 timeout floor: uncaughtException: 正数 timeout floor",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 65,
-              "line": 43
-            },
-            "start": {
-              "column": 24,
-              "line": 43
-            }
-          }
-        },
-        {
-          "id": "216",
-          "mutatorName": "MethodExpression",
-          "replacement": "src.description as string",
-          "statusReason": "uncaughtException: description trim: uncaughtException: description trim",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
+          "killedBy": [],
           "coveredBy": [
             "4"
-          ],
-          "location": {
-            "end": {
-              "column": 43,
-              "line": 49
-            },
-            "start": {
-              "column": 9,
-              "line": 49
-            }
-          }
-        },
-        {
-          "id": "214",
-          "mutatorName": "MethodExpression",
-          "replacement": "src.description as string",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 91,
-              "line": 48
-            },
-            "start": {
-              "column": 57,
-              "line": 48
-            }
-          }
-        },
-        {
-          "id": "198",
-          "mutatorName": "LogicalOperator",
-          "replacement": "typeof src.toolCallTimeoutMs === \"number\" || src.toolCallTimeoutMs as number > 0",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 106,
-              "line": 43
-            },
-            "start": {
-              "column": 24,
-              "line": 43
-            }
-          }
-        },
-        {
-          "id": "205",
-          "mutatorName": "LogicalOperator",
-          "replacement": "src.reconnect as Record<string, unknown> | undefined && {}",
-          "statusReason": "uncaughtException: Expected values to be strictly deep-equal:: uncaughtException: Expected values to be strictly deep-equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 76,
-              "line": 46
-            },
-            "start": {
-              "column": 16,
-              "line": 46
-            }
-          }
-        },
-        {
-          "id": "231",
-          "mutatorName": "EqualityOperator",
-          "replacement": "src.cwd as string === \"\"",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 66,
-              "line": 55
-            },
-            "start": {
-              "column": 40,
-              "line": 55
-            }
-          }
-        },
-        {
-          "id": "207",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: description trim: uncaughtException: description trim",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 98,
-              "line": 48
-            },
-            "start": {
-              "column": 18,
-              "line": 48
-            }
-          }
-        },
-        {
-          "id": "230",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 66,
-              "line": 55
-            },
-            "start": {
-              "column": 40,
-              "line": 55
-            }
-          }
-        },
-        {
-          "id": "240",
-          "mutatorName": "EqualityOperator",
-          "replacement": "src.env === null",
-          "statusReason": "uncaughtException: Expected values to be strictly deep-equal:: uncaughtException: Expected values to be strictly deep-equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 56,
-              "line": 56
-            },
-            "start": {
-              "column": 40,
-              "line": 56
-            }
-          }
-        },
-        {
-          "id": "242",
-          "mutatorName": "ArrowFunction",
-          "replacement": "() => undefined",
-          "statusReason": "uncaughtException: Iterator value undefined is not an entry object: uncaughtException: Iterator value undefined is not an entry object",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 132,
-              "line": 57
-            },
-            "start": {
-              "column": 94,
-              "line": 57
-            }
-          }
-        },
-        {
-          "id": "241",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: Expected values to be strictly deep-equal:: uncaughtException: Expected values to be strictly deep-equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 6,
-              "line": 58
-            },
-            "start": {
-              "column": 58,
-              "line": 56
-            }
-          }
-        },
-        {
-          "id": "239",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 56,
-              "line": 56
-            },
-            "start": {
-              "column": 40,
-              "line": 56
-            }
-          }
-        },
-        {
-          "id": "243",
-          "mutatorName": "ArrayDeclaration",
-          "replacement": "[]",
-          "statusReason": "uncaughtException: Expected values to be strictly deep-equal:: uncaughtException: Expected values to be strictly deep-equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 132,
-              "line": 57
-            },
-            "start": {
-              "column": 112,
-              "line": 57
-            }
-          }
-        },
-        {
-          "id": "199",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 4,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 65,
-              "line": 43
-            },
-            "start": {
-              "column": 24,
-              "line": 43
-            }
-          }
-        },
-        {
-          "id": "244",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 64
-            },
-            "start": {
-              "column": 10,
-              "line": 59
-            }
-          }
-        },
-        {
-          "id": "223",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: Expected values to be strictly deep-equal:: uncaughtException: Expected values to be strictly deep-equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 32,
-              "line": 54
-            },
-            "start": {
-              "column": 9,
-              "line": 54
-            }
-          }
-        },
-        {
-          "id": "246",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: headers 值 String 化: uncaughtException: headers 值 String 化",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4",
-            "6"
           ],
           "location": {
             "end": {
@@ -5979,62 +6222,8 @@
               "line": 61
             },
             "start": {
-              "column": 9,
+              "column": 44,
               "line": 61
-            }
-          }
-        },
-        {
-          "id": "249",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof src.headers !== \"object\"",
-          "statusReason": "uncaughtException: headers 值 String 化: uncaughtException: headers 值 String 化",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 40,
-              "line": 61
-            },
-            "start": {
-              "column": 9,
-              "line": 61
-            }
-          }
-        },
-        {
-          "id": "217",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 28,
-              "line": 52
-            },
-            "start": {
-              "column": 7,
-              "line": 52
             }
           }
         },
@@ -6044,8 +6233,8 @@
           "replacement": "src.headers === null",
           "statusReason": "uncaughtException: headers 值 String 化: uncaughtException: headers 值 String 化",
           "status": "Killed",
-          "static": false,
           "testsCompleted": 1,
+          "static": false,
           "killedBy": [
             "4"
           ],
@@ -6064,66 +6253,13 @@
           }
         },
         {
-          "id": "225",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 66,
-              "line": 55
-            },
-            "start": {
-              "column": 9,
-              "line": 55
-            }
-          }
-        },
-        {
-          "id": "254",
-          "mutatorName": "ArrowFunction",
-          "replacement": "() => undefined",
-          "statusReason": "uncaughtException: Iterator value undefined is not an entry object: uncaughtException: Iterator value undefined is not an entry object",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 140,
-              "line": 62
-            },
-            "start": {
-              "column": 102,
-              "line": 62
-            }
-          }
-        },
-        {
           "id": "253",
           "mutatorName": "BlockStatement",
           "replacement": "{}",
           "statusReason": "uncaughtException: headers 值 String 化: uncaughtException: headers 值 String 化",
           "status": "Killed",
-          "static": false,
           "testsCompleted": 1,
+          "static": false,
           "killedBy": [
             "4"
           ],
@@ -6142,30 +6278,27 @@
           }
         },
         {
-          "id": "228",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof src.cwd !== \"string\"",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "id": "254",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "statusReason": "uncaughtException: Iterator value undefined is not an entry object: uncaughtException: Iterator value undefined is not an entry object",
           "status": "Killed",
+          "testsCompleted": 1,
           "static": false,
-          "testsCompleted": 3,
           "killedBy": [
             "4"
           ],
           "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
+            "4"
           ],
           "location": {
             "end": {
-              "column": 36,
-              "line": 55
+              "column": 140,
+              "line": 62
             },
             "start": {
-              "column": 9,
-              "line": 55
+              "column": 102,
+              "line": 62
             }
           }
         },
@@ -6175,8 +6308,8 @@
           "replacement": "[]",
           "statusReason": "uncaughtException: headers 值 String 化: uncaughtException: headers 值 String 化",
           "status": "Killed",
-          "static": false,
           "testsCompleted": 1,
+          "static": false,
           "killedBy": [
             "4"
           ],
@@ -6191,127 +6324,6 @@
             "start": {
               "column": 120,
               "line": 62
-            }
-          }
-        },
-        {
-          "id": "234",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: Expected values to be strictly deep-equal:: uncaughtException: Expected values to be strictly deep-equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 56,
-              "line": 56
-            },
-            "start": {
-              "column": 9,
-              "line": 56
-            }
-          }
-        },
-        {
-          "id": "251",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 64,
-              "line": 61
-            },
-            "start": {
-              "column": 44,
-              "line": 61
-            }
-          }
-        },
-        {
-          "id": "224",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 4,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 66,
-              "line": 55
-            },
-            "start": {
-              "column": 9,
-              "line": 55
-            }
-          }
-        },
-        {
-          "id": "227",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 4,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 36,
-              "line": 55
-            },
-            "start": {
-              "column": 9,
-              "line": 55
-            }
-          }
-        },
-        {
-          "id": "226",
-          "mutatorName": "LogicalOperator",
-          "replacement": "typeof src.cwd === \"string\" || src.cwd as string !== \"\"",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 4,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 66,
-              "line": 55
-            },
-            "start": {
-              "column": 9,
-              "line": 55
             }
           }
         }
