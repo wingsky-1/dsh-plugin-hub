@@ -67,7 +67,6 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "catalog:",
-    "@deepseek-ai/dsh-client-store": "catalog:",
     "@deepseek-ai/dsh-client-ui-slots": "catalog:",
     "@deepseek-ai/dsh-host-webserver": "catalog:",
     "@types/marked": "^6.0.0",
@@ -76,6 +75,7 @@
     "highlight.js": "^11.12.0",
     "marked": "^18.0.9",
     "mermaid": "^11.17.1",
+    "mime": "^4.1.0",
     "untildify": "^6.0.0"
   },
   "peerDependencies": {
