@@ -16,8 +16,7 @@
     "docs:check": "node scripts/gate/verify-docs.ts",
     "typecheck": "pnpm -r --if-present run typecheck",
     "cov": "c8 --reporter=json --reporter=json-summary --reporter=text pnpm -r --if-present test",
-    "crap": "node scripts/gate/crap-check.mjs",
-    "mutation": "stryker run"
+    "crap": "node scripts/gate/crap-check.mjs"
   },
   "keywords": [
     "dsh",
