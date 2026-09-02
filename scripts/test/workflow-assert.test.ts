@@ -388,6 +388,13 @@ test('#276 方案 A: src 级 mutate 退役产物行号机制——ci/observe 两
         `${f} 的 mutate "${m}" 必须是 src 路径（方案 A：文件 glob 声明，无产物行号）`)
     }
   }
+  // #439：根 stryker.config.json 已退役——lib 级 mutate 与 CI 段配置（src 级）口径脱节，
+  // 全仓 stryker 配置统一收敛到 stryker.conf.d/。防退役后回归：根配置不得存在、不得被 git 追踪。
+  const rootStryker = join(ROOT, 'stryker.config.json')
+  assert.ok(!existsSync(rootStryker), '根 stryker.config.json 应已删除（#439 退役：口径统一 src 级 conf.d，禁止裸 stryker run 依赖根配置）')
+  const ls = spawnSync('git', ['ls-files', 'stryker.config.json'], { cwd: ROOT, encoding: 'utf8' })
+  assert.strictEqual(ls.status, 0, 'git ls-files 应正常退出')
+  assert.strictEqual(ls.stdout.trim(), '', 'git ls-files stryker.config.json 应为空（根配置不得重新被版本库追踪，#439 防回归）')
 })
 
 test('#178+#204: ci.yml PR 增量门禁——读仓库基线文件 + 按命中包切片 + 并入 repo-gate', () => {
