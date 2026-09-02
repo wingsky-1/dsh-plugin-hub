@@ -5,11 +5,12 @@
 /**
  * workflow-assert — CI workflow 结构静态断言（#85 v3 F2 防回归条款）。
  *
- * 断言 ci.yml / observe.yml 的关键结构不变量：
+ * 断言 ci.yml / observe*.yml / release.yml / health-report.yml 的关键结构不变量：
  *   - repo-gate 聚合闸：if always()、fail-closed 断言步骤、required check 名不变
  *   - fail-closed 双闸：filter 失败 fallback 全量切片
  *   - build-test 矩阵恒全集构建（repo-gate 全局门禁依赖全量 lib 产物，评审 F1）
- *   - action 一律 pin commit SHA（供应链纪律，与 health-report.yml 既有惯例一致）
+ *   - action 一律 pin commit SHA（供应链纪律，release.yml 为最高风险面——持有
+ *     NPM_TOKEN + contents: write，必须纳入断言盲区外全覆盖；health-report.yml 同防回归）
  *   - observe.yml：全量班调度（北京次日 04:00）、self-cov --check 执行点在位；
  *     全量清单 ↔ stryker.conf.d 文件集 ↔ gauntlet mutation.packages 三方一致
  *   - observe-incremental.yml：增量班调度（北京 12/16/20/24）、无日期闸、
@@ -34,6 +35,8 @@ const ROOT = join(import.meta.dirname, '../..')
 const CI = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8')
 const OBSERVE = readFileSync(join(ROOT, '.github/workflows/observe.yml'), 'utf8')
 const OBSERVE_INC = readFileSync(join(ROOT, '.github/workflows/observe-incremental.yml'), 'utf8')
+const RELEASE = readFileSync(join(ROOT, '.github/workflows/release.yml'), 'utf8')
+const HEALTH = readFileSync(join(ROOT, '.github/workflows/health-report.yml'), 'utf8')
 const GAUNTLET = JSON.parse(readFileSync(join(ROOT, 'scripts/data/gauntlet.config.json'), 'utf8'))
 const MANIFEST = JSON.parse(readFileSync(join(ROOT, 'scripts/data/plugins-manifest.json'), 'utf8'))
 
@@ -135,8 +138,11 @@ test('ci.yml: changes case 映射覆盖全部包（防新增包静默漏检，�
   assert.deepEqual(loopList, [...SLICE_PACKAGES].sort(), 'for 循环清单与切片包集不一致')
 })
 
-test('ci.yml/observe*.yml: 第三方与官方 action 一律 pin commit SHA', () => {
-  for (const [name, text] of [['ci.yml', CI], ['observe.yml', OBSERVE], ['observe-incremental.yml', OBSERVE_INC]]) {
+test('ci.yml/observe*/release/health-report.yml: 第三方与官方 action 一律 pin commit SHA', () => {
+  for (const [name, text] of [
+    ['ci.yml', CI], ['observe.yml', OBSERVE], ['observe-incremental.yml', OBSERVE_INC],
+    ['release.yml', RELEASE], ['health-report.yml', HEALTH],
+  ]) {
     // 逐行解析 uses: 值（避免贪婪 \S+ 吞掉 @ref，评审 F9）
     const lines = text.split('\n').filter((l) => l.trim().startsWith('uses:'))
     assert.ok(lines.length > 0, `${name} 存在 uses 步骤`)
