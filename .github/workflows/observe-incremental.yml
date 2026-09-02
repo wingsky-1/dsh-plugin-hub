@@ -1,0 +1,190 @@
+name: Observe (incremental)
+
+# #433 调度重设计：每日四班次增量班（北京 12/16/20/24 = UTC 04/08/12/16）。
+# - 基于全量班（observe.yml，北京次日 04:00）提交进 scripts/gate/baseline/ 的
+#   仓库内基线跑增量变异（快）——只变异上次全量后发生变化的代码；
+# - 基线有实质变化即 create-pull-request 自动开 PR 合入 main（每次独立判断，
+#   无每日日期闸；create-pull-request 自身在无 diff 时不建 PR，天然「有变化即 PR」）；
+# - 职责收敛：本班次不跑 cov / self-cov --check / crap / observe-check 报告，
+#   只做「恢复基线 → 增量变异 → 基线 PR + auto-merge」。
+# - #204 方案 A：基线走仓库内版本化文件 scripts/gate/baseline/（git 跨 ref 天然
+#   可见），替代失效的 actions/cache 跨 ref 通道（#204 实证 PR 永远 miss main 缓存）。
+# - token 用 OBSERVE_PAT（repo secret）：GITHUB_TOKEN 创建的 PR 不触发后续
+#   workflow runs（防递归机制），曾致基线快照 PR 的必需检查长期 action_required、
+#   反复卡在人工批准——PAT 创建可正常触发 CI 与 auto-merge。
+
+on:
+  schedule:
+    # 每日四班次增量变异与基线刷新（#433 调度重设计）：北京 12:00/16:00/20:00/24:00
+    # = UTC 04:00/08:00/12:00/16:00，均避开整点 Actions 高峰；全量班见 observe.yml
+    - cron: '0 4,8,12,16 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  # #433 调度重设计：增量班四班次定时（无 push 触发），schedule 间无冲突可并行；
+  # 并发组与 observe.yml 全量班独立（增量班不等待、不取消全量班）
+  group: observe-incremental-${{ github.event_name }}
+  cancel-in-progress: false
+
+jobs:
+  incremental:
+    name: Incremental mutation
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        # #433：增量班需读 origin/main 上全量班提交的仓库内基线（对比 scripts/gate/baseline/）
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@a8198c4bff370c8506180b035930dea56dbd5288 # v5
+        # 版本以根 package.json 的 packageManager 字段为单一事实源（勿同时指定 version）
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all
+        # 必须全量构建（run #32790425132 教训）：mutate 区间的行号锚定 esbuild
+        # 产物分段注释，产物结构依赖 workspace 内联链（shared/ 与依赖包副本）的
+        # 全集一致性；单包构建曾因跨包 lib 缺失直接 ERR_MODULE_NOT_FOUND。
+        run: pnpm build
+
+      - name: Restore repo incremental baseline（#204：读仓库内基线到 coverage/mutation/）
+        # #204 方案 A：增量班直接读 scripts/gate/baseline/ 下全量班提交的基线文件，
+        # 复制到 coverage/mutation/ 供 Stryker 增量模式跳过未变 mutant。
+        # 首夜/部分包基线缺失时该包天然降级为全量变异（notice 标注属预期，非缺陷）。
+        run: |
+          set -e
+          mkdir -p coverage/mutation
+          RESTORED=0
+          for f in scripts/gate/baseline/incremental-*.json; do
+            if [ -f "$f" ]; then
+              cp "$f" "coverage/mutation/$(basename "$f")"
+              RESTORED=1
+            fi
+          done
+          if [ "$RESTORED" -eq 0 ]; then
+            echo '::notice::incremental 基线缺失 —— 本次降级为全量变异（首夜无基线属预期，非缺陷）'
+          fi
+
+      - name: Resolve mutation suites（#433 增量班：全量清单，增量模式跳过未变 mutant）
+        id: suite-plan
+        run: |
+          set -e
+          # 全量清单（glob conf 目录为单一事实源）——增量模式 stryker 读已恢复的
+          # 基线跳过未变 mutant（快）；计划空时 has_suites=false 防空跑
+          ls stryker.conf.d/dsh-*.json > /tmp/suites.txt
+          echo "has_suites=true" >> "$GITHUB_OUTPUT"
+
+      - name: Mutation suites（串行执行计划内变异配置；单配置失败记账继续跑完，结尾统一判红）
+        # id 供 collect 步骤区分「整套 skip（无产物无从收集）」与「部分失败
+        # （记账班次已产出的基线照常收集）」（#217）
+        id: mutation-suites
+        if: steps.suite-plan.outputs.has_suites == 'true'
+        # #178 逐包容错：strict 判红路径下 incremental 基线已先落盘（StrykerJS 源码核实），
+        # 记账继续可让后续包照常产出报告与基线，避免单包连锁丢弃整班次数据。
+        # #220 B 方案：循环清单由 suite-plan 步骤产出（全量 glob），本步骤不关心名单来源
+        run: |
+          FAILED=0
+          FAILED_CONFS=''
+          while read -r conf; do
+            name="$(basename "$conf" .json)"
+            echo "::group::stryker $name"
+            if npx stryker run "$conf"; then
+              echo "::endgroup::"
+            else
+              echo "::endgroup::"
+              echo "::error::变异套件失败：$name（记账后继续执行其余配置）"
+              FAILED=1
+              FAILED_CONFS="$FAILED_CONFS $name"
+            fi
+          done < /tmp/suites.txt
+          if [ "$FAILED" -ne 0 ]; then
+            echo "::error::以下变异套件失败，统一判红:$FAILED_CONFS"
+            exit 1
+          fi
+
+      - name: Collect incremental baseline（#204：收集到仓库内 scripts/gate/baseline/）
+        # if: always() && 非 skipped 且有计划 —— 部分失败班次已产出的基线文件照常收集；
+        # 但整套变异被 skip 或计划为空时无任何产物，collect 不运行（防 copied=0 误红，#217/#220）
+        if: always() && steps.mutation-suites.outcome != 'skipped' && steps.suite-plan.outputs.has_suites == 'true'
+        run: node scripts/gate/collect-incremental-baseline.mjs
+
+      - name: Open baseline PR（#433 增量班：基线有实质变化即自动建 PR，无每日日期闸）
+        # create-pull-request 只在有 diff 时创建 PR（无变化 = no-op，不产生噪音提交）——
+        # 天然实现「有变化即 PR」，每次增量班独立判断，无需日期闸。
+        # 受保护分支禁止 workflow 直接 push main → 走 PR + auto-merge 路径。
+        # token 用 OBSERVE_PAT（repo secret）：PAT 创建的 PR 可正常触发 CI 与 auto-merge
+        # （GITHUB_TOKEN 不触发后续 workflow runs，曾致基线 PR 反复卡人工批准）。
+        uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7
+        with:
+          token: ${{ secrets.OBSERVE_PAT }}
+          branch: ci/incremental-baseline
+          base: main
+          title: 'chore(ci): update incremental mutation baseline（增量快照）'
+          body: |
+            增量变异产出的 Stryker incremental 基线快照（#433 调度重设计；增量班基于
+            全量班基线跑增量变异后收集）。
+
+            变更内容：`scripts/gate/baseline/` 下的 incremental 基线文件与
+            manifest.json（仅当基线内容有实质变化时本 PR 才会被创建）。
+
+            无代码逻辑变更；合并后 PR 的 mutation-gate 将直接读取本目录基线
+            走增量变异（跳过未变 mutant），替代失效的 actions/cache 跨 ref 通道。
+          commit-message: 'chore(ci): update incremental mutation baseline（增量快照）'
+          labels: 'ci'
+          delete-branch: true
+          signoff: false
+
+      - name: Auto-merge baseline PR（若被创建）
+        # create-pull-request 只建 PR 不合并；此处用 gh 开启 auto-merge。
+        # 竞态处理：create-pull-request 刚创建 PR 后，GitHub API 可能有传播延迟，
+        # 单次 gh pr list 可能查不到 → 用循环重试（最多 60s）规避。
+        # 注意：auto-merge 需要分支保护规则允许该 bot PR 自动合并（CI 全绿 + 无
+        # review 要求，或配置 auto-merge 通过条件）。若保护规则要求 review，本步骤
+        # 会失败并在日志提示，不影响增量变异其余流程。
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.OBSERVE_PAT }}
+        run: |
+          PR=""
+          for i in $(seq 1 12); do
+            PR=$(gh pr list --repo "$GITHUB_REPOSITORY" --head ci/incremental-baseline --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)
+            if [ -n "$PR" ]; then
+              echo "PR #$PR 已可见（第 ${i} 次轮询）"
+              break
+            fi
+            echo "等待 PR 可见性传播（第 ${i} 次，5s）…"
+            sleep 5
+          done
+          if [ -n "$PR" ]; then
+            echo "开启 auto-merge：PR #$PR"
+            gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --auto --squash || \
+              echo "::warning::auto-merge 开启失败（可能受分支保护 review 规则限制）——需人工合入 PR #$PR"
+          else
+            echo "无基线变更 PR（基线内容未变化或创建失败），跳过 auto-merge"
+          fi
+
+      - name: Upload artifacts（mutation 报告留档）
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: observe-incremental-reports
+          path: |
+            coverage/mutation/
+          retention-days: 14
+          if-no-files-found: error   # 报告缺失本身即异常（fail-closed，评审 F4 旁证）

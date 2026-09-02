@@ -1,8 +1,10 @@
-# Incremental mutation baseline（#204 · #276 方案 A）
+# Incremental mutation baseline（#204 · #276 方案 A · #433 调度重设计）
 
-本目录存放定时全量变异产出的 Stryker incremental 基线（每段一个 JSON，含 mutant
-指纹与覆盖信息），由 `.github/workflows/observe.yml` 每日四班次（北京 09/12/16/20）
-更新、经 `create-pull-request` 自动合入 main（快照 PR 每日最多一次，日期闸）。
+本目录存放定时变异产出的 Stryker incremental 基线（每段一个 JSON，含 mutant
+指纹与覆盖信息），由 `.github/workflows/observe.yml` 每日全量班（北京次日 04:00
+= UTC 20:00）与 `.github/workflows/observe-incremental.yml` 增量班（北京
+12/16/20/24）更新、经 `create-pull-request` 自动合入 main（全量班快照 PR 每
+自然日最多一次日期闸；增量班无日期闸、基线有实质变化即 PR）。
 
 PR 的 `mutation-gate`（ci.yml）直接从本目录读取对应段基线文件，复制到
 `coverage/mutation/` 供 Stryker 增量模式跳过未变 mutant——替代失效的

@@ -47,12 +47,18 @@ testFiles、阈值口径与 `gauntlet.config.json` 三方一致，由 workflow-a
 **全量分工总述**：PR 门管变更切片；夜间 observe 门管主干全量；发版前
 release.yml tag 管线跑全量门禁——全量只在这三处语义中的后两处真实执行。
 
-- **夜间全量落基线**（observe.yml）：刻意不 restore 任何缓存——无 incremental
-  基线即天然全量；运行末尾把六份 `coverage/mutation/incremental-*.json` 收集到
+- **observe 调度（#433）**：每日全量班（observe.yml，北京次日 04:00 = UTC
+  20:00，cron `0 20 * * *`）刷新基线——刻意不 restore 任何缓存——无 incremental
+  基线即天然全量；运行末尾把全部 `coverage/mutation/incremental-*.json` 收集到
   仓库内版本化目录 `scripts/gate/baseline/`（#204 方案 A：git 跨 ref 天然可见，
-  替代按 ref 隔离、PR 永远 miss 的 actions/cache），有实质变化时经
-  create-pull-request 自动开 PR 合入 main。逐包容错记账：单包失败记账继续
-  跑完其余包，结尾统一非零退出。
+  替代按 ref 隔离、PR 永远 miss 的 actions/cache），有实质变化且当日尚无快照时
+  经 create-pull-request 自动开 PR 合入 main（快照 PR 每自然日最多一次日期闸防
+  git 膨胀）。逐包容错记账：单包失败记账继续跑完其余包，结尾统一非零退出。
+  每日四班次增量班（observe-incremental.yml，北京 12/16/20/24 = UTC 04/08/12/16，
+  cron `0 4,8,12,16 * * *`）：restore 仓库基线 → 增量变异（快，跳过未变
+  mutant）→ 基线有实质变化即 create-pull-request + auto-merge（无日期闸，每次
+  独立判断「有变化即 PR」；create-pull-request 无 diff 时自然 no-op）；增量班
+  不跑 cov/self-cov/crap 等报告，职责收敛为「变异 + 基线 PR」。
 - **PR 增量门禁**（ci.yml，#217 变异/覆盖解耦为三段式）：
   1. `coverage` job（全局单次）：单进程跑 `pnpm cov` + `self-cov.mjs`，产物
      `coverage/self-coverage.json` 经 artifact 下发——cov 从变异矩阵剥离后，

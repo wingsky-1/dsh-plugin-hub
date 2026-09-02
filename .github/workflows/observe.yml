@@ -2,9 +2,12 @@ name: Observe (nightly)
 
 # #85 v3 F1/F6 定案：观察期采集与变异门禁的夜间调度。
 # - cov / self-cov --check（阈值硬校验）/ crap 明细
-# - 六包全量变异（串行）+ mutate 面守卫（F5）
+# - 全量变异（串行）
 # - 报告落 issue（幂等：同日不重开）；回落 >1pp 自动追评（隔夜必有工单）
 # 变异硬门禁在本 workflow 生效：任一包 covered < threshold 且 strict 开启 → 运行失败。
+# #276 方案 A + #433 调度重设计：本 workflow 为每日全量班（北京次日 04:00 = UTC 20:00，
+# cron '0 20 * * *'）——全量变异 + 基线快照 PR（日期闸每日最多一次）；每日四班次
+# 增量变异见 observe-incremental.yml（北京 12/16/20/24，有变化即 PR，无日期闸）。
 # #178 v2 增量链路（#204 修订：缓存 → 仓库内版本化基线）：
 # - 本 workflow 刻意不做 actions/cache restore —— 无增量基线即天然全量，无需 --force；
 #   请勿"好心"补 restore 步骤（会破坏全量基线语义）。
@@ -16,9 +19,9 @@ name: Observe (nightly)
 
 on:
   schedule:
-    # 每日四班次全量变异与基线刷新（#276 方案 A 调度重设计）：北京 09:00/12:00/16:00/20:00
-    # = UTC 01:00/04:00/08:00/12:00，均避开整点 Actions 高峰
-    - cron: '0 1,4,8,12 * * *'
+    # 每日全量变异与基线刷新（#276 方案 A + #433 调度重设计）：北京次日 04:00
+    # = UTC 20:00，避开整点 Actions 高峰；增量班见 observe-incremental.yml
+    - cron: '0 20 * * *'
   workflow_dispatch:
 
 permissions:
@@ -27,7 +30,8 @@ permissions:
   pull-requests: write
 
 concurrency:
-  # #276 方案 A：四班次定时全量（无 push 触发），schedule 间无冲突可并行
+  # #276 方案 A + #433 调度重设计：全量班每日定时一次（无 push 触发），
+  # 与 observe-incremental.yml 增量班并发组独立，schedule 间无冲突可并行
   group: observe-${{ github.event_name }}
   cancel-in-progress: false
 
@@ -70,13 +74,13 @@ jobs:
         run: pnpm crap
         continue-on-error: true   # 观察期：基线校准归 #42 二期
 
-      - name: Resolve mutation suites（#276 方案 A：四班次全量）
+      - name: Resolve mutation suites（#276 方案 A + #433 全量班：每日一次全量）
         id: suite-plan
         run: |
           set -e
-          # 全量清单（glob conf 目录为单一事实源）——四班次定时全量变异，
-          # 无 push 裁剪分支（#220 按需基线的 push 触发已随 #276 方案 A 调度
-          # 重设计移除，见本文件 on: 节）
+          # 全量清单（glob conf 目录为单一事实源）——全量班即全量变异，无 push
+          # 裁剪分支（#220 按需基线的 push 触发已随 #276 方案 A 调度重设计移除，
+          # #433 起本 workflow 收敛为每日全量班，见本文件 on: 节）
           ls stryker.conf.d/dsh-*.json > /tmp/suites.txt
           echo "mode=full" >> "$GITHUB_OUTPUT"
           echo "has_suites=true" >> "$GITHUB_OUTPUT"
@@ -119,8 +123,8 @@ jobs:
         if: always() && steps.mutation-suites.outcome != 'skipped' && steps.suite-plan.outputs.has_suites == 'true'
         run: node scripts/gate/collect-incremental-baseline.mjs
 
-      - name: Baseline PR date gate（快照每日最多一次，防 git 膨胀 #276 方案 A）
-        # 四班次全量变异照常执行、基线文件照常 collect；但「基线快照 PR 合入 main」
+      - name: Baseline PR date gate（全量班快照 PR 每自然日最多一次，防 git 膨胀 #276 方案 A）
+        # 全量班每日一次变异照常执行、基线文件照常 collect；但「基线快照 PR 合入 main」
         # 限制为每自然日最多一次：检查 main 上基线的实质变更记录（manifest.json）
         # 最近一次提交是否今天（UTC）。今日已有快照 → 标记 skip_pr，
         # Open baseline PR 步骤跳过。变异执行不受本闸限制。
@@ -141,7 +145,7 @@ jobs:
             echo "skip_pr=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Open baseline PR（基线有变化时自动建 PR 合入 main；受每日日期闸约束）
+      - name: Open baseline PR（基线有变化时自动建 PR 合入 main；受全量班每日日期闸约束）
         # create-pull-request 只在有 diff 时创建 PR（无变化 = no-op，不产生噪音提交）。
         # 受保护分支禁止 workflow 直接 push main → 走 PR + auto-merge 路径。
         # PR 由 bot 身份创建，auto-merge 需在 PR 创建后由后续步骤开启（该 action 本身

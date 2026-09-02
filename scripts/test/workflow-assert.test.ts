@@ -10,8 +10,10 @@
  *   - fail-closed 双闸：filter 失败 fallback 全量切片
  *   - build-test 矩阵恒全集构建（repo-gate 全局门禁依赖全量 lib 产物，评审 F1）
  *   - action 一律 pin commit SHA（供应链纪律，与 health-report.yml 既有惯例一致）
- *   - observe.yml：四班次调度、self-cov --check 执行点在位；
- *     六包串行清单 ↔ stryker.conf.d 文件集 ↔ gauntlet mutation.packages 三方一致
+ *   - observe.yml：全量班调度（北京次日 04:00）、self-cov --check 执行点在位；
+ *     全量清单 ↔ stryker.conf.d 文件集 ↔ gauntlet mutation.packages 三方一致
+ *   - observe-incremental.yml：增量班调度（北京 12/16/20/24）、无日期闸、
+ *     有变化即 PR、不跑覆盖校验
  *   - changes 的 case 映射覆盖全部包（防新增包静默漏检，评审 F7）
  *   - #187 触发面收敛：mutation-gate 仅限 pull_request；repo-gate 判定走
  *     scripts/gate/repo-gate-assert.mjs 并以判定表全组合单测锁死
@@ -31,6 +33,7 @@ import { spawnSync } from 'node:child_process'
 const ROOT = join(import.meta.dirname, '../..')
 const CI = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8')
 const OBSERVE = readFileSync(join(ROOT, '.github/workflows/observe.yml'), 'utf8')
+const OBSERVE_INC = readFileSync(join(ROOT, '.github/workflows/observe-incremental.yml'), 'utf8')
 const GAUNTLET = JSON.parse(readFileSync(join(ROOT, 'scripts/data/gauntlet.config.json'), 'utf8'))
 const MANIFEST = JSON.parse(readFileSync(join(ROOT, 'scripts/data/plugins-manifest.json'), 'utf8'))
 
@@ -132,8 +135,8 @@ test('ci.yml: changes case 映射覆盖全部包（防新增包静默漏检，�
   assert.deepEqual(loopList, [...SLICE_PACKAGES].sort(), 'for 循环清单与切片包集不一致')
 })
 
-test('ci.yml/observe.yml: 第三方与官方 action 一律 pin commit SHA', () => {
-  for (const [name, text] of [['ci.yml', CI], ['observe.yml', OBSERVE]]) {
+test('ci.yml/observe*.yml: 第三方与官方 action 一律 pin commit SHA', () => {
+  for (const [name, text] of [['ci.yml', CI], ['observe.yml', OBSERVE], ['observe-incremental.yml', OBSERVE_INC]]) {
     // 逐行解析 uses: 值（避免贪婪 \S+ 吞掉 @ref，评审 F9）
     const lines = text.split('\n').filter((l) => l.trim().startsWith('uses:'))
     assert.ok(lines.length > 0, `${name} 存在 uses 步骤`)
@@ -193,30 +196,46 @@ test('#322: 每个带 stryker 配置的包在 path-filter 均有段配置通配�
   }
 })
 
-test('#276 方案 A: observe 四班次全量——定时触发、无 push 裁剪、快照 PR 日期闸', () => {
-  assert.ok(OBSERVE.includes("'0 1,4,8,12 * * *'"),
-    '每日四班次（UTC 01/04/08/12 = 北京 09/12/16/20）全量变异')
-  assert.ok(OBSERVE.includes('Resolve mutation suites'), 'suite-plan 步骤在位')
+test('#433 调度重设计: observe 全量班（北京次日 04:00）+ 增量班四班次（有变化即 PR）', () => {
+  // ── 全量班（observe.yml）：每日一次，北京次日 04:00 = UTC 20:00 ──
+  assert.ok(OBSERVE.includes("'0 20 * * *'"),
+    '全量班 cron 必须为每日一次 UTC 20:00（北京次日 04:00）')
+  assert.ok(OBSERVE.includes('Resolve mutation suites'), '全量班 suite-plan 步骤在位')
   assert.ok(OBSERVE.includes('ls stryker.conf.d/dsh-*.json > /tmp/suites.txt'),
-    'suite-plan 必须纯全量（glob conf 目录为单一事实源，无 push 裁剪分支）')
+    '全量班 suite-plan 必须纯全量（glob conf 目录为单一事实源，无 push 裁剪分支）')
   assert.ok(!OBSERVE.includes('EVENT_NAME'), 'observe 不得再依赖 push/事件类型（#276 方案 A 已移除 push 触发）')
   assert.ok(OBSERVE.includes('steps.suite-plan.outputs.has_suites == \'true\''),
-    '变异执行与 collect 必须以 has_suites 为前提——空计划不跑 collect 防 copied=0 误红')
-  assert.ok(OBSERVE.includes('skip_pr=true'), '快照 PR 日期闸（每日最多一次）在位')
+    '全量班变异执行与 collect 必须以 has_suites 为前提——空计划不跑 collect 防 copied=0 误红')
+  assert.ok(OBSERVE.includes('skip_pr=true'), '全量班快照 PR 日期闸（每自然日最多一次）在位')
   assert.ok(OBSERVE.includes("steps.pr-gate.outputs.skip_pr == 'false'"),
-    'Open baseline PR 必须以日期闸放行为前提')
+    '全量班 Open baseline PR 必须以日期闸放行为前提')
   assert.ok(OBSERVE.includes('scripts/gate/baseline/manifest.json'),
-    '日期闸须只匹配 manifest.json（基线实质变更记录）——避免 README 等静态文件重置闸')
-  assert.ok(OBSERVE.includes('--format=%ct'), '日期闸须用 committer Unix 时间戳 + date -u 转 UTC（杜绝时区混用跨日误判）')
+    '全量班日期闸须只匹配 manifest.json（基线实质变更记录）——避免 README 等静态文件重置闸')
+  assert.ok(OBSERVE.includes('--format=%ct'), '全量班日期闸须用 committer Unix 时间戳 + date -u 转 UTC（杜绝时区混用跨日误判）')
+
+  // ── 增量班（observe-incremental.yml）：每日四班次，北京 12/16/20/24 = UTC 04/08/12/16 ──
+  assert.ok(OBSERVE_INC.includes("'0 4,8,12,16 * * *'"),
+    '增量班 cron 必须为每日四班次（UTC 04/08/12/16 = 北京 12/16/20/次日 0 点）')
+  assert.ok(OBSERVE_INC.includes('workflow_dispatch'), '增量班支持手动 dispatch')
+  assert.ok(OBSERVE_INC.includes('Resolve mutation suites'), '增量班 suite-plan 步骤在位')
+  assert.ok(OBSERVE_INC.includes('collect-incremental-baseline.mjs'), '增量班收集脚本执行点在位')
+  assert.ok(OBSERVE_INC.includes('create-pull-request@'), '增量班基线经 create-pull-request 自动开 PR')
+  assert.ok(OBSERVE_INC.includes('gh pr merge'), '增量班 auto-merge 步骤在位')
+  assert.ok(!OBSERVE_INC.includes('skip_pr=true'), '增量班不得有日期闸——每次独立判断、有变化即 PR')
+  assert.ok(!OBSERVE_INC.includes('self-cov.mjs --check'), '增量班不跑覆盖校验（职责收敛到全量班）')
 })
 
 test('#220 段式三方一致：observe 计划 ↔ stryker.conf.d 文件集 ↔ gauntlet 包集', () => {
-  // observe.yml 循环清单由 suite-plan 步骤产出（#276 方案 A：四班次纯全量）；
+  // observe 两班（全量班 observe.yml + 增量班 observe-incremental.yml）循环清单
+  // 均由各自 suite-plan 步骤产出（#433：全量班即全量、增量班基于基线跑增量但
+  // 清单同样 glob 全量——新增配置自动纳入，Stryker 增量模式跳过未变 mutant）；
   // 循环本身从计划文件读取
-  assert.ok(OBSERVE.includes('ls stryker.conf.d/dsh-*.json'),
-    'observe suite-plan 的全量清单必须以 glob stryker.conf.d/dsh-*.json 为单一事实源（新增配置自动纳入）')
-  assert.ok(OBSERVE.includes('while read -r conf; do'),
-    '变异循环必须从 suite-plan 清单文件逐行消费')
+  for (const [name, wf] of [['observe.yml', OBSERVE], ['observe-incremental.yml', OBSERVE_INC]]) {
+    assert.ok(wf.includes('ls stryker.conf.d/dsh-*.json'),
+      `${name} suite-plan 的全量清单必须以 glob stryker.conf.d/dsh-*.json 为单一事实源（新增配置自动纳入）`)
+    assert.ok(wf.includes('while read -r conf; do'),
+      `${name} 变异循环必须从 suite-plan 清单文件逐行消费`)
+  }
 
   // stryker.conf.d 实际文件集 → 基础包名集合（段配置 <pkg>-<后缀>.json 与包级
   // <pkg>.json 统一归并到 <pkg>——功能段名/数字段名兼容，basePkgOfConf 共享函数）
@@ -308,28 +327,39 @@ test('gauntlet: mutation.packages 全部带 threshold 字段且 ≥60（阶段�
 // 基线改「仓库内版本化文件」——夜间 collect 到 scripts/gate/baseline/ + create-pull-request 合入 main，
 // PR 侧直接读文件（git 跨 ref 天然可见、可本地实证）。
 
-test('#178+#204: observe.yml 夜间保持全量——只收集仓库基线不读缓存', () => {
-  assert.ok(
-    !OBSERVE.includes('actions/cache/restore'),
-    'observe.yml 严禁出现 restore 缓存步骤——无基线即天然全量（v2 架构定案，勿"好心"补 restore）',
-  )
-  assert.ok(
-    !OBSERVE.includes('actions/cache/save@'),
-    'observe.yml 已改用仓库内基线（#204），不得出现 cache/save 步骤',
-  )
-  const collectIdx = OBSERVE.indexOf('Collect incremental baseline')
-  assert.ok(collectIdx > 0, 'collect 步骤在位（夜间基线 → 仓库内固定路径）')
-  const collectBlock = OBSERVE.slice(collectIdx, OBSERVE.indexOf('- name:', collectIdx + 10))
-  assert.ok(collectBlock.includes('if: always()'), 'collect 步骤必须 if: always()（部分失败夜已产出的基线照常收集）')
-  assert.ok(collectBlock.includes('collect-incremental-baseline.mjs'), 'collect 脚本执行点在位')
-  assert.ok(OBSERVE.includes('create-pull-request@'), '基线经 create-pull-request 自动开 PR 合入 main（受保护分支禁直接 push）')
-  assert.ok(OBSERVE.includes('peter-evans/create-pull-request'), '使用业界标准 peter-evans/create-pull-request')
-  assert.ok(OBSERVE.includes('contents: write'), 'observe.yml permissions 需 contents: write（自动 PR 创建需要）')
-  assert.ok(OBSERVE.includes('pull-requests: write'), 'observe.yml permissions 需 pull-requests: write')
+test('#178+#204: observe 两班均只读仓库基线不读缓存——全量班不 restore、增量班 restore 仓库文件', () => {
+  for (const [name, wf] of [['observe.yml', OBSERVE], ['observe-incremental.yml', OBSERVE_INC]]) {
+    assert.ok(
+      !wf.includes('actions/cache/restore'),
+      `${name} 严禁出现 restore 缓存步骤——基线走仓库内文件（#204 架构定案，勿"好心"补 actions/cache restore）`,
+    )
+    assert.ok(
+      !wf.includes('actions/cache/save@'),
+      `${name} 已改用仓库内基线（#204），不得出现 cache/save 步骤`,
+    )
+    const collectIdx = wf.indexOf('Collect incremental baseline')
+    assert.ok(collectIdx > 0, `${name} collect 步骤在位（夜间/增量基线 → 仓库内固定路径）`)
+    const collectBlock = wf.slice(collectIdx, wf.indexOf('- name:', collectIdx + 10))
+    assert.ok(collectBlock.includes('if: always()'),
+      `${name} collect 步骤必须 if: always()（部分失败班次已产出的基线照常收集）`)
+    assert.ok(collectBlock.includes('collect-incremental-baseline.mjs'), `${name} collect 脚本执行点在位`)
+    assert.ok(wf.includes('create-pull-request@'), `${name} 基线经 create-pull-request 自动开 PR 合入 main（受保护分支禁直接 push）`)
+    assert.ok(wf.includes('peter-evans/create-pull-request'), `${name} 使用业界标准 peter-evans/create-pull-request`)
+    assert.ok(wf.includes('contents: write'), `${name} permissions 需 contents: write（自动 PR 创建需要）`)
+    assert.ok(wf.includes('pull-requests: write'), `${name} permissions 需 pull-requests: write`)
+  }
+  // 增量班刻意 restore 仓库内基线（读 scripts/gate/baseline/ 到 coverage/mutation/，
+  // 同 ci.yml mutation-gate 思路）；全量班刻意不恢复任何基线——无增量基线即天然全量
+  assert.ok(OBSERVE_INC.includes('Restore repo incremental baseline'),
+    '增量班 restore 仓库基线步骤在位（#433：基于全量班基线跑增量变异）')
+  assert.ok(OBSERVE_INC.includes('scripts/gate/baseline/incremental-'),
+    '增量班 restore 必须读 scripts/gate/baseline/（仓库内版本化基线，#204 方案 A）')
+  assert.ok(OBSERVE_INC.includes('::notice::'),
+    '增量班基线缺失时须打 notice 标注全量降级（首夜属预期，防误判缺陷）')
 })
 
-test('#276 方案 A: src 级 mutate 退役产物行号机制——ci/observe 均不得再出现 sync/guard', () => {
-  for (const [name, wf] of [['ci.yml', CI], ['observe.yml', OBSERVE]]) {
+test('#276 方案 A: src 级 mutate 退役产物行号机制——ci/observe 两班均不得再出现 sync/guard', () => {
+  for (const [name, wf] of [['ci.yml', CI], ['observe.yml', OBSERVE], ['observe-incremental.yml', OBSERVE_INC]]) {
     assert.ok(!wf.includes('sync-mutate-segments.mjs'),
       `${name} 不得再调用 sync-mutate-segments.mjs（src 级 mutate 无产物行号，已退役）`)
     assert.ok(!wf.includes('mutate-scope-guard.mjs'),
@@ -769,13 +799,16 @@ test('#217: repo-gate 五维聚合 needs + 判定脚本 env 全维注入', () =>
   // 判定表实现侧同维锁定（env ↔ evaluateGate 输入一一对应）
 })
 
-test('#217: observe.yml Mutation suites id + collect 区分整套 skip 与部分失败', () => {
-  const sIdx = OBSERVE.indexOf('- name: Mutation suites')
-  assert.ok(sIdx > 0, 'Mutation suites 步骤在位')
-  const sBlock = OBSERVE.slice(sIdx, OBSERVE.indexOf('- name:', sIdx + 10))
-  assert.ok(sBlock.includes('id: mutation-suites'), 'Mutation suites 必须声明 id 供下游引用 outcome')
-  const cIdx = OBSERVE.indexOf('- name: Collect incremental baseline')
-  const cBlock = OBSERVE.slice(cIdx, OBSERVE.indexOf('- name:', cIdx + 10))
-  assert.ok(cBlock.includes("if: always() && steps.mutation-suites.outcome != 'skipped'"),
-    'collect 条件必须区分整套 skip（无产物不收集）与部分失败（记账夜照常收集）')
+test('#217: observe 两班 Mutation suites id + collect 区分整套 skip 与部分失败', () => {
+  for (const [name, wf] of [['observe.yml', OBSERVE], ['observe-incremental.yml', OBSERVE_INC]]) {
+    const sIdx = wf.indexOf('- name: Mutation suites')
+    assert.ok(sIdx > 0, `${name} Mutation suites 步骤在位`)
+    const sBlock = wf.slice(sIdx, wf.indexOf('- name:', sIdx + 10))
+    assert.ok(sBlock.includes('id: mutation-suites'), `${name} Mutation suites 必须声明 id 供下游引用 outcome`)
+    const cIdx = wf.indexOf('- name: Collect incremental baseline')
+    assert.ok(cIdx > 0, `${name} Collect incremental baseline 步骤在位`)
+    const cBlock = wf.slice(cIdx, wf.indexOf('- name:', cIdx + 10))
+    assert.ok(cBlock.includes("if: always() && steps.mutation-suites.outcome != 'skipped'"),
+      `${name} collect 条件必须区分整套 skip（无产物不收集）与部分失败（记账班次照常收集）`)
+  }
 })
