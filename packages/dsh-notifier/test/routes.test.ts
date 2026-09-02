@@ -743,6 +743,55 @@ try {
     assert.ok(records.length <= 200, "滚动上限 200：读取最多 200 条");
     assert.equal(records[records.length - 1].message, "m209", "保留的是最新记录");
   }
+  // P2-4（#436 复核 P1-1 同根因）：settings 服务消失 → 回落 current 与初始形态
+  // 一致（same-shape）。entry 只给 maxConnections（缺 notifySound/askRemindMin 等
+  // 默认键）：回落若不经 normalizeConfig 会退回裸 entry（notifySound=true →
+  // undefined、askRemindMin 缺失）——与初始 normalizeConfig(entry) 形态不对称。
+  // 观测面 = GET /config 的 effective（redactConfigView(resolve()) = current 全量
+  // 视图，含 askRemindMin）。捕获 shared 的回落 disposer 手动触发（模拟服务消失
+  // 但插件存活，isUnloading=false 不短路）。
+  {
+    const { apply } = await import("../lib/index.js");
+    const { makeFakeCtx, makeFakeSettings } = await import("./helpers.ts");
+    const entry = { maxConnections: 64 };
+    let fallbackDisposer = null;
+    const fakeSettings = makeFakeSettings({ base: entry });
+    const { ctx, routes } = makeFakeCtx({
+      inject(serviceNames, fn) {
+        if (Array.isArray(serviceNames) && serviceNames.includes("settings")) {
+          fn({
+            settings: fakeSettings.service,
+            effect(f2) {
+              const d = f2();
+              const disp = typeof d === "function" ? d : () => {};
+              fallbackDisposer = disp;
+              return disp;
+            },
+          });
+        }
+      },
+    });
+    apply(ctx, {
+      enabled: true,
+      maxConnections: 64,
+      configFile: join(work, "p24-cfg.json"),
+      historyFile: join(work, "p24-hist.jsonl"),
+    });
+    const cfgRoute = routes.find((r) => r.path === ROUTES.config);
+    const getEffective = async () => {
+      const { rec, res } = makeRes();
+      await cfgRoute.handler(fakeReq({}), res);
+      return JSON.parse(rec.text).effective;
+    };
+    const before = await getEffective();
+    assert.equal(before.maxConnections, 64, "attach 态 current 反映 entry 值");
+    assert.equal(before.notifySound, true, "attach 态 notifySound 默认值兜底");
+    assert.equal(before.askRemindMin, 5, "attach 态 askRemindMin 默认值兜底");
+    assert.ok(fallbackDisposer, "shared 回落 disposer 已捕获（服务消失回落路径可达）");
+    fallbackDisposer(); // 模拟 settings 服务消失（插件存活）→ 回落
+    const after = await getEffective();
+    assert.deepEqual(after, before, "回落 current 与初始形态 same-shape（同键同值、默认值兜底一致）");
+  }
 } finally {
   mainNotifier.dispose(); // 停心跳（P2-5：30s unref 定时器不在测试进程存活期残留）
   rmSync(work, { recursive: true, force: true });

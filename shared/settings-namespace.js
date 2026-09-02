@@ -57,9 +57,10 @@ export function warnLog(ctx, message) {
 /**
  * 安装「可选 settings 消费者的标准接线」：settings 服务存在时，把 `ns` 以组合层
  * `entry` 作为 `base` 注册进 settings 服务，并让 `hooks.setSource` 指向解析后的
- * owner scope（hooks.onScope 可选：register 成功后先交 scope）；服务消失/插件
- * 卸载时回落到 entry。注册随 scoped fiber 生效——settings 服务从未挂载则本函数
- * 什么都不做（卡片降级，功能不受影响）。
+ * owner scope（hooks.onScope 可选：register 成功后先交 scope）；仅服务消失
+ * （scoped fiber 注销而插件仍存活）时回落到 entry；插件自身卸载时不回落
+ * （disposer 短路，随 fiber 注销）。注册随 scoped fiber 生效——settings 服务
+ * 从未挂载则本函数什么都不做（卡片降级，功能不受影响）。
  *
  * 等值语义参考官方 `installSettingsSection`
  * （@deepseek-ai/dsh-settings@0.1.0-rc.7，MIT）。这里不 import 该包，纯粹以

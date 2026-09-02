@@ -117,7 +117,9 @@ import { installSettingsNamespace } from "../../../shared/settings-namespace.js"
   assert.equal(onChangeCount, 3, "disposer 触发 onChange");
 }
 
-// ---- onScope（#436）：register 成功后、setSource 之前回调；服务缺失不触发 ----
+// ---- onScope（#436）：register 成功后、setSource 之前回调 ----
+// 说明：settings 服务缺失用例（上方 L37-50）hooks 不含 onScope，未对「缺失不
+// 触发」做独立断言——属不传 onScope 的兼容回归（既有 7 处隐式覆盖该分支）。
 
 {
   let scopeSeen = null;
