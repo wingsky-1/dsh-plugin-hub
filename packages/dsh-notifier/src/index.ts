@@ -145,7 +145,8 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
   /**
    * 当前配置（运行时镜像，与 settings 命名空间解析值保持同步）。
    * settings attach 后由 setSource 指向 scope.get()，变更经 onChange 刷新；
-   * 服务缺失时回落组合层 entry（normalizeConfig 兜底默认值）。
+   * 服务缺失时回落组合层 entry——setSource/onChange 均经 normalizeConfig 收口，
+   * 回落形态与初始一致（同键同值、默认值兜底，与 attach 态同源）。
    */
   let current: NotifyConfig = normalizeConfig(entry);
   /** settings 读取来源 thunk（attach 后为 scope.get()）。 */
@@ -719,10 +720,14 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
   installNotifierSettings(ctx, entry, {
     setSource: (s) => {
       source = s;
-      current = s();
+      // 收口归一化（#436 复核 P1-1）：setSource 与 onChange 两处都过 normalizeConfig
+      // ——服务消失回落时 s() 为裸 entry，需默认值兜底才能与初始 current
+      // （normalizeConfig(entry)）形态一致；normalizeConfig 幂等，对 scope.get()
+      // 的官方解析结果重复归一化无害。
+      current = normalizeConfig(s());
     },
     onChange: () => {
-      current = source();
+      current = normalizeConfig(source());
     },
     onScope: (scope, service) => {
       attachedScope = scope;

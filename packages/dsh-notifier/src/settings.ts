@@ -1,49 +1,29 @@
 /**
- * dsh-notifier — 官方 settings 命名空间接线（issue #76，包内复刻）。
+ * dsh-notifier — 官方 settings 命名空间接线（薄包装，收敛自 shared）。
  *
  * 职责：插件在官方 settings 服务中的命名空间（SETTINGS_NS）、minimal 类型面
  * （OwnerScopeLike / SettingsServiceLike / NotifierSettingsHooks）与挂载函数
- * installNotifierSettings。形态等值复刻同仓 dsh-lan-proxy 的
- * installLanProxySettings（PR #267）：服务面注入零包依赖、register 返回的
- * owner scope 经 onScope 外露供写（存量迁移）、热更新统一走 scope.watch。
+ * installNotifierSettings。issue #436 起不再包内复刻接线——实现统一转发
+ * shared/installSettingsNamespace（单一事实源），hooks 依次透传 onScope /
+ * setSource / onChange；onScope 供存量迁移与乐观并发（经 service.update）。
  *
  * 为什么不用官方 @deepseek-ai/dsh-settings 包：插件运行时沿自身 lib/ 向上
  * 解析不到该包（MODULE_NOT_FOUND），动态 import 会静默失败——与
  * shared/settings-namespace.js 相同的服务面注入方案。
- * 为什么不用 schemastery 构造 schema：notifier 无该依赖且 coder 禁改
- * package.json；官方 register 对 schema 的最小调用面是「callable（resolve
- * 时直接调用）+ toJSON（describe 序列化）+ 无 secret 的平铺形态（redact
- * walk 走 default 原样返回）」，包内以零依赖函数形态等值覆盖。
+ * 为什么不用 schemastery 构造 schema：notifier 无该依赖；官方 register 对
+ * schema 的最小调用面是「callable（resolve 时直接调用）+ toJSON（describe
+ * 序列化）+ 无 secret 的平铺形态（redact walk 走 default 原样返回）」，这里以
+ * 零依赖函数形态 createNotifierSchema 等值覆盖（与 #436 前一致）。
  */
 import type { Context } from "@deepseek-ai/cordis";
-import { errorMessage } from "../../../shared/host-utils.js";
+import { installSettingsNamespace } from "../../../shared/settings-namespace.js";
 import { normalizeConfig } from "./config.ts";
 import type { NotifyConfig } from "./config.ts";
 
+export { warnLog } from "../../../shared/settings-namespace.js";
+
 /** 本插件在官方 settings 服务中的命名空间。 */
 export const SETTINGS_NS = "dsh-notifier";
-
-/**
- * 是否正处于插件自身 fiber 卸载中（区别于「仅丢失 settings 服务」）。
- * 官方判据：fiber.state ∈ { unloading, unloaded, disposed }。
- */
-function isUnloading(ctx: unknown): boolean {
-  const fiber =
-    ctx && typeof ctx === "object" && "fiber" in ctx
-      ? (ctx as { fiber?: { state?: unknown } }).fiber
-      : undefined;
-  const state = fiber && typeof fiber === "object" ? fiber.state : undefined;
-  return state === "unloading" || state === "unloaded" || state === "disposed";
-}
-
-/** 日志兜底：logger 可能确实没有（极端降级），全部可选调用。 */
-export function warnLog(ctx: unknown, message: string): void {
-  const logger =
-    ctx && typeof ctx === "object" && "logger" in ctx
-      ? (ctx as { logger?: { warn?: (...a: unknown[]) => void } }).logger
-      : undefined;
-  if (typeof logger?.warn === "function") logger.warn(message);
-}
 
 /**
  * owner scope 最小类型面（官方 SettingsScope<T> 的子集）。注意官方 scope 的
@@ -96,45 +76,19 @@ function createNotifierSchema(): unknown {
 
 /**
  * 注册插件自有 settings 命名空间并把 owner scope 交给调用方。
- * 语义等值复刻官方 installSettingsSection / shared installSettingsNamespace，
- * 差异仅在把 register 返回的 owner scope 经 onScope 外露，供存量配置迁移写入
- * 与乐观并发（经 service.update(ns, patch, expectedRevision)）。
+ * 薄包装（#436）：转发 shared/installSettingsNamespace——setSource / onChange /
+ * onScope 依次透传，降级与卸载回落语义统一由 shared 承担。对外签名与 #436 前
+ * 保持一致：ctx / entry（组合层配置的通知字段，经 sanitizeSettings 白名单过滤
+ * 后传入，作为命名空间的 base 层；无有效键则为空 base）/ hooks。
  *
  * @param ctx - 插件宿主端 apply 收到的 cordis 上下文。
- * @param entry - 组合层配置的通知字段（经 sanitizeSettings 白名单过滤后传入，
- *   作为命名空间的 base 层；无有效键则为空 base）。
+ * @param entry - 组合层配置的通知字段（作为命名空间的 base 层）。
  * @param hooks - source 收藏、变更通知与 scope 移交。
  */
 export function installNotifierSettings(ctx: Context, entry: Record<string, unknown>, hooks: NotifierSettingsHooks): void {
-  type InjectFn = (services: string[], fn: (c: any) => void) => void;
-  if (typeof (ctx as unknown as { inject?: InjectFn })?.inject !== "function") {
-    warnLog(ctx, `${SETTINGS_NS}: ctx.inject 不可用 — 设置命名空间未注册，设置卡降级`);
-    return;
-  }
-  (ctx.inject as unknown as InjectFn)(["settings"], (sctx) => {
-    const settings = sctx && (sctx.settings as SettingsServiceLike | undefined);
-    if (!settings || typeof settings.register !== "function") {
-      warnLog(ctx, `${SETTINGS_NS}: settings 服务缺少 register 能力 — 设置命名空间未注册，设置卡降级`);
-      return;
-    }
-    let scope: OwnerScopeLike;
-    try {
-      scope = settings.register(SETTINGS_NS, createNotifierSchema(), { base: entry });
-    } catch (err) {
-      warnLog(ctx, `${SETTINGS_NS}: settings.register 失败 — ${errorMessage(err)}`);
-      return;
-    }
-    hooks.onScope(scope, settings);
-    hooks.setSource(() => scope.get());
-    sctx.effect(() => () => {
-      if (isUnloading(ctx)) return;
-      hooks.onChange();
-    });
-    hooks.onChange();
-    // 热更新统一走官方 scope.watch（提交后异步串行回调）。
-    scope.watch(() => {
-      if (isUnloading(ctx)) return;
-      hooks.onChange();
-    });
+  installSettingsNamespace(ctx, SETTINGS_NS, createNotifierSchema(), entry, {
+    setSource: hooks.setSource,
+    onChange: hooks.onChange,
+    onScope: hooks.onScope,
   });
 }
