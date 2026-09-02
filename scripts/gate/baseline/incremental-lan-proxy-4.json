@@ -4,438 +4,6 @@
       "language": "typescript",
       "mutants": [
         {
-          "id": "21",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 57
-            },
-            "start": {
-              "column": 83,
-              "line": 53
-            }
-          }
-        },
-        {
-          "id": "22",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "existsSync(certFile)",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 28,
-              "line": 54
-            },
-            "start": {
-              "column": 7,
-              "line": 54
-            }
-          }
-        },
-        {
-          "id": "23",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 28,
-              "line": 54
-            },
-            "start": {
-              "column": 7,
-              "line": 54
-            }
-          }
-        },
-        {
-          "id": "24",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 28,
-              "line": 54
-            },
-            "start": {
-              "column": 7,
-              "line": 54
-            }
-          }
-        },
-        {
-          "id": "25",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 86,
-              "line": 54
-            },
-            "start": {
-              "column": 30,
-              "line": 54
-            }
-          }
-        },
-        {
-          "id": "27",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "existsSync(keyFile)",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 27,
-              "line": 55
-            },
-            "start": {
-              "column": 7,
-              "line": 55
-            }
-          }
-        },
-        {
-          "id": "28",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 27,
-              "line": 55
-            },
-            "start": {
-              "column": 7,
-              "line": 55
-            }
-          }
-        },
-        {
-          "id": "29",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 27,
-              "line": 55
-            },
-            "start": {
-              "column": 7,
-              "line": 55
-            }
-          }
-        },
-        {
-          "id": "30",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 83,
-              "line": 55
-            },
-            "start": {
-              "column": 29,
-              "line": 55
-            }
-          }
-        },
-        {
-          "id": "33",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 75
-            },
-            "start": {
-              "column": 59,
-              "line": 68
-            }
-          }
-        },
-        {
-          "id": "34",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 72
-            },
-            "start": {
-              "column": 7,
-              "line": 69
-            }
-          }
-        },
-        {
-          "id": "35",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 82,
-              "line": 71
-            },
-            "start": {
-              "column": 12,
-              "line": 71
-            }
-          }
-        },
-        {
-          "id": "36",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 82,
-              "line": 71
-            },
-            "start": {
-              "column": 12,
-              "line": 71
-            }
-          }
-        },
-        {
-          "id": "37",
-          "mutatorName": "EqualityOperator",
-          "replacement": "cert.validToDate.getTime() - Date.now() >= MIN_REMAINING_SECONDS * 1000",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 82,
-              "line": 71
-            },
-            "start": {
-              "column": 12,
-              "line": 71
-            }
-          }
-        },
-        {
-          "id": "38",
-          "mutatorName": "EqualityOperator",
-          "replacement": "cert.validToDate.getTime() - Date.now() <= MIN_REMAINING_SECONDS * 1000",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 82,
-              "line": 71
-            },
-            "start": {
-              "column": 12,
-              "line": 71
-            }
-          }
-        },
-        {
-          "id": "39",
-          "mutatorName": "ArithmeticOperator",
-          "replacement": "cert.validToDate.getTime() + Date.now()",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 51,
-              "line": 71
-            },
-            "start": {
-              "column": 12,
-              "line": 71
-            }
-          }
-        },
-        {
-          "id": "40",
-          "mutatorName": "ArithmeticOperator",
-          "replacement": "MIN_REMAINING_SECONDS / 1000",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 82,
-              "line": 71
-            },
-            "start": {
-              "column": 54,
-              "line": 71
-            }
-          }
-        },
-        {
-          "id": "41",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 74
-            },
-            "start": {
-              "column": 11,
-              "line": 72
-            }
-          }
-        },
-        {
-          "id": "42",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "true",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 17,
-              "line": 73
-            },
-            "start": {
-              "column": 12,
-              "line": 73
-            }
-          }
-        },
-        {
-          "id": "49",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 89
-            },
-            "start": {
-              "column": 80,
-              "line": 85
-            }
-          }
-        },
-        {
-          "id": "50",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 31,
-              "line": 87
-            },
-            "start": {
-              "column": 5,
-              "line": 87
-            }
-          }
-        },
-        {
-          "id": "57",
-          "mutatorName": "ArrayDeclaration",
-          "replacement": "[\"Stryker was here\"]",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 61,
-              "line": 91
-            },
-            "start": {
-              "column": 59,
-              "line": 91
-            }
-          }
-        },
-        {
-          "id": "68",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 102
-            },
-            "start": {
-              "column": 17,
-              "line": 100
-            }
-          }
-        },
-        {
-          "id": "69",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 86,
-              "line": 101
-            },
-            "start": {
-              "column": 5,
-              "line": 101
-            }
-          }
-        },
-        {
           "id": "0",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -468,6 +36,32 @@
             "start": {
               "column": 33,
               "line": 25
+            }
+          }
+        },
+        {
+          "id": "2",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 44
+            },
+            "start": {
+              "column": 36,
+              "line": 40
             }
           }
         },
@@ -580,6 +174,103 @@
           }
         },
         {
+          "id": "9",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "Survived",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 50
+            },
+            "start": {
+              "column": 54,
+              "line": 47
+            }
+          }
+        },
+        {
+          "id": "10",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0"
+          ],
+          "location": {
+            "end": {
+              "column": 27,
+              "line": 48
+            },
+            "start": {
+              "column": 7,
+              "line": 48
+            }
+          }
+        },
+        {
+          "id": "11",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0"
+          ],
+          "location": {
+            "end": {
+              "column": 27,
+              "line": 48
+            },
+            "start": {
+              "column": 7,
+              "line": 48
+            }
+          }
+        },
+        {
+          "id": "12",
+          "mutatorName": "EqualityOperator",
+          "replacement": "host !== \"localhost\"",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0"
+          ],
+          "location": {
+            "end": {
+              "column": 27,
+              "line": 48
+            },
+            "start": {
+              "column": 7,
+              "line": 48
+            }
+          }
+        },
+        {
           "id": "13",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -634,6 +325,78 @@
           }
         },
         {
+          "id": "16",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0"
+          ],
+          "location": {
+            "end": {
+              "column": 26,
+              "line": 49
+            },
+            "start": {
+              "column": 10,
+              "line": 49
+            }
+          }
+        },
+        {
+          "id": "17",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0"
+          ],
+          "location": {
+            "end": {
+              "column": 26,
+              "line": 49
+            },
+            "start": {
+              "column": 10,
+              "line": 49
+            }
+          }
+        },
+        {
+          "id": "18",
+          "mutatorName": "EqualityOperator",
+          "replacement": "isIP(host) === 0",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0"
+          ],
+          "location": {
+            "end": {
+              "column": 26,
+              "line": 49
+            },
+            "start": {
+              "column": 10,
+              "line": 49
+            }
+          }
+        },
+        {
           "id": "19",
           "mutatorName": "ObjectLiteral",
           "replacement": "{}",
@@ -670,6 +433,101 @@
           }
         },
         {
+          "id": "21",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 57
+            },
+            "start": {
+              "column": 83,
+              "line": 53
+            }
+          }
+        },
+        {
+          "id": "22",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "existsSync(certFile)",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 28,
+              "line": 54
+            },
+            "start": {
+              "column": 7,
+              "line": 54
+            }
+          }
+        },
+        {
+          "id": "23",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 28,
+              "line": 54
+            },
+            "start": {
+              "column": 7,
+              "line": 54
+            }
+          }
+        },
+        {
+          "id": "24",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 28,
+              "line": 54
+            },
+            "start": {
+              "column": 7,
+              "line": 54
+            }
+          }
+        },
+        {
+          "id": "25",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 86,
+              "line": 54
+            },
+            "start": {
+              "column": 30,
+              "line": 54
+            }
+          }
+        },
+        {
           "id": "26",
           "mutatorName": "StringLiteral",
           "replacement": "``",
@@ -684,6 +542,82 @@
             "start": {
               "column": 46,
               "line": 54
+            }
+          }
+        },
+        {
+          "id": "27",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "existsSync(keyFile)",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 27,
+              "line": 55
+            },
+            "start": {
+              "column": 7,
+              "line": 55
+            }
+          }
+        },
+        {
+          "id": "28",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 27,
+              "line": 55
+            },
+            "start": {
+              "column": 7,
+              "line": 55
+            }
+          }
+        },
+        {
+          "id": "29",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 27,
+              "line": 55
+            },
+            "start": {
+              "column": 7,
+              "line": 55
+            }
+          }
+        },
+        {
+          "id": "30",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 83,
+              "line": 55
+            },
+            "start": {
+              "column": 29,
+              "line": 55
             }
           }
         },
@@ -724,6 +658,381 @@
           }
         },
         {
+          "id": "33",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 75
+            },
+            "start": {
+              "column": 59,
+              "line": 68
+            }
+          }
+        },
+        {
+          "id": "34",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 72
+            },
+            "start": {
+              "column": 7,
+              "line": 69
+            }
+          }
+        },
+        {
+          "id": "35",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 82,
+              "line": 71
+            },
+            "start": {
+              "column": 12,
+              "line": 71
+            }
+          }
+        },
+        {
+          "id": "36",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 82,
+              "line": 71
+            },
+            "start": {
+              "column": 12,
+              "line": 71
+            }
+          }
+        },
+        {
+          "id": "37",
+          "mutatorName": "EqualityOperator",
+          "replacement": "cert.validToDate.getTime() - Date.now() >= MIN_REMAINING_SECONDS * 1000",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 82,
+              "line": 71
+            },
+            "start": {
+              "column": 12,
+              "line": 71
+            }
+          }
+        },
+        {
+          "id": "38",
+          "mutatorName": "EqualityOperator",
+          "replacement": "cert.validToDate.getTime() - Date.now() <= MIN_REMAINING_SECONDS * 1000",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 82,
+              "line": 71
+            },
+            "start": {
+              "column": 12,
+              "line": 71
+            }
+          }
+        },
+        {
+          "id": "39",
+          "mutatorName": "ArithmeticOperator",
+          "replacement": "cert.validToDate.getTime() + Date.now()",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 51,
+              "line": 71
+            },
+            "start": {
+              "column": 12,
+              "line": 71
+            }
+          }
+        },
+        {
+          "id": "40",
+          "mutatorName": "ArithmeticOperator",
+          "replacement": "MIN_REMAINING_SECONDS / 1000",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 82,
+              "line": 71
+            },
+            "start": {
+              "column": 54,
+              "line": 71
+            }
+          }
+        },
+        {
+          "id": "41",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 74
+            },
+            "start": {
+              "column": 11,
+              "line": 72
+            }
+          }
+        },
+        {
+          "id": "42",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "true",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 17,
+              "line": 73
+            },
+            "start": {
+              "column": 12,
+              "line": 73
+            }
+          }
+        },
+        {
+          "id": "43",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 108
+            },
+            "start": {
+              "column": 79,
+              "line": 82
+            }
+          }
+        },
+        {
+          "id": "44",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 78,
+              "line": 85
+            },
+            "start": {
+              "column": 7,
+              "line": 85
+            }
+          }
+        },
+        {
+          "id": "45",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 78,
+              "line": 85
+            },
+            "start": {
+              "column": 7,
+              "line": 85
+            }
+          }
+        },
+        {
+          "id": "46",
+          "mutatorName": "LogicalOperator",
+          "replacement": "existsSync(certPath) && existsSync(keyPath) || certStillValid(certPath)",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 78,
+              "line": 85
+            },
+            "start": {
+              "column": 7,
+              "line": 85
+            }
+          }
+        },
+        {
+          "id": "47",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 50,
+              "line": 85
+            },
+            "start": {
+              "column": 7,
+              "line": 85
+            }
+          }
+        },
+        {
+          "id": "48",
+          "mutatorName": "LogicalOperator",
+          "replacement": "existsSync(certPath) || existsSync(keyPath)",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 50,
+              "line": 85
+            },
+            "start": {
+              "column": 7,
+              "line": 85
+            }
+          }
+        },
+        {
+          "id": "49",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 89
+            },
+            "start": {
+              "column": 80,
+              "line": 85
+            }
+          }
+        },
+        {
+          "id": "50",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 31,
+              "line": 87
+            },
+            "start": {
+              "column": 5,
+              "line": 87
+            }
+          }
+        },
+        {
           "id": "51",
           "mutatorName": "ObjectLiteral",
           "replacement": "{}",
@@ -756,6 +1065,152 @@
             "start": {
               "column": 26,
               "line": 90
+            }
+          }
+        },
+        {
+          "id": "54",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "false",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 43,
+              "line": 90
+            },
+            "start": {
+              "column": 39,
+              "line": 90
+            }
+          }
+        },
+        {
+          "id": "55",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 79,
+              "line": 91
+            },
+            "start": {
+              "column": 16,
+              "line": 91
+            }
+          }
+        },
+        {
+          "id": "56",
+          "mutatorName": "LogicalOperator",
+          "replacement": "options.extraSans && []",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 61,
+              "line": 91
+            },
+            "start": {
+              "column": 38,
+              "line": 91
+            }
+          }
+        },
+        {
+          "id": "57",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[\"Stryker was here\"]",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 61,
+              "line": 91
+            },
+            "start": {
+              "column": 59,
+              "line": 91
+            }
+          }
+        },
+        {
+          "id": "58",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 100
+            },
+            "start": {
+              "column": 7,
+              "line": 93
+            }
+          }
+        },
+        {
+          "id": "59",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 78,
+              "line": 94
+            },
+            "start": {
+              "column": 30,
+              "line": 94
             }
           }
         },
@@ -850,6 +1305,29 @@
           }
         },
         {
+          "id": "65",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 63,
+              "line": 98
+            },
+            "start": {
+              "column": 19,
+              "line": 98
+            }
+          }
+        },
+        {
           "id": "66",
           "mutatorName": "ObjectLiteral",
           "replacement": "{}",
@@ -886,6 +1364,44 @@
           }
         },
         {
+          "id": "68",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 102
+            },
+            "start": {
+              "column": 17,
+              "line": 100
+            }
+          }
+        },
+        {
+          "id": "69",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 86,
+              "line": 101
+            },
+            "start": {
+              "column": 5,
+              "line": 101
+            }
+          }
+        },
+        {
           "id": "70",
           "mutatorName": "StringLiteral",
           "replacement": "``",
@@ -900,6 +1416,32 @@
             "start": {
               "column": 21,
               "line": 101
+            }
+          }
+        },
+        {
+          "id": "71",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 56,
+              "line": 103
+            },
+            "start": {
+              "column": 3,
+              "line": 103
             }
           }
         },
@@ -922,338 +1464,13 @@
           }
         },
         {
-          "id": "75",
-          "mutatorName": "ObjectLiteral",
-          "replacement": "{}",
-          "statusReason": "Ignored because of excluded mutation \"ObjectLiteral\"",
-          "status": "Ignored",
-          "static": false,
-          "location": {
-            "end": {
-              "column": 70,
-              "line": 107
-            },
-            "start": {
-              "column": 10,
-              "line": 107
-            }
-          }
-        },
-        {
-          "id": "54",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "false",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 43,
-              "line": 90
-            },
-            "start": {
-              "column": 39,
-              "line": 90
-            }
-          }
-        },
-        {
-          "id": "44",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 78,
-              "line": 85
-            },
-            "start": {
-              "column": 7,
-              "line": 85
-            }
-          }
-        },
-        {
-          "id": "55",
-          "mutatorName": "ArrayDeclaration",
-          "replacement": "[]",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 79,
-              "line": 91
-            },
-            "start": {
-              "column": 16,
-              "line": 91
-            }
-          }
-        },
-        {
-          "id": "45",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 78,
-              "line": 85
-            },
-            "start": {
-              "column": 7,
-              "line": 85
-            }
-          }
-        },
-        {
-          "id": "12",
-          "mutatorName": "EqualityOperator",
-          "replacement": "host !== \"localhost\"",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 27,
-              "line": 48
-            },
-            "start": {
-              "column": 7,
-              "line": 48
-            }
-          }
-        },
-        {
-          "id": "18",
-          "mutatorName": "EqualityOperator",
-          "replacement": "isIP(host) === 0",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 26,
-              "line": 49
-            },
-            "start": {
-              "column": 10,
-              "line": 49
-            }
-          }
-        },
-        {
-          "id": "11",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 27,
-              "line": 48
-            },
-            "start": {
-              "column": 7,
-              "line": 48
-            }
-          }
-        },
-        {
-          "id": "2",
-          "mutatorName": "ArrayDeclaration",
-          "replacement": "[]",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 44
-            },
-            "start": {
-              "column": 36,
-              "line": 40
-            }
-          }
-        },
-        {
-          "id": "47",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 50,
-              "line": 85
-            },
-            "start": {
-              "column": 7,
-              "line": 85
-            }
-          }
-        },
-        {
-          "id": "10",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 27,
-              "line": 48
-            },
-            "start": {
-              "column": 7,
-              "line": 48
-            }
-          }
-        },
-        {
-          "id": "58",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 100
-            },
-            "start": {
-              "column": 7,
-              "line": 93
-            }
-          }
-        },
-        {
-          "id": "17",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 26,
-              "line": 49
-            },
-            "start": {
-              "column": 10,
-              "line": 49
-            }
-          }
-        },
-        {
           "id": "73",
           "mutatorName": "CallExpression",
           "replacement": ";",
           "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
           "status": "Killed",
-          "static": false,
           "testsCompleted": 1,
+          "static": false,
           "killedBy": [
             "0"
           ],
@@ -1273,216 +1490,13 @@
           }
         },
         {
-          "id": "59",
-          "mutatorName": "ArrayDeclaration",
-          "replacement": "[]",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 78,
-              "line": 94
-            },
-            "start": {
-              "column": 30,
-              "line": 94
-            }
-          }
-        },
-        {
-          "id": "71",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 56,
-              "line": 103
-            },
-            "start": {
-              "column": 3,
-              "line": 103
-            }
-          }
-        },
-        {
-          "id": "9",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 50
-            },
-            "start": {
-              "column": 54,
-              "line": 47
-            }
-          }
-        },
-        {
-          "id": "16",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 26,
-              "line": 49
-            },
-            "start": {
-              "column": 10,
-              "line": 49
-            }
-          }
-        },
-        {
-          "id": "43",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 108
-            },
-            "start": {
-              "column": 79,
-              "line": 82
-            }
-          }
-        },
-        {
-          "id": "46",
-          "mutatorName": "LogicalOperator",
-          "replacement": "existsSync(certPath) && existsSync(keyPath) || certStillValid(certPath)",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 78,
-              "line": 85
-            },
-            "start": {
-              "column": 7,
-              "line": 85
-            }
-          }
-        },
-        {
-          "id": "48",
-          "mutatorName": "LogicalOperator",
-          "replacement": "existsSync(certPath) || existsSync(keyPath)",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 50,
-              "line": 85
-            },
-            "start": {
-              "column": 7,
-              "line": 85
-            }
-          }
-        },
-        {
-          "id": "56",
-          "mutatorName": "LogicalOperator",
-          "replacement": "options.extraSans && []",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 61,
-              "line": 91
-            },
-            "start": {
-              "column": 38,
-              "line": 91
-            }
-          }
-        },
-        {
-          "id": "65",
-          "mutatorName": "ArrayDeclaration",
-          "replacement": "[]",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 63,
-              "line": 98
-            },
-            "start": {
-              "column": 19,
-              "line": 98
-            }
-          }
-        },
-        {
           "id": "74",
           "mutatorName": "CallExpression",
           "replacement": ";",
           "status": "Survived",
-          "static": false,
           "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
           "coveredBy": [
             "0",
             "1"
@@ -1497,321 +1511,9 @@
               "line": 106
             }
           }
-        }
-      ],
-      "source": "// dsh-lan-proxy — TLS 证书准备。\n//\n// 两级证书来源，按配置优先：\n//   1. 用户提供的 PEM 文件（tlsCertFile / tlsKeyFile）——正式证书、\n//      mkcert 本地 CA 证书等，由 loadTlsFromFiles 读取；\n//   2. 自动生成的自签名证书——用 selfsigned（构建期内联进产物，\n//      运行时零依赖）生成（rsa:2048 / sha256 / 有效期 825 天），\n//      缓存到 <DSH_HOME>/lan-proxy/，幂等复用：证书存在且 24 小时内\n//      不过期则直接复用，否则重新生成。\n//   过期判定用 node:crypto 的 X509Certificate 解析 validToDate，\n//   不再依赖宿主机 openssl 子进程（issue #9）。\n//\n// 自签名证书带 subjectAltName（localhost / 127.0.0.1 / ::1 / 调用方传入的\n// 本机局域网 IP）：Chrome 59+ 对缺失 SAN 的证书直接拒绝（无法\"继续访问\"），\n// 有 SAN 的自签证书至少允许用户显式信任后进入。\nimport { X509Certificate } from \"node:crypto\";\nimport { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from \"node:fs\";\nimport { join } from \"node:path\";\nimport { isIP } from \"node:net\";\nimport { generate as generateSelfSigned } from \"selfsigned\";\nimport type { TlsMaterials } from \"./proxy.ts\";\n\n/** 自签证书缓存文件名（目录由调用方决定，默认 <DSH_HOME>/lan-proxy）。 */\nexport const SELF_SIGNED_KEY = \"dsh-lan-proxy-key.pem\";\nexport const SELF_SIGNED_CERT = \"dsh-lan-proxy-cert.pem\";\n\n/** 自签证书有效期（天）。825 ≈ 2.25 年，浏览器信任窗口友好。 */\nconst CERT_DAYS = 825;\n/** 剩余有效期低于该秒数视为即将过期，需要重签（24 小时）。 */\nconst MIN_REMAINING_SECONDS = 86400;\n\n/** selfsigned subjectAltName 条目（type 7 = IP 字面量，type 2 = DNS 名）。 */\nexport interface SanAltName {\n  type: 2 | 7;\n  value?: string;\n  ip?: string;\n}\n\n/** 默认 SAN：回环访问（本机 https://localhost:3443 测试）。 */\nconst DEFAULT_SANS: SanAltName[] = [\n  { type: 7, ip: \"127.0.0.1\" },\n  { type: 2, value: \"localhost\" },\n  { type: 7, ip: \"::1\" },\n];\n\n/** 把主机名/IP 编码为 selfsigned SAN 条目（IP 字面量走 ip 字段，其余走 DNS value）。 */\nexport function toSanEntry(host: string): SanAltName {\n  if (host === \"localhost\") return { type: 2, value: \"localhost\" };\n  return isIP(host) !== 0 ? { type: 7, ip: host } : { type: 2, value: host };\n}\n\n/** 读取用户提供的 PEM 证书与私钥文件。 */\nexport function loadTlsFromFiles(certFile: string, keyFile: string): TlsMaterials {\n  if (!existsSync(certFile)) throw new Error(`TLS cert file not found: ${certFile}`);\n  if (!existsSync(keyFile)) throw new Error(`TLS key file not found: ${keyFile}`);\n  return { cert: readFileSync(certFile), key: readFileSync(keyFile) };\n}\n\n/** ensureSelfSignedTls 选项。 */\nexport interface SelfSignedOptions {\n  /** 证书缓存目录（自动创建）。 */\n  dir: string;\n  /** 额外加入 SAN 的主机名/局域网 IP（如本机全部非回环 IPv4）。 */\n  extraSans?: string[];\n}\n\n/** 证书是否仍然有效（存在、可解析、剩余有效期 > 24 小时）。 */\nexport function certStillValid(certPath: string): boolean {\n  try {\n    const cert = new X509Certificate(readFileSync(certPath));\n    return cert.validToDate.getTime() - Date.now() > MIN_REMAINING_SECONDS * 1000;\n  } catch {\n    return false;\n  }\n}\n\n/**\n * 幂等获取自签名证书材料：缓存目录里已有未过期证书则直接复用，\n * 否则用 selfsigned 生成（rsa:2048 / sha256 / 825 天 / 带 SAN）并落盘缓存。\n * 生成失败时抛错（调用方降级为 HTTP-only）。\n */\nexport function ensureSelfSignedTls(options: SelfSignedOptions): TlsMaterials {\n  const keyPath = join(options.dir, SELF_SIGNED_KEY);\n  const certPath = join(options.dir, SELF_SIGNED_CERT);\n  if (existsSync(certPath) && existsSync(keyPath) && certStillValid(certPath)) {\n    // 私钥权限收敛 0600（历史缓存可能受 umask 影响过宽）\n    chmodSync(keyPath, 0o600);\n    return { cert: readFileSync(certPath), key: readFileSync(keyPath) };\n  }\n  mkdirSync(options.dir, { recursive: true });\n  const sans = [...DEFAULT_SANS, ...(options.extraSans ?? []).map(toSanEntry)];\n  let pem: { private: string; cert: string };\n  try {\n    pem = generateSelfSigned([{ name: \"commonName\", value: \"dsh-lan-proxy\" }], {\n      keySize: 2048,\n      algorithm: \"sha256\",\n      days: CERT_DAYS,\n      extensions: [{ name: \"subjectAltName\", altNames: sans }],\n    });\n  } catch (err) {\n    throw new Error(`self-signed cert generation failed: ${(err as Error).message}`);\n  }\n  writeFileSync(keyPath, pem.private, { mode: 0o600 });\n  writeFileSync(certPath, pem.cert);\n  // 显式收敛私钥权限 0600（writeFileSync mode 受 umask 影响可能过宽）\n  chmodSync(keyPath, 0o600);\n  return { cert: readFileSync(certPath), key: readFileSync(keyPath) };\n}\n"
-    },
-    "packages/dsh-lan-proxy/src/settings.ts": {
-      "language": "typescript",
-      "mutants": [
-        {
-          "id": "132",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 91
-            },
-            "start": {
-              "column": 80,
-              "line": 88
-            }
-          }
         },
         {
-          "id": "133",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 70,
-              "line": 89
-            },
-            "start": {
-              "column": 5,
-              "line": 89
-            }
-          }
-        },
-        {
-          "id": "79",
-          "mutatorName": "StringLiteral",
-          "replacement": "\"\"",
-          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
-          "status": "Ignored",
-          "static": false,
-          "location": {
-            "end": {
-              "column": 43,
-              "line": 15
-            },
-            "start": {
-              "column": 28,
-              "line": 15
-            }
-          }
-        },
-        {
-          "id": "88",
-          "mutatorName": "StringLiteral",
-          "replacement": "\"\"",
-          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
-          "status": "Ignored",
-          "static": false,
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 25
-            },
-            "start": {
-              "column": 27,
-              "line": 25
-            }
-          }
-        },
-        {
-          "id": "89",
-          "mutatorName": "StringLiteral",
-          "replacement": "\"\"",
-          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
-          "status": "Ignored",
-          "static": false,
-          "location": {
-            "end": {
-              "column": 46,
-              "line": 25
-            },
-            "start": {
-              "column": 39,
-              "line": 25
-            }
-          }
-        },
-        {
-          "id": "95",
-          "mutatorName": "StringLiteral",
-          "replacement": "\"\"",
-          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
-          "status": "Ignored",
-          "static": false,
-          "location": {
-            "end": {
-              "column": 51,
-              "line": 28
-            },
-            "start": {
-              "column": 43,
-              "line": 28
-            }
-          }
-        },
-        {
-          "id": "103",
-          "mutatorName": "StringLiteral",
-          "replacement": "\"\"",
-          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
-          "status": "Ignored",
-          "static": false,
-          "location": {
-            "end": {
-              "column": 31,
-              "line": 29
-            },
-            "start": {
-              "column": 20,
-              "line": 29
-            }
-          }
-        },
-        {
-          "id": "106",
-          "mutatorName": "StringLiteral",
-          "replacement": "\"\"",
-          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
-          "status": "Ignored",
-          "static": false,
-          "location": {
-            "end": {
-              "column": 55,
-              "line": 29
-            },
-            "start": {
-              "column": 45,
-              "line": 29
-            }
-          }
-        },
-        {
-          "id": "109",
-          "mutatorName": "StringLiteral",
-          "replacement": "\"\"",
-          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
-          "status": "Ignored",
-          "static": false,
-          "location": {
-            "end": {
-              "column": 79,
-              "line": 29
-            },
-            "start": {
-              "column": 69,
-              "line": 29
-            }
-          }
-        },
-        {
-          "id": "118",
-          "mutatorName": "StringLiteral",
-          "replacement": "\"\"",
-          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
-          "status": "Ignored",
-          "static": false,
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 35
-            },
-            "start": {
-              "column": 27,
-              "line": 35
-            }
-          }
-        },
-        {
-          "id": "119",
-          "mutatorName": "StringLiteral",
-          "replacement": "\"\"",
-          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
-          "status": "Ignored",
-          "static": false,
-          "location": {
-            "end": {
-              "column": 47,
-              "line": 35
-            },
-            "start": {
-              "column": 39,
-              "line": 35
-            }
-          }
-        },
-        {
-          "id": "124",
-          "mutatorName": "StringLiteral",
-          "replacement": "\"\"",
-          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
-          "status": "Ignored",
-          "static": false,
-          "location": {
-            "end": {
-              "column": 41,
-              "line": 38
-            },
-            "start": {
-              "column": 31,
-              "line": 38
-            }
-          }
-        },
-        {
-          "id": "131",
-          "mutatorName": "StringLiteral",
-          "replacement": "\"\"",
-          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
-          "status": "Ignored",
-          "static": false,
-          "location": {
-            "end": {
-              "column": 78,
-              "line": 88
-            },
-            "start": {
-              "column": 68,
-              "line": 88
-            }
-          }
-        },
-        {
-          "id": "134",
-          "mutatorName": "StringLiteral",
-          "replacement": "``",
-          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
-          "status": "Ignored",
-          "static": false,
-          "location": {
-            "end": {
-              "column": 68,
-              "line": 89
-            },
-            "start": {
-              "column": 18,
-              "line": 89
-            }
-          }
-        },
-        {
-          "id": "137",
-          "mutatorName": "StringLiteral",
-          "replacement": "\"\"",
-          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
-          "status": "Ignored",
-          "static": false,
-          "location": {
-            "end": {
-              "column": 50,
-              "line": 92
-            },
-            "start": {
-              "column": 40,
-              "line": 92
-            }
-          }
-        },
-        {
-          "id": "148",
-          "mutatorName": "StringLiteral",
-          "replacement": "\"\"",
-          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
-          "status": "Ignored",
-          "static": false,
-          "location": {
-            "end": {
-              "column": 61,
-              "line": 94
-            },
-            "start": {
-              "column": 51,
-              "line": 94
-            }
-          }
-        },
-        {
-          "id": "151",
-          "mutatorName": "StringLiteral",
-          "replacement": "``",
-          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
-          "status": "Ignored",
-          "static": false,
-          "location": {
-            "end": {
-              "column": 81,
-              "line": 95
-            },
-            "start": {
-              "column": 20,
-              "line": 95
-            }
-          }
-        },
-        {
-          "id": "153",
+          "id": "75",
           "mutatorName": "ObjectLiteral",
           "replacement": "{}",
           "statusReason": "Ignored because of excluded mutation \"ObjectLiteral\"",
@@ -1819,1747 +1521,17 @@
           "static": false,
           "location": {
             "end": {
-              "column": 69,
-              "line": 100
-            },
-            "start": {
-              "column": 54,
-              "line": 100
-            }
-          }
-        },
-        {
-          "id": "156",
-          "mutatorName": "StringLiteral",
-          "replacement": "``",
-          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
-          "status": "Ignored",
-          "static": false,
-          "location": {
-            "end": {
-              "column": 81,
-              "line": 102
-            },
-            "start": {
-              "column": 20,
-              "line": 102
-            }
-          }
-        },
-        {
-          "id": "80",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 30
-            },
-            "start": {
-              "column": 45,
-              "line": 23
-            }
-          }
-        },
-        {
-          "id": "81",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 53,
-              "line": 25
-            },
-            "start": {
-              "column": 5,
-              "line": 25
-            }
-          }
-        },
-        {
-          "id": "83",
-          "mutatorName": "LogicalOperator",
-          "replacement": "ctx && typeof ctx === \"object\" || \"fiber\" in ctx",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 53,
-              "line": 25
-            },
-            "start": {
-              "column": 5,
-              "line": 25
-            }
-          }
-        },
-        {
-          "id": "86",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 25
-            },
-            "start": {
-              "column": 12,
-              "line": 25
-            }
-          }
-        },
-        {
-          "id": "90",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'state'): uncaughtException: Cannot read properties of undefined (reading 'state')",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 51,
-              "line": 28
-            },
-            "start": {
-              "column": 17,
-              "line": 28
-            }
-          }
-        },
-        {
-          "id": "87",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof ctx !== \"object\"",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 25
-            },
-            "start": {
-              "column": 12,
-              "line": 25
-            }
-          }
-        },
-        {
-          "id": "91",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 51,
-              "line": 28
-            },
-            "start": {
-              "column": 17,
-              "line": 28
-            }
-          }
-        },
-        {
-          "id": "92",
-          "mutatorName": "LogicalOperator",
-          "replacement": "fiber || typeof fiber === \"object\"",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 51,
-              "line": 28
-            },
-            "start": {
-              "column": 17,
-              "line": 28
-            }
-          }
-        },
-        {
-          "id": "93",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 51,
-              "line": 28
-            },
-            "start": {
-              "column": 26,
-              "line": 28
-            }
-          }
-        },
-        {
-          "id": "96",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 79,
-              "line": 29
-            },
-            "start": {
-              "column": 10,
-              "line": 29
-            }
-          }
-        },
-        {
-          "id": "98",
-          "mutatorName": "LogicalOperator",
-          "replacement": "(state === \"unloading\" || state === \"unloaded\") && state === \"disposed\"",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 79,
-              "line": 29
-            },
-            "start": {
-              "column": 10,
-              "line": 29
-            }
-          }
-        },
-        {
-          "id": "99",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 55,
-              "line": 29
-            },
-            "start": {
-              "column": 10,
-              "line": 29
-            }
-          }
-        },
-        {
-          "id": "101",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 31,
-              "line": 29
-            },
-            "start": {
-              "column": 10,
-              "line": 29
-            }
-          }
-        },
-        {
-          "id": "104",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 55,
-              "line": 29
-            },
-            "start": {
-              "column": 35,
-              "line": 29
-            }
-          }
-        },
-        {
-          "id": "102",
-          "mutatorName": "EqualityOperator",
-          "replacement": "state !== \"unloading\"",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 31,
-              "line": 29
-            },
-            "start": {
-              "column": 10,
-              "line": 29
-            }
-          }
-        },
-        {
-          "id": "107",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 79,
-              "line": 29
-            },
-            "start": {
-              "column": 59,
-              "line": 29
-            }
-          }
-        },
-        {
-          "id": "108",
-          "mutatorName": "EqualityOperator",
-          "replacement": "state !== \"disposed\"",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 79,
-              "line": 29
-            },
-            "start": {
-              "column": 59,
-              "line": 29
-            }
-          }
-        },
-        {
-          "id": "105",
-          "mutatorName": "EqualityOperator",
-          "replacement": "state !== \"unloaded\"",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 55,
-              "line": 29
-            },
-            "start": {
-              "column": 35,
-              "line": 29
-            }
-          }
-        },
-        {
-          "id": "111",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 54,
-              "line": 35
-            },
-            "start": {
-              "column": 5,
-              "line": 35
-            }
-          }
-        },
-        {
-          "id": "82",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 53,
-              "line": 25
-            },
-            "start": {
-              "column": 5,
-              "line": 25
-            }
-          }
-        },
-        {
-          "id": "112",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 54,
-              "line": 35
-            },
-            "start": {
-              "column": 5,
-              "line": 35
-            }
-          }
-        },
-        {
-          "id": "84",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 25
-            },
-            "start": {
-              "column": 5,
-              "line": 25
-            }
-          }
-        },
-        {
-          "id": "85",
-          "mutatorName": "LogicalOperator",
-          "replacement": "ctx || typeof ctx === \"object\"",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 25
-            },
-            "start": {
-              "column": 5,
-              "line": 25
-            }
-          }
-        },
-        {
-          "id": "115",
-          "mutatorName": "LogicalOperator",
-          "replacement": "ctx || typeof ctx === \"object\"",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 35
-            },
-            "start": {
-              "column": 5,
-              "line": 35
-            }
-          }
-        },
-        {
-          "id": "117",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof ctx !== \"object\"",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 35
-            },
-            "start": {
-              "column": 12,
-              "line": 35
-            }
-          }
-        },
-        {
-          "id": "94",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof fiber !== \"object\"",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 51,
-              "line": 28
-            },
-            "start": {
-              "column": 26,
-              "line": 28
-            }
-          }
-        },
-        {
-          "id": "120",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 41,
-              "line": 38
-            },
-            "start": {
-              "column": 7,
-              "line": 38
-            }
-          }
-        },
-        {
-          "id": "97",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 79,
-              "line": 29
-            },
-            "start": {
-              "column": 10,
-              "line": 29
-            }
-          }
-        },
-        {
-          "id": "122",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof logger?.warn !== \"function\"",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 41,
-              "line": 38
-            },
-            "start": {
-              "column": 7,
-              "line": 38
-            }
-          }
-        },
-        {
-          "id": "125",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 64,
-              "line": 38
-            },
-            "start": {
-              "column": 43,
-              "line": 38
-            }
-          }
-        },
-        {
-          "id": "100",
-          "mutatorName": "LogicalOperator",
-          "replacement": "state === \"unloading\" && state === \"unloaded\"",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 55,
-              "line": 29
-            },
-            "start": {
-              "column": 10,
-              "line": 29
-            }
-          }
-        },
-        {
-          "id": "126",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]: uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 119
-            },
-            "start": {
-              "column": 114,
-              "line": 86
-            }
-          }
-        },
-        {
-          "id": "127",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]: uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 78,
-              "line": 88
-            },
-            "start": {
-              "column": 7,
-              "line": 88
-            }
-          }
-        },
-        {
-          "id": "129",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof (ctx as unknown as {\n  inject?: InjectFn;\n})?.inject === \"function\"",
-          "statusReason": "uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]: uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 78,
-              "line": 88
-            },
-            "start": {
-              "column": 7,
-              "line": 88
-            }
-          }
-        },
-        {
-          "id": "135",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "statusReason": "uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]: uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 6,
-              "line": 118
-            },
-            "start": {
-              "column": 3,
-              "line": 92
-            }
-          }
-        },
-        {
-          "id": "141",
-          "mutatorName": "LogicalOperator",
-          "replacement": "sctx || sctx.settings as SettingsServiceLike | undefined",
-          "statusReason": "uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]: uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 80,
-              "line": 93
-            },
-            "start": {
-              "column": 22,
-              "line": 93
-            }
-          }
-        },
-        {
-          "id": "139",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]: uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 80,
-              "line": 93
-            },
-            "start": {
-              "column": 22,
-              "line": 93
-            }
-          }
-        },
-        {
-          "id": "136",
-          "mutatorName": "ArrayDeclaration",
-          "replacement": "[]",
-          "statusReason": "uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]: uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 51,
-              "line": 92
-            },
-            "start": {
-              "column": 39,
-              "line": 92
-            }
-          }
-        },
-        {
-          "id": "110",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 39
-            },
-            "start": {
-              "column": 62,
-              "line": 33
-            }
-          }
-        },
-        {
-          "id": "142",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]: uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 61,
-              "line": 94
-            },
-            "start": {
-              "column": 9,
-              "line": 94
-            }
-          }
-        },
-        {
-          "id": "138",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]: uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 118
-            },
-            "start": {
-              "column": 63,
-              "line": 92
-            }
-          }
-        },
-        {
-          "id": "113",
-          "mutatorName": "LogicalOperator",
-          "replacement": "ctx && typeof ctx === \"object\" || \"logger\" in ctx",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 54,
-              "line": 35
-            },
-            "start": {
-              "column": 5,
-              "line": 35
-            }
-          }
-        },
-        {
-          "id": "140",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]: uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 80,
-              "line": 93
-            },
-            "start": {
-              "column": 22,
-              "line": 93
-            }
-          }
-        },
-        {
-          "id": "144",
-          "mutatorName": "LogicalOperator",
-          "replacement": "!settings && typeof settings.register !== \"function\"",
-          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'register'): uncaughtException: Cannot read properties of undefined (reading 'register')",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 61,
-              "line": 94
-            },
-            "start": {
-              "column": 9,
-              "line": 94
-            }
-          }
-        },
-        {
-          "id": "145",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "settings",
-          "statusReason": "uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]: uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 18,
-              "line": 94
-            },
-            "start": {
-              "column": 9,
-              "line": 94
-            }
-          }
-        },
-        {
-          "id": "147",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof settings.register === \"function\"",
-          "statusReason": "uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]: uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 61,
-              "line": 94
-            },
-            "start": {
-              "column": 22,
-              "line": 94
-            }
-          }
-        },
-        {
-          "id": "114",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 35
-            },
-            "start": {
-              "column": 5,
-              "line": 35
-            }
-          }
-        },
-        {
-          "id": "152",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'watch'): uncaughtException: Cannot read properties of undefined (reading 'watch')",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 6,
-              "line": 101
-            },
-            "start": {
-              "column": 9,
-              "line": 99
-            }
-          }
-        },
-        {
-          "id": "143",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 61,
-              "line": 94
-            },
-            "start": {
-              "column": 9,
-              "line": 94
-            }
-          }
-        },
-        {
-          "id": "116",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 35
-            },
-            "start": {
-              "column": 12,
-              "line": 35
-            }
-          }
-        },
-        {
-          "id": "155",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 83,
-              "line": 102
-            },
-            "start": {
-              "column": 7,
-              "line": 102
-            }
-          }
-        },
-        {
-          "id": "121",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 41,
-              "line": 38
-            },
-            "start": {
-              "column": 7,
-              "line": 38
-            }
-          }
-        },
-        {
-          "id": "157",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 36,
-              "line": 105
-            },
-            "start": {
-              "column": 5,
-              "line": 105
-            }
-          }
-        },
-        {
-          "id": "162",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 6,
-              "line": 111
-            },
-            "start": {
-              "column": 29,
+              "column": 70,
               "line": 107
-            }
-          }
-        },
-        {
-          "id": "163",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 27,
-              "line": 108
             },
             "start": {
-              "column": 11,
-              "line": 108
-            }
-          }
-        },
-        {
-          "id": "123",
-          "mutatorName": "OptionalChaining",
-          "replacement": "logger.warn",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 26,
-              "line": 38
-            },
-            "start": {
-              "column": 14,
-              "line": 38
-            }
-          }
-        },
-        {
-          "id": "154",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'watch'): uncaughtException: Cannot read properties of undefined (reading 'watch')",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 6,
-              "line": 104
-            },
-            "start": {
-              "column": 19,
-              "line": 101
-            }
-          }
-        },
-        {
-          "id": "164",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 27,
-              "line": 108
-            },
-            "start": {
-              "column": 11,
-              "line": 108
-            }
-          }
-        },
-        {
-          "id": "128",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 78,
-              "line": 88
-            },
-            "start": {
-              "column": 7,
-              "line": 88
-            }
-          }
-        },
-        {
-          "id": "161",
-          "mutatorName": "ArrowFunction",
-          "replacement": "() => undefined",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 6,
-              "line": 111
-            },
-            "start": {
-              "column": 17,
+              "column": 10,
               "line": 107
-            }
-          }
-        },
-        {
-          "id": "159",
-          "mutatorName": "ArrowFunction",
-          "replacement": "() => undefined",
-          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'enabled'): uncaughtException: Cannot read properties of undefined (reading 'enabled')",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 38,
-              "line": 106
-            },
-            "start": {
-              "column": 21,
-              "line": 106
-            }
-          }
-        },
-        {
-          "id": "166",
-          "mutatorName": "ArrowFunction",
-          "replacement": "() => undefined",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 34,
-              "line": 109
-            },
-            "start": {
-              "column": 23,
-              "line": 109
-            }
-          }
-        },
-        {
-          "id": "171",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 27,
-              "line": 115
-            },
-            "start": {
-              "column": 11,
-              "line": 115
-            }
-          }
-        },
-        {
-          "id": "170",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 6,
-              "line": 117
-            },
-            "start": {
-              "column": 23,
-              "line": 114
-            }
-          }
-        },
-        {
-          "id": "172",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 27,
-              "line": 115
-            },
-            "start": {
-              "column": 11,
-              "line": 115
-            }
-          }
-        },
-        {
-          "id": "173",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 24,
-              "line": 116
-            },
-            "start": {
-              "column": 7,
-              "line": 116
-            }
-          }
-        },
-        {
-          "id": "130",
-          "mutatorName": "OptionalChaining",
-          "replacement": "(ctx as unknown as {\n  inject?: InjectFn;\n}).inject",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 63,
-              "line": 88
-            },
-            "start": {
-              "column": 14,
-              "line": 88
-            }
-          }
-        },
-        {
-          "id": "149",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 6,
-              "line": 97
-            },
-            "start": {
-              "column": 63,
-              "line": 94
-            }
-          }
-        },
-        {
-          "id": "146",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 61,
-              "line": 94
-            },
-            "start": {
-              "column": 22,
-              "line": 94
-            }
-          }
-        },
-        {
-          "id": "150",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 83,
-              "line": 95
-            },
-            "start": {
-              "column": 7,
-              "line": 95
-            }
-          }
-        },
-        {
-          "id": "168",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 22,
-              "line": 112
-            },
-            "start": {
-              "column": 5,
-              "line": 112
-            }
-          }
-        },
-        {
-          "id": "167",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "0"
-          ],
-          "location": {
-            "end": {
-              "column": 24,
-              "line": 110
-            },
-            "start": {
-              "column": 7,
-              "line": 110
             }
           }
         }
       ],
-      "source": "/**\n * dsh-lan-proxy — 官方 settings 命名空间接线（#276 方案 A 阶段 3 拆出）。\n *\n * 职责：插件在官方 settings 服务中的命名空间（SETTINGS_NS）、minimal 类型面\n * （OwnerScopeLike / SettingsServiceLike / LanProxySettingsHooks）与挂载函数\n * installLanProxySettings。非导出辅助 isUnloading / warnLog 亦归此模块\n * （apply.ts 经 module 导出复用 warnLog，不重复实现）。\n */\nimport type { Context } from \"@deepseek-ai/cordis\";\nimport { errorMessage } from \"../../../shared/host-utils.js\";\nimport { Config } from \"./config.ts\";\nimport type { LanProxyConfig } from \"./config.ts\";\n\n/** 本插件在官方 settings 服务中的命名空间。 */\nexport const SETTINGS_NS = \"dsh-lan-proxy\";\n\n/**\n * 是否正处于插件自身 fiber 卸载中（区别于「仅丢失 settings 服务」）。\n * 与 shared/settings-namespace.js 同款判据：fiber.state ∈ { unloading, unloaded,\n * disposed }。（包内复刻：coder 规程禁止改 shared/，而 owner scope 写能力需要\n * 拿到 register 返回值，shared 版 hooks 不外露 scope。）\n */\nfunction isUnloading(ctx: unknown): boolean {\n  const fiber =\n    ctx && typeof ctx === \"object\" && \"fiber\" in ctx\n      ? (ctx as { fiber?: { state?: unknown } }).fiber\n      : undefined;\n  const state = fiber && typeof fiber === \"object\" ? fiber.state : undefined;\n  return state === \"unloading\" || state === \"unloaded\" || state === \"disposed\";\n}\n\n/** 日志兜底：logger 可能确实没有（极端降级），全部可选调用。 */\nexport function warnLog(ctx: unknown, message: string): void {\n  const logger =\n    ctx && typeof ctx === \"object\" && \"logger\" in ctx\n      ? (ctx as { logger?: { warn?: (...a: unknown[]) => void } }).logger\n      : undefined;\n  if (typeof logger?.warn === \"function\") logger.warn(message);\n}\n\n/**\n * owner scope 最小类型面（官方 SettingsScope<T> 的子集；仅 import type 无法\n * 从运行时拿到该包，这里按 @deepseek-ai/dsh-settings@0.1.1-rc.2 类型层收窄）。\n */\nexport interface OwnerScopeLike {\n  /** 当前解析值（schema defaults → base → user 层）。 */\n  get(): LanProxyConfig;\n  /** 提交后异步串行回调，返回 disposer。 */\n  watch(cb: (next: LanProxyConfig, prev: LanProxyConfig) => void): () => void;\n  /** 增量 merge patch 进 user 层并持久化。 */\n  update(patch: object, expectedRevision?: number): Promise<void>;\n  /** 整节替换 user 层，缺省键回落 base/schema 默认。 */\n  replace(section: object, expectedRevision?: number): Promise<void>;\n}\n\n/** settings 服务最小类型面（register/describe）。 */\nexport interface SettingsServiceLike {\n  register(ns: string, schema: unknown, options?: { base?: unknown }): OwnerScopeLike;\n  describe(options?: { redactSecrets?: boolean }): Array<{ ns: string; user?: unknown; revision: number }>;\n}\n\n/** installLanProxySettings 的 hooks 面（含 onScope：attach 后交出 owner scope）。 */\nexport interface LanProxySettingsHooks {\n  /** 把插件对该命名空间的读取来源指向返回的 scope（`scope.get()`）。 */\n  setSource(source: () => LanProxyConfig): void;\n  /** 来源切换或命名空间值变化时触发，插件据此刷新/重建转发器。 */\n  onChange(): void;\n  /** scope attach 后回调（迁移在此执行）；服务缺失时不触发。 */\n  onScope(scope: OwnerScopeLike, service: SettingsServiceLike): void;\n}\n\n/**\n * 注册插件自有 settings 命名空间并把 owner scope 交给调用方\n * （服务面注入，零包依赖；语义等值复刻官方 installSettingsSection 与\n * shared/installSettingsNamespace——差异仅在把 register 返回的 owner scope\n * 经 onScope 外露，供存量配置迁移写入）。\n *\n * 为什么不用官方 @deepseek-ai/dsh-settings 包：插件运行时沿自身 lib/ 向上\n * 解析不到该包（MODULE_NOT_FOUND），动态 import 会静默失败——与\n * shared/settings-namespace.js 相同的服务面注入方案。\n *\n * @param ctx - 插件宿主端 apply 收到的 cordis 上下文。\n * @param entry - 组合层配置，作为命名空间的 base 层。\n * @param hooks - source 收藏、变更通知与 scope 移交。\n */\nexport function installLanProxySettings(ctx: Context, entry: LanProxyConfig, hooks: LanProxySettingsHooks): void {\n  type InjectFn = (services: string[], fn: (c: any) => void) => void;\n  if (typeof (ctx as unknown as { inject?: InjectFn })?.inject !== \"function\") {\n    warnLog(ctx, `${SETTINGS_NS}: ctx.inject 不可用 — 设置命名空间未注册，设置卡降级`);\n    return;\n  }\n  (ctx.inject as unknown as InjectFn)([\"settings\"], (sctx) => {\n    const settings = sctx && (sctx.settings as SettingsServiceLike | undefined);\n    if (!settings || typeof settings.register !== \"function\") {\n      warnLog(ctx, `${SETTINGS_NS}: settings 服务缺少 register 能力 — 设置命名空间未注册，设置卡降级`);\n      return;\n    }\n    let scope: OwnerScopeLike;\n    try {\n      scope = settings.register(SETTINGS_NS, Config, { base: entry });\n    } catch (err) {\n      warnLog(ctx, `${SETTINGS_NS}: settings.register 失败 — ${errorMessage(err)}`);\n      return;\n    }\n    hooks.onScope(scope, settings);\n    hooks.setSource(() => scope.get());\n    sctx.effect(() => () => {\n      if (isUnloading(ctx)) return;\n      hooks.setSource(() => entry);\n      hooks.onChange();\n    });\n    hooks.onChange();\n    // 热更新统一走官方 scope.watch（提交后异步串行回调）。\n    scope.watch(() => {\n      if (isUnloading(ctx)) return;\n      hooks.onChange();\n    });\n  });\n}"
+      "source": "// dsh-lan-proxy — TLS 证书准备。\n//\n// 两级证书来源，按配置优先：\n//   1. 用户提供的 PEM 文件（tlsCertFile / tlsKeyFile）——正式证书、\n//      mkcert 本地 CA 证书等，由 loadTlsFromFiles 读取；\n//   2. 自动生成的自签名证书——用 selfsigned（构建期内联进产物，\n//      运行时零依赖）生成（rsa:2048 / sha256 / 有效期 825 天），\n//      缓存到 <DSH_HOME>/lan-proxy/，幂等复用：证书存在且 24 小时内\n//      不过期则直接复用，否则重新生成。\n//   过期判定用 node:crypto 的 X509Certificate 解析 validToDate，\n//   不再依赖宿主机 openssl 子进程（issue #9）。\n//\n// 自签名证书带 subjectAltName（localhost / 127.0.0.1 / ::1 / 调用方传入的\n// 本机局域网 IP）：Chrome 59+ 对缺失 SAN 的证书直接拒绝（无法\"继续访问\"），\n// 有 SAN 的自签证书至少允许用户显式信任后进入。\nimport { X509Certificate } from \"node:crypto\";\nimport { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from \"node:fs\";\nimport { join } from \"node:path\";\nimport { isIP } from \"node:net\";\nimport { generate as generateSelfSigned } from \"selfsigned\";\nimport type { TlsMaterials } from \"./proxy.ts\";\n\n/** 自签证书缓存文件名（目录由调用方决定，默认 <DSH_HOME>/lan-proxy）。 */\nexport const SELF_SIGNED_KEY = \"dsh-lan-proxy-key.pem\";\nexport const SELF_SIGNED_CERT = \"dsh-lan-proxy-cert.pem\";\n\n/** 自签证书有效期（天）。825 ≈ 2.25 年，浏览器信任窗口友好。 */\nconst CERT_DAYS = 825;\n/** 剩余有效期低于该秒数视为即将过期，需要重签（24 小时）。 */\nconst MIN_REMAINING_SECONDS = 86400;\n\n/** selfsigned subjectAltName 条目（type 7 = IP 字面量，type 2 = DNS 名）。 */\nexport interface SanAltName {\n  type: 2 | 7;\n  value?: string;\n  ip?: string;\n}\n\n/** 默认 SAN：回环访问（本机 https://localhost:3443 测试）。 */\nconst DEFAULT_SANS: SanAltName[] = [\n  { type: 7, ip: \"127.0.0.1\" },\n  { type: 2, value: \"localhost\" },\n  { type: 7, ip: \"::1\" },\n];\n\n/** 把主机名/IP 编码为 selfsigned SAN 条目（IP 字面量走 ip 字段，其余走 DNS value）。 */\nexport function toSanEntry(host: string): SanAltName {\n  if (host === \"localhost\") return { type: 2, value: \"localhost\" };\n  return isIP(host) !== 0 ? { type: 7, ip: host } : { type: 2, value: host };\n}\n\n/** 读取用户提供的 PEM 证书与私钥文件。 */\nexport function loadTlsFromFiles(certFile: string, keyFile: string): TlsMaterials {\n  if (!existsSync(certFile)) throw new Error(`TLS cert file not found: ${certFile}`);\n  if (!existsSync(keyFile)) throw new Error(`TLS key file not found: ${keyFile}`);\n  return { cert: readFileSync(certFile), key: readFileSync(keyFile) };\n}\n\n/** ensureSelfSignedTls 选项。 */\nexport interface SelfSignedOptions {\n  /** 证书缓存目录（自动创建）。 */\n  dir: string;\n  /** 额外加入 SAN 的主机名/局域网 IP（如本机全部非回环 IPv4）。 */\n  extraSans?: string[];\n}\n\n/** 证书是否仍然有效（存在、可解析、剩余有效期 > 24 小时）。 */\nexport function certStillValid(certPath: string): boolean {\n  try {\n    const cert = new X509Certificate(readFileSync(certPath));\n    return cert.validToDate.getTime() - Date.now() > MIN_REMAINING_SECONDS * 1000;\n  } catch {\n    return false;\n  }\n}\n\n/**\n * 幂等获取自签名证书材料：缓存目录里已有未过期证书则直接复用，\n * 否则用 selfsigned 生成（rsa:2048 / sha256 / 825 天 / 带 SAN）并落盘缓存。\n * 生成失败时抛错（调用方降级为 HTTP-only）。\n */\nexport function ensureSelfSignedTls(options: SelfSignedOptions): TlsMaterials {\n  const keyPath = join(options.dir, SELF_SIGNED_KEY);\n  const certPath = join(options.dir, SELF_SIGNED_CERT);\n  if (existsSync(certPath) && existsSync(keyPath) && certStillValid(certPath)) {\n    // 私钥权限收敛 0600（历史缓存可能受 umask 影响过宽）\n    chmodSync(keyPath, 0o600);\n    return { cert: readFileSync(certPath), key: readFileSync(keyPath) };\n  }\n  mkdirSync(options.dir, { recursive: true });\n  const sans = [...DEFAULT_SANS, ...(options.extraSans ?? []).map(toSanEntry)];\n  let pem: { private: string; cert: string };\n  try {\n    pem = generateSelfSigned([{ name: \"commonName\", value: \"dsh-lan-proxy\" }], {\n      keySize: 2048,\n      algorithm: \"sha256\",\n      days: CERT_DAYS,\n      extensions: [{ name: \"subjectAltName\", altNames: sans }],\n    });\n  } catch (err) {\n    throw new Error(`self-signed cert generation failed: ${(err as Error).message}`);\n  }\n  writeFileSync(keyPath, pem.private, { mode: 0o600 });\n  writeFileSync(certPath, pem.cert);\n  // 显式收敛私钥权限 0600（writeFileSync mode 受 umask 影响可能过宽）\n  chmodSync(keyPath, 0o600);\n  return { cert: readFileSync(certPath), key: readFileSync(keyPath) };\n}\n"
     },
     "packages/dsh-lan-proxy/src/index.ts": {
       "language": "typescript",
@@ -3583,31 +1555,13 @@
           }
         },
         {
-          "id": "78",
-          "mutatorName": "StringLiteral",
-          "replacement": "\"\"",
-          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
-          "status": "Ignored",
-          "static": false,
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 38
-            },
-            "start": {
-              "column": 24,
-              "line": 38
-            }
-          }
-        },
-        {
           "id": "77",
           "mutatorName": "ArrayDeclaration",
           "replacement": "[]",
           "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
           "status": "Killed",
-          "static": false,
           "testsCompleted": 1,
+          "static": false,
           "killedBy": [
             "0"
           ],
@@ -3625,9 +1579,119 @@
               "line": 38
             }
           }
+        },
+        {
+          "id": "78",
+          "mutatorName": "StringLiteral",
+          "replacement": "\"\"",
+          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
+          "status": "Ignored",
+          "static": false,
+          "location": {
+            "end": {
+              "column": 35,
+              "line": 38
+            },
+            "start": {
+              "column": 24,
+              "line": 38
+            }
+          }
         }
       ],
       "source": "/**\n * dsh-lan-proxy — 主机端。dsh web UI 的零依赖 LAN 转发器：等回环 web 服务器\n * 绑定后，在 0.0.0.0:<port> 上监听并把 HTTP + WebSocket 转发到\n * 127.0.0.1:<webServer.port>（默认 3080），重写 Host/Origin 使 /api 浏览器\n * 信任围栏接受这些请求。\n *\n * 端口不是固定的：默认 3081，可通过两层途径修改（都实时生效）——\n *   1. GUI 设置卡片（设置 → 插件 → dsh-lan-proxy）：经 loopback HTTP 配置路由\n *      写入官方 settings 命名空间（scope.update/replace），scope.watch 触发热更新；\n *      settings 服务不可解析时自动降级并打 warn 日志。\n *   2. 组合层配置（profile 的 cordis.patch.yml 覆盖 lan-proxy 行的 config，\n *      或启动时 --patch overlay）——作为 settings 命名空间的 base 层生效。\n *\n * 配置单一通道（issue #110）：不再维护自建 `~/.dsh/lan-proxy/config.json` 与\n * RPC state/config 端点；配置一律存官方 settings 存储（settings.register 注册的\n * `dsh-lan-proxy` 命名空间，owner scope get/watch/update/replace）。存量\n * config.json 在 settings 服务 attach 后做一次性 marker 迁移（原子改名\n * `config.json.migrated.bak` 幂等标记 → 校验过滤 → scope.update 增量写入，\n * 失败回滚改名）；此后手改 config.json 不再生效。\n *\n * 激活方式：把本包安装进某个 profile，其 cordis.patch.yml（通过\n * `dsh.bundle.patch` 声明）会插入 `lan-proxy` 这一行：\n *\n *   dsh plugin --profile web add link:<本包路径>\n *\n * 该行是普通 cordis 插件：主机端（exports \".\"）在宿主进程运行，注入\n * `webServer`，因此只在回环服务器监听后启动，并从 ctx.webServer.port\n * 解析真实上游端口（`--port 0` 与自定义 `--port` 均可用）。\n *\n * 结构（#276 方案 A 阶段 3 拆分）：职责按模块拆分（config / settings /\n * migrate / config-routes / apply），本文件保留插件契约（name/inject 与 apply、\n * 路由表转发）与全部公共符号 re-export（导出面不变，外部消费者从\n * lib/index.js 导入不受影响）。apply 实现于 apply.ts，不 import 本文件。\n */\nexport const name = \"lan-proxy\";\n\n/** 等回环 web 服务器绑定并初始化后再启动。 */\nexport const inject = [\"webServer\"];\n\n// ------------------------------------------------------------------ 对外 re-export\n// 注意：bundle-host 会把 tsc 产物中的子模块全部内联进 lib/index.js 并清理游离 .js，\n// smoke/lint 只能从 lib/index.js 导入，故契约与核心模块一律在此 re-export。\n// 配置模型与校验（#276 方案 A 阶段 3 拆出：schema / 校验 / 净化 / 类型面；\n// normalizeLegacyWsCompressPaths 为 #395 M2 存量白名单归一化纯函数）\nexport { Config, sanitizeSettings, validateSettings, normalizeLegacyWsCompressPaths } from \"./config.ts\";\nexport type { HttpCompressSnapshot, LanProxyConfig, ResolvedConfig, SettingInvalid } from \"./config.ts\";\n// 官方 settings 命名空间接线（#276 方案 A 阶段 3 拆出）\nexport { SETTINGS_NS, installLanProxySettings } from \"./settings.ts\";\nexport type { LanProxySettingsHooks, OwnerScopeLike } from \"./settings.ts\";\n// 存量 config.json 一次性迁移（#276 方案 A 阶段 3 拆出）\nexport { MIGRATED_BAK_NAME, migrateFileConfig } from \"./migrate.ts\";\nexport type { MigrationOutcome } from \"./migrate.ts\";\n// loopback HTTP 配置路由（#276 方案 A 阶段 3 拆出：路由表 + 保存纯函数）\nexport { ROUTES, applyConfigPatch, buildConfigRoutes } from \"./config-routes.ts\";\nexport type { ConfigRouteDeps, PatchResult } from \"./config-routes.ts\";\n// 插件挂载主流程（apply + 转发常量）\nexport { apply, pluginDir, DEFAULT_WSS_COMPRESS_PATHS } from \"./apply.ts\";\n\n// 测试面 re-export（smoke 只依赖主入口，避免发布物保留内部模块）\nexport { createLanProxy, hostnameAllowed, formatAuthority, rewriteHeaders, bridgeUpstreamHeaders, isLoopbackTarget, DEFAULT_OPTIONS, compressWsPath, isCompressible, resolveCompressionOptions, deflateAllowedByPolicy, DEFAULT_DEFLATE_POLICY, hasDshAuthCookie, isTokenMintCandidate, withLaunchToken } from \"./proxy.ts\";\nexport type { ConnStats, DeflatePolicy, LanProxy, TokenProvider } from \"./proxy.ts\";\nexport { ensureSelfSignedTls, certStillValid, toSanEntry, loadTlsFromFiles, SELF_SIGNED_KEY, SELF_SIGNED_CERT } from \"./cert.ts\";"
+    },
+    "packages/dsh-lan-proxy/src/settings.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "79",
+          "mutatorName": "StringLiteral",
+          "replacement": "\"\"",
+          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
+          "status": "Ignored",
+          "static": false,
+          "location": {
+            "end": {
+              "column": 43,
+              "line": 22
+            },
+            "start": {
+              "column": 28,
+              "line": 22
+            }
+          }
+        },
+        {
+          "id": "82",
+          "mutatorName": "ObjectLiteral",
+          "replacement": "{}",
+          "statusReason": "Ignored because of excluded mutation \"ObjectLiteral\"",
+          "status": "Ignored",
+          "static": false,
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 70
+            },
+            "start": {
+              "column": 61,
+              "line": 66
+            }
+          }
+        },
+        {
+          "id": "81",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "statusReason": "uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]: uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0"
+          ],
+          "location": {
+            "end": {
+              "column": 6,
+              "line": 70
+            },
+            "start": {
+              "column": 3,
+              "line": 66
+            }
+          }
+        },
+        {
+          "id": "80",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]: uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 71
+            },
+            "start": {
+              "column": 114,
+              "line": 65
+            }
+          }
+        }
+      ],
+      "source": "/**\n * dsh-lan-proxy — 官方 settings 命名空间接线（薄包装，收敛自 shared）。\n *\n * 职责：插件在官方 settings 服务中的命名空间（SETTINGS_NS）、minimal 类型面\n * （OwnerScopeLike / SettingsServiceLike / LanProxySettingsHooks）与挂载函数\n * installLanProxySettings。issue #436 起不再包内复刻接线——实现统一转发\n * shared/installSettingsNamespace（单一事实源），hooks 依次透传 onScope /\n * setSource / onChange；onScope 供存量配置迁移写入。\n *\n * 为什么不用官方 @deepseek-ai/dsh-settings 包：插件运行时沿自身 lib/ 向上\n * 解析不到该包（MODULE_NOT_FOUND），动态 import 会静默失败——与\n * shared/settings-namespace.js 相同的服务面注入方案。\n */\nimport type { Context } from \"@deepseek-ai/cordis\";\nimport { installSettingsNamespace } from \"../../../shared/settings-namespace.js\";\nimport { Config } from \"./config.ts\";\nimport type { LanProxyConfig } from \"./config.ts\";\n\nexport { warnLog } from \"../../../shared/settings-namespace.js\";\n\n/** 本插件在官方 settings 服务中的命名空间。 */\nexport const SETTINGS_NS = \"dsh-lan-proxy\";\n\n/**\n * owner scope 最小类型面（官方 SettingsScope<T> 的子集；仅 import type 无法\n * 从运行时拿到该包，这里按 @deepseek-ai/dsh-settings@0.1.1-rc.2 类型层收窄）。\n */\nexport interface OwnerScopeLike {\n  /** 当前解析值（schema defaults → base → user 层）。 */\n  get(): LanProxyConfig;\n  /** 提交后异步串行回调，返回 disposer。 */\n  watch(cb: (next: LanProxyConfig, prev: LanProxyConfig) => void): () => void;\n  /** 增量 merge patch 进 user 层并持久化。 */\n  update(patch: object, expectedRevision?: number): Promise<void>;\n  /** 整节替换 user 层，缺省键回落 base/schema 默认。 */\n  replace(section: object, expectedRevision?: number): Promise<void>;\n}\n\n/** settings 服务最小类型面（register/describe）。 */\nexport interface SettingsServiceLike {\n  register(ns: string, schema: unknown, options?: { base?: unknown }): OwnerScopeLike;\n  describe(options?: { redactSecrets?: boolean }): Array<{ ns: string; user?: unknown; revision: number }>;\n}\n\n/** installLanProxySettings 的 hooks 面（含 onScope：attach 后交出 owner scope）。 */\nexport interface LanProxySettingsHooks {\n  /** 把插件对该命名空间的读取来源指向返回的 scope（`scope.get()`）。 */\n  setSource(source: () => LanProxyConfig): void;\n  /** 来源切换或命名空间值变化时触发，插件据此刷新/重建转发器。 */\n  onChange(): void;\n  /** scope attach 后回调（迁移在此执行）；服务缺失时不触发。 */\n  onScope(scope: OwnerScopeLike, service: SettingsServiceLike): void;\n}\n\n/**\n * 注册插件自有 settings 命名空间并把 owner scope 交给调用方。\n * 薄包装（#436）：转发 shared/installSettingsNamespace——setSource / onChange /\n * onScope 依次透传，降级与卸载回落语义统一由 shared 承担。对外签名与 #436 前\n * 保持一致：ctx / entry（组合层配置，作为命名空间的 base 层）/ hooks。\n *\n * @param ctx - 插件宿主端 apply 收到的 cordis 上下文。\n * @param entry - 组合层配置，作为命名空间的 base 层。\n * @param hooks - source 收藏、变更通知与 scope 移交。\n */\nexport function installLanProxySettings(ctx: Context, entry: LanProxyConfig, hooks: LanProxySettingsHooks): void {\n  installSettingsNamespace(ctx, SETTINGS_NS, Config, entry, {\n    setSource: hooks.setSource,\n    onChange: hooks.onChange,\n    onScope: hooks.onScope,\n  });\n}\n"
     }
   },
   "schemaVersion": "1.0",
