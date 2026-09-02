@@ -12,7 +12,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "2",
+            "1",
             "4"
           ],
           "location": {
@@ -1789,6 +1789,52 @@
           }
         },
         {
+          "id": "95",
+          "mutatorName": "Regex",
+          "replacement": "/(\\d{2}):(\\d{2})$/u",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 33,
+              "line": 30
+            },
+            "start": {
+              "column": 13,
+              "line": 30
+            }
+          }
+        },
+        {
+          "id": "96",
+          "mutatorName": "Regex",
+          "replacement": "/^(\\d{2}):(\\d{2})/u",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 33,
+              "line": 30
+            },
+            "start": {
+              "column": 13,
+              "line": 30
+            }
+          }
+        },
+        {
           "id": "97",
           "mutatorName": "Regex",
           "replacement": "/^(\\d):(\\d{2})$/u",
@@ -1919,6 +1965,32 @@
           }
         },
         {
+          "id": "102",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: Cannot read properties of null (reading '1'): uncaughtException: Cannot read properties of null (reading '1')",
+          "status": "Killed",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 17,
+              "line": 31
+            },
+            "start": {
+              "column": 7,
+              "line": 31
+            }
+          }
+        },
+        {
           "id": "103",
           "mutatorName": "EqualityOperator",
           "replacement": "m !== null",
@@ -1962,6 +2034,84 @@
           "location": {
             "end": {
               "column": 33,
+              "line": 34
+            },
+            "start": {
+              "column": 7,
+              "line": 34
+            }
+          }
+        },
+        {
+          "id": "105",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: 非法 HH:MM(25:00) 丢弃回默认: uncaughtException: 非法 HH:MM(25:00) 丢弃回默认",
+          "status": "Killed",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 33,
+              "line": 34
+            },
+            "start": {
+              "column": 7,
+              "line": 34
+            }
+          }
+        },
+        {
+          "id": "106",
+          "mutatorName": "LogicalOperator",
+          "replacement": "hours > 23 && minutes > 59",
+          "statusReason": "uncaughtException: 非法 HH:MM(25:00) 丢弃回默认: uncaughtException: 非法 HH:MM(25:00) 丢弃回默认",
+          "status": "Killed",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 33,
+              "line": 34
+            },
+            "start": {
+              "column": 7,
+              "line": 34
+            }
+          }
+        },
+        {
+          "id": "107",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: 非法 HH:MM(25:00) 丢弃回默认: uncaughtException: 非法 HH:MM(25:00) 丢弃回默认",
+          "status": "Killed",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 17,
               "line": 34
             },
             "start": {
@@ -2023,6 +2173,52 @@
           }
         },
         {
+          "id": "110",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 33,
+              "line": 34
+            },
+            "start": {
+              "column": 21,
+              "line": 34
+            }
+          }
+        },
+        {
+          "id": "111",
+          "mutatorName": "EqualityOperator",
+          "replacement": "minutes >= 59",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 33,
+              "line": 34
+            },
+            "start": {
+              "column": 21,
+              "line": 34
+            }
+          }
+        },
+        {
           "id": "112",
           "mutatorName": "EqualityOperator",
           "replacement": "minutes <= 59",
@@ -2049,6 +2245,343 @@
           }
         },
         {
+          "id": "113",
+          "mutatorName": "ArithmeticOperator",
+          "replacement": "hours * 60 - minutes",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 30,
+              "line": 35
+            },
+            "start": {
+              "column": 10,
+              "line": 35
+            }
+          }
+        },
+        {
+          "id": "114",
+          "mutatorName": "ArithmeticOperator",
+          "replacement": "hours / 60",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 20,
+              "line": 35
+            },
+            "start": {
+              "column": 10,
+              "line": 35
+            }
+          }
+        },
+        {
+          "id": "115",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: 跨午夜晚间: uncaughtException: 跨午夜晚间",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 48
+            },
+            "start": {
+              "column": 94,
+              "line": 39
+            }
+          }
+        },
+        {
+          "id": "116",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: 跨午夜晚间: uncaughtException: 跨午夜晚间",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 35,
+              "line": 40
+            },
+            "start": {
+              "column": 7,
+              "line": 40
+            }
+          }
+        },
+        {
+          "id": "117",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 35,
+              "line": 40
+            },
+            "start": {
+              "column": 7,
+              "line": 40
+            }
+          }
+        },
+        {
+          "id": "118",
+          "mutatorName": "EqualityOperator",
+          "replacement": "quietHours?.enabled === true",
+          "statusReason": "uncaughtException: 跨午夜晚间: uncaughtException: 跨午夜晚间",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 35,
+              "line": 40
+            },
+            "start": {
+              "column": 7,
+              "line": 40
+            }
+          }
+        },
+        {
+          "id": "119",
+          "mutatorName": "OptionalChaining",
+          "replacement": "quietHours.enabled",
+          "status": "Survived",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 26,
+              "line": 40
+            },
+            "start": {
+              "column": 7,
+              "line": 40
+            }
+          }
+        },
+        {
+          "id": "120",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "false",
+          "statusReason": "uncaughtException: 跨午夜晚间: uncaughtException: 跨午夜晚间",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 35,
+              "line": 40
+            },
+            "start": {
+              "column": 31,
+              "line": 40
+            }
+          }
+        },
+        {
+          "id": "121",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "true",
+          "statusReason": "uncaughtException: 禁用: uncaughtException: 禁用",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 49,
+              "line": 40
+            },
+            "start": {
+              "column": 44,
+              "line": 40
+            }
+          }
+        },
+        {
+          "id": "122",
+          "mutatorName": "ArithmeticOperator",
+          "replacement": "now.getHours() * 60 - now.getMinutes()",
+          "status": "Survived",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 57,
+              "line": 41
+            },
+            "start": {
+              "column": 19,
+              "line": 41
+            }
+          }
+        },
+        {
+          "id": "123",
+          "mutatorName": "ArithmeticOperator",
+          "replacement": "now.getHours() / 60",
+          "statusReason": "uncaughtException: 中午不静默: uncaughtException: 中午不静默",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 38,
+              "line": 41
+            },
+            "start": {
+              "column": 19,
+              "line": 41
+            }
+          }
+        },
+        {
+          "id": "124",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: 跨午夜晚间: uncaughtException: 跨午夜晚间",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 47,
+              "line": 44
+            },
+            "start": {
+              "column": 7,
+              "line": 44
+            }
+          }
+        },
+        {
+          "id": "125",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 47,
+              "line": 44
+            },
+            "start": {
+              "column": 7,
+              "line": 44
+            }
+          }
+        },
+        {
+          "id": "126",
+          "mutatorName": "LogicalOperator",
+          "replacement": "Number.isNaN(start) && Number.isNaN(end)",
+          "status": "Survived",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 47,
+              "line": 44
+            },
+            "start": {
+              "column": 7,
+              "line": 44
+            }
+          }
+        },
+        {
           "id": "127",
           "mutatorName": "BooleanLiteral",
           "replacement": "true",
@@ -2064,6 +2597,78 @@
             "start": {
               "column": 56,
               "line": 44
+            }
+          }
+        },
+        {
+          "id": "128",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: 跨午夜晚间: uncaughtException: 跨午夜晚间",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 20,
+              "line": 45
+            },
+            "start": {
+              "column": 7,
+              "line": 45
+            }
+          }
+        },
+        {
+          "id": "129",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 20,
+              "line": 45
+            },
+            "start": {
+              "column": 7,
+              "line": 45
+            }
+          }
+        },
+        {
+          "id": "130",
+          "mutatorName": "EqualityOperator",
+          "replacement": "start !== end",
+          "statusReason": "uncaughtException: 跨午夜晚间: uncaughtException: 跨午夜晚间",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 20,
+              "line": 45
+            },
+            "start": {
+              "column": 7,
+              "line": 45
             }
           }
         },
@@ -2087,417 +2692,13 @@
           }
         },
         {
-          "id": "120",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "false",
-          "statusReason": "uncaughtException: 跨午夜晚间: uncaughtException: 跨午夜晚间",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 40
-            },
-            "start": {
-              "column": 31,
-              "line": 40
-            }
-          }
-        },
-        {
-          "id": "115",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: 跨午夜晚间: uncaughtException: 跨午夜晚间",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 48
-            },
-            "start": {
-              "column": 94,
-              "line": 39
-            }
-          }
-        },
-        {
-          "id": "117",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 40
-            },
-            "start": {
-              "column": 7,
-              "line": 40
-            }
-          }
-        },
-        {
-          "id": "118",
-          "mutatorName": "EqualityOperator",
-          "replacement": "quietHours?.enabled === true",
-          "statusReason": "uncaughtException: 跨午夜晚间: uncaughtException: 跨午夜晚间",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 40
-            },
-            "start": {
-              "column": 7,
-              "line": 40
-            }
-          }
-        },
-        {
-          "id": "119",
-          "mutatorName": "OptionalChaining",
-          "replacement": "quietHours.enabled",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 26,
-              "line": 40
-            },
-            "start": {
-              "column": 7,
-              "line": 40
-            }
-          }
-        },
-        {
-          "id": "116",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: 跨午夜晚间: uncaughtException: 跨午夜晚间",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 40
-            },
-            "start": {
-              "column": 7,
-              "line": 40
-            }
-          }
-        },
-        {
-          "id": "123",
-          "mutatorName": "ArithmeticOperator",
-          "replacement": "now.getHours() / 60",
-          "statusReason": "uncaughtException: 中午不静默: uncaughtException: 中午不静默",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 38,
-              "line": 41
-            },
-            "start": {
-              "column": 19,
-              "line": 41
-            }
-          }
-        },
-        {
-          "id": "121",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "true",
-          "statusReason": "uncaughtException: 禁用: uncaughtException: 禁用",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 49,
-              "line": 40
-            },
-            "start": {
-              "column": 44,
-              "line": 40
-            }
-          }
-        },
-        {
-          "id": "122",
-          "mutatorName": "ArithmeticOperator",
-          "replacement": "now.getHours() * 60 - now.getMinutes()",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 57,
-              "line": 41
-            },
-            "start": {
-              "column": 19,
-              "line": 41
-            }
-          }
-        },
-        {
-          "id": "126",
-          "mutatorName": "LogicalOperator",
-          "replacement": "Number.isNaN(start) && Number.isNaN(end)",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 47,
-              "line": 44
-            },
-            "start": {
-              "column": 7,
-              "line": 44
-            }
-          }
-        },
-        {
-          "id": "124",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: 跨午夜晚间: uncaughtException: 跨午夜晚间",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 47,
-              "line": 44
-            },
-            "start": {
-              "column": 7,
-              "line": 44
-            }
-          }
-        },
-        {
-          "id": "125",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 47,
-              "line": 44
-            },
-            "start": {
-              "column": 7,
-              "line": 44
-            }
-          }
-        },
-        {
-          "id": "113",
-          "mutatorName": "ArithmeticOperator",
-          "replacement": "hours * 60 - minutes",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 2,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 30,
-              "line": 35
-            },
-            "start": {
-              "column": 10,
-              "line": 35
-            }
-          }
-        },
-        {
-          "id": "95",
-          "mutatorName": "Regex",
-          "replacement": "/(\\d{2}):(\\d{2})$/u",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 33,
-              "line": 30
-            },
-            "start": {
-              "column": 13,
-              "line": 30
-            }
-          }
-        },
-        {
-          "id": "107",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: 非法 HH:MM(25:00) 丢弃回默认: uncaughtException: 非法 HH:MM(25:00) 丢弃回默认",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 2,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 17,
-              "line": 34
-            },
-            "start": {
-              "column": 7,
-              "line": 34
-            }
-          }
-        },
-        {
-          "id": "130",
-          "mutatorName": "EqualityOperator",
-          "replacement": "start !== end",
-          "statusReason": "uncaughtException: 跨午夜晚间: uncaughtException: 跨午夜晚间",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 20,
-              "line": 45
-            },
-            "start": {
-              "column": 7,
-              "line": 45
-            }
-          }
-        },
-        {
-          "id": "128",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: 跨午夜晚间: uncaughtException: 跨午夜晚间",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 20,
-              "line": 45
-            },
-            "start": {
-              "column": 7,
-              "line": 45
-            }
-          }
-        },
-        {
           "id": "132",
           "mutatorName": "ConditionalExpression",
           "replacement": "true",
           "statusReason": "uncaughtException: 跨午夜晚间: uncaughtException: 跨午夜晚间",
           "status": "Killed",
-          "static": false,
           "testsCompleted": 1,
+          "static": false,
           "killedBy": [
             "6"
           ],
@@ -2516,171 +2717,27 @@
           }
         },
         {
-          "id": "114",
-          "mutatorName": "ArithmeticOperator",
-          "replacement": "hours / 60",
+          "id": "133",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
           "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
           "status": "Killed",
-          "static": false,
-          "testsCompleted": 2,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 20,
-              "line": 35
-            },
-            "start": {
-              "column": 10,
-              "line": 35
-            }
-          }
-        },
-        {
-          "id": "106",
-          "mutatorName": "LogicalOperator",
-          "replacement": "hours > 23 && minutes > 59",
-          "statusReason": "uncaughtException: 非法 HH:MM(25:00) 丢弃回默认: uncaughtException: 非法 HH:MM(25:00) 丢弃回默认",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 2,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 33,
-              "line": 34
-            },
-            "start": {
-              "column": 7,
-              "line": 34
-            }
-          }
-        },
-        {
-          "id": "129",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
           "testsCompleted": 1,
-          "coveredBy": [
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 20,
-              "line": 45
-            },
-            "start": {
-              "column": 7,
-              "line": 45
-            }
-          }
-        },
-        {
-          "id": "96",
-          "mutatorName": "Regex",
-          "replacement": "/^(\\d{2}):(\\d{2})/u",
-          "status": "Survived",
           "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 33,
-              "line": 30
-            },
-            "start": {
-              "column": 13,
-              "line": 30
-            }
-          }
-        },
-        {
-          "id": "105",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: 非法 HH:MM(25:00) 丢弃回默认: uncaughtException: 非法 HH:MM(25:00) 丢弃回默认",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 2,
           "killedBy": [
             "6"
           ],
           "coveredBy": [
-            "4",
             "6"
           ],
           "location": {
             "end": {
-              "column": 33,
-              "line": 34
+              "column": 18,
+              "line": 46
             },
             "start": {
               "column": 7,
-              "line": 34
-            }
-          }
-        },
-        {
-          "id": "111",
-          "mutatorName": "EqualityOperator",
-          "replacement": "minutes >= 59",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 33,
-              "line": 34
-            },
-            "start": {
-              "column": 21,
-              "line": 34
-            }
-          }
-        },
-        {
-          "id": "102",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: Cannot read properties of null (reading '1'): uncaughtException: Cannot read properties of null (reading '1')",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 2,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 17,
-              "line": 31
-            },
-            "start": {
-              "column": 7,
-              "line": 31
+              "line": 46
             }
           }
         },
@@ -2689,8 +2746,34 @@
           "mutatorName": "EqualityOperator",
           "replacement": "start <= end",
           "status": "Survived",
-          "static": false,
           "testsCompleted": 1,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 18,
+              "line": 46
+            },
+            "start": {
+              "column": 7,
+              "line": 46
+            }
+          }
+        },
+        {
+          "id": "135",
+          "mutatorName": "EqualityOperator",
+          "replacement": "start >= end",
+          "statusReason": "uncaughtException: 跨午夜晚间: uncaughtException: 跨午夜晚间",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
           "coveredBy": [
             "6"
           ],
@@ -2711,8 +2794,8 @@
           "replacement": "true",
           "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
           "status": "Killed",
-          "static": false,
           "testsCompleted": 1,
+          "static": false,
           "killedBy": [
             "6"
           ],
@@ -2731,60 +2814,13 @@
           }
         },
         {
-          "id": "133",
+          "id": "137",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 18,
-              "line": 46
-            },
-            "start": {
-              "column": 7,
-              "line": 46
-            }
-          }
-        },
-        {
-          "id": "110",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 33,
-              "line": 34
-            },
-            "start": {
-              "column": 21,
-              "line": 34
-            }
-          }
-        },
-        {
-          "id": "141",
-          "mutatorName": "EqualityOperator",
-          "replacement": "minutes < start",
           "statusReason": "uncaughtException: 同日内: uncaughtException: 同日内",
           "status": "Killed",
-          "static": false,
           "testsCompleted": 1,
+          "static": false,
           "killedBy": [
             "6"
           ],
@@ -2793,7 +2829,32 @@
           ],
           "location": {
             "end": {
-              "column": 43,
+              "column": 60,
+              "line": 46
+            },
+            "start": {
+              "column": 27,
+              "line": 46
+            }
+          }
+        },
+        {
+          "id": "138",
+          "mutatorName": "LogicalOperator",
+          "replacement": "minutes >= start || minutes < end",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 60,
               "line": 46
             },
             "start": {
@@ -2808,8 +2869,8 @@
           "replacement": "true",
           "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
           "status": "Killed",
-          "static": false,
           "testsCompleted": 1,
+          "static": false,
           "killedBy": [
             "6"
           ],
@@ -2819,56 +2880,6 @@
           "location": {
             "end": {
               "column": 43,
-              "line": 46
-            },
-            "start": {
-              "column": 27,
-              "line": 46
-            }
-          }
-        },
-        {
-          "id": "135",
-          "mutatorName": "EqualityOperator",
-          "replacement": "start >= end",
-          "statusReason": "uncaughtException: 跨午夜晚间: uncaughtException: 跨午夜晚间",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 18,
-              "line": 46
-            },
-            "start": {
-              "column": 7,
-              "line": 46
-            }
-          }
-        },
-        {
-          "id": "137",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: 同日内: uncaughtException: 同日内",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 60,
               "line": 46
             },
             "start": {
@@ -2883,8 +2894,8 @@
           "replacement": "minutes > start",
           "statusReason": "uncaughtException: 同日内: uncaughtException: 同日内",
           "status": "Killed",
-          "static": false,
           "testsCompleted": 1,
+          "static": false,
           "killedBy": [
             "6"
           ],
@@ -2903,37 +2914,38 @@
           }
         },
         {
-          "id": "149",
+          "id": "141",
           "mutatorName": "EqualityOperator",
-          "replacement": "minutes > start",
-          "status": "Survived",
-          "static": false,
+          "replacement": "minutes < start",
+          "statusReason": "uncaughtException: 同日内: uncaughtException: 同日内",
+          "status": "Killed",
           "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
           "coveredBy": [
             "6"
           ],
           "location": {
             "end": {
-              "column": 26,
-              "line": 47
+              "column": 43,
+              "line": 46
             },
             "start": {
-              "column": 10,
-              "line": 47
+              "column": 27,
+              "line": 46
             }
           }
         },
         {
-          "id": "138",
-          "mutatorName": "LogicalOperator",
-          "replacement": "minutes >= start || minutes < end",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
+          "id": "142",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
           "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
+          "static": false,
+          "killedBy": [],
           "coveredBy": [
             "6"
           ],
@@ -2943,7 +2955,29 @@
               "line": 46
             },
             "start": {
-              "column": 27,
+              "column": 47,
+              "line": 46
+            }
+          }
+        },
+        {
+          "id": "143",
+          "mutatorName": "EqualityOperator",
+          "replacement": "minutes <= end",
+          "status": "Survived",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 60,
+              "line": 46
+            },
+            "start": {
+              "column": 47,
               "line": 46
             }
           }
@@ -2954,8 +2988,8 @@
           "replacement": "minutes >= end",
           "statusReason": "uncaughtException: 同日内: uncaughtException: 同日内",
           "status": "Killed",
-          "static": false,
           "testsCompleted": 1,
+          "static": false,
           "killedBy": [
             "6"
           ],
@@ -2979,8 +3013,8 @@
           "replacement": "true",
           "statusReason": "uncaughtException: 中午不静默: uncaughtException: 中午不静默",
           "status": "Killed",
-          "static": false,
           "testsCompleted": 1,
+          "static": false,
           "killedBy": [
             "6"
           ],
@@ -3004,8 +3038,8 @@
           "replacement": "false",
           "statusReason": "uncaughtException: 跨午夜晚间: uncaughtException: 跨午夜晚间",
           "status": "Killed",
-          "static": false,
           "testsCompleted": 1,
+          "static": false,
           "killedBy": [
             "6"
           ],
@@ -3024,33 +3058,16 @@
           }
         },
         {
-          "id": "143",
-          "mutatorName": "EqualityOperator",
-          "replacement": "minutes <= end",
-          "status": "Survived",
-          "static": false,
+          "id": "147",
+          "mutatorName": "LogicalOperator",
+          "replacement": "minutes >= start && minutes < end",
+          "statusReason": "uncaughtException: 跨午夜晚间: uncaughtException: 跨午夜晚间",
+          "status": "Killed",
           "testsCompleted": 1,
-          "coveredBy": [
+          "static": false,
+          "killedBy": [
             "6"
           ],
-          "location": {
-            "end": {
-              "column": 60,
-              "line": 46
-            },
-            "start": {
-              "column": 47,
-              "line": 46
-            }
-          }
-        },
-        {
-          "id": "152",
-          "mutatorName": "EqualityOperator",
-          "replacement": "minutes <= end",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
           "coveredBy": [
             "6"
           ],
@@ -3060,29 +3077,8 @@
               "line": 47
             },
             "start": {
-              "column": 30,
+              "column": 10,
               "line": 47
-            }
-          }
-        },
-        {
-          "id": "142",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 60,
-              "line": 46
-            },
-            "start": {
-              "column": 47,
-              "line": 46
             }
           }
         },
@@ -3092,8 +3088,55 @@
           "replacement": "false",
           "statusReason": "uncaughtException: 跨午夜晚间: uncaughtException: 跨午夜晚间",
           "status": "Killed",
-          "static": false,
           "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 26,
+              "line": 47
+            },
+            "start": {
+              "column": 10,
+              "line": 47
+            }
+          }
+        },
+        {
+          "id": "149",
+          "mutatorName": "EqualityOperator",
+          "replacement": "minutes > start",
+          "status": "Survived",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 26,
+              "line": 47
+            },
+            "start": {
+              "column": 10,
+              "line": 47
+            }
+          }
+        },
+        {
+          "id": "150",
+          "mutatorName": "EqualityOperator",
+          "replacement": "minutes < start",
+          "statusReason": "uncaughtException: 跨午夜晚间: uncaughtException: 跨午夜晚间",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
           "killedBy": [
             "6"
           ],
@@ -3117,8 +3160,8 @@
           "replacement": "false",
           "statusReason": "uncaughtException: 跨午夜凌晨: uncaughtException: 跨午夜凌晨",
           "status": "Killed",
-          "static": false,
           "testsCompleted": 1,
+          "static": false,
           "killedBy": [
             "6"
           ],
@@ -3137,16 +3180,13 @@
           }
         },
         {
-          "id": "147",
-          "mutatorName": "LogicalOperator",
-          "replacement": "minutes >= start && minutes < end",
-          "statusReason": "uncaughtException: 跨午夜晚间: uncaughtException: 跨午夜晚间",
-          "status": "Killed",
-          "static": false,
+          "id": "152",
+          "mutatorName": "EqualityOperator",
+          "replacement": "minutes <= end",
+          "status": "Survived",
           "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
+          "static": false,
+          "killedBy": [],
           "coveredBy": [
             "6"
           ],
@@ -3156,32 +3196,7 @@
               "line": 47
             },
             "start": {
-              "column": 10,
-              "line": 47
-            }
-          }
-        },
-        {
-          "id": "150",
-          "mutatorName": "EqualityOperator",
-          "replacement": "minutes < start",
-          "statusReason": "uncaughtException: 跨午夜晚间: uncaughtException: 跨午夜晚间",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 26,
-              "line": 47
-            },
-            "start": {
-              "column": 10,
+              "column": 30,
               "line": 47
             }
           }
@@ -3192,8 +3207,8 @@
           "replacement": "minutes >= end",
           "statusReason": "uncaughtException: 跨午夜凌晨: uncaughtException: 跨午夜凌晨",
           "status": "Killed",
-          "static": false,
           "testsCompleted": 1,
+          "static": false,
           "killedBy": [
             "6"
           ],
@@ -3222,19 +3237,10 @@
     "break": null
   },
   "testFiles": {
-    "packages/dsh-notifier/test/e2e-approval.test.ts": {
-      "tests": [
-        {
-          "id": "0",
-          "name": "packages/dsh-notifier/test/e2e-approval.test.ts"
-        }
-      ],
-      "source": "// @ts-nocheck\n/**\n * dsh-notifier — e2e：审批请求通知（approval/request waterfall）。\n *\n * 覆盖：五个事件监听器注册面；审批通知（工具中文名/任务标题/申请理由/\n * 行动建议，不短路、不暴露会话 id）；无标题降级；next 抛错原样传播；\n * notifyAsk=false 不通知；免打扰紧急例外 allowKinds（M4）。\n */\nimport { join } from \"node:path\";\nimport { mkdtempSync, rmSync } from \"node:fs\";\nimport { tmpdir } from \"node:os\";\nimport { assert, makeNotifier, agentWithTitle } from \"./helpers.ts\";\n\n/** 带 info 收集的 logger 覆盖。 */\nfunction loggingOverride(infos) {\n  return { logger: { warn: () => {}, info: (t) => infos.push(t) } };\n}\n\nconst work = mkdtempSync(join(tmpdir(), \"dnotify-e2e-approval-\"));\ntry {\n  // 监听器注册面 + 审批通知主流程\n  {\n    const infos = [];\n    const { listeners } = await makeNotifier(work, {}, loggingOverride(infos));\n\n    const approval = listeners.get(\"approval/request\")[0];\n    const status = listeners.get(\"agent/status\")[0];\n    const error = listeners.get(\"agent/error\")[0];\n    const turnStop = listeners.get(\"agent/turn-stopping\")[0];\n    const disposed = listeners.get(\"agent/disposed\")[0];\n    assert.ok(approval && status && error && turnStop && disposed, \"五个事件监听器已注册\");\n    assert.equal(listeners.has(\"tools/pre-execute\"), false, \"不再挂 pre-execute（真实审批走 approval/request）\");\n\n    // approval/request：通知（工具中文名/任务标题/申请理由），不短路返回 next 结果\n    const req = { toolName: \"pwsh\", agent: agentWithTitle(\"session-1\", \"优化 notifier 插件\"), reason: \"escalate sandbox to workspace-write: 需要写文件\", signal: { aborted: false } };\n    const outcome = await approval(req, async () => \"allowed-once\");\n    assert.equal(outcome, \"allowed-once\", \"不短路，返回 next 结果\");\n    assert.equal(infos.length, 1);\n    assert.match(infos[0], /ask/);\n    assert.match(infos[0], /任务「优化 notifier 插件」等待审批（工具「PowerShell 命令」）/, \"审批通知带任务标题与工具中文名\");\n    assert.match(infos[0], /理由：escalate sandbox to workspace-write: 需要写文件/);\n    assert.match(infos[0], /确认或拒绝/, \"审批通知带行动建议\");\n    assert.ok(!infos[0].includes(\"session-\"), \"审批通知不暴露内部会话 id\");\n\n    // 无会话标题：降级为仅工具名\n    const outcome2 = await approval({ toolName: \"bash\", agent: agentWithTitle(\"session-9\", null) }, async () => \"allowed-once\");\n    assert.equal(outcome2, \"allowed-once\");\n    assert.match(infos[1], /工具「终端命令」等待审批/, \"无标题时仅显示工具中文名\");\n    assert.ok(!infos[1].includes(\"任务「\"), \"无标题时不显示任务行\");\n    assert.ok(!infos[1].includes(\"session-9\"), \"无标题路径也不暴露会话 id\");\n\n    // next 抛错 → 原样传播（waterfall 兜底由上层负责），通知已先行发出\n    await assert.rejects(approval(req, async () => {\n      throw new Error(\"boom\");\n    }), /boom/);\n    assert.equal(infos.length, 3, \"next 抛错前通知已发出\");\n  }\n\n  // notifyAsk=false（组合层 entry）时 approval/request 不通知、不短路\n  {\n    const infos = [];\n    const { listeners } = await makeNotifier(work, { notifyAsk: false }, loggingOverride(infos));\n    const approval = listeners.get(\"approval/request\")[0];\n    const outcome = await approval({ toolName: \"bash\", agent: { id: \"session-1\" } }, async () => \"allowed-once\");\n    assert.equal(outcome, \"allowed-once\", \"不短路\");\n    assert.equal(infos.length, 0, \"notifyAsk=false 不通知\");\n  }\n\n  // M4 免打扰紧急例外：allowKinds 中的 kind 在免打扰时段仍通知\n  {\n    // 窗口围绕当前时间动态构造（±2 分钟）：#181 —— 写死 \"00:00\"/\"23:59\" 假设\n    // 全天覆盖，但实现是半开区间 [start, end)，23:59 这一分钟不命中，UTC 边缘必炸；\n    // now 邻近 00:00 时 start > end，天然走实现的跨午夜分支（quiet-hours.ts）。\n    const hhmm = (offsetMinutes) => {\n      const t = new Date(Date.now() + offsetMinutes * 60_000);\n      return `${String(t.getHours()).padStart(2, \"0\")}:${String(t.getMinutes()).padStart(2, \"0\")}`;\n    };\n    const qhOn = { enabled: true, start: hhmm(-2), end: hhmm(2) };\n    const infos = [];\n    const { listeners } = await makeNotifier(work, { quietHours: { ...qhOn, allowKinds: [\"ask\"] }, historyFile: join(work, \"history-qh1.jsonl\") }, loggingOverride(infos));\n    const approval = listeners.get(\"approval/request\")[0];\n    await approval({ toolName: \"pwsh\", agent: agentWithTitle(\"qh-1\", \"免打扰审批\", { turnEnd: 1 }) }, async () => \"ok\");\n    assert.equal(infos.length, 1, \"免打扰期间 ask 仍通知（紧急例外 allowKinds）\");\n    assert.match(infos[0], /ask/);\n\n    // allowKinds 为空/不含 ask：免打扰生效则静默\n    const infos2 = [];\n    const { listeners: listeners2 } = await makeNotifier(work, { quietHours: { ...qhOn, allowKinds: [] }, historyFile: join(work, \"history-qh2.jsonl\") }, loggingOverride(infos2));\n    await listeners2.get(\"approval/request\")[0]({ toolName: \"pwsh\", agent: { id: \"qh-2\" } }, async () => \"ok\");\n    assert.equal(infos2.filter((t) => !t.includes(\"被免打扰拦截\")).length, 0, \"无 allowKinds 时免打扰不产生实际通知\");\n    assert.ok(infos2.some((t) => t.includes(\"被免打扰拦截\")), \"被拦截仍记录日志（可核对发没发）\");\n  }\n} finally {\n  rmSync(work, { recursive: true, force: true });\n}\n"
-    },
     "packages/dsh-notifier/test/e2e-done.src.test.ts": {
       "tests": [
         {
-          "id": "1",
+          "id": "0",
           "name": "packages/dsh-notifier/test/e2e-done.src.test.ts"
         }
       ],
@@ -3243,11 +3249,20 @@
     "packages/dsh-notifier/test/e2e-edge.src.test.ts": {
       "tests": [
         {
-          "id": "2",
+          "id": "1",
           "name": "packages/dsh-notifier/test/e2e-edge.src.test.ts"
         }
       ],
       "source": "// @ts-nocheck\n/**\n * dsh-notifier — e2e：边缘路径与清理生命周期（#82 批次 4 热点补强）。\n *\n * 覆盖：生命周期 disposer 清理、readBody async-iterator 分支、审批超时提醒、\n * 通知失败容错（catch 不崩）、完成聚合类型切换、错误合并 ≥3 条 shift、\n * disposed 清理 turn 去重、hookUserQuestions 服务缺失/抛错容错、\n * 无状态 idle 不误报。\n */\nimport { join } from \"node:path\";\nimport { mkdtempSync, rmSync, writeFileSync } from \"node:fs\";\nimport { tmpdir } from \"node:os\";\nimport { assert, makeNotifier, makeFakeCtx, agentWithTitle, makeRes, fakeReq, waitForHistory, turnPair, quietWindowNow } from \"./helpers.ts\";\nimport { ROUTES, apply } from \"../src/index.ts\";\n\nconst work = mkdtempSync(join(tmpdir(), \"dnotify-e2e-edge-\"));\ntry {\n  // ── 1. 生命周期清理：ctx.effect disposer 触发后，路由/监听器 disposer 被调用 ──\n  {\n    const routeDispCalled = new Set();\n    const listenerDispCalled = new Set();\n    const effectDisposers = [];\n    let listenerCount = 0;\n    const { ctx, listeners } = makeFakeCtx({\n      webServer: {\n        register(route) {\n          routeDispCalled.add(route.path);\n          return () => routeDispCalled.delete(route.path);\n        },\n      },\n      on(event, handler) {\n        if (!listeners.has(event)) listeners.set(event, []);\n        listeners.get(event).push(handler);\n        const idx = listenerCount++;\n        return () => listenerDispCalled.add(idx);\n      },\n      effect(fn) {\n        const disp = fn();\n        if (typeof disp === \"function\") effectDisposers.push(disp);\n        return () => {};\n      },\n    });\n    await apply(ctx, { enabled: true, toastScript: join(work, \"lifecycle-toast.ps1\"), historyFile: join(work, \"lifecycle-history.jsonl\") });\n    assert.equal(routeDispCalled.size, 7, \"7 条路由注册（M2 增 status/kinds）\");\n    // 调用所有 effect disposer（清理顺序）\n    for (const disp of effectDisposers) disp();\n    // 路由 disposer 被触发（从 set 移除）\n    assert.equal(routeDispCalled.size, 0, \"清理后路由 disposer 全部调用\");\n    // 监听器 disposer 被触发（闭包/清理 disposers 执行的 for loop）\n    assert.ok(listenerDispCalled.size >= 5, \"清理后监听器 disposer 全部调用：\" + listenerDispCalled.size);\n  }\n\n  // ── 2. readBody async-iterator 分支（config PUT 走 web streams）──\n  {\n    const { routes } = await makeNotifier(work, { historyFile: join(work, \"async-iter-hist.jsonl\") });\n    const configRoute = routes.find((r) => r.path === ROUTES.config);\n    // 构造 async-iterable req（有 Symbol.asyncIterator，无 .on）\n    const body = JSON.stringify({ patch: { notifyAsk: false } });\n    const chunks = [Buffer.from(body)];\n    let idx = 0;\n    const asyncIterReq = {\n      method: \"PUT\",\n      url: \"/\",\n      socket: { remoteAddress: \"127.0.0.1\" },\n      headers: { host: \"127.0.0.1:3080\" },\n      [Symbol.asyncIterator]() { return this; },\n      next() {\n        if (idx < chunks.length) return Promise.resolve({ value: chunks[idx++], done: false });\n        return Promise.resolve({ value: undefined, done: true });\n      },\n    };\n    // 确保没有 .on 方法（触发 async-iterator 分支）\n    assert.equal(typeof asyncIterReq.on, \"undefined\", \"async-iter req 无 .on 方法\");\n    const { rec, res } = makeRes();\n    await configRoute.handler(asyncIterReq, res);\n    assert.equal(rec.status, 200);\n    assert.equal(JSON.parse(rec.text).user.notifyAsk, false, \"async-iterator 分支解析成功\");\n  }\n\n  // ── 3. 审批超时提醒（askRemindMin > 0 分支）──\n  {\n    const capturedTimers = [];\n    const origSet = globalThis.setTimeout;\n    // 透明代理：记录 setTimeout 调用，但仍转发到真实实现\n    globalThis.setTimeout = (cb, ms, ...args) => {\n      const timer = origSet(cb, ms, ...args);\n      capturedTimers.push({ ms, timer });\n      return timer;\n    };\n    try {\n            const infos = [];\n      const { listeners } = await makeNotifier(work, { askRemindMin: 1, historyFile: join(work, \"ask-remind-hist.jsonl\") }, {\n        logger: { warn: (m) => { infos.push(`warn: ${m}`); }, info: (t) => infos.push(t) },\n      });\n      // 清理 apply 阶段的 timer 记录（execFile timeout 等）\n      capturedTimers.length = 0;\n      const approval = listeners.get(\"approval/request\")[0];\n      const askReq = { toolName: \"pwsh\", agent: agentWithTitle(\"remind-1\", \"超时审批测试\"), reason: \"test\" };\n      const nextPromise = approval(askReq, async () => \"reminded\");\n      const askTimer = capturedTimers.find((t) => t.ms === 60000);\n      assert.ok(askTimer, \"askRemindMin > 0 注册了 60000ms 定时器\");\n      const outcome = await nextPromise;\n      assert.equal(outcome, \"reminded\", \"next 结果透传\");\n    } finally {\n      globalThis.setTimeout = origSet;\n    }\n  }\n\n  // ── 4. 通知失败容错：notify 抛错时 handler 不崩，catch → warn → 仍继续后续逻辑 ──\n  {\n    const warns = [];\n    // 启用 notifyTurnEnd 以使 turn-stopping 进入通知路径（默认关）\n    const { listeners } = await makeNotifier(work, { notifyTurnEnd: true, historyFile: join(work, \"fail-hist.jsonl\") }, {\n      logger: {\n        info: () => { throw new Error(\"notify failed\"); },\n        warn: (m) => { warns.push(m); },\n      },\n    });\n    const approval = listeners.get(\"approval/request\")[0];\n    const status = listeners.get(\"agent/status\")[0];\n    const error = listeners.get(\"agent/error\")[0];\n    const turnStop = listeners.get(\"agent/turn-stopping\")[0];\n\n    // approval/request：notify 抛错 → catch → warn → 仍转发 next\n    const outcome = await approval({ toolName: \"bash\", agent: { id: \"fail-1\" }, reason: \"test\" }, async () => \"next-result\");\n    assert.equal(outcome, \"next-result\", \"notify 抛错后 next 仍转发\");\n    assert.ok(warns.some((w) => w.includes(\"通知失败\")), \"approval notify 失败时 warn 记录\");\n\n    // agent/status：idle → notify 抛错 → catch → warn\n    const fail2 = turnPair(\"fail-2\", \"出错任务\", {}, { turn: 1 });\n    status({ agent: fail2.running, status: \"running\" });\n    status({ agent: fail2.idle, status: \"idle\" });\n    assert.ok(warns.some((w) => w.includes(\"agent/status\")), \"status notify 失败时 warn 记录\");\n\n    // agent/error：notify 抛错 → catch → warn\n    error({ agent: { id: \"fail-3\" }, turn: 1, error: new Error(\"test error\") });\n    assert.ok(warns.some((w) => w.includes(\"agent/error\")), \"error notify 失败时 warn 记录\");\n\n    // turn-stopping：notify 抛错 → catch → warn\n    await turnStop({ agent: { id: \"fail-4\" }, turn: 1 });\n    assert.ok(warns.some((w) => w.includes(\"turn-stopping\")), \"turn-stopping notify 失败时 warn 记录\");\n  }\n\n  // ── 5. 完成聚合类型切换（done → subagent-done 混合）──\n  {\n    const infos = [];\n    const { listeners } = await makeNotifier(work, { doneMergeWindowMs: 500, notifySubagentDone: true, historyFile: join(work, \"merge-kind-hist.jsonl\") }, {\n      logger: { warn: () => {}, info: (t) => infos.push(t) },\n    });\n    const status = listeners.get(\"agent/status\")[0];\n    // 主任务完成 → done 通知，doneBatch 开始\n    const mk1 = turnPair(\"mk-1\", \"主任务\", {}, { turn: 1 });\n    status({ agent: mk1.running, status: \"running\" });\n    status({ agent: mk1.idle, status: \"idle\" });\n    assert.equal(infos.filter((t) => /done/.test(t)).length, 1, \"首条 done 即时通知\");\n    // 子代理完成 → kind 不同 → flushDoneMerge（count=1 不补发）+ 即时 subagent-done\n    const mk2 = turnPair(\"mk-2\", \"子代理\", { subagent: true }, { turn: 1 });\n    status({ agent: mk2.running, status: \"running\" });\n    status({ agent: mk2.idle, status: \"idle\" });\n    const doneCount = infos.filter((t) => /: done /.test(t)).length;\n    const subCount = infos.filter((t) => /: subagent-done /.test(t)).length;\n    assert.equal(doneCount, 1, \"类型切换后 done 不重复\");\n    assert.equal(subCount, 1, \"子代理完成即时通知（subagent-done）\");\n  }\n\n  // ── 6. error 合并窗口 ≥3 条 shift（lastMessages 收尾 2 条）──\n  {\n    const infos = [];\n    const { listeners } = await makeNotifier(work, { errorMergeWindowMs: 1000, historyFile: join(work, \"merge-shift-hist.jsonl\") }, {\n      logger: { warn: () => {}, info: (t) => infos.push(t) },\n    });\n    const error = listeners.get(\"agent/error\")[0];\n    // 4 条错误在同一个窗口\n    error({ agent: { id: \"shift-1\" }, turn: 1, error: new Error(\"e1\") });\n    error({ agent: { id: \"shift-1\" }, turn: 1, error: new Error(\"e2\") });\n    error({ agent: { id: \"shift-1\" }, turn: 1, error: new Error(\"e3\") });\n    error({ agent: { id: \"shift-1\" }, turn: 1, error: new Error(\"e4\") });\n    assert.equal(infos.filter((t) => /error/.test(t)).length, 1, \"4 条错误只通知 1 条（窗口内合并）\");\n    await new Promise((resolve) => setTimeout(resolve, 1100)); // 等窗口过期\n    error({ agent: { id: \"shift-1\" }, turn: 1, error: new Error(\"e5\") });\n    // 窗口过期后通知应携带 mergedCount=3（e2-4 被合并）+ mergedErrors 为 [e3, e4]（shift 后收尾 2 条）\n    const mergedInfo = infos.filter((t) => /error/.test(t) && t.includes(\"同类错误\"))[0];\n    assert.ok(mergedInfo?.includes(\"另有 3 条同类错误\"), \"窗口过期后通知携带合并计数 3\");\n    assert.ok(mergedInfo?.includes(\"e3\"), \"shift 后 e3 保留在 mergedErrors\");\n    assert.ok(mergedInfo?.includes(\"e4\"), \"shift 后 e4 保留在 mergedErrors\");\n    assert.ok(!mergedInfo?.includes(\"e2\"), \"e2 被 shift 移出 mergedErrors\");\n  }\n\n  // ── 7. agent/disposed 清理 turnNotified 前缀 ──\n  {\n    const infos = [];\n    const { listeners } = await makeNotifier(work, { notifyTurnEnd: true, historyFile: join(work, \"disp-turn-hist.jsonl\") }, {\n      logger: { warn: () => {}, info: (t) => infos.push(t) },\n    });\n    const turnStop = listeners.get(\"agent/turn-stopping\")[0];\n    const disposed = listeners.get(\"agent/disposed\")[0];\n    await turnStop({ agent: { id: \"disp-1\" }, turn: 1 });\n    let turnCount = infos.filter((t) => /turn-end/.test(t)).length;\n    assert.equal(turnCount, 1, \"首轮 turn-stopping 通知\");\n    // 同轮重复 → 不通知（去重生效）\n    await turnStop({ agent: { id: \"disp-1\" }, turn: 1 });\n    assert.equal(infos.filter((t) => /turn-end/.test(t)).length, 1, \"去重生效\");\n    // disposed 清理后 → 再次通知（去重条目被清除）\n    disposed({ agent: { id: \"disp-1\" } });\n    await turnStop({ agent: { id: \"disp-1\" }, turn: 1 });\n    assert.equal(infos.filter((t) => /turn-end/.test(t)).length, 2, \"disposed 清理后重发通知\");\n    // agent.id 为 undefined → 不抛\n    disposed({ agent: {} });\n    disposed({ agent: {} });\n    assert.ok(true, \"agent.id 为 undefined 时不抛\");\n  }\n\n  // ── 8. hookUserQuestions：ctx.get 抛出 → 静默容错 ──\n  {\n    const { listeners } = await makeNotifier(work, { historyFile: join(work, \"hook-fail-hist.jsonl\") }, {\n      get: () => { throw new Error(\"service not ready\"); },\n      logger: { warn: () => {}, info: () => {} },\n    });\n    // apply 不应抛异常\n    assert.ok(!!listeners.get(\"internal/service\")[0], \"apply 成功，internal/service 监听器已注册\");\n    // internal/service 事件触发 hookUserQuestions → 同样静默\n    const svcHandler = listeners.get(\"internal/service\")[0];\n    svcHandler(\"userQuestions\", undefined);\n    assert.ok(true, \"internal/service 触发时 ctx.get 抛错不崩\");\n  }\n\n  // ── 9. 无状态 idle：无 running 记录时 idle 不误报 ──\n  {\n    const infos = [];\n    const { listeners } = await makeNotifier(work, { historyFile: join(work, \"noop-idle-hist.jsonl\") }, {\n      logger: { warn: () => {}, info: (t) => infos.push(t) },\n    });\n    const status = listeners.get(\"agent/status\")[0];\n    status({ agent: agentWithTitle(\"noop-1\", \"从未 running\"), status: \"idle\" });\n    assert.equal(infos.length, 0, \"无 running 记录的 idle 不通知\");\n  }\n// ── 10. 免打扰拦截 + 勾选 error 豁免 → 窗口内再报错必须通知 ──\n  {\n    // #181 动态窗口：写死 \"00:00\"/\"23:59\" 在半开区间镜下 23:59 这一分钟不命中\n    // （UTC 边缘必炸，run 33282203798 根因）；围绕当前时间 ±2 分钟恒命中。\n    const qhAll = quietWindowNow();\n    // 免打扰开启，allowKinds 不含 error\n    const infos = [];\n    const { listeners, routes } = await makeNotifier(work, { errorMergeWindowMs: 60000, quietHours: { ...qhAll, allowKinds: [\"ask\"] }, historyFile: join(work, \"qh-error-hist-1.jsonl\") }, {\n      logger: { warn: () => {}, info: (t) => infos.push(t) },\n    });\n    const error = listeners.get(\"agent/error\")[0];\n    const configRoute = routes.find((r) => r.path === ROUTES.config);\n    const historyRoute = routes.find((r) => r.path === ROUTES.history);\n\n    // 第一条错误：免打扰拦截，errorMerge 不开窗\n    error({ agent: { id: \"qh-e1\" }, turn: 1, error: new Error(\"err1\") });\n    // 验证被免打扰拦截，且仅一条日志（无实际通知）\n    assert.equal(infos.filter((t) => /error/.test(t) && !t.includes(\"被免打扰拦截\")).length, 0, \"免打扰拦截时不发实际通知\");\n    assert.ok(infos.some((t) => t.includes(\"被免打扰拦截\")), \"被拦截记录日志\");\n    // 验证历史中有 suppressed: \"quiet\"\n    const hist1 = await waitForHistory(historyRoute, (r) => r.some((e) => e.kind === \"error\" && e.suppressed === \"quiet\"));\n    assert.ok(hist1.some((e) => e.kind === \"error\" && e.suppressed === \"quiet\"), \"被拦截的错误落 suppressed:quiet 历史\");\n\n    // 保存配置，开启 error 豁免（通过 PUT /config 模拟面板操作；issue #76 新契约 {patch}）\n    const { rec: putRec, res: putRes } = makeRes();\n    const newBody = Buffer.from(JSON.stringify({ patch: { quietHours: { ...qhAll, allowKinds: [\"ask\", \"error\"] } } }));\n    await configRoute.handler({\n      method: \"PUT\",\n      url: \"/\",\n      socket: { remoteAddress: \"127.0.0.1\" },\n      headers: { host: \"127.0.0.1:3080\", \"content-type\": \"application/json\" },\n      on: (evt, cb) => { if (evt === \"data\") cb(newBody); if (evt === \"end\") cb(); },\n    }, putRes);\n    assert.equal(putRec.status, 200, \"PUT /config 返回 200\");\n    // 重置 info 计数\n    infos.length = 0;\n\n    // 第二条错误：窗口内（距上一条 < 60s），但无窗口（上一条被拦截未开窗），应正常通知\n    error({ agent: { id: \"qh-e1\" }, turn: 1, error: new Error(\"err2\") });\n    assert.equal(infos.filter((t) => /error/.test(t) && !t.includes(\"被免打扰拦截\")).length, 1, \"开启 error 豁免后错误正常通知\");\n    assert.ok(infos.some((t) => /error/.test(t) && t.includes(\"err2\")), \"通知内容包含 err2\");\n  }\n\n  // ── 11. 合并被吞的错误落 suppressed: \"merged\" 历史 ──\n  {\n    const infos = [];\n    const { listeners, routes } = await makeNotifier(work, { errorMergeWindowMs: 60000, historyFile: join(work, \"merged-hist.jsonl\") }, {\n      logger: { warn: () => {}, info: (t) => infos.push(t) },\n    });\n    const error = listeners.get(\"agent/error\")[0];\n    const historyRoute = routes.find((r) => r.path === ROUTES.history);\n\n    // 第一条错误：开窗\n    error({ agent: { id: \"mh-1\" }, turn: 1, error: new Error(\"first\") });\n    assert.equal(infos.filter((t) => /error/.test(t)).length, 1, \"首条错误通知\");\n    // 清空 info 计数\n    infos.length = 0;\n\n    // 第二条错误（窗口内）：合并，应落 suppressed: \"merged\" 历史\n    error({ agent: { id: \"mh-1\" }, turn: 1, error: new Error(\"second\") });\n    assert.equal(infos.filter((t) => /error/.test(t)).length, 0, \"窗口内合并不产生新通知\");\n    // 验证历史中有 suppressed: \"merged\"\n    const hist = await waitForHistory(historyRoute, (r) => r.some((e) => e.kind === \"error\" && e.suppressed === \"merged\"));\n    assert.ok(hist.some((e) => e.kind === \"error\" && e.suppressed === \"merged\"), \"合并被吞的错误落 suppressed:merged 历史\");\n  }\n\n  // ── 12. 多个错误持续到达时窗口不无限顺延（免打扰拦截不开窗 → 每次独立落 quiet 历史） ──\n  {\n    // #181 动态窗口：写死 \"00:00\"/\"23:59\" 在半开区间镜下 23:59 这一分钟不命中\n    // （UTC 边缘必炸，run 33282203798 根因）；围绕当前时间 ±2 分钟恒命中。\n    const qhAll = quietWindowNow();\n    const infos = [];\n    const { listeners } = await makeNotifier(work, {  errorMergeWindowMs: 60000, quietHours: { ...qhAll, allowKinds: [] } , historyFile: join(work, \"no-extend-hist.jsonl\") }, {\n      logger: { warn: () => {}, info: (t) => infos.push(t) },\n    });\n    const error = listeners.get(\"agent/error\")[0];\n\n    // 持续发送多条错误（免打扰拦截，不消耗窗口）\n    error({ agent: { id: \"ne-1\" }, turn: 1, error: new Error(\"e1\") });\n    error({ agent: { id: \"ne-1\" }, turn: 1, error: new Error(\"e2\") });\n    error({ agent: { id: \"ne-1\" }, turn: 1, error: new Error(\"e3\") });\n    // 每条都被免打扰拦截，不产生实际通知\n    const actualNotifies = infos.filter((t) => /error/.test(t) && !t.includes(\"被免打扰拦截\"));\n    assert.equal(actualNotifies.length, 0, \"免打扰拦截时多条错误都不产生实际通知\");\n    // 每条都记录了被拦截日志\n    const suppressedLogs = infos.filter((t) => t.includes(\"被免打扰拦截\"));\n    assert.equal(suppressedLogs.length, 3, \"每条错误都记录被拦截日志（窗口不无限顺延导致丢失）\");\n  }\n} finally {\n  rmSync(work, { recursive: true, force: true });\n}"
+    },
+    "packages/dsh-notifier/test/e2e-approval.test.ts": {
+      "tests": [
+        {
+          "id": "2",
+          "name": "packages/dsh-notifier/test/e2e-approval.test.ts"
+        }
+      ],
+      "source": "// @ts-nocheck\n/**\n * dsh-notifier — e2e：审批请求通知（approval/request waterfall）。\n *\n * 覆盖：五个事件监听器注册面；审批通知（工具中文名/任务标题/申请理由/\n * 行动建议，不短路、不暴露会话 id）；无标题降级；next 抛错原样传播；\n * notifyAsk=false 不通知；免打扰紧急例外 allowKinds（M4）。\n */\nimport { join } from \"node:path\";\nimport { mkdtempSync, rmSync } from \"node:fs\";\nimport { tmpdir } from \"node:os\";\nimport { assert, makeNotifier, agentWithTitle } from \"./helpers.ts\";\n\n/** 带 info 收集的 logger 覆盖。 */\nfunction loggingOverride(infos) {\n  return { logger: { warn: () => {}, info: (t) => infos.push(t) } };\n}\n\nconst work = mkdtempSync(join(tmpdir(), \"dnotify-e2e-approval-\"));\ntry {\n  // 监听器注册面 + 审批通知主流程\n  {\n    const infos = [];\n    const { listeners } = await makeNotifier(work, {}, loggingOverride(infos));\n\n    const approval = listeners.get(\"approval/request\")[0];\n    const status = listeners.get(\"agent/status\")[0];\n    const error = listeners.get(\"agent/error\")[0];\n    const turnStop = listeners.get(\"agent/turn-stopping\")[0];\n    const disposed = listeners.get(\"agent/disposed\")[0];\n    assert.ok(approval && status && error && turnStop && disposed, \"五个事件监听器已注册\");\n    assert.equal(listeners.has(\"tools/pre-execute\"), false, \"不再挂 pre-execute（真实审批走 approval/request）\");\n\n    // approval/request：通知（工具中文名/任务标题/申请理由），不短路返回 next 结果\n    const req = { toolName: \"pwsh\", agent: agentWithTitle(\"session-1\", \"优化 notifier 插件\"), reason: \"escalate sandbox to workspace-write: 需要写文件\", signal: { aborted: false } };\n    const outcome = await approval(req, async () => \"allowed-once\");\n    assert.equal(outcome, \"allowed-once\", \"不短路，返回 next 结果\");\n    assert.equal(infos.length, 1);\n    assert.match(infos[0], /ask/);\n    assert.match(infos[0], /任务「优化 notifier 插件」等待审批（工具「PowerShell 命令」）/, \"审批通知带任务标题与工具中文名\");\n    assert.match(infos[0], /理由：escalate sandbox to workspace-write: 需要写文件/);\n    assert.match(infos[0], /确认或拒绝/, \"审批通知带行动建议\");\n    assert.ok(!infos[0].includes(\"session-\"), \"审批通知不暴露内部会话 id\");\n\n    // 无会话标题：降级为仅工具名\n    const outcome2 = await approval({ toolName: \"bash\", agent: agentWithTitle(\"session-9\", null) }, async () => \"allowed-once\");\n    assert.equal(outcome2, \"allowed-once\");\n    assert.match(infos[1], /工具「终端命令」等待审批/, \"无标题时仅显示工具中文名\");\n    assert.ok(!infos[1].includes(\"任务「\"), \"无标题时不显示任务行\");\n    assert.ok(!infos[1].includes(\"session-9\"), \"无标题路径也不暴露会话 id\");\n\n    // next 抛错 → 原样传播（waterfall 兜底由上层负责），通知已先行发出\n    await assert.rejects(approval(req, async () => {\n      throw new Error(\"boom\");\n    }), /boom/);\n    assert.equal(infos.length, 3, \"next 抛错前通知已发出\");\n  }\n\n  // notifyAsk=false（组合层 entry）时 approval/request 不通知、不短路\n  {\n    const infos = [];\n    const { listeners } = await makeNotifier(work, { notifyAsk: false }, loggingOverride(infos));\n    const approval = listeners.get(\"approval/request\")[0];\n    const outcome = await approval({ toolName: \"bash\", agent: { id: \"session-1\" } }, async () => \"allowed-once\");\n    assert.equal(outcome, \"allowed-once\", \"不短路\");\n    assert.equal(infos.length, 0, \"notifyAsk=false 不通知\");\n  }\n\n  // M4 免打扰紧急例外：allowKinds 中的 kind 在免打扰时段仍通知\n  {\n    // 窗口围绕当前时间动态构造（±2 分钟）：#181 —— 写死 \"00:00\"/\"23:59\" 假设\n    // 全天覆盖，但实现是半开区间 [start, end)，23:59 这一分钟不命中，UTC 边缘必炸；\n    // now 邻近 00:00 时 start > end，天然走实现的跨午夜分支（quiet-hours.ts）。\n    const hhmm = (offsetMinutes) => {\n      const t = new Date(Date.now() + offsetMinutes * 60_000);\n      return `${String(t.getHours()).padStart(2, \"0\")}:${String(t.getMinutes()).padStart(2, \"0\")}`;\n    };\n    const qhOn = { enabled: true, start: hhmm(-2), end: hhmm(2) };\n    const infos = [];\n    const { listeners } = await makeNotifier(work, { quietHours: { ...qhOn, allowKinds: [\"ask\"] }, historyFile: join(work, \"history-qh1.jsonl\") }, loggingOverride(infos));\n    const approval = listeners.get(\"approval/request\")[0];\n    await approval({ toolName: \"pwsh\", agent: agentWithTitle(\"qh-1\", \"免打扰审批\", { turnEnd: 1 }) }, async () => \"ok\");\n    assert.equal(infos.length, 1, \"免打扰期间 ask 仍通知（紧急例外 allowKinds）\");\n    assert.match(infos[0], /ask/);\n\n    // allowKinds 为空/不含 ask：免打扰生效则静默\n    const infos2 = [];\n    const { listeners: listeners2 } = await makeNotifier(work, { quietHours: { ...qhOn, allowKinds: [] }, historyFile: join(work, \"history-qh2.jsonl\") }, loggingOverride(infos2));\n    await listeners2.get(\"approval/request\")[0]({ toolName: \"pwsh\", agent: { id: \"qh-2\" } }, async () => \"ok\");\n    assert.equal(infos2.filter((t) => !t.includes(\"被免打扰拦截\")).length, 0, \"无 allowKinds 时免打扰不产生实际通知\");\n    assert.ok(infos2.some((t) => t.includes(\"被免打扰拦截\")), \"被拦截仍记录日志（可核对发没发）\");\n  }\n} finally {\n  rmSync(work, { recursive: true, force: true });\n}\n"
     },
     "packages/dsh-notifier/test/e2e-question-turn.test.ts": {
       "tests": [

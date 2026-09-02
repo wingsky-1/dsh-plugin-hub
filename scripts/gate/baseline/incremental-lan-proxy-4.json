@@ -1623,20 +1623,27 @@
           }
         },
         {
-          "id": "82",
-          "mutatorName": "ObjectLiteral",
+          "id": "80",
+          "mutatorName": "BlockStatement",
           "replacement": "{}",
-          "statusReason": "Ignored because of excluded mutation \"ObjectLiteral\"",
-          "status": "Ignored",
+          "statusReason": "uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]: uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]",
+          "status": "Killed",
+          "testsCompleted": 1,
           "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0"
+          ],
           "location": {
             "end": {
-              "column": 4,
-              "line": 70
+              "column": 2,
+              "line": 71
             },
             "start": {
-              "column": 61,
-              "line": 66
+              "column": 114,
+              "line": 65
             }
           }
         },
@@ -1646,8 +1653,8 @@
           "replacement": ";",
           "statusReason": "uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]: uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]",
           "status": "Killed",
-          "static": false,
           "testsCompleted": 1,
+          "static": false,
           "killedBy": [
             "0"
           ],
@@ -1666,27 +1673,20 @@
           }
         },
         {
-          "id": "80",
-          "mutatorName": "BlockStatement",
+          "id": "82",
+          "mutatorName": "ObjectLiteral",
           "replacement": "{}",
-          "statusReason": "uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]: uncaughtException: 自定义白名单不被强制改写，实际 [\"/api/remote.mux\"]",
-          "status": "Killed",
+          "statusReason": "Ignored because of excluded mutation \"ObjectLiteral\"",
+          "status": "Ignored",
           "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0"
-          ],
           "location": {
             "end": {
-              "column": 2,
-              "line": 71
+              "column": 4,
+              "line": 70
             },
             "start": {
-              "column": 114,
-              "line": 65
+              "column": 61,
+              "line": 66
             }
           }
         }

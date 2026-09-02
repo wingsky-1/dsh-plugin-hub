@@ -4,24 +4,6 @@
       "language": "typescript",
       "mutants": [
         {
-          "id": "287",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 6,
-              "line": 262
-            },
-            "start": {
-              "column": 83,
-              "line": 243
-            }
-          }
-        },
-        {
           "id": "0",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -380,6 +362,33 @@
           }
         },
         {
+          "id": "19",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: disposeMiddleware is not a function: uncaughtException: disposeMiddleware is not a function",
+          "status": "Killed",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [
+            "2"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 502
+            },
+            "start": {
+              "column": 15,
+              "line": 79
+            }
+          }
+        },
+        {
           "id": "20",
           "mutatorName": "ArrayDeclaration",
           "replacement": "[\"Stryker was here\"]",
@@ -403,6 +412,102 @@
             "start": {
               "column": 40,
               "line": 80
+            }
+          }
+        },
+        {
+          "id": "21",
+          "mutatorName": "LogicalOperator",
+          "replacement": "options.disabledTools && mw.disabledTools",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 66,
+              "line": 82
+            },
+            "start": {
+              "column": 25,
+              "line": 82
+            }
+          }
+        },
+        {
+          "id": "22",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 42,
+              "line": 83
+            },
+            "start": {
+              "column": 7,
+              "line": 83
+            }
+          }
+        },
+        {
+          "id": "23",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 42,
+              "line": 83
+            },
+            "start": {
+              "column": 7,
+              "line": 83
+            }
+          }
+        },
+        {
+          "id": "24",
+          "mutatorName": "EqualityOperator",
+          "replacement": "options.disabledTools === undefined",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 42,
+              "line": 83
+            },
+            "start": {
+              "column": 7,
+              "line": 83
             }
           }
         },
@@ -1968,6 +2073,30 @@
           }
         },
         {
+          "id": "109",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 58,
+              "line": 145
+            },
+            "start": {
+              "column": 19,
+              "line": 145
+            }
+          }
+        },
+        {
           "id": "110",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -2018,6 +2147,30 @@
             "start": {
               "column": 46,
               "line": 145
+            }
+          }
+        },
+        {
+          "id": "113",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 36,
+              "line": 146
+            },
+            "start": {
+              "column": 31,
+              "line": 146
             }
           }
         },
@@ -2727,6 +2880,30 @@
             "start": {
               "column": 104,
               "line": 159
+            }
+          }
+        },
+        {
+          "id": "152",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 34,
+              "line": 162
+            },
+            "start": {
+              "column": 24,
+              "line": 162
             }
           }
         },
@@ -3926,6 +4103,30 @@
           }
         },
         {
+          "id": "217",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 37,
+              "line": 202
+            },
+            "start": {
+              "column": 33,
+              "line": 202
+            }
+          }
+        },
+        {
           "id": "218",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -3940,6 +4141,30 @@
             "start": {
               "column": 24,
               "line": 203
+            }
+          }
+        },
+        {
+          "id": "219",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 35,
+              "line": 206
+            },
+            "start": {
+              "column": 17,
+              "line": 206
             }
           }
         },
@@ -4088,6 +4313,30 @@
           }
         },
         {
+          "id": "228",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 30,
+              "line": 215
+            },
+            "start": {
+              "column": 19,
+              "line": 215
+            }
+          }
+        },
+        {
           "id": "229",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -4102,6 +4351,30 @@
             "start": {
               "column": 20,
               "line": 215
+            }
+          }
+        },
+        {
+          "id": "230",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 36,
+              "line": 216
+            },
+            "start": {
+              "column": 31,
+              "line": 216
             }
           }
         },
@@ -5043,6 +5316,30 @@
           }
         },
         {
+          "id": "282",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 34,
+              "line": 241
+            },
+            "start": {
+              "column": 24,
+              "line": 241
+            }
+          }
+        },
+        {
           "id": "283",
           "mutatorName": "BooleanLiteral",
           "replacement": "false",
@@ -5058,6 +5355,97 @@
             "start": {
               "column": 30,
               "line": 241
+            }
+          }
+        },
+        {
+          "id": "284",
+          "mutatorName": "ArithmeticOperator",
+          "replacement": "CONNECT_TIMEOUT_MS + DISCOVERY_TIMEOUT_MS + CALL_TIMEOUT_MS - 5000",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 82,
+              "line": 242
+            },
+            "start": {
+              "column": 16,
+              "line": 242
+            }
+          }
+        },
+        {
+          "id": "285",
+          "mutatorName": "ArithmeticOperator",
+          "replacement": "CONNECT_TIMEOUT_MS + DISCOVERY_TIMEOUT_MS - CALL_TIMEOUT_MS",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 75,
+              "line": 242
+            },
+            "start": {
+              "column": 16,
+              "line": 242
+            }
+          }
+        },
+        {
+          "id": "286",
+          "mutatorName": "ArithmeticOperator",
+          "replacement": "CONNECT_TIMEOUT_MS - DISCOVERY_TIMEOUT_MS",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 57,
+              "line": 242
+            },
+            "start": {
+              "column": 16,
+              "line": 242
+            }
+          }
+        },
+        {
+          "id": "287",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 6,
+              "line": 262
+            },
+            "start": {
+              "column": 83,
+              "line": 243
             }
           }
         },
@@ -6407,6 +6795,30 @@
           }
         },
         {
+          "id": "361",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 99,
+              "line": 294
+            },
+            "start": {
+              "column": 19,
+              "line": 294
+            }
+          }
+        },
+        {
           "id": "362",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -6511,6 +6923,30 @@
             "start": {
               "column": 82,
               "line": 294
+            }
+          }
+        },
+        {
+          "id": "368",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 36,
+              "line": 295
+            },
+            "start": {
+              "column": 31,
+              "line": 295
             }
           }
         },
@@ -7777,6 +8213,30 @@
             "start": {
               "column": 39,
               "line": 320
+            }
+          }
+        },
+        {
+          "id": "437",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 34,
+              "line": 323
+            },
+            "start": {
+              "column": 24,
+              "line": 323
             }
           }
         },
@@ -9423,6 +9883,30 @@
           }
         },
         {
+          "id": "526",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 35,
+              "line": 383
+            },
+            "start": {
+              "column": 17,
+              "line": 383
+            }
+          }
+        },
+        {
           "id": "527",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -9711,6 +10195,30 @@
           }
         },
         {
+          "id": "543",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 76,
+              "line": 396
+            },
+            "start": {
+              "column": 19,
+              "line": 396
+            }
+          }
+        },
+        {
           "id": "544",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -9797,6 +10305,30 @@
             "start": {
               "column": 68,
               "line": 396
+            }
+          }
+        },
+        {
+          "id": "549",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 36,
+              "line": 397
+            },
+            "start": {
+              "column": 31,
+              "line": 397
             }
           }
         },
@@ -10449,6 +10981,30 @@
             "start": {
               "column": 39,
               "line": 407
+            }
+          }
+        },
+        {
+          "id": "585",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 34,
+              "line": 410
+            },
+            "start": {
+              "column": 24,
+              "line": 410
             }
           }
         },
@@ -11165,6 +11721,174 @@
           }
         },
         {
+          "id": "624",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 46,
+              "line": 430
+            },
+            "start": {
+              "column": 3,
+              "line": 430
+            }
+          }
+        },
+        {
+          "id": "625",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 44,
+              "line": 431
+            },
+            "start": {
+              "column": 3,
+              "line": 431
+            }
+          }
+        },
+        {
+          "id": "626",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 44,
+              "line": 432
+            },
+            "start": {
+              "column": 3,
+              "line": 432
+            }
+          }
+        },
+        {
+          "id": "627",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 46,
+              "line": 433
+            },
+            "start": {
+              "column": 3,
+              "line": 433
+            }
+          }
+        },
+        {
+          "id": "628",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 35,
+              "line": 445
+            },
+            "start": {
+              "column": 7,
+              "line": 445
+            }
+          }
+        },
+        {
+          "id": "629",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 35,
+              "line": 445
+            },
+            "start": {
+              "column": 7,
+              "line": 445
+            }
+          }
+        },
+        {
+          "id": "630",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof ctx.on !== \"function\"",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 35,
+              "line": 445
+            },
+            "start": {
+              "column": 7,
+              "line": 445
+            }
+          }
+        },
+        {
           "id": "631",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -11178,6 +11902,30 @@
             },
             "start": {
               "column": 25,
+              "line": 445
+            }
+          }
+        },
+        {
+          "id": "632",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 497
+            },
+            "start": {
+              "column": 37,
               "line": 445
             }
           }
@@ -12813,637 +13561,13 @@
           }
         },
         {
-          "id": "19",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: disposeMiddleware is not a function: uncaughtException: disposeMiddleware is not a function",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 2,
-          "killedBy": [
-            "2"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 502
-            },
-            "start": {
-              "column": 15,
-              "line": 79
-            }
-          }
-        },
-        {
-          "id": "228",
-          "mutatorName": "ArrayDeclaration",
-          "replacement": "[]",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 30,
-              "line": 215
-            },
-            "start": {
-              "column": 19,
-              "line": 215
-            }
-          }
-        },
-        {
-          "id": "113",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 36,
-              "line": 146
-            },
-            "start": {
-              "column": 31,
-              "line": 146
-            }
-          }
-        },
-        {
-          "id": "217",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 37,
-              "line": 202
-            },
-            "start": {
-              "column": 33,
-              "line": 202
-            }
-          }
-        },
-        {
-          "id": "286",
-          "mutatorName": "ArithmeticOperator",
-          "replacement": "CONNECT_TIMEOUT_MS - DISCOVERY_TIMEOUT_MS",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 57,
-              "line": 242
-            },
-            "start": {
-              "column": 16,
-              "line": 242
-            }
-          }
-        },
-        {
-          "id": "284",
-          "mutatorName": "ArithmeticOperator",
-          "replacement": "CONNECT_TIMEOUT_MS + DISCOVERY_TIMEOUT_MS + CALL_TIMEOUT_MS - 5000",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 82,
-              "line": 242
-            },
-            "start": {
-              "column": 16,
-              "line": 242
-            }
-          }
-        },
-        {
-          "id": "230",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 36,
-              "line": 216
-            },
-            "start": {
-              "column": 31,
-              "line": 216
-            }
-          }
-        },
-        {
-          "id": "23",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 42,
-              "line": 83
-            },
-            "start": {
-              "column": 7,
-              "line": 83
-            }
-          }
-        },
-        {
-          "id": "22",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 42,
-              "line": 83
-            },
-            "start": {
-              "column": 7,
-              "line": 83
-            }
-          }
-        },
-        {
-          "id": "285",
-          "mutatorName": "ArithmeticOperator",
-          "replacement": "CONNECT_TIMEOUT_MS + DISCOVERY_TIMEOUT_MS - CALL_TIMEOUT_MS",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 75,
-              "line": 242
-            },
-            "start": {
-              "column": 16,
-              "line": 242
-            }
-          }
-        },
-        {
-          "id": "21",
-          "mutatorName": "LogicalOperator",
-          "replacement": "options.disabledTools && mw.disabledTools",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 66,
-              "line": 82
-            },
-            "start": {
-              "column": 25,
-              "line": 82
-            }
-          }
-        },
-        {
-          "id": "152",
-          "mutatorName": "ArrowFunction",
-          "replacement": "() => undefined",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 34,
-              "line": 162
-            },
-            "start": {
-              "column": 24,
-              "line": 162
-            }
-          }
-        },
-        {
-          "id": "109",
-          "mutatorName": "ArrayDeclaration",
-          "replacement": "[]",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 58,
-              "line": 145
-            },
-            "start": {
-              "column": 19,
-              "line": 145
-            }
-          }
-        },
-        {
-          "id": "282",
-          "mutatorName": "ArrowFunction",
-          "replacement": "() => undefined",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 34,
-              "line": 241
-            },
-            "start": {
-              "column": 24,
-              "line": 241
-            }
-          }
-        },
-        {
-          "id": "219",
-          "mutatorName": "ArrayDeclaration",
-          "replacement": "[]",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 206
-            },
-            "start": {
-              "column": 17,
-              "line": 206
-            }
-          }
-        },
-        {
-          "id": "24",
-          "mutatorName": "EqualityOperator",
-          "replacement": "options.disabledTools === undefined",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 42,
-              "line": 83
-            },
-            "start": {
-              "column": 7,
-              "line": 83
-            }
-          }
-        },
-        {
-          "id": "361",
-          "mutatorName": "ArrayDeclaration",
-          "replacement": "[]",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 99,
-              "line": 294
-            },
-            "start": {
-              "column": 19,
-              "line": 294
-            }
-          }
-        },
-        {
-          "id": "368",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 36,
-              "line": 295
-            },
-            "start": {
-              "column": 31,
-              "line": 295
-            }
-          }
-        },
-        {
-          "id": "543",
-          "mutatorName": "ArrayDeclaration",
-          "replacement": "[]",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 76,
-              "line": 396
-            },
-            "start": {
-              "column": 19,
-              "line": 396
-            }
-          }
-        },
-        {
-          "id": "526",
-          "mutatorName": "ArrayDeclaration",
-          "replacement": "[]",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 383
-            },
-            "start": {
-              "column": 17,
-              "line": 383
-            }
-          }
-        },
-        {
-          "id": "585",
-          "mutatorName": "ArrowFunction",
-          "replacement": "() => undefined",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 34,
-              "line": 410
-            },
-            "start": {
-              "column": 24,
-              "line": 410
-            }
-          }
-        },
-        {
-          "id": "437",
-          "mutatorName": "ArrowFunction",
-          "replacement": "() => undefined",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 34,
-              "line": 323
-            },
-            "start": {
-              "column": 24,
-              "line": 323
-            }
-          }
-        },
-        {
-          "id": "630",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof ctx.on !== \"function\"",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 445
-            },
-            "start": {
-              "column": 7,
-              "line": 445
-            }
-          }
-        },
-        {
-          "id": "549",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 36,
-              "line": 397
-            },
-            "start": {
-              "column": 31,
-              "line": 397
-            }
-          }
-        },
-        {
-          "id": "625",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 44,
-              "line": 431
-            },
-            "start": {
-              "column": 3,
-              "line": 431
-            }
-          }
-        },
-        {
-          "id": "626",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 44,
-              "line": 432
-            },
-            "start": {
-              "column": 3,
-              "line": 432
-            }
-          }
-        },
-        {
-          "id": "624",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 46,
-              "line": 430
-            },
-            "start": {
-              "column": 3,
-              "line": 430
-            }
-          }
-        },
-        {
           "id": "720",
           "mutatorName": "CallExpression",
           "replacement": ";",
           "status": "Survived",
-          "static": false,
           "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
           "coveredBy": [
             "0",
             "2",
@@ -13461,104 +13585,13 @@
           }
         },
         {
-          "id": "627",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 46,
-              "line": 433
-            },
-            "start": {
-              "column": 3,
-              "line": 433
-            }
-          }
-        },
-        {
-          "id": "629",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 445
-            },
-            "start": {
-              "column": 7,
-              "line": 445
-            }
-          }
-        },
-        {
-          "id": "628",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 445
-            },
-            "start": {
-              "column": 7,
-              "line": 445
-            }
-          }
-        },
-        {
-          "id": "632",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 497
-            },
-            "start": {
-              "column": 37,
-              "line": 445
-            }
-          }
-        },
-        {
           "id": "721",
           "mutatorName": "BlockStatement",
           "replacement": "{}",
           "status": "Survived",
-          "static": false,
           "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
           "coveredBy": [
             "2",
             "4"
@@ -13579,8 +13612,9 @@
           "mutatorName": "CallExpression",
           "replacement": ";",
           "status": "Survived",
-          "static": false,
           "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
           "coveredBy": [
             "2",
             "4"
@@ -13602,240 +13636,6 @@
     "packages/dsh-mcp-manager/src/routes.ts": {
       "language": "typescript",
       "mutants": [
-        {
-          "id": "965",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 10,
-              "line": 250
-            },
-            "start": {
-              "column": 13,
-              "line": 247
-            }
-          }
-        },
-        {
-          "id": "968",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "false",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 41,
-              "line": 249
-            },
-            "start": {
-              "column": 37,
-              "line": 249
-            }
-          }
-        },
-        {
-          "id": "969",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 10,
-              "line": 252
-            },
-            "start": {
-              "column": 25,
-              "line": 250
-            }
-          }
-        },
-        {
-          "id": "970",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 251
-            },
-            "start": {
-              "column": 11,
-              "line": 251
-            }
-          }
-        },
-        {
-          "id": "973",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 8,
-              "line": 267
-            },
-            "start": {
-              "column": 36,
-              "line": 258
-            }
-          }
-        },
-        {
-          "id": "974",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "guard(req, res, \"POST\")",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 37,
-              "line": 259
-            },
-            "start": {
-              "column": 13,
-              "line": 259
-            }
-          }
-        },
-        {
-          "id": "975",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 37,
-              "line": 259
-            },
-            "start": {
-              "column": 13,
-              "line": 259
-            }
-          }
-        },
-        {
-          "id": "976",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 37,
-              "line": 259
-            },
-            "start": {
-              "column": 13,
-              "line": 259
-            }
-          }
-        },
-        {
-          "id": "978",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 10,
-              "line": 264
-            },
-            "start": {
-              "column": 13,
-              "line": 260
-            }
-          }
-        },
-        {
-          "id": "979",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 60,
-              "line": 261
-            },
-            "start": {
-              "column": 15,
-              "line": 261
-            }
-          }
-        },
-        {
-          "id": "980",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 60,
-              "line": 261
-            },
-            "start": {
-              "column": 15,
-              "line": 261
-            }
-          }
-        },
-        {
-          "id": "981",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof manager.resumeReconnect === \"function\"",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 60,
-              "line": 261
-            },
-            "start": {
-              "column": 15,
-              "line": 261
-            }
-          }
-        },
-        {
-          "id": "983",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "status": "NoCoverage",
-          "static": false,
-          "coveredBy": [],
-          "location": {
-            "end": {
-              "column": 109,
-              "line": 261
-            },
-            "start": {
-              "column": 62,
-              "line": 261
-            }
-          }
-        },
         {
           "id": "723",
           "mutatorName": "ObjectLiteral",
@@ -14053,6 +13853,68 @@
           }
         },
         {
+          "id": "735",
+          "mutatorName": "ArithmeticOperator",
+          "replacement": "2 * 1024 / 1024",
+          "status": "Survived",
+          "testsCompleted": 10,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9"
+          ],
+          "location": {
+            "end": {
+              "column": 44,
+              "line": 80
+            },
+            "start": {
+              "column": 29,
+              "line": 80
+            }
+          }
+        },
+        {
+          "id": "736",
+          "mutatorName": "ArithmeticOperator",
+          "replacement": "2 / 1024",
+          "status": "Survived",
+          "testsCompleted": 10,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9"
+          ],
+          "location": {
+            "end": {
+              "column": 37,
+              "line": 80
+            },
+            "start": {
+              "column": 29,
+              "line": 80
+            }
+          }
+        },
+        {
           "id": "737",
           "mutatorName": "BlockStatement",
           "replacement": "{}",
@@ -14153,6 +14015,34 @@
             "start": {
               "column": 10,
               "line": 84
+            }
+          }
+        },
+        {
+          "id": "741",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: routes is not iterable: uncaughtException: routes is not iterable",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 418
+            },
+            "start": {
+              "column": 85,
+              "line": 88
             }
           }
         },
@@ -14658,6 +14548,31 @@
           }
         },
         {
+          "id": "763",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "status": "Survived",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 84,
+              "line": 104
+            },
+            "start": {
+              "column": 22,
+              "line": 104
+            }
+          }
+        },
+        {
           "id": "764",
           "mutatorName": "LogicalOperator",
           "replacement": "queryParam(url, \"scope\") && \"\"",
@@ -14925,6 +14840,34 @@
             "start": {
               "column": 48,
               "line": 108
+            }
+          }
+        },
+        {
+          "id": "777",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'handler'): uncaughtException: Cannot read properties of undefined (reading 'handler')",
+          "status": "Killed",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [
+            "2"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 417
+            },
+            "start": {
+              "column": 10,
+              "line": 111
             }
           }
         },
@@ -18289,6 +18232,31 @@
           }
         },
         {
+          "id": "948",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 8,
+              "line": 253
+            },
+            "start": {
+              "column": 36,
+              "line": 240
+            }
+          }
+        },
+        {
           "id": "949",
           "mutatorName": "BooleanLiteral",
           "replacement": "guard(req, res, \"POST\")",
@@ -18658,6 +18626,25 @@
           }
         },
         {
+          "id": "965",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 10,
+              "line": 250
+            },
+            "start": {
+              "column": 13,
+              "line": 247
+            }
+          }
+        },
+        {
           "id": "967",
           "mutatorName": "ObjectLiteral",
           "replacement": "{}",
@@ -18672,6 +18659,63 @@
             "start": {
               "column": 31,
               "line": 249
+            }
+          }
+        },
+        {
+          "id": "968",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "false",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 41,
+              "line": 249
+            },
+            "start": {
+              "column": 37,
+              "line": 249
+            }
+          }
+        },
+        {
+          "id": "969",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 10,
+              "line": 252
+            },
+            "start": {
+              "column": 25,
+              "line": 250
+            }
+          }
+        },
+        {
+          "id": "970",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 35,
+              "line": 251
+            },
+            "start": {
+              "column": 11,
+              "line": 251
             }
           }
         },
@@ -18712,6 +18756,82 @@
           }
         },
         {
+          "id": "973",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 8,
+              "line": 267
+            },
+            "start": {
+              "column": 36,
+              "line": 258
+            }
+          }
+        },
+        {
+          "id": "974",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "guard(req, res, \"POST\")",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 37,
+              "line": 259
+            },
+            "start": {
+              "column": 13,
+              "line": 259
+            }
+          }
+        },
+        {
+          "id": "975",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 37,
+              "line": 259
+            },
+            "start": {
+              "column": 13,
+              "line": 259
+            }
+          }
+        },
+        {
+          "id": "976",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 37,
+              "line": 259
+            },
+            "start": {
+              "column": 13,
+              "line": 259
+            }
+          }
+        },
+        {
           "id": "977",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -18730,6 +18850,82 @@
           }
         },
         {
+          "id": "978",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 10,
+              "line": 264
+            },
+            "start": {
+              "column": 13,
+              "line": 260
+            }
+          }
+        },
+        {
+          "id": "979",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 60,
+              "line": 261
+            },
+            "start": {
+              "column": 15,
+              "line": 261
+            }
+          }
+        },
+        {
+          "id": "980",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 60,
+              "line": 261
+            },
+            "start": {
+              "column": 15,
+              "line": 261
+            }
+          }
+        },
+        {
+          "id": "981",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof manager.resumeReconnect === \"function\"",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 60,
+              "line": 261
+            },
+            "start": {
+              "column": 15,
+              "line": 261
+            }
+          }
+        },
+        {
           "id": "982",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -18743,6 +18939,25 @@
             },
             "start": {
               "column": 50,
+              "line": 261
+            }
+          }
+        },
+        {
+          "id": "983",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "status": "NoCoverage",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [],
+          "location": {
+            "end": {
+              "column": 109,
+              "line": 261
+            },
+            "start": {
+              "column": 62,
               "line": 261
             }
           }
@@ -26240,171 +26455,6 @@
             "start": {
               "column": 43,
               "line": 561
-            }
-          }
-        },
-        {
-          "id": "741",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: routes is not iterable: uncaughtException: routes is not iterable",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 418
-            },
-            "start": {
-              "column": 85,
-              "line": 88
-            }
-          }
-        },
-        {
-          "id": "948",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 8,
-              "line": 253
-            },
-            "start": {
-              "column": 36,
-              "line": 240
-            }
-          }
-        },
-        {
-          "id": "777",
-          "mutatorName": "ArrayDeclaration",
-          "replacement": "[]",
-          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'handler'): uncaughtException: Cannot read properties of undefined (reading 'handler')",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 2,
-          "killedBy": [
-            "2"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 417
-            },
-            "start": {
-              "column": 10,
-              "line": 111
-            }
-          }
-        },
-        {
-          "id": "763",
-          "mutatorName": "ArrowFunction",
-          "replacement": "() => undefined",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 4,
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 84,
-              "line": 104
-            },
-            "start": {
-              "column": 22,
-              "line": 104
-            }
-          }
-        },
-        {
-          "id": "736",
-          "mutatorName": "ArithmeticOperator",
-          "replacement": "2 / 1024",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 10,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8",
-            "9"
-          ],
-          "location": {
-            "end": {
-              "column": 37,
-              "line": 80
-            },
-            "start": {
-              "column": 29,
-              "line": 80
-            }
-          }
-        },
-        {
-          "id": "735",
-          "mutatorName": "ArithmeticOperator",
-          "replacement": "2 * 1024 / 1024",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 10,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8",
-            "9"
-          ],
-          "location": {
-            "end": {
-              "column": 44,
-              "line": 80
-            },
-            "start": {
-              "column": 29,
-              "line": 80
             }
           }
         }
