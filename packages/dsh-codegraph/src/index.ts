@@ -158,6 +158,11 @@ export async function apply(ctx: Context, config: CodegraphConfig = {}): Promise
       // #363 补充 3：封装定义经 mcp-manager 注册（manager 侧 #362 补充 4 消费）。
       const registerInput: McpManagerServerInput = {
         name: "codegraph",
+        // A2（#417）：能力目录 available_mcp_servers 的条目描述优先取服务器
+        // description，缺省 fallback 到工具描述摘要（恰好是 codegraph_files
+        // 的「列文件结构」，埋没 explore/impact/callers 核心能力）。补上后
+        // 目录如实展示结构类查询能力，引导模型优先想起 codegraph。
+        description: "codegraph 本地代码图谱：结构类查询（谁调用 X / 改 X 影响谁 / 找符号定义与调用链）优先用它；自动先 sync 当前 worktree 索引",
         transport: "stdio",
         command: "codegraph",
         args: ["serve", "--mcp"],
