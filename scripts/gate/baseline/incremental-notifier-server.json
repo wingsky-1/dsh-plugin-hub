@@ -22,6 +22,34 @@
           }
         },
         {
+          "id": "1",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "1",
+            "2",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 36,
+              "line": 82
+            },
+            "start": {
+              "column": 23,
+              "line": 82
+            }
+          }
+        },
+        {
           "id": "2",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -36,6 +64,32 @@
             "start": {
               "column": 24,
               "line": 82
+            }
+          }
+        },
+        {
+          "id": "3",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: 7 条路由注册（M2 增 status/kinds）: uncaughtException: 7 条路由注册（M2 增 status/kinds）",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "2"
+          ],
+          "coveredBy": [
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 780
+            },
+            "start": {
+              "column": 77,
+              "line": 137
             }
           }
         },
@@ -10111,6 +10165,50 @@
           }
         },
         {
+          "id": "535",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "Survived",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 6,
+              "line": 728
+            },
+            "start": {
+              "column": 23,
+              "line": 721
+            }
+          }
+        },
+        {
+          "id": "536",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "Survived",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 6,
+              "line": 731
+            },
+            "start": {
+              "column": 21,
+              "line": 729
+            }
+          }
+        },
+        {
           "id": "537",
           "mutatorName": "BlockStatement",
           "replacement": "{}",
@@ -10714,101 +10812,6 @@
             "start": {
               "column": 5,
               "line": 778
-            }
-          }
-        },
-        {
-          "id": "3",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: 7 条路由注册（M2 增 status/kinds）: uncaughtException: 7 条路由注册（M2 增 status/kinds）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "2"
-          ],
-          "coveredBy": [
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 780
-            },
-            "start": {
-              "column": 77,
-              "line": 137
-            }
-          }
-        },
-        {
-          "id": "536",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 6,
-              "line": 731
-            },
-            "start": {
-              "column": 21,
-              "line": 729
-            }
-          }
-        },
-        {
-          "id": "535",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 6,
-              "line": 728
-            },
-            "start": {
-              "column": 23,
-              "line": 721
-            }
-          }
-        },
-        {
-          "id": "1",
-          "mutatorName": "ArrayDeclaration",
-          "replacement": "[]",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "1",
-            "2",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 36,
-              "line": 82
-            },
-            "start": {
-              "column": 23,
-              "line": 82
             }
           }
         }

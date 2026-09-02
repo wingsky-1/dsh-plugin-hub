@@ -900,6 +900,118 @@
           }
         },
         {
+          "id": "36",
+          "mutatorName": "Regex",
+          "replacement": "/(?:\\/home\\/[^\\s\"'`<>:;]+|\\/Users\\/[^\\s\"'`<>:;]|\\/root\\/[^\\s\"'`<>:;]+|\\/etc\\/[^\\s\"'`<>:;]+|C:\\\\Users\\\\[^\\s\"'`<>:;]+)/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "1",
+            "2",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 125,
+              "line": 62
+            },
+            "start": {
+              "column": 4,
+              "line": 62
+            }
+          }
+        },
+        {
+          "id": "37",
+          "mutatorName": "Regex",
+          "replacement": "/(?:\\/home\\/[^\\s\"'`<>:;]+|\\/Users\\/[\\s\"'`<>:;]+|\\/root\\/[^\\s\"'`<>:;]+|\\/etc\\/[^\\s\"'`<>:;]+|C:\\\\Users\\\\[^\\s\"'`<>:;]+)/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "1",
+            "2",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 125,
+              "line": 62
+            },
+            "start": {
+              "column": 4,
+              "line": 62
+            }
+          }
+        },
+        {
+          "id": "38",
+          "mutatorName": "Regex",
+          "replacement": "/(?:\\/home\\/[^\\s\"'`<>:;]+|\\/Users\\/[^\\S\"'`<>:;]+|\\/root\\/[^\\s\"'`<>:;]+|\\/etc\\/[^\\s\"'`<>:;]+|C:\\\\Users\\\\[^\\s\"'`<>:;]+)/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "1",
+            "2",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 125,
+              "line": 62
+            },
+            "start": {
+              "column": 4,
+              "line": 62
+            }
+          }
+        },
+        {
+          "id": "39",
+          "mutatorName": "Regex",
+          "replacement": "/(?:\\/home\\/[^\\s\"'`<>:;]+|\\/Users\\/[^\\s\"'`<>:;]+|\\/root\\/[^\\s\"'`<>:;]|\\/etc\\/[^\\s\"'`<>:;]+|C:\\\\Users\\\\[^\\s\"'`<>:;]+)/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "1",
+            "2",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 125,
+              "line": 62
+            },
+            "start": {
+              "column": 4,
+              "line": 62
+            }
+          }
+        },
+        {
           "id": "40",
           "mutatorName": "Regex",
           "replacement": "/(?:\\/home\\/[^\\s\"'`<>:;]+|\\/Users\\/[^\\s\"'`<>:;]+|\\/root\\/[\\s\"'`<>:;]+|\\/etc\\/[^\\s\"'`<>:;]+|C:\\\\Users\\\\[^\\s\"'`<>:;]+)/giu",
@@ -962,6 +1074,34 @@
           }
         },
         {
+          "id": "42",
+          "mutatorName": "Regex",
+          "replacement": "/(?:\\/home\\/[^\\s\"'`<>:;]+|\\/Users\\/[^\\s\"'`<>:;]+|\\/root\\/[^\\s\"'`<>:;]+|\\/etc\\/[^\\s\"'`<>:;]|C:\\\\Users\\\\[^\\s\"'`<>:;]+)/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "1",
+            "2",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 125,
+              "line": 62
+            },
+            "start": {
+              "column": 4,
+              "line": 62
+            }
+          }
+        },
+        {
           "id": "43",
           "mutatorName": "Regex",
           "replacement": "/(?:\\/home\\/[^\\s\"'`<>:;]+|\\/Users\\/[^\\s\"'`<>:;]+|\\/root\\/[^\\s\"'`<>:;]+|\\/etc\\/[\\s\"'`<>:;]+|C:\\\\Users\\\\[^\\s\"'`<>:;]+)/giu",
@@ -1003,6 +1143,90 @@
           "killedBy": [
             "7"
           ],
+          "coveredBy": [
+            "1",
+            "2",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 125,
+              "line": 62
+            },
+            "start": {
+              "column": 4,
+              "line": 62
+            }
+          }
+        },
+        {
+          "id": "45",
+          "mutatorName": "Regex",
+          "replacement": "/(?:\\/home\\/[^\\s\"'`<>:;]+|\\/Users\\/[^\\s\"'`<>:;]+|\\/root\\/[^\\s\"'`<>:;]+|\\/etc\\/[^\\s\"'`<>:;]+|C:\\\\Users\\\\[^\\s\"'`<>:;])/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "1",
+            "2",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 125,
+              "line": 62
+            },
+            "start": {
+              "column": 4,
+              "line": 62
+            }
+          }
+        },
+        {
+          "id": "46",
+          "mutatorName": "Regex",
+          "replacement": "/(?:\\/home\\/[^\\s\"'`<>:;]+|\\/Users\\/[^\\s\"'`<>:;]+|\\/root\\/[^\\s\"'`<>:;]+|\\/etc\\/[^\\s\"'`<>:;]+|C:\\\\Users\\\\[\\s\"'`<>:;]+)/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "1",
+            "2",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 125,
+              "line": 62
+            },
+            "start": {
+              "column": 4,
+              "line": 62
+            }
+          }
+        },
+        {
+          "id": "47",
+          "mutatorName": "Regex",
+          "replacement": "/(?:\\/home\\/[^\\s\"'`<>:;]+|\\/Users\\/[^\\s\"'`<>:;]+|\\/root\\/[^\\s\"'`<>:;]+|\\/etc\\/[^\\s\"'`<>:;]+|C:\\\\Users\\\\[^\\S\"'`<>:;]+)/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
           "coveredBy": [
             "1",
             "2",
@@ -1636,6 +1860,34 @@
           }
         },
         {
+          "id": "69",
+          "mutatorName": "Regex",
+          "replacement": "/\\b(postgres(?:ql)?|mysql|mariadb|mongodb(?:\\+srv)|rediss?|amqps?|mssql):\\/\\/([^\\s:@\\/\"'`<>]*):([^\\s@\\/\"'`<>]+)@/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "1",
+            "2",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 121,
+              "line": 77
+            },
+            "start": {
+              "column": 4,
+              "line": 77
+            }
+          }
+        },
+        {
           "id": "70",
           "mutatorName": "Regex",
           "replacement": "/\\b(postgres(?:ql)?|mysql|mariadb|mongodb(?:\\+srv)?|rediss|amqps?|mssql):\\/\\/([^\\s:@\\/\"'`<>]*):([^\\s@\\/\"'`<>]+)@/giu",
@@ -1646,6 +1898,34 @@
           "killedBy": [
             "7"
           ],
+          "coveredBy": [
+            "1",
+            "2",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 121,
+              "line": 77
+            },
+            "start": {
+              "column": 4,
+              "line": 77
+            }
+          }
+        },
+        {
+          "id": "71",
+          "mutatorName": "Regex",
+          "replacement": "/\\b(postgres(?:ql)?|mysql|mariadb|mongodb(?:\\+srv)?|rediss?|amqps|mssql):\\/\\/([^\\s:@\\/\"'`<>]*):([^\\s@\\/\"'`<>]+)@/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
           "coveredBy": [
             "1",
             "2",
@@ -2700,6 +2980,34 @@
             },
             "start": {
               "column": 3,
+              "line": 93
+            }
+          }
+        },
+        {
+          "id": "108",
+          "mutatorName": "Regex",
+          "replacement": "/\\b(password|passwd|token|api[_-]key|secret|authorization)\\b\\s*[=:]\\s*[\"']?[^\\s\"'`,;<>]{3,}/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "1",
+            "2",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 100,
+              "line": 93
+            },
+            "start": {
+              "column": 4,
               "line": 93
             }
           }
@@ -7458,6 +7766,34 @@
           }
         },
         {
+          "id": "324",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "1",
+            "2",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 41,
+              "line": 334
+            },
+            "start": {
+              "column": 14,
+              "line": 334
+            }
+          }
+        },
+        {
           "id": "325",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -9702,330 +10038,6 @@
             "start": {
               "column": 14,
               "line": 403
-            }
-          }
-        },
-        {
-          "id": "71",
-          "mutatorName": "Regex",
-          "replacement": "/\\b(postgres(?:ql)?|mysql|mariadb|mongodb(?:\\+srv)?|rediss?|amqps|mssql):\\/\\/([^\\s:@\\/\"'`<>]*):([^\\s@\\/\"'`<>]+)@/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "1",
-            "2",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 121,
-              "line": 77
-            },
-            "start": {
-              "column": 4,
-              "line": 77
-            }
-          }
-        },
-        {
-          "id": "69",
-          "mutatorName": "Regex",
-          "replacement": "/\\b(postgres(?:ql)?|mysql|mariadb|mongodb(?:\\+srv)|rediss?|amqps?|mssql):\\/\\/([^\\s:@\\/\"'`<>]*):([^\\s@\\/\"'`<>]+)@/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "1",
-            "2",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 121,
-              "line": 77
-            },
-            "start": {
-              "column": 4,
-              "line": 77
-            }
-          }
-        },
-        {
-          "id": "324",
-          "mutatorName": "ArrowFunction",
-          "replacement": "() => undefined",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "1",
-            "2",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 41,
-              "line": 334
-            },
-            "start": {
-              "column": 14,
-              "line": 334
-            }
-          }
-        },
-        {
-          "id": "108",
-          "mutatorName": "Regex",
-          "replacement": "/\\b(password|passwd|token|api[_-]key|secret|authorization)\\b\\s*[=:]\\s*[\"']?[^\\s\"'`,;<>]{3,}/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "1",
-            "2",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 100,
-              "line": 93
-            },
-            "start": {
-              "column": 4,
-              "line": 93
-            }
-          }
-        },
-        {
-          "id": "36",
-          "mutatorName": "Regex",
-          "replacement": "/(?:\\/home\\/[^\\s\"'`<>:;]+|\\/Users\\/[^\\s\"'`<>:;]|\\/root\\/[^\\s\"'`<>:;]+|\\/etc\\/[^\\s\"'`<>:;]+|C:\\\\Users\\\\[^\\s\"'`<>:;]+)/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "1",
-            "2",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 125,
-              "line": 62
-            },
-            "start": {
-              "column": 4,
-              "line": 62
-            }
-          }
-        },
-        {
-          "id": "46",
-          "mutatorName": "Regex",
-          "replacement": "/(?:\\/home\\/[^\\s\"'`<>:;]+|\\/Users\\/[^\\s\"'`<>:;]+|\\/root\\/[^\\s\"'`<>:;]+|\\/etc\\/[^\\s\"'`<>:;]+|C:\\\\Users\\\\[\\s\"'`<>:;]+)/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "1",
-            "2",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 125,
-              "line": 62
-            },
-            "start": {
-              "column": 4,
-              "line": 62
-            }
-          }
-        },
-        {
-          "id": "45",
-          "mutatorName": "Regex",
-          "replacement": "/(?:\\/home\\/[^\\s\"'`<>:;]+|\\/Users\\/[^\\s\"'`<>:;]+|\\/root\\/[^\\s\"'`<>:;]+|\\/etc\\/[^\\s\"'`<>:;]+|C:\\\\Users\\\\[^\\s\"'`<>:;])/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "1",
-            "2",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 125,
-              "line": 62
-            },
-            "start": {
-              "column": 4,
-              "line": 62
-            }
-          }
-        },
-        {
-          "id": "38",
-          "mutatorName": "Regex",
-          "replacement": "/(?:\\/home\\/[^\\s\"'`<>:;]+|\\/Users\\/[^\\S\"'`<>:;]+|\\/root\\/[^\\s\"'`<>:;]+|\\/etc\\/[^\\s\"'`<>:;]+|C:\\\\Users\\\\[^\\s\"'`<>:;]+)/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "1",
-            "2",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 125,
-              "line": 62
-            },
-            "start": {
-              "column": 4,
-              "line": 62
-            }
-          }
-        },
-        {
-          "id": "42",
-          "mutatorName": "Regex",
-          "replacement": "/(?:\\/home\\/[^\\s\"'`<>:;]+|\\/Users\\/[^\\s\"'`<>:;]+|\\/root\\/[^\\s\"'`<>:;]+|\\/etc\\/[^\\s\"'`<>:;]|C:\\\\Users\\\\[^\\s\"'`<>:;]+)/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "1",
-            "2",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 125,
-              "line": 62
-            },
-            "start": {
-              "column": 4,
-              "line": 62
-            }
-          }
-        },
-        {
-          "id": "37",
-          "mutatorName": "Regex",
-          "replacement": "/(?:\\/home\\/[^\\s\"'`<>:;]+|\\/Users\\/[\\s\"'`<>:;]+|\\/root\\/[^\\s\"'`<>:;]+|\\/etc\\/[^\\s\"'`<>:;]+|C:\\\\Users\\\\[^\\s\"'`<>:;]+)/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "1",
-            "2",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 125,
-              "line": 62
-            },
-            "start": {
-              "column": 4,
-              "line": 62
-            }
-          }
-        },
-        {
-          "id": "39",
-          "mutatorName": "Regex",
-          "replacement": "/(?:\\/home\\/[^\\s\"'`<>:;]+|\\/Users\\/[^\\s\"'`<>:;]+|\\/root\\/[^\\s\"'`<>:;]|\\/etc\\/[^\\s\"'`<>:;]+|C:\\\\Users\\\\[^\\s\"'`<>:;]+)/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "1",
-            "2",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 125,
-              "line": 62
-            },
-            "start": {
-              "column": 4,
-              "line": 62
-            }
-          }
-        },
-        {
-          "id": "47",
-          "mutatorName": "Regex",
-          "replacement": "/(?:\\/home\\/[^\\s\"'`<>:;]+|\\/Users\\/[^\\s\"'`<>:;]+|\\/root\\/[^\\s\"'`<>:;]+|\\/etc\\/[^\\s\"'`<>:;]+|C:\\\\Users\\\\[^\\S\"'`<>:;]+)/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "1",
-            "2",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 125,
-              "line": 62
-            },
-            "start": {
-              "column": 4,
-              "line": 62
             }
           }
         }

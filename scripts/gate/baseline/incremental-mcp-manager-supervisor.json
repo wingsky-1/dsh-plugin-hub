@@ -4,6 +4,35 @@
       "language": "typescript",
       "mutants": [
         {
+          "id": "0",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 16
+            },
+            "start": {
+              "column": 33,
+              "line": 14
+            }
+          }
+        },
+        {
           "id": "1",
           "mutatorName": "LogicalOperator",
           "replacement": "process.env.DSH_HOME && join(homedir(), \".dsh\")",
@@ -69,6 +98,143 @@
           }
         },
         {
+          "id": "4",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: timeout waiting for @global 单元连接条目建立: uncaughtException: timeout waiting for @global 单元连接条目建立",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 34
+            },
+            "start": {
+              "column": 86,
+              "line": 19
+            }
+          }
+        },
+        {
+          "id": "5",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
+          "status": "Killed",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [
+            "5"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 30
+            },
+            "start": {
+              "column": 7,
+              "line": 21
+            }
+          }
+        },
+        {
+          "id": "6",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "existsSync(file)",
+          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
+          "status": "Killed",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [
+            "5"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 26,
+              "line": 22
+            },
+            "start": {
+              "column": 9,
+              "line": 22
+            }
+          }
+        },
+        {
+          "id": "7",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
+          "status": "Killed",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [
+            "5"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 26,
+              "line": 22
+            },
+            "start": {
+              "column": 9,
+              "line": 22
+            }
+          }
+        },
+        {
+          "id": "8",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 26,
+              "line": 22
+            },
+            "start": {
+              "column": 9,
+              "line": 22
+            }
+          }
+        },
+        {
           "id": "9",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -87,6 +253,237 @@
           }
         },
         {
+          "id": "10",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 112,
+              "line": 25
+            },
+            "start": {
+              "column": 9,
+              "line": 25
+            }
+          }
+        },
+        {
+          "id": "11",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
+          "status": "Killed",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [
+            "5"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 112,
+              "line": 25
+            },
+            "start": {
+              "column": 9,
+              "line": 25
+            }
+          }
+        },
+        {
+          "id": "12",
+          "mutatorName": "LogicalOperator",
+          "replacement": "parsed && typeof parsed === \"object\" && typeof parsed.disabled === \"object\" || parsed.disabled !== null",
+          "status": "Survived",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 112,
+              "line": 25
+            },
+            "start": {
+              "column": 9,
+              "line": 25
+            }
+          }
+        },
+        {
+          "id": "13",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 84,
+              "line": 25
+            },
+            "start": {
+              "column": 9,
+              "line": 25
+            }
+          }
+        },
+        {
+          "id": "14",
+          "mutatorName": "LogicalOperator",
+          "replacement": "parsed && typeof parsed === \"object\" || typeof parsed.disabled === \"object\"",
+          "status": "Survived",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 84,
+              "line": 25
+            },
+            "start": {
+              "column": 9,
+              "line": 25
+            }
+          }
+        },
+        {
+          "id": "15",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 45,
+              "line": 25
+            },
+            "start": {
+              "column": 9,
+              "line": 25
+            }
+          }
+        },
+        {
+          "id": "16",
+          "mutatorName": "LogicalOperator",
+          "replacement": "parsed || typeof parsed === \"object\"",
+          "status": "Survived",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 45,
+              "line": 25
+            },
+            "start": {
+              "column": 9,
+              "line": 25
+            }
+          }
+        },
+        {
+          "id": "17",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 45,
+              "line": 25
+            },
+            "start": {
+              "column": 19,
+              "line": 25
+            }
+          }
+        },
+        {
+          "id": "18",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof parsed !== \"object\"",
+          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
+          "status": "Killed",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [
+            "5"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 45,
+              "line": 25
+            },
+            "start": {
+              "column": 19,
+              "line": 25
+            }
+          }
+        },
+        {
           "id": "19",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -100,6 +497,59 @@
             },
             "start": {
               "column": 37,
+              "line": 25
+            }
+          }
+        },
+        {
+          "id": "20",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 84,
+              "line": 25
+            },
+            "start": {
+              "column": 49,
+              "line": 25
+            }
+          }
+        },
+        {
+          "id": "21",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof parsed.disabled !== \"object\"",
+          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
+          "status": "Killed",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [
+            "5"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 84,
+              "line": 25
+            },
+            "start": {
+              "column": 49,
               "line": 25
             }
           }
@@ -123,6 +573,302 @@
           }
         },
         {
+          "id": "23",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 112,
+              "line": 25
+            },
+            "start": {
+              "column": 88,
+              "line": 25
+            }
+          }
+        },
+        {
+          "id": "24",
+          "mutatorName": "EqualityOperator",
+          "replacement": "parsed.disabled === null",
+          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
+          "status": "Killed",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [
+            "5"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 112,
+              "line": 25
+            },
+            "start": {
+              "column": 88,
+              "line": 25
+            }
+          }
+        },
+        {
+          "id": "25",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
+          "status": "Killed",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [
+            "5"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 6,
+              "line": 29
+            },
+            "start": {
+              "column": 114,
+              "line": 25
+            }
+          }
+        },
+        {
+          "id": "26",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
+          "status": "Killed",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [
+            "5"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 8,
+              "line": 28
+            },
+            "start": {
+              "column": 68,
+              "line": 26
+            }
+          }
+        },
+        {
+          "id": "27",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 33,
+              "line": 27
+            },
+            "start": {
+              "column": 13,
+              "line": 27
+            }
+          }
+        },
+        {
+          "id": "28",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
+          "status": "Killed",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [
+            "5"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 33,
+              "line": 27
+            },
+            "start": {
+              "column": 13,
+              "line": 27
+            }
+          }
+        },
+        {
+          "id": "30",
+          "mutatorName": "MethodExpression",
+          "replacement": "names",
+          "status": "Survived",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 105,
+              "line": 27
+            },
+            "start": {
+              "column": 57,
+              "line": 27
+            }
+          }
+        },
+        {
+          "id": "31",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "statusReason": "uncaughtException: Expected values to be strictly deep-equal:: uncaughtException: Expected values to be strictly deep-equal:",
+          "status": "Killed",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [
+            "5"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 104,
+              "line": 27
+            },
+            "start": {
+              "column": 70,
+              "line": 27
+            }
+          }
+        },
+        {
+          "id": "32",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 104,
+              "line": 27
+            },
+            "start": {
+              "column": 80,
+              "line": 27
+            }
+          }
+        },
+        {
+          "id": "33",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: Expected values to be strictly deep-equal:: uncaughtException: Expected values to be strictly deep-equal:",
+          "status": "Killed",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [
+            "5"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 104,
+              "line": 27
+            },
+            "start": {
+              "column": 80,
+              "line": 27
+            }
+          }
+        },
+        {
+          "id": "34",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof name !== \"string\"",
+          "statusReason": "uncaughtException: Expected values to be strictly deep-equal:: uncaughtException: Expected values to be strictly deep-equal:",
+          "status": "Killed",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [
+            "5"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 104,
+              "line": 27
+            },
+            "start": {
+              "column": 80,
+              "line": 27
+            }
+          }
+        },
+        {
           "id": "35",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -137,6 +883,472 @@
             "start": {
               "column": 96,
               "line": 27
+            }
+          }
+        },
+        {
+          "id": "36",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
+          "status": "Killed",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [
+            "5"
+          ],
+          "coveredBy": [
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 57
+            },
+            "start": {
+              "column": 99,
+              "line": 38
+            }
+          }
+        },
+        {
+          "id": "37",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
+          "status": "Killed",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [
+            "5"
+          ],
+          "coveredBy": [
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 43
+            },
+            "start": {
+              "column": 37,
+              "line": 40
+            }
+          }
+        },
+        {
+          "id": "38",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 35,
+              "line": 41
+            },
+            "start": {
+              "column": 9,
+              "line": 41
+            }
+          }
+        },
+        {
+          "id": "39",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
+          "status": "Killed",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [
+            "5"
+          ],
+          "coveredBy": [
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 35,
+              "line": 41
+            },
+            "start": {
+              "column": 9,
+              "line": 41
+            }
+          }
+        },
+        {
+          "id": "40",
+          "mutatorName": "EqualityOperator",
+          "replacement": "unit.userDisabled.size >= 0",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 35,
+              "line": 41
+            },
+            "start": {
+              "column": 9,
+              "line": 41
+            }
+          }
+        },
+        {
+          "id": "41",
+          "mutatorName": "EqualityOperator",
+          "replacement": "unit.userDisabled.size <= 0",
+          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
+          "status": "Killed",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [
+            "5"
+          ],
+          "coveredBy": [
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 35,
+              "line": 41
+            },
+            "start": {
+              "column": 9,
+              "line": 41
+            }
+          }
+        },
+        {
+          "id": "42",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
+          "status": "Killed",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [
+            "5"
+          ],
+          "coveredBy": [
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 82,
+              "line": 41
+            },
+            "start": {
+              "column": 37,
+              "line": 41
+            }
+          }
+        },
+        {
+          "id": "43",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "status": "Survived",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 30,
+              "line": 42
+            },
+            "start": {
+              "column": 10,
+              "line": 42
+            }
+          }
+        },
+        {
+          "id": "44",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
+          "status": "Killed",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [
+            "5"
+          ],
+          "coveredBy": [
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 47
+            },
+            "start": {
+              "column": 39,
+              "line": 45
+            }
+          }
+        },
+        {
+          "id": "45",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 23,
+              "line": 46
+            },
+            "start": {
+              "column": 9,
+              "line": 46
+            }
+          }
+        },
+        {
+          "id": "46",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
+          "status": "Killed",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [
+            "5"
+          ],
+          "coveredBy": [
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 23,
+              "line": 46
+            },
+            "start": {
+              "column": 9,
+              "line": 46
+            }
+          }
+        },
+        {
+          "id": "47",
+          "mutatorName": "EqualityOperator",
+          "replacement": "names.size >= 0",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 23,
+              "line": 46
+            },
+            "start": {
+              "column": 9,
+              "line": 46
+            }
+          }
+        },
+        {
+          "id": "48",
+          "mutatorName": "EqualityOperator",
+          "replacement": "names.size <= 0",
+          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
+          "status": "Killed",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [
+            "5"
+          ],
+          "coveredBy": [
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 23,
+              "line": 46
+            },
+            "start": {
+              "column": 9,
+              "line": 46
+            }
+          }
+        },
+        {
+          "id": "49",
+          "mutatorName": "MethodExpression",
+          "replacement": "[...names]",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 59,
+              "line": 46
+            },
+            "start": {
+              "column": 42,
+              "line": 46
+            }
+          }
+        },
+        {
+          "id": "50",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "statusReason": "uncaughtException: Expected values to be strictly deep-equal:: uncaughtException: Expected values to be strictly deep-equal:",
+          "status": "Killed",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [
+            "5"
+          ],
+          "coveredBy": [
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 52,
+              "line": 46
+            },
+            "start": {
+              "column": 42,
+              "line": 46
+            }
+          }
+        },
+        {
+          "id": "51",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
+          "status": "Killed",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [
+            "5"
+          ],
+          "coveredBy": [
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 54
+            },
+            "start": {
+              "column": 7,
+              "line": 48
+            }
+          }
+        },
+        {
+          "id": "52",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "existsSync(dir)",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 25,
+              "line": 50
+            },
+            "start": {
+              "column": 9,
+              "line": 50
+            }
+          }
+        },
+        {
+          "id": "53",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 25,
+              "line": 50
+            },
+            "start": {
+              "column": 9,
+              "line": 50
+            }
+          }
+        },
+        {
+          "id": "54",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4",
+            "5"
+          ],
+          "location": {
+            "end": {
+              "column": 25,
+              "line": 50
+            },
+            "start": {
+              "column": 9,
+              "line": 50
             }
           }
         },
@@ -232,6 +1444,53 @@
           }
         },
         {
+          "id": "60",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: The \"path\" argument must be of type string or an instance of Buffer or URL. Received undefined: uncaughtException: The \"path\" argument must be of type string or an instance of Buffer or URL. Received undefined",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 63
+            },
+            "start": {
+              "column": 51,
+              "line": 60
+            }
+          }
+        },
+        {
+          "id": "61",
+          "mutatorName": "MethodExpression",
+          "replacement": "createHash(\"sha256\").update(root).digest(\"hex\")",
+          "status": "Survived",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 76,
+              "line": 61
+            },
+            "start": {
+              "column": 16,
+              "line": 61
+            }
+          }
+        },
+        {
           "id": "62",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -264,6 +1523,31 @@
             "start": {
               "column": 57,
               "line": 61
+            }
+          }
+        },
+        {
+          "id": "64",
+          "mutatorName": "LogicalOperator",
+          "replacement": "process.env.DSH_HOME && join(homedir(), \".dsh\")",
+          "statusReason": "uncaughtException: The \"path\" argument must be of type string. Received undefined: uncaughtException: The \"path\" argument must be of type string. Received undefined",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 62,
+              "line": 62
+            },
+            "start": {
+              "column": 15,
+              "line": 62
             }
           }
         },
@@ -322,6 +1606,132 @@
           }
         },
         {
+          "id": "68",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'get'): uncaughtException: Cannot read properties of undefined (reading 'get')",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 76
+            },
+            "start": {
+              "column": 82,
+              "line": 66
+            }
+          }
+        },
+        {
+          "id": "69",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'get'): uncaughtException: Cannot read properties of undefined (reading 'get')",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 72
+            },
+            "start": {
+              "column": 7,
+              "line": 67
+            }
+          }
+        },
+        {
+          "id": "70",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "existsSync(file)",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 26,
+              "line": 68
+            },
+            "start": {
+              "column": 9,
+              "line": 68
+            }
+          }
+        },
+        {
+          "id": "71",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 26,
+              "line": 68
+            },
+            "start": {
+              "column": 9,
+              "line": 68
+            }
+          }
+        },
+        {
+          "id": "72",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 26,
+              "line": 68
+            },
+            "start": {
+              "column": 9,
+              "line": 68
+            }
+          }
+        },
+        {
           "id": "73",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -336,6 +1746,30 @@
             "start": {
               "column": 38,
               "line": 69
+            }
+          }
+        },
+        {
+          "id": "74",
+          "mutatorName": "OptionalChaining",
+          "replacement": "parsed.disabledTools",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 52,
+              "line": 71
+            },
+            "start": {
+              "column": 31,
+              "line": 71
             }
           }
         },
@@ -771,1413 +2205,6 @@
               "line": 97
             }
           }
-        },
-        {
-          "id": "18",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof parsed !== \"object\"",
-          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 4,
-          "killedBy": [
-            "5"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 45,
-              "line": 25
-            },
-            "start": {
-              "column": 19,
-              "line": 25
-            }
-          }
-        },
-        {
-          "id": "5",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 4,
-          "killedBy": [
-            "5"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 30
-            },
-            "start": {
-              "column": 7,
-              "line": 21
-            }
-          }
-        },
-        {
-          "id": "6",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "existsSync(file)",
-          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 4,
-          "killedBy": [
-            "5"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 26,
-              "line": 22
-            },
-            "start": {
-              "column": 9,
-              "line": 22
-            }
-          }
-        },
-        {
-          "id": "11",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 4,
-          "killedBy": [
-            "5"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 112,
-              "line": 25
-            },
-            "start": {
-              "column": 9,
-              "line": 25
-            }
-          }
-        },
-        {
-          "id": "0",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 4,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 16
-            },
-            "start": {
-              "column": 33,
-              "line": 14
-            }
-          }
-        },
-        {
-          "id": "7",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 4,
-          "killedBy": [
-            "5"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 26,
-              "line": 22
-            },
-            "start": {
-              "column": 9,
-              "line": 22
-            }
-          }
-        },
-        {
-          "id": "25",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 4,
-          "killedBy": [
-            "5"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 6,
-              "line": 29
-            },
-            "start": {
-              "column": 114,
-              "line": 25
-            }
-          }
-        },
-        {
-          "id": "26",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 4,
-          "killedBy": [
-            "5"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 8,
-              "line": 28
-            },
-            "start": {
-              "column": 68,
-              "line": 26
-            }
-          }
-        },
-        {
-          "id": "21",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof parsed.disabled !== \"object\"",
-          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 4,
-          "killedBy": [
-            "5"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 84,
-              "line": 25
-            },
-            "start": {
-              "column": 49,
-              "line": 25
-            }
-          }
-        },
-        {
-          "id": "24",
-          "mutatorName": "EqualityOperator",
-          "replacement": "parsed.disabled === null",
-          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 4,
-          "killedBy": [
-            "5"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 112,
-              "line": 25
-            },
-            "start": {
-              "column": 88,
-              "line": 25
-            }
-          }
-        },
-        {
-          "id": "4",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: timeout waiting for @global 单元连接条目建立: uncaughtException: timeout waiting for @global 单元连接条目建立",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 34
-            },
-            "start": {
-              "column": 86,
-              "line": 19
-            }
-          }
-        },
-        {
-          "id": "28",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 4,
-          "killedBy": [
-            "5"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 33,
-              "line": 27
-            },
-            "start": {
-              "column": 13,
-              "line": 27
-            }
-          }
-        },
-        {
-          "id": "31",
-          "mutatorName": "ArrowFunction",
-          "replacement": "() => undefined",
-          "statusReason": "uncaughtException: Expected values to be strictly deep-equal:: uncaughtException: Expected values to be strictly deep-equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 4,
-          "killedBy": [
-            "5"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 104,
-              "line": 27
-            },
-            "start": {
-              "column": 70,
-              "line": 27
-            }
-          }
-        },
-        {
-          "id": "33",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: Expected values to be strictly deep-equal:: uncaughtException: Expected values to be strictly deep-equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 4,
-          "killedBy": [
-            "5"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 104,
-              "line": 27
-            },
-            "start": {
-              "column": 80,
-              "line": 27
-            }
-          }
-        },
-        {
-          "id": "36",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 2,
-          "killedBy": [
-            "5"
-          ],
-          "coveredBy": [
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 57
-            },
-            "start": {
-              "column": 99,
-              "line": 38
-            }
-          }
-        },
-        {
-          "id": "34",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof name !== \"string\"",
-          "statusReason": "uncaughtException: Expected values to be strictly deep-equal:: uncaughtException: Expected values to be strictly deep-equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 4,
-          "killedBy": [
-            "5"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 104,
-              "line": 27
-            },
-            "start": {
-              "column": 80,
-              "line": 27
-            }
-          }
-        },
-        {
-          "id": "37",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 2,
-          "killedBy": [
-            "5"
-          ],
-          "coveredBy": [
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 43
-            },
-            "start": {
-              "column": 37,
-              "line": 40
-            }
-          }
-        },
-        {
-          "id": "39",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 2,
-          "killedBy": [
-            "5"
-          ],
-          "coveredBy": [
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 41
-            },
-            "start": {
-              "column": 9,
-              "line": 41
-            }
-          }
-        },
-        {
-          "id": "41",
-          "mutatorName": "EqualityOperator",
-          "replacement": "unit.userDisabled.size <= 0",
-          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 2,
-          "killedBy": [
-            "5"
-          ],
-          "coveredBy": [
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 41
-            },
-            "start": {
-              "column": 9,
-              "line": 41
-            }
-          }
-        },
-        {
-          "id": "42",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 2,
-          "killedBy": [
-            "5"
-          ],
-          "coveredBy": [
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 82,
-              "line": 41
-            },
-            "start": {
-              "column": 37,
-              "line": 41
-            }
-          }
-        },
-        {
-          "id": "43",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 30,
-              "line": 42
-            },
-            "start": {
-              "column": 10,
-              "line": 42
-            }
-          }
-        },
-        {
-          "id": "44",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 2,
-          "killedBy": [
-            "5"
-          ],
-          "coveredBy": [
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 47
-            },
-            "start": {
-              "column": 39,
-              "line": 45
-            }
-          }
-        },
-        {
-          "id": "14",
-          "mutatorName": "LogicalOperator",
-          "replacement": "parsed && typeof parsed === \"object\" || typeof parsed.disabled === \"object\"",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 4,
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 84,
-              "line": 25
-            },
-            "start": {
-              "column": 9,
-              "line": 25
-            }
-          }
-        },
-        {
-          "id": "46",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 2,
-          "killedBy": [
-            "5"
-          ],
-          "coveredBy": [
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 23,
-              "line": 46
-            },
-            "start": {
-              "column": 9,
-              "line": 46
-            }
-          }
-        },
-        {
-          "id": "12",
-          "mutatorName": "LogicalOperator",
-          "replacement": "parsed && typeof parsed === \"object\" && typeof parsed.disabled === \"object\" || parsed.disabled !== null",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 4,
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 112,
-              "line": 25
-            },
-            "start": {
-              "column": 9,
-              "line": 25
-            }
-          }
-        },
-        {
-          "id": "20",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 4,
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 84,
-              "line": 25
-            },
-            "start": {
-              "column": 49,
-              "line": 25
-            }
-          }
-        },
-        {
-          "id": "10",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 4,
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 112,
-              "line": 25
-            },
-            "start": {
-              "column": 9,
-              "line": 25
-            }
-          }
-        },
-        {
-          "id": "16",
-          "mutatorName": "LogicalOperator",
-          "replacement": "parsed || typeof parsed === \"object\"",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 4,
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 45,
-              "line": 25
-            },
-            "start": {
-              "column": 9,
-              "line": 25
-            }
-          }
-        },
-        {
-          "id": "17",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 4,
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 45,
-              "line": 25
-            },
-            "start": {
-              "column": 19,
-              "line": 25
-            }
-          }
-        },
-        {
-          "id": "8",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 4,
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 26,
-              "line": 22
-            },
-            "start": {
-              "column": 9,
-              "line": 22
-            }
-          }
-        },
-        {
-          "id": "15",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 4,
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 45,
-              "line": 25
-            },
-            "start": {
-              "column": 9,
-              "line": 25
-            }
-          }
-        },
-        {
-          "id": "13",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 4,
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 84,
-              "line": 25
-            },
-            "start": {
-              "column": 9,
-              "line": 25
-            }
-          }
-        },
-        {
-          "id": "48",
-          "mutatorName": "EqualityOperator",
-          "replacement": "names.size <= 0",
-          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 2,
-          "killedBy": [
-            "5"
-          ],
-          "coveredBy": [
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 23,
-              "line": 46
-            },
-            "start": {
-              "column": 9,
-              "line": 46
-            }
-          }
-        },
-        {
-          "id": "60",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: The \"path\" argument must be of type string or an instance of Buffer or URL. Received undefined: uncaughtException: The \"path\" argument must be of type string or an instance of Buffer or URL. Received undefined",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 63
-            },
-            "start": {
-              "column": 51,
-              "line": 60
-            }
-          }
-        },
-        {
-          "id": "50",
-          "mutatorName": "ArrayDeclaration",
-          "replacement": "[]",
-          "statusReason": "uncaughtException: Expected values to be strictly deep-equal:: uncaughtException: Expected values to be strictly deep-equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 2,
-          "killedBy": [
-            "5"
-          ],
-          "coveredBy": [
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 52,
-              "line": 46
-            },
-            "start": {
-              "column": 42,
-              "line": 46
-            }
-          }
-        },
-        {
-          "id": "61",
-          "mutatorName": "MethodExpression",
-          "replacement": "createHash(\"sha256\").update(root).digest(\"hex\")",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 76,
-              "line": 61
-            },
-            "start": {
-              "column": 16,
-              "line": 61
-            }
-          }
-        },
-        {
-          "id": "51",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: loaded.get is not a function or its return value is not iterable: uncaughtException: loaded.get is not a function or its return value is not iterable",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 2,
-          "killedBy": [
-            "5"
-          ],
-          "coveredBy": [
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 54
-            },
-            "start": {
-              "column": 7,
-              "line": 48
-            }
-          }
-        },
-        {
-          "id": "64",
-          "mutatorName": "LogicalOperator",
-          "replacement": "process.env.DSH_HOME && join(homedir(), \".dsh\")",
-          "statusReason": "uncaughtException: The \"path\" argument must be of type string. Received undefined: uncaughtException: The \"path\" argument must be of type string. Received undefined",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 62,
-              "line": 62
-            },
-            "start": {
-              "column": 15,
-              "line": 62
-            }
-          }
-        },
-        {
-          "id": "23",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 4,
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 112,
-              "line": 25
-            },
-            "start": {
-              "column": 88,
-              "line": 25
-            }
-          }
-        },
-        {
-          "id": "27",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 4,
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 33,
-              "line": 27
-            },
-            "start": {
-              "column": 13,
-              "line": 27
-            }
-          }
-        },
-        {
-          "id": "68",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'get'): uncaughtException: Cannot read properties of undefined (reading 'get')",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 76
-            },
-            "start": {
-              "column": 82,
-              "line": 66
-            }
-          }
-        },
-        {
-          "id": "69",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'get'): uncaughtException: Cannot read properties of undefined (reading 'get')",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 72
-            },
-            "start": {
-              "column": 7,
-              "line": 67
-            }
-          }
-        },
-        {
-          "id": "70",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "existsSync(file)",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 26,
-              "line": 68
-            },
-            "start": {
-              "column": 9,
-              "line": 68
-            }
-          }
-        },
-        {
-          "id": "71",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 26,
-              "line": 68
-            },
-            "start": {
-              "column": 9,
-              "line": 68
-            }
-          }
-        },
-        {
-          "id": "32",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 4,
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 104,
-              "line": 27
-            },
-            "start": {
-              "column": 80,
-              "line": 27
-            }
-          }
-        },
-        {
-          "id": "30",
-          "mutatorName": "MethodExpression",
-          "replacement": "names",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 4,
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 105,
-              "line": 27
-            },
-            "start": {
-              "column": 57,
-              "line": 27
-            }
-          }
-        },
-        {
-          "id": "72",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 26,
-              "line": 68
-            },
-            "start": {
-              "column": 9,
-              "line": 68
-            }
-          }
-        },
-        {
-          "id": "74",
-          "mutatorName": "OptionalChaining",
-          "replacement": "parsed.disabledTools",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 52,
-              "line": 71
-            },
-            "start": {
-              "column": 31,
-              "line": 71
-            }
-          }
-        },
-        {
-          "id": "38",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 41
-            },
-            "start": {
-              "column": 9,
-              "line": 41
-            }
-          }
-        },
-        {
-          "id": "40",
-          "mutatorName": "EqualityOperator",
-          "replacement": "unit.userDisabled.size >= 0",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 41
-            },
-            "start": {
-              "column": 9,
-              "line": 41
-            }
-          }
-        },
-        {
-          "id": "45",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 23,
-              "line": 46
-            },
-            "start": {
-              "column": 9,
-              "line": 46
-            }
-          }
-        },
-        {
-          "id": "47",
-          "mutatorName": "EqualityOperator",
-          "replacement": "names.size >= 0",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 23,
-              "line": 46
-            },
-            "start": {
-              "column": 9,
-              "line": 46
-            }
-          }
-        },
-        {
-          "id": "49",
-          "mutatorName": "MethodExpression",
-          "replacement": "[...names]",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 59,
-              "line": 46
-            },
-            "start": {
-              "column": 42,
-              "line": 46
-            }
-          }
-        },
-        {
-          "id": "52",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "existsSync(dir)",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 25,
-              "line": 50
-            },
-            "start": {
-              "column": 9,
-              "line": 50
-            }
-          }
-        },
-        {
-          "id": "53",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 25,
-              "line": 50
-            },
-            "start": {
-              "column": 9,
-              "line": 50
-            }
-          }
-        },
-        {
-          "id": "54",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "4",
-            "5"
-          ],
-          "location": {
-            "end": {
-              "column": 25,
-              "line": 50
-            },
-            "start": {
-              "column": 9,
-              "line": 50
-            }
-          }
         }
       ],
       "source": "/**\n * dsh-mcp-manager — 中间层用户状态与目录缓存持久化（单一事实源）。\n */\n\nimport { createHash } from \"node:crypto\";\nimport { mkdir, readFile, rename, writeFile } from \"node:fs/promises\";\nimport { existsSync } from \"node:fs\";\nimport { dirname, join } from \"node:path\";\nimport { homedir } from \"node:os\";\nimport type { ProjectUnit, DisabledToolsMap } from \"./middleware-types.ts\";\nimport { parseDisabledTools } from \"./middleware-utils.ts\";\n\n/** userDisabled 持久化文件路径。 */\nexport function userStateFile() {\n  return join(process.env.DSH_HOME ?? join(homedir(), \".dsh\"), \"dsh-mcp-user-state.json\");\n}\n\n/** 加载 userDisabled（损坏/缺失 → 空）。 */\nexport async function loadUserState(file: string): Promise<Map<string, Set<string>>> {\n  const out = new Map<string, Set<string>>();\n  try {\n    if (!existsSync(file)) return out;\n    const raw = await readFile(file, \"utf8\");\n    const parsed = JSON.parse(raw) as { disabled?: Record<string, string[]> } | null;\n    if (parsed && typeof parsed === \"object\" && typeof parsed.disabled === \"object\" && parsed.disabled !== null) {\n      for (const [root, names] of Object.entries(parsed.disabled)) {\n        if (Array.isArray(names)) out.set(root, new Set(names.filter((name) => typeof name === \"string\")));\n      }\n    }\n  } catch {\n    // 损坏忽略\n  }\n  return out;\n}\n\n/** 持久化 userDisabled（合并式：先读现有文件，内存 units 覆盖，保留已淘汰\n * root 的记录——防 LRU 淘汰/卸载后禁用记录被静默抹掉，P1 修复）。 */\nexport async function saveUserState(file: string, units: Map<string, ProjectUnit>): Promise<void> {\n  const merged = await loadUserState(file);\n  for (const [root, unit] of units) {\n    if (unit.userDisabled.size > 0) merged.set(root, new Set(unit.userDisabled));\n    else merged.delete(root);\n  }\n  const disabled: Record<string, string[]> = {};\n  for (const [root, names] of merged) {\n    if (names.size > 0) disabled[root] = [...names].sort();\n  }\n  try {\n    const dir = dirname(file);\n    if (!existsSync(dir)) await mkdir(dir, { recursive: true });\n    const tmp = `${file}.${process.pid}.${Date.now().toString(36)}.tmp`;\n    await writeFile(tmp, JSON.stringify({ version: 1, disabled }, null, 2), \"utf8\");\n    await rename(tmp, file);\n  } catch {\n    // 落盘失败不阻塞主流程\n  }\n}\n\n/** 目录缓存文件路径（每工作空间一份；root 哈希防路径注入）。 */\nexport function catalogCacheFileFor(root: string) {\n  const hash = createHash(\"sha256\").update(root).digest(\"hex\").slice(0, 16);\n  return join(process.env.DSH_HOME ?? join(homedir(), \".dsh\"), \"dsh-mcp-catalog\", `${hash}.json`);\n}\n\n/** 加载工具级禁用（disabledTools 三段：root → server → tool[]；损坏/缺失 → 空）。 */\nexport async function loadDisabledTools(file: string): Promise<DisabledToolsMap> {\n  try {\n    if (!existsSync(file)) return new Map();\n    const raw = await readFile(file, \"utf8\");\n    const parsed = JSON.parse(raw) as { disabledTools?: unknown } | null;\n    return parseDisabledTools(parsed?.disabledTools);\n  } catch {\n    // 损坏忽略\n    return new Map();\n  }\n}\n\n/**\n * 持久化工具级禁用。内存映射是进程内完整视图（启动时 loadDisabledTools 全量\n * 加载 + setToolDisabled 增量变更），直接整图写盘即满足「多工作空间互不抹掉」\n * （同一进程内所有空间共用同一映射）；跨进程并发写属读-改-写竞态，与\n * 服务器级 userDisabled（saveUserState）现状一致。\n */\nexport async function saveDisabledTools(file: string, disabledTools: DisabledToolsMap): Promise<void> {\n  const payload: Record<string, Record<string, string[]>> = {};\n  for (const [root, servers] of disabledTools) {\n    const serverRec: Record<string, string[]> = {};\n    for (const [server, tools] of servers) {\n      if (tools.size > 0) serverRec[server] = [...tools].sort();\n    }\n    if (Object.keys(serverRec).length > 0) payload[root] = serverRec;\n  }\n  try {\n    const dir = dirname(file);\n    if (!existsSync(dir)) await mkdir(dir, { recursive: true });\n    const tmp = `${file}.${process.pid}.${Date.now().toString(36)}.tmp`;\n    await writeFile(tmp, JSON.stringify({ version: 1, disabledTools: payload }, null, 2), \"utf8\");\n    await rename(tmp, file);\n  } catch {\n    // 落盘失败不阻塞主流程\n  }\n}"
@@ -2222,6 +2249,34 @@
           }
         },
         {
+          "id": "100",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: scope=project 断开写项目单元: uncaughtException: scope=project 断开写项目单元",
+          "status": "Killed",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "2",
+            "4",
+            "6",
+            "9"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 16
+            },
+            "start": {
+              "column": 69,
+              "line": 14
+            }
+          }
+        },
+        {
           "id": "101",
           "mutatorName": "ConditionalExpression",
           "replacement": "true",
@@ -2231,6 +2286,34 @@
           "static": false,
           "killedBy": [
             "2"
+          ],
+          "coveredBy": [
+            "2",
+            "4",
+            "6",
+            "9"
+          ],
+          "location": {
+            "end": {
+              "column": 33,
+              "line": 15
+            },
+            "start": {
+              "column": 10,
+              "line": 15
+            }
+          }
+        },
+        {
+          "id": "102",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: scope=project 断开写项目单元: uncaughtException: scope=project 断开写项目单元",
+          "status": "Killed",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [
+            "4"
           ],
           "coveredBy": [
             "2",
@@ -2276,62 +2359,6 @@
               "line": 15
             }
           }
-        },
-        {
-          "id": "100",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: scope=project 断开写项目单元: uncaughtException: scope=project 断开写项目单元",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 2,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "2",
-            "4",
-            "6",
-            "9"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 16
-            },
-            "start": {
-              "column": 69,
-              "line": 14
-            }
-          }
-        },
-        {
-          "id": "102",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: scope=project 断开写项目单元: uncaughtException: scope=project 断开写项目单元",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 2,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "2",
-            "4",
-            "6",
-            "9"
-          ],
-          "location": {
-            "end": {
-              "column": 33,
-              "line": 15
-            },
-            "start": {
-              "column": 10,
-              "line": 15
-            }
-          }
         }
       ],
       "source": "// dsh-mcp-manager — scope 常量与归一化（单一事实源）。\n//\n// 历史：scope 字符串 \"global\"/\"project\" 曾在宿主/监督器/路由硬编码 25+ 处，\n// 新增 scope 类型需多处协调。独立成模块以避免 index.js ↔ supervisor/routes\n// 的循环依赖，Manager / supervisor / routes 统一从此 import。\n\n/** 全局作用域。 */\nexport const SCOPE_GLOBAL = \"global\";\n\n/** 项目级作用域。 */\nexport const SCOPE_PROJECT = \"project\";\n\n/** 归一化 scope（非法值回落 global）。 */\nexport function normalizeScope(value: string): \"global\" | \"project\" {\n  return value === SCOPE_PROJECT ? SCOPE_PROJECT : SCOPE_GLOBAL;\n}\n"
@@ -2339,6 +2366,50 @@
     "packages/dsh-mcp-manager/src/store.ts": {
       "language": "typescript",
       "mutants": [
+        {
+          "id": "104",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "Survived",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 19
+            },
+            "start": {
+              "column": 36,
+              "line": 17
+            }
+          }
+        },
+        {
+          "id": "105",
+          "mutatorName": "LogicalOperator",
+          "replacement": "process.env.DSH_HOME && join(homedir(), \".dsh\")",
+          "status": "Survived",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 62,
+              "line": 18
+            },
+            "start": {
+              "column": 15,
+              "line": 18
+            }
+          }
+        },
         {
           "id": "106",
           "mutatorName": "StringLiteral",
@@ -2454,6 +2525,93 @@
           }
         },
         {
+          "id": "111",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: server \"dup\" not found in project scope: uncaughtException: server \"dup\" not found in project scope",
+          "status": "Killed",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "4",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 58
+            },
+            "start": {
+              "column": 16,
+              "line": 38
+            }
+          }
+        },
+        {
+          "id": "112",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "existsSync(this.path)",
+          "statusReason": "uncaughtException: server \"dup\" not found in project scope: uncaughtException: server \"dup\" not found in project scope",
+          "status": "Killed",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "4",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 31,
+              "line": 39
+            },
+            "start": {
+              "column": 9,
+              "line": 39
+            }
+          }
+        },
+        {
+          "id": "113",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: server \"dup\" not found in project scope: uncaughtException: server \"dup\" not found in project scope",
+          "status": "Killed",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "4",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 31,
+              "line": 39
+            },
+            "start": {
+              "column": 9,
+              "line": 39
+            }
+          }
+        },
+        {
           "id": "114",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
@@ -2559,6 +2717,32 @@
           }
         },
         {
+          "id": "118",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: server \"dup\" not found in project scope: uncaughtException: server \"dup\" not found in project scope",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 6,
+              "line": 50
+            },
+            "start": {
+              "column": 9,
+              "line": 45
+            }
+          }
+        },
+        {
           "id": "119",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -2586,6 +2770,32 @@
           "static": false,
           "killedBy": [
             "7"
+          ],
+          "coveredBy": [
+            "4",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 40,
+              "line": 48
+            },
+            "start": {
+              "column": 11,
+              "line": 48
+            }
+          }
+        },
+        {
+          "id": "121",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: server \"dup\" not found in project scope: uncaughtException: server \"dup\" not found in project scope",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
           ],
           "coveredBy": [
             "4",
@@ -2710,6 +2920,31 @@
           "killedBy": [
             "3"
           ],
+          "coveredBy": [
+            "3",
+            "4",
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 25,
+              "line": 62
+            },
+            "start": {
+              "column": 9,
+              "line": 62
+            }
+          }
+        },
+        {
+          "id": "127",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [],
           "coveredBy": [
             "3",
             "4",
@@ -2897,6 +3132,424 @@
             "start": {
               "column": 13,
               "line": 68
+            }
+          }
+        },
+        {
+          "id": "136",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: 重读生效: uncaughtException: 重读生效",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 83
+            },
+            "start": {
+              "column": 25,
+              "line": 74
+            }
+          }
+        },
+        {
+          "id": "137",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: server \"dup\" not found in global scope: uncaughtException: server \"dup\" not found in global scope",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 6,
+              "line": 78
+            },
+            "start": {
+              "column": 9,
+              "line": 76
+            }
+          }
+        },
+        {
+          "id": "138",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: 无变化不广播: uncaughtException: 无变化不广播",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 6,
+              "line": 80
+            },
+            "start": {
+              "column": 13,
+              "line": 78
+            }
+          }
+        },
+        {
+          "id": "139",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: 重读生效: uncaughtException: 重读生效",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 35,
+              "line": 81
+            },
+            "start": {
+              "column": 9,
+              "line": 81
+            }
+          }
+        },
+        {
+          "id": "140",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: 目标=配置全集 enabled（排除 disabled 的 p2、不依赖已有 entry）: uncaughtException: 目标=配置全集 enabled（排除 disabled 的 p2、不依赖已有 entry）",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 35,
+              "line": 81
+            },
+            "start": {
+              "column": 9,
+              "line": 81
+            }
+          }
+        },
+        {
+          "id": "141",
+          "mutatorName": "EqualityOperator",
+          "replacement": "this.mtimeMs !== undefined",
+          "statusReason": "uncaughtException: 目标=配置全集 enabled（排除 disabled 的 p2、不依赖已有 entry）: uncaughtException: 目标=配置全集 enabled（排除 disabled 的 p2、不依赖已有 entry）",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 35,
+              "line": 81
+            },
+            "start": {
+              "column": 9,
+              "line": 81
+            }
+          }
+        },
+        {
+          "id": "142",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "true",
+          "statusReason": "uncaughtException: 目标=配置全集 enabled（排除 disabled 的 p2、不依赖已有 entry）: uncaughtException: 目标=配置全集 enabled（排除 disabled 的 p2、不依赖已有 entry）",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 49,
+              "line": 81
+            },
+            "start": {
+              "column": 44,
+              "line": 81
+            }
+          }
+        },
+        {
+          "id": "143",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: server \"dup\" not found in global scope: uncaughtException: server \"dup\" not found in global scope",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 36,
+              "line": 82
+            },
+            "start": {
+              "column": 12,
+              "line": 82
+            }
+          }
+        },
+        {
+          "id": "144",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: 重读生效: uncaughtException: 重读生效",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 36,
+              "line": 82
+            },
+            "start": {
+              "column": 12,
+              "line": 82
+            }
+          }
+        },
+        {
+          "id": "145",
+          "mutatorName": "EqualityOperator",
+          "replacement": "current === this.mtimeMs",
+          "statusReason": "uncaughtException: server \"dup\" not found in global scope: uncaughtException: server \"dup\" not found in global scope",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 36,
+              "line": 82
+            },
+            "start": {
+              "column": 12,
+              "line": 82
+            }
+          }
+        },
+        {
+          "id": "146",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: 重读生效: uncaughtException: 重读生效",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 90
+            },
+            "start": {
+              "column": 27,
+              "line": 86
+            }
+          }
+        },
+        {
+          "id": "147",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "await this.changedOnDisk()",
+          "statusReason": "uncaughtException: 目标=配置全集 enabled（排除 disabled 的 p2、不依赖已有 entry）: uncaughtException: 目标=配置全集 enabled（排除 disabled 的 p2、不依赖已有 entry）",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 38,
+              "line": 87
+            },
+            "start": {
+              "column": 9,
+              "line": 87
+            }
+          }
+        },
+        {
+          "id": "148",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: 重读生效: uncaughtException: 重读生效",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 38,
+              "line": 87
+            },
+            "start": {
+              "column": 9,
+              "line": 87
+            }
+          }
+        },
+        {
+          "id": "149",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: 目标=配置全集 enabled（排除 disabled 的 p2、不依赖已有 entry）: uncaughtException: 目标=配置全集 enabled（排除 disabled 的 p2、不依赖已有 entry）",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 38,
+              "line": 87
+            },
+            "start": {
+              "column": 9,
+              "line": 87
+            }
+          }
+        },
+        {
+          "id": "150",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "true",
+          "statusReason": "uncaughtException: 无变化不广播: uncaughtException: 无变化不广播",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 52,
+              "line": 87
+            },
+            "start": {
+              "column": 47,
+              "line": 87
             }
           }
         },
@@ -3130,6 +3783,34 @@
           }
         },
         {
+          "id": "159",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: The expression evaluated to a falsy value:: uncaughtException: The expression evaluated to a falsy value:",
+          "status": "Killed",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "3",
+            "4",
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 84,
+              "line": 97
+            },
+            "start": {
+              "column": 58,
+              "line": 97
+            }
+          }
+        },
+        {
           "id": "160",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
@@ -3331,6 +4012,60 @@
           }
         },
         {
+          "id": "167",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: 配置移除后 supervisor 同步移除: uncaughtException: 配置移除后 supervisor 同步移除",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4",
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 105
+            },
+            "start": {
+              "column": 24,
+              "line": 102
+            }
+          }
+        },
+        {
+          "id": "168",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "statusReason": "uncaughtException: 配置移除后 supervisor 同步移除: uncaughtException: 配置移除后 supervisor 同步移除",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4",
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 77,
+              "line": 103
+            },
+            "start": {
+              "column": 47,
+              "line": 103
+            }
+          }
+        },
+        {
           "id": "169",
           "mutatorName": "ConditionalExpression",
           "replacement": "true",
@@ -3340,6 +4075,60 @@
           "static": false,
           "killedBy": [
             "7"
+          ],
+          "coveredBy": [
+            "4",
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 77,
+              "line": 103
+            },
+            "start": {
+              "column": 58,
+              "line": 103
+            }
+          }
+        },
+        {
+          "id": "170",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: 配置移除后 supervisor 同步移除: uncaughtException: 配置移除后 supervisor 同步移除",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4",
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 77,
+              "line": 103
+            },
+            "start": {
+              "column": 58,
+              "line": 103
+            }
+          }
+        },
+        {
+          "id": "171",
+          "mutatorName": "EqualityOperator",
+          "replacement": "entry.name !== name",
+          "statusReason": "uncaughtException: 配置移除后 supervisor 同步移除: uncaughtException: 配置移除后 supervisor 同步移除",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
           ],
           "coveredBy": [
             "4",
@@ -3385,577 +4174,13 @@
           }
         },
         {
-          "id": "104",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 19
-            },
-            "start": {
-              "column": 36,
-              "line": 17
-            }
-          }
-        },
-        {
-          "id": "105",
-          "mutatorName": "LogicalOperator",
-          "replacement": "process.env.DSH_HOME && join(homedir(), \".dsh\")",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 1,
-          "coveredBy": [
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 62,
-              "line": 18
-            },
-            "start": {
-              "column": 15,
-              "line": 18
-            }
-          }
-        },
-        {
-          "id": "121",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: server \"dup\" not found in project scope: uncaughtException: server \"dup\" not found in project scope",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 40,
-              "line": 48
-            },
-            "start": {
-              "column": 11,
-              "line": 48
-            }
-          }
-        },
-        {
-          "id": "118",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: server \"dup\" not found in project scope: uncaughtException: server \"dup\" not found in project scope",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 6,
-              "line": 50
-            },
-            "start": {
-              "column": 9,
-              "line": 45
-            }
-          }
-        },
-        {
-          "id": "111",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: server \"dup\" not found in project scope: uncaughtException: server \"dup\" not found in project scope",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 4,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "4",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 58
-            },
-            "start": {
-              "column": 16,
-              "line": 38
-            }
-          }
-        },
-        {
-          "id": "113",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: server \"dup\" not found in project scope: uncaughtException: server \"dup\" not found in project scope",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 4,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "4",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 31,
-              "line": 39
-            },
-            "start": {
-              "column": 9,
-              "line": 39
-            }
-          }
-        },
-        {
-          "id": "136",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: 重读生效: uncaughtException: 重读生效",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 83
-            },
-            "start": {
-              "column": 25,
-              "line": 74
-            }
-          }
-        },
-        {
-          "id": "112",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "existsSync(this.path)",
-          "statusReason": "uncaughtException: server \"dup\" not found in project scope: uncaughtException: server \"dup\" not found in project scope",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 4,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "4",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 31,
-              "line": 39
-            },
-            "start": {
-              "column": 9,
-              "line": 39
-            }
-          }
-        },
-        {
-          "id": "142",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "true",
-          "statusReason": "uncaughtException: 目标=配置全集 enabled（排除 disabled 的 p2、不依赖已有 entry）: uncaughtException: 目标=配置全集 enabled（排除 disabled 的 p2、不依赖已有 entry）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 49,
-              "line": 81
-            },
-            "start": {
-              "column": 44,
-              "line": 81
-            }
-          }
-        },
-        {
-          "id": "139",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: 重读生效: uncaughtException: 重读生效",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 81
-            },
-            "start": {
-              "column": 9,
-              "line": 81
-            }
-          }
-        },
-        {
-          "id": "137",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: server \"dup\" not found in global scope: uncaughtException: server \"dup\" not found in global scope",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 6,
-              "line": 78
-            },
-            "start": {
-              "column": 9,
-              "line": 76
-            }
-          }
-        },
-        {
-          "id": "138",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: 无变化不广播: uncaughtException: 无变化不广播",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 6,
-              "line": 80
-            },
-            "start": {
-              "column": 13,
-              "line": 78
-            }
-          }
-        },
-        {
-          "id": "127",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 4,
-          "coveredBy": [
-            "3",
-            "4",
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 25,
-              "line": 62
-            },
-            "start": {
-              "column": 9,
-              "line": 62
-            }
-          }
-        },
-        {
-          "id": "140",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: 目标=配置全集 enabled（排除 disabled 的 p2、不依赖已有 entry）: uncaughtException: 目标=配置全集 enabled（排除 disabled 的 p2、不依赖已有 entry）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 81
-            },
-            "start": {
-              "column": 9,
-              "line": 81
-            }
-          }
-        },
-        {
-          "id": "141",
-          "mutatorName": "EqualityOperator",
-          "replacement": "this.mtimeMs !== undefined",
-          "statusReason": "uncaughtException: 目标=配置全集 enabled（排除 disabled 的 p2、不依赖已有 entry）: uncaughtException: 目标=配置全集 enabled（排除 disabled 的 p2、不依赖已有 entry）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 81
-            },
-            "start": {
-              "column": 9,
-              "line": 81
-            }
-          }
-        },
-        {
-          "id": "167",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: 配置移除后 supervisor 同步移除: uncaughtException: 配置移除后 supervisor 同步移除",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4",
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 105
-            },
-            "start": {
-              "column": 24,
-              "line": 102
-            }
-          }
-        },
-        {
-          "id": "143",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: server \"dup\" not found in global scope: uncaughtException: server \"dup\" not found in global scope",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 36,
-              "line": 82
-            },
-            "start": {
-              "column": 12,
-              "line": 82
-            }
-          }
-        },
-        {
-          "id": "147",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "await this.changedOnDisk()",
-          "statusReason": "uncaughtException: 目标=配置全集 enabled（排除 disabled 的 p2、不依赖已有 entry）: uncaughtException: 目标=配置全集 enabled（排除 disabled 的 p2、不依赖已有 entry）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 38,
-              "line": 87
-            },
-            "start": {
-              "column": 9,
-              "line": 87
-            }
-          }
-        },
-        {
-          "id": "170",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: 配置移除后 supervisor 同步移除: uncaughtException: 配置移除后 supervisor 同步移除",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4",
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 77,
-              "line": 103
-            },
-            "start": {
-              "column": 58,
-              "line": 103
-            }
-          }
-        },
-        {
-          "id": "145",
-          "mutatorName": "EqualityOperator",
-          "replacement": "current === this.mtimeMs",
-          "statusReason": "uncaughtException: server \"dup\" not found in global scope: uncaughtException: server \"dup\" not found in global scope",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 36,
-              "line": 82
-            },
-            "start": {
-              "column": 12,
-              "line": 82
-            }
-          }
-        },
-        {
-          "id": "168",
-          "mutatorName": "ArrowFunction",
-          "replacement": "() => undefined",
-          "statusReason": "uncaughtException: 配置移除后 supervisor 同步移除: uncaughtException: 配置移除后 supervisor 同步移除",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4",
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 77,
-              "line": 103
-            },
-            "start": {
-              "column": 47,
-              "line": 103
-            }
-          }
-        },
-        {
           "id": "173",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
           "statusReason": "uncaughtException: 配置移除后 supervisor 同步移除: uncaughtException: 配置移除后 supervisor 同步移除",
           "status": "Killed",
-          "static": false,
           "testsCompleted": 1,
+          "static": false,
           "killedBy": [
             "4"
           ],
@@ -3976,208 +4201,13 @@
           }
         },
         {
-          "id": "144",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: 重读生效: uncaughtException: 重读生效",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 36,
-              "line": 82
-            },
-            "start": {
-              "column": 12,
-              "line": 82
-            }
-          }
-        },
-        {
-          "id": "146",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: 重读生效: uncaughtException: 重读生效",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 90
-            },
-            "start": {
-              "column": 27,
-              "line": 86
-            }
-          }
-        },
-        {
-          "id": "171",
-          "mutatorName": "EqualityOperator",
-          "replacement": "entry.name !== name",
-          "statusReason": "uncaughtException: 配置移除后 supervisor 同步移除: uncaughtException: 配置移除后 supervisor 同步移除",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4",
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 77,
-              "line": 103
-            },
-            "start": {
-              "column": 58,
-              "line": 103
-            }
-          }
-        },
-        {
-          "id": "149",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: 目标=配置全集 enabled（排除 disabled 的 p2、不依赖已有 entry）: uncaughtException: 目标=配置全集 enabled（排除 disabled 的 p2、不依赖已有 entry）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 38,
-              "line": 87
-            },
-            "start": {
-              "column": 9,
-              "line": 87
-            }
-          }
-        },
-        {
-          "id": "159",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: The expression evaluated to a falsy value:: uncaughtException: The expression evaluated to a falsy value:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 2,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "3",
-            "4",
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 84,
-              "line": 97
-            },
-            "start": {
-              "column": 58,
-              "line": 97
-            }
-          }
-        },
-        {
-          "id": "150",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "true",
-          "statusReason": "uncaughtException: 无变化不广播: uncaughtException: 无变化不广播",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 52,
-              "line": 87
-            },
-            "start": {
-              "column": 47,
-              "line": 87
-            }
-          }
-        },
-        {
-          "id": "148",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: 重读生效: uncaughtException: 重读生效",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 38,
-              "line": 87
-            },
-            "start": {
-              "column": 9,
-              "line": 87
-            }
-          }
-        },
-        {
           "id": "174",
           "mutatorName": "EqualityOperator",
           "replacement": "index > 0",
           "statusReason": "uncaughtException: 配置移除后 supervisor 同步移除: uncaughtException: 配置移除后 supervisor 同步移除",
           "status": "Killed",
-          "static": false,
           "testsCompleted": 1,
+          "static": false,
           "killedBy": [
             "4"
           ],
@@ -4203,8 +4233,8 @@
           "replacement": "index < 0",
           "statusReason": "uncaughtException: 配置移除后 supervisor 同步移除: uncaughtException: 配置移除后 supervisor 同步移除",
           "status": "Killed",
-          "static": false,
           "testsCompleted": 1,
+          "static": false,
           "killedBy": [
             "4"
           ],
@@ -4230,8 +4260,8 @@
           "replacement": ";",
           "statusReason": "uncaughtException: 配置移除后 supervisor 同步移除: uncaughtException: 配置移除后 supervisor 同步移除",
           "status": "Killed",
-          "static": false,
           "testsCompleted": 1,
+          "static": false,
           "killedBy": [
             "4"
           ],
@@ -4272,6 +4302,37 @@
             "start": {
               "column": 49,
               "line": 46
+            }
+          }
+        },
+        {
+          "id": "178",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 10,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9"
+          ],
+          "location": {
+            "end": {
+              "column": 16,
+              "line": 47
+            },
+            "start": {
+              "column": 12,
+              "line": 47
             }
           }
         },
@@ -6097,6 +6158,37 @@
           }
         },
         {
+          "id": "275",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "status": "Survived",
+          "testsCompleted": 10,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9"
+          ],
+          "location": {
+            "end": {
+              "column": 91,
+              "line": 131
+            },
+            "start": {
+              "column": 22,
+              "line": 131
+            }
+          }
+        },
+        {
           "id": "276",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -6219,6 +6311,37 @@
             "start": {
               "column": 84,
               "line": 131
+            }
+          }
+        },
+        {
+          "id": "283",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "status": "Survived",
+          "testsCompleted": 10,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9"
+          ],
+          "location": {
+            "end": {
+              "column": 133,
+              "line": 132
+            },
+            "start": {
+              "column": 40,
+              "line": 132
             }
           }
         },
@@ -6367,6 +6490,37 @@
           }
         },
         {
+          "id": "292",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "status": "Survived",
+          "testsCompleted": 10,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9"
+          ],
+          "location": {
+            "end": {
+              "column": 87,
+              "line": 133
+            },
+            "start": {
+              "column": 40,
+              "line": 133
+            }
+          }
+        },
+        {
           "id": "293",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -6435,6 +6589,37 @@
             "start": {
               "column": 76,
               "line": 133
+            }
+          }
+        },
+        {
+          "id": "297",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "status": "Survived",
+          "testsCompleted": 10,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9"
+          ],
+          "location": {
+            "end": {
+              "column": 112,
+              "line": 135
+            },
+            "start": {
+              "column": 36,
+              "line": 135
             }
           }
         },
@@ -13128,6 +13313,32 @@
           }
         },
         {
+          "id": "644",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 28,
+              "line": 337
+            },
+            "start": {
+              "column": 23,
+              "line": 337
+            }
+          }
+        },
+        {
           "id": "645",
           "mutatorName": "ConditionalExpression",
           "replacement": "true",
@@ -13196,6 +13407,32 @@
           "killedBy": [
             "8"
           ],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 34,
+              "line": 339
+            },
+            "start": {
+              "column": 9,
+              "line": 339
+            }
+          }
+        },
+        {
+          "id": "648",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
           "coveredBy": [
             "2",
             "3",
@@ -13399,6 +13636,84 @@
           }
         },
         {
+          "id": "657",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 50,
+              "line": 344
+            },
+            "start": {
+              "column": 20,
+              "line": 344
+            }
+          }
+        },
+        {
+          "id": "658",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 50,
+              "line": 344
+            },
+            "start": {
+              "column": 20,
+              "line": 344
+            }
+          }
+        },
+        {
+          "id": "659",
+          "mutatorName": "EqualityOperator",
+          "replacement": "this.connectedAt !== undefined",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 50,
+              "line": 344
+            },
+            "start": {
+              "column": 20,
+              "line": 344
+            }
+          }
+        },
+        {
           "id": "660",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -13435,6 +13750,162 @@
           }
         },
         {
+          "id": "662",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 6,
+              "line": 355
+            },
+            "start": {
+              "column": 44,
+              "line": 351
+            }
+          }
+        },
+        {
+          "id": "663",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 24,
+              "line": 352
+            },
+            "start": {
+              "column": 11,
+              "line": 352
+            }
+          }
+        },
+        {
+          "id": "664",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 24,
+              "line": 352
+            },
+            "start": {
+              "column": 11,
+              "line": 352
+            }
+          }
+        },
+        {
+          "id": "665",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 33,
+              "line": 353
+            },
+            "start": {
+              "column": 11,
+              "line": 353
+            }
+          }
+        },
+        {
+          "id": "666",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 33,
+              "line": 353
+            },
+            "start": {
+              "column": 11,
+              "line": 353
+            }
+          }
+        },
+        {
+          "id": "667",
+          "mutatorName": "EqualityOperator",
+          "replacement": "this.client === client",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 33,
+              "line": 353
+            },
+            "start": {
+              "column": 11,
+              "line": 353
+            }
+          }
+        },
+        {
           "id": "668",
           "mutatorName": "CallExpression",
           "replacement": ";",
@@ -13459,6 +13930,84 @@
           }
         },
         {
+          "id": "669",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 66,
+              "line": 356
+            },
+            "start": {
+              "column": 9,
+              "line": 356
+            }
+          }
+        },
+        {
+          "id": "670",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 66,
+              "line": 356
+            },
+            "start": {
+              "column": 9,
+              "line": 356
+            }
+          }
+        },
+        {
+          "id": "671",
+          "mutatorName": "LogicalOperator",
+          "replacement": "\"onClose\" in transport || transport.onClose !== undefined",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 66,
+              "line": 356
+            },
+            "start": {
+              "column": 9,
+              "line": 356
+            }
+          }
+        },
+        {
           "id": "672",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -13472,6 +14021,84 @@
             },
             "start": {
               "column": 9,
+              "line": 356
+            }
+          }
+        },
+        {
+          "id": "673",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 66,
+              "line": 356
+            },
+            "start": {
+              "column": 35,
+              "line": 356
+            }
+          }
+        },
+        {
+          "id": "674",
+          "mutatorName": "EqualityOperator",
+          "replacement": "transport.onClose === undefined",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 66,
+              "line": 356
+            },
+            "start": {
+              "column": 35,
+              "line": 356
+            }
+          }
+        },
+        {
+          "id": "675",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 100,
+              "line": 356
+            },
+            "start": {
+              "column": 68,
               "line": 356
             }
           }
@@ -13747,6 +14374,84 @@
             },
             "start": {
               "column": 11,
+              "line": 368
+            }
+          }
+        },
+        {
+          "id": "689",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 50,
+              "line": 368
+            },
+            "start": {
+              "column": 11,
+              "line": 368
+            }
+          }
+        },
+        {
+          "id": "690",
+          "mutatorName": "LogicalOperator",
+          "replacement": "this.disposed && this.client !== client",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 50,
+              "line": 368
+            },
+            "start": {
+              "column": 11,
+              "line": 368
+            }
+          }
+        },
+        {
+          "id": "691",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 50,
+              "line": 368
+            },
+            "start": {
+              "column": 28,
               "line": 368
             }
           }
@@ -14083,6 +14788,32 @@
           }
         },
         {
+          "id": "706",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 26,
+              "line": 381
+            },
+            "start": {
+              "column": 13,
+              "line": 381
+            }
+          }
+        },
+        {
           "id": "707",
           "mutatorName": "CallExpression",
           "replacement": ";",
@@ -14282,6 +15013,32 @@
           }
         },
         {
+          "id": "714",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 75,
+              "line": 388
+            },
+            "start": {
+              "column": 38,
+              "line": 388
+            }
+          }
+        },
+        {
           "id": "715",
           "mutatorName": "EqualityOperator",
           "replacement": "typeof transport.close !== \"function\"",
@@ -14441,6 +15198,32 @@
             "start": {
               "column": 9,
               "line": 392
+            }
+          }
+        },
+        {
+          "id": "721",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 17,
+              "line": 393
+            },
+            "start": {
+              "column": 9,
+              "line": 393
             }
           }
         },
@@ -14706,6 +15489,29 @@
           }
         },
         {
+          "id": "733",
+          "mutatorName": "LogicalOperator",
+          "replacement": "error && new Error(\"reconnect disabled\")",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 72,
+              "line": 400
+            },
+            "start": {
+              "column": 32,
+              "line": 400
+            }
+          }
+        },
+        {
           "id": "734",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -14744,6 +15550,110 @@
           "location": {
             "end": {
               "column": 93,
+              "line": 403
+            },
+            "start": {
+              "column": 9,
+              "line": 403
+            }
+          }
+        },
+        {
+          "id": "736",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 93,
+              "line": 403
+            },
+            "start": {
+              "column": 9,
+              "line": 403
+            }
+          }
+        },
+        {
+          "id": "737",
+          "mutatorName": "LogicalOperator",
+          "replacement": "this.connectedAt !== undefined || Date.now() - this.connectedAt >= policy.maxDelayMs",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 93,
+              "line": 403
+            },
+            "start": {
+              "column": 9,
+              "line": 403
+            }
+          }
+        },
+        {
+          "id": "738",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 39,
+              "line": 403
+            },
+            "start": {
+              "column": 9,
+              "line": 403
+            }
+          }
+        },
+        {
+          "id": "739",
+          "mutatorName": "EqualityOperator",
+          "replacement": "this.connectedAt === undefined",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 39,
               "line": 403
             },
             "start": {
@@ -15365,6 +16275,32 @@
             "start": {
               "column": 44,
               "line": 421
+            }
+          }
+        },
+        {
+          "id": "766",
+          "mutatorName": "OptionalChaining",
+          "replacement": "this.reconnectTimer.unref()",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 34,
+              "line": 426
+            },
+            "start": {
+              "column": 5,
+              "line": 426
             }
           }
         },
@@ -16976,6 +17912,32 @@
           }
         },
         {
+          "id": "841",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 42,
+              "line": 498
+            },
+            "start": {
+              "column": 9,
+              "line": 498
+            }
+          }
+        },
+        {
           "id": "842",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
@@ -17063,6 +18025,32 @@
           }
         },
         {
+          "id": "845",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 41,
+              "line": 499
+            },
+            "start": {
+              "column": 7,
+              "line": 499
+            }
+          }
+        },
+        {
           "id": "846",
           "mutatorName": "ConditionalExpression",
           "replacement": "true",
@@ -17073,6 +18061,32 @@
           "killedBy": [
             "2"
           ],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 29,
+              "line": 505
+            },
+            "start": {
+              "column": 9,
+              "line": 505
+            }
+          }
+        },
+        {
+          "id": "847",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
           "coveredBy": [
             "2",
             "3",
@@ -17121,6 +18135,199 @@
           }
         },
         {
+          "id": "849",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 6,
+              "line": 514
+            },
+            "start": {
+              "column": 31,
+              "line": 505
+            }
+          }
+        },
+        {
+          "id": "850",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 75,
+              "line": 507
+            },
+            "start": {
+              "column": 11,
+              "line": 507
+            }
+          }
+        },
+        {
+          "id": "851",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 75,
+              "line": 507
+            },
+            "start": {
+              "column": 11,
+              "line": 507
+            }
+          }
+        },
+        {
+          "id": "852",
+          "mutatorName": "LogicalOperator",
+          "replacement": "transport !== undefined || typeof transport.close === \"function\"",
+          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'close'): uncaughtException: Cannot read properties of undefined (reading 'close')",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 75,
+              "line": 507
+            },
+            "start": {
+              "column": 11,
+              "line": 507
+            }
+          }
+        },
+        {
+          "id": "853",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'close'): uncaughtException: Cannot read properties of undefined (reading 'close')",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 34,
+              "line": 507
+            },
+            "start": {
+              "column": 11,
+              "line": 507
+            }
+          }
+        },
+        {
+          "id": "854",
+          "mutatorName": "EqualityOperator",
+          "replacement": "transport === undefined",
+          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'close'): uncaughtException: Cannot read properties of undefined (reading 'close')",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "4",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 34,
+              "line": 507
+            },
+            "start": {
+              "column": 11,
+              "line": 507
+            }
+          }
+        },
+        {
+          "id": "855",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 75,
+              "line": 507
+            },
+            "start": {
+              "column": 38,
+              "line": 507
+            }
+          }
+        },
+        {
+          "id": "856",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof transport.close !== \"function\"",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 75,
+              "line": 507
+            },
+            "start": {
+              "column": 38,
+              "line": 507
+            }
+          }
+        },
+        {
           "id": "857",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -17135,6 +18342,52 @@
             "start": {
               "column": 65,
               "line": 507
+            }
+          }
+        },
+        {
+          "id": "858",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 8,
+              "line": 513
+            },
+            "start": {
+              "column": 77,
+              "line": 507
+            }
+          }
+        },
+        {
+          "id": "859",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 10,
+              "line": 510
+            },
+            "start": {
+              "column": 13,
+              "line": 508
             }
           }
         },
@@ -17157,6 +18410,58 @@
             "start": {
               "column": 56,
               "line": 516
+            }
+          }
+        },
+        {
+          "id": "861",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[\"Stryker was here\"]",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 20,
+              "line": 518
+            },
+            "start": {
+              "column": 18,
+              "line": 518
+            }
+          }
+        },
+        {
+          "id": "862",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6",
+            "8"
+          ],
+          "location": {
+            "end": {
+              "column": 31,
+              "line": 520
+            },
+            "start": {
+              "column": 5,
+              "line": 520
             }
           }
         },
@@ -17338,1235 +18643,6 @@
             "start": {
               "column": 18,
               "line": 530
-            }
-          }
-        },
-        {
-          "id": "648",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 34,
-              "line": 339
-            },
-            "start": {
-              "column": 9,
-              "line": 339
-            }
-          }
-        },
-        {
-          "id": "659",
-          "mutatorName": "EqualityOperator",
-          "replacement": "this.connectedAt !== undefined",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 50,
-              "line": 344
-            },
-            "start": {
-              "column": 20,
-              "line": 344
-            }
-          }
-        },
-        {
-          "id": "658",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 50,
-              "line": 344
-            },
-            "start": {
-              "column": 20,
-              "line": 344
-            }
-          }
-        },
-        {
-          "id": "644",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 28,
-              "line": 337
-            },
-            "start": {
-              "column": 23,
-              "line": 337
-            }
-          }
-        },
-        {
-          "id": "662",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 6,
-              "line": 355
-            },
-            "start": {
-              "column": 44,
-              "line": 351
-            }
-          }
-        },
-        {
-          "id": "657",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 50,
-              "line": 344
-            },
-            "start": {
-              "column": 20,
-              "line": 344
-            }
-          }
-        },
-        {
-          "id": "663",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 24,
-              "line": 352
-            },
-            "start": {
-              "column": 11,
-              "line": 352
-            }
-          }
-        },
-        {
-          "id": "664",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 24,
-              "line": 352
-            },
-            "start": {
-              "column": 11,
-              "line": 352
-            }
-          }
-        },
-        {
-          "id": "665",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 33,
-              "line": 353
-            },
-            "start": {
-              "column": 11,
-              "line": 353
-            }
-          }
-        },
-        {
-          "id": "669",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 66,
-              "line": 356
-            },
-            "start": {
-              "column": 9,
-              "line": 356
-            }
-          }
-        },
-        {
-          "id": "666",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 33,
-              "line": 353
-            },
-            "start": {
-              "column": 11,
-              "line": 353
-            }
-          }
-        },
-        {
-          "id": "667",
-          "mutatorName": "EqualityOperator",
-          "replacement": "this.client === client",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 33,
-              "line": 353
-            },
-            "start": {
-              "column": 11,
-              "line": 353
-            }
-          }
-        },
-        {
-          "id": "670",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 66,
-              "line": 356
-            },
-            "start": {
-              "column": 9,
-              "line": 356
-            }
-          }
-        },
-        {
-          "id": "671",
-          "mutatorName": "LogicalOperator",
-          "replacement": "\"onClose\" in transport || transport.onClose !== undefined",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 66,
-              "line": 356
-            },
-            "start": {
-              "column": 9,
-              "line": 356
-            }
-          }
-        },
-        {
-          "id": "675",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 100,
-              "line": 356
-            },
-            "start": {
-              "column": 68,
-              "line": 356
-            }
-          }
-        },
-        {
-          "id": "673",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 66,
-              "line": 356
-            },
-            "start": {
-              "column": 35,
-              "line": 356
-            }
-          }
-        },
-        {
-          "id": "674",
-          "mutatorName": "EqualityOperator",
-          "replacement": "transport.onClose === undefined",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 66,
-              "line": 356
-            },
-            "start": {
-              "column": 35,
-              "line": 356
-            }
-          }
-        },
-        {
-          "id": "689",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 50,
-              "line": 368
-            },
-            "start": {
-              "column": 11,
-              "line": 368
-            }
-          }
-        },
-        {
-          "id": "733",
-          "mutatorName": "LogicalOperator",
-          "replacement": "error && new Error(\"reconnect disabled\")",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "4",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 72,
-              "line": 400
-            },
-            "start": {
-              "column": 32,
-              "line": 400
-            }
-          }
-        },
-        {
-          "id": "690",
-          "mutatorName": "LogicalOperator",
-          "replacement": "this.disposed && this.client !== client",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 50,
-              "line": 368
-            },
-            "start": {
-              "column": 11,
-              "line": 368
-            }
-          }
-        },
-        {
-          "id": "706",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 26,
-              "line": 381
-            },
-            "start": {
-              "column": 13,
-              "line": 381
-            }
-          }
-        },
-        {
-          "id": "714",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 75,
-              "line": 388
-            },
-            "start": {
-              "column": 38,
-              "line": 388
-            }
-          }
-        },
-        {
-          "id": "691",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 50,
-              "line": 368
-            },
-            "start": {
-              "column": 28,
-              "line": 368
-            }
-          }
-        },
-        {
-          "id": "721",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 17,
-              "line": 393
-            },
-            "start": {
-              "column": 9,
-              "line": 393
-            }
-          }
-        },
-        {
-          "id": "736",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 93,
-              "line": 403
-            },
-            "start": {
-              "column": 9,
-              "line": 403
-            }
-          }
-        },
-        {
-          "id": "737",
-          "mutatorName": "LogicalOperator",
-          "replacement": "this.connectedAt !== undefined || Date.now() - this.connectedAt >= policy.maxDelayMs",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 93,
-              "line": 403
-            },
-            "start": {
-              "column": 9,
-              "line": 403
-            }
-          }
-        },
-        {
-          "id": "738",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 39,
-              "line": 403
-            },
-            "start": {
-              "column": 9,
-              "line": 403
-            }
-          }
-        },
-        {
-          "id": "739",
-          "mutatorName": "EqualityOperator",
-          "replacement": "this.connectedAt === undefined",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 39,
-              "line": 403
-            },
-            "start": {
-              "column": 9,
-              "line": 403
-            }
-          }
-        },
-        {
-          "id": "849",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "4",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 6,
-              "line": 514
-            },
-            "start": {
-              "column": 31,
-              "line": 505
-            }
-          }
-        },
-        {
-          "id": "841",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 42,
-              "line": 498
-            },
-            "start": {
-              "column": 9,
-              "line": 498
-            }
-          }
-        },
-        {
-          "id": "766",
-          "mutatorName": "OptionalChaining",
-          "replacement": "this.reconnectTimer.unref()",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 34,
-              "line": 426
-            },
-            "start": {
-              "column": 5,
-              "line": 426
-            }
-          }
-        },
-        {
-          "id": "852",
-          "mutatorName": "LogicalOperator",
-          "replacement": "transport !== undefined || typeof transport.close === \"function\"",
-          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'close'): uncaughtException: Cannot read properties of undefined (reading 'close')",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 75,
-              "line": 507
-            },
-            "start": {
-              "column": 11,
-              "line": 507
-            }
-          }
-        },
-        {
-          "id": "854",
-          "mutatorName": "EqualityOperator",
-          "replacement": "transport === undefined",
-          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'close'): uncaughtException: Cannot read properties of undefined (reading 'close')",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 34,
-              "line": 507
-            },
-            "start": {
-              "column": 11,
-              "line": 507
-            }
-          }
-        },
-        {
-          "id": "853",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'close'): uncaughtException: Cannot read properties of undefined (reading 'close')",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "4",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 34,
-              "line": 507
-            },
-            "start": {
-              "column": 11,
-              "line": 507
-            }
-          }
-        },
-        {
-          "id": "850",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "4",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 75,
-              "line": 507
-            },
-            "start": {
-              "column": 11,
-              "line": 507
-            }
-          }
-        },
-        {
-          "id": "851",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "4",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 75,
-              "line": 507
-            },
-            "start": {
-              "column": 11,
-              "line": 507
-            }
-          }
-        },
-        {
-          "id": "847",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 29,
-              "line": 505
-            },
-            "start": {
-              "column": 9,
-              "line": 505
-            }
-          }
-        },
-        {
-          "id": "856",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof transport.close !== \"function\"",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "4",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 75,
-              "line": 507
-            },
-            "start": {
-              "column": 38,
-              "line": 507
-            }
-          }
-        },
-        {
-          "id": "858",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "4",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 8,
-              "line": 513
-            },
-            "start": {
-              "column": 77,
-              "line": 507
-            }
-          }
-        },
-        {
-          "id": "855",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "4",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 75,
-              "line": 507
-            },
-            "start": {
-              "column": 38,
-              "line": 507
-            }
-          }
-        },
-        {
-          "id": "859",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "4",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 10,
-              "line": 510
-            },
-            "start": {
-              "column": 13,
-              "line": 508
-            }
-          }
-        },
-        {
-          "id": "861",
-          "mutatorName": "ArrayDeclaration",
-          "replacement": "[\"Stryker was here\"]",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 20,
-              "line": 518
-            },
-            "start": {
-              "column": 18,
-              "line": 518
-            }
-          }
-        },
-        {
-          "id": "862",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 31,
-              "line": 520
-            },
-            "start": {
-              "column": 5,
-              "line": 520
-            }
-          }
-        },
-        {
-          "id": "845",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6",
-            "8"
-          ],
-          "location": {
-            "end": {
-              "column": 41,
-              "line": 499
-            },
-            "start": {
-              "column": 7,
-              "line": 499
-            }
-          }
-        },
-        {
-          "id": "178",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 10,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8",
-            "9"
-          ],
-          "location": {
-            "end": {
-              "column": 16,
-              "line": 47
-            },
-            "start": {
-              "column": 12,
-              "line": 47
-            }
-          }
-        },
-        {
-          "id": "292",
-          "mutatorName": "ArrayDeclaration",
-          "replacement": "[]",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 10,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8",
-            "9"
-          ],
-          "location": {
-            "end": {
-              "column": 87,
-              "line": 133
-            },
-            "start": {
-              "column": 40,
-              "line": 133
-            }
-          }
-        },
-        {
-          "id": "297",
-          "mutatorName": "ArrayDeclaration",
-          "replacement": "[]",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 10,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8",
-            "9"
-          ],
-          "location": {
-            "end": {
-              "column": 112,
-              "line": 135
-            },
-            "start": {
-              "column": 36,
-              "line": 135
-            }
-          }
-        },
-        {
-          "id": "283",
-          "mutatorName": "ArrayDeclaration",
-          "replacement": "[]",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 10,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8",
-            "9"
-          ],
-          "location": {
-            "end": {
-              "column": 133,
-              "line": 132
-            },
-            "start": {
-              "column": 40,
-              "line": 132
-            }
-          }
-        },
-        {
-          "id": "275",
-          "mutatorName": "ArrayDeclaration",
-          "replacement": "[]",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 10,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8",
-            "9"
-          ],
-          "location": {
-            "end": {
-              "column": 91,
-              "line": 131
-            },
-            "start": {
-              "column": 22,
-              "line": 131
             }
           }
         }
