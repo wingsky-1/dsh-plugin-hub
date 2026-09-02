@@ -154,13 +154,16 @@ test('observe.yml: 夜间调度 + 双硬门禁执行点 + issues 写权限', () 
   assert.ok(OBSERVE.includes('observe-check.mjs'), '阈值校验+回落检测脚本执行点（F1/F6）')
 })
 
-test('#220: docs 不在 ci.yml global 过滤面——文档 PR 不触发变异切片', () => {
-  // gate/build/release 脚本均不消费 docs/ 内容；release-notes 校验仅在 release.yml。
-  // 若未来新增消费 docs 的门禁脚本，须把 'docs/**' 加回 global 组并同步本断言
+test('#220: docs 与 AGENTS.md 不在 ci.yml global 过滤面——文档 PR 不触发变异切片', () => {
+  // gate/build/release 脚本均不消费 docs/ 与 AGENTS.md 内容；release-notes 校验
+  // 仅在 release.yml。若未来新增消费 docs/AGENTS.md/README 等的门禁脚本，
+  // 须把对应路径加回 global 组并同步本断言
   const filterBlock = CI.slice(CI.indexOf('filters: |'), CI.indexOf("dsh-notifier:"))
   assert.ok(!/^.*-\s'docs\/\*\*'/m.test(filterBlock),
     "docs/** 不得出现在 global 过滤组——纯文档 PR 不应触发全量切片")
-  assert.ok(CI.includes('# docs/** 刻意不在 global 面'),
+  assert.ok(!/^.*-\s'AGENTS\.md'/m.test(filterBlock),
+    "AGENTS.md 不得出现在 global 过滤组——改根级纯文档不应触发全量切片")
+  assert.ok(CI.includes('# docs/** 与 AGENTS.md 刻意不在 global 面'),
     '过滤面旁必须保留理由注释（防后人「好心」加回）')
 })
 

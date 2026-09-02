@@ -70,15 +70,16 @@ jobs:
               - 'scripts/**'
               - 'agents/**'
               - '.github/**'
-              # docs/** 刻意不在 global 面（#220）：gate/build/release 脚本均不消费
-              # docs/ 内容，文档 PR 无需变异切片与 smoke/typecheck（release-notes
-              # 校验仅存在于 tag 触发的 release.yml）。若未来新增消费 docs 的门禁
-              # 脚本，须同步加回此处——workflow-assert 契约已锁定该约定
+              # docs/** 与 AGENTS.md 刻意不在 global 面（#220）：gate/build/release
+              # 脚本均不消费其内容，纯文档 PR 无需变异切片与 smoke/typecheck
+              # （release-notes 校验仅存在于 tag 触发的 release.yml）。AGENTS.md 与
+              # docs/** 同等对待（根级纯文档，无门禁脚本消费其内容）。若未来新增
+              # 消费 docs/AGENTS.md/README 等的门禁脚本，须同步加回此处——
+              # workflow-assert 契约已锁定该约定
               - 'package.json'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'tsconfig.base.json'
-              - 'AGENTS.md'
             dsh-notifier:
               - 'packages/dsh-notifier/**'
               # #322：stryker 段配置变更须命中本包面（段配置是 mutation 单一事实源，
