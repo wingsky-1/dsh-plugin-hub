@@ -41,6 +41,6 @@ test('crap.strict 是唯一判红开关，忽略 --strict argv', () => {
   const hard = run(true)
   assert.equal(observe.status, 0, `strict=false 应观察期放行：${observe.stderr}`)
   assert.equal(hard.status, 1, `strict=true 应判红：${hard.stderr}`)
-  assert.match(observe.stdout, /观察期模式/)
+  assert.match(observe.stdout, /strict=false 观察期/)
   assert.match(hard.stderr, /判定为红/)
 })

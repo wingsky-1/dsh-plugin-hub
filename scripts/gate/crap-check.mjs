@@ -215,5 +215,5 @@ if (strict) {
   }
   console.log('crap-check: [strict] 无超阈热点，OK');
 } else {
-  console.log('crap-check: OK（观察期模式：明细已落盘 coverage/crap-report.json）');
+  console.log(`crap-check: OK（strict=false 观察期，strict 来源 gauntlet.config.json: crap.strict，明细已落盘 coverage/crap-report.json）`);
 }
