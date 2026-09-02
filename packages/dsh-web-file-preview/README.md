@@ -82,6 +82,8 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-web-file-preview
 
 ## 验证
 
+测试单份维护、变异自动覆盖：单元测试只维护 `test/*.test.ts`（`import "../lib/index.js"` 测产物）；stryker 经 lib→src hook 复用同一份断言，无需手工同步副本。
+
 ```sh
 pnpm build && pnpm test                 # 仓库内：构建 + smoke
 curl http://127.0.0.1:3080/api/dsh-file-preview/health

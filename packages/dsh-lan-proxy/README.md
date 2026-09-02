@@ -185,6 +185,8 @@ GUI 设置入口：设置 → 插件 → 「局域网访问」卡片（保存即
 
 ## 验证
 
+测试单份维护、变异自动覆盖：单元测试只维护 `test/*.test.ts`（`import "../lib/index.js"` 测产物）；stryker 经 lib→src hook 复用同一份断言，无需手工同步副本。
+
 ```sh
 # 健康检查（回环；含压缩配置与生效状态/协商计数）
 curl -s http://127.0.0.1:3081/api/dsh-lan-proxy/health

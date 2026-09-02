@@ -18,7 +18,7 @@
 - `gate/verify-docs.ts` — 文档/description 校验（缺 .md、占位符残留）。
 - `gate/aggregate.ts` — 聚合 `cordis.patch.yml` 生成 + 一致性校验（`--check` 供 CI）。
 - `gate/crap-check.mjs` — 单函数 CRAP 复杂度检查（阈值唯一事实源 scripts/data/gauntlet.config.json 的 crap.threshold / crap.strict，观察期仅记录，翻期可置 true 判红）
-- `gate/forbid-src-tests.mjs` — #423 防双份回潮：扫 packages 下全部 `*.src.test.ts`（含未跟踪），命中即 exit 1。
+- `gate/forbid-src-tests.mjs` — #423 防双份回潮：扫 packages 下全部遗留 src 副本测试文件（含未跟踪），命中即 exit 1。
 
 ## lib/（纯共享库，只被 import，不被 `node` 直接调用）
 
