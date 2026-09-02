@@ -15,7 +15,18 @@ export interface SettingsNamespaceHooks {
   onChange(): void;
   /** 可选自定义校验，透传给 settings.register。 */
   validate?: unknown;
+  /**
+   * 可选；register 返回 owner scope 后立即回调（先于 setSource）。
+   * 供存量配置迁移 / 写路径装配使用；settings 服务缺失时不触发。
+   */
+  onScope?(scope: unknown, service: unknown): void;
 }
+
+/**
+ * 日志兜底：logger 可能确实没有（极端降级），全部可选调用。
+ * 单一事实源（#436）：notifier / lan-proxy 曾各复刻一份，现统一引用本导出。
+ */
+export declare function warnLog(ctx: unknown, message: string): void;
 
 /**
  * 注册插件自有 settings 命名空间（服务面注入，无包依赖）。

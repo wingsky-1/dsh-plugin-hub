@@ -117,6 +117,40 @@ import { installSettingsNamespace } from "../../../shared/settings-namespace.js"
   assert.equal(onChangeCount, 3, "disposer 触发 onChange");
 }
 
+// ---- onScope（#436）：register 成功后、setSource 之前回调；服务缺失不触发 ----
+
+{
+  let scopeSeen = null;
+  let serviceSeen = null;
+  const order = [];
+  const scope = {
+    get: () => ({ from: "scope" }),
+    watch: () => () => {},
+  };
+  const settings = { register: () => scope };
+  const ctx = {
+    logger: { warn: () => {} },
+    inject: (keys, cb) => {
+      if (Array.isArray(keys) && keys.includes("settings")) {
+        cb({ settings, effect: (fn) => { fn(); return () => {}; } });
+      }
+      return () => {};
+    },
+  };
+  installSettingsNamespace(ctx, "test-ns", {}, { from: "entry" }, {
+    setSource: () => { order.push("setSource"); },
+    onChange: () => {},
+    onScope: (s, svc) => {
+      scopeSeen = s;
+      serviceSeen = svc;
+      order.push("onScope");
+    },
+  });
+  assert.equal(scopeSeen, scope, "onScope 收到 register 返回的 owner scope");
+  assert.equal(serviceSeen, settings, "onScope 收到 settings 服务");
+  assert.deepEqual(order, ["onScope", "setSource"], "onScope 先于 setSource 回调");
+}
+
 // ---- isUnloading 短路：fiber 处于卸载态时 disposer / watch 不动作 ----
 
 for (const state of ["unloading", "unloaded", "disposed"]) {
