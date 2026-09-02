@@ -81,7 +81,7 @@ IIFE 工厂、Symbol.toStringTag 装配、**load id === 包名** define 注入�
 ## 5. 门禁与阶段提交（改动提交前全跑，在仓库根执行）
 
 ```sh
-pnpm build && pnpm test && pnpm contract && pnpm pack:check
+pnpm build && pnpm test && pnpm contract && pnpm pack:check && pnpm typecheck
 ```
 
 - `contract`：load id === 包名、`src/client/index.ts ⇒ lib/client.js` 产物、

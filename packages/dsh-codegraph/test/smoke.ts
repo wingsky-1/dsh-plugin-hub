@@ -15,8 +15,8 @@
 //   - 封装 execute（#363 补充 3）：先 sync 再转发底层 CLI（fake 计数：调用 1
 //     次 sync 1 次；TTL 30s 内不重复）；异常分支/空结果区分（改测封装 execute）
 //   - apply（enabled:false / 不读 ctx.session 回归 / 探测未装引导 / 不再调用
-//     ctx.tools.register / registerServer 携带 toolDefinitions / 8 个封装定义 /
-//     discipline 文案含「工具经 mcp-manager 统一管理」声明）
+//     ctx.tools.register / registerServer 携带 toolDefinitions + description / 8 个封装定义 /
+//     discipline 文案为场景决策表（#417 A 项，含全部工具引导））
 //
 // 运行：node dsh-codegraph/test/smoke.ts
 import assert from "node:assert/strict";
@@ -883,6 +883,9 @@ check("契约: inject 包含 mcpManager", () => assert.ok(inject.includes("mcpMa
     });
     assert.ok(registeredInput, "registerServer 被调用");
     assert.equal(registeredInput.name, "codegraph");
+    // A2（#417）：注册时携带服务器级 description——能力目录条目优先取它，
+    // 避免 fallback 到 codegraph_files 工具摘要（「列文件结构」埋没核心查询能力）。
+    assert.ok(typeof registeredInput.description === "string" && registeredInput.description.includes("结构类查询"), "入参携带 description（能力目录如实展示）");
     assert.ok(Array.isArray(registeredInput.toolDefinitions), "入参携带 toolDefinitions");
     assert.equal(registeredInput.toolDefinitions.length, 8, "8 个封装定义");
     rmSync(dir, { recursive: true, force: true });
@@ -917,14 +920,18 @@ check("契约: inject 包含 mcpManager", () => assert.ok(inject.includes("mcpMa
         assert.equal(injected.source.plugin, "codegraph");
         const text = injected.content[0].text;
         assert.ok(text.includes("codegraph_explore"), "纪律文本含工具名");
-        // #363 验收 6/18：纪律文案含全部工具引导 + 「工具经 mcp-manager 统一管理」声明
+        // #363 验收 6/18 + #417 A 项：纪律文案含全部工具引导；注册形态
+        // 说明已随决策表化删除（由能力目录承担），断言跟随新文案。
         for (const tool of ["codegraph_impact", "codegraph_node", "codegraph_callers", "codegraph_callees", "codegraph_search", "codegraph_files", "codegraph_status"]) {
           assert.ok(text.includes(tool), `纪律文案应引导 ${tool}`);
         }
-        assert.ok(text.includes("全部经 mcp-manager 统一管理"), "含「工具经 mcp-manager 统一管理」声明");
-        assert.ok(text.includes("本插件不直接注册工具"), "含「本插件不直接注册工具」声明");
+        assert.ok(text.includes("全文搜词才用 grep"), "含决策表兜底（grep 只用于全文搜索）");
+        assert.ok(text.includes("正在编辑的文件一律 Read 原文"), "保留正在编辑的文件 Read 原文纪律");
+        assert.ok(text.includes("codegraph init <path>"), "保留无索引引导");
         assert.ok(!text.includes("mcp__codegraph__impact"), "不再有双轨说明（去 mcp__ 官方工具直呼）");
         assert.ok(!text.includes("裸名纪律工具"), "不再有裸名 vs mcp__ 双轨措辞");
+        assert.ok(!text.includes("全部经 mcp-manager 统一管理"), "注册形态声明已移除（#417 A 项：实现细节交能力目录）");
+        assert.ok(!text.includes("本插件不直接注册工具"), "注册形态声明已移除（#417 A 项）");
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
