@@ -22,6 +22,7 @@ import {
   exitFullscreenQuiet,
 } from "./fullscreen-math.ts";
 import { textFitsSnapshot } from "./render-limit.ts";
+import { normalizeBasePath } from "../relpath.ts";
 
 /** 文件预览 URL（F2-B）。 */
 export function fileUrl(path: string, cwd: string | undefined, state: FilePreviewState): string {
@@ -202,6 +203,12 @@ export function openPreview(
   frag?: string,
 ): void {
   ensureStyle();
+  // issue #479：把相对入参 path 用会话 cwd 归并为绝对形态——md 渲染以
+  // state.currentPath 作 basePath 解析文内相对引用，相对路径会令
+  // resolveRelativePath 把首段解析为 host 而全军覆没；归一后 basePath 恒为
+  // 绝对，下游（md 渲染 / 返回栈 / data-fp-cwd / fileUrl）天然正确。
+  // 幂等：绝对形态 / 纯裸名 / 无 cwd 均原样返回（详见 relpath.normalizeBasePath）。
+  path = normalizeBasePath(path, cwd);
   // issue #45：带 fragment 的文件引用（./f.md#g）——待定位锚点只随「前进打开」
   // 设置一次，md 首次渲染后消费；返回（isBack）不带锚点语义。
   // 注意：此处无条件赋值（含 undefined）是 pendingFrag 的唯一写入点之一，

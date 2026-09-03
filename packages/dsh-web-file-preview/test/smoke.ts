@@ -21,7 +21,7 @@ import assert from "node:assert/strict";
 import {
   ROUTES, makeRoutes, serveFileRoute, previewKindOf, computeGitDiff,
   normalizeConfig, DEFAULT_CONFIG, groupOfPath, groupOfExt, isLikelySingleFilePath, resolveRelativePath,
-  cleanRefChipPath, resolveAbsolutePath, splitReferenceFragment, serveTokenRoute,
+  cleanRefChipPath, resolveAbsolutePath, splitReferenceFragment, serveTokenRoute, normalizeBasePath, rewriteTarget,
 } from "../lib/index.js";
 import { build as esbuildBuild } from "esbuild";
 import { assertClientProductContract, assertClientSourceContract } from "../../../test/smoke-lib.ts";
@@ -107,6 +107,20 @@ assert.equal(resolveRelativePath(REL, "#sec"), null, "纯锚点不展开");
 assert.equal(resolveAbsolutePath("/home/u/proj/docs/design.md"), "/home/u/proj/docs/design.md", "#45 绝对路径规范化保留");
 assert.equal(resolveAbsolutePath("//cdn/x.png"), null, "#45 协议相对拒绝");
 assert.deepEqual(splitReferenceFragment("./f.md#g"), { ref: "./f.md", fragment: "g" }, "#45 fragment 剥离保留锚点");
+
+// issue #479：openPreview 入参归一（normalizeBasePath）——纯函数层；详细分支见
+// unit-relpath.test.ts。此处补「归一化后 rewriteTarget 相对解析恢复」的层间回归：
+// 相对 basePath 直接喂 rewriteTarget 全 NULL（P1 根因），归一为绝对后与绝对场景一致。
+{
+  const CWD = "/home/u/proj";
+  const relBase = "docs/architecture/dsh-codegraph.md";
+  const absBase = normalizeBasePath(relBase, CWD);
+  assert.equal(absBase, "/home/u/proj/docs/architecture/dsh-codegraph.md", "#479 相对 basePath 归一为绝对");
+  const relImg = rewriteTarget("diagrams/codegraph-architecture.svg", { cwd: CWD, basePath: relBase });
+  const absImg = rewriteTarget("diagrams/codegraph-architecture.svg", { cwd: CWD, basePath: absBase });
+  assert.equal(relImg, null, "#479 修复前（相对 basePath）：文内相对图片不重写（P1 根因已固化）");
+  assert.ok(absImg !== null && absImg.path === "/home/u/proj/docs/architecture/diagrams/codegraph-architecture.svg", "#479 归一经 rewriteTarget 重写为预览目标");
+}
 
 
 // ------------------------------------------------------------ 纯函数

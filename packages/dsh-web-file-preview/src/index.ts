@@ -95,8 +95,9 @@ export { serveTokenRoute, allocServeToken, releaseServeToken, serveContentTypeOf
 export { createTokenStore, DEFAULT_TOKEN_TTL_MS, DEFAULT_TOKEN_MAX, DEFAULT_ACTIVE_WINDOW_MS, type TokenStore, type TokenStoreOptions } from "./serve-tokens.ts";
 // 预览分组判定（单一事实源，宿主/客户端共用；经此透出供 smoke 断言双端一致）。
 export { groupOfPath, groupOfExt, extOf, isPreviewablePath, isLikelySingleFilePath, cleanRefChipPath } from "./grouping.ts";
-// Markdown 相对/绝对引用展开与 fragment 拆分（U8 v2 + issue #45；纯函数，经此透出供 smoke 断言）。
-export { resolveRelativePath, resolveAbsolutePath, splitReferenceFragment } from "./relpath.ts";
+// Markdown 相对/绝对引用展开、fragment 拆分与 openPreview 入参归一（U8 v2 + issue #45/#479；
+// 纯函数，经此透出供 smoke 断言）。
+export { resolveRelativePath, resolveAbsolutePath, splitReferenceFragment, normalizeBasePath } from "./relpath.ts";
 // 点击链接解析纯逻辑（客户端无 DOM 依赖，经此透出供单元测试）。
 export { basenameOf, decideGate, resolveFileLink } from "./client/link-resolver.ts";
 // 引用 → 预览目标重写决策纯逻辑（issue #45；无 DOM 依赖，经此透出供单元测试）。
