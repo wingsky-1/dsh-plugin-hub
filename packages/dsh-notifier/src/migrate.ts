@@ -7,9 +7,10 @@
  *
  * 分流（R1）：
  * - 合法 json：改名 `.migrated.bak`（即 `dsh-notifier.json.migrated.bak`）后
- *   sanitize 过滤，再经 owner scope.update **逐字段缺失补齐**写入
+ *   sanitize 过滤（#470 起走 sanitizePatchSettings 透传通道：未知键保留补写，
+ *   装配键剔除），再经 owner scope.update **逐字段缺失补齐**写入
  *   （#468：不是无脑全量覆盖——只补写 user 层尚缺失的键）；
- * - 损坏/非对象/无有效键：只改名 `.corrupted.bak` 标记，不写入（防把 schema
+ * - 损坏/非对象/无任何键：只改名 `.corrupted.bak` 标记，不写入（防把 schema
  *   默认值固化进 user 层、压制后续默认值演进）；
  * - 中断态：`.migrated.bak` 存在而 json 不存在 → 从 bak 重放
  *   （解析 → sanitize → 逐字段缺失补齐）——迁移是否「已完成」不再以
@@ -18,8 +19,8 @@
  *   「不重复写入」）；
  * - 写入失败：回滚改名（bak 还原为 json）并 warn，下次启动重试（E6）。
  *
- * 冲突策略（#468，用户改值优先；字段粒度 = 顶层配置键，sanitize 白名单）：
- * - 迁移只补写 user 层**缺失**的键（sanitize 白名单 ∩ bak 显式键 − user 层
+ * 冲突策略（#468，用户改值优先；字段粒度 = 顶层配置键，sanitize 透传通道）：
+ * - 迁移只补写 user 层**缺失**的键（sanitize 结果 ∩ bak 显式键 − user 层
  *   已存在的键）；用户已改/已存在的字段一律不被迁移覆盖，与 PUT /config
  *   之后重启不再被迁移抢回的语义一致（E2 依赖的幂等判定本来就是「user 层
  *   已有值 = 不重复写入」）；
@@ -36,6 +37,10 @@
  * - 若用户确实想要 bak 里的旧值，官方 settings 是唯一事实源——迁移不写
  *   用户键，bak 原样保留可手动核对。
  *
+ * 无有效键判据（#470 P2-1）：legacy 含**未知键**不再是「无有效键」——透传
+ * 通道下未知键会补写进 user 层（升级不丢未来键）；仅「无任何键 / 非法 JSON /
+ * 非对象」才走 corrupted 只标记不写入。
+ *
  * 并发说明（#468 P1-3）：迁移 update 不传 expectedRevision——官方 update 是
  * 串行写队列 + merge over 最新 user section，迁移与用户 PUT 并发时各自 merge，
  * 迁移不会用旧快照覆盖用户新值；但「写入前 readUser 幂等判定」存在 TOCTOU
@@ -45,7 +50,7 @@
  */
 import { existsSync, readFileSync, renameSync, unlinkSync } from "node:fs";
 import { errorMessage } from "../../../shared/host-utils.js";
-import { sanitizeSettings } from "./config.ts";
+import { sanitizePatchSettings } from "./config.ts";
 
 /** 已迁移备份文件名后缀（幂等标记：存在且 user 层有值 = 已处理）。 */
 export const MIGRATED_BAK_SUFFIX = ".migrated.bak";
@@ -155,9 +160,9 @@ export async function migrateLegacyConfig(legacyPath: string, deps: MigrateDeps,
       logger?.warn?.(`dsh-notifier: 检测到未完成的迁移残留 ${MIGRATED_BAK_SUFFIX}，但内容不是合法 JSON — 无法自动恢复，请手动检查该备份（原始配置应在其内）或将其改名 ${CORRUPTED_BAK_SUFFIX}`);
       return { performed: false, migrated: false, rolledBack: false, skippedCorrupt: true, skippedIdempotent: false, resumed: true };
     }
-    const sanitized = sanitizeSettings(parsed);
+    const sanitized = sanitizePatchSettings(parsed);
     if (sanitized === null || Object.keys(sanitized).length === 0) {
-      logger?.warn?.(`dsh-notifier: 未完成的迁移残留 ${MIGRATED_BAK_SUFFIX} 无可迁移的有效键 — 已跳过，确认无误后可手动删除该备份`);
+      logger?.warn?.(`dsh-notifier: 未完成的迁移残留 ${MIGRATED_BAK_SUFFIX} 无可迁移的配置键 — 已跳过，确认无误后可手动删除该备份`);
       return { performed: false, migrated: false, rolledBack: false, skippedCorrupt: true, skippedIdempotent: false, resumed: true };
     }
     const patch = diffMissingKeys(sanitized, deps.readUser());
@@ -198,13 +203,13 @@ export async function migrateLegacyConfig(legacyPath: string, deps: MigrateDeps,
     }
     return { performed: true, migrated: false, rolledBack: false, skippedCorrupt: true, skippedIdempotent: false, resumed: false };
   }
-  const sanitized = sanitizeSettings(parsed);
+  const sanitized = sanitizePatchSettings(parsed);
   if (sanitized === null || Object.keys(sanitized).length === 0) {
     try {
       renameOver(legacyPath, corruptedBak);
-      logger?.warn?.(`dsh-notifier: 存量配置无有效键 — 改名 ${CORRUPTED_BAK_SUFFIX} 标记，不写入设置`);
+      logger?.warn?.(`dsh-notifier: 存量配置无任何键可迁移 — 改名 ${CORRUPTED_BAK_SUFFIX} 标记，不写入设置`);
     } catch (err) {
-      logger?.warn?.(`dsh-notifier: 无有效键配置改名失败（${errorMessage(err)}）— 原文件保留原位，请手动处理`);
+      logger?.warn?.(`dsh-notifier: 无键可迁移配置改名失败（${errorMessage(err)}）— 原文件保留原位，请手动处理`);
     }
     return { performed: true, migrated: false, rolledBack: false, skippedCorrupt: true, skippedIdempotent: false, resumed: false };
   }

@@ -12,7 +12,7 @@ import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import { isLoopbackRequest } from "../../../shared/loopback.js";
 import { writeJson, readBody, errorMessage } from "../../../shared/host-utils.js";
 import type { NotifyConfig } from "./config.ts";
-import { sanitizeSettings, validateSettings, redactConfigView, unmaskChannels } from "./config.ts";
+import { sanitizePatchSettings, validateSettings, redactConfigView, unmaskChannels } from "./config.ts";
 import type { HistoryStore } from "./history.ts";
 import { buildSystemCommand } from "./message.ts";
 
@@ -317,7 +317,8 @@ export type PatchResult =
  * 配置保存纯函数（PUT /config 的主体，独立导出供 smoke 单测）：
  * channels[].deviceKey 掩码按 id 对齐回填 user 层原值（评审 P0-2：必须先于
  * 校验，掩码不是合法 key 语义）→ validateSettings 定位首个非法键（400 + hint）
- * → sanitizeSettings 净化 → 经 settings 服务 update 增量写入（expectedRevision
+ * → sanitizePatchSettings 净化（已知键校验 + 未知键透传保留、装配键剔除，
+ * #470）→ 经 settings 服务 update 增量写入（expectedRevision
  * 可选做乐观并发）。错误映射（R3）：SETTINGS_CONFLICT → 409 固定文案；settings
  * 缺失 → 503 settings-unavailable；写入异常原文只进服务端日志（P2-2）。
  * 成功响应的 user 经 redactConfigView 统一脱敏（评审 P0-1 单一出口）。
@@ -354,8 +355,16 @@ export async function applyConfigPatch(deps: RouteDeps, payload: unknown): Promi
   if (invalid !== null) {
     return { ok: false, status: 400, code: "invalid", response: { error: `配置校验失败: ${invalid.key}`, hint: invalid.hint } };
   }
-  const sanitized = sanitizeSettings(effectivePatch);
+  // #470 双通道拆分后 PUT 走透传净化（未知键保留、装配键剔除）：
+  // 「至少一个有效配置键」判据改为「原始 patch 非空对象」——纯未知键 patch
+  // （如 {futureKey:1}）→ 200 透传写入；仅空 patch {}（无任何键可写）→ 400。
+  if (typeof rawPatch !== "object" || rawPatch === null || Object.keys(rawPatch).length === 0) {
+    return { ok: false, status: 400, code: "invalid", response: { error: "配置校验失败: patch", hint: "需至少包含一个配置键（patch 不能为空）" } };
+  }
+  const sanitized = sanitizePatchSettings(effectivePatch);
   if (sanitized === null || Object.keys(sanitized).length === 0) {
+    // null = 已知键非法（validateSettings 已拦，理论不可达兜底）；空对象 =
+    // 原始 patch 仅含装配键（剔除后无任何可写键）→ 同空 patch 语义 400
     return { ok: false, status: 400, code: "invalid", response: { error: "配置校验失败: patch", hint: "需至少包含一个有效配置键" } };
   }
   try {

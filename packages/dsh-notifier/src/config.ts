@@ -296,7 +296,7 @@ function normalizeAllowKinds(v: unknown): string[] {
   return [...seen];
 }
 
-/** 合并配置（未知键丢弃，默认值兜底；深拷贝防默认值被污染）。 */
+/** 合并配置（未知键透传保留，默认值兜底；深拷贝防默认值被污染）。 */
 export function normalizeConfig(input: unknown): NotifyConfig {
   const base: NotifyConfig = { ...DEFAULT_CONFIG, quietHours: { ...DEFAULT_CONFIG.quietHours } };
   if (typeof input !== "object" || input === null) return base;
@@ -548,11 +548,18 @@ export function validateSettings(raw: unknown): SettingInvalid | null {
 }
 
 /**
- * 净化提交的配置（PUT 保存通道与存量迁移共用）：只接受已知键；任一已知键
- * 类型非法 → 整体拒绝（返回 null，避免静默丢键造成「保存了但没生效」的
- * 困惑；迁移场景则等价于「无有效键 → 只标记不写入」）。未知键丢弃（写入
- * 通道白名单语义——不把组合层装配键如 configFile 等混入 user 层；与
- * lan-proxy sanitizeSettings 同口径，normalizeConfig 的透传仅服务读取渲染）。
+ * 组合层装配键名（sanitizePatchSettings 透传通道的保留键排除表）：这些键是
+ * cordis 组合层 / apply 入口的装配键（开关与路径覆盖），不属于 settings user
+ * 层的配置契约——PUT /config 与存量迁移提交同名键时一律剔除，防 user 层被
+ * 无意义装配键污染，也杜绝未来某版本误把 user 层 configFile 等当配置来源
+ * （#470 P1-3：PUT 透传不能成为绕过 entry 白名单的路径）。
+ */
+const ASSEMBLY_KEYS: readonly string[] = ["configFile", "toastScript", "historyFile", "statusFile", "enabled"];
+
+/**
+ * 净化组合层 entry 配置（apply 装配通道专用）：白名单语义不变——只取已知
+ * 配置键，装配键/未知键一律丢弃（现状 index.ts:140 行为保留，#470 P1-3
+ * 双通道拆分后本函数不再服务 PUT / 迁移）。
  */
 export function sanitizeSettings(raw: unknown): Partial<NotifyConfig> | null {
   if (typeof raw !== "object" || raw === null) return null;
@@ -562,6 +569,34 @@ export function sanitizeSettings(raw: unknown): Partial<NotifyConfig> | null {
     const value = src[key];
     if (value === undefined || value === null) continue;
     if (!SETTING_VALIDATORS[key](value)) return null;
+    out[key] = value;
+  }
+  return out;
+}
+
+/**
+ * 净化 PUT /config 与存量迁移的增量 patch（透传通道，#470）：已知键按
+ * validateSettings 同口径校验（任一非法 → 整体拒绝返回 null）；**未知键原样
+ * 透传保留**（前向兼容——GET 读得到的未来/第三方键 PUT 回得去，迁移不丢
+ * legacy 未来键），但组合层装配键名（ASSEMBLY_KEYS）一律剔除（静默，与
+ * Bark 保留键同口径）。返回对象非空即代表有可写键；纯未知键 patch 透传后
+ * 同样非空（区别于空 patch {} → 空对象由调用方按 400 处理）。
+ */
+export function sanitizePatchSettings(raw: unknown): Partial<NotifyConfig> | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const src = raw as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(src)) {
+    if ((ASSEMBLY_KEYS as readonly string[]).includes(key)) continue;
+    const value = src[key];
+    if (value === undefined || value === null) continue;
+    const validator = SETTING_VALIDATORS[key];
+    if (validator !== undefined) {
+      if (!validator(value)) return null;
+      out[key] = value;
+      continue;
+    }
+    // 未知键透传保留：任意 JSON 值原样并入（顶层未来键形状不可预知）
     out[key] = value;
   }
   return out;

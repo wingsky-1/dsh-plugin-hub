@@ -2,7 +2,7 @@
  * dsh-notifier — 审批/完成/错误事件通知（宿主端）。
  *
  * 本文件只做装配：apply + 事件订阅 + 生命周期清理。职责划分：
- * - config.ts      配置契约/默认值/validateSettings/sanitizeSettings/迁移源路径
+ * - config.ts      配置契约/默认值/validateSettings/sanitize*Settings/迁移源路径
  * - quiet-hours.ts 免打扰判定（parseHHMM / isInQuietHours）
  * - message.ts     通知文案单表/脱敏/格式化/agent 事件读取（纯函数）
  * - history.ts     通知历史 jsonl 存储（滚动/按天清理/原子写）
@@ -86,7 +86,7 @@ export const inject = ["webServer"];
 
 export { QUIET_ALLOW_KINDS, isInQuietHours, parseHHMM } from "./quiet-hours.ts";
 export type { QuietHoursConfig } from "./quiet-hours.ts";
-export { CONFIG_KEYS, DEFAULT_CONFIG, configFile, historyFile, statusFile, normalizeConfig, sanitizeSettings, validateSettings, toastScriptPath, normalizeBarkBaseUrl, normalizeBarkLevels, redactConfigView, unmaskChannels, SECRET_MASK, BARK_ID_PATTERN, BARK_RESERVED_KEYS } from "./config.ts";
+export { CONFIG_KEYS, DEFAULT_CONFIG, configFile, historyFile, statusFile, normalizeConfig, sanitizeSettings, sanitizePatchSettings, validateSettings, toastScriptPath, normalizeBarkBaseUrl, normalizeBarkLevels, redactConfigView, unmaskChannels, SECRET_MASK, BARK_ID_PATTERN, BARK_RESERVED_KEYS } from "./config.ts";
 export type { NotifierApplyConfig, NotifyConfig, SettingInvalid, BarkChannelConfig, BarkLevel } from "./config.ts";
 export { HISTORY_LIMIT } from "./history.ts";
 export { SETTINGS_NS, installNotifierSettings } from "./settings.ts";
