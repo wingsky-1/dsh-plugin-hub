@@ -469,7 +469,9 @@ async function cmdScreenshot(flags) {
     await waitSelector(page.webSocketDebuggerUrl, selector, 10000);
     clip = await evalRaw(page.webSocketDebuggerUrl, selExpr(selector, `
       const r = el.getBoundingClientRect();
-      return { found: true, x: r.x, y: r.y, width: r.width, height: r.height, dpr: window.devicePixelRatio || 1 };`));
+      // getBoundingClientRect 是 viewport 坐标；captureBeyondViewport 下 CDP 按文档
+      // 坐标解释 clip，须加 scrollX/scrollY 转换，否则页面滚动后截空白（PR #481 P1-2）
+      return { found: true, x: r.x + window.scrollX, y: r.y + window.scrollY, width: r.width, height: r.height, dpr: window.devicePixelRatio || 1 };`));
     if (!clip || !clip.found) throw new Error(`截图元素未找到: ${selector}`);
     clip = { x: clip.x, y: clip.y, width: clip.width, height: clip.height, scale: clip.dpr };
   }
