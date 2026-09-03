@@ -16,16 +16,21 @@
 #     dsh.profile.bundles（紧跟 @deepseek-ai/dsh-base 之后），再添加用户插件。
 #
 # 用法：
-#   verify-isolated.sh [--port <port>] [--keep] [--no-build] [-- <pkg-path>...]
+#   verify-isolated.sh [--port <port>] [--browser] [--keep] [--no-build] [-- <pkg-path>...]
 #
-#   默认：端口 3456（--port 0 让系统随机），结束后自动清理临时 DSH_HOME 与 profile。
+#   默认：端口 3456（--port 0 自动探测真实空闲端口），结束后自动清理临时
+#   DSH_HOME 与 profile。
+#   --browser 额外启动独立浏览器实例（scripts/browser-driver.mjs，raw CDP 零依赖）：
+#     独立 user-data-dir + 自选空闲调试端口 + headless，实例信息写入
+#     $ISOLATED_HOME/browser.state（与 DSH_HOME 同生命周期，退出随 trap 一并清理，
+#     多会话并行各自独立、互不串扰）。浏览器操作命令见 browser-driver.mjs --help。
 #   --keep     结束后保留临时 DSH_HOME（不删，方便排查；路径会打印）
 #   --no-build 跳过挂载前的 pnpm build（默认会构建每个插件，保证 lib/ 或 dist/ 产物存在）
 #   --         之后的位置参数为要挂载的本地插件路径（相对路径基于当前 cwd 解析）
 #
 # 示例（在插件仓库根执行）：
 #   verify-isolated.sh packages/dsh-mcp-manager
-#   verify-isolated.sh --port 0 packages/dsh-notifier packages/dsh-mcp-manager
+#   verify-isolated.sh --port 0 --browser packages/dsh-notifier packages/dsh-mcp-manager
 # 绝对路径亦可：
 #   verify-isolated.sh /path/to/repo/packages/dsh-mcp-manager
 set -euo pipefail
@@ -33,10 +38,12 @@ set -euo pipefail
 PORT=3456
 KEEP=0
 BUILD=1
+BROWSER=0
 PKGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --port) PORT="$2"; shift 2 ;;
+    --browser) BROWSER=1; shift ;;
     --keep) KEEP=1; shift ;;
     --no-build) BUILD=0; shift ;;
     --) shift; PKGS+=("$@"); break ;;
@@ -45,11 +52,22 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# 本脚本目录（browser-driver.mjs 同目录随 skill 分发）
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # 1. 第一层隔离：全新临时 DSH_HOME（隔离全部用户数据）
 ISOLATED_HOME="$(mktemp -d)"
 export DSH_HOME="$ISOLATED_HOME"
 PROFILE="verify_$(openssl rand -hex 4)"
+BROWSER_STATE="$ISOLATED_HOME/browser.state"
 cleanup() {
+  # --browser：先优雅关闭浏览器实例（CDP Browser.close + kill 兜底），
+  # 再清理 DSH_HOME——user-data-dir 在 ISOLATED_HOME 内，随 rm -rf 一并删除，
+  # 进程与临时目录双重保障无残留（Ctrl+C / 崩溃 / 正常退出均走 EXIT trap）。
+  if [[ "$BROWSER" -eq 1 && -f "$BROWSER_STATE" ]]; then
+    echo "清理浏览器实例（browser-driver quit）..."
+    node "$SCRIPT_DIR/browser-driver.mjs" quit --state "$BROWSER_STATE" --json >/dev/null 2>&1 || true
+  fi
   if [[ "$KEEP" -eq 1 ]]; then
     echo "（--keep）临时 DSH_HOME 保留于: $ISOLATED_HOME"
     echo "（--keep）如需删除: rm -rf '$ISOLATED_HOME'"
@@ -95,8 +113,45 @@ if [[ ${#PKGS[@]} -gt 0 ]]; then
   dsh plugin --profile "$PROFILE" add "${PKGS[@]}" >/dev/null
 fi
 
+# 5. 启动独立浏览器实例（--browser）：独立 user-data-dir + 自选空闲调试端口，
+#    实例信息写入 $BROWSER_STATE（与 DSH_HOME 同生命周期，exit trap 统一清理）。
+if [[ "$BROWSER" -eq 1 ]]; then
+  node "$SCRIPT_DIR/browser-driver.mjs" launch \
+    --state "$BROWSER_STATE" \
+    --user-data-dir "$ISOLATED_HOME/browser-profile" \
+    --json
+  echo "浏览器实例就绪: state=$BROWSER_STATE（操作命令见 browser-driver.mjs --help）"
+fi
+
+# 6. 修复 --port 0：dsh 收到 --port 0 会自行随机分配，但脚本打印仍是 0、无法访问。
+#    这里在 dsh 启动紧邻处用 node 探测真实空闲端口再传给 dsh——探测块必须贴近 dsh
+#    启动，否则与绑定之间隔着构建/挂载的长耗时窗口，两并行任务可能探测到同一端口
+#    导致 EADDRINUSE（PR #481 P2-1）。
+if [[ "$PORT" -eq 0 ]]; then
+  PORT="$(node -e '
+    const net = require("node:net");
+    const srv = net.createServer();
+    srv.listen(0, "127.0.0.1", () => {
+      const p = srv.address().port;
+      srv.close(() => console.log(p));
+    });
+  ')"
+  echo "（--port 0）已探测空闲端口: $PORT"
+fi
+
+# 7. 把 dsh web 实际端口并入 state（浏览器调试端口已由 launch 写入），供并行任务核对
+if [[ "$BROWSER" -eq 1 && -f "$BROWSER_STATE" ]]; then
+  node -e '
+    const fs = require("fs");
+    const p = process.argv[1];
+    const j = JSON.parse(fs.readFileSync(p, "utf8"));
+    j.dshWebPort = Number(process.argv[2]);
+    fs.writeFileSync(p, JSON.stringify(j, null, 2));
+  ' "$BROWSER_STATE" "$PORT"
+fi
+
 echo "隔离环境就绪: DSH_HOME=$ISOLATED_HOME  profile=$PROFILE"
 echo "启动 dsh web 于 http://127.0.0.1:$PORT （Ctrl+C 退出并自动清理）"
-# 5. 前台启动（阻塞）。不用 exec：exec 会替换 shell，dsh 被 Ctrl+C/SIGTERM 杀掉时
+# 8. 前台启动（阻塞）。不用 exec：exec 会替换 shell，dsh 被 Ctrl+C/SIGTERM 杀掉时
 #    EXIT trap 不触发、临时目录残留。前台子进程 + EXIT trap 保证任何退出都清理。
 dsh --profile "$PROFILE" --port "$PORT" --no-open

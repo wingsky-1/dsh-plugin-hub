@@ -1,15 +1,22 @@
 /**
- * dsh-verify-isolated — smoke：skills 目录结构 + SKILL.md frontmatter + patch 配置。
+ * dsh-verify-isolated — smoke：skills 目录结构 + SKILL.md frontmatter + patch 配置
+ * + 新增脚本参数契约（browser-driver.mjs / verify-isolated.sh）。
  *
- * 无网络、无真实凭据；验证（参照 archify-dsh 的 bundledSkillDir 模式）：
+ * 无网络、无真实凭据、**不真正启动浏览器**（防跨平台 flake，遵守 docs/DEVELOPMENT.md §5）。
+ * 验证（参照 archify-dsh 的 bundledSkillDir 模式）：
  * 1. 包内 skills/dsh-verify-isolated/SKILL.md 存在且 frontmatter name 正确；
  * 2. 一键脚本随 skill 目录分发；
  * 3. cordis.patch.yml 复用官方 @deepseek-ai/dsh-skill-filesystem，配置
  *    providerName / includeDefaultRoots:false / bundledSkillDir（从包 manifest
  *    解析 skills 目录）；
- * 4. bundledSkillDir 的 JS 表达式在模拟 profile baseUrl 下能解析到真实 skills 目录。
+ * 4. bundledSkillDir 的 JS 表达式在模拟 profile baseUrl 下能解析到真实 skills 目录；
+ * 5. browser-driver.mjs 存在，--help 参数契约覆盖全部原子命令，无参数非零退出；
+ * 6. verify-isolated.sh 含 --browser 与 --port 0 修复逻辑；
+ * 7. SKILL.md 含多会话并行章节与三平台内核自查清单；
+ * 8. README 同步新能力。
  */
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -58,4 +65,41 @@ assert.ok(patch.includes("@wingsky-1/dsh-verify-isolated/package.json"),
   assert.equal(resolvedSkills, join(PKG_ROOT, "skills"), "bundledSkillDir 解析到包内 skills");
 }
 
-console.log("PASS: dsh-verify-isolated smoke（skills 结构 / frontmatter / patch 配置 / 路径解析）");
+// ---- 5. browser-driver.mjs 存在 + --help 参数契约（不启动浏览器实例） ----
+const driverFile = join(SKILL_DIR, "scripts", "browser-driver.mjs");
+assert.ok(existsSync(driverFile), "browser-driver.mjs 随 skill 目录分发");
+const help = execFileSync(process.execPath, [driverFile, "--help"], { encoding: "utf8" });
+assert.ok(help.includes("--json"), "browser-driver --help 声明统一 JSON 输出");
+for (const cmd of ["launch", "quit", "snapshot", "click", "eval", "fill", "wait", "screenshot", "console"]) {
+  assert.ok(help.includes(cmd), `browser-driver --help 契约含命令 ${cmd}`);
+}
+let noArgExitsNonZero = false;
+try { execFileSync(process.execPath, [driverFile], { encoding: "utf8" }); }
+catch { noArgExitsNonZero = true; }
+assert.ok(noArgExitsNonZero, "browser-driver 无参数应非零退出（用法提示，不误启动浏览器）");
+
+// ---- 6. verify-isolated.sh 含 --browser 与 --port 0 修复逻辑 ----
+{
+  const script = readFileSync(scriptFile, "utf8");
+  assert.ok(script.includes("--browser"), "脚本含 --browser 选项");
+  assert.ok(script.includes("browser-driver.mjs"), "脚本调用 browser-driver.mjs");
+  assert.ok(script.includes("browser.state"), "脚本管理 browser.state 实例文件");
+  assert.ok(script.includes("--port 0"), "脚本含 --port 0 处理分支");
+  assert.ok(script.includes("探测空闲端口"), "--port 0 自选真实空闲端口（修复打印 0 无效）");
+}
+
+// ---- 7. SKILL.md 含多会话并行章节与三平台内核自查 ----
+assert.ok(raw.includes("多会话并行"), "SKILL.md 含多会话并行章节");
+assert.ok(raw.includes("四重隔离"), "SKILL.md 含四重隔离说明");
+assert.ok(raw.includes("DSH_VERIFY_CHROME"), "SKILL.md 含 DSH_VERIFY_CHROME 内核指定");
+assert.ok(raw.includes("ms-playwright"), "SKILL.md 含 ms-playwright 缓存路径表");
+assert.ok(raw.includes("Google Chrome.app"), "SKILL.md 含 macOS 自查路径");
+assert.ok(raw.includes("ProgramFiles"), "SKILL.md 含 Windows 自查路径");
+
+// ---- 8. README 同步新能力 ----
+const readme = readFileSync(join(PKG_ROOT, "README.md"), "utf8");
+assert.ok(readme.includes("browser-driver.mjs"), "README 同步 browser-driver");
+assert.ok(readme.includes("--browser"), "README 同步 --browser 用法");
+assert.ok(readme.includes("四重隔离"), "README 同步四重隔离说明");
+
+console.log("PASS: dsh-verify-isolated smoke（skills 结构 / frontmatter / patch / 路径解析 / 脚本参数契约 / 文档同步）");
