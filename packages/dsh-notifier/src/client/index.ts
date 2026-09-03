@@ -336,15 +336,6 @@ const NS = "notifier";
   // 当前 SSE 句柄（visibilitychange 回前台重建时引用；卸载时置 null）
   var eventsHandle: { close: () => void; reconnect: () => void } | null = null;
 
-  // 页面重新可见时：还原标题 + 强制重建 SSE（iOS 后台挂起后连接可能已失效，
-  // 重建自动带 since 补拉，避免断线窗口漏通知）
-  document.addEventListener("visibilitychange", function () {
-    if (document.visibilityState === "visible") {
-      restoreTitle();
-      if (eventsHandle && eventsHandle.reconnect) eventsHandle.reconnect();
-    }
-  });
-
   /** SSE 半开连接看门狗：60s 无任何帧（notify 或心跳 ping）→ 主动重建。 */
   var WATCHDOG_MS = 60000;
   function startEvents() {
@@ -1414,12 +1405,15 @@ export function apply(ctx: any) {
 
       // i18n（issue #348）：注册本插件字典；t 绑定官方 locale 服务（未装配回落 key 本体）。
       var locale: any = ctx.get("locale");
+      // #469：订阅取消函数供 disposer 卸载调用（对齐 T4 mcp-manager 范式），
+      // 防重复 apply 后旧订阅持续重绑已停用实例。
+      var unsubLocale: (() => void) | null = null;
       if (locale && typeof locale.register === "function") {
         try {
           locale.register(NS, { zh: zh, en: en });
           t = locale.bind(NS);
           if (typeof locale.subscribe === "function" && typeof locale.getSnapshot === "function") {
-            locale.subscribe(function () {
+            unsubLocale = locale.subscribe(function () {
               try { t = locale.bind(NS); } catch (e) { /* 忽略 */ }
             });
           }
@@ -1430,6 +1424,18 @@ export function apply(ctx: any) {
 
       // 通知半区（SSE / 浏览器通知）：不依赖任何插件 DOM（C6），直接启动
       var disposeEvents: { close: () => void; reconnect: () => void } | null = startEvents();
+      // 页面重新可见时：还原标题 + 强制重建 SSE（iOS 后台挂起后连接可能已失效，
+      // 重建自动带 since 补拉，避免断线窗口漏通知）。
+      // #469：具名 handler 在 apply 内注册、disposer 移除（对齐 mcp-manager
+      // onVisible 范式）——匿名模块体注册无卸载路径，重复 apply/热更会累积
+      // 旧监听、可能操作已置 null 的 SSE 句柄。
+      function onVisibilityChange() {
+        if (document.visibilityState === "visible") {
+          restoreTitle();
+          if (eventsHandle && eventsHandle.reconnect) eventsHandle.reconnect();
+        }
+      }
+      document.addEventListener("visibilitychange", onVisibilityChange);
       // 运行时配置预取：可见性判定与通知展示要用 notifyWhenVisible / notifySound
       fetchConfig().then(function (v: any) {
         if (v && v.effective) runtimeConfig = v.effective;
@@ -1469,6 +1475,11 @@ export function apply(ctx: any) {
       // ⚠️ 清理必须写在 ctx.effect 返回的 disposer 里。
       ctx.effect(function () {
         return function () {
+          document.removeEventListener("visibilitychange", onVisibilityChange);
+          if (unsubLocale !== null) {
+            unsubLocale();
+            unsubLocale = null;
+          }
           if (disposeEvents) {
             disposeEvents.close();
             disposeEvents = null;
