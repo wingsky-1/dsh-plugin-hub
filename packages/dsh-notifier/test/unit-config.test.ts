@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { mkdtempSync, rmSync } from "node:fs";
 import { assert } from "./helpers.ts";
-import { normalizeConfig, parseHHMM, isInQuietHours, DEFAULT_CONFIG, configFile, historyFile, toastScriptPath, normalizeBarkBaseUrl, redactConfigView, unmaskChannels, SECRET_MASK, BARK_ID_PATTERN, validateSettings, sanitizeSettings, QUIET_ALLOW_KINDS } from "../lib/index.js";
+import { normalizeConfig, parseHHMM, isInQuietHours, DEFAULT_CONFIG, configFile, historyFile, toastScriptPath, normalizeBarkBaseUrl, redactConfigView, unmaskChannels, SECRET_MASK, BARK_ID_PATTERN, validateSettings, sanitizeSettings, sanitizePatchSettings, QUIET_ALLOW_KINDS } from "../lib/index.js";
 
 const work = mkdtempSync(join(tmpdir(), "dnotify-unit-config-"));
 try {
@@ -218,7 +218,22 @@ try {
   assert.equal(validateSettings({ quietHours: { allowKinds: cap128 } }), null, "quietHours.allowKinds 恰 128 项通过");
   const sanitizedCh = sanitizeSettings({ channels: [{ ...okCh, volume: "0.7" }] });
   assert.ok(sanitizedCh && Array.isArray(sanitizedCh.channels) && sanitizedCh.channels.length === 1, "sanitizeSettings channels 往返");
-  assert.deepEqual(sanitizeSettings({ futureKey: 1 }), {}, "未来键写入白名单语义不变（读取归一化才透传）");
+  assert.deepEqual(sanitizeSettings({ futureKey: 1 }), {}, "entry 白名单通道：未来键仍丢弃（组合层装配专用，#470 双通道拆分）");
+
+  // ===== #470：sanitizePatchSettings（PUT/迁移透传通道）=====
+  assert.deepEqual(sanitizePatchSettings({ futureKey: 1 }), { futureKey: 1 }, "透传通道：纯未知键原样保留");
+  assert.deepEqual(sanitizePatchSettings({ notifyAsk: false, futureKey: { a: 1 } }), { notifyAsk: false, futureKey: { a: 1 } }, "透传通道：已知+未知混合双保留");
+  assert.deepEqual(sanitizePatchSettings({}), {}, "透传通道：空 patch 空对象（调用方按 400 语义处理）");
+  assert.equal(sanitizePatchSettings({ notifyAsk: "yes" }), null, "透传通道：已知键非法 → 整体拒绝 null");
+  assert.deepEqual(sanitizePatchSettings({ configFile: "/x", toastScript: "/y", historyFile: "/z", statusFile: "/s", enabled: false }), {}, "透传通道：装配键全部剔除（不入 user 层）");
+  assert.deepEqual(sanitizePatchSettings({ configFile: "/x", notifyQuestion: false, futureKey: 2 }), { notifyQuestion: false, futureKey: 2 }, "透传通道：混合提交剔除装配键、保留已知+未知");
+  // 透传通道不深改值（原样引用与深等）
+  const nested = { futureObj: { x: [1, 2] } };
+  const nestedOut = sanitizePatchSettings(nested);
+  assert.deepEqual(nestedOut, nested, "透传通道：任意 JSON 值原样并入");
+  assert.equal(sanitizePatchSettings(null), null, "透传通道：非对象 → null");
+  assert.deepEqual(sanitizePatchSettings({ notifyTaskDone: true }), { notifyTaskDone: true }, "透传通道：纯已知键与 entry 白名单同结果");
+  assert.equal(sanitizePatchSettings({ channels: [{ ...okCh, volume: "0.7" }] }).channels[0].volume, "0.7", "透传通道：channels 内未知 string/number 参数保留（Bark 前向兼容不变）");
 } finally {
   rmSync(work, { recursive: true, force: true });
 }

@@ -133,6 +133,184 @@ try {
     assert.deepEqual(lastCall.patch, { notifyAsk: false }, "service.update 只收到变更键（增量 patch，非整表）");
   }
 
+  // ===== #470：未知键透传保留（前向兼容）——PUT /config 行为 =====
+  {
+    function bodyReq(payload) {
+      const text = JSON.stringify(payload);
+      return {
+        method: "PUT",
+        url: "/",
+        socket: { remoteAddress: "127.0.0.1" },
+        headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
+        on(event, cb) {
+          if (event === "data") setTimeout(() => cb(Buffer.from(text)), 0);
+          else if (event === "end") setTimeout(cb, 1);
+          return this;
+        },
+        destroy() {},
+      };
+    }
+    // 独立实例：预置 user 层存量未知键（模拟旧版本/手改 yaml 的未来键）
+    const { routes: nfRoutes, settings: nfSettings, dispose: nfDispose } = makeNotifier(
+      work,
+      { historyFile: join(work, "history-future.jsonl") },
+      { settings: { user: { notifyAsk: true, futureKey: "keepme" } } },
+    );
+    const cfgR = nfRoutes.find((r) => r.path === ROUTES.config);
+
+    // (1) #470 验收 2：存量 user 层未知键在保存已知键后不丢（读写闭合）
+    {
+      const put = makeRes();
+      await cfgR.handler(bodyReq({ patch: { notifyAsk: false } }), put.res);
+      assert.equal(put.rec.status, 200, "保存已知键成功");
+      const after = nfSettings.getUser();
+      assert.equal(after.notifyAsk, false, "已知键保存生效");
+      assert.equal(after.futureKey, "keepme", "存量未知键不被已知键保存清除");
+    }
+
+    // (2) #470 验收 3：PUT 携带顶层未知键 → 200 透传写入（GET 往返深等）；
+    //     纯未知键 patch 200（不再落入「至少一个有效键」400）
+    {
+      const put = makeRes();
+      await cfgR.handler(bodyReq({ patch: { futureKey2: { a: 1 }, notifySound: false } }), put.res);
+      assert.equal(put.rec.status, 200, "已知+未知混合 PUT 200");
+      const putBody = JSON.parse(put.rec.text);
+      assert.deepEqual(putBody.user.futureKey2, { a: 1 }, "PUT 响应 user 含透传未知键");
+      assert.deepEqual(nfSettings.getUser().futureKey2, { a: 1 }, "settings user 层含透传未知键（原样并入）");
+      // GET 往返：读到的键原样仍在（读写闭合）
+      const get = makeRes();
+      await cfgR.handler(fakeReq({}), get.res);
+      const getBody = JSON.parse(get.rec.text);
+      assert.deepEqual(getBody.user.futureKey2, { a: 1 }, "GET user 层保留透传未知键");
+      assert.deepEqual(getBody.effective.futureKey2, { a: 1 }, "GET effective 透传未知键（读面归一化保留）");
+      assert.equal(getBody.user.notifySound, false, "已知键同步生效");
+      // 纯未知键 patch → 200
+      const put2 = makeRes();
+      await cfgR.handler(bodyReq({ patch: { pureFuture: 1 } }), put2.res);
+      assert.equal(put2.rec.status, 200, "纯未知键 patch 200 透传（不再 400）");
+      assert.equal(nfSettings.getUser().pureFuture, 1, "纯未知键写入 user 层");
+    }
+
+    // (3) #470 验收 3 边界：空 patch {} → 仍 400（无变更可写）
+    {
+      const put = makeRes();
+      await cfgR.handler(bodyReq({ patch: {} }), put.res);
+      assert.equal(put.rec.status, 400, "空 patch 仍 400");
+      const body = JSON.parse(put.rec.text);
+      assert.match(body.error.error, /配置校验失败/, "空 patch 400 带配置校验失败");
+    }
+
+    // (4) #470 验收 4：PUT 透传排除装配键名——configFile/toastScript/historyFile/
+    //     statusFile/enabled 被剔除（不入 user 层）；组合层 entry 白名单语义不变
+    {
+      const put = makeRes();
+      await cfgR.handler(bodyReq({ patch: { configFile: "/x", toastScript: "/y", historyFile: "/z", statusFile: "/s", enabled: false } }), put.res);
+      assert.equal(put.rec.status, 400, "纯装配键 patch 净化后无任何可写键 → 400（同空 patch 语义）");
+      const user = nfSettings.getUser();
+      for (const key of ["configFile", "toastScript", "historyFile", "statusFile", "enabled"]) {
+        assert.ok(!(key in user), `装配键 ${key} 不入 user 层`);
+      }
+      // 装配键 + 已知键混合 → 200，装配键剔除、已知键生效
+      const put2 = makeRes();
+      await cfgR.handler(bodyReq({ patch: { configFile: "/x", notifyQuestion: false } }), put2.res);
+      assert.equal(put2.rec.status, 200, "装配键+已知键混合 200（装配键剔除）");
+      assert.ok(!("configFile" in nfSettings.getUser()), "混合提交后 configFile 仍未入 user 层");
+      assert.equal(nfSettings.getUser().notifyQuestion, false, "已知键生效");
+    }
+
+    // (5) #470 验收 5：已知键非法值仍 400 + hint；未知键存在不改变校验结果
+    {
+      const put = makeRes();
+      await cfgR.handler(bodyReq({ patch: { notifyAsk: "yes", futureKey3: 1 } }), put.res);
+      assert.equal(put.rec.status, 400, "非法已知键 400（未知键并存不改变结果）");
+      const body = JSON.parse(put.rec.text);
+      assert.match(body.error.error, /配置校验失败: notifyAsk/, "400 指明首个非法键 notifyAsk");
+      assert.ok(body.error.hint, "400 带 hint");
+      assert.ok(!("futureKey3" in nfSettings.getUser()), "被拒 patch 的未知键不写入");
+    }
+
+    // (6) #470 验收 6：user 层旧脏键不被自动清洗——透传键升为已知键后提交脏值
+    //     400 + hint；保存其他键不触发 400（脏键留 user 层，读面归一化兜底）
+    {
+      // 模拟 vN 未知键 futureFlag 已透传进 user 层、vN+1 升级为已知键（脏值 true 是
+      // 合法布尔，此处用类型非法值模拟旧脏键；直接 setUser 预置，模拟「升级前写入」）
+      nfSettings.setUser({ notifyAsk: true, futureKey: "keepme", futureKey2: { a: 1 }, pureFuture: 1, dirtyKnown: "yes" });
+      // 保存其他已知键（不提交 dirtyKnown）→ 200，脏键仍在
+      const put = makeRes();
+      await cfgR.handler(bodyReq({ patch: { notifySound: true } }), put.res);
+      assert.equal(put.rec.status, 200, "保存其他键不触发脏键 400");
+      assert.equal(nfSettings.getUser().dirtyKnown, "yes", "旧脏键不被自动清洗（留待用户主动改/手清）");
+      // 主动提交脏已知键（dirtyKnown 若为已知键需合法——此处用真的已知键 notifyAsk 字符串形态）
+      const put2 = makeRes();
+      await cfgR.handler(bodyReq({ patch: { notifyAsk: "yes" } }), put2.res);
+      assert.equal(put2.rec.status, 400, "主动提交脏已知键 400 + hint");
+      const b2 = JSON.parse(put2.rec.text);
+      assert.match(b2.error.error, /notifyAsk/, "400 指明脏已知键");
+    }
+
+    // (7) #470 验收 8（链路模拟）：GET effective（含未知键）→ 改已知键 →
+    //     diffPayload 不含未知键 → PUT → GET 未知键保留（client 只提交变更键）
+    {
+      // 预置未知键 + 已知键，读 GET effective 作为 UI 基线（client loadCard 语义）
+      const pre = makeRes();
+      await cfgR.handler(bodyReq({ patch: { chainFuture: { k: 1 }, notifyTaskDone: true } }), pre.res);
+      const get0 = makeRes();
+      await cfgR.handler(fakeReq({}), get0.res);
+      const effective0 = JSON.parse(get0.rec.text).effective;
+      // UI 以 effective 深拷贝为 settings 与 baselineRef：只改一个已知键
+      const baselineRef = JSON.parse(JSON.stringify(effective0));
+      const settingsView = JSON.parse(JSON.stringify(effective0));
+      settingsView.notifyTaskDone = false;
+      // diffPayload 只提交与基线不同的键（与 src/client/index.ts 同逻辑）
+      const payload = {};
+      for (const key in settingsView) {
+        if (baselineRef[key] !== undefined && JSON.stringify(settingsView[key]) !== JSON.stringify(baselineRef[key])) {
+          payload[key] = settingsView[key];
+        }
+      }
+      assert.deepEqual(payload, { notifyTaskDone: false }, "diff 只含变更已知键，不含未知键");
+      const put = makeRes();
+      await cfgR.handler(bodyReq({ patch: payload }), put.res);
+      assert.equal(put.rec.status, 200, "diff payload PUT 成功");
+      const get1 = makeRes();
+      await cfgR.handler(fakeReq({}), get1.res);
+      const finalUser = JSON.parse(get1.rec.text).user;
+      assert.deepEqual(finalUser.chainFuture, { k: 1 }, "GET→diff→PUT→GET 整链后未知键保留且值未变");
+      assert.equal(JSON.parse(get1.rec.text).effective.chainFuture.k, 1, "effective 同保未知键");
+      // 边界：diff 含未知键时 PUT 可透传（未知键作为 payload 一部分 → 200 写入）
+      const put2 = makeRes();
+      await cfgR.handler(bodyReq({ patch: { diffFuture: 2, notifyAsk: false } }), put2.res);
+      assert.equal(put2.rec.status, 200, "diff 含未知键可透传写入");
+      assert.equal(nfSettings.getUser().diffFuture, 2, "未知键经 PUT 透传并入 user 层");
+    }
+
+    nfDispose();
+  }
+
+  // (8) #470 验收 4（entry 白名单回归）：组合层装配键 configFile/enabled 不进
+  //     settings user 层（makeNotifier 的 entry 经 sanitizeSettings 白名单过滤，
+  //     base 层承载已知配置键、装配键被丢弃——不混入 user 层，也不进 GET user）
+  {
+    const { routes: enRoutes, settings: enSettings, dispose: enDispose } = makeNotifier(work, {
+      historyFile: join(work, "history-entry.jsonl"),
+      configFile: join(work, "entry-cfg.json"),
+      enabled: true,
+      notifyAsk: false,
+    });
+    const cfgR2 = enRoutes.find((r) => r.path === ROUTES.config);
+    const user = enSettings.getUser();
+    assert.deepEqual(user, {}, "组合层 entry 只进 base 层，user 层保持空（装配键与已知键都不入 user）");
+    const get = makeRes();
+    await cfgR2.handler(fakeReq({}), get.res);
+    const getBody = JSON.parse(get.rec.text);
+    for (const key of ["configFile", "toastScript", "historyFile", "statusFile", "enabled"]) {
+      assert.ok(!(key in getBody.user), `GET user 不含装配键 ${key}`);
+    }
+    assert.equal(getBody.effective.notifyAsk, false, "entry 已知键经 base 层进 effective（装配键不干扰）");
+    assert.equal(getBody.effective.quietHours.enabled, false, "effective 其余键默认值兜底");
+    enDispose();
+  }
+
   // F4 expectedRevision 缺省：无冲突检测（不带 revision 的 PUT 成功）
   {
     function bodyReq(payload) {
