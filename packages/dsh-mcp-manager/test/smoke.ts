@@ -77,6 +77,10 @@ import {
   assertSupportedOutputSchema,
 } from "../lib/index.js";
 
+// 服务契约门禁（#476）：apply.ts provide 方法面与 shared 类型面契约清单一致
+// （运行时方法名/参数形状断言；编译期类型断言经 scripts/test/
+// service-contract-wiring.test.ts 的 tsc 编译面执行）
+import "./service-contract.test.ts";
 // 结构化单元测试（#82 批次 1：清零未覆盖 CRAP 超阈热点）
 import "./unit-shared.test.ts";
 import "./unit-manager.test.ts";
