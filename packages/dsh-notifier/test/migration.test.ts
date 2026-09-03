@@ -1,6 +1,6 @@
 // @ts-nocheck
 /**
- * dsh-notifier — e2e：存量配置迁移（issue #76 E1-E7 / R1）。
+ * dsh-notifier — e2e：存量配置迁移（issue #76 E1-E7 / R1；#468 逐字段补齐）。
  *
  * 覆盖：
  * - E1 旧 json 存在 → 一次性迁移至官方 settings user 层，原文改名 .migrated.bak；
@@ -9,7 +9,11 @@
  * - E4 损坏/非对象/无有效键 → 改名 .corrupted.bak，不写入；
  * - E5 Windows rename 目标已存在 → 先 unlink 旧 bak 再 rename；
  * - E6 迁移写入失败 → 回滚改名（json 还原）+ warn，不阻塞启动；
- * - E7 迁移前置于 enabled 判定（禁用态也迁移，路由/命名空间照常注册）。
+ * - E7 迁移前置于 enabled 判定（禁用态也迁移，路由/命名空间照常注册）；
+ * - E8 migrateLegacyConfig outcome 精确断言（#468 起迁移完成判定 = 逐字段缺失
+ *   补齐，不再是「user 层任意键存在」整体跳过）；
+ * - E9 #468 回归：中断部分写入后重跑补齐剩余字段；用户改值不被迁移覆盖
+ *   （冲突策略：只补写 user 层缺失的键，用户已改/已存在的键不被覆盖）。
  */
 import { join } from "node:path";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
@@ -158,14 +162,21 @@ try {
   // 布尔结果字段翻转/逻辑运算符/条件分支的存活变异体由 outcome 深比较杀灭）
   {
     const dir = mkdtempSync(join(tmpdir(), "dnotify-migrate-outcome-"));
-    const deps = (userHasValues = false, failUpdate = false) => {
+    // 直测注入面（#468 起 readUser）：user 层当前值可预置（模拟部分写入/用户改值）
+    const deps = (user = {}, failUpdate = false) => {
       const updates = [];
       return {
         updates,
-        hasUserValues: () => userHasValues,
+        readUser: () => user,
         async update(patch) {
           if (failUpdate) throw new Error("io boom");
+          // #468 P1-4：锁死「只补缺失键」语义——update 提交的每个键在写入前
+          // 必须不存在于 user 层（防未来实现改成快照全量/覆盖写导致漏报）
+          for (const key of Object.keys(patch)) {
+            assert.equal(key in user, false, `E9：update 不得提交 user 层已存在的键 ${key}`);
+          }
           updates.push(patch);
+          Object.assign(user, patch);
         },
       };
     };
@@ -188,18 +199,18 @@ try {
       assert.deepEqual(out, CORRUPT_ONLY, "E8：损坏标记态 → skippedCorrupt+skippedIdempotent");
       assert.equal(d.updates.length, 0, "E8：损坏标记态不写入");
     }
-    // migrated.bak 存在 + user 层已有值 → 幂等跳过（E2）
+    // migrated.bak 存在 + user 层全量有值 → 幂等跳过（E2）
     {
-      const d = deps(true);
+      const d = deps({ notifyAsk: false, notifySound: true });
       const legacy = join(dir, "bak-user.json");
-      writeFileSync(legacy + MIGRATED_BAK_SUFFIX, JSON.stringify({ notifyAsk: false }));
+      writeFileSync(legacy + MIGRATED_BAK_SUFFIX, JSON.stringify({ notifyAsk: false, notifySound: true }));
       const out = await migrateLegacyConfig(legacy, d);
-      assert.deepEqual(out, IDLE, "E8：bak 存在 + user 有值 → 幂等跳过");
+      assert.deepEqual(out, IDLE, "E8：bak 存在 + user 已全量 → 幂等跳过");
       assert.equal(d.updates.length, 0, "E8：幂等跳过不写入");
     }
     // 中断态重放成功：bak 存在 + user 空 + bak 合法 → resumed+migrated
     {
-      const d = deps(false);
+      const d = deps();
       const legacy = join(dir, "resume-ok.json");
       writeFileSync(legacy + MIGRATED_BAK_SUFFIX, JSON.stringify({ notifySound: false }));
       const out = await migrateLegacyConfig(legacy, d);
@@ -208,7 +219,7 @@ try {
     }
     // 中断态重放失败：bak 非法 JSON → skippedCorrupt+resumed，不写入
     {
-      const d = deps(false);
+      const d = deps();
       const legacy = join(dir, "resume-bad.json");
       writeFileSync(legacy + MIGRATED_BAK_SUFFIX, "{bad json");
       const out = await migrateLegacyConfig(legacy, d);
@@ -217,7 +228,7 @@ try {
     }
     // 中断态重放失败：bak 无有效键 → skippedCorrupt+resumed
     {
-      const d = deps(false);
+      const d = deps();
       const legacy = join(dir, "resume-empty.json");
       writeFileSync(legacy + MIGRATED_BAK_SUFFIX, JSON.stringify({ evilKey: 1 }));
       const out = await migrateLegacyConfig(legacy, d);
@@ -259,13 +270,71 @@ try {
     }
     // 写入失败 → 回滚改名（E6）：json 还原 + rolledBack
     {
-      const d = deps(false, true);
+      const d = deps({}, true);
       const legacy = join(dir, "rollback.json");
       writeFileSync(legacy, JSON.stringify({ notifyAsk: true }));
       const out = await migrateLegacyConfig(legacy, d, { warn: () => {} });
       assert.deepEqual(out, { performed: true, migrated: false, rolledBack: true, skippedCorrupt: false, skippedIdempotent: false, resumed: false }, "E8：写入失败回滚 outcome");
       assert.ok(existsSync(legacy), "E8：回滚后原 json 还原");
       assert.ok(!existsSync(legacy + MIGRATED_BAK_SUFFIX), "E8：回滚后 migrated.bak 已还原为 json");
+    }
+    // #468 E9a：json 迁移部分写入中断（user 层只落了部分键）→ 重跑补齐剩余字段
+    {
+      const d = deps({ notifyAsk: false }); // 上次迁移只写进 notifyAsk 就被打断
+      const legacy = join(dir, "partial.json");
+      writeFileSync(legacy, JSON.stringify({ notifyAsk: false, notifySound: true, quietHours: { enabled: true, start: "23:00", end: "07:00" } }));
+      const out = await migrateLegacyConfig(legacy, d);
+      assert.deepEqual(out, { performed: true, migrated: true, rolledBack: false, skippedCorrupt: false, skippedIdempotent: false, resumed: false }, "E9a：部分写入中断后重跑 → 继续迁移");
+      assert.deepEqual(d.updates, [{ notifySound: true, quietHours: { enabled: true, start: "23:00", end: "07:00" } }], "E9a：只补写 user 层缺失字段（已写 notifyAsk 不重写）");
+    }
+    // #468 E9b：中断态（bak-only）部分写入 → 重跑补齐，全部齐后再跑幂等跳过
+    {
+      const d = deps({ notifyAsk: false }); // 上次重放只写进 notifyAsk 就被打断
+      const legacy = join(dir, "resume-partial.json");
+      writeFileSync(legacy + MIGRATED_BAK_SUFFIX, JSON.stringify({ notifyAsk: false, notifySound: true }));
+      const out = await migrateLegacyConfig(legacy, d);
+      assert.deepEqual(out, { performed: false, migrated: true, rolledBack: false, skippedCorrupt: false, skippedIdempotent: false, resumed: true }, "E9b：中断态部分写入后重跑 → 补齐 + resumed");
+      assert.deepEqual(d.updates, [{ notifySound: true }], "E9b：只补缺失字段 notifySound");
+      // 再跑一次（user 层已全量）→ 幂等跳过，不再写
+      const out2 = await migrateLegacyConfig(legacy, d);
+      assert.deepEqual(out2, { performed: false, migrated: false, rolledBack: false, skippedCorrupt: false, skippedIdempotent: true, resumed: false }, "E9b：补齐后再次运行 → 幂等跳过");
+      assert.equal(d.updates.length, 1, "E9b：幂等运行不重复写入");
+    }
+    // #468 E9c：用户改值不被迁移覆盖（冲突策略：只补 user 层缺失键）
+    // 中断态：bak 里 notifyAsk=false，用户已改为 true 且已保存 notifySound——
+    // 两条都存在 → 幂等跳过；只缺 quietHours → 只补 quietHours，不动用户值
+    {
+      const d = deps({ notifyAsk: true, notifySound: false }); // 用户改值后的 user 层
+      const legacy = join(dir, "user-conflict.json");
+      writeFileSync(legacy + MIGRATED_BAK_SUFFIX, JSON.stringify({ notifyAsk: false, notifySound: true, quietHours: { enabled: false, start: "22:00", end: "08:00" } }));
+      const out = await migrateLegacyConfig(legacy, d);
+      assert.equal(out.migrated, true, "E9c：缺 quietHours → 迁移补齐");
+      assert.deepEqual(d.updates, [{ quietHours: { enabled: false, start: "22:00", end: "08:00" } }], "E9c：只补缺失键 quietHours");
+      assert.equal(d.readUser().notifyAsk, true, "E9c：用户改过的 notifyAsk 不被迁移覆盖");
+      assert.equal(d.readUser().notifySound, false, "E9c：用户已存在的 notifySound 不被迁移覆盖");
+    }
+    // #468 E9d：json 正常迁移 + user 键全量已存在（经 PUT /config 保存过）→
+    // 改名后幂等跳过，不重复写入、不覆盖用户值
+    {
+      const d = deps({ notifyAsk: true }); // 用户已把该键改成 true
+      const legacy = join(dir, "valid-user.json");
+      writeFileSync(legacy, JSON.stringify({ notifyAsk: false })); // legacy 里是 false
+      const out = await migrateLegacyConfig(legacy, d);
+      assert.deepEqual(out, { performed: true, migrated: false, rolledBack: false, skippedCorrupt: false, skippedIdempotent: true, resumed: false }, "E9d：user 全量存在 → 改名后幂等跳过");
+      assert.equal(d.updates.length, 0, "E9d：不重复写入");
+      assert.equal(d.readUser().notifyAsk, true, "E9d：用户改值不被迁移覆盖");
+    }
+    // #468 E9e：冲突策略字段粒度 = 顶层配置键——user 层 quietHours 以部分子键
+    // 形态存在（用户只 PUT 过子键 start）即视为用户已接管整组：不补写嵌套
+    // 子键（bak 的 enabled/end 不覆盖不补），迁移只补顶层缺失键 notifySound
+    {
+      const d = deps({ notifyAsk: true, quietHours: { start: "07:00" } }); // 用户部分子键接管
+      const legacy = join(dir, "subkey-owner.json");
+      writeFileSync(legacy + MIGRATED_BAK_SUFFIX, JSON.stringify({ notifyAsk: false, notifySound: true, quietHours: { enabled: false, start: "22:00", end: "08:00" } }));
+      const out = await migrateLegacyConfig(legacy, d);
+      assert.equal(out.migrated, true, "E9e：缺顶层键 notifySound → 迁移补齐");
+      assert.deepEqual(d.updates, [{ notifySound: true }], "E9e：不补写 quietHours 嵌套子键（仅顶层缺失键）");
+      assert.deepEqual(d.readUser().quietHours, { start: "07:00" }, "E9e：用户部分子键保持原样（不被 bak 子键覆盖）");
     }
     rmSync(dir, { recursive: true, force: true });
   }
