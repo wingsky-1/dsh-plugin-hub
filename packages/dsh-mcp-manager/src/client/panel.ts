@@ -8,7 +8,7 @@
  */
 
 import { el, api } from "./dom.ts";
-import { t } from "./i18n.ts";
+import { t } from "../../../../shared/client/i18n.js";
 import type { McpState, UiActions } from "./state.ts";
 import { renderServers } from "./servers.ts";
 import { buildQuickAdd } from "./quick-add.ts";

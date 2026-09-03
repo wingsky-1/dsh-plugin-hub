@@ -16,7 +16,7 @@ import type { FilePreviewState } from "./state.ts";
 import { html as diffToHtml } from "diff2html";
 import DOMPurify from "dompurify";
 import { exceedsTextRenderLimit, TEXT_RENDER_LIMIT_CODEPOINTS } from "./render-limit.ts";
-import { t } from "./i18n.ts";
+import { t } from "../../../../shared/client/i18n.js";
 
 /** git diff 探测 URL（F2-B）。 */
 export function fileDiffUrl(path: string, cwd: string | undefined, state: FilePreviewState): string {

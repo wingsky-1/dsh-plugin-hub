@@ -24,7 +24,7 @@ import DOMPurify from "dompurify";
 import { runMermaidHydration, mermaidBaseConfig, type MermaidApiLike } from "./mermaid-core.ts";
 import type { FilePreviewState } from "./state.ts";
 import { openViewer, closeLightbox } from "./viewer.ts";
-import { t } from "./i18n.ts";
+import { t } from "../../../../shared/client/i18n.js";
 import { shouldOpenMermaidViewer, isExternalClickableAnchor } from "./viewer-math.ts";
 
 /** 已加载的 mermaid API 引用（动态 import 自带模块缓存，此处仅存引用）。 */

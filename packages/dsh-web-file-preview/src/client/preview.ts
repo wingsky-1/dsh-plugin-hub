@@ -12,7 +12,7 @@ import { renderImage } from "./image.ts";
 import { closeLightbox } from "./viewer.ts";
 import { renderGroupFor } from "./renderer.ts";
 import { scrollToFragment } from "./anchor.ts";
-import { t } from "./i18n.ts";
+import { t } from "../../../../shared/client/i18n.js";
 import { renderHtmlPreview, releaseUrl } from "./html.ts";
 import {
   fullscreenSupported,

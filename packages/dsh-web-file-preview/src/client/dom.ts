@@ -4,7 +4,7 @@
  * DOM 元素创建、样式注入、剪贴板操作、错误视图等纯 DOM 操作。
  * 仅 export 纯函数；i18n 文案经共享 i18n.ts 的 t（活绑定）。
  */
-import { t } from "./i18n.ts";
+import { t } from "../../../../shared/client/i18n.js";
 
 /** 创建带属性/子节点的 DOM 元素。 */
 export function el(tag: string, attrs: any = {}, children?: any[]): any {
