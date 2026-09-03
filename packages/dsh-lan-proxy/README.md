@@ -57,6 +57,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-lan-proxy
 
 | 键 | 默认 | 说明 |
 |---|---|---|
+| `enabled` | `true` | 总开关（关闭后转发器停止监听） |
 | `host` | `0.0.0.0` | 监听地址 |
 | `port` | `3081` | HTTP 监听端口 |
 | `httpsPort` | `3443` | HTTPS 监听端口 |
@@ -64,8 +65,10 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-lan-proxy
 | `targetPort` | 自动 | 上游端口（默认取 web 服务器实际绑定端口） |
 | `httpsEnabled` | `true` | 是否并存 HTTPS |
 | `tlsCertFile` / `tlsKeyFile` | 无 | 自定义证书（mkcert 等） |
+| `printBanner` | `true` | 启动时是否在终端打印监听横幅（LAN 访问地址等） |
 | `wsCompressEnabled` | `true` | 是否对命中 `wsCompressPaths` 的 WebSocket 做压缩桥接 |
 | `wsCompressPaths` | `/api/remote.mux` | 参与 WebSocket 压缩的路径白名单 |
+| `wsDeflatePolicy` | `{browser:true, uaDeny:[iPhone…]}` | WS 压缩协商策略：`browser` 为 false 全局关压缩；`uaDeny` 为不协商压缩的 UA 片段列表（iOS Safari 默认拦截，见「WebSocket 压缩」节） |
 | `httpCompressEnabled` | `true` | HTTP 响应压缩总开关（Brotli/gzip 自适应协商，合并自 dsh-gzip） |
 | `httpCompressLevel` | `1` | 压缩档位预设 0..3：`0` 默认 / `1` 低（gzip 1 / br 2，最快）· `2` 中（gzip 5 / br 5，均衡）/ `3` 高（gzip 9 / br 9，最高压缩比），对 gzip 与 Brotli **同时生效**；旧配置整数 4..9 自动迁移为 3 |
 | `injectToken` | `true` | 自动注入启动令牌（issue #380）：LAN 设备首次访问 `GET /` 由转发层自动补当前 token 铸造会话 cookie，固定设备免手工拿 token；带失效 cookie 的请求在上游 401 后自动重放自愈。安全语义见「安全模型」 |
