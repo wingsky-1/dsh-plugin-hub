@@ -13,6 +13,7 @@ import { applyHeadingIds, scrollToFragment } from "./anchor.ts";
 import { el, errorView } from "./dom.ts";
 import { renderHtmlPreview } from "./html.ts";
 import type { FilePreviewState } from "./state.ts";
+import { resolvedFromFileResponse, applyResolvedPath } from "./resolved-path.ts";
 import { html as diffToHtml } from "diff2html";
 import DOMPurify from "dompurify";
 import { exceedsTextRenderLimit, TEXT_RENDER_LIMIT_CODEPOINTS } from "./render-limit.ts";
@@ -48,8 +49,21 @@ export function fetchText(url: string, body: HTMLElement, seq: number, signal: A
         errorView(body, msg, url);
         return;
       }
+      // issue #486：首响应 resolved 落地（评审 P0-2：先设 currentPath 再渲染）。
+      // 宿主 X-File-Path 回传真实绝对路径（可能经搜索纠正）；缺头降级原值。
+      const resolved = resolvedFromFileResponse(res, state.currentPath);
+      const groupChanged = applyResolvedPath(state, resolved);
       state.rawText = await res.text();
       if (seq !== state.openSeq) return;
+      if (groupChanged) {
+        // 分组随 resolved 变化（入口 foo.txt 命中真实 foo.html）——tab 栏/按钮
+        // 按入口分组已建好，正文不能按旧分组渲染；整体重建交给 onResolved
+        //（openPreview 内定义，用 resolved 重开）。rawText 已存，重开后由快照
+        // 还原（见 preview.ts 返回分支语义），仅多一次 fetch 属可接受代价。
+        state.onResolved?.();
+        return;
+      }
+      state.onResolved?.();
       renderTabBody(body, state);
     })
     .catch(() => { if (seq === state.openSeq) errorView(body, t("fetchFail"), url); });

@@ -10,6 +10,7 @@
 import { el, errorView } from "./dom.ts";
 import { t } from "../../../../shared/client/i18n.js";
 import type { FilePreviewState } from "./state.ts";
+import { resolvedFromFileResponse, applyResolvedPath } from "./resolved-path.ts";
 import { openViewer } from "./viewer.ts";
 
 /**
@@ -47,6 +48,11 @@ export function renderImage(url: string, body: HTMLElement, seq: number, signal:
         errorView(body, msg, url);
         return;
       }
+      // issue #486：resolved 落地（先设 currentPath 再渲染，评审 P0-2）。图片组
+      // 扩展名不会被搜索纠正到其它组（入口即 image 才走本分支），分组变化恒 false。
+      const resolved = resolvedFromFileResponse(res, state.currentPath);
+      applyResolvedPath(state, resolved);
+      state.onResolved?.();
       const blob = await res.blob();
       if (seq !== state.openSeq) return;
       renderBlobImage(blob, body, url, state);

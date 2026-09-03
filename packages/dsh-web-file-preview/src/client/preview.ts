@@ -203,22 +203,26 @@ export function openPreview(
   frag?: string,
 ): void {
   ensureStyle();
-  // issue #479：把相对入参 path 用会话 cwd 归并为绝对形态——md 渲染以
-  // state.currentPath 作 basePath 解析文内相对引用，相对路径会令
-  // resolveRelativePath 把首段解析为 host 而全军覆没；归一后 basePath 恒为
-  // 绝对，下游（md 渲染 / 返回栈 / data-fp-cwd / fileUrl）天然正确。
-  // 幂等：绝对形态 / 纯裸名 / 无 cwd 均原样返回（详见 relpath.normalizeBasePath）。
-  path = normalizeBasePath(path, cwd);
+  // issue #486：**客户端零预处理**——path 原样传递（相对就相对），路径解析/
+  // 搜索/归一全部交由宿主端（file/alloc 三级定位）。md basePath 在首响应
+  // resolved 落地后由宿主回传的真实绝对路径提供（见 state.onResolved），不再
+  // 依赖客户端 normalizeBasePath 预归一（#479 场景被更权威地覆盖；#479 的
+  // normalizeBasePath 保留为 legacy 纯函数导出）。
   // issue #45：带 fragment 的文件引用（./f.md#g）——待定位锚点只随「前进打开」
   // 设置一次，md 首次渲染后消费；返回（isBack）不带锚点语义。
   // 注意：此处无条件赋值（含 undefined）是 pendingFrag 的唯一写入点之一，
   // closeModal 不得清理它——openPreview 内部先赋值后调 closeModal，清理会把
   // 本次锚点意图抹掉（实测踩坑）。
   state.pendingFrag = isBack ? undefined : (frag ?? undefined);
-  // 返回栈：进入"新文件"（非返回触发、当前已有活跃 Modal、目标不同）→ 把当前
-  // 文件与预览态快照压栈，供「← 返回」还原。返回触发（isBack）不再重复压栈；
-  // 以 overlay !== undefined（当前是否已有打开的 Modal）判断"是否在浏览链内"，
-  // 避免重开会话时（overlay 为 undefined）把上次残留路径误压栈。
+  // issue #486：记录入口路径（供分辨首响应 resolved 是否被搜索纠正）。
+  // 返回（isBack）时 prev.path 已是 resolved 绝对（历史条目恒为权威值）。
+  state.entryPath = path;
+  // 返回栈：进入"新文件"（非返回触发、当前已有活跃 Modal、目标不同）→ 在
+  // **同步段（closeModal 覆盖 state 前）**捕获上一文件快照（评审 P0-1：若推迟
+  // 到 resolved 落地后再从 state 读，拿到的是已被覆盖的新 currentPath），存入
+  // pendingBackEntry；本文件首响应 resolved 落地后（onResolved）才真正入栈——
+  // 落地前关闭/切走 → 丢弃不压。返回触发（isBack）不再压栈；以 overlay !==
+  // undefined 判断"是否在浏览链内"，避免重开会话时把上次残留路径误压栈。
   if (!isBack && state.overlay !== undefined && state.currentPath !== "" && state.currentPath !== path) {
     // issue #344：返回栈快照防御——超大 rawText/diffText 不入栈（仅存 path，返回时
     // 重新拉取），防 MAX_BACK=32 × 20M 常驻内存。rawText 长度超出阈值时整个快照
@@ -227,7 +231,7 @@ export function openPreview(
     const diffLen = typeof state.diffText === "string" ? state.diffText.length : 0;
     const keepRaw = textFitsSnapshot(rawLen);
     const keepDiff = textFitsSnapshot(diffLen);
-    state.backStack.push({
+    state.pendingBackEntry = {
       path: state.currentPath, cwd: state.currentCwd,
       previewMode: state.previewMode,
       rawText: keepRaw ? state.rawText : undefined,
@@ -239,8 +243,9 @@ export function openPreview(
       hadDiff: (typeof state.diffText === "string" && state.diffText.length > 0) || state.diffUntracked,
       // issue #73：html 预览 token/src 快照——返回时 iframe 直接复用（免重新 alloc）
       serveToken: state.serveToken, serveSrc: state.serveSrc,
-    });
-    if (state.backStack.length > state.MAX_BACK) state.backStack.shift();
+    };
+  } else {
+    state.pendingBackEntry = undefined;
   }
   // a11y（评审 U11 / 返回栈 S3）：仅"首次打开"（当前无活跃 Modal）捕获触发元素，
   // 内跳/返回（overlay 已存在）不覆盖——确保整条浏览链关闭后焦点回到最初的文件链接。
@@ -258,8 +263,11 @@ export function openPreview(
   const group = renderGroupFor(path);
   state.currentGroup = group;
   // U8 v2：记录当前文件与会话 cwd（md 相对引用解析基 + Modal 内跳转）。
+  // issue #486：currentPath 初值为入口 path；首响应 resolved 落地后更新为宿主
+  // 回传的真实绝对路径（见 state.onResolved）。
   state.currentPath = path;
   state.currentCwd = cwd;
+  state.onResolved = undefined; // 每次打开重置（下方按分组分支注册）
   // issue #73：html 组默认「预览」tab（iframe sandbox），与 md/code 同语义。
   state.previewMode = group.group === "md" || group.group === "code" || group.group === "html" ? "preview" : "raw";
   state.rawText = undefined;
@@ -437,13 +445,51 @@ export function openPreview(
   // 由 closeModal 还原；配合样式表 overscroll-behavior:contain。
   document.body.style.overflow = "hidden";
 
+  // issue #486：resolved 落地回调——首响应（fetchText/renderImage/alloc）成功
+  // 拿到宿主回传真实路径后触发一次（幂等：执行即自清）。负责三件依赖 resolved
+  // 的延迟动作：
+  //  1) 返回栈入栈（评审 P0-1：pendingBackEntry 在同步段捕获，落地才真正压栈，
+  //     保证 NavEntry.path 恒为权威 resolved；落地前关闭/切走 → 丢弃不压）；
+  //  2) 分组随 resolved 变化 → 整体重建（fetchText 已发现 groupChanged 并只调
+  //     onResolved 不渲染——此处用 resolved 重开 Modal，tab 栏/按钮按新分组重建；
+  //     rawText 已缓存，重开走快照语义仅多一次 fetch）；
+  //  3) diff 探测 defer（评审 P1：probeDiff 必须发 resolved，同步段入口 path 在
+  //     搜索纠正场景会让 git resolve 到错目录 → Diff tab 误判不可用）。
+  // 返回（isBack）时 prev 快照已还原、路径恒为 resolved 历史值：不重建、不重复
+  // probeDiff（prev.hadDiff 语义已覆盖），仅 html/md 大 diff 重探按既有逻辑。
+  const resolvedProbe = !isBack;
+  const needReopenForGroup = !isBack;
+  state.onResolved = () => {
+    if (seq !== state.openSeq) return; // 代数守卫：已切走/关闭 → 本次作废
+    state.onResolved = undefined; // 幂等：只执行一次
+    // 1) 返回栈入栈
+    const pending = state.pendingBackEntry;
+    state.pendingBackEntry = undefined;
+    if (pending !== undefined) {
+      state.backStack.push(pending);
+      if (state.backStack.length > state.MAX_BACK) state.backStack.shift();
+      backBtn.style.display = "";
+    }
+    // 2) 分组变化 → 整体重建（fetchText 已把 groupChanged 场景的渲染延后到此处）
+    if (needReopenForGroup && state.currentGroup !== undefined &&
+        state.currentGroup.group !== renderGroupFor(state.entryPath).group &&
+        state.entryPath !== state.currentPath) {
+      openPreview(state, state.currentPath, state.currentCwd, false, undefined, state.pendingFrag);
+      return;
+    }
+    // 3) diff 探测（defer：path 现为 resolved 权威值）
+    if (resolvedProbe) {
+      probeDiff(state.currentPath, state.currentCwd, seq, addDiffTab, addUnavailableDiffTab, abort.signal, state);
+    }
+  };
+
   if (group.group === "image") {
     renderImage(url, body, seq, abort.signal, state);
   } else if (group.group === "html") {
     // issue #73：html 组「预览」tab = serve 虚拟伺服 iframe；原始/Diff 仍走
-    // fetchText/probeDiff（原始 tab 首次 fetch /file 时惰性拉取原文）。
+    // fetchText/probeDiff（原始 tab 首次 fetch /file 时惰性拉取原文）。alloc 成功
+    // 回调内已触发 onResolved（resolved 落地 + probeDiff defer）。
     renderHtmlPreview(body, state, seq, abort.signal);
-    probeDiff(path, cwd, seq, addDiffTab, addUnavailableDiffTab, abort.signal, state);
   } else if (isBack && prev !== undefined) {
     // 返回：直接用快照还原预览态（tab/原文/diff），免重新拉取、无闪烁。
     state.previewMode = prev.previewMode;
@@ -459,7 +505,7 @@ export function openPreview(
     if (prev.diffText !== undefined || prev.diffUntracked) {
       addDiffTab();
     } else if (prev.hadDiff) {
-      probeDiff(path, cwd, seq, addDiffTab, addUnavailableDiffTab, abort.signal, state);
+      probeDiff(state.currentPath, state.currentCwd, seq, addDiffTab, addUnavailableDiffTab, abort.signal, state);
     }
     syncTabActive();
     // issue #344：返回栈快照防御——大文件 rawText 未入栈（undefined）时不能直接
@@ -473,7 +519,6 @@ export function openPreview(
     renderTabBody(body, state);
   } else {
     fetchText(url, body, seq, abort.signal, state);
-    probeDiff(path, cwd, seq, addDiffTab, addUnavailableDiffTab, abort.signal, state);
   }
 }
 

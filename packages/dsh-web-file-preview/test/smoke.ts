@@ -22,6 +22,7 @@ import {
   ROUTES, makeRoutes, serveFileRoute, previewKindOf, computeGitDiff,
   normalizeConfig, DEFAULT_CONFIG, groupOfPath, groupOfExt, isLikelySingleFilePath, resolveRelativePath,
   cleanRefChipPath, resolveAbsolutePath, splitReferenceFragment, serveTokenRoute, normalizeBasePath, rewriteTarget, dirResolvedPathOf,
+  findUniqueByBasename, bareBasenameOf, resolveFile,
 } from "../lib/index.js";
 import { build as esbuildBuild } from "esbuild";
 import { assertClientProductContract, assertClientSourceContract } from "../../../test/smoke-lib.ts";
@@ -489,95 +490,130 @@ try {
     assert.equal((await computeGitDiff(root, "hello.md")).reason, "not-git", "非 git 目录 → not-git");
   }
 
-  // ---- issue #41：file 404 负路径 basename 兜底搜索（五场景）----
+  // ---- issue #41/#486：file 404 负路径 basename 兜底搜索（通用遍历，非 git）----
   {
-    // 准备 git 仓：子目录深处的唯一裸名 + 两处同名歧义 + 被 .gitignore 忽略的文件
-    const gitRoot = join(root, "bk-repo");
+    const gitRoot = join(root, "bk-repo"); // git 仓目录（仅证明「git 仓内同样可用」，
+    // 遍历不依赖 git 命令；gitignore 不再豁免——A1 决策：物理存在+唯一即暴露）
     mkdirSync(gitRoot, { recursive: true });
     const gb = (args) => git(gitRoot, args);
     const fileUrl = (cwd, p) =>
       `http://127.0.0.1${ROUTES.file}?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(p)}`;
-    if (gb(["init"]).status === 0) {
+    const gitOk = gb(["init"]).status === 0;
+    if (gitOk) {
       gb(["config", "user.email", "t@t"]);
       gb(["config", "user.name", "t"]);
-      // 用例 1 — git 主路径·唯一命中：裸名实际位于 assets/deep/ → 200 且内容正确
-      mkdirSync(join(gitRoot, "assets", "deep"), { recursive: true });
-      writeFileSync(join(gitRoot, "assets", "deep", "solo.md"), "fallback hit", "utf8");
-      gb(["add", "."]);
-      {
-        const res = fakeRes();
-        await serveFileRoute(res, rawReqForFiles(), new URL(fileUrl(gitRoot, "solo.md")), {});
-        assert.equal(res._calls.status, 200, "#41 git 仓库唯一裸名兜底命中 → 200");
-        assert.equal(res._calls.data, "fallback hit", "#41 兜底按真实路径读出内容");
-      }
-      // 主路径不受影响：直接命中零新增开销（回归确认正常路径仍工作）
-      writeFileSync(join(gitRoot, "direct.md"), "direct", "utf8");
-      {
-        const res = fakeRes();
-        await serveFileRoute(res, rawReqForFiles(), new URL(fileUrl(gitRoot, "direct.md")), {});
-        assert.equal(res._calls.status, 200, "#41 直接命中的主路径行为不变");
-      }
-      // 用例 2 — 多命中 → 放弃维持 404（basename 歧义即 inert）
-      mkdirSync(join(gitRoot, "d1"), { recursive: true });
-      mkdirSync(join(gitRoot, "d2"), { recursive: true });
-      writeFileSync(join(gitRoot, "d1", "dup.md"), "one", "utf8");
-      writeFileSync(join(gitRoot, "d2", "dup.md"), "two", "utf8");
-      gb(["add", "."]);
-      {
-        const res = fakeRes();
-        await serveFileRoute(res, rawReqForFiles(), new URL(fileUrl(gitRoot, "dup.md")), {});
-        assert.equal(res._calls.status, 404, "#41 ≥2 同名 → 放弃维持 404");
-      }
-      // 用例 5 — gitignore 文件不暴露：被忽略的唯一同名文件不得经兜底泄露
-      writeFileSync(join(gitRoot, ".gitignore"), "secret-*.txt\n", "utf8");
-      mkdirSync(join(gitRoot, "ignored"), { recursive: true });
-      writeFileSync(join(gitRoot, "ignored", "secret-leak.txt"), "should not expose", "utf8");
-      gb(["add", "."]);
-      {
-        const res = fakeRes();
-        await serveFileRoute(res, rawReqForFiles(), new URL(fileUrl(gitRoot, "secret-leak.txt")), {});
-        assert.equal(res._calls.status, 404, "#41 gitignore 忽略的文件不经兜底暴露");
-      }
-    } else {
-      console.log("  (跳过 #41 git 场景：git init 不可用)");
+    }
+    // 用例 1 — 唯一命中：裸名实际位于 assets/deep/ → 200 + X-File-Path = 真实绝对
+    mkdirSync(join(gitRoot, "assets", "deep"), { recursive: true });
+    writeFileSync(join(gitRoot, "assets", "deep", "solo.md"), "fallback hit", "utf8");
+    if (gitOk) gb(["add", "."]);
+    {
+      const res = fakeRes();
+      await serveFileRoute(res, rawReqForFiles(), new URL(fileUrl(gitRoot, "solo.md")), {});
+      assert.equal(res._calls.status, 200, "#486 唯一裸名兜底命中 → 200");
+      assert.equal(res._calls.data, "fallback hit", "#486 兜底按真实路径读出内容");
+      const fp = res._calls.headers["x-file-path"];
+      assert.ok(typeof fp === "string", "#486 命中响应带 X-File-Path");
+      assert.equal(decodeURIComponent(fp), join(gitRoot, "assets", "deep", "solo.md"),
+        "#486 X-File-Path = 真实 resolved 绝对路径（搜索纠正）");
+    }
+    // 主路径不受影响：直接命中零新增开销 + X-File-Path 同值
+    writeFileSync(join(gitRoot, "direct.md"), "direct", "utf8");
+    {
+      const res = fakeRes();
+      await serveFileRoute(res, rawReqForFiles(), new URL(fileUrl(gitRoot, "direct.md")), {});
+      assert.equal(res._calls.status, 200, "#486 直接命中的主路径行为不变");
+      assert.equal(decodeURIComponent(res._calls.headers["x-file-path"]), join(gitRoot, "direct.md"),
+        "#486 直接命中 X-File-Path = resolve 结果（viaSearch=false 同值）");
+    }
+    // 用例 2 — 多命中 → 放弃维持 404（basename 歧义即 inert）
+    mkdirSync(join(gitRoot, "d1"), { recursive: true });
+    mkdirSync(join(gitRoot, "d2"), { recursive: true });
+    writeFileSync(join(gitRoot, "d1", "dup.md"), "one", "utf8");
+    writeFileSync(join(gitRoot, "d2", "dup.md"), "two", "utf8");
+    {
+      const res = fakeRes();
+      await serveFileRoute(res, rawReqForFiles(), new URL(fileUrl(gitRoot, "dup.md")), {});
+      assert.equal(res._calls.status, 404, "#486 ≥2 同名 → 放弃维持 404");
+    }
+    // 用例 5（A1 翻转）— gitignore 忽略的真实文件：物理存在+唯一 → 暴露
+    //（旧 #41 语义「gitignore 隐藏」已废弃；被忽略文件本就经 /file 直读可达，
+    // 兜底搜索暴露它不新增访问面——README 安全模型明示）
+    writeFileSync(join(gitRoot, ".gitignore"), "secret-*.txt\n", "utf8");
+    mkdirSync(join(gitRoot, "ignored"), { recursive: true });
+    writeFileSync(join(gitRoot, "ignored", "secret-leak.txt"), "ignored but physical", "utf8");
+    {
+      const res = fakeRes();
+      await serveFileRoute(res, rawReqForFiles(), new URL(fileUrl(gitRoot, "secret-leak.txt")), {});
+      assert.equal(res._calls.status, 200, "#486 A1：gitignore 忽略的真实文件唯一 → 暴露（物理存在即暴露）");
+      assert.equal(res._calls.data, "ignored but physical", "#486 读出的确是被忽略文件内容");
+    }
+    // 用例 6 — dot 目录跳过、dot 文件（裸名）可命中（决策钉死）
+    mkdirSync(join(gitRoot, ".hiddendir"), { recursive: true });
+    writeFileSync(join(gitRoot, ".hiddendir", "dotdir-file.txt"), "dotdir", "utf8");
+    writeFileSync(join(gitRoot, ".env"), "dotfile content", "utf8");
+    {
+      const resDot = fakeRes();
+      await serveFileRoute(resDot, rawReqForFiles(), new URL(fileUrl(gitRoot, "dotdir-file.txt")), {});
+      assert.equal(resDot._calls.status, 404, "#486 dot 目录（.hiddendir）不进入遍历 → 404");
+      // .env 裸名：extOf 空 → 分组 other → 415（「找到但不可预览」），而非 404
+      //（「找不到」）——415 即证明 dot 文件被兜底命中（纯函数层 .env 命中断言
+      // 见 unit-basename-fallback）。
+      const resEnv = fakeRes();
+      await serveFileRoute(resEnv, rawReqForFiles(), new URL(fileUrl(gitRoot, ".env")), {});
+      assert.equal(resEnv._calls.status, 415, "#486 dot 文件（.env 裸名）兜底命中 → 415（找到但不可预览）");
+    }
+    // 用例 7 — 绝对 path 目录写错也进搜索（三级全开）：请求带 cwd（搜索根）+ 不存在
+    // 的绝对 path → ③ 按 basename 在 cwd 内唯一搜索纠正（不带 cwd 则无搜索根，不触发）
+    {
+      const wrongAbs = join(gitRoot, "no-such-dir", "solo.md");
+      const res = fakeRes();
+      await serveFileRoute(res, rawReqForFiles(), new URL(
+        `http://127.0.0.1${ROUTES.file}?cwd=${encodeURIComponent(gitRoot)}&path=${encodeURIComponent(wrongAbs)}`), {});
+      assert.equal(res._calls.status, 200, "#486 绝对 path 404 后也进 basename 搜索（三级全开）");
+      assert.equal(decodeURIComponent(res._calls.headers["x-file-path"]), join(gitRoot, "assets", "deep", "solo.md"));
     }
 
-    // 用例 3 — 非 git 工作区回退黑名单遍历命中
+    // 用例 3 — 非 git 工作区遍历命中（同一通用遍历，无 git 依赖）
     const plainDir = join(root, "plain-ws");
     mkdirSync(join(plainDir, "nested"), { recursive: true });
     writeFileSync(join(plainDir, "nested", "only.txt"), "plain walk hit", "utf8");
     {
       const res = fakeRes();
       await serveFileRoute(res, rawReqForFiles(), new URL(fileUrl(plainDir, "only.txt")), {});
-      assert.equal(res._calls.status, 200, "#41 非 git 回退遍历唯一命中 → 200");
+      assert.equal(res._calls.status, 200, "#486 非 git 工作区唯一命中 → 200");
       assert.equal(res._calls.data, "plain walk hit");
-    }
-    // 对照：同扩展名文件放非 git 目录可暴露，证明 #41 的 404 源于 gitignore 语义而非路径/类型错误
-    writeFileSync(join(plainDir, "nested", "secret-leak.txt"), "should not expose", "utf8");
-    {
-      const res = fakeRes();
-      await serveFileRoute(res, rawReqForFiles(), new URL(fileUrl(plainDir, "secret-leak.txt")), {});
-      assert.equal(res._calls.status, 200, "#41 对照：同内容在非 git 区可暴露");
+      assert.equal(decodeURIComponent(res._calls.headers["x-file-path"]), join(plainDir, "nested", "only.txt"));
     }
 
-    // 用例 4 — 触顶放弃（模块级注入小 walkLimit；路由层生产默认 20000 不宜构造大目录）
-    const fbBundle = await esbuildBuild({
-      entryPoints: [join(pkgDir, "src/basename-fallback.ts")],
-      bundle: true, platform: "node", format: "esm", write: false, logLevel: "silent",
-    });
-    const fbCode = fbBundle.outputFiles[0]!.text;
-    const fb = await import(
-      `data:text/javascript;base64,${Buffer.from(fbCode).toString("base64")}`
-    ) as typeof import("../lib/basename-fallback.js");
-    assert.equal(await fb.findUniqueByBasename(plainDir, "only.txt", { walkLimit: 0 }), null, "#41 触顶即放弃（walkLimit=0）");
-    assert.equal(await fb.findUniqueByBasename(plainDir, "only.txt"), join(plainDir, "nested", "only.txt"), "#41 对照：不限触顶时回退遍历找到真实绝对路径");
-    assert.equal(await fb.findUniqueByBasename(plainDir, "no-such-file.xyz"), null, "#41 零命中 → null 维持 404");
+    // 用例 4 — 触顶放弃（opts 注入小 walkLimit；路由层生产默认 20000 不宜构造大目录）
+    assert.equal(await findUniqueByBasename(plainDir, "only.txt", { walkLimit: 0 }), null, "#486 触顶即放弃（walkLimit=0）");
+    assert.equal(await findUniqueByBasename(plainDir, "only.txt"), join(plainDir, "nested", "only.txt"), "#486 对照：不限触顶时遍历找到真实绝对路径");
+    assert.equal(await findUniqueByBasename(plainDir, "no-such-file.xyz"), null, "#486 零命中 → null 维持 404");
     // bareBasenameOf 单元语义：末段提取 / 尾分隔符与空值拒绝
-    assert.equal(fb.bareBasenameOf("a/b/c.png"), "c.png");
-    assert.equal(fb.bareBasenameOf("a\\b\\c.png"), "c.png", "Windows 分隔符兼容");
-    assert.equal(fb.bareBasenameOf("dir/"), null, "尾分隔符末段为空 → 不兜底");
-    assert.equal(fb.bareBasenameOf(""), null);
-    assert.equal(fb.bareBasenameOf(".."), null, ".. 无末段凭证 → 不兜底");
+    assert.equal(bareBasenameOf("a/b/c.png"), "c.png");
+    assert.equal(bareBasenameOf("a\\b\\c.png"), "c.png", "Windows 分隔符兼容");
+    assert.equal(bareBasenameOf("dir/"), null, "尾分隔符末段为空 → 不兜底");
+    assert.equal(bareBasenameOf(""), null);
+    assert.equal(bareBasenameOf(".."), null, ".. 无末段凭证 → 不兜底");
+    // resolveFile 三级定位纯函数（#486）：命中文件 / 命中目录（不进搜索）/ 三级搜索
+    writeFileSync(join(plainDir, "root.txt"), "root", "utf8");
+    {
+      const hit = await resolveFile(plainDir, "root.txt");
+      assert.equal(hit?.kind, "file", "#486 resolveFile 相对直接命中 → file");
+      assert.equal(hit?.viaSearch, false, "#486 直接命中 viaSearch=false");
+      const searched = await resolveFile(plainDir, "only.txt");
+      assert.equal(searched?.kind, "file", "#486 resolveFile 相对 404 → ③ 搜索命中");
+      assert.equal(searched?.viaSearch, true, "#486 搜索命中 viaSearch=true");
+      assert.equal(searched?.resolved, join(plainDir, "nested", "only.txt"), "#486 搜索命中 resolved=真实绝对");
+      const absWrong = await resolveFile(plainDir, join(plainDir, "no-dir", "only.txt"));
+      assert.equal(absWrong?.kind, "file", "#486 resolveFile 绝对 path 404 → ③ 搜索命中");
+      assert.equal(absWrong?.viaSearch, true, "#486 绝对搜索命中 viaSearch=true");
+      const dirHit = await resolveFile(plainDir, "nested");
+      assert.equal(dirHit?.kind, "dir", "#486 resolve 命中目录 → dir（不进搜索改名换读）");
+      const none = await resolveFile(plainDir, "no-such-file.xyz");
+      assert.equal(none, null, "#486 resolveFile 全失败 → null");
+    }
   }
 
   // 客户端契约 + 与宿主 ROUTES 路由一致性

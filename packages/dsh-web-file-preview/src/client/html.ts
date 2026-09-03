@@ -12,6 +12,7 @@
 import { el, errorView } from "./dom.ts";
 import { t } from "../../../../shared/client/i18n.js";
 import type { FilePreviewState } from "./state.ts";
+import { applyResolvedPath } from "./resolved-path.ts";
 
 /** issue #73：serve token 分配 URL。 */
 export function allocUrl(path: string, cwd: string | undefined, state: FilePreviewState): string {
@@ -64,9 +65,13 @@ export function renderHtmlPreview(body: HTMLElement, state: FilePreviewState, se
         errorView(body, t("htmlBootFail"), rawFileUrl(state.currentPath, state.currentCwd, state));
         return;
       }
+      // issue #486：alloc 响应回传真实 resolved path（可能经 ③ 搜索纠正）→ 设
+      // 权威 currentPath（html 组入口即 html，分组不变；老响应无 path 降级原值）。
+      if (typeof data.path === "string" && data.path !== "") applyResolvedPath(state, data.path);
       state.serveToken = data.token;
       // encodeURI 保留 "/"（rest 是 POSIX 相对路径），编码空格/中文等字符。
       state.serveSrc = `${state.API.serve}/${data.token}/${encodeURI(data.rest)}`;
+      state.onResolved?.();
       body.textContent = "";
       body.appendChild(makeHtmlFrame(state.serveSrc));
     })
