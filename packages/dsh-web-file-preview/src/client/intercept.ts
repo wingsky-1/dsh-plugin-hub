@@ -6,7 +6,7 @@
  * 不构成环，因 intercept 不逆向引用 text）。
  */
 
-import { el } from "./dom.ts";
+import { showToast } from "./dom.ts";
 import type { FilePreviewState } from "./state.ts";
 import { resolveFileLink, decideGate, SCOPE_SELECTORS } from "./link-resolver.ts";
 import { t } from "../../../../shared/client/i18n.js";
@@ -66,25 +66,11 @@ export function activeCwd(): string | undefined {
 
 /**
  * 轻量 toast 提示（issue #3：folder 引用点击给出友好反馈，不开 Modal）。
- * `role="status"` 底部居中、自动消失、可点关闭；样式走主题变量 + 浅色回退，
- * 不遮挡 chip（触控目标 ≥44px 由样式表 coarse 媒体查询保证）。
+ * 实现收敛在 dom.showToast（issue #479 P2 目录引用复用同一 toast）。
  * 文案硬编码，非外部输入，无注入面。
  */
 export function showFolderNotice(): void {
-  const existing = document.querySelector(".fwp-folder-notice");
-  if (existing !== null && existing.parentElement !== null) {
-    existing.parentElement.removeChild(existing);
-  }
-  const notice = el("div", {
-    class: "fwp-folder-notice",
-    text: t("dirNoPreview"),
-    attrs: { role: "status", "data-dsh-web-file-preview-notice": "" },
-  });
-  notice.addEventListener("click", () => {
-    notice.remove();
-  });
-  document.body.appendChild(notice);
-  window.setTimeout(() => { if (notice.parentElement !== null) notice.remove(); }, 4000);
+  showToast(t("dirNoPreview"));
 }
 
 /** 捕获阶段点击拦截：文件链接 → web 预览；folder → toast 提示。 */

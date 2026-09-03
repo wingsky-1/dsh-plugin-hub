@@ -33,6 +33,7 @@ export const zh = {
   imageAria: "图片预览",
   imageZoomHint: "点击放大",
   imageDecodeFail: "图片解码失败（文件已获取，但无法作为图片显示）",
+  imgFailHint: "图片加载失败（可在新标签打开原文查看）",
   // mermaid
   chartAria: "图表预览",
   mermaidFailNote: "图表渲染失败，已回退为代码展示",
@@ -77,6 +78,7 @@ export const en: Record<FilePreviewLocaleKey, string> = {
   imageAria: "Image preview",
   imageZoomHint: "Click to zoom",
   imageDecodeFail: "Image decode failed (file fetched but cannot be displayed as an image)",
+  imgFailHint: "Image failed to load (open original in a new tab)",
   chartAria: "Diagram preview",
   mermaidFailNote: "Diagram rendering failed — falling back to code view",
   dirNoPreview: "Folders cannot be previewed on the web — open them from the file tree",

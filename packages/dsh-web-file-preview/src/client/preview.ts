@@ -5,7 +5,7 @@
  * fileUrl 仅被 openPreview 使用，故归本模块（避免跨模块循环依赖）。
  */
 
-import { el, copyPathText, ensureStyle } from "./dom.ts";
+import { el, copyPathText, ensureStyle, showToast } from "./dom.ts";
 import type { FilePreviewState, NavEntry } from "./state.ts";
 import { fetchText, renderTabBody, probeDiff } from "./text.ts";
 import { renderImage } from "./image.ts";
@@ -395,6 +395,18 @@ export function openPreview(
         event.preventDefault();
         event.stopPropagation();
         scrollToFragment(state.overlay, anchorLink.getAttribute("data-fp-anchor") ?? "");
+        return;
+      }
+    }
+    // issue #479 P2：md 内目录引用（[diagrams/](diagrams/) 等，rewriteAnchor 已标
+    // data-fp-dir）→ 拦截默认导航，toast 提示（不新标签、不整页导航）。
+    if (targetEl !== null) {
+      let dirLink: Element | null = null;
+      try { dirLink = targetEl.closest("a[data-fp-dir]"); } catch { dirLink = null; }
+      if (dirLink !== null && dirLink !== undefined) {
+        event.preventDefault();
+        event.stopPropagation();
+        showToast(t("dirNoPreview"));
         return;
       }
     }

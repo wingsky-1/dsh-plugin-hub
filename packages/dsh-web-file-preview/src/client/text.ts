@@ -157,7 +157,14 @@ export function pumpPreviewImages(state: FilePreviewState, signal: AbortSignal |
         state.trackedBlobUrls.push(objectUrl);
         if (job.img.isConnected) job.img.src = objectUrl;
       })
-      .catch(() => { /* 内嵌图失败：保留 API 原 src，可新标签/长按查看 */ })
+      .catch(() => {
+        // issue #479 P3：内嵌图失败不再静默——保留 API 原 src（可新标签/长按查看），
+        // 但标记错误态（class + hover 提示），用户可见「加载失败」而非破图无线索。
+        if (job.img.isConnected) {
+          job.img.classList.add("fwp-img-failed");
+          job.img.title = t("imgFailHint");
+        }
+      })
       .finally(() => { state.imgInFlight--; pumpPreviewImages(state, signal); });
   }
 }

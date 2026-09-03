@@ -100,6 +100,6 @@ export { groupOfPath, groupOfExt, extOf, isPreviewablePath, isLikelySingleFilePa
 export { resolveRelativePath, resolveAbsolutePath, splitReferenceFragment, normalizeBasePath } from "./relpath.ts";
 // 点击链接解析纯逻辑（客户端无 DOM 依赖，经此透出供单元测试）。
 export { basenameOf, decideGate, resolveFileLink } from "./client/link-resolver.ts";
-// 引用 → 预览目标重写决策纯逻辑（issue #45；无 DOM 依赖，经此透出供单元测试）。
-export { rewriteTarget } from "./client/rewrite-target.ts";
+// 引用 → 预览目标重写决策纯逻辑（issue #45/#479 P2 目录语义；无 DOM 依赖，经此透出供单元测试）。
+export { rewriteTarget, dirResolvedPathOf } from "./client/rewrite-target.ts";
 
