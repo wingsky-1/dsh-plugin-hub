@@ -261,10 +261,13 @@ try {
       const baselineRef = JSON.parse(JSON.stringify(effective0));
       const settingsView = JSON.parse(JSON.stringify(effective0));
       settingsView.notifyTaskDone = false;
-      // diffPayload 只提交与基线不同的键（与 src/client/index.ts 同逻辑）
+      // diffPayload 只提交与基线不同的键——逻辑与 src/client/index.ts
+      // diffSettingsPayload 完全一致（无夹带守卫；真函数另有 client-contract
+      // #470 P1-2 产物直测，此处模拟同语义 diff 走 HTTP 整链）
       const payload = {};
       for (const key in settingsView) {
-        if (baselineRef[key] !== undefined && JSON.stringify(settingsView[key]) !== JSON.stringify(baselineRef[key])) {
+        if (!Object.prototype.hasOwnProperty.call(settingsView, key)) continue;
+        if (JSON.stringify(settingsView[key]) !== JSON.stringify(baselineRef[key])) {
           payload[key] = settingsView[key];
         }
       }
@@ -309,6 +312,98 @@ try {
     assert.equal(getBody.effective.notifyAsk, false, "entry 已知键经 base 层进 effective（装配键不干扰）");
     assert.equal(getBody.effective.quietHours.enabled, false, "effective 其余键默认值兜底");
     enDispose();
+  }
+
+  // (9) #470 复核 P0/P1 路由级回归：数组 patch 拒绝（不写脏数字键）；
+  //     原型链成员键（constructor/hasOwnProperty/__proto__…）不触发 500、
+  //     不脏写 user 层（既有 JSON.parse 注入形态）
+  {
+    function bodyReq(payload) {
+      const text = JSON.stringify(payload);
+      return {
+        method: "PUT",
+        url: "/",
+        socket: { remoteAddress: "127.0.0.1" },
+        headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
+        on(event, cb) {
+          if (event === "data") setTimeout(() => cb(Buffer.from(text)), 0);
+          else if (event === "end") setTimeout(cb, 1);
+          return this;
+        },
+        destroy() {},
+      };
+    }
+    const { routes: pfRoutes, settings: pfSettings, dispose: pfDispose } = makeNotifier(work, {
+      historyFile: join(work, "history-proto.jsonl"),
+    });
+    const cfgR3 = pfRoutes.find((r) => r.path === ROUTES.config);
+
+    // 数组 patch：[1,2] 不得被当对象透传 → 400，user 层无 "0"/"1" 脏键
+    const putArr = makeRes();
+    await cfgR3.handler(bodyReq({ patch: [1, 2] }), putArr.res);
+    assert.equal(putArr.rec.status, 400, "数组 patch → 400（不当对象透传）");
+    const arrUser = pfSettings.getUser();
+    assert.ok(!("0" in arrUser) && !("1" in arrUser), "数组 patch 不写脏数字索引键");
+    assert.deepEqual(arrUser, {}, "数组 patch 后 user 层保持空");
+    // 空数组同样 400
+    const putArr2 = makeRes();
+    await cfgR3.handler(bodyReq({ patch: [] }), putArr2.res);
+    assert.equal(putArr2.rec.status, 400, "空数组 patch → 400");
+
+    // 原型链成员键：逐个 PUT 不得抛异常（handler 捕获 → 400）、不脏写 user 层
+    for (const key of ["constructor", "hasOwnProperty", "prototype", "toString", "valueOf", "__proto__"]) {
+      const evil = JSON.parse(`{"${key}": 1}`);
+      const put = makeRes();
+      let threw = false;
+      try {
+        await cfgR3.handler(bodyReq({ patch: evil }), put.res);
+      } catch {
+        threw = true;
+      }
+      assert.equal(threw, false, `${key} patch 不抛未捕获异常（无 500/悬挂）`);
+      assert.equal(put.rec.status, 400, `${key} 纯原型键 patch → 400（净化后无键可写）`);
+      const userAfter = pfSettings.getUser();
+      assert.equal(Object.prototype.hasOwnProperty.call(userAfter, key), false, `${key} 不脏写 user 层`);
+    }
+    // 原型键 + 已知键混合：仅已知键生效、原型键剔除（200）
+    const mixed = JSON.parse('{"notifyAsk":false,"__proto__":{"polluted":1},"constructor":1}');
+    const putMix = makeRes();
+    await cfgR3.handler(bodyReq({ patch: mixed }), putMix.res);
+    assert.equal(putMix.rec.status, 200, "原型键+已知键混合 → 200（原型键剔除）");
+    const mixUser = pfSettings.getUser();
+    assert.equal(mixUser.notifyAsk, false, "混合提交已知键生效");
+    assert.equal(Object.prototype.hasOwnProperty.call(mixUser, "constructor"), false, "混合提交 constructor 不写入");
+    assert.equal({}.polluted, undefined, "无全局原型污染");
+
+    pfDispose();
+  }
+
+  // (10) #470 复核 P2 采纳：GET user/effective 不含特殊键（constructor/prototype/
+  //      __proto__/toString/hasOwnProperty/valueOf）契约扫描——即使存量 user 层
+  //      被外部手改注入特殊键（模拟 setUser 预置），读出口也不泄露（normalize 剔除）
+  {
+    const { routes: gfRoutes, settings: gfSettings, dispose: gfDispose } = makeNotifier(
+      work,
+      { historyFile: join(work, "history-getproto.jsonl") },
+      {
+        settings: {
+          user: JSON.parse('{"notifyAsk":true,"futureKey":1,"constructor":1,"prototype":2,"toString":3,"hasOwnProperty":4,"valueOf":5,"__proto__":{"polluted":1}}'),
+        },
+      },
+    );
+    const cfgR4 = gfRoutes.find((r) => r.path === ROUTES.config);
+    const get = makeRes();
+    await cfgR4.handler(fakeReq({}), get.res);
+    assert.equal(get.rec.status, 200, "存量 user 含特殊键 GET 正常 200（不崩）");
+    const body = JSON.parse(get.rec.text);
+    for (const badKey of ["constructor", "prototype", "toString", "hasOwnProperty", "valueOf", "__proto__"]) {
+      assert.equal(Object.prototype.hasOwnProperty.call(body.user, badKey), false, `GET user 不含特殊键 ${badKey}`);
+      assert.equal(Object.prototype.hasOwnProperty.call(body.effective, badKey), false, `GET effective 不含特殊键 ${badKey}`);
+    }
+    assert.equal(body.user.futureKey, 1, "GET user 普通未知键保留");
+    assert.equal(body.effective.notifyAsk, true, "GET effective 已知键正常");
+    assert.equal(Object.prototype.polluted, undefined, "GET 读出口无全局原型污染");
+    gfDispose();
   }
 
   // F4 expectedRevision 缺省：无冲突检测（不带 revision 的 PUT 成功）

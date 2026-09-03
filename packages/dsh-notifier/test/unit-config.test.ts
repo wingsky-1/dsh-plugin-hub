@@ -149,6 +149,17 @@ try {
   assert.deepEqual(opaque.allowKinds, [], "allowKinds 非法回默认且不透传");
   assert.equal(opaque.bogus, 1, "其他未知键仍透传");
 
+  // #470 复核 P0（读面纵深）：normalizeConfig 透传剔除原型链成员自有键——
+  // 存量 user 层若含 JSON.parse 注入的 constructor/__proto__ 等键，不得脏写
+  // 运行时镜像、不得改原型
+  const readEvil = JSON.parse('{"constructor":1,"toString":2,"hasOwnProperty":3,"valueOf":4,"__proto__":{"polluted":1},"futureRead":9,"notifyAsk":true}');
+  const readOut = normalizeConfig(readEvil);
+  assert.equal(readOut.notifyAsk, true, "读面：已知键正常归一化");
+  assert.equal(readOut.futureRead, 9, "读面：普通未知键仍透传");
+  assert.equal(Object.prototype.hasOwnProperty.call(readOut, "constructor"), false, "读面：constructor 剔除不透传（非自有键）");
+  assert.equal(Object.prototype.hasOwnProperty.call(readOut, "toString"), false, "读面：toString 剔除不透传（非自有键）");
+  assert.equal(Object.getPrototypeOf(readOut), Object.prototype, "读面：normalizeConfig 输出原型未被污染");
+
   // ===== M2：凭据脱敏与掩码回填（评审 P0-1/P0-2）=====
   const withSecret = { channels: [{ id: "phone", type: "bark", baseUrl: "https://api.day.app", deviceKey: "realKey123", enabled: true }], notifyAsk: true };
   const redacted = redactConfigView(withSecret);
@@ -234,6 +245,16 @@ try {
   assert.equal(sanitizePatchSettings(null), null, "透传通道：非对象 → null");
   assert.deepEqual(sanitizePatchSettings({ notifyTaskDone: true }), { notifyTaskDone: true }, "透传通道：纯已知键与 entry 白名单同结果");
   assert.equal(sanitizePatchSettings({ channels: [{ ...okCh, volume: "0.7" }] }).channels[0].volume, "0.7", "透传通道：channels 内未知 string/number 参数保留（Bark 前向兼容不变）");
+  // #470 复核 P0：数组 patch 不得被当对象透传成数字索引脏键 → null（调用方 400）
+  assert.equal(sanitizePatchSettings([1, 2]), null, "透传通道：数组 patch → null（拒绝，不写脏 user 层）");
+  assert.equal(sanitizePatchSettings([]), null, "透传通道：空数组 → null");
+  // #470 复核 P0：原型链成员键经 JSON.parse 成为自有键 → 剔除不写入、不触发原型校验器
+  const protoEvil = JSON.parse('{"__proto__":{"polluted":1},"constructor":1,"prototype":2,"toString":3,"hasOwnProperty":4,"valueOf":5,"futureKey":7}');
+  const protoEvilOut = sanitizePatchSettings(protoEvil);
+  assert.deepEqual(protoEvilOut, { futureKey: 7 }, "透传通道：原型链成员键剔除、未知键仍透传");
+  assert.equal(Object.getPrototypeOf(protoEvilOut), Object.prototype, "透传通道：__proto__ 不改变 out 原型（无原型污染）");
+  const protoKnownEvil = JSON.parse('{"notifyAsk":false,"__proto__":{"polluted":1},"constructor":1}');
+  assert.deepEqual(sanitizePatchSettings(protoKnownEvil), { notifyAsk: false }, "透传通道：原型键与已知键混合 → 只留已知键");
 } finally {
   rmSync(work, { recursive: true, force: true });
 }

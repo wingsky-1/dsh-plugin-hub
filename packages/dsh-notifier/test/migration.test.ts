@@ -380,6 +380,38 @@ try {
       assert.equal(out.skippedCorrupt, true, "E9h：仅装配键 legacy 标记 corrupted");
       assert.equal(d.updates.length, 0, "E9h：仅装配键不写入");
     }
+    // #470 复核 P1-1：legacy 含原型链成员键（__proto__/constructor/toString 等
+    // 经 JSON.parse 的自有键）→ 不抛异常、不整体迁移崩、正常键照常补写；
+    // legacy 为数组 → 视为非对象（无键）标记 corrupted 不写入
+    {
+      const d = deps();
+      const legacy = join(dir, "proto-mix.json");
+      // 手动 JSON 文本：JSON.parse 后 __proto__/constructor 等均为**自有键**
+      // （对象字面量 __proto__ 是原型语法，测不到真实威胁形态）
+      writeFileSync(legacy, '{"notifyAsk":false,"futureKey":1,"constructor":2,"toString":3,"__proto__":{"polluted":1}}');
+      let threw = false;
+      let out;
+      try {
+        out = await migrateLegacyConfig(legacy, d);
+      } catch {
+        threw = true;
+      }
+      assert.equal(threw, false, "E9i：原型键 legacy 不抛异常（迁移不崩）");
+      assert.equal(out.migrated, true, "E9i：原型键 legacy 正常迁移（正常键补写）");
+      assert.deepEqual(d.updates, [{ notifyAsk: false, futureKey: 1 }], "E9i：原型键剔除、只写正常键");
+      assert.ok(Object.prototype.hasOwnProperty.call(d.readUser(), "constructor") === false && Object.prototype.hasOwnProperty.call(d.readUser(), "toString") === false, "E9i：原型键不写 user 层");
+      assert.equal(Object.prototype.polluted, undefined, "E9i：无全局原型污染");
+      assert.ok(existsSync(legacy + MIGRATED_BAK_SUFFIX), "E9i：正常迁移改名 migrated.bak（未因原型键中断）");
+    }
+    {
+      const d = deps();
+      const legacy = join(dir, "array-legacy.json");
+      writeFileSync(legacy, JSON.stringify([1, 2]));
+      const out = await migrateLegacyConfig(legacy, d);
+      assert.equal(out.migrated, false, "E9j：数组 legacy 不迁移（非对象语义）");
+      assert.equal(out.skippedCorrupt, true, "E9j：数组 legacy 标记 corrupted");
+      assert.equal(d.updates.length, 0, "E9j：数组 legacy 不写入");
+    }
     rmSync(dir, { recursive: true, force: true });
   }
 } finally {
