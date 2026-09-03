@@ -121,6 +121,12 @@ rewritten (except for composition-layer assembly keys, see boundaries below):
   existing ones; a legacy file containing only unknown keys is no longer treated as
   "no valid keys".
 - **Boundary exceptions**:
+  - `patch` **must be an object**: non-object shapes (arrays, `null`, numbers, etc.)
+    always return 400 — arrays are never passed through as numeric-index dirty keys.
+  - Prototype-chain / special member keys (`__proto__`, `constructor`, `prototype`,
+    `toString`, `hasOwnProperty`, `valueOf`, etc., which JSON text can inject as own
+    keys) are always stripped from both the read pass-through and the write channels —
+    never validated and never written.
   - Composition-layer assembly keys (`configFile` / `toastScript` / `historyFile` /
     `statusFile` / `enabled`) are cordis composition/startup parameters and **never
     enter the settings user layer** — PUT and migration drop same-named keys; entry

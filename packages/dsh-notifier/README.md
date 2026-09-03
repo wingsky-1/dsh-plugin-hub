@@ -127,6 +127,11 @@ context filter checks」）。取舍如下（issue #290）：
 - **存量迁移**：旧 `dsh-notifier.json` 的未知键在迁移时**透传保留**——user 层
   缺失则补写、已存在不覆盖；纯未知键 legacy 不再被当作「无有效键」丢弃；
 - **边界例外**：
+  - `patch` **必须是对象**：数组、`null` 等非对象形态一律 400（数组不会按数字
+    索引透传成脏键）；
+  - 原型链/特殊成员键（`__proto__`、`constructor`、`prototype`、`toString`、
+    `hasOwnProperty`、`valueOf` 等，JSON 文本可注入为自有键）在读取透传与写入
+    通道中一律剔除，不参与校验也不写入；
   - 组合层装配键（`configFile` / `toastScript` / `historyFile` / `statusFile` /
     `enabled`）是 cordis 组合层/启动参数，**不进入 settings 用户层**——PUT 与
     迁移提交同名键一律剔除，entry 组合层走白名单过滤；
