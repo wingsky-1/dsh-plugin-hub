@@ -733,15 +733,14 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
       attachedScope = scope;
       attachedService = service;
       // 迁移（rename-first 幂等；损坏/中断/回滚均在 migrate.ts 内处理并 warn，
-      // 失败不阻塞启动——E6）。hasUserValues 判定「user 层已有值 = 迁移已完成」。
+      // 失败不阻塞启动——E6）。迁移完成判定 = 逐字段缺失补齐（#468：不再以
+      // 「user 层已有任意值 = 迁移已完成」整体跳过——部分写入中断后剩余 legacy
+      // 字段会永久漏迁）；readUser 供 diffMissingKeys 只补写 user 层缺失键。
       void migrateLegacyConfig(
         storeFile,
         {
           update: (patch) => service.update(SETTINGS_NS, patch),
-          hasUserValues: () => {
-            const { user } = readUser();
-            return user !== undefined && Object.keys(user).length > 0;
-          },
+          readUser: () => readUser().user,
         },
         ctx.logger
       ).catch((err) => {
