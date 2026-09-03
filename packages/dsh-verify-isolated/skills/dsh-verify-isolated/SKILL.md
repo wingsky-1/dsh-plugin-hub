@@ -4,8 +4,9 @@ description: >
   DSH 插件开发的隔离环境浏览器验证 skill——**适用于任意 dsh 插件仓库**
   （dsh-plugin-hub / xiaozhuge 等）。触发信号：需要对客户端 UI 改动（src/client/**
   或宿主端 UI 渲染逻辑）做隔离浏览器实测、采集截图证据归档、验证不污染正在使用的
-  web profile。核心做法：临时 DSH_HOME + verify_<8位随机> 独立 profile 双重隔离，
-  一键脚本 scripts/verify-isolated.sh 拉起隔离 dsh web，退出自动清理。
+  web profile。核心做法：临时 DSH_HOME + verify_<8位随机> 独立 profile + 独立端口 +
+  独立浏览器实例四重隔离，一键脚本 scripts/verify-isolated.sh 拉起隔离 dsh web 与
+  自带浏览器实例（browser-driver.mjs，raw CDP 零依赖），退出自动清理。
   Do NOT trigger for: 纯宿主端逻辑（不涉及 UI 渲染）、纯文档改动、普通单元/smoke
   测试（那些走仓库自身 test 门禁）。
 ---
@@ -26,15 +27,17 @@ description: >
 
 **不需要**隔离验证的例外：纯文档改动、纯宿主端逻辑（不涉及 UI 渲染）、纯后端数据流变更。
 
-## 1. 双重隔离原理
+## 1. 四重隔离原理
 
-验证使用**全新临时 `DSH_HOME` + 独立 profile** 的双重隔离环境，与正在使用的真实
-`~/.dsh`（含用户日常的 `web` profile）完全隔绝：
+验证使用**全新临时 `DSH_HOME` + 独立 profile + 独立端口 + 独立浏览器实例**的四重
+隔离环境，与正在使用的真实 `~/.dsh`（含用户日常的 `web` profile）完全隔绝：
 
 | 隔离层 | 做法 | 隔离内容 |
 |--------|------|----------|
 | 第一层：临时 `DSH_HOME` | `DSH_HOME=$(mktemp -d)` | 凭据、会话、全部用户数据、home 级 `cordis.patch.yml` |
 | 第二层：独立 profile | `verify_<8位随机>`（非 `web`） | 插件组合栈（bundles）、profile 级 patch、插件依赖 |
+| 第三层：独立端口 | `--port` 自选/探测空闲端口 | 与运行中主 `dsh web` 及其它验证实例互不冲突 |
+| 第四层：独立浏览器实例 | `--browser` 拉起 skill 自带浏览器（独立 user-data-dir + 调试端口） | 页面/tab/console 完全独立，多会话并行互不可见 |
 
 只建独立 profile 不够：profile 共享 home 级的凭据与会话；只有同时把 `DSH_HOME`
 指向临时目录，才能做到与用户正在使用的环境完全隔离。验证结束后删除临时
@@ -54,8 +57,10 @@ description: >
 SKILL_BASE="<Base directory for this skill 一行的绝对路径，见上方 skill_resources>"
 bash "$SKILL_BASE/scripts/verify-isolated.sh" --port 3456 <插件包路径>
 # 多包：... --port 3456 <包A路径> <包B路径>
-# 端口冲突：--port 0 让系统随机分配；--keep 保留临时环境便于排查
+# 端口冲突：--port 0 让脚本自动探测真实空闲端口；--keep 保留临时环境便于排查
 # 跳过构建：--no-build（默认会先 pnpm build 各插件，保证 lib/ 或 dist/ 产物存在）
+# 浏览器验证：加 --browser 自动拉起 skill 自带独立浏览器实例（见 §5 多会话并行）
+bash "$SKILL_BASE/scripts/verify-isolated.sh" --port 0 --browser <插件包路径>
 ```
 
 若注入的 base 不可用或不确信，先自证脚本位置再执行
@@ -64,8 +69,10 @@ bash "$SKILL_BASE/scripts/verify-isolated.sh" --port 3456 <插件包路径>
 （自包含、不依赖自身位置）；`SKILL_BASE` 里的尖括号是占位说明，不是可执行值。
 
 脚本自动完成：建临时 `DSH_HOME` → 建 `verify_<8位随机>` profile → 注入内置
-`@deepseek-ai/dsh-web-app` bundle → **构建并**把本地插件 link 进 profile → 启动隔离
-`dsh web`（前台阻塞）。`Ctrl+C` 退出时 `trap` 自动删除临时 `DSH_HOME` 与 profile。
+`@deepseek-ai/dsh-web-app` bundle → **构建并**把本地插件 link 进 profile →
+`--browser` 时启动独立浏览器实例（实例信息写入 `$DSH_HOME/browser.state`）→
+启动隔离 `dsh web`（前台阻塞）。`Ctrl+C` 退出时 `trap` 自动清理浏览器实例、
+临时 `DSH_HOME` 与 profile。
 
 > **构建说明**：dsh 直读构建产物（dsh-plugin-hub 各包的 `lib/`、xiaozhuge 的 `dist/`），
 > 脚本默认在挂载前 `pnpm build` 各插件，保证产物存在；产物已就绪时可 `--no-build` 跳过。
@@ -102,6 +109,15 @@ dsh plugin --profile "$PROFILE" add /path/to/main-checkout/packages/dsh-<name>
 dsh --profile "$PROFILE" --port 3456
 ```
 
+需要浏览器实例时（第四层隔离，等价于脚本 `--browser`）：
+
+```bash
+node "$SKILL_BASE/scripts/browser-driver.mjs" launch \
+  --state "$DSH_HOME/browser.state" --user-data-dir "$DSH_HOME/browser-profile"
+# 退出前清理（与脚本 exit trap 相同语义）：
+node "$SKILL_BASE/scripts/browser-driver.mjs" quit --state "$DSH_HOME/browser.state"
+```
+
 ## 4. 关键原则
 
 - **DSH_HOME 设到临时目录**：`$(mktemp -d)` 生成唯一临时目录，隔离凭据、会话与
@@ -116,65 +132,138 @@ dsh --profile "$PROFILE" --port 3456
   安装目录按名解析，**不要**用 `dsh plugin add` 走 npm 安装（其依赖
   `@deepseek-ai/dsh-frontend` 不在 registry，会 404）。
 - **独立端口**：`--port <n>` 选择与运行中主 `dsh web` 不冲突的端口（如 3456），
-  **不要关闭或重启运行中的主 dsh web 进程**。
+  `--port 0` 自动探测真实空闲端口，**不要关闭或重启运行中的主 dsh web 进程**。
 - **不复制真实凭据**：隔离环境使用临时 `DSH_HOME`，不携带 `~/.dsh` 下的真实凭据、
   令牌、API 密钥等。若验证需要凭据，使用测试专用凭据或 mock 数据。
 - **验证完成后清理**：停止隔离 `dsh web` 进程后，删除临时 `DSH_HOME` 目录
   （`rm -rf "$DSH_HOME"`），避免残留无用的 `verify_*` profile。
 
-## 5. 浏览器验证方法
+## 5. 多会话并行（浏览器硬隔离）
 
-使用浏览器自动驾驶工具（Playwright 或 chrome-devtools MCP）在隔离环境内进行自动化验证。
+**强制规则：客户端 UI 验证一律走本 skill 自带浏览器实例（`--browser`），禁用
+工作区共享 MCP 浏览器**（`.dsh/mcp.json` 的 playwright / chrome-devtools 由
+dsh-mcp-manager 管理，**同一工作区的所有会话共享同一个 MCP server 子进程**——
+浏览器实例只有一份，`browser_snapshot/click` 等工具操作该 server 的「当前活动
+页」，多会话并行时 tab/页面互相漂移串扰，甚至漂到其他实例的用户页面。官方
+`--isolated` 只解「状态串」（每会话新 context），不解「操作面串」；`--browser`
+才是结构性硬隔离）。
 
-### 5.1 准备工作
+每个验证任务**自带独立浏览器实例**：独立 user-data-dir + 自选空闲调试端口 +
+headless 内核，实例信息写入各任务自己的 `browser.state`（`--browser` 时在
+`$DSH_HOME/browser.state`，随 DSH_HOME 同生命周期），多会话并行互不可见、
+互不打断、tab 不漂移。
 
-- Playwright：`npx playwright install chromium`
-- chrome-devtools：需系统已安装 Chrome/Chromium
-- 仓库 `.dsh/mcp.json` 若已配置浏览器 MCP，可在 DSH 会话中直接使用。
+### 5.1 四重隔离自检清单（并行验证前逐项核对）
 
-### 5.2 核验改动
+| # | 隔离项 | 自检命令 / 判据 |
+|---|--------|-----------------|
+| 1 | DSH_HOME | `echo $DSH_HOME` → 必须是本次验证的临时目录（mktemp 路径），**不得是** `~/.dsh` |
+| 2 | profile | 脚本输出 `profile=verify_<8位随机>`；`dsh plugin --profile web list` 不受影响 |
+| 3 | 端口 | dsh web 端口与主实例及其它并行实例互不相同；`--port 0` 时脚本会打印探测到的真实端口 |
+| 4 | 浏览器实例 | `browser.state` 的 `port`/`pid`/`userDataDir` 为本任务独有；并行任务各自的 state 文件路径不同（各在各自 DSH_HOME 下） |
 
-1. **导航到改动对应的路由/页面**：打开 `http://localhost:<port>` 下的对应路径。
-2. **验证 UI 呈现**：确认组件渲染正确、样式符合预期、交互行为正常。
-3. **检查 Console**：检查是否有未处理的错误或警告。
-   - 重点关注：`console.error`、未捕获的异常、插件相关的 `console.warn` 消息。
-   - 挂载失败只应 `console.warn` 不应 throw。
+并行验证建议：每个任务**单独运行一个 `verify-isolated.sh --port 0 --browser` 进程**
+（各自独立临时 DSH_HOME / profile / 端口 / 浏览器实例），不要在同一隔离环境内
+手拉多个浏览器。
+
+## 6. 浏览器验证方法
+
+使用 skill 自带浏览器驱动（`browser-driver.mjs`，raw CDP 零依赖）在隔离环境内
+自动化验证；浏览器 MCP 仅限**非并行**的简单场景。
+
+### 6.1 前置检查：浏览器内核
+
+`--browser` 需要 Chromium 系内核（Chrome / Edge / Chromium）。探测链（
+`browser-driver.mjs detectChrome()`，唯一收敛点）：
+
+`DSH_VERIFY_CHROME` 环境变量 → ms-playwright 缓存 → PATH → 平台常见路径，
+全缺失时 fail-fast 并打印可执行安装指引。
+
+| 平台 | ms-playwright 缓存目录 | 常见安装路径（PATH 之外兜底） |
+|------|------------------------|------------------------------|
+| Linux | `~/.cache/ms-playwright` | `/usr/bin/google-chrome`、`/usr/bin/chromium`、`/snap/bin/chromium` |
+| macOS | `~/Library/Caches/ms-playwright` | `/Applications/Google Chrome.app/.../Google Chrome`、`/Applications/Chromium.app/.../Chromium` |
+| Windows | `%LOCALAPPDATA%\ms-playwright` | `%ProgramFiles%\Google\Chrome\Application\chrome.exe`、`%ProgramFiles(x86)%\...`、`%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe` |
+
+自查命令：
+
+```bash
+# Linux / macOS：确认内核可执行文件存在
+ls ~/.cache/ms-playwright 2>/dev/null      # ms-playwright 缓存命中？
+command -v google-chrome chromium          # PATH 命中？
+# macOS 额外：
+ls "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" 2>/dev/null
+# Windows（PowerShell）：
+Test-Path "$env:LOCALAPPDATA\ms-playwright"          # ms-playwright 缓存
+Test-Path "$env:ProgramFiles\Google\Chrome\Application\chrome.exe"
+# 全部缺失时一键安装内核：
+#   Linux: sudo apt-get install -y chromium-browser   或   npx playwright install chromium
+#   macOS: brew install --cask google-chrome          或   npx playwright install chromium
+#   Windows: winget install Google.Chrome             或   npx playwright install chromium
+# 已装但探测不到时显式指定：
+#   DSH_VERIFY_CHROME=/path/to/chrome verify-isolated.sh --browser <pkg>
+```
+
+### 6.2 browser-driver 操作命令
+
+`--browser` 启动后（实例信息在 `$DSH_HOME/browser.state`），所有命令统一
+`--json` 输出、默认即 JSON；`--state` 必须指向本任务自己的 state 文件
+（并行任务各用各的，互不覆盖）。完整契约见 `browser-driver.mjs --help`：
+
+```bash
+# 先看帮助（契约唯一事实源）
+node "$SKILL_BASE/scripts/browser-driver.mjs" --help
+STATE="$DSH_HOME/browser.state"
+
+# 页面状态快照（导航 + title/readyState/body 文本/选择器元素）
+node "$SKILL_BASE/scripts/browser-driver.mjs" snapshot --state "$STATE" --url http://127.0.0.1:<端口>
+# 点击 / 填充 / 执行 JS / 等待元素（轮询，替代固定 sleep）
+node "$SKILL_BASE/scripts/browser-driver.mjs" click  --state "$STATE" --selector "button.start"
+node "$SKILL_BASE/scripts/browser-driver.mjs" fill   --state "$STATE" --selector "input[name=q]" --value "测试"
+node "$SKILL_BASE/scripts/browser-driver.mjs" eval   --state "$STATE" --expression "document.title"
+node "$SKILL_BASE/scripts/browser-driver.mjs" wait   --state "$STATE" --selector ".done" --timeout 10000
+# 截图（整页或元素）与 console 捕获
+node "$SKILL_BASE/scripts/browser-driver.mjs" screenshot --state "$STATE" --url http://127.0.0.1:<端口> --path shot.png
+node "$SKILL_BASE/scripts/browser-driver.mjs" console   --state "$STATE" --url http://127.0.0.1:<端口> --wait-ms 2000
+```
+
+### 6.3 核验改动
+
+1. **导航到改动对应的路由/页面**：打开 `http://localhost:<port>` 下的对应路径
+   （`--port 0` 时用脚本打印的真实端口）。
+2. **验证 UI 呈现**：`snapshot` 确认组件渲染正确、样式符合预期；`click`/`fill`/
+   `eval` 验证交互行为。
+3. **检查 Console**：`console` 命令捕获 `console.error`、未捕获异常、插件相关的
+   `console.warn` 消息。挂载失败只应 `console.warn` 不应 throw。
 4. **双主题验证**：切换明/暗主题确认颜色引用正确，无硬编码固定色值。
-5. **窄屏验证**：调整视口到 pad（768×1024）和 phone（375×667）尺寸，确认响应式布局正常。
+5. **窄屏验证**：`eval` 设置视口（如 `window.resizeTo(768,1024)`）后核验 pad
+   （768×1024）和 phone（375×667）尺寸下的响应式布局。
 
-### 5.3 防 flake 纪律
+### 6.4 防 flake 纪律
 
 浏览器自动化验证**不得使用固定时间等待**（如 `setTimeout(resolve, 300)`），
 必须采用轮询等待机制：
 
-- 等待元素出现：使用 MCP 工具的 `wait_for` 或 `waitForSelector` 而非固定 sleep。
+- 等待元素出现：用 `wait --selector <css> --timeout <ms>`（browser-driver 内置
+  轮询），或 `click`/`fill` 内部自带先等待；不要固定 sleep。
 - 等待 DOM 更新：轮询目标元素状态直到满足条件，设置合理超时兜底。
-- 等待网络请求完成：使用 `wait_for` 等待响应完成标志，而非固定延时。
+- 等待网络请求完成：轮询页面状态标志（如 `eval --expression "document.readyState"`）
+  而非固定延时。
 
-正例（Playwright）：
+### 6.5 截图采集
 
-```javascript
-await page.waitForSelector('text=预期内容', { timeout: 5000 });
-```
-
-反例：
-
-```javascript
-await new Promise(r => setTimeout(r, 1000)); // 固定 sleep，禁止
-```
-
-### 5.4 截图采集
-
-- 截图只截插件 UI 本身（headless element screenshot），不带浏览器整窗，
+- 截图只截插件 UI 本身（`screenshot --selector` 元素截图），不带浏览器整窗，
   避免泄露本机环境（文件路径、IP 地址、其他标签页）。
 - 格式：PNG；单张截图聚焦一个验证点，多场景拆多张。
 - 归档路径与 PR 证据要求以各仓库 AGENTS.md 为准（dsh-plugin-hub 归档至
   `packages/dsh-<name>/docs/archive/`）。
 
-## 6. 完成检查
+## 7. 完成检查
 
-- [ ] 隔离 `dsh web` 实例已启动且不冲突主实例端口
+- [ ] 隔离 `dsh web` 实例已启动且不冲突主实例端口（`--port 0` 时打印真实端口）
+- [ ] 若做并行验证：四重隔离自检清单（§5.1）逐项通过，各任务浏览器 state 独立
 - [ ] 插件 UI 在隔离环境渲染正常（双主题 + 窄屏如适用）
 - [ ] Console 无未处理错误（挂载失败仅 warn）
 - [ ] 截图已采集并按仓库规范归档（如适用）
-- [ ] 隔离实例已停止、临时 `DSH_HOME` 与 `verify_*` profile 已清理
+- [ ] 隔离实例已停止、浏览器实例已清理（`browser.state` 不再存在）、临时
+      `DSH_HOME` 与 `verify_*` profile 已清理
