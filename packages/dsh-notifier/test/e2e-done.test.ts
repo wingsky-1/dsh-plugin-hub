@@ -393,7 +393,7 @@ try {
       id: "mal-2",
       session: {
         header: undefined,
-        events: [
+        snapshotEvents: () => [
           { type: "turn/end", data: { turn: 7, reason: { kind: "completed" } } },
           { type: "turn/end", data: { turn: "x", reason: { kind: "completed" } } },
           { type: "session/title", data: { title: "T" } },
@@ -401,7 +401,7 @@ try {
       },
     };
     assert.deepEqual(lastTurnEndOf(snapshotAgent), { turn: 7, kind: "completed" }, "(d) lastTurnEndOf 跳过非有限 turn 条目");
-    assert.equal(lastTurnEndOf({ id: "mal-3", session: { header: undefined, events: [{ type: "turn/end", data: { turn: null, reason: { kind: "completed" } } }] } }), undefined, "(d) 仅畸形条目时返回 undefined");
+    assert.equal(lastTurnEndOf({ id: "mal-3", session: { header: undefined, snapshotEvents: () => [{ type: "turn/end", data: { turn: null, reason: { kind: "completed" } } }] } }), undefined, "(d) 仅畸形条目时返回 undefined");
   }
 
   // ── issue #290：根因 A 安全化与提交后置三态化（A-2/A-3/B-1/B-2/B-4）──

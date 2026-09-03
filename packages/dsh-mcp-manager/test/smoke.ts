@@ -2100,16 +2100,18 @@ const main = async () => {
 
   // ---------- pre-step 目录注入（history-based 去重，复刻官方 tool-skill 语义）
 
-  // 模拟 agent：session.events 持久化 + surface 可见性（与真实 agent 同构）
+  // 模拟 agent：session.snapshotEvents() 持久化 + surface 可见性（与真实 agent 同构；
+  // 0.1.2-rc.1 起 events getter 移除，fake 暴露方法形态）
   function makeAgent() {
+    const events = [];
     const session = {
       header: { cwd: "/tmp" },
       surface: { nodes: new Set() },
-      events: [],
+      snapshotEvents: () => events,
       append(type, data) {
-        const seq = session.events.length;
+        const seq = events.length;
         const event = { type, data, seq };
-        session.events.push(event);
+        events.push(event);
         if (type === "user/message") session.surface.nodes.add(seq);
         return event;
       },
@@ -2121,7 +2123,7 @@ const main = async () => {
   function runStep(decision, messages, supervisors, cache, agent) {
     const result = resolveCatalogInjection(decision, messages, supervisors, 6, cache, agent);
     const known = new Set();
-    for (const evt of agent.session.events) {
+    for (const evt of agent.session.snapshotEvents()) {
       if (evt.type === "user/message" && evt.data?.source?.kind === "mcp-catalog") known.add(evt.data.id);
     }
     for (const msg of result.messages) {
@@ -2134,12 +2136,12 @@ const main = async () => {
     const supervisors = new Map([["code-graph", { server: { description: "代码图谱" }, tools: [], toolMeta: new Map() }]]);
     const agent = makeAgent();
 
-    // 真实语义：decision.messages 只含本轮新消息（历史在 session.events）
+    // 真实语义：decision.messages 只含本轮新消息（历史在 session.snapshotEvents()）
     let historyCount = 0;
     for (let round = 1; round <= 5; round += 1) {
       const decision = { kind: "enter", messages: [{ id: `user-${round}`, role: "user", content: [] }] };
       const result = runStep(decision, decision.messages, supervisors, undefined, agent);
-      historyCount = agent.session.events.filter((e) => e.type === "user/message" && e.data?.source?.kind === "mcp-catalog").length;
+      historyCount = agent.session.snapshotEvents().filter((e) => e.type === "user/message" && e.data?.source?.kind === "mcp-catalog").length;
       const inMessages = result.messages.filter((m) => m.source?.kind === "mcp-catalog").length;
       if (round === 1) {
         assert.equal(historyCount, 1, "首轮注入 1 条");
@@ -2160,13 +2162,13 @@ const main = async () => {
     // 首次注入
     let result = runStep({ kind: "enter", messages: [...messages] }, messages, base, undefined, agent);
     messages = result.messages;
-    const firstId = agent.session.events.find((e) => e.data?.source?.kind === "mcp-catalog").data.id;
+    const firstId = agent.session.snapshotEvents().find((e) => e.data?.source?.kind === "mcp-catalog").data.id;
     assert.ok(firstId, "首次注入");
 
     // 描述变化（集合不变）→ 不注入
     const descChanged = new Map([["code-graph", { server: { description: "新描述" }, tools: [], toolMeta: new Map() }]]);
     result = runStep({ kind: "enter", messages: [...messages, { id: "u2", role: "user", content: [] }] }, messages, descChanged, undefined, agent);
-    assert.equal(agent.session.events.filter((e) => e.data?.source?.kind === "mcp-catalog").length, 1, "描述变化不注入");
+    assert.equal(agent.session.snapshotEvents().filter((e) => e.data?.source?.kind === "mcp-catalog").length, 1, "描述变化不注入");
 
     // 集合变化（新增服务器）→ 注入"更新"消息（历史 1 + 更新 1，声明作废旧目录）
     const added = new Map([
@@ -2174,14 +2176,14 @@ const main = async () => {
       ["playwright", { server: { description: "浏览器自动化" }, tools: [], toolMeta: new Map() }],
     ]);
     result = runStep({ kind: "enter", messages: [...messages, { id: "u3", role: "user", content: [] }] }, messages, added, undefined, agent);
-    const afterAdd = agent.session.events.filter((e) => e.data?.source?.kind === "mcp-catalog");
+    const afterAdd = agent.session.snapshotEvents().filter((e) => e.data?.source?.kind === "mcp-catalog");
     assert.equal(afterAdd.length, 2, "集合变化注入更新消息（历史目录无法删除，新消息声明作废）");
     assert.match(afterAdd[1].data.content[0].text, /替换此前所有/);
     assert.match(afterAdd[1].data.content[0].text, /playwright/);
 
     // 更新后同集合不再注入
     result = runStep({ kind: "enter", messages: [...messages, { id: "u4", role: "user", content: [] }] }, messages, added, undefined, agent);
-    assert.equal(agent.session.events.filter((e) => e.data?.source?.kind === "mcp-catalog").length, 2, "更新后不再注入");
+    assert.equal(agent.session.snapshotEvents().filter((e) => e.data?.source?.kind === "mcp-catalog").length, 2, "更新后不再注入");
   });
 
   check("resolveCatalogInjection：compaction 后重建 + 门控 + reject", () => {
@@ -2190,12 +2192,12 @@ const main = async () => {
     let messages = [{ id: "m1", role: "user", content: [] }];
     let result = runStep({ kind: "enter", messages: [...messages] }, messages, supervisors, undefined, agent);
     messages = result.messages;
-    assert.equal(agent.session.events.filter((e) => e.data?.source?.kind === "mcp-catalog").length, 1, "首次注入");
+    assert.equal(agent.session.snapshotEvents().filter((e) => e.data?.source?.kind === "mcp-catalog").length, 1, "首次注入");
 
     // compaction 模拟：surface 清空（旧目录不可见）→ 重新注入
     agent.session.surface.nodes.clear();
     result = runStep({ kind: "enter", messages: [{ id: "m1", role: "user", content: [] }] }, messages, supervisors, undefined, agent);
-    const afterCompact = agent.session.events.filter((e) => e.data?.source?.kind === "mcp-catalog");
+    const afterCompact = agent.session.snapshotEvents().filter((e) => e.data?.source?.kind === "mcp-catalog");
     assert.ok(afterCompact.length >= 1, "compaction 后按可见性重建");
     assert.equal(result.messages.filter((m) => m.source?.kind === "mcp-catalog").length, 1);
 
@@ -2243,7 +2245,7 @@ const main = async () => {
     let messages = [{ id: "m1", role: "user", content: [] }];
     let result = runStep({ kind: "enter", messages: [...messages] }, messages, supervisors, undefined, agent);
     messages = result.messages;
-    const catalogEvents = agent.session.events.filter((e) => e.type === "user/message" && e.data?.source?.kind === "mcp-catalog");
+    const catalogEvents = agent.session.snapshotEvents().filter((e) => e.type === "user/message" && e.data?.source?.kind === "mcp-catalog");
     assert.equal(catalogEvents.length, 1, "首轮注入成功（append 为 user/message 未被拒绝）");
     const appended = catalogEvents[0].data;
     assert.equal(Object.hasOwn(appended.source.entries[0], "text"), false, "append 后事件载荷仍无 text 属性");
@@ -2253,7 +2255,7 @@ const main = async () => {
     // digest 去重语义不变：同集合再次 pre-step 不重复注入
     result = runStep({ kind: "enter", messages: [...messages] }, messages, supervisors, undefined, agent);
     assert.equal(
-      agent.session.events.filter((e) => e.type === "user/message" && e.data?.source?.kind === "mcp-catalog").length,
+      agent.session.snapshotEvents().filter((e) => e.type === "user/message" && e.data?.source?.kind === "mcp-catalog").length,
       1,
       "次轮不重复注入（digest 去重不变）",
     );

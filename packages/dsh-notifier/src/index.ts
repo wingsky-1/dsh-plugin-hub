@@ -435,7 +435,7 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
 
   /**
    * 完成判定辅源记忆（issue #272）：session/event 推送流记录的 per-session
-   * 最新 turn/end。主源在 idle 时从 agent.session.events 快照回读 turn/end，
+   * 最新 turn/end。主源在 idle 时从 agent.session.snapshotEvents() 快照回读 turn/end，
    * 该读是一次性快照——任何一次读滞后都会被下方 lastEndedTurn 的无条件推进
    * 固化为「后续 turn 全部已处理」的永久静默（#272 报告场景的根因）。本推送
    * 源 post-commit 逐条派发（官方 SessionEventMap 声明面），不依赖快照回读，

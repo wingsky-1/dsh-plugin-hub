@@ -4,7 +4,7 @@
  * 注入方式：**agent/pre-step user 消息注入**（与 dsh-tool-skill / dsh-time-context
  * 官方插件同款载体，出现在 GUI「上下文注入」面板）。
  *
- * 幂等（官方模式）：查**会话历史** `agent.session.events` 是否已注入过本插件的
+ * 幂等（官方模式）：查**会话历史** `agent.session.snapshotEvents()` 是否已注入过本插件的
  * 纪律消息（source.kind=plugin && source.plugin=codegraph）——与 dsh-time-context
  * 的 `latestInjectionTime(agent)` 同款（pre-step 的 messages 不含历史注入，
  * 不能靠查 messages 判重）。compaction/resume 后历史被压缩 → 重新注入（幂等自愈）。
@@ -60,11 +60,11 @@ function disciplineMessage(): UserMessage {
   };
 }
 
-/** 会话历史里是否已注入过纪律消息（官方模式：查 agent.session.events，仿
- * dsh-time-context 的 latestInjectionTime）。compaction 后历史不可见 → false
+/** 会话历史里是否已注入过纪律消息（官方模式：查 agent.session.snapshotEvents()，
+ * 仿 dsh-time-context 的 latestInjectionTime）。compaction 后历史不可见 → false
  * → 重新注入（幂等自愈）。 */
-function alreadyInjected(agent: { session?: { events?: unknown[] } }): boolean {
-  const events = agent.session?.events;
+function alreadyInjected(agent: { session?: { snapshotEvents?: () => ReadonlyArray<unknown> } }): boolean {
+  const events = agent.session?.snapshotEvents?.();
   if (!Array.isArray(events)) return false;
   return events.some((event) => {
     const e = event as { type?: string; data?: { source?: { kind?: string; plugin?: string } } };
@@ -85,7 +85,7 @@ export function registerDisciplineHook(ctx: Context): () => void {
     const cwd = (agent.session as unknown as { header?: { cwd?: string } })?.header?.cwd;
     if (!shouldInject(cwd)) return decision;
     // 幂等：会话历史已注入过 → 原样放行。
-    if (alreadyInjected(agent as unknown as { session?: { events?: unknown[] } })) return decision;
+    if (alreadyInjected(agent as unknown as { session?: { snapshotEvents?: () => ReadonlyArray<unknown> } })) return decision;
     // 不可变注入：追加纪律消息（内容与 mcp 能力目录正交，无先后依赖）。
     const nextMessages = Array.isArray(decision.messages)
       ? [...decision.messages, disciplineMessage()]

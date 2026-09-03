@@ -160,7 +160,7 @@ assert.equal(DEFAULT_CATALOG_MAX_ENTRIES, 6);
   const agentVisible = {
     session: {
       surface: { nodes: [7] },
-      events: [
+      snapshotEvents: () => [
         { type: "user/message", seq: 5, data: { source: { kind: "mcp-catalog", entries: entry } } },
         event(7),
         { type: "user/message", seq: 8, data: { source: { kind: "other" } } },
@@ -173,7 +173,7 @@ assert.equal(DEFAULT_CATALOG_MAX_ENTRIES, 6);
   const agentInvisible = {
     session: {
       surface: { nodes: [] },
-      events: [event(3)],
+      snapshotEvents: () => [event(3)],
     },
   };
   assert.deepEqual(catalogHistory(agentInvisible), { published: true }, "不可见时仅标记 published");
@@ -182,7 +182,7 @@ assert.equal(DEFAULT_CATALOG_MAX_ENTRIES, 6);
   const agentBadThenGood = {
     session: {
       surface: { nodes: [1] },
-      events: [
+      snapshotEvents: () => [
         event(1),
         { type: "user/message", seq: 2, data: { source: { kind: "mcp-catalog", entries: "bad" } } },
       ],
@@ -192,7 +192,7 @@ assert.equal(DEFAULT_CATALOG_MAX_ENTRIES, 6);
 
   // 只有非目录消息。
   assert.deepEqual(
-    catalogHistory({ session: { events: [{ type: "user/message", seq: 1, data: { source: { kind: "x" } } }] } }),
+    catalogHistory({ session: { snapshotEvents: () => [{ type: "user/message", seq: 1, data: { source: { kind: "x" } } }] } }),
     { published: false },
   );
 }
@@ -211,7 +211,7 @@ assert.equal(DEFAULT_CATALOG_MAX_ENTRIES, 6);
   // 2. 历史 digest 相同 + 本轮已带目录 → 过滤掉该目录（幂等撤销）。
   const entry = [{ name: "s", text: "d" }];
   const digest = digestCatalogEntries(entry);
-  const agentSame = { session: { surface: { nodes: [1] }, events: [{ type: "user/message", seq: 1, data: { source: { kind: "mcp-catalog", entries: entry } } }] } };
+  const agentSame = { session: { surface: { nodes: [1] }, snapshotEvents: () => [{ type: "user/message", seq: 1, data: { source: { kind: "mcp-catalog", entries: entry } } }] } };
   const existingMsg = renderMcpCatalogMessage(entry);
   const decisionWith = { kind: "enter", messages: [plainMessage("keep"), existingMsg] };
   const filtered = resolveCatalogInjection(decisionWith, [], supervisors, 6, new Map(), agentSame);
@@ -239,7 +239,7 @@ assert.equal(DEFAULT_CATALOG_MAX_ENTRIES, 6);
   assert.ok(injected.messages[0].content[0].text.includes("本会话已配置以下 MCP 服务器"), "首次注入用普通帧");
 
   // 6b. 已发布但 digest 变化 → 注入更新帧。
-  const agentOther = { session: { surface: { nodes: [] }, events: [{ type: "user/message", seq: 1, data: { source: { kind: "mcp-catalog", entries: [{ name: "old" }] } } }] } };
+  const agentOther = { session: { surface: { nodes: [] }, snapshotEvents: () => [{ type: "user/message", seq: 1, data: { source: { kind: "mcp-catalog", entries: [{ name: "old" }] } } }] } };
   const updated = resolveCatalogInjection(baseDecision(), [], supervisors, 6, new Map(), agentOther);
   assert.ok(updated.messages[0].content[0].text.includes("MCP 服务器集合已变化"), "digest 变化 → 更新帧");
 
