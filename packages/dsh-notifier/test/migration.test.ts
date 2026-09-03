@@ -412,6 +412,17 @@ try {
       assert.equal(out.skippedCorrupt, true, "E9j：数组 legacy 标记 corrupted");
       assert.equal(d.updates.length, 0, "E9j：数组 legacy 不写入");
     }
+    // #470 qa 复核：legacy 未知键 null 值透传补写（与 PUT 同净化通道一致）
+    {
+      const d = deps();
+      const legacy = join(dir, "null-future.json");
+      writeFileSync(legacy, JSON.stringify({ notifySound: true, nullFuture: null }));
+      const out = await migrateLegacyConfig(legacy, d);
+      assert.equal(out.migrated, true, "E9k：含 null 未知键 legacy 正常迁移");
+      assert.deepEqual(d.updates, [{ notifySound: true, nullFuture: null }], "E9k：已知键+null 未知键一并补写");
+      assert.equal(Object.prototype.hasOwnProperty.call(d.readUser(), "nullFuture"), true, "E9k：nullFuture 键入 user 层");
+      assert.equal(d.readUser().nullFuture, null, "E9k：nullFuture 值为 null");
+    }
     rmSync(dir, { recursive: true, force: true });
   }
 } finally {

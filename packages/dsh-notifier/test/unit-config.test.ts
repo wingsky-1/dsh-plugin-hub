@@ -168,6 +168,20 @@ try {
   assert.equal(redacted.notifyAsk, true, "其余字段原样");
   assert.deepEqual(redactConfigView({ a: 1 }), { a: 1 }, "无 channels 输入原样");
   assert.equal(redactConfigView(undefined), null, "null 输入兜底");
+  // #470 qa 复核发现 2：redactConfigView 特殊键剔除的函数级直测——用
+  // defineProperty 造**自有** constructor/__proto__ 键（JSON.stringify 会丢弃
+  // undefined 值但不会丢自有键；此处刻意让 stringify 保留它们，证明剔除是
+  // redactConfigView 自身逻辑而非序列化副效应）
+  const evilOwn = { keep: 1 };
+  Object.defineProperty(evilOwn, "constructor", { value: 1, enumerable: true });
+  Object.defineProperty(evilOwn, "__proto__", { value: { polluted: 1 }, enumerable: true });
+  Object.defineProperty(evilOwn, "toString", { value: "x", enumerable: true });
+  const evilOut = redactConfigView(evilOwn);
+  assert.equal(Object.prototype.hasOwnProperty.call(evilOut, "keep"), true, "读出口：普通键保留");
+  assert.equal(Object.prototype.hasOwnProperty.call(evilOut, "constructor"), false, "读出口：constructor 自有键剔除");
+  assert.equal(Object.prototype.hasOwnProperty.call(evilOut, "__proto__"), false, "读出口：__proto__ 自有键剔除");
+  assert.equal(Object.prototype.hasOwnProperty.call(evilOut, "toString"), false, "读出口：toString 自有键剔除");
+  assert.equal(Object.prototype.polluted, undefined, "读出口：无全局原型污染");
 
   const userChs = [{ id: "phone", deviceKey: "realKey123" }, { id: "pad", deviceKey: "padKey456" }];
   const unmasked = unmaskChannels(
@@ -255,6 +269,15 @@ try {
   assert.equal(Object.getPrototypeOf(protoEvilOut), Object.prototype, "透传通道：__proto__ 不改变 out 原型（无原型污染）");
   const protoKnownEvil = JSON.parse('{"notifyAsk":false,"__proto__":{"polluted":1},"constructor":1}');
   assert.deepEqual(sanitizePatchSettings(protoKnownEvil), { notifyAsk: false }, "透传通道：原型键与已知键混合 → 只留已知键");
+  // #470 qa 复核发现 1：null 值语义分层——未知键 null 透传保留（与读面一致），
+  // 已知键 null 沿用既有跳过语义（视同未提交）
+  assert.deepEqual(sanitizePatchSettings({ nullFuture: null, notifyAsk: null }), { nullFuture: null }, "透传通道：未知键 null 透传保留、已知键 null 跳过");
+  assert.deepEqual(sanitizePatchSettings({ notifyAsk: null }), {}, "透传通道：纯已知键 null patch 净化后空对象（调用方按 400 处理）");
+  assert.deepEqual(sanitizePatchSettings({ nullFuture: null }), { nullFuture: null }, "透传通道：纯未知键 null patch 非空（可写）");
+  // 读面 normalizeConfig 本就透传 null（与写面闭合）
+  const nullRead = normalizeConfig({ nullFuture: null });
+  assert.equal(Object.prototype.hasOwnProperty.call(nullRead, "nullFuture"), true, "读面：未知键 null 透传保留");
+  assert.equal(nullRead.nullFuture, null, "读面：未知键 null 值原样");
 } finally {
   rmSync(work, { recursive: true, force: true });
 }

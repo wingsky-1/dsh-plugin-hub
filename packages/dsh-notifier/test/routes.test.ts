@@ -189,6 +189,18 @@ try {
       await cfgR.handler(bodyReq({ patch: { pureFuture: 1 } }), put2.res);
       assert.equal(put2.rec.status, 200, "纯未知键 patch 200 透传（不再 400）");
       assert.equal(nfSettings.getUser().pureFuture, 1, "纯未知键写入 user 层");
+      // #470 qa 复核：未知键 null 值透传（PUT {nullFuture:null} → 200，GET 可读回）
+      const putNull = makeRes();
+      await cfgR.handler(bodyReq({ patch: { nullFuture: null } }), putNull.res);
+      assert.equal(putNull.rec.status, 200, "纯未知键 null patch 200 透传");
+      assert.equal(Object.prototype.hasOwnProperty.call(nfSettings.getUser(), "nullFuture"), true, "settings user 层含 nullFuture 键");
+      assert.equal(nfSettings.getUser().nullFuture, null, "nullFuture 值为 null 原样保留");
+      const getNull = makeRes();
+      await cfgR.handler(fakeReq({}), getNull.res);
+      const getNullBody = JSON.parse(getNull.rec.text);
+      assert.equal(Object.prototype.hasOwnProperty.call(getNullBody.user, "nullFuture"), true, "GET user 读回 nullFuture");
+      assert.equal(getNullBody.user.nullFuture, null, "GET user nullFuture 值为 null");
+      assert.equal(Object.prototype.hasOwnProperty.call(getNullBody.effective, "nullFuture"), true, "GET effective 读回 nullFuture");
     }
 
     // (3) #470 验收 3 边界：空 patch {} → 仍 400（无变更可写）

@@ -606,15 +606,19 @@ export function sanitizeSettings(raw: unknown): Partial<NotifyConfig> | null {
  * 净化 PUT /config 与存量迁移的增量 patch（透传通道，#470）：已知键按
  * validateSettings 同口径校验（任一非法 → 整体拒绝返回 null）；**未知键原样
  * 透传保留**（前向兼容——GET 读得到的未来/第三方键 PUT 回得去，迁移不丢
- * legacy 未来键），但组合层装配键名（ASSEMBLY_SETTING_KEYS）一律剔除（静默，
- * 与 Bark 保留键同口径）。返回对象非空即代表有可写键；纯未知键 patch 透传后
- * 同样非空（区别于空 patch {} → 空对象由调用方按 400 处理）。
+ * legacy 未来键；任意 JSON 值含 null——与读面 normalizeConfig 透传口径一致，
+ * #470 qa 复核发现 2），但组合层装配键名（ASSEMBLY_SETTING_KEYS）一律剔除
+ * （静默，与 Bark 保留键同口径）。返回对象非空即代表有可写键；纯未知键 patch
+ * 透传后同样非空（区别于空 patch {} → 空对象由调用方按 400 处理）。
  *
  * 安全边界（#470 复核 P0）：patch 必须为**普通对象**（数组直接返回 null——
  * 数组会被 Object.keys 当对象把数字索引透传成 "0":"1" 式脏键）；原型链成员
  * 键（constructor/prototype/toString/hasOwnProperty/valueOf/__proto__）一律
  * 剔除不写入——查表前用 hasOwn 判自有键防误触原型链校验器（抛 TypeError 致
  * 500），写入经 hasOwn 校验防把 Object.prototype 方法当未知键透传脏写 user 层。
+ * null 值语义：已知键值为 null 沿用既有跳过语义（validateSettings 同口径，
+ * 视同未提交）；**未知键值为 null 透传保留**（读面 normalizeConfig 本就透传
+ * null，写面不留空档——否则 GET 读到的 null 键 PUT 回去会静默消失）。
  */
 export function sanitizePatchSettings(raw: unknown): Partial<NotifyConfig> | null {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
@@ -624,15 +628,18 @@ export function sanitizePatchSettings(raw: unknown): Partial<NotifyConfig> | nul
     if ((ASSEMBLY_SETTING_KEYS as readonly string[]).includes(key)) continue;
     if (!Object.prototype.hasOwnProperty.call(src, key)) continue;
     const value = src[key];
-    if (value === undefined || value === null) continue;
     if ((PROTOTYPE_POLLUTION_KEYS as readonly string[]).includes(key)) continue;
     if (Object.hasOwn(SETTING_VALIDATORS, key)) {
+      // 已知键：null 沿用既有跳过语义（与 validateSettings/sanitizeSettings 一致）
+      if (value === undefined || value === null) continue;
       const validator = SETTING_VALIDATORS[key];
       if (!validator(value)) return null;
       out[key] = value;
       continue;
     }
-    // 未知键透传保留：任意 JSON 值原样并入（顶层未来键形状不可预知）
+    // 未知键透传保留：任意 JSON 值（含 null/undefined 不存在于 JSON 文本；
+    // null 显式透传）原样并入——顶层未来键形状不可预知
+    if (value === undefined) continue;
     out[key] = value;
   }
   return out;
