@@ -19,6 +19,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assertClientContract } from '../lib/client-contract-lib.ts'
 import { filterOutRetiredDirs, listPluginDirs, loadManifest } from '../lib/plugins-manifest-lib.ts'
+import { runConfigMatrix } from '../lib/config-matrix-gate.ts'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const packagesDir = join(ROOT, 'packages')
@@ -128,6 +129,23 @@ if (checked === 0) {
   } else {
     console.log('PASS @deepseek-ai/@wingsky-1 仅类型导入 | src 下无运行时值导入')
   }
+}
+
+// config-matrix（issue #471）：配置平行事实源字段覆盖矩阵门禁。并入本文件内部
+// （P0-A 裁决：根 package.json 命令字符串零改动、.github/ 零改动），输出作为
+// 既有逐包行/汇总行之后的**追加段落**（P2 裁决：既有输出逐字节不变）。失败
+// 计入 failed → exit 1（与既有 FAIL 语义一致）。
+// 提取器与矩阵逻辑在 scripts/lib/config-matrix-lib.ts / config-matrix-gate.ts
+// （esbuild+acorn AST 提取，零新增依赖；root 参数化供负向副本测试复用）。
+{
+  const matrix = runConfigMatrix(ROOT)
+  console.log('\nconfig-matrix:')
+  for (const line of matrix.lines) console.log(`  ${line}`)
+  for (const problem of matrix.problems) {
+    failed++
+    console.log(`FAIL config-matrix | ${problem}`)
+  }
+  console.log(matrix.pass ? 'config-matrix | PASS' : `config-matrix | ${matrix.problems.length} 个失败`)
 }
 
 console.log(failed === 0 ? '客户端契约：全部通过' : `客户端契约：${failed} 个失败`)
