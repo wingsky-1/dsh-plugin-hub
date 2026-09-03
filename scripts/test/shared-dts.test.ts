@@ -22,7 +22,7 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { assertSharedDtsPresent, listSharedDts } from '../lib/shared-dts-lib.ts'
+import { assertSharedDtsNoExtras, assertSharedDtsPresent, listSharedDts } from '../lib/shared-dts-lib.ts'
 import { walkFiles } from '../lib/walk-files.ts'
 
 function tempDir() {
@@ -111,4 +111,39 @@ test('#5 同源防漂移：bundle-host 复用共享 walkFiles，无私有枚举�
   } finally {
     cleanup()
   }
+})
+
+test('#6 assertSharedDtsNoExtras 查多：包内预置残留副本 → 报出该文件（红）', () => {
+  const { dir, cleanup } = tempDir()
+  try {
+    const shared = fixtureShared(dir)
+    const expected = listSharedDts(dir)
+    // 模拟 retired 残留：源 shared/ 已移除某 d.ts，但包内 shared/ 仍残留旧副本
+    writeFileSync(join(shared, 'retired.d.ts'), '')
+    writeFileSync(join(shared, 'host', 'old-archived.d.ts'), '')
+    const extras = assertSharedDtsNoExtras(shared, expected)
+    assert.deepEqual(extras, ['host/old-archived.d.ts', 'retired.d.ts'])
+  } finally {
+    cleanup()
+  }
+})
+
+test('#6b assertSharedDtsNoExtras 查多：移除残留后出口为空（绿）', () => {
+  const { dir, cleanup } = tempDir()
+  try {
+    const shared = fixtureShared(dir)
+    const extras = assertSharedDtsNoExtras(shared, listSharedDts(dir))
+    assert.deepEqual(extras, [], '无残留 → 空清单')
+  } finally {
+    cleanup()
+  }
+})
+
+test('#7 同源防漂移：pack-check 每包接入查多出口（assertSharedDtsNoExtras fail-loud）', () => {
+  const root = join(import.meta.dirname, '..', '..')
+  const packCheck = readFileSync(join(root, 'scripts', 'gate', 'pack-check.ts'), 'utf8')
+  // 生产路径接入断言（防「检测出口不进生产路径」假绿回归）：pack-check 必须调用
+  // assertSharedDtsNoExtras 并对非空 extra 判 FAIL（残留 fail-loud）
+  assert.match(packCheck, /assertSharedDtsNoExtras/, 'pack-check 必须调用查多出口 assertSharedDtsNoExtras')
+  assert.match(packCheck, /shared 副本残留/, 'pack-check 对残留须报 fail-loud 文案')
 })
