@@ -55,20 +55,6 @@ done
 # 本脚本目录（browser-driver.mjs 同目录随 skill 分发）
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# 修复 --port 0：dsh 收到 --port 0 会自行随机分配，但脚本打印仍是 0、无法访问，
-# 也无从得知实际端口——这里先用 node 探测一个真实空闲端口，再传给 dsh。
-if [[ "$PORT" -eq 0 ]]; then
-  PORT="$(node -e '
-    const net = require("node:net");
-    const srv = net.createServer();
-    srv.listen(0, "127.0.0.1", () => {
-      const p = srv.address().port;
-      srv.close(() => console.log(p));
-    });
-  ')"
-  echo "（--port 0）已探测空闲端口: $PORT"
-fi
-
 # 1. 第一层隔离：全新临时 DSH_HOME（隔离全部用户数据）
 ISOLATED_HOME="$(mktemp -d)"
 export DSH_HOME="$ISOLATED_HOME"
@@ -134,7 +120,27 @@ if [[ "$BROWSER" -eq 1 ]]; then
     --state "$BROWSER_STATE" \
     --user-data-dir "$ISOLATED_HOME/browser-profile" \
     --json
-  # 把 dsh web 实际端口并入 state（浏览器调试端口已由 launch 写入），供并行任务核对
+  echo "浏览器实例就绪: state=$BROWSER_STATE（操作命令见 browser-driver.mjs --help）"
+fi
+
+# 6. 修复 --port 0：dsh 收到 --port 0 会自行随机分配，但脚本打印仍是 0、无法访问。
+#    这里在 dsh 启动紧邻处用 node 探测真实空闲端口再传给 dsh——探测块必须贴近 dsh
+#    启动，否则与绑定之间隔着构建/挂载的长耗时窗口，两并行任务可能探测到同一端口
+#    导致 EADDRINUSE（PR #481 P2-1）。
+if [[ "$PORT" -eq 0 ]]; then
+  PORT="$(node -e '
+    const net = require("node:net");
+    const srv = net.createServer();
+    srv.listen(0, "127.0.0.1", () => {
+      const p = srv.address().port;
+      srv.close(() => console.log(p));
+    });
+  ')"
+  echo "（--port 0）已探测空闲端口: $PORT"
+fi
+
+# 7. 把 dsh web 实际端口并入 state（浏览器调试端口已由 launch 写入），供并行任务核对
+if [[ "$BROWSER" -eq 1 && -f "$BROWSER_STATE" ]]; then
   node -e '
     const fs = require("fs");
     const p = process.argv[1];
@@ -142,11 +148,10 @@ if [[ "$BROWSER" -eq 1 ]]; then
     j.dshWebPort = Number(process.argv[2]);
     fs.writeFileSync(p, JSON.stringify(j, null, 2));
   ' "$BROWSER_STATE" "$PORT"
-  echo "浏览器实例就绪: state=$BROWSER_STATE（操作命令见 browser-driver.mjs --help）"
 fi
 
 echo "隔离环境就绪: DSH_HOME=$ISOLATED_HOME  profile=$PROFILE"
 echo "启动 dsh web 于 http://127.0.0.1:$PORT （Ctrl+C 退出并自动清理）"
-# 6. 前台启动（阻塞）。不用 exec：exec 会替换 shell，dsh 被 Ctrl+C/SIGTERM 杀掉时
+# 8. 前台启动（阻塞）。不用 exec：exec 会替换 shell，dsh 被 Ctrl+C/SIGTERM 杀掉时
 #    EXIT trap 不触发、临时目录残留。前台子进程 + EXIT trap 保证任何退出都清理。
 dsh --profile "$PROFILE" --port "$PORT" --no-open
