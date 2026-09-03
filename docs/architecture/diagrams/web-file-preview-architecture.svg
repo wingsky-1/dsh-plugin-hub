@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 1160 540" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="fwp-title fwp-desc">
+      <title id="fwp-title">dsh-web-file-preview 拦截与预览链路</title>
+      <desc id="fwp-desc">浏览器端捕获点击并解析路径，经宿主 loopback 路由拉取文件，按分组（图片/文本/Markdown/代码/HTML）渲染到预览 Modal；HTML 预览走 token 虚拟伺服。</desc>
+      <defs><style>@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap');</style>
+        <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse">
+          <circle cx="1" cy="1" r="0.9" fill="rgba(45,49,66,0.10)"/>
+        </pattern>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+        <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+      </defs>
+
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+      <rect width="100%" height="100%" fill="url(#dots)" opacity="0.55"/>
+
+      <!-- Zone: 浏览器端 -->
+      <rect x="268" y="72" width="500" height="400" rx="8"
+            fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <rect x="468" y="76" width="100" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="518" y="85" fill="rgba(45,49,66,0.40)" font-size="7" font-family="'Geist Mono', monospace"
+            text-anchor="middle" letter-spacing="0.14em">浏览器端（client.js）</text>
+
+      <!-- Zone: 宿主端 -->
+      <rect x="820" y="72" width="300" height="400" rx="8"
+            fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <rect x="916" y="76" width="108" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="970" y="85" fill="rgba(45,49,66,0.40)" font-size="7" font-family="'Geist Mono', monospace"
+            text-anchor="middle" letter-spacing="0.14em">宿主端（Node）</text>
+
+      <!-- Arrows (behind boxes) -->
+      <!-- 文件链接 → 拦截 -->
+      <line x1="180" y1="196" x2="312" y2="196" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <!-- 拦截解析 → 预览 Modal -->
+      <line x1="440" y1="196" x2="560" y2="196" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <!-- Modal → /file（主链路 HTTP） -->
+      <path d="M 700,196 H 752 Q 760,196 760,204 V 228 Q 760,236 768,236 H 856" fill="none" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+      <!-- Modal → /alloc（HTML 预览） -->
+      <path d="M 700,236 H 752 Q 760,236 760,228 V 204 Q 760,196 768,196 H 856" fill="none" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <!-- /file → 分组渲染 -->
+      <line x1="560" y1="300" x2="700" y2="300" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <!-- /serve → HTML iframe -->
+      <path d="M 1080,300 V 380 H 700" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+      <!-- Arrow labels -->
+      <rect x="186" y="176" width="96" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="234" y="185" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">点击文件链接</text>
+
+      <rect x="446" y="176" width="96" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="494" y="185" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">解析路径</text>
+
+      <rect x="710" y="216" width="72" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="746" y="225" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">GET /file</text>
+
+      <rect x="710" y="168" width="72" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="746" y="177" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">GET /alloc</text>
+
+      <rect x="566" y="280" width="72" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="602" y="289" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">渲染注入</text>
+
+      <rect x="856" y="336" width="96" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="904" y="345" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">/serve token 伺服</text>
+
+      <!-- Node: 对话文件引用 -->
+      <rect x="40" y="164" width="140" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="40" y="164" width="140" height="64" rx="6" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+      <rect x="48" y="172" width="36" height="12" rx="2" fill="transparent" stroke="rgba(122,131,153,0.40)" stroke-width="0.8"/>
+      <text x="66" y="181" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CHAT</text>
+      <text x="110" y="200" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">对话文件引用</text>
+      <text x="110" y="216" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">文件 chip / @ 引用 / 行内路径</text>
+
+      <!-- Node: 双机制拦截（focal） -->
+      <rect x="316" y="164" width="124" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="316" y="164" width="124" height="64" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <rect x="324" y="172" width="52" height="12" rx="2" fill="transparent" stroke="rgba(235,108,54,0.50)" stroke-width="0.8"/>
+      <text x="350" y="181" fill="#eb6c36" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">GATE</text>
+      <text x="378" y="200" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">双机制拦截</text>
+      <text x="378" y="216" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">openPath 收口 + 捕获拦截</text>
+
+      <!-- Node: 预览 Modal -->
+      <rect x="560" y="164" width="140" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="560" y="164" width="140" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="568" y="172" width="52" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="594" y="181" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">MODAL</text>
+      <text x="630" y="200" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">预览 Modal</text>
+      <text x="630" y="216" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">预览 / 原始 / Diff 三 tab</text>
+
+      <!-- Node: 分组渲染 -->
+      <rect x="560" y="268" width="140" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="560" y="268" width="140" height="64" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <rect x="568" y="276" width="52" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.22)" stroke-width="0.8"/>
+      <text x="594" y="285" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">RENDER</text>
+      <text x="630" y="304" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">分组渲染</text>
+      <text x="630" y="320" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">image/md/code/text/html</text>
+
+      <!-- Node: 宿主路由 -->
+      <rect x="856" y="164" width="148" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="856" y="164" width="148" height="64" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <rect x="864" y="172" width="52" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.22)" stroke-width="0.8"/>
+      <text x="890" y="181" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">ROUTES</text>
+      <text x="930" y="200" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">宿主路由 ×7</text>
+      <text x="930" y="216" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">/file /diff /alloc /serve ...</text>
+
+      <!-- Node: token 伺服 -->
+      <rect x="856" y="268" width="148" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="856" y="268" width="148" height="64" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+      <rect x="864" y="276" width="52" height="12" rx="2" fill="transparent" stroke="rgba(79,93,117,0.50)" stroke-width="0.8"/>
+      <text x="890" y="285" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">SERVE</text>
+      <text x="930" y="304" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">token 虚拟伺服</text>
+      <text x="930" y="320" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">realpath 双向校验 · 只读</text>
+
+      <!-- Node: iframe -->
+      <rect x="560" y="380" width="140" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="560" y="380" width="140" height="64" rx="6" fill="rgba(235,108,54,0.05)" stroke="rgba(235,108,54,0.50)" stroke-width="1" stroke-dasharray="4,4"/>
+      <rect x="568" y="388" width="52" height="12" rx="2" fill="transparent" stroke="rgba(235,108,54,0.40)" stroke-width="0.8"/>
+      <text x="594" y="397" fill="#eb6c36" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">IFRAME</text>
+      <text x="630" y="416" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">HTML &lt;iframe sandbox&gt;</text>
+      <text x="630" y="432" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">无 allow-scripts / same-origin</text>
+
+      <!-- Legend strip -->
+      <line x1="40" y1="508" x2="1120" y2="508" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <text x="40" y="524" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+
+      <rect x="40" y="532" width="14" height="10" rx="2" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <text x="60" y="540" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Focal（主链路）</text>
+
+      <line x1="220" y1="537" x2="248" y2="537" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+      <text x="256" y="540" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">HTTP（loopback）</text>
+
+      <line x1="400" y1="537" x2="428" y2="537" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <text x="436" y="540" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">HTML 预览专属路径</text>
+
+      <line x1="620" y1="537" x2="648" y2="537" stroke="#4f5d75" stroke-width="1.2"/>
+      <text x="656" y="540" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">安全边界</text>
+    </svg>
