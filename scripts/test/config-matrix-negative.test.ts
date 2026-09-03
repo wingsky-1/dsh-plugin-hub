@@ -176,3 +176,27 @@ test('notifier: 客户端引用豁免键（豁免残留）→ 红且报错含豁
       s.replace('    var qh = settings.quietHours || {};', '    var ak = settings.allowKinds || [];\n    var qh = settings.quietHours || {};'))
   }, 'allowKinds')
 })
+
+// 量级 #12：README 键集一致性仅 warn 不判红（缺文档键 → warnings 含键名，pass 仍 true）
+test('量级: README 配置表缺键 → warn 不红（pass 仍 true）', () => {
+  const root = fakeRepo()
+  try {
+    // 复制真实 README 进副本（矩阵 README warn 需要文件存在）
+    cpSync(join(ROOT, 'packages/dsh-lan-proxy/README.md'), join(root, 'packages/dsh-lan-proxy/README.md'))
+    cpSync(join(ROOT, 'packages/dsh-notifier/README.md'), join(root, 'packages/dsh-notifier/README.md'))
+    // 基线（README 与代码键集一致）：零 warn
+    let r = runConfigMatrix(root)
+    assert.equal(r.pass, true)
+    assert.deepEqual(r.warnings, [], 'README 与代码键集一致时应零 warn')
+    // 注入：删 lan-proxy README 配置表一行（enabled）→ warn 含键名、pass 仍 true
+    const readmePath = join(root, 'packages/dsh-lan-proxy/README.md')
+    const text = readFileSync(readmePath, 'utf8')
+    writeFileSync(readmePath, text.replace(/^\| `enabled` \| `true` \| 总开关.*\n/m, ''))
+    r = runConfigMatrix(root)
+    assert.equal(r.pass, true, 'README 缺键仅 warn，不判红')
+    assert.ok(r.warnings.some((w) => w.includes('enabled') && w.includes('lan-proxy')), `warn 应含键名 enabled: ${r.warnings.join(';')}`)
+    assert.ok(r.problems.length === 0, 'README 缺键不应产生 problems')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})

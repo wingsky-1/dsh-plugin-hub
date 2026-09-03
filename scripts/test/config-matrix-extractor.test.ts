@@ -21,6 +21,7 @@ import assert from 'node:assert/strict'
 import {
   parseTs, findTopVar, findTopFn, objectKeysOf, arrayStringKeys, arrayFirstColKeys,
   extractNamedKeys, collectNormalizeBranchKeys, collectClientUiKeys, booleanKeysOfObject, sourceLineOf, diffKeys,
+  extractReadmeConfigKeys,
 } from '../lib/config-matrix-lib.ts'
 
 // 简单 fixture：普通对象 + 数组
@@ -182,4 +183,34 @@ test('diffKeys 缺/多键', () => {
   const d = diffKeys(['a', 'b', 'c'], ['a', 'c', 'z'])
   assert.deepEqual(d.missing, ['b'])
   assert.deepEqual(d.extra, ['z'])
+})
+
+// README 配置键提取（量级 #12：lan-proxy 表 + notifier JSON + 合并键 + 噪音免疫）
+test('README lan-proxy 配置表键提取（含合并键、排除非键 token）', () => {
+  const readme = `## 配置
+
+| 键 | 默认 | 说明 |
+|---|---|---|
+| \`enabled\` | \`true\` | 总开关 |
+| \`tlsCertFile\` / \`tlsKeyFile\` | 无 | 证书 |
+| \`wsCompressPaths\` | \`/api/remote.mux\` | 白名单（见 \`GET /health\`） |
+| \`httpCompressLevel\` | \`1\` | 档位 |
+`
+  const { keys } = extractReadmeConfigKeys(readme, 'lan-proxy')
+  assert.deepEqual(keys, ['enabled', 'tlsCertFile', 'tlsKeyFile', 'wsCompressPaths', 'httpCompressLevel'])
+})
+
+test('README notifier JSON 样例键提取（仅顶层键）', () => {
+  const readme = `## 配置
+
+\`\`\`json
+{
+  "notifyAsk": true,
+  "quietHours": { "enabled": false },
+  "channels": []
+}
+\`\`\`
+`
+  const { keys } = extractReadmeConfigKeys(readme, 'notifier')
+  assert.deepEqual(keys, ['notifyAsk', 'quietHours', 'channels'])
 })
