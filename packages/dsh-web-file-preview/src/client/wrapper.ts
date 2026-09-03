@@ -22,7 +22,11 @@ export function wrapOpenPath(ctx: any, state: FilePreviewState): () => void {
   let session: any;
   let orig: ((req: unknown, signal?: AbortSignal) => Promise<unknown>) | undefined;
   try {
-    const remote = ctx && ctx.get ? ctx.get("remote") : undefined;
+    // #486-fix：客户端服务经 ctx 属性直访（provider-usage #383 同款）——宿主风格
+    // ctx.get("remote") 在客户端注入代理上抛 "cannot get property ... without
+    // inject"。remote 服务须在 inject 声明 "remote"（+ "remote.session" 深层），
+    // 访问链 remote.session 才不触发代理校验。
+    const remote = ctx ? ctx.remote : undefined;
     session = remote && typeof remote === "object" ? remote.session : undefined;
     if (session && typeof session.openWorkspacePath === "function") {
       orig = session.openWorkspacePath.bind(session);

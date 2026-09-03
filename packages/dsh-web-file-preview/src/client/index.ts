@@ -55,7 +55,10 @@ export function apply(ctx: any): void {
     // t 经共享模块活绑定（多文件 client 共用），语言切换 subscribe 重绑
     // （下次打开预览即生效）。unsubLocale 供 effect 卸载时解绑（T4，
     // 对齐 provider-usage 范式），防重复 apply 后旧订阅持续重绑已停用实例。
-    const locale: any = ctx.get("locale");
+    // #486-fix：客户端服务经 ctx 属性直访（ctx.locale/ctx.sessions/ctx.remote，
+    // 官方 model-selection / provider-usage #383 同款）——宿主风格 ctx.get 在
+    // 客户端注入代理上按属性校验 inject，未声明即抛 "without inject"。
+    const locale: any = ctx.locale;
     let unsubLocale: (() => void) | undefined;
     if (locale && typeof locale.register === "function") {
       try {
@@ -76,8 +79,8 @@ export function apply(ctx: any): void {
     const captureHandler = (event: any) => onClickCapture(event, state);
     // B：document 捕获阶段拦截文件链接点击（含"只输出、无打开操作"的路径）。
     document.addEventListener("click", captureHandler, true);
-    // 暴露当前会话 cwd（通过 inject 的 sessions 服务，惰性读取）。
-    try { (window as any).__DSH_CWD_SESSIONS__ = ctx && ctx.get ? ctx.get("sessions") : undefined; } catch { /* 兼容 */ }
+    // 暴露当前会话 cwd（经 inject 的 sessions 服务，惰性读取；ctx 属性直访）。
+    try { (window as any).__DSH_CWD_SESSIONS__ = ctx ? ctx.sessions : undefined; } catch { /* 兼容 */ }
     // A：openPath 调用点收口。
     const restoreOpenPath = wrapOpenPath(ctx, state);
     // issue #104：系统明暗切换时对已渲染 mermaid 图就地重渲染（v11 无 setTheme，
@@ -112,5 +115,8 @@ export function apply(ctx: any): void {
 }
 
 // ---- 客户端契约：apply/inject 由 build-client 经 factory 装配（干净模块，第三方内联）----
-// 需要 sessions 服务以跟随当前会话（cwd 用于拼预览 URL）；locale 用于字典注册与 t 装配。
-export const inject: string[] = ["sessions", "locale"];
+// 需要 sessions 服务以跟随当前会话（cwd 用于拼预览 URL）；locale 用于字典注册与 t 装配；
+// remote（+ remote.session 深层）用于 openWorkspacePath 调用点收口包装（wrapper.ts）——
+// 客户端注入代理按本数组校验 ctx 属性访问，漏声明即抛 "without inject"（#486-fix，
+// provider-usage #383 同款面）。
+export const inject: string[] = ["sessions", "locale", "remote", "remote.session"];

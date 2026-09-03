@@ -656,7 +656,11 @@ try {
   // 0.1.2 适配（#323 Phase 1.3）：openPath 收口迁移到 ctx.remote.session.openWorkspacePath——
   // client 必须引用新调用面、不得再包装已删除的 workspaces.openPath。
   assert.ok(client.includes("openWorkspacePath"), "#323 client 含 openWorkspacePath 收口（0.1.2 迁移）");
-  assert.ok(client.includes('get("remote")'), "#323 client 经 ctx.get(\"remote\") 取 Remote 网关");
+  // #486-fix：客户端服务经 ctx 属性直访（provider-usage #383 同款）——宿主风格
+  // ctx.get("remote") 在客户端注入代理抛 "without inject"；须 ctx.remote 直访且
+  // inject 声明 remote/remote.session。
+  assert.ok(client.includes("ctx.remote"), "#486-fix client 经 ctx.remote 直访取 Remote 网关");
+  assert.ok(!client.includes('get("remote")'), "#486-fix client 不再用 ctx.get(\"remote\")（宿主风格不适配客户端代理）");
   assert.ok(!/\bws\.openPath\b/.test(client), "#323 不得再包装已删除的 workspaces.openPath");
   // issue #388 哨兵断言（防「布局主权对轰」实现回退）：宿主 dsh-web-mobile 窄视口
   // [aria-modal] 模板规则劫持卡片（根因见 issue）——修复 = 卡片固定 id + style.css
