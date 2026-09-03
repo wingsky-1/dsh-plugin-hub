@@ -293,3 +293,49 @@ export function booleanKeysOfObject(initNode) {
   }
   return out
 }
+
+/**
+ * README 配置节键提取（量级 #12：键集一致性仅 warn 不判红）。包形态不同：
+ *   - lan-proxy：markdown 表格（`## 配置` 节），行首 `` | `key` | `` 或
+ *     `` | `a` / `b` | ``（斜杠合并多键）；
+ *   - notifier：首个 ```json 样例块顶层键。
+ * 只取「代码表键形态」（camelCase token），防 GET/api/true 等非键 token 误收。
+ * @returns { keys: string[], section: string|null } section=定位到的节（诊断用）。
+ */
+export function extractReadmeConfigKeys(text, pkg) {
+  if (pkg === 'lan-proxy') {
+    // 逐行截「## 配置」节（到下一个二级/三级标题止），避免 JS 正则无 \Z 的坑
+    const lines = text.split('\n')
+    const start = lines.findIndex((l) => /^## 配置[ \t]*$/.test(l))
+    if (start === -1) return { keys: [], section: null }
+    const secLines = []
+    for (let i = start + 1; i < lines.length; i += 1) {
+      if (/^#{2,3}[ \t]/.test(lines[i])) break
+      secLines.push(lines[i])
+    }
+    const keys = []
+    for (const line of secLines) {
+      // 取表格行首列（第一个 | 与第二个 | 之间），支持合并键 `a` / `b`
+      const tm = line.match(/^\|\s*([^|]+?)\s*\|/)
+      if (!tm) continue
+      for (const span of tm[1].matchAll(/`([^`]+)`/g)) {
+        for (const part of span[1].split('/')) {
+          const k = part.trim()
+          if (/^[a-z][A-Za-z0-9]*$/.test(k) && !keys.includes(k)) keys.push(k)
+        }
+      }
+    }
+    return { keys, section: '## 配置' }
+  }
+  if (pkg === 'notifier') {
+    const m = text.match(/```json\n([\s\S]*?)\n```/)
+    if (!m) return { keys: [], section: '```json' }
+    const keys = []
+    for (const line of m[1].split('\n')) {
+      const km = line.match(/^\s*"([a-z][A-Za-z0-9]*)":/)
+      if (km && !keys.includes(km[1])) keys.push(km[1])
+    }
+    return { keys, section: '```json' }
+  }
+  return { keys: [], section: null }
+}

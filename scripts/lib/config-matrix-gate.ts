@@ -32,6 +32,7 @@ import { join } from 'node:path'
 import {
   parseTs, findTopVar, findTopFn, objectKeysOf, booleanKeysOfObject,
   collectNormalizeBranchKeys, collectClientUiKeys, diffKeys, sourceLineOf,
+  extractReadmeConfigKeys,
 } from './config-matrix-lib.ts'
 
 // 豁免白名单（P1-2 三条件收敛：服务端/组合层键或客户端不渲染键；单包 ≤8；
@@ -153,7 +154,19 @@ function runLanProxy(root) {
   }
 
   lines.push(`lan-proxy ${schema.keys.length} 键 × [schema/validators/hints] 全等 + client DEFAULTS ${defaults.keys.length}(豁免 ${exemptKeys.length})`)
-  return { problems, lines }
+
+  // 量级 #12：README 配置表键集一致性——代码键缺文档仅 warn 不判红（防文档漂移提示）
+  const warnings = []
+  const readmePath = join(root, 'packages/dsh-lan-proxy/README.md')
+  let readmeText = null
+  try { readmeText = readFileSync(readmePath, 'utf8') } catch { readmeText = null }
+  if (readmeText !== null) {
+    const { keys: docKeys } = extractReadmeConfigKeys(readmeText, 'lan-proxy')
+    for (const k of diffKeys(schema.keys, docKeys).missing) {
+      warnings.push(`lan-proxy README 配置表缺文档键: ${k}（docs/README 与代码键集不一致，仅提示）`)
+    }
+  }
+  return { problems, warnings, lines }
 }
 
 /** notifier 矩阵；返回 { problems, lines }。 */
@@ -257,20 +270,34 @@ function runNotifier(root) {
 
   const summary = `notifier ${base.length} 键 × [default/validators/hints] 全等 + CONFIG_KEYS ${configKeys.keys.length}/${boolKeys.length} + normalize 覆盖 + client UI 覆盖 ${uiKeys.length}(豁免 ${exemptKeys.length})`
   lines.push(summary)
-  return { problems, lines }
+
+  // 量级 #12：README JSON 样例键集一致性——代码键缺文档仅 warn 不判红
+  const warnings = []
+  const readmePath = join(root, 'packages/dsh-notifier/README.md')
+  let readmeText = null
+  try { readmeText = readFileSync(readmePath, 'utf8') } catch { readmeText = null }
+  if (readmeText !== null) {
+    const { keys: docKeys } = extractReadmeConfigKeys(readmeText, 'notifier')
+    for (const k of diffKeys(base, docKeys).missing) {
+      warnings.push(`notifier README JSON 样例缺文档键: ${k}（docs/README 与代码键集不一致，仅提示）`)
+    }
+  }
+  return { problems, warnings, lines }
 }
 
 /**
  * 运行两包矩阵门禁（root 参数化：真实仓库根或 mkdtemp 副本根）。
- * @returns {{ pass: boolean, problems: string[], lines: string[] }}
+ * @returns {{ pass: boolean, problems: string[], warnings: string[], lines: string[] }}
  */
 export function runConfigMatrix(root) {
   const problems = []
+  const warnings = []
   const lines = []
   for (const run of [runLanProxy, runNotifier]) {
     const r = run(root)
     problems.push(...r.problems)
+    warnings.push(...(r.warnings ?? []))
     lines.push(...r.lines)
   }
-  return { pass: problems.length === 0, problems, lines }
+  return { pass: problems.length === 0, problems, warnings, lines }
 }

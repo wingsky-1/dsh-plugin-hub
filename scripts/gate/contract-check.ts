@@ -132,21 +132,29 @@ if (checked === 0) {
 }
 
 // config-matrix（issue #471）：配置平行事实源字段覆盖矩阵门禁。并入本文件内部
-// （P0-A 裁决：根 package.json 命令字符串零改动、.github/ 零改动），输出作为
-// 既有逐包行/汇总行之后的**追加段落**（P2 裁决：既有输出逐字节不变）。失败
-// 计入 failed → exit 1（与既有 FAIL 语义一致）。
+// （P0-A 裁决：根 package.json 命令字符串零改动、.github/ 零改动）。复核裁决
+// （qa #11）：矩阵段必须位于既有最终汇总行「客户端契约：全部通过/失败」**之后**
+// ——旧输出整体逐字节不变、矩阵段成为真正末段。故矩阵失败用独立计数 matrixFailed
+// 计数，不并入 failed（并入会改写汇总行文案），仅追加 FAIL config-matrix 行 +
+// 末行状态 + exit 1（与既有 FAIL 语义一致）。
 // 提取器与矩阵逻辑在 scripts/lib/config-matrix-lib.ts / config-matrix-gate.ts
 // （esbuild+acorn AST 提取，零新增依赖；root 参数化供负向副本测试复用）。
+console.log(failed === 0 ? '客户端契约：全部通过' : `客户端契约：${failed} 个失败`)
 {
   const matrix = runConfigMatrix(ROOT)
   console.log('\nconfig-matrix:')
   for (const line of matrix.lines) console.log(`  ${line}`)
+  // 量级 #12（README 键集一致性）：缺/多键仅 warn 不判红（防文档漂移提示）。
+  for (const w of matrix.warnings) console.log(`warn config-matrix | ${w}`)
   for (const problem of matrix.problems) {
-    failed++
     console.log(`FAIL config-matrix | ${problem}`)
   }
-  console.log(matrix.pass ? 'config-matrix | PASS' : `config-matrix | ${matrix.problems.length} 个失败`)
+  // 量级 #13：报错附「四同步清单」指引（不改判红语义）。
+  if (matrix.problems.length > 0) {
+    console.log('hint config-matrix | 新增/修改配置键请四同步——① 事实源表（lan-proxy Config / notifier DEFAULT_CONFIG）② validators/hints ③ normalize 白名单与透传排除 ④ 客户端渲染/编辑 + smoke 断言 + README 配置节；补齐后重跑 pnpm contract')
+  }
+  const matrixFailed = matrix.problems.length > 0
+  if (matrixFailed) failed++ // 仅用于 exit code（汇总行文案在矩阵段前已打印，不受影响）
+  console.log(matrixFailed ? `config-matrix | ${matrix.problems.length} 个失败` : 'config-matrix | PASS')
 }
-
-console.log(failed === 0 ? '客户端契约：全部通过' : `客户端契约：${failed} 个失败`)
 process.exit(failed === 0 ? 0 : 1)
