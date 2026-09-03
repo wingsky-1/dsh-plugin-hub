@@ -18,7 +18,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { checkAggregateConsistency, listPluginDirs, loadManifest } from '../lib/plugins-manifest-lib.ts'
+import { checkAggregateConsistency, filterOutRetiredDirs, listPluginDirs, loadManifest } from '../lib/plugins-manifest-lib.ts'
 
 const ACTIVE = ['dsh-alpha', 'dsh-beta']
 const MANIFEST = {
@@ -115,6 +115,25 @@ test('#4b 目录有包但只在 standalone → 双向通过；聚合 deps 误引
   })
   assert.equal(problems.length, 1)
   assert.match(problems[0], /多出独立发包 @wingsky-1\/dsh-demo/)
+})
+
+test('#4c 退役残留目录（manifest.retired 已登记）→ 方向 B 豁免不判红（T1）', () => {
+  // 模拟 #397：dsh-idle-archive / dsh-subagent-model-inherit 退役后目录残留（无 package.json）。
+  const manifest = { active: ACTIVE, retired: [...MANIFEST.retired, { name: 'dsh-leftover', reason: 'T1 残留', successor: '' }] }
+  const problems = checkAggregateConsistency({ dirNames: [...ACTIVE, 'dsh-leftover'], manifest })
+  assert.deepEqual(problems, [], 'retired 残留目录不得再报「未登记」（告警不红，清理债）')
+})
+
+test('#4d filterOutRetiredDirs：物理目录集按 manifest.retired 过滤，双向校验输入不退化（T1）', () => {
+  const manifest = { active: ACTIVE, retired: [{ name: 'dsh-gone', reason: '测试退役', successor: '' }, { name: 'dsh-leftover', reason: 'T1 残留', successor: '' }] }
+  const physical = [...ACTIVE, 'dsh-newkid', 'dsh-leftover']
+  const { kept, skipped } = filterOutRetiredDirs(physical, manifest)
+  assert.deepEqual(kept, [...ACTIVE, 'dsh-newkid'], 'kept 保留物理序且含未登记新目录（守卫输入）')
+  assert.deepEqual(skipped, ['dsh-leftover'], 'skipped 仅命中 manifest.retired 名')
+  // 守卫不退化：kept 里未登记的 dsh-newkid 仍被方向 B 捕获
+  const problems = checkAggregateConsistency({ dirNames: kept, manifest })
+  assert.equal(problems.length, 1)
+  assert.match(problems[0], /未登记 manifest: dsh-newkid/)
 })
 
 test('#5 active 引用不存在目录 → 报「不存在的目录」', () => {

@@ -18,12 +18,25 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assertClientContract } from '../lib/client-contract-lib.ts'
-import { listPluginDirs } from '../lib/plugins-manifest-lib.ts'
+import { filterOutRetiredDirs, listPluginDirs, loadManifest } from '../lib/plugins-manifest-lib.ts'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const packagesDir = join(ROOT, 'packages')
 
-const pluginDirs = listPluginDirs(ROOT)
+// T1（#397）：退役残留目录无 package.json，按 manifest.retired 过滤——残留目录
+// 属清理债不参与契约检查（plugins-manifest-lib 方向 B 已豁免并告警）。listPluginDirs
+// 保持物理枚举语义不变，此处仅消费侧按 manifest 过滤，不掏空「新目录必须登记」守卫。
+let manifest
+try {
+  manifest = loadManifest(ROOT)
+} catch (e) {
+  console.log(`FAIL plugins-manifest | ${e.message}`)
+  process.exit(1)
+}
+const { kept: pluginDirs, skipped: retiredDirs } = filterOutRetiredDirs(listPluginDirs(ROOT), manifest)
+if (retiredDirs.length > 0) {
+  console.warn(`[contract-check] 跳过已退役包残留目录: ${retiredDirs.join(', ')}（manifest.retired 已登记，请清理）`)
+}
 
 let failed = 0
 let checked = 0

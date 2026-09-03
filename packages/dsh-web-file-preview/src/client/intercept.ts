@@ -9,7 +9,7 @@
 import { el } from "./dom.ts";
 import type { FilePreviewState } from "./state.ts";
 import { resolveFileLink, decideGate, SCOPE_SELECTORS } from "./link-resolver.ts";
-import { t } from "./i18n.ts";
+import { t } from "../../../../shared/client/i18n.js";
 import { groupOfPath } from "../grouping.ts";
 import { openPreview } from "./preview.ts";
 

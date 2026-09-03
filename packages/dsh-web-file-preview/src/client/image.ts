@@ -8,7 +8,7 @@
  */
 
 import { el, errorView } from "./dom.ts";
-import { t } from "./i18n.ts";
+import { t } from "../../../../shared/client/i18n.js";
 import type { FilePreviewState } from "./state.ts";
 import { openViewer } from "./viewer.ts";
 

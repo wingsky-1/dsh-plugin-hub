@@ -4,7 +4,7 @@
     "packages/dsh-provider-usage/src/core/history.ts",
     "packages/dsh-provider-usage/src/pipeline/v2.ts",
     "packages/dsh-provider-usage/src/hotreload.ts",
-    "packages/dsh-provider-usage/src/placement-math.ts",
+    "shared/placement-math.js",
     "packages/dsh-provider-usage/src/path-resolve.ts",
     "packages/dsh-provider-usage/src/client-logic.ts",
     "packages/dsh-provider-usage/src/provider-config.ts",

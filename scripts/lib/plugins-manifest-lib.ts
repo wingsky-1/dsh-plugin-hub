@@ -39,6 +39,24 @@ export function warnUnknownEntries(root) {
   }
 }
 
+/**
+ * 从物理目录集中剔除 manifest.retired 名（T1：#397 退役包目录残留致 contract /
+ * verify-npm-layout 等按 package.json 读包的消费方裸 ENOENT 崩门禁）。
+ * listPluginDirs 保持「物理目录事实源」语义不变（checkAggregateConsistency 双向
+ * 校验依赖它：新目录必须登记 / 登记项必须存在）；本函数仅供「按 package.json 逐包
+ * 消费」的入口过滤退役残留目录——出队顺序 = 物理枚举序，仅做名集过滤。
+ */
+export function filterOutRetiredDirs(dirNames, manifest) {
+  const retiredNames = new Set((manifest.retired ?? []).map((r) => r.name))
+  const kept = []
+  const skipped = []
+  for (const d of dirNames) {
+    if (retiredNames.has(d)) skipped.push(d)
+    else kept.push(d)
+  }
+  return { kept, skipped }
+}
+
 function fail(msg) {
   throw new Error(`scripts/data/plugins-manifest.json 解析失败：${msg}（schema 见 docs/DEVELOPMENT.md §4 插件清单）`)
 }
@@ -113,8 +131,10 @@ export function checkAggregateConsistency({ dirNames, manifest, aggDeps, aggPatc
   const problems = []
   const actual = new Set(dirNames)
   // 目录集语义：active（进聚合）∪ standalone（独立发包）都必须真实存在；
-  // retired 包目录应删除，不在此列。
+  // retired 包目录应删除，不在此列——残留目录（T1）属清理债：告警不判红，
+  // 但仍强制「新目录必须登记」守卫（见方向 B retired 豁免）。
   const expected = new Set([...manifest.active, ...(manifest.standalone ?? [])])
+  const retiredNames = new Set(manifest.retired.map((r) => r.name))
 
   // #1 目录集 == active ∪ standalone 集（双向）：新目录必须登记；登记项必须真实存在
   for (const d of [...manifest.active, ...(manifest.standalone ?? [])]) {
@@ -124,6 +144,12 @@ export function checkAggregateConsistency({ dirNames, manifest, aggDeps, aggPatc
     }
   }
   for (const d of dirNames) {
+    // T1：#397 退役包残留目录（无 package.json）不再判红——已登记 retired 即属
+    // 已知清理债，方向 B 豁免；新插件目录（非 active/standalone/retired 名）仍 fail。
+    if (retiredNames.has(d)) {
+      console.warn(`[plugins-manifest] 警告：packages/ 存在已退役包残留目录 ${d}（manifest.retired 已登记），请清理删除`)
+      continue
+    }
     if (!expected.has(d)) problems.push(`packages/ 存在 dsh-* 子包但未登记 manifest: ${d} —— 新插件必须加入 scripts/data/plugins-manifest.json 的 active 或 standalone`)
   }
 
@@ -133,7 +159,6 @@ export function checkAggregateConsistency({ dirNames, manifest, aggDeps, aggPatc
     const own = Object.keys(aggDeps).filter((k) => k.startsWith(NPM_SCOPE))
     const expectedDeps = new Set(manifest.active.map((d) => NPM_SCOPE + d))
     const standaloneNames = new Set(manifest.standalone ?? [])
-    const retiredNames = new Set(manifest.retired.map((r) => r.name))
     for (const dep of own) {
       if (expectedDeps.has(dep)) continue
       const short = dep.slice(NPM_SCOPE.length)

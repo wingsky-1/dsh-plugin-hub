@@ -11,7 +11,7 @@ import { STATS_URL, ADAPTERS_URL, SELECT_URL, INSPECT_URL, ADD_URL, fetchTimeout
 import type { UiPlacementConfig } from "./core.ts";
 import { splitProviderList, providerBadgeText } from "../client-logic.ts";
 import type { ProviderListItem } from "../client-logic.ts";
-import { t } from "./i18n.ts";
+import { t } from "../../../../shared/client/i18n.js";
 import type { ProviderUsageLocaleKey } from "./locales.ts";
 
 // ---------------------------------------------------------------- 类型

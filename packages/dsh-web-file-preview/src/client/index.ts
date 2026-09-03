@@ -28,7 +28,7 @@ import { onClickCapture } from "./intercept.ts";
 import { wrapOpenPath } from "./wrapper.ts";
 import { watchMermaidTheme, watchMermaidAnchorSafety } from "./mermaid.ts";
 import { isFullscreenActive } from "./fullscreen-math.ts";
-import { bindLocale } from "./i18n.ts";
+import { bindLocale } from "../../../../shared/client/i18n.js";
 import { zh, en, type FilePreviewLocaleKey } from "./locales.ts";
 // 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
 // lib/types/*.d.ts 相对导入保留 .ts 后缀，declare module 增强的模块名解析会判
@@ -51,15 +51,18 @@ export function apply(ctx: any): void {
   (onKeyDown as any).__state = state;
 
   try {
-    // i18n（issue #348）：注册本插件字典；t 经共享 i18n.ts 活绑定（多文件 client 共用），
-    // 语言切换 subscribe 重绑（下次打开预览即生效）。
+    // i18n（issue #348 → #378 抽取 shared/client/i18n.js）：注册本插件字典；
+    // t 经共享模块活绑定（多文件 client 共用），语言切换 subscribe 重绑
+    // （下次打开预览即生效）。unsubLocale 供 effect 卸载时解绑（T4，
+    // 对齐 provider-usage 范式），防重复 apply 后旧订阅持续重绑已停用实例。
     const locale: any = ctx.get("locale");
+    let unsubLocale: (() => void) | undefined;
     if (locale && typeof locale.register === "function") {
       try {
         locale.register(NS, { zh: zh, en: en });
         bindLocale(locale, NS);
         if (typeof locale.subscribe === "function" && typeof locale.getSnapshot === "function") {
-          locale.subscribe(function () {
+          unsubLocale = locale.subscribe(function () {
             bindLocale(locale, NS);
           });
         }
@@ -92,6 +95,7 @@ export function apply(ctx: any): void {
       state.disposed = true;
       unwatchMermaidTheme();
       unwatchAnchorSafety();
+      if (unsubLocale !== undefined) unsubLocale();
       document.removeEventListener("fullscreenchange", syncFs);
       document.removeEventListener("webkitfullscreenchange", syncFs);
       document.removeEventListener("click", captureHandler, true);

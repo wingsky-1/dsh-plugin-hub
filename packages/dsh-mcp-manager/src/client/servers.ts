@@ -8,7 +8,7 @@
 
 import { el, api } from "./dom.ts";
 import { STATUS_ORDER, STATUS_TEXT } from "./constants.ts";
-import { t } from "./i18n.ts";
+import { t } from "../../../../shared/client/i18n.js";
 import type { McpState, UiActions } from "./state.ts";
 
 /** 服务器端点摘要：streamable-http 显示 URL，stdio 显示 command + args。 */

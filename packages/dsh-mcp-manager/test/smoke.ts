@@ -618,11 +618,15 @@ const main = async () => {
     assert.ok(clientSrc.includes("state-error-primary"), "勾选态使用错误红主题变量");
     assert.ok(clientSrc.includes(":has(input:checked)"), "已禁用工具名同步标红");
   });
-  check("client i18n 接线哨兵（issue #348）", () => {
+  check("client i18n 接线哨兵（issue #348 → #378 抽取 shared）", () => {
     const clientSrc = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
     assert.ok(clientSrc.includes('"mcpManager"'), "i18n 命名空间 NS 进产物");
     assert.ok(clientSrc.includes("locale.register"), "locale.register（字典注册）进产物");
     assert.ok(clientSrc.includes("bindLocale"), "bindLocale（t 活绑定装配）进产物");
+    // T4（#378）：locale.subscribe 返回值保存为 unsubLocale 并在卸载时调用——
+    // 防重复 apply 后旧订阅持续重绑已停用实例（对齐 provider-usage 范式）。
+    assert.ok(clientSrc.includes("unsubLocale = locale.subscribe"), "subscribe 返回值保存（unsubLocale）进产物");
+    assert.ok(/unsubLocale!=null&&unsubLocale\(\)|unsubLocale\(\)/.test(clientSrc), "卸载调用 unsubLocale() 进产物");
     assert.ok(clientSrc.includes("locale: NS"), "slots.register locale 参数进产物");
     assert.ok(clientSrc.includes("Running") && clientSrc.includes("stConnected"), "en/zh 双语字典 + STATUS_TEXT key 化进产物");
   });
