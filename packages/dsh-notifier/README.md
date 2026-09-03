@@ -108,6 +108,35 @@ context filter checks」）。取舍如下（issue #290）：
 `dsh-notifier.json.migrated.bak`（损坏则改名 `.corrupted.bak`，不写入），
 自建读写链路已废弃。
 
+**未知键语义（前向兼容，issue #470）**：dsh-notifier 对配置中**无法识别的键**
+采取「透传保留」策略——读取与写入口径一致，未知键不会被丢弃，也不会被校验
+或改写（仅组合层装配键名例外，见下）：
+
+- **读取**：`GET /api/dsh-notifier/config` 的 `user`（settings 用户层原始节）与
+  `effective`（生效配置）均原样返回未知键，供未来版本/第三方键保持可见；
+- **写入**：`PUT /api/dsh-notifier/config` 为增量 patch——仅合并提交的已知键；
+  存量 user 层中已有的未知键**不受已知键保存影响**，本次 patch 中携带的未知键
+  **一并原样保留**（不会静默丢弃）。纯未知键 patch（如 `{"futureKey":1}`）返回
+  **200** 并写入；仅空 patch `{}`（或无任何可写键，如只含装配键）返回 **400**
+  「需至少包含一个配置键」；
+- **升级路径**：某键在某版本还是未知键（已透传进 user 层）、下一版本成为已知键
+  时——旧脏键**不会被自动清洗**（升级本身不覆盖用户已表态字段）；读取时
+  normalize 对已知键非法值丢弃回默认（脏值不影响生效配置与其他键）；你**主动
+  提交**该键且值非法时才返回 400 + hint。若想清除残留脏键，可在
+  `settings.yaml` 中手动删除；
+- **存量迁移**：旧 `dsh-notifier.json` 的未知键在迁移时**透传保留**——user 层
+  缺失则补写、已存在不覆盖；纯未知键 legacy 不再被当作「无有效键」丢弃；
+- **边界例外**：
+  - 组合层装配键（`configFile` / `toastScript` / `historyFile` / `statusFile` /
+    `enabled`）是 cordis 组合层/启动参数，**不进入 settings 用户层**——PUT 与
+    迁移提交同名键一律剔除，entry 组合层走白名单过滤；
+  - Bark 频道实例内 `device_key` / `device_keys` / `ciphertext` 保留键仍一律
+    剔除/写拒，未知参数仅透传 string/number 值；
+  - 未知键不参与合法性校验（已知键非法仍返回 400 + hint）。
+
+后果提示：升级后若设置页未显示某字段但 `settings.yaml` 中仍在，属预期保留
+行为，不会因保存其他已知配置而丢失。
+
 配置项示例（默认值；`channels` / `kindRoutes` / `allowKinds` 为 M2 新增键）：
 
 ```json
