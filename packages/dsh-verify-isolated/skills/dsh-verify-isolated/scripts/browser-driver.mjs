@@ -273,7 +273,8 @@ async function cmdLaunch(flags) {
     wsUrl: version.webSocketDebuggerUrl,
     launchedAt: new Date().toISOString(),
   };
-  writeFileSync(statePath, JSON.stringify(state, null, 2));
+  // 0o600：state 含调试 wsUrl/pid 等敏感信息，仅限本用户可读（PR #481 P3-3）
+  writeFileSync(statePath, JSON.stringify(state, null, 2), { mode: 0o600 });
   out(flags, { ok: true, ...state, stateFile: statePath });
 }
 
@@ -573,6 +574,7 @@ const USAGE = `用法: node browser-driver.mjs <command> [--flag value]... [--js
 
 通用：--state <path> 指定实例 state 文件（多会话并行必须各自独立）；
 内核探测：DSH_VERIFY_CHROME env > ms-playwright 缓存 > PATH > 平台常见路径，全缺 fail-fast。
+环境要求：Node >= 22（页面操作依赖内置全局 WebSocket）；Chromium 系内核。
 详情见本文件头部注释。`;
 
 function printHelp(cmd) {
