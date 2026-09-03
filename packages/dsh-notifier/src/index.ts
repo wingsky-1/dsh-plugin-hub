@@ -86,7 +86,7 @@ export const inject = ["webServer"];
 
 export { QUIET_ALLOW_KINDS, isInQuietHours, parseHHMM } from "./quiet-hours.ts";
 export type { QuietHoursConfig } from "./quiet-hours.ts";
-export { CONFIG_KEYS, DEFAULT_CONFIG, configFile, historyFile, statusFile, normalizeConfig, sanitizeSettings, sanitizePatchSettings, validateSettings, toastScriptPath, normalizeBarkBaseUrl, normalizeBarkLevels, redactConfigView, unmaskChannels, SECRET_MASK, BARK_ID_PATTERN, BARK_RESERVED_KEYS } from "./config.ts";
+export { CONFIG_KEYS, DEFAULT_CONFIG, ASSEMBLY_SETTING_KEYS, configFile, historyFile, statusFile, normalizeConfig, sanitizeSettings, sanitizePatchSettings, validateSettings, toastScriptPath, normalizeBarkBaseUrl, normalizeBarkLevels, redactConfigView, unmaskChannels, SECRET_MASK, BARK_ID_PATTERN, BARK_RESERVED_KEYS } from "./config.ts";
 export type { NotifierApplyConfig, NotifyConfig, SettingInvalid, BarkChannelConfig, BarkLevel } from "./config.ts";
 export { HISTORY_LIMIT } from "./history.ts";
 export { SETTINGS_NS, installNotifierSettings } from "./settings.ts";

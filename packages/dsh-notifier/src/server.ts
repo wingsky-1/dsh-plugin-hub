@@ -425,7 +425,17 @@ export function buildRoutes(deps: RouteDeps): WebRoute[] {
           logger.warn(`dsh-notifier: 配置请求体读取失败: ${message}`);
           return;
         }
-        const result = await applyConfigPatch(deps, body);
+        // #470 复核 P0-2 兜底：applyConfigPatch 内部异常（理论不可达——净化/
+        // 校验/脱敏对任意输入均收敛为错误分支，此处防未来改动引入未捕获抛错）
+        // 不得让 handler 冒泡成宿主 500/悬挂——收敛 500 固定文案 + 服务端日志
+        let result: PatchResult;
+        try {
+          result = await applyConfigPatch(deps, body);
+        } catch (error) {
+          logger.warn(`dsh-notifier: 配置保存处理异常 — ${errorMessage(error)}`);
+          writeJson(res, 500, { ok: false, error: { error: "保存失败，请查看服务端日志" } });
+          return;
+        }
         if (!result.ok) {
           writeJson(res, result.status, { ok: false, error: result.response });
           return;

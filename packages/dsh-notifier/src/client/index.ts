@@ -36,6 +36,32 @@ declare module "@deepseek-ai/dsh-client-ui-slots" {
 /** 本插件字典命名空间（宿主 locale 服务注册用）。 */
 const NS = "notifier";
 
+/**
+ * 基线 diff 纯函数（issue #470 复核 P1-2）：返回 settings 相对 baseLine 中
+ * **值不同**的键集合（增量 patch，只提交变更键——A4 防组合层 base 被默认值
+ * 回写覆盖）。深比较用 JSON.stringify（值同序同即视为未变，UI 编辑对象字段
+ * 时键序稳定）。settings 中不存在于 baseLine 的新增键（diff 语义下的新增）
+ * 与值不同的既有键都会被提交；baseLine 中已删除的键不提交删除（增量 merge
+ * patch 无删除语义）。
+ *
+ * 导出为纯函数供测试直测（与 save() 共用同一实现——routes.test 整链模拟不再
+ * 手写近似）。
+ * @param settings 当前 UI 编辑态（effective 深拷贝起点）。
+ * @param baseLine 加载基线（loadCard 时的 effective 深拷贝）。
+ */
+function diffSettingsPayload(settings: Record<string, any>, baseLine: Record<string, any> | null): Record<string, any> {
+  var payload: Record<string, any> = {};
+  if (baseLine === null) return payload;
+  for (var key in settings) {
+    if (!Object.prototype.hasOwnProperty.call(settings, key)) continue;
+    var cur = settings[key];
+    var base = baseLine[key];
+    var same = JSON.stringify(cur) === JSON.stringify(base);
+    if (!same) payload[key] = cur;
+  }
+  return payload;
+}
+
   /** i18n 翻译函数（apply 时由 ctx.locale.bind(NS) 装配；未装配回落 key 本体，行为零变化）。 */
   var t: any = function (key: string, params?: any) {
     if (params === undefined) return key;
@@ -609,18 +635,10 @@ const NS = "notifier";
       setSaved("");
     }
 
-    /** 基线 diff：只提交与加载基线不同的键（A4，防组合层 base 被默认值回写覆盖）。 */
+    /** 基线 diff：只提交与加载基线不同的键（A4，防组合层 base 被默认值回写覆盖）。
+     *  逻辑收敛在模块级纯函数 diffSettingsPayload（#470 复核 P1-2，供测试直测）。 */
     function diffPayload(): Record<string, any> {
-      var payload: Record<string, any> = {};
-      var baseLine = baselineRef.current;
-      for (var key in settings) {
-        if (baseLine === null) break;
-        var cur = settings[key];
-        var base = baseLine[key];
-        var same = JSON.stringify(cur) === JSON.stringify(base);
-        if (!same) payload[key] = cur;
-      }
-      return payload;
+      return diffSettingsPayload(settings, baselineRef.current);
     }
 
     function save() {
@@ -1400,6 +1418,9 @@ const NS = "notifier";
   // ------------------------------------------------------------ 装配
 
 export function apply(ctx: any) {
+    // 测试直测挂载面（#470 复核 P1-2）：diffSettingsPayload 是模块级纯函数，
+    // 经 apply 暴露给 smoke 测试引用——保证「测试即产品实现」而非手写近似。
+    (apply as any).diffSettingsPayload = diffSettingsPayload;
     try {
       injectStyle();
 
