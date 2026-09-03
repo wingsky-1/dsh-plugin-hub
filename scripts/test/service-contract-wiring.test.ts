@@ -63,6 +63,5 @@ test('service-contract 编译面接线：契约测试文件被 tsc 真实编译�
       0,
       `${suite.name}：tsc 编译契约测试失败（exit=${result.status}）——shared 类型面与契约测试清单漂移？\n${result.stdout}\n${result.stderr}`,
     )
-    assert.ok(result.stdout.length >= 0)
   }
 })

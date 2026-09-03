@@ -143,6 +143,10 @@ const pkgDir = join(dirname(fileURLToPath(import.meta.url)), "..");
  */
 function extractProvidedServiceMethods(): Array<{ name: string; paramCount: number; optionalCount: number }> {
   const src = readFileSync(join(pkgDir, "src", "apply.ts"), "utf8");
+  // 锚定首个 `provide("mcpManager", {` marker（非 AST——测试刻意不做解析级双真源，
+  // 方法名存在性 + 参数个数即可抓「删方法/改参数量」）。当前 apply.ts 全文件仅此
+  // 一处该形态调用，indexOf 首个命中即目标；若未来 apply.ts 出现多处 provide
+  // 调用或形态变化导致本提取失配，测试会红并提示人工更新（fail-loud，不静默）。
   const marker = 'provide("mcpManager", {';
   const markerIndex = src.indexOf(marker);
   assert.ok(markerIndex >= 0, "apply.ts 应包含 ctx.provide(\"mcpManager\", {...}) 服务注入");
@@ -235,8 +239,11 @@ function extractProvidedServiceMethods(): Array<{ name: string; paramCount: numb
 }
 
 // 顶层立即执行（被 smoke.ts import 即运行；不依赖 node:test runner——
-// 与同目录 unit-*.test.ts 的执行形态一致）。失败置 exitCode 并打印 FAIL，
-// 不中断 smoke 其余检查，但 `pnpm test` 最终退出码红。
+// 与同目录 unit-*.test.ts 的执行形态一致）。
+// 失败处理：打印 FAIL 后 **throw 原错误**（不置 exitCode 吞掉）——宿主
+// smoke.ts 成功路径末尾无条件 process.exit(0)（#218 防挂起），若此处只置
+// process.exitCode=1 会被 exit(0) 覆盖成假绿（复核闸 P0-1 实证）；顶层抛错
+// 会沿 import 链冒泡终止 smoke → 进程退出码非 0 真红（与 unit 文件同形态）。
 try {
   const provided = extractProvidedServiceMethods();
   const contractNames = CONTRACT_METHODS.map((x) => x.name);
@@ -263,5 +270,5 @@ try {
   console.log("  ok   service-contract: apply.ts provide 方法面与契约清单一致（8 方法/参数形状）");
 } catch (error) {
   console.error(`  FAIL service-contract: ${(error as Error).message}`);
-  process.exitCode = 1;
+  throw error;
 }

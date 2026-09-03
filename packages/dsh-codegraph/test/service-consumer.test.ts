@@ -135,8 +135,11 @@ try {
   ]);
   console.log("  ok   service-consumer: 消费方类型化调用形状与契约一致（registerServer/getStatus/unregisterServer）");
 } catch (error) {
+  // 打印 FAIL 后 **throw 原错误**（不置 exitCode 吞掉）：宿主 smoke 若在成功
+  // 路径无条件 exit(0)，exitCode 会被覆盖成假绿（复核闸 P0-1 同型隐患）；
+  // 顶层抛错沿 import 链冒泡终止 smoke → 退出码非 0 真红。
   console.error(`  FAIL service-consumer: ${(error as Error).message}`);
-  process.exitCode = 1;
+  throw error;
 }
 
 // ─────────────────────── 无直连 shared 静态断言 ───────────────────────
