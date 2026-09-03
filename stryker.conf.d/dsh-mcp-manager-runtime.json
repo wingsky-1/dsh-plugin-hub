@@ -4,7 +4,7 @@
     "packages/dsh-mcp-manager/src/catalog.ts",
     "packages/dsh-mcp-manager/src/apply.ts",
     "packages/dsh-mcp-manager/src/transport.ts",
-    "packages/dsh-mcp-manager/src/placement-math.ts",
+    "shared/placement-math.js",
     "packages/dsh-mcp-manager/src/config-schema.ts",
     "packages/dsh-mcp-manager/src/protocol.ts",
     "packages/dsh-mcp-manager/src/middleware-types.ts",
@@ -60,5 +60,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-mcp-manager-runtime.json",
-  "_comment": "#342 二期：src 级文件组功能命名段（runtime）——catalog+apply+transport+placement-math+config-schema+protocol+middleware-types；types.ts / service.ts（type-only）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+  "_comment": "#342 二期：src 级文件组功能命名段（runtime）——catalog+apply+transport+shared/placement-math+config-schema+protocol+middleware-types（#378：placement 纯核心上移 shared，mutate 跟随；lib→src hook 对 shared 段返回 null 默认解析，测试经 lib/index.js→src re-export 链执行 shared 真源码）；types.ts / service.ts（type-only）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
 }
