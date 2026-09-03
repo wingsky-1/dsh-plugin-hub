@@ -78,13 +78,90 @@ export interface PreviewConfig {
   maxAssetBytes?: number;
 }
 
+/**
+ * X-File-Path 响应头省略阈值（字符数）：真实路径超过即不带头（客户端降级原
+ * path）。防 encodeURIComponent 后超 Node 默认 16KB 响应头上限（中文膨胀 ~3 倍；
+ * 与客户端 rewrite-target MAX_REWRITE_PATH=8000 同量级护栏，此处取 8000 字符）。
+ */
+export const MAX_FILE_PATH_HEADER = 8000;
+
 function queryParam(url: URL, key: string): string | undefined {
   const value = url.searchParams.get(key);
   return value === null ? undefined : value;
 }
 
 /**
- * readFile 失败错误 → HTTP 错误码：stat 与 readFile 之间文件被删/被换为目录时
+ * 三级定位结果：file/dir 表示 resolve（或搜索）命中的真实绝对路径；null 表示
+ * 完全未命中（维持 404）。
+ *  - file：stat 通过的真实文件（resolved 可直接读）；
+ *  - dir：resolve 命中**目录**（调用方按「not a file」400；**不进搜索改名换读**，
+ *    对抗评审 P0-3）；
+ *  - null：①② 均 ENOENT 且 ③ 搜索 0 命中 / ≥2 歧义 / 触顶 / 超时（维持 404，
+ *    绝不猜）。
+ * viaSearch 标记该结果是否经 ③ basename 兜底搜索命中（供日志/诊断）。
+ */
+export interface ResolveFileOutcome {
+  kind: "file" | "dir";
+  resolved: string;
+  viaSearch: boolean;
+}
+
+/**
+ * 文件定位三级判定（issue #486，file/alloc 共用单一权威；客户端零预处理原则：
+ * 所有路径解析/搜索都收口在此）：
+ *  ① 绝对：path 为绝对形态（`/`、盘符、`~/`/`~\` 展开后）→ resolve(path)+stat；
+ *  ② 相对：resolve(cwd, path)+stat；
+ *  ③ ①② stat 失败（ENOENT）且 cwd 非空 → 按 basename 末段在 cwd 内唯一搜索
+ *     （findUniqueByBasename：fdir 通用遍历，非 git——任意工作区可用，含非 git
+ *     目录与被 .gitignore 忽略的真实文件；语义见 basename-fallback.ts）。
+ *
+ * 约定（对齐历史 #41 精神并收紧）：
+ *  - 绝对路径 resolve 失败也进 ③（用户拍板「三级全开」——目录写错的绝对引用
+ *    同样可被 cwd 内唯一 basename 纠正；安全语义不变，搜索不打开任何 /file
+ *    直读打不开的文件）；
+ *  - resolve 命中但为目录（EISDIR/stat 非文件）→ 返回 dir，**不进搜索改名换读**；
+ *  - `~`/`~/` 前缀先 untildify 展开为用户主目录（业界标准，untildify 库）。
+ *
+ * @returns file/dir 命中结果；完全未命中 → null。
+ */
+export async function resolveFile(
+  cwd: string | undefined,
+  path: string,
+): Promise<ResolveFileOutcome | null> {
+  if (path === undefined || path === "") return null;
+  const expandedPath = untildify(path);
+  // ① 绝对 / ② 相对：统一 resolve 一次（绝对路径的 cwd 参数本就不参与 resolve）。
+  let resolved: string | null = null;
+  if (isAbsolute(expandedPath)) {
+    resolved = resolve(expandedPath);
+  } else if (cwd !== undefined && cwd !== "") {
+    resolved = resolve(cwd, expandedPath);
+  }
+  if (resolved !== null) {
+    try {
+      const info = await stat(resolved);
+      // 命中即返回（文件或目录）；目录由调用方判 400，不进搜索（P0-3）。
+      return { kind: info.isFile() ? "file" : "dir", resolved, viaSearch: false };
+    } catch {
+      // ENOENT 等 → 落 ③ 搜索（若可搜）。
+    }
+  }
+  // ③ basename 兜底搜索（仅 cwd 可确定时；绝对路径 resolve 失败也进——三级全开）。
+  if (cwd !== undefined && cwd !== "") {
+    const name = bareBasenameOf(path);
+    if (name !== null) {
+      try {
+        const found = await findUniqueByBasename(cwd, name);
+        if (found !== null) return { kind: "file", resolved: found, viaSearch: true };
+      } catch {
+        // 兜底搜索任何意外 → null 维持 404，绝不放大为 500。
+      }
+    }
+  }
+  return null;
+}
+
+/** readFile 失败错误 → HTTP 错误码：stat 与 readFile 之间文件被删/被换为目录时
  * 归 404（与 stat 阶段不存在同语义）；其余（权限、IO）归 500。
  */
 function readErrorCode(error: unknown): number {
@@ -123,37 +200,24 @@ export async function serveFileRoute(
     writeJson(res, 400, { error: "missing cwd (relative path requires cwd)" });
     return;
   }
-  // 不做「逃出 cwd」拦截：按 `resolve(cwd, path)` 直接定位（绝对路径用绝对，
-  // 相对路径相对 cwd 解析；`~`/`~/` 前缀先经 untildify 展开为用户主目录，
-  // 业界标准实现，见 https://www.npmjs.com/package/untildify）。
-  // 任意文件访问由平台/用户负责（见文件头约定）。
-  // C5：绝对路径无需 cwd（上层校验已保证「相对路径必有 cwd」）。
-  const expandedPath = untildify(path);
-  let resolved = isAbsolute(expandedPath) ? resolve(expandedPath) : resolve(cwd as string, expandedPath);
-  let info: Stats | undefined;
+  // 三级定位（issue #486）：① 绝对 → ② 相对(cwd) → ③ cwd 内 basename 唯一
+  // 搜索。不做「逃出 cwd」拦截（/file 任意文件访问由平台/用户负责，见文件头
+  // 约定与 README 安全模型）；目录命中（not a file）不进搜索改名换读（P0-3）。
+  const outcome = await resolveFile(cwd, path);
+  if (outcome === null || outcome.kind === "dir") {
+    // dir（resolve 命中目录）按「not a file」400；未命中 → 404。
+    writeJson(res, outcome === null ? 404 : 400, {
+      error: outcome === null ? `not found: ${path}` : `not a file: ${path}`,
+    });
+    return;
+  }
+  const resolved = outcome.resolved;
+  // 命中后复检（basename 兜底命中后 stat 已在 resolveFile 内做过；此处 stat
+  // 由 resolveFile 保证通过，直接复用。读取阶段文件被删/换目录由 readErrorCode 兜底）。
+  let info: Stats;
   try {
     info = await stat(resolved);
   } catch {
-    // issue #41 — 仅此 404 负路径进入的 basename 兜底（默认开启，无设置项）：
-    // 相对路径未命中且带 cwd 时，按裸文件名在工作区内受控搜索唯一真实文件；
-    // 绝对路径（完整凭证打错不换目标）与无 cwd 不兜底；0 命中 / ≥2 歧义 /
-    // 触顶一律维持原 404。兜底链路任何意外都吞掉并保持 404，绝不放大为 500。
-    if (!isAbsolute(expandedPath) && cwd !== undefined && cwd !== "") {
-      const name = bareBasenameOf(path);
-      if (name !== null) {
-        try {
-          const found = await findUniqueByBasename(cwd, name);
-          if (found !== null) {
-            resolved = found;
-            info = await stat(resolved); // 命中后复检（竞态删除 → info 保持 undefined → 404）
-          }
-        } catch {
-          // 维持 404
-        }
-      }
-    }
-  }
-  if (info === undefined) {
     writeJson(res, 404, { error: `not found: ${path}` });
     return;
   }
@@ -161,7 +225,9 @@ export async function serveFileRoute(
     writeJson(res, 400, { error: `not a file: ${path}` });
     return;
   }
-  const kind = previewKindOf(path);
+  // 分组判定基于 **resolved**（评审 P1）：搜索可能把入口 `foo.txt` 纠正到真实
+  // 的 `foo.html`，Content-Type/分组须按真实落盘文件判定，否则 415/错判。
+  const kind = previewKindOf(resolved);
   // 文本超限检查必须在 ETag/304 判断**之前**（评审 W10/C6）：若先走 304，
   // 带缓存标签的超限文件会永远命中「未变化」绕过 413，用户看不到超限提示。
   // 413 响应不缓存（no-store），避免客户端把超限状态当可复用缓存。
@@ -189,13 +255,22 @@ export async function serveFileRoute(
   // —— ETag（弱校验，基于 stat 的 size+mtimeMs，O(1)）；Cache-Control: no-cache
   // 让浏览器可协商 304，避免重复下载；文件未变时客户端自动发 If-None-Match 命中 304。
   const etag = `"${info.size}-${info.mtimeMs}"`;
-  const baseHeaders = {
+  const baseHeaders: Record<string, string> = {
     "cache-control": "no-cache",
     "etag": etag,
     "referrer-policy": "no-referrer",
     // 防 MIME 嗅探/类型混淆：预览内容一律按声明 Content-Type 呈现（尤其 SVG）。
     "x-content-type-options": "nosniff",
   };
+  // X-File-Path（issue #486）：回传**真实 resolved 绝对路径**（可能经 ③ 搜索纠正，
+  // 与请求 path 不同）。客户端以之为权威 currentPath（md basePath/展示/返回栈）。
+  // 200 与 304 同值带头（baseHeaders 共用）；超长省略防超 Node 默认 16KB 响应头
+  // 上限（encodeURIComponent 中文膨胀 ~3 倍；对照客户端 rewrite-target
+  // MAX_REWRITE_PATH=8000 同量级护栏）。
+  const filePathValue = encodeURIComponent(resolved);
+  if (resolved.length <= MAX_FILE_PATH_HEADER) {
+    baseHeaders["x-file-path"] = filePathValue;
+  }
   if (req.headers["if-none-match"] === etag) {
     res.writeHead(304, baseHeaders);
     res.end();
@@ -255,9 +330,11 @@ export function resetServeTokenStore(store?: TokenStore): void {
   tokenStore = store;
 }
 
-/** 分配前校验路径：必须是存在的文件且属于 html 渲染组（.html/.htm）。 */
+/** 分配前校验路径：三级定位（resolveFile，issue #486）后必须是真实文件且属于
+ * html 渲染组（.html/.htm，按 resolved 判定——入口扩展名可能被搜索纠正）。
+ * 返回 absPath（真实绝对）+ viaSearch（是否经 ③ 兜底命中）。 */
 async function resolveAllocTarget(cwd: string | undefined, path: string): Promise<
-  { ok: true; absPath: string } | { ok: false; status: number; error: string }
+  { ok: true; absPath: string; viaSearch: boolean } | { ok: false; status: number; error: string }
 > {
   if (path === undefined || path === "") {
     return { ok: false, status: 400, error: "missing path" };
@@ -265,21 +342,18 @@ async function resolveAllocTarget(cwd: string | undefined, path: string): Promis
   if (!isAbsolute(untildify(path)) && (cwd === undefined || cwd === "")) {
     return { ok: false, status: 400, error: "missing cwd (relative path requires cwd)" };
   }
-  const expandedPath = untildify(path);
-  const resolved = isAbsolute(expandedPath) ? resolve(expandedPath) : resolve(cwd as string, expandedPath);
-  if (groupOfPath(resolved).group !== "html") {
-    return { ok: false, status: 400, error: "alloc only supports html preview" };
-  }
-  let info: Stats;
-  try {
-    info = await stat(resolved);
-  } catch {
+  const outcome = await resolveFile(cwd, path);
+  if (outcome === null) {
     return { ok: false, status: 404, error: `not found: ${path}` };
   }
-  if (!info.isFile()) {
+  if (outcome.kind === "dir") {
     return { ok: false, status: 400, error: `not a file: ${path}` };
   }
-  return { ok: true, absPath: resolved };
+  // 分组按 **resolved** 判定（评审 P1：入口扩展名可能被 ③ 搜索纠正到真实扩展名）。
+  if (groupOfPath(outcome.resolved).group !== "html") {
+    return { ok: false, status: 400, error: "alloc only supports html preview" };
+  }
+  return { ok: true, absPath: outcome.resolved, viaSearch: outcome.viaSearch };
 }
 
 /**
@@ -325,10 +399,13 @@ export async function allocServeToken(
     return;
   }
   // rest 恒等于「realpath 归一后的磁盘绝对路径相对 root 的 POSIX 相对路径」
-  // （spec 四、资源解析）。注意：响应不带 root——客户端只消费 token/rest，
+  // （spec 四、资源解析）。注意：响应不带 root——客户端只消费 token/rest/path，
   // root 属多余信息面（评审 P2-3，与 A3「不泄露区分信息」精神一致）。
   const rest = relative(root, realFile).split(sep).join("/");
-  writeJson(res, 200, { ok: true, token, rest });
+  // path = 真实 resolved 绝对路径（issue #486：可能经 ③ 搜索纠正，与请求 path
+  // 不同；客户端以之为权威 currentPath/basePath）。与 rest 基于同一 realpath 归一
+  // 前路径（target.absPath 即 resolveFile 结果），语义与 /file 的 X-File-Path 一致。
+  writeJson(res, 200, { ok: true, token, rest, path: target.absPath });
 }
 
 /** serve 单资源 Content-Type（E1）：html → text/html；其余按 mime 库；未知 octet-stream。 */

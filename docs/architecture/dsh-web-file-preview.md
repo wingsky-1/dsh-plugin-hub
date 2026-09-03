@@ -79,10 +79,10 @@ sequenceDiagram
 
 | 路由 | 说明 |
 |---|---|
-| `GET /file?cwd=&path=` | 主预览：`untildify(~)` → `resolve(cwd, path)` 定位 → stat 分组直出；404（ENOENT + basename 兜底）/ 400（非文件 / 缺 cwd）/ 413（超 `maxTextBytes`，先于 ETag）/ 415（不可预览后缀）；弱 ETag（`size-mtimeMs`）304 协商 |
-| `GET /diff?cwd=&path=` | git diff：`rev-parse` → `status --porcelain`（untracked 判定）→ `git diff --no-ext-diff --no-textconv HEAD`（**--no-textconv 封死 textconv 命令执行面**）；每步 8s 超时、32MB 上限 |
+| `GET /file?cwd=&path=` | 主预览：**三级定位**（#486：① 绝对 resolve → ② 相对 resolve(cwd) → ③ resolve 失败+带 cwd → basename 在 cwd 内 fdir 唯一搜索）→ 按 **resolved** 真实文件扩展名分组直出；成功响应带 `X-File-Path`（encodeURIComponent(resolved)，200/304 同值、超 8000 字符省略）；404（未命中）/ 400（非文件 / 缺 cwd）/ 413（超 `maxTextBytes`，先于 ETag）/ 415（不可预览后缀）；弱 ETag（`size-mtimeMs`）304 协商 |
+| `GET /diff?cwd=&path=` | git diff：`rev-parse` → `status --porcelain`（untracked 判定）→ `git diff --no-ext-diff --no-textconv HEAD`（**--no-textconv 封死 textconv 命令执行面**）；每步 8s 超时、32MB 上限（宿主零改动——客户端 probeDiff 发 resolved 绝对路径，git.ts 天然接受） |
 | `GET /health` | 健康检查 |
-| `GET /alloc?cwd=&path=` | 仅 html 组：realpath 目标文件 → root=realpath(dirname) → `store.alloc(root)`（128-bit token；满且无 LRU 可淘汰 → 429）；返回 `{token, rest}` **不含 root** |
+| `GET /alloc?cwd=&path=` | 仅 html 组：**同三级定位**（#486）→ realpath 目标文件 → root=realpath(dirname) → `store.alloc(root)`（128-bit token；满且无 LRU 可淘汰 → 429）；返回 `{token, rest, path}`（path=真实 resolved 绝对，#486；**不含 root**） |
 | `GET /serve/<token>/<rest>` | token 虚拟伺服（prefix 路由）：decodeURIComponent → 拒 NUL/`..`/`.` 段 → join(root) → realpath 双向包含校验 → isFile → ≤`maxAssetBytes` → ETag 304 → 流式直出（html→text/html 其余 mime）；未知/过期 token 统一 404 |
 | `GET /release?token=` | 显式释放（幂等 200，无探测面）；未释放由 TTL 30min / LRU 64 兜底 |
 | `GET /mermaid` | Mermaid 懒加载 chunk（`lib/client-mermaid.js`，仅首次出现 mermaid 块时动态 import） |
@@ -109,7 +109,9 @@ html→`text/plain` 防顶层脚本通道），客户端 `renderGroupFor` 直接
 - **缓存**：无跨会话 JS 内存缓存——HTTP 层 `no-cache` + 弱 ETag + If-None-Match 自动
   协商（未变 304 秒回、已变拿最新）；`rawText` 仅当前预览会话与返回栈快照（≤1MB）内保留；
 - **返回栈**：Modal 内 `@` 引用跳转压栈（`MAX_BACK=32` 环形），返回重建（大文本快照
-  退化为仅 path，返回时重拉）。
+  退化为仅 path，返回时重拉）。**#486**：快照在 openPreview 同步段捕获（closeModal 覆
+  盖 state 前），本文件首响应 resolved 落地后才真正入栈——条目 path 恒为宿主回传的
+  权威绝对路径，返回直中不再二次搜索；resolved 落地前关闭/切走不压栈。
 
 ---
 
@@ -123,6 +125,11 @@ html→`text/plain` 防顶层脚本通道），客户端 `renderGroupFor` 直接
   平台/用户负责）；`/serve` 因把目录映射成 web root 而做全套防护——realpath 双向根
   越界校验（闭合符号链接逃逸）、编码攻击面拒绝（percent 解码/NUL/`..`/`\`）、目录 404
   无列表、未知 token 404、只读不落盘、TTL/LRU 三重回收；
+- **兜底搜索（#486）**：③ 级 fdir 通用遍历（非 git，任意工作区可用）——**不遵循
+  `.gitignore`**（物理存在+唯一即暴露，与 `/file` 任意读模型一致，不新增访问面）；dot
+  目录跳过但 dot 文件可命中；不跟符号链接；唯一命中+stat 通过才采信，0/≥2 歧义/触顶
+  （20000）/超时（1500ms）→ 404 不猜；「确认不存在」1s 负缓存 + in-flight 合并防
+  并发叠堆（同一批失效内嵌图 20 并发实测 325ms→23.6ms）；
 - **渲染安全**：文件响应一律 `X-Content-Type-Options: nosniff`；SVG 额外
   `Content-Security-Policy: sandbox`；HTML iframe `sandbox` 空 token 集（无
   allow-scripts / allow-same-origin）、`referrerpolicy="no-referrer"`（防 token 经
