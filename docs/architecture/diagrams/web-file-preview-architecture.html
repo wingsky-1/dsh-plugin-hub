@@ -76,17 +76,17 @@
 
       <!-- Arrows (behind boxes) -->
       <!-- 文件链接 → 拦截 -->
-      <line x1="180" y1="196" x2="312" y2="196" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <line x1="180" y1="196" x2="316" y2="196" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
       <!-- 拦截解析 → 预览 Modal -->
       <line x1="440" y1="196" x2="560" y2="196" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
       <!-- Modal → /file（主链路 HTTP） -->
-      <path d="M 700,196 H 752 Q 760,196 760,204 V 228 Q 760,236 768,236 H 856" fill="none" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+      <line x1="700" y1="196" x2="856" y2="196" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
       <!-- Modal → /alloc（HTML 预览） -->
-      <path d="M 700,236 H 752 Q 760,236 760,228 V 204 Q 760,196 768,196 H 856" fill="none" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
-      <!-- /file → 分组渲染 -->
-      <line x1="560" y1="300" x2="700" y2="300" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <line x1="700" y1="224" x2="856" y2="224" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <!-- Modal → 分组渲染 -->
+      <line x1="630" y1="228" x2="630" y2="268" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
       <!-- /serve → HTML iframe -->
-      <path d="M 1080,300 V 380 H 700" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <path d="M 1004,300 V 380 H 700" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
 
       <!-- Arrow labels -->
       <rect x="186" y="176" width="96" height="12" rx="2" fill="#f5f5f5"/>
@@ -95,14 +95,14 @@
       <rect x="446" y="176" width="96" height="12" rx="2" fill="#f5f5f5"/>
       <text x="494" y="185" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">解析路径</text>
 
-      <rect x="710" y="216" width="72" height="12" rx="2" fill="#f5f5f5"/>
-      <text x="746" y="225" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">GET /file</text>
+      <rect x="720" y="178" width="72" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="756" y="187" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">GET /file</text>
 
-      <rect x="710" y="168" width="72" height="12" rx="2" fill="#f5f5f5"/>
-      <text x="746" y="177" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">GET /alloc</text>
+      <rect x="720" y="206" width="72" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="756" y="215" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">GET /alloc</text>
 
-      <rect x="566" y="280" width="72" height="12" rx="2" fill="#f5f5f5"/>
-      <text x="602" y="289" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">渲染注入</text>
+      <rect x="638" y="240" width="72" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="674" y="249" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">渲染注入</text>
 
       <rect x="856" y="336" width="96" height="12" rx="2" fill="#f5f5f5"/>
       <text x="904" y="345" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">/serve token 伺服</text>

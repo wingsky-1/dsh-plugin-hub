@@ -36,8 +36,8 @@
       <line x1="496" y1="320" x2="548" y2="320" stroke="rgba(45,49,66,0.35)" stroke-width="1" stroke-dasharray="4,3"/>
 
       <!-- Arrow labels -->
-      <rect x="200" y="144" width="120" height="12" rx="2" fill="#f5f5f5"/>
-      <text x="260" y="153" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">HTTP / HTTPS / WS</text>
+      <rect x="196" y="144" width="108" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="250" y="153" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">HTTP / HTTPS / WS</text>
 
       <rect x="452" y="144" width="48" height="12" rx="2" fill="#f5f5f5"/>
       <text x="476" y="153" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">请求</text>
