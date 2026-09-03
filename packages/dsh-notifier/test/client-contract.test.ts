@@ -9,6 +9,7 @@
  * 依赖任何插件 DOM）。
  */
 import { readFileSync } from "node:fs";
+import vm from "node:vm";
 import { fileURLToPath } from "node:url";
 import { assert } from "./helpers.ts";
 import { assertClientProductContract, assertClientSourceContract } from "../../../test/smoke-lib.ts";
@@ -143,4 +144,175 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   assert.ok(libBuf[0] === 0xef && libBuf[1] === 0xbb && libBuf[2] === 0xbf, "lib/toast.ps1 必须带 UTF-8 BOM（PS 5.1 按 ANSI 解码无 BOM 文件）");
   const srcBuf = readFileSync(new URL("../src/toast.ps1", import.meta.url));
   assert.deepEqual(stripBom(libBuf), stripBom(srcBuf), "lib/toast.ps1 剥离 BOM 后应与 src 源文件逐字节一致");
+}
+
+// ---- issue #469：visibilitychange 匿名监听无卸载 → 具名 handler + disposer 移除 ----
+// 分三层：① 源码级成对哨兵（注册/移除同现、订阅取消函数保存——防回归，源码名稳定）；
+// ② 产物级负向哨兵（匿名注册形态绝迹——esbuild 会把 apply 内具名函数重命名，
+//    产物文本不断言具体名字，只断不变量）；③ vm 沙箱执行真实产物 lib/client.js，
+//    事件计数级断言验收语义（apply→dispose→重复 apply 全程至多一份监听）。
+{
+  const src = readFileSync(new URL("../src/client/index.ts", import.meta.url), "utf8");
+  const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+
+  // ① 源码级哨兵（源码名稳定，产物对 esbuild 重命名脆弱）：
+  // - 匿名 visibilitychange 注册绝迹（旧泄漏根因：无引用可移除）
+  assert.ok(!src.includes('addEventListener("visibilitychange", function'),
+    "#469：源码不再有匿名 visibilitychange 注册");
+  // - 具名 handler + apply 内注册 + disposer 移除成对
+  assert.ok(src.includes('function onVisibilityChange()'),
+    "#469：具名 onVisibilityChange handler 存在");
+  assert.ok(src.includes('addEventListener("visibilitychange", onVisibilityChange)'),
+    "#469：具名 handler 注册进 apply");
+  assert.ok(src.includes('removeEventListener("visibilitychange", onVisibilityChange)'),
+    "#469：disposer 移除 visibilitychange 监听");
+  // - locale.subscribe 取消函数保存并在 disposer 调用（T4 范式）
+  assert.ok(src.includes("unsubLocale = locale.subscribe("),
+    "#469：locale.subscribe 取消函数已保存");
+  assert.ok(src.includes("unsubLocale()"),
+    "#469：disposer 调用 locale 取消函数");
+
+  // ② 产物级负向哨兵：匿名注册形态绝迹（源码哨兵防改动，此哨兵防构建链丢配对）
+  assert.ok(!client.includes('addEventListener("visibilitychange", function'),
+    "#469：产物不再有匿名 visibilitychange 注册");
+  assert.ok(client.includes('removeEventListener("visibilitychange",'),
+    "#469：产物 disposer 含 visibilitychange 移除");
+  // 具名注册与移除必须引用同一 handler 标识符（esbuild 重命名后 add/remove 同源）
+  const reg = client.match(/document\.addEventListener\("visibilitychange",\s*([A-Za-z_$][\w$]*)/);
+  const rem = client.match(/document\.removeEventListener\("visibilitychange",\s*([A-Za-z_$][\w$]*)/);
+  assert.ok(reg && rem && reg[1] === rem[1],
+    "#469：产物 add/remove visibilitychange 引用同一具名 handler（reg=" + (reg && reg[1]) + " rem=" + (rem && rem[1]) + "）");
+}
+
+// ---- issue #469 ② vm 沙箱执行真实产物：事件计数级验收 ----
+{
+  const PKG = "@wingsky-1/dsh-notifier";
+  const clientCode = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+
+  // 最小 document stub：对 add/removeEventListener 记账；其余惰性 no-op。
+  // listenerCounts 按事件类型计数（remove 才减）——浏览器语义近似，足以断言
+  // 「重复 apply 后仅一份」「disposer 后归零」且不依赖真 DOM。
+  const byType = new Map(); // type -> Set<fn>
+  const listeners = {
+    addEventListener(type, fn) {
+      let s = byType.get(type);
+      if (!s) { s = new Set(); byType.set(type, s); }
+      s.add(fn);
+    },
+    removeEventListener(type, fn) {
+      const s = byType.get(type);
+      if (s) s.delete(fn);
+    },
+  };
+  const styleEl = {
+    id: "",
+    textContent: "",
+    dataset: {},
+    remove() {},
+  };
+  const documentStub = {
+    ...listeners,
+    visibilityState: "visible",
+    title: "",
+    hidden: false,
+    getElementById() { return null; }, // injectStyle：无旧 style → 新建
+    createElement(tag) {
+      if (tag === "style") return styleEl;
+      // 其它标签（banner 等）惰性 no-op
+      return { appendChild() {}, remove() {}, set textContent(_v) {}, style: {}, dataset: {} };
+    },
+    head: { appendChild() {} },
+    body: { appendChild() {} },
+  };
+  // EventSource stub：实例可赋 handler/close；每次构造/close 计数供可见重建断言。
+  let sourceCount = 0;
+  let closeCount = 0;
+  class EventSourceStub {
+    constructor() { sourceCount += 1; this.onmessage = null; this.onerror = null; this.onopen = null; }
+    close() { closeCount += 1; }
+  }
+  const fakeReact = { createElement: () => ({}) };
+  const warnings = [];
+  const sandbox = {
+    console: { ...console, warn: (...a) => warnings.push(a.join(" ")) },
+    Symbol, Object, Array, JSON, Math, Date, Promise,
+    setTimeout, clearTimeout,
+    EventSource: EventSourceStub,
+    Notification: function () {},
+    fetch: () => Promise.resolve({ ok: true, json: () => Promise.resolve({}) }),
+    document: documentStub,
+  };
+  sandbox.window = sandbox;
+  sandbox.window.__ModuleLoader__ = {
+    load(handoff) {
+      if (handoff.id !== PKG) throw new Error(`unexpected load id: ${handoff.id}`);
+      loadedFactory = handoff.factory;
+    },
+  };
+  let loadedFactory = null;
+  vm.createContext(sandbox);
+  vm.runInContext(clientCode, sandbox);
+  assert.ok(loadedFactory !== null, "#469：产物 load 已注册 factory");
+
+  // materialize（同 client-contract-lib）：factory(require stub) → module.exports
+  const requireStub = (spec) => {
+    if (spec === "react") return fakeReact;
+    throw new Error(`unexpected require: ${spec}`);
+  };
+  const mod = loadedFactory(requireStub);
+  assert.equal(typeof mod.apply, "function", "#469：materialize 后 exports.apply 为函数");
+
+  // 卸载-重挂序列（宿主生命周期：旧实例 disposer 先于新 apply）：
+  // apply1 → 监听 1；dispose1 → 0；apply2 → 1（重复 apply 后仅一份）；dispose2 → 0。
+  // 监听注册/移除与 apply/disposer 严格配对，任意时刻至多一份。
+  const disposers = [];
+  // locale 服务记账：subscribe 返回取消函数，调用计数 +1；重绑回调被调用计数。
+  let localeSubscribes = 0;
+  let localeUnsubs = 0;
+  const makeLocale = () => ({
+    register() {},
+    bind() { return () => ""; },
+    getSnapshot() { return {}; },
+    subscribe() { localeSubscribes += 1; return () => { localeUnsubs += 1; }; },
+  });
+  const makeCtx = (opts = {}) => ({
+    get(name) {
+      if (name === "locale" && opts.locale) return opts.locale;
+      // 无 locale/slots 服务：字典注册/tab 挂载跳过（通知半区照常）
+      return undefined;
+    },
+    effect(fn) {
+      const d = fn();
+      disposers.push(d);
+      return d;
+    },
+  });
+  const visCount = () => (byType.get("visibilitychange") || new Set()).size;
+
+  mod.apply(makeCtx({ locale: makeLocale() }));
+  assert.equal(visCount(), 1, "#469：首次 apply 后 visibilitychange 监听一份");
+  assert.equal(localeSubscribes, 1, "#469：首次 apply 建立一条 locale 订阅");
+  disposers.shift()();
+  assert.equal(visCount(), 0, "#469：disposer 卸载后监听归零");
+  assert.equal(localeUnsubs, 1, "#469：disposer 卸载取消 locale 订阅");
+
+  // 重复 apply（宿主热更/重挂载：旧实例已卸）→ 仍只一份，不累积
+  mod.apply(makeCtx({ locale: makeLocale() }));
+  assert.equal(visCount(), 1, "#469：重复 apply 后 visibilitychange 监听仅一份");
+  assert.equal(localeSubscribes, 2, "#469：重复 apply 建立新订阅");
+  assert.equal(localeUnsubs, 1, "#469：旧订阅已取消、无残留重绑");
+  assert.equal(disposers.length, 1, "#469：重复 apply 只新增一个 disposer");
+
+  // 触发可见事件：监听应作用于当前句柄（重建 SSE——source 计数增加且旧源被关）
+  const sourcesBefore = sourceCount;
+  for (const fn of byType.get("visibilitychange") || []) fn();
+  assert.ok(sourceCount > sourcesBefore, "#469：可见事件触发 SSE 重建（监听仍活）");
+  assert.ok(closeCount >= sourcesBefore, "#469：重建前旧 SSE 句柄已关（不操作已置 null 句柄）");
+
+  // 卸载当前实例 → 监听归零；disposer 幂等：二次调用不报错、监听仍零
+  disposers.shift()();
+  assert.equal(visCount(), 0, "#469：disposer 卸载后 visibilitychange 监听归零");
+  assert.equal(localeUnsubs, 2, "#469：两次实例的 locale 订阅全部取消");
+  for (const d of disposers.splice(0)) d();
+  assert.equal(visCount(), 0, "#469：disposer 二次调用后仍无监听");
 }
