@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url'
 import { executeClient } from '../lib/client-contract-lib.ts'
 import { extractInlinedPackages, readMermaidChunkRefs } from '../build/collect-licenses.ts'
 import { AGGREGATE_NAME, checkAggregateConsistency, filterOutRetiredDirs, listPluginDirs, loadManifest, warnUnknownEntries } from '../lib/plugins-manifest-lib.ts'
+import { assertSharedDtsPresent, listSharedDts } from '../lib/shared-dts-lib.ts'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
@@ -44,6 +45,9 @@ const { kept: plugins, skipped: retiredDirs } = filterOutRetiredDirs(listPluginD
 if (retiredDirs.length > 0) {
   console.warn(`[pack-check] 跳过已退役包残留目录: ${retiredDirs.join(', ')}（manifest.retired 已登记，请清理）`)
 }
+// shared 声明副本期望清单（issue #461 L2）：仓库 shared/ 全部 .d.ts（递归含子目录）
+// 随包逐一断言——新增 shared 子目录/文件（如 client/i18n.d.ts）自动纳入，防漏打包静默
+const SHARED_DTS_EXPECTED = listSharedDts(ROOT)
 
 let failed = 0
 for (const p of plugins) {
@@ -63,9 +67,11 @@ for (const p of plugins) {
     for (const f of ['README.md', 'LICENSE', 'cordis.patch.yml']) {
       if (!existsSync(join(pkgRoot, f))) problems.push(`缺 ${f}`)
     }
-    // shared 声明副本（bundle-host d.ts X1 递归复制，含子目录 host/）须随包发布
-    if (!existsSync(join(pkgRoot, 'shared', 'host', 'plugin-skeleton.d.ts'))) {
-      problems.push('缺 shared/host/plugin-skeleton.d.ts（shared 递归副本）')
+    // shared 声明副本（bundle-host d.ts X1 递归复制，含子目录 host/ client/）须随包发布：
+    // 枚举比对仓库 shared/ 全部 .d.ts（issue #461 L2），缺哪个报哪个，防新增漏打包静默
+    const missingSharedDts = assertSharedDtsPresent(join(pkgRoot, 'shared'), SHARED_DTS_EXPECTED)
+    if (missingSharedDts.length > 0) {
+      problems.push(`缺 shared 声明副本: ${missingSharedDts.join(', ')}（shared 递归副本未随包）`)
     }
     const idx = readFileSync(join(pkgRoot, 'lib', 'index.js'), 'utf8')
     // 只匹配 import 语句中的仓库外相对引用（esbuild 模块注释含路径文本，不算断链）

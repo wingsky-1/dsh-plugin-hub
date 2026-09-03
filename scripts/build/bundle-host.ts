@@ -21,6 +21,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import { buildClient, buildMermaidChunk, copyClientResources } from './build-client.ts'
+import { walkFiles } from '../lib/walk-files.ts'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 // 插件目录相对当前工作目录解析（pnpm --filter 场景 cwd=包目录传 .；仓库根场景传 packages/dsh-*）
@@ -37,20 +38,6 @@ const packagesDir = join(ROOT, 'packages')
 if (!pkgDir.startsWith(packagesDir + sep) || pkgDir === packagesDir) {
   console.error(`[bundle-host] 插件目录须在 packages/ 下（实际: ${process.argv[2]}）`)
   process.exit(1)
-}
-
-/** 递归收集目录下满足谓词的文件（返回相对路径列表，不含目录）。 */
-function walkFiles(dir, predicate) {
-  const out = []
-  const visit = (cur) => {
-    for (const f of readdirSync(cur, { withFileTypes: true })) {
-      const abs = join(cur, f.name)
-      if (f.isDirectory()) visit(abs)
-      else if (predicate(f.name)) out.push(relative(dir, abs).split(sep).join('/'))
-    }
-  }
-  visit(dir)
-  return out
 }
 
 // 1. esbuild 内联 shared（tsc 产物 → 自包含单文件，临时文件再替换，避免占用原文件）
