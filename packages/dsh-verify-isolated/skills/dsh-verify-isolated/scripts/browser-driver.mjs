@@ -363,8 +363,10 @@ function selExpr(selector, extra) {
 }
 
 async function waitSelector(wsUrl, selector, timeoutMs) {
+  // selExpr 未命中返回 { found:false }（对象恒 truthy），poll 必须显式判 found===true，
+  // 否则等待会立即「成功」（假绿，PR #481 P1-1）
   const found = await poll(async () => {
-    try { return await evalRaw(wsUrl, selExpr(selector)); }
+    try { return (await evalRaw(wsUrl, selExpr(selector))).found === true; }
     catch { return false; }
   }, timeoutMs, 200);
   if (!found) throw new Error(`等待选择器超时（${timeoutMs}ms）: ${selector}`);
