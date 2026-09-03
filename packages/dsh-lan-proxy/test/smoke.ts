@@ -905,6 +905,9 @@ const main = async () => {
             Object.assign(state.user, patch);
           },
           replace: async (section: Record<string, unknown>, expectedRevision?: number) => {
+            // 与 update 同口径注入写入失败/乐观并发冲突（清除路径走 replace）。
+            if (opts.broken) throw new Error("disk full");
+            if (opts.conflict) throw Object.assign(new Error("stale"), { code: "SETTINGS_CONFLICT" });
             state.replaces.push({ section, expectedRevision });
             state.user = { ...section };
           },
@@ -958,7 +961,79 @@ const main = async () => {
     (unavail.deps as any).writable = () => false;
     const na = await applyConfigPatch(unavail.deps, { patch: { port: 4000 } });
     check("settings 服务不可用时写入 503 拒绝", () => assert.equal(na.ok === false && (na as any).status, 503));
-    // 写入异常与乐观并发冲突映射（P2-2：响应 details 固定文案，原文只进日志）。
+    // ── #467 验收：TLS 成对清除语义（只清 cert / 只清 key / 双清 / 清除遇 409 /
+    //    user 层已不完整）。
+    const clearCertOnly = await applyConfigPatch(
+      makeDeps({ tlsCertFile: "/x.pem", tlsKeyFile: "/x-key.pem", port: 4000 }).deps,
+      { patch: { tlsCertFile: "" } },
+    );
+    check("#467 只清 cert（另一侧未提交）400 tls-pair 拒绝，不落盘", () => {
+      assert.equal(clearCertOnly.ok, false, JSON.stringify(clearCertOnly));
+      assert.equal((clearCertOnly as any).status, 400);
+      assert.equal((clearCertOnly as any).code, "tls-pair");
+    });
+    const clearKeyOnly = await applyConfigPatch(
+      makeDeps({ tlsCertFile: "/x.pem", tlsKeyFile: "/x-key.pem", port: 4000 }).deps,
+      { patch: { tlsKeyFile: "" } },
+    );
+    check("#467 只清 key（另一侧未提交）400 tls-pair 拒绝，不落盘", () => {
+      assert.equal(clearKeyOnly.ok, false, JSON.stringify(clearKeyOnly));
+      assert.equal((clearKeyOnly as any).status, 400);
+      assert.equal((clearKeyOnly as any).code, "tls-pair");
+    });
+    const clearBoth = await applyConfigPatch(
+      makeDeps({ tlsCertFile: "/x.pem", tlsKeyFile: "/x-key.pem", port: 4000 }).deps,
+      { patch: { tlsCertFile: "", tlsKeyFile: "", printBanner: false } },
+    );
+    check("#467 双清（同空）整套成对剔除，user 层不留任何 tls 键", () => {
+      assert.equal(clearBoth.ok, true, JSON.stringify(clearBoth));
+      assert.equal((clearBoth as any).value.user.tlsCertFile, undefined, "tlsCertFile 已剔除");
+      assert.equal((clearBoth as any).value.user.tlsKeyFile, undefined, "tlsKeyFile 已剔除");
+      assert.equal((clearBoth as any).value.user.port, 4000, "其余键保留");
+      assert.equal((clearBoth as any).value.user.printBanner, false);
+    });
+    const clearConflict = await applyConfigPatch(
+      makeDeps({ tlsCertFile: "/x.pem", tlsKeyFile: "/x-key.pem" }, { conflict: true }).deps,
+      { patch: { tlsCertFile: "", tlsKeyFile: "" } },
+    );
+    check("#467 清除遇 SETTINGS_CONFLICT 映射 409/conflict 固定文案", () => {
+      assert.equal(clearConflict.ok, false, JSON.stringify(clearConflict));
+      assert.equal((clearConflict as any).status, 409);
+      assert.equal((clearConflict as any).code, "conflict");
+      assert.equal((clearConflict as any).details, "设置已被其他窗口修改，请刷新后重试");
+    });
+    const brokenUser = await applyConfigPatch(
+      makeDeps({ tlsCertFile: "/x.pem", tlsKeyFile: "/x-key.pem", port: 4000 }).deps,
+      { patch: { tlsCertFile: "", tlsKeyFile: "" } },
+    );
+    check("#467 双清不会产生含 undefined 段的路径（user 层干净成对）", () => {
+      const user = (brokenUser as any).value.user;
+      const fsPath = join(user?.tlsCertFile ?? "", user?.tlsKeyFile ?? "");
+      assert.ok(!fsPath.includes("undefined"), `不得产生含 undefined 段的路径，实际 ${fsPath}`);
+    });
+    const inPair = await applyConfigPatch(
+      makeDeps({ tlsCertFile: "/x.pem", tlsKeyFile: "/x-key.pem", port: 4000 }).deps,
+      { patch: { tlsKeyFile: "/new-key.pem", printBanner: false } },
+    );
+    check("#467 只设 key 亦被拒（任一单侧显式即 400，含未清除意图）", () => {
+      assert.equal(inPair.ok, false, JSON.stringify(inPair));
+      assert.equal((inPair as any).code, "tls-pair");
+    });
+    // 场景 5：user 层已不完整（历史孤儿 { tlsCertFile: "/x.pem" } 残留）时，
+    // 双清仍整体剔除两键并走 replace 自愈；单侧清除请求仍被 raw 层拒绝（双清是唯一出口）。
+    const orphanPair = makeDeps({ tlsCertFile: "/x.pem", port: 4000 });
+    const orphanRes = await applyConfigPatch(orphanPair.deps, { patch: { tlsCertFile: "", tlsKeyFile: "" } });
+    check("#467 user 层已不完整（孤儿单侧残留）双清 replace 自愈，无孤儿留存", () => {
+      assert.equal(orphanRes.ok, true, JSON.stringify(orphanRes));
+      assert.equal((orphanRes as any).value.user.tlsCertFile, undefined);
+      assert.equal((orphanRes as any).value.user.tlsKeyFile, undefined);
+      assert.equal(orphanPair.state.replaces.length, 1, "走 replace 整节替换");
+    });
+    const orphanLone = await applyConfigPatch(makeDeps({ tlsCertFile: "/x.pem", port: 4000 }).deps, { patch: { tlsCertFile: "" } });
+    check("#467 user 层已不完整时单侧清除仍被拒（不落盘半套）", () => {
+      assert.equal(orphanLone.ok, false, JSON.stringify(orphanLone));
+      assert.equal((orphanLone as any).code, "tls-pair");
+    });
     const logWarns: string[] = [];
     const brokenDeps = makeDeps({}, { broken: true });
     (brokenDeps.deps as any).logWarn = (m: string) => logWarns.push(m);

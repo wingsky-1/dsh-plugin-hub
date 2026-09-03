@@ -73,15 +73,15 @@ export async function applyConfigPatch(deps: ConfigRouteDeps, payload: unknown):
     return { ok: false, status: 400, code: "invalid", details: "非法配置值（未知键或类型错误）" };
   }
   const rawSrc = (typeof rawPatch === "object" && rawPatch !== null ? rawPatch : {}) as Record<string, unknown>;
-  // 证书成对约束（P2-1）：raw 层先判「显式给出的两侧必须同形态」——一侧空串
-  // 而另一侧非空字符串时直接拒绝。否则单边空串经 sanitize 剔除后，剩余的单侧
-  // 值会绕过下方 sanitize 后的成对校验（如 {tlsCertFile:"", tlsKeyFile:"/x"}）。
-  const rawCert = typeof rawSrc.tlsCertFile === "string" ? rawSrc.tlsCertFile : undefined;
-  const rawKey = typeof rawSrc.tlsKeyFile === "string" ? rawSrc.tlsKeyFile : undefined;
-  const mixedTlsPair =
-    (rawCert === "" && (rawKey ?? "") !== "") ||
-    (rawKey === "" && (rawCert ?? "") !== "");
-  if (mixedTlsPair) {
+  // 证书成对约束（#467 固化成对语义）：raw 层按「键是否显式出现」判定形态——
+  // 只显式给出单侧（另一侧未提交 = undefined）即拒绝；"一空一缺"与"一非空一缺"
+  // 同属单侧出现。注意须用键存在性（rawSrc[key] !== undefined）而非字符串判型：
+  // 单侧显式空串意在清除，另一侧缺席时若漏判会进入 clearingTls 分支，删除循环
+  // 只剔"显式空串"侧，user 层残留另一侧孤儿（半套证书）。"同空（双空串）"=
+  // 整套清除、"同非空"= 整套设置，均两侧同时显式出现，不落此分支。
+  const rawCertExplicit = rawSrc.tlsCertFile !== undefined;
+  const rawKeyExplicit = rawSrc.tlsKeyFile !== undefined;
+  if (rawCertExplicit !== rawKeyExplicit) {
     return { ok: false, status: 400, code: "tls-pair", details: "证书文件与私钥文件必须成对提供（或都留空以使用自签名证书）" };
   }
   // 成对约束第二层（sanitize 后判定，口径与历史版本一致）：只给单侧值。
@@ -93,8 +93,10 @@ export async function applyConfigPatch(deps: ConfigRouteDeps, payload: unknown):
     if (clearingTls) {
       const { user } = deps.readUser();
       const section: Record<string, unknown> = { ...user };
+      // #467：清除语义固化为"整套成对剔除"（同空 = 整套清除）——raw 层已保证
+      // 显式空串两侧同现，但仍整体剔除两键，杜绝单侧剔除遗留另一半的可能。
       for (const key of TLS_PAIR_KEYS) {
-        if (rawSrc[key] === "") delete section[key];
+        if (rawSrc[key] === "" || user[key] !== undefined) delete section[key];
       }
       await deps.replace({ ...section, ...(sanitized as Record<string, unknown>) }, expectedRevision);
     } else {
