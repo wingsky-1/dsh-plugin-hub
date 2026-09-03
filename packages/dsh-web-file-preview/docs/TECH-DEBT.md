@@ -37,6 +37,10 @@
 | git diff 调用（execFile 3 命令） | [simple-git](https://github.com/steveukx/git-js) | 保持自写 | 需精确控制 timeout/maxBuffer/`-C`；库是再封装一层 |
 | MIME 映射（9 项手写） | mime-types / mime-db | 保持子集 | 有意为之（避宿主大表与 ESM 内联问题） |
 | 剪贴板降级 / ETag / 413 / 错误码 | 原生 API / HTTP 协议实现 | 合理自研 | 非轮子 |
+| openPreview 入参归一 `normalizeBasePath`（relpath.ts，issue #479 P1） | `node:path` / `upath` | 合理自研 | 本质是 **md 引用语义**（相对引用 + cwd → 绝对，保留 `#`/`?`/字面 `%XX` 段级转义），通用路径库不处理 URL 字面量编码语义；底层已是标准 `new URL` + `encodeURIComponent` 组合 |
+| 目录引用判定 `dirResolvedPathOf`/`isDirResolvedPath`（rewrite-target.ts，issue #479 P2） | 无对应开源（无「md 引用→目录判定」库） | 合理自研 | 一行 `endsWith("/")` + 复用 `resolveRef` 前缀，单一事实源 |
+| 轻量 toast `showToast`（dom.ts，issue #479 P2，自 folder 收敛复用） | `toastify-js` / `sonner` / `react-hot-toast` | 保持自写 | 通用 toast 框架需主题适配 + 增产物体积；既有 `.fwp-folder-notice` 视觉已实测工作，收敛复用非新造 |
+| 内嵌图失败错误态 `fwp-img-failed`（text.ts，issue #479 P3） | 浏览器原生 classList / img error 事件 | 合理自研 | 一行 class + title 标记，非轮子 |
 
 **规则**：新增能力先查成熟库再动手；若决定引入新依赖，必须走 `dsh.client.inlineBareImports` 构建期内联，并跑 `pnpm contract && pnpm pack:check`。
 
