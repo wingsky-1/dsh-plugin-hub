@@ -278,6 +278,8 @@ export async function waitForHistory(historyRoute, predicate, timeoutMs = 2000) 
  *   完成判定不含它——仅用于构造注释宣称的完整 header 形态，issue #199 P2-5）；
  * opts.depth：header.delegationDepth（仅作附加，不作子代理判据）；
  * opts.cwd：header.cwd（模拟 headless CLI 会话「header 仅 {cwd}」形态）。
+ * 0.1.2-rc.1 起 session.events getter 移除：fake 暴露 snapshotEvents()（无参语义
+ * 等价旧 getter），与真实宿主形态一致。
  */
 export function agentWithTitle(id, title, opts = {}) {
   const events = [];
@@ -295,7 +297,7 @@ export function agentWithTitle(id, title, opts = {}) {
     id,
     session: {
       header: Object.keys(header).length > 0 ? header : undefined,
-      events,
+      snapshotEvents: () => events,
     },
   };
 }
@@ -303,7 +305,7 @@ export function agentWithTitle(id, title, opts = {}) {
 /**
  * 完成轮两态时序构造（阶段二单源 push + 快照兜底收敛后必需，issue #290）：
  * 真实宿主中 agent/status running 派发于本轮 turn 开始——本轮 turn/end 尚未
- * post-commit 落盘，session.events 最新条目为上一轮（或空）；idle 派发于本轮
+ * post-commit 落盘，session.snapshotEvents() 最新条目为上一轮（或空）；idle 派发于本轮
  * turn/end 落盘之后。单源收敛的 runningBaseline 冻结判据（idle 快照 ≤ running
  * 基线 = 本轮无新 closure = abort-early 陈旧快照，冻结不误报）依赖该时序——
  * 旧测试「running 与 idle 同一构造（events 已含本轮 closure）」在单源语义下会

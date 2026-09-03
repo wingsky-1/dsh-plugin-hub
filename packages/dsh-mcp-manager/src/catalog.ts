@@ -30,7 +30,7 @@ export interface SupervisorLite {
 /** 目录缓存（连接成功时持久化的工具描述摘要）。 */
 export type CatalogCache = Map<string, { summary: string }>;
 
-/** 会话消息最小面（pre-step decision.messages / session.events）。 */
+/** 会话消息最小面（pre-step decision.messages / session.snapshotEvents()）。 */
 export interface CatalogMessage {
   id?: unknown;
   role?: string;
@@ -50,11 +50,11 @@ export interface CatalogHistoryResult {
   published: boolean;
 }
 
-/** agent 最小面（session.events 倒序找目录消息）。 */
+/** agent 最小面（session.snapshotEvents() 倒序找目录消息；0.1.2-rc.1 起 events getter 移除）。 */
 export interface CatalogAgent {
   session?: {
     surface?: { nodes?: unknown[] };
-    events?: Array<{ type?: string; seq?: unknown; data?: { source?: { kind?: string; entries?: unknown } } }>;
+    snapshotEvents?: () => ReadonlyArray<{ type?: string; seq?: unknown; data?: { source?: { kind?: string; entries?: unknown } } }>;
   };
 }
 
@@ -216,14 +216,15 @@ export function readCatalogEntries(source: { entries?: unknown } | undefined): C
 }
 
 /**
- * 从会话持久化日志（agent.session.events）倒序找最后一条**可见**的 mcp-catalog 消息。
- * **这是去重的权威来源**（与官方 dsh-tool-skill catalogHistory 同构）：
+ * 从会话持久化日志（agent.session.snapshotEvents()）倒序找最后一条**可见**的
+ * mcp-catalog 消息。**这是去重的权威来源**（与官方 dsh-tool-skill catalogHistory
+ * 同构）：
  * - decision.messages 只含本轮新消息，历史目录消息不在其中——用它定位会导致每轮重复注入；
  * - 可见性（surface.nodes）过滤：compaction/resume 后旧目录不可见 → visibleDigest 为空 → 重新注入。
  */
 export function catalogHistory(agent: CatalogAgent | undefined): CatalogHistoryResult {
   const visible = new Set(agent?.session?.surface?.nodes ?? []);
-  const events = agent?.session?.events ?? [];
+  const events = agent?.session?.snapshotEvents?.() ?? [];
   let published = false;
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
@@ -254,7 +255,7 @@ export function renderMcpCatalogUpdate(entries: CatalogEntry[], mode?: string): 
 /**
  * 目录注入决策（纯函数，pre-step 监听器薄调用，便于单测）。
  * 完全复刻官方 dsh-tool-skill 的 catalog 语义（根治重复注入）：
- * 1. 历史（session.events）digest 相同 → 本轮不注入（撤销本轮已注入的）——**去重源是历史而非本轮消息**；
+ * 1. 历史（session.snapshotEvents()）digest 相同 → 本轮不注入（撤销本轮已注入的）——**去重源是历史而非本轮消息**；
  * 2. 历史 digest 不同 → 注入"更新"消息（声明替换旧目录）；
  * 3. 从未发布且无服务器 → 不注入；
  * 4. compaction/resume 后旧目录不可见 → 重新注入（events-based 重建）。
@@ -263,7 +264,7 @@ export function renderMcpCatalogUpdate(entries: CatalogEntry[], mode?: string): 
  * @param supervisors manager.supervisors。
  * @param maxEntries 目录条目上限。
  * @param cache 目录缓存。
- * @param agent pre-step 的 agent（session.events 来源）。
+ * @param agent pre-step 的 agent（session.snapshotEvents() 来源）。
  * @returns 新决策。
  */
 export function resolveCatalogInjection(

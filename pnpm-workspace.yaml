@@ -11,17 +11,17 @@ autoInstallPeers: false
 # 仅限 import type（编译期擦除），禁止任何运行时值导入（contract-check 有门禁）。
 catalog:
   '@deepseek-ai/cordis': 4.0.2
-  '@deepseek-ai/dsh-agent': 0.1.2-alpha.3
-  '@deepseek-ai/dsh-client-store': 0.1.2-alpha.3
-  '@deepseek-ai/dsh-client-ui-slots': 0.1.2-alpha.3
-  '@deepseek-ai/dsh-host-webserver': 0.1.2-alpha.3
-  '@deepseek-ai/dsh-llm': 0.1.2-alpha.3
-  '@deepseek-ai/dsh-session': 0.1.2-alpha.3
-  '@deepseek-ai/dsh-session-title': 0.1.2-alpha.3
-  '@deepseek-ai/dsh-skill': 0.1.2-alpha.3
-  '@deepseek-ai/dsh-system-prompt': 0.1.2-alpha.3
-  '@deepseek-ai/dsh-tools': 0.1.2-alpha.3
-  '@deepseek-ai/dsh-user-approval': 0.1.2-alpha.3
+  '@deepseek-ai/dsh-agent': 0.1.2-rc.1
+  '@deepseek-ai/dsh-client-store': 0.1.2-rc.1
+  '@deepseek-ai/dsh-client-ui-slots': 0.1.2-rc.1
+  '@deepseek-ai/dsh-host-webserver': 0.1.2-rc.1
+  '@deepseek-ai/dsh-llm': 0.1.2-rc.1
+  '@deepseek-ai/dsh-session': 0.1.2-rc.1
+  '@deepseek-ai/dsh-session-title': 0.1.2-rc.1
+  '@deepseek-ai/dsh-skill': 0.1.2-rc.1
+  '@deepseek-ai/dsh-system-prompt': 0.1.2-rc.1
+  '@deepseek-ai/dsh-tools': 0.1.2-rc.1
+  '@deepseek-ai/dsh-user-approval': 0.1.2-rc.1
 
 allowBuilds:
   esbuild: true
@@ -30,22 +30,22 @@ allowBuilds:
 # 死配置；一旦全局启用 minimumReleaseAge（rc 包发布时间新、会超龄拦截），按此清单
 # 豁免官方 rc 包。升级锁版版本号时同步更新此处。
 minimumReleaseAgeExclude:
-  - '@deepseek-ai/dsh-agent@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-host-webserver@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-llm@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-session-title@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-session@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-skill@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-system-prompt@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-tools@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-user-approval@0.1.2-alpha.3'
+  - '@deepseek-ai/dsh-agent@0.1.2-rc.1'
+  - '@deepseek-ai/dsh-host-webserver@0.1.2-rc.1'
+  - '@deepseek-ai/dsh-llm@0.1.2-rc.1'
+  - '@deepseek-ai/dsh-session-title@0.1.2-rc.1'
+  - '@deepseek-ai/dsh-session@0.1.2-rc.1'
+  - '@deepseek-ai/dsh-skill@0.1.2-rc.1'
+  - '@deepseek-ai/dsh-system-prompt@0.1.2-rc.1'
+  - '@deepseek-ai/dsh-tools@0.1.2-rc.1'
+  - '@deepseek-ai/dsh-user-approval@0.1.2-rc.1'
   - '@deepseek-ai/cordis@4.0.2'
   - '@deepseek-ai/cosmokit@1.8.3'
-  - '@deepseek-ai/dsh-brand@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-timeout@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-typert-protocol@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-util-crypto@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-util-values@0.1.2-alpha.3'
+  - '@deepseek-ai/dsh-brand@0.1.2-rc.1'
+  - '@deepseek-ai/dsh-timeout@0.1.2-rc.1'
+  - '@deepseek-ai/dsh-typert-protocol@0.1.2-rc.1'
+  - '@deepseek-ai/dsh-util-crypto@0.1.2-rc.1'
+  - '@deepseek-ai/dsh-util-values@0.1.2-rc.1'
   - '@deepseek-ai/schemastery@3.18.2'
-  - '@deepseek-ai/dsh-client-ui-slots@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-client-store@0.1.2-alpha.3'
+  - '@deepseek-ai/dsh-client-ui-slots@0.1.2-rc.1'
+  - '@deepseek-ai/dsh-client-store@0.1.2-rc.1'

@@ -53,18 +53,21 @@ assert.ok(!macArgs.join(" ").includes('说话"'), "消息内引号被转义");
 assert.equal(buildSystemCommand("linux", "t", "m", { silent: true, notifySendAvailable: false, toastScript: "t.ps1" }), null, "notify-send 不可用返回 null");
 assert.deepEqual(buildSystemCommand("linux", "t", "m", { silent: true, toastScript: "t.ps1" }), ["notify-send", "t", "m"]);
 
-// sessionTitleOf：从 session.events 的 session/title 事件取标题
+// sessionTitleOf：从 session.snapshotEvents() 的 session/title 事件取标题
+// （0.1.2-rc.1 起 session.events getter 移除，fake 与真实宿主同形态）
 const titledAgent = {
   id: "session-1",
-  session: { events: [{ type: "other", data: {} }, { type: "session/title", data: { title: "优化 notifier 插件" } }] },
+  session: { snapshotEvents: () => [{ type: "other", data: {} }, { type: "session/title", data: { title: "优化 notifier 插件" } }] },
 };
 assert.equal(sessionTitleOf(titledAgent), "优化 notifier 插件", "取最后一个标题事件");
-assert.equal(sessionTitleOf({ id: "session-1", session: { events: [] } }), undefined, "无标题事件返回 undefined");
+assert.equal(sessionTitleOf({ id: "session-1", session: { snapshotEvents: () => [] } }), undefined, "无标题事件返回 undefined");
+assert.equal(sessionTitleOf({ id: "session-1", session: { snapshotEvents: () => "bad" } }), undefined, "snapshotEvents 返回非数组容错");
 assert.equal(sessionTitleOf({ id: "session-1" }), undefined, "无 session 返回 undefined");
 assert.equal(sessionTitleOf(undefined), undefined, "无 agent 返回 undefined");
-assert.equal(sessionTitleOf({ id: "session-1", session: { events: "bad" } }), undefined, "events 非数组容错");
+// 迁移回归：snapshotEvents 方法缺失（旧宿主形态/未挂方法）不得抛错，静默返回 undefined
+assert.equal(sessionTitleOf({ id: "session-1", session: {} }), undefined, "session 无 snapshotEvents 方法返回 undefined");
 assert.equal(
-  sessionTitleOf({ session: { events: [{ type: "session/title", data: { title: "优".repeat(80) } }] } }),
+  sessionTitleOf({ session: { snapshotEvents: () => [{ type: "session/title", data: { title: "优".repeat(80) } }] } }),
   "优".repeat(40),
   "标题截断 40 字符"
 );
@@ -72,16 +75,16 @@ assert.equal(
 // sessionTitleOf 接入脱敏链（issue #30）：标题源自会话内容，进入通知与历史前
 // 敏感片段必须打码；正常标题不含敏感特征、脱敏后原样透传保持可读
 assert.ok(
-  !sessionTitleOf({ session: { events: [{ type: "session/title", data: { title: `修复 ${"a".repeat(48)} 泄漏` } }] } })!.includes("aaaa"),
+  !sessionTitleOf({ session: { snapshotEvents: () => [{ type: "session/title", data: { title: `修复 ${"a".repeat(48)} 泄漏` } }] } })!.includes("aaaa"),
   "标题中长 hex 密钥片段被打码为 <token>"
 );
 assert.equal(
-  sessionTitleOf({ session: { events: [{ type: "session/title", data: { title: `修复 ${"f".repeat(30)} 泄漏` } }] } }),
+  sessionTitleOf({ session: { snapshotEvents: () => [{ type: "session/title", data: { title: `修复 ${"f".repeat(30)} 泄漏` } }] } }),
   "修复 <token> 泄漏",
   "≥24 位 hex 长串在标题中打码"
 );
 assert.ok(
-  !sessionTitleOf({ session: { events: [{ type: "session/title", data: { title: "联系 admin@corp.example.com 处理部署" } }] } })!.includes("admin@"),
+  !sessionTitleOf({ session: { snapshotEvents: () => [{ type: "session/title", data: { title: "联系 admin@corp.example.com 处理部署" } }] } })!.includes("admin@"),
   "标题中邮箱地址被打码为 <email>"
 );
 assert.equal(

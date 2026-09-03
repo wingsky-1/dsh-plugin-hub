@@ -893,13 +893,13 @@ check("契约: inject 包含 mcpManager", () => assert.ok(inject.includes("mcpMa
 
   // #359 三轮（B2）：纪律注入为根 ctx pre-step user 消息型（面板可见，同官方
   // dsh-tool-skill 载体）；git 仓注入、非 git 不注入；幂等查会话历史
-  // （agent.session.events，官方 dsh-time-context 模式）。内容与 mcp 目录正交。
+  // （agent.session.snapshotEvents()，官方 dsh-time-context 模式）。内容与 mcp 目录正交。
   {
     const runPreStep = async (state, messages, cwd, events = []) => {
       const next = async () => ({ kind: "enter", messages });
       let result;
       for (const cb of state.preStepCbs ?? []) {
-        result = await cb({ agent: { id: "a1", session: { header: { cwd }, events } }, messages, signal: { throwIfAborted: () => {} } }, next);
+        result = await cb({ agent: { id: "a1", session: { header: { cwd }, snapshotEvents: () => events } }, messages, signal: { throwIfAborted: () => {} } }, next);
       }
       return result;
     };

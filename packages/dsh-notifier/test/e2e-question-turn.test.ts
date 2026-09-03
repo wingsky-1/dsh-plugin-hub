@@ -34,7 +34,7 @@ try {
     };
     serviceHandler("userQuestions", fakeService);
 
-    const agent = { id: "session-1", session: { events: [{ type: "session/title", data: { title: "提问测试" } }] } };
+    const agent = { id: "session-1", session: { snapshotEvents: () => [{ type: "session/title", data: { title: "提问测试" } }] } };
     const result = await fakeService.ask({ agent, questions: [{ question: "今天吃了吗？" }] });
     assert.deepEqual(result, { answers: ["svc-marker"] }, "包装不改变原 ask 返回值，且 this 正确绑定");
     assert.ok(infos.some((t) => /question/.test(t)), "提问触发通知");
@@ -85,7 +85,7 @@ try {
     const infosOn = [];
     const { listeners: listenersOn } = await makeNotifier(work, { notifyTurnEnd: true, historyFile: join(work, "history-t2.jsonl") }, { logger: { warn: () => {}, info: (t) => infosOn.push(t) } });
     const turnStopOn = listenersOn.get("agent/turn-stopping")[0];
-    const agentWithEvents = { id: "session-1", session: { events: [{ type: "session/title", data: { title: "优化 notifier 插件" } }] } };
+    const agentWithEvents = { id: "session-1", session: { snapshotEvents: () => [{ type: "session/title", data: { title: "优化 notifier 插件" } }] } };
     await turnStopOn({ agent: agentWithEvents, turn: 4 });
     assert.ok(infosOn.some((t) => /turn-end/.test(t)), "notifyTurnEnd 开启后 turn-stopping 触发通知");
     assert.ok(infosOn.some((t) => /任务「优化 notifier 插件」第 4 轮工作已完成/.test(t)), "轮次完成通知带任务标题与轮次号");
