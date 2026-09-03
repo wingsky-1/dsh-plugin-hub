@@ -94,6 +94,53 @@ the original file is renamed `dsh-notifier.json.migrated.bak` (corrupt files are
 renamed `.corrupted.bak` without being written). The self-maintained read/write path
 is retired.
 
+**Unknown-key semantics (forward compatibility, issue #470)**: dsh-notifier applies a
+**"pass-through and preserve"** policy to configuration keys it does **not recognize** —
+read and write behave consistently; unknown keys are never dropped, validated or
+rewritten (except for composition-layer assembly keys, see boundaries below):
+
+- **Reading**: `GET /api/dsh-notifier/config` returns unknown keys verbatim in both
+  `user` (the raw settings user layer) and `effective` (the resolved config), keeping
+  future-version / third-party keys visible.
+- **Writing**: `PUT /api/dsh-notifier/config` is an incremental patch — it merges the
+  submitted known keys only; unknown keys already in the user layer are **not affected
+  by saving known keys**, and unknown keys carried in the current patch are **preserved
+  verbatim** (never silently dropped). A patch with only unknown keys (e.g.
+  `{"futureKey":1}`) returns **200** and is written; only an empty patch `{}` (or a
+  patch with nothing writable after filtering, e.g. only assembly keys) returns **400**
+  "need at least one config key".
+- **Upgrade path**: when a key is unknown in version vN (already passed through into the
+  user layer) and becomes a known key in vN+1 — stale dirty values in the user layer are
+  **not auto-cleaned** (an upgrade never overwrites fields the user has already set);
+  on read, normalize falls back to defaults for invalid known-key values (dirty values
+  do not affect the effective config or other keys); a **400 + hint** is only raised when
+  you **actively submit** that key with an invalid value. To clear a leftover dirty key,
+  delete it manually in `settings.yaml`.
+- **Legacy migration**: unknown keys in the old `dsh-notifier.json` are **preserved
+  through migration** — written when missing from the user layer, never overwriting
+  existing ones; a legacy file containing only unknown keys is no longer treated as
+  "no valid keys".
+- **Boundary exceptions**:
+  - `patch` **must be an object**: non-object shapes (arrays, `null`, numbers, etc.)
+    always return 400 — arrays are never passed through as numeric-index dirty keys.
+  - Prototype-chain / special member keys (`__proto__`, `constructor`, `prototype`,
+    `toString`, `hasOwnProperty`, `valueOf`, etc., which JSON text can inject as own
+    keys) are always stripped from both the read pass-through and the write channels —
+    never validated and never written.
+  - Composition-layer assembly keys (`configFile` / `toastScript` / `historyFile` /
+    `statusFile` / `enabled`) are cordis composition/startup parameters and **never
+    enter the settings user layer** — PUT and migration drop same-named keys; entry
+    composition goes through the whitelist filter.
+  - Reserved Bark channel keys (`device_key` / `device_keys` / `ciphertext`) are still
+    always stripped / rejected; unknown channel params only pass through as
+    string/number values.
+  - Unknown keys take no part in validation (invalid known keys still return
+    400 + hint).
+
+Consequence: after an upgrade, if the settings page does not show a field that still
+exists in `settings.yaml`, that is the intended preserve behavior — saving other known
+settings will not lose it.
+
 Example values (defaults):
 
 ```json

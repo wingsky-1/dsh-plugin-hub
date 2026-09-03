@@ -226,16 +226,28 @@ try {
       assert.deepEqual(out, { performed: false, migrated: false, rolledBack: false, skippedCorrupt: true, skippedIdempotent: false, resumed: true }, "E8：中断态 bak 损坏 → 标记跳过");
       assert.equal(d.updates.length, 0, "E8：损坏 bak 不写入");
     }
-    // 中断态重放失败：bak 无有效键 → skippedCorrupt+resumed
+    // 中断态重放：bak 仅含未知键 → #470 P2-1 透传补写（不再是「无有效键」，
+    // 升级不丢 legacy 未来键），skippedCorrupt=false
+    {
+      const d = deps();
+      const legacy = join(dir, "resume-future.json");
+      writeFileSync(legacy + MIGRATED_BAK_SUFFIX, JSON.stringify({ futureKey: { a: 1 } }));
+      const out = await migrateLegacyConfig(legacy, d);
+      assert.equal(out.resumed, true, "E8：纯未知键重放标记 resumed");
+      assert.equal(out.migrated, true, "E8：#470 纯未知键重放透传迁移（不再判无有效键）");
+      assert.equal(out.skippedCorrupt, false, "E8：#470 纯未知键不标记 corrupted");
+      assert.deepEqual(d.updates, [{ futureKey: { a: 1 } }], "E8：#470 纯未知键原样补写");
+    }
+    // 中断态重放失败：bak 无任何键 → skippedCorrupt+resumed
     {
       const d = deps();
       const legacy = join(dir, "resume-empty.json");
-      writeFileSync(legacy + MIGRATED_BAK_SUFFIX, JSON.stringify({ evilKey: 1 }));
+      writeFileSync(legacy + MIGRATED_BAK_SUFFIX, JSON.stringify({}));
       const out = await migrateLegacyConfig(legacy, d);
-      assert.equal(out.resumed, true, "E8：无有效键重放标记 resumed");
-      assert.equal(out.migrated, false, "E8：无有效键重放不迁移");
-      assert.equal(out.skippedCorrupt, true, "E8：无有效键重放标记 corrupted");
-      assert.equal(d.updates.length, 0, "E8：无有效键不写入");
+      assert.equal(out.resumed, true, "E8：无键重放标记 resumed");
+      assert.equal(out.migrated, false, "E8：无键重放不迁移");
+      assert.equal(out.skippedCorrupt, true, "E8：无键重放标记 corrupted");
+      assert.equal(d.updates.length, 0, "E8：无键不写入");
     }
     // 损坏 json：只标记 .corrupted.bak，不写入（E4）
     {
@@ -335,6 +347,81 @@ try {
       assert.equal(out.migrated, true, "E9e：缺顶层键 notifySound → 迁移补齐");
       assert.deepEqual(d.updates, [{ notifySound: true }], "E9e：不补写 quietHours 嵌套子键（仅顶层缺失键）");
       assert.deepEqual(d.readUser().quietHours, { start: "07:00" }, "E9e：用户部分子键保持原样（不被 bak 子键覆盖）");
+    }
+    // #470 E9f：json 正常迁移含未知键 → user 层缺失则补写透传保留；
+    // 已存在（用户改过/已存在）→ 不覆盖（#468 不变）
+    {
+      const d = deps({ notifyAsk: true, futureKey: "user-value" }); // user 层已存在 futureKey
+      const legacy = join(dir, "future-mix.json");
+      writeFileSync(legacy, JSON.stringify({ notifyAsk: false, futureKey: "legacy-value", futureKey2: { a: 1 }, configFile: "/x" }));
+      const out = await migrateLegacyConfig(legacy, d);
+      assert.equal(out.migrated, true, "E9f：纯未知键 json 正常迁移透传补写");
+      assert.deepEqual(d.updates, [{ futureKey2: { a: 1 } }], "E9f：缺失未知键补写、已存在未知键不覆盖、装配键 configFile 剔除");
+      assert.equal(d.readUser().futureKey, "user-value", "E9f：用户已存在未知键不被 legacy 覆盖");
+      assert.equal(d.readUser().notifyAsk, true, "E9f：用户已改 notifyAsk 不被覆盖（#468 不变）");
+      assert.ok(!("configFile" in d.readUser()), "E9f：装配键 configFile 不入 user 层");
+    }
+    // #470 E9g：纯未知键 legacy json（user 层空）→ 透传补写迁移（不再判无有效键 corrupt）
+    {
+      const d = deps();
+      const legacy = join(dir, "future-only.json");
+      writeFileSync(legacy, JSON.stringify({ futureKey: 1, bogus: "x" }));
+      const out = await migrateLegacyConfig(legacy, d);
+      assert.equal(out.migrated, true, "E9g：纯未知键 legacy 不再判无有效键 → 透传迁移");
+      assert.deepEqual(d.updates, [{ futureKey: 1, bogus: "x" }], "E9g：未知键原样补写");
+    }
+    // #470 E9h：legacy json 仅含装配键 → 净化后无任何可写键 → 只标记 corrupted 不写入
+    {
+      const d = deps();
+      const legacy = join(dir, "assembly-only.json");
+      writeFileSync(legacy, JSON.stringify({ configFile: "/x", enabled: true }));
+      const out = await migrateLegacyConfig(legacy, d);
+      assert.equal(out.migrated, false, "E9h：仅装配键 legacy 无键可迁移");
+      assert.equal(out.skippedCorrupt, true, "E9h：仅装配键 legacy 标记 corrupted");
+      assert.equal(d.updates.length, 0, "E9h：仅装配键不写入");
+    }
+    // #470 复核 P1-1：legacy 含原型链成员键（__proto__/constructor/toString 等
+    // 经 JSON.parse 的自有键）→ 不抛异常、不整体迁移崩、正常键照常补写；
+    // legacy 为数组 → 视为非对象（无键）标记 corrupted 不写入
+    {
+      const d = deps();
+      const legacy = join(dir, "proto-mix.json");
+      // 手动 JSON 文本：JSON.parse 后 __proto__/constructor 等均为**自有键**
+      // （对象字面量 __proto__ 是原型语法，测不到真实威胁形态）
+      writeFileSync(legacy, '{"notifyAsk":false,"futureKey":1,"constructor":2,"toString":3,"__proto__":{"polluted":1}}');
+      let threw = false;
+      let out;
+      try {
+        out = await migrateLegacyConfig(legacy, d);
+      } catch {
+        threw = true;
+      }
+      assert.equal(threw, false, "E9i：原型键 legacy 不抛异常（迁移不崩）");
+      assert.equal(out.migrated, true, "E9i：原型键 legacy 正常迁移（正常键补写）");
+      assert.deepEqual(d.updates, [{ notifyAsk: false, futureKey: 1 }], "E9i：原型键剔除、只写正常键");
+      assert.ok(Object.prototype.hasOwnProperty.call(d.readUser(), "constructor") === false && Object.prototype.hasOwnProperty.call(d.readUser(), "toString") === false, "E9i：原型键不写 user 层");
+      assert.equal(Object.prototype.polluted, undefined, "E9i：无全局原型污染");
+      assert.ok(existsSync(legacy + MIGRATED_BAK_SUFFIX), "E9i：正常迁移改名 migrated.bak（未因原型键中断）");
+    }
+    {
+      const d = deps();
+      const legacy = join(dir, "array-legacy.json");
+      writeFileSync(legacy, JSON.stringify([1, 2]));
+      const out = await migrateLegacyConfig(legacy, d);
+      assert.equal(out.migrated, false, "E9j：数组 legacy 不迁移（非对象语义）");
+      assert.equal(out.skippedCorrupt, true, "E9j：数组 legacy 标记 corrupted");
+      assert.equal(d.updates.length, 0, "E9j：数组 legacy 不写入");
+    }
+    // #470 qa 复核：legacy 未知键 null 值透传补写（与 PUT 同净化通道一致）
+    {
+      const d = deps();
+      const legacy = join(dir, "null-future.json");
+      writeFileSync(legacy, JSON.stringify({ notifySound: true, nullFuture: null }));
+      const out = await migrateLegacyConfig(legacy, d);
+      assert.equal(out.migrated, true, "E9k：含 null 未知键 legacy 正常迁移");
+      assert.deepEqual(d.updates, [{ notifySound: true, nullFuture: null }], "E9k：已知键+null 未知键一并补写");
+      assert.equal(Object.prototype.hasOwnProperty.call(d.readUser(), "nullFuture"), true, "E9k：nullFuture 键入 user 层");
+      assert.equal(d.readUser().nullFuture, null, "E9k：nullFuture 值为 null");
     }
     rmSync(dir, { recursive: true, force: true });
   }
