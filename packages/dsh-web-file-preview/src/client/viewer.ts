@@ -14,7 +14,7 @@
  */
 
 import { el } from "./dom.ts";
-import { t } from "./i18n.ts";
+import { t } from "../../../../shared/client/i18n.js";
 import type { FilePreviewState } from "./state.ts";
 import { clampScale, viewerTransform, isExternalClickableAnchor } from "./viewer-math.ts";
 

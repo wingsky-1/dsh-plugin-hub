@@ -16,7 +16,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { executeClient } from '../lib/client-contract-lib.ts'
 import { extractInlinedPackages, readMermaidChunkRefs } from '../build/collect-licenses.ts'
-import { AGGREGATE_NAME, checkAggregateConsistency, listPluginDirs, loadManifest, warnUnknownEntries } from '../lib/plugins-manifest-lib.ts'
+import { AGGREGATE_NAME, checkAggregateConsistency, filterOutRetiredDirs, listPluginDirs, loadManifest, warnUnknownEntries } from '../lib/plugins-manifest-lib.ts'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
@@ -30,6 +30,8 @@ try {
   process.exit(1)
 }
 {
+  // 方向 B 已豁免 manifest.retired 残留目录（T1：#397 告警不红），物理全集传入，
+  // 保证「新目录必须登记」双向校验不退化。
   const problems = checkAggregateConsistency({ dirNames: listPluginDirs(ROOT), manifest })
   if (problems.length > 0) {
     for (const p of problems) console.log(`FAIL plugins-manifest | ${p}`)
@@ -37,7 +39,11 @@ try {
   }
   console.log('PASS plugins-manifest | 目录集 == manifest.active ∪ standalone 集')
 }
-const plugins = listPluginDirs(ROOT)
+// T1：打包循环按 manifest.retired 过滤退役残留目录（无 package.json，读包会裸崩）
+const { kept: plugins, skipped: retiredDirs } = filterOutRetiredDirs(listPluginDirs(ROOT), manifest)
+if (retiredDirs.length > 0) {
+  console.warn(`[pack-check] 跳过已退役包残留目录: ${retiredDirs.join(', ')}（manifest.retired 已登记，请清理）`)
+}
 
 let failed = 0
 for (const p of plugins) {

@@ -19,10 +19,24 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { executeClient } from '../lib/client-contract-lib.ts'
-import { AGGREGATE_NAME, listPluginDirs } from '../lib/plugins-manifest-lib.ts'
+import { AGGREGATE_NAME, filterOutRetiredDirs, listPluginDirs, loadManifest } from '../lib/plugins-manifest-lib.ts'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
-const plugins = listPluginDirs(ROOT)
+
+// T1（#397）：退役残留目录无 package.json，按 manifest.retired 过滤（残留属清理债，
+// 不参与布局验证；plugins-manifest-lib 方向 B 已豁免并告警）。listPluginDirs 保持
+// 物理枚举语义不变，仅消费侧按 manifest 过滤，不掏空「新目录必须登记」守卫。
+let manifest
+try {
+  manifest = loadManifest(ROOT)
+} catch (e) {
+  console.log(`FAIL plugins-manifest | ${e.message}`)
+  process.exit(1)
+}
+const { kept: plugins, skipped: retiredDirs } = filterOutRetiredDirs(listPluginDirs(ROOT), manifest)
+if (retiredDirs.length > 0) {
+  console.warn(`[verify-npm-layout] 跳过已退役包残留目录: ${retiredDirs.join(', ')}（manifest.retired 已登记，请清理）`)
+}
 
 let failed = 0
 
@@ -33,7 +47,7 @@ let failed = 0
 //    由 prepublishOnly 跑（不随安装执行）。聚合包 dsh-plugins-all 已对齐此约定。
 const FORBIDDEN_INSTALL_SCRIPTS = ['preinstall', 'install', 'postinstall', 'prepare']
 // 全部发布包（含聚合包）：目录枚举 + 聚合包名，与 plugins-manifest-lib 同源
-const allPackages = [...listPluginDirs(ROOT), AGGREGATE_NAME]
+const allPackages = [...plugins, AGGREGATE_NAME]
 for (const p of allPackages) {
   const pkgJson = JSON.parse(readFileSync(join(ROOT, 'packages', p, 'package.json'), 'utf8'))
   const bad = Object.keys(pkgJson.scripts ?? {}).filter(s => FORBIDDEN_INSTALL_SCRIPTS.includes(s))

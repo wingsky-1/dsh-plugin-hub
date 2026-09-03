@@ -23,7 +23,7 @@ import {
 } from "./core.ts";
 import type { SessionsServiceLike, RemoteLike, StatsResponseV2, HistoryResponseV2, UiPlacementConfig } from "./core.ts";
 import { SettingsPage } from "./settings.ts";
-import { t, bindLocale } from "./i18n.ts";
+import { t, bindLocale } from "../../../../shared/client/i18n.js";
 import { zh, en, type ProviderUsageLocaleKey } from "./locales.ts";
 // 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
 // lib/types/*.d.ts 相对导入保留 .ts 后缀，declare module 增强的模块名解析会判

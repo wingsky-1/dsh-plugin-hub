@@ -379,13 +379,14 @@ test('#276 方案 A: src 级 mutate 退役产物行号机制——ci/observe 两
   ]) {
     assert.ok(!existsSync(join(ROOT, p)), `${p} 应已删除（#276 方案 A 退役清点）`)
   }
-  // 全部 conf 的 mutate 必须是 src 路径（无 lib/ 产物行号）
+  // 全部 conf 的 mutate 必须是源码路径（src/ 各包源码，或 shared/ 共享源码——
+  // #378 起 trait 上移 shared/placement-math.js，js+d.ts 双写真源码；均非 lib/ 产物行号）
   const confDir = join(ROOT, 'stryker.conf.d')
   for (const f of readdirSync(confDir).filter((x) => x.endsWith('.json'))) {
     const conf = JSON.parse(readFileSync(join(confDir, f), 'utf8'))
     for (const m of conf.mutate ?? []) {
-      assert.ok(m.includes('/src/') && !m.includes('lib/index.js'),
-        `${f} 的 mutate "${m}" 必须是 src 路径（方案 A：文件 glob 声明，无产物行号）`)
+      assert.ok((m.includes('/src/') || m.startsWith('shared/')) && !m.includes('lib/index.js'),
+        `${f} 的 mutate "${m}" 必须是源码路径（src/ 或 shared/，方案 A：文件 glob 声明，无产物行号）`)
     }
   }
   // #439：根 stryker.config.json 已退役——lib 级 mutate 与 CI 段配置（src 级）口径脱节，

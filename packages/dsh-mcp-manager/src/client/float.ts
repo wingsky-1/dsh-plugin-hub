@@ -8,7 +8,7 @@
 
 import { el, api } from "./dom.ts";
 import { STATUS_ORDER, STATUS_TEXT, statusDot } from "./constants.ts";
-import { t } from "./i18n.ts";
+import { t } from "../../../../shared/client/i18n.js";
 import type { McpState, UiActions } from "./state.ts";
 import {
   DEFAULT_Z_INDEX_BASE,

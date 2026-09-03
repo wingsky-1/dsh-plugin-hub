@@ -9,7 +9,7 @@
 import * as React from "react";
 import { API } from "./constants.ts";
 import { api } from "./dom.ts";
-import { t } from "./i18n.ts";
+import { t } from "../../../../shared/client/i18n.js";
 
 /**
  * 设置页插件卡（settings.plugin.item）：浮窗位置 / 偏移编辑区。

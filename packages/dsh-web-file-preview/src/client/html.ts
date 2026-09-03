@@ -10,7 +10,7 @@
  * 时也要渲染 html 预览）。
  */
 import { el, errorView } from "./dom.ts";
-import { t } from "./i18n.ts";
+import { t } from "../../../../shared/client/i18n.js";
 import type { FilePreviewState } from "./state.ts";
 
 /** issue #73：serve token 分配 URL。 */
