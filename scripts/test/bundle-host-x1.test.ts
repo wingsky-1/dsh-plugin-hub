@@ -53,7 +53,7 @@ function readTree(dir) {
   return out
 }
 
-// 复制真实仓库 shared/（含深层 host/ client/）到目标，返回目标 shared 目录
+// 复制真实仓库 shared/（含子目录）到目标，返回目标 shared 目录
 function copyRealShared(destRoot) {
   const src = join(ROOT, 'shared')
   const dest = join(destRoot, 'shared')
@@ -185,7 +185,7 @@ test('#4b 真实仓库方向：bundle-host 2b 复制谓词与 listSharedDts 同�
     const sharedDest = copyRealShared(dir)
     const expected = listSharedDts(ROOT)
     assert.ok(expected.length >= 3, '仓库 shared/ 至少含顶层 + 若干子目录的 d.ts')
-    // shared/<d>/<d>/ 至少一级深层（host/ client/ 均 >0 级）
+    // shared/ 至少含 client/ 一级子目录（深层复制面）
     assert.ok(expected.some((rel) => rel.includes('/')), '清单含子目录路径（深层复制面）')
     for (const rel of expected) {
       assert.ok(existsSync(join(sharedDest, rel)), `包内副本 ${rel} 存在且结构保留`)

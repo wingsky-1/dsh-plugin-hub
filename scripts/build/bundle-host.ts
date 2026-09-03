@@ -181,7 +181,7 @@ cleanFreeFloatingJs(libDir, true)
 //   - 顶层 lib/x.d.ts 引用包内副本为 ../shared/；
 //   - 子目录 lib/a/b.d.ts 引用为 ../../shared/（深度 +1 级，逐层递增）。
 rewriteDtsPaths(libDir, 0)
-// 2b. shared 声明副本进包（递归：shared/ 下所有 .d.ts，含子目录如 host/）
+// 2b. shared 声明副本进包（递归：shared/ 下所有 .d.ts，含子目录如 client/）
 mkdirSync(join(pkgDir, 'shared'), { recursive: true })
 for (const rel of walkFiles(join(ROOT, 'shared'), (f) => f.endsWith('.d.ts'))) {
   const dest = join(pkgDir, 'shared', rel)

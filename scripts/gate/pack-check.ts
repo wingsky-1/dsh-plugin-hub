@@ -67,7 +67,7 @@ for (const p of plugins) {
     for (const f of ['README.md', 'LICENSE', 'cordis.patch.yml']) {
       if (!existsSync(join(pkgRoot, f))) problems.push(`缺 ${f}`)
     }
-    // shared 声明副本（bundle-host d.ts X1 递归复制，含子目录 host/ client/）须随包发布：
+    // shared 声明副本（bundle-host d.ts X1 递归复制，含子目录如 client/）须随包发布：
     // 枚举比对仓库 shared/ 全部 .d.ts（issue #461 L2），缺哪个报哪个，防新增漏打包静默
     const missingSharedDts = assertSharedDtsPresent(join(pkgRoot, 'shared'), SHARED_DTS_EXPECTED)
     if (missingSharedDts.length > 0) {
