@@ -1405,9 +1405,11 @@ export function apply(ctx: any) {
 
       // i18n（issue #348）：注册本插件字典；t 绑定官方 locale 服务（未装配回落 key 本体）。
       var locale: any = ctx.get("locale");
-      // #469：订阅取消函数供 disposer 卸载调用（对齐 T4 mcp-manager 范式），
-      // 防重复 apply 后旧订阅持续重绑已停用实例。
-      var unsubLocale: (() => void) | null = null;
+      // #469：订阅取消函数供 disposer 卸载调用（守卫对齐 T4 provider-usage/
+      // mcp-manager 的 undefined 形态——不预设 subscribe 返回 null，防其返回
+      // null 时 null 初始化遮蔽导致守卫失效），防重复 apply 后旧订阅持续重绑
+      // 已停用实例。
+      var unsubLocale: (() => void) | undefined;
       if (locale && typeof locale.register === "function") {
         try {
           locale.register(NS, { zh: zh, en: en });
@@ -1476,9 +1478,14 @@ export function apply(ctx: any) {
       ctx.effect(function () {
         return function () {
           document.removeEventListener("visibilitychange", onVisibilityChange);
-          if (unsubLocale !== null) {
+          // #469 P1-1：标题恢复（restoreTitle）原本只由 visibilitychange 回前台
+          // 触发；disposer 摘除监听后该路径关闭，若残留 flashTitle 的 savedTitle
+          // 缓存则标题永久卡死（评审复现：hidden 帧 → 卸载 → 标题不恢复）。
+          // 故卸载时主动恢复一次标题并清缓存。
+          restoreTitle();
+          if (unsubLocale !== undefined) {
             unsubLocale();
-            unsubLocale = null;
+            unsubLocale = undefined;
           }
           if (disposeEvents) {
             disposeEvents.close();

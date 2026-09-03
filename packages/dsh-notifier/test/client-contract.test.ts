@@ -171,6 +171,15 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
     "#469：locale.subscribe 取消函数已保存");
   assert.ok(src.includes("unsubLocale()"),
     "#469：disposer 调用 locale 取消函数");
+  // - unsubLocale 守卫对齐 undefined 形态（P1-2：防官方 locale.subscribe 返回
+  //   null 时 null 初始化守卫失效——provider-usage/mcp-manager 同款范式）
+  assert.ok(src.includes("var unsubLocale: (() => void) | undefined;"),
+    "#469 P1-2：unsubLocale 声明为 undefined 形态（非 null 初始化）");
+  assert.ok(src.includes("if (unsubLocale !== undefined) {"),
+    "#469 P1-2：disposer unsubLocale 守卫为 !== undefined");
+  // - disposer 卸载即恢复标题（P1-1：标题恢复不能只依赖已摘除的 visibilitychange 监听）
+  assert.ok(/removeEventListener\("visibilitychange", onVisibilityChange\);[\s\S]*?restoreTitle\(\);/.test(src),
+    "#469 P1-1：disposer 内移除监听后调用 restoreTitle()");
 
   // ② 产物级负向哨兵：匿名注册形态绝迹（源码哨兵防改动，此哨兵防构建链丢配对）
   assert.ok(!client.includes('addEventListener("visibilitychange", function'),
@@ -182,6 +191,18 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   const rem = client.match(/document\.removeEventListener\("visibilitychange",\s*([A-Za-z_$][\w$]*)/);
   assert.ok(reg && rem && reg[1] === rem[1],
     "#469：产物 add/remove visibilitychange 引用同一具名 handler（reg=" + (reg && reg[1]) + " rem=" + (rem && rem[1]) + "）");
+  // P2-①：remove 必须位于 disposer（ctx.effect 返回函数）内——取 effect 返回函数
+  // 体做结构定位，remove 不得出现在 apply 直落路径（防「注册配对但清理不在卸载期」）。
+  const effectRet = client.match(/ctx\.effect\(function\(\)\s*\{\s*return function\(\)\s*\{([\s\S]*?)\n\s*\}\s*;\s*\}\s*,/);
+  assert.ok(effectRet && effectRet[1].includes('removeEventListener("visibilitychange",'),
+    "#469 P2：产物 removeEventListener(visibilitychange) 位于 disposer（effect 返回函数）内");
+  // disposer 内须含 restoreTitle 调用（P1-1：标题恢复不能只依赖已摘除的监听）
+  assert.ok(effectRet && effectRet[1].includes("restoreTitle()"),
+    "#469 P1-1：产物 disposer 内含 restoreTitle()（卸载即恢复标题）");
+  // unsubLocale 守卫为 undefined 形态（P1-2：对齐 provider-usage 范式，防
+  // locale.subscribe 返回 null 时守卫失效——产物 null 折叠为 null 字面量需双形态）
+  assert.ok(effectRet && /unsubLocale\s*!==\s*(?:void 0|undefined|null)/.test(effectRet[1]),
+    "#469 P1-2：产物 disposer unsubLocale 守卫为 undefined 形态");
 }
 
 // ---- issue #469 ② vm 沙箱执行真实产物：事件计数级验收 ----
@@ -225,14 +246,17 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
     body: { appendChild() {} },
   };
   // EventSource stub：实例可赋 handler/close；每次构造/close 计数供可见重建断言。
+  // 实例列表供测试手动投递 notify 帧（驱动 flashTitle 降级链）。
   let sourceCount = 0;
   let closeCount = 0;
+  const sources = [];
   class EventSourceStub {
-    constructor() { sourceCount += 1; this.onmessage = null; this.onerror = null; this.onopen = null; }
+    constructor() { sourceCount += 1; this.onmessage = null; this.onerror = null; this.onopen = null; sources.push(this); }
     close() { closeCount += 1; }
   }
   const fakeReact = { createElement: () => ({}) };
   const warnings = [];
+  const storage = new Map();
   const sandbox = {
     console: { ...console, warn: (...a) => warnings.push(a.join(" ")) },
     Symbol, Object, Array, JSON, Math, Date, Promise,
@@ -241,6 +265,11 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
     Notification: function () {},
     fetch: () => Promise.resolve({ ok: true, json: () => Promise.resolve({}) }),
     document: documentStub,
+    localStorage: {
+      getItem: (k) => (storage.has(k) ? storage.get(k) : null),
+      setItem: (k, v) => storage.set(k, String(v)),
+      removeItem: (k) => storage.delete(k),
+    },
   };
   sandbox.window = sandbox;
   sandbox.window.__ModuleLoader__ = {
@@ -303,16 +332,36 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   assert.equal(localeUnsubs, 1, "#469：旧订阅已取消、无残留重绑");
   assert.equal(disposers.length, 1, "#469：重复 apply 只新增一个 disposer");
 
-  // 触发可见事件：监听应作用于当前句柄（重建 SSE——source 计数增加且旧源被关）
+  // 触发可见事件：监听应作用于当前句柄（重建 SSE——source 计数增加且旧源被关）。
+  // 先显式翻转 visibilityState="hidden" → "visible"（不依赖 stub 默认值巧合）。
   const sourcesBefore = sourceCount;
+  documentStub.visibilityState = "hidden";
+  documentStub.title = "原始标题";
+  documentStub.visibilityState = "visible";
   for (const fn of byType.get("visibilitychange") || []) fn();
   assert.ok(sourceCount > sourcesBefore, "#469：可见事件触发 SSE 重建（监听仍活）");
   assert.ok(closeCount >= sourcesBefore, "#469：重建前旧 SSE 句柄已关（不操作已置 null 句柄）");
 
-  // 卸载当前实例 → 监听归零；disposer 幂等：二次调用不报错、监听仍零
+  // P1-1 回归直测：hidden 后台收到 notify 帧 → flashTitle 置闪烁标题 → disposer
+  // 卸载必须 restoreTitle（标题恢复 + savedTitle 缓存清除）——不能等
+  // visibilitychange 触发（监听已被 disposer 摘除，标题会永久卡死 = 评审复现）。
+  // 当前活跃实例 = 最后创建的 source（apply2 的 disposer 尚未执行、其 SSE 未关）。
+  const activeSource = sources[sources.length - 1];
+  documentStub.visibilityState = "hidden";
+  documentStub.title = "原始标题";
+  assert.ok(typeof activeSource.onmessage === "function",
+    "#469 P1-1：当前 SSE 实例已接 onmessage（可投递通知帧）");
+  activeSource.onmessage({ data: JSON.stringify({ type: "notify", kind: "done", title: "T", message: "m", seq: 1 }) });
+  assert.ok(documentStub.title.startsWith("🔔"),
+    "#469 P1-1：hidden 帧驱动 flashTitle 后标题为闪烁态（实际 " + documentStub.title + "）");
+  // 卸载当前实例 → 监听归零 + 标题恢复（disposer restoreTitle）
   disposers.shift()();
   assert.equal(visCount(), 0, "#469：disposer 卸载后 visibilitychange 监听归零");
   assert.equal(localeUnsubs, 2, "#469：两次实例的 locale 订阅全部取消");
+  assert.equal(documentStub.title, "原始标题",
+    "#469 P1-1：disposer 卸载 restoreTitle 恢复标题（评审复现：卸载后标题卡死）");
+  // disposer 幂等：二次调用不报错、标题仍恢复态、监听仍零
   for (const d of disposers.splice(0)) d();
   assert.equal(visCount(), 0, "#469：disposer 二次调用后仍无监听");
+  assert.equal(documentStub.title, "原始标题", "#469 P1-1：disposer 二次调用标题不复发闪烁");
 }
