@@ -233,6 +233,9 @@ importers:
       dompurify:
         specifier: ^3.2.0
         version: 3.4.14
+      fdir:
+        specifier: ~6.5.0
+        version: 6.5.0
       highlight.js:
         specifier: ^11.12.0
         version: 11.12.0
@@ -1666,6 +1669,15 @@ packages:
 
   fastdom@1.0.12:
     resolution: {integrity: sha512-LB+xjSTEbjHE1cWsxu+tN2Xqr1kpi+V9aADI7sVM5ZMaXyYGPHULQMzpJMYqOTULK/73pUkWVzzObFRBkPr+hg==}
+
+  fdir@6.5.0:
+    resolution: {integrity: sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg==}
+    engines: {node: '>=12.0.0'}
+    peerDependencies:
+      picomatch: ^3 || ^4
+    peerDependenciesMeta:
+      picomatch:
+        optional: true
 
   figures@6.1.0:
     resolution: {integrity: sha512-d+l3qxjSesT4V7v2fh+QnmFnUWv9lSpjarhShNTgBOfA0ttejbQUAlHLitbjkoRiDulW0OPoQPYIGhIC8ohejg==}
@@ -3821,6 +3833,8 @@ snapshots:
   fastdom@1.0.12:
     dependencies:
       strictdom: 1.0.1
+
+  fdir@6.5.0: {}
 
   figures@6.1.0:
     dependencies:

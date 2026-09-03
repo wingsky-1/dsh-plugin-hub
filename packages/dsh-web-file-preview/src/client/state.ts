@@ -44,10 +44,29 @@ export interface FilePreviewState {
   openSeq: number;
   /** 当前预览的在途请求取消句柄。 */
   activeAbort: AbortController | undefined;
-  /** 当前预览文件路径。 */
+  /** 当前预览文件路径（issue #486：首响应 resolved 落地后为宿主回传的真实绝对路径）。 */
   currentPath: string;
   /** 当前预览会话 cwd。 */
   currentCwd: string | undefined;
+  /**
+   * issue #486：本次打开的**入口路径**（openPreview 收到、未经 resolved 的原始
+   * path）。用于分辨「首响应 resolved 是否与入口不同」（经宿主 ③ 搜索纠正）：
+   * 相同 → 仅更新 currentPath；不同且分组变化 → 需整体重建 UI（tab 栏/按钮按
+   * 入口分组已建好）。
+   */
+  entryPath: string;
+  /**
+   * issue #486：resolved 落地回调（每次 openPreview 重置）。由 fetchText /
+   * renderImage / html alloc 在成功拿到真实路径并更新 currentPath 后调用一次；
+   * 内含本文件「返回栈入栈 + diff 探测 defer」（diff 需发 resolved，评审 P1）。
+   */
+  onResolved: (() => void) | undefined;
+  /**
+   * issue #486：已捕获待入栈的返回快照（评审 P0-1）。openPreview 同步段
+   * （closeModal 覆盖 state 前）捕获上一文件快照；本文件首响应 resolved 落地后
+   * 才真正 push 进 backStack（落地前关闭/切走 → 丢弃不压）。
+   */
+  pendingBackEntry: NavEntry | undefined;
   /** 待定位的标题锚点（issue #45：带 fragment 的引用在 md 首次渲染后消费一次）。 */
   pendingFrag: string | undefined;
   /** md 内嵌图 blob objectURL 清单（closeModal 统一 revoke）。 */
@@ -126,6 +145,9 @@ export function createState(): FilePreviewState {
     activeAbort: undefined,
     currentPath: "",
     currentCwd: undefined,
+    entryPath: "",
+    onResolved: undefined,
+    pendingBackEntry: undefined,
     pendingFrag: undefined,
     trackedBlobUrls: [],
     MAX_IMG_CONCURRENCY: 6,

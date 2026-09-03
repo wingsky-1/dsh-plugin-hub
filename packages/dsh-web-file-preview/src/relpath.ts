@@ -80,6 +80,12 @@ export function resolveAbsolutePath(reference: string): string | null {
 /**
  * 把 openPreview 入参的「被预览文件路径」规范化为绝对形态（issue #479）。
  *
+ * ⚠️ legacy（issue #486）：客户端请求链路已不再调用本函数——#486 起客户端零
+ * 预处理，路径解析/搜索全部交由宿主端（file/alloc 三级定位 + resolved 回传，
+ * 见 routes.resolveFile / client/resolved-path.ts），md basePath 由宿主回传的
+ * 真实绝对路径提供，比客户端预归一更权威。本函数保留为纯函数导出（smoke /
+ * 既有单测 / 潜在外部消费方兼容），不再被生产客户端引用。
+ *
  * 背景：md 渲染时以 `state.currentPath` 作 basePath 解析文内相对引用；当该路径是
  * 相对路径（对话流文本嗅探 / 相对 <a href> 点击传入）时，`resolveRelativePath` 内部
  * `new URL(reference, "file://" + 相对baseFile)` 会把首段解析为 host 导致解析失败，

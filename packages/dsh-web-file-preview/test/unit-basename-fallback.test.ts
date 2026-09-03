@@ -2,13 +2,14 @@
 /**
  * dsh-web-file-preview — unit：basename fallback（basename-fallback 纯函数）。
  *
- * mkdtemp 构造临时目录 + 真实文件（不依赖 git 仓库，走回退黑名单 DFS 遍历），覆盖：
+ * mkdtemp 构造临时目录 + 真实文件（不依赖 git 仓库——#486 起为 fdir 通用遍历），覆盖：
  * - 唯一命中 → 真实绝对路径
  * - 多命中歧义 → null（绝不猜）
- * - dot 目录黑名单跳过
+ * - dot 目录黑名单跳过、**dot 文件（.env 裸名）可命中**（#486 A1）
  * - node_modules 黑名单跳过
  * - symlink 不跟随（同名文件仅存在于符号链接目标内时不计数，唯一真实命中仍返回）
- * - walkLimit=0 触顶返回 null
+ * - 中文/UTF-8 文件名精确命中（无 git quotePath 转义依赖）
+ * - walkLimit=0 触顶返回 null（不污染负缓存——后续完整搜索仍可达）
  * - 零命中 → null
  * - bareBasenameOf 全分支：末段提取、Windows 分隔符、尾分隔符、空串、..
  */
@@ -43,6 +44,18 @@ try {
   assert.equal(await findUniqueByBasename(root, "linkonly.txt", { walkLimit: 0 }), null, "walkLimit=0 触顶 → null");
   assert.equal(await findUniqueByBasename(root, "dotfile.txt"), null, "dot 目录不进入遍历");
   assert.equal(await findUniqueByBasename(root, "ignored.txt"), null, "node_modules 不进入遍历");
+  // issue #486 A1 决策：dot **文件**（裸名）可命中（dot 目录跳过但文件不剪）；
+  // 中文文件名（UTF-8）精确比对正常（fdir Dirent 原样字节流，无 git 转义问题）。
+  writeFileSync(join(root, ".env"), "env", "utf8");
+  mkdirSync(join(root, "中文字目录", "子"), { recursive: true });
+  writeFileSync(join(root, "中文字目录", "子", "中文名.md"), "中文内容", "utf8");
+  assert.equal(await findUniqueByBasename(root, ".env"), join(root, ".env"), "dot 文件（.env 裸名）可命中");
+  assert.equal(
+    await findUniqueByBasename(root, "中文名.md"),
+    join(root, "中文字目录", "子", "中文名.md"),
+    "中文文件名精确命中（UTF-8）",
+  );
+  assert.equal(await findUniqueByBasename(root, "no-such-中文.xyz"), null, "中文零命中 → null");
   assert.equal(
     await findUniqueByBasename(root, "linkonly.txt"),
     join(root, "real", "linkonly.txt"),
