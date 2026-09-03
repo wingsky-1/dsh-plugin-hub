@@ -21,7 +21,7 @@ import assert from "node:assert/strict";
 import {
   ROUTES, makeRoutes, serveFileRoute, previewKindOf, computeGitDiff,
   normalizeConfig, DEFAULT_CONFIG, groupOfPath, groupOfExt, isLikelySingleFilePath, resolveRelativePath,
-  cleanRefChipPath, resolveAbsolutePath, splitReferenceFragment, serveTokenRoute,
+  cleanRefChipPath, resolveAbsolutePath, splitReferenceFragment, serveTokenRoute, normalizeBasePath, rewriteTarget, dirResolvedPathOf,
 } from "../lib/index.js";
 import { build as esbuildBuild } from "esbuild";
 import { assertClientProductContract, assertClientSourceContract } from "../../../test/smoke-lib.ts";
@@ -107,6 +107,38 @@ assert.equal(resolveRelativePath(REL, "#sec"), null, "纯锚点不展开");
 assert.equal(resolveAbsolutePath("/home/u/proj/docs/design.md"), "/home/u/proj/docs/design.md", "#45 绝对路径规范化保留");
 assert.equal(resolveAbsolutePath("//cdn/x.png"), null, "#45 协议相对拒绝");
 assert.deepEqual(splitReferenceFragment("./f.md#g"), { ref: "./f.md", fragment: "g" }, "#45 fragment 剥离保留锚点");
+
+// issue #479：openPreview 入参归一（normalizeBasePath）——纯函数层；详细分支见
+// unit-relpath.test.ts。此处补「归一化后 rewriteTarget 相对解析恢复」的层间回归：
+// 相对 basePath 直接喂 rewriteTarget 全 NULL（P1 根因），归一为绝对后与绝对场景一致。
+{
+  const CWD = "/home/u/proj";
+  const relBase = "docs/architecture/dsh-codegraph.md";
+  const absBase = normalizeBasePath(relBase, CWD);
+  assert.equal(absBase, "/home/u/proj/docs/architecture/dsh-codegraph.md", "#479 相对 basePath 归一为绝对");
+  const relImg = rewriteTarget("diagrams/codegraph-architecture.svg", { cwd: CWD, basePath: relBase });
+  const absImg = rewriteTarget("diagrams/codegraph-architecture.svg", { cwd: CWD, basePath: absBase });
+  assert.equal(relImg, null, "#479 修复前（相对 basePath）：文内相对图片不重写（P1 根因已固化）");
+  assert.ok(absImg !== null && absImg.path === "/home/u/proj/docs/architecture/diagrams/codegraph-architecture.svg", "#479 归一经 rewriteTarget 重写为预览目标");
+}
+
+// issue #479 P2：目录引用（[diagrams/](diagrams/) 等）——rewriteTarget 保持 null
+// （目录不可预览），dirResolvedPathOf 返回目录绝对路径（rewrite.ts 据此标
+// data-fp-dir → toast 提示，而非 target=_blank 新标签打开错误 URL）。
+{
+  const CWD = "/home/u/proj";
+  const base = "/home/u/proj/docs/architecture/dsh-codegraph.md";
+  const opts = { cwd: CWD, basePath: base };
+  assert.equal(rewriteTarget("diagrams/", opts), null, "#479 P2 目录引用不可预览 → rewriteTarget null");
+  assert.equal(dirResolvedPathOf("diagrams/", opts), "/home/u/proj/docs/architecture/diagrams/", "#479 P2 目录语义判定返回绝对目录路径");
+  assert.equal(dirResolvedPathOf("./diagrams/", opts), "/home/u/proj/docs/architecture/diagrams/", "#479 P2 ./ 目录形态同样判定");
+  assert.equal(dirResolvedPathOf("../../dir/", opts), "/home/u/proj/dir/", "#479 P2 ../ 上跳目录判定");
+  assert.equal(dirResolvedPathOf("/abs/dir/", opts), "/abs/dir/", "#479 P2 绝对目录形态判定");
+  assert.equal(dirResolvedPathOf("a.zip", opts), null, "#479 P2 不可预览文件不是目录");
+  assert.equal(dirResolvedPathOf("a.md", opts), null, "#479 P2 可预览文件不是目录");
+  assert.equal(dirResolvedPathOf("https://x/dir/", opts), null, "#479 P2 外域保留（非本地目录）");
+  assert.equal(dirResolvedPathOf("diagrams", opts), null, "#479 P2 无尾斜杠目录引用不可判（维持现状）");
+}
 
 
 // ------------------------------------------------------------ 纯函数
@@ -573,6 +605,13 @@ try {
   assert.ok(client.includes("unsubLocale = locale.subscribe"), "subscribe 返回值保存（unsubLocale）进产物");
   assert.ok(/unsubLocale!=null&&unsubLocale\(\)|unsubLocale\(\)/.test(client), "卸载调用 unsubLocale() 进产物");
   assert.ok(client.includes("Copy path") && client.includes("copyPath"), "en/zh 双语字典进产物");
+  // issue #479 P2/P3 哨兵断言（防实现回退）：目录引用标 data-fp-dir（toast 提示而非
+  // 新标签）、内嵌图失败标 fwp-img-failed 错误态 + imgFailHint 双语文案——minify 保留
+  // 字符串字面量与类名，产物层可断言。
+  assert.ok(client.includes("data-fp-dir"), "#479 P2 client 含目录引用标记（data-fp-dir）");
+  assert.ok(client.includes("fwp-img-failed"), "#479 P3 client 含内嵌图失败错误态类名");
+  assert.ok(client.includes("imgFailHint"), "#479 P3 client 含内嵌图失败提示文案键");
+  assert.ok(client.includes("Image failed to load"), "#479 P3 en 文案进产物（双语平衡）");
   // issue #344（评审 F1/F2 防回退哨兵）：diff 渲染路径必须接入 render-limit 谓词
   // （renderDiff 超限降级）与返回栈 hadDiff 重探逻辑——minify 保留属性名（hadDiff）
   // 与导出函数名（exceedsTextRenderLimit），产物层可断言，防「修了一半」回归。

@@ -8,7 +8,7 @@
  * splitReferenceFragment fragment 剥离分支。
  */
 import { assert } from "./helpers.ts";
-import { resolveRelativePath, resolveAbsolutePath, splitReferenceFragment } from "../lib/index.js";
+import { resolveRelativePath, resolveAbsolutePath, splitReferenceFragment, normalizeBasePath } from "../lib/index.js";
 
 const BASE = "/home/u/work/src/a.md";
 
@@ -77,3 +77,44 @@ assert.deepEqual(splitReferenceFragment("a.md?x=1#sec"), { ref: "a.md?x=1", frag
 assert.deepEqual(splitReferenceFragment("a.md#"), { ref: "a.md", fragment: null }, "空锚点视为无 fragment");
 assert.deepEqual(splitReferenceFragment("a.md#%E4%B8%AD"), { ref: "a.md", fragment: "中" }, "锚点 %XX 解码一次");
 assert.deepEqual(splitReferenceFragment("a.md#%zz"), { ref: "a.md", fragment: "%zz" }, "非法编码锚点原样保留");
+
+// ------------------------------------------------------------ issue #479：openPreview 入参归一（normalizeBasePath）
+
+const CWD = "/home/u/proj";
+// —— 相对 path + 绝对 cwd → 绝对形态（核心修复）
+assert.equal(normalizeBasePath("docs/a.md", CWD), "/home/u/proj/docs/a.md", "相对+绝对 cwd → 绝对");
+assert.equal(normalizeBasePath("./img.png", CWD), "/home/u/proj/img.png", "./ 前缀归一");
+assert.equal(normalizeBasePath("docs/../b.md", CWD), "/home/u/proj/b.md", ".. 归一由 URL 规范化");
+assert.equal(normalizeBasePath("docs/中 文/图 片.png", CWD), "/home/u/proj/docs/中 文/图 片.png", "空格+中文保留");
+assert.equal(normalizeBasePath("docs\\sub\\a.md", CWD), "/home/u/proj/docs\\sub\\a.md", "反斜杠相对路径归一（POSIX 下作为普通字符，跟随实现）");
+// —— 特殊字符文件名（评审必改项：段级转义防截断/错解码）
+assert.equal(normalizeBasePath("docs/a#b.md", CWD), "/home/u/proj/docs/a#b.md", "含 # 文件名保留（URL 不吞 fragment）");
+assert.equal(normalizeBasePath("docs/a?b.md", CWD), "/home/u/proj/docs/a?b.md", "含 ? 文件名保留（URL 不吞 query）");
+assert.equal(normalizeBasePath("docs/a%20b.md", CWD), "/home/u/proj/docs/a%20b.md", "字面 %20 保留（不全解码为空格）");
+assert.equal(normalizeBasePath("docs/a%2Fb.md", CWD), "/home/u/proj/docs/a%2Fb.md", "字面 %2F 保留（不当分隔符）");
+assert.equal(normalizeBasePath("docs/%E4%B8%AD.md", CWD), "/home/u/proj/docs/%E4%B8%AD.md", "已编码输入单解一致（URL 解码一次）");
+// —— 纯裸名不归一（保留服务端 #41 basename 兜底可达）
+assert.equal(normalizeBasePath("AGENTS.md", CWD), "AGENTS.md", "纯裸名不归一（#41 兜底可达）");
+assert.equal(normalizeBasePath("solo", CWD), "solo", "无扩展名裸名同样不归一");
+// —— 绝对形态原样（幂等基）
+assert.equal(normalizeBasePath("/abs/x.md", CWD), "/abs/x.md", "绝对路径原样");
+assert.equal(normalizeBasePath("~/x.md", CWD), "~/x.md", "~/ 家目录语义原样（服务端 untildify）");
+assert.equal(normalizeBasePath("~\\x.md", CWD), "~\\x.md", "~\\ 家目录反斜杠形态原样");
+assert.equal(normalizeBasePath("C:\\x\\y.md", CWD), "C:\\x\\y.md", "盘符绝对原样");
+assert.equal(normalizeBasePath("//cdn/x.png", CWD), "//cdn/x.png", "协议相对原样");
+assert.equal(normalizeBasePath("https://x/a.md", CWD), "https://x/a.md", "scheme 原样");
+// —— cwd 异常/缺失 → 原样（显式分支）
+assert.equal(normalizeBasePath("docs/a.md", undefined), "docs/a.md", "无 cwd → 原样");
+assert.equal(normalizeBasePath("docs/a.md", ""), "docs/a.md", "空 cwd → 原样");
+assert.equal(normalizeBasePath("docs/a.md", "work/src"), "docs/a.md", "相对 cwd → 原样（显式分支）");
+assert.equal(normalizeBasePath("", CWD), "", "空路径 → 原样");
+// —— cwd 尾斜杠 strip（防 // 双斜杠污染）
+assert.equal(normalizeBasePath("docs/a.md", "/home/u/proj/"), "/home/u/proj/docs/a.md", "cwd 尾斜杠 → 无双斜杠");
+// —— 盘符 cwd + 相对 path → C:/ 形态（win32 round-trip 正确，评审 F3.1 必改项）
+assert.equal(normalizeBasePath("docs/a.md", "C:\\Users\\me"), "C:/Users/me/docs/a.md", "盘符 cwd + 相对 → C:/... 形态（去前导 /）");
+assert.equal(normalizeBasePath("docs/a.md", "C:\\Users\\me\\"), "C:/Users/me/docs/a.md", "盘符 cwd 尾斜杠同样 strip");
+// —— 幂等（入口归一天然幂等）
+{
+  const once = normalizeBasePath("docs/a.md", CWD);
+  assert.equal(normalizeBasePath(once, CWD), once, "归一幂等：二次调用不变");
+}

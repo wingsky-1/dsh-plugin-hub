@@ -73,5 +73,25 @@ export function errorView(body: HTMLElement, msg: string, url: string | undefine
   }
 }
 
+/**
+ * 轻量 toast 提示（issue #479 P2 复用）：role=status 底部居中、自动消失、可点关闭。
+ * 样式走 .fwp-folder-notice（触控目标 ≥44px 由样式表 coarse 媒体查询保证）。
+ * 文案由调用方给出（外部输入按文本注入，无 HTML 面）。
+ */
+export function showToast(text: string): void {
+  const existing = document.querySelector(".fwp-folder-notice");
+  if (existing !== null && existing.parentElement !== null) {
+    existing.parentElement.removeChild(existing);
+  }
+  const notice = el("div", {
+    class: "fwp-folder-notice",
+    text,
+    attrs: { role: "status", "data-dsh-web-file-preview-notice": "" },
+  });
+  notice.addEventListener("click", () => { notice.remove(); });
+  document.body.appendChild(notice);
+  window.setTimeout(() => { if (notice.parentElement !== null) notice.remove(); }, 4000);
+}
+
 // 样式：构建期 text-loader 内联（见 src/client/style.css）
 import STYLE from "./style.css";

@@ -23,6 +23,8 @@
 .fwp-actions .fwp-nav-back[hidden]{display:none}
 .fwp-body{overflow:auto;min-height:200px;display:flex;align-items:flex-start;justify-content:center;padding:14px;background:var(--dsw-alias-bg-layer-1,#fafbfc)}
 .fwp-body img{max-width:100%;max-height:70vh;object-fit:contain;border-radius:6px;background:var(--dsw-alias-bg-layer-2,#eef0f3)}
+/* issue #479 P3：md 内嵌图加载失败错误态（fetch 失败标记，保留 API src 可新标签查看） */
+.fwp-body img.fwp-img-failed{opacity:.5;filter:grayscale(1);border:1px dashed var(--dsw-alias-state-error-primary,#b42318);cursor:help}
 .fwp-body pre{margin:0;padding:12px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;line-height:1.55;white-space:pre-wrap;word-break:break-word;color:var(--dsw-alias-label-primary,#1c1e26);background:var(--dsw-alias-bg-base,#fff);border:1px solid var(--dsw-alias-border-l1,#e5e7eb);border-radius:8px;min-width:100%;box-sizing:border-box}
 .fwp-state{padding:26px;color:var(--dsw-alias-label-secondary,#6b7280);font-size:13px;text-align:center;align-self:center}
 .fwp-state.fwp-err{color:var(--dsw-alias-state-error-primary,#b42318)}

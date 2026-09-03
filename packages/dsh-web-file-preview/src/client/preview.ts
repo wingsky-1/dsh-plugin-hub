@@ -5,7 +5,7 @@
  * fileUrl 仅被 openPreview 使用，故归本模块（避免跨模块循环依赖）。
  */
 
-import { el, copyPathText, ensureStyle } from "./dom.ts";
+import { el, copyPathText, ensureStyle, showToast } from "./dom.ts";
 import type { FilePreviewState, NavEntry } from "./state.ts";
 import { fetchText, renderTabBody, probeDiff } from "./text.ts";
 import { renderImage } from "./image.ts";
@@ -22,6 +22,7 @@ import {
   exitFullscreenQuiet,
 } from "./fullscreen-math.ts";
 import { textFitsSnapshot } from "./render-limit.ts";
+import { normalizeBasePath } from "../relpath.ts";
 
 /** 文件预览 URL（F2-B）。 */
 export function fileUrl(path: string, cwd: string | undefined, state: FilePreviewState): string {
@@ -202,6 +203,12 @@ export function openPreview(
   frag?: string,
 ): void {
   ensureStyle();
+  // issue #479：把相对入参 path 用会话 cwd 归并为绝对形态——md 渲染以
+  // state.currentPath 作 basePath 解析文内相对引用，相对路径会令
+  // resolveRelativePath 把首段解析为 host 而全军覆没；归一后 basePath 恒为
+  // 绝对，下游（md 渲染 / 返回栈 / data-fp-cwd / fileUrl）天然正确。
+  // 幂等：绝对形态 / 纯裸名 / 无 cwd 均原样返回（详见 relpath.normalizeBasePath）。
+  path = normalizeBasePath(path, cwd);
   // issue #45：带 fragment 的文件引用（./f.md#g）——待定位锚点只随「前进打开」
   // 设置一次，md 首次渲染后消费；返回（isBack）不带锚点语义。
   // 注意：此处无条件赋值（含 undefined）是 pendingFrag 的唯一写入点之一，
@@ -388,6 +395,18 @@ export function openPreview(
         event.preventDefault();
         event.stopPropagation();
         scrollToFragment(state.overlay, anchorLink.getAttribute("data-fp-anchor") ?? "");
+        return;
+      }
+    }
+    // issue #479 P2：md 内目录引用（[diagrams/](diagrams/) 等，rewriteAnchor 已标
+    // data-fp-dir）→ 拦截默认导航，toast 提示（不新标签、不整页导航）。
+    if (targetEl !== null) {
+      let dirLink: Element | null = null;
+      try { dirLink = targetEl.closest("a[data-fp-dir]"); } catch { dirLink = null; }
+      if (dirLink !== null && dirLink !== undefined) {
+        event.preventDefault();
+        event.stopPropagation();
+        showToast(t("dirNoPreview"));
         return;
       }
     }

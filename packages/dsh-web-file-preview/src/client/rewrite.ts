@@ -25,7 +25,7 @@
 
 import DOMPurify from "dompurify";
 import { splitReferenceFragment } from "../relpath.ts";
-import { rewriteTarget, type RewriteOpts } from "./rewrite-target.ts";
+import { rewriteTarget, dirResolvedPathOf, type RewriteOpts } from "./rewrite-target.ts";
 
 /**
  * 清洗并重写 md 渲染产物。
@@ -62,6 +62,14 @@ function rewriteAnchor(node: HTMLElement, opts: RewriteOpts): void {
   }
   const target = rewriteTarget(href, opts);
   if (target === null) {
+    // issue #479 P2：目录引用（[diagrams/](diagrams/)）→ 标 data-fp-dir（点击由
+    // overlay 处理器 toast 提示），**不加** target=_blank——避免新标签打开错误的
+    // 相对 URL（落 dsh web 根 404）。
+    const dirPath = dirResolvedPathOf(href, opts);
+    if (dirPath !== null) {
+      node.setAttribute("data-fp-dir", dirPath);
+      return;
+    }
     // issue #45 兜底：不可重写的链接（外域网页/不可预览文件等）绝不整页导航——
     // 新标签打开，当前 dsh web 页面保持不动。
     node.setAttribute("target", "_blank");
