@@ -183,4 +183,48 @@ Markdown 中可能引用其他文件的语法面，逐一分析「渲染去向 �
 - [x] 阶段四 4c：U6/U7/U11 + `/health` 405 + 死代码清理 + README.zh（提交 `40e7797`；捏合/44px/safe-area/焦点管理）
 - [ ] 阶段五：最终全量回归（build/test/contract/pack 已在各 commit 通过；如需发布前再整体跑一遍）
 - [x] 专项：U8（已实施并浏览器 MCP 验证通过；含方法修正记录，见 §5.5「实施落地记录」）
-- [x] 专项：W10（**收敛为「size 预判 + 413 拒绝」＝C6 已实现**；增强项全部后置；见 §5.5「W10 收敛结论」）
+- [x] 专项：W10（**收敛为「size 预判 + 413 拒绝」＝C6 已实现**；增强项全部后置；见 §5.5「W10 收敛结论」）- [x] 专项：路径兜底搜索通用化 + 宿主权威 resolved 回传（#486，见 §10）
+
+## 10. #486 专项：宿主三级定位 + 权威路径回传（实施记录）
+
+> 触发：`diagrams/lan-proxy-architecture.html`（相对引用目录缺 `docs/architecture` 前缀）
+> web 预览 404。两轮独立对抗评审（整体方案 + 通用载体选型）+ 实测后定稿实施。
+
+**根因**：① 客户端 `normalizeBasePath`（#479）把相对引用预归一成绝对，屏蔽了宿主 #41
+basename 兜底（只对相对 path 触发）；② html 预览走 `/alloc`，该路由**无任何兜底**。
+
+**设计原则（用户拍板）**：客户端零路径预处理，路径解析/搜索全部交由宿主端；宿主按
+绝对 → 相对 → cwd 内唯一搜索三级定位；命中后回传真实 resolved，客户端以之为权威。
+
+**实施要点**：
+- 兜底搜索通用化：弃 `git ls-files`（非通用/固定 spawn 开销），改 **fdir 6.5.0**（零
+  依赖、内联 <30KB、license 自动归集）+ 自写薄壳——`excludeSymlinks` + 黑名单
+  （dot 目录/node_modules）+ filter+AbortSignal 真早停 + stat 收敛（>1 即弃）+
+  壁钟 1500ms 超时/20000 触顶双保险。选型实测（10 万文件）：fdir 全量 76ms 最快、
+  abort 早停 19ms；git 3 万文件 21.5ms 与 Node 遍历打平无优势。
+- 并发去重：in-flight 合并（同 key 并发只爬一次）+ **仅缓存「完整遍历 0 命中」**的
+  秒级负缓存（触顶/超时/歧义不缓存——受限搜索结论不得错当全局不存在；unit 实测
+  踩坑后修正）。20 并发 miss 实测 325ms → 23.6ms。
+- gitignore 语义 A1：**物理存在 + 唯一即暴露**（不解析 .gitignore）——对齐 /file 任意
+  读模型，不新增访问面（被忽略文件本就经 /file 直读可达）；dot 目录跳过但 dot 文件
+  （.env/.gitignore 裸名）可命中（单测钉死）。README 安全模型明示。
+- `routes.ts` 抽 `resolveFile` 三级定位（file/alloc 共用）；**目录命中（EISDIR）不进
+  搜索改名换读**（评审 P0-3）；分组判定统一按 resolved 扩展名。
+- `/file` 成功响应加 `X-File-Path`（encodeURIComponent(resolved)，200/304 同值，>8000
+  字符省略防超 Node 16KB header 上限）；`/alloc` 响应加 `path` 字段。
+- 客户端：`openPreview` 移除预归一；**首响应 resolved 落地先改 currentPath 再渲染**
+  （评审 P0-2，防双击渲染副作用重放）；**返回栈快照同步段捕获、resolved 落地才入栈**
+  （评审 P0-1，条目恒为权威绝对路径）；probeDiff defer 发 resolved（防 Diff tab 误判
+  不可用）；分组变化（入口 txt 命中真实 html）整体重建。
+- `/diff` 宿主零改动（git 语义本体保留——diff 依赖 git 基线是功能依赖非搜索依赖）。
+
+**测试**：smoke #41 段去 git 化（git 仓仅证明可用性）+ 用例 5（gitignore）翻转 + dot
+目录/文件 + 绝对 path 三级全开 + X-File-Path 断言 + resolveFile 纯函数分支；unit 补
+dot 文件/中文命中；esbuild data-URL 直测模块因 fdir 内联 createRequire 失效 → 改经
+lib/index.js + opts 注入（测试基建适配）。
+
+**文档**：README（能力/实现/依赖/安全模型）、docs/architecture/dsh-web-file-preview.md
+（路由表/返回栈/安全）同步更新。
+
+**新增依赖**：fdir@~6.5.0（issue #486 评审 approved；THIRD-PARTY-LICENSES 自动归集，
+pack:check 断言通过）。
