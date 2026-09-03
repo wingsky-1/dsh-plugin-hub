@@ -25,7 +25,6 @@ export {
   clampPointToViewport,
   composerDockedAtBottom,
   bottomAnchorEdge,
-  panelTopForAnchor,
   panelAnchorForPlacement,
 } from "../../../shared/placement-math.js";
 export type { FloatBreakpoint, ViewportPoint, RectLike } from "../../../shared/placement-math.js";

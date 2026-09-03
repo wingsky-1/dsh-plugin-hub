@@ -27,7 +27,8 @@ DSH 插件家族共用的模块（构建期 esbuild 内联进各插件包，不�
 
 - shared 是**构建期源码依赖**：插件 src 以相对路径 import，构建时由 esbuild 内联进
   各包 lib/ 产物。**发布物必须自包含**——npm 包内不得残留 `../../shared` 运行时引用。
-- 修改 shared 需跑 `dshx build --check`（shared checkJs 一致性）并回归全部插件 smoke。
+- 修改 shared 后回归：`pnpm build && pnpm test`（回归全部插件 smoke）+
+  `pnpm typecheck`（shared 双写 d.ts 与消费方类型一致性）。
 - **js + d.ts 双写**（tsc rootDir 硬约束）：shared 实现一律 `.js` + `.d.ts`（不可 TS 化），
   类型经 d.ts 解析、实现经 esbuild 内联；client 侧同理（`shared/client/`）。
 - 新增 shared 模块须满足下方准入规则；废弃走 DEPRECATED 两步走。

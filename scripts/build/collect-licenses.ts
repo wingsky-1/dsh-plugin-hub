@@ -27,7 +27,7 @@
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { listPluginDirs } from '../lib/plugins-manifest-lib.ts'
+import { filterOutRetiredDirs, listPluginDirs, loadManifest } from '../lib/plugins-manifest-lib.ts'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
@@ -235,11 +235,20 @@ export function collectForPackage(pkgDir, root = ROOT) {
   return refs.map(r => r.name)
 }
 
-// ---- CLI 入口：无参数 = 全部插件包 ------------------------------------
+// ---- CLI 入口：无参数 = 全部插件包（按 manifest.retired 过滤，T1 防退役残留目录）----
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  let dirs = listPluginDirs(ROOT)
+  if (process.argv.length <= 2) {
+    // T1（#397）：退役残留目录无 lib/ 会 FAIL，全量模式按 manifest.retired 过滤
+    const { kept, skipped } = filterOutRetiredDirs(dirs, loadManifest(ROOT))
+    if (skipped.length > 0) {
+      console.warn(`[collect-licenses] 跳过已退役包残留目录: ${skipped.join(', ')}（manifest.retired 已登记，请清理）`)
+    }
+    dirs = kept
+  }
   const targets = process.argv.slice(2).length > 0
     ? process.argv.slice(2)
-    : listPluginDirs(ROOT).map(d => `packages/${d}`)
+    : dirs.map(d => `packages/${d}`)
   let failed = 0
   for (const t of targets) {
     try {

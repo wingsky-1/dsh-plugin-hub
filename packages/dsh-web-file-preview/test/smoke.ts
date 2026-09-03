@@ -564,10 +564,14 @@ try {
   assert.ok(client.includes("放大预览") && client.includes("退出放大"), "#344 client 含降级态文案（放大预览/退出放大）");
   assert.ok(client.includes('classList.add("fwp-fs-btn")') || client.includes(".fwp-fs-btn{"), "#344 client 含全屏按钮类名");
   assert.ok(client.includes(".fwp-fs{") || client.includes(".fwp-fs "), "#344 client 含视口放大降级类（带选择器上下文）");
-  // i18n 接入哨兵（issue #348）：NS / register / bind / 双语字典进产物
+  // i18n 接入哨兵（issue #348 → #378 抽取 shared）：NS / register / bind / 双语字典进产物
   assert.ok(client.includes('"filePreview"'), "i18n 命名空间 NS 进产物");
   assert.ok(client.includes("locale.register"), "locale.register（字典注册）进产物");
   assert.ok(client.includes("bindLocale"), "bindLocale（t 活绑定装配）进产物");
+  // T4（#378）：locale.subscribe 返回值保存为 unsubLocale 并在卸载时调用——
+  // 防重复 apply 后旧订阅持续重绑已停用实例（对齐 provider-usage 范式）。
+  assert.ok(client.includes("unsubLocale = locale.subscribe"), "subscribe 返回值保存（unsubLocale）进产物");
+  assert.ok(/unsubLocale!=null&&unsubLocale\(\)|unsubLocale\(\)/.test(client), "卸载调用 unsubLocale() 进产物");
   assert.ok(client.includes("Copy path") && client.includes("copyPath"), "en/zh 双语字典进产物");
   // issue #344（评审 F1/F2 防回退哨兵）：diff 渲染路径必须接入 render-limit 谓词
   // （renderDiff 超限降级）与返回栈 hadDiff 重探逻辑——minify 保留属性名（hadDiff）
