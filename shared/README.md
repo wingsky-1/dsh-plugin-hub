@@ -32,6 +32,9 @@ DSH 插件家族共用的模块（构建期 esbuild 内联进各插件包，不�
 - **js + d.ts 双写**（tsc rootDir 硬约束）：shared 实现一律 `.js` + `.d.ts`（不可 TS 化），
   类型经 d.ts 解析、实现经 esbuild 内联；client 侧同理（`shared/client/`）。
 - 新增 shared 模块须满足下方准入规则；废弃走 DEPRECATED 两步走。
+- **发布面**：`.d.ts` 声明经 bundle-host **d.ts X1**（2a 引用改写 + 2b 副本随包）随每个
+  消费包发布，pack:check 双向断言（查缺 + 查多 retired 残留）兜底——机制说明见
+  [DEVELOPMENT.md d.ts X1 小节](../docs/DEVELOPMENT.md#user-content-dts-x1)，此处不重复。
 
 ## 准入规则（新增模块必须全部满足）
 
