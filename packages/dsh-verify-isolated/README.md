@@ -64,7 +64,8 @@ bash "$SKILL_BASE/scripts/verify-isolated.sh" --port 0 --browser <插件包路�
 ```
 
 浏览器实例操作（实例信息在 `$DSH_HOME/browser.state`；命令契约见
-`browser-driver.mjs --help`）：
+`browser-driver.mjs --help`。**页面操作命令需 Node ≥22**——依赖内置全局
+WebSocket，更低版本会在连接时报错提示升级）：
 
 ```bash
 node "$SKILL_BASE/scripts/browser-driver.mjs" snapshot --state "$DSH_HOME/browser.state" --url http://127.0.0.1:<端口>
