@@ -229,7 +229,7 @@ node "$SKILL_BASE/scripts/browser-driver.mjs" console   --state "$STATE" --url h
 
 ### 6.3 核验改动
 
-1. **导航到改动对应的路由/页面**：打开 `http://localhost:<port>` 下的对应路径
+1. **导航到改动对应的路由/页面**：打开 `http://127.0.0.1:<port>` 下的对应路径
    （`--port 0` 时用脚本打印的真实端口）。
 2. **验证 UI 呈现**：`snapshot` 确认组件渲染正确、样式符合预期；`click`/`fill`/
    `eval` 验证交互行为。
