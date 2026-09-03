@@ -21,6 +21,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import { buildClient, buildMermaidChunk, copyClientResources } from './build-client.ts'
+import { rewriteDtsPaths } from '../lib/rewrite-dts-paths.ts'
 import { walkFiles } from '../lib/walk-files.ts'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -176,26 +177,9 @@ function cleanFreeFloatingJs(dir, isRoot) {
 cleanFreeFloatingJs(libDir, true)
 
 // 2a. d.ts 路径改写（X1，递归且按文件深度感知）：shared 相对引用 → 包内副本。
-// 顶层 lib/x.d.ts 引用包内副本为 ../shared/；
-// 子目录 lib/a/b.d.ts 引用为 ../../shared/（深度 +1 级）。
-function rewriteDtsPaths(dir, depth) {
-  const prefix = '../'.repeat(depth + 1)
-  // rewriteRelativeImportExtensions 的 d.ts 缺口修正（#276 方案 A）：TS（5.9/7.x
-  // 实测一致）只把相对 .ts 后缀 specifier 回写到 JS emit，声明文件不回写——
-  // 源码 .ts 后缀原样进入 lib/*.d.ts，会指向发布包内不存在的文件。统一改回 .js。
-  // 对未启用该 flag / 未迁移的包无匹配，天然无操作。
-  const TS_SUFFIX = /(from\s+|import\s*\(\s*)(["'])(\.\.?\/[^"'\s]+)\.ts\2/g
-  for (const f of readdirSync(dir, { withFileTypes: true })) {
-    const abs = join(dir, f.name)
-    if (f.isDirectory()) { rewriteDtsPaths(abs, depth + 1); continue }
-    if (!f.name.endsWith('.d.ts')) continue
-    const p = join(dir, f.name)
-    const t = readFileSync(p, 'utf8')
-      .replace(/(?:\.\.\/)+shared\//g, `${prefix}shared/`)
-      .replace(TS_SUFFIX, '$1$2$3.js$2')
-    writeFileSync(p, t)
-  }
-}
+// 实现单一事实源在 scripts/lib/rewrite-dts-paths.ts（issue #478 提纯，供测试 import）：
+//   - 顶层 lib/x.d.ts 引用包内副本为 ../shared/；
+//   - 子目录 lib/a/b.d.ts 引用为 ../../shared/（深度 +1 级，逐层递增）。
 rewriteDtsPaths(libDir, 0)
 // 2b. shared 声明副本进包（递归：shared/ 下所有 .d.ts，含子目录如 host/）
 mkdirSync(join(pkgDir, 'shared'), { recursive: true })

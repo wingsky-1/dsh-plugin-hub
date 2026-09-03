@@ -13,11 +13,13 @@
  * 本库把断言升级为「仓库 shared/ 枚举清单 与 tarball 内 shared/ 副本逐一比对」：
  *   - listSharedDts(root)：枚举仓库 shared/ 下全部 .d.ts 相对路径（与
  *     bundle-host 2b 复制谓词同源，walk-files 单一事实源）；
- *   - assertSharedDtsPresent(pkgSharedDir, expected)：tarball 缺哪个文件报哪个。
+ *   - assertSharedDtsPresent(pkgSharedDir, expected)：tarball 缺哪个文件报哪个（查缺）；
+ *   - assertSharedDtsNoExtras(pkgSharedDir, expected)：报包内 shared/ 中期望清单之外
+ *     的残留 .d.ts（查多，issue #478：retired 模块移除后旧副本不得残留在包内）。
  * 未来 shared 新增子目录/文件自动纳入断言，无需再改 pack-check。
  */
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readdirSync, statSync } from 'node:fs'
+import { join, relative, sep } from 'node:path'
 import { walkFiles } from './walk-files.ts'
 
 /**
@@ -38,4 +40,31 @@ export function listSharedDts(root) {
  */
 export function assertSharedDtsPresent(pkgSharedDir, expected) {
   return expected.filter((rel) => !existsSync(join(pkgSharedDir, rel)))
+}
+
+/**
+ * 查多：返回包内 shared/ 中「期望清单之外」的残留 .d.ts（相对路径列表，空 = 无残留）。
+ *
+ * retired 残留场景（issue #478）：shared 模块退休（DEPRECATED 两步走 → 移除）后，旧
+ * 声明副本残留在包内 shared/——包根 shared/ 不入 git，clean-lib 只清 lib/ 不清包根
+ * shared/，bundle-host 每次构建覆盖写入新副本但从不清理已移除者；files 白名单
+ * shared/glob 双星 .d.ts 仍会把它带进发布 tarball（过期声明随包发布，陈旧类型面）。
+ * assertSharedDtsPresent 只查「缺」不查「多」——本出口补「多」向，pack-check 接入后
+ * 残留 fail-loud。
+ */
+export function assertSharedDtsNoExtras(pkgSharedDir, expected) {
+  const expectedSet = new Set(expected)
+  const out = []
+  const visit = (cur) => {
+    for (const f of readdirSync(cur, { withFileTypes: true })) {
+      const abs = join(cur, f.name)
+      if (f.isDirectory()) { visit(abs); continue }
+      if (!f.name.endsWith('.d.ts')) continue
+      // 包内目录相对 shared/ 根的路径（walkFiles 同款归一：relative + / 分隔）
+      const rel = relative(pkgSharedDir, abs).split(sep).join('/')
+      if (!expectedSet.has(rel)) out.push(rel)
+    }
+  }
+  if (existsSync(pkgSharedDir) && statSync(pkgSharedDir).isDirectory()) visit(pkgSharedDir)
+  return out
 }
