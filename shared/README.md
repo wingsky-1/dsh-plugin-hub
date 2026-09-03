@@ -16,8 +16,6 @@ DSH 插件家族共用的模块（构建期 esbuild 内联进各插件包，不�
 | `frontmatter.js` | 宿主 | `parseFrontmatter` / `parseFrontmatterAll` / `setFrontmatterField` / `parseYamlBool` | 历史：commands-files / skill-explorer 同源复制统一；现生产消费已退役（verify-isolated 测试仍引用） |
 | `settings-namespace.js` | 宿主 | `installSettingsNamespace`（settings 服务面注入） | lan-proxy / mcp-manager / notifier / provider-usage |
 | `mcp-manager-service.d.ts` | 宿主 | MCP 管理器服务契约类型面（消费方只走公开入口） | mcp-manager / codegraph |
-| `host/plugin-skeleton.js` | 宿主 | `definePlugin` 骨架 | 无生产调用（见 DEPRECATED） |
-| `host/mount-once.js` | 宿主 | 防重复 apply 挂载围栏 | 机制性随包（pack-check 断言副本存在） |
 | `placement-math.js` | 双端 | 浮窗/胶囊定位/层级/断点纯函数（#128 → #378 抽取，含 `panelTopForAnchor` 与参数化 `panelZIndexFor(base, dflt)`） | mcp-manager / provider-usage |
 | `client/i18n.js` | 客户 | 共享 `t` 活绑定 + `bindLocale`（#348 → #378 抽取；未装配回落 key 本体） | mcp-manager / provider-usage / web-file-preview |
 
@@ -55,8 +53,3 @@ DSH 插件家族共用的模块（构建期 esbuild 内联进各插件包，不�
 > ⚠️ 活绑定语义依赖 **esbuild 同 bundle 内联**（每 bundle 独立副本、import 侧即时可见
 > 重绑）。若未来客户端构建改为共享 chunk / 跨包复用产物，须重新验证该假设
 > （见 `shared/client/i18n.js` 头注释）。
-
-## DEPRECATED
-
-- `host/plugin-skeleton.js`：`definePlugin` 骨架无生产调用（T12：试点迁移或归档二选一，
-  不长期悬置）。

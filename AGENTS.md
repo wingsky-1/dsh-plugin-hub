@@ -13,7 +13,6 @@ shared/
   loopback.js/.d.ts      loopback 围栏（单一事实源）
   host-utils.js/.d.ts    宿主端辅助（writeJson/readBody/errorMessage 等)
   frontmatter.js/.d.ts   frontmatter 解析
-  host/                   宿主侧共享（plugin-skeleton 骨架、mount-once 防重）
 scripts/              仓库维护脚本（按职能分 build/ gate/ lib/ release/ test/ data/）
 test/                 共享测试工具（smoke-lib）
 .dsh/skills/          Agent 项目级 skills（随仓库自动加载，见文末「Agent 环境」）

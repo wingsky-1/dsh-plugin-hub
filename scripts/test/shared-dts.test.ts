@@ -5,12 +5,12 @@
 /**
  * shared-dts-lib 自测（node:test，issue #461 L2）。
  *
- * L2 目标：pack-check 对 shared 声明副本断言从「硬编码 plugin-skeleton.d.ts 单文件」
- * 升级为「仓库 shared/ 全部 .d.ts（递归含子目录）逐一随包」——新增 shared 子目录/文件
+ * L2 目标：pack-check 对 shared 声明副本断言从「硬编码单文件」升级为
+ * 「仓库 shared/ 全部 .d.ts（递归含子目录）逐一随包」——新增 shared 子目录/文件
  * （如 client/i18n.d.ts）漏打包时必须 fail-loud，机制保证 → 断言保证。
  *
  * 覆盖：
- *   - listSharedDts 枚举正确（含 host/ client/ 子目录，返回相对路径）
+ *   - listSharedDts 枚举正确（含 client/ 子目录，返回相对路径）
  *   - assertSharedDtsPresent 缺文件报错 / 完整通过
  *   - 与 bundle-host d.ts X1 复制谓词同源：bundle-host 必须复用共享 walkFiles
  *     （防「复制机制」与「断言清单」两处枚举实现漂移）
@@ -31,15 +31,12 @@ function tempDir() {
 }
 
 function fixtureShared(root) {
-  // 构造与真实 shared/ 同构的目录：顶层 loopback.d.ts + host/ + client/ 子目录
+  // 构造与真实 shared/ 同构的目录：顶层 loopback.d.ts + client/ 子目录
   const shared = join(root, 'shared')
-  mkdirSync(join(shared, 'host'), { recursive: true })
   mkdirSync(join(shared, 'client'), { recursive: true })
   writeFileSync(join(shared, 'loopback.d.ts'), '')
-  writeFileSync(join(shared, 'host', 'plugin-skeleton.d.ts'), '')
   writeFileSync(join(shared, 'client', 'i18n.d.ts'), '')
   // 非 .d.ts 文件不得被枚举（.js 是运行时内联源，不随包）
-  writeFileSync(join(shared, 'host', 'plugin-skeleton.js'), '')
   writeFileSync(join(shared, 'client', 'i18n.js'), '')
   return shared
 }
@@ -49,7 +46,7 @@ test('#1 listSharedDts 递归枚举全部 .d.ts（含子目录、排除 .js）',
   try {
     fixtureShared(dir)
     const list = listSharedDts(dir)
-    assert.deepEqual(list, ['client/i18n.d.ts', 'host/plugin-skeleton.d.ts', 'loopback.d.ts'])
+    assert.deepEqual(list, ['client/i18n.d.ts', 'loopback.d.ts'])
   } finally {
     cleanup()
   }
@@ -84,7 +81,7 @@ test('#3 assertSharedDtsPresent 完整副本通过（空缺件清单）', () => 
 test('#4 与真实仓库 shared/ 一致：清单非空、含新增 client/i18n.d.ts、路径真实存在', () => {
   const root = join(import.meta.dirname, '..', '..')
   const list = listSharedDts(root)
-  assert.ok(list.length >= 3, '仓库 shared/ 至少含顶层 + host/ + client/ 的 d.ts')
+  assert.ok(list.length >= 2, '仓库 shared/ 至少含顶层 + client/ 的 d.ts')
   // 必须命中 L2 新增断言目标：client/ 子目录文件（i18n.d.ts）
   assert.ok(list.includes('client/i18n.d.ts'), '新增 shared/client/i18n.d.ts 必须进入枚举清单')
   // 全部为 .d.ts 且在仓库 shared/ 真实存在
@@ -107,7 +104,7 @@ test('#5 同源防漂移：bundle-host 复用共享 walkFiles，无私有枚举�
   try {
     fixtureShared(dir)
     const walked = walkFiles(join(dir, 'shared'), (f) => f.endsWith('.d.ts'))
-    assert.deepEqual(walked, ['client/i18n.d.ts', 'host/plugin-skeleton.d.ts', 'loopback.d.ts'])
+    assert.deepEqual(walked, ['client/i18n.d.ts', 'loopback.d.ts'])
   } finally {
     cleanup()
   }
@@ -119,10 +116,11 @@ test('#6 assertSharedDtsNoExtras 查多：包内预置残留副本 → 报出该
     const shared = fixtureShared(dir)
     const expected = listSharedDts(dir)
     // 模拟 retired 残留：源 shared/ 已移除某 d.ts，但包内 shared/ 仍残留旧副本
+    mkdirSync(join(shared, 'deep'), { recursive: true })
     writeFileSync(join(shared, 'retired.d.ts'), '')
-    writeFileSync(join(shared, 'host', 'old-archived.d.ts'), '')
+    writeFileSync(join(shared, 'deep', 'old-archived.d.ts'), '')
     const extras = assertSharedDtsNoExtras(shared, expected)
-    assert.deepEqual(extras, ['host/old-archived.d.ts', 'retired.d.ts'])
+    assert.deepEqual(extras, ['deep/old-archived.d.ts', 'retired.d.ts'])
   } finally {
     cleanup()
   }

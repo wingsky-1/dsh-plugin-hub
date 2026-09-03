@@ -141,8 +141,7 @@ X1 在 bundle-host 构建宿主产物时对 **tsc 声明产物**做两件事（�
   `.js`（rewriteRelativeImportExtensions 的 d.ts 不回写缺口，issue #276；未启用该
   flag 的包无匹配，天然无操作）。发布后 d.ts 不再引用包外路径，类型解析全部落在
   包内副本。
-- **2b 声明副本进包**：把仓库根 `shared/` 下全部 `.d.ts`（递归，含子目录 `host/`、
-  `client/` 等）复制进 `packages/<pkg>/shared/`（保留相对目录结构），随包发布。
+- **2b 声明副本进包**：把仓库根 `shared/` 下全部 `.d.ts`（递归，含子目录如 `client/`）复制进 `packages/<pkg>/shared/`（保留相对目录结构），随包发布。
   复制谓词与遍历实现 = `scripts/lib/walk-files.ts` 的 `walkFiles`（单一事实源）。
 
 **副本清单来源**：不是包内静态清单——每次构建**实时枚举仓库 shared/**（`walkFiles`

@@ -10,7 +10,7 @@
  *      （tsc 原样写入的 `../../shared/` 等）改写为指向包内副本——前缀按当前文件在
  *      lib/ 下的目录深度归一为 '../'.repeat(depth + 1)（整体吞掉任意 ../ 前缀后按
  *      文件深度重算），另把相对 .ts 后缀 import 回写 .js（#276）；
- *   2b 声明副本进包：仓库根 shared/ 全部 .d.ts（递归，含子目录 host/ client/）
+ *   2b 声明副本进包：仓库根 shared/ 全部 .d.ts（递归，含子目录 client/ 等）
  *      复制进包内 shared/（保留相对目录结构），谓词/遍历 = scripts/lib/walk-files.ts。
  *
  * 覆盖（spec v2）：
@@ -53,7 +53,7 @@ function readTree(dir) {
   return out
 }
 
-// 复制真实仓库 shared/（含深层 host/ client/）到目标，返回目标 shared 目录
+// 复制真实仓库 shared/（含子目录）到目标，返回目标 shared 目录
 function copyRealShared(destRoot) {
   const src = join(ROOT, 'shared')
   const dest = join(destRoot, 'shared')
@@ -154,13 +154,11 @@ test('#6 2b 复制含深层子目录：shared/<d>/<d>/x.d.ts 连同目录结构�
   const { dir, cleanup } = tempDir()
   try {
     // 构造仓库 shared/（模拟含 >1 级子目录的 shared 树）
-    mkdirSync(join(dir, 'shared', 'host'), { recursive: true })
     mkdirSync(join(dir, 'shared', 'deep', 'deeper'), { recursive: true })
     writeFileSync(join(dir, 'shared', 'loopback.d.ts'), '')
-    writeFileSync(join(dir, 'shared', 'host', 'mount-once.d.ts'), '')
     writeFileSync(join(dir, 'shared', 'deep', 'deeper', 'x.d.ts'), '')
     // 非 .d.ts 不得复制
-    writeFileSync(join(dir, 'shared', 'host', 'mount-once.js'), '')
+    writeFileSync(join(dir, 'shared', 'deep', 'sample.js'), '')
     // 复制落点 = 包内 shared/，保留相对目录结构（walkFiles 同源谓词）
     const pkgDir = join(dir, 'pkg')
     mkdirSync(pkgDir)
@@ -170,12 +168,11 @@ test('#6 2b 复制含深层子目录：shared/<d>/<d>/x.d.ts 连同目录结构�
       cpSync(join(dir, 'shared', rel), dest)
     }
     assert.ok(existsSync(join(pkgDir, 'shared', 'loopback.d.ts')), '顶层 .d.ts 复制')
-    assert.ok(existsSync(join(pkgDir, 'shared', 'host', 'mount-once.d.ts')), '1 级子目录 .d.ts 复制')
     assert.ok(existsSync(join(pkgDir, 'shared', 'deep', 'deeper', 'x.d.ts')), '2 级子目录 .d.ts 连同目录结构复制')
-    assert.ok(!existsSync(join(pkgDir, 'shared', 'host', 'mount-once.js')), '非 .d.ts 不复制')
+    assert.ok(!existsSync(join(pkgDir, 'shared', 'deep', 'sample.js')), '非 .d.ts 不复制')
     // 与 listSharedDts 同源枚举一致（复制清单 == 期望清单）
     assert.deepEqual(walkFiles(join(dir, 'shared'), (f) => f.endsWith('.d.ts')),
-      ['deep/deeper/x.d.ts', 'host/mount-once.d.ts', 'loopback.d.ts'])
+      ['deep/deeper/x.d.ts', 'loopback.d.ts'])
   } finally {
     cleanup()
   }
@@ -187,8 +184,8 @@ test('#4b 真实仓库方向：bundle-host 2b 复制谓词与 listSharedDts 同�
   try {
     const sharedDest = copyRealShared(dir)
     const expected = listSharedDts(ROOT)
-    assert.ok(expected.length >= 3, '仓库 shared/ 至少含顶层 + host/ + client/ 的 d.ts')
-    // shared/<d>/<d>/ 至少一级深层（host/ client/ 均 >0 级）
+    assert.ok(expected.length >= 3, '仓库 shared/ 至少含顶层 + 若干子目录的 d.ts')
+    // shared/ 至少含 client/ 一级子目录（深层复制面）
     assert.ok(expected.some((rel) => rel.includes('/')), '清单含子目录路径（深层复制面）')
     for (const rel of expected) {
       assert.ok(existsSync(join(sharedDest, rel)), `包内副本 ${rel} 存在且结构保留`)
