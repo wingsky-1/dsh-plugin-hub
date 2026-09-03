@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url'
 import { executeClient } from '../lib/client-contract-lib.ts'
 import { extractInlinedPackages, readMermaidChunkRefs } from '../build/collect-licenses.ts'
 import { AGGREGATE_NAME, checkAggregateConsistency, filterOutRetiredDirs, listPluginDirs, loadManifest, warnUnknownEntries } from '../lib/plugins-manifest-lib.ts'
-import { assertSharedDtsPresent, listSharedDts } from '../lib/shared-dts-lib.ts'
+import { assertSharedDtsNoExtras, assertSharedDtsPresent, listSharedDts } from '../lib/shared-dts-lib.ts'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
@@ -72,6 +72,13 @@ for (const p of plugins) {
     const missingSharedDts = assertSharedDtsPresent(join(pkgRoot, 'shared'), SHARED_DTS_EXPECTED)
     if (missingSharedDts.length > 0) {
       problems.push(`缺 shared 声明副本: ${missingSharedDts.join(', ')}（shared 递归副本未随包）`)
+    }
+    // 查多（issue #478）：retired 模块移除后旧声明副本不得残留在包内——「源 shared/
+    // 移除某 d.ts 后旧副本仍随包发布」属过期类型面（files 白名单 shared/**/*.d.ts
+    // 仍会带走），查缺出口对残留静默放行，此处 fail-loud。
+    const extraSharedDts = assertSharedDtsNoExtras(join(pkgRoot, 'shared'), SHARED_DTS_EXPECTED)
+    if (extraSharedDts.length > 0) {
+      problems.push(`shared 副本残留: ${extraSharedDts.join(', ')}（源 shared/ 已无此文件，须清理）`)
     }
     const idx = readFileSync(join(pkgRoot, 'lib', 'index.js'), 'utf8')
     // 只匹配 import 语句中的仓库外相对引用（esbuild 模块注释含路径文本，不算断链）

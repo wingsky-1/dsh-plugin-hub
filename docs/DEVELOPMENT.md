@@ -116,14 +116,55 @@ scripts/                   # 仓库维护脚本（*.ts，Node 直跑；按职能
 `scripts/build/bundle-host.ts` 编排单包构建：
 1. esbuild 内联 `shared/*` 进 `lib/index.js`（宿主端自包含单文件）。
 2. 客户端经 `scripts/build/build-client.ts`（唯一契约外壳/注入点）构建 `lib/client.js`。
-3. d.ts X1：改写 `../../../shared` → 包内副本，`shared/*.d.ts` 随包。
-   shared 层因此保持 **js + d.ts 双写**（tsc `rootDir` 硬约束，shared 不可 TS 化）。
+3. d.ts X1：shared 声明随包机制（见下小节）。
 4. 拷贝资源（非 TS 文件）+ LICENSE。
 5. 第三方 license 归集：扫描产物中 esbuild 的 node_modules 模块注释，把真实被内联
    的第三方库（含传递依赖）license 文本写入 `lib/THIRD-PARTY-LICENSES`
    （`scripts/build/collect-licenses.ts`）。**运行时依赖 = 构建期内联**——内联在法律上
    等于分发该库副本，必须随发布物附其 license 文本与版权声明；`pack:check` 断言
    「有内联 ⇒ 清单存在、非空、含 MIT/BSD/Apache 字样且覆盖每个被内联的包名」。
+
+<a id="dts-x1"></a><a id="user-content-dts-x1"></a>
+### d.ts X1：shared 声明随包机制（#478）
+
+宿主端共享层（shared/）是 **js + d.ts 双写**（tsc `rootDir` 硬约束，shared 不可
+TS 化）：`.js` 实现经 esbuild 内联进各包运行时，`.d.ts` 声明则经 X1 随包发布。
+X1 在 bundle-host 构建宿主产物时对 **tsc 声明产物**做两件事（纯类型层，运行时无关）：
+
+- **2a 路径改写**（`scripts/lib/rewrite-dts-paths.ts`，`rewriteDtsPaths`）：改写
+  `lib/**/*.d.ts` 中所有指向**仓库外 shared/** 的相对引用——tsc 从 src/ 原样写入
+  声明的 `../../shared/` 等（实际形态 `(?:\\.\\.\\/)+shared/`）→ 指向**包内副本**。
+  前缀按当前文件在 lib/ 下的目录深度归一为 `'../'.repeat(depth + 1)`：整体吞掉任意
+  深度 `../` 前缀后按文件深度重算——顶层 `lib/x.d.ts`（depth 0）→ `../shared/`，
+  子目录 `lib/client/x.d.ts`（depth 1）→ `../../shared/`。引用原深度与文件深度无
+  对应关系（归一化语义：一律按**文件**深度）。顺带把相对 `.ts` 后缀 import 回写
+  `.js`（rewriteRelativeImportExtensions 的 d.ts 不回写缺口，issue #276；未启用该
+  flag 的包无匹配，天然无操作）。发布后 d.ts 不再引用包外路径，类型解析全部落在
+  包内副本。
+- **2b 声明副本进包**：把仓库根 `shared/` 下全部 `.d.ts`（递归，含子目录 `host/`、
+  `client/` 等）复制进 `packages/<pkg>/shared/`（保留相对目录结构），随包发布。
+  复制谓词与遍历实现 = `scripts/lib/walk-files.ts` 的 `walkFiles`（单一事实源）。
+
+**副本清单来源**：不是包内静态清单——每次构建**实时枚举仓库 shared/**（`walkFiles`
+谓词 `.d.ts`）。包根 `shared/` 不入 git、属构建产物（.gitignore
+`packages/*/shared/`；clean-lib 只清 lib/ 不清包根 shared/），经各包 package.json
+`files` 白名单 `shared/**/*.d.ts` 发布。
+
+**与 shared 准入规则的关系**：X1 是 shared 契约的**发布面强制器**——准入规则
+（shared/README.md 准入 1-7：≥2 稳定消费者、无包级常量依赖、跨 apply 状态语义明确、
+无泄漏、登记消费方与行为契约、独立测试、显式废弃两步走）约束**哪些模块有资格进
+shared**；X1 保证**已准入的模块随每个消费包完整发布**（机制保证）。「准入审核 →
+进 shared → 自动随包」，使 shared 单点维护而各包发布物自包含不断链。
+
+**断言链**（`scripts/lib/shared-dts-lib.ts` + `pack:check`）：
+- `listSharedDts(ROOT)` 用与 2b **同一 walkFiles 谓词**枚举仓库 shared/ 全部 .d.ts
+  相对路径；pack:check 打包每个插件后逐包比对 tarball：
+  - `assertSharedDtsPresent` 查缺：新增 shared 子目录/文件漏随包 → fail-loud；
+  - `assertSharedDtsNoExtras` 查多（#478）：**retired 残留**——shared 模块退休
+    （DEPRECATED 两步走 → 移除）后，旧声明副本残留在包内 shared/（bundle-host 每次
+    构建覆盖写入新副本但从不清理已移除者，files 白名单仍会把它带进 tarball，过期
+    声明随包发布 = 陈旧类型面）→ 报「shared 副本残留」fail-loud。
+  枚举与复制同源，杜绝两处漂移；双向（缺/多）断言把「机制保证」升级为「断言保证」。
 
 宿主端类型一律用官方类型层（pnpm-workspace catalog 锁版：`@deepseek-ai/cordis`
 的 `Context` + `@deepseek-ai/dsh-host-webserver` 的 `WebRoute`/ctx.webServer 增强 +
