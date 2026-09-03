@@ -25,6 +25,11 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+// 服务消费方契约门禁（#476）：codegraph 经 mcp-manager 公开入口的类型化调用
+// 形状 + 无直连 shared + 依赖解析链（运行时断言；编译期断言经 scripts/test/
+// service-contract-wiring.test.ts 的 tsc 编译面执行）
+import "./service-consumer.test.ts";
+
 const pkgDir = join(new URL("..", import.meta.url).pathname);
 const mod = await import(pathToFileURL(join(pkgDir, "lib/index.js")).href);
 const { apply, name, inject } = mod;
