@@ -18,14 +18,30 @@
  *   「不重复写入」）；
  * - 写入失败：回滚改名（bak 还原为 json）并 warn，下次启动重试（E6）。
  *
- * 冲突策略（#468，用户改值优先）：
+ * 冲突策略（#468，用户改值优先；字段粒度 = 顶层配置键，sanitize 白名单）：
  * - 迁移只补写 user 层**缺失**的键（sanitize 白名单 ∩ bak 显式键 − user 层
- *   已存在的键）；用户已改/已存在的字段（含值为 undefined 的键）一律不被
- *   迁移覆盖，与 PUT /config 之后重启不再被迁移抢回的语义一致（E2 依赖的
- *   幂等判定本来就是「user 层已有值 = 不重复写入」）；
+ *   已存在的键）；用户已改/已存在的字段一律不被迁移覆盖，与 PUT /config
+ *   之后重启不再被迁移抢回的语义一致（E2 依赖的幂等判定本来就是「user 层
+ *   已有值 = 不重复写入」）；
+ * - user 层键以**任何形态存在**（含空对象/仅部分嵌套子键）即视为用户已接管
+ *   该字段**整组**（含其嵌套子键）——迁移不补写其嵌套子键。原因：sanitize
+ *   对嵌套对象（如 quietHours）输出恒为完整对象（base 默认值兜底），子键级
+ *   补齐会把 schema 默认值固化进 user 层（压制后续默认值演进），且会覆盖
+ *   「用户只 PUT 部分子键 = 其余用默认」的合法意图；用户整组接管后 bak 保留
+ *   人工恢复路径；
+ * - 顶层标量键的键存在性判定与官方 mergeLayers 对顶层键的语义一致（user 键
+ *   值为 undefined 也代表用户已表态）；该证据**仅对顶层键成立**——官方解析
+ *   对嵌套对象会剥离空对象内部并回落 base，故冲突粒度不延伸到子键级；
  * - json 正常迁移与中断重放共用同一补齐写入路径，天然收敛到终态；
  * - 若用户确实想要 bak 里的旧值，官方 settings 是唯一事实源——迁移不写
  *   用户键，bak 原样保留可手动核对。
+ *
+ * 并发说明（#468 P1-3）：迁移 update 不传 expectedRevision——官方 update 是
+ * 串行写队列 + merge over 最新 user section，迁移与用户 PUT 并发时各自 merge，
+ * 迁移不会用旧快照覆盖用户新值；但「写入前 readUser 幂等判定」存在 TOCTOU
+ * 窗口：极端并发下可能对同一缺失键多补一次（update 内不含该键才补）。补写
+ * 是幂等 merge 且永不覆盖已存在键，多补一次危害低（仅多一次无害写入），
+ * 不做乐观并发。
  */
 import { existsSync, readFileSync, renameSync, unlinkSync } from "node:fs";
 import { errorMessage } from "../../../shared/host-utils.js";
@@ -65,8 +81,11 @@ export interface MigrateDeps {
 
 /**
  * 从 sanitize 白名单结果中挑出 user 层尚缺失的键（#468 冲突策略：只补缺失键，
- * 用户已改/已存在的键不被迁移覆盖）。字段是否「已迁移」按**键存在性**判定
- * （与官方解析 mergeLayers 的语义一致：user 键值为 undefined 也代表用户已表态）。
+ * 用户已改/已存在的键不被迁移覆盖）。字段粒度 = **顶层配置键**（sanitize 白名单）；
+ * user 层键以任何形态存在（含空对象/部分嵌套子键）即视为用户已接管该字段整组，
+ * 迁移不补写其嵌套子键。顶层标量键的键存在性判定与官方 mergeLayers 对顶层键的
+ * 语义一致（user 键值为 undefined 也代表用户已表态）——该证据不延伸到嵌套子键级
+ * （官方解析对嵌套对象会剥离空对象内部并回落 base，见文件头冲突策略）。
  *
  * @returns 待补写 patch；空对象 = 无缺失键（迁移已完成，调用方幂等跳过）。
  */
@@ -202,7 +221,8 @@ export async function migrateLegacyConfig(legacyPath: string, deps: MigrateDeps,
   const patch = diffMissingKeys(sanitized, deps.readUser());
   if (Object.keys(patch).length === 0) {
     // 改名后才发现所有字段均已迁齐（用户经 PUT /config 全量保存过且键全在）
-    // → 不重复写入，幂等结束（bak 保留供核对）
+    // → 不重复写入，幂等结束（bak 保留供核对：如需旧值见该备份）
+    logger?.warn?.(`dsh-notifier: 存量配置字段在 user 层均已存在，跳过写入（不改动用户已设值；如需旧值见 ${legacyPath.split(/[\\/]/).pop()}${MIGRATED_BAK_SUFFIX}）`);
     return { performed: true, migrated: false, rolledBack: false, skippedCorrupt: false, skippedIdempotent: true, resumed: false };
   }
   try {

@@ -170,6 +170,11 @@ try {
         readUser: () => user,
         async update(patch) {
           if (failUpdate) throw new Error("io boom");
+          // #468 P1-4：锁死「只补缺失键」语义——update 提交的每个键在写入前
+          // 必须不存在于 user 层（防未来实现改成快照全量/覆盖写导致漏报）
+          for (const key of Object.keys(patch)) {
+            assert.equal(key in user, false, `E9：update 不得提交 user 层已存在的键 ${key}`);
+          }
           updates.push(patch);
           Object.assign(user, patch);
         },
@@ -318,6 +323,18 @@ try {
       assert.deepEqual(out, { performed: true, migrated: false, rolledBack: false, skippedCorrupt: false, skippedIdempotent: true, resumed: false }, "E9d：user 全量存在 → 改名后幂等跳过");
       assert.equal(d.updates.length, 0, "E9d：不重复写入");
       assert.equal(d.readUser().notifyAsk, true, "E9d：用户改值不被迁移覆盖");
+    }
+    // #468 E9e：冲突策略字段粒度 = 顶层配置键——user 层 quietHours 以部分子键
+    // 形态存在（用户只 PUT 过子键 start）即视为用户已接管整组：不补写嵌套
+    // 子键（bak 的 enabled/end 不覆盖不补），迁移只补顶层缺失键 notifySound
+    {
+      const d = deps({ notifyAsk: true, quietHours: { start: "07:00" } }); // 用户部分子键接管
+      const legacy = join(dir, "subkey-owner.json");
+      writeFileSync(legacy + MIGRATED_BAK_SUFFIX, JSON.stringify({ notifyAsk: false, notifySound: true, quietHours: { enabled: false, start: "22:00", end: "08:00" } }));
+      const out = await migrateLegacyConfig(legacy, d);
+      assert.equal(out.migrated, true, "E9e：缺顶层键 notifySound → 迁移补齐");
+      assert.deepEqual(d.updates, [{ notifySound: true }], "E9e：不补写 quietHours 嵌套子键（仅顶层缺失键）");
+      assert.deepEqual(d.readUser().quietHours, { start: "07:00" }, "E9e：用户部分子键保持原样（不被 bak 子键覆盖）");
     }
     rmSync(dir, { recursive: true, force: true });
   }
