@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 1120 520" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="lanproxy-title lanproxy-desc">
+      <title id="lanproxy-title">dsh-lan-proxy 局域网转发架构</title>
+      <desc id="lanproxy-desc">局域网设备经 lan-proxy 监听面、转发核心与 WS 压缩桥接，回环转发到 127.0.0.1 上的 dsh web；安全校验在转发核心旁侧。</desc>
+      <defs><style>@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap');</style>
+        <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse">
+          <circle cx="1" cy="1" r="0.9" fill="rgba(45,49,66,0.10)"/>
+        </pattern>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+        <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+      </defs>
+
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+      <rect width="100%" height="100%" fill="url(#dots)" opacity="0.55"/>
+
+      <!-- Zone: lan-proxy 转发器 -->
+      <rect x="268" y="72" width="540" height="376" rx="8"
+            fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <rect x="464" y="76" width="148" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="538" y="85" fill="rgba(45,49,66,0.40)" font-size="7" font-family="'Geist Mono', monospace"
+            text-anchor="middle" letter-spacing="0.14em">LAN-PROXY 转发器</text>
+
+      <!-- Arrows (behind boxes) -->
+      <!-- LAN → 监听面（主链路） -->
+      <line x1="180" y1="168" x2="316" y2="168" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <!-- 监听面 → 转发核心 -->
+      <line x1="436" y1="168" x2="548" y2="168" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <!-- 转发核心 → dsh web -->
+      <line x1="728" y1="168" x2="856" y2="168" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <!-- 监听面 → WS 桥接（下行） -->
+      <line x1="376" y1="200" x2="376" y2="288" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <!-- 转发核心 → 安全校验（下行） -->
+      <line x1="638" y1="200" x2="638" y2="288" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <!-- 安全校验 ↔ WS 桥接（共享校验语义） -->
+      <line x1="496" y1="320" x2="548" y2="320" stroke="rgba(45,49,66,0.35)" stroke-width="1" stroke-dasharray="4,3"/>
+
+      <!-- Arrow labels -->
+      <rect x="196" y="144" width="108" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="250" y="153" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">HTTP / HTTPS / WS</text>
+
+      <rect x="452" y="144" width="48" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="476" y="153" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">请求</text>
+
+      <rect x="744" y="144" width="72" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="780" y="153" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">回环转发</text>
+
+      <rect x="388" y="236" width="72" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="424" y="245" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">WS 升级</text>
+
+      <rect x="652" y="236" width="72" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="688" y="245" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">入站校验</text>
+
+      <!-- Node: LAN 设备 -->
+      <rect x="40" y="136" width="140" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="40" y="136" width="140" height="64" rx="6" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+      <rect x="48" y="144" width="36" height="12" rx="2" fill="transparent" stroke="rgba(122,131,153,0.40)" stroke-width="0.8"/>
+      <text x="66" y="153" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">LAN</text>
+      <text x="110" y="172" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">局域网设备</text>
+      <text x="110" y="188" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">手机 / iPad / 笔记本</text>
+
+      <!-- Node: 监听面（focal coral） -->
+      <rect x="316" y="136" width="120" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="316" y="136" width="120" height="64" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <rect x="324" y="144" width="52" height="12" rx="2" fill="transparent" stroke="rgba(235,108,54,0.50)" stroke-width="0.8"/>
+      <text x="350" y="153" fill="#eb6c36" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">LISTEN</text>
+      <text x="376" y="172" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">监听面</text>
+      <text x="376" y="188" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">0.0.0.0:3081 / :3443</text>
+
+      <!-- Node: 转发核心 -->
+      <rect x="548" y="136" width="180" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="548" y="136" width="180" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="556" y="144" width="52" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="582" y="153" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CORE</text>
+      <text x="638" y="172" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">转发核心</text>
+      <text x="638" y="188" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">http-proxy · 压缩 · injectToken</text>
+
+      <!-- Node: WS 压缩桥接 -->
+      <rect x="316" y="288" width="180" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="316" y="288" width="180" height="64" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <rect x="324" y="296" width="32" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.22)" stroke-width="0.8"/>
+      <text x="340" y="305" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">WS</text>
+      <text x="406" y="324" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">WS 压缩桥接</text>
+      <text x="406" y="340" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">permessage-deflate · 30s 探活</text>
+
+      <!-- Node: 安全校验 -->
+      <rect x="548" y="288" width="180" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="548" y="288" width="180" height="64" rx="6" fill="rgba(235,108,54,0.05)" stroke="rgba(235,108,54,0.50)" stroke-width="1" stroke-dasharray="4,4"/>
+      <rect x="556" y="296" width="40" height="12" rx="2" fill="transparent" stroke="rgba(235,108,54,0.40)" stroke-width="0.8"/>
+      <text x="576" y="305" fill="#eb6c36" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">SEC</text>
+      <text x="638" y="324" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">安全校验</text>
+      <text x="638" y="340" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">Host 校验 · 回环白名单</text>
+
+      <!-- Node: dsh web -->
+      <rect x="856" y="136" width="180" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="856" y="136" width="180" height="64" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+      <rect x="864" y="144" width="52" height="12" rx="2" fill="transparent" stroke="rgba(79,93,117,0.50)" stroke-width="0.8"/>
+      <text x="890" y="153" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">UPST</text>
+      <text x="946" y="172" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">dsh web（回环）</text>
+      <text x="946" y="188" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">127.0.0.1:3080</text>
+
+      <!-- Legend strip -->
+      <line x1="40" y1="480" x2="1080" y2="480" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <text x="40" y="496" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+
+      <rect x="40" y="508" width="14" height="10" rx="2" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <text x="60" y="516" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Focal（主链路）</text>
+
+      <rect x="180" y="508" width="14" height="10" rx="2" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="200" y="516" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Backend</text>
+
+      <rect x="300" y="508" width="14" height="10" rx="2" fill="rgba(235,108,54,0.05)" stroke="rgba(235,108,54,0.50)" stroke-width="1" stroke-dasharray="4,4"/>
+      <text x="320" y="516" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Security</text>
+
+      <line x1="420" y1="513" x2="448" y2="513" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <text x="456" y="516" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Primary flow</text>
+
+      <line x1="560" y1="513" x2="588" y2="513" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <text x="596" y="516" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Async / 桥接</text>
+    </svg>

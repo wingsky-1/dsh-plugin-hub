@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>dsh-mcp-manager 双轨架构</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #f5f5f5;
+      --color-ink:     #2d3142;
+      --color-muted:   #4f5d75;
+      --color-accent:  #eb6c36;
+      --font-sans:     'Geist', system-ui, sans-serif;
+      --font-serif:    'Instrument Serif', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+    .frame { max-width: 1240px; width: 100%; }
+    .eyebrow {
+      font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500;
+      letter-spacing: 0.18em; text-transform: uppercase; color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-family: var(--font-serif); font-size: clamp(1.4rem, 2.2vw + 0.7rem, 1.9rem);
+      font-weight: 400; letter-spacing: -0.02em; line-height: 1.15; color: var(--color-ink);
+      margin-bottom: 1.25rem;
+    }
+    svg { width: 100%; min-width: 1040px; display: block; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Architecture · dsh-mcp-manager</p>
+    <h1>双轨架构：中间层收敛 vs 直呼注册</h1>
+
+    <svg viewBox="0 0 1160 540" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="mcp-title mcp-desc">
+      <title id="mcp-title">dsh-mcp-manager 双轨架构</title>
+      <desc id="mcp-desc">模型经两条轨道访问 MCP 服务器：project/all 模式走 ws_mcp_* 中间层原子工具，off 模式走 mcp__ 前缀直呼工具；连接管理与配置存储位于宿主端。</desc>
+      <defs>
+        <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse">
+          <circle cx="1" cy="1" r="0.9" fill="rgba(45,49,66,0.10)"/>
+        </pattern>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+      </defs>
+
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+      <rect width="100%" height="100%" fill="url(#dots)" opacity="0.55"/>
+
+      <!-- Zone: 模型可见工具面 -->
+      <rect x="280" y="84" width="280" height="372" rx="8"
+            fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <rect x="384" y="88" width="72" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="420" y="97" fill="rgba(45,49,66,0.40)" font-size="7" font-family="'Geist Mono', monospace"
+            text-anchor="middle" letter-spacing="0.14em">模型面工具</text>
+
+      <!-- Arrows (behind boxes) -->
+      <!-- Agent → 中间层（accent 主轨） -->
+      <path d="M 180,252 H 232 Q 240,252 240,244 V 160 Q 240,152 248,152 H 320"
+            fill="none" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <!-- Agent → mcp__ 直呼（muted 次轨） -->
+      <path d="M 180,252 H 232 Q 240,252 240,260 V 372 Q 240,380 248,380 H 320"
+            fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <!-- 中间层 → 连接管理（accent） -->
+      <path d="M 520,152 H 572 Q 580,152 580,160 V 232 Q 580,240 588,240 H 660"
+            fill="none" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <!-- mcp__ → 连接管理（muted） -->
+      <path d="M 520,388 H 572 Q 580,388 580,380 V 272 Q 580,264 588,264 H 660"
+            fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <!-- 连接管理 → MCP 服务器 -->
+      <line x1="840" y1="252" x2="940" y2="252" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <!-- 连接管理 → 存储 -->
+      <line x1="750" y1="284" x2="750" y2="420" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+      <!-- Arrow labels -->
+      <rect x="196" y="132" width="120" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="256" y="141" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">PROJECT / ALL</text>
+
+      <rect x="196" y="360" width="120" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="256" y="369" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">OFF / 全局直呼</text>
+
+      <rect x="528" y="212" width="72" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="564" y="221" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">收敛调用</text>
+
+      <rect x="528" y="256" width="72" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="564" y="265" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">直呼</text>
+
+      <rect x="848" y="232" width="84" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="890" y="241" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">stdio · HTTP</text>
+
+      <rect x="758" y="352" width="96" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="806" y="361" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">0600 原子写</text>
+
+      <!-- Node: Agent 模型 -->
+      <rect x="40" y="220" width="140" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="40" y="220" width="140" height="64" rx="6" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+      <rect x="48" y="228" width="36" height="12" rx="2" fill="transparent" stroke="rgba(122,131,153,0.40)" stroke-width="0.8"/>
+      <text x="66" y="237" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">LLM</text>
+      <text x="110" y="256" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Agent 模型</text>
+      <text x="110" y="272" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">工具调用方</text>
+
+      <!-- Node: 中间层四原子工具（focal） -->
+      <rect x="320" y="120" width="200" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="320" y="120" width="200" height="64" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <rect x="328" y="128" width="52" height="12" rx="2" fill="transparent" stroke="rgba(235,108,54,0.50)" stroke-width="0.8"/>
+      <text x="354" y="137" fill="#eb6c36" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">MIDDLE</text>
+      <text x="420" y="156" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">中间层四原子工具</text>
+      <text x="420" y="172" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">ws_mcp_list / detail / search / call</text>
+
+      <!-- Node: mcp__ 直呼工具 -->
+      <rect x="320" y="356" width="200" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="320" y="356" width="200" height="64" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <rect x="328" y="364" width="52" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.22)" stroke-width="0.8"/>
+      <text x="354" y="373" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">DIRECT</text>
+      <text x="420" y="392" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">mcp__ 前缀直呼工具</text>
+      <text x="420" y="408" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">mcp__&lt;server&gt;__&lt;tool&gt;（64 字符）</text>
+
+      <!-- Node: 连接管理 -->
+      <rect x="660" y="220" width="180" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="660" y="220" width="180" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="668" y="228" width="52" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="694" y="237" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">POOL</text>
+      <text x="750" y="256" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">连接管理</text>
+      <text x="750" y="272" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">supervisor · middleware 池</text>
+
+      <!-- Node: MCP 服务器 -->
+      <rect x="940" y="220" width="160" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="940" y="220" width="160" height="64" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <rect x="948" y="228" width="36" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.22)" stroke-width="0.8"/>
+      <text x="966" y="237" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">MCP</text>
+      <text x="1020" y="256" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">MCP 服务器</text>
+      <text x="1020" y="272" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">本地子进程 / 远程</text>
+
+      <!-- Node: 配置存储 -->
+      <rect x="660" y="420" width="180" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="660" y="420" width="180" height="64" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+      <rect x="668" y="428" width="52" height="12" rx="2" fill="transparent" stroke="rgba(79,93,117,0.50)" stroke-width="0.8"/>
+      <text x="694" y="437" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">STORE</text>
+      <text x="750" y="456" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">配置存储</text>
+      <text x="750" y="472" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">dsh-mcp.json · 项目 .dsh/mcp.json</text>
+
+      <!-- Legend strip -->
+      <line x1="40" y1="508" x2="1120" y2="508" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <text x="40" y="524" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+
+      <rect x="40" y="532" width="14" height="10" rx="2" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <text x="60" y="540" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Focal（推荐主路径）</text>
+
+      <rect x="220" y="532" width="14" height="10" rx="2" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="240" y="540" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">直呼路径</text>
+
+      <line x1="360" y1="537" x2="388" y2="537" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <text x="396" y="540" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">收敛主链路</text>
+
+      <line x1="520" y1="537" x2="548" y2="537" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <text x="556" y="540" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">直呼链路</text>
+    </svg>
+  </div>
+</body>
+</html>

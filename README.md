@@ -182,7 +182,8 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
 构建 / 契约 / 测试 / 打包命令、目录结构、宿主端与客户端写法规范，统一见
 [DEVELOPMENT.md](docs/DEVELOPMENT.md)（从 §0 构建总览开始）；贡献流程见
 [CONTRIBUTING.md](CONTRIBUTING.md)；issue 处理流程见
-[ISSUE-WORKFLOW.md](docs/ISSUE-WORKFLOW.md)。
+[ISSUE-WORKFLOW.md](docs/ISSUE-WORKFLOW.md)；**各插件架构图解（功能 / 原理 / 使用方式，
+含 SVG 架构图与 Mermaid 时序图）见 [插件架构文档](docs/architecture/README.md)**。
 
 插件迁入本仓库前均经过开源前审查（构建自包含、隐私清理、安全加固、元数据完整）。
 
