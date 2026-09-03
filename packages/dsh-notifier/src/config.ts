@@ -102,6 +102,25 @@ export interface NotifierApplyConfig {
   statusFile?: string;
 }
 
+/**
+ * 组合层装配键名（sanitizePatchSettings 透传通道的保留键排除表，单一事实源）：
+ * 这些键是 cordis 组合层 / apply 入口的装配键（开关与路径覆盖），不属于
+ * settings user 层的配置契约——PUT /config 与存量迁移提交同名键时一律剔除，
+ * 防 user 层被无意义装配键污染，也杜绝未来某版本误把 user 层 configFile 等当
+ * 配置来源（#470 P1-3：PUT 透传不能成为绕过 entry 白名单的路径；新增装配键
+ * 只加 NotifierApplyConfig 不加本表 → 下方编译期断言直接报错）。
+ */
+export const ASSEMBLY_SETTING_KEYS = ["configFile", "toastScript", "historyFile", "statusFile", "enabled"] as const;
+
+// 编译期契约锁（#470 复核 P1-3）：ASSEMBLY_SETTING_KEYS 必须与
+// NotifierApplyConfig 键集**双向完全一致**——任一方向漏/多都让赋值类型错误。
+type AssemblyKey = (typeof ASSEMBLY_SETTING_KEYS)[number];
+type ApplyConfigKey = keyof NotifierApplyConfig;
+type AssertAssemblyComplete = Exclude<ApplyConfigKey, AssemblyKey> extends never ? true : false;
+type AssertAssemblyNoExtra = Exclude<AssemblyKey, ApplyConfigKey> extends never ? true : false;
+const assemblyKeysComplete: AssertAssemblyComplete = true;
+const assemblyKeysNoExtra: AssertAssemblyNoExtra = true;
+
 /** 默认配置。 */
 export const DEFAULT_CONFIG: NotifyConfig = {
   notifyAsk: true,
@@ -141,6 +160,16 @@ export const DEFAULT_CONFIG: NotifyConfig = {
 
 /** 布尔配置键（单一事实源：normalizeConfig 白名单与客户端渲染依赖它）。 */
 export const CONFIG_KEYS: readonly BooleanKeys[] = ["notifyAsk", "notifyQuestion", "notifyTaskDone", "notifySubagentDone", "notifyTaskError", "notifyTurnEnd", "systemNotify", "browserNotify", "notifyWhenVisible", "notifySound"];
+
+/**
+ * 原型链污染/特殊成员键名（读透传与写通道共用保留键，#470 复核 P0）：这些键
+ * 经 JSON.parse 可成为**自有键**，但作为未知键透传会误触 Object.prototype
+ * 成员——constructor/prototype/toString/hasOwnProperty/valueOf 被原样写进
+ * user 层/运行时镜像属脏写，__proto__ 赋值还会改对象原型（原型污染）。config
+ * 契约不识别这些键，读取透传与写入通道一律剔除（与 Bark 保留键、
+ * isBarkLevelsStrict/isKindRoutes 既有剔除口径一致）。
+ */
+const PROTOTYPE_POLLUTION_KEYS: readonly string[] = ["__proto__", "constructor", "prototype", "toString", "hasOwnProperty", "valueOf", "isPrototypeOf", "propertyIsEnumerable", "toLocaleString"];
 
 /** 配置存储路径（旧版自建 json；issue #76 后仅作存量迁移源，不再读写）。 */
 export function configFile() {
@@ -296,7 +325,7 @@ function normalizeAllowKinds(v: unknown): string[] {
   return [...seen];
 }
 
-/** 合并配置（未知键丢弃，默认值兜底；深拷贝防默认值被污染）。 */
+/** 合并配置（未知键透传保留，默认值兜底；深拷贝防默认值被污染）。 */
 export function normalizeConfig(input: unknown): NotifyConfig {
   const base: NotifyConfig = { ...DEFAULT_CONFIG, quietHours: { ...DEFAULT_CONFIG.quietHours } };
   if (typeof input !== "object" || input === null) return base;
@@ -339,8 +368,12 @@ export function normalizeConfig(input: unknown): NotifyConfig {
   if (Array.isArray(src.allowKinds)) base.allowKinds = normalizeAllowKinds(src.allowKinds);
   // 未知键透传：白名单之外的键原样保留（此插件在旧版本运行或手改配置时会
   // 出现未来版本/第三方键），避免「降级丢键」——只归一化你认识的键。
+  // #470 复核 P0：原型链污染/特殊成员键（__proto__/constructor/toString 等）
+  // 一律剔除——JSON.parse 能让它们成为自有键，透传会脏写运行时镜像或改原型。
   const out = base as NotifyConfig & Record<string, unknown>;
   for (const key of Object.keys(src)) {
+    if ((PROTOTYPE_POLLUTION_KEYS as readonly string[]).includes(key)) continue;
+    if (!Object.prototype.hasOwnProperty.call(src, key)) continue;
     if ((CONFIG_KEYS as readonly string[]).includes(key)) continue;
     // 已归一化过的键不再透传（否则非法值会以原样覆盖归一化结果）
     if (key === "quietHours" || key === "errorMergeWindowMs" || key === "askRemindMin" || key === "doneMergeWindowMs" || key === "historyMaxAgeDays" || key === "maxConnections") continue;
@@ -533,9 +566,13 @@ export interface SettingInvalid {
  * 校验提交的配置（写入前，不净化）：返回首个非法键与其合法范围，全部合法
  * 返回 null（H6：非法值 400 拒绝 + hint，不再静默丢弃回默认）。遍历顺序
  * 与 sanitizeSettings 一致（SETTING_VALIDATORS 键序）。导出供 smoke 单测。
+ * 非对象/数组 payload 命中 key="(payload)" 分支（400 + 「patch 必须是对象」，
+ * #470 复核 P1-4：文案与 README 边界声明逐句一致）。
  */
 export function validateSettings(raw: unknown): SettingInvalid | null {
-  if (typeof raw !== "object" || raw === null) return { key: "(payload)", hint: "需为配置对象" };
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return { key: "(payload)", hint: "patch 必须是对象（数组/非对象形态不支持）" };
+  }
   const src = raw as Record<string, unknown>;
   for (const key of Object.keys(SETTING_VALIDATORS)) {
     const value = src[key];
@@ -548,11 +585,9 @@ export function validateSettings(raw: unknown): SettingInvalid | null {
 }
 
 /**
- * 净化提交的配置（PUT 保存通道与存量迁移共用）：只接受已知键；任一已知键
- * 类型非法 → 整体拒绝（返回 null，避免静默丢键造成「保存了但没生效」的
- * 困惑；迁移场景则等价于「无有效键 → 只标记不写入」）。未知键丢弃（写入
- * 通道白名单语义——不把组合层装配键如 configFile 等混入 user 层；与
- * lan-proxy sanitizeSettings 同口径，normalizeConfig 的透传仅服务读取渲染）。
+ * 净化组合层 entry 配置（apply 装配通道专用）：白名单语义不变——只取已知
+ * 配置键，装配键/未知键一律丢弃（现状 index.ts:140 行为保留，#470 P1-3
+ * 双通道拆分后本函数不再服务 PUT / 迁移）。
  */
 export function sanitizeSettings(raw: unknown): Partial<NotifyConfig> | null {
   if (typeof raw !== "object" || raw === null) return null;
@@ -567,6 +602,49 @@ export function sanitizeSettings(raw: unknown): Partial<NotifyConfig> | null {
   return out;
 }
 
+/**
+ * 净化 PUT /config 与存量迁移的增量 patch（透传通道，#470）：已知键按
+ * validateSettings 同口径校验（任一非法 → 整体拒绝返回 null）；**未知键原样
+ * 透传保留**（前向兼容——GET 读得到的未来/第三方键 PUT 回得去，迁移不丢
+ * legacy 未来键；任意 JSON 值含 null——与读面 normalizeConfig 透传口径一致，
+ * #470 qa 复核发现 2），但组合层装配键名（ASSEMBLY_SETTING_KEYS）一律剔除
+ * （静默，与 Bark 保留键同口径）。返回对象非空即代表有可写键；纯未知键 patch
+ * 透传后同样非空（区别于空 patch {} → 空对象由调用方按 400 处理）。
+ *
+ * 安全边界（#470 复核 P0）：patch 必须为**普通对象**（数组直接返回 null——
+ * 数组会被 Object.keys 当对象把数字索引透传成 "0":"1" 式脏键）；原型链成员
+ * 键（constructor/prototype/toString/hasOwnProperty/valueOf/__proto__）一律
+ * 剔除不写入——查表前用 hasOwn 判自有键防误触原型链校验器（抛 TypeError 致
+ * 500），写入经 hasOwn 校验防把 Object.prototype 方法当未知键透传脏写 user 层。
+ * null 值语义：已知键值为 null 沿用既有跳过语义（validateSettings 同口径，
+ * 视同未提交）；**未知键值为 null 透传保留**（读面 normalizeConfig 本就透传
+ * null，写面不留空档——否则 GET 读到的 null 键 PUT 回去会静默消失）。
+ */
+export function sanitizePatchSettings(raw: unknown): Partial<NotifyConfig> | null {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  const src = raw as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(src)) {
+    if ((ASSEMBLY_SETTING_KEYS as readonly string[]).includes(key)) continue;
+    if (!Object.prototype.hasOwnProperty.call(src, key)) continue;
+    const value = src[key];
+    if ((PROTOTYPE_POLLUTION_KEYS as readonly string[]).includes(key)) continue;
+    if (Object.hasOwn(SETTING_VALIDATORS, key)) {
+      // 已知键：null 沿用既有跳过语义（与 validateSettings/sanitizeSettings 一致）
+      if (value === undefined || value === null) continue;
+      const validator = SETTING_VALIDATORS[key];
+      if (!validator(value)) return null;
+      out[key] = value;
+      continue;
+    }
+    // 未知键透传保留：任意 JSON 值（含 null/undefined 不存在于 JSON 文本；
+    // null 显式透传）原样并入——顶层未来键形状不可预知
+    if (value === undefined) continue;
+    out[key] = value;
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- 凭据脱敏与掩码回填（M2 评审 P0-1/P0-2）
 
 /**
@@ -574,10 +652,20 @@ export function sanitizeSettings(raw: unknown): Partial<NotifyConfig> | null {
  * 掩码为 SECRET_MASK。GET /config 的 user 与 effective、PUT 成功响应的 user 一律
  * 经此函数输出——调用方不得绕过（契约测试深度扫描锁死）。
  *
+ * #470 复核 P0/P2：读出口同时剔除原型链/特殊成员自有键（constructor/prototype/
+ * toString/hasOwnProperty/valueOf/__proto__ 等）——settings user 层原始节可能被
+ * 手改 yaml 注入这类键，读出口一律不暴露（与写通道剔除口径一致，防 UI/脚本
+ * 看到并回写脏键）。
+ *
  * 模板类型仅约束输入输出同构；实现按结构化克隆 + 单键覆写，对任意 JSON 值安全。
  */
 export function redactConfigView<T>(value: T): T {
   const clone = JSON.parse(JSON.stringify(value ?? null)) as T & { channels?: Array<Record<string, unknown>> };
+  if (clone && typeof clone === "object") {
+    for (const key of PROTOTYPE_POLLUTION_KEYS) {
+      if (Object.prototype.hasOwnProperty.call(clone, key)) delete (clone as unknown as Record<string, unknown>)[key];
+    }
+  }
   if (Array.isArray(clone?.channels)) {
     for (const ch of clone.channels) {
       if (ch && typeof ch === "object" && typeof ch.deviceKey === "string") ch.deviceKey = SECRET_MASK;

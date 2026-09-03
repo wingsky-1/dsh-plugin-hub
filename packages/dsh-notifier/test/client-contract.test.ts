@@ -365,3 +365,71 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   assert.equal(visCount(), 0, "#469：disposer 二次调用后仍无监听");
   assert.equal(documentStub.title, "原始标题", "#469 P1-1：disposer 二次调用标题不复发闪烁");
 }
+
+// ---- issue #470 复核 P1-2：client diffSettingsPayload 真实产物直测 ----
+// 用 vm materialize 出的 mod.apply.diffSettingsPayload（apply 挂载的模块级纯函数）
+// 验证「真链」：以 GET effective（含未知键）为基线 → 只改已知键 → diff 不含
+// 未知键 →（PUT 行为在 routes.test.ts 全链断言）。不再允许测试手写近似 diff。
+{
+  const clientCode = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+  const sandbox = {
+    console: { ...console, warn: () => {} },
+    Symbol, Object, Array, JSON, Math, Date, Promise,
+    setTimeout, clearTimeout,
+    EventSource: function () {},
+    Notification: function () {},
+    fetch: () => Promise.resolve({ ok: true, json: () => Promise.resolve({}) }),
+    document: {
+      visibilityState: "visible", title: "", hidden: false,
+      addEventListener() {}, removeEventListener() {},
+      getElementById: () => null,
+      createElement: () => ({ appendChild() {}, remove() {}, style: {}, dataset: {} }),
+      head: { appendChild() {} }, body: { appendChild() {} },
+    },
+    localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+    window: {},
+  };
+  sandbox.window = sandbox;
+  let loadedFactory = null;
+  sandbox.window.__ModuleLoader__ = { load(handoff) { loadedFactory = handoff.factory; } };
+  vm.createContext(sandbox);
+  vm.runInContext(clientCode, sandbox);
+  assert.ok(loadedFactory !== null, "#470 P1-2：产物 load 已注册 factory");
+  const fakeReactForDiff = { createElement: () => ({}) };
+  const mod = loadedFactory((spec) => {
+    if (spec === "react") return fakeReactForDiff;
+    throw new Error(`unexpected require: ${spec}`);
+  });
+  assert.equal(typeof mod.apply, "function", "#470 P1-2：materialize 后 exports.apply 为函数");
+  // 挂载赋值在 apply 函数体首行——先跑一次 apply（最小 ctx）才可读属性；
+  // 随后立即 disposer 卸载（停 SSE/监听，防句柄残留）。
+  const disposers2 = [];
+  mod.apply({
+    get() { return undefined; },
+    effect(fn) { const d = fn(); disposers2.push(d); return d; },
+  });
+  const diffFn = mod.apply.diffSettingsPayload;
+  assert.equal(typeof diffFn, "function", "#470 P1-2：apply 挂载 diffSettingsPayload 纯函数");
+  for (const d of disposers2.splice(0)) d();
+
+  // 基线含未知键：只改已知键 → payload 仅含变更已知键（不含未知键）
+  const effective = { notifyTaskDone: true, notifyAsk: true, futureKey: { k: 1 }, quietHours: { enabled: false, start: "22:00", end: "08:00" } };
+  const settingsView = JSON.parse(JSON.stringify(effective));
+  settingsView.notifyTaskDone = false;
+  const payload = diffFn(settingsView, effective);
+  // vm 沙箱 realm 对象原型与测试 realm 不同，deepStrictEqual 跨 realm 不等——用
+  // JSON 归一比对（diff 语义本就 JSON 序列化级）
+  assert.deepEqual(JSON.parse(JSON.stringify(payload)), { notifyTaskDone: false }, "#470 P1-2：diff 只含变更已知键（不含未知键 futureKey）");
+
+  // 未知键值被 UI 改动 → diff 会包含它（未来 UI 编辑未知键时透传可写）
+  const view2 = JSON.parse(JSON.stringify(effective));
+  view2.futureKey = { k: 2 };
+  const payload2 = diffFn(view2, effective);
+  assert.deepEqual(JSON.parse(JSON.stringify(payload2)), { futureKey: { k: 2 } }, "#470 P1-2：diff 含改动未知键（PUT 可透传写入）");
+
+  // 全等 → 空 payload（save 判定 unchanged）
+  assert.deepEqual(JSON.parse(JSON.stringify(diffFn(JSON.parse(JSON.stringify(effective)), effective))), {}, "#470 P1-2：全等基线 diff 为空");
+
+  // baseline 为 null（加载未完成）→ 空 payload（不误存）
+  assert.deepEqual(JSON.parse(JSON.stringify(diffFn(settingsView, null))), {}, "#470 P1-2：baseline null → 空 payload");
+}

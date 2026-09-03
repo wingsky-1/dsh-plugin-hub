@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { mkdtempSync, rmSync } from "node:fs";
 import { assert } from "./helpers.ts";
-import { normalizeConfig, parseHHMM, isInQuietHours, DEFAULT_CONFIG, configFile, historyFile, toastScriptPath, normalizeBarkBaseUrl, redactConfigView, unmaskChannels, SECRET_MASK, BARK_ID_PATTERN, validateSettings, sanitizeSettings, QUIET_ALLOW_KINDS } from "../lib/index.js";
+import { normalizeConfig, parseHHMM, isInQuietHours, DEFAULT_CONFIG, configFile, historyFile, toastScriptPath, normalizeBarkBaseUrl, redactConfigView, unmaskChannels, SECRET_MASK, BARK_ID_PATTERN, validateSettings, sanitizeSettings, sanitizePatchSettings, QUIET_ALLOW_KINDS } from "../lib/index.js";
 
 const work = mkdtempSync(join(tmpdir(), "dnotify-unit-config-"));
 try {
@@ -149,6 +149,17 @@ try {
   assert.deepEqual(opaque.allowKinds, [], "allowKinds 非法回默认且不透传");
   assert.equal(opaque.bogus, 1, "其他未知键仍透传");
 
+  // #470 复核 P0（读面纵深）：normalizeConfig 透传剔除原型链成员自有键——
+  // 存量 user 层若含 JSON.parse 注入的 constructor/__proto__ 等键，不得脏写
+  // 运行时镜像、不得改原型
+  const readEvil = JSON.parse('{"constructor":1,"toString":2,"hasOwnProperty":3,"valueOf":4,"__proto__":{"polluted":1},"futureRead":9,"notifyAsk":true}');
+  const readOut = normalizeConfig(readEvil);
+  assert.equal(readOut.notifyAsk, true, "读面：已知键正常归一化");
+  assert.equal(readOut.futureRead, 9, "读面：普通未知键仍透传");
+  assert.equal(Object.prototype.hasOwnProperty.call(readOut, "constructor"), false, "读面：constructor 剔除不透传（非自有键）");
+  assert.equal(Object.prototype.hasOwnProperty.call(readOut, "toString"), false, "读面：toString 剔除不透传（非自有键）");
+  assert.equal(Object.getPrototypeOf(readOut), Object.prototype, "读面：normalizeConfig 输出原型未被污染");
+
   // ===== M2：凭据脱敏与掩码回填（评审 P0-1/P0-2）=====
   const withSecret = { channels: [{ id: "phone", type: "bark", baseUrl: "https://api.day.app", deviceKey: "realKey123", enabled: true }], notifyAsk: true };
   const redacted = redactConfigView(withSecret);
@@ -157,6 +168,20 @@ try {
   assert.equal(redacted.notifyAsk, true, "其余字段原样");
   assert.deepEqual(redactConfigView({ a: 1 }), { a: 1 }, "无 channels 输入原样");
   assert.equal(redactConfigView(undefined), null, "null 输入兜底");
+  // #470 qa 复核发现 2：redactConfigView 特殊键剔除的函数级直测——用
+  // defineProperty 造**自有** constructor/__proto__ 键（JSON.stringify 会丢弃
+  // undefined 值但不会丢自有键；此处刻意让 stringify 保留它们，证明剔除是
+  // redactConfigView 自身逻辑而非序列化副效应）
+  const evilOwn = { keep: 1 };
+  Object.defineProperty(evilOwn, "constructor", { value: 1, enumerable: true });
+  Object.defineProperty(evilOwn, "__proto__", { value: { polluted: 1 }, enumerable: true });
+  Object.defineProperty(evilOwn, "toString", { value: "x", enumerable: true });
+  const evilOut = redactConfigView(evilOwn);
+  assert.equal(Object.prototype.hasOwnProperty.call(evilOut, "keep"), true, "读出口：普通键保留");
+  assert.equal(Object.prototype.hasOwnProperty.call(evilOut, "constructor"), false, "读出口：constructor 自有键剔除");
+  assert.equal(Object.prototype.hasOwnProperty.call(evilOut, "__proto__"), false, "读出口：__proto__ 自有键剔除");
+  assert.equal(Object.prototype.hasOwnProperty.call(evilOut, "toString"), false, "读出口：toString 自有键剔除");
+  assert.equal(Object.prototype.polluted, undefined, "读出口：无全局原型污染");
 
   const userChs = [{ id: "phone", deviceKey: "realKey123" }, { id: "pad", deviceKey: "padKey456" }];
   const unmasked = unmaskChannels(
@@ -218,7 +243,41 @@ try {
   assert.equal(validateSettings({ quietHours: { allowKinds: cap128 } }), null, "quietHours.allowKinds 恰 128 项通过");
   const sanitizedCh = sanitizeSettings({ channels: [{ ...okCh, volume: "0.7" }] });
   assert.ok(sanitizedCh && Array.isArray(sanitizedCh.channels) && sanitizedCh.channels.length === 1, "sanitizeSettings channels 往返");
-  assert.deepEqual(sanitizeSettings({ futureKey: 1 }), {}, "未来键写入白名单语义不变（读取归一化才透传）");
+  assert.deepEqual(sanitizeSettings({ futureKey: 1 }), {}, "entry 白名单通道：未来键仍丢弃（组合层装配专用，#470 双通道拆分）");
+
+  // ===== #470：sanitizePatchSettings（PUT/迁移透传通道）=====
+  assert.deepEqual(sanitizePatchSettings({ futureKey: 1 }), { futureKey: 1 }, "透传通道：纯未知键原样保留");
+  assert.deepEqual(sanitizePatchSettings({ notifyAsk: false, futureKey: { a: 1 } }), { notifyAsk: false, futureKey: { a: 1 } }, "透传通道：已知+未知混合双保留");
+  assert.deepEqual(sanitizePatchSettings({}), {}, "透传通道：空 patch 空对象（调用方按 400 语义处理）");
+  assert.equal(sanitizePatchSettings({ notifyAsk: "yes" }), null, "透传通道：已知键非法 → 整体拒绝 null");
+  assert.deepEqual(sanitizePatchSettings({ configFile: "/x", toastScript: "/y", historyFile: "/z", statusFile: "/s", enabled: false }), {}, "透传通道：装配键全部剔除（不入 user 层）");
+  assert.deepEqual(sanitizePatchSettings({ configFile: "/x", notifyQuestion: false, futureKey: 2 }), { notifyQuestion: false, futureKey: 2 }, "透传通道：混合提交剔除装配键、保留已知+未知");
+  // 透传通道不深改值（原样引用与深等）
+  const nested = { futureObj: { x: [1, 2] } };
+  const nestedOut = sanitizePatchSettings(nested);
+  assert.deepEqual(nestedOut, nested, "透传通道：任意 JSON 值原样并入");
+  assert.equal(sanitizePatchSettings(null), null, "透传通道：非对象 → null");
+  assert.deepEqual(sanitizePatchSettings({ notifyTaskDone: true }), { notifyTaskDone: true }, "透传通道：纯已知键与 entry 白名单同结果");
+  assert.equal(sanitizePatchSettings({ channels: [{ ...okCh, volume: "0.7" }] }).channels[0].volume, "0.7", "透传通道：channels 内未知 string/number 参数保留（Bark 前向兼容不变）");
+  // #470 复核 P0：数组 patch 不得被当对象透传成数字索引脏键 → null（调用方 400）
+  assert.equal(sanitizePatchSettings([1, 2]), null, "透传通道：数组 patch → null（拒绝，不写脏 user 层）");
+  assert.equal(sanitizePatchSettings([]), null, "透传通道：空数组 → null");
+  // #470 复核 P0：原型链成员键经 JSON.parse 成为自有键 → 剔除不写入、不触发原型校验器
+  const protoEvil = JSON.parse('{"__proto__":{"polluted":1},"constructor":1,"prototype":2,"toString":3,"hasOwnProperty":4,"valueOf":5,"futureKey":7}');
+  const protoEvilOut = sanitizePatchSettings(protoEvil);
+  assert.deepEqual(protoEvilOut, { futureKey: 7 }, "透传通道：原型链成员键剔除、未知键仍透传");
+  assert.equal(Object.getPrototypeOf(protoEvilOut), Object.prototype, "透传通道：__proto__ 不改变 out 原型（无原型污染）");
+  const protoKnownEvil = JSON.parse('{"notifyAsk":false,"__proto__":{"polluted":1},"constructor":1}');
+  assert.deepEqual(sanitizePatchSettings(protoKnownEvil), { notifyAsk: false }, "透传通道：原型键与已知键混合 → 只留已知键");
+  // #470 qa 复核发现 1：null 值语义分层——未知键 null 透传保留（与读面一致），
+  // 已知键 null 沿用既有跳过语义（视同未提交）
+  assert.deepEqual(sanitizePatchSettings({ nullFuture: null, notifyAsk: null }), { nullFuture: null }, "透传通道：未知键 null 透传保留、已知键 null 跳过");
+  assert.deepEqual(sanitizePatchSettings({ notifyAsk: null }), {}, "透传通道：纯已知键 null patch 净化后空对象（调用方按 400 处理）");
+  assert.deepEqual(sanitizePatchSettings({ nullFuture: null }), { nullFuture: null }, "透传通道：纯未知键 null patch 非空（可写）");
+  // 读面 normalizeConfig 本就透传 null（与写面闭合）
+  const nullRead = normalizeConfig({ nullFuture: null });
+  assert.equal(Object.prototype.hasOwnProperty.call(nullRead, "nullFuture"), true, "读面：未知键 null 透传保留");
+  assert.equal(nullRead.nullFuture, null, "读面：未知键 null 值原样");
 } finally {
   rmSync(work, { recursive: true, force: true });
 }
