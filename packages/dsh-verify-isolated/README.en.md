@@ -38,24 +38,33 @@ built-in skill and becomes available to all sessions in the profile (check with
 - **Minimal startup dependencies**: profile bundles contain `@deepseek-ai/dsh-base` +
   `@deepseek-ai/dsh-web-app` (built-in bundles are resolved by name from the dsh install
   directory, not via npm);
-- **One-shot script** `skills/dsh-verify-isolated/scripts/verify-isolated.sh`: validate the
-  dsh entry and print its version (`--dsh` pins the target dsh version) → create temp
-  DSH_HOME → create profile (explicit `plugin list` init) → inject web-app bundle →
-  normalize plugin args via `resolve-pkg-paths.mjs` (relative paths → absolute against
-  cwd; package specs pass through; #517 C11) → build and link local plugins (`--no-build`
-  validates artifact presence + staleness warning) → (optionally `--browser`) launch a
-  dedicated browser instance → start (explicit `--host 127.0.0.1` loopback +
-  `DSH_TELEMETRY_DISABLED=1` telemetry off) → readiness probe → unified trap cleanup on
-  exit (dsh process + browser process + user-data-dir + DSH_HOME, no leftovers);
-  `--port 0` auto-detects the real free port (no longer prints an invalid 0).
+- **One-shot script** `skills/dsh-verify-isolated/scripts/verify-isolated.mjs`
+  (Node implementation, requires Node ≥22; the old bash `.sh` was rewritten and
+  removed in #517 C8): validate the dsh entry and print its version (`--dsh` pins
+  the target dsh version) → create temp DSH_HOME → create profile (explicit
+  `plugin list` init) → inject web-app bundle → normalize plugin args (relative
+  paths → absolute against cwd; package specs like `@scope/name` / git URLs pass
+  through; #517 C11 semantics built in) → build and link local plugins
+  (`--no-build` validates artifact presence + staleness warning) → (optionally
+  `--browser`) launch a dedicated browser instance → start (explicit
+  `--host 127.0.0.1` loopback + `DSH_TELEMETRY_DISABLED=1` telemetry off) →
+  readiness probe → unified cleanup on exit (dsh process + browser process +
+  user-data-dir + DSH_HOME, no leftovers); `--port 0` auto-detects the real free
+  port (no longer prints an invalid 0); **B6** writes a startup-self-check
+  verdict at `$DSH_HOME/verdict.json` after ready (mode 0o600, three-channel port
+  source, cleanup field finalized on exit); **B7** `--evidence-dir` defaults to
+  `$DSH_HOME/evidence/`, externalized as `<dir>/evidence-<profile>/` without ever
+  touching the external directory; `--json` emits only the final verdict JSON on
+  stdout. Exit-code contract: 0 OK / 1 startup-or-readiness failure /
+  2 argument error / 130 SIGINT / 143 SIGTERM.
 
 ## Package layout
 
 ```text
 skills/dsh-verify-isolated/
   SKILL.md                        # skill definition (frontmatter name=dsh-verify-isolated)
-  scripts/verify-isolated.sh      # one-shot isolated verification script (--dsh / --browser / --port 0 / --keep / --no-build)
-  scripts/resolve-pkg-paths.mjs   # plugin arg normalizer (relative path → absolute; package spec passthrough; #517 C11)
+  scripts/verify-isolated.mjs     # one-shot isolated verification script (Node, --dsh / --browser / --port 0 / --keep / --no-build / --evidence-dir / --json)
+  scripts/lib/verify-core.mjs     # shared base utilities (exit-code constants/poll/findFreePort/port parsing/C11 normalization)
   scripts/browser-driver.mjs      # self-contained browser driver (raw CDP, zero deps, --json atomic CLI)
 cordis.patch.yml                  # reuses official dsh-skill-filesystem + bundledSkillDir
 lib/index.js                      # host gate export (name + empty apply)
@@ -66,18 +75,22 @@ lib/index.js                      # host gate export (name + empty apply)
 Once the skill is loaded, follow its checklist; you can also call the package's one-shot
 script directly. The script's resource base directory relative to the skill (the
 `Base directory for this skill:` absolute path injected when the skill loads) is always
-`scripts/verify-isolated.sh`, adaptive to the install shape (npm copy / `link:` dev mode /
-in-repo browsing all work); see SKILL.md §2:
+`scripts/verify-isolated.mjs` (Node implementation, requires Node ≥22; upgrade path from
+the old bash version: `bash .../verify-isolated.sh ...` → `node .../verify-isolated.mjs ...`),
+adaptive to the install shape (npm copy / `link:` dev mode / in-repo browsing all work);
+see SKILL.md §2:
 
 ```bash
 # SKILL_BASE = the "Base directory for this skill:" absolute path injected when the skill loads
-bash "$SKILL_BASE/scripts/verify-isolated.sh" --port 3456 <plugin-package-path>
+node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 3456 <plugin-package-path>
 # parallel sessions / browser verification: --port 0 auto-detects the port,
 # --browser launches a dedicated browser instance
-bash "$SKILL_BASE/scripts/verify-isolated.sh" --port 0 --browser <plugin-package-path>
+node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --browser <plugin-package-path>
 # pin the dsh version (required when verifying a specific dsh release's ecosystem,
 # prevents PATH drift)
-bash "$SKILL_BASE/scripts/verify-isolated.sh" --dsh /opt/dsh-0.1.2-alpha.2/bin/dsh --port 0 <plugin-package-path>
+node "$SKILL_BASE/scripts/verify-isolated.mjs" --dsh /opt/dsh-0.1.2-alpha.2/bin/dsh --port 0 <plugin-package-path>
+# externalize the evidence dir + emit only the final verdict JSON on stdout (human text on stderr)
+node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --evidence-dir /tmp/my-evidence --json <plugin-package-path>
 ```
 
 Plugin arguments accept either **local plugin paths** (relative paths are resolved to

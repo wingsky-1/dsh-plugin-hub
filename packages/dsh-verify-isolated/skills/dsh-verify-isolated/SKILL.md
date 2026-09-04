@@ -5,7 +5,7 @@ description: >
   （dsh-plugin-hub / xiaozhuge 等）。触发信号：需要对客户端 UI 改动（src/client/**
   或宿主端 UI 渲染逻辑）做隔离浏览器实测、采集截图证据归档、验证不污染正在使用的
   web profile。核心做法：临时 DSH_HOME + verify_<8位随机> 独立 profile + 独立端口 +
-  独立浏览器实例四重隔离，一键脚本 scripts/verify-isolated.sh 拉起隔离 dsh web 与
+  独立浏览器实例四重隔离，一键脚本 scripts/verify-isolated.mjs 拉起隔离 dsh web 与
   自带浏览器实例（browser-driver.mjs，raw CDP 零依赖），退出自动清理。
   Do NOT trigger for: 纯宿主端逻辑（不涉及 UI 渲染）、纯文档改动、普通单元/smoke
   测试（那些走仓库自身 test 门禁）。
@@ -45,7 +45,10 @@ description: >
 
 ## 2. 一键脚本（推荐）
 
-脚本随本 skill 分发，相对本 skill 的**资源基础目录**恒为 `scripts/verify-isolated.sh`。
+脚本随本 skill 分发，相对本 skill 的**资源基础目录**恒为
+`scripts/verify-isolated.mjs`（node 实现，原 bash 版 `verify-isolated.sh` 已随
+#517 C8 重写删除，不留 shim；升级路径：`bash .../verify-isolated.sh ...` →
+`node .../verify-isolated.mjs ...`，参数与输出文案逐行对齐）。
 资源基础目录 = 加载本 skill 时系统注入的 `<skill_resources>` 块中
 `Base directory for this skill:` 一行的**绝对路径**（本 skill 所在目录，安装形态
 自适应：npm 副本安装、`link:` 开发态挂载、仓库 checkout 内浏览均自动指向 skill
@@ -55,20 +58,22 @@ description: >
 # 工作目录：worktree 根（非主 checkout）
 # SKILL_BASE 取注入的「Base directory for this skill:」后面的绝对路径：
 SKILL_BASE="<Base directory for this skill 一行的绝对路径，见上方 skill_resources>"
-bash "$SKILL_BASE/scripts/verify-isolated.sh" --port 3456 <插件包路径>
+node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 3456 <插件包路径>
 # 多包：... --port 3456 <包A路径> <包B路径>
 # 端口冲突：--port 0 让脚本自动探测真实空闲端口；--keep 保留临时环境便于排查
 # 跳过构建：--no-build（默认会先 pnpm build 各插件，保证 lib/ 或 dist/ 产物存在；
 #           产物缺失会报可操作错误，源码比产物新会给陈旧警告）
 # 浏览器验证：加 --browser 自动拉起 skill 自带独立浏览器实例（见 §5 多会话并行）
-bash "$SKILL_BASE/scripts/verify-isolated.sh" --port 0 --browser <插件包路径>
+node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --browser <插件包路径>
 # 锚定 dsh 版本：验证特定 dsh 版本的生态时必须 --dsh 指定入口（默认用 PATH 中的
 # dsh——PATH 碰巧是什么版本就验什么，结果不可复现）
-bash "$SKILL_BASE/scripts/verify-isolated.sh" --dsh /opt/dsh-0.1.2-alpha.2/bin/dsh --port 0 <插件包路径>
+node "$SKILL_BASE/scripts/verify-isolated.mjs" --dsh /opt/dsh-0.1.2-alpha.2/bin/dsh --port 0 <插件包路径>
+# 证据目录外部化（截图/快照归档到 <dir>/evidence-<profile>/，绝不动外部目录）：
+node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --evidence-dir /tmp/my-evidence <插件包路径>
 ```
 
-插件参数（`--` 之后或直接位置参数）接受两种形态，脚本经
-`resolve-pkg-paths.mjs` 统一归一化（#517 C11）：
+插件参数（`--` 之后或直接位置参数）接受两种形态，脚本内建统一归一化
+（#517 C11 语义，随 C8 内建于 `lib/verify-core.mjs` 的 `resolvePkgArg`）：
 
 - **本地插件路径**（推荐，worktree 根执行时写相对路径即可）：相对路径基于当前
   cwd 解析为**绝对路径**后挂载——dsh 会把非绝对路径当 git URL 解析、报
@@ -77,18 +82,37 @@ bash "$SKILL_BASE/scripts/verify-isolated.sh" --dsh /opt/dsh-0.1.2-alpha.2/bin/d
   内置 bundle 如 `@deepseek-ai/dsh-web-app` 仍需按 §3 手动注入，不走 add）。
 
 若注入的 base 不可用或不确信，先自证脚本位置再执行
-（`ls "$SKILL_BASE/scripts/verify-isolated.sh"`），或直接用 glob 全局搜索
-`verify-isolated.sh` 取其真实绝对路径——脚本从任意 cwd 以绝对路径调用
+（`ls "$SKILL_BASE/scripts/verify-isolated.mjs"`），或直接用 glob 全局搜索
+`verify-isolated.mjs` 取其真实绝对路径——脚本从任意 cwd 以绝对路径调用
 （自包含、不依赖自身位置）；`SKILL_BASE` 里的尖括号是占位说明，不是可执行值。
 
 脚本自动完成：建临时 `DSH_HOME` → 校验 dsh 入口并打印版本（`--dsh` 锚定）→ 建
 `verify_<8位随机>` profile（`dsh plugin --profile <p> list` 显式初始化，失败即报
 可操作错误）→ 注入内置 `@deepseek-ai/dsh-web-app` bundle → **构建并**把本地插件
-link 进 profile（`--no-build` 时校验产物存在 + 陈旧警告）→ `--browser` 时启动
-独立浏览器实例（实例信息写入 `$DSH_HOME/browser.state`）→ 启动隔离 `dsh web`
-（显式 `--host 127.0.0.1` 回环 + `DSH_TELEMETRY_DISABLED=1` 遥测禁用）→ **就绪
-断言**（轮询 HTTP 可达，15s 超时报可操作错误）→ 前台等待。`Ctrl+C` 退出时
-`trap` 自动清理 dsh 进程、浏览器实例、临时 `DSH_HOME` 与 profile。
+link 进 profile（`--no-build` 时校验产物存在 + 陈旧警告；插件参数相对路径基于 cwd
+绝对化、npm 包名/git URL 原样透传）→ `--browser` 时启动独立浏览器实例（实例信息
+写入 `$DSH_HOME/browser.state`）→ 启动隔离 `dsh web`（显式 `--host 127.0.0.1`
+回环 + `DSH_TELEMETRY_DISABLED=1` 遥测禁用）→ **就绪断言**（轮询 HTTP 可达，
+2xx-4xx 就绪、15s 超时报可操作错误）→ 前台等待。`Ctrl+C` 退出时统一清理 dsh
+进程、浏览器实例、临时 `DSH_HOME` 与 profile（SIGINT/SIGTERM 透传退出码
+130/143）。
+
+**B6 启动自检 verdict**：就绪后写 `$DSH_HOME/verdict.json`（0o600），退出终态更新
+cleanup 字段（`"done"`/`"kept"`）；端口实际绑定解析 dsh.log 端口行（parsed）→
+就绪断言端口（asserted）→ 探测端口（probed）三通道标注 source。可用
+`--json` 让 stdout 只出最终 verdict JSON（人类文案走 stderr）。
+
+**B7 证据目录**：默认 `$DSH_HOME/evidence/`（脚本会打印路径；退出随临时目录一并
+清理，`--keep` 保留）；显式 `--evidence-dir <dir>` 外部化时建
+`<dir>/evidence-<profile>/` 子目录，**绝不动外部目录**（不删、不覆盖）。
+
+**退出码契约**：0 正常完成 / 1 启动或就绪失败（profile 初始化失败、add 失败、
+dsh 就绪前退出、15s 就绪超时）/ 2 参数错误（未知选项、缺参、找不到 dsh 入口、
+--no-build 缺产物）/ 130 SIGINT（Ctrl+C）/ 143 SIGTERM。
+
+**Windows 承诺等级：试验性**——spawn .cmd 回退、无 POSIX 信号（taskkill /T 进程
+树清理）等兼容点在代码逐处注释标注，但未在 CI 实测；smoke 不启动 dsh，Windows
+行为走代码审查（见 verify-isolated.mjs 头部注释「Windows 三坑」）。
 
 > **构建说明**：dsh 直读构建产物（dsh-plugin-hub 各包的 `lib/`、xiaozhuge 的 `dist/`），
 > 脚本默认在挂载前 `pnpm build` 各插件，保证产物存在；产物已就绪时可 `--no-build` 跳过。
@@ -188,7 +212,7 @@ headless 内核，实例信息写入各任务自己的 `browser.state`（`--brow
 | 4 | 浏览器实例 | `browser.state` 的 `port`/`pid`/`userDataDir` 为本任务独有；并行任务各自的 state 文件路径不同（各在各自 DSH_HOME 下） |
 | 5 | 插件持久化隔离感知 | 验证涉及**读写插件自己的持久化文件**（通知记录、用量数据等）时，先确认该插件落盘路径 DSH_HOME 感知（hub 内查是否有 `process.env.DSH_HOME ?? homedir()/.dsh` 契约）。**不感知时的处置**：在验证记录中标注「该插件隔离盲区」→ 验证中避免触发会写持久化文件的操作（清理/发送测试类按钮）→ 提报 issue（先例 #510）。读面串同样算盲区，截图含真实数据时须说明 |
 
-并行验证建议：每个任务**单独运行一个 `verify-isolated.sh --port 0 --browser` 进程**
+并行验证建议：每个任务**单独运行一个 `verify-isolated.mjs --port 0 --browser` 进程**
 （各自独立临时 DSH_HOME / profile / 端口 / 浏览器实例），不要在同一隔离环境内
 手拉多个浏览器。
 
@@ -227,7 +251,7 @@ Test-Path "$env:ProgramFiles\Google\Chrome\Application\chrome.exe"
 #   macOS: brew install --cask google-chrome          或   npx playwright install chromium
 #   Windows: winget install Google.Chrome             或   npx playwright install chromium
 # 已装但探测不到时显式指定：
-#   DSH_VERIFY_CHROME=/path/to/chrome verify-isolated.sh --browser <pkg>
+#   DSH_VERIFY_CHROME=/path/to/chrome node "$SKILL_BASE/scripts/verify-isolated.mjs" --browser <pkg>
 ```
 
 ### 6.2 browser-driver 操作命令
