@@ -337,9 +337,12 @@ try {
       });
       const statusListener = listeners.get("agent/status")[0];
       const historyRoute = routes.find((r) => r.path === ROUTES.history);
-      // 触发前读面即隔离 home 的空历史（修复前：隔离实例会读到真实 ~/.dsh 的历史）
-      const empty = await waitForHistory(historyRoute, (r) => r.length >= 0, 50);
-      assert.deepEqual(empty, [], "#510：隔离 home 下默认路径历史为空（读面不串真实 ~/.dsh）");
+      // 触发前读面即隔离 home 的空历史（修复前：隔离实例会读到真实 ~/.dsh 的历史）。
+      // 显式读一次而非恒真谓词轮询：JSON.parse 失败即红，对 handler 损坏敏感。
+      const { rec: emptyRec, res: emptyRes } = makeRes();
+      await historyRoute.handler(fakeReq({}), emptyRes);
+      const emptyRecords = JSON.parse(emptyRec.text).records || [];
+      assert.deepEqual(emptyRecords, [], "#510：隔离 home 下默认路径历史为空（读面不串真实 ~/.dsh）");
       // 触发一条完成通知，验证写面落 DSH_HOME
       const pair = turnPair("dsh-home-1", "隔离home完成", {}, { turn: 1 });
       statusListener({ agent: pair.running, status: "running" });

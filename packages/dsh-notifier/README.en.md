@@ -95,6 +95,12 @@ the original file is renamed `dsh-notifier.json.migrated.bak` (corrupt files are
 renamed `.corrupted.bak` without being written). The self-maintained read/write path
 is retired.
 
+> The storage/read paths of the notification history jsonl, the per-channel delivery
+> status json (`dsh-notifier-status.json`), and the legacy migration source json all
+> respect `DSH_HOME` (#510): they resolve to `~/.dsh` when the variable is unset and
+> follow the isolated home when set — isolated environments (multi-instance / test
+> sandboxes / dsh-verify-isolated) never touch the real `~/.dsh`.
+
 **Unknown-key semantics (forward compatibility, issue #470)**: dsh-notifier applies a
 **"pass-through and preserve"** policy to configuration keys it does **not recognize** —
 read and write behave consistently; unknown keys are never dropped, validated or

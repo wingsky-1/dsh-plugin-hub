@@ -34,6 +34,7 @@ try {
     assert.equal(statusFile(), join(dshHomeIso, "dsh-notifier-status.json"), "#510：状态写面随 DSH_HOME");
   } finally {
     delete process.env.DSH_HOME;
+    rmSync(dshHomeIso, { recursive: true, force: true });
   }
 
   assert.equal(normalizeConfig(undefined).notifyAsk, true);
