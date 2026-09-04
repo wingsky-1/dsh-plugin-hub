@@ -43,8 +43,8 @@ assert.ok(!raw.includes("node_modules/@wingsky-1"),
 // ---- 2. 一键脚本随 skill 分发 ----
 const scriptFile = join(SKILL_DIR, "scripts", "verify-isolated.sh");
 assert.ok(existsSync(scriptFile), "一键脚本随 skill 目录分发");
-assert.ok(readFileSync(scriptFile, "utf8").includes("verify_$(openssl rand -hex 4)"),
-  "脚本含 verify_<随机> profile 逻辑");
+assert.ok(readFileSync(scriptFile, "utf8").includes('verify_$(node -e'),
+  "脚本含 verify_<随机> profile 逻辑（node crypto 生成，不依赖 openssl CLI）");
 
 // ---- 3. cordis.patch.yml 复用官方 provider + bundledSkillDir 配置 ----
 const patch = readFileSync(join(PKG_ROOT, "cordis.patch.yml"), "utf8");
@@ -78,7 +78,7 @@ try { execFileSync(process.execPath, [driverFile], { encoding: "utf8" }); }
 catch { noArgExitsNonZero = true; }
 assert.ok(noArgExitsNonZero, "browser-driver 无参数应非零退出（用法提示，不误启动浏览器）");
 
-// ---- 6. verify-isolated.sh 含 --browser 与 --port 0 修复逻辑 ----
+// ---- 6. verify-isolated.sh 参数契约：--browser/--port 0/#376 加固（--dsh/回环/遥测/初始化/就绪断言/L1/L2） ----
 {
   const script = readFileSync(scriptFile, "utf8");
   assert.ok(script.includes("--browser"), "脚本含 --browser 选项");
@@ -86,6 +86,39 @@ assert.ok(noArgExitsNonZero, "browser-driver 无参数应非零退出（用法�
   assert.ok(script.includes("browser.state"), "脚本管理 browser.state 实例文件");
   assert.ok(script.includes("--port 0"), "脚本含 --port 0 处理分支");
   assert.ok(script.includes("探测空闲端口"), "--port 0 自选真实空闲端口（修复打印 0 无效）");
+  // #376 H1：--dsh 参数化 dsh 入口（版本锚定），校验可执行 + 版本展示
+  assert.ok(script.includes("--dsh"), "脚本含 --dsh 选项（dsh 入口版本锚定）");
+  assert.ok(script.includes('DSH_BIN="$2"'), "--dsh 解析到 DSH_BIN");
+  assert.ok(script.includes('DSH_BIN=dsh'), "DSH_BIN 默认 dsh（无 --dsh 时行为兼容现状）");
+  assert.ok(script.includes('dsh 入口不可执行'), "--dsh 目标不可执行时 fail fast");
+  assert.ok(script.includes("--version"), "启动前展示 dsh 版本（锚定证据）");
+  // #376 H2：显式回环 + 遥测禁用（锚定启动行本体——注释里出现同串不算数）
+  assert.ok(script.includes('DSH_TELEMETRY_DISABLED=1 "$DSH_ABS"'), "隔离实例显式禁用遥测（锚定启动行）");
+  assert.ok(
+    script.includes('"$DSH_ABS" --profile "$PROFILE" --host 127.0.0.1 --port "$PORT" --no-open'),
+    "隔离实例显式回环绑定（锚定启动行）",
+  );
+  // #376 M1：profile 初始化走显式 plugin list（不再依赖 add --help 未文档化行为）
+  assert.ok(script.includes('plugin --profile "$PROFILE" list'), "profile 初始化用显式 plugin list");
+  assert.ok(!script.includes("add --help >/dev/null"), "不再依赖 add --help 隐式初始化（注释提及不受限）");
+  assert.ok(script.includes("profile 初始化失败"), "初始化失败 fail loudly");
+  // #376 M2：启动后就绪断言（轮询 HTTP 可达 + 进程存活核对，超时可操作错误）
+  assert.ok(script.includes("就绪断言通过"), "启动后就绪断言通过输出");
+  assert.ok(script.includes("15s 内未就绪"), "就绪超时给可操作错误");
+  assert.ok(script.includes("AbortSignal.timeout"), "就绪探测带超时（不裸连）");
+  assert.ok(script.includes("进程在就绪前退出"), "就绪探测核对 dsh 进程存活（防端口被占假阳性）");
+  assert.ok(script.includes("r.status < 500"), "就绪判定不接受 5xx");
+  // #376 L1：openssl/realpath 依赖替换为 node（脚本本已硬依赖 node）
+  assert.ok(script.includes("randomBytes(4)"), "随机后缀走 node crypto");
+  assert.ok(!script.includes("openssl rand"), "不再依赖 openssl CLI");
+  assert.ok(!script.includes('realpath -m "$pkg"'), "不再调用 GNU realpath -m（注释提及不受限）");
+  assert.ok(script.includes('require("node:path").resolve'), "路径解析走 node path.resolve");
+  // #376 L2：--no-build 产物存在性检查 + 陈旧产物警告
+  assert.ok(script.includes("--no-build 但缺少构建产物"), "--no-build 缺产物报可操作错误");
+  assert.ok(script.includes("源码比构建产物新"), "--no-build 陈旧产物 mtime 警告");
+  // 启动生命周期：后台 + 就绪断言 + wait（EXIT trap 兜底 kill）
+  assert.ok(script.includes('DSH_PID=$!'), "dsh 后台启动记录 pid");
+  assert.ok(script.includes('wait "$DSH_PID"'), "前台 wait 保持阻塞体感");
 }
 
 // ---- 7. SKILL.md 含多会话并行章节与三平台内核自查 ----
@@ -95,6 +128,11 @@ assert.ok(raw.includes("DSH_VERIFY_CHROME"), "SKILL.md 含 DSH_VERIFY_CHROME 内
 assert.ok(raw.includes("ms-playwright"), "SKILL.md 含 ms-playwright 缓存路径表");
 assert.ok(raw.includes("Google Chrome.app"), "SKILL.md 含 macOS 自查路径");
 assert.ok(raw.includes("ProgramFiles"), "SKILL.md 含 Windows 自查路径");
+// #376 配套：SKILL.md 含 --dsh 用法与隔离自检第 5 项（插件持久化 DSH_HOME 感知）
+assert.ok(raw.includes("--dsh"), "SKILL.md 含 --dsh 版本锚定用法");
+assert.ok(raw.includes("DSH_HOME 感知"), "SKILL.md 自检清单含插件 DSH_HOME 感知项（#510 盲区）");
+assert.ok(raw.includes("DSH_TELEMETRY_DISABLED=1"), "SKILL.md 含遥测禁用原则");
+assert.ok(raw.includes("--host 127.0.0.1"), "SKILL.md 含显式回环原则");
 
 // ---- 8. README 同步新能力 ----
 const readme = readFileSync(join(PKG_ROOT, "README.md"), "utf8");

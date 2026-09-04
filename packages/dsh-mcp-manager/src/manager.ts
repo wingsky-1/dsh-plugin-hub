@@ -13,6 +13,7 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import type { ServerResponse } from "node:http";
+import type { SseHub } from "../../../shared/sse-hub.js";
 import type { Context, LoggerService } from "@deepseek-ai/cordis";
 import type { ServerConfig, ClientUiConfig } from "./types.ts";
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
@@ -80,9 +81,12 @@ export class McpManager {
   uiConfigSource: () => any;
   /** 设置命名空间写入 sink（apply 时经 ctx.inject(["settings"]) 注入；注入不到则写不可用）。 */
   uiUpdate?: (patch: Record<string, unknown>) => Promise<unknown>;
-  sseConnections?: Set<ServerResponse>;
-  /** SSE 心跳定时器清理函数（makeEventsRoute 注册；卸载 disposer 统一执行，#268）。 */
-  sseHeartbeatCleanups?: Set<() => void>;
+  /**
+   * SSE 连接枢纽（共享 shared/sse-hub，#515）：makeEventsRoute 惰性创建；
+   * 广播/卸载 disposer 收口到 hub（连接表 + 心跳 + 上限淘汰 + stalled/maxAge
+   * 主动回收）。取代旧 sseConnections Set + per-connection 心跳（#268）。
+   */
+  sseHub?: SseHub;
   /** 中间层模式（Config.middleware 归一化）。 */
   middlewareMode: MiddlewareMode;
   /** 中间层实例（连接池 + 目录 + 路由；惰性创建）。 */

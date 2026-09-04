@@ -8,7 +8,7 @@
  * 无状态 idle 不误报。
  */
 import { join } from "node:path";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { assert, makeNotifier, makeFakeCtx, agentWithTitle, makeRes, fakeReq, waitForHistory, turnPair, quietWindowNow } from "./helpers.ts";
 import { ROUTES, apply } from "../lib/index.js";
@@ -321,6 +321,45 @@ try {
     // 每条都记录了被拦截日志
     const suppressedLogs = infos.filter((t) => t.includes("被免打扰拦截"));
     assert.equal(suppressedLogs.length, 3, "每条错误都记录被拦截日志（窗口不无限顺延导致丢失）");
+  }
+
+  // ── 13. #510 DSH_HOME 感知：apply 默认路径（不传覆盖）读写面落隔离 home ──
+  {
+    const isoHome = mkdtempSync(join(tmpdir(), "dnotify-e2e-dsh-home-"));
+    const prevDshHome = process.env.DSH_HOME;
+    process.env.DSH_HOME = isoHome;
+    try {
+      // 不传 historyFile/statusFile 覆盖（显式 undefined 抹掉 makeNotifier 默认），
+      // 走 config.ts 默认路径解析——#510 修复后应全部落 DSH_HOME，而非真实 ~/.dsh。
+      const infos = [];
+      const { listeners, routes, dispose } = await makeNotifier(isoHome, { doneMergeWindowMs: 0, historyFile: undefined, statusFile: undefined, configFile: undefined }, {
+        logger: { warn: () => {}, info: (t) => infos.push(t) },
+      });
+      const statusListener = listeners.get("agent/status")[0];
+      const historyRoute = routes.find((r) => r.path === ROUTES.history);
+      // 触发前读面即隔离 home 的空历史（修复前：隔离实例会读到真实 ~/.dsh 的历史）。
+      // 显式读一次而非恒真谓词轮询：JSON.parse 失败即红，对 handler 损坏敏感。
+      const { rec: emptyRec, res: emptyRes } = makeRes();
+      await historyRoute.handler(fakeReq({}), emptyRes);
+      const emptyRecords = JSON.parse(emptyRec.text).records || [];
+      assert.deepEqual(emptyRecords, [], "#510：隔离 home 下默认路径历史为空（读面不串真实 ~/.dsh）");
+      // 触发一条完成通知，验证写面落 DSH_HOME
+      const pair = turnPair("dsh-home-1", "隔离home完成", {}, { turn: 1 });
+      statusListener({ agent: pair.running, status: "running" });
+      statusListener({ agent: pair.idle, status: "idle" });
+      assert.ok(infos.some((t) => /done/.test(t)), "#510：完成通知正常发出");
+      const records = await waitForHistory(historyRoute, (r) => r.some((e) => e.kind === "done"));
+      assert.ok(records.some((e) => e.kind === "done" && !e.suppressed), "#510：默认路径完成通知经路由可读（读写同源落隔离 home）");
+      // 文件系统级断言：jsonl 真实落在 isoHome（写面锁定到 DSH_HOME；读写同源，
+      // 同一 store 单一 file，故不再对真实 ~/.dsh 做存在性/mtime 探测——测试
+      // 自身零触碰真实 home，也不给外部写入留 flake 面）
+      assert.ok(existsSync(join(isoHome, "dsh-notifier-history.jsonl")), "#510：历史 jsonl 落 DSH_HOME（写面）");
+      dispose();
+    } finally {
+      if (prevDshHome === undefined) delete process.env.DSH_HOME;
+      else process.env.DSH_HOME = prevDshHome;
+      rmSync(isoHome, { recursive: true, force: true });
+    }
   }
 } finally {
   rmSync(work, { recursive: true, force: true });

@@ -13,6 +13,7 @@ import { createTransport } from "./transport.ts";
 import type { StdioTransport, HttpTransport } from "./transport.ts";
 import { SCOPE_GLOBAL, SCOPE_PROJECT } from "./scope.ts";
 import { MCPClient } from "./protocol.ts";
+import { defaultCallResultFallbackText, projectCallToolResult } from "./call-result.ts";
 import type { ServerConfig } from "./types.ts";
 import type { Context, LoggerService } from "@deepseek-ai/cordis";
 // 官方工具定义类型（仅 import type，编译期擦除；contract-check 禁止运行时值导入）。
@@ -258,22 +259,14 @@ export function buildToolDefinition(client: MCPClient, tool: Record<string, unkn
         signal: exec.signal,
         timeoutMs,
       });
-      const resultObj = result as { content?: unknown; isError?: unknown; structuredContent?: unknown; toolResult?: unknown } | undefined;
-      if (!Array.isArray(resultObj?.content)) {
-        const rendered = result && "toolResult" in (result as object) ? JSON.stringify(resultObj?.toolResult) : "(no output)";
-        const text = typeof rendered === "string" ? rendered : "(no output)";
-        if (resultObj?.isError === true) throw new Error(renderText(text) as string);
-        return {
-          content: [{ type: "text", text: renderText(text) }],
-          ...(resultObj?.structuredContent !== undefined ? { structuredContent: resultObj.structuredContent } : {}),
-        };
-      }
-      const text = extractText(resultObj!.content as unknown[], rawName);
-      if (resultObj?.isError === true) throw new Error(renderText(text) as string);
-      return {
-        content: resultObj!.content,
-        ...(resultObj?.structuredContent !== undefined ? { structuredContent: resultObj.structuredContent } : {}),
-      };
+      // #512：结果投影收敛到 call-result.ts 单一事实源（isError 判定 + 白名单
+      // 清洗 + 无 content 兜底），与 middleware（ws_mcp_call）/ 官方
+      // dsh-mcp-client createExecutor 同一契约；本侧差异面 = 文本截断与
+      // extractText 占位符渲染。
+      return projectCallToolResult(result, {
+        errorText: (content) => renderText(extractText(content, rawName)) as string,
+        fallbackText: (r) => renderText(defaultCallResultFallbackText(r)) as string,
+      });
     },
   };
 }

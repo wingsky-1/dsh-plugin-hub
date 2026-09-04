@@ -94,13 +94,8 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
   // 隐藏命名空间，设置页插件卡可编辑；配置变更经既有 SSE events 通道广播一帧，
   // 客户端收到后重新 GET /api/dsh-mcp/config 就地更新浮窗位置（无需重启/轮询）。
   const broadcastUiConfigChanged = () => {
-    for (const res of manager.sseConnections ?? []) {
-      try {
-        res.write(uiConfigChangedFrame());
-      } catch {
-        // 连接已断，等待 close 事件清理
-      }
-    }
+    // #515：广播收口到共享 hub（未创建 = 尚无 events 订阅，跳过）。
+    manager.sseHub?.broadcast(uiConfigChangedFrame());
   };
   // #389：把 settings 命名空间合并面（含用户层保存的 middleware）同步到运行时。
   // 保存路径（routes POST config middleware 分支）写 settings 用户层；apply 启动
@@ -252,31 +247,17 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
       const eventsRoute = makeEventsRoute(manager);
       const healthRoute = makeHealthRoute(manager);
       const disposers = [...routes, eventsRoute, healthRoute].map((route) => ctx.webServer.register(route));
-      // 状态变化 → 广播 SSE 帧（连接集合在 makeEventsRoute 中惰性创建）。
+      // 状态变化 → 广播 SSE 帧（hub 在 makeEventsRoute 中惰性创建，#515）。
       const unsubscribeStatus = manager.onStatus(() => {
-        for (const res of manager.sseConnections ?? []) {
-          try {
-            res.write(sseData({ type: "summary" }));
-          } catch {
-            // 连接已断，等待 close 事件清理
-          }
-        }
+        manager.sseHub?.broadcast(sseData({ type: "summary" }));
       });
       return () => {
         unsubscribeStatus();
         for (const dispose of disposers) dispose();
-        // 先清 SSE 心跳定时器（#268）：disposer 显式清 interval，不依赖
-        // 下方 res.destroy() 触发 close 的异步时序。
-        for (const stopHeartbeat of manager.sseHeartbeatCleanups ?? []) stopHeartbeat();
-        manager.sseHeartbeatCleanups?.clear();
-        for (const res of manager.sseConnections ?? []) {
-          try {
-            res.destroy();
-          } catch {
-            // 已关闭
-          }
-        }
-        if (manager.sseConnections !== undefined) manager.sseConnections.clear();
+        // #515：hub.dispose() 统一停心跳 + destroy 全部连接（幂等，不依赖
+        // close 事件异步时序）；取代旧 sseHeartbeatCleanups 逐连接清理。
+        manager.sseHub?.dispose();
+        manager.sseHub = undefined;
       };
     }, "dsh-mcp-manager: routes");
 

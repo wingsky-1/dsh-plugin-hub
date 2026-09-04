@@ -25,6 +25,7 @@ import { dirname } from "node:path";
 import type { ServerConfig } from "./types.ts";
 import type { ToolDefinition, ToolOutputDefinition } from "@deepseek-ai/dsh-tools";
 import { MCPClient } from "./protocol.ts";
+import { defaultCallResultFallbackText, projectCallToolResult } from "./call-result.ts";
 import { createTransport } from "./transport.ts";
 import {
   CONNECT_TIMEOUT_MS,
@@ -559,7 +560,12 @@ export class McpMiddleware {
         const content = typeof def.output?.render === "function"
           ? def.output.render(args, value as unknown as Parameters<NonNullable<ToolOutputDefinition["render"]>>[1])
           : [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value ?? {}) }];
-        return { content, structuredContent: value };
+        // #512 共性问题：structuredContent 条件展开——封装 execute 返回 undefined
+        // 时不落键，防显式 undefined 值键触发宿主 lossless JSON 校验失败（#381 同源）。
+        return {
+          content,
+          ...(value !== undefined ? { structuredContent: value } : {}),
+        };
       } catch (error) {
         if (signal?.aborted === true) throw signal.reason;
         throw new Error(this.hostRedact(`ws_mcp_call: ${JSON.stringify(`${parsed.server}/${tool}`)} 封装调用失败：${msgOf(error)}`));
@@ -578,17 +584,29 @@ export class McpMiddleware {
         `ws_mcp_call: 调用超时（${CALL_TIMEOUT_MS}ms），可重试；若反复超时请用 ws_mcp_detail 核对参数或检查服务器状态`,
         signal,
       );
-      const resultObj = result as { content?: unknown; isError?: unknown; structuredContent?: unknown } | undefined;
-      if (resultObj?.isError === true) {
-        throw new Error(this.hostRedact(`ws_mcp_call: 远端工具返回错误：${msgOf(resultObj.content)}；可先用 ws_mcp_detail 核对参数 schema 后重试`));
-      }
+      // #512：远端结果经 call-result.ts 统一投影收敛（isError 判定 + 白名单
+      // 清洗 + 无 content 兜底），与 supervisor（mcp__ 直呼）/ 官方
+      // dsh-mcp-client createExecutor 同一契约——不再裸透传 resultObj，
+      // Python SDK 必带的 isError:false / _meta 等字段不再外泄进工具契约。
+      // fallbackText（复核闸 F1）：content 键存在但非数组（协议违规形态）时
+      // 保留远端原文（msgOf，与旧文案行为等价）；content 缺省走默认兜底。
+      const projected = projectCallToolResult(result, {
+        errorText: (content) =>
+          `ws_mcp_call: 远端工具返回错误：${msgOf(content)}；可先用 ws_mcp_detail 核对参数 schema 后重试`,
+        fallbackText: (r) => {
+          const raw = typeof r === "object" && r !== null && "content" in r ? (r as { content?: unknown }).content : undefined;
+          return raw !== undefined && !Array.isArray(raw) ? msgOf(raw) : defaultCallResultFallbackText(r);
+        },
+      });
       if (stale) {
-        // schema 可能已过期：结果前置提示（不改变调用结果结构）。
+        // schema 可能已过期：结果前置提示（投影后的白名单结构，仅扩 content）。
         const hint = { type: "text", text: "（提示：本工具目录已过期，schema 可能已变更，请重新 ws_mcp_search）" };
-        const content = Array.isArray(resultObj?.content) ? [hint, ...(resultObj.content as unknown[])] : [hint];
-        return { ...resultObj, content };
+        return {
+          content: [hint, ...projected.content],
+          ...(projected.structuredContent !== undefined ? { structuredContent: projected.structuredContent } : {}),
+        };
       }
-      return resultObj;
+      return projected;
     } catch (error) {
       if (signal?.aborted === true) throw signal.reason;
       throw new Error(this.hostRedact(`ws_mcp_call: ${JSON.stringify(`${parsed.server}/${tool}`)} 调用失败：${msgOf(error)}；可先用 ws_mcp_detail 核对参数 schema，或确认服务器已连接后重试`));
