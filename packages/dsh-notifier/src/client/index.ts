@@ -861,18 +861,30 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
     }
 
     /** 提交 PUT 并处理响应（save 的内核；guard 占用与释放由 saveFor 负责）。
-     *  #405 PR2b：409 不再只提示文案——转 handleConflict 进入双动作恢复流程。 */
+     *  #405 PR2b：409 不再只提示文案——转 handleConflict 进入双动作恢复流程。
+     *  #405 实测补强（浏览器验证发现）：fetch 在极端环境（连接池耗尽/服务端静默
+     *  挂起）可能永不 settle → finally 永不执行 → 按钮永久「保存中」。加 15s
+     *  AbortController 超时兜底：超时中断请求（服务端写入与否未知，UI 必须恢复），
+     *  释放 guard 并提示重试。 */
     function putAndCommit(payload: Record<string, any>, entry: string) {
       var expectedRevision = metaRef.current && typeof metaRef.current.revision === "number" ? metaRef.current.revision : undefined;
-      return fetch(ROUTES.config, {
+      var ctrl: AbortController | null = typeof AbortController !== "undefined" ? new AbortController() : null;
+      var timer: ReturnType<typeof setTimeout> | null = ctrl ? setTimeout(function () { ctrl!.abort(); }, 15000) : null;
+      var chain = fetch(ROUTES.config, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ patch: payload, expectedRevision: expectedRevision }),
+        signal: ctrl ? ctrl.signal : undefined,
       }).then(function (r: any) {
         return r.json().then(function (body: any) {
           if (!r.ok) {
             var err = (body && body.error) || {};
-            throw new Error(err.error || err.details || err.code || ("HTTP " + r.status));
+            // 挂 code 供 catch 按契约分流（#405 PR3 复核）：409 判定优先
+            // err.code === "SETTINGS_CONFLICT"，不再依赖错误文案中文匹配
+            // （文案是本地化/可改的，code 是契约字段）。文案保留进 message。
+            var throwErr = new Error(err.error || err.details || err.code || ("HTTP " + r.status)) as Error & { code?: string };
+            if (err.code !== undefined) throwErr.code = String(err.code);
+            throw throwErr;
           }
           return body;
         });
@@ -894,13 +906,24 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
         setTimeout(function () { setSaved(""); }, 2200);
       }).catch(function (e: any) {
         var msg = (e && e.message) || e;
-        if (String(msg).indexOf("版本冲突") >= 0) {
+        // 409 判定：code 契约优先，中文文案仅作旧服务端回退（#405 PR3 复核）
+        if ((e && e.code === "SETTINGS_CONFLICT") || String(msg).indexOf("版本冲突") >= 0) {
           // 版本冲突：进入双动作恢复（不再仅提示手动关闭重开）
           handleConflict(entry);
           return;
         }
+        // AbortError（15s 超时兜底）：服务端可能已写入也可能未写入——提示重试，
+        // 用户重试时 revision 若已推进会自然走 409 恢复流程，语义自洽。
+        if (e && e.name === "AbortError") {
+          setSaved(t("saveTimeout"), true);
+          return;
+        }
         setSaved(t("saveFail", { msg: msg }), true);
       });
+      if (timer !== null) {
+        chain = chain.finally(function () { clearTimeout(timer!); });
+      }
+      return chain;
     }
 
     /** 从全量 diff 中按入口过滤出本次要提交的键（#405 PR2 域保存；
@@ -920,7 +943,15 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
      *  - guard.end() 放 finally：成功/失败/异常任何路径都释放，防按钮永久卡死。 */
     function saveFor(entry: string, quietIfEmpty?: boolean) {
       if (!saveGuard.tryBegin(entry)) return; // 在途：记 pending=entry，由在途 finally 补发
-      var payload = diffPayloadFor(entry);
+      var payload: Record<string, any>;
+      try {
+        payload = diffPayloadFor(entry);
+      } catch (error) {
+        // 防御：tryBegin 后同步异常（diff 计算等理论不可达路径）必须释放 guard
+        saveGuard.end();
+        setSaved(t("saveFail", { msg: String((error && (error as any).message) || error) }), true);
+        return;
+      }
       if (Object.keys(payload).length === 0) {
         saveGuard.end();
         if (!quietIfEmpty) setSaved(t("unchanged"));
@@ -1128,10 +1159,19 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
       });
     }
 
-    /** 动态 kind 确认（POST /kinds；完成后刷新清单并提示）。 */
+    /** 动态 kind 确认（POST /kinds；完成后刷新清单并提示）。
+     *  #405 PR3（评审 P1-2）：响应体带新 revision → 同步 metaRef/setMeta——服务端
+     *  确认写入已推进 revision，若不同步，同一窗口随后保存会带过期 revision 必 409
+     *  （无并发的纯版本链断点，比连点更高频）。 */
     function confirmOne(kind: string, confirmed: boolean) {
       postKind(kind, confirmed)
-        .then(function () {
+        .then(function (body: any) {
+          var freshRevision = body && typeof body.revision === "number" ? body.revision : undefined;
+          if (freshRevision !== undefined && metaRef.current) {
+            var nextMeta = Object.assign({}, metaRef.current, { revision: freshRevision });
+            metaRef.current = nextMeta;
+            setMeta(nextMeta);
+          }
           toast(t("kindConfirmOk"));
           return loadKinds({ value: true }) as any;
         })
@@ -2003,10 +2043,9 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
 
     // #402 第 4 条：去掉设置卡 title/副标题；顶部直接是 tab 栏。
     // #508 M1：底部保存栏 = 脏状态指示（diffSettingsPayload 键数）+ 放弃更改 + 保存。
+    // #405 PR2：foot 显示全量脏计数（含频道域）；「保存频道」按钮的域脏态不做单独
+    // 计数——无频道域脏时点击走空 diff 的「未修改」提示（与 foot 保存同交互语义）。
     var dirtyCount = Object.keys(diffPayload()).length;
-    // #405 PR2 域保存：频道域脏态（channels 单键）。脏计数分域——foot 显示总数，
-    // 频道 tab 域按钮依据本域脏态使能/禁用（域保存语义 ≠ 全量，两入口并存不重复）。
-    var channelsDirty = Object.prototype.hasOwnProperty.call(diffPayload(), "channels");
     return React.createElement("li", { className: "dn-set-card" },
       tabbar,
       React.createElement("div", { className: "dn-set-body" },

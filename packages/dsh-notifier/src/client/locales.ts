@@ -39,6 +39,7 @@ export const zh = {
   savedOk: "已保存",
   saveFailConflict: "保存失败：{msg}（请关闭本卡片重新打开后重试）",
   saveFail: "保存失败：{msg}",
+  saveTimeout: "保存超时：网络请求未在 15 秒内完成，请重试",
   // #405 PR2b：409 冲突双动作横幅
   conflictTitle: "配置已在其他窗口被修改：",
   conflictChannels: "频道配置已在其他窗口被修改：",
@@ -231,6 +232,7 @@ export const en: Record<NotifierLocaleKey, string> = {
   savedOk: "Saved",
   saveFailConflict: "Save failed: {msg} (close and reopen this card, then retry)",
   saveFail: "Save failed: {msg}",
+  saveTimeout: "Save timed out: request did not complete within 15s, please retry",
   // #405 PR2b：409 conflict resolution banner
   conflictTitle: "Configuration was changed in another window:",
   conflictChannels: "Channel configuration was changed in another window:",
