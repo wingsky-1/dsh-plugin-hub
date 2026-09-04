@@ -84,6 +84,14 @@ for (const p of plugins) {
     // 只匹配 import 语句中的仓库外相对引用（esbuild 模块注释含路径文本，不算断链）
     const outsideRef = /(?:from|import)\s*["']\.\.\/\.\.\/(?:shared|types)/.test(idx)
     if (outsideRef) problems.push('lib 残留 ../../shared|types 运行时引用')
+    // client 产物 chunk（lib/client.js 及 client-mermaid.js 等，issue #477）：同款
+    // 自包含断言延伸到 client 面——client bundle 同样构建期内联 shared/client
+    // （如 client/ensure-style.js），chunk 内残留仓库外相对引用即发布断链。
+    for (const chunkFile of readdirSync(join(pkgRoot, 'lib')).filter((f) => /^client[^/]*\.js$/.test(f))) {
+      if (/(?:from|import)\s*["']\.\.\/\.\.\/(?:shared|types)/.test(readFileSync(join(pkgRoot, 'lib', chunkFile), 'utf8'))) {
+        problems.push(`${chunkFile} 残留 ../../shared|types 运行时引用`)
+      }
+    }
     // loopback 围栏断言跟随 HTTP 面存在性：产物注入 webServer（有 RPC/路由面）
     // 才要求 isLoopbackRequest；纯事件面插件（无 webServer，如 #153 模型继承器）
     // 无 HTTP 面，围栏不适用。

@@ -35,6 +35,7 @@ import "./unit-routes.test.ts";
 import "./unit-serve-tokens.test.ts";
 import "./unit-basename-fallback.test.ts";
 import "./unit-git.test.ts";
+import "./client-style.test.ts";
 
 const pkgDir = fileURLToPath(new URL("..", import.meta.url));
 

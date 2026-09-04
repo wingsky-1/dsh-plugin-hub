@@ -38,6 +38,7 @@ import { apply, sanitizeSettings, validateSettings, ROUTES, pluginDir,
 // 注意：单元测试在模块加载期执行（早于下方 main() 的集成区），
 // 全 localhost 随机端口 + 临时 DSH_HOME，无外网、无子进程。
 import "./unit-proxy.test.ts";
+import "./client-style.test.ts";
 import "./unit-apply.test.ts";
 
 const UPSTREAM_PORT = 19090;

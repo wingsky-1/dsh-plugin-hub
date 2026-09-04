@@ -24,6 +24,9 @@ import {
 import type { SessionsServiceLike, RemoteLike, StatsResponseV2, HistoryResponseV2, UiPlacementConfig } from "./core.ts";
 import { SettingsPage } from "./settings.ts";
 import { t, bindLocale } from "../../../../shared/client/i18n.js";
+// 样式注入收敛 shared/client/ensure-style.js（issue #477）：head 缺失由 shared
+// 静默 no-op 兜底（旧 DOMContentLoaded 兜底属理论不可达防御，随迁移删除）。
+import { ensureStyle } from "../../../../shared/client/ensure-style.js";
 import { zh, en, type ProviderUsageLocaleKey } from "./locales.ts";
 // 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
 // lib/types/*.d.ts 相对导入保留 .ts 后缀，declare module 增强的模块名解析会判
@@ -56,6 +59,7 @@ declare module "@deepseek-ai/dsh-client-ui-slots" {
 
 const REFRESH_MS = 60000; // 轮询间隔
 const PILL_PREFIX = "dou-"; // 样式类名前缀
+const STYLE_ID = "dsh-provider-usage-style"; // <style> 幂等键（dsh-<pkg>-style 命名，#477）
 const MAX_HISTORY_DAYS = 30; // 历史请求天数
 
 // ------------------------------------------------------------------ 工具
@@ -94,19 +98,6 @@ function fmtAge(ts: number | undefined): string {
   if (diff < 3600000) return t("minutesAgo", { n: Math.floor(diff / 60000) });
   if (diff < 86400000) return t("hoursAgo", { n: Math.floor(diff / 3600000) });
   return t("daysAgo", { n: Math.floor(diff / 86400000) });
-}
-
-/** 样式注入（幂等）。 */
-function injectStyle(): void {
-  if (document.head === null) {
-    document.addEventListener("DOMContentLoaded", () => injectStyle(), { once: true });
-    return;
-  }
-  if (document.querySelector("style[data-dou-style]") !== null) return;
-  const style = document.createElement("style");
-  style.setAttribute("data-dou-style", "");
-  style.textContent = STYLE;
-  document.head.appendChild(style);
 }
 
 // ------------------------------------------------------------------ 状态
@@ -483,7 +474,7 @@ function placePanel(): void {
 }
 
 function mountFloat(): () => void {
-  injectStyle();
+  ensureStyle({ id: STYLE_ID, cssText: STYLE });
   const pill = el("button", { type: "button", class: PILL_PREFIX + "float", "aria-label": t("ariaPill") });
   pill.dataset.douFloat = "";
   pill.hidden = true; // 初始隐藏，首次数据到达后显示
@@ -624,7 +615,7 @@ function mountFloat(): () => void {
 
 export function apply(ctx: any): void {
   try {
-    injectStyle();
+    ensureStyle({ id: STYLE_ID, cssText: STYLE });
     if (document.body === null) return;
 
     // #383 根因修复：客户端插件服务须经 inject 数组声明（"sessions"/"remote"/

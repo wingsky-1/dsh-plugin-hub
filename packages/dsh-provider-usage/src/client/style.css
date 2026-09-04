@@ -1,7 +1,7 @@
 /* dsh-provider-usage — 客户端样式（独立 .css 文件）。
  *
  * 由 build-client 的 .css text-loader 构建期内联进 client.js（产物仍自包含单文件、
- * 零运行时依赖、无独立网络请求）。injectStyle 注入 <style data-dou-style>。
+ * 零运行时依赖、无独立网络请求）。ensureStyle（shared/client/ensure-style.js，issue #477 收敛）注入 <style id=dsh-provider-usage-style>。
  * 前缀统一 dou-（防与 shell 冲突）；颜色一律走 --dsw-alias-* 主题变量 + 浅色回退，
  * 明暗双主题自适应。PILL_PREFIX 常量（dou-）在 JS 侧用于查询，此处已硬编码为
  * dou-，二者须保持一致。

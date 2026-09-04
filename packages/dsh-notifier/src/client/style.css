@@ -1,7 +1,7 @@
 /* dsh-notifier — 客户端样式（独立 .css 文件，issue #76 设置卡片）。
  *
  * 由 build-client 的 .css text-loader 构建期内联进 client.js（产物仍自包含单文件、
- * 零运行时依赖、无独立网络请求）。injectStyle 注入 <style id=dsh-notifier-style>。
+ * 零运行时依赖、无独立网络请求）。ensureStyle（shared/client/ensure-style.js，issue #477 收敛）注入 <style id=dsh-notifier-style>。
  * 前缀 dn-（防与 shell 冲突）；颜色一律走 --dsw-alias-* 主题变量 + 浅色回退。
  * 本文件只保留「设置卡片」与「通知展示（横幅/toast）」两类样式——侧边栏入口/
  * 浮层面板/角标相关样式随 B 组移除（issue #76）。
