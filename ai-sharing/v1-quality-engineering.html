@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>v1 · AI 加速开发之后：质量工程的重新设计 — dsh-plugin-hub 20 天复盘</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --ink:#e8eaf0; --dim:#9aa3b2; --faint:#5c6470;
+    --cyan:#4fd6c2; --amber:#ffb454; --rose:#ff7a90; --blue:#7ab3ff;
+    --mono:'SFMono-Regular',ui-monospace,'Cascadia Code',Consolas,Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--ink);font:16px/1.6 -apple-system,'PingFang SC','Microsoft YaHei','Noto Sans CJK SC',sans-serif;overflow:hidden}
+  .slide{position:absolute;inset:0;display:none;flex-direction:column;padding:56px 84px 64px}
+  .slide.active{display:flex}
+  .kicker{color:var(--cyan);font-size:14px;letter-spacing:.18em;margin-bottom:14px}
+  h1{font-size:44px;line-height:1.25;margin-bottom:12px;font-weight:700}
+  h2{font-size:32px;line-height:1.3;margin-bottom:22px;font-weight:700}
+  h2 .em{color:var(--cyan)}
+  p.lead{font-size:20px;color:var(--dim);max-width:60em}
+  ul{list-style:none;margin-top:6px}
+  ul li{font-size:19px;padding:7px 0 7px 26px;position:relative}
+  ul li::before{content:'';position:absolute;left:4px;top:17px;width:8px;height:8px;border-radius:2px;background:var(--cyan);opacity:.85}
+  li.dim{color:var(--dim);font-size:17px}
+  li b{color:var(--ink)}
+  code{font-family:var(--mono);font-size:.92em;background:#1d2129;border:1px solid #2a2f3a;border-radius:5px;padding:1px 7px;color:#cfe3ff}
+  .cols{display:flex;gap:36px;margin-top:8px}
+  .cols>div{flex:1}
+  .card{background:var(--panel);border:1px solid #232833;border-radius:12px;padding:18px 22px;margin-top:10px}
+  .card h3{font-size:17px;color:var(--amber);margin-bottom:8px;font-weight:600}
+  .card p{font-size:15.5px;color:var(--dim);line-height:1.55}
+  .num{font-family:var(--mono);color:var(--blue)}
+  .big{display:flex;gap:26px;margin-top:26px;flex-wrap:wrap}
+  .big .b{background:var(--panel);border:1px solid #232833;border-radius:12px;padding:18px 24px;min-width:150px}
+  .big .b i{display:block;font-style:normal;font-size:36px;font-weight:700;font-family:var(--mono);color:var(--cyan)}
+  .big .b span{font-size:14px;color:var(--dim)}
+  table{border-collapse:collapse;width:100%;margin-top:10px;font-size:16.5px}
+  th,td{text-align:left;padding:9px 14px;border-bottom:1px solid #262b36}
+  th{color:var(--dim);font-weight:600;font-size:14px}
+  td.mono{font-family:var(--mono);font-size:15px;color:#cfe3ff}
+  .timeline{display:flex;gap:10px;margin-top:24px}
+  .tl{flex:1;background:var(--panel);border:1px solid #232833;border-radius:10px;padding:14px}
+  .tl i{display:block;font-style:normal;color:var(--cyan);font-size:13px;letter-spacing:.06em;margin-bottom:6px;font-family:var(--mono)}
+  .tl b{display:block;font-size:16.5px;margin-bottom:5px}
+  .tl span{font-size:13.5px;color:var(--dim);line-height:1.5;display:block}
+  .bars{display:flex;align-items:flex-end;gap:7px;height:200px;margin-top:26px;border-bottom:2px solid #2a2f3a;padding:0 6px}
+  .bars .bar{flex:1;background:linear-gradient(180deg,var(--cyan),#2b8d80);border-radius:4px 4px 0 0;position:relative;min-width:14px}
+  .bars .bar.hot{background:linear-gradient(180deg,var(--rose),#a04a5a)}
+  .bars .bar.turn{background:linear-gradient(180deg,var(--amber),#9a6b2c)}
+  .bars .bar small{position:absolute;top:-22px;left:50%;transform:translateX(-50%);font-size:11px;color:var(--faint);font-family:var(--mono)}
+  .dayaxis{display:flex;gap:7px;padding:6px 6px 0;font-size:10.5px;color:var(--faint);font-family:var(--mono)}
+  .dayaxis span{flex:1;text-align:center}
+  .note{margin-top:auto;padding-top:18px;border-top:1px dashed #2a2f3a;color:var(--faint);font-size:14.5px;max-width:72em}
+  .note::before{content:'讲稿 · ';color:#3d434d;letter-spacing:.1em}
+  .q{font-size:30px;line-height:1.5;color:var(--ink);font-weight:600;max-width:30em}
+  .q em{color:var(--amber);font-style:normal}
+  .foot{position:fixed;left:84px;right:84px;bottom:20px;display:none;justify-content:space-between;font-size:13px;color:#3d434d;font-family:var(--mono)}
+  body.showing .foot{display:flex}
+  .tag{display:inline-block;font-size:12.5px;font-family:var(--mono);border:1px solid #2a2f3a;border-radius:999px;padding:2px 12px;color:var(--dim);margin-right:8px}
+  @media print{
+    body{overflow:visible;background:#fff;color:#111}
+    .slide{position:relative;display:flex;page-break-after:always;height:100vh;padding:40px 56px}
+    .note{color:#555;border-color:#ccc}
+    .foot{display:none!important}
+    code{background:#f2f3f5;border-color:#ddd;color:#1a3a6b}
+    .card,.big .b,.tl{background:#f7f7f9;border-color:#ddd}
+    .bars .bar{background:#3aa89a}
+  }
+</style>
+</head>
+<body>
+<main id="deck">
+
+<!-- 1 封面 -->
+<section class="slide">
+  <div style="margin:auto 0">
+    <div class="kicker">内部 AI 分享 · 复盘来自真实仓库 dsh-plugin-hub</div>
+    <h1>AI 加速开发之后<br>质量工程的重新设计</h1>
+    <p class="lead">20 天 · 392 个提交 · 287 个 PR · 6.1 万行 TypeScript —— 一个人加一群 Agent。<br>这样的速度，代码还能要吗？这次分享是我用 20 天找到的答案。</p>
+    <div class="big">
+      <div class="b"><i>20</i><span>天（08-16 → 09-04）</span></div>
+      <div class="b"><i>392</i><span>commits / 287 PR</span></div>
+      <div class="b"><i>14</i><span>个 npm 发版</span></div>
+      <div class="b"><i>8</i><span>个插件 + 聚合包</span></div>
+    </div>
+  </div>
+  <div class="note">开场先抛数字制造张力：速度是 AI 带来的，但「质量还能不能守住」是今天要回答的问题。自我介绍一句带过，不要展开。</div>
+</section>
+
+<!-- 2 项目是什么 -->
+<section class="slide">
+  <div class="kicker">背景</div>
+  <h2>复盘对象：dsh-plugin-hub 是什么</h2>
+  <ul>
+    <li><b>DSH（DeepSeek Harness）Web GUI 的插件集</b>，npm 分发：一键装全家桶，或按需单装</li>
+    <li>8 个插件：通知中心 / MCP 管理器 / 局域网代理 / 用量统计 / 文件预览 / 代码图谱 / 隔离验证 …</li>
+    <li>形态：<code>monorepo</code>（pnpm workspace）+ CI 门禁 + tag 触发自动发版</li>
+    <li>关键约束：<b>绝不修改宿主源码</b>，只走官方扩展点挂载——宿主是上游，我们是生态位</li>
+    <li class="dim">它不是玩具：64 个测试文件、21 段变异测试配置、五条 CI 工作流</li>
+  </ul>
+  <div class="note">一句话定位即可，不要陷入功能演示。强调「这是真实在 npm 上发布、每天在用的东西」，为后面的质量话题铺垫可信度。</div>
+</section>
+
+<!-- 3 路线图 -->
+<section class="slide">
+  <div class="kicker">今天讲什么</div>
+  <h2>路线图</h2>
+  <table>
+    <tr><th style="width:8em">章节</th><th>内容</th></tr>
+    <tr><td>01 时间线</td><td>20 天五阶段：速度是怎么来的</td></tr>
+    <tr><td>02 转折点</td><td>三个事故，让方向从「更快」转向「更稳」</td></tr>
+    <tr><td>03 三件武器</td><td>门禁体系 / 覆盖率与 CRAP / 变异测试</td></tr>
+    <tr><td>04 制度化</td><td>证据文化、防 flake 纪律、AI 协作里的质量角色</td></tr>
+    <tr><td>05 故事</td><td>三次变形的 bug、基建自身的回归、没测的端</td></tr>
+    <tr><td>06 收束</td><td>AI 时代的质量公式 + 可复制清单</td></tr>
+  </table>
+  <div class="note">给听众一张地图。提一句：AI 协作体系是另一个专场（v2），这里只在第四章讲它跟质量相关的部分。</div>
+</section>
+
+<!-- 4 时间线五阶段 -->
+<section class="slide">
+  <div class="kicker">01 时间线</div>
+  <h2>20 天，五个阶段——每个阶段的主要矛盾都在换</h2>
+  <div class="timeline">
+    <div class="tl"><i>D0-D1</i><b>诞生即终局</b><span>7 插件迁入 monorepo，构建/CI/发版一天搭完，次日上 npm</span></div>
+    <div class="tl"><i>D2-D5</i><b>功能爆发</b><span>notifier 单包 35 commits，21 个是 fix——跑得快，坏得也快</span></div>
+    <div class="tl"><i>D5-D7</i><b>工程化转折</b><span>依赖现代化、Gauntlet 质量体系、证据文化、AI 协作工作流</span></div>
+    <div class="tl"><i>D8-D12</i><b>质量深水区</b><span>变异测试全量接入又驯化（21 段）、防 flake 整改、夜间观察链路</span></div>
+    <div class="tl"><i>D13-D20</i><b>生态收束</b><span>上游三次适配、i18n、v0.2.0/v0.2.1、tech-debt 批量盘点</span></div>
+  </div>
+  <ul style="margin-top:22px">
+    <li class="dim">注：这不是「先规划后执行」，而是<b>被事故推着走</b>的演进——顺序本身就是教训</li>
+  </ul>
+  <div class="note">这页是全程叙事骨架，后面反复回来引用。强调阶段 3 只用了三天，但决定了后面所有代码的质量下限。</div>
+</section>
+
+<!-- 5 每日提交柱状图 -->
+<section class="slide">
+  <div class="kicker">01 时间线</div>
+  <h2>每日提交数：爆发、转折、收敛</h2>
+  <div class="bars">
+    <div class="bar" style="height:14%"><small>7</small></div>
+    <div class="bar hot" style="height:75%"><small>35</small></div>
+    <div class="bar hot" style="height:45%"><small>21</small></div>
+    <div class="bar hot" style="height:26%"><small>12</small></div>
+    <div class="bar hot" style="height:88%"><small>40</small></div>
+    <div class="bar turn" style="height:15%"><small>7</small></div>
+    <div class="bar turn" style="height:58%"><small>27</small></div>
+    <div class="bar turn" style="height:36%"><small>17</small></div>
+    <div class="bar" style="height:60%"><small>28</small></div>
+    <div class="bar" style="height:85%"><small>39</small></div>
+    <div class="bar" style="height:88%"><small>40</small></div>
+    <div class="bar" style="height:19%"><small>9</small></div>
+    <div class="bar" style="height:13%"><small>6</small></div>
+    <div class="bar" style="height:11%"><small>5</small></div>
+    <div class="bar" style="height:45%"><small>21</small></div>
+    <div class="bar" style="height:30%"><small>14</small></div>
+    <div class="bar" style="height:52%"><small>24</small></div>
+    <div class="bar" style="height:30%"><small>14</small></div>
+    <div class="bar" style="height:28%"><small>13</small></div>
+    <div class="bar" style="height:28%"><small>13</small></div>
+  </div>
+  <div class="dayaxis"><span>8/16</span><span>8/17</span><span>8/18</span><span>8/19</span><span>8/20</span><span>8/21</span><span>8/22</span><span>8/23</span><span>8/24</span><span>8/25</span><span>8/26</span><span>8/27</span><span>8/28</span><span>8/29</span><span>8/30</span><span>8/31</span><span>9/1</span><span>9/2</span><span>9/3</span><span>9/4</span></div>
+  <ul style="margin-top:20px">
+    <li><span class="tag">红=爆发</span><span class="tag">黄=转折</span><span class="tag">青=稳态</span> 提交没有变少，<b>内容变了</b>：功能 → 门禁与治理 → 带着闸门的功能</li>
+  </ul>
+  <div class="note">这页只讲一件事：转折期（8/21-8/23）提交量是低谷，但那是全项目ROI最高的三天。停一停不是慢，是把返工从未来挪到现在。</div>
+</section>
+
+<!-- 6 阶段2 的代价 -->
+<section class="slide">
+  <div class="kicker">01 时间线</div>
+  <h2>阶段 2 的账单：速度的利息</h2>
+  <div class="cols">
+    <div>
+      <ul>
+        <li>notifier 一个包 <b>35 个提交，21 个是 fix</b>——fix 比功能还多</li>
+        <li>SSE 连接泄漏：0.1.8 发出去当天出事，<b>紧急发 0.1.9 并在 README 挂「请弃用 0.1.8」</b>（issue #2）</li>
+        <li>「2 台设备，显示在线 24 个连接」——连接表只增不减（issue #330）</li>
+        <li>子代理完成被误报为任务完成（issue #7）——同源 bug 后来又变了两次姿态</li>
+      </ul>
+    </div>
+    <div>
+      <div class="card"><h3>当时的心态</h3><p>AI 出活太快，一个晚上一个插件就能从 0 到能用。每一次「先发出去再说」，都是在给未来的自己放高利贷。</p></div>
+      <div class="card"><h3>代价清单</h3><p>紧急发版、用户侧升级成本、深夜排查、以及最贵的——对「这个仓里还有多少颗雷」失去把握。</p></div>
+    </div>
+  </div>
+  <div class="note">这页是「为什么要踩刹车」的情绪铺垫。SSE 泄漏是最好的例子：功能完全正常，但资源生命周期是错的——AI 写代码时最容易欠的就是这类账。</div>
+</section>
+
+<!-- 7 转折点 -->
+<section class="slide">
+  <div class="kicker">02 转折点</div>
+  <h2>三个事故，把方向从「更快」掰到「更稳」</h2>
+  <table>
+    <tr><th>事故</th><th>表象</th><th>根因类型</th></tr>
+    <tr><td class="mono">SSE 连接泄漏 #2/#330</td><td>通知重复、连接数虚高、浏览器发热</td><td><b>资源生命周期</b>——功能对，清理错</td></tr>
+    <tr><td class="mono">MCP 自激循环 #324</td><td>切换目录后每 500ms 一次高频自激 GET</td><td><b>反馈环失控</b>——轮询去刷新「轮询状态」</td></tr>
+    <tr><td class="mono">子代理误报 #7→#49→#290</td><td>任务没做完，通知先喊「完成」</td><td><b>边界条件</b>——判据只覆盖了想象中的路径</td></tr>
+  </table>
+  <ul style="margin-top:22px">
+    <li>共同点：三个都不是「AI 写错了语法」，而是<b>「人类 Review 也很难看出来的系统性缺陷」</b></li>
+    <li>结论：Review 环节必须升级——不能再靠眼睛，要靠<b>机器化的验证与度量</b></li>
+  </ul>
+  <div class="note">讲自激循环时可以展开 30 秒：为了刷新 MCP 状态发了一个请求，这个请求又触发了刷新——AI 对「系统里还有谁在动」没有全局图。这就是后面所有工程化投入的动因。</div>
+</section>
+
+<!-- 8 第一性原理 -->
+<section class="slide">
+  <div class="kicker">03 三件武器</div>
+  <h2>第一性原理：瓶颈已经转移</h2>
+  <p class="q" style="margin:28px 0 34px">AI 把「写代码」的成本打下来之后，<br>整个工程的第一瓶颈变成了 <em>验证</em>。</p>
+  <div class="cols">
+    <div>
+      <ul>
+        <li>以前：写慢、验证快（人写代码一周，跑个测试几分钟）</li>
+        <li>现在：写快、验证慢——<b>产出速率被验证速率卡死</b></li>
+        <li>推论：投资回报最高的地方不再是「写得更爽」，而是「验证得更狠」</li>
+        <li class="dim">佐证：20 天里「meta 类」issue（质量/流程/基建）占了 25 个 scope 分组之首</li>
+      </ul>
+    </div>
+    <div>
+      <div class="card"><h3>验证金字塔（本项目实测版）</h3><p><b>① 静态门禁</b>：构建契约 / 类型 / 打包校验<br><b>② 行为门禁</b>：smoke + 单测 + 覆盖率/CRAP<br><b>③ 元验证</b>：变异测试——验证「验证本身」有效<br><b>④ 证据</b>：隔离环境实测 + 截图归档</p></div>
+    </div>
+  </div>
+  <div class="note">这是全场的论点句，后面三件武器分别对应金字塔的四层。可以在白板上画一下：传统「开发→测试」漏斗，现在是「生成→验证」漏斗，漏斗的宽窄颠倒了。</div>
+</section>
+
+<!-- 9 门禁全景 -->
+<section class="slide">
+  <div class="kicker">03 三件武器 · 武器一</div>
+  <h2>武器一：把「合格」变成一台机器</h2>
+  <ul>
+    <li>合并前置门禁，一条命令跑完：<code>pnpm build && pnpm test && pnpm contract && pnpm pack:check && pnpm typecheck</code></li>
+    <li><code>contract</code>：构建产物契约校验——客户端模块形态、路由围栏、patch id 规范，机器说了算</li>
+    <li><code>pack:check</code>：发布物边界校验——内联了哪些第三方库、license 归集是否完整</li>
+    <li>CI 按路径过滤只跑受影响子包（#85）；Windows 加独立构建 runner（#121）</li>
+    <li>docs-only 的 PR 不触发全量门禁——门禁也要省着用，别把人逼成「绕门禁专家」（#432）</li>
+  </ul>
+  <div class="card" style="max-width:52em"><h3>关键认知</h3><p>门禁不是给「坏人」设卡，是给「人和 AI 都会疲劳」这个事实兜底。门禁的反馈速度决定它会被爱还是被绕：全量跑 20 分钟的门禁，一定会催生投机。</p></div>
+  <div class="note">强调两点：契约门禁把「规范」从文档变成代码（AI 最听机器的话）；门禁设计本身有工程量（路径过滤、docs-only 跳过都是踩坑后加的）。</div>
+</section>
+
+<!-- 10 CRAP -->
+<section class="slide">
+  <div class="kicker">03 三件武器 · 武器二</div>
+  <h2>武器二：覆盖率不够，还要 CRAP</h2>
+  <div class="cols">
+    <div>
+      <ul>
+        <li><b>CRAP = 复杂度 × 覆盖率</b>：一段又绕又没测的代码才是真正的雷</li>
+        <li>100% 覆盖率可以靠「只测快乐路径」刷出来；CRAP 刷不了——复杂分支必须逐条喂测试</li>
+        <li>阈值唯一事实源：<code>scripts/data/gauntlet.config.json</code>，CI 卡点</li>
+        <li>首期清零 <b>55 个超阈热点</b>并收紧阈值（#82）</li>
+      </ul>
+    </div>
+    <div>
+      <div class="card"><h3>口径修正：覆盖率也会撒谎（#79）</h3><p>构建期 esbuild 把第三方库<b>内联进产物</b>，c8 连 vendor 一起统计——覆盖率虚高一大截。修正：<b>排除 vendor，单独报告 self-written 覆盖率</b>，夜间硬校验。<br><br>度量指标的第一性问题：<b>你必须知道你在度量什么。</b></p></div>
+    </div>
+  </div>
+  <div class="note">CRAP 这个名字自带喜剧效果，可以用它拉回注意力。核心观点：AI 时代「生成复杂代码」零成本，所以「复杂且没测」的堆积速度是以前的十倍——这个指标恰好专杀这种堆积。</div>
+</section>
+
+<!-- 11 变异测试 -->
+<section class="slide">
+  <div class="kicker">03 三件武器 · 武器三</div>
+  <h2>武器三：变异测试——测「测试的有效性」</h2>
+  <div class="cols">
+    <div>
+      <ul>
+        <li>原理：把代码<b>故意改坏</b>（条件取反、返回值替换…），如果测试还全绿，说明测试是摆设</li>
+        <li>工具：Stryker，只对 self-written 函数开 mutation（#80/#92）</li>
+        <li>它抓住的是<b>「覆盖率 OK 但断言无效」</b>：测试跑了、没真的验证</li>
+        <li class="dim">传统覆盖率的盲区：行执行了 ≠ 行为被断言了</li>
+      </ul>
+    </div>
+    <div>
+      <div class="card"><h3>为什么 AI 时代特别需要</h3><p>AI 写测试很快——<b>写「假测试」也很快</b>：断言宽松、mock 一切、永不失败。变异测试是唯一把「测试质量」本身变成可度量指标的常规武器。</p></div>
+      <div class="card"><h3>本项目形态</h3><p>21 个分段配置（lan-proxy 4 段 / mcp-manager 6 段 / notifier 4 段 / provider-usage 6 段 / wfp 1 段）+ 增量基线缓存（#178）</p></div>
+    </div>
+  </div>
+  <div class="note">先讲原理再讲为什么（30 秒内讲清「杀变异体」这个概念），细节留到故事章节。听众若有 QA 同事，这里是他们最有共鸣的一页。</div>
+</section>
+
+<!-- 12 驯化变异测试 -->
+<section class="slide">
+  <div class="kicker">03 三件武器 · 武器三</div>
+  <h2>驯化一头怪兽：变异测试的提速战</h2>
+  <ul>
+    <li>全量变异测试太慢，直接威胁「门禁反馈速度」——于是打了一场持续一周的提速战：</li>
+    <li><b>#179</b> 耗时优化立项（目标：单段 &lt; 2 分钟）→ <b>#220</b> 按模块拆段 + concurrency 超订 → <b>#342</b> 单段仍超 2 分钟，二次拆段</li>
+    <li><b>#187</b> 事故：一个 re-export 让 lib 行号偏移，21 段配置的 mutate 区间<b>全体漂移</b>，夜间守卫直接判红 → 区间改为<b>从源码自动派生</b>（#276）</li>
+    <li><b>#204</b>：增量基线按 ref 隔离没做好，PR 永远 cache miss、静默降级全量——基建的 bug 最擅长「安静地变慢」</li>
+    <li>最终形态：PR 跑增量分段，夜间全量 + 四班次增量观察（#433），全量构建放北京时间 4 点</li>
+  </ul>
+  <div class="note">这页的落点：引入重型质量工具不是加个配置，是一套「工具自身的工程」。如果听众只记住一句：让慢工具变可用的办法是「分层 + 增量 + 自动化派生」，不是「少跑」。</div>
+</section>
+
+<!-- 13 证据文化 -->
+<section class="slide">
+  <div class="kicker">04 制度化</div>
+  <h2>证据文化：口说无凭，截图为证</h2>
+  <div class="cols">
+    <div>
+      <ul>
+        <li>约定（#51）：插件界面改动，必须<b>隔离环境实测 + 截图归档</b>到 <code>docs/archive/</code>，issue/PR 双向引用</li>
+        <li>CI 截图证据门禁：客户端改动的 PR 缺证据就不算完成（#121）</li>
+        <li>隔离纪律：临时 <code>DSH_HOME</code> + 独立 profile + 独立端口——<b>验证不许污染正在使用的环境</b></li>
+      </ul>
+    </div>
+    <div>
+      <div class="card"><h3>为什么 AI 协作特别需要</h3><p>AI 说「我改好了、看起来没问题」——它没看过浏览器。它的「没问题」是脑补。<br><br>证据约定的本质：<b>把「我相信」变成「我看到」</b>，而看到的那个人必须是独立的复核角色，不是写代码的角色自己。</p></div>
+    </div>
+  </div>
+  <div class="note">举一个真实例子：dsh-verify-isolated 插件就是这套约定催生的工具——验证动作本身被自动化成一键脚本。好约定会自己长出工具。</div>
+</section>
+
+<!-- 14 防 flake -->
+<section class="slide">
+  <div class="kicker">04 制度化</div>
+  <h2>防 flake：测试的可信度比测试的数量重要</h2>
+  <ul>
+    <li><b>#313/#315</b> 系统性整改：固定 <code>sleep</code> 等响应 → 改<b>轮询等待条件成立</b>——「等 500ms」和「等到它发生」是两种世界观</li>
+    <li><b>#181</b> 时间边界 flake：quietHours 配 00:00-23:59，在 23:59 那一分钟跑测试就不覆盖——<b>时间相关测试必须注入时钟</b></li>
+    <li><b>#217</b> 端口竞争：变异测试矩阵并行跑全仓 smoke，端口打架——测试隔离要连端口一起隔离</li>
+    <li><b>#218</b> 测试产物零污染：运行时落盘必须进 <code>mkdtemp</code> 目录，出现 <code>packages/*/undefined/</code> 就是事故</li>
+  </ul>
+  <div class="card" style="max-width:54em"><h3>一条红线的价值</h3><p>flake 测试的危害不是「偶尔红」，是<b>「红着红着大家就学会无视红色」</b>——整个门禁体系从此失效。所以防 flake 不是测试优化，是门禁体系的生存问题。</p></div>
+  <div class="note">可以问听众一个问题：你们 CI 上有没有一个「大家都知道忽略它」的红色按钮？有，说明防 flake 已经欠债了。</div>
+</section>
+
+<!-- 15 AI 协作里的质量角色 -->
+<section class="slide">
+  <div class="kicker">04 制度化</div>
+  <h2>AI 协作流水线里的质量设计（预告 v2）</h2>
+  <div class="timeline">
+    <div class="tl"><i>STEP 1</i><b>方案门</b><span>公共 API / 依赖 / CI / 发版类改动，必须在原 issue 出方案、打 needs-proposal-review，人工批准才许动手</span></div>
+    <div class="tl"><i>STEP 2</i><b>隔离执行</b><span>独立 worktree 写码，主 checkout 永远干净；构建测试全在隔离环境</span></div>
+    <div class="tl"><i>STEP 3</i><b>独立复核</b><span>qa 角色按验收判据判收，重大 PR 再拉一个无先入之见的子 agent 做对抗评审</span></div>
+    <div class="tl"><i>STEP 4</i><b>证据归档</b><span>截图 / 测试输出随 PR 入库，评审遗留项分三桶跟踪，不许「下次再说」</span></div>
+  </div>
+  <ul style="margin-top:20px">
+    <li>权限分离：<code>zone/auto</code> 可自治、<code>zone/red-line</code> 必须人批、<code>approved</code> 标签<b>永不许 AI 代打</b></li>
+    <li class="dim">写代码的 agent 和判断「写得好不好」的 agent 必须分角色——裁判不能是运动员（细节在 v2 展开）</li>
+  </ul>
+  <div class="note">这页 90 秒带过，重点是「质量不是工具，是流程角色设计」。留钩子：如果对这套 loop engine 感兴趣，那是另一场分享。</div>
+</section>
+
+<!-- 16 故事1 三次变形 -->
+<section class="slide">
+  <div class="kicker">05 故事</div>
+  <h2>故事一：同一个 bug 的三次变形</h2>
+  <table>
+    <tr><th style="width:6em">回合</th><th>表象</th><th>修了什么</th></tr>
+    <tr><td class="mono">#7</td><td>子代理完成被误报为「任务完成」</td><td>判定加了 delegationDepth</td></tr>
+    <tr><td class="mono">#49</td><td>fork 型委派仍误报——新路径绕过判据</td><td>origin 判据补 parentSession + 运行时归属</td></tr>
+    <tr><td class="mono">#290</td><td>0.1.13 通知静默丢失——ctx.agents 未注入时直接抛错</td><td>防御注入缺失 + 事件作用域过滤</td></tr>
+  </table>
+  <ul style="margin-top:20px">
+    <li>每次都「修好了」，每次都有下一个变体——<b>修 bug 修的是表象，测试钉住的才是类</b></li>
+    <li>最终靠变异测试把这一类判据钉死：任何改写 isSubagentOf 语义的变异，测试必须能杀死</li>
+    <li class="dim">启示：对 AI 生成的边界判断代码，问「这个判据漏了哪种世界」比问「这样写对吗」有效</li>
+  </ul>
+  <div class="note">讲成侦探故事，节奏放慢。三次变形分别对应：深度判定、来源判定、环境判定——bug 在考验你对整个调用图的理解。</div>
+</section>
+
+<!-- 17 故事2 基建回归 -->
+<section class="slide">
+  <div class="kicker">05 故事</div>
+  <h2>故事二：质量基建自己也会回归</h2>
+  <div class="cols">
+    <div>
+      <ul>
+        <li><b>#187</b>：一个无害的 re-export，让构建产物行号整体偏移 → 21 个变异分段区间全体漂移 → 夜间守卫判红</li>
+        <li>处置：mutate 区间不再手写，改<b>从源码结构自动派生</b>（#276），并建立「区间漂移」的 fail-loud 告警（#235）</li>
+        <li><b>#423</b>：发现 30 个测试副本靠手工双向同步——本身就是 flake 温床 → 改为自动生成/复用</li>
+        <li><b>#437</b>：依赖靠 root hoisting 隐式可用、包内未声明——删一个 root devDep 就断链，而且断得莫名其妙</li>
+      </ul>
+    </div>
+    <div>
+      <div class="card"><h3>元认知</h3><p>你引入的每一个质量工具，<b>自己也是需要被治理的代码</b>：配置会漂移、基线会过期、脚本会腐化。<br><br>工程化的完整体 = 工具 + 工具的防回归 + 工具的可维护性。</p></div>
+    </div>
+  </div>
+  <div class="note">这页适合工程师听众深聊：tsconfig/CI 配置/测试基建是「代码的代码」，它们的回归往往以「静默变慢 / 静默漏检」的形式出现，比功能 bug 更隐蔽。</div>
+</section>
+
+<!-- 18 故事3 没测的端 -->
+<section class="slide">
+  <div class="kicker">05 故事</div>
+  <h2>故事三：你没测的端，就是会炸</h2>
+  <ul>
+    <li><b>#98</b> Windows：<code>execFileSync</code> 调 esbuild 没带 shell，<code>.cmd</code> 解析失败直接 EINVAL——Linux 上永不复现</li>
+    <li><b>#238</b> Windows：toast 脚本缺 UTF-8 BOM（PowerShell 5.1 解析失败）+ <code>-Name=Value</code> 参数绑定不生效——<b>所有 Windows 通知全坏</b>，而 CI 全绿</li>
+    <li><b>#268/#308/#412</b> 手机端：切后台再切回，半开连接挂起、接口卡死、MCP 掉线——桌面开发时永远遇不到</li>
+  </ul>
+  <div class="cols" style="margin-top:14px">
+    <div>
+      <div class="card"><h3>制度回应</h3><p>CI 加 Windows 构建 runner（#121）；多端兼容写进开发规范：<b>三操作系统 × 三访问形态（桌面/平板/手机）× 明暗双主题</b>，客户端 UI 改动按矩阵自测并归档证据。</p></div>
+    </div>
+    <div>
+      <div class="card"><h3>AI 协作的放大效应</h3><p>AI 只了解你给它看的运行环境。你不测的矩阵象限，AI 一样不测——<b>盲区不是被 AI 消灭了，是被 AI 高速复制了</b>。</p></div>
+    </div>
+  </div>
+  <div class="note">toast.ps1 那个案例值得展开 1 分钟：BOM 是给 PowerShell 5.1 认编码用的，参数绑定是 PS 5.1 不支持 -Name=Value 语法——两个坑叠在一起，且只在 Windows 出现。CI 绿 ≠ 可用。</div>
+</section>
+
+<!-- 19 数据复盘 -->
+<section class="slide">
+  <div class="kicker">06 收束</div>
+  <h2>20 天数据复盘：投入花在了哪里</h2>
+  <table>
+    <tr><th>类别</th><th>数字</th><th>说明</th></tr>
+    <tr><td>功能与修复</td><td class="mono">~60%</td><td>8 个插件从 0 到可用并持续迭代</td></tr>
+    <tr><td>质量与门禁</td><td class="mono">~25%</td><td>Gauntlet 体系 + 变异测试 + 防 flake + 证据文化</td></tr>
+    <tr><td>协作与流程</td><td class="mono">~15%</td><td>loop engine、角色规程、CI 调度、文档</td></tr>
+    <tr><td>返工型 fix</td><td class="mono">前高后低</td><td>D2-D5 fix 密度最高，阶段 3 之后显著收敛</td></tr>
+  </table>
+  <ul style="margin-top:18px">
+    <li>14 个发版里，v0.1.8→v0.1.9 是唯一「事故驱动」的紧急版；此后再无紧急发版</li>
+    <li class="dim">tech-debt 从「散落各处」变成<b>批量盘点 + 分桶跟踪</b>（#435-440），说明系统进入了「还债有账本」的稳态</li>
+  </ul>
+  <div class="note">这页回答老板视角的问题：花在质量上的 40% 时间值不值？回答：看紧急发版次数——转折之后再没有过。事故成本永远比预防成本贵。</div>
+</section>
+
+<!-- 20 反思 -->
+<section class="slide">
+  <div class="kicker">06 收束</div>
+  <h2>反思：过度工程化的护栏</h2>
+  <ul>
+    <li>不是所有指标都要立刻卡死——<b>观察期机制</b>：crap 指标先只记录不判红，等基线校准后再纳入完成定义</li>
+    <li>观察期开关曾分散在 6 处靠注释互指（#440）——连「临时方案」都需要单一事实源</li>
+    <li>门禁不是越多越好：docs-only PR 曾被全量门禁误伤（#432）——门禁对「无风险变更」也要让路</li>
+    <li>维护型提交（observe 报告 / 周报）由夜间流水线自动开 PR，不占人工注意力（#433）</li>
+  </ul>
+  <div class="card" style="max-width:52em"><h3>一句话</h3><p>质量工程的成熟标志不是「门禁多严」，而是<b>「每一道闸门都知道自己为什么存在、什么时候让路」</b>。</p></div>
+  <div class="note">这页防止分享变成「门禁原教旨主义」。真实仓库里最容易出问题的恰恰是「临时措施」的堆积——临时开关分散 6 处就是活例子。</div>
+</section>
+
+<!-- 21 方法论总结 -->
+<section class="slide">
+  <div class="kicker">06 收束</div>
+  <h2>AI 时代的质量公式</h2>
+  <p class="q" style="margin:26px 0 30px">生成成本 → 0 之后，<br>竞争力 = <em>验证吞吐量</em> × <em>学习速度</em>。</p>
+  <div class="big">
+    <div class="b"><i>①</i><span>把规范变成机器可执行的契约——AI 听机器的话，不听文档的话</span></div>
+    <div class="b"><i>②</i><span>度量必须诚实——口径错了（如 vendor 混入覆盖率），决策全错</span></div>
+    <div class="b"><i>③</i><span>验证「验证」本身——变异测试专杀假测试</span></div>
+    <div class="b"><i>④</i><span>证据先于结论——截图与实测是 AI 协作世界的硬通货</span></div>
+    <div class="b"><i>⑤</i><span>盲区会被高速复制——测试矩阵要覆盖你没亲历的端</span></div>
+  </div>
+  <div class="note">五个卡片逐条点过去，每条一句话即可，细节前面都讲过。这是全场的「带走清单」。</div>
+</section>
+
+<!-- 22 可复制清单 -->
+<section class="slide">
+  <div class="kicker">06 收束</div>
+  <h2>给团队的五条可复制建议</h2>
+  <ul>
+    <li><b>第一周先立契约再上量</b>：构建/测试/打包三道门禁跑通之前，别让 AI 产能放开跑——否则利息吓人</li>
+    <li><b>覆盖率看口径，CRAP 看热点</b>：先清热点再谈阈值；vendor 与自写代码分开统计</li>
+    <li><b>给重型工具分层</b>：PR 跑增量、夜间跑全量；任何门禁超过 10 分钟必须有增量形态</li>
+    <li><b>证据制度化</b>：UI/行为改动必须有独立环境实测证据，复核角色 ≠ 实现角色</li>
+    <li><b>把 flake 当 P0</b>：出现「可忽略的红」当天修，修不掉就先摘除——门禁的可信度是整座大厦的地基</li>
+  </ul>
+  <div class="note">这页是对公司场景的落地翻译。可以预告：这五条的每一份实施细节（配置、脚本、流程）都在公开仓库里，会后发链接。</div>
+</section>
+
+<!-- 23 结尾 -->
+<section class="slide">
+  <div style="margin:auto 0">
+    <div class="kicker">Q&amp;A</div>
+    <h1 style="font-size:40px">AI 让每个人都能一天写完一个月的代码，<br>但它没有承诺这些代码能活过一个月。</h1>
+    <p class="lead" style="margin-top:18px">质量工程在 AI 时代的唯一变化：从「开发的收尾环节」，变成了「开发的前置条件」。</p>
+    <p class="lead" style="margin-top:28px;color:var(--faint);font-size:16px">数据与案例均来自 github.com/wingsky-1/dsh-plugin-hub（2026-08-16 → 09-04）· issue 编号可现场检索验证</p>
+  </div>
+  <div class="note">收尾金句 + 开放提问。备好可能的问题：变异测试耗时（→21段拆分数据）、CRAP 与圈内争议（→观察期机制）、AI 会不会写假证据（→复核角色分离）。</div>
+</section>
+
+</main>
+<div class="foot"><span>v1 · AI 加速开发之后：质量工程的重新设计</span><span id="pager">1 / 23</span></div>
+<script>
+  const slides=[...document.querySelectorAll('.slide')];
+  let i=0;
+  function show(n){
+    i=Math.max(0,Math.min(slides.length-1,n));
+    slides.forEach((s,k)=>s.classList.toggle('active',k===i));
+    document.getElementById('pager').textContent=(i+1)+' / '+slides.length;
+    document.body.classList.add('showing');
+  }
+  addEventListener('keydown',e=>{
+    if(['ArrowRight','PageDown',' '].includes(e.key)){e.preventDefault();show(i+1)}
+    else if(['ArrowLeft','PageUp'].includes(e.key)){e.preventDefault();show(i-1)}
+    else if(e.key==='Home'){show(0)} else if(e.key==='End'){show(slides.length-1)}
+  });
+  addEventListener('click',e=>{ if(e.clientX>innerWidth*0.7) show(i+1); else if(e.clientX<innerWidth*0.3) show(i-1); });
+  show(0);
+</script>
+</body>
+</html>

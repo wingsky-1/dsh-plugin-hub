@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>v3 · AI 时代个人开源方法论：20 天从 0 到 8 个插件的Playbook — dsh-plugin-hub 复盘</title>
+<style>
+  :root{
+    --bg:#0e1410; --panel:#161d18; --ink:#e9efe9; --dim:#9fb0a2; --faint:#5d6f61;
+    --green:#6fe08c; --amber:#ffb454; --rose:#ff7a90; --blue:#7ab3ff;
+    --mono:'SFMono-Regular',ui-monospace,'Cascadia Code',Consolas,Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--ink);font:16px/1.6 -apple-system,'PingFang SC','Microsoft YaHei','Noto Sans CJK SC',sans-serif;overflow:hidden}
+  .slide{position:absolute;inset:0;display:none;flex-direction:column;padding:56px 84px 64px}
+  .slide.active{display:flex}
+  .kicker{color:var(--green);font-size:14px;letter-spacing:.18em;margin-bottom:14px}
+  h1{font-size:42px;line-height:1.28;margin-bottom:12px;font-weight:700}
+  h2{font-size:31px;line-height:1.3;margin-bottom:22px;font-weight:700}
+  h2 .em{color:var(--green)}
+  p.lead{font-size:20px;color:var(--dim);max-width:60em}
+  ul{list-style:none;margin-top:6px}
+  ul li{font-size:19px;padding:7px 0 7px 26px;position:relative}
+  ul li::before{content:'';position:absolute;left:4px;top:17px;width:8px;height:8px;border-radius:2px;background:var(--green);opacity:.85}
+  li.dim{color:var(--dim);font-size:17px}
+  li b{color:var(--ink)}
+  code{font-family:var(--mono);font-size:.9em;background:#1a231c;border:1px solid #29352b;border-radius:5px;padding:1px 7px;color:#cfe8d4}
+  .cols{display:flex;gap:36px;margin-top:8px}
+  .cols>div{flex:1}
+  .card{background:var(--panel);border:1px solid #25302a;border-radius:12px;padding:18px 22px;margin-top:10px}
+  .card h3{font-size:17px;color:var(--amber);margin-bottom:8px;font-weight:600}
+  .card p{font-size:15.5px;color:var(--dim);line-height:1.55}
+  .num{font-family:var(--mono);color:var(--blue)}
+  .big{display:flex;gap:26px;margin-top:26px;flex-wrap:wrap}
+  .big .b{background:var(--panel);border:1px solid #25302a;border-radius:12px;padding:18px 24px;min-width:150px}
+  .big .b i{display:block;font-style:normal;font-size:36px;font-weight:700;font-family:var(--mono);color:var(--green)}
+  .big .b span{font-size:14px;color:var(--dim)}
+  table{border-collapse:collapse;width:100%;margin-top:10px;font-size:16.5px}
+  th,td{text-align:left;padding:9px 14px;border-bottom:1px solid #27332b}
+  th{color:var(--dim);font-weight:600;font-size:14px}
+  td.mono{font-family:var(--mono);font-size:14.5px;color:#cfe8d4}
+  .steps{counter-reset:st;margin-top:20px}
+  .step{display:flex;gap:18px;padding:13px 0;border-bottom:1px solid #202b23;align-items:flex-start}
+  .step::before{counter-increment:st;content:counter(st);flex:none;width:34px;height:34px;border-radius:50%;background:#1c2a20;border:1px solid #2e4434;color:var(--green);font-family:var(--mono);font-weight:700;display:flex;align-items:center;justify-content:center;font-size:16px}
+  .step b{display:block;font-size:17.5px;margin-bottom:3px}
+  .step span{font-size:14.5px;color:var(--dim);line-height:1.5;display:block}
+  .note{margin-top:auto;padding-top:18px;border-top:1px dashed #25302a;color:var(--faint);font-size:14.5px;max-width:72em}
+  .note::before{content:'讲稿 · ';color:#48584c;letter-spacing:.1em}
+  .q{font-size:29px;line-height:1.55;color:var(--ink);font-weight:600;max-width:32em}
+  .q em{color:var(--amber);font-style:normal}
+  .foot{position:fixed;left:84px;right:84px;bottom:20px;display:none;justify-content:space-between;font-size:13px;color:#48584c;font-family:var(--mono)}
+  body.showing .foot{display:flex}
+  .tag{display:inline-block;font-size:12.5px;font-family:var(--mono);border:1px solid #2a3830;border-radius:999px;padding:2px 12px;color:var(--dim);margin-right:8px}
+  @media print{
+    body{overflow:visible;background:#fff;color:#111}
+    .slide{position:relative;display:flex;page-break-after:always;height:100vh;padding:40px 56px}
+    .note{color:#555;border-color:#ccc}
+    .foot{display:none!important}
+    code{background:#f0f6f0;border-color:#ddd;color:#1a5c2c}
+    .card,.big .b{background:#f6f9f6;border-color:#ddd}
+    .step::before{background:#eef5ee}
+  }
+</style>
+</head>
+<body>
+<main id="deck">
+
+<!-- 1 封面 -->
+<section class="slide">
+  <div style="margin:auto 0">
+    <div class="kicker">内部 AI 分享 · 复盘来自真实仓库 dsh-plugin-hub</div>
+    <h1>AI 时代个人开源方法论<br>20 天，从 0 到 npm 上的 8 个插件</h1>
+    <p class="lead">不是「AI 帮我写了个脚本」的玩具故事，而是一套可以照抄的操作手册：<br><b>一个人，业余时间，怎么用 AI 把一个有真实用户的开源项目做到发版 14 次、CI 五条工作流、变异测试全覆盖。</b></p>
+    <div class="big">
+      <div class="b"><i>20</i><span>天</span></div>
+      <div class="b"><i>392</i><span>commits</span></div>
+      <div class="b"><i>14</i><span>个 npm 版本</span></div>
+      <div class="b"><i>6.1w</i><span>行 TS</span></div>
+    </div>
+  </div>
+  <div class="note">开场表明性质：这是 Playbook 型分享，听完能带走一份可执行的清单。适合想动手做自己的项目、或在公司内部想「用 AI 干点真事」的工程师。</div>
+</section>
+
+<!-- 2 约束即优势 -->
+<section class="slide">
+  <div class="kicker">00 心法</div>
+  <h2>先说约束：为什么「一个人 + 无预算」反而是优势</h2>
+  <ul>
+    <li><b>一个人</b> → 没有沟通损耗，AI 产出的所有上下文都是你的上下文，决策链为零</li>
+    <li><b>业余时间</b> → 逼你把体系做成「异步自治」：你去上班，agent 在跑 issue 队列</li>
+    <li><b>无预算</b> → 依赖成熟开源库是唯一解，正好避开重复造轮子最大的坑</li>
+    <li class="dim">反面真相：约束不是美德，是筛选器——它逼出了 20 天里最重要的三个决策：<b>基建先行、只写胶水、体系自治</b></li>
+  </ul>
+  <div class="card" style="max-width:52em"><h3>本分享的总纲</h3><p><b>基建先行</b>（第一天定生死）→ <b>小步快跑</b>（让门禁追上产能）→ <b>数据驱动治理</b>（让度量说实话）→ <b>生态对齐</b>（跟着上游走，别对抗）</p></div>
+  <div class="note">共鸣点：很多工程师「想做个自己的项目」但觉得没时间。这页论证的恰是：约束条件催生方法论，时间少反而更需要体系化。</div>
+</section>
+
+<!-- 3 全景时间线 -->
+<section class="slide">
+  <div class="kicker">01 全景</div>
+  <h2>20 天都花在哪了</h2>
+  <table>
+    <tr><th style="width:8em">时间</th><th>阶段</th><th>关键产出</th></tr>
+    <tr><td class="mono">D0-D1</td><td>基建</td><td>monorepo 骨架、7 插件迁入、CI/Release 一天搭完、次日 npm 首发</td></tr>
+    <tr><td class="mono">D2-D5</td><td>功能爆发</td><td>插件快速迭代；fix 密度最高（notifier 单包 21 个 fix）</td></tr>
+    <tr><td class="mono">D5-D7</td><td>工程化转折</td><td>依赖现代化 / 质量门禁 / 证据文化 / AI 工作流落地</td></tr>
+    <tr><td class="mono">D8-D12</td><td>质量深水区</td><td>变异测试 21 段接入、防 flake 整改、夜间观察链路</td></tr>
+    <tr><td class="mono">D13-D20</td><td>生态收束</td><td>上游三次适配、i18n、v0.2.0/v0.2.1、tech-debt 批量盘点</td></tr>
+  </table>
+  <ul style="margin-top:16px">
+    <li class="dim">注意节奏：<b>功能爆发只有三天就被踩了刹车</b>——个人项目最常见的死法是永远停在 D5</li>
+  </ul>
+  <div class="note">这页给全片地图，后面按「方法论六步」重新切这些素材，而不是按时间。提醒听众留意：D5 那次刹车是整个故事的枢纽。</div>
+</section>
+
+<!-- 4 步骤1 -->
+<section class="slide">
+  <div class="kicker">02 Playbook</div>
+  <h2>第一步：第一小时决定整个项目的命运</h2>
+  <div class="steps">
+    <div class="step"><b>仓库骨架一次成型</b><span>monorepo（pnpm workspace）+ 聚合包 + CI + tag 触发发版——这些是「第一天 1 小时」vs「第三周 3 天」的区别</span></div>
+    <div class="step"><b>npm 命名当天验证</b><span>scope 必须匹配 npm 账号名（@wingsky → @wingsky-1 的教训），publishConfig 先配好</span></div>
+    <div class="step"><b>让 AI 写「项目宪法」</b><span>AGENTS.md / 开发规范 / 提交规范——写给 AI 看的文档比写给人看的更重要，因为 AI 是唯一全天候读者</span></div>
+    <div class="step"><b>基建即契约</b><span>构建脚本 TS 化、构建产物契约校验、pack:check 发布物边界——第一周就上，别等「项目大了再说」</span></div>
+  </div>
+  <div class="note">金句：个人项目死于「先写功能后补基建」——因为补基建的那天永远不会来。第一天有热情，把最枯燥的事放在热情最高的时候做。</div>
+</section>
+
+<!-- 5 步骤2 -->
+<section class="slide">
+  <div class="kicker">02 Playbook</div>
+  <h2>第二步：让 AI 写得快的秘密——约定先于代码</h2>
+  <div class="cols">
+    <div>
+      <ul>
+        <li>AI 的产出质量 ≈ <b>你给它的约束质量</b>。本仓的实践：</li>
+        <li><code>AGENTS.md</code>：全局规则（中文表达、方案先行、红线、worktree 纪律）</li>
+        <li><code>docs/DEVELOPMENT.md</code>：宿主端/客户端写法、CSS 规范、防 flake 纪律、多端兼容矩阵</li>
+        <li><b>规范写成机器可校验的契约</b>——AI 违反文档不会痛，违反 CI 门禁会痛</li>
+      </ul>
+    </div>
+    <div>
+      <div class="card"><h3>一个反直觉事实</h3><p>这个仓 20 天写了 <b>25 个 docs 提交</b>，docs 类 scope 仅次于 notifier。<br><br>看起来的「文档项目」，实际是把规范写成了<b>给 AI 执行的接口定义</b>。文档不是给人看的仪式感，是产能的放大器。</p></div>
+    </div>
+  </div>
+  <div class="note">给听众的可操作建议：每次 AI 犯同样的错两次，就把这个错写成规范条款或门禁——规范是事故的沉淀物，不是预先的想象力。</div>
+</section>
+
+<!-- 6 步骤3 -->
+<section class="slide">
+  <div class="kicker">02 Playbook</div>
+  <h2>第三步：依赖现代化——不自写是硬纪律</h2>
+  <ul>
+    <li>触发：意识到自己在重造轮子后，一次性立项（#8/#47），把自写实现全部替换：</li>
+  </ul>
+  <table>
+    <tr><th>自写实现</th><th>替换为</th><th>结果</th></tr>
+    <tr><td>自写 HTTP/WS 转发</td><td class="mono">http-proxy</td><td>边界场景（TLS/WS 升级）全部白得</td></tr>
+    <tr><td>openssl 子进程自签证书</td><td class="mono">selfsigned</td><td>跨平台、零子进程开销</td></tr>
+    <tr><td>自写 MCP 协议+传输层</td><td class="mono">@modelcontextprotocol/sdk</td><td>协议演进跟上游走</td></tr>
+    <tr><td>自写 MIME 表</td><td class="mono">mime</td><td>边界类型全覆盖</td></tr>
+  </table>
+  <ul style="margin-top:14px">
+    <li>合规配套：内联 = 分发副本 → 构建链自动归集 license 到 <code>THIRD-PARTY-LICENSES</code>，<code>pack:check</code> 门禁断言</li>
+    <li class="dim">AI 时代新特点：AI 「能写出来」不等于「该写」——能写恰恰让重复造轮子的诱惑变大十倍</li>
+  </ul>
+  <div class="note">选型标准顺口说：活跃维护、低依赖、与模块系统/运行平台兼容、不进错端（Node API 库不打进浏览器 bundle）。license 归集是开源发布的合规底线。</div>
+</section>
+
+<!-- 7 步骤4 -->
+<section class="slide">
+  <div class="kicker">02 Playbook</div>
+  <h2>第四步：质量闸门——CI 全绿才可合，没有例外</h2>
+  <ul>
+    <li>合并前置五连：<code>build && test && contract && pack:check && typecheck</code>，再加 <code>cov + crap</code> 质量度量</li>
+    <li>每个功能必须带 smoke 断言（含路由 403/405 围栏、client 契约）——<b>「没测试的功能」在这个仓不存在</b></li>
+    <li>覆盖率要看口径：排除 esbuild 内联 vendor，只统计 self-written（#79）；CRAP 卡复杂度×覆盖率热点</li>
+    <li>变异测试（Stryker）专杀「假测试」：AI 写测试很快，写永不失败的测试更快</li>
+    <li class="dim">成本控制：PR 按路径过滤只跑受影响子包（#85），重型检查放夜间（#433）</li>
+  </ul>
+  <div class="card" style="max-width:52em"><h3>给个人项目的忠告</h3><p>个人项目最容易省略的就是测试。但 AI 协作下反过来：<b>产量越大，越付不起「信任 AI 但不验证」的成本</b>。门禁不是负担，是让你敢点合并的底气。</p></div>
+  <div class="note">这页不展开质量细节（那是 v1 的主题），只立「门禁不可省」的论点，给出最简起步版：test + typecheck + build 三连就能挡掉大半事故。</div>
+</section>
+
+<!-- 8 步骤5 -->
+<section class="slide">
+  <div class="kicker">02 Playbook</div>
+  <h2>第五步：AI 工作流——让 agent 自治，让人守闸门</h2>
+  <div class="steps">
+    <div class="step"><b>issue 驱动</b><span>任务只来自 issue；agent 认领 → 独立 worktree → 实现 → PR，主 checkout 永远干净</span></div>
+    <div class="step"><b>方案门</b><span>API/依赖/CI/发版类改动先出方案评论、人工批准再动手——「先讨论再动手」不是美德，是成本控制</span></div>
+    <div class="step"><b>授权分级</b><span>zone/auto 自治 + zone/red-line 人批 + approved 永不代打——权限跟着风险走</span></div>
+    <div class="step"><b>独立复核</b><span>qa 角色按验收判据判收；重要方案拉无上下文的子 agent 做对抗性评审</span></div>
+  </div>
+  <div class="note">这是 v2 的浓缩版。个人开发者最需要的两条：worktree 隔离（本地环境稳定压倒一切）和方案门（最贵的错误都是方向性错误）。</div>
+</section>
+
+<!-- 9 步骤6 -->
+<section class="slide">
+  <div class="kicker">02 Playbook</div>
+  <h2>第六步：验证文化——隔离实测 + 证据归档</h2>
+  <ul>
+    <li>约定（#51）：界面改动必须<b>隔离环境实测 + 截图归档 docs/archive/</b> + issue/PR 双向引用</li>
+    <li>隔离怎么做：临时 <code>DSH_HOME</code> + 独立 profile + 独立端口 + 自动清理——不污染正在使用的环境</li>
+    <li>后来长出了专用工具（verify-isolated 插件）：一键脚本自动构建/挂载/启动/验证/清理——<b>好约定会自己长出工具</b></li>
+    <li class="dim">AI 的「我改好了」是脑补。证据文化的本质：把「我相信」变成「我看到」</li>
+  </ul>
+  <div class="card" style="max-width:52em"><h3>为什么个人项目更需要</h3><p>没有 QA、没有同事帮你把关。AI 说改好了、CI 是绿的、但你没亲眼看过——<b>这三件事都不等于「能用」</b>。截图归档是最便宜的「亲眼看过」。</p></div>
+  <div class="note">听众可以立刻抄的做法：今天就给自己的 UI 项目立一条规矩——改界面的 PR 必须贴运行截图，缺了不合。一周就能感受到效果。</div>
+</section>
+
+<!-- 10 踩坑集1 -->
+<section class="slide">
+  <div class="kicker">03 踩坑集</div>
+  <h2>踩坑集一：发布与平台的坑</h2>
+  <table>
+    <tr><th>坑</th><th>细节</th><th>带走什么</th></tr>
+    <tr><td>npm scope</td><td>scope 必须匹配账号名，发布当天才发现</td><td>发布配置第一天就真发一次验证</td></tr>
+    <tr><td>Windows 构建</td><td><code>execFileSync</code> 调 esbuild 的 <code>.cmd</code> 没带 shell → EINVAL（#98）</td><td>CI 加 Windows runner（#121）</td></tr>
+    <tr><td>PowerShell 5.1</td><td>脚本缺 UTF-8 BOM 解析失败 + <code>-Name=Value</code> 不绑定（#238）</td><td>别假设「PowerShell 就是一种 PowerShell」</td></tr>
+    <tr><td>时间边界</td><td>quietHours 00:00-23:59 在 23:59 那分钟不覆盖（#181）</td><td>时间相关测试注入时钟</td></tr>
+    <tr><td>端口竞争</td><td>并行 smoke 端口打架（#217）</td><td>测试隔离要连端口一起隔离</td></tr>
+  </table>
+  <div class="note">这页节奏快、密度高，每个坑 20 秒。听众自己做过跨平台发布的会疯狂点头。文案：这些坑每一个都真实烧掉了我的晚上。</div>
+</section>
+
+<!-- 11 踩坑集2 -->
+<section class="slide">
+  <div class="kicker">03 踩坑集</div>
+  <h2>踩坑集二：AI 特有的坑</h2>
+  <table>
+    <tr><th>坑</th><th>案例</th><th>制度回应</th></tr>
+    <tr><td>静默断链</td><td>依赖靠 root hoisting 隐式可用，包内不声明（#437）</td><td>显式声明门禁</td></tr>
+    <tr><td>口径漂移</td><td>同一配置三处口径互相矛盾（#438）</td><td>单一事实源</td></tr>
+    <tr><td>重复造轮子</td><td>自写 HTTP 代理/证书/MIME/MCP 协议层</td><td>立项前强制开源库调研（#8）</td></tr>
+    <tr><td>脑补完成</td><td>声称 UI 改好但没打开过浏览器</td><td>截图证据门禁（#51/#121）</td></tr>
+    <tr><td>假测试</td><td>断言宽松、mock 一切、永不失败的测试</td><td>变异测试（#80）</td></tr>
+    <tr><td>基建腐化</td><td>21 段变异配置手写区间漂移（#187）</td><td>区间自动派生（#276）</td></tr>
+  </table>
+  <div class="note">AI 特有坑的共同根源：AI 只知道你给它的文本世界，文本与现实脱节它不知道。制度回应的本质都是「把现实拉回循环」。</div>
+</section>
+
+<!-- 12 踩坑集3 上游 -->
+<section class="slide">
+  <div class="kicker">03 踩坑集</div>
+  <h2>踩坑集三：跟上游相处的锚定策略</h2>
+  <ul>
+    <li>本项目寄生在上游 dsh 的扩展点上——上游三次发版（alpha.1 / alpha.4 / rc.1）各有破坏性变更</li>
+    <li><b>锚定声明</b>：每个插件版本显式声明适配的上游版本，peer 锁版，npm 在不匹配时给出提示</li>
+    <li><b>升级前比对</b>：对官方类型层包做编译产物 diff，摸清「导出面不变但行为变了」的暗改（generation 超时策略变化）</li>
+    <li><b>绝改宿主源码</b>：只走官方挂载机制——对抗式修改一时爽，上游更新火葬场</li>
+    <li class="dim">v0.2.0 顺带退役了 2 个插件（npm 标 deprecated + 发布移除指南）——<b>敢于退役也是生态纪律</b></li>
+  </ul>
+  <div class="note">适用面广：公司内部做框架/平台的下游团队同理。核心动作三件：锚定声明、升级前产物比对、绝不 fork 修改。</div>
+</section>
+
+<!-- 13 发布纪律 -->
+<section class="slide">
+  <div class="kicker">03 踩坑集</div>
+  <h2>发布纪律：把发版变成一个 tag 的事</h2>
+  <ul>
+    <li>推 <code>vX.Y.Z</code> tag 触发：管线校验全包版本 == tag → 全量门禁 → publish → GitHub Release</li>
+    <li>版本号由 tag 唯一驱动，<b>禁止手改 package.json 绕过校验</b>——发版没有人为旁路</li>
+    <li>Release notes 每版入库（中英分节 + 双锚点跳转导航，踩过 GitHub sanitizer 改写锚点的坑）</li>
+    <li>升级指南随版发布：先升什么后升什么、重启要求、废弃插件移除命令——<b>用户成功 = 你的成功</b></li>
+    <li class="dim">20 天 14 个版本，唯一一次紧急发版是 SSE 泄漏（v0.1.9）；此后纪律生效，零紧急版</li>
+  </ul>
+  <div class="note">双锚点那个坑值得一句话：GitHub 会把 HTML id 改写成 user-content- 前缀，第三方渲染器又不认——所以每个锚点写两份。小坑，但说明发版文档也要较真。</div>
+</section>
+
+<!-- 14 成本核算 -->
+<section class="slide">
+  <div class="kicker">04 复盘</div>
+  <h2>成本核算：这 20 天到底投入了多少「人时」</h2>
+  <div class="big">
+    <div class="b"><i>~1-2h</i><span>人日均投入（碎片化：审方案/批红线/复盘）</span></div>
+    <div class="b"><i>~95%</i><span>代码由 agent 产出</span></div>
+    <div class="b"><i>40%</i><span>commits 属质量/流程/文档（非功能）</span></div>
+    <div class="b"><i>0</i><span>转折期之后的紧急发版</span></div>
+  </div>
+  <ul style="margin-top:22px">
+    <li>结论一：AI 把「写」的成本打到接近零后，<b>人的时间全部转移到了「决定什么是对的」</b></li>
+    <li>结论二：40% 非功能投入不是浪费——它换来的是「敢在用户面前保持每天发版」的信心</li>
+    <li class="dim">诚实的代价清单：token 消耗（复核与评审是大头）、体系搭建期的学习成本、偶尔的深夜事故排查</li>
+  </ul>
+  <div class="note">老板视角页。回答「这事值不值」：用 1-2h/天产出一个持续发版的开源插件集——这个投入产出比在 AI 之前的时代不存在。</div>
+</section>
+
+<!-- 15 数据复盘 -->
+<section class="slide">
+  <div class="kicker">04 复盘</div>
+  <h2>数据复盘：三个可以引用的结论</h2>
+  <table>
+    <tr><th>结论</th><th>证据</th></tr>
+    <tr><td><b>爆发必须立刻跟进闸门</b></td><td>D2-D5 fix 密度最高（notifier 21 fix）；D5-D7 停下建门禁后，紧急发版再未出现</td></tr>
+    <tr><td><b>度量决定决策质量</b></td><td>覆盖率口径修正（#79）前后，对「哪里最危险」的判断完全不同——先修度量再谈优化</td></tr>
+    <tr><td><b>体系本身要可持续</b></td><td>tech-debt 批量盘点（#435-440）+ 观察期机制 + 夜间自动报告——治理不能靠心血来潮</td></tr>
+  </table>
+  <ul style="margin-top:16px">
+    <li class="dim">所有结论可复现：仓库公开，issue 编号、提交记录、发版历史全部可查</li>
+  </ul>
+  <div class="note">这页是给「回去要写汇报」的听众准备的：三个结论每个都有数据背书，可以直接引用。</div>
+</section>
+
+<!-- 16 迁移公司 -->
+<section class="slide">
+  <div class="kicker">05 迁移</div>
+  <h2>从个人仓到公司团队：什么能搬，什么要改</h2>
+  <div class="cols">
+    <div>
+      <div class="card"><h3>直接搬走</h3><p>· 规范→契约化（门禁代替文档约定）<br>· 依赖现代化纪律（先调研开源库）<br>· 证据文化（UI 改动贴实测截图）<br>· 发布管线（tag 驱动、无人工旁路）<br>· 防三连：口径单一事实源 / 显式声明 / 变异测试</p></div>
+    </div>
+    <div>
+      <div class="card"><h3>要改造</h3><p>· 自治循环：公司场景先从「辅助人」起步（AI 出 PR 人合并），权限逐级放开<br>· 发版自由度：受公司发布窗口约束，管线对齐内部流程<br>· 数据边界：内部代码不进外部 agent 平台，先过合规</p></div>
+    </div>
+  </div>
+  <ul style="margin-top:12px">
+    <li><b>推荐试点</b>：测试加固 / 依赖升级 / 文档同步——判据清晰、可回滚、验证可自动化</li>
+  </ul>
+  <div class="note">落地路径页，回答「我回去怎么开始」。强调顺序：先搬「直接搬走」列，一个月后复盘，再考虑第二列。</div>
+</section>
+
+<!-- 17 结尾 -->
+<section class="slide">
+  <div style="margin:auto 0">
+    <div class="kicker">Q&amp;A</div>
+    <h1 style="font-size:38px">个人开源的门槛，<br>从来没有低到过今天这个程度。</h1>
+    <p class="lead" style="margin-top:18px">但「能做出」和「做得成」之间的那段距离，<br>仍然要靠第一天搭的基建、第五天的刹车、和每一个说真话的度量指标来填。</p>
+    <p class="lead" style="margin-top:26px;color:var(--faint);font-size:16px">完整 Playbook 素材：github.com/wingsky-1/dsh-plugin-hub（AGENTS.md / docs/DEVELOPMENT.md / 全部 issue 链路公开）</p>
+  </div>
+  <div class="note">备问：用什么 agent 工具（方法论工具无关）；token 成本（复核大头，可选档位）；为何敢公开全部过程（审计链本身就是项目信誉）。</div>
+</section>
+
+</main>
+<div class="foot"><span>v3 · AI 时代个人开源方法论</span><span id="pager">1 / 17</span></div>
+<script>
+  const slides=[...document.querySelectorAll('.slide')];
+  let i=0;
+  function show(n){
+    i=Math.max(0,Math.min(slides.length-1,n));
+    slides.forEach((s,k)=>s.classList.toggle('active',k===i));
+    document.getElementById('pager').textContent=(i+1)+' / '+slides.length;
+    document.body.classList.add('showing');
+  }
+  addEventListener('keydown',e=>{
+    if(['ArrowRight','PageDown',' '].includes(e.key)){e.preventDefault();show(i+1)}
+    else if(['ArrowLeft','PageUp'].includes(e.key)){e.preventDefault();show(i-1)}
+    else if(e.key==='Home'){show(0)} else if(e.key==='End'){show(slides.length-1)}
+  });
+  addEventListener('click',e=>{ if(e.clientX>innerWidth*0.7) show(i+1); else if(e.clientX<innerWidth*0.3) show(i-1); });
+  show(0);
+</script>
+</body>
+</html>

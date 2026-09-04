@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>v2 · 一人 + Agent 团队：20 天开源仓的 AI 协作体系 — dsh-plugin-hub 复盘</title>
+<style>
+  :root{
+    --bg:#101014; --panel:#191922; --ink:#eaeaf0; --dim:#a0a3b2; --faint:#5e6270;
+    --violet:#a78bfa; --amber:#ffb454; --rose:#ff7a90; --blue:#7ab3ff; --green:#5ad6a0;
+    --mono:'SFMono-Regular',ui-monospace,'Cascadia Code',Consolas,Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--ink);font:16px/1.6 -apple-system,'PingFang SC','Microsoft YaHei','Noto Sans CJK SC',sans-serif;overflow:hidden}
+  .slide{position:absolute;inset:0;display:none;flex-direction:column;padding:56px 84px 64px}
+  .slide.active{display:flex}
+  .kicker{color:var(--violet);font-size:14px;letter-spacing:.18em;margin-bottom:14px}
+  h1{font-size:42px;line-height:1.28;margin-bottom:12px;font-weight:700}
+  h2{font-size:31px;line-height:1.3;margin-bottom:22px;font-weight:700}
+  h2 .em{color:var(--violet)}
+  p.lead{font-size:20px;color:var(--dim);max-width:60em}
+  ul{list-style:none;margin-top:6px}
+  ul li{font-size:19px;padding:7px 0 7px 26px;position:relative}
+  ul li::before{content:'';position:absolute;left:4px;top:17px;width:8px;height:8px;border-radius:2px;background:var(--violet);opacity:.85}
+  li.dim{color:var(--dim);font-size:17px}
+  li b{color:var(--ink)}
+  code{font-family:var(--mono);font-size:.9em;background:#20202b;border:1px solid #2d2d3a;border-radius:5px;padding:1px 7px;color:#d8ccff}
+  .cols{display:flex;gap:36px;margin-top:8px}
+  .cols>div{flex:1}
+  .card{background:var(--panel);border:1px solid #282838;border-radius:12px;padding:18px 22px;margin-top:10px}
+  .card h3{font-size:17px;color:var(--amber);margin-bottom:8px;font-weight:600}
+  .card p{font-size:15.5px;color:var(--dim);line-height:1.55}
+  .num{font-family:var(--mono);color:var(--blue)}
+  .big{display:flex;gap:26px;margin-top:26px;flex-wrap:wrap}
+  .big .b{background:var(--panel);border:1px solid #282838;border-radius:12px;padding:18px 24px;min-width:150px}
+  .big .b i{display:block;font-style:normal;font-size:36px;font-weight:700;font-family:var(--mono);color:var(--violet)}
+  .big .b span{font-size:14px;color:var(--dim)}
+  table{border-collapse:collapse;width:100%;margin-top:10px;font-size:16.5px}
+  th,td{text-align:left;padding:9px 14px;border-bottom:1px solid #2a2a38}
+  th{color:var(--dim);font-weight:600;font-size:14px}
+  td.mono{font-family:var(--mono);font-size:14.5px;color:#d8ccff}
+  .flow{display:flex;gap:8px;margin-top:24px;align-items:stretch}
+  .flow .st{flex:1;background:var(--panel);border:1px solid #282838;border-radius:10px;padding:13px 12px;position:relative}
+  .flow .st::after{content:'→';position:absolute;right:-14px;top:42%;color:var(--faint);font-size:18px;z-index:2}
+  .flow .st:last-child::after{content:''}
+  .flow .st i{display:block;font-style:normal;color:var(--violet);font-size:12.5px;font-family:var(--mono);margin-bottom:5px}
+  .flow .st b{display:block;font-size:15.5px;margin-bottom:4px}
+  .flow .st span{font-size:12.5px;color:var(--dim);line-height:1.45;display:block}
+  .org{display:flex;flex-direction:column;align-items:center;margin-top:18px}
+  .org .lvl{display:flex;gap:16px;justify-content:center}
+  .org .box{background:var(--panel);border:1px solid #2d2d40;border-radius:10px;padding:12px 18px;text-align:center;min-width:130px}
+  .org .box b{display:block;font-size:15.5px}
+  .org .box span{font-size:12.5px;color:var(--dim)}
+  .org .box.me{border-color:var(--violet);box-shadow:0 0 24px rgba(167,139,250,.15)}
+  .org .arr{color:var(--faint);font-size:20px;padding:6px 0}
+  .tag{display:inline-block;font-size:12.5px;font-family:var(--mono);border:1px solid #2d2d3a;border-radius:999px;padding:2px 12px;color:var(--dim);margin:0 8px 8px 0}
+  .tag.hi{color:var(--green);border-color:#2c4a3c}
+  .tag.risk{color:var(--rose);border-color:#4a2c34}
+  .tag.warn{color:var(--amber);border-color:#4a3c22}
+  .note{margin-top:auto;padding-top:18px;border-top:1px dashed #2a2a38;color:var(--faint);font-size:14.5px;max-width:72em}
+  .note::before{content:'讲稿 · ';color:#454852;letter-spacing:.1em}
+  .q{font-size:29px;line-height:1.55;color:var(--ink);font-weight:600;max-width:32em}
+  .q em{color:var(--amber);font-style:normal}
+  .foot{position:fixed;left:84px;right:84px;bottom:20px;display:none;justify-content:space-between;font-size:13px;color:#454852;font-family:var(--mono)}
+  body.showing .foot{display:flex}
+  @media print{
+    body{overflow:visible;background:#fff;color:#111}
+    .slide{position:relative;display:flex;page-break-after:always;height:100vh;padding:40px 56px}
+    .note{color:#555;border-color:#ccc}
+    .foot{display:none!important}
+    code{background:#f2f0fa;border-color:#ddd;color:#4a3591}
+    .card,.big .b,.flow .st,.org .box{background:#f7f6fb;border-color:#ddd}
+  }
+</style>
+</head>
+<body>
+<main id="deck">
+
+<!-- 1 封面 -->
+<section class="slide">
+  <div style="margin:auto 0">
+    <div class="kicker">内部 AI 分享 · 复盘来自真实仓库 dsh-plugin-hub</div>
+    <h1>一人 + Agent 团队<br>20 天开源仓的 AI 协作体系</h1>
+    <p class="lead">你有一个 7×24 待命、写码飞快、从不上诉的团队——但它没读过你们公司的隐性规范、会对着错误的方向自信狂奔、而且离职（崩溃）不需要通知。<br><b>这次分享讲的是我怎么「管」它：组织设计、权限体系、流程状态机，和踩过的坑。</b></p>
+    <div class="big">
+      <div class="b"><i>287</i><span>PR（绝大多数由 agent 完成）</span></div>
+      <div class="b"><i>5</i><span>类 agent 角色 + judge</span></div>
+      <div class="b"><i>3</i><span>代工作流演进</span></div>
+      <div class="b"><i>7</i><span>项主控复盘改进（一轮）</span></div>
+    </div>
+  </div>
+  <div class="note">开场定位：这不是「AI 帮我写代码」的分享，是「AI 团队的组织行为学」。听众预期管理：今天不聊 prompt 技巧，聊管理体系。</div>
+</section>
+
+<!-- 2 背景 -->
+<section class="slide">
+  <div class="kicker">背景</div>
+  <h2>复盘对象与 20 天总账</h2>
+  <ul>
+    <li>dsh-plugin-hub：DSH Web GUI 插件集（8 个插件 + 聚合包），npm 公开发布，6.1 万行 TS</li>
+    <li>20 天：392 commits / 287 PR / 221 issues / 14 个发版（v0.1.0 → v0.2.1）</li>
+    <li>人的角色：<b>提需求、定方向、审方案、批红线</b>——20 天里我没有直接写过一行仓库里的代码</li>
+    <li class="dim">AI 的角色：规格起草、编码、测试加固、代码清理、QA 验收、维护编排——全链路</li>
+  </ul>
+  <div class="card" style="max-width:52em"><h3>为什么这个案例值得看</h3><p>它不是 demo 项目：有真实用户、公开 npm、事故会真实发生（SSE 泄漏当天紧急发版）。<b>管理体系的好坏会被市场直接打分</b>——这是检验 AI 协作方法论最诚实的环境。</p></div>
+  <div class="note">强调「人没写代码」这个事实，制造第一波张力。但立刻补一句：人做的事变难了，不是变少了——为全场定调。</div>
+</section>
+
+<!-- 3 为什么不是随便写 -->
+<section class="slide">
+  <div class="kicker">01 体系设计的出发点</div>
+  <h2>为什么不是「让 AI 随便写」</h2>
+  <div class="cols">
+    <div>
+      <ul>
+        <li>AI 写码的三大天性：<b>过度自信</b>（说改好了但没验证）、<b>上下文短视</b>（不知道系统里还有谁）、<b>服从表象</b>（规范写在文档里约等于不存在）</li>
+        <li>无管理的结果在第一天就见过：功能能跑、生命周期泄漏、Windows 全炸</li>
+        <li>结论：把 AI 当<b>高产能初级工程师团队</b>来管理——而管理初级团队靠的不是信任，是<b>流程 + 权限 + 验收</b></li>
+      </ul>
+    </div>
+    <div>
+      <div class="card"><h3>体系设计的三个公理</h3><p><b>① 不信任单点输出</b>：任何 agent 的产出都要有独立检查<br><b>② 权限跟着风险走</b>：低风险自动放行，高风险人批<br><b>③ 一切凭据留痕</b>：状态、证据、决策全部写进 issue，不靠会话记忆</p></div>
+    </div>
+  </div>
+  <div class="note">这页给出全场理论框架。用公司场景类比：你会让一个实习生直接往 main 推代码、直接发版吗？不会——那为什么对 AI 会？</div>
+</section>
+
+<!-- 4 组织架构 -->
+<section class="slide">
+  <div class="kicker">02 组织设计</div>
+  <h2>组织架构：主控 — 编排层 — 角色层</h2>
+  <div class="org">
+    <div class="lvl"><div class="box me"><b>主控（人）</b><span>方向 / 方案批准 / 红线 / 追认</span></div></div>
+    <div class="arr">↓ 授权 &amp; 放行</div>
+    <div class="lvl"><div class="box"><b>oss-pipeline</b><span>loop engine 主循环 + 计划门</span></div><div class="box"><b>oss-triage / steering</b><span>批量编排 / PR 评论转向</span></div><div class="box"><b>oss-report</b><span>健康巡检 / 回顾汇总</span></div></div>
+    <div class="arr">↓ 按角色派发</div>
+    <div class="lvl">
+      <div class="box"><b>spec-writer</b><span>issue → 规格</span></div>
+      <div class="box"><b>coder</b><span>实现 + 测试</span></div>
+      <div class="box"><b>cleaner</b><span>清理 / 复用收敛</span></div>
+      <div class="box"><b>hardener</b><span>加固 / 边界</span></div>
+      <div class="box"><b>qa（兼 judge）</b><span>按判据验收</span></div>
+    </div>
+  </div>
+  <ul style="margin-top:18px">
+    <li>每个角色一张「岗位说明书」（<code>agents/*.md</code> + 公共协议 <code>_protocol.md</code>）：<b>职责边界、输入输出、禁止事项</b></li>
+    <li class="dim">关键设计：角色间不共享对话记忆，交接全靠仓库内的书面凭据（issue / PR / 规格）</li>
+  </ul>
+  <div class="note">对照公司组织：主控=技术负责人，编排层=PMO/流水线，角色层=职能团队。指出最大差异：agent 角色切换零成本，所以「分角色」几乎免费——这是 AI 组织独有的红利。</div>
+</section>
+
+<!-- 5 角色规程 -->
+<section class="slide">
+  <div class="kicker">02 组织设计</div>
+  <h2>岗位说明书长什么样</h2>
+  <table>
+    <tr><th>角色</th><th>职责</th><th>关键约束</th></tr>
+    <tr><td class="mono">spec-writer</td><td>把 issue 转成可执行规格</td><td>只写规格不写码；规格含验收判据</td></tr>
+    <tr><td class="mono">coder</td><td>按规格实现 + smoke 断言</td><td>禁越权改公共 API / 依赖</td></tr>
+    <tr><td class="mono">cleaner</td><td>去重 / 死代码 / 收敛 shared</td><td>禁改行为——只许等价重构</td></tr>
+    <tr><td class="mono">hardener</td><td>边界 / 错误路径 / 安全加固</td><td>禁顺手加功能</td></tr>
+    <tr><td class="mono">qa（兼 judge）</td><td>按规格判据独立验收</td><td>与实现角色隔离；判据不含糊</td></tr>
+  </table>
+  <ul style="margin-top:16px">
+    <li>公共协议约定：遇阻塞<b>不绕路</b>，把阻塞原因写进返回值由主控升级——禁止 agent 自行「创造性解决」越权问题</li>
+    <li class="dim">效果类比：初级工程师最危险的不是不会，是「顺手把问题绕过去」——协议把它堵死</li>
+  </ul>
+  <div class="note">讲一个真实细节：cleaner「禁改行为」这类负面约束比正面描述更重要——agent 的越权行为几乎都发生在「好心办坏事」：重构时顺手优化、修 bug 时顺手加功能。</div>
+</section>
+
+<!-- 6 工作流状态机 -->
+<section class="slide">
+  <div class="kicker">03 流程</div>
+  <h2>工作流：issue 驱动的状态机</h2>
+  <div class="flow">
+    <div class="st"><i>CLAIM</i><b>认领</b><span>从 zone/auto 队列取 issue</span></div>
+    <div class="st"><i>WORKTREE</i><b>隔离</b><span>独立 worktree，主 checkout 永远干净</span></div>
+    <div class="st"><i>SPEC</i><b>规格</b><span>spec-writer 产出规格 + 判据</span></div>
+    <div class="st"><i>IMPL</i><b>实现</b><span>coder + smoke 断言</span></div>
+    <div class="st"><i>QA</i><b>复核</b><span>qa 按判据验收 + 计圈收敛</span></div>
+    <div class="st"><i>MERGE</i><b>合并</b><span>门禁全绿 → auto-merge → 清理</span></div>
+  </div>
+  <ul style="margin-top:22px">
+    <li><b>计圈收敛环</b>：qa 打回算一圈，同 issue 超过设定圈数自动升级给主控——防止 agent 在死循环里空转烧钱</li>
+    <li><b>转向检查</b>：每轮循环检查 maintainer 在 PR/issue 里的新评论，有人话就先听人话</li>
+    <li>细粒度状态走 issue 内格式化状态行（<code>[loop] ts=…</code>），粗粒度走标签——<b>会话会死，issue 永存</b></li>
+  </ul>
+  <div class="note">重点讲计圈机制：它回答「AI 失控时怎么发现」——不是靠人盯，是让流程自己暴露异常（圈数是噪音指标）。转向检查则是人机之间的免打断通道。</div>
+</section>
+
+<!-- 7 权限体系 -->
+<section class="slide">
+  <div class="kicker">03 流程</div>
+  <h2>授权标签体系：AI 的权限带宽</h2>
+  <p style="margin-bottom:10px">
+    <span class="tag hi">zone/auto</span><span class="tag hi">approved</span><span class="tag hi">api-approved</span>
+    <span class="tag warn">pending-ratification</span>
+    <span class="tag risk">zone/red-line</span><span class="tag risk">blocked-human</span><span class="tag risk">needs-proposal-review</span>
+  </p>
+  <ul>
+    <li><code>zone/auto</code>：AI 可全流程自治（修 bug、内部重构、测试加固）——但门禁一个不减</li>
+    <li><code>zone/red-line</code>：公共 API 行为变更、新依赖、CI/workflow、发版——<b>必须在原 issue 出方案，人工 approved 后才许动手</b></li>
+    <li><code>priority/critical</code> 紧急通道：跳决策直进实施，<b>门禁不减</b>，合并后 24 小时内人工追认</li>
+    <li>铁律：「按此执行」只授权 AI 代打 zone 标签；<b><code>approved</code> / <code>api-approved</code> 永不代打</b></li>
+  </ul>
+  <div class="card" style="max-width:54em"><h3>设计原则</h3><p>不是「AI 能不能做」的问题，是「AI 做了之后谁能追责」的问题。标签体系就是<b>审计日志 + 权限模型</b>的合体：每个标签谁打的、什么时候打的，仓库里可查。</p></div>
+  <div class="note">用公司治理类比：zone/auto=授权审批额度内自主，red-line=上会。强调「永不代打」——这是防止权限提升攻击（AI 自己打 approved 然后自己合并）的关键一环。</div>
+</section>
+
+<!-- 8 方案门 -->
+<section class="slide">
+  <div class="kicker">03 流程</div>
+  <h2>方案门：把「先讨论再动手」制度化</h2>
+  <div class="cols">
+    <div>
+      <ul>
+        <li>高风险改动动手前，agent 必须先在<b>原 issue 内起草方案评论</b>，打 <code>needs-proposal-review</code></li>
+        <li>复杂方案还要<b>拉独立子 agent 做对抗性评审</b>：正确性/边界/性能/安全/兼容性/是否过度设计……</li>
+        <li>子 agent 与方案作者<b>不带共享上下文</b>——评审者没有先入之见，才挑得出真错</li>
+        <li>获批后返回主控定去向，不单开决策 issue——<b>决策与实施同源，审计链完整</b></li>
+      </ul>
+    </div>
+    <div>
+      <div class="card"><h3>实测效果</h3><p>20 天里靠方案门拦截的典型错误：依赖选型重复造轮子（后改为强制先调研开源库）、覆盖率口径虚高（vendor 混入）、变异区间手写漂移（后改自动派生）。<br><br><b>方案阶段纠错成本 ≈ 0；合并后纠错成本 = 一个紧急发版。</b></p></div>
+    </div>
+  </div>
+  <div class="note">对抗评审是全场最能借鉴的实践之一：让另一个无上下文的 agent 只读方案文档挑错，专治「自己审自己越审越满意」。成本极低，收益极高。</div>
+</section>
+
+<!-- 9 上下文工程 -->
+<section class="slide">
+  <div class="kicker">04 上下文工程</div>
+  <h2>上下文是 AI 组织的第一资源</h2>
+  <ul>
+    <li><b>注入纪律</b>：注入上下文曾经过度频繁，被用户抱怨（#457）——纪律文本本身要做「信息密度治理」（#414）</li>
+    <li><b>MCP 中间层收敛</b>：项目级 MCP 工具收敛为 <code>ws_mcp_search</code>/<code>ws_mcp_call</code> 两个原子工具——接入 20 个 MCP 不再膨胀 20 份 schema（#312/#413）</li>
+    <li><b>结构化查询代替全文搜</b>：codegraph 工具层强制「查询前 sync」，查询纪律写进注入文本（#329/#363）</li>
+    <li><b>可见性要诚实</b>：<code>ws_mcp_list</code> 过滤无命中曾谎报「未配置」——对 agent 撒谎会导致连环误判（#362）</li>
+  </ul>
+  <div class="card" style="max-width:54em"><h3>视角转换</h3><p>管理人类团队时稀缺资源是<b>注意力</b>；管理 agent 团队时稀缺资源是<b>上下文窗口</b>。一切「会议」（注入文本）都要按信息密度付费——冗长纪律 = 挤占有效工作记忆。</p></div>
+  <div class="note">这章是 v2 相对 v1 的差异化内容。「ws_mcp_list 谎报未配置」这个案例很妙：对人类，文档错误是困惑；对 agent，工具返回的错误描述会被当成事实并执行下去。</div>
+</section>
+
+<!-- 10 失败案例1 体系自身迭代 -->
+<section class="slide">
+  <div class="kicker">05 失败与迭代</div>
+  <h2>失败案例一：协作体系自己的第一轮复盘</h2>
+  <ul>
+    <li>20260822 维护轮跑完后，主控复盘出 <b>七项改进</b>（issue #67）——协作体系 v1 的七宗罪，摘三条：</li>
+    <li><b>复核缺位</b>：qa 角色没有接入状态机，大 PR 没有代码级复核闸 → 补（#58）</li>
+    <li><b>状态不可见</b>：agent 做到哪一步要靠翻会话 → 引入格式化状态行 + 流转标签</li>
+    <li><b>权限太粗</b>：只有「能做/不能做」，缺「有条件能做」 → 引入 pending-ratification（先做后追认）与紧急通道</li>
+    <li class="dim">方法论：协作体系本身也走「发布 → 观察诉求 → 复盘 → 迭代」，跟产品一样</li>
+  </ul>
+  <div class="note">这页的核心信息：没有第一版就对的协作体系，只有迭代出来的。我们如今看到的所有顺滑流程，背后都有一轮复盘出七条罪状的狼狈。</div>
+</section>
+
+<!-- 11 失败案例2 AI的坑 -->
+<section class="slide">
+  <div class="kicker">05 失败与迭代</div>
+  <h2>失败案例二：AI 的三类典型事故</h2>
+  <table>
+    <tr><th>类型</th><th>案例</th><th>制度回应</th></tr>
+    <tr><td><b>静默断链</b></td><td>依赖靠 root hoisting 隐式可用，包内未声明（#437）——删一个无关 devDep 全仓炸</td><td>契约校验 + 显式声明门禁</td></tr>
+    <tr><td><b>口径漂移</b></td><td>同一件事在文档/CI/脚本里三处口径不一致（#438）</td><td>单一事实源纪律（gauntlet.config.json）</td></tr>
+    <tr><td><b>表象服从</b></td><td>AI 声称 UI 改好了，但从未打开浏览器看过（#51 起源）</td><td>证据文化：隔离实测 + 截图归档 + CI 证据门禁（#121）</td></tr>
+  </table>
+  <ul style="margin-top:18px">
+    <li>共同点：<b>都不是代码写错，而是「声明与现实脱节」</b>——AI 对世界的认知全部来自你给它的文本，文本错了它就错得很自信</li>
+    <li class="dim">所以治理重心从「审代码」上移到「审声明」：依赖声明、口径声明、完成声明</li>
+  </ul>
+  <div class="note">「审声明」是本页要留下的新词。三类事故可以各配一句吐槽，但落点必须回到制度回应——观众要带走的是右列。</div>
+</section>
+
+<!-- 12 失败案例3 判据 -->
+<section class="slide">
+  <div class="kicker">05 失败与迭代</div>
+  <h2>失败案例三：给 agent 的判据要像合同，不要像愿景</h2>
+  <div class="cols">
+    <div>
+      <ul>
+        <li>「通知完成误报」bug 修了三次（#7→#49→#290）：每次判据都「对」，每次都漏一种世界</li>
+        <li>教训：给 qa/judge 的验收判据必须是<b>可枚举、可证伪</b>的条款——「fork 型委派且 parentSession 归属时不得发完成通知」，而不是「正确识别子代理」</li>
+        <li>模糊判据在人类团队里靠默契兜底；agent 团队没有默契，<b>模糊判据 = 没有判据</b></li>
+      </ul>
+    </div>
+    <div>
+      <div class="card"><h3>一个实操习惯</h3><p>规格里的每条验收判据都问自己：<b>「一个只想过关的 agent 能不能钻这个空子？」</b><br><br>能，就再具体一层。判据是防「聪明但没立场的执行者」的合同条款，不是给人看的表扬信。</p></div>
+    </div>
+  </div>
+  <div class="note">这页与 v1 的「三次变形」故事共用素材但角度不同：v1 讲质量，v2 讲判据设计。提醒听众：如果你只带回一页，带这页——判据质量决定 agent 产出上限。</div>
+</section>
+
+<!-- 13 三代演进 -->
+<section class="slide">
+  <div class="kicker">06 演进</div>
+  <h2>三代工作流：从手工作坊到 loop engine</h2>
+  <table>
+    <tr><th>代际</th><th>形态</th><th>瓶颈</th></tr>
+    <tr><td class="mono">v1 手工</td><td>人在会话里逐个指挥 agent 干活</td><td>人是瓶颈：切上下文、丢状态、忘跟进</td></tr>
+    <tr><td class="mono">v2 脚本化</td><td>固定流程写成编排脚本，批量执行</td><td>刚性：异常全靠人兜底，复核缺失</td></tr>
+    <tr><td class="mono">v3 loop engine</td><td>issue 状态机 + 计划门 + 计圈收敛 + 标签授权，agent 自治循环、人守闸门</td><td>当前形态：人的时间集中到方案与红线</td></tr>
+  </table>
+  <ul style="margin-top:16px">
+    <li>演进不是重写，是<b>每次只解决上一代最痛的一个点</b>：先省人力、再保质量、最后定权限</li>
+    <li class="dim">附产品：方法论沉淀为 skill（oss-pipeline / triage / steering / report），人换项目体系跟着走</li>
+  </ul>
+  <div class="note">三代演进的时间跨度只有几天到一周——AI 组织的好处是体系本身也能高速迭代。但提醒：跳代不划算，v1 的手工期是理解所有异常场景的学费。</div>
+</section>
+
+<!-- 14 数据 -->
+<section class="slide">
+  <div class="kicker">06 演进</div>
+  <h2>20 天协作数据：这套体系扛住了什么</h2>
+  <div class="big">
+    <div class="b"><i>221</i><span>issue 全部走状态机流转</span></div>
+    <div class="b"><i>287</i><span>PR 全部走门禁 + 复核</span></div>
+    <div class="b"><i>21</i><span>个 fix(dsh-notifier)——爆发期事故密度</span></div>
+    <div class="b"><i>1</i><span>次紧急发版（转折期之后归零）</span></div>
+  </div>
+  <ul style="margin-top:24px">
+    <li>issue 编号到 #465+，远多于实际 issue 数——<b>方案评论、状态行、复盘全写在 issue 里</b>，一个 issue 就是一条完整审计链</li>
+    <li>夜间/周度质量报告（observe.yml / health-report.yml）自动开 PR、自动汇总——维护型工作彻底不占人的注意力</li>
+    <li class="dim">人的实际时间投入：<b>方案评审与红线决策为主</b>，平均每天数次、每次几分钟到几十分钟</li>
+  </ul>
+  <div class="note">回答听众最关心的问题：人到底要投入多少？答案是「碎片化高杠杆时间」——体系把人的介入压缩成一个个决策点，而不是一段段监工时间。</div>
+</section>
+
+<!-- 15 反思 不该自治 -->
+<section class="slide">
+  <div class="kicker">07 反思</div>
+  <h2>反思：什么时候不该让 AI 自治</h2>
+  <ul>
+    <li><b>方向类决策</b>：做什么插件、砍什么功能——agent 只能优化给定目标，不能选择目标</li>
+    <li><b>有长期承诺的接口</b>：公共 API、发布版本、依赖选型——错一次的代价由未来的自己付</li>
+    <li><b>需要品味的地方</b>：UI 打磨、文案语气、架构美学——agent 能达到「不丑」，到不了「讲究」</li>
+    <li><b>事故善后</b>：紧急发版可以 AI 执行，<b>「要不要发」必须人拍板</b>（24h 追认机制就是这么来的）</li>
+  </ul>
+  <div class="card" style="max-width:52em"><h3>反向自查</h3><p>每次 AI 产出不满意时问一句：这是<b>执行问题</b>还是<b>我给的题就不对</b>？实测中，后者居多——而它不该怪 AI，该改规格或改决策。</p></div>
+  <div class="note">这页防分享变成「AI 万能论」。真实经验：把方向类决策错误地丢给 agent，得到的是高效地跑错方向——比慢更糟。</div>
+</section>
+
+<!-- 16 反思 人的角色 -->
+<section class="slide">
+  <div class="kicker">07 反思</div>
+  <h2>人的角色迁移：从生产者到「体系架构师」</h2>
+  <div class="cols">
+    <div>
+      <ul>
+        <li><b>过去</b>：写代码 → review 代码 → 修 bug → 发版（时间花在产出上）</li>
+        <li><b>现在</b>：定判据 → 审方案 → 批红线 → 复盘体系（时间花在「让产出可信」上）</li>
+        <li>核心技能变化：<b>把模糊意图写成可执行判据的能力</b>，成为新的第一生产力</li>
+        <li class="dim">直白说：AI 时代最贵的不是会写代码的人，是「知道什么是对的」的人</li>
+      </ul>
+    </div>
+    <div>
+      <div class="card"><h3>对管理者的启示</h3><p>评估一个人时，看他写的代码不如看他写的判据：<b>判据的质量决定一个 agent 化团队产出的上限</b>。<br><br>对个人贡献者：你最好的晋升材料，可能是你写的那份「验收判据」而不是你写的类。</p></div>
+    </div>
+  </div>
+  <div class="note">这页是全场人文落点，放慢语速。「知道什么是对的」不是虚话——前文所有案例（口径、判据、红线）都是它的注脚。</div>
+</section>
+
+<!-- 17 最小落地集 -->
+<section class="slide">
+  <div class="kicker">08 落地</div>
+  <h2>在公司团队落地的最小集（不是照搬全部）</h2>
+  <ul>
+    <li><b>第 1 周：留痕</b>——所有 agent 产出必须挂 issue/PR，禁止只活在会话里（会话会死，issue 永存）</li>
+    <li><b>第 2 周：分级</b>——列出你们团队的「红线清单」（API/依赖/CI/发布），红线外自治、红线内人批</li>
+    <li><b>第 3 周：复核</b>——重要改动引入一次独立上下文的对抗评审，成本几乎为零</li>
+    <li><b>第 4 周：判据</b>——验收标准从「看着行」改写为可证伪条款， qa 与实现角色分离</li>
+    <li><b>持续</b>：每轮复盘体系本身——<b>流程也是代码，也要迭代</b></li>
+  </ul>
+  <div class="card" style="max-width:52em"><h3>先从哪类任务试点</h3><p>测试加固 / 依赖升级 / 文档同步 / 明确规格的 bug 修复——特征：判据清晰、风险可回滚、验证可自动化。别一上来就让 agent 碰核心架构。</p></div>
+  <div class="note">给公司听众的干货页。强调「最小集」：今天展示的完整体系是 20 天长出来的，落地别贪全，按周推进。</div>
+</section>
+
+<!-- 18 结尾 -->
+<section class="slide">
+  <div style="margin:auto 0">
+    <div class="kicker">Q&amp;A</div>
+    <h1 style="font-size:38px">管理 AI 团队与管理人类团队，<br>唯一不变的是：体系决定产出上限。</h1>
+    <p class="lead" style="margin-top:18px">区别只是：AI 团队的流程不需要哄、权限必须防穿透、判据必须可证伪——<br>而这三件事，对人类团队其实也成立，只是从没有人逼我们做到这么严格。</p>
+    <p class="lead" style="margin-top:26px;color:var(--faint);font-size:16px">数据与机制均来自 github.com/wingsky-1/dsh-plugin-hub（2026-08-16 → 09-04）· 标签体系、角色规程、loop engine 全部开源可查</p>
+  </div>
+  <div class="note">备问：agent 跑偏怎么发现（计圈+状态行+转向检查）；成本（token 消耗主要在复核与评审，值得）；与 CI 的关系（CI 管代码，loop engine 管流程，不重叠）。</div>
+</section>
+
+</main>
+<div class="foot"><span>v2 · 一人 + Agent 团队：AI 协作体系</span><span id="pager">1 / 18</span></div>
+<script>
+  const slides=[...document.querySelectorAll('.slide')];
+  let i=0;
+  function show(n){
+    i=Math.max(0,Math.min(slides.length-1,n));
+    slides.forEach((s,k)=>s.classList.toggle('active',k===i));
+    document.getElementById('pager').textContent=(i+1)+' / '+slides.length;
+    document.body.classList.add('showing');
+  }
+  addEventListener('keydown',e=>{
+    if(['ArrowRight','PageDown',' '].includes(e.key)){e.preventDefault();show(i+1)}
+    else if(['ArrowLeft','PageUp'].includes(e.key)){e.preventDefault();show(i-1)}
+    else if(e.key==='Home'){show(0)} else if(e.key==='End'){show(slides.length-1)}
+  });
+  addEventListener('click',e=>{ if(e.clientX>innerWidth*0.7) show(i+1); else if(e.clientX<innerWidth*0.3) show(i-1); });
+  show(0);
+</script>
+</body>
+</html>
