@@ -51,7 +51,7 @@ flowchart LR
 
 `skills/dsh-verify-isolated/scripts/verify-isolated.mjs`（node ≥22 实现，原 bash 版
 `verify-isolated.sh` 已随 #517 C8 重写删除，不留 shim；退出码契约
-0/1/2/130/143）：
+0/1/2/130/143；可选隔离审计 `--audit` 见 §2.1）：
 
 ```mermaid
 sequenceDiagram
@@ -72,10 +72,11 @@ sequenceDiagram
         SH->>D: 对每个包 pnpm build（确保 lib/ 或 dist/ 产物；--no-build 校验产物 + 陈旧警告）
     end
     SH->>D: dsh plugin --profile verify_随机 add 包路径<br/>（相对路径基于 cwd 绝对化，包规格原样透传）
+    SH->>SH: --audit 时 t0 基线快照（lib/audit.mjs scanSnapshot：<br/>挂载 link: symlink 之后、脚本写面前，先扫后写 + 白名单双保险）
     SH->>D: dsh --profile verify_随机 --host 127.0.0.1 --port 端口 --no-open<br/>（后台子进程，stdout/stderr 收集到 $DSH_HOME/dsh.log）
     SH->>SH: 就绪断言（轮询 HTTP 2xx-4xx + 进程存活，15s 超时）
     SH->>T: 就绪后写 $DSH_HOME/verdict.json（B6，0o600，端口三通道 source）
-    Note over SH: Ctrl+C / SIGTERM → 统一清理（kill dsh → browser quit →<br/>verdict 终态 cleanup → rm -rf DSH_HOME），透传 130/143
+    Note over SH: Ctrl+C / SIGTERM → 统一清理（kill dsh → browser quit →<br/>审计（--audit）→ verdict 终态 cleanup → rm -rf DSH_HOME），透传 130/143
 ```
 
 双重隔离的层次（为什么两层都必要）：
@@ -90,6 +91,33 @@ sequenceDiagram
 > **只建独立 profile 不够**——profile 共享 home 级凭据与会话；必须同时把 `DSH_HOME`
 > 指向临时目录才与真实环境完全隔绝。验证结束删除临时 DSH_HOME 与 `verify_*` profile。
 
+### 2.1 隔离审计（B4，可选 `--audit`）
+
+判定面 = **预置白名单**（版本化 `WHITELIST_V`，`scripts/lib/audit.mjs` 纯函数：
+`scanSnapshot` / `diffAgainstWhitelist` / `checkSymlinkEscape` / `runAudit`）外的
+新增/删除/修改（纯 stat 路径级，不读内容；白名单内变化忽略——dsh 重写 settings
+是常态；未知顶层路径 → 可疑）：
+
+```text
+profiles/**、*.json/*.jsonl/*.log（仅顶层）、browser.state、browser-profile/**（整树白名单 + 跳过深扫）、
+evidence/**、audit/**、dsh.log、verdict.json
+```
+
+- **symlink 防逃逸**：快照 lstat 不跟随（不读链接目标内容）；`t1` 时**新增的**或
+  **目标变化**且 resolve 后在 `$ISOLATED_HOME` 外的 symlink 报「越界 symlink」（防
+  插件经 symlink 写回主 checkout）；`t0` 已存在且目标未变的外部 symlink（`link:`
+  挂载点，profile node_modules 全 link: 是挂载机制本身）合法不报。防逃逸优先于
+  白名单——`profiles/**` 内新增越界 symlink 同样报。
+- **时序**：`t0` 基线在挂载（link: symlink 进基线）之后、脚本自身写面
+  （browser.state / verdict / evidence 内容 / audit 落盘）之前；审计 diff 插在
+  settle「kill dsh → browser quit → **审计** → verdict 终态 → rm」；
+  `--keep` 落 `$ISOLATED_HOME/audit/audit.json`，否则并入 verdict JSON（`audit`
+  字段，`--json` 的 stdout 终态同样并入）。
+- **局限**：只扫 `$ISOLATED_HOME` 子树 + `--audit-extra-dirs <dir>`（可重复，相对
+  路径基于 cwd 绝对化，与 DSH_HOME 重叠报参数错误）指定目录，**不扫真实 home**。
+- **不阻断退出**：审计是补充非门禁——可疑项只输出「审计: N 项可疑」结论，退出码
+  契约 0/1/2/130/143 不变；审计异常仅警告（verdict audit 字段带 error）。
+
 ---
 
 ## 3. 使用方式
@@ -102,7 +130,8 @@ dsh plugin --profile web add @wingsky-1/dsh-verify-isolated
 node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 3456 <插件包路径>
 # 多包：--port 3456 <包A> <包B>
 # --port 0 随机端口 · --keep 保留临时环境 · --no-build 跳过构建 ·
-# --evidence-dir <dir> 证据目录外部化 · --json stdout 只出最终 verdict
+# --evidence-dir <dir> 证据目录外部化 · --audit 隔离审计（B4，白名单外变化报可疑不阻断）·
+# --audit-extra-dirs <dir> 额外审计目录 · --json stdout 只出最终 verdict
 ```
 
 - **SKILL_BASE 自适应**：跟随 `cordis.patch.yml` 的 bundledSkillDir 解析——npm 副本 /
@@ -125,4 +154,7 @@ node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 3456 <插件包路径>
 - 隔离环境不携带真实凭据（临时 `DSH_HOME` 无 `~/.dsh` 数据）；
 - 不关闭/重启运行中的主 `dsh web` 进程（独立端口）；
 - 脚本只用 `mktemp -d` 临时目录，退出即清理，不留残留；
-- 硬约束：独立端口（不冲突）、不复制真实凭据（用测试凭据/mock）、`--port 0` 系统随机。
+- 硬约束：独立端口（不冲突）、不复制真实凭据（用测试凭据/mock）、`--port 0` 系统随机；
+- 可选隔离审计（`--audit`）只扫 `$ISOLATED_HOME` 子树 + `--audit-extra-dirs` 指定
+  目录，**不扫真实 home**；快照 lstat 不读文件内容、不跟随 symlink（防逃逸）；审计
+  是补充非门禁，可疑项不阻断退出。

@@ -70,6 +70,11 @@ node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --browser <插件包路�
 node "$SKILL_BASE/scripts/verify-isolated.mjs" --dsh /opt/dsh-0.1.2-alpha.2/bin/dsh --port 0 <插件包路径>
 # 证据目录外部化（截图/快照归档到 <dir>/evidence-<profile>/，绝不动外部目录）：
 node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --evidence-dir /tmp/my-evidence <插件包路径>
+# 隔离审计（B4）：对比隔离 DSH_HOME 写面与预置白名单，白名单外变化报「可疑」、
+# 不阻断退出；--keep 时报告落 $DSH_HOME/audit/audit.json，否则并入 verdict 的 audit 字段
+node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --audit --keep <插件包路径>
+# 额外审计目录（插件写到隔离环境外的数据面，可重复；局限：不扫真实 home）：
+node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --audit --audit-extra-dirs /tmp/plugin-data <插件包路径>
 ```
 
 插件参数（`--` 之后或直接位置参数）接受两种形态，脚本内建统一归一化
@@ -105,6 +110,22 @@ cleanup 字段（`"done"`/`"kept"`）；端口实际绑定解析 dsh.log 端口�
 **B7 证据目录**：默认 `$DSH_HOME/evidence/`（脚本会打印路径；退出随临时目录一并
 清理，`--keep` 保留）；显式 `--evidence-dir <dir>` 外部化时建
 `<dir>/evidence-<profile>/` 子目录，**绝不动外部目录**（不删、不覆盖）。
+
+**B4 隔离审计（`--audit`）**：可选开启，对比隔离 `$DSH_HOME` 写面与**预置白名单**
+（版本化 `WHITELIST_V`，模式数组随 `scripts/lib/audit.mjs` 分发、smoke 断言存在）：
+白名单外的新增/删除/修改报「可疑」（纯 stat 路径级，不读内容）；白名单内变化
+忽略（dsh 重写 settings 是常态）；未知顶层路径 → 可疑。**symlink 防逃逸**：快照
+lstat 不跟随；`t1` 时**新增的**或**目标变化**且 resolve 后在 `$ISOLATED_HOME` 外的
+symlink 报「越界 symlink」（防插件经 symlink 写回主 checkout），`t0` 已存在且
+目标未变的外部 symlink（`link:` 挂载点，合法）不报；防逃逸优先于白名单——
+`profiles/**` 内新增越界 symlink 同样报。**局限**：只扫 `$ISOLATED_HOME` 子树 +
+`--audit-extra-dirs <dir>`（可重复，相对路径基于 cwd 绝对化）指定的额外目录，
+**不扫真实 home**。时序：`t0` 基线在挂载（link: symlink）之后、脚本自身写面
+（browser.state/verdict/evidence 内容/audit 落盘）之前；审计插在退出清理序列
+「kill dsh → browser quit → **审计** → verdict 终态 → rm」之间，**不阻断退出**
+（审计是补充非门禁，退出码契约不变）；`--keep` 时报告落
+`$DSH_HOME/audit/audit.json`，否则并入 verdict JSON 的 `audit` 字段；`--json` 时
+同样并入 stdout 的最终 verdict（错误路径的错误 JSON 也带 `audit` 字段）。
 
 **退出码契约**：0 正常完成 / 1 启动或就绪失败（profile 初始化失败、add 失败、
 dsh 就绪前退出、15s 就绪超时）/ 2 参数错误（未知选项、缺参、找不到 dsh 入口、
