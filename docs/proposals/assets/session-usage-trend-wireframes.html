@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UI/UX 设计草图 — 会话用量趋势与报表</title>
+<style>
+  /* 主题变量：浅色为默认，暗色经 html[data-theme] 覆盖 */
+  :root{
+    --bg:#f5f6f8; --panel:#ffffff; --ink:#1c2330; --ink-2:#5a6478; --ink-3:#9aa0ab;
+    --line:#e8eaf0; --line-2:#d8dbe4; --accent:#3b82f6; --accent-soft:#eaf2fe;
+    --ok:#16a34a; --warn:#d97706; --err:#dc2626;
+    --p1:#3b82f6; --p2:#8b5cf6; --p3:#10b981; --p4:#f59e0b; --p5:#ef4444;
+    --chip:#f0f2f6; --shadow:0 1px 3px rgba(16,24,40,.08);
+  }
+  html[data-theme="dark"]{
+    --bg:#14171d; --panel:#1d222b; --ink:#e7eaf0; --ink-2:#a8b0c0; --ink-3:#6b7382;
+    --line:#2b313c; --line-2:#363d4a; --accent:#60a5fa; --accent-soft:#1c2a41;
+    --ok:#4ade80; --warn:#fbbf24; --err:#f87171;
+    --p1:#60a5fa; --p2:#a78bfa; --p3:#34d399; --p4:#fbbf24; --p5:#f87171;
+    --chip:#262c37; --shadow:0 1px 3px rgba(0,0,0,.4);
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{background:var(--bg); color:var(--ink); font:14px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif; padding:24px; transition:background .2s,color .2s;}
+  .toolbar{max-width:1280px; margin:0 auto 20px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;}
+  .toolbar h1{font-size:18px; margin-right:auto;}
+  .toolbar .meta{color:var(--ink-3); font-size:12px;}
+  .theme-btn{border:1px solid var(--line-2); background:var(--panel); color:var(--ink); border-radius:8px; padding:6px 14px; cursor:pointer; font-size:13px;}
+  .section{max-width:1280px; margin:0 auto 28px;}
+  .section > h2{font-size:15px; margin-bottom:10px; display:flex; align-items:center; gap:8px;}
+  .section > h2 .no{background:var(--accent); color:#fff; border-radius:6px; width:22px; height:22px; display:inline-flex; align-items:center; justify-content:center; font-size:12px;}
+  .section > p.desc{color:var(--ink-2); font-size:13px; margin-bottom:12px;}
+  .frame{background:var(--panel); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow); overflow:hidden;}
+  /* 通用线框元素 */
+  .chip{display:inline-flex; align-items:center; gap:4px; background:var(--chip); border-radius:6px; padding:3px 10px; font-size:12px; color:var(--ink-2); cursor:default;}
+  .chip.on{background:var(--accent-soft); color:var(--accent); font-weight:600;}
+  .btn{display:inline-flex; align-items:center; gap:6px; border-radius:8px; padding:6px 14px; font-size:13px; border:1px solid var(--line-2); background:var(--panel); color:var(--ink); cursor:default;}
+  .btn.primary{background:var(--accent); border-color:var(--accent); color:#fff;}
+  .badge{display:inline-block; border-radius:5px; padding:1px 8px; font-size:11px;}
+  .badge.ok{background:color-mix(in srgb, var(--ok) 15%, transparent); color:var(--ok);}
+  .badge.run{background:color-mix(in srgb, var(--warn) 15%, transparent); color:var(--warn);}
+  .badge.err{background:color-mix(in srgb, var(--err) 15%, transparent); color:var(--err);}
+  .note{color:var(--ink-3); font-size:12px;}
+  .k{color:var(--accent); font-weight:600;}
+  /* 面板 tab 行 */
+  .tabs{display:flex; gap:2px; padding:10px 16px 0; border-bottom:1px solid var(--line); font-size:13px; flex-wrap:wrap;}
+  .tabs .t{padding:7px 14px; color:var(--ink-2); border-radius:8px 8px 0 0; cursor:default; white-space:nowrap;}
+  .tabs .t.on{color:var(--accent); font-weight:600; box-shadow:inset 0 -2px 0 var(--accent);}
+  .pad{padding:16px;}
+  .ctrl-row{display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:14px;}
+  .ctrl-row .grp{display:flex; gap:4px; background:var(--chip); border-radius:8px; padding:3px;}
+  .ctrl-row .grp .g{padding:4px 12px; border-radius:6px; font-size:12px; color:var(--ink-2); cursor:default;}
+  .ctrl-row .grp .g.on{background:var(--panel); color:var(--ink); font-weight:600; box-shadow:var(--shadow);}
+  .legend{display:flex; gap:14px; flex-wrap:wrap; font-size:12px; color:var(--ink-2); margin:10px 2px 0;}
+  .legend i{display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:5px; vertical-align:-1px;}
+  .cards{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; margin-top:14px;}
+  .stat{border:1px solid var(--line); border-radius:10px; padding:12px 14px;}
+  .stat .l{font-size:12px; color:var(--ink-3);}
+  .stat .v{font-size:20px; font-weight:700; margin:2px 0;}
+  .stat .d{font-size:12px;}
+  .up{color:var(--err);} .down{color:var(--ok);}
+  svg.chart{width:100%; height:auto; display:block;}
+  svg.chart text{font-size:10px; fill:var(--ink-3);}
+  /* 报告 tab 布局 */
+  .report-grid{display:grid; grid-template-columns:340px 1fr; gap:0;}
+  .cfg{border-right:1px solid var(--line); padding:16px;}
+  .cfg h3, .rpt h3{font-size:13px; margin-bottom:10px; color:var(--ink-2);}
+  .field{margin-bottom:12px;}
+  .field .fl{font-size:12px; color:var(--ink-2); margin-bottom:4px;}
+  .input{border:1px solid var(--line-2); border-radius:8px; padding:6px 10px; font-size:12px; color:var(--ink-3); background:var(--chip);}
+  .input.wide{display:block; width:100%;}
+  textarea.input{min-height:72px; resize:none; line-height:1.5; font-family:inherit;}
+  .switch-row{display:flex; justify-content:space-between; align-items:center; padding:6px 0; font-size:13px;}
+  .sw{width:34px; height:19px; border-radius:10px; background:var(--line-2); position:relative; flex:none;}
+  .sw::after{content:""; position:absolute; width:15px; height:15px; border-radius:50%; background:#fff; top:2px; left:2px; box-shadow:var(--shadow);}
+  .sw.on{background:var(--accent);} .sw.on::after{left:17px;}
+  .rpt{padding:16px; min-width:0;}
+  .hist{border:1px solid var(--line); border-radius:10px; overflow:hidden; margin-bottom:16px;}
+  .hist .h-row{display:flex; align-items:center; gap:10px; padding:9px 14px; border-bottom:1px solid var(--line); font-size:13px;}
+  .hist .h-row:last-child{border-bottom:none;}
+  .hist .h-row .t{font-weight:600;}
+  .hist .h-row .m{color:var(--ink-3); font-size:12px; margin-right:auto;}
+  .hist .h-row .act{color:var(--accent); font-size:12px; cursor:default;}
+  /* 年报卡片流 */
+  .story{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px;}
+  .scard{border:1px solid var(--line); border-radius:12px; padding:16px; position:relative; overflow:hidden;}
+  .scard .big{font-size:26px; font-weight:800; letter-spacing:-.5px;}
+  .scard .cap{font-size:12px; color:var(--ink-2); margin-top:4px;}
+  .scard .hl{height:4px; border-radius:2px; margin:10px 0 6px;}
+  .scard.wide{grid-column:1/-1;}
+  .scard .narr{font-size:13px; color:var(--ink-2); line-height:1.8;}
+  .scard .narr b{color:var(--ink);}
+  .bar{height:8px; border-radius:4px; background:var(--chip); overflow:hidden; margin:6px 0 4px;}
+  .bar i{display:block; height:100%; border-radius:4px;}
+  /* 空态 */
+  .empty{border:1.5px dashed var(--line-2); border-radius:12px; padding:36px; text-align:center; color:var(--ink-3);}
+  .empty .e-ico{font-size:26px; margin-bottom:8px;}
+  /* 标注 */
+  .anno{display:flex; gap:8px; align-items:flex-start; max-width:1280px; margin:10px auto 0; font-size:12px; color:var(--ink-2);}
+  .anno .pin{flex:none; width:18px; height:18px; border-radius:50%; background:var(--warn); color:#fff; font-size:11px; display:inline-flex; align-items:center; justify-content:center; margin-top:2px;}
+  .two-col{display:grid; grid-template-columns:1fr 1fr; gap:20px;}
+  @media (max-width:900px){ .report-grid{grid-template-columns:1fr;} .cfg{border-right:none; border-bottom:1px solid var(--line);} .two-col{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <h1>UI/UX 设计草图 — 会话用量趋势与报表</h1>
+  <span class="meta">dsh-provider-usage · 线框稿 v1 · 数据为演示假数据</span>
+  <button class="theme-btn" onclick="const h=document.documentElement;h.dataset.theme=h.dataset.theme==='dark'?'':'dark'">切换 浅色 / 暗色</button>
+</div>
+
+<!-- ═══════════ ① 悬浮胶囊（现状不变） ═══════════ -->
+<div class="section">
+  <h2><span class="no">①</span>悬浮胶囊（现状保持不变，仅示意上下文）</h2>
+  <div class="frame pad" style="display:flex; gap:10px; align-items:center;">
+    <span class="chip" style="padding:6px 14px;"><i style="width:8px;height:8px;border-radius:50%;background:var(--ok);display:inline-block;margin-right:6px;"></i>DeepSeek ¥42.30 · 峰值前 3h12m</span>
+    <span class="note">点击胶囊展开面板 → 面板内新增「使用趋势」子 tab（见 ②）；「用量报告」为设置区独立顶层 tab（见 ③）。</span>
+  </div>
+</div>
+
+<!-- ═══════════ ② 使用趋势 tab ═══════════ -->
+<div class="section">
+  <h2><span class="no">②</span>「用量统计」面板 · 新增「使用趋势」子 tab</h2>
+  <p class="desc">粒度（日 30 点 / 周 12 点 / 月 12 点）× 指标（输入 / 输出 / 缓存读 / 调用次数）× 适配器（provider，可细到 model）三维切换；主图为按适配器堆叠的柱状图。</p>
+  <div class="frame">
+    <div class="tabs">
+      <span class="t">概览</span><span class="t">历史明细</span><span class="t on">使用趋势</span><span class="t">适配器管理</span><span class="t">设置</span>
+    </div>
+    <div class="pad">
+      <div class="ctrl-row">
+        <span class="grp"><span class="g on">日 · 30 天</span><span class="g">周 · 12 周</span><span class="g">月 · 12 月</span></span>
+        <span class="grp"><span class="g on">总 token</span><span class="g">输入</span><span class="g">输出</span><span class="g">缓存读</span><span class="g">调用次数</span></span>
+        <span class="grp"><span class="g on">按 provider</span><span class="g">细到 model</span></span>
+        <span style="margin-left:auto;" class="note">本地时区 · 周一为周起点</span>
+      </div>
+      <svg class="chart" id="trend" viewBox="0 0 1200 260" aria-label="堆叠柱状图"></svg>
+      <div class="legend">
+        <span><i style="background:var(--p1)"></i>deepseek-official</span>
+        <span><i style="background:var(--p2)"></i>claudex-glm</span>
+        <span><i style="background:var(--p3)"></i>opencode-go</span>
+        <span><i style="background:var(--p4)"></i>zai-coding-cn</span>
+        <span style="margin-left:auto;">悬停柱体显示逐日明细 · 点击图例隐藏/显示适配器</span>
+      </div>
+      <div class="cards">
+        <div class="stat"><div class="l">本期总 token</div><div class="v">128.4M</div><div class="d">环比 <span class="up">▲ 18.2%</span></div></div>
+        <div class="stat"><div class="l">LLM 调用次数</div><div class="v">3,207</div><div class="d">环比 <span class="down">▼ 4.6%</span></div></div>
+        <div class="stat"><div class="l">峰值日</div><div class="v">09-02</div><div class="d">单日 9.8M · 214 次调用</div></div>
+        <div class="stat"><div class="l">最常用适配器</div><div class="v" style="font-size:15px;padding-top:4px;">deepseek-official</div><div class="d">占比 62.4%</div></div>
+      </div>
+      <div class="note" style="margin-top:12px; display:flex; gap:6px; align-items:center;">
+        <svg width="13" height="13" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="none" stroke="var(--ink-3)"/><path d="M8 4.5v4M8 11.2v.6" stroke="var(--ink-3)" stroke-width="1.6" fill="none"/></svg>
+        统计自插件挂载时点起算，早于该时点的会话不计入。
+      </div>
+    </div>
+  </div>
+  <div class="anno"><span class="pin">a</span><span>控制行在移动端（&lt;768px）逐组折行；图表 SVG 随容器宽度缩放，触屏支持左右拖动查看 30 根柱体。</span></div>
+  <div class="anno"><span class="pin">b</span><span>「细到 model」模式下堆叠粒度变为 provider+model，图例自动展开为二级（provider 分组标题 + model 条目）。</span></div>
+  <div class="anno"><span class="pin">c</span><span>「调用次数」指标下 Y 轴单位由 token 数切换为次数，堆叠逻辑不变。</span></div>
+</div>
+
+<!-- ═══════════ ③ 用量报告 tab ═══════════ -->
+<div class="section">
+  <h2><span class="no">③</span>「用量报告」独立顶层 tab（配置 / 历史 / 详情）</h2>
+  <p class="desc">与「用量统计」tab 同级注册；左列全部可配置（时间 / 模型 / 提示词），右列为报告历史与网易云年报式详情。</p>
+  <div class="frame">
+    <div class="report-grid">
+      <div class="cfg">
+        <h3>报告配置</h3>
+        <div class="switch-row"><span>日报 · 每日 22:00</span><span class="sw on"></span></div>
+        <div class="switch-row"><span>周报 · 周一 09:00</span><span class="sw on"></span></div>
+        <div class="switch-row"><span>月报 · 每月 1 日 09:00</span><span class="sw"></span></div>
+        <div class="field" style="margin-top:10px;"><div class="fl">周起点</div><span class="grp" style="display:inline-flex; gap:4px; background:var(--chip); border-radius:8px; padding:3px;"><span class="g on" style="padding:3px 10px;border-radius:6px;font-size:12px;background:var(--panel);box-shadow:var(--shadow);">周一</span><span class="g" style="padding:3px 10px;border-radius:6px;font-size:12px;color:var(--ink-2);">周日</span></span></div>
+        <div class="field"><div class="fl">生成模型</div><div class="input wide">https://api.deepseek.com · deepseek-chat · <span style="letter-spacing:2px;">sk-****</span></div></div>
+        <div class="field"><div class="fl">提示词模板（注入当期统计 JSON）</div><textarea class="input wide">你是我的用量分析助手。基于以下当期聚合数据，写一份 300 字以内的用量周报，包含：总量与环比、最活跃项目、使用建议。数据：{{stats}}</textarea></div>
+        <div class="switch-row"><span>统计脱敏（隐去项目路径）</span><span class="sw on"></span></div>
+        <div class="switch-row"><span>经 dsh-notifier 推送摘要</span><span class="sw"></span></div>
+        <div style="display:flex; gap:8px; margin-top:14px;"><span class="btn primary">保存配置</span><span class="btn">立即生成本期</span></div>
+      </div>
+      <div class="rpt">
+        <h3>报告历史</h3>
+        <div class="hist">
+          <div class="h-row"><span class="t">周报 · 09-01 ～ 09-07</span><span class="m">生成于 09-08 09:00 · deepseek-chat</span><span class="badge ok">已生成</span><span class="act">查看</span><span class="act">推送</span></div>
+          <div class="h-row"><span class="t">日报 · 09-07</span><span class="m">生成于 09-07 22:00 · deepseek-chat</span><span class="badge ok">已生成</span><span class="act">查看</span><span class="act">重新生成</span></div>
+          <div class="h-row"><span class="t">日报 · 09-06</span><span class="m">错过补跑于 09-07 09:00</span><span class="badge run">补跑</span><span class="act">查看</span></div>
+          <div class="h-row"><span class="t">日报 · 09-05</span><span class="m">模型接口超时 · 已重试 2 次</span><span class="badge err">失败</span><span class="act">重试</span></div>
+        </div>
+        <h3>报告详情 · 周报 09-01 ～ 09-07（年报式卡片）</h3>
+        <div class="story">
+          <div class="scard wide">
+            <div class="big">本周你与 AI 一起消耗了 <span style="color:var(--accent)">31.6M</span> tokens</div>
+            <div class="cap">相当于上一周的 1.18 倍 · 共 812 次 LLM 调用 · 覆盖 5 个项目</div>
+            <div class="hl" style="background:linear-gradient(90deg,var(--p1),var(--p2),var(--p3));"></div>
+          </div>
+          <div class="scard">
+            <div class="cap">最活跃项目</div>
+            <div class="big" style="font-size:18px;">dsh-plugin-hub</div>
+            <div class="bar"><i style="width:72%;background:var(--p1);"></i></div>
+            <div class="cap">17.2M · 占 54.3%</div>
+          </div>
+          <div class="scard">
+            <div class="cap">最常用适配器</div>
+            <div class="big" style="font-size:18px;">deepseek-official</div>
+            <div class="bar"><i style="width:62%;background:var(--p2);"></i></div>
+            <div class="cap">19.7M · 489 次调用</div>
+          </div>
+          <div class="scard">
+            <div class="cap">峰值日 · 09-02</div>
+            <div class="big" style="font-size:18px;">9.8M tokens</div>
+            <div class="cap">单日 214 次调用 · 主要来自代码重构会话</div>
+          </div>
+          <div class="scard wide">
+            <div class="cap">本周叙事（由所配模型生成）</div>
+            <div class="narr">这一周你把最多的精力投在了 <b>dsh-plugin-hub</b> 的插件开发上，<b>周二</b>是绝对高峰——单日 9.8M tokens 里大部分流向了代码重构。<b>缓存读取占比 71%</b>，说明长会话复用良好；建议把 <b>zai-coding-cn</b> 上的零散小任务合并到深度会话，可进一步摊薄输入成本。</div>
+          </div>
+        </div>
+        <div class="note" style="margin-top:10px;">生成消耗的 token 不计入用量统计，由报告元数据单独记录（此处可见）。</div>
+      </div>
+    </div>
+  </div>
+  <div class="anno"><span class="pin">d</span><span>配置项即时保存；「立即生成本期」用于补生成 / 预览，与定时调度共用幂等标记（按 profile 隔离）。</span></div>
+  <div class="anno"><span class="pin">e</span><span>报告详情 HTML 经宿主端 sanitize 双层净化后渲染；外发摘要默认隐去项目路径。</span></div>
+</div>
+
+<!-- ═══════════ ④ 状态与响应式 ═══════════ -->
+<div class="section">
+  <h2><span class="no">④</span>关键状态与响应式</h2>
+  <div class="two-col">
+    <div class="frame pad">
+      <h3 style="font-size:13px; color:var(--ink-2); margin-bottom:10px;">趋势 tab · 空态 / 加载</h3>
+      <div class="empty"><div class="e-ico">📈</div>暂无趋势数据 —— 统计自插件挂载起算，完成首轮会话后即可查看</div>
+      <div class="empty" style="margin-top:10px;"><div class="e-ico">⏳</div>正在聚合最近 30 天数据…</div>
+    </div>
+    <div class="frame pad">
+      <h3 style="font-size:13px; color:var(--ink-2); margin-bottom:10px;">报告 tab · 空态</h3>
+      <div class="empty"><div class="e-ico">📊</div>尚未生成报告 —— 配置好时间与模型后，日报将于每日 22:00 自动生成<br><span class="btn primary" style="margin-top:12px; pointer-events:none;">立即生成本期</span></div>
+    </div>
+  </div>
+  <div class="anno"><span class="pin">f</span><span>响应式：≥1280px 双列（配置左 / 报告右）；768–1280px 配置区折叠为可展开分组；&lt;768px 单列堆叠、趋势控制行折行、历史行隐藏次要元信息。暗色主题复用面板既有 CSS 变量（点右上角按钮体验）。</span></div>
+</div>
+
+<script>
+// 堆叠柱状演示数据：固定伪随机（可复现），3+1 个适配器 × 30 天
+(function(){
+  const svg = document.getElementById('trend');
+  const W=1200, H=260, PL=46, PR=14, PT=14, PB=26;
+  const days=30, plotW=W-PL-PR, plotH=H-PT-PB;
+  const colors=['var(--p1)','var(--p2)','var(--p3)','var(--p4)'];
+  const names=['deepseek','claudex','opencode','zai'];
+  // 固定种子伪随机
+  let s=42; const rnd=()=>{s=(s*9301+49297)%233280; return s/233280;};
+  const rows=[]; // rows[d] = [v1..v4]
+  for(let d=0; d<days; d++){
+    const base=2.2+2.6*Math.abs(Math.sin(d/4.5))+rnd()*1.4;
+    const weekend=(d%7===5||d%7===6)?0.35:1;
+    rows.push(names.map((_,i)=>+(base*weekend*[0.62,0.2,0.11,0.07][i]*(0.75+rnd()*0.5)).toFixed(2)));
+  }
+  const max=3.2*10; // Y 轴按 M tokens
+  const bw=plotW/days*0.62;
+  let parts='';
+  // 网格与 Y 轴
+  for(let g=0; g<=4; g++){
+    const y=PT+plotH-plotH*g/4;
+    parts+=`<line x1="${PL}" y1="${y}" x2="${W-PR}" y2="${y}" stroke="var(--line)" stroke-width="1"/>`;
+    parts+=`<text x="${PL-6}" y="${y+3}" text-anchor="end">${(max*g/4).toFixed(0)}M</text>`;
+  }
+  // 堆叠柱
+  rows.forEach((r,d)=>{
+    const x=PL+plotW/days*(d+0.5)-bw/2;
+    let acc=0;
+    r.forEach((v,i)=>{
+      const h0=plotH*acc/max, h1=plotH*(acc+v)/max;
+      parts+=`<rect x="${x.toFixed(1)}" y="${(PT+plotH-h1).toFixed(1)}" width="${bw.toFixed(1)}" height="${(h1-h0).toFixed(1)}" rx="${i===r.length-1?2:0}" fill="${colors[i]}"><title>第 ${d+1} 天 · ${names[i]}：${(v*10).toFixed(1)}M</title></rect>`;
+      acc+=v;
+    });
+    if(d%5===0||d===days-1) parts+=`<text x="${x+bw/2}" y="${H-8}" text-anchor="middle">${String(d+1).padStart(2,'0')}</text>`;
+  });
+  svg.innerHTML=parts;
+})();
+</script>
+</body>
+</html>
