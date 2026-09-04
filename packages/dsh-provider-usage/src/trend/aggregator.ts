@@ -27,6 +27,40 @@ import type { TrendCallRecord, TrendCorrectRecord, TrendCounterRecord, TrendEmit
 /** 聚合指标（序列查询的取值维度；total = 四项 token 之和）。 */
 export type TrendMetric = "total" | "input" | "output" | "cacheRead" | "cacheWrite" | "calls";
 
+/** 序列粒度。 */
+export type TrendGranularity = "day" | "week" | "month";
+
+/** 堆叠柱单段（一个 provider 或 provider+model 组合在一个时间桶内的取值）。 */
+export interface TrendStackPart {
+  provider: string;
+  model: string | null;
+  value: number | null;
+}
+
+/** 堆叠柱单根（一个时间桶）。 */
+export interface TrendStackPoint {
+  /** 桶键：day=YYYY-MM-DD / week=周首日 / month=YYYY-MM。 */
+  key: string;
+  parts: TrendStackPart[];
+  /** 各段之和（null-aware；空桶 null）。 */
+  total: number | null;
+}
+
+/** 窗口摘要（趋势页汇总卡数据源）。 */
+export interface TrendWindowSummary {
+  /** 当前窗口指标总量。 */
+  total: number | null;
+  calls: number;
+  turns: number;
+  toolCalls: number;
+  /** 峰值桶键（total 最大的时间桶；无数据 null）。 */
+  peakKey: string | null;
+  /** 取值最大的适配器段。 */
+  top: { provider: string; model: string | null; value: number } | null;
+  /** 上一同等窗口指标总量（环比基准；无数据 null）。 */
+  prevTotal: number | null;
+}
+
 /** 未压实行（内存持有；flush 时持久化，压实后移除）。 */
 export interface PendingEntry {
   row: TrendDetailRow | TrendCounterRow;
@@ -296,6 +330,148 @@ export class TrendAggregator {
     return keys.map((key) => ({ day: key, value: this.rangeValue(monthRange(key), metric, provider) }));
   }
 
+  /**
+   * 堆叠柱序列（/trend 路由数据源）：每时间桶按 provider（byModel 时细到
+   * provider+model）拆段；providers 为图例并集（窗口内出现过的段）。
+   */
+  seriesStacked(
+    n: number,
+    gran: TrendGranularity,
+    metric: TrendMetric,
+    provider: string | undefined,
+    byModel: boolean,
+    now: number,
+  ): { series: TrendStackPoint[]; providers: Array<{ provider: string; model: string | null }> } {
+    const keys = this.granKeys(n, gran, now);
+    const series: TrendStackPoint[] = keys.map((key) => {
+      const partsMap = new Map<string, TrendStackPart>();
+      for (const [day, models] of this.days) {
+        const range = this.granRange(key, gran);
+        if (day < range.start || day > range.end) continue;
+        for (const [p, cells] of models) {
+          if (provider !== undefined && p !== provider) continue;
+          for (const [m, cell] of cells) {
+            const id = byModel ? `${p}\u0000${m ?? ""}` : p;
+            const v = metricValue(cell, metric);
+            const cur = partsMap.get(id);
+            if (cur !== undefined) cur.value = sumToken(cur.value, v);
+            else partsMap.set(id, { provider: p, model: byModel ? m : null, value: v });
+          }
+        }
+      }
+      const parts = [...partsMap.values()];
+      let total: number | null = null;
+      for (const pt of parts) total = sumToken(total, pt.value);
+      return { key, parts, total };
+    });
+    const legend = new Map<string, { provider: string; model: string | null }>();
+    for (const point of series) {
+      for (const pt of point.parts) {
+        legend.set(byModel ? `${pt.provider}\u0000${pt.model ?? ""}` : pt.provider, {
+          provider: pt.provider,
+          model: byModel ? pt.model : null,
+        });
+      }
+    }
+    return { series, providers: [...legend.values()] };
+  }
+
+  /** 窗口摘要（当前 n 桶 + 上一同等窗口环比基准）。 */
+  windowSummary(
+    n: number,
+    gran: TrendGranularity,
+    metric: TrendMetric,
+    provider: string | undefined,
+    now: number,
+  ): TrendWindowSummary {
+    const keys = this.granKeys(n, gran, now);
+    const curRange = {
+      start: this.granRange(keys[0], gran).start,
+      end: this.granRange(keys[keys.length - 1], gran).end,
+    };
+    // 上一窗口：同长键序列整体前移 n 桶（day/week/month 各自步进语义）
+    const prevKeys = this.granKeys(n, gran, this.prevWindowAnchor(now, n, gran));
+    const prevRange = {
+      start: this.granRange(prevKeys[0], gran).start,
+      end: this.granRange(prevKeys[prevKeys.length - 1], gran).end,
+    };
+    let total: number | null = null;
+    let calls = 0;
+    let turns = 0;
+    let toolCalls = 0;
+    let peakKey: string | null = null;
+    let peakVal = -1;
+    let top: { provider: string; model: string | null; value: number } | null = null;
+    const series = this.seriesStacked(n, gran, metric, provider, false, now).series;
+    for (const point of series) {
+      if (point.total !== null && point.total > peakVal) {
+        peakVal = point.total;
+        peakKey = point.key;
+      }
+      for (const pt of point.parts) {
+        if (pt.value !== null && (top === null || pt.value > top.value)) {
+          top = { provider: pt.provider, model: pt.model, value: pt.value };
+        }
+      }
+    }
+    for (const { cell } of this.rangeCells(curRange, provider)) {
+      total = sumToken(total, metricValue(cell, metric));
+      calls += cell.calls;
+      turns += cell.turns;
+      toolCalls += cell.toolCalls;
+    }
+    return {
+      total,
+      calls,
+      turns,
+      toolCalls,
+      peakKey,
+      top,
+      prevTotal: this.rangeValue(prevRange, metric, provider),
+    };
+  }
+
+  // ---------------------------------------------------------------- 内部
+
+  /** 粒度桶键序列（升序，含当前桶）。 */
+  private granKeys(n: number, gran: TrendGranularity, now: number): string[] {
+    if (gran === "week") return lastNWeekKeys(n, now);
+    if (gran === "month") return lastNMonthKeys(n, now);
+    return lastNDayKeys(n, now);
+  }
+
+  /** 桶键 → 本地日区间。 */
+  private granRange(key: string, gran: TrendGranularity): { start: string; end: string } {
+    if (gran === "week") return weekRange(key);
+    if (gran === "month") return monthRange(key);
+    return { start: key, end: key };
+  }
+
+  /** 上一窗口锚点（把 now 前移 n 桶，得到 prevKeys 与当前窗口不重叠的时点）。 */
+  private prevWindowAnchor(now: number, n: number, gran: TrendGranularity): number {
+    const d = new Date(now);
+    if (gran === "month") {
+      d.setMonth(d.getMonth() - n);
+      return d.getTime();
+    }
+    const days = gran === "week" ? n * 7 : n;
+    d.setDate(d.getDate() - days);
+    return d.getTime();
+  }
+
+  /** 日区间内的全部 (provider, model, cell)（升序日；provider 过滤可选）。 */
+  private rangeCells(range: { start: string; end: string }, provider?: string): Array<{ provider: string; model: string | null; cell: TrendCell }> {
+    const out: Array<{ provider: string; model: string | null; cell: TrendCell }> = [];
+    for (const [day, models] of this.days) {
+      if (day < range.start || day > range.end) continue;
+      for (const [p, cells] of models) {
+        if (provider !== undefined && p !== provider) continue;
+        for (const [m, cell] of cells) out.push({ provider: p, model: m, cell });
+      }
+    }
+    return out;
+  }
+
   /** 单日取值（provider 过滤可选；跨 model 求和）。 */
   private dayValue(day: string, metric: TrendMetric, provider?: string): number | null {
     const models = this.days.get(day);
@@ -330,7 +506,7 @@ export class TrendAggregator {
     };
   }
 
-  // ---------------------------------------------------------------- 内部
+  // ---------------------------------------------------------------- 内部（桶构建）
 
   private cellOf(day: string, provider: string, model: string | null): TrendCell {
     let providers = this.days.get(day);

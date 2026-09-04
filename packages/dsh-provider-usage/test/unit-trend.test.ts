@@ -386,6 +386,85 @@ function cellTotals(agg, day, provider = "deepseek") {
   assert.deepEqual(months.map((m) => m.value), [8, 4], "月区间聚合");
 }
 
+// ---------------------------------------------------------------- aggregator：堆叠柱序列 / 窗口摘要（#503 M2 查询面）
+
+{
+  // 场景：3 个 provider/model 组合、跨 3 天；dPrev 落在上一窗口（环比基准）
+  const agg = new TrendAggregator();
+  const d1 = new Date(2026, 8, 3, 10, 0, 0).getTime(); // 周四 09-03
+  const dPrev = new Date(2026, 7, 31, 10, 0, 0).getTime(); // 周一 08-31
+  const call = (time, provider, model, input) => ({
+    type: "call",
+    record: { time, session: "s", turn: 1, step: 1, retry: 1, provider, model, tokens: { input, output: 0, cacheRead: null, cacheWrite: null } },
+  });
+  agg.apply(call(dPrev, "deepseek", "chat", 7));
+  agg.apply(call(d1, "deepseek", "chat", 10));
+  agg.apply(call(T0, "deepseek", "reasoner", 20));
+  agg.apply(call(T0, "deepseek", "chat", 3));
+  agg.apply(call(T0, "openai", "gpt", 5));
+
+  // seriesStacked（day，byModel=false）：同 provider 跨 model 并段；空桶 null
+  const day = agg.seriesStacked(3, "day", "input", undefined, false, T0);
+  assert.deepEqual(day.series.map((p) => p.key), ["2026-09-02", "2026-09-03", "2026-09-04"], "day 桶键（升序含今日）");
+  assert.deepEqual(day.series[0], { key: "2026-09-02", parts: [], total: null }, "空桶 parts 空且 total=null");
+  assert.deepEqual(day.series[1].parts, [{ provider: "deepseek", model: null, value: 10 }], "byModel=false 段 model=null");
+  assert.deepEqual(
+    day.series[2].parts.map((p) => [p.provider, p.value]),
+    [["deepseek", 23], ["openai", 5]],
+    "同 provider 跨 model 并段（20+3）",
+  );
+  assert.equal(day.series[2].total, 28, "桶 total = 段之和");
+  assert.deepEqual(day.providers, [{ provider: "deepseek", model: null }, { provider: "openai", model: null }], "图例并集（窗口内出现过的段）");
+
+  // seriesStacked（day，byModel=true）：细到 provider+model
+  const byModel = agg.seriesStacked(3, "day", "input", undefined, true, T0);
+  assert.deepEqual(
+    byModel.series[2].parts.map((p) => [p.provider, p.model, p.value]),
+    [["deepseek", "reasoner", 20], ["deepseek", "chat", 3], ["openai", "gpt", 5]],
+    "byModel 拆段含 model",
+  );
+  assert.deepEqual(
+    byModel.providers.map((p) => `${p.provider}/${p.model}`).sort(),
+    ["deepseek/chat", "deepseek/reasoner", "openai/gpt"],
+    "byModel 图例并集细到 model",
+  );
+
+  // seriesStacked：provider 过滤（段与图例同收）
+  const filtered = agg.seriesStacked(3, "day", "input", "deepseek", false, T0);
+  assert.deepEqual(filtered.series[2].parts, [{ provider: "deepseek", model: null, value: 23 }], "provider 过滤只剩该 provider 段");
+  assert.deepEqual(filtered.providers, [{ provider: "deepseek", model: null }], "过滤后图例");
+  assert.equal(filtered.series[2].total, 23, "过滤后桶 total");
+
+  // seriesStacked（week / month）：跨桶聚合与键形态（08-31/09-03/09-04 同一周）
+  const weeks = agg.seriesStacked(2, "week", "input", undefined, false, T0);
+  assert.deepEqual(weeks.series.map((p) => p.key), ["2026-08-24", "2026-08-31"], "week 桶键（周一锚点）");
+  assert.deepEqual(weeks.series.map((p) => p.total), [null, 45], "week 桶聚合（7+10+20+3+5）");
+  const months = agg.seriesStacked(2, "month", "input", undefined, false, T0);
+  assert.deepEqual(months.series.map((p) => p.key), ["2026-08", "2026-09"], "month 桶键");
+  assert.deepEqual(months.series.map((p) => p.total), [7, 38], "month 桶聚合（08-31 入 8 月桶）");
+
+  // windowSummary：total/calls/peakKey/top/prevTotal（上一窗口 08-30..09-01 含 08-31 的 7）
+  const sum = agg.windowSummary(3, "day", "input", undefined, T0);
+  assert.equal(sum.total, 38, "窗口 total（09-02..09-04）");
+  assert.equal(sum.calls, 4, "窗口 calls 计数（d1 1 次 + 当日 3 次）");
+  assert.equal(sum.peakKey, DAY0, "峰值桶 = 取值最大的日桶");
+  assert.deepEqual(sum.top, { provider: "deepseek", model: null, value: 23 }, "top 段（byModel=false 视角）");
+  assert.equal(sum.turns, 0, "turns 无 counter 记录为 0");
+  assert.equal(sum.prevTotal, 7, "上一窗口指标总量（环比基准）");
+
+  // windowSummary：metric=calls 切换（上一窗口 08-31 的调用计入 prevTotal）
+  const sumCalls = agg.windowSummary(3, "day", "calls", undefined, T0);
+  assert.equal(sumCalls.total, 4, "calls 指标窗口总量");
+  assert.equal(sumCalls.prevTotal, 1, "calls 指标环比基准");
+
+  // windowSummary：provider 过滤（摘要口径与序列同源收窄）
+  const sumFiltered = agg.windowSummary(3, "day", "input", "openai", T0);
+  assert.equal(sumFiltered.total, 5, "过滤后窗口 total");
+  assert.equal(sumFiltered.calls, 1, "过滤后 calls");
+  assert.deepEqual(sumFiltered.top, { provider: "openai", model: null, value: 5 }, "过滤后 top 段");
+  assert.equal(sumFiltered.prevTotal, null, "过滤后上一窗口无数据 prevTotal=null");
+}
+
 // ---------------------------------------------------------------- store
 
 {

@@ -9,7 +9,7 @@
  *   统计自挂载时点起算。
  */
 import { dayKey } from "../charts.ts";
-import { TrendAggregator, mergeAggRows, type TrendMetric } from "./aggregator.ts";
+import { TrendAggregator, mergeAggRows, type TrendGranularity, type TrendMetric, type TrendStackPoint, type TrendWindowSummary } from "./aggregator.ts";
 import { TrendCollector } from "./collector.ts";
 import { TrendStore } from "./store.ts";
 import { safeId } from "./types.ts";
@@ -209,6 +209,28 @@ export class TrendTracker {
   /** 全量桶快照（堆叠柱状/Top 适配器数据源）。 */
   buckets(): ReturnType<TrendAggregator["buckets"]> {
     return this.aggregator.buckets();
+  }
+
+  /** 堆叠柱序列（M2 /trend 路由数据源；n 由粒度决定：日 30 / 周 12 / 月 12）。 */
+  seriesStacked(
+    n: number,
+    gran: TrendGranularity,
+    metric: TrendMetric,
+    provider?: string,
+    byModel = false,
+  ): { series: TrendStackPoint[]; providers: Array<{ provider: string; model: string | null }> } {
+    return this.aggregator.seriesStacked(n, gran, metric, provider, byModel, this.now());
+  }
+
+  /** 窗口摘要（趋势页汇总卡）。 */
+  windowSummary(n: number, gran: TrendGranularity, metric: TrendMetric, provider?: string): TrendWindowSummary {
+    return this.aggregator.windowSummary(n, gran, metric, provider, this.now());
+  }
+
+  /** 统计自挂载时点起算提示的数据源：最早有数据的本地日 key（无数据 null）。 */
+  firstRecordedDay(): string | null {
+    const days = this.aggregator.buckets();
+    return days.length > 0 ? days[0].day : null;
   }
 
   /** 健康观测（/health 附带）。 */

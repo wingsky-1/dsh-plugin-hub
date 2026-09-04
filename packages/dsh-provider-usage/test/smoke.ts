@@ -142,15 +142,15 @@ function makeFakeCtx(overrides = {}) {
   assert.equal(routes.length, 0, "enabled:false 不注册任何路由");
 }
 
-// ---------------------------------------------------------------- 注册九路由
+// ---------------------------------------------------------------- 注册十路由
 
 {
   const { ctx, routes } = makeFakeCtx();
   await apply(ctx, { ...ISOLATED_CONFIG });
   assert.deepEqual(
     routes.map((r) => r.path).sort(),
-    [ROUTES.health, ROUTES.history, ROUTES.stats, ROUTES.adapters, ROUTES.select, ROUTES.inspect, ROUTES.add, ROUTES.uiConfig, ROUTES.events].sort(),
-    "注册九条路由（stats/history/adapters.json/select/inspect/add/health/ui-config/events）",
+    [ROUTES.health, ROUTES.history, ROUTES.stats, ROUTES.trend, ROUTES.adapters, ROUTES.select, ROUTES.inspect, ROUTES.add, ROUTES.uiConfig, ROUTES.events].sort(),
+    "注册十条路由（stats/history/trend/adapters.json/select/inspect/add/health/ui-config/events）",
   );
   assert.ok(routes.every((r) => r.kind === "exact" || r.kind === "prefix"), "路由 kind 合法");
 }
@@ -158,7 +158,7 @@ function makeFakeCtx(overrides = {}) {
 // ---------------------------------------------------------------- 围栏：403 / 405
 
 const POST_ROUTES = new Set([ROUTES.select, ROUTES.inspect, ROUTES.add, ROUTES.uiConfig]);
-for (const routePath of [ROUTES.stats, ROUTES.history, ROUTES.health, ROUTES.adapters, ROUTES.select, ROUTES.inspect, ROUTES.add, ROUTES.uiConfig, ROUTES.events]) {
+for (const routePath of [ROUTES.stats, ROUTES.history, ROUTES.trend, ROUTES.health, ROUTES.adapters, ROUTES.select, ROUTES.inspect, ROUTES.add, ROUTES.uiConfig, ROUTES.events]) {
   {
     const { ctx, routes } = makeFakeCtx();
     await apply(ctx, { ...ISOLATED_CONFIG });
@@ -172,7 +172,7 @@ for (const routePath of [ROUTES.stats, ROUTES.history, ROUTES.health, ROUTES.ada
     assert.equal(responses403.at(-1)?.error, "forbidden: loopback-only", `${routePath} 非回环 403`);
 
     // 方法错 → 405（POST 路由用 DELETE 触发；GET 路由用 POST 触发）
-    // #473 批 2（B2-4）：405 body 围栏文案断言（守卫收敛后逐字节锁定，全 9 端点）
+    // #473 批 2（B2-4）：405 body 围栏文案断言（守卫收敛后逐字节锁定，全 10 端点）
     const wrongMethod = POST_ROUTES.has(routePath) ? "DELETE" : "POST";
     const responses405 = [];
     const res405 = { writeHead: (code) => { responses405.push({ __code: code }); }, end: (chunk) => responses405.push(JSON.parse(chunk)) };
@@ -1447,7 +1447,97 @@ console.log("[smoke] #105① /history 渲染缓存断言全部通过 ✓");
   assert.deepEqual(rows.map((r) => r.input).sort((a, b) => a - b), [7, 25], "input 只含 25 与 7（100 被丢弃）");
 }
 
-console.log("[smoke] #503 trend 挂接断言全部通过 ✓");
+// ---------------------------------------------------------------- #503 M2：/trend 路由集成断言
+
+{
+  // 独立 historyDir：隔离磁盘分片（防前序块的落盘行经启动重建混进本块断言口径）
+  const dir = mkdtempSync(join(tmpdir(), "dou-trend-api-"));
+  const { ctx, routes, listeners, emitEvent } = makeFakeCtx();
+  await apply(ctx, { ...ISOLATED_CONFIG, historyDir: join(dir, "hist") });
+  const trendRoute = routes.find((r) => r.path === ROUTES.trend);
+  assert.ok(trendRoute !== undefined, "trend 路由存在");
+
+  // 合成事件流：两个会话各一次定稿调用（header 归属折叠 + usage chunk 定稿）
+  const t = Date.now();
+  const emitCall = (sessionId, seqBase, provider, model, input, output) => {
+    const s = { id: sessionId };
+    emitEvent("session/event", s, { type: "request/header", seq: seqBase, time: t, data: { header: { config: { provider, model } }, reason: "initial" } });
+    emitEvent("session/event", s, { type: "assistant/chunk", seq: seqBase + 1, time: t, data: { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: input, outputTokens: output } } } });
+  };
+  emitCall("sess-trend-api-a", 1, "deepseek", "deepseek-chat", 100, 50);
+  emitCall("sess-trend-api-b", 1, "openai", "gpt-x", 10, 5);
+
+  // 官方排空点先行刷盘（路由读内存聚合，此处主要验证 flush 与查询共存不崩）
+  await listeners.get("session/flush")[0]();
+
+  const today = dayKey(t);
+
+  // 默认参数（granularity=day / metric=total）：200 形状
+  const payload = await callHandler(trendRoute, fakeReq({ url: ROUTES.trend }));
+  assert.equal(payload.ok, true, "trend 默认 ok");
+  assert.equal(payload.plugin, "dsh-provider-usage", "trend plugin 字段");
+  assert.equal(payload.version, ADAPTER_CONTRACT_VERSION, "trend 带契约版本");
+  assert.equal(payload.granularity, "day", "granularity 默认 day");
+  assert.equal(payload.metric, "total", "metric 默认 total");
+  assert.equal(payload.byModel, false, "byModel 默认 false");
+  assert.ok(Array.isArray(payload.series) && payload.series.length === 30, "日序列固定 30 桶");
+  assert.ok(Array.isArray(payload.providers) && payload.providers.length === 2, "图例并集 = 两个 provider");
+  assert.ok(typeof payload.generatedAt === "number", "generatedAt 时间戳");
+
+  // 今日桶：total = 100+50+10+5 = 165（>0）；段拆到 provider
+  const todayPoint = payload.series.find((p) => p.key === today);
+  assert.ok(todayPoint !== undefined, "序列含今日桶");
+  assert.ok(todayPoint.total === 165, `今日 total = 165（实际 ${todayPoint.total}）`);
+  const deepseekPart = todayPoint.parts.find((p) => p.provider === "deepseek");
+  assert.ok(deepseekPart && deepseekPart.value === 150, "今日 deepseek 段 = 150");
+  // 空桶补齐为 null（30 桶内仅今日有数据——独立 historyDir 保证）
+  assert.equal(payload.series.filter((p) => p.total === null).length, 29, "无数据日 total=null");
+
+  // 窗口摘要
+  assert.equal(payload.summary.calls, 2, "summary.calls = 2 次调用");
+  assert.equal(payload.summary.total, 165, "summary.total = 165");
+  assert.equal(payload.summary.peakKey, today, "峰值桶 = 今日");
+  assert.ok(payload.summary.top && payload.summary.top.provider === "deepseek" && payload.summary.top.value === 150, "top 段 = deepseek/150");
+  assert.equal(payload.summary.prevTotal, null, "上一窗口无数据 → prevTotal=null");
+
+  // 起算日（「统计自挂载时点起算」数据源）
+  assert.equal(payload.firstDay, today, "firstDay = 最早有数据的当日");
+
+  // ?metric=calls 指标切换：取值维度切到调用次数
+  const callsPayload = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?metric=calls` }));
+  assert.equal(callsPayload.metric, "calls", "metric=calls 回显");
+  assert.equal(callsPayload.series.find((p) => p.key === today).total, 2, "calls 指标下今日桶 = 2 次调用");
+  assert.equal(callsPayload.summary.total, 2, "calls 指标下 summary.total = 2");
+
+  // ?granularity=week：周粒度 12 桶，本周聚合两天数据（实际仅今日）
+  const weekPayload = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?granularity=week` }));
+  assert.equal(weekPayload.granularity, "week", "granularity=week 回显");
+  assert.equal(weekPayload.series.length, 12, "周序列固定 12 桶");
+  assert.equal(weekPayload.series.at(-1).total, 165, "当前周 total = 165");
+
+  // ?provider=deepseek 过滤：只剩该 provider 的段与图例
+  const filtered = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?provider=deepseek` }));
+  assert.equal(filtered.series.find((p) => p.key === today).total, 150, "provider 过滤后今日 total = 150");
+  assert.equal(filtered.providers.length, 1, "过滤后图例只剩 deepseek");
+
+  // ?byModel=1：段拆到 provider+model，图例并集细到 model
+  const byModelPayload = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?byModel=1` }));
+  assert.equal(byModelPayload.byModel, true, "byModel=1 回显");
+  const byModelToday = byModelPayload.series.find((p) => p.key === today);
+  assert.equal(byModelToday.parts.length, 2, "byModel 拆两段");
+  assert.deepEqual(
+    byModelToday.parts.map((p) => `${p.provider}/${p.model}`).sort(),
+    ["deepseek/deepseek-chat", "openai/gpt-x"],
+    "byModel 段含 model 维度",
+  );
+
+  // 非法参数回退默认（守卫：未知 granularity/metric 不进查询面）
+  const fallback = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?granularity=hour&metric=evil` }));
+  assert.equal(fallback.granularity, "day", "非法 granularity 回退 day");
+  assert.equal(fallback.metric, "total", "非法 metric 回退 total");
+}
+
+console.log("[smoke] #503 trend 挂接 + /trend 集成断言全部通过 ✓");
 
 // 恢复真实环境变量（测试收尾）
 for (const k of SAVED_ENV_KEYS) {

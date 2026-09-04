@@ -12,6 +12,8 @@ declare const __DSH_ROUTES__: Record<string, string> | undefined;
 export const STATS_URL = __DSH_ROUTES__?.stats ?? "/api/dsh-provider-usage/stats";
 export const HISTORY_URL = __DSH_ROUTES__?.history ?? "/api/dsh-provider-usage/history";
 export const HEALTH_URL = __DSH_ROUTES__?.health ?? "/api/dsh-provider-usage/health";
+/** 会话用量趋势（#503 M2）。 */
+export const TREND_URL = __DSH_ROUTES__?.trend ?? "/api/dsh-provider-usage/trend";
 /** @deprecated v1 适配器管理路由（设置面板兼容保留；宿主可能未注册，调用方需容错）。 */
 export const ADAPTERS_URL = __DSH_ROUTES__?.adapters ?? "/api/dsh-provider-usage/adapters.json";
 /** @deprecated */

@@ -50,6 +50,7 @@ import type {} from "@deepseek-ai/dsh-session";
 export const ROUTES: Record<string, string> = {
   stats: "/api/dsh-provider-usage/stats",
   history: "/api/dsh-provider-usage/history",
+  trend: "/api/dsh-provider-usage/trend",
   adapters: "/api/dsh-provider-usage/adapters.json",
   select: "/api/dsh-provider-usage/adapters/select",
   inspect: "/api/dsh-provider-usage/adapters/inspect",
@@ -569,6 +570,45 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     },
   };
 
+  /**
+   * 会话用量趋势（#503 M2，GET）：granularity=day|week|month（默认 day）×
+   * metric=total|input|output|cacheRead|cacheWrite|calls（默认 total）×
+   * provider 过滤（缺省全部）× byModel=1（适配器维度细到 model，默认 provider）。
+   * 堆叠柱序列 + 窗口摘要 + 起算日（「统计自插件挂载时点起算」文案数据源）。
+   */
+  const TREND_WINDOW: Record<string, number> = { day: 30, week: 12, month: 12 };
+  const TREND_METRICS = new Set(["total", "input", "output", "cacheRead", "cacheWrite", "calls"]);
+  const trendRoute: WebRoute = {
+    kind: "exact",
+    path: ROUTES.trend,
+    handler: (req, res) => {
+      if (!guardLoopbackMethod(req, res, ["GET"])) return;
+      const url = new URL(req.url ?? "/", "http://localhost");
+      const g = url.searchParams.get("granularity") ?? "day";
+      const granularity = g === "week" || g === "month" ? g : "day";
+      const m = url.searchParams.get("metric") ?? "total";
+      const metric = TREND_METRICS.has(m) ? (m as "total" | "input" | "output" | "cacheRead" | "cacheWrite" | "calls") : "total";
+      const providerParam = url.searchParams.get("provider") ?? "";
+      const provider = providerParam.length > 0 && providerParam.length <= 128 ? providerParam : undefined;
+      const byModel = url.searchParams.get("byModel") === "1";
+      const n = TREND_WINDOW[granularity] ?? 30;
+      const stack = trend.seriesStacked(n, granularity, metric, provider, byModel);
+      writeJson(res, 200, {
+        ok: true,
+        plugin: "dsh-provider-usage",
+        version: ADAPTER_CONTRACT_VERSION,
+        granularity,
+        metric,
+        provider: provider ?? null,
+        byModel,
+        ...stack,
+        summary: trend.windowSummary(n, granularity, metric, provider),
+        firstDay: trend.firstRecordedDay(),
+        generatedAt: Date.now(),
+      });
+    },
+  };
+
   /** 适配器元数据路由（设置页主列表同源）。 */
   const adaptersRoute: WebRoute = {
     kind: "exact",
@@ -775,7 +815,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
 
   const disposeRoutes = ctx.effect(
     () => {
-      const routeDisposers = [statsRoute, historyRoute, healthRoute, adaptersRoute, selectRoute, inspectRoute, addRoute, uiConfigRoute, eventsRoute].map((route) =>
+      const routeDisposers = [statsRoute, historyRoute, healthRoute, trendRoute, adaptersRoute, selectRoute, inspectRoute, addRoute, uiConfigRoute, eventsRoute].map((route) =>
         ctx.webServer.register(route),
       );
       return () => {

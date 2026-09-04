@@ -217,6 +217,22 @@
 .dou-legendDot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .dou-miniChart { margin-top: 6px; }
 
+/* ---------------------------------------------------------------- 设置页·使用趋势区块（issue #503 M2） */
+
+/* 组件布局大量内联样式；此处只补全局交互/渲染语义：
+   键盘 focus 可见性（按钮组/下拉/复选框统一 outline，不依赖浏览器默认被 reset 的形态） */
+.dou-trend button:focus-visible,
+.dou-trend select:focus-visible,
+.dou-trend input:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-info-primary, #4a7dd6);
+  outline-offset: 1px;
+}
+
+/* 图表容器：SVG 铺满宽度、按 viewBox 等比伸缩（与 .dou-miniChart 同语义） */
+.dou-trend-chart svg { display: block; width: 100%; height: auto; }
+/* 图例色点与轴文字跟随主题（颜色变量集中在 SVG 内联处与组件内联处） */
+.dou-trend-legendDot { display: inline-block; }
+
 /* ---------------------------------------------------------------- 设置页·提供商手风琴列表（issue #38） */
 
 .dou-provList {

@@ -68,7 +68,7 @@ export type { TrendTrackerOptions } from "./trend/index.ts";
 export { TrendCollector, TREND_FOLD_TTL_MS } from "./trend/collector.ts";
 export type { TrendCallRecord, TrendCorrectRecord, TrendCounterRecord, TrendEmit } from "./trend/collector.ts";
 export { TrendAggregator, metricValue, weekStartKey, lastNWeekKeys, lastNMonthKeys, monthRange, weekRange, mergeAggRows } from "./trend/aggregator.ts";
-export type { TrendMetric } from "./trend/aggregator.ts";
+export type { TrendMetric, TrendGranularity, TrendStackPart, TrendStackPoint, TrendWindowSummary } from "./trend/aggregator.ts";
 export { TrendStore } from "./trend/store.ts";
 export { TREND_ROW_VERSION, TREND_UNIDENTIFIED, sumToken } from "./trend/types.ts";
 export type { TrendAttribution, TrendTokens, TrendDetailRow, TrendCounterRow, TrendAggRow, TrendCell } from "./trend/types.ts";
