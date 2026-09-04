@@ -124,6 +124,7 @@ let dshWebPort = 0; // 传给 dsh 的有效端口（--port 0 时为探测值）
 let browserPort = null;
 let readyOk = false;
 let readyIso = null;
+let childExitBeforeReady = null; // 就绪前 dsh 退出记录（P1 修复：#517 C8 复核）
 let exiting = null; // { code: number, signal: string|null } 退出请求
 let settling = false;
 let errorPayload = null; // --json 错误路径已输出的错误对象（settle 不再重复出 JSON）
@@ -557,11 +558,16 @@ async function main() {
   dshChild.stdout.on("data", onDshData);
   dshChild.stderr.on("data", onDshData);
 
-  // child 退出：正常/异常透传 dsh 自身退出码（bash wait 同语义）；Ctrl+C 同进程组
-  // 时 dsh 收到 SIGINT 退出，此处 signal → 130/143（信号路径已由 SIGINT handler
-  // 兜底，双路汇聚 settle 幂等）。
+  // child 退出：**就绪前退出不透传退出码**——dsh 启动即崩（端口被占
+  // EADDRINUSE / 插件加载失败 / 就绪前净退出）时若直接 requestExit 透传，
+  // settle 会在微任务内抢先 process.exit，使下方 waitReady 的 dead 检测与
+  // CliError 诊断整段不可达：stderr 空（无可操作诊断）且 dsh exit 0（就绪前
+  // 净退出）会静默假成功、非契约码（如 3）穿透契约表（#517 C8 复核 P1 复现）。
+  // 故就绪前退出只记录，让 waitReady 的 pidAlive 检测返回 dead → 统一走
+  // CliError(EXIT.FAIL) 路径（有诊断文案 + 契约退出码 1）。
   dshChild.once("exit", (code, signal) => {
     if (exiting) return;
+    if (!readyOk) { childExitBeforeReady = { code, signal }; return; }
     const mapped = signal === "SIGINT" ? EXIT.SIGINT : signal === "SIGTERM" ? EXIT.SIGTERM : (code ?? EXIT.FAIL);
     requestExit(mapped, null);
   });
@@ -570,8 +576,11 @@ async function main() {
   const verdictPort = dshWebPort;
   const ready = await waitReady(verdictPort, dshChild.pid);
   if (ready === "dead") {
+    const detail = childExitBeforeReady
+      ? `（dsh 就绪前退出 code=${childExitBeforeReady.code ?? "null"} signal=${childExitBeforeReady.signal ?? "null"}）`
+      : "";
     throw new CliError(
-      "错误: dsh web 进程在就绪前退出（可能端口被占/EADDRINUSE/插件加载失败）——按上方 dsh 输出排查；--keep 可保留现场",
+      `错误: dsh web 进程在就绪前退出${detail}（可能端口被占/EADDRINUSE/插件加载失败）——完整输出见 dsh.log: ${dshLogPath}；--keep 可保留现场`,
       EXIT.FAIL,
     );
   }

@@ -24,8 +24,8 @@
  */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
@@ -170,6 +170,68 @@ assert.ok(noArgExitsNonZero, "browser-driver 无参数应非零退出（用法�
   // 未知选项：退出码 2
   const u = run(["--bogus"]);
   assert.equal(u.code, 2, "未知选项退出码 2");
+}
+
+// ---- 6d. P1 回归（#517 C8 复核）：dsh 就绪前退出 → 契约码 1 + 可操作诊断 ----
+// 复现路径：dsh web 启动即崩（端口被占 EADDRINUSE / 插件加载失败 / 就绪前净退出）。
+// 修复前：exit handler 抢先 requestExit 透传 dsh 退出码 → settle 抢先 process.exit
+// → waitReady 的 dead 检测与 CliError 诊断不可达（stderr 空），且 dsh exit 0 静默
+// 假成功、非契约码（3）穿透契约表。修复后：就绪前退出只记录，统一走
+// CliError(EXIT.FAIL=1) + 引用 dsh.log 的可操作诊断。
+{
+  const tmp = mkdtempSync(join(tmpdir(), "dsh-verify-smoke-"));
+  try {
+    // 假 dsh：--version 有输出；plugin list 创建 profile 骨架（bundle 注入要读
+    // package.json，不建则 ENOENT 走不到就绪阶段）；web 启动（--host 参数）时
+    // 按 FAKE_DH_EXIT 立即退出（模拟就绪前崩溃）
+    const fakeDsh = join(tmp, "fake-dsh.mjs");
+    writeFileSync(fakeDsh, `#!/usr/bin/env node
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+const args = process.argv.slice(2);
+if (args.includes("--version")) { console.log("fake-dsh 0.0.0"); process.exit(0); }
+if (args[0] === "plugin" && args.includes("list")) {
+  const i = args.indexOf("--profile");
+  const dir = join(process.env.DSH_HOME, "profiles", args[i + 1]);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ dsh: { profile: { bundles: ["@deepseek-ai/dsh-base"] } } }));
+  process.exit(0);
+}
+process.exit(Number(process.env.FAKE_DH_EXIT ?? "0"));
+`);
+    chmodSync(fakeDsh, 0o755);
+    const runWithFake = (exitCode) => {
+      let code = 0; let out = "";
+      try {
+        out = execFileSync(process.execPath, [scriptFile, "--dsh", fakeDsh, "--port", "0"], {
+          encoding: "utf8", env: { ...process.env, FAKE_DH_EXIT: String(exitCode) }, timeout: 30000,
+        });
+      } catch (e) { code = e.status ?? -1; out = (e.stdout ?? "") + (e.stderr ?? ""); }
+      return { code, out };
+    };
+    // dsh exit 0（就绪前净退出）：不得静默假成功——契约码必须 1 且 stderr 有诊断
+    const fake0 = runWithFake(0);
+    assert.equal(fake0.code, 1, `dsh 就绪前 exit0 时脚本退出码必须 1（不透传 0 假成功），实际 ${fake0.code}`);
+    assert.ok(fake0.out.includes("就绪前退出"), "就绪前退出给可操作诊断（引用 dsh.log）");
+    assert.ok(fake0.out.includes("dsh.log"), "诊断引用 dsh.log 文件路径");
+    // dsh exit 3（非契约码）：不得穿透——契约码必须 1
+    const fake3 = runWithFake(3);
+    assert.equal(fake3.code, 1, `dsh 就绪前 exit3 时脚本退出码必须 1（不透传非契约码），实际 ${fake3.code}`);
+    assert.ok(fake3.out.includes("就绪前退出"), "exit3 同样给可操作诊断");
+    // --json：错误路径 stdout 单 JSON（人类文案走 stderr，只解析 stdout）、exitCode=1
+    let jcode = 0; let jout = "";
+    try {
+      jout = execFileSync(process.execPath, [scriptFile, "--json", "--dsh", fakeDsh, "--port", "0"], {
+        encoding: "utf8", env: { ...process.env, FAKE_DH_EXIT: "0" }, timeout: 30000,
+      });
+    } catch (e) { jcode = e.status ?? -1; jout = e.stdout ?? ""; } // stdout 单 JSON；人类文案在 stderr 不并入
+    assert.equal(jcode, 1, `--json 就绪前退出 exitCode 必须 1，实际 ${jcode}`);
+    const jparsed = JSON.parse(jout.trim().split("\n").filter(Boolean).at(-1));
+    assert.equal(jparsed.ok, false, "--json 就绪前退出 ok=false");
+    assert.equal(jparsed.exitCode, 1, "--json 就绪前退出 exitCode=1");
+  } finally {
+    rmSync(tmp, { recursive: true, force: true }); // 零污染纪律（#218）
+  }
 }
 
 // ---- 7. SKILL.md 含多会话并行章节与三平台内核自查 ----
