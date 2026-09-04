@@ -609,7 +609,7 @@ export class McpMiddleware {
       return projected;
     } catch (error) {
       if (signal?.aborted === true) throw signal.reason;
-      throw new Error(this.hostRedact(`ws_mcp_call: ${JSON.stringify(`${parsed.server}/${tool}`)} 调用失败：${msgOf(error)}；可先用 ws_mcp_detail 核对参数 schema，或确认服务器已连接后重试`));
+      throw new Error(this.hostRedact(`ws_mcp_call: ${JSON.stringify(`${parsed.server}/${tool}`)} 调用失败：${msgOf(error)}`));
     }
   }
 
