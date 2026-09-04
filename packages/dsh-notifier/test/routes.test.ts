@@ -900,6 +900,39 @@ try {
     assert.ok(warns.some((w) => w.includes("secret-internal-path")), "异常原文进服务端日志");
   }
 
+  // #405 PR3 复核：settings 服务缺失（未 attach）→ POST /kinds 503（与 PUT /config
+  // 服务缺失语义一致，非笼统 500——对抗评审发现的行为回归锁死）
+  {
+    const { apply } = await import("../lib/index.js");
+    const { makeFakeCtx } = await import("./helpers.ts");
+    const { ctx, routes } = makeFakeCtx({});
+    const svcBox = {};
+    const origProvide = ctx.provide.bind(ctx);
+    ctx.provide = (name, svc) => {
+      if (name === "wingsky.notifier") svcBox.svc = svc;
+      origProvide(name, svc);
+    };
+    apply(ctx, { enabled: true, configFile: join(work, "kinds-nosettings-cfg.json"), historyFile: join(work, "kinds-nosettings-hist.jsonl") });
+    svcBox.svc.registerKind({ id: "e2e:nosvc", label: "NO SVC" });
+    const kindsRouteNs = routes.find((r) => r.path === ROUTES.kinds);
+    const text = JSON.stringify({ kind: "e2e:nosvc", confirmed: true });
+    const { rec, res } = makeRes();
+    await kindsRouteNs.handler({
+      method: "POST",
+      url: "/",
+      socket: { remoteAddress: "127.0.0.1" },
+      headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
+      on(event, cb) {
+        if (event === "data") setTimeout(() => cb(Buffer.from(text)), 0);
+        else if (event === "end") setTimeout(cb, 1);
+        return this;
+      },
+      destroy() {},
+    }, res);
+    assert.equal(rec.status, 503, "settings 缺失 → kinds 确认 503（与 PUT 通道一致）");
+    assert.equal(JSON.parse(rec.text).error.code, "settings-unavailable", "503 带 code=settings-unavailable");
+  }
+
   // events SSE（C1）
   {
     const { rec, res } = makeRes();

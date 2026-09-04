@@ -255,7 +255,7 @@ across types):
 
 Error mapping (PUT /config): invalid config key → 400 (`{ok:false, error:{error:"配置校验失败: <key>", hint}}`); stale `expectedRevision` conflict → 409 (`code:"SETTINGS_CONFLICT"`); settings service unavailable → 503 (`code:"settings-unavailable"`); write failure → 500 (root cause only in server logs).
 
-Error mapping (POST /kinds): kind-confirmation CAS retries (≤2) exhausted → 409 (`code:"SETTINGS_CONFLICT"`, rare: sustained concurrent writes during confirmation); write failure → 500 (fixed `error` text, root cause only in server logs). The 200 response carries the fresh `revision` for the client to sync its optimistic-concurrency version.
+Error mapping (POST /kinds): kind-confirmation CAS retries (≤2) exhausted → 409 (`code:"SETTINGS_CONFLICT"`, rare: sustained concurrent writes during confirmation); settings service unavailable → 503 (`code:"settings-unavailable"`, same semantics as PUT /config); write failure → 500 (fixed `error` text, root cause only in server logs). The 200 response carries the fresh `revision` for the client to sync its optimistic-concurrency version.
 
 ## Type dependencies
 

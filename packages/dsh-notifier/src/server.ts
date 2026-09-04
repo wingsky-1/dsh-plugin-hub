@@ -567,6 +567,12 @@ export function buildRoutes(deps: RouteDeps): WebRoute[] {
             writeJson(res, 409, { ok: false, error: { code: "SETTINGS_CONFLICT", error: "版本冲突" } });
             return;
           }
+          if (code === "SETTINGS_UNAVAILABLE") {
+            // 与 PUT /config 的服务缺失语义一致（#405 PR3 复核）：settings 服务未
+            // attach → 503，而非笼统 500——保持跨通道错误映射一致。
+            writeJson(res, 503, { ok: false, error: { code: "settings-unavailable", error: "设置服务不可用" } });
+            return;
+          }
           logger.warn(`dsh-notifier: kind 确认写入失败 — ${errorMessage(error)}`);
           writeJson(res, 500, { ok: false, error: { error: "确认失败，请查看服务端日志" } });
           return;

@@ -287,7 +287,7 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
 
 错误映射（PUT /config）：非法配置键 → 400（`{ok:false, error:{error:"配置校验失败: <键>", hint}}`）；版本冲突（`expectedRevision` 过期）→ 409（`code:"SETTINGS_CONFLICT"`）；settings 服务缺失 → 503（`code:"settings-unavailable"`）；写入异常 → 500（底层原因只进服务端日志）。
 
-错误映射（POST /kinds）：kind 确认内部 CAS 冲突重试（≤2 次）耗尽 → 409（`code:"SETTINGS_CONFLICT"`，罕见：确认期间持续并发写入）；写入异常 → 500（`error` 固定文案，底层原因只进服务端日志）。
+错误映射（POST /kinds）：kind 确认内部 CAS 冲突重试（≤2 次）耗尽 → 409（`code:"SETTINGS_CONFLICT"`，罕见：确认期间持续并发写入）；settings 服务缺失 → 503（`code:"settings-unavailable"`，与 PUT /config 同语义）；写入异常 → 500（`error` 固定文案，底层原因只进服务端日志）。
 
 ## 类型依赖
 

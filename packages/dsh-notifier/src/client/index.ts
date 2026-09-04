@@ -879,7 +879,12 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
         return r.json().then(function (body: any) {
           if (!r.ok) {
             var err = (body && body.error) || {};
-            throw new Error(err.error || err.details || err.code || ("HTTP " + r.status));
+            // 挂 code 供 catch 按契约分流（#405 PR3 复核）：409 判定优先
+            // err.code === "SETTINGS_CONFLICT"，不再依赖错误文案中文匹配
+            // （文案是本地化/可改的，code 是契约字段）。文案保留进 message。
+            var throwErr = new Error(err.error || err.details || err.code || ("HTTP " + r.status)) as Error & { code?: string };
+            if (err.code !== undefined) throwErr.code = String(err.code);
+            throw throwErr;
           }
           return body;
         });
@@ -901,7 +906,8 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
         setTimeout(function () { setSaved(""); }, 2200);
       }).catch(function (e: any) {
         var msg = (e && e.message) || e;
-        if (String(msg).indexOf("版本冲突") >= 0) {
+        // 409 判定：code 契约优先，中文文案仅作旧服务端回退（#405 PR3 复核）
+        if ((e && e.code === "SETTINGS_CONFLICT") || String(msg).indexOf("版本冲突") >= 0) {
           // 版本冲突：进入双动作恢复（不再仅提示手动关闭重开）
           handleConflict(entry);
           return;
@@ -2037,10 +2043,9 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
 
     // #402 第 4 条：去掉设置卡 title/副标题；顶部直接是 tab 栏。
     // #508 M1：底部保存栏 = 脏状态指示（diffSettingsPayload 键数）+ 放弃更改 + 保存。
+    // #405 PR2：foot 显示全量脏计数（含频道域）；「保存频道」按钮的域脏态不做单独
+    // 计数——无频道域脏时点击走空 diff 的「未修改」提示（与 foot 保存同交互语义）。
     var dirtyCount = Object.keys(diffPayload()).length;
-    // #405 PR2 域保存：频道域脏态（channels 单键）。脏计数分域——foot 显示总数，
-    // 频道 tab 域按钮依据本域脏态使能/禁用（域保存语义 ≠ 全量，两入口并存不重复）。
-    var channelsDirty = Object.prototype.hasOwnProperty.call(diffPayload(), "channels");
     return React.createElement("li", { className: "dn-set-card" },
       tabbar,
       React.createElement("div", { className: "dn-set-body" },

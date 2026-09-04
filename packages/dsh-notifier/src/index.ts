@@ -233,7 +233,14 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
   /** settings user 层增量写入（PUT /config 与 kind 确认共用的写通道）。 */
   function updateConfig(patch: object, expectedRevision?: number): Promise<void> {
     const service = attachedService;
-    if (!service) return Promise.reject(new Error("settings service unavailable"));
+    if (!service) {
+      // 服务缺失的 rejection 挂 code（#405 PR3 复核）：与 service.update 抛出的
+      // SETTINGS_CONFLICT 同面，供调用方（PUT 503 分支 / kinds handler 兜底）按
+      // code 分流，避免依赖底层错误文案判断。
+      const err = new Error("settings service unavailable") as Error & { code?: string };
+      err.code = "SETTINGS_UNAVAILABLE";
+      return Promise.reject(err);
+    }
     // 乐观并发（F4）必须经 service.update(ns, ...)（SettingsProvider 公开
     // 方法，write 内做 revision 校验）——scope.update 会丢弃该参数。
     return service.update(SETTINGS_NS, patch, expectedRevision);
