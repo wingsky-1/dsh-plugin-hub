@@ -53,7 +53,7 @@ try {
     assert.equal(JSON.parse(rec.text).error, "forbidden: loopback-only", "403 body 围栏文案");
   }
 
-  // 405（J2）：test 路由仅 POST；history 路由仅 GET；health 仅 GET；status 仅 GET；kinds 仅 GET/POST
+  // 405（J2）：test 路由仅 POST；history 路由 GET/DELETE；health 仅 GET；status 仅 GET；kinds 仅 GET/POST
   {
     const { rec, res } = makeRes();
     await testRoute.handler(fakeReq({}), res);

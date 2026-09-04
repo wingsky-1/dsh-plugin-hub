@@ -21,8 +21,7 @@ import { writeFile, rename } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { isLoopbackRequest } from "../../../shared/loopback.js";
-import { writeJson, readJsonBody, errorMessage, sseData } from "../../../shared/host-utils.js";
+import { guardLoopbackMethod, writeJson, readJsonBody, errorMessage, sseData } from "../../../shared/host-utils.js";
 import { installSettingsNamespace } from "../../../shared/settings-namespace.js";
 import { Mutex } from "async-mutex";
 import type { Context } from "@deepseek-ai/cordis";
@@ -441,8 +440,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     kind: "exact",
     path: ROUTES.stats,
     handler: async (req, res) => {
-      if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
-      if (req.method !== "GET") return writeJson(res, 405, { error: `method not allowed: ${req.method}` });
+      if (!guardLoopbackMethod(req, res, ["GET"])) return;
       const url = new URL(req.url ?? "/", "http://localhost");
       const prov = url.searchParams.get("provider") ?? config.provider;
       const controller = new AbortController();
@@ -486,8 +484,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     kind: "exact",
     path: ROUTES.history,
     handler: async (req, res) => {
-      if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
-      if (req.method !== "GET") return writeJson(res, 405, { error: `method not allowed: ${req.method}` });
+      if (!guardLoopbackMethod(req, res, ["GET"])) return;
       const url = new URL(req.url ?? "/", "http://localhost");
       const prov = url.searchParams.get("provider") ?? config.provider;
       const entry = registry.getEntry(prov);
@@ -551,8 +548,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     kind: "exact",
     path: ROUTES.health,
     handler: (req, res) => {
-      if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
-      if (req.method !== "GET") return writeJson(res, 405, { error: `method not allowed: ${req.method}` });
+      if (!guardLoopbackMethod(req, res, ["GET"])) return;
       const snap = registry.snapshot();
       writeJson(res, 200, {
         ok: true,
@@ -573,8 +569,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     kind: "exact",
     path: ROUTES.adapters,
     handler: (req, res) => {
-      if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
-      if (req.method !== "GET") return writeJson(res, 405, { error: `method not allowed: ${req.method}` });
+      if (!guardLoopbackMethod(req, res, ["GET"])) return;
       const snap = registry.snapshot();
       // 模型配置页提供商路由（设置页主列表同源）
       let modelProviders: string[] = [];
@@ -611,8 +606,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     kind: "exact",
     path: ROUTES.select,
     handler: async (req, res) => {
-      if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
-      if (req.method !== "POST") return writeJson(res, 405, { error: `method not allowed: ${req.method}` });
+      if (!guardLoopbackMethod(req, res, ["POST"])) return;
       let body: Record<string, unknown>;
       try {
         const raw = await readJsonBody(req);
@@ -646,8 +640,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     kind: "exact",
     path: ROUTES.inspect,
     handler: async (req, res) => {
-      if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
-      if (req.method !== "POST") return writeJson(res, 405, { error: `method not allowed: ${req.method}` });
+      if (!guardLoopbackMethod(req, res, ["POST"])) return;
       let body: Record<string, unknown>;
       try {
         const raw = await readJsonBody(req);
@@ -678,8 +671,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     kind: "exact",
     path: ROUTES.add,
     handler: async (req, res) => {
-      if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
-      if (req.method !== "POST") return writeJson(res, 405, { error: `method not allowed: ${req.method}` });
+      if (!guardLoopbackMethod(req, res, ["POST"])) return;
       let body: Record<string, unknown>;
       try {
         const raw = await readJsonBody(req);
@@ -732,12 +724,11 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     kind: "exact",
     path: ROUTES.uiConfig,
     handler: async (req, res) => {
-      if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
+      if (!guardLoopbackMethod(req, res, ["GET", "POST"])) return;
       if (req.method === "GET") {
         writeJson(res, 200, { ok: true, ui: uiConfig });
         return;
       }
-      if (req.method !== "POST") return writeJson(res, 405, { error: `method not allowed: ${req.method}` });
       let body: Record<string, unknown>;
       try {
         const raw = await readJsonBody(req);
@@ -763,14 +754,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     kind: "exact",
     path: ROUTES.events,
     handler: (req, res) => {
-      if (!isLoopbackRequest(req)) {
-        writeJson(res, 403, { error: "forbidden: loopback-only" });
-        return;
-      }
-      if (req.method !== "GET") {
-        writeJson(res, 405, { error: `method not allowed: ${req.method}` });
-        return;
-      }
+      if (!guardLoopbackMethod(req, res, ["GET"])) return;
       res.writeHead(200, {
         "content-type": "text/event-stream",
         "cache-control": "no-cache",
