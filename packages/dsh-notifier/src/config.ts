@@ -10,6 +10,7 @@
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { dshHome as sharedDshHome } from "../../../shared/dsh-home.js";
 import { parseHHMM } from "./quiet-hours.ts";
 import type { QuietHoursConfig } from "./quiet-hours.ts";
 
@@ -231,14 +232,14 @@ export const CONFIG_KEYS: readonly BooleanKeys[] = ["notifyAsk", "notifyQuestion
 const PROTOTYPE_POLLUTION_KEYS: readonly string[] = ["__proto__", "constructor", "prototype", "toString", "hasOwnProperty", "valueOf", "isPrototypeOf", "propertyIsEnumerable", "toLocaleString"];
 
 /**
- * DSH home 基目录（#510）：插件落盘路径统一感知 `DSH_HOME`——官方 dsh 在隔离
- * 环境（多实例 / 测试沙箱 / dsh-verify-isolated 临时 home）下运行时，官方
- * settings 存储已随 DSH_HOME 隔离，插件 history/status 落盘也必须随隔离 home
- * 走，否则读写两面都串到真实 `~/.dsh`（#510 根因）。未设置时回落 `~/.dsh`，
- * 默认形态路径逐字节不变。写法对齐 dsh-provider-usage/src/path-resolve.ts 先例。
+ * DSH home 基目录（#510 → #517 收敛）：薄 facade，语义由 shared/dsh-home.js
+ * 单一事实源承载（非空 env 原样采用、未设置或空串回落 ~/.dsh）。插件落盘
+ * 路径（configFile/historyFile/statusFile）统一经此解析——官方 settings 存储
+ * 已随 DSH_HOME 隔离，插件 history/status 落盘也必须随隔离 home 走，否则
+ * 读写两面都串到真实 ~/.dsh（#510 根因）。
  */
 function dshHome(): string {
-  return process.env.DSH_HOME ?? join(homedir(), ".dsh");
+  return sharedDshHome();
 }
 
 /**

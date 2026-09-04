@@ -8,14 +8,14 @@
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { homedir } from "node:os";
+import { dshHome } from "../../../shared/dsh-home.js";
 import type { ServerConfig } from "./types.ts";
 
 // ------------------------------------------------------------------ 存储
 
 /** 默认配置存储路径。 */
 export function defaultStorePath() {
-  return join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), "dsh-mcp.json");
+  return join(dshHome(), "dsh-mcp.json");
 }
 
 /**
