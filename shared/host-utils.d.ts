@@ -24,3 +24,11 @@ export declare function errorMessage(error: unknown): string;
  * @param limit 字节上限（默认 256KB）。
  */
 export declare function readBody(req: IncomingMessage, limit?: number): Promise<object>;
+
+/**
+ * Loopback + 方法白名单低阶路由守卫：非 loopback → 403，方法不在白名单 → 405，
+ * 否则放行（403 先于 405 为本守卫执行顺序，仅对套守卫端点成立）。
+ * @param methods 允许的 HTTP 方法白名单。
+ * @returns 是否放行（true 时调用方继续处理请求）。
+ */
+export declare function guardLoopbackMethod(req: IncomingMessage, res: ServerResponse, methods: string[]): boolean;

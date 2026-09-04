@@ -6,8 +6,7 @@
  * apply.ts：config-routes 与 apply 都要引用 ROUTES，放在本模块可避免
  * apply ↔ config-routes 循环引用（apply.ts 不得 import index.ts 的同一纪律）。
  */
-import { isLoopbackRequest } from "../../../shared/loopback.js";
-import { writeJson, readBody, errorMessage } from "../../../shared/host-utils.js";
+import { writeJson, readBody, errorMessage, guardLoopbackMethod } from "../../../shared/host-utils.js";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import { sanitizeSettings, validateSettings } from "./config.ts";
 import type { HttpCompressSnapshot, ResolvedConfig } from "./config.ts";
@@ -124,7 +123,7 @@ export function buildConfigRoutes(deps: ConfigRouteDeps): WebRoute[] {
     kind: "exact",
     path: ROUTES.config,
     handler: async (req, res) => {
-      if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
+      if (!guardLoopbackMethod(req, res, ["GET", "PUT"])) return;
       if (req.method === "GET") {
         const { user, revision } = deps.readUser();
         writeJson(res, 200, {
