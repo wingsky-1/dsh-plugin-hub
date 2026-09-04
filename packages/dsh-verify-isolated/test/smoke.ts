@@ -19,12 +19,19 @@
  * 7. SKILL.md 含多会话并行章节与三平台内核自查清单；
  * 8. README 同步新能力。
  *
+ * 9. B4 隔离审计（#517 B4）：lib/audit.mjs 纯函数行为断言（WHITELIST_V 版本化、
+ *    scanSnapshot/diffAgainstWhitelist/checkSymlinkEscape/runAudit）+ mkdtemp
+ *    fixture 正反例（越界 symlink / 白名单外新增/删除/修改 / 白名单内变化忽略 /
+ *    link: 挂载点合法 / t1 无变化通过 / browser-profile 跳过深扫）+ 脚本契约锚定
+ *    （--audit / --audit-extra-dirs / 结论行 / audit.json）+ 子进程退出码实测
+ *    （--audit --help=0、--audit-extra-dirs 不存在=2）。
+ *
  * 注（#517 C11 并入）：resolve-pkg-paths.mjs 独立文件随 C8 内建进
  * lib/verify-core.mjs 的 resolvePkgArg（6a 行为断言覆盖原 6.5 段语义）。
  */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -274,4 +281,142 @@ assert.ok(readme.includes("四重隔离"), "README 同步四重隔离说明");
 assert.ok(readme.includes("verify-isolated.mjs"), "README 同步 node 版脚本名（升级路径）");
 assert.ok(!readme.includes("scripts/verify-isolated.sh"), "README 不再以旧 bash 脚本路径作为当前用法（升级路径说明除外）");
 
-console.log("PASS: dsh-verify-isolated smoke（skills 结构 / frontmatter / patch / 路径解析 / verify-core 行为 / 脚本契约与退出码 / 文档同步）");
+// ---- 9. B4 隔离审计：lib/audit.mjs 纯函数行为断言 + 脚本契约锚定 + 退出码实测 ----
+{
+  const auditFile = join(SCRIPTS_DIR, "lib", "audit.mjs");
+  assert.ok(existsSync(auditFile), "lib/audit.mjs 随 skill 目录分发");
+  const audit = await import(pathToFileURL(auditFile).href);
+
+  // 9a. 白名单版本化 + 模式全集存在（预置模式数组，版本化 WHITELIST_V）
+  assert.match(audit.WHITELIST_V, /^v\d+$/, `WHITELIST_V 版本化格式: ${audit.WHITELIST_V}`);
+  for (const p of [
+    "profiles/**", "*.json", "*.jsonl", "*.log", "browser.state",
+    "browser-profile/**", "evidence/**", "audit/**", "dsh.log", "verdict.json",
+  ]) {
+    assert.ok(audit.WHITELIST.includes(p), `预置白名单含 ${p}`);
+  }
+
+  // 9b. 脚本契约锚定（USAGE/parseCli/--help 同步义务 + 结论行文案 + 落盘契约）
+  const script = readFileSync(scriptFile, "utf8");
+  for (const opt of ["--audit", "--audit-extra-dirs"]) {
+    assert.ok(script.includes(opt), `脚本含 ${opt} 选项契约`);
+  }
+  assert.ok(script.includes("WHITELIST_V"), "脚本引用版本化白名单常量");
+  assert.ok(script.includes("审计:通过"), "审计结论行通过文案");
+  assert.ok(script.includes("项可疑"), "审计结论行可疑文案");
+  assert.ok(script.includes("audit.json"), "审计报告落盘契约（--keep 落 $ISOLATED_HOME/audit/audit.json）");
+
+  // 9c. 子进程退出码实测：--audit 不破坏退出码契约（0/2）；extra dir 不存在 → 2
+  const run = (args) => {
+    let code = 0;
+    let out = "";
+    try { out = execFileSync(process.execPath, [scriptFile, ...args], { encoding: "utf8" }); }
+    catch (e) { code = e.status ?? -1; out = (e.stdout ?? "") + (e.stderr ?? ""); }
+    return { code, out };
+  };
+  const h2 = run(["--audit", "--help"]);
+  assert.equal(h2.code, 0, "--audit --help 退出码 0");
+  assert.ok(h2.out.includes("--audit-extra-dirs"), "--help 含 --audit-extra-dirs 用法");
+  const badExtra = run(["--audit", "--audit-extra-dirs", join(tmpdir(), "dsh-verify-no-such-audit-dir-xyz")]);
+  assert.equal(badExtra.code, 2, "--audit-extra-dirs 目录不存在退出码 2（参数错误）");
+
+  // 9d. mkdtemp fixture 正反例（零污染纪律 #218：全部落在 mkdtemp 隔离目录）
+  const tmp = mkdtempSync(join(tmpdir(), "dsh-verify-audit-"));
+  const outside = mkdtempSync(join(tmpdir(), "dsh-verify-audit-out-"));
+  try {
+    const w = (p, s) => { mkdirSync(join(tmp, dirname(p)), { recursive: true }); writeFileSync(join(tmp, p), s); };
+    const wl = audit.WHITELIST;
+    // 正例1：白名单外新增 → 可疑（新增）
+    {
+      const t0 = audit.scanSnapshot(tmp);
+      w("mystery.bin", "x");
+      const t1 = audit.scanSnapshot(tmp);
+      const r = audit.runAudit({ t0, t1, isolatedRoot: tmp });
+      assert.equal(r.count, 1, `白名单外新增报 1 项（实际 ${r.count}）`);
+      assert.equal(r.suspicious[0].path, "mystery.bin", "可疑路径正确");
+      assert.equal(r.suspicious[0].type, "新增", "可疑类型为新增");
+      assert.equal(r.conclusion, "suspicious", "结论 suspicious");
+    }
+    // 正例2：越界 symlink——新增且 resolve 后在扫描根外（顶层 + 白名单内
+    // profiles/** 都报，防逃逸优先于白名单忽略）
+    {
+      const t0 = audit.scanSnapshot(tmp);
+      symlinkSync(join(outside, "evil"), join(tmp, "evil-link"), "dir");
+      mkdirSync(join(tmp, "profiles", "verify_x"), { recursive: true });
+      symlinkSync(join(outside, "evil2"), join(tmp, "profiles", "verify_x", "evil2"), "dir");
+      const t1 = audit.scanSnapshot(tmp);
+      const r = audit.runAudit({ t0, t1, isolatedRoot: tmp });
+      assert.ok(r.suspicious.some((s) => s.path === "evil-link" && s.type === "越界 symlink"),
+        "新增越界 symlink 报可疑");
+      assert.ok(r.suspicious.some((s) => s.path === "profiles/verify_x/evil2" && s.type === "越界 symlink"),
+        "白名单内新增越界 symlink 仍报（防逃逸优先）");
+      // 越界 symlink 不重复报「新增」（防逃逸通道优先，diff 剔除）
+      assert.ok(!r.suspicious.some((s) => s.path === "evil-link" && s.type === "新增"),
+        "越界 symlink 不重复报新增");
+    }
+    // 正例3：白名单外删除 → 可疑（删除）
+    {
+      w("doomed.bin", "x");
+      const t0 = audit.scanSnapshot(tmp);
+      rmSync(join(tmp, "doomed.bin"));
+      const t1 = audit.scanSnapshot(tmp);
+      const r = audit.runAudit({ t0, t1, isolatedRoot: tmp });
+      assert.ok(r.suspicious.some((s) => s.path === "doomed.bin" && s.type === "删除"),
+        "白名单外删除报可疑");
+    }
+    // 正例4：白名单外修改（size 变化）→ 可疑（修改）
+    {
+      w("mut.bin", "aa");
+      const t0 = audit.scanSnapshot(tmp);
+      w("mut.bin", "bbbb");
+      const t1 = audit.scanSnapshot(tmp);
+      const r = audit.runAudit({ t0, t1, isolatedRoot: tmp });
+      assert.ok(r.suspicious.some((s) => s.path === "mut.bin" && s.type === "修改"),
+        "白名单外修改报可疑");
+    }
+    // 反例1：白名单内变化忽略（*.json/*.log/browser.state/profiles/**/evidence/**/audit/**）
+    {
+      const t0 = audit.scanSnapshot(tmp);
+      w("settings.json", "{}");
+      w("browser.state", "{}");
+      w("dsh.log", "hello");
+      w("profiles/verify_x/p.json", "{}");
+      w("evidence/shot.png", "x");
+      w("audit/audit.json", "{}");
+      const t1 = audit.scanSnapshot(tmp);
+      const r = audit.runAudit({ t0, t1, isolatedRoot: tmp, whitelist: wl });
+      assert.equal(r.count, 0, `白名单内变化忽略（实际 ${r.count}）`);
+      assert.equal(r.conclusion, "pass", "结论 pass");
+    }
+    // 反例2：t0 已存在且目标未变的外部 symlink（link: 挂载点）不报
+    {
+      mkdirSync(join(tmp, "profiles", "verify_x", "node_modules"), { recursive: true });
+      symlinkSync(join(outside, "pkg"), join(tmp, "profiles", "verify_x", "node_modules", "pkg"), "dir");
+      const t0 = audit.scanSnapshot(tmp);
+      const t1 = audit.scanSnapshot(tmp);
+      const r = audit.runAudit({ t0, t1, isolatedRoot: tmp });
+      assert.ok(!r.suspicious.some((s) => s.path.includes("node_modules")),
+        "t0 已存在且目标未变的外部 symlink（link: 挂载点）不报");
+    }
+    // 反例3：t1 无变化 → 通过
+    {
+      const s0 = audit.scanSnapshot(tmp);
+      const s1 = audit.scanSnapshot(tmp);
+      const r = audit.runAudit({ t0: s0, t1: s1, isolatedRoot: tmp });
+      assert.equal(r.count, 0, "t1 无变化 0 可疑");
+      assert.equal(r.conclusion, "pass", "t1 无变化结论 pass");
+    }
+    // 9e. browser-profile/** 整树白名单 + 跳过深扫（数万文件，只记目录条目）
+    {
+      w("browser-profile/deep/file", "y");
+      const s = audit.scanSnapshot(tmp, { skipDeep: audit.SKIP_DEEP });
+      assert.ok(s.entries.has("browser-profile"), "browser-profile 目录条目在位");
+      assert.ok(!s.entries.has("browser-profile/deep/file"), "browser-profile/** 跳过深扫");
+    }
+  } finally {
+    rmSync(tmp, { recursive: true, force: true }); // 零污染纪律（#218）
+    rmSync(outside, { recursive: true, force: true });
+  }
+}
+
+console.log("PASS: dsh-verify-isolated smoke（skills 结构 / frontmatter / patch / 路径解析 / verify-core 行为 / 脚本契约与退出码 / B4 审计纯函数与 fixture 正反例 / 文档同步）");
