@@ -511,9 +511,27 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   });
   const guardFactory = mod.apply.createSaveGuard;
   const domainFn = mod.apply.domainPayload;
+  const rebaseFn = mod.apply.rebaseSettings;
   assert.equal(typeof guardFactory, "function", "#405：apply 挂载 createSaveGuard 纯工厂");
   assert.equal(typeof domainFn, "function", "#405：apply 挂载 domainPayload 纯函数");
+  assert.equal(typeof rebaseFn, "function", "#405：apply 挂载 rebaseSettings 纯函数");
   for (const d of disposers3.splice(0)) d();
+
+  // rebaseSettings：键级 last-write-wins——最新 effective 为基底，本地变更键覆盖；
+  // 远端新键保留、本地未改键取远端值
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(rebaseFn(
+      { notifyAsk: false, channels: [1] },
+      { notifyAsk: true, notifySound: true, channels: [9], kindRoutes: { ask: ["browser"] } },
+    ))),
+    { notifyAsk: false, notifySound: true, channels: [1], kindRoutes: { ask: ["browser"] } },
+    "#405：rebase 键级合并——本地变更覆盖、远端未冲突键保留"
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(rebaseFn({}, { notifyAsk: true }))),
+    { notifyAsk: true },
+    "#405：无本地变更 → rebase 结果即远端最新"
+  );
 
   // domainPayload：域过滤语义（#405 PR2）——channels 域只提 channels 键；
   // all 原样；未知入口空对象

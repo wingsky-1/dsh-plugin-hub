@@ -39,6 +39,13 @@ export const zh = {
   savedOk: "已保存",
   saveFailConflict: "保存失败：{msg}（请关闭本卡片重新打开后重试）",
   saveFail: "保存失败：{msg}",
+  // #405 PR2b：409 冲突双动作横幅
+  conflictTitle: "配置已在其他窗口被修改：",
+  conflictChannels: "频道配置已在其他窗口被修改：",
+  conflictLoadLatest: "加载最新（放弃我的修改）",
+  conflictOverwrite: "保留我的修改并覆盖",
+  conflictIgnore: "忽略",
+  conflictLoadedLatest: "已加载最新配置",
   // 测试/清理动作
   testSent: "测试通知已发送（服务端未释放句柄 {n} 条）",
   testFail: "发送测试通知失败：{msg}{hint}",
@@ -224,6 +231,13 @@ export const en: Record<NotifierLocaleKey, string> = {
   savedOk: "Saved",
   saveFailConflict: "Save failed: {msg} (close and reopen this card, then retry)",
   saveFail: "Save failed: {msg}",
+  // #405 PR2b：409 conflict resolution banner
+  conflictTitle: "Configuration was changed in another window:",
+  conflictChannels: "Channel configuration was changed in another window:",
+  conflictLoadLatest: "Load latest (discard my changes)",
+  conflictOverwrite: "Keep my changes and overwrite",
+  conflictIgnore: "Ignore",
+  conflictLoadedLatest: "Loaded latest configuration",
   testSent: "Test notification sent ({n} unreleased server handles)",
   testFail: "Failed to send test notification: {msg}{hint}",
   cleared: "Cleared {n} history entries",
