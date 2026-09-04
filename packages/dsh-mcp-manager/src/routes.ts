@@ -9,8 +9,7 @@
  */
 
 // 辅助函数统一来自仓库共享层（loopback 围栏 / writeJson / readJsonBody / sseData）。
-import { isLoopbackRequest } from "../../../shared/loopback.js";
-import { writeJson, readJsonBody, sseData } from "../../../shared/host-utils.js";
+import { writeJson, readJsonBody, sseData, guardLoopbackMethod } from "../../../shared/host-utils.js";
 import { parseClaudeJson } from "./import.ts";
 import { SCOPE_PROJECT, normalizeScope } from "./scope.ts";
 import { parseFullServerName, MIDDLEWARE_GLOBAL_ROOT, normalizeToolName } from "./middleware-utils.ts";
@@ -86,17 +85,6 @@ function queryParam(url: URL, name: string): string | undefined {
 
 /** 组装 /api/dsh-mcp/* 路由。cwd 参数仅用于兼容旧调用（不再被路由使用）。 */
 export function makeRoutes(manager: RoutesManager, cwd = process.cwd()): WebRoute[] {
-  const guard = (req: Parameters<WebRoute["handler"]>[0], res: Parameters<WebRoute["handler"]>[1], method: string): boolean => {
-    if (!isLoopbackRequest(req)) {
-      writeJson(res, 403, { error: "forbidden: loopback-only" });
-      return false;
-    }
-    if (req.method !== method) {
-      writeJson(res, 405, { error: `method not allowed: ${req.method}` });
-      return false;
-    }
-    return true;
-  };
   const handleError = (res: Parameters<WebRoute["handler"]>[1], error: unknown) => {
     writeJson(res, 400, { error: error instanceof Error ? error.message : String(error) });
   };
@@ -127,10 +115,7 @@ export function makeRoutes(manager: RoutesManager, cwd = process.cwd()): WebRout
         // 经设置命名空间落盘（Config.ui），触发 scope.watch → onChange → SSE 广播一帧，
         // 客户端收到后重新 GET /config 就地更新浮窗位置，无需重启/轮询。
         if (req.method === "POST") {
-          if (!isLoopbackRequest(req)) {
-            writeJson(res, 403, { error: "forbidden: loopback-only" });
-            return;
-          }
+          if (!guardLoopbackMethod(req, res, ["POST"])) return;
           let body: unknown;
           try {
             body = await readJsonBody(req);
@@ -161,6 +146,9 @@ export function makeRoutes(manager: RoutesManager, cwd = process.cwd()): WebRout
           }
           return;
         }
+        // 端点级方法分流先于 loopback 的刻意例外（#473 R2 结构 β）：本 else 对
+        // 白名单外方法（PUT/DELETE/OPTIONS 等）直接 405、不查 loopback——非
+        // loopback+PUT 返回 405 而非 403 是契约行为，禁止误套守卫（会漂移为 403）。
         writeJson(res, 405, { error: `method not allowed: ${req.method}` });
       },
     },
@@ -170,10 +158,7 @@ export function makeRoutes(manager: RoutesManager, cwd = process.cwd()): WebRout
       handler: async (req, res) => {
         const url = new URL(req.url ?? "/", "http://localhost");
         const method = req.method ?? "GET";
-        if (!isLoopbackRequest(req)) {
-          writeJson(res, 403, { error: "forbidden: loopback-only" });
-          return;
-        }
+        if (!guardLoopbackMethod(req, res, ["GET", "POST", "PATCH", "DELETE"])) return;
         if (method === "GET") {
           try {
             // 变更点驱动（#111/#228）：GET /servers 是纯读快照，零副作用——
@@ -238,7 +223,7 @@ export function makeRoutes(manager: RoutesManager, cwd = process.cwd()): WebRout
       kind: "exact",
       path: ROUTES.session,
       handler: async (req, res) => {
-        if (!guard(req, res, "POST")) return;
+        if (!guardLoopbackMethod(req, res, ["POST"])) return;
         const body = await readJsonBody(req);
         if (body === undefined || typeof (body as Record<string, unknown>).cwd !== "string") {
           writeJson(res, 400, { error: "body must include a cwd string" });
@@ -256,7 +241,7 @@ export function makeRoutes(manager: RoutesManager, cwd = process.cwd()): WebRout
       kind: "exact",
       path: ROUTES.resume,
       handler: async (req, res) => {
-        if (!guard(req, res, "POST")) return;
+        if (!guardLoopbackMethod(req, res, ["POST"])) return;
         try {
           if (typeof manager.resumeReconnect !== "function") throw new Error("resumeReconnect unavailable");
           await manager.resumeReconnect();
@@ -270,7 +255,7 @@ export function makeRoutes(manager: RoutesManager, cwd = process.cwd()): WebRout
       kind: "exact",
       path: ROUTES.connect,
       handler: async (req, res) => {
-        if (!guard(req, res, "POST")) return;
+        if (!guardLoopbackMethod(req, res, ["POST"])) return;
         const url = new URL(req.url ?? "/", "http://localhost");
         const name = queryParam(url, "name");
         if (name === undefined || name === "") {
@@ -290,7 +275,7 @@ export function makeRoutes(manager: RoutesManager, cwd = process.cwd()): WebRout
       kind: "exact",
       path: ROUTES.disconnect,
       handler: async (req, res) => {
-        if (!guard(req, res, "POST")) return;
+        if (!guardLoopbackMethod(req, res, ["POST"])) return;
         const url = new URL(req.url ?? "/", "http://localhost");
         const name = queryParam(url, "name");
         if (name === undefined || name === "") {
@@ -310,7 +295,7 @@ export function makeRoutes(manager: RoutesManager, cwd = process.cwd()): WebRout
       kind: "exact",
       path: ROUTES.reconnect,
       handler: async (req, res) => {
-        if (!guard(req, res, "POST")) return;
+        if (!guardLoopbackMethod(req, res, ["POST"])) return;
         const url = new URL(req.url ?? "/", "http://localhost");
         const name = queryParam(url, "name");
         if (name === undefined || name === "") {
@@ -330,7 +315,7 @@ export function makeRoutes(manager: RoutesManager, cwd = process.cwd()): WebRout
       kind: "exact",
       path: ROUTES.importJson,
       handler: async (req, res) => {
-        if (!guard(req, res, "POST")) return;
+        if (!guardLoopbackMethod(req, res, ["POST"])) return;
         const body = await readJsonBody(req);
         if (body === undefined || typeof (body as Record<string, unknown>).json !== "string") {
           writeJson(res, 400, { error: "body must include a json string" });
@@ -368,7 +353,7 @@ export function makeRoutes(manager: RoutesManager, cwd = process.cwd()): WebRout
       kind: "exact",
       path: ROUTES.toolDisable,
       handler: async (req, res) => {
-        if (!guard(req, res, "PATCH")) return;
+        if (!guardLoopbackMethod(req, res, ["PATCH"])) return;
         const url = new URL(req.url ?? "/", "http://localhost");
         const body = await readJsonBody(req);
         if (body === undefined || typeof body !== "object" || body === null) {
@@ -465,14 +450,7 @@ export function makeEventsRoute(manager: RoutesManager, options?: { heartbeatMs?
     kind: "exact",
     path: ROUTES.events,
     handler: (req, res) => {
-      if (!isLoopbackRequest(req)) {
-        writeJson(res, 403, { error: "forbidden: loopback-only" });
-        return;
-      }
-      if (req.method !== "GET") {
-        writeJson(res, 405, { error: `method not allowed: ${req.method}` });
-        return;
-      }
+      if (!guardLoopbackMethod(req, res, ["GET"])) return;
       const connections = manager.sseConnections ??= new Set();
       res.writeHead(200, {
         "content-type": "text/event-stream",
@@ -521,14 +499,7 @@ export function makeHealthRoute(manager: RoutesManager): WebRoute {
     kind: "exact",
     path: ROUTES.health,
     handler: (req, res) => {
-      if (!isLoopbackRequest(req)) {
-        writeJson(res, 403, { error: "forbidden: loopback-only" });
-        return;
-      }
-      if (req.method !== "GET") {
-        writeJson(res, 405, { error: `method not allowed: ${req.method}` });
-        return;
-      }
+      if (!guardLoopbackMethod(req, res, ["GET"])) return;
       let servers = 0;
       let connected = 0;
       let tools = 0;
