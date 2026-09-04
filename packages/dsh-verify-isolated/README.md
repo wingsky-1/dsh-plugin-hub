@@ -32,22 +32,27 @@ dsh plugin --profile web add @wingsky-1/dsh-verify-isolated
   全缺失 fail-fast 打印安装指引；
 - **最小启动依赖**：profile bundles 含 `@deepseek-ai/dsh-base` +
   `@deepseek-ai/dsh-web-app`（内置 bundle 按名从 dsh 安装目录解析，不走 npm）；
-- **一键脚本** `skills/dsh-verify-isolated/scripts/verify-isolated.sh`：校验 dsh
+- **一键脚本** `skills/dsh-verify-isolated/scripts/verify-isolated.mjs`（node 实现，
+  需 Node ≥22；原 bash 版 `.sh` 已随 #517 C8 重写删除）：校验 dsh
   入口并打印版本（`--dsh` 锚定目标 dsh 版本）→ 建临时 DSH_HOME → 建 profile
   （`plugin list` 显式初始化）→ 注入 web-app bundle → 构建并 link 本地插件
   （`--no-build` 时校验产物存在 + 陈旧警告）→ （可选 `--browser`）启动独立浏览器
   实例 → 启动（显式 `--host 127.0.0.1` 回环 + `DSH_TELEMETRY_DISABLED=1` 遥测
-  禁用）→ 就绪断言 → 退出 trap 统一清理（dsh 进程 + 浏览器进程 +
+  禁用）→ 就绪断言 → 退出统一清理（dsh 进程 + 浏览器进程 +
   user-data-dir + DSH_HOME 无残留）；`--port 0` 自动探测真实空闲端口（不再打印
-  无效的 0）。
+  无效的 0）；**B6** 就绪后写 `$DSH_HOME/verdict.json` 启动自检（0o600，端口三通道
+  source，退出终态更新 cleanup）；**B7** 证据目录 `--evidence-dir` 默认
+  `$DSH_HOME/evidence/`、外部化建 `<dir>/evidence-<profile>/` 绝不动外部目录；
+  `--json` 时 stdout 只出最终 verdict JSON。退出码契约：0 正常 / 1 启动或就绪失败
+  / 2 参数错误 / 130 SIGINT / 143 SIGTERM。
 
 ## 包结构
 
 ```text
 skills/dsh-verify-isolated/
   SKILL.md                        # skill 定义（frontmatter name=dsh-verify-isolated）
-  scripts/verify-isolated.sh      # 一键隔离验证脚本（--dsh / --browser / --port 0 / --keep / --no-build）
-  scripts/resolve-pkg-paths.mjs   # 插件参数归一化（相对路径→绝对 / 包规格透传，#517 C11）
+  scripts/verify-isolated.mjs     # 一键隔离验证脚本（node，--dsh / --browser / --port 0 / --keep / --no-build / --evidence-dir / --json）
+  scripts/lib/verify-core.mjs     # 共享基础工具（退出码常量/poll/findFreePort/端口解析/C11 归一化）
   scripts/browser-driver.mjs      # 自带独立浏览器驱动（raw CDP 零依赖，--json 原子操作 CLI）
 cordis.patch.yml                  # 复用官方 dsh-skill-filesystem + bundledSkillDir
 lib/index.js                      # 宿主门禁出口（name + 空 apply）
@@ -57,16 +62,19 @@ lib/index.js                      # 宿主门禁出口（name + 空 apply）
 
 skill 加载后按清单执行；也可直接调包内一键脚本。脚本相对 skill 的资源基础目录
 （加载 skill 时注入的 `Base directory for this skill:` 绝对路径）恒为
-`scripts/verify-isolated.sh`，安装形态自适应（npm 副本 / `link:` 开发态 / 仓库内
-浏览均可用），详见 SKILL.md §2：
+`scripts/verify-isolated.mjs`（node 实现，需 Node ≥22；原 bash 版升级路径：
+`bash .../verify-isolated.sh ...` → `node .../verify-isolated.mjs ...`），安装形态
+自适应（npm 副本 / `link:` 开发态 / 仓库内浏览均可用），详见 SKILL.md §2：
 
 ```bash
 # SKILL_BASE = 加载 skill 时注入的「Base directory for this skill:」绝对路径
-bash "$SKILL_BASE/scripts/verify-isolated.sh" --port 3456 <插件包路径>
+node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 3456 <插件包路径>
 # 多会话并行/浏览器验证：--port 0 自动探测端口，--browser 拉起独立浏览器实例
-bash "$SKILL_BASE/scripts/verify-isolated.sh" --port 0 --browser <插件包路径>
+node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --browser <插件包路径>
 # 锚定 dsh 版本（验证特定 dsh 版本生态时必带，防 PATH 漂移）
-bash "$SKILL_BASE/scripts/verify-isolated.sh" --dsh /opt/dsh-0.1.2-alpha.2/bin/dsh --port 0 <插件包路径>
+node "$SKILL_BASE/scripts/verify-isolated.mjs" --dsh /opt/dsh-0.1.2-alpha.2/bin/dsh --port 0 <插件包路径>
+# 证据目录外部化 + stdout 只出最终 verdict JSON（人类文案走 stderr）
+node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --evidence-dir /tmp/my-evidence --json <插件包路径>
 ```
 
 插件参数支持**本地插件路径**（相对路径基于当前 cwd 自动解析为绝对路径后挂载，
@@ -92,4 +100,4 @@ node "$SKILL_BASE/scripts/browser-driver.mjs" screenshot --state "$DSH_HOME/brow
 - 浏览器实例只绑定回环调试端口（`--remote-debugging-address=127.0.0.1`），
   仅本机可连；
 - 脚本只用 `mktemp -d` 临时目录，退出即清理（`--browser` 时浏览器进程与
-  user-data-dir 随 trap 一并清理），不留残留。
+  user-data-dir 一并清理），不留残留。

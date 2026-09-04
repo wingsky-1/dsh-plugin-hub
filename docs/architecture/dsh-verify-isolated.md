@@ -18,7 +18,7 @@ skill 注册完全由 `cordis.patch.yml` 配置的官方 provider 承担：
 ```mermaid
 flowchart LR
     subgraph npm["@wingsky-1/dsh-verify-isolated（随包分发）"]
-        S["skills/dsh-verify-isolated/<br/>SKILL.md + scripts/verify-isolated.sh"]
+        S["skills/dsh-verify-isolated/<br/>SKILL.md + scripts/verify-isolated.mjs"]
         P["cordis.patch.yml"]
         IDX["lib/index.js（name + 空 apply）"]
     end
@@ -49,29 +49,33 @@ flowchart LR
 
 ## 2. 一键脚本：四重隔离的流程
 
-`skills/dsh-verify-isolated/scripts/verify-isolated.sh`（bash + 内嵌 node，`set -euo pipefail`）：
+`skills/dsh-verify-isolated/scripts/verify-isolated.mjs`（node ≥22 实现，原 bash 版
+`verify-isolated.sh` 已随 #517 C8 重写删除，不留 shim；退出码契约
+0/1/2/130/143）：
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant U as 用户 / agent
-    participant SH as verify-isolated.sh
-    participant T as 临时 DSH_HOME（mktemp -d）
+    participant SH as verify-isolated.mjs
+    participant T as 临时 DSH_HOME（mkdtemp）
     participant P as verify_8位随机 profile
     participant D as dsh CLI
 
-    U->>SH: bash verify-isolated.sh --port 3456 插件包路径
-    SH->>T: DSH_HOME=$(mktemp -d)（隔离凭据/会话/home 级 patch）
-    SH->>SH: trap cleanup EXIT（--keep 保留 / 默认 rm -rf）
-    SH->>P: dsh plugin --profile verify_随机 list<br/>（显式初始化 profile，#376 M1）
+    U->>SH: node verify-isolated.mjs --port 3456 插件包路径
+    SH->>T: DSH_HOME = mkdtemp（隔离凭据/会话/home 级 patch）
+    SH->>T: 建默认证据目录 $DSH_HOME/evidence/（B7；--evidence-dir 外部化）
+    SH->>P: dsh plugin --profile verify_随机 list<br/>（显式初始化 profile，失败即报可操作错误）
     SH->>P: node 注入 dsh.profile.bundles：<br/>@deepseek-ai/dsh-base + @deepseek-ai/dsh-web-app<br/>（按名从 dsh 安装目录解析，不走 npm）
-    SH->>SH: resolve-pkg-paths.mjs 归一化插件参数<br/>（相对路径按 cwd 绝对化，规避 dsh 当 git URL，#517 C11）
+    SH->>SH: 插件参数归一化内建（C11 语义）<br/>（相对路径按 cwd 绝对化，规避 dsh 当 git URL，#517 C11）
     alt 默认（BUILD=1）
-        SH->>D: 对每个本地包 pnpm build（确保 lib/ 或 dist/ 产物）
+        SH->>D: 对每个包 pnpm build（确保 lib/ 或 dist/ 产物；--no-build 校验产物 + 陈旧警告）
     end
-    SH->>D: dsh plugin --profile verify_随机 add 绝对路径数组（link 挂载）
-    SH->>D: dsh --profile verify_随机 --host 127.0.0.1 --port 端口 --no-open<br/>（显式回环 + DSH_TELEMETRY_DISABLED=1，前台阻塞）
-    Note over D: Ctrl+C → EXIT trap 自动清理 dsh 进程、浏览器实例、临时 DSH_HOME 与 profile
+    SH->>D: dsh plugin --profile verify_随机 add 包路径<br/>（相对路径基于 cwd 绝对化，包规格原样透传）
+    SH->>D: dsh --profile verify_随机 --host 127.0.0.1 --port 端口 --no-open<br/>（后台子进程，stdout/stderr 收集到 $DSH_HOME/dsh.log）
+    SH->>SH: 就绪断言（轮询 HTTP 2xx-4xx + 进程存活，15s 超时）
+    SH->>T: 就绪后写 $DSH_HOME/verdict.json（B6，0o600，端口三通道 source）
+    Note over SH: Ctrl+C / SIGTERM → 统一清理（kill dsh → browser quit →<br/>verdict 终态 cleanup → rm -rf DSH_HOME），透传 130/143
 ```
 
 双重隔离的层次（为什么两层都必要）：
@@ -95,15 +99,16 @@ sequenceDiagram
 dsh plugin --profile web add @wingsky-1/dsh-verify-isolated
 
 # 2. skill 加载后，取「Base directory for this skill:」绝对路径为 SKILL_BASE
-bash "$SKILL_BASE/scripts/verify-isolated.sh" --port 3456 <插件包路径>
+node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 3456 <插件包路径>
 # 多包：--port 3456 <包A> <包B>
-# --port 0 随机端口 · --keep 保留临时环境 · --no-build 跳过构建
+# --port 0 随机端口 · --keep 保留临时环境 · --no-build 跳过构建 ·
+# --evidence-dir <dir> 证据目录外部化 · --json stdout 只出最终 verdict
 ```
 
 - **SKILL_BASE 自适应**：跟随 `cordis.patch.yml` 的 bundledSkillDir 解析——npm 副本 /
   `link:` 开发态 / 仓库 checkout 均返回真实 skill 目录（脚本相对它定位）；
 - 脚本自包含、从任意 cwd 以绝对路径调用；不确定时先 `ls "$SKILL_BASE/scripts/
-  verify-isolated.sh"` 自证；
+  verify-isolated.mjs"` 自证；
 - **浏览器验证**（SKILL.md §5/§6）：`--browser` 拉起 skill 自带独立浏览器实例
   （browser-driver.mjs，独立 user-data-dir + 调试端口，多会话并行硬隔离）；核验 UI
   呈现 / Console（挂载失败只应 warn 不应 throw）/ 双主题 / 窄屏（768×1024 pad、
