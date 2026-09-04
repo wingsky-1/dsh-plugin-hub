@@ -585,7 +585,7 @@ async function main() {
     );
   }
   if (ready === "timeout") {
-    throw new CliError(`错误: dsh web 15s 内未就绪（端口 ${verdictPort}）——按上方 dsh 输出排查；--keep 可保留现场`, EXIT.FAIL);
+    throw new CliError(`错误: dsh web 15s 内未就绪（端口 ${verdictPort}）——完整输出见 dsh.log: ${dshLogPath}；--keep 可保留现场`, EXIT.FAIL);
   }
   readyOk = true;
   readyIso = new Date().toISOString();
