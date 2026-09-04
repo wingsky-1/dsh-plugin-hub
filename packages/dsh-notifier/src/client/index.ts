@@ -66,6 +66,46 @@ function diffSettingsPayload(settings: Record<string, any>, baseLine: Record<str
   return payload;
 }
 
+/**
+ * 保存串行 guard（issue #405 要素 2）：同一时刻仅一个在途保存请求。
+ * exhaustMap + trailing 语义——在途期间再点保存不丢弃意图：记 pending，
+ * 由调用方在本次在途结束（end）后补发一次（补发是完整保存，是否仍有脏由
+ * 调用方 save() 的 diff 空检查兜底，天然不循环）。
+ *
+ * 模块级纯工厂（无 React 依赖），对齐 diffSettingsPayload 先例：
+ * apply 挂载 + vm materialize 直测，「测试即产品实现」。
+ *
+ * @returns {{ tryBegin(): boolean; isBusy(): boolean; end(): boolean }}
+ * - tryBegin(): 空闲则占用并返回 true；在途则记 pending 返回 false（不占用）。
+ * - end(): 释放占用；返回「在途期间是否积累过补发意图」（调用方据此补发一次）。
+ *   必须与 tryBegin 成功一一配对（放 finally），任何路径都释放，防永久卡死。
+ */
+function createSaveGuard(): { tryBegin(): boolean; isBusy(): boolean; end(): boolean } {
+  var busy = false;
+  var pending = false;
+  return {
+    tryBegin(): boolean {
+      if (busy) {
+        pending = true;
+        return false;
+      }
+      busy = true;
+      return true;
+    },
+    isBusy(): boolean {
+      return busy;
+    },
+    end(): boolean {
+      busy = false;
+      if (pending) {
+        pending = false;
+        return true;
+      }
+      return false;
+    },
+  };
+}
+
   /** i18n 翻译函数（apply 时由 ctx.locale.bind(NS) 装配；未装配回落 key 本体，行为零变化）。 */
   var t: any = function (key: string, params?: any) {
     if (params === undefined) return key;
@@ -83,7 +123,7 @@ function diffSettingsPayload(settings: Record<string, any>, baseLine: Record<str
   };
   var STYLE_ID = "dsh-notifier-style";
   // 合并 #418/#421/#426/#508 后统一 bump（保证新样式重注入；508-1 > 426-1）
-  var CSS_VERSION = "508-1";
+  var CSS_VERSION = "405-1";
   // 浏览器通知图标（内联 SVG data URL，零外部资源；铃铛造型）。
   var NOTIFY_ICON =
     "data:image/svg+xml;utf8," +
@@ -644,6 +684,19 @@ function diffSettingsPayload(settings: Record<string, any>, baseLine: Record<str
     // 用 useRef 持久化：组件每次渲染局部变量会重置为 null，导致 save() 闭包里读不到
     // 基线而永远判定「无变化」。
     var baselineRef = ReactHooks.useRef(null as Record<string, any> | null);
+    // #405：settings / meta（revision）ref 收口——异步回调（保存成功 / trailing 补发）
+    // 一律读 ref 而非渲染闭包值，杜绝「连点第二个 PUT 带旧 revision」「补发漏提交在途
+    // 新编辑」两类陈旧闭包问题。settingsRef 由 patch（唯一写入口）在 updater 内同步。
+    var settingsRef = ReactHooks.useRef(null as Record<string, any> | null);
+    var metaRef = ReactHooks.useRef(null as any);
+    // #405：保存串行 guard（模块级纯工厂）——同一时刻仅一个在途 PUT。
+    var saveGuardRef = ReactHooks.useRef(null as ReturnType<typeof createSaveGuard> | null);
+    if (saveGuardRef.current === null) saveGuardRef.current = createSaveGuard();
+    var saveGuard = saveGuardRef.current;
+    // 保存中 UI 态（按钮禁用 + 「保存中…」文案）
+    var savingDraft = useState(false);
+    var saving = savingDraft[0];
+    var setSaving = savingDraft[1];
 
     function loadHistory(alive: { value: boolean }) {
       fetchHistory().then(function (records) {
@@ -670,9 +723,11 @@ function diffSettingsPayload(settings: Record<string, any>, baseLine: Record<str
         .then(function (v: any) {
           if (!alive.value) return;
           var effective = (v && v.effective) || {};
-          setSettings(Object.assign({}, effective));
+          patch(Object.assign({}, effective));
           baselineRef.current = Object.assign({}, effective);
-          setMeta({ user: v.user || {}, revision: v.revision, effective: effective, writable: v.writable !== false });
+          var nextMeta = { user: v.user || {}, revision: v.revision, effective: effective, writable: v.writable !== false };
+          metaRef.current = nextMeta;
+          setMeta(nextMeta);
           runtimeConfig = effective; // SSE 展示面同步
           if (v.writable === false) setSaved(t("settingsUnavailable"), true);
         })
@@ -695,32 +750,39 @@ function diffSettingsPayload(settings: Record<string, any>, baseLine: Record<str
       return React.createElement("li", { className: "dn-set-card" }, t("settingsLoading"));
     }
 
-    /** 函数式 setState 写设置（防 stale closure：同帧多次 onChange 后写覆盖先写）。
+    /** settings 唯一写入口（#405 ref 收口）：updater 内同步 settingsRef——
+     *  为什么在 updater 内写（而非 useEffect latest 模式）：useEffect 是 passive
+     *  effect（paint 后异步），可能与网络宏任务回调（保存成功 / trailing 补发）
+     *  乱序；updater 内写在 state 计算的同一闭包同一时刻完成，时序零窗口。React
+     *  并发 abort 重放会重跑整个 updater 队列，最终写值恒等于最终提交的 state
+     *  （最终一致）；StrictMode 双调写同值幂等。all 调用点（loadCard /
+     *  switchControl / discardChanges / 各 patch 调用方）统一走本函数，保证
+     *  异步回调读 settingsRef.current 恒为最新草稿。
      *  p 为对象时浅合并；为函数时以最新 prev 计算（prev => next）。 */
     function patch(p: any) {
       setSettings(function (prev: any) {
-        if (typeof p === "function") return p(prev);
-        return Object.assign({}, prev, p);
+        var next = typeof p === "function" ? p(prev) : Object.assign({}, prev, p);
+        settingsRef.current = next;
+        return next;
       });
       setSaved("");
     }
 
     /** 基线 diff：只提交与加载基线不同的键（A4，防组合层 base 被默认值回写覆盖）。
-     *  逻辑收敛在模块级纯函数 diffSettingsPayload（#470 复核 P1-2，供测试直测）。 */
+     *  逻辑收敛在模块级纯函数 diffSettingsPayload（#470 复核 P1-2，供测试直测）。
+     *  #405：读 settingsRef（非渲染闭包 settings）——trailing 补发在 .then 回调里
+     *  触发，必须取最新草稿；渲染期调用时 ref 与 state 同值，无行为差异。 */
     function diffPayload(): Record<string, any> {
-      return diffSettingsPayload(settings, baselineRef.current);
+      return diffSettingsPayload(settingsRef.current || settings, baselineRef.current);
     }
 
-    function save() {
-      var payload = diffPayload();
-      if (Object.keys(payload).length === 0) {
-        setSaved(t("unchanged"));
-        return;
-      }
-      fetch(ROUTES.config, {
+    /** 提交 PUT 并处理响应（save 的内核；guard 占用与释放由 save 负责）。 */
+    function putAndCommit(payload: Record<string, any>) {
+      var expectedRevision = metaRef.current && typeof metaRef.current.revision === "number" ? metaRef.current.revision : undefined;
+      return fetch(ROUTES.config, {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ patch: payload, expectedRevision: metaValue ? metaValue.revision : undefined }),
+        body: JSON.stringify({ patch: payload, expectedRevision: expectedRevision }),
       }).then(function (r: any) {
         return r.json().then(function (body: any) {
           if (!r.ok) {
@@ -730,8 +792,18 @@ function diffSettingsPayload(settings: Record<string, any>, baseLine: Record<str
           return body;
         });
       }).then(function (body: any) {
-        baselineRef.current = Object.assign({}, settings);
-        setMeta({ user: (body && body.user) || {}, revision: (body && body.revision) || undefined, effective: settings, writable: true });
+        // #405 事务性基线推进（评审 P0-2 落实）：只并入本次 PUT 实际提交的 payload
+        // 键——若并入点击后的 settings 全量，在途期间的编辑会被固化为基线而丢失；
+        // 键级并入后，在途新编辑（非 payload 键）仍在 diff 中，由 trailing 补发提交。
+        baselineRef.current = Object.assign({}, baselineRef.current || {}, payload);
+        var nextMeta = {
+          user: (body && body.user) || {},
+          revision: (body && body.revision) || undefined,
+          effective: Object.assign({}, baselineRef.current),
+          writable: true,
+        };
+        metaRef.current = nextMeta; // 同步写 ref：补发立即读新 revision，不再 409
+        setMeta(nextMeta);
         setSaved(t("savedOk"));
         setTimeout(function () { setSaved(""); }, 2200);
       }).catch(function (e: any) {
@@ -742,10 +814,34 @@ function diffSettingsPayload(settings: Record<string, any>, baseLine: Record<str
       });
     }
 
-    /** #508 M1：放弃更改——草稿回写加载基线（编辑态/运行时镜像同步还原）。 */
+    /** 保存（#405 串行 guard 接入）：同一时刻仅一个在途 PUT——
+     *  - 在途期间再次点击：guard 记 pending 并立即返回（不重复发 PUT）；
+     *    本次在途结束（finally 释放 guard）后若积累过点击，自动补发一次（trailing），
+     *    补发读 settingsRef 最新草稿 + metaRef 最新 revision，无丢失、无误 409；
+     *  - 空 diff：初次点击提示「未修改」；补发路径（quietIfEmpty=true）静默返回，
+     *    不覆盖刚显示的「已保存」；
+     *  - guard.end() 放 finally：成功/失败/异常任何路径都释放，防按钮永久卡死。 */
+    function save(quietIfEmpty?: boolean) {
+      if (!saveGuard.tryBegin()) return; // 在途：记 pending，由在途 finally 补发
+      var payload = diffPayload();
+      if (Object.keys(payload).length === 0) {
+        saveGuard.end();
+        if (!quietIfEmpty) setSaved(t("unchanged"));
+        return;
+      }
+      setSaving(true);
+      putAndCommit(payload).finally(function () {
+        setSaving(false);
+        if (saveGuard.end()) save(true); // trailing 补发（完整保存，天然不循环）
+      });
+    }
+
+    /** #508 M1：放弃更改——草稿回写加载基线（编辑态/运行时镜像同步还原）。
+     *  #405：经 patch 统一写入口（settingsRef 同步）；按钮在 saving 期间禁用
+     *  （foot 渲染处），消除「在途成功回调覆盖放弃后基线」的竞态。 */
     function discardChanges() {
       if (baselineRef.current) {
-        setSettings(Object.assign({}, baselineRef.current));
+        patch(function () { return Object.assign({}, baselineRef.current); });
         runtimeConfig = baselineRef.current;
       }
       setSaved("");
@@ -967,15 +1063,15 @@ function diffSettingsPayload(settings: Record<string, any>, baseLine: Record<str
       );
     }
 
-    /** 顶层布尔设置键的 switch（switchToggle 的设置键薄封装）。 */
+    /** 顶层布尔设置键的 switch（switchToggle 的设置键薄封装）。
+     *  #405：统一走 patch 写入口（settingsRef 同步），不再裸 setSettings。 */
     function switchControl(key: string, ariaLabel: string) {
       return switchToggle(settings[key] === true, function (v: boolean) {
-        setSettings(function (prev: any) {
+        patch(function (prev: any) {
           var next = Object.assign({}, prev);
           next[key] = v;
           return next;
         });
-        setSaved("");
       }, ariaLabel);
     }
 
@@ -1779,8 +1875,10 @@ function diffSettingsPayload(settings: Record<string, any>, baseLine: Record<str
               ? React.createElement("span", { className: "dn-dirty" }, t("dirtySome", { n: dirtyCount }))
               : null,
           React.createElement("span", { className: "dn-spacer" }),
-          React.createElement("button", { type: "button", className: "dn-set-btn dn-set-btnSmall", onClick: discardChanges }, t("discardChanges")),
-          React.createElement("button", { type: "button", className: "dn-set-save", onClick: save }, t("save")),
+          // #405：保存中（guard 在途）禁用「放弃更改」与「保存」——防提交窗口内矛盾操作
+          // （放弃被在途成功回调覆盖基线）与连点重复 PUT；按钮文案切换「保存中…」。
+          React.createElement("button", { type: "button", className: "dn-set-btn dn-set-btnSmall", disabled: saving, onClick: discardChanges }, t("discardChanges")),
+          React.createElement("button", { type: "button", className: "dn-set-save", disabled: saving, onClick: function () { save(); } }, saving ? t("saving") : t("save")),
         ),
       ),
     );
@@ -1789,9 +1887,11 @@ function diffSettingsPayload(settings: Record<string, any>, baseLine: Record<str
   // ------------------------------------------------------------ 装配
 
 export function apply(ctx: any) {
-    // 测试直测挂载面（#470 复核 P1-2）：diffSettingsPayload 是模块级纯函数，
-    // 经 apply 暴露给 smoke 测试引用——保证「测试即产品实现」而非手写近似。
+    // 测试直测挂载面（#470 复核 P1-2 / #405）：diffSettingsPayload 与
+    // createSaveGuard 是模块级纯函数，经 apply 暴露给 smoke 测试引用——
+    // 保证「测试即产品实现」而非手写近似。
     (apply as any).diffSettingsPayload = diffSettingsPayload;
+    (apply as any).createSaveGuard = createSaveGuard;
     try {
       ensureStyle({ id: STYLE_ID, cssText: STYLE, version: CSS_VERSION });
 
