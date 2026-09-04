@@ -28,6 +28,8 @@ export const DEFAULT_CONFIG = {
   autoReload: true,
   maxAgeDays: 30,
   maxSizeMB: 20,
+  // #503 会话用量趋势：聚合分片保留天数（日切压实后按天留存，明细仅当日）
+  trendRetentionDays: 180,
 };
 
 export interface NormalizedConfig {
@@ -43,6 +45,7 @@ export interface NormalizedConfig {
   autoReload: boolean;
   maxAgeDays: number;
   maxSizeMB: number;
+  trendRetentionDays: number;
 }
 
 export const Config: z<{
@@ -56,6 +59,7 @@ export const Config: z<{
   autoReload: boolean;
   maxAgeDays: number;
   maxSizeMB: number;
+  trendRetentionDays: number;
 }> = z.object({
   adapter: z.string().default("").description("用户适配器 mjs 文件路径（兼容配置声明；推荐经设置页「用量统计」添加）"),
   staticPath: z.string().default("").description("API 路径（如 /v1/usage；config.adapter 模式用）"),
@@ -67,6 +71,7 @@ export const Config: z<{
   autoReload: z.boolean().default(true).description("热更新开关（编辑适配器 mjs 后自动重新加载；默认开启，可显式 false 关闭）"),
   maxAgeDays: z.number().default(DEFAULT_CONFIG.maxAgeDays).description("历史数据保留天数").disabled(true),
   maxSizeMB: z.number().default(DEFAULT_CONFIG.maxSizeMB).description("历史数据大小上限（MB）").disabled(true),
+  trendRetentionDays: z.number().default(DEFAULT_CONFIG.trendRetentionDays).description("会话用量趋势聚合保留天数").disabled(true),
 });
 
 export function normalizeConfig(input: unknown): NormalizedConfig {
@@ -89,5 +94,9 @@ export function normalizeConfig(input: unknown): NormalizedConfig {
     base.maxAgeDays = Math.min(365, cfg.maxAgeDays as number);
   }
   if (Number.isFinite(cfg.maxSizeMB)) base.maxSizeMB = Math.min(500, cfg.maxSizeMB as number);
+  // #503：trend 聚合保留天数——仅正整数（上界 3650≈10 年），非法回落默认 180
+  if (Number.isInteger(cfg.trendRetentionDays) && (cfg.trendRetentionDays as number) > 0) {
+    base.trendRetentionDays = Math.min(3650, cfg.trendRetentionDays as number);
+  }
   return base;
 }

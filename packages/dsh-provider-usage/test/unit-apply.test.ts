@@ -28,6 +28,11 @@ import {
 
 // ---------------------------------------------------------------- 工具：fakeReqs
 
+/** #503：session 事件监听桩（apply 现注册 session/event|flush|disposed 监听）。 */
+function onStub() {
+  return () => {};
+}
+
 function fakeReq(overrides = {}) {
   return {
     socket: { remoteAddress: "127.0.0.1" },
@@ -67,6 +72,7 @@ let savedHome;
   const ctx = {
     logger: { warn: () => {} },
     webServer: { register(route) { routes.push(route); return () => {}; } },
+    on: onStub,
     llm: { listProviders() { return []; } },
     fiber: { state: "active" },
     inject: (deps, cb) => {
@@ -108,6 +114,7 @@ let savedHome;
   const ctx = {
     logger: { warn: (m) => { warns.push(m); } },
     webServer: { register(route) { routes.push(route); return () => {}; } },
+    on: onStub,
     llm: { listProviders() { return []; } },
     fiber: { state: "active" },
     inject: (deps, cb) => {
@@ -133,6 +140,7 @@ let savedHome;
   const ctx = {
     logger: { warn: (m) => { warns.push(m); } },
     webServer: { register(route) { routes.push(route); return () => {}; } },
+    on: onStub,
     llm: { listProviders() { return []; } },
     fiber: { state: "active" },
     inject: (deps, cb) => {
@@ -162,6 +170,7 @@ let savedHome;
   const ctx = {
     logger: { warn: () => {} },
     webServer: { register(route) { routes.push(route); return () => {}; } },
+    on: onStub,
     llm: { listProviders() { return []; } },
     fiber: { state: "unloading" },
     inject: (deps, cb) => {
@@ -190,6 +199,7 @@ let savedHome;
   const ctx = {
     logger: { warn: () => {} },
     webServer: { register(route) { routes.push(route); return () => {}; } },
+    on: onStub,
     llm: { listProviders() { return []; } },
     fiber: { state: "disposed" },
     inject: (deps, cb) => {
@@ -229,6 +239,7 @@ export function formatPanel() { return "<p>p</p>"; }
   const ctx = {
     logger: { warn: () => {} },
     webServer: { register(route) { routes.push(route); return () => {}; } },
+    on: onStub,
     llm: { listProviders() { return []; } },
     fiber: { state: "active" },
     inject: (deps, cb) => { cb({ settings: {} }); },
@@ -251,6 +262,7 @@ export function formatPanel() { return "<p>p</p>"; }
   const ctx = {
     logger: { warn: () => {} },
     webServer: { register(route) { routes.push(route); return () => {}; } },
+    on: onStub,
     llm: { listProviders() { return []; } },
     fiber: { state: "active" },
     inject: (deps, cb) => { cb({ settings: {} }); },
@@ -290,6 +302,7 @@ export function formatPanel() { return "<p>p</p>"; }
     webServer: {
       register(route) { routes.push(route); return () => {}; },
     },
+    on: onStub,
     llm: { listProviders() { return []; } },
     fiber: { state: "active" },
     inject: (deps, cb) => { cb({ settings: {} }); },
@@ -327,6 +340,7 @@ export function formatPanel() { return "<p>p</p>"; }
   const ctx = {
     logger: { warn: () => {} },
     webServer: { register(route) { routes.push(route); return () => {}; } },
+    on: onStub,
     llm: { listProviders() { return []; } },
     fiber: { state: "active" },
     inject: (deps, cb) => { cb({ settings: {} }); },
@@ -356,6 +370,7 @@ function makeCtx(over: {
   const ctx = {
     logger: { warn: () => {} },
     webServer: { register(route: Record<string, unknown>) { routes.push(route); return () => {}; } },
+    on: onStub,
     llm: over.llm !== undefined ? over.llm : { listProviders() { return []; } },
     fiber: { state: "active" },
     inject: (deps: unknown, cb: (s: unknown) => void) => { cb({ settings: {} }); },

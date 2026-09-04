@@ -1,6 +1,6 @@
 # 提案：dsh 会话用量「日/周/月」趋势与定时报表
 
-- 状态：待评审（头脑风暴定稿；经独立子 agent 对抗评审 + 两轮路线讨论，定稿为「事件为唯一事实来源」路线）
+- 状态：**方案复核通过，待维护者 approved 后实施**（头脑风暴定稿 → 三轮独立对抗评审：v1.0 文件路线证伪、v1.1 会话路线否决、v1.2 `ctx.llm.stream` 路线复核通过；issue #503）
 - 落点：扩展 `dsh-provider-usage` 包（用量入口统一；趋势逻辑独立为包内 `src/trend/` 模块，不与 v2 适配器契约耦合）
 - 目标：
   1. 统计「日 / 周 / 月 × 各模型适配器（provider，细到 model 可选）」的 token 消耗与调用次数；
@@ -151,3 +151,27 @@ session/event（官方契约，唯一事实来源）
 5. **用语规范**：按钮说「保存更改」不说「提交」；错误说明哪里错了与怎么修（「模型接口超时，已自动重试 2 次——检查 endpoint 后可手动重试」）；空态是行动邀请（「尚未配置适配器——检测可用 provider 后一键接入」）。
 6. **动效一次编排**：适配器热插拔时的状态过渡做一次编排好的微交互（卡片态：检测中 → 就绪），其余静态；尊重 `prefers-reduced-motion`。
 7. **质量底线**：键盘焦点可见、触控目标 ≥ 40px、<768px 单列折行、双主题等价（隔离环境截图证据归档，走 dsh-verify-isolated）。
+
+## 八、v1.2 定稿：报告生成经 `ctx.llm.stream` 宿主运行时（2026-09-04）
+
+报告生成的模型调用方式经三轮演进，最终定稿为 **dsh-llm 官方运行时一击式调用**：
+
+| 版本 | 路线 | 结论 |
+|---|---|---|
+| v1.0 | 插件直连模型 API（endpoint + key） | 有「新增网络出口 + 凭据使用面」安全红线 |
+| v1.1 | `ctx.agents.create` + `followup` 发起报告会话 | 对抗复核否决：无内置无工具 preset、会话权限继承部署 defaultPreset（实际 danger-full-access）、崩溃孤儿不被 idle-archive 归档（明确跳过 origin==='subagent'）、dispose 语义与文件归宿需实测 |
+| **v1.2（定稿）** | **`ctx.llm.stream(GenerateOptions)`** | 一击式流式调用：`provider/model` 取自 dsh 已注册适配器路由，`messages/system` 直传，`tools` 不传即无工具面，chunk 自带 `type:'usage'` 可自行记账 |
+
+> **复核结论（第三轮，2026-09-04）**：v1.2 路线复核通过。证据：`@deepseek-ai/dsh-llm` 官方类型层声明 `ctx.llm: LlmRuntime`（cordis `Context` 合并）与 `stream(GenerateOptions): AsyncIterable<StreamChunk>`（`tools` 不传即无工具面；`purpose` 枚举不含报告用途故留空）；`GenerateOptions.provider` 须为已注册适配器路由。注入面收敛：prompt 只传数值与匿名会话 id，敏感文本由插件事后回填。 |
+
+定稿要点：
+
+1. **零凭据持有、零新增网络出口**：调用经宿主 `llm` 服务（cordis 声明 `ctx.llm: LlmRuntime`），凭据由 dsh 既有 provider 配置持有，插件不接触；安全红线消除，README 安全模型节按「无独立凭据、无独立出口」描述；
+2. **无会话副作用**：不创建 agent/会话——无主会话归属与 cwd 问题、无会话列表/projcache 污染、无崩溃孤儿、无 dispose 语义顾虑；v1.0 的轻量本意由宿主运行时达成；
+3. **模型可配置**：配置项从「endpoint+key」简化为「从 dsh 已注册适配器路由选择 provider/model」（须有注册适配器），默认跟随 dsh 默认 provider；
+4. **统计口径**：`llm.stream` 不产生 session 事件 → 生成消耗不计入用量统计（与 v1.0 口径一致），由报告元数据单独记录（报告页可见）；
+5. **工具面**：`GenerateOptions.tools` 不传即无工具面（类型层保证，无需 preset/restrict）；
+6. **失败语义**：流式异常/`finish` 异常 → 元数据标失败，幂等重试不重复扣期；`AbortSignal` 支持取消；
+7. **注入面收敛**：提示词只传数值与匿名会话 id，报告叙事由 LLM 产出，标题等敏感文本由插件事后按 id 回填（统计 JSON 不整体入 prompt）；
+8. smoke：mock llm 服务（或 waterfall 短路注入假 chunk），无网络纪律不变。
+

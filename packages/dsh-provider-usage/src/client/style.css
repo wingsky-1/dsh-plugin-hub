@@ -217,6 +217,22 @@
 .dou-legendDot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .dou-miniChart { margin-top: 6px; }
 
+/* ---------------------------------------------------------------- 设置页·使用趋势区块（issue #503 M2） */
+
+/* 组件布局大量内联样式；此处只补全局交互/渲染语义：
+   键盘 focus 可见性（按钮组/下拉/复选框统一 outline，不依赖浏览器默认被 reset 的形态） */
+.dou-trend button:focus-visible,
+.dou-trend select:focus-visible,
+.dou-trend input:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-info-primary, #4a7dd6);
+  outline-offset: 1px;
+}
+
+/* 图表容器：SVG 铺满宽度、按 viewBox 等比伸缩（与 .dou-miniChart 同语义） */
+.dou-trend-chart svg { display: block; width: 100%; height: auto; }
+/* 图例色点与轴文字跟随主题（颜色变量集中在 SVG 内联处与组件内联处） */
+.dou-trend-legendDot { display: inline-block; }
+
 /* ---------------------------------------------------------------- 设置页·提供商手风琴列表（issue #38） */
 
 .dou-provList {
@@ -409,10 +425,261 @@
   border-color: var(--dsw-alias-state-info-primary, #4a7dd6);
 }
 
+/* #503 M3 用量报告区块（配置卡片 / 手动生成 / 历史列表）：
+   复用 --dsw-* 变量与 dou- 前缀；键盘焦点一律 :focus-visible 可见。 */
+.dou-reportFetchFail,
+.dou-reportGenError {
+  color: var(--dsw-alias-state-error-primary, #d64545);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.dou-reportCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--dsw-alias-border-l2, #e8eaf0);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1, #f8f9fb);
+}
+.dou-reportRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.dou-reportCol {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.dou-reportEnabled,
+.dou-reportInline {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  min-width: 0;
+}
+.dou-reportLabel {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary, #9aa0ab);
+}
+.dou-reportHint {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary, #9aa0ab);
+}
+.dou-reportTime {
+  width: 96px;
+  flex: none;
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid var(--dsw-alias-border-l1, #d7dae0);
+  border-radius: 5px;
+  background: var(--dsw-alias-bg-base, #fdfdfd);
+  color: var(--dsw-alias-label-primary, #1c1e26);
+}
+.dou-reportNum {
+  width: 56px;
+  flex: none;
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid var(--dsw-alias-border-l1, #d7dae0);
+  border-radius: 5px;
+  background: var(--dsw-alias-bg-base, #fdfdfd);
+  color: var(--dsw-alias-label-primary, #1c1e26);
+}
+.dou-reportInput {
+  width: 160px;
+  min-width: 0;
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid var(--dsw-alias-border-l1, #d7dae0);
+  border-radius: 5px;
+  background: var(--dsw-alias-bg-base, #fdfdfd);
+  color: var(--dsw-alias-label-primary, #1c1e26);
+}
+.dou-reportSelect {
+  font-size: 12px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-alias-border-l1, #d7dae0);
+  background: var(--dsw-alias-bg-base, #fdfdfd);
+  color: inherit;
+}
+.dou-reportTextarea {
+  width: 100%;
+  min-width: 0;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 6px 8px;
+  border: 1px solid var(--dsw-alias-border-l1, #d7dae0);
+  border-radius: 5px;
+  background: var(--dsw-alias-bg-base, #fdfdfd);
+  color: var(--dsw-alias-label-primary, #1c1e26);
+  resize: vertical;
+}
+.dou-reportSaveBtn,
+.dou-reportGenBtn {
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 12px;
+  border: 1px solid var(--dsw-alias-border-l2, #e8eaf0);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-base, #fdfdfd);
+  color: inherit;
+  cursor: pointer;
+}
+.dou-reportGenBtn {
+  border-color: var(--dsw-alias-state-info-primary, #4a7dd6);
+  color: var(--dsw-alias-state-info-primary, #4a7dd6);
+}
+.dou-reportSaveBtn:disabled,
+.dou-reportGenBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.dou-reportSaved {
+  font-size: 11px;
+  color: var(--dsw-alias-state-success-primary, #3f9d63);
+}
+.dou-reportSaveFail {
+  font-size: 11px;
+  color: var(--dsw-alias-state-error-primary, #d64545);
+}
+.dou-reportGenRow {
+  margin-top: 10px;
+}
+.dou-reportListTitle {
+  font-size: 12px;
+  font-weight: 600;
+  margin: 12px 0 6px;
+}
+.dou-reportList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.dou-reportItem {
+  border: 1px solid var(--dsw-alias-border-l2, #e8eaf0);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.dou-reportItemHead {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.dou-reportItemPeriod {
+  flex: none;
+  font-weight: 600;
+}
+.dou-reportItemKey {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.dou-reportBadge {
+  flex: none;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+}
+.dou-reportBadgeOk {
+  color: var(--dsw-alias-state-success-primary, #3f9d63);
+  border: 1px solid var(--dsw-alias-state-success-primary, #3f9d63);
+}
+.dou-reportBadgeFail {
+  color: var(--dsw-alias-state-error-primary, #d64545);
+  border: 1px solid var(--dsw-alias-state-error-primary, #d64545);
+}
+.dou-reportItemTime {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary, #9aa0ab);
+  font-variant-numeric: tabular-nums;
+}
+.dou-reportDetail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--dsw-alias-border-l2, #e8eaf0);
+}
+.dou-reportDetailMeta {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary, #9aa0ab);
+  font-variant-numeric: tabular-nums;
+}
+.dou-reportDetailBody {
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.dou-reportCollapse {
+  align-self: flex-end;
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 8px;
+  border: 1px solid var(--dsw-alias-border-l2, #e8eaf0);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.dou-reportLoading {
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary, #9aa0ab);
+}
+.dou-reportEmpty {
+  padding: 18px 14px;
+  text-align: center;
+  border: 1px dashed var(--dsw-alias-border-l1, #d7dae0);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary, #9aa0ab);
+}
+/* 键盘焦点可见（键盘用户可达性；触屏/鼠标点击不显描边） */
+.dou-reportSaveBtn:focus-visible,
+.dou-reportGenBtn:focus-visible,
+.dou-reportItemHead:focus-visible,
+.dou-reportCollapse:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-info-primary, #4a7dd6);
+  outline-offset: 1px;
+}
+.dou-reportTime:focus-visible,
+.dou-reportNum:focus-visible,
+.dou-reportInput:focus-visible,
+.dou-reportSelect:focus-visible,
+.dou-reportTextarea:focus-visible {
+  outline: none;
+  border-color: var(--dsw-alias-state-info-primary, #4a7dd6);
+}
+
 /* 三端响应式：窄屏收起展开区左缩进，徽标允许换行占整行 */
 @media (max-width: 480px) {
   .dou-provBody { padding-left: 10px; }
   .dou-provBadge { max-width: 100%; }
+  .dou-reportItemTime { margin-left: 0; width: 100%; }
 }
 
 /* #128 悬停态统一包裹 @media(hover:hover)：触屏设备不吸附悬停背景（规格第 7 条）。 */

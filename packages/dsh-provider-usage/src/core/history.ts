@@ -189,6 +189,11 @@ export class HistoryStore {
     }
     for (const provider of providers) {
       if (provider.startsWith(".") || provider === "legacy-v3.bak") continue;
+      // #503：trend 目录（会话用量趋势明细/聚合分片）不归 HistoryStore 的 maxAgeDays/
+      // maxSizeMB 管——其留存周期独立为 trendRetentionDays（默认 180 天），由
+      // TrendTracker.prune() 按自身 cutoff 清理。trend 分片文件名 YYYY-MM-DD.jsonl
+      // 恰好命中下方 Date.parse 日期启发，漏排会被 30 天默认 retention 静默误删。
+      if (provider === "trend") continue;
       const pdir = join(this.root, provider);
       let names: string[];
       try {
