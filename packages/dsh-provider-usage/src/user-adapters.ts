@@ -8,9 +8,9 @@
 import { copyFile, link, mkdir, open, readFile, readdir, rename, unlink } from "node:fs/promises";
 import { constants, existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { expandHomePath, pluginHome, resolvePath } from "./path-resolve.ts";
+import { dshHome as dshHomeDefault } from "../../../shared/dsh-home.js";
 
 /** 损坏启用状态的取证备份上限；新隔离的现场始终保留，其余按文件名时间戳轮转。 */
 export const ADAPTER_STATE_BACKUP_LIMIT = 5;
@@ -361,7 +361,7 @@ export async function writeAdapterState(
 /** 校验 add 入参 file 字段：文件存在可读 + 路径规整禁穿越。 */
 export function resolveAddAdapterFile(
   input: unknown,
-  dshHome = process.env.DSH_HOME ?? join(homedir(), ".dsh"),
+  dshHome = dshHomeDefault(),
 ): string | undefined {
   if (typeof input !== "string") return undefined;
   const trimmed = input.trim();

@@ -6,11 +6,12 @@
  * randomUUID polyfill 同处装配。路由表归 config-routes.ts，settings 接线归
  * settings.ts，存量迁移归 migrate.ts；本模块不 import index.ts（防循环）。
  */
-import { homedir, networkInterfaces } from "node:os";
+import { networkInterfaces } from "node:os";
 import { join } from "node:path";
 import { mkdirSync } from "node:fs";
 import type { Context } from "@deepseek-ai/cordis";
 import { writeJson, errorMessage, guardLoopbackMethod } from "../../../shared/host-utils.js";
+import { dshHome } from "../../../shared/dsh-home.js";
 import { createLanProxy, DEFAULT_OPTIONS, DEFAULT_DEFLATE_POLICY } from "./proxy.ts";
 import type { TlsMaterials, LanProxy } from "./proxy.ts";
 import { ensureSelfSignedTls, loadTlsFromFiles } from "./cert.ts";
@@ -50,7 +51,7 @@ function lanIpv4Addresses(): string[] {
 
 /** 插件目录（<DSH_HOME>/lan-proxy）：自签名证书缓存 + 存量迁移备份所在。 */
 export function pluginDir(): string {
-  return join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), "lan-proxy");
+  return join(dshHome(), "lan-proxy");
 }
 
 /**

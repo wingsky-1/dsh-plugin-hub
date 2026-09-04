@@ -27,6 +27,7 @@ import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { guardLoopbackMethod, writeJson, readJsonBody, errorMessage, sseData } from "../../../shared/host-utils.js";
 import { installSettingsNamespace } from "../../../shared/settings-namespace.js";
+import { dshHome } from "../../../shared/dsh-home.js";
 import { Mutex } from "async-mutex";
 import type { Context } from "@deepseek-ai/cordis";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
@@ -82,7 +83,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   if (rawConfig.enabled === false) return; // 显式禁用：不注册任何路由
   const config = normalizeConfig(rawConfig);
   const sanitizeDiagnostic = (s: string): string =>
-    s.split(process.env.DSH_HOME ?? join(homedir(), ".dsh")).join("~/.dsh").split(homedir()).join("~");
+    s.split(dshHome()).join("~/.dsh").split(homedir()).join("~");
   const registry = makeAdapterRegistry({
     sanitizePath: sanitizeDiagnostic,
   });
@@ -92,7 +93,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   };
 
   // -------------------------------------------------------- 历史存储与持久化根
-  const historyRoot = config.historyDir || join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), "dsh-provider-usage");
+  const historyRoot = config.historyDir || join(dshHome(), "dsh-provider-usage");
   const history = new HistoryStore({
     root: historyRoot,
     maxAgeMs: config.maxAgeDays * 86400000,

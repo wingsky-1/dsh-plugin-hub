@@ -9,7 +9,7 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { homedir } from "node:os";
+import { dshHome } from "../../../shared/dsh-home.js";
 import type { ServerConfig } from "./types.ts";
 
 /** 目录条目。 */
@@ -69,7 +69,7 @@ export const DEFAULT_CATALOG_MAX_ENTRIES = 6;
 
 /** 目录缓存文件（连接成功时把工具描述摘要持久化于此；目录 digest 的稳定数据源）。 */
 export function catalogCacheFile() {
-  return join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), "dsh-mcp-catalog.json");
+  return join(dshHome(), "dsh-mcp-catalog.json");
 }
 
 /**

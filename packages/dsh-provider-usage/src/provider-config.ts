@@ -20,6 +20,7 @@ import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { dshHome as dshHomeShared } from "../../../shared/dsh-home.js";
 
 /** 插件配置提供的 apiEndpoint/apiKey（可选）。 */
 export interface ProviderConfigInput {
@@ -65,9 +66,10 @@ function opencodeKeyFromAuth(text: string | undefined): string | undefined {
   return undefined;
 }
 
-/** .credentials.yaml 文件路径。 */
+/** .credentials.yaml 文件路径（DSH 官方凭据文档，dsh-credentials-local 同源：
+ *  base 语义由 shared/dsh-home.js 承载，#517 收敛）。 */
 export function credentialsFile(dshHome?: string): string {
-  return join(dshHome ?? process.env.DSH_HOME ?? join(homedir(), ".dsh"), ".credentials.yaml");
+  return join(dshHome ?? dshHomeShared(), ".credentials.yaml");
 }
 
 /** auth.json 文件路径。 */

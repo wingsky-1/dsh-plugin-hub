@@ -11,9 +11,9 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { homedir } from "node:os";
 import type { ServerResponse } from "node:http";
 import type { SseHub } from "../../../shared/sse-hub.js";
+import { dshHome } from "../../../shared/dsh-home.js";
 import type { Context, LoggerService } from "@deepseek-ai/cordis";
 import type { ServerConfig, ClientUiConfig } from "./types.ts";
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
@@ -39,10 +39,11 @@ import type { MiddlewareMode, ProjectUnit, DisabledToolsMap } from "./middleware
 /** 中间层 all 模式的全局虚拟 root（全局服务器经中间层访问时的路由 key）。 */
 export const MIDDLEWARE_GLOBAL_ROOT = "@global";
 
-/** DSH 全局家目录（与官方 dsh-home-paths 同语义：DSH_HOME ?? ~/.dsh）。 */
+/** DSH 全局家目录（shared/dsh-home.js 语义：DSH_HOME 非空白原样采用、空白
+ *  视同未设置回落 ~/.dsh；#517 收敛）。resolve 为本处 .dsh 标记排除的对比
+ *  用途服务。 */
 function dshHomePath() {
-  const envHome = process.env.DSH_HOME;
-  return resolve(envHome !== undefined && envHome !== "" ? envHome : join(homedir(), ".dsh"));
+  return resolve(dshHome());
 }
 
 /**
