@@ -7,7 +7,6 @@
  * validateSettings / sanitizeSettings 校验——非法值 400 拒绝 + hint，
  * 不再静默丢弃回默认（H6）。
  */
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dshHome as sharedDshHome } from "../../../shared/dsh-home.js";

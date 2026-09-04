@@ -29,7 +29,7 @@ test('dshHome：未设置 DSH_HOME 时回落 ~/.dsh（默认形态逐字节不�
   }
 })
 
-test('dshHome：非空 DSH_HOME 原样采用（不 resolve、不规范化）', () => {
+test('dshHome：非空 DSH_HOME 原样采用（不 resolve、不规范化、不展开 ~）', () => {
   const prev = process.env.DSH_HOME
   try {
     process.env.DSH_HOME = '/tmp/dsh-home-contract'
@@ -37,6 +37,10 @@ test('dshHome：非空 DSH_HOME 原样采用（不 resolve、不规范化）', (
     // 带冗余分隔符/点段的值原样保留——本模块不做路径规范化
     process.env.DSH_HOME = '/tmp/dsh-home//x/.'
     assert.equal(dshHome(), '/tmp/dsh-home//x/.')
+    // ~ 前缀原样返回（不展开——官方在 resolve 层做 expandHomePath，插件拼 base 不展开；
+    // 锁定防后续「顺手对齐官方」加展开时无回归锁）
+    process.env.DSH_HOME = '~/x'
+    assert.equal(dshHome(), '~/x')
   } finally {
     if (prev !== undefined) process.env.DSH_HOME = prev
     else delete process.env.DSH_HOME
@@ -58,7 +62,9 @@ test('dshHome：空串与纯空白视同未设置（对齐官方 resolveDshHome�
 })
 
 test('dshHome：env 恢复纪律（finally 后还原测试前状态）', () => {
-  // 前面用例各自 finally 恢复；此处锚定恢复语义本身
+  // 前面用例各自 finally 恢复；此处锚定恢复语义本身：恢复后 dshHome() 必须与
+  // 「prev 按本模块语义解析的结果」一致（prev 为空白串时视同未设置，故不能
+  // 断言 dshHome() === prev——那会与空白语义自相矛盾，评审 P1-1 实证假失败）。
   const prev = process.env.DSH_HOME
   try {
     process.env.DSH_HOME = '/tmp/probe'
@@ -67,5 +73,6 @@ test('dshHome：env 恢复纪律（finally 后还原测试前状态）', () => {
     if (prev !== undefined) process.env.DSH_HOME = prev
     else delete process.env.DSH_HOME
   }
-  assert.equal(dshHome() === prev || (prev === undefined && dshHome() === join(homedir(), '.dsh')), true)
+  const expected = prev !== undefined && prev.trim().length > 0 ? prev : join(homedir(), '.dsh')
+  assert.equal(dshHome(), expected)
 })

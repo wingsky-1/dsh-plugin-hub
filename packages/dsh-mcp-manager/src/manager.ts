@@ -39,9 +39,9 @@ import type { MiddlewareMode, ProjectUnit, DisabledToolsMap } from "./middleware
 /** 中间层 all 模式的全局虚拟 root（全局服务器经中间层访问时的路由 key）。 */
 export const MIDDLEWARE_GLOBAL_ROOT = "@global";
 
-/** DSH 全局家目录（与官方 dsh-home-paths 同语义：DSH_HOME ?? ~/.dsh）。
- *  resolve 为本处 .dsh 标记排除的对比用途服务；归一语义（空串回落）由
- *  shared/dsh-home.js 单一事实源承载（#517 收敛）。 */
+/** DSH 全局家目录（shared/dsh-home.js 语义：DSH_HOME 非空白原样采用、空白
+ *  视同未设置回落 ~/.dsh；#517 收敛）。resolve 为本处 .dsh 标记排除的对比
+ *  用途服务。 */
 function dshHomePath() {
   return resolve(dshHome());
 }
