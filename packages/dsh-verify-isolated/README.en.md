@@ -120,5 +120,5 @@ node "$SKILL_BASE/scripts/browser-driver.mjs" screenshot --state "$DSH_HOME/brow
 - The browser instance binds only to a loopback debug port
   (`--remote-debugging-address=127.0.0.1`), reachable from this machine only;
 - The scripts only use `mktemp -d` temp directories, cleaned up on exit (with `--browser`
-  the browser process and user-data-dir are also cleaned via the trap), leaving no
+  the browser process and user-data-dir are also cleaned up), leaving no
   leftovers.

@@ -100,4 +100,4 @@ node "$SKILL_BASE/scripts/browser-driver.mjs" screenshot --state "$DSH_HOME/brow
 - 浏览器实例只绑定回环调试端口（`--remote-debugging-address=127.0.0.1`），
   仅本机可连；
 - 脚本只用 `mktemp -d` 临时目录，退出即清理（`--browser` 时浏览器进程与
-  user-data-dir 随 trap 一并清理），不留残留。
+  user-data-dir 一并清理），不留残留。

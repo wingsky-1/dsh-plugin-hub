@@ -158,7 +158,7 @@ node -e 'const t=Date.now();(async()=>{for(;;){try{const r=await fetch("http://1
 ```bash
 node "$SKILL_BASE/scripts/browser-driver.mjs" launch \
   --state "$DSH_HOME/browser.state" --user-data-dir "$DSH_HOME/browser-profile"
-# 退出前清理（与脚本 exit trap 相同语义）：
+# 退出前清理（与脚本统一清理相同语义）：
 node "$SKILL_BASE/scripts/browser-driver.mjs" quit --state "$DSH_HOME/browser.state"
 ```
 
