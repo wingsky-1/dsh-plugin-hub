@@ -32,18 +32,21 @@ dsh plugin --profile web add @wingsky-1/dsh-verify-isolated
   全缺失 fail-fast 打印安装指引；
 - **最小启动依赖**：profile bundles 含 `@deepseek-ai/dsh-base` +
   `@deepseek-ai/dsh-web-app`（内置 bundle 按名从 dsh 安装目录解析，不走 npm）；
-- **一键脚本** `skills/dsh-verify-isolated/scripts/verify-isolated.sh`：建临时
-  DSH_HOME → 建 profile → 注入 web-app bundle → 构建并 link 本地插件 →
-  （可选 `--browser`）启动独立浏览器实例 → 启动 → 退出 trap 统一清理
-  （浏览器进程 + user-data-dir + DSH_HOME 无残留）；`--port 0` 自动探测真实
-  空闲端口（不再打印无效的 0）。
+- **一键脚本** `skills/dsh-verify-isolated/scripts/verify-isolated.sh`：校验 dsh
+  入口并打印版本（`--dsh` 锚定目标 dsh 版本）→ 建临时 DSH_HOME → 建 profile
+  （`plugin list` 显式初始化）→ 注入 web-app bundle → 构建并 link 本地插件
+  （`--no-build` 时校验产物存在 + 陈旧警告）→ （可选 `--browser`）启动独立浏览器
+  实例 → 启动（显式 `--host 127.0.0.1` 回环 + `DSH_TELEMETRY_DISABLED=1` 遥测
+  禁用）→ 就绪断言 → 退出 trap 统一清理（dsh 进程 + 浏览器进程 +
+  user-data-dir + DSH_HOME 无残留）；`--port 0` 自动探测真实空闲端口（不再打印
+  无效的 0）。
 
 ## 包结构
 
 ```text
 skills/dsh-verify-isolated/
   SKILL.md                        # skill 定义（frontmatter name=dsh-verify-isolated）
-  scripts/verify-isolated.sh      # 一键隔离验证脚本（--browser / --port 0 / --keep / --no-build）
+  scripts/verify-isolated.sh      # 一键隔离验证脚本（--dsh / --browser / --port 0 / --keep / --no-build）
   scripts/browser-driver.mjs      # 自带独立浏览器驱动（raw CDP 零依赖，--json 原子操作 CLI）
 cordis.patch.yml                  # 复用官方 dsh-skill-filesystem + bundledSkillDir
 lib/index.js                      # 宿主门禁出口（name + 空 apply）
@@ -61,6 +64,8 @@ skill 加载后按清单执行；也可直接调包内一键脚本。脚本相�
 bash "$SKILL_BASE/scripts/verify-isolated.sh" --port 3456 <插件包路径>
 # 多会话并行/浏览器验证：--port 0 自动探测端口，--browser 拉起独立浏览器实例
 bash "$SKILL_BASE/scripts/verify-isolated.sh" --port 0 --browser <插件包路径>
+# 锚定 dsh 版本（验证特定 dsh 版本生态时必带，防 PATH 漂移）
+bash "$SKILL_BASE/scripts/verify-isolated.sh" --dsh /opt/dsh-0.1.2-alpha.2/bin/dsh --port 0 <插件包路径>
 ```
 
 浏览器实例操作（实例信息在 `$DSH_HOME/browser.state`；命令契约见
@@ -76,6 +81,8 @@ node "$SKILL_BASE/scripts/browser-driver.mjs" screenshot --state "$DSH_HOME/brow
 ## 安全模型
 
 - 隔离环境不携带真实凭据（临时 `DSH_HOME` 无 `~/.dsh` 数据）；
+- 隔离 `dsh web` 显式回环绑定（`--host 127.0.0.1`，仅本机可连）并显式禁用遥测
+  （`DSH_TELEMETRY_DISABLED=1`，测试数据不外发）；
 - 不关闭/重启运行中的主 `dsh web` 进程（独立端口）；
 - 浏览器实例只绑定回环调试端口（`--remote-debugging-address=127.0.0.1`），
   仅本机可连；
