@@ -54,7 +54,7 @@ import { TrendTracker } from "./trend/index.ts";
 import { metricValue } from "./trend/aggregator.ts";
 import { sumToken, type TrendCell } from "./trend/types.ts";
 // #503 会话用量报告（M3 接线）：调度/生成/落盘/路由
-import { candidateWindow, type DueReport } from "./report/schedule.ts";
+import { candidateWindow, presetLastRunForNewlyEnabled, type DueReport } from "./report/schedule.ts";
 import { normalizeReportConfig, readReportConfig, writeReportConfig, type ReportConfig, type ReportPeriod } from "./report/config.ts";
 import { ReportScheduler, readLastRun, writeLastRun } from "./report/scheduler.ts";
 import { generateReport, buildStatsSnapshot, type ReportMeta, type ReportStatsSnapshot } from "./report/generate.ts";
@@ -1056,6 +1056,11 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
         return writeJson(res, 400, { error: "bad-json" });
       }
       const normalized = normalizeReportConfig(body);
+      // #531：首次启用（disabled→enabled 且 lastRun 无记录）的周期预置 lastRun=当前
+      // 候选键（当期视为已扣期）——防「保存即立即生成最近窗口」。先写 lastRun 再
+      // 热更新调度器，下轮 tick 读到新 lastRun 即跳过当期；曾启用过的周期保持补跑语义。
+      const preset = presetLastRunForNewlyEnabled(reportCfg, normalized, Date.now(), await readLastRun(historyRoot));
+      if (preset.changed) await writeLastRun(historyRoot, preset.lastRun);
       try {
         await writeReportConfig(historyRoot, normalized);
       } catch {

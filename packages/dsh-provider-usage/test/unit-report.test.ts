@@ -22,6 +22,7 @@ import { assert } from "./helpers.ts";
 import {
   candidateWindow,
   pendingReports,
+  presetLastRunForNewlyEnabled,
   parseHHMM,
   normalizeReportConfig,
   DEFAULT_REPORT_CONFIG,
@@ -127,6 +128,42 @@ const GEN = (over = {}) => ({
   // enabled 关闭不调度
   const off = pendingReports(CFG({ weekly: { enabled: false, time: "09:00", weekStartsOn: 1 } }), T0, {});
   assert.ok(!off.some((d) => d.period === "weekly"), "weekly 关闭 → 不调度");
+}
+
+// ---------------------------------------------------------------- schedule：#531 首次启用扣期预置
+
+{
+  const allOff = normalizeReportConfig({
+    daily: { enabled: false, time: "22:00" },
+    weekly: { enabled: false, time: "09:00", weekStartsOn: 1 },
+    monthly: { enabled: false, time: "09:00", dayOfMonth: 1 },
+  });
+  // 全关 → 全开（首次启用）：三期全部预置当前候选键，changed=true
+  const r1 = presetLastRunForNewlyEnabled(allOff, CFG(), T0, {});
+  assert.equal(r1.changed, true, "首次启用 → changed");
+  const cand = {
+    daily: candidateWindow("daily", CFG(), T0).key,
+    weekly: candidateWindow("weekly", CFG(), T0).key,
+    monthly: candidateWindow("monthly", CFG(), T0).key,
+  };
+  assert.deepEqual(r1.lastRun, cand, "预置键 === 各期当前候选键");
+  // 预置后 pendingReports 立即为空（保存后 tick 不抢跑）
+  assert.deepEqual(pendingReports(CFG(), T0, r1.lastRun), [], "预置扣期后 tick 无到期");
+  // 跨过下一锚点后照常补跑（预置只扣当期，不扣未来）
+  const later = pendingReports(CFG(), T0 + 25 * HOUR, r1.lastRun);
+  assert.ok(later.some((d) => d.period === "daily" && d.key > r1.lastRun.daily), "下个锚点到期 → 照常生成");
+  // 之前已启用（lastRun 缺失）→ 不预置（保持补跑语义：升级场景不吞当期）
+  const r2 = presetLastRunForNewlyEnabled(CFG(), CFG(), T0, {});
+  assert.equal(r2.changed, false, "已启用未变 → 不预置");
+  // 停用再启用且 lastRun 已有值 → 不预置（补跑最近窗口为恢复语义）
+  const halfRun = { daily: "2026-08-01" };
+  const r3 = presetLastRunForNewlyEnabled(allOff, CFG(), T0, halfRun);
+  assert.equal(r3.changed, true, "部分周期有记录 → 其余仍预置");
+  assert.equal(r3.lastRun.daily, "2026-08-01", "已有记录的周期不覆写");
+  // 部分启用：只预置新开的周期
+  const onlyMonthly = CFG({ daily: { enabled: false, time: "22:00" }, weekly: { enabled: false, time: "09:00", weekStartsOn: 1 } });
+  const r4 = presetLastRunForNewlyEnabled(allOff, onlyMonthly, T0, {});
+  assert.deepEqual(Object.keys(r4.lastRun), ["monthly"], "仅新启用周期预置");
 }
 
 // ---------------------------------------------------------------- config：归一化
