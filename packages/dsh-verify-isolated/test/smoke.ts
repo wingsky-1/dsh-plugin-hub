@@ -1,25 +1,33 @@
 /**
  * dsh-verify-isolated — smoke：skills 目录结构 + SKILL.md frontmatter + patch 配置
- * + 新增脚本参数契约（browser-driver.mjs / verify-isolated.sh）。
+ * + 新增脚本参数契约（browser-driver.mjs / verify-isolated.mjs，node 重写 #517 C8）。
  *
- * 无网络、无真实凭据、**不真正启动浏览器**（防跨平台 flake，遵守 docs/DEVELOPMENT.md §5）。
- * 验证（参照 archify-dsh 的 bundledSkillDir 模式）：
+ * 无网络、无真实凭据、**不真正启动 dsh / 浏览器**（防跨平台 flake，遵守
+ * docs/DEVELOPMENT.md §5）。验证（参照 archify-dsh 的 bundledSkillDir 模式）：
  * 1. 包内 skills/dsh-verify-isolated/SKILL.md 存在且 frontmatter name 正确；
- * 2. 一键脚本随 skill 目录分发；
+ * 2. 一键脚本随 skill 目录分发（verify-isolated.mjs，verify-isolated.sh 已删除不留 shim）；
  * 3. cordis.patch.yml 复用官方 @deepseek-ai/dsh-skill-filesystem，配置
  *    providerName / includeDefaultRoots:false / bundledSkillDir（从包 manifest
  *    解析 skills 目录）；
  * 4. bundledSkillDir 的 JS 表达式在模拟 profile baseUrl 下能解析到真实 skills 目录；
  * 5. browser-driver.mjs 存在，--help 参数契约覆盖全部原子命令，无参数非零退出；
- * 6. verify-isolated.sh 含 --browser 与 --port 0 修复逻辑；
+ * 6. verify-isolated.mjs 关键契约：--dsh/--port 0/--browser/--keep/--no-build/
+ *    --evidence-dir/verdict.json/dsh.log/退出码（0/1/2/130/143）文本锚定 +
+ *    lib/verify-core.mjs import 行为断言（EXIT 常量 / poll / findFreePort /
+ *    resolvePkgArg C11 归一化 / readDshPort parsed 通道）+ 子进程退出码实测
+ *    （--help=0、--dsh 不存在=2、--json 错误=单 JSON）；
  * 7. SKILL.md 含多会话并行章节与三平台内核自查清单；
  * 8. README 同步新能力。
+ *
+ * 注（#517 C11 并入）：resolve-pkg-paths.mjs 独立文件随 C8 内建进
+ * lib/verify-core.mjs 的 resolvePkgArg（6a 行为断言覆盖原 6.5 段语义）。
  */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import { parseFrontmatter } from "../../../shared/frontmatter.js";
 
@@ -27,6 +35,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = join(HERE, "..");
 const SKILL_DIR = join(PKG_ROOT, "skills", "dsh-verify-isolated");
 const SKILL_FILE = join(SKILL_DIR, "SKILL.md");
+const SCRIPTS_DIR = join(SKILL_DIR, "scripts");
 
 // ---- 1. skills 目录结构 + frontmatter ----
 assert.ok(existsSync(SKILL_FILE), "skills/dsh-verify-isolated/SKILL.md 存在");
@@ -40,11 +49,13 @@ assert.match(fm.description ?? "", /隔离环境/, "description 含隔离环境"
 assert.ok(!raw.includes("node_modules/@wingsky-1"),
   "SKILL.md 不得写死 node_modules/@wingsky-1 路径（应经 skill 资源 base 定位）");
 
-// ---- 2. 一键脚本随 skill 分发 ----
-const scriptFile = join(SKILL_DIR, "scripts", "verify-isolated.sh");
-assert.ok(existsSync(scriptFile), "一键脚本随 skill 目录分发");
-assert.ok(readFileSync(scriptFile, "utf8").includes('verify_$(node -e'),
-  "脚本含 verify_<随机> profile 逻辑（node crypto 生成，不依赖 openssl CLI）");
+// ---- 2. 一键脚本随 skill 分发（node 重写：#517 C8，删除 .sh 不留 shim） ----
+const scriptFile = join(SCRIPTS_DIR, "verify-isolated.mjs");
+assert.ok(existsSync(scriptFile), "verify-isolated.mjs 随 skill 目录分发");
+assert.ok(!existsSync(join(SCRIPTS_DIR, "verify-isolated.sh")),
+  "verify-isolated.sh 已删除，不留 shim（skill 随包整体发布无新旧错配）");
+assert.ok(existsSync(join(SCRIPTS_DIR, "lib", "verify-core.mjs")),
+  "共享基础工具 lib/verify-core.mjs 随 skill 目录分发");
 
 // ---- 3. cordis.patch.yml 复用官方 provider + bundledSkillDir 配置 ----
 const patch = readFileSync(join(PKG_ROOT, "cordis.patch.yml"), "utf8");
@@ -66,7 +77,7 @@ assert.ok(patch.includes("@wingsky-1/dsh-verify-isolated/package.json"),
 }
 
 // ---- 5. browser-driver.mjs 存在 + --help 参数契约（不启动浏览器实例） ----
-const driverFile = join(SKILL_DIR, "scripts", "browser-driver.mjs");
+const driverFile = join(SCRIPTS_DIR, "browser-driver.mjs");
 assert.ok(existsSync(driverFile), "browser-driver.mjs 随 skill 目录分发");
 const help = execFileSync(process.execPath, [driverFile, "--help"], { encoding: "utf8" });
 assert.ok(help.includes("--json"), "browser-driver --help 声明统一 JSON 输出");
@@ -78,91 +89,85 @@ try { execFileSync(process.execPath, [driverFile], { encoding: "utf8" }); }
 catch { noArgExitsNonZero = true; }
 assert.ok(noArgExitsNonZero, "browser-driver 无参数应非零退出（用法提示，不误启动浏览器）");
 
-// ---- 6. verify-isolated.sh 参数契约：--browser/--port 0/#376 加固（--dsh/回环/遥测/初始化/就绪断言/L1/L2） ----
+// ---- 6. verify-isolated.mjs：lib import 行为断言 + 关键契约文本锚定 + 退出码实测 ----
 {
+  // 6a. lib/verify-core.mjs import 行为断言（弃纯文本 grep 锁脚本细节）
+  const core = await import(pathToFileURL(join(SCRIPTS_DIR, "lib", "verify-core.mjs")).href);
+  assert.equal(core.EXIT.OK, 0, "EXIT.OK=0（正常完成）");
+  assert.equal(core.EXIT.FAIL, 1, "EXIT.FAIL=1（启动或就绪失败）");
+  assert.equal(core.EXIT.USAGE, 2, "EXIT.USAGE=2（参数错误）");
+  assert.equal(core.EXIT.SIGINT, 130, "EXIT.SIGINT=130（Ctrl+C 透传）");
+  assert.equal(core.EXIT.SIGTERM, 143, "EXIT.SIGTERM=143（SIGTERM 透传）");
+  // poll：fn 立即 true / 超时 false
+  assert.equal(await core.poll(() => true, 500, 50), true, "poll 命中立即返回 true");
+  assert.equal(await core.poll(() => false, 150, 50), false, "poll 超时返回 false");
+  // findFreePort：127.0.0.1 上探测到真实空闲端口
+  const fp = await core.findFreePort();
+  assert.ok(Number.isInteger(fp) && fp > 0 && fp < 65536, `findFreePort 返回合法端口: ${fp}`);
+  // resolvePkgArg：C11 归一化语义内建（相对路径绝对化 / 包规格原样透传 / ~ 展开）
+  //（cwd = 包根，smoke 由 pnpm -r 在各包目录执行）
+  assert.equal(core.resolvePkgArg("skills").kind, "path", "cwd 存在的相对路径 → path");
+  assert.equal(core.resolvePkgArg("./skills").kind, "path", "形态类路径 ./ → path");
+  assert.equal(core.resolvePkgArg("~").kind, "path", "~ → path（home 展开）");
+  assert.equal(core.resolvePkgArg("~/x").abs, join(homedir(), "x"), "~/x → home 前缀展开");
+  assert.equal(core.resolvePkgArg("/abs/path").kind, "path", "绝对路径 → path");
+  assert.equal(core.resolvePkgArg("@scope/name").kind, "spec", "@scope/name 包规格 → spec 原样透传");
+  assert.equal(core.resolvePkgArg("https://github.com/a/b.git").kind, "spec", "git URL → spec 原样透传");
+  assert.equal(core.resolvePkgArg("@scope/name").abs, null, "spec 无 abs");
+  // readDshPort：B6 parsed 通道（0.1.2-rc.1 实证格式）
+  assert.equal(core.readDshPort("dsh web: http://127.0.0.1:34567/?token=abc"), 34567, "readDshPort 解析端口行");
+  assert.equal(core.readDshPort("noise line\nsome other output"), null, "readDshPort 无端口行返回 null");
+
+  // 6b. 关键契约文本锚定（不锁脚本细节，锁对外契约面；#517 C11 归一化语义由
+  // 6a resolvePkgArg 行为断言覆盖——内建进 verify-core，不依赖 C11 独立文件）
   const script = readFileSync(scriptFile, "utf8");
-  assert.ok(script.includes("--browser"), "脚本含 --browser 选项");
-  assert.ok(script.includes("browser-driver.mjs"), "脚本调用 browser-driver.mjs");
-  assert.ok(script.includes("browser.state"), "脚本管理 browser.state 实例文件");
-  assert.ok(script.includes("--port 0"), "脚本含 --port 0 处理分支");
-  assert.ok(script.includes("探测空闲端口"), "--port 0 自选真实空闲端口（修复打印 0 无效）");
-  // #376 H1：--dsh 参数化 dsh 入口（版本锚定），校验可执行 + 版本展示
-  assert.ok(script.includes("--dsh"), "脚本含 --dsh 选项（dsh 入口版本锚定）");
-  assert.ok(script.includes('DSH_BIN="$2"'), "--dsh 解析到 DSH_BIN");
-  assert.ok(script.includes('DSH_BIN=dsh'), "DSH_BIN 默认 dsh（无 --dsh 时行为兼容现状）");
-  assert.ok(script.includes('dsh 入口不可执行'), "--dsh 目标不可执行时 fail fast");
-  assert.ok(script.includes("--version"), "启动前展示 dsh 版本（锚定证据）");
-  // #376 H2：显式回环 + 遥测禁用（锚定启动行本体——注释里出现同串不算数）
-  assert.ok(script.includes('DSH_TELEMETRY_DISABLED=1 "$DSH_ABS"'), "隔离实例显式禁用遥测（锚定启动行）");
-  assert.ok(
-    script.includes('"$DSH_ABS" --profile "$PROFILE" --host 127.0.0.1 --port "$PORT" --no-open'),
-    "隔离实例显式回环绑定（锚定启动行）",
-  );
-  // #376 M1：profile 初始化走显式 plugin list（不再依赖 add --help 未文档化行为）
-  assert.ok(script.includes('plugin --profile "$PROFILE" list'), "profile 初始化用显式 plugin list");
-  assert.ok(!script.includes("add --help >/dev/null"), "不再依赖 add --help 隐式初始化（注释提及不受限）");
-  assert.ok(script.includes("profile 初始化失败"), "初始化失败 fail loudly");
-  // #376 M2：启动后就绪断言（轮询 HTTP 可达 + 进程存活核对，超时可操作错误）
-  assert.ok(script.includes("就绪断言通过"), "启动后就绪断言通过输出");
-  assert.ok(script.includes("15s 内未就绪"), "就绪超时给可操作错误");
-  assert.ok(script.includes("AbortSignal.timeout"), "就绪探测带超时（不裸连）");
+  for (const opt of ["--dsh", "--port 0", "--browser", "--keep", "--no-build", "--evidence-dir", "--json"]) {
+    assert.ok(script.includes(opt), `脚本含 ${opt} 选项契约`);
+  }
+  assert.ok(script.includes("verdict.json"), "脚本含 B6 verdict.json 契约");
+  assert.ok(script.includes("dsh.log"), "脚本含 dsh.log 收集契约");
+  for (const code of ["130", "143"]) assert.ok(script.includes(code), `退出码契约表含 ${code}`);
+  // 四重隔离语义锚定（#376 加固面保留）：
+  assert.ok(script.includes('"--host", "127.0.0.1"'), "隔离实例显式回环绑定（锚定启动行）");
+  assert.ok(script.includes("DSH_TELEMETRY_DISABLED"), "隔离实例显式禁用遥测");
+  assert.ok(script.includes("randomBytes(4)"), "verify_<随机> profile 走 node crypto");
+  assert.ok(script.includes('["plugin", "--profile", profile, "list"]'),
+    "profile 初始化用显式 plugin list（不再依赖 add --help 隐式初始化）");
+  // 用户可见契约文案（SKILL.md §5.1 自检清单与就绪/清理流程依赖）：
+  assert.ok(script.includes("就绪断言通过"), "就绪断言通过输出");
+  assert.ok(script.includes("15s 内未就绪"), "就绪超时可操作错误");
   assert.ok(script.includes("进程在就绪前退出"), "就绪探测核对 dsh 进程存活（防端口被占假阳性）");
-  assert.ok(script.includes("r.status < 500"), "就绪判定不接受 5xx");
-  // #376 L1：openssl/realpath 依赖替换为 node（脚本本已硬依赖 node）
-  assert.ok(script.includes("randomBytes(4)"), "随机后缀走 node crypto");
-  assert.ok(!script.includes("openssl rand"), "不再依赖 openssl CLI");
-  assert.ok(!script.includes('realpath -m "$pkg"'), "不再调用 GNU realpath -m（注释提及不受限）");
-  assert.ok(script.includes('require("node:path").resolve'), "路径解析走 node path.resolve");
-  // #376 L2：--no-build 产物存在性检查 + 陈旧产物警告
+  assert.ok(script.includes("AbortSignal.timeout"), "就绪探测带超时（不裸连）");
   assert.ok(script.includes("--no-build 但缺少构建产物"), "--no-build 缺产物报可操作错误");
   assert.ok(script.includes("源码比构建产物新"), "--no-build 陈旧产物 mtime 警告");
-  // 启动生命周期：后台 + 就绪断言 + wait（EXIT trap 兜底 kill）
-  assert.ok(script.includes('DSH_PID=$!'), "dsh 后台启动记录 pid");
-  assert.ok(script.includes('wait "$DSH_PID"'), "前台 wait 保持阻塞体感");
-  // #517 C11：插件参数归一化——脚本调用 resolve-pkg-paths.mjs，add 用绝对路径数组
-  assert.ok(script.includes("resolve-pkg-paths.mjs"), "脚本调用 resolve-pkg-paths.mjs（#517 C11 单点归一化）");
-  assert.ok(script.includes("PKGS_ABS=()"), "脚本累积 PKGS_ABS 绝对路径数组");
-  assert.ok(script.includes('add "${PKGS_ABS[@]}"'), "plugin add 用归一化后的绝对路径数组（非原始相对路径）");
   assert.ok(script.includes("dsh 会把非绝对路径当 git URL 解析"), "脚本注释声明相对路径 git URL 陷阱（#517 C11）");
-  assert.ok(!script.includes('plugin add "${PKGS[@]}"'), "plugin add 不再直接传原始 ${PKGS[@]}（相对路径会当 git URL）");
 }
 
-// ---- 6.5 resolve-pkg-paths.mjs 行为断言（#517 C11：路径 vs 包规格归一化） ----
+// ---- 6c. 子进程退出码实测（不启动 dsh / 浏览器，走 --dsh 不存在与 --help 路径） ----
 {
-  const resolver = join(SKILL_DIR, "scripts", "resolve-pkg-paths.mjs");
-  assert.ok(existsSync(resolver), "resolve-pkg-paths.mjs 随 skill 目录分发");
-  const absBase = runResolver(resolver, ["--json", "--", "./rel", "@scope/name", "@wingsky-1/dsh-notifier"]);
-  // 相对路径（./ 形态）→ path（resolve）
-  const rel = absBase.find((i) => i.input === "./rel");
-  assert.equal(rel.kind, "path", "./rel 判为 path");
-  assert.ok(rel.abs.endsWith("/rel") && rel.abs.startsWith("/"), "./rel 解析为绝对路径");
-  // 包规格 → spec 原样透传
-  assert.equal(absBase.find((i) => i.input === "@scope/name").kind, "spec", "@scope/name 判为 spec");
-  assert.equal(absBase.find((i) => i.input === "@scope/name").abs, null, "spec 无 abs");
-  assert.equal(absBase.find((i) => i.input === "@wingsky-1/dsh-notifier").kind, "spec", "scoped 包名判为 spec");
-  // cwd 存在路径 → path（仓库根踩点：packages/dsh-notifier，与脚本真实调用场景一致）
-  const REPO_ROOT = join(PKG_ROOT, "..", "..");
-  const exist1 = runResolver(resolver, ["--json", "--", "packages/dsh-notifier"], REPO_ROOT);
-  assert.equal(exist1[0].kind, "path", "cwd 存在的相对目录判为 path");
-  assert.ok(exist1[0].abs.includes("/packages/dsh-notifier") && exist1[0].abs.startsWith("/"), "cwd 存在目录解析为绝对路径");
-  // 绝对路径 → path 原样
-  const abs1 = runResolver(resolver, ["--json", "--", "/tmp/x"]);
-  assert.equal(abs1[0].kind, "path", "绝对路径判为 path");
-  assert.equal(abs1[0].abs, "/tmp/x", "绝对路径逐字节保留");
-  // ~ 开头 → 展开 home
-  const tilde = runResolver(resolver, ["--json", "--", "~"]);
-  assert.equal(tilde[0].kind, "path", "~ 判为 path");
-  assert.ok(tilde[0].abs.startsWith("/") && !tilde[0].abs.includes("~"), "~ 展开为 home 绝对路径");
-  // 不含空格外的边界：无参数非零退出
-  let noArgFails = false;
-  try { runResolver(resolver, []); } catch (e) { noArgFails = e.status === 2; }
-  assert.ok(noArgFails, "resolver 无参数非零退出（exit 2）");
-}
-
-/** 跑 resolve-pkg-paths.mjs --json 并解析输出。 */
-function runResolver(resolver, args, cwd) {
-  const out = execFileSync(process.execPath, [resolver, ...args], { encoding: "utf8", ...(cwd ? { cwd } : {}) });
-  return JSON.parse(out.trim());
+  const run = (args) => {
+    let code = 0;
+    let out = "";
+    try { out = execFileSync(process.execPath, [scriptFile, ...args], { encoding: "utf8" }); }
+    catch (e) { code = e.status ?? -1; out = (e.stdout ?? "") + (e.stderr ?? ""); }
+    return { code, out };
+  };
+  // --help：用法提示，退出码 0
+  const h = run(["--help"]);
+  assert.equal(h.code, 0, "--help 退出码 0");
+  assert.ok(h.out.includes("verify-isolated.mjs"), "--help 含脚本名");
+  // --dsh 不存在：参数错误退出码 2
+  const bad = run(["--dsh", "/nonexistent/dsh"]);
+  assert.equal(bad.code, 2, "--dsh 不存在退出码 2（找不到 dsh 入口）");
+  // --json --dsh 不存在：stdout 单 JSON（含 exitCode 2）
+  const j = run(["--json", "--dsh", "/nonexistent/dsh"]);
+  assert.equal(j.code, 2, "--json 错误路径退出码 2");
+  const parsed = JSON.parse(j.out.trim().split("\n").at(-1));
+  assert.equal(parsed.ok, false, "--json 错误对象 ok=false");
+  assert.equal(parsed.exitCode, 2, "--json 错误对象 exitCode=2");
+  // 未知选项：退出码 2
+  const u = run(["--bogus"]);
+  assert.equal(u.code, 2, "未知选项退出码 2");
 }
 
 // ---- 7. SKILL.md 含多会话并行章节与三平台内核自查 ----
@@ -183,5 +188,7 @@ const readme = readFileSync(join(PKG_ROOT, "README.md"), "utf8");
 assert.ok(readme.includes("browser-driver.mjs"), "README 同步 browser-driver");
 assert.ok(readme.includes("--browser"), "README 同步 --browser 用法");
 assert.ok(readme.includes("四重隔离"), "README 同步四重隔离说明");
+assert.ok(readme.includes("verify-isolated.mjs"), "README 同步 node 版脚本名（升级路径）");
+assert.ok(!readme.includes("scripts/verify-isolated.sh"), "README 不再以旧 bash 脚本路径作为当前用法（升级路径说明除外）");
 
-console.log("PASS: dsh-verify-isolated smoke（skills 结构 / frontmatter / patch / 路径解析 / 脚本参数契约 / 文档同步）");
+console.log("PASS: dsh-verify-isolated smoke（skills 结构 / frontmatter / patch / 路径解析 / verify-core 行为 / 脚本契约与退出码 / 文档同步）");
