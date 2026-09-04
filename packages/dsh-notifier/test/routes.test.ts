@@ -539,6 +539,51 @@ try {
     assert.equal(JSON.parse(put7.rec.text).error.error, "配置校验失败: channels", "400 指明 channels 键");
   }
 
+  // ===== #508 M2：webhook 频道写入/凭据掩码泛化（凭据只走请求头不落 URL）=====
+  {
+    function bodyReq(payload) {
+      const text = JSON.stringify(payload);
+      return {
+        method: "PUT",
+        url: "/",
+        socket: { remoteAddress: "127.0.0.1" },
+        headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
+        on(event, cb) {
+          if (event === "data") setTimeout(() => cb(Buffer.from(text)), 0);
+          else if (event === "end") setTimeout(cb, 1);
+          return this;
+        },
+        destroy() {},
+      };
+    }
+    const WH_SECRET = "whTokenValue99";
+    const putW1 = makeRes();
+    await configRoute.handler(bodyReq({ patch: { channels: [{ id: "webhook-1", type: "webhook", url: "https://ntfy.sh/dsh-x", enabled: false, auth: "bearer", token: WH_SECRET, timeoutSec: 10, preset: "ntfy" }] } }), putW1.res);
+    assert.equal(putW1.rec.status, 200, "合法 webhook 实例 PUT 成功");
+    assert.ok(!JSON.stringify(putW1.rec.text).includes(WH_SECRET), "PUT 响应不含 webhook token 明文");
+    const getW = makeRes();
+    await configRoute.handler(fakeReq({}), getW.res);
+    const getWBody = JSON.parse(getW.rec.text);
+    const whView = getWBody.user.channels.find((c) => c.id === "webhook-1");
+    assert.equal(whView.token, "********", "GET user 出口 webhook token 掩码");
+    assert.ok(!JSON.stringify(getWBody).includes(WH_SECRET), "GET 响应全文深度扫描不含 webhook token 明文");
+    assert.equal(whView.auth, "bearer", "非凭据字段不受影响");
+
+    // 掩码回填：webhook token 掩码提交 → user 层原值保持（未修改语义）
+    const putW2 = makeRes();
+    await configRoute.handler(bodyReq({ patch: { channels: [{ id: "webhook-1", type: "webhook", url: "https://ntfy.sh/dsh-x", enabled: true, auth: "bearer", token: "********", timeoutSec: 10 }] } }), putW2.res);
+    assert.equal(putW2.rec.status, 200, "webhook 掩码提交（未修改语义）成功");
+    const whAfter = settings.getUser().channels.find((c) => c.id === "webhook-1");
+    assert.equal(whAfter.token, WH_SECRET, "webhook token 掩码按 id 回填原值");
+    assert.equal(whAfter.enabled, true, "其余字段正常更新");
+
+    // 新 webhook 实例带掩码 → 400（掩码只允许表达「未修改」，与 bark 同 hint 语义）
+    const putW3 = makeRes();
+    await configRoute.handler(bodyReq({ patch: { channels: [{ id: "webhook-new", type: "webhook", url: "https://ntfy.sh/dsh-y", enabled: false, token: "********" }] } }), putW3.res);
+    assert.equal(putW3.rec.status, 400, "新 webhook 实例带掩码 400 拒绝");
+    assert.ok(JSON.parse(putW3.rec.text).error.hint.includes("掩码"), "400 hint 指引真实 token");
+  }
+
   // ===== M2：/test 收敛 service 管线 + /status + /kinds（issue #366）=====
   {
     function postReq(payload) {

@@ -74,6 +74,7 @@ import { createNotifierService } from "./service.ts";
 import type { NotifierServiceInternal, NotifyChannel, NotifySentEvent } from "./service.ts";
 import { createStatusStore } from "./status.ts";
 import { createBarkChannel, createBarkGate } from "./channel-bark.ts";
+import { createWebhookChannel } from "./channel-webhook.ts";
 
 /** 稳定的 cordis 插件名。 */
 export const name = "notifier";
@@ -94,6 +95,8 @@ export { migrateLegacyConfig, MIGRATED_BAK_SUFFIX, CORRUPTED_BAK_SUFFIX } from "
 export { createStatusStore } from "./status.ts";
 export type { StatusStore, ChannelStatusEntry } from "./status.ts";
 export { createBarkChannel, createBarkGate, SEVERITY_LEVEL, BARK_TIMEOUT_MS, BARK_RETRIES, BARK_MAX_INFLIGHT } from "./channel-bark.ts";
+// #508 M2：webhook 频道公开面（渲染器/映射表导出供消费方与测试直测）
+export { createWebhookChannel, renderWebhookBody, priorityFor, SEVERITY_NTFY_PRIORITY, SEVERITY_GOTIFY_PRIORITY, WEBHOOK_DEFAULT_TIMEOUT_SEC, WEBHOOK_MIN_TIMEOUT_SEC, WEBHOOK_MAX_TIMEOUT_SEC } from "./channel-webhook.ts";
 export type { MigrationOutcome } from "./migrate.ts";
 export {
   buildSystemCommand,
@@ -202,14 +205,20 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
   }
 
   /**
-   * 配置驱动的出站频道（enabled 的 bark 实例）：每次 dispatch 现取现建——
-   * 配置热更新（PUT /config）即时生效；在途投递持有旧实例自然结束（终稿 §10）。
-   * channel 实例是轻量闭包，重建无负担；限流门按 id 延续（评审 P1）。
+   * 配置驱动的出站频道（enabled 的实例，#508 M2：bark + webhook 按类型分派）：
+   * 每次 dispatch 现取现建——配置热更新（PUT /config）即时生效；在途投递持有
+   * 旧实例自然结束（终稿 §10）。channel 实例是轻量闭包，重建无负担；限流门按
+   * id 延续（评审 P1）。频道路由 id = `type:id`（与 service resolveRoutes /
+   * 客户端 channelIdFor 同语义，复核 4② 单点）。
    */
   function outboundChannels(): Array<{ id: string; channel: NotifyChannel }> {
-    return (current.channels ?? [])
-      .filter((c) => c.type === "bark" && c.enabled)
-      .map((c) => ({ id: `bark:${c.id}`, channel: createBarkChannel(c, gateFor(c.id)) }));
+    const out: Array<{ id: string; channel: NotifyChannel }> = [];
+    for (const c of current.channels ?? []) {
+      if (!c.enabled) continue;
+      if (c.type === "bark") out.push({ id: `bark:${c.id}`, channel: createBarkChannel(c, gateFor(c.id)) });
+      else if (c.type === "webhook") out.push({ id: `webhook:${c.id}`, channel: createWebhookChannel(c) });
+    }
+    return out;
   }
 
   /** 投递终态事件（'wingsky-notify/sent'）：宿主无事件总线时静默跳过（探测面）。 */

@@ -172,6 +172,70 @@ Example values (defaults):
 > replay, transparent). If more devices×tabs are concurrently online, raise it in
 > the card.
 
+### Webhook push channel (#508)
+
+Configure via the "Notification center → Delivery channels → Add Webhook push" tab (or edit
+the configuration JSON directly). Purpose: receive notifications on Android via ntfy /
+Gotify / a self-hosted push gateway, complementing Bark (iOS); each delivery POSTs a JSON
+body to `url`.
+
+Per-instance fields (`type` fixed to `"webhook"`):
+
+| Field | Notes |
+|---|---|
+| `id` | Instance id (2-32 chars, lowercase letters/digits/hyphens; locked after creation; the alignment key for `kindRoutes` and mask backfill) |
+| `name` | Display name (falls back to the id) |
+| `url` | Target URL (http/https; normalized to origin+path — query/hash stripped, credential URLs rejected) |
+| `enabled` | Whether enabled (default **false** — outbound authorization must be granted explicitly) |
+| `auth` | Authentication: `none` (default) / `bearer` / `basic` / `header` |
+| `token` | Bearer token (secret: always masked `********` in responses) |
+| `username` | Basic auth username (not a secret) |
+| `password` | Basic auth password (secret: always masked) |
+| `headerName` / `headerValue` | Custom-header auth (`headerValue` is a secret: masked); header names are limited to letters/digits/hyphens (≤64 chars) and forbid `content-type` / `content-length` / `host` / `cookie` / `authorization` |
+| `preset` | Preset: `ntfy` (default) / `gotify` / `custom` (self-hosted gateway); selects the `{{priority}}` mapping and the default template |
+| `template` | JSON body template (≤8192 chars; empty = preset default template) |
+| `timeoutSec` | Delivery timeout in seconds (1-60, default 10; authoritatively clamped server-side) |
+
+Presets and the channel-aware `{{priority}}` mapping (selected by `preset`; `{{severity}}`
+is always the raw severity):
+
+| preset | info | success | warning | failure |
+|---|---|---|---|---|
+| `ntfy` | `default` | `low` | `high` | `urgent` |
+| `gotify` | 3 | 3 | 7 | 9 |
+
+`custom` does no mapping — `{{priority}}` passes the severity through verbatim for the
+gateway to handle.
+
+Template placeholder list: `{{title}}`, `{{message}}`, `{{kind}}`, `{{severity}}`,
+`{{priority}}` (mapping above), `{{source}}` (renders as an empty string, reserved), and
+`{{ts}}` (rounded epoch milliseconds, emitted as a bare number — the only placeholder
+allowed unquoted in the template).
+
+Rendering semantics (JSON-aware, two steps): `{{ts}}` is substituted as a numeric literal
+first → the template is parsed with `JSON.parse` → placeholders are replaced in string
+values only while walking the parsed tree → re-serialized with `JSON.stringify`.
+Substitution happens inside already-parsed strings and is uniformly escaped on
+re-serialization, so notification content containing quotes or `"}}` cannot break out of a
+string to inject extra fields. A template that is not valid JSON fails that channel's
+delivery and is recorded (never silently downgraded to plain text; other channels are
+unaffected). The `ntfy` preset default template contains `"topic": "<topic>"` — replace it
+with your topic name before delivering.
+
+Delivery reliability: timeout 1-60 s (default 10); **failures are never retried
+automatically** — 4xx / 5xx / network errors / render failures all end as a terminal
+failure recorded in the status file and the notification history (error summary redacted);
+re-send via "Send test notification" to verify. Reference channels in `kindRoutes` as
+`webhook:<id>` (same `type:id` shape as `bark:<id>`).
+
+Example instance (stored alongside Bark instances in the `channels` array, ids unique
+across types):
+
+```json
+{ "id": "droid", "type": "webhook", "url": "https://ntfy.sh/mytopic",
+  "enabled": true, "auth": "bearer", "token": "…", "preset": "ntfy", "timeoutSec": 10 }
+```
+
 ## Routes (all behind the loopback fence)
 
 | Route | Method | Notes |
@@ -215,6 +279,16 @@ be able to resolve these official packages (skipping type checking is unaffected
 - Browser notifications require a **secure context** (HTTPS or localhost); LAN HTTP access automatically routes through the fallback channel (banner / sound / title reminder)
 - Browser notification permission is requested within a gesture (via the "Request notification permission" button on the Settings → Plugins → dsh-notifier card)
 - Windows system notifications are implemented via a PowerShell WinRT script, with the command passed as a parameter array and title/body packed into a single base64 (UTF-8 JSON) payload argument (no shell concatenation surface, and immune to PS 5.1 command-line argument parsing ambiguities, see issue #238); the script idempotently registers the AppUserModelId `DSH.dsh-notifier` on startup (HKCU, no admin required) — an unregistered AUMID gets toasts silently dropped by Windows 10/11. The AUMID follows the `Company.Product` convention to avoid collisions in the public namespace (`HKCU\SOFTWARE\Classes\AppUserModelId`) where same-named apps overwrite each other's display names; a legacy `DSH` key registered by older versions is harmless leftover (just an empty registry entry, does not affect new toasts) and can be removed manually with `Remove-Item -Path "HKCU:\SOFTWARE\Classes\AppUserModelId\DSH"` if desired
+- **Webhook channel credentials & outbound security (#508)**:
+  - **Disabled by default**: `enabled` defaults to false — outbound authorization must be granted explicitly (same posture as Bark)
+  - **Credentials never land in the URL**: credentials travel only in request headers (bearer → `Authorization: Bearer`, basic → `Authorization: Basic` (base64), header → custom header name + value); reverse-proxy access logs (URL + header names) never see them
+  - **Credential masking funneled via `CHANNEL_SECRET_FIELDS`**: the masked-field list is a per-channel-type single source of truth (bark → `deviceKey`, webhook → `token`/`password`/`headerValue`); GET /config (user + effective) and PUT success responses always mask `********`, submitting the full mask = keep the original value (backfilled aligned by instance id so a reordering never swaps credentials between instances); a mask submitted for a new instance returns 400
+  - **Reserved keys block config bypass (`WEBHOOK_RESERVED_KEYS`)**: credential alias keys such as `auth_token` / `access_token` / `bearer_token` / `api_key` / `apikey` / `client_secret` / `secret` / `password_hash` are always stripped / rejected on write — legitimate credentials can only enter via the known secret fields (masked end to end)
+  - **JSON injection protection**: the template renders JSON-aware in two steps (value-level substitution + uniform re-serialization escaping); notification content cannot break out of a string to inject extra JSON fields
+  - **Unified error redaction**: error text first has credential literals replaced, then goes through the generic redaction table (same as Bark); non-2xx response bodies are truncated to 200 chars before redaction into the error summary
+  - **URL SSRF posture (same normalize as Bark)**: http/https schemes only, credential URLs (`user:pass@host`) rejected, query/hash stripped; no domain allowlist — an intranet self-hosted gateway is a legitimate use case; custom header names forbid end-to-end headers (`content-type`/`content-length`/`host`/`cookie`/`authorization`) against request smuggling / JSON body corruption
+  - **No retry on failure**: a failed delivery is terminal (4xx/5xx/network/render) — no retry-driven outbound amplification
+  - Webhook is an **additive channel type**: the semantics and compatibility commitments of existing channels and notification outputs (SSE frames / system notifications / history jsonl) are unchanged
 
 ## Verification
 

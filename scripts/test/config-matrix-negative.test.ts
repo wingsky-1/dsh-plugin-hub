@@ -140,7 +140,9 @@ test('notifier: CONFIG_KEYS 漏布尔键 → 红且报错含键名', () => {
 test('notifier: normalizeConfig 漏归一化分支 → 红且报错含键名', () => {
   assertRed('notifier normalize 漏 channels', (root) => {
     edit(root, 'dsh-notifier', 'config.ts', (s) =>
-      s.replace(/  if \(Array\.isArray\(src\.channels\)\) base\.channels = normalizeBarkChannels\(src\.channels\);\n/, ''))
+      // #508：channels 归一化已按类型分派为 normalizeChannels（bark/webhook），
+      // 注入目标随实现同步——负向测试锁定的是「漏归一化分支门禁必红」这一性质
+      s.replace(/  if \(Array\.isArray\(src\.channels\)\) base\.channels = normalizeChannels\(src\.channels\);\n/, ''))
   }, 'channels')
 })
 

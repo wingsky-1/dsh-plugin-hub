@@ -50,11 +50,70 @@ export interface BarkChannelConfig {
 /** Bark 实例内不允许经透传写入的保留键（凭据/加密字段，防配置绕过 secret 规则）。 */
 export const BARK_RESERVED_KEYS: readonly string[] = ["device_key", "device_keys", "ciphertext"];
 
+/**
+ * webhook 实例内不允许经透传写入的保留键（#508 M2）：凭据类 snake_case 别名
+ * 一律剔除——合法凭据只能走已知 secret 字段（token/password/headerValue，经掩码
+ * 收口），防配置绕过 secret 规则（与 BARK_RESERVED_KEYS 同语义）。
+ */
+export const WEBHOOK_RESERVED_KEYS: readonly string[] = ["auth_token", "access_token", "bearer_token", "api_key", "apikey", "client_secret", "secret", "password_hash"];
+
 /** device key 的响应掩码（PUT 提交整值等于它 = 该实例 key 未修改）。 */
 export const SECRET_MASK = "********";
 
+/**
+ * 各频道类型的 secret 字段清单（#508 M2 掩码泛化单一事实源）：redactConfigView
+ * 按此清单掩码、unmaskChannels 按此清单回填——新增频道类型的 secret 字段只改本表。
+ * 未知类型回落 ["deviceKey"]（兼容第三方贡献频道沿用 bark 掩码语义）。
+ */
+export const CHANNEL_SECRET_FIELDS: Record<string, readonly string[]> = {
+  bark: ["deviceKey"],
+  webhook: ["token", "password", "headerValue"],
+};
+
 /** 实例 id 格式：2-32 位小写字母/数字/连字符，字母或数字开头（掩码回填的稳定对齐键）。 */
 export const BARK_ID_PATTERN = /^[a-z0-9][a-z0-9-]{1,31}$/;
+
+/**
+ * Webhook 推送频道实例（#508 M2：安卓经 ntfy / Gotify / 自建推送网关；默认停用，
+ * 出站授权须用户显式授予）。凭据一律走请求头（bearer/basic/header），不拼 URL。
+ */
+export type WebhookAuth = "none" | "bearer" | "basic" | "header";
+
+/** webhook 预设（#508 拍板 r3：{{priority}} 频道感知映射的依据）。 */
+export type WebhookPreset = "ntfy" | "gotify" | "custom";
+
+export interface WebhookChannelConfig {
+  /** 实例 id（kindRoutes 对齐键与掩码回填对齐键；创建后锁定不可改）。 */
+  id: string;
+  /** 设置卡显示名（缺省回退 id）。 */
+  name?: string;
+  type: "webhook";
+  /** 目标 URL（normalize 规范化为 origin+path：拒绝凭据 URL、去 query/hash——
+   *  凭据走请求头不落 URL；scheme 限 http/https）。 */
+  url: string;
+  enabled: boolean;
+  /** 认证方式（默认 none；bearer→token、basic→username+password、header→headerName+headerValue）。 */
+  auth: WebhookAuth;
+  /** 访问令牌（secret：bearer 认证用；响应一律掩码）。 */
+  token?: string;
+  /** Basic 认证用户名（非 secret）。 */
+  username?: string;
+  /** Basic 认证密码（secret：响应一律掩码）。 */
+  password?: string;
+  /** 自定义请求头名（token 字符限 http(s) 头名合法集；header 认证用，非 secret）。 */
+  headerName?: string;
+  /** 自定义请求头值（secret：响应一律掩码）。 */
+  headerValue?: string;
+  /** 预设（{{priority}} 映射与默认模板依据；默认 ntfy）。 */
+  preset?: WebhookPreset;
+  /** JSON body 模板（渲染契约见 channel-webhook.ts renderWebhookBody；空 = 预设默认模板）。 */
+  template?: string;
+  /** 投递超时秒（1-60，服务端 normalize 权威 clamp；默认 10）。 */
+  timeoutSec?: number;
+}
+
+/** 频道实例联合（#508 M2：bark | webhook；未来类型扩此联合 + 分派三处）。 */
+export type ChannelConfig = BarkChannelConfig | WebhookChannelConfig;
 
 /** 通知配置（内存单一事实源，与落盘 JSON 同构）。 */
 export interface NotifyConfig {
@@ -81,8 +140,8 @@ export interface NotifyConfig {
   /** SSE 连接表上限（同机同时在线的服务端未释放句柄数；超限淘汰最老连接，
    *  防半开幽灵连接只增不减耗尽资源）。 */
   maxConnections: number;
-  /** 配置驱动的推送频道实例（M2：bark；启用后才参与投递，见 service.ts）。 */
-  channels: BarkChannelConfig[];
+  /** 配置驱动的推送频道实例（#508 M2：bark | webhook；启用后才参与投递，见 service.ts）。 */
+  channels: ChannelConfig[];
   /** kind→channelId[] 稀疏路由覆盖（缺省=广播全部启用频道；见设计终稿 §4.6）。 */
   kindRoutes: Record<string, string[]>;
   /** 已确认的动态 kind 清单（用户确认后落盘，重启保持；M1 内存态缺陷修复）。 */
@@ -273,17 +332,72 @@ function normalizeBarkChannel(v: unknown): BarkChannelConfig | null {
   return out;
 }
 
+/** 自定义请求头名合法性（保守 token 集；禁冒端到端关键头防走私/破坏 JSON body）。 */
+const WEBHOOK_HEADER_NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9-]{0,63}$/;
+const WEBHOOK_HEADER_DENYLIST: readonly string[] = ["content-type", "content-length", "host", "cookie", "authorization"];
+
+/** 头名校验（#508 M2；normalize 与写校验共用，channel-webhook 复用拒非法头名）。 */
+export function isWebhookHeaderName(v: unknown): boolean {
+  if (typeof v !== "string" || !WEBHOOK_HEADER_NAME_PATTERN.test(v)) return false;
+  return !(WEBHOOK_HEADER_DENYLIST as readonly string[]).includes(v.toLowerCase());
+}
+
 /**
- * Bark 实例数组归一化：逐实例归一化后按 id 去重（首个胜出，重复 id 会让掩码
- * 回填与路由对齐产生歧义）；上限 16 实例（单人自用足够，防配置膨胀）。
+ * 单个 webhook 实例归一化（#508 M2）：形状/类型不对返回 null（读取时丢弃）。
+ * URL 复用 normalizeBarkBaseUrl（http/https、拒绝凭据、去 query/hash——凭据走
+ * 请求头不落 URL）；timeoutSec 权威 clamp 1-60；凭据字段长度限 512；
+ * 未知 string/number 键透传（保留键剔除，同 bark 口径）。
  */
-function normalizeBarkChannels(v: unknown): BarkChannelConfig[] {
+function normalizeWebhookChannel(v: unknown): WebhookChannelConfig | null {
+  if (typeof v !== "object" || v === null) return null;
+  const src = v as Record<string, unknown>;
+  if (typeof src.id !== "string" || !BARK_ID_PATTERN.test(src.id)) return null;
+  if (src.type !== "webhook") return null;
+  const url = normalizeBarkBaseUrl(src.url);
+  if (url === null) return null;
+  if (typeof src.enabled !== "boolean") return null;
+  const auth = src.auth === undefined ? "none" : src.auth;
+  if (auth !== "none" && auth !== "bearer" && auth !== "basic" && auth !== "header") return null;
+  const out: WebhookChannelConfig & Record<string, unknown> = {
+    id: src.id,
+    type: "webhook",
+    url,
+    enabled: src.enabled,
+    auth,
+  };
+  if (typeof src.name === "string" && src.name.length > 0 && src.name.length <= 64) out.name = src.name;
+  if (typeof src.token === "string" && src.token.length > 0 && src.token.length <= 512) out.token = src.token;
+  if (typeof src.username === "string" && src.username.length > 0 && src.username.length <= 128) out.username = src.username;
+  if (typeof src.password === "string" && src.password.length > 0 && src.password.length <= 512) out.password = src.password;
+  if (typeof src.headerName === "string" && isWebhookHeaderName(src.headerName)) out.headerName = src.headerName;
+  if (typeof src.headerValue === "string" && src.headerValue.length > 0 && src.headerValue.length <= 512) out.headerValue = src.headerValue;
+  if (src.preset === "ntfy" || src.preset === "gotify" || src.preset === "custom") out.preset = src.preset;
+  if (typeof src.template === "string" && src.template.length <= 8192) out.template = src.template;
+  if (typeof src.timeoutSec === "number" && Number.isFinite(src.timeoutSec)) out.timeoutSec = Math.min(60, Math.max(1, Math.round(src.timeoutSec)));
+  // 未知键透传：string/number 值原样保留（与 bark 同口径）；保留键一律剔除
+  for (const key of Object.keys(src)) {
+    if (key === "id" || key === "type" || key === "url" || key === "enabled" || key === "auth") continue;
+    if (key === "name" || key === "token" || key === "username" || key === "password" || key === "headerName" || key === "headerValue" || key === "preset" || key === "template" || key === "timeoutSec") continue;
+    if ((WEBHOOK_RESERVED_KEYS as readonly string[]).includes(key)) continue;
+    const value = src[key];
+    if (typeof value === "string" || typeof value === "number") out[key] = value;
+  }
+  return out;
+}
+
+/**
+ * 频道实例数组归一化（#508 M2 分派版）：按实例 type 分派 bark/webhook 专属
+ * normalizer，跨类型按 id 去重（首个胜出）；上限 16 实例。未知 type 走 bark
+ * 口径（normalizeBarkChannel 对 type!=="bark" 返回 null → 丢弃，前向兼容旧行为）。
+ */
+function normalizeChannels(v: unknown): ChannelConfig[] {
   if (!Array.isArray(v)) return [];
   const seen = new Set<string>();
-  const out: BarkChannelConfig[] = [];
+  const out: ChannelConfig[] = [];
   for (const item of v) {
     if (out.length >= 16) break;
-    const ch = normalizeBarkChannel(item);
+    const isWebhook = typeof item === "object" && item !== null && (item as Record<string, unknown>).type === "webhook";
+    const ch = isWebhook ? normalizeWebhookChannel(item) : normalizeBarkChannel(item);
     if (ch === null || seen.has(ch.id)) continue;
     seen.add(ch.id);
     out.push(ch);
@@ -362,8 +476,8 @@ export function normalizeConfig(input: unknown): NotifyConfig {
       base.quietHours.allowKinds = normalizeAllowKinds(qh.allowKinds);
     }
   }
-  // M2 三键：推送频道实例 / kind 稀疏路由 / 动态 kind 确认清单
-  if (Array.isArray(src.channels)) base.channels = normalizeBarkChannels(src.channels);
+  // M2 三键：推送频道实例 / kind 稀疏路由 / 动态 kind 确认清单（#508 M2：channels 按类型分派）
+  if (Array.isArray(src.channels)) base.channels = normalizeChannels(src.channels);
   if (typeof src.kindRoutes === "object" && src.kindRoutes !== null) base.kindRoutes = normalizeKindRoutes(src.kindRoutes);
   if (Array.isArray(src.allowKinds)) base.allowKinds = normalizeAllowKinds(src.allowKinds);
   // 未知键透传：白名单之外的键原样保留（此插件在旧版本运行或手改配置时会
@@ -472,7 +586,8 @@ function isBarkChannel(v: unknown): boolean {
   return true;
 }
 
-/** channels 整组写入校验（≤16 实例 + id 不得重复——重复会让掩码回填/路由对齐歧义）。 */
+/** channels 整组写入校验（≤16 实例 + id 不得重复——重复会让掩码回填/路由对齐歧义）。
+ *  #508 M2：按实例 type 分派 bark/webhook 严格校验，id 跨类型去重。 */
 function isBarkChannels(v: unknown): boolean {
   if (!Array.isArray(v) || v.length > 16) return false;
   const seen = new Set<string>();
@@ -480,6 +595,54 @@ function isBarkChannels(v: unknown): boolean {
     if (!isBarkChannel(item)) return false;
     const id = (item as Record<string, unknown>).id as string;
     if (seen.has(id)) return false;
+    seen.add(id);
+  }
+  return true;
+}
+
+/** webhook 已知参数的类型校验表（与 normalizeWebhookChannel 的过滤键平行维护）。 */
+const WEBHOOK_KNOWN_PARAM_KEYS: readonly string[] = ["name", "token", "username", "password", "headerName", "headerValue", "preset", "template", "timeoutSec"];
+
+function isWebhookChannelParam(key: string, value: unknown): boolean {
+  if (key === "name") return typeof value === "string" && value.length > 0 && value.length <= 64;
+  if (key === "token" || key === "password" || key === "headerValue") return typeof value === "string" && value.length > 0 && value.length <= 512;
+  if (key === "username") return typeof value === "string" && value.length > 0 && value.length <= 128;
+  if (key === "headerName") return isWebhookHeaderName(value);
+  if (key === "preset") return value === "ntfy" || value === "gotify" || value === "custom";
+  if (key === "template") return typeof value === "string" && value.length <= 8192;
+  if (key === "timeoutSec") return typeof value === "number" && Number.isFinite(value) && value >= 1 && value <= 60;
+  return typeof value === "string" || typeof value === "number"; // 未知键透传
+}
+
+/** 单个 webhook 实例写入校验（严格口径：任一项非法即整组 400）。 */
+function isWebhookChannel(v: unknown): boolean {
+  if (typeof v !== "object" || v === null) return false;
+  const ch = v as Record<string, unknown>;
+  if (typeof ch.id !== "string" || !BARK_ID_PATTERN.test(ch.id)) return false;
+  if (ch.type !== "webhook") return false;
+  if (normalizeBarkBaseUrl(ch.url) === null) return false;
+  if (typeof ch.enabled !== "boolean") return false;
+  const auth = ch.auth === undefined ? "none" : ch.auth;
+  if (auth !== "none" && auth !== "bearer" && auth !== "basic" && auth !== "header") return false;
+  for (const key of Object.keys(ch)) {
+    if (key === "id" || key === "type" || key === "url" || key === "enabled" || key === "auth") continue;
+    if ((WEBHOOK_RESERVED_KEYS as readonly string[]).includes(key)) return false; // 保留键写入口径直接拒绝
+    if (!(WEBHOOK_KNOWN_PARAM_KEYS as readonly string[]).includes(key) && typeof ch[key] !== "string" && typeof ch[key] !== "number") return false;
+    if (!isWebhookChannelParam(key, ch[key])) return false;
+  }
+  return true;
+}
+
+/** channels 整组写入校验（#508 M2 混合版）：按实例 type 分派严格校验，id 跨类型去重。 */
+function isChannels(v: unknown): boolean {
+  if (!Array.isArray(v) || v.length > 16) return false;
+  const seen = new Set<string>();
+  for (const item of v) {
+    const type = typeof item === "object" && item !== null ? (item as Record<string, unknown>).type : undefined;
+    const ok = type === "webhook" ? isWebhookChannel(item) : isBarkChannel(item);
+    if (!ok) return false;
+    const id = (item as Record<string, unknown>).id as string;
+    if (typeof id !== "string" || seen.has(id)) return false;
     seen.add(id);
   }
   return true;
@@ -526,7 +689,7 @@ const SETTING_VALIDATORS: Record<string, (v: unknown) => boolean> = {
   doneMergeWindowMs: isNonNegNumber(60000),
   historyMaxAgeDays: isNonNegNumber(3650),
   maxConnections: isConnLimit,
-  channels: isBarkChannels,
+  channels: isChannels,
   kindRoutes: isKindRoutes,
   allowKinds: isConfirmedKinds,
 };
@@ -549,7 +712,7 @@ const SETTING_HINTS: Record<string, string> = {
   doneMergeWindowMs: "需为 0-60000 的整数（毫秒）",
   historyMaxAgeDays: "需为 0-3650 的整数（天）",
   maxConnections: "需为 1-1024 的整数",
-  channels: "需为 { id, type:'bark', baseUrl, deviceKey, enabled } 实例数组（id 为 2-32 位小写字母/数字/连字符且不重复；baseUrl 为无凭据的 http(s) 地址；至多 16 实例；可选 levels 为 { kind: 级别 } 映射，键至多 64 字符、至多 64 项，级别限 active/timeSensitive/passive/critical）",
+  channels: "需为频道实例数组（至多 16 实例、id 不重复，id 为 2-32 位小写字母/数字/连字符）：bark 实例 { id, type:'bark', baseUrl, deviceKey, enabled }（baseUrl 为无凭据的 http(s) 地址；可选 levels 为 { kind: 级别 } 映射，键至多 64 字符、至多 64 项，级别限 active/timeSensitive/passive/critical）；webhook 实例 { id, type:'webhook', url, enabled, auth?:'none'|'bearer'|'basic'|'header', token?/username?/password?/headerName?/headerValue?, preset?:'ntfy'|'gotify'|'custom', template?(JSON ≤8192), timeoutSec?(1-60) }（url 为无凭据无 query 的 http(s) 地址，凭据只走请求头）",
   kindRoutes: "需为 { kind: channelId[] } 对象（至多 64 个 kind，每项至多 16 个 channelId）",
   allowKinds: "需为非空字符串数组（至多 128 项，每项至多 64 字符）",
 };
@@ -648,9 +811,11 @@ export function sanitizePatchSettings(raw: unknown): Partial<NotifyConfig> | nul
 // ---------------------------------------------------------------- 凭据脱敏与掩码回填（M2 评审 P0-1/P0-2）
 
 /**
- * 配置读取面统一脱敏出口（单一收口，评审 P0-1）：深拷贝后把 channels[].deviceKey
- * 掩码为 SECRET_MASK。GET /config 的 user 与 effective、PUT 成功响应的 user 一律
- * 经此函数输出——调用方不得绕过（契约测试深度扫描锁死）。
+ * 配置读取面统一脱敏出口（单一收口，评审 P0-1）：深拷贝后把 channels[].secret
+ * 字段（#508 M2 泛化：按 CHANNEL_SECRET_FIELDS[type] 清单遍历——bark→deviceKey、
+ * webhook→token/password/headerValue；未知类型回落 deviceKey）掩码为 SECRET_MASK。
+ * GET /config 的 user 与 effective、PUT 成功响应的 user 一律经此函数输出——调用方
+ * 不得绕过（契约测试深度扫描锁死）。
  *
  * #470 复核 P0/P2：读出口同时剔除原型链/特殊成员自有键（constructor/prototype/
  * toString/hasOwnProperty/valueOf/__proto__ 等）——settings user 层原始节可能被
@@ -668,17 +833,24 @@ export function redactConfigView<T>(value: T): T {
   }
   if (Array.isArray(clone?.channels)) {
     for (const ch of clone.channels) {
-      if (ch && typeof ch === "object" && typeof ch.deviceKey === "string") ch.deviceKey = SECRET_MASK;
+      if (!ch || typeof ch !== "object") continue;
+      const type = typeof ch.type === "string" ? ch.type : "";
+      const fields = CHANNEL_SECRET_FIELDS[type] ?? ["deviceKey"];
+      for (const field of fields) {
+        if (typeof ch[field] === "string") ch[field] = SECRET_MASK;
+      }
     }
   }
   return clone;
 }
 
 /**
- * 掩码回填（PUT /config 保存通道，评审 P0-2）：patch 实例的 deviceKey 整值等于
+ * 掩码回填（PUT /config 保存通道，评审 P0-2）：patch 实例的 secret 字段整值等于
  * SECRET_MASK 时按 **id 对齐**回填 user 层原值（严禁按下标——数组序变会把 A 的
- * key 回填进 B，造成凭据串实例）。必须先于 validateSettings/sanitizeSettings 执行
- * （掩码不是合法 deviceKey 语义，未回填会被 400 拦死）。
+ * key 回填进 B，造成凭据串实例）。#508 M2 泛化：按 CHANNEL_SECRET_FIELDS[type]
+ * 清单逐字段回填（webhook 的 token/password/headerValue 与 bark 的 deviceKey 同语义）。
+ * 必须先于 validateSettings/sanitizeSettings 执行（掩码不是合法 secret 值语义，
+ * 未回填会被 400 拦死）。
  *
  * @returns 回填后的 channels 数组；`missing` = 新增实例却提交掩码（无原值可回填），
  *   调用方应 400 拒绝——掩码只允许表达「未修改」。
@@ -688,12 +860,19 @@ export function unmaskChannels(
   userChannels: unknown,
 ): { ok: true; channels: unknown[] } | { ok: false } {
   if (!Array.isArray(patchChannels)) return { ok: true, channels: [] };
-  const originals = new Map<string, string>();
+  const originals = new Map<string, Record<string, string>>();
   if (Array.isArray(userChannels)) {
     for (const ch of userChannels) {
       if (typeof ch === "object" && ch !== null) {
         const rec = ch as Record<string, unknown>;
-        if (typeof rec.id === "string" && typeof rec.deviceKey === "string") originals.set(rec.id, rec.deviceKey);
+        if (typeof rec.id !== "string") continue;
+        const type = typeof rec.type === "string" ? rec.type : "";
+        const fields = CHANNEL_SECRET_FIELDS[type] ?? ["deviceKey"];
+        const secrets: Record<string, string> = {};
+        for (const field of fields) {
+          if (typeof rec[field] === "string") secrets[field] = rec[field] as string;
+        }
+        originals.set(rec.id, secrets);
       }
     }
   }
@@ -701,10 +880,15 @@ export function unmaskChannels(
   for (const item of patchChannels) {
     if (typeof item !== "object" || item === null) return { ok: false };
     const ch = { ...(item as Record<string, unknown>) };
-    if (ch.deviceKey === SECRET_MASK) {
-      const original = typeof ch.id === "string" ? originals.get(ch.id) : undefined;
-      if (original === undefined) return { ok: false }; // 新实例不允许掩码占位
-      ch.deviceKey = original;
+    const type = typeof ch.type === "string" ? ch.type : "";
+    const fields = CHANNEL_SECRET_FIELDS[type] ?? ["deviceKey"];
+    const original = typeof ch.id === "string" ? originals.get(ch.id) : undefined;
+    for (const field of fields) {
+      if (ch[field] === SECRET_MASK) {
+        const value = original?.[field];
+        if (value === undefined) return { ok: false }; // 新实例不允许掩码占位
+        ch[field] = value;
+      }
     }
     out.push(ch);
   }
