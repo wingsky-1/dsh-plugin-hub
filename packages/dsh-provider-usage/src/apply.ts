@@ -546,14 +546,33 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   // async-mutex 为既有依赖，零新增）。锁内不做等待 IO 之外的调度决策，无死锁面。
   const reportMutex = new Mutex();
 
+  /**
+   * 可选服务探测：ctx["wingsky.notifier"] 不在本插件 inject 声明面——cordis 的
+   * inject 为硬依赖（声明而服务缺失会令插件整体 INACTIVE，见 Fiber._refresh），
+   * 故推送能力必须经 try-catch 动态探测：服务在 →返回服务；不在 →get trap 同步
+   * 抛错就地吞掉、返回 null（静默跳过推送，主流程零影响）。
+   * 每次发送/注册前现取、不缓存引用：与 notifier 插件的加载/热重载时序无关。
+   */
+  function optionalNotifier(): {
+    send: (req: { source: string; kind: string; severity: string; title: string; body: string }) => Promise<unknown>;
+    registerKind?: (reg: { id: string; label: string }) => unknown;
+  } | null {
+    try {
+      const n = (ctx as { "wingsky.notifier"?: unknown })["wingsky.notifier"];
+      if (n !== null && typeof n === "object" && typeof (n as { send?: unknown }).send === "function") {
+        return n as { send: (req: { source: string; kind: string; severity: string; title: string; body: string }) => Promise<unknown>; registerKind?: (reg: { id: string; label: string }) => unknown };
+      }
+      return null;
+    } catch {
+      return null; // cordis get trap：服务未提供（未声明 inject 的必需服务访问被拒）
+    }
+  }
+
   /** 可选 notifier 推送（cfg.push.enabled 才发；中心不在静默跳过，send 失败仅 warn）。 */
   function notifyReport(meta: ReportMeta, snapshot: ReportStatsSnapshot): void {
     if (!reportCfg.push.enabled) return;
-    type NotifierLike = {
-      send?: (req: { source: string; kind: string; severity: string; title: string; body: string }) => Promise<unknown>;
-    };
-    const notifier = (ctx as { "wingsky.notifier"?: NotifierLike })["wingsky.notifier"];
-    if (notifier === undefined || typeof notifier.send !== "function") return; // 中心不在：静默跳过
+    const notifier = optionalNotifier();
+    if (notifier === null) return; // 中心不在：静默跳过
     const total = snapshot.totals.total;
     const body = `${meta.period} ${meta.key}（${meta.startDay} ~ ${meta.endDay}）：token 总量 ${
       total === null ? "无数据" : total.toLocaleString("en-US")
@@ -605,9 +624,8 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
 
   // 可选推送 kind 动态注册（挂载时一次性；中心不在/异常静默——注册失败不阻断挂载）。
   {
-    type NotifierReg = { registerKind?: (reg: { id: string; label: string }) => unknown };
-    const notifier = (ctx as { "wingsky.notifier"?: NotifierReg })["wingsky.notifier"];
-    if (notifier !== undefined && typeof notifier.registerKind === "function") {
+    const notifier = optionalNotifier();
+    if (notifier !== null && typeof notifier.registerKind === "function") {
       try {
         notifier.registerKind({ id: "provider-usage:report", label: "用量报告" });
       } catch { /* 注册失败静默：推送为可选功能 */ }
