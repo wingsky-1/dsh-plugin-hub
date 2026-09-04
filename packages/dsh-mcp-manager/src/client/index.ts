@@ -16,6 +16,9 @@
  */
 
 import STYLE from "./style.css";
+// 样式注入收敛 shared/client/ensure-style.js（issue #477）：幂等键统一
+// dsh-<pkg>-style 命名（旧 data-attr 标记退役）；本包维持不卸载语义（无 disposer）。
+import { ensureStyle } from "../../../../shared/client/ensure-style.js";
 import * as React from "react";
 
 import { createState, type McpState, type UiActions } from "./state.ts";
@@ -75,13 +78,8 @@ export function apply(ctx: any): void {
       }
     }
 
-    // 注入样式（仅首次；容错：重复 apply 不重复创建）
-    if (document.querySelector('style[data-dsh-mcp-manager-style]') === null) {
-      const style = document.createElement("style");
-      style.dataset.dshMcpManagerStyle = "";
-      style.textContent = STYLE;
-      document.head.appendChild(style);
-    }
+    // 注入样式（幂等；容错：重复 apply 不重复创建——幂等实现收敛 shared/client/ensure-style）
+    ensureStyle({ id: "dsh-mcp-manager-style", cssText: STYLE });
 
     const disposers: any[] = [];
 

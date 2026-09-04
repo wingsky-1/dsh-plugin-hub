@@ -133,6 +133,17 @@ function deepFind(nodes, sel) {
   return null;
 }
 
+// 按 id 活搜索（#477 样式注入收敛 shared/client/ensure-style.js：幂等键走
+// document.getElementById + node.id 属性；remove 摘除后自然查不到 → 重注入复位）
+function findNodeById(nodes, id) {
+  for (const n of nodes) {
+    if (n.id === id) return n;
+    const hit = findNodeById(n.children ?? [], id);
+    if (hit) return hit;
+  }
+  return null;
+}
+
 // ---- 全局环境安装（模块顶层不触 DOM；apply 之后才会访问）----
 const docHead = makeNode("head");
 const docBody = makeNode("body");
@@ -145,6 +156,7 @@ globalThis.document = {
   body: docBody,
   visibilityState: "visible",
   createElement: (t) => makeNode(t),
+  getElementById(id) { return findNodeById([docHead, docBody], id); },
   createTextNode: (t) => ({ nodeName: "#text", textContent: String(t), parentElement: null }),
   addEventListener() {},
   removeEventListener() {},
