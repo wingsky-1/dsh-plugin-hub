@@ -727,6 +727,23 @@ export function formatPanel() { return "<p>x</p>"; }
   for (const name of ["isUsageStatsAdapter", "esc", "sanitizeHtml", "HistoryStore", "runV2Pipeline", "sseData"]) {
     assert.ok(hostLib.includes(name), `宿主产物应含 ${name}`);
   }
+
+  // #532 设置页多 tab 契约：分段器结构与窗格 keep-mounted 语义进产物/源码
+  {
+    const clientBundle = readFileSync(join(pkgDir, "lib", "client.js"), "utf8");
+    const settingsIndex = readFileSync(join(pkgDir, "src/client/settings/index.ts"), "utf8");
+    // 五 tab 键齐全（趋势/报告/用量/适配器/悬浮窗）
+    for (const key of ["trend", "report", "usage", "providers", "float"]) {
+      assert.ok(settingsIndex.includes(`"${key}"`), `设置页 tab 键 ${key} 存在`);
+    }
+    // keep-mounted 语义：pane wrapper 用 hidden 显隐（不条件渲染卸载），且不做 URL/存储持久化
+    assert.ok(settingsIndex.includes('className: "dou-set-pane"') && settingsIndex.includes("hidden: tab !== key"),
+      "设置页窗格 keep-mounted（hidden 属性显隐，不卸载组件实例）");
+    assert.ok(!/location\.hash|sessionStorage\.|localStorage\./.test(settingsIndex),
+      "tab 状态不做 URL/存储持久化（与通知中心一致，避免宿主路由冲突）");
+    // 通知中心 #508 分段器同构哨兵：dou-set-card/dou-set-tabs/dou-set-tab 样式类进产物
+    assert.ok(clientBundle.includes("dou-set-tab") && clientBundle.includes("dou-set-pane"), "多 tab 结构类名进客户端产物");
+  }
 }
 
 console.log("[smoke] 全部断言通过 ✓ (v2 集成)");

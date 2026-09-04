@@ -22,7 +22,7 @@ import {
   FALLBACK_PROVIDER,
 } from "./core.ts";
 import type { SessionsServiceLike, RemoteLike, StatsResponseV2, HistoryResponseV2, UiPlacementConfig } from "./core.ts";
-import { SettingsPage } from "./settings.ts";
+import { SettingsPage } from "./settings/index.ts";
 import { t, bindLocale } from "../../../../shared/client/i18n.js";
 // 样式注入收敛 shared/client/ensure-style.js（issue #477）：head 缺失由 shared
 // 静默 no-op 兜底（旧 DOMContentLoaded 兜底属理论不可达防御，随迁移删除）。

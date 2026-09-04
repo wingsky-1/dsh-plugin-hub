@@ -30,6 +30,12 @@ export const zh = {
   loading: "加载中…",
   ariaPill: "用量统计",
   settingsTab: "用量统计",
+  // 设置页：五分段器 tab（#532）
+  pageTabTrend: "趋势",
+  pageTabReport: "报告",
+  pageTabUsage: "用量",
+  pageTabProviders: "适配器",
+  pageTabFloat: "悬浮窗",
   // 错误表（errorMessage）
   errNoApiKey: "未找到 API Key（走 {p}_API_KEY 环境变量或 .credentials.yaml）。",
   errUnauthorized: "API Key 无效或已过期（401/403）。",
@@ -187,6 +193,12 @@ export const en: Record<ProviderUsageLocaleKey, string> = {
   loading: "Loading…",
   ariaPill: "Usage statistics",
   settingsTab: "Usage statistics",
+  // Settings page: five-tab segmenter (#532)
+  pageTabTrend: "Trend",
+  pageTabReport: "Report",
+  pageTabUsage: "Usage",
+  pageTabProviders: "Adapters",
+  pageTabFloat: "Pill",
   errNoApiKey: "API key not found (set the {p}_API_KEY environment variable or .credentials.yaml).",
   errUnauthorized: "API key invalid or expired (401/403).",
   errTimeout: "Request timed out, please retry.",
