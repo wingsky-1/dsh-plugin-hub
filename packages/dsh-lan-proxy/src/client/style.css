@@ -1,7 +1,7 @@
 /* dsh-lan-proxy — 客户端样式（独立 .css 文件）。
  *
  * 由 build-client 的 .css text-loader 构建期内联进 client.js（产物仍自包含单文件、
- * 零运行时依赖、无独立请求）。injectStyle 注入 <style id=dsh-lan-proxy-style>。
+ * 零运行时依赖、无独立请求）。ensureStyle（shared/client/ensure-style.js，issue #477 收敛）注入 <style id=dsh-lan-proxy-style>。
  * 前缀 lp-（防与 shell 冲突）；颜色一律走 --dsw-alias-* 主题变量 + 浅色回退。 */
 
 .lp-set-card {

@@ -299,7 +299,7 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    S(["客户端 apply(ctx)"]) --> A["injectStyle 幂等注入样式<br/>ctx.get sessions / connection"]
+    S(["客户端 apply(ctx)"]) --> A["ensureStyle 幂等注入样式<br/>ctx.get sessions / connection"]
     A --> B["slots.inject settings.section<br/>注册独立 tab「用量统计」<br/>(独立 try/catch 不连坐浮窗)"]
     A --> C["mountFloat(): 胶囊 button + 面板 div<br/>MutationObserver 自动重挂位<br/>scroll/resize 跟随定位"]
     C --> D["立即 refreshStats() 一次<br/>+ setInterval 60s 轮询<br/>+ visibilitychange 转可见补刷<br/>(每次取数前先 revalidateProvider 复检, #71)"]

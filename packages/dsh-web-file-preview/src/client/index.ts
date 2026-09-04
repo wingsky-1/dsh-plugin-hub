@@ -105,8 +105,10 @@ export function apply(ctx: any): void {
       document.removeEventListener("keydown", onKeyDown);
       finalizeSession(state, "unmount");
       restoreOpenPath();
-      const style = document.querySelector("style[data-dsh-web-file-preview-style]");
-      if (style !== null && style.parentElement !== null) style.remove();
+      // #477：样式注入收敛 shared/client/ensure-style.js（幂等键 dsh-web-file-preview-style），
+      // 卸载按 id 摘除（旧 data-attr 标记随迁移退役）。
+      const style = document.getElementById("dsh-web-file-preview-style");
+      if (style !== null) style.remove();
       delete (window as any).__DSH_CWD_SESSIONS__;
     }, "dsh-web-file-preview: ui");
   } catch (error) {

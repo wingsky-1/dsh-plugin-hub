@@ -1,7 +1,7 @@
 /* dsh-web-file-preview — 客户端样式（独立 .css 文件）。
  *
  * 由 build-client 的 .css text-loader 构建期内联进 client.js（产物仍自包含单文件、
- * 零运行时依赖、无独立请求）。ensureStyle 注入 <style data-dsh-web-file-preview-style>。
+ * 零运行时依赖、无独立请求）。ensureStyle（shared/client/ensure-style.js，issue #477 收敛）注入 <style id=dsh-web-file-preview-style>（旧 data-attr 标记退役）。
  * 前缀 fwp-（防与 shell / 其它插件冲突）；颜色一律走 --dsw-alias-*/--dsw-hljs-*
  * 主题变量 + 浅色回退，明暗自适应。 */
 
