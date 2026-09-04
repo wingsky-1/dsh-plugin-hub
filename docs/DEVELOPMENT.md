@@ -187,6 +187,27 @@ contract-check 禁止运行时值导入）。原自建类型层 `types/dsh.d.ts`
 - **测试**：`test/smoke.ts` 直跑，必含 403/405 围栏用例 + 客户端契约断言
   （`assertClientSourceContract` / `assertClientProductContract`）。
 
+### 落盘路径必须感知 DSH_HOME（#510）
+
+凡插件自行落盘或读取持久化文件（配置、历史、状态、缓存等），路径 base 一律
+`process.env.DSH_HOME ?? join(homedir(), ".dsh")`，**禁止直拼 `join(homedir(), ".dsh", ...)`**：
+
+- **为什么**：官方 dsh 在隔离环境（多实例 / 测试沙箱 / dsh-verify-isolated 临时
+  home）下运行时，settings 存储等宿主数据已随 `DSH_HOME` 隔离；插件若仍硬拼
+  `~/.dsh`，读写两面都会串到真实 home——#510 即 dsh-notifier 通知历史/投递状态
+  落真实 `~/.dsh`，隔离实例的通知记录 tab 读出用户真实数据。
+- **写法先例**：`packages/dsh-provider-usage/src/path-resolve.ts`（`pluginHome()`）；
+  收敛方向为 `shared/dsh-home.js` 单一事实源（#517 C10 接缝），现阶段各包内聚
+  helper 亦可，但不得绕过 env 读取。
+- **豁免口径**：读取**非 dsh 生态**的外部凭据/配置（如 provider-usage 读 opencode
+  自家目录）不跟随 `DSH_HOME`，属合法例外——豁免须在代码注释说明「为什么不跟随」。
+- **测试义务**：新增/改动落盘路径时，路径契约断言必须双锁定——默认形态
+  （无 `DSH_HOME`）路径逐字节不变 + 设 `DSH_HOME` 后路径随隔离 home（finally
+  恢复 env，防污染同进程其他用例）；写面用 e2e 落盘断言锁定（读函数返回值不足
+  以证明写面）。
+- **门禁演进**：B5（#517）计划在门禁加静态扫描（禁 `packages/*/src` 直连
+  `os.homedir`，带豁免机制）之前，依赖本条自觉遵守。
+
 ### 事件订阅与 scope 语义（cordis dispatch 过滤）
 
 cordis `EventsService.dispatch` 对已注册监听器的过滤条件为
