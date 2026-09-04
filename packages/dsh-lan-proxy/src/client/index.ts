@@ -17,6 +17,10 @@
 // Symbol.toStringTag 装配）由 scripts/build/build-client.ts 统一生成——源码不写任何 loader。
 // 样式：独立 style.css（见同目录），build-client 的 .css text-loader 构建期内联为字符串
 import STYLE from "./style.css";
+// 样式注入收敛 shared/client/ensure-style.js（issue #477）：本包只补
+// { id, cssText, version } 实参；STYLE_ID/CSS_VERSION 常量保留为调用实参来源，
+// disposer（getElementById(STYLE_ID)）沿用常量。
+import { ensureStyle } from "../../../../shared/client/ensure-style.js";
 import * as React from "react";
 // i18n（issue #348）：复用官方 dsh-client-locale——zh/en 双语字典，LocaleNamespaceMap
 // 声明合并进官方 ui-slots 类型面；仅 import type（编译期擦除，无运行时依赖）。
@@ -63,20 +67,6 @@ var CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
   };
 
   var disposed = false;
-
-  // ------------------------------------------------------------ 样式
-
-  /** 注入卡片样式（显式版本号，热更新时旧 <style> 移除重建）。 */
-  function injectStyle() {
-    var existing = document.getElementById(STYLE_ID);
-    if (existing && existing.dataset.version === CSS_VERSION) return;
-    if (existing) existing.remove();
-    var style = document.createElement("style");
-    style.id = STYLE_ID;
-    style.dataset.version = CSS_VERSION;
-    style.textContent = STYLE;
-    document.head.appendChild(style);
-  }
 
   // ------------------------------------------------------------ 设置卡片
 
@@ -413,7 +403,7 @@ export function apply(ctx: any) {
         return;
       }
 
-      injectStyle();
+      ensureStyle({ id: STYLE_ID, cssText: STYLE, version: CSS_VERSION });
 
       // i18n（issue #348）：注册本插件字典；t 绑定官方 locale 服务（未装配回落 key 本体）。
       var locale: any = ctx.get("locale");

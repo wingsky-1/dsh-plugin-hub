@@ -18,6 +18,7 @@ DSH 插件家族共用的模块（构建期 esbuild 内联进各插件包，不�
 | `mcp-manager-service.d.ts` | 宿主 | MCP 管理器服务契约类型面（消费方只走公开入口） | mcp-manager / codegraph |
 | `placement-math.js` | 双端 | 浮窗/胶囊定位/层级/断点纯函数（#128 → #378 抽取，含 `panelTopForAnchor` 与参数化 `panelZIndexFor(base, dflt)`） | mcp-manager / provider-usage |
 | `client/i18n.js` | 客户 | 共享 `t` 活绑定 + `bindLocale`（#348 → #378 抽取；未装配回落 key 本体） | mcp-manager / provider-usage / web-file-preview |
+| `client/ensure-style.js` | 客户 | 参数化 `ensureStyle({ id, cssText, version? })`（#477 收敛；按 id 幂等 / head 缺失静默 no-op 不抛 / version 变化重建 / 返回 disposer） | notifier / lan-proxy / provider-usage / web-file-preview / mcp-manager |
 
 > 消费方登记为快照，新增共享模块必须同步登记消费者与行为契约（准入规则 6）。
 

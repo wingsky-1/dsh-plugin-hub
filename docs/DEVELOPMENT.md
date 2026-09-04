@@ -273,7 +273,10 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
 ## 3. CSS 规范（独立文件，不写进 TS）
 
 - 客户端样式放独立 `src/client/style.css`，源码 `import STYLE from "./style.css"`，
-  `injectStyle` 里 `style.textContent = STYLE`。
+  经共享 helper 注入（issue #477 收敛 `shared/client/ensure-style.js`）：
+  `ensureStyle({ id: "dsh-<pkg>-style", cssText: STYLE, version: CSS_VERSION })`——
+  按 id 幂等、head 缺失静默 no-op 不抛、version 变化重建 `<style>`（热更新失效）、
+  返回 disposer；不要在包内自写 `createElement("style")` 注入段。
 - `.css` 经 `build-client` 的 **text-loader** 构建期**原样内联**成字符串打进
   `lib/client.js`——产物仍自包含单文件、无独立网络请求。
 - `src/client/css.d.ts` 提供 `declare module "*.css"`（tsc 的 `verbatimModuleSyntax`

@@ -5,6 +5,9 @@
  * 仅 export 纯函数；i18n 文案经共享 i18n.ts 的 t（活绑定）。
  */
 import { t } from "../../../../shared/client/i18n.js";
+// 样式注入实现收敛 shared/client/ensure-style.js（issue #477）：本模块只保留
+// STYLE cssText 装配点（style.css 仍被本文件 import，esbuild 不摇树）。
+import { ensureStyle as ensureStyleShared } from "../../../../shared/client/ensure-style.js";
 
 /** 创建带属性/子节点的 DOM 元素。 */
 export function el(tag: string, attrs: any = {}, children?: any[]): any {
@@ -23,13 +26,14 @@ export function el(tag: string, attrs: any = {}, children?: any[]): any {
   return node;
 }
 
-/** 注入样式 <style>（仅首次）。 */
+/**
+ * 注入样式 <style>（仅首次；issue #477 收敛 shared/client/ensure-style.js 后的
+ * 无参薄 facade：本包 id/cssText 在此单点装配，index.ts / preview.ts 两调用点
+ * 与 import 面零改动。行为契约见 ensure-style.js 头注释：head 缺失静默 no-op、
+ * 同 id 幂等、disposer 卸载）。
+ */
 export function ensureStyle(): void {
-  if (document.querySelector("style[data-dsh-web-file-preview-style]") !== null) return;
-  const style = document.createElement("style");
-  style.setAttribute("data-dsh-web-file-preview-style", "");
-  style.textContent = STYLE;
-  document.head.appendChild(style);
+  ensureStyleShared({ id: "dsh-web-file-preview-style", cssText: STYLE });
 }
 
 /**
