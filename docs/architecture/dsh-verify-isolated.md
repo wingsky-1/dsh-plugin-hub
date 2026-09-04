@@ -47,9 +47,9 @@ flowchart LR
 
 ---
 
-## 2. 一键脚本：双重隔离的六步
+## 2. 一键脚本：四重隔离的流程
 
-`skills/dsh-verify-isolated/scripts/verify-isolated.sh`（102 行，`set -euo pipefail`）：
+`skills/dsh-verify-isolated/scripts/verify-isolated.sh`（bash + 内嵌 node，`set -euo pipefail`）：
 
 ```mermaid
 sequenceDiagram
@@ -63,14 +63,15 @@ sequenceDiagram
     U->>SH: bash verify-isolated.sh --port 3456 插件包路径
     SH->>T: DSH_HOME=$(mktemp -d)（隔离凭据/会话/home 级 patch）
     SH->>SH: trap cleanup EXIT（--keep 保留 / 默认 rm -rf）
-    SH->>P: dsh plugin --profile verify_随机 add --help<br/>（以 add --help 副作用初始化 profile）
+    SH->>P: dsh plugin --profile verify_随机 list<br/>（显式初始化 profile，#376 M1）
     SH->>P: node 注入 dsh.profile.bundles：<br/>@deepseek-ai/dsh-base + @deepseek-ai/dsh-web-app<br/>（按名从 dsh 安装目录解析，不走 npm）
+    SH->>SH: resolve-pkg-paths.mjs 归一化插件参数<br/>（相对路径按 cwd 绝对化，规避 dsh 当 git URL，#517 C11）
     alt 默认（BUILD=1）
-        SH->>D: 对每个包 pnpm build（确保 lib/ 或 dist/ 产物）
+        SH->>D: 对每个本地包 pnpm build（确保 lib/ 或 dist/ 产物）
     end
-    SH->>D: dsh plugin --profile verify_随机 add 包路径（link 挂载）
-    SH->>D: dsh --profile verify_随机 --port 端口 --no-open<br/>（前台阻塞）
-    Note over D: Ctrl+C → EXIT trap 自动清理临时 DSH_HOME 与 profile
+    SH->>D: dsh plugin --profile verify_随机 add 绝对路径数组（link 挂载）
+    SH->>D: dsh --profile verify_随机 --host 127.0.0.1 --port 端口 --no-open<br/>（显式回环 + DSH_TELEMETRY_DISABLED=1，前台阻塞）
+    Note over D: Ctrl+C → EXIT trap 自动清理 dsh 进程、浏览器实例、临时 DSH_HOME 与 profile
 ```
 
 双重隔离的层次（为什么两层都必要）：
@@ -79,6 +80,8 @@ sequenceDiagram
 |---|---|---|
 | 第一层：临时 `DSH_HOME` | `DSH_HOME=$(mktemp -d)` | 凭据、会话、全部用户数据、home 级 `cordis.patch.yml` |
 | 第二层：独立 profile | `verify_<8位随机>`（非 `web`） | 插件组合栈（bundles）、profile 级 patch、插件依赖 |
+| 第三层：独立端口 | `--port` 自选/探测空闲端口 | 与主 `dsh web` 及其它验证实例互不冲突 |
+| 第四层：独立浏览器实例 | `--browser`（自带 browser-driver.mjs，raw CDP） | 页面/tab/console 完全独立，多会话并行互不可见 |
 
 > **只建独立 profile 不够**——profile 共享 home 级凭据与会话；必须同时把 `DSH_HOME`
 > 指向临时目录才与真实环境完全隔绝。验证结束删除临时 DSH_HOME 与 `verify_*` profile。
@@ -101,12 +104,12 @@ bash "$SKILL_BASE/scripts/verify-isolated.sh" --port 3456 <插件包路径>
   `link:` 开发态 / 仓库 checkout 均返回真实 skill 目录（脚本相对它定位）；
 - 脚本自包含、从任意 cwd 以绝对路径调用；不确定时先 `ls "$SKILL_BASE/scripts/
   verify-isolated.sh"` 自证；
-- **浏览器验证**（SKILL.md §5）：Playwright 或 chrome-devtools MCP 访问
-  `http://localhost:<port>`；核验 UI 呈现 / Console（挂载失败只应 warn 不应 throw）/
-  双主题 / 窄屏（768×1024 pad、375×667 phone）；**防 flake**：轮询
-  （`waitForSelector`/`wait_for`）禁固定 sleep；截图只截插件 UI 本身（element
-  screenshot，不带整窗防泄露本机信息），dsh-plugin-hub 归档至
-  `packages/dsh-<name>/docs/archive/`；
+- **浏览器验证**（SKILL.md §5/§6）：`--browser` 拉起 skill 自带独立浏览器实例
+  （browser-driver.mjs，独立 user-data-dir + 调试端口，多会话并行硬隔离）；核验 UI
+  呈现 / Console（挂载失败只应 warn 不应 throw）/ 双主题 / 窄屏（768×1024 pad、
+  375×667 phone）；**防 flake**：轮询（`wait --selector`）禁固定 sleep；截图只截
+  插件 UI 本身（element screenshot，不带整窗防泄露本机信息），dsh-plugin-hub
+  归档至 `packages/dsh-<name>/docs/archive/`；
 - **完成检查**：隔离实例已启动且端口不冲突 → UI 渲染正常 → Console 无未处理错误 →
   截图已归档 → 实例已停止、临时 DSH_HOME 与 `verify_*` profile 已清理。
 

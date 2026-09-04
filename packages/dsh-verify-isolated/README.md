@@ -47,6 +47,7 @@ dsh plugin --profile web add @wingsky-1/dsh-verify-isolated
 skills/dsh-verify-isolated/
   SKILL.md                        # skill 定义（frontmatter name=dsh-verify-isolated）
   scripts/verify-isolated.sh      # 一键隔离验证脚本（--dsh / --browser / --port 0 / --keep / --no-build）
+  scripts/resolve-pkg-paths.mjs   # 插件参数归一化（相对路径→绝对 / 包规格透传，#517 C11）
   scripts/browser-driver.mjs      # 自带独立浏览器驱动（raw CDP 零依赖，--json 原子操作 CLI）
 cordis.patch.yml                  # 复用官方 dsh-skill-filesystem + bundledSkillDir
 lib/index.js                      # 宿主门禁出口（name + 空 apply）
@@ -67,6 +68,10 @@ bash "$SKILL_BASE/scripts/verify-isolated.sh" --port 0 --browser <插件包路�
 # 锚定 dsh 版本（验证特定 dsh 版本生态时必带，防 PATH 漂移）
 bash "$SKILL_BASE/scripts/verify-isolated.sh" --dsh /opt/dsh-0.1.2-alpha.2/bin/dsh --port 0 <插件包路径>
 ```
+
+插件参数支持**本地插件路径**（相对路径基于当前 cwd 自动解析为绝对路径后挂载，
+规避 dsh 把非绝对路径当 git URL 解析——#517 C11）或**包规格**（npm 包名/git URL
+原样透传）。
 
 浏览器实例操作（实例信息在 `$DSH_HOME/browser.state`；命令契约见
 `browser-driver.mjs --help`。**页面操作命令需 Node ≥22**——依赖内置全局

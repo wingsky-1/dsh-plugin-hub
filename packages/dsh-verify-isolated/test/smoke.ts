@@ -119,6 +119,50 @@ assert.ok(noArgExitsNonZero, "browser-driver 无参数应非零退出（用法�
   // 启动生命周期：后台 + 就绪断言 + wait（EXIT trap 兜底 kill）
   assert.ok(script.includes('DSH_PID=$!'), "dsh 后台启动记录 pid");
   assert.ok(script.includes('wait "$DSH_PID"'), "前台 wait 保持阻塞体感");
+  // #517 C11：插件参数归一化——脚本调用 resolve-pkg-paths.mjs，add 用绝对路径数组
+  assert.ok(script.includes("resolve-pkg-paths.mjs"), "脚本调用 resolve-pkg-paths.mjs（#517 C11 单点归一化）");
+  assert.ok(script.includes("PKGS_ABS=()"), "脚本累积 PKGS_ABS 绝对路径数组");
+  assert.ok(script.includes('add "${PKGS_ABS[@]}"'), "plugin add 用归一化后的绝对路径数组（非原始相对路径）");
+  assert.ok(script.includes("dsh 会把非绝对路径当 git URL 解析"), "脚本注释声明相对路径 git URL 陷阱（#517 C11）");
+  assert.ok(!script.includes('plugin add "${PKGS[@]}"'), "plugin add 不再直接传原始 ${PKGS[@]}（相对路径会当 git URL）");
+}
+
+// ---- 6.5 resolve-pkg-paths.mjs 行为断言（#517 C11：路径 vs 包规格归一化） ----
+{
+  const resolver = join(SKILL_DIR, "scripts", "resolve-pkg-paths.mjs");
+  assert.ok(existsSync(resolver), "resolve-pkg-paths.mjs 随 skill 目录分发");
+  const absBase = runResolver(resolver, ["--json", "--", "./rel", "@scope/name", "@wingsky-1/dsh-notifier"]);
+  // 相对路径（./ 形态）→ path（resolve）
+  const rel = absBase.find((i) => i.input === "./rel");
+  assert.equal(rel.kind, "path", "./rel 判为 path");
+  assert.ok(rel.abs.endsWith("/rel") && rel.abs.startsWith("/"), "./rel 解析为绝对路径");
+  // 包规格 → spec 原样透传
+  assert.equal(absBase.find((i) => i.input === "@scope/name").kind, "spec", "@scope/name 判为 spec");
+  assert.equal(absBase.find((i) => i.input === "@scope/name").abs, null, "spec 无 abs");
+  assert.equal(absBase.find((i) => i.input === "@wingsky-1/dsh-notifier").kind, "spec", "scoped 包名判为 spec");
+  // cwd 存在路径 → path（仓库根踩点：packages/dsh-notifier，与脚本真实调用场景一致）
+  const REPO_ROOT = join(PKG_ROOT, "..", "..");
+  const exist1 = runResolver(resolver, ["--json", "--", "packages/dsh-notifier"], REPO_ROOT);
+  assert.equal(exist1[0].kind, "path", "cwd 存在的相对目录判为 path");
+  assert.ok(exist1[0].abs.includes("/packages/dsh-notifier") && exist1[0].abs.startsWith("/"), "cwd 存在目录解析为绝对路径");
+  // 绝对路径 → path 原样
+  const abs1 = runResolver(resolver, ["--json", "--", "/tmp/x"]);
+  assert.equal(abs1[0].kind, "path", "绝对路径判为 path");
+  assert.equal(abs1[0].abs, "/tmp/x", "绝对路径逐字节保留");
+  // ~ 开头 → 展开 home
+  const tilde = runResolver(resolver, ["--json", "--", "~"]);
+  assert.equal(tilde[0].kind, "path", "~ 判为 path");
+  assert.ok(tilde[0].abs.startsWith("/") && !tilde[0].abs.includes("~"), "~ 展开为 home 绝对路径");
+  // 不含空格外的边界：无参数非零退出
+  let noArgFails = false;
+  try { runResolver(resolver, []); } catch (e) { noArgFails = e.status === 2; }
+  assert.ok(noArgFails, "resolver 无参数非零退出（exit 2）");
+}
+
+/** 跑 resolve-pkg-paths.mjs --json 并解析输出。 */
+function runResolver(resolver, args, cwd) {
+  const out = execFileSync(process.execPath, [resolver, ...args], { encoding: "utf8", ...(cwd ? { cwd } : {}) });
+  return JSON.parse(out.trim());
 }
 
 // ---- 7. SKILL.md 含多会话并行章节与三平台内核自查 ----
