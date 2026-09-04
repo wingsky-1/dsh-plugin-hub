@@ -861,13 +861,20 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
     }
 
     /** 提交 PUT 并处理响应（save 的内核；guard 占用与释放由 saveFor 负责）。
-     *  #405 PR2b：409 不再只提示文案——转 handleConflict 进入双动作恢复流程。 */
+     *  #405 PR2b：409 不再只提示文案——转 handleConflict 进入双动作恢复流程。
+     *  #405 实测补强（浏览器验证发现）：fetch 在极端环境（连接池耗尽/服务端静默
+     *  挂起）可能永不 settle → finally 永不执行 → 按钮永久「保存中」。加 15s
+     *  AbortController 超时兜底：超时中断请求（服务端写入与否未知，UI 必须恢复），
+     *  释放 guard 并提示重试。 */
     function putAndCommit(payload: Record<string, any>, entry: string) {
       var expectedRevision = metaRef.current && typeof metaRef.current.revision === "number" ? metaRef.current.revision : undefined;
-      return fetch(ROUTES.config, {
+      var ctrl: AbortController | null = typeof AbortController !== "undefined" ? new AbortController() : null;
+      var timer: ReturnType<typeof setTimeout> | null = ctrl ? setTimeout(function () { ctrl!.abort(); }, 15000) : null;
+      var chain = fetch(ROUTES.config, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ patch: payload, expectedRevision: expectedRevision }),
+        signal: ctrl ? ctrl.signal : undefined,
       }).then(function (r: any) {
         return r.json().then(function (body: any) {
           if (!r.ok) {
@@ -899,8 +906,18 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
           handleConflict(entry);
           return;
         }
+        // AbortError（15s 超时兜底）：服务端可能已写入也可能未写入——提示重试，
+        // 用户重试时 revision 若已推进会自然走 409 恢复流程，语义自洽。
+        if (e && e.name === "AbortError") {
+          setSaved(t("saveTimeout"), true);
+          return;
+        }
         setSaved(t("saveFail", { msg: msg }), true);
       });
+      if (timer !== null) {
+        chain = chain.finally(function () { clearTimeout(timer!); });
+      }
+      return chain;
     }
 
     /** 从全量 diff 中按入口过滤出本次要提交的键（#405 PR2 域保存；
@@ -920,7 +937,15 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
      *  - guard.end() 放 finally：成功/失败/异常任何路径都释放，防按钮永久卡死。 */
     function saveFor(entry: string, quietIfEmpty?: boolean) {
       if (!saveGuard.tryBegin(entry)) return; // 在途：记 pending=entry，由在途 finally 补发
-      var payload = diffPayloadFor(entry);
+      var payload: Record<string, any>;
+      try {
+        payload = diffPayloadFor(entry);
+      } catch (error) {
+        // 防御：tryBegin 后同步异常（diff 计算等理论不可达路径）必须释放 guard
+        saveGuard.end();
+        setSaved(t("saveFail", { msg: String((error && (error as any).message) || error) }), true);
+        return;
+      }
       if (Object.keys(payload).length === 0) {
         saveGuard.end();
         if (!quietIfEmpty) setSaved(t("unchanged"));
