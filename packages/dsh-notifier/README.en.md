@@ -89,7 +89,8 @@ Pick one of the following access forms (both the settings card and the README su
 Configuration is stored in the **official settings store** (`<DSH_HOME>/settings.yaml`,
 namespace `dsh-notifier`), read/written through the plugin card under
 Settings → Plugins → dsh-notifier (issue #76). The legacy self-maintained
-`~/.dsh/dsh-notifier.json` is **migrated once at startup** into the official store;
+`dsh-notifier.json` (under DSH_HOME, default `~/.dsh`) is **migrated once at startup**
+into the official store;
 the original file is renamed `dsh-notifier.json.migrated.bak` (corrupt files are
 renamed `.corrupted.bak` without being written). The self-maintained read/write path
 is retired.

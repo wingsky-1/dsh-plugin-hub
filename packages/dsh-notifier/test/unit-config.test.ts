@@ -11,18 +11,30 @@ import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { mkdtempSync, rmSync } from "node:fs";
 import { assert } from "./helpers.ts";
-import { normalizeConfig, parseHHMM, isInQuietHours, DEFAULT_CONFIG, configFile, historyFile, toastScriptPath, normalizeBarkBaseUrl, redactConfigView, unmaskChannels, SECRET_MASK, BARK_ID_PATTERN, validateSettings, sanitizeSettings, sanitizePatchSettings, QUIET_ALLOW_KINDS } from "../lib/index.js";
+import { normalizeConfig, parseHHMM, isInQuietHours, DEFAULT_CONFIG, configFile, historyFile, statusFile, toastScriptPath, normalizeBarkBaseUrl, redactConfigView, unmaskChannels, SECRET_MASK, BARK_ID_PATTERN, validateSettings, sanitizeSettings, sanitizePatchSettings, QUIET_ALLOW_KINDS } from "../lib/index.js";
 
 const work = mkdtempSync(join(tmpdir(), "dnotify-unit-config-"));
 try {
   const DEFAULT_CONFIG_UNTOUCHED = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
 
-  // 路径契约（config.ts 导出）：configFile 是存量自建 json 的迁移源路径（issue #76 后
-  // 配置走官方 settings 存储，configFile 不再读写，仅迁移读取/改名）；historyFile 与
-  // toast 脚本路径不变。
-  assert.equal(configFile(), join(homedir(), ".dsh", "dsh-notifier.json"), "配置迁移源路径固定到 ~/.dsh/dsh-notifier.json");
-  assert.equal(historyFile(), join(homedir(), ".dsh", "dsh-notifier-history.jsonl"), "历史路径固定到 ~/.dsh/dsh-notifier-history.jsonl");
+  // 路径契约（config.ts 导出，#510）：三路径 DSH_HOME 感知——默认形态（无
+  // DSH_HOME）与旧版逐字节一致；设 DSH_HOME 时读写面都落隔离 home（隔离验证
+  // 不读/不写真实 ~/.dsh）。configFile 是存量自建 json 的迁移源路径（issue #76
+  // 后配置走官方 settings 存储，configFile 不再读写，仅迁移读取/改名），迁移源
+  // 语义不变、仅 base 解析随 DSH_HOME；historyFile / toast 脚本路径默认形态不变。
+  assert.equal(configFile(), join(homedir(), ".dsh", "dsh-notifier.json"), "默认形态：迁移源路径 ~/.dsh/dsh-notifier.json");
+  assert.equal(historyFile(), join(homedir(), ".dsh", "dsh-notifier-history.jsonl"), "默认形态：历史路径 ~/.dsh/dsh-notifier-history.jsonl");
+  assert.equal(statusFile(), join(homedir(), ".dsh", "dsh-notifier-status.json"), "默认形态：状态路径 ~/.dsh/dsh-notifier-status.json");
   assert.ok(toastScriptPath().endsWith("toast.ps1"), "toast 脚本路径固定到 toast.ps1（src 插桩形态下随加载源解析到 src/）");
+  const dshHomeIso = mkdtempSync(join(tmpdir(), "dnotify-dsh-home-"));
+  process.env.DSH_HOME = dshHomeIso;
+  try {
+    assert.equal(configFile(), join(dshHomeIso, "dsh-notifier.json"), "#510：迁移源随 DSH_HOME（隔离 home 的旧配置才被迁移）");
+    assert.equal(historyFile(), join(dshHomeIso, "dsh-notifier-history.jsonl"), "#510：历史读/写面随 DSH_HOME");
+    assert.equal(statusFile(), join(dshHomeIso, "dsh-notifier-status.json"), "#510：状态写面随 DSH_HOME");
+  } finally {
+    delete process.env.DSH_HOME;
+  }
 
   assert.equal(normalizeConfig(undefined).notifyAsk, true);
   // DEFAULT_CONFIG 全字段默认值锁定（对照 config.ts 幸存 BooleanLiteral：

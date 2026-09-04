@@ -104,7 +104,8 @@ context filter checks」）。取舍如下（issue #290）：
 
 配置保存在**官方 settings 存储**（`<DSH_HOME>/settings.yaml`，命名空间 `dsh-notifier`），
 经「设置 → 插件 → dsh-notifier」卡片读写（issue #76）；旧版自建
-`~/.dsh/dsh-notifier.json` 在升级后**启动时一次性迁移**进官方存储，原文件改名
+`dsh-notifier.json`（位于 DSH_HOME，默认 `~/.dsh`）在升级后**启动时一次性迁移**
+进官方存储，原文件改名
 `dsh-notifier.json.migrated.bak`（损坏则改名 `.corrupted.bak`，不写入），
 自建读写链路已废弃。
 
@@ -215,8 +216,13 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
 
 投递可靠性：10s 硬超时、网络错误/5xx 重试 ×2（4xx 不重试）、实例级在途并发 ≤2
 （内置频道不受限）；成功判定双查 HTTP 2xx + 响应体 `code===200`。
-投递终态（成功/失败 + 脱敏错误摘要）落盘 `~/.dsh/dsh-notifier-status.json` 并经
+投递终态（成功/失败 + 脱敏错误摘要）落盘 DSH_HOME 下的 `dsh-notifier-status.json`
+（默认 `~/.dsh`）并经
 `wingsky-notify/sent` 事件广播（cordis Events），设置页频道卡状态行实时可见。
+
+> 通知历史 jsonl、频道投递状态 json 与旧版迁移源 json 的落盘/读取路径均感知
+> `DSH_HOME`（#510）：未设置时为 `~/.dsh`，设置后随隔离 home 走——隔离环境
+> （多实例 / 测试沙箱 / dsh-verify-isolated）读写面不触碰真实 `~/.dsh`。
 
 `kindRoutes`：kind → channelId[] 稀疏路由（如 `{ "error": ["browser", "system", "bark:phone"] }`）；
 未声明条目的 kind 广播全部启用频道；设置页事件区可双向编辑（与频道卡共享同一份配置）。

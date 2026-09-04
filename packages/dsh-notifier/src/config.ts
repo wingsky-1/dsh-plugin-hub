@@ -151,13 +151,13 @@ export interface NotifyConfig {
 /** 布尔配置键联合（normalizeConfig 白名单与客户端渲染依赖它）。 */
 type BooleanKeys = { [K in keyof NotifyConfig]: NotifyConfig[K] extends boolean ? K : never }[keyof NotifyConfig];
 
-/** apply 接收的配置（enabled / 路径覆盖）。 */
+/** apply 接收的配置（enabled / 路径覆盖；路径不覆盖时默认落 DSH_HOME，未设时 ~/.dsh，#510）。 */
 export interface NotifierApplyConfig {
   enabled?: boolean;
   configFile?: string;
   toastScript?: string;
   historyFile?: string;
-  /** 频道投递状态文件覆盖（默认 ~/.dsh/dsh-notifier-status.json；测试隔离用）。 */
+  /** 频道投递状态文件覆盖（测试隔离用）。 */
   statusFile?: string;
 }
 
@@ -230,19 +230,34 @@ export const CONFIG_KEYS: readonly BooleanKeys[] = ["notifyAsk", "notifyQuestion
  */
 const PROTOTYPE_POLLUTION_KEYS: readonly string[] = ["__proto__", "constructor", "prototype", "toString", "hasOwnProperty", "valueOf", "isPrototypeOf", "propertyIsEnumerable", "toLocaleString"];
 
-/** 配置存储路径（旧版自建 json；issue #76 后仅作存量迁移源，不再读写）。 */
+/**
+ * DSH home 基目录（#510）：插件落盘路径统一感知 `DSH_HOME`——官方 dsh 在隔离
+ * 环境（多实例 / 测试沙箱 / dsh-verify-isolated 临时 home）下运行时，官方
+ * settings 存储已随 DSH_HOME 隔离，插件 history/status 落盘也必须随隔离 home
+ * 走，否则读写两面都串到真实 `~/.dsh`（#510 根因）。未设置时回落 `~/.dsh`，
+ * 默认形态路径逐字节不变。写法对齐 dsh-provider-usage/src/path-resolve.ts 先例。
+ */
+function dshHome(): string {
+  return process.env.DSH_HOME ?? join(homedir(), ".dsh");
+}
+
+/**
+ * 配置存储路径（旧版自建 json；issue #76 后仅作存量迁移源，不再读写）。
+ * 路径同样随 DSH_HOME（#510）：隔离环境的迁移源读隔离 home 下的旧配置，
+ * 不触碰真实 `~/.dsh`；只读迁移语义不变。
+ */
 export function configFile() {
-  return join(homedir(), ".dsh", "dsh-notifier.json");
+  return join(dshHome(), "dsh-notifier.json");
 }
 
-/** 通知历史文件路径（jsonl 追加；与配置同目录）。 */
+/** 通知历史文件路径（jsonl 追加；与配置同目录；DSH_HOME 感知，#510）。 */
 export function historyFile() {
-  return join(homedir(), ".dsh", "dsh-notifier-history.jsonl");
+  return join(dshHome(), "dsh-notifier-history.jsonl");
 }
 
-/** 频道投递状态文件路径（M2：per-channel 最近投递终态；与配置同目录）。 */
+/** 频道投递状态文件路径（M2：per-channel 最近投递终态；与配置同目录；DSH_HOME 感知，#510）。 */
 export function statusFile() {
-  return join(homedir(), ".dsh", "dsh-notifier-status.json");
+  return join(dshHome(), "dsh-notifier-status.json");
 }
 
 /** toast 脚本路径（本插件 lib 下）。 */
