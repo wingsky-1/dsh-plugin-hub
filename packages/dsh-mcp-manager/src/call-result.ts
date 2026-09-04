@@ -83,19 +83,23 @@ export function projectCallToolResult(
   const resultObj = (typeof result === "object" && result !== null ? result : undefined) as
     | { content?: unknown; isError?: unknown; structuredContent?: unknown; toolResult?: unknown }
     | undefined;
-  const fallbackText = handlers.fallbackText !== undefined
-    ? handlers.fallbackText(result)
-    : defaultCallResultFallbackText(result);
+  // 兜底文本惰性求值（F3）：仅缺省分支实际消费，正常 content 路径零开销。
+  const resolveFallbackText = (): string =>
+    handlers.fallbackText !== undefined
+      ? handlers.fallbackText(result)
+      : defaultCallResultFallbackText(result);
   const structured = resultObj?.structuredContent;
   if (!Array.isArray(resultObj?.content)) {
     // 无 content / 非数组 content：兜底文本分支（toolResult JSON 或占位符）。
-    if (resultObj?.isError === true) throw new Error(fallbackText);
+    if (resultObj?.isError === true) throw new Error(resolveFallbackText());
+    const fallbackText = resolveFallbackText();
     return {
       content: [{ type: "text", text: fallbackText }],
       ...(structured !== undefined ? { structuredContent: structured } : {}),
     };
   }
   if (resultObj?.isError === true) {
+    const fallbackText = resolveFallbackText();
     throw new Error(
       handlers.errorText !== undefined
         ? handlers.errorText(resultObj.content)

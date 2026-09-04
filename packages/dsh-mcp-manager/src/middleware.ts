@@ -25,7 +25,7 @@ import { dirname } from "node:path";
 import type { ServerConfig } from "./types.ts";
 import type { ToolDefinition, ToolOutputDefinition } from "@deepseek-ai/dsh-tools";
 import { MCPClient } from "./protocol.ts";
-import { projectCallToolResult } from "./call-result.ts";
+import { defaultCallResultFallbackText, projectCallToolResult } from "./call-result.ts";
 import { createTransport } from "./transport.ts";
 import {
   CONNECT_TIMEOUT_MS,
@@ -588,9 +588,15 @@ export class McpMiddleware {
       // 清洗 + 无 content 兜底），与 supervisor（mcp__ 直呼）/ 官方
       // dsh-mcp-client createExecutor 同一契约——不再裸透传 resultObj，
       // Python SDK 必带的 isError:false / _meta 等字段不再外泄进工具契约。
+      // fallbackText（复核闸 F1）：content 键存在但非数组（协议违规形态）时
+      // 保留远端原文（msgOf，与旧文案行为等价）；content 缺省走默认兜底。
       const projected = projectCallToolResult(result, {
         errorText: (content) =>
           `ws_mcp_call: 远端工具返回错误：${msgOf(content)}；可先用 ws_mcp_detail 核对参数 schema 后重试`,
+        fallbackText: (r) => {
+          const raw = typeof r === "object" && r !== null && "content" in r ? (r as { content?: unknown }).content : undefined;
+          return raw !== undefined && !Array.isArray(raw) ? msgOf(raw) : defaultCallResultFallbackText(r);
+        },
       });
       if (stale) {
         // schema 可能已过期：结果前置提示（投影后的白名单结构，仅扩 content）。

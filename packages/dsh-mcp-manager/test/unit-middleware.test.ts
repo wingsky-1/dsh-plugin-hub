@@ -33,6 +33,7 @@ const {
   listCatalog,
   findToolDetail,
   McpMiddleware,
+  projectCallToolResult,
   CATALOG_TTL_MS,
   LIST_DEFAULT_TOOLS_PER_SERVER,
   LIST_MAX_TOOLS_PER_SERVER,
@@ -813,5 +814,58 @@ function makeHost(serversByRoot = new Map()) {
     assert.equal(Object.hasOwn(out, "structuredContent"), false, "封装 execute 返回 undefined 不落 structuredContent 键");
     assertLossless(out, "#512 封装 undefined");
     await mw.dispose();
+  }
+
+  // 复核闸 F1：isError:true 且 content 非数组（协议违规形态）→ 走兜底分支时
+  // fallbackText 保留远端原文（msgOf，与旧文案行为等价），不丢成 "(no output)"。
+  // 注：no-content isError 分支不经 errorText handler（其入参契约为 content
+  // 数组），文案经外层 catch 统一包装为「调用失败：<原文>；可先用 …」。
+  {
+    const { mw, dispose } = await withFakeClient({ isError: true, content: "boom-msg" });
+    await assert.rejects(
+      () => mw.callTool(fullServerName(ROOT, "py"), "echo", {}, undefined),
+      /调用失败：.*boom-msg/,
+      "isError + 非数组 content 错误原文保留",
+    );
+    await dispose();
+  }
+  {
+    const { mw, dispose } = await withFakeClient({ isError: true, content: 12345 });
+    await assert.rejects(
+      () => mw.callTool(fullServerName(ROOT, "py"), "echo", {}, undefined),
+      /12345/,
+      "isError + 标量 content 同样保留原文",
+    );
+    await dispose();
+  }
+
+  // 复核闸 F5：缺省分支（不传 handlers）——错误文案取 content 内 text 块 join，
+  // 无 text 块退化兜底文本；fallbackText 惰性（正常路径零额外计算语义由实现保证）。
+  {
+    let fallbackCalls = 0;
+    const probe = (result, handlers) => projectCallToolResult(result, handlers);
+    // 缺省 errorText：text 块 join。
+    let thrown;
+    try {
+      probe({ content: [{ type: "text", text: "e1" }, { type: "text", text: "e2" }], isError: true }, {});
+    } catch (error) {
+      thrown = error;
+    }
+    assert.equal(thrown.message, "e1\ne2", "缺省 errorText = content 内 text 块 join");
+    // 缺省 errorText：无 text 块 → 退化兜底文本。
+    thrown = undefined;
+    try {
+      probe({ content: [{ type: "image", mimeType: "image/png" }], isError: true }, {});
+    } catch (error) {
+      thrown = error;
+    }
+    assert.equal(thrown.message, "(no output)", "缺省 errorText 无 text 块退化兜底");
+    // 注入 fallbackText 但正常 content 路径不消费（惰性：计数不增长）。
+    const normal = probe(
+      { content: [{ type: "text", text: "ok" }], isError: false },
+      { fallbackText: () => { fallbackCalls += 1; return "unused"; } },
+    );
+    assert.equal(fallbackCalls, 0, "fallbackText 惰性：正常 content 路径不调用");
+    assert.deepEqual(normal.content, [{ type: "text", text: "ok" }]);
   }
 }
