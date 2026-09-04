@@ -684,7 +684,7 @@ export function formatPanel() { return "<p>x</p>"; }
 
   // lib/index.js 导出 v2 契约面
   const hostLib = readFileSync(join(pkgDir, "lib/index.js"), "utf8");
-  for (const name of ["isUsageStatsAdapter", "esc", "sanitizeHtml", "HistoryStore", "runV2Pipeline"]) {
+  for (const name of ["isUsageStatsAdapter", "esc", "sanitizeHtml", "HistoryStore", "runV2Pipeline", "sseData"]) {
     assert.ok(hostLib.includes(name), `宿主产物应含 ${name}`);
   }
 }

@@ -40,6 +40,14 @@ assert.equal(sseData("hello"), "data: \"hello\"\n\n", "字符串 SSE 带转义")
 assert.equal(sseData([1, 2, 3]), "data: [1,2,3]\n\n", "数组 SSE 序列化");
 assert.equal(sseData(null), "data: null\n\n", "null SSE 序列化");
 
+// #472 收敛锚定：lib/index.js 的 sseData（re-export 自 shared/host-utils.js）
+// 输出与 shared 单一事实源一致（防 re-export 链被误删/改指后导出面漂移）。
+{
+  const { sseData: sharedSseData } = await import("../../../shared/host-utils.js");
+  assert.equal(typeof sseData, "function", "lib/index.js 可 import sseData");
+  assert.equal(sseData({ type: "ui-config-changed" }), sharedSseData({ type: "ui-config-changed" }), "lib 导出与 shared 输出一致");
+}
+
 // ---------------------------------------------------------------- parseUserAdapters
 
 assert.deepEqual(parseUserAdapters(undefined), [], "undefined 返回空数组");

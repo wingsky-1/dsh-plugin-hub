@@ -821,6 +821,15 @@ const main = async () => {
     assert.equal(uiConfigChangedFrame(), 'data: {"type":"ui-config-changed"}\n\n');
     assert.equal(sseData({ type: "ui-config-changed" }), uiConfigChangedFrame(), "与 sseData 同构");
   });
+  // #472 收敛锚定：lib/index.js 仍可 import sseData（re-export 面不漂移），
+  // 且输出与 shared/host-utils.js 单一事实源一致（防 re-export 链被误删/改指）。
+  await checkAsync("lib/index.js 导出 sseData 且输出与 shared/host-utils.js 一致（#472）", async () => {
+    const { sseData: libSseData } = await import("../lib/index.js");
+    const { sseData: sharedSseData } = await import("../../../shared/host-utils.js");
+    assert.equal(typeof libSseData, "function", "lib/index.js 可 import sseData");
+    assert.equal(libSseData({ type: "ui-config-changed" }), sharedSseData({ type: "ui-config-changed" }));
+    assert.equal(libSseData({ type: "ping" }), 'data: {"type":"ping"}\n\n');
+  });
   check("broadcastFrame 向全部连接写帧（掉线忽略）", () => {
     const written = [];
     const conn = { write: (chunk) => { written.push(chunk); } };

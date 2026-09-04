@@ -93,8 +93,10 @@ export type { FloatBreakpoint, ViewportPoint, RectLike } from "./placement-math.
 // 面板锚点判定同为纯函数，随定位数学一起从单一事实源 re-export。
 export { panelAnchorForPlacement } from "./placement-math.ts";
 // 胶囊位置 UI 配置（#276 方案 A 阶段 3 拆出：纯函数 + 持久化读写）
-export { DEFAULT_UI_CONFIG, normalizeUiConfig, panelTopForAnchor, uiConfigFile, readUiConfig, writeUiConfig, sseData } from "./ui-config.ts";
+export { DEFAULT_UI_CONFIG, normalizeUiConfig, panelTopForAnchor, uiConfigFile, readUiConfig, writeUiConfig } from "./ui-config.ts";
 export type { UiPlacementConfig } from "./ui-config.ts";
+// sseData 已收敛 shared/host-utils.js（#472）：单独改指共享层，导出面保持不变
+export { sseData } from "../../../shared/host-utils.js";
 // 用户适配器持久化（#276 方案 A 阶段 3 拆出：清单/启用状态读写 + add 文件校验）
 export { userAdaptersFile, adapterStateFile, parseUserAdapters, readUserAdapters, readAdapterState, resolveAddAdapterFile } from "./user-adapters.ts";
 export type { UserAdapterRecord } from "./user-adapters.ts";

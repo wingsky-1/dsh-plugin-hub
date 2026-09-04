@@ -37,6 +37,13 @@ try {
   const kindsRoute = routes.find((r) => r.path === ROUTES.kinds);
   assert.ok(configRoute && eventsRoute && healthRoute && testRoute && historyRoute && statusRoute && kindsRoute, "七条路由已注册（M2 增 status/kinds）");
 
+  // #472 收敛锚定：sseData 收敛 shared/host-utils.js 后 notifier 导出面不变——
+  // lib/index.js 不得新增 sseData 导出（现状从不导出，防未来误加导出面漂移）。
+  {
+    const lib = await import("../lib/index.js");
+    assert.ok(!("sseData" in lib), "lib/index.js 不得可见 sseData（notifier 从不导出该符号）");
+  }
+
   // 403（J1）——含 M2 新路由（围栏必项，评审缺口项）
   for (const route of [configRoute, eventsRoute, healthRoute, testRoute, historyRoute, statusRoute, kindsRoute]) {
     const { rec, res } = makeRes();

@@ -170,8 +170,8 @@ export type {
   DisabledToolsMap,
 } from "./middleware.ts";
 // 路由
-export { ROUTES, makeRoutes, makeEventsRoute, makeHealthRoute, sseData, uiConfigChangedFrame, broadcastFrame, SSE_HEARTBEAT_MS, SSE_PING_FRAME } from "./routes.ts";
+export { ROUTES, makeRoutes, makeEventsRoute, makeHealthRoute, uiConfigChangedFrame, broadcastFrame, SSE_HEARTBEAT_MS, SSE_PING_FRAME } from "./routes.ts";
 export { SCOPE_GLOBAL, SCOPE_PROJECT, normalizeScope } from "./scope.ts";
-// 仓库共享层（loopback 围栏 / writeJson / readJsonBody）
+// 仓库共享层（loopback 围栏 / writeJson / readJsonBody / sseData）
 export { isLoopbackRequest } from "../../../shared/loopback.js";
-export { writeJson, readJsonBody } from "../../../shared/host-utils.js";
+export { writeJson, readJsonBody, sseData } from "../../../shared/host-utils.js";

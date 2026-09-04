@@ -85,8 +85,3 @@ export async function writeUiConfig(root: string, cfg: UiPlacementConfig): Promi
   await writeFile(tmp, JSON.stringify(normalizeUiConfig(cfg)), { mode: 0o600 });
   await rename(tmp, file);
 }
-
-/** 序列化一帧 SSE data 行（同 dsh-mcp-manager 的 sseData 语义）。 */
-export function sseData(payload: unknown): string {
-  return `data: ${JSON.stringify(payload)}\n\n`;
-}
