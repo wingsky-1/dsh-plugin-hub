@@ -2175,6 +2175,43 @@ const main = async () => {
     assert.match(rendered[0].text, /已截断/, "长结果截断标注");
   });
 
+  check("buildToolDefinition：#512 投影收敛（isError 抛错 + 无 content 兜底 + 白名单）", async () => {
+    const server = normalizeServer({ name: "demo", transport: "stdio", command: "npx" });
+    // isError:true → throw，文案 = extractText(content)（占位符渲染）+ 截断链路。
+    const errDef = buildToolDefinition(
+      { callTool: async () => ({ content: [{ type: "text", text: "远端故障" }], isError: true, _meta: { t: 1 } }) },
+      { name: "err", description: "d", inputSchema: {} },
+      server,
+    );
+    await assert.rejects(() => errDef.execute({}, { signal: { aborted: false } }), /远端故障/, "isError:true 抛错含远端文本");
+    // isError:false → 白名单收敛：isError/_meta 不进返回值（additionalProperties:false 契约）。
+    const okDef = buildToolDefinition(
+      { callTool: async () => ({ content: [{ type: "text", text: "ok" }], isError: false, _meta: { t: 1 } }) },
+      { name: "ok", description: "d", inputSchema: {} },
+      server,
+    );
+    const okValue = await okDef.execute({}, { signal: { aborted: false } });
+    assert.deepEqual(Object.keys(okValue).sort(), ["content"], "isError:false/_meta 不外泄，仅 content");
+    assert.equal(Object.hasOwn(okValue, "isError"), false);
+    assert.equal(Object.hasOwn(okValue, "_meta"), false);
+    // 无 content → toolResult JSON 兜底；空对象 → "(no output)"。
+    const trDef = buildToolDefinition(
+      { callTool: async () => ({ toolResult: { ok: 1 } }) },
+      { name: "tr", description: "d", inputSchema: {} },
+      server,
+    );
+    const trValue = await trDef.execute({}, { signal: { aborted: false } });
+    assert.equal(trValue.content[0].text, '{"ok":1}', "toolResult 形态 JSON 兜底");
+    const emptyDef = buildToolDefinition(
+      { callTool: async () => ({}) },
+      { name: "empty", description: "d", inputSchema: {} },
+      server,
+    );
+    const emptyValue = await emptyDef.execute({}, { signal: { aborted: false } });
+    assert.equal(emptyValue.content[0].text, "(no output)", "空对象兜底 (no output)");
+  });
+
+
   // ---------- pre-step 目录注入（history-based 去重，复刻官方 tool-skill 语义）
 
   // 模拟 agent：session.snapshotEvents() 持久化 + surface 可见性（与真实 agent 同构；
