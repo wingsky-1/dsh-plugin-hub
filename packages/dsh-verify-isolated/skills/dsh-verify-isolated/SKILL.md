@@ -67,6 +67,15 @@ bash "$SKILL_BASE/scripts/verify-isolated.sh" --port 0 --browser <插件包路�
 bash "$SKILL_BASE/scripts/verify-isolated.sh" --dsh /opt/dsh-0.1.2-alpha.2/bin/dsh --port 0 <插件包路径>
 ```
 
+插件参数（`--` 之后或直接位置参数）接受两种形态，脚本经
+`resolve-pkg-paths.mjs` 统一归一化（#517 C11）：
+
+- **本地插件路径**（推荐，worktree 根执行时写相对路径即可）：相对路径基于当前
+  cwd 解析为**绝对路径**后挂载——dsh 会把非绝对路径当 git URL 解析、报
+  `Repository not found` 迷惑错误，脚本已自动规避；绝对路径原样使用。
+- **包规格**（npm 包名 / git URL）：原样透传（仅适用 registry 可解析的包；
+  内置 bundle 如 `@deepseek-ai/dsh-web-app` 仍需按 §3 手动注入，不走 add）。
+
 若注入的 base 不可用或不确信，先自证脚本位置再执行
 （`ls "$SKILL_BASE/scripts/verify-isolated.sh"`），或直接用 glob 全局搜索
 `verify-isolated.sh` 取其真实绝对路径——脚本从任意 cwd 以绝对路径调用

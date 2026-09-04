@@ -36,7 +36,9 @@
 #   --no-build 跳过挂载前的 pnpm build（默认会构建每个插件，保证 lib/ 或 dist/
 #              产物存在）；此时校验产物存在（缺失即报可操作错误），并对比 src/
 #              与产物的 mtime，源码更新即给陈旧警告（防「存在但陈旧」锚定旧版本）
-#   --         之后的位置参数为要挂载的本地插件路径（相对路径基于当前 cwd 解析）
+#   --         之后的位置参数为要挂载的插件：本地插件路径（相对/绝对；相对路径
+#              基于当前 cwd 解析为绝对路径，规避 dsh 把非绝对路径当 git URL
+#              解析——#517 C11）或包规格（npm 包名/git URL 原样透传）
 #
 # 示例（在插件仓库根执行）：
 #   verify-isolated.sh packages/dsh-mcp-manager
@@ -133,14 +135,24 @@ node -e '
   fs.writeFileSync(p, JSON.stringify(j, null, 2));
 ' "$DSH_HOME/profiles/$PROFILE/package.json"
 
-# 4. 挂载本地插件（相对路径基于当前 cwd，dsh 官方会锚定到调用目录；绝对路径原样使用）
+# 4. 挂载本地插件：先经 resolve-pkg-paths.mjs 归一化全部参数——**相对路径基于
+#    当前 cwd 取绝对路径**（dsh 会把非绝对路径当 git URL 解析、报 `Repository
+#    not found` 迷惑错误，#517 C11）；npm 包名/git URL 等包规格原样透传。
 if [[ ${#PKGS[@]} -gt 0 ]]; then
+  # 单次调用解析全部参数（替代逐包 node -e 子进程），输出每行一个归一化结果
+  PKGS_ABS=()
+  while IFS= read -r p; do PKGS_ABS+=("$p"); done < <(
+    node "$SCRIPT_DIR/resolve-pkg-paths.mjs" -- "${PKGS[@]}"
+  )
   # dsh 直读构建产物（hub 的 lib/、xiaozhuge 的 dist/），不 build 则 link 到的
   # 源码目录缺产物、启动即 ERR_MODULE_NOT_FOUND
-  for pkg in "${PKGS[@]}"; do
-    # 相对路径基于当前 cwd 取绝对路径：node path.resolve 替代 GNU realpath -m
-    # （BSD/macOS 的 realpath 无 -m）
-    pkg_abs="$(node -e 'console.log(require("node:path").resolve(process.argv[1]))' "$pkg")"
+  for pkg_abs in "${PKGS_ABS[@]}"; do
+    # 插件目录须存在且为合法包（目录不存在/非插件目录给可操作错误，不等
+    # dsh 的迷惑报错；包规格（npm 名/git URL）跳过本校验原样传给 dsh）
+    if [[ ! -f "$pkg_abs/package.json" ]]; then
+      echo "跳过: 非本地插件目录（无 package.json）: $pkg_abs（若为包名/git URL 将原样传给 dsh）"
+      continue
+    fi
     if [[ "$BUILD" -eq 1 ]]; then
       if [[ -f "$pkg_abs/package.json" ]] && grep -q '"build"' "$pkg_abs/package.json"; then
         echo "构建插件: $pkg_abs"
@@ -182,7 +194,13 @@ if [[ ${#PKGS[@]} -gt 0 ]]; then
       ' "$pkg_abs"
     fi
   done
-  "$DSH_ABS" plugin --profile "$PROFILE" add "${PKGS[@]}" >/dev/null
+  # add 统一用归一化后的绝对路径数组（相对路径在 dsh 侧会被当 git URL）
+  if ! "$DSH_ABS" plugin --profile "$PROFILE" add "${PKGS_ABS[@]}" >/dev/null; then
+    echo "错误: dsh plugin add 失败（已传入归一化路径）:" >&2
+    for p in "${PKGS_ABS[@]}"; do echo "  - $p" >&2; done
+    echo "       相对路径已按当前 cwd 解析为绝对路径（#517 C11）；请核对插件路径/包名" >&2
+    exit 1
+  fi
 fi
 
 # 5. 启动独立浏览器实例（--browser）：独立 user-data-dir + 自选空闲调试端口，

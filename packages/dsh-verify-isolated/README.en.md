@@ -41,12 +41,13 @@ built-in skill and becomes available to all sessions in the profile (check with
 - **One-shot script** `skills/dsh-verify-isolated/scripts/verify-isolated.sh`: validate the
   dsh entry and print its version (`--dsh` pins the target dsh version) → create temp
   DSH_HOME → create profile (explicit `plugin list` init) → inject web-app bundle →
-  build and link local plugins (`--no-build` validates artifact presence + staleness
-  warning) → (optionally `--browser`) launch a dedicated browser instance → start
-  (explicit `--host 127.0.0.1` loopback + `DSH_TELEMETRY_DISABLED=1` telemetry off) →
-  readiness probe → unified trap cleanup on exit (dsh process + browser process +
-  user-data-dir + DSH_HOME, no leftovers); `--port 0` auto-detects the real free port
-  (no longer prints an invalid 0).
+  normalize plugin args via `resolve-pkg-paths.mjs` (relative paths → absolute against
+  cwd; package specs pass through; #517 C11) → build and link local plugins (`--no-build`
+  validates artifact presence + staleness warning) → (optionally `--browser`) launch a
+  dedicated browser instance → start (explicit `--host 127.0.0.1` loopback +
+  `DSH_TELEMETRY_DISABLED=1` telemetry off) → readiness probe → unified trap cleanup on
+  exit (dsh process + browser process + user-data-dir + DSH_HOME, no leftovers);
+  `--port 0` auto-detects the real free port (no longer prints an invalid 0).
 
 ## Package layout
 
@@ -54,6 +55,7 @@ built-in skill and becomes available to all sessions in the profile (check with
 skills/dsh-verify-isolated/
   SKILL.md                        # skill definition (frontmatter name=dsh-verify-isolated)
   scripts/verify-isolated.sh      # one-shot isolated verification script (--dsh / --browser / --port 0 / --keep / --no-build)
+  scripts/resolve-pkg-paths.mjs   # plugin arg normalizer (relative path → absolute; package spec passthrough; #517 C11)
   scripts/browser-driver.mjs      # self-contained browser driver (raw CDP, zero deps, --json atomic CLI)
 cordis.patch.yml                  # reuses official dsh-skill-filesystem + bundledSkillDir
 lib/index.js                      # host gate export (name + empty apply)
@@ -77,6 +79,11 @@ bash "$SKILL_BASE/scripts/verify-isolated.sh" --port 0 --browser <plugin-package
 # prevents PATH drift)
 bash "$SKILL_BASE/scripts/verify-isolated.sh" --dsh /opt/dsh-0.1.2-alpha.2/bin/dsh --port 0 <plugin-package-path>
 ```
+
+Plugin arguments accept either **local plugin paths** (relative paths are resolved to
+absolute paths against the current cwd before mounting — dsh otherwise parses a
+non-absolute path as a git URL; #517 C11) or **package specs** (npm package names /
+git URLs pass through unchanged).
 
 Browser instance operations (instance info in `$DSH_HOME/browser.state`; the command
 contract is in `browser-driver.mjs --help`. **Page-operation commands need Node ≥22** —
