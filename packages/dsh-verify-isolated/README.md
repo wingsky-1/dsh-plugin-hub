@@ -46,8 +46,11 @@ dsh plugin --profile web add @wingsky-1/dsh-verify-isolated
   **B4** 可选隔离审计 `--audit`——对比隔离 `$ISOLATED_HOME` 写面与预置白名单
   （版本化 `WHITELIST_V`，`scripts/lib/audit.mjs` 纯函数），白名单外新增/删除/修改
   与越界 symlink 报「可疑」、**不阻断退出**（`--audit-extra-dirs <dir>` 可加额外
-  审计目录；局限：不扫真实 home；`--keep` 落 `$DSH_HOME/audit/audit.json`，否则
-  并入 verdict 的 `audit` 字段）；`--json` 时 stdout 只出最终 verdict JSON。退出码
+  审计目录，必须是目录；局限：不扫真实 home；白名单含 dsh 自身写面
+  `.credentials.yaml`/`storages/**`，随版本漂移的官方 bundle link 由就绪后 t0
+  基线覆盖——审计面 = 就绪后运行期增量写面；`--keep` 落
+  `$DSH_HOME/audit/audit.json`，否则随 `--json` 终态 verdict 输出 `audit` 字段）；
+  `--json` 时 stdout 只出最终 verdict JSON。退出码
   契约：0 正常 / 1 启动或就绪失败 / 2 参数错误 / 130 SIGINT / 143 SIGTERM。
 
 ## 包结构

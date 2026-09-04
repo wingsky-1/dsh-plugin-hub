@@ -114,18 +114,25 @@ cleanup 字段（`"done"`/`"kept"`）；端口实际绑定解析 dsh.log 端口�
 **B4 隔离审计（`--audit`）**：可选开启，对比隔离 `$DSH_HOME` 写面与**预置白名单**
 （版本化 `WHITELIST_V`，模式数组随 `scripts/lib/audit.mjs` 分发、smoke 断言存在）：
 白名单外的新增/删除/修改报「可疑」（纯 stat 路径级，不读内容）；白名单内变化
-忽略（dsh 重写 settings 是常态）；未知顶层路径 → 可疑。**symlink 防逃逸**：快照
-lstat 不跟随；`t1` 时**新增的**或**目标变化**且 resolve 后在 `$ISOLATED_HOME` 外的
-symlink 报「越界 symlink」（防插件经 symlink 写回主 checkout），`t0` 已存在且
-目标未变的外部 symlink（`link:` 挂载点，合法）不报；防逃逸优先于白名单——
-`profiles/**` 内新增越界 symlink 同样报。**局限**：只扫 `$ISOLATED_HOME` 子树 +
-`--audit-extra-dirs <dir>`（可重复，相对路径基于 cwd 绝对化）指定的额外目录，
-**不扫真实 home**。时序：`t0` 基线在挂载（link: symlink）之后、脚本自身写面
-（browser.state/verdict/evidence 内容/audit 落盘）之前；审计插在退出清理序列
-「kill dsh → browser quit → **审计** → verdict 终态 → rm」之间，**不阻断退出**
-（审计是补充非门禁，退出码契约不变）；`--keep` 时报告落
-`$DSH_HOME/audit/audit.json`，否则并入 verdict JSON 的 `audit` 字段；`--json` 时
-同样并入 stdout 的最终 verdict（错误路径的错误 JSON 也带 `audit` 字段）。
+忽略（dsh 重写 settings 是常态）；未知顶层路径 → 可疑。白名单分工：
+`profiles/**`、`*.json/*.jsonl/*.log`、`.credentials.yaml`、`browser.state`、
+`browser-profile/**`（整树白名单 + 跳过深扫）、`evidence/**`、`audit/**`、
+`storages/**`（dsh 官方存储写面）、`dsh.log`、`verdict.json`；随 dsh 版本漂移的
+面（如 profiles/node_modules/** 官方 bundle link）由 **t0 动态基线**覆盖（见下）。
+**symlink 防逃逸**：快照 lstat 不跟随；`t1` 时**新增的**或**目标变化**且 resolve
+后在**所在扫描根**（`$ISOLATED_HOME` 或 `--audit-extra-dirs` 目录）外的 symlink
+报「越界 symlink」（防插件经 symlink 写回主 checkout），`t0` 已存在且目标未变的
+外部 symlink（`link:` 挂载点，合法）不报；防逃逸优先于白名单——`profiles/**` 内
+新增越界 symlink 同样报。**局限**：只扫 `$ISOLATED_HOME` 子树 +
+`--audit-extra-dirs <dir>`（可重复，相对路径基于 cwd 绝对化、必须是目录）指定的
+额外目录，**不扫真实 home**。时序：`t0` 基线在**就绪断言成功之后**（dsh 启动期
+自身写面与官方 bundle link 进基线——语义为「**就绪后运行期写面审计**」，审计面 =
+dsh 就绪后、退出前的增量写面；verdict 中间态在其后写入，先扫后写 + 白名单双
+保险）；审计插在退出清理序列「kill dsh → browser quit → **审计** → verdict 终态
+→ rm」之间，**不阻断退出**（审计是补充非门禁，退出码契约不变）；就绪前退出/
+超时路径不审计（`audit` 为 null）；`--keep` 时报告落 `$DSH_HOME/audit/audit.json`，
+否则随 `--json` 终态 verdict 输出（stdout `audit` 字段；错误路径错误 JSON 恒带
+`audit` 字段，与 verdict 对齐）。
 
 **退出码契约**：0 正常完成 / 1 启动或就绪失败（profile 初始化失败、add 失败、
 dsh 就绪前退出、15s 就绪超时）/ 2 参数错误（未知选项、缺参、找不到 dsh 入口、

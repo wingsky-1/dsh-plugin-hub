@@ -99,22 +99,33 @@ sequenceDiagram
 是常态；未知顶层路径 → 可疑）：
 
 ```text
-profiles/**、*.json/*.jsonl/*.log（仅顶层）、browser.state、browser-profile/**（整树白名单 + 跳过深扫）、
-evidence/**、audit/**、dsh.log、verdict.json
+profiles/**、*.json/*.jsonl/*.log（仅顶层）、.credentials.yaml、browser.state、
+browser-profile/**（整树白名单 + 跳过深扫）、evidence/**、audit/**、storages/**（dsh 官方存储写面）、
+dsh.log、verdict.json
 ```
 
+**白名单分工**：静态白名单覆盖 dsh 固定写面（`.credentials.yaml` /
+`storages/**`）与脚本/官方形态写面；随 dsh 版本漂移的面（如
+`profiles/node_modules/**` 官方 bundle link，指向真实 dsh 安装目录、越界但合法）
+由 **t0 动态基线**覆盖——就绪后扫描进基线，t0 已存在且目标未变的外部 symlink
+（`link:` 挂载点）合法不报。
+
 - **symlink 防逃逸**：快照 lstat 不跟随（不读链接目标内容）；`t1` 时**新增的**或
-  **目标变化**且 resolve 后在 `$ISOLATED_HOME` 外的 symlink 报「越界 symlink」（防
-  插件经 symlink 写回主 checkout）；`t0` 已存在且目标未变的外部 symlink（`link:`
-  挂载点，profile node_modules 全 link: 是挂载机制本身）合法不报。防逃逸优先于
-  白名单——`profiles/**` 内新增越界 symlink 同样报。
-- **时序**：`t0` 基线在挂载（link: symlink 进基线）之后、脚本自身写面
-  （browser.state / verdict / evidence 内容 / audit 落盘）之前；审计 diff 插在
+  **目标变化**且 resolve 后在**所在扫描根**（`$ISOLATED_HOME` 或
+  `--audit-extra-dirs` 目录）外的 symlink 报「越界 symlink」（防插件经 symlink
+  写回主 checkout）；`t0` 已存在且目标未变的外部 symlink（`link:` 挂载点，profile
+  node_modules 全 link: 是挂载机制本身）合法不报。防逃逸优先于白名单——
+  `profiles/**` 内新增越界 symlink 同样报。
+- **时序**：`t0` 基线在**就绪断言成功之后**（dsh 启动期自身写面与官方 bundle link
+  进基线——语义为「就绪后运行期写面审计」，审计面 = 就绪后、退出前的增量写面；
+  verdict 中间态在其后写入，先扫后写 + 白名单双保险）；审计 diff 插在
   settle「kill dsh → browser quit → **审计** → verdict 终态 → rm」；
-  `--keep` 落 `$ISOLATED_HOME/audit/audit.json`，否则并入 verdict JSON（`audit`
-  字段，`--json` 的 stdout 终态同样并入）。
+  `--keep` 落 `$ISOLATED_HOME/audit/audit.json`，否则随 `--json` 终态 verdict
+  输出 `audit` 字段（错误路径错误 JSON 恒带 `audit` 字段与 verdict 对齐）；
+  就绪前退出/超时路径 auditBaseline 为 null → 审计跳过不报。
 - **局限**：只扫 `$ISOLATED_HOME` 子树 + `--audit-extra-dirs <dir>`（可重复，相对
-  路径基于 cwd 绝对化，与 DSH_HOME 重叠报参数错误）指定目录，**不扫真实 home**。
+  路径基于 cwd 绝对化、必须是目录，与 DSH_HOME 重叠报参数错误）指定目录，
+  **不扫真实 home**。
 - **不阻断退出**：审计是补充非门禁——可疑项只输出「审计: N 项可疑」结论，退出码
   契约 0/1/2/130/143 不变；审计异常仅警告（verdict audit 字段带 error）。
 

@@ -59,10 +59,15 @@ built-in skill and becomes available to all sessions in the profile (check with
   (versioned `WHITELIST_V`, pure functions in `scripts/lib/audit.mjs`); additions/
   deletions/modifications outside the whitelist plus escaping symlinks are
   reported as "suspicious" and **do not block exit** (`--audit-extra-dirs <dir>`
-  adds extra audited dirs; limitation: real home is never scanned; `--keep`
-  writes `$DSH_HOME/audit/audit.json`, otherwise the result is merged into the
-  verdict's `audit` field); `--json` emits only the final verdict JSON on
-  stdout. Exit-code contract: 0 OK / 1 startup-or-readiness failure /
+  adds extra audited dirs, must be a directory; limitation: real home is never
+  scanned; the whitelist covers dsh's own write surface (`.credentials.yaml` /
+  `storages/**`) while version-drifted surfaces such as the official
+  `profiles/node_modules/**` bundle links are captured by the post-readiness t0
+  baseline — the audit surface is the incremental write surface of the runtime;
+  `--keep` writes `$DSH_HOME/audit/audit.json`, otherwise the result is carried
+  in the final verdict's `audit` field, and error-path JSON always carries an
+  `audit` field aligned with the verdict); `--json` emits only the final verdict
+  JSON on stdout. Exit-code contract: 0 OK / 1 startup-or-readiness failure /
   2 argument error / 130 SIGINT / 143 SIGTERM.
 
 ## Package layout
