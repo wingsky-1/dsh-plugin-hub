@@ -683,3 +683,135 @@ function makeHost(serversByRoot = new Map()) {
   );
   await mw3.dispose();
 }
+
+// ---- #512：callTool 远端结果投影收敛（isError/_meta 不泄漏 + 无 content 兜底）----
+{
+  // 模拟宿主 lossless 校验（与 #381 回归同款，递归断言无 undefined 值键/元素）。
+  const assertLossless = (value, path) => {
+    if (value === undefined) throw new Error(`lossless 违规：${path} 为 undefined`);
+    if (value === null || typeof value !== "object") return;
+    if (Array.isArray(value)) {
+      value.forEach((item, i) => assertLossless(item, `${path}[${i}]`));
+      return;
+    }
+    for (const [key, entry] of Object.entries(value)) assertLossless(entry, `${path}.${key}`);
+  };
+
+  async function withFakeClient(remoteResult, { stale = false } = {}) {
+    const servers = [{ name: "py", transport: "stdio", command: "python", enabled: true }];
+    const { host } = makeHost(new Map([[ROOT, servers]]));
+    const mw = new McpMiddleware(host, {});
+    const unit = {
+      root: ROOT,
+      connections: new Map(),
+      catalog: new Map([
+        ["py", {
+          discoveredAt: stale ? Date.now() - CATALOG_TTL_MS - 1000 : Date.now(),
+          tools: new Map([["echo", { description: "回声", inputSchema: { type: "object" } }]]),
+          unavailable: undefined,
+        }],
+      ]),
+      userDisabled: new Set(),
+      lastTouchedAt: Date.now(),
+      inFlight: new Map(),
+    };
+    mw.units.set(ROOT, unit);
+    unit.connections.set("py", {
+      server: servers[0],
+      client: { callTool: async () => remoteResult },
+      transport: { close: () => Promise.resolve() },
+      status: "connected",
+      error: undefined,
+      connectedAt: Date.now(),
+      reconnectTimer: undefined,
+      disposed: false,
+      failedAttempts: 0,
+    });
+    return { mw, dispose: () => mw.dispose() };
+  }
+
+  // Python SDK 形态：成功结果必带 isError:false（+ _meta）→ 不得外泄。
+  {
+    const { mw, dispose } = await withFakeClient({
+      content: [{ type: "text", text: "你好" }],
+      structuredContent: { answer: 42 },
+      isError: false,
+      _meta: { trace: "x" },
+    });
+    const out = await mw.callTool(fullServerName(ROOT, "py"), "echo", {}, undefined);
+    assert.deepEqual(
+      { content: out.content, structuredContent: out.structuredContent },
+      { content: [{ type: "text", text: "你好" }], structuredContent: { answer: 42 } },
+      "#512：isError:false / _meta 不泄漏，白名单字段保留",
+    );
+    assert.equal(Object.hasOwn(out, "isError"), false, "无 isError 键");
+    assert.equal(Object.hasOwn(out, "_meta"), false, "无 _meta 键");
+    assertLossless(out, "#512 输出");
+    await dispose();
+  }
+
+  // isError:true → 抛错（文案含远端错误提示与下一步引导）。
+  {
+    const { mw, dispose } = await withFakeClient({
+      content: [{ type: "text", text: "boom" }],
+      isError: true,
+    });
+    await assert.rejects(
+      () => mw.callTool(fullServerName(ROOT, "py"), "echo", {}, undefined),
+      /远端工具返回错误：.*boom.*ws_mcp_detail/,
+      "isError:true 抛错且文案可归因",
+    );
+    await dispose();
+  }
+
+  // 无 content / 非数组 content → 兜底文本（required content 不落空，lossless 合规）。
+  {
+    const { mw, dispose } = await withFakeClient({ toolResult: { ok: 1 } });
+    const out = await mw.callTool(fullServerName(ROOT, "py"), "echo", {}, undefined);
+    assert.deepEqual(out.content, [{ type: "text", text: '{"ok":1}' }], "toolResult 形态渲染 JSON 兜底");
+    assertLossless(out, "#512 兜底");
+    await dispose();
+  }
+  {
+    const { mw, dispose } = await withFakeClient({});
+    const out = await mw.callTool(fullServerName(ROOT, "py"), "echo", {}, undefined);
+    assert.deepEqual(out.content, [{ type: "text", text: "(no output)" }], "空结果 → (no output) 兜底");
+    await dispose();
+  }
+
+  // stale（目录过期）：前置 hint + 仍走投影（不透传 isError/_meta）。
+  {
+    const { mw, dispose } = await withFakeClient(
+      { content: [{ type: "text", text: "旧结果" }], isError: false, _meta: { t: 1 } },
+      { stale: true },
+    );
+    const out = await mw.callTool(fullServerName(ROOT, "py"), "echo", {}, undefined);
+    assert.equal(out.content.length, 2, "stale 前置 hint");
+    assert.match(out.content[0].text, /本工具目录已过期/);
+    assert.deepEqual(out.content[1], { type: "text", text: "旧结果" });
+    assert.equal(Object.hasOwn(out, "isError"), false, "stale 分支也不泄漏 isError");
+    assert.equal(Object.hasOwn(out, "_meta"), false, "stale 分支也不泄漏 _meta");
+    assertLossless(out, "#512 stale");
+    await dispose();
+  }
+
+  // 封装 execute 返回 undefined → 不落 structuredContent 键（#381 同源防御）。
+  {
+    const voidTool = {
+      name: "void_op",
+      description: "无返回值",
+      parameters: { type: "object", properties: {} },
+      output: { schema: { type: "object", properties: {}, additionalProperties: false }, render: () => [{ type: "text", text: "done" }] },
+      execute: async () => undefined,
+    };
+    const voidServer = { name: "vd", transport: "stdio", command: "x", enabled: true, toolDefinitions: [voidTool] };
+    const { host } = makeHost(new Map([["@global", [voidServer]]]));
+    const mw = new McpMiddleware(host, {});
+    await mw.projectUnitFor("@global");
+    await mw.ensureConnected("@global", "vd");
+    const out = await mw.callTool(fullServerName("@global", "vd"), "void_op", {}, undefined);
+    assert.equal(Object.hasOwn(out, "structuredContent"), false, "封装 execute 返回 undefined 不落 structuredContent 键");
+    assertLossless(out, "#512 封装 undefined");
+    await mw.dispose();
+  }
+}
