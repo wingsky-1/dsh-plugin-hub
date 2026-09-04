@@ -84,6 +84,7 @@ export const zh = {
   secDnd: "免打扰时段",
   tabLabel: "通知中心",
   save: "保存",
+  saving: "保存中…",
   // ===== M2 频道卡（issue #366）=====
   chEnabled: "启用",
   chDisabled: "未启用",
@@ -258,6 +259,7 @@ export const en: Record<NotifierLocaleKey, string> = {
   secDnd: "Do-not-disturb",
   tabLabel: "Notification center",
   save: "Save",
+  saving: "Saving…",
   chEnabled: "Enabled",
   chDisabled: "Disabled",
   chTest: "Send test",

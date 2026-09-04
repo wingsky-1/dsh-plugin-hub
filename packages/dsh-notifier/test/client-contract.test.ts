@@ -466,3 +466,73 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   // baseline 为 null（加载未完成）→ 空 payload（不误存）
   assert.deepEqual(JSON.parse(JSON.stringify(diffFn(settingsView, null))), {}, "#470 P1-2：baseline null → 空 payload");
 }
+
+// ---- issue #405 PR1：client createSaveGuard（保存串行）真实产物直测 ----
+// 同一时刻仅一个在途保存（tryBegin 在途返回 false 不占用）；在途期间的再次点击
+// 记 pending，由 end() 返回 true 通知调用方补发一次；end 幂等释放、无 pending 时
+// 返回 false（不产生补发风暴）。guard 是模块级纯工厂（无 React 依赖），经
+// apply 挂载面直测——「测试即产品实现」。
+{
+  const clientCode = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+  const sandbox = {
+    console: { ...console, warn: () => {} },
+    Symbol, Object, Array, JSON, Math, Date, Promise,
+    setTimeout, clearTimeout,
+    EventSource: function () {},
+    Notification: function () {},
+    fetch: () => Promise.resolve({ ok: true, json: () => Promise.resolve({}) }),
+    document: {
+      visibilityState: "visible", title: "", hidden: false,
+      addEventListener() {}, removeEventListener() {},
+      getElementById: () => null,
+      createElement: () => ({ appendChild() {}, remove() {}, style: {}, dataset: {} }),
+      head: { appendChild() {} }, body: { appendChild() {} },
+    },
+    localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+    window: {},
+  };
+  sandbox.window = sandbox;
+  let loadedFactory = null;
+  sandbox.window.__ModuleLoader__ = { load(handoff) { loadedFactory = handoff.factory; } };
+  vm.createContext(sandbox);
+  vm.runInContext(clientCode, sandbox);
+  assert.ok(loadedFactory !== null, "#405：产物 load 已注册 factory");
+  const mod = loadedFactory((spec) => {
+    if (spec === "react") return { createElement: () => ({}) };
+    throw new Error(`unexpected require: ${spec}`);
+  });
+  const disposers3 = [];
+  mod.apply({
+    get() { return undefined; },
+    effect(fn) { const d = fn(); disposers3.push(d); return d; },
+  });
+  const guardFactory = mod.apply.createSaveGuard;
+  assert.equal(typeof guardFactory, "function", "#405：apply 挂载 createSaveGuard 纯工厂");
+  for (const d of disposers3.splice(0)) d();
+
+  // 1. 单飞行：首次占用成功；在途期间再 tryBegin 返回 false（记 pending），不占用
+  const g1 = guardFactory();
+  assert.equal(g1.isBusy(), false, "#405：初始空闲");
+  assert.equal(g1.tryBegin(), true, "#405：首次 tryBegin 占用成功");
+  assert.equal(g1.isBusy(), true, "#405：占用后在途");
+  assert.equal(g1.tryBegin(), false, "#405：在途期间 tryBegin 被拒（单飞行）");
+  assert.equal(g1.isBusy(), true, "#405：被拒不改变在途态");
+
+  // 2. trailing 补发意图：在途期间积累过点击 → end() 返回 true（应补发一次）
+  assert.equal(g1.end(), true, "#405：在途期间有 pending → end 返回补发意图");
+  assert.equal(g1.isBusy(), false, "#405：end 后释放空闲");
+
+  // 3. 无 pending：end 返回 false（不产生补发/风暴）
+  const g2 = guardFactory();
+  assert.equal(g2.tryBegin(), true, "#405：g2 占用成功");
+  assert.equal(g2.end(), false, "#405：无 pending → end 返回 false（不补发）");
+
+  // 4. 多次在途点击只记一次 pending（补发一次即清）；end 幂等释放
+  const g3 = guardFactory();
+  g3.tryBegin();
+  g3.tryBegin();
+  g3.tryBegin();
+  assert.equal(g3.end(), true, "#405：多次 pending 合并为一次补发意图");
+  assert.equal(g3.end(), false, "#405：再次 end（无 pending）返回 false");
+  assert.equal(g3.isBusy(), false, "#405：重复 end 幂等释放");
+}

@@ -306,6 +306,16 @@
   .dn-set-card .dn-set-btn:hover,
   .dn-set-card .dn-set-save:hover { opacity: 0.9; }
 }
+/* #405：保存中（guard 在途）禁用态——保存/放弃按钮置灰不可点，hover 不响应 */
+.dn-set-card .dn-set-btn:disabled,
+.dn-set-card .dn-set-save:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+@media (hover: hover) {
+  .dn-set-card .dn-set-btn:disabled:hover,
+  .dn-set-card .dn-set-save:disabled:hover { opacity: 0.45; }
+}
 
 /* --- 免打扰 --- */
 .dn-set-card .dn-dnd {
