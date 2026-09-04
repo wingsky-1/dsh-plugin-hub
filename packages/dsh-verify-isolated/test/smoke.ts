@@ -140,7 +140,9 @@ assert.ok(noArgExitsNonZero, "browser-driver 无参数应非零退出（用法�
   assert.ok(script.includes("AbortSignal.timeout"), "就绪探测带超时（不裸连）");
   assert.ok(script.includes("--no-build 但缺少构建产物"), "--no-build 缺产物报可操作错误");
   assert.ok(script.includes("源码比构建产物新"), "--no-build 陈旧产物 mtime 警告");
-  assert.ok(script.includes("dsh 会把非绝对路径当 git URL 解析"), "脚本注释声明相对路径 git URL 陷阱（#517 C11）");
+  // C11 语义注释在 lib/verify-core.mjs（resolvePkgArg 归属处）
+  const coreSrc = readFileSync(join(SCRIPTS_DIR, "lib", "verify-core.mjs"), "utf8");
+  assert.ok(coreSrc.includes("dsh 会把非绝对路径当 git URL 解析"), "脚本注释声明相对路径 git URL 陷阱（#517 C11）");
 }
 
 // ---- 6c. 子进程退出码实测（不启动 dsh / 浏览器，走 --dsh 不存在与 --help 路径） ----
