@@ -743,6 +743,9 @@ const main = async () => {
   {
     const upPort = 19190, pxPort = 19191;
     const bigBody = JSON.stringify({ data: "y".repeat(300_000) });
+    // issue #528 反向回归：跟踪「上游长连接被销毁」次数（客户端断开后上游 close）。
+    let upstreamSseHoldClosed = 0;
+    let upstreamSseHoldActive = 0;
     const upstream = createServer((req, res) => {
       const p = new URL(req.url ?? "/", "http://x").pathname;
       if (p === "/big") {
@@ -754,6 +757,13 @@ const main = async () => {
       } else if (p === "/sse") {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.end("data: x\n\n");
+      } else if (p === "/sse-hold") {
+        // issue #528：模拟 SSE/长响应——发头 + 首帧后保持连接不 end；客户端断开时
+        // 若代理不销毁上游，本路由 res 的 close 永不触发（残留）→ 计数不增。
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write("data: x\n\n");
+        upstreamSseHoldActive += 1;
+        res.on("close", () => { upstreamSseHoldActive -= 1; upstreamSseHoldClosed += 1; });
       } else if (p === "/pregzip") {
         // 模拟 dsh-gzip 独立包在宿主端已压缩：转发层必须让位（单层）。
         const gz = gzipSync(Buffer.from(bigBody));
@@ -849,6 +859,37 @@ const main = async () => {
       });
       check("转发层：上游中途断连 → 客户端快速终止（不悬挂回归）", () => {
         assert.ok(cut.ms < 4000, `耗时 ${cut.ms}ms（>4s 视作悬挂），结束方式 ${cut.how}`);
+      });
+    }
+    // issue #528 反向回归：客户端断开长响应（SSE 类）→ 代理必须销毁上游连接。
+    // 修复前 proxyResReceived 闸拦截下游断开传播，上游 res close 永不触发
+    // （notifier 连接顶格 16 的根因）；修复后 500ms 内上游收到 close、active 回落。
+    {
+      const upDestroyBefore = proxyOn.connStats().httpUpstreamDestroyed;
+      const openAndDrop = () => new Promise((resolve) => {
+        const req = httpRequest({ host: "127.0.0.1", port: pxPort, path: "/sse-hold", headers: { host: "127.0.0.1" } }, (res) => {
+          res.once("data", () => { req.destroy(); resolve(); }); // 收首帧后客户端断开
+        });
+        req.on("error", () => resolve());
+        req.end();
+      });
+      for (let i = 0; i < 3; i += 1) await openAndDrop();
+      await sleep(500); // 等断连传播到上游（销毁在 ~3ms 内，500ms 富余防 flake）
+      check("转发层：客户端断开 SSE → 上游连接被销毁（issue #528 反向回归）", () => {
+        const delta = proxyOn.connStats().httpUpstreamDestroyed - upDestroyBefore;
+        assert.equal(delta, 3, `httpUpstreamDestroyed 应 +3，实际 +${delta}`);
+        assert.equal(upstreamSseHoldActive, 0, `上游 active SSE 应回落 0，实际 ${upstreamSseHoldActive}`);
+        assert.equal(upstreamSseHoldClosed, 3, `上游 close 计数应 3，实际 ${upstreamSseHoldClosed}`);
+      });
+      // 防误杀回归：正常完整请求（非长连接）断开/完成后不得销毁上游。
+      const upDestroyBefore2 = proxyOn.connStats().httpUpstreamDestroyed;
+      for (let i = 0; i < 5; i += 1) {
+        const r = await requestThrough(pxPort, "/big", { "accept-encoding": "gzip" });
+        assert.equal(r.status, 200);
+      }
+      await sleep(100);
+      check("转发层：完整短请求不触发上游销毁（防误杀）", () => {
+        assert.equal(proxyOn.connStats().httpUpstreamDestroyed, upDestroyBefore2, `正常请求不应 httpUpstreamDestroyed，实际 +${proxyOn.connStats().httpUpstreamDestroyed - upDestroyBefore2}`);
       });
     }
     await proxyOn.close();
