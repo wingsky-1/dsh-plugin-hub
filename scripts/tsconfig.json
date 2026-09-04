@@ -1,0 +1,15 @@
+{
+  // 增量收紧路径：本期仅 verify-docs.ts 入 typecheck 面；其余 gate/build
+  // 脚本入面属后续独立 issue（#474 非目标，勿一次性全量纳入）。
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    // 显式覆写 module 语义：scripts/ 无 package.json，module 语义依赖根
+    // type:module 向上回溯（运气依赖，未来 scripts/ 放 package.json 或 base
+    // 改动即整面翻红）——此处显式固化防漂移（issue #474 R2）。
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": ["node"],
+    "noEmit": true
+  },
+  "include": ["gate/verify-docs.ts"]
+}
