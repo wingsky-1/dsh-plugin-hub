@@ -317,6 +317,24 @@
   .dn-set-card .dn-set-save:disabled:hover { opacity: 0.45; }
 }
 
+/* #405 PR2：频道 tab 域保存行（仅提交 channels 键，与 foot 全量语义不同） */
+.dn-set-card .dn-ch-domainSave {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--dsw-alias-border-l1, #e2e5ea);
+}
+.dn-set-card .dn-ch-domainSaveHint {
+  flex: 1;
+  color: var(--dsw-alias-label-tertiary, #6d7480);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.dn-set-card .dn-ch-domainSave .dn-set-save { min-height: 32px; }
+
 /* --- 免打扰 --- */
 .dn-set-card .dn-dnd {
   border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);

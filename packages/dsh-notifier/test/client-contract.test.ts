@@ -93,9 +93,12 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
 
   // 1. 频道 tab 去就近保存：单一保存入口（foot），且源码/产物/样式三处无 dn-ch-saveRow
-  assert.ok(!src.includes("dn-ch-saveRow"), "#418：频道 tab 就近保存行已移除");
-  assert.ok(!client.includes("dn-ch-saveRow"), "#418：产物无就近保存 class");
-  assert.ok(!src.includes("tabSave"), "#418：tabSave 变量已移除");
+  //    ——#418 移除的是「双份全量保存」的旧行（dn-ch-saveRow）；#405 后按方案定稿
+  //    引入的域保存行 class 为 dn-ch-domainSave（仅提交 channels 键，语义 ≠ 全量），
+  //    属 #418 原文预留的「域级拆分后按域重排按钮位置」兑现，不构成该回归。
+  assert.ok(!src.includes("dn-ch-saveRow"), "#418：旧就近保存行 class 未回归");
+  assert.ok(!client.includes("dn-ch-saveRow"), "#418：产物无旧就近保存 class");
+  assert.ok(!src.includes("tabSave"), "#418：tabSave 变量未回归");
   // 2. 浏览器通知权限状态行移入浏览器频道卡（browserPermLine 只挂在 browser 卡）
   assert.ok(src.includes("browserPermLine"), "#418：浏览器权限状态行归入频道卡");
   assert.ok(src.includes('channelId === "browser" ? browserPermLine()'), "#418：权限行只渲染于浏览器卡");
@@ -507,32 +510,64 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
     effect(fn) { const d = fn(); disposers3.push(d); return d; },
   });
   const guardFactory = mod.apply.createSaveGuard;
+  const domainFn = mod.apply.domainPayload;
   assert.equal(typeof guardFactory, "function", "#405：apply 挂载 createSaveGuard 纯工厂");
+  assert.equal(typeof domainFn, "function", "#405：apply 挂载 domainPayload 纯函数");
   for (const d of disposers3.splice(0)) d();
+
+  // domainPayload：域过滤语义（#405 PR2）——channels 域只提 channels 键；
+  // all 原样；未知入口空对象
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(domainFn({ channels: [1], notifyAsk: false, quietHours: {} }, "channels"))),
+    { channels: [1] },
+    "#405：channels 域只提交 channels 键（事件/参数草稿不随域保存提交）"
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(domainFn({ notifyAsk: false }, "channels"))),
+    {},
+    "#405：无 channels 变更时 channels 域提交为空"
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(domainFn({ channels: [1], notifyAsk: false }, "all"))),
+    { channels: [1], notifyAsk: false },
+    "#405：all 入口原样全量提交"
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(domainFn({ channels: [1] }, "unknown"))),
+    {},
+    "#405：未知入口保守返回空（不提交）"
+  );
 
   // 1. 单飞行：首次占用成功；在途期间再 tryBegin 返回 false（记 pending），不占用
   const g1 = guardFactory();
   assert.equal(g1.isBusy(), false, "#405：初始空闲");
-  assert.equal(g1.tryBegin(), true, "#405：首次 tryBegin 占用成功");
+  assert.equal(g1.tryBegin("all"), true, "#405：首次 tryBegin 占用成功");
   assert.equal(g1.isBusy(), true, "#405：占用后在途");
-  assert.equal(g1.tryBegin(), false, "#405：在途期间 tryBegin 被拒（单飞行）");
+  assert.equal(g1.tryBegin("all"), false, "#405：在途期间 tryBegin 被拒（单飞行）");
   assert.equal(g1.isBusy(), true, "#405：被拒不改变在途态");
 
-  // 2. trailing 补发意图：在途期间积累过点击 → end() 返回 true（应补发一次）
-  assert.equal(g1.end(), true, "#405：在途期间有 pending → end 返回补发意图");
+  // 2. trailing 补发入口：在途期间积累过点击 → end() 返回该入口（应同入口补发一次）
+  assert.equal(g1.end(), "all", "#405：在途期间有 pending → end 返回补发入口");
   assert.equal(g1.isBusy(), false, "#405：end 后释放空闲");
 
-  // 3. 无 pending：end 返回 false（不产生补发/风暴）
+  // 3. 无 pending：end 返回 null（不产生补发/风暴）
   const g2 = guardFactory();
-  assert.equal(g2.tryBegin(), true, "#405：g2 占用成功");
-  assert.equal(g2.end(), false, "#405：无 pending → end 返回 false（不补发）");
+  assert.equal(g2.tryBegin("all"), true, "#405：g2 占用成功");
+  assert.equal(g2.end(), null, "#405：无 pending → end 返回 null（不补发）");
 
-  // 4. 多次在途点击只记一次 pending（补发一次即清）；end 幂等释放
+  // 4. 域入口保真：被拒的是 "channels" → end 返回 "channels"（域保存不被升级成全量）
   const g3 = guardFactory();
-  g3.tryBegin();
-  g3.tryBegin();
-  g3.tryBegin();
-  assert.equal(g3.end(), true, "#405：多次 pending 合并为一次补发意图");
-  assert.equal(g3.end(), false, "#405：再次 end（无 pending）返回 false");
+  g3.tryBegin("all");
+  assert.equal(g3.tryBegin("channels"), false, "#405：在途期间域保存被拒");
+  assert.equal(g3.end(), "channels", "#405：end 返回最后一次被拒入口 channels");
+  assert.equal(g3.end(), null, "#405：再次 end（无 pending）返回 null");
   assert.equal(g3.isBusy(), false, "#405：重复 end 幂等释放");
+
+  // 5. 多次不同入口点击：记最后一次意图
+  const g4 = guardFactory();
+  g4.tryBegin("all");
+  g4.tryBegin("channels");
+  g4.tryBegin("all");
+  assert.equal(g4.end(), "all", "#405：多次被拒记最后一次入口");
+  assert.equal(g4.end(), null, "#405：清空后再 end 返回 null");
 }

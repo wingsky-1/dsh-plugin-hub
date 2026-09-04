@@ -85,6 +85,8 @@ export const zh = {
   tabLabel: "通知中心",
   save: "保存",
   saving: "保存中…",
+  saveChannels: "保存频道",
+  channelsDomainHint: "仅保存频道改动，不影响事件/参数等未保存修改",
   // ===== M2 频道卡（issue #366）=====
   chEnabled: "启用",
   chDisabled: "未启用",
@@ -260,6 +262,8 @@ export const en: Record<NotifierLocaleKey, string> = {
   tabLabel: "Notification center",
   save: "Save",
   saving: "Saving…",
+  saveChannels: "Save channels",
+  channelsDomainHint: "Saves channel changes only; other unsaved edits stay untouched",
   chEnabled: "Enabled",
   chDisabled: "Disabled",
   chTest: "Send test",
