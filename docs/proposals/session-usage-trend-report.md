@@ -1,6 +1,6 @@
 # 提案：dsh 会话用量「日/周/月」趋势与定时报表
 
-- 状态：待评审（头脑风暴定稿；经独立子 agent 对抗评审 + 两轮路线讨论，定稿为「事件为唯一事实来源」路线）
+- 状态：**方案复核通过，待维护者 approved 后实施**（头脑风暴定稿 → 三轮独立对抗评审：v1.0 文件路线证伪、v1.1 会话路线否决、v1.2 `ctx.llm.stream` 路线复核通过；issue #503）
 - 落点：扩展 `dsh-provider-usage` 包（用量入口统一；趋势逻辑独立为包内 `src/trend/` 模块，不与 v2 适配器契约耦合）
 - 目标：
   1. 统计「日 / 周 / 月 × 各模型适配器（provider，细到 model 可选）」的 token 消耗与调用次数；
@@ -161,6 +161,8 @@ session/event（官方契约，唯一事实来源）
 | v1.0 | 插件直连模型 API（endpoint + key） | 有「新增网络出口 + 凭据使用面」安全红线 |
 | v1.1 | `ctx.agents.create` + `followup` 发起报告会话 | 对抗复核否决：无内置无工具 preset、会话权限继承部署 defaultPreset（实际 danger-full-access）、崩溃孤儿不被 idle-archive 归档（明确跳过 origin==='subagent'）、dispose 语义与文件归宿需实测 |
 | **v1.2（定稿）** | **`ctx.llm.stream(GenerateOptions)`** | 一击式流式调用：`provider/model` 取自 dsh 已注册适配器路由，`messages/system` 直传，`tools` 不传即无工具面，chunk 自带 `type:'usage'` 可自行记账 |
+
+> **复核结论（第三轮，2026-09-04）**：v1.2 路线复核通过。证据：`@deepseek-ai/dsh-llm` 官方类型层声明 `ctx.llm: LlmRuntime`（cordis `Context` 合并）与 `stream(GenerateOptions): AsyncIterable<StreamChunk>`（`tools` 不传即无工具面；`purpose` 枚举不含报告用途故留空）；`GenerateOptions.provider` 须为已注册适配器路由。注入面收敛：prompt 只传数值与匿名会话 id，敏感文本由插件事后回填。 |
 
 定稿要点：
 
