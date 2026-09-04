@@ -32,6 +32,7 @@ import "./unit-detect.test.ts";
 import "./unit-refresh-revalidate.test.ts";
 import "./unit-deepseek-official.test.ts";
 import "./unit-fetch-timeout.test.ts";
+import "./unit-trend.test.ts";
 
 import {
   apply,
@@ -47,6 +48,7 @@ import {
   normalizeRangeDay,
   panelCacheKey,
   isPanelCacheStale,
+  dayKey,
 } from "../lib/index.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -90,6 +92,9 @@ function fakeReq(overrides = {}) {
 
 function makeFakeCtx(overrides = {}) {
   const routes = [];
+  // #503：事件监听表（ctx.on 注册 / emitEvent 派发）与 effect disposer 收集
+  const listeners = new Map();
+  const effects = [];
   const ctx = {
     logger: { warn: () => {}, info: () => {} },
     webServer: {
@@ -108,11 +113,25 @@ function makeFakeCtx(overrides = {}) {
     },
     effect(fn) {
       const disposer = fn();
-      return typeof disposer === "function" ? disposer : () => {};
+      effects.push(typeof disposer === "function" ? disposer : () => {});
+      return effects.at(-1);
+    },
+    on(event, fn) {
+      const arr = listeners.get(event) ?? [];
+      arr.push(fn);
+      listeners.set(event, arr);
+      return () => {
+        const cur = listeners.get(event) ?? [];
+        const i = cur.indexOf(fn);
+        if (i >= 0) cur.splice(i, 1);
+      };
     },
     ...overrides,
   };
-  return { ctx, routes };
+  const emitEvent = (event, ...args) => {
+    for (const fn of [...(listeners.get(event) ?? [])]) fn(...args);
+  };
+  return { ctx, routes, listeners, effects, emitEvent };
 }
 
 // ---------------------------------------------------------------- enabled 开关
@@ -1374,6 +1393,61 @@ export function formatPanel(input) {
 }
 
 console.log("[smoke] #105① /history 渲染缓存断言全部通过 ✓");
+
+// ---------------------------------------------------------------- #503 M1：trend 挂接（apply 集成）
+
+{
+  const { ctx, routes, listeners, emitEvent } = makeFakeCtx();
+  await apply(ctx, { ...ISOLATED_CONFIG });
+  assert.ok((listeners.get("session/event") ?? []).length === 1, "session/event 监听已注册");
+  assert.ok((listeners.get("session/flush") ?? []).length === 1, "session/flush 官方排空点已注册");
+  assert.ok((listeners.get("session/disposed") ?? []).length === 1, "session/disposed 监听已注册");
+
+  // 合成事件流：header 归属折叠 + usage chunk 定稿
+  const t = Date.now();
+  const session = { id: "sess-trend" };
+  emitEvent("session/event", session, { type: "request/header", seq: 1, time: t, data: { header: { config: { provider: "deepseek", model: "deepseek-chat" } }, reason: "initial" } });
+  emitEvent("session/event", session, { type: "assistant/chunk", seq: 2, time: t, data: { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: 100, outputTokens: 50 } } } });
+
+  // /health 观测面
+  const healthRes = [];
+  routes.find((r) => r.path === ROUTES.health).handler(fakeReq(), { writeHead: () => {}, end: (c) => healthRes.push(JSON.parse(c)) });
+  assert.equal(healthRes.at(-1).trend.unpersistedRows, 1, "/health trend 观测：未落盘行 = 1");
+
+  // session/flush 官方排空点 → 明细分片落盘
+  await listeners.get("session/flush")[0]();
+  const trendRoot = join(process.env.DSH_HOME, "dsh-provider-usage", "trend");
+  const day = dayKey(t);
+  assert.ok(existsSync(join(trendRoot, "details", `${day}.jsonl`)), "排空后当日语细分片落盘");
+  const rows = readFileSync(join(trendRoot, "details", `${day}.jsonl`), "utf8").trimEnd().split("\n").map((l) => JSON.parse(l));
+  const detail = rows.find((r) => r.kind === "detail");
+  assert.equal(detail.provider, "deepseek", "落盘行归属（header 折叠）");
+  assert.equal(detail.input, 100, "落盘行 token");
+}
+
+{
+  // 热重载不双算：卸载后事件不计数；重新挂载独立记账
+  const inst1 = makeFakeCtx();
+  await apply(inst1.ctx, { ...ISOLATED_CONFIG });
+  const t = Date.now();
+  inst1.emitEvent("session/event", { id: "s-hot" }, { type: "assistant/chunk", seq: 1, time: t, data: { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: 25, outputTokens: 25 } } } });
+  await inst1.effects.at(-1)(); // 卸载（async disposer：含 trend dispose await 刷盘）
+
+  inst1.emitEvent("session/event", { id: "s-hot" }, { type: "assistant/chunk", seq: 2, time: t + 10, data: { turn: 1, step: 2, chunk: { type: "usage", usage: { inputTokens: 100, outputTokens: 100 } } } }); // 卸载后事件
+
+  const inst2 = makeFakeCtx();
+  await apply(inst2.ctx, { ...ISOLATED_CONFIG });
+  inst2.emitEvent("session/event", { id: "s-hot" }, { type: "assistant/chunk", seq: 3, time: t + 20, data: { turn: 1, step: 3, chunk: { type: "usage", usage: { inputTokens: 7, outputTokens: 7 } } } });
+  await inst2.effects.at(-1)(); // 卸载即排空
+
+  const day = dayKey(t);
+  const trendRoot = join(process.env.DSH_HOME, "dsh-provider-usage", "trend");
+  const rows = readFileSync(join(trendRoot, "details", `${day}.jsonl`), "utf8").trimEnd().split("\n").map((l) => JSON.parse(l)).filter((r) => r.kind === "detail" && r.session === "s-hot");
+  assert.equal(rows.length, 2, "卸载前 1 次 + 重挂载后 1 次（卸载后事件与重放均不计）");
+  assert.deepEqual(rows.map((r) => r.input).sort((a, b) => a - b), [7, 25], "input 只含 25 与 7（100 被丢弃）");
+}
+
+console.log("[smoke] #503 trend 挂接断言全部通过 ✓");
 
 // 恢复真实环境变量（测试收尾）
 for (const k of SAVED_ENV_KEYS) {

@@ -101,6 +101,7 @@ npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-provider-usage
 | `autoReload` | `true` | 热更新开关（编辑适配器文件后自动加载；默认开启，可显式 `false` 关闭） |
 | `maxAgeDays` | `30` | 历史保留天数 |
 | `maxSizeMB` | `20` | 历史大小上限（MB，超限从最旧日文件删） |
+| `trendRetentionDays` | `180` | 会话用量趋势聚合保留天数（#503；日切压实后按天留存，正整数上界 3650） |
 
 ### 启用选择状态恢复
 

@@ -42,6 +42,10 @@ import { resolvePath } from "./path-resolve.ts";
 import { Config, normalizeConfig } from "./config.ts";
 import { normalizeUiConfig, readUiConfig, writeUiConfig } from "./ui-config.ts";
 import { readAdapterStateResult, readUserAdapters, userAdaptersFile, writeAdapterState, resolveAddAdapterFile, type UserAdapterRecord } from "./user-adapters.ts";
+// #503 会话用量趋势（M1 数据层）：官方 session/event 契约事件为唯一事实源
+import { TrendTracker } from "./trend/index.ts";
+// dsh-session 类型层（仅类型，编译期擦除）：加载 Events 声明合并 → ctx.on("session/*") 事件面
+import type {} from "@deepseek-ai/dsh-session";
 
 export const ROUTES: Record<string, string> = {
   stats: "/api/dsh-provider-usage/stats",
@@ -560,6 +564,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
         enabled: snap.enabled,
         errors: snap.errors,
         historyDir: historyRoot,
+        trend: trend.stats(), // #503：会话用量趋势观测（天数/未落盘行/最近刷盘）
       });
     },
   };
@@ -807,8 +812,23 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   const PRUNE_INTERVAL_MS = 10 * 60 * 1000; // 每 10 分钟一次全树扫描（写入有界、定期收敛）
   pruneTimer = setInterval(() => {
     void history.pruneAll().catch((err) => console.warn("[dsh-provider-usage] 历史留存清理失败:", err));
+    // #503：trend 聚合分片留存清理同周期
+    void trend.prune().catch((err) => console.warn("[dsh-provider-usage] trend 留存清理失败:", err));
   }, PRUNE_INTERVAL_MS);
   (pruneTimer as { unref?: () => void }).unref?.();
+
+  // 8.6 会话用量趋势（#503 M1）：监听注册走 disposers 统一回收（热重载不双监听）；
+  // session/flush 为 awaited parallel 官方排空点（flushNow 内部吞错，不拒绝排空）。
+  // start 先于监听注册完成：重建/自愈窗口内不接事件，防半重建态记账。
+  const trend = await TrendTracker.start({
+    root: join(historyRoot, "trend"),
+    retentionDays: config.trendRetentionDays,
+    warn: (msg) => console.warn(`[dsh-provider-usage] trend: ${sanitizeDiagnostic(msg)}`),
+  });
+  const trendDisposers: Array<() => void> = [];
+  trendDisposers.push(ctx.on("session/event", (session, event) => trend.handleEvent(session, event)));
+  trendDisposers.push(ctx.on("session/flush", () => trend.flushNow()));
+  trendDisposers.push(ctx.on("session/disposed", (session) => trend.handleDisposed(session)));
 
   // 9. 设置面板命名空间（只读镜像；apiKey 不进 schema 避免回显）
   installSettingsNamespace(ctx, "dsh-provider-usage", Config, rawConfig, {
@@ -816,9 +836,10 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     onChange: () => {},
   });
 
-  // 10. 卸载清理
+  // 10. 卸载清理（async disposer：cordis stop await 完成后卸载才结束——
+  // trend 最终刷盘 await 到位，防抖 timer 清理，热重载不丢已收事件、不双算）
   ctx.effect(
-    () => () => {
+    () => async () => {
       disposeRoutes();
       if (warmupTimer !== null) clearInterval(warmupTimer);
       if (pruneTimer !== null) clearInterval(pruneTimer);
@@ -834,6 +855,11 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       // 预热/后台调用点自带 .catch 吞掉）并清空 Map，避免卸载后残留锁对象
       for (const lock of providerLocks.values()) lock.cancel();
       providerLocks.clear();
+      // #503：trend 监听回收 + 最终排空（dispose await 刷盘）
+      for (const dispose of trendDisposers) {
+        try { dispose(); } catch { /* 忽略 */ }
+      }
+      await trend.dispose();
     },
     "dsh-provider-usage",
   );
