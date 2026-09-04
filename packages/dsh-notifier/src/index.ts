@@ -239,15 +239,42 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
     return service.update(SETTINGS_NS, patch, expectedRevision);
   }
 
-  /** 动态 kind 确认 → 配置 allowKinds（M2：确认态持久化，修复 M1 内存态丢失）。 */
+  /**
+   * 动态 kind 确认 → 配置 allowKinds（M2：确认态持久化）。#405 PR3：read-modify-
+   * write CAS 循环（评审 P0-1/P2-1 落实）——
+   * - 允许集数据源 = user 层原始节 allowKinds，user 层未接管（无该键）时回退解析值
+   *   （组合层 base/默认值）——若只读 user 层，base 配置的豁免项会在首次确认时被
+   *   空集整键覆盖清空（合并 patch 顶层键浅合并语义）；
+   * - 带 expectedRevision（readUser().revision）提交；SETTINGS_CONFLICT（另一端
+   *   并发写入推进了 revision）→ 重拉重算重试 ≤2 次；耗尽/其他错误上抛给调用方；
+   * - 请求方向零契约变更（POST /kinds 不新增字段）：客户端传 revision 是与服务端
+   *   CAS 循环重复的防御（allowKinds 唯一写者即本函数），已砍。所有调用方（HTTP
+   *   路由 + service 内部 fire-and-forget 链）统一收口进同一 CAS。
+   */
   async function confirmKindToConfig(kind: string, confirmed: boolean): Promise<void> {
-    const allowed = new Set<string>(Array.isArray(current.allowKinds) ? current.allowKinds : []);
-    if (confirmed) allowed.add(kind);
-    else allowed.delete(kind);
-    await updateConfig({ allowKinds: [...allowed] });
-    // 官方 scope.watch 回调是「提交后异步串行」——POST /kinds 响应里的确认态
-    // 要立即可见，这里主动同步镜像（watch 回调随后幂等刷新一次）。
-    current = source();
+    const MAX_CONFLICT_RETRIES = 2;
+    for (let attempt = 0; ; attempt += 1) {
+      const { user, revision } = readUser();
+      const resolved = source();
+      const baseAllowed = Array.isArray(user.allowKinds)
+        ? user.allowKinds
+        : Array.isArray(resolved.allowKinds)
+          ? resolved.allowKinds
+          : [];
+      const allowed = new Set<string>(baseAllowed);
+      if (confirmed) allowed.add(kind);
+      else allowed.delete(kind);
+      try {
+        await updateConfig({ allowKinds: [...allowed] }, revision);
+      } catch (err) {
+        const code = (err as { code?: unknown })?.code;
+        if (code === "SETTINGS_CONFLICT" && attempt < MAX_CONFLICT_RETRIES) continue;
+        throw err;
+      }
+      // 提交后主动同步镜像（watch 回调异步「提交后串行」；随后幂等刷新一次）。
+      current = source();
+      return;
+    }
   }
 
   // ------------------------------------------------------------ 通知中心 service（M1）

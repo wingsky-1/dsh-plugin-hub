@@ -470,6 +470,23 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   assert.deepEqual(JSON.parse(JSON.stringify(diffFn(settingsView, null))), {}, "#470 P1-2：baseline null → 空 payload");
 }
 
+// ---- issue #405 PR2/PR3：客户端保存模型演进源码级契约锚点 ----
+{
+  const src = readFileSync(new URL("../src/client/index.ts", import.meta.url), "utf8");
+  const locales = readFileSync(new URL("../src/client/locales.ts", import.meta.url), "utf8");
+
+  // PR3：confirmOne 同步服务端 revision（修「确认 kind 后同窗口保存必 409」版本链断点）
+  assert.ok(src.includes("freshRevision"), "#405：confirmOne 读取响应新 revision");
+  assert.ok(src.includes("metaRef.current = nextMeta"), "#405：confirmOne 同步 metaRef.revision");
+  // PR2：频道域保存行（新 class，非 #418 回归的 dn-ch-saveRow）+ 域入口
+  assert.ok(src.includes('className: "dn-ch-domainSave"'), "#405：频道 tab 域保存行 class");
+  assert.ok(src.includes('saveFor("channels")'), "#405：域保存走 channels 入口");
+  assert.ok(src.includes('saveFor("all")'), "#405：foot 保存走 all 入口");
+  assert.ok(src.includes("dn-conflict"), "#405：409 冲突横幅 class 进源码");
+  assert.ok(locales.includes("conflictOverwrite:"), "#405：冲突覆盖动作文案进 zh/en 字典");
+  assert.ok(locales.includes("saveChannels:"), "#405：域保存按钮文案进 zh/en 字典");
+}
+
 // ---- issue #405 PR1：client createSaveGuard（保存串行）真实产物直测 ----
 // 同一时刻仅一个在途保存（tryBegin 在途返回 false 不占用）；在途期间的再次点击
 // 记 pending，由 end() 返回 true 通知调用方补发一次；end 幂等释放、无 pending 时

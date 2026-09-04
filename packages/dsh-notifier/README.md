@@ -282,10 +282,12 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
 | `/api/dsh-notifier/test` | POST | 测试通知（收敛到 service 管线，绕过免打扰；body 可选 `{channelId}` 指定单频道测试） |
 | `/api/dsh-notifier/history` | GET / **DELETE** | GET 最近通知记录（最多 200 条，`historyMaxAgeDays` 过滤 / 被免打扰拦截的标记 `suppressed`）；**DELETE 清空** |
 | `/api/dsh-notifier/status` | GET | 频道投递状态（per-channel 最近投递终态 + 连续失败计数，错误摘要已脱敏） |
-| `/api/dsh-notifier/kinds` | GET / POST | GET 动态 kind 清单（含确认态）；POST `{kind, confirmed}` 写确认（持久化到 `allowKinds`） |
+| `/api/dsh-notifier/kinds` | GET / POST | GET 动态 kind 清单（含确认态）；POST `{kind, confirmed}` 写确认（持久化到 `allowKinds`），200 响应带 `revision`（供客户端同步乐观并发版本） |
 | `/api/dsh-notifier/health` | GET | 健康检查 |
 
 错误映射（PUT /config）：非法配置键 → 400（`{ok:false, error:{error:"配置校验失败: <键>", hint}}`）；版本冲突（`expectedRevision` 过期）→ 409（`code:"SETTINGS_CONFLICT"`）；settings 服务缺失 → 503（`code:"settings-unavailable"`）；写入异常 → 500（底层原因只进服务端日志）。
+
+错误映射（POST /kinds）：kind 确认内部 CAS 冲突重试（≤2 次）耗尽 → 409（`code:"SETTINGS_CONFLICT"`，罕见：确认期间持续并发写入）；写入异常 → 500（`error` 固定文案，底层原因只进服务端日志）。
 
 ## 类型依赖
 

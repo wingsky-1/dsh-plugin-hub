@@ -1128,10 +1128,19 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
       });
     }
 
-    /** 动态 kind 确认（POST /kinds；完成后刷新清单并提示）。 */
+    /** 动态 kind 确认（POST /kinds；完成后刷新清单并提示）。
+     *  #405 PR3（评审 P1-2）：响应体带新 revision → 同步 metaRef/setMeta——服务端
+     *  确认写入已推进 revision，若不同步，同一窗口随后保存会带过期 revision 必 409
+     *  （无并发的纯版本链断点，比连点更高频）。 */
     function confirmOne(kind: string, confirmed: boolean) {
       postKind(kind, confirmed)
-        .then(function () {
+        .then(function (body: any) {
+          var freshRevision = body && typeof body.revision === "number" ? body.revision : undefined;
+          if (freshRevision !== undefined && metaRef.current) {
+            var nextMeta = Object.assign({}, metaRef.current, { revision: freshRevision });
+            metaRef.current = nextMeta;
+            setMeta(nextMeta);
+          }
           toast(t("kindConfirmOk"));
           return loadKinds({ value: true }) as any;
         })

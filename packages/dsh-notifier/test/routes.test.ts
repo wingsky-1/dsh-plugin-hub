@@ -654,6 +654,101 @@ try {
     assert.ok(send1.some((x) => x.status === "ok"), "确认后动态 kind 正常投递");
   }
 
+  // ===== #405 PR3：kinds 确认 CAS 循环（read-modify-write + 冲突重试 + 兜底）=====
+  {
+    function postReq(payload) {
+      const text = JSON.stringify(payload);
+      return {
+        method: "POST",
+        url: "/",
+        socket: { remoteAddress: "127.0.0.1" },
+        headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
+        on(event, cb) {
+          if (event === "data") setTimeout(() => cb(Buffer.from(text)), 0);
+          else if (event === "end") setTimeout(cb, 1);
+          return this;
+        },
+        destroy() {},
+      };
+    }
+    const notifier = mainNotifier.ctx.get("wingsky.notifier", false);
+
+    // 1. 无冲突确认：200 响应带新 revision（客户端 confirmOne 同步 meta 的依据）
+    notifier.registerKind({ id: "e2e:cas0", label: "CAS 0" });
+    const c0 = makeRes();
+    await kindsRoute.handler(postReq({ kind: "e2e:cas0", confirmed: true }), c0.res);
+    assert.equal(c0.rec.status, 200, "无冲突确认 200");
+    const c0Body = JSON.parse(c0.rec.text);
+    assert.equal(typeof c0Body.revision, "number", "#405：POST /kinds 200 响应带 revision");
+    assert.equal(c0Body.revision, settings.getRevision(), "#405：响应 revision 为最新服务端 revision");
+
+    // 2. CAS 冲突自动重试：确认期间另一端先写入推进 revision → 首次 update 冲突 →
+    //    内部重拉重算（读到另一端 allowKinds）→ 重试成功，两端确认都保留
+    notifier.registerKind({ id: "e2e:cas1", label: "CAS 1" });
+    notifier.registerKind({ id: "e2e:cas2", label: "CAS 2" });
+    // 另一端先确认 cas2（user 层 allowKinds 推进）
+    await kindsRoute.handler(postReq({ kind: "e2e:cas2", confirmed: true }), makeRes().res);
+    // 包装 service.update：本次确认（cas1）的首次 update 前先空写推进 revision，
+    // 使 confirmKindToConfig 已读到的 revision 过期 → SETTINGS_CONFLICT → 自动重试
+    const origUpdate = settings.service.update.bind(settings.service);
+    let sabotage = true;
+    settings.service.update = async (ns, patch, expectedRevision) => {
+      if (sabotage) {
+        sabotage = false;
+        // 空写推进 revision（不改 user）→ 使调用方持有的 expectedRevision 过期
+        await origUpdate(ns, {}, undefined);
+      }
+      return origUpdate(ns, patch, expectedRevision);
+    };
+    try {
+      const c1 = makeRes();
+      await kindsRoute.handler(postReq({ kind: "e2e:cas1", confirmed: true }), c1.res);
+      assert.equal(c1.rec.status, 200, "CAS 冲突一次后自动重试成功");
+      const allowed1 = settings.getUser().allowKinds || [];
+      assert.ok(allowed1.includes("e2e:cas1"), "#405：重试后本次确认生效");
+      assert.ok(allowed1.includes("e2e:cas2"), "#405：重试读最新 user 层——另一端确认不丢失（无读-改-写覆盖）");
+    } finally {
+      settings.service.update = origUpdate;
+    }
+
+    // 3. CAS 耗尽 → handler 兜底 409（评审 P1-1：rejection 不冒泡成宿主未处理）
+    notifier.registerKind({ id: "e2e:cas3", label: "CAS 3" });
+    settings.service.update = async (ns, patch, expectedRevision) => {
+      // 每次 update 前都空写推进 revision → 调用方持有的 revision 恒过期 → 3 次重试耗尽
+      await origUpdate(ns, {}, undefined);
+      return origUpdate(ns, patch, expectedRevision);
+    };
+    try {
+      const c3 = makeRes();
+      await kindsRoute.handler(postReq({ kind: "e2e:cas3", confirmed: true }), c3.res);
+      assert.equal(c3.rec.status, 409, "CAS 重试耗尽 → 409");
+      assert.equal(JSON.parse(c3.rec.text).error.code, "SETTINGS_CONFLICT", "409 带 code=SETTINGS_CONFLICT");
+      const allowed3 = settings.getUser().allowKinds || [];
+      assert.ok(!allowed3.includes("e2e:cas3"), "耗尽后确认未写入（拒绝语义）");
+    } finally {
+      settings.service.update = origUpdate;
+    }
+
+    // 4. base 层 allowKinds 回退（评审 P0-1）：user 层未接管（无 allowKinds 键）时，
+    //    确认写入不得以空集整键覆盖组合层 base 配置的豁免项
+    {
+      const baseInst = makeNotifier(work, { allowKinds: ["base:k0"], historyFile: join(work, "history-kinds-base.jsonl") });
+      try {
+        const bKindsRoute = baseInst.routes.find((r) => r.path === ROUTES.kinds);
+        const bNotifier = baseInst.ctx.get("wingsky.notifier", false);
+        bNotifier.registerKind({ id: "e2e:base1", label: "BASE 1" });
+        const b0 = makeRes();
+        await bKindsRoute.handler(postReq({ kind: "e2e:base1", confirmed: true }), b0.res);
+        assert.equal(b0.rec.status, 200, "base 回退场景确认 200");
+        const allowedBase = baseInst.settings.getUser().allowKinds || [];
+        assert.ok(allowedBase.includes("e2e:base1"), "确认的新 kind 已写入 user 层");
+        assert.ok(allowedBase.includes("base:k0"), "#405：base 层豁免项未被空集覆盖（user 未接管时回退解析值合并）");
+      } finally {
+        baseInst.dispose();
+      }
+    }
+  }
+
   // config PUT 容错：非法 JSON → 400；超大 body → 不挂起、无未处理拒绝（J3/J4）
   {
     function rawBodyReq(text) {

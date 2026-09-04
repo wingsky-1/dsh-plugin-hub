@@ -555,8 +555,24 @@ export function buildRoutes(deps: RouteDeps): WebRoute[] {
           writeJson(res, 404, { ok: false, error: { code: "not-found", details: `未注册的动态 kind: ${kind}` } });
           return;
         }
-        await setConfirm(kind, confirmed);
-        writeJson(res, 200, { ok: true, kinds: listKinds() });
+        // #405 PR3：setConfirm 现为 CAS 循环（可抛 SETTINGS_CONFLICT 耗尽 / 服务
+        // 缺失 rejection）——handler 必须兜底（评审 P1-1），防 rejection 冒泡成
+        // 宿主行为未定义；200 响应体带新 revision（向后兼容新增字段）供客户端
+        // confirmOne 同步 meta——修「确认 kind 后同窗口保存必 409」的版本链断点。
+        try {
+          await setConfirm(kind, confirmed);
+        } catch (error) {
+          const code = (error as { code?: unknown })?.code;
+          if (code === "SETTINGS_CONFLICT") {
+            writeJson(res, 409, { ok: false, error: { code: "SETTINGS_CONFLICT", error: "版本冲突" } });
+            return;
+          }
+          logger.warn(`dsh-notifier: kind 确认写入失败 — ${errorMessage(error)}`);
+          writeJson(res, 500, { ok: false, error: { error: "确认失败，请查看服务端日志" } });
+          return;
+        }
+        const { revision: freshRevision } = readUser();
+        writeJson(res, 200, { ok: true, kinds: listKinds(), revision: freshRevision });
         return;
       }
       writeJson(res, 405, { error: `method not allowed: ${req.method}` });
