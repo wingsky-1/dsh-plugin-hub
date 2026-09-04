@@ -32,6 +32,8 @@ import "./unit-detect.test.ts";
 import "./unit-refresh-revalidate.test.ts";
 import "./unit-deepseek-official.test.ts";
 import "./unit-fetch-timeout.test.ts";
+import "./unit-trend.test.ts";
+import "./unit-report.test.ts";
 
 import {
   apply,
@@ -47,6 +49,7 @@ import {
   normalizeRangeDay,
   panelCacheKey,
   isPanelCacheStale,
+  dayKey,
 } from "../lib/index.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -88,8 +91,20 @@ function fakeReq(overrides = {}) {
   return req;
 }
 
+/** #503 M3：报告生成的默认罐头 chunk 流（安全正文 + usage 元数据 + finish）。 */
+const DEFAULT_LLM_CHUNKS = [
+  { type: "text-delta", index: 0, text: "本周用量平稳，调用集中在工作时段，环比小幅上升。" },
+  { type: "usage", usage: { inputTokens: 120, outputTokens: 60, totalTokens: 180 } },
+  { type: "finish", reason: "stop" },
+];
+
 function makeFakeCtx(overrides = {}) {
+  // #503 M3：llmStreamChunks 允许用例替换报告生成的产出正文（XSS 净化用例传恶意正文）
+  const { llmStreamChunks, ...rest } = overrides;
   const routes = [];
+  // #503：事件监听表（ctx.on 注册 / emitEvent 派发）与 effect disposer 收集
+  const listeners = new Map();
+  const effects = [];
   const ctx = {
     logger: { warn: () => {}, info: () => {} },
     webServer: {
@@ -105,14 +120,37 @@ function makeFakeCtx(overrides = {}) {
           { id: OPENCODE_GO_PROVIDER, name: "OpenCode Go" },
         ];
       },
+      async listModels(provider) {
+        return [{ provider, id: "model-a", name: "Model A" }];
+      },
+      stream() {
+        const chunks = llmStreamChunks ?? DEFAULT_LLM_CHUNKS;
+        return (async function* () {
+          yield* chunks;
+        })();
+      },
     },
     effect(fn) {
       const disposer = fn();
-      return typeof disposer === "function" ? disposer : () => {};
+      effects.push(typeof disposer === "function" ? disposer : () => {});
+      return effects.at(-1);
     },
-    ...overrides,
+    on(event, fn) {
+      const arr = listeners.get(event) ?? [];
+      arr.push(fn);
+      listeners.set(event, arr);
+      return () => {
+        const cur = listeners.get(event) ?? [];
+        const i = cur.indexOf(fn);
+        if (i >= 0) cur.splice(i, 1);
+      };
+    },
+    ...rest,
   };
-  return { ctx, routes };
+  const emitEvent = (event, ...args) => {
+    for (const fn of [...(listeners.get(event) ?? [])]) fn(...args);
+  };
+  return { ctx, routes, listeners, effects, emitEvent };
 }
 
 // ---------------------------------------------------------------- enabled 开关
@@ -123,23 +161,23 @@ function makeFakeCtx(overrides = {}) {
   assert.equal(routes.length, 0, "enabled:false 不注册任何路由");
 }
 
-// ---------------------------------------------------------------- 注册九路由
+// ---------------------------------------------------------------- 注册十四路由
 
 {
   const { ctx, routes } = makeFakeCtx();
   await apply(ctx, { ...ISOLATED_CONFIG });
   assert.deepEqual(
     routes.map((r) => r.path).sort(),
-    [ROUTES.health, ROUTES.history, ROUTES.stats, ROUTES.adapters, ROUTES.select, ROUTES.inspect, ROUTES.add, ROUTES.uiConfig, ROUTES.events].sort(),
-    "注册九条路由（stats/history/adapters.json/select/inspect/add/health/ui-config/events）",
+    [ROUTES.health, ROUTES.history, ROUTES.stats, ROUTES.trend, ROUTES.adapters, ROUTES.select, ROUTES.inspect, ROUTES.add, ROUTES.uiConfig, ROUTES.events, ROUTES.reportConfig, ROUTES.reports, ROUTES.reportDetail, ROUTES.reportGenerate].sort(),
+    "注册十四条路由（stats/history/trend/adapters.json/select/inspect/add/health/ui-config/events + #503 报告四路由）",
   );
   assert.ok(routes.every((r) => r.kind === "exact" || r.kind === "prefix"), "路由 kind 合法");
 }
 
 // ---------------------------------------------------------------- 围栏：403 / 405
 
-const POST_ROUTES = new Set([ROUTES.select, ROUTES.inspect, ROUTES.add, ROUTES.uiConfig]);
-for (const routePath of [ROUTES.stats, ROUTES.history, ROUTES.health, ROUTES.adapters, ROUTES.select, ROUTES.inspect, ROUTES.add, ROUTES.uiConfig, ROUTES.events]) {
+const POST_ROUTES = new Set([ROUTES.select, ROUTES.inspect, ROUTES.add, ROUTES.uiConfig, ROUTES.reportConfig, ROUTES.reportGenerate]);
+for (const routePath of [ROUTES.stats, ROUTES.history, ROUTES.trend, ROUTES.health, ROUTES.adapters, ROUTES.select, ROUTES.inspect, ROUTES.add, ROUTES.uiConfig, ROUTES.events, ROUTES.reportConfig, ROUTES.reports, ROUTES.reportDetail, ROUTES.reportGenerate]) {
   {
     const { ctx, routes } = makeFakeCtx();
     await apply(ctx, { ...ISOLATED_CONFIG });
@@ -153,7 +191,7 @@ for (const routePath of [ROUTES.stats, ROUTES.history, ROUTES.health, ROUTES.ada
     assert.equal(responses403.at(-1)?.error, "forbidden: loopback-only", `${routePath} 非回环 403`);
 
     // 方法错 → 405（POST 路由用 DELETE 触发；GET 路由用 POST 触发）
-    // #473 批 2（B2-4）：405 body 围栏文案断言（守卫收敛后逐字节锁定，全 9 端点）
+    // #473 批 2（B2-4）：405 body 围栏文案断言（守卫收敛后逐字节锁定，全 10 端点）
     const wrongMethod = POST_ROUTES.has(routePath) ? "DELETE" : "POST";
     const responses405 = [];
     const res405 = { writeHead: (code) => { responses405.push({ __code: code }); }, end: (chunk) => responses405.push(JSON.parse(chunk)) };
@@ -1374,6 +1412,297 @@ export function formatPanel(input) {
 }
 
 console.log("[smoke] #105① /history 渲染缓存断言全部通过 ✓");
+
+// ---------------------------------------------------------------- #503 M1：trend 挂接（apply 集成）
+
+{
+  const { ctx, routes, listeners, emitEvent } = makeFakeCtx();
+  await apply(ctx, { ...ISOLATED_CONFIG });
+  assert.ok((listeners.get("session/event") ?? []).length === 1, "session/event 监听已注册");
+  assert.ok((listeners.get("session/flush") ?? []).length === 1, "session/flush 官方排空点已注册");
+  assert.ok((listeners.get("session/disposed") ?? []).length === 1, "session/disposed 监听已注册");
+
+  // 合成事件流：header 归属折叠 + usage chunk 定稿
+  const t = Date.now();
+  const session = { id: "sess-trend" };
+  emitEvent("session/event", session, { type: "request/header", seq: 1, time: t, data: { header: { config: { provider: "deepseek", model: "deepseek-chat" } }, reason: "initial" } });
+  emitEvent("session/event", session, { type: "assistant/chunk", seq: 2, time: t, data: { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: 100, outputTokens: 50 } } } });
+
+  // /health 观测面
+  const healthRes = [];
+  routes.find((r) => r.path === ROUTES.health).handler(fakeReq(), { writeHead: () => {}, end: (c) => healthRes.push(JSON.parse(c)) });
+  assert.equal(healthRes.at(-1).trend.unpersistedRows, 1, "/health trend 观测：未落盘行 = 1");
+
+  // session/flush 官方排空点 → 明细分片落盘
+  await listeners.get("session/flush")[0]();
+  const trendRoot = join(process.env.DSH_HOME, "dsh-provider-usage", "trend");
+  const day = dayKey(t);
+  assert.ok(existsSync(join(trendRoot, "details", `${day}.jsonl`)), "排空后当日语细分片落盘");
+  const rows = readFileSync(join(trendRoot, "details", `${day}.jsonl`), "utf8").trimEnd().split("\n").map((l) => JSON.parse(l));
+  const detail = rows.find((r) => r.kind === "detail");
+  assert.equal(detail.provider, "deepseek", "落盘行归属（header 折叠）");
+  assert.equal(detail.input, 100, "落盘行 token");
+}
+
+{
+  // 热重载不双算：卸载后事件不计数；重新挂载独立记账
+  const inst1 = makeFakeCtx();
+  await apply(inst1.ctx, { ...ISOLATED_CONFIG });
+  const t = Date.now();
+  inst1.emitEvent("session/event", { id: "s-hot" }, { type: "assistant/chunk", seq: 1, time: t, data: { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: 25, outputTokens: 25 } } } });
+  await inst1.effects.at(-1)(); // 卸载（async disposer：含 trend dispose await 刷盘）
+
+  inst1.emitEvent("session/event", { id: "s-hot" }, { type: "assistant/chunk", seq: 2, time: t + 10, data: { turn: 1, step: 2, chunk: { type: "usage", usage: { inputTokens: 100, outputTokens: 100 } } } }); // 卸载后事件
+
+  const inst2 = makeFakeCtx();
+  await apply(inst2.ctx, { ...ISOLATED_CONFIG });
+  inst2.emitEvent("session/event", { id: "s-hot" }, { type: "assistant/chunk", seq: 3, time: t + 20, data: { turn: 1, step: 3, chunk: { type: "usage", usage: { inputTokens: 7, outputTokens: 7 } } } });
+  await inst2.effects.at(-1)(); // 卸载即排空
+
+  const day = dayKey(t);
+  const trendRoot = join(process.env.DSH_HOME, "dsh-provider-usage", "trend");
+  const rows = readFileSync(join(trendRoot, "details", `${day}.jsonl`), "utf8").trimEnd().split("\n").map((l) => JSON.parse(l)).filter((r) => r.kind === "detail" && r.session === "s-hot");
+  assert.equal(rows.length, 2, "卸载前 1 次 + 重挂载后 1 次（卸载后事件与重放均不计）");
+  assert.deepEqual(rows.map((r) => r.input).sort((a, b) => a - b), [7, 25], "input 只含 25 与 7（100 被丢弃）");
+}
+
+// ---------------------------------------------------------------- #503 M2：/trend 路由集成断言
+
+{
+  // 独立 historyDir：隔离磁盘分片（防前序块的落盘行经启动重建混进本块断言口径）
+  const dir = mkdtempSync(join(tmpdir(), "dou-trend-api-"));
+  const { ctx, routes, listeners, emitEvent } = makeFakeCtx();
+  await apply(ctx, { ...ISOLATED_CONFIG, historyDir: join(dir, "hist") });
+  const trendRoute = routes.find((r) => r.path === ROUTES.trend);
+  assert.ok(trendRoute !== undefined, "trend 路由存在");
+
+  // 合成事件流：两个会话各一次定稿调用（header 归属折叠 + usage chunk 定稿）
+  const t = Date.now();
+  const emitCall = (sessionId, seqBase, provider, model, input, output) => {
+    const s = { id: sessionId };
+    emitEvent("session/event", s, { type: "request/header", seq: seqBase, time: t, data: { header: { config: { provider, model } }, reason: "initial" } });
+    emitEvent("session/event", s, { type: "assistant/chunk", seq: seqBase + 1, time: t, data: { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: input, outputTokens: output } } } });
+  };
+  emitCall("sess-trend-api-a", 1, "deepseek", "deepseek-chat", 100, 50);
+  emitCall("sess-trend-api-b", 1, "openai", "gpt-x", 10, 5);
+
+  // 官方排空点先行刷盘（路由读内存聚合，此处主要验证 flush 与查询共存不崩）
+  await listeners.get("session/flush")[0]();
+
+  const today = dayKey(t);
+
+  // 默认参数（granularity=day / metric=total）：200 形状
+  const payload = await callHandler(trendRoute, fakeReq({ url: ROUTES.trend }));
+  assert.equal(payload.ok, true, "trend 默认 ok");
+  assert.equal(payload.plugin, "dsh-provider-usage", "trend plugin 字段");
+  assert.equal(payload.version, ADAPTER_CONTRACT_VERSION, "trend 带契约版本");
+  assert.equal(payload.granularity, "day", "granularity 默认 day");
+  assert.equal(payload.metric, "total", "metric 默认 total");
+  assert.equal(payload.byModel, false, "byModel 默认 false");
+  assert.ok(Array.isArray(payload.series) && payload.series.length === 30, "日序列固定 30 桶");
+  assert.ok(Array.isArray(payload.providers) && payload.providers.length === 2, "图例并集 = 两个 provider");
+  assert.ok(typeof payload.generatedAt === "number", "generatedAt 时间戳");
+
+  // 今日桶：total = 100+50+10+5 = 165（>0）；段拆到 provider
+  const todayPoint = payload.series.find((p) => p.key === today);
+  assert.ok(todayPoint !== undefined, "序列含今日桶");
+  assert.ok(todayPoint.total === 165, `今日 total = 165（实际 ${todayPoint.total}）`);
+  const deepseekPart = todayPoint.parts.find((p) => p.provider === "deepseek");
+  assert.ok(deepseekPart && deepseekPart.value === 150, "今日 deepseek 段 = 150");
+  // 空桶补齐为 null（30 桶内仅今日有数据——独立 historyDir 保证）
+  assert.equal(payload.series.filter((p) => p.total === null).length, 29, "无数据日 total=null");
+
+  // 窗口摘要
+  assert.equal(payload.summary.calls, 2, "summary.calls = 2 次调用");
+  assert.equal(payload.summary.total, 165, "summary.total = 165");
+  assert.equal(payload.summary.peakKey, today, "峰值桶 = 今日");
+  assert.ok(payload.summary.top && payload.summary.top.provider === "deepseek" && payload.summary.top.value === 150, "top 段 = deepseek/150");
+  assert.equal(payload.summary.prevTotal, null, "上一窗口无数据 → prevTotal=null");
+
+  // 起算日（「统计自挂载时点起算」数据源）
+  assert.equal(payload.firstDay, today, "firstDay = 最早有数据的当日");
+
+  // ?metric=calls 指标切换：取值维度切到调用次数
+  const callsPayload = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?metric=calls` }));
+  assert.equal(callsPayload.metric, "calls", "metric=calls 回显");
+  assert.equal(callsPayload.series.find((p) => p.key === today).total, 2, "calls 指标下今日桶 = 2 次调用");
+  assert.equal(callsPayload.summary.total, 2, "calls 指标下 summary.total = 2");
+
+  // ?granularity=week：周粒度 12 桶，本周聚合两天数据（实际仅今日）
+  const weekPayload = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?granularity=week` }));
+  assert.equal(weekPayload.granularity, "week", "granularity=week 回显");
+  assert.equal(weekPayload.series.length, 12, "周序列固定 12 桶");
+  assert.equal(weekPayload.series.at(-1).total, 165, "当前周 total = 165");
+
+  // ?provider=deepseek 过滤：只剩该 provider 的段与图例
+  const filtered = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?provider=deepseek` }));
+  assert.equal(filtered.series.find((p) => p.key === today).total, 150, "provider 过滤后今日 total = 150");
+  assert.equal(filtered.providers.length, 1, "过滤后图例只剩 deepseek");
+
+  // ?byModel=1：段拆到 provider+model，图例并集细到 model
+  const byModelPayload = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?byModel=1` }));
+  assert.equal(byModelPayload.byModel, true, "byModel=1 回显");
+  const byModelToday = byModelPayload.series.find((p) => p.key === today);
+  assert.equal(byModelToday.parts.length, 2, "byModel 拆两段");
+  assert.deepEqual(
+    byModelToday.parts.map((p) => `${p.provider}/${p.model}`).sort(),
+    ["deepseek/deepseek-chat", "openai/gpt-x"],
+    "byModel 段含 model 维度",
+  );
+
+  // 非法参数回退默认（守卫：未知 granularity/metric 不进查询面）
+  const fallback = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?granularity=hour&metric=evil` }));
+  assert.equal(fallback.granularity, "day", "非法 granularity 回退 day");
+  assert.equal(fallback.metric, "total", "非法 metric 回退 total");
+}
+
+console.log("[smoke] #503 trend 挂接 + /trend 集成断言全部通过 ✓");
+
+// ---------------------------------------------------------------- #503 M3：用量报告接线（调度/落盘/路由/净化/不入统计）
+
+{
+  // 独立 historyDir：报告产物与趋势分片全部隔离在临时目录（零污染纪律）
+  const dir = mkdtempSync(join(tmpdir(), "dou-report-"));
+  const histDir = join(dir, "hist");
+  const reportsDir = join(histDir, "reports");
+  const { ctx, routes, listeners, emitEvent, effects } = makeFakeCtx();
+  await apply(ctx, { ...ISOLATED_CONFIG, historyDir: histDir });
+  const cfgRoute = routes.find((r) => r.path === ROUTES.reportConfig);
+  const listRoute = routes.find((r) => r.path === ROUTES.reports);
+  const detailRoute = routes.find((r) => r.path === ROUTES.reportDetail);
+  const genRoute = routes.find((r) => r.path === ROUTES.reportGenerate);
+  const trendRoute = routes.find((r) => r.path === ROUTES.trend);
+  assert.ok(cfgRoute !== undefined && listRoute !== undefined && detailRoute !== undefined && genRoute !== undefined, "报告四路由存在");
+
+  // b. 默认挂载（报告全关）：无 reports/ 产物；GET /report-config 返回默认配置
+  assert.ok(!existsSync(reportsDir), "默认挂载（报告全关）不产生 reports/ 目录");
+  const defaultCfg = await callHandler(cfgRoute, fakeReq({ url: ROUTES.reportConfig }));
+  assert.equal(defaultCfg.ok, true, "report-config GET ok");
+  assert.equal(defaultCfg.config.daily.enabled, false, "默认 daily 关闭");
+  assert.equal(defaultCfg.config.weekly.enabled, false, "默认 weekly 关闭");
+  assert.equal(defaultCfg.config.monthly.enabled, false, "默认 monthly 关闭");
+  assert.ok(defaultCfg.config.promptTemplate.includes("{stats}"), "默认模板含 {stats} 占位");
+  assert.ok(Array.isArray(defaultCfg.providers) && defaultCfg.providers.length >= 2, "providers 来自 llm.listProviders()");
+
+  // c. POST /report-config 保存（启用日报 22:00）→ GET 回读一致
+  const savedCfg = await callHandler(
+    cfgRoute,
+    fakeReq({ method: "POST", body: JSON.stringify({ daily: { enabled: true, time: "22:00" }, push: { enabled: false } }) }),
+  );
+  assert.equal(savedCfg.ok, true, "report-config POST ok");
+  assert.equal(savedCfg.config.daily.enabled, true, "保存后 daily 启用");
+  assert.equal(savedCfg.config.daily.time, "22:00", "触发时刻回显");
+  const reread = await callHandler(cfgRoute, fakeReq({ url: ROUTES.reportConfig }));
+  assert.deepEqual(reread.config, savedCfg.config, "POST 后 GET 回读一致");
+
+  // f. 前置：合成一点趋势数据（生成「不入统计」断言的对照快照）
+  const t = Date.now();
+  const sess = { id: "sess-report" };
+  emitEvent("session/event", sess, { type: "request/header", seq: 1, time: t, data: { header: { config: { provider: "deepseek", model: "deepseek-chat" } }, reason: "initial" } });
+  emitEvent("session/event", sess, { type: "assistant/chunk", seq: 2, time: t, data: { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: 80, outputTokens: 40 } } } });
+  await listeners.get("session/flush")[0](); // 官方排空点先行刷盘
+  const trendBefore = await callHandler(trendRoute, fakeReq({ url: ROUTES.trend }));
+
+  // d. 手动生成 daily → 200 + meta.ok → 三件套就位
+  const gen = await callHandler(genRoute, fakeReq({ method: "POST", body: JSON.stringify({ period: "daily" }) }));
+  assert.equal(gen.ok, true, "generate ok（实际 " + JSON.stringify(gen).slice(0, 160) + "）");
+  assert.equal(gen.meta.ok, true, "生成 meta.ok=true");
+  assert.equal(gen.meta.period, "daily", "meta.period=daily");
+  assert.equal(gen.meta.provider, "anthropic", "空 provider 解析为注册序首个");
+  assert.equal(gen.meta.model, "model-a", "空 model 解析为该 provider 首个");
+  assert.ok(typeof gen.meta.key === "string" && /^\d{4}-\d{2}-\d{2}$/.test(gen.meta.key), "窗口键为 day key 形态");
+  const htmlFile = join(reportsDir, `daily-${gen.meta.key}.html`);
+  const metaFile = join(reportsDir, `daily-${gen.meta.key}.meta.json`);
+  const indexFile = join(reportsDir, "index.jsonl");
+  assert.ok(existsSync(htmlFile), "报告 HTML 已落盘（0600 原子写）");
+  assert.ok(existsSync(metaFile), "meta.json 已落盘");
+  assert.ok(existsSync(indexFile), "index.jsonl 已 append");
+  const storedMeta = JSON.parse(readFileSync(metaFile, "utf8"));
+  assert.equal(storedMeta.key, gen.meta.key, "meta 文件与响应一致");
+  const storedHtml = readFileSync(htmlFile, "utf8");
+  assert.ok(storedHtml.startsWith("<!doctype html>") && storedHtml.includes("dou-report-body"), "HTML 为最小文档骨架包裹");
+
+  // e/f. 双断言：生成不入统计（方案 §2.3 显式断言）——生成前后 /trend 桶快照完全一致
+  const trendAfter = await callHandler(trendRoute, fakeReq({ url: ROUTES.trend }));
+  assert.deepEqual(trendAfter.series, trendBefore.series, "生成前后趋势序列逐桶一致（生成不产生 session 事件）");
+  assert.deepEqual(trendAfter.summary, trendBefore.summary, "生成前后窗口摘要一致（生成消耗不入用量统计）");
+  // 事件通道计数佐证：生成过程只经 llm.stream，无 session/event 派发
+  assert.ok((listeners.get("session/event") ?? []).length === 1, "session/event 监听注册数不变（生成路径不新增事件源）");
+
+  // e. XSS 双层净化：恶意 LLM 正文 → detail 响应既无明文载体、也无实体化标签残留
+  {
+    const xssDir = mkdtempSync(join(tmpdir(), "dou-report-xss-"));
+    const xssCtx = makeFakeCtx({
+      llmStreamChunks: [
+        { type: "text-delta", index: 0, text: "<script>alert(1)</script>安全正文<img onerror=x src=y>收尾" },
+        { type: "usage", usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } },
+        { type: "finish", reason: "stop" },
+      ],
+    });
+    await apply(xssCtx.ctx, { ...ISOLATED_CONFIG, historyDir: join(xssDir, "hist") });
+    const xssGen = await callHandler(xssCtx.routes.find((r) => r.path === ROUTES.reportGenerate), fakeReq({ method: "POST", body: JSON.stringify({ period: "daily" }) }));
+    assert.equal(xssGen.ok, true, "XSS 用例生成成功");
+    const xssDetail = await callHandler(
+      xssCtx.routes.find((r) => r.path === ROUTES.reportDetail),
+      fakeReq({ url: `${ROUTES.reportDetail}?period=daily&key=${encodeURIComponent(xssGen.meta.key)}` }),
+    );
+    assert.equal(xssDetail.ok, true, "XSS 用例 detail ok");
+    assert.equal(xssDetail.meta.ok, true, "XSS 用例 detail meta.ok=true");
+    assert.ok(!xssDetail.html.includes("<script"), "detail html 不含明文 <script（第一层 escHtml 转义）");
+    assert.ok(!xssDetail.html.includes("onerror"), "detail html 不含 onerror 事件属性（第二层 sanitizeHtml 移除）");
+    assert.ok(!xssDetail.html.includes("&lt;script"), "detail html 无实体化 script 标签残留（#105③ 实体感知封闭）");
+    assert.ok(xssDetail.html.includes("安全正文"), "正文文本保留（只删载体不删内容）");
+    for (const d of [...xssCtx.effects].reverse()) { try { d(); } catch {} }
+  }
+
+  // f2. 趋势查询对生成免疫已由 f 覆盖；此处补 list/detail 读面
+  const listPayload = await callHandler(listRoute, fakeReq({ url: ROUTES.reports }));
+  assert.equal(listPayload.ok, true, "reports GET ok");
+  assert.ok(Array.isArray(listPayload.reports) && listPayload.reports.length >= 1, "历史索引非空");
+  assert.equal(listPayload.reports[0].key, gen.meta.key, "倒序：最新在前");
+
+  const detail = await callHandler(detailRoute, fakeReq({ url: `${ROUTES.reportDetail}?period=daily&key=${encodeURIComponent(gen.meta.key)}` }));
+  assert.equal(detail.ok, true, "detail ok");
+  assert.equal(detail.meta.ok, true, "detail meta.ok=true");
+  assert.ok(typeof detail.html === "string" && detail.html.length > 0, "detail html 非空");
+
+  // g. 手动生成推进 lastRun（防调度 tick 重复生成同窗）
+  const lastRunFile = join(reportsDir, "last-run.json");
+  assert.ok(existsSync(lastRunFile), "last-run.json 已落盘");
+  const lastRun = JSON.parse(readFileSync(lastRunFile, "utf8"));
+  assert.equal(lastRun.daily, gen.meta.key, "lastRun.daily === 窗口键");
+
+  // h. 路径隔离：reports 产物全部落在临时 historyRoot 下，无 undefined 段
+  const produced = readdirSync(reportsDir);
+  assert.ok(produced.length > 0, "reports 目录有产物");
+  const PRODUCED_RE = /^(daily|weekly|monthly)-\d{4}-\d{2}(-\d{2})?(\.html|\.meta\.json)$|^index\.jsonl$|^last-run\.json$|^config\.json$/;
+  for (const f of produced) {
+    assert.ok(!f.includes("undefined"), `产物文件名无 undefined 段（实际 ${f}）`);
+    assert.ok(PRODUCED_RE.test(f), `产物文件名白名单形态（实际 ${f}）`);
+  }
+  assert.ok(!existsSync(join(dir, "undefined")), "无 undefined/ 目录段");
+
+  // detail 守卫：period 枚举 + key 白名单（防路径穿越）
+  {
+    const bad1 = await callHandler(detailRoute, fakeReq({ url: `${ROUTES.reportDetail}?period=evil&key=2026-09-04` }));
+    assert.equal(bad1.error, "invalid-period", "非法 period 拒绝");
+    const bad2 = await callHandler(detailRoute, fakeReq({ url: `${ROUTES.reportDetail}?period=daily&key=..%2F..%2Fevil` }));
+    assert.equal(bad2.error, "invalid-key", "穿越形态 key 拒绝（白名单正则）");
+    const bad3 = await callHandler(detailRoute, fakeReq({ url: `${ROUTES.reportDetail}?period=monthly&key=2026-09-04` }));
+    assert.equal(bad3.error, "invalid-key", "monthly 期传入 daily 形态 key 拒绝");
+    const bad4 = await callHandler(detailRoute, fakeReq({ url: `${ROUTES.reportDetail}?period=daily&key=2099-01-01` }));
+    assert.equal(bad4.error, "report-not-found", "合法形态但无产物 → 404");
+  }
+
+  // generate 守卫：非法 period 拒绝
+  {
+    const badGen = await callHandler(genRoute, fakeReq({ method: "POST", body: JSON.stringify({ period: "hourly" }) }));
+    assert.equal(badGen.error, "invalid-period", "generate 非法 period 拒绝");
+  }
+
+  await (effects.at(-1) as () => Promise<void>)(); // 卸载（async disposer：trend 刷盘 + scheduler 停 tick）
+  console.log("[smoke] #503 M3 报告接线断言全部通过 ✓");
+}
 
 // 恢复真实环境变量（测试收尾）
 for (const k of SAVED_ENV_KEYS) {

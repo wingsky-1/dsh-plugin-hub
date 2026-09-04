@@ -42,7 +42,9 @@
   "peerDependencies": {
     "react": "^18.2.0",
     "@deepseek-ai/cordis": "4.0.2",
-    "@deepseek-ai/dsh-host-webserver": "0.1.2-rc.1"
+    "@deepseek-ai/dsh-host-webserver": "0.1.2-rc.1",
+    "@deepseek-ai/dsh-llm": "0.1.2-rc.1",
+    "@deepseek-ai/dsh-session": "0.1.2-rc.1"
   },
   "peerDependenciesMeta": {
     "react": {
@@ -52,6 +54,12 @@
       "optional": true
     },
     "@deepseek-ai/dsh-host-webserver": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-llm": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-session": {
       "optional": true
     }
   },
@@ -63,6 +71,8 @@
     "@deepseek-ai/cordis": "catalog:",
     "@deepseek-ai/dsh-client-ui-slots": "catalog:",
     "@deepseek-ai/dsh-host-webserver": "catalog:",
+    "@deepseek-ai/dsh-llm": "catalog:",
+    "@deepseek-ai/dsh-session": "catalog:",
     "async-mutex": "^0.5.0",
     "schemastery": "^3.18.0",
     "untildify": "^6.0.0"

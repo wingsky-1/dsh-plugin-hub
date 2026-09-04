@@ -66,6 +66,81 @@ function diffSettingsPayload(settings: Record<string, any>, baseLine: Record<str
   return payload;
 }
 
+/**
+ * 409 冲突「保留我的修改并覆盖」的 rebase 纯函数（issue #405 PR2b）：
+ * 以服务端最新 effective 为基底，把本地变更键的值覆盖上去（键级 last-write-wins，
+ * 与 JSON Merge Patch / Firebase per-key merge 同语义）——本地变更键集合由调用方
+ * 在用户触发「覆盖」动作时实时重算（非 409 时刻快照，横幅期间的新编辑不丢）。
+ * 顶层浅拷贝即可（settings 不可变更新模式，patch 不原位改对象）。
+ * @param localChanges 本地相对旧基线的变更键集合（域/全量均适用）。
+ * @param remoteEffective 服务端最新 effective（GET /config 拉取）。
+ * @returns rebase 后的新草稿（作为 setSettings 输入）。
+ */
+function rebaseSettings(localChanges: Record<string, any>, remoteEffective: Record<string, any>): Record<string, any> {
+  return Object.assign({}, remoteEffective, localChanges);
+}
+
+/**
+ * 按保存入口从全量 diff 中取子集（issue #405 PR2 域保存）：
+ * - entry "all"：原样返回（foot 全量保存）；
+ * - entry "channels"：仅保留 channels 键（频道域保存——事件/参数半成品草稿不
+ *   随频道域保存提交）；
+ * - 未知入口：返回空对象（保守不提交）。
+ * 模块级纯函数（apply 挂载 + vm 直测），对齐 diffSettingsPayload 先例。
+ */
+function domainPayload(diff: Record<string, any>, entry: string): Record<string, any> {
+  if (entry === "all") return diff;
+  if (entry === "channels") {
+    if (!Object.prototype.hasOwnProperty.call(diff, "channels")) return {};
+    return { channels: diff.channels };
+  }
+  return {};
+}
+
+/**
+ * 保存串行 guard（issue #405 要素 2）：同一时刻仅一个在途保存请求。
+ * exhaustMap + trailing 语义——在途期间再点保存不丢弃意图：记 pending（含
+ * 入口标识），由调用方在本次在途结束（end）后按同一入口补发一次（补发是完整
+ * 保存，是否仍有脏由调用方 saveFor() 的 diff 空检查兜底，天然不循环）。
+ *
+ * 为什么 pending 记入口而非布尔：#405 PR2 有两个保存入口——foot 全量（"all"）
+ * 与频道 tab 域保存（"channels"），语义不同。在途期间被拒的入口必须原样补发：
+ * 若「保存频道」被拒却补发全量，会把事件 tab 的半成品草稿一并提交。同一次在途
+ * 多次点击不同入口时记最后一次意图（end 只返回一个入口，天然不风暴）。
+ *
+ * 模块级纯工厂（无 React 依赖），对齐 diffSettingsPayload 先例：
+ * apply 挂载 + vm materialize 直测，「测试即产品实现」。
+ *
+ * @returns {{ tryBegin(entry: string): boolean; isBusy(): boolean; end(): string | null }}
+ * - tryBegin(entry): 空闲则占用并返回 true；在途则记 pending=entry 返回 false。
+ * - end(): 释放占用；返回「在途期间最后一次被拒的入口」（调用方据此同入口补发
+ *   一次）；无 pending 返回 null。必须与 tryBegin 成功一一配对（放 finally），
+ *   任何路径都释放，防永久卡死。
+ */
+function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolean; end(): string | null } {
+  var busy = false;
+  var pending: string | null = null;
+  return {
+    tryBegin(entry: string): boolean {
+      if (busy) {
+        pending = entry;
+        return false;
+      }
+      busy = true;
+      return true;
+    },
+    isBusy(): boolean {
+      return busy;
+    },
+    end(): string | null {
+      busy = false;
+      var p = pending;
+      pending = null;
+      return p;
+    },
+  };
+}
+
   /** i18n 翻译函数（apply 时由 ctx.locale.bind(NS) 装配；未装配回落 key 本体，行为零变化）。 */
   var t: any = function (key: string, params?: any) {
     if (params === undefined) return key;
@@ -83,7 +158,7 @@ function diffSettingsPayload(settings: Record<string, any>, baseLine: Record<str
   };
   var STYLE_ID = "dsh-notifier-style";
   // 合并 #418/#421/#426/#508 后统一 bump（保证新样式重注入；508-1 > 426-1）
-  var CSS_VERSION = "508-1";
+  var CSS_VERSION = "405-2";
   // 浏览器通知图标（内联 SVG data URL，零外部资源；铃铛造型）。
   var NOTIFY_ICON =
     "data:image/svg+xml;utf8," +
@@ -644,6 +719,25 @@ function diffSettingsPayload(settings: Record<string, any>, baseLine: Record<str
     // 用 useRef 持久化：组件每次渲染局部变量会重置为 null，导致 save() 闭包里读不到
     // 基线而永远判定「无变化」。
     var baselineRef = ReactHooks.useRef(null as Record<string, any> | null);
+    // #405：settings / meta（revision）ref 收口——异步回调（保存成功 / trailing 补发）
+    // 一律读 ref 而非渲染闭包值，杜绝「连点第二个 PUT 带旧 revision」「补发漏提交在途
+    // 新编辑」两类陈旧闭包问题。settingsRef 由 patch（唯一写入口）在 updater 内同步。
+    var settingsRef = ReactHooks.useRef(null as Record<string, any> | null);
+    var metaRef = ReactHooks.useRef(null as any);
+    // #405：保存串行 guard（模块级纯工厂）——同一时刻仅一个在途 PUT。
+    var saveGuardRef = ReactHooks.useRef(null as ReturnType<typeof createSaveGuard> | null);
+    if (saveGuardRef.current === null) saveGuardRef.current = createSaveGuard();
+    var saveGuard = saveGuardRef.current;
+    // 保存中 UI 态（按钮禁用 + 「保存中…」文案）
+    var savingDraft = useState(false);
+    var saving = savingDraft[0];
+    var setSaving = savingDraft[1];
+    // #405 PR2b：409 冲突横幅态。null=无冲突；非 null={ entry, latest }——
+    // latest 为冲突时拉取的服务端最新 {effective, revision}（「加载最新/覆盖」动作
+    // 的数据源）。横幅期间用户可继续编辑（非模态），动作触发时实时重算本地变更。
+    var conflictDraft = useState(null as null | { entry: string; latest: any });
+    var conflict = conflictDraft[0];
+    var setConflict = conflictDraft[1];
 
     function loadHistory(alive: { value: boolean }) {
       fetchHistory().then(function (records) {
@@ -670,9 +764,11 @@ function diffSettingsPayload(settings: Record<string, any>, baseLine: Record<str
         .then(function (v: any) {
           if (!alive.value) return;
           var effective = (v && v.effective) || {};
-          setSettings(Object.assign({}, effective));
+          commitSettings(Object.assign({}, effective));
           baselineRef.current = Object.assign({}, effective);
-          setMeta({ user: v.user || {}, revision: v.revision, effective: effective, writable: v.writable !== false });
+          var nextMeta = { user: v.user || {}, revision: v.revision, effective: effective, writable: v.writable !== false };
+          metaRef.current = nextMeta;
+          setMeta(nextMeta);
           runtimeConfig = effective; // SSE 展示面同步
           if (v.writable === false) setSaved(t("settingsUnavailable"), true);
         })
@@ -695,57 +791,217 @@ function diffSettingsPayload(settings: Record<string, any>, baseLine: Record<str
       return React.createElement("li", { className: "dn-set-card" }, t("settingsLoading"));
     }
 
-    /** 函数式 setState 写设置（防 stale closure：同帧多次 onChange 后写覆盖先写）。
+    /** settings 唯一写入口（#405 ref 收口）：updater 内同步 settingsRef——
+     *  为什么在 updater 内写（而非 useEffect latest 模式）：useEffect 是 passive
+     *  effect（paint 后异步），可能与网络宏任务回调（保存成功 / trailing 补发）
+     *  乱序；updater 内写在 state 计算的同一闭包同一时刻完成，时序零窗口。React
+     *  并发 abort 重放会重跑整个 updater 队列，最终写值恒等于最终提交的 state
+     *  （最终一致）；StrictMode 双调写同值幂等。all 调用点（loadCard /
+     *  switchControl / discardChanges / 各 patch 调用方）统一走本函数，保证
+     *  异步回调读 settingsRef.current 恒为最新草稿。
      *  p 为对象时浅合并；为函数时以最新 prev 计算（prev => next）。 */
     function patch(p: any) {
       setSettings(function (prev: any) {
-        if (typeof p === "function") return p(prev);
-        return Object.assign({}, prev, p);
+        var next = typeof p === "function" ? p(prev) : Object.assign({}, prev, p);
+        settingsRef.current = next;
+        return next;
       });
       setSaved("");
     }
 
-    /** 基线 diff：只提交与加载基线不同的键（A4，防组合层 base 被默认值回写覆盖）。
-     *  逻辑收敛在模块级纯函数 diffSettingsPayload（#470 复核 P1-2，供测试直测）。 */
-    function diffPayload(): Record<string, any> {
-      return diffSettingsPayload(settings, baselineRef.current);
+    /** 整体替换 settings（#405 PR2b）：已知完整 next 时同步写 settingsRef 再
+     *  setState——调用方（loadCard / 冲突恢复 rebase / 静默刷新）随后可能立即
+     *  读 ref（如覆盖重提 saveFor），不能等 updater 异步执行。事件级增量编辑
+     *  仍走 patch（updater 内写 ref，天然与 state 计算同步）。 */
+    function commitSettings(next: Record<string, any>) {
+      settingsRef.current = next;
+      setSettings(next);
+      setSaved("");
     }
 
-    function save() {
-      var payload = diffPayload();
-      if (Object.keys(payload).length === 0) {
-        setSaved(t("unchanged"));
-        return;
-      }
-      fetch(ROUTES.config, {
+    /** 基线 diff：只提交与加载基线不同的键（A4，防组合层 base 被默认值回写覆盖）。
+     *  逻辑收敛在模块级纯函数 diffSettingsPayload（#470 复核 P1-2，供测试直测）。
+     *  #405：读 settingsRef（非渲染闭包 settings）——trailing 补发在 .then 回调里
+     *  触发，必须取最新草稿；渲染期调用时 ref 与 state 同值，无行为差异。 */
+    function diffPayload(): Record<string, any> {
+      return diffSettingsPayload(settingsRef.current || settings, baselineRef.current);
+    }
+
+    /** 409 冲突恢复（#405 PR2b）：拉最新 → 无脏静默刷新 / 有脏弹双动作横幅。 */
+    function handleConflict(entry: string) {
+      fetchConfig()
+        .then(function (v: any) {
+          if (!v) return;
+          var latest = { effective: (v && v.effective) || {}, revision: v && v.revision, user: (v && v.user) || {} };
+          // 本地已无该入口脏（用户在 409 往返间撤销/放弃）→ 静默切到最新（兑现
+          // issue 要点 4「自动重拉重新渲染」的安全路径，不打扰）。
+          if (Object.keys(diffPayloadFor(entry)).length === 0) {
+            applyLatestQuiet(latest);
+            return;
+          }
+          setConflict({ entry: entry, latest: latest });
+          setSaved(""); // 冲突横幅自带标题（conflictTitle/conflictChannels），foot 提示区清空防重复
+        })
+        .catch(function () {
+          // 拉最新失败：保留原错误提示（saveFailConflict），不弹横幅
+          setSaved(t("saveFailConflict", { msg: "" }), true);
+        });
+    }
+
+    /** 无脏静默刷新：settings/baseline/meta 全部切到服务端最新（不丢任何草稿——
+     *  调用前已确认本地无脏）。 */
+    function applyLatestQuiet(latest: any) {
+      commitSettings(Object.assign({}, latest.effective));
+      baselineRef.current = Object.assign({}, latest.effective);
+      var nextMeta = { user: latest.user || {}, revision: latest.revision, effective: Object.assign({}, latest.effective), writable: true };
+      metaRef.current = nextMeta;
+      setMeta(nextMeta);
+      runtimeConfig = latest.effective;
+      setSaved("");
+    }
+
+    /** 提交 PUT 并处理响应（save 的内核；guard 占用与释放由 saveFor 负责）。
+     *  #405 PR2b：409 不再只提示文案——转 handleConflict 进入双动作恢复流程。
+     *  #405 实测补强（浏览器验证发现）：fetch 在极端环境（连接池耗尽/服务端静默
+     *  挂起）可能永不 settle → finally 永不执行 → 按钮永久「保存中」。加 15s
+     *  AbortController 超时兜底：超时中断请求（服务端写入与否未知，UI 必须恢复），
+     *  释放 guard 并提示重试。 */
+    function putAndCommit(payload: Record<string, any>, entry: string) {
+      var expectedRevision = metaRef.current && typeof metaRef.current.revision === "number" ? metaRef.current.revision : undefined;
+      var ctrl: AbortController | null = typeof AbortController !== "undefined" ? new AbortController() : null;
+      var timer: ReturnType<typeof setTimeout> | null = ctrl ? setTimeout(function () { ctrl!.abort(); }, 15000) : null;
+      var chain = fetch(ROUTES.config, {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ patch: payload, expectedRevision: metaValue ? metaValue.revision : undefined }),
+        body: JSON.stringify({ patch: payload, expectedRevision: expectedRevision }),
+        signal: ctrl ? ctrl.signal : undefined,
       }).then(function (r: any) {
         return r.json().then(function (body: any) {
           if (!r.ok) {
             var err = (body && body.error) || {};
-            throw new Error(err.error || err.details || err.code || ("HTTP " + r.status));
+            // 挂 code 供 catch 按契约分流（#405 PR3 复核）：409 判定优先
+            // err.code === "SETTINGS_CONFLICT"，不再依赖错误文案中文匹配
+            // （文案是本地化/可改的，code 是契约字段）。文案保留进 message。
+            var throwErr = new Error(err.error || err.details || err.code || ("HTTP " + r.status)) as Error & { code?: string };
+            if (err.code !== undefined) throwErr.code = String(err.code);
+            throw throwErr;
           }
           return body;
         });
       }).then(function (body: any) {
-        baselineRef.current = Object.assign({}, settings);
-        setMeta({ user: (body && body.user) || {}, revision: (body && body.revision) || undefined, effective: settings, writable: true });
+        // #405 事务性基线推进（评审 P0-2 落实）：只并入本次 PUT 实际提交的 payload
+        // 键——若并入点击后的 settings 全量，在途期间的编辑会被固化为基线而丢失；
+        // 键级并入后，在途新编辑（非 payload 键）仍在 diff 中，由 trailing 补发提交。
+        baselineRef.current = Object.assign({}, baselineRef.current || {}, payload);
+        var nextMeta = {
+          user: (body && body.user) || {},
+          revision: (body && body.revision) || undefined,
+          effective: Object.assign({}, baselineRef.current),
+          writable: true,
+        };
+        metaRef.current = nextMeta; // 同步写 ref：补发立即读新 revision，不再 409
+        setMeta(nextMeta);
+        setConflict(null); // 覆盖保存成功：横幅关闭（若曾因再 409 重现）
         setSaved(t("savedOk"));
         setTimeout(function () { setSaved(""); }, 2200);
       }).catch(function (e: any) {
         var msg = (e && e.message) || e;
-        setSaved(String(msg).indexOf("版本冲突") >= 0
-          ? t("saveFailConflict", { msg: msg })
-          : t("saveFail", { msg: msg }), true);
+        // 409 判定：code 契约优先，中文文案仅作旧服务端回退（#405 PR3 复核）
+        if ((e && e.code === "SETTINGS_CONFLICT") || String(msg).indexOf("版本冲突") >= 0) {
+          // 版本冲突：进入双动作恢复（不再仅提示手动关闭重开）
+          handleConflict(entry);
+          return;
+        }
+        // AbortError（15s 超时兜底）：服务端可能已写入也可能未写入——提示重试，
+        // 用户重试时 revision 若已推进会自然走 409 恢复流程，语义自洽。
+        if (e && e.name === "AbortError") {
+          setSaved(t("saveTimeout"), true);
+          return;
+        }
+        setSaved(t("saveFail", { msg: msg }), true);
+      });
+      if (timer !== null) {
+        chain = chain.finally(function () { clearTimeout(timer!); });
+      }
+      return chain;
+    }
+
+    /** 从全量 diff 中按入口过滤出本次要提交的键（#405 PR2 域保存；
+     *  纯逻辑收敛在模块级 domainPayload，供测试直测）。 */
+    function diffPayloadFor(entry: string): Record<string, any> {
+      return domainPayload(diffPayload(), entry);
+    }
+
+    /** 保存（#405 串行 guard 接入，入口参数化）：同一时刻仅一个在途 PUT——
+     *  - entry："all"（foot 全量）/ "channels"（频道 tab 域保存，只提 channels 键）；
+     *  - 在途期间再次点击（任意入口）：guard 记 pending=该入口并立即返回；
+     *    本次在途结束（finally 释放 guard）后按被拒入口原样补发（trailing）——
+     *    补发读 settingsRef 最新草稿 + metaRef 最新 revision，无丢失、无误 409，
+     *    域保存被拒不会升级成全量提交（事件 tab 半成品不被误提交）；
+     *  - 空 diff：初次点击提示「未修改」；补发路径（quietIfEmpty=true）静默返回，
+     *    不覆盖刚显示的「已保存」；
+     *  - guard.end() 放 finally：成功/失败/异常任何路径都释放，防按钮永久卡死。 */
+    function saveFor(entry: string, quietIfEmpty?: boolean) {
+      if (!saveGuard.tryBegin(entry)) return; // 在途：记 pending=entry，由在途 finally 补发
+      var payload: Record<string, any>;
+      try {
+        payload = diffPayloadFor(entry);
+      } catch (error) {
+        // 防御：tryBegin 后同步异常（diff 计算等理论不可达路径）必须释放 guard
+        saveGuard.end();
+        setSaved(t("saveFail", { msg: String((error && (error as any).message) || error) }), true);
+        return;
+      }
+      if (Object.keys(payload).length === 0) {
+        saveGuard.end();
+        if (!quietIfEmpty) setSaved(t("unchanged"));
+        return;
+      }
+      setSaving(true);
+      putAndCommit(payload, entry).finally(function () {
+        setSaving(false);
+        var nextEntry = saveGuard.end();
+        if (nextEntry !== null) saveFor(nextEntry, true); // trailing 补发（同入口，天然不循环）
       });
     }
 
-    /** #508 M1：放弃更改——草稿回写加载基线（编辑态/运行时镜像同步还原）。 */
+    /** 冲突横幅「加载最新」：丢弃本地草稿，切到服务端最新（等价旧「关闭重开」
+     *  的手动重拉，无需用户手动操作）。 */
+    function resolveConflictLoadLatest() {
+      if (!conflict) return;
+      applyLatestQuiet(conflict.latest);
+      setConflict(null);
+      toast(t("conflictLoadedLatest"));
+    }
+
+    /** 冲突横幅「保留我的修改并覆盖」：rebase-then-retry——
+     *  以最新 effective 为新基线，把本地变更键（动作触发时实时重算，非 409 快照，
+     *  横幅期间新编辑不丢）覆盖上去，用新 revision 重提；再 409 会回到横幅
+     *  （每次覆盖消费一次用户动作，天然收敛、无自动风暴）。 */
+    function resolveConflictOverwrite() {
+      if (!conflict) return;
+      var entry = conflict.entry;
+      var latest = conflict.latest;
+      var localChanges = diffPayloadFor(entry); // 实时重算（相对旧基线的当前脏）
+      var merged = rebaseSettings(localChanges, latest.effective || {});
+      commitSettings(merged); // 同步写 ref：随后 saveFor 立即以 merged 计算 diff
+      baselineRef.current = Object.assign({}, latest.effective || {});
+      var nextMeta = { user: latest.user || {}, revision: latest.revision, effective: Object.assign({}, latest.effective || {}), writable: true };
+      metaRef.current = nextMeta;
+      setMeta(nextMeta);
+      runtimeConfig = latest.effective;
+      setConflict(null);
+      setSaved("");
+      // 用最新 revision 重提（quiet 补发语义：diff 由合并后的 settings 计算）
+      saveFor(entry, true);
+    }
+
+    /** #508 M1：放弃更改——草稿回写加载基线（编辑态/运行时镜像同步还原）。
+     *  #405：经 patch 统一写入口（settingsRef 同步）；按钮在 saving 期间禁用
+     *  （foot 渲染处），消除「在途成功回调覆盖放弃后基线」的竞态。 */
     function discardChanges() {
       if (baselineRef.current) {
-        setSettings(Object.assign({}, baselineRef.current));
+        commitSettings(Object.assign({}, baselineRef.current));
         runtimeConfig = baselineRef.current;
       }
       setSaved("");
@@ -903,10 +1159,19 @@ function diffSettingsPayload(settings: Record<string, any>, baseLine: Record<str
       });
     }
 
-    /** 动态 kind 确认（POST /kinds；完成后刷新清单并提示）。 */
+    /** 动态 kind 确认（POST /kinds；完成后刷新清单并提示）。
+     *  #405 PR3（评审 P1-2）：响应体带新 revision → 同步 metaRef/setMeta——服务端
+     *  确认写入已推进 revision，若不同步，同一窗口随后保存会带过期 revision 必 409
+     *  （无并发的纯版本链断点，比连点更高频）。 */
     function confirmOne(kind: string, confirmed: boolean) {
       postKind(kind, confirmed)
-        .then(function () {
+        .then(function (body: any) {
+          var freshRevision = body && typeof body.revision === "number" ? body.revision : undefined;
+          if (freshRevision !== undefined && metaRef.current) {
+            var nextMeta = Object.assign({}, metaRef.current, { revision: freshRevision });
+            metaRef.current = nextMeta;
+            setMeta(nextMeta);
+          }
           toast(t("kindConfirmOk"));
           return loadKinds({ value: true }) as any;
         })
@@ -967,15 +1232,15 @@ function diffSettingsPayload(settings: Record<string, any>, baseLine: Record<str
       );
     }
 
-    /** 顶层布尔设置键的 switch（switchToggle 的设置键薄封装）。 */
+    /** 顶层布尔设置键的 switch（switchToggle 的设置键薄封装）。
+     *  #405：统一走 patch 写入口（settingsRef 同步），不再裸 setSettings。 */
     function switchControl(key: string, ariaLabel: string) {
       return switchToggle(settings[key] === true, function (v: boolean) {
-        setSettings(function (prev: any) {
+        patch(function (prev: any) {
           var next = Object.assign({}, prev);
           next[key] = v;
           return next;
         });
-        setSaved("");
       }, ariaLabel);
     }
 
@@ -1758,20 +2023,47 @@ function diffSettingsPayload(settings: Record<string, any>, baseLine: Record<str
       dedupFold,
       dndCard,
     ];
-    // 频道 tab 内容：频道卡组（内置 + Bark + Webhook）+ 添加按钮（#418：无就近保存——
-    // 与 foot 保存同一份全量草稿，双保存按钮视觉重复；域级拆分属 #405 跟踪）
+    // 频道 tab 内容：频道卡组（内置 + Bark + Webhook）+ 添加按钮 + 域保存行。
+    // #405 PR2 域保存（方案定稿形态 B）：频道 tab 底部「保存频道」只提交 channels
+    // 键——与 foot 全量保存语义不同（域 vs 全量），不构成 #418 移除的「双份全量
+    // 保存」视觉重复；#418 原文预留「域级拆分后按域重排按钮位置」，本行兑现。
+    var channelsDomainSave = React.createElement("div", { className: "dn-ch-domainSave", key: "ch-domain-save" },
+      React.createElement("span", { className: "dn-ch-domainSaveHint" }, t("channelsDomainHint")),
+      React.createElement("button", {
+        type: "button",
+        className: "dn-set-btn dn-set-btnPrimary dn-set-save",
+        disabled: saving,
+        onClick: function () { saveFor("channels"); },
+      }, saving ? t("saving") : t("saveChannels")),
+    );
     var channelsPane = [
       channelsChildren,
+      channelsDomainSave,
     ];
 
     // #402 第 4 条：去掉设置卡 title/副标题；顶部直接是 tab 栏。
     // #508 M1：底部保存栏 = 脏状态指示（diffSettingsPayload 键数）+ 放弃更改 + 保存。
+    // #405 PR2：foot 显示全量脏计数（含频道域）；「保存频道」按钮的域脏态不做单独
+    // 计数——无频道域脏时点击走空 diff 的「未修改」提示（与 foot 保存同交互语义）。
     var dirtyCount = Object.keys(diffPayload()).length;
     return React.createElement("li", { className: "dn-set-card" },
       tabbar,
       React.createElement("div", { className: "dn-set-body" },
         activeTab === "events" ? eventsPane : activeTab === "channels" ? channelsPane : historyPane,
         React.createElement("div", { className: "dn-set-notes" }, degradation),
+        // #405 PR2b：409 冲突双动作横幅（非模态：横幅期间可继续编辑；动作触发时
+        // 实时重算本地变更）。「忽略」= 关闭横幅、草稿保留原样。
+        conflict
+          ? React.createElement("div", { className: "dn-conflict", role: "alert" },
+              React.createElement("span", { className: "dn-conflictText" },
+                t(conflict.entry === "channels" ? "conflictChannels" : "conflictTitle")),
+              React.createElement("span", { className: "dn-conflictActions" },
+                React.createElement("button", { type: "button", className: "dn-set-btn dn-set-btnSmall", onClick: resolveConflictLoadLatest }, t("conflictLoadLatest")),
+                React.createElement("button", { type: "button", className: "dn-set-btn dn-set-btnSmall dn-set-save", disabled: saving, onClick: resolveConflictOverwrite }, t("conflictOverwrite")),
+                React.createElement("button", { type: "button", className: "dn-set-btn dn-set-btnSmall", onClick: function () { setConflict(null); } }, t("conflictIgnore")),
+              ),
+            )
+          : null,
         React.createElement("div", { className: "dn-set-foot" },
           saved
             ? React.createElement("span", { className: saved.err ? "dn-set-error" : "dn-set-saved" }, saved.msg)
@@ -1779,8 +2071,10 @@ function diffSettingsPayload(settings: Record<string, any>, baseLine: Record<str
               ? React.createElement("span", { className: "dn-dirty" }, t("dirtySome", { n: dirtyCount }))
               : null,
           React.createElement("span", { className: "dn-spacer" }),
-          React.createElement("button", { type: "button", className: "dn-set-btn dn-set-btnSmall", onClick: discardChanges }, t("discardChanges")),
-          React.createElement("button", { type: "button", className: "dn-set-save", onClick: save }, t("save")),
+          // #405：保存中（guard 在途）禁用「放弃更改」与「保存」——防提交窗口内矛盾操作
+          // （放弃被在途成功回调覆盖基线）与连点重复 PUT；按钮文案切换「保存中…」。
+          React.createElement("button", { type: "button", className: "dn-set-btn dn-set-btnSmall", disabled: saving, onClick: discardChanges }, t("discardChanges")),
+          React.createElement("button", { type: "button", className: "dn-set-save", disabled: saving, onClick: function () { saveFor("all"); } }, saving ? t("saving") : t("save")),
         ),
       ),
     );
@@ -1789,9 +2083,13 @@ function diffSettingsPayload(settings: Record<string, any>, baseLine: Record<str
   // ------------------------------------------------------------ 装配
 
 export function apply(ctx: any) {
-    // 测试直测挂载面（#470 复核 P1-2）：diffSettingsPayload 是模块级纯函数，
-    // 经 apply 暴露给 smoke 测试引用——保证「测试即产品实现」而非手写近似。
+    // 测试直测挂载面（#470 复核 P1-2 / #405）：diffSettingsPayload 与
+    // createSaveGuard 是模块级纯函数，经 apply 暴露给 smoke 测试引用——
+    // 保证「测试即产品实现」而非手写近似。
     (apply as any).diffSettingsPayload = diffSettingsPayload;
+    (apply as any).createSaveGuard = createSaveGuard;
+    (apply as any).domainPayload = domainPayload;
+    (apply as any).rebaseSettings = rebaseSettings;
     try {
       ensureStyle({ id: STYLE_ID, cssText: STYLE, version: CSS_VERSION });
 

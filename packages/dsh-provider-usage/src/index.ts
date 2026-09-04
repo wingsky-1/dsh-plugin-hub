@@ -17,6 +17,10 @@
  * - GET /api/dsh-provider-usage/health  健康检查 + 适配器快照
  * - GET/POST /api/dsh-provider-usage/ui-config 胶囊位置配置（读取/保存，保存后 SSE 广播）
  * - GET /api/dsh-provider-usage/events  SSE 事件通道（ui-config-changed 等，客户端即时热更新）
+ * - GET/POST /api/dsh-provider-usage/report-config 报告配置（读/写，#503 M3）
+ * - GET /api/dsh-provider-usage/reports  报告历史索引（#503 M3）
+ * - GET /api/dsh-provider-usage/reports/detail  报告详情（#503 M3）
+ * - POST /api/dsh-provider-usage/reports/generate  手动生成报告（#503 M3）
  */
 
 // ------------------------------------------------------------------ 对外 re-export
@@ -62,6 +66,26 @@ export { splitProviderList, providerBadgeText } from "./client-logic.ts";
 export { runV2Pipeline, runV2PanelPipeline, capsuleHtmlFromHistory, panelCacheKey, normalizeRangeDay, isPanelCacheStale, PANEL_CACHE_TTL_MS } from "./pipeline/v2.ts";
 export type { PanelCacheEntry } from "./pipeline/v2.ts";
 export { HotReloadableAdapter, loadAndValidateAdapter, readStamp, stampEqual } from "./hotreload.ts";
+// #503 会话用量趋势（M1 数据层）：trend 模块公共面（测试/外部消费者从 lib/index.js 导入）
+export { TrendTracker } from "./trend/index.ts";
+export type { TrendTrackerOptions } from "./trend/index.ts";
+export { TrendCollector, TREND_FOLD_TTL_MS, TREND_DONE_MAX } from "./trend/collector.ts";
+export type { TrendCallRecord, TrendCorrectRecord, TrendCounterRecord, TrendEmit } from "./trend/collector.ts";
+export { TrendAggregator, metricValue, weekStartKey, lastNWeekKeys, lastNMonthKeys, monthRange, weekRange, mergeAggRows } from "./trend/aggregator.ts";
+export type { TrendMetric, TrendGranularity, TrendStackPart, TrendStackPoint, TrendWindowSummary } from "./trend/aggregator.ts";
+export { TrendStore } from "./trend/store.ts";
+// isValidShardRow/safeToken/safeId：分片行校验与防御提取纯函数（单测从 lib/index.js 导入）
+export { TREND_ROW_VERSION, TREND_UNIDENTIFIED, sumToken, isValidShardRow, safeToken, safeId } from "./trend/types.ts";
+export type { TrendAttribution, TrendTokens, TrendDetailRow, TrendCounterRow, TrendAggRow, TrendCell } from "./trend/types.ts";
+// #503 会话用量报告（M3 接线）：report 模块公共面（测试/外部消费者从 lib/index.js 导入）
+export { candidateWindow, pendingReports } from "./report/schedule.ts";
+export type { DueReport } from "./report/schedule.ts";
+export { parseHHMM, normalizeReportConfig, DEFAULT_REPORT_CONFIG, DEFAULT_PROMPT_TEMPLATE, readReportConfig, writeReportConfig, reportConfigFile } from "./report/config.ts";
+export type { ReportConfig, ReportPeriod, ReportPeriodConfig } from "./report/config.ts";
+export { generateReport, applyPromptTemplate, buildStatsSnapshot } from "./report/generate.ts";
+export type { ReportMeta, ReportResult, ReportStatsSnapshot, ReportLlmService, ReportTokenUsage } from "./report/generate.ts";
+export { ReportScheduler } from "./report/scheduler.ts";
+export { readLastRun, writeLastRun } from "./report/scheduler.ts";
 // 路径解析纯函数透出（供测试与调用方复用同一展开/解析规则，无行为变更）
 export { resolvePath, pluginHome, expandHomePath } from "./path-resolve.ts";
 // 配置归一化（#276 方案 A 阶段 3 拆出：默认值 / schemastery schema / normalizeConfig）

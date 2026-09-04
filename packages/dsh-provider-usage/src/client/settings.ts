@@ -13,6 +13,10 @@ import { splitProviderList, providerBadgeText } from "../client-logic.ts";
 import type { ProviderListItem } from "../client-logic.ts";
 import { t } from "../../../../shared/client/i18n.js";
 import type { ProviderUsageLocaleKey } from "./locales.ts";
+// #503：设置页顶部「使用趋势」区块（三维切换 + 堆叠柱状 + 汇总卡）
+import { TrendSection } from "./trend.ts";
+// #503 M3：设置页「用量报告」区块（配置卡片 + 手动生成 + 历史列表）
+import { ReportSection } from "./report.ts";
 
 // ---------------------------------------------------------------- 类型
 
@@ -782,6 +786,10 @@ export function SettingsPage() {
   return React.createElement(
     "div",
     { className: "dou-settings", style: { maxWidth: 560 } },
+    // #503：使用趋势区块置顶（三维切换 + 堆叠柱状 + 汇总卡），原有三节行为不变
+    React.createElement(TrendSection),
+    // #503 M3：用量报告区块（配置 + 手动生成 + 历史）紧随趋势区块
+    React.createElement(ReportSection),
     React.createElement(UsageSection, { statsByProvider }),
     React.createElement(UiSection),
     React.createElement(ProviderListSection, {
