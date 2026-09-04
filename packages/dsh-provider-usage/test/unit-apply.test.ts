@@ -361,16 +361,28 @@ export function formatPanel() { return "<p>p</p>"; }
 import fs, { existsSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 
-/** 构造标准 fake ctx：收集路由与 disposer。 */
+/** 构造标准 fake ctx：收集路由与 disposer。
+ *  - over.get：可选注入的假 wingsky.notifier 服务（get 桩命中 "wingsky.notifier" 时返回）；
+ *  - over.recordOn：为 true 时记录 ctx.on 监听器到 listeners（供 internal/service 补注册测试手动触发）。 */
 function makeCtx(over: {
   llm?: unknown;
+  get?: unknown;
+  recordOn?: boolean;
 } = {}) {
   const routes: Array<Record<string, unknown>> = [];
   const disposers: Array<() => void> = [];
+  const listeners: Map<string, Array<(...args: unknown[]) => unknown>> = new Map();
   const ctx = {
     logger: { warn: () => {} },
     webServer: { register(route: Record<string, unknown>) { routes.push(route); return () => {}; } },
-    on: onStub,
+    on: over.recordOn
+      ? (name: string, cb: (...args: unknown[]) => unknown) => {
+          const list = listeners.get(name) ?? [];
+          list.push(cb);
+          listeners.set(name, list);
+          return () => {};
+        }
+      : onStub,
     llm: over.llm !== undefined ? over.llm : { listProviders() { return []; } },
     fiber: { state: "active" },
     inject: (deps: unknown, cb: (s: unknown) => void) => { cb({ settings: {} }); },
@@ -380,7 +392,10 @@ function makeCtx(over: {
       return typeof d === "function" ? d : () => {};
     },
   };
-  return { ctx, routes, disposers };
+  if (over.get !== undefined) {
+    (ctx as Record<string, unknown>).get = (name: string) => (name === "wingsky.notifier" ? over.get : undefined);
+  }
+  return { ctx, routes, disposers, listeners };
 }
 
 // ---------------------------------------------------------------- #301：apply 内部恢复隔离坏状态且诊断单次可见
@@ -848,4 +863,68 @@ export function formatPanel() { return "<p>f</p>"; }
     await fetchWithTimeout("https://gw.test/def");
     assert.ok(defCalls >= 1, "默认参数下仍走 fetch 至少一次");
   });
+}
+
+// ---------------------------------------------------------------- #534：通知类型注入（可选 notifier 探测 + 动态 kind 注册/补注册）
+
+{
+  /** 假 notifier 服务：send 恒可调，registerKind 记录调用（不真正落盘）。 */
+  function fakeNotifier(kinds: Array<{ id: string; label: string }>) {
+    return {
+      send: async () => ({ ok: true }),
+      registerKind(reg: { id: string; label: string }) {
+        kinds.push({ id: reg.id, label: reg.label });
+      },
+    };
+  }
+
+  // 落盘隔离（#218 零污染纪律）：DSH_HOME 指向临时目录，不碰真实环境与仓库
+  const dir = mkdtempSync(join(tmpdir(), "dou-kind-534-"));
+  const historyDir = join(dir, "history");
+  const savedDshHome = process.env.DSH_HOME;
+  process.env.DSH_HOME = join(dir, "dshhome");
+  mkdirSync(process.env.DSH_HOME, { recursive: true });
+  try {
+    const baseCfg = { autoReload: false, apiKey: "sk-test", apiEndpoint: "http://127.0.0.1:9", historyDir };
+
+    // 1) ctx 无 get（fake ctx 未提供探测面）：降级不注册、apply 正常挂载不抛
+    {
+      const { ctx, routes, disposers } = makeCtx();
+      await apply(ctx, baseCfg);
+      assert.ok(routes.some((r) => r.path === ROUTES.health), "无 notifier 探测面时 apply 正常挂载");
+      for (const dispose of [...disposers].reverse()) { try { dispose(); } catch {} }
+    }
+
+    // 2) ctx.get 命中 wingsky.notifier（notifier 已加载）：挂载即注册 provider-usage:report
+    {
+      const kinds: Array<{ id: string; label: string }> = [];
+      const { ctx, routes, disposers } = makeCtx({ get: fakeNotifier(kinds) });
+      await apply(ctx, baseCfg);
+      assert.equal(kinds.length, 1, "挂载直调注册一次");
+      assert.equal(kinds[0].id, "provider-usage:report", "注册 kind id 正确");
+      assert.equal(kinds[0].label, "用量报告", "注册 kind label 正确");
+      for (const dispose of [...disposers].reverse()) { try { dispose(); } catch {} }
+    }
+
+    // 3) internal/service 事件补注册：notifier 后加载/HMR 重建后 kindRegistry 为空，
+    //    事件触发 → 重新注册（挂载 1 次 + 事件触发 1 次 = 2 次，幂等无害）
+    {
+      const kinds: Array<{ id: string; label: string }> = [];
+      const { ctx, disposers, listeners } = makeCtx({ get: fakeNotifier(kinds), recordOn: true });
+      await apply(ctx, baseCfg);
+      assert.equal(kinds.length, 1, "挂载直调已注册一次");
+      const svcListeners = listeners.get("internal/service") ?? [];
+      assert.ok(svcListeners.length >= 1, "internal/service 监听已注册");
+      // 手动触发 notifier 服务事件（模拟 notifier 提供/重载完成广播）
+      for (const cb of svcListeners) {
+        cb("wingsky.notifier");
+      }
+      assert.equal(kinds.length, 2, "事件触发补注册一次（幂等追加）");
+      assert.equal(kinds[1].id, "provider-usage:report", "补注册 kind id 一致");
+      for (const dispose of [...disposers].reverse()) { try { dispose(); } catch {} }
+    }
+  } finally {
+    if (savedDshHome === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = savedDshHome;
+  }
 }

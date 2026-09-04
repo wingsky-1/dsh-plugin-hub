@@ -548,24 +548,29 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   const reportMutex = new Mutex();
 
   /**
-   * 可选服务探测：ctx["wingsky.notifier"] 不在本插件 inject 声明面——cordis 的
+   * 可选服务探测：'wingsky.notifier' 不在本插件 inject 声明面——cordis 的
    * inject 为硬依赖（声明而服务缺失会令插件整体 INACTIVE，见 Fiber._refresh），
-   * 故推送能力必须经 try-catch 动态探测：服务在 →返回服务；不在 →get trap 同步
-   * 抛错就地吞掉、返回 null（静默跳过推送，主流程零影响）。
+   * 故推送能力必须经 get(name, false) 非严格探测（cordis 官方可选注入姿势，
+   * 与 dsh-notifier 自身 getNotifierService 同形；service.d.ts 第 12 行写明）：
+   * 服务在 →返回服务；不在 →返回 undefined → 返回 null（静默跳过推送，主流程
+   * 零影响）。不能用 ctx["wingsky.notifier"] 属性访问——未声明 inject 时 cordis
+   * get trap 无论服务是否已提供都抛 "cannot get property without inject"。
    * 每次发送/注册前现取、不缓存引用：与 notifier 插件的加载/热重载时序无关。
+   * try/catch 保留：防御 ctx.get 在其 mixin accessor 链路理论抛错，静默降级
+   * 而不是让 apply 整体启动失败（与 getNotifierService 逐字同形）。
    */
   function optionalNotifier(): {
     send: (req: { source: string; kind: string; severity: string; title: string; body: string }) => Promise<unknown>;
     registerKind?: (reg: { id: string; label: string }) => unknown;
   } | null {
     try {
-      const n = (ctx as { "wingsky.notifier"?: unknown })["wingsky.notifier"];
+      const n = (ctx as { get?: (name: string, strict?: boolean) => unknown }).get?.("wingsky.notifier", false);
       if (n !== null && typeof n === "object" && typeof (n as { send?: unknown }).send === "function") {
         return n as { send: (req: { source: string; kind: string; severity: string; title: string; body: string }) => Promise<unknown>; registerKind?: (reg: { id: string; label: string }) => unknown };
       }
       return null;
     } catch {
-      return null; // cordis get trap：服务未提供（未声明 inject 的必需服务访问被拒）
+      return null; // ctx.get 异常：服务不可达时静默降级（不阻断挂载/主流程）
     }
   }
 
@@ -623,8 +628,14 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     warn: (msg) => console.warn(`[dsh-provider-usage] report: ${sanitizeDiagnostic(msg)}`),
   });
 
-  // 可选推送 kind 动态注册（挂载时一次性；中心不在/异常静默——注册失败不阻断挂载）。
-  {
+  // 可选推送 kind 动态注册（挂载直调 + internal/service 事件补注册）：
+  // registerKind 幂等（notifier 侧 kindRegistry.set），重复调用无害。
+  // - 挂载直调：notifier 已加载（profile 顺序在其后）时立即注册；
+  // - internal/service 订阅：notifier 后加载/HMR 重建 kindRegistry（新建空表）
+  //   时补注册（事件在服务 provide/unprovide/fiber 生命周期迁移时派发，
+  //   { global: true } 与 dsh-notifier 对 userQuestions 的订阅先例一致）；
+  // - 两者任一路成功即保证 kind 在清单中；中心不在/异常静默——不阻断挂载。
+  function ensureReportKind(): void {
     const notifier = optionalNotifier();
     if (notifier !== null && typeof notifier.registerKind === "function") {
       try {
@@ -632,6 +643,10 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       } catch { /* 注册失败静默：推送为可选功能 */ }
     }
   }
+  ensureReportKind();
+  trendDisposers.push(ctx.on("internal/service", (name) => {
+    if (name === "wingsky.notifier") ensureReportKind();
+  }, { global: true }));
 
   // 7. 路由注册
   // #308 断连感知统一形态（stats/history 共用）：请求级 AbortController——客户端
