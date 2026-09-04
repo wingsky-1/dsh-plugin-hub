@@ -130,7 +130,7 @@ const loopbackMethods = ["GET", "POST"];
     assert.equal(resOk.state.status, 200);
     assert.equal(resOk.state.headers["content-type"], "text/event-stream");
     assert.ok(resOk.state.body.startsWith(": connected"));
-    assert.ok(manager.sseConnections.has(resOk), "连接已登记");
+    assert.equal(manager.sseHub?.size(), 1, "连接已登记（hub 惰性创建）");
     // 广播经 onStatus 到达已登记连接（apply 内即此组合）。
     // emitStatus 是 coalesce 异步（setTimeout 0），需等待宏任务落定。
     let frames = 0;
@@ -138,14 +138,14 @@ const loopbackMethods = ["GET", "POST"];
       frames += 1;
     };
     const unsubscribe = manager.onStatus(() => {
-      broadcastFrame(manager.sseConnections, sseData({ type: "summary" }));
+      manager.sseHub?.broadcast(sseData({ type: "summary" }));
     });
     manager.emitStatus();
     // emitStatus 是 coalesce 异步（setTimeout 0）：轮询等广播落定（事件驱动替代固定 sleep）。
     await pollUntil("广播落定 frames===1", () => frames === 1);
     // close 注销。
     resOk.state.onClose();
-    assert.equal(manager.sseConnections.size, 0, "close 后注销");
+    assert.equal(manager.sseHub?.size(), 0, "close 后注销");
     // 二次广播应执行但不再写帧（连接已注销）——哨兵确认广播落定后断言帧数不变。
     let landed = 0;
     const offSentinel = manager.onStatus(() => {
@@ -157,6 +157,31 @@ const loopbackMethods = ["GET", "POST"];
     assert.equal(frames, 1, "close 注销后广播不再写帧");
     unsubscribe();
   } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---- #515：mcp 补齐连接上限 + 淘汰（对齐 notifier；取代旧裸 Set 无上限） ----
+
+{
+  const { dir, manager } = setup();
+  try {
+    // 上限 2：注册 3 条 → 最老被淘汰，表收敛 2。
+    const route = makeEventsRoute(manager, { heartbeatMs: 60_000, maxConnections: 2 });
+    const r1 = fakeRes();
+    const r2 = fakeRes();
+    const r3 = fakeRes();
+    route.handler(fakeReq("GET", ROUTES.events), r1);
+    route.handler(fakeReq("GET", ROUTES.events), r2);
+    route.handler(fakeReq("GET", ROUTES.events), r3);
+    assert.equal(manager.sseHub?.size(), 2, "上限 2，注册 3 收敛到 2");
+    assert.equal(r1.state.destroyed, true, "最老 r1 被淘汰 destroy");
+    assert.equal(r2.state.destroyed, false, "r2 保留");
+    assert.equal(r3.state.destroyed, false, "r3 保留");
+    const stats = manager.sseHub?.evictStats();
+    assert.equal(stats?.limit, 1, "evict 原因计数 limit=1");
+  } finally {
+    manager.sseHub?.dispose();
     rmSync(dir, { recursive: true, force: true });
   }
 }
@@ -176,14 +201,13 @@ const countPing = (res) => (res.state.body.match(/data: \{"type":"ping"\}/g) ?? 
     const route = makeEventsRoute(manager, { heartbeatMs: 10 });
     const res = fakeRes();
     route.handler(fakeReq("GET", ROUTES.events), res);
-    assert.equal(manager.sseHeartbeatCleanups?.size, 1, "心跳清理函数已登记 disposer 注册表");
+    assert.equal(manager.sseHub?.size(), 1, "连接已登记（hub）");
     // 等心跳帧到达阈值（事件驱动轮询替代固定 sleep 等后台数据）。
     await pollUntil("心跳 data ping 帧到达", () => countPing(res) >= 1);
     const pingsAtClose = countPing(res);
-    // close：注销连接 + 清心跳定时器（防泄漏），此后不再有新帧。
+    // close：hub 内部 evict（出表 + 停对该连接写心跳），此后不再有新帧。
     res.state.onClose();
-    assert.equal(manager.sseConnections.size, 0, "close 后注销");
-    assert.equal(manager.sseHeartbeatCleanups.size, 0, "close 自删 cleanup");
+    assert.equal(manager.sseHub?.size(), 0, "close 后注销");
     await assertNoGrowth("close 后心跳停止", () => countPing(res), pingsAtClose);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -200,14 +224,15 @@ const countPing = (res) => (res.state.body.match(/data: \{"type":"ping"\}/g) ?? 
     const resB = fakeRes();
     route.handler(fakeReq("GET", ROUTES.events), resA);
     route.handler(fakeReq("GET", ROUTES.events), resB);
-    assert.equal(manager.sseConnections.size, 2);
-    assert.equal(manager.sseHeartbeatCleanups.size, 2, "每连接一条 cleanup");
-    for (const stopHeartbeat of [...manager.sseHeartbeatCleanups]) stopHeartbeat();
-    assert.equal(manager.sseHeartbeatCleanups.size, 0, "disposer 清空注册表");
-    // 清理发生在首个 interval 跳之前（同步路径），两连接均应零心跳帧：
-    // 观察窗口内持续断言（事件驱动轮询替代固定 sleep 等后台停止）。
-    await assertNoGrowth("卸载后连接 A 心跳停止", () => countPing(resA), 0);
-    await assertNoGrowth("卸载后连接 B 心跳停止", () => countPing(resB), 0);
+    assert.equal(manager.sseHub?.size(), 2, "两条连接已登记");
+    // 卸载路径：hub.dispose() 统一停心跳 + destroy 全部连接（apply disposer 同款），
+    // 不依赖 res.destroy() 触发 close 的异步时序。
+    const hub = manager.sseHub;
+    hub?.dispose();
+    // dispose 后 hub 仍可用（destroy 由 dispose 语义外/或调用方负责）——此处模拟
+    // apply disposer 语义：dispose 停心跳；连接由 register 的 close 清理或路由卸载 destroy。
+    await assertNoGrowth("dispose 后连接 A 心跳停止", () => countPing(resA), 0);
+    await assertNoGrowth("dispose 后连接 B 心跳停止", () => countPing(resB), 0);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -223,9 +248,10 @@ const countPing = (res) => (res.state.body.match(/data: \{"type":"ping"\}/g) ?? 
     route.handler(fakeReq("GET", ROUTES.events), res);
     await pollUntil("destroy 前心跳在写帧", () => countPing(res) >= 1);
     const pingsAtDestroy = countPing(res);
-    res.destroy(); // 不触发 onClose：走 destroyed 自愈而非 close 清理
+    res.destroy(); // 不触发 onClose：hub 心跳 tick 看到 destroyed 即 evict（自愈）
     await assertNoGrowth("destroy 后心跳停止写帧", () => countPing(res), pingsAtDestroy);
-    assert.equal(manager.sseHeartbeatCleanups.size, 0, "自愈路径自删 cleanup");
+    // 心跳 tick 是异步的：轮询等 hub 自愈出表（事件驱动替代固定 sleep）。
+    await pollUntil("hub 自愈 evict destroyed 连接", () => (manager.sseHub?.size() ?? 0) === 0);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

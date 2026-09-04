@@ -4,12 +4,17 @@
  * 全部可变状态经工厂函数收口（createSseHub / createSystemNotifier），
  * 路由经 buildRoutes(deps) 纯组装——deps 由 index.ts 装配层注入，
  * 本模块自身不持有跨请求状态以外的生命周期职责。
+ *
+ * #515：SSE 连接管理（表/心跳/上限淘汰/stalled+maxAge 主动回收）收敛到
+ * shared/sse-hub.js 单一实现（连接状态机）；本文件保留 notifier 业务包装
+ * （seq + 滚动缓冲 + ?since 补拉）与对外接口不变。
  */
 import { spawn, execFile } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import type { ServerResponse } from "node:http";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import { writeJson, readBody, errorMessage, sseData, guardLoopbackMethod } from "../../../shared/host-utils.js";
+import { createSseHub as createSharedHub } from "../../../shared/sse-hub.js";
 import type { NotifyConfig } from "./config.ts";
 import { sanitizePatchSettings, validateSettings, redactConfigView, unmaskChannels } from "./config.ts";
 import type { HistoryStore } from "./history.ts";
@@ -26,36 +31,66 @@ export const ROUTES = {
   kinds: "/api/dsh-notifier/kinds",
 };
 
-/** 写失败判死阈值：连续 ≥3 次写不动即销毁（理论 throw 兜底路径）。
- *  注意：真实 ServerResponse 对已断对端 write() 几乎不抛错（数据静默入队），
- *  死连接主力清理是 close / error（register 收口）与 destroyed/writableEnded 兜底，
- *  failStreak 仅兜底「抛错」这一理论路径——阈值 3 对应约 3 个广播/心跳周期，
- *  非严格 90s。write 返回 false 一律视为背压（见 writeFrame）。 */
-const MAX_WRITE_FAILS = 3;
+/** SSE 推送枢纽：连接表、滚动缓冲广播、心跳。
+ *  #515：连接管理（表/心跳/上限淘汰/stalled+maxAge 回收）收敛到 shared/sse-hub.js，
+ *  本接口保留 notifier 业务面（broadcast(payload) 带 seq+滚动缓冲、framesSince 补拉）。
+ *  类型 = 共享 hub 核心面 + notifier 业务广播（对象负载）+ 滚动缓冲回放。
+ */
+import type { SseConnHealth, SseEvictStats } from "../../../shared/sse-hub.js";
+export type { SseConnHealth, SseEvictStats };
+export type { SseHubOptions } from "../../../shared/sse-hub.js";
 
-/** SSE 推送枢纽：连接表、滚动缓冲广播、心跳。 */
+/** notifier 视角的 SSE 枢纽：共享连接管理面 + 业务广播 + 断线补拉。
+ *  注意不 extends 共享 SseHub：共享的 broadcast(text) 是「写现成帧」原语，
+ *  本接口的 broadcast(payload) 是「对象负载 → 附加 seq → 广播」业务语义，
+ *  两者签名不同，用组合而非继承（register/size/dispose 委托共享 hub）。 */
 export interface SseHub {
-  /** 注册一条 SSE 连接：入表 + 挂 close/error 监听 + 连接上限淘汰最老。 */
+  /** 注册一条 SSE 连接：入表 + 挂 close/error 监听 + 上限淘汰（委托共享 hub）。 */
   register(res: ServerResponse): void;
-  /** 广播一帧：附加递增 seq、入滚动缓冲、推给所有连接。 */
+  /** 广播一帧业务通知：附加递增 seq、入滚动缓冲、推给所有连接。 */
   broadcast(payload: Record<string, unknown>): void;
   /** 断线补拉：滚动缓冲中 seq 更大的帧（独立于 /history 截断）。 */
   framesSince(since: number): Array<Record<string, unknown> & { seq: number }>;
-  /** 当前连接数（/health 展示；语义=服务端未释放句柄数，含静默半开残留）。 */
+  /** 当前连接数（语义 = 服务端未释放句柄数）。 */
   size(): number;
+  /** evict 原因计数（health 观测）。 */
+  evictStats(): SseEvictStats;
+  /** 连接健康快照（health per-conn 观测）。 */
+  connHealth(now?: number): SseConnHealth[];
   /** 停止心跳定时器。 */
   dispose(): void;
 }
 
 /**
- * 创建 SSE 枢纽并启动心跳。
- * @param options.getMaxConnections 连接上限实时读取器（配置改动即时生效，无需重启；
- *   超限时淘汰最老连接，让连接表有界——静默半开连接只增不减的根治手段）。
+ * 创建 SSE 枢纽（notifier 业务包装）。
+ *
+ * 连接管理（register/size/dispose/心跳/stalled+maxAge 回收）委托共享 hub
+ * （shared/sse-hub.js，#515）；本包装在共享 hub 之上叠加 notifier 业务广播：
+ * broadcast(payload) 附加递增 seq、入 600 条滚动缓冲（断线回放独立于 /history
+ * 截断），framesSince(since) 供 events 路由 ?since 补拉。
+ *
+ * @param options.getMaxConnections 连接上限实时读取器（配置改动即时生效）。
+ * @param options.heartbeatMs 心跳间隔（默认 30s；测试注入短值）。
+ * @param options.stalledTimeoutMs stalled 回收窗口（默认 90s；测试注入短值）。
+ * @param options.maxAgeMs maxAge 轮换上限（默认 120min；0 = 关闭轮换）。
+ * @param options.idleTimeoutMs maxAge 轮换空闲门槛（默认 15min）。
  */
-export function createSseHub(options: { getMaxConnections: () => number }): SseHub {
+export function createSseHub(options: {
+  getMaxConnections: () => number;
+  heartbeatMs?: number;
+  stalledTimeoutMs?: number;
+  maxAgeMs?: number;
+  idleTimeoutMs?: number;
+}): SseHub {
   const { getMaxConnections } = options;
-  /** 连接表：Map<响应, 写状态>。Map 迭代序 = 插入序，超限淘汰时第一项即最老。 */
-  const connState = new Map<ServerResponse, { failStreak: number }>();
+  // 共享 hub：连接表 + 心跳 + 上限淘汰 + stalled/maxAge 主动回收（单一实现）。
+  const hub = createSharedHub({
+    getMaxConnections,
+    heartbeatMs: options.heartbeatMs,
+    stalledTimeoutMs: options.stalledTimeoutMs,
+    maxAgeMs: options.maxAgeMs,
+    idleTimeoutMs: options.idleTimeoutMs,
+  });
 
   /** SSE 已派发帧的滚动缓冲（断线回补用；上限 RECENT_LIMIT，独立于 /history 的
    *  200 条截断，避免补拉时尾部事件被截掉）。 */
@@ -63,111 +98,23 @@ export function createSseHub(options: { getMaxConnections: () => number }): SseH
   let notifySeq = 0;
   const recentFrames: Array<Record<string, unknown> & { seq: number }> = [];
 
-  /** 移除一条连接（幂等）：先出表再 destroy，destroy 触发的 close 回调再次 evict 无害。 */
-  function evict(res: ServerResponse) {
-    if (connState.delete(res)) {
-      try {
-        res.destroy();
-      } catch {
-        // 忽略
-      }
-    }
-  }
-
-  /** 连接上限收缩：超限淘汰最老（注册序最早）的连接，直到表不超限。
-   *  register 与心跳各调用一次——配置调小后无需新注册，30s 内即收敛。 */
-  function enforceLimit() {
-    // 防御非法上限：normalizeConfig 已保证 [1,1024]，此处仅兜底未来直接注入
-    // 闭包传入 <1 值导致 while 条件恒真空转的问题（与 oldest===undefined break 双保险）。
-    const limit = Math.max(1, getMaxConnections());
-    while (connState.size > limit) {
-      const oldest = connState.keys().next().value;
-      if (oldest === undefined) break;
-      evict(oldest);
-    }
-  }
-
-  /** 注册一条 SSE 连接：入表 + close/error 监听 + 上限淘汰 + socket keepalive 兜底。 */
-  function register(res: ServerResponse) {
-    connState.set(res, { failStreak: 0 });
-    // close 是正常断连路径；error 是补 close 的缺口（现有代码缺失：不监听 error，
-    // 部分路径会抛 unhandled error，且连接残留）。两者都收口到 evict（幂等）。
-    res.on("close", () => evict(res));
-    res.on("error", () => evict(res));
-    // TCP keepalive：仅对「空闲连接」生效探测；SSE 每 30s 心跳使连接从不空闲，
-    // 故对活跃写连接不触发（真正探测死连接的是 TCP 重传，分钟级）——仅兜底长空闲。
-    try {
-      res.socket?.setKeepAlive(true, 60000);
-    } catch {
-      // 忽略
-    }
-    enforceLimit();
-  }
-
-  /**
-   * 统一写帧：成功则刷新写状态；失败累计 failStreak，连续 ≥3 次判死销毁。
-   * write 返回 false 一律视为背压（TCP 接收窗口关闭，对端暂停消费），**不是断连
-   * 证据**——弱网/浏览器冻结后台 tab 等健康连接可能长时间不消费，误判会造成无谓
-   * 重连。仅「抛错 / destroyed / writableEnded」才判死。
-   * @returns 是否成功写出。
-   */
-  function writeFrame(res: ServerResponse, text: string): boolean {
-    const entry = connState.get(res);
-    if (entry === undefined) return false;
-    if (res.destroyed || res.writableEnded) {
-      // 已销毁/已结束的响应：close 事件可能漏发，这里兜底直接清理
-      evict(res);
-      return false;
-    }
-    try {
-      res.write(text);
-      entry.failStreak = 0;
-      return true;
-    } catch {
-      entry.failStreak += 1;
-      if (entry.failStreak >= MAX_WRITE_FAILS) evict(res);
-      return false;
-    }
-  }
-
-  function broadcast(payload: Record<string, unknown>) {
-    const frame: Record<string, unknown> & { seq: number } = Object.assign({}, payload, { seq: ++notifySeq });
-    recentFrames.push(frame);
-    if (recentFrames.length > RECENT_LIMIT) recentFrames.shift();
-    const text = sseData(frame);
-    for (const res of connState.keys()) {
-      // 迭代中 evict 当前项安全（JS Map 迭代器按访问序号推进，删除不影响后续项）
-      writeFrame(res, text);
-    }
-  }
-
-  function framesSince(since: number) {
-    return recentFrames.filter((frame) => frame.seq > since);
-  }
-
-  /**
-   * SSE 心跳：每 30s 发一条 data 型 ping 帧。必须用 data 而非注释帧——注释帧
-   * 既不触发客户端 onmessage 也不触发 onerror，半开连接（断网/合盖/NAT 静默
-   * 掐断）时客户端零事件，无法自愈；data 帧让客户端的 watchdog 能检测失活。
-   * 顺带做连接上限收缩（配置调小即收敛）与写失败判死扫描。
-   */
-  const HEARTBEAT_MS = 30000;
-  const heartbeatTimer = setInterval(() => {
-    const frame = sseData({ type: "ping" });
-    for (const res of connState.keys()) {
-      writeFrame(res, frame);
-    }
-    enforceLimit();
-  }, HEARTBEAT_MS);
-  // unref：心跳不阻止进程退出（服务端有主循环；测试/无连接时不会被句柄吊死）
-  heartbeatTimer.unref();
-
   return {
-    register,
-    broadcast,
-    framesSince,
-    size: () => connState.size,
-    dispose: () => clearInterval(heartbeatTimer),
+    register: hub.register,
+    size: hub.size,
+    dispose: hub.dispose,
+    evictStats: hub.evictStats,
+    connHealth: hub.connHealth,
+    /** 业务广播：附加 seq → 入滚动缓冲 → 经共享 hub 写全部连接（判死收口在 hub）。 */
+    broadcast(payload: Record<string, unknown>) {
+      const frame: Record<string, unknown> & { seq: number } = Object.assign({}, payload, { seq: ++notifySeq });
+      recentFrames.push(frame);
+      if (recentFrames.length > RECENT_LIMIT) recentFrames.shift();
+      hub.broadcast(sseData(frame));
+    },
+    /** 断线补拉：滚动缓冲中 seq 更大的帧（?since 语义不变）。 */
+    framesSince(since: number) {
+      return recentFrames.filter((frame) => frame.seq > since);
+    },
   };
 }
 
@@ -486,9 +433,11 @@ export function buildRoutes(deps: RouteDeps): WebRoute[] {
     },
   };
 
-  /** 健康检查：插件是否加载、配置摘要、SSE 连接数。
-   *  sseConnections 语义 = 服务端未释放的 SSE 句柄数（含静默半开残留，分钟级回收），
-   *  非「在线设备数」；上限见 config.maxConnections（淘汰最老）。 */
+  /** 健康检查：插件是否加载、配置摘要、SSE 连接数与回收观测。
+   *  sseConnections 语义 = 服务端未释放的 SSE 句柄数，非「在线设备数」；上限见
+   *  config.maxConnections。#515 起连接表由 shared/sse-hub 管理：stalled 超窗 /
+   *  maxAge 轮换主动回收 + 上限淘汰，sseEvicts 暴露各回收路径计数（观测残留构成），
+   *  sseConnHealth 暴露逐连接 age/lastWriteAgo/stalled（先量化再调参）。 */
   const healthRoute: WebRoute = {
     kind: "exact",
     path: ROUTES.health,
@@ -513,6 +462,8 @@ export function buildRoutes(deps: RouteDeps): WebRoute[] {
           maxConnections: current.maxConnections,
         },
         sseConnections: sse.size(),
+        sseEvicts: sse.evictStats(),
+        sseConnHealth: sse.connHealth(),
       });
     },
   };

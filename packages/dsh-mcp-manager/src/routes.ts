@@ -10,6 +10,8 @@
 
 // 辅助函数统一来自仓库共享层（loopback 围栏 / writeJson / readJsonBody / sseData）。
 import { writeJson, readJsonBody, sseData, guardLoopbackMethod } from "../../../shared/host-utils.js";
+import { createSseHub } from "../../../shared/sse-hub.js";
+import type { SseHub } from "../../../shared/sse-hub.js";
 import { parseClaudeJson } from "./import.ts";
 import { SCOPE_PROJECT, normalizeScope } from "./scope.ts";
 import { parseFullServerName, MIDDLEWARE_GLOBAL_ROOT, normalizeToolName } from "./middleware-utils.ts";
@@ -45,12 +47,13 @@ export interface RoutesManager {
   projectRoot?: string;
   /** 设置命名空间写入 sink（apply 注入；config 写路由落盘用）。 */
   uiUpdate?: (patch: Record<string, unknown>) => Promise<unknown>;
-  sseConnections?: Set<ServerResponse>;
   /**
-   * SSE 心跳定时器的逐连接清理函数（makeEventsRoute 注册；close 时自删）。
-   * 插件卸载时由 apply 的路由 disposer 统一执行，防 interval 泄漏（#268）。
+   * SSE 连接枢纽（共享 shared/sse-hub，#515）：makeEventsRoute 惰性创建，
+   * apply/广播/卸载 disposer 收口到 hub（连接表 + 心跳 + 上限淘汰 +
+   * stalled/maxAge 主动回收）。取代旧 sseConnections Set + per-connection
+   * 心跳（#268），消除与 dsh-notifier 的不对称。
    */
-  sseHeartbeatCleanups?: Set<() => void>;
+  sseHub?: SseHub;
   supervisors: Map<string, { status: string; tools: string[] }>;
   catalogCache: Map<string, unknown>;
   /** 中间层模式（off/project/all；health 计数展示用，缺省 off）。 */
@@ -417,14 +420,23 @@ export function uiConfigChangedFrame(): string {
  * 必须用 data 而非注释帧——注释帧既不触发客户端 onmessage 也不触发 onerror，
  * 半开连接（移动端切后台系统冻结 JS 并静默掐断 TCP）时客户端零事件无法自愈；
  * data 帧喂客户端 60s watchdog 使其能检测失活并关旧建新。
+ * #515 起心跳由共享 hub（shared/sse-hub.js）统一管理，本常量保留兼容导出。
  */
 export const SSE_HEARTBEAT_MS = 30_000;
-/** 心跳 ping 帧（内容固定，模块级缓存避免逐次序列化）。 */
+/** 心跳 ping 帧（内容固定，模块级缓存避免逐次序列化；#515 起 hub 内置同帧）。 */
 export const SSE_PING_FRAME = sseData({ type: "ping" });
 
-/** 向全部 SSE 连接写出一帧（逐连接 try/catch，掉线忽略）。 */
-export function broadcastFrame(connections: Set<ServerResponse> | undefined, frame: string): void {
-  for (const res of connections ?? []) {
+/**
+ * 向全部 SSE 连接写出一帧（#515 起收口到共享 hub；本函数保留兼容导出，
+ * 接受 hub 或旧 Set 形态）。判死/背压由 hub writeFrame 统一处理。
+ */
+export function broadcastFrame(connections: SseHub | Set<ServerResponse> | undefined, frame: string): void {
+  if (!connections) return;
+  if (typeof (connections as SseHub).broadcast === "function") {
+    (connections as SseHub).broadcast(frame);
+    return;
+  }
+  for (const res of connections as Set<ServerResponse>) {
     try {
       res.write(frame);
     } catch {
@@ -436,22 +448,31 @@ export function broadcastFrame(connections: Set<ServerResponse> | undefined, fra
 /**
  * 状态变化推送通道（SSE）：浏览器端 EventSource 订阅，宿主状态变化时
  * 广播 `{ type: "summary" }` 帧（内容不随帧传输，浏览器收到后自行拉取）。
- * 连接集合挂在 manager.sseConnections 上（惰性创建），插件卸载时由
- * apply 的清理函数统一 destroy。
  *
- * 半开连接防护（#268，对齐 dsh-notifier）：写完初始帧后每 30s 向本连接写一条
- * data ping 心跳——移动端切后台系统冻结 JS 并静默掐断 TCP，两端均收不到
- * FIN/RST，无心跳则客户端 watchdog 无失活信号可依；close 时清定时器防泄漏，
- * 清理函数同时登记 manager.sseHeartbeatCleanups 供插件卸载 disposer 兜底。
+ * #515 起连接管理收口到共享 hub（shared/sse-hub.js）：manager.sseHub 惰性创建
+ * （上限淘汰 + 心跳 + stalled/maxAge 主动回收），本路由只负责入表与首帧——
+ * 取代旧裸 Set + per-connection 心跳（#268/#515，消除与 dsh-notifier 不对称）。
+ *
+ * 半开连接防护（#268，对齐 dsh-notifier）：hub 每 30s 向全部连接写 data ping
+ * 心跳——移动端切后台系统冻结 JS 并静默掐断 TCP，两端均收不到 FIN/RST，
+ * 无心跳则客户端 watchdog 无失活信号可依。
  */
-export function makeEventsRoute(manager: RoutesManager, options?: { heartbeatMs?: number }): WebRoute {
-  const heartbeatMs = options?.heartbeatMs ?? SSE_HEARTBEAT_MS;
+export function makeEventsRoute(manager: RoutesManager, options?: { heartbeatMs?: number; maxConnections?: number }): WebRoute {
   return {
     kind: "exact",
     path: ROUTES.events,
     handler: (req, res) => {
       if (!guardLoopbackMethod(req, res, ["GET"])) return;
-      const connections = manager.sseConnections ??= new Set();
+      // 惰性创建共享 hub（上限淘汰 + 心跳 + stalled/maxAge 回收）。
+      // maxConnections 默认 16（与 dsh-notifier 对齐，#515 评审）；health 路由
+      // 若在 events 之前注册会先建 hub，故 hub 创建不含业务副作用。
+      const hub = (manager.sseHub ??= createSseHub({
+        getMaxConnections: () => options?.maxConnections ?? 16,
+        heartbeatMs: options?.heartbeatMs,
+        warn: (message) => {
+          // 无 logger 注入面，静默（连接回收是自愈路径，无需告警）
+        },
+      }));
       res.writeHead(200, {
         "content-type": "text/event-stream",
         "cache-control": "no-cache",
@@ -459,36 +480,7 @@ export function makeEventsRoute(manager: RoutesManager, options?: { heartbeatMs?
       });
       res.write(": connected\n\n");
       res.write(sseData({ type: "summary" }));
-      connections.add(res);
-      // 每连接一条心跳定时器（notifier 为 hub 级单 interval——本包 makeEventsRoute
-      // 无 hub 对象可挂，per-connection 使 close 清理与泄漏防线在同一闭包内自洽）。
-      // 三路清理收敛到 stopHeartbeat：close 事件 / 插件卸载 disposer / destroyed
-      // 自愈（close 丢失的极端场景，向死管道空转即自杀退出）；unref 使其不阻止
-      // 进程退出。
-      const cleanups = manager.sseHeartbeatCleanups ??= new Set();
-      let heartbeat: ReturnType<typeof setInterval> | undefined;
-      const stopHeartbeat = (): void => {
-        if (heartbeat !== undefined) clearInterval(heartbeat);
-        heartbeat = undefined;
-        cleanups.delete(stopHeartbeat);
-      };
-      heartbeat = setInterval(() => {
-        if (res.destroyed || res.writableEnded) {
-          stopHeartbeat();
-          return;
-        }
-        try {
-          res.write(SSE_PING_FRAME);
-        } catch {
-          // 连接已断，等待 close 事件清理
-        }
-      }, heartbeatMs);
-      heartbeat.unref();
-      cleanups.add(stopHeartbeat);
-      res.on("close", () => {
-        stopHeartbeat();
-        connections.delete(res);
-      });
+      hub.register(res);
     },
   };
 }
