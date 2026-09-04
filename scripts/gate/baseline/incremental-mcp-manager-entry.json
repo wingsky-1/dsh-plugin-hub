@@ -4,6 +4,110 @@
       "language": "typescript",
       "mutants": [
         {
+          "id": "0",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 45
+            },
+            "start": {
+              "column": 93,
+              "line": 15
+            }
+          }
+        },
+        {
+          "id": "1",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 67,
+              "line": 17
+            },
+            "start": {
+              "column": 7,
+              "line": 17
+            }
+          }
+        },
+        {
+          "id": "2",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 67,
+              "line": 17
+            },
+            "start": {
+              "column": 7,
+              "line": 17
+            }
+          }
+        },
+        {
+          "id": "3",
+          "mutatorName": "LogicalOperator",
+          "replacement": "(type === \"http\" || type === \"sse\") && entry.url !== undefined",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 67,
+              "line": 17
+            },
+            "start": {
+              "column": 7,
+              "line": 17
+            }
+          }
+        },
+        {
           "id": "4",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
@@ -82,6 +186,32 @@
           }
         },
         {
+          "id": "7",
+          "mutatorName": "EqualityOperator",
+          "replacement": "type !== \"http\"",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 22,
+              "line": 17
+            },
+            "start": {
+              "column": 7,
+              "line": 17
+            }
+          }
+        },
+        {
           "id": "8",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -95,6 +225,55 @@
             },
             "start": {
               "column": 16,
+              "line": 17
+            }
+          }
+        },
+        {
+          "id": "9",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 40,
+              "line": 17
+            },
+            "start": {
+              "column": 26,
+              "line": 17
+            }
+          }
+        },
+        {
+          "id": "10",
+          "mutatorName": "EqualityOperator",
+          "replacement": "type !== \"sse\"",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 40,
+              "line": 17
+            },
+            "start": {
+              "column": 26,
               "line": 17
             }
           }
@@ -114,6 +293,110 @@
             "start": {
               "column": 35,
               "line": 17
+            }
+          }
+        },
+        {
+          "id": "12",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 67,
+              "line": 17
+            },
+            "start": {
+              "column": 44,
+              "line": 17
+            }
+          }
+        },
+        {
+          "id": "13",
+          "mutatorName": "EqualityOperator",
+          "replacement": "entry.url === undefined",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 67,
+              "line": 17
+            },
+            "start": {
+              "column": 44,
+              "line": 17
+            }
+          }
+        },
+        {
+          "id": "14",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 30
+            },
+            "start": {
+              "column": 69,
+              "line": 17
+            }
+          }
+        },
+        {
+          "id": "15",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 58,
+              "line": 18
+            },
+            "start": {
+              "column": 9,
+              "line": 18
             }
           }
         },
@@ -196,6 +479,32 @@
           }
         },
         {
+          "id": "19",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof entry.url === \"string\"",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 38,
+              "line": 18
+            },
+            "start": {
+              "column": 9,
+              "line": 18
+            }
+          }
+        },
+        {
           "id": "20",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -223,6 +532,32 @@
           "static": false,
           "killedBy": [
             "7"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 58,
+              "line": 18
+            },
+            "start": {
+              "column": 42,
+              "line": 18
+            }
+          }
+        },
+        {
+          "id": "22",
+          "mutatorName": "EqualityOperator",
+          "replacement": "entry.url !== \"\"",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
           ],
           "coveredBy": [
             "6",
@@ -337,6 +672,29 @@
           }
         },
         {
+          "id": "28",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 68,
+              "line": 24
+            },
+            "start": {
+              "column": 9,
+              "line": 24
+            }
+          }
+        },
+        {
           "id": "29",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
@@ -354,6 +712,52 @@
           "location": {
             "end": {
               "column": 68,
+              "line": 24
+            },
+            "start": {
+              "column": 9,
+              "line": 24
+            }
+          }
+        },
+        {
+          "id": "30",
+          "mutatorName": "LogicalOperator",
+          "replacement": "typeof entry.headers === \"object\" || entry.headers !== null",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 68,
+              "line": 24
+            },
+            "start": {
+              "column": 9,
+              "line": 24
+            }
+          }
+        },
+        {
+          "id": "31",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 42,
               "line": 24
             },
             "start": {
@@ -454,6 +858,32 @@
           }
         },
         {
+          "id": "36",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 97,
+              "line": 25
+            },
+            "start": {
+              "column": 9,
+              "line": 25
+            }
+          }
+        },
+        {
           "id": "37",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
@@ -471,6 +901,136 @@
           "location": {
             "end": {
               "column": 97,
+              "line": 25
+            },
+            "start": {
+              "column": 9,
+              "line": 25
+            }
+          }
+        },
+        {
+          "id": "38",
+          "mutatorName": "LogicalOperator",
+          "replacement": "typeof entry.env === \"object\" && entry.env !== null || Object.keys(entry.env).length > 0",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 97,
+              "line": 25
+            },
+            "start": {
+              "column": 9,
+              "line": 25
+            }
+          }
+        },
+        {
+          "id": "39",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 60,
+              "line": 25
+            },
+            "start": {
+              "column": 9,
+              "line": 25
+            }
+          }
+        },
+        {
+          "id": "40",
+          "mutatorName": "LogicalOperator",
+          "replacement": "typeof entry.env === \"object\" || entry.env !== null",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 60,
+              "line": 25
+            },
+            "start": {
+              "column": 9,
+              "line": 25
+            }
+          }
+        },
+        {
+          "id": "41",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 38,
+              "line": 25
+            },
+            "start": {
+              "column": 9,
+              "line": 25
+            }
+          }
+        },
+        {
+          "id": "42",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof entry.env !== \"object\"",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 38,
               "line": 25
             },
             "start": {
@@ -645,6 +1205,32 @@
           }
         },
         {
+          "id": "50",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 64,
+              "line": 31
+            },
+            "start": {
+              "column": 7,
+              "line": 31
+            }
+          }
+        },
+        {
           "id": "51",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
@@ -723,6 +1309,32 @@
           }
         },
         {
+          "id": "54",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof entry.command === \"string\"",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 40,
+              "line": 31
+            },
+            "start": {
+              "column": 7,
+              "line": 31
+            }
+          }
+        },
+        {
           "id": "55",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -750,6 +1362,32 @@
           "static": false,
           "killedBy": [
             "7"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 64,
+              "line": 31
+            },
+            "start": {
+              "column": 44,
+              "line": 31
+            }
+          }
+        },
+        {
+          "id": "57",
+          "mutatorName": "EqualityOperator",
+          "replacement": "entry.command !== \"\"",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
           ],
           "coveredBy": [
             "6",
@@ -889,6 +1527,32 @@
           }
         },
         {
+          "id": "64",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 32,
+              "line": 39
+            },
+            "start": {
+              "column": 7,
+              "line": 39
+            }
+          }
+        },
+        {
           "id": "65",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
@@ -984,6 +1648,29 @@
           "location": {
             "end": {
               "column": 56,
+              "line": 40
+            },
+            "start": {
+              "column": 7,
+              "line": 40
+            }
+          }
+        },
+        {
+          "id": "69",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 36,
               "line": 40
             },
             "start": {
@@ -1105,6 +1792,32 @@
           }
         },
         {
+          "id": "75",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 58,
+              "line": 41
+            },
+            "start": {
+              "column": 7,
+              "line": 41
+            }
+          }
+        },
+        {
           "id": "76",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
@@ -1122,6 +1835,84 @@
           "location": {
             "end": {
               "column": 58,
+              "line": 41
+            },
+            "start": {
+              "column": 7,
+              "line": 41
+            }
+          }
+        },
+        {
+          "id": "77",
+          "mutatorName": "LogicalOperator",
+          "replacement": "typeof entry.env === \"object\" || entry.env !== null",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 58,
+              "line": 41
+            },
+            "start": {
+              "column": 7,
+              "line": 41
+            }
+          }
+        },
+        {
+          "id": "78",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 36,
+              "line": 41
+            },
+            "start": {
+              "column": 7,
+              "line": 41
+            }
+          }
+        },
+        {
+          "id": "79",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof entry.env !== \"object\"",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 36,
               "line": 41
             },
             "start": {
@@ -1271,6 +2062,58 @@
           }
         },
         {
+          "id": "86",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 57
+            },
+            "start": {
+              "column": 63,
+              "line": 48
+            }
+          }
+        },
+        {
+          "id": "87",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 77,
+              "line": 50
+            },
+            "start": {
+              "column": 7,
+              "line": 50
+            }
+          }
+        },
+        {
           "id": "88",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
@@ -1401,6 +2244,81 @@
           }
         },
         {
+          "id": "93",
+          "mutatorName": "EqualityOperator",
+          "replacement": "parsed !== null",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 22,
+              "line": 50
+            },
+            "start": {
+              "column": 7,
+              "line": 50
+            }
+          }
+        },
+        {
+          "id": "94",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 52,
+              "line": 50
+            },
+            "start": {
+              "column": 26,
+              "line": 50
+            }
+          }
+        },
+        {
+          "id": "95",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof parsed === \"object\"",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 52,
+              "line": 50
+            },
+            "start": {
+              "column": 26,
+              "line": 50
+            }
+          }
+        },
+        {
           "id": "96",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -1487,6 +2405,162 @@
           }
         },
         {
+          "id": "100",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 56
+            },
+            "start": {
+              "column": 83,
+              "line": 53
+            }
+          }
+        },
+        {
+          "id": "101",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 52,
+              "line": 54
+            },
+            "start": {
+              "column": 9,
+              "line": 54
+            }
+          }
+        },
+        {
+          "id": "102",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: 非法条目整体 400: uncaughtException: 非法条目整体 400",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 52,
+              "line": 54
+            },
+            "start": {
+              "column": 9,
+              "line": 54
+            }
+          }
+        },
+        {
+          "id": "103",
+          "mutatorName": "LogicalOperator",
+          "replacement": "typeof entry !== \"object\" && entry === null",
+          "statusReason": "uncaughtException: 非法条目整体 400: uncaughtException: 非法条目整体 400",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 52,
+              "line": 54
+            },
+            "start": {
+              "column": 9,
+              "line": 54
+            }
+          }
+        },
+        {
+          "id": "104",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: 非法条目整体 400: uncaughtException: 非法条目整体 400",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 34,
+              "line": 54
+            },
+            "start": {
+              "column": 9,
+              "line": 54
+            }
+          }
+        },
+        {
+          "id": "105",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof entry === \"object\"",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7"
+          ],
+          "location": {
+            "end": {
+              "column": 34,
+              "line": 54
+            },
+            "start": {
+              "column": 9,
+              "line": 54
+            }
+          }
+        },
+        {
           "id": "106",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -1531,973 +2605,13 @@
           }
         },
         {
-          "id": "110",
-          "mutatorName": "StringLiteral",
-          "replacement": "``",
-          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
-          "status": "Ignored",
-          "static": false,
-          "location": {
-            "end": {
-              "column": 113,
-              "line": 54
-            },
-            "start": {
-              "column": 70,
-              "line": 54
-            }
-          }
-        },
-        {
-          "id": "15",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 58,
-              "line": 18
-            },
-            "start": {
-              "column": 9,
-              "line": 18
-            }
-          }
-        },
-        {
-          "id": "2",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 67,
-              "line": 17
-            },
-            "start": {
-              "column": 7,
-              "line": 17
-            }
-          }
-        },
-        {
-          "id": "0",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 45
-            },
-            "start": {
-              "column": 93,
-              "line": 15
-            }
-          }
-        },
-        {
-          "id": "3",
-          "mutatorName": "LogicalOperator",
-          "replacement": "(type === \"http\" || type === \"sse\") && entry.url !== undefined",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 67,
-              "line": 17
-            },
-            "start": {
-              "column": 7,
-              "line": 17
-            }
-          }
-        },
-        {
-          "id": "13",
-          "mutatorName": "EqualityOperator",
-          "replacement": "entry.url === undefined",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 67,
-              "line": 17
-            },
-            "start": {
-              "column": 44,
-              "line": 17
-            }
-          }
-        },
-        {
-          "id": "19",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof entry.url === \"string\"",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 38,
-              "line": 18
-            },
-            "start": {
-              "column": 9,
-              "line": 18
-            }
-          }
-        },
-        {
-          "id": "1",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 67,
-              "line": 17
-            },
-            "start": {
-              "column": 7,
-              "line": 17
-            }
-          }
-        },
-        {
-          "id": "7",
-          "mutatorName": "EqualityOperator",
-          "replacement": "type !== \"http\"",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 22,
-              "line": 17
-            },
-            "start": {
-              "column": 7,
-              "line": 17
-            }
-          }
-        },
-        {
-          "id": "22",
-          "mutatorName": "EqualityOperator",
-          "replacement": "entry.url !== \"\"",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 58,
-              "line": 18
-            },
-            "start": {
-              "column": 42,
-              "line": 18
-            }
-          }
-        },
-        {
-          "id": "14",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 30
-            },
-            "start": {
-              "column": 69,
-              "line": 17
-            }
-          }
-        },
-        {
-          "id": "10",
-          "mutatorName": "EqualityOperator",
-          "replacement": "type !== \"sse\"",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 40,
-              "line": 17
-            },
-            "start": {
-              "column": 26,
-              "line": 17
-            }
-          }
-        },
-        {
-          "id": "12",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 67,
-              "line": 17
-            },
-            "start": {
-              "column": 44,
-              "line": 17
-            }
-          }
-        },
-        {
-          "id": "39",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 60,
-              "line": 25
-            },
-            "start": {
-              "column": 9,
-              "line": 25
-            }
-          }
-        },
-        {
-          "id": "36",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 97,
-              "line": 25
-            },
-            "start": {
-              "column": 9,
-              "line": 25
-            }
-          }
-        },
-        {
-          "id": "40",
-          "mutatorName": "LogicalOperator",
-          "replacement": "typeof entry.env === \"object\" || entry.env !== null",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 60,
-              "line": 25
-            },
-            "start": {
-              "column": 9,
-              "line": 25
-            }
-          }
-        },
-        {
-          "id": "38",
-          "mutatorName": "LogicalOperator",
-          "replacement": "typeof entry.env === \"object\" && entry.env !== null || Object.keys(entry.env).length > 0",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 97,
-              "line": 25
-            },
-            "start": {
-              "column": 9,
-              "line": 25
-            }
-          }
-        },
-        {
-          "id": "31",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 42,
-              "line": 24
-            },
-            "start": {
-              "column": 9,
-              "line": 24
-            }
-          }
-        },
-        {
-          "id": "41",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 38,
-              "line": 25
-            },
-            "start": {
-              "column": 9,
-              "line": 25
-            }
-          }
-        },
-        {
-          "id": "28",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 68,
-              "line": 24
-            },
-            "start": {
-              "column": 9,
-              "line": 24
-            }
-          }
-        },
-        {
-          "id": "30",
-          "mutatorName": "LogicalOperator",
-          "replacement": "typeof entry.headers === \"object\" || entry.headers !== null",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 68,
-              "line": 24
-            },
-            "start": {
-              "column": 9,
-              "line": 24
-            }
-          }
-        },
-        {
-          "id": "9",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 40,
-              "line": 17
-            },
-            "start": {
-              "column": 26,
-              "line": 17
-            }
-          }
-        },
-        {
-          "id": "75",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 58,
-              "line": 41
-            },
-            "start": {
-              "column": 7,
-              "line": 41
-            }
-          }
-        },
-        {
-          "id": "54",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof entry.command === \"string\"",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 40,
-              "line": 31
-            },
-            "start": {
-              "column": 7,
-              "line": 31
-            }
-          }
-        },
-        {
-          "id": "50",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 64,
-              "line": 31
-            },
-            "start": {
-              "column": 7,
-              "line": 31
-            }
-          }
-        },
-        {
-          "id": "64",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 32,
-              "line": 39
-            },
-            "start": {
-              "column": 7,
-              "line": 39
-            }
-          }
-        },
-        {
-          "id": "57",
-          "mutatorName": "EqualityOperator",
-          "replacement": "entry.command !== \"\"",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 64,
-              "line": 31
-            },
-            "start": {
-              "column": 44,
-              "line": 31
-            }
-          }
-        },
-        {
-          "id": "42",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof entry.env !== \"object\"",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 38,
-              "line": 25
-            },
-            "start": {
-              "column": 9,
-              "line": 25
-            }
-          }
-        },
-        {
-          "id": "77",
-          "mutatorName": "LogicalOperator",
-          "replacement": "typeof entry.env === \"object\" || entry.env !== null",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 58,
-              "line": 41
-            },
-            "start": {
-              "column": 7,
-              "line": 41
-            }
-          }
-        },
-        {
-          "id": "79",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof entry.env !== \"object\"",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 36,
-              "line": 41
-            },
-            "start": {
-              "column": 7,
-              "line": 41
-            }
-          }
-        },
-        {
-          "id": "78",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 36,
-              "line": 41
-            },
-            "start": {
-              "column": 7,
-              "line": 41
-            }
-          }
-        },
-        {
-          "id": "87",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 77,
-              "line": 50
-            },
-            "start": {
-              "column": 7,
-              "line": 50
-            }
-          }
-        },
-        {
-          "id": "86",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 57
-            },
-            "start": {
-              "column": 63,
-              "line": 48
-            }
-          }
-        },
-        {
-          "id": "69",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 36,
-              "line": 40
-            },
-            "start": {
-              "column": 7,
-              "line": 40
-            }
-          }
-        },
-        {
-          "id": "93",
-          "mutatorName": "EqualityOperator",
-          "replacement": "parsed !== null",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 22,
-              "line": 50
-            },
-            "start": {
-              "column": 7,
-              "line": 50
-            }
-          }
-        },
-        {
-          "id": "101",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 52,
-              "line": 54
-            },
-            "start": {
-              "column": 9,
-              "line": 54
-            }
-          }
-        },
-        {
-          "id": "100",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 56
-            },
-            "start": {
-              "column": 83,
-              "line": 53
-            }
-          }
-        },
-        {
-          "id": "95",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof parsed === \"object\"",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 52,
-              "line": 50
-            },
-            "start": {
-              "column": 26,
-              "line": 50
-            }
-          }
-        },
-        {
           "id": "108",
           "mutatorName": "EqualityOperator",
           "replacement": "entry !== null",
           "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
           "status": "Killed",
-          "static": false,
           "testsCompleted": 1,
+          "static": false,
           "killedBy": [
             "6"
           ],
@@ -2512,110 +2626,6 @@
             },
             "start": {
               "column": 38,
-              "line": 54
-            }
-          }
-        },
-        {
-          "id": "102",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: 非法条目整体 400: uncaughtException: 非法条目整体 400",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 52,
-              "line": 54
-            },
-            "start": {
-              "column": 9,
-              "line": 54
-            }
-          }
-        },
-        {
-          "id": "105",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof entry === \"object\"",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 34,
-              "line": 54
-            },
-            "start": {
-              "column": 9,
-              "line": 54
-            }
-          }
-        },
-        {
-          "id": "103",
-          "mutatorName": "LogicalOperator",
-          "replacement": "typeof entry !== \"object\" && entry === null",
-          "statusReason": "uncaughtException: 非法条目整体 400: uncaughtException: 非法条目整体 400",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 52,
-              "line": 54
-            },
-            "start": {
-              "column": 9,
-              "line": 54
-            }
-          }
-        },
-        {
-          "id": "104",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: 非法条目整体 400: uncaughtException: 非法条目整体 400",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "6",
-            "7"
-          ],
-          "location": {
-            "end": {
-              "column": 34,
-              "line": 54
-            },
-            "start": {
-              "column": 9,
               "line": 54
             }
           }
@@ -2626,8 +2636,8 @@
           "replacement": ";",
           "statusReason": "uncaughtException: 非法条目整体 400: uncaughtException: 非法条目整体 400",
           "status": "Killed",
-          "static": false,
           "testsCompleted": 1,
+          "static": false,
           "killedBy": [
             "6"
           ],
@@ -2647,24 +2657,20 @@
           }
         },
         {
-          "id": "94",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
+          "id": "110",
+          "mutatorName": "StringLiteral",
+          "replacement": "``",
+          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
+          "status": "Ignored",
           "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "6",
-            "7"
-          ],
           "location": {
             "end": {
-              "column": 52,
-              "line": 50
+              "column": 113,
+              "line": 54
             },
             "start": {
-              "column": 26,
-              "line": 50
+              "column": 70,
+              "line": 54
             }
           }
         }
@@ -4429,6 +4435,29 @@
           }
         },
         {
+          "id": "180",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 73,
+              "line": 30
+            },
+            "start": {
+              "column": 40,
+              "line": 30
+            }
+          }
+        },
+        {
           "id": "181",
           "mutatorName": "EqualityOperator",
           "replacement": "(src.url as string).trim() !== \"\"",
@@ -4446,6 +4475,29 @@
           "location": {
             "end": {
               "column": 73,
+              "line": 30
+            },
+            "start": {
+              "column": 40,
+              "line": 30
+            }
+          }
+        },
+        {
+          "id": "182",
+          "mutatorName": "MethodExpression",
+          "replacement": "src.url as string",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 66,
               "line": 30
             },
             "start": {
@@ -4840,6 +4892,31 @@
           "location": {
             "end": {
               "column": 106,
+              "line": 43
+            },
+            "start": {
+              "column": 24,
+              "line": 43
+            }
+          }
+        },
+        {
+          "id": "199",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 65,
               "line": 43
             },
             "start": {
@@ -5460,6 +5537,31 @@
           }
         },
         {
+          "id": "224",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 66,
+              "line": 55
+            },
+            "start": {
+              "column": 9,
+              "line": 55
+            }
+          }
+        },
+        {
           "id": "225",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
@@ -5479,6 +5581,56 @@
           "location": {
             "end": {
               "column": 66,
+              "line": 55
+            },
+            "start": {
+              "column": 9,
+              "line": 55
+            }
+          }
+        },
+        {
+          "id": "226",
+          "mutatorName": "LogicalOperator",
+          "replacement": "typeof src.cwd === \"string\" || src.cwd as string !== \"\"",
+          "status": "Survived",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 66,
+              "line": 55
+            },
+            "start": {
+              "column": 9,
+              "line": 55
+            }
+          }
+        },
+        {
+          "id": "227",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 36,
               "line": 55
             },
             "start": {
@@ -5905,6 +6057,32 @@
           }
         },
         {
+          "id": "245",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 64,
+              "line": 61
+            },
+            "start": {
+              "column": 9,
+              "line": 61
+            }
+          }
+        },
+        {
           "id": "246",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
@@ -5922,6 +6100,58 @@
           "location": {
             "end": {
               "column": 64,
+              "line": 61
+            },
+            "start": {
+              "column": 9,
+              "line": 61
+            }
+          }
+        },
+        {
+          "id": "247",
+          "mutatorName": "LogicalOperator",
+          "replacement": "typeof src.headers === \"object\" || src.headers !== null",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 64,
+              "line": 61
+            },
+            "start": {
+              "column": 9,
+              "line": 61
+            }
+          }
+        },
+        {
+          "id": "248",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
+          "status": "Killed",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 40,
               "line": 61
             },
             "start": {
@@ -6095,224 +6325,6 @@
               "line": 62
             }
           }
-        },
-        {
-          "id": "180",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 73,
-              "line": 30
-            },
-            "start": {
-              "column": 40,
-              "line": 30
-            }
-          }
-        },
-        {
-          "id": "182",
-          "mutatorName": "MethodExpression",
-          "replacement": "src.url as string",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 66,
-              "line": 30
-            },
-            "start": {
-              "column": 40,
-              "line": 30
-            }
-          }
-        },
-        {
-          "id": "247",
-          "mutatorName": "LogicalOperator",
-          "replacement": "typeof src.headers === \"object\" || src.headers !== null",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 2,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 64,
-              "line": 61
-            },
-            "start": {
-              "column": 9,
-              "line": 61
-            }
-          }
-        },
-        {
-          "id": "245",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 2,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 64,
-              "line": 61
-            },
-            "start": {
-              "column": 9,
-              "line": 61
-            }
-          }
-        },
-        {
-          "id": "248",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: Expected values to be strictly equal:: uncaughtException: Expected values to be strictly equal:",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 2,
-          "killedBy": [
-            "6"
-          ],
-          "coveredBy": [
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 40,
-              "line": 61
-            },
-            "start": {
-              "column": 9,
-              "line": 61
-            }
-          }
-        },
-        {
-          "id": "199",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 4,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 65,
-              "line": 43
-            },
-            "start": {
-              "column": 24,
-              "line": 43
-            }
-          }
-        },
-        {
-          "id": "224",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 4,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 66,
-              "line": 55
-            },
-            "start": {
-              "column": 9,
-              "line": 55
-            }
-          }
-        },
-        {
-          "id": "227",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 4,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 36,
-              "line": 55
-            },
-            "start": {
-              "column": 9,
-              "line": 55
-            }
-          }
-        },
-        {
-          "id": "226",
-          "mutatorName": "LogicalOperator",
-          "replacement": "typeof src.cwd === \"string\" || src.cwd as string !== \"\"",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 4,
-          "coveredBy": [
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 66,
-              "line": 55
-            },
-            "start": {
-              "column": 9,
-              "line": 55
-            }
-          }
         }
       ],
       "source": "/**\n * dsh-mcp-manager — 服务器配置归一化（纯函数，单一事实源）。\n *\n * normalizeServer 校验并规范化一条 MCP 服务器配置（stdio / streamable-http），\n * 供 Manager 增改与 mcpServers JSON 导入路径共用；SERVER_NAME_PATTERN 为\n * 服务器名命名空间约束（与官方 dsh-mcp-client 一致）。\n */\n\nimport type { ServerConfig } from \"./types.ts\";\nimport { DEFAULT_TOOL_CALL_TIMEOUT_MS } from \"./supervisor.ts\";\n\n/** MCP 服务器名命名空间约束（与官方 dsh-mcp-client 一致）。 */\nexport const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;\n\n/** 校验并规范化一条服务器配置。 */\nexport function normalizeServer(input: unknown): ServerConfig {\n  if (typeof input !== \"object\" || input === null) throw new Error(\"server config must be an object\");\n  const src = input as Record<string, unknown>;\n  const name = String(src.name ?? \"\").trim();\n  if (!SERVER_NAME_PATTERN.test(name)) {\n    throw new Error(`server name must match ${SERVER_NAME_PATTERN.source}`);\n  }\n  const transport = src.transport === \"streamable-http\" ? \"streamable-http\" : src.transport === \"stdio\" ? \"stdio\" : undefined;\n  if (transport === undefined) throw new Error('transport must be \"stdio\" or \"streamable-http\"');\n  if (transport === \"stdio\") {\n    if (typeof src.command !== \"string\" || (src.command as string).trim() === \"\") {\n      throw new Error(\"stdio server requires a command\");\n    }\n  } else {\n    if (typeof src.url !== \"string\" || (src.url as string).trim() === \"\") {\n      throw new Error(\"streamable-http server requires a url\");\n    }\n    try {\n      new URL(src.url as string);\n    } catch {\n      throw new Error(`invalid url: ${src.url}`);\n    }\n  }\n  const server: ServerConfig = {\n    name,\n    transport,\n    enabled: src.enabled !== false,\n    toolCallTimeoutMs: typeof src.toolCallTimeoutMs === \"number\" && (src.toolCallTimeoutMs as number) > 0\n      ? Math.floor(src.toolCallTimeoutMs as number)\n      : DEFAULT_TOOL_CALL_TIMEOUT_MS,\n    reconnect: (src.reconnect as Record<string, unknown> | undefined) ?? {},\n    // 能力目录的自定义描述（用户手写；MCP 协议无服务器级自描述，完整保留不截断）。\n    description: typeof src.description === \"string\" && (src.description as string).trim() !== \"\"\n      ? (src.description as string).trim()\n      : undefined,\n  };\n  if (transport === \"stdio\") {\n    server.command = src.command as string;\n    if (Array.isArray(src.args)) server.args = (src.args as unknown[]).map(String);\n    if (typeof src.cwd === \"string\" && (src.cwd as string) !== \"\") server.cwd = src.cwd as string;\n    if (typeof src.env === \"object\" && src.env !== null) {\n      server.env = Object.fromEntries(Object.entries(src.env as Record<string, unknown>).map(([key, value]) => [key, String(value)]));\n    }\n  } else {\n    server.url = src.url as string;\n    if (typeof src.headers === \"object\" && src.headers !== null) {\n      server.headers = Object.fromEntries(Object.entries(src.headers as Record<string, unknown>).map(([key, value]) => [key, String(value)]));\n    }\n  }\n  return server;\n}\n"
@@ -6377,7 +6389,7 @@
           "name": "packages/dsh-mcp-manager/test/unit-middleware.test.ts"
         }
       ],
-      "source": "// @ts-nocheck\n/**\n * dsh-mcp-manager — unit：中间层（ws_mcp_search / ws_mcp_call）。\n *\n * 覆盖：\n * - normalizeMiddlewareMode 归一化（off/project/all/非法）\n * - fullServerName / parseFullServerName（含非法形态）\n * - normalizeToolName（mcp__ 前缀剥离 / 跨 server 拒绝）\n * - normalizeArguments（JSON 字符串参数解析 / 标量保留）\n * - globMatch / policyAllows / policyDenialReason（deny 优先）\n * - scoreTool / searchCatalog（跨字段打分 / unavailable 段 / 空查询摘要）\n * - McpMiddleware：projectUnitFor 惰性创建 + userDisabled 合并 + inFlight 去重\n * - callTool：未知 server / 未连接 / 连接中 / 策略拒绝 / 路由一致性\n * - evictIfNeeded LRU 淘汰\n */\nimport assert from \"node:assert/strict\";\nimport { existsSync, mkdtempSync, mkdirSync, writeFileSync } from \"node:fs\";\nimport { tmpdir } from \"node:os\";\nimport { join } from \"node:path\";\n\nconst {\n  normalizeMiddlewareMode,\n  fullServerName,\n  parseFullServerName,\n  normalizeToolName,\n  normalizeArguments,\n  globMatch,\n  policyAllows,\n  policyDenialReason,\n  scoreTool,\n  searchCatalog,\n  searchCatalogMulti,\n  listCatalog,\n  findToolDetail,\n  McpMiddleware,\n  projectCallToolResult,\n  CATALOG_TTL_MS,\n  LIST_DEFAULT_TOOLS_PER_SERVER,\n  LIST_MAX_TOOLS_PER_SERVER,\n  userStateFile,\n  loadUserState,\n  saveUserState,\n} = await import(\"../lib/index.js\");\n\nconst ROOT = \"/tmp/ws-root-a\";\n\nfunction makeHost(serversByRoot = new Map()) {\n  const log = { emits: 0, saved: 0 };\n  const host = {\n    ctx: { tools: { register: () => () => {} } },\n    logger: { info: () => {}, warn: () => {}, error: () => {} },\n    projectServersFor: async (root) => serversByRoot.get(root),\n    globalServers: () => [],\n    normalizedProjectRoot: async (cwd) => (typeof cwd === \"string\" && cwd !== \"\" ? cwd : undefined),\n    saveUserState: async () => { log.saved += 1; },\n    emitStatus: () => { log.emits += 1; },\n    catalogCachePath: (root) => join(root, \".dsh-mcp-catalog-test.json\"),\n  };\n  return { host, log };\n}\n\n// ---- normalizeMiddlewareMode ----\n{\n  assert.equal(normalizeMiddlewareMode(\"off\"), \"off\");\n  assert.equal(normalizeMiddlewareMode(\"project\"), \"project\");\n  assert.equal(normalizeMiddlewareMode(\"all\"), \"all\");\n  assert.equal(normalizeMiddlewareMode(\"bogus\"), \"off\");\n  assert.equal(normalizeMiddlewareMode(undefined), \"off\");\n}\n\n// ---- fullServerName / parseFullServerName ----\n{\n  assert.equal(fullServerName(\"/a/b\", \"ctx\"), \"@/a/b/ctx\");\n  assert.deepEqual(parseFullServerName(\"@/a/b/ctx\"), { root: \"/a/b\", server: \"ctx\" });\n  assert.deepEqual(parseFullServerName(\"@/a/b\"), { root: \"/a\", server: \"b\" });\n  assert.equal(parseFullServerName(\"ctx\"), undefined);\n  assert.equal(parseFullServerName(\"@/\"), undefined); // 空 server\n  assert.equal(parseFullServerName(\"@/a/\"), undefined); // 空 server\n}\n\n// ---- normalizeToolName ----\n{\n  assert.equal(normalizeToolName(\"ctx\", \"use_ctx\"), \"use_ctx\");\n  assert.equal(normalizeToolName(\"ctx\", \"mcp__ctx__use_ctx\"), \"use_ctx\");\n  assert.equal(normalizeToolName(\"ctx\", \"mcp__ctx__mcp__ctx__use_ctx\"), \"use_ctx\");\n  assert.throws(() => normalizeToolName(\"ctx\", \"mcp__other__tool\"), /疑似其他/);\n}\n\n// ---- normalizeArguments ----\n{\n  assert.deepEqual(normalizeArguments({ a: 1 }), { a: 1 });\n  assert.deepEqual(normalizeArguments('{\"a\":1}'), { a: 1 });\n  assert.deepEqual(normalizeArguments('\"[1,2]\"'), [1, 2]);\n  assert.equal(normalizeArguments(\"hello\"), \"hello\"); // 标量保留\n  assert.deepEqual(normalizeArguments(\"\"), {}); // 空串 → 空对象\n}\n\n// ---- globMatch / policy ----\n{\n  assert.equal(globMatch(\"*\", \"anything\"), true);\n  assert.equal(globMatch(\"foo\", \"foo\"), true);\n  assert.equal(globMatch(\"foo\", \"bar\"), false);\n  assert.equal(globMatch(\"foo*\", \"foobar\"), true);\n  assert.equal(globMatch(\"foo*\", \"barfoo\"), false);\n  const policy = { allowTools: { ctx: [\"use_*\"] }, denyTools: { ctx: [\"use_secret\"] } };\n  assert.equal(policyAllows(policy, \"ctx\", \"use_ctx\"), true);\n  assert.equal(policyAllows(policy, \"ctx\", \"use_secret\"), false); // deny 优先\n  assert.equal(policyAllows(policy, \"ctx\", \"other\"), false); // 不在 allow\n  assert.equal(policyAllows(policy, \"other\", \"anything\"), true); // 未配置 → 允许\n  assert.equal(policyAllows(undefined, \"ctx\", \"x\"), true);\n  assert.match(policyDenialReason(policy, \"ctx\", \"use_secret\"), /denyTools/);\n  assert.match(policyDenialReason(policy, \"ctx\", \"other\"), /allowTools/);\n}\n\n// ---- scoreTool / searchCatalog ----\n{\n  const unit = {\n    root: ROOT,\n    connections: new Map(),\n    catalog: new Map([\n      [\"ctx\", {\n        discoveredAt: Date.now(),\n        tools: new Map([\n          [\"use_ctx\", { description: \"查询 context7 文档\", inputSchema: { type: \"object\", properties: { query: { type: \"string\" } } } }],\n          [\"search\", { description: \"search tool\", inputSchema: {} }],\n        ]),\n      }],\n      [\"down\", { discoveredAt: 0, tools: new Map(), unavailable: \"连接失败\" }],\n    ]),\n    userDisabled: new Set(),\n    lastTouchedAt: Date.now(),\n    inFlight: new Map(),\n  };\n  const units = new Map([[ROOT, unit]]);\n  const { results, unavailable } = searchCatalog(units, ROOT, \"文档\", 5);\n  assert.ok(results.length >= 1, \"命中文档工具\");\n  assert.equal(results[0].server, fullServerName(ROOT, \"ctx\"));\n  assert.equal(results[0].fresh, true);\n  assert.equal(unavailable.length, 1);\n  assert.match(unavailable[0].reason, /连接失败/);\n  // 空查询 → 能力摘要\n  const summary = searchCatalog(units, ROOT, \"\", 5);\n  assert.equal(summary.results.length, 2);\n  // TTL 过期 → fresh=false\n  const stale = searchCatalog(new Map([[ROOT, { ...unit, catalog: new Map([[\"ctx\", { discoveredAt: Date.now() - CATALOG_TTL_MS - 1000, tools: unit.catalog.get(\"ctx\").tools }]]) }]]), ROOT, \"文档\", 5);\n  assert.equal(stale.results[0].fresh, false);\n}\n\n// ---- McpMiddleware：projectUnitFor / userDisabled / inFlight ----\n{\n  const servers = [{ name: \"ctx\", transport: \"stdio\", command: \"npx\", enabled: true }];\n  const { host, log } = makeHost(new Map([[ROOT, servers]]));\n  const mw = new McpMiddleware(host, {});\n  mw.disabledByRoot.set(ROOT, new Set([\"ctx\"]));\n  const unit = await mw.projectUnitFor(ROOT);\n  assert.ok(unit !== undefined);\n  assert.equal(unit.userDisabled.has(\"ctx\"), true, \"userDisabled 合并\");\n  assert.equal(unit.connections.size, 0, \"惰性：未显式连接前不建连接\");\n  assert.equal(log.emits, 0);\n  // 无项目标记目录 → undefined\n  const none = await mw.projectUnitFor(\"/no/such/root\");\n  assert.equal(none, undefined);\n  await mw.dispose();\n}\n\n// ---- callTool：路由一致性 / 未连接 / 策略 ----\n{\n  // enabled:false → 不触发真实连接（单元测试不 spawn 子进程）\n  const servers = [{ name: \"ctx\", transport: \"stdio\", command: \"npx\", enabled: false }];\n  const { host } = makeHost(new Map([[ROOT, servers]]));\n  const mw = new McpMiddleware(host, { denyTools: { ctx: [\"secret\"] } });\n  await mw.projectUnitFor(ROOT);\n  // 路由一致性：参数 root ≠ 路由 root → 拒绝\n  await assert.rejects(\n    () => mw.callTool(\"@/other/root/ctx\", \"use_ctx\", {}, undefined),\n    /不属于当前工作空间|未激活/,\n  );\n  // 未知 server 形态\n  await assert.rejects(() => mw.callTool(\"ctx\", \"use_ctx\", {}, undefined), /格式应为/);\n  // 未连接（enabled:false 不触发连接）→ 错误含下一步提示（ws_mcp_search 或 ws_mcp_list）\n  await assert.rejects(\n    () => mw.callTool(fullServerName(ROOT, \"ctx\"), \"use_ctx\", {}, undefined),\n    /未连接或连接失败，请先 ws_mcp_search 或 ws_mcp_list 确认 server 已连接/,\n  );\n  // userDisabled → 错误含下一步提示\n  mw.disabledByRoot.set(ROOT, new Set([\"ctx\"]));\n  const disabledUnit = await mw.projectUnitFor(ROOT);\n  disabledUnit.userDisabled.add(\"ctx\");\n  await assert.rejects(\n    () => mw.callTool(fullServerName(ROOT, \"ctx\"), \"use_ctx\", {}, undefined),\n    /已被用户禁用；可先在 GUI「MCP」浮窗中重新连接/,\n  );\n  disabledUnit.userDisabled.delete(\"ctx\");\n  await mw.dispose();\n}\n\n// ---- evictIfNeeded LRU ----\n{\n  const { host } = makeHost(new Map());\n  const mw = new McpMiddleware(host, {});\n  // 注入 18 个假单元（无服务器配置，projectUnitFor 会返回 undefined —— 直接塞 map）\n  for (let index = 0; index < 18; index += 1) {\n    mw.units.set(`/root-${index}`, {\n      root: `/root-${index}`,\n      connections: new Map(),\n      catalog: new Map(),\n      userDisabled: new Set(),\n      lastTouchedAt: 1000 + index,\n      inFlight: new Map(),\n    });\n  }\n  mw.evictIfNeeded(16);\n  assert.equal(mw.units.size, 16, \"LRU 淘汰到上限\");\n  assert.equal(mw.units.has(\"/root-0\"), false, \"最旧被淘汰\");\n  assert.equal(mw.units.has(\"/root-17\"), true, \"最新保留\");\n  await mw.dispose();\n}\n\n// ---- userState 持久化 ----\n{\n  const dir = mkdtempSync(join(tmpdir(), \"dsh-mcp-mw-\"));\n  const file = join(dir, \"user-state.json\");\n  const units = new Map([[ROOT, {\n    root: ROOT,\n    connections: new Map(),\n    catalog: new Map(),\n    userDisabled: new Set([\"ctx\"]),\n    lastTouchedAt: Date.now(),\n    inFlight: new Map(),\n  }]]);\n  await saveUserState(file, units);\n  const loaded = await loadUserState(file);\n  assert.deepEqual([...loaded.get(ROOT)], [\"ctx\"]);\n  // 损坏文件 → 空\n  writeFileSync(file, \"{bad json\");\n  const empty = await loadUserState(file);\n  assert.equal(empty.size, 0);\n  mkdirSync(join(dir, \"sub\"));\n}\n\n// ---- last-good 目录缓存：loadCatalogCache 读取 / persistCatalog 空采集不写盘 ----\n{\n  const dir = mkdtempSync(join(tmpdir(), \"dsh-mcp-mw-cat-\"));\n  const baseHost = makeHost(new Map());\n  const catalogHost = {\n    ...baseHost.host,\n    catalogCachePath: (root) => join(dir, `${root.replace(/[^a-z0-9]/gi, \"_\")}.json`),\n  };\n  const mw = new McpMiddleware(catalogHost, {});\n  const unit = {\n    root: ROOT,\n    connections: new Map(),\n    catalog: new Map([\n      [\"ctx\", {\n        discoveredAt: Date.now(),\n        tools: new Map([[\"use_ctx\", { description: \"查询文档\", inputSchema: {} }]]),\n      }],\n    ]),\n    userDisabled: new Set(),\n    lastTouchedAt: Date.now(),\n    inFlight: new Map(),\n  };\n  mw.units.set(ROOT, unit);\n  await mw.persistCatalog(ROOT);\n  const file = catalogHost.catalogCachePath(ROOT);\n  assert.equal(existsSync(file), true, \"有工具的目录落盘\");\n  // 空采集不写盘：清空目录后 persist 不覆盖已有缓存（保留 last-good）\n  const { readFileSync } = await import(\"node:fs\");\n  const before = readFileSync(file, \"utf8\");\n  unit.catalog.get(\"ctx\").tools.clear();\n  unit.catalog.get(\"ctx\").unavailable = \"failed\";\n  await mw.persistCatalog(ROOT);\n  assert.equal(readFileSync(file, \"utf8\"), before, \"空采集不覆盖已有缓存（保留 last-good）\");\n  await mw.dispose();\n}\n\n// ---- searchCatalogMulti：多单元合并检索（all 模式） ----\n{\n  const unit = {\n    root: ROOT,\n    connections: new Map(),\n    catalog: new Map([\n      [\"ctx\", {\n        discoveredAt: Date.now(),\n        tools: new Map([\n          [\"use_ctx\", { description: \"查询 context7 文档\", inputSchema: {} }],\n          [\"search\", { description: \"search tool\", inputSchema: {} }],\n        ]),\n      }],\n    ]),\n    userDisabled: new Set(),\n    lastTouchedAt: Date.now(),\n    inFlight: new Map(),\n  };\n  const globalUnit = {\n    ...unit,\n    root: \"@global\",\n    catalog: new Map([\n      [\"gctx\", {\n        discoveredAt: Date.now(),\n        tools: new Map([\n          [\"use_g\", { description: \"全局工具\", inputSchema: {} }],\n          [\"other\", { description: \"无关\", inputSchema: {} }],\n        ]),\n      }],\n    ]),\n  };\n  const units = new Map([[ROOT, unit], [\"@global\", globalUnit]]);\n  // 合并查询命中两个单元（项目 root + @global）。\n  const multi = searchCatalogMulti(units, [ROOT, \"@global\"], \"use\", 10);\n  assert.ok(multi.results.some((hit) => hit.server === fullServerName(ROOT, \"ctx\")), \"命中项目单元\");\n  assert.ok(multi.results.some((hit) => hit.server === fullServerName(\"@global\", \"gctx\")), \"命中 @global 单元\");\n  // 空查询能力摘要同样合并。\n  const summary = searchCatalogMulti(units, [ROOT, \"@global\"], \"\", 10);\n  assert.equal(summary.results.length, 4, \"合并摘要含全部工具\");\n  // 单 root 包装与 multi 单元素等价（且顺序一致——multi 单 root 委托 searchCatalog，P2-2）。\n  const single = searchCatalog(units, ROOT, \"文档\", 10);\n  assert.deepEqual(single.results, searchCatalogMulti(units, [ROOT], \"文档\", 10).results);\n  // 多 root 合并后统一按全局 limit 截断（P2-3：limit 为全局上限）。\n  const capped = searchCatalogMulti(units, [ROOT, \"@global\"], \"\", 2);\n  assert.equal(capped.results.length, 2, \"多 root 合并后按全局 limit 截断\");\n  // 无此单元 → 空。\n  const none = searchCatalogMulti(units, [\"/no/such\"], \"x\", 10);\n  assert.equal(none.results.length, 0);\n  assert.equal(none.unavailable.length, 0);\n}\n\n// ---- listCatalog：完整清单 / 过滤 / 空返回 / 截断 / unavailable / disabled ----\n{\n  const mkTools = (count) => {\n    const tools = new Map();\n    for (let i = 0; i < count; i += 1) tools.set(`t${i}`, { description: `desc${i}`, inputSchema: {} });\n    return tools;\n  };\n  const unit = {\n    root: ROOT,\n    connections: new Map(),\n    catalog: new Map([\n      // 2 个工具（无截断）\n      [\"ctx\", { discoveredAt: Date.now(), tools: mkTools(2) }],\n      // 用户已禁用（工具来自 last-good 目录）\n      [\"off\", { discoveredAt: Date.now(), tools: mkTools(1) }],\n      // 发现失败\n      [\"down\", { discoveredAt: 0, tools: new Map(), unavailable: \"连接失败\" }],\n    ]),\n    userDisabled: new Set([\"off\"]),\n    lastTouchedAt: Date.now(),\n    inFlight: new Map(),\n  };\n  const globalUnit = {\n    ...unit,\n    root: \"@global\",\n    catalog: new Map([[\"gctx\", { discoveredAt: Date.now(), tools: mkTools(3) }]]),\n    userDisabled: new Set(),\n  };\n  const units = new Map([[ROOT, unit], [\"@global\", globalUnit]]);\n\n  // 完整清单（project 模式：单 root）\n  const listed = listCatalog(units, [ROOT], undefined, 50, \"project\", \"empty\");\n  assert.equal(listed.workspace, ROOT);\n  assert.equal(listed.mode, \"project\");\n  assert.equal(listed.totalServers, 3, \"全部服务器（含 disabled/unavailable）\");\n  assert.equal(listed.totalTools, 3, \"工具数不含 unavailable 服务器\");\n  assert.equal(listed.toolsTruncated, false);\n  const ctxEntry = listed.servers.find((s) => s.server === fullServerName(ROOT, \"ctx\"));\n  assert.deepEqual(ctxEntry.tools.map((t) => t.tool), [\"t0\", \"t1\"]);\n  assert.equal(ctxEntry.toolsTruncated, false);\n  assert.equal(ctxEntry.disabled, undefined);\n  const offEntry = listed.servers.find((s) => s.server === fullServerName(ROOT, \"off\"));\n  assert.equal(offEntry.disabled, true, \"userDisabled → disabled: true\");\n  const downEntry = listed.servers.find((s) => s.server === fullServerName(ROOT, \"down\"));\n  assert.equal(downEntry.unavailable, \"连接失败\", \"发现失败附原因\");\n  assert.deepEqual(downEntry.tools, []);\n  assert.equal(listed.message, undefined, \"非空返回无 message\");\n\n  // server 过滤（裸名）\n  const filteredBare = listCatalog(units, [ROOT], \"ctx\", 50, \"project\", \"empty\");\n  assert.equal(filteredBare.totalServers, 1);\n  assert.equal(filteredBare.servers[0].server, fullServerName(ROOT, \"ctx\"));\n  // server 过滤（全名）\n  const filteredFull = listCatalog(units, [ROOT], fullServerName(ROOT, \"ctx\"), 50, \"project\", \"empty\");\n  assert.equal(filteredFull.totalServers, 1);\n  // 全名 root 不属于当前 roots → 路由一致性错误\n  assert.throws(() => listCatalog(units, [ROOT], \"@/other/root/ctx\", 50, \"project\", \"empty\"), /不属于当前工作空间/);\n\n  // all 模式：合并 @global 单元\n  const all = listCatalog(units, [ROOT, \"@global\"], undefined, 50, \"all\", \"empty\");\n  assert.equal(all.mode, \"all\");\n  assert.equal(all.totalServers, 4, \"项目 root + @global 合并\");\n  assert.equal(all.workspace, ROOT);\n  assert.ok(all.servers.some((s) => s.server === fullServerName(\"@global\", \"gctx\")), \"含 @global 服务器\");\n  assert.equal(all.totalTools, 6);\n\n  // perServerLimit 截断 → toolsTruncated（per-server + 全局汇总）\n  const truncated = listCatalog(units, [ROOT], undefined, 1, \"project\", \"empty\");\n  const ctxT = truncated.servers.find((s) => s.server === fullServerName(ROOT, \"ctx\"));\n  assert.equal(ctxT.tools.length, 1, \"截断到 1 条\");\n  assert.equal(ctxT.toolsTruncated, true, \"per-server toolsTruncated\");\n  assert.equal(truncated.toolsTruncated, true, \"全局 toolsTruncated\");\n  const offT = truncated.servers.find((s) => s.server === fullServerName(ROOT, \"off\"));\n  assert.equal(offT.toolsTruncated, false, \"未超限不置位\");\n\n  // 空返回 → message（project / all 区分）\n  const empty = listCatalog(new Map(), [ROOT], undefined, 50, \"project\", \"无项目级 MCP 配置提示\");\n  assert.equal(empty.totalServers, 0);\n  assert.equal(empty.totalTools, 0);\n  assert.equal(empty.message, \"无项目级 MCP 配置提示\");\n  assert.equal(empty.toolsTruncated, false);\n  // 常量值\n  assert.equal(LIST_DEFAULT_TOOLS_PER_SERVER, 50);\n  assert.equal(LIST_MAX_TOOLS_PER_SERVER, 500);\n\n  // #381 回归：未禁用工具条目**不写** disabled 键（显式 undefined 键会被宿主\n  // lossless JSON 输出校验判非法 → ws_mcp_list 报 \"value is not lossless JSON\"）。\n  for (const tool of ctxEntry.tools) {\n    assert.equal(Object.hasOwn(tool, \"disabled\"), false, `未禁用条目不写 disabled 键（${tool.tool}）`);\n  }\n  assert.equal(Object.hasOwn(offEntry, \"disabled\"), true, \"服务器级禁用仍写 disabled 键\");\n\n  // #381 回归：工具级禁用路径——禁用条目写 disabled: true，未禁用条目无键。\n  const disabledMap = new Map([[ROOT, new Map([[\"ctx\", new Set([\"t0\"])]])]]);\n  const withDisabled = listCatalog(units, [ROOT], undefined, 50, \"project\", \"empty\", disabledMap);\n  const ctxWD = withDisabled.servers.find((s) => s.server === fullServerName(ROOT, \"ctx\"));\n  assert.equal(ctxWD.tools[0].disabled, true, \"t0 被禁用 → disabled: true\");\n  assert.equal(Object.hasOwn(ctxWD.tools[0], \"disabled\"), true);\n  assert.equal(Object.hasOwn(ctxWD.tools[1], \"disabled\"), false, \"t1 未禁用 → 无 disabled 键\");\n\n  // #381 回归：模拟宿主 lossless 校验（递归断言输出树无 undefined 值键/元素）。\n  const assertLossless = (value, path) => {\n    if (value === undefined) throw new Error(`lossless 违规：${path} 为 undefined`);\n    if (value === null || typeof value !== \"object\") return;\n    if (Array.isArray(value)) {\n      value.forEach((item, i) => assertLossless(item, `${path}[${i}]`));\n      return;\n    }\n    for (const [key, entry] of Object.entries(value)) assertLossless(entry, `${path}.${key}`);\n  };\n  assertLossless(listed, \"listed\");\n  assertLossless(withDisabled, \"withDisabled\");\n}\n\n// ---- findToolDetail：精确命中 / 完整 schema / 错误三分 / tool 归一化 ----\n{\n  const schema = { type: \"object\", properties: { query: { type: \"string\" }, mode: { type: \"string\", enum: [\"a\", \"b\"] } }, required: [\"query\"] };\n  const unit = {\n    root: ROOT,\n    connections: new Map(),\n    catalog: new Map([\n      [\"ctx\", {\n        discoveredAt: Date.now(),\n        tools: new Map([\n          [\"use_ctx\", { description: \"查询 context7 文档\", inputSchema: schema }],\n        ]),\n      }],\n      [\"down\", { discoveredAt: 0, tools: new Map(), unavailable: \"连接失败\" }],\n    ]),\n    userDisabled: new Set(),\n    lastTouchedAt: Date.now(),\n    inFlight: new Map(),\n  };\n  const units = new Map([[ROOT, unit]]);\n  // 精确命中：完整 schema + fresh + server/tool 原样\n  const detail = findToolDetail(units, ROOT, fullServerName(ROOT, \"ctx\"), \"use_ctx\");\n  assert.equal(detail.server, fullServerName(ROOT, \"ctx\"));\n  assert.equal(detail.tool, \"use_ctx\");\n  assert.equal(detail.description, \"查询 context7 文档\");\n  assert.deepEqual(detail.inputSchema, schema, \"完整 inputSchema（含 enum/required）\");\n  assert.equal(detail.fresh, true);\n  assert.equal(detail.disabled, undefined);\n  // tool 归一化（mcp__ 前缀剥离）\n  const normalized = findToolDetail(units, ROOT, fullServerName(ROOT, \"ctx\"), \"mcp__ctx__use_ctx\");\n  assert.equal(normalized.tool, \"use_ctx\");\n  assert.deepEqual(normalized.inputSchema, schema);\n  // 跨 server 前缀 → 疑似其他\n  assert.throws(() => findToolDetail(units, ROOT, fullServerName(ROOT, \"ctx\"), \"mcp__other__tool\"), /疑似其他/);\n  // 错误三分 1：server 发现失败（附原因）\n  assert.throws(\n    () => findToolDetail(units, ROOT, fullServerName(ROOT, \"down\"), \"x\"),\n    /发现失败.*连接失败/,\n  );\n  // 错误三分 2：服务器未发现\n  assert.throws(\n    () => findToolDetail(units, ROOT, fullServerName(ROOT, \"nope\"), \"x\"),\n    /未连接或未发现/,\n  );\n  // 错误三分 2b：单元未激活\n  assert.throws(\n    () => findToolDetail(units, \"/no/such\", fullServerName(\"/no/such\", \"ctx\"), \"x\"),\n    /未连接或未发现/,\n  );\n  // 错误三分 3：工具不存在\n  assert.throws(\n    () => findToolDetail(units, ROOT, fullServerName(ROOT, \"ctx\"), \"nope\"),\n    /tool 不存在/,\n  );\n  // 路由一致性：参数 root ≠ 路由 root → 拒绝\n  assert.throws(\n    () => findToolDetail(units, ROOT, fullServerName(\"@global\", \"ctx\"), \"x\"),\n    /不属于当前工作空间/,\n  );\n  // 用户禁用 → detail 标注 disabled\n  const disabledUnit = {\n    ...unit,\n    userDisabled: new Set([\"ctx\"]),\n  };\n  const disabledDetail = findToolDetail(new Map([[ROOT, disabledUnit]]), ROOT, fullServerName(ROOT, \"ctx\"), \"use_ctx\");\n  assert.equal(disabledDetail.disabled, true, \"用户禁用标注 disabled\");\n  // 禁用且目录空 → 未连接（附禁用说明）\n  const disabledEmpty = {\n    ...disabledUnit,\n    catalog: new Map([[\"ctx\", { discoveredAt: 0, tools: new Map() }]]),\n  };\n  assert.throws(\n    () => findToolDetail(new Map([[ROOT, disabledEmpty]]), ROOT, fullServerName(ROOT, \"ctx\"), \"x\"),\n    /已被用户禁用/,\n  );\n}\n\n// ---- #412 force 受控重建：半开 connected entry 不短路 ----\n{\n  const servers = [{ name: \"ctx\", transport: \"stdio\", command: \"npx\", enabled: true }];\n  const { host } = makeHost(new Map([[ROOT, servers]]));\n  // 防双进程探测命中（避免真实 spawn；重建落 failed 占位 + 排重试）\n  host.ctx.tools.schemas = () => [{ name: \"mcp__ctx__t\" }];\n  const mw = new McpMiddleware(host, {});\n  // 直接构造单元（不走 projectUnitFor 惰性连接，测试全程不 spawn）\n  const unit = {\n    root: ROOT,\n    connections: new Map(),\n    catalog: new Map(),\n    userDisabled: new Set(),\n    lastTouchedAt: Date.now(),\n    inFlight: new Map(),\n  };\n  mw.units.set(ROOT, unit);\n  // 预置「半开死连接」：status 卡 connected、transport 已静默断链（模拟移动端\n  // 切后台掐断 TCP 后 onClose 不触发）。\n  const deadTransport = { close: () => { deadTransport.closed = true; return Promise.resolve(); }, closed: false };\n  const deadEntry = {\n    server: servers[0],\n    client: {},\n    transport: deadTransport,\n    status: \"connected\",\n    error: undefined,\n    connectedAt: Date.now(),\n    reconnectTimer: undefined,\n    disposed: false,\n    failedAttempts: 0,\n  };\n  unit.connections.set(\"ctx\", deadEntry);\n\n  // 非 force：connected 短路——entry 引用与 transport 原样保留（惰性路径防重复建连）。\n  await mw.ensureConnected(ROOT, \"ctx\");\n  assert.equal(unit.connections.get(\"ctx\"), deadEntry, \"非 force 短路保留原 entry\");\n  assert.equal(deadTransport.closed, false, \"非 force 不 close 旧 transport\");\n\n  // force：忽略 connected 状态受控重建——旧 transport 被 close、entry 置 failed\n  // + 重试排程（探测命中防双进程路径复用 entry，不再短路）。\n  await mw.ensureConnected(ROOT, \"ctx\", { force: true });\n  assert.equal(deadTransport.closed, true, \"force 关闭旧 transport（半开 socket 不泄漏）\");\n  const after = unit.connections.get(\"ctx\");\n  assert.equal(after.status, \"failed\", \"force 重建置 failed（防 probeRetry 对 connected 短路死循环）\");\n  assert.equal(after.transport, undefined, \"旧 transport 已清空（重建代际）\");\n  assert.equal(after.probeRetried, true, \"重试已排（probeRetried 一次性标记）\");\n  if (after.reconnectTimer !== undefined) clearTimeout(after.reconnectTimer);\n  await mw.dispose();\n}\n\n// ---- #413：runtime 封装定义服务器（toolDefinitions）中间层直呼 ----\n{\n  const wrappedTool = {\n    name: \"cg_node\",\n    description: \"查符号（封装定义）\",\n    parameters: { type: \"object\", properties: { symbol: { type: \"string\" } }, required: [\"symbol\"] },\n    output: {\n      schema: { type: \"object\", properties: { text: { type: \"string\" } }, required: [\"text\"], additionalProperties: false },\n      render: (args, value) => [{ type: \"text\", text: `rendered:${value.text}` }],\n    },\n    isConcurrencySafe: () => true,\n    execute: async (args, exec) => {\n      const cwd = exec?.agent?.session?.header?.cwd;\n      return { text: `node(${args.symbol})@${cwd ?? \"no-cwd\"}` };\n    },\n  };\n  const wrappedServer = { name: \"cg\", transport: \"stdio\", command: \"codegraph\", enabled: true, toolDefinitions: [wrappedTool] };\n  const { host, log } = makeHost(new Map([[\"@global\", [wrappedServer]]]));\n  const mw = new McpMiddleware(host, {});\n  await mw.projectUnitFor(\"@global\");\n  await mw.ensureConnected(\"@global\", \"cg\");\n  const unit = mw.units.get(\"@global\");\n  assert.ok(unit, \"@global 单元已创建\");\n  const entry = unit.connections.get(\"cg\");\n  assert.ok(entry, \"封装定义服务器虚拟连接已建立\");\n  assert.equal(entry.status, \"connected\", \"虚拟连接状态 connected\");\n  assert.equal(entry.client, undefined, \"不建远端 client（封装 execute 不经远端）\");\n  assert.equal(entry.transport, undefined, \"不 spawn transport\");\n  // 目录从 toolDefinitions 投影（name/description/parameters → inputSchema）。\n  const catalog = unit.catalog.get(\"cg\");\n  assert.ok(catalog, \"目录已投影\");\n  assert.equal(catalog.tools.has(\"cg_node\"), true, \"封装工具名投影进目录\");\n  assert.equal(catalog.tools.get(\"cg_node\").description, \"查符号（封装定义）\");\n  assert.deepEqual(catalog.tools.get(\"cg_node\").inputSchema, { type: \"object\", properties: { symbol: { type: \"string\" } }, required: [\"symbol\"] }, \"parameters 直接作 inputSchema\");\n\n  // callTool 封装直呼：execute 被调用 + output.render 投影 content + agent 透传。\n  const result = await mw.callTool(fullServerName(\"@global\", \"cg\"), \"cg_node\", { symbol: \"foo\" }, undefined, { session: { header: { cwd: \"/proj\" } } });\n  assert.deepEqual(result, { content: [{ type: \"text\", text: \"rendered:node(foo)@/proj\" }], structuredContent: { text: \"node(foo)@/proj\" } }, \"封装直呼：execute + render + agent 透传\");\n  // agent 缺省 → cwd 解析 undefined。\n  const noAgent = await mw.callTool(fullServerName(\"@global\", \"cg\"), \"cg_node\", { symbol: \"bar\" }, undefined);\n  assert.deepEqual(noAgent.structuredContent, { text: \"node(bar)@no-cwd\" }, \"agent 缺省不崩（封装侧自处理）\");\n\n  // 工具级禁用前置：禁用表命中 → 抛禁用错误（不经 execute）。\n  mw.disabledTools.set(\"@global\", new Map([[\"cg\", new Set([\"cg_node\"])]]));\n  await assert.rejects(\n    () => mw.callTool(fullServerName(\"@global\", \"cg\"), \"cg_node\", { symbol: \"x\" }, undefined, { session: { header: { cwd: \"/p\" } } }),\n    /已被用户在「MCP」浮窗禁用/,\n  );\n  mw.disabledTools.delete(\"@global\");\n\n  // 不存在的封装工具名 → 明确报错。\n  await assert.rejects(\n    () => mw.callTool(fullServerName(\"@global\", \"cg\"), \"nope\", {}, undefined),\n    /不存在（封装定义服务器）/,\n  );\n\n  // persistCatalog 跳过 runtime 条目（isRuntimeServer 命中 → 不写盘）。\n  const dir = mkdtempSync(join(tmpdir(), \"dsh-mcp-mw-wrapped-\"));\n  const persistHost = {\n    ...host,\n    isRuntimeServer: (name) => name === \"cg\",\n    catalogCachePath: (root) => join(dir, `${root.replace(/[^a-z0-9]/gi, \"_\")}.json`),\n  };\n  const mw2 = new McpMiddleware(persistHost, {});\n  const unit2 = {\n    root: \"@global\",\n    connections: new Map([[\"cg\", entry]]),\n    catalog: new Map([[\"cg\", catalog], [\"storeSrv\", { discoveredAt: Date.now(), tools: new Map([[\"t1\", { description: \"d\", inputSchema: {} }]]) }]]),\n    userDisabled: new Set(),\n    lastTouchedAt: Date.now(),\n    inFlight: new Map(),\n  };\n  mw2.units.set(\"@global\", unit2);\n  await mw2.persistCatalog(\"@global\");\n  const { readFileSync } = await import(\"node:fs\");\n  const persisted = readFileSync(persistHost.catalogCachePath(\"@global\"), \"utf8\");\n  assert.equal(persisted.includes(\"cg\"), false, \"runtime 条目不写盘\");\n  assert.equal(persisted.includes(\"storeSrv\"), true, \"store 条目照常写盘\");\n  await mw2.dispose();\n  await mw.dispose();\n}\n\n// ---- #413：空 toolDefinitions / 封装调用超时兜底 ----\n{\n  // 空 toolDefinitions：连接照建、目录 0 工具、调用报「不存在」。\n  const emptyWrapped = { name: \"cg\", transport: \"stdio\", command: \"codegraph\", enabled: true, toolDefinitions: [] };\n  const { host } = makeHost(new Map([[\"@global\", [emptyWrapped]]]));\n  const mw = new McpMiddleware(host, {});\n  await mw.projectUnitFor(\"@global\");\n  await mw.ensureConnected(\"@global\", \"cg\");\n  const unit = mw.units.get(\"@global\");\n  assert.equal(unit.connections.get(\"cg\")?.status, \"connected\", \"空 toolDefinitions 仍建虚拟连接\");\n  assert.equal(unit.catalog.get(\"cg\")?.tools.size, 0, \"空 toolDefinitions 目录 0 工具\");\n  await assert.rejects(\n    () => mw.callTool(fullServerName(\"@global\", \"cg\"), \"anything\", {}, undefined),\n    /不存在（封装定义服务器）/,\n  );\n  await mw.dispose();\n\n  // 封装 execute 挂起 → withTimeout 超时兜底（不无限等待）。\n  const hangingTool = {\n    name: \"hang\",\n    description: \"挂起\",\n    parameters: { type: \"object\", properties: {} },\n    output: { schema: { type: \"object\", properties: { text: { type: \"string\" } }, required: [\"text\"], additionalProperties: false }, render: (a, v) => [{ type: \"text\", text: v.text }] },\n    execute: async () => new Promise(() => {}), // 永不 resolve\n  };\n  const hangingServer = { name: \"hg\", transport: \"stdio\", command: \"x\", enabled: true, toolDefinitions: [hangingTool] };\n  const { host: host2 } = makeHost(new Map([[\"@global\", [hangingServer]]]));\n  const mw3 = new McpMiddleware(host2, {});\n  await mw3.projectUnitFor(\"@global\");\n  await mw3.ensureConnected(\"@global\", \"hg\");\n  await assert.rejects(\n    () => mw3.callTool(fullServerName(\"@global\", \"hg\"), \"hang\", {}, undefined),\n    /封装调用超时/,\n  );\n  await mw3.dispose();\n}\n\n// ---- #512：callTool 远端结果投影收敛（isError/_meta 不泄漏 + 无 content 兜底）----\n{\n  // 模拟宿主 lossless 校验（与 #381 回归同款，递归断言无 undefined 值键/元素）。\n  const assertLossless = (value, path) => {\n    if (value === undefined) throw new Error(`lossless 违规：${path} 为 undefined`);\n    if (value === null || typeof value !== \"object\") return;\n    if (Array.isArray(value)) {\n      value.forEach((item, i) => assertLossless(item, `${path}[${i}]`));\n      return;\n    }\n    for (const [key, entry] of Object.entries(value)) assertLossless(entry, `${path}.${key}`);\n  };\n\n  async function withFakeClient(remoteResult, { stale = false } = {}) {\n    const servers = [{ name: \"py\", transport: \"stdio\", command: \"python\", enabled: true }];\n    const { host } = makeHost(new Map([[ROOT, servers]]));\n    const mw = new McpMiddleware(host, {});\n    const unit = {\n      root: ROOT,\n      connections: new Map(),\n      catalog: new Map([\n        [\"py\", {\n          discoveredAt: stale ? Date.now() - CATALOG_TTL_MS - 1000 : Date.now(),\n          tools: new Map([[\"echo\", { description: \"回声\", inputSchema: { type: \"object\" } }]]),\n          unavailable: undefined,\n        }],\n      ]),\n      userDisabled: new Set(),\n      lastTouchedAt: Date.now(),\n      inFlight: new Map(),\n    };\n    mw.units.set(ROOT, unit);\n    unit.connections.set(\"py\", {\n      server: servers[0],\n      client: { callTool: async () => remoteResult },\n      transport: { close: () => Promise.resolve() },\n      status: \"connected\",\n      error: undefined,\n      connectedAt: Date.now(),\n      reconnectTimer: undefined,\n      disposed: false,\n      failedAttempts: 0,\n    });\n    return { mw, dispose: () => mw.dispose() };\n  }\n\n  // Python SDK 形态：成功结果必带 isError:false（+ _meta）→ 不得外泄。\n  {\n    const { mw, dispose } = await withFakeClient({\n      content: [{ type: \"text\", text: \"你好\" }],\n      structuredContent: { answer: 42 },\n      isError: false,\n      _meta: { trace: \"x\" },\n    });\n    const out = await mw.callTool(fullServerName(ROOT, \"py\"), \"echo\", {}, undefined);\n    assert.deepEqual(\n      { content: out.content, structuredContent: out.structuredContent },\n      { content: [{ type: \"text\", text: \"你好\" }], structuredContent: { answer: 42 } },\n      \"#512：isError:false / _meta 不泄漏，白名单字段保留\",\n    );\n    assert.equal(Object.hasOwn(out, \"isError\"), false, \"无 isError 键\");\n    assert.equal(Object.hasOwn(out, \"_meta\"), false, \"无 _meta 键\");\n    assertLossless(out, \"#512 输出\");\n    await dispose();\n  }\n\n  // isError:true → 抛错（文案含远端错误提示与下一步引导）。\n  {\n    const { mw, dispose } = await withFakeClient({\n      content: [{ type: \"text\", text: \"boom\" }],\n      isError: true,\n    });\n    await assert.rejects(\n      () => mw.callTool(fullServerName(ROOT, \"py\"), \"echo\", {}, undefined),\n      /远端工具返回错误：.*boom.*ws_mcp_detail/,\n      \"isError:true 抛错且文案可归因\",\n    );\n    await dispose();\n  }\n\n  // 无 content / 非数组 content → 兜底文本（required content 不落空，lossless 合规）。\n  {\n    const { mw, dispose } = await withFakeClient({ toolResult: { ok: 1 } });\n    const out = await mw.callTool(fullServerName(ROOT, \"py\"), \"echo\", {}, undefined);\n    assert.deepEqual(out.content, [{ type: \"text\", text: '{\"ok\":1}' }], \"toolResult 形态渲染 JSON 兜底\");\n    assertLossless(out, \"#512 兜底\");\n    await dispose();\n  }\n  {\n    const { mw, dispose } = await withFakeClient({});\n    const out = await mw.callTool(fullServerName(ROOT, \"py\"), \"echo\", {}, undefined);\n    assert.deepEqual(out.content, [{ type: \"text\", text: \"(no output)\" }], \"空结果 → (no output) 兜底\");\n    await dispose();\n  }\n\n  // stale（目录过期）：前置 hint + 仍走投影（不透传 isError/_meta）。\n  {\n    const { mw, dispose } = await withFakeClient(\n      { content: [{ type: \"text\", text: \"旧结果\" }], isError: false, _meta: { t: 1 } },\n      { stale: true },\n    );\n    const out = await mw.callTool(fullServerName(ROOT, \"py\"), \"echo\", {}, undefined);\n    assert.equal(out.content.length, 2, \"stale 前置 hint\");\n    assert.match(out.content[0].text, /本工具目录已过期/);\n    assert.deepEqual(out.content[1], { type: \"text\", text: \"旧结果\" });\n    assert.equal(Object.hasOwn(out, \"isError\"), false, \"stale 分支也不泄漏 isError\");\n    assert.equal(Object.hasOwn(out, \"_meta\"), false, \"stale 分支也不泄漏 _meta\");\n    assertLossless(out, \"#512 stale\");\n    await dispose();\n  }\n\n  // 封装 execute 返回 undefined → 不落 structuredContent 键（#381 同源防御）。\n  {\n    const voidTool = {\n      name: \"void_op\",\n      description: \"无返回值\",\n      parameters: { type: \"object\", properties: {} },\n      output: { schema: { type: \"object\", properties: {}, additionalProperties: false }, render: () => [{ type: \"text\", text: \"done\" }] },\n      execute: async () => undefined,\n    };\n    const voidServer = { name: \"vd\", transport: \"stdio\", command: \"x\", enabled: true, toolDefinitions: [voidTool] };\n    const { host } = makeHost(new Map([[\"@global\", [voidServer]]]));\n    const mw = new McpMiddleware(host, {});\n    await mw.projectUnitFor(\"@global\");\n    await mw.ensureConnected(\"@global\", \"vd\");\n    const out = await mw.callTool(fullServerName(\"@global\", \"vd\"), \"void_op\", {}, undefined);\n    assert.equal(Object.hasOwn(out, \"structuredContent\"), false, \"封装 execute 返回 undefined 不落 structuredContent 键\");\n    assertLossless(out, \"#512 封装 undefined\");\n    await mw.dispose();\n  }\n\n  // 复核闸 F1：isError:true 且 content 非数组（协议违规形态）→ 走兜底分支时\n  // fallbackText 保留远端原文（msgOf，与旧文案行为等价），不丢成 \"(no output)\"。\n  // 注：no-content isError 分支不经 errorText handler（其入参契约为 content\n  // 数组），文案经外层 catch 统一包装为「调用失败：<原文>；可先用 …」。\n  {\n    const { mw, dispose } = await withFakeClient({ isError: true, content: \"boom-msg\" });\n    await assert.rejects(\n      () => mw.callTool(fullServerName(ROOT, \"py\"), \"echo\", {}, undefined),\n      /调用失败：.*boom-msg/,\n      \"isError + 非数组 content 错误原文保留\",\n    );\n    await dispose();\n  }\n  {\n    const { mw, dispose } = await withFakeClient({ isError: true, content: 12345 });\n    await assert.rejects(\n      () => mw.callTool(fullServerName(ROOT, \"py\"), \"echo\", {}, undefined),\n      /12345/,\n      \"isError + 标量 content 同样保留原文\",\n    );\n    await dispose();\n  }\n\n  // 复核闸 F5：缺省分支（不传 handlers）——错误文案取 content 内 text 块 join，\n  // 无 text 块退化兜底文本；fallbackText 惰性（正常路径零额外计算语义由实现保证）。\n  {\n    let fallbackCalls = 0;\n    const probe = (result, handlers) => projectCallToolResult(result, handlers);\n    // 缺省 errorText：text 块 join。\n    let thrown;\n    try {\n      probe({ content: [{ type: \"text\", text: \"e1\" }, { type: \"text\", text: \"e2\" }], isError: true }, {});\n    } catch (error) {\n      thrown = error;\n    }\n    assert.equal(thrown.message, \"e1\\ne2\", \"缺省 errorText = content 内 text 块 join\");\n    // 缺省 errorText：无 text 块 → 退化兜底文本。\n    thrown = undefined;\n    try {\n      probe({ content: [{ type: \"image\", mimeType: \"image/png\" }], isError: true }, {});\n    } catch (error) {\n      thrown = error;\n    }\n    assert.equal(thrown.message, \"(no output)\", \"缺省 errorText 无 text 块退化兜底\");\n    // 注入 fallbackText 但正常 content 路径不消费（惰性：计数不增长）。\n    const normal = probe(\n      { content: [{ type: \"text\", text: \"ok\" }], isError: false },\n      { fallbackText: () => { fallbackCalls += 1; return \"unused\"; } },\n    );\n    assert.equal(fallbackCalls, 0, \"fallbackText 惰性：正常 content 路径不调用\");\n    assert.deepEqual(normal.content, [{ type: \"text\", text: \"ok\" }]);\n  }\n}\n"
+      "source": "// @ts-nocheck\n/**\n * dsh-mcp-manager — unit：中间层（ws_mcp_search / ws_mcp_call）。\n *\n * 覆盖：\n * - normalizeMiddlewareMode 归一化（off/project/all/非法）\n * - fullServerName / parseFullServerName（含非法形态）\n * - normalizeToolName（mcp__ 前缀剥离 / 跨 server 拒绝）\n * - normalizeArguments（JSON 字符串参数解析 / 标量保留）\n * - globMatch / policyAllows / policyDenialReason（deny 优先）\n * - scoreTool / searchCatalog（跨字段打分 / unavailable 段 / 空查询摘要）\n * - McpMiddleware：projectUnitFor 惰性创建 + userDisabled 合并 + inFlight 去重\n * - callTool：未知 server / 未连接 / 连接中 / 策略拒绝 / 路由一致性\n * - evictIfNeeded LRU 淘汰\n */\nimport assert from \"node:assert/strict\";\nimport { existsSync, mkdtempSync, mkdirSync, writeFileSync } from \"node:fs\";\nimport { tmpdir } from \"node:os\";\nimport { join } from \"node:path\";\n\nconst {\n  normalizeMiddlewareMode,\n  fullServerName,\n  parseFullServerName,\n  normalizeToolName,\n  normalizeArguments,\n  globMatch,\n  policyAllows,\n  policyDenialReason,\n  scoreTool,\n  searchCatalog,\n  searchCatalogMulti,\n  listCatalog,\n  findToolDetail,\n  McpMiddleware,\n  projectCallToolResult,\n  CATALOG_TTL_MS,\n  LIST_DEFAULT_TOOLS_PER_SERVER,\n  LIST_MAX_TOOLS_PER_SERVER,\n  userStateFile,\n  loadUserState,\n  saveUserState,\n} = await import(\"../lib/index.js\");\n\nconst ROOT = \"/tmp/ws-root-a\";\n\nfunction makeHost(serversByRoot = new Map()) {\n  const log = { emits: 0, saved: 0 };\n  const host = {\n    ctx: { tools: { register: () => () => {} } },\n    logger: { info: () => {}, warn: () => {}, error: () => {} },\n    projectServersFor: async (root) => serversByRoot.get(root),\n    globalServers: () => [],\n    normalizedProjectRoot: async (cwd) => (typeof cwd === \"string\" && cwd !== \"\" ? cwd : undefined),\n    saveUserState: async () => { log.saved += 1; },\n    emitStatus: () => { log.emits += 1; },\n    catalogCachePath: (root) => join(root, \".dsh-mcp-catalog-test.json\"),\n  };\n  return { host, log };\n}\n\n// ---- normalizeMiddlewareMode ----\n{\n  assert.equal(normalizeMiddlewareMode(\"off\"), \"off\");\n  assert.equal(normalizeMiddlewareMode(\"project\"), \"project\");\n  assert.equal(normalizeMiddlewareMode(\"all\"), \"all\");\n  assert.equal(normalizeMiddlewareMode(\"bogus\"), \"off\");\n  assert.equal(normalizeMiddlewareMode(undefined), \"off\");\n}\n\n// ---- fullServerName / parseFullServerName ----\n{\n  assert.equal(fullServerName(\"/a/b\", \"ctx\"), \"@/a/b/ctx\");\n  assert.deepEqual(parseFullServerName(\"@/a/b/ctx\"), { root: \"/a/b\", server: \"ctx\" });\n  assert.deepEqual(parseFullServerName(\"@/a/b\"), { root: \"/a\", server: \"b\" });\n  assert.equal(parseFullServerName(\"ctx\"), undefined);\n  assert.equal(parseFullServerName(\"@/\"), undefined); // 空 server\n  assert.equal(parseFullServerName(\"@/a/\"), undefined); // 空 server\n}\n\n// ---- normalizeToolName ----\n{\n  assert.equal(normalizeToolName(\"ctx\", \"use_ctx\"), \"use_ctx\");\n  assert.equal(normalizeToolName(\"ctx\", \"mcp__ctx__use_ctx\"), \"use_ctx\");\n  assert.equal(normalizeToolName(\"ctx\", \"mcp__ctx__mcp__ctx__use_ctx\"), \"use_ctx\");\n  assert.throws(() => normalizeToolName(\"ctx\", \"mcp__other__tool\"), /疑似其他/);\n}\n\n// ---- normalizeArguments ----\n{\n  assert.deepEqual(normalizeArguments({ a: 1 }), { a: 1 });\n  assert.deepEqual(normalizeArguments('{\"a\":1}'), { a: 1 });\n  assert.deepEqual(normalizeArguments('\"[1,2]\"'), [1, 2]);\n  assert.equal(normalizeArguments(\"hello\"), \"hello\"); // 标量保留\n  assert.deepEqual(normalizeArguments(\"\"), {}); // 空串 → 空对象\n}\n\n// ---- globMatch / policy ----\n{\n  assert.equal(globMatch(\"*\", \"anything\"), true);\n  assert.equal(globMatch(\"foo\", \"foo\"), true);\n  assert.equal(globMatch(\"foo\", \"bar\"), false);\n  assert.equal(globMatch(\"foo*\", \"foobar\"), true);\n  assert.equal(globMatch(\"foo*\", \"barfoo\"), false);\n  const policy = { allowTools: { ctx: [\"use_*\"] }, denyTools: { ctx: [\"use_secret\"] } };\n  assert.equal(policyAllows(policy, \"ctx\", \"use_ctx\"), true);\n  assert.equal(policyAllows(policy, \"ctx\", \"use_secret\"), false); // deny 优先\n  assert.equal(policyAllows(policy, \"ctx\", \"other\"), false); // 不在 allow\n  assert.equal(policyAllows(policy, \"other\", \"anything\"), true); // 未配置 → 允许\n  assert.equal(policyAllows(undefined, \"ctx\", \"x\"), true);\n  assert.match(policyDenialReason(policy, \"ctx\", \"use_secret\"), /denyTools/);\n  assert.match(policyDenialReason(policy, \"ctx\", \"other\"), /allowTools/);\n}\n\n// ---- scoreTool / searchCatalog ----\n{\n  const unit = {\n    root: ROOT,\n    connections: new Map(),\n    catalog: new Map([\n      [\"ctx\", {\n        discoveredAt: Date.now(),\n        tools: new Map([\n          [\"use_ctx\", { description: \"查询 context7 文档\", inputSchema: { type: \"object\", properties: { query: { type: \"string\" } } } }],\n          [\"search\", { description: \"search tool\", inputSchema: {} }],\n        ]),\n      }],\n      [\"down\", { discoveredAt: 0, tools: new Map(), unavailable: \"连接失败\" }],\n    ]),\n    userDisabled: new Set(),\n    lastTouchedAt: Date.now(),\n    inFlight: new Map(),\n  };\n  const units = new Map([[ROOT, unit]]);\n  const { results, unavailable } = searchCatalog(units, ROOT, \"文档\", 5);\n  assert.ok(results.length >= 1, \"命中文档工具\");\n  assert.equal(results[0].server, fullServerName(ROOT, \"ctx\"));\n  assert.equal(results[0].fresh, true);\n  assert.equal(unavailable.length, 1);\n  assert.match(unavailable[0].reason, /连接失败/);\n  // 空查询 → 能力摘要\n  const summary = searchCatalog(units, ROOT, \"\", 5);\n  assert.equal(summary.results.length, 2);\n  // TTL 过期 → fresh=false\n  const stale = searchCatalog(new Map([[ROOT, { ...unit, catalog: new Map([[\"ctx\", { discoveredAt: Date.now() - CATALOG_TTL_MS - 1000, tools: unit.catalog.get(\"ctx\").tools }]]) }]]), ROOT, \"文档\", 5);\n  assert.equal(stale.results[0].fresh, false);\n}\n\n// ---- McpMiddleware：projectUnitFor / userDisabled / inFlight ----\n{\n  const servers = [{ name: \"ctx\", transport: \"stdio\", command: \"npx\", enabled: true }];\n  const { host, log } = makeHost(new Map([[ROOT, servers]]));\n  const mw = new McpMiddleware(host, {});\n  mw.disabledByRoot.set(ROOT, new Set([\"ctx\"]));\n  const unit = await mw.projectUnitFor(ROOT);\n  assert.ok(unit !== undefined);\n  assert.equal(unit.userDisabled.has(\"ctx\"), true, \"userDisabled 合并\");\n  assert.equal(unit.connections.size, 0, \"惰性：未显式连接前不建连接\");\n  assert.equal(log.emits, 0);\n  // 无项目标记目录 → undefined\n  const none = await mw.projectUnitFor(\"/no/such/root\");\n  assert.equal(none, undefined);\n  await mw.dispose();\n}\n\n// ---- callTool：路由一致性 / 未连接 / 策略 ----\n{\n  // enabled:false → 不触发真实连接（单元测试不 spawn 子进程）\n  const servers = [{ name: \"ctx\", transport: \"stdio\", command: \"npx\", enabled: false }];\n  const { host } = makeHost(new Map([[ROOT, servers]]));\n  const mw = new McpMiddleware(host, { denyTools: { ctx: [\"secret\"] } });\n  await mw.projectUnitFor(ROOT);\n  // 路由一致性：参数 root ≠ 路由 root → 拒绝\n  await assert.rejects(\n    () => mw.callTool(\"@/other/root/ctx\", \"use_ctx\", {}, undefined),\n    /不属于当前工作空间|未激活/,\n  );\n  // 未知 server 形态\n  await assert.rejects(() => mw.callTool(\"ctx\", \"use_ctx\", {}, undefined), /格式应为/);\n  // 未连接（enabled:false 不触发连接）→ 错误含下一步提示（ws_mcp_search 或 ws_mcp_list）\n  await assert.rejects(\n    () => mw.callTool(fullServerName(ROOT, \"ctx\"), \"use_ctx\", {}, undefined),\n    /未连接或连接失败，请先 ws_mcp_search 或 ws_mcp_list 确认 server 已连接/,\n  );\n  // userDisabled → 错误含下一步提示\n  mw.disabledByRoot.set(ROOT, new Set([\"ctx\"]));\n  const disabledUnit = await mw.projectUnitFor(ROOT);\n  disabledUnit.userDisabled.add(\"ctx\");\n  await assert.rejects(\n    () => mw.callTool(fullServerName(ROOT, \"ctx\"), \"use_ctx\", {}, undefined),\n    /已被用户禁用；可先在 GUI「MCP」浮窗中重新连接/,\n  );\n  disabledUnit.userDisabled.delete(\"ctx\");\n  await mw.dispose();\n}\n\n// ---- evictIfNeeded LRU ----\n{\n  const { host } = makeHost(new Map());\n  const mw = new McpMiddleware(host, {});\n  // 注入 18 个假单元（无服务器配置，projectUnitFor 会返回 undefined —— 直接塞 map）\n  for (let index = 0; index < 18; index += 1) {\n    mw.units.set(`/root-${index}`, {\n      root: `/root-${index}`,\n      connections: new Map(),\n      catalog: new Map(),\n      userDisabled: new Set(),\n      lastTouchedAt: 1000 + index,\n      inFlight: new Map(),\n    });\n  }\n  mw.evictIfNeeded(16);\n  assert.equal(mw.units.size, 16, \"LRU 淘汰到上限\");\n  assert.equal(mw.units.has(\"/root-0\"), false, \"最旧被淘汰\");\n  assert.equal(mw.units.has(\"/root-17\"), true, \"最新保留\");\n  await mw.dispose();\n}\n\n// ---- userState 持久化 ----\n{\n  const dir = mkdtempSync(join(tmpdir(), \"dsh-mcp-mw-\"));\n  const file = join(dir, \"user-state.json\");\n  const units = new Map([[ROOT, {\n    root: ROOT,\n    connections: new Map(),\n    catalog: new Map(),\n    userDisabled: new Set([\"ctx\"]),\n    lastTouchedAt: Date.now(),\n    inFlight: new Map(),\n  }]]);\n  await saveUserState(file, units);\n  const loaded = await loadUserState(file);\n  assert.deepEqual([...loaded.get(ROOT)], [\"ctx\"]);\n  // 损坏文件 → 空\n  writeFileSync(file, \"{bad json\");\n  const empty = await loadUserState(file);\n  assert.equal(empty.size, 0);\n  mkdirSync(join(dir, \"sub\"));\n}\n\n// ---- last-good 目录缓存：loadCatalogCache 读取 / persistCatalog 空采集不写盘 ----\n{\n  const dir = mkdtempSync(join(tmpdir(), \"dsh-mcp-mw-cat-\"));\n  const baseHost = makeHost(new Map());\n  const catalogHost = {\n    ...baseHost.host,\n    catalogCachePath: (root) => join(dir, `${root.replace(/[^a-z0-9]/gi, \"_\")}.json`),\n  };\n  const mw = new McpMiddleware(catalogHost, {});\n  const unit = {\n    root: ROOT,\n    connections: new Map(),\n    catalog: new Map([\n      [\"ctx\", {\n        discoveredAt: Date.now(),\n        tools: new Map([[\"use_ctx\", { description: \"查询文档\", inputSchema: {} }]]),\n      }],\n    ]),\n    userDisabled: new Set(),\n    lastTouchedAt: Date.now(),\n    inFlight: new Map(),\n  };\n  mw.units.set(ROOT, unit);\n  await mw.persistCatalog(ROOT);\n  const file = catalogHost.catalogCachePath(ROOT);\n  assert.equal(existsSync(file), true, \"有工具的目录落盘\");\n  // 空采集不写盘：清空目录后 persist 不覆盖已有缓存（保留 last-good）\n  const { readFileSync } = await import(\"node:fs\");\n  const before = readFileSync(file, \"utf8\");\n  unit.catalog.get(\"ctx\").tools.clear();\n  unit.catalog.get(\"ctx\").unavailable = \"failed\";\n  await mw.persistCatalog(ROOT);\n  assert.equal(readFileSync(file, \"utf8\"), before, \"空采集不覆盖已有缓存（保留 last-good）\");\n  await mw.dispose();\n}\n\n// ---- searchCatalogMulti：多单元合并检索（all 模式） ----\n{\n  const unit = {\n    root: ROOT,\n    connections: new Map(),\n    catalog: new Map([\n      [\"ctx\", {\n        discoveredAt: Date.now(),\n        tools: new Map([\n          [\"use_ctx\", { description: \"查询 context7 文档\", inputSchema: {} }],\n          [\"search\", { description: \"search tool\", inputSchema: {} }],\n        ]),\n      }],\n    ]),\n    userDisabled: new Set(),\n    lastTouchedAt: Date.now(),\n    inFlight: new Map(),\n  };\n  const globalUnit = {\n    ...unit,\n    root: \"@global\",\n    catalog: new Map([\n      [\"gctx\", {\n        discoveredAt: Date.now(),\n        tools: new Map([\n          [\"use_g\", { description: \"全局工具\", inputSchema: {} }],\n          [\"other\", { description: \"无关\", inputSchema: {} }],\n        ]),\n      }],\n    ]),\n  };\n  const units = new Map([[ROOT, unit], [\"@global\", globalUnit]]);\n  // 合并查询命中两个单元（项目 root + @global）。\n  const multi = searchCatalogMulti(units, [ROOT, \"@global\"], \"use\", 10);\n  assert.ok(multi.results.some((hit) => hit.server === fullServerName(ROOT, \"ctx\")), \"命中项目单元\");\n  assert.ok(multi.results.some((hit) => hit.server === fullServerName(\"@global\", \"gctx\")), \"命中 @global 单元\");\n  // 空查询能力摘要同样合并。\n  const summary = searchCatalogMulti(units, [ROOT, \"@global\"], \"\", 10);\n  assert.equal(summary.results.length, 4, \"合并摘要含全部工具\");\n  // 单 root 包装与 multi 单元素等价（且顺序一致——multi 单 root 委托 searchCatalog，P2-2）。\n  const single = searchCatalog(units, ROOT, \"文档\", 10);\n  assert.deepEqual(single.results, searchCatalogMulti(units, [ROOT], \"文档\", 10).results);\n  // 多 root 合并后统一按全局 limit 截断（P2-3：limit 为全局上限）。\n  const capped = searchCatalogMulti(units, [ROOT, \"@global\"], \"\", 2);\n  assert.equal(capped.results.length, 2, \"多 root 合并后按全局 limit 截断\");\n  // 无此单元 → 空。\n  const none = searchCatalogMulti(units, [\"/no/such\"], \"x\", 10);\n  assert.equal(none.results.length, 0);\n  assert.equal(none.unavailable.length, 0);\n}\n\n// ---- listCatalog：完整清单 / 过滤 / 空返回 / 截断 / unavailable / disabled ----\n{\n  const mkTools = (count) => {\n    const tools = new Map();\n    for (let i = 0; i < count; i += 1) tools.set(`t${i}`, { description: `desc${i}`, inputSchema: {} });\n    return tools;\n  };\n  const unit = {\n    root: ROOT,\n    connections: new Map(),\n    catalog: new Map([\n      // 2 个工具（无截断）\n      [\"ctx\", { discoveredAt: Date.now(), tools: mkTools(2) }],\n      // 用户已禁用（工具来自 last-good 目录）\n      [\"off\", { discoveredAt: Date.now(), tools: mkTools(1) }],\n      // 发现失败\n      [\"down\", { discoveredAt: 0, tools: new Map(), unavailable: \"连接失败\" }],\n    ]),\n    userDisabled: new Set([\"off\"]),\n    lastTouchedAt: Date.now(),\n    inFlight: new Map(),\n  };\n  const globalUnit = {\n    ...unit,\n    root: \"@global\",\n    catalog: new Map([[\"gctx\", { discoveredAt: Date.now(), tools: mkTools(3) }]]),\n    userDisabled: new Set(),\n  };\n  const units = new Map([[ROOT, unit], [\"@global\", globalUnit]]);\n\n  // 完整清单（project 模式：单 root）\n  const listed = listCatalog(units, [ROOT], undefined, 50, \"project\", \"empty\");\n  assert.equal(listed.workspace, ROOT);\n  assert.equal(listed.mode, \"project\");\n  assert.equal(listed.totalServers, 3, \"全部服务器（含 disabled/unavailable）\");\n  assert.equal(listed.totalTools, 3, \"工具数不含 unavailable 服务器\");\n  assert.equal(listed.toolsTruncated, false);\n  const ctxEntry = listed.servers.find((s) => s.server === fullServerName(ROOT, \"ctx\"));\n  assert.deepEqual(ctxEntry.tools.map((t) => t.tool), [\"t0\", \"t1\"]);\n  assert.equal(ctxEntry.toolsTruncated, false);\n  assert.equal(ctxEntry.disabled, undefined);\n  const offEntry = listed.servers.find((s) => s.server === fullServerName(ROOT, \"off\"));\n  assert.equal(offEntry.disabled, true, \"userDisabled → disabled: true\");\n  const downEntry = listed.servers.find((s) => s.server === fullServerName(ROOT, \"down\"));\n  assert.equal(downEntry.unavailable, \"连接失败\", \"发现失败附原因\");\n  assert.deepEqual(downEntry.tools, []);\n  assert.equal(listed.message, undefined, \"非空返回无 message\");\n\n  // server 过滤（裸名）\n  const filteredBare = listCatalog(units, [ROOT], \"ctx\", 50, \"project\", \"empty\");\n  assert.equal(filteredBare.totalServers, 1);\n  assert.equal(filteredBare.servers[0].server, fullServerName(ROOT, \"ctx\"));\n  // server 过滤（全名）\n  const filteredFull = listCatalog(units, [ROOT], fullServerName(ROOT, \"ctx\"), 50, \"project\", \"empty\");\n  assert.equal(filteredFull.totalServers, 1);\n  // 全名 root 不属于当前 roots → 路由一致性错误\n  assert.throws(() => listCatalog(units, [ROOT], \"@/other/root/ctx\", 50, \"project\", \"empty\"), /不属于当前工作空间/);\n\n  // all 模式：合并 @global 单元\n  const all = listCatalog(units, [ROOT, \"@global\"], undefined, 50, \"all\", \"empty\");\n  assert.equal(all.mode, \"all\");\n  assert.equal(all.totalServers, 4, \"项目 root + @global 合并\");\n  assert.equal(all.workspace, ROOT);\n  assert.ok(all.servers.some((s) => s.server === fullServerName(\"@global\", \"gctx\")), \"含 @global 服务器\");\n  assert.equal(all.totalTools, 6);\n\n  // perServerLimit 截断 → toolsTruncated（per-server + 全局汇总）\n  const truncated = listCatalog(units, [ROOT], undefined, 1, \"project\", \"empty\");\n  const ctxT = truncated.servers.find((s) => s.server === fullServerName(ROOT, \"ctx\"));\n  assert.equal(ctxT.tools.length, 1, \"截断到 1 条\");\n  assert.equal(ctxT.toolsTruncated, true, \"per-server toolsTruncated\");\n  assert.equal(truncated.toolsTruncated, true, \"全局 toolsTruncated\");\n  const offT = truncated.servers.find((s) => s.server === fullServerName(ROOT, \"off\"));\n  assert.equal(offT.toolsTruncated, false, \"未超限不置位\");\n\n  // 空返回 → message（project / all 区分）\n  const empty = listCatalog(new Map(), [ROOT], undefined, 50, \"project\", \"无项目级 MCP 配置提示\");\n  assert.equal(empty.totalServers, 0);\n  assert.equal(empty.totalTools, 0);\n  assert.equal(empty.message, \"无项目级 MCP 配置提示\");\n  assert.equal(empty.toolsTruncated, false);\n  // 常量值\n  assert.equal(LIST_DEFAULT_TOOLS_PER_SERVER, 50);\n  assert.equal(LIST_MAX_TOOLS_PER_SERVER, 500);\n\n  // #381 回归：未禁用工具条目**不写** disabled 键（显式 undefined 键会被宿主\n  // lossless JSON 输出校验判非法 → ws_mcp_list 报 \"value is not lossless JSON\"）。\n  for (const tool of ctxEntry.tools) {\n    assert.equal(Object.hasOwn(tool, \"disabled\"), false, `未禁用条目不写 disabled 键（${tool.tool}）`);\n  }\n  assert.equal(Object.hasOwn(offEntry, \"disabled\"), true, \"服务器级禁用仍写 disabled 键\");\n\n  // #381 回归：工具级禁用路径——禁用条目写 disabled: true，未禁用条目无键。\n  const disabledMap = new Map([[ROOT, new Map([[\"ctx\", new Set([\"t0\"])]])]]);\n  const withDisabled = listCatalog(units, [ROOT], undefined, 50, \"project\", \"empty\", disabledMap);\n  const ctxWD = withDisabled.servers.find((s) => s.server === fullServerName(ROOT, \"ctx\"));\n  assert.equal(ctxWD.tools[0].disabled, true, \"t0 被禁用 → disabled: true\");\n  assert.equal(Object.hasOwn(ctxWD.tools[0], \"disabled\"), true);\n  assert.equal(Object.hasOwn(ctxWD.tools[1], \"disabled\"), false, \"t1 未禁用 → 无 disabled 键\");\n\n  // #381 回归：模拟宿主 lossless 校验（递归断言输出树无 undefined 值键/元素）。\n  const assertLossless = (value, path) => {\n    if (value === undefined) throw new Error(`lossless 违规：${path} 为 undefined`);\n    if (value === null || typeof value !== \"object\") return;\n    if (Array.isArray(value)) {\n      value.forEach((item, i) => assertLossless(item, `${path}[${i}]`));\n      return;\n    }\n    for (const [key, entry] of Object.entries(value)) assertLossless(entry, `${path}.${key}`);\n  };\n  assertLossless(listed, \"listed\");\n  assertLossless(withDisabled, \"withDisabled\");\n}\n\n// ---- findToolDetail：精确命中 / 完整 schema / 错误三分 / tool 归一化 ----\n{\n  const schema = { type: \"object\", properties: { query: { type: \"string\" }, mode: { type: \"string\", enum: [\"a\", \"b\"] } }, required: [\"query\"] };\n  const unit = {\n    root: ROOT,\n    connections: new Map(),\n    catalog: new Map([\n      [\"ctx\", {\n        discoveredAt: Date.now(),\n        tools: new Map([\n          [\"use_ctx\", { description: \"查询 context7 文档\", inputSchema: schema }],\n        ]),\n      }],\n      [\"down\", { discoveredAt: 0, tools: new Map(), unavailable: \"连接失败\" }],\n    ]),\n    userDisabled: new Set(),\n    lastTouchedAt: Date.now(),\n    inFlight: new Map(),\n  };\n  const units = new Map([[ROOT, unit]]);\n  // 精确命中：完整 schema + fresh + server/tool 原样\n  const detail = findToolDetail(units, ROOT, fullServerName(ROOT, \"ctx\"), \"use_ctx\");\n  assert.equal(detail.server, fullServerName(ROOT, \"ctx\"));\n  assert.equal(detail.tool, \"use_ctx\");\n  assert.equal(detail.description, \"查询 context7 文档\");\n  assert.deepEqual(detail.inputSchema, schema, \"完整 inputSchema（含 enum/required）\");\n  assert.equal(detail.fresh, true);\n  assert.equal(detail.disabled, undefined);\n  // tool 归一化（mcp__ 前缀剥离）\n  const normalized = findToolDetail(units, ROOT, fullServerName(ROOT, \"ctx\"), \"mcp__ctx__use_ctx\");\n  assert.equal(normalized.tool, \"use_ctx\");\n  assert.deepEqual(normalized.inputSchema, schema);\n  // 跨 server 前缀 → 疑似其他\n  assert.throws(() => findToolDetail(units, ROOT, fullServerName(ROOT, \"ctx\"), \"mcp__other__tool\"), /疑似其他/);\n  // 错误三分 1：server 发现失败（附原因）\n  assert.throws(\n    () => findToolDetail(units, ROOT, fullServerName(ROOT, \"down\"), \"x\"),\n    /发现失败.*连接失败/,\n  );\n  // 错误三分 2：服务器未发现\n  assert.throws(\n    () => findToolDetail(units, ROOT, fullServerName(ROOT, \"nope\"), \"x\"),\n    /未连接或未发现/,\n  );\n  // 错误三分 2b：单元未激活\n  assert.throws(\n    () => findToolDetail(units, \"/no/such\", fullServerName(\"/no/such\", \"ctx\"), \"x\"),\n    /未连接或未发现/,\n  );\n  // 错误三分 3：工具不存在\n  assert.throws(\n    () => findToolDetail(units, ROOT, fullServerName(ROOT, \"ctx\"), \"nope\"),\n    /tool 不存在/,\n  );\n  // 路由一致性：参数 root ≠ 路由 root → 拒绝\n  assert.throws(\n    () => findToolDetail(units, ROOT, fullServerName(\"@global\", \"ctx\"), \"x\"),\n    /不属于当前工作空间/,\n  );\n  // 用户禁用 → detail 标注 disabled\n  const disabledUnit = {\n    ...unit,\n    userDisabled: new Set([\"ctx\"]),\n  };\n  const disabledDetail = findToolDetail(new Map([[ROOT, disabledUnit]]), ROOT, fullServerName(ROOT, \"ctx\"), \"use_ctx\");\n  assert.equal(disabledDetail.disabled, true, \"用户禁用标注 disabled\");\n  // 禁用且目录空 → 未连接（附禁用说明）\n  const disabledEmpty = {\n    ...disabledUnit,\n    catalog: new Map([[\"ctx\", { discoveredAt: 0, tools: new Map() }]]),\n  };\n  assert.throws(\n    () => findToolDetail(new Map([[ROOT, disabledEmpty]]), ROOT, fullServerName(ROOT, \"ctx\"), \"x\"),\n    /已被用户禁用/,\n  );\n}\n\n// ---- #412 force 受控重建：半开 connected entry 不短路 ----\n{\n  const servers = [{ name: \"ctx\", transport: \"stdio\", command: \"npx\", enabled: true }];\n  const { host } = makeHost(new Map([[ROOT, servers]]));\n  // 防双进程探测命中（避免真实 spawn；重建落 failed 占位 + 排重试）\n  host.ctx.tools.schemas = () => [{ name: \"mcp__ctx__t\" }];\n  const mw = new McpMiddleware(host, {});\n  // 直接构造单元（不走 projectUnitFor 惰性连接，测试全程不 spawn）\n  const unit = {\n    root: ROOT,\n    connections: new Map(),\n    catalog: new Map(),\n    userDisabled: new Set(),\n    lastTouchedAt: Date.now(),\n    inFlight: new Map(),\n  };\n  mw.units.set(ROOT, unit);\n  // 预置「半开死连接」：status 卡 connected、transport 已静默断链（模拟移动端\n  // 切后台掐断 TCP 后 onClose 不触发）。\n  const deadTransport = { close: () => { deadTransport.closed = true; return Promise.resolve(); }, closed: false };\n  const deadEntry = {\n    server: servers[0],\n    client: {},\n    transport: deadTransport,\n    status: \"connected\",\n    error: undefined,\n    connectedAt: Date.now(),\n    reconnectTimer: undefined,\n    disposed: false,\n    failedAttempts: 0,\n  };\n  unit.connections.set(\"ctx\", deadEntry);\n\n  // 非 force：connected 短路——entry 引用与 transport 原样保留（惰性路径防重复建连）。\n  await mw.ensureConnected(ROOT, \"ctx\");\n  assert.equal(unit.connections.get(\"ctx\"), deadEntry, \"非 force 短路保留原 entry\");\n  assert.equal(deadTransport.closed, false, \"非 force 不 close 旧 transport\");\n\n  // force：忽略 connected 状态受控重建——旧 transport 被 close、entry 置 failed\n  // + 重试排程（探测命中防双进程路径复用 entry，不再短路）。\n  await mw.ensureConnected(ROOT, \"ctx\", { force: true });\n  assert.equal(deadTransport.closed, true, \"force 关闭旧 transport（半开 socket 不泄漏）\");\n  const after = unit.connections.get(\"ctx\");\n  assert.equal(after.status, \"failed\", \"force 重建置 failed（防 probeRetry 对 connected 短路死循环）\");\n  assert.equal(after.transport, undefined, \"旧 transport 已清空（重建代际）\");\n  assert.equal(after.probeRetried, true, \"重试已排（probeRetried 一次性标记）\");\n  if (after.reconnectTimer !== undefined) clearTimeout(after.reconnectTimer);\n  await mw.dispose();\n}\n\n// ---- #413：runtime 封装定义服务器（toolDefinitions）中间层直呼 ----\n{\n  const wrappedTool = {\n    name: \"cg_node\",\n    description: \"查符号（封装定义）\",\n    parameters: { type: \"object\", properties: { symbol: { type: \"string\" } }, required: [\"symbol\"] },\n    output: {\n      schema: { type: \"object\", properties: { text: { type: \"string\" } }, required: [\"text\"], additionalProperties: false },\n      render: (args, value) => [{ type: \"text\", text: `rendered:${value.text}` }],\n    },\n    isConcurrencySafe: () => true,\n    execute: async (args, exec) => {\n      const cwd = exec?.agent?.session?.header?.cwd;\n      return { text: `node(${args.symbol})@${cwd ?? \"no-cwd\"}` };\n    },\n  };\n  const wrappedServer = { name: \"cg\", transport: \"stdio\", command: \"codegraph\", enabled: true, toolDefinitions: [wrappedTool] };\n  const { host, log } = makeHost(new Map([[\"@global\", [wrappedServer]]]));\n  const mw = new McpMiddleware(host, {});\n  await mw.projectUnitFor(\"@global\");\n  await mw.ensureConnected(\"@global\", \"cg\");\n  const unit = mw.units.get(\"@global\");\n  assert.ok(unit, \"@global 单元已创建\");\n  const entry = unit.connections.get(\"cg\");\n  assert.ok(entry, \"封装定义服务器虚拟连接已建立\");\n  assert.equal(entry.status, \"connected\", \"虚拟连接状态 connected\");\n  assert.equal(entry.client, undefined, \"不建远端 client（封装 execute 不经远端）\");\n  assert.equal(entry.transport, undefined, \"不 spawn transport\");\n  // 目录从 toolDefinitions 投影（name/description/parameters → inputSchema）。\n  const catalog = unit.catalog.get(\"cg\");\n  assert.ok(catalog, \"目录已投影\");\n  assert.equal(catalog.tools.has(\"cg_node\"), true, \"封装工具名投影进目录\");\n  assert.equal(catalog.tools.get(\"cg_node\").description, \"查符号（封装定义）\");\n  assert.deepEqual(catalog.tools.get(\"cg_node\").inputSchema, { type: \"object\", properties: { symbol: { type: \"string\" } }, required: [\"symbol\"] }, \"parameters 直接作 inputSchema\");\n\n  // callTool 封装直呼：execute 被调用 + output.render 投影 content + agent 透传。\n  const result = await mw.callTool(fullServerName(\"@global\", \"cg\"), \"cg_node\", { symbol: \"foo\" }, undefined, { session: { header: { cwd: \"/proj\" } } });\n  assert.deepEqual(result, { content: [{ type: \"text\", text: \"rendered:node(foo)@/proj\" }], structuredContent: { text: \"node(foo)@/proj\" } }, \"封装直呼：execute + render + agent 透传\");\n  // agent 缺省 → cwd 解析 undefined。\n  const noAgent = await mw.callTool(fullServerName(\"@global\", \"cg\"), \"cg_node\", { symbol: \"bar\" }, undefined);\n  assert.deepEqual(noAgent.structuredContent, { text: \"node(bar)@no-cwd\" }, \"agent 缺省不崩（封装侧自处理）\");\n\n  // 工具级禁用前置：禁用表命中 → 抛禁用错误（不经 execute）。\n  mw.disabledTools.set(\"@global\", new Map([[\"cg\", new Set([\"cg_node\"])]]));\n  await assert.rejects(\n    () => mw.callTool(fullServerName(\"@global\", \"cg\"), \"cg_node\", { symbol: \"x\" }, undefined, { session: { header: { cwd: \"/p\" } } }),\n    /已被用户在「MCP」浮窗禁用/,\n  );\n  mw.disabledTools.delete(\"@global\");\n\n  // 不存在的封装工具名 → 明确报错。\n  await assert.rejects(\n    () => mw.callTool(fullServerName(\"@global\", \"cg\"), \"nope\", {}, undefined),\n    /不存在（封装定义服务器）/,\n  );\n\n  // persistCatalog 跳过 runtime 条目（isRuntimeServer 命中 → 不写盘）。\n  const dir = mkdtempSync(join(tmpdir(), \"dsh-mcp-mw-wrapped-\"));\n  const persistHost = {\n    ...host,\n    isRuntimeServer: (name) => name === \"cg\",\n    catalogCachePath: (root) => join(dir, `${root.replace(/[^a-z0-9]/gi, \"_\")}.json`),\n  };\n  const mw2 = new McpMiddleware(persistHost, {});\n  const unit2 = {\n    root: \"@global\",\n    connections: new Map([[\"cg\", entry]]),\n    catalog: new Map([[\"cg\", catalog], [\"storeSrv\", { discoveredAt: Date.now(), tools: new Map([[\"t1\", { description: \"d\", inputSchema: {} }]]) }]]),\n    userDisabled: new Set(),\n    lastTouchedAt: Date.now(),\n    inFlight: new Map(),\n  };\n  mw2.units.set(\"@global\", unit2);\n  await mw2.persistCatalog(\"@global\");\n  const { readFileSync } = await import(\"node:fs\");\n  const persisted = readFileSync(persistHost.catalogCachePath(\"@global\"), \"utf8\");\n  assert.equal(persisted.includes(\"cg\"), false, \"runtime 条目不写盘\");\n  assert.equal(persisted.includes(\"storeSrv\"), true, \"store 条目照常写盘\");\n  await mw2.dispose();\n  await mw.dispose();\n}\n\n// ---- #413：空 toolDefinitions / 封装调用超时兜底 ----\n{\n  // 空 toolDefinitions：连接照建、目录 0 工具、调用报「不存在」。\n  const emptyWrapped = { name: \"cg\", transport: \"stdio\", command: \"codegraph\", enabled: true, toolDefinitions: [] };\n  const { host } = makeHost(new Map([[\"@global\", [emptyWrapped]]]));\n  const mw = new McpMiddleware(host, {});\n  await mw.projectUnitFor(\"@global\");\n  await mw.ensureConnected(\"@global\", \"cg\");\n  const unit = mw.units.get(\"@global\");\n  assert.equal(unit.connections.get(\"cg\")?.status, \"connected\", \"空 toolDefinitions 仍建虚拟连接\");\n  assert.equal(unit.catalog.get(\"cg\")?.tools.size, 0, \"空 toolDefinitions 目录 0 工具\");\n  await assert.rejects(\n    () => mw.callTool(fullServerName(\"@global\", \"cg\"), \"anything\", {}, undefined),\n    /不存在（封装定义服务器）/,\n  );\n  await mw.dispose();\n\n  // 封装 execute 挂起 → withTimeout 超时兜底（不无限等待）。\n  const hangingTool = {\n    name: \"hang\",\n    description: \"挂起\",\n    parameters: { type: \"object\", properties: {} },\n    output: { schema: { type: \"object\", properties: { text: { type: \"string\" } }, required: [\"text\"], additionalProperties: false }, render: (a, v) => [{ type: \"text\", text: v.text }] },\n    execute: async () => new Promise(() => {}), // 永不 resolve\n  };\n  const hangingServer = { name: \"hg\", transport: \"stdio\", command: \"x\", enabled: true, toolDefinitions: [hangingTool] };\n  const { host: host2 } = makeHost(new Map([[\"@global\", [hangingServer]]]));\n  const mw3 = new McpMiddleware(host2, {});\n  await mw3.projectUnitFor(\"@global\");\n  await mw3.ensureConnected(\"@global\", \"hg\");\n  await assert.rejects(\n    () => mw3.callTool(fullServerName(\"@global\", \"hg\"), \"hang\", {}, undefined),\n    /封装调用超时/,\n  );\n  await mw3.dispose();\n}\n\n// ---- #512：callTool 远端结果投影收敛（isError/_meta 不泄漏 + 无 content 兜底）----\n{\n  // 模拟宿主 lossless 校验（与 #381 回归同款，递归断言无 undefined 值键/元素）。\n  const assertLossless = (value, path) => {\n    if (value === undefined) throw new Error(`lossless 违规：${path} 为 undefined`);\n    if (value === null || typeof value !== \"object\") return;\n    if (Array.isArray(value)) {\n      value.forEach((item, i) => assertLossless(item, `${path}[${i}]`));\n      return;\n    }\n    for (const [key, entry] of Object.entries(value)) assertLossless(entry, `${path}.${key}`);\n  };\n\n  async function withFakeClient(remoteResult, { stale = false } = {}) {\n    const servers = [{ name: \"py\", transport: \"stdio\", command: \"python\", enabled: true }];\n    const { host } = makeHost(new Map([[ROOT, servers]]));\n    const mw = new McpMiddleware(host, {});\n    const unit = {\n      root: ROOT,\n      connections: new Map(),\n      catalog: new Map([\n        [\"py\", {\n          discoveredAt: stale ? Date.now() - CATALOG_TTL_MS - 1000 : Date.now(),\n          tools: new Map([[\"echo\", { description: \"回声\", inputSchema: { type: \"object\" } }]]),\n          unavailable: undefined,\n        }],\n      ]),\n      userDisabled: new Set(),\n      lastTouchedAt: Date.now(),\n      inFlight: new Map(),\n    };\n    mw.units.set(ROOT, unit);\n    unit.connections.set(\"py\", {\n      server: servers[0],\n      client: { callTool: async () => remoteResult },\n      transport: { close: () => Promise.resolve() },\n      status: \"connected\",\n      error: undefined,\n      connectedAt: Date.now(),\n      reconnectTimer: undefined,\n      disposed: false,\n      failedAttempts: 0,\n    });\n    return { mw, dispose: () => mw.dispose() };\n  }\n\n  // Python SDK 形态：成功结果必带 isError:false（+ _meta）→ 不得外泄。\n  {\n    const { mw, dispose } = await withFakeClient({\n      content: [{ type: \"text\", text: \"你好\" }],\n      structuredContent: { answer: 42 },\n      isError: false,\n      _meta: { trace: \"x\" },\n    });\n    const out = await mw.callTool(fullServerName(ROOT, \"py\"), \"echo\", {}, undefined);\n    assert.deepEqual(\n      { content: out.content, structuredContent: out.structuredContent },\n      { content: [{ type: \"text\", text: \"你好\" }], structuredContent: { answer: 42 } },\n      \"#512：isError:false / _meta 不泄漏，白名单字段保留\",\n    );\n    assert.equal(Object.hasOwn(out, \"isError\"), false, \"无 isError 键\");\n    assert.equal(Object.hasOwn(out, \"_meta\"), false, \"无 _meta 键\");\n    assertLossless(out, \"#512 输出\");\n    await dispose();\n  }\n\n  // isError:true → 抛错（文案含远端错误提示与下一步引导）。\n  {\n    const { mw, dispose } = await withFakeClient({\n      content: [{ type: \"text\", text: \"boom\" }],\n      isError: true,\n    });\n    await assert.rejects(\n      () => mw.callTool(fullServerName(ROOT, \"py\"), \"echo\", {}, undefined),\n      /远端工具返回错误：.*boom.*ws_mcp_detail/,\n      \"isError:true 抛错且文案可归因\",\n    );\n    // #529：外层 catch 不再追加 detail 建议，同一条错误里「ws_mcp_detail」只出现一次。\n    const dupErr = await mw.callTool(fullServerName(ROOT, \"py\"), \"echo\", {}, undefined).then(\n      () => null,\n      (e: unknown) => e,\n    );\n    assert.ok(dupErr instanceof Error, \"isError:true 应抛错\");\n    const detailCount = (dupErr.message.match(/ws_mcp_detail/g) ?? []).length;\n    assert.equal(detailCount, 1, `detail 建议只出现一次（实际 ${detailCount} 次：${dupErr.message}）`);\n    await dispose();\n  }\n\n  // 无 content / 非数组 content → 兜底文本（required content 不落空，lossless 合规）。\n  {\n    const { mw, dispose } = await withFakeClient({ toolResult: { ok: 1 } });\n    const out = await mw.callTool(fullServerName(ROOT, \"py\"), \"echo\", {}, undefined);\n    assert.deepEqual(out.content, [{ type: \"text\", text: '{\"ok\":1}' }], \"toolResult 形态渲染 JSON 兜底\");\n    assertLossless(out, \"#512 兜底\");\n    await dispose();\n  }\n  {\n    const { mw, dispose } = await withFakeClient({});\n    const out = await mw.callTool(fullServerName(ROOT, \"py\"), \"echo\", {}, undefined);\n    assert.deepEqual(out.content, [{ type: \"text\", text: \"(no output)\" }], \"空结果 → (no output) 兜底\");\n    await dispose();\n  }\n\n  // stale（目录过期）：前置 hint + 仍走投影（不透传 isError/_meta）。\n  {\n    const { mw, dispose } = await withFakeClient(\n      { content: [{ type: \"text\", text: \"旧结果\" }], isError: false, _meta: { t: 1 } },\n      { stale: true },\n    );\n    const out = await mw.callTool(fullServerName(ROOT, \"py\"), \"echo\", {}, undefined);\n    assert.equal(out.content.length, 2, \"stale 前置 hint\");\n    assert.match(out.content[0].text, /本工具目录已过期/);\n    assert.deepEqual(out.content[1], { type: \"text\", text: \"旧结果\" });\n    assert.equal(Object.hasOwn(out, \"isError\"), false, \"stale 分支也不泄漏 isError\");\n    assert.equal(Object.hasOwn(out, \"_meta\"), false, \"stale 分支也不泄漏 _meta\");\n    assertLossless(out, \"#512 stale\");\n    await dispose();\n  }\n\n  // 封装 execute 返回 undefined → 不落 structuredContent 键（#381 同源防御）。\n  {\n    const voidTool = {\n      name: \"void_op\",\n      description: \"无返回值\",\n      parameters: { type: \"object\", properties: {} },\n      output: { schema: { type: \"object\", properties: {}, additionalProperties: false }, render: () => [{ type: \"text\", text: \"done\" }] },\n      execute: async () => undefined,\n    };\n    const voidServer = { name: \"vd\", transport: \"stdio\", command: \"x\", enabled: true, toolDefinitions: [voidTool] };\n    const { host } = makeHost(new Map([[\"@global\", [voidServer]]]));\n    const mw = new McpMiddleware(host, {});\n    await mw.projectUnitFor(\"@global\");\n    await mw.ensureConnected(\"@global\", \"vd\");\n    const out = await mw.callTool(fullServerName(\"@global\", \"vd\"), \"void_op\", {}, undefined);\n    assert.equal(Object.hasOwn(out, \"structuredContent\"), false, \"封装 execute 返回 undefined 不落 structuredContent 键\");\n    assertLossless(out, \"#512 封装 undefined\");\n    await mw.dispose();\n  }\n\n  // 复核闸 F1：isError:true 且 content 非数组（协议违规形态）→ 走兜底分支时\n  // fallbackText 保留远端原文（msgOf，与旧文案行为等价），不丢成 \"(no output)\"。\n  // 注：no-content isError 分支不经 errorText handler（其入参契约为 content\n  // 数组），文案经外层 catch 统一包装为「调用失败：<原文>」（#529：外层不再\n  // 追加 detail 建议，建议由内层按场景给一次）。\n  {\n    const { mw, dispose } = await withFakeClient({ isError: true, content: \"boom-msg\" });\n    await assert.rejects(\n      () => mw.callTool(fullServerName(ROOT, \"py\"), \"echo\", {}, undefined),\n      /调用失败：.*boom-msg/,\n      \"isError + 非数组 content 错误原文保留\",\n    );\n    await dispose();\n  }\n  {\n    const { mw, dispose } = await withFakeClient({ isError: true, content: 12345 });\n    await assert.rejects(\n      () => mw.callTool(fullServerName(ROOT, \"py\"), \"echo\", {}, undefined),\n      /12345/,\n      \"isError + 标量 content 同样保留原文\",\n    );\n    await dispose();\n  }\n\n  // 复核闸 F5：缺省分支（不传 handlers）——错误文案取 content 内 text 块 join，\n  // 无 text 块退化兜底文本；fallbackText 惰性（正常路径零额外计算语义由实现保证）。\n  {\n    let fallbackCalls = 0;\n    const probe = (result, handlers) => projectCallToolResult(result, handlers);\n    // 缺省 errorText：text 块 join。\n    let thrown;\n    try {\n      probe({ content: [{ type: \"text\", text: \"e1\" }, { type: \"text\", text: \"e2\" }], isError: true }, {});\n    } catch (error) {\n      thrown = error;\n    }\n    assert.equal(thrown.message, \"e1\\ne2\", \"缺省 errorText = content 内 text 块 join\");\n    // 缺省 errorText：无 text 块 → 退化兜底文本。\n    thrown = undefined;\n    try {\n      probe({ content: [{ type: \"image\", mimeType: \"image/png\" }], isError: true }, {});\n    } catch (error) {\n      thrown = error;\n    }\n    assert.equal(thrown.message, \"(no output)\", \"缺省 errorText 无 text 块退化兜底\");\n    // 注入 fallbackText 但正常 content 路径不消费（惰性：计数不增长）。\n    const normal = probe(\n      { content: [{ type: \"text\", text: \"ok\" }], isError: false },\n      { fallbackText: () => { fallbackCalls += 1; return \"unused\"; } },\n    );\n    assert.equal(fallbackCalls, 0, \"fallbackText 惰性：正常 content 路径不调用\");\n    assert.deepEqual(normal.content, [{ type: \"text\", text: \"ok\" }]);\n  }\n}\n"
     },
     "packages/dsh-mcp-manager/test/unit-routes-sse.test.ts": {
       "tests": [

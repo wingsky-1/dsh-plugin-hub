@@ -9103,9 +9103,9 @@
           }
         },
         {
-          "id": "19",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
+          "id": "48",
+          "mutatorName": "EqualityOperator",
+          "replacement": "a.version !== ADAPTER_CONTRACT_VERSION",
           "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
           "status": "Killed",
           "static": false,
@@ -9120,12 +9120,66 @@
           ],
           "location": {
             "end": {
-              "column": 42,
-              "line": 135
+              "column": 43,
+              "line": 138
             },
             "start": {
-              "column": 7,
-              "line": 135
+              "column": 5,
+              "line": 138
+            }
+          }
+        },
+        {
+          "id": "61",
+          "mutatorName": "EqualityOperator",
+          "replacement": "a.providers.length <= 0",
+          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3"
+          ],
+          "location": {
+            "end": {
+              "column": 27,
+              "line": 142
+            },
+            "start": {
+              "column": 5,
+              "line": 142
+            }
+          }
+        },
+        {
+          "id": "54",
+          "mutatorName": "EqualityOperator",
+          "replacement": "(a.name as string).length < 2",
+          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3"
+          ],
+          "location": {
+            "end": {
+              "column": 65,
+              "line": 139
+            },
+            "start": {
+              "column": 35,
+              "line": 139
             }
           }
         },
@@ -9157,9 +9211,9 @@
           }
         },
         {
-          "id": "48",
-          "mutatorName": "EqualityOperator",
-          "replacement": "a.version !== ADAPTER_CONTRACT_VERSION",
+          "id": "29",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
           "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
           "status": "Killed",
           "static": false,
@@ -9174,39 +9228,12 @@
           ],
           "location": {
             "end": {
-              "column": 43,
-              "line": 138
+              "column": 40,
+              "line": 146
             },
             "start": {
               "column": 5,
               "line": 138
-            }
-          }
-        },
-        {
-          "id": "23",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof v === 'object'",
-          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3"
-          ],
-          "location": {
-            "end": {
-              "column": 28,
-              "line": 135
-            },
-            "start": {
-              "column": 7,
-              "line": 135
             }
           }
         },
@@ -9265,57 +9292,6 @@
           }
         },
         {
-          "id": "10",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 4,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 36,
-              "line": 122
-            },
-            "start": {
-              "column": 15,
-              "line": 122
-            }
-          }
-        },
-        {
-          "id": "26",
-          "mutatorName": "EqualityOperator",
-          "replacement": "v !== null",
-          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3"
-          ],
-          "location": {
-            "end": {
-              "column": 42,
-              "line": 135
-            },
-            "start": {
-              "column": 32,
-              "line": 135
-            }
-          }
-        },
-        {
           "id": "63",
           "mutatorName": "ArrowFunction",
           "replacement": "() => undefined",
@@ -9343,33 +9319,6 @@
           }
         },
         {
-          "id": "61",
-          "mutatorName": "EqualityOperator",
-          "replacement": "a.providers.length <= 0",
-          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3"
-          ],
-          "location": {
-            "end": {
-              "column": 27,
-              "line": 142
-            },
-            "start": {
-              "column": 5,
-              "line": 142
-            }
-          }
-        },
-        {
           "id": "50",
           "mutatorName": "EqualityOperator",
           "replacement": "typeof a.name !== 'string'",
@@ -9392,33 +9341,6 @@
             },
             "start": {
               "column": 5,
-              "line": 139
-            }
-          }
-        },
-        {
-          "id": "54",
-          "mutatorName": "EqualityOperator",
-          "replacement": "(a.name as string).length < 2",
-          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3"
-          ],
-          "location": {
-            "end": {
-              "column": 65,
-              "line": 139
-            },
-            "start": {
-              "column": 35,
               "line": 139
             }
           }
@@ -9451,9 +9373,9 @@
           }
         },
         {
-          "id": "29",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
+          "id": "26",
+          "mutatorName": "EqualityOperator",
+          "replacement": "v !== null",
           "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
           "status": "Killed",
           "static": false,
@@ -9468,12 +9390,90 @@
           ],
           "location": {
             "end": {
-              "column": 40,
-              "line": 146
+              "column": 42,
+              "line": 135
             },
             "start": {
-              "column": 5,
-              "line": 138
+              "column": 32,
+              "line": 135
+            }
+          }
+        },
+        {
+          "id": "23",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof v === 'object'",
+          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3"
+          ],
+          "location": {
+            "end": {
+              "column": 28,
+              "line": 135
+            },
+            "start": {
+              "column": 7,
+              "line": 135
+            }
+          }
+        },
+        {
+          "id": "19",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3"
+          ],
+          "location": {
+            "end": {
+              "column": 42,
+              "line": 135
+            },
+            "start": {
+              "column": 7,
+              "line": 135
+            }
+          }
+        },
+        {
+          "id": "10",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 4,
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 36,
+              "line": 122
+            },
+            "start": {
+              "column": 15,
+              "line": 122
             }
           }
         },
@@ -9505,9 +9505,9 @@
           }
         },
         {
-          "id": "82",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
+          "id": "108",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "/^[A-Za-z0-9_-]{2,64}$/.test(a.name as string)",
           "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
           "status": "Killed",
           "static": false,
@@ -9521,194 +9521,11 @@
           ],
           "location": {
             "end": {
-              "column": 2,
-              "line": 162
-            },
-            "start": {
-              "column": 75,
-              "line": 151
-            }
-          }
-        },
-        {
-          "id": "83",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 42,
-              "line": 152
-            },
-            "start": {
-              "column": 7,
-              "line": 152
-            }
-          }
-        },
-        {
-          "id": "87",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof v === 'object'",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 28,
-              "line": 152
-            },
-            "start": {
-              "column": 7,
-              "line": 152
-            }
-          }
-        },
-        {
-          "id": "72",
-          "mutatorName": "EqualityOperator",
-          "replacement": "p.length <= 0",
-          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3"
-          ],
-          "location": {
-            "end": {
-              "column": 76,
-              "line": 143
-            },
-            "start": {
-              "column": 64,
-              "line": 143
-            }
-          }
-        },
-        {
-          "id": "96",
-          "mutatorName": "ArrayDeclaration",
-          "replacement": "[\"Stryker was here\"]",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 31,
-              "line": 154
-            },
-            "start": {
-              "column": 29,
-              "line": 154
-            }
-          }
-        },
-        {
-          "id": "99",
-          "mutatorName": "EqualityOperator",
-          "replacement": "a.version === ADAPTER_CONTRACT_VERSION",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 45,
-              "line": 155
-            },
-            "start": {
-              "column": 7,
-              "line": 155
-            }
-          }
-        },
-        {
-          "id": "97",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 45,
-              "line": 155
-            },
-            "start": {
-              "column": 7,
-              "line": 155
-            }
-          }
-        },
-        {
-          "id": "111",
-          "mutatorName": "Regex",
-          "replacement": "/^[A-Za-z0-9_-]$/",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 61,
+              "column": 84,
               "line": 156
             },
             "start": {
-              "column": 38,
+              "column": 37,
               "line": 156
             }
           }
@@ -9740,7 +9557,7 @@
           }
         },
         {
-          "id": "102",
+          "id": "83",
           "mutatorName": "ConditionalExpression",
           "replacement": "true",
           "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
@@ -9756,38 +9573,12 @@
           ],
           "location": {
             "end": {
-              "column": 84,
-              "line": 156
+              "column": 42,
+              "line": 152
             },
             "start": {
               "column": 7,
-              "line": 156
-            }
-          }
-        },
-        {
-          "id": "108",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "/^[A-Za-z0-9_-]{2,64}$/.test(a.name as string)",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 84,
-              "line": 156
-            },
-            "start": {
-              "column": 37,
-              "line": 156
+              "line": 152
             }
           }
         },
@@ -9809,6 +9600,215 @@
           "location": {
             "end": {
               "column": 33,
+              "line": 156
+            },
+            "start": {
+              "column": 7,
+              "line": 156
+            }
+          }
+        },
+        {
+          "id": "99",
+          "mutatorName": "EqualityOperator",
+          "replacement": "a.version === ADAPTER_CONTRACT_VERSION",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 45,
+              "line": 155
+            },
+            "start": {
+              "column": 7,
+              "line": 155
+            }
+          }
+        },
+        {
+          "id": "72",
+          "mutatorName": "EqualityOperator",
+          "replacement": "p.length <= 0",
+          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3"
+          ],
+          "location": {
+            "end": {
+              "column": 76,
+              "line": 143
+            },
+            "start": {
+              "column": 64,
+              "line": 143
+            }
+          }
+        },
+        {
+          "id": "82",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 162
+            },
+            "start": {
+              "column": 75,
+              "line": 151
+            }
+          }
+        },
+        {
+          "id": "96",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[\"Stryker was here\"]",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 31,
+              "line": 154
+            },
+            "start": {
+              "column": 29,
+              "line": 154
+            }
+          }
+        },
+        {
+          "id": "97",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 45,
+              "line": 155
+            },
+            "start": {
+              "column": 7,
+              "line": 155
+            }
+          }
+        },
+        {
+          "id": "87",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof v === 'object'",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 28,
+              "line": 152
+            },
+            "start": {
+              "column": 7,
+              "line": 152
+            }
+          }
+        },
+        {
+          "id": "111",
+          "mutatorName": "Regex",
+          "replacement": "/^[A-Za-z0-9_-]$/",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 61,
+              "line": 156
+            },
+            "start": {
+              "column": 38,
+              "line": 156
+            }
+          }
+        },
+        {
+          "id": "102",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 84,
               "line": 156
             },
             "start": {
@@ -9840,32 +9840,6 @@
             "start": {
               "column": 38,
               "line": 156
-            }
-          }
-        },
-        {
-          "id": "117",
-          "mutatorName": "LogicalOperator",
-          "replacement": "!Array.isArray(a.providers) && a.providers.length === 0",
-          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'length'): uncaughtException: Cannot read properties of undefined (reading 'length')",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 62,
-              "line": 157
-            },
-            "start": {
-              "column": 7,
-              "line": 157
             }
           }
         },
@@ -9924,10 +9898,36 @@
           }
         },
         {
-          "id": "115",
+          "id": "123",
           "mutatorName": "ConditionalExpression",
           "replacement": "true",
           "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 40,
+              "line": 158
+            },
+            "start": {
+              "column": 7,
+              "line": 158
+            }
+          }
+        },
+        {
+          "id": "117",
+          "mutatorName": "LogicalOperator",
+          "replacement": "!Array.isArray(a.providers) && a.providers.length === 0",
+          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'length'): uncaughtException: Cannot read properties of undefined (reading 'length')",
           "status": "Killed",
           "static": false,
           "testsCompleted": 1,
@@ -9950,10 +9950,10 @@
           }
         },
         {
-          "id": "118",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "Array.isArray(a.providers)",
-          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'length'): uncaughtException: Cannot read properties of undefined (reading 'length')",
+          "id": "129",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
           "status": "Killed",
           "static": false,
           "testsCompleted": 1,
@@ -9966,12 +9966,12 @@
           ],
           "location": {
             "end": {
-              "column": 34,
-              "line": 157
+              "column": 44,
+              "line": 159
             },
             "start": {
               "column": 7,
-              "line": 157
+              "line": 159
             }
           }
         },
@@ -10003,10 +10003,10 @@
           }
         },
         {
-          "id": "137",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof a.formatPanel === 'function'",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "id": "118",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "Array.isArray(a.providers)",
+          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'length'): uncaughtException: Cannot read properties of undefined (reading 'length')",
           "status": "Killed",
           "static": false,
           "testsCompleted": 1,
@@ -10019,12 +10019,12 @@
           ],
           "location": {
             "end": {
-              "column": 42,
-              "line": 160
+              "column": 34,
+              "line": 157
             },
             "start": {
               "column": 7,
-              "line": 160
+              "line": 157
             }
           }
         },
@@ -10055,33 +10055,7 @@
           }
         },
         {
-          "id": "125",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof a.fetchData === 'function'",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 40,
-              "line": 158
-            },
-            "start": {
-              "column": 7,
-              "line": 158
-            }
-          }
-        },
-        {
-          "id": "129",
+          "id": "115",
           "mutatorName": "ConditionalExpression",
           "replacement": "true",
           "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
@@ -10097,38 +10071,12 @@
           ],
           "location": {
             "end": {
-              "column": 44,
-              "line": 159
+              "column": 62,
+              "line": 157
             },
             "start": {
               "column": 7,
-              "line": 159
-            }
-          }
-        },
-        {
-          "id": "123",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 40,
-              "line": 158
-            },
-            "start": {
-              "column": 7,
-              "line": 158
+              "line": 157
             }
           }
         },
@@ -10159,9 +10107,9 @@
           }
         },
         {
-          "id": "143",
+          "id": "131",
           "mutatorName": "EqualityOperator",
-          "replacement": "missing.length >= 0",
+          "replacement": "typeof a.formatCapsule === 'function'",
           "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
           "status": "Killed",
           "static": false,
@@ -10175,40 +10123,12 @@
           ],
           "location": {
             "end": {
-              "column": 28,
-              "line": 161
+              "column": 44,
+              "line": 159
             },
             "start": {
-              "column": 10,
-              "line": 161
-            }
-          }
-        },
-        {
-          "id": "146",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: The \"path\" argument must be of type string. Received undefined: uncaughtException: The \"path\" argument must be of type string. Received undefined",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 167
-            },
-            "start": {
-              "column": 48,
-              "line": 165
+              "column": 7,
+              "line": 159
             }
           }
         },
@@ -10239,9 +10159,9 @@
           }
         },
         {
-          "id": "131",
+          "id": "125",
           "mutatorName": "EqualityOperator",
-          "replacement": "typeof a.formatCapsule === 'function'",
+          "replacement": "typeof a.fetchData === 'function'",
           "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
           "status": "Killed",
           "static": false,
@@ -10255,12 +10175,64 @@
           ],
           "location": {
             "end": {
-              "column": 44,
-              "line": 159
+              "column": 40,
+              "line": 158
             },
             "start": {
               "column": 7,
-              "line": 159
+              "line": 158
+            }
+          }
+        },
+        {
+          "id": "143",
+          "mutatorName": "EqualityOperator",
+          "replacement": "missing.length >= 0",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 28,
+              "line": 161
+            },
+            "start": {
+              "column": 10,
+              "line": 161
+            }
+          }
+        },
+        {
+          "id": "137",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof a.formatPanel === 'function'",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 42,
+              "line": 160
+            },
+            "start": {
+              "column": 7,
+              "line": 160
             }
           }
         },
@@ -10315,6 +10287,34 @@
             "start": {
               "column": 10,
               "line": 166
+            }
+          }
+        },
+        {
+          "id": "146",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: The \"path\" argument must be of type string. Received undefined: uncaughtException: The \"path\" argument must be of type string. Received undefined",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 167
+            },
+            "start": {
+              "column": 48,
+              "line": 165
             }
           }
         },
@@ -11761,6 +11761,35 @@
           }
         },
         {
+          "id": "430",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: 两适配器探针成对出现: uncaughtException: 两适配器探针成对出现",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 61,
+              "line": 31
+            },
+            "start": {
+              "column": 7,
+              "line": 31
+            }
+          }
+        },
+        {
           "id": "429",
           "mutatorName": "BlockStatement",
           "replacement": "{}",
@@ -11819,10 +11848,10 @@
           }
         },
         {
-          "id": "430",
+          "id": "433",
           "mutatorName": "ConditionalExpression",
           "replacement": "true",
-          "statusReason": "uncaughtException: 两适配器探针成对出现: uncaughtException: 两适配器探针成对出现",
+          "statusReason": "uncaughtException: 并发同 provider 请求复用缓存（实际 fresh）: uncaughtException: 并发同 provider 请求复用缓存（实际 fresh）",
           "status": "Killed",
           "static": false,
           "testsCompleted": 1,
@@ -11838,7 +11867,7 @@
           ],
           "location": {
             "end": {
-              "column": 61,
+              "column": 35,
               "line": 31
             },
             "start": {
@@ -11906,9 +11935,9 @@
           }
         },
         {
-          "id": "433",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
+          "id": "434",
+          "mutatorName": "EqualityOperator",
+          "replacement": "externalSignal === undefined",
           "statusReason": "uncaughtException: 并发同 provider 请求复用缓存（实际 fresh）: uncaughtException: 并发同 provider 请求复用缓存（实际 fresh）",
           "status": "Killed",
           "static": false,
@@ -11964,35 +11993,6 @@
           }
         },
         {
-          "id": "434",
-          "mutatorName": "EqualityOperator",
-          "replacement": "externalSignal === undefined",
-          "statusReason": "uncaughtException: 并发同 provider 请求复用缓存（实际 fresh）: uncaughtException: 并发同 provider 请求复用缓存（实际 fresh）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 31
-            },
-            "start": {
-              "column": 7,
-              "line": 31
-            }
-          }
-        },
-        {
           "id": "461",
           "mutatorName": "ArrowFunction",
           "replacement": "() => undefined",
@@ -12018,64 +12018,6 @@
             "start": {
               "column": 42,
               "line": 54
-            }
-          }
-        },
-        {
-          "id": "498",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'error'): uncaughtException: Cannot read properties of undefined (reading 'error')",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 115
-            },
-            "start": {
-              "column": 47,
-              "line": 96
-            }
-          }
-        },
-        {
-          "id": "473",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 79,
-              "line": 69
-            },
-            "start": {
-              "column": 9,
-              "line": 69
             }
           }
         },
@@ -12109,12 +12051,16 @@
           }
         },
         {
-          "id": "438",
-          "mutatorName": "BooleanLiteral",
+          "id": "473",
+          "mutatorName": "ConditionalExpression",
           "replacement": "true",
-          "statusReason": "Error running file \"packages/dsh-provider-usage/test/unit-contract.test.ts\". Tap process exited with code 13. To reproduce it yourself, use the following command: \n      cd \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-JIgPaf\"\n      node \"-r\" \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/node_modules/.pnpm/@stryker-mutator+tap-runner@10.0.0_@stryker-mutator+core@10.0.0_@types+node@26.4.0_/node_modules/@stryker-mutator/tap-runner/dist/src/setup/hook.cjs\" \"-r\" \"./scripts/test/mutation-tap-bridge.cjs\" \"--import\" \"./scripts/test/mutation-lib-to-src-hook.mjs\" \"packages/dsh-provider-usage/test/unit-contract.test.ts\"\n      \n      Stderr output:\n      EVAL-ORDER-TAG: CONTRACT\n[dsh-provider-usage] 内置适配器契约校验失败（version 必须 === 2（实际 1）、name（2-64 位字母数字下划线连字符）、providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），不注册\n[dsh-provider-usage] 适配器 file:x.mjs 加载错误：契约校验失败（version 必须 === 2（实际 undefined）、name（2-64 位字母数字下划线连字符）、providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），已拒收\n[dsh-provider-usage] 适配器 file:adapter-a 加载错误：适配器 name 重复：adapter-a，忽略重复注册\n[dsh-provider-usage] 适配器 k1 加载错误：加载失败消息\n[dsh-provider-usage] 适配器 k2 执行错误：执行超时消息\n[dsh-provider-usage] 适配器 dup 加载错误：第一次\n[dsh-provider-usage] 适配器 dup 执行错误：第二次\nWarning: Detected unsettled top-level await at file:///home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-JIgPaf/packages/dsh-provider-usage/test/unit-contract.test.ts:600\n  const slow = await safeFetchData(() => new Promise(() => {}), 30);\n               ^\n\n\n\n",
-          "status": "RuntimeError",
+          "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
+          "status": "Killed",
           "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
           "coveredBy": [
             "0",
             "2",
@@ -12124,12 +12070,12 @@
           ],
           "location": {
             "end": {
-              "column": 19,
-              "line": 35
+              "column": 79,
+              "line": 69
             },
             "start": {
-              "column": 14,
-              "line": 35
+              "column": 9,
+              "line": 69
             }
           }
         },
@@ -12163,6 +12109,35 @@
           }
         },
         {
+          "id": "498",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'error'): uncaughtException: Cannot read properties of undefined (reading 'error')",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 115
+            },
+            "start": {
+              "column": 47,
+              "line": 96
+            }
+          }
+        },
+        {
           "id": "492",
           "mutatorName": "ConditionalExpression",
           "replacement": "true",
@@ -12188,6 +12163,31 @@
             "start": {
               "column": 9,
               "line": 80
+            }
+          }
+        },
+        {
+          "id": "438",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "true",
+          "statusReason": "Error running file \"packages/dsh-provider-usage/test/unit-contract.test.ts\". Tap process exited with code 13. To reproduce it yourself, use the following command: \n      cd \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3\"\n      node \"-r\" \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/node_modules/.pnpm/@stryker-mutator+tap-runner@10.0.0_@stryker-mutator+core@10.0.0_@types+node@26.4.0_/node_modules/@stryker-mutator/tap-runner/dist/src/setup/hook.cjs\" \"-r\" \"./scripts/test/mutation-tap-bridge.cjs\" \"--import\" \"./scripts/test/mutation-lib-to-src-hook.mjs\" \"packages/dsh-provider-usage/test/unit-contract.test.ts\"\n      \n      Stderr output:\n      EVAL-ORDER-TAG: CONTRACT\n[dsh-provider-usage] 内置适配器契约校验失败（version 必须 === 2（实际 1）、name（2-64 位字母数字下划线连字符）、providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），不注册\n[dsh-provider-usage] 适配器 file:x.mjs 加载错误：契约校验失败（version 必须 === 2（实际 undefined）、name（2-64 位字母数字下划线连字符）、providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），已拒收\n[dsh-provider-usage] 适配器 file:adapter-a 加载错误：适配器 name 重复：adapter-a，忽略重复注册\n[dsh-provider-usage] 适配器 k1 加载错误：加载失败消息\n[dsh-provider-usage] 适配器 k2 执行错误：执行超时消息\n[dsh-provider-usage] 适配器 dup 加载错误：第一次\n[dsh-provider-usage] 适配器 dup 执行错误：第二次\nWarning: Detected unsettled top-level await at file:///home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3/packages/dsh-provider-usage/test/unit-contract.test.ts:600\n  const slow = await safeFetchData(() => new Promise(() => {}), 30);\n               ^\n\n\n\n",
+          "status": "RuntimeError",
+          "static": false,
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 19,
+              "line": 35
+            },
+            "start": {
+              "column": 14,
+              "line": 35
             }
           }
         },
@@ -12250,6 +12250,35 @@
           }
         },
         {
+          "id": "510",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 33,
+              "line": 108
+            },
+            "start": {
+              "column": 9,
+              "line": 108
+            }
+          }
+        },
+        {
           "id": "512",
           "mutatorName": "EqualityOperator",
           "replacement": "typeof html === 'string'",
@@ -12282,7 +12311,7 @@
           "id": "464",
           "mutatorName": "BlockStatement",
           "replacement": "{}",
-          "statusReason": "Error running file \"packages/dsh-provider-usage/test/unit-contract.test.ts\". Tap process exited with code 13. To reproduce it yourself, use the following command: \n      cd \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-JIgPaf\"\n      node \"-r\" \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/node_modules/.pnpm/@stryker-mutator+tap-runner@10.0.0_@stryker-mutator+core@10.0.0_@types+node@26.4.0_/node_modules/@stryker-mutator/tap-runner/dist/src/setup/hook.cjs\" \"-r\" \"./scripts/test/mutation-tap-bridge.cjs\" \"--import\" \"./scripts/test/mutation-lib-to-src-hook.mjs\" \"packages/dsh-provider-usage/test/unit-contract.test.ts\"\n      \n      Stderr output:\n      EVAL-ORDER-TAG: CONTRACT\n[dsh-provider-usage] 内置适配器契约校验失败（version 必须 === 2（实际 1）、name（2-64 位字母数字下划线连字符）、providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），不注册\n[dsh-provider-usage] 适配器 file:x.mjs 加载错误：契约校验失败（version 必须 === 2（实际 undefined）、name（2-64 位字母数字下划线连字符）、providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），已拒收\n[dsh-provider-usage] 适配器 file:adapter-a 加载错误：适配器 name 重复：adapter-a，忽略重复注册\n[dsh-provider-usage] 适配器 k1 加载错误：加载失败消息\n[dsh-provider-usage] 适配器 k2 执行错误：执行超时消息\n[dsh-provider-usage] 适配器 dup 加载错误：第一次\n[dsh-provider-usage] 适配器 dup 执行错误：第二次\nWarning: Detected unsettled top-level await at file:///home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-JIgPaf/packages/dsh-provider-usage/test/unit-contract.test.ts:600\n  const slow = await safeFetchData(() => new Promise(() => {}), 30);\n               ^\n\n\n\n",
+          "statusReason": "Error running file \"packages/dsh-provider-usage/test/unit-contract.test.ts\". Tap process exited with code 13. To reproduce it yourself, use the following command: \n      cd \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3\"\n      node \"-r\" \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/node_modules/.pnpm/@stryker-mutator+tap-runner@10.0.0_@stryker-mutator+core@10.0.0_@types+node@26.4.0_/node_modules/@stryker-mutator/tap-runner/dist/src/setup/hook.cjs\" \"-r\" \"./scripts/test/mutation-tap-bridge.cjs\" \"--import\" \"./scripts/test/mutation-lib-to-src-hook.mjs\" \"packages/dsh-provider-usage/test/unit-contract.test.ts\"\n      \n      Stderr output:\n      EVAL-ORDER-TAG: CONTRACT\n[dsh-provider-usage] 内置适配器契约校验失败（version 必须 === 2（实际 1）、name（2-64 位字母数字下划线连字符）、providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），不注册\n[dsh-provider-usage] 适配器 file:x.mjs 加载错误：契约校验失败（version 必须 === 2（实际 undefined）、name（2-64 位字母数字下划线连字符）、providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），已拒收\n[dsh-provider-usage] 适配器 file:adapter-a 加载错误：适配器 name 重复：adapter-a，忽略重复注册\n[dsh-provider-usage] 适配器 k1 加载错误：加载失败消息\n[dsh-provider-usage] 适配器 k2 执行错误：执行超时消息\n[dsh-provider-usage] 适配器 dup 加载错误：第一次\n[dsh-provider-usage] 适配器 dup 执行错误：第二次\nWarning: Detected unsettled top-level await at file:///home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3/packages/dsh-provider-usage/test/unit-contract.test.ts:600\n  const slow = await safeFetchData(() => new Promise(() => {}), 30);\n               ^\n\n\n\n",
           "status": "RuntimeError",
           "static": false,
           "coveredBy": [
@@ -12304,39 +12333,10 @@
           }
         },
         {
-          "id": "510",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 33,
-              "line": 108
-            },
-            "start": {
-              "column": 9,
-              "line": 108
-            }
-          }
-        },
-        {
           "id": "499",
           "mutatorName": "ArrowFunction",
           "replacement": "() => undefined",
-          "statusReason": "Error running file \"packages/dsh-provider-usage/test/unit-contract.test.ts\". Tap process exited with code 13. To reproduce it yourself, use the following command: \n      cd \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-JIgPaf\"\n      node \"-r\" \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/node_modules/.pnpm/@stryker-mutator+tap-runner@10.0.0_@stryker-mutator+core@10.0.0_@types+node@26.4.0_/node_modules/@stryker-mutator/tap-runner/dist/src/setup/hook.cjs\" \"-r\" \"./scripts/test/mutation-tap-bridge.cjs\" \"--import\" \"./scripts/test/mutation-lib-to-src-hook.mjs\" \"packages/dsh-provider-usage/test/unit-contract.test.ts\"\n      \n      Stderr output:\n      EVAL-ORDER-TAG: CONTRACT\n[dsh-provider-usage] 内置适配器契约校验失败（version 必须 === 2（实际 1）、name（2-64 位字母数字下划线连字符）、providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），不注册\n[dsh-provider-usage] 适配器 file:x.mjs 加载错误：契约校验失败（version 必须 === 2（实际 undefined）、name（2-64 位字母数字下划线连字符）、providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），已拒收\n[dsh-provider-usage] 适配器 file:adapter-a 加载错误：适配器 name 重复：adapter-a，忽略重复注册\n[dsh-provider-usage] 适配器 k1 加载错误：加载失败消息\n[dsh-provider-usage] 适配器 k2 执行错误：执行超时消息\n[dsh-provider-usage] 适配器 dup 加载错误：第一次\n[dsh-provider-usage] 适配器 dup 执行错误：第二次\nWarning: Detected unsettled top-level await at file:///home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-JIgPaf/packages/dsh-provider-usage/test/unit-contract.test.ts:612\n  const slow = await safeFormat(() => new Promise        (() => {})                     , \"formatPanel\", 30);\n               ^\n\n\n\n",
+          "statusReason": "Error running file \"packages/dsh-provider-usage/test/unit-contract.test.ts\". Tap process exited with code 13. To reproduce it yourself, use the following command: \n      cd \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3\"\n      node \"-r\" \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/node_modules/.pnpm/@stryker-mutator+tap-runner@10.0.0_@stryker-mutator+core@10.0.0_@types+node@26.4.0_/node_modules/@stryker-mutator/tap-runner/dist/src/setup/hook.cjs\" \"-r\" \"./scripts/test/mutation-tap-bridge.cjs\" \"--import\" \"./scripts/test/mutation-lib-to-src-hook.mjs\" \"packages/dsh-provider-usage/test/unit-contract.test.ts\"\n      \n      Stderr output:\n      EVAL-ORDER-TAG: CONTRACT\n[dsh-provider-usage] 内置适配器契约校验失败（version 必须 === 2（实际 1）、name（2-64 位字母数字下划线连字符）、providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），不注册\n[dsh-provider-usage] 适配器 file:x.mjs 加载错误：契约校验失败（version 必须 === 2（实际 undefined）、name（2-64 位字母数字下划线连字符）、providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），已拒收\n[dsh-provider-usage] 适配器 file:adapter-a 加载错误：适配器 name 重复：adapter-a，忽略重复注册\n[dsh-provider-usage] 适配器 k1 加载错误：加载失败消息\n[dsh-provider-usage] 适配器 k2 执行错误：执行超时消息\n[dsh-provider-usage] 适配器 dup 加载错误：第一次\n[dsh-provider-usage] 适配器 dup 执行错误：第二次\nWarning: Detected unsettled top-level await at file:///home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3/packages/dsh-provider-usage/test/unit-contract.test.ts:612\n  const slow = await safeFormat(() => new Promise        (() => {})                     , \"formatPanel\", 30);\n               ^\n\n\n\n",
           "status": "RuntimeError",
           "static": false,
           "coveredBy": [
@@ -12354,32 +12354,6 @@
             "start": {
               "column": 28,
               "line": 98
-            }
-          }
-        },
-        {
-          "id": "523",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'status'): uncaughtException: Cannot read properties of undefined (reading 'status')",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 130
-            },
-            "start": {
-              "column": 7,
-              "line": 128
             }
           }
         },
@@ -12413,7 +12387,7 @@
           "id": "502",
           "mutatorName": "BlockStatement",
           "replacement": "{}",
-          "statusReason": "Error running file \"packages/dsh-provider-usage/test/unit-contract.test.ts\". Tap process exited with code 13. To reproduce it yourself, use the following command: \n      cd \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-JIgPaf\"\n      node \"-r\" \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/node_modules/.pnpm/@stryker-mutator+tap-runner@10.0.0_@stryker-mutator+core@10.0.0_@types+node@26.4.0_/node_modules/@stryker-mutator/tap-runner/dist/src/setup/hook.cjs\" \"-r\" \"./scripts/test/mutation-tap-bridge.cjs\" \"--import\" \"./scripts/test/mutation-lib-to-src-hook.mjs\" \"packages/dsh-provider-usage/test/unit-contract.test.ts\"\n      \n      Stderr output:\n      EVAL-ORDER-TAG: CONTRACT\n[dsh-provider-usage] 内置适配器契约校验失败（version 必须 === 2（实际 1）、name（2-64 位字母数字下划线连字符）、providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），不注册\n[dsh-provider-usage] 适配器 file:x.mjs 加载错误：契约校验失败（version 必须 === 2（实际 undefined）、name（2-64 位字母数字下划线连字符）、providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），已拒收\n[dsh-provider-usage] 适配器 file:adapter-a 加载错误：适配器 name 重复：adapter-a，忽略重复注册\n[dsh-provider-usage] 适配器 k1 加载错误：加载失败消息\n[dsh-provider-usage] 适配器 k2 执行错误：执行超时消息\n[dsh-provider-usage] 适配器 dup 加载错误：第一次\n[dsh-provider-usage] 适配器 dup 执行错误：第二次\nWarning: Detected unsettled top-level await at file:///home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-JIgPaf/packages/dsh-provider-usage/test/unit-contract.test.ts:612\n  const slow = await safeFormat(() => new Promise        (() => {})                     , \"formatPanel\", 30);\n               ^\n\n\n\n",
+          "statusReason": "Error running file \"packages/dsh-provider-usage/test/unit-contract.test.ts\". Tap process exited with code 13. To reproduce it yourself, use the following command: \n      cd \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3\"\n      node \"-r\" \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/node_modules/.pnpm/@stryker-mutator+tap-runner@10.0.0_@stryker-mutator+core@10.0.0_@types+node@26.4.0_/node_modules/@stryker-mutator/tap-runner/dist/src/setup/hook.cjs\" \"-r\" \"./scripts/test/mutation-tap-bridge.cjs\" \"--import\" \"./scripts/test/mutation-lib-to-src-hook.mjs\" \"packages/dsh-provider-usage/test/unit-contract.test.ts\"\n      \n      Stderr output:\n      EVAL-ORDER-TAG: CONTRACT\n[dsh-provider-usage] 内置适配器契约校验失败（version 必须 === 2（实际 1）、name（2-64 位字母数字下划线连字符）、providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），不注册\n[dsh-provider-usage] 适配器 file:x.mjs 加载错误：契约校验失败（version 必须 === 2（实际 undefined）、name（2-64 位字母数字下划线连字符）、providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），已拒收\n[dsh-provider-usage] 适配器 file:adapter-a 加载错误：适配器 name 重复：adapter-a，忽略重复注册\n[dsh-provider-usage] 适配器 k1 加载错误：加载失败消息\n[dsh-provider-usage] 适配器 k2 执行错误：执行超时消息\n[dsh-provider-usage] 适配器 dup 加载错误：第一次\n[dsh-provider-usage] 适配器 dup 执行错误：第二次\nWarning: Detected unsettled top-level await at file:///home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3/packages/dsh-provider-usage/test/unit-contract.test.ts:612\n  const slow = await safeFormat(() => new Promise        (() => {})                     , \"formatPanel\", 30);\n               ^\n\n\n\n",
           "status": "RuntimeError",
           "static": false,
           "coveredBy": [
@@ -12431,6 +12405,32 @@
             "start": {
               "column": 41,
               "line": 102
+            }
+          }
+        },
+        {
+          "id": "523",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'status'): uncaughtException: Cannot read properties of undefined (reading 'status')",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 130
+            },
+            "start": {
+              "column": 7,
+              "line": 128
             }
           }
         },
@@ -12461,7 +12461,7 @@
           }
         },
         {
-          "id": "490",
+          "id": "472",
           "mutatorName": "BooleanLiteral",
           "replacement": "false",
           "status": "Survived",
@@ -12476,12 +12476,12 @@
           ],
           "location": {
             "end": {
-              "column": 16,
-              "line": 77
+              "column": 24,
+              "line": 63
             },
             "start": {
-              "column": 12,
-              "line": 77
+              "column": 20,
+              "line": 63
             }
           }
         },
@@ -12511,7 +12511,7 @@
           }
         },
         {
-          "id": "472",
+          "id": "490",
           "mutatorName": "BooleanLiteral",
           "replacement": "false",
           "status": "Survived",
@@ -12526,12 +12526,12 @@
           ],
           "location": {
             "end": {
-              "column": 24,
-              "line": 63
+              "column": 16,
+              "line": 77
             },
             "start": {
-              "column": 20,
-              "line": 63
+              "column": 12,
+              "line": 77
             }
           }
         },
@@ -12564,7 +12564,7 @@
           "id": "463",
           "mutatorName": "ArrayDeclaration",
           "replacement": "[]",
-          "statusReason": "Error running file \"packages/dsh-provider-usage/test/unit-apply.test.ts\". Tap process exited with code 13. To reproduce it yourself, use the following command: \n      cd \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-JIgPaf\"\n      node \"-r\" \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/node_modules/.pnpm/@stryker-mutator+tap-runner@10.0.0_@stryker-mutator+core@10.0.0_@types+node@26.4.0_/node_modules/@stryker-mutator/tap-runner/dist/src/setup/hook.cjs\" \"-r\" \"./scripts/test/mutation-tap-bridge.cjs\" \"--import\" \"./scripts/test/mutation-lib-to-src-hook.mjs\" \"packages/dsh-provider-usage/test/unit-apply.test.ts\"\n      \n      Stderr output:\n      EVAL-ORDER-TAG: APPLY\n[dsh-provider-usage] 热更新成功：hr-test（good.mjs）\n[dsh-provider-usage] 适配器 file:bad.mjs 加载错误：契约校验失败（providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），已拒收\n[dsh-provider-usage] 适配器 file:bad.mjs 加载错误：热更新失败：契约校验失败：providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）\n[dsh-provider-usage] 适配器 file:bad.mjs 加载错误：热更新失败：契约校验失败：providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）\n[dsh-provider-usage] 适配器 file:bad.mjs 加载错误：热更新启动失败：契约校验失败：providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）\n[dsh-provider-usage] 热更新成功：dispose-test（dispose.mjs）\n[dsh-provider-usage] 适配器 adapter-state 加载错误：adapter-state.json 读取失败（EISDIR: illegal operation on a directory, read），本次按默认启用关系继续\n[dsh-provider-usage] 适配器 adapter-state 加载错误：启用选择落盘失败：读取旧 adapter-state.json 失败（EISDIR: illegal operation on a directory, read），为避免覆盖旧状态已取消写入\nWarning: Detected unsettled top-level await at file:///home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-JIgPaf/packages/dsh-provider-usage/test/unit-apply.test.ts:760\n    const [bFast, bSlow] = await Promise.all([pFast, pSlow]);\n                           ^\n\n\n\n",
+          "statusReason": "Error running file \"packages/dsh-provider-usage/test/unit-apply.test.ts\". Tap process exited with code 13. To reproduce it yourself, use the following command: \n      cd \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3\"\n      node \"-r\" \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/node_modules/.pnpm/@stryker-mutator+tap-runner@10.0.0_@stryker-mutator+core@10.0.0_@types+node@26.4.0_/node_modules/@stryker-mutator/tap-runner/dist/src/setup/hook.cjs\" \"-r\" \"./scripts/test/mutation-tap-bridge.cjs\" \"--import\" \"./scripts/test/mutation-lib-to-src-hook.mjs\" \"packages/dsh-provider-usage/test/unit-apply.test.ts\"\n      \n      Stderr output:\n      EVAL-ORDER-TAG: APPLY\n[dsh-provider-usage] 热更新成功：hr-test（good.mjs）\n[dsh-provider-usage] 适配器 file:bad.mjs 加载错误：契约校验失败（providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），已拒收\n[dsh-provider-usage] 适配器 file:bad.mjs 加载错误：热更新失败：契约校验失败：providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）\n[dsh-provider-usage] 适配器 file:bad.mjs 加载错误：热更新失败：契约校验失败：providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）\n[dsh-provider-usage] 适配器 file:bad.mjs 加载错误：热更新启动失败：契约校验失败：providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）\n[dsh-provider-usage] 热更新成功：dispose-test（dispose.mjs）\n[dsh-provider-usage] 适配器 adapter-state 加载错误：adapter-state.json 读取失败（EISDIR: illegal operation on a directory, read），本次按默认启用关系继续\n[dsh-provider-usage] 适配器 adapter-state 加载错误：启用选择落盘失败：读取旧 adapter-state.json 失败（EISDIR: illegal operation on a directory, read），为避免覆盖旧状态已取消写入\nWarning: Detected unsettled top-level await at file:///home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3/packages/dsh-provider-usage/test/unit-apply.test.ts:775\n    const [bFast, bSlow] = await Promise.all([pFast, pSlow]);\n                           ^\n\n\n\n",
           "status": "RuntimeError",
           "static": false,
           "coveredBy": [
@@ -12589,7 +12589,7 @@
           "id": "501",
           "mutatorName": "ArrayDeclaration",
           "replacement": "[]",
-          "statusReason": "Error running file \"packages/dsh-provider-usage/test/unit-apply.test.ts\". Tap process exited with code 13. To reproduce it yourself, use the following command: \n      cd \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-JIgPaf\"\n      node \"-r\" \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/node_modules/.pnpm/@stryker-mutator+tap-runner@10.0.0_@stryker-mutator+core@10.0.0_@types+node@26.4.0_/node_modules/@stryker-mutator/tap-runner/dist/src/setup/hook.cjs\" \"-r\" \"./scripts/test/mutation-tap-bridge.cjs\" \"--import\" \"./scripts/test/mutation-lib-to-src-hook.mjs\" \"packages/dsh-provider-usage/test/unit-apply.test.ts\"\n      \n      Stderr output:\n      EVAL-ORDER-TAG: APPLY\n[dsh-provider-usage] 热更新成功：hr-test（good.mjs）\n[dsh-provider-usage] 适配器 file:bad.mjs 加载错误：契约校验失败（providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），已拒收\n[dsh-provider-usage] 适配器 file:bad.mjs 加载错误：热更新失败：契约校验失败：providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）\n[dsh-provider-usage] 适配器 file:bad.mjs 加载错误：热更新失败：契约校验失败：providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）\n[dsh-provider-usage] 适配器 file:bad.mjs 加载错误：热更新启动失败：契约校验失败：providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）\n[dsh-provider-usage] 热更新成功：dispose-test（dispose.mjs）\n[dsh-provider-usage] 适配器 adapter-state 加载错误：adapter-state.json 读取失败（EISDIR: illegal operation on a directory, read），本次按默认启用关系继续\n[dsh-provider-usage] 适配器 adapter-state 加载错误：启用选择落盘失败：读取旧 adapter-state.json 失败（EISDIR: illegal operation on a directory, read），为避免覆盖旧状态已取消写入\nWarning: Detected unsettled top-level await at file:///home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-JIgPaf/packages/dsh-provider-usage/test/unit-apply.test.ts:678\n  await historyR.handler(fakeReq({ url: `${ROUTES.history}?days=7` }), hDays);\n  ^\n\n\n\n",
+          "statusReason": "Error running file \"packages/dsh-provider-usage/test/unit-apply.test.ts\". Tap process exited with code 13. To reproduce it yourself, use the following command: \n      cd \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3\"\n      node \"-r\" \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/node_modules/.pnpm/@stryker-mutator+tap-runner@10.0.0_@stryker-mutator+core@10.0.0_@types+node@26.4.0_/node_modules/@stryker-mutator/tap-runner/dist/src/setup/hook.cjs\" \"-r\" \"./scripts/test/mutation-tap-bridge.cjs\" \"--import\" \"./scripts/test/mutation-lib-to-src-hook.mjs\" \"packages/dsh-provider-usage/test/unit-apply.test.ts\"\n      \n      Stderr output:\n      EVAL-ORDER-TAG: APPLY\n[dsh-provider-usage] 热更新成功：hr-test（good.mjs）\n[dsh-provider-usage] 适配器 file:bad.mjs 加载错误：契约校验失败（providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），已拒收\n[dsh-provider-usage] 适配器 file:bad.mjs 加载错误：热更新失败：契约校验失败：providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）\n[dsh-provider-usage] 适配器 file:bad.mjs 加载错误：热更新失败：契约校验失败：providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）\n[dsh-provider-usage] 适配器 file:bad.mjs 加载错误：热更新启动失败：契约校验失败：providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）\n[dsh-provider-usage] 热更新成功：dispose-test（dispose.mjs）\n[dsh-provider-usage] 适配器 adapter-state 加载错误：adapter-state.json 读取失败（EISDIR: illegal operation on a directory, read），本次按默认启用关系继续\n[dsh-provider-usage] 适配器 adapter-state 加载错误：启用选择落盘失败：读取旧 adapter-state.json 失败（EISDIR: illegal operation on a directory, read），为避免覆盖旧状态已取消写入\nWarning: Detected unsettled top-level await at file:///home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3/packages/dsh-provider-usage/test/unit-apply.test.ts:693\n  await historyR.handler(fakeReq({ url: `${ROUTES.history}?days=7` }), hDays);\n  ^\n\n\n\n",
           "status": "RuntimeError",
           "static": false,
           "coveredBy": [
@@ -12686,28 +12686,6 @@
           }
         },
         {
-          "id": "525",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 2,
-          "coveredBy": [
-            "0",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 132
-            },
-            "start": {
-              "column": 13,
-              "line": 130
-            }
-          }
-        },
-        {
           "id": "526",
           "mutatorName": "CallExpression",
           "replacement": ";",
@@ -12726,6 +12704,28 @@
             "start": {
               "column": 5,
               "line": 131
+            }
+          }
+        },
+        {
+          "id": "525",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "Survived",
+          "static": false,
+          "testsCompleted": 2,
+          "coveredBy": [
+            "0",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 132
+            },
+            "start": {
+              "column": 13,
+              "line": 130
             }
           }
         }
@@ -12747,7 +12747,7 @@
           "name": "packages/dsh-provider-usage/test/unit-apply.test.ts"
         }
       ],
-      "source": "// @ts-nocheck\n/**\n * dsh-provider-usage — unit：apply 宿主注入路径覆盖。\n *\n * 覆盖：installSettingsNamespace inject 回调全分支（含 isUnloading）、\n * HotReloadableAdapter onReload 回调分支、dispose 清理全分支、\n * sseClients 清理、warmupTimer 清理。\n *\n * 此文件不重复 smoke.ts 已覆盖的 boot/enabled/fence 断言，仅专注\n * 于 smoke 未到达的 apply 内部分支（#82 批次 3）。\n */\nimport { mkdtempSync, writeFileSync, mkdirSync } from \"node:fs\";\nconsole.error(\"EVAL-ORDER-TAG: APPLY\");\nimport { join, dirname } from \"node:path\";\nimport { tmpdir, homedir } from \"node:os\";\nimport { fileURLToPath } from \"node:url\";\nimport { assert, injectGlobalFetch } from \"./helpers.ts\";\nimport {\n  apply,\n  ROUTES,\n  OPENCODE_GO_PROVIDER,\n  OPENCODE_GO_ADAPTER_ID,\n  ADAPTER_CONTRACT_VERSION,\n  fetchWithTimeout,\n  userAdaptersFile,\n  adapterStateFile,\n} from \"../lib/index.js\";\n\n// ---------------------------------------------------------------- 工具：fakeReqs\n\n/** #503：session 事件监听桩（apply 现注册 session/event|flush|disposed 监听）。 */\nfunction onStub() {\n  return () => {};\n}\n\nfunction fakeReq(overrides = {}) {\n  return {\n    socket: { remoteAddress: \"127.0.0.1\" },\n    headers: { host: \"127.0.0.1:3080\", \"sec-fetch-site\": \"same-origin\" },\n    method: \"GET\",\n    url: \"/\",\n    [Symbol.asyncIterator]: async function* () {\n      if (typeof overrides.body === \"string\" && overrides.body !== \"\") {\n        yield Buffer.from(overrides.body);\n      }\n    },\n    ...overrides,\n  };\n}\n\nfunction makeRes() {\n  const chunks = [];\n  let code = 200;\n  return {\n    writeHead: (c) => { code = c; },\n    end: (chunk) => { chunks.push(chunk); },\n    write: (chunk) => { chunks.push(chunk); },\n    on: () => {},\n    _code: () => code,\n    _body: () => chunks.map((c) => (typeof c === \"string\" ? c : String(c))).join(\"\"),\n  };\n}\n\n// ---------------------------------------------------------------- 存 DSH_HOME\nlet savedHome;\n\n// ---------------------------------------------------------------- 1) inject 回调：settings 正常注册\n\n{\n  const routes = [];\n  const settingsEvents = [];\n  const ctx = {\n    logger: { warn: () => {} },\n    webServer: { register(route) { routes.push(route); return () => {}; } },\n    on: onStub,\n    llm: { listProviders() { return []; } },\n    fiber: { state: \"active\" },\n    inject: (deps, cb) => {\n      const scope = {\n        get: () => ({}),\n        watch: (fn) => { settingsEvents.push(\"watch-registered\"); },\n      };\n      const sctx = {\n        settings: {\n          register: (ns, schema, opts) => {\n            settingsEvents.push(\"register-called\");\n            return scope;\n          },\n        },\n        effect: (fn) => {\n          const disposer = fn();\n          settingsEvents.push(\"effect-registered\");\n          return typeof disposer === \"function\" ? disposer : () => {};\n        },\n      };\n      cb(sctx);\n    },\n    effect: (fn) => {\n      const d = fn();\n      return typeof d === \"function\" ? d : () => {};\n    },\n  };\n  await apply(ctx, { apiKey: \"sk-test\", apiEndpoint: \"http://127.0.0.1:9\" });\n  assert.ok(settingsEvents.includes(\"register-called\"), \"settings.register 被调用\");\n  assert.ok(settingsEvents.includes(\"effect-registered\"), \"sctx.effect 被注册\");\n  assert.ok(settingsEvents.includes(\"watch-registered\"), \"scope.watch 被注册\");\n}\n\n// ---------------------------------------------------------------- 2) inject 回调：settings.register 抛错\n\n{\n  const warns = [];\n  const routes = [];\n  const ctx = {\n    logger: { warn: (m) => { warns.push(m); } },\n    webServer: { register(route) { routes.push(route); return () => {}; } },\n    on: onStub,\n    llm: { listProviders() { return []; } },\n    fiber: { state: \"active\" },\n    inject: (deps, cb) => {\n      cb({\n        settings: { register: () => { throw new Error(\"duplicate\"); } },\n        effect: (fn) => { const d = fn(); return typeof d === \"function\" ? d : () => {}; },\n      });\n    },\n    effect: (fn) => {\n      const d = fn();\n      return typeof d === \"function\" ? d : () => {};\n    },\n  };\n  await apply(ctx, { apiKey: \"sk-test\", apiEndpoint: \"http://127.0.0.1:9\" });\n  assert.ok(warns.some((m) => m.includes(\"duplicate\")), \"settings.register 抛错应 warn\");\n}\n\n// ---------------------------------------------------------------- 3) inject 回调：settings 服务缺 register\n\n{\n  const warns = [];\n  const routes = [];\n  const ctx = {\n    logger: { warn: (m) => { warns.push(m); } },\n    webServer: { register(route) { routes.push(route); return () => {}; } },\n    on: onStub,\n    llm: { listProviders() { return []; } },\n    fiber: { state: \"active\" },\n    inject: (deps, cb) => {\n      cb({ settings: {} });\n    },\n    effect: (fn) => {\n      const d = fn();\n      return typeof d === \"function\" ? d : () => {};\n    },\n  };\n  await apply(ctx, { apiKey: \"sk-test\", apiEndpoint: \"http://127.0.0.1:9\" });\n  assert.ok(warns.some((m) => m.includes(\"register\")), \"settings 缺 register 应 warn\");\n}\n\n// ---------------------------------------------------------------- 4) inject 回调：ctx.inject 不可用（已覆盖/无需重复）\n\n// smoke.ts 已有的 apply 用 fake ctx 无 inject → installSettingsNamespace 走\n// \"ctx.inject 不可用\" 分支。本文件不重复。\n\n// ---------------------------------------------------------------- 5) isUnloading 全分支通过 inject 回调覆盖\n\n// 5a) fiber.state = \"unloading\" → sctx.effect disposer 内 isUnloading 返回 true →\n//     disposer 提前 return（setSource 不切回 entry）\n{\n  const setSourceCalls = [];\n  const routes = [];\n  const ctx = {\n    logger: { warn: () => {} },\n    webServer: { register(route) { routes.push(route); return () => {}; } },\n    on: onStub,\n    llm: { listProviders() { return []; } },\n    fiber: { state: \"unloading\" },\n    inject: (deps, cb) => {\n      const scope = { get: () => ({}), watch: (fn) => {} };\n      cb({\n        settings: { register: () => scope },\n        effect: (fn) => {\n          const disposer = fn();\n          // 模拟 fiber 卸载时调用 disposer：isUnloading(ctx) 应为 true → 提前 return\n          disposer();\n          return () => {};\n        },\n      });\n    },\n    effect: (fn) => { const d = fn(); return typeof d === \"function\" ? d : () => {}; },\n  };\n  await apply(ctx, { apiKey: \"sk-test\", apiEndpoint: \"http://127.0.0.1:9\" });\n  // setSource 应该在 register 成功后被设为 () => scope.get()，但 disposer 内\n  // isUnloading=true 时不会切回 entry。此处纯验证不抛错。\n  assert.ok(true, \"isUnloading=true 分支不抛错\");\n}\n\n// 5b) fiber.state = \"disposed\" → 同 unloading 分支\n{\n  const routes = [];\n  const ctx = {\n    logger: { warn: () => {} },\n    webServer: { register(route) { routes.push(route); return () => {}; } },\n    on: onStub,\n    llm: { listProviders() { return []; } },\n    fiber: { state: \"disposed\" },\n    inject: (deps, cb) => {\n      const scope = { get: () => ({}), watch: (fn) => {} };\n      cb({\n        settings: { register: () => scope },\n        effect: (fn) => {\n          const disposer = fn();\n          disposer();\n          return () => {};\n        },\n      });\n    },\n    effect: (fn) => { const d = fn(); return typeof d === \"function\" ? d : () => {}; },\n  };\n  await apply(ctx, { apiKey: \"sk-test\", apiEndpoint: \"http://127.0.0.1:9\" });\n  assert.ok(true, \"isUnloading=disposed 分支不抛错\");\n}\n\n// ---------------------------------------------------------------- 6) HotReloadableAdapter onReload 回调全分支\n\n// 6a) 合法用户适配器文件 → onReload ok:true → hr.current !== null → full branch\n{\n  const dir = mkdtempSync(join(tmpdir(), \"dou-hr-\"));\n  const goodFile = join(dir, \"good.mjs\");\n  writeFileSync(goodFile, `\nexport const version = 2;\nexport const name = \"hr-test\";\nexport const label = \"HR Test\";\nexport const providers = [\"${OPENCODE_GO_PROVIDER}\"];\nexport async function fetchData() { return { v: 1 }; }\nexport function formatCapsule() { return \"<span>ok</span>\"; }\nexport function formatPanel() { return \"<p>p</p>\"; }\n`, \"utf8\");\n\n  const routes = [];\n  const ctx = {\n    logger: { warn: () => {} },\n    webServer: { register(route) { routes.push(route); return () => {}; } },\n    on: onStub,\n    llm: { listProviders() { return []; } },\n    fiber: { state: \"active\" },\n    inject: (deps, cb) => { cb({ settings: {} }); },\n    effect: (fn) => {\n      const d = fn();\n      return typeof d === \"function\" ? d : () => {};\n    },\n  };\n  await apply(ctx, { adapter: goodFile, autoReload: true, apiKey: \"sk-test\", apiEndpoint: \"http://127.0.0.1:9\" });\n  assert.ok(true, \"HotReload ok:true 分支不抛错\");\n}\n\n// 6b) 非法适配器文件 → onReload ok:false → !info.ok 分支\n{\n  const dir = mkdtempSync(join(tmpdir(), \"dou-hr-bad-\"));\n  const badFile = join(dir, \"bad.mjs\");\n  writeFileSync(badFile, `export const version = 2; export const name = \"bad\";`, \"utf8\");\n\n  const routes = [];\n  const ctx = {\n    logger: { warn: () => {} },\n    webServer: { register(route) { routes.push(route); return () => {}; } },\n    on: onStub,\n    llm: { listProviders() { return []; } },\n    fiber: { state: \"active\" },\n    inject: (deps, cb) => { cb({ settings: {} }); },\n    effect: (fn) => {\n      const d = fn();\n      return typeof d === \"function\" ? d : () => {};\n    },\n  };\n  await apply(ctx, { adapter: badFile, autoReload: true, apiKey: \"sk-test\", apiEndpoint: \"http://127.0.0.1:9\" });\n  assert.ok(true, \"HotReload ok:false 分支不抛错\");\n}\n\n// ---------------------------------------------------------------- 7) dispose 清理全分支（含 hotReloaders + sseClients）\n\n{\n  const dir = mkdtempSync(join(tmpdir(), \"dou-dispose-\"));\n  const goodFile = join(dir, \"dispose.mjs\");\n  writeFileSync(goodFile, `\nexport const version = 2;\nexport const name = \"dispose-test\";\nexport const label = \"Dispose\";\nexport const providers = [\"${OPENCODE_GO_PROVIDER}\"];\nexport async function fetchData() { return { v: 1 }; }\nexport function formatCapsule() { return \"<span>ok</span>\"; }\nexport function formatPanel() { return \"<p>p</p>\"; }\n`, \"utf8\");\n\n  const disposers = [];\n  const errors = [];\n  const routes = [];\n\n  // 先订阅 SSE（使 sseClients 有成员）\n  const eventsRoute = { path: ROUTES.events };\n  // 外部收集 disposer\n  const ctx = {\n    logger: { warn: () => {} },\n    webServer: {\n      register(route) { routes.push(route); return () => {}; },\n    },\n    on: onStub,\n    llm: { listProviders() { return []; } },\n    fiber: { state: \"active\" },\n    inject: (deps, cb) => { cb({ settings: {} }); },\n    effect: (fn) => {\n      const d = fn();\n      if (typeof d === \"function\") disposers.push(d);\n      return d;\n    },\n  };\n  await apply(ctx, { adapter: goodFile, autoReload: true, apiKey: \"sk-test\", apiEndpoint: \"http://127.0.0.1:9\" });\n\n  // 订阅 SSE（通过 events 路由 handler 添加 SSE 客户端）\n  const evRoute = routes.find((r) => r.path === ROUTES.events);\n  assert.ok(evRoute, \"events 路由存在\");\n  let sseRes;\n  evRoute.handler(fakeReq({ method: \"GET\" }), {\n    writeHead: (code, headers) => {},\n    write: (chunk) => {},\n    on: (evt, cb) => { if (evt === \"close\") sseRes = { close: cb }; },\n  });\n\n  // 执行所有 disposer（包括内层 ctx.effect 的 disposer）\n  for (const d of disposers) {\n    if (typeof d === \"function\") d();\n  }\n\n  assert.ok(true, \"dispose 全分支不抛错\");\n}\n\n// ---------------------------------------------------------------- 8) 确保 warmupTimer 被清理（disposer 中）\n\n{\n  const disposers = [];\n  const routes = [];\n  const ctx = {\n    logger: { warn: () => {} },\n    webServer: { register(route) { routes.push(route); return () => {}; } },\n    on: onStub,\n    llm: { listProviders() { return []; } },\n    fiber: { state: \"active\" },\n    inject: (deps, cb) => { cb({ settings: {} }); },\n    effect: (fn) => {\n      const d = fn();\n      if (typeof d === \"function\") disposers.push(d);\n      return typeof d === \"function\" ? d : () => {};\n    },\n  };\n  await apply(ctx, { warmupIntervalMs: 60000, apiKey: \"sk-test\", apiEndpoint: \"http://127.0.0.1:9\" });\n  for (const d of disposers) {\n    if (typeof d === \"function\") d();\n  }\n  assert.ok(true, \"warmupTimer 清理不抛错\");\n}\n// ================================================================ #150 二阶段：apply 内部数据面与路由分支\n\nimport fs, { existsSync, readFileSync, readdirSync, rmSync, statSync } from \"node:fs\";\nimport { syncBuiltinESMExports } from \"node:module\";\n\n/** 构造标准 fake ctx：收集路由与 disposer。 */\nfunction makeCtx(over: {\n  llm?: unknown;\n} = {}) {\n  const routes: Array<Record<string, unknown>> = [];\n  const disposers: Array<() => void> = [];\n  const ctx = {\n    logger: { warn: () => {} },\n    webServer: { register(route: Record<string, unknown>) { routes.push(route); return () => {}; } },\n    on: onStub,\n    llm: over.llm !== undefined ? over.llm : { listProviders() { return []; } },\n    fiber: { state: \"active\" },\n    inject: (deps: unknown, cb: (s: unknown) => void) => { cb({ settings: {} }); },\n    effect(fn: () => unknown) {\n      const d = fn();\n      if (typeof d === \"function\") disposers.push(d as () => void);\n      return typeof d === \"function\" ? d : () => {};\n    },\n  };\n  return { ctx, routes, disposers };\n}\n\n// ---------------------------------------------------------------- #301：apply 内部恢复隔离坏状态且诊断单次可见\n\n{\n  const dir = mkdtempSync(join(tmpdir(), \"dou-state-301-quarantine-apply-\"));\n  const historyDir = join(dir, \"history\");\n  mkdirSync(historyDir, { recursive: true });\n  const stateFile = adapterStateFile(historyDir);\n  const cases = [\n    { raw: \"{broken\", marker: \"JSON 损坏\" },\n    { raw: '[\"not\",\"a\",\"mapping\"]', marker: \"顶层结构无效\" },\n  ];\n  const backups: string[] = [];\n  for (const entry of cases) {\n    writeFileSync(stateFile, entry.raw, \"utf8\");\n    const { ctx, routes, disposers } = makeCtx();\n    const warnings: string[] = [];\n    const originalWarn = console.warn;\n    console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(\" \")); };\n    try {\n      await apply(ctx, {\n        autoReload: false,\n        apiKey: \"sk-test\",\n        apiEndpoint: \"http://127.0.0.1:9\",\n        historyDir,\n      });\n    } finally {\n      console.warn = originalWarn;\n    }\n\n    const health = routes.find((route) => route.path === ROUTES.health) as { handler: (req: unknown, res: unknown) => void };\n    const response = makeRes();\n    health.handler(fakeReq(), response);\n    const errors = (JSON.parse(response._body()) as { errors?: Array<{ key: string; message: string }> }).errors ?? [];\n    assert.equal(warnings.filter((line) => line.includes(entry.marker)).length, 1,\n      `${entry.marker} 恰好输出一次 console.warn`);\n    assert.ok(errors.some((error) => error.key === \"adapter-state\" && error.message.includes(entry.marker)),\n      `${entry.marker} 同时进入 health 诊断`);\n    assert.equal(existsSync(stateFile), false, `${entry.marker} 原文件已移出恢复路径`);\n    const backup = readdirSync(historyDir)\n      .filter((name) => name.startsWith(\"adapter-state.json.bak-\"))\n      .find((name) => !backups.includes(name) && readFileSync(join(historyDir, name), \"utf8\") === entry.raw);\n    assert.ok(backup !== undefined, `${entry.marker} 原文完整保留在新取证备份`);\n    backups.push(backup ?? \"missing\");\n    for (const dispose of [...disposers].reverse()) { try { dispose(); } catch {} }\n  }\n  for (const [index, backup] of backups.entries()) {\n    assert.equal(readFileSync(join(historyDir, backup), \"utf8\"), cases[index]?.raw, \"全部取证备份最终均保留\");\n  }\n}\n\n// ---------------------------------------------------------------- #301：恢复缺失候选可见 + 写入失败可见且串行链可恢复\n\n{\n  const dir = mkdtempSync(join(tmpdir(), \"dou-state-301-apply-\"));\n  const historyDir = join(dir, \"history\");\n  mkdirSync(historyDir, { recursive: true });\n  const stateFile = adapterStateFile(historyDir);\n  writeFileSync(stateFile, JSON.stringify({ \"ghost-provider\": \"missing-adapter\" }), \"utf8\");\n\n  const { ctx, routes, disposers } = makeCtx();\n  const restoreWarnings: string[] = [];\n  const originalWarn = console.warn;\n  console.warn = (...args: unknown[]) => { restoreWarnings.push(args.map(String).join(\" \")); };\n  try {\n    await apply(ctx, {\n      autoReload: false,\n      apiKey: \"sk-test\",\n      apiEndpoint: \"http://127.0.0.1:9\",\n      historyDir,\n    });\n  } finally {\n    console.warn = originalWarn;\n  }\n  const health = routes.find((route) => route.path === ROUTES.health) as { handler: (req: unknown, res: unknown) => void };\n  const select = routes.find((route) => route.path === ROUTES.select) as { handler: (req: unknown, res: unknown) => Promise<void> };\n  const healthErrors = (): Array<{ key: string; message: string }> => {\n    const response = makeRes();\n    health.handler(fakeReq(), response);\n    return (JSON.parse(response._body()) as { errors?: Array<{ key: string; message: string }> }).errors ?? [];\n  };\n\n  assert.ok(healthErrors().some((entry) =>\n    entry.key === \"adapter-state\" && entry.message.includes(\"missing-adapter\") && entry.message.includes(\"不在当前候选\")),\n  \"启动恢复 select(false) 进入 health 诊断，不再静默回退默认启用者\");\n  assert.equal(restoreWarnings.filter((line) =>\n    line.includes(\"missing-adapter\") && line.includes(\"不在当前候选\")).length, 1,\n  \"启动恢复 select(false) 恰好输出一次 console.warn，避免重复诊断\");\n\n  // 成功路径：发布物实际调度链写出合法 JSON、无 tmp 残留，POSIX 权限为 0600。\n  let response = makeRes();\n  await select.handler(fakeReq({\n    method: \"POST\",\n    body: JSON.stringify({ provider: OPENCODE_GO_PROVIDER, adapterName: OPENCODE_GO_ADAPTER_ID }),\n  }), response);\n  const persisted = await pollUntil(() => {\n    try {\n      return JSON.parse(readFileSync(stateFile, \"utf8\"))[OPENCODE_GO_PROVIDER] === OPENCODE_GO_ADAPTER_ID;\n    } catch { return false; }\n  });\n  assert.equal(persisted, true, \"select 经串行链原子写入新的启用选择\");\n  assert.deepEqual(readdirSync(historyDir).filter((name) => name.endsWith(\".tmp\")), [], \"成功写入无 tmp 残留\");\n  if (process.platform !== \"win32\") {\n    assert.equal(statSync(stateFile).mode & 0o777, 0o600, \"POSIX 状态文件权限为 0600\");\n  }\n\n  rmSync(stateFile, { force: true });\n  mkdirSync(stateFile); // 旧状态读取稳定报 EISDIR，构造 fail-closed 的持久化错误\n  response = makeRes();\n  const writeErrors: string[] = [];\n  const originalError = console.error;\n  console.error = (...args: unknown[]) => { writeErrors.push(args.map(String).join(\" \")); };\n  let surfaced = false;\n  try {\n    await select.handler(fakeReq({\n      method: \"POST\",\n      body: JSON.stringify({ provider: OPENCODE_GO_PROVIDER, adapterName: OPENCODE_GO_ADAPTER_ID }),\n    }), response);\n    assert.equal(response._code(), 200, \"运行期 select 内存切换仍成功响应\");\n    surfaced = await pollUntil(() => healthErrors().some((entry) =>\n      entry.key === \"adapter-state\" && entry.message.includes(\"启用选择落盘失败\")));\n  } finally {\n    console.error = originalError;\n  }\n  assert.equal(surfaced, true, \"异步写盘失败进入 health 诊断（同时由宿主 console.error 输出）\");\n  assert.equal(writeErrors.filter((line) => line.includes(\"启用选择落盘失败\")).length, 1,\n    \"每次失败写入恰好输出一次 console.error\");\n\n  rmSync(stateFile, { recursive: true, force: true });\n  response = makeRes();\n  await select.handler(fakeReq({\n    method: \"POST\",\n    body: JSON.stringify({ provider: OPENCODE_GO_PROVIDER, adapterName: OPENCODE_GO_ADAPTER_ID }),\n  }), response);\n  const recovered = await pollUntil(() => {\n    try {\n      return JSON.parse(readFileSync(stateFile, \"utf8\"))[OPENCODE_GO_PROVIDER] === OPENCODE_GO_ADAPTER_ID;\n    } catch { return false; }\n  });\n  assert.equal(recovered, true, \"一次持久化失败不会毒化串行链，修复文件系统后后续选择可成功落盘\");\n\n  for (const dispose of [...disposers].reverse()) { try { dispose(); } catch {} }\n}\n\n\n// ---------------------------------------------------------------- #301：rename 已提交后的目录 fsync 失败仅报耐久性告警\n\nif (process.platform !== \"win32\") {\n  const dir = mkdtempSync(join(tmpdir(), \"dou-state-301-post-rename-\"));\n  const historyDir = join(dir, \"history\");\n  const stateFile = adapterStateFile(historyDir);\n  const { ctx, routes, disposers } = makeCtx();\n  await apply(ctx, {\n    autoReload: false,\n    apiKey: \"sk-test\",\n    apiEndpoint: \"http://127.0.0.1:9\",\n    historyDir,\n  });\n\n  const health = routes.find((route) => route.path === ROUTES.health) as {\n    handler: (req: unknown, res: unknown) => void;\n  };\n  const select = routes.find((route) => route.path === ROUTES.select) as {\n    handler: (req: unknown, res: unknown) => Promise<void>;\n  };\n  const healthErrors = (): Array<{ key: string; message: string }> => {\n    const response = makeRes();\n    health.handler(fakeReq(), response);\n    return (JSON.parse(response._body()) as { errors?: Array<{ key: string; message: string }> }).errors ?? [];\n  };\n\n  const originalOpen = fs.promises.open;\n  let directorySyncAttempts = 0;\n  fs.promises.open = async (path, flags, ...rest) => {\n    if (String(path) === historyDir && flags === \"r\") {\n      directorySyncAttempts += 1;\n      const error = new Error(\"simulated parent directory fsync failure\") as NodeJS.ErrnoException;\n      error.code = \"EIO\";\n      throw error;\n    }\n    return originalOpen(path, flags, ...rest);\n  };\n  syncBuiltinESMExports();\n\n  const warnings: string[] = [];\n  const writeErrors: string[] = [];\n  const originalWarn = console.warn;\n  const originalError = console.error;\n  console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(\" \")); };\n  console.error = (...args: unknown[]) => { writeErrors.push(args.map(String).join(\" \")); };\n  let response = makeRes();\n  let surfaced = false;\n  let committed = false;\n  try {\n    await select.handler(fakeReq({\n      method: \"POST\",\n      body: JSON.stringify({ provider: OPENCODE_GO_PROVIDER, adapterName: null }),\n    }), response);\n    assert.equal(response._code(), 200, \"内存中的显式停用仍成功响应\");\n    surfaced = await pollUntil(() => healthErrors().some((entry) =>\n      entry.key === \"adapter-state\" && entry.message.includes(\"耐久性未完全确认\")));\n    committed = await pollUntil(() => {\n      try {\n        return JSON.parse(readFileSync(stateFile, \"utf8\"))[OPENCODE_GO_PROVIDER] === null;\n      } catch { return false; }\n    });\n  } finally {\n    console.warn = originalWarn;\n    console.error = originalError;\n    fs.promises.open = originalOpen;\n    syncBuiltinESMExports();\n  }\n\n  assert.equal(directorySyncAttempts, 1, \"故障注入精确命中 rename 后的父目录 fsync\");\n  assert.equal(committed, true, \"目录 fsync 失败时原子 rename 的新状态仍已提交\");\n  assert.equal(surfaced, true, \"post-commit 失败进入 health 的独立耐久性诊断\");\n  assert.equal(warnings.filter((line) => line.includes(\"耐久性未完全确认\")).length, 1,\n    \"post-commit 失败恰好输出一次 console.warn\");\n  assert.deepEqual(writeErrors.filter((line) => line.includes(\"启用选择落盘失败\")), [],\n    \"post-commit 失败不误报 console.error 写入失败\");\n  assert.equal(healthErrors().some((entry) => entry.message.includes(\"启用选择落盘失败\")), false,\n    \"post-commit 失败不污染 health 为写入失败\");\n\n  for (const dispose of [...disposers].reverse()) { try { dispose(); } catch {} }\n}\n\n\n/** 合法用户适配器 mjs 文本。 */\nfunction adapterMjs(name: string, body = \"{ v: 1 }\"): string {\n  return `\nexport const version = ${ADAPTER_CONTRACT_VERSION};\nexport const name = ${JSON.stringify(name)};\nexport const label = ${JSON.stringify(name)};\nexport const providers = [\"${OPENCODE_GO_PROVIDER}\"];\nexport async function fetchData() { return ${body}; }\nexport function formatCapsule() { return \"<span>${name}</span>\"; }\nexport function formatPanel() { return \"<p>${name}</p>\"; }\n`;\n}\n\n/** 轮询直到条件成立或超时（防 flake：不使用固定 sleep 判定）。 */\nasync function pollUntil(cond: () => boolean, timeoutMs = 2000): Promise<boolean> {\n  const deadline = Date.now() + timeoutMs;\n  while (Date.now() < deadline) {\n    if (cond()) return true;\n    await new Promise((r) => setTimeout(r, 10));\n  }\n  return cond();\n}\n\nconst routeOf = (routes: Array<Record<string, unknown>>, path: string) =>\n  routes.find((r) => r.path === path) as { handler: (req: unknown, res: unknown) => Promise<void> | void } | undefined;\n\n// ---------------------------------------------------------------- stats/history 路由围栏与数据面\n\n{\n  const dir = mkdtempSync(join(tmpdir(), \"dou-stats-\"));\n  const goodFile = join(dir, \"good.mjs\");\n  writeFileSync(goodFile, adapterMjs(\"stats-adp\"), \"utf8\");\n  const { ctx, routes } = makeCtx();\n  await apply(ctx, {\n    adapter: goodFile, autoReload: false,\n    apiKey: \"sk\", apiEndpoint: \"http://127.0.0.1:9\",\n    historyDir: join(dir, \"hist\"),\n  });\n\n  // stats：403 非 loopback / 405 非 GET\n  const stats = routeOf(routes, ROUTES.stats);\n  assert.ok(stats, \"stats 路由已注册\");\n  const res403 = makeRes();\n  await stats.handler(fakeReq({ headers: { host: \"evil.example\" } }), res403);\n  assert.equal(res403._code(), 403, \"stats 非 loopback 403\");\n  const res405 = makeRes();\n  await stats.handler(fakeReq({ method: \"POST\" }), res405);\n  assert.equal(res405._code(), 405, \"stats POST 405\");\n\n  // history：403 / 405 / 无候选 no-adapter / days clamp\n  const historyR = routeOf(routes, ROUTES.history);\n  assert.ok(historyR, \"history 路由已注册\");\n  const h403 = makeRes();\n  await historyR.handler(fakeReq({ headers: { host: \"x\" } }), h403);\n  assert.equal(h403._code(), 403, \"history 非 loopback 403\");\n\n  // 无启用适配器（清空选择后）→ 结构化 no-adapter\n  const hNoAdp = makeRes();\n  await historyR.handler(fakeReq({ url: `${ROUTES.history}?provider=ghost` }), hNoAdp);\n  const noAdpBody = JSON.parse(hNoAdp._body());\n  assert.equal(noAdpBody.reason, \"no-adapter\", \"无候选 provider 报 no-adapter\");\n  assert.equal(noAdpBody.panelHtml, null, \"无候选不带占位 HTML\");\n\n  // days 参数：合法窗口取 min(days, maxAgeDays)\n  const hDays = makeRes();\n  await historyR.handler(fakeReq({ url: `${ROUTES.history}?days=7` }), hDays);\n  const okBody = JSON.parse(hDays._body());\n  assert.equal(okBody.plugin, \"dsh-provider-usage\", \"history 正常响应 plugin 字段\");\n  assert.equal(okBody.adapterName, \"stats-adp\", \"用户适配器注册后默认成为启用者\");\n  assert.equal(typeof okBody.range.start, \"number\", \"range.start 数字\");\n}\n\n// ---------------------------------------------------------------- getStats：跨 provider 并行 / 锁内二次校验 / 未配置\n\n{\n  const dir = mkdtempSync(join(tmpdir(), \"dou-getstats-\"));\n  // 隔离 DSH_HOME：避免读到真实环境的 user-adapters.json / adapter-state.json\n  const savedDshHome = process.env.DSH_HOME;\n  process.env.DSH_HOME = join(dir, \"dshhome\");\n  mkdirSync(process.env.DSH_HOME, { recursive: true });\n  try {\n    // 两个用户适配器（providers 互不相同）：\n    // - slow：80ms IO 延迟 + 调用计数（seq 经返回数据透出、formatCapsule 渲染）——\n    //   提供「全程仅一次真实取数」的证据载体；\n    // - fast：60ms 延迟 + 起止时间戳写 globalThis 探针——提供跨 provider 并行的窗口证据。\n    const slowFile = join(dir, \"slow.mjs\");\n    writeFileSync(slowFile, `\nexport const version = ${ADAPTER_CONTRACT_VERSION};\nexport const name = \"slow-adp\";\nexport const providers = [\"prov-slow\"];\nlet calls = 0;\nexport async function fetchData() {\n  calls += 1;\n  const probe = (globalThis.__pp120 ??= []);\n  probe.push({ n: \"A\", t: Date.now(), k: \"s\", seq: calls });\n  await new Promise((r) => setTimeout(r, 80)); // 有意延迟：slow 适配器 fixture（80ms 真实 IO 窗口，验证持锁）\n  probe.push({ n: \"A\", t: Date.now(), k: \"e\" });\n  return { v: calls };\n}\nexport function formatCapsule(input) { return \"<span>\" + input.data.v + \"</span>\"; }\nexport function formatPanel() { return \"<p>s</p>\"; }\n`, \"utf8\");\n    const fastFile = join(dir, \"fast.mjs\");\n    writeFileSync(fastFile, `\nexport const version = ${ADAPTER_CONTRACT_VERSION};\nexport const name = \"fast-adp\";\nexport const providers = [\"prov-fast\"];\nexport async function fetchData() {\n  const probe = (globalThis.__pp120 ??= []);\n  probe.push({ n: \"B\", t: Date.now(), k: \"s\" });\n  await new Promise((r) => setTimeout(r, 60)); // 有意延迟：fast 适配器 fixture（60ms 真实 IO 窗口，验证跨 provider 并行）\n  probe.push({ n: \"B\", t: Date.now(), k: \"e\" });\n  return { v: 7 };\n}\nexport function formatCapsule(input) { return \"<span>\" + input.data.v + \"</span>\"; }\nexport function formatPanel() { return \"<p>f</p>\"; }\n`, \"utf8\");\n    // 清单写入 historyRoot（本块显式传了 historyDir → user-adapters.json 从那里读取）\n    mkdirSync(join(dir, \"hist\"), { recursive: true });\n    writeFileSync(userAdaptersFile(join(dir, \"hist\")), JSON.stringify({\n      adapters: [\n        { id: \"slow-adp\", label: \"Slow\", providers: [\"prov-slow\"], file: slowFile },\n        { id: \"fast-adp\", label: \"Fast\", providers: [\"prov-fast\"], file: fastFile },\n      ],\n    }), \"utf8\");\n    delete globalThis.__pp120;\n    const { ctx, routes, disposers } = makeCtx();\n    await apply(ctx, {\n      autoReload: false,\n      apiKey: \"sk\", apiEndpoint: \"http://127.0.0.1:9\",\n      historyDir: join(dir, \"hist\"),\n    });\n    const stats = routeOf(routes, ROUTES.stats) as { handler: (req: unknown, res: unknown) => Promise<void> };\n    const selectR = routeOf(routes, ROUTES.select) as { handler: (req: unknown, res: unknown) => Promise<void> };\n    const askStats = async (provider: string): Promise<Record<string, unknown>> => {\n      const r = makeRes();\n      await stats.handler(fakeReq({ url: `${ROUTES.stats}?provider=${provider}` }), r);\n      return JSON.parse(r._body()) as Record<string, unknown>;\n    };\n\n    // 场景1 跨 provider 并行 + 场景2 锁内二次校验（#120）：启动预热对各启用 provider\n    // 并行 fire-and-forget（各持各的 per-provider 锁）；紧随其后发起的两个客户端请求\n    // 在各自 provider 锁上排队，首个取数完成写缓存后经锁内二次 cacheFresh 校验命中，\n    // 全程仅 1 次真实取数（旧全局锁下 fast 必须等 slow 80ms 完成才能开始，且并发者\n    // 只能拿 busy 占位帧）。\n    const pFast = askStats(\"prov-fast\");\n    const pSlow = askStats(\"prov-slow\");\n    const [bFast, bSlow] = await Promise.all([pFast, pSlow]);\n\n    // 场景1 断言：slow/fast 取数时间窗重叠 = 无全局队头阻塞\n    const probe = (globalThis.__pp120 ?? []) as Array<{ n: string; t: number; k: string; seq?: number }>;\n    const win = (n: string): { s: number; e: number } => ({\n      s: probe.find((e) => e.n === n && e.k === \"s\")?.t ?? Number.NaN,\n      e: probe.find((e) => e.n === n && e.k === \"e\")?.t ?? Number.NaN,\n    });\n    const wa = win(\"A\");\n    const wb = win(\"B\");\n    assert.ok(!Number.isNaN(wa.s) && !Number.isNaN(wb.s), \"两适配器探针成对出现\");\n    assert.ok(Math.max(wa.s, wb.s) < Math.min(wa.e, wb.e),\n      `slow/fast 取数窗口重叠（A=${wa.s}-${wa.e} B=${wb.s}-${wb.e}）——跨 provider 并行取数`);\n\n    // 场景2 断言：并发请求命中锁内二次校验缓存（复用首次结果，fetchData 全程仅一次）\n    assert.equal(bSlow.status, \"cached\", `并发同 provider 请求复用缓存（实际 ${bSlow.status}）`);\n    assert.equal(bSlow.capsuleHtml, \"<span>1</span>\",\n      \"capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）\");\n    assert.notEqual(bSlow.reason, \"busy\", \"#120 后 busy 短路语义废除，排队者拿真数据帧\");\n    assert.equal(bFast.status, \"cached\", \"另一 provider 的并发请求同样命中二次校验\");\n    assert.equal(bFast.capsuleHtml, \"<span>7</span>\", \"fast 数据保真\");\n    const seqs = probe.filter((e) => e.n === \"A\" && e.k === \"s\").map((e) => e.seq);\n    assert.equal(seqs.length, 1, `slow.fetchData 仅执行一次（实际 ${seqs.length} 次）`);\n\n    // 场景3 fresh 产物落盘历史（fresh 语义经落盘侧验证）\n    const histDir = join(dir, \"hist\", \"prov-slow\", \"slow-adp\");\n    const landed = await pollUntil(() => existsSync(histDir) && readdirSync(histDir).length > 0);\n    assert.equal(landed, true, \"fresh 数据落盘历史 JSONL\");\n\n    // 场景4 no-enabled-adapter：候选存在但被显式清空（select 清空路径，clearing 不预热）\n    await selectR.handler(fakeReq({\n      method: \"POST\",\n      body: JSON.stringify({ provider: \"prov-slow\", adapterName: null }),\n    }), makeRes());\n    const bNoEn = await askStats(\"prov-slow\");\n    assert.equal(bNoEn.reason, \"no-enabled-adapter\", \"候选存在但清空启用报 no-enabled-adapter\");\n    assert.equal(bNoEn.ok, false, \"未配置语义 ok=false\");\n    assert.equal(bNoEn.configured, false, \"configured=false\");\n\n    for (const d of [...disposers].reverse()) { try { d(); } catch {} }\n  } finally {\n    if (savedDshHome === undefined) delete process.env.DSH_HOME;\n    else process.env.DSH_HOME = savedDshHome;\n  }\n}\n\n// ---------------------------------------------------------------- fetchWithTimeout 边界（#150 二阶段）\n\n// fetchWithTimeout 边界（#150 二阶段）\n\n// 注入窗口纪律：fetchWithTimeout 硬编码读取全局 fetch。经 injectGlobalFetch\n// 串行通道（#120）与其他模块的注入窗口互斥，save/restore 恒配对——ESM TLA\n// 交错下不再可能把他人 mock 固化为「现场」（unit-v1 慢路径 × 本窗口交错驻留实证）。\n{\n  await injectGlobalFetch(async (set) => {\n    // 快路径：远小于超时的延迟 -> 正常拿到注入实现的返回值\n    let fastCalls = 0;\n    set(async (url: unknown, opts: { signal?: AbortSignal }) => {\n      fastCalls += 1;\n      await new Promise((r) => setTimeout(r, 5)); // 有意延迟：fetch mock 快路径（5ms）\n      return { status: 200, ok: true, url, aborted: opts?.signal?.aborted ?? null };\n    });\n    const okRes = await fetchWithTimeout(\"https://gw.test/fast\", 1000);\n    assert.equal((okRes as unknown as { status: number }).status, 200, \"快路径返回注入实现的响应\");\n    // 计数只作下界断言：飞行中的外部异步可能泄漏进窗口调用全局 fetch（绝对计数实证 flake）\n    assert.ok(fastCalls >= 1, \"快路径到达注入 fetch 至少一次\");\n    assert.equal(\n      (okRes as unknown as { url: string }).url,\n      \"https://gw.test/fast\",\n      \"url 原样透传到 fetch\",\n    );\n\n    // 慢路径：超过 timeoutMs 的延迟 -> 返回时已观察到 abort\n    // （delayMs 远大于 timeoutMs=20：防微任务风暴推迟 abort 定时器）\n    let slowCalls = 0;\n    set(async (_url: unknown, opts: { signal?: AbortSignal } | undefined) => {\n      slowCalls += 1;\n      await new Promise((r) => setTimeout(r, 500)); // 有意延迟：fetch mock 慢路径（500ms，验证 abort 触发）\n      return { status: 200, ok: true, aborted: opts?.signal?.aborted ?? null };\n    });\n    const slowRes = await fetchWithTimeout(\"https://gw.test/slow\", 20);\n    assert.ok(slowCalls >= 1, \"慢路径到达注入 fetch 至少一次\");\n    assert.equal((slowRes as unknown as { aborted: boolean }).aborted, true,\n      \"超过 timeoutMs 后 controller.abort 已触发\");\n\n    // 默认参数形态：省略 timeoutMs 与 init 仍完成调用\n    // （与 fast/slow 同理用下界断言：飞行中的外部异步可能泄漏进窗口调用全局 fetch）\n    let defCalls = 0;\n    set(async () => { defCalls += 1; return { status: 204 }; });\n    await fetchWithTimeout(\"https://gw.test/def\");\n    assert.ok(defCalls >= 1, \"默认参数下仍走 fetch 至少一次\");\n  });\n}\n"
+      "source": "// @ts-nocheck\n/**\n * dsh-provider-usage — unit：apply 宿主注入路径覆盖。\n *\n * 覆盖：installSettingsNamespace inject 回调全分支（含 isUnloading）、\n * HotReloadableAdapter onReload 回调分支、dispose 清理全分支、\n * sseClients 清理、warmupTimer 清理。\n *\n * 此文件不重复 smoke.ts 已覆盖的 boot/enabled/fence 断言，仅专注\n * 于 smoke 未到达的 apply 内部分支（#82 批次 3）。\n */\nimport { mkdtempSync, writeFileSync, mkdirSync } from \"node:fs\";\nconsole.error(\"EVAL-ORDER-TAG: APPLY\");\nimport { join, dirname } from \"node:path\";\nimport { tmpdir, homedir } from \"node:os\";\nimport { fileURLToPath } from \"node:url\";\nimport { assert, injectGlobalFetch } from \"./helpers.ts\";\nimport {\n  apply,\n  ROUTES,\n  OPENCODE_GO_PROVIDER,\n  OPENCODE_GO_ADAPTER_ID,\n  ADAPTER_CONTRACT_VERSION,\n  fetchWithTimeout,\n  userAdaptersFile,\n  adapterStateFile,\n} from \"../lib/index.js\";\n\n// ---------------------------------------------------------------- 工具：fakeReqs\n\n/** #503：session 事件监听桩（apply 现注册 session/event|flush|disposed 监听）。 */\nfunction onStub() {\n  return () => {};\n}\n\nfunction fakeReq(overrides = {}) {\n  return {\n    socket: { remoteAddress: \"127.0.0.1\" },\n    headers: { host: \"127.0.0.1:3080\", \"sec-fetch-site\": \"same-origin\" },\n    method: \"GET\",\n    url: \"/\",\n    [Symbol.asyncIterator]: async function* () {\n      if (typeof overrides.body === \"string\" && overrides.body !== \"\") {\n        yield Buffer.from(overrides.body);\n      }\n    },\n    ...overrides,\n  };\n}\n\nfunction makeRes() {\n  const chunks = [];\n  let code = 200;\n  return {\n    writeHead: (c) => { code = c; },\n    end: (chunk) => { chunks.push(chunk); },\n    write: (chunk) => { chunks.push(chunk); },\n    on: () => {},\n    _code: () => code,\n    _body: () => chunks.map((c) => (typeof c === \"string\" ? c : String(c))).join(\"\"),\n  };\n}\n\n// ---------------------------------------------------------------- 存 DSH_HOME\nlet savedHome;\n\n// ---------------------------------------------------------------- 1) inject 回调：settings 正常注册\n\n{\n  const routes = [];\n  const settingsEvents = [];\n  const ctx = {\n    logger: { warn: () => {} },\n    webServer: { register(route) { routes.push(route); return () => {}; } },\n    on: onStub,\n    llm: { listProviders() { return []; } },\n    fiber: { state: \"active\" },\n    inject: (deps, cb) => {\n      const scope = {\n        get: () => ({}),\n        watch: (fn) => { settingsEvents.push(\"watch-registered\"); },\n      };\n      const sctx = {\n        settings: {\n          register: (ns, schema, opts) => {\n            settingsEvents.push(\"register-called\");\n            return scope;\n          },\n        },\n        effect: (fn) => {\n          const disposer = fn();\n          settingsEvents.push(\"effect-registered\");\n          return typeof disposer === \"function\" ? disposer : () => {};\n        },\n      };\n      cb(sctx);\n    },\n    effect: (fn) => {\n      const d = fn();\n      return typeof d === \"function\" ? d : () => {};\n    },\n  };\n  await apply(ctx, { apiKey: \"sk-test\", apiEndpoint: \"http://127.0.0.1:9\" });\n  assert.ok(settingsEvents.includes(\"register-called\"), \"settings.register 被调用\");\n  assert.ok(settingsEvents.includes(\"effect-registered\"), \"sctx.effect 被注册\");\n  assert.ok(settingsEvents.includes(\"watch-registered\"), \"scope.watch 被注册\");\n}\n\n// ---------------------------------------------------------------- 2) inject 回调：settings.register 抛错\n\n{\n  const warns = [];\n  const routes = [];\n  const ctx = {\n    logger: { warn: (m) => { warns.push(m); } },\n    webServer: { register(route) { routes.push(route); return () => {}; } },\n    on: onStub,\n    llm: { listProviders() { return []; } },\n    fiber: { state: \"active\" },\n    inject: (deps, cb) => {\n      cb({\n        settings: { register: () => { throw new Error(\"duplicate\"); } },\n        effect: (fn) => { const d = fn(); return typeof d === \"function\" ? d : () => {}; },\n      });\n    },\n    effect: (fn) => {\n      const d = fn();\n      return typeof d === \"function\" ? d : () => {};\n    },\n  };\n  await apply(ctx, { apiKey: \"sk-test\", apiEndpoint: \"http://127.0.0.1:9\" });\n  assert.ok(warns.some((m) => m.includes(\"duplicate\")), \"settings.register 抛错应 warn\");\n}\n\n// ---------------------------------------------------------------- 3) inject 回调：settings 服务缺 register\n\n{\n  const warns = [];\n  const routes = [];\n  const ctx = {\n    logger: { warn: (m) => { warns.push(m); } },\n    webServer: { register(route) { routes.push(route); return () => {}; } },\n    on: onStub,\n    llm: { listProviders() { return []; } },\n    fiber: { state: \"active\" },\n    inject: (deps, cb) => {\n      cb({ settings: {} });\n    },\n    effect: (fn) => {\n      const d = fn();\n      return typeof d === \"function\" ? d : () => {};\n    },\n  };\n  await apply(ctx, { apiKey: \"sk-test\", apiEndpoint: \"http://127.0.0.1:9\" });\n  assert.ok(warns.some((m) => m.includes(\"register\")), \"settings 缺 register 应 warn\");\n}\n\n// ---------------------------------------------------------------- 4) inject 回调：ctx.inject 不可用（已覆盖/无需重复）\n\n// smoke.ts 已有的 apply 用 fake ctx 无 inject → installSettingsNamespace 走\n// \"ctx.inject 不可用\" 分支。本文件不重复。\n\n// ---------------------------------------------------------------- 5) isUnloading 全分支通过 inject 回调覆盖\n\n// 5a) fiber.state = \"unloading\" → sctx.effect disposer 内 isUnloading 返回 true →\n//     disposer 提前 return（setSource 不切回 entry）\n{\n  const setSourceCalls = [];\n  const routes = [];\n  const ctx = {\n    logger: { warn: () => {} },\n    webServer: { register(route) { routes.push(route); return () => {}; } },\n    on: onStub,\n    llm: { listProviders() { return []; } },\n    fiber: { state: \"unloading\" },\n    inject: (deps, cb) => {\n      const scope = { get: () => ({}), watch: (fn) => {} };\n      cb({\n        settings: { register: () => scope },\n        effect: (fn) => {\n          const disposer = fn();\n          // 模拟 fiber 卸载时调用 disposer：isUnloading(ctx) 应为 true → 提前 return\n          disposer();\n          return () => {};\n        },\n      });\n    },\n    effect: (fn) => { const d = fn(); return typeof d === \"function\" ? d : () => {}; },\n  };\n  await apply(ctx, { apiKey: \"sk-test\", apiEndpoint: \"http://127.0.0.1:9\" });\n  // setSource 应该在 register 成功后被设为 () => scope.get()，但 disposer 内\n  // isUnloading=true 时不会切回 entry。此处纯验证不抛错。\n  assert.ok(true, \"isUnloading=true 分支不抛错\");\n}\n\n// 5b) fiber.state = \"disposed\" → 同 unloading 分支\n{\n  const routes = [];\n  const ctx = {\n    logger: { warn: () => {} },\n    webServer: { register(route) { routes.push(route); return () => {}; } },\n    on: onStub,\n    llm: { listProviders() { return []; } },\n    fiber: { state: \"disposed\" },\n    inject: (deps, cb) => {\n      const scope = { get: () => ({}), watch: (fn) => {} };\n      cb({\n        settings: { register: () => scope },\n        effect: (fn) => {\n          const disposer = fn();\n          disposer();\n          return () => {};\n        },\n      });\n    },\n    effect: (fn) => { const d = fn(); return typeof d === \"function\" ? d : () => {}; },\n  };\n  await apply(ctx, { apiKey: \"sk-test\", apiEndpoint: \"http://127.0.0.1:9\" });\n  assert.ok(true, \"isUnloading=disposed 分支不抛错\");\n}\n\n// ---------------------------------------------------------------- 6) HotReloadableAdapter onReload 回调全分支\n\n// 6a) 合法用户适配器文件 → onReload ok:true → hr.current !== null → full branch\n{\n  const dir = mkdtempSync(join(tmpdir(), \"dou-hr-\"));\n  const goodFile = join(dir, \"good.mjs\");\n  writeFileSync(goodFile, `\nexport const version = 2;\nexport const name = \"hr-test\";\nexport const label = \"HR Test\";\nexport const providers = [\"${OPENCODE_GO_PROVIDER}\"];\nexport async function fetchData() { return { v: 1 }; }\nexport function formatCapsule() { return \"<span>ok</span>\"; }\nexport function formatPanel() { return \"<p>p</p>\"; }\n`, \"utf8\");\n\n  const routes = [];\n  const ctx = {\n    logger: { warn: () => {} },\n    webServer: { register(route) { routes.push(route); return () => {}; } },\n    on: onStub,\n    llm: { listProviders() { return []; } },\n    fiber: { state: \"active\" },\n    inject: (deps, cb) => { cb({ settings: {} }); },\n    effect: (fn) => {\n      const d = fn();\n      return typeof d === \"function\" ? d : () => {};\n    },\n  };\n  await apply(ctx, { adapter: goodFile, autoReload: true, apiKey: \"sk-test\", apiEndpoint: \"http://127.0.0.1:9\" });\n  assert.ok(true, \"HotReload ok:true 分支不抛错\");\n}\n\n// 6b) 非法适配器文件 → onReload ok:false → !info.ok 分支\n{\n  const dir = mkdtempSync(join(tmpdir(), \"dou-hr-bad-\"));\n  const badFile = join(dir, \"bad.mjs\");\n  writeFileSync(badFile, `export const version = 2; export const name = \"bad\";`, \"utf8\");\n\n  const routes = [];\n  const ctx = {\n    logger: { warn: () => {} },\n    webServer: { register(route) { routes.push(route); return () => {}; } },\n    on: onStub,\n    llm: { listProviders() { return []; } },\n    fiber: { state: \"active\" },\n    inject: (deps, cb) => { cb({ settings: {} }); },\n    effect: (fn) => {\n      const d = fn();\n      return typeof d === \"function\" ? d : () => {};\n    },\n  };\n  await apply(ctx, { adapter: badFile, autoReload: true, apiKey: \"sk-test\", apiEndpoint: \"http://127.0.0.1:9\" });\n  assert.ok(true, \"HotReload ok:false 分支不抛错\");\n}\n\n// ---------------------------------------------------------------- 7) dispose 清理全分支（含 hotReloaders + sseClients）\n\n{\n  const dir = mkdtempSync(join(tmpdir(), \"dou-dispose-\"));\n  const goodFile = join(dir, \"dispose.mjs\");\n  writeFileSync(goodFile, `\nexport const version = 2;\nexport const name = \"dispose-test\";\nexport const label = \"Dispose\";\nexport const providers = [\"${OPENCODE_GO_PROVIDER}\"];\nexport async function fetchData() { return { v: 1 }; }\nexport function formatCapsule() { return \"<span>ok</span>\"; }\nexport function formatPanel() { return \"<p>p</p>\"; }\n`, \"utf8\");\n\n  const disposers = [];\n  const errors = [];\n  const routes = [];\n\n  // 先订阅 SSE（使 sseClients 有成员）\n  const eventsRoute = { path: ROUTES.events };\n  // 外部收集 disposer\n  const ctx = {\n    logger: { warn: () => {} },\n    webServer: {\n      register(route) { routes.push(route); return () => {}; },\n    },\n    on: onStub,\n    llm: { listProviders() { return []; } },\n    fiber: { state: \"active\" },\n    inject: (deps, cb) => { cb({ settings: {} }); },\n    effect: (fn) => {\n      const d = fn();\n      if (typeof d === \"function\") disposers.push(d);\n      return d;\n    },\n  };\n  await apply(ctx, { adapter: goodFile, autoReload: true, apiKey: \"sk-test\", apiEndpoint: \"http://127.0.0.1:9\" });\n\n  // 订阅 SSE（通过 events 路由 handler 添加 SSE 客户端）\n  const evRoute = routes.find((r) => r.path === ROUTES.events);\n  assert.ok(evRoute, \"events 路由存在\");\n  let sseRes;\n  evRoute.handler(fakeReq({ method: \"GET\" }), {\n    writeHead: (code, headers) => {},\n    write: (chunk) => {},\n    on: (evt, cb) => { if (evt === \"close\") sseRes = { close: cb }; },\n  });\n\n  // 执行所有 disposer（包括内层 ctx.effect 的 disposer）\n  for (const d of disposers) {\n    if (typeof d === \"function\") d();\n  }\n\n  assert.ok(true, \"dispose 全分支不抛错\");\n}\n\n// ---------------------------------------------------------------- 8) 确保 warmupTimer 被清理（disposer 中）\n\n{\n  const disposers = [];\n  const routes = [];\n  const ctx = {\n    logger: { warn: () => {} },\n    webServer: { register(route) { routes.push(route); return () => {}; } },\n    on: onStub,\n    llm: { listProviders() { return []; } },\n    fiber: { state: \"active\" },\n    inject: (deps, cb) => { cb({ settings: {} }); },\n    effect: (fn) => {\n      const d = fn();\n      if (typeof d === \"function\") disposers.push(d);\n      return typeof d === \"function\" ? d : () => {};\n    },\n  };\n  await apply(ctx, { warmupIntervalMs: 60000, apiKey: \"sk-test\", apiEndpoint: \"http://127.0.0.1:9\" });\n  for (const d of disposers) {\n    if (typeof d === \"function\") d();\n  }\n  assert.ok(true, \"warmupTimer 清理不抛错\");\n}\n// ================================================================ #150 二阶段：apply 内部数据面与路由分支\n\nimport fs, { existsSync, readFileSync, readdirSync, rmSync, statSync } from \"node:fs\";\nimport { syncBuiltinESMExports } from \"node:module\";\n\n/** 构造标准 fake ctx：收集路由与 disposer。\n *  - over.get：可选注入的假 wingsky.notifier 服务（get 桩命中 \"wingsky.notifier\" 时返回）；\n *  - over.recordOn：为 true 时记录 ctx.on 监听器到 listeners（供 internal/service 补注册测试手动触发）。 */\nfunction makeCtx(over: {\n  llm?: unknown;\n  get?: unknown;\n  recordOn?: boolean;\n} = {}) {\n  const routes: Array<Record<string, unknown>> = [];\n  const disposers: Array<() => void> = [];\n  const listeners: Map<string, Array<(...args: unknown[]) => unknown>> = new Map();\n  const ctx = {\n    logger: { warn: () => {} },\n    webServer: { register(route: Record<string, unknown>) { routes.push(route); return () => {}; } },\n    on: over.recordOn\n      ? (name: string, cb: (...args: unknown[]) => unknown) => {\n          const list = listeners.get(name) ?? [];\n          list.push(cb);\n          listeners.set(name, list);\n          return () => {};\n        }\n      : onStub,\n    llm: over.llm !== undefined ? over.llm : { listProviders() { return []; } },\n    fiber: { state: \"active\" },\n    inject: (deps: unknown, cb: (s: unknown) => void) => { cb({ settings: {} }); },\n    effect(fn: () => unknown) {\n      const d = fn();\n      if (typeof d === \"function\") disposers.push(d as () => void);\n      return typeof d === \"function\" ? d : () => {};\n    },\n  };\n  if (over.get !== undefined) {\n    (ctx as Record<string, unknown>).get = (name: string) => (name === \"wingsky.notifier\" ? over.get : undefined);\n  }\n  return { ctx, routes, disposers, listeners };\n}\n\n// ---------------------------------------------------------------- #301：apply 内部恢复隔离坏状态且诊断单次可见\n\n{\n  const dir = mkdtempSync(join(tmpdir(), \"dou-state-301-quarantine-apply-\"));\n  const historyDir = join(dir, \"history\");\n  mkdirSync(historyDir, { recursive: true });\n  const stateFile = adapterStateFile(historyDir);\n  const cases = [\n    { raw: \"{broken\", marker: \"JSON 损坏\" },\n    { raw: '[\"not\",\"a\",\"mapping\"]', marker: \"顶层结构无效\" },\n  ];\n  const backups: string[] = [];\n  for (const entry of cases) {\n    writeFileSync(stateFile, entry.raw, \"utf8\");\n    const { ctx, routes, disposers } = makeCtx();\n    const warnings: string[] = [];\n    const originalWarn = console.warn;\n    console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(\" \")); };\n    try {\n      await apply(ctx, {\n        autoReload: false,\n        apiKey: \"sk-test\",\n        apiEndpoint: \"http://127.0.0.1:9\",\n        historyDir,\n      });\n    } finally {\n      console.warn = originalWarn;\n    }\n\n    const health = routes.find((route) => route.path === ROUTES.health) as { handler: (req: unknown, res: unknown) => void };\n    const response = makeRes();\n    health.handler(fakeReq(), response);\n    const errors = (JSON.parse(response._body()) as { errors?: Array<{ key: string; message: string }> }).errors ?? [];\n    assert.equal(warnings.filter((line) => line.includes(entry.marker)).length, 1,\n      `${entry.marker} 恰好输出一次 console.warn`);\n    assert.ok(errors.some((error) => error.key === \"adapter-state\" && error.message.includes(entry.marker)),\n      `${entry.marker} 同时进入 health 诊断`);\n    assert.equal(existsSync(stateFile), false, `${entry.marker} 原文件已移出恢复路径`);\n    const backup = readdirSync(historyDir)\n      .filter((name) => name.startsWith(\"adapter-state.json.bak-\"))\n      .find((name) => !backups.includes(name) && readFileSync(join(historyDir, name), \"utf8\") === entry.raw);\n    assert.ok(backup !== undefined, `${entry.marker} 原文完整保留在新取证备份`);\n    backups.push(backup ?? \"missing\");\n    for (const dispose of [...disposers].reverse()) { try { dispose(); } catch {} }\n  }\n  for (const [index, backup] of backups.entries()) {\n    assert.equal(readFileSync(join(historyDir, backup), \"utf8\"), cases[index]?.raw, \"全部取证备份最终均保留\");\n  }\n}\n\n// ---------------------------------------------------------------- #301：恢复缺失候选可见 + 写入失败可见且串行链可恢复\n\n{\n  const dir = mkdtempSync(join(tmpdir(), \"dou-state-301-apply-\"));\n  const historyDir = join(dir, \"history\");\n  mkdirSync(historyDir, { recursive: true });\n  const stateFile = adapterStateFile(historyDir);\n  writeFileSync(stateFile, JSON.stringify({ \"ghost-provider\": \"missing-adapter\" }), \"utf8\");\n\n  const { ctx, routes, disposers } = makeCtx();\n  const restoreWarnings: string[] = [];\n  const originalWarn = console.warn;\n  console.warn = (...args: unknown[]) => { restoreWarnings.push(args.map(String).join(\" \")); };\n  try {\n    await apply(ctx, {\n      autoReload: false,\n      apiKey: \"sk-test\",\n      apiEndpoint: \"http://127.0.0.1:9\",\n      historyDir,\n    });\n  } finally {\n    console.warn = originalWarn;\n  }\n  const health = routes.find((route) => route.path === ROUTES.health) as { handler: (req: unknown, res: unknown) => void };\n  const select = routes.find((route) => route.path === ROUTES.select) as { handler: (req: unknown, res: unknown) => Promise<void> };\n  const healthErrors = (): Array<{ key: string; message: string }> => {\n    const response = makeRes();\n    health.handler(fakeReq(), response);\n    return (JSON.parse(response._body()) as { errors?: Array<{ key: string; message: string }> }).errors ?? [];\n  };\n\n  assert.ok(healthErrors().some((entry) =>\n    entry.key === \"adapter-state\" && entry.message.includes(\"missing-adapter\") && entry.message.includes(\"不在当前候选\")),\n  \"启动恢复 select(false) 进入 health 诊断，不再静默回退默认启用者\");\n  assert.equal(restoreWarnings.filter((line) =>\n    line.includes(\"missing-adapter\") && line.includes(\"不在当前候选\")).length, 1,\n  \"启动恢复 select(false) 恰好输出一次 console.warn，避免重复诊断\");\n\n  // 成功路径：发布物实际调度链写出合法 JSON、无 tmp 残留，POSIX 权限为 0600。\n  let response = makeRes();\n  await select.handler(fakeReq({\n    method: \"POST\",\n    body: JSON.stringify({ provider: OPENCODE_GO_PROVIDER, adapterName: OPENCODE_GO_ADAPTER_ID }),\n  }), response);\n  const persisted = await pollUntil(() => {\n    try {\n      return JSON.parse(readFileSync(stateFile, \"utf8\"))[OPENCODE_GO_PROVIDER] === OPENCODE_GO_ADAPTER_ID;\n    } catch { return false; }\n  });\n  assert.equal(persisted, true, \"select 经串行链原子写入新的启用选择\");\n  assert.deepEqual(readdirSync(historyDir).filter((name) => name.endsWith(\".tmp\")), [], \"成功写入无 tmp 残留\");\n  if (process.platform !== \"win32\") {\n    assert.equal(statSync(stateFile).mode & 0o777, 0o600, \"POSIX 状态文件权限为 0600\");\n  }\n\n  rmSync(stateFile, { force: true });\n  mkdirSync(stateFile); // 旧状态读取稳定报 EISDIR，构造 fail-closed 的持久化错误\n  response = makeRes();\n  const writeErrors: string[] = [];\n  const originalError = console.error;\n  console.error = (...args: unknown[]) => { writeErrors.push(args.map(String).join(\" \")); };\n  let surfaced = false;\n  try {\n    await select.handler(fakeReq({\n      method: \"POST\",\n      body: JSON.stringify({ provider: OPENCODE_GO_PROVIDER, adapterName: OPENCODE_GO_ADAPTER_ID }),\n    }), response);\n    assert.equal(response._code(), 200, \"运行期 select 内存切换仍成功响应\");\n    surfaced = await pollUntil(() => healthErrors().some((entry) =>\n      entry.key === \"adapter-state\" && entry.message.includes(\"启用选择落盘失败\")));\n  } finally {\n    console.error = originalError;\n  }\n  assert.equal(surfaced, true, \"异步写盘失败进入 health 诊断（同时由宿主 console.error 输出）\");\n  assert.equal(writeErrors.filter((line) => line.includes(\"启用选择落盘失败\")).length, 1,\n    \"每次失败写入恰好输出一次 console.error\");\n\n  rmSync(stateFile, { recursive: true, force: true });\n  response = makeRes();\n  await select.handler(fakeReq({\n    method: \"POST\",\n    body: JSON.stringify({ provider: OPENCODE_GO_PROVIDER, adapterName: OPENCODE_GO_ADAPTER_ID }),\n  }), response);\n  const recovered = await pollUntil(() => {\n    try {\n      return JSON.parse(readFileSync(stateFile, \"utf8\"))[OPENCODE_GO_PROVIDER] === OPENCODE_GO_ADAPTER_ID;\n    } catch { return false; }\n  });\n  assert.equal(recovered, true, \"一次持久化失败不会毒化串行链，修复文件系统后后续选择可成功落盘\");\n\n  for (const dispose of [...disposers].reverse()) { try { dispose(); } catch {} }\n}\n\n\n// ---------------------------------------------------------------- #301：rename 已提交后的目录 fsync 失败仅报耐久性告警\n\nif (process.platform !== \"win32\") {\n  const dir = mkdtempSync(join(tmpdir(), \"dou-state-301-post-rename-\"));\n  const historyDir = join(dir, \"history\");\n  const stateFile = adapterStateFile(historyDir);\n  const { ctx, routes, disposers } = makeCtx();\n  await apply(ctx, {\n    autoReload: false,\n    apiKey: \"sk-test\",\n    apiEndpoint: \"http://127.0.0.1:9\",\n    historyDir,\n  });\n\n  const health = routes.find((route) => route.path === ROUTES.health) as {\n    handler: (req: unknown, res: unknown) => void;\n  };\n  const select = routes.find((route) => route.path === ROUTES.select) as {\n    handler: (req: unknown, res: unknown) => Promise<void>;\n  };\n  const healthErrors = (): Array<{ key: string; message: string }> => {\n    const response = makeRes();\n    health.handler(fakeReq(), response);\n    return (JSON.parse(response._body()) as { errors?: Array<{ key: string; message: string }> }).errors ?? [];\n  };\n\n  const originalOpen = fs.promises.open;\n  let directorySyncAttempts = 0;\n  fs.promises.open = async (path, flags, ...rest) => {\n    if (String(path) === historyDir && flags === \"r\") {\n      directorySyncAttempts += 1;\n      const error = new Error(\"simulated parent directory fsync failure\") as NodeJS.ErrnoException;\n      error.code = \"EIO\";\n      throw error;\n    }\n    return originalOpen(path, flags, ...rest);\n  };\n  syncBuiltinESMExports();\n\n  const warnings: string[] = [];\n  const writeErrors: string[] = [];\n  const originalWarn = console.warn;\n  const originalError = console.error;\n  console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(\" \")); };\n  console.error = (...args: unknown[]) => { writeErrors.push(args.map(String).join(\" \")); };\n  let response = makeRes();\n  let surfaced = false;\n  let committed = false;\n  try {\n    await select.handler(fakeReq({\n      method: \"POST\",\n      body: JSON.stringify({ provider: OPENCODE_GO_PROVIDER, adapterName: null }),\n    }), response);\n    assert.equal(response._code(), 200, \"内存中的显式停用仍成功响应\");\n    surfaced = await pollUntil(() => healthErrors().some((entry) =>\n      entry.key === \"adapter-state\" && entry.message.includes(\"耐久性未完全确认\")));\n    committed = await pollUntil(() => {\n      try {\n        return JSON.parse(readFileSync(stateFile, \"utf8\"))[OPENCODE_GO_PROVIDER] === null;\n      } catch { return false; }\n    });\n  } finally {\n    console.warn = originalWarn;\n    console.error = originalError;\n    fs.promises.open = originalOpen;\n    syncBuiltinESMExports();\n  }\n\n  assert.equal(directorySyncAttempts, 1, \"故障注入精确命中 rename 后的父目录 fsync\");\n  assert.equal(committed, true, \"目录 fsync 失败时原子 rename 的新状态仍已提交\");\n  assert.equal(surfaced, true, \"post-commit 失败进入 health 的独立耐久性诊断\");\n  assert.equal(warnings.filter((line) => line.includes(\"耐久性未完全确认\")).length, 1,\n    \"post-commit 失败恰好输出一次 console.warn\");\n  assert.deepEqual(writeErrors.filter((line) => line.includes(\"启用选择落盘失败\")), [],\n    \"post-commit 失败不误报 console.error 写入失败\");\n  assert.equal(healthErrors().some((entry) => entry.message.includes(\"启用选择落盘失败\")), false,\n    \"post-commit 失败不污染 health 为写入失败\");\n\n  for (const dispose of [...disposers].reverse()) { try { dispose(); } catch {} }\n}\n\n\n/** 合法用户适配器 mjs 文本。 */\nfunction adapterMjs(name: string, body = \"{ v: 1 }\"): string {\n  return `\nexport const version = ${ADAPTER_CONTRACT_VERSION};\nexport const name = ${JSON.stringify(name)};\nexport const label = ${JSON.stringify(name)};\nexport const providers = [\"${OPENCODE_GO_PROVIDER}\"];\nexport async function fetchData() { return ${body}; }\nexport function formatCapsule() { return \"<span>${name}</span>\"; }\nexport function formatPanel() { return \"<p>${name}</p>\"; }\n`;\n}\n\n/** 轮询直到条件成立或超时（防 flake：不使用固定 sleep 判定）。 */\nasync function pollUntil(cond: () => boolean, timeoutMs = 2000): Promise<boolean> {\n  const deadline = Date.now() + timeoutMs;\n  while (Date.now() < deadline) {\n    if (cond()) return true;\n    await new Promise((r) => setTimeout(r, 10));\n  }\n  return cond();\n}\n\nconst routeOf = (routes: Array<Record<string, unknown>>, path: string) =>\n  routes.find((r) => r.path === path) as { handler: (req: unknown, res: unknown) => Promise<void> | void } | undefined;\n\n// ---------------------------------------------------------------- stats/history 路由围栏与数据面\n\n{\n  const dir = mkdtempSync(join(tmpdir(), \"dou-stats-\"));\n  const goodFile = join(dir, \"good.mjs\");\n  writeFileSync(goodFile, adapterMjs(\"stats-adp\"), \"utf8\");\n  const { ctx, routes } = makeCtx();\n  await apply(ctx, {\n    adapter: goodFile, autoReload: false,\n    apiKey: \"sk\", apiEndpoint: \"http://127.0.0.1:9\",\n    historyDir: join(dir, \"hist\"),\n  });\n\n  // stats：403 非 loopback / 405 非 GET\n  const stats = routeOf(routes, ROUTES.stats);\n  assert.ok(stats, \"stats 路由已注册\");\n  const res403 = makeRes();\n  await stats.handler(fakeReq({ headers: { host: \"evil.example\" } }), res403);\n  assert.equal(res403._code(), 403, \"stats 非 loopback 403\");\n  const res405 = makeRes();\n  await stats.handler(fakeReq({ method: \"POST\" }), res405);\n  assert.equal(res405._code(), 405, \"stats POST 405\");\n\n  // history：403 / 405 / 无候选 no-adapter / days clamp\n  const historyR = routeOf(routes, ROUTES.history);\n  assert.ok(historyR, \"history 路由已注册\");\n  const h403 = makeRes();\n  await historyR.handler(fakeReq({ headers: { host: \"x\" } }), h403);\n  assert.equal(h403._code(), 403, \"history 非 loopback 403\");\n\n  // 无启用适配器（清空选择后）→ 结构化 no-adapter\n  const hNoAdp = makeRes();\n  await historyR.handler(fakeReq({ url: `${ROUTES.history}?provider=ghost` }), hNoAdp);\n  const noAdpBody = JSON.parse(hNoAdp._body());\n  assert.equal(noAdpBody.reason, \"no-adapter\", \"无候选 provider 报 no-adapter\");\n  assert.equal(noAdpBody.panelHtml, null, \"无候选不带占位 HTML\");\n\n  // days 参数：合法窗口取 min(days, maxAgeDays)\n  const hDays = makeRes();\n  await historyR.handler(fakeReq({ url: `${ROUTES.history}?days=7` }), hDays);\n  const okBody = JSON.parse(hDays._body());\n  assert.equal(okBody.plugin, \"dsh-provider-usage\", \"history 正常响应 plugin 字段\");\n  assert.equal(okBody.adapterName, \"stats-adp\", \"用户适配器注册后默认成为启用者\");\n  assert.equal(typeof okBody.range.start, \"number\", \"range.start 数字\");\n}\n\n// ---------------------------------------------------------------- getStats：跨 provider 并行 / 锁内二次校验 / 未配置\n\n{\n  const dir = mkdtempSync(join(tmpdir(), \"dou-getstats-\"));\n  // 隔离 DSH_HOME：避免读到真实环境的 user-adapters.json / adapter-state.json\n  const savedDshHome = process.env.DSH_HOME;\n  process.env.DSH_HOME = join(dir, \"dshhome\");\n  mkdirSync(process.env.DSH_HOME, { recursive: true });\n  try {\n    // 两个用户适配器（providers 互不相同）：\n    // - slow：80ms IO 延迟 + 调用计数（seq 经返回数据透出、formatCapsule 渲染）——\n    //   提供「全程仅一次真实取数」的证据载体；\n    // - fast：60ms 延迟 + 起止时间戳写 globalThis 探针——提供跨 provider 并行的窗口证据。\n    const slowFile = join(dir, \"slow.mjs\");\n    writeFileSync(slowFile, `\nexport const version = ${ADAPTER_CONTRACT_VERSION};\nexport const name = \"slow-adp\";\nexport const providers = [\"prov-slow\"];\nlet calls = 0;\nexport async function fetchData() {\n  calls += 1;\n  const probe = (globalThis.__pp120 ??= []);\n  probe.push({ n: \"A\", t: Date.now(), k: \"s\", seq: calls });\n  await new Promise((r) => setTimeout(r, 80)); // 有意延迟：slow 适配器 fixture（80ms 真实 IO 窗口，验证持锁）\n  probe.push({ n: \"A\", t: Date.now(), k: \"e\" });\n  return { v: calls };\n}\nexport function formatCapsule(input) { return \"<span>\" + input.data.v + \"</span>\"; }\nexport function formatPanel() { return \"<p>s</p>\"; }\n`, \"utf8\");\n    const fastFile = join(dir, \"fast.mjs\");\n    writeFileSync(fastFile, `\nexport const version = ${ADAPTER_CONTRACT_VERSION};\nexport const name = \"fast-adp\";\nexport const providers = [\"prov-fast\"];\nexport async function fetchData() {\n  const probe = (globalThis.__pp120 ??= []);\n  probe.push({ n: \"B\", t: Date.now(), k: \"s\" });\n  await new Promise((r) => setTimeout(r, 60)); // 有意延迟：fast 适配器 fixture（60ms 真实 IO 窗口，验证跨 provider 并行）\n  probe.push({ n: \"B\", t: Date.now(), k: \"e\" });\n  return { v: 7 };\n}\nexport function formatCapsule(input) { return \"<span>\" + input.data.v + \"</span>\"; }\nexport function formatPanel() { return \"<p>f</p>\"; }\n`, \"utf8\");\n    // 清单写入 historyRoot（本块显式传了 historyDir → user-adapters.json 从那里读取）\n    mkdirSync(join(dir, \"hist\"), { recursive: true });\n    writeFileSync(userAdaptersFile(join(dir, \"hist\")), JSON.stringify({\n      adapters: [\n        { id: \"slow-adp\", label: \"Slow\", providers: [\"prov-slow\"], file: slowFile },\n        { id: \"fast-adp\", label: \"Fast\", providers: [\"prov-fast\"], file: fastFile },\n      ],\n    }), \"utf8\");\n    delete globalThis.__pp120;\n    const { ctx, routes, disposers } = makeCtx();\n    await apply(ctx, {\n      autoReload: false,\n      apiKey: \"sk\", apiEndpoint: \"http://127.0.0.1:9\",\n      historyDir: join(dir, \"hist\"),\n    });\n    const stats = routeOf(routes, ROUTES.stats) as { handler: (req: unknown, res: unknown) => Promise<void> };\n    const selectR = routeOf(routes, ROUTES.select) as { handler: (req: unknown, res: unknown) => Promise<void> };\n    const askStats = async (provider: string): Promise<Record<string, unknown>> => {\n      const r = makeRes();\n      await stats.handler(fakeReq({ url: `${ROUTES.stats}?provider=${provider}` }), r);\n      return JSON.parse(r._body()) as Record<string, unknown>;\n    };\n\n    // 场景1 跨 provider 并行 + 场景2 锁内二次校验（#120）：启动预热对各启用 provider\n    // 并行 fire-and-forget（各持各的 per-provider 锁）；紧随其后发起的两个客户端请求\n    // 在各自 provider 锁上排队，首个取数完成写缓存后经锁内二次 cacheFresh 校验命中，\n    // 全程仅 1 次真实取数（旧全局锁下 fast 必须等 slow 80ms 完成才能开始，且并发者\n    // 只能拿 busy 占位帧）。\n    const pFast = askStats(\"prov-fast\");\n    const pSlow = askStats(\"prov-slow\");\n    const [bFast, bSlow] = await Promise.all([pFast, pSlow]);\n\n    // 场景1 断言：slow/fast 取数时间窗重叠 = 无全局队头阻塞\n    const probe = (globalThis.__pp120 ?? []) as Array<{ n: string; t: number; k: string; seq?: number }>;\n    const win = (n: string): { s: number; e: number } => ({\n      s: probe.find((e) => e.n === n && e.k === \"s\")?.t ?? Number.NaN,\n      e: probe.find((e) => e.n === n && e.k === \"e\")?.t ?? Number.NaN,\n    });\n    const wa = win(\"A\");\n    const wb = win(\"B\");\n    assert.ok(!Number.isNaN(wa.s) && !Number.isNaN(wb.s), \"两适配器探针成对出现\");\n    assert.ok(Math.max(wa.s, wb.s) < Math.min(wa.e, wb.e),\n      `slow/fast 取数窗口重叠（A=${wa.s}-${wa.e} B=${wb.s}-${wb.e}）——跨 provider 并行取数`);\n\n    // 场景2 断言：并发请求命中锁内二次校验缓存（复用首次结果，fetchData 全程仅一次）\n    assert.equal(bSlow.status, \"cached\", `并发同 provider 请求复用缓存（实际 ${bSlow.status}）`);\n    assert.equal(bSlow.capsuleHtml, \"<span>1</span>\",\n      \"capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）\");\n    assert.notEqual(bSlow.reason, \"busy\", \"#120 后 busy 短路语义废除，排队者拿真数据帧\");\n    assert.equal(bFast.status, \"cached\", \"另一 provider 的并发请求同样命中二次校验\");\n    assert.equal(bFast.capsuleHtml, \"<span>7</span>\", \"fast 数据保真\");\n    const seqs = probe.filter((e) => e.n === \"A\" && e.k === \"s\").map((e) => e.seq);\n    assert.equal(seqs.length, 1, `slow.fetchData 仅执行一次（实际 ${seqs.length} 次）`);\n\n    // 场景3 fresh 产物落盘历史（fresh 语义经落盘侧验证）\n    const histDir = join(dir, \"hist\", \"prov-slow\", \"slow-adp\");\n    const landed = await pollUntil(() => existsSync(histDir) && readdirSync(histDir).length > 0);\n    assert.equal(landed, true, \"fresh 数据落盘历史 JSONL\");\n\n    // 场景4 no-enabled-adapter：候选存在但被显式清空（select 清空路径，clearing 不预热）\n    await selectR.handler(fakeReq({\n      method: \"POST\",\n      body: JSON.stringify({ provider: \"prov-slow\", adapterName: null }),\n    }), makeRes());\n    const bNoEn = await askStats(\"prov-slow\");\n    assert.equal(bNoEn.reason, \"no-enabled-adapter\", \"候选存在但清空启用报 no-enabled-adapter\");\n    assert.equal(bNoEn.ok, false, \"未配置语义 ok=false\");\n    assert.equal(bNoEn.configured, false, \"configured=false\");\n\n    for (const d of [...disposers].reverse()) { try { d(); } catch {} }\n  } finally {\n    if (savedDshHome === undefined) delete process.env.DSH_HOME;\n    else process.env.DSH_HOME = savedDshHome;\n  }\n}\n\n// ---------------------------------------------------------------- fetchWithTimeout 边界（#150 二阶段）\n\n// fetchWithTimeout 边界（#150 二阶段）\n\n// 注入窗口纪律：fetchWithTimeout 硬编码读取全局 fetch。经 injectGlobalFetch\n// 串行通道（#120）与其他模块的注入窗口互斥，save/restore 恒配对——ESM TLA\n// 交错下不再可能把他人 mock 固化为「现场」（unit-v1 慢路径 × 本窗口交错驻留实证）。\n{\n  await injectGlobalFetch(async (set) => {\n    // 快路径：远小于超时的延迟 -> 正常拿到注入实现的返回值\n    let fastCalls = 0;\n    set(async (url: unknown, opts: { signal?: AbortSignal }) => {\n      fastCalls += 1;\n      await new Promise((r) => setTimeout(r, 5)); // 有意延迟：fetch mock 快路径（5ms）\n      return { status: 200, ok: true, url, aborted: opts?.signal?.aborted ?? null };\n    });\n    const okRes = await fetchWithTimeout(\"https://gw.test/fast\", 1000);\n    assert.equal((okRes as unknown as { status: number }).status, 200, \"快路径返回注入实现的响应\");\n    // 计数只作下界断言：飞行中的外部异步可能泄漏进窗口调用全局 fetch（绝对计数实证 flake）\n    assert.ok(fastCalls >= 1, \"快路径到达注入 fetch 至少一次\");\n    assert.equal(\n      (okRes as unknown as { url: string }).url,\n      \"https://gw.test/fast\",\n      \"url 原样透传到 fetch\",\n    );\n\n    // 慢路径：超过 timeoutMs 的延迟 -> 返回时已观察到 abort\n    // （delayMs 远大于 timeoutMs=20：防微任务风暴推迟 abort 定时器）\n    let slowCalls = 0;\n    set(async (_url: unknown, opts: { signal?: AbortSignal } | undefined) => {\n      slowCalls += 1;\n      await new Promise((r) => setTimeout(r, 500)); // 有意延迟：fetch mock 慢路径（500ms，验证 abort 触发）\n      return { status: 200, ok: true, aborted: opts?.signal?.aborted ?? null };\n    });\n    const slowRes = await fetchWithTimeout(\"https://gw.test/slow\", 20);\n    assert.ok(slowCalls >= 1, \"慢路径到达注入 fetch 至少一次\");\n    assert.equal((slowRes as unknown as { aborted: boolean }).aborted, true,\n      \"超过 timeoutMs 后 controller.abort 已触发\");\n\n    // 默认参数形态：省略 timeoutMs 与 init 仍完成调用\n    // （与 fast/slow 同理用下界断言：飞行中的外部异步可能泄漏进窗口调用全局 fetch）\n    let defCalls = 0;\n    set(async () => { defCalls += 1; return { status: 204 }; });\n    await fetchWithTimeout(\"https://gw.test/def\");\n    assert.ok(defCalls >= 1, \"默认参数下仍走 fetch 至少一次\");\n  });\n}\n\n// ---------------------------------------------------------------- #534：通知类型注入（可选 notifier 探测 + 动态 kind 注册/补注册）\n\n{\n  /** 假 notifier 服务：send 恒可调，registerKind 记录调用（不真正落盘）。 */\n  function fakeNotifier(kinds: Array<{ id: string; label: string }>) {\n    return {\n      send: async () => ({ ok: true }),\n      registerKind(reg: { id: string; label: string }) {\n        kinds.push({ id: reg.id, label: reg.label });\n      },\n    };\n  }\n\n  // 落盘隔离（#218 零污染纪律）：DSH_HOME 指向临时目录，不碰真实环境与仓库\n  const dir = mkdtempSync(join(tmpdir(), \"dou-kind-534-\"));\n  const historyDir = join(dir, \"history\");\n  const savedDshHome = process.env.DSH_HOME;\n  process.env.DSH_HOME = join(dir, \"dshhome\");\n  mkdirSync(process.env.DSH_HOME, { recursive: true });\n  try {\n    const baseCfg = { autoReload: false, apiKey: \"sk-test\", apiEndpoint: \"http://127.0.0.1:9\", historyDir };\n\n    // 1) ctx 无 get（fake ctx 未提供探测面）：降级不注册、apply 正常挂载不抛\n    {\n      const { ctx, routes, disposers } = makeCtx();\n      await apply(ctx, baseCfg);\n      assert.ok(routes.some((r) => r.path === ROUTES.health), \"无 notifier 探测面时 apply 正常挂载\");\n      for (const dispose of [...disposers].reverse()) { try { dispose(); } catch {} }\n    }\n\n    // 2) ctx.get 命中 wingsky.notifier（notifier 已加载）：挂载即注册 provider-usage:report\n    {\n      const kinds: Array<{ id: string; label: string }> = [];\n      const { ctx, routes, disposers } = makeCtx({ get: fakeNotifier(kinds) });\n      await apply(ctx, baseCfg);\n      assert.equal(kinds.length, 1, \"挂载直调注册一次\");\n      assert.equal(kinds[0].id, \"provider-usage:report\", \"注册 kind id 正确\");\n      assert.equal(kinds[0].label, \"用量报告\", \"注册 kind label 正确\");\n      for (const dispose of [...disposers].reverse()) { try { dispose(); } catch {} }\n    }\n\n    // 3) internal/service 事件补注册：notifier 后加载/HMR 重建后 kindRegistry 为空，\n    //    事件触发 → 重新注册（挂载 1 次 + 事件触发 1 次 = 2 次，幂等无害）\n    {\n      const kinds: Array<{ id: string; label: string }> = [];\n      const { ctx, disposers, listeners } = makeCtx({ get: fakeNotifier(kinds), recordOn: true });\n      await apply(ctx, baseCfg);\n      assert.equal(kinds.length, 1, \"挂载直调已注册一次\");\n      const svcListeners = listeners.get(\"internal/service\") ?? [];\n      assert.ok(svcListeners.length >= 1, \"internal/service 监听已注册\");\n      // 手动触发 notifier 服务事件（模拟 notifier 提供/重载完成广播）\n      for (const cb of svcListeners) {\n        cb(\"wingsky.notifier\");\n      }\n      assert.equal(kinds.length, 2, \"事件触发补注册一次（幂等追加）\");\n      assert.equal(kinds[1].id, \"provider-usage:report\", \"补注册 kind id 一致\");\n      for (const dispose of [...disposers].reverse()) { try { dispose(); } catch {} }\n    }\n  } finally {\n    if (savedDshHome === undefined) delete process.env.DSH_HOME;\n    else process.env.DSH_HOME = savedDshHome;\n  }\n}\n"
     },
     "packages/dsh-provider-usage/test/unit-config.test.ts": {
       "tests": [
