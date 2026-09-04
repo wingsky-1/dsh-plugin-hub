@@ -20,7 +20,8 @@
  *
  * 用法：
  *   node verify-isolated.mjs [--dsh <path>] [--port <port>] [--browser] [--keep]
- *                            [--no-build] [--evidence-dir <dir>] [--json]
+ *                            [--no-build] [--evidence-dir <dir>] [--audit]
+ *                            [--audit-extra-dirs <dir>] [--json]
  *                            [-- <pkg-path>...]
  *   --dsh <path>       指定 dsh 入口（默认 PATH 中的 dsh）。隔离实测必须锚定目标
  *                      dsh 版本——PATH 里碰巧存在的版本会让验证结果不可复现（#376 H1）。
@@ -36,6 +37,15 @@
  *                      证据目录（B7）：默认 $ISOLATED_HOME/evidence/；显式外部化
  *                      时建 <dir>/evidence-<profile>/ 子目录，**绝不动外部目录**
  *                      （不删、不覆盖，仅创建子目录并打印路径）。
+ *   --audit            隔离审计（B4）：对比隔离 DSH_HOME 写面与预置白名单
+ *                      （版本化 WHITELIST_V，lib/audit.mjs），白名单外变化报
+ *                      「可疑」（新增/删除/修改 + 越界 symlink），**不阻断退出**
+ *                      （审计是补充非门禁，退出码契约不变）；t0 基线在挂载后、
+ *                      脚本自身写面前扫描（先扫后写 + 白名单双保险）。
+ *   --audit-extra-dirs <dir>
+ *                      额外审计目录（可重复）：相对路径基于 cwd 绝对化；局限
+ *                      ——审计只扫 $ISOLATED_HOME 子树 + 本选项指定目录，**不扫
+ *                      真实 home**（插件写真实 ~/.dsh 的数据面不在判定面内）。
  *   --json             stdout 只出最终 verdict JSON（人类文案全部走 stderr）。
  *   --                 之后为要挂载的本地插件路径（相对路径基于当前 cwd 解析；
  *                      npm 包名 / git URL 原样透传，见 lib/verify-core.mjs
@@ -72,6 +82,18 @@
  * B7 证据目录：默认 $ISOLATED_HOME/evidence/；供截图/快照等归档，退出随
  * DSH_HOME 一并清理（--keep 保留）。显式 --evidence-dir 时建外部子目录，
  * 绝不动外部目录本体。
+ *
+ * B4 隔离审计（--audit）：判定面 = 预置白名单（WHITELIST_V 版本化，
+ * lib/audit.mjs 纯函数：scanSnapshot / diffAgainstWhitelist /
+ * checkSymlinkEscape / runAudit）外的新增/删除/修改 + 越界 symlink；
+ * symlink 快照 lstat 不跟随，「t0 已存在且目标未变的外部 symlink（link:
+ * 挂载点）合法不报」，「新增或目标变化且 resolve 后在 $ISOLATED_HOME 外的
+ * 报『越界 symlink』（防插件经 symlink 写回主 checkout）」。时序：t0 基线
+ * 在 setupPlugins（link: 挂载）之后、脚本自身写面（browser.state/verdict/
+ * evidence 内容/audit 落盘）之前；审计 diff 插在 settle「kill dsh →
+ * browser quit → 审计 → verdict 终态 → rm」；--keep 落
+ * $ISOLATED_HOME/audit/audit.json，否则并入 verdict JSON（audit 字段）。
+ * 不阻断退出（审计异常仅警告，退出码契约不变）。
  */
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 import {
@@ -79,11 +101,14 @@ import {
   readdirSync, rmSync, statSync, writeFileSync,
 } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { delimiter, isAbsolute, join, resolve } from "node:path";
+import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import {
   EXIT, findFreePort, jsonOut, pidAlive, readDshPort, resolvePkgArg, waitPidExit,
 } from "./lib/verify-core.mjs";
+import {
+  runAudit, scanSnapshot, SKIP_DEEP, WHITELIST_V,
+} from "./lib/audit.mjs";
 
 const SCRIPT_DIR = import.meta.dirname; // Node >= 22 全程可用
 const DRIVER = join(SCRIPT_DIR, "browser-driver.mjs");
@@ -91,7 +116,7 @@ const DEFAULT_PORT = 3456;
 const READY_TIMEOUT_MS = 15000;
 const LOG_TAIL_LIMIT = 4096; // 防背压：收集缓冲限长（browser-driver stderrBuf 先例）
 
-const USAGE = `用法: node verify-isolated.mjs [--dsh <path>] [--port <port>] [--browser] [--keep] [--no-build] [--evidence-dir <dir>] [--json] [-- <pkg-path>...]
+const USAGE = `用法: node verify-isolated.mjs [--dsh <path>] [--port <port>] [--browser] [--keep] [--no-build] [--evidence-dir <dir>] [--audit] [--audit-extra-dirs <dir>] [--json] [-- <pkg-path>...]
 
 选项：
   --dsh <path>         指定 dsh 入口（默认 PATH 中的 dsh；隔离实测必须锚定版本，防 PATH 漂移）
@@ -100,6 +125,9 @@ const USAGE = `用法: node verify-isolated.mjs [--dsh <path>] [--port <port>] [
   --keep               结束后保留临时 DSH_HOME（默认自动删除）
   --no-build           跳过挂载前 pnpm build（校验产物存在 + 陈旧警告）
   --evidence-dir <dir> 证据目录外部化（建 <dir>/evidence-<profile>/，绝不动外部目录）
+  --audit              隔离审计：对比隔离 DSH_HOME 写面与预置白名单，白名单外变化报「可疑」，不阻断退出
+  --audit-extra-dirs <dir>
+                      额外审计目录（可重复；相对路径基于 cwd 绝对化；局限：不扫真实 home）
   --json               stdout 只出最终 verdict JSON（人类文案走 stderr）
   --                   之后为要挂载的本地插件路径（相对路径基于 cwd 绝对化；npm 包名 / git URL 原样透传）
   --help               显示本帮助
@@ -129,6 +157,8 @@ let childExitBeforeReady = null; // 就绪前 dsh 退出记录（P1 修复：#51
 let exiting = null; // { code: number, signal: string|null } 退出请求
 let settling = false;
 let errorPayload = null; // --json 错误路径已输出的错误对象（settle 不再重复出 JSON）
+let auditBaseline = null; // B4：t0 基线快照 [{ root, snapshot }]（--audit 时）
+let auditResult = null; // B4：settle 审计输出（--audit 时；并入 verdict/audit.json）
 
 // 人类文案输出：--json 时走 stderr（stdout 只出最终 JSON），普通模式走 stdout
 //（SKILL.md §5.1 自检清单依赖 `profile=verify_<随机>` / `DSH_HOME=…` 等可读行）。
@@ -148,6 +178,12 @@ class CliError extends Error {
   }
 }
 
+// child 是否位于 parent 内（resolve 后绝对路径比较；B4 extra dir 重叠校验用）
+function isInsideDir(child, parent) {
+  const rel = relative(parent, child);
+  return rel === "" || (rel !== ".." && !rel.startsWith(".." + sep) && !isAbsolute(rel));
+}
+
 // --- CLI 解析（对齐 bash 版参数契约；--help 为新增） ---
 function parseCli(argv) {
   // jsonMode 只在 `--` 前段探测（`--` 之后为插件参数原样透传，不参与选项解析）；
@@ -164,7 +200,8 @@ function parseCli(argv) {
   jsonMode = jsonDetected;
   const f = {
     dsh: null, port: DEFAULT_PORT, browser: false, keep: false,
-    noBuild: false, evidenceDir: null, json: jsonMode, help: false,
+    noBuild: false, evidenceDir: null, audit: false, auditExtraDirs: [],
+    json: jsonMode, help: false,
   };
   const pkgs = [];
   const bad = (msg) => { throw new CliError(msg, EXIT.USAGE); };
@@ -196,6 +233,8 @@ function parseCli(argv) {
         case "keep": f.keep = true; break;
         case "no-build": f.noBuild = true; break;
         case "evidence-dir": f.evidenceDir = inline ?? val(i, "--evidence-dir"); if (inline === null) i++; break;
+        case "audit": f.audit = true; break;
+        case "audit-extra-dirs": f.auditExtraDirs.push(inline ?? val(i, "--audit-extra-dirs")); if (inline === null) i++; break;
         case "json": {
           // --json=<v> 显式布尔（true/false），非法值参数错误
           if (inline !== null) {
@@ -315,6 +354,7 @@ function makeVerdict(mut) {
     ready: readyOk,
     readyAt: readyIso,
     evidenceDir: evidenceDir,
+    audit: auditResult, // B4：--audit 时 settle 审计结果；否则 null（--json 终态含同字段）
     cleanup: "running", // 中间态；终态由 writeVerdictTerminal 覆写为 done/kept
     ...mut,
   };
@@ -458,9 +498,66 @@ async function settle() {
         spawnSync(process.execPath, [DRIVER, "quit", "--state", browserState, "--json"], { stdio: "ignore", timeout: 20000 });
       } catch {}
     }
-    // 3. verdict 终态 cleanup（done/kept）
+    // 3. 隔离审计（B4，--audit）：t1 终态扫描 → 白名单 diff + symlink 防逃逸 →
+    //    输出结论。审计是补充非门禁：任何异常仅警告（auditResult 带 error），
+    //    不阻断退出、不影响退出码契约。
+    if (flags?.audit && auditBaseline) {
+      try {
+        const all = [];
+        for (const b of auditBaseline) {
+          const t1 = scanSnapshot(b.root, { skipDeep: SKIP_DEEP });
+          const r = runAudit({ t0: b.snapshot, t1, isolatedRoot: b.root });
+          all.push(...r.suspicious);
+        }
+        // 去重 + 稳定排序（extra dir 与 DSH_HOME 已校验不重叠，防御性去重）
+        const seen = new Set();
+        const suspicious = all
+          .filter((s) => (seen.has(s.path) ? false : (seen.add(s.path), true)))
+          .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+        const count = suspicious.length;
+        auditResult = {
+          enabled: true,
+          whitelistV: WHITELIST_V,
+          extraDirs: flags.auditExtraDirs,
+          suspicious,
+          count,
+          conclusion: count === 0 ? "pass" : "suspicious",
+          runAt: new Date().toISOString(),
+        };
+        if (count === 0) {
+          out("审计:通过");
+        } else {
+          out(`审计:可疑项 ${count}:`);
+          for (const s of suspicious) {
+            out(`可疑: ${s.path}（${s.type}${s.detail ? `: ${s.detail}` : ""}）`);
+          }
+          out(`审计: ${count}项可疑`);
+        }
+        // --keep 落 $ISOLATED_HOME/audit/audit.json（t1 扫描之后写，先扫后写
+        // 排除自身；audit/** 白名单双保险在位）
+        if (flags.keep && isolatedHome) {
+          const auditPath = join(isolatedHome, "audit", "audit.json");
+          mkdirSync(dirname(auditPath), { recursive: true });
+          writeFileSync(auditPath, JSON.stringify(auditResult, null, 2));
+          out(`审计报告: ${auditPath}`);
+        }
+      } catch (e) {
+        outWarn(`审计异常（不影响退出码）: ${e.message}`);
+        auditResult = {
+          enabled: true,
+          whitelistV: WHITELIST_V,
+          extraDirs: flags.auditExtraDirs,
+          suspicious: [],
+          count: -1,
+          conclusion: "error",
+          error: e.message,
+          runAt: new Date().toISOString(),
+        };
+      }
+    }
+    // 4. verdict 终态 cleanup（done/kept；audit 字段已并入 makeVerdict）
     writeVerdictTerminal();
-    // 4. 不 --keep 时清理 ISOLATED_HOME
+    // 5. 不 --keep 时清理 ISOLATED_HOME
     if (isolatedHome) {
       if (flags?.keep) {
         out(`（--keep）临时 DSH_HOME 保留于: ${isolatedHome}`);
@@ -473,10 +570,15 @@ async function settle() {
     outWarn(`清理异常（继续退出）: ${e.message}`);
   } finally {
     // --json：stdout 只出一份 JSON——错误路径已输出错误对象则不再重复，否则出
-    // 最终 verdict（ok/cleanup 终态与 verdict.json 文件一致）
+    // 最终 verdict（ok/cleanup 终态与 verdict.json 文件一致）。B4：审计结果
+    // 一律并入（错误路径的 error 对象同样带 audit 字段，stdout 仍单 JSON）
     if (jsonMode) {
-      if (errorPayload) jsonOut(errorPayload);
-      else jsonOut(makeVerdict({ ok: readyOk && (exiting?.code ?? EXIT.FAIL) === 0, cleanup: flags?.keep ? "kept" : "done" }));
+      if (errorPayload) {
+        if (auditResult) errorPayload.audit = auditResult;
+        jsonOut(errorPayload);
+      } else {
+        jsonOut(makeVerdict({ ok: readyOk && (exiting?.code ?? EXIT.FAIL) === 0, cleanup: flags?.keep ? "kept" : "done" }));
+      }
     }
     process.exit(exiting?.code ?? EXIT.FAIL);
   }
@@ -496,6 +598,25 @@ async function main() {
     process.exit(EXIT.OK);
   }
 
+  // 0a. B4 --audit-extra-dirs 参数校验（纯参数级 fail fast：存在性 + 基于 cwd
+  // 绝对化；与 DSH_HOME 重叠校验延后到 mkdtemp 之后）。未开 --audit 时忽略
+  // （警告提示，审计需 --audit 显式开启——extra dirs 单独无效）。
+  let extraDirsAbs = [];
+  if (f.audit) {
+    extraDirsAbs = f.auditExtraDirs.map((raw) => {
+      const abs = resolve(raw);
+      if (!existsSync(abs)) {
+        throw new CliError(
+          `错误: --audit-extra-dirs 目录不存在: ${raw}（相对路径基于 cwd 解析）`,
+          EXIT.USAGE,
+        );
+      }
+      return abs;
+    });
+  } else if (f.auditExtraDirs.length > 0) {
+    outWarn("警告: --audit-extra-dirs 未开启 --audit，忽略（审计需 --audit 显式开启）");
+  }
+
   // 0. dsh 入口校验与版本锚定展示（fail fast，不在建完环境后才失败）
   const rawDsh = f.dsh ?? "dsh";
   dshAbs = resolveDsh(rawDsh);
@@ -511,6 +632,15 @@ async function main() {
   browserState = join(isolatedHome, "browser.state");
   dshLogPath = join(isolatedHome, "dsh.log");
   verdictPath = join(isolatedHome, "verdict.json");
+  // B4：extra dir 不得与隔离 DSH_HOME 重叠（同树重复审计 + 判定基准歧义）
+  for (const dir of extraDirsAbs) {
+    if (isInsideDir(dir, isolatedHome) || isInsideDir(isolatedHome, dir)) {
+      throw new CliError(
+        `错误: --audit-extra-dirs 与隔离 DSH_HOME 重叠: ${dir}`,
+        EXIT.USAGE,
+      );
+    }
+  }
   // dsh.log 含隔离实例访问 token（dsh web URL 行）——与 verdict/browser.state
   // 一致 0o600 初始化（仅本用户可读，防同机其他用户窥探；P2-3）。
   try { writeFileSync(dshLogPath, "", { mode: 0o600 }); } catch {}
@@ -540,6 +670,20 @@ async function main() {
 
   // 4. 挂载本地插件（C11 归一化 + 构建 / --no-build 校验 + add）
   setupPlugins(pkgs);
+
+  // 4.5 B4：t0 基线快照（--audit）。位置口径：**挂载之后**（profiles/** 内
+  // link: symlink 进基线——t0 已存在且目标未变的外部 symlink 合法不报）、
+  // **脚本自身写面之前**（browser.state / verdict / evidence 内容 / audit
+  // 落盘尚未产生，先扫后写 + 白名单双保险）；dsh.log 空文件与 evidence 空
+  // 目录为脚本早期准备面，均在白名单内（*.log / evidence/**）。
+  if (f.audit) {
+    auditBaseline = [
+      { root: isolatedHome, snapshot: scanSnapshot(isolatedHome, { skipDeep: SKIP_DEEP }) },
+    ];
+    for (const dir of extraDirsAbs) {
+      auditBaseline.push({ root: dir, snapshot: scanSnapshot(dir, { skipDeep: SKIP_DEEP }) });
+    }
+  }
 
   // 5. 启动独立浏览器实例（--browser）：实例信息写入 browser.state。
   //    刻意不传 DSH_HOME：browser-driver 属宿主环境工具（探测系统 Chrome 内核、
