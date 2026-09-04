@@ -33,6 +33,7 @@ import "./unit-refresh-revalidate.test.ts";
 import "./unit-deepseek-official.test.ts";
 import "./unit-fetch-timeout.test.ts";
 import "./unit-trend.test.ts";
+import "./unit-report.test.ts";
 
 import {
   apply,
@@ -90,7 +91,16 @@ function fakeReq(overrides = {}) {
   return req;
 }
 
+/** #503 M3：报告生成的默认罐头 chunk 流（安全正文 + usage 元数据 + finish）。 */
+const DEFAULT_LLM_CHUNKS = [
+  { type: "text-delta", index: 0, text: "本周用量平稳，调用集中在工作时段，环比小幅上升。" },
+  { type: "usage", usage: { inputTokens: 120, outputTokens: 60, totalTokens: 180 } },
+  { type: "finish", reason: "stop" },
+];
+
 function makeFakeCtx(overrides = {}) {
+  // #503 M3：llmStreamChunks 允许用例替换报告生成的产出正文（XSS 净化用例传恶意正文）
+  const { llmStreamChunks, ...rest } = overrides;
   const routes = [];
   // #503：事件监听表（ctx.on 注册 / emitEvent 派发）与 effect disposer 收集
   const listeners = new Map();
@@ -110,6 +120,15 @@ function makeFakeCtx(overrides = {}) {
           { id: OPENCODE_GO_PROVIDER, name: "OpenCode Go" },
         ];
       },
+      async listModels(provider) {
+        return [{ provider, id: "model-a", name: "Model A" }];
+      },
+      stream() {
+        const chunks = llmStreamChunks ?? DEFAULT_LLM_CHUNKS;
+        return (async function* () {
+          yield* chunks;
+        })();
+      },
     },
     effect(fn) {
       const disposer = fn();
@@ -126,7 +145,7 @@ function makeFakeCtx(overrides = {}) {
         if (i >= 0) cur.splice(i, 1);
       };
     },
-    ...overrides,
+    ...rest,
   };
   const emitEvent = (event, ...args) => {
     for (const fn of [...(listeners.get(event) ?? [])]) fn(...args);
@@ -142,23 +161,23 @@ function makeFakeCtx(overrides = {}) {
   assert.equal(routes.length, 0, "enabled:false 不注册任何路由");
 }
 
-// ---------------------------------------------------------------- 注册十路由
+// ---------------------------------------------------------------- 注册十四路由
 
 {
   const { ctx, routes } = makeFakeCtx();
   await apply(ctx, { ...ISOLATED_CONFIG });
   assert.deepEqual(
     routes.map((r) => r.path).sort(),
-    [ROUTES.health, ROUTES.history, ROUTES.stats, ROUTES.trend, ROUTES.adapters, ROUTES.select, ROUTES.inspect, ROUTES.add, ROUTES.uiConfig, ROUTES.events].sort(),
-    "注册十条路由（stats/history/trend/adapters.json/select/inspect/add/health/ui-config/events）",
+    [ROUTES.health, ROUTES.history, ROUTES.stats, ROUTES.trend, ROUTES.adapters, ROUTES.select, ROUTES.inspect, ROUTES.add, ROUTES.uiConfig, ROUTES.events, ROUTES.reportConfig, ROUTES.reports, ROUTES.reportDetail, ROUTES.reportGenerate].sort(),
+    "注册十四条路由（stats/history/trend/adapters.json/select/inspect/add/health/ui-config/events + #503 报告四路由）",
   );
   assert.ok(routes.every((r) => r.kind === "exact" || r.kind === "prefix"), "路由 kind 合法");
 }
 
 // ---------------------------------------------------------------- 围栏：403 / 405
 
-const POST_ROUTES = new Set([ROUTES.select, ROUTES.inspect, ROUTES.add, ROUTES.uiConfig]);
-for (const routePath of [ROUTES.stats, ROUTES.history, ROUTES.trend, ROUTES.health, ROUTES.adapters, ROUTES.select, ROUTES.inspect, ROUTES.add, ROUTES.uiConfig, ROUTES.events]) {
+const POST_ROUTES = new Set([ROUTES.select, ROUTES.inspect, ROUTES.add, ROUTES.uiConfig, ROUTES.reportConfig, ROUTES.reportGenerate]);
+for (const routePath of [ROUTES.stats, ROUTES.history, ROUTES.trend, ROUTES.health, ROUTES.adapters, ROUTES.select, ROUTES.inspect, ROUTES.add, ROUTES.uiConfig, ROUTES.events, ROUTES.reportConfig, ROUTES.reports, ROUTES.reportDetail, ROUTES.reportGenerate]) {
   {
     const { ctx, routes } = makeFakeCtx();
     await apply(ctx, { ...ISOLATED_CONFIG });
@@ -1538,6 +1557,152 @@ console.log("[smoke] #105① /history 渲染缓存断言全部通过 ✓");
 }
 
 console.log("[smoke] #503 trend 挂接 + /trend 集成断言全部通过 ✓");
+
+// ---------------------------------------------------------------- #503 M3：用量报告接线（调度/落盘/路由/净化/不入统计）
+
+{
+  // 独立 historyDir：报告产物与趋势分片全部隔离在临时目录（零污染纪律）
+  const dir = mkdtempSync(join(tmpdir(), "dou-report-"));
+  const histDir = join(dir, "hist");
+  const reportsDir = join(histDir, "reports");
+  const { ctx, routes, listeners, emitEvent, effects } = makeFakeCtx();
+  await apply(ctx, { ...ISOLATED_CONFIG, historyDir: histDir });
+  const cfgRoute = routes.find((r) => r.path === ROUTES.reportConfig);
+  const listRoute = routes.find((r) => r.path === ROUTES.reports);
+  const detailRoute = routes.find((r) => r.path === ROUTES.reportDetail);
+  const genRoute = routes.find((r) => r.path === ROUTES.reportGenerate);
+  const trendRoute = routes.find((r) => r.path === ROUTES.trend);
+  assert.ok(cfgRoute !== undefined && listRoute !== undefined && detailRoute !== undefined && genRoute !== undefined, "报告四路由存在");
+
+  // b. 默认挂载（报告全关）：无 reports/ 产物；GET /report-config 返回默认配置
+  assert.ok(!existsSync(reportsDir), "默认挂载（报告全关）不产生 reports/ 目录");
+  const defaultCfg = await callHandler(cfgRoute, fakeReq({ url: ROUTES.reportConfig }));
+  assert.equal(defaultCfg.ok, true, "report-config GET ok");
+  assert.equal(defaultCfg.config.daily.enabled, false, "默认 daily 关闭");
+  assert.equal(defaultCfg.config.weekly.enabled, false, "默认 weekly 关闭");
+  assert.equal(defaultCfg.config.monthly.enabled, false, "默认 monthly 关闭");
+  assert.ok(defaultCfg.config.promptTemplate.includes("{stats}"), "默认模板含 {stats} 占位");
+  assert.ok(Array.isArray(defaultCfg.providers) && defaultCfg.providers.length >= 2, "providers 来自 llm.listProviders()");
+
+  // c. POST /report-config 保存（启用日报 22:00）→ GET 回读一致
+  const savedCfg = await callHandler(
+    cfgRoute,
+    fakeReq({ method: "POST", body: JSON.stringify({ daily: { enabled: true, time: "22:00" }, push: { enabled: false } }) }),
+  );
+  assert.equal(savedCfg.ok, true, "report-config POST ok");
+  assert.equal(savedCfg.config.daily.enabled, true, "保存后 daily 启用");
+  assert.equal(savedCfg.config.daily.time, "22:00", "触发时刻回显");
+  const reread = await callHandler(cfgRoute, fakeReq({ url: ROUTES.reportConfig }));
+  assert.deepEqual(reread.config, savedCfg.config, "POST 后 GET 回读一致");
+
+  // f. 前置：合成一点趋势数据（生成「不入统计」断言的对照快照）
+  const t = Date.now();
+  const sess = { id: "sess-report" };
+  emitEvent("session/event", sess, { type: "request/header", seq: 1, time: t, data: { header: { config: { provider: "deepseek", model: "deepseek-chat" } }, reason: "initial" } });
+  emitEvent("session/event", sess, { type: "assistant/chunk", seq: 2, time: t, data: { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: 80, outputTokens: 40 } } } });
+  await listeners.get("session/flush")[0](); // 官方排空点先行刷盘
+  const trendBefore = await callHandler(trendRoute, fakeReq({ url: ROUTES.trend }));
+
+  // d. 手动生成 daily → 200 + meta.ok → 三件套就位
+  const gen = await callHandler(genRoute, fakeReq({ method: "POST", body: JSON.stringify({ period: "daily" }) }));
+  assert.equal(gen.ok, true, "generate ok（实际 " + JSON.stringify(gen).slice(0, 160) + "）");
+  assert.equal(gen.meta.ok, true, "生成 meta.ok=true");
+  assert.equal(gen.meta.period, "daily", "meta.period=daily");
+  assert.equal(gen.meta.provider, "anthropic", "空 provider 解析为注册序首个");
+  assert.equal(gen.meta.model, "model-a", "空 model 解析为该 provider 首个");
+  assert.ok(typeof gen.meta.key === "string" && /^\d{4}-\d{2}-\d{2}$/.test(gen.meta.key), "窗口键为 day key 形态");
+  const htmlFile = join(reportsDir, `daily-${gen.meta.key}.html`);
+  const metaFile = join(reportsDir, `daily-${gen.meta.key}.meta.json`);
+  const indexFile = join(reportsDir, "index.jsonl");
+  assert.ok(existsSync(htmlFile), "报告 HTML 已落盘（0600 原子写）");
+  assert.ok(existsSync(metaFile), "meta.json 已落盘");
+  assert.ok(existsSync(indexFile), "index.jsonl 已 append");
+  const storedMeta = JSON.parse(readFileSync(metaFile, "utf8"));
+  assert.equal(storedMeta.key, gen.meta.key, "meta 文件与响应一致");
+  const storedHtml = readFileSync(htmlFile, "utf8");
+  assert.ok(storedHtml.startsWith("<!doctype html>") && storedHtml.includes("dou-report-body"), "HTML 为最小文档骨架包裹");
+
+  // e/f. 双断言：生成不入统计（方案 §2.3 显式断言）——生成前后 /trend 桶快照完全一致
+  const trendAfter = await callHandler(trendRoute, fakeReq({ url: ROUTES.trend }));
+  assert.deepEqual(trendAfter.series, trendBefore.series, "生成前后趋势序列逐桶一致（生成不产生 session 事件）");
+  assert.deepEqual(trendAfter.summary, trendBefore.summary, "生成前后窗口摘要一致（生成消耗不入用量统计）");
+  // 事件通道计数佐证：生成过程只经 llm.stream，无 session/event 派发
+  assert.ok((listeners.get("session/event") ?? []).length === 1, "session/event 监听注册数不变（生成路径不新增事件源）");
+
+  // e. XSS 双层净化：恶意 LLM 正文 → detail 响应既无明文载体、也无实体化标签残留
+  {
+    const xssDir = mkdtempSync(join(tmpdir(), "dou-report-xss-"));
+    const xssCtx = makeFakeCtx({
+      llmStreamChunks: [
+        { type: "text-delta", index: 0, text: "<script>alert(1)</script>安全正文<img onerror=x src=y>收尾" },
+        { type: "usage", usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } },
+        { type: "finish", reason: "stop" },
+      ],
+    });
+    await apply(xssCtx.ctx, { ...ISOLATED_CONFIG, historyDir: join(xssDir, "hist") });
+    const xssGen = await callHandler(xssCtx.routes.find((r) => r.path === ROUTES.reportGenerate), fakeReq({ method: "POST", body: JSON.stringify({ period: "daily" }) }));
+    assert.equal(xssGen.ok, true, "XSS 用例生成成功");
+    const xssDetail = await callHandler(
+      xssCtx.routes.find((r) => r.path === ROUTES.reportDetail),
+      fakeReq({ url: `${ROUTES.reportDetail}?period=daily&key=${encodeURIComponent(xssGen.meta.key)}` }),
+    );
+    assert.equal(xssDetail.ok, true, "XSS 用例 detail ok");
+    assert.equal(xssDetail.meta.ok, true, "XSS 用例 detail meta.ok=true");
+    assert.ok(!xssDetail.html.includes("<script"), "detail html 不含明文 <script（第一层 escHtml 转义）");
+    assert.ok(!xssDetail.html.includes("onerror"), "detail html 不含 onerror 事件属性（第二层 sanitizeHtml 移除）");
+    assert.ok(!xssDetail.html.includes("&lt;script"), "detail html 无实体化 script 标签残留（#105③ 实体感知封闭）");
+    assert.ok(xssDetail.html.includes("安全正文"), "正文文本保留（只删载体不删内容）");
+    for (const d of [...xssCtx.effects].reverse()) { try { d(); } catch {} }
+  }
+
+  // f2. 趋势查询对生成免疫已由 f 覆盖；此处补 list/detail 读面
+  const listPayload = await callHandler(listRoute, fakeReq({ url: ROUTES.reports }));
+  assert.equal(listPayload.ok, true, "reports GET ok");
+  assert.ok(Array.isArray(listPayload.reports) && listPayload.reports.length >= 1, "历史索引非空");
+  assert.equal(listPayload.reports[0].key, gen.meta.key, "倒序：最新在前");
+
+  const detail = await callHandler(detailRoute, fakeReq({ url: `${ROUTES.reportDetail}?period=daily&key=${encodeURIComponent(gen.meta.key)}` }));
+  assert.equal(detail.ok, true, "detail ok");
+  assert.equal(detail.meta.ok, true, "detail meta.ok=true");
+  assert.ok(typeof detail.html === "string" && detail.html.length > 0, "detail html 非空");
+
+  // g. 手动生成推进 lastRun（防调度 tick 重复生成同窗）
+  const lastRunFile = join(reportsDir, "last-run.json");
+  assert.ok(existsSync(lastRunFile), "last-run.json 已落盘");
+  const lastRun = JSON.parse(readFileSync(lastRunFile, "utf8"));
+  assert.equal(lastRun.daily, gen.meta.key, "lastRun.daily === 窗口键");
+
+  // h. 路径隔离：reports 产物全部落在临时 historyRoot 下，无 undefined 段
+  const produced = readdirSync(reportsDir);
+  assert.ok(produced.length > 0, "reports 目录有产物");
+  const PRODUCED_RE = /^(daily|weekly|monthly)-\d{4}-\d{2}(-\d{2})?(\.html|\.meta\.json)$|^index\.jsonl$|^last-run\.json$|^config\.json$/;
+  for (const f of produced) {
+    assert.ok(!f.includes("undefined"), `产物文件名无 undefined 段（实际 ${f}）`);
+    assert.ok(PRODUCED_RE.test(f), `产物文件名白名单形态（实际 ${f}）`);
+  }
+  assert.ok(!existsSync(join(dir, "undefined")), "无 undefined/ 目录段");
+
+  // detail 守卫：period 枚举 + key 白名单（防路径穿越）
+  {
+    const bad1 = await callHandler(detailRoute, fakeReq({ url: `${ROUTES.reportDetail}?period=evil&key=2026-09-04` }));
+    assert.equal(bad1.error, "invalid-period", "非法 period 拒绝");
+    const bad2 = await callHandler(detailRoute, fakeReq({ url: `${ROUTES.reportDetail}?period=daily&key=..%2F..%2Fevil` }));
+    assert.equal(bad2.error, "invalid-key", "穿越形态 key 拒绝（白名单正则）");
+    const bad3 = await callHandler(detailRoute, fakeReq({ url: `${ROUTES.reportDetail}?period=monthly&key=2026-09-04` }));
+    assert.equal(bad3.error, "invalid-key", "monthly 期传入 daily 形态 key 拒绝");
+    const bad4 = await callHandler(detailRoute, fakeReq({ url: `${ROUTES.reportDetail}?period=daily&key=2099-01-01` }));
+    assert.equal(bad4.error, "report-not-found", "合法形态但无产物 → 404");
+  }
+
+  // generate 守卫：非法 period 拒绝
+  {
+    const badGen = await callHandler(genRoute, fakeReq({ method: "POST", body: JSON.stringify({ period: "hourly" }) }));
+    assert.equal(badGen.error, "invalid-period", "generate 非法 period 拒绝");
+  }
+
+  await (effects.at(-1) as () => Promise<void>)(); // 卸载（async disposer：trend 刷盘 + scheduler 停 tick）
+  console.log("[smoke] #503 M3 报告接线断言全部通过 ✓");
+}
 
 // 恢复真实环境变量（测试收尾）
 for (const k of SAVED_ENV_KEYS) {

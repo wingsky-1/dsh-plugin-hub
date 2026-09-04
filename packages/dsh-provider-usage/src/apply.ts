@@ -15,9 +15,13 @@
  * - GET /api/dsh-provider-usage/health  健康检查 + 适配器快照
  * - GET/POST /api/dsh-provider-usage/ui-config 胶囊位置配置（读取/保存，保存后 SSE 广播）
  * - GET /api/dsh-provider-usage/events  SSE 事件通道（ui-config-changed 等，客户端即时热更新）
+ * - GET/POST /api/dsh-provider-usage/report-config 报告配置（读/写，#503 M3）
+ * - GET /api/dsh-provider-usage/reports  报告历史索引（index.jsonl 倒序）
+ * - GET /api/dsh-provider-usage/reports/detail  报告详情（已净化 HTML + 元数据）
+ * - POST /api/dsh-provider-usage/reports/generate  手动生成指定周期报告
  */
 
-import { writeFile, rename } from "node:fs/promises";
+import { writeFile, rename, readFile, appendFile, mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -42,8 +46,17 @@ import { resolvePath } from "./path-resolve.ts";
 import { Config, normalizeConfig } from "./config.ts";
 import { normalizeUiConfig, readUiConfig, writeUiConfig } from "./ui-config.ts";
 import { readAdapterStateResult, readUserAdapters, userAdaptersFile, writeAdapterState, resolveAddAdapterFile, type UserAdapterRecord } from "./user-adapters.ts";
+import { escHtml, dayKey } from "./charts.ts";
+import { sanitizeHtml } from "./sanitize.ts";
 // #503 会话用量趋势（M1 数据层）：官方 session/event 契约事件为唯一事实源
 import { TrendTracker } from "./trend/index.ts";
+import { metricValue } from "./trend/aggregator.ts";
+import { sumToken, type TrendCell } from "./trend/types.ts";
+// #503 会话用量报告（M3 接线）：调度/生成/落盘/路由
+import { candidateWindow, type DueReport } from "./report/schedule.ts";
+import { normalizeReportConfig, readReportConfig, writeReportConfig, type ReportConfig, type ReportPeriod } from "./report/config.ts";
+import { ReportScheduler, readLastRun, writeLastRun } from "./report/scheduler.ts";
+import { generateReport, buildStatsSnapshot, type ReportMeta, type ReportStatsSnapshot } from "./report/generate.ts";
 // dsh-session 类型层（仅类型，编译期擦除）：加载 Events 声明合并 → ctx.on("session/*") 事件面
 import type {} from "@deepseek-ai/dsh-session";
 
@@ -58,6 +71,11 @@ export const ROUTES: Record<string, string> = {
   health: "/api/dsh-provider-usage/health",
   uiConfig: "/api/dsh-provider-usage/ui-config",
   events: "/api/dsh-provider-usage/events",
+  // #503 会话用量报告（M3）
+  reportConfig: "/api/dsh-provider-usage/report-config",
+  reports: "/api/dsh-provider-usage/reports",
+  reportDetail: "/api/dsh-provider-usage/reports/detail",
+  reportGenerate: "/api/dsh-provider-usage/reports/generate",
 };
 
 export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {}): Promise<void> {
@@ -453,6 +471,149 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   trendDisposers.push(ctx.on("session/flush", () => trend.flushNow()));
   trendDisposers.push(ctx.on("session/disposed", (session) => trend.handleDisposed(session)));
 
+  // 6.6 会话用量报告（#503 M3 接线）：落盘三件套（HTML/meta/index.jsonl）+ 调度器 +
+  // 手动生成复用同一 runDue。落盘目录 = <historyRoot>/reports/（historyRoot 随
+  // DSH_HOME/profile 走，多实例天然隔离）。生成不入统计（方案 §2.3）：generateReport
+  // 只消费 ctx.llm.stream，不派发 session/event——本块仅从 trend.buckets() 只读快照取数。
+  const reportsDir = join(historyRoot, "reports");
+  const reportIndexFile = (): string => join(reportsDir, "index.jsonl");
+  let reportCfg = await readReportConfig(historyRoot);
+
+  /** 报告产物文件名（period-key 前缀；key 已由路由白名单正则校验，无穿越面）。 */
+  const reportHtmlFile = (period: ReportPeriod, key: string): string => join(reportsDir, `${period}-${key}.html`);
+  const reportMetaFile = (period: ReportPeriod, key: string): string => join(reportsDir, `${period}-${key}.meta.json`);
+
+  /** 0600 原子写（tmp+rename；ui-config/writeUiConfig 同款模式）。 */
+  async function writeReportFile(file: string, data: string): Promise<void> {
+    await mkdir(reportsDir, { recursive: true });
+    const tmp = `${file}.${Date.now()}.tmp`;
+    await writeFile(tmp, data, { mode: 0o600 });
+    await rename(tmp, file);
+  }
+
+  /**
+   * 第一层净化（落盘形态即安全）：LLM 正文 escHtml 转义后包入最小 HTML 文档骨架。
+   * 文件本身无任何未转义插值——UI 读侧再经 sanitizeHtml 第二层净化（方案 §2.3 双层）。
+   */
+  function reportHtmlDocument(meta: ReportMeta, bodyText: string): string {
+    const title = `${meta.period} ${meta.key} 用量报告`;
+    return [
+      "<!doctype html>",
+      `<html lang="zh-CN"><head><meta charset="utf-8"><title>${escHtml(title)}</title></head>`,
+      `<body><article class="dou-report-body">${escHtml(bodyText).replace(/\n/g, "<br>")}</article></body></html>`,
+    ].join("");
+  }
+
+  /** 落盘三件套：HTML + meta.json（均 0600 原子写）+ index.jsonl append 一行 meta。 */
+  async function persistReport(meta: ReportMeta, bodyText: string): Promise<void> {
+    await writeReportFile(reportHtmlFile(meta.period, meta.key), reportHtmlDocument(meta, bodyText));
+    await writeReportFile(reportMetaFile(meta.period, meta.key), JSON.stringify(meta, null, 2));
+    await mkdir(reportsDir, { recursive: true });
+    await appendFile(reportIndexFile(), `${JSON.stringify(meta)}\n`, { mode: 0o600 });
+  }
+
+  /** day key 前移 n 天（本地逐日回退/推进，DST 安全；与 report/schedule.ts 同款语义）。 */
+  function shiftDayKey(key: string, n: number): string {
+    const [y, mo, d] = key.split("-").map(Number);
+    const dt = new Date(y, mo - 1, d);
+    dt.setDate(dt.getDate() + n);
+    return dayKey(dt.getTime());
+  }
+
+  /** 窗口天数（ISO day key 按 UTC 解析差值 = 天数差，不受本地 DST 影响）。 */
+  function windowDayCount(startDay: string, endDay: string): number {
+    return Math.round((Date.parse(endDay) - Date.parse(startDay)) / 86400000) + 1;
+  }
+
+  /** 环比基准：同长度窗口整体前移（[startDay-len, startDay-1]）的 total 求和（null-aware）。 */
+  function prevWindowTotal(
+    buckets: Array<{ day: string; providers: Array<{ provider: string; model: string | null; cell: TrendCell }> }>,
+    startDay: string,
+    endDay: string,
+  ): number | null {
+    const len = windowDayCount(startDay, endDay);
+    const prevStart = shiftDayKey(startDay, -len);
+    const prevEnd = shiftDayKey(startDay, -1);
+    let acc: number | null = null;
+    for (const { day, providers } of buckets) {
+      if (day < prevStart || day > prevEnd) continue;
+      for (const { cell } of providers) acc = sumToken(acc, metricValue(cell, "total"));
+    }
+    return acc;
+  }
+
+  // 生成互斥：调度 tick 与手动生成共用一把锁，串行化生成全程（防同窗口双写产物竞态；
+  // async-mutex 为既有依赖，零新增）。锁内不做等待 IO 之外的调度决策，无死锁面。
+  const reportMutex = new Mutex();
+
+  /** 可选 notifier 推送（cfg.push.enabled 才发；中心不在静默跳过，send 失败仅 warn）。 */
+  function notifyReport(meta: ReportMeta, snapshot: ReportStatsSnapshot): void {
+    if (!reportCfg.push.enabled) return;
+    type NotifierLike = {
+      send?: (req: { source: string; kind: string; severity: string; title: string; body: string }) => Promise<unknown>;
+    };
+    const notifier = (ctx as { "wingsky.notifier"?: NotifierLike })["wingsky.notifier"];
+    if (notifier === undefined || typeof notifier.send !== "function") return; // 中心不在：静默跳过
+    const total = snapshot.totals.total;
+    const body = `${meta.period} ${meta.key}（${meta.startDay} ~ ${meta.endDay}）：token 总量 ${
+      total === null ? "无数据" : total.toLocaleString("en-US")
+    }，调用 ${snapshot.totals.calls} 次。详情见 dsh 设置页用量报告。`; // 摘要只含数值与期间，不含任何路径
+    notifier
+      .send({ source: "@wingsky-1/dsh-provider-usage", kind: "provider-usage:report", severity: "info", title: "用量报告", body })
+      .catch((e: unknown) => console.warn(`[dsh-provider-usage] report: 推送失败（不影响主流程）：${sanitizeDiagnostic(errorMessage(e))}`));
+  }
+
+  /**
+   * 生成一个到期窗口（调度 tick 与手动生成路由复用）：
+   * 统计快照（只读 buckets）→ generateReport → 成功才落盘三件套 + 可选推送；
+   * 失败抛错（调度侧不推进 lastRun、同窗重试——scheduler 已有语义）。
+   */
+  async function runDue(due: DueReport): Promise<ReportMeta> {
+    const buckets = trend.buckets();
+    const snapshot = buildStatsSnapshot({
+      period: due.period,
+      startDay: due.startDay,
+      endDay: due.endDay,
+      buckets,
+      prevTotal: prevWindowTotal(buckets, due.startDay, due.endDay),
+    });
+    const result = await generateReport({
+      llm: ctx.llm,
+      period: due.period,
+      key: due.key,
+      startDay: due.startDay,
+      endDay: due.endDay,
+      statsJson: JSON.stringify(snapshot, null, 2),
+      promptTemplate: reportCfg.promptTemplate,
+      provider: reportCfg.provider,
+      model: reportCfg.model,
+    });
+    if (!result.meta.ok) throw new Error(result.meta.error ?? "报告生成失败");
+    await persistReport(result.meta, result.body);
+    notifyReport(result.meta, snapshot);
+    return result.meta;
+  }
+
+  // 调度器（方案 §2.3 极简调度器）：tickMs 默认 60s；启动首轮 tick 即补跑检查；
+  // onDue 抛错不推进 lastRun（同窗重试），dispose 停 tick（主 disposer 统一回收）。
+  const reportScheduler = ReportScheduler.start({
+    root: historyRoot,
+    config: reportCfg,
+    onDue: (due) => reportMutex.runExclusive(async () => { await runDue(due); }),
+    warn: (msg) => console.warn(`[dsh-provider-usage] report: ${sanitizeDiagnostic(msg)}`),
+  });
+
+  // 可选推送 kind 动态注册（挂载时一次性；中心不在/异常静默——注册失败不阻断挂载）。
+  {
+    type NotifierReg = { registerKind?: (reg: { id: string; label: string }) => unknown };
+    const notifier = (ctx as { "wingsky.notifier"?: NotifierReg })["wingsky.notifier"];
+    if (notifier !== undefined && typeof notifier.registerKind === "function") {
+      try {
+        notifier.registerKind({ id: "provider-usage:report", label: "用量报告" });
+      } catch { /* 注册失败静默：推送为可选功能 */ }
+    }
+  }
+
   // 7. 路由注册
   // #308 断连感知统一形态（stats/history 共用）：请求级 AbortController——客户端
   // 提前断连（fetch abort / 半开超时）时经 res close 触发 abort，取数链路级联
@@ -830,9 +991,163 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     },
   };
 
+  // 7d. 用量报告路由（#503 M3）：配置读写 / 历史索引 / 详情回看 / 手动生成。
+  // 全部 loopback 围栏 + guardLoopbackMethod；detail 的 key 白名单正则防路径穿越。
+
+  /** 报告配置路由（GET 读 / POST 保存；保存即热更新调度器配置）。 */
+  const reportConfigRoute: WebRoute = {
+    kind: "exact",
+    path: ROUTES.reportConfig,
+    handler: async (req, res) => {
+      if (!guardLoopbackMethod(req, res, ["GET", "POST"])) return;
+      if (req.method === "GET") {
+        const config = await readReportConfig(historyRoot);
+        // provider 候选来自 dsh 已注册适配器路由（同 adaptersRoute 的 modelProviders 面，附展示名）
+        let providers: Array<{ id: string; name?: string }> = [];
+        try {
+          const listed = ctx.llm.listProviders();
+          if (Array.isArray(listed)) {
+            providers = listed
+              .map((i) => (i as { id?: unknown; name?: unknown } | null))
+              .filter((i): i is { id: string; name?: string } => typeof (i as { id?: unknown })?.id === "string")
+              .map((i) => ({ id: i.id as string, ...(typeof i.name === "string" ? { name: i.name } : {}) }));
+          }
+        } catch { /* 回落空数组 */ }
+        return writeJson(res, 200, { ok: true, config, providers });
+      }
+      let body: unknown;
+      try {
+        body = await readJsonBody(req);
+      } catch {
+        return writeJson(res, 400, { error: "bad-json" });
+      }
+      const normalized = normalizeReportConfig(body);
+      try {
+        await writeReportConfig(historyRoot, normalized);
+      } catch {
+        return writeJson(res, 500, { error: "persist-failed" });
+      }
+      reportCfg = normalized; // 接线层缓存同步（runDue 读 promptTemplate/provider/model/push 取此份）
+      reportScheduler.updateConfig(normalized); // 调度器下轮 tick 生效
+      writeJson(res, 200, { ok: true, config: normalized });
+    },
+  };
+
+  /** 读 index.jsonl（逐行 JSON.parse 容错坏行；倒序 = 最新在前）。 */
+  async function readReportIndex(): Promise<ReportMeta[]> {
+    let raw: string;
+    try {
+      raw = await readFile(reportIndexFile(), "utf8");
+    } catch {
+      return []; // 尚无任何报告
+    }
+    const out: ReportMeta[] = [];
+    for (const line of raw.split("\n")) {
+      const s = line.trim();
+      if (s.length === 0) continue;
+      try {
+        const obj = JSON.parse(s) as ReportMeta | null;
+        // 最小形状防御：period/key 可辨识才收（坏行读侧跳过——落盘侧只 append 成功行）
+        if (
+          obj !== null && typeof obj === "object" &&
+          typeof obj.key === "string" &&
+          (obj.period === "daily" || obj.period === "weekly" || obj.period === "monthly")
+        ) {
+          out.push(obj);
+        }
+      } catch { /* 坏行跳过 */ }
+    }
+    return out.reverse();
+  }
+
+  /** 报告历史索引路由（GET；倒序数组）。 */
+  const reportsRoute: WebRoute = {
+    kind: "exact",
+    path: ROUTES.reports,
+    handler: async (req, res) => {
+      if (!guardLoopbackMethod(req, res, ["GET"])) return;
+      const list = await readReportIndex();
+      writeJson(res, 200, { ok: true, reports: list });
+    },
+  };
+
+  // detail 的 key 白名单：key 直接拼文件路径，必须防路径穿越（period 枚举 + key 正则双闸）
+  const REPORT_KEY_RES: Record<ReportPeriod, RegExp> = {
+    daily: /^\d{4}-\d{2}-\d{2}$/,
+    weekly: /^\d{4}-\d{2}-\d{2}$/,
+    monthly: /^\d{4}-\d{2}$/,
+  };
+  const REPORT_PERIODS = new Set<ReportPeriod>(["daily", "weekly", "monthly"]);
+
+  /** 报告详情路由（GET ?period=&key=）：读盘 → sanitizeHtml 第二层净化 + meta。 */
+  const reportDetailRoute: WebRoute = {
+    kind: "exact",
+    path: ROUTES.reportDetail,
+    handler: async (req, res) => {
+      if (!guardLoopbackMethod(req, res, ["GET"])) return;
+      const url = new URL(req.url ?? "/", "http://localhost");
+      const period = url.searchParams.get("period") ?? "";
+      const key = url.searchParams.get("key") ?? "";
+      if (!REPORT_PERIODS.has(period as ReportPeriod)) {
+        return writeJson(res, 400, { error: "invalid-period" });
+      }
+      if (!REPORT_KEY_RES[period as ReportPeriod].test(key)) {
+        return writeJson(res, 400, { error: "invalid-key" });
+      }
+      let html: string;
+      try {
+        // 第二层净化：文件本身已 escHtml 包裹（第一层），读侧再过 sanitizeHtml 兜底
+        html = sanitizeHtml(await readFile(reportHtmlFile(period as ReportPeriod, key), "utf8"));
+      } catch {
+        return writeJson(res, 404, { error: "report-not-found" });
+      }
+      let meta: ReportMeta;
+      try {
+        meta = JSON.parse(await readFile(reportMetaFile(period as ReportPeriod, key), "utf8")) as ReportMeta;
+      } catch {
+        return writeJson(res, 404, { error: "report-not-found" });
+      }
+      writeJson(res, 200, { ok: true, html, meta });
+    },
+  };
+
+  /** 手动生成路由（POST {period}）：与调度复用 runDue（互斥锁内）；成功推进 lastRun。 */
+  const reportGenerateRoute: WebRoute = {
+    kind: "exact",
+    path: ROUTES.reportGenerate,
+    handler: async (req, res) => {
+      if (!guardLoopbackMethod(req, res, ["POST"])) return;
+      let body: Record<string, unknown>;
+      try {
+        const raw = await readJsonBody(req);
+        if (typeof raw !== "object" || raw === null) return writeJson(res, 400, { error: "bad-json" });
+        body = raw as Record<string, unknown>;
+      } catch {
+        return writeJson(res, 400, { error: "bad-json" });
+      }
+      const period = body.period;
+      if (typeof period !== "string" || !REPORT_PERIODS.has(period as ReportPeriod)) {
+        return writeJson(res, 400, { error: "invalid-period" });
+      }
+      // 候选窗口（不检查 enabled：手动生成为用户主动行为；UI 空态亦引导「立即手动生成」）
+      const due = candidateWindow(period as ReportPeriod, reportCfg, Date.now());
+      try {
+        const meta = await reportMutex.runExclusive(() => runDue(due));
+        // 成功推进 lastRun（读改写：调度器同窗不再重复生成——防 tick 双生成）
+        const lastRun = await readLastRun(historyRoot);
+        lastRun[due.period] = due.key;
+        await writeLastRun(historyRoot, lastRun);
+        writeJson(res, 200, { ok: true, meta });
+      } catch (e: unknown) {
+        writeJson(res, 500, { ok: false, error: e instanceof Error ? e.message : String(e) });
+      }
+    },
+  };
+
   const disposeRoutes = ctx.effect(
     () => {
-      const routeDisposers = [statsRoute, historyRoute, healthRoute, trendRoute, adaptersRoute, selectRoute, inspectRoute, addRoute, uiConfigRoute, eventsRoute].map((route) =>
+      // #503 M3：报告四路由并入同一注册/回收面
+      const routeDisposers = [statsRoute, historyRoute, healthRoute, trendRoute, adaptersRoute, selectRoute, inspectRoute, addRoute, uiConfigRoute, eventsRoute, reportConfigRoute, reportsRoute, reportDetailRoute, reportGenerateRoute].map((route) =>
         ctx.webServer.register(route),
       );
       return () => {
@@ -904,6 +1219,8 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
         try { dispose(); } catch { /* 忽略 */ }
       }
       await trend.dispose();
+      // #503 M3：报告调度器停 tick（同步；进行中的一轮由 onDue 自身 await 语义收敛）
+      reportScheduler.dispose();
     },
     "dsh-provider-usage",
   );
