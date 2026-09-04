@@ -606,3 +606,28 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   assert.equal(g4.end(), "all", "#405：多次被拒记最后一次入口");
   assert.equal(g4.end(), null, "#405：清空后再 end 返回 null");
 }
+
+// ---- issue #527：未启用频道/事件 chips 置灰禁点（通知事件路由 + 免打扰豁免）----
+{
+  const src = readFileSync(new URL("../src/client/index.ts", import.meta.url), "utf8");
+  const locales = readFileSync(new URL("../src/client/locales.ts", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../src/client/style.css", import.meta.url), "utf8");
+  const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+
+  // 1. 路由 chips：routeOptions 带 enabled 标志；未启用 chip 渲染 disabled + is-off
+  assert.ok(src.includes("enabled: c.enabled === true"), "#527：路由候选带实例频道 enabled 标志");
+  assert.ok(src.includes("enabled: prev.browserNotify === true") && src.includes("enabled: prev.systemNotify === true"), "#527：内置频道 enabled 判定跟随开关");
+  assert.ok(src.includes('disabled: !o.enabled'), "#527：未启用路由 chip 原生 disabled 禁点");
+  assert.ok(src.includes('" is-off"') && src.includes('"dn-route-chip"'), "#527：未启用路由 chip 带 is-off 弱化 class");
+  assert.ok(src.includes("routeDisabledHint"), "#527：路由未启用 title 提示引用文案键");
+
+  // 2. 免打扰豁免 chips：未启用事件 disabled 禁点（保留 dn-set-allowDim 弱化）
+  assert.ok(src.includes("disabled: !c.enabled"), "#527：未启用豁免事件 chip 原生 disabled 禁点");
+  assert.ok(src.includes("dn-set-allowDim"), "#527：#421 弱化样式保留（与 disabled 叠加）");
+
+  // 3. 文案键双语 + 产物
+  assert.ok(locales.includes('routeDisabledHint: "频道未启用：先在上方「通知频道」启用后才能配置投递"'), "#527：routeDisabledHint 中文文案");
+  assert.ok(locales.includes("routeDisabledHint: \"Channel not enabled"), "#527：routeDisabledHint 英文文案");
+  assert.ok(client.includes("is-off") && client.includes("routeDisabledHint"), "#527：置灰逻辑与文案键进产物");
+  assert.ok(css.includes("dn-route-chip.is-off"), "#527：is-off 置灰样式进 CSS");
+}

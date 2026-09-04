@@ -158,7 +158,7 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
   };
   var STYLE_ID = "dsh-notifier-style";
   // 合并 #418/#421/#426/#508 后统一 bump（保证新样式重注入；508-1 > 426-1）
-  var CSS_VERSION = "405-2";
+  var CSS_VERSION = "527-1";
   // 浏览器通知图标（内联 SVG data URL，零外部资源；铃铛造型）。
   var NOTIFY_ICON =
     "data:image/svg+xml;utf8," +
@@ -1126,15 +1126,18 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
       return ids;
     }
 
-    /** 路由候选（含停用频道——显式路由允许指向停用频道；点亮态由 defaultRouteIds /
-     *  显式快照真实呈现，不美化）。 */
-    function routeOptions(prev: any): Array<{ id: string; label: string }> {
+    /** 路由候选（含停用频道——保留显示以呈现「已配置但未启用」；未启用者置灰
+     *  禁点——投递面 = 启用频道 ∩ 路由，未启用频道即使点亮也不投递，假点亮误导。
+     *  enabled 标志供 chips 置灰/title 提示（#527）；已勾选未启用频道不自动清除，
+     *  用户启用后即恢复有效）。 */
+    function routeOptions(prev: any): Array<{ id: string; label: string; enabled: boolean }> {
+      var inst = (prev.channels || []).map(function (c: any) {
+        return { id: channelIdFor(c), label: c.name || String(c.id), enabled: c.enabled === true };
+      });
       return [
-        { id: "browser", label: t("chBrowserNotify") },
-        { id: "system", label: t("chSystemNotify") },
-      ].concat((prev.channels || []).map(function (c: any) {
-        return { id: channelIdFor(c), label: c.name || String(c.id) };
-      }));
+        { id: "browser", label: t("chBrowserNotify"), enabled: prev.browserNotify === true },
+        { id: "system", label: t("chSystemNotify"), enabled: prev.systemNotify === true },
+      ].concat(inst);
     }
 
     /**
@@ -1707,11 +1710,16 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
       });
       var chips = options.map(function (o) {
         var on = litSet[o.id] === true;
+        // 未启用频道：置灰禁点（#527）——投递面 = 启用频道 ∩ 路由，停用频道点亮
+        // 也不投递（假点亮）；title 说明「启用后可用」。已勾选未启用项保留勾选
+        // 显示（不自动改用户配置），用户启用频道后该 chip 恢复可点/生效。
         return React.createElement("button", {
           type: "button",
           key: o.id,
-          className: "dn-route-chip" + (on ? " is-on" : ""),
+          className: "dn-route-chip" + (on ? " is-on" : "") + (o.enabled ? "" : " is-off"),
           "aria-pressed": on ? "true" : "false",
+          disabled: !o.enabled,
+          title: o.enabled ? undefined : t("routeDisabledHint"),
           onClick: function () { routeToggle(kind, o.id, !on); },
         }, o.label);
       });
@@ -1880,11 +1888,15 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
     });
     var allowChips = quietAllowChoices.map(function (c) {
       var checked = allows.indexOf(c.kind) !== -1;
+      // 未启用事件：置灰禁点（#527）——事件开关关闭则不产生通知，豁免勾选无意义；
+      // 保留已勾选显示（不自动改配置），启用事件后恢复可点。禁点用原生 disabled。
       return React.createElement("button", {
         type: "button",
         key: c.kind,
         className: "dn-route-chip" + (checked ? " is-on" : "") + (c.enabled ? "" : " dn-set-allowDim"),
         "aria-pressed": checked ? "true" : "false",
+        disabled: !c.enabled,
+        title: c.enabled ? undefined : t("allowDisabledHint"),
         onClick: function () {
           var next = allows.slice();
           if (!checked && next.indexOf(c.kind) === -1) next.push(c.kind);
