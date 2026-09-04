@@ -1,0 +1,1433 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dsh-notifier 通知中心 UI/UX v0.2.2 评审样本（r4）</title>
+<!--
+  dsh-notifier 通知中心 UI/UX 现代化 + webhook 频道（安卓推送）——静态评审样本 r4
+  对应 issue #505（v0.2.2 方向一）/ #366 频道 SPI 第四频道位。
+  r2 修订：已落实对抗评审全部 P0（路由默认语义 / chips 状态标签 / {{priority}} 派生占位符 /
+  JSON-aware 模板渲染声明 / Gotify 改 Header 认证 / switch 触控与无障碍名 / webhook 卡头移动端换行），
+  并按「无数据支撑不承诺」砍掉：历史筛选 chips、记录级频道徽标、未确认 kind 豁免徽标、版本徽标、webhook 卡强调色。
+  r3 修订（用户拍板）：① 认证字段按业界实践动态化（Bearer 单字段 / Basic 用户名+密码 / 自定义头 头名+值）；
+  ② 投递超时开放配置（1–60s，默认 10，UI min/max + 服务端 clamp）；③ 历史筛选/记录级频道徽标排期跟踪；
+  ④ severity→ntfy priority 映射表确认；⑤ 频道类型 SVG 图标保留。
+  r4 增补（用户反馈）：动态 kind（插件注入的通知类型）确认后同样支持配置投递频道（kindRoutes 路由 chips）。
+  仅为评审用静态 mock：不接入任何后端，样式变量模拟宿主 --dsw-alias-* 主题面。
+  落地形态 = src/client/index.ts（React createElement）+ style.css，本文件不直接入库为代码。
+-->
+<style>
+/* ================= 主题变量（模拟宿主 --dsw-alias-*，含浅色回退） =================
+   注：亮色值为官方 style.css 回退同款；暗色值为 mock 自拟——真实落地整块删除、
+   只依赖宿主主题变量（评审 P1-24）。tertiary 已按 4.5:1 对比度上调（评审 P1-15）。 */
+:root, html[data-theme="light"] {
+  --dsw-alias-bg-base: #ffffff;
+  --dsw-alias-bg-layer-1: #f5f6f8;
+  --dsw-alias-bg-layer-2: #eceef2;
+  --dsw-alias-border-l1: #e2e5ea;
+  --dsw-alias-border-l2: #d3d8df;
+  --dsw-alias-label-primary: #1f2329;
+  --dsw-alias-label-secondary: #5f6672;
+  --dsw-alias-label-tertiary: #6d7480;
+  --dsw-alias-state-info-primary: #2f6fed;
+  --dsw-alias-state-info-soft: rgba(47, 111, 237, 0.10);
+  --dsw-alias-state-success-primary: #0f9d6e;
+  --dsw-alias-state-success-soft: rgba(15, 157, 110, 0.12);
+  --dsw-alias-state-warning-primary: #b45309;
+  --dsw-alias-state-warning-soft: rgba(247, 144, 9, 0.14);
+  --dsw-alias-state-error-primary: #d92d20;
+  --dsw-alias-state-error-soft: rgba(217, 45, 32, 0.10);
+  --mock-page-bg: #e9ecf1;
+  --mock-shadow: 0 12px 40px rgba(15, 23, 42, 0.12);
+  --dn-sev-info: #2f6fed;
+  --dn-sev-success: #0f9d6e;
+  --dn-sev-warning: #f79009;
+  --dn-sev-failure: #d92d20;
+}
+html[data-theme="dark"] {
+  --dsw-alias-bg-base: #17191d;
+  --dsw-alias-bg-layer-1: #1f2227;
+  --dsw-alias-bg-layer-2: #262a31;
+  --dsw-alias-border-l1: #2f343b;
+  --dsw-alias-border-l2: #3c424b;
+  --dsw-alias-label-primary: #e8eaed;
+  --dsw-alias-label-secondary: #b3b9c2;
+  --dsw-alias-label-tertiary: #8b929e;
+  --dsw-alias-state-info-primary: #6b9aff;
+  --dsw-alias-state-info-soft: rgba(107, 154, 255, 0.16);
+  --dsw-alias-state-success-primary: #34c48e;
+  --dsw-alias-state-success-soft: rgba(52, 196, 142, 0.16);
+  --dsw-alias-state-warning-primary: #f7a23b;
+  --dsw-alias-state-warning-soft: rgba(247, 162, 59, 0.16);
+  --dsw-alias-state-error-primary: #ef5350;
+  --dsw-alias-state-error-soft: rgba(239, 83, 80, 0.16);
+  --mock-page-bg: #0e1013;
+  --mock-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  --dn-sev-info: #6b9aff;
+  --dn-sev-success: #34c48e;
+  --dn-sev-warning: #f7a23b;
+  --dn-sev-failure: #ef5350;
+}
+
+/* ================= mock 外框（非插件样式，仅评审页用） ================= */
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--mock-page-bg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: var(--dsw-alias-label-primary);
+  transition: background 0.2s ease;
+}
+.mock-toolbar {
+  position: sticky; top: 0; z-index: 50;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 20px;
+  background: var(--dsw-alias-bg-base);
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+.mock-toolbar .mock-title { font-size: 13px; font-weight: 700; }
+.mock-toolbar .mock-sub { font-size: 11px; color: var(--dsw-alias-label-tertiary); }
+.mock-spacer { flex: 1; }
+.mock-btn {
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  border-radius: 8px;
+  padding: 6px 12px;
+  min-height: 32px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.mock-btn.is-active {
+  border-color: var(--dsw-alias-state-info-primary);
+  color: var(--dsw-alias-state-info-primary);
+  background: var(--dsw-alias-state-info-soft);
+  font-weight: 600;
+}
+.mock-stage { display: flex; justify-content: center; padding: 28px 16px 60px; }
+.mock-shell { width: 760px; max-width: 100%; transition: width 0.25s ease; }
+.mock-shell.is-phone { width: 390px; }
+.mock-crumb { font-size: 12px; color: var(--dsw-alias-label-tertiary); margin: 0 2px 10px; }
+.mock-crumb b { color: var(--dsw-alias-label-secondary); font-weight: 600; }
+.mock-guide {
+  margin: 0 0 14px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-base);
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+.mock-guide summary {
+  cursor: pointer; user-select: none;
+  padding: 9px 14px;
+  min-height: 32px;
+  display: flex; align-items: center;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+  list-style: none;
+}
+.mock-guide summary::-webkit-details-marker { display: none; }
+.mock-guide summary::before { content: "改动点与评审关注项 ▸ "; color: var(--dsw-alias-state-info-primary); }
+.mock-guide[open] summary::before { content: "改动点与评审关注项 ▾ "; }
+.mock-guide ul { margin: 0; padding: 2px 30px 12px; line-height: 1.9; }
+.mock-guide h4 { margin: 10px 0 2px; color: var(--dsw-alias-label-primary); font-size: 12px; }
+
+/* mock 专用 toast（操作反馈演示） */
+.mock-toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-bg-base);
+  font-size: 12px;
+  border-radius: 8px;
+  padding: 8px 16px;
+  z-index: 100;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+}
+
+/* ================= 设置卡（dn- 前缀，模拟 settings.section 插槽卡片） ================= */
+.dn-set-card {
+  list-style: none;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 12px;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-base);
+  box-shadow: var(--mock-shadow);
+}
+/* --- 顶部：三 tab 分段器（普通 button，不用 role=tablist——与现实现一致） --- */
+.dn-set-card .dn-set-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+}
+.dn-set-card .dn-set-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 5px 14px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.dn-set-card .dn-set-tab:hover { color: var(--dsw-alias-label-primary); }
+.dn-set-card .dn-set-tabActive {
+  background: var(--dsw-alias-bg-base);
+  border-color: var(--dsw-alias-border-l1);
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+.dn-set-card .dn-set-tabBadge {
+  min-width: 17px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--dsw-alias-state-error-primary);
+  color: #fff;
+  font-size: 10px;
+  line-height: 17px;
+  text-align: center;
+}
+.dn-set-card .dn-set-body { padding: 14px; }
+
+/* --- 分区标题 --- */
+.dn-set-card .dn-sec { margin: 0 0 8px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.dn-set-card .dn-sec-title { font-weight: 600; font-size: 12px; }
+.dn-set-card .dn-sec-hint { font-size: 11px; color: var(--dsw-alias-label-tertiary); }
+
+/* --- 开关（switch）：track 40×22，透明 input 覆盖 44×32 触控区，aria-label 提供可访问名 --- */
+.dn-switch {
+  position: relative;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 32px;
+  flex: none;
+  cursor: pointer;
+}
+.dn-switch input {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  margin: 0; opacity: 0; cursor: pointer;
+}
+.dn-switch .dn-switch-track {
+  width: 40px; height: 22px;
+  border-radius: 11px;
+  background: var(--dsw-alias-border-l2);
+  transition: background 0.15s ease;
+  flex: none;
+  position: relative;
+}
+.dn-switch .dn-switch-track::after {
+  content: "";
+  position: absolute; top: 2px; left: 2px;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s ease;
+}
+.dn-switch input:checked + .dn-switch-track { background: var(--dsw-alias-state-success-primary); }
+.dn-switch input:checked + .dn-switch-track::after { transform: translateX(18px); }
+.dn-switch input:focus-visible + .dn-switch-track {
+  outline: 2px solid var(--dsw-alias-state-info-primary);
+  outline-offset: 2px;
+}
+
+/* --- 事件行（severity 色点 + 名称 + kind 码 + 开关 + 路由 chips） --- */
+.dn-set-card .dn-evt {
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: var(--dsw-alias-bg-base);
+}
+.dn-set-card .dn-evt-head {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  min-height: 32px;
+}
+.dn-sev { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--dn-sev-info); }
+.dn-sev-success { background: var(--dn-sev-success); }
+.dn-sev-warning { background: var(--dn-sev-warning); }
+.dn-sev-failure { background: var(--dn-sev-failure); }
+.dn-set-card .dn-evt-name { font-weight: 600; }
+.dn-set-card .dn-evt-kind {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary);
+  background: var(--dsw-alias-bg-layer-1);
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 6px;
+  padding: 0 5px;
+  line-height: 1.7;
+}
+.dn-set-card .dn-evt-head .dn-switch { margin-left: auto; }
+.dn-set-card .dn-evt-routes {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--dsw-alias-border-l1);
+}
+.dn-set-card .dn-evt-routesCap { font-size: 11px; color: var(--dsw-alias-label-tertiary); flex: none; }
+/* 路由 chip：button + aria-pressed；≥32px 触控 */
+.dn-route-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-tertiary);
+  border-radius: 999px;
+  padding: 4px 12px;
+  min-height: 32px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+.dn-route-chip::before {
+  content: "";
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--dsw-alias-border-l2);
+  flex: none;
+}
+.dn-route-chip.is-on {
+  background: var(--dsw-alias-state-info-soft);
+  border-color: var(--dsw-alias-state-info-primary);
+  color: var(--dsw-alias-state-info-primary);
+  font-weight: 600;
+}
+.dn-route-chip.is-on::before { background: var(--dsw-alias-state-info-primary); }
+/* stale chip：路由残留的已删频道（虚线 + help 光标，保存时自动清理） */
+.dn-route-chip.is-stale {
+  border-style: dashed;
+  opacity: 0.75;
+  cursor: help;
+  text-decoration: line-through;
+}
+/* 路由状态标签：default 态为纯文本，custom 态为可点击恢复链接（状态≠动作，动态渲染） */
+.dn-route-state {
+  border: none; background: none;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  min-height: 32px;
+  padding: 0 4px;
+  cursor: default;
+}
+.dn-route-state.is-custom {
+  color: var(--dsw-alias-state-info-primary);
+  cursor: pointer;
+  text-decoration: underline dotted;
+  font-weight: 600;
+}
+
+/* --- 动态 kind 待确认 --- */
+.dn-set-card .dn-kinds {
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-left: 3px solid var(--dsw-alias-state-warning-primary);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: var(--dsw-alias-state-warning-soft);
+}
+.dn-set-card .dn-kinds-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 32px; }
+.dn-set-card .dn-kinds-name { font-weight: 600; }
+.dn-set-card .dn-kinds-src { font-size: 11px; color: var(--dsw-alias-label-secondary); }
+.dn-set-card .dn-kinds-actions { margin-left: auto; display: flex; gap: 6px; }
+
+/* --- 按钮（全部 ≥32px 触控） --- */
+.dn-set-card .dn-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  border-radius: 8px;
+  padding: 5px 12px;
+  min-height: 32px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.dn-set-card .dn-btn:hover { border-color: var(--dsw-alias-border-l2); }
+.dn-set-card .dn-btnSmall { min-height: 32px; padding: 4px 12px; font-size: 11px; border-radius: 7px; }
+.dn-set-card .dn-btnPrimary {
+  background: var(--dsw-alias-state-info-primary);
+  border-color: var(--dsw-alias-state-info-primary);
+  color: #fff;
+  font-weight: 600;
+}
+.dn-set-card .dn-btnDanger {
+  background: var(--dsw-alias-state-error-primary);
+  border-color: var(--dsw-alias-state-error-primary);
+  color: #fff;
+}
+.dn-set-card .dn-btnGhostDanger {
+  color: var(--dsw-alias-state-error-primary);
+  border-color: var(--dsw-alias-state-error-soft);
+  background: var(--dsw-alias-state-error-soft);
+}
+.dn-set-card button:focus-visible, .dn-set-card input:focus-visible,
+.dn-set-card select:focus-visible, .dn-set-card textarea:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-info-primary);
+  outline-offset: 2px;
+}
+
+/* --- 免打扰 --- */
+.dn-set-card .dn-dnd {
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--dsw-alias-bg-base);
+}
+.dn-set-card .dn-dnd-head { display: flex; align-items: center; gap: 8px; min-height: 32px; }
+.dn-set-card .dn-dnd-head .dn-switch { margin-left: auto; }
+.dn-set-card .dn-dnd-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; font-size: 12px; }
+.dn-set-card .dn-dnd-row .dn-dnd-cap { color: var(--dsw-alias-label-secondary); }
+.dn-set-card .dn-input {
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 12px;
+  min-height: 32px;
+}
+.dn-set-card .dn-inputText { width: 240px; max-width: 100%; }
+.dn-set-card .dn-select { width: auto; min-width: 120px; }
+.dn-set-card .dn-allowChips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+
+/* --- 折叠区 --- */
+.dn-set-card .dn-fold { margin-top: 10px; }
+.dn-set-card .dn-fold > summary {
+  cursor: pointer; user-select: none; list-style: none;
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 32px;
+  padding: 2px 12px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+}
+.dn-set-card .dn-fold > summary::-webkit-details-marker { display: none; }
+.dn-set-card .dn-fold > summary::before {
+  content: "";
+  width: 5px; height: 5px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.12s ease;
+}
+.dn-set-card .dn-fold[open] > summary::before { transform: rotate(45deg); }
+.dn-set-card .dn-fold-body {
+  margin-top: 8px;
+  border: 1px dashed var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.dn-set-card .dn-fold-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-height: 36px; }
+.dn-set-card .dn-fold-row + .dn-fold-row { border-top: 1px dashed var(--dsw-alias-border-l1); }
+.dn-set-card .dn-fold-row .dn-fold-cap { flex: 1; color: var(--dsw-alias-label-secondary); }
+.dn-set-card .dn-fold-row .dn-numInput { width: 110px; }
+
+/* --- 频道卡 --- */
+.dn-set-card .dn-ch-card {
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 12px;
+  margin-bottom: 10px;
+  background: var(--dsw-alias-bg-base);
+  overflow: hidden;
+}
+.dn-set-card .dn-ch-card > summary {
+  cursor: pointer; list-style: none; user-select: none;
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px;
+  min-height: 48px;
+  flex-wrap: wrap; /* 390px 下允许换行，开关不被挤出（评审 P0-19） */
+}
+.dn-set-card .dn-ch-card > summary::-webkit-details-marker { display: none; }
+.dn-set-card .dn-ch-card > summary::after {
+  content: "";
+  width: 6px; height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 0.12s ease;
+  opacity: 0.5;
+  flex: none;
+  margin-left: auto;
+}
+.dn-set-card .dn-ch-card[open] > summary::after { transform: rotate(225deg); }
+/* 频道图标（P2 取舍项：帮助快速区分频道类型，可砍回状态圆点） */
+.dn-ch-icon {
+  width: 30px; height: 30px;
+  border-radius: 8px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  flex: none;
+}
+.dn-ch-icon svg { width: 16px; height: 16px; }
+.dn-set-card .dn-ch-name { font-weight: 600; }
+.dn-set-card .dn-ch-type {
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary);
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 6px;
+  padding: 0 5px;
+  line-height: 1.7;
+}
+.dn-ch-statusDot { width: 8px; height: 8px; border-radius: 50%; background: var(--dsw-alias-border-l2); flex: none; }
+.dn-ch-statusDot.ok { background: var(--dn-sev-success); }
+.dn-ch-statusDot.fail { background: var(--dn-sev-failure); box-shadow: 0 0 0 3px var(--dsw-alias-state-error-soft); }
+.dn-set-card .dn-ch-statusTxt { font-size: 11px; color: var(--dsw-alias-label-tertiary); }
+.dn-ch-failBadge {
+  font-size: 10px;
+  border-radius: 8px;
+  padding: 1px 7px;
+  background: var(--dsw-alias-state-error-soft);
+  border: 1px solid var(--dsw-alias-state-error-primary);
+  color: var(--dsw-alias-state-error-primary);
+  flex: none;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dn-set-card .dn-ch-summaryRight { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; }
+.dn-set-card .dn-ch-card > summary > .dn-ch-summaryRight ~ ::after { margin-left: 0; }
+/* 卡体 */
+.dn-set-card .dn-ch-body { padding: 4px 14px 12px; border-top: 1px dashed var(--dsw-alias-border-l1); }
+.dn-set-card .dn-ch-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 0; min-height: 40px; }
+.dn-set-card .dn-ch-row + .dn-ch-row { border-top: 1px solid var(--dsw-alias-bg-layer-1); }
+.dn-set-card .dn-ch-cap { flex: 0 0 96px; color: var(--dsw-alias-label-secondary); }
+.dn-set-card .dn-ch-ctl { flex: 1 1 220px; min-width: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dn-set-card .dn-ch-ctl .dn-inputText { flex: 1 1 180px; width: auto; min-width: 0; }
+.dn-set-card .dn-ch-hint { flex-basis: 100%; font-size: 11px; color: var(--dsw-alias-label-tertiary); line-height: 1.6; }
+.dn-set-card .dn-ch-actions {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  padding-top: 8px; margin-top: 4px;
+  border-top: 1px dashed var(--dsw-alias-border-l1);
+}
+.dn-set-card .dn-ch-perm { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 11px; color: var(--dsw-alias-label-tertiary); }
+.dn-set-card .dn-ch-onEdge { border-left: 3px solid var(--dsw-alias-state-success-primary); }
+.dn-set-card .dn-ch-card.dn-ch-off > summary { opacity: 0.75; }
+
+/* secret 掩码显示 */
+.dn-secret { display: inline-flex; align-items: center; gap: 6px; flex: 1 1 180px; min-width: 0; }
+.dn-secret .dn-inputText { flex: 1 1 auto; font-family: ui-monospace, monospace; letter-spacing: 0.08em; }
+.dn-secret-reveal {
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  border-radius: 7px;
+  min-height: 32px;
+  padding: 4px 10px;
+  font-size: 11px; cursor: pointer; flex: none;
+}
+/* 认证动态字段组（r3：Bearer 单字段 / Basic 两字段 / 自定义头两字段，按选择渲染） */
+.dn-authFields { display: inline-flex; align-items: center; gap: 6px; flex: 1 1 200px; min-width: 0; flex-wrap: wrap; }
+.dn-authFields .dn-inputText { flex: 1 1 120px; width: auto; min-width: 0; font-family: ui-monospace, monospace; }
+
+/* webhook 模板编辑 */
+.dn-tpl {
+  width: 100%;
+  min-height: 112px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.7;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  tab-size: 2;
+}
+.dn-tplChips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; align-items: center; }
+.dn-tplChips .dn-tplCap { font-size: 11px; color: var(--dsw-alias-label-tertiary); }
+.dn-tpl-chip {
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-secondary);
+  padding: 5px 8px;
+  min-height: 32px;
+  cursor: copy;
+}
+.dn-tpl-chip.is-raw { border-style: solid; color: var(--dsw-alias-state-warning-primary); border-color: var(--dsw-alias-state-warning-soft); }
+
+/* levels 矩阵 */
+.dn-levels-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 0; }
+.dn-levels-row .dn-levels-kind { flex: 0 1 150px; min-width: 0; font-size: 12px; }
+.dn-levels-row .dn-select { flex: 1 1 130px; }
+.dn-levels-add { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+
+/* --- 通知记录 --- */
+.dn-set-card .dn-his-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.dn-set-card .dn-his-list { list-style: none; margin: 0; padding: 0; }
+.dn-set-card .dn-his-item {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 9px 2px;
+  border-bottom: 1px solid var(--dsw-alias-bg-layer-1);
+}
+.dn-set-card .dn-his-item .dn-sev { margin-top: 4px; }
+.dn-his-main { flex: 1; min-width: 0; }
+.dn-his-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dn-his-kind { font-weight: 600; font-size: 11px; color: var(--dsw-alias-label-primary); }
+.dn-his-time { font-size: 11px; color: var(--dsw-alias-label-tertiary); font-variant-numeric: tabular-nums; }
+.dn-his-sup {
+  font-size: 10px;
+  border-radius: 8px;
+  padding: 0 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-tertiary);
+}
+.dn-his-text { font-size: 12px; color: var(--dsw-alias-label-secondary); margin-top: 3px; line-height: 1.6; overflow-wrap: anywhere; }
+
+/* --- 底部保存栏（脏状态） --- */
+.dn-set-card .dn-set-foot {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+}
+.dn-dirty { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--dsw-alias-state-warning-primary); }
+.dn-dirty::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--dsw-alias-state-warning-primary); }
+.dn-set-card .dn-set-foot .dn-spacer { flex: 1; }
+.dn-set-card .dn-save {
+  border: none;
+  background: var(--dsw-alias-state-success-primary);
+  color: #fff;
+  border-radius: 8px;
+  padding: 6px 20px;
+  min-height: 32px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+.dn-set-card .dn-save:hover { opacity: 0.92; }
+
+/* 降级说明（三 tab 常显：writable=false 等全局状态不能被 tab 藏住，评审 P1-4） */
+.dn-set-card .dn-notes { margin-top: 10px; }
+.dn-set-card .dn-note {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  line-height: 1.7;
+  border-left: 3px solid var(--dsw-alias-border-l2);
+  padding-left: 8px;
+  margin-top: 6px;
+}
+
+/* ================= 移动端（phone 模拟 ≤480px 真机同款断点） ================= */
+@media (max-width: 480px) {
+  .mock-stage { padding: 16px 8px 60px; }
+  .dn-set-card .dn-set-body { padding: 12px 10px; }
+  .dn-set-card .dn-set-tabs { padding: 8px 10px; }
+  .dn-set-card .dn-set-tab { flex: 1; justify-content: center; padding: 5px 8px; }
+  /* 频道卡头：窄屏收起次要信息，保证 名称+徽标+开关 一行可达 */
+  .dn-set-card .dn-ch-card > summary .dn-ch-statusTxt { display: none; }
+  .dn-set-card .dn-ch-cap { flex-basis: 100%; }
+  .dn-set-card .dn-ch-ctl { flex-basis: 100%; }
+  .dn-set-card .dn-ch-ctl .dn-inputText { flex: 1 1 100%; }
+  .dn-set-card .dn-btn { flex: 1 1 auto; }
+  .dn-set-card .dn-evt-head .dn-switch { margin-left: 0; }
+  .dn-ch-failBadge { max-width: 140px; }
+}
+</style>
+</head>
+<body>
+
+<header class="mock-toolbar">
+  <span class="mock-title">dsh-notifier 通知中心 · UI/UX v0.2.2 评审样本（r4）</span>
+  <span class="mock-sub">静态 mock · issue #505 方向一 + #366 webhook 频道位</span>
+  <span class="mock-spacer"></span>
+  <button class="mock-btn" id="btnWidth" onclick="toggleWidth()">📱 手机宽度 (390px)</button>
+  <button class="mock-btn" id="btnTheme" onclick="toggleTheme()">🌙 暗色</button>
+</header>
+
+<div class="mock-stage">
+<div class="mock-shell" id="shell">
+
+  <details class="mock-guide">
+    <summary>改动点 / 修订记录 / 待拍板项（点开查看）</summary>
+    <ul>
+      <h4>本次改动点</h4>
+      <li><b>信息层级</b>：双 tab 扩为三 tab——「通知事件 / 通知频道 / 通知记录」，历史独立成 tab；事件 tab 保留待确认 kind 徽标。</li>
+      <li><b>控件现代化</b>：checkbox → 开关（44×32 触控区 + aria-label）；路由由展开复选组改为<b>频道 chips 直点切换</b>，右侧状态标签动态显示「跟随默认 / 自定义 · N 频道」。</li>
+      <li><b>路由语义定死</b>：全亮 = 跟随默认（随频道启停动态）；任一 chip 点灭即物化为自定义快照；全灭 = 自动恢复跟随默认并 toast 反馈；虚线删除线 chip = 残留已删频道（保存时清理）。</li>
+      <li><b>webhook 频道（安卓）</b>：预设 ntfy / Gotify / 自建 + Header 认证（token 不进 URL）+ JSON 模板编辑器；<code>{{priority}}</code> 为频道感知派生占位符（severity→ntfy priority 映射收口在服务端），文本占位符 JSON-aware 转义、<code>{{ts}}</code> 数字直出。</li>
+      <li><b>保存栏</b>：底部常驻「N 处未保存修改」脏状态 + 保存/放弃（diffSettingsPayload 已有能力）。</li>
+      <h4>对抗评审修订（r2）</h4>
+      <li>已修 P0×6：chips 默认语义与全灭歧义、mock 路由状态自相矛盾、{{severity}} 映射矛盾（改 {{priority}}）、模板 JSON 注入（声明 JSON-aware 渲染策略）、Gotify token 明文进 URL（改 Authorization 头）、switch 触控目标/无障碍名、webhook 卡头 390px 溢出（summary 换行 + 窄屏隐藏次要文本）。</li>
+      <li>已砍（无数据支撑/炫技）：历史筛选 chips、记录级频道徽标、「未确认 kind」豁免徽标、「v0.2.2 新」版本徽标、webhook 卡强调色。</li>
+      <li>可达性：chips 补 aria-pressed、移除残缺 role=tablist、小按钮/占位符 chips 触控提至 32px、tertiary 文本对比度上调（暗色值为 mock 自拟，落地依赖宿主变量）。</li>
+      <h4>已拍板（r3，全部落实进本样本）</h4>
+      <li>① 认证按业界实践：Bearer / Basic（用户名+密码）/ 自定义头（头名+值）——切换认证方式动态渲染对应字段（下方「认证」行可实际切换体验）。</li>
+      <li>② 投递超时开放配置：1–60 秒，默认 10（UI min/max 限界 + 服务端 clamp）；超时与失败均落记录、不自动重试。</li>
+      <li>③ 历史筛选 / 记录级「投递到哪些频道」徽标：需后端历史结构扩展，<b>排期跟踪</b>（后续在 #505 下拆 issue，本期不做）。</li>
+      <li>④ severity→ntfy priority 映射表确认：info→default / success→low / warning→high / failure→urgent。</li>
+      <li>⑤ 频道类型 SVG 图标保留。</li>
+      <h4>r4 增补（用户反馈）</h4>
+      <li><b>动态 kind 也支持配置投递频道</b>：插件注入的通知类型确认（允许）后，与内置事件同款路由 chips（kindRoutes 天然支持动态 kind id 作路由 key）；待确认行不显示路由，允许后出现。</li>
+      <h4>落地注意（非 UI）</h4>
+      <li>type:"webhook" 是配置模型改动（normalize/校验/secret 规则全链，非纯 UI）；掩码收口 deviceKey→token 扩展；失败信息接 sanitizeErrorText + smoke 断言；CSS_VERSION bump。</li>
+    </ul>
+  </details>
+
+  <p class="mock-crumb">设置 · <b>通知中心</b>（settings.section 独立 tab，order 70）</p>
+
+  <section class="dn-set-card">
+    <!-- tab 栏 -->
+    <div class="dn-set-tabs">
+      <button class="dn-set-tab dn-set-tabActive" data-pane="events">通知事件 <span class="dn-set-tabBadge">1</span></button>
+      <button class="dn-set-tab" data-pane="channels">通知频道</button>
+      <button class="dn-set-tab" data-pane="history">通知记录</button>
+    </div>
+
+    <div class="dn-set-body">
+
+      <!-- ================= tab 1：通知事件 ================= -->
+      <div id="pane-events">
+
+        <div class="dn-sec">
+          <span class="dn-sec-title">内置事件</span>
+          <span class="dn-sec-hint">开关控制是否投递；chips 控制投递到哪些频道</span>
+        </div>
+
+        <!-- 事件行 1：ask（跟随默认） -->
+        <div class="dn-evt">
+          <div class="dn-evt-head">
+            <span class="dn-sev dn-sev-warning" title="severity: warning"></span>
+            <span class="dn-evt-name">需要授权</span>
+            <span class="dn-evt-kind">ask</span>
+            <label class="dn-switch"><input type="checkbox" checked aria-label="启用事件：需要授权" data-dirty><span class="dn-switch-track"></span></label>
+          </div>
+          <div class="dn-evt-routes">
+            <span class="dn-evt-routesCap">投递到</span>
+            <button class="dn-route-chip is-on" aria-pressed="true">浏览器</button>
+            <button class="dn-route-chip is-on" aria-pressed="true">系统</button>
+            <button class="dn-route-chip is-on" aria-pressed="true">Bark·iPhone</button>
+            <button class="dn-route-chip is-on" aria-pressed="true">ntfy·安卓</button>
+            <button class="dn-route-state">跟随默认 · 全部启用频道</button>
+          </div>
+        </div>
+
+        <!-- 事件行 2：question（自定义：3 频道，系统被点灭） -->
+        <div class="dn-evt">
+          <div class="dn-evt-head">
+            <span class="dn-sev" title="severity: info"></span>
+            <span class="dn-evt-name">模型提问</span>
+            <span class="dn-evt-kind">question</span>
+            <label class="dn-switch"><input type="checkbox" aria-label="启用事件：模型提问" data-dirty><span class="dn-switch-track"></span></label>
+          </div>
+          <div class="dn-evt-routes">
+            <span class="dn-evt-routesCap">投递到</span>
+            <button class="dn-route-chip is-on" aria-pressed="true">浏览器</button>
+            <button class="dn-route-chip" aria-pressed="false">系统</button>
+            <button class="dn-route-chip is-on" aria-pressed="true">Bark·iPhone</button>
+            <button class="dn-route-chip is-on" aria-pressed="true">ntfy·安卓</button>
+            <button class="dn-route-state is-custom">自定义 · 3 频道 · 恢复默认</button>
+          </div>
+        </div>
+
+        <!-- 事件行 3：done（自定义：2 频道 + stale 残留 chip 示例） -->
+        <div class="dn-evt">
+          <div class="dn-evt-head">
+            <span class="dn-sev dn-sev-success" title="severity: success"></span>
+            <span class="dn-evt-name">任务完成</span>
+            <span class="dn-evt-kind">done</span>
+            <label class="dn-switch"><input type="checkbox" checked aria-label="启用事件：任务完成" data-dirty><span class="dn-switch-track"></span></label>
+          </div>
+          <div class="dn-evt-routes">
+            <span class="dn-evt-routesCap">投递到</span>
+            <button class="dn-route-chip" aria-pressed="false">浏览器</button>
+            <button class="dn-route-chip is-on" aria-pressed="true">系统</button>
+            <button class="dn-route-chip is-on" aria-pressed="true">Bark·iPhone</button>
+            <button class="dn-route-chip" aria-pressed="false">ntfy·安卓</button>
+            <button class="dn-route-chip is-stale" aria-pressed="false" title="该频道已删除，路由条目残留；保存时自动清理">bark-2（已删除）</button>
+            <button class="dn-route-state is-custom">自定义 · 2 频道 · 恢复默认</button>
+          </div>
+        </div>
+
+        <!-- 事件行 4：error（跟随默认） -->
+        <div class="dn-evt">
+          <div class="dn-evt-head">
+            <span class="dn-sev dn-sev-failure" title="severity: failure"></span>
+            <span class="dn-evt-name">任务出错</span>
+            <span class="dn-evt-kind">error</span>
+            <label class="dn-switch"><input type="checkbox" checked aria-label="启用事件：任务出错" data-dirty><span class="dn-switch-track"></span></label>
+          </div>
+          <div class="dn-evt-routes">
+            <span class="dn-evt-routesCap">投递到</span>
+            <button class="dn-route-chip is-on" aria-pressed="true">浏览器</button>
+            <button class="dn-route-chip is-on" aria-pressed="true">系统</button>
+            <button class="dn-route-chip is-on" aria-pressed="true">Bark·iPhone</button>
+            <button class="dn-route-chip is-on" aria-pressed="true">ntfy·安卓</button>
+            <button class="dn-route-state">跟随默认 · 全部启用频道</button>
+          </div>
+        </div>
+
+        <!-- 事件行 5/6：平铺（评审 P2-30：折叠只藏 2 行反而藏配置） -->
+        <div class="dn-evt">
+          <div class="dn-evt-head">
+            <span class="dn-sev" title="severity: info"></span>
+            <span class="dn-evt-name">子代理完成</span>
+            <span class="dn-evt-kind">subagent-done</span>
+            <label class="dn-switch"><input type="checkbox" aria-label="启用事件：子代理完成" data-dirty><span class="dn-switch-track"></span></label>
+          </div>
+          <div class="dn-evt-routes">
+            <span class="dn-evt-routesCap">投递到</span>
+            <button class="dn-route-chip is-on" aria-pressed="true">浏览器</button>
+            <button class="dn-route-chip is-on" aria-pressed="true">系统</button>
+            <button class="dn-route-chip is-on" aria-pressed="true">Bark·iPhone</button>
+            <button class="dn-route-chip is-on" aria-pressed="true">ntfy·安卓</button>
+            <button class="dn-route-state">跟随默认 · 全部启用频道</button>
+          </div>
+        </div>
+        <div class="dn-evt">
+          <div class="dn-evt-head">
+            <span class="dn-sev" title="severity: info"></span>
+            <span class="dn-evt-name">回合结束</span>
+            <span class="dn-evt-kind">turn-end</span>
+            <label class="dn-switch"><input type="checkbox" aria-label="启用事件：回合结束" data-dirty><span class="dn-switch-track"></span></label>
+          </div>
+          <div class="dn-evt-routes">
+            <span class="dn-evt-routesCap">投递到</span>
+            <button class="dn-route-chip is-on" aria-pressed="true">浏览器</button>
+            <button class="dn-route-chip is-on" aria-pressed="true">系统</button>
+            <button class="dn-route-chip is-on" aria-pressed="true">Bark·iPhone</button>
+            <button class="dn-route-chip is-on" aria-pressed="true">ntfy·安卓</button>
+            <button class="dn-route-state">跟随默认 · 全部启用频道</button>
+          </div>
+        </div>
+
+        <!-- 动态 kind 待确认 -->
+        <div class="dn-sec" style="margin-top:14px">
+          <span class="dn-sec-title">插件提议的通知类型</span>
+          <span class="dn-sec-hint">确认前仅落记录、不推送</span>
+        </div>
+        <div class="dn-kinds">
+          <div class="dn-kinds-head">
+            <span class="dn-sev dn-sev-info"></span>
+            <span class="dn-kinds-name">闲置归档到期</span>
+            <span class="dn-evt-kind">idle-archive:due</span>
+            <span class="dn-kinds-src">来自 dsh-idle-archive</span>
+            <span class="dn-kinds-actions">
+              <button class="dn-btn dn-btnSmall dn-btnPrimary">允许</button>
+              <button class="dn-btn dn-btnSmall dn-btnGhostDanger">拒绝</button>
+            </span>
+          </div>
+          <div class="dn-ch-hint" style="padding-left:16px;margin-top:4px">允许后可像内置事件一样配置投递频道（r4：动态 kind 路由）</div>
+        </div>
+        <div class="dn-kinds" style="border-left-color: var(--dsw-alias-state-success-primary); background: var(--dsw-alias-bg-base); opacity: 0.75;">
+          <div class="dn-kinds-head">
+            <span class="dn-sev dn-sev-success"></span>
+            <span class="dn-kinds-name">用量日报</span>
+            <span class="dn-evt-kind">usage-report</span>
+            <span class="dn-kinds-src">来自 dsh-provider-usage · 已允许</span>
+            <span class="dn-kinds-actions">
+              <button class="dn-btn dn-btnSmall">撤销允许</button>
+            </span>
+          </div>
+          <div class="dn-evt-routes" style="border-top:none;margin-top:4px;padding-top:8px">
+            <span class="dn-evt-routesCap">投递到</span>
+            <button class="dn-route-chip is-on" aria-pressed="true">浏览器</button>
+            <button class="dn-route-chip is-on" aria-pressed="true">系统</button>
+            <button class="dn-route-chip is-on" aria-pressed="true">Bark·iPhone</button>
+            <button class="dn-route-chip" aria-pressed="false">ntfy·安卓</button>
+            <button class="dn-route-state is-custom">自定义 · 3 频道 · 恢复默认</button>
+          </div>
+        </div>
+
+        <!-- 免打扰 -->
+        <div class="dn-sec" style="margin-top:14px">
+          <span class="dn-sec-title">免打扰</span>
+          <span class="dn-sec-hint">时段内静默投递，仍落记录</span>
+        </div>
+        <div class="dn-dnd">
+          <div class="dn-dnd-head">
+            <span class="dn-sev dn-sev-warning"></span>
+            <span class="dn-evt-name">启用免打扰</span>
+            <label class="dn-switch"><input type="checkbox" checked aria-label="启用免打扰" data-dirty><span class="dn-switch-track"></span></label>
+          </div>
+          <div class="dn-dnd-row">
+            <span class="dn-dnd-cap">时段</span>
+            <input type="time" class="dn-input" value="22:00" aria-label="免打扰开始时间" data-dirty>
+            <span class="dn-dnd-cap">至</span>
+            <input type="time" class="dn-input" value="08:00" aria-label="免打扰结束时间" data-dirty>
+          </div>
+          <div class="dn-dnd-row" style="display:block">
+            <span class="dn-dnd-cap">时段内仍然提醒（豁免）：</span>
+            <div class="dn-allowChips">
+              <button class="dn-route-chip is-on" aria-pressed="true">需要授权</button>
+              <button class="dn-route-chip is-on" aria-pressed="true">模型提问</button>
+              <button class="dn-route-chip" aria-pressed="false">任务完成</button>
+              <button class="dn-route-chip" aria-pressed="false">子代理完成</button>
+              <button class="dn-route-chip is-on" aria-pressed="true">任务出错</button>
+              <button class="dn-route-chip" aria-pressed="false">回合结束</button>
+            </div>
+            <div class="dn-tplChips" style="margin-top:8px">
+              <button class="dn-btn dn-btnSmall">跟随已启用</button>
+              <button class="dn-btn dn-btnSmall">恢复默认</button>
+              <span class="dn-tplCap">灰 chip = 事件本身未启用（勾选态保留照常写入）</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 高级参数折叠 -->
+        <details class="dn-fold">
+          <summary>合并去重与保留策略</summary>
+          <div class="dn-fold-body">
+            <div class="dn-fold-row">
+              <span class="dn-fold-cap">错误合并窗口（同源错误聚合，毫秒）</span>
+              <input type="number" class="dn-input dn-numInput" value="10000" step="1000" aria-label="错误合并窗口毫秒" data-dirty>
+            </div>
+            <div class="dn-fold-row">
+              <span class="dn-fold-cap">完成合并窗口（毫秒）</span>
+              <input type="number" class="dn-input dn-numInput" value="3000" step="1000" aria-label="完成合并窗口毫秒" data-dirty>
+            </div>
+            <div class="dn-fold-row">
+              <span class="dn-fold-cap">授权提醒间隔（分钟，未响应时再次提醒）</span>
+              <input type="number" class="dn-input dn-numInput" value="5" step="1" aria-label="授权提醒间隔分钟" data-dirty>
+            </div>
+            <div class="dn-fold-row">
+              <span class="dn-fold-cap">通知记录保留天数</span>
+              <input type="number" class="dn-input dn-numInput" value="7" step="1" aria-label="通知记录保留天数" data-dirty>
+            </div>
+            <div class="dn-fold-row">
+              <span class="dn-fold-cap">SSE 最大连接数</span>
+              <input type="number" class="dn-input dn-numInput" value="64" step="1" min="1" max="1024" aria-label="SSE 最大连接数" data-dirty>
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <!-- ================= tab 2：通知频道 ================= -->
+      <div id="pane-channels" hidden>
+
+        <div class="dn-sec">
+          <span class="dn-sec-title">频道</span>
+          <span class="dn-sec-hint">投递失败徽标常驻卡头，收起也能看到</span>
+        </div>
+
+        <!-- 浏览器通知 -->
+        <details class="dn-ch-card dn-ch-onEdge" open>
+          <summary>
+            <span class="dn-ch-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 4 5.7 4 9s-1.5 6.4-4 9c-2.5-2.6-4-5.7-4-9s1.5-6.4 4-9z"/></svg></span>
+            <span class="dn-ch-name">浏览器通知</span>
+            <span class="dn-ch-type">内置</span>
+            <span class="dn-ch-statusDot ok" title="最近投递成功"></span>
+            <span class="dn-ch-statusTxt">昨天 23:41 成功</span>
+            <span class="dn-ch-summaryRight">
+              <label class="dn-switch"><input type="checkbox" checked aria-label="启用频道：浏览器通知" data-dirty><span class="dn-switch-track"></span></label>
+            </span>
+          </summary>
+          <div class="dn-ch-body">
+            <div class="dn-ch-row">
+              <span class="dn-ch-cap">权限状态</span>
+              <span class="dn-ch-ctl dn-ch-perm"><span>已授权（granted）</span></span>
+            </div>
+            <div class="dn-ch-row">
+              <span class="dn-ch-cap">页面可见时也弹</span>
+              <span class="dn-ch-ctl">
+                <label class="dn-switch"><input type="checkbox" aria-label="页面可见时也弹" data-dirty><span class="dn-switch-track"></span></label>
+                <span class="dn-ch-hint" style="flex:none">默认页面聚焦时静默，只落记录</span>
+              </span>
+            </div>
+            <div class="dn-ch-actions">
+              <button class="dn-btn dn-btnSmall">发送测试</button>
+            </div>
+          </div>
+        </details>
+
+        <!-- 系统通知 -->
+        <details class="dn-ch-card dn-ch-onEdge">
+          <summary>
+            <span class="dn-ch-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></span>
+            <span class="dn-ch-name">系统通知（Windows toast）</span>
+            <span class="dn-ch-type">内置</span>
+            <span class="dn-ch-statusTxt">从未投递</span>
+            <span class="dn-ch-summaryRight">
+              <label class="dn-switch"><input type="checkbox" checked aria-label="启用频道：系统通知" data-dirty><span class="dn-switch-track"></span></label>
+            </span>
+          </summary>
+          <div class="dn-ch-body">
+            <div class="dn-ch-row">
+              <span class="dn-ch-cap">提示音</span>
+              <span class="dn-ch-ctl">
+                <label class="dn-switch"><input type="checkbox" checked aria-label="系统通知提示音" data-dirty><span class="dn-switch-track"></span></label>
+              </span>
+            </div>
+            <div class="dn-ch-actions">
+              <button class="dn-btn dn-btnSmall">发送测试</button>
+            </div>
+          </div>
+        </details>
+
+        <!-- Bark -->
+        <details class="dn-ch-card dn-ch-onEdge">
+          <summary>
+            <span class="dn-ch-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></span>
+            <span class="dn-ch-name">Bark·iPhone</span>
+            <span class="dn-ch-type">bark</span>
+            <span class="dn-ch-statusDot ok"></span>
+            <span class="dn-ch-statusTxt">09:12 成功</span>
+            <span class="dn-ch-summaryRight">
+              <label class="dn-switch"><input type="checkbox" checked aria-label="启用频道：Bark·iPhone" data-dirty><span class="dn-switch-track"></span></label>
+            </span>
+          </summary>
+          <div class="dn-ch-body">
+            <div class="dn-ch-row">
+              <span class="dn-ch-cap">名称</span>
+              <span class="dn-ch-ctl"><input type="text" class="dn-input dn-inputText" value="Bark·iPhone" aria-label="Bark 频道名称" data-dirty></span>
+            </div>
+            <div class="dn-ch-row">
+              <span class="dn-ch-cap">服务器</span>
+              <span class="dn-ch-ctl"><input type="text" class="dn-input dn-inputText" value="https://api.day.app" aria-label="Bark 服务器地址" data-dirty></span>
+            </div>
+            <div class="dn-ch-row">
+              <span class="dn-ch-cap">设备密钥</span>
+              <span class="dn-ch-ctl">
+                <span class="dn-secret">
+                  <input type="password" class="dn-input dn-inputText" value="QH4xxxxxxxxxxxxxx" aria-label="Bark 设备密钥" data-dirty>
+                  <button class="dn-secret-reveal" onclick="toggleSecret(this)">显示</button>
+                </span>
+                <span class="dn-ch-hint">仅存本机配置，界面回显始终掩码</span>
+              </span>
+            </div>
+            <details class="dn-fold" style="margin-top:8px">
+              <summary>Bark 高级参数</summary>
+              <div class="dn-fold-body">
+                <div class="dn-fold-row"><span class="dn-fold-cap">默认 level</span>
+                  <select class="dn-input dn-select" aria-label="Bark 默认 level" data-dirty><option>自动（按 severity 映射）</option><option>active</option><option>timeSensitive</option><option>passive</option><option>critical</option></select>
+                </div>
+                <div class="dn-levels-row"><span class="dn-levels-kind">需要授权 (ask)</span>
+                  <select class="dn-input dn-select" aria-label="ask 的 Bark level" data-dirty><option>timeSensitive</option><option>active</option><option>critical</option></select>
+                  <button class="dn-btn dn-btnSmall">移除</button>
+                </div>
+                <div class="dn-levels-row"><span class="dn-levels-kind">任务出错 (error)</span>
+                  <select class="dn-input dn-select" aria-label="error 的 Bark level" data-dirty><option>critical</option><option>active</option></select>
+                  <button class="dn-btn dn-btnSmall">移除</button>
+                </div>
+                <div class="dn-levels-add">
+                  <input type="text" class="dn-input dn-inputText" placeholder="kind（可从建议列表选）" style="flex:1 1 150px" list="kindSuggest" aria-label="添加映射的 kind" data-dirty>
+                  <select class="dn-input dn-select" aria-label="添加映射的 level"><option>active</option><option>timeSensitive</option><option>passive</option><option>critical</option></select>
+                  <button class="dn-btn dn-btnSmall">添加映射</button>
+                </div>
+                <datalist id="kindSuggest"><option value="ask"></option><option value="question"></option><option value="done"></option><option value="subagent-done"></option><option value="error"></option><option value="turn-end"></option><option value="idle-archive:due"></option></datalist>
+              </div>
+            </details>
+            <div class="dn-ch-actions">
+              <button class="dn-btn dn-btnSmall">发送测试</button>
+              <button class="dn-btn dn-btnSmall dn-btnGhostDanger">删除频道</button>
+            </div>
+          </div>
+        </details>
+
+        <!-- webhook（v0.2.2 新增频道位，安卓通道） -->
+        <details class="dn-ch-card dn-ch-onEdge" open>
+          <summary>
+            <span class="dn-ch-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 4.5 13.5H11l-1 8.5L19.5 10H13l0-8z" stroke-linejoin="round"/></svg></span>
+            <span class="dn-ch-name">ntfy·安卓手机</span>
+            <span class="dn-ch-type">webhook</span>
+            <span class="dn-ch-statusDot fail" title="最近投递失败"></span>
+            <span class="dn-ch-failBadge">上次失败 · 10:03 · HTTP 403</span>
+            <span class="dn-ch-summaryRight">
+              <label class="dn-switch"><input type="checkbox" checked aria-label="启用频道：ntfy·安卓手机" data-dirty><span class="dn-switch-track"></span></label>
+            </span>
+          </summary>
+          <div class="dn-ch-body">
+            <div class="dn-ch-row">
+              <span class="dn-ch-cap">预设</span>
+              <span class="dn-ch-ctl">
+                <select class="dn-input dn-select" id="whPreset" onchange="applyPreset(false)" aria-label="webhook 预设" data-dirty>
+                  <option value="ntfy" selected>ntfy（ntfy.sh 或自建）</option>
+                  <option value="gotify">Gotify</option>
+                  <option value="custom">自建推送网关</option>
+                </select>
+                <span class="dn-ch-hint" style="flex:none">预设填充 URL 形态 / 认证方式 / 模板；覆盖已填内容前会先确认</span>
+              </span>
+            </div>
+            <div class="dn-ch-row">
+              <span class="dn-ch-cap">名称</span>
+              <span class="dn-ch-ctl"><input type="text" class="dn-input dn-inputText" value="ntfy·安卓手机" aria-label="webhook 频道名称" data-dirty></span>
+            </div>
+            <div class="dn-ch-row">
+              <span class="dn-ch-cap">目标 URL</span>
+              <span class="dn-ch-ctl">
+                <input type="text" class="dn-input dn-inputText" id="whUrl" value="https://ntfy.sh/dsh-notify-xxxx" placeholder="https://ntfy.sh/<topic>" aria-label="webhook 目标 URL" data-dirty>
+                <span class="dn-ch-hint">POST JSON；仅允许 http(s)，URL 不得含内嵌凭据（校验复用 Bark 同款白名单姿态）；ntfy 主题名建议带随机后缀防遍历</span>
+              </span>
+            </div>
+            <div class="dn-ch-row">
+              <span class="dn-ch-cap">认证</span>
+              <span class="dn-ch-ctl">
+                <select class="dn-input dn-select" id="whAuth" onchange="authChanged()" aria-label="webhook 认证方式" data-dirty>
+                  <option>无</option>
+                  <option selected>Bearer Token（Authorization 头）</option>
+                  <option>Basic 用户名/密码</option>
+                  <option>自定义请求头</option>
+                </select>
+                <span class="dn-authFields" id="whAuthFields"></span>
+                <span class="dn-ch-hint">凭据只走请求头（业界实践：ntfy / Gotify 均支持 Authorization 头，不拼 URL）；仅存本机配置并掩码回显，错误信息出站前统一脱敏</span>
+              </span>
+            </div>
+            <div class="dn-ch-row">
+              <span class="dn-ch-cap">投递超时</span>
+              <span class="dn-ch-ctl">
+                <input type="number" class="dn-input" id="whTimeout" value="10" min="1" max="60" step="1" style="width:110px" aria-label="webhook 投递超时秒数" data-dirty>
+                <span class="dn-ch-hint" style="flex:none">秒 · 1–60（UI 限界 + 服务端 clamp，默认 10）；超时按投递失败落记录，不自动重试</span>
+              </span>
+            </div>
+            <div class="dn-ch-row" style="display:block">
+              <span class="dn-ch-cap" style="display:block;margin-bottom:6px">消息模板（JSON body，占位符点击插入）</span>
+              <textarea class="dn-tpl" id="whTpl" spellcheck="false" aria-label="webhook 消息模板" data-dirty>{
+  "topic": "dsh-notify-xxxx",
+  "title": "{{title}}",
+  "message": "{{message}}",
+  "tags": ["{{kind}}"],
+  "priority": "{{priority}}"
+}</textarea>
+              <div class="dn-tplChips">
+                <span class="dn-tplCap">占位符（文本型自动 JSON 转义）：</span>
+                <button class="dn-tpl-chip" onclick="insertTpl('{{title}}')">{{title}}</button>
+                <button class="dn-tpl-chip" onclick="insertTpl('{{message}}')">{{message}}</button>
+                <button class="dn-tpl-chip" onclick="insertTpl('{{kind}}')">{{kind}}</button>
+                <button class="dn-tpl-chip" onclick="insertTpl('{{severity}}')" title="原文直出：info/success/warning/failure">{{severity}}</button>
+                <button class="dn-tpl-chip" onclick="insertTpl('{{priority}}')" title="频道感知映射：ntfy→default/low/high/urgent；Gotify→1-10 整数">{{priority}}</button>
+                <button class="dn-tpl-chip" onclick="insertTpl('{{source}}')">{{source}}</button>
+                <button class="dn-tpl-chip is-raw" onclick="insertTpl('{{ts}}')" title="数字直出，不加引号">{{ts}} 数字直出</button>
+                <span class="mock-spacer"></span>
+                <button class="dn-btn dn-btnSmall" onclick="applyPreset(true)">恢复预设模板</button>
+              </div>
+              <span class="dn-ch-hint" style="display:block;margin-top:6px">
+                {{priority}} 由服务端按频道映射渲染（ntfy：info→default / success→low / warning→high / failure→urgent）；
+                渲染为 JSON-aware 替换（字符串值转义回填，模板非法即该频道投递失败落记录，不阻断其他频道）。
+              </span>
+              <span class="dn-ch-hint" style="display:block">
+                投递固定 10s 超时、失败不自动重试（终态落记录可重发测试）；webhook 默认停用，出站授权显式授予。
+              </span>
+            </div>
+            <div class="dn-ch-actions">
+              <button class="dn-btn dn-btnSmall">发送测试</button>
+              <button class="dn-btn dn-btnSmall dn-btnGhostDanger">删除频道</button>
+              <span class="dn-ch-statusTxt" style="align-self:center">失败摘要显示在卡头徽标与测试反馈（脱敏后）</span>
+            </div>
+          </div>
+        </details>
+
+        <!-- 已停用的第二 bark 示例（收起态） -->
+        <details class="dn-ch-card dn-ch-off">
+          <summary>
+            <span class="dn-ch-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></span>
+            <span class="dn-ch-name">Bark·iPad</span>
+            <span class="dn-ch-type">bark</span>
+            <span class="dn-ch-statusTxt">已停用</span>
+            <span class="dn-ch-summaryRight">
+              <label class="dn-switch"><input type="checkbox" aria-label="启用频道：Bark·iPad" data-dirty><span class="dn-switch-track"></span></label>
+            </span>
+          </summary>
+          <div class="dn-ch-body">
+            <div class="dn-ch-row">
+              <span class="dn-ch-cap">服务器</span>
+              <span class="dn-ch-ctl"><input type="text" class="dn-input dn-inputText" value="https://api.day.app" aria-label="Bark·iPad 服务器地址" data-dirty></span>
+            </div>
+          </div>
+        </details>
+
+        <div class="dn-ch-actions" style="border:none">
+          <button class="dn-btn">+ 添加 Bark（iOS）</button>
+          <button class="dn-btn dn-btnPrimary">+ 添加 Webhook（安卓 / 自建）</button>
+        </div>
+      </div>
+
+      <!-- ================= tab 3：通知记录 ================= -->
+      <div id="pane-history" hidden>
+        <div class="dn-his-tools">
+          <button class="dn-btn dn-btnSmall dn-btnGhostDanger" id="btnClear" onclick="clearConfirm()">清理记录</button>
+          <button class="dn-btn dn-btnSmall">发送测试</button>
+          <button class="dn-btn dn-btnSmall">刷新</button>
+          <span class="dn-ch-statusTxt">最近 10 条 · 按滚动窗口保留</span>
+        </div>
+        <ul class="dn-his-list">
+          <li class="dn-his-item">
+            <span class="dn-sev dn-sev-failure"></span>
+            <div class="dn-his-main">
+              <div class="dn-his-head">
+                <span class="dn-his-kind">任务出错</span>
+                <span class="dn-his-time">10:03:41</span>
+              </div>
+              <div class="dn-his-text">任务出错：npm test 在 packages/dsh-notifier 失败（exit 1）…</div>
+            </div>
+          </li>
+          <li class="dn-his-item">
+            <span class="dn-sev dn-sev-warning"></span>
+            <div class="dn-his-main">
+              <div class="dn-his-head">
+                <span class="dn-his-kind">需要授权</span>
+                <span class="dn-his-time">10:01:12</span>
+                <span class="dn-his-sup">免打扰豁免</span>
+              </div>
+              <div class="dn-his-text">需要授权：模型请求执行 git push，请到会话中确认</div>
+            </div>
+          </li>
+          <li class="dn-his-item">
+            <span class="dn-sev dn-sev-success"></span>
+            <div class="dn-his-main">
+              <div class="dn-his-head">
+                <span class="dn-his-kind">任务完成</span>
+                <span class="dn-his-time">09:58:30</span>
+              </div>
+              <div class="dn-his-text">任务完成：PR #460 评审遗留项已全部清偿</div>
+            </div>
+          </li>
+          <li class="dn-his-item">
+            <span class="dn-sev dn-sev-warning"></span>
+            <div class="dn-his-main">
+              <div class="dn-his-head">
+                <span class="dn-his-kind">闲置归档到期</span>
+                <span class="dn-evt-kind">idle-archive:due</span>
+                <span class="dn-his-time">09:30:00</span>
+              </div>
+              <div class="dn-his-text">dsh-idle-archive：3 个会话超过 7 天未活跃，已归档</div>
+            </div>
+          </li>
+          <li class="dn-his-item">
+            <span class="dn-sev"></span>
+            <div class="dn-his-main">
+              <div class="dn-his-head">
+                <span class="dn-his-kind">回合结束</span>
+                <span class="dn-his-time">09:12:07</span>
+              </div>
+              <div class="dn-his-text">回合结束：本轮对话完成，用时 2 分 11 秒</div>
+            </div>
+          </li>
+        </ul>
+        <div class="dn-notes">
+          <div class="dn-note">清理为两段式确认；记录为滚动窗口（默认 7 天），无全文检索。</div>
+        </div>
+      </div>
+
+      <!-- 降级说明（三 tab 常显） -->
+      <div class="dn-notes" id="degradation">
+        <div class="dn-note">LAN 访问（非 localhost）时浏览器通知被禁用，仅保留页面内提醒与记录。</div>
+        <div class="dn-note">iOS 浏览器不支持系统级通知 API，自动降级为页面内横幅 + 提示音。</div>
+      </div>
+    </div>
+
+    <!-- 底部保存栏 -->
+    <div class="dn-set-foot">
+      <span class="dn-dirty" id="dirtyHint">有 2 处未保存修改</span>
+      <span class="dn-spacer"></span>
+      <button class="dn-btn dn-btnSmall">放弃更改</button>
+      <button class="dn-save">保存</button>
+    </div>
+  </section>
+
+</div>
+</div>
+
+<script>
+/* ---- mock 交互（仅评审用，非实现代码） ---- */
+function toggleTheme() {
+  var html = document.documentElement;
+  var dark = html.getAttribute("data-theme") === "dark";
+  html.setAttribute("data-theme", dark ? "light" : "dark");
+  document.getElementById("btnTheme").textContent = dark ? "🌙 暗色" : "☀️ 亮色";
+}
+function toggleWidth() {
+  var shell = document.getElementById("shell");
+  var phone = shell.classList.toggle("is-phone");
+  document.getElementById("btnWidth").textContent = phone ? "🖥 桌面宽度" : "📱 手机宽度 (390px)";
+}
+/* mock toast（操作反馈演示） */
+function toast(msg) {
+  var el = document.createElement("div");
+  el.className = "mock-toast";
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(function () { el.remove(); }, 2200);
+}
+/* tab 切换（降级说明三 tab 常显，不再隐藏） */
+document.querySelectorAll(".dn-set-tab").forEach(function (tab) {
+  tab.addEventListener("click", function () {
+    document.querySelectorAll(".dn-set-tab").forEach(function (t) { t.classList.remove("dn-set-tabActive"); });
+    tab.classList.add("dn-set-tabActive");
+    ["events", "channels", "history"].forEach(function (p) {
+      document.getElementById("pane-" + p).hidden = (p !== tab.dataset.pane);
+    });
+  });
+});
+/* 路由 chips：状态机（跟随默认 / 自定义快照 / 全灭恢复默认）——演示评审 P0-1 定死的语义 */
+function setupRouteRow(row) {
+  var chips = Array.prototype.slice.call(row.querySelectorAll(".dn-route-chip:not(.is-stale)"));
+  var state = row.querySelector(".dn-route-state");
+  if (!state) return;
+  function refresh() {
+    var on = chips.filter(function (c) { return c.classList.contains("is-on"); });
+    if (on.length === chips.length) {
+      state.classList.remove("is-custom");
+      state.textContent = "跟随默认 · 全部启用频道";
+      state.title = "未自定义路由：投递到全部已启用频道（随频道启停动态变化）";
+    } else {
+      state.classList.add("is-custom");
+      state.textContent = "自定义 · " + on.length + " 频道 · 恢复默认";
+      state.title = "已自定义路由（冻结快照）；点击恢复跟随默认";
+    }
+  }
+  chips.forEach(function (chip) {
+    chip.addEventListener("click", function () {
+      chip.classList.toggle("is-on");
+      var on = chips.filter(function (c) { return c.classList.contains("is-on"); });
+      if (on.length === 0) {
+        chips.forEach(function (c) { c.classList.add("is-on"); });
+        toast("已恢复跟随默认（全部启用频道）");
+      }
+      chips.forEach(function (c) { c.setAttribute("aria-pressed", c.classList.contains("is-on") ? "true" : "false"); });
+      refresh();
+      markDirty();
+    });
+  });
+  state.addEventListener("click", function () {
+    if (!state.classList.contains("is-custom")) return;
+    chips.forEach(function (c) { c.classList.add("is-on"); c.setAttribute("aria-pressed", "true"); });
+    refresh();
+    toast("已恢复跟随默认");
+    markDirty();
+  });
+  refresh();
+}
+/* r4：动态 kind（插件注入的通知类型）确认后同样可配路由——状态机同时挂到含状态标签的 .dn-kinds 行 */
+document.querySelectorAll(".dn-evt, .dn-kinds").forEach(function (row) {
+  if (row.querySelector(".dn-route-state")) setupRouteRow(row);
+});
+/* 豁免 chips（非事件行）：简单切换 + aria-pressed */
+document.querySelectorAll(".dn-allowChips .dn-route-chip").forEach(function (chip) {
+  chip.addEventListener("click", function () {
+    chip.classList.toggle("is-on");
+    chip.setAttribute("aria-pressed", chip.classList.contains("is-on") ? "true" : "false");
+    markDirty();
+  });
+});
+/* secret 显隐（目标 = 按钮紧邻的前一个 input，兼容多字段动态组） */
+function toggleSecret(btn) {
+  var input = btn.previousElementSibling;
+  if (!input || input.tagName !== "INPUT") input = btn.parentElement.querySelector("input");
+  var show = input.type === "password";
+  input.type = show ? "text" : "password";
+  btn.textContent = show ? "隐藏" : "显示";
+}
+/* 两段式清理确认 */
+var clearArmed = false, clearTimer = null;
+function clearConfirm() {
+  var btn = document.getElementById("btnClear");
+  if (!clearArmed) {
+    clearArmed = true;
+    btn.textContent = "确认清理？再次点击";
+    btn.classList.add("dn-btnDanger");
+    clearTimer = setTimeout(function () { clearArmed = false; btn.textContent = "清理记录"; btn.classList.remove("dn-btnDanger"); }, 3000);
+  } else {
+    clearTimeout(clearTimer);
+    clearArmed = false;
+    btn.textContent = "清理记录";
+    btn.classList.remove("dn-btnDanger");
+    toast("（mock）记录已清理");
+  }
+}
+/* webhook 预设：仅在非初始且已改动时确认（评审 P1-11），Gotify 凭据走 Header 不进 URL（P0-8） */
+var PRESETS = {
+  ntfy: {
+    url: "https://ntfy.sh/dsh-notify-xxxx",
+    auth: "Bearer Token（Authorization 头）",
+    tpl: '{\n  "topic": "dsh-notify-xxxx",\n  "title": "{{title}}",\n  "message": "{{message}}",\n  "tags": ["{{kind}}"],\n  "priority": "{{priority}}"\n}'
+  },
+  gotify: {
+    url: "https://gotify.example.com/message",
+    auth: "Bearer Token（Authorization 头）",
+    tpl: '{\n  "title": "{{title}}",\n  "message": "{{message}}",\n  "priority": "{{priority}}",\n  "extras": {\n    "client::display": { "contentType": "text/markdown" }\n  }\n}'
+  },
+  custom: {
+    url: "https://gateway.example.com/hooks/dsh",
+    auth: "自定义请求头",
+    tpl: '{\n  "event": "{{kind}}",\n  "title": "{{title}}",\n  "body": "{{message}}",\n  "severity": "{{severity}}",\n  "ts": {{ts}}\n}'
+  }
+};
+var presetTouched = false;
+function applyPreset(force) {
+  var p = PRESETS[document.getElementById("whPreset").value];
+  if (!p) return;
+  if (!force && presetTouched && !confirm("切换预设将覆盖已填写的 URL / 认证 / 模板，继续？")) return;
+  document.getElementById("whUrl").value = p.url;
+  document.getElementById("whAuth").value = p.auth;
+  document.getElementById("whTpl").value = p.tpl;
+  renderAuthFields();
+  presetTouched = false;
+  markDirty();
+}
+/* r3：认证动态字段组——按业界实践，切换认证方式渲染对应字段
+   （Bearer=令牌单字段；Basic=用户名+密码；自定义头=头名+值；凭据字段均掩码+显隐） */
+var AUTH_FIELDS = {
+  none: [],
+  bearer: [{ type: "password", placeholder: "访问令牌（tk.…）", label: "webhook 访问令牌", secret: true }],
+  basic: [
+    { type: "text", placeholder: "用户名", label: "webhook Basic 用户名" },
+    { type: "password", placeholder: "密码", label: "webhook Basic 密码", secret: true }
+  ],
+  header: [
+    { type: "text", placeholder: "请求头名（如 X-Gotify-Key）", label: "自定义请求头名" },
+    { type: "password", placeholder: "头值（令牌）", label: "自定义请求头值", secret: true }
+  ]
+};
+function renderAuthFields() {
+  var sel = document.getElementById("whAuth");
+  var key = ["none", "bearer", "basic", "header"][sel.selectedIndex] || "none";
+  var wrap = document.getElementById("whAuthFields");
+  wrap.textContent = "";
+  AUTH_FIELDS[key].forEach(function (f) {
+    var input = document.createElement("input");
+    input.type = f.type;
+    input.className = "dn-input dn-inputText";
+    input.placeholder = f.placeholder;
+    input.setAttribute("aria-label", f.label);
+    input.dataset.dirty = "";
+    input.addEventListener("input", markDirty);
+    wrap.appendChild(input);
+    if (f.secret) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "dn-secret-reveal";
+      btn.textContent = "显示";
+      btn.onclick = function () { toggleSecret(btn); };
+      wrap.appendChild(btn);
+    }
+  });
+}
+function authChanged() { renderAuthFields(); presetTouched = true; markDirty(); }
+renderAuthFields(); /* 初始渲染（Bearer 单字段） */
+/* 占位符插入（真实实现为光标处插入） */
+function insertTpl(token) {
+  var ta = document.getElementById("whTpl");
+  var at = ta.selectionStart || ta.value.length;
+  ta.value = ta.value.slice(0, at) + token + ta.value.slice(at);
+  markDirty();
+}
+/* 脏状态计数（mock：任何改动 +1；真实实现为 diffSettingsPayload 键数） */
+var dirtyCount = 2;
+function markDirty() {
+  dirtyCount += 1;
+  document.getElementById("dirtyHint").textContent = "有 " + dirtyCount + " 处未保存修改";
+}
+document.querySelectorAll("[data-dirty]").forEach(function (input) {
+  input.addEventListener("change", markDirty);
+  input.addEventListener("input", function () {
+    if (input.id === "whUrl" || input.id === "whTpl") presetTouched = true;
+    markDirty();
+  });
+});
+</script>
+</body>
+</html>

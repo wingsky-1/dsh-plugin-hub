@@ -135,6 +135,39 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   assert.ok(!locales.includes("allowAsk:") && !locales.includes("allowQuestion:") && !locales.includes("allowError:"), "#421：旧 allowXxx 豁免 label 键已删");
 }
 
+// ---- issue #508：通知中心 UI/UX 现代化（三 tab / switch / chips / 脏状态栏 / webhook 卡）----
+{
+  const src = readFileSync(new URL("../src/client/index.ts", import.meta.url), "utf8");
+  const locales = readFileSync(new URL("../src/client/locales.ts", import.meta.url), "utf8");
+  const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+
+  // 1. 三 tab：通知记录 tab 加入（activeTab 联合类型收窄为三值，secHistory 分区标题）
+  assert.ok(src.includes("events\" | \"channels\" | \"history\""), "#508：activeTab 联合类型含 history（三 tab）");
+  assert.ok(src.includes('t("secHistory")'), "#508：通知记录 tab 引用 secHistory 分区标题");
+  assert.ok(locales.includes('secHistory: "通知记录"') && locales.includes('secHistory: "History"'), "#508：secHistory 文案双语");
+  // 2. switch 无障碍：原生 checkbox 改 switch 开关，无内联文本必须靠 aria-label 提供可访问名
+  assert.ok(src.includes('className: "dn-switch"') && src.includes('"aria-label"'), "#508：switch 开关依赖 aria-label 可访问名");
+  assert.ok(client.includes("dn-switch-track"), "#508：dn-switch-track 开关轨道 class 进产物");
+  // 3. 路由 chips：直点切换 + aria-pressed 开/关态 + 状态标签 + stale 虚线 chip
+  assert.ok(src.includes('"aria-pressed"') && src.includes("dn-route-state") && src.includes("is-stale"), "#508：路由 chips 含 aria-pressed/状态标签/stale 形态");
+  assert.ok(locales.includes("routeDefaultState:") && locales.includes("routeCustomState:"), "#508：chips 状态标签文案键双语存在");
+  // 4. 动态 kind 确认行带路由提示（r4 拍板）
+  assert.ok(src.includes("dn-kind-routeHint") && locales.includes("kindRouteHint:"), "#508：动态 kind 确认行路由提示（源码+文案）");
+  // 5. 底部脏状态保存栏：脏计数 + 放弃更改入口
+  assert.ok(src.includes("dn-dirty") && src.includes("discardChanges"), "#508：脏状态保存栏（dn-dirty + discardChanges）");
+  assert.ok(locales.includes("dirtySome:") && locales.includes("discardChanges:"), "#508：脏状态/放弃更改文案键双语存在");
+  // 6. webhook 频道卡：预设常量 + 认证字段区 + 添加入口；双语键平衡由 tsc 编译期
+  //    锁（Record<NotifierLocaleKey, string>），此处只断言关键键出现一次以上（中英各一）
+  assert.ok(src.includes("webhookCard") && src.includes("WEBHOOK_PRESETS") && src.includes("dn-authFields"), "#508：webhook 频道卡（webhookCard/WEBHOOK_PRESETS/dn-authFields）");
+  assert.ok(locales.split("chAddWebhook:").length > 2, "#508：chAddWebhook 文案键在 locales 出现一次以上（中英双语各一）");
+  // 7. 频道卡头类型图标（iconEl → dn-ch-icon）
+  assert.ok(client.includes("dn-ch-icon"), "#508：频道卡头类型图标 class 进产物");
+  // 8. 负向断言：旧 checkbox 豁免 label class 已移除——用引号闭合精确串防误伤
+  //    dn-set-allowDim/allowHint/allows/allowActions（它们仍是 #421 有效锚点）
+  assert.ok(!src.includes('className: "dn-set-allow"'), "#508：旧 checkbox 豁免 label class dn-set-allow 已移除");
+  assert.ok(!src.includes('"bark:" + String(ch.id)'), "#508：channelId 前缀 hardcode 已收敛为 channelIdFor");
+}
+
 // lib/toast.ps1 发布物完整性（issue #238）：必须带 UTF-8 BOM 且与源文件逐字节一致。
 // pwsh 7 在 CI 上解析通过抓不住 5.1 的 ANSI 码页问题，字节级断言是唯一机器兜底；
 // 构建期 copyClientResources 已强制补写，此处防回归（编辑器去 BOM / 复制链变更）。

@@ -135,8 +135,10 @@ context filter checks」）。取舍如下（issue #290）：
   - 组合层装配键（`configFile` / `toastScript` / `historyFile` / `statusFile` /
     `enabled`）是 cordis 组合层/启动参数，**不进入 settings 用户层**——PUT 与
     迁移提交同名键一律剔除，entry 组合层走白名单过滤；
-  - Bark 频道实例内 `device_key` / `device_keys` / `ciphertext` 保留键仍一律
-    剔除/写拒，未知参数仅透传 string/number 值；
+  - Bark 频道实例内 `device_key` / `device_keys` / `ciphertext` 与 webhook 频道实例内
+    `WEBHOOK_RESERVED_KEYS`（`auth_token` / `access_token` / `bearer_token` / `api_key` /
+    `apikey` / `client_secret` / `secret` / `password_hash`）保留键仍一律剔除/写拒，
+    未知参数仅透传 string/number 值；
   - 未知键不参与合法性校验（已知键非法仍返回 400 + hint）。
 
 后果提示：升级后若设置页未显示某字段但 `settings.yaml` 中仍在，属预期保留
@@ -206,7 +208,7 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
 - 键为事件 kind（内置 `ask/question/done/subagent-done/error/turn-end/test` 或动态 kind，任意字符串）；
   值限 `active` / `timeSensitive` / `passive` / `critical`；至多 64 项、每键至多 64 字符。
 - 完整优先级：`levels[kind]` > `level` > severity 映射 > 不携带。
-- ⚠️ `critical` 需苹果特殊授权（普通 App 无法申请），未获授权时 Bark 可能降级/拒绝。
+- 注意：`critical` 需苹果特殊授权（普通 App 无法申请），未获授权时 Bark 可能降级/拒绝。
 - 与 `kindRoutes`（kind→channelId[] 路由）正交：路由决定「投给哪些频道」，`levels` 决定「在本实例上多响」。
 
 投递可靠性：10s 硬超时、网络错误/5xx 重试 ×2（4xx 不重试）、实例级在途并发 ≤2
@@ -218,11 +220,56 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
 未声明条目的 kind 广播全部启用频道；设置页事件区可双向编辑（与频道卡共享同一份配置）。
 `allowKinds`：已确认的动态 kind 清单（其他插件注册的通知类型经你确认后持久化于此）。
 
+### Webhook 推送频道（#508）
+
+设置 tab「通知中心 → 投递频道 → 添加 Webhook 推送」配置（也可直接编辑上述配置 JSON）。
+用途：安卓经 ntfy / Gotify / 自建推送网关接收通知，补齐 Bark（iOS）未覆盖的推送
+通道——每次投递向 `url` POST 一份 JSON body。
+
+每实例字段（`type` 固定为 `"webhook"`）：
+
+| 字段 | 说明 |
+|---|---|
+| `id` | 实例 id（2-32 位小写字母/数字/连字符，创建后锁定；`kindRoutes` 对齐键与掩码回填对齐键） |
+| `name` | 显示名（缺省回退 id） |
+| `url` | 目标地址（http/https；normalize 规范化为 origin+path——去 query/hash、拒绝带凭据 URL） |
+| `enabled` | 是否启用（默认 **false**——出站授权须显式开启） |
+| `auth` | 认证方式：`none`（默认）/ `bearer` / `basic` / `header` |
+| `token` | bearer 认证令牌（secret：响应一律掩码 `********`） |
+| `username` | Basic 认证用户名（非 secret） |
+| `password` | Basic 认证密码（secret：响应一律掩码） |
+| `headerName` / `headerValue` | 自定义请求头认证（`headerValue` 为 secret：响应掩码）；头名限字母/数字/连字符（≤64 字符），禁 `content-type` / `content-length` / `host` / `cookie` / `authorization` |
+| `preset` | 预设：`ntfy`（默认）/ `gotify` / `custom`（自建网关）；决定 `{{priority}}` 映射与默认模板 |
+| `template` | JSON body 模板（≤8192 字符；留空 = 预设默认模板） |
+| `timeoutSec` | 投递超时秒（1-60，默认 10；服务端权威 clamp） |
+
+预设与 `{{priority}}` 频道感知映射（按 `preset` 选择映射表；`{{severity}}` 恒为 severity 原文）：
+
+| preset | info | success | warning | failure |
+|---|---|---|---|---|
+| `ntfy` | `default` | `low` | `high` | `urgent` |
+| `gotify` | 3 | 3 | 7 | 9 |
+
+`custom` 不映射——`{{priority}}` 直出 severity 原文，由网关自行处理。
+
+模板占位符清单：`{{title}}`、`{{message}}`、`{{kind}}`、`{{severity}}`、`{{priority}}`（映射见上表）、`{{source}}`（渲染为空串，预留位）、`{{ts}}`（毫秒时间戳取整，数字直出——唯一允许以裸值形态出现在模板中的占位符）。
+
+渲染语义（JSON-aware 两步法）：先把 `{{ts}}` 替换为数字字面量 → 模板整体 `JSON.parse` → 树遍历仅对**字符串值**做占位符替换 → 重新 `JSON.stringify`。替换发生在已解析字符串内部、重新序列化时统一转义——通知内容含引号 / `"}}` 也无法逃逸出字符串注入额外字段（防注入收口）。模板不是合法 JSON = 该频道投递失败并落记录（不静默降级为文本，不影响其他频道）。`ntfy` 预设默认模板含 `"topic": "<topic>"` 占位，投递前改成你的主题名。
+
+投递可靠性：超时 1-60s（默认 10）；**失败不自动重试**——4xx / 5xx / 网络错误 / 渲染失败统一为失败终态，落 status 文件与通知历史（错误摘要已脱敏），可经「发送测试通知」重发验证。`kindRoutes` 中以 `webhook:<id>` 引用（与 `bark:<id>` 同款 `type:id` 形态）。
+
+实例示例（与 Bark 实例同存于 `channels` 数组，id 跨类型去重）：
+
+```json
+{ "id": "droid", "type": "webhook", "url": "https://ntfy.sh/mytopic",
+  "enabled": true, "auth": "bearer", "token": "…", "preset": "ntfy", "timeoutSec": 10 }
+```
+
 ## 路由（全部 loopback 围栏）
 
 | 路由 | 方法 | 说明 |
 |---|---|---|
-| `/api/dsh-notifier/config` | GET/PUT | **GET** 返回 `{ok, user, revision, effective, writable}`（`user` 为官方 settings 用户层、`revision` 供乐观并发、`effective` 为生效配置；**凭据字段（deviceKey）一律掩码**）；**PUT** 接收 `{patch, expectedRevision?}`（增量 patch，`expectedRevision` 可选做乐观并发），返回 `{ok, user, revision}`（同样掩码） |
+| `/api/dsh-notifier/config` | GET/PUT | **GET** 返回 `{ok, user, revision, effective, writable}`（`user` 为官方 settings 用户层、`revision` 供乐观并发、`effective` 为生效配置；**凭据字段（bark `deviceKey` / webhook `token`·`password`·`headerValue`）一律掩码**）；**PUT** 接收 `{patch, expectedRevision?}`（增量 patch，`expectedRevision` 可选做乐观并发），返回 `{ok, user, revision}`（同样掩码） |
 | `/api/dsh-notifier/events` | GET | SSE 通知帧（浏览器 EventSource 订阅；`?since=<seq>` 断线补拉） |
 | `/api/dsh-notifier/test` | POST | 测试通知（收敛到 service 管线，绕过免打扰；body 可选 `{channelId}` 指定单频道测试） |
 | `/api/dsh-notifier/history` | GET / **DELETE** | GET 最近通知记录（最多 200 条，`historyMaxAgeDays` 过滤 / 被免打扰拦截的标记 `suppressed`）；**DELETE 清空** |
@@ -268,6 +315,16 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
   - **响应掩码单一出口**：GET /config 的 user+effective 与 PUT 成功响应中的 `deviceKey` 一律掩码 `********`；提交整值掩码 = 保持原值（按实例 id 对齐回填，防止数组顺序变化串凭据）
   - **错误出口统一脱敏**：Bark 4xx 响应体会回显 key 原文（实测）——错误文本先按 device key 字面替换再过通用脱敏表，logger / `NotifyResult.error` / status 文件 / sent 事件四路出口全部覆盖
   - **SSRF 姿态**：`baseUrl` 限 http/https scheme、拒绝带凭据 URL（`user:pass@host`）、丢弃 query/hash。**不做域名白名单**——baseUrl 指向内网自建 bark-server 是合法场景；已知残余风险：局域网内可访问 dsh web 的调用方（经 lan-proxy 反代可穿透 loopback 围栏，见部署文档）可借 `/test` 触发一次对 `baseUrl` 的出站 POST（半盲，响应错误摘要仅回显脱敏后片段）。对该风险敏感的部署可将插件 `enabled` 关闭或用独立端口方案（后续版本）
+- **Webhook 频道凭据与出站安全（#508）**：
+  - **默认停用**：`enabled` 默认 false——出站授权须显式开启（与 Bark 同姿态）
+  - **凭据不落 URL**：凭据只走请求头（bearer→`Authorization: Bearer`、basic→`Authorization: Basic`（base64）、header→自定义头名+值），不拼 URL——反代 access log 默认只记 URL 与 header 名，凭据不落日志
+  - **凭据掩码收口（`CHANNEL_SECRET_FIELDS` 泛化）**：掩码字段清单按频道类型单一事实源化（bark→`deviceKey`、webhook→`token`/`password`/`headerValue`）；GET /config 的 user+effective 与 PUT 成功响应一律掩码 `********`，提交整值掩码 = 保持原值（按实例 id 对齐回填，防数组序变化串凭据），新实例带掩码提交 400
+  - **保留键防配置绕过（`WEBHOOK_RESERVED_KEYS`）**：`auth_token` / `access_token` / `bearer_token` / `api_key` / `apikey` / `client_secret` / `secret` / `password_hash` 等凭据别名键一律剔除/写拒——合法凭据只能走已知 secret 字段（经掩码收口）
+  - **JSON 注入防护**：模板渲染 JSON-aware 两步法（值级替换 + 重新序列化统一转义），通知内容无法逃逸出字符串注入额外 JSON 字段
+  - **错误出口统一脱敏**：错误文本先按凭据字面替换再过通用脱敏表（同 Bark）；非 2xx 响应体截断 200 字符后脱敏再进错误摘要
+  - **URL SSRF 姿态（与 Bark 同款 normalize）**：scheme 限 http/https、拒绝带凭据 URL（`user:pass@host`）、去 query/hash；不做域名白名单——内网自建网关是合法场景；自定义头名禁端到端关键头（`content-type`/`content-length`/`host`/`cookie`/`authorization`）防请求走私/破坏 JSON body
+  - **失败不重试**：投递失败即终态（4xx/5xx/网络错误/渲染失败），无自动重试带来的出站放大
+  - webhook 为**增量频道类型**：不改变既有频道与通知出口（SSE 帧 / 系统通知 / 历史 jsonl）的语义与兼容承诺
 
 ## 验证
 

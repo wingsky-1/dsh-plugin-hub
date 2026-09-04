@@ -254,7 +254,9 @@ export function createNotifierService(deps: NotifierServiceDeps): NotifierServic
     const set = new Set(routes);
     const targets = pool.filter((t) => set.has(t.id));
     const known = new Set<string>([BUILTIN_CHANNELS.browser, BUILTIN_CHANNELS.system]);
-    for (const c of current().channels ?? []) known.add(`bark:${c.id}`);
+    // #508 M2（复核 4②）：频道路由 id = `type:id`（与客户端 channelIdFor / 宿主
+    // outboundChannels 同语义；bark/webhook 通用，未来频道类型天然兼容）
+    for (const c of current().channels ?? []) known.add(`${c.type}:${c.id}`);
     const stale = routes.filter((id) => !known.has(id));
     return { targets, stale };
   }
