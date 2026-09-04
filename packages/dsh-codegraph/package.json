@@ -1,6 +1,6 @@
 {
   "name": "@wingsky-1/dsh-codegraph",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "codegraph MCP + worktree 开发纪律：探测/引导安装 codegraph CLI，经 mcp-manager 核心服务运行时注册 MCP 服务器，工具层强制「查询前 sync + projectPath」，非 git 仓不启用（#329 阶段2）",
   "type": "module",
   "main": "lib/index.js",
@@ -62,9 +62,9 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.2",
-    "@deepseek-ai/dsh-agent": ">=0.1.2-alpha.1 <0.1.3",
-    "@deepseek-ai/dsh-llm": ">=0.1.2-alpha.1 <0.1.3",
-    "@deepseek-ai/dsh-tools": ">=0.1.2-alpha.1 <0.1.3"
+    "@deepseek-ai/dsh-agent": "0.1.2-rc.1",
+    "@deepseek-ai/dsh-llm": "0.1.2-rc.1",
+    "@deepseek-ai/dsh-tools": "0.1.2-rc.1"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {

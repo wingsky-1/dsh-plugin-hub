@@ -1,6 +1,6 @@
 {
   "name": "@wingsky-1/dsh-verify-isolated",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "DSH 插件开发的隔离环境浏览器验证 skill：临时 DSH_HOME + 独立 verify_<随机> profile 双重隔离，一键拉起隔离 dsh web（自动构建/挂载/启动/清理），不污染正在使用的 web profile",
   "type": "module",
   "main": "lib/index.js",
@@ -44,7 +44,7 @@
     "access": "public"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-skill-filesystem": ">=0.1.2-alpha.1 <0.1.3"
+    "@deepseek-ai/dsh-skill-filesystem": "0.1.2-rc.1"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-skill-filesystem": {
