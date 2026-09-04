@@ -1657,6 +1657,70 @@ const main = async () => {
         await find(ROUTES.toolDisable).handler(fakeReq("GET", ROUTES.toolDisable), res405);
         assert.equal(res405.state.status, 405);
       });
+      await checkAsync("白名单外方法 → 405 + error 文案逐字（每端点 ≥1 锚；servers 为最大写面补缺）", async () => {
+        // servers（R3 最大写面端点）：白名单 GET/POST/PATCH/DELETE 之外的方法 → 405+文案
+        // 逐字——防守卫白名单误多列方法（围栏实质放宽而 403 用例仍绿）。
+        for (const method of ["OPTIONS", "PUT"] as const) {
+          const res = fakeRes();
+          await find(ROUTES.servers).handler(fakeReq(method, ROUTES.servers), res);
+          assert.equal(res.state.status, 405, `servers ${method} → 405`);
+          assert.equal(
+            JSON.parse(res.state.body).error,
+            `method not allowed: ${method}`,
+            `servers ${method} 405 文案逐字`,
+          );
+        }
+        // config（结构 β）：PUT 405 由 else 分支直出（不查 loopback），文案同源逐字。
+        const cfgPut = fakeRes();
+        await find(ROUTES.config).handler(fakeReq("PUT", ROUTES.config, { position: "bottom-right" }), cfgPut);
+        assert.equal(cfgPut.state.status, 405);
+        assert.equal(JSON.parse(cfgPut.state.body).error, "method not allowed: PUT", "config PUT 405 文案逐字");
+        const cfgOptions = fakeRes();
+        await find(ROUTES.config).handler(fakeReq("OPTIONS", ROUTES.config), cfgOptions);
+        assert.equal(cfgOptions.state.status, 405);
+        assert.equal(
+          JSON.parse(cfgOptions.state.body).error,
+          "method not allowed: OPTIONS",
+          "config OPTIONS 405 文案逐字",
+        );
+        // 单方法端点：每端点 ≥1 非法方法 405+文案（守卫收口后错误文案统一出自 shared）。
+        // events/health 不在 makeRoutes 返回列表（独立工厂路由），单独取 handler。
+        const wrong: Array<[string, string, string]> = [
+          ["session", ROUTES.session, "GET"],
+          ["resume", ROUTES.resume, "GET"],
+          ["connect", ROUTES.connect, "GET"],
+          ["disconnect", ROUTES.disconnect, "GET"],
+          ["reconnect", ROUTES.reconnect, "GET"],
+          ["importJson", ROUTES.importJson, "GET"],
+          ["toolDisable", ROUTES.toolDisable, "GET"],
+        ];
+        for (const [label, path, method] of wrong) {
+          const res = fakeRes();
+          await find(path).handler(fakeReq(method, path), res);
+          assert.equal(res.state.status, 405, `${label} ${method} → 405`);
+          assert.equal(
+            JSON.parse(res.state.body).error,
+            `method not allowed: ${method}`,
+            `${label} 405 文案逐字`,
+          );
+        }
+        const eventsWrong = fakeRes();
+        await makeEventsRoute(manager).handler(fakeReq("POST", ROUTES.events), eventsWrong);
+        assert.equal(eventsWrong.state.status, 405);
+        assert.equal(
+          JSON.parse(eventsWrong.state.body).error,
+          "method not allowed: POST",
+          "events 405 文案逐字",
+        );
+        const healthWrong = fakeRes();
+        await makeHealthRoute(manager).handler(fakeReq("POST", ROUTES.health), healthWrong);
+        assert.equal(healthWrong.state.status, 405);
+        assert.equal(
+          JSON.parse(healthWrong.state.body).error,
+          "method not allowed: POST",
+          "health 405 文案逐字",
+        );
+      });
       await checkAsync("resume：POST 合法 → 200 + 调用 resumeReconnect；围栏 403 / GET 405", async () => {
         const before = managerState.resumed;
         const res = fakeRes();
