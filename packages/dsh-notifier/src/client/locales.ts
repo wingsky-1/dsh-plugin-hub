@@ -63,7 +63,7 @@ export const zh = {
   dndEnd: "结束时间",
   dndStillLabel: "免打扰仍提醒",
   // 免打扰豁免候选（issue #421）：label 复用事件文案（KIND_KEYS），另加未启用提示与快捷项
-  allowDisabledHint: "未启用",
+  allowDisabledHint: "事件未启用",
   allowFollowEnabled: "跟随已启用事件",
   allowResetDefault: "恢复默认（审批/提问/出错）",
   // 权限/降级说明
@@ -165,6 +165,7 @@ export const zh = {
   routeCustomStateTitle: "已自定义路由（冻结快照）；点击恢复跟随默认",
   routeStaleChip: "已删除",
   routeStaleTitle: "该频道已删除，路由条目残留；投递时自动跳过，保存后清理",
+  routeDisabledHint: "频道未启用：先在上方「通知频道」启用后才能配置投递",
   dirtySome: "有 {n} 处未保存修改",
   discardChanges: "放弃更改",
   discardOk: "已放弃未保存修改",
@@ -253,7 +254,7 @@ export const en: Record<NotifierLocaleKey, string> = {
   dndStart: "Start time",
   dndEnd: "End time",
   dndStillLabel: "Still notify during DND",
-  allowDisabledHint: "disabled",
+  allowDisabledHint: "Not enabled",
   allowFollowEnabled: "Follow enabled events",
   allowResetDefault: "Reset default (approval/question/error)",
   settingsSvcDown: "Settings service unavailable: cannot save configuration (settings service not mounted). Plugin notifications are unaffected, but changes will be rejected.",
@@ -345,6 +346,7 @@ export const en: Record<NotifierLocaleKey, string> = {
   routeCustomStateTitle: "Route customized (frozen snapshot); click to reset to default",
   routeStaleChip: "deleted",
   routeStaleTitle: "This channel was deleted but its route entry remains; skipped at delivery, cleaned up on save",
+  routeDisabledHint: "Channel not enabled: enable it under Notify channels first to configure delivery",
   dirtySome: "{n} unsaved change(s)",
   discardChanges: "Discard changes",
   discardOk: "Unsaved changes discarded",

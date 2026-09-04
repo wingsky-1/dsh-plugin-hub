@@ -166,8 +166,11 @@ export interface ConnStats {
   wsPassthroughDestroyed: number;
   /** 透传路径：socket error（ECONNRESET 等）。 */
   wsPassthroughErrors: number;
-  /** HTTP 转发：客户端提前断开 → 上游响应 aborted。 */
+  /** HTTP 转发：客户端提前断开 → 上游响应 aborted（幂等防抖后计数）。 */
   httpClientAborted: number;
+  /** HTTP 转发：客户端提前断开且上游响应头已发出 → 代理主动销毁上游响应
+   *  （下游断开传播，issue #528；SSE/慢响应经代理断开不残留上游连接）。 */
+  httpUpstreamDestroyed: number;
   /** HTTP 转发：代理错误（上游不可达 / 转发中断）。 */
   httpProxyErrors: number;
 }
@@ -627,6 +630,7 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
     wsPassthroughDestroyed: 0,
     wsPassthroughErrors: 0,
     httpClientAborted: 0,
+    httpUpstreamDestroyed: 0,
     httpProxyErrors: 0,
   };
   /** 桥接路径打点回调（bridgeCompressedWs 的 target 注入，避免直接耦合计数对象）。 */
@@ -705,14 +709,36 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
   /** injectToken 重放上下文（issue #380）：失效 cookie 候选请求经
    *  selfHandleResponse 转发，上游 401 时带 token 重放一次自愈。 */
   const replayContexts = new WeakMap<ServerResponse, { originalUrl: string; token: string }>();
+  /**
+   * 下游断开传播（issue #528）：客户端在「上游响应头已发出、响应体未结束」时
+   * 断开（SSE 关页/息屏、慢响应中断），http-proxy 默认路径 proxyRes.pipe(res)
+   * 只 unpipe 不销毁上游 → 上游连接残留（notifier 侧收不到 close、顶格 16）。
+   * 此处统一注册：下游 res close 且未自然写完（!writableEnded）且上游未自然读完
+   * （!complete）→ 主动销毁上游 proxyRes（实测不触发 proxy error/502、不污染
+   * agent 池；上游随即收到 close，长连接回收）。
+   * 闸只查 proxyRes 侧（destroyed/complete）：客户端断开时 res.destroyed 恒为
+   * true（Node 已销毁下游），不能拿它当闸；幂等由 proxyRes.destroyed 保证。
+   */
+  const destroyUpstream = (proxyRes: IncomingMessage, res: ServerResponse) => {
+    if (res.writableEnded || proxyRes.complete || proxyRes.destroyed) return; // 正常完成/已销毁：返池或已收口
+    connStats.httpUpstreamDestroyed += 1;
+    proxyRes.destroy();
+  };
   proxy.on("proxyRes", (proxyRes, req, res) => {
     proxyResReceived.add(res);
     const abortDownstream = () => {
+      if (res.destroyed) return; // 幂等防抖（destroy 同步触发 aborted+error 双事件）
       connStats.httpClientAborted += 1;
       res.destroy();
     };
     proxyRes.on("aborted", abortDownstream);
     proxyRes.on("error", abortDownstream);
+    // 下游断开（客户端关页/息屏/切后台）：销毁上游，传播断连（issue #528）。
+    // 不能只依赖 proxyRes 'aborted'——那是「上游读侧中断」信号，客户端断开不触发。
+    res.on("close", () => destroyUpstream(proxyRes, res));
+    res.on("error", () => destroyUpstream(proxyRes, res)); // 写侧错误兜底同收口
+    // 竞态收口：close 监听注册前 res 已销毁（断开与 proxyRes 到达同 tick）→ 同步补检。
+    if (res.destroyed) destroyUpstream(proxyRes, res);
     const replay = replayContexts.get(res);
     if (replay === undefined) return;
     replayContexts.delete(res);

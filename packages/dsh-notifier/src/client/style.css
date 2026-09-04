@@ -205,6 +205,19 @@
   font-weight: 600;
 }
 .dn-set-card .dn-route-chip.is-on::before { background: var(--dsw-alias-state-info-primary, #2f6fed); }
+/* 未启用频道 chip（#527）：置灰禁点——停用频道不在投递面内，点亮也不投递 */
+.dn-set-card .dn-route-chip.is-off,
+.dn-set-card .dn-route-chip.is-off.is-on {
+  opacity: 0.45;
+  border-style: dashed;
+  cursor: not-allowed;
+  color: var(--dsw-alias-label-tertiary, #6d7480);
+  background: var(--dsw-alias-bg-layer-1, #f5f6f8);
+  border-color: var(--dsw-alias-border-l1, #e2e5ea);
+  font-weight: 400;
+}
+.dn-set-card .dn-route-chip.is-off::before { background: var(--dsw-alias-border-l2, #d3d8df); }
+.dn-set-card .dn-route-chip:disabled { pointer-events: none; }
 /* stale chip：路由残留的已删频道（虚线 + 删除线；title 提示，投递跳过 / 保存清理） */
 .dn-set-card .dn-route-chip.is-stale {
   border-style: dashed;
