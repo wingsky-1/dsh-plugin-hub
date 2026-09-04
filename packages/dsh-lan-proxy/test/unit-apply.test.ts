@@ -723,9 +723,22 @@ const { createServer } = await import("node:http");
       return lastWrite;
     };
     // E1: 围栏与方法白名单。
-    assert.equal((await callRoute("GET", { socket: { remoteAddress: "10.0.0.9" } })).status, 403, "非回环 403");
-    assert.equal((await callRoute("DELETE")).status, 405, "DELETE 405");
-    assert.equal((await callRoute("POST", {}, { patch: {} })).status, 405, "POST 405");
+    // #473 批 1（B1-4/B1-3）：403 body 围栏文案 + 405 body 文案断言（守卫收敛后逐字节锁定）
+    {
+      const forbidden = await callRoute("GET", { socket: { remoteAddress: "10.0.0.9" } });
+      assert.equal(forbidden.status, 403, "非回环 403");
+      assert.equal(JSON.parse(forbidden.body).error, "forbidden: loopback-only", "403 body 围栏文案");
+    }
+    {
+      const del405 = await callRoute("DELETE");
+      assert.equal(del405.status, 405, "DELETE 405");
+      assert.equal(JSON.parse(del405.body).error, "method not allowed: DELETE", "DELETE 405 body 文案");
+    }
+    {
+      const post405 = await callRoute("POST", {}, { patch: {} });
+      assert.equal(post405.status, 405, "POST 405");
+      assert.equal(JSON.parse(post405.body).error, "method not allowed: POST", "POST 405 body 文案");
+    }
     // E2: GET 快照字段全集（user/effective/compress/revision/writable）。
     {
       const snap = JSON.parse((await callRoute("GET")).body);

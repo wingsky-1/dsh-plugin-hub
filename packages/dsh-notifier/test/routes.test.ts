@@ -45,10 +45,12 @@ try {
   }
 
   // 403（J1）——含 M2 新路由（围栏必项，评审缺口项）
+  // #473 批 1（B1-4）：403 body 文案断言（守卫收敛后逐字节锁定）
   for (const route of [configRoute, eventsRoute, healthRoute, testRoute, historyRoute, statusRoute, kindsRoute]) {
     const { rec, res } = makeRes();
     await route.handler(fakeReq({ socket: { remoteAddress: "10.0.0.2" } }), res);
     assert.equal(rec.status, 403);
+    assert.equal(JSON.parse(rec.text).error, "forbidden: loopback-only", "403 body 围栏文案");
   }
 
   // 405（J2）：test 路由仅 POST；history 路由仅 GET；health 仅 GET；status 仅 GET；kinds 仅 GET/POST
@@ -59,15 +61,26 @@ try {
     const { rec: rec2, res: res2 } = makeRes();
     await historyRoute.handler(fakeReq({ method: "POST" }), res2);
     assert.equal(rec2.status, 405);
+    // #473 批 1（B1-3）：history（GET/DELETE 白名单）POST → 405 + error 文案
+    assert.equal(JSON.parse(rec2.text).error, "method not allowed: POST", "history POST 405 body 文案");
     const { rec: rec3, res: res3 } = makeRes();
     await healthRoute.handler(fakeReq({ method: "DELETE" }), res3);
     assert.equal(rec3.status, 405);
+    // #473 批 1（B1-4）：单方法端点 405 body 文案断言
+    assert.equal(JSON.parse(rec3.text).error, "method not allowed: DELETE", "health DELETE 405 body 文案");
     const { rec: rec4, res: res4 } = makeRes();
     await statusRoute.handler(fakeReq({ method: "POST" }), res4);
     assert.equal(rec4.status, 405);
     const { rec: rec5, res: res5 } = makeRes();
     await kindsRoute.handler(fakeReq({ method: "DELETE" }), res5);
     assert.equal(rec5.status, 405);
+    // #473 批 1（B1-3）：kinds（GET/POST 白名单）DELETE → 405 + error 文案
+    assert.equal(JSON.parse(rec5.text).error, "method not allowed: DELETE", "kinds DELETE 405 body 文案");
+    // #473 批 1（B1-3）：config（GET/PUT 白名单）补非法方法锚 DELETE → 405 + error 文案
+    const { rec: rec6, res: res6 } = makeRes();
+    await configRoute.handler(fakeReq({ method: "DELETE" }), res6);
+    assert.equal(rec6.status, 405);
+    assert.equal(JSON.parse(rec6.text).error, "method not allowed: DELETE", "config DELETE 405 body 文案");
   }
 
   // health：配置摘要与 sseConnections

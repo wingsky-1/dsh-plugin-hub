@@ -1093,9 +1093,17 @@ const main = async () => {
       });
 
     const forbidden = await callRoute("GET", { socket: { remoteAddress: "192.168.1.9" } });
-    check("config 路由非回环 403", () => assert.equal(forbidden.status, 403));
+    check("config 路由非回环 403", () => {
+      assert.equal(forbidden.status, 403);
+      // #473 批 1（B1-4）：403 body 围栏文案（守卫收敛后逐字节锁定）
+      assert.equal(JSON.parse(forbidden.body).error, "forbidden: loopback-only");
+    });
     const notAllowed = await callRoute("POST", {}, { patch: {} });
-    check("config 路由 POST 405（仅 GET/PUT）", () => assert.equal(notAllowed.status, 405));
+    check("config 路由 POST 405（仅 GET/PUT）", () => {
+      assert.equal(notAllowed.status, 405);
+      // #473 批 1（B1-3）：405 body 文案断言
+      assert.equal(JSON.parse(notAllowed.body).error, "method not allowed: POST");
+    });
 
     const got = await callRoute("GET");
     check("GET 返回 user 层 + effective 生效值 + 压缩快照 + revision（只读面不收缩）", () => {
@@ -1215,9 +1223,17 @@ const main = async () => {
       assert.equal(payload.writable, true);
     });
     const cfg403 = await callRoute("GET", { socket: { remoteAddress: "192.168.100.9" } });
-    check("config 路由非回环 403", () => assert.equal(cfg403.status, 403));
+    check("config 路由非回环 403", () => {
+      assert.equal(cfg403.status, 403);
+      // #473 批 1（B1-4）：403 body 围栏文案（守卫收敛后逐字节锁定）
+      assert.equal(JSON.parse(cfg403.body).error, "forbidden: loopback-only");
+    });
     const cfg405 = await callRoute("DELETE");
-    check("config 路由 DELETE 405", () => assert.equal(cfg405.status, 405));
+    check("config 路由 DELETE 405", () => {
+      assert.equal(cfg405.status, 405);
+      // #473 批 1（B1-3）：405 body 文案断言
+      assert.equal(JSON.parse(cfg405.body).error, "method not allowed: DELETE");
+    });
     // PUT 写入：经路由 → deps.update（fake scope）→ watch 触发。
     const put = await callRoute("PUT", {}, { patch: { printBanner: false }, expectedRevision: settingsState.revision });
     check("PUT 经路由写入官方存储并触发 watch 回调", () => {
@@ -1245,7 +1261,11 @@ const main = async () => {
     check("health 403 for non-loopback", () => assert.equal(res403.status(), 403));
     const res405 = fakeRes();
     healthRoute.handler(fakeReq({ method: "POST" }), res405);
-    check("health 405 for non-GET", () => assert.equal(res405.status(), 405));
+    check("health 405 for non-GET", () => {
+      assert.equal(res405.status(), 405);
+      // #473 批 1（B1-3）：health（GET 白名单）405 body 文案断言
+      assert.equal(JSON.parse(res405.body()).error, "method not allowed: POST");
+    });
     const res200 = fakeRes();
     healthRoute.handler(fakeReq(), res200);
     check("health 200 with status summary", () => {

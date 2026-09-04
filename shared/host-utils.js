@@ -6,6 +6,32 @@
 
 import { Buffer } from "node:buffer";
 
+import { isLoopbackRequest } from "./loopback.js";
+
+/**
+ * Loopback + 方法白名单低阶路由守卫。
+ *
+ * **对本守卫的执行顺序**：非 loopback → 403；方法不在白名单 → 405；否则放行
+ * （403 先于 405）。该顺序仅对**套本守卫的端点**成立——个别端点（如
+ * mcp-manager /config）是端点级方法分流先于 loopback 的刻意例外，不适用。
+ *
+ * @param {import("node:http").IncomingMessage} req - Node http 请求对象。
+ * @param {import("node:http").ServerResponse} res - 响应对象。
+ * @param {string[]} methods - 允许的 HTTP 方法白名单。
+ * @returns {boolean} 是否放行（true 时调用方继续处理请求）。
+ */
+export function guardLoopbackMethod(req, res, methods) {
+  if (!isLoopbackRequest(req)) {
+    writeJson(res, 403, { error: "forbidden: loopback-only" });
+    return false;
+  }
+  if (!methods.includes(req.method)) {
+    writeJson(res, 405, { error: `method not allowed: ${req.method}` });
+    return false;
+  }
+  return true;
+}
+
 /**
  * 写 JSON 响应（统一带 referrer-policy 头，防 referrer 泄露）。
  * @param {import("node:http").ServerResponse} res - 响应对象。

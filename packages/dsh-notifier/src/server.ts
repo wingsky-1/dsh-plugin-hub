@@ -9,8 +9,7 @@ import { spawn, execFile } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import type { ServerResponse } from "node:http";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
-import { isLoopbackRequest } from "../../../shared/loopback.js";
-import { writeJson, readBody, errorMessage, sseData } from "../../../shared/host-utils.js";
+import { writeJson, readBody, errorMessage, sseData, guardLoopbackMethod } from "../../../shared/host-utils.js";
 import type { NotifyConfig } from "./config.ts";
 import { sanitizePatchSettings, validateSettings, redactConfigView, unmaskChannels } from "./config.ts";
 import type { HistoryStore } from "./history.ts";
@@ -390,7 +389,7 @@ export function buildRoutes(deps: RouteDeps): WebRoute[] {
     kind: "exact",
     path: ROUTES.config,
     handler: async (req, res) => {
-      if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
+      if (!guardLoopbackMethod(req, res, ["GET", "PUT"])) return;
       if (req.method === "GET") {
         const { user, revision } = readUser();
         // 凭据脱敏单一出口（评审 P0-1）：user 与 effective 双视图都经
@@ -446,10 +445,7 @@ export function buildRoutes(deps: RouteDeps): WebRoute[] {
     kind: "exact",
     path: ROUTES.events,
     handler: (req, res) => {
-      if (!isLoopbackRequest(req)) {
-        writeJson(res, 403, { error: "forbidden: loopback-only" });
-        return;
-      }
+      if (!guardLoopbackMethod(req, res, ["GET"])) return;
       if (req.method !== "GET") {
         writeJson(res, 405, { error: `method not allowed: ${req.method}` });
         return;
@@ -497,7 +493,7 @@ export function buildRoutes(deps: RouteDeps): WebRoute[] {
     kind: "exact",
     path: ROUTES.health,
     handler: (req, res) => {
-      if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
+      if (!guardLoopbackMethod(req, res, ["GET"])) return;
       if (req.method !== "GET") return writeJson(res, 405, { error: `method not allowed: ${req.method}` });
       const current = resolve();
       writeJson(res, 200, {
@@ -533,7 +529,7 @@ export function buildRoutes(deps: RouteDeps): WebRoute[] {
     kind: "exact",
     path: ROUTES.test,
     handler: async (req, res) => {
-      if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
+      if (!guardLoopbackMethod(req, res, ["POST"])) return;
       if (req.method !== "POST") return writeJson(res, 405, { error: `method not allowed: ${req.method}` });
       let channelId: string | undefined;
       try {
@@ -564,7 +560,7 @@ export function buildRoutes(deps: RouteDeps): WebRoute[] {
     kind: "exact",
     path: ROUTES.status,
     handler: async (req, res) => {
-      if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
+      if (!guardLoopbackMethod(req, res, ["GET"])) return;
       if (req.method !== "GET") return writeJson(res, 405, { error: `method not allowed: ${req.method}` });
       const channels = await statusReader();
       writeJson(res, 200, { ok: true, channels });
@@ -580,7 +576,7 @@ export function buildRoutes(deps: RouteDeps): WebRoute[] {
     kind: "exact",
     path: ROUTES.kinds,
     handler: async (req, res) => {
-      if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
+      if (!guardLoopbackMethod(req, res, ["GET", "POST"])) return;
       if (req.method === "GET") {
         writeJson(res, 200, { ok: true, kinds: listKinds() });
         return;
@@ -621,7 +617,7 @@ export function buildRoutes(deps: RouteDeps): WebRoute[] {
     kind: "exact",
     path: ROUTES.history,
     handler: async (req, res) => {
-      if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
+      if (!guardLoopbackMethod(req, res, ["GET", "DELETE"])) return;
       if (req.method === "GET") {
         const records = await history.read();
         writeJson(res, 200, { ok: true, records });

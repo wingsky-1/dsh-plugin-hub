@@ -10,8 +10,7 @@ import { homedir, networkInterfaces } from "node:os";
 import { join } from "node:path";
 import { mkdirSync } from "node:fs";
 import type { Context } from "@deepseek-ai/cordis";
-import { isLoopbackRequest } from "../../../shared/loopback.js";
-import { writeJson, errorMessage } from "../../../shared/host-utils.js";
+import { writeJson, errorMessage, guardLoopbackMethod } from "../../../shared/host-utils.js";
 import { createLanProxy, DEFAULT_OPTIONS, DEFAULT_DEFLATE_POLICY } from "./proxy.ts";
 import type { TlsMaterials, LanProxy } from "./proxy.ts";
 import { ensureSelfSignedTls, loadTlsFromFiles } from "./cert.ts";
@@ -400,7 +399,7 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
     path: ROUTES.health,
     kind: "exact",
     handler(req, res) {
-      if (!isLoopbackRequest(req)) return writeJson(res, 403, { error: "forbidden: loopback-only" });
+      if (!guardLoopbackMethod(req, res, ["GET"])) return;
       if (req.method !== "GET") return writeJson(res, 405, { error: "method not allowed: " + req.method });
       const v = resolve();
       // 压缩快照与 GET /config 同源（compressSnapshot 单一来源）。
