@@ -22,7 +22,7 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isLoopbackRequest } from "../../../shared/loopback.js";
-import { writeJson, readJsonBody, errorMessage } from "../../../shared/host-utils.js";
+import { writeJson, readJsonBody, errorMessage, sseData } from "../../../shared/host-utils.js";
 import { installSettingsNamespace } from "../../../shared/settings-namespace.js";
 import { Mutex } from "async-mutex";
 import type { Context } from "@deepseek-ai/cordis";
@@ -41,7 +41,7 @@ import { resolveProviderConfig } from "./provider-config.ts";
 import { HotReloadableAdapter } from "./hotreload.ts";
 import { resolvePath } from "./path-resolve.ts";
 import { Config, normalizeConfig } from "./config.ts";
-import { normalizeUiConfig, readUiConfig, writeUiConfig, sseData } from "./ui-config.ts";
+import { normalizeUiConfig, readUiConfig, writeUiConfig } from "./ui-config.ts";
 import { readAdapterStateResult, readUserAdapters, userAdaptersFile, writeAdapterState, resolveAddAdapterFile, type UserAdapterRecord } from "./user-adapters.ts";
 
 export const ROUTES: Record<string, string> = {

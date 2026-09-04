@@ -21,6 +21,20 @@ export function writeJson(res, status, payload) {
 }
 
 /**
+ * 序列化一帧 SSE data 行（输出形如 `data: <json>\n\n`）。
+ * 与 mcp-manager / notifier / provider-usage 三处历史实现逐字同构（#472 收敛）。
+ * JSON.stringify(undefined) 返回 undefined，拼接为 `data: undefined\n\n`；含真实
+ * 换行的 payload 由 JSON 转义为字面 `\n`，不拆多行 data 帧。现状三处均无调用点
+ * 传 undefined（payload 恒为对象字面量），该行为仅为对齐历史、不额外兜底，
+ * 非承诺契约——若未来收紧（抛错/省略）不视为破坏兼容（需单开决策）。
+ * @param {unknown} payload - 序列化为 JSON 的 SSE 帧负载。
+ * @returns {string} SSE data 帧文本。
+ */
+export function sseData(payload) {
+  return `data: ${JSON.stringify(payload)}\n\n`;
+}
+
+/**
  * 宽松读请求 body（JSON）：解析失败或超限返回 undefined（不抛错），
  * 由调用方决定响应。与 readBody 共用限长语义。
  * @param {import("node:http").IncomingMessage} req - Node http 请求对象（或 async-iterator 桩）。

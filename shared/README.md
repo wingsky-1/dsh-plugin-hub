@@ -12,7 +12,7 @@ DSH 插件家族共用的模块（构建期 esbuild 内联进各插件包，不�
 | 文件 | 端 | 内容 | 消费方（登记快照） |
 |------|----|------|------|
 | `loopback.js` | 宿主 | `isLoopbackRequest` 安全围栏（路由 loopback 校验单一事实源） | lan-proxy / mcp-manager / notifier / provider-usage / web-file-preview |
-| `host-utils.js` | 宿主 | `writeJson` / `errorMessage` / `readBody`（限长显式化）/ `readJsonBody`（宽松版） | lan-proxy / mcp-manager / notifier / provider-usage / web-file-preview |
+| `host-utils.js` | 宿主 | `writeJson` / `errorMessage` / `readBody`（限长显式化）/ `readJsonBody`（宽松版）/ `sseData`（SSE data 帧序列化 `data: <json>\n\n`；undefined / 含 `\n` payload 行为对齐三包历史、非承诺契约；`sseData` 消费方：mcp-manager / notifier / provider-usage） | lan-proxy / mcp-manager / notifier / provider-usage / web-file-preview |
 | `frontmatter.js` | 宿主 | `parseFrontmatter` / `parseFrontmatterAll` / `setFrontmatterField` / `parseYamlBool` | 历史：commands-files / skill-explorer 同源复制统一；现生产消费已退役（verify-isolated 测试仍引用） |
 | `settings-namespace.js` | 宿主 | `installSettingsNamespace`（settings 服务面注入） | lan-proxy / mcp-manager / notifier / provider-usage |
 | `mcp-manager-service.d.ts` | 宿主 | MCP 管理器服务契约类型面（消费方只走公开入口） | mcp-manager / codegraph |

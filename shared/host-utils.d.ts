@@ -4,6 +4,12 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 export declare function writeJson(res: ServerResponse, status: number, payload: unknown): void;
 
 /**
+ * 序列化一帧 SSE data 行（输出形如 `data: <json>\n\n`）。
+ * undefined / 含换行 payload 行为对齐三包历史实现、非承诺契约（#472）。
+ */
+export declare function sseData(payload: unknown): string;
+
+/**
  * 宽松读请求 body（JSON）：解析失败或超限返回 undefined（不抛错），由调用方决定响应。
  * @param limit 字节上限（默认 2MB）。
  */

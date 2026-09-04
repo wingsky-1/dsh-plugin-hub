@@ -17,7 +17,8 @@ import { defaultStorePath, McpStore } from "./store.ts";
 import { DEFAULT_RESULT_TRUNCATE_BYTES } from "./supervisor.ts";
 import { normalizeMiddlewareMode, registerMiddlewareTools } from "./middleware.ts";
 import type { MiddlewareMode } from "./middleware-types.ts";
-import { makeRoutes, makeEventsRoute, makeHealthRoute, sseData, uiConfigChangedFrame } from "./routes.ts";
+import { makeRoutes, makeEventsRoute, makeHealthRoute, uiConfigChangedFrame } from "./routes.ts";
+import { sseData } from "../../../shared/host-utils.js";
 
 /** 向 Agent 宣告插件（announceToAgent 开启时注入）。能力清单由动态目录
  * （<available_mcp_servers>，见 L1）承担，此处只保留插件存在、安全边界与术语约定，

@@ -10,7 +10,7 @@ import type { ChildProcess } from "node:child_process";
 import type { ServerResponse } from "node:http";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import { isLoopbackRequest } from "../../../shared/loopback.js";
-import { writeJson, readBody, errorMessage } from "../../../shared/host-utils.js";
+import { writeJson, readBody, errorMessage, sseData } from "../../../shared/host-utils.js";
 import type { NotifyConfig } from "./config.ts";
 import { sanitizePatchSettings, validateSettings, redactConfigView, unmaskChannels } from "./config.ts";
 import type { HistoryStore } from "./history.ts";
@@ -26,11 +26,6 @@ export const ROUTES = {
   status: "/api/dsh-notifier/status",
   kinds: "/api/dsh-notifier/kinds",
 };
-
-/** SSE 帧。 */
-function sseData(payload: unknown): string {
-  return `data: ${JSON.stringify(payload)}\n\n`;
-}
 
 /** 写失败判死阈值：连续 ≥3 次写不动即销毁（理论 throw 兜底路径）。
  *  注意：真实 ServerResponse 对已断对端 write() 几乎不抛错（数据静默入队），

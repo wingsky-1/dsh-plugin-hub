@@ -8,9 +8,9 @@
  * 由 lib/index.js 组合根 re-export（ROUTES / makeRoutes）。
  */
 
-// 辅助函数统一来自仓库共享层（loopback 围栏 / writeJson / readJsonBody）。
+// 辅助函数统一来自仓库共享层（loopback 围栏 / writeJson / readJsonBody / sseData）。
 import { isLoopbackRequest } from "../../../shared/loopback.js";
-import { writeJson, readJsonBody } from "../../../shared/host-utils.js";
+import { writeJson, readJsonBody, sseData } from "../../../shared/host-utils.js";
 import { parseClaudeJson } from "./import.ts";
 import { SCOPE_PROJECT, normalizeScope } from "./scope.ts";
 import { parseFullServerName, MIDDLEWARE_GLOBAL_ROOT, normalizeToolName } from "./middleware-utils.ts";
@@ -419,10 +419,8 @@ export function makeRoutes(manager: RoutesManager, cwd = process.cwd()): WebRout
 
 // --------------------------------------------------------- 状态推送（SSE）
 
-/** 序列化一帧 SSE data 行。 */
-export function sseData(payload: unknown): string {
-  return `data: ${JSON.stringify(payload)}\n\n`;
-}
+// sseData 已收敛 shared/host-utils.js（#472）：本文件经顶部共享层 import 使用，
+// 导出面由组合根 src/index.ts re-export 保持 lib/index.js 不变。
 
 /** 配置变更 SSE 帧：客户端收到后重新 GET /api/dsh-mcp/config 就地更新浮窗位置。 */
 export function uiConfigChangedFrame(): string {
