@@ -117,6 +117,10 @@ assert.ok(noArgExitsNonZero, "browser-driver 无参数应非零退出（用法�
   // readDshPort：B6 parsed 通道（0.1.2-rc.1 实证格式）
   assert.equal(core.readDshPort("dsh web: http://127.0.0.1:34567/?token=abc"), 34567, "readDshPort 解析端口行");
   assert.equal(core.readDshPort("noise line\nsome other output"), null, "readDshPort 无端口行返回 null");
+  // P2-6/7：截断 chunk 尾部（无 / 或 ? 收尾）不 latch；端口范围 1-65535 外视为无匹配
+  assert.equal(core.readDshPort("dsh web: http://127.0.0.1:34"), null, "readDshPort 截断端口行不 latch（行完整性）");
+  assert.equal(core.readDshPort("dsh web: http://127.0.0.1:70000/?token=abc"), null, "readDshPort 端口范围校验（>65535 → null）");
+  assert.equal(core.readDshPort("dsh web: http://127.0.0.1:0/?token=abc"), null, "readDshPort 端口范围校验（0 → null）");
 
   // 6b. 关键契约文本锚定（不锁脚本细节，锁对外契约面；#517 C11 归一化语义由
   // 6a resolvePkgArg 行为断言覆盖——内建进 verify-core，不依赖 C11 独立文件）
@@ -127,6 +131,14 @@ assert.ok(noArgExitsNonZero, "browser-driver 无参数应非零退出（用法�
   assert.ok(script.includes("verdict.json"), "脚本含 B6 verdict.json 契约");
   assert.ok(script.includes("dsh.log"), "脚本含 dsh.log 收集契约");
   for (const code of ["130", "143"]) assert.ok(script.includes(code), `退出码契约表含 ${code}`);
+  // B6 verdict schema 字段集锚（从单字符串锚升级为字段序列 + 关键值）
+  for (const field of [
+    "v:", "ok:", "dsh:", "dshHome:", "profile:", "port:", "pid:", "browser:",
+    "telemetry:", "ready:", "readyAt:", "evidenceDir:", "cleanup:",
+    "officialContract: false", "非官方契约，不承诺实际生效",
+  ]) {
+    assert.ok(script.includes(field), `verdict schema 含字段 ${field}`);
+  }
   // 四重隔离语义锚定（#376 加固面保留）：
   assert.ok(script.includes('"--host", "127.0.0.1"'), "隔离实例显式回环绑定（锚定启动行）");
   assert.ok(script.includes("DSH_TELEMETRY_DISABLED"), "隔离实例显式禁用遥测");
@@ -161,12 +173,19 @@ assert.ok(noArgExitsNonZero, "browser-driver 无参数应非零退出（用法�
   // --dsh 不存在：参数错误退出码 2
   const bad = run(["--dsh", "/nonexistent/dsh"]);
   assert.equal(bad.code, 2, "--dsh 不存在退出码 2（找不到 dsh 入口）");
-  // --json --dsh 不存在：stdout 单 JSON（含 exitCode 2）
+  // --json --dsh 不存在：stdout **恰好 1 行** JSON（含 exitCode 2；P2-10 锁定
+  // stdout 只出 JSON 的约束，人类文案不得混入）
   const j = run(["--json", "--dsh", "/nonexistent/dsh"]);
   assert.equal(j.code, 2, "--json 错误路径退出码 2");
-  const parsed = JSON.parse(j.out.trim().split("\n").at(-1));
+  const jLines = j.out.trim().split("\n").filter((l) => l.trim().length > 0);
+  assert.equal(jLines.length, 1, "--json 错误路径 stdout 只有 1 行 JSON");
+  const parsed = JSON.parse(jLines[0]);
   assert.equal(parsed.ok, false, "--json 错误对象 ok=false");
   assert.equal(parsed.exitCode, 2, "--json 错误对象 exitCode=2");
+  // P1-1 回归：`--` 之后的 --json 是插件参数，不得误开全局 jsonMode
+  const afterDash = run(["--dsh", "/nonexistent/dsh", "--", "--json"]);
+  assert.equal(afterDash.code, 2, "-- 之后 --json 仍按参数错误退出码 2");
+  assert.ok(!afterDash.out.trim().startsWith("{"), "-- 之后的 --json 不误开 jsonMode（stdout 非 JSON）");
   // 未知选项：退出码 2
   const u = run(["--bogus"]);
   assert.equal(u.code, 2, "未知选项退出码 2");
