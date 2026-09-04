@@ -43,21 +43,22 @@
  *   --help             显示本帮助。
  *
  * 退出码契约（显式表，smoke 锁定）：
- *   ┌─────┬────────────────────────────────────────────────────────────────┐
- *   │  0  │ 正常完成：启动 + 就绪 + 前台等待 dsh 退出，清理完毕              │
- *   │  1  │ 启动或就绪失败：profile 初始化失败 / add 失败 / dsh 就绪前退出 / │
- *   │     │ 15s 就绪超时                                                    │
- *   │  2  │ 参数错误：未知选项 / 缺参 / 找不到 dsh 入口 / --no-build 缺产物  │
- *   │ 130 │ SIGINT（Ctrl+C）：终态清理后透传                                 │
- *   │ 143 │ SIGTERM：终态清理后透传                                          │
- *   └─────┴────────────────────────────────────────────────────────────────┘
- *   （其余：dsh 自身异常退出码原样透传——bash 版 wait 透传同语义，见 main() 中
- *     child "exit" 处理注释。）
+ *   +-----+------------------------------------------------------------------+
+ *   |  0  | 正常完成：启动 + 就绪 + 前台等待 dsh 退出，清理完毕                |
+ *   |  1  | 启动或就绪失败：profile 初始化失败 / add 失败 / dsh 就绪前退出 /   |
+ *   |     | 15s 就绪超时                                                      |
+ *   |  2  | 参数错误：未知选项 / 缺参 / 找不到 dsh 入口 / --no-build 缺产物    |
+ *   | 130 | SIGINT（Ctrl+C）：终态清理后透传                                   |
+ *   | 143 | SIGTERM：终态清理后透传                                            |
+ *   +-----+------------------------------------------------------------------+
+ *   （其余：就绪后 dsh 自身异常退出码原样透传；信号退出归一为 130/143——与
+ *     bash 版 wait 透传同语义，见 main() 中 child "exit" 处理注释。）
  *
  * Windows 三坑（承诺等级：试验性，文档已标注；smoke 不启动 dsh，Windows 行为走
  * 代码审查）：
- *   1. spawn .cmd 回退：.cmd/.bat 入口不能直接 spawn（无 PATHEXT 解析），
- *      shell:true 回退（见 spawnDsh）；
+ *   1. spawn/execFile 对 .cmd 回退：.cmd/.bat 入口无 PATHEXT 解析，统一
+ *      shell:true 回退（见 spawnDsh / readDshVersion / runDsh / resolveDsh
+ *      注释）；win32 下 PATH 查找优先 .exe，仅剩 .cmd/.bat 时按脚本回退；
  *   2. 无 POSIX 信号：SIGTERM/SIGINT 语义在 Windows 不成立，kill 走
  *      taskkill /T /F 进程树（见 killDsh）；
  *   3. taskkill /T 进程树清理：Node child.kill 只杀壳进程、孙进程残留，
@@ -149,7 +150,18 @@ class CliError extends Error {
 
 // --- CLI 解析（对齐 bash 版参数契约；--help 为新增） ---
 function parseCli(argv) {
-  jsonMode = argv.includes("--json") || argv.some((a) => a.startsWith("--json="));
+  // jsonMode 只在 `--` 前段探测（`--` 之后为插件参数原样透传，不参与选项解析）；
+  // `--json=false` 显式关闭；`--json --bogus` 等错误路径在循环内解析到 --json
+  // 即置位，随后抛错时顶层 catch 仍按 JSON 输出（P1：修复 --dsh /x -- --json
+  // 误开全局 jsonMode 的边界外扫描）。
+  let jsonDetected = false;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--") break;
+    if (a === "--json") { jsonDetected = true; break; }
+    if (a.startsWith("--json=")) { jsonDetected = a.slice("--json=".length) === "true"; break; }
+  }
+  jsonMode = jsonDetected;
   const f = {
     dsh: null, port: DEFAULT_PORT, browser: false, keep: false,
     noBuild: false, evidenceDir: null, json: jsonMode, help: false,
@@ -173,8 +185,10 @@ function parseCli(argv) {
         case "port": {
           const raw = inline ?? val(i, "--port");
           if (inline === null) i++;
+          // 严格十进制（拒绝 0x10 / 1e3 / 空串等 Number() 宽容形态）
+          if (!/^\d+$/.test(raw)) bad(`错误: --port 需要 0-65535 的十进制整数: ${raw}`);
           const p = Number(raw);
-          if (!Number.isInteger(p) || p < 0 || p > 65535) bad(`错误: --port 需要 0-65535 的整数: ${raw}`);
+          if (p > 65535) bad(`错误: --port 需要 0-65535 的十进制整数: ${raw}`);
           f.port = p;
           break;
         }
@@ -182,7 +196,16 @@ function parseCli(argv) {
         case "keep": f.keep = true; break;
         case "no-build": f.noBuild = true; break;
         case "evidence-dir": f.evidenceDir = inline ?? val(i, "--evidence-dir"); if (inline === null) i++; break;
-        case "json": f.json = true; break;
+        case "json": {
+          // --json=<v> 显式布尔（true/false），非法值参数错误
+          if (inline !== null) {
+            if (inline !== "true" && inline !== "false") bad(`错误: --json 只接受 true/false: ${inline}`);
+            f.json = inline === "true";
+          } else {
+            f.json = true;
+          }
+          break;
+        }
         case "help": f.help = true; break;
         default: bad(`未知选项: ${a}`);
       }
@@ -209,12 +232,14 @@ function resolveDsh(candidate) {
   if (!candidate) return null;
   const hasSep = candidate.includes("/") || (process.platform === "win32" && candidate.includes("\\"));
   if (isAbsolute(candidate) || hasSep) return checkExecutable(candidate);
-  // PATH 查找（等价 command -v；win32 补 .cmd/.bat/.exe 后缀）
+  // PATH 查找（等价 command -v）。win32 三坑之 1 兑现：优先 .exe，仅剩
+  // .cmd/.bat 时返回该路径，由 readDshVersion / runDsh / spawnDsh 统一
+  // shell:true 回退（execFile/spawn 无 PATHEXT 解析，直接跑 .cmd 必失败）。
   for (const dir of (process.env.PATH || "").split(delimiter).filter(Boolean)) {
     const hit = checkExecutable(join(dir, candidate));
     if (hit) return hit;
     if (process.platform === "win32") {
-      for (const ext of ["cmd", "bat", "exe"]) {
+      for (const ext of ["exe", "cmd", "bat"]) {
         const h = checkExecutable(`${join(dir, candidate)}.${ext}`);
         if (h) return h;
       }
@@ -223,9 +248,19 @@ function resolveDsh(candidate) {
   return null;
 }
 
+// win32 三坑之 1：.cmd/.bat 入口判定（execFileSync/spawnSync 需 shell:true 回退）
+function isWinScript(p) {
+  return process.platform === "win32" && /\.(cmd|bat)$/i.test(p);
+}
+
 function readDshVersion(abs) {
+  // win32：.cmd 入口 execFileSync 无 PATHEXT 解析，shell:true 回退（试验性承诺）
   try {
-    const raw = execFileSync(abs, ["--version"], { encoding: "utf8", timeout: 10000 });
+    const raw = execFileSync(abs, ["--version"], {
+      encoding: "utf8",
+      timeout: 10000,
+      ...(isWinScript(abs) ? { shell: true } : {}),
+    });
     return (raw.split("\n")[0] || "").trim();
   } catch { return "unknown"; }
 }
@@ -245,18 +280,19 @@ function killDsh(child, signal) {
 
 function spawnDsh(abs, args, env) {
   // 坑 1：.cmd/.bat 入口不能直接 spawn（无 PATHEXT 解析），shell:true 回退
-  const winScript = process.platform === "win32" && /\.(cmd|bat)$/i.test(abs);
   const opts = { env, stdio: ["ignore", "pipe", "pipe"] };
-  return winScript ? spawn(abs, args, { ...opts, shell: true }) : spawn(abs, args, opts);
+  return isWinScript(abs) ? spawn(abs, args, { ...opts, shell: true }) : spawn(abs, args, opts);
 }
 
 // dsh 子命令（plugin list / add 等）：spawn env 显式 {...process.env, DSH_HOME}，
-// 等价 bash `export DSH_HOME=...` 后的子命令环境。
+// 等价 bash `export DSH_HOME=...` 后的子命令环境。win32 三坑之 1：.cmd 入口
+// spawnSync 无 PATHEXT 解析，shell:true 回退（试验性承诺）。
 function runDsh(args, silent = true) {
   return spawnSync(dshAbs, args, {
     env: { ...process.env, DSH_HOME: isolatedHome },
     stdio: silent ? "ignore" : "inherit",
     timeout: 600000,
+    ...(isWinScript(dshAbs) ? { shell: true } : {}),
   });
 }
 
@@ -267,7 +303,7 @@ function makeVerdict(mut) {
     ok: false,
     dsh: { path: dshAbs, version: dshVersion },
     dshHome: isolatedHome,
-    profile,
+    profile: profile,
     port: { requested: flags?.port ?? null, actual: actualPort, source: portSource },
     pid: dshChild?.pid ?? null,
     browser: flags?.browser ? { state: browserState, port: browserPort } : null,
@@ -278,7 +314,7 @@ function makeVerdict(mut) {
     },
     ready: readyOk,
     readyAt: readyIso,
-    evidenceDir,
+    evidenceDir: evidenceDir,
     cleanup: "running", // 中间态；终态由 writeVerdictTerminal 覆写为 done/kept
     ...mut,
   };
@@ -352,6 +388,9 @@ function setupPlugins(pkgs) {
       if (s > p) outWarn(`警告: 源码比构建产物新（--no-build 可能验证到旧版本）: ${it.abs}`);
     } else if (hasBuildScript(it.abs)) {
       out(`构建插件: ${it.abs}`);
+      // 刻意不传 DSH_HOME：pnpm build 属宿主环境操作（目标插件目录的构建工具链），
+      // 不随隔离 home——比 bash 版全局 export DSH_HOME 的辐射面更窄、更安全；
+      // DSH_HOME 隔离仅限 dsh web 启动面（spawnDsh）与 dsh 子命令（runDsh）。
       const r = spawnSync("pnpm", ["build"], {
         cwd: it.abs,
         env: process.env,
@@ -404,11 +443,13 @@ async function settle() {
   if (settling) return;
   settling = true;
   try {
-    // 1. kill dsh（含窗口等待 + SIGKILL 兜底）
+    // 1. kill dsh：与 bash trap 对齐，先 SIGTERM 优雅终止（5s 窗口），SIGKILL
+    //    仅作二次兜底（评审 P2-9：避免活体 dsh 被直接 SIGKILL 跳过清理钩子）
     if (dshChild) {
       await waitPidExit(dshChild.pid, 5000);
+      if (pidAlive(dshChild.pid)) killDsh(dshChild, "SIGTERM");
+      await waitPidExit(dshChild.pid, 3000);
       if (pidAlive(dshChild.pid)) killDsh(dshChild, "SIGKILL");
-      await waitPidExit(dshChild.pid, 2000);
     }
     // 2. browser quit（如有实例，CDP 优雅关闭 + kill 兜底，行为同 bash trap）
     if (flags?.browser && browserState && existsSync(browserState)) {
@@ -449,7 +490,11 @@ async function main() {
   const { flags: f, pkgs } = parseCli(process.argv.slice(2));
   flags = f;
   jsonMode = f.json;
-  if (f.help) { process.stdout.write(USAGE + "\n"); process.exit(EXIT.OK); }
+  // --json 时 USAGE 走 stderr（stdout 只出 JSON 的约束对 --help 同样生效，P2-8）
+  if (f.help) {
+    (jsonMode ? process.stderr : process.stdout).write(USAGE + "\n");
+    process.exit(EXIT.OK);
+  }
 
   // 0. dsh 入口校验与版本锚定展示（fail fast，不在建完环境后才失败）
   const rawDsh = f.dsh ?? "dsh";
@@ -466,6 +511,9 @@ async function main() {
   browserState = join(isolatedHome, "browser.state");
   dshLogPath = join(isolatedHome, "dsh.log");
   verdictPath = join(isolatedHome, "verdict.json");
+  // dsh.log 含隔离实例访问 token（dsh web URL 行）——与 verdict/browser.state
+  // 一致 0o600 初始化（仅本用户可读，防同机其他用户窥探；P2-3）。
+  try { writeFileSync(dshLogPath, "", { mode: 0o600 }); } catch {}
   // B7：证据目录默认 $ISOLATED_HOME/evidence/；显式 --evidence-dir 外部化时建
   // <dir>/evidence-<profile>/ 子目录（recursive 幂等，绝不动外部目录本体）
   evidenceDir = f.evidenceDir
@@ -493,7 +541,9 @@ async function main() {
   // 4. 挂载本地插件（C11 归一化 + 构建 / --no-build 校验 + add）
   setupPlugins(pkgs);
 
-  // 5. 启动独立浏览器实例（--browser）：实例信息写入 browser.state
+  // 5. 启动独立浏览器实例（--browser）：实例信息写入 browser.state。
+  //    刻意不传 DSH_HOME：browser-driver 属宿主环境工具（探测系统 Chrome 内核、
+  //    操作 /tmp 级 user-data-dir），不随隔离 home（同 pnpm build 方向注释）。
   if (f.browser) {
     const launch = spawnSync(
       process.execPath,
@@ -541,6 +591,9 @@ async function main() {
   });
 
   let logTail = ""; // 4096 限长滚动缓冲（防背压先例）
+  // dsh.log 文件侧无限增长说明：dsh web 输出量极小（实测启动仅一行 URL），
+  // 且 dsh.log 位于一次性临时 ISOLATED_HOME（退出即删），单次运行量级有限、
+  // 不设文件侧滚动；内存侧 logTail 4096 限长防背压是唯一防膨胀约束。
   const onDshData = (chunk) => {
     const s = String(chunk);
     try { appendFileSync(dshLogPath, s); } catch {}
@@ -565,6 +618,8 @@ async function main() {
   // 净退出）会静默假成功、非契约码（如 3）穿透契约表（#517 C8 复核 P1 复现）。
   // 故就绪前退出只记录，让 waitReady 的 pidAlive 检测返回 dead → 统一走
   // CliError(EXIT.FAIL) 路径（有诊断文案 + 契约退出码 1）。
+  // **就绪后**：信号退出归一为 130/143，其余 dsh 异常退出码原样透传
+  //（bash 版 wait 透传同语义，头部退出码表括号行措辞与此一致）。
   dshChild.once("exit", (code, signal) => {
     if (exiting) return;
     if (!readyOk) { childExitBeforeReady = { code, signal }; return; }
@@ -572,32 +627,42 @@ async function main() {
     requestExit(mapped, null);
   });
 
-  // 9. 就绪断言（轮询 HTTP + 进程存活核对，15s 超时可操作错误）
+  // 9. 就绪断言（轮询 HTTP + 进程存活核对，15s 超时可操作错误）。
+  //    dead/timeout 诊断内联 logTail 尾部（内存滚动缓冲，非 --keep 时 dsh.log
+  //    随 ISOLATED_HOME 删除——引用文件路径用户按提示查看时已不存在，P2-4）。
   const verdictPort = dshWebPort;
   const ready = await waitReady(verdictPort, dshChild.pid);
   if (ready === "dead") {
     const detail = childExitBeforeReady
       ? `（dsh 就绪前退出 code=${childExitBeforeReady.code ?? "null"} signal=${childExitBeforeReady.signal ?? "null"}）`
       : "";
+    const tail = logTail.slice(-LOG_TAIL_LIMIT).trim();
     throw new CliError(
-      `错误: dsh web 进程在就绪前退出${detail}（可能端口被占/EADDRINUSE/插件加载失败）——完整输出见 dsh.log: ${dshLogPath}；--keep 可保留现场`,
+      `错误: dsh web 进程在就绪前退出${detail}（可能端口被占/EADDRINUSE/插件加载失败）\n` +
+      `--- dsh 输出尾部（内存缓冲；完整 dsh.log 仅 --keep 保留: ${dshLogPath}）---\n` +
+      `${tail || "（无输出）"}`,
       EXIT.FAIL,
     );
   }
   if (ready === "timeout") {
-    throw new CliError(`错误: dsh web 15s 内未就绪（端口 ${verdictPort}）——完整输出见 dsh.log: ${dshLogPath}；--keep 可保留现场`, EXIT.FAIL);
+    const tail = logTail.slice(-LOG_TAIL_LIMIT).trim();
+    throw new CliError(
+      `错误: dsh web 15s 内未就绪（端口 ${verdictPort}）\n` +
+      `--- dsh 输出尾部（内存缓冲；完整 dsh.log 仅 --keep 保留: ${dshLogPath}）---\n` +
+      `${tail || "（无输出）"}`,
+      EXIT.FAIL,
+    );
   }
   readyOk = true;
   readyIso = new Date().toISOString();
   // 端口实际绑定三通道收口：parsed → asserted（就绪断言端口）→ probed。
-  // 就绪成功瞬间 data 事件可能尚未排到、dsh 端口行也可能晚于 HTTP 就绪打印
-  // （实证），故先对 dsh.log 文件做一次 parsed 兜底；仍无则落 asserted/probed。
-  if (!actualPort || portSource !== "parsed") {
-    try {
-      const p = readDshPort(readFileSync(dshLogPath, "utf8"));
-      if (p) { actualPort = p; portSource = "parsed"; }
-    } catch {}
-  }
+  // **无条件**以 dsh.log 全文重解析 parsed（P2-6：chunk 截断可能已 latch 错误
+  // 端口——readDshPort 行完整性校验已防截断，此处双保险覆盖任何早到解析；
+  // 无匹配则落 asserted/probed）。
+  try {
+    const p = readDshPort(readFileSync(dshLogPath, "utf8"));
+    if (p) { actualPort = p; portSource = "parsed"; }
+  } catch {}
   if (!actualPort) {
     actualPort = verdictPort;
     portSource = flags.port === 0 ? "probed" : "asserted";

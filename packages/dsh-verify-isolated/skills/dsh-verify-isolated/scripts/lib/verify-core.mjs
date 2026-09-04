@@ -1,9 +1,10 @@
 /**
  * verify-core.mjs — verify-isolated.mjs 的共享基础工具（零依赖，纯 Node 内置）。
  *
- * #517 C8 抽取：poll / findFreePort / jsonOut / fail / 退出码常量给
- * verify-isolated.mjs 复用（browser-driver.mjs 的 main/parseArgs/out/fail/poll
- * 模式），另内建两段纯函数语义：
+ * #517 C8 抽取：poll / findFreePort / jsonOut / 退出码常量给
+ * verify-isolated.mjs 复用（browser-driver.mjs 的 main/parseArgs/out/poll
+ * 模式；fail 由 verify-isolated.mjs 内聚为 json 感知的 errorPayload 路径，
+ * 本模块不导出死函数），另内建两段纯函数语义：
  *   - readDshPort：B6 verdict 端口实际绑定双通道之 parsed 通道（解析 dsh.log）；
  *   - resolvePkgArg：C11 插件参数归一化（相对路径绝对化 / 包规格透传），随 C8
  *     内建，不依赖 C11 的 resolve-pkg-paths.mjs 文件。
@@ -69,20 +70,19 @@ export function jsonOut(obj, pretty = false) {
   process.stdout.write(JSON.stringify(obj, null, pretty ? 2 : 0) + "\n");
 }
 
-/** 人类风格错误输出 + 显式退出码（--json 的 stdout 单 JSON 约束由调用方包装）。 */
-export function fail(msg, code = EXIT.FAIL) {
-  process.stderr.write(msg + "\n");
-  process.exit(code);
-}
-
 // --- B6：dsh 端口行解析（parsed 通道，格式已实证） ---
 // dsh web 启动会打印一行 `dsh web: http://127.0.0.1:<port>/?token=...`
 //（0.1.2-rc.1 实测确认，注入 web-app bundle 后约 2s 内输出）；verdict 的
 // port.actual 三通道第一优先解析它。不匹配返回 null，由调用方回退
 // 就绪断言端口（asserted）/ 探测端口（probed）。
+// 行完整性（P2-6）：端口号后必须紧跟 `/` 或 `?`（真实 URL 形态），防 chunk
+// 截断 latch（如 chunk 尾部 `:34` 被当作完整端口锁定）；范围校验（P2-7）：
+// 1-65535 之外视为无匹配。
 export function readDshPort(text) {
-  const m = /dsh web:\s*http:\/\/\S*?:(\d+)/.exec(text || "");
-  return m ? Number(m[1]) : null;
+  const m = /dsh web:\s*http:\/\/\S*?:(\d+)(?=\/|\?)/.exec(text || "");
+  if (!m) return null;
+  const p = Number(m[1]);
+  return p >= 1 && p <= 65535 ? p : null;
 }
 
 // --- C11 内建：插件参数归一化（原 resolve-pkg-paths.mjs 语义随 C8 内建） ---
