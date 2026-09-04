@@ -153,11 +153,13 @@ for (const routePath of [ROUTES.stats, ROUTES.history, ROUTES.health, ROUTES.ada
     assert.equal(responses403.at(-1)?.error, "forbidden: loopback-only", `${routePath} 非回环 403`);
 
     // 方法错 → 405（POST 路由用 DELETE 触发；GET 路由用 POST 触发）
+    // #473 批 2（B2-4）：405 body 围栏文案断言（守卫收敛后逐字节锁定，全 9 端点）
     const wrongMethod = POST_ROUTES.has(routePath) ? "DELETE" : "POST";
     const responses405 = [];
-    const res405 = { writeHead: (code) => { responses405.push({ __code: code }); }, end: () => {} };
+    const res405 = { writeHead: (code) => { responses405.push({ __code: code }); }, end: (chunk) => responses405.push(JSON.parse(chunk)) };
     route.handler(fakeReq({ method: wrongMethod }), res405);
-    assert.equal(responses405.at(-1)?.__code, 405, `${routePath} 非 ${POST_ROUTES.has(routePath) ? "POST" : "GET"} 405`);
+    assert.equal(responses405[0]?.__code, 405, `${routePath} 非 ${POST_ROUTES.has(routePath) ? "POST" : "GET"} 405`);
+    assert.equal(responses405.at(-1)?.error, `method not allowed: ${wrongMethod}`, `${routePath} 405 body 围栏文案`);
   }
 }
 

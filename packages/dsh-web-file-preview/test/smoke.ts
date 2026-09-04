@@ -250,12 +250,21 @@ const releaseRoute = routes[6].handler;
   const res = fakeRes();
   fileRoute(fakeReq("POST", ROUTES.file + "?cwd=/tmp&path=a", "127.0.0.1"), res);
   assert.equal(res._calls.status, 405, "非 GET 405");
+  // #473 批 2（B2-4）：405 body 围栏文案逐字断言（守卫收敛后锁定）
+  assert.equal(JSON.parse(res._calls.data).error, "method not allowed: POST", "非 GET 405 body 文案");
 }
 // health 非回环 403
 {
   const res = fakeRes();
   healthRoute(fakeReq("GET", ROUTES.health, "8.8.8.8"), res);
   assert.equal(res._calls.status, 403, "health 非回环 403");
+}
+// health 方法非 GET → 405（#473 批 2（B2-4）：405 body 围栏文案逐字断言）
+{
+  const res = fakeRes();
+  healthRoute(fakeReq("DELETE", ROUTES.health, "127.0.0.1"), res);
+  assert.equal(res._calls.status, 405, "health 非 GET 405");
+  assert.equal(JSON.parse(res._calls.data).error, "method not allowed: DELETE", "health 405 body 文案");
 }
 // mermaid 路由围栏（issue #104）：与 file/diff 同语义
 {
@@ -278,6 +287,8 @@ const releaseRoute = routes[6].handler;
   const res = fakeRes();
   await serveRouteHandler(fakeReq("POST", ROUTES.serve + "/tok/x.html", "127.0.0.1"), res);
   assert.equal(res._calls.status, 405, "#73 serve 非 GET 405");
+  // #473 批 2（B2-4）：405 body 围栏文案逐字断言（prefix 路由形态）
+  assert.equal(JSON.parse(res._calls.data).error, "method not allowed: POST", "#73 serve 405 body 文案");
 }
 {
   const res = fakeRes();

@@ -44,8 +44,7 @@ import { createReadStream } from "node:fs";
 import type { Stats } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import mime from "mime";
-import { isLoopbackRequest } from "../../../shared/loopback.js";
-import { writeJson, errorMessage } from "../../../shared/host-utils.js";
+import { guardLoopbackMethod, writeJson, errorMessage } from "../../../shared/host-utils.js";
 import { previewKindOf } from "./mime.ts";
 import { computeGitDiff } from "./git.ts";
 import { bareBasenameOf, findUniqueByBasename } from "./basename-fallback.ts";
@@ -629,14 +628,7 @@ export function makeRoutes(cfg: PreviewConfig): WebRoute[] {
     kind: "exact",
     path: ROUTES.file,
     handler: (req: IncomingMessage, res: ServerResponse): Promise<void> | void => {
-      if (!isLoopbackRequest(req)) {
-        writeJson(res, 403, { error: "forbidden: loopback-only" });
-        return;
-      }
-      if (req.method !== "GET") {
-        writeJson(res, 405, { error: `method not allowed: ${req.method}` });
-        return;
-      }
+      if (!guardLoopbackMethod(req, res, ["GET"])) return;
       const url = new URL(req.url ?? "/", "http://localhost");
       return serveFileRoute(res, req, url, cfg);
     },
@@ -645,14 +637,7 @@ export function makeRoutes(cfg: PreviewConfig): WebRoute[] {
     kind: "exact",
     path: ROUTES.health,
     handler: (req: IncomingMessage, res: ServerResponse): void => {
-      if (!isLoopbackRequest(req)) {
-        writeJson(res, 403, { error: "forbidden: loopback-only" });
-        return;
-      }
-      if (req.method !== "GET") {
-        writeJson(res, 405, { error: `method not allowed: ${req.method}` });
-        return;
-      }
+      if (!guardLoopbackMethod(req, res, ["GET"])) return;
       writeJson(res, 200, { ok: true, plugin: "dsh-web-file-preview" });
     },
   };
@@ -662,14 +647,7 @@ export function makeRoutes(cfg: PreviewConfig): WebRoute[] {
     // async：diff 计算（execFile）不阻塞服务事件循环（评审 C3）；try/catch 兜底防
     // 参数型异常穿透到 webServer 层。
     handler: async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
-      if (!isLoopbackRequest(req)) {
-        writeJson(res, 403, { error: "forbidden: loopback-only" });
-        return;
-      }
-      if (req.method !== "GET") {
-        writeJson(res, 405, { error: `method not allowed: ${req.method}` });
-        return;
-      }
+      if (!guardLoopbackMethod(req, res, ["GET"])) return;
       const url = new URL(req.url ?? "/", "http://localhost");
       const cwd = queryParam(url, "cwd");
       const path = queryParam(url, "path");
@@ -691,14 +669,7 @@ export function makeRoutes(cfg: PreviewConfig): WebRoute[] {
     kind: "exact",
     path: ROUTES.mermaid,
     handler: (req: IncomingMessage, res: ServerResponse): Promise<void> | void => {
-      if (!isLoopbackRequest(req)) {
-        writeJson(res, 403, { error: "forbidden: loopback-only" });
-        return;
-      }
-      if (req.method !== "GET") {
-        writeJson(res, 405, { error: `method not allowed: ${req.method}` });
-        return;
-      }
+      if (!guardLoopbackMethod(req, res, ["GET"])) return;
       return serveMermaidRoute(res, req);
     },
   };
@@ -707,14 +678,7 @@ export function makeRoutes(cfg: PreviewConfig): WebRoute[] {
     kind: "exact",
     path: ROUTES.alloc,
     handler: (req: IncomingMessage, res: ServerResponse): Promise<void> | void => {
-      if (!isLoopbackRequest(req)) {
-        writeJson(res, 403, { error: "forbidden: loopback-only" });
-        return;
-      }
-      if (req.method !== "GET") {
-        writeJson(res, 405, { error: `method not allowed: ${req.method}` });
-        return;
-      }
+      if (!guardLoopbackMethod(req, res, ["GET"])) return;
       return allocServeToken(res, new URL(req.url ?? "/", "http://localhost"), cfg);
     },
   };
@@ -723,14 +687,7 @@ export function makeRoutes(cfg: PreviewConfig): WebRoute[] {
     kind: "prefix",
     path: ROUTES.serve,
     handler: (req: IncomingMessage, res: ServerResponse): Promise<void> | void => {
-      if (!isLoopbackRequest(req)) {
-        writeJson(res, 403, { error: "forbidden: loopback-only" });
-        return;
-      }
-      if (req.method !== "GET") {
-        writeJson(res, 405, { error: `method not allowed: ${req.method}` });
-        return;
-      }
+      if (!guardLoopbackMethod(req, res, ["GET"])) return;
       return serveTokenRoute(res, req, new URL(req.url ?? "/", "http://localhost"), cfg);
     },
   };
@@ -739,14 +696,7 @@ export function makeRoutes(cfg: PreviewConfig): WebRoute[] {
     kind: "exact",
     path: ROUTES.release,
     handler: (req: IncomingMessage, res: ServerResponse): void => {
-      if (!isLoopbackRequest(req)) {
-        writeJson(res, 403, { error: "forbidden: loopback-only" });
-        return;
-      }
-      if (req.method !== "GET") {
-        writeJson(res, 405, { error: `method not allowed: ${req.method}` });
-        return;
-      }
+      if (!guardLoopbackMethod(req, res, ["GET"])) return;
       releaseServeToken(res, new URL(req.url ?? "/", "http://localhost"));
     },
   };
