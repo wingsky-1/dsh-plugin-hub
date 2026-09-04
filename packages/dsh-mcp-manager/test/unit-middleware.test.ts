@@ -762,6 +762,14 @@ function makeHost(serversByRoot = new Map()) {
       /远端工具返回错误：.*boom.*ws_mcp_detail/,
       "isError:true 抛错且文案可归因",
     );
+    // #529：外层 catch 不再追加 detail 建议，同一条错误里「ws_mcp_detail」只出现一次。
+    const dupErr = await mw.callTool(fullServerName(ROOT, "py"), "echo", {}, undefined).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    assert.ok(dupErr instanceof Error, "isError:true 应抛错");
+    const detailCount = (dupErr.message.match(/ws_mcp_detail/g) ?? []).length;
+    assert.equal(detailCount, 1, `detail 建议只出现一次（实际 ${detailCount} 次：${dupErr.message}）`);
     await dispose();
   }
 
@@ -819,7 +827,8 @@ function makeHost(serversByRoot = new Map()) {
   // 复核闸 F1：isError:true 且 content 非数组（协议违规形态）→ 走兜底分支时
   // fallbackText 保留远端原文（msgOf，与旧文案行为等价），不丢成 "(no output)"。
   // 注：no-content isError 分支不经 errorText handler（其入参契约为 content
-  // 数组），文案经外层 catch 统一包装为「调用失败：<原文>；可先用 …」。
+  // 数组），文案经外层 catch 统一包装为「调用失败：<原文>」（#529：外层不再
+  // 追加 detail 建议，建议由内层按场景给一次）。
   {
     const { mw, dispose } = await withFakeClient({ isError: true, content: "boom-msg" });
     await assert.rejects(
