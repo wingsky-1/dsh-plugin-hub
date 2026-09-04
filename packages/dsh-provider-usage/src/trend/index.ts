@@ -61,6 +61,8 @@ export class TrendTracker {
         this.aggregator.apply(e);
         this.markDirty();
       },
+      // P2-6：归属异常（主源与 message.source 副源不一致等）经统一诊断出口告警
+      onAnomaly: (msg) => resolved.warn(`归属异常：${msg}`),
     });
   }
 
@@ -149,27 +151,39 @@ export class TrendTracker {
   private async flushInner(): Promise<void> {
     const today = dayKey(this.now());
     // 1. 持久化未落盘行（含时钟回拨落入过去日的行——先落明细再压实，防丢；
-    //    快照精确标记：await 间隙新到的行是独立对象，不误标）
+    //    快照精确标记：await 间隙新到的行是独立对象，不误标；
+    //    按日成功集标记：部分日失败时成功日不重复 append（防崩溃重建双算））
     const dirtyDays = this.aggregator.unpersistedDays();
     if (dirtyDays.length > 0) {
       const snapshot = this.aggregator.takeUnpersisted();
-      const ok = await this.store.appendRows(snapshot.map((p) => p.row));
-      if (ok) this.aggregator.markPersisted(snapshot);
+      const okDays = await this.store.appendRows(snapshot.map((p) => p.row));
+      if (okDays.size > 0) {
+        this.aggregator.markPersisted(snapshot.filter((p) => okDays.has(p.row.day)));
+      }
     }
     // 2. 过去日压实（仅该日明细已全部落盘才压，防内存压掉磁盘没落的数据；
-    //    写盘前与既有聚合分片合并——迟到旧日行二次压实时防覆盖丢数）
+    //    两步式安全序：先纯计算聚合行 → 既有聚合合并 → 原子写 → 删明细分片 →
+    //    全部成功后才消费内存行（任一步失败内存行保留，防丢数）。
+    //    逐日 try/catch：单日失败记 warn 留待下轮，保证 flushInner 永不 reject——
+    //    防抖路径 void 调用不产生 unhandledRejection，session/flush 官方排空点
+    //    不向宿主 checkpoint 传播插件内部错误（不连坐约定）。
     for (const day of this.aggregator.pendingDays()) {
       if (day >= today) continue;
       if (this.aggregator.hasUnpersisted(day)) continue; // 上一步失败：留到下轮
-      const pendingAgg = this.aggregator.rollupDay(day);
-      const existing = await this.store.readAggShard(day);
-      await this.store.writeAggDay(day, mergeAggRows(existing, pendingAgg));
-      await this.store.deleteDetailShard(day);
+      try {
+        const pendingAgg = this.aggregator.rollupRowsOf(day);
+        const existing = await this.store.readAggShard(day);
+        await this.store.writeAggDay(day, mergeAggRows(existing, pendingAgg));
+        await this.store.deleteDetailShard(day);
+        this.aggregator.dropPending(day);
+      } catch (e: unknown) {
+        this.warn(`压实失败（${day}）：${e instanceof Error ? e.message : String(e)}`);
+      }
     }
     this.lastFlushAt = this.now();
   }
 
-  /** dispose：清防抖 timer + 最终排空（cordis disposer await 本方法）。 */
+  /** dispose：清防抖 timer + 等待进行中的一轮收敛 + 最终排空（cordis disposer await）。 */
   async dispose(): Promise<void> {
     if (this.flushTimer !== null) {
       clearTimeout(this.flushTimer);
@@ -177,16 +191,20 @@ export class TrendTracker {
     }
     this.disposed = true;
     try {
+      // 与进行中的 flushNow 串行（评审 P1-2：并发压实的迟写覆盖丢数窗口）
+      await this.flushChain.catch(() => {});
       await this.flushInner();
     } catch (e: unknown) {
       this.warn(`dispose 刷盘失败：${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
-  /** 留存清理（挂 apply 现有 10min prune 周期）。返回删除文件数。 */
+  /** 留存清理（挂 apply 现有 10min prune 周期）：磁盘 cutoff 前分片 + 内存日桶同步收缩。 */
   async prune(): Promise<number> {
     const cutoff = dayKey(this.now() - this.retentionDays * 86400000);
-    return this.store.prune(cutoff);
+    const removed = await this.store.prune(cutoff);
+    this.aggregator.pruneDays(cutoff);
+    return removed;
   }
 
   // ---------------------------------------------------------------- 查询（M2 路由消费）

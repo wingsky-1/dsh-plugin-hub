@@ -16,6 +16,7 @@
 import { dayKey, lastNDayKeys } from "../charts.ts";
 import {
   sumToken,
+  TREND_ROW_VERSION,
   type TrendAggRow,
   type TrendCell,
   type TrendCounterRow,
@@ -107,7 +108,7 @@ export class TrendAggregator {
       cell.cacheWrite = sumToken(cell.cacheWrite, r.tokens.cacheWrite);
     }
     const row: TrendDetailRow = {
-      v: 1,
+      v: TREND_ROW_VERSION,
       kind: "detail",
       time: r.time,
       day,
@@ -164,7 +165,7 @@ export class TrendAggregator {
     cell.turns += r.turns;
     cell.toolCalls += r.toolCalls;
     const row: TrendCounterRow = {
-      v: 1,
+      v: TREND_ROW_VERSION,
       kind: "counter",
       time: r.time,
       day,
@@ -244,24 +245,20 @@ export class TrendAggregator {
   }
 
   /**
-   * 日切压实：把给定日的明细/计数行折叠为聚合行返回并从 pending 移除。
+   * 日切压实（纯计算）：把给定日的明细/计数行折叠为聚合行返回，**不从 pending 移除**。
+   * 供 flush 压实路径「先算 → IO → 成功后才消费」的安全序使用（IO 失败内存行保留）。
    * cells 不动（apply 时已累加，压实只做落盘形态转换，绝不二次累加）。
-   * 落盘侧由 tracker 负责：写入前必须与既有聚合分片合并（迟到旧日行场景，见 flushInner）。
    */
-  rollupDay(day: string): TrendAggRow[] {
+  rollupRowsOf(day: string): TrendAggRow[] {
     const byKey = new Map<string, TrendAggRow>();
-    const kept: PendingEntry[] = [];
     for (const p of this.pending) {
-      if (p.row.day !== day) {
-        kept.push(p);
-        continue;
-      }
+      if (p.row.day !== day) continue;
       const row = p.row;
       const key = `${row.provider}\u0000${row.model ?? ""}`;
       let agg = byKey.get(key);
       if (agg === undefined) {
         agg = {
-          v: 1,
+          v: TREND_ROW_VERSION,
           kind: "agg",
           day,
           provider: row.provider,
@@ -287,8 +284,35 @@ export class TrendAggregator {
         agg.toolCalls += row.toolCalls;
       }
     }
-    this.pending = kept;
     return [...byKey.values()];
+  }
+
+  /** 消费给定日的 pending 行（压实 IO 全部成功后调用；cells 不动）。 */
+  dropPending(day: string): void {
+    this.pending = this.pending.filter((p) => p.row.day !== day);
+  }
+
+  /** 裁剪内存日桶（prune 同步收缩，长期运行不重启时 days 有界；cells 随桶整体丢弃）。 */
+  pruneDays(beforeDay: string): number {
+    let removed = 0;
+    for (const day of [...this.days.keys()]) {
+      if (day < beforeDay) {
+        this.days.delete(day);
+        removed += 1;
+      }
+    }
+    return removed;
+  }
+
+  /**
+   * 日切压实（一步式）：折叠为聚合行返回并从 pending 移除。
+   * 仅供启动自愈等「无并发 IO 失败窗口」的同步场景使用；flush 压实路径
+   * 一律走 rollupRowsOf + dropPending 两步式（IO 失败内存行保留，防丢数）。
+   */
+  rollupDay(day: string): TrendAggRow[] {
+    const rows = this.rollupRowsOf(day);
+    this.dropPending(day);
+    return rows;
   }
 
   /** 从内存 pending 移除给定日已全部落盘的登记（重启自愈删除明细分片后同步内存视图）。 */
@@ -313,7 +337,7 @@ export class TrendAggregator {
     return out;
   }
 
-  /** 近 n 日序列（含今日；空日补零单元）。 */
+  /** 近 n 日序列（含今日；空日补 null——零 usage 语义，非 0）。 */
   seriesDays(n: number, now: number, metric: TrendMetric, provider?: string): Array<{ day: string; value: number | null }> {
     return lastNDayKeys(n, now).map((day) => ({ day, value: this.dayValue(day, metric, provider) }));
   }
@@ -530,9 +554,10 @@ export class TrendAggregator {
 
 // ---------------------------------------------------------------- 纯函数
 
-/** token 差（cell 回退用；null 参与运算按缺失语义）。 */
+/** token 差（cell 回退用）：有值→null 时增量为 -old（cell 同步扣减，保证内存聚合
+ *  与校正后的落盘明细一致）；双方皆 null 增量 0（null-aware 无变化）。 */
 function sub(oldV: number | null, newV: number | null): number | null {
-  if (newV === null) return null;
+  if (newV === null) return oldV === null ? null : -oldV;
   if (oldV === null) return newV;
   return newV - oldV;
 }

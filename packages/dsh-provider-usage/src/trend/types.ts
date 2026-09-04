@@ -123,6 +123,18 @@ export function safeId(v: unknown, maxLen = 256): string | null {
   return v;
 }
 
+// 分片行校验局部 helper（P2-4）：防 "x" 等垃圾值进 sumToken 拼接、垃圾日键进内存桶。
+/** day key 格式（YYYY-MM-DD；字典序即时间序的根基，垃圾日键会污染内存桶与 prune 判定）。 */
+const TREND_DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+/** token 计量字段：有限数或 null（负数/NaN/字符串一律拒绝）。 */
+function isNumOrNull(v: unknown): boolean {
+  return v === null || (typeof v === "number" && Number.isFinite(v));
+}
+/** 标识字段：字符串或 null。 */
+function isStrOrNull(v: unknown): boolean {
+  return v === null || typeof v === "string";
+}
+
 /** 判定明细/计数行是否完整可收（载入重建的防御校验；坏行跳过）。 */
 export function isValidShardRow(row: unknown): row is TrendDetailRow | TrendCounterRow | TrendAggRow {
   if (typeof row !== "object" || row === null) return false;
@@ -132,20 +144,28 @@ export function isValidShardRow(row: unknown): row is TrendDetailRow | TrendCoun
     return (
       typeof r.time === "number" &&
       typeof r.day === "string" &&
+      TREND_DAY_RE.test(r.day) &&
       typeof r.session === "string" &&
       typeof r.turn === "number" &&
       typeof r.step === "number" &&
       typeof r.retry === "number" &&
       typeof r.provider === "string" &&
-      r.calls === 1
+      r.calls === 1 &&
+      isNumOrNull(r.input) &&
+      isNumOrNull(r.output) &&
+      isNumOrNull(r.cacheRead) &&
+      isNumOrNull(r.cacheWrite) &&
+      isStrOrNull(r.model)
     );
   }
   if (r.kind === "counter") {
     return (
       typeof r.time === "number" &&
       typeof r.day === "string" &&
+      TREND_DAY_RE.test(r.day) &&
       typeof r.session === "string" &&
       typeof r.provider === "string" &&
+      isStrOrNull(r.model) &&
       (r.turns === 0 || r.turns === 1) &&
       (r.toolCalls === 0 || r.toolCalls === 1)
     );
@@ -153,7 +173,13 @@ export function isValidShardRow(row: unknown): row is TrendDetailRow | TrendCoun
   if (r.kind === "agg") {
     return (
       typeof r.day === "string" &&
+      TREND_DAY_RE.test(r.day) &&
       typeof r.provider === "string" &&
+      isStrOrNull(r.model) &&
+      isNumOrNull(r.input) &&
+      isNumOrNull(r.output) &&
+      isNumOrNull(r.cacheRead) &&
+      isNumOrNull(r.cacheWrite) &&
       typeof r.calls === "number" &&
       typeof r.turns === "number" &&
       typeof r.toolCalls === "number"

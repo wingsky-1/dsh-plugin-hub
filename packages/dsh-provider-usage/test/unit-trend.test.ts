@@ -7,14 +7,20 @@
  *   retry 逐次计（新 header 边界）/ message 补记与校正 / interrupted /
  *   归属缺失入未识别桶 / message.source 副源 / turn-end 定稿记忆保留（防乱序双算）/
  *   turn 计数 / tool 计数 / 分级 TTL / 会话销毁清理
+ * - 评审修复：P2-1 counter 记账 time 取 event.time / P2-2 message 补记定稿后
+ *   headerSeen 对称重置（迟到 usage 不双算）/ P2-3 done 记忆 Map 化（retry 记忆 +
+ *   TREND_DONE_MAX 淘汰）/ P2-6 归属不一致 onAnomaly 告警（不覆盖主源）
  * - aggregator：null 语义求和 / 日切压实（cells 不动）/ rebuild / mergeAggRows /
  *   日/周/月序列（周一锚点、月区间、空日 null、provider 过滤）/ 时钟回拨旧日落桶
- * - store：明细 roundtrip / 坏行跳过 / 聚合原子写 / prune
+ * - store：明细 roundtrip / 坏行跳过 / 聚合原子写 / prune /
+ *   P1-3 appendRows 成功日集合（部分失败不重复 append）/ P2-4 坏行校验拒绝 /
+ *   P2-7 writeAggDay 清理同日残留 tmp
+ * - 交叉：P0-1 HistoryStore.pruneAll 不误删 trend 分片
  * - tracker：启动重建（聚合权威）/ 过去日明细自愈 / 当日明细防二次落盘 /
  *   防抖刷盘 / dispose await 刷盘 / 日切压实与重启不双算 / 迟到旧日行合并防覆盖
  * - config：trendRetentionDays 归一化
  */
-import { mkdtempSync, existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, existsSync, readFileSync, writeFileSync, mkdirSync, utimesSync, rmdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { assert } from "./helpers.ts";
@@ -23,12 +29,15 @@ import {
   TrendAggregator,
   TrendStore,
   TrendTracker,
+  HistoryStore,
   dayKey,
   sumToken,
   mergeAggRows,
   metricValue,
   TREND_ROW_VERSION,
   TREND_UNIDENTIFIED,
+  TREND_DONE_MAX,
+  isValidShardRow,
   normalizeConfig,
   DEFAULT_CONFIG,
 } from "../lib/index.js";
@@ -475,7 +484,7 @@ function cellTotals(agg, day, provider = "deepseek") {
     { v: 1, kind: "counter", time: T0, day: DAY0, session: "s1", provider: "p", model: "m", turns: 1, toolCalls: 0 },
   ];
   const ok = await store.appendRows(rows);
-  assert.equal(ok, true, "appendRows 成功");
+  assert.ok(ok instanceof Set && ok.has(DAY0), "appendRows 返回成功日集合");
   const back = await store.readDetailShard(DAY0);
   assert.deepEqual(back, rows, "明细分片 roundtrip");
   assert.equal((await store.hasAggShard(DAY0)), false, "聚合分片未写不存在");
@@ -644,6 +653,244 @@ function writeAggShardLine(row) {
   assert.equal(tracker.stats().unpersistedRows, 0, "flushNow 排空后无未落盘行");
   tracker.handleDisposed({ id: "s1" });
   await tracker.dispose();
+}
+
+// ---------------------------------------------------------------- 评审修复：P0-1 交叉（HistoryStore×trend）
+
+{
+  // P0-1 交叉：HistoryStore.pruneAll（默认 30 天 retention）不得误删 trend 目录分片——
+  // trend 留存由 TrendTracker.prune 按自身 cutoff 独立管理（分片名日期恰好命中
+  // pruneAll 的日期启发，漏排会被 30 天 retention 静默误删）。
+  const root = mkdtempSync(join(tmpdir(), "dou-trend-p0x-"));
+  const detFile = join(root, "trend", "details", "2026-01-01.jsonl");
+  const aggFile = join(root, "trend", "agg", "2026-01-01.jsonl");
+  const usageFile = join(root, "p1", "n1", "2026-01-01.jsonl");
+  mkdirSync(join(root, "trend", "details"), { recursive: true });
+  mkdirSync(join(root, "trend", "agg"), { recursive: true });
+  mkdirSync(join(root, "p1", "n1"), { recursive: true });
+  const detailLine = JSON.stringify({ v: 1, kind: "detail", time: T0, day: "2026-01-01", session: "sx", turn: 1, step: 1, retry: 1, provider: "p", model: "m", input: 1, output: 1, cacheRead: null, cacheWrite: null, calls: 1 });
+  const aggLine = JSON.stringify({ v: 1, kind: "agg", day: "2026-01-01", provider: "p", model: "m", input: 1, output: 1, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 });
+  writeFileSync(detFile, `${detailLine}\n`);
+  writeFileSync(aggFile, `${aggLine}\n`);
+  writeFileSync(usageFile, '{"time":1,"data":{}}\n');
+  // mtime 一律设 90 天前构造过期形态（历史实现若按 mtime 启发判过期同样视为过期）
+  const old = new Date(Date.now() - 90 * 86400000);
+  utimesSync(detFile, old, old);
+  utimesSync(aggFile, old, old);
+  utimesSync(usageFile, old, old);
+  const hist = new HistoryStore({ root }); // 默认 maxAgeMs=30 天
+  await hist.pruneAll();
+  assert.ok(existsSync(detFile), "pruneAll 不误删 trend/details 分片");
+  assert.ok(existsSync(aggFile), "pruneAll 不误删 trend/agg 分片");
+  assert.ok(!existsSync(usageFile), "普通 usage 过期分片被删（对照组有效）");
+  // TrendStore.prune 按自身 cutoff 正常清理 trend 分片
+  const tstore = new TrendStore({ root: join(root, "trend") });
+  const removed = await tstore.prune("2026-02-01");
+  assert.equal(removed, 2, "TrendStore.prune 删除 cutoff 前的明细+聚合分片");
+  assert.ok(!existsSync(detFile) && !existsSync(aggFile), "trend 过期分片被自身 prune 清理");
+}
+
+// ---------------------------------------------------------------- 评审修复：P1-3 appendRows 部分失败
+
+{
+  // P1-3 store 级：失败日 details/<day>.jsonl 预创建为目录 → appendFile 得 EISDIR，
+  // appendRows 返回成功日集合只含成功日；移除障碍重试后失败日进入成功集。
+  const root = mkdtempSync(join(tmpdir(), "dou-trend-partial-"));
+  const store = new TrendStore({ root, warn: () => {} });
+  const dayB = "2026-09-03";
+  mkdirSync(join(root, "details", `${dayB}.jsonl`), { recursive: true });
+  const rowOf = (day, session) => ({ v: 1, kind: "detail", time: T0, day, session, turn: 1, step: 1, retry: 1, provider: "p", model: "m", input: 1, output: 1, cacheRead: null, cacheWrite: null, calls: 1 });
+  const okDays = await store.appendRows([rowOf(DAY0, "sA"), rowOf(dayB, "sB")]);
+  assert.ok(okDays instanceof Set, "appendRows 返回成功日集合");
+  assert.deepEqual([...okDays], [DAY0], "成功集只含成功日（失败日 EISDIR 不在集）");
+  assert.equal((await store.readDetailShard(DAY0)).length, 1, "成功日已落盘");
+  assert.equal((await store.readDetailShard(dayB)).length, 0, "失败日未落盘");
+  rmdirSync(join(root, "details", `${dayB}.jsonl`)); // 移除障碍
+  const okDays2 = await store.appendRows([rowOf(dayB, "sB")]);
+  assert.deepEqual([...okDays2], [dayB], "移除障碍后失败日进入成功集");
+  assert.equal((await store.readDetailShard(dayB)).length, 1, "失败日行补上");
+}
+
+{
+  // P1-3 tracker 级：flush 部分失败后成功日不重写（不重复 append → 崩溃重建不双算）、
+  // 失败日行待下轮补上（时钟回拨过去日 + 分片目录障碍构造 EISDIR）。
+  const root = mkdtempSync(join(tmpdir(), "dou-trend-partial2-"));
+  let nowMs = T0; // 09-04 today
+  const tracker = await TrendTracker.start({ root, now: () => nowMs, flushDebounceMs: 60000 });
+  const H = { header: { config: { provider: "p", model: "m" } }, reason: "initial" };
+  const today = dayKey(T0);
+  const pastDay = dayKey(T0 - 24 * HOUR); // 09-03
+  tracker.handleEvent({ id: "s1" }, ev("request/header", H, T0, 1));
+  tracker.handleEvent({ id: "s1" }, ev("assistant/chunk", USAGE(10, 5), T0, 2)); // 今日行
+  tracker.handleEvent({ id: "s2" }, ev("request/header", H, T0 - 24 * HOUR, 3));
+  tracker.handleEvent({ id: "s2" }, ev("assistant/chunk", USAGE(7, 7), T0 - 24 * HOUR, 4)); // 过去日行
+  mkdirSync(join(root, "details", `${pastDay}.jsonl`), { recursive: true }); // 失败日障碍
+  await tracker.flushNow();
+  assert.equal(readFileSync(join(root, "details", `${today}.jsonl`), "utf8").trimEnd().split("\n").length, 1, "成功日分片有行");
+  assert.equal(tracker.stats().unpersistedRows, 1, "unpersisted 只剩失败日行");
+  assert.equal(tracker.buckets().find((d) => d.day === today).providers[0].cell.calls, 1, "成功日 cells 不双算");
+  rmdirSync(join(root, "details", `${pastDay}.jsonl`)); // 移除障碍
+  await tracker.flushNow();
+  assert.equal(readFileSync(join(root, "details", `${today}.jsonl`), "utf8").trimEnd().split("\n").length, 1, "成功日分片行数不变（不重写）");
+  assert.equal(tracker.stats().unpersistedRows, 0, "失败日行已补上排空");
+  assert.equal(existsSync(join(root, "agg", `${pastDay}.jsonl`)), true, "过去日补盘后自愈压实");
+  await tracker.dispose();
+}
+
+// ---------------------------------------------------------------- 评审修复：P2-2 补记定稿后 headerSeen 对称重置
+
+{
+  // P2-2 双算反例：header → message（带 usage）补记定稿 → 同 (turn,step) 迟到 usage chunk。
+  // 修复前：补记定稿不重置 headerSeen → 迟到 usage 被误判为新调用（retry+1）重记 → 双算。
+  const { emitted, send } = makeCollector();
+  const agg = new TrendAggregator();
+  const s = { id: "s1" };
+  send(s, ev("request/header", HEADER(), T0, 1));
+  send(s, ev("assistant/message", MESSAGE({ inputTokens: 30, outputTokens: 20 }), T0 + 100, 2)); // 补记定稿
+  send(s, ev("assistant/chunk", USAGE(300, 150), T0 + 200, 3)); // 迟到 usage chunk
+  assert.equal(callsOf(emitted).length, 1, "补记定稿后迟到 usage 不重记（防双算）");
+  const corr = correctsOf(emitted);
+  assert.equal(corr.length, 1, "迟到 usage 走校正");
+  assert.deepEqual(corr[0].tokens, { input: 300, output: 150, cacheRead: 0, cacheWrite: 0 }, "token 为校正值");
+  // aggregator 端到端：correct 覆盖补记行 token，calls 仍 1
+  for (const e of emitted) agg.apply(e);
+  const cell = agg.buckets().find((d) => d.day === DAY0).providers[0].cell;
+  assert.equal(cell.calls, 1, "aggregator calls=1（补记 1 + 校正不重计）");
+  assert.equal(cell.input, 300, "aggregator token 被校正覆盖");
+}
+
+// ---------------------------------------------------------------- 评审修复：P2-3 done 定稿记忆 Map 化
+
+{
+  // P2-3(a)：retry=2 定稿后 folds 被 TTL 清空 → 迟到 message 校正的 retry
+  // 从 done 记忆取真实值 2（修复前兜底 1，会错改 retry=1 行的归属）。
+  let nowMs = T0;
+  const { emitted, send } = makeCollector(() => nowMs);
+  const s = { id: "s1" };
+  send(s, ev("request/header", HEADER(), T0, 1));
+  send(s, ev("assistant/chunk", USAGE(100, 50), T0, 2)); // retry=1 定稿 → done["1:1"]=1
+  send(s, ev("request/header", HEADER(), T0 + 5000, 3)); // 重试边界
+  send(s, ev("assistant/chunk", USAGE(70, 30), T0 + 6000, 4)); // retry=2 定稿 → done["1:1"]=2
+  nowMs = T0 + 11 * 60 * 1000; // fold TTL 到龄：sweep 清 folds（done 记忆保留）
+  send(s, ev("tool/call", { turn: 1, step: 1, callId: "c", name: "bash", arguments: "{}" }, nowMs, 5)); // 触发 sweep
+  send(s, ev("assistant/message", MESSAGE({ inputTokens: 88, outputTokens: 66 }), nowMs, 6)); // 迟到校正
+  const corr = correctsOf(emitted);
+  assert.equal(corr.length, 1, "folds 清空后迟到 message 仍走校正（不双算）");
+  assert.equal(corr[0].retry, 2, "retry 从 done 记忆取真实值 2（非兜底 1）");
+}
+
+{
+  // P2-3(b)：done 超 TREND_DONE_MAX 按插入序淘汰最旧键（长命会话防无界增长）。
+  // 行为观测：每 turn 定稿 1 键 + turn/end 清 folds → done 累积 MAX+1 键 →
+  // 最旧键（turn=1）被淘汰（迟到 message 补记），最新键仍在（迟到 message 校正）。
+  assert.equal(TREND_DONE_MAX, 200, "done 记忆上限常量");
+  const { emitted, send } = makeCollector();
+  const s = { id: "s1" };
+  const usageAt = (turn) => ({ turn, step: 1, chunk: { type: "usage", usage: { inputTokens: 1, outputTokens: 1 } } });
+  for (let turn = 1; turn <= TREND_DONE_MAX + 1; turn++) {
+    send(s, ev("assistant/chunk", usageAt(turn), T0, turn));
+    send(s, ev("turn/end", { turn, reason: { kind: "completed" } }, T0, turn));
+  }
+  send(s, ev("assistant/message", MESSAGE({ inputTokens: 9, outputTokens: 9 }), T0, 999)); // turn=1 step=1（被淘汰键）
+  assert.equal(callsOf(emitted).length, TREND_DONE_MAX + 2, "被淘汰键的迟到 message 走补记（无记忆可校正）");
+  const late = { ...MESSAGE({ inputTokens: 8, outputTokens: 8 }), turn: TREND_DONE_MAX + 1 };
+  send(s, ev("assistant/message", late, T0, 1000)); // turn=MAX+1（最新键仍在记忆）
+  const corr = correctsOf(emitted);
+  assert.equal(corr.length, 1, "未淘汰键的迟到 message 走校正");
+  assert.equal(corr[0].turn, TREND_DONE_MAX + 1, "校正命中最新键");
+}
+
+// ---------------------------------------------------------------- 评审修复：P2-4 分片行校验补强
+
+{
+  // P2-4：token 字符串 "x" / model 数字 / day 非零填充格式（"2026-9-4"）→
+  // isValidShardRow 拒收、readDetailShard/readAggShard 跳过并逐行告警
+  //（防垃圾值进 sumToken 拼接、垃圾日键进内存桶）。
+  const root = mkdtempSync(join(tmpdir(), "dou-trend-badrow-"));
+  const warns = [];
+  const store = new TrendStore({ root, warn: (m) => warns.push(m) });
+  const good = { v: 1, kind: "detail", time: T0, day: DAY0, session: "s1", turn: 1, step: 1, retry: 1, provider: "p", model: "m", input: 1, output: 1, cacheRead: null, cacheWrite: null, calls: 1 };
+  const badToken = { ...good, session: "s2", input: "x" };
+  const badModel = { ...good, session: "s3", model: 3 };
+  const badDay = { ...good, session: "s4", day: "2026-9-4" };
+  const badCounter = { v: 1, kind: "counter", time: T0, day: DAY0, session: "s5", provider: "p", model: 3, turns: 1, toolCalls: 0 };
+  const badAgg = { v: 1, kind: "agg", day: DAY0, provider: "p", model: 3, input: "x", output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 };
+  // 校验面单点断言
+  assert.equal(isValidShardRow(badToken), false, "token 非有限数拒绝");
+  assert.equal(isValidShardRow(badModel), false, "model 非字符串拒绝");
+  assert.equal(isValidShardRow(badDay), false, "day 非零填充格式拒绝");
+  assert.equal(isValidShardRow(badCounter), false, "counter 行 model 数字拒绝");
+  assert.equal(isValidShardRow(badAgg), false, "agg 行坏 token/model 拒绝");
+  assert.equal(isValidShardRow(good), true, "合法行通过");
+  // 分片读取面：坏行跳过 + 告警
+  mkdirSync(join(root, "details"), { recursive: true });
+  mkdirSync(join(root, "agg"), { recursive: true });
+  writeFileSync(join(root, "details", `${DAY0}.jsonl`), [good, badToken, badModel, badDay, badCounter].map((r) => JSON.stringify(r)).join("\n") + "\n");
+  writeFileSync(join(root, "agg", `${DAY0}.jsonl`), `${JSON.stringify(badAgg)}\n`);
+  const details = await store.readDetailShard(DAY0);
+  assert.equal(details.length, 1, "4 坏行全拒，仅收合法行");
+  assert.equal(details[0].session, "s1", "保留的是合法 detail 行");
+  assert.equal((await store.readAggShard(DAY0)).length, 0, "agg 坏行拒收");
+  assert.equal(warns.length, 5, "每个坏行均有告警");
+}
+
+// ---------------------------------------------------------------- 评审修复：P2-6 归属不一致告警
+
+{
+  // P2-6：主源在场且 message.source 解析结果与之不一致 → onAnomaly 告警（带上下文）、
+  // attribution 保持主源不被副源覆盖。
+  const anomalies = [];
+  const emitted = [];
+  const collector = new TrendCollector({ now: () => T0, emit: (e) => emitted.push(e), onAnomaly: (m) => anomalies.push(m) });
+  collector.handleEvent("s1", ev("request/header", HEADER("deepseek", "deepseek-chat"), T0, 1));
+  collector.handleEvent("s1", ev("assistant/message", {
+    turn: 1, step: 1,
+    message: { role: "assistant", source: { kind: "model", provider: "opencode", model: "glm-4" } },
+    usage: { inputTokens: 10, outputTokens: 5 },
+  }, T0 + 100, 2));
+  assert.equal(anomalies.length, 1, "归属不一致触发 onAnomaly（provider 不同）");
+  assert.ok(anomalies[0].includes("s1"), "告警带上下文");
+  assert.equal(callsOf(emitted)[0].provider, "deepseek", "attribution 保持主源 provider");
+  assert.equal(callsOf(emitted)[0].model, "deepseek-chat", "attribution 保持主源 model");
+  // 回归：主副源一致不告警；归属缺失走副源补齐不告警（既有语义不回退）
+  const silent = [];
+  const c2 = new TrendCollector({ now: () => T0, emit: () => {}, onAnomaly: (m) => silent.push(m) });
+  c2.handleEvent("s1", ev("request/header", HEADER(), T0, 1));
+  c2.handleEvent("s1", ev("assistant/message", MESSAGE({ inputTokens: 1, outputTokens: 1 }), T0, 2));
+  assert.equal(silent.length, 0, "主副源一致不告警");
+  const missing = [];
+  const c3 = new TrendCollector({ now: () => T0, emit: () => {}, onAnomaly: (m) => missing.push(m) });
+  c3.handleEvent("s1", ev("assistant/message", MESSAGE({ inputTokens: 1, outputTokens: 1 }), T0, 1));
+  assert.equal(missing.length, 0, "归属缺失走副源补齐不告警");
+}
+
+{
+  // P2-6 tracker 接线：collector onAnomaly → tracker 统一 warn 出口
+  const warns = [];
+  const root = mkdtempSync(join(tmpdir(), "dou-trend-anomaly-"));
+  const tracker = await TrendTracker.start({ root, now: () => T0, flushDebounceMs: 60000, warn: (m) => warns.push(m) });
+  tracker.handleEvent({ id: "s1" }, ev("request/header", HEADER("deepseek", "deepseek-chat"), T0, 1));
+  tracker.handleEvent({ id: "s1" }, ev("assistant/message", {
+    turn: 1, step: 1,
+    message: { role: "assistant", source: { kind: "model", provider: "opencode", model: "glm-4" } },
+    usage: { inputTokens: 1, outputTokens: 1 },
+  }, T0, 2));
+  assert.ok(warns.some((m) => m.includes("归属")), "tracker 侧 onAnomaly 接线到 warn");
+  await tracker.dispose();
+}
+
+{
+  // P2-7：writeAggDay 写 tmp 前清理同日 rename 前崩溃残留 tmp（前缀 `${day}.jsonl.` 且
+  // 后缀 `.tmp`）；他日残留不受影响，主流程正常。
+  const root = mkdtempSync(join(tmpdir(), "dou-trend-tmp-"));
+  const store = new TrendStore({ root, warn: () => {} });
+  mkdirSync(join(root, "agg"), { recursive: true });
+  writeFileSync(join(root, "agg", `${DAY0}.jsonl.1700000000000.tmp`), "stale\n"); // 同日残留
+  writeFileSync(join(root, "agg", `2026-09-05.jsonl.1700000000000.tmp`), "other-day\n"); // 他日残留
+  await store.writeAggDay(DAY0, [{ v: 1, kind: "agg", day: DAY0, provider: "p", model: "m", input: 1, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 }]);
+  assert.equal(existsSync(join(root, "agg", `${DAY0}.jsonl.1700000000000.tmp`)), false, "同日残留 tmp 已清");
+  assert.equal(existsSync(join(root, "agg", `2026-09-05.jsonl.1700000000000.tmp`)), true, "他日残留不受影响");
+  assert.equal((await store.readAggShard(DAY0)).length, 1, "主流程不受清理影响");
 }
 
 // ---------------------------------------------------------------- config

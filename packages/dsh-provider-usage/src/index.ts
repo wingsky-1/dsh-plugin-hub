@@ -65,12 +65,13 @@ export { HotReloadableAdapter, loadAndValidateAdapter, readStamp, stampEqual } f
 // #503 会话用量趋势（M1 数据层）：trend 模块公共面（测试/外部消费者从 lib/index.js 导入）
 export { TrendTracker } from "./trend/index.ts";
 export type { TrendTrackerOptions } from "./trend/index.ts";
-export { TrendCollector, TREND_FOLD_TTL_MS } from "./trend/collector.ts";
+export { TrendCollector, TREND_FOLD_TTL_MS, TREND_DONE_MAX } from "./trend/collector.ts";
 export type { TrendCallRecord, TrendCorrectRecord, TrendCounterRecord, TrendEmit } from "./trend/collector.ts";
 export { TrendAggregator, metricValue, weekStartKey, lastNWeekKeys, lastNMonthKeys, monthRange, weekRange, mergeAggRows } from "./trend/aggregator.ts";
 export type { TrendMetric, TrendGranularity, TrendStackPart, TrendStackPoint, TrendWindowSummary } from "./trend/aggregator.ts";
 export { TrendStore } from "./trend/store.ts";
-export { TREND_ROW_VERSION, TREND_UNIDENTIFIED, sumToken } from "./trend/types.ts";
+// isValidShardRow/safeToken/safeId：分片行校验与防御提取纯函数（单测从 lib/index.js 导入）
+export { TREND_ROW_VERSION, TREND_UNIDENTIFIED, sumToken, isValidShardRow, safeToken, safeId } from "./trend/types.ts";
 export type { TrendAttribution, TrendTokens, TrendDetailRow, TrendCounterRow, TrendAggRow, TrendCell } from "./trend/types.ts";
 // 路径解析纯函数透出（供测试与调用方复用同一展开/解析规则，无行为变更）
 export { resolvePath, pluginHome, expandHomePath } from "./path-resolve.ts";

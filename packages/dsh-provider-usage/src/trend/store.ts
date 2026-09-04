@@ -53,15 +53,20 @@ export class TrendStore {
 
   // ---------------------------------------------------------------- 明细追加
 
-  /** 追加未持久化行到各自日分片（per-day 单飞串行；返回是否全部成功）。 */
-  async appendRows(rows: Array<TrendDetailRow | TrendCounterRow>): Promise<boolean> {
+  /**
+   * 追加未持久化行到各自日分片（per-day 单飞串行）。
+   * 返回本次调用中**写入成功的 day 集合**：调用方据此精确标记 persisted——
+   * 部分日失败时成功日不重复 append（防崩溃重建双算）、失败日行保留待下轮重试。
+   * 注意：okDays 只反映本次调用各日写入段的成败（排队在前链的历史失败不影响本次结果）。
+   */
+  async appendRows(rows: Array<TrendDetailRow | TrendCounterRow>): Promise<Set<string>> {
     const byDay = new Map<string, Array<TrendDetailRow | TrendCounterRow>>();
     for (const row of rows) {
       const list = byDay.get(row.day);
       if (list === undefined) byDay.set(row.day, [row]);
       else list.push(row);
     }
-    let ok = true;
+    const okDays = new Set<string>();
     for (const [day, dayRows] of byDay) {
       const done = this.detailChains.get(day) ?? Promise.resolve();
       const next = done
@@ -69,9 +74,9 @@ export class TrendStore {
           await mkdir(this.detailsDir(), { recursive: true });
           const body = dayRows.map((r) => JSON.stringify(r)).join("\n");
           await appendFile(this.detailsFile(day), `${body}\n`, { encoding: "utf8", mode: 0o600 });
+          okDays.add(day);
         })
         .catch((e: unknown) => {
-          ok = false;
           this.warn(`明细分片写入失败（${day}）：${e instanceof Error ? e.message : String(e)}`);
         });
       this.detailChains.set(day, next);
@@ -79,7 +84,7 @@ export class TrendStore {
       // 链已收敛且无后续写入时清理表项（防 Map 无界增长）
       if (this.detailChains.get(day) === next) this.detailChains.delete(day);
     }
-    return ok;
+    return okDays;
   }
 
   // ---------------------------------------------------------------- 聚合压实
@@ -93,6 +98,17 @@ export class TrendStore {
     if (rows.length === 0) {
       await rm(this.aggFile(day), { force: true });
       return;
+    }
+    // P2-7：写 tmp 前清理同日 rename 前崩溃残留的 tmp（文件名前缀 `${day}.jsonl.` 且
+    // 后缀 `.tmp`）。尽力而为：清理失败不影响主流程（仅告警，下轮重写时再清）。
+    try {
+      for (const f of await readdir(this.aggDir())) {
+        if (f.startsWith(`${day}.jsonl.`) && f.endsWith(".tmp")) {
+          await rm(join(this.aggDir(), f), { force: true });
+        }
+      }
+    } catch (e: unknown) {
+      this.warn(`聚合分片 tmp 残留清理失败（${day}）：${e instanceof Error ? e.message : String(e)}`);
     }
     const tmp = `${this.aggFile(day)}.${Date.now()}.tmp`;
     const body = rows.map((r) => JSON.stringify(r)).join("\n");

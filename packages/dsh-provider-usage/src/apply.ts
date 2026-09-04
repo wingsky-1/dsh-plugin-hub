@@ -436,6 +436,23 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     }
   }
 
+  // 6.5 会话用量趋势（#503 M1）：监听注册走 disposers 统一回收（热重载不双监听）；
+  // session/flush 为 awaited parallel 官方排空点（flushNow 内部吞错，不拒绝排空）。
+  // start 先于监听注册完成：重建/自愈窗口内不接事件，防半重建态记账。
+  // 评审 P1-5：本块必须在「7. 路由注册」之前——/health 与 trendRoute 的 handler
+  // 闭包引用 trend（trend.stats() / trend.seriesStacked 等），若 trend 晚于路由注册
+  // effect 初始化，启动窗口内请求 /health 命中 const TDZ → ReferenceError → 500。
+  // trend start 只做磁盘读，无依赖前置问题；pruneTimer 回调引用 trend 随之安全。
+  const trend = await TrendTracker.start({
+    root: join(historyRoot, "trend"),
+    retentionDays: config.trendRetentionDays,
+    warn: (msg) => console.warn(`[dsh-provider-usage] trend: ${sanitizeDiagnostic(msg)}`),
+  });
+  const trendDisposers: Array<() => void> = [];
+  trendDisposers.push(ctx.on("session/event", (session, event) => trend.handleEvent(session, event)));
+  trendDisposers.push(ctx.on("session/flush", () => trend.flushNow()));
+  trendDisposers.push(ctx.on("session/disposed", (session) => trend.handleDisposed(session)));
+
   // 7. 路由注册
   // #308 断连感知统一形态（stats/history 共用）：请求级 AbortController——客户端
   // 提前断连（fetch abort / 半开超时）时经 res close 触发 abort，取数链路级联
@@ -852,23 +869,10 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   const PRUNE_INTERVAL_MS = 10 * 60 * 1000; // 每 10 分钟一次全树扫描（写入有界、定期收敛）
   pruneTimer = setInterval(() => {
     void history.pruneAll().catch((err) => console.warn("[dsh-provider-usage] 历史留存清理失败:", err));
-    // #503：trend 聚合分片留存清理同周期
+    // #503：trend 聚合分片留存清理同周期（trend 初始化已提前至 6.5，见评审 P1-5）
     void trend.prune().catch((err) => console.warn("[dsh-provider-usage] trend 留存清理失败:", err));
   }, PRUNE_INTERVAL_MS);
   (pruneTimer as { unref?: () => void }).unref?.();
-
-  // 8.6 会话用量趋势（#503 M1）：监听注册走 disposers 统一回收（热重载不双监听）；
-  // session/flush 为 awaited parallel 官方排空点（flushNow 内部吞错，不拒绝排空）。
-  // start 先于监听注册完成：重建/自愈窗口内不接事件，防半重建态记账。
-  const trend = await TrendTracker.start({
-    root: join(historyRoot, "trend"),
-    retentionDays: config.trendRetentionDays,
-    warn: (msg) => console.warn(`[dsh-provider-usage] trend: ${sanitizeDiagnostic(msg)}`),
-  });
-  const trendDisposers: Array<() => void> = [];
-  trendDisposers.push(ctx.on("session/event", (session, event) => trend.handleEvent(session, event)));
-  trendDisposers.push(ctx.on("session/flush", () => trend.flushNow()));
-  trendDisposers.push(ctx.on("session/disposed", (session) => trend.handleDisposed(session)));
 
   // 9. 设置面板命名空间（只读镜像；apiKey 不进 schema 避免回显）
   installSettingsNamespace(ctx, "dsh-provider-usage", Config, rawConfig, {

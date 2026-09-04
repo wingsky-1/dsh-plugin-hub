@@ -32,6 +32,12 @@ import {
 export const TREND_FOLD_TTL_MS = 10 * 60 * 1000;
 /** 会话状态（定稿记忆/归属）整体 TTL（长于 fold TTL，防乱序迟到 message 双算）。 */
 export const TREND_SESSION_TTL_MS = 60 * 60 * 1000;
+/**
+ * done 定稿记忆上限（键数，P2-3）：超过后按 Map 插入序淘汰最旧键。
+ * done 不按 turn 清（保留定稿记忆防乱序迟到 message 双算），本上限是唯一收缩路径，
+ * 防长命会话无界增长。
+ */
+export const TREND_DONE_MAX = 200;
 
 /** 一次定稿 LLM 调用（collector → aggregator 的主记录）。 */
 export interface TrendCallRecord {
@@ -84,8 +90,12 @@ interface SessionFoldState {
    * 即判定下一个 usage 为新一次调用（retry），未见 header 的 usage 为同调用重复块。
    */
   headerSeen: boolean;
-  /** 已定稿 fold 记忆（turn/end 丢弃的是未定稿缓冲，不是定稿记忆；防乱序迟到 message 双算）。 */
-  done: Set<string>;
+  /**
+   * 已定稿 fold 记忆（turn/end 丢弃的是未定稿缓冲，不是定稿记忆；防乱序迟到 message 双算）。
+   * 值 = 该键最后一次定稿的 retry（fold 被 TTL 清后，迟到校正据此取真实 retry，P2-3）；
+   * 上限 TREND_DONE_MAX 按插入序淘汰最旧键（长命会话防无界增长）。
+   */
+  done: Map<string, number>;
   /** 最近一次事件触达（墙钟，注入时钟）；会话级 TTL 依据。 */
   lastTouch: number;
   /** 最近一次 fold 活动；fold 级 TTL 依据。 */
@@ -97,6 +107,21 @@ export interface TrendCollectorOptions {
   now?: () => number;
   /** 定稿记录出口（aggregator.apply*）。 */
   emit: (e: TrendEmit) => void;
+  /** 归属异常告警出口（P2-6：主源与 message.source 副源不一致等；只告警不纠数）。 */
+  onAnomaly?: (msg: string) => void;
+}
+
+/**
+ * done 定稿记忆写入（P2-3）：超上限按 Map 插入序淘汰最旧键（done.set 对已存键
+ * 不重置插入序，淘汰目标恒为最早写入且未被复写的键）。失败路径不写 done——
+ * 只有真实定稿才进记忆。
+ */
+function rememberDone(done: Map<string, number>, key: string, retry: number): void {
+  done.set(key, retry);
+  if (done.size > TREND_DONE_MAX) {
+    const oldest = done.keys().next();
+    if (!oldest.done) done.delete(oldest.value);
+  }
 }
 
 /** 从 EpochHeader.config / AssistantProvenance 形状的 payload 防御提取归属。 */
@@ -125,18 +150,20 @@ export class TrendCollector {
   private readonly sessions = new Map<string, SessionFoldState>();
   private readonly now: () => number;
   private readonly emit: (e: TrendEmit) => void;
+  private readonly onAnomaly: ((msg: string) => void) | null;
   private lastSweep = 0;
 
   constructor(opts: TrendCollectorOptions) {
     this.now = opts.now ?? Date.now;
     this.emit = opts.emit;
+    this.onAnomaly = opts.onAnomaly ?? null;
   }
 
   /** 会话状态（惰性建）。 */
   private stateOf(session: string): SessionFoldState {
     let s = this.sessions.get(session);
     if (s === undefined) {
-      s = { attribution: null, folds: new Map(), headerSeen: false, done: new Set(), lastTouch: this.now(), lastFoldTouch: this.now() };
+      s = { attribution: null, folds: new Map(), headerSeen: false, done: new Map<string, number>(), lastTouch: this.now(), lastFoldTouch: this.now() };
       this.sessions.set(session, s);
     }
     return s;
@@ -176,7 +203,7 @@ export class TrendCollector {
           this.onTurnEnd(state, session, event);
           return;
         case "tool/call":
-          this.onToolCall(state, session);
+          this.onToolCall(state, session, event);
           return;
         default:
           return; // 其余事件类型与记账无关
@@ -252,7 +279,7 @@ export class TrendCollector {
     fold.finalized = true;
     state.headerSeen = false;
     state.lastFoldTouch = nowMs;
-    state.done.add(key);
+    rememberDone(state.done, key, fold.retry);
     const { provider, model } = this.providerOf(state);
     this.emit({
       type: "call",
@@ -271,25 +298,38 @@ export class TrendCollector {
     const turn = typeof d.turn === "number" && Number.isFinite(d.turn) ? d.turn : null;
     const step = typeof d.step === "number" && Number.isFinite(d.step) ? d.step : null;
     if (turn === null || step === null) return;
-    // 副源：归属缺失时用 message.source（kind:"model"）补齐
-    if (state.attribution === null) {
-      const src = d.message?.source as Record<string, unknown> | undefined;
-      if (src !== undefined && src.kind === "model") {
-        const alt = parseAttribution(src);
-        if (alt !== null) state.attribution = alt;
+    // 副源归属（P2-6）：归属缺失时用 message.source（kind:"model"）补齐；主源在场
+    // 但与副源解析结果不一致（provider 或 model 不同）时仅告警不覆盖——主源 header
+    // 是记账归属的权威，message.source 仅为缺失时的补齐副源。
+    const src = d.message?.source as Record<string, unknown> | undefined;
+    if (src !== undefined && src.kind === "model") {
+      const alt = parseAttribution(src);
+      if (alt !== null) {
+        if (state.attribution === null) {
+          state.attribution = alt;
+        } else if (state.attribution.provider !== alt.provider || state.attribution.model !== alt.model) {
+          this.onAnomaly?.(
+            `归属不一致（session=${session} turn=${turn} step=${step}）：主源 ${state.attribution.provider}/${state.attribution.model ?? "null"} 与 message.source ${alt.provider}/${alt.model} 不同，保留主源`,
+          );
+        }
       }
     }
     const key = this.foldKey(turn, step);
     const fold = state.folds.get(key);
     const tokens = parseTokens(d.usage);
     if ((fold !== undefined && fold.finalized) || state.done.has(key)) {
-      // 已定稿（fold 在场或已成记忆）→ 仅校正不重记
+      // 已定稿（fold 在场或已成记忆）→ 仅校正不重记。
+      // retry 取值（P2-3）：fold 在场取 fold.retry；fold 被 TTL 清后从 done 记忆取
+      // 真实 retry（防迟到校正错改 retry=1 行）；两者皆缺兜底 1。
       if (tokens !== null) {
-        this.emit({ type: "correct", record: { session, turn, step, retry: fold?.retry ?? 1, tokens } });
+        const retry = fold?.retry ?? state.done.get(key) ?? 1;
+        this.emit({ type: "correct", record: { session, turn, step, retry, tokens } });
       }
       return;
     }
     // 未定稿/缺失 → 补记（usage 缺失：调用照计、token 记 null）；时间取事件 time（非单调容忍）
+    // headerSeen 对称重置（P2-2）：与 usage 定稿路径对称——header 后 message 补记定稿
+    // 若仍留 headerSeen=true，同 fold 键迟到 usage chunk 会被误判为新调用（retry+1 重记）双算。
     const retry = fold !== undefined ? fold.retry : 1;
     if (fold !== undefined) {
       fold.finalized = true;
@@ -297,7 +337,8 @@ export class TrendCollector {
       state.folds.set(key, { retry: 1, finalized: true });
     }
     state.lastFoldTouch = this.now();
-    state.done.add(key);
+    state.headerSeen = false;
+    rememberDone(state.done, key, retry);
     const time = typeof event.time === "number" && Number.isFinite(event.time) ? event.time : this.now();
     const { provider, model } = this.providerOf(state);
     this.emit({
@@ -325,13 +366,17 @@ export class TrendCollector {
         if (key.startsWith(prefix)) state.folds.delete(key);
       }
     }
+    // counter 记账时间取事件 time（P2-1：防时钟回拨时 counter 落错日桶），非有限数回落 now
+    const time = typeof event.time === "number" && Number.isFinite(event.time) ? event.time : this.now();
     const { provider, model } = this.providerOf(state);
-    this.emit({ type: "counter", record: { time: this.now(), session, provider, model, turns: 1, toolCalls: 0 } });
+    this.emit({ type: "counter", record: { time, session, provider, model, turns: 1, toolCalls: 0 } });
   }
 
-  private onToolCall(state: SessionFoldState, session: string): void {
+  private onToolCall(state: SessionFoldState, session: string, event: SessionEvent & { type: "tool/call" }): void {
+    // 同 onTurnEnd：counter 记账时间取事件 time，非有限数回落 now（口径与 onMessage 一致）
+    const time = typeof event.time === "number" && Number.isFinite(event.time) ? event.time : this.now();
     const { provider, model } = this.providerOf(state);
-    this.emit({ type: "counter", record: { time: this.now(), session, provider, model, turns: 0, toolCalls: 1 } });
+    this.emit({ type: "counter", record: { time, session, provider, model, turns: 0, toolCalls: 1 } });
   }
 
   private foldKey(turn: unknown, step: unknown): string {
