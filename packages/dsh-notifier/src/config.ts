@@ -332,24 +332,6 @@ function normalizeBarkChannel(v: unknown): BarkChannelConfig | null {
   return out;
 }
 
-/**
- * Bark 实例数组归一化：逐实例归一化后按 id 去重（首个胜出，重复 id 会让掩码
- * 回填与路由对齐产生歧义）；上限 16 实例（单人自用足够，防配置膨胀）。
- */
-function normalizeBarkChannels(v: unknown): BarkChannelConfig[] {
-  if (!Array.isArray(v)) return [];
-  const seen = new Set<string>();
-  const out: BarkChannelConfig[] = [];
-  for (const item of v) {
-    if (out.length >= 16) break;
-    const ch = normalizeBarkChannel(item);
-    if (ch === null || seen.has(ch.id)) continue;
-    seen.add(ch.id);
-    out.push(ch);
-  }
-  return out;
-}
-
 /** 自定义请求头名合法性（保守 token 集；禁冒端到端关键头防走私/破坏 JSON body）。 */
 const WEBHOOK_HEADER_NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9-]{0,63}$/;
 const WEBHOOK_HEADER_DENYLIST: readonly string[] = ["content-type", "content-length", "host", "cookie", "authorization"];
