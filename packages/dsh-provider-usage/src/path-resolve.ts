@@ -9,8 +9,8 @@
  * 4. 解析后做 `existsSync` / 可读校验；失败 → 记诊断 + 该条目跳过。
  */
 import { existsSync, statSync } from "node:fs";
-import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
+import { dshHome as dshHomeBase } from "../../../shared/dsh-home.js";
 // issue #87：~ 展开复用成熟开源实现 untildify（与 dsh-web-file-preview 同源同版，
 // devDependency + 构建期 esbuild 内联，发布物零运行时依赖）。
 // 行为边界：仅展开开头的 `~`；`~user/...` 形态不展开、原样返回（旧手写实现把
@@ -19,10 +19,11 @@ import untildify from "untildify";
 
 /**
  * 插件 home 目录（host 文件逻辑归属区 ~/.dsh/plugins/provider-usage）。
- * @param base - DSH_HOME 根（缺省读 env，回落 ~/.dsh）；参数化供调用方在非全局
- *   env 场景（如路由入参校验）复用同一拼装规则。
+ * 渐进退役 facade：base 缺省语义由 shared/dsh-home.js 单一事实源承载（#517），
+ * 公开签名不变——参数化供调用方在非全局 env 场景（如路由入参校验）复用。
+ * @param base - DSH_HOME 根（缺省读 env，空串视同未设置，回落 ~/.dsh）。
  */
-export function pluginHome(base = process.env.DSH_HOME ?? join(homedir(), ".dsh")): string {
+export function pluginHome(base = dshHomeBase()): string {
   return join(base, "plugins", "provider-usage");
 }
 
@@ -52,7 +53,7 @@ export function resolvePath(p: string): string | undefined {
     expanded = trimmed;
   } else {
     // 相对路径：尝试 DSH_HOME → 插件 home
-    const dshHome = process.env.DSH_HOME ?? join(homedir(), ".dsh");
+    const dshHome = dshHomeBase();
     const candidates = [join(dshHome, trimmed), join(pluginHome(), trimmed)];
     for (const candidate of candidates) {
       if (existsSync(candidate)) {

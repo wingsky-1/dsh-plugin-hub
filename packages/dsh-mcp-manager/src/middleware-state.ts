@@ -6,13 +6,13 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { homedir } from "node:os";
 import type { ProjectUnit, DisabledToolsMap } from "./middleware-types.ts";
 import { parseDisabledTools } from "./middleware-utils.ts";
+import { dshHome } from "../../../shared/dsh-home.js";
 
 /** userDisabled 持久化文件路径。 */
 export function userStateFile() {
-  return join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), "dsh-mcp-user-state.json");
+  return join(dshHome(), "dsh-mcp-user-state.json");
 }
 
 /** 加载 userDisabled（损坏/缺失 → 空）。 */
@@ -59,7 +59,7 @@ export async function saveUserState(file: string, units: Map<string, ProjectUnit
 /** 目录缓存文件路径（每工作空间一份；root 哈希防路径注入）。 */
 export function catalogCacheFileFor(root: string) {
   const hash = createHash("sha256").update(root).digest("hex").slice(0, 16);
-  return join(process.env.DSH_HOME ?? join(homedir(), ".dsh"), "dsh-mcp-catalog", `${hash}.json`);
+  return join(dshHome(), "dsh-mcp-catalog", `${hash}.json`);
 }
 
 /** 加载工具级禁用（disabledTools 三段：root → server → tool[]；损坏/缺失 → 空）。 */
