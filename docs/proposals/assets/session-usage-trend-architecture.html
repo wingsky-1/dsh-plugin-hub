@@ -4929,7 +4929,7 @@
         <path data-edge-from="reportTab" data-edge-to="sched" data-edge-label="配置 / 手动生成" data-edge-key="7" data-edge-id="summon" data-composition-points="1095,240;1095,290" d="M 1095 240 L 1095 290" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
         <path data-edge-from="sched" data-edge-to="gen" data-edge-label="到期触发 / 补跑" data-edge-key="8" data-edge-id="tick" data-composition-points="1015,320;991,320;991,480;710,480" d="M 1015 320 L 999 320 Q 991 320 991 328 L 991 472 Q 991 480 983 480 L 710 480" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         <path data-edge-from="gen" data-edge-to="agg" data-edge-label="当期聚合" data-edge-key="9" data-edge-id="gather" data-composition-points="630,450;630,426;656,426;656,396;640,396;640,372" d="M 630 450 L 630 434 Q 630 426 638 426 L 648 426 Q 656 426 656 418 L 656 404 Q 656 396 648 396 L 648 396 Q 640 396 640 388 L 640 372" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="gen" data-edge-to="llm" data-edge-label="followup 报告会话" data-edge-key="10" data-edge-id="call" data-composition-points="630,510;630,538" d="M 630 510 L 630 538" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="gen" data-edge-to="llm" data-edge-label="stream 报告生成" data-edge-key="10" data-edge-id="call" data-composition-points="630,510;630,538" d="M 630 510 L 630 538" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         <path data-edge-from="gen" data-edge-to="store" data-edge-label="报告落盘 0600" data-edge-key="11" data-edge-id="saverpt" data-composition-points="630,450;630,425;885,425;885,380;885,364" d="M 630 450 L 630 433 Q 630 425 638 425 L 877 425 Q 885 425 885 417 L 885 388 Q 885 380 885 372 L 885 364" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
         <path data-edge-from="gen" data-edge-to="notifier" data-edge-label="可选摘要" data-edge-key="12" data-edge-id="push" data-composition-points="710,480;760,480;760,568;810,568" d="M 710 480 L 752 480 Q 760 480 760 488 L 760 560 Q 760 568 768 568 L 810 568" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
 
@@ -5058,15 +5058,15 @@
         <text data-detail="fine" x="1095" y="342" class="t-backend" font-size="7" text-anchor="middle">lastRun 幂等</text>
         </g>
 
-        <g id="node-llm" data-node-id="llm" data-node-label="dsh agent 运行时" tabindex="0" role="button" aria-label="Focus dsh agent 运行时, agents.create + followup, dsh-provider-usage 插件 · 宿主端" aria-pressed="false" data-node-kind="backend" data-node-sublabel="agents.create + followup" data-node-context="dsh-provider-usage 插件 · 宿主端">
-          <title>dsh agent 运行时 · agents.create + followup · dsh-provider-usage 插件 · 宿主端</title>
+        <g id="node-llm" data-node-id="llm" data-node-label="dsh llm 运行时" tabindex="0" role="button" aria-label="Focus dsh llm 运行时, ctx.llm.stream 一击式, dsh-provider-usage 插件 · 宿主端" aria-pressed="false" data-node-kind="backend" data-node-sublabel="ctx.llm.stream 一击式" data-node-context="dsh-provider-usage 插件 · 宿主端">
+          <title>dsh llm 运行时 · ctx.llm.stream 一击式 · dsh-provider-usage 插件 · 宿主端</title>
           <rect x="550" y="538" width="160" height="60" rx="6" class="c-mask"/>
           <rect x="550" y="538" width="160" height="60" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(556 544) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
-          <text data-detail-anchor x="630" y="566" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">dsh agent 运行时</text>
-        <text data-detail="context" x="630" y="582" class="t-muted" font-size="9" text-anchor="middle">agents.create + followup</text>
+          <text data-detail-anchor x="630" y="566" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">dsh llm 运行时</text>
+        <text data-detail="context" x="630" y="582" class="t-muted" font-size="9" text-anchor="middle">ctx.llm.stream 一击式</text>
         </g>
 
         <g id="node-notifier" data-node-id="notifier" data-node-label="dsh-notifier" tabindex="0" role="button" aria-label="Focus dsh-notifier, 可选推送 · 默认脱敏, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="可选推送 · 默认脱敏" data-node-context="Architecture component">
@@ -5122,9 +5122,9 @@
           <rect x="573.8" y="380" width="48.4" height="14" rx="3" class="c-mask"/>
           <text x="598" y="390" class="t-muted" font-size="8" text-anchor="middle">当期聚合</text>
         </g>
-        <g data-detail="context" data-edge-from="gen" data-edge-to="llm" data-edge-label="followup 报告会话" data-edge-key="10" data-edge-id="call">
-          <rect x="614.2" y="510" width="91.6" height="14" rx="3" class="c-mask"/>
-          <text x="660" y="520" class="t-muted" font-size="8" text-anchor="middle">followup 报告会话</text>
+        <g data-detail="context" data-edge-from="gen" data-edge-to="llm" data-edge-label="stream 报告生成" data-edge-key="10" data-edge-id="call">
+          <rect x="619" y="510" width="82" height="14" rx="3" class="c-mask"/>
+          <text x="660" y="520" class="t-muted" font-size="8" text-anchor="middle">stream 报告生成</text>
         </g>
         <g data-detail="context" data-edge-from="gen" data-edge-to="store" data-edge-label="报告落盘 0600" data-edge-key="11" data-edge-id="saverpt">
           <rect x="663.8" y="398" width="72.4" height="14" rx="3" class="c-mask"/>
