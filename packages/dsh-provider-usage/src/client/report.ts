@@ -34,6 +34,13 @@ export interface ReportPeriodConfigView {
   time: string;
 }
 
+/** 单周期提示词模板表（#532，与宿主端 ReportPrompts 同构）。 */
+export interface ReportPromptsView {
+  daily: string;
+  weekly: string;
+  monthly: string;
+}
+
 /** 报告配置（宿主响应归一化形状）。 */
 export interface ReportConfigView {
   daily: ReportPeriodConfigView;
@@ -42,6 +49,8 @@ export interface ReportConfigView {
   provider: string;
   model: string;
   promptTemplate: string;
+  /** 三周期独立模板（#532；旧配置经宿主 normalize 迁移后始终存在）。 */
+  prompts: ReportPromptsView;
   sanitizePaths: boolean;
   push: { enabled: boolean };
 }
@@ -77,6 +86,65 @@ export interface ReportMetaView {
     cacheReadTokens: number | null;
     cacheWriteTokens: number | null;
   };
+  /** #532：空窗口标记（当期无任何用量，未调模型未落盘）。 */
+  noData?: boolean;
+  /** #532：hero 摘要（成功生成时落盘；旧报告无此字段不渲染 hero）。 */
+  summary?: {
+    total: number | null;
+    calls: number;
+    activeDays: number;
+    windowDays: number;
+    longestStreak: number;
+    wowRatio: number | null;
+    peakDay: { day: string; total: number | null } | null;
+  };
+}
+
+/** #532：环比箭头胶囊（null = 上一窗口无数据，不做对比）。 */
+function ratioBadge(ratio: number | null): React.ReactElement {
+  if (ratio === null) return React.createElement("span", { className: "dou-heroRatio" }, "—");
+  const up = ratio >= 1;
+  const pct = Math.round(Math.abs(ratio - 1) * 100);
+  return React.createElement(
+    "span",
+    { className: `dou-heroRatio ${up ? "dou-heroRatioUp" : "dou-heroRatioDown"}` },
+    up ? "↑" : "↓",
+    " ",
+    pct === 0 ? t("reportRatioFlat") : t("reportRatioPct", { n: pct }),
+  );
+}
+
+/** #532：详情页年报 hero 区（海报式渐变不随主题反转，文字恒浅色）。 */
+function reportHero(s: NonNullable<ReportMetaView["summary"]>): React.ReactElement {
+  const stats: Array<[string, string]> = [
+    [t("reportHeroCalls"), `${s.calls.toLocaleString("en-US")}`],
+    [t("reportHeroActive"), `${s.activeDays} / ${s.windowDays}`],
+    [t("reportHeroStreak"), `${s.longestStreak}`],
+    [t("reportHeroPeak"), s.peakDay !== null ? `${(s.peakDay.total ?? 0).toLocaleString("en-US")}` : "—"],
+  ];
+  return React.createElement(
+    "div",
+    { className: "dou-hero" },
+    React.createElement(
+      "div",
+      { className: "dou-heroBig" },
+      React.createElement("span", { className: "dou-heroNum" }, s.total !== null ? s.total.toLocaleString("en-US") : "—"),
+      React.createElement("span", { className: "dou-heroNumUnit" }, t("reportHeroTotal")),
+      ratioBadge(s.wowRatio),
+    ),
+    React.createElement(
+      "div",
+      { className: "dou-heroStats" },
+      stats.map(([label, value]) =>
+        React.createElement(
+          "div",
+          { className: "dou-heroStat", key: label },
+          React.createElement("small", null, label),
+          React.createElement("b", null, value),
+        ),
+      ),
+    ),
+  );
 }
 
 /** 历史行唯一 id（列表展开态标记用）。 */
@@ -100,26 +168,31 @@ export function ReportSection(): React.ReactElement {
   // 手动生成
   const [genPeriod, setGenPeriod] = React.useState<ReportPeriodView>("daily");
   const [generating, setGenerating] = React.useState(false);
-  const [genError, setGenError] = React.useState<string | null>(null);
-  // 历史列表与详情展开
+  const [genError, setGenError] = React.useState<string | null>(null);  // 历史列表与详情展开
   const [list, setList] = React.useState<ReportMetaView[] | null>(null);
   const [listFailed, setListFailed] = React.useState(false);
   const [openId, setOpenId] = React.useState<string | null>(null);
   const [detail, setDetail] = React.useState<{ id: string; html: string; meta: ReportMetaView } | null>(null);
   // #532 模型候选：按 provider 缓存（null = 已请求且失败/为空 → 降级手填；undefined = 未请求）
   const [modelsCache, setModelsCache] = React.useState<Record<string, ReportModelOption[] | null>>({});
+  // #532 三周期提示词：当前编辑的周期 tab + 宿主默认模板（「恢复默认」数据源）
+  const [promptTab, setPromptTab] = React.useState<ReportPeriodView>("daily");
+  const [promptDefaults, setPromptDefaults] = React.useState<ReportPromptsView | null>(null);
+  // #532 手动生成的空窗口提示（区别于错误）
+  const [genNotice, setGenNotice] = React.useState<string | null>(null);
 
   /** 读配置与 provider 候选（失败展示错误行，不阻塞历史列表）。 */
   const loadConfig = React.useCallback(async (): Promise<void> => {
     try {
       const res = await fetchTimeout(REPORT_CONFIG_URL, { headers: { Accept: "application/json" }, cache: "no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body = (await res.json()) as { ok?: boolean; config?: ReportConfigView; providers?: ReportProviderOption[] };
+      const body = (await res.json()) as { ok?: boolean; config?: ReportConfigView; providers?: ReportProviderOption[]; promptDefaults?: ReportPromptsView };
       if (body.config !== undefined) {
         setDraft(body.config);
         setConfigFailed(false);
       }
       if (Array.isArray(body.providers)) setProviders(body.providers);
+      if (body.promptDefaults !== null && body.promptDefaults !== undefined) setPromptDefaults(body.promptDefaults);
     } catch {
       setConfigFailed(true);
     }
@@ -206,6 +279,7 @@ export function ReportSection(): React.ReactElement {
     if (generating) return;
     setGenerating(true);
     setGenError(null);
+    setGenNotice(null);
     try {
       const res = await fetchTimeout(REPORT_GENERATE_URL, {
         method: "POST",
@@ -214,6 +288,12 @@ export function ReportSection(): React.ReactElement {
       });
       const body = (await res.json().catch(() => ({}))) as { ok?: boolean; meta?: ReportMetaView; error?: string };
       if (!res.ok || body.meta === undefined) throw new Error(body.error ?? `HTTP ${res.status}`);
+      if (body.meta.noData === true) {
+        // #532：空窗口不调模型不落盘——正向提示，不进错误分支、不展开详情
+        setGenNotice(t("reportNoData"));
+        return;
+      }
+      setGenNotice(null);
       await loadReports();
       setOpenId(rowIdOf(body.meta)); // 生成成功后展开详情
     } catch (e) {
@@ -373,16 +453,44 @@ export function ReportSection(): React.ReactElement {
           models !== null && !haveModels
             ? React.createElement("div", { className: "dou-reportHint" }, t("reportModelFallback"))
             : null,
-          // 提示词模板
+          // 提示词模板（#532：三周期各自独立模板 + 周期切换 tab + 恢复默认）
           React.createElement(
             "div",
             { className: "dou-reportCol" },
-            React.createElement("span", { className: "dou-reportLabel" }, t("reportPrompt")),
+            React.createElement(
+              "div",
+              { className: "dou-reportPromptTabs" },
+              React.createElement("span", { className: "dou-reportLabel" }, t("reportPrompt")),
+              PERIODS.map((p) =>
+                React.createElement(
+                  "button",
+                  {
+                    key: p,
+                    type: "button",
+                    className: `dou-reportPromptTab${promptTab === p ? " dou-reportPromptTabActive" : ""}`,
+                    "aria-pressed": promptTab === p,
+                    onClick: () => setPromptTab(p),
+                  },
+                  periodLabel(p),
+                ),
+              ),
+              promptDefaults !== null
+                ? React.createElement(
+                    "button",
+                    {
+                      type: "button",
+                      className: "dou-reportPromptReset",
+                      onClick: () => patchTop({ prompts: { ...draft.prompts, [promptTab]: promptDefaults[promptTab] } }),
+                    },
+                    t("reportPromptReset"),
+                  )
+                : null,
+            ),
             React.createElement("textarea", {
               className: "dou-reportTextarea",
-              rows: 5,
-              value: draft.promptTemplate,
-              onChange: (e: unknown) => patchTop({ promptTemplate: (e as { target: { value: string } }).target.value }),
+              rows: 7,
+              value: draft.prompts[promptTab],
+              onChange: (e: unknown) => patchTop({ prompts: { ...draft.prompts, [promptTab]: (e as { target: { value: string } }).target.value } }),
             }),
             React.createElement("span", { className: "dou-reportHint" }, t("reportPromptHint")),
           ),
@@ -433,6 +541,7 @@ export function ReportSection(): React.ReactElement {
         generating ? t("reportGenerating") : t("reportGenerate"),
       ),
       genError !== null ? React.createElement("span", { className: "dou-reportGenError" }, genError) : null,
+      genNotice !== null ? React.createElement("span", { className: "dou-reportGenNotice" }, genNotice) : null,
     ),
     // ---- 历史列表 ----
     React.createElement("h3", { className: "dou-reportListTitle" }, t("reportHistory")),
@@ -460,20 +569,30 @@ export function ReportSection(): React.ReactElement {
                       ),
                     );
                   }
-                  parts.push(
-                    detail.html.length > 0
-                      ? React.createElement("div", {
-                          className: "dou-reportDetailBody",
-                          key: "body",
-                          // 数据源为本插件宿主端产物：落盘 escHtml 第一层 + 读侧 sanitizeHtml 第二层
-                          dangerouslySetInnerHTML: { __html: detail.html },
-                        })
-                      : React.createElement(
-                          "div",
-                          { className: "dou-reportFetchFail", key: "empty" },
-                          detail.meta.error ?? t("reportFetchFail"),
-                        ),
-                  );
+                  // #532 年报 hero：meta.summary 存在时渲染大数字 + 环比 + 活跃统计
+                  const summary = detail.meta.summary;
+                  if (summary !== null && summary !== undefined) {
+                    parts.push(reportHero(summary));
+                  }
+                  if (detail.meta.noData === true) {
+                    parts.push(React.createElement("div", { className: "dou-reportGenNotice", key: "nodata" }, t("reportNoData")));
+                  } else {
+                    parts.push(
+                      detail.html.length > 0
+                        ? React.createElement("div", {
+                            className: "dou-reportDetailBody",
+                            key: "body",
+                            // 数据源为本插件宿主端产物：落盘 escape-then-transform 白名单标签
+                            // 第一层 + 读侧 sanitizeHtml 第二层（#532 管线）
+                            dangerouslySetInnerHTML: { __html: detail.html },
+                          })
+                        : React.createElement(
+                            "div",
+                            { className: "dou-reportFetchFail", key: "empty" },
+                            detail.meta.error ?? t("reportFetchFail"),
+                          ),
+                    );
+                  }
                   parts.push(
                     React.createElement(
                       "button",

@@ -55,9 +55,10 @@ import { metricValue } from "./trend/aggregator.ts";
 import { sumToken, type TrendCell } from "./trend/types.ts";
 // #503 会话用量报告（M3 接线）：调度/生成/落盘/路由
 import { candidateWindow, presetLastRunForNewlyEnabled, type DueReport } from "./report/schedule.ts";
-import { normalizeReportConfig, readReportConfig, writeReportConfig, type ReportConfig, type ReportPeriod } from "./report/config.ts";
+import { normalizeReportConfig, promptFor, readReportConfig, writeReportConfig, DEFAULT_PROMPTS, type ReportConfig, type ReportPeriod } from "./report/config.ts";
 import { ReportScheduler, readLastRun, writeLastRun } from "./report/scheduler.ts";
-import { generateReport, buildStatsSnapshot, type ReportMeta, type ReportStatsSnapshot } from "./report/generate.ts";
+import { generateReport, buildStatsSnapshot, type ReportMeta, type ReportMetaSummary, type ReportStatsSnapshot } from "./report/generate.ts";
+import { reportBodyToHtml } from "./report/format.ts";
 // dsh-session 类型层（仅类型，编译期擦除）：加载 Events 声明合并 → ctx.on("session/*") 事件面
 import type {} from "@deepseek-ai/dsh-session";
 
@@ -494,15 +495,17 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   }
 
   /**
-   * 第一层净化（落盘形态即安全）：LLM 正文 escHtml 转义后包入最小 HTML 文档骨架。
-   * 文件本身无任何未转义插值——UI 读侧再经 sanitizeHtml 第二层净化（方案 §2.3 双层）。
+   * 第一层净化（落盘形态即安全）：LLM 正文经 reportBodyToHtml 管线（#532
+   * escape-then-transform：escHtml 先转义，仅引入无属性 h3/strong/ul/li/p 白名单
+   * 标签）包入最小 HTML 文档骨架。文件本身无任何未转义插值——UI 读侧再经
+   * sanitizeHtml 第二层净化兜底（黑名单对无属性白名单标签天然放行）。
    */
   function reportHtmlDocument(meta: ReportMeta, bodyText: string): string {
     const title = `${meta.period} ${meta.key} 用量报告`;
     return [
       "<!doctype html>",
       `<html lang="zh-CN"><head><meta charset="utf-8"><title>${escHtml(title)}</title></head>`,
-      `<body><article class="dou-report-body">${escHtml(bodyText).replace(/\n/g, "<br>")}</article></body></html>`,
+      `<body><article class="dou-report-body">${reportBodyToHtml(bodyText)}</article></body></html>`,
     ].join("");
   }
 
@@ -589,10 +592,25 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       .catch((e: unknown) => console.warn(`[dsh-provider-usage] report: 推送失败（不影响主流程）：${sanitizeDiagnostic(errorMessage(e))}`));
   }
 
+  /** 快照 → hero 摘要（纯数值投影；#532 meta.summary 数据源）。 */
+  function summaryOf(snapshot: ReportStatsSnapshot): ReportMetaSummary {
+    return {
+      total: snapshot.totals.total,
+      calls: snapshot.totals.calls,
+      activeDays: snapshot.activeDays,
+      windowDays: snapshot.windowDays,
+      longestStreak: snapshot.longestStreak,
+      wowRatio: snapshot.wowRatio,
+      peakDay: snapshot.peakDay,
+    };
+  }
+
   /**
    * 生成一个到期窗口（调度 tick 与手动生成路由复用）：
    * 统计快照（只读 buckets）→ generateReport → 成功才落盘三件套 + 可选推送；
    * 失败抛错（调度侧不推进 lastRun、同窗重试——scheduler 已有语义）。
+   * #532：空窗口（calls=0）不调模型不落盘，返回 noData 元数据（调度侧正常推进
+   * lastRun 防逐 tick 重试死循环；手动生成回显「当期无用量数据」）。
    */
   async function runDue(due: DueReport): Promise<ReportMeta> {
     const buckets = trend.buckets();
@@ -603,6 +621,20 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       buckets,
       prevTotal: prevWindowTotal(buckets, due.startDay, due.endDay),
     });
+    if (snapshot.totals.calls === 0) {
+      return {
+        period: due.period,
+        key: due.key,
+        startDay: due.startDay,
+        endDay: due.endDay,
+        provider: reportCfg.provider,
+        model: reportCfg.model,
+        generatedAt: Date.now(),
+        durationMs: 0,
+        ok: true,
+        noData: true,
+      };
+    }
     const result = await generateReport({
       llm: ctx.llm,
       period: due.period,
@@ -610,14 +642,15 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       startDay: due.startDay,
       endDay: due.endDay,
       statsJson: JSON.stringify(snapshot, null, 2),
-      promptTemplate: reportCfg.promptTemplate,
+      promptTemplate: promptFor(reportCfg, due.period),
       provider: reportCfg.provider,
       model: reportCfg.model,
     });
     if (!result.meta.ok) throw new Error(result.meta.error ?? "报告生成失败");
-    await persistReport(result.meta, result.body);
-    notifyReport(result.meta, snapshot);
-    return result.meta;
+    const meta: ReportMeta = { ...result.meta, summary: summaryOf(snapshot) };
+    await persistReport(meta, result.body);
+    notifyReport(meta, snapshot);
+    return meta;
   }
 
   // 调度器（方案 §2.3 极简调度器）：tickMs 默认 60s；启动首轮 tick 即补跑检查；
@@ -1048,7 +1081,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
               .map((i) => ({ id: i.id as string, ...(typeof i.name === "string" ? { name: i.name } : {}) }));
           }
         } catch { /* 回落空数组 */ }
-        return writeJson(res, 200, { ok: true, config, providers });
+        return writeJson(res, 200, { ok: true, config, providers, promptDefaults: DEFAULT_PROMPTS });
       }
       let body: unknown;
       try {
