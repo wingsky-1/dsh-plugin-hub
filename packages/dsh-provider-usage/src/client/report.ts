@@ -16,9 +16,10 @@ import * as React from "react";
 import { fetchTimeout } from "./core.ts";
 import { t } from "../../../../shared/client/i18n.js";
 
-/** 宿主端 ROUTES（构建期经 __DSH_ROUTES__ 注入；报告四路由 #503 M3 起进入路由表）。 */
+/** 宿主端 ROUTES（构建期经 __DSH_ROUTES__ 注入；报告五路由 #503 M3 / #532 起进入路由表）。 */
 declare const __DSH_ROUTES__: Record<string, string> | undefined;
 const REPORT_CONFIG_URL = __DSH_ROUTES__?.reportConfig ?? "/api/dsh-provider-usage/report-config";
+const REPORT_MODELS_URL = __DSH_ROUTES__?.reportModels ?? "/api/dsh-provider-usage/report-models";
 const REPORTS_URL = __DSH_ROUTES__?.reports ?? "/api/dsh-provider-usage/reports";
 const REPORT_DETAIL_URL = __DSH_ROUTES__?.reportDetail ?? "/api/dsh-provider-usage/reports/detail";
 const REPORT_GENERATE_URL = __DSH_ROUTES__?.reportGenerate ?? "/api/dsh-provider-usage/reports/generate";
@@ -47,6 +48,12 @@ export interface ReportConfigView {
 
 /** provider 候选（/report-config 响应 providers[]）。 */
 export interface ReportProviderOption {
+  id: string;
+  name?: string;
+}
+
+/** 模型候选（/report-models 响应 models[]，#532）。 */
+export interface ReportModelOption {
   id: string;
   name?: string;
 }
@@ -99,6 +106,8 @@ export function ReportSection(): React.ReactElement {
   const [listFailed, setListFailed] = React.useState(false);
   const [openId, setOpenId] = React.useState<string | null>(null);
   const [detail, setDetail] = React.useState<{ id: string; html: string; meta: ReportMetaView } | null>(null);
+  // #532 模型候选：按 provider 缓存（null = 已请求且失败/为空 → 降级手填；undefined = 未请求）
+  const [modelsCache, setModelsCache] = React.useState<Record<string, ReportModelOption[] | null>>({});
 
   /** 读配置与 provider 候选（失败展示错误行，不阻塞历史列表）。 */
   const loadConfig = React.useCallback(async (): Promise<void> => {
@@ -133,6 +142,29 @@ export function ReportSection(): React.ReactElement {
     void loadConfig();
     void loadReports();
   }, [loadConfig, loadReports]);
+
+  // #532 模型候选：provider 空串（跟随默认）按注册序首个解析（与宿主 resolveRoute 同序同源）；
+  // 按需拉取 + 组件生命周期内 memo（每 provider 至多一次）；live 标志丢弃过期响应防竞态。
+  const providerKey = draft?.provider ?? "";
+  const effectiveProvider = providerKey === "" ? (providers[0]?.id ?? "") : providerKey;
+  const models = modelsCache[effectiveProvider];
+  const haveModels = Array.isArray(models) && models.length > 0;
+  React.useEffect(() => {
+    if (effectiveProvider === "" || modelsCache[effectiveProvider] !== undefined) return;
+    let live = true;
+    fetchTimeout(`${REPORT_MODELS_URL}?provider=${encodeURIComponent(effectiveProvider)}`, { headers: { Accept: "application/json" }, cache: "no-store" })
+      .then((res) => res.json() as Promise<{ ok?: boolean; models?: ReportModelOption[] }>)
+      .then((body) => {
+        if (!live) return;
+        setModelsCache((c) => ({ ...c, [effectiveProvider]: body?.ok === true && Array.isArray(body.models) ? body.models : null }));
+      })
+      .catch(() => {
+        if (live) setModelsCache((c) => ({ ...c, [effectiveProvider]: null }));
+      });
+    return () => {
+      live = false;
+    };
+  }, [effectiveProvider, modelsCache]);
 
   /** 单周期字段更新（draft 空时忽略——输入未就绪不可交互）。 */
   const patchPeriod = (period: ReportPeriodView, patch: Partial<ReportPeriodConfigView & { weekStartsOn: 0 | 1 } & { dayOfMonth: number }>): void => {
@@ -311,15 +343,36 @@ export function ReportSection(): React.ReactElement {
               "label",
               { className: "dou-reportInline" },
               t("reportModel"),
-              React.createElement("input", {
-                type: "text",
-                className: "dou-reportInput",
-                placeholder: t("reportModelHint"),
-                value: draft.model,
-                onChange: (e: unknown) => patchTop({ model: (e as { target: { value: string } }).target.value }),
-              }),
+              // #532：模型候选已加载 → 下拉（首项「跟随默认」=空串语义=注册序首个）；
+              // 当前配置值不在列表 → 兜底项渲染旧值，绝不隐式改写；未加载/失败 → 降级手填。
+              haveModels
+                ? React.createElement(
+                    "select",
+                    {
+                      className: "dou-reportSelect",
+                      value: draft.model,
+                      onChange: (e: unknown) => patchTop({ model: (e as { target: { value: string } }).target.value }),
+                    },
+                    React.createElement("option", { key: "", value: "" }, t("reportModelDefault")),
+                    draft.model !== "" && !models!.some((m) => m.id === draft.model)
+                      ? React.createElement("option", { key: "__kept", value: draft.model }, t("reportModelKept", { v: draft.model }))
+                      : null,
+                    models!.map((m) =>
+                      React.createElement("option", { key: m.id, value: m.id }, typeof m.name === "string" && m.name.length > 0 ? `${m.name} (${m.id})` : m.id),
+                    ),
+                  )
+                : React.createElement("input", {
+                    type: "text",
+                    className: "dou-reportInput",
+                    placeholder: t("reportModelHint"),
+                    value: draft.model,
+                    onChange: (e: unknown) => patchTop({ model: (e as { target: { value: string } }).target.value }),
+                  }),
             ),
           ),
+          models !== null && !haveModels
+            ? React.createElement("div", { className: "dou-reportHint" }, t("reportModelFallback"))
+            : null,
           // 提示词模板
           React.createElement(
             "div",

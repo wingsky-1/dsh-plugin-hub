@@ -168,8 +168,8 @@ function makeFakeCtx(overrides = {}) {
   await apply(ctx, { ...ISOLATED_CONFIG });
   assert.deepEqual(
     routes.map((r) => r.path).sort(),
-    [ROUTES.health, ROUTES.history, ROUTES.stats, ROUTES.trend, ROUTES.adapters, ROUTES.select, ROUTES.inspect, ROUTES.add, ROUTES.uiConfig, ROUTES.events, ROUTES.reportConfig, ROUTES.reports, ROUTES.reportDetail, ROUTES.reportGenerate].sort(),
-    "注册十四条路由（stats/history/trend/adapters.json/select/inspect/add/health/ui-config/events + #503 报告四路由）",
+    [ROUTES.health, ROUTES.history, ROUTES.stats, ROUTES.trend, ROUTES.adapters, ROUTES.select, ROUTES.inspect, ROUTES.add, ROUTES.uiConfig, ROUTES.events, ROUTES.reportConfig, ROUTES.reportModels, ROUTES.reports, ROUTES.reportDetail, ROUTES.reportGenerate].sort(),
+    "注册十五条路由（stats/history/trend/adapters.json/select/inspect/add/health/ui-config/events + #503 报告四路由 + #532 模型候选）",
   );
   assert.ok(routes.every((r) => r.kind === "exact" || r.kind === "prefix"), "路由 kind 合法");
 }
@@ -177,7 +177,7 @@ function makeFakeCtx(overrides = {}) {
 // ---------------------------------------------------------------- 围栏：403 / 405
 
 const POST_ROUTES = new Set([ROUTES.select, ROUTES.inspect, ROUTES.add, ROUTES.uiConfig, ROUTES.reportConfig, ROUTES.reportGenerate]);
-for (const routePath of [ROUTES.stats, ROUTES.history, ROUTES.trend, ROUTES.health, ROUTES.adapters, ROUTES.select, ROUTES.inspect, ROUTES.add, ROUTES.uiConfig, ROUTES.events, ROUTES.reportConfig, ROUTES.reports, ROUTES.reportDetail, ROUTES.reportGenerate]) {
+for (const routePath of [ROUTES.stats, ROUTES.history, ROUTES.trend, ROUTES.health, ROUTES.adapters, ROUTES.select, ROUTES.inspect, ROUTES.add, ROUTES.uiConfig, ROUTES.events, ROUTES.reportConfig, ROUTES.reportModels, ROUTES.reports, ROUTES.reportDetail, ROUTES.reportGenerate]) {
   {
     const { ctx, routes } = makeFakeCtx();
     await apply(ctx, { ...ISOLATED_CONFIG });
@@ -1611,6 +1611,19 @@ console.log("[smoke] #503 trend 挂接 + /trend 集成断言全部通过 ✓");
   assert.equal(savedCfg.config.daily.time, "22:00", "触发时刻回显");
   const reread = await callHandler(cfgRoute, fakeReq({ url: ROUTES.reportConfig }));
   assert.deepEqual(reread.config, savedCfg.config, "POST 后 GET 回读一致");
+
+  // e0. #532 报告模型候选路由：已知 provider → listModels 白名单映射；未知/缺失 → unknown-provider
+  {
+    const modelsRoute = routes.find((r) => r.path === ROUTES.reportModels);
+    assert.ok(modelsRoute !== undefined, "report-models 路由存在");
+    const modelsOk = await callHandler(modelsRoute, fakeReq({ url: `${ROUTES.reportModels}?provider=anthropic` }));
+    assert.equal(modelsOk.ok, true, "report-models 已知 provider ok");
+    assert.deepEqual(modelsOk.models, [{ id: "model-a", name: "Model A" }], "models 白名单字段映射（id/name）");
+    const modelsUnknown = await callHandler(modelsRoute, fakeReq({ url: `${ROUTES.reportModels}?provider=no-such` }));
+    assert.deepEqual(modelsUnknown, { ok: false, reason: "unknown-provider" }, "未知 provider 拒绝（与发现失败分报）");
+    const modelsMissing = await callHandler(modelsRoute, fakeReq({ url: ROUTES.reportModels }));
+    assert.deepEqual(modelsMissing, { ok: false, reason: "unknown-provider" }, "缺 provider 参数拒绝");
+  }
 
   // f. 前置：合成一点趋势数据（生成「不入统计」断言的对照快照）
   const t = Date.now();

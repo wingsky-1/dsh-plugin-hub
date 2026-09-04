@@ -74,6 +74,7 @@ export const ROUTES: Record<string, string> = {
   events: "/api/dsh-provider-usage/events",
   // #503 会话用量报告（M3）
   reportConfig: "/api/dsh-provider-usage/report-config",
+  reportModels: "/api/dsh-provider-usage/report-models",
   reports: "/api/dsh-provider-usage/reports",
   reportDetail: "/api/dsh-provider-usage/reports/detail",
   reportGenerate: "/api/dsh-provider-usage/reports/generate",
@@ -1072,8 +1073,53 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     },
   };
 
-  /** 读 index.jsonl（逐行 JSON.parse 容错坏行；倒序 = 最新在前）。 */
-  async function readReportIndex(): Promise<ReportMeta[]> {
+  /**
+   * 报告模型候选路由（#532，GET ?provider=）：listProviders 校验存在 → listModels。
+   * listModels 为 adapter 自主发现（可能走网络）：5s 竞速超时防悬挂，失败回
+   * {ok:false,reason}（客户端降级手填）；不在 report-config GET 预拉全量——避免
+   * 打开设置页即打多路发现请求。未知 provider 与发现失败分开报（unknown-provider）。
+   */
+  const reportModelsRoute: WebRoute = {
+    kind: "exact",
+    path: ROUTES.reportModels,
+    handler: async (req, res) => {
+      if (!guardLoopbackMethod(req, res, ["GET"])) return;
+      const url = new URL(req.url ?? "/", "http://localhost");
+      const provider = url.searchParams.get("provider") ?? "";
+      const known = (() => {
+        try {
+          return ctx.llm.listProviders().some((i) => (i as { id?: unknown })?.id === provider);
+        } catch {
+          return false;
+        }
+      })();
+      if (provider.length === 0 || !known) {
+        return writeJson(res, 200, { ok: false, reason: "unknown-provider" });
+      }
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      try {
+        const pending = ctx.llm.listModels(provider);
+        pending.catch(() => {}); // 超时竞速后底层悬挂 rejection 兜底（防 unhandled）
+        const timeout = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("discover-timeout")), 5000);
+        });
+        const models = await Promise.race([pending, timeout]);
+        const list = Array.isArray(models)
+          ? (models as Array<{ id?: unknown; name?: unknown } | null>)
+              .filter((m): m is { id: string; name?: string } =>
+                typeof m?.id === "string" && (m.id as string).length > 0)
+              .map((m) => ({ id: m.id, ...(typeof m.name === "string" && m.name.length > 0 ? { name: m.name as string } : {}) }))
+          : [];
+        writeJson(res, 200, { ok: true, models: list });
+      } catch (e: unknown) {
+        writeJson(res, 200, { ok: false, reason: e instanceof Error ? e.message : "discover-failed" });
+      } finally {
+        if (timer !== null) clearTimeout(timer);
+      }
+    },
+  };
+
+  /** 读 index.jsonl（逐行 JSON.parse 容错坏行；倒序 = 最新在前）。 */  async function readReportIndex(): Promise<ReportMeta[]> {
     let raw: string;
     try {
       raw = await readFile(reportIndexFile(), "utf8");
@@ -1186,7 +1232,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   const disposeRoutes = ctx.effect(
     () => {
       // #503 M3：报告四路由并入同一注册/回收面
-      const routeDisposers = [statsRoute, historyRoute, healthRoute, trendRoute, adaptersRoute, selectRoute, inspectRoute, addRoute, uiConfigRoute, eventsRoute, reportConfigRoute, reportsRoute, reportDetailRoute, reportGenerateRoute].map((route) =>
+      const routeDisposers = [statsRoute, historyRoute, healthRoute, trendRoute, adaptersRoute, selectRoute, inspectRoute, addRoute, uiConfigRoute, eventsRoute, reportConfigRoute, reportModelsRoute, reportsRoute, reportDetailRoute, reportGenerateRoute].map((route) =>
         ctx.webServer.register(route),
       );
       return () => {
