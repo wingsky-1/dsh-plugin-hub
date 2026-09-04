@@ -43,16 +43,24 @@ dsh plugin --profile web add @wingsky-1/dsh-verify-isolated
   无效的 0）；**B6** 就绪后写 `$DSH_HOME/verdict.json` 启动自检（0o600，端口三通道
   source，退出终态更新 cleanup）；**B7** 证据目录 `--evidence-dir` 默认
   `$DSH_HOME/evidence/`、外部化建 `<dir>/evidence-<profile>/` 绝不动外部目录；
-  `--json` 时 stdout 只出最终 verdict JSON。退出码契约：0 正常 / 1 启动或就绪失败
-  / 2 参数错误 / 130 SIGINT / 143 SIGTERM。
+  **B4** 可选隔离审计 `--audit`——对比隔离 `$ISOLATED_HOME` 写面与预置白名单
+  （版本化 `WHITELIST_V`，`scripts/lib/audit.mjs` 纯函数），白名单外新增/删除/修改
+  与越界 symlink 报「可疑」、**不阻断退出**（`--audit-extra-dirs <dir>` 可加额外
+  审计目录，必须是目录；局限：不扫真实 home；白名单含 dsh 自身写面
+  `.credentials.yaml`/`storages/**`，随版本漂移的官方 bundle link 由就绪后 t0
+  基线覆盖——审计面 = 就绪后运行期增量写面；`--keep` 落
+  `$DSH_HOME/audit/audit.json`，否则随 `--json` 终态 verdict 输出 `audit` 字段）；
+  `--json` 时 stdout 只出最终 verdict JSON。退出码
+  契约：0 正常 / 1 启动或就绪失败 / 2 参数错误 / 130 SIGINT / 143 SIGTERM。
 
 ## 包结构
 
 ```text
 skills/dsh-verify-isolated/
   SKILL.md                        # skill 定义（frontmatter name=dsh-verify-isolated）
-  scripts/verify-isolated.mjs     # 一键隔离验证脚本（node，--dsh / --browser / --port 0 / --keep / --no-build / --evidence-dir / --json）
+  scripts/verify-isolated.mjs     # 一键隔离验证脚本（node，--dsh / --browser / --port 0 / --keep / --no-build / --evidence-dir / --audit / --audit-extra-dirs / --json）
   scripts/lib/verify-core.mjs     # 共享基础工具（退出码常量/poll/findFreePort/端口解析/C11 归一化）
+  scripts/lib/audit.mjs           # B4 隔离审计纯函数（scanSnapshot/diffAgainstWhitelist/checkSymlinkEscape/runAudit + 版本化白名单 WHITELIST_V）
   scripts/browser-driver.mjs      # 自带独立浏览器驱动（raw CDP 零依赖，--json 原子操作 CLI）
 cordis.patch.yml                  # 复用官方 dsh-skill-filesystem + bundledSkillDir
 lib/index.js                      # 宿主门禁出口（name + 空 apply）
@@ -75,6 +83,8 @@ node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --browser <插件包路�
 node "$SKILL_BASE/scripts/verify-isolated.mjs" --dsh /opt/dsh-0.1.2-alpha.2/bin/dsh --port 0 <插件包路径>
 # 证据目录外部化 + stdout 只出最终 verdict JSON（人类文案走 stderr）
 node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --evidence-dir /tmp/my-evidence --json <插件包路径>
+# 隔离审计（B4）：白名单外变化报「可疑」不阻断退出；--keep 落 $DSH_HOME/audit/audit.json
+node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --audit --keep <插件包路径>
 ```
 
 插件参数支持**本地插件路径**（相对路径基于当前 cwd 自动解析为绝对路径后挂载，

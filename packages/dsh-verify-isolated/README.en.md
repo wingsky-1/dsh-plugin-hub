@@ -54,8 +54,20 @@ built-in skill and becomes available to all sessions in the profile (check with
   verdict at `$DSH_HOME/verdict.json` after ready (mode 0o600, three-channel port
   source, cleanup field finalized on exit); **B7** `--evidence-dir` defaults to
   `$DSH_HOME/evidence/`, externalized as `<dir>/evidence-<profile>/` without ever
-  touching the external directory; `--json` emits only the final verdict JSON on
-  stdout. Exit-code contract: 0 OK / 1 startup-or-readiness failure /
+  touching the external directory; **B4** optional isolated audit `--audit` — diffs
+  the isolated `$ISOLATED_HOME` write surface against a preset whitelist
+  (versioned `WHITELIST_V`, pure functions in `scripts/lib/audit.mjs`); additions/
+  deletions/modifications outside the whitelist plus escaping symlinks are
+  reported as "suspicious" and **do not block exit** (`--audit-extra-dirs <dir>`
+  adds extra audited dirs, must be a directory; limitation: real home is never
+  scanned; the whitelist covers dsh's own write surface (`.credentials.yaml` /
+  `storages/**`) while version-drifted surfaces such as the official
+  `profiles/node_modules/**` bundle links are captured by the post-readiness t0
+  baseline — the audit surface is the incremental write surface of the runtime;
+  `--keep` writes `$DSH_HOME/audit/audit.json`, otherwise the result is carried
+  in the final verdict's `audit` field, and error-path JSON always carries an
+  `audit` field aligned with the verdict); `--json` emits only the final verdict
+  JSON on stdout. Exit-code contract: 0 OK / 1 startup-or-readiness failure /
   2 argument error / 130 SIGINT / 143 SIGTERM.
 
 ## Package layout
@@ -63,8 +75,9 @@ built-in skill and becomes available to all sessions in the profile (check with
 ```text
 skills/dsh-verify-isolated/
   SKILL.md                        # skill definition (frontmatter name=dsh-verify-isolated)
-  scripts/verify-isolated.mjs     # one-shot isolated verification script (Node, --dsh / --browser / --port 0 / --keep / --no-build / --evidence-dir / --json)
+  scripts/verify-isolated.mjs     # one-shot isolated verification script (Node, --dsh / --browser / --port 0 / --keep / --no-build / --evidence-dir / --audit / --audit-extra-dirs / --json)
   scripts/lib/verify-core.mjs     # shared base utilities (exit-code constants/poll/findFreePort/port parsing/C11 normalization)
+  scripts/lib/audit.mjs           # B4 isolated-audit pure functions (scanSnapshot/diffAgainstWhitelist/checkSymlinkEscape/runAudit + versioned whitelist WHITELIST_V)
   scripts/browser-driver.mjs      # self-contained browser driver (raw CDP, zero deps, --json atomic CLI)
 cordis.patch.yml                  # reuses official dsh-skill-filesystem + bundledSkillDir
 lib/index.js                      # host gate export (name + empty apply)
@@ -91,6 +104,9 @@ node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --browser <plugin-packag
 node "$SKILL_BASE/scripts/verify-isolated.mjs" --dsh /opt/dsh-0.1.2-alpha.2/bin/dsh --port 0 <plugin-package-path>
 # externalize the evidence dir + emit only the final verdict JSON on stdout (human text on stderr)
 node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --evidence-dir /tmp/my-evidence --json <plugin-package-path>
+# isolated audit (B4): changes outside the whitelist are reported as suspicious and do not block exit;
+# --keep writes $DSH_HOME/audit/audit.json
+node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --audit --keep <plugin-package-path>
 ```
 
 Plugin arguments accept either **local plugin paths** (relative paths are resolved to
