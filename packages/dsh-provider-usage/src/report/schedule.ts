@@ -114,3 +114,32 @@ export function pendingReports(cfg: ReportConfig, now: number, lastRun: Partial<
   }
   return out;
 }
+
+/**
+ * #531：首次启用周期的扣期预置（保存配置时调用，纯函数便于单测）。
+ *
+ * pendingReports 对 lastRun 缺失视为「补跑到期」——「停机跨锚点补跑」的既定语义；
+ * 但「首次启用」不该立即生成最近窗口（用户预期：从下一个触发时刻开始）。故保存
+ * 配置时对「本次 disabled→enabled 且 lastRun 无记录」的周期，预置 lastRun=当前
+ * 候选键（当期视为已扣期），下个锚点自然触发。曾启用过（lastRun 已有值）的周期
+ * 保持补跑语义不变。
+ *
+ * 返回新 lastRun 表与是否有变更；调用方 changed=true 时自行原子落盘，并须先写
+ * lastRun 再 updateConfig（防下一轮 tick 读旧 lastRun 抢跑生成）。
+ */
+export function presetLastRunForNewlyEnabled(
+  prev: ReportConfig,
+  next: ReportConfig,
+  now: number,
+  lastRun: Partial<Record<ReportPeriod, string>>,
+): { lastRun: Partial<Record<ReportPeriod, string>>; changed: boolean } {
+  const out = { ...lastRun };
+  let changed = false;
+  for (const period of ["daily", "weekly", "monthly"] as const) {
+    if (!next[period].enabled || prev[period].enabled) continue;
+    if (out[period] !== undefined) continue; // 曾启用过：保持补跑语义
+    out[period] = candidateWindow(period, next, now).key;
+    changed = true;
+  }
+  return { lastRun: out, changed };
+}

@@ -54,10 +54,11 @@ import { TrendTracker } from "./trend/index.ts";
 import { metricValue } from "./trend/aggregator.ts";
 import { sumToken, type TrendCell } from "./trend/types.ts";
 // #503 会话用量报告（M3 接线）：调度/生成/落盘/路由
-import { candidateWindow, type DueReport } from "./report/schedule.ts";
-import { normalizeReportConfig, readReportConfig, writeReportConfig, type ReportConfig, type ReportPeriod } from "./report/config.ts";
+import { candidateWindow, presetLastRunForNewlyEnabled, type DueReport } from "./report/schedule.ts";
+import { normalizeReportConfig, promptFor, readReportConfig, writeReportConfig, DEFAULT_PROMPTS, type ReportConfig, type ReportPeriod } from "./report/config.ts";
 import { ReportScheduler, readLastRun, writeLastRun } from "./report/scheduler.ts";
-import { generateReport, buildStatsSnapshot, type ReportMeta, type ReportStatsSnapshot } from "./report/generate.ts";
+import { generateReport, buildStatsSnapshot, type ReportMeta, type ReportMetaSummary, type ReportStatsSnapshot } from "./report/generate.ts";
+import { reportBodyToHtml } from "./report/format.ts";
 // dsh-session 类型层（仅类型，编译期擦除）：加载 Events 声明合并 → ctx.on("session/*") 事件面
 import type {} from "@deepseek-ai/dsh-session";
 
@@ -74,6 +75,7 @@ export const ROUTES: Record<string, string> = {
   events: "/api/dsh-provider-usage/events",
   // #503 会话用量报告（M3）
   reportConfig: "/api/dsh-provider-usage/report-config",
+  reportModels: "/api/dsh-provider-usage/report-models",
   reports: "/api/dsh-provider-usage/reports",
   reportDetail: "/api/dsh-provider-usage/reports/detail",
   reportGenerate: "/api/dsh-provider-usage/reports/generate",
@@ -493,15 +495,17 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   }
 
   /**
-   * 第一层净化（落盘形态即安全）：LLM 正文 escHtml 转义后包入最小 HTML 文档骨架。
-   * 文件本身无任何未转义插值——UI 读侧再经 sanitizeHtml 第二层净化（方案 §2.3 双层）。
+   * 第一层净化（落盘形态即安全）：LLM 正文经 reportBodyToHtml 管线（#532
+   * escape-then-transform：escHtml 先转义，仅引入无属性 h3/strong/ul/li/p 白名单
+   * 标签）包入最小 HTML 文档骨架。文件本身无任何未转义插值——UI 读侧再经
+   * sanitizeHtml 第二层净化兜底（黑名单对无属性白名单标签天然放行）。
    */
   function reportHtmlDocument(meta: ReportMeta, bodyText: string): string {
     const title = `${meta.period} ${meta.key} 用量报告`;
     return [
       "<!doctype html>",
       `<html lang="zh-CN"><head><meta charset="utf-8"><title>${escHtml(title)}</title></head>`,
-      `<body><article class="dou-report-body">${escHtml(bodyText).replace(/\n/g, "<br>")}</article></body></html>`,
+      `<body><article class="dou-report-body">${reportBodyToHtml(bodyText)}</article></body></html>`,
     ].join("");
   }
 
@@ -588,10 +592,25 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       .catch((e: unknown) => console.warn(`[dsh-provider-usage] report: 推送失败（不影响主流程）：${sanitizeDiagnostic(errorMessage(e))}`));
   }
 
+  /** 快照 → hero 摘要（纯数值投影；#532 meta.summary 数据源）。 */
+  function summaryOf(snapshot: ReportStatsSnapshot): ReportMetaSummary {
+    return {
+      total: snapshot.totals.total,
+      calls: snapshot.totals.calls,
+      activeDays: snapshot.activeDays,
+      windowDays: snapshot.windowDays,
+      longestStreak: snapshot.longestStreak,
+      wowRatio: snapshot.wowRatio,
+      peakDay: snapshot.peakDay,
+    };
+  }
+
   /**
    * 生成一个到期窗口（调度 tick 与手动生成路由复用）：
    * 统计快照（只读 buckets）→ generateReport → 成功才落盘三件套 + 可选推送；
    * 失败抛错（调度侧不推进 lastRun、同窗重试——scheduler 已有语义）。
+   * #532：空窗口（calls=0）不调模型不落盘，返回 noData 元数据（调度侧正常推进
+   * lastRun 防逐 tick 重试死循环；手动生成回显「当期无用量数据」）。
    */
   async function runDue(due: DueReport): Promise<ReportMeta> {
     const buckets = trend.buckets();
@@ -602,6 +621,20 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       buckets,
       prevTotal: prevWindowTotal(buckets, due.startDay, due.endDay),
     });
+    if (snapshot.totals.calls === 0) {
+      return {
+        period: due.period,
+        key: due.key,
+        startDay: due.startDay,
+        endDay: due.endDay,
+        provider: reportCfg.provider,
+        model: reportCfg.model,
+        generatedAt: Date.now(),
+        durationMs: 0,
+        ok: true,
+        noData: true,
+      };
+    }
     const result = await generateReport({
       llm: ctx.llm,
       period: due.period,
@@ -609,14 +642,15 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       startDay: due.startDay,
       endDay: due.endDay,
       statsJson: JSON.stringify(snapshot, null, 2),
-      promptTemplate: reportCfg.promptTemplate,
+      promptTemplate: promptFor(reportCfg, due.period),
       provider: reportCfg.provider,
       model: reportCfg.model,
     });
     if (!result.meta.ok) throw new Error(result.meta.error ?? "报告生成失败");
-    await persistReport(result.meta, result.body);
-    notifyReport(result.meta, snapshot);
-    return result.meta;
+    const meta: ReportMeta = { ...result.meta, summary: summaryOf(snapshot) };
+    await persistReport(meta, result.body);
+    notifyReport(meta, snapshot);
+    return meta;
   }
 
   // 调度器（方案 §2.3 极简调度器）：tickMs 默认 60s；启动首轮 tick 即补跑检查；
@@ -1047,7 +1081,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
               .map((i) => ({ id: i.id as string, ...(typeof i.name === "string" ? { name: i.name } : {}) }));
           }
         } catch { /* 回落空数组 */ }
-        return writeJson(res, 200, { ok: true, config, providers });
+        return writeJson(res, 200, { ok: true, config, providers, promptDefaults: DEFAULT_PROMPTS });
       }
       let body: unknown;
       try {
@@ -1056,6 +1090,11 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
         return writeJson(res, 400, { error: "bad-json" });
       }
       const normalized = normalizeReportConfig(body);
+      // #531：首次启用（disabled→enabled 且 lastRun 无记录）的周期预置 lastRun=当前
+      // 候选键（当期视为已扣期）——防「保存即立即生成最近窗口」。先写 lastRun 再
+      // 热更新调度器，下轮 tick 读到新 lastRun 即跳过当期；曾启用过的周期保持补跑语义。
+      const preset = presetLastRunForNewlyEnabled(reportCfg, normalized, Date.now(), await readLastRun(historyRoot));
+      if (preset.changed) await writeLastRun(historyRoot, preset.lastRun);
       try {
         await writeReportConfig(historyRoot, normalized);
       } catch {
@@ -1067,8 +1106,53 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     },
   };
 
-  /** 读 index.jsonl（逐行 JSON.parse 容错坏行；倒序 = 最新在前）。 */
-  async function readReportIndex(): Promise<ReportMeta[]> {
+  /**
+   * 报告模型候选路由（#532，GET ?provider=）：listProviders 校验存在 → listModels。
+   * listModels 为 adapter 自主发现（可能走网络）：5s 竞速超时防悬挂，失败回
+   * {ok:false,reason}（客户端降级手填）；不在 report-config GET 预拉全量——避免
+   * 打开设置页即打多路发现请求。未知 provider 与发现失败分开报（unknown-provider）。
+   */
+  const reportModelsRoute: WebRoute = {
+    kind: "exact",
+    path: ROUTES.reportModels,
+    handler: async (req, res) => {
+      if (!guardLoopbackMethod(req, res, ["GET"])) return;
+      const url = new URL(req.url ?? "/", "http://localhost");
+      const provider = url.searchParams.get("provider") ?? "";
+      const known = (() => {
+        try {
+          return ctx.llm.listProviders().some((i) => (i as { id?: unknown })?.id === provider);
+        } catch {
+          return false;
+        }
+      })();
+      if (provider.length === 0 || !known) {
+        return writeJson(res, 200, { ok: false, reason: "unknown-provider" });
+      }
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      try {
+        const pending = ctx.llm.listModels(provider);
+        pending.catch(() => {}); // 超时竞速后底层悬挂 rejection 兜底（防 unhandled）
+        const timeout = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("discover-timeout")), 5000);
+        });
+        const models = await Promise.race([pending, timeout]);
+        const list = Array.isArray(models)
+          ? (models as Array<{ id?: unknown; name?: unknown } | null>)
+              .filter((m): m is { id: string; name?: string } =>
+                typeof m?.id === "string" && (m.id as string).length > 0)
+              .map((m) => ({ id: m.id, ...(typeof m.name === "string" && m.name.length > 0 ? { name: m.name as string } : {}) }))
+          : [];
+        writeJson(res, 200, { ok: true, models: list });
+      } catch (e: unknown) {
+        writeJson(res, 200, { ok: false, reason: e instanceof Error ? e.message : "discover-failed" });
+      } finally {
+        if (timer !== null) clearTimeout(timer);
+      }
+    },
+  };
+
+  /** 读 index.jsonl（逐行 JSON.parse 容错坏行；倒序 = 最新在前）。 */  async function readReportIndex(): Promise<ReportMeta[]> {
     let raw: string;
     try {
       raw = await readFile(reportIndexFile(), "utf8");
@@ -1181,7 +1265,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   const disposeRoutes = ctx.effect(
     () => {
       // #503 M3：报告四路由并入同一注册/回收面
-      const routeDisposers = [statsRoute, historyRoute, healthRoute, trendRoute, adaptersRoute, selectRoute, inspectRoute, addRoute, uiConfigRoute, eventsRoute, reportConfigRoute, reportsRoute, reportDetailRoute, reportGenerateRoute].map((route) =>
+      const routeDisposers = [statsRoute, historyRoute, healthRoute, trendRoute, adaptersRoute, selectRoute, inspectRoute, addRoute, uiConfigRoute, eventsRoute, reportConfigRoute, reportModelsRoute, reportsRoute, reportDetailRoute, reportGenerateRoute].map((route) =>
         ctx.webServer.register(route),
       );
       return () => {

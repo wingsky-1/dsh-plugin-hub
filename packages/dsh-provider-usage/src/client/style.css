@@ -688,3 +688,154 @@
 .dou-provHead:hover { background: var(--dsw-alias-interactive-bg-hover, #f2f3f6); }
 .dou-float:hover { background: var(--dsw-alias-interactive-bg-hover, #f2f3f6); }
 }
+
+/* ================= #532 设置页多 tab（通知中心 #508 分段器同语言） =================
+ * 整页一张大卡 + 顶部五分段器（普通 button，role=navigation 不用 tablist——#402 决策）。
+ * 窗格 keep-mounted：hidden 属性切换显隐，组件实例不销毁（表单编辑态保留）。
+ * 颜色一律 --dsw-alias-* 主题变量 + 浅色回退（暗色由宿主变量保证）。 */
+.dou-set-card {
+  border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-base, #ffffff);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+}
+.dou-set-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
+  background: var(--dsw-alias-bg-layer-1, #f5f6f8);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.dou-set-tabs::-webkit-scrollbar { display: none; }
+.dou-set-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 5px 14px;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, #5f6672);
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.dou-set-tabActive {
+  background: var(--dsw-alias-bg-base, #ffffff);
+  border-color: var(--dsw-alias-border-l1, #e2e5ea);
+  color: var(--dsw-alias-label-primary, #1f2329);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+.dou-set-tab:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-info-primary, #4a7dd6);
+  outline-offset: 2px;
+}
+.dou-set-body { padding: 14px; }
+.dou-set-pane[hidden] { display: none !important; }
+@media (hover: hover) {
+  .dou-set-tab:hover { color: var(--dsw-alias-label-primary, #1f2329); }
+}
+
+/* ================= #532 年报化：hero 摘要 + 三周期提示词 tab + 正文排版 =================
+ * hero 为海报式渐变（不随主题反转，文字恒浅色——年报产品惯例）；正文 h3/strong/ul/p
+ * 由宿主 reportBodyToHtml 管线产出（escape-then-transform，无属性白名单标签）。 */
+.dou-reportPromptTabs { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+.dou-reportPromptTab {
+  border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
+  background: var(--dsw-alias-bg-layer-1, #f5f6f8);
+  color: var(--dsw-alias-label-tertiary, #6d7480);
+  border-radius: 999px;
+  padding: 3px 12px;
+  min-height: 28px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.dou-reportPromptTabActive {
+  background: var(--dsw-alias-state-info-soft, rgba(47, 111, 237, 0.10));
+  border-color: var(--dsw-alias-state-info-primary, #4a7dd6);
+  color: var(--dsw-alias-state-info-primary, #4a7dd6);
+  font-weight: 600;
+}
+.dou-reportPromptReset {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary, #9aa0ab);
+  font-size: 11px;
+  cursor: pointer;
+  min-height: 28px;
+  padding: 0 6px;
+  font-family: inherit;
+}
+@media (hover: hover) {
+  .dou-reportPromptReset:hover { color: var(--dsw-alias-state-error-primary, #d64545); }
+}
+.dou-reportGenNotice { color: var(--dsw-alias-state-success-primary, #0f9d6e); font-size: 11px; }
+
+/* 详情页 hero（渐变海报；移动端字号收缩） */
+.dou-hero {
+  border-radius: 12px;
+  color: #f2f4f8;
+  background:
+    radial-gradient(120% 90% at 85% -10%, rgba(107, 154, 255, 0.35), transparent 55%),
+    radial-gradient(110% 80% at 0% 100%, rgba(15, 157, 110, 0.30), transparent 50%),
+    linear-gradient(135deg, #131b2e 0%, #1a2340 48%, #14203a 100%);
+  padding: 16px 16px 14px;
+  margin-bottom: 10px;
+}
+.dou-heroBig { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.dou-heroNum {
+  font-size: clamp(26px, 6vw, 38px);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  background: linear-gradient(90deg, #ffffff, #a8c4ff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.dou-heroNumUnit { font-size: 11px; color: rgba(242, 244, 248, 0.6); }
+.dou-heroRatio {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 1px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(242, 244, 248, 0.14);
+  color: rgba(242, 244, 248, 0.75);
+}
+.dou-heroRatioUp { background: rgba(52, 196, 142, 0.22); color: #4fd6a4; }
+.dou-heroRatioDown { background: rgba(240, 101, 90, 0.22); color: #f0817a; }
+.dou-heroStats { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 12px; }
+.dou-heroStat small { display: block; font-size: 10px; color: rgba(242, 244, 248, 0.55); letter-spacing: 1px; }
+.dou-heroStat b { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* 年报正文排版（宿主管线产物：h3/strong/ul/li/p，全部无属性） */
+.dou-reportDetailBody h3 {
+  font-size: 13px;
+  font-weight: 700;
+  margin: 14px 0 4px;
+  color: var(--dsw-alias-label-primary, #1f2329);
+}
+.dou-reportDetailBody h3::before {
+  content: "";
+  display: inline-block;
+  width: 3px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--dsw-alias-state-info-primary, #4a7dd6);
+  margin-right: 8px;
+  vertical-align: -1px;
+}
+.dou-reportDetailBody p { font-size: 12px; color: var(--dsw-alias-label-secondary, #5f6672); margin: 6px 0; }
+.dou-reportDetailBody strong { color: var(--dsw-alias-label-primary, #1f2329); font-weight: 700; }
+.dou-reportDetailBody ul { margin: 6px 0; padding-left: 18px; }
+.dou-reportDetailBody li { font-size: 12px; color: var(--dsw-alias-label-secondary, #5f6672); margin: 4px 0; }

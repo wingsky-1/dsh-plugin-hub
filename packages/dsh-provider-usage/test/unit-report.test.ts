@@ -22,9 +22,18 @@ import { assert } from "./helpers.ts";
 import {
   candidateWindow,
   pendingReports,
+  presetLastRunForNewlyEnabled,
   parseHHMM,
   normalizeReportConfig,
   DEFAULT_REPORT_CONFIG,
+  DEFAULT_DAILY_PROMPT,
+  DEFAULT_WEEKLY_PROMPT,
+  DEFAULT_MONTHLY_PROMPT,
+  DEFAULT_PROMPTS,
+  LEGACY_PROMPT_TEMPLATE,
+  promptFor,
+  reportBodyToHtml,
+  sanitizeHtml,
   generateReport,
   applyPromptTemplate,
   buildStatsSnapshot,
@@ -129,6 +138,42 @@ const GEN = (over = {}) => ({
   assert.ok(!off.some((d) => d.period === "weekly"), "weekly 关闭 → 不调度");
 }
 
+// ---------------------------------------------------------------- schedule：#531 首次启用扣期预置
+
+{
+  const allOff = normalizeReportConfig({
+    daily: { enabled: false, time: "22:00" },
+    weekly: { enabled: false, time: "09:00", weekStartsOn: 1 },
+    monthly: { enabled: false, time: "09:00", dayOfMonth: 1 },
+  });
+  // 全关 → 全开（首次启用）：三期全部预置当前候选键，changed=true
+  const r1 = presetLastRunForNewlyEnabled(allOff, CFG(), T0, {});
+  assert.equal(r1.changed, true, "首次启用 → changed");
+  const cand = {
+    daily: candidateWindow("daily", CFG(), T0).key,
+    weekly: candidateWindow("weekly", CFG(), T0).key,
+    monthly: candidateWindow("monthly", CFG(), T0).key,
+  };
+  assert.deepEqual(r1.lastRun, cand, "预置键 === 各期当前候选键");
+  // 预置后 pendingReports 立即为空（保存后 tick 不抢跑）
+  assert.deepEqual(pendingReports(CFG(), T0, r1.lastRun), [], "预置扣期后 tick 无到期");
+  // 跨过下一锚点后照常补跑（预置只扣当期，不扣未来）
+  const later = pendingReports(CFG(), T0 + 25 * HOUR, r1.lastRun);
+  assert.ok(later.some((d) => d.period === "daily" && d.key > r1.lastRun.daily), "下个锚点到期 → 照常生成");
+  // 之前已启用（lastRun 缺失）→ 不预置（保持补跑语义：升级场景不吞当期）
+  const r2 = presetLastRunForNewlyEnabled(CFG(), CFG(), T0, {});
+  assert.equal(r2.changed, false, "已启用未变 → 不预置");
+  // 停用再启用且 lastRun 已有值 → 不预置（补跑最近窗口为恢复语义）
+  const halfRun = { daily: "2026-08-01" };
+  const r3 = presetLastRunForNewlyEnabled(allOff, CFG(), T0, halfRun);
+  assert.equal(r3.changed, true, "部分周期有记录 → 其余仍预置");
+  assert.equal(r3.lastRun.daily, "2026-08-01", "已有记录的周期不覆写");
+  // 部分启用：只预置新开的周期
+  const onlyMonthly = CFG({ daily: { enabled: false, time: "22:00" }, weekly: { enabled: false, time: "09:00", weekStartsOn: 1 } });
+  const r4 = presetLastRunForNewlyEnabled(allOff, onlyMonthly, T0, {});
+  assert.deepEqual(Object.keys(r4.lastRun), ["monthly"], "仅新启用周期预置");
+}
+
 // ---------------------------------------------------------------- config：归一化
 
 {
@@ -220,6 +265,108 @@ const GEN = (over = {}) => ({
   assert.equal(s.byProvider[1].calls, 3, "p2 次之");
   assert.equal(s.prevTotal, 120, "环比基准透传");
   assert.equal(s.totals.total, 180, "total=四项之和");
+  // #532 年报派生维度
+  assert.deepEqual(s.peakDay, { day: "2026-09-02", total: 100 }, "峰值日=byDay 最大（并列取最早）");
+  assert.equal(s.activeDays, 2, "活跃天数=窗口内有数据天数");
+  assert.equal(s.windowDays, 2, "窗口天数（含无数据日）");
+  assert.equal(s.avgPerActiveDay, 90, "活跃日均=total/activeDays");
+  assert.equal(s.longestStreak, 2, "最长连续=日历日差1 连续（09-02/09-03）");
+  assert.equal(s.wowRatio, 1.5, "环比比值=total/prevTotal（180/120）");
+  // 星期分布：2026-09-02=周三(idx2)、09-03=周四(idx3)
+  assert.equal(s.byWeekday[2], 100, "byWeekday 周三桶");
+  assert.equal(s.byWeekday[3], 80, "byWeekday 周四桶");
+  assert.equal(s.byWeekday.reduce((a, b) => a + b, 0), 180, "byWeekday 总和=total");
+}
+
+// ---------------------------------------------------------------- #532 派生维度：边界条件
+
+{
+  const cell = (calls, input) => ({ input, output: null, cacheRead: null, cacheWrite: null, calls, turns: calls, toolCalls: 0 });
+  // 空窗口：全 null/0，wowRatio null（防 Infinity），不抛
+  const empty = buildStatsSnapshot({ period: "weekly", startDay: "2026-09-01", endDay: "2026-09-07", buckets: [], prevTotal: null });
+  assert.equal(empty.peakDay, null, "空窗口 peakDay=null");
+  assert.equal(empty.activeDays, 0, "空窗口 activeDays=0");
+  assert.equal(empty.windowDays, 7, "空窗口 windowDays=7");
+  assert.equal(empty.avgPerActiveDay, null, "空窗口 avgPerActiveDay=null");
+  assert.equal(empty.longestStreak, 0, "空窗口 streak=0");
+  assert.equal(empty.wowRatio, null, "prevTotal=null → wowRatio=null");
+  assert.deepEqual(empty.byWeekday, [0, 0, 0, 0, 0, 0, 0], "空窗口 byWeekday 全 0");
+  // 除零：prevTotal=0 → null（防 Infinity 被 JSON.stringify 静默转 null 的语义错误）
+  const zeroPrev = buildStatsSnapshot({ period: "daily", startDay: "2026-09-02", endDay: "2026-09-02", buckets: [{ day: "2026-09-02", providers: [{ provider: "p1", model: "m1", cell: cell(1, 50) }] }], prevTotal: 0 });
+  assert.equal(zeroPrev.wowRatio, null, "prevTotal=0 → wowRatio=null（不做对比）");
+  // 跨月连续：01-31 → 02-01 日历日差=1（streak=2，非字典序判断）
+  const crossMonth = buildStatsSnapshot({ period: "weekly", startDay: "2026-01-31", endDay: "2026-02-01", buckets: [
+    { day: "2026-01-31", providers: [{ provider: "p1", model: "m1", cell: cell(1, 10) }] },
+    { day: "2026-02-01", providers: [{ provider: "p1", model: "m1", cell: cell(1, 20) }] },
+  ], prevTotal: null });
+  assert.equal(crossMonth.longestStreak, 2, "跨月 01-31→02-01 按日历日判定连续");
+  // provider/model 名防御：控制字符剥离 + 80 字符截断
+  const longName = "x".repeat(100);
+  const hostile = buildStatsSnapshot({ period: "daily", startDay: "2026-09-02", endDay: "2026-09-02", buckets: [
+    { day: "2026-09-02", providers: [{ provider: `a\u0000b${longName}`, model: `m\nevil`, cell: cell(1, 10) }] },
+  ], prevTotal: null });
+  assert.ok(!hostile.byProvider[0].provider.includes("\u0000"), "provider 控制字符已剥离");
+  assert.equal(hostile.byProvider[0].provider.length, 80, "provider 截断至 80 字符");
+  assert.ok(!hostile.byProvider[0].model.includes("\n"), "model 控制字符已剥离");
+}
+
+// ---------------------------------------------------------------- #532 per-period 提示词
+
+{
+  // 新格式 prompts 优先；promptTemplate 回填为月报镜像
+  const n = normalizeReportConfig({ prompts: { daily: "日模板{stats}", weekly: "周模板{stats}", monthly: "月模板{stats}" } });
+  assert.deepEqual(n.prompts, { daily: "日模板{stats}", weekly: "周模板{stats}", monthly: "月模板{stats}" }, "prompts 新格式直读");
+  assert.equal(n.promptTemplate, "月模板{stats}", "promptTemplate=月报镜像");
+  // 旧默认模板 → 自动升级三份新默认（存量用户拿得到年报体验）
+  const legacyDefault = normalizeReportConfig({ promptTemplate: LEGACY_PROMPT_TEMPLATE });
+  assert.equal(legacyDefault.prompts.daily, DEFAULT_DAILY_PROMPT, "旧默认 → 升级日报新默认");
+  assert.equal(legacyDefault.prompts.weekly, DEFAULT_WEEKLY_PROMPT, "旧默认 → 升级周报新默认");
+  assert.equal(legacyDefault.prompts.monthly, DEFAULT_MONTHLY_PROMPT, "旧默认 → 升级月报新默认");
+  // 自定义旧模板 → 三周期以该文本起始（不丢用户文本）
+  const custom = normalizeReportConfig({ promptTemplate: "我的自定义模板 {stats}" });
+  assert.deepEqual(custom.prompts, { daily: "我的自定义模板 {stats}", weekly: "我的自定义模板 {stats}", monthly: "我的自定义模板 {stats}" }, "自定义旧模板三周期继承");
+  // 非法 prompts 值回退默认
+  const bad = normalizeReportConfig({ prompts: { daily: "", weekly: 42, monthly: "x".repeat(20001) } });
+  assert.equal(bad.prompts.daily, DEFAULT_MONTHLY_PROMPT, "空串回退默认（promptTemplate 默认=月报）");
+  assert.equal(bad.prompts.weekly, DEFAULT_MONTHLY_PROMPT, "非字符串回退默认");
+  assert.equal(bad.prompts.monthly, DEFAULT_MONTHLY_PROMPT, "超长回退默认");
+  // promptFor 按周期取模板
+  assert.equal(promptFor(n, "daily"), "日模板{stats}", "promptFor daily");
+  assert.equal(promptFor(n, "weekly"), "周模板{stats}", "promptFor weekly");
+  assert.equal(promptFor(n, "monthly"), "月模板{stats}", "promptFor monthly");
+  // 三份默认模板各含 {stats} 且内容互不相同
+  assert.ok(DEFAULT_DAILY_PROMPT.includes("{stats}") && DEFAULT_WEEKLY_PROMPT.includes("{stats}") && DEFAULT_MONTHLY_PROMPT.includes("{stats}"), "三默认模板含 {stats}");
+  assert.ok(DEFAULT_DAILY_PROMPT !== DEFAULT_WEEKLY_PROMPT && DEFAULT_WEEKLY_PROMPT !== DEFAULT_MONTHLY_PROMPT, "三默认模板互不相同");
+  assert.deepEqual(DEFAULT_PROMPTS.daily, DEFAULT_DAILY_PROMPT, "DEFAULT_PROMPTS 表与单常量一致");
+}
+
+// ---------------------------------------------------------------- #532 渲染管线（escape-then-transform）
+
+{
+  // 基本结构：## → h3、- 组 ul/li、普通行 → p、空行断段
+  const html = reportBodyToHtml("## 数据亮点\n- 第一项\n- 第二项\n\n正文段落，**强调**收尾。\n## 结语\n只此一句。");
+  assert.ok(html.includes("<h3>数据亮点</h3>"), "## → h3");
+  assert.ok(html.includes("<ul>") && html.includes("<li>第一项</li>") && html.includes("<li>第二项</li>") && html.includes("</ul>"), "连续 - 组包 ul/li");
+  assert.ok(html.includes("<p>正文段落，<strong>强调</strong>收尾。</p>"), "普通行 → p + **x** → strong");
+  assert.ok(html.includes("<h3>结语</h3>"), "第二标题");
+  // XSS 向量集：转义在前，注入内容恒为实体文本
+  const x1 = reportBodyToHtml("## x onerror=alert(1)");
+  assert.ok(!/<h3[^>]+o/.test(x1), "h3 标签无属性位可利用（onerror 转义为实体文本）");
+  const x2 = reportBodyToHtml('**a" onclick=b**');
+  assert.ok(x2.includes("<strong>") && !/<strong[^>]+o/.test(x2), "strong 标签无属性位可利用");
+  const x3 = reportBodyToHtml("<script>alert(1)</script>");
+  assert.ok(x3.includes("&lt;script&gt;"), "script 标签为实体文本（读侧 sanitizeHtml 第二层兜底）");
+  assert.ok(!x3.includes("<script"), "无明文 script 标签");
+  const x4 = reportBodyToHtml("- img:<img src=x onerror=y>");
+  assert.ok(!/<img/i.test(x4), "列表项内注入 img 被转义");
+  // 未闭合 ** 回退字面
+  assert.ok(reportBodyToHtml("未闭合 ** 加粗").includes("**"), "未闭合 ** 字面保留");
+  // ### 与代码围栏字面显示（只认一档标题与 - 列表）
+  const x5 = reportBodyToHtml("### 三级标题\n```code```");
+  assert.ok(!x5.includes("<h3>三级标题</h3>"), "### 不当 h3（字面显示）");
+  // 往返幂等：管线输出再过一次 sanitizeHtml 白名单标签存活（模拟读侧第二层）
+  const sanitized = sanitizeHtml(reportBodyToHtml("## 标题\n- 列表\n**加粗**"));
+  assert.ok(sanitized.includes("<h3>") && sanitized.includes("<ul>") && sanitized.includes("<strong>"), "落盘 → 读侧往返白名单标签存活");
 }
 
 // ---------------------------------------------------------------- 生成不入统计前提（单测侧）

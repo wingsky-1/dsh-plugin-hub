@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dsh-provider-usage 用量统计 UI/UX 评审样本（原型 r1）</title>
+<!--
+  dsh-provider-usage 用量统计设置页现代化 + 用量年报化 —— 静态评审原型 r2
+  对应诉求：① 设置页多 tab（样式基准 = 通知中心 #508 设计语言）② 报告模型下拉可选
+  ③ 年报化（网易云年报感觉：hero 大数字 + 叙事小节 + 环比）
+  ④ r2（用户反馈）：提示词模板按周期拆分——日报/周报/月报各自独立模板与默认文案，
+  配置 schema 由单一 promptTemplate 改为 prompts{daily,weekly,monthly} + 旧值迁移。
+  另含已定位 bug（保存配置立即触发三期生成）的修复不在本样张可视化范围。
+
+  三个结构变体（底部悬浮切换器 / ←→ 方向键 / hash #variant=a|b|c 兼容 file://）：
+  - A 通知中心同构：整页一张大卡 + 顶部五分段器 tab，与 #508 完全同语言（保守派）
+  - B 年报开屏：hero 大数字首屏 + 年报卡片墙，配置收进次级入口（年报派）
+  - C 侧导航仪表盘：左垂直 tab 列 + 右内容区，报告杂志式排版（效率派）
+
+  仅为评审用静态 mock：不接入任何后端，样式变量模拟宿主 --dsw-alias-* 主题面。
+  暗色值为 mock 自拟——真实落地只依赖宿主主题变量（与通知中心样张同纪律）。
+  落地形态 = src/client/settings/（React createElement）+ style.css，本文件不直接入库为代码。
+-->
+<style>
+/* ================= 主题变量（模拟宿主 --dsw-alias-*，含浅色回退） ================= */
+:root, html[data-theme="light"] {
+  --dsw-alias-bg-base: #ffffff;
+  --dsw-alias-bg-layer-1: #f5f6f8;
+  --dsw-alias-bg-layer-2: #eceef2;
+  --dsw-alias-border-l1: #e2e5ea;
+  --dsw-alias-border-l2: #d3d8df;
+  --dsw-alias-label-primary: #1f2329;
+  --dsw-alias-label-secondary: #5f6672;
+  --dsw-alias-label-tertiary: #6d7480;
+  --dsw-alias-state-info-primary: #2f6fed;
+  --dsw-alias-state-info-soft: rgba(47, 111, 237, 0.10);
+  --dsw-alias-state-success-primary: #0f9d6e;
+  --dsw-alias-state-success-soft: rgba(15, 157, 110, 0.12);
+  --dsw-alias-state-warning-primary: #b45309;
+  --dsw-alias-state-warning-soft: rgba(247, 144, 9, 0.14);
+  --dsw-alias-state-error-primary: #d92d20;
+  --dsw-alias-state-error-soft: rgba(217, 45, 32, 0.10);
+  --mock-page-bg: #e9ecf1;
+}
+html[data-theme="dark"] {
+  --dsw-alias-bg-base: #17191d;
+  --dsw-alias-bg-layer-1: #1f2227;
+  --dsw-alias-bg-layer-2: #262a31;
+  --dsw-alias-border-l1: #2f343b;
+  --dsw-alias-border-l2: #3c424b;
+  --dsw-alias-label-primary: #e8eaed;
+  --dsw-alias-label-secondary: #b3b9c2;
+  --dsw-alias-label-tertiary: #8b929e;
+  --dsw-alias-state-info-primary: #6b9aff;
+  --dsw-alias-state-info-soft: rgba(107, 154, 255, 0.16);
+  --dsw-alias-state-success-primary: #34c48e;
+  --dsw-alias-state-success-soft: rgba(52, 196, 142, 0.16);
+  --dsw-alias-state-warning-primary: #e8a23d;
+  --dsw-alias-state-warning-soft: rgba(232, 162, 61, 0.16);
+  --dsw-alias-state-error-primary: #f0655a;
+  --dsw-alias-state-error-soft: rgba(240, 101, 90, 0.16);
+  --mock-page-bg: #0e0f12;
+}
+
+/* ================= 原型公共骨架（页面 chrome，非设计评审对象） ================= */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  background: var(--mock-page-bg);
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px; line-height: 1.7;
+  padding: 20px 16px 96px;
+  transition: background 0.2s ease;
+}
+.mock-shell { max-width: 760px; margin: 0 auto; }
+.mock-crumbs { font-size: 11px; color: var(--dsw-alias-label-tertiary); margin-bottom: 10px; }
+.mock-crumbs b { color: var(--dsw-alias-label-secondary); font-weight: 600; }
+
+/* 原型工具条（非设计对象） */
+.proto-bar {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: 18px; z-index: 999;
+  display: flex; align-items: center; gap: 2px;
+  background: #101318; color: #e8eaed; border-radius: 999px;
+  padding: 6px 8px; box-shadow: 0 8px 32px rgba(0,0,0,0.45);
+  font-size: 12px; user-select: none;
+}
+.proto-bar button {
+  border: 0; background: transparent; color: #e8eaed; cursor: pointer;
+  width: 30px; height: 30px; border-radius: 50%; font-size: 15px; line-height: 1;
+}
+.proto-bar button:hover { background: rgba(255,255,255,0.12); }
+.proto-bar .proto-label { min-width: 220px; text-align: center; font-variant-numeric: tabular-nums; }
+.proto-bar .proto-label small { display: block; color: #8b929e; font-size: 10px; }
+.proto-theme {
+  position: fixed; top: 14px; right: 14px; z-index: 999;
+  border: 1px solid var(--dsw-alias-border-l1); background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-secondary); border-radius: 999px; padding: 5px 14px;
+  font-size: 12px; cursor: pointer;
+}
+.proto-tag {
+  position: fixed; top: 14px; left: 14px; z-index: 999;
+  font-size: 10px; letter-spacing: 1px; color: #e8eaed; background: #b45309;
+  padding: 3px 10px; border-radius: 6px; opacity: 0.92;
+}
+
+/* ================= 通知中心设计语言组件（dou- 前缀，A 变体主用） ================= */
+.dou-card {
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 12px; overflow: hidden;
+  background: var(--dsw-alias-bg-base);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+}
+.dou-tabs {
+  display: flex; gap: 4px; padding: 10px 14px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+  overflow-x: auto; scrollbar-width: none;
+}
+.dou-tabs::-webkit-scrollbar { display: none; }
+.dou-tab {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 32px; padding: 5px 14px; white-space: nowrap;
+  border: 1px solid transparent; border-radius: 8px; background: transparent;
+  color: var(--dsw-alias-label-secondary); font-size: 12px; cursor: pointer;
+}
+.dou-tabActive {
+  background: var(--dsw-alias-bg-base); border-color: var(--dsw-alias-border-l1);
+  color: var(--dsw-alias-label-primary); font-weight: 600;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+.dou-tab .dou-tabBadge {
+  min-width: 17px; padding: 0 5px; border-radius: 9px;
+  background: var(--dsw-alias-state-info-primary); color: #fff;
+  font-size: 10px; line-height: 17px; text-align: center;
+}
+.dou-body { padding: 14px; }
+
+/* 行卡 / 分区标题 */
+.dou-sec { margin: 0 0 8px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.dou-sec-title { font-weight: 600; font-size: 12px; }
+.dou-sec-hint { font-size: 11px; color: var(--dsw-alias-label-tertiary); }
+.dou-row {
+  border: 1px solid var(--dsw-alias-border-l1); border-radius: 10px;
+  padding: 10px 12px; margin-bottom: 8px; background: var(--dsw-alias-bg-base);
+}
+.dou-row-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 32px; }
+.dou-row-sub { font-size: 11px; color: var(--dsw-alias-label-tertiary); margin-top: 2px; }
+.dou-grow { flex: 1; }
+
+/* switch（40×22 track + 44×32 触控区，#508 同款） */
+.dou-switch { position: relative; display: inline-flex; align-items: center; width: 44px; height: 32px; flex: none; cursor: pointer; }
+.dou-switch input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.dou-switch .track { width: 40px; height: 22px; border-radius: 11px; background: var(--dsw-alias-border-l2); transition: background 0.15s ease; position: relative; flex: none; }
+.dou-switch .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.25); transition: transform 0.15s ease; }
+.dou-switch input:checked + .track { background: var(--dsw-alias-state-success-primary); }
+.dou-switch input:checked + .track::after { transform: translateX(18px); }
+
+/* chips */
+.dou-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  border: 1px solid var(--dsw-alias-border-l1); border-radius: 999px;
+  padding: 4px 12px; min-height: 30px; font-size: 11px; cursor: pointer;
+  background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-tertiary);
+  transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+.dou-chipActive { background: var(--dsw-alias-state-info-soft); border-color: var(--dsw-alias-state-info-primary); color: var(--dsw-alias-state-info-primary); font-weight: 600; }
+
+/* 状态点 / 徽标 */
+.dou-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; }
+.dou-dot-ok { background: var(--dsw-alias-state-success-primary); }
+.dou-dot-warn { background: var(--dsw-alias-state-warning-primary); }
+.dou-badge { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; font-size: 10px; font-weight: 600; }
+.dou-badge-ok { background: var(--dsw-alias-state-success-soft); color: var(--dsw-alias-state-success-primary); }
+.dou-badge-fail { background: var(--dsw-alias-state-error-soft); color: var(--dsw-alias-state-error-primary); }
+.dou-kind {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px;
+  color: var(--dsw-alias-label-tertiary); background: var(--dsw-alias-bg-layer-1);
+  border: 1px solid var(--dsw-alias-border-l1); border-radius: 6px; padding: 0 5px;
+}
+
+/* 表单 */
+.dou-input, .dou-select {
+  font: inherit; font-size: 12px; color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px; padding: 5px 10px; min-height: 30px;
+}
+.dou-input:focus, .dou-select:focus { outline: 2px solid var(--dsw-alias-state-info-primary); outline-offset: 1px; }
+.dou-textarea {
+  font: inherit; font-size: 12px; color: var(--dsw-alias-label-primary); width: 100%;
+  background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px; padding: 8px 10px; resize: vertical; line-height: 1.6;
+}
+.dou-btn {
+  font: inherit; font-size: 12px; cursor: pointer; min-height: 32px; padding: 5px 16px;
+  border-radius: 8px; border: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary);
+}
+.dou-btnPrimary { background: var(--dsw-alias-state-info-primary); border-color: var(--dsw-alias-state-info-primary); color: #fff; font-weight: 600; }
+.dou-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ================= 年报 hero（海报式，不随主题反转——网易云年报惯例） ================= */
+.dou-hero {
+  border-radius: 14px; color: #f2f4f8; position: relative; overflow: hidden;
+  background:
+    radial-gradient(120% 90% at 85% -10%, rgba(107, 154, 255, 0.35), transparent 55%),
+    radial-gradient(110% 80% at 0% 100%, rgba(15, 157, 110, 0.30), transparent 50%),
+    linear-gradient(135deg, #131b2e 0%, #1a2340 48%, #14203a 100%);
+  padding: 22px 22px 20px;
+}
+.dou-hero-cap { font-size: 11px; letter-spacing: 3px; color: rgba(242,244,248,0.62); text-transform: uppercase; }
+.dou-hero-title { font-size: 17px; font-weight: 700; margin: 6px 0 2px; letter-spacing: 0.5px; }
+.dou-hero-quote { font-size: 12px; color: rgba(242,244,248,0.78); margin: 8px 0 16px; line-height: 1.8; }
+.dou-hero-big { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.dou-hero-num {
+  font-size: clamp(34px, 7vw, 46px); font-weight: 800; letter-spacing: 0.5px;
+  font-variant-numeric: tabular-nums; line-height: 1.1;
+  background: linear-gradient(90deg, #ffffff, #a8c4ff);
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+.dou-hero-numUnit { font-size: 12px; color: rgba(242,244,248,0.6); }
+.dou-hero-stats { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 14px; }
+.dou-hero-stat small { display: block; font-size: 10px; color: rgba(242,244,248,0.55); letter-spacing: 1px; }
+.dou-hero-stat b { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.dou-hero-stat b i { font-style: normal; font-size: 11px; font-weight: 500; color: rgba(242,244,248,0.6); margin-left: 2px; }
+.dou-ratio {
+  display: inline-flex; align-items: center; gap: 4px; margin-left: 10px;
+  border-radius: 999px; padding: 2px 10px; font-size: 11px; font-weight: 700;
+  vertical-align: 6px;
+}
+.dou-ratioUp { background: rgba(52, 196, 142, 0.22); color: #4fd6a4; }
+.dou-ratioDown { background: rgba(240, 101, 90, 0.22); color: #f0817a; }
+.dou-ratioFlat { background: rgba(242,244,248,0.14); color: rgba(242,244,248,0.75); }
+.dou-hero-foot { margin-top: 16px; padding-top: 12px; border-top: 1px solid rgba(242,244,248,0.12); font-size: 10px; color: rgba(242,244,248,0.5); display: flex; gap: 12px; flex-wrap: wrap; }
+.dou-heroBtn {
+  position: absolute; right: 18px; top: 20px;
+  border: 1px solid rgba(242,244,248,0.35); background: rgba(255,255,255,0.08);
+  color: #f2f4f8; border-radius: 999px; padding: 5px 14px; font-size: 11px; cursor: pointer;
+  backdrop-filter: blur(4px);
+}
+
+/* 年报正文（h3 小节 / strong / ul，落地 = escape-then-transform 白名单标签） */
+.dou-report-body h3 { font-size: 13px; font-weight: 700; margin: 16px 0 6px; color: var(--dsw-alias-label-primary); }
+.dou-report-body h3::before { content: ""; display: inline-block; width: 3px; height: 12px; border-radius: 2px; background: var(--dsw-alias-state-info-primary); margin-right: 8px; vertical-align: -1px; }
+.dou-report-body p { font-size: 12px; color: var(--dsw-alias-label-secondary); margin: 6px 0; }
+.dou-report-body strong { color: var(--dsw-alias-label-primary); font-weight: 700; }
+.dou-report-body ul { margin: 6px 0; padding-left: 18px; }
+.dou-report-body li { font-size: 12px; color: var(--dsw-alias-label-secondary); margin: 4px 0; }
+.dou-report-sign { margin-top: 14px; padding-top: 10px; border-top: 1px dashed var(--dsw-alias-border-l1); font-size: 10px; color: var(--dsw-alias-label-tertiary); display: flex; gap: 12px; flex-wrap: wrap; }
+
+/* 数据亮点横条（byProvider 占比可视化，纯 CSS） */
+.dou-bars { margin: 8px 0 2px; }
+.dou-barRow { display: grid; grid-template-columns: 150px 1fr 74px; gap: 10px; align-items: center; margin: 7px 0; font-size: 11px; }
+.dou-barRow .name { color: var(--dsw-alias-label-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dou-barTrack { height: 8px; border-radius: 4px; background: var(--dsw-alias-bg-layer-2); overflow: hidden; }
+.dou-barFill { height: 100%; border-radius: 4px; background: linear-gradient(90deg, var(--dsw-alias-state-info-primary), #7aa5ff); }
+.dou-barFill.alt { background: linear-gradient(90deg, var(--dsw-alias-state-success-primary), #6fd6b3); }
+.dou-barFill.alt2 { background: linear-gradient(90deg, #b45309, #f0b45c); }
+.dou-barRow .val { text-align: right; font-variant-numeric: tabular-nums; color: var(--dsw-alias-label-tertiary); }
+
+/* 历史行 / 手风琴 / 折叠 */
+.dou-historyItem { border: 1px solid var(--dsw-alias-border-l1); border-radius: 10px; margin-bottom: 8px; overflow: hidden; background: var(--dsw-alias-bg-base); }
+.dou-historyHead {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  min-height: 40px; padding: 8px 12px; border: 0; background: transparent; cursor: pointer; font: inherit;
+  color: var(--dsw-alias-label-primary);
+}
+.dou-historyHead:hover { background: var(--dsw-alias-bg-layer-1); }
+.dou-historyKey { font-size: 11px; color: var(--dsw-alias-label-tertiary); font-variant-numeric: tabular-nums; }
+.dou-historyTime { margin-left: auto; font-size: 10px; color: var(--dsw-alias-label-tertiary); }
+.dou-chevron { transition: transform 0.15s ease; color: var(--dsw-alias-label-tertiary); font-size: 10px; }
+.dou-chevronOpen { transform: rotate(90deg); }
+.dou-detail { border-top: 1px dashed var(--dsw-alias-border-l1); padding: 12px; }
+
+/* mini 柱状趋势（mock 堆叠柱，flex） */
+.dou-chart { display: flex; align-items: flex-end; gap: 4px; height: 120px; padding: 10px 2px 0; }
+.dou-chartCol { flex: 1; display: flex; flex-direction: column-reverse; border-radius: 4px 4px 0 0; overflow: hidden; min-height: 2px; }
+.dou-chartSeg-i { background: var(--dsw-alias-state-info-primary); opacity: 0.85; }
+.dou-chartSeg-s { background: var(--dsw-alias-state-success-primary); opacity: 0.85; }
+.dou-chartSeg-w { background: #b45309; opacity: 0.85; }
+.dou-chartAxis { display: flex; gap: 4px; margin-top: 6px; }
+.dou-chartAxis span { flex: 1; text-align: center; font-size: 9px; color: var(--dsw-alias-label-tertiary); }
+
+/* ================= B 变体：年报卡片墙 / 弹层 ================= */
+.dou-wall { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
+.dou-wallCard {
+  border-radius: 12px; padding: 14px 16px; color: #f2f4f8; cursor: pointer; position: relative;
+  background: linear-gradient(150deg, #1a2340, #22335c);
+  border: 1px solid rgba(255,255,255,0.06);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.dou-wallCard:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(15, 23, 42, 0.35); }
+.dou-wallCard .m { font-size: 24px; font-weight: 800; letter-spacing: 1px; }
+.dou-wallCard .m small { font-size: 11px; font-weight: 500; color: rgba(242,244,248,0.6); margin-left: 4px; }
+.dou-wallCard .n { font-size: 11px; color: rgba(242,244,248,0.65); margin-top: 8px; font-variant-numeric: tabular-nums; }
+.dou-wallCard .t { position: absolute; right: 12px; top: 12px; font-size: 10px; color: rgba(242,244,248,0.5); }
+.dou-sheetMask { position: fixed; inset: 0; background: rgba(10, 12, 16, 0.55); z-index: 900; display: flex; align-items: flex-end; justify-content: center; }
+.dou-sheet {
+  width: min(720px, 100%); max-height: 82vh; overflow: auto;
+  background: var(--dsw-alias-bg-base); border-radius: 16px 16px 0 0; padding: 18px 18px 26px;
+  box-shadow: 0 -12px 48px rgba(0,0,0,0.4);
+}
+.dou-sheetHead { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.dou-sheetClose { margin-left: auto; }
+
+/* ================= C 变体：侧导航 + 杂志式 ================= */
+.dou-split { display: grid; grid-template-columns: 168px 1fr; border: 1px solid var(--dsw-alias-border-l1); border-radius: 12px; overflow: hidden; background: var(--dsw-alias-bg-base); }
+.dou-side { background: var(--dsw-alias-bg-layer-1); border-right: 1px solid var(--dsw-alias-border-l1); padding: 12px 8px; display: flex; flex-direction: column; gap: 2px; }
+.dou-sideItem {
+  display: flex; align-items: center; gap: 9px; min-height: 36px; padding: 6px 12px;
+  border-radius: 8px; border: 0; background: transparent; cursor: pointer; font: inherit;
+  color: var(--dsw-alias-label-secondary); text-align: left; font-size: 12px;
+}
+.dou-sideItemActive { background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); font-weight: 600; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08); }
+.dou-sideIcon { width: 16px; text-align: center; opacity: 0.75; }
+.dou-content { padding: 16px 18px; min-width: 0; }
+.dou-magTitle { font-size: 19px; font-weight: 800; line-height: 1.45; margin: 4px 0 2px; }
+.dou-magLead { font-size: 12px; color: var(--dsw-alias-label-secondary); margin: 8px 0 14px; }
+.dou-weekRow { display: flex; gap: 6px; margin: 10px 0 2px; }
+.dou-weekCol { flex: 1; text-align: center; }
+.dou-weekCol .wc { height: 44px; border-radius: 6px; background: var(--dsw-alias-state-info-soft); position: relative; overflow: hidden; }
+.dou-weekCol .wc i { position: absolute; left: 0; right: 0; bottom: 0; background: var(--dsw-alias-state-info-primary); opacity: 0.75; border-radius: 0 0 6px 6px; }
+.dou-weekCol small { font-size: 10px; color: var(--dsw-alias-label-tertiary); }
+.dou-weekCol.hi .wc i { background: linear-gradient(180deg, var(--dsw-alias-state-info-primary), var(--dsw-alias-state-success-primary)); opacity: 1; }
+.dou-weekCol.hi small { color: var(--dsw-alias-state-info-primary); font-weight: 700; }
+
+/* 响应式 */
+@media (max-width: 640px) {
+  body { padding: 14px 10px 96px; }
+  .dou-split { grid-template-columns: 1fr; }
+  .dou-side { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--dsw-alias-border-l1); }
+  .dou-sideItem { white-space: nowrap; }
+  .dou-barRow { grid-template-columns: 110px 1fr 64px; }
+  .dou-hero { padding: 18px 16px 16px; }
+  .proto-bar .proto-label { min-width: 130px; }
+}
+</style>
+</head>
+<body>
+<div class="proto-tag">PROTOTYPE · 评审样本 r1</div>
+<button class="proto-theme" id="themeBtn" type="button">暗色 / 浅色</button>
+
+<div class="mock-shell">
+  <div class="mock-crumbs">dsh web · 设置 · <b>用量统计</b>（dsh-provider-usage）</div>
+  <div id="app"></div>
+</div>
+
+<div class="proto-bar" id="protoBar">
+  <button id="prevV" type="button" title="上一个变体">←</button>
+  <div class="proto-label" id="protoLabel"></div>
+  <button id="nextV" type="button" title="下一个变体">→</button>
+</div>
+
+<script>
+"use strict";
+/* ============================================================= mock 数据（与实现快照字段一一对应） */
+var MOCK = {
+  now: "2025-03-01 09:12",
+  providers: [
+    { id: "deepseek-official", name: "DeepSeek 官方", models: [
+      { id: "deepseek-chat", name: "DeepSeek-V3" },
+      { id: "deepseek-reasoner", name: "DeepSeek-R1" },
+    ]},
+    { id: "opencode-go", name: "OpenCode（中转）", models: [
+      { id: "claude-sonnet-4", name: "Claude Sonnet 4" },
+      { id: "gpt-4.1", name: "GPT-4.1" },
+    ]},
+  ],
+  // 月报快照派生字段（方案数据层扩展面，字段名与实现同名）
+  month: {
+    period: "monthly", key: "2025-02", startDay: "2025-02-01", endDay: "2025-02-28",
+    totals: { calls: 386, turns: 1240, toolCalls: 512, input: 986420, output: 267400, cacheRead: 3018300, cacheWrite: 29800, total: 4309920 },
+    activeDays: 25, windowDays: 28, avgPerActiveDay: 172396,
+    peakDay: { day: "2025-02-14", total: 92180 },
+    longestStreak: 9,
+    wowRatio: 1.23,
+    byWeekday: [418300, 655210, 702640, 688450, 596100, 633020, 616200],
+    byProvider: [
+      { provider: "deepseek-official", model: "deepseek-chat", calls: 262, total: 2930740 },
+      { provider: "deepseek-official", model: "deepseek-reasoner", calls: 96, total: 1231840 },
+      { provider: "opencode-go", model: "claude-sonnet-4", calls: 28, total: 147340 },
+    ],
+    quote: "这个二月，你有 25 天与 AI 并肩——比上月多出 23% 的思考量，最长的一次连续陪伴是 9 天。",
+    bodyHtml:
+      "<h3>这个二月，你和 DeepSeek 一起走过了 25 天</h3>" +
+      "<p>386 次对话、1240 轮交互、<strong>430 万 token</strong> 的思考与回答。28 天里有 25 天彼此陪伴——比上月多出 <strong>23%</strong> 的投入，最长的一次连续同行是 <strong>9 天</strong>。</p>" +
+      "<h3>数据亮点</h3>" +
+      "<ul>" +
+      "<li><strong>2 月 14 日</strong>是你的峰值日：单日 9.2 万 token，R1 陪你推演到深夜</li>" +
+      "<li>DeepSeek-V3 承担了 <strong>68%</strong> 的日常对话，DeepSeek-R1 贡献了 96 次深度推理</li>" +
+      "<li>周三是一周中最投入的一天（70.3 万 token），缓存命中为你节省了约 70% 输入成本</li>" +
+      "</ul>" +
+      "<h3>结构点评</h3>" +
+      "<p>你的用量重心在代码与推理之间保持平衡：V3 处理高频实现，R1 承接架构推演。工具调用 512 次说明自动化习惯已经养成——保持这个节奏。</p>" +
+      "<h3>结语</h3>" +
+      "<p>数据的另一面是专注。三月，愿你把每一次提问都变成一次向答案的靠近。</p>",
+    genMeta: { provider: "deepseek-official", model: "deepseek-reasoner", durationMs: 14210, tokens: 3521, generatedAt: "2025-03-01 09:00" },
+  },
+  history: [
+    { period: "monthly", key: "2025-02", ok: true, time: "03-01 09:00", total: "430.1 万", ratio: 1.23 },
+    { period: "monthly", key: "2025-01", ok: true, time: "02-01 09:00", total: "349.7 万", ratio: 0.91 },
+    { period: "weekly",  key: "02-24~03-02", ok: true, time: "03-03 09:00", total: "96.4 万", ratio: 1.08 },
+    { period: "daily",   key: "2025-02-28", ok: true, time: "02-28 22:00", total: "13.8 万", ratio: 0.87 },
+    { period: "monthly", key: "2024-12", ok: false, time: "01-01 09:00", total: "—", ratio: null },
+  ],
+  trend: {
+    days: ["02-15","02-16","02-17","02-18","02-19","02-20","02-21","02-22","02-23","02-24","02-25","02-26","02-27","02-28"],
+    cols: [ [62,18,8],[48,30,4],[71,12,6],[55,22,9],[38,9,3],[80,26,10],[66,31,5],[59,17,7],[44,20,2],[77,28,9],[85,34,11],[63,15,4],[72,25,8],[58,19,6] ],
+  },
+};
+
+/* ============================================================= 工具 */
+function h(html) { var d = document.createElement("div"); d.innerHTML = html; return d.firstElementChild; }
+function esc(s) { return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function fmtNum(n) { return n.toLocaleString("en-US"); }
+function ratioBadge(r) {
+  if (r === null || r === undefined) return '<span class="dou-ratio dou-ratioFlat">—</span>';
+  var up = r >= 1;
+  var cls = up ? "dou-ratioUp" : "dou-ratioDown";
+  var arrow = up ? "↑" : "↓";
+  var pct = Math.round(Math.abs(r - 1) * 100);
+  return '<span class="dou-ratio ' + cls + '">' + arrow + " " + (r === 0 ? "新增" : (pct === 0 ? "持平" : pct + "%")) + "</span>";
+}
+function fmtTokenShort(n) {
+  if (n >= 10000) return (n / 10000).toFixed(1).replace(/\.0$/, "") + " 万";
+  return fmtNum(n);
+}
+
+/* 组件片段（三个变体共用视觉语言，但各自的信息架构不同） */
+function periodRows() {
+  var rows = [
+    { p: "日报", on: true, time: "22:00", sub: "每天 22:00 · 覆盖当日至今" },
+    { p: "周报", on: true, time: "09:00", sub: "每周一 09:00 · 覆盖前 7 天 · 周一起始" },
+    { p: "月报", on: true, time: "09:00", sub: "每月 1 日 09:00 · 覆盖上一自然月" },
+  ];
+  return '<div class="dou-sec"><span class="dou-sec-title">生成周期</span><span class="dou-sec-hint">关闭再开启的周期从下一个触发时刻开始，不回补当期（bug 修复语义）</span></div>' +
+    rows.map(function (r) {
+      return '<div class="dou-row"><div class="dou-row-head">' +
+        '<label class="dou-switch"><input type="checkbox" checked' + (r.on ? "" : "") + '><span class="track"></span></label>' +
+        '<b>' + r.p + '</b><span class="dou-grow"></span>' +
+        '<input class="dou-input" type="time" value="' + r.time + '" style="width:96px" aria-label="' + r.p + '触发时刻">' +
+        "</div><div class=\"dou-row-sub\">" + r.sub + "</div></div>";
+    }).join("");
+}
+function routeRow(withModelSelect) {
+  var provOpts = MOCK.providers.map(function (p) { return '<option' + (p.id === "deepseek-official" ? " selected" : "") + '>' + esc(p.name) + "（" + esc(p.id) + "）</option>"; }).join("");
+  var modelSel;
+  if (withModelSelect) {
+    modelSel = '<select class="dou-select" aria-label="报告模型"><option>跟随默认（首个已注册模型）</option>' +
+      MOCK.providers[0].models.map(function (m) { return "<option>" + esc(m.name) + "（" + esc(m.id) + "）</option>"; }).join("") +
+      "</select>";
+  } else {
+    modelSel = '<input class="dou-input" placeholder="留空 = 跟随默认" style="width:190px">';
+  }
+  return '<div class="dou-row"><div class="dou-row-head"><b>生成模型</b><span class="dou-grow"></span>' +
+    '<select class="dou-select" aria-label="报告生成 provider">' + provOpts + "</select>" + modelSel + "</div>" +
+    '<div class="dou-row-sub">模型列表来自该 provider 的已注册模型（同适配器页可选）；拉取失败时自动降级为手填输入框</div></div>';
+}
+function promptRow() {
+  return '<div class="dou-row"><div class="dou-row-head"><b>提示词模板</b>' +
+    '<span class="dou-grow"></span>' +
+    '<button class="dou-chip dou-chipActive" type="button" data-ptab="daily" onclick="switchPrompt(this)">日报</button>' +
+    '<button class="dou-chip" type="button" data-ptab="weekly" onclick="switchPrompt(this)">周报</button>' +
+    '<button class="dou-chip" type="button" data-ptab="monthly" onclick="switchPrompt(this)">月报</button>' +
+    '<button class="dou-btn" type="button" style="margin-left:6px" onclick="resetPrompt()">恢复本周期默认</button></div>' +
+    '<div class="dou-row-sub">三周期各自独立模板；{stats} 注入对应周期的聚合统计 JSON（日报=当日/周报=本周/月报=当月全维度）。旧版单一模板保存时自动迁移：从未改过 → 升级为三份新默认，自定义过 → 三周期均以该文本起始</div>' +
+    '<textarea class="dou-textarea" id="promptArea" rows="6" style="margin-top:8px">' + esc(PROMPT_DEFAULTS.daily) + "</textarea></div>";
+}
+var PROMPT_DEFAULTS = {
+  daily: "你是用量速报员。根据 {stats} 注入的当日统计数据，用第二人称写一段 80–150 字的中文日报速览：\n- 一两句总体节奏（token 总量、调用次数、与昨日比较）\n- 一句当日最常用模型或工具调用亮点\n- 一句轻量的提醒或鼓励收尾\n只依据数据，禁止编造数值；标记仅可用 **加粗** 与 - 列表，不要小标题。",
+  weekly: "你是用量分析师。根据 {stats} 注入的本周统计数据，用第二人称写一份 200–300 字的中文周报，含三节：\n## 本周节奏\n总量、环比（wowRatio）、活跃天数，数值直接引用。\n- 数据亮点：peakDay、最常用模型、工具调用（用 - 列表）\n## 结构点评\n模型/适配器分工与逐日节奏的观察。\n## 下周寄语\n一句收尾。\n只依据数据，禁止编造；标记仅可用 ##、-、**。",
+  monthly: "你是用量年报撰写者。根据 {stats} 注入的当月统计数据，用第二人称写一份有温度的中文月报（400–600 字），结构：\n- 金句开场：点出活跃天数（activeDays/windowDays）、最长连续（longestStreak）与环比（wowRatio）中最动人的一个事实\n## 数据亮点\n- peakDay（峰值日故事）、topModel 占比、缓存节省（cacheRead 占比）、工具调用（用 - 列表，数值直接引用）\n## 结构点评\n模型分工（byProvider）与星期节奏（byWeekday）的观察。\n## 结语\n一句寄语收尾。\n只依据数据，禁止编造；标记仅可用 ##、-、**；数据稀疏的月份收窄叙事，不堆砌抒情。",
+};
+var PROMPT_STATE = "daily";
+function promptText(period) {
+  return PROMPT_DEFAULTS[period];
+}
+function switchPrompt(btn) {
+  PROMPT_STATE = btn.getAttribute("data-ptab");
+  var row = btn.closest(".dou-row");
+  row.querySelectorAll("[data-ptab]").forEach(function (b) { b.classList.toggle("dou-chipActive", b === btn); });
+  var area = row.querySelector("#promptArea");
+  if (area) area.value = promptText(PROMPT_STATE);
+}
+function resetPrompt() {
+  PROMPT_DEFAULTS[PROMPT_STATE] = PROMPT_DEFAULTS[PROMPT_STATE]; // 原型：演示按钮位置，实际实现恢复内置默认
+  var area = document.getElementById("promptArea");
+  if (area) area.value = promptText(PROMPT_STATE);
+}
+function pushRow() {
+  return '<div class="dou-row"><div class="dou-row-head">' +
+    '<label class="dou-switch"><input type="checkbox" checked><span class="track"></span></label><b>生成后推送</b>' +
+    '<span class="dou-kind">dsh-notifier</span><span class="dou-grow"></span>' +
+    '<button class="dou-btn dou-btnPrimary" type="button">保存配置</button><span class="dou-sec-hint">已保存 ✓</span></div></div>';
+}
+function genRow() {
+  return '<div class="dou-row"><div class="dou-row-head"><b>手动生成</b><span class="dou-grow"></span>' +
+    '<select class="dou-select" aria-label="生成周期"><option>月报</option><option>周报</option><option>日报</option></select>' +
+    '<button class="dou-btn dou-btnPrimary" type="button">立即生成</button></div>' +
+    '<div class="dou-row-sub">当期无任何用量时不调用模型，直接提示「当期无用量数据」</div></div>';
+}
+function reportDetail(inner) {
+  return '<div class="dou-detail">' + inner +
+    '<div class="dou-report-sign"><span>deepseek-reasoner · 14.2s · 3,521 tokens</span><span>2025-03-01 09:00 生成</span></div></div>';
+}
+function hero(periodCap, title, bigNum, bigUnit, ratio, quote, statsHtml, footHtml, btn) {
+  return '<div class="dou-hero">' + (btn ? '<button class="dou-heroBtn" type="button">' + btn + "</button>" : "") +
+    '<div class="dou-hero-cap">' + periodCap + "</div>" +
+    '<div class="dou-hero-title">' + title + "</div>" +
+    '<div class="dou-hero-quote">' + quote + "</div>" +
+    '<div class="dou-hero-big"><span class="dou-hero-num">' + bigNum + '</span><span class="dou-hero-numUnit">' + bigUnit + "</span>" + ratioBadge(ratio) + "</div>" +
+    '<div class="dou-hero-stats">' + statsHtml + "</div>" +
+    '<div class="dou-hero-foot">' + footHtml + "</div></div>";
+}
+var heroStats = '<div class="dou-hero-stat"><small>对话次数</small><b>386<i>次</i></b></div>' +
+  '<div class="dou-hero-stat"><small>活跃天数</small><b>25<i>/ 28 天</i></b></div>' +
+  '<div class="dou-hero-stat"><small>最长连续</small><b>9<i>天</i></b></div>' +
+  '<div class="dou-hero-stat"><small>峰值日</small><b>9.2<i>万</i></b></div>';
+var heroFoot = "<span>deepseek-official · deepseek-reasoner</span><span>2025-02-01 ~ 02-28</span><span>生成消耗 3,521 tokens（不入统计）</span>";
+
+function trendPane() {
+  var cols = MOCK.trend.cols.map(function (c, i) {
+    var total = c[0] + c[1] + c[2];
+    return '<div class="dou-chartCol" title="' + MOCK.trend.days[i] + " · " + total + 'k tokens">' +
+      '<div class="dou-chartSeg-i" style="height:' + c[0] + '%"></div>' +
+      '<div class="dou-chartSeg-s" style="height:' + c[1] + '%"></div>' +
+      '<div class="dou-chartSeg-w" style="height:' + c[2] + '%"></div></div>';
+  }).join("");
+  var axis = MOCK.trend.days.map(function (d, i) { return "<span>" + (i % 2 === 0 ? d.slice(3) : "") + "</span>"; }).join("");
+  return '<div class="dou-sec"><span class="dou-sec-title">使用趋势</span><span class="dou-sec-hint">近 14 天 · token 总量</span></div>' +
+    '<div class="dou-row"><div class="dou-row-head">' +
+    '<button class="dou-chip" type="button">近 24 小时</button><button class="dou-chip" type="button">近 7 天</button><button class="dou-chip dou-chipActive" type="button">近 14 天</button>' +
+    '<span class="dou-grow"></span><span class="dou-kind">deepseek-official</span><span class="dou-kind">opencode-go</span></div>' +
+    '<div class="dou-chart">' + cols + '</div><div class="dou-chartAxis">' + axis + "</div></div>" +
+    '<div class="dou-row"><div class="dou-row-head"><span class="dou-sec-hint">窗口汇总</span><span class="dou-grow"></span>' +
+    "<span>总量 <b>612.4 万</b></span><span>调用 <b>1,942</b></span>" + ratioBadge(1.17) + "</div></div>";
+}
+function usagePane() {
+  return '<div class="dou-sec"><span class="dou-sec-title">实时用量</span><span class="dou-sec-hint">按 provider 展示悬浮胶囊同款数据</span></div>' +
+    '<div class="dou-row"><div class="dou-row-head"><span class="dou-dot dou-dot-ok"></span><b>deepseek-official</b>' +
+    '<span class="dou-sec-hint">实时 · 09:12:04 更新</span></div>' +
+    '<div class="dou-row-sub" style="font-size:12px">今日 138.2k tok · 42 次调用 · 缓存命中 71%</div></div>' +
+    '<div class="dou-row"><div class="dou-row-head"><span class="dou-dot dou-dot-warn"></span><b>opencode-go</b>' +
+    '<span class="dou-sec-hint">缓存 · 08:40 拉取</span></div>' +
+    '<div class="dou-row-sub" style="font-size:12px">今日 21.6k tok · 7 次调用 · 上游延迟 1.8s</div></div>';
+}
+function adapterPane() {
+  return '<div class="dou-sec"><span class="dou-sec-title">适配器</span><span class="dou-sec-hint">3 个 provider · 主列表与模型配置页一致</span></div>' +
+    '<div class="dou-historyItem"><button class="dou-historyHead" type="button"><span class="dou-chevron dou-chevronOpen">▶</span><b>deepseek-official</b>' +
+    '<span class="dou-badge dou-badge-ok">已启用: deepseek-official v2</span></button>' +
+    '<div class="dou-detail">' +
+    '<div class="dou-row" style="margin-bottom:6px"><div class="dou-row-head"><span>DeepSeek 官方适配器</span><span class="dou-kind">builtin</span><span class="dou-grow"></span>' +
+    '<label class="dou-switch"><input type="checkbox" checked><span class="track"></span></label></div></div>' +
+    '<div class="dou-row" style="margin-bottom:0"><div class="dou-row-head"><span>opencode-go 自定义</span><span class="dou-kind">user-file</span><span class="dou-grow"></span>' +
+    '<label class="dou-switch"><input type="checkbox"><span class="track"></span></label></div>' +
+    '<div class="dou-row-sub">~/.dsh/adapters/opencode-go.mjs</div></div></div></div>' +
+    '<div class="dou-historyItem"><button class="dou-historyHead" type="button"><span class="dou-chevron">▶</span><b>opencode-go</b>' +
+    '<span class="dou-badge dou-badge-fail" style="background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-tertiary)">未启用适配器</span></button></div>';
+}
+function uiPane() {
+  return '<div class="dou-sec"><span class="dou-sec-title">悬浮胶囊</span><span class="dou-sec-hint">z 层级 1–9000 · 偏移 0–2000</span></div>' +
+    '<div class="dou-row"><div class="dou-row-head"><b>锚点</b><span class="dou-grow"></span>' +
+    '<select class="dou-select"><option>右上角</option><option>左上角</option><option>右下角</option><option>左下角</option></select>' +
+    " X <input class=\"dou-input\" type=\"number\" value=\"16\" style=\"width:70px\"> Y <input class=\"dou-input\" type=\"number\" value=\"16\" style=\"width:70px\">" +
+    " 层级 <input class=\"dou-input\" type=\"number\" value=\"1200\" style=\"width:80px\"></div></div>" +
+    '<div class="dou-row"><div class="dou-row-head"><b>预览</b><span class="dou-grow"></span><span class="dou-kind" style="font-size:11px">138.2k tok · 42 calls</span></div></div>';
+}
+
+/* ============================================================= 变体 A：通知中心同构（五分段器 tab） */
+function variantA() {
+  var root = h('<div><div class="dou-card">' +
+    '<div class="dou-tabs">' +
+    '<button class="dou-tab" data-t="trend">趋势</button>' +
+    '<button class="dou-tab dou-tabActive" data-t="report">报告<span class="dou-tabBadge">新</span></button>' +
+    '<button class="dou-tab" data-t="usage">用量</button>' +
+    '<button class="dou-tab" data-t="adapter">适配器</button>' +
+    '<button class="dou-tab" data-t="ui">悬浮窗</button></div>' +
+    '<div class="dou-body" id="aBody"></div></div></div>');
+  var panes = {
+    trend: trendPane,
+    report: function () {
+      return '<div class="dou-sec"><span class="dou-sec-title">最新一期 · 2025 年 2 月月报</span><span class="dou-sec-hint">年报 hero 来自 meta.summary，正文为白名单标签渲染</span></div>' +
+        hero("MONTHLY REPORT · 每月一期", "2 月用量年报", fmtTokenShort(MOCK.month.totals.total), "tokens", MOCK.month.wowRatio, MOCK.month.quote, heroStats, heroFoot, "查看完整年报") +
+        '<div style="height:10px"></div>' +
+        '<div class="dou-historyItem">' +
+        '<button class="dou-historyHead" type="button" data-fold><span class="dou-chevron dou-chevronOpen">▶</span><span class="dou-badge dou-badge-ok">月报</span><span class="dou-historyKey">2025-02</span><span class="dou-historyTime">03-01 09:00</span></button>' +
+        '<div data-detail>' + reportDetail('<div class="dou-report-body">' + MOCK.month.bodyHtml + "</div>") + "</div></div>" +
+        '<div class="dou-historyItem"><button class="dou-historyHead" type="button"><span class="dou-chevron">▶</span><span class="dou-badge dou-badge-ok">周报</span><span class="dou-historyKey">02-24~03-02</span><span class="dou-historyTime">03-03 09:00</span></button></div>' +
+        '<div class="dou-historyItem"><button class="dou-historyHead" type="button"><span class="dou-chevron">▶</span><span class="dou-badge dou-badge-fail">月报</span><span class="dou-historyKey">2024-12</span><span class="dou-historyTime">01-01 09:00</span></button></div>' +
+        '<div style="height:6px"></div>' +
+        '<div class="dou-sec"><span class="dou-sec-title">报告配置</span></div>' +
+        periodRows() + routeRow(true) + promptRow() + pushRow() + genRow();
+    },
+    usage: usagePane, adapter: adapterPane, ui: uiPane,
+  };
+  wireTabs(root, "[data-t]", "dou-tab", "dou-tabActive", "#aBody", panes, "report");
+  return root;
+}
+
+/* ============================================================= 变体 B：年报开屏（hero 首屏 + 卡片墙 + 次级配置弹层） */
+function variantB() {
+  var root = h("<div>");
+  root.appendChild(h(
+    hero("PROVIDER USAGE · 年度叙事", "你的 2 月用量报告已生成", fmtTokenShort(MOCK.month.totals.total), "tokens", MOCK.month.wowRatio,
+      MOCK.month.quote, heroStats, heroFoot, "查看完整年报")));
+  root.appendChild(h('<div style="height:12px"></div>'));
+  // 年报卡片墙
+  var wall = h('<div class="dou-wall"></div>');
+  MOCK.history.forEach(function (r) {
+    wall.appendChild(h(
+      '<div class="dou-wallCard" role="button" tabindex="0"><span class="t">' + esc(r.time) + "</span>" +
+      '<div class="m">' + (r.period === "monthly" ? esc(r.key) : esc(r.key.split("~")[0])) + "<small>" +
+      (r.period === "monthly" ? "月报" : r.period === "weekly" ? "周报" : "日报") + "</small></div>" +
+      '<div class="n">' + (r.ok ? fmtTokenShort(Number(String(r.total).replace(/[^\d.]/g, "")) * 10000) + " tokens" : "生成失败") + "</div>" +
+      '<div style="margin-top:6px">' + ratioBadge(r.ratio) + "</div></div>"));
+  });
+  root.appendChild(wall);
+  root.appendChild(h('<div style="height:12px"></div>'));
+  // 次级配置：报告设置入口 + 其余区块折叠收纳（本变体的结构差异：配置退后）
+  var cfgCard = h('<div class="dou-card"><div class="dou-body">' +
+    '<div class="dou-row" style="margin-bottom:0"><div class="dou-row-head">' +
+    '<b>报告设置</b><span class="dou-sec-hint">周期 / 模型 / 提示词 / 推送</span><span class="dou-grow"></span>' +
+    '<button class="dou-btn" type="button" data-open-cfg>打开设置</button></div></div>' +
+    '<div data-cfg style="display:none;margin-top:10px">' + periodRows() + routeRow(true) + promptRow() + pushRow() + "</div>" +
+    '<div class="dou-row" style="margin:8px 0 0"><div class="dou-row-head"><b>趋势 / 用量 / 适配器</b><span class="dou-grow"></span>' +
+    '<button class="dou-btn" type="button" data-open-more>展开管理</button></div></div>' +
+    '<div data-more style="display:none;margin-top:10px">' + trendPane() + usagePane() + adapterPane() + uiPane() + "</div>" +
+    "</div></div>");
+  root.appendChild(cfgCard);
+  cfgCard.querySelector("[data-open-cfg]").addEventListener("click", function () {
+    var el = cfgCard.querySelector("[data-cfg]");
+    el.style.display = el.style.display === "none" ? "" : "none";
+  });
+  cfgCard.querySelector("[data-open-more]").addEventListener("click", function () {
+    var el = cfgCard.querySelector("[data-more]");
+    el.style.display = el.style.display === "none" ? "" : "none";
+  });
+  // hero「查看完整年报」→ 全屏 sheet（年报沉浸阅读形态）
+  root.querySelector(".dou-heroBtn").addEventListener("click", function () { openSheet(); });
+  return root;
+}
+function openSheet() {
+  var mask = h('<div class="dou-sheetMask"><div class="dou-sheet">' +
+    '<div class="dou-sheetHead"><span class="dou-badge dou-badge-ok">月报 · 2025-02</span><b>2 月用量年报</b>' +
+    '<button class="dou-btn dou-sheetClose" type="button">关闭</button></div>' +
+    '<div class="dou-report-body">' + MOCK.month.bodyHtml + "</div>" +
+    '<div class="dou-bars">' + barsHtml() + "</div>" +
+    '<div class="dou-report-sign"><span>deepseek-reasoner · 14.2s · 3,521 tokens</span><span>2025-03-01 09:00 生成</span></div></div></div>');
+  document.body.appendChild(mask);
+  mask.querySelector(".dou-sheetClose").addEventListener("click", function () { mask.remove(); });
+  mask.addEventListener("click", function (e) { if (e.target === mask) mask.remove(); });
+}
+function barsHtml() {
+  var colors = ["", " alt", " alt2"];
+  var max = MOCK.month.byProvider[0].total;
+  return MOCK.month.byProvider.map(function (b, i) {
+    return '<div class="dou-barRow"><span class="name">' + esc(b.provider) + " · " + esc(b.model) + '</span>' +
+      '<span class="dou-barTrack"><span class="dou-barFill' + colors[i] + '" style="width:' + Math.round(b.total / max * 100) + '%"></span></span>' +
+      '<span class="val">' + fmtTokenShort(b.total) + " · " + Math.round(b.total / MOCK.month.totals.total * 100) + "%</span></div>";
+  }).join("");
+}
+
+/* ============================================================= 变体 C：侧导航仪表盘（左 tab 列 + 杂志式报告） */
+function variantC() {
+  var root = h('<div><div class="dou-split">' +
+    '<div class="dou-side">' +
+    '<button class="dou-sideItem" data-t="trend"><span class="dou-sideIcon">📈</span>趋势</button>' +
+    '<button class="dou-sideItem dou-sideItemActive" data-t="report"><span class="dou-sideIcon">年报</span>用量报告</button>' +
+    '<button class="dou-sideItem" data-t="usage"><span class="dou-sideIcon">◉</span>用量</button>' +
+    '<button class="dou-sideItem" data-t="adapter"><span class="dou-sideIcon">🔌</span>适配器</button>' +
+    '<button class="dou-sideItem" data-t="ui"><span class="dou-sideIcon">◈</span>悬浮窗</button></div>' +
+    '<div class="dou-content" id="cBody"></div></div></div>');
+  var panes = {
+    trend: trendPane,
+    usage: usagePane, adapter: adapterPane, ui: uiPane,
+    report: function () {
+      var weekdays = ["一", "二", "三", "四", "五", "六", "日"];
+      var maxW = Math.max.apply(null, MOCK.month.byWeekday);
+      var hi = MOCK.month.byWeekday.indexOf(maxW);
+      var week = MOCK.month.byWeekday.map(function (v, i) {
+        return '<div class="dou-weekCol' + (i === hi ? " hi" : "") + '"><div class="wc"><i style="height:' + Math.round(v / maxW * 100) + '%"></i></div><small>' + weekdays[i] + "</small></div>";
+      }).join("");
+      return '<div class="dou-sec"><span class="dou-badge dou-badge-ok">月报 · 2025-02</span><span class="dou-historyTime" style="margin-left:auto">生成于 03-01 09:00</span></div>' +
+        '<div class="dou-magTitle">这个二月，你和 DeepSeek 一起走过了 25 天</div>' +
+        '<div class="dou-magLead">' + MOCK.month.quote + "</div>" +
+        '<div class="dou-row"><div class="dou-row-head"><b>430.1 万</b><span class="dou-sec-hint">tokens</span>' + ratioBadge(1.23) +
+        '<span class="dou-grow"></span><span class="dou-sec-hint">386 次对话 · 512 次工具调用</span></div>' +
+        '<div class="dou-weekRow">' + week + "</div>" +
+        '<div class="dou-row-sub">按星期分布 · 周三最投入（70.3 万）</div></div>' +
+        '<div class="dou-report-body">' + MOCK.month.bodyHtml + "</div>" +
+        '<div class="dou-bars"><div class="dou-sec" style="margin-top:14px"><span class="dou-sec-title">模型占比</span></div>' + barsHtml() + "</div>" +
+        reportDetail("") +
+        '<div style="height:8px"></div>' +
+        '<div class="dou-sec"><span class="dou-sec-title">历史</span></div>' +
+        '<div class="dou-historyItem"><button class="dou-historyHead" type="button"><span class="dou-chevron">▶</span><span class="dou-badge dou-badge-ok">周报</span><span class="dou-historyKey">02-24~03-02</span><span class="dou-historyTime">96.4 万</span></button></div>' +
+        '<div class="dou-historyItem"><button class="dou-historyHead" type="button"><span class="dou-chevron">▶</span><span class="dou-badge dou-badge-fail">月报</span><span class="dou-historyKey">2024-12</span><span class="dou-historyTime">失败</span></button></div>' +
+        '<div style="height:8px"></div>' + periodRows() + routeRow(true) + promptRow() + pushRow() + genRow();
+    },
+  };
+  wireTabs(root, "[data-t]", "dou-sideItem", "dou-sideItemActive", "#cBody", panes, "report");
+  return root;
+}
+
+/* ============================================================= tab 接线 / 原型切换器 */
+function wireTabs(root, sel, baseCls, activeCls, bodySel, panes, initial) {
+  var btns = root.querySelectorAll(sel);
+  var body = root.querySelector(bodySel);
+  function show(name) {
+    btns.forEach(function (b) { b.classList.toggle(activeCls, b.getAttribute("data-t") === name); });
+    body.innerHTML = panes[name]();
+    bindFolds(body);
+  }
+  btns.forEach(function (b) { b.addEventListener("click", function () { show(b.getAttribute("data-t")); }); });
+  show(initial);
+}
+function bindFolds(scope) {
+  scope.querySelectorAll("[data-fold]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var detail = btn.parentElement.querySelector("[data-detail]");
+      var chev = btn.querySelector(".dou-chevron");
+      if (!detail) return;
+      var open = detail.style.display !== "none";
+      detail.style.display = open ? "none" : "";
+      chev.classList.toggle("dou-chevronOpen", !open);
+    });
+  });
+}
+
+var VARIANTS = [
+  { key: "a", name: "A · 通知中心同构", desc: "五分段器 tab，与通知中心 #508 同语言（保守派）", build: variantA },
+  { key: "b", name: "B · 年报开屏", desc: "hero 大数字首屏 + 年报卡片墙，配置退后（年报派）", build: variantB },
+  { key: "c", name: "C · 侧导航仪表盘", desc: "左垂直 tab 列 + 杂志式报告排版（效率派）", build: variantC },
+];
+function currentVariant() {
+  var m = /^#?variant=([abc])$/.exec(location.hash);
+  if (m) return m[1];
+  return "a";
+}
+function render() {
+  var key = currentVariant();
+  var v = VARIANTS.find(function (x) { return x.key === key; }) || VARIANTS[0];
+  var app = document.getElementById("app");
+  app.innerHTML = "";
+  app.appendChild(v.build());
+  document.getElementById("protoLabel").innerHTML =
+    esc(v.name) + "<small>" + esc(v.desc) + "</small>";
+}
+document.getElementById("prevV").addEventListener("click", function () { cycle(-1); });
+document.getElementById("nextV").addEventListener("click", function () { cycle(1); });
+function cycle(dir) {
+  var keys = VARIANTS.map(function (v) { return v.key; });
+  var i = keys.indexOf(currentVariant());
+  location.hash = "variant=" + keys[(i + dir + keys.length) % keys.length];
+}
+window.addEventListener("hashchange", render);
+document.addEventListener("keydown", function (e) {
+  var tag = (document.activeElement && document.activeElement.tagName) || "";
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (document.activeElement && document.activeElement.isContentEditable)) return;
+  if (e.key === "ArrowLeft") cycle(-1);
+  if (e.key === "ArrowRight") cycle(1);
+});
+document.getElementById("themeBtn").addEventListener("click", function () {
+  var cur = document.documentElement.getAttribute("data-theme");
+  document.documentElement.setAttribute("data-theme", cur === "dark" ? "light" : "dark");
+});
+render();
+</script>
+</body>
+</html>
