@@ -112,6 +112,7 @@ export {
   catalogCacheFile,
   CATALOG_SUMMARY_MAX_CHARS,
   CATALOG_SUMMARY_PER_TOOL_CHARS,
+  CATALOG_ENTRY_MAX_CHARS,
   summarizeToolDescriptions,
   composeCatalogEntries,
   digestCatalogEntries,

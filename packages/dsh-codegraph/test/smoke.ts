@@ -824,7 +824,7 @@ check("契约: inject 包含 mcpManager", () => assert.ok(inject.includes("mcpMa
 // ---- apply ----
 {
   const makeCtx = (overrides = {}) => {
-    const state = { disposers: [], registered: [], hooks: [], logs: [], tools: [], registerCalls: [], preStepCbs: [] };
+    const state = { disposers: [], registered: [], hooks: [], logs: [], tools: [], registerCalls: [], preStepCbs: [], sections: [] };
     const ctx = {
       logger: { warn: (m) => state.logs.push(`warn:${m}`), info: (m) => state.logs.push(`info:${m}`) },
       // inject 强依赖：ctx.mcpManager 直接可用（不再 get 探测）。registerServer
@@ -836,19 +836,25 @@ check("契约: inject 包含 mcpManager", () => assert.ok(inject.includes("mcpMa
         getTools: () => [],
         list: () => [],
       },
+      systemPrompt: overrides.systemPrompt ?? {
+        section: (opts) => {
+          state.sections.push(opts);
+          return () => {};
+        },
+      },
       // 注意：不再提供 ctx.tools——#363 补充 3 撤销自注册，apply 不应触碰 tools
-      // （inject 也不含 tools）。纪律注入为根 ctx pre-step 监听（main b01ced7）。
+      // （inject 也不含 tools）。系统提示词注入为 ctx.systemPrompt.section。
       on: (event, cb) => { if (event === "agent/pre-step") state.preStepCbs.push(cb); return () => {}; },
       effect: (fn) => { const d = fn(); state.disposers.push(d); return d; },
     };
     return { ctx, state };
   };
 
-  check("契约: inject 含 mcpManager、不含 tools（#363 撤销自注册；纪律注入走根 ctx pre-step 不需 agents/systemPrompt）", () => {
+  check("契约: inject 含 mcpManager 与 systemPrompt、不含 tools", () => {
     assert.ok(inject.includes("mcpManager"), `inject 应含 mcpManager，实际 ${JSON.stringify(inject)}`);
+    assert.ok(inject.includes("systemPrompt"), `inject 应含 systemPrompt，实际 ${JSON.stringify(inject)}`);
     assert.ok(!inject.includes("tools"), "inject 不应再含 tools（#363 补充 3 撤销自注册）");
-    assert.ok(!inject.includes("agents"), "inject 不应含 agents（纪律注入为 pre-step，b01ced7）");
-    assert.ok(!inject.includes("systemPrompt"), "inject 不应含 systemPrompt（纪律注入为 pre-step，b01ced7）");
+    assert.ok(!inject.includes("agents"), "inject 不应含 agents");
   });
 
   // 回归（启动崩溃根因）：apply 不读取 ctx.session（无 session 字段也能 apply）。
@@ -935,6 +941,9 @@ check("契约: inject 包含 mcpManager", () => assert.ok(inject.includes("mcpMa
         getTools: () => [],
         list: () => [],
       },
+      systemPrompt: {
+        section: () => () => {},
+      },
       on: () => () => {},
       effect: (fn) => { const d = fn(); return d; },
     };
@@ -945,7 +954,7 @@ check("契约: inject 包含 mcpManager", () => assert.ok(inject.includes("mcpMa
     assert.equal(registeredInput.name, "codegraph");
     // A2（#417）：注册时携带服务器级 description——能力目录条目优先取它，
     // 避免 fallback 到 codegraph_files 工具摘要（「列文件结构」埋没核心查询能力）。
-    assert.ok(typeof registeredInput.description === "string" && registeredInput.description.includes("结构类查询"), "入参携带 description（能力目录如实展示）");
+    assert.ok(typeof registeredInput.description === "string" && registeredInput.description.includes("Local code graph"), "入参携带 description（能力目录如实展示）");
     assert.ok(Array.isArray(registeredInput.toolDefinitions), "入参携带 toolDefinitions");
     assert.equal(registeredInput.toolDefinitions.length, 8, "8 个封装定义");
     rmSync(dir, { recursive: true, force: true });
@@ -955,71 +964,52 @@ check("契约: inject 包含 mcpManager", () => assert.ok(inject.includes("mcpMa
   // dsh-tool-skill 载体）；git 仓注入、非 git 不注入；幂等查会话历史
   // （agent.session.snapshotEvents()，官方 dsh-time-context 模式）。内容与 mcp 目录正交。
   {
-    const runPreStep = async (state, messages, cwd, events = []) => {
-      const next = async () => ({ kind: "enter", messages });
-      let result;
-      for (const cb of state.preStepCbs ?? []) {
-        result = await cb({ agent: { id: "a1", session: { header: { cwd }, snapshotEvents: () => events } }, messages, signal: { throwIfAborted: () => {} } }, next);
-      }
-      return result;
-    };
-    checkAsync("discipline: git 仓会话 pre-step 注入纪律消息（面板可见 + #363 文案）", async () => {
+    checkAsync("discipline: git 仓会话注册系统提示词段落（order 170 + 全英文决策表）", async () => {
       const dir = mkdtempSync(join(tmpdir(), "cg-disc-git-"));
       mkdirSync(join(dir, "repo", ".git"), { recursive: true });
       try {
         const { ctx, state } = makeCtx();
-        const { registerDisciplineHook } = await import(pathToFileURL(join(pkgDir, "lib/index.js")).href);
-        registerDisciplineHook(ctx);
-        assert.equal((state.preStepCbs ?? []).length, 1, "注册了 pre-step 监听器");
-        const decision = await runPreStep(state, [{ id: "m1", role: "user", content: [{ type: "text", text: "hi" }], source: { kind: "user" } }], join(dir, "repo"));
-        assert.equal(decision.kind, "enter");
-        assert.equal(decision.messages.length, 2, "追加 1 条纪律消息");
-        const injected = decision.messages[1];
-        assert.equal(injected.role, "user");
-        assert.equal(injected.source.kind, "plugin", "source.kind=plugin → GUI 上下文注入面板可见");
-        assert.equal(injected.source.plugin, "codegraph");
-        const text = injected.content[0].text;
-        assert.ok(text.includes("codegraph_explore"), "纪律文本含工具名");
-        // #363 验收 6/18 + #417 A 项：纪律文案含全部工具引导；注册形态
-        // 说明已随决策表化删除（由能力目录承担），断言跟随新文案。
-        for (const tool of ["codegraph_impact", "codegraph_node", "codegraph_callers", "codegraph_callees", "codegraph_search", "codegraph_files", "codegraph_status"]) {
-          assert.ok(text.includes(tool), `纪律文案应引导 ${tool}`);
+        const { registerCodegraphPrompt } = await import(pathToFileURL(join(pkgDir, "lib/index.js")).href);
+        registerCodegraphPrompt(ctx);
+        assert.equal(state.sections.length, 1, "注册了 1 个系统提示词段落");
+        const section = state.sections[0];
+        assert.equal(section.name, "plugin:dsh-codegraph");
+        assert.equal(section.order, 170, "order 为 170，排在 mcp-manager 160 之后");
+        assert.equal(typeof section.text, "function", "text 为函数支持会话级动态计算");
+
+        // 在 git 仓会话中求值
+        const contextGit = { agent: { session: { header: { cwd: join(dir, "repo") } } } };
+        const text = section.text(contextGit);
+        assert.ok(text.length > 0, "git 仓会话返回非空提示词");
+        assert.ok(text.includes("[Code Graph: codegraph_* tools]"), "包含标题");
+        assert.ok(text.includes("ALWAYS prioritize `codegraph_*` tools"), "强调优先使用图谱");
+        for (const tool of ["codegraph_explore", "codegraph_impact", "codegraph_node", "codegraph_callers", "codegraph_callees", "codegraph_search", "codegraph_files", "codegraph_status"]) {
+          assert.ok(text.includes(tool), `提示词应引导 ${tool}`);
         }
-        assert.ok(text.includes("全文搜词才用 grep"), "含决策表兜底（grep 只用于全文搜索）");
-        assert.ok(text.includes("正在编辑的文件一律 Read 原文"), "保留正在编辑的文件 Read 原文纪律");
+        assert.ok(text.includes("NEVER grep for code symbols"), "排他性规则约束 grep");
+        assert.ok(text.includes("DO NOT use `mcp__` prefixes"), "明确禁止 mcp__ 前缀防止臆造");
         assert.ok(text.includes("codegraph init <path>"), "保留无索引引导");
-        assert.ok(!text.includes("mcp__codegraph__impact"), "不再有双轨说明（去 mcp__ 官方工具直呼）");
-        assert.ok(!text.includes("裸名纪律工具"), "不再有裸名 vs mcp__ 双轨措辞");
-        assert.ok(!text.includes("全部经 mcp-manager 统一管理"), "注册形态声明已移除（#417 A 项：实现细节交能力目录）");
-        assert.ok(!text.includes("本插件不直接注册工具"), "注册形态声明已移除（#417 A 项）");
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
     });
-    checkAsync("discipline: 会话历史已注入 → 不重复注入（幂等）", async () => {
-      const dir = mkdtempSync(join(tmpdir(), "cg-disc-idem-"));
-      mkdirSync(join(dir, "repo", ".git"), { recursive: true });
-      try {
-        const { ctx, state } = makeCtx();
-        const { registerDisciplineHook } = await import(pathToFileURL(join(pkgDir, "lib/index.js")).href);
-        registerDisciplineHook(ctx);
-        // 会话历史已有纪律消息（source.kind=plugin && plugin=codegraph）
-        const events = [{ type: "user/message", data: { source: { kind: "plugin", plugin: "codegraph" } } }];
-        const decision = await runPreStep(state, [{ id: "m1", role: "user", content: [{ type: "text", text: "hi" }], source: { kind: "user" } }], join(dir, "repo"), events);
-        assert.equal(decision.messages.length, 1, "历史已注入 → 不再追加");
-      } finally {
-        rmSync(dir, { recursive: true, force: true });
-      }
-    });
-    checkAsync("discipline: 非 git 会话不注入纪律（零注入）", async () => {
+
+    checkAsync("discipline: 非 git 会话或无 session 返回空串（零注入零污染）", async () => {
       const dir = mkdtempSync(join(tmpdir(), "cg-disc-nongit-"));
       mkdirSync(join(dir, "nongit"), { recursive: true });
       try {
         const { ctx, state } = makeCtx();
-        const { registerDisciplineHook } = await import(pathToFileURL(join(pkgDir, "lib/index.js")).href);
-        registerDisciplineHook(ctx);
-        const decision = await runPreStep(state, [{ id: "m1", role: "user", content: [{ type: "text", text: "hi" }], source: { kind: "user" } }], join(dir, "nongit"));
-        assert.equal(decision.messages.length, 1, "非 git 不注入纪律");
+        const { registerCodegraphPrompt } = await import(pathToFileURL(join(pkgDir, "lib/index.js")).href);
+        registerCodegraphPrompt(ctx);
+        const section = state.sections[0];
+
+        // 1. 非 git 目录
+        const contextNonGit = { agent: { session: { header: { cwd: join(dir, "nongit") } } } };
+        assert.equal(section.text(contextNonGit), "", "非 git 仓返回空串实现零注入");
+
+        // 2. 杜绝 process.cwd 逃逸：无 agent 或空 session 时返回空串
+        assert.equal(section.text({}), "", "无 agent 时返回空串");
+        assert.equal(section.text(undefined), "", "无 context 时返回空串");
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }

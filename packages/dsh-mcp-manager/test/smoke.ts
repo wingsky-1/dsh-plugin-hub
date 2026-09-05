@@ -224,9 +224,9 @@ const main = async () => {
     assert.match(registered.find((d) => d.name === "ws_mcp_search").description, /ws_mcp_list/, "search 描述互引完整盘点");
     assert.match(registered.find((d) => d.name === "ws_mcp_call").description, /ws_mcp_detail/, "call 描述互引参数 schema 查询");
     assert.match(registered.find((d) => d.name === "ws_mcp_list").description, /ws_mcp_detail/, "list 描述互引 detail");
-    assert.match(registered.find((d) => d.name === "ws_mcp_list").description, /不返回 inputSchema/, "list 描述写明不做什么");
+    assert.match(registered.find((d) => d.name === "ws_mcp_list").description, /Does not return inputSchema/, "list 描述写明不做什么");
     assert.match(registered.find((d) => d.name === "ws_mcp_detail").description, /inputSchema/, "detail 描述说明完整 schema");
-    assert.match(registered.find((d) => d.name === "ws_mcp_detail").description, /不做关键词检索/, "detail 描述写明不做什么");
+    assert.match(registered.find((d) => d.name === "ws_mcp_detail").description, /Does not perform keyword search/, "detail 描述写明不做什么");
     // Anthropic 规范：parameters 每个字段都带 description。
     for (const def of registered) {
       const props = def.parameters?.properties ?? {};
@@ -2078,7 +2078,7 @@ const main = async () => {
     const tavilySummary = summarizeToolDescriptions(tavily)!;
     assert.ok(tavilySummary.includes("Search the web"), "摘要含 search 语义（防 crawler 误导）");
     assert.ok(tavilySummary.includes("research"), "摘要含 research 语义");
-    assert.ok(tavilySummary.startsWith("共 5 个工具："), "多工具前缀标注真实工具数");
+    assert.ok(tavilySummary.startsWith("5 tools: "), "多工具前缀标注真实工具数");
   });
   check("recordCatalogTools 仅实质变化落盘", async () => {
     const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-catalog-"));
@@ -2134,7 +2134,7 @@ const main = async () => {
     assert.equal(msg.source.kind, "mcp-catalog");
     assert.equal(msg.content[0].type, "text");
     assert.match(msg.content[0].text, /available_mcp_servers/);
-    assert.match(msg.content[0].text, /不代表当前连接状态/);
+    assert.match(msg.content[0].text, /does not reflect active connection status/);
     assert.match(msg.content[0].text, /ws_mcp_search/, "#228 目录文案引导经中间层调用");
     assert.match(msg.content[0].text, /`code-graph`: 代码图谱/);
     assert.ok(typeof msg.id === "string" && msg.id.length > 0);
@@ -2305,7 +2305,7 @@ const main = async () => {
     result = runStep({ kind: "enter", messages: [...messages, { id: "u3", role: "user", content: [] }] }, messages, added, undefined, agent);
     const afterAdd = agent.session.snapshotEvents().filter((e) => e.data?.source?.kind === "mcp-catalog");
     assert.equal(afterAdd.length, 2, "集合变化注入更新消息（历史目录无法删除，新消息声明作废）");
-    assert.match(afterAdd[1].data.content[0].text, /替换此前所有/);
+    assert.match(afterAdd[1].data.content[0].text, /replaces all previous available_mcp_servers/);
     assert.match(afterAdd[1].data.content[0].text, /playwright/);
 
     // 更新后同集合不再注入
