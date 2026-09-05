@@ -20,9 +20,10 @@ install them all at once as a single bundle, or pick individual plugins as neede
   plaintext nor reach the browser; each plugin's threat model and hardening details live
   in its README security section
 - **Context-cost-controlled MCP management**: project-level MCP is collapsed into the
-  two atomic tools `ws_mcp_search` / `ws_mcp_call` by default, so project-level scale
-  never balloons the context (`middleware: all` folds global servers into the middleware
-  too); per-working-directory project/global config tiers let each repo carry its own
+  four atomic tools `ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call`
+  by default, so project-level scale never balloons the context (`middleware: all` folds
+  global servers into the middleware too, hot-switchable from the settings page);
+  per-working-directory project/global config tiers let each repo carry its own
   MCP servers without cross-project interference
 - **Extensible usage-stats framework**: a generic v2 adapter contract with DeepSeek
   official and OpenCode Go built in out of the box; write one mjs file to plug in any
@@ -47,13 +48,13 @@ This plugin set only adapts to **rc (release-candidate) releases of DeepSeek Har
 
 | Package | What it does | Docs | Status |
 |---|---|---|---|
-| `@wingsky-1/dsh-notifier` | Approval/completion/error event notifications (browser Notification + system toast) | [README](packages/dsh-notifier/README.md) | ✅ Published |
-| `@wingsky-1/dsh-provider-usage` | Multi-provider usage float pill (generic adapter framework: DeepSeek official and OpenCode Go built in, plug in any data source with your own mjs) | [README](packages/dsh-provider-usage/README.md) | ✅ Published |
-| `@wingsky-1/dsh-lan-proxy` | Access the dsh web UI over LAN (HTTP/HTTPS/WS forwarding + TLS + HTTP response compression, Brotli/gzip) | [README](packages/dsh-lan-proxy/README.md) | ✅ Published |
-| `@wingsky-1/dsh-mcp-manager` | MCP server manager (stdio / HTTP; per-working-directory project/global config tiers, project-level MCP collapsed via middleware — no tool flood in the model surface) | [README](packages/dsh-mcp-manager/README.md) | ✅ Published |
-| `@wingsky-1/dsh-web-file-preview` | Click conversation file links to preview in the web UI (image / text / Markdown / code / Diff / Mermaid) | [README](packages/dsh-web-file-preview/README.md) | ✅ Published |
-| `@wingsky-1/dsh-verify-isolated` | Isolated-environment browser verification skill for DSH plugin development (temp DSH_HOME + independent profile, double isolation) | [README](packages/dsh-verify-isolated/README.md) | ✅ Published |
-| `@wingsky-1/dsh-codegraph` | codegraph local code-graph MCP + worktree development discipline (registered at runtime via mcp-manager) | [README](packages/dsh-codegraph/README.md) | ✅ Published (standalone, not in the bundle) |
+| `@wingsky-1/dsh-notifier` | Task-event notification center: 6 event kinds (ask / approval / completion / subagent completion / error / turn end), dual channels (browser Notification + host system toast) plus Bark/Webhook push channels (ntfy, Gotify, self-hosted gateways); quiet hours with urgent exceptions, approval-timeout re-reminders, completion-storm aggregation, notification text redaction | [README](packages/dsh-notifier/README.md) · [Architecture](docs/architecture/dsh-notifier.md) | Published |
+| `@wingsky-1/dsh-provider-usage` | Multi-provider usage stats framework (v2 adapter contract): persistent capsule + detail panel; DeepSeek official (interval-bookkeeping daily usage derivation + peak/valley countdown badge — works even without an official usage endpoint) and OpenCode Go built in; plug in any data source with a single mjs file, hot-swappable from the settings page; daily/weekly/monthly usage reports (generated via the host llm); API keys stay on the host, never reach the browser | [README](packages/dsh-provider-usage/README.md) · [Adapter guide](packages/dsh-provider-usage/docs/adapter-guide.md) · [Architecture](docs/architecture/dsh-provider-usage.md) | Published |
+| `@wingsky-1/dsh-lan-proxy` | Access the dsh web UI over LAN: HTTP/HTTPS/WS forwarding + TLS (self-signed / custom certs); dual compression for HTTP (Brotli/gzip adaptive) and WebSocket (permessage-deflate); WS half-open probing keeps mobile backgrounding from going stale; launch-token auto-injection lets LAN devices connect without fetching the token; DNS-rebinding protection + loopback target allowlist | [README](packages/dsh-lan-proxy/README.md) · [Architecture](docs/architecture/dsh-lan-proxy.md) | Published |
+| `@wingsky-1/dsh-mcp-manager` | MCP server manager (stdio / streamable-http): per-working-directory project/global config tiers; project-level MCP collapsed into 4 atomic tools via middleware by default (`middleware: all` folds in global servers, hot-switchable in the settings page); workspace isolation prevents cross-project interference; configs store `${ENV}` references only — no plaintext secrets on disk; runtime registration API for other plugins to inject MCP servers | [README](packages/dsh-mcp-manager/README.md) · [Architecture](docs/architecture/dsh-mcp-manager.md) | Published |
+| `@wingsky-1/dsh-web-file-preview` | Web-side preview for conversation file links: images (lightbox zoom) / Markdown (with Mermaid diagram rendering) / code (25+ languages highlighted) / text / git Diff / sandboxed HTML preview (iframe sandbox, no script execution); @-mention recognition + path fallback search (unique basename match inside the workspace when the referenced path is wrong) | [README](packages/dsh-web-file-preview/README.md) · [Architecture](docs/architecture/dsh-web-file-preview.md) | Published |
+| `@wingsky-1/dsh-verify-isolated` | Isolated-environment browser verification skill for DSH plugin development: temp DSH_HOME + independent profile + independent port + independent browser instance (four-way isolation), one-command launch with automatic cleanup; bundled zero-dependency raw-CDP browser driver (snapshot / click / screenshot / eval), optional isolation audit | [README](packages/dsh-verify-isolated/README.md) · [Architecture](docs/architecture/dsh-verify-isolated.md) | Published |
+| `@wingsky-1/dsh-codegraph` | codegraph local code-graph MCP + worktree development discipline: 8 wrapper tools (impact / call chains / symbol search / file structure, etc.); queries force a sync first to guarantee index freshness and auto-complete projectPath; registered at runtime via mcp-manager | [README](packages/dsh-codegraph/README.md) · [Architecture](docs/architecture/dsh-codegraph.md) | Published (standalone, not in the bundle) |
 
 > **Standalone note**: `@wingsky-1/dsh-codegraph` is published **standalone** and is **not
 > included in `dsh-plugins-all`**; install it separately (it registers the codegraph MCP at
@@ -202,6 +203,8 @@ individual package, then restart.
 ## Security notes
 
 - After installing `dsh-lan-proxy`, HTTP/HTTPS ports are opened on `0.0.0.0` — **every device on your LAN can access your dsh**. Uninstall it when not needed.
+- The launch-token auto-injection of `dsh-lan-proxy` (`injectToken`) is **on by default**: any device on the LAN that can reach the port gets full dsh control without a token (equivalent to trusting the entire LAN — bash passthrough to the host). Enable it only on a trusted intranet; turn it off in the settings card on untrusted segments.
+- When `dsh-web-file-preview` is exposed through `dsh-lan-proxy` or any proxy that forwards external traffic, the loopback fence is bypassed: **LAN devices can preview local files without any credentials (including credential/config files under `~/.dsh`)** — use it only on a trusted LAN, never expose it to public networks.
 - The stdio subprocesses of `dsh-mcp-manager` inherit host privileges; only configure MCP servers you trust.
 - All plugin routes are loopback-fenced (non-loopback → 403, wrong method → 405).
 

@@ -50,12 +50,12 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
 
 | 包 | 功能 |
 |---|---|
-| `@wingsky-1/dsh-notifier` | 审批/完成/错误事件通知（浏览器 Notification + 系统 toast） |
-| `@wingsky-1/dsh-provider-usage` | 多 provider 用量悬浮框（适配器框架，内置 OpenCode Go） |
-| `@wingsky-1/dsh-lan-proxy` | 局域网访问 dsh web UI（HTTP/HTTPS/WS + TLS + HTTP 响应 gzip 压缩） |
-| `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理器（stdio/HTTP，工具注册给模型） |
-| `@wingsky-1/dsh-web-file-preview` | 点击对话文件链接在 web 端预览（图片/文本/Markdown/代码/Diff） |
-| `@wingsky-1/dsh-verify-isolated` | 插件开发隔离验证 skill（临时 DSH_HOME + 独立 profile 双重隔离） |
+| `@wingsky-1/dsh-notifier` | 任务事件通知中心（6 类事件；浏览器 + 系统 toast 双通道 + Bark/Webhook 推送频道） |
+| `@wingsky-1/dsh-provider-usage` | 多 provider 用量统计胶囊（v2 适配器框架：内置 DeepSeek 官方与 OpenCode Go，自写 mjs 接入任意数据源） |
+| `@wingsky-1/dsh-lan-proxy` | 局域网访问 dsh web UI（HTTP/HTTPS/WS 转发 + TLS；Brotli/gzip 与 WebSocket 双压缩 + WS 半开探活 + 启动令牌自动注入） |
+| `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理器（stdio/HTTP；项目级/全局两级配置，项目级经中间层收敛为 4 个原子工具） |
+| `@wingsky-1/dsh-web-file-preview` | 对话文件链接 web 端预览（图片 / Markdown（Mermaid）/ 代码高亮 / 文本 / Diff / HTML 沙箱 + 路径兜底搜索） |
+| `@wingsky-1/dsh-verify-isolated` | 插件开发隔离验证 skill（DSH_HOME / profile / 端口 / 浏览器实例四重隔离 + 自带浏览器驱动） |
 
 <details>
 <summary><b>历史退役说明</b>——dsh-gzip / dsh-idle-archive / dsh-subagent-model-inherit（已退役）</summary>
