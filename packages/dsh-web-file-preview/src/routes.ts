@@ -331,6 +331,34 @@ export function resetServeTokenStore(store?: TokenStore): void {
   tokenStore = store;
 }
 
+// ---- issue #507：交互式预览独立 token 桶 ----
+// 交互态（sandbox="allow-scripts"）的 token 生命周期与静态预览分离：短 TTL、
+// 退出交互态即 release——把「页内脚本可读 location 外泄 token」的窗口压缩到
+// 交互会话期。与静态桶互不干扰（独立 maxTokens，交互桶不挤占静态配额）。
+
+/** 交互桶默认闲置 TTL（比静态桶 30min 短得多；父页心跳每 2min 续命）。 */
+export const INTERACTIVE_TOKEN_TTL_MS = 10 * 60 * 1000;
+/** 交互桶并发上限（比静态桶小：交互态是用户手势 opt-in 的显式动作）。 */
+export const INTERACTIVE_TOKEN_MAX = 16;
+
+let interactiveTokenStore: TokenStore | undefined;
+
+/** 取进程级单例交互 token 存储（issue #507；短 TTL 独立桶）。 */
+export function getInteractiveTokenStore(): TokenStore {
+  if (interactiveTokenStore === undefined) {
+    interactiveTokenStore = createTokenStore({
+      ttlMs: INTERACTIVE_TOKEN_TTL_MS,
+      maxTokens: INTERACTIVE_TOKEN_MAX,
+    });
+  }
+  return interactiveTokenStore;
+}
+
+/** 重置交互单例（测试注入用；生产不调用）。 */
+export function resetInteractiveTokenStore(store?: TokenStore): void {
+  interactiveTokenStore = store;
+}
+
 /** 分配前校验路径：三级定位（resolveFile，issue #486）后必须是真实文件且属于
  * html 渲染组（.html/.htm，按 resolved 判定——入口扩展名可能被搜索纠正）。
  * 返回 absPath（真实绝对）+ viaSearch（是否经 ③ 兜底命中）。 */
@@ -364,6 +392,9 @@ async function resolveAllocTarget(cwd: string | undefined, path: string): Promis
  * realpath 归一后的路径**（评审 P1-1）：HTML 所在目录是符号链接时（macOS
  * /tmp→/private/tmp、软链 worktree、iCloud 挂载均常态），若 rest 用未归一路径
  * 计算会含 `..` 段，serve 侧 realpath 判定必 404。
+ *
+ * issue #507：`mode=interactive` 时分配交互桶 token（短 TTL，独立于静态桶）——
+ * 交互式预览（allow-scripts）的入口；默认（缺省/static）保持现状语义不变。
  */
 export async function allocServeToken(
   res: ServerResponse,
@@ -372,6 +403,7 @@ export async function allocServeToken(
 ): Promise<void> {
   const cwd = queryParam(url, "cwd");
   const path = queryParam(url, "path") ?? "";
+  const interactive = queryParam(url, "mode") === "interactive";
   const target = await resolveAllocTarget(cwd, path);
   if (!target.ok) {
     writeJson(res, target.status, { error: target.error });
@@ -393,7 +425,7 @@ export async function allocServeToken(
     writeJson(res, 404, { error: `not found: ${path}` });
     return;
   }
-  const store = getTokenStore();
+  const store = interactive ? getInteractiveTokenStore() : getTokenStore();
   const token = store.alloc(root);
   if (token === null) {
     // 全部活跃且达上限：拒绝新分配（防泄漏优先于可用性），客户端提示稍后再试。
@@ -407,7 +439,9 @@ export async function allocServeToken(
   // path = 真实 resolved 绝对路径（issue #486：可能经 ③ 搜索纠正，与请求 path
   // 不同；客户端以之为权威 currentPath/basePath）。与 rest 基于同一 realpath 归一
   // 前路径（target.absPath 即 resolveFile 结果），语义与 /file 的 X-File-Path 一致。
-  writeJson(res, 200, { ok: true, token, rest, path: target.absPath });
+  // issue #507：交互态分配独立短 TTL token——响应带 mode 供客户端区分（静态预览的
+  // serveSrc 语义不变；交互 token 退出交互态即 release，泄漏窗口 = 交互会话期）。
+  writeJson(res, 200, { ok: true, token, rest, path: target.absPath, mode: interactive ? "interactive" : "static" });
 }
 
 /** serve 单资源 Content-Type（E1）：html → text/html；其余按 mime 库；未知 octet-stream。 */
@@ -416,6 +450,26 @@ export function serveContentTypeOf(rest: string): string {
   if (ext === "html" || ext === "htm") return "text/html; charset=utf-8";
   const type = mime.getType(ext);
   return type !== null ? type : "application/octet-stream";
+}
+
+// ---- issue #507：serve HTML 响应的 CSP（单一事实源，200/304 同值）----
+// 顶层导航（用户贴地址栏 / 外泄 token 被打开）会绕过 iframe sandbox 属性，只能靠
+// 服务端 CSP 兜底：
+// - static：`sandbox`（无脚本，opaque origin）——serve URL 顶层打开时与沙箱
+//   iframe 同语义；iframe 内与空集 sandbox 属性叠加无害（#549 评审 P0-1）。
+// - interactive：`sandbox allow-scripts` + 资源/连接指令——脚本可执行但 origin
+//   仍 opaque；connect-src 'none' 封页内 fetch/XHR/beacon/WS/ES 外传；img/style/
+//   media/font 放开（CDN 原型场景），属诚实声明的残余信道（img 型 token 外传由
+//   交互 token 短 TTL + 退出即 release 兜底）。
+export const CSP_HTML_STATIC = "sandbox";
+export const CSP_HTML_INTERACTIVE =
+  "sandbox allow-scripts; script-src 'self' 'unsafe-inline'; style-src * 'unsafe-inline'; " +
+  "img-src * data: blob:; media-src * blob:; font-src * data:; connect-src 'none'; " +
+  "form-action 'none'; base-uri 'none'; object-src 'none'; frame-src 'none'";
+
+/** 按 token 模式取 serve text/html 响应的 CSP（#507）。 */
+export function serveCspOf(mode: "interactive" | "static"): string {
+  return mode === "interactive" ? CSP_HTML_INTERACTIVE : CSP_HTML_STATIC;
 }
 
 /**
@@ -437,12 +491,16 @@ export async function serveTokenRoute(
     writeJson(res, 404, { error: "not found" });
     return;
   }
-  const store = getTokenStore();
-  const entry = store.get(token);
+  const interactiveEntry = getInteractiveTokenStore().get(token);
+  const staticEntry = interactiveEntry !== undefined ? undefined : getTokenStore().get(token);
+  const entry = interactiveEntry ?? staticEntry;
+  // issue #507：交互 / 静态双桶查询——交互桶优先（不影响静态桶语义），
+  // unknown/过期 token 一律 404（A3：不泄露区分信息）。
   if (entry === undefined) {
-    writeJson(res, 404, { error: "not found" }); // A3：未知/过期 token 一律 404，不泄露区分信息
+    writeJson(res, 404, { error: "not found" });
     return;
   }
+  const tokenMode: "interactive" | "static" = interactiveEntry !== undefined ? "interactive" : "static";
   // rest 编码攻击面：pathname 保留百分号编码（%2e%2e / %2f 不会先被 URL 解析器还原），
   // 先 decodeURIComponent 还原（失败=非法编码 → 404），再做「.. / .」段与 NUL 拒绝（C2）。
   let decodedRest: string;
@@ -512,6 +570,13 @@ export async function serveTokenRoute(
     "referrer-policy": "no-referrer", // A4：防外部资源收到含 token 的 Referer
     "x-content-type-options": "nosniff", // A4：防 MIME 嗅探/类型混淆
   };
+  // issue #507：serve text/html 响应按 token 模式注入 CSP（200/304 同值）——
+  // static `sandbox`（顶层导航无脚本通道）、interactive `sandbox allow-scripts`
+  // + 连接指令（脚本可执行但 opaque origin，connect-src 'none' 封主动外传）。
+  // 判定基于**解码后**路径（与 #344 F10 Content-Type 同基准）。
+  if (serveContentTypeOf(decodedRest) === "text/html; charset=utf-8") {
+    baseHeaders["content-security-policy"] = serveCspOf(tokenMode);
+  }
   if (req.headers["if-none-match"] === etag) {
     res.writeHead(304, baseHeaders);
     res.end();
@@ -566,7 +631,8 @@ export async function serveTokenRoute(
   });
 }
 
-/** token 显式释放（B5，幂等）：客户端 closeModal 上报；未知 token 也返回 ok（无探测面）。 */
+/** token 显式释放（B5，幂等）：客户端 closeModal 上报；未知 token 也返回 ok（无探测面）。
+ * issue #507：静态 + 交互双桶都释放（幂等，未知 token 无副作用）。 */
 export function releaseServeToken(res: ServerResponse, url: URL): void {
   const token = queryParam(url, "token");
   if (token === undefined || token === "") {
@@ -574,6 +640,7 @@ export function releaseServeToken(res: ServerResponse, url: URL): void {
     return;
   }
   getTokenStore().release(token);
+  getInteractiveTokenStore().release(token);
   writeJson(res, 200, { ok: true });
 }
 
