@@ -691,6 +691,17 @@ const main = async () => {
     const out = sanitizeSettings({ wsCompressEnabled: false, wsCompressPaths: ["/api/remote.mux"] });
     assert.deepEqual(out, { wsCompressEnabled: false, wsCompressPaths: ["/api/remote.mux"] });
   });
+  // issue #552 解耦：wsBridgeEnabled（桥接总开关）为新配置键——sanitize 接受布尔，
+  // 非法拒绝；与 wsCompressEnabled 正交独立保存。
+  check("sanitize 接受 wsBridgeEnabled 布尔", () => {
+    const out = sanitizeSettings({ wsBridgeEnabled: false });
+    assert.deepEqual(out, { wsBridgeEnabled: false });
+    assert.deepEqual(sanitizeSettings({ wsBridgeEnabled: true }), { wsBridgeEnabled: true });
+  });
+  check("sanitize 拒绝非布尔 wsBridgeEnabled", () =>
+    assert.equal(sanitizeSettings({ wsBridgeEnabled: "yes" }), null));
+  check("validateSettings 接受 wsBridgeEnabled", () =>
+    assert.equal(validateSettings({ wsBridgeEnabled: false, wsCompressPaths: ["/x"] }), null));
   check("sanitize 拒绝非字符串数组 paths", () =>
     assert.equal(sanitizeSettings({ wsCompressPaths: [1, 2] }), null));
   // normalizeLegacyWsCompressPaths（#395 M2）：旧默认乱序等价归一化，自定义不动。
@@ -1633,11 +1644,12 @@ const main = async () => {
     check("client 全部 label 经 htmlFor/id 关联且 number 输入带 inputMode", () => {
       const expectedIds = [
         "lp-set-enabled", "lp-set-port", "lp-set-https-enabled", "lp-set-https-port",
-        "lp-set-cert", "lp-set-key", "lp-set-banner", "lp-set-ws-compress",
-        "lp-set-ws-paths", "lp-set-http-compress", "lp-set-level", "lp-set-inject-token",
+        "lp-set-cert", "lp-set-key", "lp-set-banner", "lp-set-ws-bridge",
+        "lp-set-ws-compress", "lp-set-ws-paths", "lp-set-http-compress", "lp-set-level",
+        "lp-set-inject-token",
       ];
       const forIds = [...client.matchAll(/htmlFor:\s*"([^"]+)"/g)].map((m: any) => m[1]);
-      assert.deepEqual([...forIds].sort(), [...expectedIds].sort(), "12 行全部 htmlFor 关联");
+      assert.deepEqual([...forIds].sort(), [...expectedIds].sort(), "13 行全部 htmlFor 关联");
       for (const fid of forIds) {
         assert.ok(new RegExp(`id:\\s*"${fid}"`).test(client), `控件侧存在同名 id「${fid}」`);
       }

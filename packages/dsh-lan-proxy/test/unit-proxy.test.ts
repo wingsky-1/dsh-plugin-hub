@@ -521,4 +521,97 @@ assert.equal(DEFAULT_OPTIONS.targetHost, "127.0.0.1");
   rmSync(certDir, { recursive: true, force: true });
 }
 
+// ===== wsBridgeEnabled 三态路径选择（issue #552 解耦） =====
+// 判别依据 connStats：桥接任一端 close → wsBridgeClosed+1；透传 socket 销毁 →
+// wsPassthroughDestroyed+1。三种配置各建一条 WS 连接后关闭，断言走了预期路径：
+//   a) wsBridge=false + 命中压缩白名单 → 透传（wsPassthroughDestroyed 增长）；
+//   b) wsBridge=true + 未命中白名单 → 仍桥接（wsBridgeClosed 增长）；
+//   c) wsBridge 缺省（旧行为兼容）→ 命中走桥接、未命中走透传。
+{
+  const { WebSocketServer, WebSocket: WsClient } = await import("ws");
+
+  async function mkUpstream(portOffset) {
+    // 端口区间错开前置测试（19850+rand(100) 最大 19949）：取 20100+ 避免碰撞。
+    const upPort = 20100 + portOffset + Math.floor(Math.random() * 60);
+    const upServer = createServer();
+    const wss = new WebSocketServer({ noServer: true });
+    upServer.on("upgrade", (req, socket, head) => {
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        ws.on("message", (data, isBinary) => ws.send(data, { binary: isBinary }));
+      });
+    });
+    await new Promise((r) => upServer.listen(upPort, "127.0.0.1", r));
+    return { upPort, upServer, wss };
+  }
+  /** 经代理建一条 WS 连接、等 open、重试发送帧至回显（上游段 open 竞态：桥接的
+   *  浏览器段 message 监听在 upstreamWs open 后才挂载，过早帧会被丢——重试规避），
+   *  关闭连接返回收到的帧。 */
+  async function openAndEcho(port, path) {
+    const ws = new WsClient(`ws://127.0.0.1:${port}${path}`);
+    const received = [];
+    ws.on("message", (data) => received.push(data.toString()));
+    await new Promise((r, j) => { ws.on("open", r); ws.on("error", j); });
+    for (let i = 0; i < 6; i++) {
+      ws.send(`ping-${path}-${i}`);
+      if (await waitFor(() => received.length > 0, 800)) break;
+    }
+    ws.close();
+    await sleep(100);
+    return received;
+  }
+
+  // a) wsBridge=false：命中白名单路径也走透传（显式放弃桥接/保活）
+  {
+    const u = await mkUpstream(0);
+    const proxy = createLanProxy({
+      host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: u.upPort,
+      wsBridge: { enabled: false },
+      wsCompress: { enabled: true, paths: ["/api/remote.mux"], probeIntervalMs: 0 },
+    });
+    const { httpPort } = await proxy.listen();
+    const got = await openAndEcho(httpPort, "/api/remote.mux");
+    assert.ok(got.some((s) => s.startsWith("ping-/api/remote.mux")), "wsBridge=false 命中白名单仍可转发（透传）");
+    const cs = proxy.connStats();
+    assert.ok(cs.wsPassthroughDestroyed >= 1,
+      `wsBridge=false → 透传计数增长（wsPassthroughDestroyed=${cs.wsPassthroughDestroyed}，bridgeClosed=${cs.wsBridgeClosed}）`);
+    assert.equal(cs.wsBridgeClosed, 0, "wsBridge=false → 不产生桥接连接");
+    await proxy.close(); u.wss.close(); u.upServer.close();
+  }
+
+  // b) wsBridge=true：未命中白名单路径也走桥接（保活基座不依赖压缩白名单）
+  {
+    const u = await mkUpstream(100);
+    const proxy = createLanProxy({
+      host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: u.upPort,
+      wsBridge: { enabled: true },
+      wsCompress: { enabled: true, paths: ["/api/remote.mux"], probeIntervalMs: 0 },
+    });
+    const { httpPort } = await proxy.listen();
+    const got = await openAndEcho(httpPort, "/api/other");
+    assert.ok(got.some((s) => s.startsWith("ping-/api/other")), "wsBridge=true 未命中白名单仍可转发（桥接明文）");
+    const cs = proxy.connStats();
+    assert.ok(cs.wsBridgeClosed >= 1,
+      `wsBridge=true → 桥接计数增长（wsBridgeClosed=${cs.wsBridgeClosed}）`);
+    assert.equal(cs.wsPassthroughDestroyed, 0, "wsBridge=true → 不产生透传连接");
+    await proxy.close(); u.wss.close(); u.upServer.close();
+  }
+
+  // c) wsBridge 缺省（旧行为兼容）：命中白名单走桥接、未命中走透传
+  {
+    const u = await mkUpstream(200);
+    const proxy = createLanProxy({
+      host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: u.upPort,
+      wsCompress: { enabled: true, paths: ["/api/remote.mux"], probeIntervalMs: 0 },
+    });
+    const { httpPort } = await proxy.listen();
+    await openAndEcho(httpPort, "/api/remote.mux");   // 命中 → 桥接
+    await openAndEcho(httpPort, "/api/other");        // 未命中 → 透传
+    const cs = proxy.connStats();
+    assert.ok(cs.wsBridgeClosed >= 1, `缺省 wsBridge：命中白名单走桥接（bridgeClosed=${cs.wsBridgeClosed}）`);
+    assert.ok(cs.wsPassthroughDestroyed >= 1,
+      `缺省 wsBridge：未命中白名单走透传（passthroughDestroyed=${cs.wsPassthroughDestroyed}）`);
+    await proxy.close(); u.wss.close(); u.upServer.close();
+  }
+}
+
 console.log("[unit-proxy] all passed ✓");

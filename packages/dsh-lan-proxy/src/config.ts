@@ -35,7 +35,16 @@ export interface LanProxyConfig {
   targetPort?: number;
   /** 启动时是否向终端打印监听横幅（LAN 访问地址等；默认 true）。 */
   printBanner?: boolean;
-  /** WebSocket 压缩桥接总开关（默认 true）。 */
+  /**
+   * WebSocket 桥接总开关（默认 true，issue #552 解耦）。true = 所有 WS 升级
+   * 一律走「终结 + 桥接」（ws 库自动代答上游 Ping + 30s 半开探活 + 按策略协商
+   * 压缩）——保活成为默认基座能力，移动端切后台不再被上游心跳判死；false =
+   * 走 TCP 字节透传（显式放弃保活与压缩，README 标注移动端断连风险）。
+   * 与 wsCompressEnabled/wsCompressPaths 正交：压缩仅作用于桥接路径，清空
+   * 压缩白名单/关闭压缩不再连带丢失保活。
+   */
+  wsBridgeEnabled?: boolean;
+  /** WebSocket 压缩总开关（默认 true）：仅控制桥接路径上是否协商 permessage-deflate。 */
   wsCompressEnabled?: boolean;
   /** 参与 WebSocket 压缩桥接的路径白名单。 */
   wsCompressPaths?: string[];
@@ -103,9 +112,17 @@ export const Config: z<LanProxyConfig> = z.object({
   /** 启动横幅（终端 console.log；默认开，可经 GUI 设置面板关闭）。 */
   printBanner: z.boolean().default(true),
   /**
-   * WebSocket 压缩桥接总开关（默认开）：对 wsCompressPaths 命中的 WS 升级做
-   * 「终结 + permessage-deflate」——浏览器段压缩、DSH 段明文，大流量 Remote 流
-   * mux 通道（remote.mux）经远程/慢链路访问时显著省流量。
+   * WebSocket 桥接总开关（默认 true，issue #552 解耦）：true = 所有 WS 升级
+   * 一律走「终结 + 桥接」（ws 库自动代答上游 Ping + 30s 半开探活 + 按策略协商
+   * 压缩）——保活成为默认基座能力，移动端切后台不再被上游心跳判死；false =
+   * 走 TCP 字节透传（显式放弃保活与压缩，README 标注移动端断连风险）。
+   * 与 wsCompressEnabled/wsCompressPaths 正交：压缩仅作用于桥接路径。
+   */
+  wsBridgeEnabled: z.boolean().default(true),
+  /**
+   * WebSocket 压缩总开关（默认开）：仅控制桥接路径上是否协商 permessage-deflate
+   * （浏览器段压缩、DSH 段明文），大流量 Remote 流 mux 通道（remote.mux）
+   * 经远程/慢链路访问时显著省流量。关闭压缩不影响桥接保活（issue #552）。
    */
   wsCompressEnabled: z.boolean().default(true),
   /** 参与 WebSocket 压缩桥接的路径白名单（默认：api-gateway 的 Remote 流 mux 端点）。 */
@@ -154,6 +171,7 @@ const FILE_CONFIG_VALIDATORS: Record<string, (v: unknown) => boolean> = {
   targetHost: (v) => typeof v === "string" && isLoopbackTarget(v),
   targetPort: (v) => typeof v === "number" && Number.isInteger(v) && v > 0 && v <= 65535,
   printBanner: (v) => typeof v === "boolean",
+  wsBridgeEnabled: (v) => typeof v === "boolean",
   wsCompressEnabled: (v) => typeof v === "boolean",
   wsCompressPaths: (v) => Array.isArray(v) && v.every((s) => typeof s === "string"),
   wsDeflatePolicy: (v) => {
@@ -230,6 +248,7 @@ const SETTING_FIELD_HINTS: Record<string, string> = {
   targetHost: "需为回环地址或主机名",
   targetPort: "需为 1-65535 的整数",
   printBanner: "需为布尔值",
+  wsBridgeEnabled: "需为布尔值（WS 桥接总开关：true=全部 WS 走桥接保活，false=透传）",
   wsCompressEnabled: "需为布尔值",
   wsCompressPaths: "需为字符串数组（路径白名单）",
   wsDeflatePolicy: "需为 { browser?: boolean, uaDeny?: string[] }（UA 片段数组）",
@@ -281,6 +300,8 @@ export interface ResolvedConfig {
   targetHost: string;
   targetPort?: number;
   printBanner: boolean;
+  /** WS 桥接总开关（issue #552；默认 true，见 apply resolve）。 */
+  wsBridgeEnabled: boolean;
   wsCompressEnabled: boolean;
   wsCompressPaths: readonly string[];
   wsDeflatePolicy: DeflatePolicy;
