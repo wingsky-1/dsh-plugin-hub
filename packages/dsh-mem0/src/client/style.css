@@ -52,6 +52,61 @@
   color: var(--dsw-alias-error, #ef4444);
 }
 
+/* 自愈诊断横幅 */
+.dsh-mem0-diag-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.4;
+  border: 1px solid var(--dsw-alias-warning-border, #fcd34d);
+  background: var(--dsw-alias-warning-bg, #fffbeb);
+  color: var(--dsw-alias-warning-text, #92400e);
+}
+
+.dsh-mem0-code {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.06);
+  font-family: monospace;
+  font-size: 12px;
+}
+
+/* 导航子 Tab */
+.dsh-mem0-tabs {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1, #e5e7eb);
+  padding-bottom: 8px;
+}
+
+.dsh-mem0-tab-btn {
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, #6b7280);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.dsh-mem0-tab-btn:hover {
+  background: var(--dsw-alias-interactive-bg-hover, #f3f4f6);
+  color: var(--dsw-alias-label-primary, #111827);
+}
+
+.dsh-mem0-tab-btn.active {
+  background: var(--dsw-alias-bg-layer-1, #f3f4f6);
+  color: var(--dsw-alias-brand, #2563eb);
+  font-weight: 600;
+}
+
+/* 工具栏 */
 .dsh-mem0-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -68,6 +123,12 @@
   background: var(--dsw-alias-bg-base, #ffffff);
   color: var(--dsw-alias-label-primary, #111827);
   outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.dsh-mem0-select:focus,
+.dsh-mem0-input:focus {
+  border-color: var(--dsw-alias-brand, #2563eb);
 }
 
 .dsh-mem0-input {
@@ -87,6 +148,11 @@
   transition: all 0.15s ease;
 }
 
+.dsh-mem0-btn.small {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
 .dsh-mem0-btn:hover {
   background: var(--dsw-alias-interactive-bg-hover, #e5e7eb);
 }
@@ -101,6 +167,12 @@
   opacity: 0.9;
 }
 
+.dsh-mem0-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 记忆卡片列表 */
 .dsh-mem0-list {
   display: flex;
   flex-direction: column;
@@ -154,4 +226,62 @@
   text-align: center;
   color: var(--dsw-alias-label-secondary, #9ca3af);
   font-size: 13px;
+}
+
+/* 引擎配置面板 */
+.dsh-mem0-config-card {
+  padding: 16px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1, #f9fafb);
+  border: 1px solid var(--dsw-alias-border-l1, #e5e7eb);
+  margin-bottom: 12px;
+}
+
+.dsh-mem0-config-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 12px 0;
+  color: var(--dsw-alias-label-primary, #111827);
+}
+
+.dsh-mem0-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.dsh-mem0-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dsh-mem0-field label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary, #4b5563);
+}
+
+.dsh-mem0-save-row {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.dsh-mem0-save-msg {
+  font-size: 13px;
+  color: var(--dsw-alias-success, #10b981);
+  font-weight: 500;
+}
+
+.dsh-mem0-model-tip {
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  background: var(--dsw-alias-bg-layer-2, #f3f4f6);
+  border: 1px dashed var(--dsw-alias-border-l2, #cbd5e1);
+  color: var(--dsw-alias-label-secondary, #475569);
 }

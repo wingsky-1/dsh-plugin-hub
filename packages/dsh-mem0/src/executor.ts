@@ -5,12 +5,13 @@
  * 1. spawn 本地 Python stdio 子进程（server/mem0_server.py）；
  * 2. 维持 MCP 协议初始化握手（initialize -> notifications/initialized）；
  * 3. 封装 tools/call 发送与请求/响应关联；
- * 4. 异常退避与生命周期清理（disposer kill 子进程，零孤儿进程）。
+ * 4. 细粒度环境探测与自愈诊断（ENOENT, 依赖缺失检测）；
+ * 5. 异常退避与生命周期清理（disposer kill 子进程，零孤儿进程）。
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
-import { dirname, join, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { MemoryExecutor } from "./tool-definitions.ts";
 
@@ -22,16 +23,32 @@ interface PendingRequest {
   timer: NodeJS.Timeout;
 }
 
+export type OfflineReason =
+  | "ready"
+  | "starting"
+  | "python_not_found"
+  | "dependency_missing"
+  | "process_exited"
+  | "idle";
+
+export interface ExecutorStatus {
+  ready: boolean;
+  reason: OfflineReason;
+  detail?: string;
+}
+
 export class StdioMemoryExecutor implements MemoryExecutor {
   private proc?: ChildProcess;
   private reqId = 1;
   private pending = new Map<number, PendingRequest>();
   private ready = false;
+  private reason: OfflineReason = "idle";
+  private detail?: string;
   private scriptPath: string;
   private pythonBin: string;
+  private lastEnvOverrides?: Record<string, string>;
 
   constructor(options?: { scriptPath?: string; pythonBin?: string }) {
-    // 默认定位包内的 server/mem0_server.py
     this.scriptPath = options?.scriptPath ?? resolve(__dirname, "../server/mem0_server.py");
     this.pythonBin = options?.pythonBin ?? "python3";
   }
@@ -40,8 +57,27 @@ export class StdioMemoryExecutor implements MemoryExecutor {
     return this.ready && this.proc !== undefined && !this.proc.killed;
   }
 
+  public getStatus(): ExecutorStatus {
+    return {
+      ready: this.isReady(),
+      reason: this.isReady() ? "ready" : this.reason,
+      detail: this.detail,
+    };
+  }
+
+  public setPythonBin(bin: string): void {
+    const trimmed = bin.trim();
+    if (trimmed && trimmed !== this.pythonBin) {
+      this.pythonBin = trimmed;
+    }
+  }
+
   public async start(envOverrides?: Record<string, string>): Promise<void> {
     if (this.isReady()) return;
+
+    this.lastEnvOverrides = envOverrides;
+    this.reason = "starting";
+    this.detail = undefined;
 
     const env = {
       ...process.env,
@@ -49,29 +85,66 @@ export class StdioMemoryExecutor implements MemoryExecutor {
       ...envOverrides,
     };
 
+    let child: ChildProcess;
     try {
-      this.proc = spawn(this.pythonBin, [this.scriptPath], {
+      child = spawn(this.pythonBin, [this.scriptPath], {
         env,
         stdio: ["pipe", "pipe", "pipe"],
       });
-    } catch (err) {
+      this.proc = child;
+    } catch (err: any) {
       this.ready = false;
+      this.reason = err?.code === "ENOENT" ? "python_not_found" : "process_exited";
+      this.detail = err instanceof Error ? err.message : String(err);
       return;
     }
 
-    if (!this.proc.stdout || !this.proc.stdin) {
+    child.on("error", (err: any) => {
       this.ready = false;
+      if (err?.code === "ENOENT") {
+        this.reason = "python_not_found";
+        this.detail = `Command '${this.pythonBin}' not found. Please install Python 3.10+ or set custom pythonBin.`;
+      } else {
+        this.reason = "process_exited";
+        this.detail = err?.message || String(err);
+      }
+    });
+
+    if (!child.stdout || !child.stdin) {
+      this.ready = false;
+      this.reason = "process_exited";
+      this.detail = "Process stdio streams are not available.";
       return;
     }
 
-    const rl = createInterface({ input: this.proc.stdout });
+    // 监听 stderr 识别缺失模块等关键错误
+    if (child.stderr) {
+      let stderrBuffer = "";
+      child.stderr.on("data", (chunk: Buffer) => {
+        const text = chunk.toString("utf8");
+        stderrBuffer += text;
+        if (stderrBuffer.length > 2000) {
+          stderrBuffer = stderrBuffer.slice(-2000);
+        }
+        if (text.includes("ModuleNotFoundError") || text.includes("No module named")) {
+          this.reason = "dependency_missing";
+          this.detail = "Required python package 'mem0ai' or 'fastmcp' is missing. Run: pip install mem0ai mcp";
+        }
+      });
+    }
+
+    const rl = createInterface({ input: child.stdout });
     rl.on("line", (line) => {
       this.handleLine(line);
     });
 
-    this.proc.on("exit", () => {
+    child.on("exit", (code) => {
       this.ready = false;
       this.proc = undefined;
+      if (this.reason !== "python_not_found" && this.reason !== "dependency_missing") {
+        this.reason = "process_exited";
+        this.detail = `Python process exited with code ${code ?? "null"}.`;
+      }
       for (const req of this.pending.values()) {
         clearTimeout(req.timer);
         req.reject(new Error("Python memory process exited"));
@@ -81,21 +154,30 @@ export class StdioMemoryExecutor implements MemoryExecutor {
 
     // 握手初始化
     try {
-      await this.sendRequest("initialize", {
-        protocolVersion: "2024-11-05",
-        capabilities: {},
-        clientInfo: { name: "dsh-mem0", version: "0.1.0" },
-      }, 10_000);
+      await this.sendRequest(
+        "initialize",
+        {
+          protocolVersion: "2024-11-05",
+          capabilities: {},
+          clientInfo: { name: "dsh-mem0", version: "0.2.0" },
+        },
+        10_000,
+      );
 
       this.sendNotification("notifications/initialized", {});
       this.ready = true;
-    } catch {
+      this.reason = "ready";
+      this.detail = undefined;
+    } catch (err) {
       this.ready = false;
+      this.reason = "process_exited";
+      this.detail = `Handshake failed: ${err instanceof Error ? err.message : String(err)}`;
     }
   }
 
   public stop(): void {
     this.ready = false;
+    this.reason = "idle";
     if (this.proc && !this.proc.killed) {
       try {
         this.proc.kill("SIGTERM");
@@ -109,6 +191,11 @@ export class StdioMemoryExecutor implements MemoryExecutor {
       req.reject(new Error("Executor stopped"));
     }
     this.pending.clear();
+  }
+
+  public async restart(envOverrides?: Record<string, string>): Promise<void> {
+    this.stop();
+    await this.start(envOverrides ?? this.lastEnvOverrides);
   }
 
   public async search(query: string, userId?: string, limit?: number): Promise<string> {
@@ -143,10 +230,14 @@ export class StdioMemoryExecutor implements MemoryExecutor {
   }
 
   private async callTool(name: string, args: Record<string, unknown>): Promise<any> {
-    return this.sendRequest("tools/call", {
-      name,
-      arguments: args,
-    }, 30_000);
+    return this.sendRequest(
+      "tools/call",
+      {
+        name,
+        arguments: args,
+      },
+      30_000,
+    );
   }
 
   private extractContent(result: any): string {
@@ -154,7 +245,9 @@ export class StdioMemoryExecutor implements MemoryExecutor {
     if (typeof result === "string") return result;
     if (Array.isArray(result.content)) {
       return result.content
-        .map((c: any) => (typeof c === "object" && c !== null && typeof c.text === "string" ? c.text : ""))
+        .map((c: any) =>
+          typeof c === "object" && c !== null && typeof c.text === "string" ? c.text : "",
+        )
         .filter(Boolean)
         .join("\n");
     }
@@ -200,7 +293,7 @@ export class StdioMemoryExecutor implements MemoryExecutor {
         }
       }
     } catch {
-      // 忽略无法解析为 JSON 的非协议调试行
+      // 忽略非 JSON 调试输出
     }
   }
 }
