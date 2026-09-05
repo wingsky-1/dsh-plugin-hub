@@ -3,9 +3,9 @@
  * dsh-notifier — 真实 cordis Context 形态测试（issue #290 C/D/E 系列）。
  *
  * 覆盖（qa 独立复核必须；纯宿主逻辑，qa 实测豁免——隔离环境用真实 cordis 复核）：
- * - C-1/C-3：smoke-lib `assertRealCordisContextSemantics` 在真实 cordis 4.0.1
- *   Context（插件 fiber 运行时上下文）上成立——未注入服务访问抛错 / ctx.get
- *   安全返回 / effect disposer 真实清理语义；
+ * - C-1/C-3：smoke-lib `assertRealCordisContextSemantics` 在真实 cordis
+ *   （catalog 锁定版）Context（插件 fiber 运行时上下文）上成立——未注入服务
+ *   访问抛错 / ctx.get 安全返回 / effect disposer 真实清理语义；
  * - D-1/D-2/D-3：真实 Context 派发 `agent/status` 与 `session/event` 可达性契约
  *   （untagged 放行 + {global:true} 防御），fail-closed（硬断言、无 skip/容错）；
  * - A-1/E-1 静态契约断言：src/index.ts 不得直读 `ctx.agents`、isSubagentOf 走
