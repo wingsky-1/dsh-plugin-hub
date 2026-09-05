@@ -2,7 +2,8 @@
  * dsh-provider-usage — 使用趋势纯函数单测（#503 M2.1）。
  *
  * 覆盖方案 §3.5 要求的客户端判定面：范围档位矩阵（粒度 × retentionDays）、
- * 月键标签、部分桶起点、nice 上界、空桶/部分桶的 SVG 形态断言。
+ * 月键标签、部分桶起点、nice 上界、Y 域口径（#589 桶堆叠合计）、
+ * 空桶/部分桶的 SVG 形态断言。
  * 被测对象为 src/client/trend-math.ts 真实源码（esbuild 即时打包，同 unit-detect
  * 先例；trend.ts 顶部 import react，node 测试环境不可直载）。i18n 未装配时回落
  * key 本体（shared/client/i18n.js 行为零变化），SVG 断言不依赖文案。
@@ -36,6 +37,7 @@ const {
   trendRangeOptions,
   trendDefaultRange,
   niceTicks,
+  trendYTicks,
   seriesColor,
   stackedBarsSvg,
   stackedAreasSvg,
@@ -113,6 +115,28 @@ test("niceTicks：按数据最大值动态推导步长与刻度序列（#503 M2.
     assert.ok(top >= v, `top ${top} >= maxV ${v}`);
     assert.equal(ticks[ticks.length - 1], top);
     assert.equal(ticks[0], 0);
+  }
+});
+
+test("trendYTicks：Y 域口径 = 桶堆叠合计 point.total（#589，#571 遗留）", () => {
+  // 多段桶：单段最大 600K、桶合计 1.1M（= 汇总卡「峰值」）——旧单段口径轴顶 600K，
+  // 堆叠柱顶溢出绘图区；正确口径轴顶 1.25M ≥ 峰值
+  const a = trendYTicks([
+    { total: 1_100_000 },
+    { total: 600_000 },
+  ]);
+  assert.equal(a.top, 1_250_000);
+  assert.ok(a.top >= 1_100_000, `轴顶 ${a.top} ≥ 峰值 1.1M`);
+  assert.notEqual(a.top, niceTicks(600_000).top, "与旧单段口径区分（回归护栏）");
+  // 单段桶场景与 niceTicks 直推一致（无堆叠时不改变 #571 已修的步长行为）
+  assert.deepEqual(trendYTicks([{ total: 792_000 }]), niceTicks(792_000));
+  // 全 null series / 空窗口：回退单刻度 [0,1]
+  assert.deepEqual(trendYTicks([{ total: null }, { total: null }]), { ticks: [0, 1], top: 1 });
+  assert.deepEqual(trendYTicks([]), { ticks: [0, 1], top: 1 });
+  // 顶格 ≥ 每桶合计（任意数据形状）
+  for (const v of [792_000, 1_700_000, 12_300]) {
+    const { top } = trendYTicks([{ total: v }, { total: v / 2 }, { total: null }]);
+    assert.ok(top >= v, `top ${top} >= 桶合计 ${v}`);
   }
 });
 

@@ -87,6 +87,20 @@ export function niceTicks(maxV: number): { ticks: number[]; top: number } {
   return { ticks, top };
 }
 
+/**
+ * Y 域刻度（#589）：口径 = 每桶全量段合计 point.total（与汇总卡「峰值」同源）——
+ * 堆叠图每桶的视觉高度是段之和，按单段最大值推域时多段桶的堆叠顶必然溢出轴顶
+ * （#571 遗留：刻度算法已动态化，喂入的最大值仍是 M2 起的单段口径）。
+ * total 含隐藏段 → hidden 不缩轴（兑现评审 P1-5「与汇总卡全段口径一致」）。
+ */
+export function trendYTicks(series: Array<{ total: number | null }>): { ticks: number[]; top: number } {
+  let maxV = 0;
+  for (const point of series) {
+    if (point.total !== null && point.total > maxV) maxV = point.total;
+  }
+  return niceTicks(maxV);
+}
+
 /** 图表系列离散色：前四复用宿主状态色变量（浅/暗跟随），溢出轮转稳定离散色。 */
 const CHART_COLORS: string[] = [
   "var(--dsw-alias-state-info-primary,#4a7dde)",
