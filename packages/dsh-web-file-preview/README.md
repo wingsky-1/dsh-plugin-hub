@@ -11,7 +11,7 @@ DSH 自带的“可点击文件引用”在点击产出文件 chip / 行内文�
 - **图片预览**：`png / jpg / jpeg / gif / webp / svg / avif / bmp`；点击进入灯箱放大/平移（滚轮缩放 + 拖拽）。
 - **Markdown 预览**：`.md / .markdown` 默认渲染预览（marked + GFM 常用能力），可切「原始」；文内 ` ```mermaid ` 代码块渲染为图（首次出现时才懒加载 mermaid 引擎，普通预览首屏零额外开销），语法错误自动回退为代码块并提示。
 - **代码语法高亮**：`js/ts/py/java/…` 等 25+ 语言（highlight.js 子集）高亮，可切「原始」。
-- **HTML 预览（issue #73）**：`.html / .htm` 走「serve 路由 + `<iframe sandbox>`」静态伺服——HTML 与相对路径的 css/js/img 资源按浏览器原生解析正常加载渲染（root = HTML 文件所在目录，root 内任意深度相对引用含 `../` 均可达；根 HTML 引用 root 外资源因 token 前缀语义不可达，属安全边界）；**不执行 `<script>`**（sandbox 无 `allow-scripts`，首版边界）；可切「原始」tab 查看源码。
+- **HTML 预览（issue #73）**：`.html / .htm` 走「serve 路由 + `<iframe sandbox>`」静态伺服——HTML 与相对路径的 css/js/img 资源按浏览器原生解析正常加载渲染（root = HTML 文件所在目录，root 内任意深度相对引用含 `../` 均可达；根 HTML 引用 root 外资源因 token 前缀语义不可达，属安全边界）；**不执行 `<script>`**（sandbox 无 `allow-scripts`，首版边界）；可切「原始」tab 查看源码。**子资源加载依赖 serve 路由的跨站 no-cors 放行（issue #549）**——sandbox iframe 为 opaque origin，其相对路径子资源请求在 Fetch Metadata 下呈 `cross-site`，serve 路由独有放行标签型（no-cors）加载，`fetch`/XHR（cors）与顶层导航（navigate）仍拒绝（详见安全模型）。
 - **文本预览**：`txt / log / csv / conf …` 等宽展示。
 - **Diff 视图（git）**：`.md/代码/文本/HTML` 若在 git 仓库且有未提交变更，顶栏多出第 3 个 **Diff** tab，红/绿展示 `git diff HEAD -- <file>`（未跟踪新文件给提示）。
 - Modal 内动作：**预览/原始/Diff**、**复制路径**、**在新标签打开**、**关闭**（Esc / 点遮罩）。
@@ -115,13 +115,13 @@ curl http://127.0.0.1:3080/api/dsh-file-preview/health
   - **只读伺服、不落盘不拷贝**：token 映射为内存态，进程崩溃即消失；`release` 显式释放 + idle TTL（默认 30min）+ LRU 上限（默认 64，不淘汰活跃预览）三重回收；
   - **iframe sandbox 无脚本**：客户端以 `<iframe sandbox>`（**无 `allow-scripts`、无 `allow-same-origin`**——两者同开隔离失效，禁止）渲染，HTML 内 `<script>` 不执行（首版边界，二期独立红线）；iframe `referrerpolicy="no-referrer"` 防外部资源收到含 token 的 Referer；
   - **`/file` 对 `.html/.htm` 保持 `text/plain`**：若改为 `text/html`，新标签/顶层直接访问 `file?path=foo.html` 会成为同源顶层脚本执行通道——serve 的 `text/html` 只作用于 `/serve` 沙箱路径；
-  - **loopback 围栏不放宽**：serve/alloc/release 与 `/file` 同围栏（非回环 403 / 非 GET 405）；LAN / 移动端 HTML 预览经 `dsh-lan-proxy` 现状穿透，风险沿用上方局域网部署高危告警，插件层不为 HTML 放开围栏；
+  - **loopback 围栏——serve 独有跨站 no-cors 放行（issue #549）**：serve/alloc/release 与 `/file` 默认同围栏（非回环 403 / 非 GET 405）；**serve 路由唯一例外**：放行「`sec-fetch-site: cross-site` 且 `sec-fetch-mode: no-cors`」的标签型子资源请求——sandbox iframe（opaque origin）内相对路径 css/js/img 加载必需（浏览器对 opaque origin 发起的一切请求标记为 cross-site，默认围栏会 403 全部子资源，多文件工程预览失效）。cors（页内 fetch/XHR）、navigate（顶层导航）、缺 mode 头（fail-closed）仍拒绝；alloc/release/`/file` 不放开跨站。LAN / 移动端 HTML 预览经 `dsh-lan-proxy` 现状穿透，风险沿用上方局域网部署高危告警，插件层不为 HTML 放开非 serve 路由围栏；
   - 响应统一 `X-Content-Type-Options: nosniff` + `Referrer-Policy: no-referrer`；不设 `Access-Control-Allow-Origin`（压抑 iframe 内 fetch 数据外联）。
 
 ## 已知限制
 
 - 文本类超过 `maxTextBytes`（默认 20MB）返回 413+截断标记，不再整读全文（大文件流式/虚拟滚动未实现，见 W10 专项）；客户端对 >1MB 的超大文本降级为纯 `<pre>` 截断渲染（原始 tab / 新标签可看全文）。
-- HTML 预览（issue #73）已知限制：iframe 内 `fetch`/XHR 在 opaque origin 下因 CORS 被阻断（属预期，静态子资源加载不受影响）；**根绝对路径**（`<script src="/assets/app.js">`）不支持——浏览器按服务器 origin 解析会请求 dsh web 根，与 token 虚拟伺服不一致（支持需注入 `<base>` = 改写 HTML，属更高风险选项，另行决策）；iframe 内导航（SPA 路由 / 页面跳转）不进 Modal 返回栈；**预览长期不交互可能失效**（serve token idle TTL 30min 兜底回收，关闭 Modal 会显式释放）；**预览期间 root 目录被移动/删除后预览失效**（只读伺服不落盘语义，需重新打开）。
+- HTML 预览（issue #73）已知限制：iframe 内 `fetch`/XHR 在 opaque origin 下被 serve 围栏 403（跨站 cors）且无 ACAO（CORS 读取阻断）——双重重叠阻断属预期，**仅影响页内脚本动态取数，不影响标签型子资源**（css/js/img 经 #549 跨站 no-cors 放行正常加载）；**根绝对路径**（`<script src="/assets/app.js">`）不支持——浏览器按服务器 origin 解析会请求 dsh web 根，与 token 虚拟伺服不一致（支持需注入 `<base>` = 改写 HTML，属更高风险选项，另行决策）；iframe 内导航（SPA 路由 / 页面跳转）不进 Modal 返回栈；**预览长期不交互可能失效**（serve token idle TTL 30min 兜底回收，关闭 Modal 会显式释放）；**预览期间 root 目录被移动/删除后预览失效**（只读伺服不落盘语义，需重新打开）。
 - 可点击范围较宽（凡路径 title / 本地 href / 内联路径文本都可能进预览），`data-ref-chip` 权威分支优先于通用嗅探，避免 `@` 引用误触发。
 - 文件夹 `@` 引用不开预览（仅提示），目录浏览能力不在本插件范畴。
 - client bundle 含 `marked` + `highlight.js` 子集 + `diff2html`，min 后约 550KB（gzip ~120KB）。

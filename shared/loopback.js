@@ -11,11 +11,22 @@
 // 相对路径 import 在 link 安装下保持有效；独立复制插件目录会断链。
 
 /**
- * Loopback 围栏：请求必须来自回环地址 + 回环 Host + 非跨站，否则拒绝。
+ * Loopback 围栏：请求必须来自回环地址 + 回环 Host，且满足跨站/来源约束，
+ * 否则拒绝。默认拒绝一切 `sec-fetch-site: cross-site` 请求（DNS 重绑定 +
+ * 跨站防御）；仅当 `options.allowCrossSiteNoCors` 为 true 时，**显式带
+ * `sec-fetch-mode: no-cors` 的跨站子资源请求**放行（见 issue #549：
+ * sandbox iframe 的 opaque origin 会使其相对路径子资源请求（css/js/img）
+ * 一律呈 cross-site，serve 虚拟伺服需放行 no-cors 标签型加载，但 cors
+ * fetch/XHR 与 navigate 仍拒绝）。
+ *
+ * 跨站放行是安全语义变更点，**只允许 serve 类资源伺服路由使用**（见
+ * dsh-web-file-preview serve 路由）；普通 /api 路由必须保持默认拒绝。
+ *
  * @param {import("node:http").IncomingMessage} request - Node http 请求对象。
+ * @param {{ allowCrossSiteNoCors?: boolean }} [options] - 可选判定参数。
  * @returns {boolean} 是否允许。
  */
-export function isLoopbackRequest(request) {
+export function isLoopbackRequest(request, options = {}) {
   const address = request.socket?.remoteAddress;
   if (address !== "127.0.0.1" && address !== "::1" && address !== "::ffff:127.0.0.1") return false;
   const host = request.headers.host;
@@ -27,7 +38,15 @@ export function isLoopbackRequest(request) {
     return false;
   }
   if (hostUrl.hostname !== "127.0.0.1" && hostUrl.hostname !== "localhost" && hostUrl.hostname !== "[::1]") return false;
-  if (request.headers["sec-fetch-site"] === "cross-site") return false;
+  // 跨站判定（#549）：默认拒绝一切 cross-site；仅 serve 资源路由经
+  // allowCrossSiteNoCors 放行「显式 no-cors」的跨站子资源（标签型加载）。
+  // fail-closed：cross-site 请求缺少 no-cors 标记（含头缺失的防御语义）
+  // 一律拒绝，不猜测放行。
+  if (request.headers["sec-fetch-site"] === "cross-site") {
+    if (!(options.allowCrossSiteNoCors === true && request.headers["sec-fetch-mode"] === "no-cors")) {
+      return false;
+    }
+  }
   const origin = request.headers.origin;
   if (origin === undefined) return true;
   try {

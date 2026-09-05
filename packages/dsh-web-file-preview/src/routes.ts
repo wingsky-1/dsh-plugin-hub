@@ -686,11 +686,17 @@ export function makeRoutes(cfg: PreviewConfig): WebRoute[] {
     },
   };
   // issue #73：HTML 虚拟静态伺服（prefix：/serve/<token>/ 下任意子路径均被接管，A1）。
+  // #549（围栏放宽）：serve 路由独有安全语义变更——sandbox iframe（无
+  // allow-same-origin，opaque origin）内相对路径子资源请求（css/js/img）一律呈
+  // `sec-fetch-site: cross-site`，默认围栏会 403（现状多文件工程静态预览失效）。
+  // 经 guardLoopbackMethod 透传 `{ allowCrossSiteNoCors: true }` **仅放行显式
+  // no-cors 的标签型子资源**；cors fetch/XHR、navigate（顶层导航）与其余所有
+  // 路由仍默认拒绝跨站（语义见 shared/loopback.js）。
   const serveRoute: WebRoute = {
     kind: "prefix",
     path: ROUTES.serve,
     handler: (req: IncomingMessage, res: ServerResponse): Promise<void> | void => {
-      if (!guardLoopbackMethod(req, res, ["GET"])) return;
+      if (!guardLoopbackMethod(req, res, ["GET"], { allowCrossSiteNoCors: true })) return;
       return serveTokenRoute(res, req, new URL(req.url ?? "/", "http://localhost"), cfg);
     },
   };
