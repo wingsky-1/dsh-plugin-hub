@@ -40,6 +40,7 @@ import {
   apply,
   ROUTES,
   candidateWindow,
+  previousClosedWindow,
   ADAPTER_CONTRACT_VERSION,
   OPENCODE_GO_PROVIDER,
   OPENCODE_GO_ADAPTER_ID,
@@ -1682,9 +1683,8 @@ console.log("[smoke] #503 trend 挂接 + /trend 集成断言全部通过 ✓");
   }
 
   // f. 前置：合成一点趋势数据（生成「不入统计」断言的对照快照）
-  // #532：事件时间必须落在 daily 候选窗口内（runDay 依锚点可为昨日或今日；空窗口
-  // 现在会走 noData 短路，不再调模型）——取窗口 endDay 当日 12:00 本地时间合成。
-  const dueDaily = candidateWindow("daily", savedCfg.config, Date.now());
+  // 事件时间必须落在手动生成的闭环窗口内（昨日全天；空窗口会走 noData 短路不再调模型）
+  const dueDaily = previousClosedWindow("daily", savedCfg.config, Date.now());
   const [wy, wm, wd] = dueDaily.endDay.split("-").map(Number);
   const t = new Date(wy, wm - 1, wd, 12, 0, 0).getTime();
   const sess = { id: "sess-report" };
@@ -1730,11 +1730,11 @@ console.log("[smoke] #503 trend 挂接 + /trend 集成断言全部通过 ✓");
       ],
     });
     await apply(xssCtx.ctx, { ...ISOLATED_CONFIG, historyDir: join(xssDir, "hist") });
-    // #532：空窗口会 noData 短路不落盘——先向本 ctx 合成落在 daily 候选窗口内的用量
+    // #532：空窗口会 noData 短路不落盘——先向本 ctx 合成落在 daily 闭环窗口内的用量
     {
       const xssCfgRoute = xssCtx.routes.find((r) => r.path === ROUTES.reportConfig);
       const xssCfg = await callHandler(xssCfgRoute, fakeReq({ url: ROUTES.reportConfig }));
-      const xssDue = candidateWindow("daily", xssCfg.config, Date.now());
+      const xssDue = previousClosedWindow("daily", xssCfg.config, Date.now());
       const [xy, xm, xd] = xssDue.endDay.split("-").map(Number);
       const xt = new Date(xy, xm - 1, xd, 12, 0, 0).getTime();
       const xssSess = { id: "sess-xss" };

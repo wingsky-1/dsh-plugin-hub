@@ -54,7 +54,7 @@ import { TrendTracker } from "./trend/index.ts";
 import { metricValue } from "./trend/aggregator.ts";
 import { sumToken, type TrendCell } from "./trend/types.ts";
 // #503 会话用量报告（M3 接线）：调度/生成/落盘/路由
-import { candidateWindow, presetLastRunForNewlyEnabled, type DueReport } from "./report/schedule.ts";
+import { candidateWindow, presetLastRunForNewlyEnabled, previousClosedWindow, type DueReport } from "./report/schedule.ts";
 import { normalizeReportConfig, promptFor, readReportConfig, writeReportConfig, DEFAULT_PROMPTS, type ReportConfig, type ReportPeriod } from "./report/config.ts";
 import { ReportScheduler, readLastRun, writeLastRun } from "./report/scheduler.ts";
 import { generateReport, buildStatsSnapshot, type ReportMeta, type ReportMetaSummary, type ReportStatsSnapshot } from "./report/generate.ts";
@@ -1266,8 +1266,8 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       if (typeof period !== "string" || !REPORT_PERIODS.has(period as ReportPeriod)) {
         return writeJson(res, 400, { error: "invalid-period" });
       }
-      // 候选窗口（不检查 enabled：手动生成为用户主动行为；UI 空态亦引导「立即手动生成」）
-      const due = candidateWindow(period as ReportPeriod, reportCfg, Date.now());
+      // 手动生成恒定锚定已闭环的上一完整周期（日报=昨天全天，消灭凌晨漂移；不检查 enabled）
+      const due = previousClosedWindow(period as ReportPeriod, reportCfg, Date.now());
       try {
         const meta = await reportMutex.runExclusive(() => runDue(due));
         // 成功推进 lastRun（读改写：调度器同窗不再重复生成——防 tick 双生成）

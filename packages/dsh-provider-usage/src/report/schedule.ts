@@ -2,9 +2,9 @@
  * dsh-provider-usage/report — 触发调度纯函数（#503 M3）。
  *
  * 语义（单一模型，三期统一）：
- * - 每期有「锚点触发时刻」：daily=当日 HH:MM；weekly=周起点日 HH:MM（覆盖紧邻的
- *   前 7 天）；monthly=月内 dayOfMonth 日 HH:MM（覆盖上一自然月）；
- * - 候选窗口 = 最近一次「锚点 <= now」的触发；其覆盖区间由 runAt 唯一推导；
+ * - 每期有「锚点触发时刻」：daily=当日 HH:MM（覆盖昨日全天）；weekly=周起点日 HH:MM（覆盖紧邻的前 7 天）；
+ *   monthly=月内 dayOfMonth 日 HH:MM（覆盖上一自然月）；
+ * - 候选窗口 = 最近一次「锚点 <= now」的触发；其覆盖区间由 runAt 唯一推导（均为已闭环的上一完整周期）；
  * - 幂等：lastRun[period] 存已生成的窗口键（日期序单调）；候选键 <= lastRun 即已扣期；
  * - 补跑：进程停机跨过锚点后重启，候选键 > lastRun 即自然补生成（只补最近一个，
  *   更早窗口不追溯——文档化口径）；
@@ -75,9 +75,11 @@ function addDays(dateKey: string, n: number): string {
  */
 export function candidateWindow(period: ReportPeriod, cfg: ReportConfig, now: number): DueReport {
   if (period === "daily") {
-    // 候选锚点日：now 已过当日时刻 → 当日（报告覆盖今天至今）；未过 → 昨日（全天）
-    const runDay = todayAt(now, cfg.daily.time) <= now ? dayKey(now) : addDays(dayKey(now), -1);
-    return { period, key: runDay, startDay: runDay, endDay: runDay };
+    // 候选锚点日：最近一次 <= now 的触发日（已过当日时刻为今日，未过为昨日）
+    const anchorDay = todayAt(now, cfg.daily.time) <= now ? dayKey(now) : addDays(dayKey(now), -1);
+    // 覆盖上一自然日（昨日全天）：[anchorDay-1, anchorDay-1]
+    const targetDay = addDays(anchorDay, -1);
+    return { period, key: targetDay, startDay: targetDay, endDay: targetDay };
   }
   if (period === "weekly") {
     const runAt = lastWeekAnchor(now, cfg.weekly.weekStartsOn, cfg.weekly.time);
@@ -92,6 +94,34 @@ export function candidateWindow(period: ReportPeriod, cfg: ReportConfig, now: nu
   // 覆盖上一自然月
   const start = new Date(runDate.getFullYear(), runDate.getMonth() - 1, 1);
   const end = new Date(runDate.getFullYear(), runDate.getMonth(), 0); // 本月 0 日 = 上月末
+  const key = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}`;
+  return { period, key, startDay: dayKey(start.getTime()), endDay: dayKey(end.getTime()) };
+}
+
+/**
+ * 已闭环的上一完整周期窗口（手动生成专用：恒定取已结束的上一周期，不受定时触发时刻是否到达的约束）。
+ * - daily：恒为昨日全天 [today-1, today-1]；
+ * - weekly：恒为上一完整周（覆盖距今最近已闭环的前 7 天）；
+ * - monthly：恒为上一完整自然月 [上月1日, 上月末]。
+ */
+export function previousClosedWindow(period: ReportPeriod, cfg: ReportConfig, now: number): DueReport {
+  if (period === "daily") {
+    const yesterday = addDays(dayKey(now), -1);
+    return { period, key: yesterday, startDay: yesterday, endDay: yesterday };
+  }
+  if (period === "weekly") {
+    const d = new Date(now);
+    const back = (d.getDay() - cfg.weekly.weekStartsOn + 7) % 7;
+    d.setDate(d.getDate() - back);
+    const currentWeekStart = dayKey(d.getTime());
+    const start = addDays(currentWeekStart, -7);
+    const end = addDays(currentWeekStart, -1);
+    return { period, key: start, startDay: start, endDay: end };
+  }
+  // monthly
+  const d = new Date(now);
+  const start = new Date(d.getFullYear(), d.getMonth() - 1, 1);
+  const end = new Date(d.getFullYear(), d.getMonth(), 0);
   const key = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}`;
   return { period, key, startDay: dayKey(start.getTime()), endDay: dayKey(end.getTime()) };
 }
