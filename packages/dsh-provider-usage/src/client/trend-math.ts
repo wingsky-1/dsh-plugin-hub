@@ -224,10 +224,13 @@ export function stackedAreasSvg(opts: { bars: RenderBar[]; gran: TrendGran; yMax
     });
     flush();
   }
-  // 交互命中区与柱状同构（整列透明 rect，data-bucket 委托）
-  bars.forEach((_, i) => {
+  // 交互命中区与柱状同构（整列透明 rect，data-bucket 委托）；空桶同样给虚位（两形态一致）
+  bars.forEach((b, i) => {
     const cx = SVG_PL + gap * i + gap / 2;
-    parts.push(bucketGroup(i, cx - gap / 2, gap, ""));
+    const inner = b.none
+      ? `<rect x="${(cx - Math.max(1.5, Math.min(9, gap * 0.31))).toFixed(1)}" y="${(SVG_H - SVG_PB - 2).toFixed(1)}" width="${Math.max(3, Math.min(18, gap * 0.62)).toFixed(1)}" height="2" rx="1" style="fill:var(--dsw-alias-label-tertiary,#9aa0ab);fill-opacity:.45"/>`
+      : "";
+    parts.push(bucketGroup(i, cx - gap / 2, gap, inner));
   });
   parts.push(...axisLabelParts(bars, gran));
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SVG_W} ${SVG_H}" role="img" aria-label="${escHtml(t("trendTitle"))}" style="width:100%;height:auto;display:block">${parts.join("")}</svg>`;
