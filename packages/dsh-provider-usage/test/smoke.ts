@@ -13,7 +13,7 @@
 import { readFileSync, mkdtempSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertClientProductContract, assertClientSourceContract } from "../../../test/smoke-lib.ts";
+import { assertClientProductContract, assertClientSourceContract, clientRouteLiterals } from "../../../test/smoke-lib.ts";
 import { tmpdir } from "node:os";
 import assert from "node:assert/strict";
 import { callHandler, pollUntil } from "./helpers.ts";
@@ -661,6 +661,20 @@ export function formatPanel() { return "<p>x</p>"; }
   // 断言入参为包目录（helper 自行读 lib/client.js）
   assertClientSourceContract(pkgDir);
   assertClientProductContract(pkgDir);
+
+  // #524：客户端产物路由字面量与 ROUTES 全集严格一致断言（纵深防御 fallback 漂移）
+  {
+    const clientCode = readFileSync(join(pkgDir, "lib", "client.js"), "utf8");
+    const extracted = clientRouteLiterals(
+      clientCode,
+      "[\"'`](/api/dsh-provider-usage/[a-zA-Z0-9_/.-]+)[\"'`]",
+    );
+    assert.deepEqual(
+      extracted.sort(),
+      Object.values(ROUTES).sort(),
+      "客户端产物路由字面量必须与 ROUTES 全集严格完全一致（无缺失、无多余）",
+    );
+  }
 
   // i18n 接入哨兵（issue #348）：NS / register / bind / slots locale 参数 / 双语字典进产物
   {
