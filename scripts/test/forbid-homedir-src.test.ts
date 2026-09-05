@@ -140,6 +140,65 @@ test('豁免三态：豁免注释缺 issue 号 → 不算合法豁免，按违�
   assert.match(r.stderr, /违规 1 /)
 })
 
+test('F1：字符串字面量里的伪豁免注释不生效（真实注释词法识别）→ 判违规', () => {
+  const dir = fixture([{
+    rel: 'a.ts',
+    content: 'import { homedir } from "node:os"\nconst msg = "// dsh-gate:allow-homedir #999 字符串伪造"\nexport const p = homedir()\n',
+  }])
+  const r = run(dir)
+  assert.equal(r.status, 1, r.stderr)
+  assert.match(r.stderr, /违规 1 /)
+  assert.ok(!r.stderr.includes('字符串伪造'), '字符串内容不得被当作豁免理由')
+})
+
+test('F2：WHITELIST 条目文件存在但本次零命中 → 报已腐烂（非死代码）', () => {
+  // 构造与真实 WHITELIST 相对路径同形的文件，但内容无任何 HOME API 命中
+  const dir = mkdtempSync(join(tmpdir(), 'forbid-homedir-rot-'))
+  mkdirSync(join(dir, 'packages/dsh-provider-usage/src'), { recursive: true })
+  writeFileSync(join(dir, 'packages/dsh-provider-usage/src/apply.ts'),
+    'export const clean = 1\n') // WHITELIST 含此文件，但零命中
+  try {
+    const r = spawnSync(process.execPath, [SCRIPT, '--root', dir], { encoding: 'utf8' })
+    assert.equal(r.status, 1, r.stderr)
+    assert.match(r.stderr, /已腐烂，应删除条目/)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('F3：dynamic import 命名空间形态（await import("node:os")）→ 判违规', () => {
+  const dir = fixture([{
+    rel: 'a.ts',
+    content: 'export async function g() {\n  const os = await import("node:os")\n  return os.homedir()\n}\n',
+  }])
+  const r = run(dir)
+  assert.equal(r.status, 1, r.stderr)
+  assert.match(r.stderr, /os\.homedir/)
+})
+
+test('F4：参数/局部同名遮蔽不误报（esbuild 自动重命名，锁定行为）', () => {
+  const dir = fixture([{
+    rel: 'a.ts',
+    content: 'import { homedir } from "node:os"\nimport * as os from "node:os"\n'
+      + 'export function g(homedir: () => string) { return homedir() }\n'
+      + 'export const x = () => { const os = { homedir: () => "x" }; return os.homedir() }\n',
+  }])
+  const r = run(dir)
+  assert.equal(r.status, 0, r.stderr)
+  assert.match(r.stdout, /无 HOME 来源 API 直连/)
+})
+
+test('P3：--root=<path> 等号形态可用', () => {
+  const dir = fixture([{ rel: 'a.ts', content: 'export const a = 1\n' }])
+  try {
+    const r = spawnSync(process.execPath, [SCRIPT, `--root=${dir}`], { encoding: 'utf8' })
+    assert.equal(r.status, 0, r.stderr)
+    assert.match(r.stdout, /OK（扫描 1 文件/)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('fail-closed：语法损坏文件（TS 不可解析）→ exit 1 且指明解析失败', () => {
   const dir = fixture([{
     rel: 'broken.ts',

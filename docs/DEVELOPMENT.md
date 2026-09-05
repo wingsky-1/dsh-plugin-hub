@@ -213,8 +213,9 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
   以证明写面）。
 - **门禁（已落地）**：`scripts/gate/forbid-homedir-src.mjs`（B5，#517）以 AST 扫描
   禁止插件 src 直连 HOME 来源 API（`os.homedir` / `os.userInfo` / `process.env.HOME` /
-  `untildify`，含 import 别名与 `os["homedir"]` 中括号混淆形态；`.ts/.mts/.mjs` 全覆盖，
-  解析失败一律 fail-closed 判红）。合法例外须**双源豁免**：调用点紧邻注释
+  `untildify`，含 import 别名、`os["homedir"]` 中括号混淆形态与动态 import
+  命名空间形态；`.ts/.mts/.mjs` 全覆盖，解析失败一律 fail-closed 判红）。合法例外
+  须**双源豁免**：调用点紧邻真实注释（`//` 后在字符串字面量之外）
   `// dsh-gate:allow-homedir <理由含 #NNN>` + 脚本内 WHITELIST 文件级清单，缺一判红。
   本地运行 `pnpm gate:homedir`；CI 在 repo-gate 段执行。解析器说明：typescript 7 已移除
   经典 JS AST API，扫描链为 esbuild 剥类型 + acorn estree 解析 + node:module

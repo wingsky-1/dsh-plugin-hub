@@ -426,7 +426,7 @@ test('#423: 变异测试单份维护——禁 *.src.test.ts 回潮 + lib→src h
   }
 })
 
-test('#517 B5: ci.yml homedir 门禁——forbid-homedir-src 步骤在 repo-gate 段 + 根 scripts 入口', () => {
+test('#517 B5: ci.yml homedir 门禁——Forbid homedir 步骤存在并调 forbid-homedir-src.mjs + 根 scripts 入口', () => {
   assert.ok(CI.includes('Forbid homedir in src'),
     'ci.yml repo-gate 必须含 Forbid homedir in src 步骤（#517 B5 防回归）')
   assert.ok(CI.includes('run: node scripts/gate/forbid-homedir-src.mjs'),

@@ -13,9 +13,15 @@
  *   - `os.homedir` / `os["homedir"]`（命名空间 import，含中括号混淆形态与值引用）；
  *   - `os.userInfo()`（homedir 的别名通道：`.homedir` 字段同为 HOME 来源）；
  *   - `process.env.HOME` / `process.env["HOME"]`；
- *   - `untildify(...)`（default import，含别名）。
- * 已知局限（不为此增加复杂度，本仓无此形态）：`const { HOME } = process.env`
- * 解构形态、`const f = untildify` 值传递别名。新增豁免机制兜底。
+ *   - `untildify(...)`（default import，含别名）；
+ *   - 动态 import 命名空间形态：`const os = await import("node:os")` → `os.homedir()`
+ *     （F3，含 `(await import("node:os")).homedir()` 直接形态）。
+ * 已知局限（不为此增加复杂度，本仓无此形态；新增豁免机制兜底）：named 解构
+ * `const { homedir } = await import("node:os")`、`const { HOME } = process.env`
+ * 解构形态、`const f = untildify` 值传递别名。
+ * 遮蔽免疫依赖 esbuild transform 对遮蔽绑定的自动重命名（同名 import 的参数/
+ * 局部 const 会被改为 homedir2/os2 等，名称级检测不误报）——由自测中
+ * 遮蔽回归用例锁定，若 esbuild 升级改变此行为，自测会先行暴露（F4）。
  *
  * 豁免双源（缺一判红，三态输出）：
  *   1. 调用点紧邻注释：命中行行尾或上一行 `// dsh-gate:allow-homedir <理由含 #NNN>`；
@@ -53,7 +59,37 @@ const WHITELIST = new Map([
 ]);
 
 const EXEMPT_MARK = "dsh-gate:allow-homedir";
-const EXEMPT_RE = new RegExp(`//\\s*${EXEMPT_MARK}\\s+([^\\n]*#\\d+[^\\n]*)`);
+const EXEMPT_RE = new RegExp(`\\s*${EXEMPT_MARK}\\s+([^\\n]*#\\d+[^\\n]*)`);
+
+/**
+ * 提取行内的「真实」行注释文本——跳过字符串字面量中的 `//`（F1：纯文本正则
+ * 会把 `const msg = "// dsh-gate:allow-homedir #999 伪造"` 误判为豁免标记，
+ * 使白名单文件内“逐调用点”粒度失效）。轻量词法：跟踪单/双引号与反引号
+ * （含转义；模板字符串内不做嵌套插值解析，本仓豁免注释行不依赖该场景）。
+ * 行内无字符串外的 `//` 注释 → 返回 null。
+ */
+function lineCommentText(line) {
+  let i = 0;
+  const n = line.length;
+  while (i < n) {
+    const ch = line[i];
+    if (ch === '"' || ch === "'" || ch === "`") {
+      const q = ch;
+      i++;
+      while (i < n) {
+        if (line[i] === "\\") { i += 2; continue; }
+        if (line[i] === q) { i++; break; }
+        i++;
+      }
+      continue;
+    }
+    if (ch === "/" && line[i + 1] === "/") {
+      return line.slice(i + 2);
+    }
+    i++;
+  }
+  return null;
+}
 
 /** 递归收集各包 src 目录下全部 .ts/.mts/.mjs（含未跟踪；跳过 d.mts 与 test 文件）。 */
 function collectSrcFiles(root) {
@@ -68,7 +104,7 @@ function collectSrcFiles(root) {
     for (const e of entries) {
       const p = join(dir, e.name);
       if (e.isDirectory()) walk(p);
-      else if (e.isFile() && /\.(ts|mts|mjs)$/.test(e.name) && !/\.d\.mts$/.test(e.name) && !/\.test\./.test(e.name)) {
+      else if (e.isFile() && /\.(ts|mts|mjs)$/.test(e.name) && !/\.d\.(ts|mts)$/.test(e.name) && !/\.test\./.test(e.name)) {
         hits.push(p);
       }
     }
@@ -133,14 +169,30 @@ function staticProp(member) {
  */
 function detectInAst(ast) {
   const { homedirNamed, userInfoNamed, untildifyNamed, osNamespaces } = collectImports(ast);
+  const dynOsNamespaces = new Set(); // F3：const os = await import("node:os") 动态绑定
   const hits = [];
   const push = (node, api) => hits.push({ generatedLine: node.loc.start.line - 1, generatedColumn: node.loc.start.column, api, text: "" });
+  /** 提取动态 import 的模块源（import("x") / await import("x")），非动态形态返回 null。 */
+  const dynSource = (node) => {
+    let inner = node;
+    if (inner?.type === "AwaitExpression") inner = inner.argument;
+    if (inner?.type === "ImportExpression") return inner.source?.value ?? null;
+    if (inner?.type === "CallExpression" && inner.callee?.type === "Import") return inner.arguments[0]?.value ?? null;
+    return null;
+  };
   (function walk(node) {
     if (!node || typeof node.type !== "string") return;
+    if (node.type === "VariableDeclarator" && node.id.type === "Identifier" && node.init) {
+      const src = dynSource(node.init);
+      if (src === "node:os" || src === "os") dynOsNamespaces.add(node.id.name);
+    }
     if (node.type === "MemberExpression") {
       const prop = staticProp(node);
+      // 动态 import 直接形态：os.homedir()（F3）
+      const dynSrc = dynSource(node.object);
+      if (dynSrc !== null && (prop === "homedir" || prop === "userInfo")) push(node, `os.${prop}`);
       // os.homedir / os["homedir"] / os.userInfo / os["userInfo"]（值引用与调用同罪）
-      if (node.object.type === "Identifier" && osNamespaces.has(node.object.name) && (prop === "homedir" || prop === "userInfo")) {
+      if (node.object.type === "Identifier" && (osNamespaces.has(node.object.name) || dynOsNamespaces.has(node.object.name)) && (prop === "homedir" || prop === "userInfo")) {
         push(node, `os.${prop}`);
       }
       // process.env.HOME / process.env["HOME"]
@@ -171,11 +223,13 @@ function detectInAst(ast) {
   return hits;
 }
 
-/** 命中行的豁免注释匹配：命中 TS 行行尾或上一行含合法豁免标记（理由含 #NNN）。 */
+/** 命中行的豁免注释匹配：命中 TS 行行尾或上一行的**真实**注释含合法豁免标记。 */
 function hasExemption(tsLines, lineIdx) {
   const near = [tsLines[lineIdx], tsLines[lineIdx - 1]].filter((l) => l !== undefined);
   for (const line of near) {
-    const m = line.match(EXEMPT_RE);
+    const comment = lineCommentText(line);
+    if (comment === null) continue;
+    const m = comment.match(EXEMPT_RE);
     if (m) return m[1].trim();
   }
   return null;
@@ -196,10 +250,10 @@ async function scanFile(file) {
   }
   const ast = acorn.parse(js, { ecmaVersion: "latest", sourceType: "module", locations: true });
   const rawHits = detectInAst(ast);
-  if (rawHits.length === 0) return [];
+  if (rawHits.length === 0) return { hits: [], tsLines };
   // 映射回 TS 原文行号（.mjs 本身即原文）
   const map = mapJson ? new SourceMap(JSON.parse(mapJson)) : null;
-  return rawHits.map((h) => {
+  const hits = rawHits.map((h) => {
     let lineIdx = h.generatedLine;
     if (map) {
       const entry = map.findEntry(h.generatedLine, h.generatedColumn);
@@ -208,11 +262,18 @@ async function scanFile(file) {
     const text = (tsLines[lineIdx] ?? "").trim().slice(0, 90);
     return { line: lineIdx + 1, api: h.api, text };
   });
+  return { hits, tsLines };
 }
 
 async function main() {
-  const rootArgIdx = process.argv.indexOf("--root");
-  const root = rootArgIdx !== -1 ? process.argv[rootArgIdx + 1] : ROOT;
+  const argv = process.argv;
+  const eq = argv.find((a) => a.startsWith("--root="));
+  const spacedIdx = argv.indexOf("--root");
+  const root = eq
+    ? eq.slice("--root=".length)
+    : spacedIdx !== -1
+      ? argv[spacedIdx + 1]
+      : ROOT;
   const files = collectSrcFiles(root);
   if (files.length === 0) {
     console.error("forbid-homedir-src: 未发现任何扫描目标（packages/*/src 空，fail-closed）");
@@ -222,18 +283,21 @@ async function main() {
   const badExemptions = [];
   const legitExemptions = [];
   const parseFailures = [];
+  const hitRels = new Set(); // 本次确有命中的 WHITELIST 文件（F2：反向校验判定面）
   for (const file of files) {
     const rel = relative(root, file).split(sep).join("/");
-    let hits;
+    let result;
     try {
-      hits = await scanFile(file);
+      result = await scanFile(file);
     } catch (e) {
       parseFailures.push(`${rel}: ${String(e.message).slice(0, 120)}`);
       continue;
     }
+    const { hits, tsLines } = result;
+    if (hits.length > 0 && WHITELIST.has(rel)) hitRels.add(rel);
     const whitelisted = WHITELIST.has(rel);
     for (const h of hits) {
-      const reason = hasExemption(readFileSync(file, "utf8").split("\n"), h.line - 1);
+      const reason = hasExemption(tsLines, h.line - 1);
       if (reason && whitelisted) {
         legitExemptions.push(`${rel}:${h.line} [${h.api}] 豁免理由：${reason}`);
       } else if (reason && !whitelisted) {
@@ -245,14 +309,9 @@ async function main() {
       }
     }
   }
-  // WHITELIST 反向校验（防清单腐烂）：磁盘上存在、且本次确有命中记录的文件
-  // 才算「活的」豁免条目——文件不存在（--root fixture / 包已整体移除）不判腐烂，
-  // 由其包目录存在与否决定；文件存在但全文件零命中 = 条目已失效，报非法豁免。
-  const hitRels = new Set();
-  for (const f of files) {
-    const rel = relative(root, f).split(sep).join("/");
-    if (WHITELIST.has(rel)) hitRels.add(rel);
-  }
+  // WHITELIST 反向校验（防清单腐烂，F2）：磁盘上存在、且本次**确有命中**的文件
+  // 才算「活的」豁免条目——文件不存在（--root fixture / 包已整体移除）不判腐烂；
+  // 文件存在但本次零命中 = 条目已失效（豁免调用点已删/重构而清单未清），报非法豁免。
   for (const k of WHITELIST.keys()) {
     const onDisk = existsSync(join(root, k));
     if (onDisk && !hitRels.has(k)) badExemptions.push(`${k}: WHITELIST 条目指向的文件本次零命中（已腐烂，应删除条目）`);
