@@ -85,10 +85,6 @@ importers:
         version: link:../dsh-mcp-manager
 
   packages/dsh-lan-proxy:
-    dependencies:
-      schemastery:
-        specifier: ^3.18.0
-        version: 3.18.0
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: 'catalog:'
@@ -114,6 +110,9 @@ importers:
       http-proxy:
         specifier: 1.18.1
         version: 1.18.1(debug@4.4.3(supports-color@7.2.0))
+      schemastery:
+        specifier: ^3.18.0
+        version: 3.18.0
       selfsigned:
         specifier: ^2.4.1
         version: 2.4.1
