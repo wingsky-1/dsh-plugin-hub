@@ -60,6 +60,8 @@ export interface TrendWindowSummary {
   top: { provider: string; model: string | null; value: number } | null;
   /** 上一同等窗口指标总量（环比基准；无数据 null）。 */
   prevTotal: number | null;
+  /** 上一窗口数据是否完整（起点早于数据起点 = false；false 时环比不可比，#503 M2.1）。 */
+  prevComplete: boolean;
 }
 
 /** 未压实行（内存持有；flush 时持久化，压实后移除）。 */
@@ -367,10 +369,12 @@ export class TrendAggregator {
     now: number,
   ): { series: TrendStackPoint[]; providers: Array<{ provider: string; model: string | null }> } {
     const keys = this.granKeys(n, gran, now);
+    // 桶日区间一次算全（评审 P1-2：原实现对每桶在 days 日循环内重复调 granRange）
+    const ranges = new Map(keys.map((k) => [k, this.granRange(k, gran)] as const));
     const series: TrendStackPoint[] = keys.map((key) => {
       const partsMap = new Map<string, TrendStackPart>();
+      const range = ranges.get(key)!;
       for (const [day, models] of this.days) {
-        const range = this.granRange(key, gran);
         if (day < range.start || day > range.end) continue;
         for (const [p, cells] of models) {
           if (provider !== undefined && p !== provider) continue;
@@ -400,13 +404,18 @@ export class TrendAggregator {
     return { series, providers: [...legend.values()] };
   }
 
-  /** 窗口摘要（当前 n 桶 + 上一同等窗口环比基准）。 */
+  /**
+   * 窗口摘要（当前 n 桶 + 上一同等窗口环比基准）。
+   * @param stackSeries 可选传入路由已算好的堆叠序列（n/gran/metric/provider 必须与本
+   *   调用一致）——复用峰值/Top 遍历，消除单请求双算（评审 P1-2）；缺省时内部自算。
+   */
   windowSummary(
     n: number,
     gran: TrendGranularity,
     metric: TrendMetric,
     provider: string | undefined,
     now: number,
+    stackSeries?: TrendStackPoint[],
   ): TrendWindowSummary {
     const keys = this.granKeys(n, gran, now);
     const curRange = {
@@ -426,7 +435,8 @@ export class TrendAggregator {
     let peakKey: string | null = null;
     let peakVal = -1;
     let top: { provider: string; model: string | null; value: number } | null = null;
-    const series = this.seriesStacked(n, gran, metric, provider, false, now).series;
+    // 复用路由已算的 stack 序列（评审 P1-2：消除单请求双算；缺省自算保持独立可用）
+    const series = stackSeries ?? this.seriesStacked(n, gran, metric, provider, false, now).series;
     for (const point of series) {
       if (point.total !== null && point.total > peakVal) {
         peakVal = point.total;
@@ -452,6 +462,8 @@ export class TrendAggregator {
       peakKey,
       top,
       prevTotal: this.rangeValue(prevRange, metric, provider),
+      // 上一窗口起点早于数据起点（内存最早日，即留存/起算边缘）→ 基准不完整，环比不可比（#503 M2.1）
+      prevComplete: prevRange.start >= (firstDayKeyOf(this.days) ?? "9999-12-31"),
     };
   }
 
@@ -560,6 +572,15 @@ function sub(oldV: number | null, newV: number | null): number | null {
   if (newV === null) return oldV === null ? null : -oldV;
   if (oldV === null) return newV;
   return newV - oldV;
+}
+
+/** 内存日桶的最早 day key（无数据返回 null；day key 字典序即时间序）。 */
+function firstDayKeyOf(days: Map<string, unknown>): string | null {
+  let first: string | null = null;
+  for (const day of days.keys()) {
+    if (first === null || day < first) first = day;
+  }
+  return first;
 }
 
 /** 聚合行并入 cell（重建用；null-aware）。 */

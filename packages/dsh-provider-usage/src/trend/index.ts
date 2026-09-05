@@ -240,9 +240,12 @@ export class TrendTracker {
     return this.aggregator.seriesStacked(n, gran, metric, provider, byModel, this.now());
   }
 
-  /** 窗口摘要（趋势页汇总卡）。 */
-  windowSummary(n: number, gran: TrendGranularity, metric: TrendMetric, provider?: string): TrendWindowSummary {
-    return this.aggregator.windowSummary(n, gran, metric, provider, this.now());
+  /**
+   * 窗口摘要（趋势页汇总卡）。stackSeries 可选传入路由已算的堆叠序列复用遍历
+   * （须与 n/gran/metric/provider 同参，见 aggregator.windowSummary）。
+   */
+  windowSummary(n: number, gran: TrendGranularity, metric: TrendMetric, provider?: string, stackSeries?: TrendStackPoint[]): TrendWindowSummary {
+    return this.aggregator.windowSummary(n, gran, metric, provider, this.now(), stackSeries);
   }
 
   /** 统计自挂载时点起算提示的数据源：最早有数据的本地日 key（无数据 null）。 */
