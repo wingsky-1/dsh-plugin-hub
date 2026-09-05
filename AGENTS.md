@@ -136,6 +136,25 @@ smoke 全部无网络、无真实凭据，本地可直接运行；新功能/修�
 - 提交前自查：`git status` 出现 `packages/*/undefined/`、`*.jsonl` 等运行时产物
   一律视为污染，不得提交；自动收集脚本（基线等）只收白名单路径。
 
+## PR 贴图纪律（#566 实证）
+
+隔离实测截图归档在 `packages/<pkg>/docs/archive/`（随 PR 分支提交）。要在 PR/issue
+正文里**嵌图显示**时，注意 GitHub 对相对路径图片按**默认分支（main）**解析——
+文件只存在于 PR 分支时必 404 破图（#566 初稿即踩坑）。两种可用写法：
+
+- **首选：网页拖拽上传**。网页编辑器里把 PNG 拖进正文，GitHub 转存为
+  `https://github.com/user-attachments/assets/...` 永久链接——不受分支/删除影响，
+  最稳。agent 自动化场景拖不了，走下一条。
+- **CLI 场景：commit-pin raw URL**。`https://raw.githubusercontent.com/<org>/<repo>/<40位commit sha>/<repo内路径>`——
+  用 `git rev-parse HEAD` 取 sha 后拼 URL，发 PR 前逐张 `curl -w "%{http_code}"` 验 200。
+  pin commit（而非分支名）保证合并 squashed / 分支删除后 URL 仍长期有效（commit
+  对象保留即可达；分支名 raw 在 squash merge 后会失效）。
+
+**禁止**的写法：PR 正文嵌 `docs/../../...` 之类相对路径链（跨包相对前缀错乱 +
+main 无此文件双重破图）；正文只列文件名不嵌图（#565 先例是回避不是解决）。
+归档照旧入 `docs/archive/`（版本控制 + 各包 files 白名单不含 `docs/`，不入发布物），
+正文引用与归档存储是两个载体、各司其职。发布纪律与贡献规范对图无额外约束。
+
 ## 参考文档
 
 - 开发规范（宿主/客户端写法、构建契约、多端兼容、测试防 flake 纪律）：[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
