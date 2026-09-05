@@ -356,6 +356,19 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
    * 的 gate ask 在当前 DSH 部署中无产生者，故不挂那里）。在 await next()
    * 之前通知——next() 会阻塞到用户审批结束，这正是"等待审批"提醒的时机；
    * 不短路，返回 next() 结果。
+   *
+   * 链序契约（issue #559）：cordis waterfall 按监听器注册顺序执行，不调
+   * next() 即短路。宿主内置的浏览器审批 UI answerer（dsh-api-remotes 转发
+   * 桥）在内核启动时注册、先于 profile 挂载的第三方插件，且 GUI 应答后直接
+   * 返回 outcome 不调 next()——若按默认 push 序注册，本监听器将永远收不到
+   * 审批事件（GUI 弹框一切正常但 toast/history 零记录）。{ prepend: true }
+   * （cordis register 的官方 unshift 语义）把本监听器固定在链头：先通知 →
+   * await next() → GUI 应答，outcome 语义零改动；global 仍负责绕过
+   * waterfall 的 scope 过滤。注意 prepend 固定的是**注册时刻**链头，之后
+   * 仍 prepend 注册的监听者会插到本监听器之前（固有博弈面；本插件不短路，
+   * 不影响任何下游 answerer 的 outcome）。依赖面 = cordis register 的
+   * unshift/push 序（smoke 以真实 cordis 链序断言固化，
+   * 见 test/real-context.test.ts F 系列）。
    */
   /** 审批超时二次提醒：per-request 定时器表；next() settle（用户已决定）即清除。 */
   const askRemindTimers = new Map<string, NodeJS.Timeout>();
@@ -401,7 +414,7 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
           askRemindTimers.delete(askKey);
         }
       }
-    }, { global: true })
+    }, { global: true, prepend: true })
   );
 
   /**
