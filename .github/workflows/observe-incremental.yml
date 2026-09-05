@@ -1,17 +1,11 @@
 name: Observe (incremental)
 
-# #433 调度重设计：每日四班次增量班（北京 12/16/20/24 = UTC 04/08/12/16）。
-# - 基于全量班（observe.yml，北京次日 04:00）提交进 scripts/gate/baseline/ 的
-#   仓库内基线跑增量变异（快）——只变异上次全量后发生变化的代码；
-# - 基线有实质变化即 create-pull-request 自动开 PR 合入 main（每次独立判断，
-#   无每日日期闸；create-pull-request 自身在无 diff 时不建 PR，天然「有变化即 PR」）；
+# #433 调度重设计 + #572 孤立分支基线：每日四班次增量班（北京 12/16/20/24 = UTC 04/08/12/16）。
+# - 基于孤立分支 refs/heads/baseline/mutation 拉取最新基线跑增量变异（快）；
+# - 变异产物由 orphan-baseline.mjs push 强推至孤立分支 baseline/mutation；
 # - 职责收敛：本班次不跑 cov / self-cov --check / crap / observe-check 报告，
-#   只做「恢复基线 → 增量变异 → 基线 PR + auto-merge」。
-# - #204 方案 A：基线走仓库内版本化文件 scripts/gate/baseline/（git 跨 ref 天然
-#   可见），替代失效的 actions/cache 跨 ref 通道（#204 实证 PR 永远 miss main 缓存）。
-# - token 用 OBSERVE_PAT（repo secret）：GITHUB_TOKEN 创建的 PR 不触发后续
-#   workflow runs（防递归机制），曾致基线快照 PR 的必需检查长期 action_required、
-#   反复卡在人工批准——PAT 创建可正常触发 CI 与 auto-merge。
+#   只做「恢复基线 → 增量变异 → 推送孤立基线」。
+# - #572 方案：基线走孤立分支，彻底剥离 main 分支代码树巨型 JSON 与自动 PR 噪音。
 
 on:
   schedule:
@@ -26,9 +20,8 @@ permissions:
   pull-requests: write
 
 concurrency:
-  # #433 调度重设计：增量班四班次定时（无 push 触发），schedule 间无冲突可并行；
-  # 并发组与 observe.yml 全量班独立（增量班不等待、不取消全量班）
-  group: observe-incremental-${{ github.event_name }}
+  # #572：基线同步统一互斥锁，排队顺序落盘，消除并发覆盖踩踏
+  group: mutation-baseline-sync
   cancel-in-progress: false
 
 jobs:
@@ -63,23 +56,11 @@ jobs:
         # 全集一致性；单包构建曾因跨包 lib 缺失直接 ERR_MODULE_NOT_FOUND。
         run: pnpm build
 
-      - name: Restore repo incremental baseline（#204：读仓库内基线到 coverage/mutation/）
-        # #204 方案 A：增量班直接读 scripts/gate/baseline/ 下全量班提交的基线文件，
-        # 复制到 coverage/mutation/ 供 Stryker 增量模式跳过未变 mutant。
-        # 首夜/部分包基线缺失时该包天然降级为全量变异（notice 标注属预期，非缺陷）。
-        run: |
-          set -e
-          mkdir -p coverage/mutation
-          RESTORED=0
-          for f in scripts/gate/baseline/incremental-*.json; do
-            if [ -f "$f" ]; then
-              cp "$f" "coverage/mutation/$(basename "$f")"
-              RESTORED=1
-            fi
-          done
-          if [ "$RESTORED" -eq 0 ]; then
-            echo '::notice::incremental 基线缺失 —— 本次降级为全量变异（首夜无基线属预期，非缺陷）'
-          fi
+      - name: Restore incremental baseline from orphan branch（#572：从孤立分支恢复基线）
+        # #572：增量班从孤立分支 refs/heads/baseline/mutation 拉取最新基线，
+        # 恢复到 coverage/mutation/ 供 Stryker 增量模式跳过未变 mutant。
+        # 孤立分支暂无基线时脚本输出 notice 并安全降级为全量变异（首夜属预期，非缺陷）。
+        run: node scripts/gate/orphan-baseline.mjs restore
 
       - name: Resolve mutation suites（#433 增量班：全量清单，增量模式跳过未变 mutant）
         id: suite-plan
@@ -118,66 +99,15 @@ jobs:
             exit 1
           fi
 
-      - name: Collect incremental baseline（#204：收集到仓库内 scripts/gate/baseline/）
-        # if: always() && 非 skipped 且有计划 —— 部分失败班次已产出的基线文件照常收集；
-        # 但整套变异被 skip 或计划为空时无任何产物，collect 不运行（防 copied=0 误红，#217/#220）
+      - name: Push baseline to orphan branch（#572：提交纯文本树到孤立分支）
+        # #572：替代旧方案（#204 方案 A：向 main 自动建 PR 提交数十万行 JSON 导致 git 膨胀）。
+        # 将最新增量基线以单 commit 纯文本树推送到孤立分支 refs/heads/baseline/mutation，
+        # 享受 Git Blob 原生内容去重红利，彻底净化 main 分支代码树与提交历史。
         if: always() && steps.mutation-suites.outcome != 'skipped' && steps.suite-plan.outputs.has_suites == 'true'
-        run: node scripts/gate/collect-incremental-baseline.mjs
-
-      - name: Open baseline PR（#433 增量班：基线有实质变化即自动建 PR，无每日日期闸）
-        # create-pull-request 只在有 diff 时创建 PR（无变化 = no-op，不产生噪音提交）——
-        # 天然实现「有变化即 PR」，每次增量班独立判断，无需日期闸。
-        # 受保护分支禁止 workflow 直接 push main → 走 PR + auto-merge 路径。
-        # token 用 OBSERVE_PAT（repo secret）：PAT 创建的 PR 可正常触发 CI 与 auto-merge
-        # （GITHUB_TOKEN 不触发后续 workflow runs，曾致基线 PR 反复卡人工批准）。
-        uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7
-        with:
-          token: ${{ secrets.OBSERVE_PAT }}
-          branch: ci/incremental-baseline
-          base: main
-          title: 'chore(ci): update incremental mutation baseline（增量快照）'
-          body: |
-            增量变异产出的 Stryker incremental 基线快照（#433 调度重设计；增量班基于
-            全量班基线跑增量变异后收集）。
-
-            变更内容：`scripts/gate/baseline/` 下的 incremental 基线文件与
-            manifest.json（仅当基线内容有实质变化时本 PR 才会被创建）。
-
-            无代码逻辑变更；合并后 PR 的 mutation-gate 将直接读取本目录基线
-            走增量变异（跳过未变 mutant），替代失效的 actions/cache 跨 ref 通道。
-          commit-message: 'chore(ci): update incremental mutation baseline（增量快照）'
-          labels: 'ci'
-          delete-branch: true
-          signoff: false
-
-      - name: Auto-merge baseline PR（若被创建）
-        # create-pull-request 只建 PR 不合并；此处用 gh 开启 auto-merge。
-        # 竞态处理：create-pull-request 刚创建 PR 后，GitHub API 可能有传播延迟，
-        # 单次 gh pr list 可能查不到 → 用循环重试（最多 60s）规避。
-        # 注意：auto-merge 需要分支保护规则允许该 bot PR 自动合并（CI 全绿 + 无
-        # review 要求，或配置 auto-merge 通过条件）。若保护规则要求 review，本步骤
-        # 会失败并在日志提示，不影响增量变异其余流程。
-        if: always()
         env:
-          GH_TOKEN: ${{ secrets.OBSERVE_PAT }}
-        run: |
-          PR=""
-          for i in $(seq 1 12); do
-            PR=$(gh pr list --repo "$GITHUB_REPOSITORY" --head ci/incremental-baseline --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)
-            if [ -n "$PR" ]; then
-              echo "PR #$PR 已可见（第 ${i} 次轮询）"
-              break
-            fi
-            echo "等待 PR 可见性传播（第 ${i} 次，5s）…"
-            sleep 5
-          done
-          if [ -n "$PR" ]; then
-            echo "开启 auto-merge：PR #$PR"
-            gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --auto --squash || \
-              echo "::warning::auto-merge 开启失败（可能受分支保护 review 规则限制）——需人工合入 PR #$PR"
-          else
-            echo "无基线变更 PR（基线内容未变化或创建失败），跳过 auto-merge"
-          fi
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OBSERVE_PAT: ${{ secrets.OBSERVE_PAT }}
+        run: node scripts/gate/orphan-baseline.mjs push
 
       - name: Upload artifacts（mutation 报告留档）
         if: always()

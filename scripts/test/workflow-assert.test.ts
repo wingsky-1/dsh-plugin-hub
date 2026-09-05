@@ -35,6 +35,7 @@ const ROOT = join(import.meta.dirname, '../..')
 const CI = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8')
 const OBSERVE = readFileSync(join(ROOT, '.github/workflows/observe.yml'), 'utf8')
 const OBSERVE_INC = readFileSync(join(ROOT, '.github/workflows/observe-incremental.yml'), 'utf8')
+const OVERLAY = readFileSync(join(ROOT, '.github/workflows/baseline-overlay.yml'), 'utf8')
 const RELEASE = readFileSync(join(ROOT, '.github/workflows/release.yml'), 'utf8')
 const HEALTH = readFileSync(join(ROOT, '.github/workflows/health-report.yml'), 'utf8')
 const GAUNTLET = JSON.parse(readFileSync(join(ROOT, 'scripts/data/gauntlet.config.json'), 'utf8'))
@@ -138,10 +139,10 @@ test('ci.yml: changes case 映射覆盖全部包（防新增包静默漏检，�
   assert.deepEqual(loopList, [...SLICE_PACKAGES].sort(), 'for 循环清单与切片包集不一致')
 })
 
-test('ci.yml/observe*/release/health-report.yml: 第三方与官方 action 一律 pin commit SHA', () => {
+test('ci.yml/observe*/baseline-overlay/release/health-report.yml: 第三方与官方 action 一律 pin commit SHA', () => {
   for (const [name, text] of [
     ['ci.yml', CI], ['observe.yml', OBSERVE], ['observe-incremental.yml', OBSERVE_INC],
-    ['release.yml', RELEASE], ['health-report.yml', HEALTH],
+    ['baseline-overlay.yml', OVERLAY], ['release.yml', RELEASE], ['health-report.yml', HEALTH],
   ]) {
     // 逐行解析 uses: 值（避免贪婪 \S+ 吞掉 @ref，评审 F9）
     const lines = text.split('\n').filter((l) => l.trim().startsWith('uses:'))
@@ -202,7 +203,7 @@ test('#322: 每个带 stryker 配置的包在 path-filter 均有段配置通配�
   }
 })
 
-test('#433 调度重设计: observe 全量班（北京次日 04:00）+ 增量班四班次（有变化即 PR）', () => {
+test('#433+#572 调度重设计与孤立分支基线: observe 全量班（北京次日 04:00）+ 增量班四班次（强推孤立分支）', () => {
   // ── 全量班（observe.yml）：每日一次，北京次日 04:00 = UTC 20:00 ──
   assert.ok(OBSERVE.includes("'0 20 * * *'"),
     '全量班 cron 必须为每日一次 UTC 20:00（北京次日 04:00）')
@@ -211,23 +212,19 @@ test('#433 调度重设计: observe 全量班（北京次日 04:00）+ 增量班
     '全量班 suite-plan 必须纯全量（glob conf 目录为单一事实源，无 push 裁剪分支）')
   assert.ok(!OBSERVE.includes('EVENT_NAME'), 'observe 不得再依赖 push/事件类型（#276 方案 A 已移除 push 触发）')
   assert.ok(OBSERVE.includes('steps.suite-plan.outputs.has_suites == \'true\''),
-    '全量班变异执行与 collect 必须以 has_suites 为前提——空计划不跑 collect 防 copied=0 误红')
-  assert.ok(OBSERVE.includes('skip_pr=true'), '全量班快照 PR 日期闸（每自然日最多一次）在位')
-  assert.ok(OBSERVE.includes("steps.pr-gate.outputs.skip_pr == 'false'"),
-    '全量班 Open baseline PR 必须以日期闸放行为前提')
-  assert.ok(OBSERVE.includes('scripts/gate/baseline/manifest.json'),
-    '全量班日期闸须只匹配 manifest.json（基线实质变更记录）——避免 README 等静态文件重置闸')
-  assert.ok(OBSERVE.includes('--format=%ct'), '全量班日期闸须用 committer Unix 时间戳 + date -u 转 UTC（杜绝时区混用跨日误判）')
+    '全量班变异执行与 push 必须以 has_suites 为前提——空计划不跑 push')
+  assert.ok(!OBSERVE.includes('skip_pr=true'), '#572：全量班已迁移至孤立分支，日期闸与 PR 步骤已退役')
+  assert.ok(OBSERVE.includes('orphan-baseline.mjs push'), '全量班调用 orphan-baseline.mjs push 提交孤立分支')
 
   // ── 增量班（observe-incremental.yml）：每日四班次，北京 12/16/20/24 = UTC 04/08/12/16 ──
   assert.ok(OBSERVE_INC.includes("'0 4,8,12,16 * * *'"),
     '增量班 cron 必须为每日四班次（UTC 04/08/12/16 = 北京 12/16/20/次日 0 点）')
   assert.ok(OBSERVE_INC.includes('workflow_dispatch'), '增量班支持手动 dispatch')
   assert.ok(OBSERVE_INC.includes('Resolve mutation suites'), '增量班 suite-plan 步骤在位')
-  assert.ok(OBSERVE_INC.includes('collect-incremental-baseline.mjs'), '增量班收集脚本执行点在位')
-  assert.ok(OBSERVE_INC.includes('create-pull-request@'), '增量班基线经 create-pull-request 自动开 PR')
-  assert.ok(OBSERVE_INC.includes('gh pr merge'), '增量班 auto-merge 步骤在位')
-  assert.ok(!OBSERVE_INC.includes('skip_pr=true'), '增量班不得有日期闸——每次独立判断、有变化即 PR')
+  assert.ok(OBSERVE_INC.includes('orphan-baseline.mjs push'), '增量班调用 orphan-baseline.mjs push 强推孤立分支')
+  assert.ok(!OBSERVE_INC.includes('create-pull-request@'), '#572：增量班基线不再建 PR，直接推送孤立分支')
+  assert.ok(!OBSERVE_INC.includes('gh pr merge'), '#572：增量班 auto-merge 步骤已退役')
+  assert.ok(!OBSERVE_INC.includes('skip_pr=true'), '增量班不得有日期闸')
   assert.ok(!OBSERVE_INC.includes('self-cov.mjs --check'), '增量班不跑覆盖校验（职责收敛到全量班）')
 })
 
@@ -270,6 +267,26 @@ test('#220 段式三方一致：observe 计划 ↔ stryker.conf.d 文件集 ↔ 
   for (const p of basePkgs) {
     assert.ok(existsSync(join(ROOT, 'packages', p)), `packages/${p} 目录存在`)
   }
+})
+
+test('#572: stryker 配置生成器与拓扑清单一致性（SSOT + CodeGen 门禁）', () => {
+  const topoFile = join(ROOT, 'scripts/data/mutation-topology.json')
+  assert.ok(existsSync(topoFile), 'mutation-topology.json 单一事实源在位')
+  const topo = JSON.parse(readFileSync(topoFile, 'utf8'))
+  assert.ok(topo.sharedDefaults, '包含 sharedDefaults 通用模板')
+  assert.ok(topo.packages, '包含 packages 各包分段定义')
+
+  // package.json 脚本在位
+  const pkgJson = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
+  assert.ok(pkgJson.scripts['stryker:gen'], 'package.json 包含 stryker:gen 命令')
+  assert.ok(pkgJson.scripts['stryker:check'], 'package.json 包含 stryker:check 命令')
+
+  // 执行 gen-stryker-conf.mjs --check 校验磁盘与清单 100% 同步
+  const res = spawnSync('node', ['scripts/gate/gen-stryker-conf.mjs', '--check'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  })
+  assert.equal(res.status, 0, `gen-stryker-conf --check 失败:\n${res.stderr || res.stdout}`)
 })
 
 // ── #342 二期 §契约：功能段名唯一 + mutate 面防空段回归 ──
@@ -328,40 +345,40 @@ test('gauntlet: mutation.packages 全部带 threshold 字段且 ≥60（阶段�
   }
 })
 
-// ── #178 v2 + #204：Stryker 增量模式接入（夜间全量落仓库基线 + PR 增量切片门禁）──
-// #204 修订：actions/cache 按 ref 隔离（PR 永远 miss main 缓存，GitHub Community #58583），
-// 基线改「仓库内版本化文件」——夜间 collect 到 scripts/gate/baseline/ + create-pull-request 合入 main，
-// PR 侧直接读文件（git 跨 ref 天然可见、可本地实证）。
+// ── #178 v2 + #204 + #572：Stryker 增量模式接入（孤立分支基线存储 + PR 增量切片门禁）──
+// #572 修订：废除向 main 分支自动建 PR 提交数十万行 JSON（#204 历史方案 A），
+// 基线改走独立孤立分支 refs/heads/baseline/mutation，直接存单 commit 纯文本树，
+// PR 侧通过 orphan-baseline.mjs restore 浅拉取恢复。
 
-test('#178+#204: observe 两班均只读仓库基线不读缓存——全量班不 restore、增量班 restore 仓库文件', () => {
+test('#178+#204+#572: observe 两班均使用孤立分支基线——全量班不 restore、增量班 restore 孤立分支', () => {
   for (const [name, wf] of [['observe.yml', OBSERVE], ['observe-incremental.yml', OBSERVE_INC]]) {
     assert.ok(
       !wf.includes('actions/cache/restore'),
-      `${name} 严禁出现 restore 缓存步骤——基线走仓库内文件（#204 架构定案，勿"好心"补 actions/cache restore）`,
+      `${name} 严禁出现 restore 缓存步骤——基线走孤立分支（勿"好心"补 actions/cache restore）`,
     )
     assert.ok(
       !wf.includes('actions/cache/save@'),
-      `${name} 已改用仓库内基线（#204），不得出现 cache/save 步骤`,
+      `${name} 已改用孤立分支基线（#572），不得出现 cache/save 步骤`,
     )
-    const collectIdx = wf.indexOf('Collect incremental baseline')
-    assert.ok(collectIdx > 0, `${name} collect 步骤在位（夜间/增量基线 → 仓库内固定路径）`)
-    const collectBlock = wf.slice(collectIdx, wf.indexOf('- name:', collectIdx + 10))
-    assert.ok(collectBlock.includes('if: always()'),
-      `${name} collect 步骤必须 if: always()（部分失败班次已产出的基线照常收集）`)
-    assert.ok(collectBlock.includes('collect-incremental-baseline.mjs'), `${name} collect 脚本执行点在位`)
-    assert.ok(wf.includes('create-pull-request@'), `${name} 基线经 create-pull-request 自动开 PR 合入 main（受保护分支禁直接 push）`)
-    assert.ok(wf.includes('peter-evans/create-pull-request'), `${name} 使用业界标准 peter-evans/create-pull-request`)
-    assert.ok(wf.includes('contents: write'), `${name} permissions 需 contents: write（自动 PR 创建需要）`)
-    assert.ok(wf.includes('pull-requests: write'), `${name} permissions 需 pull-requests: write`)
+    assert.ok(
+      !wf.includes('create-pull-request@'),
+      `${name} #572 已废除基线自动开 PR 合入 main（杜绝 git 树与提交历史膨胀）`,
+    )
+    const pushIdx = wf.indexOf('Push baseline to orphan branch')
+    assert.ok(pushIdx > 0, `${name} push 步骤在位（增量基线 → 孤立分支 baseline/mutation）`)
+    const pushBlock = wf.slice(pushIdx, wf.indexOf('- name:', pushIdx + 10))
+    assert.ok(pushBlock.includes('if: always()'),
+      `${name} push 步骤必须 if: always()（部分失败班次已产出的基线照常收集并强推）`)
+    assert.ok(pushBlock.includes('orphan-baseline.mjs push'), `${name} orphan-baseline.mjs push 脚本执行点在位`)
+    assert.ok(wf.includes('contents: write'), `${name} permissions 需 contents: write（孤立分支推送需要）`)
+    assert.ok(wf.includes('mutation-baseline-sync'), `${name} concurrency 统一为 mutation-baseline-sync（防止覆盖踩踏）`)
   }
-  // 增量班刻意 restore 仓库内基线（读 scripts/gate/baseline/ 到 coverage/mutation/，
-  // 同 ci.yml mutation-gate 思路）；全量班刻意不恢复任何基线——无增量基线即天然全量
-  assert.ok(OBSERVE_INC.includes('Restore repo incremental baseline'),
-    '增量班 restore 仓库基线步骤在位（#433：基于全量班基线跑增量变异）')
-  assert.ok(OBSERVE_INC.includes('scripts/gate/baseline/incremental-'),
-    '增量班 restore 必须读 scripts/gate/baseline/（仓库内版本化基线，#204 方案 A）')
-  assert.ok(OBSERVE_INC.includes('::notice::'),
-    '增量班基线缺失时须打 notice 标注全量降级（首夜属预期，防误判缺陷）')
+  // 增量班刻意 restore 孤立分支基线（通过 orphan-baseline.mjs restore 恢复到 coverage/mutation/）；
+  // 全量班刻意不恢复任何基线——无增量基线即天然全量
+  assert.ok(OBSERVE_INC.includes('Restore incremental baseline from orphan branch'),
+    '增量班 restore 步骤在位（#572：基于孤立分支跑增量变异）')
+  assert.ok(OBSERVE_INC.includes('orphan-baseline.mjs restore'),
+    '增量班 restore 必须调用 orphan-baseline.mjs restore')
 })
 
 test('#276 方案 A: src 级 mutate 退役产物行号机制——ci/observe 两班均不得再出现 sync/guard', () => {
@@ -438,9 +455,11 @@ test('#517 B5: ci.yml homedir 门禁——Forbid homedir 步骤存在并调 forb
     '根 package.json 必须含 gate:homedir 本地入口（与 ci.yml 同一命令）')
 })
 
-test('#178+#204: ci.yml PR 增量门禁——读仓库基线文件 + 按命中包切片 + 并入 repo-gate', () => {
-  // #204：直接读 scripts/gate/baseline/ 仓库内文件，替代 actions/cache restore（跨 ref 失效）
-  assert.ok(CI.includes('Restore repo incremental baseline'), 'mutation-gate 基线读取步骤在位（读仓库内文件）')
+test('#178+#204+#572: ci.yml PR 增量门禁——从孤立分支恢复基线 + 按命中包切片 + 并入 repo-gate', () => {
+  // #572：从孤立分支拉取基线，替代旧的读 scripts/gate/baseline/ main 代码树文件
+  assert.ok(CI.includes('Restore incremental baseline from orphan branch'), 'mutation-gate 孤立分支基线读取步骤在位')
+  assert.ok(CI.includes('orphan-baseline.mjs restore'), 'mutation-gate 调用 orphan-baseline.mjs restore 恢复基线')
+  assert.ok(!CI.includes('scripts/gate/baseline/${BASENAME}.json'), 'ci.yml 不得再从 scripts/gate/baseline/ 读取基线')
   assert.ok(!CI.includes('actions/cache/restore@'), 'ci.yml 不得再用 actions/cache/restore（#204 已废弃跨 ref 缓存通道）')
   assert.ok(!CI.includes('actions/cache/save@'), 'ci.yml 禁止 save 缓存（PR 结果绝不回写夜间基线）')
   assert.ok(!CI.includes('actions/cache/@'), 'ci.yml 禁用 actions/cache@ 主 action 形态')
@@ -451,8 +470,8 @@ test('#178+#204: ci.yml PR 增量门禁——读仓库基线文件 + 按命中�
   const mg = CI.slice(gateIdx, CI.indexOf('\n  mutation-verdict:'))
   assert.ok(mg.includes('combo: ${{ fromJSON(needs.changes.outputs.mutationCombos) }}'),
     '动态 matrix ← changes.mutationCombos（#220 段式组合：[{package,seg}]，命中包按段实例化）')
-  assert.ok(mg.includes('scripts/gate/baseline/${BASENAME}.json'),
-    '读仓库基线文件路径 scripts/gate/baseline/incremental-<pkg|pkg-seg>.json（#220 段式命名）')
+  assert.ok(mg.includes('coverage/mutation/${BASENAME}.json'),
+    '读恢复后基线文件路径 coverage/mutation/${BASENAME}.json')
   assert.ok(mg.includes('PKG="${MATRIX_PKG#dsh-}"'), '矩阵包名 dsh-<pkg> → 基线短名的映射在位')
   assert.ok(mg.includes('::notice::'), '基线缺失时须打 notice 标注全量降级（首夜属预期，防误判缺陷）')
   // build 必须全量（run #32790425132 教训）：mutate 区间行号锚定 esbuild 产物分段，
@@ -470,6 +489,16 @@ test('#178+#204: ci.yml PR 增量门禁——读仓库基线文件 + 按命中�
   const rg = CI.slice(CI.indexOf('\n  repo-gate:'))
   assert.ok(rg.includes('needs.mutation-gate.result'),
     'repo-gate fail-closed 判定脚本必须检查 needs.mutation-gate.result')
+})
+
+test('#572: baseline-overlay.yml 主干合入秒级差量覆盖基线工作流在位', () => {
+  assert.ok(OVERLAY.includes('push:'), 'baseline-overlay 必须监听 push 事件')
+  assert.ok(OVERLAY.includes('branches:\n      - main'), 'baseline-overlay 仅对 main 分支生效')
+  assert.ok(OVERLAY.includes('group: mutation-baseline-sync'), 'baseline-overlay 必须与 observe 同步互斥锁')
+  assert.ok(OVERLAY.includes('cancel-in-progress: false'), '互斥锁必须排队执行（不可取消未完任务以防覆盖丢失）')
+  assert.ok(OVERLAY.includes('overlay-baseline.mjs'), '调用 overlay-baseline.mjs 脚本')
+  assert.ok(CI.includes('Upload incremental baseline artifact'), 'ci.yml 必须在变异成功时上传 incremental artifact')
+  assert.ok(CI.includes('mutation-incremental-'), 'artifact 命名格式为 mutation-incremental-<pkg>-<seg>')
 })
 
 // ── #187 触发面收敛：mutation-gate 仅限 pull_request，主干变异归夜间全量 ──
@@ -853,16 +882,16 @@ test('#217: repo-gate 五维聚合 needs + 判定脚本 env 全维注入', () =>
   // 判定表实现侧同维锁定（env ↔ evaluateGate 输入一一对应）
 })
 
-test('#217: observe 两班 Mutation suites id + collect 区分整套 skip 与部分失败', () => {
+test('#217+#572: observe 两班 Mutation suites id + push 区分整套 skip 与部分失败', () => {
   for (const [name, wf] of [['observe.yml', OBSERVE], ['observe-incremental.yml', OBSERVE_INC]]) {
     const sIdx = wf.indexOf('- name: Mutation suites')
     assert.ok(sIdx > 0, `${name} Mutation suites 步骤在位`)
     const sBlock = wf.slice(sIdx, wf.indexOf('- name:', sIdx + 10))
     assert.ok(sBlock.includes('id: mutation-suites'), `${name} Mutation suites 必须声明 id 供下游引用 outcome`)
-    const cIdx = wf.indexOf('- name: Collect incremental baseline')
-    assert.ok(cIdx > 0, `${name} Collect incremental baseline 步骤在位`)
-    const cBlock = wf.slice(cIdx, wf.indexOf('- name:', cIdx + 10))
-    assert.ok(cBlock.includes("if: always() && steps.mutation-suites.outcome != 'skipped'"),
-      `${name} collect 条件必须区分整套 skip（无产物不收集）与部分失败（记账班次照常收集）`)
+    const pIdx = wf.indexOf('- name: Push baseline to orphan branch')
+    assert.ok(pIdx > 0, `${name} Push baseline to orphan branch 步骤在位`)
+    const pBlock = wf.slice(pIdx, wf.indexOf('- name:', pIdx + 10))
+    assert.ok(pBlock.includes("if: always() && steps.mutation-suites.outcome != 'skipped'"),
+      `${name} push 条件必须区分整套 skip（无产物不推送）与部分失败（记账班次照常提交）`)
   }
 })

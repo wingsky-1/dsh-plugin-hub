@@ -1,0 +1,354 @@
+{
+  "sharedDefaults": {
+    "testRunner": "tap",
+    "concurrency": 16,
+    "timeoutMS": 60000,
+    "dryRunTimeoutMinutes": 5,
+    "reporters": [
+      "progress",
+      "clear-text",
+      "json"
+    ],
+    "coverageAnalysis": "perTest",
+    "tempDirName": ".stryker-tmp",
+    "cleanTempDir": true,
+    "excludedMutations": [
+      "StringLiteral",
+      "ArrayLiteral",
+      "ObjectLiteral",
+      "TemplateLiteral"
+    ],
+    "tapNodeArgs": [
+      "-r",
+      "./scripts/test/mutation-tap-bridge.cjs",
+      "--import",
+      "./scripts/test/mutation-lib-to-src-hook.mjs"
+    ]
+  },
+  "packages": {
+    "dsh-lan-proxy": {
+      "concurrency": 16,
+      "timeoutMS": 60000,
+      "testFiles": [
+        "packages/dsh-lan-proxy/test/unit-apply.test.ts",
+        "packages/dsh-lan-proxy/test/unit-proxy.test.ts"
+      ],
+      "segments": {
+        "1": {
+          "mutate": [
+            "packages/dsh-lan-proxy/src/proxy.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-lan-proxy/src/client/**",
+            "!packages/dsh-lan-proxy/src/types.ts"
+          ],
+          "comment": "#276 方案 A：src 级文件组分段（1）——mutate 为源文件名清单，密度均衡声明，无行号无漂移；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+        },
+        "2": {
+          "mutate": [
+            "packages/dsh-lan-proxy/src/apply.ts",
+            "packages/dsh-lan-proxy/src/config.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-lan-proxy/src/client/**",
+            "!packages/dsh-lan-proxy/src/types.ts"
+          ],
+          "comment": "#276 方案 A：src 级文件组分段（2）——mutate 为源文件名清单，密度均衡声明，无行号无漂移；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+        },
+        "3": {
+          "mutate": [
+            "packages/dsh-lan-proxy/src/config-routes.ts",
+            "packages/dsh-lan-proxy/src/migrate.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-lan-proxy/src/client/**",
+            "!packages/dsh-lan-proxy/src/types.ts"
+          ],
+          "comment": "#276 方案 A：src 级文件组分段（3）——mutate 为源文件名清单，密度均衡声明，无行号无漂移；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+        },
+        "4": {
+          "mutate": [
+            "packages/dsh-lan-proxy/src/settings.ts",
+            "packages/dsh-lan-proxy/src/cert.ts",
+            "packages/dsh-lan-proxy/src/index.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-lan-proxy/src/client/**",
+            "!packages/dsh-lan-proxy/src/types.ts"
+          ],
+          "comment": "#276 方案 A：src 级文件组分段（4）——mutate 为源文件名清单，密度均衡声明，无行号无漂移；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+        }
+      }
+    },
+    "dsh-mcp-manager": {
+      "concurrency": 16,
+      "timeoutMS": 60000,
+      "testFiles": [
+        "packages/dsh-mcp-manager/test/unit-apply.test.ts",
+        "packages/dsh-mcp-manager/test/unit-catalog.test.ts",
+        "packages/dsh-mcp-manager/test/unit-hotspot.test.ts",
+        "packages/dsh-mcp-manager/test/unit-manager.test.ts",
+        "packages/dsh-mcp-manager/test/unit-manager2.test.ts",
+        "packages/dsh-mcp-manager/test/unit-middleware.test.ts",
+        "packages/dsh-mcp-manager/test/unit-routes-sse.test.ts",
+        "packages/dsh-mcp-manager/test/unit-store.test.ts",
+        "packages/dsh-mcp-manager/test/unit-supervisor.test.ts",
+        "packages/dsh-mcp-manager/test/unit-transport.test.ts"
+      ],
+      "segments": {
+        "entry": {
+          "mutate": [
+            "packages/dsh-mcp-manager/src/index.ts",
+            "packages/dsh-mcp-manager/src/normalize.ts",
+            "packages/dsh-mcp-manager/src/import.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-mcp-manager/src/client/**",
+            "!packages/dsh-mcp-manager/src/types.ts",
+            "!packages/dsh-mcp-manager/src/service.ts"
+          ],
+          "comment": "#342 二期：功能命名段（entry）——index+normalize+import（入口/归一化/导入域，28s）；types.ts / service.ts（type-only）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+        },
+        "manager": {
+          "mutate": [
+            "packages/dsh-mcp-manager/src/manager.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-mcp-manager/src/client/**",
+            "!packages/dsh-mcp-manager/src/types.ts",
+            "!packages/dsh-mcp-manager/src/service.ts"
+          ],
+          "comment": "#342 二期：功能命名段（manager）——manager.ts 单文件（742 行，134s 全量，per-mutant 成本主导的物理极限，维持现状）；types.ts / service.ts（type-only）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+        },
+        "middleware": {
+          "mutate": [
+            "packages/dsh-mcp-manager/src/middleware.ts",
+            "packages/dsh-mcp-manager/src/middleware-utils.ts",
+            "packages/dsh-mcp-manager/src/middleware-const.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-mcp-manager/src/client/**",
+            "!packages/dsh-mcp-manager/src/types.ts",
+            "!packages/dsh-mcp-manager/src/service.ts"
+          ],
+          "comment": "#342 二期：src 级文件组功能命名段（middleware）——middleware+middleware-utils+middleware-const；types.ts / service.ts（type-only）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+        },
+        "routes": {
+          "mutate": [
+            "packages/dsh-mcp-manager/src/middleware-register.ts",
+            "packages/dsh-mcp-manager/src/routes.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-mcp-manager/src/client/**",
+            "!packages/dsh-mcp-manager/src/types.ts",
+            "!packages/dsh-mcp-manager/src/service.ts"
+          ],
+          "comment": "#342 二期：src 级文件组功能命名段（routes）——middleware-register+routes；types.ts / service.ts（type-only）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+        },
+        "runtime": {
+          "mutate": [
+            "packages/dsh-mcp-manager/src/catalog.ts",
+            "packages/dsh-mcp-manager/src/apply.ts",
+            "packages/dsh-mcp-manager/src/transport.ts",
+            "shared/placement-math.js",
+            "packages/dsh-mcp-manager/src/config-schema.ts",
+            "packages/dsh-mcp-manager/src/protocol.ts",
+            "packages/dsh-mcp-manager/src/middleware-types.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-mcp-manager/src/client/**",
+            "!packages/dsh-mcp-manager/src/types.ts",
+            "!packages/dsh-mcp-manager/src/service.ts"
+          ],
+          "comment": "#342 二期：src 级文件组功能命名段（runtime）——catalog+apply+transport+shared/placement-math+config-schema+protocol+middleware-types（#378：placement 纯核心上移 shared，mutate 跟随；lib→src hook 对 shared 段返回 null 默认解析，测试经 lib/index.js→src re-export 链执行 shared 真源码）；types.ts / service.ts（type-only）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+        },
+        "supervisor": {
+          "mutate": [
+            "packages/dsh-mcp-manager/src/supervisor.ts",
+            "packages/dsh-mcp-manager/src/middleware-state.ts",
+            "packages/dsh-mcp-manager/src/store.ts",
+            "packages/dsh-mcp-manager/src/scope.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-mcp-manager/src/client/**",
+            "!packages/dsh-mcp-manager/src/types.ts",
+            "!packages/dsh-mcp-manager/src/service.ts"
+          ],
+          "comment": "#342 二期：src 级文件组功能命名段（supervisor）——supervisor+middleware-state+store+scope；types.ts / service.ts（type-only）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+        }
+      }
+    },
+    "dsh-notifier": {
+      "concurrency": 16,
+      "timeoutMS": 60000,
+      "testFiles": [
+        "packages/dsh-notifier/test/e2e-approval.test.ts",
+        "packages/dsh-notifier/test/e2e-done.test.ts",
+        "packages/dsh-notifier/test/e2e-edge.test.ts",
+        "packages/dsh-notifier/test/e2e-question-turn.test.ts",
+        "packages/dsh-notifier/test/migration.test.ts",
+        "packages/dsh-notifier/test/routes.test.ts",
+        "packages/dsh-notifier/test/unit-config.test.ts",
+        "packages/dsh-notifier/test/unit-sanitize.test.ts",
+        "packages/dsh-notifier/test/unit-text.test.ts"
+      ],
+      "segments": {
+        "config": {
+          "mutate": [
+            "packages/dsh-notifier/src/config.ts",
+            "packages/dsh-notifier/src/migrate.ts",
+            "packages/dsh-notifier/src/settings.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-notifier/src/client/**",
+            "!packages/dsh-notifier/src/types.ts"
+          ],
+          "comment": "#342 二期：功能命名段（config）——config+migrate+settings（配置/迁移域，53s）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+        },
+        "history": {
+          "mutate": [
+            "packages/dsh-notifier/src/history.ts",
+            "packages/dsh-notifier/src/quiet-hours.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-notifier/src/client/**",
+            "!packages/dsh-notifier/src/types.ts"
+          ],
+          "comment": "#342 二期：功能命名段（history）——history+quiet-hours（历史/静默时段域，21s）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+        },
+        "message": {
+          "mutate": [
+            "packages/dsh-notifier/src/message.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-notifier/src/client/**",
+            "!packages/dsh-notifier/src/types.ts"
+          ],
+          "comment": "#342 二期：功能命名段（message）——message.ts 单文件（145s 全量，per-mutant 成本主导的物理极限，维持现状）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+        },
+        "server": {
+          "mutate": [
+            "packages/dsh-notifier/src/index.ts",
+            "packages/dsh-notifier/src/server.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-notifier/src/client/**",
+            "!packages/dsh-notifier/src/types.ts"
+          ],
+          "comment": "#342 二期：功能命名段（server）——index+server（事件/连接域）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+        }
+      }
+    },
+    "dsh-provider-usage": {
+      "concurrency": 16,
+      "timeoutMS": 60000,
+      "testFiles": [
+        "packages/dsh-provider-usage/test/unit-apply.test.ts",
+        "packages/dsh-provider-usage/test/unit-config.test.ts",
+        "packages/dsh-provider-usage/test/unit-contract.test.ts",
+        "packages/dsh-provider-usage/test/unit-deepseek-official.test.ts",
+        "packages/dsh-provider-usage/test/unit-history.test.ts",
+        "packages/dsh-provider-usage/test/unit-signal-lock.test.ts",
+        "packages/dsh-provider-usage/test/unit-v1.test.ts"
+      ],
+      "segments": {
+        "apply": {
+          "mutate": [
+            "packages/dsh-provider-usage/src/apply.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-provider-usage/src/client/**",
+            "!packages/dsh-provider-usage/src/types.ts"
+          ],
+          "comment": "#342 v4：src 级文件组分段（2）——apply 单列（#316 拆分后最重文件独立成段）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+        },
+        "contracts": {
+          "mutate": [
+            "packages/dsh-provider-usage/src/contracts.ts",
+            "packages/dsh-provider-usage/src/core/guards.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-provider-usage/src/client/**",
+            "!packages/dsh-provider-usage/src/types.ts"
+          ],
+          "comment": "#342 v4：src 级文件组分段（3）——contracts+core/guards（契约面）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+        },
+        "entry": {
+          "mutate": [
+            "packages/dsh-provider-usage/src/index.ts",
+            "packages/dsh-provider-usage/src/user-adapters.ts",
+            "packages/dsh-provider-usage/src/ui-config.ts",
+            "packages/dsh-provider-usage/src/config.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-provider-usage/src/client/**",
+            "!packages/dsh-provider-usage/src/types.ts"
+          ],
+          "comment": "#342 v4：src 级文件组分段（1）——index+user-adapters+ui-config+config（配置/入口面）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+        },
+        "pipeline": {
+          "mutate": [
+            "packages/dsh-provider-usage/src/core/history.ts",
+            "packages/dsh-provider-usage/src/pipeline/v2.ts",
+            "packages/dsh-provider-usage/src/hotreload.ts",
+            "shared/placement-math.js",
+            "packages/dsh-provider-usage/src/path-resolve.ts",
+            "packages/dsh-provider-usage/src/client-logic.ts",
+            "packages/dsh-provider-usage/src/provider-config.ts",
+            "packages/dsh-provider-usage/src/charts.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-provider-usage/src/client/**",
+            "!packages/dsh-provider-usage/src/types.ts"
+          ],
+          "comment": "#342 v4：src 级文件组分段（5）——history/v2/hotreload/placement-math/path-resolve/client-logic/provider-config/charts（历史/管线/热更/图表面；charts 纳入修复变异盲区）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+        },
+        "registry": {
+          "mutate": [
+            "packages/dsh-provider-usage/src/registry.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-provider-usage/src/client/**",
+            "!packages/dsh-provider-usage/src/types.ts"
+          ],
+          "comment": "#342 二期：功能命名段（registry）——registry（注册表域，25s）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+        },
+        "sanitize": {
+          "mutate": [
+            "packages/dsh-provider-usage/src/sanitize.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-provider-usage/src/client/**",
+            "!packages/dsh-provider-usage/src/types.ts"
+          ],
+          "comment": "#342 二期：功能命名段（sanitize）——sanitize（数据净化域，115s）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+        }
+      }
+    },
+    "dsh-web-file-preview": {
+      "concurrency": 16,
+      "timeoutMS": 60000,
+      "testFiles": [
+        "packages/dsh-web-file-preview/test/unit-grouping.test.ts",
+        "packages/dsh-web-file-preview/test/unit-link-resolver.test.ts",
+        "packages/dsh-web-file-preview/test/unit-relpath.test.ts",
+        "packages/dsh-web-file-preview/test/unit-routes.test.ts",
+        "packages/dsh-web-file-preview/test/unit-serve-tokens.test.ts",
+        "packages/dsh-web-file-preview/test/unit-basename-fallback.test.ts",
+        "packages/dsh-web-file-preview/test/unit-git.test.ts"
+      ],
+      "segments": {
+        "_single": {
+          "mutate": [
+            "packages/dsh-web-file-preview/src/**/*.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-web-file-preview/src/client/**",
+            "!packages/dsh-web-file-preview/src/types.ts"
+          ],
+          "comment": "#276 方案 A：src 级单段（mutate 直指 src，文件 glob 声明，无行号无漂移）；测试经 src 入口加载插桩代码；incremental 基线随 observe 四班次重建。"
+        }
+      }
+    }
+  }
+}

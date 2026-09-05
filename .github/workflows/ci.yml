@@ -407,23 +407,21 @@ jobs:
             echo "BASENAME=incremental-${PKG}-${SEG}" >> "$GITHUB_ENV"
           fi
 
-      - name: Restore repo incremental baseline（#204：读仓库内基线文件，替代失效的 actions/cache）
-        # #204 方案 A：夜间 observe 把全部 incremental 基线提交进 scripts/gate/baseline/，
-        # PR checkout（merge commit 含 base/main 内容）直接读文件复制到
-        # coverage/mutation/ —— git 跨 ref 天然可见，替代失效的 actions/cache
-        # 跨 ref 通道（#204 实证：actions/cache 按 ref 隔离，PR 永远 miss main 缓存）。
+      - name: Restore incremental baseline from orphan branch（#572：从孤立分支恢复基线）
+        # #572：从孤立分支 refs/heads/baseline/mutation 浅拉取纯文本增量基线，
+        # 替代旧方案（#204 方案 A：读 main 分支 scripts/gate/baseline/ 版本化文件），
+        # 彻底剥离 main 分支代码树巨型 JSON 与自动 PR 噪音。
         # 基线文件名随 combo 段号：incremental-<pkg>.json / incremental-<pkg>-<seg>.json。
-        # 首夜/基线缺失时天然降级为全量变异（notice 标注属预期，非缺陷）。
+        # 首夜/孤立分支基线缺失时天然降级为全量变异（notice 标注属预期，非缺陷）。
         id: baseline
         run: |
           set -e
-          SRC="scripts/gate/baseline/${BASENAME}.json"
+          node scripts/gate/orphan-baseline.mjs restore
+          SRC="coverage/mutation/${BASENAME}.json"
           if [ -f "$SRC" ]; then
-            mkdir -p coverage/mutation
-            cp "$SRC" "coverage/mutation/${BASENAME}.json"
-            echo "incremental 基线命中：$SRC（仓库内文件）"
+            echo "incremental 基线命中：$SRC（孤立分支）"
           else
-            echo '::notice::incremental 基线文件缺失 —— 本次降级为全量变异（首夜无基线属预期，非缺陷）'
+            echo '::notice::incremental 基线文件缺失 —— 本次降级为全量变异（首夜/新包无基线属预期，非缺陷）'
           fi
 
       - name: Incremental mutation（incremental 生效跳过未变 mutant）
@@ -439,6 +437,16 @@ jobs:
           path: coverage/mutation/${{ env.REPORT }}.json
           retention-days: 1
           if-no-files-found: error
+
+      - name: Upload incremental baseline artifact（供合并后秒级 overlay 复用 #572）
+        # 变异测试通过时上传产出的增量基线文件，供 PR 合入 main 后由 baseline-overlay.yml 秒级复用
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mutation-incremental-${{ matrix.combo.package }}-${{ matrix.combo.seg }}
+          path: coverage/mutation/${{ env.BASENAME }}.json
+          retention-days: 1
+          if-no-files-found: ignore
 
   # ── 第 3 段之三：聚合判分收尾（artifact 汇合 + 逐包双指标判分，#217）──
   # - self-coverage（coverage job）与各包 stryker 报告（mutation-gate 矩阵）

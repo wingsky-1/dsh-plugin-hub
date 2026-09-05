@@ -12,6 +12,8 @@
     "pack:check": "node scripts/gate/pack-check.ts",
     "verify:npmlayout": "node scripts/gate/verify-npm-layout.ts",
     "aggregate:check": "node scripts/gate/aggregate.ts --check",
+    "stryker:gen": "node scripts/gate/gen-stryker-conf.mjs",
+    "stryker:check": "node scripts/gate/gen-stryker-conf.mjs --check",
     "test:scripts": "node --test scripts/test/*.test.ts",
     "test:src-tests": "node scripts/gate/forbid-src-tests.mjs",
     "gate:homedir": "node scripts/gate/forbid-homedir-src.mjs",
