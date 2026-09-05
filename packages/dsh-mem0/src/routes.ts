@@ -26,6 +26,7 @@ export interface RouteContext {
   getCurrentCwd: () => string | undefined;
   getConfig: () => Mem0Config;
   updateConfig: (patch: Record<string, unknown>) => Promise<Mem0Config>;
+  installDependencies?: () => Promise<{ ok: boolean; pythonBin: string; error?: string }>;
 }
 
 export function createMem0Routes(ctx: RouteContext): WebRoute[] {
@@ -78,6 +79,23 @@ export function createMem0Routes(ctx: RouteContext): WebRoute[] {
           });
         } catch (err) {
           writeJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+        }
+      },
+    },
+    {
+      kind: "exact",
+      path: "/api/dsh-mem0/install",
+      async handler(req: IncomingMessage, res: ServerResponse) {
+        if (!guardLoopbackMethod(req, res, ["POST"])) return;
+        if (typeof ctx.installDependencies !== "function") {
+          writeJson(res, 501, { ok: false, error: "Auto-install not supported in this context" });
+          return;
+        }
+        try {
+          const result = await ctx.installDependencies();
+          writeJson(res, 200, result);
+        } catch (err) {
+          writeJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) });
         }
       },
     },

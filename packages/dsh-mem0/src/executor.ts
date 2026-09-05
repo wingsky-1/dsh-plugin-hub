@@ -14,6 +14,7 @@ import { createInterface } from "node:readline";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { MemoryExecutor } from "./tool-definitions.ts";
+import { probePythonEnvironment } from "./venv-manager.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -78,6 +79,16 @@ export class StdioMemoryExecutor implements MemoryExecutor {
     this.lastEnvOverrides = envOverrides;
     this.reason = "starting";
     this.detail = undefined;
+
+    // 1. 预先探针检测环境可用性
+    const probe = await probePythonEnvironment(this.pythonBin);
+    if (!probe.ok) {
+      this.ready = false;
+      this.reason = probe.reason || "dependency_missing";
+      this.detail = probe.detail;
+      return;
+    }
+    this.pythonBin = probe.pythonBin;
 
     const env = {
       ...process.env,

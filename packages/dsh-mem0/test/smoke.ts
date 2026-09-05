@@ -297,6 +297,10 @@ await test("路由配置操作：/api/dsh-mem0/config GET 与 POST 正常流转"
   const parsedGet = JSON.parse(getBody);
   assert.ok(parsedGet.config.llmApiKey.includes("***"), "GET 响应的 API Key 必须脱敏");
   assert.equal(parsedGet.config.hasLlmApiKey, true);
+
+  // 2. /api/dsh-mem0/install POST 路由可用性
+  const installRoute = routes.find((r) => r.path === "/api/dsh-mem0/install")!;
+  assert.ok(installRoute, "/api/dsh-mem0/install 路由必须注册");
 });
 
 // 7. 默认本地 Embedding 与模型消耗说明

@@ -27,6 +27,7 @@ import { registerMemoryPromptHook } from "./prompt.ts";
 import { createMem0Routes } from "./routes.ts";
 import { installMem0Settings, type OwnerScopeLike } from "./settings.ts";
 import { buildAllMemoryTools } from "./tool-definitions.ts";
+import { autoInstallDependencies, probePythonEnvironment } from "./venv-manager.ts";
 
 export const name = "mem0";
 
@@ -63,6 +64,12 @@ export {
   sanitizeConfigForClient,
   mergeConfigPatch,
 } from "./config.ts";
+export {
+  DEFAULT_VENV_DIR,
+  VENV_PYTHON,
+  probePythonEnvironment,
+  autoInstallDependencies,
+} from "./venv-manager.ts";
 export type { Mem0Config } from "./config.ts";
 
 /**
@@ -184,6 +191,17 @@ export function apply(ctx: Context, initialConfig?: Partial<Mem0Config>): void {
         executor.setPythonBin(next.pythonBin);
         await executor.restart(buildEnvOverrides(next));
         return next;
+      },
+      installDependencies: async () => {
+        ctx.logger?.info?.("[dsh-mem0] 开始触发后台依赖自动安装/自愈...");
+        const res = await autoInstallDependencies(currentConfig.pythonBin, (line) => {
+          ctx.logger?.debug?.(`[dsh-mem0 install] ${line}`);
+        });
+        if (res.ok) {
+          executor.setPythonBin(res.pythonBin);
+          await executor.restart(buildEnvOverrides(currentConfig));
+        }
+        return res;
       },
     });
     webServer.register(routes);

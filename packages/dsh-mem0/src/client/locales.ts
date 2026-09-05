@@ -63,7 +63,10 @@ export const zh = {
 
   // 自愈诊断
   diagPythonNotFound: "未检测到 Python 可执行程序，长期记忆已安全降级。请在宿主环境安装 Python 3.10+。",
-  diagDepMissing: "检测到缺少 Python 依赖库，请在终端执行一键安装：",
+  diagDepMissing: "检测到缺少 Python 依赖库，推荐点击下方按钮自动一键安装修复：",
+  autoInstallBtn: "⚡ 自动安装依赖",
+  autoInstallingBtn: "正在自动下载与配置环境…",
+  autoInstallDone: "依赖环境已就绪，正在拉起记忆服务！",
   copyCmd: "复制命令",
   copied: "已复制！",
 
@@ -138,7 +141,10 @@ export const en: Record<Mem0LocaleKey, string> = {
 
   // Self-healing Diagnostics
   diagPythonNotFound: "Python executable not detected. Memory is gracefully degraded. Please install Python 3.10+.",
-  diagDepMissing: "Python dependencies missing. Please run in your terminal:",
+  diagDepMissing: "Python dependencies missing. Click below to automatically install and resolve:",
+  autoInstallBtn: "⚡ Auto Install Dependencies",
+  autoInstallingBtn: "Downloading & Configuring Environment...",
+  autoInstallDone: "Environment resolved! Starting memory service...",
   copyCmd: "Copy Command",
   copied: "Copied!",
 
