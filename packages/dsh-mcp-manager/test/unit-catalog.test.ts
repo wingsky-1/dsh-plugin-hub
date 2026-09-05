@@ -40,13 +40,56 @@ assert.equal(DEFAULT_CATALOG_MAX_ENTRIES, 6);
   const meta = new Map([
     ["b", { description: "  beta   tool " }],
     ["c", { description: undefined }],
-    ["a", { description: "alpha" }],
     ["d", {}],
+    ["a", { description: "alpha" }],
   ]);
-  // 排序后取第一个非空：alpha < beta tool。
-  assert.equal(summarizeToolDescriptions(meta), "alpha");
+  // #569：每工具取首句、按工具名升序聚合（不再只取字典序第一条）。
+  assert.equal(summarizeToolDescriptions(meta), "共 2 个工具：alpha；beta tool");
   const onlyBlank = new Map([["x", { description: "   " }]]);
   assert.equal(summarizeToolDescriptions(onlyBlank), undefined, "全空白 → undefined");
+  // 顺序抖动 → 摘要稳定（按工具名排序，不随 Map 插入序/描述变化）。
+  const shuffled = new Map([
+    ["b", { description: "beta tool" }],
+    ["a", { description: "alpha" }],
+  ]);
+  assert.equal(summarizeToolDescriptions(shuffled), "共 2 个工具：alpha；beta tool", "顺序抖动摘要稳定");
+  // 首句提取：句点后随大写开新句；"1." 编号不误切；无句读整行返回。
+  assert.equal(
+    summarizeToolDescriptions(new Map([["x", { description: "Search the web. Use for facts." }]])),
+    "Search the web.",
+    "句点后随大写 → 只取首句",
+  );
+  assert.equal(
+    summarizeToolDescriptions(new Map([["x", { description: "Step 1. Crawl a site. Step 2. Done." }]])),
+    "Step 1. Crawl a site.",
+    "1. 编号不误切（句读前置数字跳过，后随真实句子边界才切）",
+  );
+  assert.equal(
+    summarizeToolDescriptions(new Map([["x", { description: "没有标点的长句啊没有句号" }]])),
+    "没有标点的长句啊没有句号",
+    "无句读整行返回",
+  );
+  // 精确去重：同句两个工具只出现一次。
+  assert.equal(
+    summarizeToolDescriptions(new Map([["a", { description: "同句" }], ["b", { description: "同句" }]])),
+    "共 2 个工具：同句",
+    "重复描述去重",
+  );
+  // 超长截断：总长 ≤ 240 字符（UTF-16 安全；截断处补 …）。
+  const many = new Map<string, { description?: unknown }>();
+  for (let i = 0; i < 30; i += 1) many.set(`t${String(i).padStart(2, "0")}`, { description: `工具 ${i} 的功能说明`.repeat(6) });
+  const long = summarizeToolDescriptions(many)!;
+  assert.ok(long.length <= 240, `总长受控（实际 ${long.length}）`);
+  assert.ok(long.endsWith("…"), "超长以省略号收尾（不句中切）");
+  // 描述去重（30 个工具同句）→ 内容一条 + 总数前缀即足够，无需省略号。
+  const dedupMap = new Map<string, { description?: unknown }>();
+  for (let i = 0; i < 30; i += 1) dedupMap.set(`t${String(i).padStart(2, "0")}`, { description: "同句说明" });
+  const dedup = summarizeToolDescriptions(dedupMap)!;
+  assert.equal(dedup, "共 30 个工具：同句说明", "重复描述去重后单条即完整");
+  // 极端长句（无句读超单句上限）→ 单句内截断 + 省略号。
+  const single = summarizeToolDescriptions(new Map([["x", { description: "长".repeat(500) }]]))!;
+  assert.ok(single.length <= 240, "极端长句截断受控");
+  assert.ok(single.endsWith("…"), "极端长句带省略号");
 }
 
 // ---- composeCatalogEntries ----

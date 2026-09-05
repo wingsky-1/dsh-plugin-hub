@@ -2052,7 +2052,7 @@ const main = async () => {
       "连接状态变化 digest 不变（不触发重复注入）"
     );
   });
-  check("summarizeToolDescriptions 排序稳定与截断", () => {
+  check("summarizeToolDescriptions 排序稳定与首句聚合", () => {
     const meta1 = new Map([
       ["mcp__s__b", { description: "工具 B 的说明文字" }],
       ["mcp__s__a", { description: "工具 A 的说明" }],
@@ -2065,7 +2065,20 @@ const main = async () => {
     assert.equal(summarizeToolDescriptions(meta1), summarizeToolDescriptions(meta2), "顺序变化摘要稳定");
     assert.equal(summarizeToolDescriptions(new Map([["x", { description: "  " }]])), undefined, "全空描述无摘要");
     const long = summarizeToolDescriptions(new Map([["x", { description: "长".repeat(100) }]]));
-    assert.equal(long, "长".repeat(100), "长描述完整返回不截断");
+    assert.equal(long, "长".repeat(100), "单句上限内完整返回不截断");
+    // #569 防 crawler 回归：tavily 类多工具服务器摘要必须覆盖 search/research
+    // 语义，不能被字典序第一条（tavily_crawl）误导成"爬虫服务器"。
+    const tavily = new Map([
+      ["tavily_search", { description: "Search the web for current information on any topic." }],
+      ["tavily_crawl", { description: "Crawl a website starting from a URL." }],
+      ["tavily_extract", { description: "Extract content from URLs." }],
+      ["tavily_map", { description: "Map a website's structure." }],
+      ["tavily_research", { description: "Perform comprehensive research on a given topic." }],
+    ]);
+    const tavilySummary = summarizeToolDescriptions(tavily)!;
+    assert.ok(tavilySummary.includes("Search the web"), "摘要含 search 语义（防 crawler 误导）");
+    assert.ok(tavilySummary.includes("research"), "摘要含 research 语义");
+    assert.ok(tavilySummary.startsWith("共 5 个工具："), "多工具前缀标注真实工具数");
   });
   check("recordCatalogTools 仅实质变化落盘", async () => {
     const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-catalog-"));

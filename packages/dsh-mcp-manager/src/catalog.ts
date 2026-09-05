@@ -72,18 +72,89 @@ export function catalogCacheFile() {
   return join(dshHome(), "dsh-mcp-catalog.json");
 }
 
+/** 目录摘要总长上限（字符，含前缀与省略号）：目录注入 ≤6 条目，防远端工具描述
+ * 堆叠稀释上下文；截断先于 escapeCatalogText 转义，防不可信输入注入超长文本。 */
+export const CATALOG_SUMMARY_MAX_CHARS = 240;
+/** 目录摘要单句上限（字符）：无句读语言 / 超长描述的安全截断点。 */
+export const CATALOG_SUMMARY_PER_TOOL_CHARS = 120;
+
 /**
- * 从工具描述集合计算目录摘要（排序后取第一个非空，**完整返回不截断**）：
- * 排序保证工具列表顺序变化时摘要稳定（重连不触发缓存更新 → digest 不变）。
+ * 从工具描述集合计算目录摘要（每工具取首句，按工具名升序 + 精确去重后拼接）。
+ *
+ * 为什么不再「排序取第一条」（#569）：tavily 等服务器的字典序第一条是次要工具
+ * （tavily_crawl），会把搜索服务器描述成爬虫、误导模型。改为每工具贡献首句：
+ * - 排序（按工具名而非描述）保证工具列表顺序/描述空白抖动时摘要稳定（重连不触发
+ *   缓存更新 → digest 不变）；
+ * - 首句提取（firstSentenceOf）防 "1." 编号 / URL / 缩写误切；多字节按字符截断；
+ * - 总长与单句均有上限：目录摘要的用途是让模型判断「该不该调这个服务器」，过长
+ *   描述（含远端不可信输入）反而稀释上下文；完整能力清单由 ws_mcp_list /
+ *   工具注册表承担，不塞进目录。
  */
 export function summarizeToolDescriptions(toolMeta: Map<string, { description?: unknown }>): string | undefined {
-  const descriptions = [...toolMeta.values()]
-    .map((meta) => (typeof meta?.description === "string" ? meta.description : ""))
-    .map((text) => text.trim().replace(/\s+/gu, " "))
-    .filter((text) => text !== "")
-    .sort();
-  const first = descriptions[0];
-  return first === undefined ? undefined : first;
+  // ① 收集 (工具名, 首句)（非空）；全空 → undefined。
+  const collected: Array<[string, string]> = [];
+  for (const [name, meta] of toolMeta) {
+    const sentence = firstSentenceOf(meta?.description);
+    if (sentence === "") continue;
+    collected.push([name, sentence]);
+  }
+  if (collected.length === 0) return undefined;
+  // ② 按工具名升序（确定性：顺序抖动只变内容不变名序）→ 精确去重。
+  collected.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  const seen = new Set<string>();
+  const sentences: string[] = [];
+  for (const [, sentence] of collected) {
+    if (seen.has(sentence)) continue;
+    seen.add(sentence);
+    sentences.push(sentence.length <= CATALOG_SUMMARY_PER_TOOL_CHARS
+      ? sentence
+      : `${charTruncate(sentence, CATALOG_SUMMARY_PER_TOOL_CHARS - 1)}…`);
+  }
+  const prefix = collected.length >= 2 ? `共 ${collected.length} 个工具：` : "";
+  // ③ 拼接（"；" 分隔），超总长按句整段回退补 "…"（绝不句中切）。
+  let text = prefix;
+  for (const sentence of sentences) {
+    const separator = text === prefix ? "" : "；";
+    if (text.length + separator.length + sentence.length <= CATALOG_SUMMARY_MAX_CHARS - 1) {
+      text += separator + sentence;
+    } else if (text === prefix) {
+      // 前缀后连一句都放不下（极端长句）→ 前缀 + 截断 + 省略号。
+      return `${prefix}${charTruncate(sentence, CATALOG_SUMMARY_MAX_CHARS - prefix.length - 1)}…`;
+    } else {
+      // 已容纳若干句 → 保留完整句，尾部补省略号表示还有更多工具。
+      return `${text}…`;
+    }
+  }
+  return text;
+}
+
+/** 取描述首行的首个完整句（MCP 描述惯例：首行即概要；多行 docstring 的参数
+ * 说明留给工具详情/ws_mcp_detail，不进目录摘要）。
+ * 句界判定防误切："1." 编号/版本/小数（句读前置数字）、URL / e.g. 缩写（句读后
+ * 须空白 + 大写字母/汉字才算新句）；无句读 → 整行返回。
+ * @returns 首句；空输入 → ""。 */
+function firstSentenceOf(description: unknown): string {
+  const raw = typeof description === "string" ? description : "";
+  if (raw.trim() === "") return "";
+  const firstLine = raw.split(/\r?\n/u)[0] ?? "";
+  const text = firstLine.replace(/\s+/gu, " ").trim();
+  if (text === "") return "";
+  for (let index = 0; index < text.length; index += 1) {
+    const ch = text[index];
+    if (ch !== "." && ch !== "!" && ch !== "?" && ch !== "。" && ch !== "！" && ch !== "？") continue;
+    if (index > 0 && text[index - 1] >= "0" && text[index - 1] <= "9") continue;
+    let next = index + 1;
+    while (next < text.length && /\s/u.test(text[next])) next += 1;
+    if (next >= text.length) return text; // 句读收尾（"…URL."）→ 整行即句，不剥标点
+    if (/[A-Za-z\u4e00-\u9fff]/u.test(text[next])) return text.slice(0, index + 1); // 句读后随大写/汉字 → 新句
+  }
+  return text;
+}
+
+/** 按 Unicode 字符截断（防切代理对/emoji；JS length 为 UTF-16 码元）。 */
+function charTruncate(text: string, maxChars: number): string {
+  if (maxChars <= 0) return "";
+  return [...text].slice(0, maxChars).join("");
 }
 
 // --------------------------------------------- L1 能力目录（感知增强）

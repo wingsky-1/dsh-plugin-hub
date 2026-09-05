@@ -711,7 +711,7 @@ export {
   MIDDLEWARE_GLOBAL_ROOT,
 } from "./middleware-utils.ts";
 // 状态持久化
-export { userStateFile, loadUserState, saveUserState, catalogCacheFileFor, loadDisabledTools, saveDisabledTools } from "./middleware-state.ts";
+export { userStateFile, loadUserState, saveUserState, catalogCacheFileFor, readCatalogServerFromDisk, loadDisabledTools, saveDisabledTools } from "./middleware-state.ts";
 // 工具注册
 export { registerMiddlewareTools } from "./middleware-register.ts";
 // 类型

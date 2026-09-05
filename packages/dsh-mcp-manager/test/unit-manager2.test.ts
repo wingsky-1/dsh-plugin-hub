@@ -1241,4 +1241,130 @@ function rmStatSafe(p) {
   }
 }
 
+// ---- #569：catalogViewFor 合成注入端目录视图（B 起步 + 中间层覆盖 + 磁盘兜底） ----
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-catview-"));
+  const prevHome = process.env.DSH_HOME;
+  const { createHash } = await import("node:crypto");
+  const catalogFileFor = (root) =>
+    join(dir, "dsh-mcp-catalog", `${createHash("sha256").update(root).digest("hex").slice(0, 16)}.json`);
+  const unitFor = (root, catalogEntries) => ({
+    root,
+    connections: new Map(),
+    catalog: new Map(Object.entries(catalogEntries)),
+    userDisabled: new Set(),
+    lastTouchedAt: Date.now(),
+    inFlight: new Map(),
+  });
+  const serversWith = (entries) => new Map(Object.entries(entries));
+
+  try {
+    process.env.DSH_HOME = dir;
+    const { manager } = makeManager(dir);
+    const mw = { units: new Map() };
+
+    // B 缓存基底：supervisor 路径旧摘要（应被中间层覆盖 / 保留兜底）。
+    manager.catalogCache.set("g1", { summary: "B-global-g1" });
+    manager.catalogCache.set("g2", { summary: "B-global-g2" });
+    manager.catalogCache.set("p1", { summary: "B-project-p1" });
+    manager.catalogCache.set("p2", { summary: "B-project-p2" });
+
+    // 场景 1：off 模式 → 纯 B 视图（中间层不参与；判 middlewareMode 非实例）。
+    {
+      manager.middlewareMode = "off";
+      manager.middleware = mw;
+      const servers = serversWith({
+        g1: { server: { name: "g1" }, scope: "global" },
+        p1: { server: { name: "p1" }, scope: "project" },
+      });
+      const view = await manager.catalogViewFor("/proj", servers);
+      assert.equal(view.get("g1")?.summary, "B-global-g1", "off 模式全局走 B");
+      assert.equal(view.get("p1")?.summary, "B-project-p1", "off 模式项目走 B");
+    }
+
+    // 场景 2：all 模式 + @global 单元含 g1（内存目录）→ 覆盖 B；p1 项目单元覆盖。
+    {
+      manager.middlewareMode = "all";
+      mw.units.set(
+        "@global",
+        unitFor("@global", {
+          g1: { discoveredAt: 1, tools: new Map([["g_search", { description: "Global search the web for facts." }]]) },
+        }),
+      );
+      mw.units.set(
+        "/proj",
+        unitFor("/proj", {
+          p1: { discoveredAt: 1, tools: new Map([["p_read", { description: "Project read files." }]]) },
+        }),
+      );
+      const servers = serversWith({
+        g1: { server: { name: "g1" }, scope: "global" },
+        g2: { server: { name: "g2" }, scope: "global" },
+        p1: { server: { name: "p1" }, scope: "project" },
+      });
+      const view = await manager.catalogViewFor("/proj", servers);
+      assert.equal(view.get("g1")?.summary, "Global search the web for facts.", "all 模式全局覆盖为中间层目录摘要");
+      assert.equal(view.get("g2")?.summary, "B-global-g2", "中间层无 g2 → 保留 B");
+      assert.equal(view.get("p1")?.summary, "Project read files.", "project scope 覆盖为项目单元摘要");
+    }
+
+    // 场景 3：project 模式 + project scope → 项目单元；global scope 无 @global 残留 → B；
+    // 场景 4：中间层有 unavailable → 视为无 → 磁盘兜底/保留 B。
+    {
+      manager.middlewareMode = "project";
+      mw.units.clear();
+      mw.units.set(
+        "/proj",
+        unitFor("/proj", {
+          p1: { discoveredAt: 1, tools: new Map([["p_read", { description: "Project read files." }]]) },
+          p2: { discoveredAt: 1, tools: new Map(), unavailable: "discovery failed" },
+        }),
+      );
+      const servers = serversWith({
+        g1: { server: { name: "g1" }, scope: "global" },
+        p1: { server: { name: "p1" }, scope: "project" },
+        p2: { server: { name: "p2" }, scope: "project" },
+      });
+      const view = await manager.catalogViewFor("/proj", servers);
+      assert.equal(view.get("p1")?.summary, "Project read files.", "project 模式项目级走中间层");
+      assert.equal(view.get("g1")?.summary, "B-global-g1", "project 模式全局无 @global 单元 → B");
+      assert.equal(view.get("p2")?.summary, "B-project-p2", "unavailable 目录视为无 → 保留 B");
+    }
+
+    // 场景 5：磁盘 last-good 兜底（单元缺失但 A 文件有该服务器）。
+    {
+      manager.middlewareMode = "all";
+      mw.units.clear(); // 单元全部缺失
+      const diskRoot = "@global";
+      const file = catalogFileFor(diskRoot);
+      mkdirSync(join(dir, "dsh-mcp-catalog"), { recursive: true });
+      writeFileSync(
+        file,
+        JSON.stringify({
+          version: 1,
+          root: diskRoot,
+          entries: {
+            g1: {
+              discoveredAt: 1,
+              tools: [{ name: "g_search", description: "Disk cached global search." }],
+            },
+          },
+        }),
+      );
+      const servers = serversWith({
+        g1: { server: { name: "g1" }, scope: "global" },
+        g2: { server: { name: "g2" }, scope: "global" },
+      });
+      const view = await manager.catalogViewFor(undefined, servers);
+      assert.equal(view.get("g1")?.summary, "Disk cached global search.", "单元缺失 → 磁盘 last-good 兜底");
+      assert.equal(view.get("g2")?.summary, "B-global-g2", "磁盘无该服务器 → 保留 B");
+    }
+  } finally {
+    if (prevHome === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = prevHome;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 console.log("  ok   unit-manager2: 管理器方法面/normalize/apply 分支");
