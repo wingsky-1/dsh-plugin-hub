@@ -344,7 +344,17 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
 - **新增/修改客户端后**：`pnpm build && pnpm test && pnpm contract && pnpm pack:check`
   全绿再提交。
 
+<a id="5-smoke-测试防-flake-纪律"></a><a id="user-content-5-smoke-测试防-flake-纪律"></a>
 ## 5. Smoke 测试防 flake 纪律
+
+### 5.1 基本要求
+
+- **无网络与零真实凭据**：smoke 测试全部无网络、无真实凭据，本地可直接离线运行。
+- **断言全覆盖**：新功能/修复必须带 smoke 断言（含路由 403/405 围栏用例、client 契约断言）。
+- **CI 稳定性门槛**：新增 / 修改 `test/smoke.ts` 后，本地连续跑 **≥10 次**（如
+  `for i in $(seq 1 10); do node packages/<pkg>/test/smoke.ts; done`）确认无 flake 再提交。
+
+### 5.2 防 flake 核心原则
 
 背景：notifier 的 history 路由测试曾因「多个 `apply()` 实例共享同一 `history.jsonl` +
 `appendHistory` 为 fire-and-forget 异步写盘 + 固定 `setTimeout(50)` 后断言『最后一条
@@ -368,8 +378,6 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
    （如 opencode-usage 的 `schedulePersist`、notifier 的 `appendHistory`），绝不能依赖
    「最后一条是 X」「条数 === N」等顺序敏感断言；必须**隔离文件 + 轮询**。理想情况：
    被测插件暴露 `await flushPersist()` 之类的可等待落盘钩子，测试直接 `await` 比轮询更稳。
-5. **CI 稳定性门槛**：新增 / 修改 `test/smoke.ts` 后，本地连续跑 **≥10 次**（如
-   `for i in $(seq 1 10); do node packages/<pkg>/test/smoke.ts; done`）确认无 flake 再提交。
 
 反例（notifier #17，已修）：多个 `apply(...)` 都传 `historyFile: join(work, "history.jsonl")`
 （共享文件）；`await setTimeout(resolve, 50)` 后 `assert.equal(records.at(-1).kind, "test")`。
@@ -377,6 +385,14 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
 
 正例（mcp-manager）：设 `DSH_HOME` 到临时目录、每块显式 `storePath: join(dir, "dsh-mcp.json")`、
 写盘为 `await writeFile`（已等待）。
+
+<a id="zero-pollution"></a><a id="user-content-zero-pollution"></a>
+### 5.3 测试产物零污染纪律（#218）
+
+- **临时落盘隔离**：测试运行时落盘**必须**落在 `mkdtempSync` 隔离目录（`DSH_HOME` 已隔离），
+  **禁止**产生任何含 `undefined` 段的路径（如 `packages/*/undefined/**`）；
+- **提交前自查**：`git status` 出现 `packages/*/undefined/`、`*.jsonl` 等运行时产物
+  一律视为污染，不得提交；自动收集脚本（基线等）只收白名单路径。
 
 ## 6. 多端兼容（三操作系统 + 三访问形态 + 明暗双主题）
 

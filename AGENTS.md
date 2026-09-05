@@ -45,7 +45,7 @@ test/                 共享测试工具（smoke-lib）
 
 独立验证（smoke / 浏览器实测 / 需启动 dsh 的验证）时使用**隔离环境**：`DSH_HOME`
 设到临时目录（如 `$(mktemp -d)`）、文件路径隔离，遵循
-[docs/DEVELOPMENT.md §5](docs/DEVELOPMENT.md#5-smoke-测试防-flake-纪律) 防 flake 纪律。
+[docs/DEVELOPMENT.md §5](docs/DEVELOPMENT.md#user-content-5-smoke-测试防-flake-纪律) 防 flake 纪律。
 客户端 UI 改动的浏览器实测统一用
 `@wingsky-1/dsh-verify-isolated` 插件包注册的 `dsh-verify-isolated`
 skill（临时 `DSH_HOME` + 独立 `verify_<随机>` profile 双重隔离，一键脚本自动
@@ -125,16 +125,11 @@ Conventional Commits（`type(scope): subject`；type：`feat` / `fix` / `docs` /
 
 ## 测试纪律
 
-smoke 全部无网络、无真实凭据，本地可直接运行；新功能/修复必须带 smoke 断言
-（含路由 403/405 围栏用例、client 契约断言）。防 flake 纪律（隔离文件路径 / 设 DSH_HOME
-到临时目录 / 轮询替代固定 sleep）见
-[DEVELOPMENT.md §5](docs/DEVELOPMENT.md#5-smoke-测试防-flake-纪律)。
+- **离线与断言全覆盖**：smoke 全部无网络、无真实凭据，本地可直接离线运行；新功能/修复必须带 smoke 断言（含路由 403/405 围栏用例、client 契约断言）。
+- **环境隔离与防 flake**：严格遵循临时 `DSH_HOME` 隔离与轮询等待纪律，禁止依赖全局默认路径与固定 sleep。
+- **测试产物零污染红线（#218）**：测试落盘必须进 `mkdtempSync` 隔离目录，严禁提交含 `undefined/`、`*.jsonl` 等运行时产物。
 
-**测试产物零污染纪律（#218）**：
-- 测试运行时落盘**必须**落在 `mkdtempSync` 隔离目录（DSH_HOME 已隔离），
-  **禁止**产生任何含 `undefined` 段的路径（如 `packages/*/undefined/**`）；
-- 提交前自查：`git status` 出现 `packages/*/undefined/`、`*.jsonl` 等运行时产物
-  一律视为污染，不得提交；自动收集脚本（基线等）只收白名单路径。
+详细操作守则、技术实现细节与正反例单一事实源见 [docs/DEVELOPMENT.md §5](docs/DEVELOPMENT.md#user-content-5-smoke-测试防-flake-纪律)。
 
 ## PR 贴图纪律（#566 实证）
 

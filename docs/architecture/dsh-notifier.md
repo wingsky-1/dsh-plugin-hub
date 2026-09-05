@@ -63,7 +63,7 @@ apply 主体直接调会在 cordis isolate 链就绪前访问服务，触发 Cyc
 | `agent/error` | `notifyTaskError` | 脱敏 → 60s 滚动窗口合并 → `notify("error")` |
 | `agent/turn-stopping` | `notifyTurnEnd`（默认关） | `(agentId, turn)` 去重 → `notify("turn-end")`；serial 事件签名无 next，**不要调 next()** |
 
-**完成提醒双源判据**（index.ts:510-576）：以 `session/event` 推送流（`eventStreamEnds`）
+**完成提醒双源判据**（`index.ts#apply`）：以 `session/event` 推送流（`eventStreamEnds`）
 记忆的最新 `turn/end` 为**主证据**（恒定新鲜）；快照回读（`lastTurnEndOf`）仅在 push 缺失
 时兜底（插件中途挂载 / 重载窗口）；`abort-early 冻结` 防止把 `running` 期间的旧 turn
 误判为完成；kind 白名单仅 `"completed"` 通知完成——aborted/interrupted/error/blocked
@@ -140,7 +140,7 @@ info→passive）；投递终态落盘 + `wingsky-notify/sent` 广播。
 
 ### 3.4 脱敏实现（sanitizeErrorText）
 
-`SANITIZE_RULES` 有序表（message.ts:59-100，**顺序即数据**）：用户路径 → `<path>`；
+`SANITIZE_RULES` 有序表（`message.ts#SANITIZE_RULES`，**顺序即数据**）：用户路径 → `<path>`；
 PEM 私钥块 → `<private-key>`；DB/消息队列连接串凭据 → `scheme://<redacted>@host`；
 GitHub PAT（classic + fine-grained）/ JWT / AWS AKIA / ≥24hex·≥32base64 长串 → `<token>`；
 密钥字段赋值 → `键=<redacted>`；邮箱 → `<email>`。
