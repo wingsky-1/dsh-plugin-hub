@@ -33,6 +33,7 @@ import { join } from 'node:path';
 const action = process.argv[2];
 const BRANCH = 'baseline/mutation';
 const TARGET_DIR = join(process.cwd(), 'coverage', 'mutation');
+const MAX_BUFFER = 64 * 1024 * 1024; // 64MB，防止巨型基线 JSON 突破 Node 默认 1MB maxBuffer
 
 function runGit(args, options = {}) {
   const { input, env, ignoreError = false } = options;
@@ -41,6 +42,7 @@ function runGit(args, options = {}) {
       encoding: 'utf8',
       stdio: [input ? 'pipe' : 'ignore', 'pipe', 'pipe'],
       input,
+      maxBuffer: MAX_BUFFER,
       env: { ...process.env, ...env },
     }).trim();
   } catch (err) {
@@ -159,7 +161,7 @@ if (action === 'push') {
     if (!match) continue;
     const fileName = match[1];
     if (/^incremental-.+\.json$/.test(fileName) || fileName === 'manifest.json') {
-      const content = execFileSync('git', ['show', `FETCH_HEAD:${fileName}`]);
+      const content = runGit(['show', `FETCH_HEAD:${fileName}`]);
       writeFileSync(join(TARGET_DIR, fileName), content);
       restored++;
     }
