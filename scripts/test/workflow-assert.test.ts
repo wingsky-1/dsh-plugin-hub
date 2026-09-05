@@ -269,6 +269,26 @@ test('#220 段式三方一致：observe 计划 ↔ stryker.conf.d 文件集 ↔ 
   }
 })
 
+test('#572: stryker 配置生成器与拓扑清单一致性（SSOT + CodeGen 门禁）', () => {
+  const topoFile = join(ROOT, 'scripts/data/mutation-topology.json')
+  assert.ok(existsSync(topoFile), 'mutation-topology.json 单一事实源在位')
+  const topo = JSON.parse(readFileSync(topoFile, 'utf8'))
+  assert.ok(topo.sharedDefaults, '包含 sharedDefaults 通用模板')
+  assert.ok(topo.packages, '包含 packages 各包分段定义')
+
+  // package.json 脚本在位
+  const pkgJson = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
+  assert.ok(pkgJson.scripts['stryker:gen'], 'package.json 包含 stryker:gen 命令')
+  assert.ok(pkgJson.scripts['stryker:check'], 'package.json 包含 stryker:check 命令')
+
+  // 执行 gen-stryker-conf.mjs --check 校验磁盘与清单 100% 同步
+  const res = spawnSync('node', ['scripts/gate/gen-stryker-conf.mjs', '--check'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  })
+  assert.equal(res.status, 0, `gen-stryker-conf --check 失败:\n${res.stderr || res.stdout}`)
+})
+
 // ── #342 二期 §契约：功能段名唯一 + mutate 面防空段回归 ──
 // 段名唯一：combos_for 按 stryker.conf.d/<pkg>-*.json 文件名枚举后缀展开矩阵，
 // 段文件名即矩阵实例（功能段名如 dsh-notifier-server.json → seg=server；数字段名
