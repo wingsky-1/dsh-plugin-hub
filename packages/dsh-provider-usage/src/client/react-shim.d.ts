@@ -37,6 +37,12 @@ declare module "react" {
     deps: readonly unknown[],
   ): T;
 
+  /** useMemo：按 deps 记忆计算结果（#503 M2.1：渲染桶折叠 / stackOrder / Y 域）。 */
+  export function useMemo<T>(factory: () => T, deps: readonly unknown[]): T;
+
+  /** useRef：跨渲染可变容器（#503 M2.1：图表容器 DOM 引用，宽度测量用）。 */
+  export function useRef<T>(initialValue: T): { current: T };
+
   /**
    * createElement：type 为标签名或函数组件；props 键值宽松（本包只传样式/事件/
    * 数据面），children 支持 ReactNode 及其数组。

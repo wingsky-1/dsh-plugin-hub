@@ -33,6 +33,7 @@ import "./unit-refresh-revalidate.test.ts";
 import "./unit-deepseek-official.test.ts";
 import "./unit-fetch-timeout.test.ts";
 import "./unit-trend.test.ts";
+import "./unit-trend-view.test.ts";
 import "./unit-report.test.ts";
 
 import {
@@ -1577,6 +1578,41 @@ console.log("[smoke] #105① /history 渲染缓存断言全部通过 ✓");
   const fallback = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?granularity=hour&metric=evil` }));
   assert.equal(fallback.granularity, "day", "非法 granularity 回退 day");
   assert.equal(fallback.metric, "total", "非法 metric 回退 total");
+
+  // ---------------------------------------------------------------- #503 M2.1：n 参数 + 按粒度×留存 clamp + 新响应字段
+
+  // 新响应字段：n（clamp 后实际桶数）、retentionDays（客户端裁档位依据）、summary.prevComplete
+  assert.equal(payload.n, 30, "响应带 n（默认 30）");
+  assert.equal(payload.retentionDays, 180, "响应带 retentionDays（默认配置）");
+  assert.equal(payload.summary.prevComplete, false, "prev 窗口起点早于数据起点（仅今日）→ prevComplete=false");
+
+  // ?n=7：日序列 7 桶；?n=90：≤retention 上限内放行
+  const n7 = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?n=7` }));
+  assert.equal(n7.n, 7, "n=7 回显");
+  assert.equal(n7.series.length, 7, "n=7 日序列 7 桶");
+  const n90 = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?n=90` }));
+  assert.equal(n90.series.length, 90, "n=90 日序列 90 桶（≤留存上限）");
+  const nOver = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?n=9999` }));
+  assert.equal(nOver.n, 180, "n=9999 clamp 到留存上限 180（day ≤ retentionDays）");
+  assert.equal(nOver.series.length, 180, "clamp 后序列长度 == n");
+
+  // 周粒度 clamp：cap = ⌈180/7⌉ = 26（周桶按周一对齐，26 桶跨度可能触留存边缘——属预期）
+  const w26 = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?granularity=week&n=26` }));
+  assert.equal(w26.series.length, 26, "周 26 桶放行（⌈180/7⌉）");
+  const wOver = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?granularity=week&n=99` }));
+  assert.equal(wOver.n, 26, "周 n=99 clamp 到 26");
+
+  // 月粒度 clamp：cap = ⌈180/30⌉ = 6（月 12 档跨度 365 天 > 180 天留存——r1 方案口径错误已修正）
+  const m6 = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?granularity=month&n=6` }));
+  assert.equal(m6.series.length, 6, "月 6 桶放行");
+  const mOver = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?granularity=month&n=12` }));
+  assert.equal(mOver.n, 6, "月 n=12 clamp 到 ⌈180/30⌉=6");
+
+  // 非法 n 回退默认（0/负数/非整数/非数字/空串）
+  for (const bad of ["0", "-5", "3.7", "abc", ""]) {
+    const badPayload = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?granularity=week&n=${encodeURIComponent(bad)}` }));
+    assert.equal(badPayload.n, 12, `非法 n=${JSON.stringify(bad)} 回退周默认 12`);
+  }
 }
 
 console.log("[smoke] #503 trend 挂接 + /trend 集成断言全部通过 ✓");
