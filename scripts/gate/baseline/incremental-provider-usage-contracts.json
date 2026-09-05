@@ -274,6 +274,31 @@
           }
         },
         {
+          "id": "10",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 36,
+              "line": 122
+            },
+            "start": {
+              "column": 15,
+              "line": 122
+            }
+          }
+        },
+        {
           "id": "11",
           "mutatorName": "EqualityOperator",
           "replacement": "typeof s !== 'string'",
@@ -410,6 +435,60 @@
           }
         },
         {
+          "id": "18",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 148
+            },
+            "start": {
+              "column": 73,
+              "line": 134
+            }
+          }
+        },
+        {
+          "id": "19",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3"
+          ],
+          "location": {
+            "end": {
+              "column": 42,
+              "line": 135
+            },
+            "start": {
+              "column": 7,
+              "line": 135
+            }
+          }
+        },
+        {
           "id": "20",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
@@ -491,6 +570,33 @@
           }
         },
         {
+          "id": "23",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof v === 'object'",
+          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3"
+          ],
+          "location": {
+            "end": {
+              "column": 28,
+              "line": 135
+            },
+            "start": {
+              "column": 7,
+              "line": 135
+            }
+          }
+        },
+        {
           "id": "24",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -536,6 +642,33 @@
           }
         },
         {
+          "id": "26",
+          "mutatorName": "EqualityOperator",
+          "replacement": "v !== null",
+          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3"
+          ],
+          "location": {
+            "end": {
+              "column": 42,
+              "line": 135
+            },
+            "start": {
+              "column": 32,
+              "line": 135
+            }
+          }
+        },
+        {
           "id": "27",
           "mutatorName": "BooleanLiteral",
           "replacement": "true",
@@ -557,6 +690,60 @@
             "start": {
               "column": 51,
               "line": 135
+            }
+          }
+        },
+        {
+          "id": "28",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: a.providers is not iterable: uncaughtException: a.providers is not iterable",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3"
+          ],
+          "location": {
+            "end": {
+              "column": 40,
+              "line": 146
+            },
+            "start": {
+              "column": 5,
+              "line": 138
+            }
+          }
+        },
+        {
+          "id": "29",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3"
+          ],
+          "location": {
+            "end": {
+              "column": 40,
+              "line": 146
+            },
+            "start": {
+              "column": 5,
+              "line": 138
             }
           }
         },
@@ -1047,6 +1234,33 @@
           }
         },
         {
+          "id": "48",
+          "mutatorName": "EqualityOperator",
+          "replacement": "a.version !== ADAPTER_CONTRACT_VERSION",
+          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3"
+          ],
+          "location": {
+            "end": {
+              "column": 43,
+              "line": 138
+            },
+            "start": {
+              "column": 5,
+              "line": 138
+            }
+          }
+        },
+        {
           "id": "49",
           "mutatorName": "ConditionalExpression",
           "replacement": "true",
@@ -1056,6 +1270,33 @@
           "static": false,
           "killedBy": [
             "2"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3"
+          ],
+          "location": {
+            "end": {
+              "column": 31,
+              "line": 139
+            },
+            "start": {
+              "column": 5,
+              "line": 139
+            }
+          }
+        },
+        {
+          "id": "50",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof a.name !== 'string'",
+          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
           ],
           "coveredBy": [
             "0",
@@ -1092,6 +1333,30 @@
           }
         },
         {
+          "id": "52",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "status": "Survived",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3"
+          ],
+          "location": {
+            "end": {
+              "column": 65,
+              "line": 139
+            },
+            "start": {
+              "column": 35,
+              "line": 139
+            }
+          }
+        },
+        {
           "id": "53",
           "mutatorName": "EqualityOperator",
           "replacement": "(a.name as string).length > 2",
@@ -1101,6 +1366,33 @@
           "static": false,
           "killedBy": [
             "2"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3"
+          ],
+          "location": {
+            "end": {
+              "column": 65,
+              "line": 139
+            },
+            "start": {
+              "column": 35,
+              "line": 139
+            }
+          }
+        },
+        {
+          "id": "54",
+          "mutatorName": "EqualityOperator",
+          "replacement": "(a.name as string).length < 2",
+          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
           ],
           "coveredBy": [
             "0",
@@ -1173,6 +1465,60 @@
           }
         },
         {
+          "id": "57",
+          "mutatorName": "Regex",
+          "replacement": "/^[A-Za-z0-9_-]$/",
+          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3"
+          ],
+          "location": {
+            "end": {
+              "column": 28,
+              "line": 140
+            },
+            "start": {
+              "column": 5,
+              "line": 140
+            }
+          }
+        },
+        {
+          "id": "58",
+          "mutatorName": "Regex",
+          "replacement": "/^[^A-Za-z0-9_-]{2,64}$/",
+          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3"
+          ],
+          "location": {
+            "end": {
+              "column": 28,
+              "line": 140
+            },
+            "start": {
+              "column": 5,
+              "line": 140
+            }
+          }
+        },
+        {
           "id": "59",
           "mutatorName": "ConditionalExpression",
           "replacement": "true",
@@ -1227,6 +1573,33 @@
           }
         },
         {
+          "id": "61",
+          "mutatorName": "EqualityOperator",
+          "replacement": "a.providers.length <= 0",
+          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3"
+          ],
+          "location": {
+            "end": {
+              "column": 27,
+              "line": 142
+            },
+            "start": {
+              "column": 5,
+              "line": 142
+            }
+          }
+        },
+        {
           "id": "62",
           "mutatorName": "MethodExpression",
           "replacement": "a.providers.some((p: unknown) => typeof p === 'string' && p.length > 0)",
@@ -1254,6 +1627,33 @@
           }
         },
         {
+          "id": "63",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3"
+          ],
+          "location": {
+            "end": {
+              "column": 76,
+              "line": 143
+            },
+            "start": {
+              "column": 23,
+              "line": 143
+            }
+          }
+        },
+        {
           "id": "64",
           "mutatorName": "ConditionalExpression",
           "replacement": "true",
@@ -1263,6 +1663,33 @@
           "static": false,
           "killedBy": [
             "2"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3"
+          ],
+          "location": {
+            "end": {
+              "column": 76,
+              "line": 143
+            },
+            "start": {
+              "column": 39,
+              "line": 143
+            }
+          }
+        },
+        {
+          "id": "65",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
           ],
           "coveredBy": [
             "0",
@@ -1317,6 +1744,33 @@
           "static": false,
           "killedBy": [
             "2"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3"
+          ],
+          "location": {
+            "end": {
+              "column": 60,
+              "line": 143
+            },
+            "start": {
+              "column": 39,
+              "line": 143
+            }
+          }
+        },
+        {
+          "id": "68",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof p !== 'string'",
+          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
           ],
           "coveredBy": [
             "0",
@@ -1407,6 +1861,33 @@
           }
         },
         {
+          "id": "72",
+          "mutatorName": "EqualityOperator",
+          "replacement": "p.length <= 0",
+          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3"
+          ],
+          "location": {
+            "end": {
+              "column": 76,
+              "line": 143
+            },
+            "start": {
+              "column": 64,
+              "line": 143
+            }
+          }
+        },
+        {
           "id": "73",
           "mutatorName": "ConditionalExpression",
           "replacement": "true",
@@ -1416,6 +1897,33 @@
           "static": false,
           "killedBy": [
             "2"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3"
+          ],
+          "location": {
+            "end": {
+              "column": 38,
+              "line": 144
+            },
+            "start": {
+              "column": 5,
+              "line": 144
+            }
+          }
+        },
+        {
+          "id": "74",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof a.fetchData !== 'function'",
+          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
           ],
           "coveredBy": [
             "0",
@@ -1479,6 +1987,33 @@
           }
         },
         {
+          "id": "77",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof a.formatCapsule !== 'function'",
+          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3"
+          ],
+          "location": {
+            "end": {
+              "column": 42,
+              "line": 145
+            },
+            "start": {
+              "column": 5,
+              "line": 145
+            }
+          }
+        },
+        {
           "id": "78",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -1524,6 +2059,33 @@
           }
         },
         {
+          "id": "80",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof a.formatPanel !== 'function'",
+          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3"
+          ],
+          "location": {
+            "end": {
+              "column": 40,
+              "line": 146
+            },
+            "start": {
+              "column": 5,
+              "line": 146
+            }
+          }
+        },
+        {
           "id": "81",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -1538,6 +2100,58 @@
             "start": {
               "column": 30,
               "line": 146
+            }
+          }
+        },
+        {
+          "id": "82",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 162
+            },
+            "start": {
+              "column": 75,
+              "line": 151
+            }
+          }
+        },
+        {
+          "id": "83",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 42,
+              "line": 152
+            },
+            "start": {
+              "column": 7,
+              "line": 152
             }
           }
         },
@@ -1620,6 +2234,32 @@
           }
         },
         {
+          "id": "87",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof v === 'object'",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 28,
+              "line": 152
+            },
+            "start": {
+              "column": 7,
+              "line": 152
+            }
+          }
+        },
+        {
           "id": "88",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -1647,6 +2287,32 @@
           "static": false,
           "killedBy": [
             "2"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 42,
+              "line": 152
+            },
+            "start": {
+              "column": 32,
+              "line": 152
+            }
+          }
+        },
+        {
+          "id": "90",
+          "mutatorName": "EqualityOperator",
+          "replacement": "v !== null",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
           ],
           "coveredBy": [
             "0",
@@ -1775,6 +2441,58 @@
           }
         },
         {
+          "id": "96",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[\"Stryker was here\"]",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 31,
+              "line": 154
+            },
+            "start": {
+              "column": 29,
+              "line": 154
+            }
+          }
+        },
+        {
+          "id": "97",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 45,
+              "line": 155
+            },
+            "start": {
+              "column": 7,
+              "line": 155
+            }
+          }
+        },
+        {
           "id": "98",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
@@ -1784,6 +2502,32 @@
           "static": false,
           "killedBy": [
             "2"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 45,
+              "line": 155
+            },
+            "start": {
+              "column": 7,
+              "line": 155
+            }
+          }
+        },
+        {
+          "id": "99",
+          "mutatorName": "EqualityOperator",
+          "replacement": "a.version === ADAPTER_CONTRACT_VERSION",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
           ],
           "coveredBy": [
             "0",
@@ -1840,6 +2584,32 @@
             "start": {
               "column": 60,
               "line": 155
+            }
+          }
+        },
+        {
+          "id": "102",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 84,
+              "line": 156
+            },
+            "start": {
+              "column": 7,
+              "line": 156
             }
           }
         },
@@ -1922,6 +2692,32 @@
           }
         },
         {
+          "id": "106",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof a.name === 'string'",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 33,
+              "line": 156
+            },
+            "start": {
+              "column": 7,
+              "line": 156
+            }
+          }
+        },
+        {
           "id": "107",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -1935,6 +2731,32 @@
             },
             "start": {
               "column": 25,
+              "line": 156
+            }
+          }
+        },
+        {
+          "id": "108",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "/^[A-Za-z0-9_-]{2,64}$/.test(a.name as string)",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 84,
+              "line": 156
+            },
+            "start": {
+              "column": 37,
               "line": 156
             }
           }
@@ -1975,6 +2797,58 @@
           "static": false,
           "killedBy": [
             "2"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 61,
+              "line": 156
+            },
+            "start": {
+              "column": 38,
+              "line": 156
+            }
+          }
+        },
+        {
+          "id": "111",
+          "mutatorName": "Regex",
+          "replacement": "/^[A-Za-z0-9_-]$/",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 61,
+              "line": 156
+            },
+            "start": {
+              "column": 38,
+              "line": 156
+            }
+          }
+        },
+        {
+          "id": "112",
+          "mutatorName": "Regex",
+          "replacement": "/^[^A-Za-z0-9_-]{2,64}$/",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
           ],
           "coveredBy": [
             "0",
@@ -2035,6 +2909,32 @@
           }
         },
         {
+          "id": "115",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 62,
+              "line": 157
+            },
+            "start": {
+              "column": 7,
+              "line": 157
+            }
+          }
+        },
+        {
           "id": "116",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
@@ -2061,6 +2961,58 @@
           }
         },
         {
+          "id": "117",
+          "mutatorName": "LogicalOperator",
+          "replacement": "!Array.isArray(a.providers) && a.providers.length === 0",
+          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'length'): uncaughtException: Cannot read properties of undefined (reading 'length')",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 62,
+              "line": 157
+            },
+            "start": {
+              "column": 7,
+              "line": 157
+            }
+          }
+        },
+        {
+          "id": "118",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "Array.isArray(a.providers)",
+          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'length'): uncaughtException: Cannot read properties of undefined (reading 'length')",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 34,
+              "line": 157
+            },
+            "start": {
+              "column": 7,
+              "line": 157
+            }
+          }
+        },
+        {
           "id": "119",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
@@ -2070,6 +3022,32 @@
           "static": false,
           "killedBy": [
             "2"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 62,
+              "line": 157
+            },
+            "start": {
+              "column": 38,
+              "line": 157
+            }
+          }
+        },
+        {
+          "id": "120",
+          "mutatorName": "EqualityOperator",
+          "replacement": "a.providers.length !== 0",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
           ],
           "coveredBy": [
             "0",
@@ -2131,6 +3109,32 @@
           }
         },
         {
+          "id": "123",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 40,
+              "line": 158
+            },
+            "start": {
+              "column": 7,
+              "line": 158
+            }
+          }
+        },
+        {
           "id": "124",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
@@ -2140,6 +3144,32 @@
           "static": false,
           "killedBy": [
             "2"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 40,
+              "line": 158
+            },
+            "start": {
+              "column": 7,
+              "line": 158
+            }
+          }
+        },
+        {
+          "id": "125",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof a.fetchData === 'function'",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
           ],
           "coveredBy": [
             "0",
@@ -2219,6 +3249,32 @@
           }
         },
         {
+          "id": "129",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 44,
+              "line": 159
+            },
+            "start": {
+              "column": 7,
+              "line": 159
+            }
+          }
+        },
+        {
           "id": "130",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
@@ -2228,6 +3284,32 @@
           "static": false,
           "killedBy": [
             "2"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 44,
+              "line": 159
+            },
+            "start": {
+              "column": 7,
+              "line": 159
+            }
+          }
+        },
+        {
+          "id": "131",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof a.formatCapsule === 'function'",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
           ],
           "coveredBy": [
             "0",
@@ -2307,6 +3389,32 @@
           }
         },
         {
+          "id": "135",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 42,
+              "line": 160
+            },
+            "start": {
+              "column": 7,
+              "line": 160
+            }
+          }
+        },
+        {
           "id": "136",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
@@ -2316,6 +3424,32 @@
           "static": false,
           "killedBy": [
             "2"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 42,
+              "line": 160
+            },
+            "start": {
+              "column": 7,
+              "line": 160
+            }
+          }
+        },
+        {
+          "id": "137",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof a.formatPanel === 'function'",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
           ],
           "coveredBy": [
             "0",
@@ -2395,6 +3529,32 @@
           }
         },
         {
+          "id": "141",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 28,
+              "line": 161
+            },
+            "start": {
+              "column": 10,
+              "line": 161
+            }
+          }
+        },
+        {
           "id": "142",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
@@ -2404,6 +3564,58 @@
           "static": false,
           "killedBy": [
             "2"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 28,
+              "line": 161
+            },
+            "start": {
+              "column": 10,
+              "line": 161
+            }
+          }
+        },
+        {
+          "id": "143",
+          "mutatorName": "EqualityOperator",
+          "replacement": "missing.length >= 0",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2"
+          ],
+          "location": {
+            "end": {
+              "column": 28,
+              "line": 161
+            },
+            "start": {
+              "column": 10,
+              "line": 161
+            }
+          }
+        },
+        {
+          "id": "144",
+          "mutatorName": "EqualityOperator",
+          "replacement": "missing.length <= 0",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
           ],
           "coveredBy": [
             "0",
@@ -2435,6 +3647,146 @@
             "start": {
               "column": 44,
               "line": 161
+            }
+          }
+        },
+        {
+          "id": "146",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: The \"path\" argument must be of type string. Received undefined: uncaughtException: The \"path\" argument must be of type string. Received undefined",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 167
+            },
+            "start": {
+              "column": 48,
+              "line": 165
+            }
+          }
+        },
+        {
+          "id": "147",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: The \"path\" argument must be of type string. Received type boolean (true): uncaughtException: The \"path\" argument must be of type string. Received type boolean (true)",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 57,
+              "line": 166
+            },
+            "start": {
+              "column": 10,
+              "line": 166
+            }
+          }
+        },
+        {
+          "id": "148",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: The \"path\" argument must be of type string. Received type boolean (false): uncaughtException: The \"path\" argument must be of type string. Received type boolean (false)",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 57,
+              "line": 166
+            },
+            "start": {
+              "column": 10,
+              "line": 166
+            }
+          }
+        },
+        {
+          "id": "149",
+          "mutatorName": "LogicalOperator",
+          "replacement": "s.replace(/[^A-Za-z0-9._-]/g, '_') && 'unknown'",
+          "statusReason": "uncaughtException: fresh 数据落盘历史 JSONL: uncaughtException: fresh 数据落盘历史 JSONL",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 57,
+              "line": 166
+            },
+            "start": {
+              "column": 10,
+              "line": 166
+            }
+          }
+        },
+        {
+          "id": "150",
+          "mutatorName": "Regex",
+          "replacement": "/[A-Za-z0-9._-]/g",
+          "statusReason": "uncaughtException: fresh 数据落盘历史 JSONL: uncaughtException: fresh 数据落盘历史 JSONL",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 38,
+              "line": 166
+            },
+            "start": {
+              "column": 20,
+              "line": 166
             }
           }
         },
@@ -9051,1356 +10403,6 @@
               "line": 423
             }
           }
-        },
-        {
-          "id": "28",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: a.providers is not iterable: uncaughtException: a.providers is not iterable",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3"
-          ],
-          "location": {
-            "end": {
-              "column": 40,
-              "line": 146
-            },
-            "start": {
-              "column": 5,
-              "line": 138
-            }
-          }
-        },
-        {
-          "id": "52",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 3,
-          "coveredBy": [
-            "0",
-            "2",
-            "3"
-          ],
-          "location": {
-            "end": {
-              "column": 65,
-              "line": 139
-            },
-            "start": {
-              "column": 35,
-              "line": 139
-            }
-          }
-        },
-        {
-          "id": "48",
-          "mutatorName": "EqualityOperator",
-          "replacement": "a.version !== ADAPTER_CONTRACT_VERSION",
-          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3"
-          ],
-          "location": {
-            "end": {
-              "column": 43,
-              "line": 138
-            },
-            "start": {
-              "column": 5,
-              "line": 138
-            }
-          }
-        },
-        {
-          "id": "61",
-          "mutatorName": "EqualityOperator",
-          "replacement": "a.providers.length <= 0",
-          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3"
-          ],
-          "location": {
-            "end": {
-              "column": 27,
-              "line": 142
-            },
-            "start": {
-              "column": 5,
-              "line": 142
-            }
-          }
-        },
-        {
-          "id": "54",
-          "mutatorName": "EqualityOperator",
-          "replacement": "(a.name as string).length < 2",
-          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3"
-          ],
-          "location": {
-            "end": {
-              "column": 65,
-              "line": 139
-            },
-            "start": {
-              "column": 35,
-              "line": 139
-            }
-          }
-        },
-        {
-          "id": "57",
-          "mutatorName": "Regex",
-          "replacement": "/^[A-Za-z0-9_-]$/",
-          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3"
-          ],
-          "location": {
-            "end": {
-              "column": 28,
-              "line": 140
-            },
-            "start": {
-              "column": 5,
-              "line": 140
-            }
-          }
-        },
-        {
-          "id": "29",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3"
-          ],
-          "location": {
-            "end": {
-              "column": 40,
-              "line": 146
-            },
-            "start": {
-              "column": 5,
-              "line": 138
-            }
-          }
-        },
-        {
-          "id": "65",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3"
-          ],
-          "location": {
-            "end": {
-              "column": 76,
-              "line": 143
-            },
-            "start": {
-              "column": 39,
-              "line": 143
-            }
-          }
-        },
-        {
-          "id": "58",
-          "mutatorName": "Regex",
-          "replacement": "/^[^A-Za-z0-9_-]{2,64}$/",
-          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3"
-          ],
-          "location": {
-            "end": {
-              "column": 28,
-              "line": 140
-            },
-            "start": {
-              "column": 5,
-              "line": 140
-            }
-          }
-        },
-        {
-          "id": "63",
-          "mutatorName": "ArrowFunction",
-          "replacement": "() => undefined",
-          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3"
-          ],
-          "location": {
-            "end": {
-              "column": 76,
-              "line": 143
-            },
-            "start": {
-              "column": 23,
-              "line": 143
-            }
-          }
-        },
-        {
-          "id": "50",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof a.name !== 'string'",
-          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3"
-          ],
-          "location": {
-            "end": {
-              "column": 31,
-              "line": 139
-            },
-            "start": {
-              "column": 5,
-              "line": 139
-            }
-          }
-        },
-        {
-          "id": "18",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 148
-            },
-            "start": {
-              "column": 73,
-              "line": 134
-            }
-          }
-        },
-        {
-          "id": "26",
-          "mutatorName": "EqualityOperator",
-          "replacement": "v !== null",
-          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3"
-          ],
-          "location": {
-            "end": {
-              "column": 42,
-              "line": 135
-            },
-            "start": {
-              "column": 32,
-              "line": 135
-            }
-          }
-        },
-        {
-          "id": "23",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof v === 'object'",
-          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3"
-          ],
-          "location": {
-            "end": {
-              "column": 28,
-              "line": 135
-            },
-            "start": {
-              "column": 7,
-              "line": 135
-            }
-          }
-        },
-        {
-          "id": "19",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3"
-          ],
-          "location": {
-            "end": {
-              "column": 42,
-              "line": 135
-            },
-            "start": {
-              "column": 7,
-              "line": 135
-            }
-          }
-        },
-        {
-          "id": "10",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 4,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 36,
-              "line": 122
-            },
-            "start": {
-              "column": 15,
-              "line": 122
-            }
-          }
-        },
-        {
-          "id": "68",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof p !== 'string'",
-          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3"
-          ],
-          "location": {
-            "end": {
-              "column": 60,
-              "line": 143
-            },
-            "start": {
-              "column": 39,
-              "line": 143
-            }
-          }
-        },
-        {
-          "id": "108",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "/^[A-Za-z0-9_-]{2,64}$/.test(a.name as string)",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 84,
-              "line": 156
-            },
-            "start": {
-              "column": 37,
-              "line": 156
-            }
-          }
-        },
-        {
-          "id": "90",
-          "mutatorName": "EqualityOperator",
-          "replacement": "v !== null",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 42,
-              "line": 152
-            },
-            "start": {
-              "column": 32,
-              "line": 152
-            }
-          }
-        },
-        {
-          "id": "83",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 42,
-              "line": 152
-            },
-            "start": {
-              "column": 7,
-              "line": 152
-            }
-          }
-        },
-        {
-          "id": "106",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof a.name === 'string'",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 33,
-              "line": 156
-            },
-            "start": {
-              "column": 7,
-              "line": 156
-            }
-          }
-        },
-        {
-          "id": "99",
-          "mutatorName": "EqualityOperator",
-          "replacement": "a.version === ADAPTER_CONTRACT_VERSION",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 45,
-              "line": 155
-            },
-            "start": {
-              "column": 7,
-              "line": 155
-            }
-          }
-        },
-        {
-          "id": "72",
-          "mutatorName": "EqualityOperator",
-          "replacement": "p.length <= 0",
-          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3"
-          ],
-          "location": {
-            "end": {
-              "column": 76,
-              "line": 143
-            },
-            "start": {
-              "column": 64,
-              "line": 143
-            }
-          }
-        },
-        {
-          "id": "82",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 162
-            },
-            "start": {
-              "column": 75,
-              "line": 151
-            }
-          }
-        },
-        {
-          "id": "96",
-          "mutatorName": "ArrayDeclaration",
-          "replacement": "[\"Stryker was here\"]",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 31,
-              "line": 154
-            },
-            "start": {
-              "column": 29,
-              "line": 154
-            }
-          }
-        },
-        {
-          "id": "97",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 45,
-              "line": 155
-            },
-            "start": {
-              "column": 7,
-              "line": 155
-            }
-          }
-        },
-        {
-          "id": "87",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof v === 'object'",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 28,
-              "line": 152
-            },
-            "start": {
-              "column": 7,
-              "line": 152
-            }
-          }
-        },
-        {
-          "id": "111",
-          "mutatorName": "Regex",
-          "replacement": "/^[A-Za-z0-9_-]$/",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 61,
-              "line": 156
-            },
-            "start": {
-              "column": 38,
-              "line": 156
-            }
-          }
-        },
-        {
-          "id": "102",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 84,
-              "line": 156
-            },
-            "start": {
-              "column": 7,
-              "line": 156
-            }
-          }
-        },
-        {
-          "id": "112",
-          "mutatorName": "Regex",
-          "replacement": "/^[^A-Za-z0-9_-]{2,64}$/",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 61,
-              "line": 156
-            },
-            "start": {
-              "column": 38,
-              "line": 156
-            }
-          }
-        },
-        {
-          "id": "74",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof a.fetchData !== 'function'",
-          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3"
-          ],
-          "location": {
-            "end": {
-              "column": 38,
-              "line": 144
-            },
-            "start": {
-              "column": 5,
-              "line": 144
-            }
-          }
-        },
-        {
-          "id": "77",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof a.formatCapsule !== 'function'",
-          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3"
-          ],
-          "location": {
-            "end": {
-              "column": 42,
-              "line": 145
-            },
-            "start": {
-              "column": 5,
-              "line": 145
-            }
-          }
-        },
-        {
-          "id": "123",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 40,
-              "line": 158
-            },
-            "start": {
-              "column": 7,
-              "line": 158
-            }
-          }
-        },
-        {
-          "id": "117",
-          "mutatorName": "LogicalOperator",
-          "replacement": "!Array.isArray(a.providers) && a.providers.length === 0",
-          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'length'): uncaughtException: Cannot read properties of undefined (reading 'length')",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 62,
-              "line": 157
-            },
-            "start": {
-              "column": 7,
-              "line": 157
-            }
-          }
-        },
-        {
-          "id": "129",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 44,
-              "line": 159
-            },
-            "start": {
-              "column": 7,
-              "line": 159
-            }
-          }
-        },
-        {
-          "id": "80",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof a.formatPanel !== 'function'",
-          "statusReason": "uncaughtException: select 经串行链原子写入新的启用选择: uncaughtException: select 经串行链原子写入新的启用选择",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3"
-          ],
-          "location": {
-            "end": {
-              "column": 40,
-              "line": 146
-            },
-            "start": {
-              "column": 5,
-              "line": 146
-            }
-          }
-        },
-        {
-          "id": "118",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "Array.isArray(a.providers)",
-          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'length'): uncaughtException: Cannot read properties of undefined (reading 'length')",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 34,
-              "line": 157
-            },
-            "start": {
-              "column": 7,
-              "line": 157
-            }
-          }
-        },
-        {
-          "id": "120",
-          "mutatorName": "EqualityOperator",
-          "replacement": "a.providers.length !== 0",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 62,
-              "line": 157
-            },
-            "start": {
-              "column": 38,
-              "line": 157
-            }
-          }
-        },
-        {
-          "id": "115",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 62,
-              "line": 157
-            },
-            "start": {
-              "column": 7,
-              "line": 157
-            }
-          }
-        },
-        {
-          "id": "135",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 42,
-              "line": 160
-            },
-            "start": {
-              "column": 7,
-              "line": 160
-            }
-          }
-        },
-        {
-          "id": "131",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof a.formatCapsule === 'function'",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 44,
-              "line": 159
-            },
-            "start": {
-              "column": 7,
-              "line": 159
-            }
-          }
-        },
-        {
-          "id": "141",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 28,
-              "line": 161
-            },
-            "start": {
-              "column": 10,
-              "line": 161
-            }
-          }
-        },
-        {
-          "id": "125",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof a.fetchData === 'function'",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 40,
-              "line": 158
-            },
-            "start": {
-              "column": 7,
-              "line": 158
-            }
-          }
-        },
-        {
-          "id": "143",
-          "mutatorName": "EqualityOperator",
-          "replacement": "missing.length >= 0",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 28,
-              "line": 161
-            },
-            "start": {
-              "column": 10,
-              "line": 161
-            }
-          }
-        },
-        {
-          "id": "137",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof a.formatPanel === 'function'",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 42,
-              "line": 160
-            },
-            "start": {
-              "column": 7,
-              "line": 160
-            }
-          }
-        },
-        {
-          "id": "144",
-          "mutatorName": "EqualityOperator",
-          "replacement": "missing.length <= 0",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2"
-          ],
-          "location": {
-            "end": {
-              "column": 28,
-              "line": 161
-            },
-            "start": {
-              "column": 10,
-              "line": 161
-            }
-          }
-        },
-        {
-          "id": "148",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: The \"path\" argument must be of type string. Received type boolean (false): uncaughtException: The \"path\" argument must be of type string. Received type boolean (false)",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 57,
-              "line": 166
-            },
-            "start": {
-              "column": 10,
-              "line": 166
-            }
-          }
-        },
-        {
-          "id": "146",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: The \"path\" argument must be of type string. Received undefined: uncaughtException: The \"path\" argument must be of type string. Received undefined",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 167
-            },
-            "start": {
-              "column": 48,
-              "line": 165
-            }
-          }
-        },
-        {
-          "id": "147",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: The \"path\" argument must be of type string. Received type boolean (true): uncaughtException: The \"path\" argument must be of type string. Received type boolean (true)",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 57,
-              "line": 166
-            },
-            "start": {
-              "column": 10,
-              "line": 166
-            }
-          }
-        },
-        {
-          "id": "149",
-          "mutatorName": "LogicalOperator",
-          "replacement": "s.replace(/[^A-Za-z0-9._-]/g, '_') && 'unknown'",
-          "statusReason": "uncaughtException: fresh 数据落盘历史 JSONL: uncaughtException: fresh 数据落盘历史 JSONL",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 57,
-              "line": 166
-            },
-            "start": {
-              "column": 10,
-              "line": 166
-            }
-          }
-        },
-        {
-          "id": "150",
-          "mutatorName": "Regex",
-          "replacement": "/[A-Za-z0-9._-]/g",
-          "statusReason": "uncaughtException: fresh 数据落盘历史 JSONL: uncaughtException: fresh 数据落盘历史 JSONL",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 38,
-              "line": 166
-            },
-            "start": {
-              "column": 20,
-              "line": 166
-            }
-          }
         }
       ],
       "source": "/**\n * dsh-provider-usage — 适配器契约（v2 重构版）。\n *\n * 版本策略：v1 旧契约（HostProviderAdapter / ClientProviderRenderer）在本版本中\n * 标记为 deprecated，保留引用兼容。v2 新契约（UsageStatsAdapter）为推荐标准。\n * 下一主要版本删除 v1 类型。\n *\n * #215 注入面（additive）：FetchContext/PanelInput 新增 optional `utils` 字段——\n * 宿主注入的适配器共享工具（图表/转义/日界等，见 charts.ts）。mjs 鸭子类型下\n * 字段可选，适配器 `const U = input.utils` 后优先消费，缺失时回退文件内私有副本。\n */\nimport type { AdapterUtils } from \"./charts.ts\";\n\n// ------------------------------------------------------------------ 契约版本\n\n/** 旧契约版本（v1，deprecated）。 */\nexport const ADAPTER_CONTRACT_VERSION_V1 = 1;\n/** 新契约版本（v2）。 */\nexport const ADAPTER_CONTRACT_VERSION = 2;\n\n// ------------------------------------------------------------------ 错误码\n\nexport const ERROR_CODES = [\n  \"no-provider\",\n  \"no-adapter\",\n  \"no-enabled-adapter\",\n  \"no-api-key\",\n  \"unauthorized\",\n  \"timeout\",\n  \"network\",\n  \"bad-data\",\n  \"bad-json\",\n  \"adapter-load-failed\",\n  \"adapter-crash\",\n  \"adapter-timeout\",\n] as const;\n\nexport type AdapterErrorCode = (typeof ERROR_CODES)[number] | `http-${number}`;\n\n// ==================================================================\n// v2 新契约（UsageStatsAdapter）\n// ==================================================================\n\n/** fetchData 的入参上下文（由插件注入）。 */\nexport interface FetchContext {\n  /** API 基础地址（来自插件配置或模型配置链）。 */\n  apiEndpoint: string;\n  /** 用户定义的 API 路径。 */\n  staticPath: string;\n  /** 密钥（从配置链解析，可能为空）。 */\n  apiKey?: string;\n  /** 当前调用的 provider 名。 */\n  provider: string;\n  /** 当前会话模型 id（可选）。 */\n  model?: string;\n  /** 当前选中会话 id（可选）。 */\n  sessionId?: string;\n  /** 超时配置（固定 5000ms，不可配置，由宿主端注入）。 */\n  timeoutMs: number;\n  /** 超时/卸载取消信号。 */\n  signal?: AbortSignal;\n  /** 宿主注入的适配器共享工具（图表/转义/日界等；mjs 鸭子类型下可选）。 */\n  utils?: AdapterUtils;\n}\n\n/** formatCapsule 的入参。 */\nexport interface CapsuleInput {\n  /** 数据时间戳。 */\n  time: number;\n  /** fetchData 返回的原始数据。 */\n  data: Record<string, unknown>;\n  /** 数据状态：fresh=新取，cached=缓存命中，stale=降级陈旧。 */\n  status: 'fresh' | 'cached' | 'stale';\n  /** status=stale 时的错误信息。 */\n  error?: string;\n  /** HTML 转义助手：将字符串中的 & < > \" ' 转义为实体。 */\n  esc: (s: unknown) => string;\n}\n\n/** formatPanel 的入参。 */\nexport interface PanelInput {\n  /** 历史条目列表。 */\n  entries: Array<{ time: number; data: Record<string, unknown> }>;\n  /** 查询时间范围。 */\n  range: { start: number; end: number };\n  /** 是否被服务端截断（超出 limit）。 */\n  truncated: boolean;\n  /** HTML 转义助手。 */\n  esc: (s: unknown) => string;\n  /** 宿主注入的适配器共享工具（图表/转义/日界等；mjs 鸭子类型下可选）。 */\n  utils?: AdapterUtils;\n}\n\n/**\n * v2 适配器契约（UsageStatsAdapter）。\n * 用户 mjs 默认导出该形状，同时支持具名导出（version/name/label/providers/...）。\n */\nexport interface UsageStatsAdapter {\n  /** 契约版本，必须 === ADAPTER_CONTRACT_VERSION（2）。 */\n  version: number;\n  /** 适配器唯一标识（白名单 ^[A-Za-z0-9_-]{2,64}$，用于日志/历史目录名）。 */\n  name: string;\n  /** 展示名（可选，默认取 name）。 */\n  label?: string;\n  /** 认领的 provider 列表。 */\n  providers: string[];\n  /** 可选：数据留存策略。 */\n  retention?: { maxAge?: number; maxSize?: number };\n  /** 获取原始数据（宿主端执行）。 */\n  fetchData(ctx: FetchContext): Promise<Record<string, unknown>>;\n  /** 格式化胶囊展示内容（宿主端执行，返回 HTML）。 */\n  formatCapsule(input: CapsuleInput): string;\n  /** 格式化面板展示内容（宿主端执行，返回 HTML）。 */\n  formatPanel(input: PanelInput): string;\n}\n\n// ------------------------------------------------------------------ HTML 转义助手\n\n/** 将字符串中的 & < > \" ' 转义为 HTML 实体。 */\nexport function esc(s: unknown): string {\n  if (s === null || s === undefined) return '';\n  const str = typeof s === 'string' ? s : String(s);\n  return str\n    .replace(/&/g, '&amp;')\n    .replace(/</g, '&lt;')\n    .replace(/>/g, '&gt;')\n    .replace(/\"/g, '&quot;')\n    .replace(/'/g, '&#39;');\n}\n\n// ------------------------------------------------------------------ 校验\n\n/** 校验 v2 适配器结构。 */\nexport function isUsageStatsAdapter(v: unknown): v is UsageStatsAdapter {\n  if (typeof v !== 'object' || v === null) return false;\n  const a = v as Record<string, unknown>;\n  return (\n    a.version === ADAPTER_CONTRACT_VERSION &&\n    typeof a.name === 'string' && (a.name as string).length >= 2 &&\n    /^[A-Za-z0-9_-]{2,64}$/.test(a.name as string) &&\n    Array.isArray(a.providers) &&\n    a.providers.length > 0 &&\n    a.providers.every((p: unknown) => typeof p === 'string' && p.length > 0) &&\n    typeof a.fetchData === 'function' &&\n    typeof a.formatCapsule === 'function' &&\n    typeof a.formatPanel === 'function'\n  );\n}\n\n/** v2 适配器形状问题明细（通过校验返回 null）。 */\nexport function describeUsageStatsAdapterShape(v: unknown): string | null {\n  if (typeof v !== 'object' || v === null) return `导出不是对象（${v === null ? 'null' : typeof v}）`;\n  const a = v as Record<string, unknown>;\n  const missing: string[] = [];\n  if (a.version !== ADAPTER_CONTRACT_VERSION) missing.push(`version 必须 === ${ADAPTER_CONTRACT_VERSION}（实际 ${String(a.version)}）`);\n  if (typeof a.name !== 'string' || !/^[A-Za-z0-9_-]{2,64}$/.test(a.name as string)) missing.push('name（2-64 位字母数字下划线连字符）');\n  if (!Array.isArray(a.providers) || a.providers.length === 0) missing.push('providers（非空字符串数组）');\n  if (typeof a.fetchData !== 'function') missing.push('fetchData（函数）');\n  if (typeof a.formatCapsule !== 'function') missing.push('formatCapsule（函数）');\n  if (typeof a.formatPanel !== 'function') missing.push('formatPanel（函数）');\n  return missing.length > 0 ? missing.join('、') : null;\n}\n\n/** 路径安全段：只保留字母数字下划线连字符，防目录穿越。 */\nexport function safeSegment(s: string): string {\n  return s.replace(/[^A-Za-z0-9._-]/g, '_') || 'unknown';\n}\n\n// ==================================================================\n// v1 旧契约（deprecated，保留引用兼容）\n// ==================================================================\n\n/** @deprecated 使用 v2 UsageStatsAdapter */\nexport interface UsageWindow {\n  key: string;\n  name: string;\n  percent: number | null;\n  raw?: string;\n  limit?: number;\n  resetsAt?: string;\n  resetPeriodMs?: number;\n}\n\n/** @deprecated 使用 v2 UsageStatsAdapter */\nexport interface ProviderUsage {\n  ok: boolean;\n  provider: string;\n  label: string;\n  fetchedAt: number;\n  windows?: UsageWindow[];\n  data?: unknown;\n  error?: string | null;\n  meta?: Record<string, unknown>;\n}\n\n/** @deprecated 使用 v2 formatCapsule 返回的 HTML */\nexport type SummaryLevel = 'ok' | 'warn' | 'err' | 'off';\n\n/** @deprecated 使用 v2 formatCapsule */\nexport interface ProviderSummary {\n  ok: boolean;\n  provider: string;\n  label: string;\n  text: string;\n  level: SummaryLevel;\n  hint?: string;\n  derived?: boolean;\n  hasAdapter: boolean;\n  fetchedAt: number;\n  error?: string | null;\n}\n\n/** @deprecated */\nexport interface SampleColumn {\n  key: string;\n  name: string;\n  limit?: number;\n  resetPeriodMs?: number;\n}\n\n/** @deprecated */\nexport type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;\n\n/** @deprecated 使用 v2 FetchContext */\nexport interface HostFetchContext {\n  provider: string;\n  model?: string;\n  sessionId?: string;\n  apiKey?: string;\n  baseUrl?: string;\n  timeoutMs?: number;\n  fetch: FetchLike;\n  signal?: AbortSignal;\n  usage?: ProviderUsage | null;\n}\n\n/** @deprecated */\nexport interface SamplePointData {\n  cols: SampleColumn[];\n  values: (number | null)[];\n}\n\n/** @deprecated 使用 v2 UsageStatsAdapter */\nexport interface HostProviderAdapter {\n  version: number;\n  id: string;\n  label: string;\n  providers: string[];\n  fetchUsage(ctx: HostFetchContext): Promise<ProviderUsage>;\n  summarize?(ctx: HostFetchContext): Promise<ProviderSummary>;\n  samplePoint?(usage: ProviderUsage): SamplePointData | null;\n  retryPolicy?: { maxRetries?: number; backoffMs?: number };\n  clientFile?: string;\n}\n\n/** @deprecated 使用 v2 formatPanel */\nexport interface ClientProviderRenderer {\n  version: number;\n  providers: string[];\n  adapterId?: string;\n  pill?(summary: ProviderSummary): { text: string; level: SummaryLevel; hint?: string } | null;\n  render(ctx: RenderContext): void | (() => void);\n}\n\n/** @deprecated */\nexport interface RenderContext {\n  provider: string;\n  adapterId?: string;\n  data?: ProviderUsage | null;\n  history?: { samples?: unknown[][]; columns?: SampleColumn[] };\n  mount: HTMLElement;\n  api?: unknown;\n  dispose?: () => void;\n}\n\n/** @deprecated */\nexport interface DshUsageGlobal {\n  version: number;\n  registerRenderer(renderer: ClientProviderRenderer): boolean;\n  unregisterRenderer?(providers: string[]): void;\n}\n\n/** @deprecated */\nexport const USAGE_GLOBAL_KEY = '__DSH_USAGE__';\n\n// ------------------------------------------------------------------ v1 校验（deprecated）\n\n/** @deprecated */\nexport function isHostProviderAdapter(v: unknown): v is HostProviderAdapter {\n  if (typeof v !== 'object' || v === null) return false;\n  const a = v as Record<string, unknown>;\n  return (\n    a.version === ADAPTER_CONTRACT_VERSION_V1 &&\n    typeof a.id === 'string' && (a.id as string).length > 0 &&\n    typeof a.label === 'string' && (a.label as string).length > 0 &&\n    Array.isArray(a.providers) &&\n    a.providers.length > 0 &&\n    a.providers.every((p: unknown) => typeof p === 'string' && p.length > 0) &&\n    typeof a.fetchUsage === 'function'\n  );\n}\n\n/** @deprecated */\nexport function describeAdapterShape(v: unknown): string | null {\n  if (typeof v !== 'object' || v === null) return `导出不是对象（${v === null ? 'null' : typeof v}）`;\n  const a = v as Record<string, unknown>;\n  const missing: string[] = [];\n  if (a.version !== ADAPTER_CONTRACT_VERSION_V1) missing.push(`version 必须 === ${ADAPTER_CONTRACT_VERSION_V1}（实际 ${String(a.version)}）`);\n  if (typeof a.id !== 'string' || (a.id as string).length === 0) missing.push('id（非空字符串）');\n  if (typeof a.label !== 'string' || (a.label as string).length === 0) missing.push('label（非空字符串）');\n  if (!Array.isArray(a.providers) || a.providers.length === 0 || !a.providers.every((p: unknown) => typeof p === 'string' && p.length > 0)) {\n    missing.push('providers（非空字符串数组）');\n  }\n  if (typeof a.fetchUsage !== 'function') missing.push('fetchUsage（函数）');\n  return missing.length > 0 ? missing.join('、') : null;\n}\n\n/** @deprecated */\nexport function isClientProviderRenderer(v: unknown): v is ClientProviderRenderer {\n  if (typeof v !== 'object' || v === null) return false;\n  const a = v as Record<string, unknown>;\n  return (\n    a.version === ADAPTER_CONTRACT_VERSION_V1 &&\n    Array.isArray(a.providers) &&\n    a.providers.length > 0 &&\n    a.providers.every((p: unknown) => typeof p === 'string' && p.length > 0) &&\n    typeof a.render === 'function'\n  );\n}\n\n// ------------------------------------------------------------------ v1 辅助（deprecated）\n\n/** @deprecated */\nexport function usageError(\n  provider: string,\n  error: string | null,\n  label = '未知提供商',\n  fetchedAt = Date.now(),\n): ProviderUsage {\n  return { ok: false, provider, label, fetchedAt, error };\n}\n\n/** @deprecated */\nexport function usageOk(\n  provider: string,\n  label: string,\n  fetchedAt: number,\n  extra: Partial<ProviderUsage> = {},\n): ProviderUsage {\n  return { ok: true, provider, label, fetchedAt, ...extra };\n}\n\n/** @deprecated */\nexport function summarizeTextFromWindows(windows: UsageWindow[] | undefined): string {\n  if (!Array.isArray(windows) || windows.length === 0) return '';\n  return windows\n    .map((w) => `${w.name} ${typeof w.percent === 'number' ? `${w.percent}%` : '--'}`)\n    .join(' · ');\n}\n\n/** @deprecated */\nexport function levelFromWindows(windows: UsageWindow[] | undefined): SummaryLevel {\n  if (!Array.isArray(windows)) return 'off';\n  let worst: number | null = null;\n  for (const w of windows) {\n    if (typeof w.percent === 'number' && (worst === null || w.percent > worst)) worst = w.percent;\n  }\n  if (worst === null) return 'off';\n  if (worst >= 95) return 'err';\n  if (worst >= 80) return 'warn';\n  return 'ok';\n}\n\n/** @deprecated */\nexport interface UsageAdapterSpec {\n  version?: number;\n  id: string;\n  label: string;\n  providers: string[];\n  windows: Array<Omit<UsageWindow, 'percent'>>;\n  fetchUsage(ctx: HostFetchContext): Promise<ProviderUsage>;\n  summarizeText?(windows: UsageWindow[]): string;\n  retryPolicy?: HostProviderAdapter['retryPolicy'];\n}\n\n/** @deprecated 使用 v2 直接实现 UsageStatsAdapter */\nexport function defineUsageAdapter(spec: UsageAdapterSpec): HostProviderAdapter {\n  const adapter: HostProviderAdapter = {\n    version: spec.version ?? ADAPTER_CONTRACT_VERSION_V1,\n    id: spec.id,\n    label: spec.label,\n    providers: spec.providers,\n    fetchUsage: spec.fetchUsage,\n    retryPolicy: spec.retryPolicy,\n  };\n  adapter.samplePoint = (usage: ProviderUsage): SamplePointData | null => {\n    if (!Array.isArray(usage.windows) || usage.windows.length === 0) return null;\n    const cols: SampleColumn[] = spec.windows.map((w) => ({\n      key: w.key,\n      name: w.name,\n      ...(w.limit !== undefined ? { limit: w.limit } : {}),\n      ...(w.resetPeriodMs !== undefined ? { resetPeriodMs: w.resetPeriodMs } : {}),\n    }));\n    const values = usage.windows.map((w) =>\n      typeof w.percent === 'number' && Number.isFinite(w.percent) ? w.percent : null,\n    );\n    if (cols.length !== values.length) return null;\n    return { cols, values };\n  };\n  adapter.summarize = async (ctx: HostFetchContext): Promise<ProviderSummary> => {\n    const usage = ctx.usage ?? null;\n    const windows = usage?.windows;\n    const text =\n      typeof spec.summarizeText === 'function'\n        ? spec.summarizeText(windows ?? [])\n        : summarizeTextFromWindows(windows);\n    return {\n      ok: true,\n      provider: ctx.provider,\n      label: adapter.label,\n      text: text !== '' ? text : adapter.label,\n      level: levelFromWindows(windows),\n      hasAdapter: true,\n      fetchedAt: Date.now(),\n    };\n  };\n  return adapter;\n}"
@@ -10408,6 +10410,64 @@
     "packages/dsh-provider-usage/src/core/guards.ts": {
       "language": "typescript",
       "mutants": [
+        {
+          "id": "429",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: 两适配器探针成对出现: uncaughtException: 两适配器探针成对出现",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 84
+            },
+            "start": {
+              "column": 64,
+              "line": 28
+            }
+          }
+        },
+        {
+          "id": "430",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: 两适配器探针成对出现: uncaughtException: 两适配器探针成对出现",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 61,
+              "line": 31
+            },
+            "start": {
+              "column": 7,
+              "line": 31
+            }
+          }
+        },
         {
           "id": "431",
           "mutatorName": "ConditionalExpression",
@@ -10429,6 +10489,93 @@
           "location": {
             "end": {
               "column": 61,
+              "line": 31
+            },
+            "start": {
+              "column": 7,
+              "line": 31
+            }
+          }
+        },
+        {
+          "id": "432",
+          "mutatorName": "LogicalOperator",
+          "replacement": "externalSignal !== undefined || externalSignal.aborted",
+          "statusReason": "uncaughtException: 两适配器探针成对出现: uncaughtException: 两适配器探针成对出现",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 61,
+              "line": 31
+            },
+            "start": {
+              "column": 7,
+              "line": 31
+            }
+          }
+        },
+        {
+          "id": "433",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: 并发同 provider 请求复用缓存（实际 fresh）: uncaughtException: 并发同 provider 请求复用缓存（实际 fresh）",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 35,
+              "line": 31
+            },
+            "start": {
+              "column": 7,
+              "line": 31
+            }
+          }
+        },
+        {
+          "id": "434",
+          "mutatorName": "EqualityOperator",
+          "replacement": "externalSignal === undefined",
+          "statusReason": "uncaughtException: 并发同 provider 请求复用缓存（实际 fresh）: uncaughtException: 并发同 provider 请求复用缓存（实际 fresh）",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 35,
               "line": 31
             },
             "start": {
@@ -10495,6 +10642,32 @@
             "start": {
               "column": 21,
               "line": 32
+            }
+          }
+        },
+        {
+          "id": "438",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "true",
+          "statusReason": "Error running file \"packages/dsh-provider-usage/test/unit-contract.test.ts\". Tap process exited with code 13. To reproduce it yourself, use the following command: \n      cd \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3\"\n      node \"-r\" \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/node_modules/.pnpm/@stryker-mutator+tap-runner@10.0.0_@stryker-mutator+core@10.0.0_@types+node@26.4.0_/node_modules/@stryker-mutator/tap-runner/dist/src/setup/hook.cjs\" \"-r\" \"./scripts/test/mutation-tap-bridge.cjs\" \"--import\" \"./scripts/test/mutation-lib-to-src-hook.mjs\" \"packages/dsh-provider-usage/test/unit-contract.test.ts\"\n      \n      Stderr output:\n      EVAL-ORDER-TAG: CONTRACT\n[dsh-provider-usage] 内置适配器契约校验失败（version 必须 === 2（实际 1）、name（2-64 位字母数字下划线连字符）、providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），不注册\n[dsh-provider-usage] 适配器 file:x.mjs 加载错误：契约校验失败（version 必须 === 2（实际 undefined）、name（2-64 位字母数字下划线连字符）、providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），已拒收\n[dsh-provider-usage] 适配器 file:adapter-a 加载错误：适配器 name 重复：adapter-a，忽略重复注册\n[dsh-provider-usage] 适配器 k1 加载错误：加载失败消息\n[dsh-provider-usage] 适配器 k2 执行错误：执行超时消息\n[dsh-provider-usage] 适配器 dup 加载错误：第一次\n[dsh-provider-usage] 适配器 dup 执行错误：第二次\nWarning: Detected unsettled top-level await at file:///home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3/packages/dsh-provider-usage/test/unit-contract.test.ts:600\n  const slow = await safeFetchData(() => new Promise(() => {}), 30);\n               ^\n\n\n\n",
+          "status": "RuntimeError",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 19,
+              "line": 35
+            },
+            "start": {
+              "column": 14,
+              "line": 35
             }
           }
         },
@@ -10650,6 +10823,35 @@
           }
         },
         {
+          "id": "445",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: 并发同 provider 请求复用缓存（实际 fresh）: uncaughtException: 并发同 provider 请求复用缓存（实际 fresh）",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 35,
+              "line": 42
+            },
+            "start": {
+              "column": 7,
+              "line": 42
+            }
+          }
+        },
+        {
           "id": "446",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
@@ -10659,6 +10861,35 @@
           "static": false,
           "killedBy": [
             "5"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 35,
+              "line": 42
+            },
+            "start": {
+              "column": 7,
+              "line": 42
+            }
+          }
+        },
+        {
+          "id": "447",
+          "mutatorName": "EqualityOperator",
+          "replacement": "externalSignal === undefined",
+          "statusReason": "uncaughtException: 并发同 provider 请求复用缓存（实际 fresh）: uncaughtException: 并发同 provider 请求复用缓存（实际 fresh）",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
           ],
           "coveredBy": [
             "0",
@@ -10933,6 +11164,142 @@
           }
         },
         {
+          "id": "460",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: 两适配器探针成对出现: uncaughtException: 两适配器探针成对出现",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 73
+            },
+            "start": {
+              "column": 7,
+              "line": 51
+            }
+          }
+        },
+        {
+          "id": "461",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "statusReason": "uncaughtException: 两适配器探针成对出现: uncaughtException: 两适配器探针成对出现",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 69,
+              "line": 54
+            },
+            "start": {
+              "column": 42,
+              "line": 54
+            }
+          }
+        },
+        {
+          "id": "462",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 27,
+              "line": 57
+            },
+            "start": {
+              "column": 5,
+              "line": 57
+            }
+          }
+        },
+        {
+          "id": "463",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "statusReason": "Error running file \"packages/dsh-provider-usage/test/unit-apply.test.ts\". Tap process exited with code 13. To reproduce it yourself, use the following command: \n      cd \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3\"\n      node \"-r\" \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/node_modules/.pnpm/@stryker-mutator+tap-runner@10.0.0_@stryker-mutator+core@10.0.0_@types+node@26.4.0_/node_modules/@stryker-mutator/tap-runner/dist/src/setup/hook.cjs\" \"-r\" \"./scripts/test/mutation-tap-bridge.cjs\" \"--import\" \"./scripts/test/mutation-lib-to-src-hook.mjs\" \"packages/dsh-provider-usage/test/unit-apply.test.ts\"\n      \n      Stderr output:\n      EVAL-ORDER-TAG: APPLY\n[dsh-provider-usage] 热更新成功：hr-test（good.mjs）\n[dsh-provider-usage] 适配器 file:bad.mjs 加载错误：契约校验失败（providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），已拒收\n[dsh-provider-usage] 适配器 file:bad.mjs 加载错误：热更新失败：契约校验失败：providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）\n[dsh-provider-usage] 适配器 file:bad.mjs 加载错误：热更新失败：契约校验失败：providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）\n[dsh-provider-usage] 适配器 file:bad.mjs 加载错误：热更新启动失败：契约校验失败：providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）\n[dsh-provider-usage] 热更新成功：dispose-test（dispose.mjs）\n[dsh-provider-usage] 适配器 adapter-state 加载错误：adapter-state.json 读取失败（EISDIR: illegal operation on a directory, read），本次按默认启用关系继续\n[dsh-provider-usage] 适配器 adapter-state 加载错误：启用选择落盘失败：读取旧 adapter-state.json 失败（EISDIR: illegal operation on a directory, read），为避免覆盖旧状态已取消写入\nWarning: Detected unsettled top-level await at file:///home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3/packages/dsh-provider-usage/test/unit-apply.test.ts:775\n    const [bFast, bSlow] = await Promise.all([pFast, pSlow]);\n                           ^\n\n\n\n",
+          "status": "RuntimeError",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 6,
+              "line": 65
+            },
+            "start": {
+              "column": 36,
+              "line": 58
+            }
+          }
+        },
+        {
+          "id": "464",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "Error running file \"packages/dsh-provider-usage/test/unit-contract.test.ts\". Tap process exited with code 13. To reproduce it yourself, use the following command: \n      cd \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3\"\n      node \"-r\" \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/node_modules/.pnpm/@stryker-mutator+tap-runner@10.0.0_@stryker-mutator+core@10.0.0_@types+node@26.4.0_/node_modules/@stryker-mutator/tap-runner/dist/src/setup/hook.cjs\" \"-r\" \"./scripts/test/mutation-tap-bridge.cjs\" \"--import\" \"./scripts/test/mutation-lib-to-src-hook.mjs\" \"packages/dsh-provider-usage/test/unit-contract.test.ts\"\n      \n      Stderr output:\n      EVAL-ORDER-TAG: CONTRACT\n[dsh-provider-usage] 内置适配器契约校验失败（version 必须 === 2（实际 1）、name（2-64 位字母数字下划线连字符）、providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），不注册\n[dsh-provider-usage] 适配器 file:x.mjs 加载错误：契约校验失败（version 必须 === 2（实际 undefined）、name（2-64 位字母数字下划线连字符）、providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），已拒收\n[dsh-provider-usage] 适配器 file:adapter-a 加载错误：适配器 name 重复：adapter-a，忽略重复注册\n[dsh-provider-usage] 适配器 k1 加载错误：加载失败消息\n[dsh-provider-usage] 适配器 k2 执行错误：执行超时消息\n[dsh-provider-usage] 适配器 dup 加载错误：第一次\n[dsh-provider-usage] 适配器 dup 执行错误：第二次\nWarning: Detected unsettled top-level await at file:///home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3/packages/dsh-provider-usage/test/unit-contract.test.ts:600\n  const slow = await safeFetchData(() => new Promise(() => {}), 30);\n               ^\n\n\n\n",
+          "status": "RuntimeError",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 8,
+              "line": 64
+            },
+            "start": {
+              "column": 41,
+              "line": 60
+            }
+          }
+        },
+        {
           "id": "466",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -11049,6 +11416,61 @@
             "start": {
               "column": 12,
               "line": 63
+            }
+          }
+        },
+        {
+          "id": "472",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 24,
+              "line": 63
+            },
+            "start": {
+              "column": 20,
+              "line": 63
+            }
+          }
+        },
+        {
+          "id": "473",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 79,
+              "line": 69
+            },
+            "start": {
+              "column": 9,
+              "line": 69
             }
           }
         },
@@ -11198,6 +11620,35 @@
           }
         },
         {
+          "id": "479",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof parsed === 'object'",
+          "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 35,
+              "line": 69
+            },
+            "start": {
+              "column": 9,
+              "line": 69
+            }
+          }
+        },
+        {
           "id": "480",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -11225,6 +11676,35 @@
           "static": false,
           "killedBy": [
             "2"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 54,
+              "line": 69
+            },
+            "start": {
+              "column": 39,
+              "line": 69
+            }
+          }
+        },
+        {
+          "id": "482",
+          "mutatorName": "EqualityOperator",
+          "replacement": "parsed !== null",
+          "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
           ],
           "coveredBy": [
             "0",
@@ -11401,6 +11881,87 @@
           }
         },
         {
+          "id": "490",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 16,
+              "line": 77
+            },
+            "start": {
+              "column": 12,
+              "line": 77
+            }
+          }
+        },
+        {
+          "id": "491",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 25,
+              "line": 78
+            },
+            "start": {
+              "column": 5,
+              "line": 78
+            }
+          }
+        },
+        {
+          "id": "492",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: 并发同 provider 请求复用缓存（实际 fresh）: uncaughtException: 并发同 provider 请求复用缓存（实际 fresh）",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 37,
+              "line": 80
+            },
+            "start": {
+              "column": 9,
+              "line": 80
+            }
+          }
+        },
+        {
           "id": "493",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
@@ -11410,6 +11971,35 @@
           "static": false,
           "killedBy": [
             "5"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 37,
+              "line": 80
+            },
+            "start": {
+              "column": 9,
+              "line": 80
+            }
+          }
+        },
+        {
+          "id": "494",
+          "mutatorName": "EqualityOperator",
+          "replacement": "externalSignal === undefined",
+          "statusReason": "uncaughtException: 并发同 provider 请求复用缓存（实际 fresh）: uncaughtException: 并发同 provider 请求复用缓存（实际 fresh）",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
           ],
           "coveredBy": [
             "0",
@@ -11494,6 +12084,142 @@
             "start": {
               "column": 42,
               "line": 81
+            }
+          }
+        },
+        {
+          "id": "498",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'error'): uncaughtException: Cannot read properties of undefined (reading 'error')",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 115
+            },
+            "start": {
+              "column": 47,
+              "line": 96
+            }
+          }
+        },
+        {
+          "id": "499",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "statusReason": "Error running file \"packages/dsh-provider-usage/test/unit-contract.test.ts\". Tap process exited with code 13. To reproduce it yourself, use the following command: \n      cd \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3\"\n      node \"-r\" \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/node_modules/.pnpm/@stryker-mutator+tap-runner@10.0.0_@stryker-mutator+core@10.0.0_@types+node@26.4.0_/node_modules/@stryker-mutator/tap-runner/dist/src/setup/hook.cjs\" \"-r\" \"./scripts/test/mutation-tap-bridge.cjs\" \"--import\" \"./scripts/test/mutation-lib-to-src-hook.mjs\" \"packages/dsh-provider-usage/test/unit-contract.test.ts\"\n      \n      Stderr output:\n      EVAL-ORDER-TAG: CONTRACT\n[dsh-provider-usage] 内置适配器契约校验失败（version 必须 === 2（实际 1）、name（2-64 位字母数字下划线连字符）、providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），不注册\n[dsh-provider-usage] 适配器 file:x.mjs 加载错误：契约校验失败（version 必须 === 2（实际 undefined）、name（2-64 位字母数字下划线连字符）、providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），已拒收\n[dsh-provider-usage] 适配器 file:adapter-a 加载错误：适配器 name 重复：adapter-a，忽略重复注册\n[dsh-provider-usage] 适配器 k1 加载错误：加载失败消息\n[dsh-provider-usage] 适配器 k2 执行错误：执行超时消息\n[dsh-provider-usage] 适配器 dup 加载错误：第一次\n[dsh-provider-usage] 适配器 dup 执行错误：第二次\nWarning: Detected unsettled top-level await at file:///home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3/packages/dsh-provider-usage/test/unit-contract.test.ts:612\n  const slow = await safeFormat(() => new Promise        (() => {})                     , \"formatPanel\", 30);\n               ^\n\n\n\n",
+          "status": "RuntimeError",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 52,
+              "line": 98
+            },
+            "start": {
+              "column": 28,
+              "line": 98
+            }
+          }
+        },
+        {
+          "id": "500",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'error'): uncaughtException: Cannot read properties of undefined (reading 'error')",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 110
+            },
+            "start": {
+              "column": 7,
+              "line": 99
+            }
+          }
+        },
+        {
+          "id": "501",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "statusReason": "Error running file \"packages/dsh-provider-usage/test/unit-apply.test.ts\". Tap process exited with code 13. To reproduce it yourself, use the following command: \n      cd \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3\"\n      node \"-r\" \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/node_modules/.pnpm/@stryker-mutator+tap-runner@10.0.0_@stryker-mutator+core@10.0.0_@types+node@26.4.0_/node_modules/@stryker-mutator/tap-runner/dist/src/setup/hook.cjs\" \"-r\" \"./scripts/test/mutation-tap-bridge.cjs\" \"--import\" \"./scripts/test/mutation-lib-to-src-hook.mjs\" \"packages/dsh-provider-usage/test/unit-apply.test.ts\"\n      \n      Stderr output:\n      EVAL-ORDER-TAG: APPLY\n[dsh-provider-usage] 热更新成功：hr-test（good.mjs）\n[dsh-provider-usage] 适配器 file:bad.mjs 加载错误：契约校验失败（providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），已拒收\n[dsh-provider-usage] 适配器 file:bad.mjs 加载错误：热更新失败：契约校验失败：providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）\n[dsh-provider-usage] 适配器 file:bad.mjs 加载错误：热更新失败：契约校验失败：providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）\n[dsh-provider-usage] 适配器 file:bad.mjs 加载错误：热更新启动失败：契约校验失败：providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）\n[dsh-provider-usage] 热更新成功：dispose-test（dispose.mjs）\n[dsh-provider-usage] 适配器 adapter-state 加载错误：adapter-state.json 读取失败（EISDIR: illegal operation on a directory, read），本次按默认启用关系继续\n[dsh-provider-usage] 适配器 adapter-state 加载错误：启用选择落盘失败：读取旧 adapter-state.json 失败（EISDIR: illegal operation on a directory, read），为避免覆盖旧状态已取消写入\nWarning: Detected unsettled top-level await at file:///home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3/packages/dsh-provider-usage/test/unit-apply.test.ts:693\n  await historyR.handler(fakeReq({ url: `${ROUTES.history}?days=7` }), hDays);\n  ^\n\n\n\n",
+          "status": "RuntimeError",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 6,
+              "line": 107
+            },
+            "start": {
+              "column": 37,
+              "line": 100
+            }
+          }
+        },
+        {
+          "id": "502",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "Error running file \"packages/dsh-provider-usage/test/unit-contract.test.ts\". Tap process exited with code 13. To reproduce it yourself, use the following command: \n      cd \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3\"\n      node \"-r\" \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/node_modules/.pnpm/@stryker-mutator+tap-runner@10.0.0_@stryker-mutator+core@10.0.0_@types+node@26.4.0_/node_modules/@stryker-mutator/tap-runner/dist/src/setup/hook.cjs\" \"-r\" \"./scripts/test/mutation-tap-bridge.cjs\" \"--import\" \"./scripts/test/mutation-lib-to-src-hook.mjs\" \"packages/dsh-provider-usage/test/unit-contract.test.ts\"\n      \n      Stderr output:\n      EVAL-ORDER-TAG: CONTRACT\n[dsh-provider-usage] 内置适配器契约校验失败（version 必须 === 2（实际 1）、name（2-64 位字母数字下划线连字符）、providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），不注册\n[dsh-provider-usage] 适配器 file:x.mjs 加载错误：契约校验失败（version 必须 === 2（实际 undefined）、name（2-64 位字母数字下划线连字符）、providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），已拒收\n[dsh-provider-usage] 适配器 file:adapter-a 加载错误：适配器 name 重复：adapter-a，忽略重复注册\n[dsh-provider-usage] 适配器 k1 加载错误：加载失败消息\n[dsh-provider-usage] 适配器 k2 执行错误：执行超时消息\n[dsh-provider-usage] 适配器 dup 加载错误：第一次\n[dsh-provider-usage] 适配器 dup 执行错误：第二次\nWarning: Detected unsettled top-level await at file:///home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3/packages/dsh-provider-usage/test/unit-contract.test.ts:612\n  const slow = await safeFormat(() => new Promise        (() => {})                     , \"formatPanel\", 30);\n               ^\n\n\n\n",
+          "status": "RuntimeError",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 8,
+              "line": 106
+            },
+            "start": {
+              "column": 41,
+              "line": 102
             }
           }
         },
@@ -11598,6 +12324,61 @@
           }
         },
         {
+          "id": "509",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 24,
+              "line": 105
+            },
+            "start": {
+              "column": 20,
+              "line": 105
+            }
+          }
+        },
+        {
+          "id": "510",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 33,
+              "line": 108
+            },
+            "start": {
+              "column": 9,
+              "line": 108
+            }
+          }
+        },
+        {
           "id": "511",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
@@ -11607,6 +12388,35 @@
           "static": false,
           "killedBy": [
             "2"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 33,
+              "line": 108
+            },
+            "start": {
+              "column": 9,
+              "line": 108
+            }
+          }
+        },
+        {
+          "id": "512",
+          "mutatorName": "EqualityOperator",
+          "replacement": "typeof html === 'string'",
+          "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
           ],
           "coveredBy": [
             "0",
@@ -11743,880 +12553,13 @@
           }
         },
         {
-          "id": "524",
-          "mutatorName": "ObjectLiteral",
-          "replacement": "{}",
-          "statusReason": "Ignored because of excluded mutation \"ObjectLiteral\"",
-          "status": "Ignored",
-          "static": false,
-          "location": {
-            "end": {
-              "column": 67,
-              "line": 129
-            },
-            "start": {
-              "column": 29,
-              "line": 129
-            }
-          }
-        },
-        {
-          "id": "430",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: 两适配器探针成对出现: uncaughtException: 两适配器探针成对出现",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 61,
-              "line": 31
-            },
-            "start": {
-              "column": 7,
-              "line": 31
-            }
-          }
-        },
-        {
-          "id": "429",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: 两适配器探针成对出现: uncaughtException: 两适配器探针成对出现",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 84
-            },
-            "start": {
-              "column": 64,
-              "line": 28
-            }
-          }
-        },
-        {
-          "id": "432",
-          "mutatorName": "LogicalOperator",
-          "replacement": "externalSignal !== undefined || externalSignal.aborted",
-          "statusReason": "uncaughtException: 两适配器探针成对出现: uncaughtException: 两适配器探针成对出现",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 61,
-              "line": 31
-            },
-            "start": {
-              "column": 7,
-              "line": 31
-            }
-          }
-        },
-        {
-          "id": "433",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: 并发同 provider 请求复用缓存（实际 fresh）: uncaughtException: 并发同 provider 请求复用缓存（实际 fresh）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 31
-            },
-            "start": {
-              "column": 7,
-              "line": 31
-            }
-          }
-        },
-        {
-          "id": "460",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: 两适配器探针成对出现: uncaughtException: 两适配器探针成对出现",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 73
-            },
-            "start": {
-              "column": 7,
-              "line": 51
-            }
-          }
-        },
-        {
-          "id": "445",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: 并发同 provider 请求复用缓存（实际 fresh）: uncaughtException: 并发同 provider 请求复用缓存（实际 fresh）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 42
-            },
-            "start": {
-              "column": 7,
-              "line": 42
-            }
-          }
-        },
-        {
-          "id": "434",
-          "mutatorName": "EqualityOperator",
-          "replacement": "externalSignal === undefined",
-          "statusReason": "uncaughtException: 并发同 provider 请求复用缓存（实际 fresh）: uncaughtException: 并发同 provider 请求复用缓存（实际 fresh）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 31
-            },
-            "start": {
-              "column": 7,
-              "line": 31
-            }
-          }
-        },
-        {
-          "id": "447",
-          "mutatorName": "EqualityOperator",
-          "replacement": "externalSignal === undefined",
-          "statusReason": "uncaughtException: 并发同 provider 请求复用缓存（实际 fresh）: uncaughtException: 并发同 provider 请求复用缓存（实际 fresh）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 42
-            },
-            "start": {
-              "column": 7,
-              "line": 42
-            }
-          }
-        },
-        {
-          "id": "461",
-          "mutatorName": "ArrowFunction",
-          "replacement": "() => undefined",
-          "statusReason": "uncaughtException: 两适配器探针成对出现: uncaughtException: 两适配器探针成对出现",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 69,
-              "line": 54
-            },
-            "start": {
-              "column": 42,
-              "line": 54
-            }
-          }
-        },
-        {
-          "id": "482",
-          "mutatorName": "EqualityOperator",
-          "replacement": "parsed !== null",
-          "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 54,
-              "line": 69
-            },
-            "start": {
-              "column": 39,
-              "line": 69
-            }
-          }
-        },
-        {
-          "id": "473",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 79,
-              "line": 69
-            },
-            "start": {
-              "column": 9,
-              "line": 69
-            }
-          }
-        },
-        {
-          "id": "479",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof parsed === 'object'",
-          "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 69
-            },
-            "start": {
-              "column": 9,
-              "line": 69
-            }
-          }
-        },
-        {
-          "id": "498",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'error'): uncaughtException: Cannot read properties of undefined (reading 'error')",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 115
-            },
-            "start": {
-              "column": 47,
-              "line": 96
-            }
-          }
-        },
-        {
-          "id": "492",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: 并发同 provider 请求复用缓存（实际 fresh）: uncaughtException: 并发同 provider 请求复用缓存（实际 fresh）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 37,
-              "line": 80
-            },
-            "start": {
-              "column": 9,
-              "line": 80
-            }
-          }
-        },
-        {
-          "id": "438",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "true",
-          "statusReason": "Error running file \"packages/dsh-provider-usage/test/unit-contract.test.ts\". Tap process exited with code 13. To reproduce it yourself, use the following command: \n      cd \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3\"\n      node \"-r\" \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/node_modules/.pnpm/@stryker-mutator+tap-runner@10.0.0_@stryker-mutator+core@10.0.0_@types+node@26.4.0_/node_modules/@stryker-mutator/tap-runner/dist/src/setup/hook.cjs\" \"-r\" \"./scripts/test/mutation-tap-bridge.cjs\" \"--import\" \"./scripts/test/mutation-lib-to-src-hook.mjs\" \"packages/dsh-provider-usage/test/unit-contract.test.ts\"\n      \n      Stderr output:\n      EVAL-ORDER-TAG: CONTRACT\n[dsh-provider-usage] 内置适配器契约校验失败（version 必须 === 2（实际 1）、name（2-64 位字母数字下划线连字符）、providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），不注册\n[dsh-provider-usage] 适配器 file:x.mjs 加载错误：契约校验失败（version 必须 === 2（实际 undefined）、name（2-64 位字母数字下划线连字符）、providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），已拒收\n[dsh-provider-usage] 适配器 file:adapter-a 加载错误：适配器 name 重复：adapter-a，忽略重复注册\n[dsh-provider-usage] 适配器 k1 加载错误：加载失败消息\n[dsh-provider-usage] 适配器 k2 执行错误：执行超时消息\n[dsh-provider-usage] 适配器 dup 加载错误：第一次\n[dsh-provider-usage] 适配器 dup 执行错误：第二次\nWarning: Detected unsettled top-level await at file:///home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3/packages/dsh-provider-usage/test/unit-contract.test.ts:600\n  const slow = await safeFetchData(() => new Promise(() => {}), 30);\n               ^\n\n\n\n",
-          "status": "RuntimeError",
-          "static": false,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 19,
-              "line": 35
-            },
-            "start": {
-              "column": 14,
-              "line": 35
-            }
-          }
-        },
-        {
-          "id": "494",
-          "mutatorName": "EqualityOperator",
-          "replacement": "externalSignal === undefined",
-          "statusReason": "uncaughtException: 并发同 provider 请求复用缓存（实际 fresh）: uncaughtException: 并发同 provider 请求复用缓存（实际 fresh）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 37,
-              "line": 80
-            },
-            "start": {
-              "column": 9,
-              "line": 80
-            }
-          }
-        },
-        {
-          "id": "500",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'error'): uncaughtException: Cannot read properties of undefined (reading 'error')",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 110
-            },
-            "start": {
-              "column": 7,
-              "line": 99
-            }
-          }
-        },
-        {
-          "id": "510",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 33,
-              "line": 108
-            },
-            "start": {
-              "column": 9,
-              "line": 108
-            }
-          }
-        },
-        {
-          "id": "512",
-          "mutatorName": "EqualityOperator",
-          "replacement": "typeof html === 'string'",
-          "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 33,
-              "line": 108
-            },
-            "start": {
-              "column": 9,
-              "line": 108
-            }
-          }
-        },
-        {
-          "id": "464",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "Error running file \"packages/dsh-provider-usage/test/unit-contract.test.ts\". Tap process exited with code 13. To reproduce it yourself, use the following command: \n      cd \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3\"\n      node \"-r\" \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/node_modules/.pnpm/@stryker-mutator+tap-runner@10.0.0_@stryker-mutator+core@10.0.0_@types+node@26.4.0_/node_modules/@stryker-mutator/tap-runner/dist/src/setup/hook.cjs\" \"-r\" \"./scripts/test/mutation-tap-bridge.cjs\" \"--import\" \"./scripts/test/mutation-lib-to-src-hook.mjs\" \"packages/dsh-provider-usage/test/unit-contract.test.ts\"\n      \n      Stderr output:\n      EVAL-ORDER-TAG: CONTRACT\n[dsh-provider-usage] 内置适配器契约校验失败（version 必须 === 2（实际 1）、name（2-64 位字母数字下划线连字符）、providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），不注册\n[dsh-provider-usage] 适配器 file:x.mjs 加载错误：契约校验失败（version 必须 === 2（实际 undefined）、name（2-64 位字母数字下划线连字符）、providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），已拒收\n[dsh-provider-usage] 适配器 file:adapter-a 加载错误：适配器 name 重复：adapter-a，忽略重复注册\n[dsh-provider-usage] 适配器 k1 加载错误：加载失败消息\n[dsh-provider-usage] 适配器 k2 执行错误：执行超时消息\n[dsh-provider-usage] 适配器 dup 加载错误：第一次\n[dsh-provider-usage] 适配器 dup 执行错误：第二次\nWarning: Detected unsettled top-level await at file:///home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3/packages/dsh-provider-usage/test/unit-contract.test.ts:600\n  const slow = await safeFetchData(() => new Promise(() => {}), 30);\n               ^\n\n\n\n",
-          "status": "RuntimeError",
-          "static": false,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 8,
-              "line": 64
-            },
-            "start": {
-              "column": 41,
-              "line": 60
-            }
-          }
-        },
-        {
-          "id": "499",
-          "mutatorName": "ArrowFunction",
-          "replacement": "() => undefined",
-          "statusReason": "Error running file \"packages/dsh-provider-usage/test/unit-contract.test.ts\". Tap process exited with code 13. To reproduce it yourself, use the following command: \n      cd \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3\"\n      node \"-r\" \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/node_modules/.pnpm/@stryker-mutator+tap-runner@10.0.0_@stryker-mutator+core@10.0.0_@types+node@26.4.0_/node_modules/@stryker-mutator/tap-runner/dist/src/setup/hook.cjs\" \"-r\" \"./scripts/test/mutation-tap-bridge.cjs\" \"--import\" \"./scripts/test/mutation-lib-to-src-hook.mjs\" \"packages/dsh-provider-usage/test/unit-contract.test.ts\"\n      \n      Stderr output:\n      EVAL-ORDER-TAG: CONTRACT\n[dsh-provider-usage] 内置适配器契约校验失败（version 必须 === 2（实际 1）、name（2-64 位字母数字下划线连字符）、providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），不注册\n[dsh-provider-usage] 适配器 file:x.mjs 加载错误：契约校验失败（version 必须 === 2（实际 undefined）、name（2-64 位字母数字下划线连字符）、providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），已拒收\n[dsh-provider-usage] 适配器 file:adapter-a 加载错误：适配器 name 重复：adapter-a，忽略重复注册\n[dsh-provider-usage] 适配器 k1 加载错误：加载失败消息\n[dsh-provider-usage] 适配器 k2 执行错误：执行超时消息\n[dsh-provider-usage] 适配器 dup 加载错误：第一次\n[dsh-provider-usage] 适配器 dup 执行错误：第二次\nWarning: Detected unsettled top-level await at file:///home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3/packages/dsh-provider-usage/test/unit-contract.test.ts:612\n  const slow = await safeFormat(() => new Promise        (() => {})                     , \"formatPanel\", 30);\n               ^\n\n\n\n",
-          "status": "RuntimeError",
-          "static": false,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 52,
-              "line": 98
-            },
-            "start": {
-              "column": 28,
-              "line": 98
-            }
-          }
-        },
-        {
-          "id": "521",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'status'): uncaughtException: Cannot read properties of undefined (reading 'status')",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 133
-            },
-            "start": {
-              "column": 22,
-              "line": 125
-            }
-          }
-        },
-        {
-          "id": "502",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "Error running file \"packages/dsh-provider-usage/test/unit-contract.test.ts\". Tap process exited with code 13. To reproduce it yourself, use the following command: \n      cd \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3\"\n      node \"-r\" \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/node_modules/.pnpm/@stryker-mutator+tap-runner@10.0.0_@stryker-mutator+core@10.0.0_@types+node@26.4.0_/node_modules/@stryker-mutator/tap-runner/dist/src/setup/hook.cjs\" \"-r\" \"./scripts/test/mutation-tap-bridge.cjs\" \"--import\" \"./scripts/test/mutation-lib-to-src-hook.mjs\" \"packages/dsh-provider-usage/test/unit-contract.test.ts\"\n      \n      Stderr output:\n      EVAL-ORDER-TAG: CONTRACT\n[dsh-provider-usage] 内置适配器契约校验失败（version 必须 === 2（实际 1）、name（2-64 位字母数字下划线连字符）、providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），不注册\n[dsh-provider-usage] 适配器 file:x.mjs 加载错误：契约校验失败（version 必须 === 2（实际 undefined）、name（2-64 位字母数字下划线连字符）、providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），已拒收\n[dsh-provider-usage] 适配器 file:adapter-a 加载错误：适配器 name 重复：adapter-a，忽略重复注册\n[dsh-provider-usage] 适配器 k1 加载错误：加载失败消息\n[dsh-provider-usage] 适配器 k2 执行错误：执行超时消息\n[dsh-provider-usage] 适配器 dup 加载错误：第一次\n[dsh-provider-usage] 适配器 dup 执行错误：第二次\nWarning: Detected unsettled top-level await at file:///home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3/packages/dsh-provider-usage/test/unit-contract.test.ts:612\n  const slow = await safeFormat(() => new Promise        (() => {})                     , \"formatPanel\", 30);\n               ^\n\n\n\n",
-          "status": "RuntimeError",
-          "static": false,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 8,
-              "line": 106
-            },
-            "start": {
-              "column": 41,
-              "line": 102
-            }
-          }
-        },
-        {
-          "id": "523",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'status'): uncaughtException: Cannot read properties of undefined (reading 'status')",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 130
-            },
-            "start": {
-              "column": 7,
-              "line": 128
-            }
-          }
-        },
-        {
-          "id": "522",
-          "mutatorName": "ArrowFunction",
-          "replacement": "() => undefined",
-          "statusReason": "uncaughtException: 超过 timeoutMs 后 controller.abort 已触发: uncaughtException: 超过 timeoutMs 后 controller.abort 已触发",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 52,
-              "line": 127
-            },
-            "start": {
-              "column": 28,
-              "line": 127
-            }
-          }
-        },
-        {
-          "id": "472",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 24,
-              "line": 63
-            },
-            "start": {
-              "column": 20,
-              "line": 63
-            }
-          }
-        },
-        {
-          "id": "462",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 27,
-              "line": 57
-            },
-            "start": {
-              "column": 5,
-              "line": 57
-            }
-          }
-        },
-        {
-          "id": "490",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 16,
-              "line": 77
-            },
-            "start": {
-              "column": 12,
-              "line": 77
-            }
-          }
-        },
-        {
-          "id": "509",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 24,
-              "line": 105
-            },
-            "start": {
-              "column": 20,
-              "line": 105
-            }
-          }
-        },
-        {
-          "id": "463",
-          "mutatorName": "ArrayDeclaration",
-          "replacement": "[]",
-          "statusReason": "Error running file \"packages/dsh-provider-usage/test/unit-apply.test.ts\". Tap process exited with code 13. To reproduce it yourself, use the following command: \n      cd \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3\"\n      node \"-r\" \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/node_modules/.pnpm/@stryker-mutator+tap-runner@10.0.0_@stryker-mutator+core@10.0.0_@types+node@26.4.0_/node_modules/@stryker-mutator/tap-runner/dist/src/setup/hook.cjs\" \"-r\" \"./scripts/test/mutation-tap-bridge.cjs\" \"--import\" \"./scripts/test/mutation-lib-to-src-hook.mjs\" \"packages/dsh-provider-usage/test/unit-apply.test.ts\"\n      \n      Stderr output:\n      EVAL-ORDER-TAG: APPLY\n[dsh-provider-usage] 热更新成功：hr-test（good.mjs）\n[dsh-provider-usage] 适配器 file:bad.mjs 加载错误：契约校验失败（providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），已拒收\n[dsh-provider-usage] 适配器 file:bad.mjs 加载错误：热更新失败：契约校验失败：providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）\n[dsh-provider-usage] 适配器 file:bad.mjs 加载错误：热更新失败：契约校验失败：providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）\n[dsh-provider-usage] 适配器 file:bad.mjs 加载错误：热更新启动失败：契约校验失败：providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）\n[dsh-provider-usage] 热更新成功：dispose-test（dispose.mjs）\n[dsh-provider-usage] 适配器 adapter-state 加载错误：adapter-state.json 读取失败（EISDIR: illegal operation on a directory, read），本次按默认启用关系继续\n[dsh-provider-usage] 适配器 adapter-state 加载错误：启用选择落盘失败：读取旧 adapter-state.json 失败（EISDIR: illegal operation on a directory, read），为避免覆盖旧状态已取消写入\nWarning: Detected unsettled top-level await at file:///home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3/packages/dsh-provider-usage/test/unit-apply.test.ts:775\n    const [bFast, bSlow] = await Promise.all([pFast, pSlow]);\n                           ^\n\n\n\n",
-          "status": "RuntimeError",
-          "static": false,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 6,
-              "line": 65
-            },
-            "start": {
-              "column": 36,
-              "line": 58
-            }
-          }
-        },
-        {
-          "id": "501",
-          "mutatorName": "ArrayDeclaration",
-          "replacement": "[]",
-          "statusReason": "Error running file \"packages/dsh-provider-usage/test/unit-apply.test.ts\". Tap process exited with code 13. To reproduce it yourself, use the following command: \n      cd \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3\"\n      node \"-r\" \"/home/runner/work/dsh-plugin-hub/dsh-plugin-hub/node_modules/.pnpm/@stryker-mutator+tap-runner@10.0.0_@stryker-mutator+core@10.0.0_@types+node@26.4.0_/node_modules/@stryker-mutator/tap-runner/dist/src/setup/hook.cjs\" \"-r\" \"./scripts/test/mutation-tap-bridge.cjs\" \"--import\" \"./scripts/test/mutation-lib-to-src-hook.mjs\" \"packages/dsh-provider-usage/test/unit-apply.test.ts\"\n      \n      Stderr output:\n      EVAL-ORDER-TAG: APPLY\n[dsh-provider-usage] 热更新成功：hr-test（good.mjs）\n[dsh-provider-usage] 适配器 file:bad.mjs 加载错误：契约校验失败（providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）），已拒收\n[dsh-provider-usage] 适配器 file:bad.mjs 加载错误：热更新失败：契约校验失败：providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）\n[dsh-provider-usage] 适配器 file:bad.mjs 加载错误：热更新失败：契约校验失败：providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）\n[dsh-provider-usage] 适配器 file:bad.mjs 加载错误：热更新启动失败：契约校验失败：providers（非空字符串数组）、fetchData（函数）、formatCapsule（函数）、formatPanel（函数）\n[dsh-provider-usage] 热更新成功：dispose-test（dispose.mjs）\n[dsh-provider-usage] 适配器 adapter-state 加载错误：adapter-state.json 读取失败（EISDIR: illegal operation on a directory, read），本次按默认启用关系继续\n[dsh-provider-usage] 适配器 adapter-state 加载错误：启用选择落盘失败：读取旧 adapter-state.json 失败（EISDIR: illegal operation on a directory, read），为避免覆盖旧状态已取消写入\nWarning: Detected unsettled top-level await at file:///home/runner/work/dsh-plugin-hub/dsh-plugin-hub/.stryker-tmp/sandbox-bGI5T3/packages/dsh-provider-usage/test/unit-apply.test.ts:693\n  await historyR.handler(fakeReq({ url: `${ROUTES.history}?days=7` }), hDays);\n  ^\n\n\n\n",
-          "status": "RuntimeError",
-          "static": false,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 6,
-              "line": 107
-            },
-            "start": {
-              "column": 37,
-              "line": 100
-            }
-          }
-        },
-        {
           "id": "519",
           "mutatorName": "BlockStatement",
           "replacement": "{}",
           "status": "Survived",
-          "static": false,
           "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
           "coveredBy": [
             "0",
             "2",
@@ -12640,8 +12583,9 @@
           "mutatorName": "CallExpression",
           "replacement": ";",
           "status": "Survived",
-          "static": false,
           "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
           "coveredBy": [
             "0",
             "2",
@@ -12661,49 +12605,98 @@
           }
         },
         {
-          "id": "491",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "status": "Survived",
+          "id": "521",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'status'): uncaughtException: Cannot read properties of undefined (reading 'status')",
+          "status": "Killed",
+          "testsCompleted": 1,
           "static": false,
-          "testsCompleted": 5,
+          "killedBy": [
+            "0"
+          ],
           "coveredBy": [
             "0",
-            "2",
-            "3",
-            "5",
             "6"
           ],
           "location": {
             "end": {
-              "column": 25,
-              "line": 78
+              "column": 2,
+              "line": 133
             },
             "start": {
-              "column": 5,
-              "line": 78
+              "column": 22,
+              "line": 125
             }
           }
         },
         {
-          "id": "526",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "status": "Survived",
+          "id": "522",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "statusReason": "uncaughtException: 超过 timeoutMs 后 controller.abort 已触发: uncaughtException: 超过 timeoutMs 后 controller.abort 已触发",
+          "status": "Killed",
+          "testsCompleted": 1,
           "static": false,
-          "testsCompleted": 2,
+          "killedBy": [
+            "0"
+          ],
           "coveredBy": [
             "0",
             "6"
           ],
           "location": {
             "end": {
-              "column": 25,
-              "line": 131
+              "column": 52,
+              "line": 127
             },
             "start": {
-              "column": 5,
-              "line": 131
+              "column": 28,
+              "line": 127
+            }
+          }
+        },
+        {
+          "id": "523",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'status'): uncaughtException: Cannot read properties of undefined (reading 'status')",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 130
+            },
+            "start": {
+              "column": 7,
+              "line": 128
+            }
+          }
+        },
+        {
+          "id": "524",
+          "mutatorName": "ObjectLiteral",
+          "replacement": "{}",
+          "statusReason": "Ignored because of excluded mutation \"ObjectLiteral\"",
+          "status": "Ignored",
+          "static": false,
+          "location": {
+            "end": {
+              "column": 67,
+              "line": 129
+            },
+            "start": {
+              "column": 29,
+              "line": 129
             }
           }
         },
@@ -12712,8 +12705,9 @@
           "mutatorName": "BlockStatement",
           "replacement": "{}",
           "status": "Survived",
-          "static": false,
           "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
           "coveredBy": [
             "0",
             "6"
@@ -12726,6 +12720,29 @@
             "start": {
               "column": 13,
               "line": 130
+            }
+          }
+        },
+        {
+          "id": "526",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "status": "Survived",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 25,
+              "line": 131
+            },
+            "start": {
+              "column": 5,
+              "line": 131
             }
           }
         }

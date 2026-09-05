@@ -6375,6 +6375,32 @@
           }
         },
         {
+          "id": "293",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "4",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 73
+            },
+            "start": {
+              "column": 36,
+              "line": 71
+            }
+          }
+        },
+        {
           "id": "294",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -12520,31 +12546,6 @@
               "line": 305
             }
           }
-        },
-        {
-          "id": "293",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "4",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 73
-            },
-            "start": {
-              "column": 36,
-              "line": 71
-            }
-          }
         }
       ],
       "source": "/**\n * dsh-mcp-manager — L1 能力目录与目录缓存（独立模块）。\n *\n * 能力目录：向模型宣告已配置 MCP 服务器（数据源不依赖实时连接状态，\n * digest 只含服务器集合，history-based 去重防重复注入）。\n * 目录缓存：连接成功时把工具描述摘要持久化于磁盘，作为 digest 的稳定数据源。\n * 由 lib/index.js 组合根 re-export。\n */\n\nimport { createHash, randomUUID } from \"node:crypto\";\nimport { join } from \"node:path\";\nimport { dshHome } from \"../../../shared/dsh-home.js\";\nimport type { ServerConfig } from \"./types.ts\";\n\n/** 目录条目。 */\nexport interface CatalogEntry {\n  name: string;\n  text?: string;\n  /** 服务器归属（global/project）；用于区分调用引导（#228 双轨迁移）。 */\n  scope?: string;\n}\n\n/** supervisor 最小面（manager.supervisors 的条目）。 */\nexport interface SupervisorLite {\n  server: ServerConfig;\n  /** 服务器归属（global/project）；目录条目携带用于调用引导（#228）。 */\n  scope?: string;\n}\n\n/** 目录缓存（连接成功时持久化的工具描述摘要）。 */\nexport type CatalogCache = Map<string, { summary: string }>;\n\n/** 会话消息最小面（pre-step decision.messages / session.snapshotEvents()）。 */\nexport interface CatalogMessage {\n  id?: unknown;\n  role?: string;\n  content?: Array<{ type?: string; text?: string }>;\n  source?: { kind?: string; form?: unknown; entries?: unknown };\n}\n\n/** pre-step 决策最小面。 */\nexport interface CatalogDecision {\n  kind: string;\n  messages: CatalogMessage[];\n}\n\n/** 目录历史查询结果。 */\nexport interface CatalogHistoryResult {\n  visibleDigest?: string;\n  published: boolean;\n}\n\n/** agent 最小面（session.snapshotEvents() 倒序找目录消息；0.1.2-rc.1 起 events getter 移除）。 */\nexport interface CatalogAgent {\n  session?: {\n    surface?: { nodes?: unknown[] };\n    snapshotEvents?: () => ReadonlyArray<{ type?: string; seq?: unknown; data?: { source?: { kind?: string; entries?: unknown } } }>;\n  };\n}\n\n// ------------------------------------------------- 感知增强（对抗性评审 v2）\n\n/** 能力目录默认开启。 */\nexport const DEFAULT_ANNOUNCE_CATALOG = true;\n/** 能力目录最大条目数（防上下文膨胀）。 */\nexport const DEFAULT_CATALOG_MAX_ENTRIES = 6;\n\n// ------------------------------------------------- 目录缓存（L1 数据源）\n\n/** 目录缓存文件（连接成功时把工具描述摘要持久化于此；目录 digest 的稳定数据源）。 */\nexport function catalogCacheFile() {\n  return join(dshHome(), \"dsh-mcp-catalog.json\");\n}\n\n/**\n * 从工具描述集合计算目录摘要（排序后取第一个非空，**完整返回不截断**）：\n * 排序保证工具列表顺序变化时摘要稳定（重连不触发缓存更新 → digest 不变）。\n */\nexport function summarizeToolDescriptions(toolMeta: Map<string, { description?: unknown }>): string | undefined {\n  const descriptions = [...toolMeta.values()]\n    .map((meta) => (typeof meta?.description === \"string\" ? meta.description : \"\"))\n    .map((text) => text.trim().replace(/\\s+/gu, \" \"))\n    .filter((text) => text !== \"\")\n    .sort();\n  const first = descriptions[0];\n  return first === undefined ? undefined : first;\n}\n\n// --------------------------------------------- L1 能力目录（感知增强）\n\n/**\n * 生成能力目录条目（**数据源不依赖用户配置、不依赖实时连接状态**）：\n * ① 服务器自定义 description（用户可选补充，优先）→\n * ② 目录缓存摘要（连接成功时自动持久化的工具描述摘要，磁盘数据，与连接状态解耦）\n * ③ 都没有 → 只显示服务器名。\n * 连接/断开/重连不改变缓存内容 → digest 稳定 → 不触发重复注入。\n * @param supervisors manager.supervisors（name → supervisor）。\n * @param maxEntries 最大条目数。\n * @param cache 目录缓存（manager.catalogCache）。\n * @returns 目录条目。\n */\nexport function composeCatalogEntries(supervisors: Map<string, SupervisorLite>, maxEntries = DEFAULT_CATALOG_MAX_ENTRIES, cache?: CatalogCache): CatalogEntry[] {\n  const entries: CatalogEntry[] = [];\n  for (const [name, supervisor] of supervisors) {\n    if (entries.length >= maxEntries) break;\n    const server = supervisor.server;\n    let text;\n    if (typeof server.description === \"string\" && server.description !== \"\") {\n      text = server.description;\n    } else {\n      const cached = cache?.get(name);\n      if (typeof cached?.summary === \"string\" && cached.summary !== \"\") text = cached.summary;\n    }\n    // 无描述时剥离 text 属性（不产出 `text: undefined`）：条目保持干净可\n    // JSON 序列化，否则目录消息 append 为 user/message 事件会被 dsh-session\n    // 序列化校验拒绝（issue #192）。\n    const scope = typeof supervisor.scope === \"string\" ? supervisor.scope : undefined;\n    const entry: CatalogEntry = { name };\n    if (text !== undefined) entry.text = text;\n    if (scope !== undefined) entry.scope = scope;\n    entries.push(entry);\n  }\n  return entries;\n}\n\n/**\n * 目录条目 digest（sha256）——**只含服务器集合（name），不含描述文本**。\n *\n * 为什么：MCP 服务器的工具描述集合不稳定（按需注册/动态描述，实测 code-graph\n * 等服务器不同时刻的摘要都不同）。若 digest 含描述文本，缓存摘要一更新就触发\n * 替换注入——永远追不上抖动。digest 只含 name 后：\n * - 服务器增删 → digest 变 → 原位替换（合理）\n * - 描述/缓存更新 → digest 不变 → 本会话目录保持快照（静态能力地图语义，\n *   与消息声明\"仅描述能力、不代表当前连接状态\"一致），跨会话才反映新缓存\n */\nexport function digestCatalogEntries(entries: CatalogEntry[]): string {\n  const canonical = entries.map((entry) => entry.name).join(\"\\n\");\n  return createHash(\"sha256\").update(canonical).digest(\"hex\");\n}\n\n/** 渲染能力目录消息（source 标记供定位替换）。\n * 按条目 scope 区分调用引导（#228 双轨迁移）：\n * - 含 project 条目 → 引导经 ws_mcp_list/ws_mcp_search/ws_mcp_detail/ws_mcp_call\n *   （项目级走中间层；完整盘点用 ws_mcp_list，查完整 schema 用 ws_mcp_detail）；\n * - 仅 global 条目 → 默认保持 mcp__ 直呼引导（全局服务器不经中间层检索）；\n *   all 模式（mode === \"all\"）下全局也走中间层 → 同样引导经中间层工具访问。\n * 口径统一（#362 评审修正）：project 模式全局服务器仍以 mcp__ 直呼注册可用，\n * 目录引导区分「经中间层访问」与「mcp__ 直呼」两类服务器，不混用。\n */\nexport function renderMcpCatalogMessage(entries: CatalogEntry[], mode?: string): CatalogMessage {\n  const hasProject = entries.some((entry) => entry.scope === \"project\");\n  const projectGuidance =\n    \"项目级服务器一律经中间层工具访问：先用 `ws_mcp_search` 检索当前工作空间的 MCP 工具，再用 `ws_mcp_call` 调用（server/tool 取自检索结果；完整盘点全部服务器与工具清单用 `ws_mcp_list`，查单个工具的完整 inputSchema 用 `ws_mcp_detail`）。**项目级服务器不直接调用其 mcp__ 前缀工具**。\";\n  const globalGuidance =\n    mode === \"all\"\n      ? \"全局服务器同样经中间层访问（all 模式全局不注册 mcp__ 工具）：先用 `ws_mcp_search` 检索，再经 `ws_mcp_call` 调用，与项目级同一套 `ws_mcp_*` 工具。\"\n      : \"全局服务器仍以 `mcp__<server>__<tool>` 前缀工具直呼调用（project 模式全局不经中间层检索）。\";\n  const guidance = hasProject\n    ? `${projectGuidance}${globalGuidance}`\n    : mode === \"all\"\n      ? globalGuidance\n      : `任务匹配某服务器能力时，直接调用其 \\`mcp__<server>__<tool>\\` 工具（具体工具名与参数见工具列表）。${globalGuidance}`;\n  const lines = [\n    \"<system-reminder>\",\n    \"本会话已配置以下 MCP 服务器（**仅描述能力，不代表当前连接状态**；服务器在 GUI「MCP」浮窗中连接后，其工具才会注册可用）：\",\n    \"\",\n    \"<available_mcp_servers>\",\n    ...entries.map((entry) => (entry.text === undefined ? `- \\`${entry.name}\\`` : `- \\`${entry.name}\\`: ${escapeCatalogText(entry.text)}`)),\n    \"</available_mcp_servers>\",\n    \"\",\n    guidance,\n    \"若某服务器此前可用而现在不可用，请勿反复重试同一工具超过两次，改用其他方式或提示用户检查「MCP」浮窗。\",\n    \"</system-reminder>\",\n  ].join(\"\\n\");\n  return {\n    id: randomUUID(),\n    role: \"user\",\n    content: [{ type: \"text\", text: lines }],\n    source: { kind: \"mcp-catalog\", form: \"catalog\", entries },\n  };\n}\n\n/** 转义远程来源文本（防提示注入/标签逃逸；与 skill catalog 的 escapeText 同思路）。\n * 只做安全转义，**不做长度截断**（完整返回描述）。 */\nexport function escapeCatalogText(value: unknown): string {\n  return String(value)\n    .replaceAll(\"&\", \"&amp;\")\n    .replaceAll(\"<\", \"&lt;\")\n    .replaceAll(\">\", \"&gt;\")\n    .replace(/[\\r\\n]/gu, \" \");\n}\n\n/** 从消息列表里定位既有的能力目录消息（source.kind 匹配）。 */\nexport function findCatalogMessage(messages: CatalogMessage[]): CatalogMessage | undefined {\n  for (const message of messages) {\n    if (message?.source?.kind === \"mcp-catalog\") return message;\n  }\n  return undefined;\n}\n\n/**\n * 防御性读取目录 source 里的 entries（坏数据返回 undefined——按\"不是本插件的目录\"\n * 处理，绝不在 step 监听器里抛错，否则每轮都会失败）。\n */\nexport function readCatalogEntries(source: { entries?: unknown } | undefined): CatalogEntry[] | undefined {\n  const entries = source?.entries;\n  if (!Array.isArray(entries)) return undefined;\n  const readable: CatalogEntry[] = [];\n  for (const entry of entries) {\n    if (typeof entry !== \"object\" || entry === null) return undefined;\n    const { name, text } = entry;\n    if (typeof name !== \"string\" || name === \"\") return undefined;\n    readable.push({ name, text: typeof text === \"string\" ? text : undefined });\n  }\n  return readable;\n}\n\n/**\n * 从会话持久化日志（agent.session.snapshotEvents()）倒序找最后一条**可见**的\n * mcp-catalog 消息。**这是去重的权威来源**（与官方 dsh-tool-skill catalogHistory\n * 同构）：\n * - decision.messages 只含本轮新消息，历史目录消息不在其中——用它定位会导致每轮重复注入；\n * - 可见性（surface.nodes）过滤：compaction/resume 后旧目录不可见 → visibleDigest 为空 → 重新注入。\n */\nexport function catalogHistory(agent: CatalogAgent | undefined): CatalogHistoryResult {\n  const visible = new Set(agent?.session?.surface?.nodes ?? []);\n  const events = agent?.session?.snapshotEvents?.() ?? [];\n  let published = false;\n  for (let index = events.length - 1; index >= 0; index -= 1) {\n    const event = events[index];\n    if (event?.type !== \"user/message\") continue;\n    if (event?.data?.source?.kind !== \"mcp-catalog\") continue;\n    const entries = readCatalogEntries(event.data.source);\n    if (entries === undefined) continue;\n    published = true;\n    if (visible.has(event.seq)) return { visibleDigest: digestCatalogEntries(entries), published };\n  }\n  return { published };\n}\n\n/** 渲染\"目录更新\"消息（历史旧目录无法删除，新消息声明作废——与 tool-skill 同语义）。 */\nexport function renderMcpCatalogUpdate(entries: CatalogEntry[], mode?: string): CatalogMessage {\n  const body = renderMcpCatalogMessage(entries, mode);\n  const inner = body.content![0].text!.split(\"\\n\").slice(3).join(\"\\n\");\n  const text = [\n    \"<system-reminder>\",\n    \"MCP 服务器集合已变化。**本目录替换此前所有 available_mcp_servers 列表**：\",\n    \"\",\n    inner,\n    \"</system-reminder>\",\n  ].join(\"\\n\");\n  return { ...body, content: [{ type: \"text\", text }] };\n}\n\n/**\n * 目录注入决策（纯函数，pre-step 监听器薄调用，便于单测）。\n * 完全复刻官方 dsh-tool-skill 的 catalog 语义（根治重复注入）：\n * 1. 历史（session.snapshotEvents()）digest 相同 → 本轮不注入（撤销本轮已注入的）——**去重源是历史而非本轮消息**；\n * 2. 历史 digest 不同 → 注入\"更新\"消息（声明替换旧目录）；\n * 3. 从未发布且无服务器 → 不注入；\n * 4. compaction/resume 后旧目录不可见 → 重新注入（events-based 重建）。\n * @param decision next() 的决策。\n * @param messages 本轮输入消息（签名兼容）。\n * @param supervisors manager.supervisors。\n * @param maxEntries 目录条目上限。\n * @param cache 目录缓存。\n * @param agent pre-step 的 agent（session.snapshotEvents() 来源）。\n * @returns 新决策。\n */\nexport function resolveCatalogInjection(\n  decision: CatalogDecision,\n  messages: CatalogMessage[],\n  supervisors: Map<string, SupervisorLite>,\n  maxEntries = DEFAULT_CATALOG_MAX_ENTRIES,\n  cache?: CatalogCache,\n  agent?: CatalogAgent,\n  mode?: string,\n): CatalogDecision {\n  if (decision.kind === \"reject\") return decision;\n  const entries = composeCatalogEntries(supervisors, maxEntries, cache);\n  const digest = digestCatalogEntries(entries);\n  const history = catalogHistory(agent);\n  const existing = findCatalogMessage(decision.messages);\n\n  if (history.visibleDigest === digest) {\n    // 历史已发布相同目录 → 本轮不注入；撤销本轮刚注入的（幂等）。\n    return existing === undefined ? decision : {\n      kind: \"enter\",\n      messages: decision.messages.filter((message) => message.id !== existing.id),\n    };\n  }\n  if (existing !== undefined) {\n    const existingEntries = readCatalogEntries(existing.source);\n    if (existingEntries !== undefined && digestCatalogEntries(existingEntries) === digest) return decision;\n  }\n  if (!history.published && entries.length === 0) {\n    return existing === undefined ? decision : {\n      kind: \"enter\",\n      messages: decision.messages.filter((message) => message.id !== existing.id),\n    };\n  }\n  const catalog = history.published ? renderMcpCatalogUpdate(entries, mode) : renderMcpCatalogMessage(entries, mode);\n  return {\n    kind: \"enter\",\n    messages: existing === undefined ? [...decision.messages, catalog] : decision.messages.map((message) => (message.id === existing.id ? catalog : message)),\n  };\n}\n"
@@ -12552,6 +12553,37 @@
     "packages/dsh-mcp-manager/src/config-schema.ts": {
       "language": "typescript",
       "mutants": [
+        {
+          "id": "565",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 10,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9"
+          ],
+          "location": {
+            "end": {
+              "column": 55,
+              "line": 15
+            },
+            "start": {
+              "column": 51,
+              "line": 15
+            }
+          }
+        },
         {
           "id": "566",
           "mutatorName": "ObjectLiteral",
@@ -12727,6 +12759,37 @@
             "start": {
               "column": 33,
               "line": 27
+            }
+          }
+        },
+        {
+          "id": "575",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "status": "Survived",
+          "testsCompleted": 10,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 33
+            },
+            "start": {
+              "column": 21,
+              "line": 28
             }
           }
         },
@@ -13262,6 +13325,37 @@
           }
         },
         {
+          "id": "601",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 10,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9"
+          ],
+          "location": {
+            "end": {
+              "column": 36,
+              "line": 101
+            },
+            "start": {
+              "column": 32,
+              "line": 101
+            }
+          }
+        },
+        {
           "id": "602",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -13276,6 +13370,37 @@
             "start": {
               "column": 50,
               "line": 101
+            }
+          }
+        },
+        {
+          "id": "603",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 10,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9"
+          ],
+          "location": {
+            "end": {
+              "column": 44,
+              "line": 102
+            },
+            "start": {
+              "column": 40,
+              "line": 102
             }
           }
         },
@@ -13311,6 +13436,37 @@
             },
             "start": {
               "column": 37,
+              "line": 103
+            }
+          }
+        },
+        {
+          "id": "606",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 10,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9"
+          ],
+          "location": {
+            "end": {
+              "column": 93,
+              "line": 103
+            },
+            "start": {
+              "column": 89,
               "line": 103
             }
           }
@@ -13352,6 +13508,37 @@
           }
         },
         {
+          "id": "609",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 10,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9"
+          ],
+          "location": {
+            "end": {
+              "column": 107,
+              "line": 105
+            },
+            "start": {
+              "column": 103,
+              "line": 105
+            }
+          }
+        },
+        {
           "id": "610",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -13384,6 +13571,68 @@
             "start": {
               "column": 86,
               "line": 107
+            }
+          }
+        },
+        {
+          "id": "612",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 10,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9"
+          ],
+          "location": {
+            "end": {
+              "column": 112,
+              "line": 107
+            },
+            "start": {
+              "column": 108,
+              "line": 107
+            }
+          }
+        },
+        {
+          "id": "613",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "status": "Survived",
+          "testsCompleted": 10,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9"
+          ],
+          "location": {
+            "end": {
+              "column": 75,
+              "line": 108
+            },
+            "start": {
+              "column": 23,
+              "line": 108
             }
           }
         },
@@ -13492,246 +13741,6 @@
             "start": {
               "column": 18,
               "line": 111
-            }
-          }
-        },
-        {
-          "id": "601",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 10,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8",
-            "9"
-          ],
-          "location": {
-            "end": {
-              "column": 36,
-              "line": 101
-            },
-            "start": {
-              "column": 32,
-              "line": 101
-            }
-          }
-        },
-        {
-          "id": "575",
-          "mutatorName": "ArrayDeclaration",
-          "replacement": "[]",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 10,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8",
-            "9"
-          ],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 33
-            },
-            "start": {
-              "column": 21,
-              "line": 28
-            }
-          }
-        },
-        {
-          "id": "609",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 10,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8",
-            "9"
-          ],
-          "location": {
-            "end": {
-              "column": 107,
-              "line": 105
-            },
-            "start": {
-              "column": 103,
-              "line": 105
-            }
-          }
-        },
-        {
-          "id": "565",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 10,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8",
-            "9"
-          ],
-          "location": {
-            "end": {
-              "column": 55,
-              "line": 15
-            },
-            "start": {
-              "column": 51,
-              "line": 15
-            }
-          }
-        },
-        {
-          "id": "603",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 10,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8",
-            "9"
-          ],
-          "location": {
-            "end": {
-              "column": 44,
-              "line": 102
-            },
-            "start": {
-              "column": 40,
-              "line": 102
-            }
-          }
-        },
-        {
-          "id": "612",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 10,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8",
-            "9"
-          ],
-          "location": {
-            "end": {
-              "column": 112,
-              "line": 107
-            },
-            "start": {
-              "column": 108,
-              "line": 107
-            }
-          }
-        },
-        {
-          "id": "606",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 10,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8",
-            "9"
-          ],
-          "location": {
-            "end": {
-              "column": 93,
-              "line": 103
-            },
-            "start": {
-              "column": 89,
-              "line": 103
-            }
-          }
-        },
-        {
-          "id": "613",
-          "mutatorName": "ArrayDeclaration",
-          "replacement": "[]",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 10,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8",
-            "9"
-          ],
-          "location": {
-            "end": {
-              "column": 75,
-              "line": 108
-            },
-            "start": {
-              "column": 23,
-              "line": 108
             }
           }
         }

@@ -2699,6 +2699,37 @@
           }
         },
         {
+          "id": "112",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "status": "Survived",
+          "testsCompleted": 10,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9"
+          ],
+          "location": {
+            "end": {
+              "column": 61,
+              "line": 33
+            },
+            "start": {
+              "column": 23,
+              "line": 33
+            }
+          }
+        },
+        {
           "id": "113",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -2748,36 +2779,6 @@
             },
             "start": {
               "column": 46,
-              "line": 33
-            }
-          }
-        },
-        {
-          "id": "112",
-          "mutatorName": "ArrayDeclaration",
-          "replacement": "[]",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 10,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8",
-            "9"
-          ],
-          "location": {
-            "end": {
-              "column": 61,
-              "line": 33
-            },
-            "start": {
-              "column": 23,
               "line": 33
             }
           }
