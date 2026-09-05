@@ -472,6 +472,32 @@ function cellTotals(agg, day, provider = "deepseek") {
   assert.equal(sumFiltered.calls, 1, "过滤后 calls");
   assert.deepEqual(sumFiltered.top, { provider: "openai", model: null, value: 5 }, "过滤后 top 段");
   assert.equal(sumFiltered.prevTotal, null, "过滤后上一窗口无数据 prevTotal=null");
+
+  // #503 M2.1：prevComplete（上一窗口起点早于内存数据起点 → 基准不完整，环比不可比）
+  assert.equal(sum.prevComplete, false, "prev 窗口起点 08-30 早于数据起点 08-31 → 不完整");
+  const aggFull = new TrendAggregator();
+  aggFull.apply(call(d1, "deepseek", "chat", 10)); // 数据起点 09-03，prev 窗口 08-30..09-01 整体在其之前
+  aggFull.apply(call(T0, "deepseek", "chat", 20));
+  const sumComplete = aggFull.windowSummary(3, "day", "input", undefined, T0);
+  assert.equal(sumComplete.prevComplete, false, "数据起点 09-03 晚于 prev 窗口起点 08-30 → 不完整");
+  assert.equal(sumComplete.prevTotal, null, "不完整时 prevTotal 仍按数据实况返回（null 语义不变）");
+
+  // 正例：n=1 时 prev 窗口 = 昨日单桶；数据起点 09-02 早于 09-03 → 完整
+  const aggSpan = new TrendAggregator();
+  aggSpan.apply(call(d1, "deepseek", "chat", 10)); // 09-03
+  aggSpan.apply(call(T0, "deepseek", "chat", 20)); // 09-04
+  const sumSpan = aggSpan.windowSummary(1, "day", "input", undefined, T0);
+  assert.equal(sumSpan.prevComplete, true, "prev 单桶 09-03 不早于数据起点 09-03 → 完整");
+  assert.equal(sumSpan.prevTotal, 10, "完整场景 prevTotal 正常返回");
+
+  // #503 M2.1：windowSummary 复用路由已算 stack 序列（结果一致性，消双算）
+  const stackForReuse = agg.seriesStacked(3, "day", "input", undefined, false, T0).series;
+  const sumReused = agg.windowSummary(3, "day", "input", undefined, T0, stackForReuse);
+  assert.deepEqual(
+    { total: sumReused.total, calls: sumReused.calls, peakKey: sumReused.peakKey, top: sumReused.top, prevTotal: sumReused.prevTotal, prevComplete: sumReused.prevComplete },
+    { total: sum.total, calls: sum.calls, peakKey: sum.peakKey, top: sum.top, prevTotal: sum.prevTotal, prevComplete: sum.prevComplete },
+    "复用 stack 序列与自算结果全等",
+  );
 }
 
 // ---------------------------------------------------------------- store

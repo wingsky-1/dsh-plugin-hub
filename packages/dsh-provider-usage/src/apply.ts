@@ -823,7 +823,20 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
    * provider 过滤（缺省全部）× byModel=1（适配器维度细到 model，默认 provider）。
    * 堆叠柱序列 + 窗口摘要 + 起算日（「统计自插件挂载时点起算」文案数据源）。
    */
+  /**
+   * 趋势窗口桶数（#503 M2.1）：默认与 M2 相同（day 30 / week 12 / month 12，兼容
+   * 既有调用方），客户端可带 ?n= 覆写。上限按粒度 × 真实留存计算——留存按「天」裁
+   * （prune cutoff = now − retentionDays 天），桶数与天数是两种口径：day ≤ retention、
+   * week ≤ ⌈retention/7⌉、month ≤ ⌈retention/30⌉；n 非正整数时回退默认（防御）。
+   */
   const TREND_WINDOW: Record<string, number> = { day: 30, week: 12, month: 12 };
+  function clampTrendN(raw: string | null, gran: "day" | "week" | "month"): number {
+    const retention = config.trendRetentionDays;
+    const cap = gran === "day" ? retention : gran === "week" ? Math.ceil(retention / 7) : Math.ceil(retention / 30);
+    const parsed = raw === null || raw === "" ? NaN : Number(raw);
+    const n = Number.isInteger(parsed) && parsed > 0 ? parsed : TREND_WINDOW[gran] ?? 30;
+    return Math.min(n, cap);
+  }
   const TREND_METRICS = new Set(["total", "input", "output", "cacheRead", "cacheWrite", "calls"]);
   const trendRoute: WebRoute = {
     kind: "exact",
@@ -838,8 +851,11 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       const providerParam = url.searchParams.get("provider") ?? "";
       const provider = providerParam.length > 0 && providerParam.length <= 128 ? providerParam : undefined;
       const byModel = url.searchParams.get("byModel") === "1";
-      const n = TREND_WINDOW[granularity] ?? 30;
+      const n = clampTrendN(url.searchParams.get("n"), granularity);
       const stack = trend.seriesStacked(n, granularity, metric, provider, byModel);
+      // windowSummary 内部按 byModel=false 口径取 top 段——仅当堆叠同为 provider 级时才复用，
+      // byModel=true 时传入会改变 top 口径（行为变化），退回内部自算（评审 P1-2 复用前提）
+      const summary = trend.windowSummary(n, granularity, metric, provider, byModel ? undefined : stack.series);
       writeJson(res, 200, {
         ok: true,
         plugin: "dsh-provider-usage",
@@ -848,8 +864,10 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
         metric,
         provider: provider ?? null,
         byModel,
+        n, // 实际返回桶数（clamp 后；客户端裁档位/提示的依据）
+        retentionDays: config.trendRetentionDays, // 客户端按粒度生成范围档位的依据
         ...stack,
-        summary: trend.windowSummary(n, granularity, metric, provider),
+        summary,
         firstDay: trend.firstRecordedDay(),
         generatedAt: Date.now(),
       });

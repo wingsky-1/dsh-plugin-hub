@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dsh-provider-usage 使用趋势视图改版 · 交互评审草图 r2</title>
+<!--
+  dsh-provider-usage「使用趋势」日/周/月视图改版 —— 静态交互评审草图 r2
+  对应提案：docs/proposals/provider-usage-trend-view-redesign.md（issue #503 M2 体验迭代）
+
+  三个变体（底部悬浮切换器 / hash #v=a|b|c 兼容 file://）：
+  - A 推荐方案 B「窗口可调 + 双形态」：范围档位（日 7/30/90/180 · 周 8/13/26 · 月 3/6/12）
+    + 柱/面积双形态 + 触屏可用 tooltip + 图例点选显隐 + 当前桶「进行中」标注
+    + 空桶统一「无数据」虚位 + 首桶「部分桶（留存/起算边缘）」标注 + 环比基准不完整时显示「-」+ 修复月视图 X 轴标签
+  - B 现状复刻（对照组）：固定 30/12/12 + <title> 悬停 + 静态图例 + 无空桶/进行中标注，
+    月视图 X 轴 slice(5) 标签 bug 原样复现
+  - C 备选方案「日历热力图」：GitHub 风格 26 周年历，仅日粒度（说明其优缺点）
+
+  仅为评审用静态 mock：不接入任何后端，数据为内置模拟（挂载 220 天前 × 留存 180 天，
+  工作日节律 + 偶发爆发 + 近期增长 + 周末低谷 + 今日按 40% 进行中模拟）。
+  样式变量模拟宿主 --dsw-alias-* 主题面，暗色值为 mock 自拟。
+  落地形态 = src/client/trend.ts（React createElement）+ style.css，本文件不入库为代码。
+-->
+<style>
+/* ================= 主题变量（模拟宿主 --dsw-alias-*，含浅/暗双套） ================= */
+:root, html[data-theme="light"] {
+  --dsw-alias-bg-base: #ffffff;
+  --dsw-alias-bg-layer-1: #f5f6f8;
+  --dsw-alias-bg-layer-2: #eceef2;
+  --dsw-alias-border-l1: #e2e5ea;
+  --dsw-alias-border-l2: #d3d8df;
+  --dsw-alias-label-primary: #1f2329;
+  --dsw-alias-label-secondary: #5f6672;
+  --dsw-alias-label-tertiary: #6d7480;
+  --dsw-alias-state-info-primary: #2f6fed;
+  --dsw-alias-state-success-primary: #0f9d6e;
+  --dsw-alias-state-warning-primary: #b45309;
+  --dsw-alias-state-error-primary: #d92d20;
+  --mock-page-bg: #e9ecf1;
+  --mock-card-shadow: 0 1px 3px rgba(15,23,42,.05);
+}
+html[data-theme="dark"] {
+  --dsw-alias-bg-base: #17191d;
+  --dsw-alias-bg-layer-1: #1f2227;
+  --dsw-alias-bg-layer-2: #262a31;
+  --dsw-alias-border-l1: #2f343b;
+  --dsw-alias-border-l2: #3c424b;
+  --dsw-alias-label-primary: #e8eaed;
+  --dsw-alias-label-secondary: #b3b9c2;
+  --dsw-alias-label-tertiary: #8b929e;
+  --dsw-alias-state-info-primary: #6b9aff;
+  --dsw-alias-state-success-primary: #34c48e;
+  --dsw-alias-state-warning-primary: #e8a23d;
+  --dsw-alias-state-error-primary: #f0655a;
+  --mock-page-bg: #0e0f12;
+  --mock-card-shadow: 0 1px 3px rgba(0,0,0,.4);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  background: var(--mock-page-bg);
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px; line-height: 1.7;
+  padding: 20px 16px 96px;
+}
+.mock-shell { max-width: 780px; margin: 0 auto; }
+.mock-crumbs { font-size: 11px; color: var(--dsw-alias-label-tertiary); margin-bottom: 10px; }
+.mock-crumbs b { color: var(--dsw-alias-label-secondary); font-weight: 600; }
+
+/* ================= 原型 chrome（非评审对象） ================= */
+.proto-tag {
+  position: fixed; top: 14px; left: 14px; z-index: 999;
+  font-size: 10px; letter-spacing: 1px; color: #fff; background: #b45309;
+  padding: 3px 10px; border-radius: 6px; opacity: .92;
+}
+.proto-theme {
+  position: fixed; top: 14px; right: 14px; z-index: 999;
+  border: 1px solid var(--dsw-alias-border-l1); background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-secondary); border-radius: 999px; padding: 5px 14px;
+  font-size: 12px; cursor: pointer;
+}
+.proto-bar {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: 18px; z-index: 999;
+  display: flex; align-items: center; gap: 2px;
+  background: #101318; color: #e8eaed; border-radius: 999px;
+  padding: 6px 8px; box-shadow: 0 8px 32px rgba(0,0,0,.45);
+  font-size: 12px; user-select: none;
+}
+.proto-bar button {
+  border: 0; background: transparent; color: #e8eaed; cursor: pointer;
+  padding: 6px 14px; border-radius: 999px; font-size: 12px;
+}
+.proto-bar button.on { background: rgba(255,255,255,.16); font-weight: 600; }
+.proto-bar .proto-label { min-width: 240px; text-align: center; color: #8b929e; font-size: 11px; padding: 0 8px; }
+
+/* ================= 卡片骨架（dou- 前缀，与通知中心 #508 设计语言对齐） ================= */
+.dou-card {
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 12px; overflow: hidden;
+  background: var(--dsw-alias-bg-base);
+  box-shadow: var(--mock-card-shadow);
+  margin-bottom: 16px;
+}
+.dou-head { padding: 14px 16px 0; }
+.dou-title { font-size: 13px; font-weight: 600; }
+.dou-sub { font-size: 11px; color: var(--dsw-alias-label-tertiary); margin-top: 2px; }
+.dou-body { padding: 12px 16px 16px; }
+.dou-note {
+  font-size: 11px; color: var(--dsw-alias-label-tertiary);
+  padding: 8px 16px 12px; border-top: 1px dashed var(--dsw-alias-border-l2);
+}
+
+/* 控件行 */
+.dou-ctrl { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.dou-seg { display: inline-flex; gap: 4px; }
+.dou-seg button {
+  padding: 3px 10px; font-size: 12px; border-radius: 6px; cursor: pointer; color: inherit;
+  border: 1px solid var(--dsw-alias-border-l2); background: transparent;
+}
+.dou-seg button.on { background: var(--dsw-alias-bg-layer-2); font-weight: 600; }
+.dou-seg-mini button { padding: 2px 8px; font-size: 11px; }
+.dou-select {
+  font-size: 12px; padding: 3px 6px; border-radius: 6px; color: inherit;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+}
+.dou-check { font-size: 12px; display: inline-flex; align-items: center; gap: 4px; }
+.dou-ctrl .spacer { margin-left: auto; font-size: 11px; color: var(--dsw-alias-label-tertiary); }
+
+/* 汇总卡 */
+.dou-cards { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.dou-kpi {
+  flex: 1 1 120px; min-width: 118px; padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+.dou-kpi .k { font-size: 11px; color: var(--dsw-alias-label-tertiary); }
+.dou-kpi .v { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.dou-kpi .d { font-size: 11px; font-weight: 600; }
+.dou-kpi .hint { font-size: 10px; color: var(--dsw-alias-label-tertiary); font-weight: 400; }
+
+/* 图例 */
+.dou-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: var(--dsw-alias-label-tertiary); margin-bottom: 8px; }
+.dou-legend .item { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; user-select: none; border-radius: 4px; padding: 1px 4px; }
+.dou-legend .item:hover { background: var(--dsw-alias-bg-layer-2); }
+.dou-legend .item.off { opacity: .38; text-decoration: line-through; }
+.dou-legend .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.dou-legend .tip { font-size: 10px; opacity: .75; }
+
+/* 图表容器 + tooltip 浮层 */
+.dou-chart { position: relative; }
+.dou-chart svg { width: 100%; height: auto; display: block; touch-action: pan-y; }
+.dou-chart .bar { cursor: pointer; }
+.dou-chart .bar:focus { outline: none; }
+.dou-chart .bar:focus-visible .hit { stroke: var(--dsw-alias-state-info-primary); stroke-width: 1; }
+.dou-tip {
+  position: absolute; z-index: 30; pointer-events: none; display: none;
+  background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.14);
+  padding: 7px 10px; font-size: 11px; min-width: 150px; max-width: 250px;
+}
+.dou-tip .t { font-weight: 600; margin-bottom: 3px; font-variant-numeric: tabular-nums; }
+.dou-tip .row { display: flex; justify-content: space-between; gap: 14px; font-variant-numeric: tabular-nums; }
+.dou-tip .row .n { display: inline-flex; align-items: center; gap: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dou-tip .row.dim { opacity: .45; }
+.dou-tip .sum { border-top: 1px solid var(--dsw-alias-border-l1); margin-top: 4px; padding-top: 3px; font-weight: 600; }
+.dou-tip .tag { display: inline-block; font-size: 10px; padding: 0 5px; border-radius: 4px; margin-left: 6px; vertical-align: 1px; font-weight: 400; }
+.dou-tip .tag.partial { color: var(--dsw-alias-state-warning-primary); border: 1px solid currentColor; }
+.dou-tip .tag.none { color: var(--dsw-alias-label-tertiary); border: 1px solid var(--dsw-alias-border-l2); }
+
+/* 问题标注条 */
+.problems { margin: 6px 0 0; }
+.problems li { font-size: 11px; color: var(--dsw-alias-label-secondary); margin: 3px 0 3px 16px; }
+.problems li::marker { color: var(--dsw-alias-state-error-primary); }
+
+/* ================= 变体 C：日历热力图 ================= */
+.heat-wrap { display: flex; gap: 10px; align-items: flex-start; overflow-x: auto; padding-bottom: 4px; }
+.heat-scroll { flex: 1 1 auto; }
+.heat-months { position: relative; font-size: 10px; color: var(--dsw-alias-label-tertiary); margin-left: 26px; height: 14px; }
+.heat-months span { position: absolute; white-space: nowrap; }
+.heat-grid { position: relative; display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 12px); gap: 3px; margin-left: 26px; }
+.heat-cell { width: 12px; height: 12px; border-radius: 3px; background: var(--dsw-alias-bg-layer-2); cursor: pointer; }
+.heat-cell:hover, .heat-cell.on { outline: 2px solid var(--dsw-alias-state-info-primary); outline-offset: 1px; }
+.heat-dow { position: absolute; left: 0; top: 14px; display: grid; grid-template-rows: repeat(7, 12px); gap: 3px; font-size: 9px; color: var(--dsw-alias-label-tertiary); }
+.heat-scale { flex: none; display: flex; align-items: center; gap: 4px; font-size: 10px; color: var(--dsw-alias-label-tertiary); padding-top: 18px; }
+.heat-scale i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+
+@media (max-width: 560px) {
+  .dou-kpi { flex: 1 1 46%; }
+  .dou-ctrl .spacer { margin-left: 0; flex-basis: 100%; }
+}
+</style>
+</head>
+<body>
+<div class="proto-tag">评审草图 · 非实现</div>
+<button class="proto-theme" id="themeBtn">暗色</button>
+
+<div class="mock-shell">
+  <div class="mock-crumbs">设置 → <b>用量统计</b> → 使用趋势（#503 M2 改版评审草图） · 提案：<b>docs/proposals/provider-usage-trend-view-redesign.md</b></div>
+
+  <!-- ==================== 变体 A：推荐方案 B ==================== -->
+  <section id="viewA">
+    <div class="dou-card">
+      <div class="dou-head">
+        <div class="dou-title">使用趋势 <span style="font-weight:400;font-size:11px;color:var(--dsw-alias-label-tertiary)">· 变体 A（推荐方案 B）</span></div>
+        <div class="dou-sub">范围可调（留存 180 天内）＋ 柱/面积双形态 ＋ 触屏可用的点按明细 ＋ 图例点选显隐</div>
+      </div>
+      <div class="dou-body">
+        <div class="dou-ctrl" id="aCtrl"></div>
+        <div class="dou-cards" id="aCards"></div>
+        <div class="dou-legend" id="aLegend"></div>
+        <div class="dou-chart" id="aChart"><div id="aSvg"></div><div class="dou-tip" id="aTip"></div></div>
+      </div>
+      <div class="dou-note" id="aNote"></div>
+    </div>
+    <div class="dou-card">
+      <div class="dou-head"><div class="dou-title">变体 A 交互要点（对着上图试）</div></div>
+      <div class="dou-body">
+        <ul class="problems" style="color:var(--dsw-alias-label-secondary)">
+          <li>范围档位随粒度联动（r2：按 180 天留存生成）：日 7/30/90 · 周 4/13/26 · 月 3/6；retentionDays 可配，宿主按粒度 clamp（day≤留存、week≤⌈留存/7⌉、month≤⌈留存/30⌉），/trend 响应回传 retentionDays 供前端裁档。</li>
+          <li>月视图默认<b>堆叠面积</b>（趋势连续性优先，保留 provider 构成），日/周默认<b>堆叠柱</b>（逐桶精确读数优先）；控件行右侧随时切换；形态选择为会话内内存态（不做 localStorage 持久化，与设置页 tab 状态既有评审决策一致）。</li>
+          <li>鼠标悬停 / 触屏<b>点按任意桶</b> → 卡片内浮层明细（非 &lt;title&gt;），iPad/iPhone 可用；「进行中」桶带角标且柱体虚线描边。</li>
+          <li><b>图例点选</b>可隐藏/恢复某段（纯前端重算，不发请求），便于聚焦单 provider；隐藏后 tooltip 合计只算可见段并标注。</li>
+          <li>空桶统一短灰虚位 =「无数据」（r2 口径：现有数据模型下「挂载前 / 超保留期 / 无会话日」同落 null 不可区分；三态区分需宿主桶级信号，列二期）。首桶数据落在留存/起算边缘时灰点虚线描边 + tooltip「部分桶」角标；窗口总量卡在含部分桶时带 hint，环比基准不完整时显示「-」并注明。</li>
+          <li>月视图 X 轴显示 <b>YY-MM</b>（修复现状 slice(5) 只剩月份号的跨年歧义）；汇总卡峰值带人话时间（如「2026-02」/「02-18 当周」）。</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== 变体 B：现状复刻（对照组） ==================== -->
+  <section id="viewB" hidden>
+    <div class="dou-card">
+      <div class="dou-head">
+        <div class="dou-title">使用趋势 <span style="font-weight:400;font-size:11px;color:var(--dsw-alias-label-tertiary)">· 变体 B（现状复刻 · 对照组）</span></div>
+        <div class="dou-sub">固定窗口 30/12/12 ＋ &lt;title&gt; 悬停 ＋ 静态图例 —— 请在触屏设备上试明细（无效）</div>
+      </div>
+      <div class="dou-body">
+        <div class="dou-ctrl" id="bCtrl"></div>
+        <div class="dou-cards" id="bCards"></div>
+        <div class="dou-legend" id="bLegend"></div>
+        <div class="dou-chart" id="bChart"></div>
+      </div>
+      <div class="dou-note">统计自 2025-07-08（插件挂载时点）起算，早于该时点的会话不计入（现状文案原样）</div>
+    </div>
+    <div class="dou-card">
+      <div class="dou-head"><div class="dou-title">现状问题点（在本复刻中可逐条验证）</div></div>
+      <div class="dou-body"><ul class="problems">
+        <li>窗口写死 30/12/12：数据实际留存 180 天，UI 只能看 30 天。</li>
+        <li>切到「月」看 X 轴：只剩月份号「01…12」，跨年 12 档重复、无年份（slice(5) 对月键失效）。</li>
+        <li>空日直接没柱：「还没开始统计」「超出保留期」「真的没用」三者不可分辨。</li>
+        <li>今天/本周/本月（进行中）与完结桶同权渲染，天然偏低像「暴跌」，无任何标注。</li>
+        <li>「峰值桶」卡显示 raw key（如 2025-12-18 周首日），不翻译成人话。</li>
+        <li>明细只有 &lt;title&gt;：桌面端延迟明显，触屏设备完全不可用。</li>
+        <li>图例纯装饰，段多时无法聚焦单个 provider。</li>
+      </ul></div>
+    </div>
+  </section>
+
+  <!-- ==================== 变体 C：日历热力图（备选） ==================== -->
+  <section id="viewC" hidden>
+    <div class="dou-card">
+      <div class="dou-head">
+        <div class="dou-title">使用趋势 <span style="font-weight:400;font-size:11px;color:var(--dsw-alias-label-tertiary)">· 变体 C（备选方案：日历热力图）</span></div>
+        <div class="dou-sub">GitHub 风格 26 周年历 · 仅日粒度 —— 「一年用量分布」心智最直白</div>
+      </div>
+      <div class="dou-body">
+        <div class="heat-wrap">
+          <div class="heat-scroll">
+            <div style="position:relative">
+              <div class="heat-months" id="cMonths"></div>
+              <div class="heat-dow"><span>一</span><span></span><span>三</span><span></span><span>五</span><span></span><span>日</span></div>
+              <div class="heat-grid" id="cGrid"></div>
+            </div>
+          </div>
+          <div class="heat-scale" id="cScale"></div>
+        </div>
+        <div class="dou-tip" id="cTip"></div>
+      </div>
+      <div class="dou-note" id="cNote"></div>
+    </div>
+    <div class="dou-card">
+      <div class="dou-head"><div class="dou-title">热力图的得与失（方案 C 判为「二期可选」的依据）</div></div>
+      <div class="dou-body"><ul class="problems" style="color:var(--dsw-alias-label-secondary)">
+        <li>得：年度节奏 / 空窗期 / 密集期一眼可见；格子天然区分「未开始 / 超保留期 / 零用量」。</li>
+        <li>失①：颜色档位表达不了量级差（10 倍用量差只表现为更深一格）；多 provider 堆叠语义放不进格子，点开才见。</li>
+        <li>失②：周/月粒度热力图无意义，仍需柱/面积兜底 → 等于两套主视图，体量 ≈ 方案 B + C 之和。</li>
+        <li>定位建议：作为方案 B 落地后的二期增强（日粒度下的第 4 种形态），不替换主形态。</li>
+      </ul></div>
+    </div>
+  </section>
+</div>
+
+<div class="proto-bar">
+  <button data-v="a" class="on">A 推荐</button>
+  <button data-v="b">B 现状</button>
+  <button data-v="c">C 热力图</button>
+  <div class="proto-label" id="protoLabel">窗口可调 + 双形态视图（提案方案 B）</div>
+</div>
+
+<script>
+"use strict";
+/* ================================================================
+ * 模拟数据（种子固定，每次打开形状一致）
+ * 挂载 220 天前；留存 180 天 → 可展示窗口 [today-180d, today]；
+ * 往更早翻（若有档位越过留存下限）只会看到统一的「无数据」空桶（r2：null 三态不可区分）。
+ * ================================================================ */
+const DAY = 86400000;
+function startOfDay(t) { const d = new Date(t); d.setHours(0,0,0,0); return d.getTime(); }
+function dayKeyOf(t) { const d = new Date(t); return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0"); }
+function weekStartOf(t) { const d = new Date(startOfDay(t)); d.setDate(d.getDate() - ((d.getDay()+6)%7)); return d.getTime(); }
+function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function mulberry32(seed) { return function() { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
+const TODAY = startOfDay(Date.now());
+const MOUNT = TODAY - 220 * DAY;          // 插件挂载时点
+const CUTOFF = TODAY - 180 * DAY;         // 留存下限（早于此的聚合分片被 prune）
+const FIRST_DAY = dayKeyOf(MOUNT);
+const CUTOFF_KEY = dayKeyOf(CUTOFF);
+
+/* 适配器与模型清单 */
+const PROVIDERS = [
+  { id: "deepseek-official", models: [{ id: "deepseek-chat", share: .72 }, { id: "deepseek-reasoner", share: .28 }] },
+  { id: "zai-coding-cn",     models: [{ id: "glm-4.6", share: 1 }] },
+];
+/* 每日用量模拟：挂载日 ~ 今天，今天按 40% 进行中折算 */
+const DAYS = new Map(); // dayKey -> Array<{provider, model, input, output, cacheRead, cacheWrite, calls}>
+(function gen() {
+  const rand = mulberry32(20250210);
+  for (let t = MOUNT; t <= TODAY; t += DAY) {
+    const dk = dayKeyOf(t);
+    const dow = new Date(t).getDay();
+    const weekend = dow === 0 || dow === 6;
+    if (rand() < (weekend ? .5 : .07)) continue;            // 无会话日 → 零用量
+    const rows = [];
+    for (const p of PROVIDERS) {
+      const base = p.id === "deepseek-official" ? 260000 : 130000;
+      let f = (weekend ? .32 : 1) * (0.62 + rand() * .85);
+      if (rand() < .055) f *= 3.1;                          // 偶发爆发日
+      f *= 1 + .42 * ((t - MOUNT) / (TODAY - MOUNT));       // 近期增长趋势
+      if (t === TODAY) f *= .4;                             // 今日进行中（模拟 40%）
+      const T = Math.round(base * f);
+      if (T < 900) continue;
+      for (const m of p.models) {
+        const mt = Math.round(T * m.share * (.85 + rand() * .3));
+        rows.push({
+          provider: p.id, model: m.id,
+          input: Math.round(mt * .30), output: Math.round(mt * .12),
+          cacheRead: Math.round(mt * .52), cacheWrite: Math.round(mt * .06),
+          calls: Math.max(1, Math.round(mt / 2600)),
+        });
+      }
+    }
+    if (rows.length) DAYS.set(dk, rows);
+  }
+})();
+const METRICS = [
+  ["total", "总 tokens"], ["input", "输入"], ["output", "输出"],
+  ["cacheRead", "缓存读"], ["cacheWrite", "缓存写"], ["calls", "调用次数"],
+];
+function cellMetric(rows, metric) {
+  if (!rows || rows.length === 0) return null;
+  let acc = null;
+  for (const r of rows) {
+    const v = metric === "total" ? (r.input + r.output + r.cacheRead + r.cacheWrite)
+      : metric === "calls" ? r.calls : r[metric];
+    acc = (acc === null) ? v : acc + v;
+  }
+  return acc;
+}
+function fmtCompact(n) {
+  if (n === null || !Number.isFinite(n)) return "-";
+  const abs = Math.abs(n);
+  if (abs >= 1e9) return (n / 1e9).toFixed(abs >= 1e10 ? 0 : 1) + "B";
+  if (abs >= 1e6) return (n / 1e6).toFixed(abs >= 1e7 ? 0 : 1) + "M";
+  if (abs >= 1e4) return (n / 1e3).toFixed(1) + "K";
+  return String(Math.round(n));
+}
+function fmtKeyHuman(key, gran) {
+  if (gran === "month") return key.slice(0, 4) + " 年 " + Number(key.slice(5, 7)) + " 月";
+  if (gran === "week")  return key.slice(5) + " 当周";
+  return key.slice(5);
+}
+/* ---------------- 窗口桶生成（升序，含当前桶） ---------------- */
+function bucketKeys(gran, n) {
+  const keys = [];
+  if (gran === "day") {
+    for (let i = n - 1; i >= 0; i--) keys.push(dayKeyOf(TODAY - i * DAY));
+  } else if (gran === "week") {
+    for (let i = n - 1; i >= 0; i--) keys.push(dayKeyOf(weekStartOf(TODAY) - i * 7 * DAY));
+  } else {
+    for (let i = n - 1; i >= 0; i--) { const m = new Date(new Date(TODAY).getFullYear(), new Date(TODAY).getMonth() - i, 1); keys.push(m.getFullYear() + "-" + String(m.getMonth()+1).padStart(2,"0")); }
+  }
+  return keys;
+}
+function bucketRange(key, gran) {
+  if (gran === "day") return { start: key, end: key };
+  if (gran === "month") {
+    const [y, m] = key.split("-").map(Number);
+    return { start: y + "-" + String(m).padStart(2,"0") + "-01", end: dayKeyOf(new Date(y, m, 0).getTime()) };
+  }
+  const [y, m, d] = key.split("-").map(Number);
+  return { start: key, end: dayKeyOf(new Date(y, m-1, d + 6).getTime()) };
+}
+function curBucketKey(gran) { return bucketKeys(gran, 1)[0]; }
+/* ---------------- 聚合：窗口 → series（parts/total/语义标记） ----------------
+ * 模拟宿主行为：留存线之前的聚合分片已被 prune，聚合时跳过 dk < CUTOFF_KEY 的天。
+ */
+function buildSeries(gran, n, metric, provider, byModel) {
+  const keys = bucketKeys(gran, n);
+  const cur = curBucketKey(gran);
+  return keys.map((key) => {
+    const range = bucketRange(key, gran);
+    const partMap = new Map();
+    for (const [dk, rows] of DAYS) {
+      if (dk < range.start || dk > range.end) continue;
+      if (dk < CUTOFF_KEY) continue;                        // 已被保留策略清理
+      for (const r of rows) {
+        if (provider && r.provider !== provider) continue;
+        const id = byModel ? r.provider + "/" + r.model : r.provider;
+        let acc = partMap.get(id);
+        if (acc === undefined) { acc = { provider: r.provider, model: byModel ? r.model : null, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, calls: 0 }; partMap.set(id, acc); }
+        acc.input += r.input; acc.output += r.output; acc.cacheRead += r.cacheRead; acc.cacheWrite += r.cacheWrite; acc.calls += r.calls;
+      }
+    }
+    const parts = [...partMap.entries()].map(([id, acc]) => ({ id, value: cellMetric([acc], metric), raw: acc }))
+      .sort((a, b) => (b.value ?? 0) - (a.value ?? 0));     // 大段在底，跨桶位置稳定
+    let total = null;
+    for (const p of parts) total = total === null ? p.value : total + p.value;
+    /* 空桶单态（r2 口径）：现有数据模型下「挂载前 / 超保留期 / 无会话日」同落 null 不可区分，统一「无数据」 */
+    const none = total === null ? "nodata" : null;
+    /* 首桶「留存/起算边缘」：桶区间 start 早于起算日或留存下限且确有数据 → 值天然偏低 */
+    const LO = FIRST_DAY > CUTOFF_KEY ? FIRST_DAY : CUTOFF_KEY;
+    const edge = total !== null && range.start < LO && key !== cur;
+    return { key, parts, total, partial: key === cur, none, edge };
+  });
+}
+function prevWindowInfo(gran, n, metric, provider) { // 环比：上一同长窗口 + 完整性
+  const keys = bucketKeys(gran, n);
+  const first = bucketRange(keys[0], gran);
+  let sum = 0, seen = false, st, end;
+  if (gran === "month") {
+    const [y, m] = keys[0].split("-").map(Number);
+    const d0 = new Date(y, m - 1 - n, 1);
+    st = dayKeyOf(d0.getTime());
+    end = dayKeyOf(new Date(d0.getFullYear(), d0.getMonth() + n, 0).getTime());
+  } else {
+    const daysBack = gran === "week" ? n * 7 : n;
+    const endT = startOfDay(new Date(first.start.replace(/-/g,"/")).getTime()) - DAY;
+    st = dayKeyOf(endT - (daysBack - 1) * DAY);
+    end = dayKeyOf(endT);
+  }
+  for (const [dk, rows] of DAYS) {
+    if (dk < st || dk > end || dk < CUTOFF_KEY) continue;
+    const v = cellMetric(rows, metric);
+    if (v !== null) { sum += v; seen = true; }
+  }
+  /* 完整性：上一窗口起点落在起算日或留存下限之前 → 基准不完整，环比不可比 */
+  const complete = seen && st >= FIRST_DAY && st >= CUTOFF_KEY;
+  return { total: seen ? sum : null, complete };
+}
+/* ---------------- SVG 渲染（柱 / 面积，变体 A 用） ---------------- */
+const VAR_COLORS = ["var(--dsw-alias-state-info-primary)","#0f9d6e","#d9a13c","#d64545","#8a63d2","#2fa3b8","#c76a8f","#6b7f99"];
+function colorOf(id) { const L = VAR_COLORS.length; let h = 0; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0; return VAR_COLORS[h % L]; }
+function niceMax(v) { if (v <= 0) return 1; const raw = v * 1.06; const mag = Math.pow(10, Math.floor(Math.log10(raw))); return [1,2,5,10].map((k) => k*mag).find((x) => x >= raw) ?? 10*mag; }
+function axisLabel(key, gran, legacy) { // legacy=true 复刻现状 slice(5) 缺陷
+  if (legacy) return key.slice(5);
+  if (gran === "month") return key.slice(2);   // YY-MM
+  return key.slice(5);                          // MM-DD
+}
+function renderChart(mount, series, opts) {
+  const { gran, mode, hidden, legacy, onTip } = opts;
+  const W = 620, H = 210, PL = 46, PR = 10, PT = 14, PB = 30;
+  const plotH = H - PT - PB, xw = W - PL - PR, N = series.length;
+  mount.innerHTML = "";
+  if (N === 0) return;
+  const gap = xw / N;
+  const bw = Math.max(1.5, Math.min(18, gap * .62));
+  let maxV = 0; for (const b of series) for (const p of b.parts) if (!hidden.has(p.id) && p.value !== null && p.value > maxV) maxV = p.value;
+  const top = niceMax(maxV);
+  const yOf = (v) => PT + (1 - v / top) * plotH;
+  const out = [];
+  for (const gv of [0, top/2, top]) {
+    const gy = yOf(gv).toFixed(1);
+    out.push(`<line x1="${PL}" y1="${gy}" x2="${W-PR}" y2="${gy}" style="stroke:var(--dsw-alias-border-l2);stroke-width:1;${gv===0?"":"stroke-dasharray:3 3"}"/>`);
+    out.push(`<text x="${PL-5}" y="${Number(gy)+3}" text-anchor="end" style="font-size:9.5px;fill:var(--dsw-alias-label-tertiary)">${fmtCompact(gv)}</text>`);
+  }
+  const labelStep = Math.max(1, Math.ceil(N / 9));
+  const isArea = mode === "area";
+  series.forEach((b, i) => { b._x = PL + gap * i + gap / 2; });
+  /* 面积：按段 id 顺序做带状堆叠，null 桶断开为独立连续段 */
+  if (isArea) {
+    const ids = [];
+    for (const b of series) for (const p of b.parts) if (!hidden.has(p.id) && p.value !== null && !ids.includes(p.id)) ids.push(p.id);
+    const bases = new Map(series.map((b) => [b.key, 0]));
+    for (const id of ids) {
+      const runs = [];
+      let run = null;
+      for (const b of series) {
+        const p = b.parts.find((x) => x.id === id);
+        const v = p && !hidden.has(id) && p.value !== null ? p.value : null;
+        if (v === null) { if (run) { runs.push(run); run = null; } continue; }
+        const base = bases.get(b.key);
+        if (!run) run = { pts: [] };
+        run.pts.push({ x: b._x, top: yOf(base + v), bottom: yOf(base) });
+        bases.set(b.key, base + v);
+      }
+      if (run) runs.push(run);
+      for (const r of runs) {
+        if (r.pts.length === 0) continue;
+        let d = "M" + r.pts[0].x.toFixed(1) + " " + r.pts[0].top.toFixed(1);
+        for (let k = 1; k < r.pts.length; k++) d += " L" + r.pts[k].x.toFixed(1) + " " + r.pts[k].top.toFixed(1);
+        for (let k = r.pts.length - 1; k >= 0; k--) d += " L" + r.pts[k].x.toFixed(1) + " " + r.pts[k].bottom.toFixed(1);
+        d += " Z";
+        out.push(`<path d="${d}" style="fill:${colorOf(id)};fill-opacity:.28;stroke:${colorOf(id)};stroke-width:1;stroke-opacity:.55"/>`);
+      }
+    }
+  }
+  /* 柱：自底向上堆叠 + 空桶三态底位 + 当前桶虚线描边 */
+  series.forEach((b, i) => {
+    const cx = b._x, x = cx - bw / 2;
+    if (!isArea) {
+      if (b.none === "nodata") out.push(`<rect x="${x.toFixed(1)}" y="${(H-PB-3).toFixed(1)}" width="${bw.toFixed(1)}" height="1.6" rx="0.8" style="fill:var(--dsw-alias-label-tertiary);fill-opacity:.55"/>`);
+      let acc = 0;
+      const segs = [];
+      for (const p of b.parts) {
+        if (hidden.has(p.id) || p.value === null) continue;
+        const y1 = yOf(acc), acc2 = acc + p.value, y2 = yOf(acc2);
+        segs.push(`<rect x="${x.toFixed(1)}" y="${y2.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(.5, y1-y2).toFixed(1)}" rx="1" style="fill:${colorOf(p.id)};fill-opacity:.9"/>`);
+        acc = acc2;
+      }
+      if (b.partial && acc > 0) segs.push(`<rect x="${(x-2.5).toFixed(1)}" y="${yOf(acc).toFixed(1)}" width="${(bw+5).toFixed(1)}" height="${(H-PB-yOf(acc)).toFixed(1)}" rx="4" style="fill:none;stroke:var(--dsw-alias-state-warning-primary);stroke-width:1;stroke-dasharray:3 2"/>`);
+      else if (b.edge && acc > 0) segs.push(`<rect x="${(x-2.5).toFixed(1)}" y="${yOf(acc).toFixed(1)}" width="${(bw+5).toFixed(1)}" height="${(H-PB-yOf(acc)).toFixed(1)}" rx="4" style="fill:none;stroke:var(--dsw-alias-label-tertiary);stroke-width:1;stroke-dasharray:1.5 2.5"/>`);
+      const hitX = cx - gap / 2;
+      segs.push(`<rect class="hit" x="${hitX.toFixed(1)}" y="${PT}" width="${gap.toFixed(1)}" height="${plotH}" fill="transparent"/>`);
+      out.push(`<g class="bar" data-i="${i}" tabindex="0" role="button" aria-label="${esc(fmtKeyHuman(b.key, gran))}">${segs.join("")}</g>`);
+    }
+    if (i % labelStep === 0 || i === N - 1) {
+      const anchor = i === 0 ? "start" : i === N - 1 ? "end" : "middle";
+      out.push(`<text x="${cx.toFixed(1)}" y="${H-12}" text-anchor="${anchor}" style="font-size:9.5px;fill:var(--dsw-alias-label-tertiary)">${esc(axisLabel(b.key, gran, legacy))}</text>`);
+    }
+    /* 面积模式：整列透明命中区（柱模式已在 .bar 内含 hit rect） */
+    if (isArea) {
+      const hitX = cx - gap / 2;
+      out.push(`<g class="bar" data-i="${i}" tabindex="0" role="button" aria-label="${esc(fmtKeyHuman(b.key, gran))}"><rect class="hit" x="${hitX.toFixed(1)}" y="${PT}" width="${gap.toFixed(1)}" height="${plotH}" fill="transparent"/></g>`);
+    }
+  });
+  mount.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="用量趋势图">${out.join("")}</svg>`;
+  if (legacy) return; // 现状复刻：仅 <title>，无 JS 交互
+  /* 交互：mouse 悬停 + 触屏/键盘点按 → 卡片内浮层 */
+  const show = (i, clientX) => {
+    const b = series[i]; if (!b) return;
+    onTip(b, clientX);
+  };
+  mount.querySelectorAll(".bar").forEach((g) => {
+    const i = Number(g.dataset.i);
+    g.addEventListener("pointermove", (e) => { if (e.pointerType === "mouse") show(i, e.clientX); });
+    g.addEventListener("pointerdown", (e) => { e.preventDefault(); show(i, e.clientX); });
+    g.addEventListener("focus", () => show(i, g.getBoundingClientRect().left + 24));
+  });
+}
+function renderTip(tipEl, mount, b, gran, clientX) {
+  const rows = b.parts.map((p) => ({ id: p.id, v: p.value, c: colorOf(p.id) }));
+  rows.sort((a, z) => (z.v ?? 0) - (a.v ?? 0));
+  const tag = b.partial ? '<span class="tag partial">进行中</span>' : b.edge ? '<span class="tag none">部分桶（留存/起算边缘）</span>' : b.none === "nodata" ? '<span class="tag none">无数据</span>' : "";
+  const body = rows.length === 0 ? '<div class="row dim"><span class="n">（无数据）</span></div>'
+    : rows.map((r) => `<div class="row"><span class="n"><i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${r.c};flex:none"></i>${esc(r.id)}</span><span>${fmtCompact(r.v)}</span></div>`).join("");
+  const visTotal = rows.reduce((s, r) => s + (r.v ?? 0), 0);
+  tipEl.innerHTML = `<div class="t">${esc(fmtKeyHuman(b.key, gran))}${tag}</div>${body}<div class="row sum"><span>合计</span><span>${fmtCompact(rows.length ? visTotal : null)}</span></div>`;
+  tipEl.style.display = "block";
+  const rect = mount.getBoundingClientRect();
+  let lx = clientX - rect.left + 12;
+  if (lx + 200 > rect.width) lx = clientX - rect.left - 208;
+  tipEl.style.left = Math.max(4, lx) + "px";
+  tipEl.style.top = "6px";
+}
+
+/* ================================================================
+ * 变体 A（推荐方案 B）
+ * ================================================================ */
+const RANGES = { day: [7, 30, 90], week: [4, 13, 26], month: [3, 6] }; // r2：按 180 天留存生成（retention 可配则档位随之放宽/收紧）
+const DEF_RANGE = { day: 30, week: 13, month: 6 };
+const DEF_MODE  = { day: "bar", week: "bar", month: "area" };
+const aState = { gran: "day", range: 30, metric: "total", provider: "", byModel: false, mode: "bar", hidden: new Set() };
+
+function segButtons(el, items, cur, onPick, mini) {
+  const wrap = document.createElement("div");
+  wrap.className = "dou-seg" + (mini ? " dou-seg-mini" : "");
+  wrap.setAttribute("role", "group");
+  for (const [val, label, title] of items) {
+    const b = document.createElement("button");
+    b.type = "button"; b.textContent = label; b.title = title || label;
+    if (val === cur) b.classList.add("on");
+    b.setAttribute("aria-pressed", val === cur ? "true" : "false");
+    b.addEventListener("click", () => onPick(val));
+    wrap.appendChild(b);
+  }
+  el.appendChild(wrap);
+}
+function selControl(el, label, options, cur, onPick) {
+  const s = document.createElement("select");
+  s.className = "dou-select"; s.setAttribute("aria-label", label);
+  for (const [v, text] of options) { const o = document.createElement("option"); o.value = v; o.textContent = text; if (v === cur) o.selected = true; s.appendChild(o); }
+  s.addEventListener("change", () => onPick(s.value));
+  el.appendChild(s);
+}
+function renderA() {
+  const ctrl = document.getElementById("aCtrl");
+  ctrl.innerHTML = "";
+  segButtons(ctrl, [["day","日"],["week","周"],["month","月"]], aState.gran, (g) => { aState.gran = g; aState.range = DEF_RANGE[g]; aState.mode = DEF_MODE[g]; aState.hidden.clear(); renderA(); });
+  segButtons(ctrl, RANGES[aState.gran].map((n) => [n, String(n)]), aState.range, (n) => { aState.range = n; renderA(); }, true);
+  selControl(ctrl, "指标", METRICS, aState.metric, (v) => { aState.metric = v; renderA(); });
+  selControl(ctrl, "适配器", [["", "全部适配器"], ...PROVIDERS.map((p) => [p.id, p.id])], aState.provider, (v) => { aState.provider = v; if (!v) aState.byModel = false; aState.hidden.clear(); renderA(); });
+  if (aState.provider) {
+    const l = document.createElement("label"); l.className = "dou-check";
+    const c = document.createElement("input"); c.type = "checkbox"; c.checked = aState.byModel;
+    c.addEventListener("change", () => { aState.byModel = c.checked; aState.hidden.clear(); renderA(); });
+    l.appendChild(c); l.appendChild(document.createTextNode("按模型拆分")); ctrl.appendChild(l);
+  }
+  segButtons(ctrl, [["bar","柱"],["area","面积"]], aState.mode, (m) => { aState.mode = m; renderA(); }, true);
+  const sp = document.createElement("span"); sp.className = "spacer";
+  sp.textContent = `近 ${aState.range} ${aState.gran === "day" ? "天" : aState.gran === "week" ? "周" : "个月"}`;
+  ctrl.appendChild(sp);
+
+  const series = buildSeries(aState.gran, aState.range, aState.metric, aState.provider || undefined, aState.byModel);
+  const hasData = series.some((b) => b.total !== null);
+  const cards = document.getElementById("aCards");
+  const legend = document.getElementById("aLegend");
+  const chart = document.getElementById("aChart");
+  if (!hasData) {
+    cards.innerHTML = ""; legend.innerHTML = "";
+    document.getElementById("aSvg").innerHTML = "";
+    document.getElementById("aTip").style.display = "none";
+    document.getElementById("aNote").textContent = "暂无趋势数据：会话产生用量后这里会展示使用趋势（统计自 " + FIRST_DAY + " 起算）。";
+    return;
+  }
+  /* 汇总卡 */
+  const total = series.reduce((s, b) => s + (b.total ?? 0), 0);
+  const activeBuckets = series.filter((b) => b.total !== null).length;
+  const avg = total / Math.max(1, activeBuckets);
+  const prevInfo = prevWindowInfo(aState.gran, aState.range, aState.metric, aState.provider || undefined);
+  const prev = prevInfo.total;
+  const dPct = (prev !== null && prev > 0 && prevInfo.complete) ? ((total - prev) / prev * 100) : null;
+  const prevNote = !prevInfo.complete ? '<span class="hint">环比基准不完整</span>' : "";
+  const peak = series.reduce((m, b) => (b.total !== null && (m === null || b.total > m.total)) ? { key: b.key, total: b.total } : m, null);
+  const topPart = (() => { let m = null; for (const b of series) for (const p of b.parts) if (p.value !== null && (m === null || p.value > m.value)) m = p; return m; })();
+  const callsSum = series.reduce((s, b) => s + b.parts.reduce((x, p) => x + p.raw.calls, 0), 0);
+  const deltaHtml = dPct === null ? "" : `<span class="d" style="color:${dPct >= 0 ? "var(--dsw-alias-state-warning-primary)" : "var(--dsw-alias-state-success-primary)"}">${dPct >= 0 ? "+" : ""}${dPct.toFixed(1)}%</span>`;
+  const hiddenCount = aState.hidden.size;
+  const partialHint = series.some((b) => b.partial) || series.some((b) => b.edge);
+  cards.innerHTML = `
+    <div class="dou-kpi"><div class="k">窗口总量</div><div class="v">${fmtCompact(total)} ${deltaHtml}${partialHint ? '<span class="hint">含进行中/部分桶</span>' : ""}${prevNote}</div></div>
+    <div class="dou-kpi"><div class="k">日均（活跃 ${activeBuckets} 桶）</div><div class="v">${fmtCompact(avg)}</div></div>
+    <div class="dou-kpi"><div class="k">调用次数</div><div class="v">${fmtCompact(callsSum)}${hiddenCount ? `<span class="hint">已隐藏 ${hiddenCount} 段 · 卡为全段口径</span>` : ""}</div></div>
+    <div class="dou-kpi"><div class="k">峰值${peak ? " · " + esc(fmtKeyHuman(peak.key, aState.gran)) : ""}</div><div class="v">${peak ? fmtCompact(peak.total) : "-"}</div></div>
+    <div class="dou-kpi"><div class="k">Top 适配器</div><div class="v" style="font-size:13px">${topPart ? esc(topPart.id) : "-"}</div></div>`;
+  /* 图例（点选显隐） */
+  const ids = []; for (const b of series) for (const p of b.parts) if (!ids.includes(p.id)) ids.push(p.id);
+  legend.innerHTML = ids.map((id) => `<span class="item${aState.hidden.has(id) ? " off" : ""}" data-id="${esc(id)}" role="switch" aria-checked="${aState.hidden.has(id) ? "false" : "true"}"><i class="dot" style="background:${colorOf(id)}"></i>${esc(id)}</span>`).join("") + '<span class="tip">点击图例可显隐对应段</span>';
+  legend.querySelectorAll(".item").forEach((it) => {
+    const id = it.dataset.id;
+    it.addEventListener("click", () => { if (aState.hidden.has(id)) aState.hidden.delete(id); else aState.hidden.add(id); renderA(); });
+  });
+  /* 图表 */
+  const tipEl = document.getElementById("aTip");
+  renderChart(document.getElementById("aSvg"), series, {
+    gran: aState.gran, mode: aState.mode, hidden: aState.hidden, legacy: false,
+    onTip: (b, clientX) => renderTip(tipEl, chart, b, aState.gran, clientX),
+  });
+  document.getElementById("aNote").innerHTML = `统计自 <b>${FIRST_DAY}</b>（插件挂载时点）起算；留存 180 天，更早的聚合分片已按保留策略清理。今日 / 本周 / 本月为进行中桶，数值未定稿。`;
+}
+
+/* ================================================================
+ * 变体 B（现状复刻）：固定 30/12/12、legacy 标签、无空桶/进行中标记
+ * ================================================================ */
+const bState = { gran: "day", metric: "total", provider: "", byModel: false };
+function renderB() {
+  const ctrl = document.getElementById("bCtrl");
+  ctrl.innerHTML = "";
+  segButtons(ctrl, [["day","日"],["week","周"],["month","月"]], bState.gran, (g) => { bState.gran = g; renderB(); });
+  selControl(ctrl, "指标", METRICS, bState.metric, (v) => { bState.metric = v; renderB(); });
+  selControl(ctrl, "适配器", [["", "全部适配器"], ...PROVIDERS.map((p) => [p.id, p.id])], bState.provider, (v) => { bState.provider = v; if (!v) bState.byModel = false; renderB(); });
+  if (bState.provider) {
+    const l = document.createElement("label"); l.className = "dou-check";
+    const c = document.createElement("input"); c.type = "checkbox"; c.checked = bState.byModel;
+    c.addEventListener("change", () => { bState.byModel = c.checked; renderB(); });
+    l.appendChild(c); l.appendChild(document.createTextNode("按模型拆分")); ctrl.appendChild(l);
+  }
+  const n = { day: 30, week: 12, month: 12 }[bState.gran];
+  const series = buildSeries(bState.gran, n, bState.metric, bState.provider || undefined, bState.byModel);
+  /* 汇总卡（现状四张，峰值 raw key；现状 prevTotal 窗口=30/12/12） */
+  const total = series.reduce((s, b) => s + (b.total ?? 0), 0);
+  const prevInfo = prevWindowInfo(bState.gran, n, bState.metric, bState.provider || undefined);
+  const prev = prevInfo.total; // 现状复刻：不校验完整性，prev 不完整时环比照常显示（静默失真是现状缺陷之一）
+  const dPct = (prev !== null && prev > 0) ? ((total - prev) / prev * 100) : null;
+  const peak = series.reduce((m, b) => (b.total !== null && (m === null || b.total > m.total)) ? { key: b.key } : m, null);
+  const topPart = (() => { let m = null; for (const b of series) for (const p of b.parts) if (p.value !== null && (m === null || p.value > m.value)) m = p; return m; })();
+  const callsSum = series.reduce((s, b) => s + b.parts.reduce((x, p) => x + p.raw.calls, 0), 0);
+  const deltaHtml = dPct === null ? "" : `<span class="d" style="color:${dPct >= 0 ? "var(--dsw-alias-state-warning-primary)" : "var(--dsw-alias-state-success-primary)"}">${dPct >= 0 ? "+" : ""}${dPct.toFixed(1)}%</span>`;
+  document.getElementById("bCards").innerHTML = `
+    <div class="dou-kpi"><div class="k">窗口总量</div><div class="v">${fmtCompact(total)} ${deltaHtml}</div></div>
+    <div class="dou-kpi"><div class="k">调用次数</div><div class="v">${fmtCompact(callsSum)}</div></div>
+    <div class="dou-kpi"><div class="k">峰值桶</div><div class="v" style="font-size:13px">${peak ? esc(peak.key) : "-"}</div></div>
+    <div class="dou-kpi"><div class="k">Top 适配器</div><div class="v" style="font-size:13px">${topPart ? esc(topPart.id) : "-"}</div></div>`;
+  /* 图例（静态） */
+  const ids = []; for (const b of series) for (const p of b.parts) if (!ids.includes(p.id)) ids.push(p.id);
+  document.getElementById("bLegend").innerHTML = ids.map((id) => `<span class="item" style="cursor:default"><i class="dot" style="background:${colorOf(id)}"></i>${esc(id)}</span>`).join("");
+  /* 现状复刻渲染：空桶消失 + <title> + slice(5) 标签 */
+  renderChartLegacyTitle(document.getElementById("bChart"), series, { gran: bState.gran });
+}
+function renderChartLegacyTitle(mount, series, opts) {
+  const { gran } = opts;
+  const W = 620, H = 210, PL = 46, PR = 10, PT = 14, PB = 30;
+  const plotH = H - PT - PB, xw = W - PL - PR, N = series.length;
+  mount.innerHTML = "";
+  if (N === 0) return;
+  const gap = xw / N, bw = Math.max(2, Math.min(18, gap * .62));
+  let maxV = 0; for (const b of series) for (const p of b.parts) if (p.value !== null && p.value > maxV) maxV = p.value;
+  const top = niceMax(maxV); const yOf = (v) => PT + (1 - v / top) * plotH;
+  const out = [];
+  for (const gv of [0, top/2, top]) {
+    const gy = yOf(gv).toFixed(1);
+    out.push(`<line x1="${PL}" y1="${gy}" x2="${W-PR}" y2="${gy}" style="stroke:var(--dsw-alias-border-l2);stroke-width:1;${gv===0?"":"stroke-dasharray:3 3"}"/>`);
+    out.push(`<text x="${PL-5}" y="${Number(gy)+3}" text-anchor="end" style="font-size:9.5px;fill:var(--dsw-alias-label-tertiary)">${fmtCompact(gv)}</text>`);
+  }
+  const labelStep = Math.max(1, Math.ceil(N / 8));
+  series.forEach((b, i) => {
+    const cx = PL + gap * i + gap / 2, x = cx - bw / 2;
+    let acc = 0; const segs = [];
+    for (const p of b.parts) {
+      if (p.value === null) continue;                       // 现状：null 直接跳过（空桶消失）
+      const y1 = yOf(acc), acc2 = acc + p.value, y2 = yOf(acc2);
+      segs.push(`<rect x="${x.toFixed(1)}" y="${y2.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(.5, y1-y2).toFixed(1)}" rx="1" style="fill:${colorOf(p.id)};fill-opacity:.9"><title>${esc(b.key)} · ${esc(p.id)}: ${fmtCompact(p.value)}</title></rect>`);
+      acc = acc2;
+    }
+    segs.push(`<rect x="${x.toFixed(1)}" y="${PT}" width="${bw.toFixed(1)}" height="${plotH}" fill="transparent"><title>${esc(b.key)} · 合计 ${fmtCompact(b.total)}</title></rect>`);
+    out.push(`<g>${segs.join("")}</g>`);
+    if (i % labelStep === 0 || i === N - 1) {
+      const anchor = i === 0 ? "start" : i === N - 1 ? "end" : "middle";
+      out.push(`<text x="${cx.toFixed(1)}" y="${H-12}" text-anchor="${anchor}" style="font-size:9.5px;fill:var(--dsw-alias-label-tertiary)">${esc(axisLabel(b.key, gran, true))}</text>`);
+    }
+  });
+  mount.innerHTML = `<svg viewBox="0 0 ${W} ${H}">${out.join("")}</svg>`;
+}
+
+/* ================================================================
+ * 变体 C：日历热力图（26 周 × 7 行）
+ * ================================================================ */
+function renderC() {
+  const grid = document.getElementById("cGrid");
+  const months = document.getElementById("cMonths");
+  const tip = document.getElementById("cTip");
+  const weeks = 26;
+  const startMon = weekStartOf(TODAY) - (weeks - 1) * 7 * DAY;
+  const totals = [];
+  let maxV = 0;
+  for (let w = 0; w < weeks; w++) {
+    for (let d = 0; d < 7; d++) {
+      const t = startMon + (w * 7 + d) * DAY;
+      const dk = dayKeyOf(t);
+      const rows = t <= TODAY ? DAYS.get(dk) ?? null : null;
+      const v = rows && dk >= CUTOFF_KEY ? cellMetric(rows, "total") : null;
+      totals.push({ t, dk, v });
+      if (v !== null && v > maxV) maxV = v;
+    }
+  }
+  const sorted = totals.filter((x) => x.v !== null).map((x) => x.v).sort((a, b) => a - b);
+  const q = (p) => sorted.length ? sorted[Math.floor(sorted.length * p)] : 1;
+  const th = [q(.25), q(.5), q(.75), q(.92)];
+  const levelOf = (v) => v === null ? -1 : v <= th[0] ? 1 : v <= th[1] ? 2 : v <= th[2] ? 3 : v <= th[3] ? 4 : 5;
+  const lvColor = ["var(--dsw-alias-bg-layer-2)", "#cfe0fb", "#9dc0f7", "#6b9aff", "#3f78e6", "#1e56c8"];
+  grid.innerHTML = ""; months.innerHTML = "";
+  let lastMonth = "";
+  const monthMarks = [];
+  totals.forEach((cell, i) => {
+    const el = document.createElement("div");
+    el.className = "heat-cell";
+    const lv = cell.v === null ? (cell.dk < FIRST_DAY ? -2 : cell.dk < CUTOFF_KEY ? -3 : -1) : levelOf(cell.v);
+    if (lv === -1) el.style.background = "var(--dsw-alias-bg-layer-1)";
+    else if (lv === -2) { el.style.background = "transparent"; el.style.border = "1px dashed var(--dsw-alias-border-l2)"; }
+    else if (lv === -3) { el.style.background = "var(--dsw-alias-bg-layer-2)"; el.style.opacity = .5; }
+    else el.style.background = lvColor[lv];
+    const show = (x, y) => {
+      const rows = DAYS.get(cell.dk);
+      const tag = cell.v === null ? (cell.dk < FIRST_DAY ? "统计未开始" : cell.dk < CUTOFF_KEY ? "已超出保留期" : "零用量") : ""; // 热力图变体保留三态示意（列二期时需宿主桶级信号才可实现）
+      tip.innerHTML = `<div class="t">${esc(cell.dk)}${tag ? `<span class="tag none">${esc(tag)}</span>` : ""}</div><div class="row"><span>总 tokens</span><span>${fmtCompact(cell.v)}</span></div>${rows ? `<div class="row"><span>调用</span><span>${fmtCompact(cellMetric(rows, "calls"))}</span></div>` : ""}`;
+      tip.style.display = "block";
+      tip.style.left = Math.min(x + 12, window.innerWidth - 200) + "px";
+      tip.style.top = (y + 14) + "px";
+      document.querySelectorAll(".heat-cell.on").forEach((x2) => x2.classList.remove("on"));
+      el.classList.add("on");
+    };
+    el.addEventListener("pointermove", (e) => { if (e.pointerType === "mouse") show(e.clientX, e.clientY); });
+    el.addEventListener("pointerdown", (e) => show(e.clientX, e.clientY));
+    grid.appendChild(el);
+    const m = cell.dk.slice(0, 7);
+    if (m !== lastMonth && (i % 7) === 0) { monthMarks.push([i, Number(m.slice(5, 7)) + "月"]); lastMonth = m; }
+  });
+  const colW = 15; // 12px 格 + 3px gap
+  for (const [i, label] of monthMarks) {
+    const sp = document.createElement("span");
+    sp.textContent = label;
+    sp.style.left = (Math.floor(i / 7) * colW) + "px";
+    months.appendChild(sp);
+  }
+  document.getElementById("cScale").innerHTML = "少 " + lvColor.slice(1).map((c) => `<i style="background:${c}"></i>`).join("") + " 多";
+  document.getElementById("cNote").textContent = "统计自 " + FIRST_DAY + " 起算；格子三态示意（统计未开始/超保留期/零用量）在现有数据模型下不可区分，列为二期增强（需宿主桶级信号）。近 " + weeks + " 周。";
+}
+
+/* ================================================================
+ * 变体 / 主题切换
+ * ================================================================ */
+const LABELS = { a: "窗口可调 + 双形态视图（提案方案 B）", b: "现状复刻 · 对照组（30/12/12 + title 悬停）", c: "备选：日历热力图（二期可选）" };
+let curV = "a";
+function switchV(v) {
+  curV = v;
+  for (const k of ["a", "b", "c"]) document.getElementById("view" + k.toUpperCase()).hidden = k !== v;
+  document.querySelectorAll(".proto-bar button").forEach((b) => b.classList.toggle("on", b.dataset.v === v));
+  document.getElementById("protoLabel").textContent = LABELS[v];
+  try { history.replaceState(null, "", "#v=" + v); } catch (_) { /* file:// 降级忽略 */ }
+}
+document.querySelectorAll(".proto-bar button").forEach((b) => b.addEventListener("click", () => switchV(b.dataset.v)));
+document.getElementById("themeBtn").addEventListener("click", () => {
+  const dark = document.documentElement.getAttribute("data-theme") !== "dark";
+  document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+  document.getElementById("themeBtn").textContent = dark ? "浅色" : "暗色";
+  if (curV === "a") renderA(); else if (curV === "b") renderB(); else renderC();
+});
+const hashV = (location.hash.match(/v=([abc])/) || [])[1];
+switchV(["a", "b", "c"].includes(hashV) ? hashV : "a");
+renderA(); renderB(); renderC();
+</script>
+</body>
+</html>
