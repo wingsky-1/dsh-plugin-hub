@@ -56,12 +56,12 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
 
 | Package | Function |
 |---|---|
-| `@wingsky-1/dsh-notifier` | Approval / completion / error event notifications (browser Notification + system toast) |
-| `@wingsky-1/dsh-provider-usage` | Multi-provider usage floating panel (adapter framework, ships with OpenCode Go) |
-| `@wingsky-1/dsh-lan-proxy` | Access dsh web UI over the LAN (HTTP/HTTPS/WS + TLS + HTTP response gzip) |
-| `@wingsky-1/dsh-mcp-manager` | MCP server manager (stdio/HTTP, tools registered for the model) |
-| `@wingsky-1/dsh-web-file-preview` | Preview conversation file links in the web UI (image/text/Markdown/code/Diff) |
-| `@wingsky-1/dsh-verify-isolated` | Isolated-verification skill for plugin development (temp DSH_HOME + dedicated profile double isolation) |
+| `@wingsky-1/dsh-notifier` | Task-event notification center (6 event kinds; browser + system toast dual channels + Bark/Webhook push channels) |
+| `@wingsky-1/dsh-provider-usage` | Multi-provider usage capsule (v2 adapter framework: DeepSeek official and OpenCode Go built in, plug in any data source with your own mjs) |
+| `@wingsky-1/dsh-lan-proxy` | Access dsh web UI over the LAN (HTTP/HTTPS/WS forwarding + TLS; Brotli/gzip + WebSocket dual compression, WS half-open probing, launch-token auto-injection) |
+| `@wingsky-1/dsh-mcp-manager` | MCP server manager (stdio/HTTP; per-working-directory project/global config tiers, project-level MCP collapsed into 4 atomic tools via the middleware) |
+| `@wingsky-1/dsh-web-file-preview` | Web-side preview for conversation file links (image / Markdown (Mermaid) / code highlighting / text / Diff / HTML sandbox + path fallback search) |
+| `@wingsky-1/dsh-verify-isolated` | Isolated-verification skill for plugin development (four-way isolation: DSH_HOME / profile / port / browser instance + bundled browser driver) |
 
 > `@wingsky-1/dsh-gzip` is retired: HTTP response compression has been merged into
 > dsh-lan-proxy and no longer ships with the bundle. Users who installed dsh-gzip
