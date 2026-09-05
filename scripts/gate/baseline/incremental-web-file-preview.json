@@ -12,11 +12,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -56,11 +56,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -82,11 +82,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -109,7 +109,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -132,7 +132,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -155,7 +155,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -177,11 +177,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -222,7 +222,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -244,11 +244,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -289,7 +289,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -311,11 +311,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -337,11 +337,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -363,11 +363,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -389,11 +389,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -415,11 +415,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -441,11 +441,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -467,11 +467,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -493,11 +493,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -519,11 +519,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -563,11 +563,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -589,11 +589,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -633,11 +633,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -659,11 +659,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -707,7 +707,7 @@
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -729,11 +729,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -756,7 +756,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -779,7 +779,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -802,7 +802,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -825,7 +825,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -848,7 +848,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -871,7 +871,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -894,7 +894,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -916,11 +916,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -961,7 +961,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -983,11 +983,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1028,7 +1028,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1050,11 +1050,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1095,7 +1095,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1117,11 +1117,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1161,7 +1161,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1184,7 +1184,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1206,11 +1206,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1233,7 +1233,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1255,11 +1255,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1281,11 +1281,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1307,11 +1307,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1390,11 +1390,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1417,7 +1417,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1439,11 +1439,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1484,11 +1484,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1510,11 +1510,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1537,7 +1537,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1559,11 +1559,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1586,7 +1586,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1608,11 +1608,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1634,11 +1634,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1660,11 +1660,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1687,7 +1687,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1728,7 +1728,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1754,7 +1754,7 @@
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1780,7 +1780,7 @@
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1802,10 +1802,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1827,7 +1827,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1849,10 +1849,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1874,10 +1874,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1899,7 +1899,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1940,10 +1940,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1965,10 +1965,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -1990,7 +1990,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2012,7 +2012,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2034,10 +2034,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2063,7 +2063,7 @@
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2085,11 +2085,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2115,7 +2115,7 @@
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2137,11 +2137,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2164,7 +2164,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2186,11 +2186,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2213,7 +2213,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2235,11 +2235,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2280,7 +2280,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2303,7 +2303,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2325,11 +2325,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2351,11 +2351,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2377,11 +2377,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2404,7 +2404,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2445,11 +2445,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2471,11 +2471,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2497,11 +2497,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2524,7 +2524,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2546,11 +2546,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2572,10 +2572,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2597,10 +2597,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2622,7 +2622,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2644,7 +2644,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2666,11 +2666,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2728,11 +2728,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2755,7 +2755,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2777,11 +2777,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2804,7 +2804,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2826,11 +2826,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2852,11 +2852,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2878,11 +2878,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2904,11 +2904,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2930,11 +2930,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2957,7 +2957,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -2979,10 +2979,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -3004,10 +3004,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -3029,7 +3029,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -3051,7 +3051,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -3073,10 +3073,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -3098,7 +3098,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -3120,7 +3120,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -3142,10 +3142,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -3167,10 +3167,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -3192,10 +3192,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -3217,10 +3217,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -3242,10 +3242,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -3285,10 +3285,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -3310,10 +3310,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -3449,7 +3449,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -3472,7 +3472,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -3512,11 +3512,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "5"
+            "4"
           ],
           "coveredBy": [
             "3",
-            "5"
+            "4"
           ],
           "location": {
             "end": {
@@ -3610,7 +3610,7 @@
           ],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -3636,7 +3636,7 @@
           ],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -3730,10 +3730,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -3755,10 +3755,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -3798,10 +3798,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -3827,7 +3827,7 @@
           ],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -3853,7 +3853,7 @@
           ],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -3876,7 +3876,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -3899,7 +3899,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -3922,7 +3922,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -3945,7 +3945,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -3968,7 +3968,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -3991,7 +3991,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -4014,7 +4014,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -4037,7 +4037,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -4060,7 +4060,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -4086,7 +4086,7 @@
           ],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -4112,7 +4112,7 @@
           ],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -4135,7 +4135,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -4161,7 +4161,7 @@
           ],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -4202,7 +4202,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -4228,7 +4228,7 @@
           ],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -4269,7 +4269,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -4295,7 +4295,7 @@
           ],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -4321,7 +4321,7 @@
           ],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -4347,7 +4347,7 @@
           ],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -4370,7 +4370,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -4467,7 +4467,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -4511,7 +4511,7 @@
           ],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -4533,11 +4533,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -4613,11 +4613,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -4643,7 +4643,7 @@
           ],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -4666,7 +4666,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -4688,11 +4688,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -4714,7 +4714,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -4736,10 +4736,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -4761,7 +4761,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -4805,7 +4805,7 @@
           ],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -4845,11 +4845,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
             "3",
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -4907,10 +4907,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -4932,10 +4932,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -4957,10 +4957,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -4982,10 +4982,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -5007,7 +5007,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -5029,7 +5029,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -5051,7 +5051,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -5073,10 +5073,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -5116,10 +5116,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -5159,10 +5159,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -5202,10 +5202,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -5245,10 +5245,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -5360,7 +5360,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -5382,10 +5382,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -5407,7 +5407,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -5503,7 +5503,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -5543,10 +5543,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -5568,7 +5568,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -5590,10 +5590,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -5615,7 +5615,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -5637,10 +5637,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -5662,10 +5662,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -5705,10 +5705,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -5730,7 +5730,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -5752,10 +5752,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -5777,7 +5777,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -5817,10 +5817,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -5860,7 +5860,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -5882,10 +5882,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -5907,7 +5907,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -5929,10 +5929,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -5954,10 +5954,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -5979,10 +5979,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -6022,10 +6022,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -6047,10 +6047,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -6072,10 +6072,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -6223,7 +6223,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -6245,10 +6245,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -6270,7 +6270,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -6366,10 +6366,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -6391,7 +6391,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -6413,7 +6413,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -6435,10 +6435,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -6460,7 +6460,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -6482,10 +6482,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -6507,7 +6507,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -6639,10 +6639,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "5"
           ],
           "coveredBy": [
-            "6"
+            "5"
           ],
           "location": {
             "end": {
@@ -33455,7 +33455,7 @@
           ],
           "coveredBy": [
             "3",
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -33481,7 +33481,7 @@
           ],
           "coveredBy": [
             "3",
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -33507,7 +33507,7 @@
           ],
           "coveredBy": [
             "3",
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -33551,11 +33551,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
             "3",
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -33581,7 +33581,7 @@
           ],
           "coveredBy": [
             "3",
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -33603,11 +33603,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
             "3",
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -33633,7 +33633,7 @@
           ],
           "coveredBy": [
             "3",
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -33655,11 +33655,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
             "3",
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -33685,7 +33685,7 @@
           ],
           "coveredBy": [
             "3",
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -33707,11 +33707,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
             "3",
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -33734,7 +33734,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -33756,11 +33756,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
             "3",
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -33783,7 +33783,7 @@
           "killedBy": [],
           "coveredBy": [
             "3",
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -33805,11 +33805,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
             "3",
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -33831,11 +33831,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
             "3",
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -33857,10 +33857,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -33882,10 +33882,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -33907,10 +33907,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -33932,7 +33932,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -33954,10 +33954,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -33979,10 +33979,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34004,10 +34004,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34029,7 +34029,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34051,7 +34051,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34073,7 +34073,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34095,7 +34095,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34117,10 +34117,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34142,10 +34142,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34167,7 +34167,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34189,10 +34189,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34214,10 +34214,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34239,10 +34239,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34264,10 +34264,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34289,10 +34289,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34314,10 +34314,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34339,10 +34339,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34364,10 +34364,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34389,10 +34389,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34414,10 +34414,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34439,10 +34439,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34464,10 +34464,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34489,10 +34489,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34514,10 +34514,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34539,10 +34539,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34564,10 +34564,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34589,10 +34589,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34632,10 +34632,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34657,7 +34657,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34679,10 +34679,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34704,10 +34704,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34729,10 +34729,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34754,10 +34754,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34779,10 +34779,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34804,10 +34804,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34829,10 +34829,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34854,10 +34854,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34879,7 +34879,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34901,10 +34901,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34944,11 +34944,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
             "3",
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34970,11 +34970,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
             "3",
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -34996,11 +34996,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
             "3",
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -35026,7 +35026,7 @@
           ],
           "coveredBy": [
             "3",
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -35052,7 +35052,7 @@
           ],
           "coveredBy": [
             "3",
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -35074,11 +35074,11 @@
           "testsCompleted": 2,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
             "3",
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -35100,10 +35100,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -35125,10 +35125,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -35150,10 +35150,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "4"
+            "6"
           ],
           "coveredBy": [
-            "4"
+            "6"
           ],
           "location": {
             "end": {
@@ -35231,19 +35231,10 @@
       ],
       "source": "// @ts-nocheck\n/**\n * dsh-web-file-preview — unit：路由、apply 扩散函数、readErrorCode/readErrorText\n * 纯函数分支。\n *\n * 覆盖：readErrorCode（EACCES → 500 间接覆盖）、readErrorText（同）、\n * diffRoute 围栏（403/405/400/200）、apply（启用/禁用/异常/清理）。\n *\n * readErrorCode/readErrorText 未从 lib 导出，通过 chmod 000 使 stat 之后\n * readFile 失败（EACCES）触发 serveFileRoute 的 catch 分支间接覆盖。\n */\nimport { assert } from \"./helpers.ts\";\nimport { mkdtempSync, writeFileSync, rmSync, chmodSync } from \"node:fs\";\nimport { tmpdir } from \"node:os\";\nimport { join } from \"node:path\";\nimport { ROUTES, makeRoutes, serveFileRoute, apply, serveContentTypeOf, allocServeToken, releaseServeToken, serveTokenRoute } from \"../lib/index.js\";\n\n// ---------------------------------------------------------------- 帮助函数\n\nfunction fakeReq(method, url, remoteAddress, host = \"127.0.0.1\") {\n  return { method, url, headers: { host }, socket: { remoteAddress } };\n}\nfunction fakeRes() {\n  const calls = { status: 0, headers: {}, data: null };\n  const listeners = {};\n  return {\n    _calls: calls,\n    writeHead(status, headers) { calls.status = status; calls.headers = headers || {}; return this; },\n    end(data) { if (data !== undefined) calls.data = data; },\n    write(chunk) { calls.data = calls.data === null ? Buffer.from(chunk) : Buffer.concat([Buffer.from(calls.data), Buffer.from(chunk)]); return true; },\n    on(evt, fn) { (listeners[evt] = listeners[evt] || []).push(fn); return this; },\n  };\n}\nfunction rawReqForFiles(headers = {}) {\n  return { headers };\n}\n\n// 检查是否以 root 运行（chmod 000 无效）\nconst isRoot = typeof process.getuid === \"function\" && process.getuid() === 0;\n\nconst root = mkdtempSync(join(tmpdir(), \"fwp-ut-\"));\ntry {\n  writeFileSync(join(root, \"pic.png\"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));\n  writeFileSync(join(root, \"doc.txt\"), \"hello\", \"utf8\");\n\n  // ================================================================\n  // readErrorCode / readErrorText（通过 chmod 000 触发 readFile 失败）\n  // ================================================================\n\n  if (!isRoot) {\n    chmodSync(join(root, \"pic.png\"), 0o000);\n    const url = `http://127.0.0.1${ROUTES.file}?cwd=${encodeURIComponent(root)}&path=pic.png`;\n    const res = fakeRes();\n    await serveFileRoute(res, rawReqForFiles(), new URL(url), {});\n    assert.equal(res._calls.status, 500, \"chmod 000 图片 → 500（readErrorCode EACCES）\");\n    assert.equal(JSON.parse(res._calls.data).error, \"read failed\", \"readErrorText EACCES → 'read failed'\");\n    chmodSync(join(root, \"pic.png\"), 0o644);\n\n    chmodSync(join(root, \"doc.txt\"), 0o000);\n    const url2 = `http://127.0.0.1${ROUTES.file}?cwd=${encodeURIComponent(root)}&path=doc.txt`;\n    const res2 = fakeRes();\n    await serveFileRoute(res2, rawReqForFiles(), new URL(url2), {});\n    assert.equal(res2._calls.status, 500, \"chmod 000 文本 → 500（readErrorCode 文本分支）\");\n    assert.equal(JSON.parse(res2._calls.data).error, \"read failed\", \"文本 readErrorText\");\n    chmodSync(join(root, \"doc.txt\"), 0o644);\n  } else {\n    console.log(\"  (跳过 readErrorCode EACCES 测试：以 root 运行，chmod 000 无效)\");\n  }\n\n  // ================================================================\n  // diffRoute 围栏与响应\n  // ================================================================\n\n  const routes = makeRoutes({});\n  const diffHandler = routes[1].handler;\n\n  // 非回环 → 403\n  {\n    const res = fakeRes();\n    await diffHandler(fakeReq(\"GET\", ROUTES.diff + \"?cwd=/tmp&path=a\", \"8.8.8.8\"), res);\n    assert.equal(res._calls.status, 403, \"diff 非回环 403\");\n  }\n  // 方法非 GET → 405\n  {\n    const res = fakeRes();\n    await diffHandler(fakeReq(\"POST\", ROUTES.diff + \"?cwd=/tmp&path=a\", \"127.0.0.1\"), res);\n    assert.equal(res._calls.status, 405, \"diff 非 GET 405\");\n  }\n  // 缺 cwd → 400\n  {\n    const res = fakeRes();\n    await diffHandler(fakeReq(\"GET\", ROUTES.diff + \"?path=a\", \"127.0.0.1\"), res);\n    assert.equal(res._calls.status, 400, \"diff 缺 cwd 400\");\n  }\n  // 缺 path → 400\n  {\n    const res = fakeRes();\n    await diffHandler(fakeReq(\"GET\", ROUTES.diff + \"?cwd=/tmp\", \"127.0.0.1\"), res);\n    assert.equal(res._calls.status, 400, \"diff 缺 path 400\");\n  }\n  // 正常请求（非 git 目录 → not-git → 200）\n  {\n    const res = fakeRes();\n    await diffHandler(\n      fakeReq(\"GET\", `${ROUTES.diff}?cwd=${encodeURIComponent(root)}&path=doc.txt`, \"127.0.0.1\"),\n      res,\n    );\n    assert.equal(res._calls.status, 200, \"diff 非 git 目录 → 200\");\n    const payload = JSON.parse(res._calls.data);\n    assert.equal(payload.ok, true, \"diff 响应含 ok:true\");\n    assert.equal(payload.reason, \"not-git\", \"diff 非 git 目录 → not-git\");\n  }\n\n  // ================================================================\n  // apply\n  // ================================================================\n\n  // apply 启用 → effect 回调执行，7 条路由注册（file/diff/health/mermaid/alloc/serve/release），清理正常\n  {\n    const disposerCalls = [];\n    const fakeCtx = {\n      effect: (cb) => {\n        const dispose = cb();\n        disposerCalls.push(dispose);\n      },\n      webServer: {\n        register: (route) => {\n          disposerCalls.push(route.path);\n          return () => { disposerCalls.push(\"disposed\"); };\n        },\n      },\n      logger: { error: () => {} },\n    };\n    apply(fakeCtx, {});\n    // 验证 effect 回调已执行、路由已注册\n    const routePaths = disposerCalls.filter((x) => typeof x === \"string\");\n    assert.equal(routePaths.length, 7, \"apply 启用 → 7 条路由注册（#104 mermaid + #73 serve 三件套）\");\n    assert.ok(routePaths.includes(ROUTES.file), \"file 路由已注册\");\n    assert.ok(routePaths.includes(ROUTES.diff), \"diff 路由已注册\");\n    assert.ok(routePaths.includes(ROUTES.health), \"health 路由已注册\");\n    assert.ok(routePaths.includes(ROUTES.mermaid), \"#104 mermaid 路由已注册\");\n    assert.ok(routePaths.includes(ROUTES.serve), \"#73 serve 路由已注册\");\n    assert.ok(routePaths.includes(ROUTES.alloc), \"#73 alloc 路由已注册\");\n    assert.ok(routePaths.includes(ROUTES.release), \"#73 release 路由已注册\");\n    // 触发清理\n    const cleanup = disposerCalls.find((x) => typeof x === \"function\");\n    if (cleanup) cleanup();\n    const disposedCount = disposerCalls.filter((x) => x === \"disposed\").length;\n    assert.equal(disposedCount, 7, \"disposer 清理 7 条路由\");\n  }\n\n  // apply 禁用 → 不注册任何路由，effect 不被调用\n  {\n    let effectCalled = false;\n    const fakeCtx = {\n      effect: () => { effectCalled = true; },\n      webServer: { register: () => () => {} },\n      logger: { error: () => {} },\n    };\n    apply(fakeCtx, { enabled: false });\n    assert.equal(effectCalled, false, \"apply 禁用 → effect 不被调用\");\n  }\n\n  // 注册路由失败 → logger.error 被调用（catch 分支）\n  {\n    let loggerError = null;\n    let disposeFn = null;\n    const fakeCtx = {\n      effect: (cb) => { disposeFn = cb(); },\n      webServer: { register: () => { throw new Error(\"register failed\"); } },\n      logger: { error: (...args) => { loggerError = args; } },\n    };\n    apply(fakeCtx, {});\n    assert.ok(loggerError !== null, \"apply 异常 → logger.error 被调用\");\n    assert.match(loggerError[0], /注册路由失败/, \"logger.error 消息含失败提示\");\n    // 异常后清理仍可被调用（空数组迭代）\n    if (disposeFn) disposeFn();\n  }\n\n  // ================================================================\n  // serve 三件套轻分支（#423 补强：serveContentTypeOf / release / alloc / serve 缺参）\n  // ================================================================\n\n  // serveContentTypeOf：html/htm → text/html；已知 ext 走 mime；未知 → octet-stream\n  {\n    assert.equal(serveContentTypeOf(\"page.html\"), \"text/html; charset=utf-8\", \"serveContentTypeOf html\");\n    assert.equal(serveContentTypeOf(\"page.HTM\"), \"text/html; charset=utf-8\", \"serveContentTypeOf htm（大小写归一）\");\n    assert.equal(serveContentTypeOf(\"a.css\"), \"text/css\", \"serveContentTypeOf 已知 ext（css）\");\n    assert.equal(serveContentTypeOf(\"x.q7x9z\"), \"application/octet-stream\", \"serveContentTypeOf 未知 ext → octet-stream\");\n  }\n\n  // release 缺参 → 400；未知 token 幂等 200\n  {\n    const res = fakeRes();\n    releaseServeToken(res, new URL(`http://127.0.0.1${ROUTES.release}`));\n    assert.equal(res._calls.status, 400, \"release 缺 token → 400\");\n    const res2 = fakeRes();\n    releaseServeToken(res2, new URL(`http://127.0.0.1${ROUTES.release}?token=deadbeefdeadbeefdeadbeefdeadbeef`));\n    assert.equal(res2._calls.status, 200, \"release 未知 token 幂等 200\");\n  }\n\n  // alloc 缺 path → 400；非 html → 400；不存在 → 404\n  {\n    const res = fakeRes();\n    await allocServeToken(res, new URL(`http://127.0.0.1${ROUTES.alloc}?cwd=${encodeURIComponent(root)}`), {});\n    assert.equal(res._calls.status, 400, \"alloc 缺 path → 400\");\n    const res2 = fakeRes();\n    await allocServeToken(res2, new URL(`http://127.0.0.1${ROUTES.alloc}?cwd=${encodeURIComponent(root)}&path=doc.txt`), {});\n    assert.equal(res2._calls.status, 400, \"alloc 非 html → 400\");\n    const res3 = fakeRes();\n    await allocServeToken(res3, new URL(`http://127.0.0.1${ROUTES.alloc}?cwd=${encodeURIComponent(root)}&path=nope.html`), {});\n    assert.equal(res3._calls.status, 404, \"alloc 不存在 → 404\");\n  }\n\n  // serve 未知 token → 404（不泄露区分信息）\n  {\n    const res = fakeRes();\n    await serveTokenRoute(res, fakeReq(\"GET\", `${ROUTES.serve}/deadbeefdeadbeefdeadbeefdeadbeef/index.html`, \"127.0.0.1\"), new URL(`http://127.0.0.1${ROUTES.serve}/deadbeefdeadbeefdeadbeefdeadbeef/index.html`), {});\n    assert.equal(res._calls.status, 404, \"serve 未知 token → 404\");\n  }\n\n  console.log(\"PASS unit-routes\");\n} finally {\n  rmSync(root, { recursive: true, force: true });\n}"
     },
-    "packages/dsh-web-file-preview/test/unit-serve-tokens.test.ts": {
-      "tests": [
-        {
-          "id": "4",
-          "name": "packages/dsh-web-file-preview/test/unit-serve-tokens.test.ts"
-        }
-      ],
-      "source": "// @ts-nocheck\n/**\n * dsh-web-file-preview — unit：serve token 生命周期（serve-tokens 纯逻辑，无 node:http 依赖）。\n *\n * 覆盖：alloc 全生命周期、get 命中刷新 idle 计时、TTL 超时懒回收、时钟回拨 cutoff\n * 兜底、release 幂等、size / snapshot、LRU 不淘汰活跃、全活跃拒绝、达上限腾位——\n * 与 smoke #73 B 组断言互补（smoke 走真实路由，本文件直测 store 分支）。\n */\nimport { assert } from \"./helpers.ts\";\nimport { createTokenStore } from \"../lib/index.js\";\n\n// ---------------------------------------------------------------- alloc / get 基础生命周期\n\n{\n  let now = 1_000;\n  const store = createTokenStore({ now: () => now, ttlMs: 100, maxTokens: 3, activeWindowMs: 20 });\n  const token = store.alloc(\"/root/a\");\n  assert.equal(typeof token, \"string\", \"alloc 返回 token\");\n  assert.equal(token.length, 32, \"token 为 128-bit hex\");\n  assert.equal(store.size(), 1, \"alloc 后 size=1\");\n  assert.deepEqual(store.snapshot().get(token), { root: \"/root/a\", lastHit: 1_000 }, \"snapshot 保存完整条目\");\n  const hit = store.get(token);\n  assert.ok(hit !== undefined && hit.root === \"/root/a\", \"get 命中返回 root\");\n  // 命中刷新 idle 计时：推进到临近 TTL 仍存活，且 lastHit 被刷新\n  now = 1_015;\n  assert.equal(store.get(token).lastHit, 1_015, \"get 命中刷新 lastHit（idle 语义）\");\n  // snapshot 是独立副本：外部删改不影响 store\n  const snap = store.snapshot();\n  snap.delete(token);\n  assert.equal(store.size(), 1, \"snapshot 删改不影响 store\");\n  // 闲置超过 TTL：访问时懒回收（lastHit 最后一次 get 刷新为 1_015；\n  // TTL=100 → 需 now ≥ 1_116 才满足 lastHit < cutoff，即 idle 满 100ms）\n  now = 1_116;\n  assert.equal(store.get(token), undefined, \"闲置超过 TTL → 访问时回收\");\n  assert.equal(store.size(), 0, \"TTL 回收减少 size\");\n  assert.equal(store.release(token), false, \"释放未知 token 返回 false\");\n  assert.equal(store.release(token), false, \"release 幂等（第二次仍 false）\");\n}\n\n// ---------------------------------------------------------------- 时钟回拨 cutoff 兜底\n\n{\n  let now = 2_000;\n  const store = createTokenStore({ now: () => now, ttlMs: 100, maxTokens: 2, activeWindowMs: 20 });\n  const token = store.alloc(\"/root/clock\");\n  // 推进时钟使 maxClockSeen=2_050（alloc 已令 maxClockSeen=2_000，get 后 2_050）\n  now = 2_050;\n  assert.ok(store.get(token), \"推进时钟后 token 可命中\");\n  // 回拨到 alloc 之前：cutoff=maxClockSeen-TTL=1_950，entry.lastHit=2_050 不 < 1_950\n  // ——证明 cutoff 用见过的最大时钟而非当前时钟，回拨不会把\"未来\"的 token 复活\n  now = 1_500;\n  const afterRewind = store.get(token);\n  assert.ok(afterRewind !== undefined, \"回拨后 token 仍按 maxClockSeen 截止不被复活\");\n  assert.equal(afterRewind.lastHit, 1_500, \"回拨后 lastHit 被本次 get 写成回拨后的时间\");\n}\n\n// ---------------------------------------------------------------- LRU：不淘汰活跃 / 淘汰最久非活跃 / 达上限腾位\n\n{\n  let now = 10_000;\n  const store = createTokenStore({ now: () => now, ttlMs: 10_000, maxTokens: 2, activeWindowMs: 10 });\n  const old = store.alloc(\"/root/old\");\n  now += 20;\n  const active = store.alloc(\"/root/active\");\n  assert.equal(store.size(), 2, \"达到上限前两个 token 并存\");\n  now += 1;\n  assert.ok(store.get(active), \"活跃 token 命中（刷新 idle）\");\n  const replacement = store.alloc(\"/root/new\");\n  assert.ok(replacement, \"达上限且有非活跃项 → 腾位成功\");\n  assert.equal(store.get(old), undefined, \"LRU 淘汰最久未用且非活跃的 token\");\n  assert.ok(store.get(active), \"LRU 不淘汰活跃 token\");\n  assert.equal(store.size(), 2, \"淘汰后 size 仍为上限\");\n}\n\n// ---------------------------------------------------------------- 全活跃拒绝 / 活跃窗口过后可腾位\n\n{\n  let now = 20_000;\n  const store = createTokenStore({ now: () => now, ttlMs: 10_000, maxTokens: 2, activeWindowMs: 100 });\n  const a = store.alloc(\"/root/a\");\n  const b = store.alloc(\"/root/b\");\n  assert.equal(store.alloc(\"/root/c\"), null, \"全部活跃且达上限 → 拒绝新分配\");\n  now += 101; // 两个 token 都老化出活跃窗口 → 下次分配可淘汰腾位\n  assert.ok(store.alloc(\"/root/c\"), \"活跃窗口过去后 → 可淘汰腾位分配\");\n  // 腾位时淘汰最久未用的非活跃 a（a/b 同为 lastHit=20_000，按插入序先淘汰 a）\n  assert.equal(store.get(a), undefined, \"腾位时淘汰最久未用且非活跃的 a\");\n  assert.equal(store.release(a), false, \"a 已淘汰 → release false\");\n  assert.equal(store.release(b), true, \"release 存在 token（b）→ true\");\n  assert.equal(store.release(b), false, \"release 同 token 第二次 → false\");\n}\n\nconsole.log(\"PASS unit-serve-tokens\");\n"
-    },
     "packages/dsh-web-file-preview/test/unit-basename-fallback.test.ts": {
       "tests": [
         {
-          "id": "5",
+          "id": "4",
           "name": "packages/dsh-web-file-preview/test/unit-basename-fallback.test.ts"
         }
       ],
@@ -35252,11 +35243,20 @@
     "packages/dsh-web-file-preview/test/unit-git.test.ts": {
       "tests": [
         {
-          "id": "6",
+          "id": "5",
           "name": "packages/dsh-web-file-preview/test/unit-git.test.ts"
         }
       ],
       "source": "// @ts-nocheck\n/**\n * dsh-web-file-preview — unit：git diff 探测（computeGitDiff）。\n *\n * mkdtemp 建真实 git 仓库（git init 不可用时跳过仓库段，不影响其余断言）：\n * - no-changes：已提交无变化\n * - hasDiff：已修改 + diff 含新增行\n * - untracked：未跟踪新文件\n * - 非 git 目录 → not-git（git 缺失时 rev-parse ENOENT 同样归 not-git，无需 git 环境）\n * - 仓库外路径 → outside-repo（cwd 落在仓库的符号链接路径上）\n */\nimport { assert } from \"./helpers.ts\";\nimport { mkdtempSync, writeFileSync, rmSync, mkdirSync, symlinkSync } from \"node:fs\";\nimport { tmpdir } from \"node:os\";\nimport { join } from \"node:path\";\nimport { spawnSync } from \"node:child_process\";\nimport { computeGitDiff } from \"../lib/index.js\";\n\nconst root = mkdtempSync(join(tmpdir(), \"fwp-ut-git-\"));\n\nfunction git(dir, args) {\n  return spawnSync(\"git\", args, { cwd: dir, encoding: \"utf8\" });\n}\n\ntry {\n  const plain = join(root, \"plain\");\n  mkdirSync(plain, { recursive: true });\n  writeFileSync(join(plain, \"hello.txt\"), \"hi\", \"utf8\");\n  assert.deepEqual(\n    await computeGitDiff(plain, \"hello.txt\"),\n    { hasDiff: false, reason: \"not-git\" },\n    \"非 git 目录 → not-git\",\n  );\n\n  const repo = join(root, \"repo\");\n  mkdirSync(repo, { recursive: true });\n  const g = (args) => git(repo, args);\n  if (g([\"init\"]).status === 0) {\n    g([\"config\", \"user.email\", \"t@t\"]);\n    g([\"config\", \"user.name\", \"t\"]);\n    writeFileSync(join(repo, \"a.txt\"), \"line1\\n\", \"utf8\");\n    g([\"add\", \".\"]);\n    g([\"commit\", \"-m\", \"c1\"]);\n\n    assert.deepEqual(\n      await computeGitDiff(repo, \"a.txt\"),\n      { hasDiff: false, reason: \"no-changes\" },\n      \"已提交无变化 → no-changes\",\n    );\n\n    writeFileSync(join(repo, \"a.txt\"), \"line1\\nline2\\n\", \"utf8\");\n    const r = await computeGitDiff(repo, \"a.txt\");\n    assert.equal(r.hasDiff, true, \"已修改 → hasDiff\");\n    assert.ok(r.diff !== undefined && r.diff.includes(\"+line2\"), \"diff 含新增行\");\n    assert.equal(r.path, \"a.txt\", \"diff 结果带相对路径\");\n\n    writeFileSync(join(repo, \"new.txt\"), \"x\\n\", \"utf8\");\n    const u = await computeGitDiff(repo, \"new.txt\");\n    assert.equal(u.hasDiff, true, \"未跟踪 → hasDiff\");\n    assert.equal(u.untracked, true, \"未跟踪 → untracked\");\n    assert.equal(u.path, \"new.txt\", \"untracked 带相对路径\");\n\n    // outside-repo：cwd 落在符号链接路径上（link → repo），git rev-parse 返回\n    // realpath 后的 toplevel（repo），而 resolved 仍走未归一化的 link 前缀 →\n    // relative(repo, link/a.txt) = ../link/a.txt → outside-repo\n    let linked = false;\n    try {\n      symlinkSync(repo, join(root, \"repo-link\"), \"dir\");\n      linked = true;\n    } catch {\n      /* Windows 权限受限 → 跳过 */\n    }\n    if (linked) {\n      assert.deepEqual(\n        await computeGitDiff(join(root, \"repo-link\"), \"a.txt\"),\n        { hasDiff: false, reason: \"outside-repo\" },\n        \"仓库外路径（符号链接 cwd）→ outside-repo\",\n      );\n    } else {\n      console.log(\"  (跳过 outside-repo 断言：symlink 不可用)\");\n    }\n  } else {\n    console.log(\"  (跳过 git 仓库断言：git init 不可用)\");\n  }\n\n  console.log(\"PASS unit-git\");\n} finally {\n  rmSync(root, { recursive: true, force: true });\n}\n"
+    },
+    "packages/dsh-web-file-preview/test/unit-serve-tokens.test.ts": {
+      "tests": [
+        {
+          "id": "6",
+          "name": "packages/dsh-web-file-preview/test/unit-serve-tokens.test.ts"
+        }
+      ],
+      "source": "// @ts-nocheck\n/**\n * dsh-web-file-preview — unit：serve token 生命周期（serve-tokens 纯逻辑，无 node:http 依赖）。\n *\n * 覆盖：alloc 全生命周期、get 命中刷新 idle 计时、TTL 超时懒回收、时钟回拨 cutoff\n * 兜底、release 幂等、size / snapshot、LRU 不淘汰活跃、全活跃拒绝、达上限腾位——\n * 与 smoke #73 B 组断言互补（smoke 走真实路由，本文件直测 store 分支）。\n */\nimport { assert } from \"./helpers.ts\";\nimport { createTokenStore } from \"../lib/index.js\";\n\n// ---------------------------------------------------------------- alloc / get 基础生命周期\n\n{\n  let now = 1_000;\n  const store = createTokenStore({ now: () => now, ttlMs: 100, maxTokens: 3, activeWindowMs: 20 });\n  const token = store.alloc(\"/root/a\");\n  assert.equal(typeof token, \"string\", \"alloc 返回 token\");\n  assert.equal(token.length, 32, \"token 为 128-bit hex\");\n  assert.equal(store.size(), 1, \"alloc 后 size=1\");\n  assert.deepEqual(store.snapshot().get(token), { root: \"/root/a\", lastHit: 1_000 }, \"snapshot 保存完整条目\");\n  const hit = store.get(token);\n  assert.ok(hit !== undefined && hit.root === \"/root/a\", \"get 命中返回 root\");\n  // 命中刷新 idle 计时：推进到临近 TTL 仍存活，且 lastHit 被刷新\n  now = 1_015;\n  assert.equal(store.get(token).lastHit, 1_015, \"get 命中刷新 lastHit（idle 语义）\");\n  // snapshot 是独立副本：外部删改不影响 store\n  const snap = store.snapshot();\n  snap.delete(token);\n  assert.equal(store.size(), 1, \"snapshot 删改不影响 store\");\n  // 闲置超过 TTL：访问时懒回收（lastHit 最后一次 get 刷新为 1_015；\n  // TTL=100 → 需 now ≥ 1_116 才满足 lastHit < cutoff，即 idle 满 100ms）\n  now = 1_116;\n  assert.equal(store.get(token), undefined, \"闲置超过 TTL → 访问时回收\");\n  assert.equal(store.size(), 0, \"TTL 回收减少 size\");\n  assert.equal(store.release(token), false, \"释放未知 token 返回 false\");\n  assert.equal(store.release(token), false, \"release 幂等（第二次仍 false）\");\n}\n\n// ---------------------------------------------------------------- 时钟回拨 cutoff 兜底\n\n{\n  let now = 2_000;\n  const store = createTokenStore({ now: () => now, ttlMs: 100, maxTokens: 2, activeWindowMs: 20 });\n  const token = store.alloc(\"/root/clock\");\n  // 推进时钟使 maxClockSeen=2_050（alloc 已令 maxClockSeen=2_000，get 后 2_050）\n  now = 2_050;\n  assert.ok(store.get(token), \"推进时钟后 token 可命中\");\n  // 回拨到 alloc 之前：cutoff=maxClockSeen-TTL=1_950，entry.lastHit=2_050 不 < 1_950\n  // ——证明 cutoff 用见过的最大时钟而非当前时钟，回拨不会把\"未来\"的 token 复活\n  now = 1_500;\n  const afterRewind = store.get(token);\n  assert.ok(afterRewind !== undefined, \"回拨后 token 仍按 maxClockSeen 截止不被复活\");\n  assert.equal(afterRewind.lastHit, 1_500, \"回拨后 lastHit 被本次 get 写成回拨后的时间\");\n}\n\n// ---------------------------------------------------------------- LRU：不淘汰活跃 / 淘汰最久非活跃 / 达上限腾位\n\n{\n  let now = 10_000;\n  const store = createTokenStore({ now: () => now, ttlMs: 10_000, maxTokens: 2, activeWindowMs: 10 });\n  const old = store.alloc(\"/root/old\");\n  now += 20;\n  const active = store.alloc(\"/root/active\");\n  assert.equal(store.size(), 2, \"达到上限前两个 token 并存\");\n  now += 1;\n  assert.ok(store.get(active), \"活跃 token 命中（刷新 idle）\");\n  const replacement = store.alloc(\"/root/new\");\n  assert.ok(replacement, \"达上限且有非活跃项 → 腾位成功\");\n  assert.equal(store.get(old), undefined, \"LRU 淘汰最久未用且非活跃的 token\");\n  assert.ok(store.get(active), \"LRU 不淘汰活跃 token\");\n  assert.equal(store.size(), 2, \"淘汰后 size 仍为上限\");\n}\n\n// ---------------------------------------------------------------- 全活跃拒绝 / 活跃窗口过后可腾位\n\n{\n  let now = 20_000;\n  const store = createTokenStore({ now: () => now, ttlMs: 10_000, maxTokens: 2, activeWindowMs: 100 });\n  const a = store.alloc(\"/root/a\");\n  const b = store.alloc(\"/root/b\");\n  assert.equal(store.alloc(\"/root/c\"), null, \"全部活跃且达上限 → 拒绝新分配\");\n  now += 101; // 两个 token 都老化出活跃窗口 → 下次分配可淘汰腾位\n  assert.ok(store.alloc(\"/root/c\"), \"活跃窗口过去后 → 可淘汰腾位分配\");\n  // 腾位时淘汰最久未用的非活跃 a（a/b 同为 lastHit=20_000，按插入序先淘汰 a）\n  assert.equal(store.get(a), undefined, \"腾位时淘汰最久未用且非活跃的 a\");\n  assert.equal(store.release(a), false, \"a 已淘汰 → release false\");\n  assert.equal(store.release(b), true, \"release 存在 token（b）→ true\");\n  assert.equal(store.release(b), false, \"release 同 token 第二次 → false\");\n}\n\nconsole.log(\"PASS unit-serve-tokens\");\n"
     }
   },
   "projectRoot": "/home/runner/work/dsh-plugin-hub/dsh-plugin-hub",
