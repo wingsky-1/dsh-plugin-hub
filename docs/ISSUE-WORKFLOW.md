@@ -43,7 +43,7 @@
    判断是否 Meta 子项，需要则挂到父 issue 并在父项清单登记。
 2. **定位**：宿主端问题看 `src/index.ts` 与 dsh web 日志（`<插件>:` 前缀行）；
    客户端问题按 DEVELOPMENT.md §2 的干净模块契约排查；CI flake 类修复**必读**
-   [DEVELOPMENT.md §5](DEVELOPMENT.md#5-smoke-测试防-flake-纪律)（隔离文件路径 /
+   [DEVELOPMENT.md §5](DEVELOPMENT.md#user-content-5-smoke-测试防-flake-纪律)（隔离文件路径 /
    设 `DSH_HOME` / 轮询替代固定 sleep）。
 3. **修复分支**：命名 `fix/<主题>` 或 `feat/<主题>`（与 CONTRIBUTING.md 开发流程一致）。
 4. **验证证据**（涉及界面行为的改动——overlay / URL 重写 / Modal 内跳转 / 双主题 /

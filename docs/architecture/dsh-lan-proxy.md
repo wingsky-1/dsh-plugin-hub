@@ -179,12 +179,12 @@ httpCompressEnabled, httpCompressLevel, injectToken`），GUI 在「设置 → �
 
 | 机制 | 实现位置 | 要点 |
 |---|---|---|
-| targetHost 回环白名单 | `isLoopbackTarget`（proxy.ts:275-278）+ 配置层校验 + `createLanProxy` 入口强校验 | 只允许 `localhost`/`127.0.0.1`/`::1`，防开放转发/SSRF（三层防线） |
-| 入站 Host 校验（DNS 重绑定防御） | `hostnameAllowed`（proxy.ts:261-272） | 仅接受 IP 字面量或 `localhost`，任何 DNS 域名 403/断开；对 HTTP 与 WS 入站同样生效 |
+| targetHost 回环白名单 | `isLoopbackTarget`（`proxy.ts#isLoopbackTarget`）+ 配置层校验 + `createLanProxy` 入口强校验 | 只允许 `localhost`/`127.0.0.1`/`::1`，防开放转发/SSRF（三层防线） |
+| 入站 Host 校验（DNS 重绑定防御） | `hostnameAllowed`（`proxy.ts#hostnameAllowed`） | 仅接受 IP 字面量或 `localhost`，任何 DNS 域名 403/断开；对 HTTP 与 WS 入站同样生效 |
 | 配置/health 路由围栏 | `isLoopbackRequest`（shared/loopback.js） | remoteAddress 回环 + Host 回环 + 非 cross-site + Origin 与 Host 一致 |
 | 凭据透传范围 | `rewriteHeaders` / `bridgeUpstreamHeaders` | 只覆盖 Host/Origin，Cookie/Authorization 原样透传；WS 桥接剥离 hop-by-hop 与 sec-websocket-* 头；上游被 targetHost 强制回环，凭据不出进程边界 |
 | HTTPS 私钥 | cert.ts | 自签名私钥落盘 0600；用户证书文件成对校验 |
-| injectToken | proxy.ts 303/311-818 | 仅「GET / 且无 token」注入；有 cookie 绝不注入（防 303 死循环）；401 重放一次封顶 |
+| injectToken | `proxy.ts#withLaunchToken` / `proxy.ts#isTokenMintCandidate` | 仅「GET / 且无 token」注入；有 cookie 绝不注入（防 303 死循环）；401 重放一次封顶 |
 
 > 全量安全语义（含跨站残余面分析、health 元数据可见性等）见包 README「安全模型」节。
 

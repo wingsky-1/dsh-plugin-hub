@@ -25,7 +25,7 @@
 | **中间层收敛** | `middleware: project`（默认，项目级服务器）/ `all`（全局 + runtime 也收敛） | 4 个原子工具（两级发现：list 盘点 → detail 拉 schema） | 项目级接多少台服务器、多少个工具都不膨胀系统提示词；按会话 cwd 路由连接池、跨空间不串台 | 多一跳（中间层转发）；目录是 last-good 快照，`tools/list_changed` 变化需重连/刷新 |
 | **直呼注册** | `middleware: off`（全部）/ project 模式下的全局服务器 | 每工具一个 `mcp__<server>__<tool>`（64 字符、哈希后缀） | 零中间跳，工具定义直接进系统提示词 | 服务器多时上下文膨胀；不同工作空间同名 server 会冲突 |
 
-`middlewareTakes(name, scope)`（manager.ts:646-650）是唯一判定口径：`off` → 全部直呼；
+`middlewareTakes(name, scope)`（`manager.ts#middlewareTakes`）是唯一判定口径：`off` → 全部直呼；
 `scope===project` → 中间层接管（project 与 all 模式皆然）；`all && scope===global` →
 接管（含 runtime 注入条目）。
 
@@ -86,7 +86,7 @@ sequenceDiagram
 
 要点：
 
-- **命名规则** `publicToolName`（supervisor.ts:57-68）：`mcp__<server>__<tool>`；非法字符
+- **命名规则** `publicToolName`（`supervisor.ts#publicToolName`）：`mcp__<server>__<tool>`；非法字符
   替换为 `_`；≤64 字符直接用，否则 `sha256(server\0tool)` 前 12 位做哈希后缀
   （`前51字符_<hash12>`）；
 - **工具定义**：parameters 原样直传 MCP inputSchema；输出 schema 只收严格子集，不落子集
@@ -94,7 +94,7 @@ sequenceDiagram
   `truncateText`（默认 8KB 截断）；execute 走 `client.callTool`（默认 15s 超时）；
 - **协议薄适配**（protocol.ts）：`listTools` / `callTool` 刻意走 `Protocol.request` +
   宽松 `ResultSchema`，绕过 SDK `Client.listTools()` 的 outputSchema 缓存强校验；
-- **双轨 reconcile**（manager.ts:525-573）：desired = 全局 store + 项目 store（同名全局
+- **双轨 reconcile**（`manager.ts#reconcileServers`）：desired = 全局 store + 项目 store（同名全局
   优先）+ runtimeRegistry（同名 runtime 优先），变化才动作；
 - **runtime 注入**：其他插件可经 `ctx.mcpManager.registerServer({...toolDefinitions})`
   运行时注册（内存态不落盘，同名幂等）；带 `toolDefinitions` 时 execute 来自调用方封装
@@ -119,9 +119,9 @@ stateDiagram-v2
     failed --> connecting: 手动 connect / ws_mcp_call 触发
 ```
 
-- supervisor 路径（supervisor.ts:397-427）：曾连接且离线 ≥ maxDelayMs 重置失败计数；
+- supervisor 路径（`supervisor.ts#scheduleReconnect`）：曾连接且离线 ≥ maxDelayMs 重置失败计数；
   放弃后注销全部工具并置 `failed`；
-- 中间层路径（middleware.ts:274-292）：`500*2^min(n-1,6)`，>10 次停止后台重试
+- 中间层路径（`middleware.ts#scheduleReconnect`）：`500*2^min(n-1,6)`，>10 次停止后台重试
   （保留 failed，手动 connect 或调用可复活）；
 - **防双进程探测重试**（#382）：探测到同名 `mcp__` 已注册（如官方 dsh-mcp-client）
   → 落 failed + 3s 一次性重试（每代只一次）。
@@ -185,10 +185,10 @@ sequenceDiagram
 
 ### 3.5 传输层
 
-- **stdio**（transport.ts:121-173）：包官方 `StdioClientTransport`；`buildChildEnv` 净化
+- **stdio**（`transport.ts#StdioTransport`）：包官方 `StdioClientTransport`；`buildChildEnv` 净化
   父环境（见 §5）；保留 `stderrTail`（最近 4000B 供启动失败诊断）；`onClose` 与 SDK
   叠加式链（不覆盖 SDK 内部链）；
-- **streamable-http**（transport.ts:61-92）：包官方 `StreamableHTTPClientTransport`；
+- **streamable-http**（`transport.ts#StreamableHttpTransport`）：包官方 `StreamableHTTPClientTransport`；
   headers 支持 `${ENV}` 引用展开；`Mcp-Session-Id` 会话保持、SSE 流式响应由 SDK 承担。
 
 ---
