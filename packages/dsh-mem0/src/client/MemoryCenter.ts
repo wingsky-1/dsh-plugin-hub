@@ -202,8 +202,33 @@ export function MemoryCenter() {
     }
   };
 
+  const [isAutoInstalling, setIsAutoInstalling] = useState(false);
+  const [autoInstallMsg, setAutoInstallMsg] = useState("");
+
+  const handleAutoInstall = async () => {
+    setIsAutoInstalling(true);
+    setAutoInstallMsg(msg("autoInstallingBtn"));
+    try {
+      const res = await fetch("/api/dsh-mem0/install", { method: "POST" });
+      const data = await res.json();
+      if (data.ok) {
+        setAutoInstallMsg(msg("autoInstallDone"));
+        setTimeout(() => {
+          fetchStatus();
+          setAutoInstallMsg("");
+        }, 2000);
+      } else {
+        setAutoInstallMsg(`${msg("opFailed")}: ${data.error || ""}`);
+      }
+    } catch (e: any) {
+      setAutoInstallMsg(`${msg("opFailed")}: ${e?.message || String(e)}`);
+    } finally {
+      setIsAutoInstalling(false);
+    }
+  };
+
   const handleCopyCmd = () => {
-    navigator.clipboard.writeText("pip install mem0ai mcp").then(() => {
+    navigator.clipboard.writeText("pip install -i https://mirrors.aliyun.com/pypi/simple/ mem0ai==2.0.20 'mcp>=1.8,<2' fastembed==0.8.0 qdrant-client").then(() => {
       setCopiedCmd(true);
       setTimeout(() => setCopiedCmd(false), 2500);
     });
@@ -259,15 +284,34 @@ export function MemoryCenter() {
     } else if (reason === "dependency_missing") {
       diagBanner = React.createElement(
         "div",
-        { className: "dsh-mem0-diag-banner warning" },
-        React.createElement("span", null, "⚠️ "),
-        React.createElement("span", null, msg("diagDepMissing")),
-        React.createElement("code", { className: "dsh-mem0-code" }, "pip install mem0ai mcp"),
+        { className: "dsh-mem0-diag-banner warning", style: { flexDirection: "column", alignItems: "flex-start" } },
         React.createElement(
-          "button",
-          { className: "dsh-mem0-btn small", onClick: handleCopyCmd },
-          copiedCmd ? msg("copied") : msg("copyCmd"),
+          "div",
+          { style: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" } },
+          React.createElement("span", null, "⚠️ "),
+          React.createElement("span", null, msg("diagDepMissing")),
+          React.createElement(
+            "button",
+            {
+              className: "dsh-mem0-btn primary small",
+              disabled: isAutoInstalling,
+              onClick: handleAutoInstall,
+            },
+            isAutoInstalling ? msg("autoInstallingBtn") : msg("autoInstallBtn"),
+          ),
+          React.createElement(
+            "button",
+            { className: "dsh-mem0-btn small", onClick: handleCopyCmd },
+            copiedCmd ? msg("copied") : msg("copyCmd"),
+          ),
         ),
+        autoInstallMsg
+          ? React.createElement(
+              "div",
+              { style: { fontSize: "12px", marginTop: "4px", color: "var(--dsw-alias-brand, #2563eb)" } },
+              autoInstallMsg,
+            )
+          : null,
       );
     }
   }
