@@ -100,6 +100,8 @@ jobs:
               - 'stryker.conf.d/dsh-lan-proxy-*.json'
             dsh-codegraph:
               - 'packages/dsh-codegraph/**'
+            dsh-mem0:
+              - 'packages/dsh-mem0/**'
             dsh-verify-isolated:
               - 'packages/dsh-verify-isolated/**'
             dsh-plugins-all:
@@ -221,6 +223,7 @@ jobs:
           - dsh-provider-usage
           - dsh-lan-proxy
           - dsh-codegraph
+          - dsh-mem0
           - dsh-verify-isolated
           - dsh-plugins-all
     runs-on: ubuntu-latest
