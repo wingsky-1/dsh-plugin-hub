@@ -68,12 +68,23 @@ export function trendDefaultRange(gran: TrendGran, retentionDays: number): numbe
   return opts.includes(def) ? def : opts[opts.length - 1];
 }
 
-/** nice 上界（最大值的 1.05 倍向上取整到 1/2/5×10^k）。 */
-export function niceMax(v: number): number {
-  if (v <= 0) return 1;
-  const raw = v * 1.05;
-  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
-  return [1, 2, 5, 10].map((k) => k * mag).find((x) => x >= raw) ?? 10 * mag;
+/**
+ * 动态 nice 刻度（#503 M2.1 后续）：按数据最大值自动推导步长与刻度序列——
+ * 步长取 1/2/2.5/5×10^k（目标 ~5 段），顶格 = ceil(max/step)×step（贴合数据，
+ * 不再是固定 0/½/max 三档）。ticks 含 0 与顶格，刻度线数 5~7 条随数据浮动；
+ * 浮点用 i×step 索引式累积防误差。
+ */
+export function niceTicks(maxV: number): { ticks: number[]; top: number } {
+  if (!(maxV > 0) || !Number.isFinite(maxV)) return { ticks: [0, 1], top: 1 };
+  const rawStep = maxV / 5;
+  const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const norm = rawStep / mag;
+  const step = (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 2.5 ? 2.5 : norm <= 5 ? 5 : 10) * mag;
+  const segs = Math.ceil(maxV / step);
+  const top = segs * step;
+  const ticks: number[] = [];
+  for (let i = 0; i <= segs; i += 1) ticks.push(i * step);
+  return { ticks, top };
 }
 
 /** 图表系列离散色：前四复用宿主状态色变量（浅/暗跟随），溢出轮转稳定离散色。 */
@@ -122,9 +133,9 @@ const PLOT_H = SVG_H - SVG_PT - SVG_PB;
 const XW = SVG_W - SVG_PL - SVG_PR;
 
 /** 网格 + Y 轴刻度（两形态共用）。 */
-function gridParts(yMax: number, yOf: (v: number) => number): string[] {
+function gridParts(ticks: number[], yOf: (v: number) => number): string[] {
   const parts: string[] = [];
-  for (const gv of [0, yMax / 2, yMax]) {
+  for (const gv of ticks) {
     const gy = yOf(gv);
     parts.push(`<line x1="${SVG_PL}" y1="${gy.toFixed(1)}" x2="${SVG_W - SVG_PR}" y2="${gy.toFixed(1)}" style="stroke:var(--dsw-alias-border-l2,#e8eaf0);stroke-width:1;${gv === 0 ? "" : "stroke-dasharray:3 3;"}"/>`);
     parts.push(`<text x="${SVG_PL - 4}" y="${(gy + 3).toFixed(1)}" text-anchor="end" style="font-size:9.5px;fill:var(--dsw-alias-label-tertiary,#9aa0ab)">${escHtml(fmtCompact(gv))}</text>`);
@@ -155,13 +166,14 @@ function bucketGroup(i: number, colX: number, colW: number, inner: string): stri
  * 堆叠柱状 SVG（M2 基础上 M2.1 增强）：空桶虚位、部分桶描边、data-bucket 委托锚点、
  * 月键标签修复。segs 为可见段（hidden 已滤），Y 域由调用方按全量段算（隐藏不缩轴）。
  */
-export function stackedBarsSvg(opts: { bars: RenderBar[]; gran: TrendGran; yMax: number }): string {
-  const { bars, gran, yMax } = opts;
+export function stackedBarsSvg(opts: { bars: RenderBar[]; gran: TrendGran; ticks: number[] }): string {
+  const { bars, gran, ticks } = opts;
+  const yMax = ticks[ticks.length - 1];
   if (bars.length === 0 || XW <= 0) return "";
   const gap = XW / bars.length;
   const barW = Math.max(2, Math.min(18, gap * 0.62));
   const yOf = (v: number): number => SVG_PT + (1 - v / yMax) * PLOT_H;
-  const parts: string[] = [...gridParts(yMax, yOf)];
+  const parts: string[] = [...gridParts(ticks, yOf)];
   bars.forEach((b, i) => {
     const cx = SVG_PL + gap * i + gap / 2;
     const x = cx - barW / 2;
@@ -193,12 +205,13 @@ export function stackedBarsSvg(opts: { bars: RenderBar[]; gran: TrendGran; yMax:
  * 逐 id 画带状 path（自底堆叠）；null 桶断开为独立连续段；禁用平滑曲线
  * （Catmull-Rom 过冲会产生负面积视觉失真——方案 §3.3 定稿）。
  */
-export function stackedAreasSvg(opts: { bars: RenderBar[]; gran: TrendGran; yMax: number; stackOrder: string[] }): string {
-  const { bars, gran, yMax, stackOrder } = opts;
+export function stackedAreasSvg(opts: { bars: RenderBar[]; gran: TrendGran; ticks: number[]; stackOrder: string[] }): string {
+  const { bars, gran, ticks, stackOrder } = opts;
+  const yMax = ticks[ticks.length - 1];
   if (bars.length === 0 || XW <= 0) return "";
   const gap = XW / bars.length;
   const yOf = (v: number): number => SVG_PT + (1 - v / yMax) * PLOT_H;
-  const parts: string[] = [...gridParts(yMax, yOf)];
+  const parts: string[] = [...gridParts(ticks, yOf)];
   const byId = bars.map((b) => new Map(b.segs.map((s) => [s.id, s.value] as const)));
   const bases = bars.map(() => 0);
   for (const id of stackOrder) {

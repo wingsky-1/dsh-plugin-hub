@@ -32,7 +32,7 @@ import {
   bucketStartKey,
   trendRangeOptions,
   trendDefaultRange,
-  niceMax,
+  niceTicks,
   seriesColor,
   stackedBarsSvg,
   stackedAreasSvg,
@@ -233,15 +233,15 @@ export function TrendSection(): React.ReactElement {
     });
   }, [data, hidden, stackOrder, retentionDays]);
 
-  // Y 域全量（hidden 不缩轴，与汇总卡全段口径一致——评审 P1-5）
-  const yMax = React.useMemo(() => {
+  // Y 域全量（hidden 不缩轴，与汇总卡全段口径一致——评审 P1-5）；刻度按数据最大值动态推导（M2.1 后续）
+  const ticks = React.useMemo(() => {
     let maxV = 0;
     for (const point of data?.series ?? []) {
       for (const p of point.parts) {
         if (p.value !== null && p.value > maxV) maxV = p.value;
       }
     }
-    return niceMax(maxV);
+    return niceTicks(maxV).ticks;
   }, [data]);
 
   // 图表事件委托：pointerdown 全输入（触屏可用），pointermove 仅鼠标（防触屏滑动误触发）。
@@ -431,8 +431,8 @@ export function TrendSection(): React.ReactElement {
               className: "dou-trend-svg",
               dangerouslySetInnerHTML: {
                 __html: effectiveView === "area"
-                  ? stackedAreasSvg({ bars: renderBars, gran, yMax, stackOrder })
-                  : stackedBarsSvg({ bars: renderBars, gran, yMax }),
+                  ? stackedAreasSvg({ bars: renderBars, gran, ticks, stackOrder })
+                  : stackedBarsSvg({ bars: renderBars, gran, ticks }),
               },
             }),
             tipBar !== null && tipPoint !== null && tip !== null
