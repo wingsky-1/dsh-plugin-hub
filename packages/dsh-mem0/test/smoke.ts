@@ -3,15 +3,17 @@
  * dsh-mem0 冒烟测试 —— 纯离线、零外部网络与真实进程依赖。
  *
  * 覆盖：
- * 1. 契约导出（name, inject）
+ * 1. 契约导出（name, inject, SETTINGS_NS）
  * 2. 命名空间解析（Git remote 归一化、目录回退、缓存重置）
  * 3. 工具定义契约（schema 字段、全英文描述、离线降级断言、正常执行断言）
  * 4. 提示词纪律（会话级单次注入、幂等判重）
  * 5. 路由安全（Loopback 403 围栏、405 方法校验、正常调用）
+ * 6. 配置脱敏与合并（maskApiKey, isMaskedKey, mergeConfigPatch, /api/dsh-mem0/config）
+ * 7. 自愈诊断状态契约（getStatus 诊断原因、/status 回传）
+ * 8. 客户端产物契约
  */
 
 import assert from "node:assert/strict";
-import { EventEmitter } from "node:events";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -23,6 +25,12 @@ const hostMod = await import(pathToFileURL(join(pkgDir, "lib/index.js")).href);
 const {
   name,
   inject,
+  SETTINGS_NS,
+  DEFAULT_CONFIG,
+  maskApiKey,
+  isMaskedKey,
+  sanitizeConfigForClient,
+  mergeConfigPatch,
   normalizeGitRemote,
   resolveGitCanonicalNamespace,
   resetNamespaceCache,
@@ -54,6 +62,7 @@ await test("契约导出：name 与 inject 声明", () => {
   assert.ok(Array.isArray(inject), "inject 应为数组");
   assert.ok(inject.includes("mcpManager"), "必须强依赖 mcpManager");
   assert.ok(inject.includes("webServer"), "必须强依赖 webServer");
+  assert.equal(SETTINGS_NS, "dsh-mem0", "设置命名空间应为 dsh-mem0");
 });
 
 // 2. 命名空间规范化
@@ -162,6 +171,8 @@ await test("路由安全：非 Loopback 请求被拦截 403", () => {
   const routes = createMem0Routes({
     executor: { isReady: () => true } as any,
     getCurrentCwd: () => process.cwd(),
+    getConfig: () => DEFAULT_CONFIG,
+    updateConfig: async () => DEFAULT_CONFIG,
   });
 
   const statusRoute = routes.find((r) => r.path === "/api/dsh-mem0/status")!;
@@ -181,10 +192,15 @@ await test("路由安全：非 Loopback 请求被拦截 403", () => {
   assert.equal(statusCode, 403, "跨站或外网请求必须返回 403 Forbidden");
 });
 
-await test("路由安全：合法 Loopback 请求返回 200", () => {
+await test("路由安全：合法 Loopback 请求返回 200 与诊断状态", () => {
   const routes = createMem0Routes({
-    executor: { isReady: () => true } as any,
+    executor: {
+      isReady: () => false,
+      getStatus: () => ({ ready: false, reason: "python_not_found", detail: "not found" }),
+    } as any,
     getCurrentCwd: () => process.cwd(),
+    getConfig: () => DEFAULT_CONFIG,
+    updateConfig: async () => DEFAULT_CONFIG,
   });
 
   const statusRoute = routes.find((r) => r.path === "/api/dsh-mem0/status")!;
@@ -203,10 +219,85 @@ await test("路由安全：合法 Loopback 请求返回 200", () => {
 
   statusRoute.handler(mockReq as any, mockRes as any);
   assert.equal(statusCode, 200, "回环合规请求返回 200");
-  assert.ok(bodyData.includes("ready"), "响应应包含 ready 字段");
+  const parsed = JSON.parse(bodyData);
+  assert.equal(parsed.ready, false);
+  assert.equal(parsed.status?.reason, "python_not_found");
 });
 
-// 6. 客户端产物契约
+// 6. 配置脱敏与合并逻辑测试
+await test("配置脱敏：maskApiKey 与 isMaskedKey 校验", () => {
+  assert.equal(maskApiKey(""), "");
+  assert.equal(maskApiKey("1234"), "********");
+  assert.equal(maskApiKey("sk-abcdefgh12345678"), "sk-***5678");
+
+  assert.equal(isMaskedKey("sk-***5678"), true);
+  assert.equal(isMaskedKey("********"), true);
+  assert.equal(isMaskedKey("sk-real-secret-key-1234"), false);
+});
+
+await test("配置合并：mergeConfigPatch 防脱敏掩码写穿真实密钥", () => {
+  const base = {
+    ...DEFAULT_CONFIG,
+    llmApiKey: "sk-real-origin-llm-key",
+    embedderApiKey: "sk-real-origin-embed-key",
+  };
+
+  // 前端带着脱敏字符回传保存
+  const patched = mergeConfigPatch(base, {
+    llmApiKey: "sk-***-masked",
+    embedderApiKey: "", // 空字符串
+    llmModel: "custom-model",
+    retrievalTopK: 8,
+  });
+
+  assert.equal(patched.llmApiKey, "sk-real-origin-llm-key", "脱敏字符不得覆盖已有真实 Key");
+  assert.equal(patched.embedderApiKey, "sk-real-origin-embed-key", "空字符不得清除已有真实 Key");
+  assert.equal(patched.llmModel, "custom-model", "普通配置字段正常更新");
+  assert.equal(patched.retrievalTopK, 8, "TopK 正常更新");
+
+  // 显式输入全新的真实 Key 时更新
+  const updatedRealKey = mergeConfigPatch(base, {
+    llmApiKey: "sk-brand-new-secret-key-9999",
+  });
+  assert.equal(updatedRealKey.llmApiKey, "sk-brand-new-secret-key-9999", "真实新 Key 允许覆盖");
+});
+
+await test("路由配置操作：/api/dsh-mem0/config GET 与 POST 正常流转", async () => {
+  let storedConfig = { ...DEFAULT_CONFIG, llmApiKey: "secret-key-123456" };
+  const routes = createMem0Routes({
+    executor: { isReady: () => true } as any,
+    getCurrentCwd: () => process.cwd(),
+    getConfig: () => storedConfig,
+    updateConfig: async (patch) => {
+      storedConfig = mergeConfigPatch(storedConfig, patch);
+      return storedConfig;
+    },
+  });
+
+  const configRoute = routes.find((r) => r.path === "/api/dsh-mem0/config")!;
+
+  // 1. GET 获取脱敏配置
+  let getCode = 0;
+  let getBody = "";
+  configRoute.handler(
+    {
+      headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
+      socket: { remoteAddress: "127.0.0.1" },
+      method: "GET",
+    } as any,
+    {
+      setHeader: () => {},
+      writeHead: (c: number) => { getCode = c; },
+      end: (data: string) => { getBody = data; },
+    } as any,
+  );
+  assert.equal(getCode, 200);
+  const parsedGet = JSON.parse(getBody);
+  assert.ok(parsedGet.config.llmApiKey.includes("***"), "GET 响应的 API Key 必须脱敏");
+  assert.equal(parsedGet.config.hasLlmApiKey, true);
+});
+
+// 7. 客户端产物契约
 await test("客户端契约：lib/client.js 存在且载入正确 load id", async () => {
   const { existsSync, readFileSync } = await import("node:fs");
   const clientPath = join(pkgDir, "lib/client.js");

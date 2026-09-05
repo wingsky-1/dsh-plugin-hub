@@ -8,7 +8,9 @@ DeepSeek Harness (DSH) 长期记忆系统插件：基于 mem0 的本地/轻量�
 - **Git 工作空间感知**：原生识别会话 `cwd`，并通过 Git Canonical 溯源自动统一主仓与所有 Worktree 的记忆空间。
 - **全英文工具契约**：提供 `memory_search`、`memory_add`、`memory_list`、`memory_delete` 4 个核心工具，面向 LLM 的描述全英文，具备离线无感降级容错。
 - **中文事实沉淀**：内置中文约束提示词模板，自动过滤琐碎寒暄，保证记忆全中文提炼入库。
-- **记忆中心设置 Tab**：官方 `settings.section` 挂载独立页面，支持记忆检索、列表浏览与单条删除。
+- **全面配置化支持**：LLM 与 Embedder 端点全可配（支持 DeepSeek、SiliconFlow 等 OpenAI 兼容端点），支持自定义 TopK 与中文抽取指令，持久化至 DSH 官方 settings（`~/.dsh/settings.yaml`）。
+- **记忆中心双区大盘**：官方 `settings.section` 挂载独立页面，提供“记忆条目列表”与“引擎配置大盘”双区，支持可视化脱敏修改与即时热重启。
+- **自愈诊断与优雅降级**：当宿主缺少 Python 或依赖库时，前端自动精准诊断并提供一键复制命令；Agent 工具层自动熔断优雅降级，绝不抛红崩溃。
 - **dsh-mcp-manager 统一纳管**：生命周期与工具状态完全交由 `dsh-mcp-manager` 统管。
 
 ## 安全模型

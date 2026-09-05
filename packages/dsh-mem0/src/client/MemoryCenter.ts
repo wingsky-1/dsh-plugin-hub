@@ -1,5 +1,5 @@
 /**
- * dsh-mem0 — Web 设置页 Tab「记忆中心」组件。
+ * dsh-mem0 — Web 设置页 Tab「记忆中心」组件（阶段二：双区面板 + 全面配置化）。
  *
  * 遵循仓库规范：纯 React.createElement 构建，无 JSX/类型依赖。
  */
@@ -14,9 +14,34 @@ function msg(key: Mem0LocaleKey): string {
 
 interface StatusData {
   ready: boolean;
+  status?: {
+    ready: boolean;
+    reason: string;
+    detail?: string;
+  };
   currentNamespace: string;
   globalNamespace: string;
   mode: string;
+}
+
+interface ConfigData {
+  llmProvider: string;
+  llmBaseUrl: string;
+  llmApiKey: string;
+  hasLlmApiKey?: boolean;
+  llmModel: string;
+  llmTemperature: number;
+
+  embedderProvider: string;
+  embedderBaseUrl: string;
+  embedderApiKey: string;
+  hasEmbedderApiKey?: boolean;
+  embedderModel: string;
+
+  retrievalTopK: number;
+  customInstructions: string;
+  enablePromptDiscipline: boolean;
+  pythonBin: string;
 }
 
 export function MemoryCenter() {
@@ -24,6 +49,9 @@ export function MemoryCenter() {
   const useEffect = React.useEffect;
   const useCallback = React.useCallback;
   const useMemo = React.useMemo;
+
+  // 活跃 Tab：memories | settings
+  const [activeTab, setActiveTab] = useState("memories");
 
   const [status, setStatus] = useState({
     ready: false,
@@ -39,12 +67,46 @@ export function MemoryCenter() {
   const [newMemory, setNewMemory] = useState("");
   const [isAdding, setIsAdding] = useState(false);
 
+  // 配置项表单状态
+  const [config, setConfig] = useState({
+    llmProvider: "openai",
+    llmBaseUrl: "https://api.deepseek.com/v1",
+    llmApiKey: "",
+    llmModel: "deepseek-chat",
+    llmTemperature: 0.1,
+    embedderProvider: "openai",
+    embedderBaseUrl: "https://api.siliconflow.cn/v1",
+    embedderApiKey: "",
+    embedderModel: "BAAI/bge-large-zh-v1.5",
+    retrievalTopK: 5,
+    customInstructions: "",
+    enablePromptDiscipline: true,
+    pythonBin: "python3",
+  } as ConfigData);
+  const [isSavingConfig, setIsSavingConfig] = useState(false);
+  const [configMessage, setConfigMessage] = useState("");
+  const [copiedCmd, setCopiedCmd] = useState(false);
+
   const fetchStatus = useCallback(async () => {
     try {
       const res = await fetch("/api/dsh-mem0/status");
       if (res.ok) {
         const data = (await res.json()) as StatusData;
         setStatus(data);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const fetchConfig = useCallback(async () => {
+    try {
+      const res = await fetch("/api/dsh-mem0/config");
+      if (res.ok) {
+        const data = (await res.json()) as { ok: boolean; config: ConfigData };
+        if (data.ok && data.config) {
+          setConfig(data.config);
+        }
       }
     } catch {
       // ignore
@@ -72,8 +134,9 @@ export function MemoryCenter() {
 
   useEffect(() => {
     fetchStatus();
+    fetchConfig();
     fetchList(scope);
-  }, [fetchStatus, fetchList, scope]);
+  }, [fetchStatus, fetchConfig, fetchList, scope]);
 
   const handleDelete = async (memoryId: string) => {
     if (!window.confirm(msg("deleteConfirm"))) return;
@@ -111,6 +174,40 @@ export function MemoryCenter() {
     }
   };
 
+  const handleSaveConfig = async () => {
+    setIsSavingConfig(true);
+    setConfigMessage("");
+    try {
+      const res = await fetch("/api/dsh-mem0/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(config),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { ok: boolean; config: ConfigData };
+        if (data.ok && data.config) {
+          setConfig(data.config);
+        }
+        setConfigMessage(msg("configSaved"));
+        fetchStatus();
+        setTimeout(() => setConfigMessage(""), 4000);
+      } else {
+        setConfigMessage(msg("opFailed"));
+      }
+    } catch {
+      setConfigMessage(msg("opFailed"));
+    } finally {
+      setIsSavingConfig(false);
+    }
+  };
+
+  const handleCopyCmd = () => {
+    navigator.clipboard.writeText("pip install mem0ai mcp").then(() => {
+      setCopiedCmd(true);
+      setTimeout(() => setCopiedCmd(false), 2500);
+    });
+  };
+
   const parsedLines: string[] = useMemo(() => {
     if (!itemsText) return [];
     return itemsText
@@ -137,115 +234,357 @@ export function MemoryCenter() {
     ),
   );
 
-  // Toolbar
-  const toolbar = React.createElement(
+  // Diagnostic Banner (自愈引导)
+  let diagBanner = null;
+  const reason = status.status?.reason;
+  if (!status.ready && reason) {
+    if (reason === "python_not_found") {
+      diagBanner = React.createElement(
+        "div",
+        { className: "dsh-mem0-diag-banner warning" },
+        React.createElement("span", null, "⚠️ "),
+        React.createElement("span", null, msg("diagPythonNotFound")),
+      );
+    } else if (reason === "dependency_missing") {
+      diagBanner = React.createElement(
+        "div",
+        { className: "dsh-mem0-diag-banner warning" },
+        React.createElement("span", null, "⚠️ "),
+        React.createElement("span", null, msg("diagDepMissing")),
+        React.createElement("code", { className: "dsh-mem0-code" }, "pip install mem0ai mcp"),
+        React.createElement(
+          "button",
+          { className: "dsh-mem0-btn small", onClick: handleCopyCmd },
+          copiedCmd ? msg("copied") : msg("copyCmd"),
+        ),
+      );
+    }
+  }
+
+  // Navigation Subtabs
+  const navTabs = React.createElement(
     "div",
-    { className: "dsh-mem0-toolbar" },
+    { className: "dsh-mem0-tabs" },
     React.createElement(
-      "select",
+      "button",
       {
-        className: "dsh-mem0-select",
-        value: scope,
-        onChange: (e: any) => setScope(e.target.value),
+        className: `dsh-mem0-tab-btn ${activeTab === "memories" ? "active" : ""}`,
+        onClick: () => setActiveTab("memories"),
       },
-      React.createElement("option", { value: "project" }, `${msg("scopeProject")} (${status.currentNamespace})`),
-      React.createElement("option", { value: "global" }, msg("scopeGlobal")),
-    ),
-    React.createElement("input", {
-      type: "text",
-      className: "dsh-mem0-input",
-      placeholder: msg("searchPlaceholder"),
-      value: query,
-      onChange: (e: any) => setQuery(e.target.value),
-    }),
-    React.createElement(
-      "button",
-      { className: "dsh-mem0-btn", onClick: () => fetchList(scope) },
-      msg("refreshBtn"),
+      `📋 ${msg("memoriesTab")}`,
     ),
     React.createElement(
       "button",
-      { className: "dsh-mem0-btn primary", onClick: () => setIsAdding(!isAdding) },
-      msg("addBtn"),
+      {
+        className: `dsh-mem0-tab-btn ${activeTab === "settings" ? "active" : ""}`,
+        onClick: () => setActiveTab("settings"),
+      },
+      `⚙️ ${msg("settingsTab")}`,
     ),
   );
 
-  // Add Form
-  const addForm = isAdding
-    ? React.createElement(
-        "div",
-        { className: "dsh-mem0-card", style: { flexDirection: "column" } },
-        React.createElement("textarea", {
-          className: "dsh-mem0-input",
-          rows: 3,
-          placeholder: msg("addPlaceholder"),
-          value: newMemory,
-          onChange: (e: any) => setNewMemory(e.target.value),
-          style: { width: "100%", resize: "vertical" },
-        }),
-        React.createElement(
-          "div",
-          { style: { display: "flex", justifyContent: "flex-end", gap: "8px", width: "100%" } },
-          React.createElement(
-            "button",
-            { className: "dsh-mem0-btn", onClick: () => setIsAdding(false) },
-            "取消",
-          ),
-          React.createElement(
-            "button",
-            { className: "dsh-mem0-btn primary", onClick: handleAdd },
-            msg("saveBtn"),
-          ),
-        ),
-      )
-    : null;
+  // Tab 1: Memories View
+  let tab1Content = null;
+  if (activeTab === "memories") {
+    // Toolbar
+    const toolbar = React.createElement(
+      "div",
+      { className: "dsh-mem0-toolbar" },
+      React.createElement(
+        "select",
+        {
+          className: "dsh-mem0-select",
+          value: scope,
+          onChange: (e: any) => setScope(e.target.value),
+        },
+        React.createElement("option", { value: "project" }, `${msg("scopeProject")} (${status.currentNamespace})`),
+        React.createElement("option", { value: "global" }, msg("scopeGlobal")),
+      ),
+      React.createElement("input", {
+        type: "text",
+        className: "dsh-mem0-input",
+        placeholder: msg("searchPlaceholder"),
+        value: query,
+        onChange: (e: any) => setQuery(e.target.value),
+      }),
+      React.createElement(
+        "button",
+        { className: "dsh-mem0-btn", onClick: () => fetchList(scope) },
+        msg("refreshBtn"),
+      ),
+      React.createElement(
+        "button",
+        { className: "dsh-mem0-btn primary", onClick: () => setIsAdding(!isAdding) },
+        msg("addBtn"),
+      ),
+    );
 
-  // List View
-  let listContent: any;
-  if (loading) {
-    listContent = React.createElement("div", { className: "dsh-mem0-empty" }, msg("loading"));
-  } else if (parsedLines.length === 0) {
-    listContent = React.createElement("div", { className: "dsh-mem0-empty" }, msg("emptyList"));
-  } else {
-    const cards = parsedLines.map((line: string, idx: number) => {
-      const idMatch =
-        line.match(/^-\s*\[([a-zA-Z0-9_-]+)\]\s*(.*)$/) ||
-        line.match(/^(?:-\s*)?(.*?)\s*\(id:\s*([a-zA-Z0-9_-]+)\)/);
-      const memoryId = idMatch ? (idMatch[1].length > 10 ? idMatch[1] : idMatch[2]) : "";
-      const content = idMatch ? (idMatch[1].length > 10 ? idMatch[2] : idMatch[1]) : line;
-
-      return React.createElement(
-        "div",
-        { key: idx, className: "dsh-mem0-card" },
-        React.createElement(
+    // Add Form
+    const addForm = isAdding
+      ? React.createElement(
           "div",
-          { style: { flex: 1 } },
-          React.createElement("div", { className: "dsh-mem0-card-content" }, content),
-          memoryId
-            ? React.createElement("div", { className: "dsh-mem0-card-meta" }, `ID: ${memoryId}`)
-            : null,
-        ),
-        memoryId
-          ? React.createElement(
+          { className: "dsh-mem0-card", style: { flexDirection: "column" } },
+          React.createElement("textarea", {
+            className: "dsh-mem0-input",
+            rows: 3,
+            placeholder: msg("addPlaceholder"),
+            value: newMemory,
+            onChange: (e: any) => setNewMemory(e.target.value),
+            style: { width: "100%", resize: "vertical" },
+          }),
+          React.createElement(
+            "div",
+            { style: { display: "flex", justifyContent: "flex-end", gap: "8px", width: "100%" } },
+            React.createElement(
               "button",
-              {
-                className: "dsh-mem0-del-btn",
-                onClick: () => handleDelete(memoryId),
-              },
-              msg("deleteBtn"),
-            )
-          : null,
-      );
-    });
-    listContent = React.createElement("div", { className: "dsh-mem0-list" }, ...cards);
+              { className: "dsh-mem0-btn", onClick: () => setIsAdding(false) },
+              "取消",
+            ),
+            React.createElement(
+              "button",
+              { className: "dsh-mem0-btn primary", onClick: handleAdd },
+              msg("saveBtn"),
+            ),
+          ),
+        )
+      : null;
+
+    // List Content
+    let listContent: any;
+    if (loading) {
+      listContent = React.createElement("div", { className: "dsh-mem0-empty" }, msg("loading"));
+    } else if (parsedLines.length === 0) {
+      listContent = React.createElement("div", { className: "dsh-mem0-empty" }, msg("emptyList"));
+    } else {
+      const cards = parsedLines.map((line: string, idx: number) => {
+        const idMatch =
+          line.match(/^-\s*\[([a-zA-Z0-9_-]+)\]\s*(.*)$/) ||
+          line.match(/^(?:-\s*)?(.*?)\s*\(id:\s*([a-zA-Z0-9_-]+)\)/);
+        const memoryId = idMatch ? (idMatch[1].length > 10 ? idMatch[1] : idMatch[2]) : "";
+        const content = idMatch ? (idMatch[1].length > 10 ? idMatch[2] : idMatch[1]) : line;
+
+        return React.createElement(
+          "div",
+          { key: idx, className: "dsh-mem0-card" },
+          React.createElement(
+            "div",
+            { style: { flex: 1 } },
+            React.createElement("div", { className: "dsh-mem0-card-content" }, content),
+            memoryId
+              ? React.createElement("div", { className: "dsh-mem0-card-meta" }, `ID: ${memoryId}`)
+              : null,
+          ),
+          memoryId
+            ? React.createElement(
+                "button",
+                {
+                  className: "dsh-mem0-del-btn",
+                  onClick: () => handleDelete(memoryId),
+                },
+                msg("deleteBtn"),
+              )
+            : null,
+        );
+      });
+      listContent = React.createElement("div", { className: "dsh-mem0-list" }, ...cards);
+    }
+
+    tab1Content = React.createElement(
+      React.Fragment,
+      null,
+      toolbar,
+      addForm,
+      listContent,
+    );
+  }
+
+  // Tab 2: Settings View
+  let tab2Content = null;
+  if (activeTab === "settings") {
+    // LLM Section
+    const llmSection = React.createElement(
+      "div",
+      { className: "dsh-mem0-config-card" },
+      React.createElement("h3", { className: "dsh-mem0-config-title" }, `🤖 ${msg("llmConfig")}`),
+      React.createElement(
+        "div",
+        { className: "dsh-mem0-grid" },
+        React.createElement(
+          "div",
+          { className: "dsh-mem0-field" },
+          React.createElement("label", null, msg("llmBaseUrl")),
+          React.createElement("input", {
+            type: "text",
+            className: "dsh-mem0-input",
+            value: config.llmBaseUrl,
+            onChange: (e: any) => setConfig({ ...config, llmBaseUrl: e.target.value }),
+          }),
+        ),
+        React.createElement(
+          "div",
+          { className: "dsh-mem0-field" },
+          React.createElement("label", null, msg("llmApiKey")),
+          React.createElement("input", {
+            type: "password",
+            className: "dsh-mem0-input",
+            placeholder: config.hasLlmApiKey ? "sk-•••• (已配置，留空保持原值)" : "sk-...",
+            value: config.llmApiKey,
+            onChange: (e: any) => setConfig({ ...config, llmApiKey: e.target.value }),
+          }),
+        ),
+        React.createElement(
+          "div",
+          { className: "dsh-mem0-field" },
+          React.createElement("label", null, msg("llmModel")),
+          React.createElement("input", {
+            type: "text",
+            className: "dsh-mem0-input",
+            value: config.llmModel,
+            onChange: (e: any) => setConfig({ ...config, llmModel: e.target.value }),
+          }),
+        ),
+        React.createElement(
+          "div",
+          { className: "dsh-mem0-field" },
+          React.createElement("label", null, `${msg("llmTemp")} (0.0 - 1.0)`),
+          React.createElement("input", {
+            type: "number",
+            step: "0.05",
+            min: "0",
+            max: "1",
+            className: "dsh-mem0-input",
+            value: config.llmTemperature,
+            onChange: (e: any) => setConfig({ ...config, llmTemperature: parseFloat(e.target.value) || 0 }),
+          }),
+        ),
+      ),
+    );
+
+    // Embedder Section
+    const embedderSection = React.createElement(
+      "div",
+      { className: "dsh-mem0-config-card" },
+      React.createElement("h3", { className: "dsh-mem0-config-title" }, `🧬 ${msg("embedderConfig")}`),
+      React.createElement(
+        "div",
+        { className: "dsh-mem0-grid" },
+        React.createElement(
+          "div",
+          { className: "dsh-mem0-field" },
+          React.createElement("label", null, msg("embedderBaseUrl")),
+          React.createElement("input", {
+            type: "text",
+            className: "dsh-mem0-input",
+            value: config.embedderBaseUrl,
+            onChange: (e: any) => setConfig({ ...config, embedderBaseUrl: e.target.value }),
+          }),
+        ),
+        React.createElement(
+          "div",
+          { className: "dsh-mem0-field" },
+          React.createElement("label", null, msg("embedderApiKey")),
+          React.createElement("input", {
+            type: "password",
+            className: "dsh-mem0-input",
+            placeholder: config.hasEmbedderApiKey ? "sk-•••• (已配置，留空保持原值)" : "sk-...",
+            value: config.embedderApiKey,
+            onChange: (e: any) => setConfig({ ...config, embedderApiKey: e.target.value }),
+          }),
+        ),
+        React.createElement(
+          "div",
+          { className: "dsh-mem0-field" },
+          React.createElement("label", null, msg("embedderModel")),
+          React.createElement("input", {
+            type: "text",
+            className: "dsh-mem0-input",
+            value: config.embedderModel,
+            onChange: (e: any) => setConfig({ ...config, embedderModel: e.target.value }),
+          }),
+        ),
+      ),
+    );
+
+    // Advanced Options Section
+    const advancedSection = React.createElement(
+      "div",
+      { className: "dsh-mem0-config-card" },
+      React.createElement("h3", { className: "dsh-mem0-config-title" }, `⚙️ ${msg("advancedConfig")}`),
+      React.createElement(
+        "div",
+        { className: "dsh-mem0-grid" },
+        React.createElement(
+          "div",
+          { className: "dsh-mem0-field" },
+          React.createElement("label", null, msg("topK")),
+          React.createElement("input", {
+            type: "number",
+            min: "1",
+            max: "20",
+            className: "dsh-mem0-input",
+            value: config.retrievalTopK,
+            onChange: (e: any) => setConfig({ ...config, retrievalTopK: parseInt(e.target.value, 10) || 5 }),
+          }),
+        ),
+        React.createElement(
+          "div",
+          { className: "dsh-mem0-field" },
+          React.createElement("label", null, msg("pythonBin")),
+          React.createElement("input", {
+            type: "text",
+            className: "dsh-mem0-input",
+            value: config.pythonBin,
+            onChange: (e: any) => setConfig({ ...config, pythonBin: e.target.value }),
+          }),
+        ),
+      ),
+      React.createElement(
+        "div",
+        { className: "dsh-mem0-field", style: { marginTop: "12px" } },
+        React.createElement("label", null, msg("customInstructions")),
+        React.createElement("textarea", {
+          rows: 4,
+          className: "dsh-mem0-input",
+          style: { width: "100%", resize: "vertical" },
+          value: config.customInstructions,
+          onChange: (e: any) => setConfig({ ...config, customInstructions: e.target.value }),
+        }),
+      ),
+    );
+
+    // Save Button & Notification
+    const saveRow = React.createElement(
+      "div",
+      { className: "dsh-mem0-save-row" },
+      configMessage ? React.createElement("span", { className: "dsh-mem0-save-msg" }, configMessage) : null,
+      React.createElement(
+        "button",
+        {
+          className: "dsh-mem0-btn primary",
+          disabled: isSavingConfig,
+          onClick: handleSaveConfig,
+        },
+        isSavingConfig ? "保存中..." : msg("saveConfigBtn"),
+      ),
+    );
+
+    tab2Content = React.createElement(
+      React.Fragment,
+      null,
+      llmSection,
+      embedderSection,
+      advancedSection,
+      saveRow,
+    );
   }
 
   return React.createElement(
     "div",
     { className: "dsh-mem0-container" },
     header,
-    toolbar,
-    addForm,
-    listContent,
+    diagBanner,
+    navTabs,
+    tab1Content,
+    tab2Content,
   );
 }

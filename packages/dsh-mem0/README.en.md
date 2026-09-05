@@ -8,7 +8,9 @@ DeepSeek Harness (DSH) persistent long-term associative memory system plugin bas
 - **Git workspace awareness**: Automatically reads session `cwd` and unifies the memory namespace across git worktrees and main checkouts via Git Canonical identity (`git-common-dir` & `remote.origin.url`).
 - **All-English tool contracts**: Provides 4 core tools (`memory_search`, `memory_add`, `memory_list`, `memory_delete`) with all-English descriptions and offline graceful degradation fallback.
 - **Chinese memory retention**: Embeds Chinese constraint instructions to filter out trivial chit-chat and record concise, factual memories.
-- **Memory Center settings tab**: Mounts a dedicated "Memory Center" tab in the DSH settings panel via the official `settings.section` slot.
+- **Comprehensive configuration**: Fully configurable LLM and embedder endpoints (supports DeepSeek, SiliconFlow, and OpenAI-compatible endpoints), customizable TopK and extraction prompts, persisted to official DSH settings (`~/.dsh/settings.yaml`).
+- **Memory Center dual-zone dashboard**: Mounts a dedicated tab in DSH settings, featuring memory items management alongside a live engine settings dashboard with masked key safety and hot reload.
+- **Self-healing diagnosis & graceful fallback**: Automatic detection and actionable recovery guidance when Python or dependencies are missing; agents fall back gracefully without crashing.
 - **dsh-mcp-manager integration**: Server registration, health lifecycle, and tool audit are completely managed by `dsh-mcp-manager`.
 
 ## Security Model
