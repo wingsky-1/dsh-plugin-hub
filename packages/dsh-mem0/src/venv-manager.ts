@@ -10,13 +10,13 @@
 
 import { execFile, spawn } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { dshHome } from "../../../shared/dsh-home.js";
 
 const execFileAsync = promisify(execFile);
 
-export const DEFAULT_VENV_DIR = join(homedir(), ".dsh/mem0/venv");
+export const DEFAULT_VENV_DIR = join(dshHome(), "mem0/venv");
 export const VENV_PYTHON = process.platform === "win32"
   ? join(DEFAULT_VENV_DIR, "Scripts/python.exe")
   : join(DEFAULT_VENV_DIR, "bin/python3");
@@ -104,7 +104,7 @@ export async function autoInstallDependencies(
   pythonBin = "python3",
   onLog?: (line: string) => void,
 ): Promise<{ ok: boolean; pythonBin: string; error?: string }> {
-  mkdirSync(join(homedir(), ".dsh/mem0"), { recursive: true });
+  mkdirSync(join(dshHome(), "mem0"), { recursive: true });
 
   const log = (msg: string) => {
     if (onLog) onLog(msg);
