@@ -35,7 +35,7 @@ const {
   bucketStartKey,
   trendRangeOptions,
   trendDefaultRange,
-  niceMax,
+  niceTicks,
   seriesColor,
   stackedBarsSvg,
   stackedAreasSvg,
@@ -91,12 +91,29 @@ test("trendDefaultRange：默认档被留存裁掉时取最大可得档", () => 
   assert.equal(trendDefaultRange("week", 20), 3); // ⌈20/7⌉=3，仅 [3] 可得
 });
 
-test("niceMax：1/2/5×10^k 上界", () => {
-  assert.equal(niceMax(0), 1);
-  assert.equal(niceMax(7), 10);
-  assert.equal(niceMax(13), 20);
-  assert.equal(niceMax(88), 100);
-  assert.equal(niceMax(120), 200);
+test("niceTicks：按数据最大值动态推导步长与刻度序列（#503 M2.1 后续）", () => {
+  // 零/异常输入：回退单刻度 [0,1]
+  assert.deepEqual(niceTicks(0), { ticks: [0, 1], top: 1 });
+  // 792K → 步长 200K，顶格 800K 贴合数据（旧实现轴顶 1M，柱视觉只到 79%）
+  const a = niceTicks(792_000);
+  assert.equal(a.top, 800_000);
+  assert.deepEqual(a.ticks, [0, 200_000, 400_000, 600_000, 800_000]);
+  // 1.7M → 步长 500K，顶格 2M（5 条）
+  const b = niceTicks(1_700_000);
+  assert.equal(b.top, 2_000_000);
+  assert.deepEqual(b.ticks, [0, 500_000, 1_000_000, 1_500_000, 2_000_000]);
+  // 2.5 步长：12.3K → 2.5K 步长，顶格 12.5K
+  const c = niceTicks(12_300);
+  assert.deepEqual(c.ticks, [0, 2_500, 5_000, 7_500, 10_000, 12_500]);
+  // 小数值：45 → 步长 10，顶格 50
+  assert.deepEqual(niceTicks(45).ticks, [0, 10, 20, 30, 40, 50]);
+  // 顶格必 ≥ 数据最大值
+  for (const v of [7, 999, 123_456, 9_999_999]) {
+    const { ticks, top } = niceTicks(v);
+    assert.ok(top >= v, `top ${top} >= maxV ${v}`);
+    assert.equal(ticks[ticks.length - 1], top);
+    assert.equal(ticks[0], 0);
+  }
 });
 
 test("seriesColor：跨调用稳定", () => {
@@ -110,7 +127,7 @@ test("stackedBarsSvg：空桶虚位 / 部分桶描边 / data-bucket 委托锚点
     { key: "2026-02-02", segs: [{ id: "p1", value: 100 }], visibleTotal: 100, none: false, mark: "edge" },
     { key: "2026-02-03", segs: [{ id: "p1", value: 60 }, { id: "p2", value: 40 }], visibleTotal: 100, none: false, mark: "ongoing" },
   ];
-  const svg = stackedBarsSvg({ bars, gran: "day", yMax: niceMax(100) });
+  const svg = stackedBarsSvg({ bars, gran: "day", ticks: niceTicks(100).ticks });
   assert.ok(svg.includes('data-bucket="0"') && svg.includes('data-bucket="2"'), "每桶带 data-bucket 委托锚点");
   assert.ok(svg.includes("stroke-dasharray:3 2"), "进行中桶警示虚线");
   assert.ok(svg.includes("stroke-dasharray:1.5 2.5"), "边缘桶灰点线");
@@ -125,7 +142,7 @@ test("stackedAreasSvg：连续段 / null 桶断开 / 命中区同构", () => {
     { key: "2026-02", segs: [], visibleTotal: null, none: true, mark: null }, // p1 断开点
     { key: "2026-03", segs: [{ id: "p1", value: 50 }, { id: "p2", value: 20 }], visibleTotal: 70, none: false, mark: null },
   ];
-  const svg = stackedAreasSvg({ bars, gran: "month", yMax: niceMax(70), stackOrder: ["p1", "p2"] });
+  const svg = stackedAreasSvg({ bars, gran: "month", ticks: niceTicks(70).ticks, stackOrder: ["p1", "p2"] });
   assert.equal(svg.match(/<path /g)?.length, 3, "p1 两段 + p1 一段 = 3 条 path（null 桶断开）");
   assert.ok(svg.includes('data-bucket="1"'), "面积模式同样有整列命中区");
   assert.ok(svg.includes("26-01") && svg.includes("26-03"), "月键 YY-MM 标签");
@@ -137,9 +154,9 @@ test("SVG 注入面：受信外文本不进 SVG（M2 的 <title> 注入面在 M2
   const bars = [
     { key: "2026-02-01", segs: [{ id: evil, value: 10 }], visibleTotal: 10, none: false, mark: null },
   ];
-  const svg = stackedBarsSvg({ bars, gran: "day", yMax: niceMax(10) });
+  const svg = stackedBarsSvg({ bars, gran: "day", ticks: niceTicks(10).ticks });
   assert.ok(!svg.includes("<img"), "恶意段 id 不以任何形态进 SVG");
   assert.ok(!svg.includes("onerror"), "事件属性 payload 不存在");
-  const areaSvg = stackedAreasSvg({ bars, gran: "day", yMax: niceMax(10), stackOrder: [evil] });
+  const areaSvg = stackedAreasSvg({ bars, gran: "day", ticks: niceTicks(10).ticks, stackOrder: [evil] });
   assert.ok(!areaSvg.includes("<img") && !areaSvg.includes("onerror"), "面积图同构");
 });
