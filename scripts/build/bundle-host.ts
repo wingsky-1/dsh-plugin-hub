@@ -92,11 +92,15 @@ console.log(`[bundle-host] ${process.argv[2]}: shared 已内联（lib/index.js �
 
 // 1b. 客户端构建（有客户端源码时）：统一走共享预设 build-client
 // （注入 load id + 契约外壳生成 wrapper/legacy 双模式 + 内建「load id === 包名」校验）
-const clientSrc = existsSync(join(pkgDir, 'src', 'client.ts'))
-  ? join(pkgDir, 'src', 'client.ts')
-  : existsSync(join(pkgDir, 'src', 'client', 'index.ts'))
-    ? join(pkgDir, 'src', 'client', 'index.ts')
-    : null
+const clientSrc = existsSync(join(pkgDir, 'src', 'client.tsx'))
+  ? join(pkgDir, 'src', 'client.tsx')
+  : existsSync(join(pkgDir, 'src', 'client.ts'))
+    ? join(pkgDir, 'src', 'client.ts')
+    : existsSync(join(pkgDir, 'src', 'client', 'index.tsx'))
+      ? join(pkgDir, 'src', 'client', 'index.tsx')
+      : existsSync(join(pkgDir, 'src', 'client', 'index.ts'))
+        ? join(pkgDir, 'src', 'client', 'index.ts')
+        : null
 if (clientSrc) {
   const pkgJson = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8'))
   const pkgName = pkgJson.name

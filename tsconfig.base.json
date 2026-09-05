@@ -15,6 +15,7 @@
     "skipLibCheck": true,
     "declaration": true,
     "sourceMap": true,
+    "jsx": "react",
     "noEmitOnError": true,
     "useDefineForClassFields": true,
     "types": [
