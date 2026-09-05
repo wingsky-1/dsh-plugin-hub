@@ -74,6 +74,7 @@ export function credentialsFile(dshHome?: string): string {
 
 /** auth.json 文件路径。 */
 export function opencodeAuthFile(): string {
+  // dsh-gate:allow-homedir #525 opencode 外部凭据：DSH_HOME 域之外的第三方工具自身写面
   return join(homedir(), ".local", "share", "opencode", "auth.json");
 }
 

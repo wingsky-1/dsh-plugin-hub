@@ -624,5 +624,8 @@ jobs:
       - name: Forbid legacy src tests（#423：变异测试单份维护，*.src.test.ts 全仓禁现）
         run: node scripts/gate/forbid-src-tests.mjs
 
+      - name: Forbid homedir in src（#517 B5：src 禁直连 HOME 来源 API，AST 扫描 fail-closed）
+        run: node scripts/gate/forbid-homedir-src.mjs
+
       - name: Docs check（README/链接/占位符）
         run: pnpm docs:check

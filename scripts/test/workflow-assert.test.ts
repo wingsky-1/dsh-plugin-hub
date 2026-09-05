@@ -426,6 +426,18 @@ test('#423: 变异测试单份维护——禁 *.src.test.ts 回潮 + lib→src h
   }
 })
 
+test('#517 B5: ci.yml homedir 门禁——Forbid homedir 步骤存在并调 forbid-homedir-src.mjs + 根 scripts 入口', () => {
+  assert.ok(CI.includes('Forbid homedir in src'),
+    'ci.yml repo-gate 必须含 Forbid homedir in src 步骤（#517 B5 防回归）')
+  assert.ok(CI.includes('run: node scripts/gate/forbid-homedir-src.mjs'),
+    'Forbid homedir in src 必须调用 scripts/gate/forbid-homedir-src.mjs')
+  assert.ok(existsSync(join(ROOT, 'scripts/gate/forbid-homedir-src.mjs')),
+    'forbid-homedir-src.mjs 脚本必须存在')
+  const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
+  assert.equal(pkg.scripts['gate:homedir'], 'node scripts/gate/forbid-homedir-src.mjs',
+    '根 package.json 必须含 gate:homedir 本地入口（与 ci.yml 同一命令）')
+})
+
 test('#178+#204: ci.yml PR 增量门禁——读仓库基线文件 + 按命中包切片 + 并入 repo-gate', () => {
   // #204：直接读 scripts/gate/baseline/ 仓库内文件，替代 actions/cache restore（跨 ref 失效）
   assert.ok(CI.includes('Restore repo incremental baseline'), 'mutation-gate 基线读取步骤在位（读仓库内文件）')

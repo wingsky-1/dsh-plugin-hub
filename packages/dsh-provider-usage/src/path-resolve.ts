@@ -32,6 +32,7 @@ export function pluginHome(base = dshHomeBase()): string {
  * 保证「UI 承诺支持 ~ 路径」与校验行为一致）。
  */
 export function expandHomePath(p: string): string {
+  // dsh-gate:allow-homedir #87 用户路径 ~ 前缀展开（untildify 业界标准实现，目标由用户指定）
   return untildify(p);
 }
 
