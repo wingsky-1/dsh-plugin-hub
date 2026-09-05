@@ -438,6 +438,16 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
+      - name: Upload incremental baseline artifact（供合并后秒级 overlay 复用 #572）
+        # 变异测试通过时上传产出的增量基线文件，供 PR 合入 main 后由 baseline-overlay.yml 秒级复用
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mutation-incremental-${{ matrix.combo.package }}-${{ matrix.combo.seg }}
+          path: coverage/mutation/${{ env.BASENAME }}.json
+          retention-days: 1
+          if-no-files-found: ignore
+
   # ── 第 3 段之三：聚合判分收尾（artifact 汇合 + 逐包双指标判分，#217）──
   # - self-coverage（coverage job）与各包 stryker 报告（mutation-gate 矩阵）
   #   在此汇合后逐包跑 scripts/gate/mutation-gate.mjs 双指标判分；

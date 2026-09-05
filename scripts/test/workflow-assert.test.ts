@@ -35,6 +35,7 @@ const ROOT = join(import.meta.dirname, '../..')
 const CI = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8')
 const OBSERVE = readFileSync(join(ROOT, '.github/workflows/observe.yml'), 'utf8')
 const OBSERVE_INC = readFileSync(join(ROOT, '.github/workflows/observe-incremental.yml'), 'utf8')
+const OVERLAY = readFileSync(join(ROOT, '.github/workflows/baseline-overlay.yml'), 'utf8')
 const RELEASE = readFileSync(join(ROOT, '.github/workflows/release.yml'), 'utf8')
 const HEALTH = readFileSync(join(ROOT, '.github/workflows/health-report.yml'), 'utf8')
 const GAUNTLET = JSON.parse(readFileSync(join(ROOT, 'scripts/data/gauntlet.config.json'), 'utf8'))
@@ -138,10 +139,10 @@ test('ci.yml: changes case 映射覆盖全部包（防新增包静默漏检，�
   assert.deepEqual(loopList, [...SLICE_PACKAGES].sort(), 'for 循环清单与切片包集不一致')
 })
 
-test('ci.yml/observe*/release/health-report.yml: 第三方与官方 action 一律 pin commit SHA', () => {
+test('ci.yml/observe*/baseline-overlay/release/health-report.yml: 第三方与官方 action 一律 pin commit SHA', () => {
   for (const [name, text] of [
     ['ci.yml', CI], ['observe.yml', OBSERVE], ['observe-incremental.yml', OBSERVE_INC],
-    ['release.yml', RELEASE], ['health-report.yml', HEALTH],
+    ['baseline-overlay.yml', OVERLAY], ['release.yml', RELEASE], ['health-report.yml', HEALTH],
   ]) {
     // 逐行解析 uses: 值（避免贪婪 \S+ 吞掉 @ref，评审 F9）
     const lines = text.split('\n').filter((l) => l.trim().startsWith('uses:'))
@@ -468,6 +469,16 @@ test('#178+#204+#572: ci.yml PR 增量门禁——从孤立分支恢复基线 + 
   const rg = CI.slice(CI.indexOf('\n  repo-gate:'))
   assert.ok(rg.includes('needs.mutation-gate.result'),
     'repo-gate fail-closed 判定脚本必须检查 needs.mutation-gate.result')
+})
+
+test('#572: baseline-overlay.yml 主干合入秒级差量覆盖基线工作流在位', () => {
+  assert.ok(OVERLAY.includes('push:'), 'baseline-overlay 必须监听 push 事件')
+  assert.ok(OVERLAY.includes('branches:\n      - main'), 'baseline-overlay 仅对 main 分支生效')
+  assert.ok(OVERLAY.includes('group: mutation-baseline-sync'), 'baseline-overlay 必须与 observe 同步互斥锁')
+  assert.ok(OVERLAY.includes('cancel-in-progress: false'), '互斥锁必须排队执行（不可取消未完任务以防覆盖丢失）')
+  assert.ok(OVERLAY.includes('overlay-baseline.mjs'), '调用 overlay-baseline.mjs 脚本')
+  assert.ok(CI.includes('Upload incremental baseline artifact'), 'ci.yml 必须在变异成功时上传 incremental artifact')
+  assert.ok(CI.includes('mutation-incremental-'), 'artifact 命名格式为 mutation-incremental-<pkg>-<seg>')
 })
 
 // ── #187 触发面收敛：mutation-gate 仅限 pull_request，主干变异归夜间全量 ──

@@ -1,0 +1,43 @@
+name: Baseline Mutation Overlay
+
+# #572：PR 增量变异产物在合入 main 时自动秒级复用覆盖（Overlay）
+# 当 PR 被合并入 main 时触发：
+# 1. 反查合并的 PR 及其在 PR 门禁阶段产出的 mutation-incremental-* 产物；
+# 2. 纯文档/配置改动等无变异产物的 PR 自动 3 秒内优雅跳过（No-op）；
+# 3. 有变异产物的 PR 自动从孤立分支 baseline/mutation 恢复全集，
+#    差量覆盖（Overlay）被该 PR 修改包的基线文件，重算 manifest 并强推回孤立分支；
+# 4. 全程不重新运行任何变异测试，15 秒内静默完成同步，零 Runner 算力浪费。
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  actions: read
+  pull-requests: read
+
+concurrency:
+  # 统一全局互斥锁，排队顺序落盘，彻底杜绝 Lost Update 覆盖竞态
+  group: mutation-baseline-sync
+  cancel-in-progress: false
+
+jobs:
+  overlay:
+    name: Overlay PR baseline on merge
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 1
+
+      - name: Fast Overlay and Push to Orphan Branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OBSERVE_PAT: ${{ secrets.OBSERVE_PAT }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: node scripts/gate/overlay-baseline.mjs
