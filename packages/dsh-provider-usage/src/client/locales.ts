@@ -31,6 +31,7 @@ export const zh = {
   ariaPill: "用量统计",
   settingsTab: "用量统计",
   // 设置页：五分段器 tab（#532）
+  settingsNavLabel: "用量统计设置分区",
   pageTabTrend: "趋势",
   pageTabReport: "报告",
   pageTabUsage: "用量",
@@ -206,6 +207,7 @@ export const en: Record<ProviderUsageLocaleKey, string> = {
   ariaPill: "Usage statistics",
   settingsTab: "Usage statistics",
   // Settings page: five-tab segmenter (#532)
+  settingsNavLabel: "Usage statistics sections",
   pageTabTrend: "Trend",
   pageTabReport: "Report",
   pageTabUsage: "Usage",
