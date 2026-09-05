@@ -29,6 +29,11 @@ export const zh = {
   // HTML 预览
   htmlBootFail: "HTML 预览启动失败（响应异常）",
   htmlSandboxTitle: "HTML 预览（沙箱内渲染，不执行脚本）",
+  // issue #507：交互式预览（opt-in 脚本执行）
+  tabInteractive: "交互",
+  htmlInteractiveTitle: "交互式预览（已启用脚本执行；不访问宿主页面）",
+  htmlInteractiveBadge: "脚本已启用",
+  interactiveConfirm: "「交互」预览会执行文件内脚本（受沙箱限制：读不到宿主页面、不能弹出窗口），确认启用？",
   // 图片
   imageAria: "图片预览",
   imageZoomHint: "点击放大",
@@ -75,6 +80,10 @@ export const en: Record<FilePreviewLocaleKey, string> = {
   fetchFail: "Request failed (file preview service unreachable)",
   htmlBootFail: "HTML preview failed to start (unexpected response)",
   htmlSandboxTitle: "HTML preview (rendered in sandbox, scripts not executed)",
+  tabInteractive: "Interactive",
+  htmlInteractiveTitle: "Interactive preview (scripts enabled; host page not accessible)",
+  htmlInteractiveBadge: "Scripts enabled",
+  interactiveConfirm: "Interactive preview runs scripts inside this file (sandboxed: cannot read the host page, no popups). Enable?",
   imageAria: "Image preview",
   imageZoomHint: "Click to zoom",
   imageDecodeFail: "Image decode failed (file fetched but cannot be displayed as an image)",

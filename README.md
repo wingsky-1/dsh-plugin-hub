@@ -15,12 +15,15 @@ DSH（DeepSeek Harness）Web GUI 插件集，npm 分发：一键装全家桶，�
 
 - **安全内建于默认**：坚持最小暴露面与最小凭据流转——管理面只对本机开放，
   密钥默认不明文落盘、不进浏览器；各插件的威胁模型与加固细节见其 README 安全章节
-- **上下文成本可控的 MCP 管理**：项目级 MCP 默认经中间层收敛为 `ws_mcp_search` /
-  `ws_mcp_call` 两个原子工具，项目级接入规模不再膨胀上下文（`middleware: all`
-  可把全局服务器也收进中间层）；分工作目录维护项目级/全局两级配置，
-  多仓库各配各的 MCP，互不串台
-- **可扩展的用量统计框架**：通用 v2 适配器契约，内置 DeepSeek 官方与 OpenCode Go
-  开箱即用；自写一个 mjs 文件即可接入任意数据源，设置页热插拔
+- **任务事件通知中心**：提问 / 审批 / 完成 / 错误等 6 类任务事件双通道提醒（浏览器
+  通知 + 系统 toast），经 Bark / Webhook 可推送到手机；免打扰例外、审批超时二次
+  提醒、完成风暴聚合、通知文本自动脱敏
+- **上下文成本可控的 MCP 管理**：项目级 MCP 默认经中间层收敛为 `ws_mcp_list` /
+  `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call` 四个原子工具，项目级接入规模
+  不再膨胀上下文（`middleware: all` 可把全局服务器也收进中间层，设置页热切换）；
+  分工作目录维护项目级/全局两级配置，多仓库各配各的 MCP，互不串台
+- **可扩展的用量统计框架**：支持多 provider 用量统计与自定义数据源接入；覆盖每日
+  用量推算、使用趋势、峰谷倒计时与日/周/月报告
 - **工程质量背书**：每个插件自带 smoke 断言（路由围栏 / 客户端契约），构建契约 +
   打包校验等全部门禁在 CI 全量执行
 
@@ -37,13 +40,13 @@ DSH（DeepSeek Harness）Web GUI 插件集，npm 分发：一键装全家桶，�
 
 | 包名 | 功能 | 文档 | 状态 |
 |---|---|---|---|
-| `@wingsky-1/dsh-notifier` | 审批/完成/错误事件通知（浏览器 Notification + 系统 toast） | [README](packages/dsh-notifier/README.md) | ✅ 已发布 |
-| `@wingsky-1/dsh-provider-usage` | 多 provider 用量统计悬浮框（通用适配器框架：内置 DeepSeek 官方与 OpenCode Go 开箱即用，自写 mjs 即可接入任意数据源） | [README](packages/dsh-provider-usage/README.md) | ✅ 已发布 |
-| `@wingsky-1/dsh-lan-proxy` | 局域网访问 dsh web UI（HTTP/HTTPS/WS 转发 + TLS + HTTP 响应压缩，Brotli/gzip 自适应） | [README](packages/dsh-lan-proxy/README.md) | ✅ 已发布 |
-| `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理器（stdio/HTTP；分工作目录维护项目级/全局两级配置，项目级 MCP 经中间层收敛、免于工具洪水） | [README](packages/dsh-mcp-manager/README.md) | ✅ 已发布 |
-| `@wingsky-1/dsh-web-file-preview` | 点击对话文件链接在 web 端预览（图片/文本/Markdown/代码/Diff/Mermaid） | [README](packages/dsh-web-file-preview/README.md) | ✅ 已发布 |
-| `@wingsky-1/dsh-verify-isolated` | DSH 插件开发的隔离环境浏览器验证 skill（临时 DSH_HOME + 独立 profile 双重隔离） | [README](packages/dsh-verify-isolated/README.md) | ✅ 已发布 |
-| `@wingsky-1/dsh-codegraph` | codegraph 本地代码图谱 MCP + worktree 开发纪律（经 mcp-manager 运行时注册） | [README](packages/dsh-codegraph/README.md) | ✅ 已发布（独立发包，暂不进聚合包） |
+| `@wingsky-1/dsh-notifier` | 任务事件通知中心：6 类事件（提问/审批/完成/子代理完成/错误/轮次完成），双通道（浏览器通知 + 宿主系统 toast）+ Bark/Webhook 推送频道（ntfy、Gotify、自建网关）；免打扰时段与紧急例外、审批超时二次提醒、完成风暴聚合、通知文本脱敏 | [README](packages/dsh-notifier/README.md) · [架构图解](docs/architecture/dsh-notifier.md) | 已发布 |
+| `@wingsky-1/dsh-provider-usage` | 多 provider 用量统计框架（v2 适配器契约）：常驻胶囊 + 详情面板；内置 DeepSeek 官方（区间记账法推算每日用量 + 峰谷倒计时徽标，官方无用量接口也能算）与 OpenCode Go 开箱即用；自写一个 mjs 即可接入任意数据源、设置页热插拔；日/周/月用量报告（经宿主 llm 生成）；密钥只在宿主端不进浏览器 | [README](packages/dsh-provider-usage/README.md) · [适配器开发指南](packages/dsh-provider-usage/docs/adapter-guide.md) · [架构图解](docs/architecture/dsh-provider-usage.md) | 已发布 |
+| `@wingsky-1/dsh-lan-proxy` | 局域网访问 dsh web UI：HTTP/HTTPS/WS 转发 + TLS（自签名/自定义证书）；HTTP（Brotli/gzip 自适应）与 WebSocket（permessage-deflate）双压缩；WS 半开探活，移动端切后台不僵死；启动令牌自动注入，LAN 设备免手工拿 token；DNS 重绑定防护 + 回环目标白名单 | [README](packages/dsh-lan-proxy/README.md) · [架构图解](docs/architecture/dsh-lan-proxy.md) | 已发布 |
+| `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理器（stdio / streamable-http）：项目级/全局两级配置分工作目录维护；项目级 MCP 默认经中间层收敛为 4 个原子工具（`middleware: all` 全量收敛、设置页热切换）；工作空间隔离防串台；配置只存 `${ENV}` 引用不落盘密钥；提供运行时注册接口供其他插件注入 MCP | [README](packages/dsh-mcp-manager/README.md) · [架构图解](docs/architecture/dsh-mcp-manager.md) | 已发布 |
+| `@wingsky-1/dsh-web-file-preview` | 对话文件链接 web 端预览：图片（灯箱缩放）/ Markdown（含 Mermaid 图表渲染）/ 代码（25+ 语言高亮）/ 文本 / git Diff / HTML 沙箱预览（iframe sandbox 不执行脚本）；@ 引用识别 + 路径兜底搜索（引用路径写错时按 basename 在工作区内唯一匹配） | [README](packages/dsh-web-file-preview/README.md) · [架构图解](docs/architecture/dsh-web-file-preview.md) | 已发布 |
+| `@wingsky-1/dsh-verify-isolated` | DSH 插件开发的隔离环境浏览器验证 skill：临时 DSH_HOME + 独立 profile + 独立端口 + 独立浏览器实例四重隔离，一键拉起、退出自动清理；自带 raw CDP 零依赖浏览器驱动（快照/点击/截图/求值），可选隔离审计 | [README](packages/dsh-verify-isolated/README.md) · [架构图解](docs/architecture/dsh-verify-isolated.md) | 已发布 |
+| `@wingsky-1/dsh-codegraph` | codegraph 本地代码图谱 MCP + worktree 开发纪律：8 个封装工具（影响面/调用链/符号搜索/文件结构等），查询前强制 sync 保证索引新鲜、projectPath 自动补全；经 mcp-manager 运行时注册 | [README](packages/dsh-codegraph/README.md) · [架构图解](docs/architecture/dsh-codegraph.md) | 已发布（独立发包，暂不进聚合包） |
 
 > **独立发包说明**：`@wingsky-1/dsh-codegraph` 为**独立发包**、**未包含在
 > `dsh-plugins-all` 聚合包中**，需单独安装（它经 mcp-manager 运行时注册 codegraph MCP，
@@ -183,6 +186,8 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
 ## 安全提醒
 
 - `dsh-lan-proxy` 装完即在 `0.0.0.0` 开放 HTTP/HTTPS 端口，**局域网所有设备可访问你的 dsh**——不需要时请卸载
+- `dsh-lan-proxy` 的启动令牌自动注入（`injectToken`）**默认开启**：局域网内任何能访问该端口的设备免 token 获得完整 dsh 控制权（等效信任整个局域网，bash 直通宿主机）——仅在可信内网开启，不可信网段务必在设置卡片关闭
+- `dsh-web-file-preview` 经 `dsh-lan-proxy` 等代理对外暴露时 loopback 围栏会被代理穿透：**局域网设备无需任何凭据即可预览本机文件（含 `~/.dsh` 下的凭据/配置文件）**——请在可信局域网使用，勿暴露到公共网络
 - `dsh-mcp-manager` 的 stdio 子进程继承宿主权限，只配置可信的 MCP 服务器
 - 各插件全部路由均 loopback 围栏（非回环 403 / 方法错 405）
 

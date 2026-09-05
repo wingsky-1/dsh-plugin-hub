@@ -101,3 +101,71 @@ test("loopback + 白名单内方法 → true 放行且不写响应", () => {
     assert.equal(rec.body, "", "放行时不写任何 body");
   }
 });
+
+// ---- issue #549：serve 围栏放宽（cross-site no-cors 子资源）----
+
+import { isLoopbackRequest } from "../../shared/loopback.js";
+
+/** 构造带指定 Fetch Metadata 头的回环请求。 */
+function metaReq(site, mode) {
+  const headers = { host: "127.0.0.1:3080" };
+  if (site !== undefined) headers["sec-fetch-site"] = site;
+  if (mode !== undefined) headers["sec-fetch-mode"] = mode;
+  return { method: "GET", socket: { remoteAddress: "127.0.0.1" }, headers };
+}
+
+test("#549 默认（无 options）拒绝一切 cross-site", () => {
+  for (const mode of ["no-cors", "cors", "navigate", undefined]) {
+    assert.equal(
+      isLoopbackRequest(metaReq("cross-site", mode)),
+      false,
+      `cross-site + mode=${mode} 默认拒绝`
+    );
+  }
+});
+
+test("#549 allowCrossSiteNoCors：显式 no-cors 跨站子资源放行", () => {
+  const allow = isLoopbackRequest(metaReq("cross-site", "no-cors"), { allowCrossSiteNoCors: true });
+  assert.equal(allow, true, "cross-site + no-cors → 放行（serve 子资源）");
+});
+
+test("#549 allowCrossSiteNoCors：cross-site 但非 no-cors 仍拒绝（fail-closed）", () => {
+  for (const mode of ["cors", "navigate", undefined]) {
+    assert.equal(
+      isLoopbackRequest(metaReq("cross-site", mode), { allowCrossSiteNoCors: true }),
+      false,
+      `cross-site + mode=${mode} 即使允许 no-cors 也拒绝`
+    );
+  }
+});
+
+test("#549 非跨站（same-origin / same-site / none / 无头）行为不变", () => {
+  for (const site of ["same-origin", "same-site", "none", undefined]) {
+    for (const opts of [undefined, { allowCrossSiteNoCors: true }]) {
+      assert.equal(isLoopbackRequest(metaReq(site, "no-cors"), opts), true, `site=${site} 放行`);
+    }
+  }
+});
+
+test("#549 guardLoopbackMethod 透传 allowCrossSiteNoCors（serve 路由形态）", () => {
+  const { rec, res } = fakeRes();
+  const allow = guardLoopbackMethod(
+    fakeReq({ headers: { host: "127.0.0.1:3080", "sec-fetch-site": "cross-site", "sec-fetch-mode": "no-cors" } }),
+    res,
+    ["GET"],
+    { allowCrossSiteNoCors: true }
+  );
+  assert.equal(allow, true, "serve 路由经守卫透传放行 cross-site no-cors");
+  assert.equal(rec.status, 0, "放行时不写响应");
+});
+
+test("#549 guardLoopbackMethod 不透传时 cross-site 仍 403", () => {
+  const { rec, res } = fakeRes();
+  const allow = guardLoopbackMethod(
+    fakeReq({ headers: { host: "127.0.0.1:3080", "sec-fetch-site": "cross-site", "sec-fetch-mode": "no-cors" } }),
+    res,
+    ["GET"]
+  );
+  assert.equal(allow, false, "不传 options 的守卫仍拒绝 cross-site");
+  assert.equal(rec.status, 403);
+});

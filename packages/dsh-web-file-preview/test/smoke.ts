@@ -756,7 +756,32 @@ try {
         assert.ok(typeof payload.token === "string" && /^[0-9a-f]{32}$/.test(payload.token), "#73 token 为 128-bit 随机 hex");
         assert.equal(payload.rest, "index.html", "#73 rest 为相对 root 的 POSIX 相对路径");
         assert.equal(payload.root, undefined, "#73 alloc 不返回 root（P2-3：多余信息面移除）");
+        assert.equal(payload.mode, "static", "#507 缺省 alloc 响应带 mode=static");
         token = payload.token;
+      }
+      // issue #507：mode=interactive alloc → 独立短 TTL 交互桶（响应 mode=interactive）
+      {
+        const res = fakeRes();
+        const interactiveAlloc = `${ROUTES.alloc}?cwd=${encodeURIComponent(serveRoot)}&path=${encodeURIComponent("index.html")}&mode=interactive`;
+        await allocRoute(fakeReq("GET", interactiveAlloc, "127.0.0.1"), res);
+        assert.equal(res._calls.status, 200, "#507 交互 alloc 200");
+        const payload = JSON.parse(res._calls.data);
+        assert.equal(payload.mode, "interactive", "#507 交互 alloc 响应 mode=interactive");
+        assert.ok(typeof payload.token === "string" && /^[0-9a-f]{32}$/.test(payload.token), "#507 交互 token 128-bit");
+        // 交互 token 可 serve（CSP 断言见 serve 用例区）；同时交互 token 与静态
+        // token 空间独立——交互桶 token 未知于静态桶，serve 按桶判定模式。
+        const resS = fakeRes();
+        await serveRouteHandler(fakeReq("GET", serveUrl(payload.token, "index.html"), "127.0.0.1"), resS);
+        assert.equal(resS._calls.status, 200, "#507 交互 token serve 200");
+        assert.ok(String(resS._calls.headers["content-security-policy"]).includes("sandbox allow-scripts"), "#507 交互 html 响应带 allow-scripts CSP");
+        assert.ok(String(resS._calls.headers["content-security-policy"]).includes("connect-src 'none'"), "#507 交互 CSP 含 connect-src 'none'（封主动外传）");
+        // 释放交互 token（幂等；释放后 serve 404）
+        const resR = fakeRes();
+        releaseRoute(fakeReq("GET", ROUTES.release + "?token=" + payload.token, "127.0.0.1"), resR);
+        assert.equal(resR._calls.status, 200, "#507 release 交互 token 200");
+        const resGone = fakeRes();
+        await serveRouteHandler(fakeReq("GET", serveUrl(payload.token, "index.html"), "127.0.0.1"), resGone);
+        assert.equal(resGone._calls.status, 404, "#507 释放后交互 token serve 404");
       }
       // alloc 非 html → 400；不存在 → 404；缺参 → 400
       {
@@ -803,6 +828,94 @@ try {
         await serveRouteHandler(fakeReq("GET", serveUrl(token, "index.html"), "127.0.0.1"), res);
         assert.equal(res._calls.headers["x-content-type-options"], "nosniff", "#73 serve 带 nosniff");
         assert.equal(res._calls.headers["referrer-policy"], "no-referrer", "#73 serve 带 no-referrer");
+      }
+      // #549：serve 围栏放宽——sandbox iframe（opaque origin）相对路径子资源请求
+      // 带 `sec-fetch-site: cross-site`；serve 路由经 allowCrossSiteNoCors 放行
+      // 显式 no-cors 的标签型加载，cors/navigate/缺 mode 头仍 fail-closed 拒绝。
+      {
+        const res = fakeRes();
+        await serveRouteHandler(
+          fakeReq("GET", serveUrl(token, "assets/app.css"), "127.0.0.1", "127.0.0.1", {
+            "sec-fetch-site": "cross-site",
+            "sec-fetch-mode": "no-cors",
+          }),
+          res
+        );
+        assert.equal(res._calls.status, 200, "#549 serve 跨站 no-cors 子资源放行（css 200）");
+      }
+      {
+        const res = fakeRes();
+        await serveRouteHandler(
+          fakeReq("GET", serveUrl(token, "index.html"), "127.0.0.1", "127.0.0.1", {
+            "sec-fetch-site": "cross-site",
+            "sec-fetch-mode": "no-cors",
+          }),
+          res
+        );
+        assert.equal(res._calls.status, 200, "#549 serve 跨站 no-cors 子资源放行（html 200）");
+      }
+      {
+        const res = fakeRes();
+        await serveRouteHandler(
+          fakeReq("GET", serveUrl(token, "index.html"), "127.0.0.1", "127.0.0.1", {
+            "sec-fetch-site": "cross-site",
+            "sec-fetch-mode": "cors",
+          }),
+          res
+        );
+        assert.equal(res._calls.status, 403, "#549 serve 跨站 cors（fetch 形态）仍 403");
+      }
+      {
+        const res = fakeRes();
+        await serveRouteHandler(
+          fakeReq("GET", serveUrl(token, "index.html"), "127.0.0.1", "127.0.0.1", {
+            "sec-fetch-site": "cross-site",
+            "sec-fetch-mode": "navigate",
+          }),
+          res
+        );
+        assert.equal(res._calls.status, 403, "#549 serve 跨站 navigate（顶层导航）仍 403");
+      }
+      {
+        const res = fakeRes();
+        await serveRouteHandler(
+          fakeReq("GET", serveUrl(token, "index.html"), "127.0.0.1", "127.0.0.1", {
+            "sec-fetch-site": "cross-site",
+          }),
+          res
+        );
+        assert.equal(res._calls.status, 403, "#549 serve 跨站缺 mode 头 fail-closed 403");
+      }
+      // #549：跨站放宽是 serve 路由独有——alloc/release/file 对 cross-site no-cors 仍 403
+      {
+        const res = fakeRes();
+        await allocRoute(
+          fakeReq("GET", allocOf("index.html"), "127.0.0.1", "127.0.0.1", {
+            "sec-fetch-site": "cross-site",
+            "sec-fetch-mode": "no-cors",
+          }),
+          res
+        );
+        assert.equal(res._calls.status, 403, "#549 alloc 对跨站 no-cors 仍 403（不放宽）");
+      }
+      {
+        const res = fakeRes();
+        releaseRoute(
+          fakeReq("GET", ROUTES.release + "?token=" + token, "127.0.0.1", "127.0.0.1", {
+            "sec-fetch-site": "cross-site",
+            "sec-fetch-mode": "no-cors",
+          }),
+          res
+        );
+        assert.equal(res._calls.status, 403, "#549 release 对跨站 no-cors 仍 403（不放宽）");
+      }
+      {
+        const res = fakeRes();
+        fileRoute(fakeReq("GET", ROUTES.file + `?cwd=${encodeURIComponent(serveRoot)}&path=assets%2Fapp.css`, "127.0.0.1", "127.0.0.1", {
+          "sec-fetch-site": "cross-site",
+          "sec-fetch-mode": "no-cors",
+        }), res);
+        assert.equal(res._calls.status, 403, "#549 file 对跨站 no-cors 仍 403（不放宽）");
       }
       // E3：serve 字节直出不改写（body === 磁盘原文件）
       {
@@ -1031,6 +1144,11 @@ try {
           const resCss = fakeRes();
           await serveRouteHandler(fakeReq("GET", serveUrl(liveToken, "assets/app.css"), "127.0.0.1"), resCss);
           assert.equal(resCss._calls.headers["content-security-policy"], undefined, "#344 非 SVG 不带 CSP");
+          // issue #507：serve text/html 按 token 模式注入 CSP——static `sandbox`
+          // （顶层导航无脚本通道）；非 html 资源不带（与 #344 语义一致）。
+          const resHtml = fakeRes();
+          await serveRouteHandler(fakeReq("GET", serveUrl(liveToken, "index.html"), "127.0.0.1"), resHtml);
+          assert.equal(resHtml._calls.headers["content-security-policy"], "sandbox", "#507 static html 响应带 CSP sandbox（顶层导航无脚本）");
           rmSync(join(serveRoot, "icon.svg"), { force: true });
         }
         // D1：流式直出——>1MB 资源 Content-Length == stat.size 且 body 完整
@@ -1089,13 +1207,16 @@ try {
     assert.ok(client.includes("sandbox"), "#73 client.js 含 sandbox 装配");
     // G4/J1/J9（qa 实测红线回归哨兵）：sandbox 必须经 setAttribute("sandbox","")
     // 显式装配——`node.sandbox=""` 反射赋值不产生属性（同源+脚本执行）。产物层
-    // 断言 setAttribute 形态存在、且无 allow-scripts/allow-same-origin 值。
+    // 断言 setAttribute 形态存在；J1 放宽为「allow-scripts 仅经交互态装配、
+    // 集合装配值由产物字符串锁定」；J9 红线不变：**绝无 allow-same-origin**。
     assert.ok(client.includes('setAttribute("sandbox"'), "#73 client.js 经 setAttribute 显式装配 sandbox（G4 回归哨兵）");
-    assert.ok(!client.includes('sandbox:"allow-scripts'), "#73 client.js 无 allow-scripts 装配值（J1）");
-    assert.ok(!client.includes('sandbox:"allow-same-origin'), "#73 client.js 无 allow-same-origin 装配值（J9）");
+    assert.ok(client.includes('"allow-scripts"'), "#507 client.js 含 allow-scripts 装配值（交互态，J1 二期）");
+    assert.ok(!client.includes("allow-same-origin"), "#73/#507 client.js 无 allow-same-origin 装配值（J9 红线）");
     assert.ok(client.includes("no-referrer"), "#73 client.js 含 referrerpolicy no-referrer（iframe 侧）");
     assert.ok(client.includes("serve"), "#73 client.js 含 serve 路由前缀拼接");
     assert.ok(client.includes("HTML 预览"), "#73 client.js 含 html 预览标题文案");
+    assert.ok(client.includes("交互"), "#507 client.js 含交互 tab 文案");
+    assert.ok(client.includes("脚本已启用"), "#507 client.js 含交互态徽标文案");
   }
 
   // ---- issue #45：引用 → 预览目标重写决策（rewrite-target，纯逻辑直测）----
