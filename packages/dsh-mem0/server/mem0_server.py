@@ -22,19 +22,30 @@ from mcp.server.fastmcp import FastMCP
 DEFAULT_DATA_DIR = os.path.expanduser(os.environ.get("MEM0_DATA_DIR", "~/.dsh/mem0/data"))
 os.makedirs(DEFAULT_DATA_DIR, exist_ok=True)
 
+# Support loading dynamic config via MEM0_CONFIG_JSON
+_dynamic_cfg = {}
+try:
+    if os.environ.get("MEM0_CONFIG_JSON"):
+        _dynamic_cfg = json.loads(os.environ["MEM0_CONFIG_JSON"])
+except Exception:
+    pass
+
 QDRANT_PATH = os.environ.get("QDRANT_PATH", os.path.join(DEFAULT_DATA_DIR, "qdrant"))
 QDRANT_HOST = os.environ.get("QDRANT_HOST")
 QDRANT_PORT = int(os.environ.get("QDRANT_PORT", "6333"))
 
-LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
-LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.deepseek.com/v1")
-LLM_MODEL = os.environ.get("LLM_MODEL", "deepseek-chat")
-LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "openai")
+LLM_API_KEY = _dynamic_cfg.get("llmApiKey") or os.environ.get("LLM_API_KEY") or os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("OPENAI_API_KEY") or ""
+LLM_BASE_URL = _dynamic_cfg.get("llmBaseUrl") or os.environ.get("LLM_BASE_URL", "https://api.deepseek.com/v1")
+LLM_MODEL = _dynamic_cfg.get("llmModel") or os.environ.get("LLM_MODEL", "deepseek-chat")
+LLM_PROVIDER = _dynamic_cfg.get("llmProvider") or os.environ.get("LLM_PROVIDER", "openai")
+LLM_TEMPERATURE = float(_dynamic_cfg.get("llmTemperature", os.environ.get("LLM_TEMPERATURE", 0.1)))
 
-EMBEDDER_MODEL = os.environ.get("EMBEDDER_MODEL", "BAAI/bge-small-zh-v1.5")
-EMBEDDER_PROVIDER = os.environ.get("EMBEDDER_PROVIDER", "fastembed")
+EMBEDDER_PROVIDER = _dynamic_cfg.get("embedderProvider") or os.environ.get("EMBEDDER_PROVIDER", "fastembed")
+EMBEDDER_BASE_URL = _dynamic_cfg.get("embedderBaseUrl") or os.environ.get("EMBEDDER_BASE_URL", "")
+EMBEDDER_API_KEY = _dynamic_cfg.get("embedderApiKey") or os.environ.get("EMBEDDER_API_KEY") or os.environ.get("SILICONFLOW_API_KEY") or os.environ.get("EMBEDDING_API_KEY") or ""
+EMBEDDER_MODEL = _dynamic_cfg.get("embedderModel") or os.environ.get("EMBEDDER_MODEL", "BAAI/bge-small-zh-v1.5")
 
-CUSTOM_INSTRUCTIONS = os.environ.get(
+CUSTOM_INSTRUCTIONS = _dynamic_cfg.get("customInstructions") or os.environ.get(
     "MEM0_CUSTOM_INSTRUCTIONS",
     (
         "记忆必须使用简体中文撰写（命令、路径、专有名词、库名保留原文）。\n"
@@ -46,11 +57,23 @@ CUSTOM_INSTRUCTIONS = os.environ.get(
 )
 
 # Vector store config (local embedded Qdrant or remote Qdrant)
+def resolve_embedding_dims(model_name: str) -> int:
+    m = model_name.lower()
+    if "bge-large" in m or "large" in m:
+        return 1024
+    if "text-embedding-3-small" in m:
+        return 1536
+    if "text-embedding-3-large" in m:
+        return 3072
+    return 512
+
+vector_dims = int(_dynamic_cfg.get("embeddingDims", resolve_embedding_dims(EMBEDDER_MODEL)))
+
 vector_store_cfg: Dict[str, Any] = {
     "provider": "qdrant",
     "config": {
         "collection_name": "mem0",
-        "embedding_model_dims": 512,
+        "embedding_model_dims": vector_dims,
     },
 }
 if QDRANT_HOST:
@@ -71,6 +94,16 @@ def get_memory():
             if _memory_instance is None:
                 from mem0 import Memory
 
+                embedder_cfg: Dict[str, Any] = {"provider": EMBEDDER_PROVIDER}
+                if EMBEDDER_PROVIDER == "openai":
+                    embedder_cfg["config"] = {
+                        "model": EMBEDDER_MODEL,
+                        "api_key": EMBEDDER_API_KEY or LLM_API_KEY or "dummy-key",
+                        "openai_base_url": EMBEDDER_BASE_URL,
+                    }
+                else:
+                    embedder_cfg["config"] = {"model": EMBEDDER_MODEL}
+
                 config = {
                     "version": "v1.1",
                     "custom_instructions": CUSTOM_INSTRUCTIONS,
@@ -80,14 +113,11 @@ def get_memory():
                             "model": LLM_MODEL,
                             "api_key": LLM_API_KEY or "dummy-key-for-offline",
                             "openai_base_url": LLM_BASE_URL,
-                            "temperature": 0.1,
+                            "temperature": LLM_TEMPERATURE,
                             "max_tokens": 2000,
                         },
                     },
-                    "embedder": {
-                        "provider": EMBEDDER_PROVIDER,
-                        "config": {"model": EMBEDDER_MODEL},
-                    },
+                    "embedder": embedder_cfg,
                     "vector_store": vector_store_cfg,
                     "history_db_path": os.path.join(DEFAULT_DATA_DIR, "history.db"),
                 }
