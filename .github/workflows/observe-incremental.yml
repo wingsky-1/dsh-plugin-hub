@@ -33,7 +33,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        # #433：增量班需读 origin/main 上全量班提交的仓库内基线（对比 scripts/gate/baseline/）
+        # #572：增量班需读孤立分支 baseline/mutation 上的增量基线（git 浅拉取）
         with:
           fetch-depth: 0
 

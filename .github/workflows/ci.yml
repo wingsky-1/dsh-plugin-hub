@@ -347,8 +347,8 @@ jobs:
   #   pnpm cov / self-cov / 判分——双指标判分统一收敛到 mutation-verdict；
   #   与 coverage job 平行无依赖（复核裁决选项 b），cov 失败不影响本矩阵跑完，
   #   由 verdict 缺席 + repo-gate 判定表兜底整体红
-  # - 基线来源（#204）：读仓库内 scripts/gate/baseline/ 版本化文件（git 跨 ref
-  #   天然可见）；首夜/基线缺失时天然降级为全量变异，门禁语义不变仅变慢
+  # - 基线来源（#572）：读孤立分支 refs/heads/baseline/mutation（git 协议
+  #   天然跨 ref 可见，零 API 鉴权要求）；首夜/基线缺失时天然降级为全量变异，门禁语义不变仅变慢
   # 已知约束：GitHub Actions 的 matrix 不允许引用 env context，但可引用 needs outputs
   mutation-gate:
     name: Mutation gate (${{ matrix.combo.package }} · ${{ matrix.combo.seg }})
