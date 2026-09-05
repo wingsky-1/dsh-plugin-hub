@@ -643,6 +643,17 @@ check("契约: inject 包含 mcpManager", () => assert.ok(inject.includes("mcpMa
             { agent: { session: { header: { cwd: repo } } } },
           );
           assert.ok(uniqText.includes("Impact of changing"), `唯一符号实际: ${uniqText.slice(0, 80)}`);
+
+          // #465：codegraph_status 经封装 execute 不抛 unknown option（CLI status
+          // 只接受位置参数 [path]）——不传 path（缺省补全）与显式 path 两种形态。
+          const defStatus = buildStatusToolDefinition();
+          const { text: stText } = await defStatus.execute({}, { agent: { session: { header: { cwd: repo } } } });
+          assert.ok(stText.includes("CodeGraph Status"), `status 实际: ${stText.slice(0, 80)}`);
+          const { text: stText2 } = await defStatus.execute(
+            { path: repo },
+            { agent: { session: { header: { cwd: repo } } } },
+          );
+          assert.ok(stText2.includes("CodeGraph Status"), `status 显式 path 实际: ${stText2.slice(0, 80)}`);
         });
       } finally {
         rmSync(dir, { recursive: true, force: true });
@@ -762,6 +773,50 @@ check("契约: inject 包含 mcpManager", () => assert.ok(inject.includes("mcpMa
       assert.ok(text.includes("执行失败"), `实际: ${text.slice(0, 60)}`);
       assert.ok(!text.includes("查询无结果"), "命令失败不应误判为空结果");
     });
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  // #465：codegraph_status 的命令形态修复——CLI 1.6.0 只接受位置参数 [path]，
+  // execute 不得追加 --path（unknown option），也不得产生双位置参数
+  // （too many arguments）。fake CLI 记录全部 argv 验证命令形态。
+  registerAsync("封装 execute: codegraph_status 位置参数形态（无 --path、无双位置参数）", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "cg-status-"));
+    const repoA = join(dir, "repoA");
+    const repoB = join(dir, "repoB");
+    for (const repo of [repoA, repoB]) {
+      mkdirSync(join(repo, ".git"), { recursive: true });
+      mkdirSync(join(repo, ".codegraph"), { recursive: true });
+    }
+    // fake codegraph：sync 与查询都把 argv 追加到 argv.log；查询输出固定 ok
+    writeFileSync(
+      join(dir, "codegraph"),
+      [
+        "#!/bin/sh",
+        `echo "$@" >> ${dir}/argv.log`,
+        `if [ "$1" = sync ]; then exit 0; fi`,
+        "echo ok",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+    const def = buildStatusToolDefinition();
+    resetSyncCache();
+    await withGlobalPath(`${dir}:${process.env.PATH ?? ""}`, async () => {
+      // 不传 path → projectPath 缺省补全为会话 cwd 的 git 根
+      const { text: t1 } = await def.execute({}, { agent: { session: { header: { cwd: repoA } } } });
+      assert.equal(t1.trim(), "ok", "status 查询正常返回");
+      // 显式 path → projectPath 取该路径（sync 目标跟随），单一位置参数
+      const { text: t2 } = await def.execute({ path: repoB }, { agent: { session: { header: { cwd: repoA } } } });
+      assert.equal(t2.trim(), "ok", "status 显式 path 正常返回");
+    });
+    const lines = String(readFileSync(join(dir, "argv.log"))).trim().split("\n").filter(Boolean);
+    assert.deepEqual(
+      lines,
+      [`sync ${repoA}`, `status ${repoA}`, `sync ${repoB}`, `status ${repoB}`],
+      "命令形态：status 单一位置参数、无 --path、sync 目标跟随显式 path",
+    );
+    for (const l of lines) {
+      assert.ok(!l.includes("--path"), `不应出现 --path：${l}`);
+    }
     rmSync(dir, { recursive: true, force: true });
   });
 }

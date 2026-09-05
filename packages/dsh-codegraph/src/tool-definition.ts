@@ -99,11 +99,17 @@ export function buildExploreToolDefinition(): ToolDefinition {
  * @param description 工具描述（含「何时用此工具 / 何时用另一工具」互引，#363 验收 11）
  * @param params 参数 schema（与 CLI 实测对齐）
  * @param required 必填参数名
- * @param buildArgs 由工具参数构建 CLI 子命令参数（不含 -p/--path，guardedCodegraph 追加）
+ * @param buildArgs 由工具参数构建 CLI 子命令参数；projectPath 由 execute 追加——
+ *   flag 模式追加 `--path <p>`，positional 模式（status）追加位置参数 `<p>`
  * @param opts.toolLabel 提示语中的工具显示名（默认取 name）
  * @param opts.symbolParam 需要同名软消歧的符号参数名（#363）：execute 内先
  *   `codegraph query <symbol>` 列候选，跨文件同名 ≥2 → 返回「传完整限定名」提示
  *   （CLI 对同名符号合并输出不报错，不消歧模型会拿到无提示的混合结果）
+ * @param opts.pathStyle projectPath 追加形态：`"flag"`（默认）追加 `--path <p>`；
+ *   `"positional"` 追加位置参数 `<p>`（供 `codegraph status`——CLI 1.6.0 实测
+ *   status 只接受位置参数 [path]，传 `--path` 报 unknown option #465）。positional
+ *   模式下 projectPath 从 `args.path` 读取（显式传入即目标路径，否则缺省补全），
+ *   且 buildArgs 不得自行追加位置参数（避免双位置参数 → too many arguments）
  */
 function buildCliTool(
   name: string,
@@ -111,7 +117,7 @@ function buildCliTool(
   params: ToolDefinition["parameters"],
   required: string[],
   buildArgs: (args: Record<string, unknown>) => string[],
-  opts: { toolLabel?: string; symbolParam?: string } = {},
+  opts: { toolLabel?: string; symbolParam?: string; pathStyle?: "flag" | "positional" } = {},
 ): ToolDefinition {
   const label = opts.toolLabel ?? name;
   return {
@@ -130,7 +136,10 @@ function buildCliTool(
       exec: { agent?: { session?: { header?: { cwd?: string } } } },
     ) => {
       const cwd = sessionCwd(exec);
-      const projectPath = typeof args.projectPath === "string" ? args.projectPath : undefined;
+      // positional 模式（status）：projectPath 语义由 `path` 参数承担（CLI 位置
+      // 参数）；其余工具沿用 `projectPath` 参数。
+      const projectPathKey = opts.pathStyle === "positional" ? "path" : "projectPath";
+      const projectPath = typeof args[projectPathKey] === "string" ? args[projectPathKey] : undefined;
       // 同名歧义软消歧（#363）：符号参数有值 → 先 query 列候选。
       if (opts.symbolParam !== undefined) {
         const symbol = args[opts.symbolParam];
@@ -155,7 +164,13 @@ function buildCliTool(
       const text = await guardedCodegraph(
         { projectPath },
         cwd,
-        async (p) => runCodegraph([...buildArgs(args), "--path", p]),
+        async (p) => {
+          const cmd = buildArgs(args);
+          // #465：status 只接受位置参数 [path]；其余子命令用 --path。
+          if (opts.pathStyle === "positional") cmd.push(p);
+          else cmd.push("--path", p);
+          return runCodegraph(cmd);
+        },
         label,
       );
       return { text };
@@ -347,10 +362,9 @@ export function buildStatusToolDefinition(): ToolDefinition {
       path: { type: "string", description: "目标 worktree 路径（缺省补全为当前会话 worktree；位置参数）" },
     },
     [],
-    (args) => {
-      const cmd = ["status"];
-      if (typeof args.path === "string" && args.path !== "") cmd.push(args.path);
-      return cmd;
-    },
+    // 位置参数由 execute 按 pathStyle: "positional" 统一追加（#465：buildArgs 不再
+    // 自行 push path，避免与追加的 projectPath 构成双位置参数 → too many arguments）。
+    () => ["status"],
+    { pathStyle: "positional" },
   );
 }
