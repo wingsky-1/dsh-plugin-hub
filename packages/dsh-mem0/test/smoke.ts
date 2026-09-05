@@ -339,4 +339,97 @@ await test("客户端契约：lib/client.js 存在且载入正确 load id", asyn
   assert.ok(code.includes('"@wingsky-1/dsh-mem0"'), "client.js 必须包含完整的 npm 包 load id");
 });
 
+// 10. 装配层路由注册与生命周期防回归断言（重点防止 register(routes[]) 数组传参缺陷）
+await test("装配层路由注册契约：apply 必须单路由逐个注册并受 ctx.effect 管理", async () => {
+  const registeredRoutes: any[] = [];
+  const disposersCalled: string[] = [];
+  let unregisterServerCalled = false;
+
+  const effects: Array<() => void | (() => void)> = [];
+  const mockCtx: any = {
+    get(name: string) {
+      if (name === "webServer") {
+        return {
+          register(route: any) {
+            // 严密断言：入参绝不能是数组！
+            assert.ok(!Array.isArray(route), "webServer.register 严禁传入数组！必须单路由逐个传入");
+            assert.equal(route.kind, "exact", "路由 kind 必须是 exact");
+            assert.ok(typeof route.path === "string" && route.path.startsWith("/api/dsh-mem0/"), `路由 path 必须是合法的 /api/dsh-mem0/* 字符串: ${route.path}`);
+            registeredRoutes.push(route);
+            return () => {
+              disposersCalled.push(route.path);
+            };
+          },
+        };
+      }
+      if (name === "mcpManager") {
+        return {
+          registerServer: async () => ({ existing: false }),
+          unregisterServer: async (name: string) => {
+            if (name === "mem0") unregisterServerCalled = true;
+          },
+        };
+      }
+      return undefined;
+    },
+    effect(fn: () => void | (() => void)) {
+      effects.push(fn);
+      return () => {};
+    },
+    on() {
+      return () => {};
+    },
+    logger: { warn() {}, info() {}, debug() {} },
+  };
+
+  const { apply, probePythonEnvironment } = hostMod;
+  apply(mockCtx, { pythonBin: "non-existent-python-for-test" });
+
+  // 执行所有 effect
+  const cleanupFns: Array<() => void> = [];
+  for (const eff of effects) {
+    const res = eff();
+    if (typeof res === "function") cleanupFns.push(res);
+  }
+
+  // 断言注册了全部 6 个路由
+  assert.equal(registeredRoutes.length, 6, "必须注册全部 6 个 exact 路由");
+  const registeredPaths = registeredRoutes.map((r) => r.path).sort();
+  const expectedPaths = [
+    "/api/dsh-mem0/add",
+    "/api/dsh-mem0/config",
+    "/api/dsh-mem0/delete",
+    "/api/dsh-mem0/install",
+    "/api/dsh-mem0/list",
+    "/api/dsh-mem0/status",
+  ].sort();
+  assert.deepEqual(registeredPaths, expectedPaths, "已注册路由路径必须完全匹配预期的 6 个路径");
+
+  // 执行清理
+  for (const cleanup of cleanupFns) {
+    cleanup();
+  }
+
+  // 断言注销逻辑
+  assert.equal(disposersCalled.length, 6, "注销时 6 个路由的 disposer 必须都被调用");
+  assert.ok(unregisterServerCalled, "注销时必须调用 mcpManager.unregisterServer('mem0')");
+});
+
+// 11. 自定义 Python 路径探测隔离测试（显式意图优于隐式推断）
+await test("环境探测契约：自定义 Python 失败时不应降级到全局系统 Python", async () => {
+  const { probePythonEnvironment } = hostMod;
+  const customProbe = await probePythonEnvironment("/non/existent/python/path/test_12345");
+  assert.equal(customProbe.ok, false);
+  assert.equal(customProbe.reason, "python_not_found");
+  assert.equal(customProbe.pythonBin, "/non/existent/python/path/test_12345", "自定义 Python 失败时不应降级到全局系统 Python");
+});
+
+// 12. 双语字典 1:1 镜像对称性断言
+await test("客户端 i18n：zh 与 en 双语字典必须完全对称", async () => {
+  const { zh, en } = await import(pathToFileURL(join(pkgDir, "src/client/locales.ts")).href);
+  const zhKeys = Object.keys(zh).sort();
+  const enKeys = Object.keys(en).sort();
+  assert.deepEqual(zhKeys, enKeys, "zh 与 en 字典的键必须 1:1 完全对应无缺失");
+});
+
 console.log(`\n全部 ${testsRun} 项冒烟测试顺利通过！`);
