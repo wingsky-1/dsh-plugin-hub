@@ -32,7 +32,7 @@ import {
   bucketStartKey,
   trendRangeOptions,
   trendDefaultRange,
-  niceTicks,
+  trendYTicks,
   seriesColor,
   stackedBarsSvg,
   stackedAreasSvg,
@@ -233,16 +233,9 @@ export function TrendSection(): React.ReactElement {
     });
   }, [data, hidden, stackOrder, retentionDays]);
 
-  // Y 域全量（hidden 不缩轴，与汇总卡全段口径一致——评审 P1-5）；刻度按数据最大值动态推导（M2.1 后续）
-  const ticks = React.useMemo(() => {
-    let maxV = 0;
-    for (const point of data?.series ?? []) {
-      for (const p of point.parts) {
-        if (p.value !== null && p.value > maxV) maxV = p.value;
-      }
-    }
-    return niceTicks(maxV).ticks;
-  }, [data]);
+  // Y 域 = 每桶全量段合计 point.total（堆叠视觉高度的口径；hidden 不缩轴，与汇总卡
+  // 「峰值」同源——评审 P1-5）。#589 修复：原按单段最大值推域，多段桶堆叠顶溢出轴顶。
+  const ticks = React.useMemo(() => trendYTicks(data?.series ?? []).ticks, [data]);
 
   // 图表事件委托：pointerdown 全输入（触屏可用），pointermove 仅鼠标（防触屏滑动误触发）。
   // 事件类型为最小结构面（shim 无 React 合成事件类型；运行时是原生 PointerEvent 透传）。
