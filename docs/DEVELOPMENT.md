@@ -211,8 +211,14 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
   （无 `DSH_HOME`）路径逐字节不变 + 设 `DSH_HOME` 后路径随隔离 home（finally
   恢复 env，防污染同进程其他用例）；写面用 e2e 落盘断言锁定（读函数返回值不足
   以证明写面）。
-- **门禁演进**：B5（#517）计划在门禁加静态扫描（禁 `packages/*/src` 直连
-  `os.homedir`，带豁免机制）之前，依赖本条自觉遵守。
+- **门禁（已落地）**：`scripts/gate/forbid-homedir-src.mjs`（B5，#517）以 AST 扫描
+  禁止插件 src 直连 HOME 来源 API（`os.homedir` / `os.userInfo` / `process.env.HOME` /
+  `untildify`，含 import 别名与 `os["homedir"]` 中括号混淆形态；`.ts/.mts/.mjs` 全覆盖，
+  解析失败一律 fail-closed 判红）。合法例外须**双源豁免**：调用点紧邻注释
+  `// dsh-gate:allow-homedir <理由含 #NNN>` + 脚本内 WHITELIST 文件级清单，缺一判红。
+  本地运行 `pnpm gate:homedir`；CI 在 repo-gate 段执行。解析器说明：typescript 7 已移除
+  经典 JS AST API，扫描链为 esbuild 剥类型 + acorn estree 解析 + node:module
+  SourceMap 行映射回 TS 原文（豁免注释匹配原文，transform 会剥离注释）。
 
 ### 事件订阅与 scope 语义（cordis dispatch 过滤）
 

@@ -85,6 +85,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   if (rawConfig.enabled === false) return; // 显式禁用：不注册任何路由
   const config = normalizeConfig(rawConfig);
   const sanitizeDiagnostic = (s: string): string =>
+    // dsh-gate:allow-homedir #517 展示层脱敏：把诊断文本中的 home 前缀折叠为 ~，不产生读写面
     s.split(dshHome()).join("~/.dsh").split(homedir()).join("~");
   const registry = makeAdapterRegistry({
     sanitizePath: sanitizeDiagnostic,

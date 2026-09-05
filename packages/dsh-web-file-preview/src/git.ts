@@ -79,6 +79,7 @@ async function runGit(args: string[], timeoutMs = 8000, opts: { numericExitIsErr
  * @returns diff 探测结果（async，不阻塞事件循环）。
  */
 export async function computeGitDiff(cwd: string, path: string): Promise<GitDiffResult> {
+  // dsh-gate:allow-homedir #87 用户路径 ~ 前缀展开（untildify 业界标准实现，目标由用户指定）
   const resolved = resolve(cwd, untildify(path));
   const dir = dirname(resolved);
 

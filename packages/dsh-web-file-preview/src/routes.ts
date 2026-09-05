@@ -128,6 +128,7 @@ export async function resolveFile(
   path: string,
 ): Promise<ResolveFileOutcome | null> {
   if (path === undefined || path === "") return null;
+  // dsh-gate:allow-homedir #87 用户路径 ~ 前缀展开（untildify 业界标准实现，目标由用户指定）
   const expandedPath = untildify(path);
   // ① 绝对 / ② 相对：统一 resolve 一次（绝对路径的 cwd 参数本就不参与 resolve）。
   let resolved: string | null = null;
@@ -195,6 +196,7 @@ export async function serveFileRoute(
   }
   // cwd 仅在 path 为相对路径时必需（评审 C5）：绝对路径无需 cwd 即可定位；
   // 相对路径缺 cwd 直接 400，避免误导性提示。
+  // dsh-gate:allow-homedir #87 用户路径 ~ 前缀展开（untildify 业界标准实现，目标由用户指定）
   if (!isAbsolute(untildify(path)) && (cwd === undefined || cwd === "")) {
     writeJson(res, 400, { error: "missing cwd (relative path requires cwd)" });
     return;
@@ -338,6 +340,7 @@ async function resolveAllocTarget(cwd: string | undefined, path: string): Promis
   if (path === undefined || path === "") {
     return { ok: false, status: 400, error: "missing path" };
   }
+  // dsh-gate:allow-homedir #87 用户路径 ~ 前缀展开（untildify 业界标准实现，目标由用户指定）
   if (!isAbsolute(untildify(path)) && (cwd === undefined || cwd === "")) {
     return { ok: false, status: 400, error: "missing cwd (relative path requires cwd)" };
   }
