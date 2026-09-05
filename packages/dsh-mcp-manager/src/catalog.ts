@@ -77,6 +77,9 @@ export function catalogCacheFile() {
 export const CATALOG_SUMMARY_MAX_CHARS = 240;
 /** 目录摘要单句上限（字符）：无句读语言 / 超长描述的安全截断点。 */
 export const CATALOG_SUMMARY_PER_TOOL_CHARS = 120;
+/** 目录单条服务器描述上限（字符）：Level 1 发现层防远端超长说明书（如 context7 500 词）
+ * 撑爆会话上下文，符合渐进式披露原则。详细使用说明由 ws_mcp_detail / ws_mcp_search 按需承载。 */
+export const CATALOG_ENTRY_MAX_CHARS = 180;
 
 /**
  * 从工具描述集合计算目录摘要（每工具取首句，按工具名升序 + 精确去重后拼接）。
@@ -110,11 +113,11 @@ export function summarizeToolDescriptions(toolMeta: Map<string, { description?: 
       ? sentence
       : `${charTruncate(sentence, CATALOG_SUMMARY_PER_TOOL_CHARS - 1)}…`);
   }
-  const prefix = collected.length >= 2 ? `共 ${collected.length} 个工具：` : "";
-  // ③ 拼接（"；" 分隔），超总长按句整段回退补 "…"（绝不句中切）。
+  const prefix = collected.length >= 2 ? `${collected.length} tools: ` : "";
+  // ③ 拼接（"; " 分隔），超总长按句整段回退补 "…"（绝不句中切）。
   let text = prefix;
   for (const sentence of sentences) {
-    const separator = text === prefix ? "" : "；";
+    const separator = text === prefix ? "" : "; ";
     if (text.length + separator.length + sentence.length <= CATALOG_SUMMARY_MAX_CHARS - 1) {
       text += separator + sentence;
     } else if (text === prefix) {
@@ -177,7 +180,9 @@ export function composeCatalogEntries(supervisors: Map<string, SupervisorLite>, 
     const server = supervisor.server;
     let text;
     if (typeof server.description === "string" && server.description !== "") {
-      text = server.description;
+      const sentence = firstSentenceOf(server.description);
+      const raw = sentence !== "" ? sentence : server.description.trim().replace(/\s+/gu, " ");
+      text = raw.length <= CATALOG_ENTRY_MAX_CHARS ? raw : `${charTruncate(raw, CATALOG_ENTRY_MAX_CHARS - 1)}…`;
     } else {
       const cached = cache?.get(name);
       if (typeof cached?.summary === "string" && cached.summary !== "") text = cached.summary;
@@ -221,26 +226,26 @@ export function digestCatalogEntries(entries: CatalogEntry[]): string {
 export function renderMcpCatalogMessage(entries: CatalogEntry[], mode?: string): CatalogMessage {
   const hasProject = entries.some((entry) => entry.scope === "project");
   const projectGuidance =
-    "项目级服务器一律经中间层工具访问：先用 `ws_mcp_search` 检索当前工作空间的 MCP 工具，再用 `ws_mcp_call` 调用（server/tool 取自检索结果；完整盘点全部服务器与工具清单用 `ws_mcp_list`，查单个工具的完整 inputSchema 用 `ws_mcp_detail`）。**项目级服务器不直接调用其 mcp__ 前缀工具**。";
+    "Project-level servers MUST be accessed via middleware tools: search with `ws_mcp_search`, verify schema with `ws_mcp_detail` if uncertain, then invoke with `ws_mcp_call` (use `ws_mcp_list` for full inventory audits). **Do NOT invoke project-level servers using mcp__ prefixed tools directly**.";
   const globalGuidance =
     mode === "all"
-      ? "全局服务器同样经中间层访问（all 模式全局不注册 mcp__ 工具）：先用 `ws_mcp_search` 检索，再经 `ws_mcp_call` 调用，与项目级同一套 `ws_mcp_*` 工具。"
-      : "全局服务器仍以 `mcp__<server>__<tool>` 前缀工具直呼调用（project 模式全局不经中间层检索）。";
+      ? "Global servers are also accessed via middleware in all mode: search with `ws_mcp_search`, then invoke with `ws_mcp_call` using the same `ws_mcp_*` suite."
+      : "Global servers are directly invoked using `mcp__<server>__<tool>` prefixed tools (project mode does not route global servers through middleware).";
   const guidance = hasProject
-    ? `${projectGuidance}${globalGuidance}`
+    ? `${projectGuidance} ${globalGuidance}`
     : mode === "all"
       ? globalGuidance
-      : `任务匹配某服务器能力时，直接调用其 \`mcp__<server>__<tool>\` 工具（具体工具名与参数见工具列表）。${globalGuidance}`;
+      : `When a task matches a server's capability, call its \`mcp__<server>__<tool>\` tool directly (see tool list for parameters). ${globalGuidance}`;
   const lines = [
     "<system-reminder>",
-    "本会话已配置以下 MCP 服务器（**仅描述能力，不代表当前连接状态**；服务器在 GUI「MCP」浮窗中连接后，其工具才会注册可用）：",
+    "Configured MCP servers in this session (**capability descriptions only, does not reflect active connection status**; tools register once connected via GUI \"MCP\" popup):",
     "",
     "<available_mcp_servers>",
     ...entries.map((entry) => (entry.text === undefined ? `- \`${entry.name}\`` : `- \`${entry.name}\`: ${escapeCatalogText(entry.text)}`)),
     "</available_mcp_servers>",
     "",
     guidance,
-    "若某服务器此前可用而现在不可用，请勿反复重试同一工具超过两次，改用其他方式或提示用户检查「MCP」浮窗。",
+    "If a server was available but is now disconnected, do not retry the same tool more than twice. Switch to an alternative method or ask the user to check the \"MCP\" popup.",
     "</system-reminder>",
   ].join("\n");
   return {
@@ -315,7 +320,7 @@ export function renderMcpCatalogUpdate(entries: CatalogEntry[], mode?: string): 
   const inner = body.content![0].text!.split("\n").slice(3).join("\n");
   const text = [
     "<system-reminder>",
-    "MCP 服务器集合已变化。**本目录替换此前所有 available_mcp_servers 列表**：",
+    "MCP server configuration has changed. **This catalog replaces all previous available_mcp_servers lists**:",
     "",
     inner,
     "</system-reminder>",
