@@ -44,7 +44,7 @@ assert.equal(DEFAULT_CATALOG_MAX_ENTRIES, 6);
     ["a", { description: "alpha" }],
   ]);
   // #569：每工具取首句、按工具名升序聚合（不再只取字典序第一条）。
-  assert.equal(summarizeToolDescriptions(meta), "共 2 个工具：alpha；beta tool");
+  assert.equal(summarizeToolDescriptions(meta), "2 tools: alpha; beta tool");
   const onlyBlank = new Map([["x", { description: "   " }]]);
   assert.equal(summarizeToolDescriptions(onlyBlank), undefined, "全空白 → undefined");
   // 顺序抖动 → 摘要稳定（按工具名排序，不随 Map 插入序/描述变化）。
@@ -52,7 +52,7 @@ assert.equal(DEFAULT_CATALOG_MAX_ENTRIES, 6);
     ["b", { description: "beta tool" }],
     ["a", { description: "alpha" }],
   ]);
-  assert.equal(summarizeToolDescriptions(shuffled), "共 2 个工具：alpha；beta tool", "顺序抖动摘要稳定");
+  assert.equal(summarizeToolDescriptions(shuffled), "2 tools: alpha; beta tool", "顺序抖动摘要稳定");
   // 首句提取：句点后随大写开新句；"1." 编号不误切；无句读整行返回。
   assert.equal(
     summarizeToolDescriptions(new Map([["x", { description: "Search the web. Use for facts." }]])),
@@ -72,7 +72,7 @@ assert.equal(DEFAULT_CATALOG_MAX_ENTRIES, 6);
   // 精确去重：同句两个工具只出现一次。
   assert.equal(
     summarizeToolDescriptions(new Map([["a", { description: "同句" }], ["b", { description: "同句" }]])),
-    "共 2 个工具：同句",
+    "2 tools: 同句",
     "重复描述去重",
   );
   // 超长截断：总长 ≤ 240 字符（UTF-16 安全；截断处补 …）。
@@ -85,7 +85,7 @@ assert.equal(DEFAULT_CATALOG_MAX_ENTRIES, 6);
   const dedupMap = new Map<string, { description?: unknown }>();
   for (let i = 0; i < 30; i += 1) dedupMap.set(`t${String(i).padStart(2, "0")}`, { description: "同句说明" });
   const dedup = summarizeToolDescriptions(dedupMap)!;
-  assert.equal(dedup, "共 30 个工具：同句说明", "重复描述去重后单条即完整");
+  assert.equal(dedup, "30 tools: 同句说明", "重复描述去重后单条即完整");
   // 极端长句（无句读超单句上限）→ 单句内截断 + 省略号。
   const single = summarizeToolDescriptions(new Map([["x", { description: "长".repeat(500) }]]))!;
   assert.ok(single.length <= 240, "极端长句截断受控");
@@ -116,6 +116,14 @@ assert.equal(DEFAULT_CATALOG_MAX_ENTRIES, 6);
   const noCache = composeCatalogEntries(new Map([["z", { server: { name: "z" } }]]));
   assert.equal(noCache[0].text, undefined);
   assert.equal(composeCatalogEntries(new Map()).length, 0);
+
+  // 超长 description 提取首句防上下文膨胀（渐进式披露：丢弃后续多行与长说明书）。
+  const verboseDesc =
+    "Resolves package name to library ID. You MUST call this first. Step 1. Do something. Selection Process: very long text...";
+  const verboseEntries = composeCatalogEntries(
+    new Map([["context7", { server: { name: "context7", description: verboseDesc } }]]),
+  );
+  assert.equal(verboseEntries[0].text, "Resolves package name to library ID.");
 }
 
 // ---- digestCatalogEntries ----
@@ -150,7 +158,7 @@ assert.equal(DEFAULT_CATALOG_MAX_ENTRIES, 6);
   const text = message.content[0].text;
   assert.ok(text.includes("<available_mcp_servers>"));
   assert.ok(text.includes("- `m1`: t&lt;1"), "条目转义渲染");
-  assert.ok(text.includes("不代表当前连接状态"));
+  assert.ok(text.includes("does not reflect active connection status"));
 
   assert.equal(findCatalogMessage([message]), message);
   assert.equal(findCatalogMessage([]), undefined);
@@ -178,8 +186,8 @@ assert.equal(DEFAULT_CATALOG_MAX_ENTRIES, 6);
   const update = renderMcpCatalogUpdate([{ name: "u1" }]);
   const text = update.content[0].text;
   assert.ok(text.startsWith("<system-reminder>"), "update 帧头");
-  assert.ok(text.includes("本目录替换此前所有 available_mcp_servers"), "替换声明");
-  assert.ok(!text.includes("不代表当前连接状态"), "内层裁掉原头部说明");
+  assert.ok(text.includes("This catalog replaces all previous available_mcp_servers"), "替换声明");
+  assert.ok(!text.includes("does not reflect active connection status"), "内层裁掉原头部说明");
   assert.ok(update.content[0].text.split("\n").length >= 6);
 }
 
@@ -279,19 +287,19 @@ assert.equal(DEFAULT_CATALOG_MAX_ENTRIES, 6);
   const injected = resolveCatalogInjection(baseDecision(), [], supervisors, 6, new Map(), undefined);
   assert.equal(injected.kind, "enter");
   assert.equal(injected.messages.length, 1);
-  assert.ok(injected.messages[0].content[0].text.includes("本会话已配置以下 MCP 服务器"), "首次注入用普通帧");
+  assert.ok(injected.messages[0].content[0].text.includes("Configured MCP servers in this session"), "首次注入用普通帧");
 
   // 6b. 已发布但 digest 变化 → 注入更新帧。
   const agentOther = { session: { surface: { nodes: [] }, snapshotEvents: () => [{ type: "user/message", seq: 1, data: { source: { kind: "mcp-catalog", entries: [{ name: "old" }] } } }] } };
   const updated = resolveCatalogInjection(baseDecision(), [], supervisors, 6, new Map(), agentOther);
-  assert.ok(updated.messages[0].content[0].text.includes("MCP 服务器集合已变化"), "digest 变化 → 更新帧");
+  assert.ok(updated.messages[0].content[0].text.includes("MCP server configuration has changed"), "digest 变化 → 更新帧");
 
   // 6c. 本轮已有旧目录且 digest 变化 → 原位替换而非追加。
   const stale = renderMcpCatalogMessage([{ name: "stale" }]);
   const replaced = resolveCatalogInjection({ kind: "enter", messages: [plainMessage("k2"), stale] }, [], supervisors, 6, new Map(), agentOther);
   assert.equal(replaced.messages.length, 2, "替换不追加");
   assert.equal(replaced.messages[0].id, "k2");
-  assert.ok(replaced.messages[1].content[0].text.includes("MCP 服务器集合已变化"));
+  assert.ok(replaced.messages[1].content[0].text.includes("MCP server configuration has changed"));
   assert.notEqual(replaced.messages[1].id, stale.id);
 }
 

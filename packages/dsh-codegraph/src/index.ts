@@ -32,7 +32,14 @@ import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
 // shared/mcp-manager-service.d.ts，类型单一事实源仍在 shared/，消费入口走包）。
 import type { McpManagerServerInput, McpManagerService } from "@wingsky-1/dsh-mcp-manager";
 import { installGuidance, isCodegraphInstalled, runInstall } from "./install.ts";
-import { registerDisciplineHook } from "./discipline.ts";
+import {
+  CODEGRAPH_SYSTEM_PROMPT,
+  DISCIPLINE_TEXT,
+  codegraphPromptText,
+  registerCodegraphPrompt,
+  registerDisciplineHook,
+  shouldInject,
+} from "./discipline.ts";
 import {
   buildCalleesToolDefinition,
   buildCallersToolDefinition,
@@ -47,11 +54,11 @@ import {
 /** Stable cordis plugin name. */
 export const name = "codegraph";
 
-/** 需要的宿主服务：mcpManager（MCP 注册/管理/使用；封装定义经其注册）。
+/** 需要的宿主服务：mcpManager（MCP 注册/管理/使用；封装定义经其注册）、systemPrompt（系统提示词段落注入）。
  *  均经 inject 强依赖声明——缺失时 cordis 内核自动停用本插件。
- *  注：纪律注入为根 ctx agent/pre-step 监听（#359 B2），不依赖 agents/systemPrompt；
+ *  注：提示词注入为 ctx.systemPrompt.section（order: 170，在 mcp-manager 之后）；
  *  工具经 mcp-manager 注册（#363 补充 3），不再依赖 tools。 */
-export const inject = ["mcpManager"];
+export const inject = ["mcpManager", "systemPrompt"];
 
 // 内部模块 re-export（公共测试面 + 其他插件可复用纯函数）。
 export { isCodegraphInstalled, installGuidance, runInstall } from "./install.ts";
@@ -69,7 +76,14 @@ export {
   SYNC_TTL_MS,
   exploreCodegraph,
 } from "./guard.ts";
-export { shouldInject, DISCIPLINE_TEXT, registerDisciplineHook } from "./discipline.ts";
+export {
+  shouldInject,
+  CODEGRAPH_SYSTEM_PROMPT,
+  DISCIPLINE_TEXT,
+  codegraphPromptText,
+  registerCodegraphPrompt,
+  registerDisciplineHook,
+} from "./discipline.ts";
 export {
   buildExploreToolDefinition,
   buildImpactToolDefinition,
@@ -158,11 +172,8 @@ export async function apply(ctx: Context, config: CodegraphConfig = {}): Promise
       // #363 补充 3：封装定义经 mcp-manager 注册（manager 侧 #362 补充 4 消费）。
       const registerInput: McpManagerServerInput = {
         name: "codegraph",
-        // A2（#417）：能力目录 available_mcp_servers 的条目描述优先取服务器
-        // description，缺省 fallback 到工具描述摘要（恰好是 codegraph_files
-        // 的「列文件结构」，埋没 explore/impact/callers 核心能力）。补上后
-        // 目录如实展示结构类查询能力，引导模型优先想起 codegraph。
-        description: "codegraph 本地代码图谱：结构类查询（谁调用 X / 改 X 影响谁 / 找符号定义与调用链）优先用它；自动先 sync 当前 worktree 索引",
+        description:
+          "Local code graph: ALWAYS prioritize for code search, symbol definitions, caller/callee relationships, and impact analysis. Call encapsulated bare tools directly (e.g. codegraph_search, codegraph_explore); DO NOT use mcp__ prefixes. Auto-syncs worktree index.",
         transport: "stdio",
         command: "codegraph",
         args: ["serve", "--mcp"],
@@ -183,13 +194,13 @@ export async function apply(ctx: Context, config: CodegraphConfig = {}): Promise
     }
   }
 
-  // 3. agent 纪律钩子（git 仓会话才注入）。
-  const disposeHook = injectDiscipline ? registerDisciplineHook(ctx) : () => {};
+  // 3. agent 系统提示词钩子（order: 170，在 mcp-manager 之后，git 仓会话才注入）。
+  const disposePrompt = injectDiscipline ? registerCodegraphPrompt(ctx) : () => {};
 
   // 卸载清理（effect disposer）。
   ctx.effect(() => {
     return () => {
-      disposeHook();
+      disposePrompt();
       // 卸载时注销 MCP 服务器（不影响 store 持久化条目；inject 保证 mcpManager 在场）。
       void mcpManager.unregisterServer("codegraph").catch(() => {});
     };
