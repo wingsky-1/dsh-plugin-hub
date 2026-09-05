@@ -6,6 +6,23 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 const scriptPath = join(process.cwd(), 'scripts', 'gate', 'orphan-baseline.mjs');
+const overlayScriptPath = join(process.cwd(), 'scripts', 'gate', 'overlay-baseline.mjs');
+
+test('#579: overlay-baseline 模块语法与依赖导入健全性', () => {
+  // node --check 验证模块语法解析无误
+  assert.doesNotThrow(() => {
+    execFileSync('node', ['--check', overlayScriptPath], { encoding: 'utf8', stdio: 'pipe' });
+  });
+
+  // 缺失 GITHUB_REPOSITORY 时 fail-closed exit 1
+  assert.throws(() => {
+    execFileSync('node', [overlayScriptPath], {
+      encoding: 'utf8',
+      stdio: 'pipe',
+      env: { ...process.env, GITHUB_REPOSITORY: '' },
+    });
+  }, /缺失 GITHUB_REPOSITORY/);
+});
 
 test('#572: orphan-baseline CLI 参数防御', () => {
   // 未知动作返回 1
