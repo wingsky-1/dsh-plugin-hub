@@ -95,7 +95,10 @@
 /* issue #73：HTML 预览 iframe（sandbox 静态伺服）——占满正文、白底渲染、无边框。 */
 .fwp-html-frame{width:100%;height:62vh;min-height:320px;border:1px solid var(--dsw-alias-border-l1,#e5e7eb);border-radius:8px;background:#fff;display:block;flex:none}
 /* issue #507：交互式预览（allow-scripts）视觉标识——外框高亮 + 「脚本已启用」徽标。 */
-.fwp-html-wrap{position:relative;display:block}
+/* issue #563：wrap 必须显式 width:100%——作为 .fwp-body（flex）项无宽度会按
+   max-content 塌缩到 iframe 固有宽（300px），交互预览呈居中小盒不满面板；
+   与静态 iframe（width:100% 直接相对面板解析）布局语义对齐。 */
+.fwp-html-wrap{position:relative;display:block;width:100%}
 .fwp-html-frame-interactive{border-color:var(--dsw-alias-state-warning-primary,#b45309);border-width:2px}
 .fwp-interactive-badge{position:absolute;top:-1px;right:8px;z-index:2;font-size:11px;line-height:1;padding:3px 8px;border-radius:0 0 6px 6px;background:var(--dsw-alias-state-warning-primary,#b45309);color:#fff;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
 @media (max-width:640px){.fwp-diff2html{font-size:11px;line-height:1.45}.fwp-diff2html .d2h-code-line,.fwp-diff2html .d2h-code-linenumber{font-size:11px;line-height:1.45}}
