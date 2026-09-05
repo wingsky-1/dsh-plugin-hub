@@ -29,11 +29,9 @@ install them all at once as a single bundle, or pick individual plugins as neede
   global servers into the middleware too, hot-switchable from the settings page);
   per-working-directory project/global config tiers let each repo carry its own
   MCP servers without cross-project interference
-- **Extensible usage-stats framework**: a generic v2 adapter contract with DeepSeek
-  official and OpenCode Go built in out of the box — write one mjs file to plug in any
-  data source; the DeepSeek side derives daily usage via interval bookkeeping (works
-  even without an official usage endpoint) with a persistent peak/valley countdown
-  badge, plus optional daily/weekly/monthly usage reports (enable in the settings page)
+- **Extensible usage-stats framework**: supports multi-provider usage stats and
+  custom data-source adapters; covers daily usage derivation, usage trends,
+  peak/valley countdown, and daily/weekly/monthly reports
 - **Engineering-quality backing**: every plugin ships smoke assertions (route fences /
   client contracts), plus build contract + pack checks + full gates run in CI
 
