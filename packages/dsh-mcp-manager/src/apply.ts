@@ -228,13 +228,18 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
         // 目录数据源按会话 cwd 计算（工作区缓存），不跟随 host 的"当前工作区"
         // 实时状态——切换工作区不改变本会话目录集合，MCP 没变化就不重复注入。
         const supervisors = await manager.catalogServersFor(agent?.session?.header?.cwd);
+        // #569：合成注入端目录缓存视图（B 起步 + 中间层 per-root 目录覆盖 +
+        // 磁盘 last-good 兜底）。manager.catalogCache 是 supervisor（直呼）路径的
+        // 摘要缓存；middleware 模式下其采集的工具目录注入端此前读不到——视图把
+        // 两套数据源收口为一个 CatalogCache 形态，公共函数签名不变。
+        const catalogView = await manager.catalogViewFor(agent?.session?.header?.cwd, supervisors);
         // 边界放宽：纯函数吃自建宽面 CatalogDecision，返回值即本轮 PreStepDecision
         return resolveCatalogInjection(
           decision as unknown as CatalogDecision,
           messages as CatalogMessage[],
           supervisors as Map<string, SupervisorLite>,
           catalogMaxEntries,
-          manager.catalogCache,
+          catalogView,
           agent as unknown as CatalogAgent | undefined,
           // 热切换后目录文案按当前模式渲染（#362 设置页中间层模式下拉）。
           manager.middlewareMode,

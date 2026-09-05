@@ -62,6 +62,44 @@ export function catalogCacheFileFor(root: string) {
   return join(dshHome(), "dsh-mcp-catalog", `${hash}.json`);
 }
 
+/** 磁盘 last-good 目录文件中的单服务器条目（与 middleware persistCatalog
+ * 落盘结构一致；读取端单一解析源）。 */
+export interface PersistedCatalogServer {
+  discoveredAt: number;
+  tools: Array<{ name: string; description: string }>;
+}
+
+/**
+ * 读取 root 的磁盘 last-good 目录缓存中**单个服务器**的工具目录。
+ * 缺失 / 损坏 / 无该服务器 → undefined（容错不抛）。
+ * 用途：能力目录注入端（manager.catalogViewFor）在中间层单元尚未创建时兜底
+ * 读盘，避免 pre-step 触发连接副作用；与 middleware.loadCatalogCache 同源解析。
+ */
+export async function readCatalogServerFromDisk(file: string, serverName: string): Promise<PersistedCatalogServer | undefined> {
+  try {
+    if (!existsSync(file)) return undefined;
+    const raw = await readFile(file, "utf8");
+    const parsed = JSON.parse(raw) as { entries?: Record<string, unknown> } | null;
+    const entry = parsed && typeof parsed === "object" && parsed.entries !== null && typeof parsed.entries === "object"
+      ? (parsed.entries as Record<string, unknown>)[serverName]
+      : undefined;
+    if (typeof entry !== "object" || entry === null) return undefined;
+    const rec = entry as { discoveredAt?: unknown; tools?: unknown } | undefined;
+    const tools: Array<{ name: string; description: string }> = [];
+    if (rec !== undefined && Array.isArray(rec.tools)) {
+      for (const tool of rec.tools) {
+        const toolRec = tool as { name?: unknown; description?: unknown } | undefined;
+        if (typeof toolRec !== "object" || toolRec === null || typeof toolRec.name !== "string") continue;
+        tools.push({ name: toolRec.name, description: typeof toolRec.description === "string" ? toolRec.description : "" });
+      }
+    }
+    return { discoveredAt: typeof rec?.discoveredAt === "number" ? rec.discoveredAt : 0, tools };
+  } catch {
+    // 损坏缓存忽略
+    return undefined;
+  }
+}
+
 /** 加载工具级禁用（disabledTools 三段：root → server → tool[]；损坏/缺失 → 空）。 */
 export async function loadDisabledTools(file: string): Promise<DisabledToolsMap> {
   try {
