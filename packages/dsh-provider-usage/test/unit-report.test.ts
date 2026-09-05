@@ -338,6 +338,16 @@ const GEN = (over = {}) => ({
   assert.ok(DEFAULT_DAILY_PROMPT.includes("{stats}") && DEFAULT_WEEKLY_PROMPT.includes("{stats}") && DEFAULT_MONTHLY_PROMPT.includes("{stats}"), "三默认模板含 {stats}");
   assert.ok(DEFAULT_DAILY_PROMPT !== DEFAULT_WEEKLY_PROMPT && DEFAULT_WEEKLY_PROMPT !== DEFAULT_MONTHLY_PROMPT, "三默认模板互不相同");
   assert.deepEqual(DEFAULT_PROMPTS.daily, DEFAULT_DAILY_PROMPT, "DEFAULT_PROMPTS 表与单常量一致");
+  // #544 年报化定稿断言：日报禁 ##（渲染白名单外）；三份均含全局 null 降级纪律与渲染禁项
+  assert.ok(!DEFAULT_DAILY_PROMPT.includes("##"), "日报模板禁小标题（白名单无 ##）");
+  for (const tpl of [DEFAULT_DAILY_PROMPT, DEFAULT_WEEKLY_PROMPT, DEFAULT_MONTHLY_PROMPT]) {
+    assert.ok(tpl.includes("null/0/NaN"), "模板含全局 null 降级纪律");
+    assert.ok(tpl.includes("除占比与倍数外不得推算"), "模板含推算边界（占比与倍数豁免）");
+    assert.ok(tpl.includes("以 JSON 为准"), "模板含日期以 JSON 为准");
+    assert.ok(!tpl.includes("```"), "模板无代码围栏示例");
+  }
+  assert.ok(DEFAULT_WEEKLY_PROMPT.includes("分母大于 0"), "周报含占比分母除零护栏");
+  assert.ok(DEFAULT_MONTHLY_PROMPT.includes("仅一个模型时"), "月报含 byProvider 单条降级");
 }
 
 // ---------------------------------------------------------------- #532 渲染管线（escape-then-transform）
