@@ -848,101 +848,6 @@
           }
         },
         {
-          "id": "43",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "status": "Survived",
-          "testsCompleted": 2,
-          "static": false,
-          "killedBy": [],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 108
-            },
-            "start": {
-              "column": 79,
-              "line": 82
-            }
-          }
-        },
-        {
-          "id": "44",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: ENOENT: no such file or directory, chmod '/tmp/dsh-lan-proxy-httpsfail-T0ahUE/dsh-lan-proxy-key.pem': uncaughtException: ENOENT: no such file or directory, chmod '/tmp/dsh-lan-proxy-httpsfail-T0ahUE/dsh-lan-proxy-key.pem'",
-          "status": "Killed",
-          "testsCompleted": 2,
-          "static": false,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 78,
-              "line": 85
-            },
-            "start": {
-              "column": 7,
-              "line": 85
-            }
-          }
-        },
-        {
-          "id": "45",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "testsCompleted": 2,
-          "static": false,
-          "killedBy": [],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 78,
-              "line": 85
-            },
-            "start": {
-              "column": 7,
-              "line": 85
-            }
-          }
-        },
-        {
-          "id": "46",
-          "mutatorName": "LogicalOperator",
-          "replacement": "existsSync(certPath) && existsSync(keyPath) || certStillValid(certPath)",
-          "status": "Survived",
-          "testsCompleted": 2,
-          "static": false,
-          "killedBy": [],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 78,
-              "line": 85
-            },
-            "start": {
-              "column": 7,
-              "line": 85
-            }
-          }
-        },
-        {
           "id": "47",
           "mutatorName": "ConditionalExpression",
           "replacement": "true",
@@ -952,32 +857,6 @@
           "static": false,
           "killedBy": [
             "0"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 50,
-              "line": 85
-            },
-            "start": {
-              "column": 7,
-              "line": 85
-            }
-          }
-        },
-        {
-          "id": "48",
-          "mutatorName": "LogicalOperator",
-          "replacement": "existsSync(certPath) || existsSync(keyPath)",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19968: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19968",
-          "status": "Killed",
-          "testsCompleted": 1,
-          "static": false,
-          "killedBy": [
-            "1"
           ],
           "coveredBy": [
             "0",
@@ -1069,32 +948,6 @@
           }
         },
         {
-          "id": "54",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "false",
-          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:20020: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:20020",
-          "status": "Killed",
-          "testsCompleted": 1,
-          "static": false,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 43,
-              "line": 90
-            },
-            "start": {
-              "column": 39,
-              "line": 90
-            }
-          }
-        },
-        {
           "id": "55",
           "mutatorName": "ArrayDeclaration",
           "replacement": "[]",
@@ -1162,55 +1015,6 @@
             "start": {
               "column": 59,
               "line": 91
-            }
-          }
-        },
-        {
-          "id": "58",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'private'): uncaughtException: Cannot read properties of undefined (reading 'private')",
-          "status": "Killed",
-          "testsCompleted": 2,
-          "static": false,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 100
-            },
-            "start": {
-              "column": 7,
-              "line": 93
-            }
-          }
-        },
-        {
-          "id": "59",
-          "mutatorName": "ArrayDeclaration",
-          "replacement": "[]",
-          "status": "Survived",
-          "testsCompleted": 2,
-          "static": false,
-          "killedBy": [],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 78,
-              "line": 94
-            },
-            "start": {
-              "column": 30,
-              "line": 94
             }
           }
         },
@@ -1423,32 +1227,6 @@
           }
         },
         {
-          "id": "71",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "statusReason": "uncaughtException: ENOENT: no such file or directory, chmod '/tmp/dsh-lan-proxy-httpsfail-sSwq2J/dsh-lan-proxy-key.pem': uncaughtException: ENOENT: no such file or directory, chmod '/tmp/dsh-lan-proxy-httpsfail-sSwq2J/dsh-lan-proxy-key.pem'",
-          "status": "Killed",
-          "testsCompleted": 1,
-          "static": false,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 56,
-              "line": 103
-            },
-            "start": {
-              "column": 3,
-              "line": 103
-            }
-          }
-        },
-        {
           "id": "72",
           "mutatorName": "ObjectLiteral",
           "replacement": "{}",
@@ -1467,15 +1245,111 @@
           }
         },
         {
+          "id": "75",
+          "mutatorName": "ObjectLiteral",
+          "replacement": "{}",
+          "statusReason": "Ignored because of excluded mutation \"ObjectLiteral\"",
+          "status": "Ignored",
+          "static": false,
+          "location": {
+            "end": {
+              "column": 70,
+              "line": 107
+            },
+            "start": {
+              "column": 10,
+              "line": 107
+            }
+          }
+        },
+        {
+          "id": "54",
+          "mutatorName": "BooleanLiteral",
+          "replacement": "false",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 43,
+              "line": 90
+            },
+            "start": {
+              "column": 39,
+              "line": 90
+            }
+          }
+        },
+        {
+          "id": "43",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 108
+            },
+            "start": {
+              "column": 79,
+              "line": 82
+            }
+          }
+        },
+        {
+          "id": "44",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 78,
+              "line": 85
+            },
+            "start": {
+              "column": 7,
+              "line": 85
+            }
+          }
+        },
+        {
           "id": "73",
           "mutatorName": "CallExpression",
           "replacement": ";",
-          "statusReason": "uncaughtException: ENOENT: no such file or directory, open '/tmp/dsh-lan-proxy-httpsfail-TujXSt/dsh-lan-proxy-cert.pem': uncaughtException: ENOENT: no such file or directory, open '/tmp/dsh-lan-proxy-httpsfail-TujXSt/dsh-lan-proxy-cert.pem'",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
           "status": "Killed",
-          "testsCompleted": 2,
           "static": false,
+          "testsCompleted": 1,
           "killedBy": [
-            "1"
+            "0"
           ],
           "coveredBy": [
             "0",
@@ -1493,13 +1367,168 @@
           }
         },
         {
+          "id": "71",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 56,
+              "line": 103
+            },
+            "start": {
+              "column": 3,
+              "line": 103
+            }
+          }
+        },
+        {
+          "id": "48",
+          "mutatorName": "LogicalOperator",
+          "replacement": "existsSync(certPath) || existsSync(keyPath)",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 50,
+              "line": 85
+            },
+            "start": {
+              "column": 7,
+              "line": 85
+            }
+          }
+        },
+        {
+          "id": "59",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 78,
+              "line": 94
+            },
+            "start": {
+              "column": 30,
+              "line": 94
+            }
+          }
+        },
+        {
+          "id": "46",
+          "mutatorName": "LogicalOperator",
+          "replacement": "existsSync(certPath) && existsSync(keyPath) || certStillValid(certPath)",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 78,
+              "line": 85
+            },
+            "start": {
+              "column": 7,
+              "line": 85
+            }
+          }
+        },
+        {
+          "id": "45",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998: uncaughtException: listen EADDRINUSE: address already in use 127.0.0.1:19998",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 1,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 78,
+              "line": 85
+            },
+            "start": {
+              "column": 7,
+              "line": 85
+            }
+          }
+        },
+        {
+          "id": "58",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'private'): uncaughtException: Cannot read properties of undefined (reading 'private')",
+          "status": "Killed",
+          "static": false,
+          "testsCompleted": 2,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 100
+            },
+            "start": {
+              "column": 7,
+              "line": 93
+            }
+          }
+        },
+        {
           "id": "74",
           "mutatorName": "CallExpression",
           "replacement": ";",
           "status": "Survived",
-          "testsCompleted": 2,
           "static": false,
-          "killedBy": [],
+          "testsCompleted": 2,
           "coveredBy": [
             "0",
             "1"
@@ -1512,24 +1541,6 @@
             "start": {
               "column": 3,
               "line": 106
-            }
-          }
-        },
-        {
-          "id": "75",
-          "mutatorName": "ObjectLiteral",
-          "replacement": "{}",
-          "statusReason": "Ignored because of excluded mutation \"ObjectLiteral\"",
-          "status": "Ignored",
-          "static": false,
-          "location": {
-            "end": {
-              "column": 70,
-              "line": 107
-            },
-            "start": {
-              "column": 10,
-              "line": 107
             }
           }
         }
@@ -1720,7 +1731,7 @@
           "name": "packages/dsh-lan-proxy/test/unit-proxy.test.ts"
         }
       ],
-      "source": "// @ts-nocheck\n/**\n * dsh-lan-proxy — 转发核心（src/proxy.ts）结构化单测。\n *\n * 覆盖本批未覆盖热点：\n * - bridgeCompressedWs：WebSocket 压缩桥接（真实 WS 连接，全 localhost，无外网）\n * - createLanProxy 转发错误处理（不可达上游 → 502，proxy error 分支）\n * - createLanProxy HTTPS 降级（HTTPS 端口被占 → HTTP-only）\n * - createLanProxy 围栏与参数校验（非回环 targetHost / 非法 targetPort）\n * - 纯函数边界用例（hostnameAllowed / isLoopbackTarget / formatAuthority /\n *   rewriteHeaders / compressWsPath / isCompressible / resolveCompressionOptions）\n */\nimport assert from \"node:assert/strict\";\nimport { createServer, request as httpRequest } from \"node:http\";\nimport { mkdtempSync, rmSync, statSync, writeFileSync } from \"node:fs\";\nimport { tmpdir } from \"node:os\";\nimport { join } from \"node:path\";\nimport { X509Certificate, createHash } from \"node:crypto\";\nimport { constants as zlibConstants } from \"node:zlib\";\n\nimport {\n  hostnameAllowed, formatAuthority, rewriteHeaders, bridgeUpstreamHeaders, createLanProxy, isLoopbackTarget,\n  DEFAULT_OPTIONS, compressWsPath, isCompressible, resolveCompressionOptions,\n  ensureSelfSignedTls,\n} from \"../lib/index.js\";\nimport {\n  toSanEntry, certStillValid, loadTlsFromFiles, SELF_SIGNED_KEY, SELF_SIGNED_CERT,\n} from \"../lib/index.js\";\n\nconst sleep = (ms) => new Promise((r) => setTimeout(r, ms));\n\n/** 轮询等待条件成立（防 flake 纪律：替代固定 sleep 猜时序）；超时返回 false。 */\nasync function waitFor(predicate, deadlineMs = 5000, stepMs = 20) {\n  const start = Date.now();\n  while (!predicate()) {\n    if (Date.now() - start > deadlineMs) return false;\n    await sleep(stepMs);\n  }\n  return true;\n}\n\n/** RFC6455 握手应答行（Sec-WebSocket-Accept 计算；供 raw 假对端完成升级）。 */\nconst wsHandshakeResponse = (key) =>\n  \"HTTP/1.1 101 Switching Protocols\\r\\nUpgrade: websocket\\r\\nConnection: Upgrade\\r\\n\" +\n  `Sec-WebSocket-Accept: ${createHash(\"sha1\").update(key + \"258EAFA5-E914-47DA-95CA-C5AB0DC85B11\").digest(\"base64\")}\\r\\n\\r\\n`;\n\n// ===== 纯函数边界用例 =====\n\n// hostnameAllowed\nassert.equal(hostnameAllowed(\"127.0.0.1\"), true, \"bare IPv4\");\nassert.equal(hostnameAllowed(\"[::1]\"), true, \"bracketed IPv6\");\nassert.equal(hostnameAllowed(\"\"), false, \"empty string\");\nassert.equal(hostnameAllowed(undefined), false, \"非字符串（undefined）→ 拒绝\");\nassert.equal(hostnameAllowed(\"0.0.0.0\"), true, \"any IPv4\");\nassert.equal(hostnameAllowed(\"192.168.1.1\"), true, \"LAN IPv4\");\nassert.equal(hostnameAllowed(\"127.0.0.1:99999\"), false, \"端口越界 → URL 解析失败 → 拒绝\");\nassert.equal(hostnameAllowed(\"localhost\"), true, \"localhost 字面量放行\");\nassert.equal(hostnameAllowed(\"localhost:3080\"), true, \"localhost 带端口放行\");\nassert.equal(hostnameAllowed(\"[::1]:443\"), true, \"bracketed IPv6 带端口放行\");\nassert.equal(hostnameAllowed(\"example.com\"), false, \"DNS 域名拒绝（重绑定防护核心语义）\");\nassert.equal(hostnameAllowed(\"sub.example.org\"), false, \"多级 DNS 域名拒绝\");\nassert.equal(hostnameAllowed(\"::1\"), false, \"裸 IPv6 冒号 authority → URL 解析失败 → 拒绝\");\n\n// isLoopbackTarget\nassert.equal(isLoopbackTarget(\"127.0.0.1\"), true, \"loopback IPv4\");\nassert.equal(isLoopbackTarget(\"::1\"), true, \"loopback IPv6\");\nassert.equal(isLoopbackTarget(\"::ffff:127.0.0.1\"), true, \"IPv4-mapped IPv6 loopback\");\nassert.equal(isLoopbackTarget(\"localhost\"), true, \"localhost\");\nassert.equal(isLoopbackTarget(\"[::1]\"), true, \"bracketed IPv6 loopback\");\nassert.equal(isLoopbackTarget(\"[127.0.0.1]\"), true, \"bracketed IPv4 loopback\");\nassert.equal(isLoopbackTarget(\"[::ffff:127.0.0.1]\"), true, \"bracketed mapped loopback\");\nassert.equal(isLoopbackTarget(\"192.168.1.1\"), false, \"非回环拒绝\");\nassert.equal(isLoopbackTarget(\"evil.com\"), false, \"DNS 名拒绝\");\nassert.equal(isLoopbackTarget(\"\"), false, \"空串拒绝\");\nassert.equal(isLoopbackTarget(\"127.0.0.2\"), false, \"非 .1 回环段仍按字面匹配语义拒绝\");\n\n// formatAuthority\nassert.equal(formatAuthority(\"0.0.0.0\", 3081), \"0.0.0.0:3081\");\nassert.equal(formatAuthority(\"::1\", 3080), \"[::1]:3080\");\nassert.equal(formatAuthority(\"::ffff:10.0.0.1\", 9090), \"[::ffff:10.0.0.1]:9090\");\n\n// rewriteHeaders\nassert.deepEqual(rewriteHeaders({ host: \"x:1\", origin: \"http://x:1\", \"x-custom\": \"v\" }, \"127.0.0.1:3080\"), {\n  host: \"127.0.0.1:3080\",\n  origin: \"http://127.0.0.1:3080\",\n  \"x-custom\": \"v\",\n}, \"多键重写\");\nassert.deepEqual(rewriteHeaders({ host: \"x:1\", origin: \"https://x:1\" }, \"127.0.0.1:3080\"), {\n  host: \"127.0.0.1:3080\",\n  origin: \"http://127.0.0.1:3080\",\n}, \"Origin https→http\");\nassert.deepEqual(rewriteHeaders({}, \"127.0.0.1:3080\"), { host: \"127.0.0.1:3080\" }, \"空头只加 host\");\nassert.deepEqual(rewriteHeaders({ host: [\"a\", \"b\"], origin: [\"http://a\"] }, \"127.0.0.1:9\"), {\n  host: \"127.0.0.1:9\",\n  origin: \"http://127.0.0.1:9\",\n}, \"多值头（string[]）同样整体覆盖为单值 authority\");\n// 原对象不被修改（浅拷贝语义）\n{\n  const src = { host: \"old:1\" };\n  rewriteHeaders(src, \"127.0.0.1:2\");\n  assert.equal(src.host, \"old:1\", \"入参 headers 不被就地修改\");\n}\n\n// bridgeUpstreamHeaders（issue #379：压缩桥接上游连接入站头透传）\nassert.deepEqual(bridgeUpstreamHeaders({\n  host: \"192.168.1.50:3081\",\n  origin: \"http://192.168.1.50:3081\",\n  cookie: \"dsh-auth-x=v1.aaa\",\n  \"x-custom\": \"v\",\n  connection: \"Upgrade\",\n  upgrade: \"websocket\",\n  \"sec-websocket-key\": \"AAA=\",\n  \"sec-websocket-version\": \"13\",\n  \"sec-websocket-extensions\": \"permessage-deflate\",\n}, \"127.0.0.1:3080\"), {\n  cookie: \"dsh-auth-x=v1.aaa\",\n  \"x-custom\": \"v\",\n  host: \"127.0.0.1:3080\",\n  origin: \"http://127.0.0.1:3080\",\n}, \"透传认证/自定义头，重写 Host/Origin，剥离 hop-by-hop 与 WS 握手专有头\");\nassert.deepEqual(bridgeUpstreamHeaders({}, \"127.0.0.1:3080\"), {\n  host: \"127.0.0.1:3080\",\n  origin: \"http://127.0.0.1:3080\",\n}, \"空头仍产出回环 Host/Origin（无条件带 origin 与桥接既有行为一致）\");\nassert.deepEqual(bridgeUpstreamHeaders({ cookie: [\"a=1\", \"b=2\"] }, \"127.0.0.1:1\"), {\n  cookie: \"a=1, b=2\",\n  host: \"127.0.0.1:1\",\n  origin: \"http://127.0.0.1:1\",\n}, \"多值头（string[]）合并为逗号串\");\n{\n  const src = { cookie: \"c=1\" };\n  bridgeUpstreamHeaders(src, \"127.0.0.1:2\");\n  assert.deepEqual(src, { cookie: \"c=1\" }, \"入参 headers 不被就地修改\");\n}\n// 分支补充：大写键名归一化小写、undefined 值跳过、hop-by-hop 全集与 WS 握手头剥离\nassert.deepEqual(bridgeUpstreamHeaders({\n  Cookie: \"c=1\",\n  \"X-Undefined\": undefined,\n  \"Proxy-Authorization\": \"Basic x\",\n  te: \"trailers\",\n  trailer: \"x-foo\",\n  \"transfer-encoding\": \"chunked\",\n  \"sec-websocket-protocol\": \"chat\",\n}, \"127.0.0.1:3080\"), {\n  cookie: \"c=1\",\n  host: \"127.0.0.1:3080\",\n  origin: \"http://127.0.0.1:3080\",\n}, \"大写键名归一化、undefined 跳过、Proxy-Authorization/te/trailer/transfer-encoding/sec-websocket-protocol 剥离\");\n// L2（#395）：sec-websocket-accept 是响应头、请求侧不可达，不在剥离集——入站若\n// 恰好携带该头则原样透传（deny 集仅针对请求侧可达头，防回归误加回剥离集）。\nassert.deepEqual(bridgeUpstreamHeaders({ \"sec-websocket-accept\": \"ABC=\", cookie: \"c=1\" }, \"127.0.0.1:3080\"), {\n  \"sec-websocket-accept\": \"ABC=\",\n  cookie: \"c=1\",\n  host: \"127.0.0.1:3080\",\n  origin: \"http://127.0.0.1:3080\",\n}, \"sec-websocket-accept 不再被剥离（响应头请求侧不可达）\");\n\n// compressWsPath\nassert.equal(compressWsPath([\"/a\", \"/b\"], \"/a?query=1\"), true, \"带查询串命中\");\nassert.equal(compressWsPath([\"/a\", \"/b\"], \"/c\"), false, \"未命中\");\nassert.equal(compressWsPath([], \"/a\"), false, \"空列表\");\nassert.equal(compressWsPath(undefined, \"/a\"), false, \"undefined 列表\");\nassert.equal(compressWsPath([\"/a\"], \"\"), false, \"空 url\");\n\n// isCompressible\nassert.equal(isCompressible(\"application/problem+json\"), true, \"problem+json\");\nassert.equal(isCompressible(\"text/plain; charset=utf-8\"), true, \"带 charset 的 text\");\nassert.equal(isCompressible(\"text/event-stream\"), false, \"SSE 豁免\");\nassert.equal(isCompressible(\"image/png\"), false, \"图片不压\");\nassert.equal(isCompressible(123), false, \"非字符串不压\");\n\n// resolveCompressionOptions\nassert.deepEqual(resolveCompressionOptions(0), {}, \"0 → 默认\");\nassert.deepEqual(resolveCompressionOptions(undefined), {}, \"undefined → 默认\");\nassert.deepEqual(resolveCompressionOptions(\"high\"), {}, \"字符串 → 默认\");\nassert.deepEqual(resolveCompressionOptions(null), {}, \"null → 默认\");\n\n// DEFAULT_OPTIONS 常量\nassert.equal(DEFAULT_OPTIONS.host, \"0.0.0.0\");\nassert.equal(DEFAULT_OPTIONS.port, 3081);\nassert.equal(DEFAULT_OPTIONS.targetHost, \"127.0.0.1\");\n\n// ===== bridgeCompressedWs（WebSocket 压缩桥接）：经真实 LAN 代理间接测试 =====\n// 起一个 WS 回显上游 → 创建 LAN 代理（wsCompress 启用，路径命中）→\n// 浏览器 WS 客户端经代理连接压缩路径 → 验证双向帧转发。\n// bridgeCompressedWs 不可从 index.ts 直接导入（未 re-export），\n// 只能经 createLanProxy 的 wsCompress 启用路径间接触发。\n{\n  const { WebSocketServer, WebSocket: WsClient } = await import(\"ws\");\n\n  const upPort = 19790 + Math.floor(Math.random() * 100);\n  const upServer = createServer();\n  const wss = new WebSocketServer({ noServer: true });\n  upServer.on(\"upgrade\", (req, socket, head) => {\n    wss.handleUpgrade(req, socket, head, (ws) => {\n      ws.on(\"message\", (data, isBinary) => ws.send(data, { binary: isBinary }));\n    });\n  });\n  await new Promise((r) => upServer.listen(upPort, \"127.0.0.1\", r));\n\n  const proxy = createLanProxy({\n    host: \"127.0.0.1\", port: 0, targetHost: \"127.0.0.1\", targetPort: upPort,\n    wsCompress: { enabled: true, paths: [\"/api/remote.mux\"] },\n  });\n  const { httpPort } = await proxy.listen();\n\n  const browserWs = new WsClient(`ws://127.0.0.1:${httpPort}/api/remote.mux`);\n  const received = [];\n  browserWs.on(\"message\", (data) => { received.push(data.toString()); });\n  await new Promise((r, j) => { browserWs.on(\"open\", r); browserWs.on(\"error\", j); });\n  browserWs.send(\"hello-via-ws-bridge\");\n  await sleep(300);\n  browserWs.close();\n\n  assert.ok(received.includes(\"hello-via-ws-bridge\"),\n    `WS 压缩桥接双向转发：上游回显到浏览器端（收到 ${JSON.stringify(received)}）`);\n\n  await proxy.close();\n  wss.close();\n  upServer.close();\n}\n\n// ===== 桥接上游连接入站头透传（issue #379 端到端） =====\n// dsh 0.1.2 起 /api/remote.mux 升级处理需 Cookie 认证（connection.requestRejection\n// → isAuthenticated），桥接若丢弃入站头即 401 拒绝升级、表现为连不上。\n// 上游记录 upgrade 请求头；浏览器端模拟真实浏览器（带 cookie + 自定义头 +\n// 协商 permessage-deflate）连压缩路径，断言：cookie/自定义头原样透传、\n// Host/Origin 重写为回环目标、浏览器段 WS 握手头不透传（无重复头）、\n// 浏览器段压缩帧经桥接解压后上游回显可达（压缩与认证互不干扰）。\n{\n  const { WebSocketServer, WebSocket: WsClient } = await import(\"ws\");\n\n  const upPort = 19850 + Math.floor(Math.random() * 100);\n  const upServer = createServer();\n  const wss = new WebSocketServer({ noServer: true });\n  let upgradeHeaders = null;\n  upServer.on(\"upgrade\", (req, socket, head) => {\n    upgradeHeaders = req.headers;\n    wss.handleUpgrade(req, socket, head, (ws) => {\n      ws.on(\"message\", (data, isBinary) => ws.send(data, { binary: isBinary }));\n    });\n  });\n  await new Promise((r) => upServer.listen(upPort, \"127.0.0.1\", r));\n\n  const proxy = createLanProxy({\n    host: \"127.0.0.1\", port: 0, targetHost: \"127.0.0.1\", targetPort: upPort,\n    wsCompress: { enabled: true, paths: [\"/api/remote.mux\"], probeIntervalMs: 0 },\n  });\n  const { httpPort } = await proxy.listen();\n\n  const browserWs = new WsClient(`ws://127.0.0.1:${httpPort}/api/remote.mux`, {\n    perMessageDeflate: { threshold: 0 }, // 真实浏览器默认协商压缩：强制每一帧都走压缩路径\n    headers: {\n      cookie: \"dsh-auth-test=v1.issue379\",\n      \"x-lan-proxy-probe\": \"issue-379\",\n    },\n  });\n  const echoed = new Promise((resolve) => browserWs.once(\"message\", (d) => resolve(d.toString())));\n  await new Promise((r, j) => { browserWs.on(\"open\", r); browserWs.on(\"error\", j); });\n  browserWs.send(\"headers-probe\");\n  assert.equal(await echoed, \"headers-probe\", \"带认证头的桥接连接双向可达（压缩帧解压后转发）\");\n  browserWs.close();\n\n  assert.ok(upgradeHeaders, \"上游已收到桥接的升级请求\");\n  assert.equal(upgradeHeaders.cookie, \"dsh-auth-test=v1.issue379\",\n    \"cookie 原样透传到上游（认证凭据不丢，issue #379 核心语义）\");\n  assert.equal(upgradeHeaders[\"x-lan-proxy-probe\"], \"issue-379\", \"自定义头同样透传\");\n  assert.equal(upgradeHeaders.host, `127.0.0.1:${upPort}`, \"host 重写为回环目标 authority\");\n  assert.equal(upgradeHeaders.origin, `http://127.0.0.1:${upPort}`, \"origin 重写为回环 http 目标\");\n  assert.equal(typeof upgradeHeaders[\"sec-websocket-key\"], \"string\",\n    \"sec-websocket-key 为 ws 库自生成的单一字符串（浏览器段握手头已剥离、无重复头）\");\n  assert.equal(upgradeHeaders[\"sec-websocket-extensions\"], undefined,\n    \"浏览器段 permessage-deflate 协商头不透传（DSH 段固定明文，避免双重压缩）\");\n\n  await proxy.close();\n  wss.close();\n  upServer.close();\n}\n\n// ===== 无 cookie 的 WS 桥接升级被上游 401 拒绝（issue #395 L4 组合链路） =====\n// 背景：#380 的 token 注入只作用于 HTTP handleRequest，WS 桥接（bridgeCompressedWs）\n// 仅透传入站头、本身不铸造 cookie；dsh 0.1.2 起 /api/remote.mux 升级需会话 Cookie\n// 认证（connection.requestRejection → isAuthenticated），无 cookie 的上游回 401 且\n// 不进入 upgrade 握手 → 桥接表现为连不上。本用例锁定「无 cookie 连压缩路径 → 浏览器\n// 端最终 error/close 而非维持 open」防回归。对照：带 cookie 的升级仍成功（上方\n// #379 端到端用例已断言双向可达，此处不再重复）。\n{\n  const { WebSocket: WsClient, WebSocketServer } = await import(\"ws\");\n\n  const upPort = 21050 + Math.floor(Math.random() * 40);\n  const upServer = createServer();\n  const wss = new WebSocketServer({ noServer: true });\n  let noCookieUpgrades = 0;\n  upServer.on(\"upgrade\", (req, socket, head) => {\n    // 模拟 dsh 行为：无 dsh-auth cookie → 不进入 upgrade 握手，写 HTTP 401 并销毁。\n    if (!req.headers.cookie?.includes(\"dsh-auth-\")) {\n      noCookieUpgrades += 1;\n      socket.write(\"HTTP/1.1 401 Unauthorized\\r\\nConnection: close\\r\\n\\r\\n\");\n      socket.destroy();\n      return;\n    }\n    wss.handleUpgrade(req, socket, head, (ws) => {\n      ws.on(\"message\", (data, isBinary) => ws.send(data, { binary: isBinary }));\n    });\n  });\n  await new Promise((r) => upServer.listen(upPort, \"127.0.0.1\", r));\n\n  const proxy = createLanProxy({\n    host: \"127.0.0.1\", port: 0, targetHost: \"127.0.0.1\", targetPort: upPort,\n    wsCompress: { enabled: true, paths: [\"/api/remote.mux\"], probeIntervalMs: 0 },\n  });\n  const { httpPort } = await proxy.listen();\n\n  // 浏览器端无 cookie 连压缩路径：不期望成功 open，断言最终以 error/close 失败。\n  const events = [];\n  const browserWs = new WsClient(`ws://127.0.0.1:${httpPort}/api/remote.mux`);\n  browserWs.on(\"open\", () => events.push(\"open\"));\n  browserWs.on(\"error\", () => events.push(\"error\"));\n  browserWs.on(\"close\", (code) => events.push(`close:${code}`));\n  assert.ok(await waitFor(() => events.some((e) => e === \"error\" || e.startsWith(\"close:\")), 5000),\n    `无 cookie 的桥接升级应在限时内失败（error/close 而非 open），实际事件 ${JSON.stringify(events)}`);\n  assert.notEqual(browserWs.readyState, WsClient.OPEN,\n    `失败后浏览器端不得保持 OPEN（实际 readyState=${browserWs.readyState}）`);\n  assert.ok(noCookieUpgrades >= 1, \"上游确实收到并拒绝了无 cookie 的升级请求（401 拒绝路径触发）\");\n\n  browserWs.close();\n  await proxy.close();\n  wss.close();\n  upServer.close();\n}\n\n// ===== WS 桥接半开探活（issue #268 P0-1） =====\n// 移动端切后台系统静默掐断 TCP 形成半开连接，close/error 永不触发 → 桥接僵死。\n// 桥接对两端各自独立探活：interval 发 ping、一个宽限窗内未获 pong 即 terminate\n// （terminate 使 close 语义成立 → 既有互断逻辑级联收口另一端）。三条断言：\n//   1. ping 帧按间隔发出；2. pong 缺失触发 terminate（两端各测）；3. pong 正常时连接保持。\n// 全 localhost 无外网；小间隔经 wsCompress.probeIntervalMs 注入（生产默认 30s）。\n\n// —— 断言 1 + 3：真 echo 上游（ws 库自动回 pong）→ ping 按间隔到达、连接不被误杀 ——\n{\n  const { WebSocketServer, WebSocket: WsClient } = await import(\"ws\");\n  const upPort = 19950 + Math.floor(Math.random() * 40);\n  const upServer = createServer();\n  const wss = new WebSocketServer({ noServer: true });\n  let upstreamPings = 0; // 真 echo 上游收到的 ping 帧数 = 上游段探活按间隔发出\n  upServer.on(\"upgrade\", (req, socket, head) => {\n    wss.handleUpgrade(req, socket, head, (ws) => {\n      ws.on(\"ping\", () => { upstreamPings += 1; });\n      ws.on(\"message\", (data, isBinary) => ws.send(data, { binary: isBinary }));\n    });\n  });\n  await new Promise((r) => upServer.listen(upPort, \"127.0.0.1\", r));\n\n  const proxy = createLanProxy({\n    host: \"127.0.0.1\", port: 0, targetHost: \"127.0.0.1\", targetPort: upPort,\n    wsCompress: { enabled: true, paths: [\"/api/events.mux\"], probeIntervalMs: 80 },\n  });\n  const { httpPort } = await proxy.listen();\n\n  const pings = []; // 浏览器端收到 ping 的时刻 = 浏览器段探活按间隔发出\n  const browserWs = new WsClient(`ws://127.0.0.1:${httpPort}/api/events.mux`);\n  browserWs.on(\"ping\", () => { pings.push(Date.now()); });\n  await new Promise((r, j) => { browserWs.on(\"open\", r); browserWs.on(\"error\", j); });\n\n  // 断言 1：ping 帧按间隔发出（浏览器段 ≥2 帧且相邻间距贴近 interval：\n  // 下界 60ms 排除风暴式连发，上界 interval×10 宽松兜底慢机调度抖动防 flake）\n  assert.ok(await waitFor(() => pings.length >= 2, 4000),\n    `探活 ping 应按间隔到达浏览器端（4s 内仅收到 ${pings.length} 帧）`);\n  assert.ok(pings[1] - pings[0] >= 60 && pings[1] - pings[0] <= 800,\n    `相邻 ping 间隔应贴近 interval=80ms（实际 ${pings[1] - pings[0]}ms，过密非周期探活、过疏非按间隔发出）`);\n  // 断言 3：pong 正常（两端 ws 库自动回 pong）→ 多周期后不误杀且消息双向可达\n  assert.ok(await waitFor(() => upstreamPings >= 2, 4000),\n    `上游段探活也应按间隔发 ping（4s 内上游仅收到 ${upstreamPings} 帧）`);\n  assert.equal(browserWs.readyState, WsClient.OPEN, \"pong 正常时连接保持 OPEN 不被误杀\");\n  const echoed = new Promise((resolve) => browserWs.once(\"message\", (d) => resolve(d.toString())));\n  browserWs.send(\"probe-alive-check\");\n  assert.equal(await echoed, \"probe-alive-check\", \"多探活周期后消息双向仍通\");\n\n  browserWs.close();\n  await proxy.close();\n  wss.close();\n  upServer.close();\n}\n\n// —— 断言 2a：上游段 pong 缺失 → terminate 上游 → 级联关闭浏览器端 ——\n// raw 假上游完成 RFC6455 握手后保持打开但对一切帧沉默（无 ws 库不会自动回\n// pong）→ 上游段探活超时 terminate → close 互断逻辑关闭浏览器端（1006）。\n{\n  const { WebSocket: WsClient } = await import(\"ws\");\n  const silentPort = 20000 + Math.floor(Math.random() * 40);\n  const silentServer = createServer((req, res) => res.destroy());\n  silentServer.on(\"upgrade\", (req, socket) => {\n    socket.write(wsHandshakeResponse(req.headers[\"sec-websocket-key\"]));\n  });\n  await new Promise((r) => silentServer.listen(silentPort, \"127.0.0.1\", r));\n\n  const proxy = createLanProxy({\n    host: \"127.0.0.1\", port: 0, targetHost: \"127.0.0.1\", targetPort: silentPort,\n    wsCompress: { enabled: true, paths: [\"/api/events.mux\"], probeIntervalMs: 80 },\n  });\n  const { httpPort } = await proxy.listen();\n\n  let closeCode = null;\n  const browserWs = new WsClient(`ws://127.0.0.1:${httpPort}/api/events.mux`);\n  browserWs.on(\"close\", (code) => { closeCode = code; });\n  await new Promise((r, j) => { browserWs.on(\"open\", r); browserWs.on(\"error\", j); });\n\n  assert.ok(await waitFor(() => closeCode !== null, 5000),\n    \"上游 pong 缺失应在一个宽限窗后触发 terminate 并级联关闭浏览器端（5s 未收到 close）\");\n  assert.equal(closeCode, 1006, `terminate 应表现为异常关闭 1006（实际 ${closeCode}）`);\n\n  await proxy.close();\n  silentServer.close();\n}\n\n// —— 断言 2b：浏览器段 pong 缺失 → terminate 浏览器端 → 互断逻辑级联关闭上游 ——\n// raw 假客户端经 node:http upgrade 拿裸 socket（不回 pong）连压缩白名单路径。\n{\n  const { WebSocketServer } = await import(\"ws\");\n  const upPort = 20050 + Math.floor(Math.random() * 40);\n  const upServer = createServer();\n  const wss = new WebSocketServer({ noServer: true });\n  let upstreamClosed = false;\n  upServer.on(\"upgrade\", (req, socket, head) => {\n    wss.handleUpgrade(req, socket, head, (ws) => {\n      ws.on(\"message\", (data, isBinary) => ws.send(data, { binary: isBinary }));\n      ws.on(\"close\", () => { upstreamClosed = true; });\n    });\n  });\n  await new Promise((r) => upServer.listen(upPort, \"127.0.0.1\", r));\n\n  const proxy = createLanProxy({\n    host: \"127.0.0.1\", port: 0, targetHost: \"127.0.0.1\", targetPort: upPort,\n    wsCompress: { enabled: true, paths: [\"/api/events.host\"], probeIntervalMs: 80 },\n  });\n  const { httpPort } = await proxy.listen();\n\n  const req = httpRequest({\n    hostname: \"127.0.0.1\", port: httpPort, path: \"/api/events.host\",\n    headers: {\n      connection: \"Upgrade\", upgrade: \"websocket\",\n      \"sec-websocket-key\": \"dGhlIHNhbXBsZSBub25jZQ==\", \"sec-websocket-version\": \"13\",\n      host: `127.0.0.1:${httpPort}`,\n    },\n  });\n  req.end();\n  const rawSocket = await new Promise((resolve, reject) => {\n    req.on(\"upgrade\", (_res, socket) => resolve(socket));\n    req.on(\"error\", reject);\n  });\n  assert.ok(rawSocket.readable && !rawSocket.destroyed, \"raw 客户端已完成 101 握手（桥接已建立）\");\n\n  // 断言 2b：浏览器段 pong 缺失 → 探活超时 terminate 浏览器端 → 既有互断逻辑\n  // 级联关闭上游。upstream close 即 terminate 成立的下游证据（raw client 自身\n  // 不发 close 帧、不主动断开，上游被关只能经由 browserWs close → upstreamWs.close；\n  // 不以 rawSocket 属性为断言——半关闭 TCP 状态下其 destroyed/readable 翻转不可靠）。\n  assert.ok(await waitFor(() => upstreamClosed, 5000),\n    \"浏览器段 pong 缺失应触发探活 terminate 并级联关闭上游连接\");\n\n  await proxy.close();\n  wss.close();\n  upServer.close();\n}\n\n// ===== createLanProxy 转发错误处理（proxy error → 502） =====\n{\n  const proxy = createLanProxy({\n    host: \"127.0.0.1\", port: 0, targetHost: \"127.0.0.1\", targetPort: 1, // 1 端口不可达\n  });\n  const { httpPort } = await proxy.listen();\n  const res = await new Promise((resolve) => {\n    const req = httpRequest(\n      { hostname: \"127.0.0.1\", port: httpPort, path: \"/any\", method: \"GET\", headers: { host: \"127.0.0.1\" } },\n      (res2) => {\n        let body = \"\";\n        res2.on(\"data\", (c) => (body += c));\n        res2.on(\"end\", () => resolve({ status: res2.statusCode, body }));\n      },\n    );\n    req.on(\"error\", (e) => resolve({ status: 0, body: e.message }));\n    req.end();\n  });\n  assert.equal(res.status, 502, `不可达上游应 502，实际 ${res.status} ${res.body}`);\n  await proxy.close();\n}\n\n// ===== createLanProxy 围栏：非回环 targetHost =====\n{\n  assert.throws(\n    () => createLanProxy({ host: \"127.0.0.1\", port: 0, targetHost: \"evil.com\", targetPort: 3080 }),\n    /仅允许回环/,\n    \"非回环 targetHost 拒绝启动（防开放转发）\",\n  );\n}\n\n// ===== createLanProxy 非法 targetPort =====\n{\n  assert.throws(() => createLanProxy({ host: \"127.0.0.1\", port: 0, targetHost: \"127.0.0.1\", targetPort: 0 }), /valid port/);\n  assert.throws(() => createLanProxy({ host: \"127.0.0.1\", port: 0, targetHost: \"127.0.0.1\", targetPort: 70000 }), /valid port/);\n  assert.throws(() => createLanProxy({ host: \"127.0.0.1\", port: 0, targetHost: \"127.0.0.1\", targetPort: -1 }), /valid port/);\n}\n\n// ===== createLanProxy HTTPS 降级 =====\n// 占用一个端口 → HTTPS 绑定失败 → 降级 HTTP-only（httpPort 返回、httpsPort 不返回）\n{\n  const occupied = createServer();\n  await new Promise((r) => occupied.listen(0, \"127.0.0.1\", r));\n  const occupiedPort = occupied.address().port;\n\n  const certDir = mkdtempSync(join(tmpdir(), \"dsh-lan-proxy-httpsfail-\"));\n  const tls = ensureSelfSignedTls({ dir: certDir, extraSans: [] });\n  const proxy = createLanProxy({\n    host: \"127.0.0.1\", port: 0, httpsPort: occupiedPort, tls, targetHost: \"127.0.0.1\", targetPort: 1,\n  });\n  const result = await proxy.listen();\n  assert.equal(result.httpsPort, undefined, \"HTTPS 绑定失败 → 结果无 httpsPort\");\n  assert.ok(result.httpPort > 0, \"HTTP 仍可用\");\n  assert.ok(proxy.server.listening, \"HTTP 服务器仍在监听\");\n  await proxy.close();\n  occupied.close();\n  rmSync(certDir, { recursive: true, force: true });\n}\n\nconsole.log(\"[unit-proxy] all passed ✓\");"
+      "source": "// @ts-nocheck\n/**\n * dsh-lan-proxy — 转发核心（src/proxy.ts）结构化单测。\n *\n * 覆盖本批未覆盖热点：\n * - bridgeCompressedWs：WebSocket 压缩桥接（真实 WS 连接，全 localhost，无外网）\n * - createLanProxy 转发错误处理（不可达上游 → 502，proxy error 分支）\n * - createLanProxy HTTPS 降级（HTTPS 端口被占 → HTTP-only）\n * - createLanProxy 围栏与参数校验（非回环 targetHost / 非法 targetPort）\n * - 纯函数边界用例（hostnameAllowed / isLoopbackTarget / formatAuthority /\n *   rewriteHeaders / compressWsPath / isCompressible / resolveCompressionOptions）\n */\nimport assert from \"node:assert/strict\";\nimport { createServer, request as httpRequest } from \"node:http\";\nimport { mkdtempSync, rmSync, statSync, writeFileSync } from \"node:fs\";\nimport { tmpdir } from \"node:os\";\nimport { join } from \"node:path\";\nimport { X509Certificate, createHash } from \"node:crypto\";\nimport { constants as zlibConstants } from \"node:zlib\";\n\nimport {\n  hostnameAllowed, formatAuthority, rewriteHeaders, bridgeUpstreamHeaders, createLanProxy, isLoopbackTarget,\n  DEFAULT_OPTIONS, compressWsPath, isCompressible, resolveCompressionOptions,\n  ensureSelfSignedTls,\n} from \"../lib/index.js\";\nimport {\n  toSanEntry, certStillValid, loadTlsFromFiles, SELF_SIGNED_KEY, SELF_SIGNED_CERT,\n} from \"../lib/index.js\";\n\nconst sleep = (ms) => new Promise((r) => setTimeout(r, ms));\n\n/** 轮询等待条件成立（防 flake 纪律：替代固定 sleep 猜时序）；超时返回 false。 */\nasync function waitFor(predicate, deadlineMs = 5000, stepMs = 20) {\n  const start = Date.now();\n  while (!predicate()) {\n    if (Date.now() - start > deadlineMs) return false;\n    await sleep(stepMs);\n  }\n  return true;\n}\n\n/** RFC6455 握手应答行（Sec-WebSocket-Accept 计算；供 raw 假对端完成升级）。 */\nconst wsHandshakeResponse = (key) =>\n  \"HTTP/1.1 101 Switching Protocols\\r\\nUpgrade: websocket\\r\\nConnection: Upgrade\\r\\n\" +\n  `Sec-WebSocket-Accept: ${createHash(\"sha1\").update(key + \"258EAFA5-E914-47DA-95CA-C5AB0DC85B11\").digest(\"base64\")}\\r\\n\\r\\n`;\n\n// ===== 纯函数边界用例 =====\n\n// hostnameAllowed\nassert.equal(hostnameAllowed(\"127.0.0.1\"), true, \"bare IPv4\");\nassert.equal(hostnameAllowed(\"[::1]\"), true, \"bracketed IPv6\");\nassert.equal(hostnameAllowed(\"\"), false, \"empty string\");\nassert.equal(hostnameAllowed(undefined), false, \"非字符串（undefined）→ 拒绝\");\nassert.equal(hostnameAllowed(\"0.0.0.0\"), true, \"any IPv4\");\nassert.equal(hostnameAllowed(\"192.168.1.1\"), true, \"LAN IPv4\");\nassert.equal(hostnameAllowed(\"127.0.0.1:99999\"), false, \"端口越界 → URL 解析失败 → 拒绝\");\nassert.equal(hostnameAllowed(\"localhost\"), true, \"localhost 字面量放行\");\nassert.equal(hostnameAllowed(\"localhost:3080\"), true, \"localhost 带端口放行\");\nassert.equal(hostnameAllowed(\"[::1]:443\"), true, \"bracketed IPv6 带端口放行\");\nassert.equal(hostnameAllowed(\"example.com\"), false, \"DNS 域名拒绝（重绑定防护核心语义）\");\nassert.equal(hostnameAllowed(\"sub.example.org\"), false, \"多级 DNS 域名拒绝\");\nassert.equal(hostnameAllowed(\"::1\"), false, \"裸 IPv6 冒号 authority → URL 解析失败 → 拒绝\");\n\n// isLoopbackTarget\nassert.equal(isLoopbackTarget(\"127.0.0.1\"), true, \"loopback IPv4\");\nassert.equal(isLoopbackTarget(\"::1\"), true, \"loopback IPv6\");\nassert.equal(isLoopbackTarget(\"::ffff:127.0.0.1\"), true, \"IPv4-mapped IPv6 loopback\");\nassert.equal(isLoopbackTarget(\"localhost\"), true, \"localhost\");\nassert.equal(isLoopbackTarget(\"[::1]\"), true, \"bracketed IPv6 loopback\");\nassert.equal(isLoopbackTarget(\"[127.0.0.1]\"), true, \"bracketed IPv4 loopback\");\nassert.equal(isLoopbackTarget(\"[::ffff:127.0.0.1]\"), true, \"bracketed mapped loopback\");\nassert.equal(isLoopbackTarget(\"192.168.1.1\"), false, \"非回环拒绝\");\nassert.equal(isLoopbackTarget(\"evil.com\"), false, \"DNS 名拒绝\");\nassert.equal(isLoopbackTarget(\"\"), false, \"空串拒绝\");\nassert.equal(isLoopbackTarget(\"127.0.0.2\"), false, \"非 .1 回环段仍按字面匹配语义拒绝\");\n\n// formatAuthority\nassert.equal(formatAuthority(\"0.0.0.0\", 3081), \"0.0.0.0:3081\");\nassert.equal(formatAuthority(\"::1\", 3080), \"[::1]:3080\");\nassert.equal(formatAuthority(\"::ffff:10.0.0.1\", 9090), \"[::ffff:10.0.0.1]:9090\");\n\n// rewriteHeaders\nassert.deepEqual(rewriteHeaders({ host: \"x:1\", origin: \"http://x:1\", \"x-custom\": \"v\" }, \"127.0.0.1:3080\"), {\n  host: \"127.0.0.1:3080\",\n  origin: \"http://127.0.0.1:3080\",\n  \"x-custom\": \"v\",\n}, \"多键重写\");\nassert.deepEqual(rewriteHeaders({ host: \"x:1\", origin: \"https://x:1\" }, \"127.0.0.1:3080\"), {\n  host: \"127.0.0.1:3080\",\n  origin: \"http://127.0.0.1:3080\",\n}, \"Origin https→http\");\nassert.deepEqual(rewriteHeaders({}, \"127.0.0.1:3080\"), { host: \"127.0.0.1:3080\" }, \"空头只加 host\");\nassert.deepEqual(rewriteHeaders({ host: [\"a\", \"b\"], origin: [\"http://a\"] }, \"127.0.0.1:9\"), {\n  host: \"127.0.0.1:9\",\n  origin: \"http://127.0.0.1:9\",\n}, \"多值头（string[]）同样整体覆盖为单值 authority\");\n// 原对象不被修改（浅拷贝语义）\n{\n  const src = { host: \"old:1\" };\n  rewriteHeaders(src, \"127.0.0.1:2\");\n  assert.equal(src.host, \"old:1\", \"入参 headers 不被就地修改\");\n}\n\n// bridgeUpstreamHeaders（issue #379：压缩桥接上游连接入站头透传）\nassert.deepEqual(bridgeUpstreamHeaders({\n  host: \"192.168.1.50:3081\",\n  origin: \"http://192.168.1.50:3081\",\n  cookie: \"dsh-auth-x=v1.aaa\",\n  \"x-custom\": \"v\",\n  connection: \"Upgrade\",\n  upgrade: \"websocket\",\n  \"sec-websocket-key\": \"AAA=\",\n  \"sec-websocket-version\": \"13\",\n  \"sec-websocket-extensions\": \"permessage-deflate\",\n}, \"127.0.0.1:3080\"), {\n  cookie: \"dsh-auth-x=v1.aaa\",\n  \"x-custom\": \"v\",\n  host: \"127.0.0.1:3080\",\n  origin: \"http://127.0.0.1:3080\",\n}, \"透传认证/自定义头，重写 Host/Origin，剥离 hop-by-hop 与 WS 握手专有头\");\nassert.deepEqual(bridgeUpstreamHeaders({}, \"127.0.0.1:3080\"), {\n  host: \"127.0.0.1:3080\",\n  origin: \"http://127.0.0.1:3080\",\n}, \"空头仍产出回环 Host/Origin（无条件带 origin 与桥接既有行为一致）\");\nassert.deepEqual(bridgeUpstreamHeaders({ cookie: [\"a=1\", \"b=2\"] }, \"127.0.0.1:1\"), {\n  cookie: \"a=1, b=2\",\n  host: \"127.0.0.1:1\",\n  origin: \"http://127.0.0.1:1\",\n}, \"多值头（string[]）合并为逗号串\");\n{\n  const src = { cookie: \"c=1\" };\n  bridgeUpstreamHeaders(src, \"127.0.0.1:2\");\n  assert.deepEqual(src, { cookie: \"c=1\" }, \"入参 headers 不被就地修改\");\n}\n// 分支补充：大写键名归一化小写、undefined 值跳过、hop-by-hop 全集与 WS 握手头剥离\nassert.deepEqual(bridgeUpstreamHeaders({\n  Cookie: \"c=1\",\n  \"X-Undefined\": undefined,\n  \"Proxy-Authorization\": \"Basic x\",\n  te: \"trailers\",\n  trailer: \"x-foo\",\n  \"transfer-encoding\": \"chunked\",\n  \"sec-websocket-protocol\": \"chat\",\n}, \"127.0.0.1:3080\"), {\n  cookie: \"c=1\",\n  host: \"127.0.0.1:3080\",\n  origin: \"http://127.0.0.1:3080\",\n}, \"大写键名归一化、undefined 跳过、Proxy-Authorization/te/trailer/transfer-encoding/sec-websocket-protocol 剥离\");\n// L2（#395）：sec-websocket-accept 是响应头、请求侧不可达，不在剥离集——入站若\n// 恰好携带该头则原样透传（deny 集仅针对请求侧可达头，防回归误加回剥离集）。\nassert.deepEqual(bridgeUpstreamHeaders({ \"sec-websocket-accept\": \"ABC=\", cookie: \"c=1\" }, \"127.0.0.1:3080\"), {\n  \"sec-websocket-accept\": \"ABC=\",\n  cookie: \"c=1\",\n  host: \"127.0.0.1:3080\",\n  origin: \"http://127.0.0.1:3080\",\n}, \"sec-websocket-accept 不再被剥离（响应头请求侧不可达）\");\n\n// compressWsPath\nassert.equal(compressWsPath([\"/a\", \"/b\"], \"/a?query=1\"), true, \"带查询串命中\");\nassert.equal(compressWsPath([\"/a\", \"/b\"], \"/c\"), false, \"未命中\");\nassert.equal(compressWsPath([], \"/a\"), false, \"空列表\");\nassert.equal(compressWsPath(undefined, \"/a\"), false, \"undefined 列表\");\nassert.equal(compressWsPath([\"/a\"], \"\"), false, \"空 url\");\n\n// isCompressible\nassert.equal(isCompressible(\"application/problem+json\"), true, \"problem+json\");\nassert.equal(isCompressible(\"text/plain; charset=utf-8\"), true, \"带 charset 的 text\");\nassert.equal(isCompressible(\"text/event-stream\"), false, \"SSE 豁免\");\nassert.equal(isCompressible(\"image/png\"), false, \"图片不压\");\nassert.equal(isCompressible(123), false, \"非字符串不压\");\n\n// resolveCompressionOptions\nassert.deepEqual(resolveCompressionOptions(0), {}, \"0 → 默认\");\nassert.deepEqual(resolveCompressionOptions(undefined), {}, \"undefined → 默认\");\nassert.deepEqual(resolveCompressionOptions(\"high\"), {}, \"字符串 → 默认\");\nassert.deepEqual(resolveCompressionOptions(null), {}, \"null → 默认\");\n\n// DEFAULT_OPTIONS 常量\nassert.equal(DEFAULT_OPTIONS.host, \"0.0.0.0\");\nassert.equal(DEFAULT_OPTIONS.port, 3081);\nassert.equal(DEFAULT_OPTIONS.targetHost, \"127.0.0.1\");\n\n// ===== bridgeCompressedWs（WebSocket 压缩桥接）：经真实 LAN 代理间接测试 =====\n// 起一个 WS 回显上游 → 创建 LAN 代理（wsCompress 启用，路径命中）→\n// 浏览器 WS 客户端经代理连接压缩路径 → 验证双向帧转发。\n// bridgeCompressedWs 不可从 index.ts 直接导入（未 re-export），\n// 只能经 createLanProxy 的 wsCompress 启用路径间接触发。\n{\n  const { WebSocketServer, WebSocket: WsClient } = await import(\"ws\");\n\n  const upPort = 19790 + Math.floor(Math.random() * 100);\n  const upServer = createServer();\n  const wss = new WebSocketServer({ noServer: true });\n  upServer.on(\"upgrade\", (req, socket, head) => {\n    wss.handleUpgrade(req, socket, head, (ws) => {\n      ws.on(\"message\", (data, isBinary) => ws.send(data, { binary: isBinary }));\n    });\n  });\n  await new Promise((r) => upServer.listen(upPort, \"127.0.0.1\", r));\n\n  const proxy = createLanProxy({\n    host: \"127.0.0.1\", port: 0, targetHost: \"127.0.0.1\", targetPort: upPort,\n    wsCompress: { enabled: true, paths: [\"/api/remote.mux\"] },\n  });\n  const { httpPort } = await proxy.listen();\n\n  const browserWs = new WsClient(`ws://127.0.0.1:${httpPort}/api/remote.mux`);\n  const received = [];\n  browserWs.on(\"message\", (data) => { received.push(data.toString()); });\n  await new Promise((r, j) => { browserWs.on(\"open\", r); browserWs.on(\"error\", j); });\n  browserWs.send(\"hello-via-ws-bridge\");\n  await sleep(300);\n  browserWs.close();\n\n  assert.ok(received.includes(\"hello-via-ws-bridge\"),\n    `WS 压缩桥接双向转发：上游回显到浏览器端（收到 ${JSON.stringify(received)}）`);\n\n  await proxy.close();\n  wss.close();\n  upServer.close();\n}\n\n// ===== 桥接上游连接入站头透传（issue #379 端到端） =====\n// dsh 0.1.2 起 /api/remote.mux 升级处理需 Cookie 认证（connection.requestRejection\n// → isAuthenticated），桥接若丢弃入站头即 401 拒绝升级、表现为连不上。\n// 上游记录 upgrade 请求头；浏览器端模拟真实浏览器（带 cookie + 自定义头 +\n// 协商 permessage-deflate）连压缩路径，断言：cookie/自定义头原样透传、\n// Host/Origin 重写为回环目标、浏览器段 WS 握手头不透传（无重复头）、\n// 浏览器段压缩帧经桥接解压后上游回显可达（压缩与认证互不干扰）。\n{\n  const { WebSocketServer, WebSocket: WsClient } = await import(\"ws\");\n\n  const upPort = 19850 + Math.floor(Math.random() * 100);\n  const upServer = createServer();\n  const wss = new WebSocketServer({ noServer: true });\n  let upgradeHeaders = null;\n  upServer.on(\"upgrade\", (req, socket, head) => {\n    upgradeHeaders = req.headers;\n    wss.handleUpgrade(req, socket, head, (ws) => {\n      ws.on(\"message\", (data, isBinary) => ws.send(data, { binary: isBinary }));\n    });\n  });\n  await new Promise((r) => upServer.listen(upPort, \"127.0.0.1\", r));\n\n  const proxy = createLanProxy({\n    host: \"127.0.0.1\", port: 0, targetHost: \"127.0.0.1\", targetPort: upPort,\n    wsCompress: { enabled: true, paths: [\"/api/remote.mux\"], probeIntervalMs: 0 },\n  });\n  const { httpPort } = await proxy.listen();\n\n  const browserWs = new WsClient(`ws://127.0.0.1:${httpPort}/api/remote.mux`, {\n    perMessageDeflate: { threshold: 0 }, // 真实浏览器默认协商压缩：强制每一帧都走压缩路径\n    headers: {\n      cookie: \"dsh-auth-test=v1.issue379\",\n      \"x-lan-proxy-probe\": \"issue-379\",\n    },\n  });\n  const echoed = new Promise((resolve) => browserWs.once(\"message\", (d) => resolve(d.toString())));\n  await new Promise((r, j) => { browserWs.on(\"open\", r); browserWs.on(\"error\", j); });\n  browserWs.send(\"headers-probe\");\n  assert.equal(await echoed, \"headers-probe\", \"带认证头的桥接连接双向可达（压缩帧解压后转发）\");\n  browserWs.close();\n\n  assert.ok(upgradeHeaders, \"上游已收到桥接的升级请求\");\n  assert.equal(upgradeHeaders.cookie, \"dsh-auth-test=v1.issue379\",\n    \"cookie 原样透传到上游（认证凭据不丢，issue #379 核心语义）\");\n  assert.equal(upgradeHeaders[\"x-lan-proxy-probe\"], \"issue-379\", \"自定义头同样透传\");\n  assert.equal(upgradeHeaders.host, `127.0.0.1:${upPort}`, \"host 重写为回环目标 authority\");\n  assert.equal(upgradeHeaders.origin, `http://127.0.0.1:${upPort}`, \"origin 重写为回环 http 目标\");\n  assert.equal(typeof upgradeHeaders[\"sec-websocket-key\"], \"string\",\n    \"sec-websocket-key 为 ws 库自生成的单一字符串（浏览器段握手头已剥离、无重复头）\");\n  assert.equal(upgradeHeaders[\"sec-websocket-extensions\"], undefined,\n    \"浏览器段 permessage-deflate 协商头不透传（DSH 段固定明文，避免双重压缩）\");\n\n  await proxy.close();\n  wss.close();\n  upServer.close();\n}\n\n// ===== 无 cookie 的 WS 桥接升级被上游 401 拒绝（issue #395 L4 组合链路） =====\n// 背景：#380 的 token 注入只作用于 HTTP handleRequest，WS 桥接（bridgeCompressedWs）\n// 仅透传入站头、本身不铸造 cookie；dsh 0.1.2 起 /api/remote.mux 升级需会话 Cookie\n// 认证（connection.requestRejection → isAuthenticated），无 cookie 的上游回 401 且\n// 不进入 upgrade 握手 → 桥接表现为连不上。本用例锁定「无 cookie 连压缩路径 → 浏览器\n// 端最终 error/close 而非维持 open」防回归。对照：带 cookie 的升级仍成功（上方\n// #379 端到端用例已断言双向可达，此处不再重复）。\n{\n  const { WebSocket: WsClient, WebSocketServer } = await import(\"ws\");\n\n  const upPort = 21050 + Math.floor(Math.random() * 40);\n  const upServer = createServer();\n  const wss = new WebSocketServer({ noServer: true });\n  let noCookieUpgrades = 0;\n  upServer.on(\"upgrade\", (req, socket, head) => {\n    // 模拟 dsh 行为：无 dsh-auth cookie → 不进入 upgrade 握手，写 HTTP 401 并销毁。\n    if (!req.headers.cookie?.includes(\"dsh-auth-\")) {\n      noCookieUpgrades += 1;\n      socket.write(\"HTTP/1.1 401 Unauthorized\\r\\nConnection: close\\r\\n\\r\\n\");\n      socket.destroy();\n      return;\n    }\n    wss.handleUpgrade(req, socket, head, (ws) => {\n      ws.on(\"message\", (data, isBinary) => ws.send(data, { binary: isBinary }));\n    });\n  });\n  await new Promise((r) => upServer.listen(upPort, \"127.0.0.1\", r));\n\n  const proxy = createLanProxy({\n    host: \"127.0.0.1\", port: 0, targetHost: \"127.0.0.1\", targetPort: upPort,\n    wsCompress: { enabled: true, paths: [\"/api/remote.mux\"], probeIntervalMs: 0 },\n  });\n  const { httpPort } = await proxy.listen();\n\n  // 浏览器端无 cookie 连压缩路径：不期望成功 open，断言最终以 error/close 失败。\n  const events = [];\n  const browserWs = new WsClient(`ws://127.0.0.1:${httpPort}/api/remote.mux`);\n  browserWs.on(\"open\", () => events.push(\"open\"));\n  browserWs.on(\"error\", () => events.push(\"error\"));\n  browserWs.on(\"close\", (code) => events.push(`close:${code}`));\n  assert.ok(await waitFor(() => events.some((e) => e === \"error\" || e.startsWith(\"close:\")), 5000),\n    `无 cookie 的桥接升级应在限时内失败（error/close 而非 open），实际事件 ${JSON.stringify(events)}`);\n  assert.notEqual(browserWs.readyState, WsClient.OPEN,\n    `失败后浏览器端不得保持 OPEN（实际 readyState=${browserWs.readyState}）`);\n  assert.ok(noCookieUpgrades >= 1, \"上游确实收到并拒绝了无 cookie 的升级请求（401 拒绝路径触发）\");\n\n  browserWs.close();\n  await proxy.close();\n  wss.close();\n  upServer.close();\n}\n\n// ===== WS 桥接半开探活（issue #268 P0-1） =====\n// 移动端切后台系统静默掐断 TCP 形成半开连接，close/error 永不触发 → 桥接僵死。\n// 桥接对两端各自独立探活：interval 发 ping、一个宽限窗内未获 pong 即 terminate\n// （terminate 使 close 语义成立 → 既有互断逻辑级联收口另一端）。三条断言：\n//   1. ping 帧按间隔发出；2. pong 缺失触发 terminate（两端各测）；3. pong 正常时连接保持。\n// 全 localhost 无外网；小间隔经 wsCompress.probeIntervalMs 注入（生产默认 30s）。\n\n// —— 断言 1 + 3：真 echo 上游（ws 库自动回 pong）→ ping 按间隔到达、连接不被误杀 ——\n{\n  const { WebSocketServer, WebSocket: WsClient } = await import(\"ws\");\n  const upPort = 19950 + Math.floor(Math.random() * 40);\n  const upServer = createServer();\n  const wss = new WebSocketServer({ noServer: true });\n  let upstreamPings = 0; // 真 echo 上游收到的 ping 帧数 = 上游段探活按间隔发出\n  upServer.on(\"upgrade\", (req, socket, head) => {\n    wss.handleUpgrade(req, socket, head, (ws) => {\n      ws.on(\"ping\", () => { upstreamPings += 1; });\n      ws.on(\"message\", (data, isBinary) => ws.send(data, { binary: isBinary }));\n    });\n  });\n  await new Promise((r) => upServer.listen(upPort, \"127.0.0.1\", r));\n\n  const proxy = createLanProxy({\n    host: \"127.0.0.1\", port: 0, targetHost: \"127.0.0.1\", targetPort: upPort,\n    wsCompress: { enabled: true, paths: [\"/api/events.mux\"], probeIntervalMs: 80 },\n  });\n  const { httpPort } = await proxy.listen();\n\n  const pings = []; // 浏览器端收到 ping 的时刻 = 浏览器段探活按间隔发出\n  const browserWs = new WsClient(`ws://127.0.0.1:${httpPort}/api/events.mux`);\n  browserWs.on(\"ping\", () => { pings.push(Date.now()); });\n  await new Promise((r, j) => { browserWs.on(\"open\", r); browserWs.on(\"error\", j); });\n\n  // 断言 1：ping 帧按间隔发出（浏览器段 ≥2 帧且相邻间距贴近 interval：\n  // 下界 60ms 排除风暴式连发，上界 interval×10 宽松兜底慢机调度抖动防 flake）\n  assert.ok(await waitFor(() => pings.length >= 2, 4000),\n    `探活 ping 应按间隔到达浏览器端（4s 内仅收到 ${pings.length} 帧）`);\n  assert.ok(pings[1] - pings[0] >= 60 && pings[1] - pings[0] <= 800,\n    `相邻 ping 间隔应贴近 interval=80ms（实际 ${pings[1] - pings[0]}ms，过密非周期探活、过疏非按间隔发出）`);\n  // 断言 3：pong 正常（两端 ws 库自动回 pong）→ 多周期后不误杀且消息双向可达\n  assert.ok(await waitFor(() => upstreamPings >= 2, 4000),\n    `上游段探活也应按间隔发 ping（4s 内上游仅收到 ${upstreamPings} 帧）`);\n  assert.equal(browserWs.readyState, WsClient.OPEN, \"pong 正常时连接保持 OPEN 不被误杀\");\n  const echoed = new Promise((resolve) => browserWs.once(\"message\", (d) => resolve(d.toString())));\n  browserWs.send(\"probe-alive-check\");\n  assert.equal(await echoed, \"probe-alive-check\", \"多探活周期后消息双向仍通\");\n\n  browserWs.close();\n  await proxy.close();\n  wss.close();\n  upServer.close();\n}\n\n// —— 断言 2a：上游段 pong 缺失 → terminate 上游 → 级联关闭浏览器端 ——\n// raw 假上游完成 RFC6455 握手后保持打开但对一切帧沉默（无 ws 库不会自动回\n// pong）→ 上游段探活超时 terminate → close 互断逻辑关闭浏览器端（1006）。\n{\n  const { WebSocket: WsClient } = await import(\"ws\");\n  const silentPort = 20000 + Math.floor(Math.random() * 40);\n  const silentServer = createServer((req, res) => res.destroy());\n  silentServer.on(\"upgrade\", (req, socket) => {\n    socket.write(wsHandshakeResponse(req.headers[\"sec-websocket-key\"]));\n  });\n  await new Promise((r) => silentServer.listen(silentPort, \"127.0.0.1\", r));\n\n  const proxy = createLanProxy({\n    host: \"127.0.0.1\", port: 0, targetHost: \"127.0.0.1\", targetPort: silentPort,\n    wsCompress: { enabled: true, paths: [\"/api/events.mux\"], probeIntervalMs: 80 },\n  });\n  const { httpPort } = await proxy.listen();\n\n  let closeCode = null;\n  const browserWs = new WsClient(`ws://127.0.0.1:${httpPort}/api/events.mux`);\n  browserWs.on(\"close\", (code) => { closeCode = code; });\n  await new Promise((r, j) => { browserWs.on(\"open\", r); browserWs.on(\"error\", j); });\n\n  assert.ok(await waitFor(() => closeCode !== null, 5000),\n    \"上游 pong 缺失应在一个宽限窗后触发 terminate 并级联关闭浏览器端（5s 未收到 close）\");\n  assert.equal(closeCode, 1006, `terminate 应表现为异常关闭 1006（实际 ${closeCode}）`);\n\n  await proxy.close();\n  silentServer.close();\n}\n\n// —— 断言 2b：浏览器段 pong 缺失 → terminate 浏览器端 → 互断逻辑级联关闭上游 ——\n// raw 假客户端经 node:http upgrade 拿裸 socket（不回 pong）连压缩白名单路径。\n{\n  const { WebSocketServer } = await import(\"ws\");\n  const upPort = 20050 + Math.floor(Math.random() * 40);\n  const upServer = createServer();\n  const wss = new WebSocketServer({ noServer: true });\n  let upstreamClosed = false;\n  upServer.on(\"upgrade\", (req, socket, head) => {\n    wss.handleUpgrade(req, socket, head, (ws) => {\n      ws.on(\"message\", (data, isBinary) => ws.send(data, { binary: isBinary }));\n      ws.on(\"close\", () => { upstreamClosed = true; });\n    });\n  });\n  await new Promise((r) => upServer.listen(upPort, \"127.0.0.1\", r));\n\n  const proxy = createLanProxy({\n    host: \"127.0.0.1\", port: 0, targetHost: \"127.0.0.1\", targetPort: upPort,\n    wsCompress: { enabled: true, paths: [\"/api/events.host\"], probeIntervalMs: 80 },\n  });\n  const { httpPort } = await proxy.listen();\n\n  const req = httpRequest({\n    hostname: \"127.0.0.1\", port: httpPort, path: \"/api/events.host\",\n    headers: {\n      connection: \"Upgrade\", upgrade: \"websocket\",\n      \"sec-websocket-key\": \"dGhlIHNhbXBsZSBub25jZQ==\", \"sec-websocket-version\": \"13\",\n      host: `127.0.0.1:${httpPort}`,\n    },\n  });\n  req.end();\n  const rawSocket = await new Promise((resolve, reject) => {\n    req.on(\"upgrade\", (_res, socket) => resolve(socket));\n    req.on(\"error\", reject);\n  });\n  assert.ok(rawSocket.readable && !rawSocket.destroyed, \"raw 客户端已完成 101 握手（桥接已建立）\");\n\n  // 断言 2b：浏览器段 pong 缺失 → 探活超时 terminate 浏览器端 → 既有互断逻辑\n  // 级联关闭上游。upstream close 即 terminate 成立的下游证据（raw client 自身\n  // 不发 close 帧、不主动断开，上游被关只能经由 browserWs close → upstreamWs.close；\n  // 不以 rawSocket 属性为断言——半关闭 TCP 状态下其 destroyed/readable 翻转不可靠）。\n  assert.ok(await waitFor(() => upstreamClosed, 5000),\n    \"浏览器段 pong 缺失应触发探活 terminate 并级联关闭上游连接\");\n\n  await proxy.close();\n  wss.close();\n  upServer.close();\n}\n\n// ===== createLanProxy 转发错误处理（proxy error → 502） =====\n{\n  const proxy = createLanProxy({\n    host: \"127.0.0.1\", port: 0, targetHost: \"127.0.0.1\", targetPort: 1, // 1 端口不可达\n  });\n  const { httpPort } = await proxy.listen();\n  const res = await new Promise((resolve) => {\n    const req = httpRequest(\n      { hostname: \"127.0.0.1\", port: httpPort, path: \"/any\", method: \"GET\", headers: { host: \"127.0.0.1\" } },\n      (res2) => {\n        let body = \"\";\n        res2.on(\"data\", (c) => (body += c));\n        res2.on(\"end\", () => resolve({ status: res2.statusCode, body }));\n      },\n    );\n    req.on(\"error\", (e) => resolve({ status: 0, body: e.message }));\n    req.end();\n  });\n  assert.equal(res.status, 502, `不可达上游应 502，实际 ${res.status} ${res.body}`);\n  await proxy.close();\n}\n\n// ===== createLanProxy 围栏：非回环 targetHost =====\n{\n  assert.throws(\n    () => createLanProxy({ host: \"127.0.0.1\", port: 0, targetHost: \"evil.com\", targetPort: 3080 }),\n    /仅允许回环/,\n    \"非回环 targetHost 拒绝启动（防开放转发）\",\n  );\n}\n\n// ===== createLanProxy 非法 targetPort =====\n{\n  assert.throws(() => createLanProxy({ host: \"127.0.0.1\", port: 0, targetHost: \"127.0.0.1\", targetPort: 0 }), /valid port/);\n  assert.throws(() => createLanProxy({ host: \"127.0.0.1\", port: 0, targetHost: \"127.0.0.1\", targetPort: 70000 }), /valid port/);\n  assert.throws(() => createLanProxy({ host: \"127.0.0.1\", port: 0, targetHost: \"127.0.0.1\", targetPort: -1 }), /valid port/);\n}\n\n// ===== createLanProxy HTTPS 降级 =====\n// 占用一个端口 → HTTPS 绑定失败 → 降级 HTTP-only（httpPort 返回、httpsPort 不返回）\n{\n  const occupied = createServer();\n  await new Promise((r) => occupied.listen(0, \"127.0.0.1\", r));\n  const occupiedPort = occupied.address().port;\n\n  const certDir = mkdtempSync(join(tmpdir(), \"dsh-lan-proxy-httpsfail-\"));\n  const tls = ensureSelfSignedTls({ dir: certDir, extraSans: [] });\n  const proxy = createLanProxy({\n    host: \"127.0.0.1\", port: 0, httpsPort: occupiedPort, tls, targetHost: \"127.0.0.1\", targetPort: 1,\n  });\n  const result = await proxy.listen();\n  assert.equal(result.httpsPort, undefined, \"HTTPS 绑定失败 → 结果无 httpsPort\");\n  assert.ok(result.httpPort > 0, \"HTTP 仍可用\");\n  assert.ok(proxy.server.listening, \"HTTP 服务器仍在监听\");\n  await proxy.close();\n  occupied.close();\n  rmSync(certDir, { recursive: true, force: true });\n}\n\n// ===== wsBridgeEnabled 三态路径选择（issue #552 解耦） =====\n// 判别依据 connStats：桥接任一端 close → wsBridgeClosed+1；透传 socket 销毁 →\n// wsPassthroughDestroyed+1。三种配置各建一条 WS 连接后关闭，断言走了预期路径：\n//   a) wsBridge=false + 命中压缩白名单 → 透传（wsPassthroughDestroyed 增长）；\n//   b) wsBridge=true + 未命中白名单 → 仍桥接（wsBridgeClosed 增长）；\n//   c) wsBridge 缺省（旧行为兼容）→ 命中走桥接、未命中走透传。\n{\n  const { WebSocketServer, WebSocket: WsClient } = await import(\"ws\");\n\n  async function mkUpstream(portOffset) {\n    // 端口区间错开前置测试（19850+rand(100) 最大 19949）：取 20100+ 避免碰撞。\n    const upPort = 20100 + portOffset + Math.floor(Math.random() * 60);\n    const upServer = createServer();\n    const wss = new WebSocketServer({ noServer: true });\n    upServer.on(\"upgrade\", (req, socket, head) => {\n      wss.handleUpgrade(req, socket, head, (ws) => {\n        ws.on(\"message\", (data, isBinary) => ws.send(data, { binary: isBinary }));\n      });\n    });\n    await new Promise((r) => upServer.listen(upPort, \"127.0.0.1\", r));\n    return { upPort, upServer, wss };\n  }\n  /** 经代理建一条 WS 连接、等 open、重试发送帧至回显（上游段 open 竞态：桥接的\n   *  浏览器段 message 监听在 upstreamWs open 后才挂载，过早帧会被丢——重试规避），\n   *  关闭连接返回收到的帧。 */\n  async function openAndEcho(port, path) {\n    const ws = new WsClient(`ws://127.0.0.1:${port}${path}`);\n    const received = [];\n    ws.on(\"message\", (data) => received.push(data.toString()));\n    await new Promise((r, j) => { ws.on(\"open\", r); ws.on(\"error\", j); });\n    for (let i = 0; i < 6; i++) {\n      ws.send(`ping-${path}-${i}`);\n      if (await waitFor(() => received.length > 0, 800)) break;\n    }\n    ws.close();\n    await sleep(100);\n    return received;\n  }\n\n  // a) wsBridge=false：命中白名单路径也走透传（显式放弃桥接/保活）\n  {\n    const u = await mkUpstream(0);\n    const proxy = createLanProxy({\n      host: \"127.0.0.1\", port: 0, targetHost: \"127.0.0.1\", targetPort: u.upPort,\n      wsBridge: { enabled: false },\n      wsCompress: { enabled: true, paths: [\"/api/remote.mux\"], probeIntervalMs: 0 },\n    });\n    const { httpPort } = await proxy.listen();\n    const got = await openAndEcho(httpPort, \"/api/remote.mux\");\n    assert.ok(got.some((s) => s.startsWith(\"ping-/api/remote.mux\")), \"wsBridge=false 命中白名单仍可转发（透传）\");\n    const cs = proxy.connStats();\n    assert.ok(cs.wsPassthroughDestroyed >= 1,\n      `wsBridge=false → 透传计数增长（wsPassthroughDestroyed=${cs.wsPassthroughDestroyed}，bridgeClosed=${cs.wsBridgeClosed}）`);\n    assert.equal(cs.wsBridgeClosed, 0, \"wsBridge=false → 不产生桥接连接\");\n    await proxy.close(); u.wss.close(); u.upServer.close();\n  }\n\n  // b) wsBridge=true：未命中白名单路径也走桥接（保活基座不依赖压缩白名单）\n  {\n    const u = await mkUpstream(100);\n    const proxy = createLanProxy({\n      host: \"127.0.0.1\", port: 0, targetHost: \"127.0.0.1\", targetPort: u.upPort,\n      wsBridge: { enabled: true },\n      wsCompress: { enabled: true, paths: [\"/api/remote.mux\"], probeIntervalMs: 0 },\n    });\n    const { httpPort } = await proxy.listen();\n    const got = await openAndEcho(httpPort, \"/api/other\");\n    assert.ok(got.some((s) => s.startsWith(\"ping-/api/other\")), \"wsBridge=true 未命中白名单仍可转发（桥接明文）\");\n    const cs = proxy.connStats();\n    assert.ok(cs.wsBridgeClosed >= 1,\n      `wsBridge=true → 桥接计数增长（wsBridgeClosed=${cs.wsBridgeClosed}）`);\n    assert.equal(cs.wsPassthroughDestroyed, 0, \"wsBridge=true → 不产生透传连接\");\n    await proxy.close(); u.wss.close(); u.upServer.close();\n  }\n\n  // c) wsBridge 缺省（旧行为兼容）：命中白名单走桥接、未命中走透传\n  {\n    const u = await mkUpstream(200);\n    const proxy = createLanProxy({\n      host: \"127.0.0.1\", port: 0, targetHost: \"127.0.0.1\", targetPort: u.upPort,\n      wsCompress: { enabled: true, paths: [\"/api/remote.mux\"], probeIntervalMs: 0 },\n    });\n    const { httpPort } = await proxy.listen();\n    await openAndEcho(httpPort, \"/api/remote.mux\");   // 命中 → 桥接\n    await openAndEcho(httpPort, \"/api/other\");        // 未命中 → 透传\n    const cs = proxy.connStats();\n    assert.ok(cs.wsBridgeClosed >= 1, `缺省 wsBridge：命中白名单走桥接（bridgeClosed=${cs.wsBridgeClosed}）`);\n    assert.ok(cs.wsPassthroughDestroyed >= 1,\n      `缺省 wsBridge：未命中白名单走透传（passthroughDestroyed=${cs.wsPassthroughDestroyed}）`);\n    await proxy.close(); u.wss.close(); u.upServer.close();\n  }\n}\n\nconsole.log(\"[unit-proxy] all passed ✓\");"
     }
   },
   "projectRoot": "/home/runner/work/dsh-plugin-hub/dsh-plugin-hub",

@@ -128,6 +128,34 @@
           }
         },
         {
+          "id": "4",
+          "mutatorName": "Regex",
+          "replacement": "/<script\\b[^>]*>[\\S\\S]*?<\\/script\\s*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 64,
+              "line": 27
+            },
+            "start": {
+              "column": 23,
+              "line": 27
+            }
+          }
+        },
+        {
           "id": "5",
           "mutatorName": "Regex",
           "replacement": "/<script\\b[^>]*>[\\s\\s]*?<\\/script\\s*>/giu",
@@ -169,6 +197,34 @@
           "killedBy": [
             "2"
           ],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 64,
+              "line": 27
+            },
+            "start": {
+              "column": 23,
+              "line": 27
+            }
+          }
+        },
+        {
+          "id": "7",
+          "mutatorName": "Regex",
+          "replacement": "/<script\\b[^>]*>[\\s\\S]*?<\\/script\\S*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
           "coveredBy": [
             "0",
             "1",
@@ -314,6 +370,34 @@
           }
         },
         {
+          "id": "12",
+          "mutatorName": "Regex",
+          "replacement": "/\\son\\w+\\S*=\\s*(?:\"[^\"]*\"|'[^']*'|[^\\s>]+)/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 72,
+              "line": 28
+            },
+            "start": {
+              "column": 26,
+              "line": 28
+            }
+          }
+        },
+        {
           "id": "13",
           "mutatorName": "Regex",
           "replacement": "/\\son\\w+\\s*=\\s(?:\"[^\"]*\"|'[^']*'|[^\\s>]+)/giu",
@@ -355,6 +439,118 @@
           "killedBy": [
             "2"
           ],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 72,
+              "line": 28
+            },
+            "start": {
+              "column": 26,
+              "line": 28
+            }
+          }
+        },
+        {
+          "id": "15",
+          "mutatorName": "Regex",
+          "replacement": "/\\son\\w+\\s*=\\s*(?:\"[^\"]\"|'[^']*'|[^\\s>]+)/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 72,
+              "line": 28
+            },
+            "start": {
+              "column": 26,
+              "line": 28
+            }
+          }
+        },
+        {
+          "id": "16",
+          "mutatorName": "Regex",
+          "replacement": "/\\son\\w+\\s*=\\s*(?:\"[\"]*\"|'[^']*'|[^\\s>]+)/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 72,
+              "line": 28
+            },
+            "start": {
+              "column": 26,
+              "line": 28
+            }
+          }
+        },
+        {
+          "id": "17",
+          "mutatorName": "Regex",
+          "replacement": "/\\son\\w+\\s*=\\s*(?:\"[^\"]*\"|'[^']'|[^\\s>]+)/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 72,
+              "line": 28
+            },
+            "start": {
+              "column": 26,
+              "line": 28
+            }
+          }
+        },
+        {
+          "id": "18",
+          "mutatorName": "Regex",
+          "replacement": "/\\son\\w+\\s*=\\s*(?:\"[^\"]*\"|'[']*'|[^\\s>]+)/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
           "coveredBy": [
             "0",
             "1",
@@ -593,6 +789,34 @@
           }
         },
         {
+          "id": "26",
+          "mutatorName": "Regex",
+          "replacement": "/<iframe\\b[^>]*>[\\S\\S]*?<\\/iframe\\s*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 60,
+              "line": 29
+            },
+            "start": {
+              "column": 19,
+              "line": 29
+            }
+          }
+        },
+        {
           "id": "27",
           "mutatorName": "Regex",
           "replacement": "/<iframe\\b[^>]*>[\\s\\s]*?<\\/iframe\\s*>/giu",
@@ -651,6 +875,874 @@
             "start": {
               "column": 19,
               "line": 29
+            }
+          }
+        },
+        {
+          "id": "29",
+          "mutatorName": "Regex",
+          "replacement": "/<iframe\\b[^>]*>[\\s\\S]*?<\\/iframe\\S*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 60,
+              "line": 29
+            },
+            "start": {
+              "column": 19,
+              "line": 29
+            }
+          }
+        },
+        {
+          "id": "30",
+          "mutatorName": "Regex",
+          "replacement": "/<frame\\b[^>]>[\\s\\S]*?<\\/frame\\s*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 57,
+              "line": 30
+            },
+            "start": {
+              "column": 18,
+              "line": 30
+            }
+          }
+        },
+        {
+          "id": "31",
+          "mutatorName": "Regex",
+          "replacement": "/<frame\\b[>]*>[\\s\\S]*?<\\/frame\\s*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 57,
+              "line": 30
+            },
+            "start": {
+              "column": 18,
+              "line": 30
+            }
+          }
+        },
+        {
+          "id": "32",
+          "mutatorName": "Regex",
+          "replacement": "/<frame\\b[^>]*>[\\s\\S]<\\/frame\\s*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 57,
+              "line": 30
+            },
+            "start": {
+              "column": 18,
+              "line": 30
+            }
+          }
+        },
+        {
+          "id": "33",
+          "mutatorName": "Regex",
+          "replacement": "/<frame\\b[^>]*>[^\\s\\S]*?<\\/frame\\s*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 57,
+              "line": 30
+            },
+            "start": {
+              "column": 18,
+              "line": 30
+            }
+          }
+        },
+        {
+          "id": "34",
+          "mutatorName": "Regex",
+          "replacement": "/<frame\\b[^>]*>[\\S\\S]*?<\\/frame\\s*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 57,
+              "line": 30
+            },
+            "start": {
+              "column": 18,
+              "line": 30
+            }
+          }
+        },
+        {
+          "id": "35",
+          "mutatorName": "Regex",
+          "replacement": "/<frame\\b[^>]*>[\\s\\s]*?<\\/frame\\s*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 57,
+              "line": 30
+            },
+            "start": {
+              "column": 18,
+              "line": 30
+            }
+          }
+        },
+        {
+          "id": "36",
+          "mutatorName": "Regex",
+          "replacement": "/<frame\\b[^>]*>[\\s\\S]*?<\\/frame\\s>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 57,
+              "line": 30
+            },
+            "start": {
+              "column": 18,
+              "line": 30
+            }
+          }
+        },
+        {
+          "id": "37",
+          "mutatorName": "Regex",
+          "replacement": "/<frame\\b[^>]*>[\\s\\S]*?<\\/frame\\S*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 57,
+              "line": 30
+            },
+            "start": {
+              "column": 18,
+              "line": 30
+            }
+          }
+        },
+        {
+          "id": "38",
+          "mutatorName": "Regex",
+          "replacement": "/<object\\b[^>]>[\\s\\S]*?<\\/object\\s*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 60,
+              "line": 31
+            },
+            "start": {
+              "column": 19,
+              "line": 31
+            }
+          }
+        },
+        {
+          "id": "39",
+          "mutatorName": "Regex",
+          "replacement": "/<object\\b[>]*>[\\s\\S]*?<\\/object\\s*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 60,
+              "line": 31
+            },
+            "start": {
+              "column": 19,
+              "line": 31
+            }
+          }
+        },
+        {
+          "id": "40",
+          "mutatorName": "Regex",
+          "replacement": "/<object\\b[^>]*>[\\s\\S]<\\/object\\s*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 60,
+              "line": 31
+            },
+            "start": {
+              "column": 19,
+              "line": 31
+            }
+          }
+        },
+        {
+          "id": "41",
+          "mutatorName": "Regex",
+          "replacement": "/<object\\b[^>]*>[^\\s\\S]*?<\\/object\\s*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 60,
+              "line": 31
+            },
+            "start": {
+              "column": 19,
+              "line": 31
+            }
+          }
+        },
+        {
+          "id": "42",
+          "mutatorName": "Regex",
+          "replacement": "/<object\\b[^>]*>[\\S\\S]*?<\\/object\\s*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 60,
+              "line": 31
+            },
+            "start": {
+              "column": 19,
+              "line": 31
+            }
+          }
+        },
+        {
+          "id": "43",
+          "mutatorName": "Regex",
+          "replacement": "/<object\\b[^>]*>[\\s\\s]*?<\\/object\\s*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 60,
+              "line": 31
+            },
+            "start": {
+              "column": 19,
+              "line": 31
+            }
+          }
+        },
+        {
+          "id": "44",
+          "mutatorName": "Regex",
+          "replacement": "/<object\\b[^>]*>[\\s\\S]*?<\\/object\\s>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 60,
+              "line": 31
+            },
+            "start": {
+              "column": 19,
+              "line": 31
+            }
+          }
+        },
+        {
+          "id": "45",
+          "mutatorName": "Regex",
+          "replacement": "/<object\\b[^>]*>[\\s\\S]*?<\\/object\\S*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 60,
+              "line": 31
+            },
+            "start": {
+              "column": 19,
+              "line": 31
+            }
+          }
+        },
+        {
+          "id": "46",
+          "mutatorName": "Regex",
+          "replacement": "/<embed\\b[^>]>[\\s\\S]*?<\\/embed\\s*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 57,
+              "line": 32
+            },
+            "start": {
+              "column": 18,
+              "line": 32
+            }
+          }
+        },
+        {
+          "id": "47",
+          "mutatorName": "Regex",
+          "replacement": "/<embed\\b[>]*>[\\s\\S]*?<\\/embed\\s*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 57,
+              "line": 32
+            },
+            "start": {
+              "column": 18,
+              "line": 32
+            }
+          }
+        },
+        {
+          "id": "48",
+          "mutatorName": "Regex",
+          "replacement": "/<embed\\b[^>]*>[\\s\\S]<\\/embed\\s*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 57,
+              "line": 32
+            },
+            "start": {
+              "column": 18,
+              "line": 32
+            }
+          }
+        },
+        {
+          "id": "49",
+          "mutatorName": "Regex",
+          "replacement": "/<embed\\b[^>]*>[^\\s\\S]*?<\\/embed\\s*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 57,
+              "line": 32
+            },
+            "start": {
+              "column": 18,
+              "line": 32
+            }
+          }
+        },
+        {
+          "id": "50",
+          "mutatorName": "Regex",
+          "replacement": "/<embed\\b[^>]*>[\\S\\S]*?<\\/embed\\s*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 57,
+              "line": 32
+            },
+            "start": {
+              "column": 18,
+              "line": 32
+            }
+          }
+        },
+        {
+          "id": "51",
+          "mutatorName": "Regex",
+          "replacement": "/<embed\\b[^>]*>[\\s\\s]*?<\\/embed\\s*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 57,
+              "line": 32
+            },
+            "start": {
+              "column": 18,
+              "line": 32
+            }
+          }
+        },
+        {
+          "id": "52",
+          "mutatorName": "Regex",
+          "replacement": "/<embed\\b[^>]*>[\\s\\S]*?<\\/embed\\s>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 57,
+              "line": 32
+            },
+            "start": {
+              "column": 18,
+              "line": 32
+            }
+          }
+        },
+        {
+          "id": "53",
+          "mutatorName": "Regex",
+          "replacement": "/<embed\\b[^>]*>[\\s\\S]*?<\\/embed\\S*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 57,
+              "line": 32
+            },
+            "start": {
+              "column": 18,
+              "line": 32
+            }
+          }
+        },
+        {
+          "id": "54",
+          "mutatorName": "Regex",
+          "replacement": "/<meta\\b[^>]>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 35,
+              "line": 33
+            },
+            "start": {
+              "column": 17,
+              "line": 33
+            }
+          }
+        },
+        {
+          "id": "55",
+          "mutatorName": "Regex",
+          "replacement": "/<meta\\b[>]*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 35,
+              "line": 33
+            },
+            "start": {
+              "column": 17,
+              "line": 33
+            }
+          }
+        },
+        {
+          "id": "56",
+          "mutatorName": "Regex",
+          "replacement": "/<link\\b[^>]>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 35,
+              "line": 34
+            },
+            "start": {
+              "column": 17,
+              "line": 34
+            }
+          }
+        },
+        {
+          "id": "57",
+          "mutatorName": "Regex",
+          "replacement": "/<link\\b[>]*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 35,
+              "line": 34
+            },
+            "start": {
+              "column": 17,
+              "line": 34
+            }
+          }
+        },
+        {
+          "id": "58",
+          "mutatorName": "Regex",
+          "replacement": "/<base\\b[^>]>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 35,
+              "line": 35
+            },
+            "start": {
+              "column": 17,
+              "line": 35
+            }
+          }
+        },
+        {
+          "id": "59",
+          "mutatorName": "Regex",
+          "replacement": "/<base\\b[>]*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 35,
+              "line": 35
+            },
+            "start": {
+              "column": 17,
+              "line": 35
             }
           }
         },
@@ -748,6 +1840,34 @@
           }
         },
         {
+          "id": "63",
+          "mutatorName": "Regex",
+          "replacement": "/\\bjavascript\\S*:/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 48,
+              "line": 37
+            },
+            "start": {
+              "column": 27,
+              "line": 37
+            }
+          }
+        },
+        {
           "id": "64",
           "mutatorName": "Regex",
           "replacement": "/\\bdata\\s:\\s*text\\/html/giu",
@@ -779,6 +1899,34 @@
           }
         },
         {
+          "id": "65",
+          "mutatorName": "Regex",
+          "replacement": "/\\bdata\\S*:\\s*text\\/html/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 55,
+              "line": 38
+            },
+            "start": {
+              "column": 27,
+              "line": 38
+            }
+          }
+        },
+        {
           "id": "66",
           "mutatorName": "Regex",
           "replacement": "/\\bdata\\s*:\\stext\\/html/giu",
@@ -789,6 +1937,34 @@
           "killedBy": [
             "2"
           ],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 55,
+              "line": 38
+            },
+            "start": {
+              "column": 27,
+              "line": 38
+            }
+          }
+        },
+        {
+          "id": "67",
+          "mutatorName": "Regex",
+          "replacement": "/\\bdata\\s*:\\S*text\\/html/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
           "coveredBy": [
             "0",
             "1",
@@ -872,6 +2048,34 @@
           }
         },
         {
+          "id": "70",
+          "mutatorName": "Regex",
+          "replacement": "/<script\\b[>]*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 23,
+              "line": 49
+            },
+            "start": {
+              "column": 3,
+              "line": 49
+            }
+          }
+        },
+        {
           "id": "71",
           "mutatorName": "Regex",
           "replacement": "/<\\/script\\s>/giu",
@@ -899,6 +2103,482 @@
             "start": {
               "column": 3,
               "line": 50
+            }
+          }
+        },
+        {
+          "id": "72",
+          "mutatorName": "Regex",
+          "replacement": "/<\\/script\\S*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 21,
+              "line": 50
+            },
+            "start": {
+              "column": 3,
+              "line": 50
+            }
+          }
+        },
+        {
+          "id": "73",
+          "mutatorName": "Regex",
+          "replacement": "/<iframe\\b[^>]>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 23,
+              "line": 51
+            },
+            "start": {
+              "column": 3,
+              "line": 51
+            }
+          }
+        },
+        {
+          "id": "74",
+          "mutatorName": "Regex",
+          "replacement": "/<iframe\\b[>]*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 23,
+              "line": 51
+            },
+            "start": {
+              "column": 3,
+              "line": 51
+            }
+          }
+        },
+        {
+          "id": "75",
+          "mutatorName": "Regex",
+          "replacement": "/<\\/iframe\\s>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 21,
+              "line": 52
+            },
+            "start": {
+              "column": 3,
+              "line": 52
+            }
+          }
+        },
+        {
+          "id": "76",
+          "mutatorName": "Regex",
+          "replacement": "/<\\/iframe\\S*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 21,
+              "line": 52
+            },
+            "start": {
+              "column": 3,
+              "line": 52
+            }
+          }
+        },
+        {
+          "id": "77",
+          "mutatorName": "Regex",
+          "replacement": "/<frame\\b[^>]>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 22,
+              "line": 53
+            },
+            "start": {
+              "column": 3,
+              "line": 53
+            }
+          }
+        },
+        {
+          "id": "78",
+          "mutatorName": "Regex",
+          "replacement": "/<frame\\b[>]*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 22,
+              "line": 53
+            },
+            "start": {
+              "column": 3,
+              "line": 53
+            }
+          }
+        },
+        {
+          "id": "79",
+          "mutatorName": "Regex",
+          "replacement": "/<\\/frame\\s>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 20,
+              "line": 54
+            },
+            "start": {
+              "column": 3,
+              "line": 54
+            }
+          }
+        },
+        {
+          "id": "80",
+          "mutatorName": "Regex",
+          "replacement": "/<\\/frame\\S*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 20,
+              "line": 54
+            },
+            "start": {
+              "column": 3,
+              "line": 54
+            }
+          }
+        },
+        {
+          "id": "81",
+          "mutatorName": "Regex",
+          "replacement": "/<object\\b[^>]>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 23,
+              "line": 55
+            },
+            "start": {
+              "column": 3,
+              "line": 55
+            }
+          }
+        },
+        {
+          "id": "82",
+          "mutatorName": "Regex",
+          "replacement": "/<object\\b[>]*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 23,
+              "line": 55
+            },
+            "start": {
+              "column": 3,
+              "line": 55
+            }
+          }
+        },
+        {
+          "id": "83",
+          "mutatorName": "Regex",
+          "replacement": "/<\\/object\\s>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 21,
+              "line": 56
+            },
+            "start": {
+              "column": 3,
+              "line": 56
+            }
+          }
+        },
+        {
+          "id": "84",
+          "mutatorName": "Regex",
+          "replacement": "/<\\/object\\S*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 21,
+              "line": 56
+            },
+            "start": {
+              "column": 3,
+              "line": 56
+            }
+          }
+        },
+        {
+          "id": "85",
+          "mutatorName": "Regex",
+          "replacement": "/<embed\\b[^>]>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 22,
+              "line": 57
+            },
+            "start": {
+              "column": 3,
+              "line": 57
+            }
+          }
+        },
+        {
+          "id": "86",
+          "mutatorName": "Regex",
+          "replacement": "/<embed\\b[>]*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 22,
+              "line": 57
+            },
+            "start": {
+              "column": 3,
+              "line": 57
+            }
+          }
+        },
+        {
+          "id": "87",
+          "mutatorName": "Regex",
+          "replacement": "/<\\/embed\\s>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 20,
+              "line": 58
+            },
+            "start": {
+              "column": 3,
+              "line": 58
+            }
+          }
+        },
+        {
+          "id": "88",
+          "mutatorName": "Regex",
+          "replacement": "/<\\/embed\\S*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 20,
+              "line": 58
+            },
+            "start": {
+              "column": 3,
+              "line": 58
             }
           }
         },
@@ -934,6 +2614,146 @@
           }
         },
         {
+          "id": "90",
+          "mutatorName": "Regex",
+          "replacement": "/<meta\\b[>]*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 21,
+              "line": 59
+            },
+            "start": {
+              "column": 3,
+              "line": 59
+            }
+          }
+        },
+        {
+          "id": "91",
+          "mutatorName": "Regex",
+          "replacement": "/<link\\b[^>]>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 21,
+              "line": 60
+            },
+            "start": {
+              "column": 3,
+              "line": 60
+            }
+          }
+        },
+        {
+          "id": "92",
+          "mutatorName": "Regex",
+          "replacement": "/<link\\b[>]*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 21,
+              "line": 60
+            },
+            "start": {
+              "column": 3,
+              "line": 60
+            }
+          }
+        },
+        {
+          "id": "93",
+          "mutatorName": "Regex",
+          "replacement": "/<base\\b[^>]>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 21,
+              "line": 61
+            },
+            "start": {
+              "column": 3,
+              "line": 61
+            }
+          }
+        },
+        {
+          "id": "94",
+          "mutatorName": "Regex",
+          "replacement": "/<base\\b[>]*>/giu",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 21,
+              "line": 61
+            },
+            "start": {
+              "column": 3,
+              "line": 61
+            }
+          }
+        },
+        {
           "id": "95",
           "mutatorName": "ArrayDeclaration",
           "replacement": "[]",
@@ -965,6 +2785,34 @@
           }
         },
         {
+          "id": "96",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "status": "Survived",
+          "testsCompleted": 7,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 80,
+              "line": 74
+            },
+            "start": {
+              "column": 27,
+              "line": 74
+            }
+          }
+        },
+        {
           "id": "97",
           "mutatorName": "ConditionalExpression",
           "replacement": "true",
@@ -985,6 +2833,136 @@
           "location": {
             "end": {
               "column": 80,
+              "line": 74
+            },
+            "start": {
+              "column": 42,
+              "line": 74
+            }
+          }
+        },
+        {
+          "id": "98",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 80,
+              "line": 74
+            },
+            "start": {
+              "column": 42,
+              "line": 74
+            }
+          }
+        },
+        {
+          "id": "99",
+          "mutatorName": "LogicalOperator",
+          "replacement": "(c === \"\\t\" || c === \"\\n\") && c === \"\\r\"",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 80,
+              "line": 74
+            },
+            "start": {
+              "column": 42,
+              "line": 74
+            }
+          }
+        },
+        {
+          "id": "100",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 66,
+              "line": 74
+            },
+            "start": {
+              "column": 42,
+              "line": 74
+            }
+          }
+        },
+        {
+          "id": "101",
+          "mutatorName": "LogicalOperator",
+          "replacement": "c === \"\\t\" && c === \"\\n\"",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 66,
+              "line": 74
+            },
+            "start": {
+              "column": 42,
+              "line": 74
+            }
+          }
+        },
+        {
+          "id": "102",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 52,
               "line": 74
             },
             "start": {
@@ -1041,6 +3019,32 @@
           }
         },
         {
+          "id": "105",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 66,
+              "line": 74
+            },
+            "start": {
+              "column": 56,
+              "line": 74
+            }
+          }
+        },
+        {
           "id": "106",
           "mutatorName": "EqualityOperator",
           "replacement": "c !== \"\\n\"",
@@ -1083,6 +3087,32 @@
             },
             "start": {
               "column": 62,
+              "line": 74
+            }
+          }
+        },
+        {
+          "id": "108",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 80,
+              "line": 74
+            },
+            "start": {
+              "column": 70,
               "line": 74
             }
           }
@@ -3514,6 +5544,60 @@
           }
         },
         {
+          "id": "221",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'text'): uncaughtException: Cannot read properties of undefined (reading 'text')",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 206
+            },
+            "start": {
+              "column": 56,
+              "line": 150
+            }
+          }
+        },
+        {
+          "id": "222",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[\"Stryker was here\"]",
+          "status": "Timeout",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 29,
+              "line": 151
+            },
+            "start": {
+              "column": 27,
+              "line": 151
+            }
+          }
+        },
+        {
           "id": "223",
           "mutatorName": "ArrayDeclaration",
           "replacement": "[\"Stryker was here\"]",
@@ -3630,6 +5714,58 @@
           }
         },
         {
+          "id": "227",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "statusReason": "Hit limit reached (2573301/2573300)",
+          "status": "Timeout",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 20,
+              "line": 156
+            },
+            "start": {
+              "column": 5,
+              "line": 156
+            }
+          }
+        },
+        {
+          "id": "228",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "statusReason": "Hit limit reached (2573301/2573300)",
+          "status": "Timeout",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 18,
+              "line": 157
+            },
+            "start": {
+              "column": 5,
+              "line": 157
+            }
+          }
+        },
+        {
           "id": "229",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
@@ -3640,6 +5776,32 @@
           "killedBy": [
             "2"
           ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 15,
+              "line": 161
+            },
+            "start": {
+              "column": 10,
+              "line": 161
+            }
+          }
+        },
+        {
+          "id": "230",
+          "mutatorName": "EqualityOperator",
+          "replacement": "i <= n",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
           "coveredBy": [
             "0",
             "2",
@@ -3683,6 +5845,32 @@
             },
             "start": {
               "column": 10,
+              "line": 161
+            }
+          }
+        },
+        {
+          "id": "232",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "Hit limit reached (2573346/2573300)",
+          "status": "Timeout",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 204
+            },
+            "start": {
+              "column": 17,
               "line": 161
             }
           }
@@ -3847,6 +6035,32 @@
             "start": {
               "column": 26,
               "line": 163
+            }
+          }
+        },
+        {
+          "id": "240",
+          "mutatorName": "UpdateOperator",
+          "replacement": "i--",
+          "statusReason": "Hit limit reached (2569746/2569700)",
+          "status": "Timeout",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 10,
+              "line": 164
+            },
+            "start": {
+              "column": 7,
+              "line": 164
             }
           }
         },
@@ -6391,6 +8605,35 @@
           }
         },
         {
+          "id": "351",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 271
+            },
+            "start": {
+              "column": 51,
+              "line": 228
+            }
+          }
+        },
+        {
           "id": "352",
           "mutatorName": "ArrayDeclaration",
           "replacement": "[\"Stryker was here\"]",
@@ -6467,6 +8710,32 @@
           }
         },
         {
+          "id": "355",
+          "mutatorName": "EqualityOperator",
+          "replacement": "i <= view.text.length",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 39,
+              "line": 234
+            },
+            "start": {
+              "column": 19,
+              "line": 234
+            }
+          }
+        },
+        {
           "id": "356",
           "mutatorName": "EqualityOperator",
           "replacement": "i >= view.text.length",
@@ -6491,6 +8760,32 @@
             },
             "start": {
               "column": 19,
+              "line": 234
+            }
+          }
+        },
+        {
+          "id": "357",
+          "mutatorName": "UpdateOperator",
+          "replacement": "i--",
+          "statusReason": "Hit limit reached (2573346/2573300)",
+          "status": "Timeout",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 44,
+              "line": 234
+            },
+            "start": {
+              "column": 41,
               "line": 234
             }
           }
@@ -6550,6 +8845,111 @@
             "start": {
               "column": 9,
               "line": 235
+            }
+          }
+        },
+        {
+          "id": "360",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 40,
+              "line": 235
+            },
+            "start": {
+              "column": 9,
+              "line": 235
+            }
+          }
+        },
+        {
+          "id": "361",
+          "mutatorName": "AssignmentOperator",
+          "replacement": "urlText -= view.text[i]",
+          "statusReason": "uncaughtException: urlText.matchAll is not a function or its return value is not iterable: uncaughtException: urlText.matchAll is not a function or its return value is not iterable",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 28,
+              "line": 236
+            },
+            "start": {
+              "column": 5,
+              "line": 236
+            }
+          }
+        },
+        {
+          "id": "362",
+          "mutatorName": "CallExpression",
+          "replacement": ";",
+          "status": "Timeout",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 22,
+              "line": 237
+            },
+            "start": {
+              "column": 5,
+              "line": 237
+            }
+          }
+        },
+        {
+          "id": "363",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[\"Stryker was here\"]",
+          "status": "Timeout",
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 45,
+              "line": 239
+            },
+            "start": {
+              "column": 43,
+              "line": 239
             }
           }
         },
@@ -6979,6 +9379,32 @@
           }
         },
         {
+          "id": "383",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 26,
+              "line": 256
+            },
+            "start": {
+              "column": 7,
+              "line": 256
+            }
+          }
+        },
+        {
           "id": "384",
           "mutatorName": "EqualityOperator",
           "replacement": "ranges.length !== 0",
@@ -7170,6 +9596,119 @@
             "start": {
               "column": 16,
               "line": 270
+            }
+          }
+        },
+        {
+          "id": "392",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 319
+            },
+            "start": {
+              "column": 52,
+              "line": 279
+            }
+          }
+        },
+        {
+          "id": "393",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 18,
+              "line": 280
+            },
+            "start": {
+              "column": 7,
+              "line": 280
+            }
+          }
+        },
+        {
+          "id": "394",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 18,
+              "line": 280
+            },
+            "start": {
+              "column": 7,
+              "line": 280
+            }
+          }
+        },
+        {
+          "id": "395",
+          "mutatorName": "EqualityOperator",
+          "replacement": "html !== ''",
+          "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 18,
+              "line": 280
+            },
+            "start": {
+              "column": 7,
+              "line": 280
             }
           }
         },
@@ -7455,6 +9994,90 @@
           }
         },
         {
+          "id": "411",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "false",
+          "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 33,
+              "line": 310
+            },
+            "start": {
+              "column": 23,
+              "line": 310
+            }
+          }
+        },
+        {
+          "id": "412",
+          "mutatorName": "EqualityOperator",
+          "replacement": "round <= 64",
+          "status": "Survived",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 33,
+              "line": 310
+            },
+            "start": {
+              "column": 23,
+              "line": 310
+            }
+          }
+        },
+        {
+          "id": "413",
+          "mutatorName": "EqualityOperator",
+          "replacement": "round >= 64",
+          "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 33,
+              "line": 310
+            },
+            "start": {
+              "column": 23,
+              "line": 310
+            }
+          }
+        },
+        {
           "id": "414",
           "mutatorName": "UpdateOperator",
           "replacement": "round--",
@@ -7476,6 +10099,35 @@
             },
             "start": {
               "column": 35,
+              "line": 310
+            }
+          }
+        },
+        {
+          "id": "415",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "3",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 4,
+              "line": 317
+            },
+            "start": {
+              "column": 44,
               "line": 310
             }
           }
@@ -7510,2378 +10162,13 @@
           }
         },
         {
-          "id": "421",
-          "mutatorName": "StringLiteral",
-          "replacement": "\"Stryker was here!\"",
-          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
-          "status": "Ignored",
-          "static": false,
-          "location": {
-            "end": {
-              "column": 30,
-              "line": 318
-            },
-            "start": {
-              "column": 28,
-              "line": 318
-            }
-          }
-        },
-        {
-          "id": "18",
-          "mutatorName": "Regex",
-          "replacement": "/\\son\\w+\\s*=\\s*(?:\"[^\"]*\"|'[']*'|[^\\s>]+)/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 72,
-              "line": 28
-            },
-            "start": {
-              "column": 26,
-              "line": 28
-            }
-          }
-        },
-        {
-          "id": "26",
-          "mutatorName": "Regex",
-          "replacement": "/<iframe\\b[^>]*>[\\S\\S]*?<\\/iframe\\s*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 60,
-              "line": 29
-            },
-            "start": {
-              "column": 19,
-              "line": 29
-            }
-          }
-        },
-        {
-          "id": "33",
-          "mutatorName": "Regex",
-          "replacement": "/<frame\\b[^>]*>[^\\s\\S]*?<\\/frame\\s*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 57,
-              "line": 30
-            },
-            "start": {
-              "column": 18,
-              "line": 30
-            }
-          }
-        },
-        {
-          "id": "16",
-          "mutatorName": "Regex",
-          "replacement": "/\\son\\w+\\s*=\\s*(?:\"[\"]*\"|'[^']*'|[^\\s>]+)/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 72,
-              "line": 28
-            },
-            "start": {
-              "column": 26,
-              "line": 28
-            }
-          }
-        },
-        {
-          "id": "34",
-          "mutatorName": "Regex",
-          "replacement": "/<frame\\b[^>]*>[\\S\\S]*?<\\/frame\\s*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 57,
-              "line": 30
-            },
-            "start": {
-              "column": 18,
-              "line": 30
-            }
-          }
-        },
-        {
-          "id": "29",
-          "mutatorName": "Regex",
-          "replacement": "/<iframe\\b[^>]*>[\\s\\S]*?<\\/iframe\\S*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 60,
-              "line": 29
-            },
-            "start": {
-              "column": 19,
-              "line": 29
-            }
-          }
-        },
-        {
-          "id": "4",
-          "mutatorName": "Regex",
-          "replacement": "/<script\\b[^>]*>[\\S\\S]*?<\\/script\\s*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 64,
-              "line": 27
-            },
-            "start": {
-              "column": 23,
-              "line": 27
-            }
-          }
-        },
-        {
-          "id": "7",
-          "mutatorName": "Regex",
-          "replacement": "/<script\\b[^>]*>[\\s\\S]*?<\\/script\\S*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 64,
-              "line": 27
-            },
-            "start": {
-              "column": 23,
-              "line": 27
-            }
-          }
-        },
-        {
-          "id": "17",
-          "mutatorName": "Regex",
-          "replacement": "/\\son\\w+\\s*=\\s*(?:\"[^\"]*\"|'[^']'|[^\\s>]+)/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 72,
-              "line": 28
-            },
-            "start": {
-              "column": 26,
-              "line": 28
-            }
-          }
-        },
-        {
-          "id": "32",
-          "mutatorName": "Regex",
-          "replacement": "/<frame\\b[^>]*>[\\s\\S]<\\/frame\\s*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 57,
-              "line": 30
-            },
-            "start": {
-              "column": 18,
-              "line": 30
-            }
-          }
-        },
-        {
-          "id": "36",
-          "mutatorName": "Regex",
-          "replacement": "/<frame\\b[^>]*>[\\s\\S]*?<\\/frame\\s>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 57,
-              "line": 30
-            },
-            "start": {
-              "column": 18,
-              "line": 30
-            }
-          }
-        },
-        {
-          "id": "30",
-          "mutatorName": "Regex",
-          "replacement": "/<frame\\b[^>]>[\\s\\S]*?<\\/frame\\s*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 57,
-              "line": 30
-            },
-            "start": {
-              "column": 18,
-              "line": 30
-            }
-          }
-        },
-        {
-          "id": "12",
-          "mutatorName": "Regex",
-          "replacement": "/\\son\\w+\\S*=\\s*(?:\"[^\"]*\"|'[^']*'|[^\\s>]+)/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 72,
-              "line": 28
-            },
-            "start": {
-              "column": 26,
-              "line": 28
-            }
-          }
-        },
-        {
-          "id": "15",
-          "mutatorName": "Regex",
-          "replacement": "/\\son\\w+\\s*=\\s*(?:\"[^\"]\"|'[^']*'|[^\\s>]+)/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 72,
-              "line": 28
-            },
-            "start": {
-              "column": 26,
-              "line": 28
-            }
-          }
-        },
-        {
-          "id": "31",
-          "mutatorName": "Regex",
-          "replacement": "/<frame\\b[>]*>[\\s\\S]*?<\\/frame\\s*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 57,
-              "line": 30
-            },
-            "start": {
-              "column": 18,
-              "line": 30
-            }
-          }
-        },
-        {
-          "id": "35",
-          "mutatorName": "Regex",
-          "replacement": "/<frame\\b[^>]*>[\\s\\s]*?<\\/frame\\s*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 57,
-              "line": 30
-            },
-            "start": {
-              "column": 18,
-              "line": 30
-            }
-          }
-        },
-        {
-          "id": "38",
-          "mutatorName": "Regex",
-          "replacement": "/<object\\b[^>]>[\\s\\S]*?<\\/object\\s*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 60,
-              "line": 31
-            },
-            "start": {
-              "column": 19,
-              "line": 31
-            }
-          }
-        },
-        {
-          "id": "42",
-          "mutatorName": "Regex",
-          "replacement": "/<object\\b[^>]*>[\\S\\S]*?<\\/object\\s*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 60,
-              "line": 31
-            },
-            "start": {
-              "column": 19,
-              "line": 31
-            }
-          }
-        },
-        {
-          "id": "37",
-          "mutatorName": "Regex",
-          "replacement": "/<frame\\b[^>]*>[\\s\\S]*?<\\/frame\\S*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 57,
-              "line": 30
-            },
-            "start": {
-              "column": 18,
-              "line": 30
-            }
-          }
-        },
-        {
-          "id": "40",
-          "mutatorName": "Regex",
-          "replacement": "/<object\\b[^>]*>[\\s\\S]<\\/object\\s*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 60,
-              "line": 31
-            },
-            "start": {
-              "column": 19,
-              "line": 31
-            }
-          }
-        },
-        {
-          "id": "43",
-          "mutatorName": "Regex",
-          "replacement": "/<object\\b[^>]*>[\\s\\s]*?<\\/object\\s*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 60,
-              "line": 31
-            },
-            "start": {
-              "column": 19,
-              "line": 31
-            }
-          }
-        },
-        {
-          "id": "41",
-          "mutatorName": "Regex",
-          "replacement": "/<object\\b[^>]*>[^\\s\\S]*?<\\/object\\s*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 60,
-              "line": 31
-            },
-            "start": {
-              "column": 19,
-              "line": 31
-            }
-          }
-        },
-        {
-          "id": "47",
-          "mutatorName": "Regex",
-          "replacement": "/<embed\\b[>]*>[\\s\\S]*?<\\/embed\\s*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 57,
-              "line": 32
-            },
-            "start": {
-              "column": 18,
-              "line": 32
-            }
-          }
-        },
-        {
-          "id": "44",
-          "mutatorName": "Regex",
-          "replacement": "/<object\\b[^>]*>[\\s\\S]*?<\\/object\\s>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 60,
-              "line": 31
-            },
-            "start": {
-              "column": 19,
-              "line": 31
-            }
-          }
-        },
-        {
-          "id": "45",
-          "mutatorName": "Regex",
-          "replacement": "/<object\\b[^>]*>[\\s\\S]*?<\\/object\\S*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 60,
-              "line": 31
-            },
-            "start": {
-              "column": 19,
-              "line": 31
-            }
-          }
-        },
-        {
-          "id": "46",
-          "mutatorName": "Regex",
-          "replacement": "/<embed\\b[^>]>[\\s\\S]*?<\\/embed\\s*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 57,
-              "line": 32
-            },
-            "start": {
-              "column": 18,
-              "line": 32
-            }
-          }
-        },
-        {
-          "id": "51",
-          "mutatorName": "Regex",
-          "replacement": "/<embed\\b[^>]*>[\\s\\s]*?<\\/embed\\s*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 57,
-              "line": 32
-            },
-            "start": {
-              "column": 18,
-              "line": 32
-            }
-          }
-        },
-        {
-          "id": "39",
-          "mutatorName": "Regex",
-          "replacement": "/<object\\b[>]*>[\\s\\S]*?<\\/object\\s*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 60,
-              "line": 31
-            },
-            "start": {
-              "column": 19,
-              "line": 31
-            }
-          }
-        },
-        {
-          "id": "48",
-          "mutatorName": "Regex",
-          "replacement": "/<embed\\b[^>]*>[\\s\\S]<\\/embed\\s*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 57,
-              "line": 32
-            },
-            "start": {
-              "column": 18,
-              "line": 32
-            }
-          }
-        },
-        {
-          "id": "50",
-          "mutatorName": "Regex",
-          "replacement": "/<embed\\b[^>]*>[\\S\\S]*?<\\/embed\\s*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 57,
-              "line": 32
-            },
-            "start": {
-              "column": 18,
-              "line": 32
-            }
-          }
-        },
-        {
-          "id": "49",
-          "mutatorName": "Regex",
-          "replacement": "/<embed\\b[^>]*>[^\\s\\S]*?<\\/embed\\s*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 57,
-              "line": 32
-            },
-            "start": {
-              "column": 18,
-              "line": 32
-            }
-          }
-        },
-        {
-          "id": "52",
-          "mutatorName": "Regex",
-          "replacement": "/<embed\\b[^>]*>[\\s\\S]*?<\\/embed\\s>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 57,
-              "line": 32
-            },
-            "start": {
-              "column": 18,
-              "line": 32
-            }
-          }
-        },
-        {
-          "id": "53",
-          "mutatorName": "Regex",
-          "replacement": "/<embed\\b[^>]*>[\\s\\S]*?<\\/embed\\S*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 57,
-              "line": 32
-            },
-            "start": {
-              "column": 18,
-              "line": 32
-            }
-          }
-        },
-        {
-          "id": "57",
-          "mutatorName": "Regex",
-          "replacement": "/<link\\b[>]*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 34
-            },
-            "start": {
-              "column": 17,
-              "line": 34
-            }
-          }
-        },
-        {
-          "id": "54",
-          "mutatorName": "Regex",
-          "replacement": "/<meta\\b[^>]>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 33
-            },
-            "start": {
-              "column": 17,
-              "line": 33
-            }
-          }
-        },
-        {
-          "id": "59",
-          "mutatorName": "Regex",
-          "replacement": "/<base\\b[>]*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 35
-            },
-            "start": {
-              "column": 17,
-              "line": 35
-            }
-          }
-        },
-        {
-          "id": "55",
-          "mutatorName": "Regex",
-          "replacement": "/<meta\\b[>]*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 33
-            },
-            "start": {
-              "column": 17,
-              "line": 33
-            }
-          }
-        },
-        {
-          "id": "73",
-          "mutatorName": "Regex",
-          "replacement": "/<iframe\\b[^>]>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 23,
-              "line": 51
-            },
-            "start": {
-              "column": 3,
-              "line": 51
-            }
-          }
-        },
-        {
-          "id": "63",
-          "mutatorName": "Regex",
-          "replacement": "/\\bjavascript\\S*:/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 48,
-              "line": 37
-            },
-            "start": {
-              "column": 27,
-              "line": 37
-            }
-          }
-        },
-        {
-          "id": "56",
-          "mutatorName": "Regex",
-          "replacement": "/<link\\b[^>]>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 34
-            },
-            "start": {
-              "column": 17,
-              "line": 34
-            }
-          }
-        },
-        {
-          "id": "75",
-          "mutatorName": "Regex",
-          "replacement": "/<\\/iframe\\s>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 21,
-              "line": 52
-            },
-            "start": {
-              "column": 3,
-              "line": 52
-            }
-          }
-        },
-        {
-          "id": "58",
-          "mutatorName": "Regex",
-          "replacement": "/<base\\b[^>]>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 35,
-              "line": 35
-            },
-            "start": {
-              "column": 17,
-              "line": 35
-            }
-          }
-        },
-        {
-          "id": "65",
-          "mutatorName": "Regex",
-          "replacement": "/\\bdata\\S*:\\s*text\\/html/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 55,
-              "line": 38
-            },
-            "start": {
-              "column": 27,
-              "line": 38
-            }
-          }
-        },
-        {
-          "id": "74",
-          "mutatorName": "Regex",
-          "replacement": "/<iframe\\b[>]*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 23,
-              "line": 51
-            },
-            "start": {
-              "column": 3,
-              "line": 51
-            }
-          }
-        },
-        {
-          "id": "72",
-          "mutatorName": "Regex",
-          "replacement": "/<\\/script\\S*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 21,
-              "line": 50
-            },
-            "start": {
-              "column": 3,
-              "line": 50
-            }
-          }
-        },
-        {
-          "id": "67",
-          "mutatorName": "Regex",
-          "replacement": "/\\bdata\\s*:\\S*text\\/html/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 55,
-              "line": 38
-            },
-            "start": {
-              "column": 27,
-              "line": 38
-            }
-          }
-        },
-        {
-          "id": "70",
-          "mutatorName": "Regex",
-          "replacement": "/<script\\b[>]*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 23,
-              "line": 49
-            },
-            "start": {
-              "column": 3,
-              "line": 49
-            }
-          }
-        },
-        {
-          "id": "76",
-          "mutatorName": "Regex",
-          "replacement": "/<\\/iframe\\S*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 21,
-              "line": 52
-            },
-            "start": {
-              "column": 3,
-              "line": 52
-            }
-          }
-        },
-        {
-          "id": "77",
-          "mutatorName": "Regex",
-          "replacement": "/<frame\\b[^>]>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 22,
-              "line": 53
-            },
-            "start": {
-              "column": 3,
-              "line": 53
-            }
-          }
-        },
-        {
-          "id": "78",
-          "mutatorName": "Regex",
-          "replacement": "/<frame\\b[>]*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 22,
-              "line": 53
-            },
-            "start": {
-              "column": 3,
-              "line": 53
-            }
-          }
-        },
-        {
-          "id": "79",
-          "mutatorName": "Regex",
-          "replacement": "/<\\/frame\\s>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 20,
-              "line": 54
-            },
-            "start": {
-              "column": 3,
-              "line": 54
-            }
-          }
-        },
-        {
-          "id": "86",
-          "mutatorName": "Regex",
-          "replacement": "/<embed\\b[>]*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 22,
-              "line": 57
-            },
-            "start": {
-              "column": 3,
-              "line": 57
-            }
-          }
-        },
-        {
-          "id": "81",
-          "mutatorName": "Regex",
-          "replacement": "/<object\\b[^>]>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 23,
-              "line": 55
-            },
-            "start": {
-              "column": 3,
-              "line": 55
-            }
-          }
-        },
-        {
-          "id": "82",
-          "mutatorName": "Regex",
-          "replacement": "/<object\\b[>]*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 23,
-              "line": 55
-            },
-            "start": {
-              "column": 3,
-              "line": 55
-            }
-          }
-        },
-        {
-          "id": "83",
-          "mutatorName": "Regex",
-          "replacement": "/<\\/object\\s>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 21,
-              "line": 56
-            },
-            "start": {
-              "column": 3,
-              "line": 56
-            }
-          }
-        },
-        {
-          "id": "80",
-          "mutatorName": "Regex",
-          "replacement": "/<\\/frame\\S*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 20,
-              "line": 54
-            },
-            "start": {
-              "column": 3,
-              "line": 54
-            }
-          }
-        },
-        {
-          "id": "87",
-          "mutatorName": "Regex",
-          "replacement": "/<\\/embed\\s>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 20,
-              "line": 58
-            },
-            "start": {
-              "column": 3,
-              "line": 58
-            }
-          }
-        },
-        {
-          "id": "88",
-          "mutatorName": "Regex",
-          "replacement": "/<\\/embed\\S*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 20,
-              "line": 58
-            },
-            "start": {
-              "column": 3,
-              "line": 58
-            }
-          }
-        },
-        {
-          "id": "90",
-          "mutatorName": "Regex",
-          "replacement": "/<meta\\b[>]*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 21,
-              "line": 59
-            },
-            "start": {
-              "column": 3,
-              "line": 59
-            }
-          }
-        },
-        {
-          "id": "84",
-          "mutatorName": "Regex",
-          "replacement": "/<\\/object\\S*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 21,
-              "line": 56
-            },
-            "start": {
-              "column": 3,
-              "line": 56
-            }
-          }
-        },
-        {
-          "id": "85",
-          "mutatorName": "Regex",
-          "replacement": "/<embed\\b[^>]>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 22,
-              "line": 57
-            },
-            "start": {
-              "column": 3,
-              "line": 57
-            }
-          }
-        },
-        {
-          "id": "93",
-          "mutatorName": "Regex",
-          "replacement": "/<base\\b[^>]>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 21,
-              "line": 61
-            },
-            "start": {
-              "column": 3,
-              "line": 61
-            }
-          }
-        },
-        {
-          "id": "221",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: Cannot read properties of undefined (reading 'text'): uncaughtException: Cannot read properties of undefined (reading 'text')",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 206
-            },
-            "start": {
-              "column": 56,
-              "line": 150
-            }
-          }
-        },
-        {
-          "id": "91",
-          "mutatorName": "Regex",
-          "replacement": "/<link\\b[^>]>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 21,
-              "line": 60
-            },
-            "start": {
-              "column": 3,
-              "line": 60
-            }
-          }
-        },
-        {
-          "id": "92",
-          "mutatorName": "Regex",
-          "replacement": "/<link\\b[>]*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 21,
-              "line": 60
-            },
-            "start": {
-              "column": 3,
-              "line": 60
-            }
-          }
-        },
-        {
-          "id": "351",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 271
-            },
-            "start": {
-              "column": 51,
-              "line": 228
-            }
-          }
-        },
-        {
-          "id": "232",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "Hit limit reached (2573346/2573300)",
-          "status": "Timeout",
-          "static": false,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 204
-            },
-            "start": {
-              "column": 17,
-              "line": 161
-            }
-          }
-        },
-        {
-          "id": "99",
-          "mutatorName": "LogicalOperator",
-          "replacement": "(c === \"\\t\" || c === \"\\n\") && c === \"\\r\"",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 80,
-              "line": 74
-            },
-            "start": {
-              "column": 42,
-              "line": 74
-            }
-          }
-        },
-        {
-          "id": "98",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 80,
-              "line": 74
-            },
-            "start": {
-              "column": 42,
-              "line": 74
-            }
-          }
-        },
-        {
-          "id": "100",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 66,
-              "line": 74
-            },
-            "start": {
-              "column": 42,
-              "line": 74
-            }
-          }
-        },
-        {
-          "id": "105",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 66,
-              "line": 74
-            },
-            "start": {
-              "column": 56,
-              "line": 74
-            }
-          }
-        },
-        {
-          "id": "108",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 80,
-              "line": 74
-            },
-            "start": {
-              "column": 70,
-              "line": 74
-            }
-          }
-        },
-        {
-          "id": "101",
-          "mutatorName": "LogicalOperator",
-          "replacement": "c === \"\\t\" && c === \"\\n\"",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 66,
-              "line": 74
-            },
-            "start": {
-              "column": 42,
-              "line": 74
-            }
-          }
-        },
-        {
-          "id": "102",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 52,
-              "line": 74
-            },
-            "start": {
-              "column": 42,
-              "line": 74
-            }
-          }
-        },
-        {
-          "id": "94",
-          "mutatorName": "Regex",
-          "replacement": "/<base\\b[>]*>/giu",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 21,
-              "line": 61
-            },
-            "start": {
-              "column": 3,
-              "line": 61
-            }
-          }
-        },
-        {
-          "id": "230",
-          "mutatorName": "EqualityOperator",
-          "replacement": "i <= n",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 15,
-              "line": 161
-            },
-            "start": {
-              "column": 10,
-              "line": 161
-            }
-          }
-        },
-        {
-          "id": "96",
-          "mutatorName": "ArrowFunction",
-          "replacement": "() => undefined",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 7,
-          "coveredBy": [
-            "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 80,
-              "line": 74
-            },
-            "start": {
-              "column": 27,
-              "line": 74
-            }
-          }
-        },
-        {
-          "id": "361",
-          "mutatorName": "AssignmentOperator",
-          "replacement": "urlText -= view.text[i]",
-          "statusReason": "uncaughtException: urlText.matchAll is not a function or its return value is not iterable: uncaughtException: urlText.matchAll is not a function or its return value is not iterable",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 28,
-              "line": 236
-            },
-            "start": {
-              "column": 5,
-              "line": 236
-            }
-          }
-        },
-        {
-          "id": "392",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 319
-            },
-            "start": {
-              "column": 52,
-              "line": 279
-            }
-          }
-        },
-        {
-          "id": "393",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "true",
-          "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 18,
-              "line": 280
-            },
-            "start": {
-              "column": 7,
-              "line": 280
-            }
-          }
-        },
-        {
-          "id": "395",
-          "mutatorName": "EqualityOperator",
-          "replacement": "html !== ''",
-          "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 18,
-              "line": 280
-            },
-            "start": {
-              "column": 7,
-              "line": 280
-            }
-          }
-        },
-        {
-          "id": "411",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 33,
-              "line": 310
-            },
-            "start": {
-              "column": 23,
-              "line": 310
-            }
-          }
-        },
-        {
-          "id": "413",
-          "mutatorName": "EqualityOperator",
-          "replacement": "round >= 64",
-          "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 33,
-              "line": 310
-            },
-            "start": {
-              "column": 23,
-              "line": 310
-            }
-          }
-        },
-        {
-          "id": "355",
-          "mutatorName": "EqualityOperator",
-          "replacement": "i <= view.text.length",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 39,
-              "line": 234
-            },
-            "start": {
-              "column": 19,
-              "line": 234
-            }
-          }
-        },
-        {
-          "id": "415",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 4,
-              "line": 317
-            },
-            "start": {
-              "column": 44,
-              "line": 310
-            }
-          }
-        },
-        {
-          "id": "420",
-          "mutatorName": "BooleanLiteral",
-          "replacement": "false",
-          "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 23,
-              "line": 313
-            },
-            "start": {
-              "column": 19,
-              "line": 313
-            }
-          }
-        },
-        {
-          "id": "360",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 40,
-              "line": 235
-            },
-            "start": {
-              "column": 9,
-              "line": 235
-            }
-          }
-        },
-        {
           "id": "417",
           "mutatorName": "ConditionalExpression",
           "replacement": "false",
           "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
           "status": "Killed",
-          "static": false,
           "testsCompleted": 1,
+          "static": false,
           "killedBy": [
             "0"
           ],
@@ -9909,8 +10196,8 @@
           "replacement": "next !== out",
           "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
           "status": "Killed",
-          "static": false,
           "testsCompleted": 1,
+          "static": false,
           "killedBy": [
             "0"
           ],
@@ -9938,8 +10225,8 @@
           "replacement": "{}",
           "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
           "status": "Killed",
-          "static": false,
           "testsCompleted": 1,
+          "static": false,
           "killedBy": [
             "0"
           ],
@@ -9962,12 +10249,16 @@
           }
         },
         {
-          "id": "383",
-          "mutatorName": "ConditionalExpression",
+          "id": "420",
+          "mutatorName": "BooleanLiteral",
           "replacement": "false",
-          "status": "Survived",
+          "statusReason": "uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）: uncaughtException: capsuleHtml 显示 v=1——预热+2 并发客户端共 3 次请求仅触发 1 次真实取数（无 check-then-act 双取）",
+          "status": "Killed",
+          "testsCompleted": 1,
           "static": false,
-          "testsCompleted": 5,
+          "killedBy": [
+            "0"
+          ],
           "coveredBy": [
             "0",
             "2",
@@ -9977,234 +10268,30 @@
           ],
           "location": {
             "end": {
-              "column": 26,
-              "line": 256
-            },
-            "start": {
-              "column": 7,
-              "line": 256
-            }
-          }
-        },
-        {
-          "id": "394",
-          "mutatorName": "ConditionalExpression",
-          "replacement": "false",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 18,
-              "line": 280
-            },
-            "start": {
-              "column": 7,
-              "line": 280
-            }
-          }
-        },
-        {
-          "id": "412",
-          "mutatorName": "EqualityOperator",
-          "replacement": "round <= 64",
-          "status": "Survived",
-          "static": false,
-          "testsCompleted": 5,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 33,
-              "line": 310
-            },
-            "start": {
               "column": 23,
-              "line": 310
+              "line": 313
+            },
+            "start": {
+              "column": 19,
+              "line": 313
             }
           }
         },
         {
-          "id": "227",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "statusReason": "Hit limit reached (2573301/2573300)",
-          "status": "Timeout",
+          "id": "421",
+          "mutatorName": "StringLiteral",
+          "replacement": "\"Stryker was here!\"",
+          "statusReason": "Ignored because of excluded mutation \"StringLiteral\"",
+          "status": "Ignored",
           "static": false,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
           "location": {
             "end": {
-              "column": 20,
-              "line": 156
+              "column": 30,
+              "line": 318
             },
             "start": {
-              "column": 5,
-              "line": 156
-            }
-          }
-        },
-        {
-          "id": "240",
-          "mutatorName": "UpdateOperator",
-          "replacement": "i--",
-          "statusReason": "Hit limit reached (2569746/2569700)",
-          "status": "Timeout",
-          "static": false,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 10,
-              "line": 164
-            },
-            "start": {
-              "column": 7,
-              "line": 164
-            }
-          }
-        },
-        {
-          "id": "228",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "statusReason": "Hit limit reached (2573301/2573300)",
-          "status": "Timeout",
-          "static": false,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 18,
-              "line": 157
-            },
-            "start": {
-              "column": 5,
-              "line": 157
-            }
-          }
-        },
-        {
-          "id": "357",
-          "mutatorName": "UpdateOperator",
-          "replacement": "i--",
-          "statusReason": "Hit limit reached (2573346/2573300)",
-          "status": "Timeout",
-          "static": false,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 44,
-              "line": 234
-            },
-            "start": {
-              "column": 41,
-              "line": 234
-            }
-          }
-        },
-        {
-          "id": "222",
-          "mutatorName": "ArrayDeclaration",
-          "replacement": "[\"Stryker was here\"]",
-          "status": "Timeout",
-          "static": false,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 29,
-              "line": 151
-            },
-            "start": {
-              "column": 27,
-              "line": 151
-            }
-          }
-        },
-        {
-          "id": "362",
-          "mutatorName": "CallExpression",
-          "replacement": ";",
-          "status": "Timeout",
-          "static": false,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 22,
-              "line": 237
-            },
-            "start": {
-              "column": 5,
-              "line": 237
-            }
-          }
-        },
-        {
-          "id": "363",
-          "mutatorName": "ArrayDeclaration",
-          "replacement": "[\"Stryker was here\"]",
-          "status": "Timeout",
-          "static": false,
-          "coveredBy": [
-            "0",
-            "2",
-            "3",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 45,
-              "line": 239
-            },
-            "start": {
-              "column": 43,
-              "line": 239
+              "column": 28,
+              "line": 318
             }
           }
         }

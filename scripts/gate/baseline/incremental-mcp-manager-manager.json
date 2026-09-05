@@ -22,6 +22,33 @@
           }
         },
         {
+          "id": "1",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: 全局家不算项目标记: uncaughtException: 全局家不算项目标记",
+          "status": "Killed",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [
+            "0",
+            "2",
+            "4"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 47
+            },
+            "start": {
+              "column": 24,
+              "line": 45
+            }
+          }
+        },
+        {
           "id": "2",
           "mutatorName": "BlockStatement",
           "replacement": "{}",
@@ -23537,33 +23564,6 @@
             "start": {
               "column": 40,
               "line": 1032
-            }
-          }
-        },
-        {
-          "id": "1",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: 全局家不算项目标记: uncaughtException: 全局家不算项目标记",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 3,
-          "killedBy": [
-            "4"
-          ],
-          "coveredBy": [
-            "0",
-            "2",
-            "4"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 47
-            },
-            "start": {
-              "column": 24,
-              "line": 45
             }
           }
         }

@@ -1573,6 +1573,34 @@
           }
         },
         {
+          "id": "66",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: The \"path\" argument must be of type string. Received undefined: uncaughtException: The \"path\" argument must be of type string. Received undefined",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "2"
+          ],
+          "coveredBy": [
+            "2",
+            "4",
+            "5",
+            "6"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 242
+            },
+            "start": {
+              "column": 28,
+              "line": 240
+            }
+          }
+        },
+        {
           "id": "67",
           "mutatorName": "BlockStatement",
           "replacement": "{}",
@@ -44930,34 +44958,6 @@
             "start": {
               "column": 16,
               "line": 910
-            }
-          }
-        },
-        {
-          "id": "66",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: The \"path\" argument must be of type string. Received undefined: uncaughtException: The \"path\" argument must be of type string. Received undefined",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "2"
-          ],
-          "coveredBy": [
-            "2",
-            "4",
-            "5",
-            "6"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 242
-            },
-            "start": {
-              "column": 28,
-              "line": 240
             }
           }
         }
