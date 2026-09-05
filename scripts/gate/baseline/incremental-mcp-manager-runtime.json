@@ -6387,7 +6387,7 @@
             "2",
             "3",
             "4",
-            "6"
+            "8"
           ],
           "location": {
             "end": {
@@ -13765,7 +13765,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -13795,7 +13795,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -13897,7 +13897,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -13927,7 +13927,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -13954,7 +13954,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -13981,7 +13981,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -14011,7 +14011,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -14041,7 +14041,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -14071,7 +14071,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -14098,7 +14098,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -14128,7 +14128,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -14176,7 +14176,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -14206,7 +14206,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -15205,7 +15205,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -15235,7 +15235,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -15287,7 +15287,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -15314,7 +15314,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -15341,7 +15341,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -15368,7 +15368,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -15395,7 +15395,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -15422,7 +15422,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -15449,7 +15449,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -15476,7 +15476,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -15503,7 +15503,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -15530,7 +15530,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -15590,10 +15590,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "8"
           ],
           "coveredBy": [
-            "6",
+            "8",
             "9"
           ],
           "location": {
@@ -15652,7 +15652,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "6"
+            "8"
           ],
           "location": {
             "end": {
@@ -15674,7 +15674,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "6"
+            "8"
           ],
           "location": {
             "end": {
@@ -15696,10 +15696,10 @@
           "testsCompleted": 1,
           "static": false,
           "killedBy": [
-            "6"
+            "8"
           ],
           "coveredBy": [
-            "6"
+            "8"
           ],
           "location": {
             "end": {
@@ -15721,7 +15721,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "6"
+            "8"
           ],
           "location": {
             "end": {
@@ -15761,7 +15761,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "6"
+            "8"
           ],
           "location": {
             "end": {
@@ -16400,7 +16400,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -16430,7 +16430,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -16460,7 +16460,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -16490,7 +16490,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -16520,7 +16520,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -16550,7 +16550,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -16580,7 +16580,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -16661,7 +16661,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -16824,7 +16824,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -16854,7 +16854,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -16884,7 +16884,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -16914,7 +16914,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -16944,7 +16944,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -16971,7 +16971,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8"
           ],
           "location": {
@@ -17000,7 +17000,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -17030,7 +17030,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -17060,7 +17060,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -17090,7 +17090,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -17138,7 +17138,7 @@
             "2",
             "3",
             "4",
-            "6",
+            "7",
             "8",
             "9"
           ],
@@ -17180,7 +17180,7 @@
           "static": false,
           "killedBy": [],
           "coveredBy": [
-            "6",
+            "8",
             "9"
           ],
           "location": {
@@ -19094,19 +19094,10 @@
       ],
       "source": "// @ts-nocheck\n/**\n * dsh-mcp-manager — unit：中间层（ws_mcp_search / ws_mcp_call）。\n *\n * 覆盖：\n * - normalizeMiddlewareMode 归一化（off/project/all/非法）\n * - fullServerName / parseFullServerName（含非法形态）\n * - normalizeToolName（mcp__ 前缀剥离 / 跨 server 拒绝）\n * - normalizeArguments（JSON 字符串参数解析 / 标量保留）\n * - globMatch / policyAllows / policyDenialReason（deny 优先）\n * - scoreTool / searchCatalog（跨字段打分 / unavailable 段 / 空查询摘要）\n * - McpMiddleware：projectUnitFor 惰性创建 + userDisabled 合并 + inFlight 去重\n * - callTool：未知 server / 未连接 / 连接中 / 策略拒绝 / 路由一致性\n * - evictIfNeeded LRU 淘汰\n */\nimport assert from \"node:assert/strict\";\nimport { existsSync, mkdtempSync, mkdirSync, writeFileSync } from \"node:fs\";\nimport { tmpdir } from \"node:os\";\nimport { join } from \"node:path\";\n\nconst {\n  normalizeMiddlewareMode,\n  fullServerName,\n  parseFullServerName,\n  normalizeToolName,\n  normalizeArguments,\n  globMatch,\n  policyAllows,\n  policyDenialReason,\n  scoreTool,\n  searchCatalog,\n  searchCatalogMulti,\n  listCatalog,\n  findToolDetail,\n  McpMiddleware,\n  projectCallToolResult,\n  CATALOG_TTL_MS,\n  LIST_DEFAULT_TOOLS_PER_SERVER,\n  LIST_MAX_TOOLS_PER_SERVER,\n  userStateFile,\n  loadUserState,\n  saveUserState,\n} = await import(\"../lib/index.js\");\n\nconst ROOT = \"/tmp/ws-root-a\";\n\nfunction makeHost(serversByRoot = new Map()) {\n  const log = { emits: 0, saved: 0 };\n  const host = {\n    ctx: { tools: { register: () => () => {} } },\n    logger: { info: () => {}, warn: () => {}, error: () => {} },\n    projectServersFor: async (root) => serversByRoot.get(root),\n    globalServers: () => [],\n    normalizedProjectRoot: async (cwd) => (typeof cwd === \"string\" && cwd !== \"\" ? cwd : undefined),\n    saveUserState: async () => { log.saved += 1; },\n    emitStatus: () => { log.emits += 1; },\n    catalogCachePath: (root) => join(root, \".dsh-mcp-catalog-test.json\"),\n  };\n  return { host, log };\n}\n\n// ---- normalizeMiddlewareMode ----\n{\n  assert.equal(normalizeMiddlewareMode(\"off\"), \"off\");\n  assert.equal(normalizeMiddlewareMode(\"project\"), \"project\");\n  assert.equal(normalizeMiddlewareMode(\"all\"), \"all\");\n  assert.equal(normalizeMiddlewareMode(\"bogus\"), \"off\");\n  assert.equal(normalizeMiddlewareMode(undefined), \"off\");\n}\n\n// ---- fullServerName / parseFullServerName ----\n{\n  assert.equal(fullServerName(\"/a/b\", \"ctx\"), \"@/a/b/ctx\");\n  assert.deepEqual(parseFullServerName(\"@/a/b/ctx\"), { root: \"/a/b\", server: \"ctx\" });\n  assert.deepEqual(parseFullServerName(\"@/a/b\"), { root: \"/a\", server: \"b\" });\n  assert.equal(parseFullServerName(\"ctx\"), undefined);\n  assert.equal(parseFullServerName(\"@/\"), undefined); // 空 server\n  assert.equal(parseFullServerName(\"@/a/\"), undefined); // 空 server\n}\n\n// ---- normalizeToolName ----\n{\n  assert.equal(normalizeToolName(\"ctx\", \"use_ctx\"), \"use_ctx\");\n  assert.equal(normalizeToolName(\"ctx\", \"mcp__ctx__use_ctx\"), \"use_ctx\");\n  assert.equal(normalizeToolName(\"ctx\", \"mcp__ctx__mcp__ctx__use_ctx\"), \"use_ctx\");\n  assert.throws(() => normalizeToolName(\"ctx\", \"mcp__other__tool\"), /疑似其他/);\n}\n\n// ---- normalizeArguments ----\n{\n  assert.deepEqual(normalizeArguments({ a: 1 }), { a: 1 });\n  assert.deepEqual(normalizeArguments('{\"a\":1}'), { a: 1 });\n  assert.deepEqual(normalizeArguments('\"[1,2]\"'), [1, 2]);\n  assert.equal(normalizeArguments(\"hello\"), \"hello\"); // 标量保留\n  assert.deepEqual(normalizeArguments(\"\"), {}); // 空串 → 空对象\n}\n\n// ---- globMatch / policy ----\n{\n  assert.equal(globMatch(\"*\", \"anything\"), true);\n  assert.equal(globMatch(\"foo\", \"foo\"), true);\n  assert.equal(globMatch(\"foo\", \"bar\"), false);\n  assert.equal(globMatch(\"foo*\", \"foobar\"), true);\n  assert.equal(globMatch(\"foo*\", \"barfoo\"), false);\n  const policy = { allowTools: { ctx: [\"use_*\"] }, denyTools: { ctx: [\"use_secret\"] } };\n  assert.equal(policyAllows(policy, \"ctx\", \"use_ctx\"), true);\n  assert.equal(policyAllows(policy, \"ctx\", \"use_secret\"), false); // deny 优先\n  assert.equal(policyAllows(policy, \"ctx\", \"other\"), false); // 不在 allow\n  assert.equal(policyAllows(policy, \"other\", \"anything\"), true); // 未配置 → 允许\n  assert.equal(policyAllows(undefined, \"ctx\", \"x\"), true);\n  assert.match(policyDenialReason(policy, \"ctx\", \"use_secret\"), /denyTools/);\n  assert.match(policyDenialReason(policy, \"ctx\", \"other\"), /allowTools/);\n}\n\n// ---- scoreTool / searchCatalog ----\n{\n  const unit = {\n    root: ROOT,\n    connections: new Map(),\n    catalog: new Map([\n      [\"ctx\", {\n        discoveredAt: Date.now(),\n        tools: new Map([\n          [\"use_ctx\", { description: \"查询 context7 文档\", inputSchema: { type: \"object\", properties: { query: { type: \"string\" } } } }],\n          [\"search\", { description: \"search tool\", inputSchema: {} }],\n        ]),\n      }],\n      [\"down\", { discoveredAt: 0, tools: new Map(), unavailable: \"连接失败\" }],\n    ]),\n    userDisabled: new Set(),\n    lastTouchedAt: Date.now(),\n    inFlight: new Map(),\n  };\n  const units = new Map([[ROOT, unit]]);\n  const { results, unavailable } = searchCatalog(units, ROOT, \"文档\", 5);\n  assert.ok(results.length >= 1, \"命中文档工具\");\n  assert.equal(results[0].server, fullServerName(ROOT, \"ctx\"));\n  assert.equal(results[0].fresh, true);\n  assert.equal(unavailable.length, 1);\n  assert.match(unavailable[0].reason, /连接失败/);\n  // 空查询 → 能力摘要\n  const summary = searchCatalog(units, ROOT, \"\", 5);\n  assert.equal(summary.results.length, 2);\n  // TTL 过期 → fresh=false\n  const stale = searchCatalog(new Map([[ROOT, { ...unit, catalog: new Map([[\"ctx\", { discoveredAt: Date.now() - CATALOG_TTL_MS - 1000, tools: unit.catalog.get(\"ctx\").tools }]]) }]]), ROOT, \"文档\", 5);\n  assert.equal(stale.results[0].fresh, false);\n}\n\n// ---- McpMiddleware：projectUnitFor / userDisabled / inFlight ----\n{\n  const servers = [{ name: \"ctx\", transport: \"stdio\", command: \"npx\", enabled: true }];\n  const { host, log } = makeHost(new Map([[ROOT, servers]]));\n  const mw = new McpMiddleware(host, {});\n  mw.disabledByRoot.set(ROOT, new Set([\"ctx\"]));\n  const unit = await mw.projectUnitFor(ROOT);\n  assert.ok(unit !== undefined);\n  assert.equal(unit.userDisabled.has(\"ctx\"), true, \"userDisabled 合并\");\n  assert.equal(unit.connections.size, 0, \"惰性：未显式连接前不建连接\");\n  assert.equal(log.emits, 0);\n  // 无项目标记目录 → undefined\n  const none = await mw.projectUnitFor(\"/no/such/root\");\n  assert.equal(none, undefined);\n  await mw.dispose();\n}\n\n// ---- callTool：路由一致性 / 未连接 / 策略 ----\n{\n  // enabled:false → 不触发真实连接（单元测试不 spawn 子进程）\n  const servers = [{ name: \"ctx\", transport: \"stdio\", command: \"npx\", enabled: false }];\n  const { host } = makeHost(new Map([[ROOT, servers]]));\n  const mw = new McpMiddleware(host, { denyTools: { ctx: [\"secret\"] } });\n  await mw.projectUnitFor(ROOT);\n  // 路由一致性：参数 root ≠ 路由 root → 拒绝\n  await assert.rejects(\n    () => mw.callTool(\"@/other/root/ctx\", \"use_ctx\", {}, undefined),\n    /不属于当前工作空间|未激活/,\n  );\n  // 未知 server 形态\n  await assert.rejects(() => mw.callTool(\"ctx\", \"use_ctx\", {}, undefined), /格式应为/);\n  // 未连接（enabled:false 不触发连接）→ 错误含下一步提示（ws_mcp_search 或 ws_mcp_list）\n  await assert.rejects(\n    () => mw.callTool(fullServerName(ROOT, \"ctx\"), \"use_ctx\", {}, undefined),\n    /未连接或连接失败，请先 ws_mcp_search 或 ws_mcp_list 确认 server 已连接/,\n  );\n  // userDisabled → 错误含下一步提示\n  mw.disabledByRoot.set(ROOT, new Set([\"ctx\"]));\n  const disabledUnit = await mw.projectUnitFor(ROOT);\n  disabledUnit.userDisabled.add(\"ctx\");\n  await assert.rejects(\n    () => mw.callTool(fullServerName(ROOT, \"ctx\"), \"use_ctx\", {}, undefined),\n    /已被用户禁用；可先在 GUI「MCP」浮窗中重新连接/,\n  );\n  disabledUnit.userDisabled.delete(\"ctx\");\n  await mw.dispose();\n}\n\n// ---- evictIfNeeded LRU ----\n{\n  const { host } = makeHost(new Map());\n  const mw = new McpMiddleware(host, {});\n  // 注入 18 个假单元（无服务器配置，projectUnitFor 会返回 undefined —— 直接塞 map）\n  for (let index = 0; index < 18; index += 1) {\n    mw.units.set(`/root-${index}`, {\n      root: `/root-${index}`,\n      connections: new Map(),\n      catalog: new Map(),\n      userDisabled: new Set(),\n      lastTouchedAt: 1000 + index,\n      inFlight: new Map(),\n    });\n  }\n  mw.evictIfNeeded(16);\n  assert.equal(mw.units.size, 16, \"LRU 淘汰到上限\");\n  assert.equal(mw.units.has(\"/root-0\"), false, \"最旧被淘汰\");\n  assert.equal(mw.units.has(\"/root-17\"), true, \"最新保留\");\n  await mw.dispose();\n}\n\n// ---- userState 持久化 ----\n{\n  const dir = mkdtempSync(join(tmpdir(), \"dsh-mcp-mw-\"));\n  const file = join(dir, \"user-state.json\");\n  const units = new Map([[ROOT, {\n    root: ROOT,\n    connections: new Map(),\n    catalog: new Map(),\n    userDisabled: new Set([\"ctx\"]),\n    lastTouchedAt: Date.now(),\n    inFlight: new Map(),\n  }]]);\n  await saveUserState(file, units);\n  const loaded = await loadUserState(file);\n  assert.deepEqual([...loaded.get(ROOT)], [\"ctx\"]);\n  // 损坏文件 → 空\n  writeFileSync(file, \"{bad json\");\n  const empty = await loadUserState(file);\n  assert.equal(empty.size, 0);\n  mkdirSync(join(dir, \"sub\"));\n}\n\n// ---- last-good 目录缓存：loadCatalogCache 读取 / persistCatalog 空采集不写盘 ----\n{\n  const dir = mkdtempSync(join(tmpdir(), \"dsh-mcp-mw-cat-\"));\n  const baseHost = makeHost(new Map());\n  const catalogHost = {\n    ...baseHost.host,\n    catalogCachePath: (root) => join(dir, `${root.replace(/[^a-z0-9]/gi, \"_\")}.json`),\n  };\n  const mw = new McpMiddleware(catalogHost, {});\n  const unit = {\n    root: ROOT,\n    connections: new Map(),\n    catalog: new Map([\n      [\"ctx\", {\n        discoveredAt: Date.now(),\n        tools: new Map([[\"use_ctx\", { description: \"查询文档\", inputSchema: {} }]]),\n      }],\n    ]),\n    userDisabled: new Set(),\n    lastTouchedAt: Date.now(),\n    inFlight: new Map(),\n  };\n  mw.units.set(ROOT, unit);\n  await mw.persistCatalog(ROOT);\n  const file = catalogHost.catalogCachePath(ROOT);\n  assert.equal(existsSync(file), true, \"有工具的目录落盘\");\n  // 空采集不写盘：清空目录后 persist 不覆盖已有缓存（保留 last-good）\n  const { readFileSync } = await import(\"node:fs\");\n  const before = readFileSync(file, \"utf8\");\n  unit.catalog.get(\"ctx\").tools.clear();\n  unit.catalog.get(\"ctx\").unavailable = \"failed\";\n  await mw.persistCatalog(ROOT);\n  assert.equal(readFileSync(file, \"utf8\"), before, \"空采集不覆盖已有缓存（保留 last-good）\");\n  await mw.dispose();\n}\n\n// ---- searchCatalogMulti：多单元合并检索（all 模式） ----\n{\n  const unit = {\n    root: ROOT,\n    connections: new Map(),\n    catalog: new Map([\n      [\"ctx\", {\n        discoveredAt: Date.now(),\n        tools: new Map([\n          [\"use_ctx\", { description: \"查询 context7 文档\", inputSchema: {} }],\n          [\"search\", { description: \"search tool\", inputSchema: {} }],\n        ]),\n      }],\n    ]),\n    userDisabled: new Set(),\n    lastTouchedAt: Date.now(),\n    inFlight: new Map(),\n  };\n  const globalUnit = {\n    ...unit,\n    root: \"@global\",\n    catalog: new Map([\n      [\"gctx\", {\n        discoveredAt: Date.now(),\n        tools: new Map([\n          [\"use_g\", { description: \"全局工具\", inputSchema: {} }],\n          [\"other\", { description: \"无关\", inputSchema: {} }],\n        ]),\n      }],\n    ]),\n  };\n  const units = new Map([[ROOT, unit], [\"@global\", globalUnit]]);\n  // 合并查询命中两个单元（项目 root + @global）。\n  const multi = searchCatalogMulti(units, [ROOT, \"@global\"], \"use\", 10);\n  assert.ok(multi.results.some((hit) => hit.server === fullServerName(ROOT, \"ctx\")), \"命中项目单元\");\n  assert.ok(multi.results.some((hit) => hit.server === fullServerName(\"@global\", \"gctx\")), \"命中 @global 单元\");\n  // 空查询能力摘要同样合并。\n  const summary = searchCatalogMulti(units, [ROOT, \"@global\"], \"\", 10);\n  assert.equal(summary.results.length, 4, \"合并摘要含全部工具\");\n  // 单 root 包装与 multi 单元素等价（且顺序一致——multi 单 root 委托 searchCatalog，P2-2）。\n  const single = searchCatalog(units, ROOT, \"文档\", 10);\n  assert.deepEqual(single.results, searchCatalogMulti(units, [ROOT], \"文档\", 10).results);\n  // 多 root 合并后统一按全局 limit 截断（P2-3：limit 为全局上限）。\n  const capped = searchCatalogMulti(units, [ROOT, \"@global\"], \"\", 2);\n  assert.equal(capped.results.length, 2, \"多 root 合并后按全局 limit 截断\");\n  // 无此单元 → 空。\n  const none = searchCatalogMulti(units, [\"/no/such\"], \"x\", 10);\n  assert.equal(none.results.length, 0);\n  assert.equal(none.unavailable.length, 0);\n}\n\n// ---- listCatalog：完整清单 / 过滤 / 空返回 / 截断 / unavailable / disabled ----\n{\n  const mkTools = (count) => {\n    const tools = new Map();\n    for (let i = 0; i < count; i += 1) tools.set(`t${i}`, { description: `desc${i}`, inputSchema: {} });\n    return tools;\n  };\n  const unit = {\n    root: ROOT,\n    connections: new Map(),\n    catalog: new Map([\n      // 2 个工具（无截断）\n      [\"ctx\", { discoveredAt: Date.now(), tools: mkTools(2) }],\n      // 用户已禁用（工具来自 last-good 目录）\n      [\"off\", { discoveredAt: Date.now(), tools: mkTools(1) }],\n      // 发现失败\n      [\"down\", { discoveredAt: 0, tools: new Map(), unavailable: \"连接失败\" }],\n    ]),\n    userDisabled: new Set([\"off\"]),\n    lastTouchedAt: Date.now(),\n    inFlight: new Map(),\n  };\n  const globalUnit = {\n    ...unit,\n    root: \"@global\",\n    catalog: new Map([[\"gctx\", { discoveredAt: Date.now(), tools: mkTools(3) }]]),\n    userDisabled: new Set(),\n  };\n  const units = new Map([[ROOT, unit], [\"@global\", globalUnit]]);\n\n  // 完整清单（project 模式：单 root）\n  const listed = listCatalog(units, [ROOT], undefined, 50, \"project\", \"empty\");\n  assert.equal(listed.workspace, ROOT);\n  assert.equal(listed.mode, \"project\");\n  assert.equal(listed.totalServers, 3, \"全部服务器（含 disabled/unavailable）\");\n  assert.equal(listed.totalTools, 3, \"工具数不含 unavailable 服务器\");\n  assert.equal(listed.toolsTruncated, false);\n  const ctxEntry = listed.servers.find((s) => s.server === fullServerName(ROOT, \"ctx\"));\n  assert.deepEqual(ctxEntry.tools.map((t) => t.tool), [\"t0\", \"t1\"]);\n  assert.equal(ctxEntry.toolsTruncated, false);\n  assert.equal(ctxEntry.disabled, undefined);\n  const offEntry = listed.servers.find((s) => s.server === fullServerName(ROOT, \"off\"));\n  assert.equal(offEntry.disabled, true, \"userDisabled → disabled: true\");\n  const downEntry = listed.servers.find((s) => s.server === fullServerName(ROOT, \"down\"));\n  assert.equal(downEntry.unavailable, \"连接失败\", \"发现失败附原因\");\n  assert.deepEqual(downEntry.tools, []);\n  assert.equal(listed.message, undefined, \"非空返回无 message\");\n\n  // server 过滤（裸名）\n  const filteredBare = listCatalog(units, [ROOT], \"ctx\", 50, \"project\", \"empty\");\n  assert.equal(filteredBare.totalServers, 1);\n  assert.equal(filteredBare.servers[0].server, fullServerName(ROOT, \"ctx\"));\n  // server 过滤（全名）\n  const filteredFull = listCatalog(units, [ROOT], fullServerName(ROOT, \"ctx\"), 50, \"project\", \"empty\");\n  assert.equal(filteredFull.totalServers, 1);\n  // 全名 root 不属于当前 roots → 路由一致性错误\n  assert.throws(() => listCatalog(units, [ROOT], \"@/other/root/ctx\", 50, \"project\", \"empty\"), /不属于当前工作空间/);\n\n  // all 模式：合并 @global 单元\n  const all = listCatalog(units, [ROOT, \"@global\"], undefined, 50, \"all\", \"empty\");\n  assert.equal(all.mode, \"all\");\n  assert.equal(all.totalServers, 4, \"项目 root + @global 合并\");\n  assert.equal(all.workspace, ROOT);\n  assert.ok(all.servers.some((s) => s.server === fullServerName(\"@global\", \"gctx\")), \"含 @global 服务器\");\n  assert.equal(all.totalTools, 6);\n\n  // perServerLimit 截断 → toolsTruncated（per-server + 全局汇总）\n  const truncated = listCatalog(units, [ROOT], undefined, 1, \"project\", \"empty\");\n  const ctxT = truncated.servers.find((s) => s.server === fullServerName(ROOT, \"ctx\"));\n  assert.equal(ctxT.tools.length, 1, \"截断到 1 条\");\n  assert.equal(ctxT.toolsTruncated, true, \"per-server toolsTruncated\");\n  assert.equal(truncated.toolsTruncated, true, \"全局 toolsTruncated\");\n  const offT = truncated.servers.find((s) => s.server === fullServerName(ROOT, \"off\"));\n  assert.equal(offT.toolsTruncated, false, \"未超限不置位\");\n\n  // 空返回 → message（project / all 区分）\n  const empty = listCatalog(new Map(), [ROOT], undefined, 50, \"project\", \"无项目级 MCP 配置提示\");\n  assert.equal(empty.totalServers, 0);\n  assert.equal(empty.totalTools, 0);\n  assert.equal(empty.message, \"无项目级 MCP 配置提示\");\n  assert.equal(empty.toolsTruncated, false);\n  // 常量值\n  assert.equal(LIST_DEFAULT_TOOLS_PER_SERVER, 50);\n  assert.equal(LIST_MAX_TOOLS_PER_SERVER, 500);\n\n  // #381 回归：未禁用工具条目**不写** disabled 键（显式 undefined 键会被宿主\n  // lossless JSON 输出校验判非法 → ws_mcp_list 报 \"value is not lossless JSON\"）。\n  for (const tool of ctxEntry.tools) {\n    assert.equal(Object.hasOwn(tool, \"disabled\"), false, `未禁用条目不写 disabled 键（${tool.tool}）`);\n  }\n  assert.equal(Object.hasOwn(offEntry, \"disabled\"), true, \"服务器级禁用仍写 disabled 键\");\n\n  // #381 回归：工具级禁用路径——禁用条目写 disabled: true，未禁用条目无键。\n  const disabledMap = new Map([[ROOT, new Map([[\"ctx\", new Set([\"t0\"])]])]]);\n  const withDisabled = listCatalog(units, [ROOT], undefined, 50, \"project\", \"empty\", disabledMap);\n  const ctxWD = withDisabled.servers.find((s) => s.server === fullServerName(ROOT, \"ctx\"));\n  assert.equal(ctxWD.tools[0].disabled, true, \"t0 被禁用 → disabled: true\");\n  assert.equal(Object.hasOwn(ctxWD.tools[0], \"disabled\"), true);\n  assert.equal(Object.hasOwn(ctxWD.tools[1], \"disabled\"), false, \"t1 未禁用 → 无 disabled 键\");\n\n  // #381 回归：模拟宿主 lossless 校验（递归断言输出树无 undefined 值键/元素）。\n  const assertLossless = (value, path) => {\n    if (value === undefined) throw new Error(`lossless 违规：${path} 为 undefined`);\n    if (value === null || typeof value !== \"object\") return;\n    if (Array.isArray(value)) {\n      value.forEach((item, i) => assertLossless(item, `${path}[${i}]`));\n      return;\n    }\n    for (const [key, entry] of Object.entries(value)) assertLossless(entry, `${path}.${key}`);\n  };\n  assertLossless(listed, \"listed\");\n  assertLossless(withDisabled, \"withDisabled\");\n}\n\n// ---- findToolDetail：精确命中 / 完整 schema / 错误三分 / tool 归一化 ----\n{\n  const schema = { type: \"object\", properties: { query: { type: \"string\" }, mode: { type: \"string\", enum: [\"a\", \"b\"] } }, required: [\"query\"] };\n  const unit = {\n    root: ROOT,\n    connections: new Map(),\n    catalog: new Map([\n      [\"ctx\", {\n        discoveredAt: Date.now(),\n        tools: new Map([\n          [\"use_ctx\", { description: \"查询 context7 文档\", inputSchema: schema }],\n        ]),\n      }],\n      [\"down\", { discoveredAt: 0, tools: new Map(), unavailable: \"连接失败\" }],\n    ]),\n    userDisabled: new Set(),\n    lastTouchedAt: Date.now(),\n    inFlight: new Map(),\n  };\n  const units = new Map([[ROOT, unit]]);\n  // 精确命中：完整 schema + fresh + server/tool 原样\n  const detail = findToolDetail(units, ROOT, fullServerName(ROOT, \"ctx\"), \"use_ctx\");\n  assert.equal(detail.server, fullServerName(ROOT, \"ctx\"));\n  assert.equal(detail.tool, \"use_ctx\");\n  assert.equal(detail.description, \"查询 context7 文档\");\n  assert.deepEqual(detail.inputSchema, schema, \"完整 inputSchema（含 enum/required）\");\n  assert.equal(detail.fresh, true);\n  assert.equal(detail.disabled, undefined);\n  // tool 归一化（mcp__ 前缀剥离）\n  const normalized = findToolDetail(units, ROOT, fullServerName(ROOT, \"ctx\"), \"mcp__ctx__use_ctx\");\n  assert.equal(normalized.tool, \"use_ctx\");\n  assert.deepEqual(normalized.inputSchema, schema);\n  // 跨 server 前缀 → 疑似其他\n  assert.throws(() => findToolDetail(units, ROOT, fullServerName(ROOT, \"ctx\"), \"mcp__other__tool\"), /疑似其他/);\n  // 错误三分 1：server 发现失败（附原因）\n  assert.throws(\n    () => findToolDetail(units, ROOT, fullServerName(ROOT, \"down\"), \"x\"),\n    /发现失败.*连接失败/,\n  );\n  // 错误三分 2：服务器未发现\n  assert.throws(\n    () => findToolDetail(units, ROOT, fullServerName(ROOT, \"nope\"), \"x\"),\n    /未连接或未发现/,\n  );\n  // 错误三分 2b：单元未激活\n  assert.throws(\n    () => findToolDetail(units, \"/no/such\", fullServerName(\"/no/such\", \"ctx\"), \"x\"),\n    /未连接或未发现/,\n  );\n  // 错误三分 3：工具不存在\n  assert.throws(\n    () => findToolDetail(units, ROOT, fullServerName(ROOT, \"ctx\"), \"nope\"),\n    /tool 不存在/,\n  );\n  // 路由一致性：参数 root ≠ 路由 root → 拒绝\n  assert.throws(\n    () => findToolDetail(units, ROOT, fullServerName(\"@global\", \"ctx\"), \"x\"),\n    /不属于当前工作空间/,\n  );\n  // 用户禁用 → detail 标注 disabled\n  const disabledUnit = {\n    ...unit,\n    userDisabled: new Set([\"ctx\"]),\n  };\n  const disabledDetail = findToolDetail(new Map([[ROOT, disabledUnit]]), ROOT, fullServerName(ROOT, \"ctx\"), \"use_ctx\");\n  assert.equal(disabledDetail.disabled, true, \"用户禁用标注 disabled\");\n  // 禁用且目录空 → 未连接（附禁用说明）\n  const disabledEmpty = {\n    ...disabledUnit,\n    catalog: new Map([[\"ctx\", { discoveredAt: 0, tools: new Map() }]]),\n  };\n  assert.throws(\n    () => findToolDetail(new Map([[ROOT, disabledEmpty]]), ROOT, fullServerName(ROOT, \"ctx\"), \"x\"),\n    /已被用户禁用/,\n  );\n}\n\n// ---- #412 force 受控重建：半开 connected entry 不短路 ----\n{\n  const servers = [{ name: \"ctx\", transport: \"stdio\", command: \"npx\", enabled: true }];\n  const { host } = makeHost(new Map([[ROOT, servers]]));\n  // 防双进程探测命中（避免真实 spawn；重建落 failed 占位 + 排重试）\n  host.ctx.tools.schemas = () => [{ name: \"mcp__ctx__t\" }];\n  const mw = new McpMiddleware(host, {});\n  // 直接构造单元（不走 projectUnitFor 惰性连接，测试全程不 spawn）\n  const unit = {\n    root: ROOT,\n    connections: new Map(),\n    catalog: new Map(),\n    userDisabled: new Set(),\n    lastTouchedAt: Date.now(),\n    inFlight: new Map(),\n  };\n  mw.units.set(ROOT, unit);\n  // 预置「半开死连接」：status 卡 connected、transport 已静默断链（模拟移动端\n  // 切后台掐断 TCP 后 onClose 不触发）。\n  const deadTransport = { close: () => { deadTransport.closed = true; return Promise.resolve(); }, closed: false };\n  const deadEntry = {\n    server: servers[0],\n    client: {},\n    transport: deadTransport,\n    status: \"connected\",\n    error: undefined,\n    connectedAt: Date.now(),\n    reconnectTimer: undefined,\n    disposed: false,\n    failedAttempts: 0,\n  };\n  unit.connections.set(\"ctx\", deadEntry);\n\n  // 非 force：connected 短路——entry 引用与 transport 原样保留（惰性路径防重复建连）。\n  await mw.ensureConnected(ROOT, \"ctx\");\n  assert.equal(unit.connections.get(\"ctx\"), deadEntry, \"非 force 短路保留原 entry\");\n  assert.equal(deadTransport.closed, false, \"非 force 不 close 旧 transport\");\n\n  // force：忽略 connected 状态受控重建——旧 transport 被 close、entry 置 failed\n  // + 重试排程（探测命中防双进程路径复用 entry，不再短路）。\n  await mw.ensureConnected(ROOT, \"ctx\", { force: true });\n  assert.equal(deadTransport.closed, true, \"force 关闭旧 transport（半开 socket 不泄漏）\");\n  const after = unit.connections.get(\"ctx\");\n  assert.equal(after.status, \"failed\", \"force 重建置 failed（防 probeRetry 对 connected 短路死循环）\");\n  assert.equal(after.transport, undefined, \"旧 transport 已清空（重建代际）\");\n  assert.equal(after.probeRetried, true, \"重试已排（probeRetried 一次性标记）\");\n  if (after.reconnectTimer !== undefined) clearTimeout(after.reconnectTimer);\n  await mw.dispose();\n}\n\n// ---- #413：runtime 封装定义服务器（toolDefinitions）中间层直呼 ----\n{\n  const wrappedTool = {\n    name: \"cg_node\",\n    description: \"查符号（封装定义）\",\n    parameters: { type: \"object\", properties: { symbol: { type: \"string\" } }, required: [\"symbol\"] },\n    output: {\n      schema: { type: \"object\", properties: { text: { type: \"string\" } }, required: [\"text\"], additionalProperties: false },\n      render: (args, value) => [{ type: \"text\", text: `rendered:${value.text}` }],\n    },\n    isConcurrencySafe: () => true,\n    execute: async (args, exec) => {\n      const cwd = exec?.agent?.session?.header?.cwd;\n      return { text: `node(${args.symbol})@${cwd ?? \"no-cwd\"}` };\n    },\n  };\n  const wrappedServer = { name: \"cg\", transport: \"stdio\", command: \"codegraph\", enabled: true, toolDefinitions: [wrappedTool] };\n  const { host, log } = makeHost(new Map([[\"@global\", [wrappedServer]]]));\n  const mw = new McpMiddleware(host, {});\n  await mw.projectUnitFor(\"@global\");\n  await mw.ensureConnected(\"@global\", \"cg\");\n  const unit = mw.units.get(\"@global\");\n  assert.ok(unit, \"@global 单元已创建\");\n  const entry = unit.connections.get(\"cg\");\n  assert.ok(entry, \"封装定义服务器虚拟连接已建立\");\n  assert.equal(entry.status, \"connected\", \"虚拟连接状态 connected\");\n  assert.equal(entry.client, undefined, \"不建远端 client（封装 execute 不经远端）\");\n  assert.equal(entry.transport, undefined, \"不 spawn transport\");\n  // 目录从 toolDefinitions 投影（name/description/parameters → inputSchema）。\n  const catalog = unit.catalog.get(\"cg\");\n  assert.ok(catalog, \"目录已投影\");\n  assert.equal(catalog.tools.has(\"cg_node\"), true, \"封装工具名投影进目录\");\n  assert.equal(catalog.tools.get(\"cg_node\").description, \"查符号（封装定义）\");\n  assert.deepEqual(catalog.tools.get(\"cg_node\").inputSchema, { type: \"object\", properties: { symbol: { type: \"string\" } }, required: [\"symbol\"] }, \"parameters 直接作 inputSchema\");\n\n  // callTool 封装直呼：execute 被调用 + output.render 投影 content + agent 透传。\n  const result = await mw.callTool(fullServerName(\"@global\", \"cg\"), \"cg_node\", { symbol: \"foo\" }, undefined, { session: { header: { cwd: \"/proj\" } } });\n  assert.deepEqual(result, { content: [{ type: \"text\", text: \"rendered:node(foo)@/proj\" }], structuredContent: { text: \"node(foo)@/proj\" } }, \"封装直呼：execute + render + agent 透传\");\n  // agent 缺省 → cwd 解析 undefined。\n  const noAgent = await mw.callTool(fullServerName(\"@global\", \"cg\"), \"cg_node\", { symbol: \"bar\" }, undefined);\n  assert.deepEqual(noAgent.structuredContent, { text: \"node(bar)@no-cwd\" }, \"agent 缺省不崩（封装侧自处理）\");\n\n  // 工具级禁用前置：禁用表命中 → 抛禁用错误（不经 execute）。\n  mw.disabledTools.set(\"@global\", new Map([[\"cg\", new Set([\"cg_node\"])]]));\n  await assert.rejects(\n    () => mw.callTool(fullServerName(\"@global\", \"cg\"), \"cg_node\", { symbol: \"x\" }, undefined, { session: { header: { cwd: \"/p\" } } }),\n    /已被用户在「MCP」浮窗禁用/,\n  );\n  mw.disabledTools.delete(\"@global\");\n\n  // 不存在的封装工具名 → 明确报错。\n  await assert.rejects(\n    () => mw.callTool(fullServerName(\"@global\", \"cg\"), \"nope\", {}, undefined),\n    /不存在（封装定义服务器）/,\n  );\n\n  // persistCatalog 跳过 runtime 条目（isRuntimeServer 命中 → 不写盘）。\n  const dir = mkdtempSync(join(tmpdir(), \"dsh-mcp-mw-wrapped-\"));\n  const persistHost = {\n    ...host,\n    isRuntimeServer: (name) => name === \"cg\",\n    catalogCachePath: (root) => join(dir, `${root.replace(/[^a-z0-9]/gi, \"_\")}.json`),\n  };\n  const mw2 = new McpMiddleware(persistHost, {});\n  const unit2 = {\n    root: \"@global\",\n    connections: new Map([[\"cg\", entry]]),\n    catalog: new Map([[\"cg\", catalog], [\"storeSrv\", { discoveredAt: Date.now(), tools: new Map([[\"t1\", { description: \"d\", inputSchema: {} }]]) }]]),\n    userDisabled: new Set(),\n    lastTouchedAt: Date.now(),\n    inFlight: new Map(),\n  };\n  mw2.units.set(\"@global\", unit2);\n  await mw2.persistCatalog(\"@global\");\n  const { readFileSync } = await import(\"node:fs\");\n  const persisted = readFileSync(persistHost.catalogCachePath(\"@global\"), \"utf8\");\n  assert.equal(persisted.includes(\"cg\"), false, \"runtime 条目不写盘\");\n  assert.equal(persisted.includes(\"storeSrv\"), true, \"store 条目照常写盘\");\n  await mw2.dispose();\n  await mw.dispose();\n}\n\n// ---- #413：空 toolDefinitions / 封装调用超时兜底 ----\n{\n  // 空 toolDefinitions：连接照建、目录 0 工具、调用报「不存在」。\n  const emptyWrapped = { name: \"cg\", transport: \"stdio\", command: \"codegraph\", enabled: true, toolDefinitions: [] };\n  const { host } = makeHost(new Map([[\"@global\", [emptyWrapped]]]));\n  const mw = new McpMiddleware(host, {});\n  await mw.projectUnitFor(\"@global\");\n  await mw.ensureConnected(\"@global\", \"cg\");\n  const unit = mw.units.get(\"@global\");\n  assert.equal(unit.connections.get(\"cg\")?.status, \"connected\", \"空 toolDefinitions 仍建虚拟连接\");\n  assert.equal(unit.catalog.get(\"cg\")?.tools.size, 0, \"空 toolDefinitions 目录 0 工具\");\n  await assert.rejects(\n    () => mw.callTool(fullServerName(\"@global\", \"cg\"), \"anything\", {}, undefined),\n    /不存在（封装定义服务器）/,\n  );\n  await mw.dispose();\n\n  // 封装 execute 挂起 → withTimeout 超时兜底（不无限等待）。\n  const hangingTool = {\n    name: \"hang\",\n    description: \"挂起\",\n    parameters: { type: \"object\", properties: {} },\n    output: { schema: { type: \"object\", properties: { text: { type: \"string\" } }, required: [\"text\"], additionalProperties: false }, render: (a, v) => [{ type: \"text\", text: v.text }] },\n    execute: async () => new Promise(() => {}), // 永不 resolve\n  };\n  const hangingServer = { name: \"hg\", transport: \"stdio\", command: \"x\", enabled: true, toolDefinitions: [hangingTool] };\n  const { host: host2 } = makeHost(new Map([[\"@global\", [hangingServer]]]));\n  const mw3 = new McpMiddleware(host2, {});\n  await mw3.projectUnitFor(\"@global\");\n  await mw3.ensureConnected(\"@global\", \"hg\");\n  await assert.rejects(\n    () => mw3.callTool(fullServerName(\"@global\", \"hg\"), \"hang\", {}, undefined),\n    /封装调用超时/,\n  );\n  await mw3.dispose();\n}\n\n// ---- #512：callTool 远端结果投影收敛（isError/_meta 不泄漏 + 无 content 兜底）----\n{\n  // 模拟宿主 lossless 校验（与 #381 回归同款，递归断言无 undefined 值键/元素）。\n  const assertLossless = (value, path) => {\n    if (value === undefined) throw new Error(`lossless 违规：${path} 为 undefined`);\n    if (value === null || typeof value !== \"object\") return;\n    if (Array.isArray(value)) {\n      value.forEach((item, i) => assertLossless(item, `${path}[${i}]`));\n      return;\n    }\n    for (const [key, entry] of Object.entries(value)) assertLossless(entry, `${path}.${key}`);\n  };\n\n  async function withFakeClient(remoteResult, { stale = false } = {}) {\n    const servers = [{ name: \"py\", transport: \"stdio\", command: \"python\", enabled: true }];\n    const { host } = makeHost(new Map([[ROOT, servers]]));\n    const mw = new McpMiddleware(host, {});\n    const unit = {\n      root: ROOT,\n      connections: new Map(),\n      catalog: new Map([\n        [\"py\", {\n          discoveredAt: stale ? Date.now() - CATALOG_TTL_MS - 1000 : Date.now(),\n          tools: new Map([[\"echo\", { description: \"回声\", inputSchema: { type: \"object\" } }]]),\n          unavailable: undefined,\n        }],\n      ]),\n      userDisabled: new Set(),\n      lastTouchedAt: Date.now(),\n      inFlight: new Map(),\n    };\n    mw.units.set(ROOT, unit);\n    unit.connections.set(\"py\", {\n      server: servers[0],\n      client: { callTool: async () => remoteResult },\n      transport: { close: () => Promise.resolve() },\n      status: \"connected\",\n      error: undefined,\n      connectedAt: Date.now(),\n      reconnectTimer: undefined,\n      disposed: false,\n      failedAttempts: 0,\n    });\n    return { mw, dispose: () => mw.dispose() };\n  }\n\n  // Python SDK 形态：成功结果必带 isError:false（+ _meta）→ 不得外泄。\n  {\n    const { mw, dispose } = await withFakeClient({\n      content: [{ type: \"text\", text: \"你好\" }],\n      structuredContent: { answer: 42 },\n      isError: false,\n      _meta: { trace: \"x\" },\n    });\n    const out = await mw.callTool(fullServerName(ROOT, \"py\"), \"echo\", {}, undefined);\n    assert.deepEqual(\n      { content: out.content, structuredContent: out.structuredContent },\n      { content: [{ type: \"text\", text: \"你好\" }], structuredContent: { answer: 42 } },\n      \"#512：isError:false / _meta 不泄漏，白名单字段保留\",\n    );\n    assert.equal(Object.hasOwn(out, \"isError\"), false, \"无 isError 键\");\n    assert.equal(Object.hasOwn(out, \"_meta\"), false, \"无 _meta 键\");\n    assertLossless(out, \"#512 输出\");\n    await dispose();\n  }\n\n  // isError:true → 抛错（文案含远端错误提示与下一步引导）。\n  {\n    const { mw, dispose } = await withFakeClient({\n      content: [{ type: \"text\", text: \"boom\" }],\n      isError: true,\n    });\n    await assert.rejects(\n      () => mw.callTool(fullServerName(ROOT, \"py\"), \"echo\", {}, undefined),\n      /远端工具返回错误：.*boom.*ws_mcp_detail/,\n      \"isError:true 抛错且文案可归因\",\n    );\n    // #529：外层 catch 不再追加 detail 建议，同一条错误里「ws_mcp_detail」只出现一次。\n    const dupErr = await mw.callTool(fullServerName(ROOT, \"py\"), \"echo\", {}, undefined).then(\n      () => null,\n      (e: unknown) => e,\n    );\n    assert.ok(dupErr instanceof Error, \"isError:true 应抛错\");\n    const detailCount = (dupErr.message.match(/ws_mcp_detail/g) ?? []).length;\n    assert.equal(detailCount, 1, `detail 建议只出现一次（实际 ${detailCount} 次：${dupErr.message}）`);\n    await dispose();\n  }\n\n  // 无 content / 非数组 content → 兜底文本（required content 不落空，lossless 合规）。\n  {\n    const { mw, dispose } = await withFakeClient({ toolResult: { ok: 1 } });\n    const out = await mw.callTool(fullServerName(ROOT, \"py\"), \"echo\", {}, undefined);\n    assert.deepEqual(out.content, [{ type: \"text\", text: '{\"ok\":1}' }], \"toolResult 形态渲染 JSON 兜底\");\n    assertLossless(out, \"#512 兜底\");\n    await dispose();\n  }\n  {\n    const { mw, dispose } = await withFakeClient({});\n    const out = await mw.callTool(fullServerName(ROOT, \"py\"), \"echo\", {}, undefined);\n    assert.deepEqual(out.content, [{ type: \"text\", text: \"(no output)\" }], \"空结果 → (no output) 兜底\");\n    await dispose();\n  }\n\n  // stale（目录过期）：前置 hint + 仍走投影（不透传 isError/_meta）。\n  {\n    const { mw, dispose } = await withFakeClient(\n      { content: [{ type: \"text\", text: \"旧结果\" }], isError: false, _meta: { t: 1 } },\n      { stale: true },\n    );\n    const out = await mw.callTool(fullServerName(ROOT, \"py\"), \"echo\", {}, undefined);\n    assert.equal(out.content.length, 2, \"stale 前置 hint\");\n    assert.match(out.content[0].text, /本工具目录已过期/);\n    assert.deepEqual(out.content[1], { type: \"text\", text: \"旧结果\" });\n    assert.equal(Object.hasOwn(out, \"isError\"), false, \"stale 分支也不泄漏 isError\");\n    assert.equal(Object.hasOwn(out, \"_meta\"), false, \"stale 分支也不泄漏 _meta\");\n    assertLossless(out, \"#512 stale\");\n    await dispose();\n  }\n\n  // 封装 execute 返回 undefined → 不落 structuredContent 键（#381 同源防御）。\n  {\n    const voidTool = {\n      name: \"void_op\",\n      description: \"无返回值\",\n      parameters: { type: \"object\", properties: {} },\n      output: { schema: { type: \"object\", properties: {}, additionalProperties: false }, render: () => [{ type: \"text\", text: \"done\" }] },\n      execute: async () => undefined,\n    };\n    const voidServer = { name: \"vd\", transport: \"stdio\", command: \"x\", enabled: true, toolDefinitions: [voidTool] };\n    const { host } = makeHost(new Map([[\"@global\", [voidServer]]]));\n    const mw = new McpMiddleware(host, {});\n    await mw.projectUnitFor(\"@global\");\n    await mw.ensureConnected(\"@global\", \"vd\");\n    const out = await mw.callTool(fullServerName(\"@global\", \"vd\"), \"void_op\", {}, undefined);\n    assert.equal(Object.hasOwn(out, \"structuredContent\"), false, \"封装 execute 返回 undefined 不落 structuredContent 键\");\n    assertLossless(out, \"#512 封装 undefined\");\n    await mw.dispose();\n  }\n\n  // 复核闸 F1：isError:true 且 content 非数组（协议违规形态）→ 走兜底分支时\n  // fallbackText 保留远端原文（msgOf，与旧文案行为等价），不丢成 \"(no output)\"。\n  // 注：no-content isError 分支不经 errorText handler（其入参契约为 content\n  // 数组），文案经外层 catch 统一包装为「调用失败：<原文>」（#529：外层不再\n  // 追加 detail 建议，建议由内层按场景给一次）。\n  {\n    const { mw, dispose } = await withFakeClient({ isError: true, content: \"boom-msg\" });\n    await assert.rejects(\n      () => mw.callTool(fullServerName(ROOT, \"py\"), \"echo\", {}, undefined),\n      /调用失败：.*boom-msg/,\n      \"isError + 非数组 content 错误原文保留\",\n    );\n    await dispose();\n  }\n  {\n    const { mw, dispose } = await withFakeClient({ isError: true, content: 12345 });\n    await assert.rejects(\n      () => mw.callTool(fullServerName(ROOT, \"py\"), \"echo\", {}, undefined),\n      /12345/,\n      \"isError + 标量 content 同样保留原文\",\n    );\n    await dispose();\n  }\n\n  // 复核闸 F5：缺省分支（不传 handlers）——错误文案取 content 内 text 块 join，\n  // 无 text 块退化兜底文本；fallbackText 惰性（正常路径零额外计算语义由实现保证）。\n  {\n    let fallbackCalls = 0;\n    const probe = (result, handlers) => projectCallToolResult(result, handlers);\n    // 缺省 errorText：text 块 join。\n    let thrown;\n    try {\n      probe({ content: [{ type: \"text\", text: \"e1\" }, { type: \"text\", text: \"e2\" }], isError: true }, {});\n    } catch (error) {\n      thrown = error;\n    }\n    assert.equal(thrown.message, \"e1\\ne2\", \"缺省 errorText = content 内 text 块 join\");\n    // 缺省 errorText：无 text 块 → 退化兜底文本。\n    thrown = undefined;\n    try {\n      probe({ content: [{ type: \"image\", mimeType: \"image/png\" }], isError: true }, {});\n    } catch (error) {\n      thrown = error;\n    }\n    assert.equal(thrown.message, \"(no output)\", \"缺省 errorText 无 text 块退化兜底\");\n    // 注入 fallbackText 但正常 content 路径不消费（惰性：计数不增长）。\n    const normal = probe(\n      { content: [{ type: \"text\", text: \"ok\" }], isError: false },\n      { fallbackText: () => { fallbackCalls += 1; return \"unused\"; } },\n    );\n    assert.equal(fallbackCalls, 0, \"fallbackText 惰性：正常 content 路径不调用\");\n    assert.deepEqual(normal.content, [{ type: \"text\", text: \"ok\" }]);\n  }\n}\n"
     },
-    "packages/dsh-mcp-manager/test/unit-routes-sse.test.ts": {
-      "tests": [
-        {
-          "id": "6",
-          "name": "packages/dsh-mcp-manager/test/unit-routes-sse.test.ts"
-        }
-      ],
-      "source": "// @ts-nocheck\n/**\n * dsh-mcp-manager — unit：SSE 推送帧 / 健康检查 / 路由边界补齐。\n *\n * 覆盖：\n * - sseData / uiConfigChangedFrame 帧格式\n * - broadcastFrame：空集合、正常写、单连接抛错吞掉继续广播其余\n * - events 路由：403 围栏 / 405 / writeHead 头 / 连接登记与 close 清理\n * - health 路由：403 / 405 / 计数聚合\n * - servers PATCH|DELETE 缺 name 400、未知 method 405\n * - session 路由：body 校验 400、cwd 切换 200\n * - import/json：缺 json 字段 400、同名 skip 与 overwrite 更新\n */\nimport assert from \"node:assert/strict\";\nimport { mkdtempSync, rmSync } from \"node:fs\";\nimport { tmpdir } from \"node:os\";\nimport { join } from \"node:path\";\nimport { callHandler, pollUntil, assertNoGrowth } from \"./helpers.ts\";\n\nconst {\n  makeRoutes,\n  makeEventsRoute,\n  makeHealthRoute,\n  sseData,\n  uiConfigChangedFrame,\n  broadcastFrame,\n  ROUTES,\n  McpStore,\n  McpManager,\n  normalizeServer,\n  SSE_HEARTBEAT_MS,\n  SSE_PING_FRAME,\n} = await import(\"../lib/index.js\");\n\n// ---- 帧格式 ----\n\n{\n  const frame = sseData({ a: 1 });\n  assert.equal(frame, 'data: {\"a\":1}\\n\\n');\n  assert.equal(uiConfigChangedFrame(), 'data: {\"type\":\"ui-config-changed\"}\\n\\n');\n}\n\n// ---- broadcastFrame ----\n\n{\n  broadcastFrame(undefined, \"data: x\\n\\n\");\n  const written = [];\n  const boom = { write: () => { throw new Error(\"EPIPE\"); } };\n  const good1 = { write: (f) => written.push([\"g1\", f]) };\n  const good2 = { write: (f) => written.push([\"g2\", f]) };\n  assert.doesNotThrow(() => broadcastFrame(new Set([boom, good1, good2]), \"f1\"), \"单连接断开不影响其余\");\n  assert.deepEqual(written.map((x) => x[0]), [\"g1\", \"g2\"]);\n}\n\n// ---- fake req/res 工具 ----\n\nconst fakeReq = (method, url, body, opts = {}) => ({\n  method,\n  url,\n  socket: { remoteAddress: opts.remote ?? \"127.0.0.1\" },\n  headers: { host: \"localhost:3080\", origin: \"http://localhost:3080\", \"sec-fetch-site\": \"same-origin\" },\n  async *[Symbol.asyncIterator]() {\n    if (body !== undefined) yield Buffer.from(typeof body === \"string\" ? body : JSON.stringify(body));\n  },\n  on: () => {},\n});\n\nconst fakeRes = () => {\n  const state = { status: 200, body: \"\", headers: {}, destroyed: false, writableEnded: false };\n  return {\n    state,\n    // routes.ts 心跳回调读 res.destroyed / res.writableEnded 判定自愈清理。\n    get destroyed() {\n      return state.destroyed;\n    },\n    get writableEnded() {\n      return state.writableEnded;\n    },\n    writeHead: (s, h) => {\n      state.status = s;\n      state.headers = h ?? {};\n    },\n    write: (chunk) => {\n      state.body += chunk.toString();\n    },\n    end: (chunk) => {\n      if (chunk) state.body += chunk.toString();\n      state.writableEnded = true;\n    },\n    setHeader: () => {},\n    on: (event, cb) => {\n      if (event === \"close\") state.onClose = cb;\n    },\n    destroy: () => {\n      state.destroyed = true;\n    },\n  };\n};\n\nfunction setup() {\n  const dir = mkdtempSync(join(tmpdir(), \"dsh-mcp-sse-\"));\n  const store = new McpStore(join(dir, \"mcp.json\"));\n  store.data = { version: 1, servers: [] };\n  store.upsert(normalizeServer({ name: \"dup-a\", transport: \"stdio\", command: \"echo\" }));\n  const manager = new McpManager({ logger: { warn: () => {}, info: () => {}, error: () => {} } }, store);\n  manager.catalogCache.set(\"cached\", { summary: \"s\" });\n  return { dir, store, manager };\n}\n\nconst loopbackMethods = [\"GET\", \"POST\"];\n\n// ---- events 路由 ----\n\n{\n  const { dir, manager } = setup();\n  try {\n    const route = makeEventsRoute(manager);\n    // 非 loopback → 403。\n    const resForeign = fakeRes();\n    route.handler(fakeReq(\"GET\", ROUTES.events, undefined, { remote: \"8.8.8.8\" }), resForeign);\n    assert.equal(resForeign.state.status, 403);\n    assert.match(resForeign.state.body, /loopback-only/);\n    // 非 GET → 405。\n    const resWrongMethod = fakeRes();\n    route.handler(fakeReq(\"POST\", ROUTES.events), resWrongMethod);\n    assert.equal(resWrongMethod.state.status, 405);\n    // 成功订阅：头、初始帧、登记。\n    const resOk = fakeRes();\n    route.handler(fakeReq(\"GET\", ROUTES.events), resOk);\n    assert.equal(resOk.state.status, 200);\n    assert.equal(resOk.state.headers[\"content-type\"], \"text/event-stream\");\n    assert.ok(resOk.state.body.startsWith(\": connected\"));\n    assert.equal(manager.sseHub?.size(), 1, \"连接已登记（hub 惰性创建）\");\n    // 广播经 onStatus 到达已登记连接（apply 内即此组合）。\n    // emitStatus 是 coalesce 异步（setTimeout 0），需等待宏任务落定。\n    let frames = 0;\n    resOk.write = () => {\n      frames += 1;\n    };\n    const unsubscribe = manager.onStatus(() => {\n      manager.sseHub?.broadcast(sseData({ type: \"summary\" }));\n    });\n    manager.emitStatus();\n    // emitStatus 是 coalesce 异步（setTimeout 0）：轮询等广播落定（事件驱动替代固定 sleep）。\n    await pollUntil(\"广播落定 frames===1\", () => frames === 1);\n    // close 注销。\n    resOk.state.onClose();\n    assert.equal(manager.sseHub?.size(), 0, \"close 后注销\");\n    // 二次广播应执行但不再写帧（连接已注销）——哨兵确认广播落定后断言帧数不变。\n    let landed = 0;\n    const offSentinel = manager.onStatus(() => {\n      landed += 1;\n    });\n    manager.emitStatus();\n    await pollUntil(\"二次广播落定\", () => landed >= 1);\n    offSentinel();\n    assert.equal(frames, 1, \"close 注销后广播不再写帧\");\n    unsubscribe();\n  } finally {\n    rmSync(dir, { recursive: true, force: true });\n  }\n}\n\n// ---- #515：mcp 补齐连接上限 + 淘汰（对齐 notifier；取代旧裸 Set 无上限） ----\n\n{\n  const { dir, manager } = setup();\n  try {\n    // 上限 2：注册 3 条 → 最老被淘汰，表收敛 2。\n    const route = makeEventsRoute(manager, { heartbeatMs: 60_000, maxConnections: 2 });\n    const r1 = fakeRes();\n    const r2 = fakeRes();\n    const r3 = fakeRes();\n    route.handler(fakeReq(\"GET\", ROUTES.events), r1);\n    route.handler(fakeReq(\"GET\", ROUTES.events), r2);\n    route.handler(fakeReq(\"GET\", ROUTES.events), r3);\n    assert.equal(manager.sseHub?.size(), 2, \"上限 2，注册 3 收敛到 2\");\n    assert.equal(r1.state.destroyed, true, \"最老 r1 被淘汰 destroy\");\n    assert.equal(r2.state.destroyed, false, \"r2 保留\");\n    assert.equal(r3.state.destroyed, false, \"r3 保留\");\n    const stats = manager.sseHub?.evictStats();\n    assert.equal(stats?.limit, 1, \"evict 原因计数 limit=1\");\n  } finally {\n    manager.sseHub?.dispose();\n    rmSync(dir, { recursive: true, force: true });\n  }\n}\n\n// ---- SSE 心跳（#268）：data ping 帧 / 间隔常量 / close 与卸载 disposer 清理 ----\n\nconst countPing = (res) => (res.state.body.match(/data: \\{\"type\":\"ping\"\\}/g) ?? []).length;\n\n{\n  // 常量契约：间隔对齐 dsh-notifier HEARTBEAT_MS（30s）；心跳必须是 data 帧而非\n  // 注释帧——注释帧不触发客户端 onmessage，watchdog 无失活信号可依。\n  assert.equal(SSE_HEARTBEAT_MS, 30_000, \"心跳间隔 30s（对齐 notifier）\");\n  assert.equal(SSE_PING_FRAME, 'data: {\"type\":\"ping\"}\\n\\n', \"心跳为 data ping 帧\");\n\n  const { dir, manager } = setup();\n  try {\n    const route = makeEventsRoute(manager, { heartbeatMs: 10 });\n    const res = fakeRes();\n    route.handler(fakeReq(\"GET\", ROUTES.events), res);\n    assert.equal(manager.sseHub?.size(), 1, \"连接已登记（hub）\");\n    // 等心跳帧到达阈值（事件驱动轮询替代固定 sleep 等后台数据）。\n    await pollUntil(\"心跳 data ping 帧到达\", () => countPing(res) >= 1);\n    const pingsAtClose = countPing(res);\n    // close：hub 内部 evict（出表 + 停对该连接写心跳），此后不再有新帧。\n    res.state.onClose();\n    assert.equal(manager.sseHub?.size(), 0, \"close 后注销\");\n    await assertNoGrowth(\"close 后心跳停止\", () => countPing(res), pingsAtClose);\n  } finally {\n    rmSync(dir, { recursive: true, force: true });\n  }\n}\n\n{\n  // 卸载路径：插件 disposer 显式执行全部 cleanups（index.ts apply 清理同款），\n  // 不依赖 res.destroy() 触发 close 的异步时序。\n  const { dir, manager } = setup();\n  try {\n    const route = makeEventsRoute(manager, { heartbeatMs: 10 });\n    const resA = fakeRes();\n    const resB = fakeRes();\n    route.handler(fakeReq(\"GET\", ROUTES.events), resA);\n    route.handler(fakeReq(\"GET\", ROUTES.events), resB);\n    assert.equal(manager.sseHub?.size(), 2, \"两条连接已登记\");\n    // 卸载路径：hub.dispose() 统一停心跳 + destroy 全部连接（apply disposer 同款），\n    // 不依赖 res.destroy() 触发 close 的异步时序。\n    const hub = manager.sseHub;\n    hub?.dispose();\n    // dispose 后 hub 仍可用（destroy 由 dispose 语义外/或调用方负责）——此处模拟\n    // apply disposer 语义：dispose 停心跳；连接由 register 的 close 清理或路由卸载 destroy。\n    await assertNoGrowth(\"dispose 后连接 A 心跳停止\", () => countPing(resA), 0);\n    await assertNoGrowth(\"dispose 后连接 B 心跳停止\", () => countPing(resB), 0);\n  } finally {\n    rmSync(dir, { recursive: true, force: true });\n  }\n}\n\n{\n  // 自愈路径：destroy() 后（模拟 close 事件丢失的极端场景）下一跳心跳看到\n  // destroyed 即自杀清理——不再写帧，且从 disposer 注册表自删。\n  const { dir, manager } = setup();\n  try {\n    const route = makeEventsRoute(manager, { heartbeatMs: 10 });\n    const res = fakeRes();\n    route.handler(fakeReq(\"GET\", ROUTES.events), res);\n    await pollUntil(\"destroy 前心跳在写帧\", () => countPing(res) >= 1);\n    const pingsAtDestroy = countPing(res);\n    res.destroy(); // 不触发 onClose：hub 心跳 tick 看到 destroyed 即 evict（自愈）\n    await assertNoGrowth(\"destroy 后心跳停止写帧\", () => countPing(res), pingsAtDestroy);\n    // 心跳 tick 是异步的：轮询等 hub 自愈出表（事件驱动替代固定 sleep）。\n    await pollUntil(\"hub 自愈 evict destroyed 连接\", () => (manager.sseHub?.size() ?? 0) === 0);\n  } finally {\n    rmSync(dir, { recursive: true, force: true });\n  }\n}\n\n// ---- health 路由 ----\n\n{\n  const { dir, manager } = setup();\n  try {\n    const route = makeHealthRoute(manager);\n    const resForeign = fakeRes();\n    route.handler(fakeReq(\"GET\", ROUTES.health, undefined, { remote: \"10.0.0.1\" }), resForeign);\n    assert.equal(resForeign.state.status, 403);\n\n    const resWrong = fakeRes();\n    route.handler(fakeReq(\"POST\", ROUTES.health), resWrong);\n    assert.equal(resWrong.state.status, 405);\n\n    manager.supervisors.set(\"a\", { status: \"connected\", tools: [\"t1\", \"t2\"] });\n    manager.supervisors.set(\"b\", { status: \"failed\", tools: [] });\n    // 中间层连接池计数（#228）：项目级连接不在 supervisors，health 单独投影。\n    manager.middlewareMode = \"project\";\n    manager.middleware = {\n      units: new Map([\n        [\"/root-a\", { connections: new Map([[\"x\", { status: \"connected\" }], [\"y\", { status: \"failed\" }]]) }],\n        [\"/root-b\", { connections: new Map() }],\n      ]),\n    };\n    const resOk = fakeRes();\n    route.handler(fakeReq(\"GET\", ROUTES.health), resOk);\n    assert.equal(resOk.state.status, 200);\n    const payload = JSON.parse(resOk.state.body);\n    assert.equal(payload.ok, true, \"health ok 标志为 true\");\n    assert.equal(payload.plugin, \"dsh-mcp-manager\");\n    assert.equal(payload.servers, 2);\n    assert.equal(payload.connected, 1);\n    assert.equal(payload.tools, 2);\n    assert.equal(payload.catalogCacheEntries, 1);\n    assert.deepEqual(\n      payload.middleware,\n      { mode: \"project\", units: 2, connections: 2, connected: 1 },\n      \"health 补中间层连接计数\",\n    );\n  } finally {\n    rmSync(dir, { recursive: true, force: true });\n  }\n}\n\n// ---- session / servers 边界 ----\n\n{\n  const { dir, manager } = setup();\n  try {\n    const routes = makeRoutes(manager);\n    const find = (path) => routes.find((r) => r.path === path);\n\n    // session：非 POST 405。\n    const sesGuard = await callHandler(find(ROUTES.session), fakeReq(\"GET\", ROUTES.session));\n    assert.equal(sesGuard.status, 405);\n\n    // session：body 无 cwd 字符串 → 400。\n    const sesBad = await callHandler(find(ROUTES.session), fakeReq(\"POST\", ROUTES.session, {}));\n    assert.equal(sesBad.status, 400);\n    const sesNoBody = await callHandler(find(ROUTES.session), fakeReq(\"POST\", ROUTES.session));\n    assert.equal(sesNoBody.status, 400);\n\n    // servers：PATCH 缺 name → 400；DELETE 缺 name → 400。\n    for (const method of [\"PATCH\", \"DELETE\"]) {\n      const res = await callHandler(find(ROUTES.servers), fakeReq(method, ROUTES.servers));\n      assert.equal(res.status, 400, `${method} 缺 name → 400`);\n      assert.match(JSON.stringify(res.payload), /name query parameter is required/);\n    }\n\n    // servers：PUT → 405。\n    const resPut = await callHandler(find(ROUTES.servers), fakeReq(\"PUT\", ROUTES.servers));\n    assert.equal(resPut.status, 405);\n\n    // DELETE 存在的服务器 → 200 ok:true。\n    const resDel = await callHandler(find(ROUTES.servers), fakeReq(\"DELETE\", `${ROUTES.servers}?name=dup-a`));\n    assert.equal(resDel.status, 200);\n    assert.equal(resDel.payload.ok, true, \"delete 返回 ok:true\");\n\n    // PATCH 不存在的服务器 → 400 not found。\n    const resPatchMissing = await callHandler(\n      find(ROUTES.servers),\n      fakeReq(\"PATCH\", `${ROUTES.servers}?name=ghost`, { command: \"x\" }),\n    );\n    assert.equal(resPatchMissing.status, 400);\n    assert.match(JSON.stringify(resPatchMissing.payload), /not found/);\n  } finally {\n    rmSync(dir, { recursive: true, force: true });\n  }\n}\n\n// ---- import/json：字段校验与 skip/overwrite ----\n\n{\n  const { dir, manager } = setup();\n  try {\n    const routes = makeRoutes(manager);\n    const importRoute = routes.find((r) => r.path === ROUTES.importJson);\n\n    // 非 POST 405。\n    const guard = await callHandler(importRoute, fakeReq(\"GET\", ROUTES.importJson));\n    assert.equal(guard.status, 405);\n\n    // body 缺 json 字符串 → 400。\n    const badBody = await callHandler(importRoute, fakeReq(\"POST\", ROUTES.importJson, { json: 42 }));\n    assert.equal(badBody.status, 400);\n    assert.match(JSON.stringify(badBody.payload), /must include a json string/);\n\n    // 同名导入默认 skip；overwrite=true 更新；非法条目整体 400。\n    const payload = JSON.stringify({ \"dup-a\": { command: \"echo2\" }, fresh: { url: \"http://f/\" } });\n    const resSkip = await callHandler(importRoute, fakeReq(\"POST\", ROUTES.importJson, { json: payload }));\n    assert.equal(resSkip.status, 200);\n    assert.deepEqual(resSkip.payload.skipped, [\"dup-a\"], \"同名默认跳过\");\n    assert.deepEqual(resSkip.payload.imported, [\"fresh\"]);\n\n    const resOverwrite = await callHandler(\n      importRoute,\n      fakeReq(\"POST\", ROUTES.importJson, { json: payload, overwrite: true }),\n    );\n    assert.deepEqual(resOverwrite.payload.imported.sort(), [\"dup-a\", \"fresh\"], \"overwrite 全部导入\");\n    assert.equal(manager.store.find(\"dup-a\").command, \"echo2\", \"overwrite 后配置更新\");\n\n    const resInvalid = await callHandler(importRoute, fakeReq(\"POST\", ROUTES.importJson, { json: '{\"bad\":1}' }));\n    assert.equal(resInvalid.status, 400);\n    assert.match(JSON.stringify(resInvalid.payload), /entry must be an object/, \"非法条目整体 400\");\n  } finally {\n    rmSync(dir, { recursive: true, force: true });\n  }\n}\n\nconsole.log(\"  ok   unit-routes-sse: SSE 帧/健康检查/路由边界\");\n"
-    },
     "packages/dsh-mcp-manager/test/unit-store.test.ts": {
       "tests": [
         {
-          "id": "7",
+          "id": "6",
           "name": "packages/dsh-mcp-manager/test/unit-store.test.ts"
         }
       ],
@@ -19115,11 +19106,20 @@
     "packages/dsh-mcp-manager/test/unit-supervisor.test.ts": {
       "tests": [
         {
-          "id": "8",
+          "id": "7",
           "name": "packages/dsh-mcp-manager/test/unit-supervisor.test.ts"
         }
       ],
       "source": "// @ts-nocheck\n/**\n * dsh-mcp-manager — unit：ConnectionSupervisor 连接状态机与重连策略。\n *\n * 覆盖：\n * - constructor 初始态与 resolveReconnect 全分支（默认/部分覆盖/disabled）\n * - connect 早退三兄弟：disposed / 已连接 / enabled:false\n * - connect 失败路径：warn 日志、teardownGeneration、policy disabled → failed\n * - closeHandler 代际守卫：旧代际关闭事件不误伤新状态\n * - teardownGeneration：有/无 client 代际、schedule=false → failed、close 抛错吞\n * - scheduleReconnect：指数退避 delay、maxAttempts 超限 gave up、\n *   connectedAt 老化重置、工具注销\n * - syncTools：注册/排序/meta/分页 cursor、重复名抛错、注册失败回滚、\n *   startup rethrow 语义\n * - disconnect：timer 清理、close 失败吞、最终 stopped\n */\nimport assert from \"node:assert/strict\";\nimport { pollUntil } from \"./helpers.ts\";\n\nconst {\n  ConnectionSupervisor,\n  resolveReconnect,\n  RECONNECT_DEFAULTS,\n  SCOPE_GLOBAL,\n} = await import(\"../lib/index.js\");\n\nfunction makeManagerLog() {\n  const log = { registered: [], disposed: [], info: [], warn: [], error: [], emits: 0, catalog: [] };\n  const manager = {\n    ctx: {\n      tools: {\n        register: (def) => {\n          log.registered.push(def.name);\n          return () => log.disposed.push(def.name);\n        },\n      },\n    },\n    logger: {\n      info: (m) => log.info.push(m),\n      warn: (m) => log.warn.push(m),\n      error: (m) => log.error.push(m),\n    },\n    enhancement: {},\n    emitStatus: () => {\n      log.emits += 1;\n    },\n    recordCatalogTools: async (name, meta) => {\n      log.catalog.push([name, [...meta.keys()].sort()]);\n    },\n  };\n  return { manager, log };\n}\n\nconst failServer = { name: \"srv\", transport: \"stdio\", command: \"dsh-mcp-missing-cmd-xyz\", enabled: true };\n\n// ---- resolveReconnect ----\n\n{\n  assert.deepEqual(resolveReconnect(undefined), { ...RECONNECT_DEFAULTS });\n  assert.deepEqual(resolveReconnect({}), { ...RECONNECT_DEFAULTS }, \"空对象全默认\");\n  assert.deepEqual(\n    resolveReconnect({ enabled: false, initialDelayMs: 10 }),\n    { enabled: false, initialDelayMs: 10, maxDelayMs: RECONNECT_DEFAULTS.maxDelayMs, maxAttempts: RECONNECT_DEFAULTS.maxAttempts },\n    \"部分字段覆盖其余默认\",\n  );\n}\n\n// ---- constructor 初始态 ----\n\n{\n  const { manager } = makeManagerLog();\n  const sup = new ConnectionSupervisor(manager, failServer);\n  assert.equal(sup.scope, SCOPE_GLOBAL, \"scope 缺省 global\");\n  assert.equal(sup.status, \"stopped\");\n  assert.equal(sup.failedAttempts, 0);\n  assert.equal(sup.connectedAt, undefined);\n  assert.equal(sup.disposed, false);\n  assert.equal(sup.tools.length, 0);\n  assert.equal(sup.client, undefined);\n  assert.deepEqual(resolveReconnect(sup.reconnectPolicy), RECONNECT_DEFAULTS);\n}\n\n// ---- setStatus / enqueueSync ----\n\n{\n  const { manager, log } = makeManagerLog();\n  const sup = new ConnectionSupervisor(manager, failServer);\n  sup.setStatus(\"connecting\");\n  assert.equal(sup.status, \"connecting\");\n  assert.equal(sup.error, undefined);\n  sup.setStatus(\"failed\", new Error(\"x\"));\n  assert.equal(sup.error.message, \"x\");\n  assert.ok(log.emits >= 2, \"每次 setStatus 都广播\");\n\n  // enqueueSync 串行且吞掉失败不影响链条。\n  const order = [];\n  sup.enqueueSync(() => order.push(1));\n  sup.enqueueSync(async () => {\n    throw new Error(\"swallowed\");\n  });\n  await sup.enqueueSync(() => order.push(2));\n  assert.deepEqual(order, [1, 2], \"失败任务不阻塞后续任务\");\n}\n\n// ---- connect 早退：disposed / 已连接 / disabled ----\n\n{\n  const { manager } = makeManagerLog();\n\n  const disposedSup = new ConnectionSupervisor(manager, failServer);\n  disposedSup.disposed = true;\n  await disposedSup.connect();\n  assert.equal(disposedSup.status, \"stopped\", \"disposed 早退不改状态\");\n  assert.equal(disposedSup.transport, undefined, \"disposed 早退不创建传输\");\n\n  const busySup = new ConnectionSupervisor(manager, failServer);\n  busySup.client = {};\n  await busySup.connect();\n  assert.equal(busySup.transport, undefined, \"已有 client 早退\");\n\n  const offSup = new ConnectionSupervisor(manager, { ...failServer, enabled: false });\n  await offSup.connect();\n  assert.equal(offSup.status, \"disabled\", \"禁用服务器 → disabled\");\n}\n\n// ---- connect 失败路径：policy disabled → failed；warn 日志 ----\n\n{\n  const { manager, log } = makeManagerLog();\n  const sup = new ConnectionSupervisor(manager, { ...failServer, reconnect: { enabled: false } });\n  await sup.connect({ startup: true });\n  assert.ok(log.warn.some((m) => /connection attempt failed/.test(m)), \"失败 warn 日志\");\n  assert.equal(sup.status, \"failed\", \"重连禁用 → failed\");\n  assert.equal(sup.client, undefined, \"失败后清空代际\");\n  assert.equal(sup.transport, undefined);\n  assert.ok(log.error.length === 0);\n}\n\n// ---- connect 失败路径：指数退避重连直至预算耗尽 ----\n\n{\n  const { manager, log } = makeManagerLog();\n  const sup = new ConnectionSupervisor(manager, {\n    ...failServer,\n    reconnect: { enabled: true, initialDelayMs: 10, maxDelayMs: 20, maxAttempts: 2 },\n  });\n  const t0 = Date.now();\n  await sup.connect();\n  assert.equal(sup.status, \"reconnecting\", \"第一次失败安排重连\");\n  assert.equal(sup.failedAttempts, 1);\n  assert.ok(sup.reconnectTimer !== undefined, \"重连 timer 已安排\");\n  assert.equal(sup.reconnectTimer._idleTimeout, 10, \"首次退避 = initialDelayMs\");\n\n  // 轮询等重连循环自行耗尽预算（10ms + 20ms + 误差），事件驱动替代固定 sleep。\n  await pollUntil(\"预算耗尽 status==='failed'\", () => sup.status === \"failed\");\n  assert.equal(sup.status, \"failed\", \"预算耗尽 → failed\");\n  assert.match(sup.error.message, /gave up after 2 attempts/);\n  assert.ok(Date.now() - t0 >= 25, \"确实经历了退避等待\");\n  assert.equal(sup.reconnectTimer, undefined, \"gave up 后不再安排 timer\");\n  assert.ok(log.warn.some((m) => /reconnect in 20ms \\(attempt 2\\/2\\)/.test(m)), \"第二次退避封顶 maxDelayMs\");\n  // 清理可能残留 timer（防御）。\n  if (sup.reconnectTimer !== undefined) clearTimeout(sup.reconnectTimer);\n}\n\n// ---- closeHandler 代际守卫：旧代际关闭不误伤 ----\n\n{\n  const { manager } = makeManagerLog();\n  const sup = new ConnectionSupervisor(manager, {\n    ...failServer,\n    reconnect: { enabled: true, initialDelayMs: 5000, maxDelayMs: 5000, maxAttempts: 5 },\n  });\n  const p = sup.connect();\n  const generation = sup.client;\n  assert.ok(generation !== undefined, \"同步段已建立代际\");\n  await p;\n\n  // 失败处理完成后 client 已清空；再触发旧代际 close → 守卫拦截，无副作用。\n  const beforeWarn = 0;\n  sup.transport?.sdk?.onclose?.();\n  assert.equal(sup.failedAttempts, 1, \"旧代际 close 不重复计数\");\n  assert.ok(sup.warnUnchanged !== true);\n\n  // disposed 后再触发 → 同样无动作（不安排新 timer）。\n  await sup.disconnect();\n  const timerBefore = sup.reconnectTimer;\n  sup.transport?.sdk?.onclose?.();\n  assert.equal(sup.reconnectTimer, timerBefore, \"disposed 守卫生效\");\n  assert.equal(beforeWarn, 0);\n}\n\n// ---- teardownGeneration 直调：代际清理 / schedule=false ----\n\n{\n  const { manager, log } = makeManagerLog();\n  const sup = new ConnectionSupervisor(manager, { ...failServer, reconnect: { enabled: false } });\n\n  // 无 client：仅状态推进。\n  sup.teardownGeneration(new Error(\"bare\"), false);\n  assert.equal(sup.status, \"failed\", \"schedule=false → failed\");\n\n  // 有 client：注销工具、清空引用、close 被调用。\n  sup.toolDisposers.set(\"t\", () => log.disposed.push(\"tool:t\"));\n  sup.tools = [\"t\"];\n  sup.client = { transport: { close: async () => log.info.push(\"closed\") } };\n  sup.teardownGeneration(new Error(\"gone\"));\n  assert.equal(sup.client, undefined);\n  await sup.syncChain;\n  assert.deepEqual(log.disposed, [\"tool:t\"], \"代际工具注销\");\n  assert.deepEqual(sup.tools, []);\n  // transport.close 是 fire-and-forget 异步：轮询等其落定（事件驱动替代固定 sleep）。\n  await pollUntil(\"transport.close 调用\", () => log.info.includes(\"closed\"));\n  assert.ok(log.info.includes(\"closed\"), \"transport.close 调用\");\n\n  // close 抛错吞掉不炸 teardown。\n  let closeSettled = 0;\n  sup.client = {\n    transport: {\n      close: async () => {\n        closeSettled += 1;\n        throw new Error(\"close boom\");\n      },\n    },\n  };\n  sup.teardownGeneration(new Error(\"x\"), false);\n  await pollUntil(\"close 抛错已落定被吞\", () => closeSettled === 1);\n  assert.equal(sup.status, \"failed\");\n\n  // disposed 短路：清理任务与状态更新都不做。\n  sup.client = { transport: undefined };\n  sup.setStatus(\"connected\");\n  sup.disposed = true;\n  sup.teardownGeneration(new Error(\"late\"), false);\n  assert.equal(sup.status, \"connected\", \"disposed 后不覆盖状态\");\n  sup.disposed = false;\n}\n\n// ---- scheduleReconnect 直调：老化重置 / 超限 gave up ----\n\n{\n  const { manager, log } = makeManagerLog();\n  const sup = new ConnectionSupervisor(manager, {\n    ...failServer,\n    reconnect: { enabled: true, initialDelayMs: 50, maxDelayMs: 60, maxAttempts: 1 },\n  });\n\n  // 长连接老化（connectedAt 远早于 maxDelayMs）→ 计数重置后从 1 起。\n  sup.connectedAt = Date.now() - RECONNECT_DEFAULTS.maxDelayMs * 10;\n  sup.scheduleReconnect(new Error(\"drop\"));\n  assert.equal(sup.failedAttempts, 1, \"老化连接计数重置\");\n  clearTimeout(sup.reconnectTimer);\n\n  // 新鲜连接连续失败：第 2 次超过 maxAttempts=1 → gave up。\n  sup.connectedAt = Date.now();\n  sup.scheduleReconnect(new Error(\"again\"));\n  const pending = sup.reconnectTimer;\n  clearTimeout(pending);\n  sup.scheduleReconnect(new Error(\"final\"));\n  assert.equal(sup.reconnectTimer, pending, \"超限不再安排新 timer\");\n  assert.match(sup.status, /^failed$/);\n  assert.match(sup.error.message, /gave up after 1 attempt/);\n\n  // 超限同时注销全部工具（经 syncChain 异步队列）。\n  sup.toolDisposers.set(\"t\", () => {});\n  sup.scheduleReconnect(new Error(\"over\"));\n  await sup.syncChain;\n  assert.equal(sup.toolDisposers.size, 0, \"gave up 注销工具\");\n}\n\n// ---- syncTools：注册 / 排序 / 分页 / 重复名 / 回滚 ----\n\n{\n  const { manager, log } = makeManagerLog();\n  const sup = new ConnectionSupervisor(manager, { name: \"srv\", transport: \"stdio\", command: \"echo\", enabled: true });\n  const pages = [\n    {\n      tools: [\n        { name: \"beta\", description: \"b-tool\" },\n        { name: \"alpha\", description: \"a-tool\" },\n      ],\n      nextCursor: \"p2\",\n    },\n    { tools: [{ name: \"gamma\" }] },\n  ];\n  const fakeClient = {\n    listTools: async (cursor) => (cursor ? pages[1] : pages[0]),\n  };\n  await sup.syncTools(fakeClient, true);\n  assert.deepEqual(sup.tools, [\"mcp__srv__alpha\", \"mcp__srv__beta\", \"mcp__srv__gamma\"], \"公共名排序\");\n  assert.equal(log.registered.length, 3);\n  assert.equal(sup.toolMeta.get(\"mcp__srv__alpha\").description, \"a-tool\");\n  assert.equal(sup.toolMeta.get(\"mcp__srv__gamma\").description, \"\", \"缺描述归一空串\");\n  assert.deepEqual(log.catalog[0], [\"srv\", [\"mcp__srv__alpha\", \"mcp__srv__beta\", \"mcp__srv__gamma\"]], \"目录摘要上报\");\n  assert.equal(sup.toolDisposers.size, 3);\n\n  // 二次同步整体替换：旧 disposer 全部执行。\n  log.disposed.length = 0;\n  await sup.syncTools({ listTools: async () => ({ tools: [{ name: \"solo\" }] }) }, false);\n  assert.equal(log.disposed.length, 3, \"旧代际注销\");\n  assert.deepEqual(sup.tools, [\"mcp__srv__solo\"]);\n\n  // 重复工具名（服务器列表返回同名工具）→ 抛错。\n  await assert.rejects(\n    () => sup.syncTools({ listTools: async () => ({ tools: [{ name: \"dup\" }, { name: \"dup\" }] }) }, false),\n    /listed tool .* more than once/,\n  );\n  // 非法字符不同名不碰撞（各自派生独立 hash 后缀）。\n  await sup.syncTools({ listTools: async () => ({ tools: [{ name: \"a.b\" }, { name: \"a_c\" }] }) }, false);\n\n  // 注册中途抛错 → 已注册的回滚；startup=false 吞掉并保持空工具集。\n  log.disposed.length = 0;\n  const failingMgr = makeManagerLog();\n  failingMgr.manager.ctx.tools.register = (def) => {\n    if (def.name.includes(\"second\")) throw new Error(\"registry full\");\n    return () => log.disposed.push(def.name);\n  };\n  const supFail = new ConnectionSupervisor(failingMgr.manager, { name: \"srv\", transport: \"stdio\", command: \"echo\", enabled: true });\n  supFail.toolDisposers.set(\"old\", () => log.disposed.push(\"old\"));\n  supFail.tools = [\"old\"];\n  await supFail.syncTools(\n    { listTools: async () => ({ tools: [{ name: \"first\" }, { name: \"second\" }] }) },\n    false,\n  );\n  assert.deepEqual([...log.disposed].sort(), [\"mcp__srv__first\", \"old\"], \"失败回滚已注册 + 清理旧代际\");\n  // 现状语义：startup=false 注册失败直接 return，tools/toolDisposers 保持旧引用\n  // （旧 disposer 已执行，工具实际已注销；数组内容不再代表可用集合）。\n  assert.deepEqual(supFail.tools, [\"old\"]);\n  assert.ok(failingMgr.log.error.some((m) => /tool registration failed/.test(m)));\n\n  // startup=true 时注册失败向上 rethrow。\n  const throwMgr = makeManagerLog();\n  throwMgr.manager.ctx.tools.register = () => {\n    throw new Error(\"boom\");\n  };\n  const supRethrow = new ConnectionSupervisor(throwMgr.manager, { name: \"srv\", transport: \"stdio\", command: \"echo\", enabled: true });\n  await assert.rejects(() => supRethrow.syncTools({ listTools: async () => ({ tools: [{ name: \"boom\" }] }) }, true), /boom/);\n\n  // cursor 为空串/null 终止循环。\n  const supEmpty = new ConnectionSupervisor(makeManagerLog().manager, { name: \"z\", transport: \"stdio\", command: \"echo\", enabled: true });\n  await supEmpty.syncTools({ listTools: async () => ({ tools: [{ name: \"t\" }], nextCursor: \"\" }) }, false);\n  assert.deepEqual(supEmpty.tools, [\"mcp__z__t\"]);\n}\n\n// ---- syncTools：封装定义路径（#362 补充 4：registerServer.toolDefinitions）----\n\n{\n  // 有 toolDefinitions → 全部用封装定义注册：execute 来自调用方、命名 mcp__ 前缀、\n  // 不触达远端 schema 投影（伪造 listTools 抛错证明未走远端路径）。\n  const execCalls = [];\n  const wrappedServer = {\n    name: \"cg\",\n    transport: \"stdio\",\n    command: \"echo\",\n    enabled: true,\n    toolDefinitions: [\n      {\n        name: \"codegraph_explore\",\n        description: \"wrapped-desc\",\n        parameters: { type: \"object\", properties: { query: { type: \"string\" } }, required: [\"query\"] },\n        output: {\n          schema: { type: \"object\", properties: { text: { type: \"string\" } }, required: [\"text\"] },\n          render(_args, value) {\n            return [{ type: \"text\", text: value && typeof value === \"object\" && \"text\" in value ? String(value.text) : \"\" }];\n          },\n        },\n        async execute(args) {\n          execCalls.push(args);\n          return { text: \"wrapped-ok\" };\n        },\n      },\n    ],\n  };\n  // 独立收集器：保留完整定义以便调用 execute 断言「来自封装」。\n  const { log } = makeManagerLog();\n  const defs = [];\n  const wrappedMgr = makeManagerLog();\n  wrappedMgr.manager.ctx.tools.register = (def) => {\n    defs.push(def);\n    return () => log.disposed.push(def.name);\n  };\n  const supW = new ConnectionSupervisor(wrappedMgr.manager, wrappedServer);\n  await supW.syncTools(\n    {\n      listTools: async () => {\n        throw new Error(\"must not reach remote schema\");\n      },\n    },\n    true,\n  );\n  assert.deepEqual(supW.tools, [\"mcp__cg__codegraph_explore\"], \"封装定义：公共名 mcp__ 前缀\");\n  assert.equal(defs.length, 1);\n  assert.equal(defs[0].name, \"mcp__cg__codegraph_explore\", \"注册名 mcp__ 前缀\");\n  assert.equal(defs[0].description, \"wrapped-desc\", \"自定义 description 被采用\");\n  assert.equal(supW.toolMeta.get(\"mcp__cg__codegraph_explore\").description, \"wrapped-desc\", \"描述元数据取封装定义\");\n  assert.equal(supW.toolDisposers.size, 1);\n\n  // execute 来自封装定义（不经通用 callTool）。\n  const value = await defs[0].execute({ query: \"X 被谁调用\" }, { signal: undefined });\n  assert.equal(value.text, \"wrapped-ok\", \"execute 来自调用方封装\");\n  assert.deepEqual(execCalls, [{ query: \"X 被谁调用\" }], \"封装 execute 收到调用参数\");\n\n  // 重复封装工具名 → 抛错（与远端路径同口径）。\n  const dupMgr = makeManagerLog();\n  const supDup = new ConnectionSupervisor(dupMgr.manager, { name: \"cg\", transport: \"stdio\", command: \"echo\", enabled: true });\n  supDup.server.toolDefinitions = [\n    { name: \"t\", description: \"a\", parameters: {} },\n    { name: \"t\", description: \"b\", parameters: {} },\n  ];\n  await assert.rejects(\n    () => supDup.syncTools({ listTools: async () => ({ tools: [] }) }, false),\n    /duplicate wrapped tool/,\n  );\n  // 缺 name 的封装定义 → 抛错。\n  const noNameMgr = makeManagerLog();\n  const supNoName = new ConnectionSupervisor(noNameMgr.manager, { name: \"cg\", transport: \"stdio\", command: \"echo\", enabled: true });\n  supNoName.server.toolDefinitions = [{ description: \"no name\", parameters: {} }];\n  await assert.rejects(\n    () => supNoName.syncTools({ listTools: async () => ({ tools: [] }) }, false),\n    /without a name/,\n  );\n}\n\n// ---- disconnect：timer / close 抛错 / 终态 ----\n\n{\n  const { manager } = makeManagerLog();\n  const sup = new ConnectionSupervisor(manager, failServer);\n  sup.reconnectTimer = setTimeout(() => {}, 10_000);\n  sup.toolDisposers.set(\"t\", () => {});\n  sup.tools = [\"t\"];\n  sup.client = {\n    transport: {\n      close: async () => {\n        throw new Error(\"close refused\");\n      },\n    },\n  };\n  await sup.disconnect();\n  assert.equal(sup.disposed, true);\n  assert.equal(sup.reconnectTimer, undefined, \"timer 清理\");\n  assert.equal(sup.client, undefined);\n  assert.equal(sup.toolDisposers.size, 0);\n  assert.equal(sup.status, \"stopped\", \"终态 stopped\");\n}\n\nconsole.log(\"  ok   unit-supervisor: 连接状态机与重连策略\");\n"
+    },
+    "packages/dsh-mcp-manager/test/unit-routes-sse.test.ts": {
+      "tests": [
+        {
+          "id": "8",
+          "name": "packages/dsh-mcp-manager/test/unit-routes-sse.test.ts"
+        }
+      ],
+      "source": "// @ts-nocheck\n/**\n * dsh-mcp-manager — unit：SSE 推送帧 / 健康检查 / 路由边界补齐。\n *\n * 覆盖：\n * - sseData / uiConfigChangedFrame 帧格式\n * - broadcastFrame：空集合、正常写、单连接抛错吞掉继续广播其余\n * - events 路由：403 围栏 / 405 / writeHead 头 / 连接登记与 close 清理\n * - health 路由：403 / 405 / 计数聚合\n * - servers PATCH|DELETE 缺 name 400、未知 method 405\n * - session 路由：body 校验 400、cwd 切换 200\n * - import/json：缺 json 字段 400、同名 skip 与 overwrite 更新\n */\nimport assert from \"node:assert/strict\";\nimport { mkdtempSync, rmSync } from \"node:fs\";\nimport { tmpdir } from \"node:os\";\nimport { join } from \"node:path\";\nimport { callHandler, pollUntil, assertNoGrowth } from \"./helpers.ts\";\n\nconst {\n  makeRoutes,\n  makeEventsRoute,\n  makeHealthRoute,\n  sseData,\n  uiConfigChangedFrame,\n  broadcastFrame,\n  ROUTES,\n  McpStore,\n  McpManager,\n  normalizeServer,\n  SSE_HEARTBEAT_MS,\n  SSE_PING_FRAME,\n} = await import(\"../lib/index.js\");\n\n// ---- 帧格式 ----\n\n{\n  const frame = sseData({ a: 1 });\n  assert.equal(frame, 'data: {\"a\":1}\\n\\n');\n  assert.equal(uiConfigChangedFrame(), 'data: {\"type\":\"ui-config-changed\"}\\n\\n');\n}\n\n// ---- broadcastFrame ----\n\n{\n  broadcastFrame(undefined, \"data: x\\n\\n\");\n  const written = [];\n  const boom = { write: () => { throw new Error(\"EPIPE\"); } };\n  const good1 = { write: (f) => written.push([\"g1\", f]) };\n  const good2 = { write: (f) => written.push([\"g2\", f]) };\n  assert.doesNotThrow(() => broadcastFrame(new Set([boom, good1, good2]), \"f1\"), \"单连接断开不影响其余\");\n  assert.deepEqual(written.map((x) => x[0]), [\"g1\", \"g2\"]);\n}\n\n// ---- fake req/res 工具 ----\n\nconst fakeReq = (method, url, body, opts = {}) => ({\n  method,\n  url,\n  socket: { remoteAddress: opts.remote ?? \"127.0.0.1\" },\n  headers: { host: \"localhost:3080\", origin: \"http://localhost:3080\", \"sec-fetch-site\": \"same-origin\" },\n  async *[Symbol.asyncIterator]() {\n    if (body !== undefined) yield Buffer.from(typeof body === \"string\" ? body : JSON.stringify(body));\n  },\n  on: () => {},\n});\n\nconst fakeRes = () => {\n  const state = { status: 200, body: \"\", headers: {}, destroyed: false, writableEnded: false };\n  return {\n    state,\n    // routes.ts 心跳回调读 res.destroyed / res.writableEnded 判定自愈清理。\n    get destroyed() {\n      return state.destroyed;\n    },\n    get writableEnded() {\n      return state.writableEnded;\n    },\n    writeHead: (s, h) => {\n      state.status = s;\n      state.headers = h ?? {};\n    },\n    write: (chunk) => {\n      state.body += chunk.toString();\n    },\n    end: (chunk) => {\n      if (chunk) state.body += chunk.toString();\n      state.writableEnded = true;\n    },\n    setHeader: () => {},\n    on: (event, cb) => {\n      if (event === \"close\") state.onClose = cb;\n    },\n    destroy: () => {\n      state.destroyed = true;\n    },\n  };\n};\n\nfunction setup() {\n  const dir = mkdtempSync(join(tmpdir(), \"dsh-mcp-sse-\"));\n  const store = new McpStore(join(dir, \"mcp.json\"));\n  store.data = { version: 1, servers: [] };\n  store.upsert(normalizeServer({ name: \"dup-a\", transport: \"stdio\", command: \"echo\" }));\n  const manager = new McpManager({ logger: { warn: () => {}, info: () => {}, error: () => {} } }, store);\n  manager.catalogCache.set(\"cached\", { summary: \"s\" });\n  return { dir, store, manager };\n}\n\nconst loopbackMethods = [\"GET\", \"POST\"];\n\n// ---- events 路由 ----\n\n{\n  const { dir, manager } = setup();\n  try {\n    const route = makeEventsRoute(manager);\n    // 非 loopback → 403。\n    const resForeign = fakeRes();\n    route.handler(fakeReq(\"GET\", ROUTES.events, undefined, { remote: \"8.8.8.8\" }), resForeign);\n    assert.equal(resForeign.state.status, 403);\n    assert.match(resForeign.state.body, /loopback-only/);\n    // 非 GET → 405。\n    const resWrongMethod = fakeRes();\n    route.handler(fakeReq(\"POST\", ROUTES.events), resWrongMethod);\n    assert.equal(resWrongMethod.state.status, 405);\n    // 成功订阅：头、初始帧、登记。\n    const resOk = fakeRes();\n    route.handler(fakeReq(\"GET\", ROUTES.events), resOk);\n    assert.equal(resOk.state.status, 200);\n    assert.equal(resOk.state.headers[\"content-type\"], \"text/event-stream\");\n    assert.ok(resOk.state.body.startsWith(\": connected\"));\n    assert.equal(manager.sseHub?.size(), 1, \"连接已登记（hub 惰性创建）\");\n    // 广播经 onStatus 到达已登记连接（apply 内即此组合）。\n    // emitStatus 是 coalesce 异步（setTimeout 0），需等待宏任务落定。\n    let frames = 0;\n    resOk.write = () => {\n      frames += 1;\n    };\n    const unsubscribe = manager.onStatus(() => {\n      manager.sseHub?.broadcast(sseData({ type: \"summary\" }));\n    });\n    manager.emitStatus();\n    // emitStatus 是 coalesce 异步（setTimeout 0）：轮询等广播落定（事件驱动替代固定 sleep）。\n    await pollUntil(\"广播落定 frames===1\", () => frames === 1);\n    // close 注销。\n    resOk.state.onClose();\n    assert.equal(manager.sseHub?.size(), 0, \"close 后注销\");\n    // 二次广播应执行但不再写帧（连接已注销）——哨兵确认广播落定后断言帧数不变。\n    let landed = 0;\n    const offSentinel = manager.onStatus(() => {\n      landed += 1;\n    });\n    manager.emitStatus();\n    await pollUntil(\"二次广播落定\", () => landed >= 1);\n    offSentinel();\n    assert.equal(frames, 1, \"close 注销后广播不再写帧\");\n    unsubscribe();\n  } finally {\n    rmSync(dir, { recursive: true, force: true });\n  }\n}\n\n// ---- #515：mcp 补齐连接上限 + 淘汰（对齐 notifier；取代旧裸 Set 无上限） ----\n\n{\n  const { dir, manager } = setup();\n  try {\n    // 上限 2：注册 3 条 → 最老被淘汰，表收敛 2。\n    const route = makeEventsRoute(manager, { heartbeatMs: 60_000, maxConnections: 2 });\n    const r1 = fakeRes();\n    const r2 = fakeRes();\n    const r3 = fakeRes();\n    route.handler(fakeReq(\"GET\", ROUTES.events), r1);\n    route.handler(fakeReq(\"GET\", ROUTES.events), r2);\n    route.handler(fakeReq(\"GET\", ROUTES.events), r3);\n    assert.equal(manager.sseHub?.size(), 2, \"上限 2，注册 3 收敛到 2\");\n    assert.equal(r1.state.destroyed, true, \"最老 r1 被淘汰 destroy\");\n    assert.equal(r2.state.destroyed, false, \"r2 保留\");\n    assert.equal(r3.state.destroyed, false, \"r3 保留\");\n    const stats = manager.sseHub?.evictStats();\n    assert.equal(stats?.limit, 1, \"evict 原因计数 limit=1\");\n  } finally {\n    manager.sseHub?.dispose();\n    rmSync(dir, { recursive: true, force: true });\n  }\n}\n\n// ---- SSE 心跳（#268）：data ping 帧 / 间隔常量 / close 与卸载 disposer 清理 ----\n\nconst countPing = (res) => (res.state.body.match(/data: \\{\"type\":\"ping\"\\}/g) ?? []).length;\n\n{\n  // 常量契约：间隔对齐 dsh-notifier HEARTBEAT_MS（30s）；心跳必须是 data 帧而非\n  // 注释帧——注释帧不触发客户端 onmessage，watchdog 无失活信号可依。\n  assert.equal(SSE_HEARTBEAT_MS, 30_000, \"心跳间隔 30s（对齐 notifier）\");\n  assert.equal(SSE_PING_FRAME, 'data: {\"type\":\"ping\"}\\n\\n', \"心跳为 data ping 帧\");\n\n  const { dir, manager } = setup();\n  try {\n    const route = makeEventsRoute(manager, { heartbeatMs: 10 });\n    const res = fakeRes();\n    route.handler(fakeReq(\"GET\", ROUTES.events), res);\n    assert.equal(manager.sseHub?.size(), 1, \"连接已登记（hub）\");\n    // 等心跳帧到达阈值（事件驱动轮询替代固定 sleep 等后台数据）。\n    await pollUntil(\"心跳 data ping 帧到达\", () => countPing(res) >= 1);\n    const pingsAtClose = countPing(res);\n    // close：hub 内部 evict（出表 + 停对该连接写心跳），此后不再有新帧。\n    res.state.onClose();\n    assert.equal(manager.sseHub?.size(), 0, \"close 后注销\");\n    await assertNoGrowth(\"close 后心跳停止\", () => countPing(res), pingsAtClose);\n  } finally {\n    rmSync(dir, { recursive: true, force: true });\n  }\n}\n\n{\n  // 卸载路径：插件 disposer 显式执行全部 cleanups（index.ts apply 清理同款），\n  // 不依赖 res.destroy() 触发 close 的异步时序。\n  const { dir, manager } = setup();\n  try {\n    const route = makeEventsRoute(manager, { heartbeatMs: 10 });\n    const resA = fakeRes();\n    const resB = fakeRes();\n    route.handler(fakeReq(\"GET\", ROUTES.events), resA);\n    route.handler(fakeReq(\"GET\", ROUTES.events), resB);\n    assert.equal(manager.sseHub?.size(), 2, \"两条连接已登记\");\n    // 卸载路径：hub.dispose() 统一停心跳 + destroy 全部连接（apply disposer 同款），\n    // 不依赖 res.destroy() 触发 close 的异步时序。\n    const hub = manager.sseHub;\n    hub?.dispose();\n    // dispose 后 hub 仍可用（destroy 由 dispose 语义外/或调用方负责）——此处模拟\n    // apply disposer 语义：dispose 停心跳；连接由 register 的 close 清理或路由卸载 destroy。\n    await assertNoGrowth(\"dispose 后连接 A 心跳停止\", () => countPing(resA), 0);\n    await assertNoGrowth(\"dispose 后连接 B 心跳停止\", () => countPing(resB), 0);\n  } finally {\n    rmSync(dir, { recursive: true, force: true });\n  }\n}\n\n{\n  // 自愈路径：destroy() 后（模拟 close 事件丢失的极端场景）下一跳心跳看到\n  // destroyed 即自杀清理——不再写帧，且从 disposer 注册表自删。\n  const { dir, manager } = setup();\n  try {\n    const route = makeEventsRoute(manager, { heartbeatMs: 10 });\n    const res = fakeRes();\n    route.handler(fakeReq(\"GET\", ROUTES.events), res);\n    await pollUntil(\"destroy 前心跳在写帧\", () => countPing(res) >= 1);\n    const pingsAtDestroy = countPing(res);\n    res.destroy(); // 不触发 onClose：hub 心跳 tick 看到 destroyed 即 evict（自愈）\n    await assertNoGrowth(\"destroy 后心跳停止写帧\", () => countPing(res), pingsAtDestroy);\n    // 心跳 tick 是异步的：轮询等 hub 自愈出表（事件驱动替代固定 sleep）。\n    await pollUntil(\"hub 自愈 evict destroyed 连接\", () => (manager.sseHub?.size() ?? 0) === 0);\n  } finally {\n    rmSync(dir, { recursive: true, force: true });\n  }\n}\n\n// ---- health 路由 ----\n\n{\n  const { dir, manager } = setup();\n  try {\n    const route = makeHealthRoute(manager);\n    const resForeign = fakeRes();\n    route.handler(fakeReq(\"GET\", ROUTES.health, undefined, { remote: \"10.0.0.1\" }), resForeign);\n    assert.equal(resForeign.state.status, 403);\n\n    const resWrong = fakeRes();\n    route.handler(fakeReq(\"POST\", ROUTES.health), resWrong);\n    assert.equal(resWrong.state.status, 405);\n\n    manager.supervisors.set(\"a\", { status: \"connected\", tools: [\"t1\", \"t2\"] });\n    manager.supervisors.set(\"b\", { status: \"failed\", tools: [] });\n    // 中间层连接池计数（#228）：项目级连接不在 supervisors，health 单独投影。\n    manager.middlewareMode = \"project\";\n    manager.middleware = {\n      units: new Map([\n        [\"/root-a\", { connections: new Map([[\"x\", { status: \"connected\" }], [\"y\", { status: \"failed\" }]]) }],\n        [\"/root-b\", { connections: new Map() }],\n      ]),\n    };\n    const resOk = fakeRes();\n    route.handler(fakeReq(\"GET\", ROUTES.health), resOk);\n    assert.equal(resOk.state.status, 200);\n    const payload = JSON.parse(resOk.state.body);\n    assert.equal(payload.ok, true, \"health ok 标志为 true\");\n    assert.equal(payload.plugin, \"dsh-mcp-manager\");\n    assert.equal(payload.servers, 2);\n    assert.equal(payload.connected, 1);\n    assert.equal(payload.tools, 2);\n    assert.equal(payload.catalogCacheEntries, 1);\n    assert.deepEqual(\n      payload.middleware,\n      { mode: \"project\", units: 2, connections: 2, connected: 1 },\n      \"health 补中间层连接计数\",\n    );\n  } finally {\n    rmSync(dir, { recursive: true, force: true });\n  }\n}\n\n// ---- session / servers 边界 ----\n\n{\n  const { dir, manager } = setup();\n  try {\n    const routes = makeRoutes(manager);\n    const find = (path) => routes.find((r) => r.path === path);\n\n    // session：非 POST 405。\n    const sesGuard = await callHandler(find(ROUTES.session), fakeReq(\"GET\", ROUTES.session));\n    assert.equal(sesGuard.status, 405);\n\n    // session：body 无 cwd 字符串 → 400。\n    const sesBad = await callHandler(find(ROUTES.session), fakeReq(\"POST\", ROUTES.session, {}));\n    assert.equal(sesBad.status, 400);\n    const sesNoBody = await callHandler(find(ROUTES.session), fakeReq(\"POST\", ROUTES.session));\n    assert.equal(sesNoBody.status, 400);\n\n    // servers：PATCH 缺 name → 400；DELETE 缺 name → 400。\n    for (const method of [\"PATCH\", \"DELETE\"]) {\n      const res = await callHandler(find(ROUTES.servers), fakeReq(method, ROUTES.servers));\n      assert.equal(res.status, 400, `${method} 缺 name → 400`);\n      assert.match(JSON.stringify(res.payload), /name query parameter is required/);\n    }\n\n    // servers：PUT → 405。\n    const resPut = await callHandler(find(ROUTES.servers), fakeReq(\"PUT\", ROUTES.servers));\n    assert.equal(resPut.status, 405);\n\n    // DELETE 存在的服务器 → 200 ok:true。\n    const resDel = await callHandler(find(ROUTES.servers), fakeReq(\"DELETE\", `${ROUTES.servers}?name=dup-a`));\n    assert.equal(resDel.status, 200);\n    assert.equal(resDel.payload.ok, true, \"delete 返回 ok:true\");\n\n    // PATCH 不存在的服务器 → 400 not found。\n    const resPatchMissing = await callHandler(\n      find(ROUTES.servers),\n      fakeReq(\"PATCH\", `${ROUTES.servers}?name=ghost`, { command: \"x\" }),\n    );\n    assert.equal(resPatchMissing.status, 400);\n    assert.match(JSON.stringify(resPatchMissing.payload), /not found/);\n  } finally {\n    rmSync(dir, { recursive: true, force: true });\n  }\n}\n\n// ---- import/json：字段校验与 skip/overwrite ----\n\n{\n  const { dir, manager } = setup();\n  try {\n    const routes = makeRoutes(manager);\n    const importRoute = routes.find((r) => r.path === ROUTES.importJson);\n\n    // 非 POST 405。\n    const guard = await callHandler(importRoute, fakeReq(\"GET\", ROUTES.importJson));\n    assert.equal(guard.status, 405);\n\n    // body 缺 json 字符串 → 400。\n    const badBody = await callHandler(importRoute, fakeReq(\"POST\", ROUTES.importJson, { json: 42 }));\n    assert.equal(badBody.status, 400);\n    assert.match(JSON.stringify(badBody.payload), /must include a json string/);\n\n    // 同名导入默认 skip；overwrite=true 更新；非法条目整体 400。\n    const payload = JSON.stringify({ \"dup-a\": { command: \"echo2\" }, fresh: { url: \"http://f/\" } });\n    const resSkip = await callHandler(importRoute, fakeReq(\"POST\", ROUTES.importJson, { json: payload }));\n    assert.equal(resSkip.status, 200);\n    assert.deepEqual(resSkip.payload.skipped, [\"dup-a\"], \"同名默认跳过\");\n    assert.deepEqual(resSkip.payload.imported, [\"fresh\"]);\n\n    const resOverwrite = await callHandler(\n      importRoute,\n      fakeReq(\"POST\", ROUTES.importJson, { json: payload, overwrite: true }),\n    );\n    assert.deepEqual(resOverwrite.payload.imported.sort(), [\"dup-a\", \"fresh\"], \"overwrite 全部导入\");\n    assert.equal(manager.store.find(\"dup-a\").command, \"echo2\", \"overwrite 后配置更新\");\n\n    const resInvalid = await callHandler(importRoute, fakeReq(\"POST\", ROUTES.importJson, { json: '{\"bad\":1}' }));\n    assert.equal(resInvalid.status, 400);\n    assert.match(JSON.stringify(resInvalid.payload), /entry must be an object/, \"非法条目整体 400\");\n  } finally {\n    rmSync(dir, { recursive: true, force: true });\n  }\n}\n\nconsole.log(\"  ok   unit-routes-sse: SSE 帧/健康检查/路由边界\");\n"
     },
     "packages/dsh-mcp-manager/test/unit-transport.test.ts": {
       "tests": [
