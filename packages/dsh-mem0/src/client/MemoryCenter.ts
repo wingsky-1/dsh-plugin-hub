@@ -1,7 +1,8 @@
 /**
- * dsh-mem0 — Web 设置页 Tab「记忆中心」组件（阶段二：双区面板 + 全面配置化）。
+ * dsh-mem0 — Web 设置页 Tab「记忆中心」组件（阶段二：双区面板 + 全面配置化 + 模型消耗透明提示）。
  *
  * 遵循仓库规范：纯 React.createElement 构建，无 JSX/类型依赖。
+ * 严禁任何硬编码人读文本，100% 走 msg(i18n)。
  */
 
 import * as React from "react";
@@ -50,7 +51,7 @@ export function MemoryCenter() {
   const useCallback = React.useCallback;
   const useMemo = React.useMemo;
 
-  // 活跃 Tab：memories | settings
+  // 活跃子 Tab：memories | settings
   const [activeTab, setActiveTab] = useState("memories");
 
   const [status, setStatus] = useState({
@@ -74,10 +75,10 @@ export function MemoryCenter() {
     llmApiKey: "",
     llmModel: "deepseek-chat",
     llmTemperature: 0.1,
-    embedderProvider: "openai",
-    embedderBaseUrl: "https://api.siliconflow.cn/v1",
+    embedderProvider: "fastembed",
+    embedderBaseUrl: "",
     embedderApiKey: "",
-    embedderModel: "BAAI/bge-large-zh-v1.5",
+    embedderModel: "BAAI/bge-small-zh-v1.5",
     retrievalTopK: 5,
     customInstructions: "",
     enablePromptDiscipline: true,
@@ -217,6 +218,16 @@ export function MemoryCenter() {
       .filter((l: string) => !query || l.toLowerCase().includes(query.toLowerCase()));
   }, [itemsText, query]);
 
+  // 根据当前选择的模型动态匹配消耗说明文案
+  const embedderModelCostDesc = useMemo(() => {
+    const m = config.embedderModel.toLowerCase();
+    if (m.includes("bge-small")) return msg("descBgeSmall");
+    if (m.includes("bge-base")) return msg("descBgeBase");
+    if (m.includes("bge-large")) return msg("descBgeLarge");
+    if (m.includes("text-embedding-3-small")) return msg("descOpenAiSmall");
+    return config.embedderProvider === "fastembed" ? msg("descBgeSmall") : msg("descBgeLarge");
+  }, [config.embedderModel, config.embedderProvider]);
+
   // Header
   const header = React.createElement(
     "div",
@@ -286,7 +297,6 @@ export function MemoryCenter() {
   // Tab 1: Memories View
   let tab1Content = null;
   if (activeTab === "memories") {
-    // Toolbar
     const toolbar = React.createElement(
       "div",
       { className: "dsh-mem0-toolbar" },
@@ -319,7 +329,6 @@ export function MemoryCenter() {
       ),
     );
 
-    // Add Form
     const addForm = isAdding
       ? React.createElement(
           "div",
@@ -338,7 +347,7 @@ export function MemoryCenter() {
             React.createElement(
               "button",
               { className: "dsh-mem0-btn", onClick: () => setIsAdding(false) },
-              "取消",
+              msg("cancelBtn"),
             ),
             React.createElement(
               "button",
@@ -349,7 +358,6 @@ export function MemoryCenter() {
         )
       : null;
 
-    // List Content
     let listContent: any;
     if (loading) {
       listContent = React.createElement("div", { className: "dsh-mem0-empty" }, msg("loading"));
@@ -427,7 +435,7 @@ export function MemoryCenter() {
           React.createElement("input", {
             type: "password",
             className: "dsh-mem0-input",
-            placeholder: config.hasLlmApiKey ? "sk-•••• (已配置，留空保持原值)" : "sk-...",
+            placeholder: config.hasLlmApiKey ? msg("apiKeyConfiguredPlaceholder") : msg("apiKeyEmptyPlaceholder"),
             value: config.llmApiKey,
             onChange: (e: any) => setConfig({ ...config, llmApiKey: e.target.value }),
           }),
@@ -458,6 +466,11 @@ export function MemoryCenter() {
           }),
         ),
       ),
+      React.createElement(
+        "div",
+        { className: "dsh-mem0-model-tip", style: { marginTop: "10px" } },
+        msg("llmCostDesc"),
+      ),
     );
 
     // Embedder Section
@@ -471,37 +484,77 @@ export function MemoryCenter() {
         React.createElement(
           "div",
           { className: "dsh-mem0-field" },
-          React.createElement("label", null, msg("embedderBaseUrl")),
-          React.createElement("input", {
-            type: "text",
-            className: "dsh-mem0-input",
-            value: config.embedderBaseUrl,
-            onChange: (e: any) => setConfig({ ...config, embedderBaseUrl: e.target.value }),
-          }),
-        ),
-        React.createElement(
-          "div",
-          { className: "dsh-mem0-field" },
-          React.createElement("label", null, msg("embedderApiKey")),
-          React.createElement("input", {
-            type: "password",
-            className: "dsh-mem0-input",
-            placeholder: config.hasEmbedderApiKey ? "sk-•••• (已配置，留空保持原值)" : "sk-...",
-            value: config.embedderApiKey,
-            onChange: (e: any) => setConfig({ ...config, embedderApiKey: e.target.value }),
-          }),
+          React.createElement("label", null, msg("embedderProvider")),
+          React.createElement(
+            "select",
+            {
+              className: "dsh-mem0-select",
+              value: config.embedderProvider,
+              onChange: (e: any) => {
+                const prov = e.target.value;
+                setConfig({
+                  ...config,
+                  embedderProvider: prov,
+                  embedderModel: prov === "fastembed" ? "BAAI/bge-small-zh-v1.5" : "BAAI/bge-large-zh-v1.5",
+                  embedderBaseUrl: prov === "openai" ? "https://api.siliconflow.cn/v1" : "",
+                });
+              },
+            },
+            React.createElement("option", { value: "fastembed" }, msg("embedderProviderFastembed")),
+            React.createElement("option", { value: "openai" }, msg("embedderProviderOpenai")),
+          ),
         ),
         React.createElement(
           "div",
           { className: "dsh-mem0-field" },
           React.createElement("label", null, msg("embedderModel")),
-          React.createElement("input", {
-            type: "text",
-            className: "dsh-mem0-input",
-            value: config.embedderModel,
-            onChange: (e: any) => setConfig({ ...config, embedderModel: e.target.value }),
-          }),
+          React.createElement(
+            "select",
+            {
+              className: "dsh-mem0-select",
+              value: config.embedderModel,
+              onChange: (e: any) => setConfig({ ...config, embedderModel: e.target.value }),
+            },
+            React.createElement("option", { value: "BAAI/bge-small-zh-v1.5" }, msg("optBgeSmall")),
+            React.createElement("option", { value: "BAAI/bge-base-zh-v1.5" }, msg("optBgeBase")),
+            React.createElement("option", { value: "BAAI/bge-large-zh-v1.5" }, msg("optBgeLarge")),
+            React.createElement("option", { value: "text-embedding-3-small" }, msg("optOpenAiSmall")),
+          ),
         ),
+        config.embedderProvider === "openai"
+          ? React.createElement(
+              "div",
+              { className: "dsh-mem0-field" },
+              React.createElement("label", null, msg("embedderBaseUrl")),
+              React.createElement("input", {
+                type: "text",
+                className: "dsh-mem0-input",
+                placeholder: "https://api.siliconflow.cn/v1",
+                value: config.embedderBaseUrl,
+                onChange: (e: any) => setConfig({ ...config, embedderBaseUrl: e.target.value }),
+              }),
+            )
+          : null,
+        config.embedderProvider === "openai"
+          ? React.createElement(
+              "div",
+              { className: "dsh-mem0-field" },
+              React.createElement("label", null, msg("embedderApiKey")),
+              React.createElement("input", {
+                type: "password",
+                className: "dsh-mem0-input",
+                placeholder: config.hasEmbedderApiKey ? msg("apiKeyConfiguredPlaceholder") : msg("apiKeyEmptyPlaceholder"),
+                value: config.embedderApiKey,
+                onChange: (e: any) => setConfig({ ...config, embedderApiKey: e.target.value }),
+              }),
+            )
+          : null,
+      ),
+      React.createElement(
+        "div",
+        { className: "dsh-mem0-model-tip", style: { marginTop: "12px" } },
+        React.createElement("strong", null, msg("embedderCostLabel")),
+        React.createElement("div", { style: { marginTop: "4px" } }, embedderModelCostDesc),
       ),
     );
 
@@ -564,7 +617,7 @@ export function MemoryCenter() {
           disabled: isSavingConfig,
           onClick: handleSaveConfig,
         },
-        isSavingConfig ? "保存中..." : msg("saveConfigBtn"),
+        isSavingConfig ? msg("savingBtn") : msg("saveConfigBtn"),
       ),
     );
 

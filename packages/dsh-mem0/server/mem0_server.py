@@ -40,10 +40,10 @@ LLM_MODEL = _dynamic_cfg.get("llmModel") or os.environ.get("LLM_MODEL", "deepsee
 LLM_PROVIDER = _dynamic_cfg.get("llmProvider") or os.environ.get("LLM_PROVIDER", "openai")
 LLM_TEMPERATURE = float(_dynamic_cfg.get("llmTemperature", os.environ.get("LLM_TEMPERATURE", 0.1)))
 
-EMBEDDER_PROVIDER = _dynamic_cfg.get("embedderProvider") or os.environ.get("EMBEDDER_PROVIDER", "openai")
-EMBEDDER_BASE_URL = _dynamic_cfg.get("embedderBaseUrl") or os.environ.get("EMBEDDER_BASE_URL", "https://api.siliconflow.cn/v1")
+EMBEDDER_PROVIDER = _dynamic_cfg.get("embedderProvider") or os.environ.get("EMBEDDER_PROVIDER", "fastembed")
+EMBEDDER_BASE_URL = _dynamic_cfg.get("embedderBaseUrl") or os.environ.get("EMBEDDER_BASE_URL", "")
 EMBEDDER_API_KEY = _dynamic_cfg.get("embedderApiKey") or os.environ.get("EMBEDDER_API_KEY") or os.environ.get("SILICONFLOW_API_KEY") or os.environ.get("EMBEDDING_API_KEY") or ""
-EMBEDDER_MODEL = _dynamic_cfg.get("embedderModel") or os.environ.get("EMBEDDER_MODEL", "BAAI/bge-large-zh-v1.5")
+EMBEDDER_MODEL = _dynamic_cfg.get("embedderModel") or os.environ.get("EMBEDDER_MODEL", "BAAI/bge-small-zh-v1.5")
 
 CUSTOM_INSTRUCTIONS = _dynamic_cfg.get("customInstructions") or os.environ.get(
     "MEM0_CUSTOM_INSTRUCTIONS",

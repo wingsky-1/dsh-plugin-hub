@@ -27,6 +27,8 @@ const {
   inject,
   SETTINGS_NS,
   DEFAULT_CONFIG,
+  EMBEDDER_MODELS_INFO,
+  LLM_MODELS_INFO,
   maskApiKey,
   isMaskedKey,
   sanitizeConfigForClient,
@@ -297,7 +299,34 @@ await test("路由配置操作：/api/dsh-mem0/config GET 与 POST 正常流转"
   assert.equal(parsedGet.config.hasLlmApiKey, true);
 });
 
-// 7. 客户端产物契约
+// 7. 默认本地 Embedding 与模型消耗说明
+await test("模型配置：默认使用本地 FastEmbed 零费用模型，且提供模型消耗信息", () => {
+  assert.equal(DEFAULT_CONFIG.embedderProvider, "fastembed", "默认必须使用本地 fastembed");
+  assert.equal(DEFAULT_CONFIG.embedderModel, "BAAI/bge-small-zh-v1.5", "默认模型为 bge-small");
+
+  assert.ok(Array.isArray(EMBEDDER_MODELS_INFO), "EMBEDDER_MODELS_INFO 必须导出");
+  assert.ok(EMBEDDER_MODELS_INFO.length >= 3, "必须包含至少 3 种推荐模型说明");
+  for (const m of EMBEDDER_MODELS_INFO) {
+    assert.ok(m.costZh.length > 5, `${m.name} 必须包含中文消耗说明`);
+    assert.ok(m.costEn.length > 5, `${m.name} 必须包含英文消耗说明`);
+  }
+
+  assert.ok(Array.isArray(LLM_MODELS_INFO), "LLM_MODELS_INFO 必须导出");
+  assert.ok(LLM_MODELS_INFO.length >= 1, "必须包含 LLM 消耗说明");
+});
+
+// 8. 客户端 i18n 完备性（无硬编码中文）
+await test("客户端 i18n：MemoryCenter.ts 源码不得包含任何硬编码中文字符", async () => {
+  const { readFileSync } = await import("node:fs");
+  const code = readFileSync(join(pkgDir, "src/client/MemoryCenter.ts"), "utf8");
+  // 移除注释行
+  const codeWithoutComments = code.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+  // 断言代码主体中不含非 ASCII 中文字符
+  const chineseMatches = codeWithoutComments.match(/[\u4e00-\u9fa5]/g);
+  assert.equal(chineseMatches, null, `MemoryCenter.ts 代码中存在硬编码中文: ${chineseMatches ? chineseMatches.slice(0, 10).join(",") : ""}`);
+});
+
+// 9. 客户端产物契约
 await test("客户端契约：lib/client.js 存在且载入正确 load id", async () => {
   const { existsSync, readFileSync } = await import("node:fs");
   const clientPath = join(pkgDir, "lib/client.js");

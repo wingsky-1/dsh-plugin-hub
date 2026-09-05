@@ -56,6 +56,8 @@ export {
   Config,
   DEFAULT_CONFIG,
   SETTINGS_NS,
+  EMBEDDER_MODELS_INFO,
+  LLM_MODELS_INFO,
   maskApiKey,
   isMaskedKey,
   sanitizeConfigForClient,

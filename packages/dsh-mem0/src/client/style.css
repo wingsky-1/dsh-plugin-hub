@@ -275,3 +275,13 @@
   color: var(--dsw-alias-success, #10b981);
   font-weight: 500;
 }
+
+.dsh-mem0-model-tip {
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  background: var(--dsw-alias-bg-layer-2, #f3f4f6);
+  border: 1px dashed var(--dsw-alias-border-l2, #cbd5e1);
+  color: var(--dsw-alias-label-secondary, #475569);
+}
