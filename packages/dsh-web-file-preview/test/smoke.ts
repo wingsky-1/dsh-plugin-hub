@@ -804,6 +804,94 @@ try {
         assert.equal(res._calls.headers["x-content-type-options"], "nosniff", "#73 serve 带 nosniff");
         assert.equal(res._calls.headers["referrer-policy"], "no-referrer", "#73 serve 带 no-referrer");
       }
+      // #549：serve 围栏放宽——sandbox iframe（opaque origin）相对路径子资源请求
+      // 带 `sec-fetch-site: cross-site`；serve 路由经 allowCrossSiteNoCors 放行
+      // 显式 no-cors 的标签型加载，cors/navigate/缺 mode 头仍 fail-closed 拒绝。
+      {
+        const res = fakeRes();
+        await serveRouteHandler(
+          fakeReq("GET", serveUrl(token, "assets/app.css"), "127.0.0.1", "127.0.0.1", {
+            "sec-fetch-site": "cross-site",
+            "sec-fetch-mode": "no-cors",
+          }),
+          res
+        );
+        assert.equal(res._calls.status, 200, "#549 serve 跨站 no-cors 子资源放行（css 200）");
+      }
+      {
+        const res = fakeRes();
+        await serveRouteHandler(
+          fakeReq("GET", serveUrl(token, "index.html"), "127.0.0.1", "127.0.0.1", {
+            "sec-fetch-site": "cross-site",
+            "sec-fetch-mode": "no-cors",
+          }),
+          res
+        );
+        assert.equal(res._calls.status, 200, "#549 serve 跨站 no-cors 子资源放行（html 200）");
+      }
+      {
+        const res = fakeRes();
+        await serveRouteHandler(
+          fakeReq("GET", serveUrl(token, "index.html"), "127.0.0.1", "127.0.0.1", {
+            "sec-fetch-site": "cross-site",
+            "sec-fetch-mode": "cors",
+          }),
+          res
+        );
+        assert.equal(res._calls.status, 403, "#549 serve 跨站 cors（fetch 形态）仍 403");
+      }
+      {
+        const res = fakeRes();
+        await serveRouteHandler(
+          fakeReq("GET", serveUrl(token, "index.html"), "127.0.0.1", "127.0.0.1", {
+            "sec-fetch-site": "cross-site",
+            "sec-fetch-mode": "navigate",
+          }),
+          res
+        );
+        assert.equal(res._calls.status, 403, "#549 serve 跨站 navigate（顶层导航）仍 403");
+      }
+      {
+        const res = fakeRes();
+        await serveRouteHandler(
+          fakeReq("GET", serveUrl(token, "index.html"), "127.0.0.1", "127.0.0.1", {
+            "sec-fetch-site": "cross-site",
+          }),
+          res
+        );
+        assert.equal(res._calls.status, 403, "#549 serve 跨站缺 mode 头 fail-closed 403");
+      }
+      // #549：跨站放宽是 serve 路由独有——alloc/release/file 对 cross-site no-cors 仍 403
+      {
+        const res = fakeRes();
+        await allocRoute(
+          fakeReq("GET", allocOf("index.html"), "127.0.0.1", "127.0.0.1", {
+            "sec-fetch-site": "cross-site",
+            "sec-fetch-mode": "no-cors",
+          }),
+          res
+        );
+        assert.equal(res._calls.status, 403, "#549 alloc 对跨站 no-cors 仍 403（不放宽）");
+      }
+      {
+        const res = fakeRes();
+        releaseRoute(
+          fakeReq("GET", ROUTES.release + "?token=" + token, "127.0.0.1", "127.0.0.1", {
+            "sec-fetch-site": "cross-site",
+            "sec-fetch-mode": "no-cors",
+          }),
+          res
+        );
+        assert.equal(res._calls.status, 403, "#549 release 对跨站 no-cors 仍 403（不放宽）");
+      }
+      {
+        const res = fakeRes();
+        fileRoute(fakeReq("GET", ROUTES.file + `?cwd=${encodeURIComponent(serveRoot)}&path=assets%2Fapp.css`, "127.0.0.1", "127.0.0.1", {
+          "sec-fetch-site": "cross-site",
+          "sec-fetch-mode": "no-cors",
+        }), res);
+        assert.equal(res._calls.status, 403, "#549 file 对跨站 no-cors 仍 403（不放宽）");
+      }
       // E3：serve 字节直出不改写（body === 磁盘原文件）
       {
         const res = fakeRes();
