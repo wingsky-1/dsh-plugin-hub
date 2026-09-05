@@ -338,6 +338,16 @@ const GEN = (over = {}) => ({
   assert.ok(DEFAULT_DAILY_PROMPT.includes("{stats}") && DEFAULT_WEEKLY_PROMPT.includes("{stats}") && DEFAULT_MONTHLY_PROMPT.includes("{stats}"), "三默认模板含 {stats}");
   assert.ok(DEFAULT_DAILY_PROMPT !== DEFAULT_WEEKLY_PROMPT && DEFAULT_WEEKLY_PROMPT !== DEFAULT_MONTHLY_PROMPT, "三默认模板互不相同");
   assert.deepEqual(DEFAULT_PROMPTS.daily, DEFAULT_DAILY_PROMPT, "DEFAULT_PROMPTS 表与单常量一致");
+  // #544 年报化定稿断言：日报禁 ##（渲染白名单外）；三份均含全局 null 降级纪律与渲染禁项
+  assert.ok(!DEFAULT_DAILY_PROMPT.includes("##"), "日报模板禁小标题（白名单无 ##）");
+  for (const tpl of [DEFAULT_DAILY_PROMPT, DEFAULT_WEEKLY_PROMPT, DEFAULT_MONTHLY_PROMPT]) {
+    assert.ok(tpl.includes("null/0/NaN"), "模板含全局 null 降级纪律");
+    assert.ok(tpl.includes("除占比与倍数外不得推算"), "模板含推算边界（占比与倍数豁免）");
+    assert.ok(tpl.includes("以 JSON 为准"), "模板含日期以 JSON 为准");
+    assert.ok(!tpl.includes("```"), "模板无代码围栏示例");
+  }
+  assert.ok(DEFAULT_WEEKLY_PROMPT.includes("分母大于 0"), "周报含占比分母除零护栏");
+  assert.ok(DEFAULT_MONTHLY_PROMPT.includes("仅一个模型时"), "月报含 byProvider 单条降级");
 }
 
 // ---------------------------------------------------------------- #532 渲染管线（escape-then-transform）
@@ -413,14 +423,17 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     },
     tickMs: 10,
   });
-  // 轮询等至少两轮 onDue 完成（时间驱动而非固定 sleep 推断轮数）
-  await sleep(140);
+  // 轮询等至少两轮 onDue 完成（防 flake：CI 高负载下 50ms 的 onDue 与 lastRun IO
+  // 都可能显著变慢，固定 sleep(140) 窗口内可能只跑完一轮——轮询到条件达成为止，
+  // 上限放宽到 5s；仓库防 flake 纪律 §5：轮询替代固定 sleep）
+  const pollDeadline = Date.now() + 5000;
+  while (calls < 2 && Date.now() < pollDeadline) await sleep(10);
   scheduler.dispose();
   assert.ok(maxConcurrent === 1, `单飞互斥：onDue 并发数受控为 1（实际 ${maxConcurrent}）`);
   assert.ok(calls >= 2, `多轮 tick 发生（实际 ${calls} 次）`);
-  // busy 跳过：140ms 窗口内若无互斥，10ms tick 理论可发起十余轮；受 busy 限制
-  // onDue 只能在前一轮完成后启动（每轮 ≥50ms）→ 调用数受窗口长度封顶
-  assert.ok(calls <= 4, `busy 期 tick 跳过生效：onDue 调用数受控（实际 ${calls} 次）`);
+  // busy 跳过：互斥生效时 onDue 只能在前一轮完成后启动（每轮 ≥50ms）；
+  // 轮询到 calls==2 即 dispose，在途 tick 至多再跑一轮 → 上限 3
+  assert.ok(calls <= 3, `busy 期 tick 跳过生效：onDue 调用数受控（实际 ${calls} 次）`);
   assert.ok(!existsSync(join(root, "reports", "last-run.json")), "恒失败 → lastRun 不落盘");
 }
 
