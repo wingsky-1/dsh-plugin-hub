@@ -1,0 +1,5 @@
+# mem0 stdio MCP server 依赖
+mem0ai==2.0.20
+fastembed==0.8.0
+mcp>=1.8,<2
+qdrant-client>=1.10.0

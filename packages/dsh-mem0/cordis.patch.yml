@@ -1,0 +1,4 @@
+# dsh-mem0 bundle patch：向 web profile 名册插入 mem0 长期记忆系统插件。
+- insert:
+    - id: ui-dsh-mem0
+      name: '@wingsky-1/dsh-mem0'
