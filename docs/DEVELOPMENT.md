@@ -170,6 +170,12 @@ shared**；X1 保证**已准入的模块随每个消费包完整发布**（机�
 `@deepseek-ai/dsh-tools` 的 `ToolDefinition`/ctx.tools 增强等；仅 import type，
 contract-check 禁止运行时值导入）。原自建类型层 `types/dsh.d.ts` 已删除（issue #48）。
 
+**版本适配策略（只适配 rc）**：官方类型层 catalog 升级以 **dsh rc 版本**为锚定
+基线（当前 `0.1.2-rc.1`），peer 与 catalog 锁步；**不对 alpha 版本适配**，除非
+维护者明确决策。升级 catalog 须跑全量门禁并核验受影响的结构（如
+SessionHeader.origin / Agent.session），并同步根 README「版本适配」与 release notes
+锚定声明。
+
 ## 1. 宿主端（`src/index.ts`）规范
 
 - **单入口**：`src/index.ts` export 一个 cordis service；需要给客户端传路由时
