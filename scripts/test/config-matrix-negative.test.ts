@@ -81,8 +81,8 @@ test('正对照：纯副本不改动矩阵 pass', () => {
   const root = fakeRepo()
   try {
     const r = runConfigMatrix(root)
-    assert.equal(r.pass, true, '真实文件副本矩阵应绿（存量 16/19 无洞）')
-    assert.ok(r.lines.some((l) => l.includes('lan-proxy 16 键')), 'lan-proxy 摘要含 16 键计数')
+    assert.equal(r.pass, true, '真实文件副本矩阵应绿（存量 17/19 无洞）')
+    assert.ok(r.lines.some((l) => l.includes('lan-proxy 17 键')), 'lan-proxy 摘要含 17 键计数')
     assert.ok(r.lines.some((l) => l.includes('notifier 19 键')), 'notifier 摘要含 19 键计数')
   } finally {
     rmSync(root, { recursive: true, force: true })

@@ -66,8 +66,9 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-lan-proxy
 | `httpsEnabled` | `true` | 是否并存 HTTPS |
 | `tlsCertFile` / `tlsKeyFile` | 无 | 自定义证书（mkcert 等） |
 | `printBanner` | `true` | 启动时是否在终端打印监听横幅（LAN 访问地址等） |
-| `wsCompressEnabled` | `true` | 是否对命中 `wsCompressPaths` 的 WebSocket 做压缩桥接 |
-| `wsCompressPaths` | `/api/remote.mux` | 参与 WebSocket 压缩的路径白名单 |
+| `wsBridgeEnabled` | `true` | WebSocket 桥接总开关（issue #552）：`true` = 所有 WS 升级一律走「终结 + 桥接」（保活基座：ws 库自动代答上游 Ping + 半开探活）；`false` = TCP 字节透传（显式放弃保活与压缩，移动端切后台可能被上游心跳判死而频繁断连重连，见「WebSocket 压缩」节） |
+| `wsCompressEnabled` | `true` | 是否对命中 `wsCompressPaths` 的 WebSocket 做压缩桥接（仅控制压缩，不影响桥接保活） |
+| `wsCompressPaths` | `/api/remote.mux` | 参与 WebSocket 压缩的路径白名单（清空 = 桥接不压缩，保活不受影响） |
 | `wsDeflatePolicy` | `{browser:true, uaDeny:[iPhone…]}` | WS 压缩协商策略：`browser` 为 false 全局关压缩；`uaDeny` 为不协商压缩的 UA 片段列表（iOS Safari 默认拦截，见「WebSocket 压缩」节） |
 | `httpCompressEnabled` | `true` | HTTP 响应压缩总开关（Brotli/gzip 自适应协商，合并自 dsh-gzip） |
 | `httpCompressLevel` | `1` | 压缩档位预设 0..3：`0` 默认 / `1` 低（gzip 1 / br 2，最快）· `2` 中（gzip 5 / br 5，均衡）/ `3` 高（gzip 9 / br 9，最高压缩比），对 gzip 与 Brotli **同时生效**；旧配置整数 4..9 自动迁移为 3 |
@@ -88,23 +89,34 @@ GUI 设置入口：设置 → 插件 → 「局域网访问」卡片（保存即
   从备份重放写入并以日志提示。确认运行正常后可手动删除该备份。
   此后手改 config.json **不再生效**。
 
-## WebSocket 压缩（wss 事件流）
+## WebSocket 桥接与压缩（wss 事件流）
 
-- 对命中 `wsCompressPaths`（默认 `/api/remote.mux`——dsh 0.1.2 起 api-gateway
-  拥有的 Remote 流 mux 端点，取代旧 `/api/events.mux`、`/api/events.host`）
-  的 WebSocket 升级，lan-proxy 做**终结 + permessage-deflate**：浏览器段压缩
-  （浏览器自动协商并解压）、DSH 段明文，再双向桥接转发。
-- 收益：remote.mux 承载 dsh 实时事件流与会话轨迹/进度等大流量帧，未压缩时
-  经远程/慢链路访问流量大；permessage-deflate 实测约省 **75~79%**。
+- **桥接是默认基座（issue #552）**：`wsBridgeEnabled` 开启（默认）时，**所有**
+  WebSocket 升级一律走「终结 + 桥接」——lan-proxy 用 ws 库分别连接浏览器段与
+  DSH 段、双向转发帧。桥接提供两项**与压缩无关**的基础能力：
+  - **上游 Ping 自动代答**：dsh 上游（api-gateway）对 remote.mux 每 2s 发一帧
+    WS Ping、连续 2 周期（约 4~6s）无 Pong 即 `terminate()`。桥接的上游连接由
+    ws 库自动回 Pong——手机切后台/息屏/短暂冻结不再触发上游判死，连接在亮屏后
+    继续可用（不再「频繁断开→重连」）。
+  - **半开探活（issue #268）**：桥接对两端各自独立每 30s 发一帧 WS ping；一帧
+    ping 在下一个周期内未收到 pong（即约 30~60s 无响应）即判定半开连接并强拆
+    该端——close/error 语义由此在半开下也能成立。判定强拆时输出 warn 日志
+    `ws-bridge half-open detected, terminating (intervalMs=…)`。
+- **压缩是桥接上的可选增强**：命中 `wsCompressPaths`（默认 `/api/remote.mux`
+  ——dsh 0.1.2 起 api-gateway 拥有的 Remote 流 mux 端点，取代旧
+  `/api/events.mux`、`/api/events.host`）且 `wsCompressEnabled` 开启时，浏览器段
+  协商 permessage-deflate（浏览器自动解压）、DSH 段明文，再双向桥接转发。
+  收益：remote.mux 承载大流量帧，permessage-deflate 实测约省 **75~79%**。
+- **清空压缩白名单 / 关闭压缩开关不再丢保活**（issue #552）：`wsCompressPaths=[]`
+  或 `wsCompressEnabled=false` 仅关闭压缩，桥接（Pong 代答 + 探活）保持生效。
 - DSH 服务端即使未来自身开启 permessage-deflate，这里 DSH 段固定不协商压缩，
   两段各自独立，**不会双重压缩、不冲突**。
-- **半开探活（保活）**：桥接对浏览器段与 DSH 段**各自独立**每 30s 发一帧
-  WebSocket ping；一帧 ping 在下一个周期内未收到 pong（即约 30~60s 无响应）即判定
-  半开连接并强拆该端——close/error 语义由此在半开下也能成立，既有互断逻辑随即
-  收口另一端。移动端切后台被系统静默掐断 TCP 时，桥接不再僵死（issue #268）。
-  判定强拆时输出 warn 日志 `ws-bridge half-open detected, terminating (intervalMs=…)`，
-  与「正常关闭/业务错误」的 upstream error 日志可按文案区分。
-- 其余 WebSocket 路径保持 TCP 字节透传（不受影响）。
+- **桥接非字节透明**：桥接是代理解析终结（非 TCP 透传），子协议
+  （Sec-WebSocket-Protocol）协商与 close 码不向另一端保真（dsh 客户端当前
+  不依赖这两者，实测零影响）；对通用 WS/未来端点以此语义为准。
+- **显式关闭桥接**（`wsBridgeEnabled=false`）：全部 WS 走 TCP 字节透传
+  （省一跳 CPU），但失去 Pong 代答与探活——移动端切后台 >4~6s 会被上游心跳
+  判死断开重连，仅建议在无需移动端的场景使用。
 
 ## HTTP 响应压缩（Brotli/gzip 自适应，合并自 dsh-gzip）
 
@@ -149,10 +161,12 @@ GUI 设置入口：设置 → 插件 → 「局域网访问」卡片（保存即
 - **凭据面**：dsh settings RPC 仅回环可读写；通过本插件访问的远程设备在
   浏览器信任围栏内可读写服务器 settings（**含凭据类数据**）——确保你的局域网
   可信，或禁用该插件
-- **桥接头透传**：WS 压缩桥接的上游连接透传入站头（Cookie 等认证凭据——dsh
+- **桥接头透传**：WS 桥接的上游连接透传入站头（Cookie 等认证凭据——dsh
   0.1.2 起 `/api/remote.mux` 升级需 Cookie 认证，丢弃即 401 连不上），仅覆盖
   Host/Origin 为回环目标、剥离 hop-by-hop 与 WS 握手专有头；上游被 `targetHost`
-  强制约束为回环，凭据不离开本机进程边界
+  强制约束为回环，凭据不离开本机进程边界。**压缩炸弹面**：桥接浏览器段
+  permessage-deflate 解压存在放大点（LAN 内恶意客户端高压缩比帧 → 代理进程
+  解压）——在「LAN 信任」威胁模型内可接受（与 injectToken 同一信任边界）
 - **私钥权限**：自动生成的自签名私钥落盘 0600
 - **开放端口提醒**：0.0.0.0 监听对局域网所有设备可见
 - **HTTP 响应压缩**：压缩在转发层完成，只作用于「本插件与局域网客户端之间」
@@ -205,8 +219,11 @@ curl http://<本机局域网IP>:3081/api/dsh-lan-proxy/health
 
 - HTTPS 自签名证书由内置库生成，无外部命令依赖（未配置证书文件且生成失败时，HTTPS 通道自动降级关闭）
 - 换网段导致 IP 变化时，自签名证书需重新生成或更新设置（证书文件路径）
-- 命中 `wsCompressPaths` 的 WebSocket 走「终结 + 压缩桥接」（多一跳、额外压缩 CPU），
-  仅建议对 remote.mux 这类大流量路径开启；其余 WebSocket 保持透传
+- WS 桥接默认对所有 WebSocket 生效（保活基座）；压缩仅对命中 `wsCompressPaths`
+  的路径生效（多一跳、额外压缩 CPU）。桥接为代理解析终结：子协议与 close 码
+  不向另一端保真（dsh 客户端不依赖，实测零影响）
+- `wsBridgeEnabled=false` 时全部 WS 走透传（省一跳 CPU），但移动端切后台
+  >4~6s 会被上游心跳判死而频繁断连重连——仅建议无移动端场景使用
 
 ## License
 

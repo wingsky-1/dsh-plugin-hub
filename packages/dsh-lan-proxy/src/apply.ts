@@ -96,6 +96,10 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
       targetHost: value.targetHost ?? DEFAULT_OPTIONS.targetHost,
       targetPort: value.targetPort,
       printBanner: value.printBanner ?? true,
+      // 桥接总开关（issue #552 解耦）：默认 true 实现在本 resolve 接线层——
+      // createLanProxy 参数层不设默认，保证 smoke/unit 现有无参/旧参调用
+      // 行为不变（透传升级测试不意外走桥接）。
+      wsBridgeEnabled: value.wsBridgeEnabled ?? true,
       wsCompressEnabled: value.wsCompressEnabled ?? true,
       // 存量迁移（issue #395 M2）：显式保存过旧默认白名单
       // ["/api/events.mux", "/api/events.host"] 的 settings 用户层值升级后仍要
@@ -231,7 +235,11 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
         tls,
         targetHost: value.targetHost,
         targetPort,
+        // 桥接总开关（issue #552 解耦）：保活默认基座能力。显式传入 enabled
+        // （resolve 层已兜底默认 true），不依赖 createLanProxy 缺省回退。
+        wsBridge: { enabled: value.wsBridgeEnabled },
         wsCompress: {
+          // 语义收窄为压缩维度：仅控制桥接路径上是否协商 permessage-deflate。
           enabled: value.wsCompressEnabled !== false,
           paths: value.wsCompressPaths ?? DEFAULT_WSS_COMPRESS_PATHS,
         },
@@ -413,7 +421,8 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
         httpsEnabled: v.httpsEnabled,
         httpsPort: v.httpsPort,
         listening: disposeProxy !== undefined,
-        // 运行时生效的 WS 压缩配置（诊断：配置 vs 实际生效一致性）
+        // 运行时生效的 WS 桥接/压缩配置（诊断：配置 vs 实际生效一致性；#552 解耦）
+        wsBridgeEnabled: v.wsBridgeEnabled,
         wsCompressEnabled: v.wsCompressEnabled,
         wsCompressPaths: v.wsCompressPaths,
         // —— HTTP 响应压缩（转发层 compression 中间件）：配置 + 生效状态 + 协商计数 ——

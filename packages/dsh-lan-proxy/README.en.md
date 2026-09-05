@@ -69,8 +69,9 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-lan-proxy
 | `targetPort` | auto | Upstream port (defaults to the web server's actual bound port) |
 | `httpsEnabled` | `true` | Whether to run HTTPS alongside |
 | `tlsCertFile` / `tlsKeyFile` | none | Custom certificate (mkcert, etc.) |
-| `wsCompressEnabled` | `true` | Whether to apply compressed bridging to WebSockets matching `wsCompressPaths` |
-| `wsCompressPaths` | `/api/remote.mux` | Path allowlist participating in WebSocket compression |
+| `wsBridgeEnabled` | `true` | WebSocket bridge master switch (issue #552): `true` = all WS upgrades go through "termination + bridge" (keep-alive base: auto-answers upstream Pings + half-open probes); `false` = TCP byte passthrough (explicitly drops keep-alive and compression — mobile backgrounding can be killed by upstream heartbeat and cause frequent reconnect loops, see "WebSocket Bridge & Compression") |
+| `wsCompressEnabled` | `true` | Whether to apply compressed bridging to WebSockets matching `wsCompressPaths` (compression only; does not affect bridge keep-alive) |
+| `wsCompressPaths` | `/api/remote.mux` | Path allowlist participating in WebSocket compression (empty = bridged without compression, keep-alive unaffected) |
 | `httpCompressEnabled` | `true` | Master switch for HTTP response compression (Brotli/gzip negotiation, merged from dsh-gzip) |
 | `httpCompressLevel` | `1` | Compression preset 0..3: `0` default / `1` low (gzip 1 / br 2, fastest) · `2` medium (gzip 5 / br 5, balanced) / `3` high (gzip 9 / br 9, best ratio) — effective for **both** gzip and Brotli; legacy integer values 4..9 are migrated to 3 automatically |
 
@@ -93,27 +94,42 @@ GUI settings entry: Settings → Plugins → "LAN Access" card (saved changes ap
   Delete that backup manually once everything works. Editing
   config.json afterwards has **no effect**.
 
-## WebSocket Compression (wss event stream)
+## WebSocket Bridge & Compression (wss event stream)
 
-- For WebSocket upgrades matching `wsCompressPaths` (default `/api/remote.mux` — the
-  Remote-stream mux endpoint owned by api-gateway since dsh 0.1.2, replacing the old
-  `/api/events.mux`, `/api/events.host`), lan-proxy performs **termination + permessage-deflate**:
-  the browser segment is compressed (the browser negotiates and decompresses automatically),
-  the DSH segment is plaintext, then both directions are bridged and forwarded.
-- Benefit: remote.mux carries dsh's real-time event streams and session traces/progress;
-  uncompressed, traffic is heavy over remote/slow links — permessage-deflate measures roughly
-  **75~79%** savings in practice.
+- **Bridging is the default base (issue #552)**: while `wsBridgeEnabled` is on (default),
+  **all** WebSocket upgrades go through "termination + bridge" — lan-proxy speaks ws on both
+  the browser segment and the DSH segment and forwards frames both ways. Bridging provides two
+  capabilities that are **independent of compression**:
+  - **Automatic upstream Ping reply**: the dsh upstream (api-gateway) sends one WS Ping on
+    `/api/remote.mux` every 2s and calls `terminate()` after 2 cycles (~4~6s) without a Pong.
+    The bridge's upstream connection auto-replies Pongs via the ws library — mobile
+    backgrounding / screen-off / brief freezes no longer trip the upstream kill; the connection
+    survives until the device returns (no more "disconnect → reconnect" loops).
+  - **Half-open liveness probe (Refs #268)**: the bridge pings the browser segment and the DSH
+    segment **independently** every 30s; a ping with no pong by the next cycle (~30~60s of
+    silence) marks that side half-open and terminates it. A termination logs
+    `lan-proxy: ws-bridge half-open detected, terminating (intervalMs=...)` at warn level.
+- **Compression is an optional enhancement on top of the bridge**: when a path matches
+  `wsCompressPaths` (default `/api/remote.mux` — the Remote-stream mux endpoint owned by
+  api-gateway since dsh 0.1.2, replacing the old `/api/events.mux`, `/api/events.host`)
+  **and** `wsCompressEnabled` is on, the browser segment negotiates permessage-deflate (the
+  browser decompresses automatically) while the DSH segment stays plaintext, then both
+  directions are bridged and forwarded. Benefit: remote.mux carries heavy real-time frames —
+  permessage-deflate measures roughly **75~79%** savings in practice.
+- **Clearing the compression allowlist / turning compression off no longer drops keep-alive**
+  (issue #552): `wsCompressPaths=[]` or `wsCompressEnabled=false` only disables compression;
+  the bridge (Pong reply + probes) stays active.
 - Even if the DSH server later enables permessage-deflate itself, the DSH segment here never
   negotiates compression; the two segments are independent, so there is **no double compression
   and no conflict**.
-- **Half-open liveness probe (keep-alive)**: the bridge pings the browser segment and the DSH
-  segment **independently** every 30s; a ping with no pong by the next cycle (~30~60s of
-  silence) marks that side half-open and terminates it — close/error semantics therefore hold
-  even under half-open connections, and the existing mutual-teardown logic closes the other
-  end. When a mobile OS silently kills TCP in background, the bridge no longer deadlocks
-  (Refs #268). A termination logs `lan-proxy: ws-bridge half-open detected, terminating
-  (intervalMs=...)` at warn level, distinct from ordinary upstream error warnings.
-- All other WebSocket paths remain TCP byte passthrough (unaffected).
+- **Bridging is not byte-transparent**: it terminates and re-originates the WS connection, so
+  subprotocol (Sec-WebSocket-Protocol) negotiation and close codes are not preserved across
+  ends (the dsh client currently depends on neither — verified zero impact); treat this as the
+  contract for generic/future endpoints.
+- **Explicitly disabling the bridge** (`wsBridgeEnabled=false`): all WS goes through TCP byte
+  passthrough (saves one hop of CPU), but loses Pong reply and probes — mobile backgrounding
+  >4~6s gets killed by the upstream heartbeat and causes frequent reconnects; only recommended
+  for setups with no mobile clients.
 
 ## HTTP Response Compression (Brotli/gzip, merged from dsh-gzip)
 
@@ -167,12 +183,15 @@ GUI settings entry: Settings → Plugins → "LAN Access" card (saved changes ap
 - **Credential surface**: dsh settings RPC is readable/writable on loopback only; remote devices
   reached through this plugin can read/write server settings (including **credential-class data**)
   within the browser trust perimeter — make sure your LAN is trusted, or disable this plugin
-- **Bridge header passthrough**: the WS compressed bridge forwards inbound headers (including
+- **Bridge header passthrough**: the WS bridge forwards inbound headers (including
   authentication cookies — since dsh 0.1.2 `/api/remote.mux` upgrades require cookie
   authentication, dropping them results in 401 and connection failure), overriding only
   Host/Origin to the loopback target and stripping hop-by-hop and WebSocket handshake-only
   headers; the upstream is forced to loopback by `targetHost`, so credentials never leave the
-  local process boundary
+  local process boundary. **Compression-bomb surface**: the browser-segment permessage-deflate
+  decompression is an amplification point (a hostile LAN client sending highly-compressed frames
+  makes the proxy process decompress) — acceptable within the "LAN-trusted" threat model (same
+  trust boundary as `injectToken`)
 - **Private key permission**: auto-generated self-signed private keys are written with 0600
 - **Open port reminder**: `0.0.0.0` listening is visible to every device on the LAN
 - **HTTP response compression**: compression happens at the forwarding layer and only applies
@@ -202,9 +221,13 @@ curl http://<your-LAN-IP>:3081/api/dsh-lan-proxy/health
   auto-degrades and shuts down)
 - When changing network segments causes the IP to change, the self-signed certificate must be
   regenerated or the settings (certificate file paths) updated
-- WebSockets matching `wsCompressPaths` go through "termination + compressed bridging" (one extra
-  hop, extra compression CPU); enabling it is only recommended for high-traffic paths like remote.mux;
-  all other WebSockets stay passthrough
+- WS bridging applies to all WebSockets by default (keep-alive base); compression only applies
+  to paths matching `wsCompressPaths` (one extra hop, extra compression CPU). Bridging is a
+  parsing termination proxy: subprotocol and close codes are not preserved across ends (the dsh
+  client does not depend on either — verified zero impact)
+- With `wsBridgeEnabled=false` all WebSockets go passthrough (saves one hop of CPU), but mobile
+  backgrounding >4~6s gets killed by the upstream heartbeat and causes frequent reconnect
+  loops — only recommended for setups with no mobile clients
 
 ## License
 

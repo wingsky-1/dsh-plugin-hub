@@ -59,6 +59,7 @@ var CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
     tlsCertFile: "",
     tlsKeyFile: "",
     printBanner: true,
+    wsBridgeEnabled: true,
     wsCompressEnabled: true,
     wsCompressPaths: ["/api/remote.mux"],
     httpCompressEnabled: true,
@@ -322,6 +323,18 @@ var CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
             onChange: function (e: any) { patch({ printBanner: e.target.checked }); },
           }),
         ),
+        // WS 桥接总开关（issue #552 解耦）：默认开——所有 WS 走「终结 + 桥接」
+        // （保活基座：代答上游 Ping + 半开探活）。关闭 = 透传，移动端切后台
+        // 不再有保活兜底（README 标注断连风险）。与下方压缩开关正交。
+        React.createElement("div", { className: "lp-set-row" },
+          React.createElement("label", { htmlFor: "lp-set-ws-bridge" }, t("wsBridge")),
+          React.createElement("input", {
+            id: "lp-set-ws-bridge",
+            type: "checkbox",
+            checked: settings.wsBridgeEnabled !== false,
+            onChange: function (e: any) { patch({ wsBridgeEnabled: e.target.checked }); },
+          }),
+        ),
         React.createElement("div", { className: "lp-set-row" },
           React.createElement("label", { htmlFor: "lp-set-ws-compress" }, t("wsCompress")),
           React.createElement("input", {
@@ -338,6 +351,7 @@ var CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
             className: "lp-set-input",
             type: "text",
             placeholder: "/api/remote.mux",
+            title: t("wsPathsHint"),
             value: (settings.wsCompressPaths || []).join(", "),
             onChange: function (e: any) {
               const parts = e.target.value.split(",").map((s: string) => s.trim()).filter(Boolean);

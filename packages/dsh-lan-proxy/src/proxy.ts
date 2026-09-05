@@ -91,6 +91,18 @@ export interface LanProxyOptions {
     probeIntervalMs?: number;
   };
   /**
+   * WS 桥接总开关（issue #552 解耦）：提供且 `enabled=true` 时**所有** WS 升级
+   * 一律走「终结 + 桥接」（ws 库自动代答上游 Ping + 30s 半开探活 + 按
+   * {@link wsCompress} 判定是否协商压缩）——保活成为默认基座能力，移动端切后台
+   * 不再被上游心跳判死；`enabled=false` 时全部走 TCP 字节透传（显式放弃保活与
+   * 压缩，README 标注移动端断连风险）。
+   * 缺省（undefined）= 旧行为：仅命中 {@link wsCompress.paths} 的 WS 走桥接。
+   * **默认值不在此层设置**——由 apply 的 resolve 接线层显式传入（默认 true），
+   * 保证 smoke/unit 现有无参/旧参 createLanProxy 调用行为不变（透传升级测试
+   * 不意外走桥接）。
+   */
+  wsBridge?: { enabled: boolean };
+  /**
    * WS 压缩协商策略（issue #308）：浏览器段是否协商 permessage-deflate /
    * 按 UA 片段拒绝。iOS Safari 启用压缩即失败（uWebSockets.js #76 实证），
    * 默认拦截 iPhone/iPad/iPod；缺省取 {@link DEFAULT_DEFLATE_POLICY}。
@@ -436,6 +448,18 @@ export interface WsBridgeTarget {
    */
   deflatePolicy?: DeflatePolicy;
   /**
+   * 浏览器段是否协商 permessage-deflate（issue #552 全桥接解耦）：缺省 true
+   * （语义 = 压缩白名单命中）。全桥接模式下对所有 WS 都建桥，但仅命中压缩
+   * 白名单的路径才协商压缩、其余桥接明文（保活不丢、压缩按需）。
+   */
+  compress?: boolean;
+  /**
+   * 活动桥接连接登记集合（issue #552 收口加固）：桥接建立时把浏览器段与上游段
+   * 加入、close 时移除。转发器 close() 借它显式 terminate 全部活动桥接——上游段
+   * 不在普通 sockets 集合，只依赖级联 close 握手（上游不响应 close 帧会滞留）。
+   */
+  bridgeSockets?: Set<WebSocket>;
+  /**
    * 断连分类打点回调（issue #308 测量）：桥接任一端 close/error/半开判死时
    * 以分类上报；缺省不记录。半开判死（halfOpen）是 iOS 后台冻结 / 中继静默
    * 掐断的特征信号，用于诊断「手机端切后台后连接挂起」占比。
@@ -516,10 +540,12 @@ export function bridgeCompressedWs(
   // 按 wsDeflatePolicy 判定该 UA 是否允许协商——命中 deny（默认 iPhone/iPad/iPod）
   // 或 browser=false 时浏览器段不协商压缩（帧仍由桥接转发，只是明文），
   // 规避 iOS 端 WS 握手失败/连接被掐。
+  // #552 解耦：compress=false（压缩白名单未命中/压缩总开关关）时同样不协商——
+  // 桥接仍建立（保活基座），仅明文转发。
   const deflateAllowed = deflateAllowedByPolicy(target.deflatePolicy, req.headers["user-agent"]);
   const wss = new WebSocketServer({
     noServer: true,
-    perMessageDeflate: deflateAllowed ? { threshold: 1024 } : false,
+    perMessageDeflate: (target.compress ?? true) && deflateAllowed ? { threshold: 1024 } : false,
   });
   wss.handleUpgrade(req, socket, head, (browserWs) => {
     // DSH 段：明文（本机/内网），固定不协商 permessage-deflate。
@@ -533,6 +559,14 @@ export function bridgeCompressedWs(
       perMessageDeflate: false,
       headers: bridgeUpstreamHeaders(req.headers, formatAuthority(target.targetHost, target.targetPort)),
     });
+    // 登记活动桥接（issue #552 收口加固）：转发器 close() 借此显式 terminate，
+    // 不依赖「浏览器端 close → 上游 close()」握手级联（上游不响应会滞留）。
+    target.bridgeSockets?.add(browserWs);
+    target.bridgeSockets?.add(upstreamWs);
+    const untrackBridges = () => {
+      target.bridgeSockets?.delete(browserWs);
+      target.bridgeSockets?.delete(upstreamWs);
+    };
     // 半开探活：两端独立计时（各自 pong 判定），probeIntervalMs=0 显式关闭。
     const probeIntervalMs = target.probeIntervalMs ?? DEFAULT_WS_PROBE_INTERVAL_MS;
     let stopProbes: (() => void) | undefined;
@@ -570,22 +604,26 @@ export function bridgeCompressedWs(
     // 断连分类打点（issue #308 测量）：close/error/halfOpen 各有独立计数。
     const report = (kind: "close" | "error" | "halfOpen") => target.onDisconnect?.(kind);
     upstreamWs.on("close", () => {
+      untrackBridges();
       stopAllProbes();
       report("close");
       browserWs.terminate();
     });
     upstreamWs.on("error", (err) => {
+      untrackBridges();
       stopAllProbes();
       report("error");
       target.logger?.warn?.(`lan-proxy: ws-bridge upstream error: ${err.message}`);
       browserWs.terminate();
     });
     browserWs.on("close", () => {
+      untrackBridges();
       stopAllProbes();
       report("close");
       try { upstreamWs.close(); } catch { /* 已关闭 */ }
     });
     browserWs.on("error", () => {
+      untrackBridges();
       stopAllProbes();
       report("error");
       try { upstreamWs.close(); } catch { /* 已关闭 */ }
@@ -678,6 +716,13 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
     sockets.add(socket);
     socket.on("close", () => sockets.delete(socket));
   };
+  /**
+   * 活动桥接连接登记（issue #552 收口加固）：桥接的浏览器段与上游段
+   * （ws 库对象）不在普通 sockets 集合——close() 时显式 terminate，避免
+   * 只依赖「browserWs close → upstreamWs.close()」握手级联（上游不响应
+   * close 帧会滞留）。
+   */
+  const bridgeSockets = new Set<WebSocket>();
 
   // ---- 转发核心：http-proxy 接管（安全围栏之后） ----
   // 目标为回环上游（isLoopbackTarget 已强校验）；keep-alive 连接池经 agent
@@ -853,15 +898,28 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
       socket.destroy();
       return;
     }
-    // WebSocket 压缩桥接：命中白名单路径 → 终结 + permessage-deflate（浏览器段压缩、
-    // DSH 段明文）。其余 WebSocket 由 http-proxy 接管 TCP 字节透传。
-    if (options.wsCompress?.enabled && compressWsPath(options.wsCompress.paths, req.url)) {
+    // WebSocket 桥接（issue #552 解耦）：按 options.wsBridge 三态判定——
+    //   true：所有 WS 升级一律走「终结 + 桥接」（保活基座；压缩仅当命中
+    //         wsCompressPaths 且 wsCompress.enabled 时协商）；
+    //   false：全部 TCP 字节透传（显式放弃保活与压缩，README 标注断连风险）；
+    //   缺省（undefined）：回退旧行为——仅命中 wsCompressPaths 的 WS 走桥接，
+    //         其余透传（兼容 smoke/unit 现有无参/旧参 createLanProxy 调用）。
+    const bridgeEnabled = options.wsBridge?.enabled;
+    const compressEnabled = options.wsCompress?.enabled !== false;
+    const shouldBridge = bridgeEnabled === true
+      || (bridgeEnabled === undefined && compressEnabled && compressWsPath(options.wsCompress?.paths, req.url));
+    if (shouldBridge) {
+      // 压缩仅作用于「压缩白名单命中且压缩开关开」的桥接路径；其余桥接明文
+      // （保活不丢、压缩按需，issue #552——清空白名单/关压缩不再丢保活）。
+      const compress = compressEnabled && compressWsPath(options.wsCompress?.paths, req.url);
       bridgeCompressedWs(req, socket, head, {
         targetHost,
         targetPort,
         logger,
-        probeIntervalMs: options.wsCompress.probeIntervalMs,
+        probeIntervalMs: options.wsCompress?.probeIntervalMs,
         deflatePolicy: options.wsDeflatePolicy ?? DEFAULT_DEFLATE_POLICY,
+        compress,
+        bridgeSockets,
         onDisconnect: onBridgeDisconnect,
       });
       return;
@@ -933,6 +991,10 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
     new Promise<void>((resolve) => {
       for (const socket of sockets) socket.destroy();
       sockets.clear();
+      // 活动桥接显式 terminate（issue #552 收口加固）：上游段不在 sockets
+      // 集合，不依赖 close 握手级联。
+      for (const ws of bridgeSockets) ws.terminate();
+      bridgeSockets.clear();
       const servers = httpsServer ? [server, httpsServer] : [server];
       let remaining = servers.length;
       for (const s of servers) {
