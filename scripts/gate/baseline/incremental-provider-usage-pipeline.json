@@ -21277,6 +21277,32 @@
           }
         },
         {
+          "id": "1030",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "0"
+          ],
+          "coveredBy": [
+            "0",
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 37
+            },
+            "start": {
+              "column": 51,
+              "line": 34
+            }
+          }
+        },
+        {
           "id": "1031",
           "mutatorName": "BlockStatement",
           "replacement": "{}",
@@ -22026,32 +22052,6 @@
             "start": {
               "column": 11,
               "line": 75
-            }
-          }
-        },
-        {
-          "id": "1030",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: 用户适配器注册后默认成为启用者: uncaughtException: 用户适配器注册后默认成为启用者",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "0"
-          ],
-          "coveredBy": [
-            "0",
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 37
-            },
-            "start": {
-              "column": 51,
-              "line": 34
             }
           }
         }
@@ -25680,6 +25680,31 @@
           }
         },
         {
+          "id": "1218",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "statusReason": "uncaughtException: auth.json 的 opencode-go 密钥被读取: uncaughtException: auth.json 的 opencode-go 密钥被读取",
+          "status": "Killed",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "1"
+          ],
+          "coveredBy": [
+            "1"
+          ],
+          "location": {
+            "end": {
+              "column": 2,
+              "line": 79
+            },
+            "start": {
+              "column": 44,
+              "line": 76
+            }
+          }
+        },
+        {
           "id": "1219",
           "mutatorName": "StringLiteral",
           "replacement": "\"\"",
@@ -28780,31 +28805,6 @@
             "start": {
               "column": 13,
               "line": 193
-            }
-          }
-        },
-        {
-          "id": "1218",
-          "mutatorName": "BlockStatement",
-          "replacement": "{}",
-          "statusReason": "uncaughtException: auth.json 的 opencode-go 密钥被读取: uncaughtException: auth.json 的 opencode-go 密钥被读取",
-          "status": "Killed",
-          "static": false,
-          "testsCompleted": 1,
-          "killedBy": [
-            "1"
-          ],
-          "coveredBy": [
-            "1"
-          ],
-          "location": {
-            "end": {
-              "column": 2,
-              "line": 79
-            },
-            "start": {
-              "column": 44,
-              "line": 76
             }
           }
         }
