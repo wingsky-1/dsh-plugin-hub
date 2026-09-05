@@ -17,6 +17,16 @@ export function el(tag: string, attrs: any = {}, children?: any[]): any {
     else if (key === "text") node.textContent = String(value);
     else if (key === "html") node.innerHTML = String(value);
     else if (key === "dataset") Object.assign(node.dataset, value as any);
+    else if (key === "attrs") {
+      // issue #564：attrs 嵌套键 = 逐键显式属性装配（setAttribute）。此前该键
+      // 落入 else 分支被赋成 node["attrs"] 无效属性而**静默丢失**——tab 的
+      // data-mode（syncTabActive 高亮依据，tab 高亮从未工作）、backBtn/fsBtn 的
+      // aria-label、.fwp-title 的 title、toast 的 role=status 全部未落 DOM。
+      // 一律 setAttribute（与 data-* 分支同语义），role/aria-*/title 等走标准属性。
+      for (const [attr, attrValue] of Object.entries(value as Record<string, string>)) {
+        node.setAttribute(attr, String(attrValue));
+      }
+    }
     else if (key.startsWith("data-")) node.setAttribute(key, String(value));
     else (node as any)[key] = value;
   }

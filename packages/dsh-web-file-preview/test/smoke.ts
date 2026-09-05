@@ -1217,6 +1217,13 @@ try {
     assert.ok(client.includes("HTML 预览"), "#73 client.js 含 html 预览标题文案");
     assert.ok(client.includes("交互"), "#507 client.js 含交互 tab 文案");
     assert.ok(client.includes("脚本已启用"), "#507 client.js 含交互态徽标文案");
+    // issue #563：交互 wrap 显式占满面板宽——wrap 是 .fwp-body（flex）项，缺
+    // width:100% 时按 max-content 塌缩到 iframe 固有宽（300px），交互预览呈居中小盒。
+    assert.ok(client.includes("fwp-html-wrap{position:relative;display:block;width:100%}"), "#563 client.js 交互 wrap 占满面板宽（宽度塌缩回归哨兵）");
+    // issue #564：el() attrs 嵌套键 = 逐键 setAttribute 显式属性装配——此前该键落
+    // else 分支静默丢失（tab data-mode 高亮从未工作、aria-label/title/role 全丢）。
+    assert.match(client, /=== "attrs"\)/, "#564 client.js el() 含 attrs 嵌套键属性装配分支");
+    assert.ok(client.includes('"data-mode": def.mode'), "#564 client.js 三 tab 携带 data-mode 装配值（高亮依据）");
   }
 
   // ---- issue #45：引用 → 预览目标重写决策（rewrite-target，纯逻辑直测）----
