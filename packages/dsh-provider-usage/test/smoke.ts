@@ -744,6 +744,11 @@ export function formatPanel() { return "<p>x</p>"; }
       "tab 状态不做 URL/存储持久化（与通知中心一致，避免宿主路由冲突）");
     // 通知中心 #508 分段器同构哨兵：dou-set-card/dou-set-tabs/dou-set-tab 样式类进产物
     assert.ok(clientBundle.includes("dou-set-tab") && clientBundle.includes("dou-set-pane"), "多 tab 结构类名进客户端产物");
+    // #543 移动端适配哨兵：分段器 role 必须 group——宿主设置弹窗移动端适配规则
+    // 排除含 [role=navigation] 的弹窗（实测命中即整弹窗退回桌面 row 布局）
+    assert.ok(settingsIndex.includes('role: "group"'), "分段器 role=group（#543 移动端适配）");
+    assert.ok(!settingsIndex.includes('role: "navigation"'), "分段器不得使用 role=navigation（#543）");
+    assert.ok(settingsIndex.includes('t("settingsNavLabel")'), "分段器 aria-label 走 i18n");
   }
 }
 

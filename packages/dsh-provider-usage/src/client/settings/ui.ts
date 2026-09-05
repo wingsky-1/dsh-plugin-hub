@@ -87,9 +87,10 @@ export function UiSection(): React.ReactElement | null {
         PLACEMENT_OPTIONS.map((o) => React.createElement("option", { key: o.value, value: o.value }, t(o.key))),
       ),
     ),
+    // #543 窄屏兜底：四个数字输入行允许换行（约 350px 内容宽度下 nowrap 横排会溢出）
     React.createElement(
       "div",
-      { style: { marginBottom: 8 } },
+      { style: { marginBottom: 8, display: "flex", flexWrap: "wrap", rowGap: 6 } },
       numInput("offsetX", t("offsetX")),
       numInput("offsetY", t("offsetY")),
       numInput("panelOffsetY", t("panelOffsetY")),
