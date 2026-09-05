@@ -423,14 +423,17 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     },
     tickMs: 10,
   });
-  // 轮询等至少两轮 onDue 完成（时间驱动而非固定 sleep 推断轮数）
-  await sleep(140);
+  // 轮询等至少两轮 onDue 完成（防 flake：CI 高负载下 50ms 的 onDue 与 lastRun IO
+  // 都可能显著变慢，固定 sleep(140) 窗口内可能只跑完一轮——轮询到条件达成为止，
+  // 上限放宽到 5s；仓库防 flake 纪律 §5：轮询替代固定 sleep）
+  const pollDeadline = Date.now() + 5000;
+  while (calls < 2 && Date.now() < pollDeadline) await sleep(10);
   scheduler.dispose();
   assert.ok(maxConcurrent === 1, `单飞互斥：onDue 并发数受控为 1（实际 ${maxConcurrent}）`);
   assert.ok(calls >= 2, `多轮 tick 发生（实际 ${calls} 次）`);
-  // busy 跳过：140ms 窗口内若无互斥，10ms tick 理论可发起十余轮；受 busy 限制
-  // onDue 只能在前一轮完成后启动（每轮 ≥50ms）→ 调用数受窗口长度封顶
-  assert.ok(calls <= 4, `busy 期 tick 跳过生效：onDue 调用数受控（实际 ${calls} 次）`);
+  // busy 跳过：互斥生效时 onDue 只能在前一轮完成后启动（每轮 ≥50ms）；
+  // 轮询到 calls==2 即 dispose，在途 tick 至多再跑一轮 → 上限 3
+  assert.ok(calls <= 3, `busy 期 tick 跳过生效：onDue 调用数受控（实际 ${calls} 次）`);
   assert.ok(!existsSync(join(root, "reports", "last-run.json")), "恒失败 → lastRun 不落盘");
 }
 
