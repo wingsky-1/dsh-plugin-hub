@@ -53,3 +53,12 @@ declare module "react" {
     ...children: ReactNode[]
   ): ReactElement;
 }
+
+declare global {
+  namespace JSX {
+    interface Element extends any {}
+    interface IntrinsicElements {
+      [elemName: string]: any;
+    }
+  }
+}

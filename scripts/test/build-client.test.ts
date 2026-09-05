@@ -155,3 +155,68 @@ test('自动识别：源码 import React 不传 externals → 走 externals 路�
     assert.ok(ok, '自动 externals 产物契约通过')
   } finally { t.rm() }
 })
+
+test('TSX 语法支持：.tsx 客户端源码中 JSX 语法正确编译为 React.createElement 并符合契约', async () => {
+  const t = tempDir()
+  try {
+    const src = t.src('client.tsx', [
+      'import * as React from "react";',
+      'export const inject: string[] = [];',
+      'export function apply() {',
+      '  return () => <div className="test-settings-root"><span>Hello TSX</span></div>;',
+      '}',
+      '',
+    ].join('\n'))
+    const out = join(t.dir, 'client.js')
+    const { mode } = await buildClient({ src, outfile: out, packageName: PKG })
+    assert.equal(mode, 'wrapper')
+    const code = readFileSync(out, 'utf8')
+    assert.ok(/require\(["']react["']\)/.test(code), 'bare import react 应走 external require')
+    assert.ok(code.includes('createElement'), 'JSX 语法应被 esbuild 编译为 createElement 调用')
+    assert.ok(code.includes('test-settings-root'), 'JSX 属性应被保留')
+    const { ok, checks } = assertClientContract(PKG, code)
+    assert.ok(ok, `TSX 客户端产物契约校验失败: ${JSON.stringify(checks)}`)
+
+    // 运行时行为验证：注入 fake react 验证 createElement 正确执行
+    const factories = new Map()
+    const sandbox = { window: {}, console, Symbol, Object, Array, JSON, Math, Date, Promise, __ModuleLoader__: { load: (h) => factories.set(h.id, h.factory) } }
+    sandbox.window = sandbox
+    vm.createContext(sandbox)
+    vm.runInContext(code, sandbox)
+    const factory = factories.get(PKG)
+    const calls = []
+    const fakeReact = {
+      createElement: (type, props, ...children) => {
+        const elem = { type, props, children }
+        calls.push(elem)
+        return elem
+      },
+    }
+    const mod = factory((spec) => (spec === 'react' ? fakeReact : {}))
+    const render = mod.apply()
+    const vdom = render()
+    assert.ok(calls.length >= 2, 'JSX 嵌套应至少调用 2 次 createElement')
+    assert.equal(calls[calls.length - 1].type, 'div')
+    assert.equal(vdom.props.className, 'test-settings-root')
+  } finally { t.rm() }
+})
+
+test('TSX 语法支持：零依赖干净 .tsx 模块走 IIFE wrapper 并符合契约', async () => {
+  const t = tempDir()
+  try {
+    const src = t.src('client.tsx', [
+      'export const inject: string[] = [];',
+      'export function apply() {',
+      '  return () => "tsx-clean";',
+      '}',
+      '',
+    ].join('\n'))
+    const out = join(t.dir, 'client.js')
+    const { mode } = await buildClient({ src, outfile: out, packageName: PKG })
+    assert.equal(mode, 'wrapper')
+    const code = readFileSync(out, 'utf8')
+    const { ok, checks } = assertClientContract(PKG, code)
+    assert.ok(ok, `零依赖 TSX 客户端产物契约校验失败: ${JSON.stringify(checks)}`)
+  } finally { t.rm() }
+})
+
