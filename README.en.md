@@ -19,6 +19,10 @@ install them all at once as a single bundle, or pick individual plugins as neede
   flow — management surfaces answer only on loopback, keys by default never persist in
   plaintext nor reach the browser; each plugin's threat model and hardening details live
   in its README security section
+- **Task-event notification center**: six task-event kinds (ask / approval / completion /
+  error, etc.) with dual-channel delivery — browser notifications + host system toasts —
+  plus Bark / Webhook push to your phone; quiet-hours exceptions, approval-timeout
+  re-reminders, completion-storm aggregation, and automatic text redaction
 - **Context-cost-controlled MCP management**: project-level MCP is collapsed into the
   four atomic tools `ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call`
   by default, so project-level scale never balloons the context (`middleware: all` folds
@@ -26,8 +30,10 @@ install them all at once as a single bundle, or pick individual plugins as neede
   per-working-directory project/global config tiers let each repo carry its own
   MCP servers without cross-project interference
 - **Extensible usage-stats framework**: a generic v2 adapter contract with DeepSeek
-  official and OpenCode Go built in out of the box; write one mjs file to plug in any
-  data source, hot-swappable from the settings page
+  official and OpenCode Go built in out of the box — write one mjs file to plug in any
+  data source; the DeepSeek side derives daily usage via interval bookkeeping (works
+  even without an official usage endpoint) with a persistent peak/valley countdown
+  badge, plus optional daily/weekly/monthly usage reports (enable in the settings page)
 - **Engineering-quality backing**: every plugin ships smoke assertions (route fences /
   client contracts), plus build contract + pack checks + full gates run in CI
 
