@@ -10,7 +10,7 @@ A collection of plugins for the **DSH (DeepSeek Harness)** web GUI, distributed 
 install them all at once as a single bundle, or pick individual plugins as needed.
 
 - **Bundle package**: `@wingsky-1/dsh-plugins-all` — install everything in one shot
-  (except plugins in observation; see plugin list below)
+  (`dsh-codegraph` is published standalone and not in the bundle; see plugin list below)
 - **Individual plugins**: `@wingsky-1/dsh-*` — install only what you need
 
 ## Core advantages
@@ -30,6 +30,19 @@ install them all at once as a single bundle, or pick individual plugins as neede
 - **Engineering-quality backing**: every plugin ships smoke assertions (route fences /
   client contracts), plus build contract + pack checks + full gates run in CI
 
+## Version support (rc only)
+
+This plugin set only adapts to **rc (release-candidate) releases of DeepSeek Harness — alpha versions are not supported**.
+
+- All plugins are currently pinned to `dsh 0.1.2-rc.1` (the official type-layer catalog and
+  every package's peerDependencies are locked in lockstep)
+- npm/pnpm will surface a peer mismatch if your dsh version does not match — upgrade the
+  dsh CLI to the corresponding rc release first
+- Per-release adaptation baselines, breaking changes and upgrade guides live in
+  [Release Notes](docs/release-notes/)
+- The plugin set follows official rc releases; **alpha versions are unsupported** — do not
+  install on an alpha dsh (or accept the compatibility risk yourself)
+
 ## Plugin list
 
 | Package | What it does | Docs | Status |
@@ -46,37 +59,37 @@ install them all at once as a single bundle, or pick individual plugins as neede
 > included in `dsh-plugins-all`**; install it separately (it registers the codegraph MCP at
 > runtime via mcp-manager, so install `dsh-mcp-manager` or the bundle first).
 
-> **No longer maintained**: `@wingsky-1/dsh-skill-explorer` (skill-center / skill management) is
-> **discontinued** (deprecated on npm; the plugin package and the bundle package have been removed).
-> A better implementation now ships on the web UI side,
-> `@linxin666/dsh-client-ui-skill-explorer` (`dsh-web-ui` repository `packages/dsh-skill-explorer`),
-> which supports symlink detection, safe handling of linked skills, and more.
-> Use the built-in skill center in the web UI instead — please do not install this package.
->
-> **No longer maintained**: `@wingsky-1/dsh-idle-archive` (idle-conversation archiving prompt) and
-> `@wingsky-1/dsh-subagent-model-inherit` (child agents inherit parent-session model and reasoning
-> effort) are both **discontinued**. The former because the community offers more mature session
-> lifecycle-management / archiving implementations (e.g.
-> [dsh-session-pruner](https://github.com/mrzhangkris/dsh-session-pruner)); the latter because
-> official dsh-subagent 0.1.2-alpha.2 natively implements `resolveChildAgentOptions` (child agents
-> inherit the parent session's model / reasoning effort / output-token limit). Both packages have
-> been removed from this repository and deprecated on npm — please do not install them; uninstall
-> if you had installed them before:
->
-> ```sh
-> dsh plugin --profile web remove @wingsky-1/dsh-idle-archive
-> dsh plugin --profile web remove @wingsky-1/dsh-subagent-model-inherit
-> ```
+<details>
+<summary><b>Historical maintenance & migration</b> — discontinued packages and legacy-package migration (expand if you installed the old/retired packages)</summary>
+
+**Discontinued (do not install; deprecated on npm)**:
+
+- `@wingsky-1/dsh-skill-explorer` (skill-center / skill management) is discontinued; both the
+  plugin package and the bundle package have been removed. A better implementation now ships
+  on the web UI side, `@linxin666/dsh-client-ui-skill-explorer` (`dsh-web-ui` repository
+  `packages/dsh-skill-explorer`), which supports symlink detection, safe handling of linked
+  skills, and more. Use the built-in skill center in the web UI instead.
+- `@wingsky-1/dsh-idle-archive` (idle-conversation archiving prompt) is discontinued because
+  the community offers more mature session lifecycle-management / archiving implementations
+  (e.g. [dsh-session-pruner](https://github.com/mrzhangkris/dsh-session-pruner)).
+- `@wingsky-1/dsh-subagent-model-inherit` (child agents inherit parent-session model and
+  reasoning effort) is discontinued because official dsh-subagent 0.1.2-alpha.2 natively
+  implements `resolveChildAgentOptions` (child agents inherit the parent session's model /
+  reasoning effort / output-token limit).
+
+Uninstall these packages if you installed them before:
+
+```sh
+dsh plugin --profile web remove @wingsky-1/dsh-skill-explorer
+dsh plugin --profile web remove @wingsky-1/dsh-idle-archive
+dsh plugin --profile web remove @wingsky-1/dsh-subagent-model-inherit
+```
 
 > dsh-memory (project long-term memory) is not included yet; it is planned.
 
-<details>
-<summary><b>Migrating from legacy packages (upgrade guide)</b> — expand if you installed <code>dsh-gzip</code> / <code>dsh-opencode-usage</code></summary>
+**Legacy packages (published historically, no longer distributed)**:
 
-Two packages were published historically and are no longer distributed. Uninstall the old
-package, install the new one, then restart `dsh web`:
-
-**`@wingsky-1/dsh-gzip` → merged into `@wingsky-1/dsh-lan-proxy`** (since 0.1.9)
+`@wingsky-1/dsh-gzip` → merged into `@wingsky-1/dsh-lan-proxy` (since 0.1.9)
 
 HTTP response compression moved wholesale into lan-proxy (on by default, Brotli/gzip
 negotiated via Accept-Encoding, SSE streaming exempt, configurable). Uninstall dsh-gzip and install dsh-lan-proxy to get the equivalent:
@@ -86,7 +99,7 @@ dsh plugin --profile web remove @wingsky-1/dsh-gzip
 dsh plugin --profile web add @wingsky-1/dsh-lan-proxy
 ```
 
-**`@wingsky-1/dsh-opencode-usage` → renamed/refactored to `@wingsky-1/dsh-provider-usage`**
+`@wingsky-1/dsh-opencode-usage` → renamed/refactored to `@wingsky-1/dsh-provider-usage`
 
 Refactored into a multi-provider adapter framework (built-in OpenCode Go, custom data-source
 adapters supported). The patch `id` changed from `ui-dsh-opencode-usage` to

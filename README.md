@@ -8,7 +8,7 @@
 
 DSH（DeepSeek Harness）Web GUI 插件集，npm 分发：一键装全家桶，或按需单装。
 
-- 聚合包：`@wingsky-1/dsh-plugins-all`（一键装齐全部插件；观察期插件除外，见下文插件列表）
+- 聚合包：`@wingsky-1/dsh-plugins-all`（一键装齐全部插件；`dsh-codegraph` 独立发包、不在聚合包内，见下文插件列表）
 - 单插件：`@wingsky-1/dsh-*`（按需安装）
 
 ## 核心优势
@@ -23,6 +23,15 @@ DSH（DeepSeek Harness）Web GUI 插件集，npm 分发：一键装全家桶，�
   开箱即用；自写一个 mjs 文件即可接入任意数据源，设置页热插拔
 - **工程质量背书**：每个插件自带 smoke 断言（路由围栏 / 客户端契约），构建契约 +
   打包校验等全部门禁在 CI 全量执行
+
+## 版本适配（只适配 rc）
+
+本插件集**只适配 DeepSeek Harness 的 rc（候选发布）版本，不对 alpha 版本适配**。
+
+- 当前全部插件锚定 `dsh 0.1.2-rc.1`（官方类型层 catalog 与各包 peerDependencies 一致锁定）
+- 安装/更新时若 dsh 版本不匹配，npm/pnpm 会给出 peer 提示——请先将 dsh 本体升级到对应 rc 版本
+- 每版的具体适配基线、破坏性变更与升级指南见 [Release Notes](docs/release-notes/)
+- 官方发布新版 rc 后本插件集跟随升级；**alpha 版本不受支持**，请勿在 alpha 环境安装（或自行评估兼容风险）
 
 ## 插件列表
 
@@ -40,32 +49,34 @@ DSH（DeepSeek Harness）Web GUI 插件集，npm 分发：一键装全家桶，�
 > `dsh-plugins-all` 聚合包中**，需单独安装（它经 mcp-manager 运行时注册 codegraph MCP，
 > 请先装 `dsh-mcp-manager` 或聚合包再配合使用）。
 
-> **已停止维护**：`@wingsky-1/dsh-skill-explorer`（技能中心/skill 管理）已**不再维护**
-> （npm 已 deprecate，插件包与聚合包均已移除）。web UI 侧已有更优实现
-> `@linxin666/dsh-client-ui-skill-explorer`（`dsh-web-ui` 仓库 `packages/dsh-skill-explorer`），
-> 支持符号链接识别、链接技能安全处理等，请直接使用 web UI 内置技能中心，勿再安装本包。
->
-> **已停止维护**：`@wingsky-1/dsh-idle-archive`（会话闲置提醒归档）与
-> `@wingsky-1/dsh-subagent-model-inherit`（子 Agent 自动继承父会话模型与思考等级）均已
-> **不再维护**。前者因社区已有更成熟的会话生命周期管理/归档实现（如
-> [dsh-session-pruner](https://github.com/mrzhangkris/dsh-session-pruner)），后者因官方
-> dsh-subagent 0.1.2-alpha.2 已原生实现 `resolveChildAgentOptions`（子 Agent 继承父会话
-> 模型/思考等级/输出上限）。两包均已从仓库移除、npm 已标 deprecated，请勿再安装；
-> 此前安装过的用户请卸载：
->
-> ```sh
-> dsh plugin --profile web remove @wingsky-1/dsh-idle-archive
-> dsh plugin --profile web remove @wingsky-1/dsh-subagent-model-inherit
-> ```
+<details>
+<summary><b>历史维护与迁移</b>——已停止维护的包、旧包迁移指引（装过旧包/退役包的用户请展开）</summary>
+
+**已停止维护（勿再安装，npm 均已标 deprecated）**：
+
+- `@wingsky-1/dsh-skill-explorer`（技能中心/skill 管理）已不再维护，插件包与聚合包均已移除。
+  web UI 侧已有更优实现 `@linxin666/dsh-client-ui-skill-explorer`（`dsh-web-ui` 仓库
+  `packages/dsh-skill-explorer`），支持符号链接识别、链接技能安全处理等，请直接使用
+  web UI 内置技能中心。
+- `@wingsky-1/dsh-idle-archive`（会话闲置提醒归档）已不再维护：社区已有更成熟的会话
+  生命周期管理/归档实现（如 [dsh-session-pruner](https://github.com/mrzhangkris/dsh-session-pruner)）。
+- `@wingsky-1/dsh-subagent-model-inherit`（子 Agent 自动继承父会话模型与思考等级）已不再维护：
+  官方 dsh-subagent 0.1.2-alpha.2 已原生实现 `resolveChildAgentOptions`（子 Agent 继承父会话
+  模型/思考等级/输出上限）。
+
+此前安装过上述退役包的用户请卸载：
+
+```sh
+dsh plugin --profile web remove @wingsky-1/dsh-skill-explorer
+dsh plugin --profile web remove @wingsky-1/dsh-idle-archive
+dsh plugin --profile web remove @wingsky-1/dsh-subagent-model-inherit
+```
 
 > dsh-memory（项目长期记忆）暂未包含，规划中。
 
-<details>
-<summary><b>从旧包迁移（升级指导）</b>——装过 <code>dsh-gzip</code> / <code>dsh-opencode-usage</code> 的请展开</summary>
+**旧包迁移（历史上发布过、现已不再分发）**：
 
-历史上发布过、现已不再分发的两个旧包，请按下面方式迁移（均先卸载旧包再安装新包，装完重启 `dsh web`）：
-
-**`@wingsky-1/dsh-gzip` → 已合并进 `@wingsky-1/dsh-lan-proxy`**（0.1.9 起）
+`@wingsky-1/dsh-gzip` → 已合并进 `@wingsky-1/dsh-lan-proxy`（0.1.9 起）
 
 HTTP 响应压缩能力整体并入 lan-proxy（默认开启，Brotli/gzip 按 Accept-Encoding 自适应协商，SSE 流式响应豁免，可配置）。
 卸载 dsh-gzip、安装 dsh-lan-proxy 即获得等价压缩能力：
@@ -75,7 +86,7 @@ dsh plugin --profile web remove @wingsky-1/dsh-gzip
 dsh plugin --profile web add @wingsky-1/dsh-lan-proxy
 ```
 
-**`@wingsky-1/dsh-opencode-usage` → 已重构更名为 `@wingsky-1/dsh-provider-usage`**
+`@wingsky-1/dsh-opencode-usage` → 已重构更名为 `@wingsky-1/dsh-provider-usage`
 
 重构为多 provider 适配器框架（内置 OpenCode Go，支持用户自定义取数适配器）。
 patch `id` 由 `ui-dsh-opencode-usage` 变为 `ui-dsh-provider-usage`，配置项亦有调整，

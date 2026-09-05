@@ -80,7 +80,7 @@ node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 3456 <插件包路径>
 # 多会话并行/浏览器验证：--port 0 自动探测端口，--browser 拉起独立浏览器实例
 node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --browser <插件包路径>
 # 锚定 dsh 版本（验证特定 dsh 版本生态时必带，防 PATH 漂移）
-node "$SKILL_BASE/scripts/verify-isolated.mjs" --dsh /opt/dsh-0.1.2-alpha.2/bin/dsh --port 0 <插件包路径>
+node "$SKILL_BASE/scripts/verify-isolated.mjs" --dsh /opt/dsh-0.1.2-rc.1/bin/dsh --port 0 <插件包路径>
 # 证据目录外部化 + stdout 只出最终 verdict JSON（人类文案走 stderr）
 node "$SKILL_BASE/scripts/verify-isolated.mjs" --port 0 --evidence-dir /tmp/my-evidence --json <插件包路径>
 # 隔离审计（B4）：白名单外变化报「可疑」不阻断退出；--keep 落 $DSH_HOME/audit/audit.json
