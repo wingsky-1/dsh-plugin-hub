@@ -11,7 +11,7 @@ import { sanitizePreview } from "./rewrite.ts";
 import { hydrateMermaid } from "./mermaid.ts";
 import { applyHeadingIds, scrollToFragment } from "./anchor.ts";
 import { el, errorView } from "./dom.ts";
-import { renderHtmlPreview } from "./html.ts";
+import { renderHtmlPreview, renderHtmlInteractive } from "./html.ts";
 import type { FilePreviewState } from "./state.ts";
 import { resolvedFromFileResponse, applyResolvedPath } from "./resolved-path.ts";
 import { html as diffToHtml } from "diff2html";
@@ -81,6 +81,11 @@ export function renderTabBody(body: HTMLElement, state: FilePreviewState): void 
   // issue #73：html 组「预览」模式 = serve iframe（不依赖 rawText；原始 tab 才拉取）。
   if (state.previewMode === "preview" && group.group === "html") {
     renderHtmlPreview(body, state, state.openSeq, state.activeAbort !== undefined ? state.activeAbort.signal : new AbortController().signal);
+    return;
+  }
+  // issue #507：html 组「交互」模式 = allow-scripts iframe（opt-in 脚本执行）。
+  if (state.previewMode === "interactive" && group.group === "html") {
+    renderHtmlInteractive(body, state, state.openSeq, state.activeAbort !== undefined ? state.activeAbort.signal : new AbortController().signal);
     return;
   }
   const text = state.rawText;

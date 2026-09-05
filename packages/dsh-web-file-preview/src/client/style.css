@@ -94,6 +94,10 @@
 .fwp-diff2html .d2h-emptyplaceholder{display:none}
 /* issue #73：HTML 预览 iframe（sandbox 静态伺服）——占满正文、白底渲染、无边框。 */
 .fwp-html-frame{width:100%;height:62vh;min-height:320px;border:1px solid var(--dsw-alias-border-l1,#e5e7eb);border-radius:8px;background:#fff;display:block;flex:none}
+/* issue #507：交互式预览（allow-scripts）视觉标识——外框高亮 + 「脚本已启用」徽标。 */
+.fwp-html-wrap{position:relative;display:block}
+.fwp-html-frame-interactive{border-color:var(--dsw-alias-state-warning-primary,#b45309);border-width:2px}
+.fwp-interactive-badge{position:absolute;top:-1px;right:8px;z-index:2;font-size:11px;line-height:1;padding:3px 8px;border-radius:0 0 6px 6px;background:var(--dsw-alias-state-warning-primary,#b45309);color:#fff;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
 @media (max-width:640px){.fwp-diff2html{font-size:11px;line-height:1.45}.fwp-diff2html .d2h-code-line,.fwp-diff2html .d2h-code-linenumber{font-size:11px;line-height:1.45}}
 /* 触控目标与安全区（评审 U7）：触屏设备按钮/标签加高到 ≥44px；灯箱工具栏避开
    灵动岛/刘海（safe-area-inset-top）；底部内容不贴 Home 指示条。 */

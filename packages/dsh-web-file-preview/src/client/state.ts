@@ -7,7 +7,9 @@
 
 import type { GroupResult } from "./renderer.ts";
 
-/** 返回栈条目：保存上一文件路径/会话 cwd + 预览态快照，返回时原样还原。 */
+/** 返回栈条目：保存上一文件路径/会话 cwd + 预览态快照，返回时原样还原。
+ * issue #507：previewMode 恒为三态（交互态 clamp 成 "preview" 才入栈——交互
+ * token 不入返回栈，返回统一回静态预览，重新点交互再 alloc）。 */
 export interface NavEntry {
   path: string;
   cwd: string | undefined;
@@ -30,8 +32,8 @@ export interface FilePreviewState {
   disposed: boolean;
   /** 当前图片 blob objectURL（关闭 Modal 时释放）。 */
   trackedObjectUrl: string | undefined;
-  /** 当前「预览 / 原始 / Diff」模式。 */
-  previewMode: "preview" | "raw" | "diff";
+  /** 当前「预览 / 交互 / 原始 / Diff」模式（issue #507：交互仅 html 组可用）。 */
+  previewMode: "preview" | "interactive" | "raw" | "diff";
   /** 已 fetch 的原文文本。 */
   rawText: string | undefined;
   /** git diff 原文。 */
@@ -87,6 +89,13 @@ export interface FilePreviewState {
   serveToken: string | undefined;
   /** issue #73：当前 html 预览的 iframe src（重建/切 tab 复用，免重复 alloc）。 */
   serveSrc: string | undefined;
+  /** issue #507：交互态独立 token（allow-scripts 预览；短 TTL、退出交互即 release，
+   * 与静态 serveToken 分离，绝不入返回栈快照）。 */
+  interactiveToken: string | undefined;
+  /** issue #507：交互态 iframe src（独立于 serveSrc）。 */
+  interactiveSrc: string | undefined;
+  /** issue #507：交互态父页心跳句柄（idle TTL 续命用；teardownInteractive 清）。 */
+  interactivePing: number | undefined;
   /** Mermaid 全局单调 render id 计数（issue #104）：跨 Modal 递增不重置，
    * 保证同文档内 mermaid.render 的元素 id 永不冲突（mermaid 内部按 id 查找节点）。 */
   mermaidRenderId: number;
@@ -158,6 +167,9 @@ export function createState(): FilePreviewState {
     sessionOriginFocus: undefined,
     serveToken: undefined,
     serveSrc: undefined,
+    interactiveToken: undefined,
+    interactiveSrc: undefined,
+    interactivePing: undefined,
     mermaidRenderId: 0,
     activeMermaidHydration: undefined,
     lboxEl: undefined,

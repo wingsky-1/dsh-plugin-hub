@@ -13,7 +13,7 @@ import { closeLightbox } from "./viewer.ts";
 import { renderGroupFor } from "./renderer.ts";
 import { scrollToFragment } from "./anchor.ts";
 import { t } from "../../../../shared/client/i18n.js";
-import { renderHtmlPreview, releaseUrl } from "./html.ts";
+import { renderHtmlPreview, releaseUrl, teardownInteractive } from "./html.ts";
 import {
   fullscreenSupported,
   isFullscreenActive,
@@ -70,6 +70,10 @@ export function closeModal(state: FilePreviewState): void {
   state.diffText = undefined;
   state.diffUntracked = false;
   state.currentGroup = undefined;
+  // issue #507：交互态清理统一入口——closeModal 是「导航式重建（openPreview 内
+  // 调用）与终态关闭共用的资源清理」函数，交互 token（短 TTL、opt-in 语义）在此
+  // 一律 release + 清心跳；静态 serveToken/serveSrc 仍不在此清理（见下 P2-6 注）。
+  teardownInteractive(state);
   // 注（issue #73 评审 P2-6）：serveToken/serveSrc **不在此清理**——closeModal 是
   // 导航式重建（openPreview 内调用）与终态关闭共用的清理函数，release 只发生在
   // finalizeSession（终态关闭，见下）；导航重建时 token 随 backStack 快照保留，
@@ -233,7 +237,9 @@ export function openPreview(
     const keepDiff = textFitsSnapshot(diffLen);
     state.pendingBackEntry = {
       path: state.currentPath, cwd: state.currentCwd,
-      previewMode: state.previewMode,
+      // issue #507：交互态 clamp 成 "preview" 才入栈（交互 token 不入返回栈——
+      // 返回统一回静态预览，重新点交互再 alloc；NavEntry 类型三态见 state.ts）。
+      previewMode: state.previewMode === "interactive" ? "preview" : state.previewMode,
       rawText: keepRaw ? state.rawText : undefined,
       diffText: keepDiff ? state.diffText : undefined,
       diffUntracked: state.diffUntracked,
@@ -311,10 +317,15 @@ export function openPreview(
 
   // 三态 tab 栏：预览 / 原始 / Diff（Diff 仅当 git 有变化时动态追加）。
   const tabs = el("div", { class: "fwp-tabs" });
-  const tabDefs: Array<{ label: string; mode: "preview" | "raw" }> = [];
+  const tabDefs: Array<{ label: string; mode: "preview" | "interactive" | "raw" }> = [];
   if (group.group === "md" || group.group === "code" || group.group === "html") {
     // issue #73：html 组与 md/code 同三-tab（预览=iframe sandbox / 原始=/file 源码）。
     tabDefs.push({ label: t("tabPreview"), mode: "preview" }, { label: t("tabRaw"), mode: "raw" });
+    // issue #507：html 组独有「交互」tab（opt-in 脚本执行；点击需用户确认手势，
+    // 确认后重建 iframe 加 allow-scripts；切回预览/原始即释放交互 token）。
+    if (group.group === "html") {
+      tabDefs.push({ label: t("tabInteractive"), mode: "interactive" });
+    }
   }
   if (group.group === "text") {
     tabDefs.push({ label: t("tabContent"), mode: "raw" });
@@ -330,6 +341,8 @@ export function openPreview(
     if (diffTab !== undefined) return;
     diffTab = el("button", { class: "fwp-tab", text: "Diff", attrs: { "data-mode": "diff" } });
     diffTab.addEventListener("click", () => {
+      // issue #507：从交互态切走（Diff tab）→ 释放交互 token（teardownInteractive）。
+      if (state.previewMode === "interactive") teardownInteractive(state);
       state.previewMode = "diff";
       syncTabActive();
       renderTabBody(body, state);
@@ -356,6 +369,15 @@ export function openPreview(
   for (const def of tabDefs) {
     const b = el("button", { class: "fwp-tab", text: def.label, attrs: { "data-mode": def.mode } });
     b.addEventListener("click", () => {
+      // issue #507：进入「交互」态 = 用户手势 opt-in 的信任决策——首次点击弹
+      // confirm（对齐 mcp-manager 先例），取消则停留原 tab（乐观置位须回滚）。
+      if (def.mode === "interactive" && state.previewMode !== "interactive") {
+        if (!window.confirm(t("interactiveConfirm"))) return;
+      }
+      // issue #507：从交互态切走（预览/原始）→ 释放交互 token + 清心跳。
+      if (state.previewMode === "interactive" && def.mode !== "interactive") {
+        teardownInteractive(state);
+      }
       state.previewMode = def.mode;
       syncTabActive();
       renderTabBody(body, state);
