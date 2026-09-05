@@ -18,10 +18,13 @@ import { isLoopbackRequest } from "./loopback.js";
  * @param {import("node:http").IncomingMessage} req - Node http 请求对象。
  * @param {import("node:http").ServerResponse} res - 响应对象。
  * @param {string[]} methods - 允许的 HTTP 方法白名单。
+ * @param {{ allowCrossSiteNoCors?: boolean }} [loopbackOptions] - 透传给
+ *   isLoopbackRequest 的可选判定参数（#549：仅 serve 资源路由放行
+ *   cross-site no-cors 子资源时使用；其余路由不得传）。
  * @returns {boolean} 是否放行（true 时调用方继续处理请求）。
  */
-export function guardLoopbackMethod(req, res, methods) {
-  if (!isLoopbackRequest(req)) {
+export function guardLoopbackMethod(req, res, methods, loopbackOptions) {
+  if (!isLoopbackRequest(req, loopbackOptions)) {
     writeJson(res, 403, { error: "forbidden: loopback-only" });
     return false;
   }

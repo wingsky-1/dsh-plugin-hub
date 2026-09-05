@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import type { LoopbackOptions } from "./loopback.d.ts";
 
 /** 写 JSON 响应（统一带 referrer-policy 头，防 referrer 泄露）。 */
 export declare function writeJson(res: ServerResponse, status: number, payload: unknown): void;
@@ -29,6 +30,13 @@ export declare function readBody(req: IncomingMessage, limit?: number): Promise<
  * Loopback + 方法白名单低阶路由守卫：非 loopback → 403，方法不在白名单 → 405，
  * 否则放行（403 先于 405 为本守卫执行顺序，仅对套守卫端点成立）。
  * @param methods 允许的 HTTP 方法白名单。
+ * @param loopbackOptions 透传给 isLoopbackRequest 的可选判定参数（#549：仅
+ *   serve 资源路由放行 cross-site no-cors 子资源时使用；其余路由不得传）。
  * @returns 是否放行（true 时调用方继续处理请求）。
  */
-export declare function guardLoopbackMethod(req: IncomingMessage, res: ServerResponse, methods: string[]): boolean;
+export declare function guardLoopbackMethod(
+  req: IncomingMessage,
+  res: ServerResponse,
+  methods: string[],
+  loopbackOptions?: LoopbackOptions
+): boolean;
