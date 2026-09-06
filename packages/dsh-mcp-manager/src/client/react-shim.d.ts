@@ -6,11 +6,9 @@ declare module "react" {
   export = React;
 }
 
-declare global {
-  namespace JSX {
-    interface Element extends any {}
-    interface IntrinsicElements {
-      [elemName: string]: any;
-    }
+namespace JSX {
+  interface Element extends any {}
+  interface IntrinsicElements {
+    [elemName: string]: any;
   }
 }

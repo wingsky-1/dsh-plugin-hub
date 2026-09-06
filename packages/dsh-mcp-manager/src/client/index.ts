@@ -27,7 +27,7 @@ import { refresh, switchTab, close, showPanel } from "./panel.ts";
 import { resetForm, beginEdit } from "./quick-add.ts";
 import { toggleFloat, mountFloat, renderFloatPanel } from "./float.ts";
 import { bindSession, rebindSession } from "./session.ts";
-import { SettingsCard } from "./settings-card.ts";
+import { SettingsCard } from "./settings-card.tsx";
 import { bindLocale } from "../../../../shared/client/i18n.js";
 import { zh, en, type McpLocaleKey } from "./locales.ts";
 // 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
