@@ -84,7 +84,7 @@ export { parseHHMM, normalizeReportConfig, DEFAULT_REPORT_CONFIG, DEFAULT_PROMPT
 export type { ReportConfig, ReportPeriod, ReportPeriodConfig } from "./report/config.ts";
 export { generateReport, applyPromptTemplate, buildStatsSnapshot } from "./report/generate.ts";
 export { reportBodyToHtml } from "./report/format.ts";
-export { DEFAULT_DAILY_PROMPT, DEFAULT_WEEKLY_PROMPT, DEFAULT_MONTHLY_PROMPT, DEFAULT_PROMPTS, LEGACY_PROMPT_TEMPLATE, LEGACY_DAILY_PROMPT_V1, LEGACY_WEEKLY_PROMPT_V1, LEGACY_MONTHLY_PROMPT_V1, promptFor } from "./report/config.ts";
+export { DEFAULT_DAILY_PROMPT, DEFAULT_WEEKLY_PROMPT, DEFAULT_MONTHLY_PROMPT, DEFAULT_PROMPTS, LEGACY_PROMPT_TEMPLATE, LEGACY_DAILY_PROMPT_V1, LEGACY_WEEKLY_PROMPT_V1, LEGACY_MONTHLY_PROMPT_V1, LEGACY_DAILY_PROMPT_V2, LEGACY_WEEKLY_PROMPT_V2, LEGACY_MONTHLY_PROMPT_V2, promptFor } from "./report/config.ts";
 export type { ReportPrompts } from "./report/config.ts";
 export type { ReportMeta, ReportResult, ReportStatsSnapshot, ReportLlmService, ReportTokenUsage } from "./report/generate.ts";
 export { ReportScheduler } from "./report/scheduler.ts";

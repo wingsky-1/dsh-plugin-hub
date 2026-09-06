@@ -35,6 +35,9 @@ import {
   LEGACY_DAILY_PROMPT_V1,
   LEGACY_WEEKLY_PROMPT_V1,
   LEGACY_MONTHLY_PROMPT_V1,
+  LEGACY_DAILY_PROMPT_V2,
+  LEGACY_WEEKLY_PROMPT_V2,
+  LEGACY_MONTHLY_PROMPT_V2,
   promptFor,
   reportBodyToHtml,
   sanitizeHtml,
@@ -347,6 +350,17 @@ const GEN = (over = {}) => ({
   assert.equal(legacyV1.prompts.daily, DEFAULT_DAILY_PROMPT, "未自定义的旧版日报模板自动升级");
   assert.equal(legacyV1.prompts.weekly, DEFAULT_WEEKLY_PROMPT, "未自定义的旧版周报模板自动升级");
   assert.equal(legacyV1.prompts.monthly, DEFAULT_MONTHLY_PROMPT, "未自定义的旧版月报模板自动升级");
+  // 存量老用户过渡单段提示词（V2：未分块单段）同样自动升级为最新语义块结构
+  const legacyV2 = normalizeReportConfig({
+    prompts: {
+      daily: LEGACY_DAILY_PROMPT_V2,
+      weekly: LEGACY_WEEKLY_PROMPT_V2,
+      monthly: LEGACY_MONTHLY_PROMPT_V2,
+    },
+  });
+  assert.equal(legacyV2.prompts.daily, DEFAULT_DAILY_PROMPT, "V2 单段日报模板自动升级为语义块");
+  assert.equal(legacyV2.prompts.weekly, DEFAULT_WEEKLY_PROMPT, "V2 单段周报模板自动升级为语义块");
+  assert.equal(legacyV2.prompts.monthly, DEFAULT_MONTHLY_PROMPT, "V2 单段月报模板自动升级为语义块");
   // 若老用户对日报有自定义修改，则保留自定义内容，不被覆写
   const userCustomPrompts = normalizeReportConfig({
     prompts: {
