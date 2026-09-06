@@ -20,6 +20,16 @@ export const DEFAULT_CUSTOM_INSTRUCTIONS =
   "忽略：一次性指令、寒暄与过程性调试文本。直述事实，不加任何'用户表示/User said'等前缀。";
 
 export interface Mem0Config {
+  /**
+   * LLM 模式：dsh (复用 DSH 模型，推荐) | custom (自定义端点)。
+   * 类型面放宽为 string 以对齐 schemastery schema 推导；写入前经 mergeConfigPatch 运行时白名单校验。
+   */
+  llmMode?: string;
+  /** DSH 模型提供商标识（如 deepseek, openai 等）。 */
+  llmDshProvider?: string;
+  /** DSH 模型标识（如 deepseek-chat 等）。 */
+  llmDshModel?: string;
+
   /** LLM Provider 端点类型（默认 openai 兼容端点）。 */
   llmProvider: string;
   /** LLM 服务 Base URL。 */
@@ -31,6 +41,11 @@ export interface Mem0Config {
   /** LLM 采样温度（0.0 ~ 1.0，默认 0.1 保证抽取确定性）。 */
   llmTemperature: number;
 
+  /**
+   * Embedder 模式：local (本地离线 FastEmbed 推荐) | custom (远程云端 OpenAI 兼容)。
+   * 类型面放宽为 string 以对齐 schemastery schema 推导；写入前经 mergeConfigPatch 运行时白名单校验。
+   */
+  embedderMode?: string;
   /** Embedder 向量服务 Provider 类型（默认 fastembed 本地纯离线零费用）。 */
   embedderProvider: string;
   /** Embedder 向量服务 Base URL（若使用 OpenAI 兼容端点）。 */
@@ -39,6 +54,8 @@ export interface Mem0Config {
   embedderApiKey?: string;
   /** Embedder 向量模型名称。 */
   embedderModel: string;
+  /** 向量维度（可选，默认按模型推导；自定义远程模型时可指定）。 */
+  embeddingDims?: number;
 
   /** 检索返回的默认条数 TopK（1 ~ 20，默认 5）。 */
   retrievalTopK: number;
@@ -52,16 +69,21 @@ export interface Mem0Config {
 
 /** 默认配置：默认采用本地 fastembed 本地向量，开箱即用零费用零密钥！ */
 export const DEFAULT_CONFIG: Mem0Config = {
+  llmMode: "dsh",
+  llmDshProvider: "deepseek",
+  llmDshModel: "deepseek-chat",
   llmProvider: "openai",
   llmBaseUrl: "https://api.deepseek.com/v1",
   llmApiKey: "",
   llmModel: "deepseek-chat",
   llmTemperature: 0.1,
 
+  embedderMode: "local",
   embedderProvider: "fastembed", // 默认本地 Embedding！
   embedderBaseUrl: "",
   embedderApiKey: "",
   embedderModel: "BAAI/bge-small-zh-v1.5",
+  embeddingDims: 512,
 
   retrievalTopK: 5,
   customInstructions: DEFAULT_CUSTOM_INSTRUCTIONS,
@@ -81,6 +103,7 @@ export interface ModelCostInfo {
   costEn: string;
   perfZh: string;
   perfEn: string;
+  recommended?: boolean;
 }
 
 export const EMBEDDER_MODELS_INFO: ModelCostInfo[] = [
@@ -89,40 +112,31 @@ export const EMBEDDER_MODELS_INFO: ModelCostInfo[] = [
     provider: "fastembed",
     dims: 512,
     isLocal: true,
+    recommended: true,
     costZh: "【本地模型·默认推荐】永久完全免费，零网络请求，零 Token 计费",
     costEn: "[Local Model - Default] 100% Free, zero network requests, zero tokens",
     perfZh: "内存常驻仅 ~120MB，本地 CPU 计算毫秒级 (~5ms)，中文语义匹配度极高",
     perfEn: "RAM ~120MB, CPU latency ~5ms, high accuracy for Chinese",
   },
   {
-    name: "BAAI/bge-base-zh-v1.5",
+    name: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
     provider: "fastembed",
-    dims: 768,
+    dims: 384,
     isLocal: true,
-    costZh: "【本地模型】永久完全免费，零网络请求，零 Token 计费",
-    costEn: "[Local Model] 100% Free, zero network requests, zero tokens",
-    perfZh: "内存占用约 ~240MB，CPU 运算约 ~15ms，表达更精细的高维模型",
-    perfEn: "RAM ~240MB, CPU latency ~15ms, 768-dim high precision",
+    costZh: "【本地模型·多语言极轻量】永久完全免费，零网络请求，超低显存/内存",
+    costEn: "[Local Model - Lightweight] 100% Free, multilingual ultra-lightweight",
+    perfZh: "内存占用仅 ~80MB，本地 CPU 极速运算 (~3ms)，适合资源受限环境",
+    perfEn: "RAM ~80MB, CPU latency ~3ms, ideal for low-spec devices",
   },
   {
-    name: "BAAI/bge-large-zh-v1.5",
-    provider: "openai",
+    name: "intfloat/multilingual-e5-large",
+    provider: "fastembed",
     dims: 1024,
-    isLocal: false,
-    costZh: "【硅基流动云端】永久免费 (需配置 SiliconFlow 免费 API Key 与 Base URL)",
-    costEn: "[SiliconFlow Cloud] 100% Free (requires SiliconFlow API Key & Base URL)",
-    perfZh: "网络延迟约 100~200ms，1024 维超大模型高精度召回",
-    perfEn: "Network latency ~100-200ms, 1024-dim large model recall",
-  },
-  {
-    name: "text-embedding-3-small",
-    provider: "openai",
-    dims: 1536,
-    isLocal: false,
-    costZh: "【OpenAI 云端】约 $0.02 / 100万 tokens (约合 0.15 元 / 百万词)",
-    costEn: "[OpenAI Cloud] ~$0.02 / 1M tokens",
-    perfZh: "国际网络链路延迟，1536 维标准多语言模型",
-    perfEn: "Standard multilingual model, 1536 dims",
+    isLocal: true,
+    costZh: "【本地模型·高精多语言】永久完全免费，首启需下载 ~600MB 权重文件",
+    costEn: "[Local Model - High Precision] 100% Free, first run downloads ~600MB weights",
+    perfZh: "内存占用约 ~400MB，CPU 运算约 ~25ms，1024 维跨语言超强表征",
+    perfEn: "RAM ~400MB, CPU latency ~25ms, 1024-dim strong multilingual representations",
   },
 ];
 
@@ -143,16 +157,22 @@ export const LLM_MODELS_INFO = [
  * schemastery Config schema，用于官方 settings 存储注册与校验。
  */
 export const Config: z<Mem0Config> = z.object({
+  llmMode: z.string().default(DEFAULT_CONFIG.llmMode ?? "dsh"),
+  llmDshProvider: z.string().default(DEFAULT_CONFIG.llmDshProvider ?? "deepseek"),
+  llmDshModel: z.string().default(DEFAULT_CONFIG.llmDshModel ?? "deepseek-chat"),
+
   llmProvider: z.string().default(DEFAULT_CONFIG.llmProvider),
   llmBaseUrl: z.string().default(DEFAULT_CONFIG.llmBaseUrl),
   llmApiKey: z.string().default(""),
   llmModel: z.string().default(DEFAULT_CONFIG.llmModel),
   llmTemperature: z.number().min(0).max(1).default(DEFAULT_CONFIG.llmTemperature),
 
+  embedderMode: z.string().default(DEFAULT_CONFIG.embedderMode ?? "local"),
   embedderProvider: z.string().default(DEFAULT_CONFIG.embedderProvider),
   embedderBaseUrl: z.string().default(DEFAULT_CONFIG.embedderBaseUrl),
   embedderApiKey: z.string().default(""),
   embedderModel: z.string().default(DEFAULT_CONFIG.embedderModel),
+  embeddingDims: z.number().default(DEFAULT_CONFIG.embeddingDims ?? 512),
 
   retrievalTopK: z.natural().min(1).max(20).default(DEFAULT_CONFIG.retrievalTopK),
   customInstructions: z.string().default(DEFAULT_CONFIG.customInstructions),
@@ -198,6 +218,16 @@ export function sanitizeConfigForClient(cfg: Mem0Config): Record<string, unknown
 export function mergeConfigPatch(current: Mem0Config, patch: Record<string, unknown>): Mem0Config {
   const next: Mem0Config = { ...current };
 
+  if (patch.llmMode === "dsh" || patch.llmMode === "custom") {
+    next.llmMode = patch.llmMode;
+  }
+  if (typeof patch.llmDshProvider === "string" && patch.llmDshProvider.trim()) {
+    next.llmDshProvider = patch.llmDshProvider.trim();
+  }
+  if (typeof patch.llmDshModel === "string" && patch.llmDshModel.trim()) {
+    next.llmDshModel = patch.llmDshModel.trim();
+  }
+
   if (typeof patch.llmProvider === "string" && patch.llmProvider.trim()) {
     next.llmProvider = patch.llmProvider.trim();
   }
@@ -219,6 +249,9 @@ export function mergeConfigPatch(current: Mem0Config, patch: Record<string, unkn
     }
   }
 
+  if (patch.embedderMode === "local" || patch.embedderMode === "custom") {
+    next.embedderMode = patch.embedderMode;
+  }
   if (typeof patch.embedderProvider === "string" && patch.embedderProvider.trim()) {
     next.embedderProvider = patch.embedderProvider.trim();
   }
@@ -227,6 +260,9 @@ export function mergeConfigPatch(current: Mem0Config, patch: Record<string, unkn
   }
   if (typeof patch.embedderModel === "string" && patch.embedderModel.trim()) {
     next.embedderModel = patch.embedderModel.trim();
+  }
+  if (typeof patch.embeddingDims === "number" && patch.embeddingDims > 0) {
+    next.embeddingDims = Math.floor(patch.embeddingDims);
   }
   if (typeof patch.embedderApiKey === "string") {
     const raw = patch.embedderApiKey.trim();

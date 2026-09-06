@@ -7,7 +7,7 @@ import STYLE from "./style.css";
 import { ensureStyle } from "../../../../shared/client/ensure-style.js";
 import { bindLocale, t } from "../../../../shared/client/i18n.js";
 import { zh, en, type Mem0LocaleKey } from "./locales.ts";
-import { MemoryCenter } from "./MemoryCenter.ts";
+import { MemoryCenter } from "./MemoryCenter.tsx";
 import type { LocaleNamespaceMap } from "@deepseek-ai/dsh-client-ui-slots";
 
 const NS = "dshMem0";
