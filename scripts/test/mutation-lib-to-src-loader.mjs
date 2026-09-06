@@ -42,7 +42,8 @@ function currentRoot() {
 }
 
 /** 统一分隔符（Windows `\` → `/`），后续全部按 POSIX 段级匹配。 */
-function toPosix(p) {
+/** POSIX 分隔符归一（测试比较 seam：Windows 原生路径 vs loader POSIX 输出）。 */
+export function toPosix(p) {
   return String(p).replaceAll("\\", "/");
 }
 

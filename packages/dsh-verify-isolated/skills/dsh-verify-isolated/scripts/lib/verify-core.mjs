@@ -94,18 +94,26 @@ export function readDshPort(text) {
 //   2. cwd 下存在该路径（目录或文件）→ 绝对化；
 //   3. 其余 → 视为包规格，原样透传。
 const PATH_LIKE = /^(\.{1,2}\/|\.{1,2}$|\/|~)/;
+// Windows 盘符绝对路径（C:\、C:/）不以 / 或 ~ 开头，PATH_LIKE 感知不到会误落
+// existsSync 分支：不存在的绝对路径被当成包规格透传（#517 C11 语义破坏）。
+const WIN32_DRIVE_LIKE = /^[A-Za-z]:[\\/]/;
 
-/** `~`/`~/x` 展开为 home 前缀（path.resolve 不做 `~` 展开，此处内建）。 */
+function isPathLike(p) {
+  return PATH_LIKE.test(p) || (process.platform === "win32" && WIN32_DRIVE_LIKE.test(p));
+}
+
+/** `~`、`~/x`、`~\x` 展开为 home 前缀（path.resolve 不做 `~` 展开，此处内建；
+ *  Windows 用户键入 `~\x` 反斜杠形态同样展开）。 */
 export function expandHome(input) {
   if (input === "~") return homedir();
-  if (input.startsWith("~/")) return resolve(homedir(), input.slice(2));
+  if (/^~[/\\]/.test(input)) return resolve(homedir(), input.slice(2));
   return input;
 }
 
 /** 单个插件参数归一化：{ input, kind: "path"|"spec", abs }（abs 仅 path 时有值）。 */
 export function resolvePkgArg(input) {
   const expanded = expandHome(input);
-  if (PATH_LIKE.test(expanded)) return { input, kind: "path", abs: resolve(expanded) };
+  if (isPathLike(expanded)) return { input, kind: "path", abs: resolve(expanded) };
   if (existsSync(expanded)) return { input, kind: "path", abs: resolve(expanded) };
   return { input, kind: "spec", abs: null };
 }

@@ -23,14 +23,14 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 // 服务消费方契约门禁（#476）：codegraph 经 mcp-manager 公开入口的类型化调用
 // 形状 + 无直连 shared + 依赖解析链（运行时断言；编译期断言经 scripts/test/
 // service-contract-wiring.test.ts 的 tsc 编译面执行）
 import "./service-consumer.test.ts";
 
-const pkgDir = join(new URL("..", import.meta.url).pathname);
+const pkgDir = fileURLToPath(new URL("..", import.meta.url));
 const mod = await import(pathToFileURL(join(pkgDir, "lib/index.js")).href);
 const { apply, name, inject } = mod;
 const { isCodegraphInstalled, installGuidance } = mod;
@@ -70,11 +70,19 @@ async function resolveModule(name, envVar) {
 }
 
 const failures = [];
+// 平台跳过标记：win32 不支持 exec POSIX fake CLI（shebang/sh 脚本，产品侧
+// resolveCodegraphPath 亦不探测 .cmd）——fake CLI 分支用例在 win32 显式跳过
+// （跳过行可见，不假绿），覆盖由 Linux CI 承担；产品 Windows 支持缺口另行跟踪。
+const SKIP = Symbol("platform-skip");
+function skipOnWin32() {
+  if (process.platform === "win32") throw SKIP;
+}
 function check(label, fn) {
   try {
     fn();
     console.log(`  ok   ${label}`);
   } catch (error) {
+    if (error === SKIP) { console.log(`  (skip win32) ${label}`); return; }
     failures.push(`${label}: ${error.message}`);
     console.error(`FAIL ${label}: ${error.message}`);
   }
@@ -84,6 +92,7 @@ async function checkAsync(label, fn) {
     await fn();
     console.log(`  ok   ${label}`);
   } catch (error) {
+    if (error === SKIP) { console.log(`  (skip win32) ${label}`); return; }
     failures.push(`${label}: ${error.message}`);
     console.error(`FAIL ${label}: ${error.message}`);
   }
@@ -101,6 +110,7 @@ function registerAsync(label, fn) {
 let pathLock = Promise.resolve();
 function withGlobalPath(path, fn) {
   const run = pathLock.then(async () => {
+    if (process.platform === "win32") throw SKIP;
     const prev = process.env.PATH;
     process.env.PATH = path;
     try {
@@ -316,6 +326,7 @@ check("契约: inject 包含 mcpManager", () => assert.ok(inject.includes("mcpMa
 
   // 分支 5：符号未找到（stdout 空结果提示）→ 空结果提示而非错误
   registerAsync("guardedCodegraph: 符号未找到 → 空结果提示（非错误）", async () => {
+    skipOnWin32();
     const dir = mkdtempSync(join(tmpdir(), "cg-fake-"));
     makeFakeBin(dir, `${FAKE_SYNC_OK}\necho 'ℹ Symbol "NoSuch" not found'`);
     resetSyncCache();
@@ -336,6 +347,7 @@ check("契约: inject 包含 mcpManager", () => assert.ok(inject.includes("mcpMa
 
   // 分支 8：命令失败（stderr + 退出码 1）→ 错误提示
   registerAsync("guardedCodegraph: 命令失败（stderr+退出码 1）→ 错误提示", async () => {
+    skipOnWin32();
     const dir = mkdtempSync(join(tmpdir(), "cg-fake2-"));
     makeFakeBin(dir, `${FAKE_SYNC_OK}\necho 'error: unknown option' >&2; exit 1`);
     resetSyncCache();
@@ -356,6 +368,7 @@ check("契约: inject 包含 mcpManager", () => assert.ok(inject.includes("mcpMa
 
   // 分支 7：空结果（找到符号但无调用者）→ 空结果提示
   registerAsync("guardedCodegraph: 无调用者 → 空结果提示", async () => {
+    skipOnWin32();
     const dir = mkdtempSync(join(tmpdir(), "cg-fake3-"));
     makeFakeBin(dir, `${FAKE_SYNC_OK}\necho 'ℹ No callers found for "x"'`);
     resetSyncCache();
@@ -405,6 +418,7 @@ check("契约: inject 包含 mcpManager", () => assert.ok(inject.includes("mcpMa
 
   // 分支 3：sync 失败 → 拒绝
   registerAsync("guardedCodegraph: sync 失败 → 拒绝", async () => {
+    skipOnWin32();
     const dir = mkdtempSync(join(tmpdir(), "cg-fake6-"));
     mkdirSync(join(dir, "repo", ".git"), { recursive: true });
     mkdirSync(join(dir, "repo", ".codegraph"), { recursive: true });
@@ -425,6 +439,7 @@ check("契约: inject 包含 mcpManager", () => assert.ok(inject.includes("mcpMa
   // sync TTL 缓存（#363 验收 9）：30s 内同 projectPath 不重复 sync；
   // 用 fake sync 计数验证；查询结果不缓存（每次重新执行）。
   registerAsync("sync TTL: 30s 内同 projectPath 只 sync 一次（查询不缓存）", async () => {
+    skipOnWin32();
     const dir = mkdtempSync(join(tmpdir(), "cg-ttl-"));
     mkdirSync(join(dir, "repo", ".git"), { recursive: true });
     mkdirSync(join(dir, "repo", ".codegraph"), { recursive: true });
@@ -486,6 +501,7 @@ check("契约: inject 包含 mcpManager", () => assert.ok(inject.includes("mcpMa
 
   // P2-2：未知子命令形态（stderr 有 error 但退出码 0）→ 归入失败提示
   registerAsync("guardedCodegraph: stderr 非空 + exit 0 → 失败提示（非空 stdout 误判）", async () => {
+    skipOnWin32();
     const dir = mkdtempSync(join(tmpdir(), "cg-unk-"));
     const repo = join(dir, "repo");
     mkdirSync(join(repo, ".git"), { recursive: true });
@@ -507,6 +523,7 @@ check("契约: inject 包含 mcpManager", () => assert.ok(inject.includes("mcpMa
 
   // P2-1：node 文件模式文件不存在 → 空结果提示（No indexed file matches）
   registerAsync("guardedCodegraph: node 文件不存在 → 空结果提示", async () => {
+    skipOnWin32();
     const dir = mkdtempSync(join(tmpdir(), "cg-nf-"));
     const repo = join(dir, "repo");
     mkdirSync(join(repo, ".git"), { recursive: true });

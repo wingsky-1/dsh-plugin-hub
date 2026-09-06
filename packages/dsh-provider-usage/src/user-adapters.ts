@@ -367,7 +367,13 @@ export function resolveAddAdapterFile(
   const trimmed = input.trim();
   if (trimmed === "" || trimmed.includes("\0")) return undefined;
   const expandedForCheck = expandHomePath(trimmed);
-  if (resolve(expandedForCheck) !== expandedForCheck) return undefined; // 拒绝 a/../b、./x 未规整形态
+  // 拒绝 a/../b、./x 未规整形态（禁穿越）。比对前做分隔符归一：Windows 下
+  // untildify 产混合分隔符（~ → 反斜杠 home，余段保留 /），resolve 归一 / → \
+  // 属平台语义而非未规整——按字面比对会把 ~/x 与全部正斜杠绝对路径误拒；
+  // POSIX 分隔符归一为恒等变换，行为与历史实现完全一致，穿越段仍被拒。
+  const expandedCanonical = resolve(expandedForCheck);
+  const sepCanonical = (s: string) => (process.platform === "win32" ? s.replace(/\\/g, "/") : s);
+  if (sepCanonical(expandedCanonical) !== sepCanonical(expandedForCheck)) return undefined;
   const resolved = resolvePath(expandedForCheck);
   if (resolved === undefined) return undefined;
   if (!isAbsolute(trimmed)) {

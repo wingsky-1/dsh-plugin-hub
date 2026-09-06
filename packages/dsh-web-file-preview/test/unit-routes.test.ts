@@ -47,7 +47,9 @@ try {
   // readErrorCode / readErrorText（通过 chmod 000 触发 readFile 失败）
   // ================================================================
 
-  if (!isRoot) {
+  // chmod 000 产生读拒绝是 POSIX 语义（root 与 Windows 均不生效），其余平台
+  // 跳过；readErrorCode 分支覆盖由 Linux CI 承担。
+  if (!isRoot && process.platform !== "win32") {
     chmodSync(join(root, "pic.png"), 0o000);
     const url = `http://127.0.0.1${ROUTES.file}?cwd=${encodeURIComponent(root)}&path=pic.png`;
     const res = fakeRes();
