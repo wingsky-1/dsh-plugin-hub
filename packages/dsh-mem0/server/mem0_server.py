@@ -59,7 +59,13 @@ CUSTOM_INSTRUCTIONS = _dynamic_cfg.get("customInstructions") or os.environ.get(
 # Vector store config (local embedded Qdrant or remote Qdrant)
 def resolve_embedding_dims(model_name: str) -> int:
     m = model_name.lower()
-    if "bge-large" in m or "large" in m:
+    if "paraphrase-multilingual" in m or "384" in m:
+        return 384
+    if "bge-small" in m or "small" in m:
+        return 512
+    if "bge-base" in m:
+        return 768
+    if "bge-large" in m or "e5-large" in m or "large" in m:
         return 1024
     if "text-embedding-3-small" in m:
         return 1536
@@ -68,11 +74,12 @@ def resolve_embedding_dims(model_name: str) -> int:
     return 512
 
 vector_dims = int(_dynamic_cfg.get("embeddingDims", resolve_embedding_dims(EMBEDDER_MODEL)))
+collection_name = f"mem0_v2_dim_{vector_dims}"
 
 vector_store_cfg: Dict[str, Any] = {
     "provider": "qdrant",
     "config": {
-        "collection_name": "mem0",
+        "collection_name": collection_name,
         "embedding_model_dims": vector_dims,
     },
 }

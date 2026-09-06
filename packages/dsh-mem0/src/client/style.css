@@ -306,3 +306,66 @@
   border: 1px dashed var(--dsw-alias-border-l2, #cbd5e1);
   color: var(--dsw-alias-label-secondary, #475569);
 }
+
+/* 接入模式切换单选 */
+.dsh-mem0-mode-toggle {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.dsh-mem0-mode-btn {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-alias-border-l1, #e5e7eb);
+  background: var(--dsw-alias-bg-layer-2, #f9fafb);
+  color: var(--dsw-alias-label-secondary, #4b5563);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.dsh-mem0-mode-btn:hover {
+  border-color: var(--dsw-alias-brand, #2563eb);
+}
+
+.dsh-mem0-mode-btn.active {
+  background: var(--dsw-alias-brand, #2563eb);
+  color: #ffffff;
+  border-color: var(--dsw-alias-brand, #2563eb);
+  font-weight: 500;
+}
+
+/* 硬件资源徽章流 */
+.dsh-mem0-metrics-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.dsh-mem0-metric-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  background: var(--dsw-alias-bg-layer-2, rgba(0, 0, 0, 0.04));
+  border: 1px solid var(--dsw-alias-border-l1, #e2e8f0);
+  color: var(--dsw-alias-label-primary, #334155);
+}
+
+.dsh-mem0-metric-chip.highlight {
+  background: var(--dsw-alias-success-bg, #ecfdf5);
+  color: var(--dsw-alias-success, #059669);
+  border-color: rgba(16, 185, 129, 0.3);
+  font-weight: 600;
+}
+
+.dsh-mem0-hint {
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary, #6b7280);
+  margin-top: 4px;
+}

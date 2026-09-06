@@ -42,6 +42,9 @@ const {
   isMemoryDisciplineInjected,
   MEMORY_DISCIPLINE_TEXT,
   createMem0Routes,
+  resolveLlmRuntimeConfig,
+  listLlmProviders,
+  listLlmModels,
 } = hostMod;
 
 let testsRun = 0;
@@ -320,14 +323,14 @@ await test("模型配置：默认使用本地 FastEmbed 零费用模型，且提
 });
 
 // 8. 客户端 i18n 完备性（无硬编码中文）
-await test("客户端 i18n：MemoryCenter.ts 源码不得包含任何硬编码中文字符", async () => {
+await test("客户端 i18n：MemoryCenter.tsx 源码不得包含任何硬编码中文字符", async () => {
   const { readFileSync } = await import("node:fs");
-  const code = readFileSync(join(pkgDir, "src/client/MemoryCenter.ts"), "utf8");
-  // 移除注释行
+  const code = readFileSync(join(pkgDir, "src/client/MemoryCenter.tsx"), "utf8");
+  // 移除注释行与 JSX 内可能保留的纯标点符号
   const codeWithoutComments = code.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
   // 断言代码主体中不含非 ASCII 中文字符
   const chineseMatches = codeWithoutComments.match(/[\u4e00-\u9fa5]/g);
-  assert.equal(chineseMatches, null, `MemoryCenter.ts 代码中存在硬编码中文: ${chineseMatches ? chineseMatches.slice(0, 10).join(",") : ""}`);
+  assert.equal(chineseMatches, null, `MemoryCenter.tsx 代码中存在硬编码中文: ${chineseMatches ? chineseMatches.slice(0, 10).join(",") : ""}`);
 });
 
 // 9. 客户端产物契约
@@ -392,8 +395,8 @@ await test("装配层路由注册契约：apply 必须单路由逐个注册并�
     if (typeof res === "function") cleanupFns.push(res);
   }
 
-  // 断言注册了全部 6 个路由
-  assert.equal(registeredRoutes.length, 6, "必须注册全部 6 个 exact 路由");
+  // 断言注册了全部 8 个路由
+  assert.equal(registeredRoutes.length, 8, "必须注册全部 8 个 exact 路由");
   const registeredPaths = registeredRoutes.map((r) => r.path).sort();
   const expectedPaths = [
     "/api/dsh-mem0/add",
@@ -401,9 +404,11 @@ await test("装配层路由注册契约：apply 必须单路由逐个注册并�
     "/api/dsh-mem0/delete",
     "/api/dsh-mem0/install",
     "/api/dsh-mem0/list",
+    "/api/dsh-mem0/llm-models",
+    "/api/dsh-mem0/llm-providers",
     "/api/dsh-mem0/status",
   ].sort();
-  assert.deepEqual(registeredPaths, expectedPaths, "已注册路由路径必须完全匹配预期的 6 个路径");
+  assert.deepEqual(registeredPaths, expectedPaths, "已注册路由路径必须完全匹配预期的 8 个路径");
 
   // 执行清理
   for (const cleanup of cleanupFns) {
@@ -411,7 +416,7 @@ await test("装配层路由注册契约：apply 必须单路由逐个注册并�
   }
 
   // 断言注销逻辑
-  assert.equal(disposersCalled.length, 6, "注销时 6 个路由的 disposer 必须都被调用");
+  assert.equal(disposersCalled.length, 8, "注销时 8 个路由的 disposer 必须都被调用");
   assert.ok(unregisterServerCalled, "注销时必须调用 mcpManager.unregisterServer('mem0')");
 });
 
@@ -430,6 +435,100 @@ await test("客户端 i18n：zh 与 en 双语字典必须完全对称", async ()
   const zhKeys = Object.keys(zh).sort();
   const enKeys = Object.keys(en).sort();
   assert.deepEqual(zhKeys, enKeys, "zh 与 en 字典的键必须 1:1 完全对应无缺失");
+});
+
+// 13. DSH 提供商与模型动态路由断言
+await test("LLM 模型路由：/api/dsh-mem0/llm-providers 与 llm-models 正常返回与降级", async () => {
+  const mockCtx = {
+    llm: {
+      listProviders: () => [{ id: "mock-prov-a", name: "Mock Provider A" }],
+      listModels: async (p: string) => {
+        if (p === "mock-prov-a") return [{ id: "model-x", name: "Model X" }];
+        return [];
+      },
+    },
+  };
+  const routes = createMem0Routes({
+    executor: { isReady: () => true } as any,
+    getCurrentCwd: () => process.cwd(),
+    getConfig: () => DEFAULT_CONFIG,
+    updateConfig: async (p) => ({ ...DEFAULT_CONFIG, ...p }),
+    appCtx: mockCtx,
+  });
+
+  const provRoute = routes.find((r) => r.path === "/api/dsh-mem0/llm-providers")!;
+  assert.ok(provRoute, "llm-providers 路由必须存在");
+
+  let provCode = 0;
+  let provBody = "";
+  provRoute.handler(
+    {
+      headers: { host: "127.0.0.1:3080" },
+      socket: { remoteAddress: "127.0.0.1" },
+      method: "GET",
+    } as any,
+    {
+      setHeader: () => {},
+      writeHead: (c: number) => { provCode = c; },
+      end: (data: string) => { provBody = data; },
+    } as any,
+  );
+  assert.equal(provCode, 200);
+  const provJson = JSON.parse(provBody);
+  assert.equal(provJson.ok, true);
+  assert.equal(provJson.providers.length, 1);
+  assert.equal(provJson.providers[0].id, "mock-prov-a");
+
+  const modelRoute = routes.find((r) => r.path === "/api/dsh-mem0/llm-models")!;
+  assert.ok(modelRoute, "llm-models 路由必须存在");
+
+  let modelCode = 0;
+  let modelBody = "";
+  await modelRoute.handler(
+    {
+      headers: { host: "127.0.0.1:3080" },
+      socket: { remoteAddress: "127.0.0.1" },
+      url: "/api/dsh-mem0/llm-models?provider=mock-prov-a",
+      method: "GET",
+    } as any,
+    {
+      setHeader: () => {},
+      writeHead: (c: number) => { modelCode = c; },
+      end: (data: string) => { modelBody = data; },
+    } as any,
+  );
+  assert.equal(modelCode, 200);
+  const modelJson = JSON.parse(modelBody);
+  assert.equal(modelJson.ok, true);
+  assert.equal(modelJson.models[0].id, "model-x");
+});
+
+// 14. 服务端凭据解析与静默注入断言
+await test("凭据静默解析：dsh 模式下正确解析运行配置，前端零密钥暴露", async () => {
+  const dshConfig = {
+    ...DEFAULT_CONFIG,
+    llmMode: "dsh",
+    llmDshProvider: "deepseek",
+    llmDshModel: "deepseek-chat",
+    llmApiKey: "",
+  };
+
+  const resolved = await resolveLlmRuntimeConfig(dshConfig, undefined);
+  assert.equal(resolved.llmModel, "deepseek-chat");
+  assert.equal(resolved.llmBaseUrl, "https://api.deepseek.com/v1");
+  assert.equal(typeof resolved.llmApiKey, "string");
+});
+
+// 15. Python 服务端 Qdrant 集合维度动态隔离断言
+await test("Python 服务端：collection_name 必须按维度动态隔离 (mem0_v2_dim_{dims})", async () => {
+  const { readFileSync } = await import("node:fs");
+  const pyCode = readFileSync(join(pkgDir, "server/mem0_server.py"), "utf8");
+  assert.ok(
+    pyCode.includes('collection_name = f"mem0_v2_dim_{vector_dims}"'),
+    "mem0_server.py 必须声明动态维度隔离集合名",
+  );
+  assert.ok(pyCode.includes("paraphrase-multilingual"), "必须覆盖 384 维多语言模型维度解析");
+  assert.ok(pyCode.includes("e5-large"), "必须覆盖 1024 维模型维度解析");
 });
 
 console.log(`\n全部 ${testsRun} 项冒烟测试顺利通过！`);

@@ -28,6 +28,11 @@ import { createMem0Routes } from "./routes.ts";
 import { installMem0Settings, type OwnerScopeLike } from "./settings.ts";
 import { buildAllMemoryTools } from "./tool-definitions.ts";
 import { autoInstallDependencies, probePythonEnvironment } from "./venv-manager.ts";
+import {
+  resolveLlmRuntimeConfig,
+  listLlmProviders,
+  listLlmModels,
+} from "./provider-resolver.ts";
 
 export const name = "mem0";
 
@@ -70,6 +75,11 @@ export {
   probePythonEnvironment,
   autoInstallDependencies,
 } from "./venv-manager.ts";
+export {
+  resolveLlmRuntimeConfig,
+  listLlmProviders,
+  listLlmModels,
+} from "./provider-resolver.ts";
 export type { Mem0Config } from "./config.ts";
 
 /**
@@ -97,18 +107,28 @@ export function apply(ctx: Context, initialConfig?: Partial<Mem0Config>): void {
   let ownerScope: OwnerScopeLike | undefined;
   let uiConfigSource: (() => Mem0Config) | undefined;
 
-  const buildEnvOverrides = (cfg: Mem0Config): Record<string, string> => ({
-    MEM0_CONFIG_JSON: JSON.stringify(cfg),
-    LLM_API_KEY: cfg.llmApiKey || "",
-    LLM_BASE_URL: cfg.llmBaseUrl || "",
-    LLM_MODEL: cfg.llmModel || "",
-    LLM_PROVIDER: cfg.llmProvider || "openai",
-    EMBEDDER_API_KEY: cfg.embedderApiKey || "",
-    EMBEDDER_BASE_URL: cfg.embedderBaseUrl || "",
-    EMBEDDER_MODEL: cfg.embedderModel || "",
-    EMBEDDER_PROVIDER: cfg.embedderProvider || "openai",
-    MEM0_CUSTOM_INSTRUCTIONS: cfg.customInstructions || "",
-  });
+  const buildEnvOverrides = async (cfg: Mem0Config): Promise<Record<string, string>> => {
+    const llmRuntime = await resolveLlmRuntimeConfig(cfg, ctx);
+    return {
+      MEM0_CONFIG_JSON: JSON.stringify({
+        ...cfg,
+        llmApiKey: llmRuntime.llmApiKey,
+        llmBaseUrl: llmRuntime.llmBaseUrl,
+        llmModel: llmRuntime.llmModel,
+        llmProvider: llmRuntime.llmProvider,
+        embeddingDims: cfg.embeddingDims || 512,
+      }),
+      LLM_API_KEY: llmRuntime.llmApiKey || "",
+      LLM_BASE_URL: llmRuntime.llmBaseUrl || "",
+      LLM_MODEL: llmRuntime.llmModel || "",
+      LLM_PROVIDER: llmRuntime.llmProvider || "openai",
+      EMBEDDER_API_KEY: cfg.embedderApiKey || "",
+      EMBEDDER_BASE_URL: cfg.embedderBaseUrl || "",
+      EMBEDDER_MODEL: cfg.embedderModel || "",
+      EMBEDDER_PROVIDER: cfg.embedderProvider || "fastembed",
+      MEM0_CUSTOM_INSTRUCTIONS: cfg.customInstructions || "",
+    };
+  };
 
   // 注册官方 settings 命名空间
   installMem0Settings(ctx, currentConfig, {
@@ -130,7 +150,7 @@ export function apply(ctx: Context, initialConfig?: Partial<Mem0Config>): void {
           if (next && typeof next === "object") {
             currentConfig = mergeConfigPatch(currentConfig, next as unknown as Record<string, unknown>);
             executor.setPythonBin(currentConfig.pythonBin);
-            executor.restart(buildEnvOverrides(currentConfig)).catch((err) => {
+            buildEnvOverrides(currentConfig).then((env) => executor.restart(env)).catch((err) => {
               ctx.logger?.warn?.(`[dsh-mem0] settings onChange 重启失败: ${String(err)}`);
             });
           }
@@ -181,6 +201,7 @@ export function apply(ctx: Context, initialConfig?: Partial<Mem0Config>): void {
       executor,
       getCurrentCwd: () => latestCwd,
       getConfig: () => currentConfig,
+      appCtx: ctx,
       updateConfig: async (patch: Record<string, unknown>) => {
         const next = mergeConfigPatch(currentConfig, patch);
         currentConfig = next;
@@ -190,7 +211,8 @@ export function apply(ctx: Context, initialConfig?: Partial<Mem0Config>): void {
           });
         }
         executor.setPythonBin(next.pythonBin);
-        await executor.restart(buildEnvOverrides(next));
+        const env = await buildEnvOverrides(next);
+        await executor.restart(env);
         return next;
       },
       installDependencies: async () => {
@@ -200,7 +222,8 @@ export function apply(ctx: Context, initialConfig?: Partial<Mem0Config>): void {
         });
         if (res.ok) {
           executor.setPythonBin(res.pythonBin);
-          await executor.restart(buildEnvOverrides(currentConfig));
+          const env = await buildEnvOverrides(currentConfig);
+          await executor.restart(env);
         }
         return res;
       },
@@ -221,9 +244,11 @@ export function apply(ctx: Context, initialConfig?: Partial<Mem0Config>): void {
   const unregisterPrompt = registerMemoryPromptHook(ctx);
 
   // 5. 异步尝试拉起 stdio 运行时
-  executor.start(buildEnvOverrides(currentConfig)).catch((err: unknown) => {
-    ctx.logger?.warn?.(`[dsh-mem0] stdio 运行时拉起异常: ${err instanceof Error ? err.message : String(err)}`);
-  });
+  buildEnvOverrides(currentConfig)
+    .then((env) => executor.start(env))
+    .catch((err: unknown) => {
+      ctx.logger?.warn?.(`[dsh-mem0] stdio 运行时拉起异常: ${err instanceof Error ? err.message : String(err)}`);
+    });
 
   // 6. 生命周期注销：kill 子进程 + unregisterServer
   ctx.effect(() => {

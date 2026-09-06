@@ -17,6 +17,7 @@ import type { MemoryExecutor } from "./tool-definitions.ts";
 import { GLOBAL_NAMESPACE, resolveGitCanonicalNamespace } from "./namespace.ts";
 import { sanitizeConfigForClient, type Mem0Config } from "./config.ts";
 import type { ExecutorStatus } from "./executor.ts";
+import { listLlmProviders, listLlmModels } from "./provider-resolver.ts";
 
 export interface RouteContext {
   executor: MemoryExecutor & {
@@ -27,6 +28,7 @@ export interface RouteContext {
   getConfig: () => Mem0Config;
   updateConfig: (patch: Record<string, unknown>) => Promise<Mem0Config>;
   installDependencies?: () => Promise<{ ok: boolean; pythonBin: string; error?: string }>;
+  appCtx?: unknown;
 }
 
 export function createMem0Routes(ctx: RouteContext): WebRoute[] {
@@ -80,6 +82,29 @@ export function createMem0Routes(ctx: RouteContext): WebRoute[] {
         } catch (err) {
           writeJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
         }
+      },
+    },
+    {
+      kind: "exact",
+      path: "/api/dsh-mem0/llm-providers",
+      handler(req: IncomingMessage, res: ServerResponse) {
+        if (!guardLoopbackMethod(req, res, ["GET"])) return;
+        const providers = listLlmProviders(ctx.appCtx);
+        writeJson(res, 200, {
+          ok: true,
+          providers,
+        });
+      },
+    },
+    {
+      kind: "exact",
+      path: "/api/dsh-mem0/llm-models",
+      async handler(req: IncomingMessage, res: ServerResponse) {
+        if (!guardLoopbackMethod(req, res, ["GET"])) return;
+        const url = new URL(req.url ?? "/", "http://127.0.0.1");
+        const provider = url.searchParams.get("provider") || "";
+        const result = await listLlmModels(ctx.appCtx, provider);
+        writeJson(res, 200, result);
       },
     },
     {
