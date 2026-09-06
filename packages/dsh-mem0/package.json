@@ -1,6 +1,6 @@
 {
   "name": "@wingsky-1/dsh-mem0",
-  "version": "0.1.0",
+  "version": "0.2.3",
   "description": "DSH 长期记忆系统插件：基于 mem0 的本地/轻量持久记忆，原生感知 Git 工作空间，全英文工具契约，中文沉淀与冲突消解，设置页「记忆中心」管理大盘。",
   "type": "module",
   "main": "lib/index.js",
