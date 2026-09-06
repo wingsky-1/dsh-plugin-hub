@@ -14,6 +14,7 @@
  */
 
 import assert from "node:assert/strict";
+import { Readable } from "node:stream";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -422,6 +423,85 @@ await test("装配层路由注册契约：apply 必须单路由逐个注册并�
   // 断言注销逻辑
   assert.equal(disposersCalled.length, 10, "注销时 10 个路由的 disposer 必须都被调用");
   assert.ok(unregisterServerCalled, "注销时必须调用 mcpManager.unregisterServer('mem0')");
+});
+
+// 10b. #592 拆解回归：POST /config 与 /install 走真实 updateConfig/installDependencies
+// 装配件——探针必失败 → switchMem0Config 自动回滚旧配置（行为逐位对照原内联闭包）。
+await test("路由配置热切换：POST /config 失败自动回滚 + POST /install 自愈装配", async () => {
+  const registered: any[] = [];
+  const effects: Array<() => void | (() => void)> = [];
+  const mockCtx: any = {
+    get(name: string) {
+      if (name === "webServer") {
+        return { register(route: any) { registered.push(route); return () => {}; } };
+      }
+      if (name === "mcpManager") {
+        return { registerServer: async () => ({ existing: false }), unregisterServer: async () => {} };
+      }
+      return undefined;
+    },
+    effect(fn: () => void | (() => void)) {
+      effects.push(fn);
+      return () => {};
+    },
+    on() {
+      return () => {};
+    },
+    logger: { warn() {}, info() {}, debug() {} },
+  };
+
+  const { apply } = hostMod;
+  apply(mockCtx, { pythonBin: "non-existent-python-for-test" });
+  for (const eff of effects) eff();
+
+  const configRoute = registered.find((r) => r.path === "/api/dsh-mem0/config")!;
+  const postReq = (payload: Record<string, unknown>): any => {
+    const stream: any = new Readable({ read() {} });
+    stream.push(Buffer.from(JSON.stringify(payload)));
+    stream.push(null);
+    stream.headers = { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" };
+    stream.socket = { remoteAddress: "127.0.0.1" };
+    stream.method = "POST";
+    return stream;
+  };
+  const mockRes = () => {
+    let code = 0;
+    let body = "";
+    const res: any = {
+      setHeader: () => {},
+      writeHead: (c: number) => { code = c; },
+      end: (d: string) => { body = d; },
+    };
+    (res as any).result = () => ({ code, body });
+    return res;
+  };
+
+  // POST /config：pythonBin 换成另一个必然探针失败值 → switchMem0Config 回滚链路
+  const res1 = mockRes();
+  await configRoute.handler(postReq({ pythonBin: "non-existent-python-for-test-2" }), res1);
+  const r1 = (res1 as any).result();
+  assert.equal(r1.code, 500, "探针必失败 → 500");
+  assert.match(JSON.parse(r1.body).error, /rolled back to previous config/, "错误消息带回滚语义");
+
+  // 回滚后 GET /config：pythonBin 已回写为旧值（#612 回写语义）
+  const getReq: any = {
+    headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
+    socket: { remoteAddress: "127.0.0.1" },
+    method: "GET",
+  };
+  const res2 = mockRes();
+  await configRoute.handler(getReq, res2);
+  const r2 = (res2 as any).result();
+  assert.equal(r2.code, 200);
+  assert.equal(JSON.parse(r2.body).config.pythonBin, "non-existent-python-for-test", "回滚后配置为旧 pythonBin");
+
+  // POST /install：真实 installMem0Dependencies——探针失败 → ok=false 透传
+  const installRoute = registered.find((r) => r.path === "/api/dsh-mem0/install")!;
+  const res3 = mockRes();
+  await installRoute.handler({ headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" }, socket: { remoteAddress: "127.0.0.1" }, method: "POST" } as any, res3);
+  const r3 = (res3 as any).result();
+  assert.equal(r3.code, 200, "自愈装配不抛错 → 200");
+  assert.equal(JSON.parse(r3.body).ok, false, "探针失败 → ok=false");
 });
 
 // 11. 自定义 Python 路径探测隔离测试（显式意图优于隐式推断）

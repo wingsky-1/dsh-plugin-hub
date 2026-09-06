@@ -230,6 +230,58 @@ export function apply(ctx: Context, initialConfig?: Partial<Mem0Config>): void {
   }
 
   // 3. 注册 HTTP 路由（/api/dsh-mem0/*）
+  // #592 拆解：配置热切换（含 #612 失败回滚）与依赖自愈装配件提出 effect 子树，
+  // 路由装配以具名引用消费（压平 routes effect 的圈复杂度；行为逐位一致）。
+  const switchMem0Config = async (previousConfig: Mem0Config, next: Mem0Config): Promise<void> => {
+    try {
+      const env = await buildEnvOverrides(next);
+      await executor.restart(env);
+      if (executor.isReady()) {
+        lastGoodEnv = env;
+        return;
+      }
+      // #612：新配置起不来 → 用最近一次 good env 自动回滚重启，并回写旧配置
+      const rollbackEnv = lastGoodEnv ?? await buildEnvOverrides(previousConfig);
+      currentConfig = previousConfig;
+      executor.setPythonBin(previousConfig.pythonBin);
+      await executor.restart(rollbackEnv).catch(() => {});
+      throw new Error(
+        `Service failed to start with new config (status: ${executor.getStatus().reason}); rolled back to previous config`,
+      );
+    } catch (err: unknown) {
+      const detail = err instanceof Error ? err.message : String(err);
+      executor.markEnvBuildFailed?.(detail);
+      throw err;
+    }
+  };
+
+  const updateMem0Config = async (patch: Record<string, unknown>): Promise<Mem0Config> => {
+    const next = mergeConfigPatch(currentConfig, patch);
+    const previousConfig = currentConfig;
+    currentConfig = next;
+    if (ownerScope && typeof ownerScope.update === "function") {
+      await ownerScope.update(next).catch((e: unknown) => {
+        ctx.logger?.warn?.(`[dsh-mem0] settings.update 落盘失败: ${String(e)}`);
+      });
+    }
+    executor.setPythonBin(next.pythonBin);
+    await switchMem0Config(previousConfig, next);
+    return next;
+  };
+
+  const installMem0Dependencies = async () => {
+    ctx.logger?.info?.("[dsh-mem0] 开始触发后台依赖自动安装/自愈...");
+    const res = await autoInstallDependencies(currentConfig.pythonBin, (line) => {
+      ctx.logger?.debug?.(`[dsh-mem0 install] ${line}`);
+    });
+    if (res.ok) {
+      executor.setPythonBin(res.pythonBin);
+      const env = await buildEnvOverrides(currentConfig);
+      await executor.restart(env);
+    }
+    return res;
+  };
+
   ctx.effect(() => {
     const webServer = ctx.get("webServer") as { register: (route: WebRoute) => () => void } | undefined;
     if (!webServer || typeof webServer.register !== "function") return () => {};
@@ -238,50 +290,8 @@ export function apply(ctx: Context, initialConfig?: Partial<Mem0Config>): void {
       getCurrentCwd: () => latestCwd,
       getConfig: () => currentConfig,
       appCtx: ctx,
-      updateConfig: async (patch: Record<string, unknown>) => {
-        const next = mergeConfigPatch(currentConfig, patch);
-        const previousConfig = currentConfig;
-        currentConfig = next;
-        if (ownerScope && typeof ownerScope.update === "function") {
-          await ownerScope.update(next).catch((e: unknown) => {
-            ctx.logger?.warn?.(`[dsh-mem0] settings.update 落盘失败: ${String(e)}`);
-          });
-        }
-        executor.setPythonBin(next.pythonBin);
-        try {
-          const env = await buildEnvOverrides(next);
-          await executor.restart(env);
-          if (executor.isReady()) {
-            lastGoodEnv = env;
-          } else {
-            // #612：新配置起不来 → 用最近一次 good env 自动回滚重启，并回写旧配置
-            const rollbackEnv = lastGoodEnv ?? await buildEnvOverrides(previousConfig);
-            currentConfig = previousConfig;
-            executor.setPythonBin(previousConfig.pythonBin);
-            await executor.restart(rollbackEnv).catch(() => {});
-            throw new Error(
-              `Service failed to start with new config (status: ${executor.getStatus().reason}); rolled back to previous config`,
-            );
-          }
-        } catch (err: unknown) {
-          const detail = err instanceof Error ? err.message : String(err);
-          executor.markEnvBuildFailed?.(detail);
-          throw err;
-        }
-        return next;
-      },
-      installDependencies: async () => {
-        ctx.logger?.info?.("[dsh-mem0] 开始触发后台依赖自动安装/自愈...");
-        const res = await autoInstallDependencies(currentConfig.pythonBin, (line) => {
-          ctx.logger?.debug?.(`[dsh-mem0 install] ${line}`);
-        });
-        if (res.ok) {
-          executor.setPythonBin(res.pythonBin);
-          const env = await buildEnvOverrides(currentConfig);
-          await executor.restart(env);
-        }
-        return res;
-      },
+      updateConfig: updateMem0Config,
+      installDependencies: installMem0Dependencies,
       // #612：前端「启动服务」按钮入口——幂等互斥的手动拉起，复用最近一次环境覆盖配置
       startExecutor: async () => {
         await startExecutorOnce();

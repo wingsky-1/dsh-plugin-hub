@@ -45,6 +45,7 @@ import {
   GAP_MS,
   TOL,
   ANOMALY_NEG,
+  dailyBarTitle,
 } from "../lib/index.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -834,6 +835,56 @@ assert.equal(parseAmount("Infinity"), null, "Infinity 非有限数 → null");
   assert.ok(sanitized.includes("<svg"), "sanitize 后 svg 结构存活");
   assert.ok(!sanitized.includes("onmouseover"), "on* 事件属性被移除");
   assert.ok(!sanitized.includes("javascript:"), "javascript: URI 被移除");
+}
+
+// ---- #592 dailyBarTitle 拆解：单日柱悬浮文案全分支（含聚合器不产出的防御态） ----
+{
+  const R = (over) => ({ key: "2026-08-24", status: "ok", u: 1.5, ...over });
+  assert.equal(dailyBarTitle(R({ status: "empty", u: 0 }), 0, 3), "08-24 无采样", "empty 态");
+  assert.equal(dailyBarTitle(R({ status: "insufficient", u: 0 }), 0, 3), "08-24 样本不足", "insufficient 态");
+  assert.equal(dailyBarTitle(R({ status: "gap", u: 0 }), 0, 3), "08-24 数据中断", "gap 态（防御分支）");
+  assert.equal(dailyBarTitle(R({ status: "unavailable", u: 0 }), 0, 3), "08-24 服务不可用区间不计", "unavailable 态（防御分支）");
+  assert.equal(dailyBarTitle(R({ status: "anomaly", u: 0, note: "余额净增 ¥1.20（异常）" }), 0, 3), "08-24 余额净增 ¥1.20（异常）", "anomaly 态带 note");
+  assert.equal(dailyBarTitle(R({ status: "anomaly", u: 0 }), 0, 3), "08-24 数值异常", "anomaly 态 note 缺省");
+  assert.equal(dailyBarTitle(R({ neg: true, u: -0.3, extra: "充值 +¥0.80 未计入" }), 0, 3), "08-24 余额净增 ¥0.30（充值 +¥0.80 未计入）", "净增 + extra 括注");
+  assert.equal(dailyBarTitle(R({ u: 1.5, extra: "1 段中断不计" }), 0, 3), "08-24 消耗 ¥1.50（1 段中断不计）", "消耗 + extra 括注");
+  assert.equal(dailyBarTitle(R({ u: 1.5 }), 2, 3), "今日 消耗 ¥1.50", "末位记录判今日");
+  assert.equal(dailyBarTitle(R({ u: 1.5 }), 0, 1), "今日 消耗 ¥1.50", "单记录窗口恒今日");
+  assert.equal(dailyBarTitle(R({ u: 1.5 }), 0, 3), "08-24 消耗 ¥1.50", "非末位为 MM-DD 标签");
+}
+
+// ---- #592 formatPanel 集成：柱图渲染路径（六态混合采样 → 全部柱形与文案落地） ----
+{
+  // 固定 now：UTC 正午。采样间隔全部 26~28h（>24h 保证任意时区下相邻区间
+  // 结束端落不同日桶，断言与时区无关；首段 28h > GAP_MS 触发中断层）。
+  const NOW = utc(2026, 9, 1, 12, 0);
+  const en = (t, balance, toppedUp = 0) => ({ time: t, data: { balance, toppedUp, grantedBalance: null, isAvailable: true } });
+  const H = 3600000;
+  //   A(T-133h,100) → B(T-105h,90)：28h > GAP_MS → 中断层（A 所在日仅 1 帧 → 样本不足）
+  //   B → C(T-79h,90.3)：免充值净增 0.3 ∈ (-1,-TOL) → 绿柱净增
+  //   C → C2(T-53h,92.3)：免充值净增 2.0 < ANOMALY_NEG → 异常态
+  //   C2 → D(T-27h,90.8)：消耗 1.5 → 蓝柱
+  //   D → E(T-1h,90.3,toppedUp 0.8)：消耗 0.5 + 充值 0.8 → 今日柱带充值附注
+  //   15 日窗口其余日 → 无采样
+  const entries = [
+    en(NOW - 133 * H, 100),
+    en(NOW - 105 * H, 90),
+    en(NOW - 79 * H, 90.3),
+    en(NOW - 53 * H, 92.3),
+    en(NOW - 27 * H, 90.8),
+    en(NOW - 1 * H, 90.3, 0.8),
+  ];
+  const panel = deepSeekOfficialAdapter.formatPanel({ entries, range: { end: NOW } });
+  assert.ok(panel.includes("无采样"), "空日占位文案");
+  assert.ok(panel.includes("样本不足"), "单帧冷启动日文案");
+  assert.ok(panel.includes("余额净增 ¥2.00（异常）"), "异常态文案（note 口径）");
+  assert.ok(panel.includes("余额净增 ¥0.30"), "净增绿柱文案");
+  assert.ok(panel.includes("消耗 ¥1.50"), "消耗蓝柱文案");
+  assert.ok(panel.includes("今日"), "今日标签");
+  assert.ok(panel.includes("充值 +¥0.80 未计入"), "充值附注括注");
+  const rectCount = (panel.match(/<rect /g) ?? []).length;
+  assert.ok(rectCount >= 4, `柱形 rect 数 ≥ 4（实际 ${rectCount}）`);
+  assert.ok(panel.includes("近 15 日用量"), "日用量卡标题");
 }
 
 console.log("[unit-deepseek-official] 全部断言通过 ✓ (#198 B/C/E/G/K)");
