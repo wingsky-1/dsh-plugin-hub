@@ -32,6 +32,10 @@ const {
   searchCatalogMulti,
   listCatalog,
   findToolDetail,
+  isCatalogFresh,
+  boundCatalogTools,
+  MAX_BYTES_PER_TOOL,
+  MAX_TOTAL_CATALOG_BYTES,
   McpMiddleware,
   projectCallToolResult,
   CATALOG_TTL_MS,
@@ -144,6 +148,42 @@ function makeHost(serversByRoot = new Map()) {
   // TTL 过期 → fresh=false
   const stale = searchCatalog(new Map([[ROOT, { ...unit, catalog: new Map([["ctx", { discoveredAt: Date.now() - CATALOG_TTL_MS - 1000, tools: unit.catalog.get("ctx").tools }]]) }]]), ROOT, "文档", 5);
   assert.equal(stale.results[0].fresh, false);
+}
+
+// ---- isCatalogFresh / boundCatalogTools（#592 discover 拆解出的纯函数） ----
+{
+  // isCatalogFresh：有条目 + 无 unavailable + TTL 内
+  assert.equal(isCatalogFresh(undefined), false, "无条目 → 不新鲜");
+  assert.equal(isCatalogFresh({ discoveredAt: Date.now(), tools: new Map(), unavailable: "x" }), false, "unavailable 段 → 不新鲜");
+  assert.equal(isCatalogFresh({ discoveredAt: Date.now(), tools: new Map() }), true, "TTL 内 → 新鲜");
+  assert.equal(isCatalogFresh({ discoveredAt: Date.now() - CATALOG_TTL_MS - 1, tools: new Map() }), false, "TTL 过期 → 不新鲜");
+}
+{
+  // 装箱：常规映射 + 空名跳过 + 非字符串描述归空 + schema 缺省 {}
+  const tools = [
+    { name: "a", description: "alpha", inputSchema: { type: "object" } },
+    { name: "", description: "空名跳过" },
+    { name: "b" },
+    { name: 42, description: 7 },
+  ];
+  const bounded = boundCatalogTools(tools);
+  assert.equal(bounded.size, 3, "空名跳过后剩 3 个");
+  assert.deepEqual(bounded.get("a"), { description: "alpha", inputSchema: { type: "object" } });
+  assert.deepEqual(bounded.get("b"), { description: "", inputSchema: {} }, "缺省描述/schema 补空");
+  assert.deepEqual(bounded.get("42"), { description: "", inputSchema: {} }, "非字符串 name String 化、描述归空");
+  // 单描述超字节上限 → 按上限截断（原 discover 截断口径：字符数）
+  const bigDescription = "字".repeat(MAX_BYTES_PER_TOOL);
+  const truncated = boundCatalogTools([{ name: "big", description: bigDescription }]).get("big");
+  assert.equal(truncated.description.length, MAX_BYTES_PER_TOOL, "超限描述截断到 MAX_BYTES_PER_TOOL");
+  assert.ok(Buffer.byteLength(bigDescription, "utf8") > MAX_BYTES_PER_TOOL, "前提：原描述字节超限");
+  // 总字节超限 → 立即停止装箱
+  const fatSchema = { data: "x".repeat(200 * 1024) };
+  const stopAtLimit = boundCatalogTools([
+    { name: "one", description: "", inputSchema: fatSchema },
+    { name: "two", description: "", inputSchema: fatSchema },
+    { name: "three", description: "", inputSchema: fatSchema },
+  ]);
+  assert.ok(stopAtLimit.size < 3, `总字节超限后停止装箱（实际 ${stopAtLimit.size} 个）`);
 }
 
 // ---- McpMiddleware：projectUnitFor / userDisabled / inFlight ----

@@ -32,9 +32,6 @@ import {
   DISCOVERY_TIMEOUT_MS,
   CALL_TIMEOUT_MS,
   CATALOG_TTL_MS,
-  MAX_TOOLS_PER_SERVER,
-  MAX_BYTES_PER_TOOL,
-  MAX_TOTAL_CATALOG_BYTES,
 } from "./middleware-const.ts";
 import {
   withTimeout,
@@ -47,6 +44,8 @@ import {
   policyDenialReason,
   fullServerName,
   isToolDenied,
+  isCatalogFresh,
+  boundCatalogTools,
   toolDisabledReason,
   MIDDLEWARE_GLOBAL_ROOT,
 } from "./middleware-utils.ts";
@@ -130,8 +129,23 @@ export class McpMiddleware {
     try {
       await promise;
     } finally {
-      unit.inFlight.delete(serverName);
+      // 所有权校验：仅当标记仍指向本次 attempt 才清除。强制拆除（abandonInFlight）
+      // 后同名可能已挂上新 attempt——被废弃的旧 attempt 迟到收敛时不得误删新标记
+      // （误删窗口内第三次 ensureConnected 会绕过去重）。
+      if (unit.inFlight.get(serverName) === promise) unit.inFlight.delete(serverName);
     }
+  }
+
+  /** 废弃某服务器跨全部单元的在途建连标记。
+   *  不变式：in-flight 去重只对「存活 entry 的重复建连」有意义——entry 被强制
+   *  拆除（remove/update/disconnect）时，同名旧 attempt 可能仍 pending（connect
+   *  挂至 CONNECT_TIMEOUT_MS 才超时；stdio close 打断时 SDK 不 reject），残留
+   *  标记会把后续 ensureConnected（含 force 的用户显式「连接」）全部吞掉，且旧
+   *  attempt 收敛时命中 disposed 守卫静默返回、无人补连 → 服务器最长 10s 内
+   *  无法重连。拆除时必须同步废弃标记；旧 attempt 稍后收敛由 connectInternal
+   *  的让位/disposed 守卫兜底，无副作用。 */
+  abandonInFlight(serverName: string): void {
+    for (const unit of this.units.values()) unit.inFlight.delete(serverName);
   }
 
   private async connectInternal(root: string, serverName: string, opts: { force?: boolean } = {}): Promise<void> {
@@ -223,6 +237,11 @@ export class McpMiddleware {
         // 探测失败不阻塞
       }
     }
+    // 让位校验：本次 attempt 期间（上方 await 窗口内）entry 已被强制拆除并由
+    // 更新的 attempt 重建（abandonInFlight 语义）——在 spawn 前退避：既防旧配置
+    // 的 entry 覆盖新 entry，也不遗孤 transport（退避点在 createTransport 之前）。
+    const current = unit.connections.get(serverName);
+    if (current !== undefined && current !== entry) return;
     const transport = createTransport(server);
     const client = new MCPClient(transport);
     const newEntry: ConnectionEntry = {
@@ -322,29 +341,10 @@ export class McpMiddleware {
     if (unit === undefined) return;
     const entry = unit.connections.get(serverName);
     if (entry === undefined || entry.client === undefined) return;
-    const catalog = unit.catalog.get(serverName);
-    if (catalog !== undefined && catalog.unavailable === undefined && Date.now() - catalog.discoveredAt <= CATALOG_TTL_MS) {
-      return; // fresh
-    }
+    if (isCatalogFresh(unit.catalog.get(serverName))) return; // fresh
     try {
       const tools = await withTimeout(this.listToolsAll(entry.client), DISCOVERY_TIMEOUT_MS, `discovery timed out (${DISCOVERY_TIMEOUT_MS}ms)`);
-      const bounded = new Map<string, CatalogTool>();
-      let totalBytes = 0;
-      for (const tool of tools) {
-        if (bounded.size >= MAX_TOOLS_PER_SERVER) break;
-        const name = String(tool.name ?? "");
-        if (name === "") continue;
-        const description = typeof tool.description === "string" ? tool.description : "";
-        const descriptionBytes = Buffer.byteLength(description, "utf8");
-        if (descriptionBytes > MAX_BYTES_PER_TOOL) {
-          bounded.set(name, { description: description.slice(0, MAX_BYTES_PER_TOOL), inputSchema: (tool.inputSchema ?? {}) as Record<string, unknown> });
-        } else {
-          bounded.set(name, { description, inputSchema: (tool.inputSchema ?? {}) as Record<string, unknown> });
-        }
-        totalBytes += descriptionBytes + JSON.stringify(bounded.get(name)?.inputSchema ?? {}).length;
-        if (totalBytes > MAX_TOTAL_CATALOG_BYTES) break;
-      }
-      unit.catalog.set(serverName, { discoveredAt: Date.now(), tools: bounded });
+      unit.catalog.set(serverName, { discoveredAt: Date.now(), tools: boundCatalogTools(tools) });
       this.persistCatalog(root);
     } catch (error) {
       unit.catalog.set(serverName, { discoveredAt: 0, tools: new Map(), unavailable: this.redact(error) });
@@ -700,6 +700,8 @@ export {
   policyAllows,
   bareServerName,
   policyDenialReason,
+  isCatalogFresh,
+  boundCatalogTools,
   isToolDenied,
   toolDisabledReason,
   parseDisabledTools,
