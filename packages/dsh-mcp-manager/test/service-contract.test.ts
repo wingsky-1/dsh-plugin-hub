@@ -142,14 +142,14 @@ const pkgDir = join(dirname(fileURLToPath(import.meta.url)), "..");
  * 内大括号干扰对象边界。
  */
 function extractProvidedServiceMethods(): Array<{ name: string; paramCount: number; optionalCount: number }> {
-  const src = readFileSync(join(pkgDir, "src", "apply.ts"), "utf8");
+  const src = readFileSync(join(pkgDir, "src", "apply-services.ts"), "utf8");
   // 锚定首个 `provide("mcpManager", {` marker（非 AST——测试刻意不做解析级双真源，
   // 方法名存在性 + 参数个数即可抓「删方法/改参数量」）。当前 apply.ts 全文件仅此
   // 一处该形态调用，indexOf 首个命中即目标；若未来 apply.ts 出现多处 provide
   // 调用或形态变化导致本提取失配，测试会红并提示人工更新（fail-loud，不静默）。
   const marker = 'provide("mcpManager", {';
   const markerIndex = src.indexOf(marker);
-  assert.ok(markerIndex >= 0, "apply.ts 应包含 ctx.provide(\"mcpManager\", {...}) 服务注入");
+  assert.ok(markerIndex >= 0, "apply-services.ts 应包含 ctx.provide(\"mcpManager\", {...}) 服务注入");
 
   // 括号配对扫描：找到 provide 对象的完整区间（跳过字符串字面量与注释）。
   const skip = (s: string, i: number): number => {
