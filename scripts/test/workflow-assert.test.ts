@@ -40,6 +40,7 @@ const RELEASE = readFileSync(join(ROOT, '.github/workflows/release.yml'), 'utf8'
 const HEALTH = readFileSync(join(ROOT, '.github/workflows/health-report.yml'), 'utf8')
 const GAUNTLET = JSON.parse(readFileSync(join(ROOT, 'scripts/data/gauntlet.config.json'), 'utf8'))
 const MANIFEST = JSON.parse(readFileSync(join(ROOT, 'scripts/data/plugins-manifest.json'), 'utf8'))
+const CI_MATRIX = readFileSync(join(ROOT, 'scripts/ci/ci-matrix.mjs'), 'utf8')
 
 // 包集合单一事实源（#306 评审）：从 plugins-manifest.json 派生，消除手写漂移。
 //  - MATRIX_PACKAGES：build-test 矩阵全集 = active ∪ standalone ∪ 聚合包
@@ -104,8 +105,14 @@ test('ci.yml: repo-gate if always() 且 fail-closed 断言经判定脚本执行'
 })
 
 test('ci.yml: filter 失败 fallback 全量切片（fail-closed 双闸）', () => {
-  assert.ok(CI.includes('[ "$FILTER_OUTCOME" = "failure" ]'),
-    'filter outcome failure 必须触发全量切片 fallback')
+  // #586：调度下沉至 scripts/ci/ci-matrix.mjs，ci.yml 注入 FILTER_OUTCOME 与 BASE_SET
+  const computeBlock = CI.slice(CI.indexOf('Compute hit packages'), CI.indexOf('build-test:'))
+  assert.ok(computeBlock.includes('FILTER_OUTCOME: ${{ steps.filter.outcome }}'),
+    'Compute hit packages 必须注入 FILTER_OUTCOME')
+  assert.ok(computeBlock.includes('BASE_SET: ${{ steps.base.outputs.base }}'),
+    'Compute hit packages 必须注入 BASE_SET')
+  assert.ok(CI_MATRIX.includes("filterOutcome !== 'success'"),
+    'ci-matrix 内部必须在 filter outcome failure/非 success 时触发全量切片 fallback')
   assert.ok(/按全量处理/.test(CI), 'diff base 不可用时按全量处理（F4）')
 })
 
@@ -128,15 +135,25 @@ test('ci.yml: build-test 矩阵恒全集且 build 无条件（评审 F1：全局
   }
 })
 
-test('ci.yml: changes case 映射覆盖全部包（防新增包静默漏检，评审 F7）', () => {
-  const computeBlock = CI.slice(CI.indexOf('Compute hit packages'))
-  for (const pkg of SLICE_PACKAGES) {
-    assert.ok(computeBlock.includes(`dsh-${pkg.slice(4)})`) || computeBlock.includes(`${pkg}) V=`),
-      `case 分支缺 ${pkg} —— 新增包必须同步加映射分支`)
+test('ci.yml: changes 步骤委托给 ci-matrix.mjs 且 paths-filter 完整覆盖 active ∪ standalone（#586）', () => {
+  const computeBlock = CI.slice(CI.indexOf('Compute hit packages'), CI.indexOf('build-test:'))
+  assert.ok(computeBlock.includes('run: node scripts/ci/ci-matrix.mjs'),
+    'Compute hit packages 步骤必须调用 node scripts/ci/ci-matrix.mjs')
+  for (const env of ['GLOBAL_HIT', 'FILTER_OUTCOME', 'BASE_SET', 'FILTER_OUTPUTS']) {
+    assert.ok(new RegExp(`${env}: \\$\\{\\{`).test(computeBlock),
+      `Compute hit packages 步骤缺环境变量 ${env}`)
   }
-  // 循环遍历清单与 SLICE_PACKAGES 一致（切片面只含 active ∪ 聚合，standalone 不进）
-  const loopList = /for pkg in ([\w -]+); do/.exec(computeBlock)?.[1]?.trim().split(/\s+/).sort()
-  assert.deepEqual(loopList, [...SLICE_PACKAGES].sort(), 'for 循环清单与切片包集不一致')
+
+  // 双向一致性检查：断言 ci.yml 中的 dorny/paths-filter 规则完整包含了 plugins-manifest.json 中 active ∪ standalone 的所有包
+  const filtersBlock = CI.slice(CI.indexOf('filters: |'), CI.indexOf('- name: Compute hit packages'))
+  const allPlugins = [...MANIFEST.active, ...(MANIFEST.standalone ?? [])]
+  for (const pkg of allPlugins) {
+    assert.ok(
+      new RegExp(`^\\s*${pkg}:`, 'm').test(filtersBlock),
+      `ci.yml paths-filter 规则缺失包 ${pkg}（active ∪ standalone 必须全量覆盖，防漏检）`
+    )
+  }
+  assert.ok(/^\s*dsh-plugins-all:/m.test(filtersBlock), 'paths-filter 规则必须覆盖聚合包 dsh-plugins-all')
 })
 
 test('ci.yml/observe*/baseline-overlay/release/health-report.yml: 第三方与官方 action 一律 pin commit SHA', () => {
@@ -687,20 +704,16 @@ test('#217+#187: repo-gate-assert CLI 退出码转发（GitHub Actions 判红依
   assert.match(covFailRun.stderr, /coverage 失败连坐/, '连坐场景判词必须点名「coverage 失败连坐」，不得误报为门禁绕过')
 })
 
-test('#306: ci.yml 静态包名出现处 == MATRIX_PACKAGES（防清单漂移，替代旧 #178 全包名断言）', () => {
-  // 动态化后 ci.yml 的静态包名只应出现在显式清单：build-test matrix、for/case 切片分支。
-  // 全量列表（fallback/GLOBAL_HIT）与 547 产物断言已改为从 plugins-manifest.json 动态
-  // 驱动（见 #306 单一事实源），不再出现在静态文本中。故只约束剩余显式处：
-  //   - matrix 包名 == MATRIX_PACKAGES（active ∪ standalone ∪ 聚合）
-  //   - for/case 包名 == SLICE_PACKAGES（active ∪ 聚合）
+test('#306+#586: ci.yml 静态包名出现处 == MATRIX_PACKAGES（防清单漂移，替代旧 #178 全包名断言）', () => {
+  // 动态化后 ci.yml 的静态包名只应出现在显式清单：build-test matrix。
+  // 切片分支已下沉至 ci-matrix.mjs 动态计算（#586），不再存在脆弱内联 for/case。
   const bt = CI.slice(CI.indexOf('\n  build-test:'), CI.indexOf('\n  repo-gate:'))
   const matrixNames = [...bt.matchAll(/^\s*- (dsh-[a-z0-9-]+)\s*$/gm)].map((m) => m[1]).sort()
   assert.deepEqual(matrixNames, [...MATRIX_PACKAGES].sort(),
     `build-test matrix 包名与 MATRIX_PACKAGES 不一致：matrix=${matrixNames.join(',')} expected=${MATRIX_PACKAGES.join(',')}`)
-  const computeBlock = CI.slice(CI.indexOf('Compute hit packages'))
-  const loopList = /for pkg in ([\w -]+); do/.exec(computeBlock)?.[1]?.trim().split(/\s+/).sort()
-  assert.deepEqual(loopList, [...SLICE_PACKAGES].sort(),
-    `for 循环包名与 SLICE_PACKAGES 不一致：loop=${loopList?.join(',')} expected=${SLICE_PACKAGES.join(',')}`)
+  const computeBlock = CI.slice(CI.indexOf('Compute hit packages'), CI.indexOf('build-test:'))
+  assert.ok(computeBlock.includes('run: node scripts/ci/ci-matrix.mjs'),
+    'Compute hit packages 步骤已下沉至 ci-matrix.mjs')
 })
 
 test('#306: repo-gate 产物断言必须动态驱动且空清单 fail-closed（防静默漏检）', () => {
@@ -718,35 +731,26 @@ test('#306: repo-gate 产物断言必须动态驱动且空清单 fail-closed（�
     '产物断言必须显式防空清单（fail-closed，防零断言通过）')
 })
 
-test('#306: 全量列表动态化——fallback/GLOBAL_HIT 从 manifest 派生且空清单 fail-closed', () => {
-  const computeBlock = CI.slice(CI.indexOf('Compute hit packages'))
-  // 单一事实源：从 plugins-manifest.json 读 active 集
-  assert.ok(/read_manifest_active/.test(computeBlock), '必须存在从 manifest 读 active 集的函数')
-  assert.ok(/plugins-manifest\.json/.test(computeBlock), '必须读 plugins-manifest.json')
-  assert.ok(/dsh-plugins-all/.test(computeBlock), '聚合包手工补入清单')
-  // fallback / GLOBAL_HIT 都用动态清单，不得再出现静态全量列表
-  const fallbackIdx = computeBlock.indexOf('fallback 全量切片')
-  const globalIdx = computeBlock.indexOf('全局路径命中 → 全量切片')
-  for (const idx of [fallbackIdx, globalIdx]) {
-    const after = computeBlock.slice(idx, idx + 120)
-    assert.ok(/emit_outputs "\$ALL_PACKAGES"/.test(after), '全量列表必须 emit_outputs "$ALL_PACKAGES"（动态）')
-  }
+test('#306+#586: 全量列表动态化——fallback/GLOBAL_HIT 从 manifest 派生且空清单 fail-closed', () => {
+  // #586：调度下沉至 ci-matrix.mjs，ci.yml 声明委托
+  assert.ok(CI.includes('run: node scripts/ci/ci-matrix.mjs'), 'ci.yml 必须委托给 ci-matrix.mjs')
+  // 单一事实源：从 plugins-manifest.json 读 active + standalone
+  assert.ok(/plugins-manifest\.json/.test(CI_MATRIX), 'ci-matrix 必须读 plugins-manifest.json')
+  assert.ok(/dsh-plugins-all/.test(CI_MATRIX), '聚合包手工补入清单')
   // 空清单 fail-closed（防 manifest 读失败 → 空切片 → 假绿）
-  assert.ok(/包清单为空（fail-closed/.test(computeBlock), '空清单必须显式 fail-closed')
+  assert.ok(/包清单为空（fail-closed/.test(CI_MATRIX), 'ci-matrix 空清单必须显式 fail-closed')
 })
 
-test('#306: 切片面真静默防回归——每个 active/standalone 包都有切片消费路径', () => {
-  // 评审发现：verify-isolated 无 stryker 配置且不在切片 for/case 时，smoke 永不跑且
-  // 无下游校验（真静默）。约束：for/case 切片必须覆盖 SLICE_PACKAGES（active ∪ 聚合），
-  // 且每个 SLICE_PACKAGES 包在 for/case 中有分支；standalone 包（不进聚合）至少进
-  // build matrix（由 #306 静态包名测试覆盖）。此处锁「切片面不漏 active 包」。
-  const computeBlock = CI.slice(CI.indexOf('Compute hit packages'))
-  const loopList = /for pkg in ([\w -]+); do/.exec(computeBlock)?.[1]?.trim().split(/\s+/).sort()
-  for (const pkg of SLICE_PACKAGES) {
-    assert.ok(loopList?.includes(pkg), `切片 for 循环缺 ${pkg} —— smoke/typecheck 将永不执行（真静默）`)
-    assert.ok(computeBlock.includes(`${pkg}) V=`) || computeBlock.includes(`dsh-${pkg.slice(4)})`),
-      `切片 case 分支缺 ${pkg}`)
+test('#306+#586: 切片面真静默防回归——每个 active/standalone 包都有切片消费路径', () => {
+  // #586：修复漏检 dsh-codegraph 与 dsh-mem0。paths-filter 必须覆盖全量插件包，
+  // ci-matrix 动态遍历全量包集，保证每个 active 与 standalone 包在改动时均能命中切片。
+  const filtersBlock = CI.slice(CI.indexOf('filters: |'), CI.indexOf('- name: Compute hit packages'))
+  for (const pkg of [...MANIFEST.active, ...(MANIFEST.standalone ?? [])]) {
+    assert.ok(new RegExp(`^\\s*${pkg}:`, 'm').test(filtersBlock),
+      `paths-filter 缺 ${pkg} —— 改动时 smoke/typecheck 将永不执行（真静默）`)
   }
+  assert.ok(CI_MATRIX.includes('manifest.active') && CI_MATRIX.includes('manifest.standalone'),
+    'ci-matrix.mjs 必须动态合并 active 与 standalone 全量包')
 })
 
 test('#178: 六份 stryker 配置开增量且 incrementalFile 无点前缀', () => {
@@ -780,11 +784,11 @@ test('#178: 变异统计口径单一事实源——observe-check 与 mutation-ga
 // if 要求 coverage success：cov 失败时 verdict 连带缺席，repo-gate 判红兜底）。
 // flake 根因（矩阵 6 路并行各自全仓 smoke 的端口竞争与时序漂移）随剥离消除。
 
-test('#217: changes 输出显式布尔 hasMutations（禁止脆弱空切片判定形态）', () => {
+test('#217+#586: changes 输出显式布尔 hasMutations（禁止脆弱空切片判定形态）', () => {
   assert.ok(CI.includes('hasMutations: ${{ steps.pkgs.outputs.hasMutations }}'),
     'changes outputs 必须声明并透传 hasMutations')
-  assert.ok(CI.includes("jq -c 'length > 0'"),
-    'hasMutations 必须由 mutationPackages 清单推导为显式布尔')
+  assert.ok(CI_MATRIX.includes('mutationPackages.length > 0'),
+    'hasMutations 必须在 ci-matrix.mjs 中由 mutationPackages 清单推导为显式布尔')
   // 下游一律精确比较布尔字符串；GHA 表达式无 length/管道，两种脆弱形态禁用
   assert.ok(!/\|\s*length/.test(CI), 'ci.yml 禁止 fromJSON(...)|length 判空形态')
   assert.ok(!CI.includes("'[]'"), 'ci.yml 禁止裸字符串比较 \'[]\' 判空形态')
