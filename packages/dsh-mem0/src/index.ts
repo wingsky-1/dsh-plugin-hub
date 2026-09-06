@@ -57,6 +57,8 @@ export {
   registerMemoryPromptHook,
 } from "./prompt.ts";
 export { createMem0Routes } from "./routes.ts";
+export { parseMemoryListOutput, type MemoryListItem, type MemoryListParseResult } from "./routes.ts";
+export { aggregateProviderUsage, type ProviderUsageStat } from "./usage-aggregator.ts";
 export { StdioMemoryExecutor } from "./executor.ts";
 export {
   Config,
@@ -72,6 +74,8 @@ export {
 export {
   DEFAULT_VENV_DIR,
   VENV_PYTHON,
+  isVenvUsable,
+  removeBrokenVenv,
   probePythonEnvironment,
   autoInstallDependencies,
 } from "./venv-manager.ts";
@@ -86,8 +90,11 @@ export type { Mem0Config } from "./config.ts";
  * 强依赖宿主服务：
  * - mcpManager: MCP 统一管理、状态与工具注册
  * - webServer: 注册 Web 路由
+ * - llm: 提供商/模型目录与凭据 Seam（#612：缺声明时 cordis 对 ctx.llm 属性访问
+ *   会确定性同步抛错 `cannot get property "llm" without inject`，可选链无法防护，
+ *   直接导致 buildEnvOverrides 必然 reject、executor 永不启动——服务未就绪根因）
  */
-export const inject = ["mcpManager", "webServer"];
+export const inject = ["mcpManager", "webServer", "llm"];
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -151,6 +158,8 @@ export function apply(ctx: Context, initialConfig?: Partial<Mem0Config>): void {
             currentConfig = mergeConfigPatch(currentConfig, next as unknown as Record<string, unknown>);
             executor.setPythonBin(currentConfig.pythonBin);
             buildEnvOverrides(currentConfig).then((env) => executor.restart(env)).catch((err) => {
+              // #612：重启链失败同样落地到 executor，保持状态可观测
+              executor.markEnvBuildFailed?.(err instanceof Error ? err.message : String(err));
               ctx.logger?.warn?.(`[dsh-mem0] settings onChange 重启失败: ${String(err)}`);
             });
           }
@@ -174,6 +183,33 @@ export function apply(ctx: Context, initialConfig?: Partial<Mem0Config>): void {
     }
     return next();
   });
+
+  // #612：最近一次"能让服务 ready"的环境覆盖配置（用于保存失败自动回滚）
+  let lastGoodEnv: Record<string, string> | undefined;
+  // #612：/start 幂等互斥哨兵（与 auto retry、onChange restart 互斥，防并发拉起）
+  let startInFlight = false;
+
+  const startExecutorOnce = async (): Promise<void> => {
+    if (startInFlight) return;
+    startInFlight = true;
+    try {
+      const env = await buildEnvOverrides(currentConfig);
+      await executor.start(env);
+      if (executor.isReady()) {
+        lastGoodEnv = env;
+      } else {
+        // 启动未成功：调度指数退避自动重试（stop/restart 会自动取消挂起重试）
+        executor.scheduleAutoRetry?.();
+      }
+    } catch (err: unknown) {
+      const detail = err instanceof Error ? err.message : String(err);
+      executor.markEnvBuildFailed?.(detail);
+      ctx.logger?.warn?.(`[dsh-mem0] stdio 运行时拉起异常: ${detail}`);
+      executor.scheduleAutoRetry?.();
+    } finally {
+      startInFlight = false;
+    }
+  };
 
   // 1. 构建封装工具定义
   const tools = buildAllMemoryTools(executor);
@@ -204,6 +240,7 @@ export function apply(ctx: Context, initialConfig?: Partial<Mem0Config>): void {
       appCtx: ctx,
       updateConfig: async (patch: Record<string, unknown>) => {
         const next = mergeConfigPatch(currentConfig, patch);
+        const previousConfig = currentConfig;
         currentConfig = next;
         if (ownerScope && typeof ownerScope.update === "function") {
           await ownerScope.update(next).catch((e: unknown) => {
@@ -211,8 +248,26 @@ export function apply(ctx: Context, initialConfig?: Partial<Mem0Config>): void {
           });
         }
         executor.setPythonBin(next.pythonBin);
-        const env = await buildEnvOverrides(next);
-        await executor.restart(env);
+        try {
+          const env = await buildEnvOverrides(next);
+          await executor.restart(env);
+          if (executor.isReady()) {
+            lastGoodEnv = env;
+          } else {
+            // #612：新配置起不来 → 用最近一次 good env 自动回滚重启，并回写旧配置
+            const rollbackEnv = lastGoodEnv ?? await buildEnvOverrides(previousConfig);
+            currentConfig = previousConfig;
+            executor.setPythonBin(previousConfig.pythonBin);
+            await executor.restart(rollbackEnv).catch(() => {});
+            throw new Error(
+              `Service failed to start with new config (status: ${executor.getStatus().reason}); rolled back to previous config`,
+            );
+          }
+        } catch (err: unknown) {
+          const detail = err instanceof Error ? err.message : String(err);
+          executor.markEnvBuildFailed?.(detail);
+          throw err;
+        }
         return next;
       },
       installDependencies: async () => {
@@ -227,6 +282,16 @@ export function apply(ctx: Context, initialConfig?: Partial<Mem0Config>): void {
         }
         return res;
       },
+      // #612：前端「启动服务」按钮入口——幂等互斥的手动拉起，复用最近一次环境覆盖配置
+      startExecutor: async () => {
+        await startExecutorOnce();
+      },
+      // #612：环境探测（诊断抽屉懒触发）
+      probeEnvironment: async () => {
+        return probePythonEnvironment(currentConfig.pythonBin);
+      },
+      // #612：stderr 日志尾随（executor 内部已按值脱敏）
+      getStderrTail: () => executor.getStderrTail(),
     });
     const routeDisposers = routes.map((route) => webServer.register(route));
     return () => {
@@ -244,11 +309,9 @@ export function apply(ctx: Context, initialConfig?: Partial<Mem0Config>): void {
   const unregisterPrompt = registerMemoryPromptHook(ctx);
 
   // 5. 异步尝试拉起 stdio 运行时
-  buildEnvOverrides(currentConfig)
-    .then((env) => executor.start(env))
-    .catch((err: unknown) => {
-      ctx.logger?.warn?.(`[dsh-mem0] stdio 运行时拉起异常: ${err instanceof Error ? err.message : String(err)}`);
-    });
+  // #612：启动失败必须落到 executor（env_build_failed + detail），前端才有诊断与重试入口；
+  // 不再只 warn 后静默停留 idle。失败后按指数退避自动重试。
+  void startExecutorOnce();
 
   // 6. 生命周期注销：kill 子进程 + unregisterServer
   ctx.effect(() => {

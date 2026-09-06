@@ -185,19 +185,34 @@ def memory_add(text: str, user_id: str = "global") -> str:
     description="List all stored memories in the specified namespace.",
 )
 def memory_list(user_id: str = "global") -> str:
-    """List memories belonging to user_id."""
+    """List memories belonging to user_id.
+
+    #612: 输出结构化 JSON（宿主端解析；兼容回退保留文本形态）。
+    每条 {id, memory, created_at?, updated_at?, user_id?}，错误走 JSON error 标记
+    而非文本前缀（此前 `[memory_list failed: ...]` 会被前端误渲染为记忆条目）。
+    """
     try:
         mem = get_memory()
         items = mem.get_all(filters={"user_id": user_id})
         memories = items.get("results", []) if isinstance(items, dict) else items
-        formatted = []
+        entries = []
         for r in memories:
-            mid = r.get("id", "")
-            text = r.get("memory", "")
-            formatted.append(f"- [{mid}] {text}")
-        return "\n".join(formatted) if formatted else "No memories found in this namespace."
+            if not isinstance(r, dict):
+                continue
+            entry: Dict[str, Any] = {
+                "id": str(r.get("id", "")),
+                "memory": str(r.get("memory", "")),
+            }
+            if r.get("created_at"):
+                entry["created_at"] = str(r["created_at"])
+            if r.get("updated_at"):
+                entry["updated_at"] = str(r["updated_at"])
+            if r.get("user_id"):
+                entry["user_id"] = str(r["user_id"])
+            entries.append(entry)
+        return json.dumps({"ok": True, "namespace": user_id, "items": entries}, ensure_ascii=False)
     except Exception as e:
-        return f"[memory_list failed: {str(e)}]"
+        return json.dumps({"ok": False, "error": f"memory_list failed: {str(e)}"}, ensure_ascii=False)
 
 
 @mcp.tool(

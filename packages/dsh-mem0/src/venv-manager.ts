@@ -9,7 +9,7 @@
  */
 
 import { execFile, spawn } from "node:child_process";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { dshHome } from "../../../shared/dsh-home.js";
@@ -127,6 +127,35 @@ export async function probePythonEnvironment(preferredBin?: string): Promise<Pyt
 }
 
 /**
+ * 强校验 venv 可用性：不仅要存在 VENV_PYTHON，还必须带可用的 pip 模块。
+ *
+ * #612：ensurepip 失败会留下"有 python 软链和 pyvenv.cfg 但无 pip 无 site-packages"
+ * 的残缺 venv；旧逻辑仅 existsSync 判定成功，随后 `python -m pip install` 必然
+ * "No module named pip" 失败，且 `python -m venv` 对已存在目录幂等不重建——
+ * 一键安装从此死循环。强校验失败时由调用方清理重建。
+ */
+export async function isVenvUsable(): Promise<boolean> {
+  if (!existsSync(VENV_PYTHON)) return false;
+  try {
+    await execFileAsync(VENV_PYTHON, ["-m", "pip", "--version"]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 清理残缺 venv 目录（幂等：目录不存在时静默成功）。
+ */
+export function removeBrokenVenv(): void {
+  try {
+    rmSync(DEFAULT_VENV_DIR, { recursive: true, force: true });
+  } catch {
+    // 清理失败不阻塞主流程：后续 venv 创建若因残留目录失败会走 --user 降级
+  }
+}
+
+/**
  * 执行依赖一键自动安装（双重自愈策略）：
  * 优先创建 ~/.dsh/mem0/venv 虚拟环境并安装；
  * 若系统缺 python3-venv (ensurepip 报错)，自动回退执行 python3 -m pip install --user。
@@ -143,12 +172,22 @@ export async function autoInstallDependencies(
 
   // 策略 A：尝试创建虚拟环境
   let useVenv = false;
+  // #612：残缺 venv（无 pip）必须先清理，否则幂等 venv 创建不会补 pip，一键安装死循环
+  if (existsSync(VENV_PYTHON) && !(await isVenvUsable())) {
+    log("检测到残缺虚拟环境（缺少 pip），先清理后重建...");
+    removeBrokenVenv();
+  }
   try {
     log("正在尝试创建专属虚拟环境 ~/.dsh/mem0/venv ...");
     await execFileAsync(pythonBin, ["-m", "venv", DEFAULT_VENV_DIR]);
-    if (existsSync(VENV_PYTHON)) {
+    // 强校验：有 python 还必须带 pip（#612），否则视同创建失败走 --user 降级
+    if (existsSync(VENV_PYTHON) && (await isVenvUsable())) {
       useVenv = true;
       log("虚拟环境创建成功！");
+    } else if (existsSync(VENV_PYTHON)) {
+      log("虚拟环境创建不完整（ensurepip 失败），清理残壳并转为用户级目录免提权安装 (--user)...");
+      removeBrokenVenv();
+      useVenv = false;
     }
   } catch (err: any) {
     log("创建虚拟环境跳过（缺少系统 python3-venv 工具），自动转为用户级目录免提权安装 (--user)...");

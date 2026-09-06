@@ -146,62 +146,79 @@ function credentialsKeyFromYaml(text: string, keyName: string): string | undefin
 
 /**
  * 通过 DSH 通用凭据 Seam 解析密钥。
+ *
+ * #612 防护纪律：宿主服务 seam（llm/settings/credentials）的任何调用都可能因
+ * 服务未就绪、半卸载等状态同步抛错，全链 try-catch 兜底，失败静默降级到下一层兜底链，
+ * 绝不让异常炸穿 buildEnvOverrides 断掉 executor 启动链。
  */
 async function resolveViaCredentialSeam(provider: string, ctx?: unknown): Promise<string | undefined> {
   if (!ctx || typeof ctx !== "object") return undefined;
-  const anyCtx = ctx as {
-    llm?: { listConfigurableProviders?: () => Array<{ provider: string; settingsNs: string; settingsPath?: string[] }> };
-    get?: (name: string) => unknown;
-  };
-  if (typeof anyCtx.llm?.listConfigurableProviders !== "function") return undefined;
-
-  const dir = anyCtx.llm.listConfigurableProviders().find((c) => c.provider === provider);
-  if (!dir) return undefined;
-
-  const settings = anyCtx.get?.("settings") as { get?: (ns: string) => unknown } | undefined;
-  const credentials = anyCtx.get?.("credentials") as { resolve?: (ref: string) => Promise<{ value?: string } | undefined> } | undefined;
-  if (!settings || typeof settings.get !== "function") return undefined;
-  if (!credentials || typeof credentials.resolve !== "function") return undefined;
-
-  let node: unknown = settings.get(dir.settingsNs);
-  for (const seg of dir.settingsPath ?? []) {
-    node = (node as Record<string, unknown> | undefined)?.[seg];
-  }
-  const ref = (node as { apiKeyEnv?: string } | undefined)?.apiKeyEnv;
-  if (typeof ref !== "string" || ref.length === 0) return undefined;
-
-  const got = await credentials.resolve(ref);
-  if (got && typeof got.value === "string" && got.value.length > 0) {
-    return got.value;
-  }
-  return undefined;
-}
-
-/**
- * 解析 Base URL（从 settings 中提取或回退已知内置提供商映射）。
- */
-function resolveBaseUrl(provider: string, ctx?: unknown): string {
-  if (ctx && typeof ctx === "object") {
+  try {
     const anyCtx = ctx as {
       llm?: { listConfigurableProviders?: () => Array<{ provider: string; settingsNs: string; settingsPath?: string[] }> };
       get?: (name: string) => unknown;
     };
-    if (typeof anyCtx.llm?.listConfigurableProviders === "function") {
-      const dir = anyCtx.llm.listConfigurableProviders().find((c) => c.provider === provider);
-      if (dir) {
-        const settings = anyCtx.get?.("settings") as { get?: (ns: string) => unknown } | undefined;
-        if (settings && typeof settings.get === "function") {
-          let node: unknown = settings.get(dir.settingsNs);
-          for (const seg of dir.settingsPath ?? []) {
-            node = (node as Record<string, unknown> | undefined)?.[seg];
-          }
-          const endpoint = (node as { baseURL?: string; apiEndpoint?: string } | undefined)?.baseURL
-            || (node as { baseURL?: string; apiEndpoint?: string } | undefined)?.apiEndpoint;
-          if (typeof endpoint === "string" && endpoint.trim().length > 0) {
-            return endpoint.trim();
+    if (typeof anyCtx.llm?.listConfigurableProviders !== "function") return undefined;
+
+    const dir = anyCtx.llm.listConfigurableProviders().find((c) => c.provider === provider);
+    if (!dir) return undefined;
+
+    const settings = anyCtx.get?.("settings") as { get?: (ns: string) => unknown } | undefined;
+    const credentials = anyCtx.get?.("credentials") as { resolve?: (ref: string) => Promise<{ value?: string } | undefined> } | undefined;
+    if (!settings || typeof settings.get !== "function") return undefined;
+    if (!credentials || typeof credentials.resolve !== "function") return undefined;
+
+    let node: unknown = settings.get(dir.settingsNs);
+    for (const seg of dir.settingsPath ?? []) {
+      node = (node as Record<string, unknown> | undefined)?.[seg];
+    }
+    const ref = (node as { apiKeyEnv?: string } | undefined)?.apiKeyEnv;
+    if (typeof ref !== "string" || ref.length === 0) return undefined;
+
+    const got = await credentials.resolve(ref);
+    if (got && typeof got.value === "string" && got.value.length > 0) {
+      return got.value;
+    }
+    return undefined;
+  } catch {
+    // 宿主服务 seam 未就绪/半卸载：静默降级到环境变量与 .credentials.yaml 兜底链
+    return undefined;
+  }
+}
+
+/**
+ * 解析 Base URL（从 settings 中提取或回退已知内置提供商映射）。
+ *
+ * #612 防护纪律：#610 曾因 ctx.llm 未在 inject 声明，宿主服务属性访问同步抛错
+ * 炸穿本函数导致 executor 永不启动。本函数是启动链关键路径，seam 调用全部
+ * try-catch 兜底，失败一律回退 KNOWN_PROVIDER_BASE_URLS 内置映射。
+ */
+function resolveBaseUrl(provider: string, ctx?: unknown): string {
+  if (ctx && typeof ctx === "object") {
+    try {
+      const anyCtx = ctx as {
+        llm?: { listConfigurableProviders?: () => Array<{ provider: string; settingsNs: string; settingsPath?: string[] }> };
+        get?: (name: string) => unknown;
+      };
+      if (typeof anyCtx.llm?.listConfigurableProviders === "function") {
+        const dir = anyCtx.llm.listConfigurableProviders().find((c) => c.provider === provider);
+        if (dir) {
+          const settings = anyCtx.get?.("settings") as { get?: (ns: string) => unknown } | undefined;
+          if (settings && typeof settings.get === "function") {
+            let node: unknown = settings.get(dir.settingsNs);
+            for (const seg of dir.settingsPath ?? []) {
+              node = (node as Record<string, unknown> | undefined)?.[seg];
+            }
+            const endpoint = (node as { baseURL?: string; apiEndpoint?: string } | undefined)?.baseURL
+              || (node as { baseURL?: string; apiEndpoint?: string } | undefined)?.apiEndpoint;
+            if (typeof endpoint === "string" && endpoint.trim().length > 0) {
+              return endpoint.trim();
+            }
           }
         }
       }
+    } catch {
+      // 宿主服务 seam 未就绪/半卸载：静默回退内置映射，绝不让异常炸穿启动链
     }
   }
 

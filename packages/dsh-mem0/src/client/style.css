@@ -369,3 +369,224 @@
   color: var(--dsw-alias-label-secondary, #6b7280);
   margin-top: 4px;
 }
+
+/* ===== #612：诊断抽屉 / 骨架屏 / 分页 / 状态徽章按钮化 ===== */
+
+.dsh-mem0-badge {
+  font: inherit;
+  cursor: pointer;
+  border: none;
+}
+
+.dsh-mem0-badge-caret {
+  margin-left: 4px;
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.dsh-mem0-diag-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.dsh-mem0-diag-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dsh-mem0-diag-drawer {
+  margin: 12px 0;
+  border: 1px solid var(--dsw-alias-border-l1, #e2e8f0);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1, #ffffff);
+  overflow: hidden;
+}
+
+.dsh-mem0-diag-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1, #e2e8f0);
+  background: var(--dsw-alias-bg-layer-2, rgba(0, 0, 0, 0.03));
+}
+
+.dsh-mem0-diag-drawer-body {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.dsh-mem0-diag-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dsh-mem0-diag-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-secondary, #6b7280);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.dsh-mem0-diag-kv {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+
+.dsh-mem0-diag-kv code {
+  font-family: var(--dsw-alias-font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  background: var(--dsw-alias-bg-layer-2, rgba(0, 0, 0, 0.04));
+  padding: 2px 6px;
+  border-radius: 4px;
+  word-break: break-all;
+}
+
+.dsh-mem0-diag-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dsh-mem0-btn.danger {
+  color: var(--dsw-alias-danger, #dc2626);
+  border-color: rgba(220, 38, 38, 0.35);
+}
+
+.dsh-mem0-btn.danger:hover:not(:disabled) {
+  background: rgba(220, 38, 38, 0.06);
+}
+
+.dsh-mem0-probe-flag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.dsh-mem0-probe-flag.ok {
+  background: var(--dsw-alias-success-bg, #ecfdf5);
+  color: var(--dsw-alias-success, #059669);
+}
+
+.dsh-mem0-probe-flag.bad {
+  background: var(--dsw-alias-danger-bg, #fef2f2);
+  color: var(--dsw-alias-danger, #dc2626);
+}
+
+.dsh-mem0-diag-logs {
+  font-family: var(--dsw-alias-font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 1.5;
+  max-height: 220px;
+  overflow: auto;
+  background: var(--dsw-alias-bg-layer-2, rgba(0, 0, 0, 0.04));
+  padding: 8px 10px;
+  border-radius: 6px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+}
+
+.dsh-mem0-item-meta {
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary, #6b7280);
+  margin-top: 2px;
+}
+
+.dsh-mem0-item {
+  position: relative;
+}
+
+.dsh-mem0-skeleton {
+  pointer-events: none;
+}
+
+.dsh-mem0-skeleton-line {
+  height: 12px;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--dsw-alias-bg-layer-2, rgba(0, 0, 0, 0.06)) 25%,
+    var(--dsw-alias-bg-layer-3, rgba(0, 0, 0, 0.1)) 50%,
+    var(--dsw-alias-bg-layer-2, rgba(0, 0, 0, 0.06)) 75%
+  );
+  background-size: 200% 100%;
+  animation: dsh-mem0-shimmer 1.4s ease infinite;
+  width: 85%;
+}
+
+.dsh-mem0-skeleton-line.short {
+  width: 45%;
+}
+
+@keyframes dsh-mem0-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.dsh-mem0-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.dsh-mem0-pager-info {
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary, #6b7280);
+}
+
+.dsh-mem0-save-hint {
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary, #6b7280);
+}
+
+.dsh-mem0-save-msg.error {
+  color: var(--dsw-alias-danger, #dc2626);
+}
+
+/* ===== #612：移动端（≤720px，LAN 代理 iPad/手机为主要访问形态） ===== */
+@media (max-width: 720px) {
+  .dsh-mem0-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dsh-mem0-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dsh-mem0-search-box {
+    flex-wrap: wrap;
+  }
+
+  .dsh-mem0-search-box .dsh-mem0-input {
+    flex: 1 1 100%;
+  }
+
+  .dsh-mem0-diag-actions {
+    flex-direction: column;
+  }
+
+  .dsh-mem0-diag-actions .dsh-mem0-btn,
+  .dsh-mem0-toolbar .dsh-mem0-btn {
+    min-height: 40px; /* 触控目标 */
+  }
+
+  .dsh-mem0-metrics-row {
+    flex-direction: column;
+  }
+}
