@@ -21,6 +21,17 @@ import { assertSharedDtsNoExtras, assertSharedDtsPresent, listSharedDts } from '
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
+/**
+ * tar 参数装配：GNU tar 在 Windows 上把 `C:\...` 盘符路径当远程主机（rsh 语法）
+ * 解析——Windows 下统一加 `--force-local` 并把路径正斜杠化；Linux 下原样返回，
+ * 行为不变。
+ */
+function tarArgs(args: string[]): string[] {
+  if (process.platform !== 'win32') return args
+  return ['--force-local', ...args.map((a) => a.split('\\').join('/'))]
+}
+
+
 // 插件清单单一来源（issue #36）：枚举走 lib，目录集 == manifest.active ∪ standalone 前置闸
 warnUnknownEntries(ROOT)
 let manifest
@@ -58,7 +69,7 @@ for (const p of plugins) {
     execFileSync('pnpm', ['--filter', name, 'pack', '--pack-destination', tmp], { cwd: ROOT, stdio: 'pipe' })
     const tgz = readdirSync(tmp).find(f => f.endsWith('.tgz'))
     const unpack = join(tmp, 'unpack')
-    execFileSync('tar', ['-xzf', join(tmp, tgz), '-C', tmp])
+    execFileSync('tar', tarArgs(['-xzf', join(tmp, tgz), '-C', tmp]))
     const pkgRoot = join(tmp, 'package')
 
     const problems = []
@@ -186,7 +197,7 @@ for (const p of plugins) {
   try {
     execFileSync('pnpm', ['--filter', aggName, 'pack', '--pack-destination', tmp], { cwd: ROOT, stdio: 'pipe' })
     const tgz = readdirSync(tmp).find(f => f.endsWith('.tgz'))
-    execFileSync('tar', ['-xzf', join(tmp, tgz), '-C', tmp])
+    execFileSync('tar', tarArgs(['-xzf', join(tmp, tgz), '-C', tmp]))
     const pkgRoot = join(tmp, 'package')
     const problems = []
     if (!existsSync(join(pkgRoot, 'lib', 'index.js'))) problems.push('缺 lib/index.js')
