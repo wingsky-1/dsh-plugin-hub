@@ -468,6 +468,54 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
 
   // baseline 为 null（加载未完成）→ 空 payload（不误存）
   assert.deepEqual(JSON.parse(JSON.stringify(diffFn(settingsView, null))), {}, "#470 P1-2：baseline null → 空 payload");
+
+  // ---- issue #614：channels 提交面空串可选字段剥除（真产物直测）----
+
+  // 存量 0.2.2 空串残留形态：UI 改 enabled 一字段 → 整组提交被 strip 成合法形态
+  // （否则 token:"" 等残留随组提交 → 服务端 400，UI 无法解锁修复）
+  const legacy = {
+    notifyTaskDone: true,
+    channels: [
+      { id: "webhook-1", type: "webhook", url: "https://ntfy.sh/t", auth: "bearer", token: "tk614", enabled: false, username: "", password: "", headerName: "", headerValue: "", template: "" },
+      { id: "bark-1", type: "bark", baseUrl: "https://api.day.app", deviceKey: "k614", enabled: false, sound: "", group: "" },
+    ],
+  };
+  const edited = JSON.parse(JSON.stringify(legacy));
+  edited.channels[0].enabled = true;
+  const stripped = diffFn(edited, legacy);
+  assert.ok(stripped.channels !== undefined, "#614：channels 变更整组入 diff");
+  assert.equal(JSON.stringify(stripped.channels), JSON.stringify([
+    { id: "webhook-1", type: "webhook", url: "https://ntfy.sh/t", auth: "bearer", token: "tk614", enabled: true },
+    { id: "bark-1", type: "bark", baseUrl: "https://api.day.app", deviceKey: "k614", enabled: false },
+  ]), "#614：空串可选字段剥除、非空值与必填字段保留");
+
+  // 无空串的常规 diff 不受影响（strip 幂等，非空全保留）
+  const clean = { channels: [{ id: "webhook-1", type: "webhook", url: "https://ntfy.sh/t", auth: "none", enabled: false }] };
+  const cleanEdited = JSON.parse(JSON.stringify(clean));
+  cleanEdited.channels[0].enabled = true;
+  assert.equal(JSON.stringify(diffFn(cleanEdited, clean).channels), JSON.stringify(cleanEdited.channels), "#614：无空串形态 diff 原样通过");
+
+  // 防御：channels 含非对象成员（null/字符串）不炸、原样透传（服务端校验兜底）
+  const junk = { channels: [null, "x"] };
+  const junkEdited = JSON.parse(JSON.stringify(junk));
+  junkEdited.channels[1] = "y";
+  assert.equal(JSON.stringify(diffFn(junkEdited, junk).channels), JSON.stringify([null, "y"]), "#614：非对象成员原样透传不炸");
+
+  // #614 纯函数直测：assignChannelFields（空串/undefined 删键）与 stripChannelEmpties
+  const assignFn = mod.apply.assignChannelFields;
+  const stripFn = mod.apply.stripChannelEmpties;
+  assert.equal(typeof assignFn, "function", "#614：apply 挂载 assignChannelFields");
+  assert.equal(typeof stripFn, "function", "#614：apply 挂载 stripChannelEmpties");
+  // 空串输入 → 删键（清空 token 输入框 = 回到未配置态）
+  assert.equal("token" in assignFn({ id: "w", token: "old" }, { token: "" }), false, "#614：空串输入删键");
+  // undefined 输入 → 删键（bark level 清除路径传 undefined）
+  assert.equal("level" in assignFn({ id: "b", level: "critical" }, { level: undefined }), false, "#614：undefined 输入删键");
+  // 非空值正常覆盖；无关键不新增
+  const assigned = assignFn({ id: "w", token: "old", auth: "none" }, { token: "new", url: "" });
+  assert.equal(JSON.stringify(assigned), JSON.stringify({ id: "w", token: "new", auth: "none" }), "#614：非空覆盖 + 空串 url 删键（不存在则不新增）");
+  // stripChannelEmpties：剥空串可选键（url 属 bark 可选位），非对象原样
+  assert.equal(JSON.stringify(stripFn({ id: "w", url: "", token: "", name: "n", enabled: false })), JSON.stringify({ id: "w", name: "n", enabled: false }), "#614：strip 剥可选空串（含 url）");
+  assert.equal(stripFn(null), null, "#614：strip 非对象输入原样返回");
 }
 
 // ---- issue #405 PR2/PR3：客户端保存模型演进源码级契约锚点 ----
