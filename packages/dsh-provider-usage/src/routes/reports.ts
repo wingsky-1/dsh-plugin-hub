@@ -16,7 +16,7 @@ import {
   type ReportPeriod,
 } from "../report/config.ts";
 import { readReportIndex, reportHtmlFile, reportMetaFile } from "../report/runner.ts";
-import { candidateWindow, presetLastRunForNewlyEnabled, type DueReport } from "../report/schedule.ts";
+import { candidateWindow, presetLastRunForNewlyEnabled, previousClosedWindow, type DueReport } from "../report/schedule.ts";
 import { readLastRun, writeLastRun, type ReportScheduler } from "../report/scheduler.ts";
 import { sanitizeHtml } from "../sanitize.ts";
 
@@ -190,7 +190,8 @@ export async function handleReportGenerate(
     return writeJson(res, 400, { error: "invalid-period" });
   }
 
-  const due = candidateWindow(period as ReportPeriod, getReportCfg(), Date.now());
+  // 手动生成恒定锚定已闭环的上一完整周期（日报=昨天全天，消灭凌晨漂移；不检查 enabled）
+  const due = previousClosedWindow(period as ReportPeriod, getReportCfg(), Date.now());
   try {
     const meta = await reportMutex.runExclusive(() => runDue(due));
     const lastRun = await readLastRun(historyRoot);

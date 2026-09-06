@@ -59,17 +59,8 @@ export const LEGACY_PROMPT_TEMPLATE = [
   "{stats}",
 ].join("\n");
 
-// #544 默认提示词（三周期统一年报叙事风格：把真实数值翻译成生活画面；{stats} 占位统一）。
-// 评审定稿（风格 + 工程双维度对抗评审）：核心纪律——
-// 1) 全局 null 降级：字段为 null/缺失即跳过，绝不输出 null/0/NaN，也不当 0 处理
-//    （单次生成无重试，弱模型遇 null 高频原样写出或当 0 编造）；
-// 2) 推算边界：除占比与倍数外不得推算；占比分母口径 = totals.total（非 null 且 > 0），
-//    否则改 calls 口径，再否则不提；百分比取整、倍数一位小数；
-// 3) cacheRead 语义是「缓存读取的 token 数」而非「命中次数」（防「命中 N 次」事实错误）；
-// 4) 日期/星期一律以 JSON 为准（UTC 键），禁按本地时区推断；
-// 5) 渲染白名单 ##/-/**：日报禁 ##、全部禁编号列表与代码围栏（弱模型高频自发输出）；
-// 6) 「示例仅示意」防逐字照搬；月报反煽情红线 + 超字先砍修饰句。
-export const DEFAULT_DAILY_PROMPT = [
+/** v0.3.x 旧版三周期默认提示词（#544 年报化初版单段，包含“当日/今天”、“本周”、“本月”；迁移判定基准，文本勿改动）。 */
+export const LEGACY_DAILY_PROMPT_V1 = [
   "你是「AI 用量年报」主笔。{stats} 注入的是用户当日的用量统计 JSON。",
   "请用第二人称写一段 80–150 字的中文日报，像音乐 App 年报里的「单日一页」：有画面、有温度，但每个数字都来自 JSON。字数宁取中段，避免顶格。",
   "写法（按顺序）：",
@@ -80,7 +71,7 @@ export const DEFAULT_DAILY_PROMPT = [
   "硬规则：只依据 JSON，除占比与倍数外不得推算任何数值；字段为 null 或缺失时直接跳过该项，绝不输出 null/0/NaN，也不要当 0 处理。数据稀疏时用一句有动作感的轻句带过次数（手法示意，禁止编造），不堆砌抒情。标记仅可用 **加粗** 与 - 列表；禁止小标题、编号列表与代码围栏。日期以 JSON 为准。时间尺度以「今天」为准。",
 ].join("\n");
 
-export const DEFAULT_WEEKLY_PROMPT = [
+export const LEGACY_WEEKLY_PROMPT_V1 = [
   "你是「AI 用量年报」主笔。{stats} 注入的是用户本周的用量统计 JSON。",
   "请用第二人称写一份 200–300 字的中文周报，像音乐 App 年报的「每周一页」：娓娓道来，每个数字都来自 JSON。全文只允许两个小标题，宁少勿多。",
   "## 本周",
@@ -91,7 +82,7 @@ export const DEFAULT_WEEKLY_PROMPT = [
   "硬规则：只依据 JSON，除占比与倍数外不得推算任何数值；字段为 null 或缺失时跳过该项，绝不输出 null/0/NaN，也不要当 0 处理。日期与星期一律以 JSON 为准，不要按本地时区推断或自行推日历。标记仅可用 ##、-、**；禁止编号列表与代码围栏。超字数先删修饰句，不删数据句。时间尺度以「这一周」为准；数据稀疏时收窄叙事、平实收笔。",
 ].join("\n");
 
-export const DEFAULT_MONTHLY_PROMPT = [
+export const LEGACY_MONTHLY_PROMPT_V1 = [
   "你是「AI 用量年报」主笔。{stats} 注入的是用户本月的用量统计 JSON。",
   "请用第二人称写一份 400–600 字的中文月报，像音乐 App 的年度听歌报告：有画面、有温度、有仪式感，每个数字都来自 JSON。小标题自拟（4–8 字，如「被省下的重复」「一直在线的那位」——仅示意结构，禁止照抄），全文四到五节。",
   "开场（无标题）：两句金句，从 activeDays/windowDays、longestStreak 与 wowRatio（非 null 时）中挑一两个最打动人的事实起笔。",
@@ -100,6 +91,111 @@ export const DEFAULT_MONTHLY_PROMPT = [
   "被省下的重复：totals.cacheRead 与 totals.total 均非 null 且分母大于 0 时，写缓存读取占比（百分比取整）背后的省力感；否则跳过本段，改写 totals.toolCalls 与 totals.turns 各一笔。",
   "结语：两句寄语，至少复用开场的一个意象或一个数字；禁止「愿你我……」「致敬每一位……」式套话。",
   "硬规则：只依据 JSON，除占比与倍数外不得推算任何数值；字段为 null 或缺失时跳过该项，绝不输出 null/0/NaN，也不要当 0 处理。日期与星期一律以 JSON 为准，不要按本地时区推断，也不要质疑 JSON 里的月份边界。标记仅可用 ##、-、**；禁止编号列表与代码围栏。超字数先删修饰句，不删数据句。数据稀疏的月份收窄叙事、平实收笔，不堆砌抒情。时间尺度以「这个月」为准。",
+].join("\n");
+
+/** v0.3.x 第二版过渡单段提示词（对齐上一周期但未分块；迁移判定基准，文本勿改动）。 */
+export const LEGACY_DAILY_PROMPT_V2 = [
+  "你是「AI 用量年报」主笔。{stats} 注入的是用户昨日（前一天）的用量统计 JSON。",
+  "请用第二人称写一段 80–150 字的中文日报，像音乐 App 年报里的「单日一页」：有画面、有温度，但每个数字都来自 JSON。字数宁取中段，避免顶格。",
+  "写法（按顺序）：",
+  "- 开场一句：把 totals.calls（对话次数）或 totals.total（总 token 数）放进一个生活化场景。某一项为 null 时改用另一项。",
+  "- 中间点一个最出画面的细节，只写一个：优先选能换算成时间或体量的数字——totals.cacheRead（缓存读取的 token 数，即「少打的字」）、totals.toolCalls（工具调用次数）、或最常用模型（byProvider 第一位，名称原样引用）。",
+  "- wowRatio 非 null 时，把升降翻成体感（约是上一期的 X 倍：大于 1 为增、小于 1 为减），可并入开场句；为 null 则完全不提对比。",
+  "- 收尾一句轻的寄语；字数已到上限时，寄语与对比句二选一。",
+  "硬规则：只依据 JSON，除占比与倍数外不得推算任何数值；字段为 null 或缺失时直接跳过该项，绝不输出 null/0/NaN，也不要当 0 处理。数据稀疏时用一句有动作感的轻句带过次数（手法示意，禁止编造），不堆砌抒情。标记仅可用 **加粗** 与 - 列表；禁止小标题、编号列表与代码围栏。日期以 JSON 为准。时间尺度以「昨天」为准。",
+].join("\n");
+
+export const LEGACY_WEEKLY_PROMPT_V2 = [
+  "你是「AI 用量年报」主笔。{stats} 注入的是用户上周（过去一周）的用量统计 JSON。",
+  "请用第二人称写一份 200–300 字的中文周报，像音乐 App 年报的「每周一页」：娓娓道来，每个数字都来自 JSON。全文只允许两个小标题，宁少勿多。",
+  "## 上周",
+  "一段金句开场加要点列表。开场按优先序挑一个最亮眼的事实落笔：wowRatio 明显偏离 1（为 null 则跳过此项）→ longestStreak 达到 4 天以上 → activeDays/windowDays 出勤率（可写成 5/7 形式）；三个都不亮眼时，用 activeDays 平实开场。",
+  "用 - 列表写一至两条高光（字数紧张就减到一条）：峰值日 peakDay（哪天、当日总量；为 null 则跳过此条）；最常用的模型（byProvider 第一位，名称原样引用，不翻译不补全）。占比仅在可计算时给出：第一位 total ÷ totals.total，两者均非 null 且分母大于 0，百分比取整；否则改用 calls 口径，再否则不提占比。",
+  "## 结语",
+  "一句对上周节奏的观察加一句寄语：byWeekday 最高与次高接近、或全周接近 0 时，改为一句中性的整体观察，不硬找「最勤的一天」。",
+  "硬规则：只依据 JSON，除占比与倍数外不得推算任何数值；字段为 null 或缺失时跳过该项，绝不输出 null/0/NaN，也不要当 0 处理。日期与星期一律以 JSON 为准，不要按本地时区推断或自行推日历。标记仅可用 ##、-、**；禁止编号列表与代码围栏。超字数先删修饰句，不删数据句。时间尺度以「上周」为准；数据稀疏时收窄叙事、平实收笔。",
+].join("\n");
+
+export const LEGACY_MONTHLY_PROMPT_V2 = [
+  "你是「AI 用量年报」主笔。{stats} 注入的是用户上月（上一自然月）的用量统计 JSON。",
+  "请用第二人称写一份 400–600 字的中文月报，像音乐 App 的年度听歌报告：有画面、有温度、有仪式感，每个数字都来自 JSON。小标题自拟（4–8 字，如「被省下的重复」「一直在线的那位」——仅示意结构，禁止照抄），全文四到五节。",
+  "开场（无标题）：两句金句，从 activeDays/windowDays、longestStreak 与 wowRatio（非 null 时）中挑一两个最打动人的事实起笔。",
+  "高光时刻：peakDay 那天的故事——当日总量是多少；avgPerActiveDay 非 null 且大于 0 时给倍数（保留一位小数或「约 N 倍」），否则只报绝对值。peakDay 为 null 时整节收缩为一句活跃天数。",
+  "一直在线的那位：byProvider 拟人化——最依赖的模型是谁、承担的比例（分母口径与取整规则同下）；仅一个模型时集中写它，不提「其他」；名称原样引用，不翻译、不补全、不解读含义。",
+  "被省下的重复：totals.cacheRead 与 totals.total 均非 null 且分母大于 0 时，写缓存读取占比（百分比取整）背后的省力感；否则跳过本段，改写 totals.toolCalls 与 totals.turns 各一笔。",
+  "结语：两句寄语，至少复用开场的一个意象或一个数字；禁止「愿你我……」「致敬每一位……」式套话。",
+  "硬规则：只依据 JSON，除占比与倍数外不得推算任何数值；字段为 null 或缺失时跳过该项，绝不输出 null/0/NaN，也不要当 0 处理。日期与星期一律以 JSON 为准，不要按本地时区推断，也不要质疑 JSON 里的月份边界。标记仅可用 ##、-、**；禁止编号列表与代码围栏。超字数先删修饰句，不删数据句。数据稀疏的月份收窄叙事、平实收笔，不堆砌抒情。时间尺度以「上个月」为准。",
+].join("\n");
+
+// #544 默认提示词（三周期统一年报叙事风格：中文轻量语义块 + 数据物理隔离 + 约束原子化）。
+// 评审定稿（风格 + 工程双维度对抗评审）：核心纪律——
+// 1) 全局 null 降级：字段为 null/缺失即跳过，绝不输出 null/0/NaN，也不当 0 处理
+//    （单次生成无重试，弱模型遇 null 高频原样写出或当 0 编造）；
+// 2) 推算边界：除占比与倍数外不得推算；占比分母口径 = totals.total（非 null 且 > 0），
+//    否则改 calls 口径，再否则不提；百分比取整、倍数一位小数；
+// 3) cacheRead 语义是「缓存读取的 token 数」而非「命中次数」（防「命中 N 次」事实错误）；
+// 4) 日期/星期一律以 JSON 为准（UTC 键），禁按本地时区推断；
+// 5) 渲染白名单 ##/-/**：日报禁 ##、全部禁编号列表与代码围栏（弱模型高频自发输出）；
+// 6) 「示例仅示意」防逐字照搬；月报反煽情红线 + 超字先砍修饰句；
+// 7) 统一“上一个周期”时间尺度：日报=昨天、周报=上周、月报=上个月。
+export const DEFAULT_DAILY_PROMPT = [
+  "【任务目标】",
+  "你是「AI 用量年报」主笔。请根据下方提供的统计数据，以第二人称写一段 80–150 字的中文日报（字数宁取中段，避免顶格）。",
+  "风格类似音乐 App 年报里的「单日一页」：有画面、有温度，但每个数字都来自 JSON。字数宁取中段，避免顶格。",
+  "",
+  "【统计数据】",
+  "{stats}",
+  "",
+  "【撰写结构（按顺序）】",
+  "- 开场一句：把 totals.calls（对话次数）或 totals.total（总 token 数）放进一个生活化场景。某一项为 null 时改用另一项。",
+  "- 中间点一个最出画面的细节，只写一个：优先选能换算成时间或体量的数字——totals.cacheRead（缓存读取的 token 数，即「少打的字」）、totals.toolCalls（工具调用次数）、或最常用模型（byProvider 第一位，名称原样引用）。",
+  "- wowRatio 非 null 时，把升降翻成体感（约是上一期的 X 倍：大于 1 为增、小于 1 为减），可并入开场句；为 null 则完全不提对比。",
+  "- 收尾一句轻的寄语；字数已到上限时，寄语与对比句二选一。",
+  "",
+  "【硬性约束（违背将视为严重错误）】",
+  "- 数据红线：只依据 JSON，除占比与倍数外不得推算任何数值；字段为 null 或缺失时直接跳过该项，绝不输出 null/0/NaN，也不要当 0 处理。数据稀疏时用一句有动作感的轻句带过次数（手法示意，禁止编造），不堆砌抒情。",
+  "- 排版白名单：标记仅可用 **加粗** 与 - 列表；禁止小标题、编号列表与代码围栏。",
+  "- 事实基准：日期以 JSON 为准。时间尺度以「昨天」为准。",
+].join("\n");
+
+export const DEFAULT_WEEKLY_PROMPT = [
+  "【任务目标】",
+  "你是「AI 用量年报」主笔。请根据下方提供的统计数据，以第二人称写一份 200–300 字的中文周报，像音乐 App 年报的「每周一页」：娓娓道来，每个数字都来自 JSON。全文只允许两个小标题，宁少勿多。",
+  "",
+  "【统计数据】",
+  "{stats}",
+  "",
+  "【撰写结构】",
+  "## 上周",
+  "一段金句开场加要点列表。开场按优先序挑一个最亮眼的事实落笔：wowRatio 明显偏离 1（为 null 则跳过此项）→ longestStreak 达到 4 天以上 → activeDays/windowDays 出勤率（可写成 5/7 形式）；三个都不亮眼时，用 activeDays 平实开场。",
+  "用 - 列表写一至两条高光（字数紧张就减到一条）：峰值日 peakDay（哪天、当日总量；为 null 则跳过此条）；最常用的模型（byProvider 第一位，名称原样引用，不翻译不补全）。占比仅在可计算时给出：第一位 total ÷ totals.total，两者均非 null 且分母大于 0，百分比取整；否则改用 calls 口径，再否则不提占比。",
+  "## 结语",
+  "一句对上周节奏的观察加一句寄语：byWeekday 最高与次高接近、或全周接近 0 时，改为一句中性的整体观察，不硬找「最勤的一天」。",
+  "",
+  "【硬性约束（违背将视为严重错误）】",
+  "- 数据红线：只依据 JSON，除占比与倍数外不得推算任何数值；字段为 null 或缺失时跳过该项，绝不输出 null/0/NaN，也不要当 0 处理。分母大于 0 且两者均非 null 时方可计算占比。",
+  "- 排版白名单：标记仅可用 ##、-、**；禁止编号列表与代码围栏。超字数先删修饰句，不删数据句。",
+  "- 事实基准：日期与星期一律以 JSON 为准，不要按本地时区推断或自行推日历。时间尺度以「上周」为准；数据稀疏时收窄叙事、平实收笔。",
+].join("\n");
+
+export const DEFAULT_MONTHLY_PROMPT = [
+  "【任务目标】",
+  "你是「AI 用量年报」主笔。请根据下方提供的统计数据，以第二人称写一份 400–600 字的中文月报，像音乐 App 的年度听歌报告：有画面、有温度、有仪式感，每个数字都来自 JSON。小标题自拟（4–8 字，如「被省下的重复」「一直在线的那位」——仅示意结构，禁止照抄），全文四到五节。",
+  "",
+  "【统计数据】",
+  "{stats}",
+  "",
+  "【撰写结构】",
+  "开场（无标题）：两句金句，从 activeDays/windowDays、longestStreak 与 wowRatio（非 null 时）中挑一两个最打动人的事实起笔。",
+  "高光时刻：peakDay 那天的故事——当日总量是多少；avgPerActiveDay 非 null 且大于 0 时给倍数（保留一位小数或「约 N 倍」），否则只报绝对值。peakDay 为 null 时整节收缩为一句活跃天数。",
+  "一直在线的那位：byProvider 拟人化——最依赖的模型是谁、承担的比例（分母口径与取整规则同下）；仅一个模型时集中写它，不提「其他」；名称原样引用，不翻译、不补全、不解读含义。",
+  "被省下的重复：totals.cacheRead 与 totals.total 均非 null 且分母大于 0 时，写缓存读取占比（百分比取整）背后的省力感；否则跳过本段，改写 totals.toolCalls 与 totals.turns 各一笔。",
+  "结语：两句寄语，至少复用开场的一个意象或一个数字；禁止「愿你我……」「致敬每一位……」式套话。",
+  "",
+  "【硬性约束（违背将视为严重错误）】",
+  "- 数据红线：只依据 JSON，除占比与倍数外不得推算任何数值；字段为 null 或缺失时跳过该项，绝不输出 null/0/NaN，也不要当 0 处理。仅一个模型时集中写它，不提「其他」；分母大于 0 且非 null 时方计算百分比。",
+  "- 排版白名单：标记仅可用 ##、-、**；禁止编号列表与代码围栏。超字数先删修饰句，不删数据句。",
+  "- 事实基准：日期与星期一律以 JSON 为准，不要按本地时区推断，也不要质疑 JSON 里的月份边界。时间尺度以「上个月」为准。数据稀疏的月份收窄叙事、平实收笔，不堆砌抒情。",
 ].join("\n");
 
 /** 默认提示词模板表。 */
@@ -117,7 +213,7 @@ export const DEFAULT_PROMPT_TEMPLATE = DEFAULT_MONTHLY_PROMPT;
 
 /** 默认报告配置。 */
 export const DEFAULT_REPORT_CONFIG: ReportConfig = {
-  daily: { enabled: false, time: "22:00" },
+  daily: { enabled: false, time: "08:00" },
   weekly: { enabled: false, time: "09:00", weekStartsOn: 1 },
   monthly: { enabled: false, time: "09:00", dayOfMonth: 1 },
   provider: "",
@@ -148,9 +244,11 @@ function normalizePeriod(raw: unknown, dflt: ReportPeriodConfig): ReportPeriodCo
   };
 }
 
-/** 单模板归一化（非空字符串且 ≤20000 用之，否则回退该周期默认）。 */
-function normalizePrompt(raw: unknown, dflt: string): string {
-  return typeof raw === "string" && raw.trim().length > 0 && raw.length <= 20000 ? raw : dflt;
+/** 单模板归一化（非空字符串且 ≤20000 用之；若严格等于任何旧版默认模板则自动升级新版；否则回退该周期默认）。 */
+function normalizePrompt(raw: unknown, dflt: string, legacyTemplates?: string[]): string {
+  if (typeof raw !== "string" || raw.trim().length === 0 || raw.length > 20000) return dflt;
+  if (legacyTemplates !== undefined && legacyTemplates.includes(raw)) return dflt;
+  return raw;
 }
 
 /**
@@ -159,7 +257,11 @@ function normalizePrompt(raw: unknown, dflt: string): string {
  * - 旧值为自定义文本 → 三周期均以该文本起始（用户文本不丢，自行按周期微调）。
  */
 function migrateLegacyPrompt(legacy: string): ReportPrompts {
-  if (legacy === LEGACY_PROMPT_TEMPLATE) return { ...DEFAULT_PROMPTS };
+  if (
+    legacy === LEGACY_PROMPT_TEMPLATE ||
+    legacy === LEGACY_MONTHLY_PROMPT_V1 ||
+    legacy === LEGACY_MONTHLY_PROMPT_V2
+  ) return { ...DEFAULT_PROMPTS };
   return { daily: legacy, weekly: legacy, monthly: legacy };
 }
 
@@ -169,7 +271,7 @@ function legacyPromptOf(src: Record<string, unknown>): string | null {
   return typeof v === "string" && v.trim().length > 0 && v.length <= 20000 ? v : null;
 }
 
-/** 校验并归一化报告配置（非法值回退默认；旧单模板自动迁移为三周期表）。 */
+/** 校验并归一化报告配置（非法值回退默认；旧单模板自动迁移为三周期表；未自定义的旧三周期模板平滑升级）。 */
 export function normalizeReportConfig(raw: unknown): ReportConfig {
   const src = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
   const weeklySrc = (typeof src.weekly === "object" && src.weekly !== null ? src.weekly : {}) as Record<string, unknown>;
@@ -183,9 +285,9 @@ export function normalizeReportConfig(raw: unknown): ReportConfig {
   const promptsSrc = (typeof src.prompts === "object" && src.prompts !== null ? src.prompts : null) as Record<string, unknown> | null;
   const prompts: ReportPrompts = promptsSrc !== null
     ? {
-        daily: normalizePrompt(promptsSrc.daily, d.promptTemplate),
-        weekly: normalizePrompt(promptsSrc.weekly, d.promptTemplate),
-        monthly: normalizePrompt(promptsSrc.monthly, d.promptTemplate),
+        daily: normalizePrompt(promptsSrc.daily, d.prompts.daily, [LEGACY_DAILY_PROMPT_V1, LEGACY_DAILY_PROMPT_V2]),
+        weekly: normalizePrompt(promptsSrc.weekly, d.prompts.weekly, [LEGACY_WEEKLY_PROMPT_V1, LEGACY_WEEKLY_PROMPT_V2]),
+        monthly: normalizePrompt(promptsSrc.monthly, d.prompts.monthly, [LEGACY_MONTHLY_PROMPT_V1, LEGACY_MONTHLY_PROMPT_V2]),
       }
     : migrateLegacyPrompt(legacyPromptOf(src) ?? LEGACY_PROMPT_TEMPLATE);
   return {

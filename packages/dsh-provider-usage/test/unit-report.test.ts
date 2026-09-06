@@ -21,6 +21,7 @@ import { tmpdir } from "node:os";
 import { assert } from "./helpers.ts";
 import {
   candidateWindow,
+  previousClosedWindow,
   pendingReports,
   presetLastRunForNewlyEnabled,
   parseHHMM,
@@ -31,6 +32,12 @@ import {
   DEFAULT_MONTHLY_PROMPT,
   DEFAULT_PROMPTS,
   LEGACY_PROMPT_TEMPLATE,
+  LEGACY_DAILY_PROMPT_V1,
+  LEGACY_WEEKLY_PROMPT_V1,
+  LEGACY_MONTHLY_PROMPT_V1,
+  LEGACY_DAILY_PROMPT_V2,
+  LEGACY_WEEKLY_PROMPT_V2,
+  LEGACY_MONTHLY_PROMPT_V2,
   promptFor,
   reportBodyToHtml,
   sanitizeHtml,
@@ -98,14 +105,21 @@ const GEN = (over = {}) => ({
 
 {
   const cfg = CFG();
-  // daily：now 12:00 未过当日 22:00 → 候选=昨日全天
+  // daily：now 12:00 未过当日 22:00 → 最近已到达锚点为昨日 22:00，覆盖前日全天（2026-09-02）
   let due = candidateWindow("daily", cfg, T0);
-  assert.equal(due.key, "2026-09-03", "daily 未过锚点 → 昨日");
-  assert.equal(due.startDay, "2026-09-03", "daily 起于锚点日");
-  assert.equal(due.endDay, "2026-09-03", "daily 止于锚点日（单日窗口）");
-  // daily：now 已过当日 22:00 → 候选=当日
+  assert.equal(due.key, "2026-09-02", "daily 未过锚点 → 前日全天");
+  assert.equal(due.startDay, "2026-09-02", "daily 起于前日");
+  assert.equal(due.endDay, "2026-09-02", "daily 止于前日（单日窗口）");
+  // daily：now 23:00 已过当日 22:00 → 当日锚点已到达，覆盖昨日全天（2026-09-03）
   due = candidateWindow("daily", cfg, T0 + 11 * HOUR);
-  assert.equal(due.key, "2026-09-04", "daily 已过锚点 → 当日");
+  assert.equal(due.key, "2026-09-03", "daily 已过锚点 → 昨日全天");
+  assert.equal(due.startDay, "2026-09-03", "daily 起于昨日");
+  assert.equal(due.endDay, "2026-09-03", "daily 止于昨日");
+  // previousClosedWindow：手动生成专用——无论当前时刻是否过锚点，恒定生成昨天（2026-09-03），消灭凌晨漂移
+  const manualDue = previousClosedWindow("daily", cfg, T0);
+  assert.equal(manualDue.key, "2026-09-03", "手动生成恒为昨日全天");
+  assert.equal(manualDue.startDay, "2026-09-03", "手动生成起于昨日");
+  assert.equal(manualDue.endDay, "2026-09-03", "手动生成止于昨日");
   // weekly：2026-09-04 周五，本周锚点=周一 08-31 09:00（已过）→ 覆盖紧邻前 7 天 08-24..08-30
   due = candidateWindow("weekly", cfg, T0);
   assert.equal(due.key, "2026-08-24", "weekly 候选键=周起点-7（[runDay-7, runDay-1] 闭区间 7 天）");
@@ -126,13 +140,13 @@ const GEN = (over = {}) => ({
   const due = pendingReports(cfg, T0, {});
   assert.deepEqual(due.map((d) => d.period), ["daily", "weekly", "monthly"], "lastRun 空 → 三期全部补生成");
   // lastRun 已记候选键 → 扣期跳过
-  const lastRun = { daily: "2026-09-03", weekly: "2026-08-24", monthly: "2026-08" };
+  const lastRun = { daily: "2026-09-02", weekly: "2026-08-24", monthly: "2026-08" };
   assert.deepEqual(pendingReports(cfg, T0, lastRun), [], "候选键 <= lastRun → 已扣期");
   // lastRun 为更晚窗口 → 该期跳过（日期序单调，防回退重复生成）；未记录期照常补跑
   assert.ok(!pendingReports(cfg, T0, { daily: "2026-09-10" }).some((d) => d.period === "daily"), "lastRun 更晚 → 该期跳过");
-  // 跨过锚点（now 前移到次日）→ daily 新窗口补跑；weekly/monthly 无 lastRun 记录照常补跑
-  const nextDay = pendingReports(CFG(), T0 + 25 * HOUR, { daily: "2026-09-03" });
-  assert.deepEqual(nextDay.map((d) => d.period), ["daily", "weekly", "monthly"], "新锚点候选键 > lastRun → 补跑（未记录期同补）");
+  // 跨过锚点（now 前移到 23:00 跨过 22:00）→ daily 新窗口（2026-09-03）补跑；weekly/monthly 无 lastRun 记录照常补跑
+  const nextRun = pendingReports(CFG(), T0 + 11 * HOUR, { daily: "2026-09-02" });
+  assert.deepEqual(nextRun.map((d) => d.period), ["daily", "weekly", "monthly"], "新锚点候选键 > lastRun → 补跑（未记录期同补）");
   // enabled 关闭不调度
   const off = pendingReports(CFG({ weekly: { enabled: false, time: "09:00", weekStartsOn: 1 } }), T0, {});
   assert.ok(!off.some((d) => d.period === "weekly"), "weekly 关闭 → 不调度");
@@ -325,11 +339,43 @@ const GEN = (over = {}) => ({
   // 自定义旧模板 → 三周期以该文本起始（不丢用户文本）
   const custom = normalizeReportConfig({ promptTemplate: "我的自定义模板 {stats}" });
   assert.deepEqual(custom.prompts, { daily: "我的自定义模板 {stats}", weekly: "我的自定义模板 {stats}", monthly: "我的自定义模板 {stats}" }, "自定义旧模板三周期继承");
-  // 非法 prompts 值回退默认
+  // 存量老用户三周期旧默认提示词（V1：含“今天/本周/本月”）自动无损升级为新版默认（昨日/上周/上月）
+  const legacyV1 = normalizeReportConfig({
+    prompts: {
+      daily: LEGACY_DAILY_PROMPT_V1,
+      weekly: LEGACY_WEEKLY_PROMPT_V1,
+      monthly: LEGACY_MONTHLY_PROMPT_V1,
+    },
+  });
+  assert.equal(legacyV1.prompts.daily, DEFAULT_DAILY_PROMPT, "未自定义的旧版日报模板自动升级");
+  assert.equal(legacyV1.prompts.weekly, DEFAULT_WEEKLY_PROMPT, "未自定义的旧版周报模板自动升级");
+  assert.equal(legacyV1.prompts.monthly, DEFAULT_MONTHLY_PROMPT, "未自定义的旧版月报模板自动升级");
+  // 存量老用户过渡单段提示词（V2：未分块单段）同样自动升级为最新语义块结构
+  const legacyV2 = normalizeReportConfig({
+    prompts: {
+      daily: LEGACY_DAILY_PROMPT_V2,
+      weekly: LEGACY_WEEKLY_PROMPT_V2,
+      monthly: LEGACY_MONTHLY_PROMPT_V2,
+    },
+  });
+  assert.equal(legacyV2.prompts.daily, DEFAULT_DAILY_PROMPT, "V2 单段日报模板自动升级为语义块");
+  assert.equal(legacyV2.prompts.weekly, DEFAULT_WEEKLY_PROMPT, "V2 单段周报模板自动升级为语义块");
+  assert.equal(legacyV2.prompts.monthly, DEFAULT_MONTHLY_PROMPT, "V2 单段月报模板自动升级为语义块");
+  // 若老用户对日报有自定义修改，则保留自定义内容，不被覆写
+  const userCustomPrompts = normalizeReportConfig({
+    prompts: {
+      daily: "用户自定义日报：{stats}",
+      weekly: LEGACY_WEEKLY_PROMPT_V1,
+      monthly: LEGACY_MONTHLY_PROMPT_V1,
+    },
+  });
+  assert.equal(userCustomPrompts.prompts.daily, "用户自定义日报：{stats}", "自定义修改过的模板保留原样");
+  assert.equal(userCustomPrompts.prompts.weekly, DEFAULT_WEEKLY_PROMPT, "同时存在的未自定义周报仍平滑升级");
+  // 非法 prompts 值回退各周期自身默认模板
   const bad = normalizeReportConfig({ prompts: { daily: "", weekly: 42, monthly: "x".repeat(20001) } });
-  assert.equal(bad.prompts.daily, DEFAULT_MONTHLY_PROMPT, "空串回退默认（promptTemplate 默认=月报）");
-  assert.equal(bad.prompts.weekly, DEFAULT_MONTHLY_PROMPT, "非字符串回退默认");
-  assert.equal(bad.prompts.monthly, DEFAULT_MONTHLY_PROMPT, "超长回退默认");
+  assert.equal(bad.prompts.daily, DEFAULT_DAILY_PROMPT, "空串回退该周期默认");
+  assert.equal(bad.prompts.weekly, DEFAULT_WEEKLY_PROMPT, "非字符串回退该周期默认");
+  assert.equal(bad.prompts.monthly, DEFAULT_MONTHLY_PROMPT, "超长回退该周期默认");
   // promptFor 按周期取模板
   assert.equal(promptFor(n, "daily"), "日模板{stats}", "promptFor daily");
   assert.equal(promptFor(n, "weekly"), "周模板{stats}", "promptFor weekly");
