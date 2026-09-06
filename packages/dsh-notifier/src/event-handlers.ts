@@ -159,8 +159,11 @@ export class NotifierEventHandlers implements EventHandlers {
   private eventStreamEnds = new Map<string, { turn: number; kind: string }>();
   private errorMerge = new Map<string, ErrorMergeEntry>();
   private turnNotified = new Set<string>();
+  private deps: EventHandlersDeps;
 
-  constructor(private deps: EventHandlersDeps) {}
+  constructor(deps: EventHandlersDeps) {
+    this.deps = deps;
+  }
 
   handleApprovalRequest = async (req: any, next: () => Promise<any>): Promise<any> => {
     const current = this.deps.getConfig();
