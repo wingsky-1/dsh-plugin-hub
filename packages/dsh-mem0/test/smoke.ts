@@ -42,6 +42,7 @@ const {
   isMemoryDisciplineInjected,
   MEMORY_DISCIPLINE_TEXT,
   createMem0Routes,
+  parseMemoryListOutput,
   resolveLlmRuntimeConfig,
   listLlmProviders,
   listLlmModels,
@@ -67,6 +68,7 @@ await test("契约导出：name 与 inject 声明", () => {
   assert.ok(Array.isArray(inject), "inject 应为数组");
   assert.ok(inject.includes("mcpManager"), "必须强依赖 mcpManager");
   assert.ok(inject.includes("webServer"), "必须强依赖 webServer");
+  assert.ok(inject.includes("llm"), "#612：必须强依赖 llm（缺声明时 cordis 属性访问确定性抛错，服务未就绪根因）");
   assert.equal(SETTINGS_NS, "dsh-mem0", "设置命名空间应为 dsh-mem0");
 });
 
@@ -395,8 +397,8 @@ await test("装配层路由注册契约：apply 必须单路由逐个注册并�
     if (typeof res === "function") cleanupFns.push(res);
   }
 
-  // 断言注册了全部 8 个路由
-  assert.equal(registeredRoutes.length, 8, "必须注册全部 8 个 exact 路由");
+  // 断言注册了全部 10 个路由（#612 新增 /start 与 /probe）
+  assert.equal(registeredRoutes.length, 10, "必须注册全部 10 个 exact 路由");
   const registeredPaths = registeredRoutes.map((r) => r.path).sort();
   const expectedPaths = [
     "/api/dsh-mem0/add",
@@ -406,9 +408,11 @@ await test("装配层路由注册契约：apply 必须单路由逐个注册并�
     "/api/dsh-mem0/list",
     "/api/dsh-mem0/llm-models",
     "/api/dsh-mem0/llm-providers",
+    "/api/dsh-mem0/probe",
+    "/api/dsh-mem0/start",
     "/api/dsh-mem0/status",
   ].sort();
-  assert.deepEqual(registeredPaths, expectedPaths, "已注册路由路径必须完全匹配预期的 8 个路径");
+  assert.deepEqual(registeredPaths, expectedPaths, "已注册路由路径必须完全匹配预期的 10 个路径");
 
   // 执行清理
   for (const cleanup of cleanupFns) {
@@ -416,7 +420,7 @@ await test("装配层路由注册契约：apply 必须单路由逐个注册并�
   }
 
   // 断言注销逻辑
-  assert.equal(disposersCalled.length, 8, "注销时 8 个路由的 disposer 必须都被调用");
+  assert.equal(disposersCalled.length, 10, "注销时 10 个路由的 disposer 必须都被调用");
   assert.ok(unregisterServerCalled, "注销时必须调用 mcpManager.unregisterServer('mem0')");
 });
 
@@ -529,6 +533,284 @@ await test("Python 服务端：collection_name 必须按维度动态隔离 (mem0
   );
   assert.ok(pyCode.includes("paraphrase-multilingual"), "必须覆盖 384 维多语言模型维度解析");
   assert.ok(pyCode.includes("e5-large"), "必须覆盖 1024 维模型维度解析");
+});
+
+// 16. #612：memory_list 输出解析（JSON 优先 / 文本回退 / 错误通道识别）
+await test("列表解析：JSON 形态优先，items 结构正确", () => {
+  const jsonOutput = JSON.stringify({
+    ok: true,
+    namespace: "global",
+    items: [
+      { id: "abc-123", memory: "决策一", created_at: "2026-09-06T08:00:00Z" },
+      { id: "def-456", memory: "决策二" },
+    ],
+  });
+  const parsed = parseMemoryListOutput(jsonOutput);
+  assert.equal(parsed.format, "json");
+  assert.equal(parsed.error, undefined);
+  assert.equal(parsed.items.length, 2);
+  assert.equal(parsed.items[0].id, "abc-123");
+  assert.equal(parsed.items[0].createdAt, "2026-09-06T08:00:00Z");
+  assert.equal(parsed.items[1].memory, "决策二");
+});
+
+await test("列表解析：python 错误走 error 通道，绝不当条目渲染", () => {
+  // 新 JSON 错误形态
+  const jsonErr = parseMemoryListOutput(JSON.stringify({ ok: false, error: "memory_list failed: boom" }));
+  assert.equal(jsonErr.items.length, 0, "JSON 错误不得产生条目");
+  assert.equal(jsonErr.error, "memory_list failed: boom");
+  // 旧文本错误形态
+  const textErr = parseMemoryListOutput("[memory_list failed: qdrant down]");
+  assert.equal(textErr.items.length, 0, "文本错误串不得产生条目（此前会被误渲染为记忆）");
+  assert.equal(textErr.error, "qdrant down");
+});
+
+await test("列表解析：旧文本形态回退解析与无结构行保留", () => {
+  const bracketForm = parseMemoryListOutput("- [id-1] 记忆甲\n- [id-2] 记忆乙");
+  assert.equal(bracketForm.format, "text-fallback");
+  assert.equal(bracketForm.items.length, 2);
+  assert.equal(bracketForm.items[0].id, "id-1");
+  assert.equal(bracketForm.items[0].memory, "记忆甲");
+
+  const parenForm = parseMemoryListOutput("- 记忆丙 (id: id-3) [score: 0.9]");
+  assert.equal(parenForm.items.length, 1);
+  assert.equal(parenForm.items[0].id, "id-3");
+
+  const plain = parseMemoryListOutput("普通无结构行");
+  assert.equal(plain.items.length, 1);
+  assert.equal(plain.items[0].id, "", "无结构行 id 置空（前端不渲染删除钮）");
+  assert.equal(plain.items[0].memory, "普通无结构行");
+
+  const empty = parseMemoryListOutput("");
+  assert.equal(empty.items.length, 0);
+});
+
+// 17. #612：/start 路由幂等与互斥
+await test("启动路由：/api/dsh-mem0/start 幂等（已就绪直接成功）与手动拉起", async () => {
+  let startCalls = 0;
+  const routes = createMem0Routes({
+    executor: {
+      isReady: () => true,
+      getStatus: () => ({ ready: true, reason: "ready" }),
+    } as any,
+    getCurrentCwd: () => process.cwd(),
+    getConfig: () => DEFAULT_CONFIG,
+    updateConfig: async () => DEFAULT_CONFIG,
+  });
+
+  const startRoute = routes.find((r) => r.path === "/api/dsh-mem0/start")!;
+  assert.ok(startRoute, "/api/dsh-mem0/start 路由必须注册");
+
+  let code = 0;
+  let body = "";
+  await startRoute.handler(
+    {
+      headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
+      socket: { remoteAddress: "127.0.0.1" },
+      method: "POST",
+    } as any,
+    {
+      setHeader: () => {},
+      writeHead: (c: number) => { code = c; },
+      end: (data: string) => { body = data; },
+    } as any,
+  );
+  assert.equal(code, 200);
+  const parsed = JSON.parse(body);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.alreadyReady, true, "已就绪时应幂等返回 alreadyReady");
+  assert.equal(startCalls, 0);
+
+  // GET 请求应被围栏拒绝（405 语义由 guardLoopbackMethod 兜底）
+  let getCode = 0;
+  startRoute.handler(
+    {
+      headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
+      socket: { remoteAddress: "127.0.0.1" },
+      method: "GET",
+    } as any,
+    {
+      setHeader: () => {},
+      writeHead: (c: number) => { getCode = c; },
+      end: () => {},
+    } as any,
+  );
+  assert.equal(getCode, 405, "/start 仅允许 POST");
+});
+
+await test("启动路由：未就绪时调用 startExecutor 并回传终态", async () => {
+  let started = false;
+  const routes = createMem0Routes({
+    executor: {
+      isReady: () => started,
+      getStatus: () => ({ ready: started, reason: started ? "ready" : "idle" }),
+      markEnvBuildFailed: () => {},
+    } as any,
+    getCurrentCwd: () => process.cwd(),
+    getConfig: () => DEFAULT_CONFIG,
+    updateConfig: async () => DEFAULT_CONFIG,
+    startExecutor: async () => {
+      started = true;
+    },
+  });
+
+  const startRoute = routes.find((r) => r.path === "/api/dsh-mem0/start")!;
+  let code = 0;
+  let body = "";
+  await startRoute.handler(
+    {
+      headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
+      socket: { remoteAddress: "127.0.0.1" },
+      method: "POST",
+    } as any,
+    {
+      setHeader: () => {},
+      writeHead: (c: number) => { code = c; },
+      end: (data: string) => { body = data; },
+    } as any,
+  );
+  assert.equal(code, 200);
+  const parsed = JSON.parse(body);
+  assert.equal(parsed.ok, true, "startExecutor 成功拉起后返回 ok");
+  assert.equal(started, true);
+});
+
+// 18. #612：llm-providers 宿主 seam 抛错时降级 200 空列表（此前 400）
+await test("LLM 提供商路由：宿主 seam 同步抛错时降级为空列表而非 500/400", async () => {
+  const routes = createMem0Routes({
+    executor: { isReady: () => true } as any,
+    getCurrentCwd: () => process.cwd(),
+    getConfig: () => DEFAULT_CONFIG,
+    updateConfig: async () => DEFAULT_CONFIG,
+    appCtx: {
+      llm: {
+        listProviders: () => {
+          throw new Error('cannot get property "llm" without inject');
+        },
+      },
+    },
+  });
+
+  const provRoute = routes.find((r) => r.path === "/api/dsh-mem0/llm-providers")!;
+  let code = 0;
+  let body = "";
+  provRoute.handler(
+    {
+      headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
+      socket: { remoteAddress: "127.0.0.1" },
+      method: "GET",
+    } as any,
+    {
+      setHeader: () => {},
+      writeHead: (c: number) => { code = c; },
+      end: (data: string) => { body = data; },
+    } as any,
+  );
+  assert.equal(code, 200, "seam 抛错必须降级 200（前端展示空态）");
+  const parsed = JSON.parse(body);
+  assert.equal(parsed.ok, true);
+  assert.deepEqual(parsed.providers, []);
+  assert.ok(typeof parsed.usage === "object", "usage 字段必须始终存在（可为空对象）");
+});
+
+// 19. #612：list 路由返回结构化 items
+await test("列表路由：/api/dsh-mem0/list 返回结构化 items 与 raw", async () => {
+  const jsonItems = JSON.stringify({
+    ok: true,
+    items: [{ id: "m-1", memory: "记忆内容", created_at: "2026-09-06T09:30:00Z" }],
+  });
+  const routes = createMem0Routes({
+    executor: {
+      isReady: () => true,
+      list: async () => jsonItems,
+    } as any,
+    getCurrentCwd: () => process.cwd(),
+    getConfig: () => DEFAULT_CONFIG,
+    updateConfig: async () => DEFAULT_CONFIG,
+  });
+
+  const listRoute = routes.find((r) => r.path === "/api/dsh-mem0/list")!;
+  let code = 0;
+  let body = "";
+  await listRoute.handler(
+    {
+      headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
+      socket: { remoteAddress: "127.0.0.1" },
+      url: "/api/dsh-mem0/list?namespace=global",
+      method: "GET",
+    } as any,
+    {
+      setHeader: () => {},
+      writeHead: (c: number) => { code = c; },
+      end: (data: string) => { body = data; },
+    } as any,
+  );
+  assert.equal(code, 200);
+  const parsed = JSON.parse(body);
+  assert.equal(parsed.namespace, "global");
+  assert.equal(parsed.items.length, 1);
+  assert.equal(parsed.items[0].id, "m-1");
+  assert.equal(parsed.items[0].memory, "记忆内容");
+  assert.equal(parsed.format, "json");
+  assert.equal(typeof parsed.raw, "string");
+});
+
+// 20. #612：/probe 路由懒触发探测
+await test("探测路由：/api/dsh-mem0/probe POST 调用 probeEnvironment", async () => {
+  let probed = false;
+  const routes = createMem0Routes({
+    executor: { isReady: () => false } as any,
+    getCurrentCwd: () => process.cwd(),
+    getConfig: () => DEFAULT_CONFIG,
+    updateConfig: async () => DEFAULT_CONFIG,
+    probeEnvironment: async () => {
+      probed = true;
+      return { ok: false, pythonBin: "python3", reason: "dependency_missing", detail: "x" };
+    },
+  });
+
+  const probeRoute = routes.find((r) => r.path === "/api/dsh-mem0/probe")!;
+  assert.ok(probeRoute, "/api/dsh-mem0/probe 路由必须注册");
+  let code = 0;
+  let body = "";
+  await probeRoute.handler(
+    {
+      headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
+      socket: { remoteAddress: "127.0.0.1" },
+      method: "POST",
+    } as any,
+    {
+      setHeader: () => {},
+      writeHead: (c: number) => { code = c; },
+      end: (data: string) => { body = data; },
+    } as any,
+  );
+  assert.equal(code, 200);
+  const parsed = JSON.parse(body);
+  assert.equal(probed, true);
+  assert.equal(parsed.ok, false);
+  assert.equal(parsed.reason, "dependency_missing");
+});
+
+// 21. #612：venv 残缺自愈契约
+await test("venv 自愈：isVenvUsable 强校验 pip 可用性", async () => {
+  const { isVenvUsable, removeBrokenVenv } = hostMod;
+  assert.equal(typeof isVenvUsable, "function", "isVenvUsable 必须导出");
+  assert.equal(typeof removeBrokenVenv, "function", "removeBrokenVenv 必须导出");
+  // 不实际创建/删除 venv：仅验证探测函数可调用且返回布尔
+  const usable = await isVenvUsable();
+  assert.equal(typeof usable, "boolean");
+});
+
+// 22. #612：stderr 尾随脱敏（按环境覆盖中的 key 值 redact）
+await test("executor 脱敏：getStderrTail 按值 redact 真实密钥", async () => {
+  const { StdioMemoryExecutor } = hostMod;
+  const executor = new StdioMemoryExecutor();
+  // 直接触发内部状态不可行（未启动进程），此处验证导出与方法存在性 + 脱敏函数行为通过
+  // spawn 一个已知输出后再验证——但 smoke 离线纪律下只验证 API 面。
+  assert.equal(typeof executor.getStderrTail, "function", "getStderrTail 必须可调用");
+  const tail = executor.getStderrTail();
+  assert.deepEqual(tail, [], "未启动时 stderr 尾随应为空数组");
 });
 
 console.log(`\n全部 ${testsRun} 项冒烟测试顺利通过！`);

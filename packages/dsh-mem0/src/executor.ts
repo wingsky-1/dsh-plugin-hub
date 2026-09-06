@@ -18,6 +18,36 @@ import { probePythonEnvironment } from "./venv-manager.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+/** #612：指数退避自动重试间隔（毫秒），最多重试 3 次。 */
+const RETRY_DELAYS_MS = [5_000, 15_000, 60_000] as const;
+
+/** #612：stderr 环形日志缓冲行数（诊断抽屉尾随展示）。 */
+const STDERR_TAIL_LINES = 200;
+
+/**
+ * #612：stderr 行脱敏——按值匹配环境覆盖中的敏感字段（真实 key 值），
+ * 替换为掩码。LAN 代理会把 Host/Origin 重写为回环（围栏对 LAN 放行），
+ * 日志下发前端前必须脱敏，防止 traceback 携带真实凭据。
+ */
+function redactSensitiveLines(lines: string[], envOverrides?: Record<string, string>): string[] {
+  const secrets = new Set<string>();
+  if (envOverrides) {
+    for (const [key, value] of Object.entries(envOverrides)) {
+      if (typeof value === "string" && value.length >= 8 && /KEY|TOKEN|SECRET|PASSWORD/i.test(key)) {
+        secrets.add(value);
+      }
+    }
+  }
+  if (secrets.size === 0) return lines;
+  return lines.map((line) => {
+    let out = line;
+    for (const secret of secrets) {
+      out = out.replaceAll(secret, "***redacted***");
+    }
+    return out;
+  });
+}
+
 interface PendingRequest {
   resolve: (value: any) => void;
   reject: (reason: any) => void;
@@ -30,6 +60,7 @@ export type OfflineReason =
   | "python_not_found"
   | "dependency_missing"
   | "process_exited"
+  | "env_build_failed"
   | "idle";
 
 export interface ExecutorStatus {
@@ -48,6 +79,10 @@ export class StdioMemoryExecutor implements MemoryExecutor {
   private scriptPath: string;
   private pythonBin: string;
   private lastEnvOverrides?: Record<string, string>;
+  private retryPending = false;
+  private retryAttempt = 0;
+  private retryTimer?: NodeJS.Timeout;
+  private stderrTailLines: string[] = [];
 
   constructor(options?: { scriptPath?: string; pythonBin?: string }) {
     this.scriptPath = options?.scriptPath ?? resolve(__dirname, "../server/mem0_server.py");
@@ -73,12 +108,34 @@ export class StdioMemoryExecutor implements MemoryExecutor {
     }
   }
 
+  /**
+   * #612：环境构建（buildEnvOverrides）失败时把失败状态落到 executor，
+   * 取代此前"catch(warn) 后 reason 恒为初值 idle"的静默固化——
+   * 前端 status 接口因此能看到明确失败原因并展示重试入口。
+   */
+  public markEnvBuildFailed(detail: string): void {
+    if (this.isReady()) return;
+    this.ready = false;
+    this.reason = "env_build_failed";
+    this.detail = detail;
+  }
+
+  /**
+   * #612：服务 stderr 日志尾随（环形最近 200 行）。
+   * 按值脱敏环境覆盖中的真实凭据后再返回（LAN 下发安全）。
+   */
+  public getStderrTail(): string[] {
+    return redactSensitiveLines([...this.stderrTailLines], this.lastEnvOverrides);
+  }
+
   public async start(envOverrides?: Record<string, string>): Promise<void> {
     if (this.isReady()) return;
 
     this.lastEnvOverrides = envOverrides;
     this.reason = "starting";
     this.detail = undefined;
+    // 一次显式 start（无论手动或自动）都重置退避计数：这是新一轮启动尝试
+    this.retryAttempt = 0;
 
     // 1. 预先探针检测环境可用性
     const probe = await probePythonEnvironment(this.pythonBin);
@@ -128,14 +185,20 @@ export class StdioMemoryExecutor implements MemoryExecutor {
       return;
     }
 
-    // 监听 stderr 识别缺失模块等关键错误
+    // 监听 stderr 识别缺失模块等关键错误；#612：环形行缓冲供诊断抽屉尾随展示
     if (child.stderr) {
-      let stderrBuffer = "";
+      let stderrLineBuf = "";
       child.stderr.on("data", (chunk: Buffer) => {
         const text = chunk.toString("utf8");
-        stderrBuffer += text;
-        if (stderrBuffer.length > 2000) {
-          stderrBuffer = stderrBuffer.slice(-2000);
+        stderrLineBuf += text;
+        const lines = stderrLineBuf.split("\n");
+        stderrLineBuf = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          this.stderrTailLines.push(line);
+          if (this.stderrTailLines.length > STDERR_TAIL_LINES) {
+            this.stderrTailLines.shift();
+          }
         }
         if (text.includes("ModuleNotFoundError") || text.includes("No module named")) {
           this.reason = "dependency_missing";
@@ -189,6 +252,8 @@ export class StdioMemoryExecutor implements MemoryExecutor {
   public stop(): void {
     this.ready = false;
     this.reason = "idle";
+    // #612：停止时取消任何挂起的自动重试（stop 语义 = 显式终止）
+    this.cancelAutoRetry();
     if (this.proc && !this.proc.killed) {
       try {
         this.proc.kill("SIGTERM");
@@ -207,6 +272,36 @@ export class StdioMemoryExecutor implements MemoryExecutor {
   public async restart(envOverrides?: Record<string, string>): Promise<void> {
     this.stop();
     await this.start(envOverrides ?? this.lastEnvOverrides);
+  }
+
+  /**
+   * #612：启动失败后的指数退避自动重试（5s/15s/60s，最多 3 次）。
+   * - 与 stop/restart 互斥：任何显式 stop（含 restart 前置 stop）都会取消挂起重试；
+   * - 与手动 /start 并发安全：start 入口 isReady 幂等 + retryPending 状态位防重入。
+   */
+  public scheduleAutoRetry(): void {
+    if (this.isReady() || this.retryPending || this.retryAttempt >= RETRY_DELAYS_MS.length) return;
+    const delay = RETRY_DELAYS_MS[this.retryAttempt];
+    this.retryAttempt += 1;
+    this.retryPending = true;
+    this.retryTimer = setTimeout(() => {
+      this.retryPending = false;
+      this.retryTimer = undefined;
+      if (this.isReady()) return;
+      void this.start(this.lastEnvOverrides).catch(() => {
+        // start 内部已把失败落到 reason/detail；继续按剩余次数递归调度
+        this.scheduleAutoRetry();
+      });
+    }, delay);
+  }
+
+  private cancelAutoRetry(): void {
+    if (this.retryTimer !== undefined) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = undefined;
+    }
+    this.retryPending = false;
+    this.retryAttempt = 0;
   }
 
   public async search(query: string, userId?: string, limit?: number): Promise<string> {
