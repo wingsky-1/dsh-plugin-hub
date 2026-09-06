@@ -60,10 +60,38 @@ function diffSettingsPayload(settings: Record<string, any>, baseLine: Record<str
     if (!Object.prototype.hasOwnProperty.call(settings, key)) continue;
     var cur = settings[key];
     var base = baseLine[key];
-    var same = JSON.stringify(cur) === JSON.stringify(base);
-    if (!same) payload[key] = cur;
+    // #614：channels 整组提交前对实例做空串可选字段剥除——存量配置（0.2.2 保存
+    // 失败前/手改 yaml/旧版本）可能残留 token:"" 等空串形态，UI 编辑任一字段都会
+    // 触发整组提交把残留一起带走 → 400 死锁。剥除与读面 normalize（空串按未配置
+    // 剥除）同语义，纯读不改草稿，用户后续输入仍经 assignChannelFields 正常写。
+    var value = key === "channels" && Array.isArray(cur) ? cur.map(stripChannelEmpties) : cur;
+    var same = JSON.stringify(value) === JSON.stringify(base);
+    if (!same) payload[key] = value;
   }
   return payload;
+}
+
+/**
+ * 单个频道实例的空串可选字段剥除（issue #614）：对实例浅拷贝后删除值为空串的
+ * 可选字段。必填字段（id/type/url/baseUrl/deviceKey/enabled/auth）不在清单内——
+ * 它们缺失/为空由服务端写面校验 400（语义正确：必填不允许空）。只处理 string
+ * 值，number/boolean/对象字段不触碰；非对象输入原样返回（防御数组/null）。
+ * 模块级纯函数（apply 挂载 + vm 直测），对齐 diffSettingsPayload 先例。
+ */
+/** 空串即「未配置」的可选 string 字段清单（bark/webhook 实例合集，#614）。
+ *  必填键（id/type/url/baseUrl/deviceKey/enabled/auth）不在清单内——为空由服务端
+ *  写面校验 400 拦截（必填不允许空，语义正确）；非 string 值（number/boolean/
+ *  levels 对象）不触碰。 */
+const CHANNEL_OPTIONAL_STRING_KEYS: readonly string[] = ["name", "token", "username", "password", "headerName", "headerValue", "template", "sound", "group", "icon", "url"];
+
+function stripChannelEmpties(ch: unknown): unknown {
+  if (typeof ch !== "object" || ch === null || Array.isArray(ch)) return ch;
+  var out = Object.assign({}, ch as Record<string, unknown>);
+  for (var i = 0; i < CHANNEL_OPTIONAL_STRING_KEYS.length; i++) {
+    var key = CHANNEL_OPTIONAL_STRING_KEYS[i];
+    if (typeof out[key] === "string" && (out[key] as string).length === 0) delete out[key];
+  }
+  return out;
 }
 
 /**
@@ -95,6 +123,26 @@ function domainPayload(diff: Record<string, any>, entry: string): Record<string,
     return { channels: diff.channels };
   }
   return {};
+}
+
+/**
+ * 频道实例字段合并（issue #614）：part 中**空串/undefined 值从 target 删除该键**，
+ * 其余浅覆盖。空串在服务端写面校验中是「非法值」而非「未配置」——token/username/
+ * password/headerValue 要求非空（length > 0）、headerName 过头名正则、name 要求
+ * 非空，读面 normalize 却把空串剥除（等价未配置）。若把清空输入回写成 "" 提交，
+ * 实例会带着空串残留被整组 400（「填了又删空」死锁，#614 必现根因之一）——空串
+ * 删键后提交面与读面同语义（键不存在 = 未配置）。单点收敛在 chPatch（bark/webhook
+ * 实例所有字段写回共用此函数）。模块级纯函数（apply 挂载 + vm 直测），
+ * 对齐 diffSettingsPayload 先例。
+ */
+function assignChannelFields(target: Record<string, any>, part: Record<string, any>): Record<string, any> {
+  var out = Object.assign({}, target);
+  Object.keys(part).forEach(function (key: string) {
+    var value = part[key];
+    if (value === "" || value === undefined) delete out[key];
+    else out[key] = value;
+  });
+  return out;
 }
 
 /**
@@ -1022,11 +1070,12 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
 
     // ---- M2 频道编辑（settings.channels 不可变操作；deviceKey 掩码语义见服务端）----
 
-    /** 更新第 idx 个频道实例（浅合并 patch；函数式基于最新 channels，防后写覆盖）。 */
+    /** 更新第 idx 个频道实例（字段经 assignChannelFields 合并——空串/undefined
+     *  删键，#614；函数式基于最新 channels，防后写覆盖）。 */
     function chPatch(idx: number, part: Record<string, any>) {
       patch(function (prev: any) {
         var list = (prev.channels || []).slice();
-        list[idx] = Object.assign({}, list[idx], part);
+        list[idx] = assignChannelFields(list[idx] || {}, part);
         return Object.assign({}, prev, { channels: list });
       });
     }
@@ -1057,8 +1106,12 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
     }
 
     /** 新增频道实例（#508 M2：kind = "bark" | "webhook"）——自动分配未占用的 id
-     *  （bark-1… / webhook-1…），默认禁用（出站授权显式授予；webhook 凭据/模板字段
-     *  空白起步，超时缺省 10s 由服务端 normalize 兜底）。 */
+     *  （bark-1… / webhook-1…），默认禁用（出站授权显式授予）。#614：可选认证/
+     *  凭据/模板字段一律**不预置键**——空串形态会被服务端写面校验整组 400（token/
+     *  username/password/headerValue 要求非空、headerName 过头名正则），未填写 =
+     *  键不存在；输入清空经 assignChannelFields 同步删键。url/baseUrl 为必填占位，
+     *  未填保存由服务端 400 拦（url 非法即整组拒绝，语义正确）。超时缺省 10s 由
+     *  服务端 normalize 兜底。 */
     function chAdd(kind: string) {
       patch(function (prev: any) {
         var list = prev.channels || [];
@@ -1073,12 +1126,6 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
               type: "webhook",
               url: "",
               auth: "none",
-              token: "",
-              username: "",
-              password: "",
-              headerName: "",
-              headerValue: "",
-              template: "",
               timeoutSec: 10,
               enabled: false,
             }
@@ -1087,7 +1134,6 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
               name: t("chNewBarkName") + " " + seq,
               type: "bark",
               baseUrl: "",
-              deviceKey: "",
               enabled: false,
             };
         return Object.assign({}, prev, { channels: list.concat([base]) });
@@ -2097,11 +2143,14 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
 export function apply(ctx: any) {
     // 测试直测挂载面（#470 复核 P1-2 / #405）：diffSettingsPayload 与
     // createSaveGuard 是模块级纯函数，经 apply 暴露给 smoke 测试引用——
-    // 保证「测试即产品实现」而非手写近似。
+    // 保证「测试即产品实现」而非手写近似。#614 新增 assignChannelFields /
+    // stripChannelEmpties（频道实例字段合并与空串剥除）。
     (apply as any).diffSettingsPayload = diffSettingsPayload;
     (apply as any).createSaveGuard = createSaveGuard;
     (apply as any).domainPayload = domainPayload;
     (apply as any).rebaseSettings = rebaseSettings;
+    (apply as any).assignChannelFields = assignChannelFields;
+    (apply as any).stripChannelEmpties = stripChannelEmpties;
     try {
       ensureStyle({ id: STYLE_ID, cssText: STYLE, version: CSS_VERSION });
 

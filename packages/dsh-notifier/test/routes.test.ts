@@ -582,6 +582,19 @@ try {
     await configRoute.handler(bodyReq({ patch: { channels: [{ id: "webhook-new", type: "webhook", url: "https://ntfy.sh/dsh-y", enabled: false, token: "********" }] } }), putW3.res);
     assert.equal(putW3.rec.status, 400, "新 webhook 实例带掩码 400 拒绝");
     assert.ok(JSON.parse(putW3.rec.text).error.hint.includes("掩码"), "400 hint 指引真实 token");
+
+    // #614：客户端修复后「空白起步」形态回归——chAdd 不预置可选键，用户填 url/token
+    // 后提交（无任何空串键）→ 200；此前该形态必 400（保存失败: channels）
+    const putW4 = makeRes();
+    await configRoute.handler(bodyReq({ patch: { channels: [{ id: "webhook-2", type: "webhook", url: "https://ntfy.sh/dsh-z", enabled: false, auth: "bearer", token: WH_SECRET, preset: "ntfy", timeoutSec: 10 }] } }), putW4.res);
+    assert.equal(putW4.rec.status, 200, "#614：无空串键形态（客户端 strip 产物）PUT 成功");
+
+    // #614：存量「空串残留」payload 仍 400（写面契约锁定——空串 ≠ 未配置，
+    // 语义由客户端 assignChannelFields/stripChannelEmpties 剥除承接，服务端不放宽）
+    const putW5 = makeRes();
+    await configRoute.handler(bodyReq({ patch: { channels: [{ id: "webhook-3", type: "webhook", url: "https://ntfy.sh/dsh-b", enabled: false, auth: "bearer", token: "tk614", username: "", password: "", headerName: "", headerValue: "" }] } }), putW5.res);
+    assert.equal(putW5.rec.status, 400, "#614：空串认证字段仍整组 400（写面口径不变）");
+    assert.equal(JSON.parse(putW5.rec.text).error.error, "配置校验失败: channels", "#614：报错键仍为 channels");
   }
 
   // ===== M2：/test 收敛 service 管线 + /status + /kinds（issue #366）=====
