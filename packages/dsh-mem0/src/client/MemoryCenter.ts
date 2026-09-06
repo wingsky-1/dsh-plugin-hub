@@ -87,16 +87,25 @@ export function MemoryCenter() {
   const [isSavingConfig, setIsSavingConfig] = useState(false);
   const [configMessage, setConfigMessage] = useState("");
   const [copiedCmd, setCopiedCmd] = useState(false);
+  const [apiError, setApiError] = useState(null as string | null);
 
   const fetchStatus = useCallback(async () => {
     try {
       const res = await fetch("/api/dsh-mem0/status");
-      if (res.ok) {
-        const data = (await res.json()) as StatusData;
-        setStatus(data);
+      if (!res.ok) {
+        setApiError(`HTTP ${res.status}`);
+        return;
       }
-    } catch {
-      // ignore
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        setApiError("Invalid response format");
+        return;
+      }
+      const data = (await res.json()) as StatusData;
+      setApiError(null);
+      setStatus(data);
+    } catch (err: unknown) {
+      setApiError(err instanceof Error ? err.message : "Network Error");
     }
   }, []);
 
@@ -270,10 +279,34 @@ export function MemoryCenter() {
     ),
   );
 
-  // Diagnostic Banner (自愈引导)
+  // Diagnostic Banner (自愈与异常诊断引导)
   let diagBanner = null;
-  const reason = status.status?.reason;
-  if (!status.ready && reason) {
+  if (apiError) {
+    // 1. Transport 层故障：明确显示无法连接后端路由服务，仅提供“重试连接”
+    diagBanner = React.createElement(
+      "div",
+      { className: "dsh-mem0-diag-banner error", style: { display: "flex", alignItems: "center", width: "100%" } },
+      React.createElement("span", null, "❌ "),
+      React.createElement("span", null, msg("diagHttpError").replace("{status}", apiError)),
+      React.createElement(
+        "button",
+        {
+          className: "dsh-mem0-btn small",
+          style: { marginLeft: "auto" },
+          onClick: () => {
+            void fetchStatus();
+            void fetchConfig();
+            void fetchList(scope);
+          },
+        },
+        `🔄 ${msg("retryBtn")}`,
+      ),
+    );
+  } else if (!status.ready) {
+    // 2. Runtime 层状态
+    const reason = status.status?.reason;
+    const detail = status.status?.detail;
+
     if (reason === "python_not_found") {
       diagBanner = React.createElement(
         "div",
@@ -305,6 +338,13 @@ export function MemoryCenter() {
             copiedCmd ? msg("copied") : msg("copyCmd"),
           ),
         ),
+        detail
+          ? React.createElement(
+              "div",
+              { className: "dsh-mem0-diag-detail" },
+              `${msg("diagDetail")} ${detail}`,
+            )
+          : null,
         autoInstallMsg
           ? React.createElement(
               "div",
@@ -312,6 +352,53 @@ export function MemoryCenter() {
               autoInstallMsg,
             )
           : null,
+      );
+    } else if (reason === "process_exited") {
+      diagBanner = React.createElement(
+        "div",
+        { className: "dsh-mem0-diag-banner error", style: { flexDirection: "column", alignItems: "flex-start" } },
+        React.createElement(
+          "div",
+          { style: { display: "flex", alignItems: "center", gap: "8px", width: "100%" } },
+          React.createElement("span", null, "⚠️ "),
+          React.createElement("span", null, msg("diagProcessExited")),
+          React.createElement(
+            "button",
+            {
+              className: "dsh-mem0-btn small",
+              style: { marginLeft: "auto" },
+              onClick: () => {
+                void fetchStatus();
+              },
+            },
+            `🔄 ${msg("retryBtn")}`,
+          ),
+        ),
+        detail
+          ? React.createElement(
+              "div",
+              { className: "dsh-mem0-diag-detail" },
+              `${msg("diagDetail")} ${detail}`,
+            )
+          : null,
+      );
+    } else if (reason === "starting") {
+      diagBanner = React.createElement(
+        "div",
+        { className: "dsh-mem0-diag-banner info" },
+        React.createElement("span", null, "⏳ "),
+        React.createElement("span", null, msg("diagStarting")),
+      );
+    } else if (detail) {
+      diagBanner = React.createElement(
+        "div",
+        { className: "dsh-mem0-diag-banner warning", style: { flexDirection: "column", alignItems: "flex-start" } },
+        React.createElement("span", null, `⚠️ ${msg("statusOffline")}`),
+        React.createElement(
+          "div",
+          { className: "dsh-mem0-diag-detail" },
+          `${msg("diagDetail")} ${detail}`,
+        ),
       );
     }
   }

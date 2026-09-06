@@ -40,12 +40,40 @@ export interface PythonProbeResult {
  * 探测指定的 Python 解释器或候选路径是否满足运行时要求。
  */
 export async function probePythonEnvironment(preferredBin?: string): Promise<PythonProbeResult> {
-  const candidates: string[] = [];
-
   const trimmedPreferred = preferredBin?.trim();
-  if (trimmedPreferred && trimmedPreferred !== "auto") {
-    candidates.push(trimmedPreferred);
+  const isCustomUserBin = Boolean(trimmedPreferred && trimmedPreferred !== "auto" && trimmedPreferred !== "python3");
+
+  // 1. 若用户显式配置了自定义 Python 路径，仅严格探测该路径，不隐式降级（显式意图优于隐式推断）
+  if (isCustomUserBin && trimmedPreferred) {
+    try {
+      await execFileAsync(trimmedPreferred, ["--version"]);
+    } catch (err: any) {
+      return {
+        ok: false,
+        pythonBin: trimmedPreferred,
+        reason: "python_not_found",
+        detail: `Custom python binary '${trimmedPreferred}' not found: ${err?.message || String(err)}`,
+      };
+    }
+    try {
+      await execFileAsync(trimmedPreferred, ["-c", "import mem0, mcp"]);
+      return {
+        ok: true,
+        pythonBin: trimmedPreferred,
+        reason: "ready",
+      };
+    } catch (err: any) {
+      return {
+        ok: false,
+        pythonBin: trimmedPreferred,
+        reason: "dependency_missing",
+        detail: err?.stderr || err?.message || "Required packages (mem0ai, mcp) are missing in custom python environment.",
+      };
+    }
   }
+
+  // 2. 缺省或 auto 模式：按优先级候选探测（首选就绪环境）
+  const candidates: string[] = [];
   if (existsSync(VENV_PYTHON)) {
     candidates.push(VENV_PYTHON);
   }
@@ -53,12 +81,14 @@ export async function probePythonEnvironment(preferredBin?: string): Promise<Pyt
   candidates.push("python");
 
   let foundPython = false;
+  let firstValidPython = "";
   let lastDetail = "";
 
   for (const bin of candidates) {
     try {
       // 1. 测试 python 命令本身是否存在
       await execFileAsync(bin, ["--version"]);
+      if (!firstValidPython) firstValidPython = bin;
       foundPython = true;
 
       // 2. 测试关键依赖是否已装
@@ -74,6 +104,7 @@ export async function probePythonEnvironment(preferredBin?: string): Promise<Pyt
       }
       // python 存在但 import 失败
       foundPython = true;
+      if (!firstValidPython) firstValidPython = bin;
       lastDetail = err?.stderr || err?.message || String(err);
     }
   }
@@ -81,7 +112,7 @@ export async function probePythonEnvironment(preferredBin?: string): Promise<Pyt
   if (!foundPython) {
     return {
       ok: false,
-      pythonBin: preferredBin || "python3",
+      pythonBin: "python3",
       reason: "python_not_found",
       detail: "No python executable found in system or ~/.dsh/mem0/venv",
     };
@@ -89,7 +120,7 @@ export async function probePythonEnvironment(preferredBin?: string): Promise<Pyt
 
   return {
     ok: false,
-    pythonBin: candidates[0] || "python3",
+    pythonBin: firstValidPython || "python3",
     reason: "dependency_missing",
     detail: lastDetail || "Required packages (mem0ai, mcp) are missing.",
   };

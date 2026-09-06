@@ -67,6 +67,27 @@
   color: var(--dsw-alias-warning-text, #92400e);
 }
 
+.dsh-mem0-diag-banner.error {
+  border: 1px solid var(--dsw-alias-error-border, rgba(239, 68, 68, 0.4));
+  background: var(--dsw-alias-error-bg, rgba(239, 68, 68, 0.08));
+  color: var(--dsw-alias-error, #ef4444);
+}
+
+.dsh-mem0-diag-banner.info {
+  border: 1px solid var(--dsw-alias-brand-border, rgba(37, 99, 235, 0.3));
+  background: var(--dsw-alias-brand-bg, rgba(37, 99, 235, 0.08));
+  color: var(--dsw-alias-brand, #2563eb);
+}
+
+.dsh-mem0-diag-detail {
+  font-family: monospace;
+  font-size: 11px;
+  margin-top: 4px;
+  word-break: break-all;
+  white-space: pre-wrap;
+  opacity: 0.85;
+}
+
 .dsh-mem0-code {
   padding: 2px 6px;
   border-radius: 4px;
