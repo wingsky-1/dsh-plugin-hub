@@ -64,6 +64,11 @@ export const zh = {
   // 自愈诊断
   diagPythonNotFound: "未检测到 Python 可执行程序，长期记忆已安全降级。请在宿主环境安装 Python 3.10+。",
   diagDepMissing: "检测到缺少 Python 依赖库，推荐点击下方按钮自动一键安装修复：",
+  diagProcessExited: "记忆引擎 Python 进程异常退出，服务当前离线。",
+  diagStarting: "记忆引擎正在启动与握手初始化，请稍候…",
+  diagHttpError: "无法连接记忆中心后端接口 ({status})，请检查服务状态。",
+  diagDetail: "错误详情：",
+  retryBtn: "重试连接",
   autoInstallBtn: "⚡ 自动安装依赖",
   autoInstallingBtn: "正在自动下载与配置环境…",
   autoInstallDone: "依赖环境已就绪，正在拉起记忆服务！",
@@ -142,6 +147,11 @@ export const en: Record<Mem0LocaleKey, string> = {
   // Self-healing Diagnostics
   diagPythonNotFound: "Python executable not detected. Memory is gracefully degraded. Please install Python 3.10+.",
   diagDepMissing: "Python dependencies missing. Click below to automatically install and resolve:",
+  diagProcessExited: "Memory engine Python process exited unexpectedly. Service is currently offline.",
+  diagStarting: "Memory engine is starting and initializing handshake, please wait...",
+  diagHttpError: "Cannot connect to memory backend endpoint ({status}). Please check service status.",
+  diagDetail: "Error Details:",
+  retryBtn: "Retry Connection",
   autoInstallBtn: "⚡ Auto Install Dependencies",
   autoInstallingBtn: "Downloading & Configuring Environment...",
   autoInstallDone: "Environment resolved! Starting memory service...",

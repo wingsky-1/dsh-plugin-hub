@@ -174,8 +174,9 @@ export function apply(ctx: Context, initialConfig?: Partial<Mem0Config>): void {
   }
 
   // 3. 注册 HTTP 路由（/api/dsh-mem0/*）
-  const webServer = ctx.get("webServer") as { register: (routes: WebRoute | WebRoute[]) => void } | undefined;
-  if (webServer && typeof webServer.register === "function") {
+  ctx.effect(() => {
+    const webServer = ctx.get("webServer") as { register: (route: WebRoute) => () => void } | undefined;
+    if (!webServer || typeof webServer.register !== "function") return () => {};
     const routes = createMem0Routes({
       executor,
       getCurrentCwd: () => latestCwd,
@@ -204,8 +205,17 @@ export function apply(ctx: Context, initialConfig?: Partial<Mem0Config>): void {
         return res;
       },
     });
-    webServer.register(routes);
-  }
+    const routeDisposers = routes.map((route) => webServer.register(route));
+    return () => {
+      for (const dispose of routeDisposers) {
+        try {
+          dispose();
+        } catch {
+          // ignore
+        }
+      }
+    };
+  }, "dsh-mem0: routes");
 
   // 4. 注册提示词纪律钩子
   const unregisterPrompt = registerMemoryPromptHook(ctx);
@@ -215,11 +225,16 @@ export function apply(ctx: Context, initialConfig?: Partial<Mem0Config>): void {
     ctx.logger?.warn?.(`[dsh-mem0] stdio 运行时拉起异常: ${err instanceof Error ? err.message : String(err)}`);
   });
 
-  // 6. 生命周期注销：kill 子进程
+  // 6. 生命周期注销：kill 子进程 + unregisterServer
   ctx.effect(() => {
     return () => {
-      unregisterPrompt();
+      if (typeof unregisterPrompt === "function") {
+        unregisterPrompt();
+      }
       executor.stop();
+      if (mcpManager && typeof mcpManager.unregisterServer === "function") {
+        void mcpManager.unregisterServer("mem0").catch(() => {});
+      }
     };
   }, "dsh-mem0: dispose");
 }
