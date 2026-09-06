@@ -621,10 +621,10 @@ function rmStatSafe(p) {
   }
 }
 
-// ---- #614：reconcile/refreshFromDisk 不得拆毁中间层项目单元 ----
+// ---- #616：reconcile/refreshFromDisk 不得拆毁中间层项目单元 ----
 
 {
-  console.log("#614 回归：reconcile/start(项目级)/refreshFromDisk 不拆毁中间层项目单元");
+  console.log("#616 回归：reconcile/start(项目级)/refreshFromDisk 不拆毁中间层项目单元");
   const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mgr2x-"));
   try {
     const { manager, store } = makeManager(dir);
@@ -654,11 +654,14 @@ function rmStatSafe(p) {
     });
     const fakeMw = {
       units: new Map([[projRoot, mkUnit(projRoot)]]),
-      projectUnitFor: async (root) => fakeMw.units.get(root) ?? (() => {
-        const unit = mkUnit(root);
-        fakeMw.units.set(root, unit);
-        return unit;
-      })(),
+      projectUnitFor: async (root) => {
+        calls614.push(["projectUnitFor", root]);
+        return fakeMw.units.get(root) ?? (() => {
+          const unit = mkUnit(root);
+          fakeMw.units.set(root, unit);
+          return unit;
+        })();
+      },
       ensureConnected: async (root, name, opts) => {
         calls614.push(["ensureConnected", root, name, opts]);
         const unit = fakeMw.units.get(root);
@@ -677,7 +680,7 @@ function rmStatSafe(p) {
     store.upsert(normalizeServer(quietServer("g1")));
     manager.reconcileServers();
     await pollUntil("all 模式全局 g1 经池接管连接", () => fakeMw.units.get("@global")?.connections.has("g1") === true);
-    assert.equal(teardownRoots.length, 0, "reconcile 零拆毁（#614 回归红线）");
+    assert.equal(teardownRoots.length, 0, "reconcile 零拆毁（#616 回归红线）");
     assert.equal(fakeMw.units.get(projRoot).connections.get("p1")?.status, "connected", "项目级 p1 连接保持");
     assert.equal(fakeMw.units.get(projRoot).connections.get("p2")?.status, "connected", "项目级 p2 连接保持");
 
@@ -697,6 +700,23 @@ function rmStatSafe(p) {
     await pollUntil("start(项目级) 幂等触达完成", () => calls614.some((c) => c[0] === "ensureConnected" && c[1] === projRoot && c[2] === "p1"));
     assert.equal(teardownRoots.length, 0, "start(项目级) 零拆毁");
     assert.ok(calls614.every((c) => c[0] !== "ensureConnected" || c[3]?.force !== true), "幂等触达不带 force（connected 短路语义）");
+
+    // start(项目级) 配置漂移：entry.server 与 store 当前配置不一致 → force 单台
+    // 重建（保留手工编辑 mcp.json 热生效语义，评审 P1-2 补测）。
+    calls614.length = 0;
+    projStore.data.servers[0] = normalizeServer(quietServer("p1", { command: "dsh-noop-cmd-v2" }));
+    manager.start("p1", "project");
+    await pollUntil("配置漂移 force 重建完成", () => calls614.some((c) => c[0] === "ensureConnected" && c[2] === "p1" && c[3]?.force === true));
+    assert.equal(teardownRoots.length, 0, "配置漂移 force 重建仍零拆毁（单台重建不殃及单元）");
+
+    // start(项目级) userDisabled 命中：不触发 ensureConnected（浮窗断开语义）。
+    calls614.length = 0;
+    fakeMw.units.get(projRoot).userDisabled.add("p2");
+    manager.start("p2", "project");
+    await pollUntil("projectUnitFor 触达完成", () => calls614.some((c) => c[0] === "projectUnitFor" && c[1] === projRoot));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.ok(!calls614.some((c) => c[0] === "ensureConnected" && c[2] === "p2"), "userDisabled 命中不连接");
+    fakeMw.units.get(projRoot).userDisabled.delete("p2");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -592,7 +592,7 @@ export class McpManager {
    * 变更点驱动（#111）：读取路径不再调用本方法（GET /servers 纯读）；本方法
    * 仅由 fs.watch 变更点与用户操作 API 调用。
    *
-   * #614 修复：两次 reloadIfChanged 均为 false（配置未变）时直接早退、不再
+   * #616 修复：两次 reloadIfChanged 均为 false（配置未变）时直接早退、不再
    * reconcile——全局 watcher 监听的是整个 `~/.dsh` 目录，插件自身的
    * user-state 写盘（saveUserState/saveDisabledTools，浮窗连接/断开必写）会
    * 触发 watcher 事件；此前无配置变化也走 reconcileServers，是「用户操作
@@ -655,7 +655,7 @@ export class McpManager {
       }
       for (const [name, want] of desired) {
         if (want.server.enabled === false) continue;
-        // project 模式项目级：由中间层单元管理（ensureMiddlewareServer 幂等触达，#614），
+        // project 模式项目级：由中间层单元管理（ensureMiddlewareServer 幂等触达，#616），
         // 不经 start；all 模式全局照常 start——start 内部下沉接管（触达 @global）。
         if (this.middlewareMode === "project" && want.scope === SCOPE_PROJECT) continue;
         const existing = this.supervisors.get(name);
@@ -711,7 +711,7 @@ export class McpManager {
     // 中间层模式项目级不建 supervisor，走 ensureMiddlewareServer 幂等触达。
     // startAll / add / update / reconcile 各入口自动收敛，无需逐处特判。
     //
-    // #614 根因修复：项目级分支此前是 touchMiddlewareUnit()（teardownUnit 拆毁
+    // #616 根因修复：项目级分支此前是 touchMiddlewareUnit()（teardownUnit 拆毁
     // 整个当前项目单元）。reconcileServers 对项目级条目（supervisors 恒无）每次
     // 都会走到 start——浮窗连接/断开任意服务器（saveUserState 写 ~/.dsh → 全局
     // fs.watch → refreshFromDisk → reconcile）就会把当前项目单元连人带连接整个
@@ -779,7 +779,7 @@ export class McpManager {
   }
 
   /**
-   * 幂等触达当前项目单元并确保该服务器连接（#614：start 的中间层项目级接管路径，
+   * 幂等触达当前项目单元并确保该服务器连接（#616：start 的中间层项目级接管路径，
    * 取代旧 touchMiddlewareUnit 的整单元拆毁语义）。
    * - 单元缺失（宿主重启 / 首次 reconcile）：projectUnitFor 创建 + 惰性连接全部；
    * - 单元已存在（配置热重载 / 误触发的 reconcile）：保留既有连接，仅对**该**服务器
@@ -793,16 +793,24 @@ export class McpManager {
   private ensureMiddlewareServer(name: string): void {
     const mw = this.middleware;
     if (mw === undefined || this.projectRoot === undefined) return;
-    void mw.projectUnitFor(this.projectRoot)
+    // 入口捕获 root（评审 P2-3）：.then 回调内不再读 this.projectRoot——
+    // setSession 切换后实例字段已变，沿用调用时快照保证 root 与 unit 配套。
+    const root = this.projectRoot;
+    void mw.projectUnitFor(root)
       .then(async (unit) => {
         if (unit === undefined || unit.userDisabled.has(name)) return;
         const current = this.projectStore?.find(name);
         const entry = unit.connections.get(name);
+        // 配置一致性比对（同源 store 实例）：未重载时 entry.server 与 current
+        // 为同一对象引用恒等；真变更必经 reloadIfChanged → load() 整组换新
+        // 对象（键序由 normalizeServer 固定），内容不同则串必不同——假阴性
+        // 不存在；唯一假阳性是用户手排 mcp.json 键序（值不变）触发一次性
+        // force 重连，重建后自愈、不循环。
         if (entry !== undefined && current !== undefined && JSON.stringify(entry.server) !== JSON.stringify(current)) {
-          await mw.ensureConnected(this.projectRoot as string, name, { force: true });
+          await mw.ensureConnected(root, name, { force: true });
           return;
         }
-        await mw.ensureConnected(this.projectRoot as string, name);
+        await mw.ensureConnected(root, name);
       })
       .catch((error: unknown) => {
         this.logger.warn(`dsh-mcp-manager: ensureMiddlewareServer(${name}) failed: ${String(error)}`);
@@ -919,7 +927,7 @@ export class McpManager {
     }
     store.upsert(config);
     await store.save();
-    // #614：中间层项目级此前在此 touchMiddlewareUnit() 拆毁整个当前单元——
+    // #616：中间层项目级此前在此 touchMiddlewareUnit() 拆毁整个当前单元——
     // 新服务器经下方 start → ensureMiddlewareServer 幂等补连即可生效，无需
     // 拆毁单元殃及既有项目级连接。
     if (config.enabled !== false) this.start(config.name, scope);
