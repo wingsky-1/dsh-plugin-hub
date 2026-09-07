@@ -564,8 +564,7 @@ export function boundCatalogTools(
   return bounded;
 }
 
-/** 等待带超时（race 兜底）。定时器 unref：在途建连的超时兜底不阻止事件循环
- *  排空（smoke 进程收尾不被挂到 CONNECT_TIMEOUT_MS；宿主常驻场景无感知）。 */
+/** 等待带超时（race 兜底）。 */
 export function withTimeout<T>(promise: Promise<T>, ms: number, message: string, signal?: AbortSignal): Promise<T> {
   if (signal?.aborted === true) return Promise.reject(signal.reason ?? new Error("aborted"));
   return new Promise<T>((resolve, reject) => {
@@ -573,7 +572,6 @@ export function withTimeout<T>(promise: Promise<T>, ms: number, message: string,
       cleanup();
       reject(new Error(message));
     }, ms);
-    timer.unref?.();
     const onAbort = () => {
       cleanup();
       reject(signal?.reason ?? new Error("aborted"));
