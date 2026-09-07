@@ -78,6 +78,12 @@ Pick one of the following access forms (both the settings card and the README su
 - **Dual channels**:
   - System notifications: native Windows toast (embedded PowerShell WinRT script, zero dependencies); macOS uses `osascript` (display notification, zero dependencies); Linux uses `notify-send` (only when available)
   - Browser notifications: SSE frame push + Notification API (only pops when the page is hidden)
+- **Independent popup & sound per channel (#640/#641)**: the browser and system
+  channels each have their own popup toggle and sound setting (muted / follow the
+  system default / built-in tones `ding`·`bell`·`chime`·`pop` with ▶ Preview),
+  supporting "popup without sound / sound only / silent"; Linux system notification
+  sound is fixed by host self-play of freedesktop event sounds (notify-send used to
+  carry no sound hint and DE support varies); see "Configuration → Per-channel sound".
 - **Insecure-context fallback**: on LAN HTTP access the browser blocks system-level popups — automatically falls back to "in-page banner + sound + title reminder"
 - **Do-not-disturb window**: supports crossing midnight (e.g. 22:00 → 08:00); an **urgent exception** can be set (`quietHours.allowKinds`: events still reminded during DND). The default candidates are the high-frequency blocking kinds (approval / question / error); the settings page lets you check **all 6 built-in events** (including task-done / subagent-done / turn-end) with one-click "Follow enabled events" or "Reset default". Exemption is orthogonal to the event toggles — a disabled event never produces notifications anyway, and the exemption entry stays intact
 - **Approval timeout re-reminder**: when an approval waits longer than `askRemindMin` minutes (default 5, 0 disables) without being handled, remind again
@@ -162,6 +168,8 @@ Example values (defaults):
   "browserNotify": true,
   "notifyWhenVisible": false,
   "notifySound": true,
+  "browserSound": true,
+  "systemSound": true,
   "quietHours": { "enabled": false, "start": "22:00", "end": "08:00", "allowKinds": [] },
   "errorMergeWindowMs": 60000,
   "askRemindMin": 5,
@@ -178,6 +186,80 @@ Example values (defaults):
 > the oldest connection beyond the limit (clients auto-reconnect with `since`
 > replay, transparent). If more devices×tabs are concurrently online, raise it in
 > the card.
+
+### Per-channel sound (#640 / #641)
+
+Popup and sound are configured **independently per channel** (browser / system), so you
+can have "popup without sound", "sound only" or "silent":
+
+| Key | Type | Meaning |
+|---|---|---|
+| `browserNotify` / `systemNotify` | boolean | existing popup toggles (unchanged) |
+| `browserSound` | `boolean \| tone id` | browser channel sound |
+| `systemSound` | `boolean \| tone id` | system channel sound |
+| `notifySound` | boolean | **deprecated read-only alias** (below) |
+
+Values: `false` = muted (a popup may still show, without sound); `true` = **follow the
+system default**; a tone id = an explicit built-in tone (`ding` / `bell` / `chime` /
+`pop` — the 4 tones have consistent meaning across platforms; pick one in the "Tone"
+dropdown of each channel card and hit ▶ Preview: the preview is synthesized locally
+with Web Audio as a listening reference — **the real system sound follows the platform
+and system settings**).
+
+Delivery matrix (all 2×2 combinations work):
+
+| Popup | Sound | Behavior |
+|---|---|---|
+| On | `false` | Show notification, silent |
+| On | `true` | Show notification, OS-default sound |
+| On | tone id | Show notification; the app self-plays the tone (system notification silenced to avoid double sound) |
+| Off | `false` | No delivery at all (silent) |
+| Off | `true`/tone id | **Sound only**: no popup, self-play only (page alive / host self-play) |
+
+- **`notifySound` (old global key) is a deprecated compatibility alias**: kept for
+  reading and legacy migration only; the settings UI no longer writes it. When
+  `browserSound`/`systemSound` are missing they fall back to `notifySound`, then to
+  `true`. Legacy `dsh-notifier.json` migration writes `browserSound`/`systemSound`
+  equal to your old `notifySound` (settings user-layer leftovers are not migrated;
+  reading falls back and the first UI save fixes them). Users who had muted the old
+  sound stay muted after upgrade (new keys are initialized from the old value) —
+  no surprise sound.
+- **Browser sound unlock prerequisite**: browser `true`/tone self-play needs an
+  unlocked page audio context — browser autoplay policy requires one user gesture
+  (opening the notification center / any sound-row interaction unlocks the
+  AudioContext). A purely background page that was never interacted with may stay
+  silent (notifications still pop, just no sound) — a browser policy constraint,
+  not a plugin defect.
+- **Linux `true` special case (#640 fix)**: Linux desktop daemons differ widely in
+  sound-hint support (GNOME silent by default / KDE only since 2025 / Xfce needs
+  libcanberra), so `systemSound=true` means "**self-play the default event sound**":
+  the host plays the `message-new-instant` event sound (freedesktop sound theme) via
+  `pw-play` (PipeWire) or `paplay` (PulseAudio) instead of relying on the daemon.
+  Headless servers (no desktop/audio session) stay silent. **Behavior change for
+  existing Linux installs**: system notifications used to be silent (notify-send had
+  no sound hint); after this upgrade, sound-on self-plays the event sound (requires an
+  audio session and `pw-play`/`paplay`; silently skipped when the player/event file is
+  missing — notifications are unaffected).
+- **Tone × platform mapping (approximate, best-effort)**:
+
+| Tone | Browser (Web Audio) | macOS | Linux (freedesktop event) | Windows |
+|---|---|---|---|---|
+| `ding` | double short high | Glass (NSSound) | `message-new-instant.oga` | `C:\Windows\Media\Windows Ding.wav` |
+| `bell` | single mid-high | Tink | `bell.oga` | `Windows Chimes.wav` |
+| `chime` | three-note ascent | Sosumi | `complete.oga` | `Windows Chord.wav` |
+| `pop` | short low | Pop | `message.oga` | `Windows Balloon.wav` |
+| `true` (system) | OS default (not silent) | Glass (kept) | default event self-play | toast default system sound; near-default wav for sound-only |
+
+  macOS playback is subject to the system "Allow notification sounds" setting; Windows
+  tones are played by the host `SoundPlayer` from built-in wav files (allow-listed
+  paths, silent when missing); Linux event files are the oga files guaranteed to exist
+  in the sound-theme-freedesktop base package under
+  `/usr/share/sounds/freedesktop/stereo/` (multi-path probing, silent when missing).
+  Self-play always uses argument-array spawning (no shell concatenation) and
+  allow-listed file paths.
+- The host platform is exposed via the `platform` field of `/api/dsh-notifier/health`
+  (the system card shows a platform hint from it — the browser OS and the host OS can
+  differ; don't confuse them).
 
 ### Webhook push channel (#508)
 

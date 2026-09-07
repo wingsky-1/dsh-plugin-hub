@@ -89,7 +89,7 @@ test('正对照：纯副本不改动矩阵 pass', () => {
     const r = runConfigMatrix(root)
     assert.equal(r.pass, true, '真实文件副本矩阵应绿（存量 17/19 无洞）')
     assert.ok(r.lines.some((l) => l.includes('lan-proxy 17 键')), 'lan-proxy 摘要含 17 键计数')
-    assert.ok(r.lines.some((l) => l.includes('notifier 19 键')), 'notifier 摘要含 19 键计数')
+    assert.ok(r.lines.some((l) => l.includes('notifier 21 键')), 'notifier 摘要含 21 键计数')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
@@ -139,7 +139,7 @@ test('notifier: SETTING_HINTS 加假键 → 红且报错含键名', () => {
 
 test('notifier: CONFIG_KEYS 漏布尔键 → 红且报错含键名', () => {
   assertRed('notifier CONFIG_KEYS 删 notifySound', (root) => {
-    edit(root, 'dsh-notifier', 'config.ts', (s) => s.replace(/,\s*"notifySound"\]/, ']'))
+    edit(root, 'dsh-notifier', 'config.ts', (s) => s.replace(/"notifySound", /, ''))
   }, 'notifySound')
 })
 

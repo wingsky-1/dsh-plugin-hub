@@ -7,7 +7,7 @@
  * （Windows/macOS/Linux 参数形态）、isLoopbackRequest 围栏判定。
  */
 import { assert, fakeReq } from "./helpers.ts";
-import { formatDuration, prettyToolName, sessionTitleOf, buildSystemCommand, isLoopbackRequest } from "../lib/index.js";
+import { formatDuration, prettyToolName, sessionTitleOf, buildSystemCommand, buildSoundCommand, MAC_SOUND_NAMES, toneFileCandidates, isLoopbackRequest } from "../lib/index.js";
 
 assert.equal(formatDuration(45000), "45 秒");
 assert.equal(formatDuration(135000), "2 分 15 秒");
@@ -26,7 +26,7 @@ assert.equal(prettyToolName(undefined), "?");
 // Windows（issue #238）：固定前缀 + 单一 base64 payload token；前缀用 deepEqual
 // 全序列快照（includes 片段断言抓不住多余/错位 token）。
 const decodePayload = (argv: string[]) => JSON.parse(Buffer.from(argv[argv.length - 1], "base64").toString("utf8"));
-const winArgs = buildSystemCommand("win32", "标题", "内容 -x", { silent: true, toastScript: "t.ps1" });
+const winArgs = buildSystemCommand("win32", "标题", "内容 -x", { sound: false, toastScript: "t.ps1" });
 assert.equal(winArgs[winArgs.length - 2], "-Payload", "payload 参数名成对出现在末尾");
 assert.deepEqual(
   winArgs.slice(0, -2),
@@ -34,24 +34,77 @@ assert.deepEqual(
   "win32 argv 固定前缀快照（末两位为 -Payload + 值）"
 );
 assert.match(winArgs[winArgs.length - 1], /^[A-Za-z0-9+/=]+$/, "payload 仅含 base64 字符集（永不被误认成参数名/不被拆 token）");
-assert.deepEqual(decodePayload(winArgs), { title: "标题", message: "内容 -x", silent: true }, "payload round-trip 深等于输入");
+assert.deepEqual(decodePayload(winArgs), { title: "标题", message: "内容 -x", silent: true }, "payload round-trip 深等于输入（sound:false → silent）");
 // 边界用例：dash 开头 / 双引号 / 换行 / emoji——payload 形态不变、内容无损往返
 for (const c of [
-  { title: "-TODO-fix", message: "- item", silent: true },
-  { title: '说"话', message: "line\nbreak", silent: false },
-  { title: "🚀任务完成", message: "🎉🎉🎉", silent: true },
+  { title: "-TODO-fix", message: "- item", silent: true, sound: false },
+  { title: '说"话', message: "line\nbreak", silent: false, sound: true },
+  { title: "🚀任务完成", message: "🎉🎉🎉", silent: true, sound: false },
 ]) {
-  const a = buildSystemCommand("win32", c.title, c.message, { silent: c.silent, toastScript: "t.ps1" });
+  const a = buildSystemCommand("win32", c.title, c.message, { sound: c.sound, toastScript: "t.ps1" });
   assert.match(a[a.length - 1], /^[A-Za-z0-9+/=]+$/, "边界值下 payload 仍是纯 base64 token");
-  assert.deepEqual(decodePayload(a), c, "边界值 round-trip 无损");
+  assert.deepEqual(decodePayload(a), { title: c.title, message: c.message, silent: c.silent }, "边界值 round-trip 无损");
 }
-const macArgs = buildSystemCommand("darwin", "标题", '说"话', { silent: false, toastScript: "t.ps1" });
+// #640/#641：Windows 声音三态 × toast payload——false→silent、true→不 silent、
+// SoundId+自播→silent（P0-2：应用自播时 toast 静音防双响）
+const winTrue = buildSystemCommand("win32", "t", "m", { sound: true, toastScript: "t.ps1" });
+assert.equal(decodePayload(winTrue).silent, false, "B1：win32 sound:true → toast 不 silent（默认系统音）");
+const winTone = buildSystemCommand("win32", "t", "m", { sound: "ding", selfPlay: true, toastScript: "t.ps1" });
+assert.equal(decodePayload(winTone).silent, true, "B1：win32 SoundId+自播 → toast silent（防双响）");
+assert.equal(buildSystemCommand("win32", "t", "m", { sound: "ding", toastScript: "t.ps1" }) !== null, true, "win32 SoundId 命令仍构造（自播由 SystemNotifier 按平台能力另发）");
+
+const macArgs = buildSystemCommand("darwin", "标题", '说"话', { sound: true, toastScript: "t.ps1" });
 assert.equal(macArgs[0], "osascript");
 assert.match(macArgs.join(" "), /display notification/);
-assert.ok(macArgs.join(" ").includes('sound name "Glass"'), "非静默带 Glass 提示音");
+assert.ok(macArgs.join(" ").includes('sound name "Glass"'), "B1：darwin sound:true 带 Glass 提示音（现状保留）");
 assert.ok(!macArgs.join(" ").includes('说话"'), "消息内引号被转义");
-assert.equal(buildSystemCommand("linux", "t", "m", { silent: true, notifySendAvailable: false, toastScript: "t.ps1" }), null, "notify-send 不可用返回 null");
-assert.deepEqual(buildSystemCommand("linux", "t", "m", { silent: true, toastScript: "t.ps1" }), ["notify-send", "t", "m"]);
+// B1：darwin 三态——false 无 sound；SoundId → MAC_SOUND_NAMES 映射名
+const macSilent = buildSystemCommand("darwin", "t", "m", { sound: false, toastScript: "t.ps1" });
+assert.ok(!macSilent.join(" ").includes("sound name"), "B1：darwin sound:false 无 sound");
+assert.ok(macSilent.join(" ").includes('display notification "m"'), "B1：darwin 静音仍弹通知实体");
+assert.equal(MAC_SOUND_NAMES.ding, "Glass", "B1：ding→Glass 映射");
+assert.ok(buildSystemCommand("darwin", "t", "m", { sound: "pop", toastScript: "t.ps1" }).join(" ").includes(`sound name "${MAC_SOUND_NAMES.pop}"`), "B1：darwin SoundId → 映射名");
+const macSelf = buildSystemCommand("darwin", "t", "m", { sound: "ding", selfPlay: true, toastScript: "t.ps1" });
+assert.ok(!macSelf.join(" ").includes("sound name"), "B1：darwin 自播时通知静音（防双响）");
+
+// B1：Linux——不可用 null；false 与 true/SoundId 均带 suppress-sound hint；参数形态
+assert.equal(buildSystemCommand("linux", "t", "m", { sound: true, notifySendAvailable: false, toastScript: "t.ps1" }), null, "notify-send 不可用返回 null");
+assert.deepEqual(buildSystemCommand("linux", "t", "m", { sound: false, toastScript: "t.ps1" }), ["notify-send", "-h", "boolean:suppress-sound:true", "t", "m"], "B1：linux sound:false → suppress-sound 不自播");
+assert.deepEqual(buildSystemCommand("linux", "t", "m", { sound: true, toastScript: "t.ps1" }), ["notify-send", "-h", "boolean:suppress-sound:true", "t", "m"], "B1：linux sound:true → suppress-sound（自播另发，防 DE 双响）");
+assert.deepEqual(buildSystemCommand("linux", "t", "m", { sound: "chime", toastScript: "t.ps1" }), ["notify-send", "-h", "boolean:suppress-sound:true", "t", "m"], "B1：linux SoundId → 同样 suppress-sound（宿主自播音色文件）");
+
+// B2：自播命令纯函数（buildSoundCommand）——Linux 播放器数组传参 + 白名单路径；
+// macOS afplay 系统声音文件；Windows SoundPlayer + 路径独立 argv 元素
+assert.deepEqual(
+  buildSoundCommand("linux", "ding", "pw-play"),
+  ["pw-play", "/usr/share/sounds/freedesktop/stereo/message-new-instant.oga"],
+  "B2：linux ding → pw-play + 事件文件（数组传参，白名单路径）"
+);
+assert.deepEqual(
+  buildSoundCommand("linux", "default", "paplay"),
+  ["paplay", "/usr/share/sounds/freedesktop/stereo/message-new-instant.oga"],
+  "B2：linux default → 默认事件文件（message-new-instant）"
+);
+assert.equal(buildSoundCommand("linux", "ding", undefined), null, "B2：无播放器 → null（缺失静默）");
+assert.deepEqual(
+  buildSoundCommand("darwin", "pop", undefined),
+  ["afplay", "/System/Library/Sounds/Pop.aiff"],
+  "B2：darwin pop → afplay 系统声音文件（无需播放器探测）"
+);
+const winSound = buildSoundCommand("win32", "ding", undefined);
+assert.equal(winSound[0], "powershell", "B2：win32 SoundPlayer 走 powershell");
+assert.ok(!winSound[winSound.length - 1].includes(";"), "B2：win32 路径独立 argv 元素（无命令拼接面）");
+assert.ok(winSound[winSound.length - 1].endsWith("Windows Ding.wav"), "B2：win32 ding → 白名单 wav 路径");
+assert.ok(winSound.slice(0, 7).every((s) => !s.includes("C:\\")), "B2：路径不拼进 -Command 骨架（最后元素才含路径）");
+// win32 true（跟随系统默认）：弹窗开由 toast 默认音承担（无自播）；只响不弹场景
+// 自播命令取「默认通知音」候选（Windows Notify System Generic.wav）
+const winDefault = buildSoundCommand("win32", "default", undefined);
+assert.ok(winDefault !== null && winDefault[winDefault.length - 1].endsWith("Windows Notify System Generic.wav"), "B2：win32 default → 默认通知音候选 wav");
+// 映射表锁定：freedesktop 事件文件在 sound-theme-freedesktop 基线包内确定存在
+// （ding→message-new-instant、bell→bell、chime→complete、pop→message）
+for (const [tone, file] of [["ding", "message-new-instant.oga"], ["bell", "bell.oga"], ["chime", "complete.oga"], ["pop", "message.oga"]]) {
+  assert.equal(toneFileCandidates("linux", tone)[0], file, `B2：linux ${tone} 事件文件确定存在（基线包）`);
+}
 
 // sessionTitleOf：从 session.snapshotEvents() 的 session/title 事件取标题
 // （0.1.2-rc.1 起 session.events getter 移除，fake 与真实宿主同形态）
