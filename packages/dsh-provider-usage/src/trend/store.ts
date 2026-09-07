@@ -102,10 +102,17 @@ export class TrendStore {
     // P2-7：写 tmp 前清理同日 rename 前崩溃残留的 tmp（文件名前缀 `${day}.jsonl.` 且
     // 后缀 `.tmp`）。尽力而为：清理失败不影响主流程（仅告警，下轮重写时再清）。
     try {
-      for (const f of await readdir(this.aggDir())) {
+      const files = await readdir(this.aggDir());
+      const deletePromises = [];
+      for (const f of files) {
         if (f.startsWith(`${day}.jsonl.`) && f.endsWith(".tmp")) {
-          await rm(join(this.aggDir(), f), { force: true });
+          deletePromises.push(rm(join(this.aggDir(), f), { force: true }));
         }
+      }
+      const results = await Promise.allSettled(deletePromises);
+      const firstError = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
+      if (firstError) {
+        throw firstError.reason;
       }
     } catch (e: unknown) {
       this.warn(`聚合分片 tmp 残留清理失败（${day}）：${e instanceof Error ? e.message : String(e)}`);
