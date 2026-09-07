@@ -656,7 +656,7 @@ export function apply(ctx: any): void {
             // 注册期求值字符串快照是旧行为）。thunk 保持最小 t(key) 形态，不包任何可能抛错的逻辑。
             { name: "settings.section", id: "dsh-provider-usage", order: 90, label: () => t("settingsTab"), locale: NS },
             function () {
-              return React.createElement(SettingsPage, null);
+              return <SettingsPage />;
             },
           );
         });
