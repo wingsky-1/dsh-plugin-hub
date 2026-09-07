@@ -63,6 +63,21 @@ export interface Mem0Config {
   customInstructions: string;
   /** 是否向 Agent 单会话注入记忆纪律提示词（默认 true）。 */
   enablePromptDiscipline: boolean;
+  /**
+   * #581：会话首轮智能预检索注入总开关（默认 true）。
+   * 关闭后全程不检索不注入，仅保留 memory_search 工具与既有纪律提示词。
+   */
+  enableSmartPreInjection: boolean;
+  /**
+   * #581：预检索注入相似度阈值（默认 0.6，取值 [0,1]，越界回退默认）。
+   * 仅相似度分数严格大于该值的记忆条目参与注入。
+   */
+  preInjectionThreshold: number;
+  /**
+   * #581：预检索注入条数上限（默认 3，取值 [1,10]，越界回退默认）。
+   * 按分数降序最多取 N 条；命中 0 条时零注入。
+   */
+  preInjectionLimit: number;
   /** Python 解释器二进制路径（默认 python3，可指定特定虚拟环境路径）。 */
   pythonBin: string;
 }
@@ -88,6 +103,9 @@ export const DEFAULT_CONFIG: Mem0Config = {
   retrievalTopK: 5,
   customInstructions: DEFAULT_CUSTOM_INSTRUCTIONS,
   enablePromptDiscipline: true,
+  enableSmartPreInjection: true,
+  preInjectionThreshold: 0.6,
+  preInjectionLimit: 3,
   pythonBin: "python3",
 };
 
@@ -177,6 +195,9 @@ export const Config: z<Mem0Config> = z.object({
   retrievalTopK: z.natural().min(1).max(20).default(DEFAULT_CONFIG.retrievalTopK),
   customInstructions: z.string().default(DEFAULT_CONFIG.customInstructions),
   enablePromptDiscipline: z.boolean().default(DEFAULT_CONFIG.enablePromptDiscipline),
+  enableSmartPreInjection: z.boolean().default(DEFAULT_CONFIG.enableSmartPreInjection),
+  preInjectionThreshold: z.number().min(0).max(1).default(DEFAULT_CONFIG.preInjectionThreshold),
+  preInjectionLimit: z.number().min(1).max(10).default(DEFAULT_CONFIG.preInjectionLimit),
   pythonBin: z.string().default(DEFAULT_CONFIG.pythonBin),
 });
 
@@ -279,6 +300,20 @@ export function mergeConfigPatch(current: Mem0Config, patch: Record<string, unkn
   }
   if (typeof patch.enablePromptDiscipline === "boolean") {
     next.enablePromptDiscipline = patch.enablePromptDiscipline;
+  }
+  // #581：三新键白名单；数值越界一律回退默认值（不落盘越界残值）
+  if (typeof patch.enableSmartPreInjection === "boolean") {
+    next.enableSmartPreInjection = patch.enableSmartPreInjection;
+  }
+  if (typeof patch.preInjectionThreshold === "number" && !Number.isNaN(patch.preInjectionThreshold)) {
+    next.preInjectionThreshold = patch.preInjectionThreshold >= 0 && patch.preInjectionThreshold <= 1
+      ? patch.preInjectionThreshold
+      : DEFAULT_CONFIG.preInjectionThreshold;
+  }
+  if (typeof patch.preInjectionLimit === "number" && !Number.isNaN(patch.preInjectionLimit)) {
+    next.preInjectionLimit = patch.preInjectionLimit >= 1 && patch.preInjectionLimit <= 10
+      ? Math.floor(patch.preInjectionLimit)
+      : DEFAULT_CONFIG.preInjectionLimit;
   }
   if (typeof patch.pythonBin === "string" && patch.pythonBin.trim()) {
     next.pythonBin = patch.pythonBin.trim();
