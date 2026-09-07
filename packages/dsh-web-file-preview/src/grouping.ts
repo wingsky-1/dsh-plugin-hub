@@ -36,6 +36,14 @@ export const CODE_EXTS = new Set([
   "dart", "scala", "sh", "bash", "zsh", "sql", "diff", "patch", "dockerfile",
   "ini", "toml", "yaml", "yml", "json", "jsonl", "xml", "css",
   "scss", "less", "vue", "svelte", "groovy", "perl", "r",
+  // issue #630：Godot 文本族——.tscn/.tres/.escn/.gdns/.gdnlib/.gdextension 与
+  // project.godot（ext "godot"）、*.png.import（ext "import"）均为 INI 风格文本；
+  // .gd（GDScript）、.gdshader/.gdshaderinc（与 GLSL 同源）为纯文本。
+  // 高亮映射见 src/client/code.ts（ini/glsl 为 hljs 内置，gd 用 python 近似）。
+  // 二进制 Godot 资源（.res/.scn/.ctex/.translation）不在此列——留 other 组由
+  // 宿主嗅探兜底（issue #630 改动 B）。
+  "gd", "tscn", "escn", "tres", "gdns", "gdnlib", "gdextension", "godot",
+  "import", "gdshader", "gdshaderinc",
 ]);
 
 /** 其它纯文本后缀。 */

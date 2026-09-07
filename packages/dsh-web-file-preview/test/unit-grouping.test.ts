@@ -55,6 +55,24 @@ assert.equal(groupOfPath("a.png").ext, "png", "图片路径扩展名回传");
 assert.equal(groupOfPath("dir/a.MD").group, "md", "大写 MD 扩展名");
 assert.equal(groupOfPath("dir/a.MD").ext, "md", "大写 MD 归一化小写");
 
+// issue #630：Godot 文本族进 code 组
+assert.equal(groupOfExt("gd"), "code", "GDScript → code");
+assert.equal(groupOfExt("tscn"), "code", "Godot 场景 → code");
+assert.equal(groupOfExt("escn"), "code", "Blender 导出场景 → code");
+assert.equal(groupOfExt("tres"), "code", "文本资源 → code");
+assert.equal(groupOfExt("gdns"), "code", "GDNative 声明 → code");
+assert.equal(groupOfExt("gdnlib"), "code", "GDNative 库声明 → code");
+assert.equal(groupOfExt("gdextension"), "code", "GDExtension 声明 → code");
+assert.equal(groupOfExt("gdshader"), "code", "着色器 → code");
+assert.equal(groupOfExt("gdshaderinc"), "code", "着色器 include → code");
+assert.equal(groupOfPath("project.godot").group, "code", "project.godot 按 godot 后缀入 code");
+assert.equal(groupOfPath("scenes/pong.tscn").group, "code", "带目录的场景路径");
+assert.equal(groupOfPath("paddle.png.import").group, "code", "导入元数据按 import 后缀入 code");
+// 二进制 Godot 资源仍留 other（宿主嗅探兜底，issue #630 改动 B）
+assert.equal(groupOfExt("res"), "other", "二进制资源 .res 不进白名单");
+assert.equal(groupOfExt("scn"), "other", "二进制场景 .scn 不进白名单");
+assert.equal(groupOfExt("ctex"), "other", "压缩纹理 .ctex 不进白名单");
+
 // ---------------------------------------------------------------- isPreviewablePath
 
 assert.equal(isPreviewablePath("a.png"), true, "图片可预览");
