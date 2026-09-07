@@ -126,6 +126,54 @@ export function buildCodegraphToolDefinitions(): ToolDefinition[] {
   ];
 }
 
+async function handleInstallation(ctx: Context, autoInstall: boolean, installCommand: string): Promise<void> {
+  if (!isCodegraphInstalled()) {
+    if (autoInstall) {
+      // 装前再探测一次（用户可能已手动装，避免重复安装）。
+      if (!isCodegraphInstalled()) {
+        const ok = await runInstall(installCommand);
+        if (!ok) {
+          ctx.logger.warn(`dsh-codegraph: 自动安装失败（${installCommand}），请手动安装`);
+        }
+      }
+    }
+    // 仍未装 → 注入引导（不阻断其他功能，但 MCP 服务器无法注册）。
+    if (!isCodegraphInstalled()) {
+      ctx.logger.info(`dsh-codegraph: ${installGuidance(installCommand)}`);
+    }
+  }
+}
+
+async function registerCodegraphServer(ctx: Context, mcpManager: McpManagerService): Promise<void> {
+  if (!isCodegraphInstalled()) return;
+
+  const toolDefinitions = buildCodegraphToolDefinitions();
+  try {
+    // #363 补充 3：封装定义经 mcp-manager 注册（manager 侧 #362 补充 4 消费）。
+    const registerInput: McpManagerServerInput = {
+      name: "codegraph",
+      description:
+        "Local code graph: ALWAYS prioritize for code search, symbol definitions, caller/callee relationships, and impact analysis. Call encapsulated bare tools directly (e.g. codegraph_search, codegraph_explore); DO NOT use mcp__ prefixes. Auto-syncs worktree index.",
+      transport: "stdio",
+      command: "codegraph",
+      args: ["serve", "--mcp"],
+      toolCallTimeoutMs: 60000,
+      reconnect: {},
+      toolDefinitions,
+    };
+    const { existing } = await mcpManager.registerServer(registerInput);
+    if (!existing) {
+      // 注册即连接：查询状态确认连接进度（connecting/connected 皆正常，failed 需提示）。
+      const status = mcpManager.getStatus("codegraph");
+      if (status !== undefined && status.status === "failed") {
+        ctx.logger.warn(`dsh-codegraph: codegraph MCP 服务器连接失败：${status.error ?? "未知原因"}`);
+      }
+    }
+  } catch (error) {
+    ctx.logger.warn(`dsh-codegraph: 注册 codegraph MCP 服务器失败：${String(error)}`);
+  }
+}
+
 /**
  * 挂载入口：探测/安装 → 经 mcp-manager 注册 MCP 服务器（携带封装定义）→ agent 钩子。
  */
@@ -143,21 +191,7 @@ export async function apply(ctx: Context, config: CodegraphConfig = {}): Promise
   // 补全 projectPath，非 git 拒绝）在会话级无条件承担，无需配置开关。
 
   // 1. 探测 codegraph CLI；未装 → autoInstall 或引导。
-  if (!isCodegraphInstalled()) {
-    if (autoInstall) {
-      // 装前再探测一次（用户可能已手动装，避免重复安装）。
-      if (!isCodegraphInstalled()) {
-        const ok = await runInstall(installCommand);
-        if (!ok) {
-          ctx.logger.warn(`dsh-codegraph: 自动安装失败（${installCommand}），请手动安装`);
-        }
-      }
-    }
-    // 仍未装 → 注入引导（不阻断其他功能，但 MCP 服务器无法注册）。
-    if (!isCodegraphInstalled()) {
-      ctx.logger.info(`dsh-codegraph: ${installGuidance(installCommand)}`);
-    }
-  }
+  await handleInstallation(ctx, autoInstall, installCommand);
 
   // 2. 经 mcp-manager 注册 MCP 服务器（inject 强依赖保证可用）+ 封装定义
   //    （#363 补充 3：工具经 registerServer.toolDefinitions 交给 manager 注册，
@@ -166,33 +200,7 @@ export async function apply(ctx: Context, config: CodegraphConfig = {}): Promise
   //    单一事实源；#363 补充 3 的临时 RegisterServerInput 已删除）。
   //    用完整 service 面：注册后可经 getStatus/getTools 感知连接状态与工具列表。
   const mcpManager = (ctx as unknown as { mcpManager: McpManagerService }).mcpManager;
-  const toolDefinitions = buildCodegraphToolDefinitions();
-  if (isCodegraphInstalled()) {
-    try {
-      // #363 补充 3：封装定义经 mcp-manager 注册（manager 侧 #362 补充 4 消费）。
-      const registerInput: McpManagerServerInput = {
-        name: "codegraph",
-        description:
-          "Local code graph: ALWAYS prioritize for code search, symbol definitions, caller/callee relationships, and impact analysis. Call encapsulated bare tools directly (e.g. codegraph_search, codegraph_explore); DO NOT use mcp__ prefixes. Auto-syncs worktree index.",
-        transport: "stdio",
-        command: "codegraph",
-        args: ["serve", "--mcp"],
-        toolCallTimeoutMs: 60000,
-        reconnect: {},
-        toolDefinitions,
-      };
-      const { existing } = await mcpManager.registerServer(registerInput);
-      if (!existing) {
-        // 注册即连接：查询状态确认连接进度（connecting/connected 皆正常，failed 需提示）。
-        const status = mcpManager.getStatus("codegraph");
-        if (status !== undefined && status.status === "failed") {
-          ctx.logger.warn(`dsh-codegraph: codegraph MCP 服务器连接失败：${status.error ?? "未知原因"}`);
-        }
-      }
-    } catch (error) {
-      ctx.logger.warn(`dsh-codegraph: 注册 codegraph MCP 服务器失败：${String(error)}`);
-    }
-  }
+  await registerCodegraphServer(ctx, mcpManager);
 
   // 3. agent 系统提示词钩子（order: 170，在 mcp-manager 之后，git 仓会话才注入）。
   const disposePrompt = injectDiscipline ? registerCodegraphPrompt(ctx) : () => {};
