@@ -15,7 +15,7 @@
  * - scheduler（M3 接线补）：lastRun 读写 roundtrip / 单飞互斥（busy 期 tick 跳过）/
  *   失败不推进 lastRun（下轮重试同窗）/ 成功推进 / dispose 停 tick
  */
-import { mkdtempSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { assert } from "./helpers.ts";
@@ -47,6 +47,13 @@ import {
   ReportScheduler,
   readLastRun,
   writeLastRun,
+  ensureLastRunMigrated,
+  deriveLastRun,
+  isClosedWindowRecord,
+  LAST_RUN_SCHEMA,
+  ReportTaskQueue,
+  readReportIndex,
+  parseReportIndexLines,
 } from "../lib/index.js";
 
 // ---------------------------------------------------------------- 工具
@@ -449,63 +456,87 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   assert.ok(existsSync(join(root, "reports", "last-run.json")), "last-run.json 落在 historyRoot/reports/ 下");
 }
 
-// ---------------------------------------------------------------- scheduler：单飞互斥（busy 期 tick 跳过）
+// ---------------------------------------------------------------- ReportTaskQueue：串行单飞 + 入队去重（#625/#626）
 
 {
-  const root = mkdtempSync(join(tmpdir(), "dou-report-busy-"));
   let calls = 0;
   let maxConcurrent = 0;
   let concurrent = 0;
-  const scheduler = ReportScheduler.start({
-    root,
-    config: CFG({ daily: { enabled: true, time: "00:00" }, weekly: { enabled: false, time: "09:00", weekStartsOn: 1 }, monthly: { enabled: false, time: "09:00", dayOfMonth: 1 } }),
-    onDue: async () => {
+  const queue = new ReportTaskQueue({
+    executor: async () => {
       calls += 1;
       concurrent += 1;
       maxConcurrent = Math.max(maxConcurrent, concurrent);
-      await sleep(50); // 慢生成：远超 tickMs=10，busy 标志应让后续 tick 直接跳过
+      await sleep(30); // 慢执行：验证串行（不并发）
       concurrent -= 1;
-      throw new Error("always-fail"); // 恒失败：lastRun 不推进，tick 才会持续产生 onDue
+      throw new Error("always-fail"); // 恒失败：任务 failed，不影响串行性
     },
-    tickMs: 10,
+    warn: () => {},
   });
-  // 轮询等至少两轮 onDue 完成（防 flake：CI 高负载下 50ms 的 onDue 与 lastRun IO
-  // 都可能显著变慢，固定 sleep(140) 窗口内可能只跑完一轮——轮询到条件达成为止，
-  // 上限放宽到 5s；仓库防 flake 纪律 §5：轮询替代固定 sleep）
+  const due = { period: "daily", key: "2026-09-04", startDay: "2026-09-04", endDay: "2026-09-04" };
+  // 同一窗口连续提交（模拟 tick 60s 一次 vs 手动并发）→ 只应有一个 queued/running（P0 入队去重）
+  const first = queue.submit(due);
+  const second = queue.submit({ ...due, force: true });
+  assert.equal(second.taskId, first.taskId, "同窗口任务去重：返回同一 taskId");
   const pollDeadline = Date.now() + 5000;
-  while (calls < 2 && Date.now() < pollDeadline) await sleep(10);
-  scheduler.dispose();
-  assert.ok(maxConcurrent === 1, `单飞互斥：onDue 并发数受控为 1（实际 ${maxConcurrent}）`);
-  assert.ok(calls >= 2, `多轮 tick 发生（实际 ${calls} 次）`);
-  // busy 跳过：互斥生效时 onDue 只能在前一轮完成后启动（每轮 ≥50ms）；
-  // 轮询到 calls==2 即 dispose，在途 tick 至多再跑一轮 → 上限 3
-  assert.ok(calls <= 3, `busy 期 tick 跳过生效：onDue 调用数受控（实际 ${calls} 次）`);
-  assert.ok(!existsSync(join(root, "reports", "last-run.json")), "恒失败 → lastRun 不落盘");
+  while (calls < 1 && Date.now() < pollDeadline) await sleep(10);
+  assert.ok(calls >= 1, `至少执行一轮（实际 ${calls}）`);
+  assert.equal(maxConcurrent, 1, `串行单飞：执行并发受控为 1（实际 ${maxConcurrent}）`);
+  await sleep(50); // 等待首任务 failed
+  assert.equal(queue.get(first.taskId).status, "failed", "执行器抛错 → 任务 failed");
+  // failed 任务不在 queued/running → 可重新提交（新 taskId）
+  const third = queue.submit(due);
+  assert.notEqual(third.taskId, first.taskId, "failed 任务后可重新提交（新 taskId）");
 }
 
-// ---------------------------------------------------------------- scheduler：失败不推进 + 下轮重试同窗
+// ---------------------------------------------------------------- tick→队列：失败不推进 lastRun + 下轮重试同窗
 
 {
   const root = mkdtempSync(join(tmpdir(), "dou-report-retry-"));
-  let calls = 0;
-  let sawKeys = [];
+  let execCalls = 0;
+  const failedKeys = [];
+  const queue = new ReportTaskQueue({
+    executor: async (input) => {
+      execCalls += 1;
+      if (execCalls < 3) {
+        failedKeys.push(input.key);
+        throw new Error(`boom-${execCalls}`); // 前两轮失败（失败不推进 lastRun）
+      }
+      // 第三轮成功：模拟 apply 接线的推进语义（执行器临界区内写 lastRun）
+      const lastRun = await readLastRun(root);
+      lastRun[input.period] = input.key;
+      await writeLastRun(root, lastRun);
+      return { meta: { period: input.period, key: input.key, startDay: input.startDay, endDay: input.endDay, generatedAt: Date.now(), ok: true } };
+    },
+    warn: () => {},
+  });
   const scheduler = ReportScheduler.start({
     root,
     config: CFG({ daily: { enabled: true, time: "00:00" }, weekly: { enabled: false, time: "09:00", weekStartsOn: 1 }, monthly: { enabled: false, time: "09:00", dayOfMonth: 1 } }),
-    onDue: async (due) => {
-      calls += 1;
-      sawKeys.push(due.key);
-      if (calls < 3) throw new Error(`boom-${calls}`); // 前两轮失败
+    onDue: (due) => {
+      queue.submit(due);
+      return Promise.resolve();
     },
     tickMs: 15,
   });
-  await sleep(120);
+  // 轮询直到成功路径把 lastRun 落盘（execCalls 计数在 executor 入口自增，
+  // 需等写盘完成再断言，防 flake；上限 5s）
+  const pollDeadline = Date.now() + 5000;
+  let lastRunDaily;
+  while (Date.now() < pollDeadline) {
+    const lr = await readLastRun(root);
+    if (lr.daily !== undefined) {
+      lastRunDaily = lr.daily;
+      break;
+    }
+    await sleep(10);
+  }
   scheduler.dispose();
-  assert.ok(calls >= 3, `失败后下轮重试（实际 ${calls} 次）`);
-  assert.ok(new Set(sawKeys).size === 1, `重试同一窗口（键集 ${[...new Set(sawKeys)].join(",")}）`);
+  assert.ok(execCalls >= 3, `失败后下轮重试（实际 ${execCalls} 次）`);
+  assert.equal(new Set(failedKeys).size, 1, `重试同一窗口（键集 ${[...failedKeys].join(",")}）`);
   // 第三轮成功 → lastRun 推进为该窗口键（防 tick 重复生成的幂等标记）
-  const lastRun = await readLastRun(root);
-  assert.equal(lastRun.daily, sawKeys[0], "成功后 lastRun.daily === 窗口键");
+  assert.ok(lastRunDaily !== undefined, "成功路径已推进 lastRun");
+  assert.equal(lastRunDaily, failedKeys[0], "lastRun.daily === 窗口键");
 }
 
 // ---------------------------------------------------------------- scheduler：dispose 停 tick
@@ -516,8 +547,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const scheduler = ReportScheduler.start({
     root,
     config: CFG({ daily: { enabled: true, time: "00:00" }, weekly: { enabled: false, time: "09:00", weekStartsOn: 1 }, monthly: { enabled: false, time: "09:00", dayOfMonth: 1 } }),
-    onDue: async () => {
+    // 模拟 apply 接线的最小推进语义（onDue 提交 → 执行 → lastRun 推进）
+    onDue: async (due) => {
       calls += 1;
+      const lastRun = await readLastRun(root);
+      lastRun[due.period] = due.key;
+      await writeLastRun(root, lastRun);
     },
     tickMs: 10,
   });
@@ -528,6 +563,113 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   assert.equal(calls, atDispose, "dispose 后不再 tick（计数冻结）");
   // 成功路径推进过 lastRun（首轮启动补跑已生成并落盘）
   assert.ok(existsSync(join(root, "reports", "last-run.json")), "dispose 前的成功生成已推进 lastRun");
+}
+
+// ---------------------------------------------------------------- #624 lastRun 推导/闭环判定（纯函数）
+
+{
+  const closed = (period, key, generatedAt, endDay) => ({ period, key, generatedAt, endDay, ok: true });
+  // 本地时刻 2026-09-07 06:00 → dayKey = "2026-09-07"
+  const t607 = new Date(2026, 8, 7, 6, 0, 0).getTime();
+  // 旧语义「当天」daily 记录：发起日 = endDay 当天（09-06 06:00 生成当天窗口）→ 未闭环（#624 根因记录）
+  const t606 = new Date(2026, 8, 6, 6, 0, 0).getTime();
+  const legacySameDay = closed("daily", "2026-09-06", t606, "2026-09-06");
+  // 新语义 daily 记录（发起日 = endDay+1）→ 已闭环
+  const closedDaily = closed("daily", "2026-09-06", t607, "2026-09-05");
+  assert.equal(isClosedWindowRecord(legacySameDay), false, "旧语义当天窗口 → 未闭环");
+  assert.equal(isClosedWindowRecord(closedDaily), true, "新语义昨天窗口 → 已闭环");
+  assert.equal(isClosedWindowRecord({ ...closedDaily, ok: false }), false, "失败记录不参与闭环");
+
+  const derived = deriveLastRun([
+    legacySameDay, // daily 09-06 旧污染（未闭环，被剔除）
+    closedDaily, // daily 09-06 已闭环
+    closed("weekly", "2026-08-31", t607, "2026-09-06"),
+    closed("monthly", "2026-08", t607, "2026-08-31"),
+    closed("daily", "2026-09-04", t607, "2026-09-03"),
+  ]);
+  assert.deepEqual(derived, { daily: "2026-09-06", weekly: "2026-08-31", monthly: "2026-08" }, "各期取最近已闭环键");
+  assert.deepEqual(deriveLastRun([legacySameDay]), {}, "仅旧污染记录 → 无键（恢复补跑）");
+  const y = deriveLastRun([
+    closed("monthly", "2026-01", t607, "2025-12-31"),
+    closed("monthly", "2025-12", t607, "2025-11-30"),
+  ]);
+  assert.equal(y.monthly, "2026-01", "monthly 键序跨年正确");
+}
+
+// ---------------------------------------------------------------- #624 ensureLastRunMigrated：迁移写回 + 自愈 + 可重放
+
+{
+  const root = mkdtempSync(join(tmpdir(), "dou-report-migrate-"));
+  const reports = join(root, "reports");
+  mkdirSync(reports, { recursive: true });
+  const lastFile = join(reports, "last-run.json");
+  const indexFile = join(reports, "index.jsonl");
+  const t607 = new Date(2026, 8, 7, 6, 0, 0).getTime();
+  const t606 = new Date(2026, 8, 6, 6, 0, 0).getTime();
+  const line = (period, key, generatedAt, endDay) => JSON.stringify({ period, key, startDay: endDay, endDay, generatedAt, ok: true });
+
+  // 场景 1：旧 schema + 旧语义污染键（#624 根因现场）→ 校准写回 schema:2
+  writeFileSync(lastFile, JSON.stringify({ daily: "2026-09-06", weekly: "2026-08-24", monthly: "2026-08", updatedAt: 1 }));
+  writeFileSync(
+    indexFile,
+    [
+      line("daily", "2026-09-04", t607, "2026-09-03"), // 已闭环
+      line("daily", "2026-09-06", t606, "2026-09-06"), // 旧语义当天（发起日=endDay，未闭环，被剔除）
+      line("weekly", "2026-08-31", t607, "2026-09-06"), // 已闭环
+      line("monthly", "2026-08", t607, "2026-08-31"), // 已闭环
+    ].join("\n") + "\n",
+  );
+  const res = await ensureLastRunMigrated(root, () => {});
+  assert.equal(res.changed, true, "旧 schema + 污染键 → 发生校准");
+  assert.deepEqual(res.after, { daily: "2026-09-04", weekly: "2026-08-31", monthly: "2026-08" }, "迁移后：daily 回退到最近已闭环 09-04（09-06 污染键剔除）");
+  const migrated = JSON.parse(readFileSync(lastFile, "utf8"));
+  assert.equal(migrated.schema, LAST_RUN_SCHEMA, "写回 schema 版本");
+  assert.equal(migrated.daily, "2026-09-04", "写回内容 = 推导结果");
+
+  // 场景 2：schema:2 且与事实一致 → 不再变化（幂等/可重放）
+  const res2 = await ensureLastRunMigrated(root, () => {});
+  assert.equal(res2.changed, false, "二次运行无变化（可重放幂等）");
+
+  // 场景 3：schema:2 被旧污染键遮蔽（P0-4 自愈）→ 仍校准
+  writeFileSync(lastFile, JSON.stringify({ daily: "2026-09-06", weekly: "2026-08-31", monthly: "2026-08", schema: LAST_RUN_SCHEMA }));
+  const res3 = await ensureLastRunMigrated(root, () => {});
+  assert.equal(res3.changed, true, "schema:2 遮蔽事故 → 自愈回退");
+  assert.equal(res3.after.daily, "2026-09-04", "自愈后 daily 回退到最近已闭环键");
+
+  // 场景 4：无 index（事实源缺失）→ 不动 lastRun
+  const root2 = mkdtempSync(join(tmpdir(), "dou-report-migrate2-"));
+  mkdirSync(join(root2, "reports"), { recursive: true });
+  writeFileSync(join(root2, "reports", "last-run.json"), JSON.stringify({ daily: "2026-09-06", schema: 1 }));
+  const res4 = await ensureLastRunMigrated(root2, () => {});
+  assert.equal(res4.changed, false, "无 index 事实源 → 保持原状");
+  const kept = JSON.parse(readFileSync(join(root2, "reports", "last-run.json"), "utf8"));
+  assert.equal(kept.daily, "2026-09-06", "原 lastRun 未被改动");
+}
+
+// ---------------------------------------------------------------- #626 读侧投影：一行/窗口=最新版 + 坏行防御
+
+{
+  const root = mkdtempSync(join(tmpdir(), "dou-report-proj-"));
+  const reports = join(root, "reports");
+  mkdirSync(reports, { recursive: true });
+  const indexFile = join(reports, "index.jsonl");
+  const line = (generatedAt, key, extra = {}) => JSON.stringify({ period: "daily", key, startDay: key, endDay: key, generatedAt, ok: true, ...extra });
+  writeFileSync(
+    indexFile,
+    [
+      line(100, "2026-09-06", { id: "v1" }), // 同日两次手动生成的旧版本
+      line(200, "2026-09-06", { id: "v2" }), // 最新版本
+      line(300, "2026-09-05", { id: "v3" }),
+      "garbage-line", // 坏行跳过
+    ].join("\n") + "\n",
+  );
+  const list = await readReportIndex(root);
+  assert.equal(list.length, 2, "同窗口去重为一行");
+  assert.equal(list[0].key, "2026-09-05", "倒序：最新 generatedAt 窗口在前");
+  const d06 = list.find((m) => m.key === "2026-09-06");
+  assert.equal(d06.id, "v2", "同窗口保留最新 generatedAt 版本");
+  const parsed = parseReportIndexLines("bad\n" + JSON.stringify({ period: "weekly", key: "2026-08-31", generatedAt: 1, ok: true }));
+  assert.equal(parsed.length, 1, "坏行跳过、合法行保留");
 }
 
 console.log("unit-report: all assertions passed");

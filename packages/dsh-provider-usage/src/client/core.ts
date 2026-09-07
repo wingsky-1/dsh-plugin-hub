@@ -24,6 +24,9 @@ export const INSPECT_URL = __DSH_ROUTES__?.inspect ?? "/api/dsh-provider-usage/a
 export const ADD_URL = __DSH_ROUTES__?.add ?? "/api/dsh-provider-usage/adapters/add";
 export const UI_CONFIG_URL = __DSH_ROUTES__?.uiConfig ?? "/api/dsh-provider-usage/ui-config";
 export const EVENTS_URL = __DSH_ROUTES__?.events ?? "/api/dsh-provider-usage/events";
+/** 报告生成任务状态轮询（#625：生成异步化，POST generate 返回 taskId 后轮询此接口）。 */
+export const REPORT_GENERATE_STATUS_URL =
+  __DSH_ROUTES__?.reportGenerateStatus ?? "/api/dsh-provider-usage/reports/generate/status";
 
 /** 客户端 fetch 默认超时毫秒（#268；与 dsh-mcp-manager api() 的 #111 先例对齐取 10s）。 */
 export const CLIENT_FETCH_TIMEOUT_MS = 10_000;

@@ -194,6 +194,11 @@ export const zh = {
   reportGenerate: "立即生成",
   reportGenerating: "生成中…",
   reportGenerateFail: "生成失败：{msg}",
+  // #625：轮询超时正向提示（任务可能仍在后台生成，不报失败）
+  reportStillGenerating: "仍在后台生成，稍后刷新列表查看",
+  // #626：幂等复用提示 + 强制重新生成勾选
+  reportReused: "该窗口已有报告，已复用现有结果（勾选「重新生成」可覆盖）",
+  reportForceRegen: "重新生成（覆盖）",
   reportHistory: "报告历史",
   reportEmpty: "尚未生成过报告——配置周期或立即手动生成",
   reportFetchFail: "报告数据获取失败",
@@ -385,6 +390,9 @@ export const en: Record<ProviderUsageLocaleKey, string> = {
   reportGenerate: "Generate now",
   reportGenerating: "Generating…",
   reportGenerateFail: "Generation failed: {msg}",
+  reportStillGenerating: "Still generating in background — refresh the list later",
+  reportReused: "Report already exists for this window — reused (check \"Regenerate\" to overwrite)",
+  reportForceRegen: "Regenerate (overwrite)",
   reportHistory: "Report history",
   reportEmpty: "No reports yet — configure a schedule or generate one now",
   reportFetchFail: "Failed to load report data",
