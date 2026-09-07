@@ -151,156 +151,121 @@ function ProviderItem({
   const adapterRows = candidates.map((c) => {
     const err = errorByKey.get(c.name);
     const enabled = c.name === item.enabledId;
-    return React.createElement(
-      "div",
-      { key: c.name, className: `dou-adapterRow${enabled ? " dou-active" : ""}` },
-      React.createElement(
-        "div",
-        { className: "dou-adapterInfo" },
-        React.createElement("span", { className: "dou-adapterName" }, c.label),
-        React.createElement(
-          "span",
-          { className: "dou-adapterMeta" },
-          `${c.name} · ${c.source === "builtin" ? t("adapterBuiltin") : t("adapterCustom")}${c.file ? ` · ${c.file}` : ""}`,
-        ),
-      ),
-      React.createElement(
-        "label",
-        { className: "dou-switchWrap", title: enabled ? t("switchOffTitle") : t("switchOnTitle") },
-        React.createElement("input", {
-          type: "checkbox",
-          className: "dou-switch",
-          checked: enabled,
-          disabled: busy,
-          onChange: (e: unknown) => {
-            const checked = (e as { target: { checked: boolean } }).target.checked;
-            if (checked) onSwitch(item.provider, c.name);
-            else onDisable(item.provider);
-          },
-        }),
-        React.createElement("span", { className: "dou-switchTrack", "aria-hidden": "true" }),
-      ),
-      err !== undefined
-        ? React.createElement("div", { className: "dou-provErr" }, t("lastError", { msg: err.message }))
-        : null,
+    return (
+      <div key={c.name} className={`dou-adapterRow${enabled ? " dou-active" : ""}`}>
+        <div className="dou-adapterInfo">
+          <span className="dou-adapterName">{c.label}</span>
+          <span className="dou-adapterMeta">
+            {`${c.name} · ${c.source === "builtin" ? t("adapterBuiltin") : t("adapterCustom")}${c.file ? ` · ${c.file}` : ""}`}
+          </span>
+        </div>
+        <label className="dou-switchWrap" title={enabled ? t("switchOffTitle") : t("switchOnTitle")}>
+          <input
+            type="checkbox"
+            className="dou-switch"
+            checked={enabled}
+            disabled={busy}
+            onChange={(e: unknown) => {
+              const checked = (e as { target: { checked: boolean } }).target.checked;
+              if (checked) onSwitch(item.provider, c.name);
+              else onDisable(item.provider);
+            }}
+          />
+          <span className="dou-switchTrack" aria-hidden="true" />
+        </label>
+        {err !== undefined ? <div className="dou-provErr">{t("lastError", { msg: err.message })}</div> : null}
+      </div>
     );
   });
 
   const inspectCard =
-    inspected === null
-      ? null
-      : React.createElement(
-          "div",
-          { className: "dou-inspectCard" },
-          React.createElement("div", { className: "dou-inspectRow" }, React.createElement("span", { className: "dou-inspectK" }, t("inspectKName")), React.createElement("span", { className: "dou-inspectV" }, inspected.name)),
-          React.createElement("div", { className: "dou-inspectRow" }, React.createElement("span", { className: "dou-inspectK" }, t("inspectKLabel")), React.createElement("span", { className: "dou-inspectV" }, inspected.label)),
-          React.createElement("div", { className: "dou-inspectRow" }, React.createElement("span", { className: "dou-inspectK" }, t("inspectKProviders")), React.createElement("span", { className: "dou-inspectV" }, inspected.providers.join("、") || item.provider)),
-          React.createElement("div", { className: "dou-inspectRow" }, React.createElement("span", { className: "dou-inspectK" }, t("inspectKVersion")), React.createElement("span", { className: "dou-inspectV" }, `version ${inspected.version} ✓`)),
-        );
+    inspected === null ? null : (
+      <div className="dou-inspectCard">
+        <div className="dou-inspectRow"><span className="dou-inspectK">{t("inspectKName")}</span><span className="dou-inspectV">{inspected.name}</span></div>
+        <div className="dou-inspectRow"><span className="dou-inspectK">{t("inspectKLabel")}</span><span className="dou-inspectV">{inspected.label}</span></div>
+        <div className="dou-inspectRow"><span className="dou-inspectK">{t("inspectKProviders")}</span><span className="dou-inspectV">{inspected.providers.join("、") || item.provider}</span></div>
+        <div className="dou-inspectRow"><span className="dou-inspectK">{t("inspectKVersion")}</span><span className="dou-inspectV">{`version ${inspected.version} ✓`}</span></div>
+      </div>
+    );
 
-  const addForm = React.createElement(
-    "div",
-    { className: "dou-addForm" },
-    React.createElement(
-      "div",
-      { className: "dou-addField" },
-      React.createElement(
-        "span",
-        { className: "dou-addLabel" },
-        t("filePath"),
-        React.createElement("span", { className: "dou-addOnly" }, t("filePathOnly")),
-      ),
-    ),
-    React.createElement("input", {
-      className: "dou-input",
-      value: file,
-      placeholder: "~/.dsh/.../xxx.mjs 或绝对路径",
-      maxLength: 1024,
-      onChange: (e: unknown) => setFile((e as { target: { value: string } }).target.value),
-    }),
-    React.createElement(
-      "div",
-      { className: "dou-provActions" },
-      React.createElement(
-        "button",
-        { type: "button", className: "dou-btn", disabled: busy || inspecting || file.trim() === "", onClick: doInspect },
-        inspecting ? t("detecting") : t("detectFile"),
-      ),
-      React.createElement(
-        "button",
-        {
-          type: "button",
-          className: "dou-btn",
-          disabled: busy || adding || inspected === null,
-          onClick: submitAdd,
-          title: inspected === null ? t("detectFirst") : undefined,
-        },
-        adding ? t("adding") : t("confirmAdd"),
-      ),
-      React.createElement("button", { type: "button", className: "dou-btn", disabled: busy || adding, onClick: toggleAdd }, t("cancel")),
-    ),
-    inspErr !== null ? React.createElement("div", { className: "dou-provErr" }, inspErr) : null,
-    inspectCard,
-    addMsg !== null
-      ? React.createElement("div", { className: addErr ? "dou-provErr" : "dou-hint" }, addMsg)
-      : null,
+  const addForm = (
+    <div className="dou-addForm">
+      <div className="dou-addField">
+        <span className="dou-addLabel">
+          {t("filePath")}
+          <span className="dou-addOnly">{t("filePathOnly")}</span>
+        </span>
+      </div>
+      <input
+        className="dou-input"
+        value={file}
+        placeholder="~/.dsh/.../xxx.mjs 或绝对路径"
+        maxLength={1024}
+        onChange={(e: unknown) => setFile((e as { target: { value: string } }).target.value)}
+      />
+      <div className="dou-provActions">
+        <button
+          type="button"
+          className="dou-btn"
+          disabled={busy || inspecting || file.trim() === ""}
+          onClick={doInspect}
+        >
+          {inspecting ? t("detecting") : t("detectFile")}
+        </button>
+        <button
+          type="button"
+          className="dou-btn"
+          disabled={busy || adding || inspected === null}
+          onClick={submitAdd}
+          title={inspected === null ? t("detectFirst") : undefined}
+        >
+          {adding ? t("adding") : t("confirmAdd")}
+        </button>
+        <button type="button" className="dou-btn" disabled={busy || adding} onClick={toggleAdd}>{t("cancel")}</button>
+      </div>
+      {inspErr !== null ? <div className="dou-provErr">{inspErr}</div> : null}
+      {inspectCard}
+      {addMsg !== null ? <div className={addErr ? "dou-provErr" : "dou-hint"}>{addMsg}</div> : null}
+    </div>
   );
 
-  return React.createElement(
-    "div",
-    { className: "dou-provItem" },
-    // 折叠头：▸/▾ + provider 名 + 徽标（已启用: <name> / 未启用适配器）
-    React.createElement(
-      "button",
-      {
-        type: "button",
-        className: "dou-provHead",
-        onClick: () => setOpen((v) => !v),
-        "aria-expanded": open,
-      },
-      React.createElement("span", { className: `dou-provArrow${open ? " dou-provArrowOpen" : ""}`, "aria-hidden": "true" }, "▸"),
-      React.createElement("span", { className: "dou-provName" }, item.provider),
-      React.createElement(
-        "span",
-        { className: `dou-provBadge${item.enabledId === null ? " dou-provBadgeOff" : ""}` },
-        badge,
-      ),
-    ),
-    !open
-      ? null
-      : React.createElement(
-          "div",
-          { className: "dou-provBody" },
-          // 无候选引导：文件注入 + 复制一句话引导指令（v2 文档）
-          candidates.length === 0
-            ? [
-                React.createElement(
-                  "div",
-                  { key: "hint", className: "dou-hint" },
-                  t("noCandidates"),
-                ),
-                React.createElement(
-                  "div",
-                  { key: "guide", className: "dou-provActions" },
-                  React.createElement(
-                    "button",
-                    { type: "button", className: "dou-btn", disabled: busy, onClick: onCopyGuide },
-                    copied ? t("copied") : t("copyGuide"),
-                  ),
-                ),
-              ]
-            : adapterRows,
-          React.createElement(
-            "div",
-            { className: "dou-provActions" },
-            React.createElement(
-              "button",
-              { type: "button", className: "dou-btn", disabled: busy, onClick: toggleAdd },
-              showAddForm ? t("collapse") : t("addAdapter"),
-            ),
-          ),
-          !showAddForm ? null : addForm,
-        ),
+  return (
+    <div className="dou-provItem">
+      {/* 折叠头：▸/▾ + provider 名 + 徽标（已启用: <name> / 未启用适配器） */}
+      <button
+        type="button"
+        className="dou-provHead"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        <span className={`dou-provArrow${open ? " dou-provArrowOpen" : ""}`} aria-hidden="true">▸</span>
+        <span className="dou-provName">{item.provider}</span>
+        <span className={`dou-provBadge${item.enabledId === null ? " dou-provBadgeOff" : ""}`}>
+          {badge}
+        </span>
+      </button>
+      {!open ? null : (
+        <div className="dou-provBody">
+          {/* 无候选引导：文件注入 + 复制一句话引导指令（v2 文档） */}
+          {candidates.length === 0 ? [
+            <div key="hint" className="dou-hint">
+              {t("noCandidates")}
+            </div>,
+            <div key="guide" className="dou-provActions">
+              <button type="button" className="dou-btn" disabled={busy} onClick={onCopyGuide}>
+                {copied ? t("copied") : t("copyGuide")}
+              </button>
+            </div>,
+          ] : adapterRows}
+          <div className="dou-provActions">
+            <button type="button" className="dou-btn" disabled={busy} onClick={toggleAdd}>
+              {showAddForm ? t("collapse") : t("addAdapter")}
+            </button>
+          </div>
+          {!showAddForm ? null : addForm}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -354,72 +319,53 @@ export function ProviderListSection({
   };
 
   /** 手风琴渲染复用（主分组与额外分组同构）。 */
-  const accordion = (items: ProviderListItem[]): React.ReactElement =>
-    React.createElement(
-      "div",
-      { className: "dou-provList" },
-      items.map((item) =>
-        React.createElement(ProviderItem, {
-          key: item.provider,
-          item,
-          candidates: candidatesByProvider.get(item.provider) ?? [],
-          errorByKey,
-          busy,
-          onSwitch,
-          onDisable,
-          onInspect,
-          onAdd,
-        }),
-      ),
-    );
+  const accordion = (items: ProviderListItem[]): React.ReactElement => (
+    <div className="dou-provList">
+      {items.map((item) => (
+        <ProviderItem
+          key={item.provider}
+          item={item}
+          candidates={candidatesByProvider.get(item.provider) ?? []}
+          errorByKey={errorByKey}
+          busy={busy}
+          onSwitch={onSwitch}
+          onDisable={onDisable}
+          onInspect={onInspect}
+          onAdd={onAdd}
+        />
+      ))}
+    </div>
+  );
 
-  return React.createElement(
-    "div",
-    { style: sectionStyle },
-    React.createElement("h4", { style: titleStyle }, t("provTitle")),
-    React.createElement(
-      "div",
-      { className: "dou-hint" },
-      t("provListHint", { n: main.length }),
-    ),
-    fileErrors.length > 0
-      ? fileErrors.map(([k, e]) =>
-          React.createElement(
-            "div",
-            { key: k, className: "dou-provErr" },
-            t("fileLoadFail", { f: k.slice(5), msg: e.message }),
-          ),
-        )
-      : null,
-    main.length === 0
-      ? React.createElement(
-          "div",
-          { className: "dou-hint" },
-          t("noProvHint"),
-          React.createElement(
-            "div",
-            { className: "dou-provActions" },
-            React.createElement(
-              "button",
-              { type: "button", className: "dou-btn", disabled: busy, onClick: onCopyGlobalGuide },
-              copiedGlobal ? t("copied") : t("copyGuide"),
-            ),
-          ),
-        )
-      : accordion(main),
-    extra.length > 0
-      ? React.createElement(
-          "div",
-          null,
-          React.createElement("h4", { style: titleStyle }, t("customProvTitle")),
-          React.createElement(
-            "div",
-            { className: "dou-hint" },
-            t("customProvHint"),
-          ),
-          accordion(extra),
-        )
-      : null,
+  return (
+    <div style={sectionStyle}>
+      <h4 style={titleStyle}>{t("provTitle")}</h4>
+      <div className="dou-hint">{t("provListHint", { n: main.length })}</div>
+      {fileErrors.length > 0
+        ? fileErrors.map(([k, e]) => (
+            <div key={k} className="dou-provErr">
+              {t("fileLoadFail", { f: k.slice(5), msg: e.message })}
+            </div>
+          ))
+        : null}
+      {main.length === 0 ? (
+        <div className="dou-hint">
+          {t("noProvHint")}
+          <div className="dou-provActions">
+            <button type="button" className="dou-btn" disabled={busy} onClick={onCopyGlobalGuide}>
+              {copiedGlobal ? t("copied") : t("copyGuide")}
+            </button>
+          </div>
+        </div>
+      ) : accordion(main)}
+      {extra.length > 0 ? (
+        <div>
+          <h4 style={titleStyle}>{t("customProvTitle")}</h4>
+          <div className="dou-hint">{t("customProvHint")}</div>
+          {accordion(extra)}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

@@ -54,11 +54,21 @@ declare module "react" {
   ): ReactElement;
 }
 
-declare global {
-  namespace JSX {
-    interface Element extends any {}
-    interface IntrinsicElements {
-      [elemName: string]: any;
-    }
+// JSX 全局命名空间（顶层 namespace 形态，对齐 #605 / issue #584 分片 a 先例：
+// .tsx 实际消费 JSX 命名空间时 declare global 形态不生效）。Element 与上方
+// declare module "react" 的 ReactElement 面同构（本包 shim 为细类型面，非
+// notifier 的 React:any 兜底形态，JSX 表达式需可赋给组件标注的 ReactElement/
+// ReactNode），仅编译期类型，零运行时影响。
+namespace JSX {
+  interface Element {
+    type: unknown;
+    props: unknown;
+    key: string | number | null;
+  }
+  interface IntrinsicAttributes {
+    key?: string | number | null;
+  }
+  interface IntrinsicElements {
+    [elemName: string]: any;
   }
 }

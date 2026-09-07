@@ -52,68 +52,58 @@ export function UiSection(): React.ReactElement | null {
 
   // 层级基准与偏移量分开钳制：层级 1-9000（#128），偏移维持 0-2000。
   const numInput = (key: "offsetX" | "offsetY" | "panelOffsetY" | "zIndexBase", label: string, min = 0, max = 2000): React.ReactNode =>
-    React.createElement(
-      "label",
-      { style: { marginRight: 12, whiteSpace: "nowrap" } },
-      label,
-      React.createElement("input", {
-        type: "number",
-        min,
-        max,
-        value: String(cfg[key]),
-        style: { width: 64, marginLeft: 6, padding: "2px 6px", border: "1px solid var(--dsw-alias-border-l2,#e8eaf0)", borderRadius: 4 },
-        onChange: (e: unknown) => {
+    <label style={{ marginRight: 12, whiteSpace: "nowrap" }}>
+      {label}
+      <input
+        type="number"
+        min={min}
+        max={max}
+        value={String(cfg[key])}
+        style={{ width: 64, marginLeft: 6, padding: "2px 6px", border: "1px solid var(--dsw-alias-border-l2,#e8eaf0)", borderRadius: 4 }}
+        onChange={(e: unknown) => {
           const v = Number((e as { target: { value: string } }).target.value);
           set({ [key]: Number.isFinite(v) ? Math.min(max, Math.max(min, Math.round(v))) : min } as Partial<UiPlacementConfig>);
-        },
-      }),
-    );
+        }}
+      />
+    </label>;
 
-  return React.createElement(
-    "div",
-    { style: sectionStyle },
-    React.createElement("h4", { style: titleStyle }, t("uiTitle")),
-    React.createElement(
-      "div",
-      { style: { marginBottom: 8 } },
-      t("uiAnchor"),
-      React.createElement(
-        "select",
-        {
-          value: cfg.placement,
-          style: { marginLeft: 6, padding: "2px 6px", border: "1px solid var(--dsw-alias-border-l2,#e8eaf0)", borderRadius: 4 },
-          onChange: (e: unknown) => set({ placement: (e as { target: { value: UiPlacementConfig["placement"] } }).target.value }),
-        },
-        PLACEMENT_OPTIONS.map((o) => React.createElement("option", { key: o.value, value: o.value }, t(o.key))),
-      ),
-    ),
-    // #543 窄屏兜底：四个数字输入行允许换行（约 350px 内容宽度下 nowrap 横排会溢出）
-    React.createElement(
-      "div",
-      { style: { marginBottom: 8, display: "flex", flexWrap: "wrap", rowGap: 6 } },
-      numInput("offsetX", t("offsetX")),
-      numInput("offsetY", t("offsetY")),
-      numInput("panelOffsetY", t("panelOffsetY")),
-      numInput("zIndexBase", t("zIndexBase"), 1, 9000),
-    ),
-    React.createElement(
-      "button",
-      {
-        type: "button",
-        className: "dou-btn",
-        disabled: saving,
-        onClick: () => {
+  return (
+    <div style={sectionStyle}>
+      <h4 style={titleStyle}>{t("uiTitle")}</h4>
+      <div style={{ marginBottom: 8 }}>
+        {t("uiAnchor")}
+        <select
+          value={cfg.placement}
+          style={{ marginLeft: 6, padding: "2px 6px", border: "1px solid var(--dsw-alias-border-l2,#e8eaf0)", borderRadius: 4 }}
+          onChange={(e: unknown) => set({ placement: (e as { target: { value: UiPlacementConfig["placement"] } }).target.value })}
+        >
+          {PLACEMENT_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{t(o.key)}</option>
+          ))}
+        </select>
+      </div>
+      {/* #543 窄屏兜底：四个数字输入行允许换行（约 350px 内容宽度下 nowrap 横排会溢出） */}
+      <div style={{ marginBottom: 8, display: "flex", flexWrap: "wrap", rowGap: 6 }}>
+        {numInput("offsetX", t("offsetX"))}
+        {numInput("offsetY", t("offsetY"))}
+        {numInput("panelOffsetY", t("panelOffsetY"))}
+        {numInput("zIndexBase", t("zIndexBase"), 1, 9000)}
+      </div>
+      <button
+        type="button"
+        className="dou-btn"
+        disabled={saving}
+        onClick={() => {
           void save();
-        },
-      },
-      saving ? t("savingNow") : t("save"),
-    ),
-    msg !== null
-      ? React.createElement(
-          "span",
-          { style: { marginLeft: 10, color: msg.ok ? "var(--dsw-alias-state-success-primary,#0f9d6e)" : "var(--dsw-alias-state-error-primary,#d64545)" } },
-          msg.text,
-        )
-      : null,
+        }}
+      >
+        {saving ? t("savingNow") : t("save")}
+      </button>
+      {msg !== null ? (
+        <span style={{ marginLeft: 10, color: msg.ok ? "var(--dsw-alias-state-success-primary,#0f9d6e)" : "var(--dsw-alias-state-error-primary,#d64545)" }}>
+          {msg.text}
+        </span>
+      ) : null}
+    </div>
   );
 }
