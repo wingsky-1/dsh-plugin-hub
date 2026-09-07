@@ -551,6 +551,7 @@ const main = async () => {
     const callDeny = await guard({ name: "ws_mcp_call", arguments: { server: fullServerName("/proj", "ctx"), tool: "use_ctx" } }, async () => ({ kind: "allow" }));
     assert.equal(callDeny.kind, "deny", "ws_mcp_call guard 查禁用表");
     assert.equal(toolDisabledReason(fullServerName("/proj", "ctx"), "use_ctx").includes("mcp-manager 管辖"), true, "禁用原因声明覆盖 mcp__ 与中间层工具（#413）");
+
     // 3) callTool（ws_mcp_call 执行路径）：禁用工具 → 显式抛错（验收 14：三入口一致）。
     const callUnit = {
       root: "/proj",
@@ -569,6 +570,52 @@ const main = async () => {
     // 未禁用工具正常放行到调用。
     const okValue = await mw.callTool(fullServerName("/proj", "ctx"), "other", {}, undefined);
     assert.deepEqual(okValue.content, [], "未禁用工具正常调用");
+
+    // 4) stats：四个原子工具埋点与统计断言
+    const { McpStatsCollector } = await import("../lib/index.js");
+    const testStatsDir = mkdtempSync(join(tmpdir(), "mcp-smoke-stats-"));
+    const testStatsFile = join(testStatsDir, "smoke-stats.json");
+    try {
+      const statsCollector = new McpStatsCollector({ enabled: true, filePath: testStatsFile });
+      // 提取注册的原子工具
+      const statsRegTools: any[] = [];
+      const statsCtx = {
+        tools: { register: (def: any) => { statsRegTools.push(def); return () => {}; } },
+        on: () => () => {},
+      };
+      const statsMwDispose = registerMiddlewareTools(
+        statsCtx as any,
+        mw,
+        async () => "/proj",
+        "project",
+        { stats: statsCollector }
+      );
+
+      const searchTool = statsRegTools.find((t) => t.name === "ws_mcp_search");
+      const listTool = statsRegTools.find((t) => t.name === "ws_mcp_list");
+      const detailTool = statsRegTools.find((t) => t.name === "ws_mcp_detail");
+      const callTool = statsRegTools.find((t) => t.name === "ws_mcp_call");
+
+      assert.ok(searchTool && listTool && detailTool && callTool, "四个原子工具均已注册");
+
+      // 执行四个原子工具
+      await searchTool.execute({ query: "codegraph" }, { agent: { session: { header: { cwd: "/proj" } } } });
+      await listTool.execute({}, { agent: { session: { header: { cwd: "/proj" } } } });
+      await detailTool.execute({ server: fullServerName("/proj", "ctx"), tool: "use_ctx" }, { agent: { session: { header: { cwd: "/proj" } } } });
+      await callTool.execute({ server: fullServerName("/proj", "ctx"), tool: "other" }, { agent: { session: { header: { cwd: "/proj" } } } });
+
+      statsCollector.flushSync();
+      const statsSnap = statsCollector.snapshot();
+      assert.equal(statsSnap.servers.ctx?.totalCalls, 1, "ws_mcp_call 成功记录到 ctx 服务器");
+      assert.equal(statsSnap.servers.ctx?.tools.other?.calls, 1, "other 工具调用成功记录");
+      assert.equal(statsSnap.disclosure.searches["codegraph"], 1, "ws_mcp_search 记录到漏斗");
+      assert.equal(statsSnap.disclosure.lists["<all>"], 1, "ws_mcp_list 记录到漏斗");
+      assert.equal(statsSnap.disclosure.details["ctx/use_ctx"], 1, "ws_mcp_detail 记录到漏斗");
+
+      statsMwDispose();
+    } finally {
+      rmSync(testStatsDir, { recursive: true, force: true });
+    }
     dispose();
   });
   await checkAsync("#362 P1：disabledTools 持久化（合并式写盘 + 重启保留）", async () => {

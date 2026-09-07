@@ -282,6 +282,7 @@ await ctx.mcpManager.registerServer({
   reason carries that semantic note; records live under `<DSH_HOME>/dsh-mcp-user-state.json`
   → `disabledTools` (the `@global` key is shared across workspaces; merged writes never
   overwrite the whole table)
+- **Call stats and debug mode (Metadata-Only)**: Disabled by default; when configured with `dsh-mcp-manager.debug.callStats: true` in `~/.dsh/settings.yaml`, tool call metrics (call count, success/error, average/max duration) and progressive disclosure funnel stats (`ws_mcp_search` query frequencies, `ws_mcp_list` / `ws_mcp_detail` query distributions) are debounced and atomically written to `<DSH_HOME>/mcp-stats.json`, with single-line console debug logs; strictly does not persist user arguments or returned content, avoiding code or privacy leaks
 - The capability catalog injection includes source annotations and a "does not represent current
   connection status" note
 
