@@ -54,7 +54,10 @@ export const LAN_PROXY_UI_EXEMPT = {
 // 设置卡不直接渲染/编辑该顶层键（quietHours.allowKinds 子键在客户端免打扰块内
 // 编辑，属 quietHours 内部不作顶层断言）。唯一豁免，条数 ≤8 满足。
 export const NOTIFIER_UI_EXEMPT = {
-  allowKinds: 'packages/dsh-notifier/src/config.ts:139 服务端动态 kind 确认清单（POST /kinds 管理），客户端不直接渲染顶层键',
+  allowKinds: 'packages/dsh-notifier/src/config.ts:157 服务端动态 kind 确认清单（POST /kinds 管理），客户端不直接渲染顶层键',
+  // #640/#641：notifySound 废弃只读兼容别名——UI 不再渲染/编辑（新键
+  // browserSound/systemSound 取代；读取回落经 resolveSoundSetting，见 config.ts）。
+  notifySound: 'packages/dsh-notifier/src/config.ts:136 废弃只读兼容别名（每通道新键取代），客户端不再渲染',
 }
 
 /** 豁免白名单结构自检：≤8 键 + 每条原因注释（含「文件:行」+ 一句理由）。 */

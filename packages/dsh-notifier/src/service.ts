@@ -22,7 +22,8 @@
  */
 import type { SseHub, SystemNotifier } from "./server.ts";
 import type { HistoryStore } from "./history.ts";
-import type { NotifyConfig } from "./config.ts";
+import type { NotifyConfig, SoundSetting } from "./config.ts";
+import { resolveSoundSetting } from "./config.ts";
 import { isInQuietHours } from "./quiet-hours.ts";
 import { NOTIFY_KINDS } from "./message.ts";
 import { sanitizeErrorText } from "./message.ts";
@@ -222,12 +223,16 @@ export function createNotifierService(deps: NotifierServiceDeps): NotifierServic
     }
   }
 
-  /** 全部可投递频道：内置（按开关）+ 配置驱动实例（enabled 过滤由装配层保证）。 */
+  /** 全部可投递频道：内置（按「弹窗开关 || 声音非静音」进入）+ 配置驱动实例
+   *  （enabled 过滤由装配层保证）。#640/#641：弹窗关 + 声音开 → 只响不弹投递
+   *  （B6：投递集合条件 = 弹窗 || 声音非静音）。 */
   function allChannels(): Array<{ id: string; channel: NotifyChannel }> {
     const cfg = current();
     const out: Array<{ id: string; channel: NotifyChannel }> = [];
-    if (cfg.browserNotify) out.push({ id: BUILTIN_CHANNELS.browser, channel: browserChannel });
-    if (cfg.systemNotify) out.push({ id: BUILTIN_CHANNELS.system, channel: systemChannel });
+    const browserSound = resolveSoundSetting(cfg, "browser");
+    if (cfg.browserNotify || browserSound !== false) out.push({ id: BUILTIN_CHANNELS.browser, channel: browserChannel });
+    const systemSound = resolveSoundSetting(cfg, "system");
+    if (cfg.systemNotify || systemSound !== false) out.push({ id: BUILTIN_CHANNELS.system, channel: systemChannel });
     try {
       out.push(...outboundChannels());
     } catch (error) {
@@ -263,8 +268,12 @@ export function createNotifierService(deps: NotifierServiceDeps): NotifierServic
 
   /**
    * 单频道投递：受理同步返回（铁律 1）；投递终态经 status 落盘 + sent 事件
-   * 异步可见（bark 的 promise 决议；内置频道同步完成即终态）。错误出口统一
+   * 异步可见（bark 的 promise 决议；内置频道 promise 决议——system 自播/命令
+   * 失败终态 failed（B4）；browser 同步完成即终态）。错误出口统一
    * sanitizeErrorText（评审 P0-4：NotifyResult.error / status / 事件三路都过）。
+   * #640/#641：内置 browser/system 的 send 载荷经 mount 闭包注入各频道「当前
+   * 弹窗开关/声音策略」实时读取器——deliver 里读取（与 allChannels 判定同一
+   * 时刻的 current()），弹窗与声音组合分派（弹 toast / 只自播 / 静默）。
    */
   function deliver(kind: string, title: string, message: string, ts: number, severity: NotifySeverity | undefined, target: { id: string; channel: NotifyChannel }): NotifyResult {
     const { id, channel } = target;
@@ -308,21 +317,72 @@ export function createNotifierService(deps: NotifierServiceDeps): NotifierServic
     }
   }
 
-  /** 内置 browser 频道：包一层 SSE hub（帧契约 {type,kind,title,message,ts,seq} 不变）。 */
+  /** browser 频道分派（帧级 sound，P0-1）：
+   *  弹窗开 → SSE notify 帧（附服务端解析的 sound 策略，客户端帧级权威）；
+   *  弹窗关 + 声音开（只响不弹）→ SSE 只响不弹帧（play-only 标记），客户端
+   *  自播不弹实体；两者皆关 → 频道根本不进投递集合（allChannels 已过滤）。 */
+  function dispatchBrowser(payload: { title: string; body: string; kind: string; ts: number; severity?: NotifySeverity }): void {
+    const cfg = current();
+    const pop = cfg.browserNotify === true;
+    const sound = resolveSoundSetting(cfg, "browser");
+    if (pop) {
+      sse.broadcast({
+        type: "notify",
+        kind: payload.kind,
+        title: payload.title,
+        message: payload.body,
+        ts: payload.ts,
+        sound: { mode: sound === false ? "silent" : sound === true ? "system" : "selfplay", tone: typeof sound === "string" ? sound : undefined },
+      });
+      return;
+    }
+    // 只响不弹：声音非静音才会进投递集合；发 play-only 帧（客户端不弹实体）。
+    // true（跟随系统默认）在此场景没有可依赖的「OS 弹窗发声」——弹窗关 = 无
+    // 通知实体 = OS 不会发声，故编码为 selfplay + tone:undefined（客户端默认
+    // 旋律），与 system 通道 pop=false + true 的「默认事件音自播」语义对齐
+    // （复核 P1-1：原 mode:"system" 会让客户端既不弹也不播 → 纯静默误导）。
+    sse.broadcast({
+      type: "notify",
+      kind: payload.kind,
+      title: payload.title,
+      message: payload.body,
+      ts: payload.ts,
+      playOnly: true,
+      sound: { mode: "selfplay", tone: typeof sound === "string" ? sound : undefined },
+    });
+  }
+
+  /** system 频道分派（弹 toast / 只自播 / 静默 由 SystemNotifier 承载；消息实时传入）。 */
+  function dispatchSystem(payload: { title: string; body: string; kind: string; ts: number; severity?: NotifySeverity }): Promise<void> {
+    const cfg = current();
+    const pop = cfg.systemNotify === true;
+    const sound = resolveSoundSetting(cfg, "system");
+    // 声音 false 时频道不会进投递集合；此处统一走 system.notify 决议终态。
+    // notify resolve false（自播失败/命令失败）→ throw → promise reject →
+    // deliver 的 emitFail（B4 异步终态 failed）。reject 不在此吞掉（复核 P2-1：
+    // onRejected 返回 undefined 会让 promise resolve → 误走 emitOk 成功上报）。
+    return system.notify(pop, sound, payload.title, payload.body).then((ok) => {
+      if (!ok) throw new Error("system notification failed (self-play or command error)");
+    });
+  }
+
+  /** 内置 browser 频道：包一层 SSE hub（帧契约 {type,kind,title,message,ts,seq} 不变，
+   *  只加 sound/playOnly 字段——向后兼容，旧客户端无 sound 帧回落快照兜底）。 */
   const browserChannel: NotifyChannel = {
     name: BUILTIN_CHANNELS.browser,
     capabilities: { titleMaxLen: 64, maxBodyLen: 2048 },
     send(payload) {
-      sse.broadcast({ type: "notify", kind: payload.kind, title: payload.title, message: payload.body, ts: payload.ts });
+      dispatchBrowser(payload);
     },
   };
 
-  /** 内置 system 频道：包一层系统通知（节流/超时/降级语义不变）。 */
+  /** 内置 system 频道：包一层系统通知（节流/超时/降级语义在 SystemNotifier 内；
+   *  终态经 promise 决议——自播失败/命令失败 → failed（B4））。 */
   const systemChannel: NotifyChannel = {
     name: BUILTIN_CHANNELS.system,
     capabilities: { titleMaxLen: 64, maxBodyLen: 256 },
     send(payload) {
-      system.notify(payload.title, payload.body);
+      return dispatchSystem(payload);
     },
   };
 

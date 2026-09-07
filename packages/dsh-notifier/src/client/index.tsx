@@ -204,9 +204,16 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
     status: "/api/dsh-notifier/status",
     kinds: "/api/dsh-notifier/kinds",
   };
+  /** 内置音色 id（与服务端 config.ts SOUND_IDS 同源复制——客户端不 import 宿主
+   *  模块，两处由各自测试锁定；定稿口径 ding/bell/chime/pop）。 */
+  var SOUND_IDS: readonly string[] = ["ding", "bell", "chime", "pop"];
+  /** 宿主平台（/health platform 拉取；服务端运行机器 OS——系统通道提示据此，
+   *  防浏览器 OS 与宿主 OS 混淆（C7）。null = 未拉取/失败）。 */
+  var hostPlatform: string | null = null;
   var STYLE_ID = "dsh-notifier-style";
   // 合并 #418/#421/#426/#508 后统一 bump（保证新样式重注入；508-1 > 426-1）
-  var CSS_VERSION = "527-1";
+  // #640/#641：声音行/三态/试听样式加入 → 527-1 → 640-1
+  var CSS_VERSION = "640-1";
   // 浏览器通知图标（内联 SVG data URL，零外部资源；铃铛造型）。
   var NOTIFY_ICON =
     "data:image/svg+xml;utf8," +
@@ -424,29 +431,60 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
   }
 
   var lastChimeAt = 0;
-  function playChime() {
-    if (audioCtx === null || audioCtx.state !== "running") return;
+  /** 统一播放节流（1.5s）：覆盖全部自播路径（通知音 + 只响不弹 + 试听由
+   *  playToneForce 绕过——用户手势直接试听不受节流限制）。防通知风暴叠播。 */
+  function playGate(): boolean {
     var now = Date.now();
-    if (now - lastChimeAt < 1500) return;
+    if (now - lastChimeAt < 1500) return false;
     lastChimeAt = now;
+    return true;
+  }
+
+  /** 按音色合成短旋律（Web Audio；4 音色语义：ding=双短高音、bell=单中高音、
+   *  chime=三音上行、pop=短促低音）。试听与通知自播共用同一实现。 */
+  function playTone(tone: string | undefined) {
+    if (audioCtx === null || audioCtx.state !== "running") return;
     try {
       var t = audioCtx.currentTime;
-      for (var i = 0; i < 2; i += 1) {
+      var notes: Array<{ freq: number; at: number; dur: number; type?: string }>;
+      if (tone === "ding") notes = [{ freq: 1318, at: 0, dur: 0.14 }, { freq: 1760, at: 0.16, dur: 0.22 }];
+      else if (tone === "bell") notes = [{ freq: 880, at: 0, dur: 0.5 }];
+      else if (tone === "chime") notes = [{ freq: 660, at: 0, dur: 0.3 }, { freq: 880, at: 0.15, dur: 0.3 }, { freq: 1320, at: 0.3, dur: 0.5 }];
+      else if (tone === "pop") notes = [{ freq: 392, at: 0, dur: 0.12, type: "triangle" }];
+      else notes = [{ freq: 880, at: 0, dur: 0.16 }, { freq: 660, at: 0.16, dur: 0.22 }]; // 默认（旧 playChime 双音）
+      for (var i = 0; i < notes.length; i += 1) {
+        var n = notes[i];
         var osc = audioCtx.createOscillator();
         var gain = audioCtx.createGain();
-        osc.type = "sine";
-        osc.frequency.value = i === 0 ? 880 : 660;
-        gain.gain.setValueAtTime(0.0001, t + i * 0.18);
-        gain.gain.exponentialRampToValueAtTime(0.18, t + i * 0.18 + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.0001, t + i * 0.18 + 0.16);
+        osc.type = n.type || "sine";
+        osc.frequency.value = n.freq;
+        gain.gain.setValueAtTime(0.0001, t + n.at);
+        gain.gain.exponentialRampToValueAtTime(0.18, t + n.at + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + n.at + n.dur);
         osc.connect(gain);
         gain.connect(audioCtx.destination);
-        osc.start(t + i * 0.18);
-        osc.stop(t + i * 0.18 + 0.17);
+        osc.start(t + n.at);
+        osc.stop(t + n.at + n.dur + 0.02);
       }
     } catch (error) {
       // 播放失败忽略
     }
+  }
+
+  /** 试听（用户手势内）：显式解锁 + 强制播放（绕过统一节流）。 */
+  function playPreview(tone: string | undefined) {
+    unlockAudio();
+    if (audioCtx === null || audioCtx.state !== "running") return;
+    try {
+      playTone(tone);
+    } catch (error) {
+      // 忽略
+    }
+  }
+
+  /** 旧双音实现保留名（通知降级路径已并入 playTone，此函数供历史锚点/兜底）。 */
+  function playChime() {
+    playTone(undefined);
   }
 
   var savedTitle: any = null;
@@ -507,33 +545,56 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
   }
 
   /**
-   * 通知展示总入口：系统级 Notification 可用 → 弹系统通知；
-   * 否则降级（页面内横幅 + 提示音 + 标题提醒）。
+   * 通知展示总入口（#640/#641：声音策略为帧级权威，取代布尔快照）：
+   * @param opts.sound 服务端解析的声音策略 {mode, tone}——
+   *   silent（静音）/ system（跟随系统默认，交给 OS）/ selfplay（页内自播，系统弹窗 silent 防双响）；
+   *   缺省（旧服务端无 sound 字段）回落 runtimeConfig 快照语义（notifySound !== false）。
+   * @param opts.playOnly 只响不弹：不弹实体、仅按需自播（服务端弹窗关 + 声音开）。
    */
-  function showNotification(kind: any, title: any, message: any, soundEnabled: boolean) {
-    // 多标签去重：仅主标签执行展示，副标签静默
+  function showNotification(kind: any, title: any, message: any, opts: { sound?: any; playOnly?: boolean }) {
+    var frame = opts.sound;
+    if (!frame || typeof frame !== "object") {
+      // 回落快照：旧服务端帧无 sound 字段 → notifySound 布尔语义
+      var legacyOn = !(runtimeConfig && runtimeConfig.notifySound === false);
+      frame = legacyOn ? { mode: "system", tone: undefined } : { mode: "silent", tone: undefined };
+    }
+    var selfPlay = frame.mode === "selfplay";
+    var silent = frame.mode === "silent" || selfPlay;
+    var tone = typeof frame.tone === "string" ? frame.tone : undefined;
+    // 只响不弹 + mode:"system"（旧服务端/升级窗口残留帧）：无弹窗实体 = OS 不会
+    // 发声，归一为自播默认旋律（复核 P1-1 防御侧——服务端已改为编 selfplay，
+    // 此处兜底旧帧防「0 弹 0 播纯静默」）
+    if (opts.playOnly === true && frame.mode === "system") {
+      selfPlay = true;
+      silent = true;
+    }
+    // 多标签去重：弹实体与只响不弹自播一律先过主标签租约（C2/P0-1），副标签静默
     if (!claimMaster()) return;
-    if (systemNotificationUsable()) {
+    if (!opts.playOnly && systemNotificationUsable()) {
       try {
-        var notification = new Notification(title, { body: message, tag: "dsh-notifier-" + kind + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8), icon: NOTIFY_ICON, silent: !soundEnabled });
+        var notification = new Notification(title, { body: message, tag: "dsh-notifier-" + kind + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8), icon: NOTIFY_ICON, silent: silent });
         notification.onclick = function () {
           window.focus();
           notification.close();
         };
         notified.push(notification);
         if (notified.length > 5) notified.shift().close();
+        // SoundId 自播（selfplay 模式）：Notification 已 silent 防双响，页内补播
+        if (selfPlay && playGate()) playTone(tone);
         return;
       } catch (error) {
         console.warn("[dsh-notifier] 浏览器通知失败，降级为页面内提醒：", error);
       }
     }
-    // 降级通道
-    if (document.visibilityState !== "hidden") {
-      showBanner(kind, title, message);
-    } else {
-      flashTitle(title);
+    // 降级通道 / 只响不弹：banner 或标题闪烁；声音按帧策略
+    if (!opts.playOnly) {
+      if (document.visibilityState !== "hidden") {
+        showBanner(kind, title, message);
+      } else {
+        flashTitle(title);
+      }
     }
-    playChime();
+    if (selfPlay && playGate()) playTone(tone);
   }
 
   // ---- 运行时配置镜像（GET /config 的 effective；SSE 展示与可见性判定用）----
@@ -542,12 +603,15 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
   function handleNotifyFrame(payload: any) {
     // 测试通知：无条件提醒（验证链路是它的目的，与可见性/权限之外的开关无关）。
     if (payload.kind === "test") {
-      showNotification(payload.kind, payload.title, payload.message, runtimeConfig?.notifySound !== false);
+      showNotification(payload.kind, payload.title, payload.message, { sound: payload.sound, playOnly: payload.playOnly === true });
       return;
     }
     // 页面聚焦时不提醒（用户在界面中）；除非配置了「页面可见时也弹」。
-    if (document.visibilityState !== "hidden" && !(runtimeConfig && runtimeConfig.notifyWhenVisible === true)) return;
-    showNotification(payload.kind, payload.title, payload.message, runtimeConfig?.notifySound !== false);
+    if (document.visibilityState !== "hidden" && !(runtimeConfig && runtimeConfig.notifyWhenVisible === true)) {
+      // 只响不弹（playOnly）不依赖可见性——它不打扰界面，纯声音提醒（C4）
+      if (payload.playOnly !== true) return;
+    }
+    showNotification(payload.kind, payload.title, payload.message, { sound: payload.sound, playOnly: payload.playOnly === true });
   }
 
   // ------------------------------------------------------------ SSE 半区（C1-C9）
@@ -1407,29 +1471,34 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
      * checkbox 依赖 HTML 规范豁免（点击 interactive content 不触发 summary 激活）。
      */
     /**
-     * 内置频道卡（#508 M1 r4 形态）：卡头 = 类型图标 + 名称 + 类型徽标 + 状态点/摘要 +
-     * 启用 switch；卡体 = 行为参数 + （浏览器）权限状态行 + 测试按钮。
-     * #418：浏览器通知权限状态行归入浏览器频道卡（契约锚点：channelId === "browser" ? browserPermLine()）。
+     * 内置频道卡（#508 M1 r4 形态 + #640/#641 三态与声音行）：
+     * 卡头 = 类型图标 + 名称 + 类型徽标 + 状态点/摘要 + 启用 switch；卡体 =
+     * 行为参数 + 声音行（开关 + 音色下拉 + ▶试听）+（浏览器）权限状态行 + 测试按钮。
+     * 三态（C3）：弹窗开 = onEdge（启用）；弹窗关+声音开 = sound（仅声音/半启用，
+     * 卡体展开提示「只响不弹」）；弹窗+声音全关 = off（未启用）。open = on || soundOn。
      */
-    function builtinCard(cfgKey: string, label: string, channelId: string) {
+    function builtinCard(cfgKey: string, soundKey: string, label: string, channelId: string) {
       var on = settings[cfgKey] === true;
+      var soundVal = settings[soundKey];
+      var soundOn = soundVal === true || (typeof soundVal === "string" && SOUND_IDS.indexOf(soundVal) !== -1);
+      var stateCls = on ? " dn-ch-onEdge" : soundOn ? " dn-ch-sound" : " dn-ch-off";
+      var summaryState = on ? t("chStateOn") : soundOn ? t("chStateSound") : t("chStateOff");
       var extras: any[] = [];
       if (channelId === "browser") {
         extras.push(chRow(t("chWhenVisible"), switchControl("notifyWhenVisible", t("chWhenVisible"))));
       }
-      if (channelId === "system") {
-        extras.push(chRow(t("chSound"), switchControl("notifySound", t("chSound"))));
-      }
+      extras.push(soundRow(soundKey, label));
       return (
         <details
-          className={"dn-ch-card" + (on ? " dn-ch-onEdge" : " dn-ch-off")}
-          key={"ch-" + channelId + ":" + on}
-          open={on}
+          className={"dn-ch-card" + stateCls}
+          key={"ch-" + channelId + ":" + on + ":" + soundOn}
+          open={on || soundOn}
         >
           <summary>
             {iconEl(channelId)}
             <span className="dn-ch-name">{label}</span>
             <span className="dn-ch-type">{t("chTypeBuiltin")}</span>
+            <span className="dn-ch-stateTxt">{summaryState}</span>
             <span className={"dn-ch-statusDot " + statusDotClass(channelId)} />
             <span className="dn-ch-statusTxt" title={statusText(channelId)}>{statusText(channelId)}</span>
             {failBadge(channelId)}
@@ -1443,11 +1512,85 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
           </summary>
           <div className="dn-ch-body">
             {extras}
+            {on === false && soundOn
+              ? <div className="dn-set-note-inline dn-soundOnly">{t("chSoundOnlyNote")}</div>
+              : null}
             {/* #418：浏览器通知权限状态行归入浏览器频道卡（权限授权入口同卡就近可达） */}
             {channelId === "browser" ? browserPermLine() : null}
+            {/* C7：系统卡平台提示（/health platform 消费；宿主 OS 与浏览器 OS 可异机） */}
+            {channelId === "system" ? systemPlatformHint() : null}
             <div className="dn-ch-actions">{testBtn(channelId)}</div>
           </div>
         </details>
+      );
+    }
+
+    /** 平台提示行（C7/E2）：宿主平台差异说明——Windows SoundPlayer 语义、macOS
+     *  NSSound、Linux 自播；/health 拉取失败/未知平台回落通用说明。 */
+    function systemPlatformHint() {
+      var text: string;
+      if (hostPlatform === "win32") text = t("sysPlatformWin");
+      else if (hostPlatform === "darwin") text = t("sysPlatformMac");
+      else if (hostPlatform === "linux") text = t("sysPlatformLinux");
+      else text = t("sysPlatformOther");
+      return <div className="dn-set-note-inline">{text}</div>;
+    }
+
+    /** 内置音色选项（4 音色；label 字典键）。 */
+    var SOUND_OPTION_KEYS: Record<string, string> = {
+      ding: "toneDing",
+      bell: "toneBell",
+      chime: "toneChime",
+      pop: "tonePop",
+    };
+
+    /** 单通道声音行：开关（false/true 切换）+ 展开音色下拉 + ▶试听。
+     *  开关语义：off=false（静音）；on=true（跟随系统默认）；on 后选择音色 =
+     *  SoundId（显式音色）。交互全部显式 unlockAudio 兜底（C5：autoplay 策略下
+     *  纯后台页面自播需此前任意手势解锁；试听点击本身即手势）。 */
+    function soundRow(soundKey: string, channelLabel: string) {
+      var soundVal = settings[soundKey];
+      var soundOn = soundVal === true || (typeof soundVal === "string" && SOUND_IDS.indexOf(soundVal) !== -1);
+      var toneValue = typeof soundVal === "string" && SOUND_IDS.indexOf(soundVal) !== -1 ? soundVal : "";
+      var toneOpts: any[] = [
+        <option value="" key="sys">{t("chSoundFollow")}</option>,
+      ].concat(SOUND_IDS.map(function (id) {
+        return <option value={id} key={id}>{t(SOUND_OPTION_KEYS[id])}</option>;
+      }));
+      return (
+        <div className="dn-ch-row" key={"sound-" + soundKey}>
+          <span className="dn-ch-cap">{t("chSound")}</span>
+          <span className="dn-ch-ctl">
+            {switchToggle(soundOn, function (v: boolean) {
+              // 用户手势：解锁音频（开启声音后隐藏页面自播才可能发声）
+              unlockAudio();
+              var p: Record<string, any> = {};
+              p[soundKey] = v; // false / true
+              patch(p);
+            }, t("chSound") + " " + channelLabel)}
+            {soundOn ? (
+              <select
+                className="dn-set-input dn-set-select"
+                value={toneValue}
+                aria-label={t("chSoundTone")}
+                onChange={function (e: any) {
+                  unlockAudio();
+                  var p: Record<string, any> = {};
+                  p[soundKey] = e.target.value === "" ? true : e.target.value;
+                  patch(p);
+                }}
+              >{toneOpts}</select>
+            ) : null}
+            {soundOn ? (
+              <button
+                type="button" className="dn-set-btn dn-set-btnSmall dn-tonePreview"
+                aria-label={t("chSoundPreview")}
+                onClick={function () { playPreview(toneValue || undefined); }}
+              >▶ {t("chSoundPreview")}</button>
+            ) : null}
+            {toneValue === "" && soundOn ? <span className="dn-ch-hint">{t("chSoundFollowHint")}</span> : null}
+          </span>
+        </div>
       );
     }
 
@@ -1918,8 +2061,8 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
 
     // 频道区：内置两卡 + 实例卡（bark / webhook 按类型分派）+ 添加按钮
     var channelsChildren: any[] = [
-      builtinCard("browserNotify", t("chBrowserNotify"), "browser"),
-      builtinCard("systemNotify", t("chSystemNotify"), "system"),
+      builtinCard("browserNotify", "browserSound", t("chBrowserNotify"), "browser"),
+      builtinCard("systemNotify", "systemSound", t("chSystemNotify"), "system"),
     ].concat((settings.channels || []).map(function (c: any, i: number) {
       return String(c.type) === "webhook" ? webhookCard(c, i) : barkCard(c, i);
     }));
@@ -2302,6 +2445,15 @@ export function apply(ctx: any) {
         if (v && v.effective) runtimeConfig = v.effective;
       }).catch(function () {
         // 失败静默（卡片打开时再拉）
+      });
+      // 宿主平台预取（C7）：/health platform 驱动系统卡平台提示（系统通道弹在
+      // 宿主机器，浏览器 OS 与宿主 OS 可异机——不要拿 navigator.platform 猜）
+      fetch(ROUTES.health, { headers: { accept: "application/json" } }).then(function (r: any) {
+        return r.json().then(function (body: any) {
+          if (typeof body.platform === "string") hostPlatform = body.platform;
+        });
+      }).catch(function () {
+        // 失败静默：平台提示回落通用文案
       });
 
       // 首次任意点击解锁音频（浏览器自动播放策略要求手势）

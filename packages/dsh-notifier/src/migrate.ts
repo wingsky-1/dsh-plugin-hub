@@ -85,6 +85,26 @@ export interface MigrateDeps {
 }
 
 /**
+ * #640/#641（D2）：legacy json 迁移时补写每通道声音键（仅此源路径——settings
+ * user 层存量不迁，靠 resolveSoundSetting 读面回落 + 首次 UI 保存固化）。
+ * 补写值 = 用户层 notifySound 存在（用户已表态，如曾 PUT 改过）取用户值；
+ * 否则取 legacy 显式 notifySound（升级前全局声音选择保留为两通道初始值）；
+ * 两者皆缺不补（真未表态，落默认 true）。user 层已存在的新键不覆盖
+ * （diffMissingKeys 兜底）。
+ */
+function addLegacySoundKeys(sanitized: Record<string, unknown>, user: Record<string, unknown>): Record<string, unknown> {
+  if (!Object.prototype.hasOwnProperty.call(sanitized, "notifySound")) return sanitized;
+  let value: unknown;
+  if (Object.prototype.hasOwnProperty.call(user, "notifySound")) value = user.notifySound;
+  else if (Object.prototype.hasOwnProperty.call(sanitized, "notifySound")) value = sanitized.notifySound;
+  else return sanitized;
+  const out = { ...sanitized };
+  if (!Object.prototype.hasOwnProperty.call(out, "browserSound")) out.browserSound = value;
+  if (!Object.prototype.hasOwnProperty.call(out, "systemSound")) out.systemSound = value;
+  return out;
+}
+
+/**
  * 从 sanitize 白名单结果中挑出 user 层尚缺失的键（#468 冲突策略：只补缺失键，
  * 用户已改/已存在的键不被迁移覆盖）。字段粒度 = **顶层配置键**（sanitize 白名单）；
  * user 层键以任何形态存在（含空对象/部分嵌套子键）即视为用户已接管该字段整组，
@@ -165,7 +185,8 @@ export async function migrateLegacyConfig(legacyPath: string, deps: MigrateDeps,
       logger?.warn?.(`dsh-notifier: 未完成的迁移残留 ${MIGRATED_BAK_SUFFIX} 无可迁移的配置键 — 已跳过，确认无误后可手动删除该备份`);
       return { performed: false, migrated: false, rolledBack: false, skippedCorrupt: true, skippedIdempotent: false, resumed: true };
     }
-    const patch = diffMissingKeys(sanitized, deps.readUser());
+    const user = deps.readUser();
+    const patch = diffMissingKeys(addLegacySoundKeys(sanitized, user), user);
     if (Object.keys(patch).length === 0) {
       // 全部字段已迁齐（含用户改值后重启——见冲突策略）：幂等跳过（E2）
       return { performed: false, migrated: false, rolledBack: false, skippedCorrupt: false, skippedIdempotent: true, resumed: false };
@@ -223,7 +244,8 @@ export async function migrateLegacyConfig(legacyPath: string, deps: MigrateDeps,
     logger?.warn?.(`dsh-notifier: 存量配置改名失败（${errorMessage(err)}）— 本次跳过，下次启动重试`);
     return { performed: false, migrated: false, rolledBack: false, skippedCorrupt: false, skippedIdempotent: false, resumed: false };
   }
-  const patch = diffMissingKeys(sanitized, deps.readUser());
+  const user = deps.readUser();
+  const patch = diffMissingKeys(addLegacySoundKeys(sanitized, user), user);
   if (Object.keys(patch).length === 0) {
     // 改名后才发现所有字段均已迁齐（用户经 PUT /config 全量保存过且键全在）
     // → 不重复写入，幂等结束（bak 保留供核对：如需旧值见该备份）

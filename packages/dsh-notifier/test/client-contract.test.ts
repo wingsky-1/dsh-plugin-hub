@@ -682,3 +682,190 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   assert.ok(client.includes("is-off") && client.includes("routeDisabledHint"), "#527：置灰逻辑与文案键进产物");
   assert.ok(css.includes("dn-route-chip.is-off"), "#527：is-off 置灰样式进 CSS");
 }
+
+// ---- issue #640/#641：每通道声音 UI（帧级 sound / 三态 / 声音行 / 试听 / 弃写锚）----
+{
+  const src = readFileSync(new URL("../src/client/index.tsx", import.meta.url), "utf8");
+  const locales = readFileSync(new URL("../src/client/locales.ts", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../src/client/style.css", import.meta.url), "utf8");
+  const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+
+  // A5：UI 不再写全局 notifySound（废弃只读别名）——产物不得含旧声音行开关
+  assert.ok(!src.includes('switchControl("notifySound"'), "#640/A5：客户端源码不再有 switchControl(\"notifySound\")");
+  assert.ok(!client.includes('switchControl("notifySound"'), "#640/A5：产物不含 switchControl(\"notifySound\")");
+  // 新声音行走 browserSound/systemSound 键
+  assert.ok(src.includes('builtinCard("browserNotify", "browserSound"'), "#640：browser 卡接 browserSound");
+  assert.ok(src.includes('builtinCard("systemNotify", "systemSound"'), "#640：system 卡接 systemSound");
+  // C1：帧级 sound 权威——showNotification 吃帧内 sound 策略对象
+  assert.ok(src.includes("showNotification(payload.kind, payload.title, payload.message, { sound: payload.sound"), "#640/C1：帧级 sound 传入 showNotification（取代布尔快照）");
+  assert.ok(src.includes("playOnly: payload.playOnly === true"), "#640/C1：只响不弹 playOnly 帧标记");
+  // C2：统一播放节流覆盖全部自播（playGate）+ 多标签租约前置（claimMaster 先于自播）
+  assert.ok(src.includes("function playGate()"), "#640/C2：统一播放节流函数");
+  assert.ok(src.includes("if (selfPlay && playGate()) playTone(tone)"), "#640/C2：自播路径统一过 playGate");
+  // C3：builtinCard 三态（状态徽标 + dn-ch-sound 半启用类 + open = on || soundOn）
+  assert.ok(src.includes("dn-ch-sound"), "#640/C3：仅声音半启用态 class");
+  assert.ok(src.includes("open={on || soundOn}"), "#640/C3：卡展开条件 = 弹窗开 || 声音开");
+  assert.ok(src.includes("chStateSound"), "#640/C3：仅声音状态文案键引用");
+  // C5/C6：试听按钮 + 音色下拉 + 显式 unlockAudio；4 音色选项
+  assert.ok(src.includes("dn-tonePreview"), "#640/C6：试听按钮 class");
+  assert.ok(src.includes("playPreview("), "#640/C6：试听调用 playPreview");
+  assert.ok(src.includes('"ding", "bell", "chime", "pop"'), "#640/C6：客户端 SOUND_IDS 4 音色（与服务端同源复制）");
+  assert.ok(src.includes("unlockAudio()"), "#640/C5：声音交互显式 unlockAudio（含试听）");
+  // C7：宿主平台提示消费 /health platform
+  assert.ok(src.includes("hostPlatform"), "#640/C7：宿主平台状态（/health platform 拉取）");
+  assert.ok(src.includes("sysPlatformWin") && src.includes("sysPlatformMac") && src.includes("sysPlatformLinux"), "#640/C7：三平台提示文案键");
+  // 文案双语 + 产物锚点
+  assert.ok(locales.includes('chSoundFollow: "跟随系统默认"') && locales.includes('chSoundFollow: "Follow system default"'), "#640：跟随系统默认文案双语");
+  assert.ok(locales.includes('toneDing: "叮（Ding）"') && locales.includes("toneDing: \"Ding\""), "#640：音色文案双语");
+  assert.ok(locales.includes("sysPlatformLinux:") && locales.includes("sysPlatformLinux:"), "#640：平台提示双语存在");
+  assert.ok(client.includes("dn-ch-sound") && client.includes("dn-tonePreview"), "#640：三态与试听 class 进产物");
+  assert.ok(css.includes("dn-ch-sound") && css.includes("dn-tonePreview"), "#640：三态与试听样式进 CSS");
+  // locales zh/en 平衡由 tsc 编译期锁（Record<NotifierLocaleKey, string>），此处锚关键键
+  console.log("#640/#641 客户端声音 UI 契约锚点: OK");
+}
+
+// ---- issue #640/#641：vm 沙箱真链——帧级 sound 驱动自播/静音（C1/C4 行为层）----
+{
+  const clientCode = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+  const byType = new Map();
+  const listeners = {
+    addEventListener(type, fn) { let s = byType.get(type); if (!s) { s = new Set(); byType.set(type, s); } s.add(fn); },
+    removeEventListener(type, fn) { const s = byType.get(type); if (s) s.delete(fn); },
+  };
+  const documentStub = {
+    ...listeners,
+    visibilityState: "hidden",
+    title: "",
+    hidden: true,
+    getElementById: () => null,
+    createElement: () => ({ appendChild() {}, remove() {}, style: {}, dataset: {} }),
+    head: { appendChild() {} },
+    body: { appendChild() {} },
+  };
+  let sourceCount = 0;
+  let notifCount = 0;
+  let notifSilent = [];
+  const sources = [];
+  class EventSourceStub { constructor() { sourceCount += 1; this.onmessage = null; this.onerror = null; sources.push(this); } close() {} }
+  const sandbox = {
+    console: { ...console, warn: () => {} },
+    Symbol, Object, Array, JSON, Math, Date, Promise,
+    setTimeout, clearTimeout,
+    EventSource: EventSourceStub,
+    Notification: Object.assign(function (title, opts) { notifCount += 1; notifSilent.push(opts.silent === true); this.close = () => {}; }, { permission: "granted" }),
+    fetch: () => Promise.resolve({ ok: true, json: () => Promise.resolve({}) }),
+    document: documentStub,
+    localStorage: { getItem: (k) => null, setItem: () => {}, removeItem: () => {} },
+  };
+  sandbox.window = sandbox;
+  sandbox.isSecureContext = true;
+  let loadedFactory = null;
+  sandbox.window.__ModuleLoader__ = { load(handoff) { loadedFactory = handoff.factory; } };
+  vm.createContext(sandbox);
+  vm.runInContext(clientCode, sandbox);
+  const mod = loadedFactory((spec) => {
+    if (spec === "react") return { createElement: () => ({}) };
+    throw new Error(`unexpected require: ${spec}`);
+  });
+  const disposers = [];
+  mod.apply({
+    get() { return undefined; },
+    effect(fn) { const d = fn(); disposers.push(d); return d; },
+  });
+  const activeSource = sources[sources.length - 1];
+  // AudioContext stub：沙箱 window.AudioContext 缺失 → unlockAudio 静默失败 → playTone
+  // 空转（沙箱无音频）；此处只验证「帧级 sound 不弹 + silent 标记」决策面。
+  let seq = 0;
+  const deliver = (payload) => { seq += 1; activeSource.onmessage({ data: JSON.stringify({ type: "notify", seq, ...payload }) }); };
+  // 弹窗帧 + sound silent：仍弹实体（silent=true），不自播（沙箱无声无妨）
+  deliver({ kind: "done", title: "T", message: "m", sound: { mode: "silent", tone: undefined } });
+  assert.equal(notifCount, 1, "#640：silent 帧仍弹系统通知实体");
+  assert.equal(notifSilent[0], true, "#640：silent 帧 → Notification silent:true");
+  // playOnly 帧：不弹实体（只响不弹）
+  deliver({ kind: "done", title: "T", message: "m", playOnly: true, sound: { mode: "selfplay", tone: "pop" } });
+  assert.equal(notifCount, 1, "#640：playOnly 帧不弹系统通知实体");
+  // system 模式帧：弹且不 silent（交给 OS 发声）
+  deliver({ kind: "done", title: "T", message: "m", sound: { mode: "system", tone: undefined } });
+  assert.equal(notifCount, 2, "#640：system 模式帧弹通知");
+  assert.equal(notifSilent[1], false, "#640：system 模式帧 → Notification 不 silent");
+  for (const d of disposers.splice(0)) d();
+  console.log("#640/#641 vm 帧级 sound 决策面: OK");
+}
+
+// ---- 复核 P1-1：playOnly + mode:"selfplay" 帧 → 客户端真实自播（振荡器启动计数）----
+// 回归「弹窗关 + browserSound=true 纯静默断链」：帧 sound 必须驱动 playTone，
+// 且 mode 为 selfplay 时即使 tone undefined 也播默认旋律（旧 playChime 双音）。
+{
+  const clientCode = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+  const byType = new Map();
+  const listeners = {
+    addEventListener(type, fn) { let s = byType.get(type); if (!s) { s = new Set(); byType.set(type, s); } s.add(fn); },
+    removeEventListener(type, fn) { const s = byType.get(type); if (s) s.delete(fn); },
+  };
+  const documentStub = {
+    ...listeners,
+    visibilityState: "visible",
+    title: "",
+    hidden: false,
+    getElementById: () => null,
+    createElement: (tag) => {
+      if (tag === "style") return { id: "", textContent: "", dataset: {}, remove() {} };
+      return { appendChild() {}, remove() {}, style: {}, dataset: {} };
+    },
+    head: { appendChild() {} },
+    body: { appendChild() {} },
+  };
+  const sources = [];
+  let oscStarts = 0;
+  // AudioContext stub：解锁后 running；振荡器 start() 计数（真实自播证据）
+  class AudioCtxStub {
+    constructor() { this.state = "suspended"; this.currentTime = 0; }
+    resume() { this.state = "running"; }
+    createBuffer() { return {}; }
+    createBufferSource() { return { buffer: null, connect() {}, start() { oscStarts += 1; } }; }
+    createOscillator() { return { type: "", frequency: { value: 0 }, connect() {}, start() { oscStarts += 1; }, stop() {} }; }
+    createGain() { return { gain: { setValueAtTime() {}, exponentialRampToValueAtTime() {} }, connect() {} }; }
+  }
+  const sandbox = {
+    console: { ...console, warn: () => {} },
+    Symbol, Object, Array, JSON, Math, Date, Promise,
+    setTimeout, clearTimeout,
+    EventSource: class { constructor() { this.onmessage = null; this.onerror = null; sources.push(this); } close() {} },
+    Notification: Object.assign(function () { this.close = () => {}; }, { permission: "granted" }),
+    AudioContext: AudioCtxStub,
+    webkitAudioContext: undefined,
+    fetch: () => Promise.resolve({ ok: true, json: () => Promise.resolve({}) }),
+    document: documentStub,
+    localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+  };
+  sandbox.window = sandbox;
+  sandbox.isSecureContext = true;
+  let loadedFactory = null;
+  sandbox.window.__ModuleLoader__ = { load(handoff) { loadedFactory = handoff.factory; } };
+  vm.createContext(sandbox);
+  vm.runInContext(clientCode, sandbox);
+  const mod = loadedFactory((spec) => {
+    if (spec === "react") return { createElement: () => ({}) };
+    throw new Error(`unexpected require: ${spec}`);
+  });
+  const disposers = [];
+  mod.apply({
+    get() { return undefined; },
+    effect(fn) { const d = fn(); disposers.push(d); return d; },
+  });
+  const activeSource = sources[sources.length - 1];
+  // 先模拟用户手势解锁（首次点击 unlockAudio）
+  for (const fn of byType.get("click") || []) fn();
+  let seq = 0;
+  const deliver = (payload) => { seq += 1; activeSource.onmessage({ data: JSON.stringify({ type: "notify", seq, ...payload }) }); };
+  // 页面 visible + 连发两个只响不弹帧（selfplay 新帧 + 旧服务端 system 残留帧）：
+  // 不弹实体（playOnly 豁免可见性）+ 至少一次默认旋律自播（1.5s 节流合并连发为
+  // 一次播放属预期；旧 bug 形态两帧皆 0 播 → 断言失败即抓住断链）
+  deliver({ kind: "done", title: "T", message: "m", playOnly: true, sound: { mode: "selfplay", tone: undefined } });
+  deliver({ kind: "done", title: "T", message: "m", playOnly: true, sound: { mode: "system", tone: undefined } });
+  assert.ok(oscStarts > 0, "P1-1：playOnly 帧（selfplay 新帧/旧 system 残留帧）驱动振荡器自播（默认旋律）");
+  // 对照：playOnly 帧不弹系统通知实体（无实体降级展示 → 标题不闪烁）
+  assert.equal(documentStub.title, "", "P1-1：playOnly 帧不触发标题闪烁（无实体降级展示）");
+  for (const d of disposers.splice(0)) d();
+  console.log("P1-1 vm playOnly 帧自播（振荡器计数）回归: OK");
+}

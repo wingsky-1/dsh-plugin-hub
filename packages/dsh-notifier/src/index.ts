@@ -27,6 +27,7 @@ import {
   normalizeConfig,
   sanitizeSettings,
   toastScriptPath,
+  resolveSoundSetting,
 } from "./config.ts";
 import type { NotifierApplyConfig, NotifyConfig } from "./config.ts";
 import { isInQuietHours } from "./quiet-hours.ts";
@@ -77,8 +78,11 @@ export {
   SECRET_MASK,
   BARK_ID_PATTERN,
   BARK_RESERVED_KEYS,
+  SOUND_IDS,
+  isSoundSetting,
+  resolveSoundSetting,
 } from "./config.ts";
-export type { NotifierApplyConfig, NotifyConfig, SettingInvalid, BarkChannelConfig, BarkLevel } from "./config.ts";
+export type { NotifierApplyConfig, NotifyConfig, SettingInvalid, BarkChannelConfig, BarkLevel, SoundId, SoundSetting, SoundChannel } from "./config.ts";
 export { HISTORY_LIMIT } from "./history.ts";
 export { SETTINGS_NS, installNotifierSettings } from "./settings.ts";
 export { migrateLegacyConfig, MIGRATED_BAK_SUFFIX, CORRUPTED_BAK_SUFFIX } from "./migrate.ts";
@@ -105,14 +109,21 @@ export {
 export type { MigrationOutcome } from "./migrate.ts";
 export {
   buildSystemCommand,
+  buildSoundCommand,
   formatDuration,
   isSubagentOf,
   lastTurnEndOf,
   prettyToolName,
   sanitizeErrorText,
   sessionTitleOf,
+  MAC_SOUND_NAMES,
+  LINUX_TONE_FILES,
+  LINUX_DEFAULT_TONE_FILE,
+  WIN_TONE_FILES,
+  TONE_BASE_DIRS,
+  toneFileCandidates,
 } from "./message.ts";
-export type { NotifyDetail } from "./message.ts";
+export type { NotifyDetail, SystemTone } from "./message.ts";
 export { ROUTES, applyConfigPatch } from "./server.ts";
 export type { PatchResult, RouteDeps } from "./server.ts";
 export {
@@ -183,7 +194,6 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
 
   const sse = createSseHub({ getMaxConnections: () => currentConfig().maxConnections });
   const system = createSystemNotifier({
-    getSoundEnabled: () => currentConfig().notifySound,
     toastScript,
     warn: (message) => ctx.logger.warn(message),
   });
