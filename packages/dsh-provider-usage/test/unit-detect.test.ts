@@ -20,7 +20,7 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build as esbuildBuild } from "esbuild";
-import { assert } from "./helpers.ts";
+import { assert, pollUntil } from "./helpers.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pkgDir = join(here, "..");
@@ -350,6 +350,9 @@ function makeRemote(providerByDefault) {
 
 {
   // TTL 过期 → 重拉；TTL 常量对齐宿主 stats 缓存量级（30s）
+  // #629 P3：原固定 sleep(60) 改流逝时间条件等待——t0 先于首次调用采集，
+  // pollUntil 等到「流逝 > TTL(50ms)+余量」才做第二次调用（条件必然出现、
+  // 与时钟相位无关，慢 runner 下只会更晚、不会过早）。
   let calls = 0;
   const remote = {
     session: {
@@ -358,8 +361,9 @@ function makeRemote(providerByDefault) {
   };
   const cache = makeCatalogCache(50); // 短 TTL 便于测试
   const sessions = makeSessions({ s: row(undefined) }, "s");
+  const t0 = Date.now();
   await resolveProviderFromSession(sessions, remote, cache.load);
-  await new Promise((r) => setTimeout(r, 60));
+  await pollUntil(() => Date.now() - t0 > 100, 5000, 1); // 流逝 100ms > TTL 50ms：缓存必已过期
   await resolveProviderFromSession(sessions, remote, cache.load);
   assert.equal(calls, 2, "TTL 过期后重拉");
   assert.equal(CATALOG_CACHE_TTL_MS, 30000, "默认 TTL 30s（与宿主 stats 缓存同量级）");
