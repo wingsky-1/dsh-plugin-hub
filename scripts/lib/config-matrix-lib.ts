@@ -41,9 +41,12 @@ import { transformSync } from 'esbuild'
 import * as acorn from 'acorn'
 import { readFileSync } from 'node:fs'
 
-/** esbuild transform + acorn parse（含 loc），返回 AST 程序节点。 */
-export function parseTs(text) {
-  const js = transformSync(text, { loader: 'ts', format: 'esm' }).code
+/** esbuild transform + acorn parse（含 loc），返回 AST 程序节点。
+ *  loader 缺省 'ts'；客户端源码为 .tsx 时传 'tsx'（esbuild 原生 JSX 编译为
+ *  createElement 调用后再 parse——issue #584 阶段一基建缺口补齐：#597 只覆盖
+ *  bundle-host/tsconfig 的 TSX 构建，未覆盖本门禁的源码 AST 解析面）。 */
+export function parseTs(text, loader = 'ts') {
+  const js = transformSync(text, { loader, format: 'esm' }).code
   return acorn.parse(js, { ecmaVersion: 'latest', sourceType: 'module', locations: true })
 }
 

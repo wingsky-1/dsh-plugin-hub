@@ -299,24 +299,27 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
     var paths: any[];
     if (channelType === "browser") {
       paths = [
-        React.createElement("circle", { cx: 12, cy: 12, r: 9, key: "c" }),
-        React.createElement("path", { d: "M3 12h18M12 3c2.5 2.6 4 5.7 4 9s-1.5 6.4-4 9c-2.5-2.6-4-5.7-4-9s1.5-6.4 4-9z", key: "p" }),
+        <circle cx={12} cy={12} r={9} key="c" />,
+        <path d="M3 12h18M12 3c2.5 2.6 4 5.7 4 9s-1.5 6.4-4 9c-2.5-2.6-4-5.7-4-9s1.5-6.4 4-9z" key="p" />,
       ];
     } else if (channelType === "system") {
       paths = [
-        React.createElement("rect", { x: 3, y: 4, width: 18, height: 12, rx: 2, key: "r" }),
-        React.createElement("path", { d: "M8 20h8M12 16v4", key: "p" }),
+        <rect x={3} y={4} width={18} height={12} rx={2} key="r" />,
+        <path d="M8 20h8M12 16v4" key="p" />,
       ];
     } else if (channelType === "webhook") {
-      paths = [React.createElement("path", { d: "M13 2 4.5 13.5H11l-1 8.5L19.5 10H13l0-8z", key: "p", strokeLinejoin: "round" })];
+      paths = [<path d="M13 2 4.5 13.5H11l-1 8.5L19.5 10H13l0-8z" key="p" strokeLinejoin="round" />];
     } else {
       paths = [
-        React.createElement("path", { d: "M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9", key: "a" }),
-        React.createElement("path", { d: "M13.7 21a2 2 0 0 1-3.4 0", key: "b" }),
+        <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" key="a" />,
+        <path d="M13.7 21a2 2 0 0 1-3.4 0" key="b" />,
       ];
     }
-    return React.createElement("span", { className: "dn-ch-icon" },
-      React.createElement("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2 }, paths));
+    return (
+      <span className="dn-ch-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>{paths}</svg>
+      </span>
+    );
   }
 
   /** 页面内短提示（操作反馈）。 */
@@ -836,7 +839,7 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
     }, []);
 
     if (!settings) {
-      return React.createElement("li", { className: "dn-set-card" }, t("settingsLoading"));
+      return <li className="dn-set-card">{t("settingsLoading")}</li>;
     }
 
     /** settings 唯一写入口（#405 ref 收口）：updater 内同步 settingsRef——
@@ -1252,32 +1255,38 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
 
     /** #508 M1：频道卡体行（cap + 控件 + 可选 hint；CSS dn-ch-row/dn-ch-cap/dn-ch-ctl）。 */
     function chRow(cap: string, control: any, hint?: string) {
-      return React.createElement("div", { className: "dn-ch-row" },
-        React.createElement("span", { className: "dn-ch-cap" }, cap),
-        React.createElement("span", { className: "dn-ch-ctl" }, control),
-        hint ? React.createElement("span", { className: "dn-ch-hint" }, hint) : null,
+      return (
+        <div className="dn-ch-row">
+          <span className="dn-ch-cap">{cap}</span>
+          <span className="dn-ch-ctl">{control}</span>
+          {hint ? <span className="dn-ch-hint">{hint}</span> : null}
+        </div>
       );
     }
 
     /** #508 M1：折叠区行（cap + 控件；CSS dn-adv-row）。 */
     function advRow(cap: string, control: any) {
-      return React.createElement("div", { className: "dn-adv-row" },
-        React.createElement("span", { className: "dn-adv-cap" }, cap),
-        control,
+      return (
+        <div className="dn-adv-row">
+          <span className="dn-adv-cap">{cap}</span>
+          {control}
+        </div>
       );
     }
 
     /** #508 M1：switch 开关底层（track 40×22 + 透明 input 覆盖 44×32 触控区；
      *  aria-label 提供可访问名——switch 无内联文本，WCAG 4.1.2）。 */
     function switchToggle(checked: boolean, onChange: (v: boolean) => void, ariaLabel: string) {
-      return React.createElement("label", { className: "dn-switch" },
-        React.createElement("input", {
-          type: "checkbox",
-          "aria-label": ariaLabel,
-          checked: checked === true,
-          onChange: function (e: any) { onChange(e.target.checked === true); },
-        }),
-        React.createElement("span", { className: "dn-switch-track" }),
+      return (
+        <label className="dn-switch">
+          <input
+            type="checkbox"
+            aria-label={ariaLabel}
+            checked={checked === true}
+            onChange={function (e: any) { onChange(e.target.checked === true); }}
+          />
+          <span className="dn-switch-track" />
+        </label>
       );
     }
 
@@ -1294,24 +1303,28 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
     }
 
     function textInput(value: any, onChange: (v: string) => void, opts?: { type?: string; placeholder?: string; ariaLabel?: string }) {
-      return React.createElement("input", {
-        type: (opts && opts.type) || "text",
-        className: "dn-set-input dn-set-inputText",
-        value: value === undefined || value === null ? "" : String(value),
-        placeholder: opts && opts.placeholder,
-        "aria-label": (opts && opts.ariaLabel) || opts && opts.placeholder || undefined,
-        onChange: function (e: any) { onChange(e.target.value); },
-      });
+      return (
+        <input
+          type={(opts && opts.type) || "text"}
+          className="dn-set-input dn-set-inputText"
+          value={value === undefined || value === null ? "" : String(value)}
+          placeholder={opts && opts.placeholder}
+          aria-label={(opts && opts.ariaLabel) || opts && opts.placeholder || undefined}
+          onChange={function (e: any) { onChange(e.target.value); }}
+        />
+      );
     }
 
     function numInput(value: any, onChange: (v: number | undefined) => void, opts?: { ariaLabel?: string; min?: number; max?: number }) {
-      return React.createElement("input", {
-        type: "number", step: 1, className: "dn-set-input dn-set-numInput",
-        min: opts && opts.min, max: opts && opts.max,
-        "aria-label": opts && opts.ariaLabel,
-        value: value === undefined || value === null ? "" : String(value),
-        onChange: function (e: any) { onChange(e.target.value === "" ? undefined : Number(e.target.value)); },
-      });
+      return (
+        <input
+          type="number" step={1} className="dn-set-input dn-set-numInput"
+          min={opts && opts.min} max={opts && opts.max}
+          aria-label={opts && opts.ariaLabel}
+          value={value === undefined || value === null ? "" : String(value)}
+          onChange={function (e: any) { onChange(e.target.value === "" ? undefined : Number(e.target.value)); }}
+        />
+      );
     }
 
     function padTime(ts: number) {
@@ -1334,18 +1347,23 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
     }
 
     function testBtn(channelId?: string) {
-      return React.createElement("button", {
-        type: "button", className: "dn-set-btn dn-set-btnSmall",
-        onClick: function () { sendTest(channelId); },
-      }, t("chTest"));
+      return (
+        <button
+          type="button" className="dn-set-btn dn-set-btnSmall"
+          onClick={function () { sendTest(channelId); }}
+        >{t("chTest")}</button>
+      );
     }
 
     /** 投递失败徽标（#402 第 1 条）：最近投递失败时上提至卡头 summary 行，收起态仍可见。 */
     function failBadge(channelKey: string) {
       var st = statusMap[channelKey];
       if (!st || !st.lastTs || st.lastStatus !== "failed") return null;
-      return React.createElement("span", { className: "dn-ch-failBadge" },
-        t("chLastFail") + " · " + padTime(st.lastTs));
+      return (
+        <span className="dn-ch-failBadge">
+          {t("chLastFail") + " · " + padTime(st.lastTs)}
+        </span>
+      );
     }
 
     /**
@@ -1363,17 +1381,21 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
         text = t("permDefault");
         pending = true;
       }
-      return React.createElement("div", { className: "dn-ch-perm" },
-        React.createElement("span", { className: "dn-ch-permText" }, text),
-        pending ? React.createElement("button", {
-          type: "button", className: "dn-set-btn dn-set-btnSmall",
-          onClick: function () {
-            requestPermission(function () {
-              setSaved(t("permRequested"));
-              setPermTick(permTick + 1); // 触发重渲染刷新权限状态行
-            });
-          },
-        }, t("requestPerm")) : null,
+      return (
+        <div className="dn-ch-perm">
+          <span className="dn-ch-permText">{text}</span>
+          {pending ? (
+            <button
+              type="button" className="dn-set-btn dn-set-btnSmall"
+              onClick={function () {
+                requestPermission(function () {
+                  setSaved(t("permRequested"));
+                  setPermTick(permTick + 1); // 触发重渲染刷新权限状态行
+                });
+              }}
+            >{t("requestPerm")}</button>
+          ) : null}
+        </div>
       );
     }
 
@@ -1398,33 +1420,34 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
       if (channelId === "system") {
         extras.push(chRow(t("chSound"), switchControl("notifySound", t("chSound"))));
       }
-      return React.createElement("details",
-        {
-          className: "dn-ch-card" + (on ? " dn-ch-onEdge" : " dn-ch-off"),
-          key: "ch-" + channelId + ":" + on,
-          open: on,
-        },
-        React.createElement("summary", null,
-          iconEl(channelId),
-          React.createElement("span", { className: "dn-ch-name" }, label),
-          React.createElement("span", { className: "dn-ch-type" }, t("chTypeBuiltin")),
-          React.createElement("span", { className: "dn-ch-statusDot " + statusDotClass(channelId) }),
-          React.createElement("span", { className: "dn-ch-statusTxt", title: statusText(channelId) }, statusText(channelId)),
-          failBadge(channelId),
-          React.createElement("span", { className: "dn-ch-summaryRight" },
-            switchToggle(on, function (v: boolean) {
-              var p: Record<string, any> = {};
-              p[cfgKey] = v;
-              patch(p);
-            }, (on ? t("chToggleOff") : t("chToggleOn")) + label),
-          ),
-        ),
-        React.createElement("div", { className: "dn-ch-body" },
-          extras,
-          // #418：浏览器通知权限状态行归入浏览器频道卡（权限授权入口同卡就近可达）
-          channelId === "browser" ? browserPermLine() : null,
-          React.createElement("div", { className: "dn-ch-actions" }, testBtn(channelId)),
-        ),
+      return (
+        <details
+          className={"dn-ch-card" + (on ? " dn-ch-onEdge" : " dn-ch-off")}
+          key={"ch-" + channelId + ":" + on}
+          open={on}
+        >
+          <summary>
+            {iconEl(channelId)}
+            <span className="dn-ch-name">{label}</span>
+            <span className="dn-ch-type">{t("chTypeBuiltin")}</span>
+            <span className={"dn-ch-statusDot " + statusDotClass(channelId)} />
+            <span className="dn-ch-statusTxt" title={statusText(channelId)}>{statusText(channelId)}</span>
+            {failBadge(channelId)}
+            <span className="dn-ch-summaryRight">
+              {switchToggle(on, function (v: boolean) {
+                var p: Record<string, any> = {};
+                p[cfgKey] = v;
+                patch(p);
+              }, (on ? t("chToggleOff") : t("chToggleOn")) + label)}
+            </span>
+          </summary>
+          <div className="dn-ch-body">
+            {extras}
+            {/* #418：浏览器通知权限状态行归入浏览器频道卡（权限授权入口同卡就近可达） */}
+            {channelId === "browser" ? browserPermLine() : null}
+            <div className="dn-ch-actions">{testBtn(channelId)}</div>
+          </div>
+        </details>
       );
     }
 
@@ -1436,9 +1459,9 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
     function barkCard(ch: any, idx: number) {
       var channelKey = channelIdFor(ch);
       var armed = delArmedId === ch.id;
-      var levelOpts: any[] = [React.createElement("option", { value: "", key: "auto" }, t("chLevelAuto"))];
+      var levelOpts: any[] = [<option value="" key="auto">{t("chLevelAuto")}</option>];
       ["active", "timeSensitive", "passive", "critical"].forEach(function (lv: string) {
-        levelOpts.push(React.createElement("option", { value: lv, key: lv }, lv));
+        levelOpts.push(<option value={lv} key={lv}>{lv}</option>);
       });
       // levels（kind→level）编辑：kind 建议 = 内置 7 kind + 动态已注册 kind；datalist id 按实例唯一
       var suggestKinds: string[] = Object.keys(KIND_KEYS);
@@ -1449,115 +1472,123 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
       var levels = ch.levels || {};
       var levelKeys = Object.keys(levels);
       var levelsRows: any[] = levelKeys.map(function (kind) {
-        return React.createElement("div", { className: "dn-levels-row", key: "lv-" + kind },
-          React.createElement("span", { className: "dn-levels-kind" },
-            KIND_KEYS[kind] !== undefined ? t(KIND_KEYS[kind]) + " (" + kind + ")" : kind),
-          React.createElement("select", {
-            className: "dn-set-input dn-set-select",
-            value: levels[kind] || "",
-            onChange: function (e: any) { chLevelsSet(idx, kind, e.target.value); },
-          }, levelOpts),
-          React.createElement("button", {
-            type: "button", className: "dn-set-btn dn-set-btnSmall",
-            onClick: function () { chLevelsSet(idx, kind, ""); },
-          }, t("chLevelsRemove")),
+        return (
+          <div className="dn-levels-row" key={"lv-" + kind}>
+            <span className="dn-levels-kind">
+              {KIND_KEYS[kind] !== undefined ? t(KIND_KEYS[kind]) + " (" + kind + ")" : kind}
+            </span>
+            <select
+              className="dn-set-input dn-set-select"
+              value={levels[kind] || ""}
+              onChange={function (e: any) { chLevelsSet(idx, kind, e.target.value); }}
+            >{levelOpts}</select>
+            <button
+              type="button" className="dn-set-btn dn-set-btnSmall"
+              onClick={function () { chLevelsSet(idx, kind, ""); }}
+            >{t("chLevelsRemove")}</button>
+          </div>
         );
       });
       var newRow = levelsNew[String(ch.id)] || { kind: "", level: "active" };
       var newKindKnown = suggestKinds.indexOf(newRow.kind) !== -1;
-      var addRow = React.createElement("div", { className: "dn-levels-add", key: "lv-add" },
-        React.createElement("input", {
-          type: "text", className: "dn-set-input dn-set-inputText", list: dlId,
-          placeholder: t("chLevelsKindPlaceholder"),
-          value: newRow.kind,
-          onChange: function (e: any) {
-            setLevelsNew(Object.assign({}, levelsNew, { [String(ch.id)]: { kind: e.target.value, level: newRow.level } }));
-          },
-        }),
-        React.createElement("select", {
-          className: "dn-set-input dn-set-select",
-          value: newRow.level,
-          onChange: function (e: any) {
-            setLevelsNew(Object.assign({}, levelsNew, { [String(ch.id)]: { kind: newRow.kind, level: e.target.value } }));
-          },
-        }, levelOpts),
-        React.createElement("button", {
-          type: "button", className: "dn-set-btn dn-set-btnSmall",
-          onClick: function () {
-            if (newRow.kind) {
-              chLevelsSet(idx, newRow.kind, newRow.level);
-              setLevelsNew(Object.assign({}, levelsNew, { [String(ch.id)]: { kind: "", level: "active" } }));
-            }
-          },
-        }, t("chLevelsAdd")),
-        newRow.kind && !newKindKnown
-          ? React.createElement("span", { className: "dn-set-note-inline" }, t("chLevelsUnknown"))
-          : null,
+      var addRow = (
+        <div className="dn-levels-add" key="lv-add">
+          <input
+            type="text" className="dn-set-input dn-set-inputText" list={dlId}
+            placeholder={t("chLevelsKindPlaceholder")}
+            value={newRow.kind}
+            onChange={function (e: any) {
+              setLevelsNew(Object.assign({}, levelsNew, { [String(ch.id)]: { kind: e.target.value, level: newRow.level } }));
+            }}
+          />
+          <select
+            className="dn-set-input dn-set-select"
+            value={newRow.level}
+            onChange={function (e: any) {
+              setLevelsNew(Object.assign({}, levelsNew, { [String(ch.id)]: { kind: newRow.kind, level: e.target.value } }));
+            }}
+          >{levelOpts}</select>
+          <button
+            type="button" className="dn-set-btn dn-set-btnSmall"
+            onClick={function () {
+              if (newRow.kind) {
+                chLevelsSet(idx, newRow.kind, newRow.level);
+                setLevelsNew(Object.assign({}, levelsNew, { [String(ch.id)]: { kind: "", level: "active" } }));
+              }
+            }}
+          >{t("chLevelsAdd")}</button>
+          {newRow.kind && !newKindKnown
+            ? <span className="dn-set-note-inline">{t("chLevelsUnknown")}</span>
+            : null}
+        </div>
       );
-      return React.createElement("details",
-        {
-          className: "dn-ch-card" + (ch.enabled ? " dn-ch-onEdge" : " dn-ch-off"),
-          key: channelKey + ":" + (ch.enabled === true),
-          open: ch.enabled === true,
-        },
-        React.createElement("summary", null,
-          iconEl("bark"),
-          React.createElement("span", { className: "dn-ch-name" }, ch.name || ch.id),
-          React.createElement("span", { className: "dn-ch-type" }, "bark"),
-          React.createElement("span", { className: "dn-ch-statusDot " + statusDotClass(channelKey) }),
-          React.createElement("span", { className: "dn-ch-statusTxt", title: statusText(channelKey) }, statusText(channelKey)),
-          failBadge(channelKey),
-          React.createElement("span", { className: "dn-ch-summaryRight" },
-            switchToggle(ch.enabled === true, function (v: boolean) { chPatch(idx, { enabled: v }); },
-              (ch.enabled ? t("chToggleOff") : t("chToggleOn")) + (ch.name || ch.id)),
-          ),
-        ),
-        React.createElement("div", { className: "dn-ch-body" },
-          chRow(t("chBarkName"), textInput(ch.name, function (v: string) { chPatch(idx, { name: v }); }, { placeholder: t("chBarkNamePlaceholder"), ariaLabel: t("chBarkName") })),
-          chRow(t("chBarkBaseUrl"), textInput(ch.baseUrl, function (v: string) { chPatch(idx, { baseUrl: v }); }, { placeholder: "https://api.day.app", ariaLabel: t("chBarkBaseUrl") }), t("chBarkBaseUrlHint")),
-          chRow(t("chBarkDeviceKey"), textInput(ch.deviceKey, function (v: string) { chPatch(idx, { deviceKey: v }); }, { type: "password", placeholder: "********", ariaLabel: t("chBarkDeviceKey") }), t("chBarkDeviceKeyHint")),
-          React.createElement("details", { className: "dn-ch-adv", key: "adv-" + ch.id },
-            React.createElement("summary", null, t("chAdvanced")),
-            React.createElement("div", { className: "dn-ch-adv-body" },
-              advRow(t("chBarkSound"), textInput(ch.sound, function (v: string) { chPatch(idx, { sound: v }); }, { ariaLabel: t("chBarkSound") })),
-              advRow(t("chBarkGroup"), textInput(ch.group, function (v: string) { chPatch(idx, { group: v }); }, { ariaLabel: t("chBarkGroup") })),
-              React.createElement("div", { className: "dn-set-note-inline" }, t("chBarkGroupHint")),
-              advRow(t("chBarkIcon"), textInput(ch.icon, function (v: string) { chPatch(idx, { icon: v }); }, { ariaLabel: t("chBarkIcon") })),
-              React.createElement("div", { className: "dn-set-note-inline" }, t("chBarkIconHint")),
-              advRow(t("chBarkUrl"), textInput(ch.url, function (v: string) { chPatch(idx, { url: v }); }, { ariaLabel: t("chBarkUrl") })),
-              advRow(t("chBarkBadge"), numInput(ch.badge, function (v: number | undefined) { chPatch(idx, { badge: v }); }, { ariaLabel: t("chBarkBadge") })),
-              advRow(t("chBarkLevel"), React.createElement("select", {
-                className: "dn-set-input dn-set-select",
-                value: ch.level || "",
-                "aria-label": t("chBarkLevel"),
-                onChange: function (e: any) { chPatch(idx, { level: e.target.value || undefined }); },
-              }, levelOpts)),
-              React.createElement("div", { className: "dn-set-note-inline" }, t("chBarkLevelHint")),
-              React.createElement("div", { className: "dn-set-note-inline" }, t("chLevelsHint")),
-              levelKeys.length === 0 ? React.createElement("div", { className: "dn-set-note-inline" }, t("chLevelsEmpty")) : levelsRows,
-              addRow,
-              React.createElement("datalist", { id: dlId },
-                suggestKinds.map(function (k) { return React.createElement("option", { value: k, key: k }, k); }),
-              ),
-            ),
-          ),
-          React.createElement("div", { className: "dn-ch-actions" },
-            testBtn(channelKey),
-            React.createElement("button", {
-              type: "button",
-              className: "dn-set-btn dn-set-btnSmall" + (armed ? " dn-set-btnDanger" : ""),
-              onClick: function () {
-                if (armed) {
-                  chRemove(idx);
-                  setDelArmedId(null);
-                } else {
-                  setDelArmedId(ch.id);
-                  setTimeout(function () { setDelArmedId(null); }, 3000);
-                }
-              },
-            }, armed ? t("chDeleteConfirm") : t("chDelete")),
-          ),
-        ),
+      return (
+        <details
+          className={"dn-ch-card" + (ch.enabled ? " dn-ch-onEdge" : " dn-ch-off")}
+          key={channelKey + ":" + (ch.enabled === true)}
+          open={ch.enabled === true}
+        >
+          <summary>
+            {iconEl("bark")}
+            <span className="dn-ch-name">{ch.name || ch.id}</span>
+            <span className="dn-ch-type">bark</span>
+            <span className={"dn-ch-statusDot " + statusDotClass(channelKey)} />
+            <span className="dn-ch-statusTxt" title={statusText(channelKey)}>{statusText(channelKey)}</span>
+            {failBadge(channelKey)}
+            <span className="dn-ch-summaryRight">
+              {switchToggle(ch.enabled === true, function (v: boolean) { chPatch(idx, { enabled: v }); },
+                (ch.enabled ? t("chToggleOff") : t("chToggleOn")) + (ch.name || ch.id))}
+            </span>
+          </summary>
+          <div className="dn-ch-body">
+            {chRow(t("chBarkName"), textInput(ch.name, function (v: string) { chPatch(idx, { name: v }); }, { placeholder: t("chBarkNamePlaceholder"), ariaLabel: t("chBarkName") }))}
+            {chRow(t("chBarkBaseUrl"), textInput(ch.baseUrl, function (v: string) { chPatch(idx, { baseUrl: v }); }, { placeholder: "https://api.day.app", ariaLabel: t("chBarkBaseUrl") }), t("chBarkBaseUrlHint"))}
+            {chRow(t("chBarkDeviceKey"), textInput(ch.deviceKey, function (v: string) { chPatch(idx, { deviceKey: v }); }, { type: "password", placeholder: "********", ariaLabel: t("chBarkDeviceKey") }), t("chBarkDeviceKeyHint"))}
+            <details className="dn-ch-adv" key={"adv-" + ch.id}>
+              <summary>{t("chAdvanced")}</summary>
+              <div className="dn-ch-adv-body">
+                {advRow(t("chBarkSound"), textInput(ch.sound, function (v: string) { chPatch(idx, { sound: v }); }, { ariaLabel: t("chBarkSound") }))}
+                {advRow(t("chBarkGroup"), textInput(ch.group, function (v: string) { chPatch(idx, { group: v }); }, { ariaLabel: t("chBarkGroup") }))}
+                <div className="dn-set-note-inline">{t("chBarkGroupHint")}</div>
+                {advRow(t("chBarkIcon"), textInput(ch.icon, function (v: string) { chPatch(idx, { icon: v }); }, { ariaLabel: t("chBarkIcon") }))}
+                <div className="dn-set-note-inline">{t("chBarkIconHint")}</div>
+                {advRow(t("chBarkUrl"), textInput(ch.url, function (v: string) { chPatch(idx, { url: v }); }, { ariaLabel: t("chBarkUrl") }))}
+                {advRow(t("chBarkBadge"), numInput(ch.badge, function (v: number | undefined) { chPatch(idx, { badge: v }); }, { ariaLabel: t("chBarkBadge") }))}
+                {advRow(t("chBarkLevel"), (
+                  <select
+                    className="dn-set-input dn-set-select"
+                    value={ch.level || ""}
+                    aria-label={t("chBarkLevel")}
+                    onChange={function (e: any) { chPatch(idx, { level: e.target.value || undefined }); }}
+                  >{levelOpts}</select>
+                ))}
+                <div className="dn-set-note-inline">{t("chBarkLevelHint")}</div>
+                <div className="dn-set-note-inline">{t("chLevelsHint")}</div>
+                {levelKeys.length === 0 ? <div className="dn-set-note-inline">{t("chLevelsEmpty")}</div> : levelsRows}
+                {addRow}
+                <datalist id={dlId}>
+                  {suggestKinds.map(function (k) { return <option value={k} key={k}>{k}</option>; })}
+                </datalist>
+              </div>
+            </details>
+            <div className="dn-ch-actions">
+              {testBtn(channelKey)}
+              <button
+                type="button"
+                className={"dn-set-btn dn-set-btnSmall" + (armed ? " dn-set-btnDanger" : "")}
+                onClick={function () {
+                  if (armed) {
+                    chRemove(idx);
+                    setDelArmedId(null);
+                  } else {
+                    setDelArmedId(ch.id);
+                    setTimeout(function () { setDelArmedId(null); }, 3000);
+                  }
+                }}
+              >{armed ? t("chDeleteConfirm") : t("chDelete")}</button>
+            </div>
+          </div>
+        </details>
       );
     }
 
@@ -1581,23 +1612,25 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
         var key = chId + ":" + field;
         var shown = revealMap[key] === true;
         var part: Record<string, any> = {};
-        return React.createElement("span", { className: "dn-secret", key: field },
-          React.createElement("input", {
-            type: shown ? "text" : "password",
-            className: "dn-set-input dn-set-inputText",
-            value: ch[field] || "",
-            placeholder: t(placeholderKey),
-            "aria-label": t(placeholderKey),
-            onChange: function (e: any) { part[field] = e.target.value; whPatch(part); },
-          }),
-          React.createElement("button", {
-            type: "button", className: "dn-secret-reveal",
-            onClick: function () {
-              var next: Record<string, boolean> = Object.assign({}, revealMap);
-              next[key] = !shown;
-              setRevealMap(next);
-            },
-          }, shown ? t("secretHide") : t("secretShow")),
+        return (
+          <span className="dn-secret" key={field}>
+            <input
+              type={shown ? "text" : "password"}
+              className="dn-set-input dn-set-inputText"
+              value={ch[field] || ""}
+              placeholder={t(placeholderKey)}
+              aria-label={t(placeholderKey)}
+              onChange={function (e: any) { part[field] = e.target.value; whPatch(part); }}
+            />
+            <button
+              type="button" className="dn-secret-reveal"
+              onClick={function () {
+                var next: Record<string, boolean> = Object.assign({}, revealMap);
+                next[key] = !shown;
+                setRevealMap(next);
+              }}
+            >{shown ? t("secretHide") : t("secretShow")}</button>
+          </span>
         );
       }
 
@@ -1609,131 +1642,144 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
         whPatch({ template: ta.value.slice(0, at) + token + ta.value.slice(at) });
       }
 
-      var authCtl: any[] = [React.createElement("select", {
-        key: "auth-select",
-        className: "dn-set-input dn-set-select",
-        value: authValue,
-        "aria-label": t("whAuth"),
-        onChange: function (e: any) { whPatch({ auth: e.target.value }); },
-      },
-        React.createElement("option", { value: "none" }, t("whAuthNone")),
-        React.createElement("option", { value: "bearer" }, t("whAuthBearer")),
-        React.createElement("option", { value: "basic" }, t("whAuthBasic")),
-        React.createElement("option", { value: "header" }, t("whAuthHeader")),
+      var authCtl: any[] = [(
+        <select
+          key="auth-select"
+          className="dn-set-input dn-set-select"
+          value={authValue}
+          aria-label={t("whAuth")}
+          onChange={function (e: any) { whPatch({ auth: e.target.value }); }}
+        >
+          <option value="none">{t("whAuthNone")}</option>
+          <option value="bearer">{t("whAuthBearer")}</option>
+          <option value="basic">{t("whAuthBasic")}</option>
+          <option value="header">{t("whAuthHeader")}</option>
+        </select>
       )];
       if (authValue === "bearer") authCtl.push(secretField("token", "whAuthToken"));
       else if (authValue === "basic") {
-        authCtl.push(React.createElement("input", {
-          key: "username", type: "text", className: "dn-set-input dn-set-inputText",
-          value: ch.username || "", placeholder: t("whAuthUsername"), "aria-label": t("whAuthUsername"),
-          onChange: function (e: any) { whPatch({ username: e.target.value }); },
-        }));
+        authCtl.push((
+          <input
+            key="username" type="text" className="dn-set-input dn-set-inputText"
+            value={ch.username || ""} placeholder={t("whAuthUsername")} aria-label={t("whAuthUsername")}
+            onChange={function (e: any) { whPatch({ username: e.target.value }); }}
+          />
+        ));
         authCtl.push(secretField("password", "whAuthPassword"));
       } else if (authValue === "header") {
-        authCtl.push(React.createElement("input", {
-          key: "headerName", type: "text", className: "dn-set-input dn-set-inputText",
-          value: ch.headerName || "", placeholder: t("whAuthHeaderName"), "aria-label": t("whAuthHeaderName"),
-          onChange: function (e: any) { whPatch({ headerName: e.target.value }); },
-        }));
+        authCtl.push((
+          <input
+            key="headerName" type="text" className="dn-set-input dn-set-inputText"
+            value={ch.headerName || ""} placeholder={t("whAuthHeaderName")} aria-label={t("whAuthHeaderName")}
+            onChange={function (e: any) { whPatch({ headerName: e.target.value }); }}
+          />
+        ));
         authCtl.push(secretField("headerValue", "whAuthHeaderValue"));
       }
 
       var textTokens = ["{{title}}", "{{message}}", "{{kind}}", "{{severity}}", "{{priority}}", "{{source}}"];
       var tplChips: any[] = textTokens.map(function (tok: string) {
-        return React.createElement("button", {
-          type: "button", key: tok, className: "dn-tpl-chip",
-          title: t("whTemplateHint"),
-          onClick: function () { insertTpl(tok); },
-        }, tok);
+        return (
+          <button
+            type="button" key={tok} className="dn-tpl-chip"
+            title={t("whTemplateHint")}
+            onClick={function () { insertTpl(tok); }}
+          >{tok}</button>
+        );
       });
-      tplChips.push(React.createElement("button", {
-        type: "button", key: "{{ts}}", className: "dn-tpl-chip is-raw",
-        title: "{{ts}} → " + String(Date.now()) + "（数字直出，不加引号）",
-        onClick: function () { insertTpl("{{ts}}"); },
-      }, "{{ts}}"));
+      tplChips.push((
+        <button
+          type="button" key="{{ts}}" className="dn-tpl-chip is-raw"
+          title={"{{ts}} → " + String(Date.now()) + "（数字直出，不加引号）"}
+          onClick={function () { insertTpl("{{ts}}"); }}
+        >{"{{ts}}"}</button>
+      ));
 
-      return React.createElement("details",
-        {
-          className: "dn-ch-card" + (ch.enabled ? " dn-ch-onEdge" : " dn-ch-off"),
-          key: channelKey + ":" + (ch.enabled === true),
-          open: ch.enabled === true,
-        },
-        React.createElement("summary", null,
-          iconEl("webhook"),
-          React.createElement("span", { className: "dn-ch-name" }, ch.name || ch.id),
-          React.createElement("span", { className: "dn-ch-type" }, "webhook"),
-          React.createElement("span", { className: "dn-ch-statusDot " + statusDotClass(channelKey) }),
-          React.createElement("span", { className: "dn-ch-statusTxt", title: statusText(channelKey) }, statusText(channelKey)),
-          failBadge(channelKey),
-          React.createElement("span", { className: "dn-ch-summaryRight" },
-            switchToggle(ch.enabled === true, function (v: boolean) { whPatch({ enabled: v }); },
-              (ch.enabled ? t("chToggleOff") : t("chToggleOn")) + (ch.name || ch.id)),
-          ),
-        ),
-        React.createElement("div", { className: "dn-ch-body" },
-          chRow(t("whPreset"), React.createElement("select", {
-            className: "dn-set-input dn-set-select", value: "", "aria-label": t("whPreset"),
-            onChange: function (e: any) {
-              var p = WEBHOOK_PRESETS[e.target.value];
-              if (!p) return;
-              // #508 M2：preset 落配置（{{priority}} 频道感知映射的依据）；认证与模板随预设填充，URL 不覆盖（防丢已填内容）
-              whPatch({ preset: e.target.value, auth: p.auth, template: p.template });
-            },
-          },
-            React.createElement("option", { value: "" }, t("whPreset")),
-            React.createElement("option", { value: "ntfy" }, t("whPresetNtfy")),
-            React.createElement("option", { value: "gotify" }, t("whPresetGotify")),
-            React.createElement("option", { value: "custom" }, t("whPresetCustom")),
-          ), t("whPresetHint")),
-          chRow(t("chBarkName"), textInput(ch.name, function (v: string) { whPatch({ name: v }); }, { placeholder: t("chBarkNamePlaceholder"), ariaLabel: t("chBarkName") })),
-          chRow(t("whUrl"), textInput(ch.url, function (v: string) { whPatch({ url: v }); }, { placeholder: t("whUrlPlaceholder"), ariaLabel: t("whUrl") }), t("whUrlHint")),
-          chRow(t("whAuth"), React.createElement("span", { className: "dn-authFields" }, authCtl), t("whAuthHint")),
-          chRow(t("whTimeout"), numInput(ch.timeoutSec, function (v: number | undefined) {
-            // UI 层先 clamp（1-60）；服务端 normalize 仍权威 clamp（防绕过 UI 的 PUT）
-            whPatch({ timeoutSec: v === undefined ? undefined : Math.min(60, Math.max(1, Math.round(v))) });
-          }, { ariaLabel: t("whTimeout"), min: 1, max: 60 }), t("whTimeoutHint")),
-          React.createElement("div", { className: "dn-ch-row", style: { display: "block" } },
-            React.createElement("div", { className: "dn-ch-cap", style: { marginBottom: "6px" } }, t("whTemplate")),
-            React.createElement("textarea", {
-              id: "dn-tpl-" + chId,
-              className: "dn-tpl",
-              spellCheck: false,
-              "aria-label": t("whTemplate"),
-              value: ch.template || "",
-              onChange: function (e: any) { whPatch({ template: e.target.value }); },
-            }),
-            React.createElement("div", { className: "dn-tplChips" },
-              React.createElement("span", { className: "dn-tplCap" }, t("routeCap") + ":"),
-              tplChips,
-              React.createElement("button", {
-                type: "button", className: "dn-set-btn dn-set-btnSmall",
-                onClick: function () {
-                  // 恢复为当前预设（ch.preset 由预设下拉落配置；缺省 ntfy 与服务端默认一致）的默认模板
-                  var p = WEBHOOK_PRESETS[String(ch.preset || "ntfy")];
-                  if (p) whPatch({ template: p.template });
-                },
-              }, t("whTplRestore")),
-            ),
-            React.createElement("span", { className: "dn-ch-hint" }, t("whTemplateHint")),
-            React.createElement("span", { className: "dn-ch-hint" }, t("whTemplateFailHint")),
-          ),
-          React.createElement("div", { className: "dn-ch-actions" },
-            testBtn(channelKey),
-            React.createElement("button", {
-              type: "button",
-              className: "dn-set-btn dn-set-btnSmall" + (armed ? " dn-set-btnDanger" : ""),
-              onClick: function () {
-                if (armed) {
-                  chRemove(idx);
-                  setDelArmedId(null);
-                } else {
-                  setDelArmedId(ch.id);
-                  setTimeout(function () { setDelArmedId(null); }, 3000);
-                }
-              },
-            }, armed ? t("chDeleteConfirm") : t("chDelete")),
-          ),
-        ),
+      return (
+        <details
+          className={"dn-ch-card" + (ch.enabled ? " dn-ch-onEdge" : " dn-ch-off")}
+          key={channelKey + ":" + (ch.enabled === true)}
+          open={ch.enabled === true}
+        >
+          <summary>
+            {iconEl("webhook")}
+            <span className="dn-ch-name">{ch.name || ch.id}</span>
+            <span className="dn-ch-type">webhook</span>
+            <span className={"dn-ch-statusDot " + statusDotClass(channelKey)} />
+            <span className="dn-ch-statusTxt" title={statusText(channelKey)}>{statusText(channelKey)}</span>
+            {failBadge(channelKey)}
+            <span className="dn-ch-summaryRight">
+              {switchToggle(ch.enabled === true, function (v: boolean) { whPatch({ enabled: v }); },
+                (ch.enabled ? t("chToggleOff") : t("chToggleOn")) + (ch.name || ch.id))}
+            </span>
+          </summary>
+          <div className="dn-ch-body">
+            {chRow(t("whPreset"), (
+              <select
+                className="dn-set-input dn-set-select" value="" aria-label={t("whPreset")}
+                onChange={function (e: any) {
+                  var p = WEBHOOK_PRESETS[e.target.value];
+                  if (!p) return;
+                  // #508 M2：preset 落配置（{{priority}} 频道感知映射的依据）；认证与模板随预设填充，URL 不覆盖（防丢已填内容）
+                  whPatch({ preset: e.target.value, auth: p.auth, template: p.template });
+                }}
+              >
+                <option value="">{t("whPreset")}</option>
+                <option value="ntfy">{t("whPresetNtfy")}</option>
+                <option value="gotify">{t("whPresetGotify")}</option>
+                <option value="custom">{t("whPresetCustom")}</option>
+              </select>
+            ), t("whPresetHint"))}
+            {chRow(t("chBarkName"), textInput(ch.name, function (v: string) { whPatch({ name: v }); }, { placeholder: t("chBarkNamePlaceholder"), ariaLabel: t("chBarkName") }))}
+            {chRow(t("whUrl"), textInput(ch.url, function (v: string) { whPatch({ url: v }); }, { placeholder: t("whUrlPlaceholder"), ariaLabel: t("whUrl") }), t("whUrlHint"))}
+            {chRow(t("whAuth"), <span className="dn-authFields">{authCtl}</span>, t("whAuthHint"))}
+            {chRow(t("whTimeout"), numInput(ch.timeoutSec, function (v: number | undefined) {
+              // UI 层先 clamp（1-60）；服务端 normalize 仍权威 clamp（防绕过 UI 的 PUT）
+              whPatch({ timeoutSec: v === undefined ? undefined : Math.min(60, Math.max(1, Math.round(v))) });
+            }, { ariaLabel: t("whTimeout"), min: 1, max: 60 }), t("whTimeoutHint"))}
+            <div className="dn-ch-row" style={{ display: "block" }}>
+              <div className="dn-ch-cap" style={{ marginBottom: "6px" }}>{t("whTemplate")}</div>
+              <textarea
+                id={"dn-tpl-" + chId}
+                className="dn-tpl"
+                spellCheck={false}
+                aria-label={t("whTemplate")}
+                value={ch.template || ""}
+                onChange={function (e: any) { whPatch({ template: e.target.value }); }}
+              />
+              <div className="dn-tplChips">
+                <span className="dn-tplCap">{t("routeCap") + ":"}</span>
+                {tplChips}
+                <button
+                  type="button" className="dn-set-btn dn-set-btnSmall"
+                  onClick={function () {
+                    // 恢复为当前预设（ch.preset 由预设下拉落配置；缺省 ntfy 与服务端默认一致）的默认模板
+                    var p = WEBHOOK_PRESETS[String(ch.preset || "ntfy")];
+                    if (p) whPatch({ template: p.template });
+                  }}
+                >{t("whTplRestore")}</button>
+              </div>
+              <span className="dn-ch-hint">{t("whTemplateHint")}</span>
+              <span className="dn-ch-hint">{t("whTemplateFailHint")}</span>
+            </div>
+            <div className="dn-ch-actions">
+              {testBtn(channelKey)}
+              <button
+                type="button"
+                className={"dn-set-btn dn-set-btnSmall" + (armed ? " dn-set-btnDanger" : "")}
+                onClick={function () {
+                  if (armed) {
+                    chRemove(idx);
+                    setDelArmedId(null);
+                  } else {
+                    setDelArmedId(ch.id);
+                    setTimeout(function () { setDelArmedId(null); }, 3000);
+                  }
+                }}
+              >{armed ? t("chDeleteConfirm") : t("chDelete")}</button>
+            </div>
+          </div>
+        </details>
       );
     }
 
@@ -1759,34 +1805,42 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
         // 未启用频道：置灰禁点（#527）——投递面 = 启用频道 ∩ 路由，停用频道点亮
         // 也不投递（假点亮）；title 说明「启用后可用」。已勾选未启用项保留勾选
         // 显示（不自动改用户配置），用户启用频道后该 chip 恢复可点/生效。
-        return React.createElement("button", {
-          type: "button",
-          key: o.id,
-          className: "dn-route-chip" + (on ? " is-on" : "") + (o.enabled ? "" : " is-off"),
-          "aria-pressed": on ? "true" : "false",
-          disabled: !o.enabled,
-          title: o.enabled ? undefined : t("routeDisabledHint"),
-          onClick: function () { routeToggle(kind, o.id, !on); },
-        }, o.label);
+        return (
+          <button
+            type="button"
+            key={o.id}
+            className={"dn-route-chip" + (on ? " is-on" : "") + (o.enabled ? "" : " is-off")}
+            aria-pressed={on ? "true" : "false"}
+            disabled={!o.enabled}
+            title={o.enabled ? undefined : t("routeDisabledHint")}
+            onClick={function () { routeToggle(kind, o.id, !on); }}
+          >{o.label}</button>
+        );
       });
       staleIds.forEach(function (id: string) {
-        chips.push(React.createElement("span", {
-          key: "stale-" + id,
-          className: "dn-route-chip is-stale",
-          title: t("routeStaleTitle"),
-        }, id + " · " + t("routeStaleChip")));
+        chips.push((
+          <span
+            key={"stale-" + id}
+            className="dn-route-chip is-stale"
+            title={t("routeStaleTitle")}
+          >{id + " · " + t("routeStaleChip")}</span>
+        ));
       });
       var isCustom = routes !== undefined;
-      chips.push(React.createElement("button", {
-        type: "button",
-        key: "state",
-        className: "dn-route-state" + (isCustom ? " is-custom" : ""),
-        title: isCustom ? t("routeCustomStateTitle") : t("routeDefaultStateTitle"),
-        onClick: function () { if (isCustom) routeSetKind(kind, null); },
-      }, isCustom ? t("routeCustomState", { n: litIds.length }) : t("routeDefaultState")));
-      return React.createElement("div", { className: "dn-evt-routes", key: "routes-" + kind },
-        React.createElement("span", { className: "dn-evt-routesCap" }, t("routeCap")),
-        chips,
+      chips.push((
+        <button
+          type="button"
+          key="state"
+          className={"dn-route-state" + (isCustom ? " is-custom" : "")}
+          title={isCustom ? t("routeCustomStateTitle") : t("routeDefaultStateTitle")}
+          onClick={function () { if (isCustom) routeSetKind(kind, null); }}
+        >{isCustom ? t("routeCustomState", { n: litIds.length }) : t("routeDefaultState")}</button>
+      ));
+      return (
+        <div className="dn-evt-routes" key={"routes-" + kind}>
+          <span className="dn-evt-routesCap">{t("routeCap")}</span>
+          {chips}
+        </div>
       );
     }
 
@@ -1796,14 +1850,16 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
       var key = kv[0], labelKey = kv[1];
       var kindId = EVENT_KIND_MAP[key];
       var sev = KIND_SEV[kindId] || "info";
-      eventChildren.push(React.createElement("div", { className: "dn-evt", key: "ev-" + key },
-        React.createElement("div", { className: "dn-evt-head" },
-          React.createElement("span", { className: "dn-sev" + (sev !== "info" ? " dn-sev-" + sev : ""), title: "severity: " + sev }),
-          React.createElement("span", { className: "dn-evt-name" }, t(labelKey)),
-          React.createElement("span", { className: "dn-evt-kind" }, kindId),
-          switchControl(key, t("evtSwitch", { name: t(labelKey) })),
-        ),
-        routeChipsRow(kindId),
+      eventChildren.push((
+        <div className="dn-evt" key={"ev-" + key}>
+          <div className="dn-evt-head">
+            <span className={"dn-sev" + (sev !== "info" ? " dn-sev-" + sev : "")} title={"severity: " + sev} />
+            <span className="dn-evt-name">{t(labelKey)}</span>
+            <span className="dn-evt-kind">{kindId}</span>
+            {switchControl(key, t("evtSwitch", { name: t(labelKey) }))}
+          </div>
+          {routeChipsRow(kindId)}
+        </div>
       ));
     });
     // 动态 kind（插件提议的通知类型）：待确认 = 允许/拒绝 + 路由提示；已允许 = 同款
@@ -1812,46 +1868,52 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
     var kindRows: any[] = kindsList.map(function (k: any) {
       var nameText = k.label && k.label !== k.id ? k.label : k.id;
       if (k.confirmed) {
-        return React.createElement("div", { className: "dn-kinds dn-kinds-ok", key: k.id },
-          React.createElement("div", { className: "dn-kinds-head" },
-            React.createElement("span", { className: "dn-sev" }),
-            React.createElement("span", { className: "dn-kinds-name" }, nameText),
-            React.createElement("span", { className: "dn-evt-kind" }, k.id),
-            React.createElement("span", { className: "dn-kinds-actions" },
-              React.createElement("button", {
-                type: "button", className: "dn-set-btn dn-set-btnSmall",
-                onClick: function () { confirmOne(k.id, false); },
-              }, t("kindRevoke")),
-            ),
-          ),
-          routeChipsRow(k.id),
+        return (
+          <div className="dn-kinds dn-kinds-ok" key={k.id}>
+            <div className="dn-kinds-head">
+              <span className="dn-sev" />
+              <span className="dn-kinds-name">{nameText}</span>
+              <span className="dn-evt-kind">{k.id}</span>
+              <span className="dn-kinds-actions">
+                <button
+                  type="button" className="dn-set-btn dn-set-btnSmall"
+                  onClick={function () { confirmOne(k.id, false); }}
+                >{t("kindRevoke")}</button>
+              </span>
+            </div>
+            {routeChipsRow(k.id)}
+          </div>
         );
       }
-      return React.createElement("div", { className: "dn-kinds", key: k.id },
-        React.createElement("div", { className: "dn-kinds-head" },
-          React.createElement("span", { className: "dn-sev" }),
-          React.createElement("span", { className: "dn-kinds-name" }, nameText),
-          React.createElement("span", { className: "dn-evt-kind" }, k.id),
-          React.createElement("span", { className: "dn-kinds-actions" },
-            React.createElement("button", {
-              type: "button", className: "dn-set-btn dn-set-btnSmall dn-set-btnPrimary",
-              onClick: function () { confirmOne(k.id, true); },
-            }, t("kindAllow")),
-            React.createElement("button", {
-              type: "button", className: "dn-set-btn dn-set-btnSmall dn-set-btnGhostDanger",
-              onClick: function () { confirmOne(k.id, false); },
-            }, t("kindDeny")),
-          ),
-        ),
-        React.createElement("div", { className: "dn-kind-routeHint" }, t("kindRouteHint")),
+      return (
+        <div className="dn-kinds" key={k.id}>
+          <div className="dn-kinds-head">
+            <span className="dn-sev" />
+            <span className="dn-kinds-name">{nameText}</span>
+            <span className="dn-evt-kind">{k.id}</span>
+            <span className="dn-kinds-actions">
+              <button
+                type="button" className="dn-set-btn dn-set-btnSmall dn-set-btnPrimary"
+                onClick={function () { confirmOne(k.id, true); }}
+              >{t("kindAllow")}</button>
+              <button
+                type="button" className="dn-set-btn dn-set-btnSmall dn-set-btnGhostDanger"
+                onClick={function () { confirmOne(k.id, false); }}
+              >{t("kindDeny")}</button>
+            </span>
+          </div>
+          <div className="dn-kind-routeHint">{t("kindRouteHint")}</div>
+        </div>
       );
     });
-    eventChildren.push(React.createElement("div", { key: "kinds" },
-      React.createElement("div", { className: "dn-sec", style: { marginTop: "14px" } },
-        React.createElement("span", { className: "dn-sec-title" }, t("kindsTitle")),
-        React.createElement("span", { className: "dn-sec-hint" }, t("kindsHint")),
-      ),
-      kindsList.length === 0 ? React.createElement("div", { className: "dn-set-note" }, t("kindsEmpty")) : kindRows,
+    eventChildren.push((
+      <div key="kinds">
+        <div className="dn-sec" style={{ marginTop: "14px" }}>
+          <span className="dn-sec-title">{t("kindsTitle")}</span>
+          <span className="dn-sec-hint">{t("kindsHint")}</span>
+        </div>
+        {kindsList.length === 0 ? <div className="dn-set-note">{t("kindsEmpty")}</div> : kindRows}
+      </div>
     ));
 
     // 频道区：内置两卡 + 实例卡（bark / webhook 按类型分派）+ 添加按钮
@@ -1861,46 +1923,60 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
     ].concat((settings.channels || []).map(function (c: any, i: number) {
       return String(c.type) === "webhook" ? webhookCard(c, i) : barkCard(c, i);
     }));
-    channelsChildren.push(React.createElement("div", { className: "dn-ch-add", key: "ch-add" },
-      React.createElement("button", { type: "button", className: "dn-set-btn", onClick: function () { chAdd("bark"); } }, t("chAddBark")),
-      React.createElement("button", { type: "button", className: "dn-set-btn dn-set-btnPrimary", onClick: function () { chAdd("webhook"); } }, t("chAddWebhook")),
+    channelsChildren.push((
+      <div className="dn-ch-add" key="ch-add">
+        <button type="button" className="dn-set-btn" onClick={function () { chAdd("bark"); }}>{t("chAddBark")}</button>
+        <button type="button" className="dn-set-btn dn-set-btnPrimary" onClick={function () { chAdd("webhook"); }}>{t("chAddWebhook")}</button>
+      </div>
     ));
 
     // 合并去重折叠区（#508 M1：统一 dn-ch-adv 折叠形态 + dn-adv-row 行）
-    var dedupFold = React.createElement("details", { className: "dn-ch-adv dn-sec-adv", key: "adv-params" },
-      React.createElement("summary", null, t("secDedup")),
-      React.createElement("div", { className: "dn-ch-adv-body" },
-        advRow(t("errMergeWindow"), React.createElement("input", {
-          type: "number", min: 0, step: 1000, className: "dn-set-input dn-set-numInput",
-          "aria-label": t("errMergeWindow"),
-          value: settings.errorMergeWindowMs,
-          onChange: function (e: any) { patch({ errorMergeWindowMs: Number(e.target.value) }); },
-        })),
-        advRow(t("doneAggWindow"), React.createElement("input", {
-          type: "number", min: 0, step: 1000, className: "dn-set-input dn-set-numInput",
-          "aria-label": t("doneAggWindow"),
-          value: settings.doneMergeWindowMs,
-          onChange: function (e: any) { patch({ doneMergeWindowMs: Number(e.target.value) }); },
-        })),
-        advRow(t("approveRemind"), React.createElement("input", {
-          type: "number", min: 0, step: 1, className: "dn-set-input dn-set-numInput",
-          "aria-label": t("approveRemind"),
-          value: settings.askRemindMin,
-          onChange: function (e: any) { patch({ askRemindMin: Number(e.target.value) }); },
-        })),
-        advRow(t("historyRetention"), React.createElement("input", {
-          type: "number", min: 0, step: 1, className: "dn-set-input dn-set-numInput",
-          "aria-label": t("historyRetention"),
-          value: settings.historyMaxAgeDays,
-          onChange: function (e: any) { patch({ historyMaxAgeDays: Number(e.target.value) }); },
-        })),
-        advRow(t("maxConnections"), React.createElement("input", {
-          type: "number", min: 1, max: 1024, step: 1, className: "dn-set-input dn-set-numInput",
-          "aria-label": t("maxConnections"),
-          value: settings.maxConnections,
-          onChange: function (e: any) { patch({ maxConnections: Number(e.target.value) }); },
-        })),
-      ),
+    var dedupFold = (
+      <details className="dn-ch-adv dn-sec-adv" key="adv-params">
+        <summary>{t("secDedup")}</summary>
+        <div className="dn-ch-adv-body">
+          {advRow(t("errMergeWindow"), (
+            <input
+              type="number" min={0} step={1000} className="dn-set-input dn-set-numInput"
+              aria-label={t("errMergeWindow")}
+              value={settings.errorMergeWindowMs}
+              onChange={function (e: any) { patch({ errorMergeWindowMs: Number(e.target.value) }); }}
+            />
+          ))}
+          {advRow(t("doneAggWindow"), (
+            <input
+              type="number" min={0} step={1000} className="dn-set-input dn-set-numInput"
+              aria-label={t("doneAggWindow")}
+              value={settings.doneMergeWindowMs}
+              onChange={function (e: any) { patch({ doneMergeWindowMs: Number(e.target.value) }); }}
+            />
+          ))}
+          {advRow(t("approveRemind"), (
+            <input
+              type="number" min={0} step={1} className="dn-set-input dn-set-numInput"
+              aria-label={t("approveRemind")}
+              value={settings.askRemindMin}
+              onChange={function (e: any) { patch({ askRemindMin: Number(e.target.value) }); }}
+            />
+          ))}
+          {advRow(t("historyRetention"), (
+            <input
+              type="number" min={0} step={1} className="dn-set-input dn-set-numInput"
+              aria-label={t("historyRetention")}
+              value={settings.historyMaxAgeDays}
+              onChange={function (e: any) { patch({ historyMaxAgeDays: Number(e.target.value) }); }}
+            />
+          ))}
+          {advRow(t("maxConnections"), (
+            <input
+              type="number" min={1} max={1024} step={1} className="dn-set-input dn-set-numInput"
+              aria-label={t("maxConnections")}
+              value={settings.maxConnections}
+              onChange={function (e: any) { patch({ maxConnections: Number(e.target.value) }); }}
+            />
+          ))}
+        </div>
+      </details>
     );
 
     var qh = settings.quietHours || {};
@@ -1936,114 +2012,137 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
       var checked = allows.indexOf(c.kind) !== -1;
       // 未启用事件：置灰禁点（#527）——事件开关关闭则不产生通知，豁免勾选无意义；
       // 保留已勾选显示（不自动改配置），启用事件后恢复可点。禁点用原生 disabled。
-      return React.createElement("button", {
-        type: "button",
-        key: c.kind,
-        className: "dn-route-chip" + (checked ? " is-on" : "") + (c.enabled ? "" : " dn-set-allowDim"),
-        "aria-pressed": checked ? "true" : "false",
-        disabled: !c.enabled,
-        title: c.enabled ? undefined : t("allowDisabledHint"),
-        onClick: function () {
-          var next = allows.slice();
-          if (!checked && next.indexOf(c.kind) === -1) next.push(c.kind);
-          else if (checked && next.indexOf(c.kind) !== -1) next.splice(next.indexOf(c.kind), 1);
-          setAllowKinds(next);
-        },
-      }, t(c.labelKey), c.enabled ? null : React.createElement("span", { className: "dn-set-allowHint" }, t("allowDisabledHint")));
+      return (
+        <button
+          type="button"
+          key={c.kind}
+          className={"dn-route-chip" + (checked ? " is-on" : "") + (c.enabled ? "" : " dn-set-allowDim")}
+          aria-pressed={checked ? "true" : "false"}
+          disabled={!c.enabled}
+          title={c.enabled ? undefined : t("allowDisabledHint")}
+          onClick={function () {
+            var next = allows.slice();
+            if (!checked && next.indexOf(c.kind) === -1) next.push(c.kind);
+            else if (checked && next.indexOf(c.kind) !== -1) next.splice(next.indexOf(c.kind), 1);
+            setAllowKinds(next);
+          }}
+        >{t(c.labelKey)}{c.enabled ? null : <span className="dn-set-allowHint">{t("allowDisabledHint")}</span>}</button>
+      );
     });
     // 免打扰卡（#508 M1 r4 形态：开关 + 时段 + 豁免 chips + 快捷按钮）
-    var dndCard = React.createElement("div", { className: "dn-dnd", key: "dnd" },
-      React.createElement("div", { className: "dn-dnd-head" },
-        React.createElement("span", { className: "dn-sev dn-sev-warning" }),
-        React.createElement("span", { className: "dn-evt-name" }, t("dndEnable")),
-        switchToggle(qh.enabled === true, function (v: boolean) {
-          patch({ quietHours: Object.assign({}, qh, { enabled: v }) });
-        }, t("dndEnable")),
-      ),
-      qh.enabled === true ? React.createElement("div", null,
-        React.createElement("div", { className: "dn-dnd-row" },
-          React.createElement("span", { className: "dn-dnd-cap" }, t("dndStart")),
-          React.createElement("input", {
-            type: "time", className: "dn-set-input", "aria-label": t("dndStart"),
-            value: qh.start || "22:00",
-            onChange: function (e: any) { patch({ quietHours: Object.assign({}, qh, { start: e.target.value }) }); },
-          }),
-          React.createElement("span", { className: "dn-dnd-cap" }, t("dndEnd")),
-          React.createElement("input", {
-            type: "time", className: "dn-set-input", "aria-label": t("dndEnd"),
-            value: qh.end || "08:00",
-            onChange: function (e: any) { patch({ quietHours: Object.assign({}, qh, { end: e.target.value }) }); },
-          }),
-        ),
-        React.createElement("div", { className: "dn-dnd-row", style: { display: "block" } },
-          React.createElement("span", { className: "dn-dnd-cap" }, t("dndStillLabel") + "："),
-          React.createElement("div", { className: "dn-set-allows" }, allowChips),
-          React.createElement("div", { className: "dn-set-allowActions" },
-            React.createElement("button", { type: "button", className: "dn-set-btn dn-set-btnSmall", onClick: allowFollowEnabled },
-              t("allowFollowEnabled")),
-            React.createElement("button", { type: "button", className: "dn-set-btn dn-set-btnSmall", onClick: allowResetDefault },
-              t("allowResetDefault")),
-          ),
-        ),
-      ) : null,
+    var dndCard = (
+      <div className="dn-dnd" key="dnd">
+        <div className="dn-dnd-head">
+          <span className="dn-sev dn-sev-warning" />
+          <span className="dn-evt-name">{t("dndEnable")}</span>
+          {switchToggle(qh.enabled === true, function (v: boolean) {
+            patch({ quietHours: Object.assign({}, qh, { enabled: v }) });
+          }, t("dndEnable"))}
+        </div>
+        {qh.enabled === true ? (
+          <div>
+            <div className="dn-dnd-row">
+              <span className="dn-dnd-cap">{t("dndStart")}</span>
+              <input
+                type="time" className="dn-set-input" aria-label={t("dndStart")}
+                value={qh.start || "22:00"}
+                onChange={function (e: any) { patch({ quietHours: Object.assign({}, qh, { start: e.target.value }) }); }}
+              />
+              <span className="dn-dnd-cap">{t("dndEnd")}</span>
+              <input
+                type="time" className="dn-set-input" aria-label={t("dndEnd")}
+                value={qh.end || "08:00"}
+                onChange={function (e: any) { patch({ quietHours: Object.assign({}, qh, { end: e.target.value }) }); }}
+              />
+            </div>
+            <div className="dn-dnd-row" style={{ display: "block" }}>
+              <span className="dn-dnd-cap">{t("dndStillLabel") + "："}</span>
+              <div className="dn-set-allows">{allowChips}</div>
+              <div className="dn-set-allowActions">
+                <button type="button" className="dn-set-btn dn-set-btnSmall" onClick={allowFollowEnabled}>
+                  {t("allowFollowEnabled")}
+                </button>
+                <button type="button" className="dn-set-btn dn-set-btnSmall" onClick={allowResetDefault}>
+                  {t("allowResetDefault")}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
     );
 
     // 三端降级文案（A5/A8；#418：浏览器通知权限状态行已移入「浏览器通知」频道卡，
     // 这里只保留服务不可用 / 非安全上下文 / 平台不支持三条全局降级说明）
     var degradation: any[] = [];
     if (metaValue && metaValue.writable === false) {
-      degradation.push(React.createElement("div", { className: "dn-set-note", key: "settings-unavailable" },
-        t("settingsSvcDown")));
+      degradation.push((
+        <div className="dn-set-note" key="settings-unavailable">
+          {t("settingsSvcDown")}
+        </div>
+      ));
     }
     if ("Notification" in window) {
       if (!isSecureContext()) {
-        degradation.push(React.createElement("div", { className: "dn-set-note", key: "insecure" },
-          t("httpDegraded")));
+        degradation.push((
+          <div className="dn-set-note" key="insecure">
+            {t("httpDegraded")}
+          </div>
+        ));
       }
     } else {
-      degradation.push(React.createElement("div", { className: "dn-set-note", key: "noapi" },
-        t("iosUnsupported")));
+      degradation.push((
+        <div className="dn-set-note" key="noapi">
+          {t("iosUnsupported")}
+        </div>
+      ));
     }
 
     // 通知记录 tab（#508 M1：历史独立成 tab；#418：清理/发送测试/刷新并排工具行；
     // 动作区 A6/A7；请求权限按钮随权限状态行一起归入「浏览器通知」频道卡）
-    var historyPane = React.createElement("div", { key: "history" },
-      React.createElement("div", { className: "dn-set-historyTools" },
-        React.createElement("button", {
-          type: "button", className: "dn-set-btn dn-set-btnSmall" + (clearArmedValue ? " dn-set-btnDanger" : ""), onClick: confirmClear,
-        }, clearArmedValue ? t("clearConfirm") : t("clearLabel")),
-        React.createElement("button", {
-          type: "button", className: "dn-set-btn dn-set-btnSmall", onClick: function () { sendTest(); },
-        }, t("sendTest")),
-        React.createElement("button", {
-          type: "button", className: "dn-set-btn dn-set-btnSmall",
-          onClick: function () { loadHistory({ value: true }); },
-        }, t("refresh")),
-        React.createElement("span", { className: "dn-set-historyCount" }, t("historyTitle")),
-      ),
-      !history || history.length === 0
-        ? React.createElement("div", { className: "dn-set-note" }, t("historyEmpty"))
-        : React.createElement("ul", { className: "dn-set-history" },
-            history.map(function (r: any, i: number) {
-              var d = new Date(r.ts);
-              var pad = function (n: number) { return n < 10 ? "0" + n : String(n); };
-              var time = pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
-              var sev = KIND_SEV[r.kind] || "info";
-              return React.createElement("li", { className: "dn-set-historyItem", key: String(r.ts) + "-" + i },
-                React.createElement("span", { className: "dn-sev" + (sev !== "info" ? " dn-sev-" + sev : ""), title: "severity: " + sev }),
-                React.createElement("div", { className: "dn-set-historyMain" },
-                  React.createElement("div", { className: "dn-set-historyHead" },
-                    React.createElement("span", { className: "dn-set-historyKind" }, KIND_KEYS[r.kind] !== undefined ? t(KIND_KEYS[r.kind]) : r.kind),
-                    React.createElement("span", { className: "dn-set-historyTime" }, time),
-                    r.suppressed === "quiet"
-                      ? React.createElement("span", { className: "dn-set-historySuppressed" }, t("historySuppressed"))
-                      : null,
-                  ),
-                  React.createElement("div", { className: "dn-set-historyText" }, r.title + "：" + r.message),
-                ),
-              );
-            }),
-          ),
+    var historyPane = (
+      <div key="history">
+        <div className="dn-set-historyTools">
+          <button
+            type="button" className={"dn-set-btn dn-set-btnSmall" + (clearArmedValue ? " dn-set-btnDanger" : "")} onClick={confirmClear}
+          >{clearArmedValue ? t("clearConfirm") : t("clearLabel")}</button>
+          <button
+            type="button" className="dn-set-btn dn-set-btnSmall" onClick={function () { sendTest(); }}
+          >{t("sendTest")}</button>
+          <button
+            type="button" className="dn-set-btn dn-set-btnSmall"
+            onClick={function () { loadHistory({ value: true }); }}
+          >{t("refresh")}</button>
+          <span className="dn-set-historyCount">{t("historyTitle")}</span>
+        </div>
+        {!history || history.length === 0
+          ? <div className="dn-set-note">{t("historyEmpty")}</div>
+          : (
+              <ul className="dn-set-history">
+                {history.map(function (r: any, i: number) {
+                  var d = new Date(r.ts);
+                  var pad = function (n: number) { return n < 10 ? "0" + n : String(n); };
+                  var time = pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+                  var sev = KIND_SEV[r.kind] || "info";
+                  return (
+                    <li className="dn-set-historyItem" key={String(r.ts) + "-" + i}>
+                      <span className={"dn-sev" + (sev !== "info" ? " dn-sev-" + sev : "")} title={"severity: " + sev} />
+                      <div className="dn-set-historyMain">
+                        <div className="dn-set-historyHead">
+                          <span className="dn-set-historyKind">{KIND_KEYS[r.kind] !== undefined ? t(KIND_KEYS[r.kind]) : r.kind}</span>
+                          <span className="dn-set-historyTime">{time}</span>
+                          {r.suppressed === "quiet"
+                            ? <span className="dn-set-historySuppressed">{t("historySuppressed")}</span>
+                            : null}
+                        </div>
+                        <div className="dn-set-historyText">{r.title + "：" + r.message}</div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+      </div>
     );
 
     // ---- #508 M1：卡内三 tab（通知事件 / 通知频道 / 通知记录）----
@@ -2052,27 +2151,29 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
     var pendingKinds = kindsList.filter(function (k: any) { return !k.confirmed; }).length;
 
     // tab 栏：三个普通 button（不引入 role=tablist 管理成本——#402 决策延续）
-    var tabbar = React.createElement("div", { className: "dn-set-tabs" },
-      React.createElement("button", {
-        type: "button",
-        className: "dn-set-tab" + (activeTab === "events" ? " dn-set-tabActive" : ""),
-        onClick: function () { setActiveTab("events"); },
-      },
-        t("secEvents"),
-        pendingKinds > 0
-          ? React.createElement("span", { className: "dn-set-tabBadge" }, String(pendingKinds))
-          : null,
-      ),
-      React.createElement("button", {
-        type: "button",
-        className: "dn-set-tab" + (activeTab === "channels" ? " dn-set-tabActive" : ""),
-        onClick: function () { setActiveTab("channels"); },
-      }, t("secChannels")),
-      React.createElement("button", {
-        type: "button",
-        className: "dn-set-tab" + (activeTab === "history" ? " dn-set-tabActive" : ""),
-        onClick: function () { setActiveTab("history"); },
-      }, t("secHistory")),
+    var tabbar = (
+      <div className="dn-set-tabs">
+        <button
+          type="button"
+          className={"dn-set-tab" + (activeTab === "events" ? " dn-set-tabActive" : "")}
+          onClick={function () { setActiveTab("events"); }}
+        >
+          {t("secEvents")}
+          {pendingKinds > 0
+            ? <span className="dn-set-tabBadge">{String(pendingKinds)}</span>
+            : null}
+        </button>
+        <button
+          type="button"
+          className={"dn-set-tab" + (activeTab === "channels" ? " dn-set-tabActive" : "")}
+          onClick={function () { setActiveTab("channels"); }}
+        >{t("secChannels")}</button>
+        <button
+          type="button"
+          className={"dn-set-tab" + (activeTab === "history" ? " dn-set-tabActive" : "")}
+          onClick={function () { setActiveTab("history"); }}
+        >{t("secHistory")}</button>
+      </div>
     );
 
     // 事件 tab 内容（#508：历史移出，事件页聚焦事件路由与确认流）
@@ -2085,14 +2186,16 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
     // #405 PR2 域保存（方案定稿形态 B）：频道 tab 底部「保存频道」只提交 channels
     // 键——与 foot 全量保存语义不同（域 vs 全量），不构成 #418 移除的「双份全量
     // 保存」视觉重复；#418 原文预留「域级拆分后按域重排按钮位置」，本行兑现。
-    var channelsDomainSave = React.createElement("div", { className: "dn-ch-domainSave", key: "ch-domain-save" },
-      React.createElement("span", { className: "dn-ch-domainSaveHint" }, t("channelsDomainHint")),
-      React.createElement("button", {
-        type: "button",
-        className: "dn-set-btn dn-set-btnPrimary dn-set-save",
-        disabled: saving,
-        onClick: function () { saveFor("channels"); },
-      }, saving ? t("saving") : t("saveChannels")),
+    var channelsDomainSave = (
+      <div className="dn-ch-domainSave" key="ch-domain-save">
+        <span className="dn-ch-domainSaveHint">{t("channelsDomainHint")}</span>
+        <button
+          type="button"
+          className="dn-set-btn dn-set-btnPrimary dn-set-save"
+          disabled={saving}
+          onClick={function () { saveFor("channels"); }}
+        >{saving ? t("saving") : t("saveChannels")}</button>
+      </div>
     );
     var channelsPane = [
       channelsChildren,
@@ -2104,37 +2207,42 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
     // #405 PR2：foot 显示全量脏计数（含频道域）；「保存频道」按钮的域脏态不做单独
     // 计数——无频道域脏时点击走空 diff 的「未修改」提示（与 foot 保存同交互语义）。
     var dirtyCount = Object.keys(diffPayload()).length;
-    return React.createElement("li", { className: "dn-set-card" },
-      tabbar,
-      React.createElement("div", { className: "dn-set-body" },
-        activeTab === "events" ? eventsPane : activeTab === "channels" ? channelsPane : historyPane,
-        React.createElement("div", { className: "dn-set-notes" }, degradation),
-        // #405 PR2b：409 冲突双动作横幅（非模态：横幅期间可继续编辑；动作触发时
-        // 实时重算本地变更）。「忽略」= 关闭横幅、草稿保留原样。
-        conflict
-          ? React.createElement("div", { className: "dn-conflict", role: "alert" },
-              React.createElement("span", { className: "dn-conflictText" },
-                t(conflict.entry === "channels" ? "conflictChannels" : "conflictTitle")),
-              React.createElement("span", { className: "dn-conflictActions" },
-                React.createElement("button", { type: "button", className: "dn-set-btn dn-set-btnSmall", onClick: resolveConflictLoadLatest }, t("conflictLoadLatest")),
-                React.createElement("button", { type: "button", className: "dn-set-btn dn-set-btnSmall dn-set-save", disabled: saving, onClick: resolveConflictOverwrite }, t("conflictOverwrite")),
-                React.createElement("button", { type: "button", className: "dn-set-btn dn-set-btnSmall", onClick: function () { setConflict(null); } }, t("conflictIgnore")),
-              ),
-            )
-          : null,
-        React.createElement("div", { className: "dn-set-foot" },
-          saved
-            ? React.createElement("span", { className: saved.err ? "dn-set-error" : "dn-set-saved" }, saved.msg)
-            : dirtyCount > 0
-              ? React.createElement("span", { className: "dn-dirty" }, t("dirtySome", { n: dirtyCount }))
-              : null,
-          React.createElement("span", { className: "dn-spacer" }),
-          // #405：保存中（guard 在途）禁用「放弃更改」与「保存」——防提交窗口内矛盾操作
-          // （放弃被在途成功回调覆盖基线）与连点重复 PUT；按钮文案切换「保存中…」。
-          React.createElement("button", { type: "button", className: "dn-set-btn dn-set-btnSmall", disabled: saving, onClick: discardChanges }, t("discardChanges")),
-          React.createElement("button", { type: "button", className: "dn-set-save", disabled: saving, onClick: function () { saveFor("all"); } }, saving ? t("saving") : t("save")),
-        ),
-      ),
+    return (
+      <li className="dn-set-card">
+        {tabbar}
+        <div className="dn-set-body">
+          {activeTab === "events" ? eventsPane : activeTab === "channels" ? channelsPane : historyPane}
+          <div className="dn-set-notes">{degradation}</div>
+          {/* #405 PR2b：409 冲突双动作横幅（非模态：横幅期间可继续编辑；动作触发时
+              实时重算本地变更）。「忽略」= 关闭横幅、草稿保留原样。 */}
+          {conflict
+            ? (
+                <div className="dn-conflict" role="alert">
+                  <span className="dn-conflictText">
+                    {t(conflict.entry === "channels" ? "conflictChannels" : "conflictTitle")}
+                  </span>
+                  <span className="dn-conflictActions">
+                    <button type="button" className="dn-set-btn dn-set-btnSmall" onClick={resolveConflictLoadLatest}>{t("conflictLoadLatest")}</button>
+                    <button type="button" className="dn-set-btn dn-set-btnSmall dn-set-save" disabled={saving} onClick={resolveConflictOverwrite}>{t("conflictOverwrite")}</button>
+                    <button type="button" className="dn-set-btn dn-set-btnSmall" onClick={function () { setConflict(null); }}>{t("conflictIgnore")}</button>
+                  </span>
+                </div>
+              )
+            : null}
+          <div className="dn-set-foot">
+            {saved
+              ? <span className={saved.err ? "dn-set-error" : "dn-set-saved"}>{saved.msg}</span>
+              : dirtyCount > 0
+                ? <span className="dn-dirty">{t("dirtySome", { n: dirtyCount })}</span>
+                : null}
+            <span className="dn-spacer" />
+            {/* #405：保存中（guard 在途）禁用「放弃更改」与「保存」——防提交窗口内矛盾操作
+                （放弃被在途成功回调覆盖基线）与连点重复 PUT；按钮文案切换「保存中…」。 */}
+            <button type="button" className="dn-set-btn dn-set-btnSmall" disabled={saving} onClick={discardChanges}>{t("discardChanges")}</button>
+            <button type="button" className="dn-set-save" disabled={saving} onClick={function () { saveFor("all"); }}>{saving ? t("saving") : t("save")}</button>
+          </div>
+        </div>
+      </li>
     );
   }
 
@@ -2217,7 +2325,7 @@ export function apply(ctx: any) {
             // t(key) 形态、不包任何可能抛错的逻辑（thunk 抛错会炸宿主 nav 渲染）。
             { name: "settings.section", id: "dsh-notifier", order: 70, label: () => t("tabLabel"), locale: NS },
             function () {
-              return React.createElement(SettingsCard, null);
+              return <SettingsCard />;
             }
           );
         });
