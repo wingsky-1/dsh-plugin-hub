@@ -212,7 +212,8 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
   var hostPlatform: string | null = null;
   var STYLE_ID = "dsh-notifier-style";
   // 合并 #418/#421/#426/#508 后统一 bump（保证新样式重注入；508-1 > 426-1）
-  var CSS_VERSION = "527-1";
+  // #640/#641：声音行/三态/试听样式加入 → 527-1 → 640-1
+  var CSS_VERSION = "640-1";
   // 浏览器通知图标（内联 SVG data URL，零外部资源；铃铛造型）。
   var NOTIFY_ICON =
     "data:image/svg+xml;utf8," +
@@ -1479,7 +1480,7 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
       if (channelId === "browser") {
         extras.push(chRow(t("chWhenVisible"), switchControl("notifyWhenVisible", t("chWhenVisible"))));
       }
-      extras.push(soundRow(soundKey, channelId, on));
+      extras.push(soundRow(soundKey, label));
       return (
         <details
           className={"dn-ch-card" + stateCls}
@@ -1540,7 +1541,7 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
      *  开关语义：off=false（静音）；on=true（跟随系统默认）；on 后选择音色 =
      *  SoundId（显式音色）。交互全部显式 unlockAudio 兜底（C5：autoplay 策略下
      *  纯后台页面自播需此前任意手势解锁；试听点击本身即手势）。 */
-    function soundRow(soundKey: string, channelId: string, popOn: boolean) {
+    function soundRow(soundKey: string, channelLabel: string) {
       var soundVal = settings[soundKey];
       var soundOn = soundVal === true || (typeof soundVal === "string" && SOUND_IDS.indexOf(soundVal) !== -1);
       var toneValue = typeof soundVal === "string" && SOUND_IDS.indexOf(soundVal) !== -1 ? soundVal : "";
@@ -1559,7 +1560,7 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
               var p: Record<string, any> = {};
               p[soundKey] = v; // false / true
               patch(p);
-            }, t("chSound") + " " + labelKeyForSound(soundKey))}
+            }, t("chSound") + " " + channelLabel)}
             {soundOn ? (
               <select
                 className="dn-set-input dn-set-select"
@@ -1584,9 +1585,6 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
           </span>
         </div>
       );
-    }
-    function labelKeyForSound(soundKey: string): string {
-      return soundKey === "browserSound" ? "browser" : "system";
     }
 
     /**

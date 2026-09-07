@@ -101,7 +101,7 @@ import { assert } from "./helpers.ts";
   // 首次 apply：按 id 注入 1 个 <style>，dataset.version 承载 CSS_VERSION
   mod.apply(ctx);
   assert.equal(styleNodes(), 1, "#477：首次 apply 注入 1 个 dsh-notifier-style");
-  assert.equal(headNodes[0].dataset.version, "527-1", "#477：dataset.version 承载 CSS_VERSION（#527 bump）");
+  assert.equal(headNodes[0].dataset.version, "640-1", "#477：dataset.version 承载 CSS_VERSION（#640 bump）");
 
   // 重复 apply（宿主热更/重挂载）：幂等，仍 1 个，不重建
   mod.apply(ctx);
