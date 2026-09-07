@@ -13,7 +13,7 @@
  * fetch 走 core.ts 既有 fetchTimeout 封装；文案全部经 locales 字典。
  */
 import * as React from "react";
-import { fetchTimeout } from "./core.ts";
+import { fetchTimeout, REPORT_GENERATE_STATUS_URL } from "./core.ts";
 import { t } from "../../../../shared/client/i18n.js";
 
 /** 宿主端 ROUTES（构建期经 __DSH_ROUTES__ 注入；报告五路由 #503 M3 / #532 起进入路由表）。 */
@@ -23,6 +23,21 @@ const REPORT_MODELS_URL = __DSH_ROUTES__?.reportModels ?? "/api/dsh-provider-usa
 const REPORTS_URL = __DSH_ROUTES__?.reports ?? "/api/dsh-provider-usage/reports";
 const REPORT_DETAIL_URL = __DSH_ROUTES__?.reportDetail ?? "/api/dsh-provider-usage/reports/detail";
 const REPORT_GENERATE_URL = __DSH_ROUTES__?.reportGenerate ?? "/api/dsh-provider-usage/reports/generate";
+
+/** 轮询退避：1s → 2s → 4s 封顶 5s；上限约 2 分钟（#625）。 */
+const POLL_INITIAL_DELAY_MS = 1_000;
+const POLL_MAX_DELAY_MS = 5_000;
+const POLL_MAX_ROUNDS = 25;
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/** 轮询超时哨兵：#625 语义——超时≠失败（后端可能仍在生成），转「仍在生成」正向提示。 */
+class PollInProgressError extends Error {
+  constructor() {
+    super("poll-timeout");
+    this.name = "PollInProgressError";
+  }
+}
 
 // ---------------------------------------------------------------- 类型
 
@@ -168,7 +183,12 @@ export function ReportSection(): React.ReactElement {
   // 手动生成
   const [genPeriod, setGenPeriod] = React.useState<ReportPeriodView>("daily");
   const [generating, setGenerating] = React.useState(false);
-  const [genError, setGenError] = React.useState<string | null>(null);  // 历史列表与详情展开
+  const [genError, setGenError] = React.useState<string | null>(null);
+  // #626 强制重新生成（默认幂等：窗口已有成功报告则复用，勾选后强制覆盖）
+  const [genForce, setGenForce] = React.useState(false);
+  // #625 轮询卸载保护：组件卸载后停止轮询，不再 setState
+  const disposedRef = React.useRef(false);
+  React.useEffect(() => () => { disposedRef.current = true; }, []);
   const [list, setList] = React.useState<ReportMetaView[] | null>(null);
   const [listFailed, setListFailed] = React.useState(false);
   const [openId, setOpenId] = React.useState<string | null>(null);
@@ -274,7 +294,36 @@ export function ReportSection(): React.ReactElement {
     }
   };
 
-  /** 手动生成：POST /reports/generate → 成功刷新列表并展开新报告。 */
+  /**
+   * 轮询生成任务状态（#625）：退避 1s→5s，上限约 2 分钟。
+   * done → 返回 meta；failed → 抛错；超时/status 404（任务已被 TTL 修剪，报告
+   * 大概率已生成）→ 抛 PollInProgressError（调用方转「仍在生成」正向提示，
+   * 绝不误报失败）。
+   * 组件卸载（disposedRef）后立即中止。
+   */
+  const pollReportTask = async (taskId: string): Promise<ReportMetaView> => {
+    let delay = POLL_INITIAL_DELAY_MS;
+    for (let i = 0; i < POLL_MAX_ROUNDS; i += 1) {
+      await sleep(delay);
+      if (disposedRef.current) throw new PollInProgressError();
+      const res = await fetchTimeout(
+        `${REPORT_GENERATE_STATUS_URL}?taskId=${encodeURIComponent(taskId)}`,
+        { headers: { Accept: "application/json" }, cache: "no-store" },
+      );
+      if (res.status === 404) throw new PollInProgressError(); // 任务已修剪：转「仍在生成」
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; status?: string; meta?: ReportMetaView; error?: string };
+      if (body.status === "done") {
+        if (body.meta === undefined) throw new Error("bad-task-result");
+        return body.meta;
+      }
+      if (body.status === "failed") throw new Error(body.error ?? "生成失败");
+      delay = Math.min(delay * 2, POLL_MAX_DELAY_MS);
+    }
+    throw new PollInProgressError();
+  };
+
+  /** 手动生成（#625 异步任务化）：POST → 幂等复用(200+meta) 或 202+taskId 轮询 → 刷新列表并展开。 */
   const onGenerate = async (): Promise<void> => {
     if (generating) return;
     setGenerating(true);
@@ -284,22 +333,61 @@ export function ReportSection(): React.ReactElement {
       const res = await fetchTimeout(REPORT_GENERATE_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ period: genPeriod }),
+        body: JSON.stringify({ period: genPeriod, force: genForce }),
       });
-      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; meta?: ReportMetaView; error?: string };
-      if (!res.ok || body.meta === undefined) throw new Error(body.error ?? `HTTP ${res.status}`);
-      if (body.meta.noData === true) {
-        // #532：空窗口不调模型不落盘——正向提示，不进错误分支、不展开详情
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        meta?: ReportMetaView;
+        reused?: boolean;
+        taskId?: string;
+        error?: string;
+      };
+      if (!res.ok || (body.meta === undefined && typeof body.taskId !== "string")) {
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      if (body.meta !== undefined) {
+        // 终态：幂等复用（窗口已有成功报告，未勾选强制重生成）
+        if (disposedRef.current) return;
+        if (body.meta.noData === true) {
+          // #532：空窗口不调模型不落盘——正向提示，不进错误分支、不展开详情
+          setGenNotice(t("reportNoData"));
+          return;
+        }
+        if (body.reused === true) setGenNotice(t("reportReused"));
+        else setGenNotice(null);
+        await loadReports();
+        if (disposedRef.current) return;
+        setOpenId(rowIdOf(body.meta)); // 生成成功后展开详情
+        return;
+      }
+      // 202 + taskId：轮询直到完成
+      let meta: ReportMetaView;
+      try {
+        meta = await pollReportTask(body.taskId as string);
+      } catch (e) {
+        if (e instanceof PollInProgressError) {
+          if (disposedRef.current) return;
+          // 超时：后端可能仍在生成——正向提示，不报失败（#625 防误报回归）
+          setGenNotice(t("reportStillGenerating"));
+          await loadReports();
+          return;
+        }
+        throw e;
+      }
+      if (disposedRef.current) return;
+      if (meta.noData === true) {
         setGenNotice(t("reportNoData"));
         return;
       }
       setGenNotice(null);
       await loadReports();
-      setOpenId(rowIdOf(body.meta)); // 生成成功后展开详情
+      if (disposedRef.current) return;
+      setOpenId(rowIdOf(meta)); // 生成成功后展开详情
     } catch (e) {
+      if (disposedRef.current) return;
       setGenError(t("reportGenerateFail", { msg: e instanceof Error ? e.message : String(e) }));
     } finally {
-      setGenerating(false);
+      if (!disposedRef.current) setGenerating(false);
     }
   };
 
@@ -539,6 +627,17 @@ export function ReportSection(): React.ReactElement {
         "button",
         { type: "button", className: "dou-reportGenBtn", disabled: generating, onClick: () => void onGenerate() },
         generating ? t("reportGenerating") : t("reportGenerate"),
+      ),
+      React.createElement(
+        "label",
+        { className: "dou-reportGenForce" },
+        React.createElement("input", {
+          type: "checkbox",
+          checked: genForce,
+          disabled: generating,
+          onChange: (e: unknown) => setGenForce((e as { target: { checked: boolean } }).target.checked),
+        }),
+        t("reportForceRegen"),
       ),
       genError !== null ? React.createElement("span", { className: "dou-reportGenError" }, genError) : null,
       genNotice !== null ? React.createElement("span", { className: "dou-reportGenNotice" }, genNotice) : null,

@@ -171,8 +171,8 @@ function makeFakeCtx(overrides = {}) {
   await apply(ctx, { ...ISOLATED_CONFIG });
   assert.deepEqual(
     routes.map((r) => r.path).sort(),
-    [ROUTES.health, ROUTES.history, ROUTES.stats, ROUTES.trend, ROUTES.adapters, ROUTES.select, ROUTES.inspect, ROUTES.add, ROUTES.uiConfig, ROUTES.events, ROUTES.reportConfig, ROUTES.reportModels, ROUTES.reports, ROUTES.reportDetail, ROUTES.reportGenerate].sort(),
-    "注册十五条路由（stats/history/trend/adapters.json/select/inspect/add/health/ui-config/events + #503 报告四路由 + #532 模型候选）",
+    [ROUTES.health, ROUTES.history, ROUTES.stats, ROUTES.trend, ROUTES.adapters, ROUTES.select, ROUTES.inspect, ROUTES.add, ROUTES.uiConfig, ROUTES.events, ROUTES.reportConfig, ROUTES.reportModels, ROUTES.reports, ROUTES.reportDetail, ROUTES.reportGenerate, ROUTES.reportGenerateStatus].sort(),
+    "注册十六条路由（stats/history/trend/adapters.json/select/inspect/add/health/ui-config/events + #503 报告四路由 + #532 模型候选 + #625 生成状态）",
   );
   assert.ok(routes.every((r) => r.kind === "exact" || r.kind === "prefix"), "路由 kind 合法");
 }
@@ -180,7 +180,7 @@ function makeFakeCtx(overrides = {}) {
 // ---------------------------------------------------------------- 围栏：403 / 405
 
 const POST_ROUTES = new Set([ROUTES.select, ROUTES.inspect, ROUTES.add, ROUTES.uiConfig, ROUTES.reportConfig, ROUTES.reportGenerate]);
-for (const routePath of [ROUTES.stats, ROUTES.history, ROUTES.trend, ROUTES.health, ROUTES.adapters, ROUTES.select, ROUTES.inspect, ROUTES.add, ROUTES.uiConfig, ROUTES.events, ROUTES.reportConfig, ROUTES.reportModels, ROUTES.reports, ROUTES.reportDetail, ROUTES.reportGenerate]) {
+for (const routePath of [ROUTES.stats, ROUTES.history, ROUTES.trend, ROUTES.health, ROUTES.adapters, ROUTES.select, ROUTES.inspect, ROUTES.add, ROUTES.uiConfig, ROUTES.events, ROUTES.reportConfig, ROUTES.reportModels, ROUTES.reports, ROUTES.reportDetail, ROUTES.reportGenerate, ROUTES.reportGenerateStatus]) {
   {
     const { ctx, routes } = makeFakeCtx();
     await apply(ctx, { ...ISOLATED_CONFIG });
@@ -1693,22 +1693,38 @@ console.log("[smoke] #503 trend 挂接 + /trend 集成断言全部通过 ✓");
   await listeners.get("session/flush")[0](); // 官方排空点先行刷盘
   const trendBefore = await callHandler(trendRoute, fakeReq({ url: ROUTES.trend }));
 
-  // d. 手动生成 daily → 200 + meta.ok → 三件套就位
-  const gen = await callHandler(genRoute, fakeReq({ method: "POST", body: JSON.stringify({ period: "daily" }) }));
-  assert.equal(gen.ok, true, "generate ok（实际 " + JSON.stringify(gen).slice(0, 160) + "）");
-  assert.equal(gen.meta.ok, true, "生成 meta.ok=true");
-  assert.equal(gen.meta.period, "daily", "meta.period=daily");
-  assert.equal(gen.meta.provider, "anthropic", "空 provider 解析为注册序首个");
-  assert.equal(gen.meta.model, "model-a", "空 model 解析为该 provider 首个");
-  assert.ok(typeof gen.meta.key === "string" && /^\d{4}-\d{2}-\d{2}$/.test(gen.meta.key), "窗口键为 day key 形态");
-  const htmlFile = join(reportsDir, `daily-${gen.meta.key}.html`);
-  const metaFile = join(reportsDir, `daily-${gen.meta.key}.meta.json`);
+  // #625 辅助：提交生成 → 轮询 status 到 done（fake 队列立即执行；防 flake 轮询替代固定 sleep）
+  const statusRoute = routes.find((r) => r.path === ROUTES.reportGenerateStatus);
+  assert.ok(statusRoute !== undefined, "reportGenerateStatus 路由存在");
+  const generateAndAwait = async (body) => {
+    const gen = await callHandler(genRoute, fakeReq({ method: "POST", body: JSON.stringify(body) }));
+    assert.equal(gen.ok, true, `generate ok（实际 ${JSON.stringify(gen).slice(0, 160)}）`);
+    assert.ok(typeof gen.taskId === "string" && gen.taskId.length > 0, "202 返回 taskId");
+    const done = await pollUntil(async () => {
+      const st = await callHandler(statusRoute, fakeReq({ url: `${ROUTES.reportGenerateStatus}?taskId=${encodeURIComponent(gen.taskId)}` }));
+      return st.status === "done" || st.status === "failed" ? st : undefined;
+    }, 5000, 5);
+    assert.ok(done !== undefined, "生成任务轮询完成");
+    assert.equal(done.status, "done", `任务成功（实际 ${done.status}${done.error ?? ""}）`);
+    assert.ok(done.meta !== undefined, "done 携带 meta");
+    return done.meta;
+  };
+
+  // d. 手动生成 daily → 202+taskId → 轮询 done → meta → 三件套就位
+  const genMeta = await generateAndAwait({ period: "daily" });
+  assert.equal(genMeta.ok, true, "生成 meta.ok=true");
+  assert.equal(genMeta.period, "daily", "meta.period=daily");
+  assert.equal(genMeta.provider, "anthropic", "空 provider 解析为注册序首个");
+  assert.equal(genMeta.model, "model-a", "空 model 解析为该 provider 首个");
+  assert.ok(typeof genMeta.key === "string" && /^\d{4}-\d{2}-\d{2}$/.test(genMeta.key), "窗口键为 day key 形态");
+  const htmlFile = join(reportsDir, `daily-${genMeta.key}.html`);
+  const metaFile = join(reportsDir, `daily-${genMeta.key}.meta.json`);
   const indexFile = join(reportsDir, "index.jsonl");
   assert.ok(existsSync(htmlFile), "报告 HTML 已落盘（0600 原子写）");
   assert.ok(existsSync(metaFile), "meta.json 已落盘");
   assert.ok(existsSync(indexFile), "index.jsonl 已 append");
   const storedMeta = JSON.parse(readFileSync(metaFile, "utf8"));
-  assert.equal(storedMeta.key, gen.meta.key, "meta 文件与响应一致");
+  assert.equal(storedMeta.key, genMeta.key, "meta 文件与响应一致");
   const storedHtml = readFileSync(htmlFile, "utf8");
   assert.ok(storedHtml.startsWith("<!doctype html>") && storedHtml.includes("dou-report-body"), "HTML 为最小文档骨架包裹");
 
@@ -1742,11 +1758,20 @@ console.log("[smoke] #503 trend 挂接 + /trend 集成断言全部通过 ✓");
       xssCtx.emitEvent("session/event", xssSess, { type: "assistant/chunk", seq: 2, time: xt, data: { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: 80, outputTokens: 40 } } } });
       await xssCtx.listeners.get("session/flush")[0]();
     }
-    const xssGen = await callHandler(xssCtx.routes.find((r) => r.path === ROUTES.reportGenerate), fakeReq({ method: "POST", body: JSON.stringify({ period: "daily" }) }));
+    const xssGenRoute = xssCtx.routes.find((r) => r.path === ROUTES.reportGenerate);
+    const xssStatusRoute = xssCtx.routes.find((r) => r.path === ROUTES.reportGenerateStatus);
+    const xssGenRes = await callHandler(xssGenRoute, fakeReq({ method: "POST", body: JSON.stringify({ period: "daily" }) }));
+    assert.equal(xssGenRes.ok, true, "XSS 用例生成 202");
+    const xssDone = await pollUntil(async () => {
+      const st = await callHandler(xssStatusRoute, fakeReq({ url: `${ROUTES.reportGenerateStatus}?taskId=${encodeURIComponent(xssGenRes.taskId)}` }));
+      return st.status === "done" || st.status === "failed" ? st : undefined;
+    }, 5000, 5);
+    assert.equal(xssDone.status, "done", `XSS 任务成功（实际 ${xssDone.status}${xssDone.error ?? ""}）`);
+    const xssGen = xssDone.meta;
     assert.equal(xssGen.ok, true, "XSS 用例生成成功");
     const xssDetail = await callHandler(
       xssCtx.routes.find((r) => r.path === ROUTES.reportDetail),
-      fakeReq({ url: `${ROUTES.reportDetail}?period=daily&key=${encodeURIComponent(xssGen.meta.key)}` }),
+      fakeReq({ url: `${ROUTES.reportDetail}?period=daily&key=${encodeURIComponent(xssGen.key)}` }),
     );
     assert.equal(xssDetail.ok, true, "XSS 用例 detail ok");
     assert.equal(xssDetail.meta.ok, true, "XSS 用例 detail meta.ok=true");
@@ -1761,9 +1786,9 @@ console.log("[smoke] #503 trend 挂接 + /trend 集成断言全部通过 ✓");
   const listPayload = await callHandler(listRoute, fakeReq({ url: ROUTES.reports }));
   assert.equal(listPayload.ok, true, "reports GET ok");
   assert.ok(Array.isArray(listPayload.reports) && listPayload.reports.length >= 1, "历史索引非空");
-  assert.equal(listPayload.reports[0].key, gen.meta.key, "倒序：最新在前");
+  assert.equal(listPayload.reports[0].key, genMeta.key, "倒序：最新在前");
 
-  const detail = await callHandler(detailRoute, fakeReq({ url: `${ROUTES.reportDetail}?period=daily&key=${encodeURIComponent(gen.meta.key)}` }));
+  const detail = await callHandler(detailRoute, fakeReq({ url: `${ROUTES.reportDetail}?period=daily&key=${encodeURIComponent(genMeta.key)}` }));
   assert.equal(detail.ok, true, "detail ok");
   assert.equal(detail.meta.ok, true, "detail meta.ok=true");
   assert.ok(typeof detail.html === "string" && detail.html.length > 0, "detail html 非空");
@@ -1772,7 +1797,32 @@ console.log("[smoke] #503 trend 挂接 + /trend 集成断言全部通过 ✓");
   const lastRunFile = join(reportsDir, "last-run.json");
   assert.ok(existsSync(lastRunFile), "last-run.json 已落盘");
   const lastRun = JSON.parse(readFileSync(lastRunFile, "utf8"));
-  assert.equal(lastRun.daily, gen.meta.key, "lastRun.daily === 窗口键");
+  assert.equal(lastRun.daily, genMeta.key, "lastRun.daily === 窗口键");
+
+  // g2. #626 幂等短路 + force 强制重生成 + #625 status 守卫
+  {
+    const dailyLineCount = () => {
+      const raw = readFileSync(indexFile, "utf8");
+      return raw.split("\n").filter((l) => l.includes('"period":"daily"') && l.includes(`"key":"${genMeta.key}"`)).length;
+    };
+    const countBeforeForce = dailyLineCount();
+    const again = await callHandler(genRoute, fakeReq({ method: "POST", body: JSON.stringify({ period: "daily" }) }));
+    assert.equal(again.ok, true, "同窗口再次生成 ok");
+    assert.equal(again.reused, true, "未勾选 force → 幂等复用");
+    assert.equal(again.meta.key, genMeta.key, "复用同窗口 meta");
+    assert.equal(dailyLineCount(), countBeforeForce, "幂等复用不新增 index 记录（未调 LLM）");
+    const forceMeta = await generateAndAwait({ period: "daily", force: true });
+    assert.equal(forceMeta.ok, true, "force 重新生成 ok");
+    assert.equal(forceMeta.key, genMeta.key, "force 覆盖同窗口");
+    assert.equal(dailyLineCount(), countBeforeForce + 1, "force 真正重新生成（index 新增一行，防假绿）");
+    const forceList = await callHandler(listRoute, fakeReq({ url: ROUTES.reports }));
+    const dailies = forceList.reports.filter((m) => m.period === "daily" && m.key === genMeta.key);
+    assert.equal(dailies.length, 1, "读侧投影：#626 同窗口多版本 → 列表一行/窗口");
+    const bad1 = await callHandler(statusRoute, fakeReq({ url: `${ROUTES.reportGenerateStatus}?taskId=not-a-uuid` }));
+    assert.equal(bad1.error, "task-not-found", "非 uuid taskId 拒绝");
+    const bad2 = await callHandler(statusRoute, fakeReq({ url: `${ROUTES.reportGenerateStatus}?taskId=00000000-0000-4000-8000-000000000000` }));
+    assert.equal(bad2.error, "task-not-found", "合法 uuid 但未知任务 → 404");
+  }
 
   // h. 路径隔离：reports 产物全部落在临时 historyRoot 下，无 undefined 段
   const produced = readdirSync(reportsDir);

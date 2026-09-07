@@ -10,7 +10,8 @@
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { ReportConfig, ReportPeriod } from "./config.ts";
-import { pendingReports, type DueReport } from "./schedule.ts";
+import { alignLastRun, deriveLastRun, LAST_RUN_SCHEMA, pendingReports, type DueReport, type LastRunRecord } from "./schedule.ts";
+import { parseReportIndexLines } from "./runner.ts";
 
 /** lastRun 持久化文件。 */
 function lastRunFile(root: string): string {
@@ -32,13 +33,50 @@ export async function readLastRun(root: string): Promise<Partial<Record<ReportPe
   }
 }
 
-/** 原子写 lastRun（tmp+rename，0600）。#503 M3 接线：导出供手动生成路由读改写复用。 */
+/** 原子写 lastRun（tmp+rename，0600；带 schema 版本）。#503 M3 接线：导出供手动生成路由读改写复用。 */
 export async function writeLastRun(root: string, state: Partial<Record<ReportPeriod, string>>): Promise<void> {
   const file = lastRunFile(root);
   await mkdir(join(root, "reports"), { recursive: true });
   const tmp = `${file}.${Date.now()}.tmp`;
-  await writeFile(tmp, JSON.stringify({ ...state, updatedAt: Date.now() }), { mode: 0o600 });
+  await writeFile(tmp, JSON.stringify({ ...state, schema: LAST_RUN_SCHEMA, updatedAt: Date.now() }), { mode: 0o600 });
   await rename(tmp, file);
+}
+
+/**
+ * 启动时 lastRun 一致性保证（#624）：
+ * - schema 缺失/旧（<2）：全量重算（deriveLastRun）——一次性迁移，修复旧语义
+ *   「当天」污染键（周一 06:00 吞日报的根因）；
+ * - schema 已新（>=2）：温和对齐（alignLastRun）——仅该期 index 存在已闭环记录
+ *   时对齐到最新闭环键（遮蔽事故自愈），preset 键（#531 首次启用预置，index 无
+ *   对应记录）保留不动。
+ * 与现文件不一致或 schema 变更时原子写回并 warn 前后对照；任何异常不抛（保持
+ * 原状，下次启动再试）；无 index 时视作无事实，不动 lastRun。
+ */
+export async function ensureLastRunMigrated(
+  root: string,
+  warn?: (msg: string) => void,
+): Promise<{ changed: boolean; before: Partial<Record<ReportPeriod, string>>; after: Partial<Record<ReportPeriod, string>> }> {
+  const diag = warn ?? ((msg: string) => console.warn(`[dsh-provider-usage] report: ${msg}`));
+  try {
+    const raw = await readFile(lastRunFile(root), "utf8").catch(() => null);
+    if (raw === null) return { changed: false, before: {}, after: {} }; // 从未落盘
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const schema = typeof parsed.schema === "number" ? parsed.schema : 1;
+    const before = await readLastRun(root);
+    const indexRaw = await readFile(join(root, "reports", "index.jsonl"), "utf8").catch(() => null);
+    if (indexRaw === null) return { changed: false, before, after: before }; // 无事实源，保持原状
+    const records = parseReportIndexLines(indexRaw) as LastRunRecord[];
+    const after = schema < LAST_RUN_SCHEMA ? deriveLastRun(records) : alignLastRun(before, records);
+    const changed = schema < LAST_RUN_SCHEMA || JSON.stringify(before) !== JSON.stringify(after);
+    if (changed) {
+      await writeLastRun(root, after);
+      diag(`lastRun 已按 index 事实校准（schema ${schema}→${LAST_RUN_SCHEMA}）：${JSON.stringify(before)} → ${JSON.stringify(after)}`);
+    }
+    return { changed, before, after };
+  } catch (e: unknown) {
+    diag(`lastRun 校准失败（保持原状）：${e instanceof Error ? e.message : String(e)}`);
+    return { changed: false, before: {}, after: {} };
+  }
 }
 
 export interface ReportSchedulerOptions {
@@ -46,7 +84,7 @@ export interface ReportSchedulerOptions {
   root: string;
   /** 当前配置（updateConfig 热更新）。 */
   config: ReportConfig;
-  /** 到期回调（执行生成；抛错 = 失败，不推进 lastRun，下轮重试）。 */
+  /** 到期回调（#625：提交到任务队列，非阻塞；队列负责执行、幂等与 lastRun 推进）。 */
   onDue: (due: DueReport) => Promise<void>;
   /** 注入时钟（测试）。 */
   now?: () => number;
@@ -59,7 +97,6 @@ export interface ReportSchedulerOptions {
 export class ReportScheduler {
   private config: ReportConfig;
   private timer: ReturnType<typeof setInterval> | null = null;
-  private busy = false;
   private disposed = false;
   private readonly root: string;
   private readonly onDue: (due: DueReport) => Promise<void>;
@@ -76,12 +113,15 @@ export class ReportScheduler {
     this.warn = opts.warn ?? ((msg) => console.warn(`[dsh-provider-usage] report: ${msg}`));
   }
 
-  /** 启动：立即跑一轮（启动补跑语义），随后固定间隔 tick。 */
+  /**
+   * 启动：先做 lastRun 一致性校准（#624，async，失败不影响调度），
+   * 完成后立即跑首轮（启动补跑语义），随后固定间隔 tick。
+   */
   static start(opts: ReportSchedulerOptions): ReportScheduler {
     const s = new ReportScheduler(opts);
     s.timer = setInterval(() => void s.tick(), s.tickMs);
     (s.timer as { unref?: () => void }).unref?.();
-    void s.tick(); // 启动补跑：首轮立即检查
+    void ensureLastRunMigrated(s.root, s.warn).finally(() => void s.tick());
     return s;
   }
 
@@ -91,12 +131,11 @@ export class ReportScheduler {
   }
 
   /**
-   * 一轮检查：读 lastRun → 计算到期集合 → 逐个生成 → 成功才推进 lastRun。
-   * 单飞：busy 时本轮直接跳过（生成超过 tick 间隔的用例覆盖）。
+   * 一轮检查：读 lastRun → 计算到期集合 → 逐个提交到任务队列（#625：提交非阻塞，
+   * 队列负责串行执行、幂等下沉与 lastRun 推进；同窗口已在队列中由队列去重吸收）。
    */
   async tick(): Promise<void> {
-    if (this.disposed || this.busy) return;
-    this.busy = true;
+    if (this.disposed) return;
     try {
       const lastRun = await readLastRun(this.root);
       const due = pendingReports(this.config, this.now(), lastRun);
@@ -104,17 +143,11 @@ export class ReportScheduler {
         try {
           await this.onDue(d);
         } catch (e: unknown) {
-          // 失败不推进 lastRun：下轮重试同一窗口（幂等不重复扣期）
-          this.warn(`${d.period} ${d.key} 生成失败：${e instanceof Error ? e.message : String(e)}`);
-          continue;
+          this.warn(`${d.period} ${d.key} 提交失败：${e instanceof Error ? e.message : String(e)}`);
         }
-        lastRun[d.period] = d.key;
-        await writeLastRun(this.root, lastRun);
       }
     } catch (e: unknown) {
       this.warn(`tick 异常：${e instanceof Error ? e.message : String(e)}`);
-    } finally {
-      this.busy = false;
     }
   }
 

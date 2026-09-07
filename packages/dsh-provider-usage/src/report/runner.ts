@@ -189,13 +189,12 @@ export async function runDueReport(params: {
   return meta;
 }
 
-export async function readReportIndex(historyRoot: string): Promise<ReportMeta[]> {
-  let raw: string;
-  try {
-    raw = await readFile(reportIndexFile(historyRoot), "utf8");
-  } catch {
-    return [];
-  }
+/**
+ * 解析 index.jsonl 全文为记录数组（坏行跳过、字段白名单过滤）。
+ * 公共解析：readReportIndex（读侧投影）与 lastRun 推导（#624）共用，
+ * 防止两处解析漂移。
+ */
+export function parseReportIndexLines(raw: string): ReportMeta[] {
   const out: ReportMeta[] = [];
   for (const line of raw.split("\n")) {
     const s = line.trim();
@@ -213,5 +212,27 @@ export async function readReportIndex(historyRoot: string): Promise<ReportMeta[]
       // 坏行跳过
     }
   }
-  return out.reverse();
+  return out;
+}
+
+/**
+ * 读报告历史索引（#626 读侧投影：按 (period,key) 去重，保留 generatedAt 最新一条
+ * ——「一行/窗口=最新版」；index.jsonl 保持 append-only 不改写）。
+ * 返回按时间倒序（最新在前），与既有消费方语义一致。
+ */
+export async function readReportIndex(historyRoot: string): Promise<ReportMeta[]> {
+  let raw: string;
+  try {
+    raw = await readFile(reportIndexFile(historyRoot), "utf8");
+  } catch {
+    return [];
+  }
+  const records = parseReportIndexLines(raw);
+  const newest = new Map<string, ReportMeta>();
+  for (const r of records) {
+    const id = `${r.period}:${r.key}`;
+    const cur = newest.get(id);
+    if (cur === undefined || r.generatedAt > cur.generatedAt) newest.set(id, r);
+  }
+  return [...newest.values()].sort((a, b) => b.generatedAt - a.generatedAt);
 }

@@ -16,13 +16,13 @@
  * - GET /api/dsh-provider-usage/report-models 报告模型候选
  * - GET /api/dsh-provider-usage/reports  报告历史索引
  * - GET /api/dsh-provider-usage/reports/detail  报告详情
- * - POST /api/dsh-provider-usage/reports/generate  手动生成报告
+ * - POST /api/dsh-provider-usage/reports/generate  手动生成报告（#625：立即返回 202+taskId）
+ * - GET /api/dsh-provider-usage/reports/generate/status  生成任务状态轮询
  */
 
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import type { ServerResponse } from "node:http";
-import { Mutex } from "async-mutex";
 import type { Context } from "@deepseek-ai/cordis";
 import { sseData } from "../../../shared/host-utils.js";
 import { installSettingsNamespace } from "../../../shared/settings-namespace.js";
@@ -42,9 +42,9 @@ import { loadUserAdapterChecked } from "./user-adapter-loader.ts";
 import { StatsService } from "./stats-service.ts";
 import { TrendTracker } from "./trend/index.ts";
 import { readReportConfig, type ReportConfig } from "./report/config.ts";
-import { ReportScheduler } from "./report/scheduler.ts";
-import { optionalNotifier, runDueReport } from "./report/runner.ts";
-import type { DueReport } from "./report/schedule.ts";
+import { ReportScheduler, readLastRun, writeLastRun } from "./report/scheduler.ts";
+import { optionalNotifier, readReportIndex, runDueReport } from "./report/runner.ts";
+import { ReportTaskQueue } from "./report/tasks.ts";
 import { createStatsRoutes } from "./routes/stats.ts";
 import { createAdapterRoutes } from "./routes/adapters.ts";
 import { createUiRoutes } from "./routes/ui.ts";
@@ -67,6 +67,7 @@ export const ROUTES: Record<string, string> = {
   reports: "/api/dsh-provider-usage/reports",
   reportDetail: "/api/dsh-provider-usage/reports/detail",
   reportGenerate: "/api/dsh-provider-usage/reports/generate",
+  reportGenerateStatus: "/api/dsh-provider-usage/reports/generate/status",
 };
 
 /** 恢复持久化的启用选择（adapter-state.json） */
@@ -293,14 +294,41 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   trendDisposers.push(ctx.on("session/disposed", (session) => trend.handleDisposed(session)));
 
   let reportCfg: ReportConfig = await readReportConfig(historyRoot);
-  const reportMutex = new Mutex();
-  const runDue = (due: DueReport): Promise<unknown> =>
-    runDueReport({ due, trend, ctx, reportCfg, historyRoot, sanitizeDiagnostic });
+
+  // #625/#626：任务队列 = 定时 tick 与手动「立即生成」的单一执行入口。
+  // 执行器职责：幂等下沉（执行前重查 index，已有成功记录且非 force → 复用，不调 LLM）、
+  // 生成、lastRun 推进——全部在队列临界区内（串行单飞天然临界，修复原 routes 侧
+  // lastRun 读改写位于 mutex 外的竞态）；失败不推进 lastRun（下轮按幂等重试/补跑）。
+  const reportQueue = new ReportTaskQueue({
+    executor: async (input) => {
+      try {
+        if (input.force !== true) {
+          const existing = (await readReportIndex(historyRoot)).find(
+            (m) => m.period === input.period && m.key === input.key && m.ok === true,
+          );
+          if (existing !== undefined) return { meta: existing, reused: true };
+        }
+        const meta = await runDueReport({ due: input, trend, ctx, reportCfg, historyRoot, sanitizeDiagnostic });
+        const lastRun = await readLastRun(historyRoot);
+        lastRun[meta.period] = meta.key;
+        await writeLastRun(historyRoot, lastRun);
+        return { meta };
+      } catch (e: unknown) {
+        // 任务 failed 的 error 会经 status 路由回客户端：脱敏后再抛，防本地路径泄露
+        throw new Error(sanitizeDiagnostic(e instanceof Error ? e.message : String(e)));
+      }
+    },
+    warn: (msg) => console.warn(`[dsh-provider-usage] report: ${sanitizeDiagnostic(msg)}`),
+  });
 
   const reportScheduler = ReportScheduler.start({
     root: historyRoot,
     config: reportCfg,
-    onDue: (due) => reportMutex.runExclusive(async () => { await runDue(due); }),
+    // #625：tick 只提交任务（非阻塞，队列去重吸收同窗口堆积），不再等待生成
+    onDue: (due) => {
+      reportQueue.submit(due);
+      return Promise.resolve();
+    },
     warn: (msg) => console.warn(`[dsh-provider-usage] report: ${sanitizeDiagnostic(msg)}`),
   });
 
@@ -347,15 +375,15 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
         reports: ROUTES.reports,
         reportDetail: ROUTES.reportDetail,
         reportGenerate: ROUTES.reportGenerate,
+        reportGenerateStatus: ROUTES.reportGenerateStatus,
       },
       {
         ctx,
         historyRoot,
-        reportMutex,
+        reportQueue,
         getReportCfg: () => reportCfg,
         setReportCfg: (c) => { reportCfg = c; },
         reportScheduler,
-        runDue,
       },
     ),
   ];

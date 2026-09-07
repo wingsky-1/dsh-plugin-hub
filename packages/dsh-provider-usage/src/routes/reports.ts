@@ -1,11 +1,14 @@
 /**
  * dsh-provider-usage — 用量报告路由（配置读写、模型发现、历史索引、详情、手动生成）。
+ *
+ * #625 手动生成异步化：POST /reports/generate 立即返回 202 {taskId}（幂等短路时
+ * 200 {meta, reused:true}），客户端经 GET /reports/generate/status 轮询；生成在
+ * ReportTaskQueue 内串行执行，HTTP 响应与 LLM 耗时解耦。
  */
 import { readFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Context } from "@deepseek-ai/cordis";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
-import type { Mutex } from "async-mutex";
 import { guardLoopbackMethod, readJsonBody, writeJson } from "../../../../shared/host-utils.js";
 import {
   DEFAULT_PROMPTS,
@@ -16,18 +19,18 @@ import {
   type ReportPeriod,
 } from "../report/config.ts";
 import { readReportIndex, reportHtmlFile, reportMetaFile } from "../report/runner.ts";
-import { candidateWindow, presetLastRunForNewlyEnabled, previousClosedWindow, type DueReport } from "../report/schedule.ts";
+import { presetLastRunForNewlyEnabled, previousClosedWindow, type DueReport } from "../report/schedule.ts";
 import { readLastRun, writeLastRun, type ReportScheduler } from "../report/scheduler.ts";
+import type { ReportTaskQueue } from "../report/tasks.ts";
 import { sanitizeHtml } from "../sanitize.ts";
 
 export interface ReportRoutesContext {
   ctx: Context;
   historyRoot: string;
-  reportMutex: Mutex;
+  reportQueue: ReportTaskQueue;
   getReportCfg: () => ReportConfig;
   setReportCfg: (cfg: ReportConfig) => void;
   reportScheduler: ReportScheduler;
-  runDue: (due: DueReport) => Promise<unknown>;
 }
 
 const REPORT_KEY_RES: Record<ReportPeriod, RegExp> = {
@@ -36,6 +39,8 @@ const REPORT_KEY_RES: Record<ReportPeriod, RegExp> = {
   monthly: /^\d{4}-\d{2}$/,
 };
 const REPORT_PERIODS = new Set<ReportPeriod>(["daily", "weekly", "monthly"]);
+/** taskId 白名单（uuid v4）。 */
+const TASK_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 export async function handleReportConfig(
   req: IncomingMessage,
@@ -174,7 +179,7 @@ export async function handleReportGenerate(
   context: ReportRoutesContext,
 ): Promise<void> {
   if (!guardLoopbackMethod(req, res, ["POST"])) return;
-  const { historyRoot, reportMutex, getReportCfg, runDue } = context;
+  const { historyRoot, reportQueue, getReportCfg } = context;
 
   let body: Record<string, unknown>;
   try {
@@ -189,18 +194,44 @@ export async function handleReportGenerate(
   if (typeof period !== "string" || !REPORT_PERIODS.has(period as ReportPeriod)) {
     return writeJson(res, 400, { error: "invalid-period" });
   }
+  // #626：force 必须严格 === true 才生效（防御 "force":"false" 等字符串形态）
+  const force = body.force === true;
 
   // 手动生成恒定锚定已闭环的上一完整周期（日报=昨天全天，消灭凌晨漂移；不检查 enabled）
   const due = previousClosedWindow(period as ReportPeriod, getReportCfg(), Date.now());
-  try {
-    const meta = await reportMutex.runExclusive(() => runDue(due));
-    const lastRun = await readLastRun(historyRoot);
-    lastRun[due.period] = due.key;
-    await writeLastRun(historyRoot, lastRun);
-    writeJson(res, 200, { ok: true, meta });
-  } catch (e: unknown) {
-    writeJson(res, 500, { ok: false, error: e instanceof Error ? e.message : String(e) });
+
+  // #626 幂等短路：窗口已有成功报告且非强制重生成 → 直接复用，不产生新任务
+  if (!force) {
+    const existing = (await readReportIndex(historyRoot)).find(
+      (m) => m.period === due.period && m.key === due.key && m.ok === true,
+    );
+    if (existing !== undefined) {
+      return writeJson(res, 200, { ok: true, meta: existing, reused: true });
+    }
   }
+
+  const { taskId } = reportQueue.submit({ ...due, force });
+  writeJson(res, 202, { ok: true, taskId });
+}
+
+export async function handleReportStatus(
+  req: IncomingMessage,
+  res: ServerResponse,
+  context: ReportRoutesContext,
+): Promise<void> {
+  if (!guardLoopbackMethod(req, res, ["GET"])) return;
+  const { reportQueue } = context;
+  const url = new URL(req.url ?? "/", "http://localhost");
+  const taskId = url.searchParams.get("taskId") ?? "";
+  if (!TASK_ID_RE.test(taskId)) return writeJson(res, 404, { error: "task-not-found" });
+  const task = reportQueue.get(taskId);
+  if (task === undefined) return writeJson(res, 404, { error: "task-not-found" });
+  writeJson(res, 200, {
+    ok: true,
+    status: task.status,
+    ...(task.status === "done" && task.meta !== undefined ? { meta: task.meta } : {}),
+    ...(task.status === "failed" ? { error: task.error ?? "生成失败" } : {}),
+  });
 }
 
 export function createReportRoutes(
@@ -210,6 +241,7 @@ export function createReportRoutes(
     reports: string;
     reportDetail: string;
     reportGenerate: string;
+    reportGenerateStatus: string;
   },
   context: ReportRoutesContext,
 ): WebRoute[] {
@@ -238,6 +270,11 @@ export function createReportRoutes(
       kind: "exact",
       path: routes.reportGenerate,
       handler: (req, res) => handleReportGenerate(req, res, context),
+    },
+    {
+      kind: "exact",
+      path: routes.reportGenerateStatus,
+      handler: (req, res) => handleReportStatus(req, res, context),
     },
   ];
 }
