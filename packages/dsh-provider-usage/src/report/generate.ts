@@ -26,7 +26,7 @@ import type {
   TokenUsage,
 } from "@deepseek-ai/dsh-llm";
 import { metricValue } from "../trend/aggregator.ts";
-import { sumToken, type TrendCell } from "../trend/types.ts";
+import { sumToken, type TrendCell, type TrendDirRow } from "../trend/types.ts";
 import type { ReportPeriod } from "./config.ts";
 
 /** 报告生成所用 llm 服务面（LlmRuntime 最小结构面——只依赖实际用到的三个方法）。 */
@@ -130,6 +130,10 @@ export interface ReportStatsSnapshot {
   byProvider: Array<{ provider: string; model: string | null; calls: number; total: number | null }>;
   /** 上一同等长度窗口的指标总量（环比基准；接线层经 windowSummary 取得）。 */
   prevTotal: number | null;
+  /** 按目录聚合（calls 降序，口径与 byProvider 一致；#633 分片 a 数据面——未识别桶
+   * dir=TREND_UNIDENTIFIED；dir 键为净化 basename 或未识别桶键，非完整路径；旧数据
+   * 无 dir 事实 → 空数组，不补造）。 */
+  byDirectory: Array<{ dir: string; calls: number; total: number | null }>;
   // ---------------------------------------------------------------- #532 年报派生维度
   // 全部为快照内单遍派生的聚合数值，注入面收敛承诺不变（仍无路径/会话明细）。
   /** 峰值日（byDay 内 total 最大的一天；空窗口 null）。 */
@@ -260,8 +264,9 @@ export async function generateReport(opts: GenerateReportOptions): Promise<Repor
 
 /**
  * 报告统计快照（纯计算）：从 tracker.buckets() 快照聚合窗口内数据。
- * 注入面收敛（方案 §八7）：只含聚合数值，不含会话明细与路径——
- * sanitizePaths 配置约束未来注入面扩展，v1 统计面无路径可脱敏。
+ * 注入面收敛（方案 §八7）：只含聚合数值与目录 basename（#633 增量：dir 键为
+ * 净化后 basename 或未识别桶键，非完整路径，进快照前剥控制字符 + 截断），
+ * 不含会话明细与路径——sanitizePaths 配置约束未来注入面扩展。
  */
 export function buildStatsSnapshot(input: {
   period: ReportPeriod;
@@ -269,6 +274,11 @@ export function buildStatsSnapshot(input: {
   endDay: string;
   /** tracker.buckets() 快照（day 升序；day×provider×model×cell）。 */
   buckets: Array<{ day: string; providers: Array<{ provider: string; model: string | null; cell: TrendCell }> }>;
+  /**
+   * 目录维度日汇总行快照（#633 分片 a：store.readAggDayShard 产物 filter kind:"dir"，
+   * 可选；缺省 = 旧数据无目录事实，不补造桶（A2「旧格式零变化」口径）。
+   */
+  dirRows?: TrendDirRow[];
   /** 上一同等长度窗口的指标总量（环比基准；接线层经 windowSummary 取得）。 */
   prevTotal: number | null;
 }): ReportStatsSnapshot {
@@ -310,6 +320,21 @@ export function buildStatsSnapshot(input: {
   }
   const byProvider = [...byKey.values()].sort((a, b) => b.calls - a.calls);
 
+  // ---- #633 分片 a：目录维度聚合（dir 行 → byDirectory，口径与 byProvider 一致）----
+  // 同 dir 键跨日 null-aware 累加；窗口过滤与 buckets 同口径（day 字典序闭区间）。
+  const byDir = new Map<string, { dir: string; calls: number; total: number | null }>();
+  for (const row of input.dirRows ?? []) {
+    if (row.day < input.startDay || row.day > input.endDay) continue;
+    const total = metricValue(row, "total");
+    const cur = byDir.get(row.dir);
+    if (cur === undefined) byDir.set(row.dir, { dir: row.dir, calls: row.calls, total });
+    else {
+      cur.calls += row.calls;
+      cur.total = sumToken(cur.total, total);
+    }
+  }
+  const byDirectory = [...byDir.values()].sort((a, b) => b.calls - a.calls);
+
   // ---- #532 年报派生维度（快照内单遍 O(n)，全部聚合数值，注入面收敛不变） ----
   // 注入文本防御：provider/model 名为 adapter/上游可影响文本，进快照前截断 80 字符
   // 并剥离控制字符（prompt 注入面收紧；快照数值维度不受影响）。
@@ -318,6 +343,10 @@ export function buildStatsSnapshot(input: {
   for (const row of byProvider) {
     row.provider = safeName(row.provider.replace(/[\u0000-\u001f\u007f]/g, ""));
     if (row.model !== null) row.model = safeName(row.model.replace(/[\u0000-\u001f\u007f]/g, ""));
+  }
+  // dir 键同防（collector.dirOf 落盘前已净化，快照侧防御性复算同一口径）
+  for (const row of byDirectory) {
+    row.dir = safeName(row.dir.replace(/[\u0000-\u001f\u007f]/g, ""));
   }
   // 峰值日：byDay（升序）内 total 最大；并列取最早一天
   let peakDay: { day: string; total: number | null } | null = null;
@@ -359,6 +388,7 @@ export function buildStatsSnapshot(input: {
     totals,
     byDay,
     byProvider,
+    byDirectory,
     prevTotal: input.prevTotal,
     peakDay,
     activeDays,

@@ -17,10 +17,12 @@ import { dayKey, lastNDayKeys } from "../charts.ts";
 import {
   sumToken,
   TREND_ROW_VERSION,
+  TREND_UNIDENTIFIED,
   type TrendAggRow,
   type TrendCell,
   type TrendCounterRow,
   type TrendDetailRow,
+  type TrendDirRow,
   type TrendTokens,
 } from "./types.ts";
 import type { TrendCallRecord, TrendCorrectRecord, TrendCounterRecord, TrendEmit } from "./collector.ts";
@@ -79,6 +81,13 @@ function emptyCell(): TrendCell {
 export class TrendAggregator {
   /** day → provider → model(null 允许) → cell。 */
   private days = new Map<string, Map<string, Map<string | null, TrendCell>>>();
+  /**
+   * #633 A3：day → dir → cell（目录维度日汇总内存态）。
+   * 生命周期与 days 同步（复核 M1 统一口径）：apply 实时累加 → rollup 压实消费
+   * 当日（dropPending 联动删除）→ 重启经混存分片 dir 行 rebuild 读回恢复（M1：
+   * rebuildFromDisk 走 readAggDayShard）→ prune 同步收缩（pruneDays 联动删除）。
+   */
+  private dirDays = new Map<string, Map<string, TrendCell>>();
   /** 未压实明细/计数行（跨日可能：时钟回拨把旧日事件记进对应日分片）。 */
   private pending: PendingEntry[] = [];
 
@@ -99,16 +108,21 @@ export class TrendAggregator {
     }
   }
 
+  /** call 量累加进 cell（applyCall / rebuild 明细行共用，cells 与 dirCells 同构复用）。 */
+  private addCall(cell: TrendCell, tokens: TrendTokens | null): void {
+    cell.calls += 1;
+    if (tokens !== null) {
+      cell.input = sumToken(cell.input, tokens.input);
+      cell.output = sumToken(cell.output, tokens.output);
+      cell.cacheRead = sumToken(cell.cacheRead, tokens.cacheRead);
+      cell.cacheWrite = sumToken(cell.cacheWrite, tokens.cacheWrite);
+    }
+  }
+
   private applyCall(r: TrendCallRecord): void {
     const day = dayKey(r.time);
-    const cell = this.cellOf(day, r.provider, r.model);
-    cell.calls += 1;
-    if (r.tokens !== null) {
-      cell.input = sumToken(cell.input, r.tokens.input);
-      cell.output = sumToken(cell.output, r.tokens.output);
-      cell.cacheRead = sumToken(cell.cacheRead, r.tokens.cacheRead);
-      cell.cacheWrite = sumToken(cell.cacheWrite, r.tokens.cacheWrite);
-    }
+    this.addCall(this.cellOf(day, r.provider, r.model), r.tokens);
+    this.addCall(this.dirCellOf(day, r.dir), r.tokens); // #633 A3：目录维度平行累加（同 record 不二次 emit）
     const row: TrendDetailRow = {
       v: TREND_ROW_VERSION,
       kind: "detail",
@@ -120,6 +134,7 @@ export class TrendAggregator {
       retry: r.retry,
       provider: r.provider,
       model: r.model,
+      dir: r.dir, // #633 A1：目录归属落盘（collector.dirOf 已保证 sanitize 后 basename 或未识别桶，不重复净化）
       input: r.tokens?.input ?? null,
       output: r.tokens?.output ?? null,
       cacheRead: r.tokens?.cacheRead ?? null,
@@ -152,7 +167,16 @@ export class TrendAggregator {
     /* 未找到（已压实/重启后迟到）：校正窗口已关闭，按口径不追溯 */
   }
 
-  /** 明细行 token 变更的 cell 增量修正。 */
+  /**
+   * 明细行 token 变更的 cell 增量修正。
+   * 注意：只修 cells、不同步 dirDays。行来源其实可区分（复核 L1 纠正旧论证）：
+   * pending 登记的 persisted 字段即判别——apply 产行（false）已由 applyCall/
+   * applyCounter 累加进 dirDays，重建产行（true）不进 dirDays（#633 图纸），
+   * 技术上可按 persisted 精确同步。裁定仍为不同步：dirDays 当前无查询面消费
+   * （分片 b 接线时再定同步策略），统一走「内存 dir 桶单向流入（apply 累加 /
+   * rebuild 读回写入，压实与 prune 删除）、权威数据只从 pending 行折算」的简单
+   * 口径；applyCorrect 已就地改 pending 行值（折算取新值），持久层 dir 行无漂移。
+   */
   private retokenCell(row: TrendDetailRow, next: TrendTokens): void {
     const cell = this.cellOf(row.day, row.provider, row.model);
     cell.input = sumToken(cell.input, sub(row.input, next.input));
@@ -161,11 +185,16 @@ export class TrendAggregator {
     cell.cacheWrite = sumToken(cell.cacheWrite, sub(row.cacheWrite, next.cacheWrite));
   }
 
+  /** counter 量累加进 cell（applyCounter / rebuild 计数行共用）。 */
+  private addCounter(cell: TrendCell, turns: number, toolCalls: number): void {
+    cell.turns += turns;
+    cell.toolCalls += toolCalls;
+  }
+
   private applyCounter(r: TrendCounterRecord): void {
     const day = dayKey(r.time);
-    const cell = this.cellOf(day, r.provider, r.model);
-    cell.turns += r.turns;
-    cell.toolCalls += r.toolCalls;
+    this.addCounter(this.cellOf(day, r.provider, r.model), r.turns, r.toolCalls);
+    this.addCounter(this.dirCellOf(day, r.dir), r.turns, r.toolCalls); // #633 A3：目录维度平行累加
     const row: TrendCounterRow = {
       v: TREND_ROW_VERSION,
       kind: "counter",
@@ -174,6 +203,7 @@ export class TrendAggregator {
       session: r.session,
       provider: r.provider,
       model: r.model,
+      dir: r.dir, // #633 A1：目录归属落盘（同 detail 行约定）
       turns: r.turns,
       toolCalls: r.toolCalls,
     };
@@ -187,24 +217,28 @@ export class TrendAggregator {
    * @param rows 校验过的分片行（agg 权威行 + 当日明细/计数行）
    * @param persistedRows 这些行是否已落盘（agg 行无意义；明细/计数行来自分片 = true）
    */
-  rebuild(rows: Array<TrendAggRow | TrendDetailRow | TrendCounterRow>, persistedRows: boolean): void {
+  rebuild(rows: Array<TrendAggRow | TrendDetailRow | TrendCounterRow | TrendDirRow>, persistedRows: boolean): void {
     for (const row of rows) {
       if (row.kind === "agg") {
         const cell = this.cellOf(row.day, row.provider, row.model);
         mergeCell(cell, row);
         continue;
       }
+      // #633 A3：dir 汇总行重建 → 只进目录维度桶（cells 累加只发生在事件路径与
+      // detail/counter 行重建，防双重计数）
+      if (row.kind === "dir") {
+        mergeCell(this.dirCellOf(row.day, row.dir), row);
+        continue;
+      }
       if (row.kind === "detail") {
-        const cell = this.cellOf(row.day, row.provider, row.model);
-        cell.calls += 1;
-        cell.input = sumToken(cell.input, row.input);
-        cell.output = sumToken(cell.output, row.output);
-        cell.cacheRead = sumToken(cell.cacheRead, row.cacheRead);
-        cell.cacheWrite = sumToken(cell.cacheWrite, row.cacheWrite);
+        this.addCall(this.cellOf(row.day, row.provider, row.model), {
+          input: row.input,
+          output: row.output,
+          cacheRead: row.cacheRead,
+          cacheWrite: row.cacheWrite,
+        });
       } else {
-        const cell = this.cellOf(row.day, row.provider, row.model);
-        cell.turns += row.turns;
-        cell.toolCalls += row.toolCalls;
+        this.addCounter(this.cellOf(row.day, row.provider, row.model), row.turns, row.toolCalls);
       }
       this.pending.push({ row, persisted: persistedRows });
     }
@@ -244,6 +278,39 @@ export class TrendAggregator {
   /** 精确标记快照条目已持久化（append 成功后调用；只翻转快照内的对象）。 */
   markPersisted(entries: PendingEntry[]): void {
     for (const p of entries) p.persisted = true;
+  }
+
+  /**
+   * 取走给定日的目录维度未压实行快照（#633 A4 压实素材，纯读不消费）。
+   * flush 压实两步式安全序：纯计算行 → IO → 成功后才 dropPending(day)（联动消费）。
+   * 同源折算：与 rollupRowsOf 遍历同一批 pending 行，按 row.dir 分桶；dir 键缺失的
+   * 行（旧格式/无归属）不产 dir 行——目录维度为加性可选键，缺键 = 无 dir 事实可
+   * 折叠（未识别桶由 collector 显式归桶产生，不在折算侧补造；旧格式日压实产物
+   * 与 #633 前形态一致，A2「旧格式零变化」口径）。
+   */
+  takeDirUnpersisted(day: string): TrendDirRow[] {
+    const byDir = new Map<string, TrendDirRow>();
+    for (const p of this.pending) {
+      if (p.row.day !== day) continue;
+      if (p.row.dir === undefined) continue;
+      const dir = p.row.dir;
+      let agg = byDir.get(dir);
+      if (agg === undefined) {
+        agg = { v: TREND_ROW_VERSION, kind: "dir", day, dir, input: null, output: null, cacheRead: null, cacheWrite: null, calls: 0, turns: 0, toolCalls: 0 };
+        byDir.set(dir, agg);
+      }
+      if (p.row.kind === "detail") {
+        agg.calls += 1;
+        agg.input = sumToken(agg.input, p.row.input);
+        agg.output = sumToken(agg.output, p.row.output);
+        agg.cacheRead = sumToken(agg.cacheRead, p.row.cacheRead);
+        agg.cacheWrite = sumToken(agg.cacheWrite, p.row.cacheWrite);
+      } else {
+        agg.turns += p.row.turns;
+        agg.toolCalls += p.row.toolCalls;
+      }
+    }
+    return [...byDir.values()];
   }
 
   /**
@@ -292,9 +359,14 @@ export class TrendAggregator {
   /** 消费给定日的 pending 行（压实 IO 全部成功后调用；cells 不动）。 */
   dropPending(day: string): void {
     this.pending = this.pending.filter((p) => p.row.day !== day);
+    this.dirDays.delete(day); // #633 A4：dir 内存桶随 pending 同步消费（生命周期一致，防过期双算）
   }
 
-  /** 裁剪内存日桶（prune 同步收缩，长期运行不重启时 days 有界；cells 随桶整体丢弃）。 */
+  /**
+   * 裁剪内存日桶（prune 同步收缩，长期运行不重启时 days 有界；cells 随桶整体丢弃）。
+   * #633 复核 M1：dirDays 联动删除（与 dropPending 对称，生命周期与 days 一致；
+   * 独立遍历不依赖 days 键集，纯 dir 日桶（无 agg 行的防御形态）也能清）。
+   */
   pruneDays(beforeDay: string): number {
     let removed = 0;
     for (const day of [...this.days.keys()]) {
@@ -303,6 +375,9 @@ export class TrendAggregator {
         removed += 1;
       }
     }
+    for (const day of [...this.dirDays.keys()]) {
+      if (day < beforeDay) this.dirDays.delete(day);
+    }
     return removed;
   }
 
@@ -310,11 +385,13 @@ export class TrendAggregator {
    * 日切压实（一步式）：折叠为聚合行返回并从 pending 移除。
    * 仅供启动自愈等「无并发 IO 失败窗口」的同步场景使用；flush 压实路径
    * 一律走 rollupRowsOf + dropPending 两步式（IO 失败内存行保留，防丢数）。
+   * #633 A4：返回混存行——agg 行在前、dir 行在后（writeAggDay 写入约定）。
    */
-  rollupDay(day: string): TrendAggRow[] {
+  rollupDay(day: string): Array<TrendAggRow | TrendDirRow> {
     const rows = this.rollupRowsOf(day);
+    const dirRows = this.takeDirUnpersisted(day);
     this.dropPending(day);
-    return rows;
+    return [...rows, ...dirRows];
   }
 
   /** 从内存 pending 移除给定日已全部落盘的登记（重启自愈删除明细分片后同步内存视图）。 */
@@ -562,6 +639,21 @@ export class TrendAggregator {
     }
     return cell;
   }
+
+  /** dir 维度日桶定位（仿 cellOf；day → dir → cell，缺桶逐级补建；#633 A3）。 */
+  private dirCellOf(day: string, dir: string): TrendCell {
+    let dirs = this.dirDays.get(day);
+    if (dirs === undefined) {
+      dirs = new Map();
+      this.dirDays.set(day, dirs);
+    }
+    let cell = dirs.get(dir);
+    if (cell === undefined) {
+      cell = emptyCell();
+      dirs.set(dir, cell);
+    }
+    return cell;
+  }
 }
 
 // ---------------------------------------------------------------- 纯函数
@@ -583,8 +675,8 @@ function firstDayKeyOf(days: Map<string, unknown>): string | null {
   return first;
 }
 
-/** 聚合行并入 cell（重建用；null-aware）。 */
-function mergeCell(cell: TrendCell, row: TrendAggRow): void {
+/** 聚合行并入 cell（重建用；null-aware。agg 与 dir 汇总行十数值字段同构，同函数复用）。 */
+function mergeCell(cell: TrendCell, row: TrendAggRow | TrendDirRow): void {
   cell.calls += row.calls;
   cell.turns += row.turns;
   cell.toolCalls += row.toolCalls;
@@ -623,6 +715,30 @@ export function mergeAggRows(base: TrendAggRow[], add: TrendAggRow[]): TrendAggR
     const cur = byKey.get(key);
     if (cur === undefined) {
       byKey.set(key, { ...r });
+      continue;
+    }
+    cur.calls += r.calls;
+    cur.turns += r.turns;
+    cur.toolCalls += r.toolCalls;
+    cur.input = sumToken(cur.input, r.input);
+    cur.output = sumToken(cur.output, r.output);
+    cur.cacheRead = sumToken(cur.cacheRead, r.cacheRead);
+    cur.cacheWrite = sumToken(cur.cacheWrite, r.cacheWrite);
+  }
+  return [...byKey.values()];
+}
+
+/**
+ * dir 汇总行合并（#633 A4 flush 压实写盘前与既有聚合分片内的 dir 行合并——
+ * 迟到旧日行场景防覆盖丢数；十数值字段与 mergeAggRows 完全同构，null-aware
+ * 求和，同 dir 键累加。输出保持输入相对顺序：base 在前（dir 行位于分片尾段））。
+ */
+export function mergeDirRows(base: TrendDirRow[], add: TrendDirRow[]): TrendDirRow[] {
+  const byKey = new Map<string, TrendDirRow>();
+  for (const r of [...base, ...add]) {
+    const cur = byKey.get(r.dir);
+    if (cur === undefined) {
+      byKey.set(r.dir, { ...r });
       continue;
     }
     cur.calls += r.calls;

@@ -3,15 +3,25 @@
  *
  * collector（事件折叠）→ aggregator（内存聚合）→ store（按天分片 JSONL）的组合：
  * - 刷盘三挂点（方案定稿）：3~5s 防抖 + `session/flush` 官方排空点 + dispose await；
- * - 启动重建：聚合分片（权威）+ 当日明细分片 → 内存聚合；过去日明细分片自愈压实；
+ * - 启动重建：聚合分片（权威，agg+dir 混存全量读回，dir 行进内存目录视图）+
+ *   当日明细分片 → 内存聚合；过去日明细分片自愈压实；
  * - 崩溃安全：压实先原子写聚合分片再删明细分片；同日并存时聚合权威（见 store）；
  * - 已知边界（文档化口径）：kill -9 丢防抖窗口数据（事件路线无重扫兜底）；
  *   统计自挂载时点起算。
  */
 import { dayKey } from "../charts.ts";
-import { TrendAggregator, mergeAggRows, type TrendGranularity, type TrendMetric, type TrendStackPoint, type TrendWindowSummary } from "./aggregator.ts";
+import {
+  TrendAggregator,
+  mergeAggRows,
+  mergeDirRows,
+  type TrendGranularity,
+  type TrendMetric,
+  type TrendStackPoint,
+  type TrendWindowSummary,
+} from "./aggregator.ts";
 import { TrendCollector } from "./collector.ts";
 import { TrendStore } from "./store.ts";
+import type { TrendAggRow, TrendDirRow } from "./types.ts";
 import { safeId } from "./types.ts";
 
 export interface TrendTrackerOptions {
@@ -25,6 +35,12 @@ export interface TrendTrackerOptions {
   now?: () => number;
   /** 诊断出口（默认 console.warn）。 */
   warn?: (msg: string) => void;
+  /**
+   * 目录归属解析器（#633 A1 官方契约接入，可选）：输入 session id，返回 cwd 原始值
+   * 或 undefined（store 无该 session / header.cwd 缺失）。抛错由 collector 捕获归
+   * 未识别桶；缺省 = 不接 store（纯离线/测试），目录恒归未识别桶。
+   */
+  resolveCwd?: (session: string) => string | undefined;
 }
 
 export class TrendTracker {
@@ -46,6 +62,7 @@ export class TrendTracker {
       flushDebounceMs: number;
       now: () => number;
       warn: (msg: string) => void;
+      resolveCwd?: (session: string) => string | undefined;
     },
     store: TrendStore,
   ) {
@@ -57,6 +74,7 @@ export class TrendTracker {
     this.aggregator = new TrendAggregator();
     this.collector = new TrendCollector({
       now: resolved.now,
+      resolveCwd: resolved.resolveCwd, // #633 A1：目录归属透传（collector 侧 per-session 惰性单查）
       emit: (e) => {
         this.aggregator.apply(e);
         this.markDirty();
@@ -73,6 +91,7 @@ export class TrendTracker {
       flushDebounceMs: opts.flushDebounceMs ?? 4000,
       now: opts.now ?? Date.now,
       warn: opts.warn ?? ((msg: string) => console.warn(`[dsh-provider-usage] trend: ${msg}`)),
+      resolveCwd: opts.resolveCwd,
     };
     const tracker = new TrendTracker(resolved, new TrendStore({ root: opts.root, warn: resolved.warn }));
     await tracker.rebuildFromDisk();
@@ -83,7 +102,11 @@ export class TrendTracker {
   private async rebuildFromDisk(): Promise<void> {
     const today = dayKey(this.now());
     for (const day of await this.store.listAggDays()) {
-      this.aggregator.rebuild(await this.store.readAggShard(day), false);
+      // #633 复核 M1：混存分片全量读回（agg+dir）——dir 行经 rebuild 的 dir 分支
+      // mergeCell 进 dirDays（重启后内存目录视图恢复，分片 b 视图假设成立）；
+      // agg 行照旧进 cells。dir 行不进 cells/pending（rebuild 内 continue），
+      // 防双计语义与读回前一致。
+      this.aggregator.rebuild(await this.store.readAggDayShard(day), false);
     }
     for (const day of await this.store.listDetailDays()) {
       const rows = await this.store.readDetailShard(day);
@@ -172,8 +195,20 @@ export class TrendTracker {
       if (this.aggregator.hasUnpersisted(day)) continue; // 上一步失败：留到下轮
       try {
         const pendingAgg = this.aggregator.rollupRowsOf(day);
-        const existing = await this.store.readAggShard(day);
-        await this.store.writeAggDay(day, mergeAggRows(existing, pendingAgg));
+        const pendingDir = this.aggregator.takeDirUnpersisted(day); // #633 A4：dir 汇总行同源折算
+        // #633 A4：既有聚合分片全量取回（agg+dir 混存）——若仍走 readAggShard（只取
+        // agg 行），整日原子重写会把分片内既有 dir 行抹掉；dir 行必须与 pendingDir
+        // 合并后一起重写（迟到旧日行二次压实防丢防重）。
+        const existing = await this.store.readAggDayShard(day);
+        const aggRows = mergeAggRows(
+          existing.filter((r): r is TrendAggRow => r.kind === "agg"),
+          pendingAgg,
+        );
+        const dirRows = mergeDirRows(
+          existing.filter((r): r is TrendDirRow => r.kind === "dir"),
+          pendingDir,
+        );
+        await this.store.writeAggDay(day, [...aggRows, ...dirRows]); // agg 行在前、dir 行在后（写入约定）
         await this.store.deleteDetailShard(day);
         this.aggregator.dropPending(day);
       } catch (e: unknown) {

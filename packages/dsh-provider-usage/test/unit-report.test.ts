@@ -14,6 +14,9 @@
  *   接线层 smoke 另以 emitEvent 计数显式断言「生成不产生 session 事件→不入统计」。
  * - scheduler（M3 接线补）：lastRun 读写 roundtrip / 单飞互斥（busy 期 tick 跳过）/
  *   失败不推进 lastRun（下轮重试同窗）/ 成功推进 / dispose 停 tick
+ * - #633 分片 a D1：旧格式 trend 分片（无 cwd/dir 键）→ 启动重建 + buildStatsSnapshot
+ *   报告链路不抛错；byDirectory 未识别桶数值正确；byProvider/byDay/派生维度与无 dir
+ *   维度时完全一致（零回归）
  */
 import { mkdtempSync, existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync, renameSync, utimesSync } from "node:fs";
 import { join } from "node:path";
@@ -59,6 +62,10 @@ import {
   __clearReportIndexCacheForTests,
   __reportIndexCacheStatsForTests,
   handleReportStatus,
+  TrendTracker,
+  dayKey,
+  TREND_ROW_VERSION,
+  TREND_UNIDENTIFIED,
 } from "../lib/index.js";
 
 // ---------------------------------------------------------------- 工具
@@ -899,6 +906,78 @@ const GEN = (over = {}) => ({
   );
   assert.equal(payload2.status, "done", "非复用任务 status done");
   assert.equal(payload2.reused, undefined, "非复用任务不携带 reused（新生成语义不变）");
+}
+
+// ---------------------------------------------------------------- #633 分片 a D1：旧格式（无 cwd/dir 键）报告生成链路回归
+
+{
+  // D1 spec：构造升级前格式（无 cwd/dir 键）分片 fixture，断言启动重建、统计/趋势查询、
+  // 报告生成三条链路均不抛错且未识别桶计入正确数值。前两条链路由 unit-trend A2 用例
+  // 覆盖；本块补报告生成链路：旧格式分片经真实 TrendTracker.start 重建（启动链路）→
+  // buckets()（统计/趋势查询面）→ buildStatsSnapshot + generateReport（报告链路）逐级
+  // 不抛错；byDirectory 未识别桶数值正确；既有维度与无 dir 维度时零回归。
+  const root = mkdtempSync(join(tmpdir(), "dou-report-d1-legacy-"));
+  const aggDir = join(root, "agg");
+  const detDir = join(root, "details");
+  mkdirSync(aggDir, { recursive: true });
+  mkdirSync(detDir, { recursive: true });
+  const today = dayKey(T0); // 2026-09-04
+  // 旧格式行（无 dir 键；形态同 unit-trend A2 fixture）：过去日 agg 权威行 + 当日明细/计数行
+  const legacyAgg = { v: TREND_ROW_VERSION, kind: "agg", day: "2026-09-03", provider: "deepseek", model: "deepseek-chat", input: 5000, output: 800, cacheRead: 120, cacheWrite: 10, calls: 30, turns: 12, toolCalls: 40 };
+  const legacyDetail = { v: TREND_ROW_VERSION, kind: "detail", time: T0 - HOUR, day: today, session: "旧会话-甲", turn: 3, step: 2, retry: 1, provider: "deepseek", model: "deepseek-chat", input: 1200, output: 300, cacheRead: 45, cacheWrite: 6, calls: 1 };
+  const legacyCounter = { v: TREND_ROW_VERSION, kind: "counter", time: T0 - HOUR, day: today, session: "旧会话-甲", provider: "deepseek", model: "deepseek-chat", turns: 1, toolCalls: 1 };
+  writeFileSync(join(aggDir, "2026-09-03.jsonl"), `${JSON.stringify(legacyAgg)}\n`);
+  writeFileSync(join(detDir, `${today}.jsonl`), `${JSON.stringify(legacyDetail)}\n${JSON.stringify(legacyCounter)}\n`);
+  // 链路 1/2（启动重建 + 统计/趋势查询面）：不抛错、两日全量入内存
+  const tracker = await TrendTracker.start({ root, now: () => T0, flushDebounceMs: 60000 });
+  const buckets = tracker.buckets();
+  assert.equal(buckets.length, 2, "旧格式分片重建：过去日 agg 权威行 + 当日明细两日全量入内存（不抛错）");
+  // 链路 3（报告生成）：窗口覆盖两日（weekly 形态）——历史输出不缺失
+  // dirRows 为升级后 A4 dir 行形态（store.readAggDayShard filter kind:"dir" 的输入面）：
+  // 未识别桶由 collector 显式归桶产生（升级后无 cwd 会话），旧格式日无 dir 事实不补造。
+  const dirRows = [
+    { v: TREND_ROW_VERSION, kind: "dir", day: today, dir: TREND_UNIDENTIFIED, input: 22, output: 11, cacheRead: null, cacheWrite: null, calls: 1, turns: 1, toolCalls: 0 },
+    { v: TREND_ROW_VERSION, kind: "dir", day: "2026-09-10", dir: "窗口外", input: 999, output: 999, cacheRead: null, cacheWrite: null, calls: 9, turns: 9, toolCalls: 9 },
+  ];
+  const s = buildStatsSnapshot({ period: "weekly", startDay: "2026-09-03", endDay: today, buckets, dirRows, prevTotal: null });
+  assert.deepEqual(
+    s.byDirectory,
+    [{ dir: TREND_UNIDENTIFIED, calls: 1, total: 33 }],
+    "byDirectory 未识别桶计入正确数值（窗口外 dir 行不计；旧格式日 09-03 无 dir 事实不补造）",
+  );
+  assert.equal(s.totals.calls, 31, "历史输出不缺失：calls 与升级前一致（30+1）");
+  assert.equal(s.totals.total, 7481, "历史 token 总量不缺失（5930+1551，四项 null-aware 之和）");
+  assert.deepEqual(
+    s.byDay,
+    [{ day: "2026-09-03", total: 5930 }, { day: today, total: 1551 }],
+    "byDay 旧数据完整（两日总量一致）",
+  );
+  // 零回归：同 buckets 无 dir 维度（dirRows 缺省）时既有字段逐字段完全一致
+  const s0 = buildStatsSnapshot({ period: "weekly", startDay: "2026-09-03", endDay: today, buckets, prevTotal: null });
+  assert.deepEqual(s0.byDirectory, [], "无 dir 行 → byDirectory 空数组（加性可选维度，不补造）");
+  const strip = (snap) => {
+    const clone = { ...snap };
+    delete clone.byDirectory;
+    return clone;
+  };
+  assert.deepEqual(strip(s), strip(s0), "byProvider/byDay/totals/派生维度与无 dir 维度时完全一致（零回归）");
+  // {stats} 注入 → generateReport（fake llm）不抛错且成功，byDirectory 进注入面
+  const { llm, seen } = fakeLlm();
+  const r = await generateReport(GEN({ llm, period: "weekly", key: "2026-09-03", startDay: "2026-09-03", endDay: today, statsJson: JSON.stringify(s) }));
+  assert.equal(r.meta.ok, true, "旧格式数据报告生成不抛错且成功");
+  assert.ok(seen.options.messages[0].content[0].text.includes(JSON.stringify(s.byDirectory[0])), "{stats} 注入面含未识别目录桶（dir=TREND_UNIDENTIFIED）");
+  await tracker.dispose();
+  // dir 键防御（与 provider/model 名同口径）：控制字符剥离 + 80 字符截断
+  const hostile = buildStatsSnapshot({
+    period: "daily",
+    startDay: today,
+    endDay: today,
+    buckets: [],
+    dirRows: [{ v: TREND_ROW_VERSION, kind: "dir", day: today, dir: `a\nb${"x".repeat(100)}`, input: 1, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 }],
+    prevTotal: null,
+  });
+  assert.ok(!hostile.byDirectory[0].dir.includes("\n"), "dir 控制字符进快照前已剥离");
+  assert.equal(hostile.byDirectory[0].dir.length, 80, "dir 截断至 80 字符（与 byProvider 同口径）");
 }
 
 console.log("unit-report: all assertions passed");
