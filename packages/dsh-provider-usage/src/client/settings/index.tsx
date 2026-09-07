@@ -169,8 +169,9 @@ export function SettingsPage(): React.ReactElement {
   return (
     <div className="dou-set-card" style={{ maxWidth: 560 }}>
       {/* 分段器：普通 button（#402 决策延续：不用 tablist）。role 用 group——
-          不可用 navigation：宿主设置弹窗的移动端适配规则带 :not(:has([role="navigation"]))
-          排除条件（#543 实测），命中即整弹窗退回桌面 row 布局，手机上内容区被压至 ~106px。 */}
+          不可用 navigation：宿主设置弹窗的移动端适配规则带 :not(:has([role=navigation]))
+          排除条件（#543 实测，选择器无引号形态；命中即整弹窗退回桌面 row 布局，
+          手机上内容区被压至 ~106px）。 */}
       <div className="dou-set-tabs" role="group" aria-label={t("settingsNavLabel")}>
         {TABS.map((item) => (
           <button

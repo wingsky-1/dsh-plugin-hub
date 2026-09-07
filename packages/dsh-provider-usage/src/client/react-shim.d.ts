@@ -1,7 +1,8 @@
 // 浏览器半区 React 类型 shim（仅类型面，issue #28 最小声明）。
 // React 运行时由 dsh web 的 factory require("react") 注入（build-client externals 路径），
-// 此处只为本包实际消费的 API 面（useState/useEffect/useCallback/createElement）
-// 提供编译期类型，不引入 @types/react 运行时/编译依赖。
+// 此处只为本包实际消费的 API 面（useState/useEffect/useCallback/useMemo/useRef/
+// createElement——源码自 #584 分片 b 起以 JSX 形态书写，createElement 为 JSX
+// 编译产物与类型检查的消费面）提供编译期类型，不引入 @types/react 运行时/编译依赖。
 declare module "react" {
   /** React 节点：元素 / 原文 / 可空（含嵌套数组，供 map 渲染列表）。 */
   export type ReactNode =
