@@ -17,6 +17,11 @@
 
 /** 分片行 schema 版本：字段语义破坏性变更时递增（载入只认当前版本，其余跳过）。 */
 export const TREND_ROW_VERSION = 1;
+/**
+ * #633 A1/A2：目录维度（cwd basename 净化值）为**加性可选键**，不递增版本——
+ * 旧格式行（无 dir 键）必须原样读回（round-trip 不丢行、不因缺键拒绝），
+ * 重建时目录维度归「未识别」桶（TREND_UNIDENTIFIED，不静默丢弃）。
+ */
 
 /** 未识别归属桶键（provider/model 缺失显式入此桶，不静默丢弃）。 */
 export const TREND_UNIDENTIFIED = "(unidentified)";
@@ -33,6 +38,35 @@ export interface TrendTokens {
   output: number | null;
   cacheRead: number | null;
   cacheWrite: number | null;
+}
+
+/** 目录键防御校验上限（POSIX NAME_MAX=255 兜底；伪造超长行按坏行跳过）。 */
+const TREND_DIR_MAX = 256;
+
+/** 分片行 dir 键防御校验：非空字符串且不超上限（旧格式行无该键，天然通过）。 */
+function isValidDirKey(v: unknown): boolean {
+  return typeof v === "string" && v.length > 0 && v.length <= TREND_DIR_MAX;
+}
+
+/**
+ * cwd → 目录键归一化（#633 A1/C2 数据层约定：dir 字段落盘即存 basename 净化值）：
+ * 剥控制字符（C0/C1）→ POSIX basename（取最后一个 '/' 后段，尾斜杠取前段）。
+ * 无效输入（非字符串/空白/根路径/剥后为空）返回 null → 归「未识别」桶。
+ * 注意：不在数据层截断长度——截断属展示出口（C2），数据层截断会把不同目录
+ * 暗中合并为同桶（违反 B1 可区分性）。
+ */
+export function sanitizeDirName(cwd: unknown): string | null {
+  if (typeof cwd !== "string") return null;
+  let cleaned = "";
+  for (const ch of cwd) {
+    const c = ch.codePointAt(0) as number;
+    if (c < 0x20 || (c >= 0x7f && c <= 0x9f)) continue; // C0 + DEL + C1 控制字符剥除
+    cleaned += ch;
+  }
+  if (cleaned.endsWith("/")) cleaned = cleaned.slice(0, -1);
+  const base = cleaned.slice(cleaned.lastIndexOf("/") + 1);
+  if (base.length === 0 || base.trim().length === 0) return null; // 根路径/空段/纯空白 → 未识别
+  return base;
 }
 
 /** 当日 per-step 明细行（分片 kind:"detail"；每次定稿调用一行）。 */
@@ -52,6 +86,8 @@ export interface TrendDetailRow {
   provider: string;
   /** 归属 model（缺失时 null；未识别桶 model 记 null）。 */
   model: string | null;
+  /** 目录归属（cwd basename 净化值；#633 新行必有，旧格式行无此键 → 重建归未识别）。 */
+  dir?: string;
   input: number | null;
   output: number | null;
   cacheRead: number | null;
@@ -73,6 +109,8 @@ export interface TrendCounterRow {
   turns: 0 | 1;
   /** tool/call 计 1，否则 0。 */
   toolCalls: 0 | 1;
+  /** 目录归属（同 detail 行约定；#633 新行必有，旧格式行无此键）。 */
+  dir?: string;
 }
 
 /** 日切压实后的 day×provider(×model) 聚合行（分片 kind:"agg"；append 后整日原子重写）。 */
@@ -91,7 +129,28 @@ export interface TrendAggRow {
   toolCalls: number;
 }
 
-export type TrendRow = TrendDetailRow | TrendCounterRow | TrendAggRow;
+/**
+ * 日级目录汇总行（分片 kind:"dir"；#633 A4 落盘形态：会话归属为 session 级
+ * 内存映射（per-session 缓存），日切时由明细/计数行折算为 day×dir 汇总行，
+ * 与 kind:"agg" 同生命周期、整日原子重写）。
+ * dir 为 TREND_UNIDENTIFIED 时即「未识别目录」桶（不静默丢弃约定）。
+ */
+export interface TrendDirRow {
+  v: number;
+  kind: "dir";
+  day: string;
+  /** 目录键（sanitizeDirName 净化 basename 或 TREND_UNIDENTIFIED）。 */
+  dir: string;
+  input: number | null;
+  output: number | null;
+  cacheRead: number | null;
+  cacheWrite: number | null;
+  calls: number;
+  turns: number;
+  toolCalls: number;
+}
+
+export type TrendRow = TrendDetailRow | TrendCounterRow | TrendAggRow | TrendDirRow;
 
 /** 内存聚合桶（day×provider×model 单元）。null token 语义：桶内无任何有效数字则保持 null。 */
 export interface TrendCell {
@@ -135,8 +194,11 @@ function isStrOrNull(v: unknown): boolean {
   return v === null || typeof v === "string";
 }
 
-/** 判定明细/计数行是否完整可收（载入重建的防御校验；坏行跳过）。 */
-export function isValidShardRow(row: unknown): row is TrendDetailRow | TrendCounterRow | TrendAggRow {
+/** 判定明细/计数/聚合/目录汇总行是否完整可收（载入重建的防御校验；坏行跳过）。
+ *  #633 A2：detail/counter 的 dir 为加性可选键——旧格式行（无 dir）不因缺键拒绝。 */
+export function isValidShardRow(
+  row: unknown,
+): row is TrendDetailRow | TrendCounterRow | TrendAggRow | TrendDirRow {
   if (typeof row !== "object" || row === null) return false;
   const r = row as Record<string, unknown>;
   if (r.v !== TREND_ROW_VERSION) return false;
@@ -155,7 +217,8 @@ export function isValidShardRow(row: unknown): row is TrendDetailRow | TrendCoun
       isNumOrNull(r.output) &&
       isNumOrNull(r.cacheRead) &&
       isNumOrNull(r.cacheWrite) &&
-      isStrOrNull(r.model)
+      isStrOrNull(r.model) &&
+      (r.dir === undefined || isValidDirKey(r.dir))
     );
   }
   if (r.kind === "counter") {
@@ -167,7 +230,8 @@ export function isValidShardRow(row: unknown): row is TrendDetailRow | TrendCoun
       typeof r.provider === "string" &&
       isStrOrNull(r.model) &&
       (r.turns === 0 || r.turns === 1) &&
-      (r.toolCalls === 0 || r.toolCalls === 1)
+      (r.toolCalls === 0 || r.toolCalls === 1) &&
+      (r.dir === undefined || isValidDirKey(r.dir))
     );
   }
   if (r.kind === "agg") {
@@ -176,6 +240,20 @@ export function isValidShardRow(row: unknown): row is TrendDetailRow | TrendCoun
       TREND_DAY_RE.test(r.day) &&
       typeof r.provider === "string" &&
       isStrOrNull(r.model) &&
+      isNumOrNull(r.input) &&
+      isNumOrNull(r.output) &&
+      isNumOrNull(r.cacheRead) &&
+      isNumOrNull(r.cacheWrite) &&
+      typeof r.calls === "number" &&
+      typeof r.turns === "number" &&
+      typeof r.toolCalls === "number"
+    );
+  }
+  if (r.kind === "dir") {
+    return (
+      typeof r.day === "string" &&
+      TREND_DAY_RE.test(r.day) &&
+      isValidDirKey(r.dir) &&
       isNumOrNull(r.input) &&
       isNumOrNull(r.output) &&
       isNumOrNull(r.cacheRead) &&

@@ -24,6 +24,7 @@ import {
   TREND_UNIDENTIFIED,
   safeId,
   safeToken,
+  sanitizeDirName,
   type TrendAttribution,
   type TrendTokens,
 } from "./types.ts";
@@ -50,6 +51,12 @@ export interface TrendCallRecord {
   provider: string;
   /** 归属 model（未识别/缺失时 null）。 */
   model: string | null;
+  /**
+   * 目录归属（#633 A1：cwd 经 sanitizeDirName 归一化的 basename；
+   * store 无 session / header.cwd 缺失 / 获取抛错时为 TREND_UNIDENTIFIED——
+   * 不静默丢弃，沿用 provider 维度未识别桶约定）。
+   */
+  dir: string;
   /** token 计量（补记且 usage 缺失时 null——调用照计）。 */
   tokens: TrendTokens | null;
   interrupted?: true;
@@ -70,6 +77,8 @@ export interface TrendCounterRecord {
   session: string;
   provider: string;
   model: string | null;
+  /** 目录归属（同 TrendCallRecord.dir；#633 A1）。 */
+  dir: string;
   turns: 0 | 1;
   toolCalls: 0 | 1;
 }
@@ -82,6 +91,13 @@ export type TrendEmit =
 /** 单会话折叠状态。 */
 interface SessionFoldState {
   attribution: TrendAttribution | null;
+  /**
+   * 目录归属缓存（#633 A1）：值三态——string = 已解析（净化 basename 或
+   * TREND_UNIDENTIFIED）；null = 已查询但 store 无该 session / cwd 缺失 / 抛错
+   * （缓存未识别结果，防同 session 重复查询）；undefined = 尚未查询。
+   * 同 session 生命周期内至多发起一次 store.get（A1 硬性约束；TTL 回收随会话状态）。
+   */
+  dir: string | null | undefined;
   /** 进行中 fold 缓冲，key = `${turn}:${step}`。 */
   folds: Map<string, { retry: number; finalized: boolean }>;
   /**
@@ -109,6 +125,12 @@ export interface TrendCollectorOptions {
   emit: (e: TrendEmit) => void;
   /** 归属异常告警出口（P2-6：主源与 message.source 副源不一致等；只告警不纠数）。 */
   onAnomaly?: (msg: string) => void;
+  /**
+   * 目录归属解析器（#633 A1，可选）：输入 session id，返回 cwd 原始值或 undefined。
+   * 接入 ctx.sessions.get(id)?.header.cwd（官方类型层）；抛错由本模块捕获归未识别。
+   * 缺省 = 不接 store（纯离线/测试），目录恒归未识别桶。
+   */
+  resolveCwd?: (session: string) => string | undefined;
 }
 
 /**
@@ -151,19 +173,21 @@ export class TrendCollector {
   private readonly now: () => number;
   private readonly emit: (e: TrendEmit) => void;
   private readonly onAnomaly: ((msg: string) => void) | null;
+  private readonly resolveCwd: ((session: string) => string | undefined) | null;
   private lastSweep = 0;
 
   constructor(opts: TrendCollectorOptions) {
     this.now = opts.now ?? Date.now;
     this.emit = opts.emit;
     this.onAnomaly = opts.onAnomaly ?? null;
+    this.resolveCwd = opts.resolveCwd ?? null;
   }
 
   /** 会话状态（惰性建）。 */
   private stateOf(session: string): SessionFoldState {
     let s = this.sessions.get(session);
     if (s === undefined) {
-      s = { attribution: null, folds: new Map(), headerSeen: false, done: new Map<string, number>(), lastTouch: this.now(), lastFoldTouch: this.now() };
+      s = { attribution: null, dir: undefined, folds: new Map(), headerSeen: false, done: new Map<string, number>(), lastTouch: this.now(), lastFoldTouch: this.now() };
       this.sessions.set(session, s);
     }
     return s;
@@ -174,6 +198,26 @@ export class TrendCollector {
     const a = s.attribution;
     if (a === null) return { provider: TREND_UNIDENTIFIED, model: null };
     return { provider: a.provider, model: a.model };
+  }
+
+  /**
+   * 目录归属解析（#633 A1）：per-session 惰性单查——首次需要归属时经 resolveCwd
+   * 查一次（结果缓存进会话状态，后续定稿直接命中缓存）；store 无该 session /
+   * cwd 缺失 / sanitize 失败 / resolveCwd 抛错 → 缓存 null（未识别），同样只查一次。
+   */
+  private dirOf(s: SessionFoldState, session: string): string {
+    if (s.dir !== undefined) return s.dir ?? TREND_UNIDENTIFIED;
+    let dir: string | null = null;
+    if (this.resolveCwd !== null) {
+      try {
+        const raw = this.resolveCwd(session);
+        dir = raw === undefined ? null : sanitizeDirName(raw);
+      } catch {
+        dir = null; // 获取抛错 → 未识别（缓存，不重复查询）
+      }
+    }
+    s.dir = dir;
+    return dir ?? TREND_UNIDENTIFIED;
   }
 
   /**
@@ -281,9 +325,10 @@ export class TrendCollector {
     state.lastFoldTouch = nowMs;
     rememberDone(state.done, key, fold.retry);
     const { provider, model } = this.providerOf(state);
+    const dir = this.dirOf(state, session);
     this.emit({
       type: "call",
-      record: { time, session, turn, step, retry: fold.retry, provider, model, tokens },
+      record: { time, session, turn, step, retry: fold.retry, provider, model, dir, tokens },
     });
   }
 
@@ -341,6 +386,7 @@ export class TrendCollector {
     rememberDone(state.done, key, retry);
     const time = typeof event.time === "number" && Number.isFinite(event.time) ? event.time : this.now();
     const { provider, model } = this.providerOf(state);
+    const dir = this.dirOf(state, session);
     this.emit({
       type: "call",
       record: {
@@ -351,6 +397,7 @@ export class TrendCollector {
         retry,
         provider,
         model,
+        dir,
         tokens,
         ...(d.interrupted === true ? { interrupted: true as const } : {}),
       },
@@ -369,14 +416,16 @@ export class TrendCollector {
     // counter 记账时间取事件 time（P2-1：防时钟回拨时 counter 落错日桶），非有限数回落 now
     const time = typeof event.time === "number" && Number.isFinite(event.time) ? event.time : this.now();
     const { provider, model } = this.providerOf(state);
-    this.emit({ type: "counter", record: { time, session, provider, model, turns: 1, toolCalls: 0 } });
+    const dir = this.dirOf(state, session);
+    this.emit({ type: "counter", record: { time, session, provider, model, dir, turns: 1, toolCalls: 0 } });
   }
 
   private onToolCall(state: SessionFoldState, session: string, event: SessionEvent & { type: "tool/call" }): void {
     // 同 onTurnEnd：counter 记账时间取事件 time，非有限数回落 now（口径与 onMessage 一致）
     const time = typeof event.time === "number" && Number.isFinite(event.time) ? event.time : this.now();
     const { provider, model } = this.providerOf(state);
-    this.emit({ type: "counter", record: { time, session, provider, model, turns: 0, toolCalls: 1 } });
+    const dir = this.dirOf(state, session);
+    this.emit({ type: "counter", record: { time, session, provider, model, dir, turns: 0, toolCalls: 1 } });
   }
 
   private foldKey(turn: unknown, step: unknown): string {

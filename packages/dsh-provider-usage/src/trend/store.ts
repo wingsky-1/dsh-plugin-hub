@@ -20,9 +20,10 @@ import {
   type TrendAggRow,
   type TrendCounterRow,
   type TrendDetailRow,
+  type TrendDirRow,
 } from "./types.ts";
 
-export type TrendShardRow = TrendDetailRow | TrendCounterRow | TrendAggRow;
+export type TrendShardRow = TrendDetailRow | TrendCounterRow | TrendAggRow | TrendDirRow;
 
 export class TrendStore {
   private readonly root: string;
