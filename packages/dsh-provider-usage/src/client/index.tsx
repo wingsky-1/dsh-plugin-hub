@@ -22,7 +22,7 @@ import {
   FALLBACK_PROVIDER,
 } from "./core.ts";
 import type { SessionsServiceLike, RemoteLike, StatsResponseV2, HistoryResponseV2, UiPlacementConfig } from "./core.ts";
-import { SettingsPage } from "./settings/index.ts";
+import { SettingsPage } from "./settings/index.tsx";
 import { t, bindLocale } from "../../../../shared/client/i18n.js";
 // 样式注入收敛 shared/client/ensure-style.js（issue #477）：head 缺失由 shared
 // 静默 no-op 兜底（旧 DOMContentLoaded 兜底属理论不可达防御，随迁移删除）。
@@ -656,7 +656,7 @@ export function apply(ctx: any): void {
             // 注册期求值字符串快照是旧行为）。thunk 保持最小 t(key) 形态，不包任何可能抛错的逻辑。
             { name: "settings.section", id: "dsh-provider-usage", order: 90, label: () => t("settingsTab"), locale: NS },
             function () {
-              return React.createElement(SettingsPage, null);
+              return <SettingsPage />;
             },
           );
         });

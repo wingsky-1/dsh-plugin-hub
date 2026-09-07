@@ -6,7 +6,7 @@
  * 注册卸载时 fire；**会话内切模型/provider 不产生任何宿主信号**，而旧 refreshStats
  * 每 60s 只重拉旧 provider 的 /stats、从不复检 → 轮询零自愈（#71 主根因）。
  *
- * 覆盖（对 src/client/index.ts 真实源码做行为级断言，esbuild 内存打包 +
+ * 覆盖（对 src/client/index.tsx 真实源码做行为级断言，esbuild 内存打包 +
  * mini-DOM stub + mock fetch/sessions，无网络无 DOM 依赖）：
  * - A1 核心：会话内切模型（宿主信号不 fire）→ 手动触发轮询回调 →
  *   refreshStats 取数前复检 → /stats?provider=<新> 被请求、胶囊/面板跟随新 provider；
@@ -46,7 +46,7 @@ const stubPlugin = {
 };
 
 const bundle = await esbuildBuild({
-  entryPoints: [join(pkgDir, "src/client/index.ts")],
+  entryPoints: [join(pkgDir, "src/client/index.tsx")],
   bundle: true,
   format: "esm",
   write: false,

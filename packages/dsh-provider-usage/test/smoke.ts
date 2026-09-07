@@ -689,7 +689,7 @@ export function formatPanel() { return "<p>x</p>"; }
   }
 
   // 客户端源码为干净模块（只 export apply/inject，无 loader 痕迹）
-  const clientSource = readFileSync(join(pkgDir, "src/client/index.ts"), "utf8");
+  const clientSource = readFileSync(join(pkgDir, "src/client/index.tsx"), "utf8");
   assert.ok(!clientSource.includes("__ModuleLoader__"), "客户端源码不得含 loader 痕迹");
   assert.ok(clientSource.includes("export function apply"), "客户端入口导出 apply");
   // #383 根因回归：客户端插件服务经 ctx 直接属性注入且须声明进 inject 数组
@@ -731,7 +731,7 @@ export function formatPanel() { return "<p>x</p>"; }
   // #629 P2：手动生成轮询路径 executor 侧幂等复用与 200 直接复用路径提示对称——
   // pollReportTask 返回 reused 且轮询分支经 setGenNotice(t("reportReused")) 渲染提示
   {
-    const reportSource = readFileSync(join(pkgDir, "src/client/report.ts"), "utf8");
+    const reportSource = readFileSync(join(pkgDir, "src/client/report.tsx"), "utf8");
     const pollRet = reportSource.match(/return \{ meta: body\.meta, reused: body\.reused === true \};/);
     assert.ok(pollRet !== null, "pollReportTask 透传 status 响应的 reused 字段（轮询路径数据源）");
     const pollCall = reportSource.match(/const polled = await pollReportTask\(/);
@@ -763,22 +763,23 @@ export function formatPanel() { return "<p>x</p>"; }
   // #532 设置页多 tab 契约：分段器结构与窗格 keep-mounted 语义进产物/源码
   {
     const clientBundle = readFileSync(join(pkgDir, "lib", "client.js"), "utf8");
-    const settingsIndex = readFileSync(join(pkgDir, "src/client/settings/index.ts"), "utf8");
+    const settingsIndex = readFileSync(join(pkgDir, "src/client/settings/index.tsx"), "utf8");
     // 五 tab 键齐全（趋势/报告/用量/适配器/悬浮窗）
     for (const key of ["trend", "report", "usage", "providers", "float"]) {
       assert.ok(settingsIndex.includes(`"${key}"`), `设置页 tab 键 ${key} 存在`);
     }
     // keep-mounted 语义：pane wrapper 用 hidden 显隐（不条件渲染卸载），且不做 URL/存储持久化
-    assert.ok(settingsIndex.includes('className: "dou-set-pane"') && settingsIndex.includes("hidden: tab !== key"),
-      "设置页窗格 keep-mounted（hidden 属性显隐，不卸载组件实例）");
+    // （#584 分片 b：源码迁移 TSX 后锚点跟随语法形态演进，断言语义逐字保留）
+    assert.ok(settingsIndex.includes('className="dou-set-pane"') && settingsIndex.includes("hidden={tab !== key}"),
+      "设置页窗格 keep-mounted（hidden 属性显隐，不卸载组件实例）（TSX 形态）");
     assert.ok(!/location\.hash|sessionStorage\.|localStorage\./.test(settingsIndex),
       "tab 状态不做 URL/存储持久化（与通知中心一致，避免宿主路由冲突）");
     // 通知中心 #508 分段器同构哨兵：dou-set-card/dou-set-tabs/dou-set-tab 样式类进产物
     assert.ok(clientBundle.includes("dou-set-tab") && clientBundle.includes("dou-set-pane"), "多 tab 结构类名进客户端产物");
     // #543 移动端适配哨兵：分段器 role 必须 group——宿主设置弹窗移动端适配规则
     // 排除含 [role=navigation] 的弹窗（实测命中即整弹窗退回桌面 row 布局）
-    assert.ok(settingsIndex.includes('role: "group"'), "分段器 role=group（#543 移动端适配）");
-    assert.ok(!settingsIndex.includes('role: "navigation"'), "分段器不得使用 role=navigation（#543）");
+    assert.ok(settingsIndex.includes('role="group"'), "分段器 role=group（#543 移动端适配）（TSX 形态）");
+    assert.ok(!settingsIndex.includes('role="navigation"'), "分段器不得使用 role=navigation（#543）（TSX 形态）");
     assert.ok(settingsIndex.includes('t("settingsNavLabel")'), "分段器 aria-label 走 i18n");
   }
 }

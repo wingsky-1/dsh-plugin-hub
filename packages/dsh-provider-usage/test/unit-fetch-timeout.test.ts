@@ -36,9 +36,10 @@ const pkgDir = join(here, "..");
 // ---------------------------------------------------------------- 源码契约：client 层裸 fetch 审计
 
 {
-  // 枚举 src/client 全部实现文件（未来新增文件自动入契约；.d.ts 声明与 .css 无调用面，排除）
+  // 枚举 src/client 全部实现文件（未来新增文件自动入契约；.d.ts 声明与 .css 无调用面，
+  // 排除。#584 分片 b：客户端入口/区块迁移 .tsx，枚举面机械同步含 .tsx）
   const clientFiles = readdirSync(join(pkgDir, "src/client"))
-    .filter((f) => f.endsWith(".ts") && !f.endsWith(".d.ts"))
+    .filter((f) => (f.endsWith(".ts") || f.endsWith(".tsx")) && !f.endsWith(".d.ts"))
     .sort();
   assert.ok(clientFiles.includes("core.ts"), "client 目录枚举应命中 core.ts");
   for (const file of clientFiles) {
