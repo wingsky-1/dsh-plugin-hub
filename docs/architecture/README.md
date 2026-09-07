@@ -24,6 +24,7 @@
 | `@wingsky-1/dsh-web-file-preview` | 点击对话文件链接在 web 端预览：图片/文本/Markdown/代码/Diff/HTML | [dsh-web-file-preview.md](dsh-web-file-preview.md) |
 | `@wingsky-1/dsh-codegraph` | codegraph MCP + worktree 开发纪律（依赖 mcp-manager 运行时注册） | [dsh-codegraph.md](dsh-codegraph.md) |
 | `@wingsky-1/dsh-verify-isolated` | 插件开发隔离浏览器验证 skill（临时 DSH_HOME + 独立 profile） | [dsh-verify-isolated.md](dsh-verify-isolated.md) |
+| `@wingsky-1/dsh-mem0` | mem0 长期记忆系统（基于本地轻量持久记忆，原生感知 Git 工作空间，中文沉淀） | [architecture-evolution.md](../../packages/dsh-mem0/docs/architecture-evolution.md) |
 | `@wingsky-1/dsh-plugins-all` | 全家桶聚合包（一键装齐 + 聚合 cordis patch） | [dsh-plugins-all.md](dsh-plugins-all.md) |
 
 ## 全景：插件如何挂载进 dsh web
@@ -40,6 +41,7 @@ flowchart LR
         P5["dsh-web-file-preview"]
         P6["dsh-codegraph"]
         P7["dsh-verify-isolated"]
+        P8["dsh-mem0"]
     end
 
     subgraph profile["dsh web profile（cordis 运行时）"]
@@ -59,6 +61,7 @@ flowchart LR
     P5 --> CORDIS
     P6 --> CORDIS
     P7 --> CORDIS
+    P8 --> CORDIS
 
     P6 -. "inject 强依赖 ctx.mcpManager" .-> P2
     P2 -. "提供 ctx.mcpManager service" .-> P6

@@ -8,7 +8,7 @@
 
 DSH（DeepSeek Harness）Web GUI 插件集，npm 分发：一键装全家桶，或按需单装。
 
-- 聚合包：`@wingsky-1/dsh-plugins-all`（一键装齐全部插件；`dsh-codegraph` 独立发包、不在聚合包内，见下文插件列表）
+- 聚合包：`@wingsky-1/dsh-plugins-all`（一键装齐全部插件；`dsh-codegraph` 与 `dsh-mem0` 独立发包、不在聚合包内，见下文插件列表）
 - 单插件：`@wingsky-1/dsh-*`（按需安装）
 
 ## 核心优势
@@ -47,10 +47,10 @@ DSH（DeepSeek Harness）Web GUI 插件集，npm 分发：一键装全家桶，�
 | `@wingsky-1/dsh-web-file-preview` | 对话文件链接 web 端预览：图片（灯箱缩放）/ Markdown（含 Mermaid 图表渲染）/ 代码（25+ 语言高亮）/ 文本 / git Diff / HTML 沙箱预览（iframe sandbox 不执行脚本）；@ 引用识别 + 路径兜底搜索（引用路径写错时按 basename 在工作区内唯一匹配） | [README](packages/dsh-web-file-preview/README.md) · [架构图解](docs/architecture/dsh-web-file-preview.md) | 已发布 |
 | `@wingsky-1/dsh-verify-isolated` | DSH 插件开发的隔离环境浏览器验证 skill：临时 DSH_HOME + 独立 profile + 独立端口 + 独立浏览器实例四重隔离，一键拉起、退出自动清理；自带 raw CDP 零依赖浏览器驱动（快照/点击/截图/求值），可选隔离审计 | [README](packages/dsh-verify-isolated/README.md) · [架构图解](docs/architecture/dsh-verify-isolated.md) | 已发布 |
 | `@wingsky-1/dsh-codegraph` | codegraph 本地代码图谱 MCP + worktree 开发纪律：8 个封装工具（影响面/调用链/符号搜索/文件结构等），查询前强制 sync 保证索引新鲜、projectPath 自动补全；经 mcp-manager 运行时注册 | [README](packages/dsh-codegraph/README.md) · [架构图解](docs/architecture/dsh-codegraph.md) | 已发布（独立发包，暂不进聚合包） |
+| `@wingsky-1/dsh-mem0` | DSH 长期记忆系统插件：基于 mem0 的本地/轻量持久记忆，原生感知 Git 工作空间，全英文工具契约，中文沉淀与冲突消解，设置页「记忆中心」管理大盘。 | [README](packages/dsh-mem0/README.md) · [架构演进](packages/dsh-mem0/docs/architecture-evolution.md) | 已发布（独立发包，暂不进聚合包） |
 
-> **独立发包说明**：`@wingsky-1/dsh-codegraph` 为**独立发包**、**未包含在
-> `dsh-plugins-all` 聚合包中**，需单独安装（它经 mcp-manager 运行时注册 codegraph MCP，
-> 请先装 `dsh-mcp-manager` 或聚合包再配合使用）。
+> **独立发包说明**：`@wingsky-1/dsh-codegraph` 与 `@wingsky-1/dsh-mem0` 为**独立发包**、**未包含在
+> `dsh-plugins-all` 聚合包中**，需单独按需安装（`dsh-codegraph` 经 mcp-manager 运行时注册 codegraph MCP，请先装 `dsh-mcp-manager` 或聚合包再配合使用）。
 
 <details>
 <summary><b>历史维护与迁移</b>——已停止维护的包、旧包迁移指引（装过旧包/退役包的用户请展开）</summary>
@@ -75,7 +75,6 @@ dsh plugin --profile web remove @wingsky-1/dsh-idle-archive
 dsh plugin --profile web remove @wingsky-1/dsh-subagent-model-inherit
 ```
 
-> dsh-memory（项目长期记忆）暂未包含，规划中。
 
 **旧包迁移（历史上发布过、现已不再分发）**：
 
