@@ -84,11 +84,17 @@ export class HistoryStore {
     range: { start: number; end: number },
   ): Promise<{ entries: HistoryEntry[] }> {
     const entries: HistoryEntry[] = [];
-    // range 覆盖的天列表（升序），逐天读取
+    const promises: Promise<HistoryEntry[]>[] = [];
+    // range 覆盖的天列表（升序），并发读取
     for (let day = startOfDay(range.start); day <= startOfDay(range.end); day += 86400000) {
-      const dayEntries = (await this.readDay(provider, name, day)).filter(
-        (e) => e.time >= range.start && e.time <= range.end,
+      promises.push(
+        this.readDay(provider, name, day).then((dayEntries) =>
+          dayEntries.filter((e) => e.time >= range.start && e.time <= range.end)
+        )
       );
+    }
+    const results = await Promise.all(promises);
+    for (const dayEntries of results) {
       entries.push(...dayEntries);
     }
     // 稳定排序防御乱序采样（append 天然近似有序）

@@ -30,7 +30,7 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
 
 // ---- issue #76：客户端清理契约（B1-B6 / C 组）----
 {
-  const src = readFileSync(new URL("../src/client/index.ts", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../src/client/index.tsx", import.meta.url), "utf8");
   const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
 
   // B1-B6：侧边栏入口/浮层/角标/拖拽全部移除（源码无对应符号）
@@ -64,7 +64,7 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
 
 // ---- issue #402：设置页 UI/UX 打磨（折叠 / 双 tab / 去 title / label thunk / 就近保存）----
 {
-  const src = readFileSync(new URL("../src/client/index.ts", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../src/client/index.tsx", import.meta.url), "utf8");
   const locales = readFileSync(new URL("../src/client/locales.ts", import.meta.url), "utf8");
   const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
 
@@ -73,7 +73,9 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   assert.ok(src.includes('label: () => t("tabLabel")'), "#402：notifier settings.section label 为 thunk（切语言跟随）");
   assert.ok(!src.includes('label: t("tabLabel")'), "#402：不再注册求值快照 label");
   // 第 1 条：频道卡 details 折叠形态（key 含 enabled —— 非受控 + key remount）
-  assert.ok(src.includes('React.createElement("details"'), "#402：频道卡为 details 可折叠");
+  // #584 分片 a：createElement → TSX 纯语法迁移，源码锚点随形态演进（语义不变：
+  // 仍断言「频道卡为 details 可折叠」，JSX 内联 details 即目标形态）
+  assert.ok(src.includes("<details"), "#402：频道卡为 details 可折叠（TSX 形态）");
   assert.ok(src.includes('failBadge('), "#402：投递失败徽标上提卡头（收起可见）");
   // 第 2 条：卡内双 tab + kind 徽标（关键 class 进产物）
   assert.ok(src.includes("dn-set-tabs") && src.includes("dn-set-tabActive"), "#402：卡内双 tab 结构");
@@ -88,7 +90,7 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
 
 // ---- issue #418：设置面板布局收敛（去重复保存 / 权限入浏览器卡 / 动作并入历史区）----
 {
-  const src = readFileSync(new URL("../src/client/index.ts", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../src/client/index.tsx", import.meta.url), "utf8");
   const locales = readFileSync(new URL("../src/client/locales.ts", import.meta.url), "utf8");
   const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
 
@@ -115,7 +117,7 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
 
 // ---- issue #421：免打扰豁免扩至全部内置事件（候选 6 项 + 跟随已启用 + 恢复默认）----
 {
-  const src = readFileSync(new URL("../src/client/index.ts", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../src/client/index.tsx", import.meta.url), "utf8");
   const locales = readFileSync(new URL("../src/client/locales.ts", import.meta.url), "utf8");
   const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
 
@@ -140,7 +142,7 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
 
 // ---- issue #508：通知中心 UI/UX 现代化（三 tab / switch / chips / 脏状态栏 / webhook 卡）----
 {
-  const src = readFileSync(new URL("../src/client/index.ts", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../src/client/index.tsx", import.meta.url), "utf8");
   const locales = readFileSync(new URL("../src/client/locales.ts", import.meta.url), "utf8");
   const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
 
@@ -149,10 +151,11 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   assert.ok(src.includes('t("secHistory")'), "#508：通知记录 tab 引用 secHistory 分区标题");
   assert.ok(locales.includes('secHistory: "通知记录"') && locales.includes('secHistory: "History"'), "#508：secHistory 文案双语");
   // 2. switch 无障碍：原生 checkbox 改 switch 开关，无内联文本必须靠 aria-label 提供可访问名
-  assert.ok(src.includes('className: "dn-switch"') && src.includes('"aria-label"'), "#508：switch 开关依赖 aria-label 可访问名");
+  // #584 分片 a：createElement → TSX 迁移，源码锚点随语法形态演进（aria-label 可访问名语义不变）
+  assert.ok(src.includes('className="dn-switch"') && src.includes("aria-label="), "#508：switch 开关依赖 aria-label 可访问名（TSX 形态）");
   assert.ok(client.includes("dn-switch-track"), "#508：dn-switch-track 开关轨道 class 进产物");
   // 3. 路由 chips：直点切换 + aria-pressed 开/关态 + 状态标签 + stale 虚线 chip
-  assert.ok(src.includes('"aria-pressed"') && src.includes("dn-route-state") && src.includes("is-stale"), "#508：路由 chips 含 aria-pressed/状态标签/stale 形态");
+  assert.ok(src.includes("aria-pressed=") && src.includes("dn-route-state") && src.includes("is-stale"), "#508：路由 chips 含 aria-pressed/状态标签/stale 形态（TSX 形态）");
   assert.ok(locales.includes("routeDefaultState:") && locales.includes("routeCustomState:"), "#508：chips 状态标签文案键双语存在");
   // 4. 动态 kind 确认行带路由提示（r4 拍板）
   assert.ok(src.includes("dn-kind-routeHint") && locales.includes("kindRouteHint:"), "#508：动态 kind 确认行路由提示（源码+文案）");
@@ -188,7 +191,7 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
 //    产物文本不断言具体名字，只断不变量）；③ vm 沙箱执行真实产物 lib/client.js，
 //    事件计数级断言验收语义（apply→dispose→重复 apply 全程至多一份监听）。
 {
-  const src = readFileSync(new URL("../src/client/index.ts", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../src/client/index.tsx", import.meta.url), "utf8");
   const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
 
   // ① 源码级哨兵（源码名稳定，产物对 esbuild 重命名脆弱）：
@@ -520,14 +523,14 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
 
 // ---- issue #405 PR2/PR3：客户端保存模型演进源码级契约锚点 ----
 {
-  const src = readFileSync(new URL("../src/client/index.ts", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../src/client/index.tsx", import.meta.url), "utf8");
   const locales = readFileSync(new URL("../src/client/locales.ts", import.meta.url), "utf8");
 
   // PR3：confirmOne 同步服务端 revision（修「确认 kind 后同窗口保存必 409」版本链断点）
   assert.ok(src.includes("freshRevision"), "#405：confirmOne 读取响应新 revision");
   assert.ok(src.includes("metaRef.current = nextMeta"), "#405：confirmOne 同步 metaRef.revision");
   // PR2：频道域保存行（新 class，非 #418 回归的 dn-ch-saveRow）+ 域入口
-  assert.ok(src.includes('className: "dn-ch-domainSave"'), "#405：频道 tab 域保存行 class");
+  assert.ok(src.includes('className="dn-ch-domainSave"'), "#405：频道 tab 域保存行 class（TSX 形态）");
   assert.ok(src.includes('saveFor("channels")'), "#405：域保存走 channels 入口");
   assert.ok(src.includes('saveFor("all")'), "#405：foot 保存走 all 入口");
   assert.ok(src.includes("dn-conflict"), "#405：409 冲突横幅 class 进源码");
@@ -657,7 +660,7 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
 
 // ---- issue #527：未启用频道/事件 chips 置灰禁点（通知事件路由 + 免打扰豁免）----
 {
-  const src = readFileSync(new URL("../src/client/index.ts", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../src/client/index.tsx", import.meta.url), "utf8");
   const locales = readFileSync(new URL("../src/client/locales.ts", import.meta.url), "utf8");
   const css = readFileSync(new URL("../src/client/style.css", import.meta.url), "utf8");
   const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
@@ -665,12 +668,12 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   // 1. 路由 chips：routeOptions 带 enabled 标志；未启用 chip 渲染 disabled + is-off
   assert.ok(src.includes("enabled: c.enabled === true"), "#527：路由候选带实例频道 enabled 标志");
   assert.ok(src.includes("enabled: prev.browserNotify === true") && src.includes("enabled: prev.systemNotify === true"), "#527：内置频道 enabled 判定跟随开关");
-  assert.ok(src.includes('disabled: !o.enabled'), "#527：未启用路由 chip 原生 disabled 禁点");
+  assert.ok(src.includes("disabled={!o.enabled}"), "#527：未启用路由 chip 原生 disabled 禁点（TSX 形态）");
   assert.ok(src.includes('" is-off"') && src.includes('"dn-route-chip"'), "#527：未启用路由 chip 带 is-off 弱化 class");
   assert.ok(src.includes("routeDisabledHint"), "#527：路由未启用 title 提示引用文案键");
 
   // 2. 免打扰豁免 chips：未启用事件 disabled 禁点（保留 dn-set-allowDim 弱化）
-  assert.ok(src.includes("disabled: !c.enabled"), "#527：未启用豁免事件 chip 原生 disabled 禁点");
+  assert.ok(src.includes("disabled={!c.enabled}"), "#527：未启用豁免事件 chip 原生 disabled 禁点（TSX 形态）");
   assert.ok(src.includes("dn-set-allowDim"), "#527：#421 弱化样式保留（与 disabled 叠加）");
 
   // 3. 文案键双语 + 产物

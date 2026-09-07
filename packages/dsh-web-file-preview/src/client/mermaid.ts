@@ -85,6 +85,75 @@ async function rerenderForTheme(state: FilePreviewState): Promise<void> {
 }
 
 /**
+ * 调度空闲任务，优先使用 requestIdleCallback，回退 setTimeout。
+ * requestIdleCallback 带 setTimeout fallback（iOS <16.4 缺失该 API）；
+ * timeout 上限兜底保证低负载下也不会无限推迟。
+ */
+function scheduleIdleTask(cb: () => void): void {
+  const win = window as any;
+  if (typeof win.requestIdleCallback === "function") {
+    win.requestIdleCallback(cb, { timeout: 2000 });
+  } else {
+    window.setTimeout(cb, 32);
+  }
+}
+
+/**
+ * 核心 Mermaid 解析与渲染逻辑。
+ */
+function executeMermaidHydration(
+  codes: NodeListOf<HTMLElement>,
+  container: HTMLElement,
+  state: FilePreviewState,
+  seq: number
+): void {
+  if (!container.isConnected || seq !== state.openSeq) return;
+  // textContent 还原 marked 写入的实体转义源码（--&gt; → -->）；trim 去围栏首尾
+  // 空白。不 filter 空串：sources 必须与 codes 按索引严格对齐（回调按索引落盘），
+  // 空源码由 render 报错自然走回退路径。
+  const sources = Array.from(codes).map((c) => (c.textContent ?? "").trim());
+  if (sources.length === 0) return;
+  // 活跃 hydration 注册表：供明暗切换对存量图重渲染；下次 hydration 覆盖、
+  // closeModal 清空，不跨 Modal 累积引用。
+  const registry = {
+    seq,
+    container,
+    entries: [] as Array<{ el: HTMLElement; source: string }>,
+  };
+  state.activeMermaidHydration = registry;
+  void runMermaidHydration(sources, {
+    loadModule: async () => {
+      // 变量 URL 动态 import：必须保持非字面量形态，否则 esbuild 会静态解析
+      // 并把 chunk 内联回 client.js（懒加载失效）——已实验证实的关键约束。
+      const mod = (await import(state.API.mermaid)) as { default: MermaidApiLike };
+      loadedApi = mod.default;
+      return loadedApi;
+    },
+    themeOf,
+    nextId: () => `fwp-mermaid-${++state.mermaidRenderId}`,
+    liveCheck: () => state.openSeq === seq && container.isConnected,
+    sanitizeSvg: sanitizeMermaidSvg,
+    onReplaced: (index, svgHtml) => {
+      const holder = replaceWithSvg(codes[index], svgHtml);
+      if (holder !== undefined) {
+        // issue #293 C1/C12：查看器触发绑定必须落 holder 级（.fwp-mermaid 容器，
+        // 不绑 SVG 子元素）——rerenderForTheme 用 holder.innerHTML 整体换图，
+        // 子元素绑定会随换图静默消失；holder 级监听在主题切换后依旧有效（P1-1）。
+        // 命中判定走 shouldOpenMermaidViewer 谓词（排除 fallback、svg 非空守卫）。
+        holder.addEventListener("click", () => {
+          if (shouldOpenMermaidViewer(holder)) openMermaidViewer(holder, state);
+        });
+        registry.entries.push({ el: holder, source: sources[index] });
+      }
+    },
+    onFallback: (index, error) => {
+      console.warn(`[dsh-web-file-preview] mermaid block ${index} render failed:`, error);
+      fallbackToCode(codes[index]);
+    },
+  });
+}
+
+/**
  * md 渲染后处理入口（text.ts renderTabBody 的 md 分支调用）。
  * 无 mermaid 块时同步快速返回——零 fetch、零调度、零开销。
  */
@@ -92,57 +161,8 @@ export function hydrateMermaid(container: HTMLElement, state: FilePreviewState):
   const codes = container.querySelectorAll<HTMLElement>("pre > code.language-mermaid");
   if (codes.length === 0) return;
   const seq = state.openSeq;
-  // requestIdleCallback 带 setTimeout fallback（iOS <16.4 缺失该 API）；
-  // timeout 上限兜底保证低负载下也不会无限推迟。
-  const win = window as any;
-  const schedule = typeof win.requestIdleCallback === "function"
-    ? (cb: () => void): number => win.requestIdleCallback(cb, { timeout: 2000 })
-    : (cb: () => void): number => window.setTimeout(cb, 32);
-  schedule(() => {
-    if (!container.isConnected || seq !== state.openSeq) return;
-    // textContent 还原 marked 写入的实体转义源码（--&gt; → -->）；trim 去围栏首尾
-    // 空白。不 filter 空串：sources 必须与 codes 按索引严格对齐（回调按索引落盘），
-    // 空源码由 render 报错自然走回退路径。
-    const sources = Array.from(codes).map((c) => (c.textContent ?? "").trim());
-    if (sources.length === 0) return;
-    // 活跃 hydration 注册表：供明暗切换对存量图重渲染；下次 hydration 覆盖、
-    // closeModal 清空，不跨 Modal 累积引用。
-    const registry = {
-      seq,
-      container,
-      entries: [] as Array<{ el: HTMLElement; source: string }>,
-    };
-    state.activeMermaidHydration = registry;
-    void runMermaidHydration(sources, {
-      loadModule: async () => {
-        // 变量 URL 动态 import：必须保持非字面量形态，否则 esbuild 会静态解析
-        // 并把 chunk 内联回 client.js（懒加载失效）——已实验证实的关键约束。
-        const mod = (await import(state.API.mermaid)) as { default: MermaidApiLike };
-        loadedApi = mod.default;
-        return loadedApi;
-      },
-      themeOf,
-      nextId: () => `fwp-mermaid-${++state.mermaidRenderId}`,
-      liveCheck: () => state.openSeq === seq && container.isConnected,
-      sanitizeSvg: sanitizeMermaidSvg,
-      onReplaced: (index, svgHtml) => {
-        const holder = replaceWithSvg(codes[index], svgHtml);
-        if (holder !== undefined) {
-          // issue #293 C1/C12：查看器触发绑定必须落 holder 级（.fwp-mermaid 容器，
-          // 不绑 SVG 子元素）——rerenderForTheme 用 holder.innerHTML 整体换图，
-          // 子元素绑定会随换图静默消失；holder 级监听在主题切换后依旧有效（P1-1）。
-          // 命中判定走 shouldOpenMermaidViewer 谓词（排除 fallback、svg 非空守卫）。
-          holder.addEventListener("click", () => {
-            if (shouldOpenMermaidViewer(holder)) openMermaidViewer(holder, state);
-          });
-          registry.entries.push({ el: holder, source: sources[index] });
-        }
-      },
-      onFallback: (index, error) => {
-        console.warn(`[dsh-web-file-preview] mermaid block ${index} render failed:`, error);
-        fallbackToCode(codes[index]);
-      },
-    });
+  scheduleIdleTask(() => {
+    executeMermaidHydration(codes, container, state, seq);
   });
 }
 
