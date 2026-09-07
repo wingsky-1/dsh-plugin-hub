@@ -32,7 +32,7 @@ export interface PreInjectOptions {
  *
  * 两层语义（对齐 executor 既有按值 redact 的 KEY|TOKEN|SECRET|PASSWORD 键名语义）：
  * 1. 键值对赋值形态：保留键名与分隔符，仅掩码值（api_key=xxx / password: xxx /
- *    中文「密码是 xxx」）；
+ *    token：xxx（中文冒号）/ 中文「密码是 xxx」/ 中文引号「xxx」与“xxx”包裹值）；
  * 2. 知名凭据前缀与高熵长串形态（sk- / ghp_ / xoxb- / AKIA / Bearer / 40+ 位
  *    base64 形态）：保留前 4 与尾 4 字符便于人读辨识，中间一律掩码。
  */
@@ -47,13 +47,14 @@ const CREDENTIAL_PREFIX_PATTERNS: Array<RegExp> = [
 
 function redactCredentialForms(text: string): string {
   let out = text;
-  // 1) 键值对赋值形态：保留键名与分隔符，掩码值
+  // 1) 键值对赋值形态：保留键名与分隔符，掩码值（分隔符含中文冒号「：」，
+  //    值形态含英文双引号与中文引号「」“”包裹形态，#642 M-1）
   out = out.replace(
-    /\b(api[_-]?key|apikey|access[_-]?token|auth[_-]?token|token|secret|password|passwd|pwd)\b(\s*[=:]\s*)("[^"\s]{6,}"|[^\s,;，。；]{6,})/gi,
+    /\b(api[_-]?key|apikey|access[_-]?token|auth[_-]?token|token|secret|password|passwd|pwd)\b(\s*[=:：]\s*)("[^"\s]{6,}"|“[^”\s]{6,}”|「[^」\s]{6,}」|[^\s,;，。；「」“”]{6,})/gi,
     (_m, key: string, sep: string) => `${key}${sep}***`,
   );
   out = out.replace(
-    /(密码|口令|密钥|令牌)(?:是|为|[:：=])?\s*([A-Za-z0-9][A-Za-z0-9_\-./+=!@#$%^&*]{7,})/g,
+    /(密码|口令|密钥|令牌)(?:是|为|[:：=])?\s*(?:“[^”\s]{6,}”|「[^」\s]{6,}」|[A-Za-z0-9][A-Za-z0-9_\-./+=!@#$%^&*]{7,})/g,
     (_m, key: string) => `${key}: ***`,
   );
   // 2) 知名凭据前缀与高熵长串形态

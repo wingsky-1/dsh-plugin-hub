@@ -1065,6 +1065,11 @@ await test("#581 注入形态：围栏开闭标签与条目列表", () => {
   assert.equal(buildPreInjectionText([]), "");
 });
 
+/** #642 M-1 断言辅助：检查文本是否残留 8 位以上字母数字凭据值形态。 */
+function zhQuoteQuoteLeak(text: string): boolean {
+  return /[A-Za-z0-9][A-Za-z0-9_\-]{7,}/.test(text);
+}
+
 // 27b. #642 复核返工 S-1 防回归：恶意记忆内容（含闭合标签与伪指令）不得破坏围栏完整性
 await test("#581 S-1 围栏逃逸防线：恶意记忆围栏标签中性化与围栏不变式", () => {
   const { buildPreInjectionText, neutralizeFenceTag, FENCE_TAG_PLACEHOLDER } = hostMod;
@@ -1112,6 +1117,17 @@ await test("#581 凭据脱敏：注入文本不得出现未脱敏密钥", () => 
   // 中文赋值形态
   const zhForm = redactCandidates([{ id: "k2", text: "数据库密码是 P@ssw0rd123456", score: 0.9 }]);
   assert.ok(!zhForm[0].text.includes("P@ssw0rd123456"), "中文赋值形态密码必须掩码");
+
+  // #642 M-1：中文冒号分隔符与中文引号包裹值形态
+  const zhColon = redactCandidates([{ id: "k3", text: "API token：MySecretValue123456", score: 0.9 }]);
+  assert.ok(!zhColon[0].text.includes("MySecretValue123456"), "中文冒号键值形态值必须掩码");
+  assert.ok(zhColon[0].text.includes("token：***"), "中文冒号分隔符保留、仅掩码值");
+  const zhQuoteCorner = redactCandidates([{ id: "k4", text: "数据库密码是「abc123456789」", score: 0.9 }]);
+  assert.ok(!zhQuoteQuoteLeak(zhQuoteCorner[0].text), "中文直角引号包裹密码必须掩码");
+  const zhQuoteCurly = redactCandidates([{ id: "k5", text: "访问令牌是“abc123456789”", score: 0.9 }]);
+  assert.ok(!zhQuoteQuoteLeak(zhQuoteCurly[0].text), "中文弯引号包裹凭据必须掩码");
+  const enQuote = redactCandidates([{ id: "k6", text: 'api_key = "abcd1234efgh5678"', score: 0.9 }]);
+  assert.ok(!enQuote[0].text.includes("abcd1234efgh5678"), "英文双引号包裹值掩码（既有语义不回退）");
 
   // 正常文本不受影响
   const normal = redactCandidates([{ id: "n1", text: "用户统一使用 pnpm 管理依赖", score: 0.9 }]);
