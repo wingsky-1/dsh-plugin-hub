@@ -1291,4 +1291,32 @@ await test("#581 钩子端到端：开关关闭全程不检索不注入 + 零命
   assert.equal(d2.messages.filter((m: any) => m.source?.plugin === "mem0").length, 0, "零命中 → 零追加文本");
 });
 
+// 31. #581 条目 8：设置页 UI 契约（三键渲染、i18n 键覆盖、fetchConfig 默认兜底）
+await test("#581 客户端契约：设置页三键渲染与 i18n 键覆盖", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { zh, en } = await import(pathToFileURL(join(pkgDir, "src/client/locales.ts")).href);
+
+  // i18n：三新键 + 提示语必须 zh/en 双侧存在且非空
+  const requiredKeys = ["smartPreInjection", "smartPreInjectionOn", "smartPreInjectionOff", "preInjectionThreshold", "preInjectionLimit", "smartPreInjectionHint"];
+  for (const key of requiredKeys) {
+    assert.ok((zh as Record<string, string>)[key]?.length, `zh 字典必须含非空键 ${key}`);
+    assert.ok((en as Record<string, string>)[key]?.length, `en 字典必须含非空键 ${key}`);
+  }
+
+  // UI 源码：三键全部渲染（开关选择器 + 两个数值输入 + i18n 引用）
+  const uiCode = readFileSync(join(pkgDir, "src/client/MemoryCenter.tsx"), "utf8");
+  assert.ok(uiCode.includes("enableSmartPreInjection"), "UI 必须绑定 enableSmartPreInjection");
+  assert.ok(uiCode.includes("preInjectionThreshold"), "UI 必须绑定 preInjectionThreshold");
+  assert.ok(uiCode.includes("preInjectionLimit"), "UI 必须绑定 preInjectionLimit");
+  assert.ok(uiCode.includes('msg("smartPreInjection")'), "开关标签必须走 i18n");
+  assert.ok(uiCode.includes('msg("preInjectionThreshold")'), "阈值标签必须走 i18n");
+  assert.ok(uiCode.includes('msg("preInjectionLimit")'), "条数标签必须走 i18n");
+  assert.ok(uiCode.includes("data.config.enableSmartPreInjection ?? true"), "fetchConfig 必须为开关提供默认兜底");
+  assert.ok(uiCode.includes("data.config.preInjectionThreshold ?? 0.6"), "fetchConfig 必须为阈值提供默认兜底");
+  assert.ok(uiCode.includes("data.config.preInjectionLimit ?? 3"), "fetchConfig 必须为条数提供默认兜底");
+  // 硬编码中文纪律：新增 UI 代码不得引入中文字面量
+  const codeWithoutComments = uiCode.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+  assert.equal(codeWithoutComments.match(/[\u4e00-\u9fa5]/g), null, "MemoryCenter.tsx 不得出现硬编码中文");
+});
+
 console.log(`\n全部 ${testsRun} 项冒烟测试顺利通过！`);
