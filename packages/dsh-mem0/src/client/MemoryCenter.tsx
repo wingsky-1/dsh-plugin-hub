@@ -64,6 +64,12 @@ interface ConfigData {
   retrievalTopK: number;
   customInstructions: string;
   enablePromptDiscipline: boolean;
+  /** #581：会话首轮智能预检索注入总开关。 */
+  enableSmartPreInjection: boolean;
+  /** #581：预检索注入相似度阈值（0~1）。 */
+  preInjectionThreshold: number;
+  /** #581：预检索注入条数上限（1~10）。 */
+  preInjectionLimit: number;
   pythonBin: string;
 }
 
@@ -169,6 +175,9 @@ export function MemoryCenter() {
     retrievalTopK: 5,
     customInstructions: "",
     enablePromptDiscipline: true,
+    enableSmartPreInjection: true,
+    preInjectionThreshold: 0.6,
+    preInjectionLimit: 3,
     pythonBin: "python3",
   });
   // #612：脏检测基准（config 首次稳定后记录快照）
@@ -268,6 +277,9 @@ export function MemoryCenter() {
             llmDshModel: data.config.llmDshModel ?? "deepseek-chat",
             embedderMode: data.config.embedderMode ?? "local",
             embeddingDims: data.config.embeddingDims ?? 512,
+            enableSmartPreInjection: data.config.enableSmartPreInjection ?? true,
+            preInjectionThreshold: data.config.preInjectionThreshold ?? 0.6,
+            preInjectionLimit: data.config.preInjectionLimit ?? 3,
           }));
         }
       }
@@ -1199,6 +1211,53 @@ export function MemoryCenter() {
                   onChange={(e: ChangeEvent<HTMLInputElement>) => setConfig({ ...config, pythonBin: e.target.value })}
                 />
               </div>
+            </div>
+            {/* #581：会话首轮智能预检索注入（开关 + 阈值 + 条数上限） */}
+            <div className="dsh-mem0-grid" style={{ marginTop: 12 }}>
+              <div className="dsh-mem0-field">
+                <label>{msg("smartPreInjection")}</label>
+                <select
+                  className="dsh-mem0-input"
+                  value={config.enableSmartPreInjection === false ? "off" : "on"}
+                  onChange={(e: ChangeEvent<HTMLSelectElement>) => setConfig({ ...config, enableSmartPreInjection: e.target.value !== "off" })}
+                >
+                  <option value="on">{msg("smartPreInjectionOn")}</option>
+                  <option value="off">{msg("smartPreInjectionOff")}</option>
+                </select>
+              </div>
+              <div className="dsh-mem0-field">
+                <label>{msg("preInjectionThreshold")}</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  className="dsh-mem0-input"
+                  value={config.preInjectionThreshold}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                    const v = parseFloat(e.target.value);
+                    setConfig({ ...config, preInjectionThreshold: Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0.6 });
+                  }}
+                />
+              </div>
+              <div className="dsh-mem0-field">
+                <label>{msg("preInjectionLimit")}</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="10"
+                  step="1"
+                  className="dsh-mem0-input"
+                  value={config.preInjectionLimit}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                    const v = parseInt(e.target.value, 10);
+                    setConfig({ ...config, preInjectionLimit: Number.isFinite(v) ? Math.min(10, Math.max(1, v)) : 3 });
+                  }}
+                />
+              </div>
+            </div>
+            <div className="dsh-mem0-model-tip" style={{ marginTop: 8 }}>
+              {msg("smartPreInjectionHint")}
             </div>
             <div className="dsh-mem0-field" style={{ marginTop: 12 }}>
               <label>{msg("customInstructions")}</label>
