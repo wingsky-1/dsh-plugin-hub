@@ -87,12 +87,12 @@ export { reportBodyToHtml } from "./report/format.ts";
 export { DEFAULT_DAILY_PROMPT, DEFAULT_WEEKLY_PROMPT, DEFAULT_MONTHLY_PROMPT, DEFAULT_PROMPTS, LEGACY_PROMPT_TEMPLATE, LEGACY_DAILY_PROMPT_V1, LEGACY_WEEKLY_PROMPT_V1, LEGACY_MONTHLY_PROMPT_V1, LEGACY_DAILY_PROMPT_V2, LEGACY_WEEKLY_PROMPT_V2, LEGACY_MONTHLY_PROMPT_V2, promptFor } from "./report/config.ts";
 export type { ReportPrompts } from "./report/config.ts";
 export type { ReportMeta, ReportResult, ReportStatsSnapshot, ReportLlmService, ReportTokenUsage } from "./report/generate.ts";
-export { ReportScheduler, readLastRun, writeLastRun, ensureLastRunMigrated } from "./report/scheduler.ts";
+export { ReportScheduler, readLastRun, writeLastRun, updateLastRun, ensureLastRunMigrated, __lastRunChainForTests } from "./report/scheduler.ts";
 // #625/#626 任务队列（手动生成与定时共用执行入口）
 export { ReportTaskQueue } from "./report/tasks.ts";
 export type { ReportTask, ReportTaskInput, ReportTaskResult, ReportTaskStatus } from "./report/tasks.ts";
 // 读侧投影（#626：一行/窗口=最新版）与公共解析
-export { readReportIndex, parseReportIndexLines } from "./report/runner.ts";
+export { readReportIndex, parseReportIndexLines, __clearReportIndexCacheForTests, __reportIndexCacheStatsForTests } from "./report/runner.ts";
 // 路径解析纯函数透出（供测试与调用方复用同一展开/解析规则，无行为变更）
 export { resolvePath, pluginHome, expandHomePath } from "./path-resolve.ts";
 // 配置归一化（#276 方案 A 阶段 3 拆出：默认值 / schemastery schema / normalizeConfig）
@@ -133,3 +133,5 @@ export { userAdaptersFile, adapterStateFile, parseUserAdapters, readUserAdapters
 export type { UserAdapterRecord } from "./user-adapters.ts";
 // 插件契约转发（apply 主流程 + 路由表实现于 apply.ts）
 export { apply, ROUTES } from "./apply.ts";
+// 路由 handler 直出（#629 P2：status 响应 reused 透传的单元断言面）
+export { handleReportStatus } from "./routes/reports.ts";

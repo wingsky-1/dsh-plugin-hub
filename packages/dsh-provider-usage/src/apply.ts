@@ -42,7 +42,7 @@ import { loadUserAdapterChecked } from "./user-adapter-loader.ts";
 import { StatsService } from "./stats-service.ts";
 import { TrendTracker } from "./trend/index.ts";
 import { readReportConfig, type ReportConfig } from "./report/config.ts";
-import { ReportScheduler, readLastRun, writeLastRun } from "./report/scheduler.ts";
+import { ReportScheduler, updateLastRun } from "./report/scheduler.ts";
 import { optionalNotifier, readReportIndex, runDueReport } from "./report/runner.ts";
 import { ReportTaskQueue } from "./report/tasks.ts";
 import { createStatsRoutes } from "./routes/stats.ts";
@@ -309,9 +309,8 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
           if (existing !== undefined) return { meta: existing, reused: true };
         }
         const meta = await runDueReport({ due: input, trend, ctx, reportCfg, historyRoot, sanitizeDiagnostic });
-        const lastRun = await readLastRun(historyRoot);
-        lastRun[meta.period] = meta.key;
-        await writeLastRun(historyRoot, lastRun);
+        // #629 P2：lastRun 推进走单一临界区（写前重读），不与保存配置路径互踩字段
+        await updateLastRun(historyRoot, (cur) => ({ ...cur, [meta.period]: meta.key }));
         return { meta };
       } catch (e: unknown) {
         // 任务 failed 的 error 会经 status 路由回客户端：脱敏后再抛，防本地路径泄露
