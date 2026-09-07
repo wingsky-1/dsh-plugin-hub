@@ -43,6 +43,44 @@ export async function writeLastRun(root: string, state: Partial<Record<ReportPer
 }
 
 /**
+ * #629 P2 lastRun 单一临界区：读-改-写按 root 串行（per-root promise 链）+ 写前重读。
+ *
+ * lost-update 窗口（原问题）：保存配置路径（handleReportConfig 的 preset 写）与任务
+ * 执行器写 lastRun（apply 层 executor）都是「readLastRun → 改 → writeLastRun」全量
+ * 写，两个 async 交错时后写者以旧快照覆盖前写者的字段（如保存配置预置 weekly 键时
+ * 抹掉任务刚推进的 daily 键）。修复形态：所有 lastRun 的 read-modify-write 统一收敛
+ * 到本函数——patch 只在临界区内、基于**链上最新**的文件快照计算（写前重读），同一
+ * root 的更新按提交序串行落盘，任何一方都不会拿过期快照覆盖他人字段。
+ *
+ * - 并发方仍可绕过本函数直写（writeLastRun 保留原语义），进程内已知写方已全部
+ *   接线到 updateLastRun；跨进程（多实例）由 DSH_HOME/profile 隔离天然不共享文件；
+ * - patch 抛错 → 该次更新不落盘且不阻塞链上后续更新（错误向调用方透传）；
+ * - 测试钩子：__lastRunChainForTests 暴露 per-root 链尾，用例 await 之即可确定性
+ *   收敛（替代 sleep 等待）。
+ */
+const lastRunChainByRoot = new Map<string, Promise<void>>();
+
+export function updateLastRun(
+  root: string,
+  patch: (prev: Partial<Record<ReportPeriod, string>>) => Partial<Record<ReportPeriod, string>>,
+): Promise<void> {
+  const prev = lastRunChainByRoot.get(root) ?? Promise.resolve();
+  const run = async (): Promise<void> => {
+    const cur = await readLastRun(root); // 写前重读：链上最新快照，非调用时刻旧快照
+    await writeLastRun(root, patch(cur));
+  };
+  const next = prev.then(run, run);
+  const tail = next.then(() => undefined, () => undefined);
+  lastRunChainByRoot.set(root, tail);
+  return next;
+}
+
+/** 测试隔离钩子：返回指定 root 的临界区链尾（await 确定收敛），无在途更新时 undefined。 */
+export function __lastRunChainForTests(root: string): Promise<void> | undefined {
+  return lastRunChainByRoot.get(root);
+}
+
+/**
  * 启动时 lastRun 一致性保证（#624）：
  * - schema 缺失/旧（<2）：全量重算（deriveLastRun）——一次性迁移，修复旧语义
  *   「当天」污染键（周一 06:00 吞日报的根因）；
