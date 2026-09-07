@@ -29,6 +29,7 @@ Pre-retrieval behavioral constraints:
 
 - **Exactly one attempt per session**: regardless of success, empty result, or degraded failure, no repeated retrieval within the same session; benefits of service recovery apply from the next new session.
 - **Three silent degradations**: service not ready, search error, or search timeout (bounded, 3s by default) — no text injected, no retry, no exception bubbled to the session step; the first reply is generated as usual.
+- **Degradation under high load**: A timed-out search does not cancel the underlying request (the orphan request finishes on the server side and is discarded); when multiple sessions start their first turn concurrently, pre-injection searches may queue on the same Python service and raise the timeout rate — in that case injection is silently skipped and never blocks the first reply.
 - **Never disguised as user input**: injected messages carry a plugin source (`kind: "plugin", plugin: "mem0"`) and are physically separated from real user input.
 
 ## Security Model
