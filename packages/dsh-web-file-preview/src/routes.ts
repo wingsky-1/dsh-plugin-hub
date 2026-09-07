@@ -779,13 +779,8 @@ export async function serveMermaidRoute(res: ServerResponse, req: IncomingMessag
   }
 }
 
-/**
- * 组装全部按 loopback 围栏守护的路由（file + diff + health + mermaid）。
- * @param cfg - 配置。
- * @returns 可注册进 ctx.webServer 的路由数组。
- */
-export function makeRoutes(cfg: PreviewConfig): WebRoute[] {
-  const fileRoute: WebRoute = {
+function makeFileRoute(cfg: PreviewConfig): WebRoute {
+  return {
     kind: "exact",
     path: ROUTES.file,
     handler: (req: IncomingMessage, res: ServerResponse): Promise<void> | void => {
@@ -794,7 +789,10 @@ export function makeRoutes(cfg: PreviewConfig): WebRoute[] {
       return serveFileRoute(res, req, url, cfg);
     },
   };
-  const healthRoute: WebRoute = {
+}
+
+function makeHealthRoute(): WebRoute {
+  return {
     kind: "exact",
     path: ROUTES.health,
     handler: (req: IncomingMessage, res: ServerResponse): void => {
@@ -802,7 +800,10 @@ export function makeRoutes(cfg: PreviewConfig): WebRoute[] {
       writeJson(res, 200, { ok: true, plugin: "dsh-web-file-preview" });
     },
   };
-  const diffRoute: WebRoute = {
+}
+
+function makeDiffRoute(): WebRoute {
+  return {
     kind: "exact",
     path: ROUTES.diff,
     // async：diff 计算（execFile）不阻塞服务事件循环（评审 C3）；try/catch 兜底防
@@ -824,9 +825,12 @@ export function makeRoutes(cfg: PreviewConfig): WebRoute[] {
       }
     },
   };
+}
+
+function makeMermaidRoute(): WebRoute {
   // Mermaid 懒加载 chunk（issue #104）：无用户输入路径的静态资产端点，
   // 围栏语义与 file/diff 完全一致（非回环 403 / 方法非 GET 405）。
-  const mermaidRoute: WebRoute = {
+  return {
     kind: "exact",
     path: ROUTES.mermaid,
     handler: (req: IncomingMessage, res: ServerResponse): Promise<void> | void => {
@@ -834,8 +838,11 @@ export function makeRoutes(cfg: PreviewConfig): WebRoute[] {
       return serveMermaidRoute(res, req);
     },
   };
+}
+
+function makeAllocRoute(cfg: PreviewConfig): WebRoute {
   // issue #73：serve token 分配（exact）。
-  const allocRoute: WebRoute = {
+  return {
     kind: "exact",
     path: ROUTES.alloc,
     handler: (req: IncomingMessage, res: ServerResponse): Promise<void> | void => {
@@ -843,6 +850,9 @@ export function makeRoutes(cfg: PreviewConfig): WebRoute[] {
       return allocServeToken(res, new URL(req.url ?? "/", "http://localhost"), cfg);
     },
   };
+}
+
+function makeServeRoute(cfg: PreviewConfig): WebRoute {
   // issue #73：HTML 虚拟静态伺服（prefix：/serve/<token>/ 下任意子路径均被接管，A1）。
   // #549（围栏放宽）：serve 路由独有安全语义变更——sandbox iframe（无
   // allow-same-origin，opaque origin）内相对路径子资源请求（css/js/img）一律呈
@@ -850,7 +860,7 @@ export function makeRoutes(cfg: PreviewConfig): WebRoute[] {
   // 经 guardLoopbackMethod 透传 `{ allowCrossSiteNoCors: true }` **仅放行显式
   // no-cors 的标签型子资源**；cors fetch/XHR、navigate（顶层导航）与其余所有
   // 路由仍默认拒绝跨站（语义见 shared/loopback.js）。
-  const serveRoute: WebRoute = {
+  return {
     kind: "prefix",
     path: ROUTES.serve,
     handler: (req: IncomingMessage, res: ServerResponse): Promise<void> | void => {
@@ -858,8 +868,11 @@ export function makeRoutes(cfg: PreviewConfig): WebRoute[] {
       return serveTokenRoute(res, req, new URL(req.url ?? "/", "http://localhost"), cfg);
     },
   };
+}
+
+function makeReleaseRoute(): WebRoute {
   // issue #73：serve token 显式释放（exact，幂等）。
-  const releaseRoute: WebRoute = {
+  return {
     kind: "exact",
     path: ROUTES.release,
     handler: (req: IncomingMessage, res: ServerResponse): void => {
@@ -867,5 +880,21 @@ export function makeRoutes(cfg: PreviewConfig): WebRoute[] {
       releaseServeToken(res, new URL(req.url ?? "/", "http://localhost"));
     },
   };
-  return [fileRoute, diffRoute, healthRoute, mermaidRoute, allocRoute, serveRoute, releaseRoute];
+}
+
+/**
+ * 组装全部按 loopback 围栏守护的路由（file + diff + health + mermaid）。
+ * @param cfg - 配置。
+ * @returns 可注册进 ctx.webServer 的路由数组。
+ */
+export function makeRoutes(cfg: PreviewConfig): WebRoute[] {
+  return [
+    makeFileRoute(cfg),
+    makeDiffRoute(),
+    makeHealthRoute(),
+    makeMermaidRoute(),
+    makeAllocRoute(cfg),
+    makeServeRoute(cfg),
+    makeReleaseRoute(),
+  ];
 }
