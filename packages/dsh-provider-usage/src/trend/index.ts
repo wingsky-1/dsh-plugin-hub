@@ -25,6 +25,12 @@ export interface TrendTrackerOptions {
   now?: () => number;
   /** 诊断出口（默认 console.warn）。 */
   warn?: (msg: string) => void;
+  /**
+   * 目录归属解析器（#633 A1 官方契约接入，可选）：输入 session id，返回 cwd 原始值
+   * 或 undefined（store 无该 session / header.cwd 缺失）。抛错由 collector 捕获归
+   * 未识别桶；缺省 = 不接 store（纯离线/测试），目录恒归未识别桶。
+   */
+  resolveCwd?: (session: string) => string | undefined;
 }
 
 export class TrendTracker {
@@ -46,6 +52,7 @@ export class TrendTracker {
       flushDebounceMs: number;
       now: () => number;
       warn: (msg: string) => void;
+      resolveCwd?: (session: string) => string | undefined;
     },
     store: TrendStore,
   ) {
@@ -57,6 +64,7 @@ export class TrendTracker {
     this.aggregator = new TrendAggregator();
     this.collector = new TrendCollector({
       now: resolved.now,
+      resolveCwd: resolved.resolveCwd, // #633 A1：目录归属透传（collector 侧 per-session 惰性单查）
       emit: (e) => {
         this.aggregator.apply(e);
         this.markDirty();
@@ -73,6 +81,7 @@ export class TrendTracker {
       flushDebounceMs: opts.flushDebounceMs ?? 4000,
       now: opts.now ?? Date.now,
       warn: opts.warn ?? ((msg: string) => console.warn(`[dsh-provider-usage] trend: ${msg}`)),
+      resolveCwd: opts.resolveCwd,
     };
     const tracker = new TrendTracker(resolved, new TrendStore({ root: opts.root, warn: resolved.warn }));
     await tracker.rebuildFromDisk();

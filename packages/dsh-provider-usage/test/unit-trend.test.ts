@@ -930,6 +930,116 @@ function writeAggShardLine(row) {
   assert.equal(normalizeConfig({ trendRetentionDays: 30 }).trendRetentionDays, 30, "合法透传");
 }
 
+// ---------------------------------------------------------------- #633 A1 补全：dir 落盘映射与 resolveCwd 契约接线
+
+{
+  // A1(a)：per-session 惰性单查——同 session 多次 emit 事件（call 定稿/校正/counter/
+  // 新 turn call），resolveCwd 恰查询 1 次（结果缓存进会话状态）
+  const root = mkdtempSync(join(tmpdir(), "dou-trend-dir-once-"));
+  const cwdCalls = [];
+  const tracker = await TrendTracker.start({
+    root,
+    now: () => T0,
+    flushDebounceMs: 60000,
+    resolveCwd: (session) => {
+      cwdCalls.push(session);
+      return "/home/u/project-a";
+    },
+  });
+  tracker.handleEvent({ id: "s1" }, ev("request/header", HEADER(), T0, 1));
+  tracker.handleEvent({ id: "s1" }, ev("assistant/chunk", USAGE(10, 5), T0, 2)); // call 定稿（首次查询）
+  tracker.handleEvent({ id: "s1" }, ev("assistant/chunk", USAGE(11, 6), T0, 3)); // 同 fold 校正
+  tracker.handleEvent({ id: "s1" }, ev("tool/call", { turn: 1, step: 1, callId: "c", name: "bash", arguments: "{}" }, T0, 4)); // counter
+  tracker.handleEvent({ id: "s1" }, ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T0, 5)); // counter
+  tracker.handleEvent({ id: "s1" }, ev("request/header", HEADER(), T0, 6));
+  tracker.handleEvent({ id: "s1" }, ev("assistant/chunk", { turn: 2, step: 1, chunk: { type: "usage", usage: { inputTokens: 3, outputTokens: 3 } } }, T0, 7)); // 新 turn call
+  await tracker.flushNow();
+  assert.deepEqual(cwdCalls, ["s1"], "同 session 多次 emit 事件，resolveCwd 恰查询 1 次");
+  assert.equal(tracker.stats().unpersistedRows, 0, "事件正常入账（2 call + 2 counter）");
+  await tracker.dispose();
+}
+
+{
+  // A1(b)：resolveCwd 返回 undefined（store 无该 session / cwd 缺失）或抛错 →
+  // 归 TREND_UNIDENTIFIED 且各自仅查询 1 次（未识别结果同样缓存，防重复查询）
+  const root = mkdtempSync(join(tmpdir(), "dou-trend-dir-miss-"));
+  const counts = { s1: 0, s2: 0 };
+  const tracker = await TrendTracker.start({
+    root,
+    now: () => T0,
+    flushDebounceMs: 60000,
+    resolveCwd: (session) => {
+      counts[session] = (counts[session] ?? 0) + 1;
+      if (session === "s1") return undefined;
+      throw new Error("boom");
+    },
+  });
+  tracker.handleEvent({ id: "s1" }, ev("request/header", HEADER(), T0, 1));
+  tracker.handleEvent({ id: "s1" }, ev("assistant/chunk", USAGE(10, 5), T0, 2));
+  tracker.handleEvent({ id: "s1" }, ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T0, 3));
+  tracker.handleEvent({ id: "s2" }, ev("request/header", HEADER(), T0, 4));
+  tracker.handleEvent({ id: "s2" }, ev("assistant/chunk", USAGE(7, 7), T0, 5));
+  tracker.handleEvent({ id: "s2" }, ev("tool/call", { turn: 1, step: 1, callId: "c", name: "bash", arguments: "{}" }, T0, 6));
+  await tracker.flushNow();
+  assert.equal(counts.s1, 1, "undefined 路径仅查询 1 次");
+  assert.equal(counts.s2, 1, "抛错路径仅查询 1 次");
+  const rows = readFileSync(join(root, "details", `${dayKey(T0)}.jsonl`), "utf8").trimEnd().split("\n").map((l) => JSON.parse(l));
+  assert.equal(rows.find((r) => r.kind === "detail" && r.session === "s1").dir, TREND_UNIDENTIFIED, "undefined → 未识别桶");
+  assert.equal(rows.find((r) => r.kind === "detail" && r.session === "s2").dir, TREND_UNIDENTIFIED, "抛错 → 未识别桶");
+  await tracker.dispose();
+}
+
+{
+  // A1(c)：resolveCwd 返回含路径分隔符/尾斜杠的 cwd → 落盘为 sanitizeDirName
+  // 净化后的 basename（数据层即存净化值，B1 可区分性约定）
+  const root = mkdtempSync(join(tmpdir(), "dou-trend-dir-sanitize-"));
+  const tracker = await TrendTracker.start({
+    root,
+    now: () => T0,
+    flushDebounceMs: 60000,
+    resolveCwd: () => "/home/u/my proj/v2/",
+  });
+  tracker.handleEvent({ id: "s1" }, ev("request/header", HEADER(), T0, 1));
+  tracker.handleEvent({ id: "s1" }, ev("assistant/chunk", USAGE(10, 5), T0, 2));
+  tracker.handleEvent({ id: "s1" }, ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T0, 3));
+  await tracker.flushNow();
+  const rows = readFileSync(join(root, "details", `${dayKey(T0)}.jsonl`), "utf8").trimEnd().split("\n").map((l) => JSON.parse(l));
+  const detail = rows.find((r) => r.kind === "detail");
+  const counter = rows.find((r) => r.kind === "counter");
+  assert.equal(detail.dir, "v2", "detail 行 dir = basename 净化值（尾斜杠剥除取末段）");
+  assert.equal(counter.dir, "v2", "counter 行 dir 同口径");
+  assert.ok(!detail.dir.includes("/"), "落盘 dir 不含路径分隔符");
+  await tracker.dispose();
+}
+
+{
+  // A1(d)：落盘 detail/counter 行均含 dir 字段且值正确（多 session 各自归属不串桶）
+  const root = mkdtempSync(join(tmpdir(), "dou-trend-dir-persist-"));
+  const tracker = await TrendTracker.start({
+    root,
+    now: () => T0,
+    flushDebounceMs: 60000,
+    resolveCwd: (session) => (session === "s1" ? "/home/u/alpha" : "/home/u/beta"),
+  });
+  tracker.handleEvent({ id: "s1" }, ev("request/header", HEADER(), T0, 1));
+  tracker.handleEvent({ id: "s1" }, ev("assistant/chunk", USAGE(10, 5), T0, 2));
+  tracker.handleEvent({ id: "s1" }, ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T0, 3));
+  tracker.handleEvent({ id: "s2" }, ev("request/header", HEADER(), T0, 4));
+  tracker.handleEvent({ id: "s2" }, ev("assistant/chunk", USAGE(7, 7), T0, 5));
+  tracker.handleEvent({ id: "s2" }, ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T0, 6));
+  await tracker.flushNow();
+  const rows = readFileSync(join(root, "details", `${dayKey(T0)}.jsonl`), "utf8").trimEnd().split("\n").map((l) => JSON.parse(l));
+  const dS1 = rows.find((r) => r.kind === "detail" && r.session === "s1");
+  const dS2 = rows.find((r) => r.kind === "detail" && r.session === "s2");
+  const cS1 = rows.find((r) => r.kind === "counter" && r.session === "s1");
+  const cS2 = rows.find((r) => r.kind === "counter" && r.session === "s2");
+  assert.equal(dS1.dir, "alpha", "s1 detail 行 dir=alpha");
+  assert.equal(dS2.dir, "beta", "s2 detail 行 dir=beta（多 session 不串桶）");
+  assert.equal(cS1.dir, "alpha", "s1 counter 行 dir=alpha");
+  assert.equal(cS2.dir, "beta", "s2 counter 行 dir=beta");
+  await tracker.dispose();
+}
+
 assert.equal(sumToken(null, 5), 5, "sumToken null+数字");
 assert.equal(sumToken(null, null), null, "sumToken null+null");
 console.log("unit-trend: all assertions passed");

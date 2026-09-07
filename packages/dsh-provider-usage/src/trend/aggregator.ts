@@ -120,6 +120,7 @@ export class TrendAggregator {
       retry: r.retry,
       provider: r.provider,
       model: r.model,
+      dir: r.dir, // #633 A1：目录归属落盘（collector.dirOf 已保证 sanitize 后 basename 或未识别桶，不重复净化）
       input: r.tokens?.input ?? null,
       output: r.tokens?.output ?? null,
       cacheRead: r.tokens?.cacheRead ?? null,
@@ -174,6 +175,7 @@ export class TrendAggregator {
       session: r.session,
       provider: r.provider,
       model: r.model,
+      dir: r.dir, // #633 A1：目录归属落盘（同 detail 行约定）
       turns: r.turns,
       toolCalls: r.toolCalls,
     };
