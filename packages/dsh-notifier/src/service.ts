@@ -336,7 +336,11 @@ export function createNotifierService(deps: NotifierServiceDeps): NotifierServic
       });
       return;
     }
-    // 只响不弹：声音非静音才会进投递集合；发 play-only 帧（客户端不弹实体）
+    // 只响不弹：声音非静音才会进投递集合；发 play-only 帧（客户端不弹实体）。
+    // true（跟随系统默认）在此场景没有可依赖的「OS 弹窗发声」——弹窗关 = 无
+    // 通知实体 = OS 不会发声，故编码为 selfplay + tone:undefined（客户端默认
+    // 旋律），与 system 通道 pop=false + true 的「默认事件音自播」语义对齐
+    // （复核 P1-1：原 mode:"system" 会让客户端既不弹也不播 → 纯静默误导）。
     sse.broadcast({
       type: "notify",
       kind: payload.kind,
@@ -344,7 +348,7 @@ export function createNotifierService(deps: NotifierServiceDeps): NotifierServic
       message: payload.body,
       ts: payload.ts,
       playOnly: true,
-      sound: { mode: sound === true ? "system" : "selfplay", tone: typeof sound === "string" ? sound : undefined },
+      sound: { mode: "selfplay", tone: typeof sound === "string" ? sound : undefined },
     });
   }
 
@@ -353,16 +357,13 @@ export function createNotifierService(deps: NotifierServiceDeps): NotifierServic
     const cfg = current();
     const pop = cfg.systemNotify === true;
     const sound = resolveSoundSetting(cfg, "system");
-    // 声音 false 时频道不会进投递集合；此处统一走 system.notify 决议终态
-    // （SystemNotifier resolve false = 失败 → deliver promise 拒收路径；终态见 B4）
-    return system.notify(pop, sound, payload.title, payload.body).then(
-      (ok) => {
-        if (!ok) throw new Error("system notification failed (self-play or command error)");
-      },
-      () => {
-        // 防御：notify 绝不应 reject；万一 reject 按失败吞掉（不向上抛）
-      },
-    );
+    // 声音 false 时频道不会进投递集合；此处统一走 system.notify 决议终态。
+    // notify resolve false（自播失败/命令失败）→ throw → promise reject →
+    // deliver 的 emitFail（B4 异步终态 failed）。reject 不在此吞掉（复核 P2-1：
+    // onRejected 返回 undefined 会让 promise resolve → 误走 emitOk 成功上报）。
+    return system.notify(pop, sound, payload.title, payload.body).then((ok) => {
+      if (!ok) throw new Error("system notification failed (self-play or command error)");
+    });
   }
 
   /** 内置 browser 频道：包一层 SSE hub（帧契约 {type,kind,title,message,ts,seq} 不变，

@@ -561,6 +561,13 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
     var selfPlay = frame.mode === "selfplay";
     var silent = frame.mode === "silent" || selfPlay;
     var tone = typeof frame.tone === "string" ? frame.tone : undefined;
+    // 只响不弹 + mode:"system"（旧服务端/升级窗口残留帧）：无弹窗实体 = OS 不会
+    // 发声，归一为自播默认旋律（复核 P1-1 防御侧——服务端已改为编 selfplay，
+    // 此处兜底旧帧防「0 弹 0 播纯静默」）
+    if (opts.playOnly === true && frame.mode === "system") {
+      selfPlay = true;
+      silent = true;
+    }
     // 多标签去重：弹实体与只响不弹自播一律先过主标签租约（C2/P0-1），副标签静默
     if (!claimMaster()) return;
     if (!opts.playOnly && systemNotificationUsable()) {

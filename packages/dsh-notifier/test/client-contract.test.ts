@@ -791,3 +791,81 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   for (const d of disposers.splice(0)) d();
   console.log("#640/#641 vm 帧级 sound 决策面: OK");
 }
+
+// ---- 复核 P1-1：playOnly + mode:"selfplay" 帧 → 客户端真实自播（振荡器启动计数）----
+// 回归「弹窗关 + browserSound=true 纯静默断链」：帧 sound 必须驱动 playTone，
+// 且 mode 为 selfplay 时即使 tone undefined 也播默认旋律（旧 playChime 双音）。
+{
+  const clientCode = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+  const byType = new Map();
+  const listeners = {
+    addEventListener(type, fn) { let s = byType.get(type); if (!s) { s = new Set(); byType.set(type, s); } s.add(fn); },
+    removeEventListener(type, fn) { const s = byType.get(type); if (s) s.delete(fn); },
+  };
+  const documentStub = {
+    ...listeners,
+    visibilityState: "visible",
+    title: "",
+    hidden: false,
+    getElementById: () => null,
+    createElement: (tag) => {
+      if (tag === "style") return { id: "", textContent: "", dataset: {}, remove() {} };
+      return { appendChild() {}, remove() {}, style: {}, dataset: {} };
+    },
+    head: { appendChild() {} },
+    body: { appendChild() {} },
+  };
+  const sources = [];
+  let oscStarts = 0;
+  // AudioContext stub：解锁后 running；振荡器 start() 计数（真实自播证据）
+  class AudioCtxStub {
+    constructor() { this.state = "suspended"; this.currentTime = 0; }
+    resume() { this.state = "running"; }
+    createBuffer() { return {}; }
+    createBufferSource() { return { buffer: null, connect() {}, start() { oscStarts += 1; } }; }
+    createOscillator() { return { type: "", frequency: { value: 0 }, connect() {}, start() { oscStarts += 1; }, stop() {} }; }
+    createGain() { return { gain: { setValueAtTime() {}, exponentialRampToValueAtTime() {} }, connect() {} }; }
+  }
+  const sandbox = {
+    console: { ...console, warn: () => {} },
+    Symbol, Object, Array, JSON, Math, Date, Promise,
+    setTimeout, clearTimeout,
+    EventSource: class { constructor() { this.onmessage = null; this.onerror = null; sources.push(this); } close() {} },
+    Notification: Object.assign(function () { this.close = () => {}; }, { permission: "granted" }),
+    AudioContext: AudioCtxStub,
+    webkitAudioContext: undefined,
+    fetch: () => Promise.resolve({ ok: true, json: () => Promise.resolve({}) }),
+    document: documentStub,
+    localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+  };
+  sandbox.window = sandbox;
+  sandbox.isSecureContext = true;
+  let loadedFactory = null;
+  sandbox.window.__ModuleLoader__ = { load(handoff) { loadedFactory = handoff.factory; } };
+  vm.createContext(sandbox);
+  vm.runInContext(clientCode, sandbox);
+  const mod = loadedFactory((spec) => {
+    if (spec === "react") return { createElement: () => ({}) };
+    throw new Error(`unexpected require: ${spec}`);
+  });
+  const disposers = [];
+  mod.apply({
+    get() { return undefined; },
+    effect(fn) { const d = fn(); disposers.push(d); return d; },
+  });
+  const activeSource = sources[sources.length - 1];
+  // 先模拟用户手势解锁（首次点击 unlockAudio）
+  for (const fn of byType.get("click") || []) fn();
+  let seq = 0;
+  const deliver = (payload) => { seq += 1; activeSource.onmessage({ data: JSON.stringify({ type: "notify", seq, ...payload }) }); };
+  // 页面 visible + 连发两个只响不弹帧（selfplay 新帧 + 旧服务端 system 残留帧）：
+  // 不弹实体（playOnly 豁免可见性）+ 至少一次默认旋律自播（1.5s 节流合并连发为
+  // 一次播放属预期；旧 bug 形态两帧皆 0 播 → 断言失败即抓住断链）
+  deliver({ kind: "done", title: "T", message: "m", playOnly: true, sound: { mode: "selfplay", tone: undefined } });
+  deliver({ kind: "done", title: "T", message: "m", playOnly: true, sound: { mode: "system", tone: undefined } });
+  assert.ok(oscStarts > 0, "P1-1：playOnly 帧（selfplay 新帧/旧 system 残留帧）驱动振荡器自播（默认旋律）");
+  // 对照：playOnly 帧不弹系统通知实体（无实体降级展示 → 标题不闪烁）
+  assert.equal(documentStub.title, "", "P1-1：playOnly 帧不触发标题闪烁（无实体降级展示）");
+  for (const d of disposers.splice(0)) d();
+  console.log("P1-1 vm playOnly 帧自播（振荡器计数）回归: OK");
+}

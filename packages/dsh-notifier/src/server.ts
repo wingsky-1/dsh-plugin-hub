@@ -133,8 +133,6 @@ export interface SystemNotifier {
    *   宿主）。节流吞掉（1s 窗口内重复投递）透传上一次决议语义。
    */
   notify(pop: boolean, tone: SoundSetting, title: string, message: string): Promise<boolean>;
-  /** 当前是否有自播能力（音色播放器/文件探测结果；health/测试反馈用）。 */
-  selfPlayAvailable(): boolean;
 }
 
 /** 系统通知节流吞掉时透传的「上一次决议」初值（首投递无上一次 = 视为可成功）。 */
@@ -142,16 +140,14 @@ let lastSystemOutcome = true;
 
 /**
  * 创建系统通知通道。
- * @param options.resolveTone 每次投递时解析系统声音设置（PUT /config 后立即生效）。
  * @param options.toastScript toast.ps1 路径。
  * @param options.warn 日志出口（ctx.logger.warn）。
  */
 export function createSystemNotifier(options: {
-  resolveTone: () => SoundSetting;
   toastScript: string;
   warn: (message: string) => void;
 }): SystemNotifier {
-  const { resolveTone, toastScript, warn } = options;
+  const { toastScript, warn } = options;
 
   /** 系统通知节流间隔：防连发（生产密集事件/连点测试按钮）造成 spawn 风暴。 */
   const SYSTEM_NOTIFY_THROTTLE_MS = 1000;
@@ -239,15 +235,6 @@ export function createSystemNotifier(options: {
   }
 
   /**
-   * 单次投递（节流窗口内调用方保证唯一）：
-   * 1. 构造 toast 命令（声音策略经 message.ts 纯函数）——不可用/命令 null → 仅自播/静默；
-   * 2. toast spawn（若有）；
-   * 3. 自播：pop=false（只响不弹）或 Linux/Windows/macOS 音色映射需自播时
-   *    spawn 播放命令（同一节流窗口内——1s 节流覆盖单次投递全部 spawn，B3）。
-   * 自播失败只影响声音，不把 toast 的 ok 拖成 failed（P1-2：自播与 toast
-   * 可用性分离）；「只响不弹」时自播失败即整体失败（异步终态 failed 上报）。
-   */
-  /**
    * 平台 × 声音 × 弹窗的自播判定（与 message.ts 命令构造同域）：
    * - linux：任何非静音（true/SoundId）都自播（DE 对 hint 支持参差，toast 发声
    *   不可依赖，#640 核心）；弹窗开也一样（suppress-sound 防双响）。
@@ -265,6 +252,18 @@ export function createSystemNotifier(options: {
     return false;
   }
 
+  /**
+   * 单次投递（节流窗口内调用方保证唯一）：
+   * 1. pop=true → 构造并 spawn toast 命令（声音策略经 message.ts 纯函数；
+   *    spawn 失败只 warn 不翻转终态——旧契约「系统通知失败静默、仅日志、不
+   *    影响主流程」：无桌面会话/无 notify-send 是常态环境而非投递失败）；
+   * 2. 自播（shouldSelfPlay 判定）：Linux/Windows/macOS 音色或只响不弹场景
+   *    spawn 播放命令（同一节流窗口内——1s 节流覆盖单次投递全部 spawn，B3）。
+   * 自播失败在弹窗场景只影响声音（toast 已成功，尽力而为）；「只响不弹」时
+   * 自播失败即整体失败（异步终态 failed 上报，B4/P1-2）。
+   * @returns 投递终态 boolean（只响不弹 = 自播成败；弹窗场景恒 true——toast
+   *   成败静默，见上）。
+   */
   async function deliverOnce(pop: boolean, tone: SoundSetting, rawTitle: string, rawMessage: string): Promise<boolean> {
     // 截断按码点而非 UTF-16 code unit：防 emoji 等代理对在边界被腰斩成
     // 孤立代理（经 JSON/base64 后变成 U+FFFD 替换符显示，issue #238 配套）。
@@ -330,11 +329,6 @@ export function createSystemNotifier(options: {
       const ok = await deliverOnce(pop, tone, title, message);
       lastSystemOutcome = ok;
       return ok;
-    },
-    selfPlayAvailable() {
-      if (process.platform === "darwin") return true; // afplay + /System/Library/Sounds 恒可探测
-      if (process.platform === "win32") return true; // SoundPlayer + C:\Windows\Media 恒可探测
-      return selfPlayBin !== undefined; // Linux：pw-play/paplay 任一可用
     },
   };
 }

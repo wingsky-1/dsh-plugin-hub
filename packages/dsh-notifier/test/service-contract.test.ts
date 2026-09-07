@@ -42,9 +42,6 @@ function fakeSystem(opts = {}) {
       if (opts.failSoundOnly && pop === false) return false; // 只响不弹自播失败
       return true;
     },
-    selfPlayAvailable() {
-      return true;
-    },
   };
 }
 
@@ -224,6 +221,19 @@ function makeService(cfgOverrides = {}, hooks = {}) {
   assert.ok(!r2.some((x) => x.channelId === "browser" || x.channelId === "system"), "B6：弹窗+声音全关 → 频道不进投递集合");
   assert.equal(sse2.frames.length, 0, "B6：全关无 SSE 帧");
   console.log("B6 投递集合条件（弹窗||声音）+ 只响不弹: OK");
+}
+
+{
+  // 复核 P1-1：弹窗关 + browserSound=true（默认值）的 playOnly 帧必须编码为
+  // selfplay（tone undefined = 客户端默认旋律）——原 mode:"system" 会让客户端
+  // 既不弹也不播 → 纯静默误导（弹窗关 = 无 OS 通知实体 = OS 不会发声）
+  const { service, sse } = makeService({ browserNotify: false, systemNotify: false, browserSound: true, systemSound: false });
+  const r = await service.send({ source: "test", kind: "done", severity: "info", body: "x" });
+  assert.ok(r.some((x) => x.channelId === "browser" && x.status === "ok"), "P1-1：browser 弹窗关+true 仍投递（sound-only）");
+  const frame = sse.frames.find((f) => f.kind === "done");
+  assert.equal(frame.playOnly, true, "P1-1：playOnly 帧标记");
+  assert.deepEqual(frame.sound, { mode: "selfplay", tone: undefined }, "P1-1：true → selfplay + tone undefined（默认旋律，非 system）");
+  console.log("P1-1 playOnly + browserSound:true → selfplay 帧编码: OK");
 }
 
 {

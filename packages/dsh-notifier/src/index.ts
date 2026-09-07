@@ -194,7 +194,6 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
 
   const sse = createSseHub({ getMaxConnections: () => currentConfig().maxConnections });
   const system = createSystemNotifier({
-    resolveTone: () => resolveSoundSetting(currentConfig(), "system"),
     toastScript,
     warn: (message) => ctx.logger.warn(message),
   });
