@@ -532,9 +532,11 @@ export function openPreview(
     syncTabActive();
     // issue #344：返回栈快照防御——大文件 rawText 未入栈（undefined）时不能直接
     // renderTabBody（会卡「加载中…」），改为重新拉取（与前进打开同一路径）。
-    // 仅文本类分组（md/code/text）需要 rawText；image/html 走各自分支（html 预览
-    // 用 iframe、rawText 本可为 undefined 由惰性拉取兜底），不在此干预。
-    if (state.rawText === undefined && (group.group === "md" || group.group === "code" || group.group === "text")) {
+    // 仅文本类分组（md/code/text/other）需要 rawText；image/html 走各自分支（html
+    // 预览用 iframe、rawText 本可为 undefined 由惰性拉取兜底），不在此干预。
+    // other 组：#630 嗅探文本 200 的 rawText 同样快照/重拉；二进制（415）本就
+    // rawText === undefined → 重拉走 fetchText 占位卡分支。
+    if (state.rawText === undefined && (group.group === "md" || group.group === "code" || group.group === "text" || group.group === "other")) {
       fetchText(url, body, seq, abort.signal, state);
       return;
     }

@@ -19,7 +19,7 @@
  *    rewrite.ts 据此标 data-fp-dir，点击 toast 提示而非新标签打开错误 URL。
  */
 
-import { groupOfPath } from "../grouping.ts";
+import { shouldIntercept } from "../grouping.ts";
 import { resolveRelativePath, resolveAbsolutePath, splitReferenceFragment } from "../relpath.ts";
 
 /** 预览 API 路由（与宿主 ROUTES.file 一致，契约 smoke 校验字面量）。 */
@@ -91,8 +91,10 @@ export function rewriteTarget(ref: string, opts: RewriteOpts): RewrittenRef | nu
   // issue #479 P2：目录引用（[diagrams/](diagrams/) 等）不可预览 → null（由 rewrite.ts
   // 经 dirResolvedPathOf 标记为目录语义，点击 toast 提示），且不得落入下方预览重写。
   if (isDirResolvedPath(resolved)) return null;
-  // D2(a)：不可预览后缀（zip/pdf 等）保留原链接（浏览器下载语义），不重写。
-  if (groupOfPath(resolved).group === "other") return null;
+  // issue #630（原 #45 D2(a) 演进）：接管判定升级为 shouldIntercept——other 组
+  // 不再保留原链接（此前相对链接新标签打开实落 404 死胡同），改走预览目标由
+  // 宿主嗅探兜底：文本直出 / 二进制 415 占位卡 + dl=1 下载。
+  if (!shouldIntercept(resolved)) return null;
   return { url: makePreviewUrl(resolved, opts.cwd), path: resolved, fragment };
 }
 

@@ -7,7 +7,9 @@
  *   - 图片 → 二进制直出（Content-Type: image/*，供 <img> 同源加载）；
  *   - 文本/代码/Markdown/HTML → UTF-8 直出（HTML 也保持 text/plain，见 E2）；
  *     超过 maxTextBytes 返回 413 + truncated（文档截断，C6/W10）。
- *   - 其余类型 → 415 提示不可预览。
+ *   - 其余类型（白名单外）→ 内容嗅探（issue #630）：文本按 text 组直出
+ *     （BOM 转码，见 src/sniff.ts）；二进制 → 415 结构化占位（binary/size/ext），
+ *     ?dl=1 走 attachment 下载出口（占位卡「下载」按钮指向这里）。
  *
  * GET /api/dsh-file-preview/health  健康检查。
  *
@@ -38,7 +40,7 @@
  */
 
 import untildify from "untildify";
-import { resolve, isAbsolute, join, relative, dirname, sep } from "node:path";
+import { resolve, isAbsolute, join, relative, dirname, sep, basename } from "node:path";
 import { stat, readFile, realpath } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import type { Stats } from "node:fs";
@@ -47,6 +49,7 @@ import mime from "mime";
 import { guardLoopbackMethod, writeJson, errorMessage } from "../../../shared/host-utils.js";
 import { previewKindOf } from "./mime.ts";
 import { computeGitDiff } from "./git.ts";
+import { sniffKind, decodeWithBom, type SniffVerdict } from "./sniff.ts";
 import { bareBasenameOf, findUniqueByBasename } from "./basename-fallback.ts";
 import { extOf, groupOfPath } from "./grouping.ts";
 import { createTokenStore, type TokenStore } from "./serve-tokens.ts";
@@ -176,6 +179,56 @@ function readErrorText(error: unknown, path: string): string {
 }
 
 /**
+ * issue #630：Content-Disposition: attachment 的 filename 段。
+ * Node 对含中文/CRLF 的头值直接抛 ERR_INVALID_CHAR（500）——ASCII 回退段先做
+ * 非 ASCII/CRLF/引号替换，RFC 5987 `filename*=UTF-8''<percent-encode>` 段承载
+ * 原始名（encodeURIComponent 连 CRLF/引号也编码，头注入面闭合；同类护栏先例：
+ * X-File-Path 的 MAX_FILE_PATH_HEADER）。
+ */
+export function contentDispositionOf(filename: string): string {
+  const fallback = filename.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_");
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
+}
+
+/**
+ * issue #630：二进制文件 attachment 下载（?dl=1，仅嗅探判二进制的分支启用）。
+ * 流式直出不整读大文件（idiom 与 serve 路由一致：手动管道 + 背压 + close 兜底）。
+ * 返回 promise 在流结束时 resolve——调用方 await 即代表响应完整发出。
+ */
+function serveBinaryDownload(res: ServerResponse, resolved: string, size: number): Promise<void> {
+  return new Promise<void>((resolvePromise) => {
+    const stream = createReadStream(resolved);
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      resolvePromise();
+    };
+    res.writeHead(200, {
+      "content-type": "application/octet-stream",
+      "content-length": String(size),
+      "content-disposition": contentDispositionOf(basename(resolved)),
+      "cache-control": "no-store",
+      "referrer-policy": "no-referrer",
+      "x-content-type-options": "nosniff",
+    });
+    stream.on("data", (chunk) => {
+      if (!res.write(chunk)) stream.pause(); // 背压：下游写不动时暂停读
+    });
+    res.on("drain", () => stream.resume());
+    stream.on("end", () => { res.end(); finish(); });
+    stream.on("error", () => {
+      // 头已发出：只能尽力关闭连接（客户端会看到截断的下载）。
+      if (typeof (res as any).destroy === "function") (res as any).destroy();
+      finish();
+    });
+    // 断连/关闭兜底：res close（下载中止）→ 销毁读流、解除悬挂。
+    res.on("close", () => { stream.destroy(); finish(); });
+    stream.on("close", () => { if (!settled) finish(); });
+  });
+}
+
+/**
  * 文件预览路由的核心处理（已通过围栏校验后调用）。
  * @param res - node ServerResponse。
  * @param req - 请求。
@@ -228,7 +281,40 @@ export async function serveFileRoute(
   }
   // 分组判定基于 **resolved**（评审 P1）：搜索可能把入口 `foo.txt` 纠正到真实
   // 的 `foo.html`，Content-Type/分组须按真实落盘文件判定，否则 415/错判。
-  const kind = previewKindOf(resolved);
+  let kind = previewKindOf(resolved);
+  // —— issue #630 改动 B：白名单未命中（other 组）不再一律 415——按业界共识
+  // （git buffer_is_binary 同款思路）做内容嗅探，文本则把 kind 重写为 text 组
+  // 形态，下方 413/ETag/X-File-Path/直出全套逻辑自动复用（插入点约束：必须在
+  // 413 检查之前完成重写，评审 P1）；二进制维持 415 结构化占位 + ?dl=1 下载出口。
+  let sniffedBom: string | undefined;
+  if (kind.group === "other") {
+    let verdict: SniffVerdict;
+    try {
+      verdict = await sniffKind(resolved);
+    } catch (error) {
+      // 嗅探 IO 失败（权限、stat 后竞态删除）与 read 阶段同语义：ENOENT/EISDIR → 404。
+      writeJson(res, readErrorCode(error), { error: readErrorText(error, path) });
+      return;
+    }
+    if (verdict.kind === "binary") {
+      // ?dl=1：仅二进制分支响应——attachment 下载（占位卡「下载」按钮指向这里）；
+      // 其余分支一律忽略 dl=1（smoke 断言钉住）。
+      if (queryParam(url, "dl") === "1") {
+        await serveBinaryDownload(res, resolved, info.size);
+        return;
+      }
+      writeJson(res, 415, {
+        error: `unsupported preview type: .${kind.ext}`,
+        binary: true,
+        size: info.size,
+        ext: kind.ext,
+      });
+      return;
+    }
+    kind.group = "text";
+    kind.contentType = "text/plain; charset=utf-8";
+    sniffedBom = verdict.bom;
+  }
   // 文本超限检查必须在 ETag/304 判断**之前**（评审 W10/C6）：若先走 304，
   // 带缓存标签的超限文件会永远命中「未变化」绕过 413，用户看不到超限提示。
   // 413 响应不缓存（no-store），避免客户端把超限状态当可复用缓存。
@@ -298,7 +384,12 @@ export async function serveFileRoute(
   }
   if (kind.group === "text" || kind.group === "renderedMd" || kind.group === "renderedCode" || kind.group === "renderedHtml") {
     try {
-      const body = await readFile(resolved, "utf8");
+      // issue #630：嗅探路径带 BOM（verdict.bom）→ 整读 Buffer 转码直出（BOM 剥除，
+      // 防 UTF-16 内容按 UTF-8 解码出每字符尾随 U+0000 的乱码）；白名单内路径
+      // （无嗅探标签）保持 readFile utf8 现状，零行为回归。
+      const body = sniffedBom !== undefined
+        ? decodeWithBom(await readFile(resolved), sniffedBom) ?? ""
+        : await readFile(resolved, "utf8");
       res.writeHead(200, {
         ...baseHeaders,
         "content-type": kind.contentType,

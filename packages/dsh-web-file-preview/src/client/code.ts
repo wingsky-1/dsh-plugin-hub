@@ -31,13 +31,14 @@ import dart from "highlight.js/lib/languages/dart";
 import diff from "highlight.js/lib/languages/diff";
 import dockerfile from "highlight.js/lib/languages/dockerfile";
 import ini from "highlight.js/lib/languages/ini";
+import glsl from "highlight.js/lib/languages/glsl";
 import plaintext from "highlight.js/lib/languages/plaintext";
 
 // 注册语言子集（语言 id 即 hljs 子路径模块名）。
 const LANGUAGE_REGISTRY: Record<string, unknown> = {
   javascript, typescript, json, xml, css, scss, markdown, yaml, bash,
   python, java, c, cpp, csharp, go, rust, php, ruby, kotlin, swift, dart,
-  diff, dockerfile, ini, plaintext,
+  diff, dockerfile, ini, glsl, plaintext,
 };
 
 for (const [langId, mod] of Object.entries(LANGUAGE_REGISTRY)) {
@@ -58,6 +59,15 @@ const EXT_TO_LANG: Record<string, string> = {
   cs: "csharp", go: "go", rs: "rust", php: "php", rb: "ruby",
   kotlin: "kotlin", kt: "kotlin", swift: "swift", dart: "dart",
   diff: "diff", patch: "diff", dockerfile: "dockerfile", ini: "ini", toml: "ini",
+  // issue #630：Godot 文本族——资源/场景 INI 家族（.tscn/.tres/project.godot/
+  // .import/.gdextension/.gdns/.gdnlib/.escn）用内置 ini；着色语言与 GLSL 同源
+  // （.gdshader/.gdshaderinc）用内置 glsl；GDScript（.gd）用 python 近似——
+  // hljs 核心无 gdscript 模块（官方 SUPPORTED_LANGUAGES 指向第三方独立仓库），
+  // python 近似可覆盖字符串/注释/数字/控制流关键字，与 GitHub 对未知语言同级。
+  gd: "python",
+  tscn: "ini", escn: "ini", tres: "ini", gdns: "ini", gdnlib: "ini",
+  gdextension: "ini", godot: "ini", import: "ini",
+  gdshader: "glsl", gdshaderinc: "glsl",
   txt: "plaintext", plain: "plaintext", log: "plaintext", csv: "plaintext",
 };
 

@@ -56,6 +56,9 @@ export const zh = {
   // 文本/diff
   untrackedNoDiff: "未跟踪的新文件（git 无基线，无法对比；完整内容见“内容/原始”）",
   noDiff: "无可用 diff",
+  // issue #630：二进制占位卡
+  binaryNoPreview: "二进制文件无法在 web 端预览",
+  binaryDownload: "下载",
 } as const;
 
 /** 字典 key 并集（LocaleNamespaceMap 声明合并用）。 */
@@ -101,4 +104,6 @@ export const en: Record<FilePreviewLocaleKey, string> = {
   diffProbeFail: "git diff probe failed (network or repository error) — changes may not be shown",
   untrackedNoDiff: "Untracked new file (no git baseline to diff; see Content/Raw for the full text)",
   noDiff: "No diff available",
+  binaryNoPreview: "Binary files cannot be previewed on the web",
+  binaryDownload: "Download",
 };

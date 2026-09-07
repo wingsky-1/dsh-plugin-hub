@@ -23,7 +23,8 @@
   },
   "dsh": {
     "bundle": {
-      "patch": "./cordis.patch.yml"
+      "patch": "./cordis.patch.yml",
+      "bannerJs": "import { createRequire as __filePreviewRequire } from \"node:module\";\nconst require = __filePreviewRequire(import.meta.url);"
     },
     "client": {
       "inject": [
@@ -74,6 +75,7 @@
     "dompurify": "^3.2.0",
     "fdir": "~6.5.0",
     "highlight.js": "^11.12.0",
+    "isbinaryfile": "5.0.4",
     "marked": "^18.0.9",
     "mermaid": "^11.17.1",
     "mime": "^4.1.0",

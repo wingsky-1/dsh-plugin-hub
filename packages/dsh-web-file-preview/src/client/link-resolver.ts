@@ -13,7 +13,7 @@
 // `<div title="完整路径"><span>裸文件名</span></div>`，旧实现逐节点命中即返回，
 // span 的裸文件名会抢在祖先完整路径之前被采用，文件移动后必然 404。
 
-import { isLikelySingleFilePath, cleanRefChipPath } from "../grouping.ts";
+import { isLikelySingleFilePath, shouldIntercept, cleanRefChipPath } from "../grouping.ts";
 
 /** 点击闸门：放行（不做任何拦截）或进入链接解析。 */
 export type GateDecision = "pass" | "inspect";
@@ -53,9 +53,18 @@ export function basenameOf(value: string): string {
   return (value.split(/[\\/]/).pop() ?? "").trim().toLowerCase();
 }
 
-/** 路径形如判定（单一事实源 src/grouping.ts）。 */
+/** 路径形如判定（单一事实源 src/grouping.ts）——非权威文本嗅探保持严格语义。 */
 function isPathLike(value: string): boolean {
   return isLikelySingleFilePath(value);
+}
+
+/**
+ * issue #630：权威凭证专用判定——chip/title/href 是元素显式声明的路径，走
+ * shouldIntercept 宽松语义（other 组也接管，宿主嗅探兜底裁决）；与文本嗅探的
+ * isPathLike（严格）刻意分叉，分级纪律见 grouping.shouldIntercept。
+ */
+function isAuthoritativePathLike(value: string): boolean {
+  return shouldIntercept(value);
 }
 
 /**
@@ -106,12 +115,12 @@ export function resolveFileLink(start: ResolverNode): ResolvedLink | null {
       continue;
     }
     const title = (node.attrs.title ?? "").trim();
-    if (title !== "" && isPathLike(title) && credentialAdopts(title, textHit)) {
+    if (title !== "" && isAuthoritativePathLike(title) && credentialAdopts(title, textHit)) {
       return { path: title, kind: "file" };
     }
     if (node.tag === "A") {
       const href = (node.attrs.href ?? "").trim();
-      if (href !== "" && isPathLike(href) && credentialAdopts(href, textHit)) {
+      if (href !== "" && isAuthoritativePathLike(href) && credentialAdopts(href, textHit)) {
         return { path: href, kind: "file" };
       }
     }

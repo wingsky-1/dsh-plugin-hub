@@ -30,6 +30,13 @@
 .fwp-state.fwp-err{color:var(--dsw-alias-state-error-primary,#b42318)}
 .fwp-err-open{margin-top:12px;border:1px solid var(--dsw-alias-border-l1,#d7dae0);background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#3a3f4b);border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;align-self:center}
 .fwp-err-open:hover{background:var(--dsw-alias-interactive-bg-hover,#eef1f5)}
+/* issue #630：二进制占位卡（GitHub "View raw"/GitLab Download viewer 同款三件套：
+   文件名 + 大小 + 下载；复用 state/actions token，明暗自适应） */
+.fwp-binary-card{display:flex;flex-direction:column;gap:10px;align-items:center}
+.fwp-binary-meta{display:flex;flex-direction:column;gap:2px;align-items:center;min-width:0;max-width:100%}
+.fwp-binary-name{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;color:var(--dsw-alias-label-primary,#1c1e26);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fwp-binary-size{font-size:11px;color:var(--dsw-alias-label-secondary,#6b7280)}
+.fwp-binary-actions{justify-content:center}
 .fwp-lbox{position:fixed;inset:0;background:rgba(0,0,0,.90);z-index:10000;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none;overscroll-behavior:contain;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
 .fwp-lbox[hidden]{display:none}
 .fwp-lbox-toolbar{position:absolute;top:12px;left:0;right:0;display:flex;justify-content:center;gap:8px;z-index:2}

@@ -36,6 +36,14 @@ export const CODE_EXTS = new Set([
   "dart", "scala", "sh", "bash", "zsh", "sql", "diff", "patch", "dockerfile",
   "ini", "toml", "yaml", "yml", "json", "jsonl", "xml", "css",
   "scss", "less", "vue", "svelte", "groovy", "perl", "r",
+  // issue #630：Godot 文本族——.tscn/.tres/.escn/.gdns/.gdnlib/.gdextension 与
+  // project.godot（ext "godot"）、*.png.import（ext "import"）均为 INI 风格文本；
+  // .gd（GDScript）、.gdshader/.gdshaderinc（与 GLSL 同源）为纯文本。
+  // 高亮映射见 src/client/code.ts（ini/glsl 为 hljs 内置，gd 用 python 近似）。
+  // 二进制 Godot 资源（.res/.scn/.ctex/.translation）不在此列——留 other 组由
+  // 宿主嗅探兜底（issue #630 改动 B）。
+  "gd", "tscn", "escn", "tres", "gdns", "gdnlib", "gdextension", "godot",
+  "import", "gdshader", "gdshaderinc",
 ]);
 
 /** 其它纯文本后缀。 */
@@ -78,10 +86,29 @@ export function isPreviewablePath(path: string): boolean {
  * 识别"单个文件"而非"多个路径并列/拼接的展示标签"：逗号、换行、多段连续空白
  * 都是多文件并列的形态（如上下文注入折叠摘要 `~/.dsh/AGENTS.md, AGENTS.md`），
  * 误判会把它们当成一条路径去预览并拦截原生点击。http/#/mailto 与不可预览后缀
- * 一并排除。权威信号（元素 title / <a href>）与非权威文本嗅探共用此判定，
- * 保持双端一致、单一事实源。
+ * 一并排除。非权威文本嗅探（link-resolver 的 CODE/SPAN 兜底）保持本严格判定。
  */
 export function isLikelySingleFilePath(value: string): boolean {
+  if (!shouldIntercept(value)) return false;
+  return isPreviewablePath(value);
+}
+
+/**
+ * issue #630：点击接管谓词（权威凭证统一语义，三入口共用：link-resolver 的
+ * chip/title/href 凭证、wrapper 的 openPath 收口、rewrite-target 的重写决策）。
+ *
+ * 白名单降级为「渲染器选择器」后，other 组不再一票否决——宿主端嗅探兜底
+ * （src/sniff.ts）让未知后缀文本可得文本预览、二进制可得占位卡 + 下载出口，
+ * 都不是死胡同，因此权威凭证指向的 other 组路径也接管。
+ *
+ * 结构排除规则与 isLikelySingleFilePath 完全一致（http/#/mailto、逗号/换行/
+ * 多空白拼接、U5 单空格多段）；唯一差异是不做 isPreviewablePath 后缀闸门。
+ *
+ * 分级纪律（评审 P1）：**非权威文本嗅探不得使用本函数**——CODE/SPAN 内的任意
+ * 无空白单词（"example.com"、"v1.2.3"）会被误判为路径，每次误判都弹 Modal 并
+ * 触发 fdir 全树兜底搜索；非权威分支仍走 isLikelySingleFilePath 严格判定。
+ */
+export function shouldIntercept(value: string): boolean {
   if (value === undefined || value === null) return false;
   if (/^https?:\/\//i.test(value) || value.startsWith("#") || value.startsWith("mailto:")) return false;
   if (value.includes(",")) return false;
@@ -92,7 +119,6 @@ export function isLikelySingleFilePath(value: string): boolean {
   // （`my file.md`）其后段无分隔符，不受影响。
   const spaceParts = value.split(" ");
   if (spaceParts.length > 1 && spaceParts.every((p) => p.length > 0 && /[\\/]/.test(p))) return false;
-  if (!isPreviewablePath(value)) return false;
   return value.includes("/") || value.includes("\\") || !/\s/.test(value);
 }
 

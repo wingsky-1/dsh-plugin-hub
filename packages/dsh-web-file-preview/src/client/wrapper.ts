@@ -9,7 +9,7 @@
  */
 
 import type { FilePreviewState } from "./state.ts";
-import { isPreviewablePath, activeCwd } from "./intercept.ts";
+import { shouldIntercept, activeCwd } from "./intercept.ts";
 import { openPreview } from "./preview.ts";
 
 /**
@@ -32,7 +32,9 @@ export function wrapOpenPath(ctx: any, state: FilePreviewState): () => void {
       orig = session.openWorkspacePath.bind(session);
       session.openWorkspacePath = async (req: unknown, signal?: AbortSignal) => {
         const p = String((req as { path?: unknown } | undefined)?.path ?? "");
-        if (isPreviewablePath(p)) {
+        // issue #630：接管判定升级为 shouldIntercept——other 组也接管（宿主嗅探
+        // 兜底：文本直出 / 二进制占位卡 + 下载出口），不再放行原生打开的死胡同。
+        if (shouldIntercept(p)) {
           openPreview(state, p, activeCwd());
           // 调用方只检查 result.ok（上游 ui-chat apply.ts:125）；预览接管视作打开成功
           return { ok: true, value: { opened: false } };
