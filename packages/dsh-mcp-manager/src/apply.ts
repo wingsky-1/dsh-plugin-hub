@@ -25,6 +25,7 @@ import {
   injectSettingsSink,
   installConfigSettings,
   resolveApplyOptions,
+  resolveDebugConfig,
   resolveMiddlewareMode,
   resolveStorePath,
 } from "./apply-config.ts";
@@ -66,8 +67,14 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
   // 此同步函数在 settings onChange（运行期变更）与启动兜底（enabled 分支内）
   // 两处调用：前者覆盖运行期变更，后者覆盖启动时 settings 已就绪的场景。
   const syncMiddlewareFromSettings = (): void => {
-    if (typeof manager.setMiddlewareMode !== "function") return;
     const source = manager.uiConfigSource();
+    const debugCfg = resolveDebugConfig(config, source);
+    manager.stats.configure({
+      enabled: debugCfg.callStats,
+      filePath: debugCfg.statsFile || undefined,
+      logger: manager.logger,
+    });
+    if (typeof manager.setMiddlewareMode !== "function") return;
     const persisted = typeof source === "object" && source !== null ? (source as Record<string, unknown>).middleware : undefined;
     if (typeof persisted !== "string") return;
     const next = normalizeMiddlewareMode(persisted);
@@ -76,6 +83,13 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
   };
   installConfigSettings(ctx, manager, config, syncMiddlewareFromSettings);
   injectSettingsSink(ctx, manager);
+
+  // 初始化 stats 配置
+  manager.stats.configure({
+    enabled: options.debug.callStats,
+    filePath: options.debug.statsFile || undefined,
+    logger: manager.logger,
+  });
 
   let runtime: EnabledRuntimeDisposers = {
     disposeRoutes: () => {},
@@ -126,6 +140,7 @@ async function assembleEnabledRuntime(
     const mw = await manager.initMiddleware(middlewareMode, options.middlewarePolicy);
     currentMiddlewareDispose = registerMiddlewareTools(ctx, mw, resolveRoot, middlewareMode, {
       disabledTools: manager.disabledTools,
+      stats: manager.stats,
     });
   }
   manager.setMiddlewareMode = makeMiddlewareHotSwitch(manager, options.middlewarePolicy, resolveRoot, middlewareDisposer);

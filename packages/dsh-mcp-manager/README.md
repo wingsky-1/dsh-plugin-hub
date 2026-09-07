@@ -236,6 +236,7 @@ await ctx.mcpManager.registerServer({
   跨工作空间共享，合并写盘不整表覆盖）
 - **凭据脱敏**：目录摘要与错误路径经 redactor 把 env/headers/URL 用户信息等
   凭据形状替换为 `[REDACTED]`
+- **调用统计与 Debug 模式（Metadata-Only）**：默认关闭；若在 `~/.dsh/settings.yaml` 中配置 `dsh-mcp-manager.debug.callStats: true`，将把 MCP 调用指标（次数、成功/失败、平均与最大耗时）及渐进式披露漏斗（`ws_mcp_search` 搜索词频次、`ws_mcp_list` 与 `ws_mcp_detail` 查询分布）防抖原子持久化至 `<DSH_HOME>/mcp-stats.json`，且控制台输出单行 debug 跟踪；严格不持久化用户 arguments 与返回 content，杜绝代码与隐私泄漏
 - 能力目录注入含来源标注与"不代表当前连接状态"说明
 
 ## 验证

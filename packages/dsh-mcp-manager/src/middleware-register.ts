@@ -32,12 +32,14 @@ import {
   MIDDLEWARE_GLOBAL_ROOT,
 } from "./middleware-utils.ts";
 import type { MiddlewareMode, DisabledToolsMap } from "./middleware-types.ts";
+import type { McpStatsCollector } from "./call-stats.ts";
 
 /** 工具执行与组装上下文。 */
 interface MiddlewareToolContext {
   mw: McpMiddleware;
   resolveRoot: (agent: unknown) => Promise<string | undefined>;
   mode: MiddlewareMode;
+  stats?: McpStatsCollector;
 }
 
 /** 空 query 搜索无命中时的可归因提示（纯 render 文案，C 项）。 */
@@ -159,6 +161,9 @@ async function executeSearch(
   const root = await toolCtx.resolveRoot(exec.agent);
   if (root === undefined) throw new Error("ws_mcp_search: 无法确定工作空间，请先选择工作区");
   const { query, serverFilter, limit } = parseSearchParams(args);
+  if (toolCtx.stats?.isEnabled()) {
+    toolCtx.stats.recordSearch(query);
+  }
   const roots = visibleMiddlewareRoots(root, toolCtx.mode);
   const unit = await toolCtx.mw.projectUnitFor(root);
   if (unit === undefined) {
@@ -261,7 +266,21 @@ async function executeCall(
   await toolCtx.mw.ensureConnected(targetRoot, parsed.server);
   // #413：透传 exec.agent 给 callTool（封装直呼分支的 execute 依赖
   // agent.session.header.cwd 做 projectPath 补全）。
-  return toolCtx.mw.callTool(server, tool, callArguments, exec.signal, exec.agent);
+  const startTime = Date.now();
+  try {
+    const result = await toolCtx.mw.callTool(server, tool, callArguments, exec.signal, exec.agent);
+    const durationMs = Date.now() - startTime;
+    if (toolCtx.stats?.isEnabled()) {
+      toolCtx.stats.recordCall(parsed.server, tool, durationMs, true);
+    }
+    return result;
+  } catch (error) {
+    const durationMs = Date.now() - startTime;
+    if (toolCtx.stats?.isEnabled()) {
+      toolCtx.stats.recordCall(parsed.server, tool, durationMs, false, error instanceof Error ? error.message : String(error));
+    }
+    throw error;
+  }
 }
 
 function buildCallTool(toolCtx: MiddlewareToolContext): ToolDefinition {
@@ -409,6 +428,9 @@ async function executeList(
   const root = await toolCtx.resolveRoot(exec.agent);
   if (root === undefined) throw new Error("ws_mcp_list: 无法确定工作空间，请先选择工作区");
   const { serverFilter, toolLimit } = parseListParams(args);
+  if (toolCtx.stats?.isEnabled()) {
+    toolCtx.stats.recordList(serverFilter);
+  }
   const roots = visibleMiddlewareRoots(root, toolCtx.mode);
   const unit = await toolCtx.mw.projectUnitFor(root);
   if (unit === undefined) {
@@ -506,6 +528,10 @@ async function executeDetail(
   if (root === undefined) throw new Error("ws_mcp_detail: 无法确定工作空间，请先选择工作区");
   const { server, tool } = parseDetailParams(args);
   if (server === "" || tool === "") throw new Error("ws_mcp_detail: server 与 tool 均为必填");
+  const parsed = parseFullServerName(server);
+  if (toolCtx.stats?.isEnabled()) {
+    toolCtx.stats.recordDetail(parsed?.server ?? server, tool);
+  }
   const targetRoot = await checkMiddlewareRoot("ws_mcp_detail", server, root, toolCtx.mode, toolCtx.mw);
   if (targetRoot === undefined) {
     throw new Error(
@@ -645,6 +671,8 @@ export function registerMiddlewareTools(
   options: {
     /** 工具级禁用映射（root → server → Set<tool>）；缺省取 mw.disabledTools。 */
     disabledTools?: DisabledToolsMap;
+    /** 可选调用统计收集器。 */
+    stats?: McpStatsCollector;
   } = {},
 ): () => void {
   const disposers: Array<() => void> = [];
@@ -652,7 +680,7 @@ export function registerMiddlewareTools(
   const disabledTools = options.disabledTools ?? mw.disabledTools;
   if (options.disabledTools !== undefined) mw.disabledTools = disabledTools;
 
-  const toolCtx: MiddlewareToolContext = { mw, resolveRoot, mode };
+  const toolCtx: MiddlewareToolContext = { mw, resolveRoot, mode, stats: options.stats };
   const tools = [
     buildSearchTool(toolCtx),
     buildCallTool(toolCtx),

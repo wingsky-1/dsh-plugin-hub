@@ -15,6 +15,7 @@ import { normalizeMiddlewareMode } from "./middleware.ts";
 import type { McpManager } from "./manager.ts";
 import { uiConfigChangedFrame } from "./routes.ts";
 import { defaultStorePath } from "./store.ts";
+import type { DebugConfig } from "./call-stats-types.ts";
 
 /** apply 顶层解析后的增强/开关配置集合。 */
 export interface ApplyOptions {
@@ -24,6 +25,7 @@ export interface ApplyOptions {
   catalogMaxEntries: number;
   middlewarePolicy: Record<string, unknown>;
   middlewareModeRaw: string | undefined;
+  debug: DebugConfig;
 }
 
 /** 解析 storePath（显式配置优先，回落默认路径）。 */
@@ -31,8 +33,18 @@ export function resolveStorePath(config: Record<string, unknown> | undefined): s
   return typeof config?.storePath === "string" && config.storePath !== "" ? config.storePath : defaultStorePath();
 }
 
+/** 解析 debug 配置。 */
+export function resolveDebugConfig(config: Record<string, unknown> | undefined, settingsSource?: unknown): DebugConfig {
+  const settings = typeof settingsSource === "object" && settingsSource !== null ? (settingsSource as Record<string, unknown>).debug : undefined;
+  const rawDebug = (typeof settings === "object" && settings !== null ? settings : config?.debug) as Record<string, unknown> | undefined;
+  return {
+    callStats: rawDebug?.callStats === true,
+    statsFile: typeof rawDebug?.statsFile === "string" ? rawDebug.statsFile : "",
+  };
+}
+
 /** 解析全部布尔/数值/策略配置（兜底链引用具名常量，单一事实源）。 */
-export function resolveApplyOptions(config: Record<string, unknown> | undefined): ApplyOptions {
+export function resolveApplyOptions(config: Record<string, unknown> | undefined, settingsSource?: unknown): ApplyOptions {
   const announceCatalog = (config?.announceCatalog as boolean | undefined) ?? DEFAULT_ANNOUNCE_CATALOG;
   const catalogMaxEntries = Number.isFinite(config?.catalogMaxEntries) && (config?.catalogMaxEntries as number) > 0
     ? Math.floor(config?.catalogMaxEntries as number)
@@ -44,6 +56,7 @@ export function resolveApplyOptions(config: Record<string, unknown> | undefined)
     catalogMaxEntries,
     middlewarePolicy: (config?.middlewarePolicy as Record<string, unknown> | undefined) ?? {},
     middlewareModeRaw: config?.middleware as string | undefined,
+    debug: resolveDebugConfig(config, settingsSource),
   };
 }
 

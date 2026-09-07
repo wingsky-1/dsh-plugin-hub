@@ -36,6 +36,7 @@ import {
   saveDisabledTools,
 } from "./middleware.ts";
 import type { MiddlewareMode, ProjectUnit, DisabledToolsMap } from "./middleware.ts";
+import { McpStatsCollector } from "./call-stats.ts";
 
 /** 中间层 all 模式的全局虚拟 root（全局服务器经中间层访问时的路由 key）。 */
 export const MIDDLEWARE_GLOBAL_ROOT = "@global";
@@ -95,6 +96,8 @@ export class McpManager {
   middleware: McpMiddleware | undefined;
   /** userDisabled 持久化路径。 */
   userStatePath: string;
+  /** MCP 调用统计收集器（可用于 debug 模式量化调用指标与渐进式披露漏斗）。 */
+  stats: McpStatsCollector;
   /** 运行时注册表（内存态，不落盘）：供其他插件经 ctx.mcpManager 注入服务器。
    * 双轨 reconcile：store.data.servers（持久化）+ runtimeRegistry（运行时）。
    * 同名冲突策略：runtime 优先（运行时注入是「当前会话」语义）。 */
@@ -124,6 +127,7 @@ export class McpManager {
     this.middlewareMode = "off";
     this.middleware = undefined;
     this.userStatePath = userStateFile();
+    this.stats = new McpStatsCollector({ logger: ctx.logger });
     this.runtimeRegistry = new Map();
     this.registerQueue = Promise.resolve();
   }
@@ -1171,6 +1175,7 @@ export class McpManager {
       for (const dispose of supervisor.toolDisposers.values()) dispose();
     }
     this.supervisors = new Map();
+    this.stats.dispose();
     if (this.middleware !== undefined) {
       await this.middleware.dispose();
       this.middleware = undefined;

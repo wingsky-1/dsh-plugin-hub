@@ -56,6 +56,7 @@ export function makeMiddlewareHotSwitch(
       const mw = await manager.initMiddleware(next, middlewarePolicy ?? {});
       dispose.current = registerMiddlewareTools(manager.ctx, mw, resolveRoot, next, {
         disabledTools: manager.disabledTools,
+        stats: manager.stats,
       });
     }
     // off ↔ project/all：重注册/卸载中间层工具后 reconcile——all 模式下全局

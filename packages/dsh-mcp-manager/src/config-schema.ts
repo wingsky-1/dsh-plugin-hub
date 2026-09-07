@@ -22,6 +22,11 @@ export const DEFAULT_UI_CONFIG: UiPlacementConfig = {
   zIndexBase: DEFAULT_Z_INDEX_BASE,
 };
 
+const DebugConfigSchema = z.object({
+  callStats: z.boolean().default(false).description("是否开启 MCP 工具调用统计调试与落盘（默认关闭，仅可通过配置文件开启）"),
+  statsFile: z.string().default("").description("统计落盘路径，留空使用默认 <DSH_HOME>/mcp-stats.json"),
+}).default({ callStats: false, statsFile: "" });
+
 const UI_POSITIONS: UiPlacementConfig["position"][] = ["top-right", "top-left", "bottom-right", "bottom-left"];
 
 const UiConfigSchema = z.object({
@@ -96,6 +101,10 @@ export const Config: z<{
   resultTruncateBytes: number;
   middleware: "off" | "project" | "all";
   middlewarePolicy: Record<string, unknown>;
+  debug: {
+    callStats: boolean;
+    statsFile: string;
+  };
   ui: UiPlacementConfig;
 }> = z.object({
   enabled: z.boolean().default(true).description("是否启用本插件"),
@@ -109,5 +118,6 @@ export const Config: z<{
     .description("MCP 中间层模式：off=直接注册 mcp__ 工具（默认兼容）；project=项目级走 ws_mcp_search/ws_mcp_call（推荐）；all=全部走中间层"),
   middlewarePolicy: z.dict(z.any()).default({})
     .description("中间层策略：{ allowTools: {<server>: [glob]}, denyTools: {<server>: [glob]} }，server 为裸名"),
+  debug: DebugConfigSchema.disabled(true),
   ui: UiConfigSchema,
 });

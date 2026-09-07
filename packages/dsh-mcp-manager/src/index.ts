@@ -57,6 +57,7 @@ export { panelAnchorForPosition } from "./placement-math.ts";
 
 // 插件契约转发（apply 主流程 + 宣告文本实现于 apply.ts）
 export { apply, MCP_GUIDANCE } from "./apply.ts";
+export { resolveDebugConfig } from "./apply-config.ts";
 
 // 服务器配置归一化（纯函数单一事实源）
 export { SERVER_NAME_PATTERN, normalizeServer } from "./normalize.ts";
@@ -126,6 +127,16 @@ export {
 } from "./catalog.ts";
 // mcpServers JSON 导入
 export { fromClaudeEntry, parseClaudeJson } from "./import.ts";
+// 统计与 Debug
+export { McpStatsCollector, defaultStatsPath } from "./call-stats.ts";
+export type {
+  McpStatsSnapshot,
+  ServerStats,
+  ToolCallMetric,
+  ProgressiveDisclosureStats,
+  DebugConfig,
+} from "./call-stats-types.ts";
+
 // 中间层（工作空间 MCP 路由：连接池 / 目录 / ws_mcp_search / ws_mcp_call /
 // ws_mcp_list / ws_mcp_detail）
 export {
