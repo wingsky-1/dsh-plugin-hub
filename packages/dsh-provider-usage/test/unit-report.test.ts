@@ -731,7 +731,7 @@ const GEN = (over = {}) => ({
   utimesSync(tmpSwap, /* atime */ new Date(), /* mtime */ new Date(1_700_000_000_000)); // 显式旧 mtime：与 append 时刻必然不同
   renameSync(tmpSwap, indexFile);
   const fourth = await readReportIndex(root);
-  assert.equal(fourth[1].generatedAt, 999, "size 不变仅 mtime 变 → 仍失效重解析");
+  assert.equal(fourth.find((m) => m.key === "2026-09-05")?.generatedAt, 999, "size 不变仅 mtime 变 → 仍失效重解析");
   // 命中路径返回浅拷贝——调用方改写返回值不污染缓存
   const before = (await readReportIndex(root)).length;
   const hit = await readReportIndex(root);
@@ -819,7 +819,9 @@ const GEN = (over = {}) => ({
       updateLastRun(root3, (cur) => ({ ...cur, [`f${i}`]: `v${i}` })));
     await Promise.all(writes);
     await __lastRunChainForTests(root3);
-    const final = await readLastRun(root3);
+    // readLastRun 只透出 daily/weekly/monthly 白名单键（schema:1 兼容过滤），
+    // f0..f9 断言须读原始落盘文件观察
+    const final = JSON.parse(readFileSync(join(root3, "reports", "last-run.json"), "utf8"));
     const kept = Array.from({ length: 10 }, (_, i) => final[`f${i}`]).filter((v) => v !== undefined).length;
     assert.equal(kept, 10, `并发风暴 10 字段全保留（实际保留 ${kept}）`);
     assert.equal(final.schema, 2, "临界区写沿用 schema 版本标记");
@@ -854,13 +856,17 @@ const GEN = (over = {}) => ({
   }, 5000, 2);
   assert.ok(task !== undefined, "复用任务到达 done");
   assert.equal(task.reused, true, "executor reused:true → task.reused=true");
-  // status 路由响应透传 reused（直调 handler，fake req/res 与 smoke 同构）
-  const payload = await callHandler(handleReportStatus, {
-    socket: { remoteAddress: "127.0.0.1" },
-    headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
-    method: "GET",
-    url: `/api/dsh-provider-usage/reports/generate/status?taskId=${sub.taskId}`,
-  });
+  // status 路由响应透传 reused（直调 handler：包 {handler} 适配 helpers.callHandler
+  // 的三参形态，补 context 实参——handleReportStatus 仅消费 reportQueue 字段）
+  const payload = await callHandler(
+    { handler: (req, res) => handleReportStatus(req, res, { reportQueue: queue }) },
+    {
+      socket: { remoteAddress: "127.0.0.1" },
+      headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
+      method: "GET",
+      url: `/api/dsh-provider-usage/reports/generate/status?taskId=${sub.taskId}`,
+    },
+  );
   assert.equal(payload.status, "done", "status done");
   assert.equal(payload.reused, true, "status 响应透传 reused（客户端轮询提示数据源）");
   // 对照：非复用任务（reused 缺省）不携带 reused 字段
@@ -870,12 +876,15 @@ const GEN = (over = {}) => ({
   });
   const sub2 = queue2.submit({ period: "daily", key: "2026-09-06", startDay: "2026-09-06", endDay: "2026-09-06" });
   await pollUntil(() => queue2.get(sub2.taskId)?.status === "done", 5000, 2);
-  const payload2 = await callHandler(handleReportStatus, {
-    socket: { remoteAddress: "127.0.0.1" },
-    headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
-    method: "GET",
-    url: `/api/dsh-provider-usage/reports/generate/status?taskId=${sub2.taskId}`,
-  });
+  const payload2 = await callHandler(
+    { handler: (req, res) => handleReportStatus(req, res, { reportQueue: queue2 }) },
+    {
+      socket: { remoteAddress: "127.0.0.1" },
+      headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
+      method: "GET",
+      url: `/api/dsh-provider-usage/reports/generate/status?taskId=${sub2.taskId}`,
+    },
+  );
   assert.equal(payload2.status, "done", "非复用任务 status done");
   assert.equal(payload2.reused, undefined, "非复用任务不携带 reused（新生成语义不变）");
 }

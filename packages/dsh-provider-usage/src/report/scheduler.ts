@@ -58,6 +58,25 @@ export async function writeLastRun(root: string, state: Partial<Record<ReportPer
  * - 测试钩子：__lastRunChainForTests 暴露 per-root 链尾，用例 await 之即可确定性
  *   收敛（替代 sleep 等待）。
  */
+/**
+ * 读 lastRun 原始全量（不应用 daily/weekly/monthly 白名单投影）。
+ *
+ * 临界区写前重读专用：readLastRun 的白名单投影会把非白名单键（历史遗留键 /
+ * 并发写方新增键）从 round-trip 中静默丢弃——串行链上每个更新读回的快照缺前序
+ * 落盘字段，写回即整表覆盖丢失（lost-update 的读取投影变体）。写路径的
+ * 读-改-写必须无损全量往返；对外读 API（调度判定）仍走 readLastRun 投影。
+ */
+async function readLastRunRaw(root: string): Promise<Record<string, unknown>> {
+  try {
+    const parsed: unknown = JSON.parse(await readFile(lastRunFile(root), "utf8"));
+    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
 const lastRunChainByRoot = new Map<string, Promise<void>>();
 
 export function updateLastRun(
@@ -66,8 +85,11 @@ export function updateLastRun(
 ): Promise<void> {
   const prev = lastRunChainByRoot.get(root) ?? Promise.resolve();
   const run = async (): Promise<void> => {
-    const cur = await readLastRun(root); // 写前重读：链上最新快照，非调用时刻旧快照
-    await writeLastRun(root, patch(cur));
+    const cur = await readLastRunRaw(root); // 写前重读：全量原始快照（投影读会丢非白名单键）；链上最新，非调用时刻旧快照
+    // await patch 结果：patch 允许在临界区内挂起（async 形态，模拟 IO 慢的交错窗），
+    // 不 await 会让 writeLastRun 收到未 resolve 的 Promise、spread 丢全部字段。
+    // 类型断言仅为复用 patch 既有签名——运行时全量透传，patch 内 spread 天然保字段。
+    await writeLastRun(root, await patch(cur as Partial<Record<ReportPeriod, string>>));
   };
   const next = prev.then(run, run);
   const tail = next.then(() => undefined, () => undefined);
