@@ -197,6 +197,10 @@ export function finalizeSession(state: FilePreviewState, reason: "close" | "unmo
   closeModal(state);
 }
 
+// 信任语义（issue #507）：interactive 是唯一带执行面的预览模式——进入须用户
+// window.confirm 显式 opt-in；离开（含关窗/返回）由 teardownInteractive 一次性
+// 释放 serve token，不留存续句柄。diff 等其余模式切换不经过 confirm（调用点
+// 传入 confirm 恒假的不变式），执行面仅收敛于 interactive 单一入口。
 function handleTabSwitch(
   state: FilePreviewState,
   targetMode: "preview" | "interactive" | "raw" | "diff",
@@ -508,8 +512,6 @@ export function openPreview(
   //     搜索纠正场景会让 git resolve 到错目录 → Diff tab 误判不可用）。
   // 返回（isBack）时 prev 快照已还原、路径恒为 resolved 历史值：不重建、不重复
   // probeDiff（prev.hadDiff 语义已覆盖），仅 html/md 大 diff 重探按既有逻辑。
-  const resolvedProbe = !isBack;
-  const needReopenForGroup = !isBack;
   state.onResolved = () => handleResolved(state, seq, isBack, backBtn, addDiffTab, addUnavailableDiffTab, abort.signal);
 
   if (group.group === "image") {
