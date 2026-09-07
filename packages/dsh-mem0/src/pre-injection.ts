@@ -133,14 +133,45 @@ export function redactCandidates(
 /** 围栏注入标题行。 */
 export const PRE_INJECTION_HEADER = "[Long-term Memories Recalled for this Workspace]";
 
+/** 围栏标签中性化占位：记忆内容中的围栏标签形态一律替换为该无害文本。 */
+export const FENCE_TAG_PLACEHOLDER = "[filtered-fence-tag]";
+
+/**
+ * 围栏标签变体模式：<user_long_term_memories> / </user_long_term_memories>
+ * 及其空白、大小写变体（围栏逃逸防线的匹配面）。
+ */
+const FENCE_TAG_VARIANT_PATTERN = /<\s*\/?\s*user_long_term_memories\s*>/gi;
+
+/**
+ * 围栏标签中性化：记忆内容（text / id）中出现的围栏标签形态一律替换为
+ * 无害占位文本，使记忆内容无法提前闭合注入围栏（S-1 防线，组装前执行）。
+ */
+export function neutralizeFenceTag(text: string): string {
+  return text.replace(FENCE_TAG_VARIANT_PATTERN, FENCE_TAG_PLACEHOLDER);
+}
+
 /**
  * 构造围栏注入文本：标题行 + <user_long_term_memories> 围栏包裹条目列表。
+ * 条目 text / id 先经围栏标签中性化再组装（S-1 围栏逃逸防线）。
+ * 组装后断言围栏不变式（开标签恰 1、闭标签恰 1），违例抛错由调用方降级
+ * 路径兜底为静默放行——绝不发出破损围栏（中性化后正常路径不可达，纵深防御）。
  * 候选集为空时返回空串（零 Token 浪费，调用方据此跳过注入）。
  */
 export function buildPreInjectionText(candidates: PreInjectCandidate[]): string {
   if (candidates.length === 0) return "";
-  const lines = candidates.map((c) => `- ${c.text}${c.id ? ` (id: ${c.id})` : ""}`);
-  return [PRE_INJECTION_HEADER, "<user_long_term_memories>", ...lines, "</user_long_term_memories>"].join("\n");
+  const lines = candidates.map((c) => {
+    const text = neutralizeFenceTag(c.text);
+    const id = neutralizeFenceTag(c.id);
+    return `- ${text}${id ? ` (id: ${id})` : ""}`;
+  });
+  const text = [PRE_INJECTION_HEADER, "<user_long_term_memories>", ...lines, "</user_long_term_memories>"].join("\n");
+  // 围栏不变式自检：开标签恰 1、闭标签恰 1
+  const openCount = (text.match(/<user_long_term_memories>/g) || []).length;
+  const closeCount = (text.match(/<\/user_long_term_memories>/g) || []).length;
+  if (openCount !== 1 || closeCount !== 1) {
+    throw new Error("pre-injection fence invariant violated: open/close tag must appear exactly once");
+  }
+  return text;
 }
 
 /**

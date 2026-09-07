@@ -65,6 +65,8 @@ export {
   buildPreInjectionText,
   PRE_INJECTION_HEADER,
   PRE_INJECTION_DISCIPLINE_TEXT,
+  neutralizeFenceTag,
+  FENCE_TAG_PLACEHOLDER,
 } from "./pre-injection.ts";
 export {
   registerSmartPreInjectionHook,
