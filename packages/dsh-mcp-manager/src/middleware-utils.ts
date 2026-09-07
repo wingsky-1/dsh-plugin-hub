@@ -5,8 +5,15 @@
  * ts 取；被连接池类、工具注册与 manager 共享。
  */
 
-import { CATALOG_TTL_MS, LIST_DEFAULT_TOOLS_PER_SERVER } from "./middleware-const.ts";
+import {
+  CATALOG_TTL_MS,
+  LIST_DEFAULT_TOOLS_PER_SERVER,
+  MAX_BYTES_PER_TOOL,
+  MAX_TOOLS_PER_SERVER,
+  MAX_TOTAL_CATALOG_BYTES,
+} from "./middleware-const.ts";
 import type {
+  CatalogServer,
   CatalogTool,
   ListCatalogResult,
   ListServerEntry,
@@ -518,6 +525,43 @@ export function findToolDetail(
   };
   if (unit.userDisabled.has(parsed.server)) detail.disabled = true;
   return detail;
+}
+
+/** 目录新鲜判定：有条目、无 unavailable 段、且发现时间在 TTL 内
+ *  （discover 惰性重发现专用；纯时间比较，无副作用）。 */
+export function isCatalogFresh(catalog: CatalogServer | undefined): boolean {
+  return catalog !== undefined
+    && catalog.unavailable === undefined
+    && Date.now() - catalog.discoveredAt <= CATALOG_TTL_MS;
+}
+
+/** 单服务器目录装箱（discover 专用纯函数）：按限额收敛工具清单——
+ *  工具数上限 MAX_TOOLS_PER_SERVER、单描述字节上限 MAX_BYTES_PER_TOOL（超限
+ *  截断）、累计字节上限 MAX_TOTAL_CATALOG_BYTES（超限即停）。行为与原
+ *  discover 内联循环逐位一致（含 totalBytes 对截断后条目的计算口径）。 */
+export function boundCatalogTools(
+  tools: Iterable<{ name?: unknown; description?: unknown; inputSchema?: unknown }>,
+): Map<string, CatalogTool> {
+  const bounded = new Map<string, CatalogTool>();
+  let totalBytes = 0;
+  for (const tool of tools) {
+    if (bounded.size >= MAX_TOOLS_PER_SERVER) break;
+    const name = String(tool.name ?? "");
+    if (name === "") continue;
+    const description = typeof tool.description === "string" ? tool.description : "";
+    const descriptionBytes = Buffer.byteLength(description, "utf8");
+    if (descriptionBytes > MAX_BYTES_PER_TOOL) {
+      bounded.set(name, {
+        description: description.slice(0, MAX_BYTES_PER_TOOL),
+        inputSchema: (tool.inputSchema ?? {}) as Record<string, unknown>,
+      });
+    } else {
+      bounded.set(name, { description, inputSchema: (tool.inputSchema ?? {}) as Record<string, unknown> });
+    }
+    totalBytes += descriptionBytes + JSON.stringify(bounded.get(name)?.inputSchema ?? {}).length;
+    if (totalBytes > MAX_TOTAL_CATALOG_BYTES) break;
+  }
+  return bounded;
 }
 
 /** 等待带超时（race 兜底）。 */

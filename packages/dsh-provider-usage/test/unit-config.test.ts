@@ -49,11 +49,14 @@ import {
 
 {
   // HOME/DSH_HOME 指向临时目录；~ 展开、绝对路径、目录拒绝都基于真实文件系统
+  // Windows 上 os.homedir()（untildify 固化源）读 USERPROFILE，须一并重定向。
   const home = mkdtempSync(join(tmpdir(), "dou-addfile-"));
   const savedDsh = process.env.DSH_HOME;
   const savedHomeEnv = process.env.HOME;
+  const savedUserProfile = process.env.USERPROFILE;
   process.env.DSH_HOME = home;
   process.env.HOME = home;
+  if (process.platform === "win32") process.env.USERPROFILE = home;
   try {
     // 显式受控固化：此后进程内 ~ 展开落点恒为本隔离目录。
     // 若落点已指向别处（前置模块抢先固化），直接失败暴露，不做静默降级。
@@ -108,6 +111,10 @@ import {
     process.env.DSH_HOME = savedDsh;
     if (savedHomeEnv === undefined) delete process.env.HOME;
     else process.env.HOME = savedHomeEnv;
+    if (process.platform === "win32") {
+      if (savedUserProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = savedUserProfile;
+    }
   }
 }
 
@@ -154,18 +161,24 @@ assert.equal(normalizeConfig({ staticPath: "/v1/custom" }).staticPath, "/v1/cust
 // resolveProviderConfig 用例自行隔离 DSH_HOME/HOME 并清理凭据环境变量，
 // finally 恢复，避免污染后续 smoke 断言。
 
-/** 保存并清空凭据环境变量，返回恢复函数。DSH_HOME 始终指向隔离目录。 */
+/** 保存并清空凭据环境变量，返回恢复函数。DSH_HOME 始终指向隔离目录。
+ *  homeDir 同时重定向 HOME 与 USERPROFILE（Windows os.homedir() 读后者，
+ *  opencode auth.json 等按 homedir() 解析的路径在两个平台行为一致）。 */
 function isolateCredEnv(homeDir?: string) {
   const saved = {
     dshHome: process.env.DSH_HOME,
     home: process.env.HOME,
+    userProfile: process.env.USERPROFILE,
     key: process.env.OPENCODE_GO_API_KEY,
     key2: process.env.OPENCODE_GO_PROVIDER_API_KEY,
   };
   delete process.env.OPENCODE_GO_API_KEY;
   delete process.env.OPENCODE_GO_PROVIDER_API_KEY;
   process.env.DSH_HOME = mkdtempSync(join(tmpdir(), "dou-dshhome-"));
-  if (homeDir !== undefined) process.env.HOME = homeDir;
+  if (homeDir !== undefined) {
+    process.env.HOME = homeDir;
+    if (process.platform === "win32") process.env.USERPROFILE = homeDir;
+  }
   return () => {
     const r = (k: string, v: string | undefined) => {
       if (v !== undefined) process.env[k] = v;
@@ -173,6 +186,7 @@ function isolateCredEnv(homeDir?: string) {
     };
     r("DSH_HOME", saved.dshHome);
     r("HOME", saved.home);
+    if (process.platform === "win32") r("USERPROFILE", saved.userProfile);
     r("OPENCODE_GO_API_KEY", saved.key);
     r("OPENCODE_GO_PROVIDER_API_KEY", saved.key2);
   };

@@ -529,6 +529,75 @@ function attachWsLivenessProbe(
  * 逻辑自然收口另一端。探活定时器/监听器随连接关闭释放：两端各自的 close/error
  * 四路清理收敛到 stopAllProbes 单入口。
  */
+/**
+ * 半开探活装配（#592 从 bridgeCompressedWs 拆出）：两端独立计时（各自 pong
+ * 判定），probeIntervalMs=0 显式关闭。返回统一停止入口（幂等安全）。
+ */
+function attachBridgeProbes(
+  browserWs: WebSocket,
+  upstreamWs: WsClient,
+  target: WsBridgeTarget,
+): () => void {
+  const probeIntervalMs = target.probeIntervalMs ?? DEFAULT_WS_PROBE_INTERVAL_MS;
+  if (probeIntervalMs <= 0) return () => {};
+  // 半开判死日志：与既有 upstream error warn 同通道、可按文案区分
+  // 「半开判死强拆」与「正常关闭/业务错误」（issue #268 复核闸修补 2）。
+  const onHalfOpen = (intervalMs: number) => {
+    target.logger?.warn?.(`lan-proxy: ws-bridge half-open detected, terminating (intervalMs=${intervalMs})`);
+    target.onDisconnect?.("halfOpen");
+  };
+  const stopBrowserProbe = attachWsLivenessProbe(browserWs, probeIntervalMs, onHalfOpen);
+  const stopUpstreamProbe = attachWsLivenessProbe(upstreamWs, probeIntervalMs, onHalfOpen);
+  return () => {
+    stopBrowserProbe();
+    stopUpstreamProbe();
+  };
+}
+
+/**
+ * 四路 teardown 接线（#592 从 bridgeCompressedWs 拆出）：任一端关闭/出错 →
+ * 对端终止；清理收敛到 stopAllProbes（幂等）。断连分类打点（issue #308 测量）：
+ * close/error/halfOpen 各有独立计数。上游 terminate（不响应 close 握手时强拆）、
+ * 浏览器端 close()（握手级联）。
+ */
+function wireBridgeTeardown(
+  browserWs: WebSocket,
+  upstreamWs: WsClient,
+  target: WsBridgeTarget,
+  stopAllProbes: () => void,
+): void {
+  const untrackBridges = () => {
+    target.bridgeSockets?.delete(browserWs);
+    target.bridgeSockets?.delete(upstreamWs);
+  };
+  const report = (kind: "close" | "error" | "halfOpen") => target.onDisconnect?.(kind);
+  upstreamWs.on("close", () => {
+    untrackBridges();
+    stopAllProbes();
+    report("close");
+    browserWs.terminate();
+  });
+  upstreamWs.on("error", (err) => {
+    untrackBridges();
+    stopAllProbes();
+    report("error");
+    target.logger?.warn?.(`lan-proxy: ws-bridge upstream error: ${err.message}`);
+    browserWs.terminate();
+  });
+  browserWs.on("close", () => {
+    untrackBridges();
+    stopAllProbes();
+    report("close");
+    try { upstreamWs.close(); } catch { /* 已关闭 */ }
+  });
+  browserWs.on("error", () => {
+    untrackBridges();
+    stopAllProbes();
+    report("error");
+    try { upstreamWs.close(); } catch { /* 已关闭 */ }
+  });
+}
+
 export function bridgeCompressedWs(
   req: IncomingMessage,
   socket: Socket,
@@ -563,31 +632,8 @@ export function bridgeCompressedWs(
     // 不依赖「浏览器端 close → 上游 close()」握手级联（上游不响应会滞留）。
     target.bridgeSockets?.add(browserWs);
     target.bridgeSockets?.add(upstreamWs);
-    const untrackBridges = () => {
-      target.bridgeSockets?.delete(browserWs);
-      target.bridgeSockets?.delete(upstreamWs);
-    };
     // 半开探活：两端独立计时（各自 pong 判定），probeIntervalMs=0 显式关闭。
-    const probeIntervalMs = target.probeIntervalMs ?? DEFAULT_WS_PROBE_INTERVAL_MS;
-    let stopProbes: (() => void) | undefined;
-    const stopAllProbes = () => {
-      stopProbes?.();
-      stopProbes = undefined;
-    };
-    if (probeIntervalMs > 0) {
-      // 半开判死日志：与既有 upstream error warn 同通道、可按文案区分
-      // 「半开判死强拆」与「正常关闭/业务错误」（issue #268 复核闸修补 2）。
-      const onHalfOpen = (intervalMs: number) => {
-        target.logger?.warn?.(`lan-proxy: ws-bridge half-open detected, terminating (intervalMs=${intervalMs})`);
-        target.onDisconnect?.("halfOpen");
-      };
-      const stopBrowserProbe = attachWsLivenessProbe(browserWs, probeIntervalMs, onHalfOpen);
-      const stopUpstreamProbe = attachWsLivenessProbe(upstreamWs, probeIntervalMs, onHalfOpen);
-      stopProbes = () => {
-        stopBrowserProbe();
-        stopUpstreamProbe();
-      };
-    }
+    const stopAllProbes = attachBridgeProbes(browserWs, upstreamWs, target);
     // 浏览器 → DSH（握手成功后开始转发）。注意保留原始帧类型 isBinary：
     // ws 的 message 回调 data 恒为 Buffer，若不显式回传 binary 标志，send(Buffer)
     // 会被当二进制帧发出——events 流是文本 JSON，误发 binary 会被客户端拒绝。
@@ -601,33 +647,7 @@ export function bridgeCompressedWs(
       if (browserWs.readyState === browserWs.OPEN) browserWs.send(data, { binary: isBinary });
     });
     // 任一端关闭/出错 → 对端终止；四路清理收敛到 stopAllProbes（幂等）。
-    // 断连分类打点（issue #308 测量）：close/error/halfOpen 各有独立计数。
-    const report = (kind: "close" | "error" | "halfOpen") => target.onDisconnect?.(kind);
-    upstreamWs.on("close", () => {
-      untrackBridges();
-      stopAllProbes();
-      report("close");
-      browserWs.terminate();
-    });
-    upstreamWs.on("error", (err) => {
-      untrackBridges();
-      stopAllProbes();
-      report("error");
-      target.logger?.warn?.(`lan-proxy: ws-bridge upstream error: ${err.message}`);
-      browserWs.terminate();
-    });
-    browserWs.on("close", () => {
-      untrackBridges();
-      stopAllProbes();
-      report("close");
-      try { upstreamWs.close(); } catch { /* 已关闭 */ }
-    });
-    browserWs.on("error", () => {
-      untrackBridges();
-      stopAllProbes();
-      report("error");
-      try { upstreamWs.close(); } catch { /* 已关闭 */ }
-    });
+    wireBridgeTeardown(browserWs, upstreamWs, target, stopAllProbes);
   });
 }
 

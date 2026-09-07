@@ -47,7 +47,7 @@ function fakeRepo() {
       ['dsh-notifier', 'client/index.ts'],
     ]
     for (const [pkg, rel] of srcs) {
-      cpSync(join(ROOT, 'packages', pkg, 'src', rel), join(root, 'packages', pkg, 'src', rel))
+      copyLf(join(ROOT, 'packages', pkg, 'src', rel), join(root, 'packages', pkg, 'src', rel))
     }
   } catch (e) {
     rmSync(root, { recursive: true, force: true })
@@ -56,9 +56,15 @@ function fakeRepo() {
   return root
 }
 
+// win32 checkout 常为 CRLF：变异正则按 LF 书写——副本统一归一化 LF，
+// 保证变异在两个平台等价生效（gate 解析对行尾不敏感）。
+function copyLf(srcPath, destPath) {
+  writeFileSync(destPath, readFileSync(srcPath, 'utf8').replace(/\r\n/g, '\n'))
+}
+
 function edit(root, pkg, rel, fn) {
   const f = join(root, 'packages', pkg, 'src', rel)
-  writeFileSync(f, fn(readFileSync(f, 'utf8')))
+  writeFileSync(f, fn(readFileSync(f, 'utf8').replace(/\r\n/g, '\n')))
 }
 
 /** 通用断言：注入后矩阵红 + problems 含 expectKey；若 expectKey 为数组则逐一断言。 */
@@ -184,8 +190,8 @@ test('量级: README 配置表缺键 → warn 不红（pass 仍 true）', () => 
   const root = fakeRepo()
   try {
     // 复制真实 README 进副本（矩阵 README warn 需要文件存在）
-    cpSync(join(ROOT, 'packages/dsh-lan-proxy/README.md'), join(root, 'packages/dsh-lan-proxy/README.md'))
-    cpSync(join(ROOT, 'packages/dsh-notifier/README.md'), join(root, 'packages/dsh-notifier/README.md'))
+    copyLf(join(ROOT, 'packages/dsh-lan-proxy/README.md'), join(root, 'packages/dsh-lan-proxy/README.md'))
+    copyLf(join(ROOT, 'packages/dsh-notifier/README.md'), join(root, 'packages/dsh-notifier/README.md'))
     // 基线（README 与代码键集一致）：零 warn
     let r = runConfigMatrix(root)
     assert.equal(r.pass, true)

@@ -36,7 +36,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import { parseFrontmatter } from "../../../shared/frontmatter.js";
@@ -120,6 +120,10 @@ assert.ok(noArgExitsNonZero, "browser-driver 无参数应非零退出（用法�
   assert.equal(core.resolvePkgArg("./skills").kind, "path", "形态类路径 ./ → path");
   assert.equal(core.resolvePkgArg("~").kind, "path", "~ → path（home 展开）");
   assert.equal(core.resolvePkgArg("~/x").abs, join(homedir(), "x"), "~/x → home 前缀展开");
+  if (process.platform === "win32") {
+    assert.equal(core.resolvePkgArg("~\\x").abs, join(homedir(), "x"), "~\\x → home 前缀展开（Windows 反斜杠形态）");
+    assert.equal(core.resolvePkgArg("C:\\abs\\path").kind, "path", "盘符绝对路径 → path");
+  }
   assert.equal(core.resolvePkgArg("/abs/path").kind, "path", "绝对路径 → path");
   assert.equal(core.resolvePkgArg("@scope/name").kind, "spec", "@scope/name 包规格 → spec 原样透传");
   assert.equal(core.resolvePkgArg("https://github.com/a/b.git").kind, "spec", "git URL → spec 原样透传");
@@ -207,14 +211,23 @@ assert.ok(noArgExitsNonZero, "browser-driver 无参数应非零退出（用法�
 // → waitReady 的 dead 检测与 CliError 诊断不可达（stderr 空），且 dsh exit 0 静默
 // 假成功、非契约码（3）穿透契约表。修复后：就绪前退出只记录，统一走
 // CliError(EXIT.FAIL=1) + 引用 dsh.log 的可操作诊断。
+// win32：.mjs 夹具无法直接 spawn（shebang 仅 POSIX 语义）——按产品 win32 设计
+// 路径提供 .cmd 入口（isWinScript → shell:true 回退），垫片转发到 node。
+function winCmdShimFor(scriptAbs) {
+  if (process.platform !== "win32") return scriptAbs;
+  const cmdShim = join(dirname(scriptAbs), `${basename(scriptAbs, ".mjs")}.cmd`);
+  writeFileSync(cmdShim, `@echo off\r\n"${process.execPath}" "%~dp0${basename(scriptAbs)}" %*\r\n`);
+  return cmdShim;
+}
+
 {
   const tmp = mkdtempSync(join(tmpdir(), "dsh-verify-smoke-"));
   try {
     // 假 dsh：--version 有输出；plugin list 创建 profile 骨架（bundle 注入要读
     // package.json，不建则 ENOENT 走不到就绪阶段）；web 启动（--host 参数）时
     // 按 FAKE_DH_EXIT 立即退出（模拟就绪前崩溃）
-    const fakeDsh = join(tmp, "fake-dsh.mjs");
-    writeFileSync(fakeDsh, `#!/usr/bin/env node
+    const fakeDshScript = join(tmp, "fake-dsh.mjs");
+    writeFileSync(fakeDshScript, `#!/usr/bin/env node
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 const args = process.argv.slice(2);
@@ -228,7 +241,8 @@ if (args[0] === "plugin" && args.includes("list")) {
 }
 process.exit(Number(process.env.FAKE_DH_EXIT ?? "0"));
 `);
-    chmodSync(fakeDsh, 0o755);
+    chmodSync(fakeDshScript, 0o755);
+    const fakeDsh = winCmdShimFor(fakeDshScript);
     const runWithFake = (exitCode) => {
       let code = 0; let out = "";
       try {
@@ -285,6 +299,9 @@ assert.ok(readme.includes("verify-isolated.mjs"), "README 同步 node 版脚本�
 assert.ok(!readme.includes("scripts/verify-isolated.sh"), "README 不再以旧 bash 脚本路径作为当前用法（升级路径说明除外）");
 
 // ---- 9. B4 隔离审计：lib/audit.mjs 纯函数行为断言 + 脚本契约锚定 + 退出码实测 ----
+// win32：目录符号链接需特权，junction 无需且 lstat/realpath 语义一致，
+// 越界检测（realpath 落点在扫描根外）不受影响。
+const SYMLINK_TYPE = process.platform === "win32" ? "junction" : "dir";
 {
   const auditFile = join(SCRIPTS_DIR, "lib", "audit.mjs");
   assert.ok(existsSync(auditFile), "lib/audit.mjs 随 skill 目录分发");
@@ -375,7 +392,12 @@ if (args.includes("--host")) {
   const pi = args.indexOf("--profile");
   const prof = args[pi + 1];
   mkdirSync(join(H, "profiles", prof, "node_modules", "@deepseek-ai"), { recursive: true });
-  symlinkSync("/nonexistent/dsh-install/lib", join(H, "profiles", prof, "node_modules", "@deepseek-ai", "dsh-base"), "dir");
+  // 悬空 bundle 链接：win32 目符号链接需特权，junction 无需且悬空语义一致。
+  if (process.platform === "win32") {
+    symlinkSync("C:\\\\nonexistent\\\\dsh-install\\\\lib", join(H, "profiles", prof, "node_modules", "@deepseek-ai", "dsh-base"), "junction");
+  } else {
+    symlinkSync("/nonexistent/dsh-install/lib", join(H, "profiles", prof, "node_modules", "@deepseek-ai", "dsh-base"), "dir");
+  }
   writeFileSync(join(H, ".credentials.yaml"), "token: fake\\n");
   mkdirSync(join(H, "storages"), { recursive: true });
   writeFileSync(join(H, "storages", "workspace.json"), "{}");
@@ -395,11 +417,12 @@ if (args.includes("--host")) {
 process.exit(1);
 `);
     chmodSync(fakeDsh, 0o755);
+    const fakeDshEntry = winCmdShimFor(fakeDsh);
     const runAuditE2E = (extraEnv) => {
       let code = 0;
       let out = "";
       try {
-        out = execFileSync(process.execPath, [scriptFile, "--audit", "--keep", "--dsh", fakeDsh, "--port", "0"], {
+        out = execFileSync(process.execPath, [scriptFile, "--audit", "--keep", "--dsh", fakeDshEntry, "--port", "0"], {
           encoding: "utf8", env: { ...process.env, ...extraEnv }, timeout: 60000,
         });
       } catch (e) { code = e.status ?? -1; out = (e.stdout ?? "") + (e.stderr ?? ""); }
@@ -449,9 +472,9 @@ process.exit(1);
     // profiles/** 都报，防逃逸优先于白名单忽略）
     {
       const t0 = audit.scanSnapshot(tmp);
-      symlinkSync(join(outside, "evil"), join(tmp, "evil-link"), "dir");
+      symlinkSync(join(outside, "evil"), join(tmp, "evil-link"), SYMLINK_TYPE);
       mkdirSync(join(tmp, "profiles", "verify_x"), { recursive: true });
-      symlinkSync(join(outside, "evil2"), join(tmp, "profiles", "verify_x", "evil2"), "dir");
+      symlinkSync(join(outside, "evil2"), join(tmp, "profiles", "verify_x", "evil2"), SYMLINK_TYPE);
       const t1 = audit.scanSnapshot(tmp);
       const r = audit.runAudit({ t0, t1, isolatedRoot: tmp });
       assert.equal(r.count, 2, `新增 2 条越界 symlink（实际 ${r.count}）`);
@@ -528,7 +551,7 @@ process.exit(1);
     // 反例2：t0 已存在且目标未变的外部 symlink（link: 挂载点）不报
     {
       mkdirSync(join(tmp, "profiles", "verify_x", "node_modules"), { recursive: true });
-      symlinkSync(join(outside, "pkg"), join(tmp, "profiles", "verify_x", "node_modules", "pkg"), "dir");
+      symlinkSync(join(outside, "pkg"), join(tmp, "profiles", "verify_x", "node_modules", "pkg"), SYMLINK_TYPE);
       const t0 = audit.scanSnapshot(tmp);
       const t1 = audit.scanSnapshot(tmp);
       const r = audit.runAudit({ t0, t1, isolatedRoot: tmp });
@@ -555,7 +578,7 @@ process.exit(1);
     // 干净运行 pass；运行期新增（白名单外）仍报——「就绪后运行期写面审计」语义
     {
       mkdirSync(join(tmp, "profiles", "verify_x", "node_modules", "@deepseek-ai"), { recursive: true });
-      symlinkSync(join(outside, "dsh-install-lib"), join(tmp, "profiles", "verify_x", "node_modules", "@deepseek-ai", "dsh-base"), "dir");
+      symlinkSync(join(outside, "dsh-install-lib"), join(tmp, "profiles", "verify_x", "node_modules", "@deepseek-ai", "dsh-base"), SYMLINK_TYPE);
       w(".credentials.yaml", "token: x\n");
       w("storages/workspace.json", "{}");
       const t0 = audit.scanSnapshot(tmp, { skipDeep: audit.SKIP_DEEP });

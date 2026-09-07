@@ -6,8 +6,8 @@
   "description": "DSH（DeepSeek Harness）Web GUI 插件集：通知、provider 用量、局域网代理、MCP 管理、闲置归档、文件预览——一键装全家桶或按需单装",
   "license": "MIT",
   "scripts": {
-    "build": "pnpm -r build",
-    "test": "pnpm -r test",
+    "build": "pnpm -r --filter !dsh-plugin-hub build",
+    "test": "pnpm -r --filter !dsh-plugin-hub test",
     "contract": "node scripts/gate/contract-check.ts",
     "pack:check": "node scripts/gate/pack-check.ts",
     "verify:npmlayout": "node scripts/gate/verify-npm-layout.ts",
@@ -19,7 +19,7 @@
     "gate:homedir": "node scripts/gate/forbid-homedir-src.mjs",
     "docs:check": "node scripts/gate/verify-docs.ts --strict-en",
     "typecheck": "pnpm -r --if-present run typecheck",
-    "cov": "c8 --reporter=json --reporter=json-summary --reporter=text pnpm -r --if-present test",
+    "cov": "c8 --reporter=json --reporter=json-summary --reporter=text pnpm -r --filter !dsh-plugin-hub --if-present test",
     "crap": "node scripts/gate/crap-check.mjs"
   },
   "keywords": [

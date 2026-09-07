@@ -146,6 +146,8 @@ export {
   parseDisabledTools,
   scoreTool,
   searchCatalog,
+  isCatalogFresh,
+  boundCatalogTools,
   searchCatalogMulti,
   listCatalog,
   findToolDetail,

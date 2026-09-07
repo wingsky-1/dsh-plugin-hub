@@ -27,6 +27,7 @@ import {
   canRedirectLibToSrc,
   candidateFrom,
   resolve,
+  toPosix,
 } from "./mutation-lib-to-src-loader.mjs";
 
 /** 临时 fake 仓库：<root>/packages/<pkg>/{lib,src,test} 骨架。 */
@@ -58,7 +59,7 @@ test("canRedirectLibToSrc: index 与非 index 子模块均重定向（任一层�
     for (const rel of ["index.js", "routes.js", "sub/module.js", "a/b/c/deep.js"]) {
       const hit = canRedirectLibToSrc(lib(root, pkg, rel), { root });
       assert.ok(hit, `${rel} 应命中重定向`);
-      assert.equal(hit.filePath, src(root, pkg, rel.slice(0, -3) + ".ts"), `${rel} 目标应为同包 src/*.ts`);
+      assert.equal(toPosix(hit.filePath), toPosix(src(root, pkg, rel.slice(0, -3) + ".ts")), `${rel} 目标应为同包 src/*.ts`);
     }
   });
 });
@@ -76,7 +77,7 @@ test("canRedirectLibToSrc: packages 边界保留——shared/node_modules/非 li
     assert.equal(canRedirectLibToSrc(data, { root }), null, "lib/data.json 不应命中");
     // lib/*.ts 偶发形态：仍映射到同包 src/*.ts
     const tsHit = canRedirectLibToSrc(join(root, "packages", pkg, "lib", "index.ts"), { root });
-    assert.equal(tsHit?.filePath, src(root, pkg, "index.ts"), "lib/index.ts 应映射到 src/index.ts");
+    assert.equal(toPosix(tsHit?.filePath), toPosix(src(root, pkg, "index.ts")), "lib/index.ts 应映射到 src/index.ts");
     // 跨包：canRedirectLibToSrc 拒绝（options.pkg 限定目标包语义）
     const cross = join(root, "packages", "dsh-other", "lib", "index.js");
     assert.equal(canRedirectLibToSrc(cross, { root, pkg }), null, "跨包 lib 不应映射到本包 src");
@@ -101,7 +102,7 @@ test("canRedirectLibToSrc: .. 路径穿越被折叠后即越界，不重定向",
     const inner = join(root, "packages", pkg, "lib", "sub", "..", "index.js");
     const hit = canRedirectLibToSrc(inner, { root });
     assert.ok(hit, "lib 内 .. 折叠后仍在 lib 内应命中");
-    assert.equal(hit.filePath, src(root, pkg, "index.ts"));
+    assert.equal(toPosix(hit.filePath), toPosix(src(root, pkg, "index.ts")));
   });
 });
 
@@ -116,7 +117,7 @@ test("canRedirectLibToSrc: client 产物不映射为宿主 src（避免宿主 sr
     }
     // 宿主模块 client-logic.ts 的产物放行（不是客户端 bundle）
     const host = canRedirectLibToSrc(lib(root, pkg, "client-logic.js"), { root });
-    assert.equal(host?.filePath, src(root, pkg, "client-logic.ts"));
+    assert.equal(toPosix(host?.filePath), toPosix(src(root, pkg, "client-logic.ts")));
   });
 });
 
@@ -125,7 +126,7 @@ test("canRedirectLibToSrc: Windows 分隔符统一后同样命中", () => {
     const win = lib(root, pkg, "sub/routes.js").replaceAll("/", "\\");
     const hit = canRedirectLibToSrc(win, { root });
     assert.ok(hit, "Windows 反斜杠路径经统一后应命中");
-    assert.equal(hit.filePath, src(root, pkg, "sub/routes.ts"));
+    assert.equal(toPosix(hit.filePath), toPosix(src(root, pkg, "sub/routes.ts")));
   });
 });
 
@@ -148,7 +149,7 @@ test("canRedirectLibToSrc: URL 百分号编码经 fileURLToPath 解码后往返�
     const decoded = fileURLToPath(urlEnc);
     const hit = canRedirectLibToSrc(decoded, { root });
     assert.ok(hit, "解码后的绝对路径应命中");
-    assert.equal(hit.filePath, src(root, pkg, "index.ts"));
+    assert.equal(toPosix(hit.filePath), toPosix(src(root, pkg, "index.ts")));
   });
 });
 
@@ -269,7 +270,7 @@ test("pkgRootFromParent: 仅识别 packages/<pkg>/ 下的父文件（candidateFr
   try {
     fakeRepo(root, pkg);
     const inPkg = candidateFrom("../lib/index.js", pathToFileURL(join(root, "packages", pkg, "test", "entry.mjs")).href);
-    assert.equal(canRedirectLibToSrc(inPkg, { root, pkg })?.filePath, src(root, pkg, "index.ts"));
+    assert.equal(toPosix(canRedirectLibToSrc(inPkg, { root, pkg })?.filePath), toPosix(src(root, pkg, "index.ts")));
     // 包外父目录：candidateFrom 仍可解析（普通路径解析），但 canRedirectLibToSrc 应拒绝
     const outside = candidateFrom("../lib/index.js", pathToFileURL(join(root, "scripts", "x.mjs")).href);
     assert.equal(canRedirectLibToSrc(outside, { root }), null);

@@ -12,7 +12,7 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import {
   pluginDir, sanitizeSettings, validateSettings,
@@ -29,7 +29,7 @@ const { createServer } = await import("node:http");
   const tmp = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-dir-"));
   process.env.DSH_HOME = tmp;
   const dir = pluginDir();
-  assert.ok(dir.endsWith("/lan-proxy"), `pluginDir 结尾 /lan-proxy，实际 ${dir}`);
+  assert.equal(basename(dir), "lan-proxy", `pluginDir 末段为 lan-proxy，实际 ${dir}`);
   assert.ok(dir.startsWith(tmp), `pluginDir 在 DSH_HOME 内，实际 ${dir}`);
   process.env.DSH_HOME = prev;
   rmSync(tmp, { recursive: true, force: true });

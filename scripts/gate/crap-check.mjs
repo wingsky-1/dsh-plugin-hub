@@ -569,8 +569,11 @@ export function runFullCheck({ repoRoot, threshold, strict, coveragePath }) {
   let skippedForeignTotal = 0;
 
   for (const [file, data] of Object.entries(coverage)) {
-    if (!/\/packages\/[^/]+\/lib\//.test(file)) continue;
-    const rel = file.startsWith(repoRoot) ? file : join(repoRoot, file);
+    // 包产物过滤对分隔符归一后匹配：coverage 键是 V8 原生路径（Windows 反斜杠），
+    // 按字面正斜杠匹配会在 Windows 上整批跳过报 0（Linux 不受影响）。
+    const normFile = file.replace(/\\/g, '/');
+    if (!/\/packages\/[^/]+\/lib\//.test(normFile)) continue;
+    const rel = existsSync(file) ? file : join(repoRoot, file);
     if (!existsSync(rel)) continue;
     const { fns, skippedForeign } = functionsOf(readFileSync(rel, 'utf8'));
     skippedForeignTotal += skippedForeign;

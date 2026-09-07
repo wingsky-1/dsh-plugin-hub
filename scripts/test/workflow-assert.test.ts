@@ -32,10 +32,12 @@ import { join, basename } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
 const ROOT = join(import.meta.dirname, '../..')
-const CI = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8')
-const OBSERVE = readFileSync(join(ROOT, '.github/workflows/observe.yml'), 'utf8')
-const OBSERVE_INC = readFileSync(join(ROOT, '.github/workflows/observe-incremental.yml'), 'utf8')
-const OVERLAY = readFileSync(join(ROOT, '.github/workflows/baseline-overlay.yml'), 'utf8')
+// win32 checkout 常为 CRLF：断言子串按 LF 书写——读取层统一归一化 LF。
+const lf = (p) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n')
+const CI = lf(join(ROOT, '.github/workflows/ci.yml'))
+const OBSERVE = lf(join(ROOT, '.github/workflows/observe.yml'))
+const OBSERVE_INC = lf(join(ROOT, '.github/workflows/observe-incremental.yml'))
+const OVERLAY = lf(join(ROOT, '.github/workflows/baseline-overlay.yml'))
 const RELEASE = readFileSync(join(ROOT, '.github/workflows/release.yml'), 'utf8')
 const HEALTH = readFileSync(join(ROOT, '.github/workflows/health-report.yml'), 'utf8')
 const GAUNTLET = JSON.parse(readFileSync(join(ROOT, 'scripts/data/gauntlet.config.json'), 'utf8'))

@@ -35,7 +35,8 @@ function fixturePackage(root, { name, indexSource, depLicense }) {
     mkdirSync(depDir, { recursive: true })
     writeFileSync(join(depDir, 'LICENSE'), depLicense)
     writeFileSync(join(depDir, 'package.json'), JSON.stringify({ name: 'fake-lib', version: '1.2.3', license: 'MIT' }))
-    symlinkSync(depDir, join(pkg, 'node_modules', 'linked-lib'))
+    // win32：目录符号链接需特权，junction 无需且目录解析语义一致
+    symlinkSync(depDir, join(pkg, 'node_modules', 'linked-lib'), process.platform === 'win32' ? 'junction' : 'dir')
   }
   return pkg
 }

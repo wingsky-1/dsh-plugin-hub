@@ -1205,12 +1205,16 @@ const main = async () => {
   {
     // 目录树：home/.dsh 模拟 DSH 全局家目录（DSH_HOME 指向它）；
     // home/dev/leetcode 是无任何标记的空工作区；proj 是带 .dsh/mcp.json 的项目。
+    // 无标记用例目录深嵌套 ≥16 层：findProjectRoot 向上窗口 16 层必不出沙箱，
+    // 杜绝逸出临时目录命中真实仓库/家目录标记（环境泄漏 flake，Windows 实测）；
+    // 有标记用例（proj）起步层立即命中，不受嵌套影响。
     const base = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-root-"));
-    const home = join(base, "home");
+    const deep = join(base, "d0", "d1", "d2", "d3", "d4", "d5", "d6", "d7", "d8", "d9", "d10", "d11", "d12", "d13", "d14");
+    const home = join(deep, "home");
     const leetcode = join(home, "dev", "leetcode");
     const proj = join(base, "proj");
     const projSub = join(proj, "sub");
-    const nomark = join(base, "nomark");
+    const nomark = join(deep, "nomark");
     try {
       mkdirSync(join(home, ".dsh"), { recursive: true });
       mkdirSync(leetcode, { recursive: true });

@@ -848,6 +848,10 @@ export class McpManager {
         void mw.removeCatalogEntry(unit.root, name).catch(() => {});
       }
     }
+    // 拆除即废弃同名在途建连标记：entry 被强拆后旧 attempt 仍可能 pending 至
+    // CONNECT_TIMEOUT_MS，残留去重标记会吞掉 remove/update 后的同名重连（含
+    // 重加配置立即重建）——详见 middleware.abandonInFlight 不变式。
+    mw.abandonInFlight(name);
     if (dropped) this.emitStatus();
   }
 
@@ -1043,6 +1047,9 @@ export class McpManager {
           if (client !== undefined && client.transport !== undefined) void client.transport.close().catch(() => {});
           targetUnit.connections.delete(name);
         }
+        // 断开即废弃同名在途标记：拆除时旧 attempt 仍 pending（挂至超时）会吞掉
+        // 紧随的显式「连接」（connect→ensureConnected 去重短路，force 也不豁免）。
+        this.middleware.abandonInFlight(name);
         this.emitStatus();
         return;
       }

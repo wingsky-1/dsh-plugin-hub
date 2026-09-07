@@ -177,6 +177,10 @@ const {
   const prevHome = process.env.DSH_HOME;
   const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-root-"));
   try {
+    // 顶棚标记：walk 从沙箱内任意一级子目录向上必然先命中 dir/.git，
+    // 不得逸出临时目录命中真实仓库/真实家目录的标记（防环境泄漏 flake）。
+    mkdirSync(join(dir, ".git"), { recursive: true });
+
     const fakeHome = join(dir, "fake-home");
     mkdirSync(fakeHome, { recursive: true });
     mkdirSync(join(fakeHome, ".dsh"), { recursive: true });
@@ -195,22 +199,28 @@ const {
     assert.equal(await manager.findProjectRoot(mcpProj), mcpProj, ".mcp.json 标记命中");
     assert.equal(await manager.findProjectRoot(dshProj), dshProj, ".dsh 非 home 标记命中");
 
-    // 全局家排除：模拟 ~ 下含 .dsh（= DSH_HOME），其子目录向上命中家级 .dsh 应跳过。
+    // 全局家排除：模拟 ~ 下含 .dsh（= DSH_HOME），其子目录向上命中家级 .dsh 应跳过，
+    // 继续向上命中顶棚 dir/.git（若误判家级 .dsh 为项目标记则返回 fake-user-home）。
     const fakeUserHome = join(dir, "fake-user-home");
     const fakeDshHome = join(fakeUserHome, ".dsh");
     mkdirSync(fakeDshHome, { recursive: true });
     process.env.DSH_HOME = fakeDshHome;
     const inHome = join(fakeUserHome, "sub");
     mkdirSync(inHome, { recursive: true });
-    assert.equal(await manager.findProjectRoot(inHome), inHome, "全局家不算项目标记");
-    // cwd 恰为家目录本身：无其他标记 → 回落 cwd。
-    assert.equal(await manager.findProjectRoot(fakeDshHome), fakeDshHome);
+    assert.equal(await manager.findProjectRoot(inHome), dir, "全局家不算项目标记");
+    // cwd 恰为家目录本身：家级 .dsh 不算自身标记 → 越过它命中顶棚。
+    assert.equal(await manager.findProjectRoot(fakeDshHome), dir, "家目录自身不算项目标记");
     // 恢复通用 home 供后续用例。
     process.env.DSH_HOME = fakeHome;
-    // 无任何标记的普通目录 → 回落 cwd。
+    // 无任何标记的普通目录 → 向上命中顶棚。
     const plain = join(dir, "plain");
     mkdirSync(plain, { recursive: true });
-    assert.equal(await manager.findProjectRoot(plain), plain);
+    assert.equal(await manager.findProjectRoot(plain), dir);
+    // 回落 cwd：输入嵌套 16 级，向上窗口（16 层）不出沙箱、够不到任何标记 → 原样返回。
+    let deep = dir;
+    for (let i = 0; i < 16; i += 1) deep = join(deep, `d${i}`);
+    mkdirSync(deep, { recursive: true });
+    assert.equal(await manager.findProjectRoot(deep), deep, "16 级窗口内无标记 → 回落 cwd");
     // undefined cwd → process.cwd() 兜底。
     const fallback = await manager.findProjectRoot(undefined);
     assert.equal(typeof fallback, "string");
@@ -889,6 +899,51 @@ function rmStatSafe(p) {
   }
 }
 
+// ---- 拆除时在途建连的 in-flight 残留（跨平台确定性回归：Windows 必现） ----
+// 命令选真实存在但永不完成 MCP 握手的 node 子进程：connect() 必然 pending 到
+// CONNECT_TIMEOUT_MS（10s），把「拆除时 attempt 在途」窗口拉满。此前 remove/
+// disconnect 强拆 entry 后不同步废弃 inFlight 去重标记，同名后续 ensureConnected
+// （含 force 的显式「连接」）被残留标记吞掉，且旧 attempt 收敛命中 disposed 守卫
+// 无人补连——修复前本块必红（此前 Linux CI 靠 spawn 快速失败侥幸避开窗口）。
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mgr2n-"));
+  const prevHome = process.env.DSH_HOME;
+  try {
+    process.env.DSH_HOME = dir;
+    const { manager, store } = makeManager(dir);
+    manager.middlewareMode = "all";
+    await manager.initMiddleware("all", {});
+    const mw = manager.middleware;
+    // 挂起型服务器：子进程常驻但不吐 MCP 帧 → transport.connect() 恒 pending。
+    const hangServer = (name) => ({
+      name, transport: "stdio", command: process.execPath,
+      args: ["-e", "setInterval(() => {}, 1e6)"], reconnect: { enabled: false },
+    });
+
+    // remove 路径：connecting 中强拆 + 重加，连接条目须立即重建。
+    store.upsert(normalizeServer(hangServer("hang")));
+    manager.start("hang", "global");
+    await pollUntil("hang 连接条目建立（connecting）", () => mw.units.get("@global")?.connections.has("hang") === true);
+    await manager.remove("hang");
+    store.upsert(normalizeServer(hangServer("hang")));
+    manager.start("hang", "global");
+    await pollUntil("remove 后重加立即重建连接条目（in-flight 残留已废弃）", () => mw.units.get("@global")?.connections.has("hang") === true);
+
+    // disconnect 路径：connecting 中断开 + 显式「连接」，force 建连不被去重吞掉。
+    await manager.disconnect("hang", "global");
+    assert.ok(mw.units.get("@global").userDisabled.has("hang"), "disconnect 写 userDisabled");
+    await manager.connect("hang", "global");
+    await pollUntil("disconnect 后显式连接立即重建条目", () => mw.units.get("@global")?.connections.has("hang") === true);
+
+    await manager.dispose();
+  } finally {
+    if (prevHome === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = prevHome;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 // ---- add / update（scope project 抛错路径在 unit-manager 已覆盖，此处补全局） ----
 
 {
@@ -1359,6 +1414,10 @@ function rmStatSafe(p) {
     inFlight: new Map(),
   });
   const serversWith = (entries) => new Map(Object.entries(entries));
+  // 项目 root 夹具用真实目录 + .git 标记：findProjectRoot 从该目录起步必然原样
+  // 返回（跨平台确定，POSIX 字符串 "/proj" 在 Windows resolve 后形态不一致）。
+  const projDir = join(dir, "proj");
+  mkdirSync(join(projDir, ".git"), { recursive: true });
 
   try {
     process.env.DSH_HOME = dir;
@@ -1379,7 +1438,7 @@ function rmStatSafe(p) {
         g1: { server: { name: "g1" }, scope: "global" },
         p1: { server: { name: "p1" }, scope: "project" },
       });
-      const view = await manager.catalogViewFor("/proj", servers);
+      const view = await manager.catalogViewFor(projDir, servers);
       assert.equal(view.get("g1")?.summary, "B-global-g1", "off 模式全局走 B");
       assert.equal(view.get("p1")?.summary, "B-project-p1", "off 模式项目走 B");
     }
@@ -1394,8 +1453,8 @@ function rmStatSafe(p) {
         }),
       );
       mw.units.set(
-        "/proj",
-        unitFor("/proj", {
+        projDir,
+        unitFor(projDir, {
           p1: { discoveredAt: 1, tools: new Map([["p_read", { description: "Project read files." }]]) },
         }),
       );
@@ -1404,7 +1463,7 @@ function rmStatSafe(p) {
         g2: { server: { name: "g2" }, scope: "global" },
         p1: { server: { name: "p1" }, scope: "project" },
       });
-      const view = await manager.catalogViewFor("/proj", servers);
+      const view = await manager.catalogViewFor(projDir, servers);
       assert.equal(view.get("g1")?.summary, "Global search the web for facts.", "all 模式全局覆盖为中间层目录摘要");
       assert.equal(view.get("g2")?.summary, "B-global-g2", "中间层无 g2 → 保留 B");
       assert.equal(view.get("p1")?.summary, "Project read files.", "project scope 覆盖为项目单元摘要");
@@ -1416,8 +1475,8 @@ function rmStatSafe(p) {
       manager.middlewareMode = "project";
       mw.units.clear();
       mw.units.set(
-        "/proj",
-        unitFor("/proj", {
+        projDir,
+        unitFor(projDir, {
           p1: { discoveredAt: 1, tools: new Map([["p_read", { description: "Project read files." }]]) },
           p2: { discoveredAt: 1, tools: new Map(), unavailable: "discovery failed" },
         }),
@@ -1427,7 +1486,7 @@ function rmStatSafe(p) {
         p1: { server: { name: "p1" }, scope: "project" },
         p2: { server: { name: "p2" }, scope: "project" },
       });
-      const view = await manager.catalogViewFor("/proj", servers);
+      const view = await manager.catalogViewFor(projDir, servers);
       assert.equal(view.get("p1")?.summary, "Project read files.", "project 模式项目级走中间层");
       assert.equal(view.get("g1")?.summary, "B-global-g1", "project 模式全局无 @global 单元 → B");
       assert.equal(view.get("p2")?.summary, "B-project-p2", "unavailable 目录视为无 → 保留 B");

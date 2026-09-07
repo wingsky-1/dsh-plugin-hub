@@ -439,6 +439,22 @@ function renderDailyUsageCard(pts, truncated, e, now, utils) {
 }
 
 /** 柱形几何：双向域 [lo, hi]、基线 y=0 实线；消耗蓝柱向上、净增绿柱向下、异常 0 高。 */
+/** 单日柱悬浮文案（#592 从 dailyBarsSvg 拆出的纯函数）：六态分层 + 净增/消耗
+ *  双口径 + 附注括注；i/total 供「今日」判定。gap/unavailable 两态为防御分支
+ *  （现聚合器不产出该状态），直接单测覆盖。 */
+export function dailyBarTitle(r, i, total) {
+  const isToday = i === total - 1;
+  const dateLabel = isToday ? "今日" : r.key.slice(5);
+  if (r.status === "empty") return `${dateLabel} 无采样`;
+  if (r.status === "insufficient") return `${dateLabel} 样本不足`;
+  if (r.status === "gap") return `${dateLabel} 数据中断`;
+  if (r.status === "unavailable") return `${dateLabel} 服务不可用区间不计`;
+  if (r.status === "anomaly") return `${dateLabel} ${r.note || "数值异常"}`;
+  const extra = r.extra ? `（${r.extra}）` : "";
+  if (r.neg) return `${dateLabel} 余额净增 ¥${Math.abs(r.u).toFixed(2)}${extra}`;
+  return `${dateLabel} 消耗 ¥${r.u.toFixed(2)}${extra}`;
+}
+
 function dailyBarsSvg(records, e) {
   const W = 320, H = 100, PL = 36, PR = 6, PT = 8, PB = 14;
   const plotW = W - PL - PR;
@@ -479,14 +495,7 @@ function dailyBarsSvg(records, e) {
     const isToday = i === records.length - 1;
     const dateLabel = isToday ? "今日" : r.key.slice(5);
     const opacity = isToday ? 0.55 : 1; // 今日未结束，半透明示意
-    let titleText;
-    if (r.status === "empty") titleText = `${dateLabel} 无采样`;
-    else if (r.status === "insufficient") titleText = `${dateLabel} 样本不足`;
-    else if (r.status === "gap") titleText = `${dateLabel} 数据中断`;
-    else if (r.status === "unavailable") titleText = `${dateLabel} 服务不可用区间不计`;
-    else if (r.status === "anomaly") titleText = `${dateLabel} ${r.note || "数值异常"}`;
-    else if (r.neg) titleText = `${dateLabel} 余额净增 ¥${Math.abs(r.u).toFixed(2)}${r.extra ? `（${r.extra}）` : ""}`;
-    else titleText = `${dateLabel} 消耗 ¥${r.u.toFixed(2)}${r.extra ? `（${r.extra}）` : ""}`;
+    const titleText = dailyBarTitle(r, i, records.length);
 
     if (r.u > TOL && r.status === "ok") {
       const yTop = yOf(finFallback(r.u, 0, hi));
