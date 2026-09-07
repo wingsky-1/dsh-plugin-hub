@@ -63,6 +63,7 @@ export {
   filterCandidatesByThreshold,
   redactCandidates,
   buildPreInjectionText,
+  buildPreInjectionMessage,
   PRE_INJECTION_HEADER,
   PRE_INJECTION_DISCIPLINE_TEXT,
   neutralizeFenceTag,

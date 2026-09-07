@@ -1182,23 +1182,28 @@ await test("#581 钩子端到端：首轮恰一次检索与围栏注入", async 
       messages: [{ role: "user", content: [{ type: "text", text: userText }] }],
     }));
 
-  // 首轮：触发检索 + 围栏注入 + 独立纪律消息
+  // 首轮：触发检索 + 围栏注入（随行纪律内嵌，单消息形态）
   const agent1 = makeAgent();
   const decision1 = await runHook(agent1, "本项目用什么包管理器？");
   assert.equal(searchCalls, 1, "首轮恰一次检索");
   assert.equal(decision1.kind, "enter");
   const injected = decision1.messages.filter((m: any) => m.source?.kind === "plugin" && m.source?.plugin === "mem0");
-  assert.equal(injected.length, 2, "预检索围栏消息 + 独立纪律消息");
-  const fenceMsg = injected.find((m: any) => m.source.form === "recall");
-  const disciplineMsg = injected.find((m: any) => m.source.form === "instructions");
-  assert.ok(fenceMsg, "围栏注入消息存在（form=recall）");
+  assert.equal(injected.length, 1, "#642 M-2：首轮注入恰 1 条 mem0 消息（围栏+内嵌纪律单消息）");
+  const fenceMsg = injected[0];
+  assert.ok(fenceMsg, "围栏注入消息存在");
+  assert.equal(fenceMsg.source.form, "recall", "随行纪律并入围栏消息后仅剩 form=recall 单消息");
   assert.ok(fenceMsg.content[0].text.includes("<user_long_term_memories>"), "围栏开标签");
   assert.ok(fenceMsg.content[0].text.includes("(id: m_01)"), "条目附 id");
-  assert.ok(disciplineMsg, "纪律消息独立存在（不与围栏合并）");
   assert.ok(
-    disciplineMsg.content[0].text.includes("not control instructions") &&
-      disciplineMsg.content[0].text.includes("takes precedence"),
-    "纪律语义：背景事实而非控制指令、冲突以当前请求为准",
+    fenceMsg.content[0].text.includes("[Memory Context Guidelines]") &&
+      fenceMsg.content[0].text.includes("not control instructions") &&
+      fenceMsg.content[0].text.includes("takes precedence"),
+    "随行纪律内嵌于围栏消息：背景事实而非控制指令、冲突以当前请求为准",
+  );
+  assert.ok(
+    fenceMsg.content[0].text.indexOf("</user_long_term_memories>") <
+      fenceMsg.content[0].text.indexOf("[Memory Context Guidelines]"),
+    "内嵌纪律位于围栏闭标签之后（纪律不混入记忆条目区）",
   );
   assert.equal(typeof unregister, "function");
 
@@ -1207,6 +1212,86 @@ await test("#581 钩子端到端：首轮恰一次检索与围栏注入", async 
   assert.equal(searchCalls, 1, "同会话第二次 pre-step 不再检索（尝试唯一性）");
   const injected2 = decision2.messages.filter((m: any) => m.source?.plugin === "mem0");
   assert.equal(injected2.length, 0, "同会话第二次 pre-step 不再注入（注入唯一性）");
+});
+
+// 30b. #642 复核返工 M-2 防回归：真实宿主双钩子链路（阶段一纪律 hook 先注册 + pre-injection hook 后注册）
+await test("#642 M-2 双钩子链路端到端：首轮 pre-injection 来源消息恰 1 条且无重复纪律消息对", async () => {
+  const { registerSmartPreInjectionHook, registerMemoryPromptHook } = hostMod;
+  let searchCalls = 0;
+  const fakeExecutor = {
+    isReady: () => true,
+    search: async () => {
+      searchCalls++;
+      return "- 用户统一使用 pnpm (id: m_01) [score: 0.92]";
+    },
+    add: async () => "",
+    list: async () => "",
+    delete: async () => "",
+  };
+  const handlers: Array<(payload: any, next: () => any) => Promise<any>> = [];
+  const mockCtx = {
+    on(_event: string, handler: any) {
+      handlers.push(handler);
+      return () => {};
+    },
+  };
+  // 按真实宿主装配序（index.ts 步骤 4 → 4b）：阶段一纪律 hook 先注册、pre-injection hook 后注册
+  registerMemoryPromptHook(mockCtx as any);
+  registerSmartPreInjectionHook(mockCtx as any, fakeExecutor as any, () => ({
+    enableSmartPreInjection: true,
+    preInjectionThreshold: 0.6,
+    preInjectionLimit: 3,
+  }));
+  assert.equal(handlers.length, 2, "双钩子按真实注册序入列");
+
+  // cordis waterfall 语义（先注册者在链外层）：cbs.shift() ?? inner
+  const waterfall = async (payload: any) => {
+    const cbs = [...handlers];
+    const next = async (): Promise<any> => {
+      const h = cbs.shift();
+      return h ? h(payload, next) : { kind: "enter", messages: payload.messages };
+    };
+    return next();
+  };
+
+  // 首轮：事件流无任何 mem0 记录（宿主在本轮 pre-step waterfall 返回后才 append 消息）
+  const events: any[] = [];
+  const agent = { session: { snapshotEvents: () => events } };
+  const decision = await waterfall({
+    agent,
+    signal: new AbortController().signal,
+    messages: [{ role: "user", content: [{ type: "text", text: "本项目用什么包管理器？" }] }],
+  });
+  assert.equal(searchCalls, 1, "首轮恰一次检索");
+
+  const mem0Msgs = decision.messages.filter((m: any) => m.source?.kind === "plugin" && m.source?.plugin === "mem0");
+  const recallMsgs = mem0Msgs.filter((m: any) => m.source.form === "recall");
+  const instructionMsgs = mem0Msgs.filter((m: any) => m.source.form === "instructions");
+  assert.equal(recallMsgs.length, 1, "pre-injection 来源消息（form=recall）恰 1 条");
+  assert.ok(
+    recallMsgs[0].content[0].text.includes("<user_long_term_memories>") &&
+      recallMsgs[0].content[0].text.includes("[Memory Context Guidelines]"),
+    "随行纪律内嵌于围栏消息（单消息形态）",
+  );
+  assert.equal(instructionMsgs.length, 1, "instructions 纪律消息恰 1 条（阶段一）");
+  assert.ok(
+    instructionMsgs[0].content[0].text === MEMORY_DISCIPLINE_TEXT,
+    "唯一 instructions 消息即阶段一纪律（无重复纪律消息对）",
+  );
+  assert.equal(searchCalls, 1);
+
+  // 第二轮：模拟宿主已把首轮消息 append 落盘（事件流补记）→ 双钩子各自判重，零新增注入
+  for (const m of mem0Msgs) {
+    events.push({ type: "user/message", data: { source: m.source } });
+  }
+  const decision2 = await waterfall({
+    agent,
+    signal: new AbortController().signal,
+    messages: [{ role: "user", content: [{ type: "text", text: "继续刚才的话题" }] }],
+  });
+  const mem0Msgs2 = decision2.messages.filter((m: any) => m.source?.kind === "plugin" && m.source?.plugin === "mem0");
+  assert.equal(mem0Msgs2.length, 0, "第二轮双钩子判重生效：零新增注入（不产生重复纪律消息对）");
+  assert.equal(searchCalls, 1, "第二轮不再检索");
 });
 
 await test("#581 钩子端到端：步骤重试不产生第二条注入（事件流判重）", async () => {
