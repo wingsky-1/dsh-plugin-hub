@@ -33,6 +33,7 @@ import {
   dayKey,
   sumToken,
   mergeAggRows,
+  mergeDirRows,
   metricValue,
   TREND_ROW_VERSION,
   TREND_UNIDENTIFIED,
@@ -1242,6 +1243,245 @@ const A2_LEGACY_AGG = {
   assert.equal(rows.length, 1, "空串/非字符串 dir 按坏行拒绝（A1 值域防线不回退）");
   assert.equal(rows[0].session, "旧会话-甲", "保留的是合法行");
   assert.equal(warns.length, 2, "两个非法 dir 行均告警");
+}
+
+// ---------------------------------------------------------------- #633 A3/A4：dir 维度归并内存态与日汇总行生成
+
+{
+  // A3(a)：内存态归并（tracker 全链路）——apply 平行累加后压实产物 dir 行：
+  // 双 session 同 cwd → 恰 1 条 calls 为和；不同 cwd 独立行；resolveCwd 缺失 →
+  // 未识别桶独立成行。dir 行位于 agg 行之后（writeAggDay 写入顺序约定）。
+  const root = mkdtempSync(join(tmpdir(), "dou-trend-a3-merge-"));
+  let nowMs = T0;
+  const tracker = await TrendTracker.start({
+    root,
+    now: () => nowMs,
+    flushDebounceMs: 60000,
+    resolveCwd: (session) => (session === "s1" || session === "s2" ? "/home/u/shared" : session === "s3" ? "/home/u/other" : undefined),
+  });
+  tracker.handleEvent({ id: "s1" }, ev("request/header", HEADER(), T0, 1));
+  tracker.handleEvent({ id: "s1" }, ev("assistant/chunk", USAGE(10, 5), T0, 2));
+  tracker.handleEvent({ id: "s1" }, ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T0, 3));
+  tracker.handleEvent({ id: "s2" }, ev("request/header", HEADER(), T0, 4));
+  tracker.handleEvent({ id: "s2" }, ev("assistant/chunk", USAGE(7, 7), T0, 5));
+  tracker.handleEvent({ id: "s3" }, ev("request/header", HEADER(), T0, 6));
+  tracker.handleEvent({ id: "s3" }, ev("assistant/chunk", USAGE(3, 3), T0, 7));
+  tracker.handleEvent({ id: "s4" }, ev("request/header", HEADER(), T0, 8));
+  tracker.handleEvent({ id: "s4" }, ev("assistant/chunk", USAGE(2, 2), T0, 9));
+  nowMs = T0 + 24 * HOUR; // 日切：DAY0 成过去日
+  await tracker.flushNow();
+  const shard = await new TrendStore({ root }).readAggDayShard(DAY0);
+  assert.deepEqual(
+    shard.map((r) => r.kind),
+    ["agg", "dir", "dir", "dir"],
+    "混存分片：agg 行在前、dir 行在后",
+  );
+  assert.deepEqual(
+    shard.filter((r) => r.kind === "dir"),
+    [
+      { v: TREND_ROW_VERSION, kind: "dir", day: DAY0, dir: "shared", input: 17, output: 12, cacheRead: 0, cacheWrite: 0, calls: 2, turns: 1, toolCalls: 0 },
+      { v: TREND_ROW_VERSION, kind: "dir", day: DAY0, dir: "other", input: 3, output: 3, cacheRead: 0, cacheWrite: 0, calls: 1, turns: 0, toolCalls: 0 },
+      { v: TREND_ROW_VERSION, kind: "dir", day: DAY0, dir: TREND_UNIDENTIFIED, input: 2, output: 2, cacheRead: 0, cacheWrite: 0, calls: 1, turns: 0, toolCalls: 0 },
+    ],
+    "同 cwd 双 session 归并为恰 1 条（calls 为和）；不同 cwd/未识别桶独立行",
+  );
+  assert.deepEqual(
+    shard.filter((r) => r.kind === "agg").map((r) => ({ input: r.input, output: r.output, calls: r.calls, turns: r.turns })),
+    [{ input: 22, output: 17, calls: 4, turns: 1 }],
+    "agg 行（provider 维度）不受 dir 平行累加影响",
+  );
+  assert.equal(existsSync(join(root, "details", `${DAY0}.jsonl`)), false, "明细分片压实后删除");
+  await tracker.dispose();
+}
+
+{
+  // A3(b)：rebuild 混存行——agg 行 + dir 行 + 当日 detail/counter 行重放：dir 行
+  // 只进目录维度桶（dirDays），不进 cells（防双计）、不进 pending（不二次落盘）。
+  const agg = new TrendAggregator();
+  agg.rebuild(
+    [
+      { v: 1, kind: "agg", day: DAY0, provider: "deepseek", model: "chat", input: 100, output: 50, cacheRead: null, cacheWrite: null, calls: 2, turns: 1, toolCalls: 3 },
+      { v: 1, kind: "dir", day: DAY0, dir: "proj", input: 100, output: 50, cacheRead: null, cacheWrite: null, calls: 2, turns: 1, toolCalls: 3 },
+      { v: 1, kind: "detail", time: T0, day: DAY0, session: "s9", turn: 9, step: 1, retry: 1, provider: "deepseek", model: "chat", dir: "proj", input: 7, output: 7, cacheRead: null, cacheWrite: null, calls: 1 },
+      { v: 1, kind: "counter", time: T0, day: DAY0, session: "s9", provider: "deepseek", model: "chat", dir: "proj", turns: 1, toolCalls: 0 },
+    ],
+    true,
+  );
+  const cell = cellTotals(agg, DAY0);
+  assert.deepEqual(
+    { input: cell.input, output: cell.output, cacheRead: cell.cacheRead, cacheWrite: cell.cacheWrite, calls: cell.calls, turns: cell.turns, toolCalls: cell.toolCalls },
+    { input: 107, output: 57, cacheRead: null, cacheWrite: null, calls: 3, turns: 2, toolCalls: 3 },
+    "rebuild：agg + detail/counter 进 cells；dir 行不进（calls=2+1 而非 +dir 的 2）",
+  );
+  assert.equal(agg.stats().pendingRows, 2, "dir 行不进 pending（不二次落盘）");
+}
+
+{
+  // A4(c)：rollup 产物字段值 deepEqual——rollupDay 返回 [...aggRows, ...dirRows]，
+  // dir 行十字段（v/kind/day/dir/input/output/cacheRead/cacheWrite/calls/turns/toolCalls）
+  // 值与 pending 折算一致；tokens null 的行 null-aware 归并；消费后不重复产出。
+  const agg = new TrendAggregator();
+  agg.apply({ type: "call", record: { time: T0, session: "s1", turn: 1, step: 1, retry: 1, provider: "deepseek", model: "chat", dir: "proj", tokens: { input: 100, output: 50, cacheRead: 10, cacheWrite: 5 } } });
+  agg.apply({ type: "counter", record: { time: T0, session: "s1", provider: "deepseek", model: "chat", dir: "proj", turns: 1, toolCalls: 2 } });
+  agg.apply({ type: "call", record: { time: T0 + HOUR, session: "s2", turn: 1, step: 1, retry: 1, provider: "deepseek", model: "chat", dir: "proj", tokens: null } });
+  const rows = agg.rollupDay(DAY0);
+  assert.deepEqual(
+    rows,
+    [
+      { v: TREND_ROW_VERSION, kind: "agg", day: DAY0, provider: "deepseek", model: "chat", input: 100, output: 50, cacheRead: 10, cacheWrite: 5, calls: 2, turns: 1, toolCalls: 2 },
+      { v: TREND_ROW_VERSION, kind: "dir", day: DAY0, dir: "proj", input: 100, output: 50, cacheRead: 10, cacheWrite: 5, calls: 2, turns: 1, toolCalls: 2 },
+    ],
+    "rollupDay 产物 agg+dir 行逐字段 deepEqual（null token 不污染、calls 独立累计）",
+  );
+  assert.deepEqual(agg.rollupDay(DAY0), [], "消费后二次 rollup 不重复产出（pending/dir 素材同源消费）");
+}
+
+{
+  // A4(d)：mergeDirRows 纯函数——同 dir 键累加（null-aware）、异 dir 独立、
+  // 输出保序（base 在前：对应分片内既有 dir 行位置约定）。
+  const merged = mergeDirRows(
+    [
+      { v: 1, kind: "dir", day: DAY0, dir: "a", input: null, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
+      { v: 1, kind: "dir", day: DAY0, dir: "b", input: 7, output: null, cacheRead: null, cacheWrite: null, calls: 2, turns: 1, toolCalls: 1 },
+    ],
+    [{ v: 1, kind: "dir", day: DAY0, dir: "a", input: 5, output: 3, cacheRead: null, cacheWrite: null, calls: 2, turns: 0, toolCalls: 0 }],
+  );
+  assert.deepEqual(
+    merged,
+    [
+      { v: 1, kind: "dir", day: DAY0, dir: "a", input: 5, output: 3, cacheRead: null, cacheWrite: null, calls: 3, turns: 0, toolCalls: 0 },
+      { v: 1, kind: "dir", day: DAY0, dir: "b", input: 7, output: null, cacheRead: null, cacheWrite: null, calls: 2, turns: 1, toolCalls: 1 },
+    ],
+    "mergeDirRows 同键累加、null-aware、保序",
+  );
+}
+
+{
+  // A4(e)：混存 round-trip——压实（混存落盘）→ 重启重建（不丢不重，dir 行不双算
+  // 进 cells）→ 迟到旧日行二次压实（既有 dir 行经 readAggDayShard 全量取回合并，
+  // 不被整日重写抹掉）→ 再重启（分片不再被改写）。
+  const root = mkdtempSync(join(tmpdir(), "dou-trend-a4-roundtrip-"));
+  let nowMs = T0;
+  let tracker = await TrendTracker.start({
+    root,
+    now: () => nowMs,
+    flushDebounceMs: 60000,
+    resolveCwd: (session) => (session === "s1" ? "/home/u/alpha" : "/home/u/beta"),
+  });
+  tracker.handleEvent({ id: "s1" }, ev("request/header", HEADER(), T0, 1));
+  tracker.handleEvent({ id: "s1" }, ev("assistant/chunk", USAGE(10, 5), T0, 2));
+  tracker.handleEvent({ id: "s1" }, ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T0, 3));
+  tracker.handleEvent({ id: "s2" }, ev("request/header", HEADER(), T0, 4));
+  tracker.handleEvent({ id: "s2" }, ev("tool/call", { turn: 1, step: 1, callId: "c", name: "bash", arguments: "{}" }, T0, 5));
+  tracker.handleEvent({ id: "s2" }, ev("assistant/chunk", USAGE(7, 7), T0, 6));
+  nowMs = T0 + 24 * HOUR;
+  await tracker.flushNow(); // 第一次压实：agg + dir 混存落盘
+  const store = new TrendStore({ root });
+  const round1 = await store.readAggDayShard(DAY0);
+  assert.deepEqual(
+    round1.map((r) => r.kind),
+    ["agg", "dir", "dir"],
+    "首次压实混存形态",
+  );
+  const dirRows1 = round1.filter((r) => r.kind === "dir");
+  assert.equal(existsSync(join(root, "details", `${DAY0}.jsonl`)), false, "明细分片已删（压实收尾）");
+  await tracker.dispose();
+  tracker = await TrendTracker.start({ root, now: () => nowMs, flushDebounceMs: 60000, resolveCwd: () => "/home/u/alpha" });
+  const cellR1 = tracker.buckets().find((d) => d.day === DAY0).providers.find((p) => p.provider === "deepseek").cell;
+  assert.deepEqual(
+    { input: cellR1.input, output: cellR1.output, cacheRead: cellR1.cacheRead, cacheWrite: cellR1.cacheWrite, calls: cellR1.calls, turns: cellR1.turns, toolCalls: cellR1.toolCalls },
+    { input: 17, output: 12, cacheRead: 0, cacheWrite: 0, calls: 2, turns: 1, toolCalls: 1 },
+    "重启重建：agg 行权威进 cells，dir 行不双算（calls=2 而非 4）",
+  );
+  // 迟到旧日行（时钟回拨）：s1 turn2 usage 落 DAY0 → 二次压实合并
+  tracker.handleEvent({ id: "s1" }, ev("request/header", HEADER(), T0 + HOUR, 7));
+  tracker.handleEvent({ id: "s1" }, ev("assistant/chunk", { turn: 2, step: 1, chunk: { type: "usage", usage: { inputTokens: 3, outputTokens: 3, cacheReadTokens: 0, cacheWriteTokens: 0 } } }, T0 + HOUR, 8));
+  await tracker.flushNow();
+  const round2 = await store.readAggDayShard(DAY0);
+  assert.deepEqual(
+    round2.map((r) => r.kind),
+    ["agg", "dir", "dir"],
+    "二次压实后行数不增（既有 dir 行未被整日重写抹掉）",
+  );
+  assert.deepEqual(
+    round2.filter((r) => r.kind === "dir"),
+    [
+      { v: TREND_ROW_VERSION, kind: "dir", day: DAY0, dir: "alpha", input: 13, output: 8, cacheRead: 0, cacheWrite: 0, calls: 2, turns: 1, toolCalls: 0 },
+      { v: TREND_ROW_VERSION, kind: "dir", day: DAY0, dir: "beta", input: 7, output: 7, cacheRead: 0, cacheWrite: 0, calls: 1, turns: 0, toolCalls: 1 },
+    ],
+    "迟到行并入 dir 行（alpha calls=1+1、input 10+3）且 beta 不受连坐",
+  );
+  await tracker.dispose();
+  tracker = await TrendTracker.start({ root, now: () => nowMs, flushDebounceMs: 60000, resolveCwd: () => "/home/u/alpha" });
+  const cellR2 = tracker.buckets().find((d) => d.day === DAY0).providers.find((p) => p.provider === "deepseek").cell;
+  assert.equal(cellR2.calls, 3, "再重启重建 calls=2+1（迟到行已并入 agg 行，不丢不重）");
+  assert.deepEqual(
+    (await store.readAggDayShard(DAY0)).map((r) => r.kind),
+    ["agg", "dir", "dir"],
+    "再重启后分片形态稳定（persisted 行 flush 不重写）",
+  );
+  await tracker.dispose();
+}
+
+{
+  // A4(f)：查询面零变化——含 dir 记账 + dir 行 rebuild 后，buckets()/seriesDays()
+  // 与固定 fixture 全等（dir 不出现在 provider 查询面，cells 数值不受平行累加影响）。
+  const agg = new TrendAggregator();
+  agg.apply({ type: "call", record: { time: T0, session: "s1", turn: 1, step: 1, retry: 1, provider: "deepseek", model: "chat", dir: "x", tokens: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 } } });
+  agg.apply({ type: "call", record: { time: T0 + HOUR, session: "s2", turn: 1, step: 1, retry: 1, provider: "deepseek", model: "chat", tokens: { input: 3, output: 4, cacheRead: null, cacheWrite: null } } });
+  agg.rebuild(
+    [
+      { v: 1, kind: "agg", day: DAY0, provider: "other", model: null, input: 5, output: 5, cacheRead: null, cacheWrite: null, calls: 1, turns: 1, toolCalls: 1 },
+      { v: 1, kind: "dir", day: DAY0, dir: "x", input: 1, output: 2, cacheRead: 0, cacheWrite: 0, calls: 1, turns: 0, toolCalls: 0 },
+    ],
+    false,
+  );
+  assert.deepEqual(
+    agg.buckets(),
+    [
+      {
+        day: DAY0,
+        providers: [
+          { provider: "deepseek", model: "chat", cell: { input: 4, output: 6, cacheRead: 0, cacheWrite: 0, calls: 2, turns: 0, toolCalls: 0 } },
+          { provider: "other", model: null, cell: { input: 5, output: 5, cacheRead: null, cacheWrite: null, calls: 1, turns: 1, toolCalls: 1 } },
+        ],
+      },
+    ],
+    "buckets() 固定 fixture 全等（dir 行 rebuild 不进 cells、apply 平行累加不污染）",
+  );
+  assert.deepEqual(
+    agg.seriesDays(2, T0 + HOUR, "input").map((d) => d.value),
+    [null, 9],
+    "seriesDays 零变化（空日 null 语义保持；input=4+5 跨 provider 求和）",
+  );
+}
+
+{
+  // A4(g)：量级留痕——1000 事件 / 5 session：resolveCwd 恰 5 次（per-session 惰性
+  // 单查缓存，与事件量无关）；start+dispose 耗时基线 stderr 一行注明取数时点。
+  const root = mkdtempSync(join(tmpdir(), "dou-trend-a4-scale-"));
+  let cwdCalls = 0;
+  const startAt = Date.now();
+  const tracker = await TrendTracker.start({ root, now: () => T0, flushDebounceMs: 60000, resolveCwd: () => { cwdCalls += 1; return "/home/u/scale"; } });
+  const startMs = Date.now() - startAt;
+  let seq = 0;
+  for (let s = 1; s <= 5; s += 1) {
+    const sid = `s${s}`;
+    tracker.handleEvent({ id: sid }, ev("request/header", HEADER(), T0, (seq += 1)));
+    for (let k = 0; k < 199; k += 1) {
+      tracker.handleEvent({ id: sid }, ev("assistant/chunk", { turn: k + 1, step: 1, chunk: { type: "usage", usage: { inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 } } }, T0, (seq += 1)));
+    }
+  }
+  const cell = tracker.buckets().find((d) => d.day === DAY0).providers[0].cell;
+  assert.equal(cell.calls, 995, "1000 事件（5 header + 995 usage）全量记账进 cells");
+  const disposeAt = Date.now();
+  await tracker.dispose();
+  const disposeMs = Date.now() - disposeAt;
+  assert.equal(cwdCalls, 5, "resolveCwd 调用数恰 5（每 session 惰性单查）");
+  const rows = readFileSync(join(root, "details", `${DAY0}.jsonl`), "utf8").trimEnd().split("\n").map((l) => JSON.parse(l));
+  assert.equal(rows.length, 995, "995 条明细行全量落盘");
+  assert.ok(rows.filter((r) => r.session === "s1").every((r) => r.dir === "scale"), "dir 落盘值逐行正确（抽查 s1 全量）");
+  console.error(`[#633 A4 量级基线] 1000 事件/5 session：start=${startMs}ms dispose=${disposeMs}ms（resolveCwd=5，995 行落盘）；取数时点 ${new Date().toISOString()} node ${process.version}`);
 }
 
 assert.equal(sumToken(null, 5), 5, "sumToken null+数字");
