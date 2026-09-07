@@ -30,7 +30,7 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
 
 // ---- issue #76：客户端清理契约（B1-B6 / C 组）----
 {
-  const src = readFileSync(new URL("../src/client/index.ts", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../src/client/index.tsx", import.meta.url), "utf8");
   const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
 
   // B1-B6：侧边栏入口/浮层/角标/拖拽全部移除（源码无对应符号）
@@ -64,7 +64,7 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
 
 // ---- issue #402：设置页 UI/UX 打磨（折叠 / 双 tab / 去 title / label thunk / 就近保存）----
 {
-  const src = readFileSync(new URL("../src/client/index.ts", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../src/client/index.tsx", import.meta.url), "utf8");
   const locales = readFileSync(new URL("../src/client/locales.ts", import.meta.url), "utf8");
   const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
 
@@ -88,7 +88,7 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
 
 // ---- issue #418：设置面板布局收敛（去重复保存 / 权限入浏览器卡 / 动作并入历史区）----
 {
-  const src = readFileSync(new URL("../src/client/index.ts", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../src/client/index.tsx", import.meta.url), "utf8");
   const locales = readFileSync(new URL("../src/client/locales.ts", import.meta.url), "utf8");
   const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
 
@@ -115,7 +115,7 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
 
 // ---- issue #421：免打扰豁免扩至全部内置事件（候选 6 项 + 跟随已启用 + 恢复默认）----
 {
-  const src = readFileSync(new URL("../src/client/index.ts", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../src/client/index.tsx", import.meta.url), "utf8");
   const locales = readFileSync(new URL("../src/client/locales.ts", import.meta.url), "utf8");
   const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
 
@@ -140,7 +140,7 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
 
 // ---- issue #508：通知中心 UI/UX 现代化（三 tab / switch / chips / 脏状态栏 / webhook 卡）----
 {
-  const src = readFileSync(new URL("../src/client/index.ts", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../src/client/index.tsx", import.meta.url), "utf8");
   const locales = readFileSync(new URL("../src/client/locales.ts", import.meta.url), "utf8");
   const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
 
@@ -188,7 +188,7 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
 //    产物文本不断言具体名字，只断不变量）；③ vm 沙箱执行真实产物 lib/client.js，
 //    事件计数级断言验收语义（apply→dispose→重复 apply 全程至多一份监听）。
 {
-  const src = readFileSync(new URL("../src/client/index.ts", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../src/client/index.tsx", import.meta.url), "utf8");
   const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
 
   // ① 源码级哨兵（源码名稳定，产物对 esbuild 重命名脆弱）：
@@ -520,7 +520,7 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
 
 // ---- issue #405 PR2/PR3：客户端保存模型演进源码级契约锚点 ----
 {
-  const src = readFileSync(new URL("../src/client/index.ts", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../src/client/index.tsx", import.meta.url), "utf8");
   const locales = readFileSync(new URL("../src/client/locales.ts", import.meta.url), "utf8");
 
   // PR3：confirmOne 同步服务端 revision（修「确认 kind 后同窗口保存必 409」版本链断点）
@@ -657,7 +657,7 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
 
 // ---- issue #527：未启用频道/事件 chips 置灰禁点（通知事件路由 + 免打扰豁免）----
 {
-  const src = readFileSync(new URL("../src/client/index.ts", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../src/client/index.tsx", import.meta.url), "utf8");
   const locales = readFileSync(new URL("../src/client/locales.ts", import.meta.url), "utf8");
   const css = readFileSync(new URL("../src/client/style.css", import.meta.url), "utf8");
   const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");

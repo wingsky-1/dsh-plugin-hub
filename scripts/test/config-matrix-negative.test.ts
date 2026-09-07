@@ -33,7 +33,7 @@ import { runConfigMatrix } from '../lib/config-matrix-gate.ts'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
-/** mkdtemp 副本仓库：复制两包 src/config.ts + src/client/index.ts（仅矩阵输入面）。 */
+/** mkdtemp 副本仓库：复制两包 src/config.ts + src/client/index.tsx（仅矩阵输入面）。 */
 function fakeRepo() {
   const root = mkdtempSync(join(tmpdir(), 'cfgmtx-'))
   try {
@@ -44,7 +44,7 @@ function fakeRepo() {
       ['dsh-lan-proxy', 'config.ts'],
       ['dsh-lan-proxy', 'client/index.ts'],
       ['dsh-notifier', 'config.ts'],
-      ['dsh-notifier', 'client/index.ts'],
+      ['dsh-notifier', 'client/index.tsx'],
     ]
     for (const [pkg, rel] of srcs) {
       copyLf(join(ROOT, 'packages', pkg, 'src', rel), join(root, 'packages', pkg, 'src', rel))
@@ -167,20 +167,20 @@ test('notifier: normalizeConfig 漏安静时段内嵌子键分支 → 红', () =
 
 test('notifier: 客户端 EVENT_KEYS 删事件键 → 红且报错含键名', () => {
   assertRed('notifier 客户端删 notifyTurnEnd', (root) => {
-    edit(root, 'dsh-notifier', 'client/index.ts', (s) => s.replace(/    \["notifyTurnEnd", "evtTurnEnd"\],\n/, ''))
+    edit(root, 'dsh-notifier', 'client/index.tsx', (s) => s.replace(/    \["notifyTurnEnd", "evtTurnEnd"\],\n/, ''))
   }, 'notifyTurnEnd')
 })
 
 test('notifier: 客户端渲染 validators 外键 → 红且报错含键名', () => {
   assertRed('notifier 客户端 settings.ghostKey', (root) => {
-    edit(root, 'dsh-notifier', 'client/index.ts', (s) =>
+    edit(root, 'dsh-notifier', 'client/index.tsx', (s) =>
       s.replace('    var qh = settings.quietHours || {};', '    var ghost = settings.ghostKey || {};\n    var qh = settings.quietHours || {};'))
   }, 'ghostKey')
 })
 
 test('notifier: 客户端引用豁免键（豁免残留）→ 红且报错含豁免键名', () => {
   assertRed('notifier 客户端引用 allowKinds', (root) => {
-    edit(root, 'dsh-notifier', 'client/index.ts', (s) =>
+    edit(root, 'dsh-notifier', 'client/index.tsx', (s) =>
       s.replace('    var qh = settings.quietHours || {};', '    var ak = settings.allowKinds || [];\n    var qh = settings.quietHours || {};'))
   }, 'allowKinds')
 })

@@ -174,7 +174,7 @@ function runNotifier(root) {
   const problems = []
   const lines = []
   const cfgPath = join(root, 'packages/dsh-notifier/src/config.ts')
-  const clientPath = join(root, 'packages/dsh-notifier/src/client/index.ts')
+  const clientPath = join(root, 'packages/dsh-notifier/src/client/index.tsx')
 
   const def = loadTable(cfgPath, 'DEFAULT_CONFIG', 'object')
   const validators = loadTable(cfgPath, 'SETTING_VALIDATORS', 'object')
