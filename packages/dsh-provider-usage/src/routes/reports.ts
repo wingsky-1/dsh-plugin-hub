@@ -210,7 +210,7 @@ export async function handleReportGenerate(
     }
   }
 
-  const { taskId } = reportQueue.submit(due);
+  const { taskId } = reportQueue.submit({ ...due, force });
   writeJson(res, 202, { ok: true, taskId });
 }
 

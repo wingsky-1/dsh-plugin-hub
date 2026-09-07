@@ -82,11 +82,14 @@ export class ReportTaskQueue {
 
   /**
    * 提交任务（非阻塞，立即返回 taskId）。
-   * 同 (period,key) 已有 queued/running 任务 → 返回既有 taskId（去重）。
+   * 同 (period,key) 已有 queued/running 任务 → 返回既有 taskId（去重）；
+   * 新提交 force=true 且既有任务 force=false → 升级既有任务 force（重新生成
+   * 语义不因去重丢失，#626）。
    */
   submit(input: ReportTaskInput): { taskId: string; existing: boolean } {
     for (const t of this.tasks.values()) {
       if ((t.status === "queued" || t.status === "running") && t.period === input.period && t.key === input.key) {
+        if (input.force === true && t.force === false) t.force = true;
         return { taskId: t.id, existing: true };
       }
     }
@@ -136,7 +139,7 @@ export class ReportTaskQueue {
     }
   }
 
-  /** 修剪：超龄 done/failed 淘汰 + 超上限时裁剪最旧。 */
+  /** 修剪：超龄 done/failed 淘汰 + 超上限时裁剪最旧的 done/failed（queued/running 不裁）。 */
   private prune(): void {
     const cutoff = this.now() - this.ttlMs;
     for (const [id, t] of this.tasks) {
@@ -146,6 +149,7 @@ export class ReportTaskQueue {
       let oldest: string | null = null;
       let oldestAt = Number.POSITIVE_INFINITY;
       for (const [id, t] of this.tasks) {
+        if (t.status !== "done" && t.status !== "failed") continue; // 在途任务不裁
         if (t.createdAt < oldestAt) {
           oldestAt = t.createdAt;
           oldest = id;

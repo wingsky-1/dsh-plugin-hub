@@ -1801,13 +1801,20 @@ console.log("[smoke] #503 trend 挂接 + /trend 集成断言全部通过 ✓");
 
   // g2. #626 幂等短路 + force 强制重生成 + #625 status 守卫
   {
+    const dailyLineCount = () => {
+      const raw = readFileSync(indexFile, "utf8");
+      return raw.split("\n").filter((l) => l.includes('"period":"daily"') && l.includes(`"key":"${genMeta.key}"`)).length;
+    };
+    const countBeforeForce = dailyLineCount();
     const again = await callHandler(genRoute, fakeReq({ method: "POST", body: JSON.stringify({ period: "daily" }) }));
     assert.equal(again.ok, true, "同窗口再次生成 ok");
     assert.equal(again.reused, true, "未勾选 force → 幂等复用");
     assert.equal(again.meta.key, genMeta.key, "复用同窗口 meta");
+    assert.equal(dailyLineCount(), countBeforeForce, "幂等复用不新增 index 记录（未调 LLM）");
     const forceMeta = await generateAndAwait({ period: "daily", force: true });
     assert.equal(forceMeta.ok, true, "force 重新生成 ok");
     assert.equal(forceMeta.key, genMeta.key, "force 覆盖同窗口");
+    assert.equal(dailyLineCount(), countBeforeForce + 1, "force 真正重新生成（index 新增一行，防假绿）");
     const forceList = await callHandler(listRoute, fakeReq({ url: ROUTES.reports }));
     const dailies = forceList.reports.filter((m) => m.period === "daily" && m.key === genMeta.key);
     assert.equal(dailies.length, 1, "读侧投影：#626 同窗口多版本 → 列表一行/窗口");

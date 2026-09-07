@@ -145,6 +145,28 @@ export function deriveLastRun(records: LastRunRecord[]): Partial<Record<ReportPe
 }
 
 /**
+ * schema 已新（>=2）时的温和校准：仅「该期 index 存在已闭环记录」才把 lastRun
+ * 对齐到最新闭环键（修旧语义污染/遮蔽事故的滞后与超前），否则保留原值——
+ * 保护 #531「首次启用预置扣期」键（preset 键在 index 中天然无对应记录，
+ * 全量重算会删掉它导致首次启用被立即补跑）。
+ */
+export function alignLastRun(
+  lastRun: Partial<Record<ReportPeriod, string>>,
+  records: LastRunRecord[],
+): Partial<Record<ReportPeriod, string>> {
+  const out = { ...lastRun };
+  for (const period of ["daily", "weekly", "monthly"] as const) {
+    let maxKey: string | undefined;
+    for (const r of records) {
+      if (r.period !== period || !isClosedWindowRecord(r)) continue;
+      if (maxKey === undefined || r.key > maxKey) maxKey = r.key;
+    }
+    if (maxKey !== undefined) out[period] = maxKey;
+  }
+  return out;
+}
+
+/**
  * 已闭环的上一完整周期窗口（手动生成专用：恒定取已结束的上一周期，不受定时触发时刻是否到达的约束）。
  * - daily：恒为昨日全天 [today-1, today-1]；
  * - weekly：恒为上一完整周（覆盖距今最近已闭环的前 7 天）；

@@ -24,10 +24,10 @@ const REPORTS_URL = __DSH_ROUTES__?.reports ?? "/api/dsh-provider-usage/reports"
 const REPORT_DETAIL_URL = __DSH_ROUTES__?.reportDetail ?? "/api/dsh-provider-usage/reports/detail";
 const REPORT_GENERATE_URL = __DSH_ROUTES__?.reportGenerate ?? "/api/dsh-provider-usage/reports/generate";
 
-/** 轮询退避：1s → 2s → 4s 封顶 5s；上限约 120s（#625）。 */
+/** 轮询退避：1s → 2s → 4s 封顶 5s；上限约 2 分钟（#625）。 */
 const POLL_INITIAL_DELAY_MS = 1_000;
 const POLL_MAX_DELAY_MS = 5_000;
-const POLL_MAX_ROUNDS = 120;
+const POLL_MAX_ROUNDS = 25;
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
@@ -295,9 +295,10 @@ export function ReportSection(): React.ReactElement {
   };
 
   /**
-   * 轮询生成任务状态（#625）：退避 1s→5s，上限约 120s。
-   * done → 返回 meta；failed → 抛错；超时 → 抛 PollInProgressError（任务可能仍在
-   * 后台生成，调用方转「仍在生成」正向提示，绝不误报失败）。
+   * 轮询生成任务状态（#625）：退避 1s→5s，上限约 2 分钟。
+   * done → 返回 meta；failed → 抛错；超时/status 404（任务已被 TTL 修剪，报告
+   * 大概率已生成）→ 抛 PollInProgressError（调用方转「仍在生成」正向提示，
+   * 绝不误报失败）。
    * 组件卸载（disposedRef）后立即中止。
    */
   const pollReportTask = async (taskId: string): Promise<ReportMetaView> => {
@@ -309,6 +310,7 @@ export function ReportSection(): React.ReactElement {
         `${REPORT_GENERATE_STATUS_URL}?taskId=${encodeURIComponent(taskId)}`,
         { headers: { Accept: "application/json" }, cache: "no-store" },
       );
+      if (res.status === 404) throw new PollInProgressError(); // 任务已修剪：转「仍在生成」
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = (await res.json().catch(() => ({}))) as { ok?: boolean; status?: string; meta?: ReportMetaView; error?: string };
       if (body.status === "done") {
@@ -345,6 +347,7 @@ export function ReportSection(): React.ReactElement {
       }
       if (body.meta !== undefined) {
         // 终态：幂等复用（窗口已有成功报告，未勾选强制重生成）
+        if (disposedRef.current) return;
         if (body.meta.noData === true) {
           // #532：空窗口不调模型不落盘——正向提示，不进错误分支、不展开详情
           setGenNotice(t("reportNoData"));
@@ -353,6 +356,7 @@ export function ReportSection(): React.ReactElement {
         if (body.reused === true) setGenNotice(t("reportReused"));
         else setGenNotice(null);
         await loadReports();
+        if (disposedRef.current) return;
         setOpenId(rowIdOf(body.meta)); // 生成成功后展开详情
         return;
       }
@@ -362,6 +366,7 @@ export function ReportSection(): React.ReactElement {
         meta = await pollReportTask(body.taskId as string);
       } catch (e) {
         if (e instanceof PollInProgressError) {
+          if (disposedRef.current) return;
           // 超时：后端可能仍在生成——正向提示，不报失败（#625 防误报回归）
           setGenNotice(t("reportStillGenerating"));
           await loadReports();
@@ -369,17 +374,20 @@ export function ReportSection(): React.ReactElement {
         }
         throw e;
       }
+      if (disposedRef.current) return;
       if (meta.noData === true) {
         setGenNotice(t("reportNoData"));
         return;
       }
       setGenNotice(null);
       await loadReports();
+      if (disposedRef.current) return;
       setOpenId(rowIdOf(meta)); // 生成成功后展开详情
     } catch (e) {
+      if (disposedRef.current) return;
       setGenError(t("reportGenerateFail", { msg: e instanceof Error ? e.message : String(e) }));
     } finally {
-      setGenerating(false);
+      if (!disposedRef.current) setGenerating(false);
     }
   };
 

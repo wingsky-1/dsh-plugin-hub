@@ -301,17 +301,22 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   // lastRun 读改写位于 mutex 外的竞态）；失败不推进 lastRun（下轮按幂等重试/补跑）。
   const reportQueue = new ReportTaskQueue({
     executor: async (input) => {
-      if (input.force !== true) {
-        const existing = (await readReportIndex(historyRoot)).find(
-          (m) => m.period === input.period && m.key === input.key && m.ok === true,
-        );
-        if (existing !== undefined) return { meta: existing, reused: true };
+      try {
+        if (input.force !== true) {
+          const existing = (await readReportIndex(historyRoot)).find(
+            (m) => m.period === input.period && m.key === input.key && m.ok === true,
+          );
+          if (existing !== undefined) return { meta: existing, reused: true };
+        }
+        const meta = await runDueReport({ due: input, trend, ctx, reportCfg, historyRoot, sanitizeDiagnostic });
+        const lastRun = await readLastRun(historyRoot);
+        lastRun[meta.period] = meta.key;
+        await writeLastRun(historyRoot, lastRun);
+        return { meta };
+      } catch (e: unknown) {
+        // 任务 failed 的 error 会经 status 路由回客户端：脱敏后再抛，防本地路径泄露
+        throw new Error(sanitizeDiagnostic(e instanceof Error ? e.message : String(e)));
       }
-      const meta = await runDueReport({ due: input, trend, ctx, reportCfg, historyRoot, sanitizeDiagnostic });
-      const lastRun = await readLastRun(historyRoot);
-      lastRun[meta.period] = meta.key;
-      await writeLastRun(historyRoot, lastRun);
-      return { meta };
     },
     warn: (msg) => console.warn(`[dsh-provider-usage] report: ${sanitizeDiagnostic(msg)}`),
   });

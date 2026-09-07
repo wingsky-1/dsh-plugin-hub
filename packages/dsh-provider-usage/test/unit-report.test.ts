@@ -476,8 +476,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const due = { period: "daily", key: "2026-09-04", startDay: "2026-09-04", endDay: "2026-09-04" };
   // 同一窗口连续提交（模拟 tick 60s 一次 vs 手动并发）→ 只应有一个 queued/running（P0 入队去重）
   const first = queue.submit(due);
-  const second = queue.submit({ ...due, force: true });
+  const second = queue.submit(due);
   assert.equal(second.taskId, first.taskId, "同窗口任务去重：返回同一 taskId");
+  // force 提交命中 queued/running → 既有任务 force 升级（#626：重新生成语义不因去重丢失）
+  const third = queue.submit({ ...due, force: true });
+  assert.equal(third.taskId, first.taskId, "force 提交去重：仍返回同一 taskId");
+  assert.equal(queue.get(first.taskId).force, true, "force 升级既有任务");
   const pollDeadline = Date.now() + 5000;
   while (calls < 1 && Date.now() < pollDeadline) await sleep(10);
   assert.ok(calls >= 1, `至少执行一轮（实际 ${calls}）`);
@@ -485,8 +489,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await sleep(50); // 等待首任务 failed
   assert.equal(queue.get(first.taskId).status, "failed", "执行器抛错 → 任务 failed");
   // failed 任务不在 queued/running → 可重新提交（新 taskId）
-  const third = queue.submit(due);
-  assert.notEqual(third.taskId, first.taskId, "failed 任务后可重新提交（新 taskId）");
+  const fourth = queue.submit(due);
+  assert.notEqual(fourth.taskId, first.taskId, "failed 任务后可重新提交（新 taskId）");
 }
 
 // ---------------------------------------------------------------- tick→队列：失败不推进 lastRun + 下轮重试同窗
@@ -644,6 +648,23 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   assert.equal(res4.changed, false, "无 index 事实源 → 保持原状");
   const kept = JSON.parse(readFileSync(join(root2, "reports", "last-run.json"), "utf8"));
   assert.equal(kept.daily, "2026-09-06", "原 lastRun 未被改动");
+
+  // 场景 5（#531 保护）：schema:2 + preset 键（index 无对应记录）→ 温和校准保留 preset 键，
+  // 仅对齐「index 存在闭环记录」的期——首次启用不被启动校准删键、不被立即补跑
+  {
+    const root3 = mkdtempSync(join(tmpdir(), "dou-report-migrate3-"));
+    const reports3 = join(root3, "reports");
+    mkdirSync(reports3, { recursive: true });
+    // 模拟：保存配置时 #531 预置 daily/weekly/monthly 键（index 均无记录），之后手动生成过 weekly
+    writeFileSync(join(reports3, "last-run.json"), JSON.stringify({ daily: "2026-09-06", weekly: "2026-08-31", monthly: "2026-08", schema: LAST_RUN_SCHEMA }));
+    writeFileSync(join(reports3, "index.jsonl"), [line("weekly", "2026-08-31", t607, "2026-09-06")].join("\n") + "\n");
+    const res5 = await ensureLastRunMigrated(root3, () => {});
+    assert.equal(res5.changed, false, "preset 键保留 + weekly 已对齐 → 无变化");
+    const kept5 = JSON.parse(readFileSync(join(reports3, "last-run.json"), "utf8"));
+    assert.equal(kept5.daily, "2026-09-06", "daily preset 键不被删");
+    assert.equal(kept5.monthly, "2026-08", "monthly preset 键不被删");
+    assert.equal(kept5.weekly, "2026-08-31", "weekly 对齐到最新闭环键");
+  }
 }
 
 // ---------------------------------------------------------------- #626 读侧投影：一行/窗口=最新版 + 坏行防御

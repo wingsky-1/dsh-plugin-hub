@@ -10,7 +10,7 @@
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { ReportConfig, ReportPeriod } from "./config.ts";
-import { deriveLastRun, LAST_RUN_SCHEMA, pendingReports, type DueReport, type LastRunRecord } from "./schedule.ts";
+import { alignLastRun, deriveLastRun, LAST_RUN_SCHEMA, pendingReports, type DueReport, type LastRunRecord } from "./schedule.ts";
 import { parseReportIndexLines } from "./runner.ts";
 
 /** lastRun 持久化文件。 */
@@ -44,10 +44,13 @@ export async function writeLastRun(root: string, state: Partial<Record<ReportPer
 
 /**
  * 启动时 lastRun 一致性保证（#624）：
- * 读 last-run.json + index.jsonl → 按 index 事实推导 lastRun（deriveLastRun，
- * 幂等可重放、自动修复旧语义「当天」污染键与 schema 遮蔽事故）→ 与现文件不一致
- * 或 schema 缺失/旧时原子写回并 warn 前后对照。
- * 任何异常不抛（保持原状，下次启动再试）；无 index 时视作无事实，不动 lastRun。
+ * - schema 缺失/旧（<2）：全量重算（deriveLastRun）——一次性迁移，修复旧语义
+ *   「当天」污染键（周一 06:00 吞日报的根因）；
+ * - schema 已新（>=2）：温和对齐（alignLastRun）——仅该期 index 存在已闭环记录
+ *   时对齐到最新闭环键（遮蔽事故自愈），preset 键（#531 首次启用预置，index 无
+ *   对应记录）保留不动。
+ * 与现文件不一致或 schema 变更时原子写回并 warn 前后对照；任何异常不抛（保持
+ * 原状，下次启动再试）；无 index 时视作无事实，不动 lastRun。
  */
 export async function ensureLastRunMigrated(
   root: string,
@@ -63,7 +66,7 @@ export async function ensureLastRunMigrated(
     const indexRaw = await readFile(join(root, "reports", "index.jsonl"), "utf8").catch(() => null);
     if (indexRaw === null) return { changed: false, before, after: before }; // 无事实源，保持原状
     const records = parseReportIndexLines(indexRaw) as LastRunRecord[];
-    const after = deriveLastRun(records);
+    const after = schema < LAST_RUN_SCHEMA ? deriveLastRun(records) : alignLastRun(before, records);
     const changed = schema < LAST_RUN_SCHEMA || JSON.stringify(before) !== JSON.stringify(after);
     if (changed) {
       await writeLastRun(root, after);
@@ -81,7 +84,6 @@ export interface ReportSchedulerOptions {
   root: string;
   /** 当前配置（updateConfig 热更新）。 */
   config: ReportConfig;
-  /** 到期回调（执行生成；抛错 = 失败，不推进 lastRun，下轮重试）。 */
   /** 到期回调（#625：提交到任务队列，非阻塞；队列负责执行、幂等与 lastRun 推进）。 */
   onDue: (due: DueReport) => Promise<void>;
   /** 注入时钟（测试）。 */

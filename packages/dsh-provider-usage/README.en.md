@@ -368,6 +368,22 @@ or the plugin home; non-normalized forms (`../` traversal) are rejected with 400
   Zero-argument fetchData that ignores the
   signal keeps working; fetching uses per-provider locks and concurrent requests on the same provider queue
   up and reuse the first result — page requests are never blocked
+- **Report generation (#503 M3; #532 annual-report style)**: zero credentials, zero new network egress —
+  model calls go through the host llm service (`ctx.llm.stream`), credentials held by existing dsh provider
+  config; generation emits no session events and is excluded from usage stats (consumption tracked in report
+  metadata); config/artifacts/lastRun live under `historyRoot/reports/` (`0600`); bodies pass the
+  escape-then-transform pipeline (escape first, then introduce attribute-less h3/strong/ul/li/p whitelist
+  tags) plus `sanitizeHtml` double sanitization before rendering; the injected stats JSON only carries
+  aggregate numbers (no session details or paths); per-period prompt templates
+  (prompts{daily,weekly,monthly}, auto-migrated from the legacy single template); empty windows skip the
+  model; optional notifier push is off by default and carries no project paths;
+  manual generation is asynchronous (#625): POST returns 202+taskId immediately and the client polls status,
+  decoupled from LLM latency (no longer subject to the 10s fetch timeout); manual generation is idempotent
+  by default (#626) — an existing successful report for the window is reused, and "Regenerate" forces an
+  overwrite; report history is deduplicated per window by a read-side projection (one row per window =
+  newest version; index.jsonl stays append-only); lastRun is derived/calibrated from the index facts
+  (schema v2, #624: legacy "same-day" windows are recognized as not-closed and rolled back, so a 06:00
+  Monday no longer drops the daily report)
 - **Fail-fast loading**: missing exports / wrong types / invalid names are rejected with
   diagnosable errors
 - **History**: daily-sharded JSONL (`0600` permissions) with automatic age/size pruning;
