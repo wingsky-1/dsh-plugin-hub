@@ -603,7 +603,24 @@
 }
 .dn-set-card .dn-ch-permText { line-height: 1.5; }
 .dn-set-card .dn-ch-onEdge { border-left: 3px solid var(--dsw-alias-state-success-primary, #0f9d6e); }
+/* #640/#641：三态——启用（绿边）/ 仅声音（琥珀边）/ 停用（灰） */
+.dn-set-card .dn-ch-card.dn-ch-sound { border-left: 3px solid var(--dsw-alias-state-warning-primary, #d97706); }
 .dn-set-card .dn-ch-card.dn-ch-off > summary { opacity: 0.75; }
+.dn-set-card .dn-ch-stateTxt {
+  font-size: 10px;
+  color: var(--dsw-alias-label-secondary, #5f6672);
+  border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
+  border-radius: 6px;
+  padding: 0 5px;
+  line-height: 1.7;
+  flex: none;
+}
+.dn-set-card .dn-ch-card.dn-ch-sound .dn-ch-stateTxt {
+  color: var(--dsw-alias-state-warning-primary, #d97706);
+  border-color: var(--dsw-alias-state-warning-primary, #d97706);
+}
+.dn-set-card .dn-soundOnly { color: var(--dsw-alias-state-warning-primary, #d97706); }
+.dn-set-card .dn-tonePreview { flex: none; }
 .dn-set-card .dn-ch-add { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
 /* #402：最近投递失败徽标（上提卡头 summary 行，收起态可见） */
 .dn-set-card .dn-ch-failBadge {
