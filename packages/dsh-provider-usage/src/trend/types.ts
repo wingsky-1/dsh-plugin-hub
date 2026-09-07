@@ -40,7 +40,9 @@ export interface TrendTokens {
   cacheWrite: number | null;
 }
 
-/** 目录键防御校验上限（POSIX NAME_MAX=255 兜底；伪造超长行按坏行跳过）。 */
+/** 目录键防御校验上限（复核 L4：POSIX NAME_MAX=255 以字节计，JS 字符串按 UTF-16
+ * 码元计长——255 字节至多 255 个字符（多字节字符只会更短），255 < 256，取 256 与
+ * safeId 上限同口径留 1 字符安全余量；超长伪造行按坏行跳过）。 */
 const TREND_DIR_MAX = 256;
 
 /** 分片行 dir 键防御校验：非空字符串且不超上限（旧格式行无该键，天然通过）。 */

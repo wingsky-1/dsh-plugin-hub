@@ -81,7 +81,12 @@ function emptyCell(): TrendCell {
 export class TrendAggregator {
   /** day → provider → model(null 允许) → cell。 */
   private days = new Map<string, Map<string, Map<string | null, TrendCell>>>();
-  /** #633 A3：day → dir → cell（目录维度日汇总内存态，生命周期与 days 同步）。 */
+  /**
+   * #633 A3：day → dir → cell（目录维度日汇总内存态）。
+   * 生命周期与 days 同步（复核 M1 统一口径）：apply 实时累加 → rollup 压实消费
+   * 当日（dropPending 联动删除）→ 重启经混存分片 dir 行 rebuild 读回恢复（M1：
+   * rebuildFromDisk 走 readAggDayShard）→ prune 同步收缩（pruneDays 联动删除）。
+   */
   private dirDays = new Map<string, Map<string, TrendCell>>();
   /** 未压实明细/计数行（跨日可能：时钟回拨把旧日事件记进对应日分片）。 */
   private pending: PendingEntry[] = [];
@@ -164,11 +169,13 @@ export class TrendAggregator {
 
   /**
    * 明细行 token 变更的 cell 增量修正。
-   * 注意：只修 cells、不同步 dirDays——pending 行的 token 是否在 dir 桶取决于
-   * 行来源（apply 产 = 在；重建产 = 不在，#633 图纸 detail 分支不进 dir 累加），
-   * 无法从行本身区分，无差别修正会给重建行凭空虚增。dirDays 是未压实窗口的
-   * 实时视图（压实即消费、当前无查询面消费），漂移窗口短暂且自愈；持久层
-   * dir 行从 pending 行折算（applyCorrect 已就地改行值），权威数据无漂移。
+   * 注意：只修 cells、不同步 dirDays。行来源其实可区分（复核 L1 纠正旧论证）：
+   * pending 登记的 persisted 字段即判别——apply 产行（false）已由 applyCall/
+   * applyCounter 累加进 dirDays，重建产行（true）不进 dirDays（#633 图纸），
+   * 技术上可按 persisted 精确同步。裁定仍为不同步：dirDays 当前无查询面消费
+   * （分片 b 接线时再定同步策略），统一走「内存 dir 桶单向流入（apply 累加 /
+   * rebuild 读回写入，压实与 prune 删除）、权威数据只从 pending 行折算」的简单
+   * 口径；applyCorrect 已就地改 pending 行值（折算取新值），持久层 dir 行无漂移。
    */
   private retokenCell(row: TrendDetailRow, next: TrendTokens): void {
     const cell = this.cellOf(row.day, row.provider, row.model);
@@ -355,7 +362,11 @@ export class TrendAggregator {
     this.dirDays.delete(day); // #633 A4：dir 内存桶随 pending 同步消费（生命周期一致，防过期双算）
   }
 
-  /** 裁剪内存日桶（prune 同步收缩，长期运行不重启时 days 有界；cells 随桶整体丢弃）。 */
+  /**
+   * 裁剪内存日桶（prune 同步收缩，长期运行不重启时 days 有界；cells 随桶整体丢弃）。
+   * #633 复核 M1：dirDays 联动删除（与 dropPending 对称，生命周期与 days 一致；
+   * 独立遍历不依赖 days 键集，纯 dir 日桶（无 agg 行的防御形态）也能清）。
+   */
   pruneDays(beforeDay: string): number {
     let removed = 0;
     for (const day of [...this.days.keys()]) {
@@ -363,6 +374,9 @@ export class TrendAggregator {
         this.days.delete(day);
         removed += 1;
       }
+    }
+    for (const day of [...this.dirDays.keys()]) {
+      if (day < beforeDay) this.dirDays.delete(day);
     }
     return removed;
   }

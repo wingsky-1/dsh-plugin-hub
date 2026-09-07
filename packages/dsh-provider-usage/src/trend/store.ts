@@ -140,7 +140,8 @@ export class TrendStore {
   /**
    * 读聚合分片全量行（agg + dir 混存，#633 A4）：flush 压实的「既有聚合合并」
    * 必须连 dir 行一起取回重写，否则二次压实会把混存分片里的 dir 行抹掉。
-   * 重建路径仍走 readAggShard（filter kind:"agg"）——dir 行进 dirCellOf 桶，不进 cells。
+   * #633 复核 M1：重启重建也走本方法——dir 行进 aggregator 的 dirDays 目录
+   * 内存桶（不进 cells），分片内 dir 权威行经 rebuild 读回内存视图。
    */
   async readAggDayShard(day: string): Promise<Array<TrendAggRow | TrendDirRow>> {
     return this.readShard(this.aggFile(day), (r): r is TrendAggRow | TrendDirRow => r.kind === "agg" || r.kind === "dir");

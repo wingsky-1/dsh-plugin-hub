@@ -3,7 +3,8 @@
  *
  * collector（事件折叠）→ aggregator（内存聚合）→ store（按天分片 JSONL）的组合：
  * - 刷盘三挂点（方案定稿）：3~5s 防抖 + `session/flush` 官方排空点 + dispose await；
- * - 启动重建：聚合分片（权威）+ 当日明细分片 → 内存聚合；过去日明细分片自愈压实；
+ * - 启动重建：聚合分片（权威，agg+dir 混存全量读回，dir 行进内存目录视图）+
+ *   当日明细分片 → 内存聚合；过去日明细分片自愈压实；
  * - 崩溃安全：压实先原子写聚合分片再删明细分片；同日并存时聚合权威（见 store）；
  * - 已知边界（文档化口径）：kill -9 丢防抖窗口数据（事件路线无重扫兜底）；
  *   统计自挂载时点起算。
@@ -101,7 +102,11 @@ export class TrendTracker {
   private async rebuildFromDisk(): Promise<void> {
     const today = dayKey(this.now());
     for (const day of await this.store.listAggDays()) {
-      this.aggregator.rebuild(await this.store.readAggShard(day), false);
+      // #633 复核 M1：混存分片全量读回（agg+dir）——dir 行经 rebuild 的 dir 分支
+      // mergeCell 进 dirDays（重启后内存目录视图恢复，分片 b 视图假设成立）；
+      // agg 行照旧进 cells。dir 行不进 cells/pending（rebuild 内 continue），
+      // 防双计语义与读回前一致。
+      this.aggregator.rebuild(await this.store.readAggDayShard(day), false);
     }
     for (const day of await this.store.listDetailDays()) {
       const rows = await this.store.readDetailShard(day);
