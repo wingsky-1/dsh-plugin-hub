@@ -1342,8 +1342,14 @@ try {
     // 带 fragment 的文件引用：fragment 剥离保留（附带瑕疵修复）。
     assert.equal(rt("./f.md#g", opts)!.fragment, "g", "#45 ./f.md#g 保留锚点 g");
     assert.equal(rt("./f.md#%E4%B8%AD", opts)!.fragment, "中", "#45 锚点解码一次");
-    // 绝对路径不可预览后缀 → 不重写（rewriteAnchor 层 target=_blank 兜底）。
-    assert.equal(rt("/home/u/proj/x.zip", opts), null, "#45 绝对路径 zip 不重写");
+    // 绝对路径不可预览后缀（#630 起 other 组也重写）：宿主嗅探兜底——文本直出 /
+    // 二进制 415 占位卡 + dl=1 下载，不再保留原链接（原行为新标签打开实落 404）。
+    {
+      const hitZip = rt("/home/u/proj/x.zip", opts);
+      assert.ok(hitZip !== null, "#630 绝对路径 zip → 重写（宿主嗅探兜底裁决）");
+      assert.equal(hitZip!.path, "/home/u/proj/x.zip", "#630 zip 重写 path 原样保留");
+      assert.ok(hitZip!.url.includes("path="), "#630 zip 重写为预览 URL");
+    }
     // 纯锚点 / 外域 / 协议相对 / data: → 不重写。
     assert.equal(rt("#section", opts), null, "#45 纯锚点不走预览 URL");
     assert.equal(rt("https://x/a.md", opts), null, "#45 外域不重写");
@@ -1383,6 +1389,20 @@ try {
     assert.ok(client.includes("noopener"), "#293 client.js 含外链 noopener 拦截（D1/D2）");
     assert.ok(client.includes("xlink:href"), "#293 client.js 含 xlink:href 外链读取（A4）");
     assert.ok(client.includes("translate("), "#293 client.js 含 transform 模板（A2 双路径共用）");
+  }
+
+  // ---- issue #630：client.js 产物契约哨兵（二进制占位卡 + 嗅探接管谓词）----
+  // 占位卡组件随产物下发（类名/i18n 文案/下载参数拼接）；接管谓词接线（wrapper
+  // 收口 + rewrite-target 重写）与 node 侧单测互为补充。宿主 bundle 不含 DOM
+  // 组件（binary-card 经 dom.ts 拉入 style.css 的 import 链已被 index 导出面挡住）。
+  {
+    const hostBundle = readFileSync(new URL("../lib/index.js", import.meta.url), "utf8");
+    assert.ok(client.includes("fwp-binary-card"), "#630 client.js 含二进制占位卡组件");
+    assert.ok(client.includes("fwp-binary-name"), "#630 client.js 含占位卡文件名节点（textContent 渲染）");
+    assert.ok(client.includes("二进制文件无法在 web 端预览"), "#630 client.js 含占位卡 i18n 文案");
+    assert.ok(client.includes("&dl=1"), "#630 client.js 含 dl=1 下载参数拼接");
+    assert.ok(!hostBundle.includes("fwp-binary-card"), "#630 宿主 bundle 不含占位卡组件（DOM 链未拉入宿主）");
+    assert.ok(hostBundle.includes("isbinaryfile"), "#630 宿主 bundle 内联嗅探库（license 归集 + banner require）");
   }
 
   // ---- issue #104：mermaid hydration 编排纯逻辑直测（mermaid-core，无 DOM）----

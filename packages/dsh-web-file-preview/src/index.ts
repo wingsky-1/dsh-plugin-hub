@@ -94,7 +94,7 @@ export { bareBasenameOf, findUniqueByBasename, DEFAULT_WALK_LIMIT } from "./base
 export { serveTokenRoute, allocServeToken, releaseServeToken, serveContentTypeOf, getTokenStore, resetServeTokenStore } from "./routes.ts";
 export { createTokenStore, DEFAULT_TOKEN_TTL_MS, DEFAULT_TOKEN_MAX, DEFAULT_ACTIVE_WINDOW_MS, type TokenStore, type TokenStoreOptions } from "./serve-tokens.ts";
 // 预览分组判定（单一事实源，宿主/客户端共用；经此透出供 smoke 断言双端一致）。
-export { groupOfPath, groupOfExt, extOf, isPreviewablePath, isLikelySingleFilePath, cleanRefChipPath } from "./grouping.ts";
+export { groupOfPath, groupOfExt, extOf, isPreviewablePath, isLikelySingleFilePath, shouldIntercept, cleanRefChipPath } from "./grouping.ts";
 // Markdown 相对/绝对引用展开、fragment 拆分与 openPreview 入参归一（U8 v2 + issue #45/#479；
 // 纯函数，经此透出供 smoke 断言）。
 export { resolveRelativePath, resolveAbsolutePath, splitReferenceFragment, normalizeBasePath } from "./relpath.ts";
@@ -106,4 +106,7 @@ export { rewriteTarget, dirResolvedPathOf } from "./client/rewrite-target.ts";
 // bundle 入口，浏览器 bundle 走 client/index 不经过此处，无进包风险）。
 export { sniffKind, bomLabelOf, decodeWithBom, SNIFF_SAMPLE_BYTES, type SniffVerdict } from "./sniff.ts";
 export { contentDispositionOf } from "./routes.ts";
+// issue #630：二进制占位卡纯函数（大小格式化/下载 URL；DOM-free，客户端组件
+// client/binary-card.ts 依赖 DOM 不经 index 透出——防 style.css 拉进宿主 bundle）。
+export { formatBytes, downloadUrlOf } from "./binary-info.ts";
 

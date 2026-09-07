@@ -10,9 +10,10 @@ import { highlightCode } from "./code.ts";
 import { sanitizePreview } from "./rewrite.ts";
 import { hydrateMermaid } from "./mermaid.ts";
 import { applyHeadingIds, scrollToFragment } from "./anchor.ts";
-import { el, errorView } from "./dom.ts";
+import { el, errorView, copyPathText } from "./dom.ts";
 import { renderHtmlPreview, renderHtmlInteractive } from "./html.ts";
 import type { FilePreviewState } from "./state.ts";
+import { renderBinaryCard } from "./binary-card.ts";
 import { resolvedFromFileResponse, applyResolvedPath } from "./resolved-path.ts";
 import { html as diffToHtml } from "diff2html";
 import DOMPurify from "dompurify";
@@ -44,6 +45,16 @@ export function fetchText(url: string, body: HTMLElement, seq: number, signal: A
     .then(async (res) => {
       if (seq !== state.openSeq) return;
       if (!res.ok) {
+        // issue #630：415 + binary:true（宿主嗅探判二进制的结构化占位）→ 占位卡
+        //（文件名/大小/下载 + 复制路径出口），替代错误文案 + 指向 415 JSON 页的
+        // 死胡同「新标签打开」按钮；其余错误态走通用 errorView 不变。
+        if (res.status === 415) {
+          const data = await res.json().catch(() => null);
+          if (seq === state.openSeq && data !== null && typeof data === "object" && (data as any).binary === true) {
+            renderBinaryCard(body, state, data as { size?: number; ext?: string }, url);
+            return;
+          }
+        }
         let msg = `加载失败（HTTP ${res.status}）`;
         try { const data = await res.json(); if (data && data.error) msg = String(data.error); } catch { /* 忽略 */ }
         errorView(body, msg, url);
@@ -99,7 +110,10 @@ export function renderTabBody(body: HTMLElement, state: FilePreviewState): void 
     body.appendChild(el("div", { class: "fwp-state", text: t("loading") }));
     return;
   }
-  if (state.previewMode === "raw" || group.group === "text") {
+  // issue #630：other 组（嗅探判文本）与 text 组同形态——等宽 pre 直出（预览
+  // 模式初始即 raw；200 内容已在 state.rawText）。415 二进制的占位卡在 fetchText
+  // 错误分支处理，不经此处。
+  if (state.previewMode === "raw" || group.group === "text" || group.group === "other") {
     body.appendChild(el("pre", { text }));
     return;
   }

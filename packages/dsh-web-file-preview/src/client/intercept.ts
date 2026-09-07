@@ -10,13 +10,17 @@ import { showToast } from "./dom.ts";
 import type { FilePreviewState } from "./state.ts";
 import { resolveFileLink, decideGate, SCOPE_SELECTORS } from "./link-resolver.ts";
 import { t } from "../../../../shared/client/i18n.js";
-import { groupOfPath } from "../grouping.ts";
+import { groupOfPath, shouldIntercept } from "../grouping.ts";
 import { openPreview } from "./preview.ts";
 
 /** 是否属于可 web 预览的分组（A：openPath 收口判定；B：静态路径判定；单一事实源 src/grouping.ts）。 */
 export function isPreviewablePath(value: string): boolean {
   return groupOfPath(String(value)).group !== "other";
 }
+
+// issue #630：点击接管谓词再导出——wrapper 收口与 link-resolver 权威凭证共用；
+// 非权威文本嗅探不得使用（分级纪律见 grouping.shouldIntercept 注释）。
+export { shouldIntercept };
 
 /**
  * 把真实 Element 祖先链适配为 ResolverNode 投影后委托纯逻辑解析
