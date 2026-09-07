@@ -284,5 +284,5 @@ export async function readReportIndex(historyRoot: string): Promise<ReportMeta[]
   }
   const value = [...newest.values()].sort((a, b) => b.generatedAt - a.generatedAt);
   if (stamp !== "") indexCache.set(historyRoot, { stamp, value });
-  return value;
+  return [...value]; // 与命中路径对称：浅拷贝防调用方就地突变污染缓存
 }
