@@ -9,9 +9,18 @@
  *   统计自挂载时点起算。
  */
 import { dayKey } from "../charts.ts";
-import { TrendAggregator, mergeAggRows, type TrendGranularity, type TrendMetric, type TrendStackPoint, type TrendWindowSummary } from "./aggregator.ts";
+import {
+  TrendAggregator,
+  mergeAggRows,
+  mergeDirRows,
+  type TrendGranularity,
+  type TrendMetric,
+  type TrendStackPoint,
+  type TrendWindowSummary,
+} from "./aggregator.ts";
 import { TrendCollector } from "./collector.ts";
 import { TrendStore } from "./store.ts";
+import type { TrendAggRow, TrendDirRow } from "./types.ts";
 import { safeId } from "./types.ts";
 
 export interface TrendTrackerOptions {
@@ -181,8 +190,20 @@ export class TrendTracker {
       if (this.aggregator.hasUnpersisted(day)) continue; // 上一步失败：留到下轮
       try {
         const pendingAgg = this.aggregator.rollupRowsOf(day);
-        const existing = await this.store.readAggShard(day);
-        await this.store.writeAggDay(day, mergeAggRows(existing, pendingAgg));
+        const pendingDir = this.aggregator.takeDirUnpersisted(day); // #633 A4：dir 汇总行同源折算
+        // #633 A4：既有聚合分片全量取回（agg+dir 混存）——若仍走 readAggShard（只取
+        // agg 行），整日原子重写会把分片内既有 dir 行抹掉；dir 行必须与 pendingDir
+        // 合并后一起重写（迟到旧日行二次压实防丢防重）。
+        const existing = await this.store.readAggDayShard(day);
+        const aggRows = mergeAggRows(
+          existing.filter((r): r is TrendAggRow => r.kind === "agg"),
+          pendingAgg,
+        );
+        const dirRows = mergeDirRows(
+          existing.filter((r): r is TrendDirRow => r.kind === "dir"),
+          pendingDir,
+        );
+        await this.store.writeAggDay(day, [...aggRows, ...dirRows]); // agg 行在前、dir 行在后（写入约定）
         await this.store.deleteDetailShard(day);
         this.aggregator.dropPending(day);
       } catch (e: unknown) {
