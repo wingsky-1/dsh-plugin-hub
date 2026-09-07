@@ -42,6 +42,14 @@ const {
   UNAVAILABLE_MSG,
   isMemoryDisciplineInjected,
   MEMORY_DISCIPLINE_TEXT,
+  parseSearchCandidates,
+  filterCandidatesByThreshold,
+  redactCandidates,
+  buildPreInjectionText,
+  isPreInjectionTriggered,
+  registerSmartPreInjectionHook,
+  PRE_INJECTION_HEADER,
+  PRE_INJECTION_DISCIPLINE_TEXT,
   createMem0Routes,
   parseMemoryListOutput,
   resolveLlmRuntimeConfig,
@@ -891,6 +899,396 @@ await test("executor 脱敏：getStderrTail 按值 redact 真实密钥", async (
   assert.equal(typeof executor.getStderrTail, "function", "getStderrTail 必须可调用");
   const tail = executor.getStderrTail();
   assert.deepEqual(tail, [], "未启动时 stderr 尾随应为空数组");
+});
+
+// ==================== #581 阶段三：会话首轮智能预检索注入 ====================
+
+// 23. #581 条目 8：三新配置键默认值与 mergeConfigPatch 白名单/越界回退
+await test("#581 配置契约：三新键默认值与合并白名单", () => {
+  assert.equal(DEFAULT_CONFIG.enableSmartPreInjection, true, "enableSmartPreInjection 默认 true");
+  assert.equal(DEFAULT_CONFIG.preInjectionThreshold, 0.6, "preInjectionThreshold 默认 0.6");
+  assert.equal(DEFAULT_CONFIG.preInjectionLimit, 3, "preInjectionLimit 默认 3");
+
+  const patched = mergeConfigPatch({ ...DEFAULT_CONFIG }, {
+    enableSmartPreInjection: false,
+    preInjectionThreshold: 0.8,
+    preInjectionLimit: 5,
+  });
+  assert.equal(patched.enableSmartPreInjection, false);
+  assert.equal(patched.preInjectionThreshold, 0.8);
+  assert.equal(patched.preInjectionLimit, 5);
+
+  // 越界回退默认
+  const outOfRange = mergeConfigPatch({ ...DEFAULT_CONFIG }, {
+    preInjectionThreshold: 1.5,
+    preInjectionLimit: 0,
+  });
+  assert.equal(outOfRange.preInjectionThreshold, 0.6, "threshold 越界（>1）回退默认");
+  assert.equal(outOfRange.preInjectionLimit, 3, "limit 越界（<1）回退默认");
+  // 非法类型不落盘
+  const invalidTypes = mergeConfigPatch({ ...DEFAULT_CONFIG }, {
+    preInjectionThreshold: "high",
+    preInjectionLimit: "many",
+    enableSmartPreInjection: "yes",
+  });
+  assert.equal(invalidTypes.preInjectionThreshold, 0.6);
+  assert.equal(invalidTypes.preInjectionLimit, 3);
+  assert.equal(invalidTypes.enableSmartPreInjection, true);
+});
+
+// 24. #581 条目 8：schemastery schema 校验与默认值
+await test("#581 schemastery schema：三新键进入 schema 且默认值正确", () => {
+  const { Config } = hostMod;
+  const resolved = Config({}); // 空输入走 schema 默认
+  assert.equal(resolved.enableSmartPreInjection, true);
+  assert.equal(resolved.preInjectionThreshold, 0.6);
+  assert.equal(resolved.preInjectionLimit, 3);
+});
+
+// 25. #581 条目 8：三新键经 /api/dsh-mem0/config GET/POST 正常流转
+await test("#581 配置路由：三新键 GET/POST 流转与越界回退", async () => {
+  let storedConfig = { ...DEFAULT_CONFIG };
+  const routes = createMem0Routes({
+    executor: { isReady: () => true } as any,
+    getCurrentCwd: () => process.cwd(),
+    getConfig: () => storedConfig,
+    updateConfig: async (patch) => {
+      storedConfig = mergeConfigPatch(storedConfig, patch);
+      return storedConfig;
+    },
+  });
+  const configRoute = routes.find((r) => r.path === "/api/dsh-mem0/config")!;
+
+  // GET：三键可见
+  let getCode = 0;
+  let getBody = "";
+  configRoute.handler(
+    { headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" }, socket: { remoteAddress: "127.0.0.1" }, method: "GET" } as any,
+    { setHeader: () => {}, writeHead: (c: number) => { getCode = c; }, end: (d: string) => { getBody = d; } } as any,
+  );
+  assert.equal(getCode, 200);
+  const parsedGet = JSON.parse(getBody);
+  assert.equal(parsedGet.config.enableSmartPreInjection, true, "GET 响应三新键可见");
+  assert.equal(parsedGet.config.preInjectionThreshold, 0.6);
+  assert.equal(parsedGet.config.preInjectionLimit, 3);
+
+  // POST：修改生效
+  const postReq = (payload: Record<string, unknown>): any => {
+    const stream: any = new Readable({ read() {} });
+    stream.push(Buffer.from(JSON.stringify(payload)));
+    stream.push(null);
+    stream.headers = { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" };
+    stream.socket = { remoteAddress: "127.0.0.1" };
+    stream.method = "POST";
+    return stream;
+  };
+  const mockRes = () => {
+    let code = 0;
+    let body = "";
+    const res: any = {
+      setHeader: () => {},
+      writeHead: (c: number) => { code = c; },
+      end: (d: string) => { body = d; },
+    };
+    (res as any).result = () => ({ code, body });
+    return res;
+  };
+  const res1 = mockRes();
+  await configRoute.handler(postReq({ enableSmartPreInjection: false, preInjectionThreshold: 0.9, preInjectionLimit: 7 }), res1);
+  const r1 = (res1 as any).result();
+  assert.equal(r1.code, 200, "合法三键更新应 200");
+  const parsedPost = JSON.parse(r1.body);
+  assert.equal(parsedPost.config.enableSmartPreInjection, false);
+  assert.equal(parsedPost.config.preInjectionThreshold, 0.9);
+  assert.equal(parsedPost.config.preInjectionLimit, 7);
+  assert.equal(storedConfig.enableSmartPreInjection, false);
+
+  // POST：越界值回退默认（不落盘越界残值）
+  const res2 = mockRes();
+  await configRoute.handler(postReq({ preInjectionThreshold: 2.0, preInjectionLimit: 99 }), res2);
+  const r2 = (res2 as any).result();
+  assert.equal(r2.code, 200);
+  assert.equal(storedConfig.preInjectionThreshold, 0.6, "threshold 越界（>1）回退默认");
+  assert.equal(storedConfig.preInjectionLimit, 3, "limit 越界（>10）回退默认");
+});
+
+// 26. #581 条目 4：解析、阈值（严格大于）与条数降序截断
+await test("#581 数据层：parseSearchCandidates 解析与阈值过滤", () => {
+  const { parseSearchCandidates, filterCandidatesByThreshold } = hostMod;
+  const raw = [
+    "- 用户统一使用 pnpm (id: m_01) [score: 0.92]",
+    "- 插件只适配 dsh rc 版本 (id: m_02) [score: 0.81]",
+    "- 无分数条目 (id: m_03)",
+    "- 等于阈值条目 (id: m_04) [score: 0.60]",
+    "- 低于阈值条目 (id: m_05) [score: 0.40]",
+  ].join("\n");
+  const candidates = parseSearchCandidates(raw);
+  assert.equal(candidates.length, 5, "五条输入全部解析");
+  assert.equal(candidates[0].id, "m_01");
+  assert.equal(candidates[0].text, "用户统一使用 pnpm");
+  assert.equal(candidates[0].score, 0.92);
+
+  const selected = filterCandidatesByThreshold(candidates, { preInjectionThreshold: 0.6, preInjectionLimit: 3 });
+  assert.equal(selected.length, 2, "仅严格大于 0.6 的 2 条入选（等于阈值不注入）");
+  assert.equal(selected[0].id, "m_01", "按分数降序");
+  assert.equal(selected[1].id, "m_02");
+
+  // limit 截断
+  const truncated = filterCandidatesByThreshold(candidates, { preInjectionThreshold: 0.1, preInjectionLimit: 2 });
+  assert.equal(truncated.length, 2, "limit=2 截断后仅 2 条");
+  assert.equal(truncated[0].score, 0.92);
+
+  // 空集
+  assert.deepEqual(filterCandidatesByThreshold([], { preInjectionThreshold: 0.6, preInjectionLimit: 3 }), []);
+  // 非列表文本归约空集
+  assert.deepEqual(parseSearchCandidates("No matching memories found."), []);
+  assert.deepEqual(parseSearchCandidates("[memory_search failed: boom]"), []);
+  assert.deepEqual(parseSearchCandidates(""), []);
+});
+
+// 27. #581 条目 6：围栏格式与条目组装
+await test("#581 注入形态：围栏开闭标签与条目列表", () => {
+  const { buildPreInjectionText } = hostMod;
+  const text = buildPreInjectionText([
+    { id: "m_01", text: "用户统一使用 pnpm", score: 0.92 },
+    { id: "m_02", text: "插件只适配 dsh rc 版本", score: 0.81 },
+  ]);
+  assert.ok(text.startsWith("[Long-term Memories Recalled for this Workspace]"), "必须以标题行开头");
+  assert.ok(text.includes("<user_long_term_memories>"), "必须含开标签");
+  assert.ok(text.includes("</user_long_term_memories>"), "必须含闭标签");
+  assert.ok(text.includes("- 用户统一使用 pnpm (id: m_01)"), "条目附 id 标识");
+  const openCount = (text.match(/<user_long_term_memories>/g) || []).length;
+  const closeCount = (text.match(/<\/user_long_term_memories>/g) || []).length;
+  assert.equal(openCount, 1);
+  assert.equal(closeCount, 1);
+  // 空集返回空串（零 Token 浪费）
+  assert.equal(buildPreInjectionText([]), "");
+});
+
+// 28. #581 条目 9：注入文本凭据脱敏
+await test("#581 凭据脱敏：注入文本不得出现未脱敏密钥", () => {
+  const { parseSearchCandidates, filterCandidatesByThreshold, redactCandidates, buildPreInjectionText } = hostMod;
+  const secret = "sk-prod1234567890abcdef1234567890abcdef";
+  const raw = `- 生产环境密钥是 ${secret} (id: m_sec) [score: 0.95]`;
+  const selected = redactCandidates(
+    filterCandidatesByThreshold(parseSearchCandidates(raw), { preInjectionThreshold: 0.6, preInjectionLimit: 3 }),
+  );
+  assert.equal(selected.length, 1);
+  const injected = buildPreInjectionText(selected);
+  assert.ok(!injected.includes(secret), "注入文本绝不能包含完整密钥串");
+  assert.ok(injected.includes("***"), "密钥必须被掩码");
+
+  // 键值对形态保留键名、掩码值
+  const kv = redactCandidates([{ id: "k1", text: "api_key = abcd1234efgh5678", score: 0.9 }]);
+  assert.ok(kv[0].text.includes("api_key"), "键值对形态保留键名");
+  assert.ok(!kv[0].text.includes("abcd1234efgh5678"), "键值对值必须掩码");
+
+  // 中文赋值形态
+  const zhForm = redactCandidates([{ id: "k2", text: "数据库密码是 P@ssw0rd123456", score: 0.9 }]);
+  assert.ok(!zhForm[0].text.includes("P@ssw0rd123456"), "中文赋值形态密码必须掩码");
+
+  // 正常文本不受影响
+  const normal = redactCandidates([{ id: "n1", text: "用户统一使用 pnpm 管理依赖", score: 0.9 }]);
+  assert.equal(normal[0].text, "用户统一使用 pnpm 管理依赖", "正常文本零误伤");
+});
+
+// 29. #581 条目 7：预检索判重与纪律判重互不误伤
+await test("#581 判重语义：isPreInjectionTriggered 与纪律判重互不误伤", () => {
+  const { isPreInjectionTriggered } = hostMod;
+  // 仅纪律已注入：预检索仍应触发
+  const onlyDiscipline = {
+    session: {
+      snapshotEvents: () => [
+        { type: "user/message", data: { source: { kind: "plugin", plugin: "mem0", form: "instructions" } } },
+      ],
+    },
+  };
+  assert.equal(isMemoryDisciplineInjected(onlyDiscipline), true, "纪律注入事件应命中纪律判重");
+  assert.equal(isPreInjectionTriggered(onlyDiscipline), true, "仅有纪律注入时预检索仍应触发");
+
+  // 仅预检索已注入：纪律应仍触发
+  const onlyPre = {
+    session: {
+      snapshotEvents: () => [
+        { type: "user/message", data: { source: { kind: "plugin", plugin: "mem0", form: "recall" } } },
+      ],
+    },
+  };
+  assert.equal(isPreInjectionTriggered(onlyPre), false, "已有预检索注入（form=recall）→ 不再触发");
+  assert.equal(isMemoryDisciplineInjected(onlyPre), true, "注意：既有判重按 plugin=mem0 全量命中，属阶段一既有语义");
+});
+
+// 30. #581 条目 1/2/3/5/7/9：注入钩子端到端（fake executor 驱动全分支矩阵）
+await test("#581 钩子端到端：首轮恰一次检索与围栏注入", async () => {
+  const { registerSmartPreInjectionHook } = hostMod;
+  let searchCalls = 0;
+  const fakeExecutor = {
+    isReady: () => true,
+    search: async () => {
+      searchCalls++;
+      return "- 用户统一使用 pnpm (id: m_01) [score: 0.92]\n- 架构决策: 只适配 rc (id: m_02) [score: 0.81]";
+    },
+    add: async () => "",
+    list: async () => "",
+    delete: async () => "",
+  };
+  const handlers: Array<(payload: any, next: () => any) => Promise<any>> = [];
+  const disposers: Array<() => void> = [];
+  const mockCtx = {
+    on(_event: string, handler: any) {
+      handlers.push(handler);
+      disposers.push(() => {});
+      return () => disposers.pop();
+    },
+  };
+  const unregister = registerSmartPreInjectionHook(mockCtx as any, fakeExecutor as any, () => ({
+    enableSmartPreInjection: true,
+    preInjectionThreshold: 0.6,
+    preInjectionLimit: 3,
+  }));
+  assert.equal(handlers.length, 1, "钩子注册到 agent/pre-step");
+  const hook = handlers[0];
+
+  const makeAgent = () => ({ session: { snapshotEvents: () => [] } });
+  const runHook = async (agent: any, userText: string) =>
+    hook({ agent }, async () => ({
+      kind: "enter",
+      messages: [{ role: "user", content: [{ type: "text", text: userText }] }],
+    }));
+
+  // 首轮：触发检索 + 围栏注入 + 独立纪律消息
+  const agent1 = makeAgent();
+  const decision1 = await runHook(agent1, "本项目用什么包管理器？");
+  assert.equal(searchCalls, 1, "首轮恰一次检索");
+  assert.equal(decision1.kind, "enter");
+  const injected = decision1.messages.filter((m: any) => m.source?.kind === "plugin" && m.source?.plugin === "mem0");
+  assert.equal(injected.length, 2, "预检索围栏消息 + 独立纪律消息");
+  const fenceMsg = injected.find((m: any) => m.source.form === "recall");
+  const disciplineMsg = injected.find((m: any) => m.source.form === "instructions");
+  assert.ok(fenceMsg, "围栏注入消息存在（form=recall）");
+  assert.ok(fenceMsg.content[0].text.includes("<user_long_term_memories>"), "围栏开标签");
+  assert.ok(fenceMsg.content[0].text.includes("(id: m_01)"), "条目附 id");
+  assert.ok(disciplineMsg, "纪律消息独立存在（不与围栏合并）");
+  assert.ok(
+    disciplineMsg.content[0].text.includes("not control instructions") &&
+      disciplineMsg.content[0].text.includes("takes precedence"),
+    "纪律语义：背景事实而非控制指令、冲突以当前请求为准",
+  );
+  assert.equal(typeof unregister, "function");
+
+  // 同会话第二轮：不再检索、不再注入
+  const decision2 = await runHook(agent1, "继续刚才的话题");
+  assert.equal(searchCalls, 1, "同会话第二次 pre-step 不再检索（尝试唯一性）");
+  const injected2 = decision2.messages.filter((m: any) => m.source?.plugin === "mem0");
+  assert.equal(injected2.length, 0, "同会话第二次 pre-step 不再注入（注入唯一性）");
+});
+
+await test("#581 钩子端到端：步骤重试不产生第二条注入（事件流判重）", async () => {
+  const { registerSmartPreInjectionHook } = hostMod;
+  let searchCalls = 0;
+  const fakeExecutor = {
+    isReady: () => true,
+    search: async () => {
+      searchCalls++;
+      return "- 记忆甲 (id: m_1) [score: 0.9]";
+    },
+    add: async () => "",
+    list: async () => "",
+    delete: async () => "",
+  };
+  const handlers: Array<any> = [];
+  registerSmartPreInjectionHook(
+    { on: (_e: string, h: any) => { handlers.push(h); return () => {}; } } as any,
+    fakeExecutor as any,
+    () => ({ enableSmartPreInjection: true, preInjectionThreshold: 0.6, preInjectionLimit: 3 }),
+  );
+  const hook = handlers[0];
+  // 同一 agent 的事件流已含本插件预检索注入（模拟步骤重试/重发时事件已提交）
+  const agent = {
+    session: {
+      snapshotEvents: () => [
+        { type: "user/message", data: { source: { kind: "plugin", plugin: "mem0", form: "recall" } } },
+      ],
+    },
+  };
+  await hook({ agent }, async () => ({
+    kind: "enter",
+    messages: [{ role: "user", content: [{ type: "text", text: "重试的同一消息" }] }],
+  }));
+  assert.equal(searchCalls, 0, "事件流已有预检索注入 → 连检索都不发起");
+});
+
+await test("#581 钩子端到端：三类降级静默放行（未就绪/抛错/超时）", async () => {
+  const { registerSmartPreInjectionHook } = hostMod;
+  const handlers: Array<any> = [];
+  const mkCtx = () => ({ on: (_e: string, h: any) => { handlers.push(h); return () => {}; } }) as any;
+  const mkNext = () => async () => ({
+    kind: "enter",
+    messages: [{ role: "user", content: [{ type: "text", text: "首轮提问" }] }],
+  });
+  const agent = { session: { snapshotEvents: () => [] } };
+  const cfg = () => ({ enableSmartPreInjection: true, preInjectionThreshold: 0.6, preInjectionLimit: 3 });
+
+  // 降级 1：未就绪
+  const notReadyExecutor = { isReady: () => false, search: async () => { throw new Error("should not be called"); } };
+  registerSmartPreInjectionHook(mkCtx(), notReadyExecutor as any, cfg);
+  const d1 = await handlers[0]({ agent }, mkNext());
+  assert.equal(d1.kind, "enter");
+  assert.equal(d1.messages.filter((m: any) => m.source?.plugin === "mem0").length, 0, "未就绪 → 零注入");
+
+  // 降级 2：检索抛错
+  const errExecutor = { isReady: () => true, search: async () => { throw new Error("qdrant down"); } };
+  registerSmartPreInjectionHook(mkCtx(), errExecutor as any, cfg);
+  const d2 = await handlers[1]({ agent: { session: { snapshotEvents: () => [] } } }, mkNext());
+  assert.equal(d2.kind, "enter");
+  assert.equal(d2.messages.filter((m: any) => m.source?.plugin === "mem0").length, 0, "抛错 → 零注入且不冒泡");
+
+  // 降级 3：检索超时（极短超时触发超时分支）
+  const slowExecutor = {
+    isReady: () => true,
+    search: () => new Promise((_resolve, reject) => setTimeout(() => reject(new Error("timeout")), 50)),
+  };
+  registerSmartPreInjectionHook(mkCtx(), slowExecutor as any, cfg, { timeoutMs: 10 });
+  const d3 = await handlers[2]({ agent: { session: { snapshotEvents: () => [] } } }, mkNext());
+  assert.equal(d3.kind, "enter");
+  assert.equal(d3.messages.filter((m: any) => m.source?.plugin === "mem0").length, 0, "超时 → 零注入");
+});
+
+await test("#581 钩子端到端：开关关闭全程不检索不注入 + 零命中零注入", async () => {
+  const { registerSmartPreInjectionHook } = hostMod;
+  const handlers: Array<any> = [];
+  const mkCtx = () => ({ on: (_e: string, h: any) => { handlers.push(h); return () => {}; } }) as any;
+  const mkNext = () => async () => ({
+    kind: "enter",
+    messages: [{ role: "user", content: [{ type: "text", text: "首轮提问" }] }],
+  });
+  const agent = { session: { snapshotEvents: () => [] } };
+
+  // 开关关闭：search 调用数必须为 0
+  let searchCalls = 0;
+  const offExecutor = {
+    isReady: () => true,
+    search: async () => { searchCalls++; return "- x (id: m) [score: 0.9]"; },
+  };
+  registerSmartPreInjectionHook(mkCtx(), offExecutor as any, () => ({
+    enableSmartPreInjection: false,
+    preInjectionThreshold: 0.6,
+    preInjectionLimit: 3,
+  }));
+  const d1 = await handlers[0]({ agent }, mkNext());
+  assert.equal(searchCalls, 0, "开关关闭 → 全程不检索");
+  assert.equal(d1.messages.filter((m: any) => m.source?.plugin === "mem0").length, 0, "开关关闭 → 零注入");
+
+  // 零命中：检索了但不注入（零 Token 浪费）
+  const emptyExecutor = { isReady: () => true, search: async () => "No matching memories found." };
+  registerSmartPreInjectionHook(mkCtx(), emptyExecutor as any, () => ({
+    enableSmartPreInjection: true,
+    preInjectionThreshold: 0.6,
+    preInjectionLimit: 3,
+  }));
+  const d2 = await handlers[1]({ agent: { session: { snapshotEvents: () => [] } } }, mkNext());
+  assert.equal(d2.kind, "enter");
+  assert.equal(d2.messages.filter((m: any) => m.source?.plugin === "mem0").length, 0, "零命中 → 零追加文本");
 });
 
 console.log(`\n全部 ${testsRun} 项冒烟测试顺利通过！`);

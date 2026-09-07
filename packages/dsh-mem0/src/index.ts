@@ -7,7 +7,8 @@
  * 3. 注册会话级单次提示词钩子（<=50 tokens）；
  * 4. 接入 DSH 官方 settings 存储体系（~/.dsh/settings.yaml）；
  * 5. 注册 /api/dsh-mem0/* loopback 保护路由；
- * 6. 生命周期严格随 Cordis 容器释放，零孤儿进程。
+ * 6. #581：会话首轮智能记忆预检索与 `<user_long_term_memories>` 围栏注入；
+ * 7. 生命周期严格随 Cordis 容器释放，零孤儿进程。
  */
 
 import type { Context } from "@deepseek-ai/cordis";
@@ -23,6 +24,7 @@ import {
   type Mem0Config,
 } from "./config.ts";
 import { StdioMemoryExecutor } from "./executor.ts";
+import { registerSmartPreInjectionHook } from "./pre-injection-hook.ts";
 import { registerMemoryPromptHook } from "./prompt.ts";
 import { createMem0Routes } from "./routes.ts";
 import { installMem0Settings, type OwnerScopeLike } from "./settings.ts";
@@ -56,6 +58,20 @@ export {
   isMemoryDisciplineInjected,
   registerMemoryPromptHook,
 } from "./prompt.ts";
+export {
+  parseSearchCandidates,
+  filterCandidatesByThreshold,
+  redactCandidates,
+  buildPreInjectionText,
+  PRE_INJECTION_HEADER,
+  PRE_INJECTION_DISCIPLINE_TEXT,
+} from "./pre-injection.ts";
+export {
+  registerSmartPreInjectionHook,
+  isPreInjectionTriggered,
+  PRE_INJECTION_TIMEOUT_MS,
+} from "./pre-injection-hook.ts";
+export type { PreInjectCandidate, PreInjectOptions } from "./pre-injection.ts";
 export { createMem0Routes } from "./routes.ts";
 export { parseMemoryListOutput, type MemoryListItem, type MemoryListParseResult } from "./routes.ts";
 export { aggregateProviderUsage, type ProviderUsageStat } from "./usage-aggregator.ts";
@@ -318,6 +334,10 @@ export function apply(ctx: Context, initialConfig?: Partial<Mem0Config>): void {
   // 4. 注册提示词纪律钩子
   const unregisterPrompt = registerMemoryPromptHook(ctx);
 
+  // 4b. #581：注册会话首轮智能预检索注入钩子
+  //（per-session 恰一次检索尝试；未就绪/抛错/超时三类静默降级，绝不阻塞首轮回复）
+  const unregisterPreInjection = registerSmartPreInjectionHook(ctx, executor, () => currentConfig);
+
   // 5. 异步尝试拉起 stdio 运行时
   // #612：启动失败必须落到 executor（env_build_failed + detail），前端才有诊断与重试入口；
   // 不再只 warn 后静默停留 idle。失败后按指数退避自动重试。
@@ -328,6 +348,9 @@ export function apply(ctx: Context, initialConfig?: Partial<Mem0Config>): void {
     return () => {
       if (typeof unregisterPrompt === "function") {
         unregisterPrompt();
+      }
+      if (typeof unregisterPreInjection === "function") {
+        unregisterPreInjection();
       }
       executor.stop();
       if (mcpManager && typeof mcpManager.unregisterServer === "function") {
