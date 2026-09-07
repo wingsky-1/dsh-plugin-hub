@@ -1826,17 +1826,10 @@ console.log("[smoke] #503 trend 挂接 + /trend 集成断言全部通过 ✓");
     assert.equal(again.reused, true, "未勾选 force → 幂等复用");
     assert.equal(again.meta.key, genMeta.key, "复用同窗口 meta");
     assert.equal(dailyLineCount(), countBeforeForce, "幂等复用不新增 index 记录（未调 LLM）");
-    // #629 P2：executor 侧幂等短路复用经 202 轮询路径同样透出 reused（提示对称）
-    {
-      const reuseTask = await callHandler(genRoute, fakeReq({ method: "POST", body: JSON.stringify({ period: "daily" }) }));
-      assert.ok(typeof reuseTask.taskId === "string", "executor 幂等短路走 202+taskId 轮询路径");
-      const reuseDone = await pollUntil(async () => {
-        const st = await callHandler(statusRoute, fakeReq({ url: `${ROUTES.reportGenerateStatus}?taskId=${encodeURIComponent(reuseTask.taskId)}` }));
-        return st.status === "done" || st.status === "failed" ? st : undefined;
-      }, 5000, 5);
-      assert.equal(reuseDone.status, "done", "复用任务 done");
-      assert.equal(reuseDone.reused, true, "status 响应透传 reused（轮询路径客户端可提示已复用）");
-    }
+    // #629 P2 复用提示对称说明：200 直接复用路径的 reused 透传已由上方 again 断言覆盖；
+    // executor 短路复用（202 任务化 → 执行前重查 index 命中 → task.reused）在 HTTP 面
+    // 被路由层 200 短路先行遮蔽，正常流量下不可达，集成层不构造时序赌注（防 flake），
+    // 该透传断言归位单元层（unit-report.test.ts 直调 handleReportStatus 覆盖）。
     const forceMeta = await generateAndAwait({ period: "daily", force: true });
     assert.equal(forceMeta.ok, true, "force 重新生成 ok");
     assert.equal(forceMeta.key, genMeta.key, "force 覆盖同窗口");
