@@ -779,7 +779,7 @@ export function formatPanel() { return "<p>x</p>"; }
     // #543 移动端适配哨兵：分段器 role 必须 group——宿主设置弹窗移动端适配规则
     // 排除含 [role=navigation] 的弹窗（实测命中即整弹窗退回桌面 row 布局）
     assert.ok(settingsIndex.includes('role="group"'), "分段器 role=group（#543 移动端适配）（TSX 形态）");
-    assert.ok(!settingsIndex.includes('role="navigation"'), "分段器不得使用 role=navigation（#543）");
+    assert.ok(!settingsIndex.includes('role="navigation"'), "分段器不得使用 role=navigation（#543）（TSX 形态）");
     assert.ok(settingsIndex.includes('t("settingsNavLabel")'), "分段器 aria-label 走 i18n");
   }
 }
