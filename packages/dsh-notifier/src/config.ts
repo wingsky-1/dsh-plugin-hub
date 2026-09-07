@@ -127,8 +127,17 @@ export interface NotifyConfig {
   systemNotify: boolean;
   browserNotify: boolean;
   notifyWhenVisible: boolean;
-  /** 系统通知是否带提示音（false = silent，静默弹出）。 */
+  /**
+   * 系统通知是否带提示音（false = silent，静默弹出）。
+   * @deprecated 只读兼容别名（#640/#641）：新 UI 不再写本键；读取由
+   * resolveSoundSetting 回落消费（缺 browserSound/systemSound 时沿用旧值）。
+   * 存量 user 层可能残留本键（settings 层不迁移、首次 UI 保存后由新键取代）。
+   */
   notifySound: boolean;
+  /** 浏览器通道声音（false=静音；true=跟随系统默认；SoundId=页内自播音色）。 */
+  browserSound: SoundSetting;
+  /** 系统通道声音（false=静音；true=跟随系统默认；Linux true=默认事件音自播）。 */
+  systemSound: SoundSetting;
   quietHours: QuietHoursConfig;
   errorMergeWindowMs: number;
   /** 审批等待超时二次提醒（分钟；0 = 关闭）。 */
@@ -148,8 +157,56 @@ export interface NotifyConfig {
   allowKinds: string[];
 }
 
-/** 布尔配置键联合（normalizeConfig 白名单与客户端渲染依赖它）。 */
-type BooleanKeys = { [K in keyof NotifyConfig]: NotifyConfig[K] extends boolean ? K : never }[keyof NotifyConfig];
+/**
+ * 布尔配置键联合（normalizeConfig 白名单与客户端渲染依赖它）。
+ * browserSound/systemSound 类型为 SoundSetting（boolean|SoundId），其 boolean
+ * 形态仍需走 CONFIG_KEYS 循环（#640/#641；门禁 N2 以默认字面量布尔推导），
+ * SoundId 字符串形态由声音专用分支归一化——联合推导把 SoundSetting 纳入。
+ */
+type BooleanKeys = { [K in keyof NotifyConfig]: NotifyConfig[K] extends boolean | SoundSetting ? K : never }[keyof NotifyConfig];
+
+// ---------------------------------------------------------------- 声音设置（#640/#641）
+
+/**
+ * 内置音色 id（全平台语义一致的 SoundId 白名单；定稿口径 ding/bell/chime/pop，
+ * 不含 default——「跟随系统」由 true 承担；不含 complete——与 done 语义重叠且
+ * 多数 DE 默认包缺对应事件文件）。各平台映射：
+ * - 浏览器：Web Audio 合成短旋律（客户端 playTone）；
+ * - macOS：NSSound 系统内置名（Glass/Ping/Sosumi/Pop/Frog/Tink…，sound name）；
+ * - Linux：freedesktop 声音事件文件（sound-theme-freedesktop 基线包内存在）；
+ * - Windows：宿主 SoundPlayer 白名单 wav（C:\Windows\Media\…，缺失静默）。
+ */
+export const SOUND_IDS = ["ding", "bell", "chime", "pop"] as const;
+
+/** 声音设置取值：false=静音；true=跟随系统默认；SoundId=显式内置音色。 */
+export type SoundId = (typeof SOUND_IDS)[number];
+
+/** 声音设置（boolean | 内置音色 id；校验器 isSoundSetting 与其白名单同源）。 */
+export type SoundSetting = boolean | SoundId;
+
+/** 声音通道键（browserSound/systemSound；resolveSoundSetting 与客户端渲染共用）。 */
+export type SoundChannel = "browser" | "system";
+
+/** v 是否为合法声音设置（false/true 或 SOUND_IDS 之一）。 */
+export function isSoundSetting(v: unknown): v is SoundSetting {
+  if (v === true || v === false) return true;
+  return typeof v === "string" && (SOUND_IDS as readonly string[]).includes(v);
+}
+
+/**
+ * 单一回落纯函数（评审 P0-3 收敛）：通道声音设置的读面权威。
+ * 缺该通道键（undefined）→ 回落全局旧别名 notifySound → 再缺省 true（跟随系统）；
+ * 显式写入（含 false）后两通道互不影响。normalize 后配置恒含两键（DEFAULT_CONFIG
+ * 兜底），但存量 user 层可能只有 notifySound（settings 层存量不迁，#640/#641 读面
+ * 回落）——本函数是唯一回落点，消费方不得自行叠加回落逻辑。
+ */
+export function resolveSoundSetting(cfg: Pick<NotifyConfig, "browserSound" | "systemSound" | "notifySound">, channel: SoundChannel): SoundSetting {
+  const value = cfg[channel === "browser" ? "browserSound" : "systemSound"];
+  if (value !== undefined) return value;
+  const legacy = cfg.notifySound;
+  if (legacy !== undefined) return legacy;
+  return true;
+}
 
 /** apply 接收的配置（enabled / 路径覆盖；路径不覆盖时默认落 DSH_HOME，未设时 ~/.dsh，#510）。 */
 export interface NotifierApplyConfig {
@@ -196,6 +253,10 @@ export const DEFAULT_CONFIG: NotifyConfig = {
   notifyWhenVisible: false,
   /** 系统通知默认带提示音。 */
   notifySound: true,
+  /** 浏览器通道声音默认 true = 跟随系统默认（浏览器通知不 silent，不自播）。 */
+  browserSound: true,
+  /** 系统通道声音默认 true = 跟随系统默认（Linux 特例：默认事件音自播，#640）。 */
+  systemSound: true,
   quietHours: { enabled: false, start: "22:00", end: "08:00" },
   /** 同类错误合并窗口（毫秒）：窗口内后续错误不再单独通知，累计到下次一并提示。 */
   errorMergeWindowMs: 60000,
@@ -217,8 +278,13 @@ export const DEFAULT_CONFIG: NotifyConfig = {
   allowKinds: [],
 };
 
-/** 布尔配置键（单一事实源：normalizeConfig 白名单与客户端渲染依赖它）。 */
-export const CONFIG_KEYS: readonly BooleanKeys[] = ["notifyAsk", "notifyQuestion", "notifyTaskDone", "notifySubagentDone", "notifyTaskError", "notifyTurnEnd", "systemNotify", "browserNotify", "notifyWhenVisible", "notifySound"];
+/**
+ * 布尔配置键（单一事实源：normalizeConfig 白名单与客户端渲染依赖它）。
+ * browserSound/systemSound 属 SoundSetting（boolean|SoundId），其 boolean 形态
+ * 走 CONFIG_KEYS 循环；SoundId 字符串形态由 normalizeConfig 声音专用分支处理
+ * （两处都要排除表同步排除——见 normalizeConfig）。
+ */
+export const CONFIG_KEYS: readonly BooleanKeys[] = ["notifyAsk", "notifyQuestion", "notifyTaskDone", "notifySubagentDone", "notifyTaskError", "notifyTurnEnd", "systemNotify", "browserNotify", "notifyWhenVisible", "notifySound", "browserSound", "systemSound"];
 
 /**
  * 原型链污染/特殊成员键名（读透传与写通道共用保留键，#470 复核 P0）：这些键
@@ -462,6 +528,21 @@ export function normalizeConfig(input: unknown): NotifyConfig {
   for (const key of CONFIG_KEYS) {
     if (typeof src[key] === "boolean") base[key] = src[key];
   }
+  // #640/#641：声音设置专用分支——SoundSetting 非纯布尔，走不进 CONFIG_KEYS
+  // 布尔循环；这里与下方「已归一化键排除表」成对出现（P1-1 修订），否则字符串
+  // 音色会走未知键透传绕过校验（读面丢弃非法值回默认 true，不抛不炸）。
+  if (isSoundSetting(src.browserSound)) base.browserSound = src.browserSound;
+  if (isSoundSetting(src.systemSound)) base.systemSound = src.systemSound;
+  // 存量表态等价映射（P0-3 收敛的读面回落前提）：旧版只有 notifySound 显式时，
+  // 若新键未显式给出（JSON 显式 undefined 不可能，undefined = 未给），把旧键值
+  // 等价映射为新键——normalize 后 cfg 新键恒存在，resolveSoundSetting 直读即可；
+  // 否则用户曾关声音（user.notifySound=false）会在升级后因新键默认 true 复活成
+  // 「突然有声」（README 行为变化声明同源）。优先级：显式新键 > 旧键映射 > 默认
+  // true；显式新键（含非法值丢回默认）后旧键不再映射。
+  if (typeof src.notifySound === "boolean") {
+    if (src.browserSound === undefined) base.browserSound = src.notifySound;
+    if (src.systemSound === undefined) base.systemSound = src.notifySound;
+  }
   if (Number.isFinite(src.errorMergeWindowMs) && (src.errorMergeWindowMs as number) >= 0 && (src.errorMergeWindowMs as number) <= 3600000) {
     base.errorMergeWindowMs = Math.round(src.errorMergeWindowMs as number);
   }
@@ -507,6 +588,9 @@ export function normalizeConfig(input: unknown): NotifyConfig {
     // 已归一化过的键不再透传（否则非法值会以原样覆盖归一化结果）
     if (key === "quietHours" || key === "errorMergeWindowMs" || key === "askRemindMin" || key === "doneMergeWindowMs" || key === "historyMaxAgeDays" || key === "maxConnections") continue;
     if (key === "channels" || key === "kindRoutes" || key === "allowKinds") continue;
+    // #640/#641：browserSound/systemSound 属已归一化键（SoundSetting 白名单），
+    // 非法字符串（如 "<script>"）不得经未知键透传覆盖归一化结果（P1-1/四同步）
+    if (key === "browserSound" || key === "systemSound") continue;
     out[key] = src[key];
   }
   return out;
@@ -698,6 +782,8 @@ const SETTING_VALIDATORS: Record<string, (v: unknown) => boolean> = {
   browserNotify: isBoolean,
   notifyWhenVisible: isBoolean,
   notifySound: isBoolean,
+  browserSound: isSoundSetting,
+  systemSound: isSoundSetting,
   quietHours: isQuietHours,
   errorMergeWindowMs: isNonNegNumber(3600000),
   askRemindMin: isNonNegNumber(600),
@@ -721,6 +807,8 @@ const SETTING_HINTS: Record<string, string> = {
   browserNotify: "需为布尔值",
   notifyWhenVisible: "需为布尔值",
   notifySound: "需为布尔值",
+  browserSound: "需为布尔值或音色 id 之一（ding/bell/chime/pop）",
+  systemSound: "需为布尔值或音色 id 之一（ding/bell/chime/pop）",
   quietHours: "需为 { enabled?: boolean, start?: \"HH:MM\", end?: \"HH:MM\", allowKinds?: string[] }（allowKinds 每项为非空字符串 ≤64 字符、至多 128 项）",
   errorMergeWindowMs: "需为 0-3600000 的整数（毫秒）",
   askRemindMin: "需为 0-600 的整数（分钟）",

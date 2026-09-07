@@ -1,8 +1,8 @@
 /**
  * dsh-provider-usage — 使用趋势纯函数层（#503 M2.1）。
  *
- * 从 trend.ts 拆出的零 React 依赖模块：格式化 / 档位生成 / 桶键语义 / SVG 生成器。
- * 单测可直接 node 加载（trend.ts 顶部 import react，node 测试环境不可用）。
+ * 从 trend.tsx 拆出的零 React 依赖模块：格式化 / 档位生成 / 桶键语义 / SVG 生成器。
+ * 单测可直接 node 加载（trend.tsx 顶部 import react，node 测试环境不可用）。
  * 宿主聚合数据（provider 名/键）不受信，凡进 SVG 文本一律 escHtml；
  * tooltip 走 React 文本节点（trend.ts 内），不经本模块。
  */

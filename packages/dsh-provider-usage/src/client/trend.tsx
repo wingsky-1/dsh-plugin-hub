@@ -112,39 +112,39 @@ const selectStyle: Object = {
 /** 汇总卡（值 + 标签 + 可选角标 + 可选 hint）。 */
 function SummaryCard(props: { label: string; value: string; delta?: string | null; up?: boolean; hint?: string | null }): React.ReactElement {
   const { label, value, delta, up, hint } = props;
-  return React.createElement(
-    "div",
-    { style: cardStyle },
-    React.createElement("div", { style: { fontSize: 11, color: "var(--dsw-alias-label-tertiary,#9aa0ab)" } }, label),
-    React.createElement(
-      "div",
-      { style: { fontSize: 16, fontWeight: 700, fontVariantNumeric: "tabular-nums", display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap" } },
-      value,
-      delta !== undefined && delta !== null
-        ? React.createElement(
-            "span",
-            { style: { fontSize: 11, fontWeight: 600, color: up ? "var(--dsw-alias-state-warn-primary,#d9a13c)" : "var(--dsw-alias-state-success-primary,#3f9d63)" } },
-            delta,
-          )
-        : null,
-      hint != null && hint !== "" ? React.createElement("span", { style: { fontSize: 10, fontWeight: 400, color: "var(--dsw-alias-label-tertiary,#9aa0ab)" } }, hint) : null,
-    ),
+  return (
+    <div style={cardStyle}>
+      <div style={{ fontSize: 11, color: "var(--dsw-alias-label-tertiary,#9aa0ab)" }}>{label}</div>
+      <div style={{ fontSize: 16, fontWeight: 700, fontVariantNumeric: "tabular-nums", display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap" }}>
+        {value}
+        {delta !== undefined && delta !== null ? (
+          <span style={{ fontSize: 11, fontWeight: 600, color: up ? "var(--dsw-alias-state-warn-primary,#d9a13c)" : "var(--dsw-alias-state-success-primary,#3f9d63)" }}>
+            {delta}
+          </span>
+        ) : null}
+        {hint != null && hint !== "" ? <span style={{ fontSize: 10, fontWeight: 400, color: "var(--dsw-alias-label-tertiary,#9aa0ab)" }}>{hint}</span> : null}
+      </div>
+    </div>
   );
 }
 
 /** 分段器（#543 哨兵惯例：role=group + aria-pressed）。 */
 function SegGroup(props: { label: string; items: Array<[string, string]>; value: string; mini?: boolean; onPick: (v: string) => void }): React.ReactElement {
   const { label, items, value, mini, onPick } = props;
-  return React.createElement(
-    "div",
-    { role: "group", "aria-label": label, style: { display: "inline-flex", gap: 4 } },
-    items.map(([v, text]) =>
-      React.createElement(
-        "button",
-        { key: v, type: "button", style: mini ? miniBtnStyle(v === value) : controlBtnStyle(v === value), "aria-pressed": v === value, onClick: () => onPick(v) },
-        text,
-      ),
-    ),
+  return (
+    <div role="group" aria-label={label} style={{ display: "inline-flex", gap: 4 }}>
+      {items.map(([v, text]) => (
+        <button
+          key={v}
+          type="button"
+          style={mini ? miniBtnStyle(v === value) : controlBtnStyle(v === value)}
+          aria-pressed={v === value}
+          onClick={() => onPick(v)}
+        >
+          {text}
+        </button>
+      ))}
+    </div>
   );
 }
 const unitKeyOf = (gran: Gran): string => (gran === "day" ? "trendRangeDayUnit" : gran === "week" ? "trendRangeWeekUnit" : "trendRangeMonthUnit");
@@ -263,127 +263,124 @@ export function TrendSection(): React.ReactElement {
   const avg = summary !== null && summary.total !== null && activeBuckets > 0 ? summary.total / activeBuckets : null;
   const peakVal = summary?.peakKey != null && data !== null ? data.series.find((p) => p.key === summary.peakKey)?.total ?? null : null;
 
-  return React.createElement(
-    "section",
-    { className: "dou-trend", style: { marginBottom: 16 } },
-    // 标题行
-    React.createElement("h2", { style: { fontSize: 13, fontWeight: 600, margin: "0 0 8px" } }, t("trendTitle")),
-    // 控件行：粒度 × 范围 × 指标 × 适配器 × byModel × 形态
-    React.createElement(
-      "div",
-      { style: { display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 10 } },
-      React.createElement(SegGroup, {
-        label: t("trendGranularity"),
-        items: [["day", t("trendGranDay")], ["week", t("trendGranWeek")], ["month", t("trendGranMonth")]] as Array<[string, string]>,
-        value: gran,
-        onPick: (v: string) => {
-          setGran(v as Gran);
-          setRange(null); // 切粒度重置为该粒度默认（方案 §3.2）
-          setView(null);
-          setHidden(new Set());
-          setTip(null);
-        },
-      }),
-      React.createElement(SegGroup, {
-        label: t("trendRangeLabel"),
-        items: trendRangeOptions(gran, retentionDays).map((n) => [String(n), t(unitKeyOf(gran), { n: String(n) })] as [string, string]),
-        value: String(effectiveRange),
-        mini: true,
-        onPick: (v: string) => {
-          setRange(Number(v));
-          setTip(null);
-        },
-      }),
-      React.createElement(
-        "select",
-        { style: selectStyle, value: metric, "aria-label": t("trendMetricLabel"), onChange: (e: unknown) => { setMetric((e as { target: { value: string } }).target.value); setTip(null); } },
-        (
-          [
-            ["total", t("trendMetricTotal")],
-            ["input", t("trendMetricInput")],
-            ["output", t("trendMetricOutput")],
-            ["cacheRead", t("trendMetricCacheRead")],
-            ["cacheWrite", t("trendMetricCacheWrite")],
-            ["calls", t("trendMetricCalls")],
-          ] as Array<[string, string]>
-        ).map(([v, label]) => React.createElement("option", { key: v, value: v }, label)),
-      ),
-      React.createElement(
-        "select",
-        {
-          style: selectStyle,
-          value: provider,
-          "aria-label": t("trendAdapterLabel"),
-          onChange: (e: unknown) => {
+  return (
+    <section className="dou-trend" style={{ marginBottom: 16 }}>
+      {/* 标题行 */}
+      <h2 style={{ fontSize: 13, fontWeight: 600, margin: "0 0 8px" }}>{t("trendTitle")}</h2>
+      {/* 控件行：粒度 × 范围 × 指标 × 适配器 × byModel × 形态 */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 10 }}>
+        <SegGroup
+          label={t("trendGranularity")}
+          items={[["day", t("trendGranDay")], ["week", t("trendGranWeek")], ["month", t("trendGranMonth")]] as Array<[string, string]>}
+          value={gran}
+          onPick={(v: string) => {
+            setGran(v as Gran);
+            setRange(null); // 切粒度重置为该粒度默认（方案 §3.2）
+            setView(null);
+            setHidden(new Set());
+            setTip(null);
+          }}
+        />
+        <SegGroup
+          label={t("trendRangeLabel")}
+          items={trendRangeOptions(gran, retentionDays).map((n) => [String(n), t(unitKeyOf(gran), { n: String(n) })] as [string, string])}
+          value={String(effectiveRange)}
+          mini={true}
+          onPick={(v: string) => {
+            setRange(Number(v));
+            setTip(null);
+          }}
+        />
+        <select
+          style={selectStyle}
+          value={metric}
+          aria-label={t("trendMetricLabel")}
+          onChange={(e: unknown) => { setMetric((e as { target: { value: string } }).target.value); setTip(null); }}
+        >
+          {(
+            [
+              ["total", t("trendMetricTotal")],
+              ["input", t("trendMetricInput")],
+              ["output", t("trendMetricOutput")],
+              ["cacheRead", t("trendMetricCacheRead")],
+              ["cacheWrite", t("trendMetricCacheWrite")],
+              ["calls", t("trendMetricCalls")],
+            ] as Array<[string, string]>
+          ).map(([v, label]) => (
+            <option key={v} value={v}>{label}</option>
+          ))}
+        </select>
+        <select
+          style={selectStyle}
+          value={provider}
+          aria-label={t("trendAdapterLabel")}
+          onChange={(e: unknown) => {
             const value = (e as { target: { value: string } }).target.value;
             setProvider(value);
             if (value === "") setByModel(false);
             setHidden(new Set());
             setTip(null);
-          },
-        },
-        React.createElement("option", { value: "" }, t("trendAdapterAll")),
-        (data?.providers ?? []).map((p) =>
-          // option children 是文本节点：React 自动转义，provider 名无需手工 escHtml
-          React.createElement("option", { key: p.provider + "/" + (p.model ?? ""), value: p.provider }, p.provider),
-        ),
-      ),
-      provider !== ""
-        ? React.createElement(
-            "label",
-            { style: { fontSize: 12, display: "inline-flex", alignItems: "center", gap: 4 } },
-            React.createElement("input", { type: "checkbox", checked: byModel, onChange: (e: unknown) => { setByModel((e as { target: { checked: boolean } }).target.checked); setHidden(new Set()); setTip(null); } }),
-            t("trendByModel"),
-          )
-        : null,
-      React.createElement(SegGroup, {
-        label: t("trendViewLabel"),
-        items: [["bar", t("trendViewBar")], ["area", t("trendViewArea")]] as Array<[string, string]>,
-        value: effectiveView,
-        mini: true,
-        onPick: (v: string) => {
-          setView(v as "bar" | "area");
-          setTip(null);
-        },
-      }),
-      React.createElement("span", { style: { fontSize: 11, color: "var(--dsw-alias-label-tertiary,#9aa0ab)", marginLeft: "auto" } }, t(unitKeyOf(gran), { n: String(effectiveRange) })),
-    ),
-    // 汇总卡（有数据才显；空态聚焦行动邀请）
-    hasData && summary !== null && data !== null
-      ? React.createElement(
-          "div",
-          { style: { display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 } },
-          React.createElement(SummaryCard, {
-            label: t("trendCardTotal"),
-            value: summary.total === null ? "-" : fmtCompact(summary.total),
-            delta: delta?.text ?? null,
-            up: delta?.up ?? false,
-            hint: [hasPartial ? t("trendPartialOngoing") : "", summary.prevComplete ? "" : t("trendPrevIncomplete")].filter(Boolean).join(" · ") || null,
-          }),
-          React.createElement(SummaryCard, { label: t("trendCardAvg"), value: avg === null ? "-" : fmtCompact(avg), hint: `${activeBuckets} ${granLabel(gran)}` }),
-          React.createElement(SummaryCard, { label: t("trendCardCalls"), value: fmtCompact(summary.calls), hint: hiddenCount > 0 ? t("trendHiddenParts", { k: String(hiddenCount) }) : null }),
-          React.createElement(SummaryCard, { label: `${t("trendCardPeak")} · ${summary.peakKey === null ? "-" : fmtBucketHuman(summary.peakKey, gran)}`, value: peakVal === null ? "-" : fmtCompact(peakVal) }),
-          React.createElement(SummaryCard, { label: t("trendCardTop"), value: summary.top === null ? "-" : summary.top.provider }),
-        )
-      : null,
-    // 图例（窗口总量降序；点选显隐，M2.1）
-    hasData && data !== null && data.providers.length > 0
-      ? React.createElement(
-          "div",
-          {
-            className: "dou-trend-legend",
-            style: { display: "flex", flexWrap: "wrap", gap: "4px 12px", fontSize: 11, color: "var(--dsw-alias-label-tertiary,#9aa0ab)", marginBottom: 8 },
-          },
-          stackOrder.map((id) => {
+          }}
+        >
+          <option value="">{t("trendAdapterAll")}</option>
+          {(data?.providers ?? []).map((p) => (
+            // option children 是文本节点：React 自动转义，provider 名无需手工 escHtml
+            <option key={p.provider + "/" + (p.model ?? "")} value={p.provider}>{p.provider}</option>
+          ))}
+        </select>
+        {provider !== "" ? (
+          <label style={{ fontSize: 12, display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <input
+              type="checkbox"
+              checked={byModel}
+              onChange={(e: unknown) => { setByModel((e as { target: { checked: boolean } }).target.checked); setHidden(new Set()); setTip(null); }}
+            />
+            {t("trendByModel")}
+          </label>
+        ) : null}
+        <SegGroup
+          label={t("trendViewLabel")}
+          items={[["bar", t("trendViewBar")], ["area", t("trendViewArea")]] as Array<[string, string]>}
+          value={effectiveView}
+          mini={true}
+          onPick={(v: string) => {
+            setView(v as "bar" | "area");
+            setTip(null);
+          }}
+        />
+        <span style={{ fontSize: 11, color: "var(--dsw-alias-label-tertiary,#9aa0ab)", marginLeft: "auto" }}>{t(unitKeyOf(gran), { n: String(effectiveRange) })}</span>
+      </div>
+      {/* 汇总卡（有数据才显；空态聚焦行动邀请） */}
+      {hasData && summary !== null && data !== null ? (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+          <SummaryCard
+            label={t("trendCardTotal")}
+            value={summary.total === null ? "-" : fmtCompact(summary.total)}
+            delta={delta?.text ?? null}
+            up={delta?.up ?? false}
+            hint={[hasPartial ? t("trendPartialOngoing") : "", summary.prevComplete ? "" : t("trendPrevIncomplete")].filter(Boolean).join(" · ") || null}
+          />
+          <SummaryCard label={t("trendCardAvg")} value={avg === null ? "-" : fmtCompact(avg)} hint={`${activeBuckets} ${granLabel(gran)}`} />
+          <SummaryCard label={t("trendCardCalls")} value={fmtCompact(summary.calls)} hint={hiddenCount > 0 ? t("trendHiddenParts", { k: String(hiddenCount) }) : null} />
+          <SummaryCard label={`${t("trendCardPeak")} · ${summary.peakKey === null ? "-" : fmtBucketHuman(summary.peakKey, gran)}`} value={peakVal === null ? "-" : fmtCompact(peakVal)} />
+          <SummaryCard label={t("trendCardTop")} value={summary.top === null ? "-" : summary.top.provider} />
+        </div>
+      ) : null}
+      {/* 图例（窗口总量降序；点选显隐，M2.1） */}
+      {hasData && data !== null && data.providers.length > 0 ? (
+        <div
+          className="dou-trend-legend"
+          style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px", fontSize: 11, color: "var(--dsw-alias-label-tertiary,#9aa0ab)", marginBottom: 8 }}
+        >
+          {stackOrder.map((id) => {
             const off = hidden.has(id);
-            return React.createElement(
-              "span",
-              {
-                key: id,
-                role: "switch",
-                "aria-checked": !off,
-                style: { display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer", borderRadius: 4, padding: "1px 4px", opacity: off ? 0.38 : 1, textDecoration: off ? "line-through" : "none" },
-                onClick: () => {
+            return (
+              <span
+                key={id}
+                role="switch"
+                aria-checked={!off}
+                style={{ display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer", borderRadius: 4, padding: "1px 4px", opacity: off ? 0.38 : 1, textDecoration: off ? "line-through" : "none" }}
+                onClick={() => {
                   setHidden((prev) => {
                     const next = new Set(prev);
                     if (next.has(id)) next.delete(id);
@@ -391,73 +388,71 @@ export function TrendSection(): React.ReactElement {
                     return next;
                   });
                   setTip(null);
-                },
-              },
-              React.createElement("span", {
-                className: "dou-trend-legendDot",
-                style: { width: 8, height: 8, borderRadius: "50%", flex: "none", background: seriesColor(id) },
-              }),
-              id,
+                }}
+              >
+                <span
+                  className="dou-trend-legendDot"
+                  style={{ width: 8, height: 8, borderRadius: "50%", flex: "none", background: seriesColor(id) }}
+                />
+                {id}
+              </span>
             );
-          }),
-          React.createElement("span", { style: { fontSize: 10, opacity: 0.8 } }, hiddenCount > 0 ? t("trendHiddenParts", { k: String(hiddenCount) }) : t("trendLegendToggleHint")),
-        )
-      : null,
-    // 图表 / 空态 / 错误
-    failed
-      ? React.createElement("div", { style: { fontSize: 12, color: "var(--dsw-alias-state-error-primary,#d64545)", padding: "12px 0" } }, t("trendFetchFail"))
-      : hasData && data !== null
-        ? React.createElement(
-            "div",
-            {
-              ref: chartRef,
-              className: "dou-trend-chart",
-              style: { position: "relative", opacity: loading ? 0.45 : 1, transition: "opacity .15s ease", pointerEvents: loading ? "none" : "auto" },
-              "aria-busy": loading,
-              // 数据源为本插件宿主端聚合 JSON；SVG 字符串内 provider 名/键均经 escHtml 转义，
-              // tooltip 走 React 文本节点（自动转义），provider 名不进 dangerouslySetInnerHTML
-              onPointerDown: onChartPointer,
-              onPointerMove: (e: { pointerType: string }) => { if (e.pointerType === "mouse") onChartPointer(e as Parameters<typeof onChartPointer>[0]); },
-              onPointerLeave: () => setTip(null),
-            },
-            React.createElement("div", {
-              className: "dou-trend-svg",
-              dangerouslySetInnerHTML: {
-                __html: effectiveView === "area"
-                  ? stackedAreasSvg({ bars: renderBars, gran, ticks, stackOrder })
-                  : stackedBarsSvg({ bars: renderBars, gran, ticks }),
-              },
-            }),
-            tipBar !== null && tipPoint !== null && tip !== null
-              ? React.createElement("div", { className: "dou-trend-tip", style: tipStyle(tip.offsetX, chartRef.current?.clientWidth ?? 0) }, renderTip(tipBar, tipPoint, gran, data.byModel, hidden))
-              : null,
-          )
-        : React.createElement(
-            "div",
-            {
-              style: {
-                padding: "22px 14px",
-                textAlign: "center",
-                border: "1px dashed var(--dsw-alias-border-l2,#e8eaf0)",
-                borderRadius: 8,
-                fontSize: 12,
-                color: "var(--dsw-alias-label-tertiary,#9aa0ab)",
-              },
-            },
-            React.createElement("div", { style: { marginBottom: 4 } }, t("trendEmptyTitle")),
-            React.createElement("div", null, t("trendEmptyHint")),
-          ),
-    // 起算提示（常驻，防误读为全量统计）：有起算日给出具体日期 + 留存天数（M2.1）
-    React.createElement(
-      "p",
-      {
-        className: "dou-trend-mountHint",
-        style: { fontSize: 11, color: "var(--dsw-alias-label-tertiary,#9aa0ab)", margin: "8px 0 0" },
-      },
-      data?.firstDay != null && data.firstDay !== ""
-        ? `${t("trendMountedHintDay", { day: data.firstDay })}；${t("trendRetained", { days: String(data.retentionDays) })}`
-        : t("trendMountedHint"),
-    ),
+          })}
+          <span style={{ fontSize: 10, opacity: 0.8 }}>{hiddenCount > 0 ? t("trendHiddenParts", { k: String(hiddenCount) }) : t("trendLegendToggleHint")}</span>
+        </div>
+      ) : null}
+      {/* 图表 / 空态 / 错误 */}
+      {failed ? (
+        <div style={{ fontSize: 12, color: "var(--dsw-alias-state-error-primary,#d64545)", padding: "12px 0" }}>{t("trendFetchFail")}</div>
+      ) : hasData && data !== null ? (
+        <div
+          ref={chartRef}
+          className="dou-trend-chart"
+          style={{ position: "relative", opacity: loading ? 0.45 : 1, transition: "opacity .15s ease", pointerEvents: loading ? "none" : "auto" }}
+          aria-busy={loading}
+          // 数据源为本插件宿主端聚合 JSON；SVG 字符串内 provider 名/键均经 escHtml 转义，
+          // tooltip 走 React 文本节点（自动转义），provider 名不进 dangerouslySetInnerHTML
+          onPointerDown={onChartPointer}
+          onPointerMove={(e: { pointerType: string }) => { if (e.pointerType === "mouse") onChartPointer(e as Parameters<typeof onChartPointer>[0]); }}
+          onPointerLeave={() => setTip(null)}
+        >
+          <div
+            className="dou-trend-svg"
+            dangerouslySetInnerHTML={{
+              __html: effectiveView === "area"
+                ? stackedAreasSvg({ bars: renderBars, gran, ticks, stackOrder })
+                : stackedBarsSvg({ bars: renderBars, gran, ticks }),
+            }}
+          />
+          {tipBar !== null && tipPoint !== null && tip !== null ? (
+            <div className="dou-trend-tip" style={tipStyle(tip.offsetX, chartRef.current?.clientWidth ?? 0)}>{renderTip(tipBar, tipPoint, gran, data.byModel, hidden)}</div>
+          ) : null}
+        </div>
+      ) : (
+        <div
+          style={{
+            padding: "22px 14px",
+            textAlign: "center",
+            border: "1px dashed var(--dsw-alias-border-l2,#e8eaf0)",
+            borderRadius: 8,
+            fontSize: 12,
+            color: "var(--dsw-alias-label-tertiary,#9aa0ab)",
+          }}
+        >
+          <div style={{ marginBottom: 4 }}>{t("trendEmptyTitle")}</div>
+          <div>{t("trendEmptyHint")}</div>
+        </div>
+      )}
+      {/* 起算提示（常驻，防误读为全量统计）：有起算日给出具体日期 + 留存天数（M2.1） */}
+      <p
+        className="dou-trend-mountHint"
+        style={{ fontSize: 11, color: "var(--dsw-alias-label-tertiary,#9aa0ab)", margin: "8px 0 0" }}
+      >
+        {data?.firstDay != null && data.firstDay !== ""
+          ? `${t("trendMountedHintDay", { day: data.firstDay })}；${t("trendRetained", { days: String(data.retentionDays) })}`
+          : t("trendMountedHint")}
+      </p>
+    </section>
   );
 }
 
@@ -498,52 +493,46 @@ function tipStyle(offsetX: number, containerWidth: number): Object {
 function renderTip(bar: RenderBar, point: NonNullable<TrendResponse>["series"][number], gran: Gran, byModel: boolean, hidden: ReadonlySet<string>): React.ReactElement {
   const tagText = bar.mark === "ongoing" ? t("trendPartialOngoing") : bar.mark === "edge" ? t("trendPartialEdge") : bar.none ? t("trendNoData") : null;
   const rows = [...point.parts].sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
-  const tagEl = tagText === null
-    ? null
-    : React.createElement(
-        "span",
-        {
-          style: {
-            fontSize: 10,
-            padding: "0 5px",
-            borderRadius: 4,
-            marginLeft: 6,
-            verticalAlign: 1,
-            fontWeight: 400,
-            color: bar.mark === "ongoing" ? "var(--dsw-alias-state-warn-primary,#d9a13c)" : "var(--dsw-alias-label-tertiary,#9aa0ab)",
-            border: "1px solid currentColor",
-          },
-        },
-        tagText,
-      );
-  return React.createElement(
-    "div",
-    null,
-    React.createElement("div", { style: { fontWeight: 600, marginBottom: 3, fontVariantNumeric: "tabular-nums" } }, fmtBucketHuman(point.key, gran), tagEl),
-    ...(rows.length === 0
-      ? [React.createElement("div", { key: "none", style: { opacity: 0.6 } }, t("trendNoData"))]
-      : rows.map((p, i) => {
-          const id = partId(p.provider, p.model, byModel);
-          const off = hidden.has(id);
-          return React.createElement(
-            "div",
-            { key: `${id}-${i}`, style: { display: "flex", justifyContent: "space-between", gap: 14, fontVariantNumeric: "tabular-nums", opacity: off ? 0.45 : 1 } },
-            React.createElement(
-              "span",
-              { style: { display: "inline-flex", alignItems: "center", gap: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } },
-              React.createElement("span", { style: { width: 8, height: 8, borderRadius: "50%", flex: "none", background: seriesColor(id), display: "inline-block" } }),
-              id,
-            ),
-            React.createElement("span", null, fmtCompact(p.value)),
-          );
-        })),
-    rows.length > 0
-      ? React.createElement(
-          "div",
-          { style: { borderTop: "1px solid var(--dsw-alias-border-l1,#e2e5ea)", marginTop: 4, paddingTop: 3, fontWeight: 600, display: "flex", justifyContent: "space-between", gap: 14, fontVariantNumeric: "tabular-nums" } },
-          React.createElement("span", null, hidden.size > 0 ? `${t("trendTipSum")}（${t("trendViewVisible")}）` : t("trendTipSum")),
-          React.createElement("span", null, fmtCompact(bar.visibleTotal)),
-        )
-      : null,
+  const tagEl = tagText === null ? null : (
+    <span
+      style={{
+        fontSize: 10,
+        padding: "0 5px",
+        borderRadius: 4,
+        marginLeft: 6,
+        verticalAlign: 1,
+        fontWeight: 400,
+        color: bar.mark === "ongoing" ? "var(--dsw-alias-state-warn-primary,#d9a13c)" : "var(--dsw-alias-label-tertiary,#9aa0ab)",
+        border: "1px solid currentColor",
+      }}
+    >
+      {tagText}
+    </span>
+  );
+  return (
+    <div>
+      <div style={{ fontWeight: 600, marginBottom: 3, fontVariantNumeric: "tabular-nums" }}>{fmtBucketHuman(point.key, gran)}{tagEl}</div>
+      {...(rows.length === 0
+        ? [<div key="none" style={{ opacity: 0.6 }}>{t("trendNoData")}</div>]
+        : rows.map((p, i) => {
+            const id = partId(p.provider, p.model, byModel);
+            const off = hidden.has(id);
+            return (
+              <div key={`${id}-${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 14, fontVariantNumeric: "tabular-nums", opacity: off ? 0.45 : 1 }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", flex: "none", background: seriesColor(id), display: "inline-block" }} />
+                  {id}
+                </span>
+                <span>{fmtCompact(p.value)}</span>
+              </div>
+            );
+          }))}
+      {rows.length > 0 ? (
+        <div style={{ borderTop: "1px solid var(--dsw-alias-border-l1,#e2e5ea)", marginTop: 4, paddingTop: 3, fontWeight: 600, display: "flex", justifyContent: "space-between", gap: 14, fontVariantNumeric: "tabular-nums" }}>
+          <span>{hidden.size > 0 ? `${t("trendTipSum")}（${t("trendViewVisible")}）` : t("trendTipSum")}</span>
+          <span>{fmtCompact(bar.visibleTotal)}</span>
+        </div>
+      ) : null}
+    </div>
   );
 }

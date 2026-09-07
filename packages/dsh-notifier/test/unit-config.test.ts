@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { mkdtempSync, rmSync } from "node:fs";
 import { assert } from "./helpers.ts";
-import { normalizeConfig, parseHHMM, isInQuietHours, DEFAULT_CONFIG, configFile, historyFile, statusFile, toastScriptPath, normalizeBarkBaseUrl, redactConfigView, unmaskChannels, SECRET_MASK, BARK_ID_PATTERN, validateSettings, sanitizeSettings, sanitizePatchSettings, QUIET_ALLOW_KINDS } from "../lib/index.js";
+import { normalizeConfig, parseHHMM, isInQuietHours, DEFAULT_CONFIG, configFile, historyFile, statusFile, toastScriptPath, normalizeBarkBaseUrl, redactConfigView, unmaskChannels, SECRET_MASK, BARK_ID_PATTERN, validateSettings, sanitizeSettings, sanitizePatchSettings, QUIET_ALLOW_KINDS, SOUND_IDS, isSoundSetting, resolveSoundSetting } from "../lib/index.js";
 
 const work = mkdtempSync(join(tmpdir(), "dnotify-unit-config-"));
 try {
@@ -45,6 +45,51 @@ try {
   assert.equal(DEFAULT_CONFIG.systemNotify, true, "默认系统通知开启");
   assert.equal(DEFAULT_CONFIG.browserNotify, true, "默认浏览器通知开启");
   assert.equal(DEFAULT_CONFIG.notifySound, true, "默认提示音开启");
+
+  // ===== #640/#641：每通道独立声音配置（A1-A5）=====
+  // A1：SOUND_IDS 定稿集合（ding/bell/chime/pop，无 default/complete）+ 默认两键 true
+  assert.deepEqual([...SOUND_IDS], ["ding", "bell", "chime", "pop"], "A1：SOUND_IDS 定稿 4 音色（无 default/complete）");
+  assert.equal(DEFAULT_CONFIG.browserSound, true, "A1：browserSound 默认 true（跟随系统）");
+  assert.equal(DEFAULT_CONFIG.systemSound, true, "A1：systemSound 默认 true（跟随系统）");
+  // isSoundSetting：false/true/四音色合法；其余非法
+  for (const ok of [false, true, "ding", "bell", "chime", "pop"]) {
+    assert.equal(isSoundSetting(ok), true, `A2：isSoundSetting(${JSON.stringify(ok)}) 合法`);
+  }
+  for (const bad of ["default", "complete", "loud", "", 1, null, { a: 1 }]) {
+    assert.equal(isSoundSetting(bad), false, `A2：isSoundSetting(${JSON.stringify(bad)}) 非法`);
+  }
+  // A2：SETTING_VALIDATORS 含两新键——合法值通过、非法值 400（首个非法键 + hint）
+  assert.equal(validateSettings({ browserSound: "ding" }), null, "A2：browserSound 音色合法");
+  assert.equal(validateSettings({ systemSound: false }), null, "A2：systemSound false 合法");
+  assert.equal(validateSettings({ browserSound: "default" })?.key, "browserSound", "A2：非白名单音色拒绝（首个非法键）");
+  assert.equal(validateSettings({ systemSound: "complete" })?.key, "systemSound", "A2：systemSound 非白名单拒绝");
+  assert.equal(validateSettings({ browserSound: "<script>" })?.key, "browserSound", "A2：browserSound 任意字符串拒绝");
+  assert.ok(String(validateSettings({ browserSound: 1 })?.hint).includes("ding/bell/chime/pop"), "A2：hint 含音色白名单提示");
+  // A3：normalize 专用分支——合法值归一化；非法字符串不回默认且**不透传**
+  assert.equal(normalizeConfig({ browserSound: "ding" }).browserSound, "ding", "A3：browserSound 音色归一化");
+  assert.equal(normalizeConfig({ systemSound: "pop", browserSound: false }).systemSound, "pop", "A3：systemSound 音色归一化");
+  assert.equal(normalizeConfig({ systemSound: "pop", browserSound: false }).browserSound, false, "A3：两键独立归一化");
+  assert.equal(normalizeConfig({ browserSound: "<script>" }).browserSound, true, "A3：非法值丢弃回默认（回落 default true）");
+  const evilSound = normalizeConfig({ browserSound: "<script>", systemSound: "ding", other: 1 }) as Record<string, unknown>;
+  assert.equal(Object.prototype.hasOwnProperty.call(evilSound, "<script>"), false, "A3：不透传（无 <script> 键）");
+  assert.equal(Object.prototype.hasOwnProperty.call(evilSound, "browserSound"), true, "A3：browserSound 键恒存在（默认兜底）");
+  assert.equal(normalizeConfig({ browserSound: "<script>" }).systemSound, true, "A3：非法值不跨键污染");
+  // A4：resolveSoundSetting 四形态回落（两新键齐 / 单新键 / 仅旧键 / 全缺）
+  assert.equal(resolveSoundSetting({ browserSound: "ding", systemSound: "pop", notifySound: false }, "browser"), "ding", "A4：新键优先（browser）");
+  assert.equal(resolveSoundSetting({ browserSound: "ding", systemSound: "pop", notifySound: false }, "system"), "pop", "A4：新键优先（system）");
+  assert.equal(resolveSoundSetting({ browserSound: false, systemSound: undefined, notifySound: true }, "browser"), false, "A4：显式 false 不再回落（写面权威）");
+  assert.equal(resolveSoundSetting({ browserSound: undefined, systemSound: true, notifySound: false }, "system"), true, "A4：system 显式 true 不回落旧键");
+  assert.equal(resolveSoundSetting({ browserSound: undefined, systemSound: undefined, notifySound: false }, "browser"), false, "A4：仅旧键 → 回落 notifySound");
+  assert.equal(resolveSoundSetting({ browserSound: undefined, systemSound: undefined, notifySound: "ding" }, "system"), "ding", "A4：仅旧键回落沿用（含旧值形态）");
+  assert.equal(resolveSoundSetting({ browserSound: undefined, systemSound: undefined, notifySound: undefined }, "browser"), true, "A4：全缺 → true（跟随系统默认）");
+  assert.equal(resolveSoundSetting({ browserSound: undefined, systemSound: undefined, notifySound: undefined }, "system"), true, "A4：全缺 → true（system）");
+  // normalize 后镜像恒含两新键（P0-3 等价映射：仅旧键表态时映射为新键，防
+  // 「用户曾关声音升级后复活」；两键互不干扰，供 resolveSoundSetting 消费）
+  const normSound = normalizeConfig({ notifySound: false });
+  assert.equal(normSound.browserSound, false, "读面：仅旧键 false → 等价映射 browserSound=false（不复活成有声）");
+  assert.equal(normSound.systemSound, false, "读面：systemSound 同映射 false");
+  assert.equal(normalizeConfig({ notifySound: false, browserSound: "ding" }).browserSound, "ding", "读面：显式新键优先于旧键映射");
+  assert.equal(normalizeConfig({ notifySound: false, browserSound: "ding" }).systemSound, false, "读面：旧键映射只作用于未显式新键的通道");
   const merged = normalizeConfig({ notifyAsk: false, bogus: 1, quietHours: { enabled: true, start: "23:30", end: "06:00", x: 1 } });
   assert.equal(merged.notifyAsk, false);
   assert.equal(merged.notifyTaskDone, true);

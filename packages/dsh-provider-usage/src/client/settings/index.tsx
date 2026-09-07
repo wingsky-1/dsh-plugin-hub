@@ -17,14 +17,14 @@ import { splitProviderList } from "../../client-logic.ts";
 import type { ProviderListItem } from "../../client-logic.ts";
 import { t } from "../../../../../shared/client/i18n.js";
 // #503：设置页顶部「使用趋势」区块（三维切换 + 堆叠柱状 + 汇总卡）
-import { TrendSection } from "../trend.ts";
+import { TrendSection } from "../trend.tsx";
 // #503 M3：设置页「用量报告」区块（配置卡片 + 手动生成 + 历史列表）
-import { ReportSection } from "../report.ts";
-import { UsageSection } from "./usage.ts";
-import type { StatsView } from "./usage.ts";
-import { UiSection } from "./ui.ts";
-import { ProviderListSection } from "./providers.ts";
-import type { AdaptersMeta, InspectAdapter, InspectResult, AddResult } from "./providers.ts";
+import { ReportSection } from "../report.tsx";
+import { UsageSection } from "./usage.tsx";
+import type { StatsView } from "./usage.tsx";
+import { UiSection } from "./ui.tsx";
+import { ProviderListSection } from "./providers.tsx";
+import type { AdaptersMeta, InspectAdapter, InspectResult, AddResult } from "./providers.tsx";
 import { jsonGet } from "./shared.ts";
 
 /** 设置页 tab 键（与窗格一一对应；顺序即渲染顺序）。 */
@@ -164,48 +164,43 @@ export function SettingsPage(): React.ReactElement {
 
   // 五窗格（keep-mounted：hidden 属性切换显隐，组件实例不销毁——表单编辑态保留）
   const pane = (key: SettingsTabKey, node: React.ReactElement): React.ReactElement =>
-    React.createElement("div", { className: "dou-set-pane", key: key, hidden: tab !== key }, node);
+    <div className="dou-set-pane" key={key} hidden={tab !== key}>{node}</div>;
 
-  return React.createElement(
-    "div",
-    { className: "dou-set-card", style: { maxWidth: 560 } },
-    // 分段器：普通 button（#402 决策延续：不用 tablist）。role 用 group——
-    // 不可用 navigation：宿主设置弹窗的移动端适配规则带 :not(:has([role="navigation"]))
-    // 排除条件（#543 实测），命中即整弹窗退回桌面 row 布局，手机上内容区被压至 ~106px。
-    React.createElement(
-      "div",
-      { className: "dou-set-tabs", role: "group", "aria-label": t("settingsNavLabel") },
-      TABS.map((item) =>
-        React.createElement(
-          "button",
-          {
-            key: item.key,
-            type: "button",
-            className: `dou-set-tab${tab === item.key ? " dou-set-tabActive" : ""}`,
-            "aria-pressed": tab === item.key,
-            onClick: () => setTab(item.key),
-          },
-          t(item.labelKey as never),
-        ),
-      ),
-    ),
-    React.createElement(
-      "div",
-      { className: "dou-set-body" },
-      pane("trend", React.createElement(TrendSection)),
-      pane("report", React.createElement(ReportSection)),
-      pane("usage", React.createElement(UsageSection, { statsByProvider })),
-      pane("providers", React.createElement(ProviderListSection, {
-        meta,
-        main: list.main,
-        extra: list.extra,
-        busy,
-        onSwitch,
-        onDisable,
-        onInspect,
-        onAdd,
-      })),
-      pane("float", React.createElement(UiSection)),
-    ),
+  return (
+    <div className="dou-set-card" style={{ maxWidth: 560 }}>
+      {/* 分段器：普通 button（#402 决策延续：不用 tablist）。role 用 group——
+          不可用 navigation：宿主设置弹窗的移动端适配规则带 :not(:has([role=navigation]))
+          排除条件（#543 实测，选择器无引号形态；命中即整弹窗退回桌面 row 布局，
+          手机上内容区被压至 ~106px）。 */}
+      <div className="dou-set-tabs" role="group" aria-label={t("settingsNavLabel")}>
+        {TABS.map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            className={`dou-set-tab${tab === item.key ? " dou-set-tabActive" : ""}`}
+            aria-pressed={tab === item.key}
+            onClick={() => setTab(item.key)}
+          >
+            {t(item.labelKey as never)}
+          </button>
+        ))}
+      </div>
+      <div className="dou-set-body">
+        {pane("trend", <TrendSection />)}
+        {pane("report", <ReportSection />)}
+        {pane("usage", <UsageSection statsByProvider={statsByProvider} />)}
+        {pane("providers", <ProviderListSection
+          meta={meta}
+          main={list.main}
+          extra={list.extra}
+          busy={busy}
+          onSwitch={onSwitch}
+          onDisable={onDisable}
+          onInspect={onInspect}
+          onAdd={onAdd}
+        />)}
+        {pane("float", <UiSection />)}
+      </div>
+    </div>
   );
 }

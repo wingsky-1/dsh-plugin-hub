@@ -199,14 +199,24 @@ try {
       assert.deepEqual(out, CORRUPT_ONLY, "E8：损坏标记态 → skippedCorrupt+skippedIdempotent");
       assert.equal(d.updates.length, 0, "E8：损坏标记态不写入");
     }
-    // migrated.bak 存在 + user 层全量有值 → 幂等跳过（E2）
+    // migrated.bak 存在 + user 层全量有值（含 #640/#641 声音新键）→ 幂等跳过（E2）
+    {
+      const d = deps({ notifyAsk: false, notifySound: true, browserSound: true, systemSound: true });
+      const legacy = join(dir, "bak-user.json");
+      writeFileSync(legacy + MIGRATED_BAK_SUFFIX, JSON.stringify({ notifyAsk: false, notifySound: true, browserSound: true, systemSound: true }));
+      const out = await migrateLegacyConfig(legacy, d);
+      assert.deepEqual(out, IDLE, "E8：bak 存在 + user 已全量（含声音新键）→ 幂等跳过");
+      assert.equal(d.updates.length, 0, "E8：幂等跳过不写入");
+    }
+    // #640/#641 D2：bak 只含旧键 notifySound → 补写 browserSound/systemSound = 同值
+    // （legacy 源路径专属——user 层已有新键不覆盖由 diffMissingKeys 兜底）
     {
       const d = deps({ notifyAsk: false, notifySound: true });
-      const legacy = join(dir, "bak-user.json");
+      const legacy = join(dir, "bak-legacy-sound.json");
       writeFileSync(legacy + MIGRATED_BAK_SUFFIX, JSON.stringify({ notifyAsk: false, notifySound: true }));
       const out = await migrateLegacyConfig(legacy, d);
-      assert.deepEqual(out, IDLE, "E8：bak 存在 + user 已全量 → 幂等跳过");
-      assert.equal(d.updates.length, 0, "E8：幂等跳过不写入");
+      assert.deepEqual(d.updates, [{ browserSound: true, systemSound: true }], "D2：bak 仅旧键 → 补写两新键 = notifySound 同值");
+      assert.equal(out.migrated, true, "D2：legacy 声音键补齐算迁移写入");
     }
     // 中断态重放成功：bak 存在 + user 空 + bak 合法 → resumed+migrated
     {
@@ -215,7 +225,7 @@ try {
       writeFileSync(legacy + MIGRATED_BAK_SUFFIX, JSON.stringify({ notifySound: false }));
       const out = await migrateLegacyConfig(legacy, d);
       assert.deepEqual(out, { performed: false, migrated: true, rolledBack: false, skippedCorrupt: false, skippedIdempotent: false, resumed: true }, "E8：中断态重放成功 outcome");
-      assert.deepEqual(d.updates, [{ notifySound: false }], "E8：重放写入键集");
+      assert.deepEqual(d.updates, [{ notifySound: false, browserSound: false, systemSound: false }], "D2：重放写入键集（旧键 notifySound + 两新键同值）");
     }
     // 中断态重放失败：bak 非法 JSON → skippedCorrupt+resumed，不写入
     {
@@ -297,7 +307,7 @@ try {
       writeFileSync(legacy, JSON.stringify({ notifyAsk: false, notifySound: true, quietHours: { enabled: true, start: "23:00", end: "07:00" } }));
       const out = await migrateLegacyConfig(legacy, d);
       assert.deepEqual(out, { performed: true, migrated: true, rolledBack: false, skippedCorrupt: false, skippedIdempotent: false, resumed: false }, "E9a：部分写入中断后重跑 → 继续迁移");
-      assert.deepEqual(d.updates, [{ notifySound: true, quietHours: { enabled: true, start: "23:00", end: "07:00" } }], "E9a：只补写 user 层缺失字段（已写 notifyAsk 不重写）");
+      assert.deepEqual(d.updates, [{ notifySound: true, browserSound: true, systemSound: true, quietHours: { enabled: true, start: "23:00", end: "07:00" } }], "E9a：只补写 user 层缺失字段（已写 notifyAsk 不重写；D2 补声音新键）");
     }
     // #468 E9b：中断态（bak-only）部分写入 → 重跑补齐，全部齐后再跑幂等跳过
     {
@@ -306,7 +316,7 @@ try {
       writeFileSync(legacy + MIGRATED_BAK_SUFFIX, JSON.stringify({ notifyAsk: false, notifySound: true }));
       const out = await migrateLegacyConfig(legacy, d);
       assert.deepEqual(out, { performed: false, migrated: true, rolledBack: false, skippedCorrupt: false, skippedIdempotent: false, resumed: true }, "E9b：中断态部分写入后重跑 → 补齐 + resumed");
-      assert.deepEqual(d.updates, [{ notifySound: true }], "E9b：只补缺失字段 notifySound");
+      assert.deepEqual(d.updates, [{ notifySound: true, browserSound: true, systemSound: true }], "E9b：只补缺失字段 notifySound + D2 声音新键");
       // 再跑一次（user 层已全量）→ 幂等跳过，不再写
       const out2 = await migrateLegacyConfig(legacy, d);
       assert.deepEqual(out2, { performed: false, migrated: false, rolledBack: false, skippedCorrupt: false, skippedIdempotent: true, resumed: false }, "E9b：补齐后再次运行 → 幂等跳过");
@@ -320,8 +330,10 @@ try {
       const legacy = join(dir, "user-conflict.json");
       writeFileSync(legacy + MIGRATED_BAK_SUFFIX, JSON.stringify({ notifyAsk: false, notifySound: true, quietHours: { enabled: false, start: "22:00", end: "08:00" } }));
       const out = await migrateLegacyConfig(legacy, d);
-      assert.equal(out.migrated, true, "E9c：缺 quietHours → 迁移补齐");
-      assert.deepEqual(d.updates, [{ quietHours: { enabled: false, start: "22:00", end: "08:00" } }], "E9c：只补缺失键 quietHours");
+      assert.equal(out.migrated, true, "E9c：缺 quietHours/新声音键 → 迁移补齐");
+      // D2：用户层 notifySound=false 已表态（用户曾关声音）→ 补写新键取**用户值**
+      // false（不因 legacy 的 true 复活成突然有声）
+      assert.deepEqual(d.updates, [{ browserSound: false, systemSound: false, quietHours: { enabled: false, start: "22:00", end: "08:00" } }], "E9c：补缺失键（D2 新键 = 用户 notifySound 值 false）");
       assert.equal(d.readUser().notifyAsk, true, "E9c：用户改过的 notifyAsk 不被迁移覆盖");
       assert.equal(d.readUser().notifySound, false, "E9c：用户已存在的 notifySound 不被迁移覆盖");
     }
@@ -344,8 +356,8 @@ try {
       const legacy = join(dir, "subkey-owner.json");
       writeFileSync(legacy + MIGRATED_BAK_SUFFIX, JSON.stringify({ notifyAsk: false, notifySound: true, quietHours: { enabled: false, start: "22:00", end: "08:00" } }));
       const out = await migrateLegacyConfig(legacy, d);
-      assert.equal(out.migrated, true, "E9e：缺顶层键 notifySound → 迁移补齐");
-      assert.deepEqual(d.updates, [{ notifySound: true }], "E9e：不补写 quietHours 嵌套子键（仅顶层缺失键）");
+      assert.equal(out.migrated, true, "E9e：缺顶层键 → 迁移补齐（notifySound + D2 新键）");
+      assert.deepEqual(d.updates, [{ notifySound: true, browserSound: true, systemSound: true }], "E9e：不补写 quietHours 嵌套子键（仅顶层缺失键，含 D2 声音新键）");
       assert.deepEqual(d.readUser().quietHours, { start: "07:00" }, "E9e：用户部分子键保持原样（不被 bak 子键覆盖）");
     }
     // #470 E9f：json 正常迁移含未知键 → user 层缺失则补写透传保留；
@@ -419,7 +431,7 @@ try {
       writeFileSync(legacy, JSON.stringify({ notifySound: true, nullFuture: null }));
       const out = await migrateLegacyConfig(legacy, d);
       assert.equal(out.migrated, true, "E9k：含 null 未知键 legacy 正常迁移");
-      assert.deepEqual(d.updates, [{ notifySound: true, nullFuture: null }], "E9k：已知键+null 未知键一并补写");
+      assert.deepEqual(d.updates, [{ notifySound: true, nullFuture: null, browserSound: true, systemSound: true }], "E9k：已知键+null 未知键一并补写（D2 声音新键随 notifySound 补齐）");
       assert.equal(Object.prototype.hasOwnProperty.call(d.readUser(), "nullFuture"), true, "E9k：nullFuture 键入 user 层");
       assert.equal(d.readUser().nullFuture, null, "E9k：nullFuture 值为 null");
     }

@@ -74,6 +74,10 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-notifier
 - **双通道**：
   - 系统通知：Windows 原生 toast（内嵌 PowerShell WinRT 脚本）；macOS 用 `osascript`（display notification）；Linux 用 `notify-send`（存在才调用），均无需额外安装
   - 浏览器通知：SSE 推帧 + Notification API（仅在页面隐藏时弹出）
+- **每通道独立弹窗与声音（#640/#641）**：浏览器 / 系统各自有弹窗开关与声音设置
+  （静音 / 跟随系统默认 / `ding`·`bell`·`chime`·`pop` 内置音色 + ▶ 试听），支持
+  「只弹不响 / 只响不弹 / 静默」；Linux 系统通知声音经宿主自播 freedesktop 事件音
+  修复（原 notify-send 无声音 hint，DE 支持参差）；详见「配置 → 每通道声音」小节
 - **非安全上下文降级**：局域网 HTTP 访问时浏览器禁止系统级弹窗——自动降级为「页面内横幅 + 提示音 + 标题提醒」
 - **免打扰时段**：支持跨午夜（如 22:00 → 08:00）；可设**紧急例外**（`quietHours.allowKinds`：免打扰期间仍提醒的事件）。默认候选为高频阻塞型（审批/提问/出错），设置页支持勾选**全部 6 个内置事件**（含任务完成/子任务完成/轮次完成）并一键「跟随已启用事件」或「恢复默认」；豁免与事件开关正交——关闭的事件即使豁免也不会收到通知（事件不产生），豁免项照常保留；未启用事件在设置页以弱化（降低透明度）样式展示，仍可勾选豁免。**升级提示**：放开白名单后，旧配置中原本会被过滤掉的 kind（如手改的 `done`/`turn-end`）会在免打扰期间恢复提醒——行为变化；如不希望这样，可在设置页豁免区自行调整
 - **审批超时二次提醒**：审批等待超 `askRemindMin` 分钟（默认 5，0 关闭）未处理时再次提醒
@@ -159,6 +163,8 @@ context filter checks」）。取舍如下（issue #290）：
   "browserNotify": true,
   "notifyWhenVisible": false,
   "notifySound": true,
+  "browserSound": true,
+  "systemSound": true,
   "quietHours": { "enabled": false, "start": "22:00", "end": "08:00", "allowKinds": [] },
   "errorMergeWindowMs": 60000,
   "askRemindMin": 5,
@@ -178,6 +184,65 @@ context filter checks」）。取舍如下（issue #290）：
 > since 补拉无感知）、**上限淘汰**（超出淘汰最老）。上限保证表有界；若**长期持续超限**
 > （淘汰后客户端重连、再次被淘汰的 churn 循环），说明该值低于峰值并发连接数，应调大
 > 到不小于峰值再观察。连接回收路径计数见 `/api/dsh-notifier/health` 的 `sseEvicts`。
+
+### 每通道声音（#640 / #641）
+
+弹窗与声音按**通道独立**（浏览器 / 系统各一套），支持「只弹不响 / 只响不弹 / 静默」：
+
+| 键 | 类型 | 语义 |
+|---|---|---|
+| `browserNotify` / `systemNotify` | boolean | 既有弹窗开关（沿用） |
+| `browserSound` | `boolean \| 音色 id` | 浏览器通道声音 |
+| `systemSound` | `boolean \| 音色 id` | 系统通道声音 |
+| `notifySound` | boolean | **废弃只读别名**（见下） |
+
+取值：`false` = 静音（弹窗仍可弹、不发声）；`true` = **跟随系统默认**；
+音色 id = 显式内置音色（`ding` / `bell` / `chime` / `pop`——4 音色全平台语义一致，
+在设置卡每通道的「音色」下拉中选择，可点 ▶ 试听：试听为浏览器本地 Web Audio 合成，
+仅作听感参考，**实际系统提示音随平台与系统设置**）。
+
+投递组合（2×2 全组合有效）：
+
+| 弹窗 | 声音 | 行为 |
+|---|---|---|
+| 开 | `false` | 弹通知实体，静音 |
+| 开 | `true` | 弹通知实体，发声交给系统默认 |
+| 开 | 音色 id | 弹通知实体；应用自播对应音色（系统通知静音防双响） |
+| 关 | `false` | 完全不投递（静默） |
+| 关 | `true`/音色 id | **只响不弹**：不弹实体、仅自播（页面存活 / 宿主自播） |
+
+- **`notifySound`（旧全局键）降级兼容别名**：仅保留读取与存量迁移，设置页不再写它；
+  读取时 `browserSound`/`systemSound` 缺失回落 `notifySound`，再缺省 `true`；
+  存量 legacy json 迁移会补写 `browserSound`/`systemSound` = 你的 `notifySound` 旧值
+  （settings user 层存量不迁移，读面回落 + 首次保存固化）。旧版关闭过提示音的存量
+  用户在升级后**仍保持静音**（新键按旧值等价初始化），不会「突然有声」。
+- **浏览器声音解锁前提**：浏览器 `true`/音色自播需要页面音频已解锁——浏览器自动
+  播放策略要求一次用户交互（打开通知中心 / 声音行任何交互都会解锁 AudioContext）；
+  纯后台从未交互的页面，声音可能不可用（此时通知照常弹出、仅无声），属浏览器
+  策略约束而非插件缺陷。
+- **Linux `true` 特例（#640 修复）**：Linux 桌面守护进程对声音 hint 支持参差
+  （GNOME 默认无声 / KDE 2025 才支持 / Xfce 依赖 libcanberra），`systemSound=true`
+  解释为「**默认事件音自播**」——宿主用 `pw-play`（PipeWire）或 `paplay`
+  （PulseAudio）播 `message-new-instant` 事件音（freedesktop 声音主题），不依赖
+  守护进程。headless（无桌面/音频会话）服务器静默。**存量 Linux 升级行为变化**：
+  之前系统通知无声（notify-send 无声音 hint），升级后声音开 = 自播事件音（需宿主
+  有音频会话且安装 pw-play/paplay 之一；播放器/事件文件缺失时静默，不影响通知）。
+- **音色 × 平台映射（近似，尽力而为）**：
+
+| 音色 | 浏览器（Web Audio 合成） | macOS | Linux（freedesktop 事件音） | Windows |
+|---|---|---|---|---|
+| `ding` | 双短高音 | Glass（NSSound） | `message-new-instant.oga` | `C:\Windows\Media\Windows Ding.wav` |
+| `bell` | 单中高音 | Tink | `bell.oga` | `Windows Chimes.wav` |
+| `chime` | 三音上行 | Sosumi | `complete.oga` | `Windows Chord.wav` |
+| `pop` | 短促低音 | Pop | `message.oga` | `Windows Balloon.wav` |
+| `true`（跟随系统） | OS 默认（不 silent） | Glass（现状保留） | 默认事件音自播 | toast 默认系统音；只响不弹时近似默认音 wav |
+
+  macOS 发声受系统「允许通知声音」设置约束；Windows 音色经宿主 `SoundPlayer`
+  播放系统内置 wav（白名单路径，缺失静默）；Linux 事件文件为
+  `/usr/share/sounds/freedesktop/stereo/` 下基线包确定存在的 oga（多路径探测，
+  缺失静默）。自播一律数组传参（无 shell 拼接面），文件走白名单路径。
+- 宿主平台见 `/api/dsh-notifier/health` 的 `platform` 字段（设置页系统卡按它显示
+  平台提示——浏览器 OS 与宿主 OS 可能不同机，别混淆）。
 
 ### Bark 推送频道（M2，issue #366）
 

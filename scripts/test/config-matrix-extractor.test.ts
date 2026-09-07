@@ -143,9 +143,10 @@ var EVENT_KEYS = [
 ];
 function apply(ctx: any) {
   function patch(p: any) { setSettings(p); }
-  function builtinCard(cfgKey: string, label: string) { return null; }
+  function builtinCard(cfgKey: string, soundKey: string, label: string) { return null; }
   function switchControl(key: string) { return null; }
-  builtinCard("browserNotify", "x");
+  builtinCard("browserNotify", "browserSound", "x");
+  builtinCard("systemNotify", "systemSound", "y");
   extras.push(row("sound", switchControl("notifySound")));
   patch({ errorMergeWindowMs: Number(x) });
   patch({ quietHours: { enabled: true } });
@@ -155,7 +156,8 @@ function apply(ctx: any) {
 `
   const ui = collectClientUiKeys(parseTs(src))
   assert.ok(ui.includes('notifyAsk') && ui.includes('notifyTurnEnd'), 'EVENT_KEYS 首列')
-  assert.ok(ui.includes('browserNotify'), 'builtinCard 参数')
+  assert.ok(ui.includes('browserNotify') && ui.includes('systemNotify'), 'builtinCard 首参（弹窗键）')
+  assert.ok(ui.includes('browserSound') && ui.includes('systemSound'), 'builtinCard 第二参（声音键，#640/#641）')
   assert.ok(ui.includes('notifySound'), 'switchControl 参数')
   assert.ok(ui.includes('errorMergeWindowMs') && ui.includes('quietHours'), 'patch 字面量对象键')
   assert.ok(ui.includes('quietHours'), 'settings.<键> 引用')

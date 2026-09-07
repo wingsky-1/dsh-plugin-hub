@@ -5,7 +5,7 @@
  * 月键标签、部分桶起点、nice 上界、Y 域口径（#589 桶堆叠合计）、
  * 空桶/部分桶的 SVG 形态断言。
  * 被测对象为 src/client/trend-math.ts 真实源码（esbuild 即时打包，同 unit-detect
- * 先例；trend.ts 顶部 import react，node 测试环境不可直载）。i18n 未装配时回落
+ * 先例；trend.tsx 顶部 import react，node 测试环境不可直载）。i18n 未装配时回落
  * key 本体（shared/client/i18n.js 行为零变化），SVG 断言不依赖文案。
  * provider 名不受信——escHtml 注入面一并覆盖。
  */

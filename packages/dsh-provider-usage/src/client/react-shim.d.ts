@@ -1,7 +1,8 @@
 // 浏览器半区 React 类型 shim（仅类型面，issue #28 最小声明）。
 // React 运行时由 dsh web 的 factory require("react") 注入（build-client externals 路径），
-// 此处只为本包实际消费的 API 面（useState/useEffect/useCallback/createElement）
-// 提供编译期类型，不引入 @types/react 运行时/编译依赖。
+// 此处只为本包实际消费的 API 面（useState/useEffect/useCallback/useMemo/useRef/
+// createElement——源码自 #584 分片 b 起以 JSX 形态书写，createElement 为 JSX
+// 编译产物与类型检查的消费面）提供编译期类型，不引入 @types/react 运行时/编译依赖。
 declare module "react" {
   /** React 节点：元素 / 原文 / 可空（含嵌套数组，供 map 渲染列表）。 */
   export type ReactNode =
@@ -54,11 +55,21 @@ declare module "react" {
   ): ReactElement;
 }
 
-declare global {
-  namespace JSX {
-    interface Element extends any {}
-    interface IntrinsicElements {
-      [elemName: string]: any;
-    }
+// JSX 全局命名空间（顶层 namespace 形态，对齐 #605 / issue #584 分片 a 先例：
+// .tsx 实际消费 JSX 命名空间时 declare global 形态不生效）。Element 与上方
+// declare module "react" 的 ReactElement 面同构（本包 shim 为细类型面，非
+// notifier 的 React:any 兜底形态，JSX 表达式需可赋给组件标注的 ReactElement/
+// ReactNode），仅编译期类型，零运行时影响。
+namespace JSX {
+  interface Element {
+    type: unknown;
+    props: unknown;
+    key: string | number | null;
+  }
+  interface IntrinsicAttributes {
+    key?: string | number | null;
+  }
+  interface IntrinsicElements {
+    [elemName: string]: any;
   }
 }

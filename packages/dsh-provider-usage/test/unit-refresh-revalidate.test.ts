@@ -20,7 +20,7 @@ const pkgDir = join(here, "..");
 // ---------------------------------------------------------------- 源码契约：A1 接线存在
 
 {
-  const src = readFileSync(join(pkgDir, "src/client/index.ts"), "utf8");
+  const src = readFileSync(join(pkgDir, "src/client/index.tsx"), "utf8");
   assert.ok(src.includes("async function revalidateProvider"), "A1 检测半区函数已抽出");
   assert.ok(
     /async function refreshStats[\s\S]*?await revalidateProvider\(\)/.test(src),

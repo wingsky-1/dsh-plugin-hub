@@ -195,7 +195,8 @@ export function collectNormalizeBranchKeys(fnNode) {
 /**
  * 客户端 UI 引用键收集（notifier 形态；lan-proxy 由 DEFAULTS 单表承载不适用）：
  *  = 顶层 EVENT_KEYS 二维数组首列（事件开关渲染）
- *  ∪ builtinCard("…") / switchControl("…") 调用首参字符串（内置卡/行为参数）
+ *  ∪ builtinCard("…", "…") / switchControl("…") 调用参数字符串（内置卡弹窗键 +
+ *    声音键（builtinCard 第二参，#640/#641）/行为参数）
  *  ∪ patch({…}) 字面量对象键（顶层配置键增量提交；chPatch 为 Bark 频道子键，
  *    刻意不收——与 SETTING_VALIDATORS 顶层键不同面）
  *  ∪ settings.<静态键> MemberExpression（渲染/读取面）。
@@ -208,7 +209,13 @@ export function collectClientUiKeys(ast) {
     if (!n || typeof n.type !== 'string') return
     if (n.type === 'CallExpression' && n.callee?.type === 'Identifier') {
       const callee = n.callee.name
-      if ((callee === 'builtinCard' || callee === 'switchControl') && n.arguments[0]?.type === 'Literal' && typeof n.arguments[0].value === 'string') {
+      if (callee === 'builtinCard') {
+        // builtinCard("browserNotify", "browserSound", …)：首参弹窗键、第二参声音键
+        for (const argIdx of [0, 1]) {
+          const a = n.arguments[argIdx]
+          if (a?.type === 'Literal' && typeof a.value === 'string') keys.add(a.value)
+        }
+      } else if (callee === 'switchControl' && n.arguments[0]?.type === 'Literal' && typeof n.arguments[0].value === 'string') {
         keys.add(n.arguments[0].value)
       }
       if (callee === 'patch' && n.arguments[0]?.type === 'ObjectExpression') {
