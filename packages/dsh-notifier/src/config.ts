@@ -157,8 +157,13 @@ export interface NotifyConfig {
   allowKinds: string[];
 }
 
-/** 布尔配置键联合（normalizeConfig 白名单与客户端渲染依赖它）。 */
-type BooleanKeys = { [K in keyof NotifyConfig]: NotifyConfig[K] extends boolean ? K : never }[keyof NotifyConfig];
+/**
+ * 布尔配置键联合（normalizeConfig 白名单与客户端渲染依赖它）。
+ * browserSound/systemSound 类型为 SoundSetting（boolean|SoundId），其 boolean
+ * 形态仍需走 CONFIG_KEYS 循环（#640/#641；门禁 N2 以默认字面量布尔推导），
+ * SoundId 字符串形态由声音专用分支归一化——联合推导把 SoundSetting 纳入。
+ */
+type BooleanKeys = { [K in keyof NotifyConfig]: NotifyConfig[K] extends boolean | SoundSetting ? K : never }[keyof NotifyConfig];
 
 // ---------------------------------------------------------------- 声音设置（#640/#641）
 
@@ -273,8 +278,13 @@ export const DEFAULT_CONFIG: NotifyConfig = {
   allowKinds: [],
 };
 
-/** 布尔配置键（单一事实源：normalizeConfig 白名单与客户端渲染依赖它）。 */
-export const CONFIG_KEYS: readonly BooleanKeys[] = ["notifyAsk", "notifyQuestion", "notifyTaskDone", "notifySubagentDone", "notifyTaskError", "notifyTurnEnd", "systemNotify", "browserNotify", "notifyWhenVisible", "notifySound"];
+/**
+ * 布尔配置键（单一事实源：normalizeConfig 白名单与客户端渲染依赖它）。
+ * browserSound/systemSound 属 SoundSetting（boolean|SoundId），其 boolean 形态
+ * 走 CONFIG_KEYS 循环；SoundId 字符串形态由 normalizeConfig 声音专用分支处理
+ * （两处都要排除表同步排除——见 normalizeConfig）。
+ */
+export const CONFIG_KEYS: readonly BooleanKeys[] = ["notifyAsk", "notifyQuestion", "notifyTaskDone", "notifySubagentDone", "notifyTaskError", "notifyTurnEnd", "systemNotify", "browserNotify", "notifyWhenVisible", "notifySound", "browserSound", "systemSound"];
 
 /**
  * 原型链污染/特殊成员键名（读透传与写通道共用保留键，#470 复核 P0）：这些键
