@@ -296,12 +296,13 @@ export function ReportSection(): React.ReactElement {
 
   /**
    * 轮询生成任务状态（#625）：退避 1s→5s，上限约 2 分钟。
-   * done → 返回 meta；failed → 抛错；超时/status 404（任务已被 TTL 修剪，报告
+   * done → 返回 { meta, reused }；failed → 抛错；超时/status 404（任务已被 TTL 修剪，报告
    * 大概率已生成）→ 抛 PollInProgressError（调用方转「仍在生成」正向提示，
    * 绝不误报失败）。
    * 组件卸载（disposedRef）后立即中止。
+   * #629 P2：reused 透传——executor 侧幂等短路复用与 200 直接复用路径提示对称。
    */
-  const pollReportTask = async (taskId: string): Promise<ReportMetaView> => {
+  const pollReportTask = async (taskId: string): Promise<{ meta: ReportMetaView; reused: boolean }> => {
     let delay = POLL_INITIAL_DELAY_MS;
     for (let i = 0; i < POLL_MAX_ROUNDS; i += 1) {
       await sleep(delay);
@@ -312,10 +313,10 @@ export function ReportSection(): React.ReactElement {
       );
       if (res.status === 404) throw new PollInProgressError(); // 任务已修剪：转「仍在生成」
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; status?: string; meta?: ReportMetaView; error?: string };
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; status?: string; meta?: ReportMetaView; reused?: boolean; error?: string };
       if (body.status === "done") {
         if (body.meta === undefined) throw new Error("bad-task-result");
-        return body.meta;
+        return { meta: body.meta, reused: body.reused === true };
       }
       if (body.status === "failed") throw new Error(body.error ?? "生成失败");
       delay = Math.min(delay * 2, POLL_MAX_DELAY_MS);
@@ -362,8 +363,11 @@ export function ReportSection(): React.ReactElement {
       }
       // 202 + taskId：轮询直到完成
       let meta: ReportMetaView;
+      let polledReused = false;
       try {
-        meta = await pollReportTask(body.taskId as string);
+        const polled = await pollReportTask(body.taskId as string);
+        meta = polled.meta;
+        polledReused = polled.reused;
       } catch (e) {
         if (e instanceof PollInProgressError) {
           if (disposedRef.current) return;
@@ -379,7 +383,8 @@ export function ReportSection(): React.ReactElement {
         setGenNotice(t("reportNoData"));
         return;
       }
-      setGenNotice(null);
+      // #629 P2：executor 侧幂等短路复用 → 与 200 直接复用路径对称提示「已复用」
+      setGenNotice(polledReused ? t("reportReused") : null);
       await loadReports();
       if (disposedRef.current) return;
       setOpenId(rowIdOf(meta)); // 生成成功后展开详情

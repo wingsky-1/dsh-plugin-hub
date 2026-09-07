@@ -1,7 +1,7 @@
 /**
  * dsh-provider-usage/report — 报告生成执行器与索引读取辅助。
  */
-import { appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Context } from "@deepseek-ai/cordis";
 import { errorMessage } from "../../../../shared/host-utils.js";
@@ -26,6 +26,28 @@ export function reportsDir(root: string): string {
 
 export function reportIndexFile(root: string): string {
   return join(root, "reports", "index.jsonl");
+}
+
+// #629 P1 解析记忆化缓存（readReportIndex 专用；键=historyRoot，值=stat 失效键+投影）。
+interface IndexCacheEntry {
+  stamp: string;
+  value: ReportMeta[];
+}
+const indexCache = new Map<string, IndexCacheEntry>();
+// 命中/未命中计数（测试可观测：确定性证明「重复读不再重解析」，不依赖时钟度量）
+let indexCacheHits = 0;
+let indexCacheMisses = 0;
+
+/** 测试隔离钩子：清空解析缓存与计数（防同进程多测试块跨 root 残留；生产路径无需调用）。 */
+export function __clearReportIndexCacheForTests(): void {
+  indexCache.clear();
+  indexCacheHits = 0;
+  indexCacheMisses = 0;
+}
+
+/** 测试观测钩子：缓存命中/未命中计数（#629 P1 验收「可测」：连续读 hits 只增 1 次 miss）。 */
+export function __reportIndexCacheStatsForTests(): { hits: number; misses: number } {
+  return { hits: indexCacheHits, misses: indexCacheMisses };
 }
 
 export function reportHtmlFile(root: string, period: ReportPeriod, key: string): string {
@@ -219,14 +241,40 @@ export function parseReportIndexLines(raw: string): ReportMeta[] {
  * 读报告历史索引（#626 读侧投影：按 (period,key) 去重，保留 generatedAt 最新一条
  * ——「一行/窗口=最新版」；index.jsonl 保持 append-only 不改写）。
  * 返回按时间倒序（最新在前），与既有消费方语义一致。
+ *
+ * #629 P1 解析记忆化：index.jsonl 为 append-only 单写者（本进程 persistReport），
+ * 同版本文件的解析结果必然一致，故按 stat 失效键（size + mtimeMs）缓存「原始全文
+ * → 解析+去重+排序投影」。任务执行/手动生成路由每轮复用缓存，不再随 index 行数
+ * 线性重解析（文件未变时 O(1)；文件变化只重解析一次并刷新缓存，仍优于逐调用全量）。
+ * - 失效以 stat 为唯一事实源，不基于时钟假设——写入方经 appendFile 后 mtime/size
+ *   必变，不会读到过期投影；
+ * - 文件缺失 → 不缓存（空表），避免 -ENOENT 竞态窗口把「暂不可见」钉死成永久空；
+ * - stat 失败（竞态删除/权限）→ 回落全量读+解析（降级路径，语义与原实现一致）；
+ * - 单进程内存态缓存，无跨进程共享面（多实例经 DSH_HOME/profile 天然隔离）。
  */
 export async function readReportIndex(historyRoot: string): Promise<ReportMeta[]> {
+  const file = reportIndexFile(historyRoot);
   let raw: string;
+  let stamp: string;
   try {
-    raw = await readFile(reportIndexFile(historyRoot), "utf8");
+    const st = await stat(file);
+    stamp = `${st.size}:${st.mtimeMs}`;
+    const cached = indexCache.get(historyRoot);
+    if (cached !== undefined && cached.stamp === stamp) {
+      indexCacheHits += 1;
+      return [...cached.value]; // 浅拷贝防调用方改写污染缓存（O(n) 拷贝远轻于重解析）
+    }
+    raw = await readFile(file, "utf8");
   } catch {
-    return [];
+    // 文件缺失或 stat 失败：回落全量读+解析（缺失时 readFile 也失败 → 空表），不缓存
+    try {
+      raw = await readFile(file, "utf8");
+    } catch {
+      return [];
+    }
+    stamp = "";
   }
+  indexCacheMisses += 1;
   const records = parseReportIndexLines(raw);
   const newest = new Map<string, ReportMeta>();
   for (const r of records) {
@@ -234,5 +282,7 @@ export async function readReportIndex(historyRoot: string): Promise<ReportMeta[]
     const cur = newest.get(id);
     if (cur === undefined || r.generatedAt > cur.generatedAt) newest.set(id, r);
   }
-  return [...newest.values()].sort((a, b) => b.generatedAt - a.generatedAt);
+  const value = [...newest.values()].sort((a, b) => b.generatedAt - a.generatedAt);
+  if (stamp !== "") indexCache.set(historyRoot, { stamp, value });
+  return [...value]; // 与命中路径对称：浅拷贝防调用方就地突变污染缓存
 }

@@ -40,6 +40,8 @@ export interface ReportTask {
   updatedAt: number;
   /** done 后携带生成 meta（reused 时亦携带既有记录）。 */
   meta?: ReportMeta;
+  /** #629 P2：done 且 meta 来自幂等短路复用（非新生成）时为 true——status 响应透传，客户端对称提示「已复用」。 */
+  reused?: boolean;
   /** failed 时携带脱敏错误信息。 */
   error?: string;
 }
@@ -129,6 +131,7 @@ export class ReportTaskQueue {
       });
       task.status = "done";
       task.meta = res.meta;
+      task.reused = res.reused === true;
       task.updatedAt = this.now();
     } catch (e: unknown) {
       // 失败（含执行器内部已捕获后的再抛）不推进 lastRun：执行器约定

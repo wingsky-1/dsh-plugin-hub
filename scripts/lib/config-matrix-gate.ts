@@ -174,7 +174,7 @@ function runNotifier(root) {
   const problems = []
   const lines = []
   const cfgPath = join(root, 'packages/dsh-notifier/src/config.ts')
-  const clientPath = join(root, 'packages/dsh-notifier/src/client/index.ts')
+  const clientPath = join(root, 'packages/dsh-notifier/src/client/index.tsx')
 
   const def = loadTable(cfgPath, 'DEFAULT_CONFIG', 'object')
   const validators = loadTable(cfgPath, 'SETTING_VALIDATORS', 'object')
@@ -248,7 +248,9 @@ function runNotifier(root) {
     problems.push(`notifier 客户端文件不可读: ${clientPath}（${e.message}）`)
     return { problems, lines }
   }
-  const cAst = parseTs(clientText)
+  // 客户端入口为 .tsx（issue #584 分片 a）：JSX 源码经 esbuild tsx loader 编译
+  // 为 createElement 调用后再 parse（loader 缺省 ts 解析不了 JSX 标签）
+  const cAst = parseTs(clientText, 'tsx')
   const uiKeys = collectClientUiKeys(cAst)
   const exempt = NOTIFIER_UI_EXEMPT
   problems.push(...checkExempts('notifier', exempt))
