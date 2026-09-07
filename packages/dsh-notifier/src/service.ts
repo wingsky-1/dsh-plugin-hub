@@ -177,14 +177,6 @@ export const BUILTIN_CHANNELS = {
   system: "system",
 } as const;
 
-/**
- * 每通道声音设置解析收口（service 层消费 resolveSoundSetting；#640/#641 每通道
- * 独立——弹窗与声音正交：弹窗关+声音开 = 只响不弹）。
- */
-export function resolveSoundForChannel(cfg: NotifyConfig, channel: "browser" | "system"): SoundSetting {
-  return resolveSoundSetting(cfg, channel);
-}
-
 /** 统一码点截断（中文场景按码点，不按 UTF-16 code unit）。 */
 function truncateCodePoints(s: string, max: number): string {
   const chars = Array.from(s);
