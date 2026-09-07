@@ -19,7 +19,7 @@ import { t } from "../../../../../shared/client/i18n.js";
 // #503：设置页顶部「使用趋势」区块（三维切换 + 堆叠柱状 + 汇总卡）
 import { TrendSection } from "../trend.ts";
 // #503 M3：设置页「用量报告」区块（配置卡片 + 手动生成 + 历史列表）
-import { ReportSection } from "../report.ts";
+import { ReportSection } from "../report.tsx";
 import { UsageSection } from "./usage.tsx";
 import type { StatsView } from "./usage.tsx";
 import { UiSection } from "./ui.tsx";

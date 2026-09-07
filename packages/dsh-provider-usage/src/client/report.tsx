@@ -117,15 +117,15 @@ export interface ReportMetaView {
 
 /** #532：环比箭头胶囊（null = 上一窗口无数据，不做对比）。 */
 function ratioBadge(ratio: number | null): React.ReactElement {
-  if (ratio === null) return React.createElement("span", { className: "dou-heroRatio" }, "—");
+  if (ratio === null) return <span className="dou-heroRatio">—</span>;
   const up = ratio >= 1;
   const pct = Math.round(Math.abs(ratio - 1) * 100);
-  return React.createElement(
-    "span",
-    { className: `dou-heroRatio ${up ? "dou-heroRatioUp" : "dou-heroRatioDown"}` },
-    up ? "↑" : "↓",
-    " ",
-    pct === 0 ? t("reportRatioFlat") : t("reportRatioPct", { n: pct }),
+  return (
+    <span className={`dou-heroRatio ${up ? "dou-heroRatioUp" : "dou-heroRatioDown"}`}>
+      {up ? "↑" : "↓"}
+      {" "}
+      {pct === 0 ? t("reportRatioFlat") : t("reportRatioPct", { n: pct })}
+    </span>
   );
 }
 
@@ -137,28 +137,22 @@ function reportHero(s: NonNullable<ReportMetaView["summary"]>): React.ReactEleme
     [t("reportHeroStreak"), `${s.longestStreak}`],
     [t("reportHeroPeak"), s.peakDay !== null ? `${(s.peakDay.total ?? 0).toLocaleString("en-US")}` : "—"],
   ];
-  return React.createElement(
-    "div",
-    { className: "dou-hero" },
-    React.createElement(
-      "div",
-      { className: "dou-heroBig" },
-      React.createElement("span", { className: "dou-heroNum" }, s.total !== null ? s.total.toLocaleString("en-US") : "—"),
-      React.createElement("span", { className: "dou-heroNumUnit" }, t("reportHeroTotal")),
-      ratioBadge(s.wowRatio),
-    ),
-    React.createElement(
-      "div",
-      { className: "dou-heroStats" },
-      stats.map(([label, value]) =>
-        React.createElement(
-          "div",
-          { className: "dou-heroStat", key: label },
-          React.createElement("small", null, label),
-          React.createElement("b", null, value),
-        ),
-      ),
-    ),
+  return (
+    <div className="dou-hero">
+      <div className="dou-heroBig">
+        <span className="dou-heroNum">{s.total !== null ? s.total.toLocaleString("en-US") : "—"}</span>
+        <span className="dou-heroNumUnit">{t("reportHeroTotal")}</span>
+        {ratioBadge(s.wowRatio)}
+      </div>
+      <div className="dou-heroStats">
+        {stats.map(([label, value]) => (
+          <div className="dou-heroStat" key={label}>
+            <small>{label}</small>
+            <b>{value}</b>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -420,322 +414,281 @@ export function ReportSection(): React.ReactElement {
 
   const failed = configFailed || listFailed;
 
-  return React.createElement(
-    "section",
-    { className: "dou-report", style: { marginBottom: 16 } },
-    React.createElement("h2", { style: { fontSize: 13, fontWeight: 600, margin: "0 0 8px" } }, t("reportTitle")),
-    failed
-      ? React.createElement("div", { className: "dou-reportFetchFail" }, t("reportFetchFail"))
-      : null,
-    // ---- 配置卡片 ----
-    draft !== null
-      ? React.createElement(
-          "div",
-          { className: "dou-reportCard" },
-          PERIODS.map((period) =>
-            React.createElement(
-              "div",
-              { className: "dou-reportRow", key: period },
-              React.createElement(
-                "label",
-                { className: "dou-reportEnabled" },
-                React.createElement("input", {
-                  type: "checkbox",
-                  checked: draft[period].enabled,
-                  onChange: (e: unknown) => patchPeriod(period, { enabled: (e as { target: { checked: boolean } }).target.checked }),
-                }),
-                periodLabel(period),
-              ),
-              React.createElement("span", { className: "dou-reportLabel" }, t("reportTime")),
-              React.createElement("input", {
-                type: "time",
-                className: "dou-reportTime",
-                "aria-label": `${periodLabel(period)} ${t("reportTime")}`,
-                value: draft[period].time,
-                onChange: (e: unknown) => patchPeriod(period, { time: (e as { target: { value: string } }).target.value }),
-              }),
-              period === "weekly"
-                ? React.createElement(
-                    "label",
-                    { className: "dou-reportInline" },
-                    t("reportWeekStartsOn"),
-                    React.createElement(
-                      "select",
-                      {
-                        className: "dou-reportSelect",
-                        value: String(draft.weekly.weekStartsOn),
-                        onChange: (e: unknown) => patchPeriod("weekly", { weekStartsOn: (e as { target: { value: string } }).target.value === "0" ? 0 : 1 }),
-                      },
-                      React.createElement("option", { value: "1" }, t("reportWeekMonday")),
-                      React.createElement("option", { value: "0" }, t("reportWeekSunday")),
-                    ),
-                  )
-                : null,
-              period === "monthly"
-                ? React.createElement(
-                    "label",
-                    { className: "dou-reportInline" },
-                    t("reportDayOfMonth"),
-                    React.createElement("input", {
-                      type: "number",
-                      min: 1,
-                      max: 28,
-                      className: "dou-reportNum",
-                      value: draft.monthly.dayOfMonth,
-                      onChange: (e: unknown) => {
-                        const n = Number((e as { target: { value: string } }).target.value);
-                        patchPeriod("monthly", { dayOfMonth: Number.isInteger(n) ? n : draft.monthly.dayOfMonth });
-                      },
-                    }),
-                  )
-                : null,
-            ),
-          ),
-          // provider / model 路由
-          React.createElement(
-            "div",
-            { className: "dou-reportRow" },
-            React.createElement(
-              "label",
-              { className: "dou-reportInline" },
-              t("reportProvider"),
-              React.createElement(
-                "select",
-                {
-                  className: "dou-reportSelect",
-                  value: draft.provider,
-                  onChange: (e: unknown) => patchTop({ provider: (e as { target: { value: string } }).target.value }),
-                },
-                React.createElement("option", { value: "" }, t("reportProviderDefault")),
-                providers.map((p) =>
-                  React.createElement("option", { key: p.id, value: p.id }, typeof p.name === "string" && p.name.length > 0 ? `${p.name} (${p.id})` : p.id),
-                ),
-              ),
-            ),
-            React.createElement(
-              "label",
-              { className: "dou-reportInline" },
-              t("reportModel"),
-              // #532：模型候选已加载 → 下拉（首项「跟随默认」=空串语义=注册序首个）；
-              // 当前配置值不在列表 → 兜底项渲染旧值，绝不隐式改写；未加载/失败 → 降级手填。
-              haveModels
-                ? React.createElement(
-                    "select",
-                    {
-                      className: "dou-reportSelect",
-                      value: draft.model,
-                      onChange: (e: unknown) => patchTop({ model: (e as { target: { value: string } }).target.value }),
-                    },
-                    React.createElement("option", { key: "", value: "" }, t("reportModelDefault")),
-                    draft.model !== "" && !models!.some((m) => m.id === draft.model)
-                      ? React.createElement("option", { key: "__kept", value: draft.model }, t("reportModelKept", { v: draft.model }))
-                      : null,
-                    models!.map((m) =>
-                      React.createElement("option", { key: m.id, value: m.id }, typeof m.name === "string" && m.name.length > 0 ? `${m.name} (${m.id})` : m.id),
-                    ),
-                  )
-                : React.createElement("input", {
-                    type: "text",
-                    className: "dou-reportInput",
-                    placeholder: t("reportModelHint"),
-                    value: draft.model,
-                    onChange: (e: unknown) => patchTop({ model: (e as { target: { value: string } }).target.value }),
-                  }),
-            ),
-          ),
-          models !== null && !haveModels
-            ? React.createElement("div", { className: "dou-reportHint" }, t("reportModelFallback"))
-            : null,
-          // 提示词模板（#532：三周期各自独立模板 + 周期切换 tab + 恢复默认）
-          React.createElement(
-            "div",
-            { className: "dou-reportCol" },
-            React.createElement(
-              "div",
-              { className: "dou-reportPromptTabs" },
-              React.createElement("span", { className: "dou-reportLabel" }, t("reportPrompt")),
-              PERIODS.map((p) =>
-                React.createElement(
-                  "button",
-                  {
-                    key: p,
-                    type: "button",
-                    className: `dou-reportPromptTab${promptTab === p ? " dou-reportPromptTabActive" : ""}`,
-                    "aria-pressed": promptTab === p,
-                    onClick: () => setPromptTab(p),
-                  },
-                  periodLabel(p),
-                ),
-              ),
-              promptDefaults !== null
-                ? React.createElement(
-                    "button",
-                    {
-                      type: "button",
-                      className: "dou-reportPromptReset",
-                      onClick: () => patchTop({ prompts: { ...draft.prompts, [promptTab]: promptDefaults[promptTab] } }),
-                    },
-                    t("reportPromptReset"),
-                  )
-                : null,
-            ),
-            React.createElement("textarea", {
-              className: "dou-reportTextarea",
-              rows: 7,
-              value: draft.prompts[promptTab],
-              onChange: (e: unknown) => patchTop({ prompts: { ...draft.prompts, [promptTab]: (e as { target: { value: string } }).target.value } }),
-            }),
-            React.createElement("span", { className: "dou-reportHint" }, t("reportPromptHint")),
-          ),
-          // 推送开关 + 保存
-          React.createElement(
-            "div",
-            { className: "dou-reportRow" },
-            React.createElement(
-              "label",
-              { className: "dou-reportEnabled" },
-              React.createElement("input", {
-                type: "checkbox",
-                checked: draft.push.enabled,
-                onChange: (e: unknown) => patchTop({ push: { enabled: (e as { target: { checked: boolean } }).target.checked } }),
-              }),
-              t("reportPush"),
-            ),
-            React.createElement(
-              "button",
-              { type: "button", className: "dou-reportSaveBtn", disabled: saving, onClick: () => void onSave() },
-              t("reportSave"),
-            ),
-            saveState === "saved"
-              ? React.createElement("span", { className: "dou-reportSaved" }, t("reportSaved"))
-              : saveState === "fail"
-                ? React.createElement("span", { className: "dou-reportSaveFail" }, t("reportSaveFail", { msg: "HTTP error" }))
-                : null,
-          ),
-        )
-      : null,
-    // ---- 手动生成 ----
-    React.createElement(
-      "div",
-      { className: "dou-reportRow dou-reportGenRow" },
-      React.createElement(
-        "select",
-        {
-          className: "dou-reportSelect",
-          value: genPeriod,
-          "aria-label": t("reportPeriodSelect"),
-          onChange: (e: unknown) => setGenPeriod((e as { target: { value: string } }).target.value as ReportPeriodView),
-        },
-        PERIODS.map((p) => React.createElement("option", { key: p, value: p }, periodLabel(p))),
-      ),
-      React.createElement(
-        "button",
-        { type: "button", className: "dou-reportGenBtn", disabled: generating, onClick: () => void onGenerate() },
-        generating ? t("reportGenerating") : t("reportGenerate"),
-      ),
-      React.createElement(
-        "label",
-        { className: "dou-reportGenForce" },
-        React.createElement("input", {
-          type: "checkbox",
-          checked: genForce,
-          disabled: generating,
-          onChange: (e: unknown) => setGenForce((e as { target: { checked: boolean } }).target.checked),
-        }),
-        t("reportForceRegen"),
-      ),
-      genError !== null ? React.createElement("span", { className: "dou-reportGenError" }, genError) : null,
-      genNotice !== null ? React.createElement("span", { className: "dou-reportGenNotice" }, genNotice) : null,
-    ),
-    // ---- 历史列表 ----
-    React.createElement("h3", { className: "dou-reportListTitle" }, t("reportHistory")),
-    list === null
+  return (
+    <section className="dou-report" style={{ marginBottom: 16 }}>
+      <h2 style={{ fontSize: 13, fontWeight: 600, margin: "0 0 8px" }}>{t("reportTitle")}</h2>
+      {failed ? <div className="dou-reportFetchFail">{t("reportFetchFail")}</div> : null}
+      {/* ---- 配置卡片 ---- */}
+      {draft !== null ? (
+        <div className="dou-reportCard">
+          {PERIODS.map((period) => (
+            <div className="dou-reportRow" key={period}>
+              <label className="dou-reportEnabled">
+                <input
+                  type="checkbox"
+                  checked={draft[period].enabled}
+                  onChange={(e: unknown) => patchPeriod(period, { enabled: (e as { target: { checked: boolean } }).target.checked })}
+                />
+                {periodLabel(period)}
+              </label>
+              <span className="dou-reportLabel">{t("reportTime")}</span>
+              <input
+                type="time"
+                className="dou-reportTime"
+                aria-label={`${periodLabel(period)} ${t("reportTime")}`}
+                value={draft[period].time}
+                onChange={(e: unknown) => patchPeriod(period, { time: (e as { target: { value: string } }).target.value })}
+              />
+              {period === "weekly" ? (
+                <label className="dou-reportInline">
+                  {t("reportWeekStartsOn")}
+                  <select
+                    className="dou-reportSelect"
+                    value={String(draft.weekly.weekStartsOn)}
+                    onChange={(e: unknown) => patchPeriod("weekly", { weekStartsOn: (e as { target: { value: string } }).target.value === "0" ? 0 : 1 })}
+                  >
+                    <option value="1">{t("reportWeekMonday")}</option>
+                    <option value="0">{t("reportWeekSunday")}</option>
+                  </select>
+                </label>
+              ) : null}
+              {period === "monthly" ? (
+                <label className="dou-reportInline">
+                  {t("reportDayOfMonth")}
+                  <input
+                    type="number"
+                    min={1}
+                    max={28}
+                    className="dou-reportNum"
+                    value={draft.monthly.dayOfMonth}
+                    onChange={(e: unknown) => {
+                      const n = Number((e as { target: { value: string } }).target.value);
+                      patchPeriod("monthly", { dayOfMonth: Number.isInteger(n) ? n : draft.monthly.dayOfMonth });
+                    }}
+                  />
+                </label>
+              ) : null}
+            </div>
+          ))}
+          {/* provider / model 路由 */}
+          <div className="dou-reportRow">
+            <label className="dou-reportInline">
+              {t("reportProvider")}
+              <select
+                className="dou-reportSelect"
+                value={draft.provider}
+                onChange={(e: unknown) => patchTop({ provider: (e as { target: { value: string } }).target.value })}
+              >
+                <option value="">{t("reportProviderDefault")}</option>
+                {providers.map((p) => (
+                  <option key={p.id} value={p.id}>{typeof p.name === "string" && p.name.length > 0 ? `${p.name} (${p.id})` : p.id}</option>
+                ))}
+              </select>
+            </label>
+            <label className="dou-reportInline">
+              {t("reportModel")}
+              {/* #532：模型候选已加载 → 下拉（首项「跟随默认」=空串语义=注册序首个）；
+                  当前配置值不在列表 → 兜底项渲染旧值，绝不隐式改写；未加载/失败 → 降级手填。 */}
+              {haveModels ? (
+                <select
+                  className="dou-reportSelect"
+                  value={draft.model}
+                  onChange={(e: unknown) => patchTop({ model: (e as { target: { value: string } }).target.value })}
+                >
+                  <option key="" value="">{t("reportModelDefault")}</option>
+                  {draft.model !== "" && !models!.some((m) => m.id === draft.model) ? (
+                    <option key="__kept" value={draft.model}>{t("reportModelKept", { v: draft.model })}</option>
+                  ) : null}
+                  {models!.map((m) => (
+                    <option key={m.id} value={m.id}>{typeof m.name === "string" && m.name.length > 0 ? `${m.name} (${m.id})` : m.id}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  className="dou-reportInput"
+                  placeholder={t("reportModelHint")}
+                  value={draft.model}
+                  onChange={(e: unknown) => patchTop({ model: (e as { target: { value: string } }).target.value })}
+                />
+              )}
+            </label>
+          </div>
+          {models !== null && !haveModels ? <div className="dou-reportHint">{t("reportModelFallback")}</div> : null}
+          {/* 提示词模板（#532：三周期各自独立模板 + 周期切换 tab + 恢复默认） */}
+          <div className="dou-reportCol">
+            <div className="dou-reportPromptTabs">
+              <span className="dou-reportLabel">{t("reportPrompt")}</span>
+              {PERIODS.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  className={`dou-reportPromptTab${promptTab === p ? " dou-reportPromptTabActive" : ""}`}
+                  aria-pressed={promptTab === p}
+                  onClick={() => setPromptTab(p)}
+                >
+                  {periodLabel(p)}
+                </button>
+              ))}
+              {promptDefaults !== null ? (
+                <button
+                  type="button"
+                  className="dou-reportPromptReset"
+                  onClick={() => patchTop({ prompts: { ...draft.prompts, [promptTab]: promptDefaults[promptTab] } })}
+                >
+                  {t("reportPromptReset")}
+                </button>
+              ) : null}
+            </div>
+            <textarea
+              className="dou-reportTextarea"
+              rows={7}
+              value={draft.prompts[promptTab]}
+              onChange={(e: unknown) => patchTop({ prompts: { ...draft.prompts, [promptTab]: (e as { target: { value: string } }).target.value } })}
+            />
+            <span className="dou-reportHint">{t("reportPromptHint")}</span>
+          </div>
+          {/* 推送开关 + 保存 */}
+          <div className="dou-reportRow">
+            <label className="dou-reportEnabled">
+              <input
+                type="checkbox"
+                checked={draft.push.enabled}
+                onChange={(e: unknown) => patchTop({ push: { enabled: (e as { target: { checked: boolean } }).target.checked } })}
+              />
+              {t("reportPush")}
+            </label>
+            <button
+              type="button"
+              className="dou-reportSaveBtn"
+              disabled={saving}
+              onClick={() => void onSave()}
+            >
+              {t("reportSave")}
+            </button>
+            {saveState === "saved" ? (
+              <span className="dou-reportSaved">{t("reportSaved")}</span>
+            ) : saveState === "fail" ? (
+              <span className="dou-reportSaveFail">{t("reportSaveFail", { msg: "HTTP error" })}</span>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    {/* ---- 手动生成 ---- */}
+    <div className="dou-reportRow dou-reportGenRow">
+      <select
+        className="dou-reportSelect"
+        value={genPeriod}
+        aria-label={t("reportPeriodSelect")}
+        onChange={(e: unknown) => setGenPeriod((e as { target: { value: string } }).target.value as ReportPeriodView)}
+      >
+        {PERIODS.map((p) => (
+          <option key={p} value={p}>{periodLabel(p)}</option>
+        ))}
+      </select>
+      <button
+        type="button"
+        className="dou-reportGenBtn"
+        disabled={generating}
+        onClick={() => void onGenerate()}
+      >
+        {generating ? t("reportGenerating") : t("reportGenerate")}
+      </button>
+      <label className="dou-reportGenForce">
+        <input
+          type="checkbox"
+          checked={genForce}
+          disabled={generating}
+          onChange={(e: unknown) => setGenForce((e as { target: { checked: boolean } }).target.checked)}
+        />
+        {t("reportForceRegen")}
+      </label>
+      {genError !== null ? <span className="dou-reportGenError">{genError}</span> : null}
+      {genNotice !== null ? <span className="dou-reportGenNotice">{genNotice}</span> : null}
+    </div>
+    {/* ---- 历史列表 ---- */}
+    <h3 className="dou-reportListTitle">{t("reportHistory")}</h3>
+    {list === null
       ? null
       : list.length === 0
-        ? React.createElement("div", { className: "dou-reportEmpty" }, t("reportEmpty"))
-        : React.createElement(
-            "ul",
-            { className: "dou-reportList" },
-            list.map((m) => {
-              const id = rowIdOf(m);
-              // 展开态详情（局部组装，避免深嵌套三元）：HTML 已由宿主双层净化
-              let detailNode: React.ReactNode = null;
-              if (openId === id) {
-                const parts: React.ReactNode[] = [];
-                if (detail !== null && detail.id === id) {
-                  const tokens = detail.meta.tokens;
-                  if (tokens !== null && tokens !== undefined && tokens.totalTokens !== null) {
+        ? <div className="dou-reportEmpty">{t("reportEmpty")}</div>
+        : (
+            <ul className="dou-reportList">
+              {list.map((m) => {
+                const id = rowIdOf(m);
+                // 展开态详情（局部组装，避免深嵌套三元）：HTML 已由宿主双层净化
+                let detailNode: React.ReactNode = null;
+                if (openId === id) {
+                  const parts: React.ReactNode[] = [];
+                  if (detail !== null && detail.id === id) {
+                    const tokens = detail.meta.tokens;
+                    if (tokens !== null && tokens !== undefined && tokens.totalTokens !== null) {
+                      parts.push(
+                        <div className="dou-reportDetailMeta" key="meta">
+                          {t("reportDetailTokens", { n: tokens.totalTokens.toLocaleString("en-US") })}
+                        </div>,
+                      );
+                    }
+                    // #532 年报 hero：meta.summary 存在时渲染大数字 + 环比 + 活跃统计
+                    const summary = detail.meta.summary;
+                    if (summary !== null && summary !== undefined) {
+                      parts.push(reportHero(summary));
+                    }
+                    if (detail.meta.noData === true) {
+                      parts.push(<div className="dou-reportGenNotice" key="nodata">{t("reportNoData")}</div>);
+                    } else {
+                      parts.push(
+                        detail.html.length > 0 ? (
+                          // 数据源为本插件宿主端产物：落盘 escape-then-transform 白名单标签
+                          // 第一层 + 读侧 sanitizeHtml 第二层（#532 管线）
+                          <div
+                            className="dou-reportDetailBody"
+                            key="body"
+                            dangerouslySetInnerHTML={{ __html: detail.html }}
+                          />
+                        ) : (
+                          <div className="dou-reportFetchFail" key="empty">
+                            {detail.meta.error ?? t("reportFetchFail")}
+                          </div>
+                        ),
+                      );
+                    }
                     parts.push(
-                      React.createElement(
-                        "div",
-                        { className: "dou-reportDetailMeta", key: "meta" },
-                        t("reportDetailTokens", { n: tokens.totalTokens.toLocaleString("en-US") }),
-                      ),
+                      <button
+                        type="button"
+                        className="dou-reportCollapse"
+                        key="collapse"
+                        onClick={() => { setOpenId(null); setDetail(null); }}
+                      >
+                        {t("reportCollapse")}
+                      </button>,
                     );
-                  }
-                  // #532 年报 hero：meta.summary 存在时渲染大数字 + 环比 + 活跃统计
-                  const summary = detail.meta.summary;
-                  if (summary !== null && summary !== undefined) {
-                    parts.push(reportHero(summary));
-                  }
-                  if (detail.meta.noData === true) {
-                    parts.push(React.createElement("div", { className: "dou-reportGenNotice", key: "nodata" }, t("reportNoData")));
                   } else {
-                    parts.push(
-                      detail.html.length > 0
-                        ? React.createElement("div", {
-                            className: "dou-reportDetailBody",
-                            key: "body",
-                            // 数据源为本插件宿主端产物：落盘 escape-then-transform 白名单标签
-                            // 第一层 + 读侧 sanitizeHtml 第二层（#532 管线）
-                            dangerouslySetInnerHTML: { __html: detail.html },
-                          })
-                        : React.createElement(
-                            "div",
-                            { className: "dou-reportFetchFail", key: "empty" },
-                            detail.meta.error ?? t("reportFetchFail"),
-                          ),
-                    );
+                    parts.push(<div className="dou-reportLoading" key="loading">{t("loading")}</div>);
                   }
-                  parts.push(
-                    React.createElement(
-                      "button",
-                      { type: "button", className: "dou-reportCollapse", key: "collapse", onClick: () => { setOpenId(null); setDetail(null); } },
-                      t("reportCollapse"),
-                    ),
-                  );
-                } else {
-                  parts.push(React.createElement("div", { className: "dou-reportLoading", key: "loading" }, t("loading")));
+                  detailNode = <div className="dou-reportDetail">{parts}</div>;
                 }
-                detailNode = React.createElement("div", { className: "dou-reportDetail" }, parts);
-              }
-              return React.createElement(
-                "li",
-                { className: "dou-reportItem", key: id },
-                React.createElement(
-                  "button",
-                  {
-                    type: "button",
-                    className: "dou-reportItemHead",
-                    "aria-expanded": openId === id,
-                    onClick: () => void toggleDetail(m),
-                  },
-                  React.createElement("span", { className: "dou-reportItemPeriod" }, periodLabel(m.period)),
-                  React.createElement("span", { className: "dou-reportItemKey" }, m.key),
-                  React.createElement(
-                    "span",
-                    { className: m.ok ? "dou-reportBadge dou-reportBadgeOk" : "dou-reportBadge dou-reportBadgeFail" },
-                    m.ok ? t("reportOk") : t("reportFailed"),
-                  ),
-                  React.createElement(
-                    "span",
-                    { className: "dou-reportItemTime" },
-                    new Date(m.generatedAt).toLocaleString(),
-                  ),
-                ),
-                detailNode,
-              );
-            }),
-          ),
+                return (
+                  <li className="dou-reportItem" key={id}>
+                    <button
+                      type="button"
+                      className="dou-reportItemHead"
+                      aria-expanded={openId === id}
+                      onClick={() => void toggleDetail(m)}
+                    >
+                      <span className="dou-reportItemPeriod">{periodLabel(m.period)}</span>
+                      <span className="dou-reportItemKey">{m.key}</span>
+                      <span className={m.ok ? "dou-reportBadge dou-reportBadgeOk" : "dou-reportBadge dou-reportBadgeFail"}>
+                        {m.ok ? t("reportOk") : t("reportFailed")}
+                      </span>
+                      <span className="dou-reportItemTime">{new Date(m.generatedAt).toLocaleString()}</span>
+                    </button>
+                    {detailNode}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+    </section>
   );
 }
