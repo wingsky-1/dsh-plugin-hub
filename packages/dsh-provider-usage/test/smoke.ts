@@ -10,13 +10,14 @@
  * - /health 快照形状
  * - 客户端 bundle 契约面与路由一致性
  */
-import { readFileSync, mkdtempSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
+import { readFileSync, mkdtempSync, writeFileSync, existsSync, mkdirSync, readdirSync, appendFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertClientProductContract, assertClientSourceContract, clientRouteLiterals } from "../../../test/smoke-lib.ts";
 import { tmpdir } from "node:os";
 import assert from "node:assert/strict";
 import { callHandler, pollUntil } from "./helpers.ts";
+import { __clearReportIndexCacheForTests, __reportIndexCacheStatsForTests, readReportIndex } from "../lib/index.js";
 
 // 纯函数断言区先行执行（无 @ts-nocheck、强类型）
 import "./smoke-pure.ts";
@@ -726,6 +727,20 @@ export function formatPanel() { return "<p>x</p>"; }
   // ui-config 改为启动拉取 + 60s 轮询 + 回前台即时拉取（syncUiConfig）。
   assert.ok(!clientSource.includes("new EventSource("), "客户端已移除 SSE 长连接（EventSource）");
   assert.ok(clientSource.includes("syncUiConfig"), "客户端以 syncUiConfig 轮询代偿 ui-config 同步");
+
+  // #629 P2：手动生成轮询路径 executor 侧幂等复用与 200 直接复用路径提示对称——
+  // pollReportTask 返回 reused 且轮询分支经 setGenNotice(t("reportReused")) 渲染提示
+  {
+    const reportSource = readFileSync(join(pkgDir, "src/client/report.ts"), "utf8");
+    const pollRet = reportSource.match(/return \{ meta: body\.meta, reused: body\.reused === true \};/);
+    assert.ok(pollRet !== null, "pollReportTask 透传 status 响应的 reused 字段（轮询路径数据源）");
+    const pollCall = reportSource.match(/const polled = await pollReportTask\(/);
+    assert.ok(pollCall !== null, "onGenerate 202 分支经 pollReportTask 拿 reused");
+    const noticeLine = reportSource.match(/setGenNotice\(polledReused \? t\("reportReused"\) : null\);/);
+    assert.ok(noticeLine !== null, "轮询路径 reused → 渲染「已复用」提示（与 200 直接复用路径对称）");
+    const directLine = reportSource.match(/if \(body\.reused === true\) setGenNotice\(t\("reportReused"\)\);/);
+    assert.ok(directLine !== null, "200 直接复用路径「已复用」提示保留（对称基线）");
+  }
 
   // qa F1（#128 实测）：bottom-* 锚点首次打开以小高度定位、异步数据撑高面板后
   // 无重排路径 → 稳定向下溢出视口。防回归：renderPanel 尾部触发重定位 +
@@ -1811,6 +1826,17 @@ console.log("[smoke] #503 trend 挂接 + /trend 集成断言全部通过 ✓");
     assert.equal(again.reused, true, "未勾选 force → 幂等复用");
     assert.equal(again.meta.key, genMeta.key, "复用同窗口 meta");
     assert.equal(dailyLineCount(), countBeforeForce, "幂等复用不新增 index 记录（未调 LLM）");
+    // #629 P2：executor 侧幂等短路复用经 202 轮询路径同样透出 reused（提示对称）
+    {
+      const reuseTask = await callHandler(genRoute, fakeReq({ method: "POST", body: JSON.stringify({ period: "daily" }) }));
+      assert.ok(typeof reuseTask.taskId === "string", "executor 幂等短路走 202+taskId 轮询路径");
+      const reuseDone = await pollUntil(async () => {
+        const st = await callHandler(statusRoute, fakeReq({ url: `${ROUTES.reportGenerateStatus}?taskId=${encodeURIComponent(reuseTask.taskId)}` }));
+        return st.status === "done" || st.status === "failed" ? st : undefined;
+      }, 5000, 5);
+      assert.equal(reuseDone.status, "done", "复用任务 done");
+      assert.equal(reuseDone.reused, true, "status 响应透传 reused（轮询路径客户端可提示已复用）");
+    }
     const forceMeta = await generateAndAwait({ period: "daily", force: true });
     assert.equal(forceMeta.ok, true, "force 重新生成 ok");
     assert.equal(forceMeta.key, genMeta.key, "force 覆盖同窗口");
@@ -1822,6 +1848,39 @@ console.log("[smoke] #503 trend 挂接 + /trend 集成断言全部通过 ✓");
     assert.equal(bad1.error, "task-not-found", "非 uuid taskId 拒绝");
     const bad2 = await callHandler(statusRoute, fakeReq({ url: `${ROUTES.reportGenerateStatus}?taskId=00000000-0000-4000-8000-000000000000` }));
     assert.equal(bad2.error, "task-not-found", "合法 uuid 但未知任务 → 404");
+  }
+
+  // g3. #629 P2 交叉写者：启用 weekly（preset 走 updateLastRun 临界区）后 lastRun.daily 不丢
+  {
+    const saveWeekly = await callHandler(
+      cfgRoute,
+      fakeReq({ method: "POST", body: JSON.stringify({ daily: { enabled: true, time: "22:00" }, weekly: { enabled: true, time: "09:00", weekStartsOn: 1 }, push: { enabled: false } }) }),
+    );
+    assert.equal(saveWeekly.ok, true, "weekly 启用保存 ok");
+    const lastRunAfter = JSON.parse(readFileSync(lastRunFile, "utf8"));
+    assert.equal(lastRunAfter.daily, genMeta.key, "preset 写 weekly 后 daily 字段保留（updateLastRun 临界区，#629 P2）");
+    assert.ok(typeof lastRunAfter.weekly === "string" && lastRunAfter.weekly.length > 0, "weekly preset 键已写入（双写者字段并存）");
+  }
+
+  // g4. #629 P1 解析记忆化：重复读走缓存（计数器证明不重解析）+ 失效正确 + 路由不服务过期投影
+  {
+    // 直接向 index.jsonl 追加一行（size/mtime 双变 → 缓存必失效；新 generatedAt 最大 → 排序首位）
+    appendFileSync(indexFile, `${JSON.stringify({ period: "daily", key: "2099-01-01", startDay: "2099-01-01", endDay: "2099-01-01", provider: "anthropic", model: "model-a", generatedAt: Date.now() + 1000000, ok: true })}\n`);
+    const afterAppend = await callHandler(listRoute, fakeReq({ url: ROUTES.reports }));
+    assert.equal(afterAppend.reports[0].key, "2099-01-01", "append 后路由读到新行（stat 失效生效，不服务过期投影）");
+    // 计数器度量：清缓存后连续三读 → 恰好 1 次 miss + 2 次 hit（重复读不再线性重解析）
+    __clearReportIndexCacheForTests();
+    const s0 = __reportIndexCacheStatsForTests();
+    await readReportIndex(histDir);
+    await readReportIndex(histDir);
+    await readReportIndex(histDir);
+    const s1 = __reportIndexCacheStatsForTests();
+    assert.deepEqual(
+      { misses: s1.misses - s0.misses, hits: s1.hits - s0.hits },
+      { misses: 1, hits: 2 },
+      "连续三读仅一次全量解析（#629 P1 记忆化生效，读次数与解析次数解耦）",
+    );
+    __clearReportIndexCacheForTests(); // 清场，防跨块计数残留影响语义
   }
 
   // h. 路径隔离：reports 产物全部落在临时 historyRoot 下，无 undefined 段
