@@ -20,7 +20,7 @@ import {
 } from "../report/config.ts";
 import { readReportIndex, reportHtmlFile, reportMetaFile } from "../report/runner.ts";
 import { presetLastRunForNewlyEnabled, previousClosedWindow, type DueReport } from "../report/schedule.ts";
-import { readLastRun, writeLastRun, type ReportScheduler } from "../report/scheduler.ts";
+import { readLastRun, updateLastRun, type ReportScheduler } from "../report/scheduler.ts";
 import type { ReportTaskQueue } from "../report/tasks.ts";
 import { sanitizeHtml } from "../sanitize.ts";
 
@@ -76,8 +76,10 @@ export async function handleReportConfig(
 
   const normalized = normalizeReportConfig(body);
   const currentCfg = getReportCfg();
+  // #629 P2：preset 写 lastRun 走单一临界区（写前重读），不与任务执行器推进互踩字段；
+  // readLastRun 仅作 changed 预判（乐观跳过无变化时的写盘），真实快照在临界区内重读。
   const preset = presetLastRunForNewlyEnabled(currentCfg, normalized, Date.now(), await readLastRun(historyRoot));
-  if (preset.changed) await writeLastRun(historyRoot, preset.lastRun);
+  if (preset.changed) await updateLastRun(historyRoot, (cur) => presetLastRunForNewlyEnabled(currentCfg, normalized, Date.now(), cur).lastRun);
   try {
     await writeReportConfig(historyRoot, normalized);
   } catch {
@@ -230,6 +232,8 @@ export async function handleReportStatus(
     ok: true,
     status: task.status,
     ...(task.status === "done" && task.meta !== undefined ? { meta: task.meta } : {}),
+    // #629 P2：executor 侧幂等短路复用时透出 reused，客户端轮询路径与 200 直接复用路径提示对称
+    ...(task.status === "done" && task.reused === true ? { reused: true } : {}),
     ...(task.status === "failed" ? { error: task.error ?? "生成失败" } : {}),
   });
 }

@@ -15,10 +15,10 @@
  * - scheduler（M3 接线补）：lastRun 读写 roundtrip / 单飞互斥（busy 期 tick 跳过）/
  *   失败不推进 lastRun（下轮重试同窗）/ 成功推进 / dispose 停 tick
  */
-import { mkdtempSync, existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync, renameSync, utimesSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { assert } from "./helpers.ts";
+import { assert, pollUntil, callHandler } from "./helpers.ts";
 import {
   candidateWindow,
   previousClosedWindow,
@@ -47,6 +47,8 @@ import {
   ReportScheduler,
   readLastRun,
   writeLastRun,
+  updateLastRun,
+  __lastRunChainForTests,
   ensureLastRunMigrated,
   deriveLastRun,
   isClosedWindowRecord,
@@ -54,6 +56,9 @@ import {
   ReportTaskQueue,
   readReportIndex,
   parseReportIndexLines,
+  __clearReportIndexCacheForTests,
+  __reportIndexCacheStatsForTests,
+  handleReportStatus,
 } from "../lib/index.js";
 
 // ---------------------------------------------------------------- 工具
@@ -444,8 +449,7 @@ const GEN = (over = {}) => ({
 }
 
 // ---------------------------------------------------------------- scheduler：lastRun 读写 roundtrip
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// #629 P3：本文件不再引入固定 sleep——真后台异步一律 pollUntil 条件等待或链尾 await。
 
 {
   const root = mkdtempSync(join(tmpdir(), "dou-report-sched-"));
@@ -467,7 +471,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       calls += 1;
       concurrent += 1;
       maxConcurrent = Math.max(maxConcurrent, concurrent);
-      await sleep(30); // 慢执行：验证串行（不并发）
+      await new Promise((r) => setTimeout(r, 30)); // 慢执行：验证串行（不并发）
       concurrent -= 1;
       throw new Error("always-fail"); // 恒失败：任务 failed，不影响串行性
     },
@@ -482,11 +486,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const third = queue.submit({ ...due, force: true });
   assert.equal(third.taskId, first.taskId, "force 提交去重：仍返回同一 taskId");
   assert.equal(queue.get(first.taskId).force, true, "force 升级既有任务");
-  const pollDeadline = Date.now() + 5000;
-  while (calls < 1 && Date.now() < pollDeadline) await sleep(10);
+  // #629 P3：条件等待替代固定 sleep（执行器入口计数是可观测事件）
+  await pollUntil(() => calls >= 1, 5000, 5);
   assert.ok(calls >= 1, `至少执行一轮（实际 ${calls}）`);
   assert.equal(maxConcurrent, 1, `串行单飞：执行并发受控为 1（实际 ${maxConcurrent}）`);
-  await sleep(50); // 等待首任务 failed
+  await pollUntil(() => queue.get(first.taskId)?.status === "failed", 5000, 5);
   assert.equal(queue.get(first.taskId).status, "failed", "执行器抛错 → 任务 failed");
   // failed 任务不在 queued/running → 可重新提交（新 taskId）
   const fourth = queue.submit(due);
@@ -524,17 +528,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     tickMs: 15,
   });
   // 轮询直到成功路径把 lastRun 落盘（execCalls 计数在 executor 入口自增，
-  // 需等写盘完成再断言，防 flake；上限 5s）
-  const pollDeadline = Date.now() + 5000;
-  let lastRunDaily;
-  while (Date.now() < pollDeadline) {
-    const lr = await readLastRun(root);
-    if (lr.daily !== undefined) {
-      lastRunDaily = lr.daily;
-      break;
-    }
-    await sleep(10);
-  }
+  // 需等写盘完成再断言，防 flake；上限 5s）——#629 P3：pollUntil 条件等待
+  const lastRunDaily = await pollUntil(async () => (await readLastRun(root)).daily, 5000, 10);
   scheduler.dispose();
   assert.ok(execCalls >= 3, `失败后下轮重试（实际 ${execCalls} 次）`);
   assert.equal(new Set(failedKeys).size, 1, `重试同一窗口（键集 ${[...failedKeys].join(",")}）`);
@@ -543,28 +538,35 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   assert.equal(lastRunDaily, failedKeys[0], "lastRun.daily === 窗口键");
 }
 
-// ---------------------------------------------------------------- scheduler：dispose 停 tick
+// ---------------------------------------------------------------- scheduler：dispose 停 tick（#629 P3：事件驱动，无固定 sleep）
 
 {
   const root = mkdtempSync(join(tmpdir(), "dou-report-dispose-"));
   let calls = 0;
+  let gate: () => void = () => {};
+  const gated = new Promise<void>((r) => { gate = r; });
   const scheduler = ReportScheduler.start({
     root,
     config: CFG({ daily: { enabled: true, time: "00:00" }, weekly: { enabled: false, time: "09:00", weekStartsOn: 1 }, monthly: { enabled: false, time: "09:00", dayOfMonth: 1 } }),
     // 模拟 apply 接线的最小推进语义（onDue 提交 → 执行 → lastRun 推进）
     onDue: async (due) => {
       calls += 1;
+      gate(); // 「首轮 tick 已发生」事件信号（onDue 入口同步触发）
       const lastRun = await readLastRun(root);
       lastRun[due.period] = due.key;
       await writeLastRun(root, lastRun);
     },
-    tickMs: 10,
+    tickMs: 200, // 拉大 tick 间隔：dispose 确定性赶在第二轮 timer 触发前
   });
-  await sleep(60);
+  await gated; // 事件等待：首轮启动补跑已发生（不假设耗时，慢 runner 下自然延长）
+  // 等首轮 lastRun 落盘收尾（在途 onDue 完成）再 dispose，防断言与写盘竞态
+  await pollUntil(() => existsSync(join(root, "reports", "last-run.json")), 5000, 5);
   scheduler.dispose();
   const atDispose = calls;
-  await sleep(60);
-  assert.equal(calls, atDispose, "dispose 后不再 tick（计数冻结）");
+  // 否定式条件等待（pollUntil 语义）：一个完整 tick 周期窗口内 onDue 不再触发
+  // ——timer 已 clearInterval，窗口内泄漏 tick 若存在必然使 calls 增长而失败
+  const leaked = await pollUntil(() => calls > atDispose, 250, 10);
+  assert.notEqual(leaked, true, "dispose 后不再 tick（计数冻结）");
   // 成功路径推进过 lastRun（首轮启动补跑已生成并落盘）
   assert.ok(existsSync(join(root, "reports", "last-run.json")), "dispose 前的成功生成已推进 lastRun");
 }
@@ -691,6 +693,212 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   assert.equal(d06.id, "v2", "同窗口保留最新 generatedAt 版本");
   const parsed = parseReportIndexLines("bad\n" + JSON.stringify({ period: "weekly", key: "2026-08-31", generatedAt: 1, ok: true }));
   assert.equal(parsed.length, 1, "坏行跳过、合法行保留");
+}
+
+// ---------------------------------------------------------------- #629 P1 readReportIndex 解析记忆化（mtime 感知缓存）
+
+{
+  const root = mkdtempSync(join(tmpdir(), "dou-report-cache-"));
+  const reports = join(root, "reports");
+  mkdirSync(reports, { recursive: true });
+  const indexFile = join(reports, "index.jsonl");
+  __clearReportIndexCacheForTests(); // 隔离：清同进程其他块可能残留的缓存与计数
+  // 缺失文件 → 空表（不缓存）
+  assert.deepEqual(await readReportIndex(root), [], "index 缺失 → 空表");
+  assert.deepEqual(await readReportIndex(root), [], "index 缺失 → 空表（二次调用语义不变）");
+  // 首读建缓存
+  const metaA = { period: "daily", key: "2026-09-05", startDay: "2026-09-05", endDay: "2026-09-05", generatedAt: 100, ok: true };
+  writeFileSync(indexFile, `${JSON.stringify(metaA)}\n`);
+  const first = await readReportIndex(root);
+  assert.equal(first.length, 1, "首读解析 1 条");
+  // 二读命中缓存（投影一致即证，不重复解析语义漂移）
+  const second = await readReportIndex(root);
+  assert.deepEqual(second, first, "stat 未变 → 命中缓存，投影一致");
+  // 计数器确定性证明：连续两读只解析一次（#629 P1「可测」——重复读不再线性重解析）
+  {
+    const stats = __reportIndexCacheStatsForTests();
+    assert.deepEqual(stats, { hits: 1, misses: 1 }, "连续两读：miss=1（只解析一次）+ hit=1（第二读走缓存）");
+  }
+  // append 一行（size/mtime 双变）→ 重新解析读到新行
+  appendFileSync(indexFile, `${JSON.stringify({ ...metaA, key: "2026-09-06", generatedAt: 200 })}\n`);
+  const third = await readReportIndex(root);
+  assert.equal(third.length, 2, "append 后缓存失效并重解析");
+  assert.equal(third[0].key, "2026-09-06", "倒序语义在缓存路径同样成立");
+  // 原子替换改写（size 不变场景：同字节数内容替换 + utimes 显式设置不同 mtime，
+  // 规避同毫秒粒度）→ mtime 变化独立失效
+  const tmpSwap = `${indexFile}.swap`;
+  writeFileSync(tmpSwap, `${JSON.stringify({ ...metaA, generatedAt: 999 })}\n${JSON.stringify({ ...metaA, key: "2026-09-06", generatedAt: 200 })}\n`);
+  utimesSync(tmpSwap, /* atime */ new Date(), /* mtime */ new Date(1_700_000_000_000)); // 显式旧 mtime：与 append 时刻必然不同
+  renameSync(tmpSwap, indexFile);
+  const fourth = await readReportIndex(root);
+  assert.equal(fourth.find((m) => m.key === "2026-09-05")?.generatedAt, 999, "size 不变仅 mtime 变 → 仍失效重解析");
+  // 命中路径返回浅拷贝——调用方改写返回值不污染缓存
+  const before = (await readReportIndex(root)).length;
+  const hit = await readReportIndex(root);
+  hit.length = 0;
+  assert.equal((await readReportIndex(root)).length, before, "命中路径返回的投影不被调用方改写污染");
+  // miss 路径返回浅拷贝——与命中路径防御对称：首读（miss）返回值上就地突变不污染缓存
+  {
+    const missRoot = mkdtempSync(join(tmpdir(), "dou-report-cache-miss-"));
+    mkdirSync(join(missRoot, "reports"), { recursive: true });
+    writeFileSync(join(missRoot, "reports", "index.jsonl"), `${JSON.stringify(metaA)}\n`);
+    const missFirst = await readReportIndex(missRoot);
+    assert.equal(missFirst.length, 1, "miss 首读解析 1 条");
+    missFirst.push({ ...metaA, key: "MUTATED", generatedAt: 1 });
+    const missSecond = await readReportIndex(missRoot);
+    assert.equal(missSecond.length, 1, "miss 路径返回值就地 push 后，缓存不被污染");
+    assert.ok(!missSecond.some((m) => m.key === "MUTATED"), "后续读不含调用方注入的污染项");
+  }
+  // root 隔离：不同 historyRoot 互不串缓存
+  const otherRoot = mkdtempSync(join(tmpdir(), "dou-report-cache-other-"));
+  assert.deepEqual(await readReportIndex(otherRoot), [], "另一 root（无 index）→ 空表，不命中前 root 缓存");
+  __clearReportIndexCacheForTests();
+}
+
+// ---------------------------------------------------------------- #629 P2 updateLastRun 单一临界区（注入时序验证 lost-update 修复）
+
+{
+  // 注入时序形态：patch 函数在临界区内执行，内部 await 一个可控 promise 即可把
+  // 「read-modify-write 的中段」挂起——并发方整次更新（readLatest→write）只能排进
+  // 串行链，精确复现原缺陷的交错窗（patch 挂起期间他方完成全量写）。
+  // ESM 导出只读，不做模块 monkey-patch；导出绑定不可变是语言既有约束。
+
+  // 场景 1（链上串行 + 写前重读）：A 的 patch 挂起期间 B 提交更新 → 修复后 B 基于链上
+  // 最新文件态（含 A 已落盘的 daily）合并写；无临界区的旧实现下 B 与 A 各持快照整表
+  // 覆盖，终态只剩后写者字段（lost-update）。
+  {
+    const rootA = mkdtempSync(join(tmpdir(), "dou-report-lra-"));
+    let releaseA: () => void = () => {};
+    const gateA = new Promise<void>((r) => { releaseA = r; });
+    let enteredA = false;
+    const pa = updateLastRun(rootA, async (cur) => {
+      enteredA = true;
+      await gateA; // 挂起 A 的临界区（模拟 read-modify-write 中段的 IO 慢）
+      return { ...cur, daily: "2026-09-05" };
+    });
+    await pollUntil(() => enteredA, 5000, 2);
+    // A 挂起期间：B 提交 weekly 更新（此刻文件尚为空表——旧快照语义）
+    const pb = updateLastRun(rootA, (cur) => ({ ...cur, weekly: "2026-08-31" }));
+    // 先释放再收敛（pb 排在 pa 后，先 await pb 会死锁）
+    releaseA();
+    await Promise.all([pa, pb]);
+    const afterA = await readLastRun(rootA);
+    assert.equal(afterA.daily, "2026-09-05", "链首 A 的字段最终落盘");
+    assert.equal(afterA.weekly, "2026-08-31", "B 排在 A 后写前重读：A 的 daily + B 的 weekly 双字段并存");
+  }
+  // 场景 2（既有字段不被后续更新覆盖——写前重读的直证）
+  {
+    const root2 = mkdtempSync(join(tmpdir(), "dou-report-lrseq-"));
+    await updateLastRun(root2, (cur) => ({ ...cur, daily: "2026-09-05" }));
+    await updateLastRun(root2, (cur) => ({ ...cur, weekly: "2026-08-31" }));
+    await updateLastRun(root2, (cur) => ({ ...cur, monthly: "2026-08" }));
+    const afterC = await readLastRun(root2);
+    assert.deepEqual(
+      { daily: afterC.daily, weekly: afterC.weekly, monthly: afterC.monthly },
+      { daily: "2026-09-05", weekly: "2026-08-31", monthly: "2026-08" },
+      "三字段并存：后续更新不覆盖既有字段（lost-update 不再发生）",
+    );
+  }
+  // 场景 3（同任务交错窗实证——保存配置 preset vs 任务完成推进的双字段并写）：
+  // preset 更新（slow patch 挂起）先入链，executor 推进更新在其后提交——
+  // 修复后 executor 的 patch 在临界区内基于 preset 已落盘的最新态合并；
+  // 原缺陷（无临界区）下 executor 会以空表快照整表覆盖，丢掉 preset 的 weekly。
+  {
+    const root4 = mkdtempSync(join(tmpdir(), "dou-report-lrrace-"));
+    let releasePreset: () => void = () => {};
+    const gatePreset = new Promise<void>((r) => { releasePreset = r; });
+    let presetEntered = false;
+    // 保存配置路径：preset 挂起（模拟 readLastRun IO 慢）
+    const pPreset = updateLastRun(root4, async (cur) => {
+      presetEntered = true;
+      await gatePreset;
+      return { ...cur, weekly: "2026-08-31" }; // preset weekly 首启用键
+    });
+    await pollUntil(() => presetEntered, 5000, 2);
+    // 任务执行器路径：完成推进 daily（排在挂起的 preset 之后入链）
+    const pExecutor = updateLastRun(root4, (cur) => ({ ...cur, daily: "2026-09-05" }));
+    // 先释放再收敛（pExecutor 排在 pPreset 后，先 await pExecutor 会死锁）
+    releasePreset();
+    await Promise.all([pPreset, pExecutor]);
+    const final = await readLastRun(root4);
+    assert.equal(final.daily, "2026-09-05", "交错窗：executor 推进的 daily 保留");
+    assert.equal(final.weekly, "2026-08-31", "交错窗：preset 的 weekly 保留（lost-update 修复实证）");
+  }
+  // 场景 4（并发风暴）：10 个并发 updateLastRun 各写各字段 → 终态 10 字段全保留
+  {
+    const root3 = mkdtempSync(join(tmpdir(), "dou-report-lrstorm-"));
+    const writes = Array.from({ length: 10 }, (_, i) =>
+      updateLastRun(root3, (cur) => ({ ...cur, [`f${i}`]: `v${i}` })));
+    await Promise.all(writes);
+    await __lastRunChainForTests(root3);
+    // readLastRun 只透出 daily/weekly/monthly 白名单键（schema:1 兼容过滤），
+    // f0..f9 断言须读原始落盘文件观察
+    const final = JSON.parse(readFileSync(join(root3, "reports", "last-run.json"), "utf8"));
+    const kept = Array.from({ length: 10 }, (_, i) => final[`f${i}`]).filter((v) => v !== undefined).length;
+    assert.equal(kept, 10, `并发风暴 10 字段全保留（实际保留 ${kept}）`);
+    assert.equal(final.schema, 2, "临界区写沿用 schema 版本标记");
+  }
+  // 场景 5（patch 抛错不阻塞链上后续）
+  {
+    const root5 = mkdtempSync(join(tmpdir(), "dou-report-lrerr-"));
+    await assert.rejects(
+      updateLastRun(root5, () => { throw new Error("boom-patch"); }),
+      /boom-patch/,
+      "patch 抛错向调用方透传",
+    );
+    await updateLastRun(root5, (cur) => ({ ...cur, daily: "2026-09-04" }));
+    const after = await readLastRun(root5);
+    assert.equal(after.daily, "2026-09-04", "抛错的更新不落盘且不阻塞后续更新");
+  }
+}
+
+// ---------------------------------------------------------------- #629 P2 executor 复用 → 队列记录 + status 响应透传 reused
+
+{
+  // executor 幂等短路（返回 reused:true）→ task.done 且 task.reused=true →
+  // handleReportStatus 响应携带 reused（客户端轮询路径「已复用」提示的数据源）
+  const queue = new ReportTaskQueue({
+    executor: async () => ({ meta: { period: "daily", key: "2026-09-05", startDay: "2026-09-05", endDay: "2026-09-05", generatedAt: 1, ok: true }, reused: true }),
+    warn: () => {},
+  });
+  const sub = queue.submit({ period: "daily", key: "2026-09-05", startDay: "2026-09-05", endDay: "2026-09-05" });
+  const task = await pollUntil(() => {
+    const t = queue.get(sub.taskId);
+    return t?.status === "done" ? t : undefined;
+  }, 5000, 2);
+  assert.ok(task !== undefined, "复用任务到达 done");
+  assert.equal(task.reused, true, "executor reused:true → task.reused=true");
+  // status 路由响应透传 reused（直调 handler：包 {handler} 适配 helpers.callHandler
+  // 的三参形态，补 context 实参——handleReportStatus 仅消费 reportQueue 字段）
+  const payload = await callHandler(
+    { handler: (req, res) => handleReportStatus(req, res, { reportQueue: queue }) },
+    {
+      socket: { remoteAddress: "127.0.0.1" },
+      headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
+      method: "GET",
+      url: `/api/dsh-provider-usage/reports/generate/status?taskId=${sub.taskId}`,
+    },
+  );
+  assert.equal(payload.status, "done", "status done");
+  assert.equal(payload.reused, true, "status 响应透传 reused（客户端轮询提示数据源）");
+  // 对照：非复用任务（reused 缺省）不携带 reused 字段
+  const queue2 = new ReportTaskQueue({
+    executor: async () => ({ meta: { period: "daily", key: "2026-09-06", startDay: "2026-09-06", endDay: "2026-09-06", generatedAt: 2, ok: true } }),
+    warn: () => {},
+  });
+  const sub2 = queue2.submit({ period: "daily", key: "2026-09-06", startDay: "2026-09-06", endDay: "2026-09-06" });
+  await pollUntil(() => queue2.get(sub2.taskId)?.status === "done", 5000, 2);
+  const payload2 = await callHandler(
+    { handler: (req, res) => handleReportStatus(req, res, { reportQueue: queue2 }) },
+    {
+      socket: { remoteAddress: "127.0.0.1" },
+      headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
+      method: "GET",
+      url: `/api/dsh-provider-usage/reports/generate/status?taskId=${sub2.taskId}`,
+    },
+  );
+  assert.equal(payload2.status, "done", "非复用任务 status done");
+  assert.equal(payload2.reused, undefined, "非复用任务不携带 reused（新生成语义不变）");
 }
 
 console.log("unit-report: all assertions passed");
