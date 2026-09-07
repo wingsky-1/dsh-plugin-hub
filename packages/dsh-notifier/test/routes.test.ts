@@ -21,6 +21,24 @@ import { tmpdir } from "node:os";
 import { assert, makeNotifier, fakeReq, makeRes, waitForHistory, turnPair, quietWindowNow } from "./helpers.ts";
 import { ROUTES } from "../lib/index.js";
 
+/** 轮询 /status 直到某频道终态 == expected（异步终态断言防 flake：spawn 完成
+ *  走事件循环，固定 sleep 会偶发竞态——见 docs/DEVELOPMENT.md §5）。 */
+async function pollStatus(route, channelId, expected, timeoutMs = 2000) {
+  const start = Date.now();
+  for (;;) {
+    const { rec, res } = makeRes();
+    await route.handler(fakeReq({}), res);
+    let channels = {};
+    try { channels = JSON.parse(rec.text).channels || {}; } catch { /* 下一轮 */ }
+    if (channels[channelId]?.lastStatus === expected) return;
+    if (Date.now() - start > timeoutMs) {
+      assert.equal(channels[channelId]?.lastStatus, expected, `轮询超时：/status ${channelId} 终态`);
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
 const work = mkdtempSync(join(tmpdir(), "dnotify-routes-"));
 let mainNotifier;
 try {
@@ -83,7 +101,7 @@ try {
     assert.equal(JSON.parse(rec6.text).error, "method not allowed: DELETE", "config DELETE 405 body 文案");
   }
 
-  // health：配置摘要与 sseConnections
+  // health：配置摘要与 sseConnections（#640/#641：platform + browserSound/systemSound）
   {
     const { rec, res } = makeRes();
     await healthRoute.handler(fakeReq({}), res);
@@ -91,8 +109,12 @@ try {
     const body = JSON.parse(rec.text);
     assert.equal(body.ok, true);
     assert.equal(body.plugin, "dsh-notifier");
+    assert.equal(typeof body.platform, "string", "D1：/health 返回宿主平台（process.platform）");
+    assert.ok(["linux", "darwin", "win32"].includes(body.platform), "D1：platform 为合法三平台值");
     assert.equal(typeof body.config.notifyAsk, "boolean", "health 返回配置摘要");
     assert.equal(body.config.maxConnections, 16, "health 摘要含 maxConnections（与默认配置一致）");
+    assert.equal(body.config.browserSound, true, "D1：health 摘要含 browserSound");
+    assert.equal(body.config.systemSound, true, "D1：health 摘要含 systemSound");
     assert.equal(typeof body.sseConnections, "number");
   }
 
@@ -631,12 +653,13 @@ try {
     assert.ok(Array.isArray(t1Body.results), "收敛后响应含受理 results");
     assert.ok(t1Body.results.some((x) => x.channelId === "browser" && x.status === "ok"), "test kind 走 service 管线投递");
 
-    // 投递终态落盘：内置频道同步终态，内存镜像即时可见（落盘 debounce 合并）
+    // 投递终态落盘：browser 同步终态即时可见；system 为异步终态（#640/#641
+    // SystemNotifier.notify 返回 Promise——spawn 完成走事件循环）→ 轮询等待
     const st2 = makeRes();
     await statusRoute.handler(fakeReq({}), st2.res);
     const st2Body = JSON.parse(st2.rec.text);
     assert.equal(st2Body.channels.browser?.lastStatus, "ok", "/test 后 browser 频道状态 ok");
-    assert.equal(st2Body.channels.system?.lastStatus, "ok", "/test 后 system 频道状态 ok");
+    await pollStatus(statusRoute, "system", "ok");
 
     // GET /kinds 初始空 + POST 未注册 kind → 404
     const k1 = makeRes();
@@ -810,6 +833,43 @@ try {
     assert.equal(body.ok, false);
     assert.match(body.error.error, /配置校验失败/, "400 带「配置校验失败」");
     assert.ok(body.error.hint, "400 带 hint（合法范围描述）");
+  }
+
+  // #640/#641 A2：新声音键写入校验——合法值 200、非法值 400 + 音色白名单 hint
+  {
+    function bodyReq(payload) {
+      const text = JSON.stringify(payload);
+      return {
+        method: "PUT",
+        url: "/",
+        socket: { remoteAddress: "127.0.0.1" },
+        headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
+        on(event, cb) {
+          if (event === "data") setTimeout(() => cb(Buffer.from(text)), 0);
+          else if (event === "end") setTimeout(cb, 1);
+          return this;
+        },
+        destroy() {},
+      };
+    }
+    const ok1 = makeRes();
+    await configRoute.handler(bodyReq({ patch: { browserSound: "ding", systemSound: "pop" } }), ok1.res);
+    assert.equal(ok1.rec.status, 200, "合法音色 PUT 成功");
+    const ok2 = makeRes();
+    await configRoute.handler(bodyReq({ patch: { systemSound: false } }), ok2.res);
+    assert.equal(ok2.rec.status, 200, "systemSound false PUT 成功");
+    const bad1 = makeRes();
+    await configRoute.handler(bodyReq({ patch: { browserSound: "loud" } }), bad1.res);
+    assert.equal(bad1.rec.status, 400, "browserSound 非法音色 400");
+    const badBody = JSON.parse(bad1.rec.text);
+    assert.equal(badBody.error.error, "配置校验失败: browserSound", "400 指明 browserSound 键");
+    assert.ok(String(badBody.error.hint).includes("ding/bell/chime/pop"), "400 hint 含音色白名单");
+    const bad2 = makeRes();
+    await configRoute.handler(bodyReq({ patch: { systemSound: "<script>" } }), bad2.res);
+    assert.equal(bad2.rec.status, 400, "systemSound 任意字符串 400");
+    const eff = settings.getUser();
+    assert.equal(eff.browserSound, "ding", "合法 browserSound 写入 user 层");
+    assert.equal(eff.systemSound, false, "合法 systemSound 写入 user 层");
   }
 
   // G1：SETTINGS_CONFLICT → 409 固定文案（expectedRevision 过期 → service.update 抛冲突）

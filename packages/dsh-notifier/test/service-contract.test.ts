@@ -32,13 +32,17 @@ function fakeSse() {
   };
 }
 
-/** fake system notifier（记录调用）。 */
+/** fake system notifier（记录调用；notify 返回 Promise 决议——#640/#641 异步终态）。 */
 function fakeSystem() {
   const calls = [];
   return {
     calls,
-    notify(title, message) {
-      calls.push({ title, message });
+    async notify(pop, tone, title, message) {
+      calls.push({ pop, tone, title, message });
+      return true;
+    },
+    selfPlayAvailable() {
+      return true;
     },
   };
 }
@@ -72,6 +76,8 @@ function defaultCfg(overrides = {}) {
     browserNotify: true,
     notifyWhenVisible: false,
     notifySound: true,
+    browserSound: true,
+    systemSound: true,
     quietHours: { enabled: false, start: "22:00", end: "08:00" },
     errorMergeWindowMs: 60000,
     askRemindMin: 5,
@@ -180,6 +186,45 @@ function makeService(cfgOverrides = {}, hooks = {}) {
   console.log("②c 内置 kind 走文案管线 + 历史落盘: OK");
 }
 
+{
+  // B5：SSE 帧附服务端解析的 sound 字段（browser 频道 send 处 resolveBrowserSound；
+  // 既有帧契约只加字段向后兼容——旧客户端无 sound 帧回落快照）
+  const { service, sse } = makeService({ browserSound: "chime" });
+  await service.send({ source: "test", kind: "done", severity: "info", body: "x" });
+  const frame = sse.frames.find((f) => f.type === "notify" && f.kind === "done");
+  assert.deepEqual(frame.sound, { mode: "selfplay", tone: "chime" }, "B5：notify 帧含 sound 策略（SoundId → selfplay+tone）");
+  const { service: svc2, sse: sse2 } = makeService({ browserSound: true });
+  await svc2.send({ source: "test", kind: "done", severity: "info", body: "x" });
+  const frame2 = sse2.frames.find((f) => f.type === "notify" && f.kind === "done");
+  assert.deepEqual(frame2.sound, { mode: "system", tone: undefined }, "B5：sound:true → system 模式");
+  const { service: svc3, sse: sse3 } = makeService({ browserSound: false });
+  await svc3.send({ source: "test", kind: "done", severity: "info", body: "x" });
+  const frame3 = sse3.frames.find((f) => f.type === "notify" && f.kind === "done");
+  assert.deepEqual(frame3.sound, { mode: "silent", tone: undefined }, "B5：sound:false → silent 模式");
+  console.log("B5 SSE 帧 sound 字段（selfplay/system/silent 三态）: OK");
+}
+
+{
+  // B6：投递集合条件 = 弹窗开关 || 声音非静音——弹窗关+声音开仍投递（sound-only）；
+  // 弹窗关+声音关 → 静默不投递
+  const { service, sse, system } = makeService({ browserNotify: false, systemNotify: false, browserSound: "pop", systemSound: true });
+  const r = await service.send({ source: "test", kind: "done", severity: "info", body: "x" });
+  assert.ok(r.some((x) => x.channelId === "browser" && x.status === "ok"), "B6：browser 弹窗关+声音开仍投递（sound-only）");
+  assert.ok(r.some((x) => x.channelId === "system" && x.status === "ok"), "B6：system 弹窗关+声音开仍投递");
+  // browser sound-only 帧：playOnly 标记 + sound 模式（客户端只自播不弹实体）
+  const frame = sse.frames.find((f) => f.kind === "done");
+  assert.equal(frame.playOnly, true, "B6：只响不弹帧带 playOnly 标记");
+  assert.deepEqual(frame.sound, { mode: "selfplay", tone: "pop" }, "B6：只响不弹帧 sound 为 SoundId 自播");
+  // system sound-only：notify(pop=false) 自播调用
+  assert.ok(system.calls.some((c) => c.pop === false && c.tone === true), "B6：system 只响不弹 → notify(pop=false, tone=true)");
+  // 全关 → 不投递
+  const { service: svc2, sse: sse2 } = makeService({ browserNotify: false, systemNotify: false, browserSound: false, systemSound: false });
+  const r2 = await svc2.send({ source: "test", kind: "done", severity: "info", body: "x" });
+  assert.ok(!r2.some((x) => x.channelId === "browser" || x.channelId === "system"), "B6：弹窗+声音全关 → 频道不进投递集合");
+  assert.equal(sse2.frames.length, 0, "B6：全关无 SSE 帧");
+  console.log("B6 投递集合条件（弹窗||声音）+ 只响不弹: OK");
+}
+
 // ---------------------------------------------------------------- ③ 动态 kind 待确认
 
 {
@@ -235,13 +280,13 @@ function makeService(cfgOverrides = {}, hooks = {}) {
 // ---------------------------------------------------------------- ⑤ fail-soft 逐频道
 
 {
-  // 关闭 browser、只留 system：dispatch 只走 system
-  const { service, sse } = makeService({ browserNotify: false, systemNotify: true });
+  // 关闭 browser 弹窗且声音也关、只留 system：dispatch 只走 system
+  const { service, sse } = makeService({ browserNotify: false, browserSound: false, systemNotify: true });
   const r = await service.send({ source: "test", kind: "error", severity: "failure", body: "boom" });
   assert.ok(r.some((x) => x.channelId === "system" && x.status === "ok"));
   assert.ok(!r.some((x) => x.channelId === "browser"));
-  assert.equal(sse.frames.length, 0, "browser 关闭时不投递");
-  console.log("⑤ 频道开关路由生效（browser 关 → 只走 system）: OK");
+  assert.equal(sse.frames.length, 0, "browser 弹窗与声音全关时不投递");
+  console.log("⑤ 频道开关路由生效（browser 全关 → 只走 system）: OK");
 }
 
 // ---------------------------------------------------------------- fake 出站频道
