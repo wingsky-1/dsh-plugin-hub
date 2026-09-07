@@ -197,6 +197,104 @@ export function finalizeSession(state: FilePreviewState, reason: "close" | "unmo
   closeModal(state);
 }
 
+function handleTabSwitch(
+  state: FilePreviewState,
+  targetMode: "preview" | "interactive" | "raw" | "diff",
+  syncTabActive: () => void,
+  body: HTMLElement
+) {
+  if (targetMode === "interactive" && state.previewMode !== "interactive") {
+    if (!window.confirm(t("interactiveConfirm"))) return;
+  }
+  if (state.previewMode === "interactive" && targetMode !== "interactive") {
+    teardownInteractive(state);
+  }
+  state.previewMode = targetMode;
+  syncTabActive();
+  renderTabBody(body, state);
+}
+
+function handleOverlayClick(event: any, state: FilePreviewState, ov: HTMLElement) {
+  const targetEl = event.target instanceof Element ? (event.target as Element) : null;
+  if (targetEl !== null) {
+    let anchorLink: Element | null = null;
+    try { anchorLink = targetEl.closest("a[data-fp-anchor]"); } catch { anchorLink = null; }
+    if (anchorLink !== null && anchorLink !== undefined) {
+      event.preventDefault();
+      event.stopPropagation();
+      scrollToFragment(state.overlay, anchorLink.getAttribute("data-fp-anchor") ?? "");
+      return;
+    }
+  }
+  if (targetEl !== null) {
+    let dirLink: Element | null = null;
+    try { dirLink = targetEl.closest("a[data-fp-dir]"); } catch { dirLink = null; }
+    if (dirLink !== null && dirLink !== undefined) {
+      event.preventDefault();
+      event.stopPropagation();
+      showToast(t("dirNoPreview"));
+      return;
+    }
+  }
+  const link = targetEl === null ? null : targetEl.closest?.("a[data-fp-ref]");
+  if (link !== null && link !== undefined) {
+    const target = link.getAttribute("data-fp-ref");
+    if (target !== null && target !== "") {
+      event.preventDefault();
+      event.stopPropagation();
+      openPreview(
+        state,
+        target,
+        link.getAttribute("data-fp-cwd") || state.currentCwd,
+        false,
+        undefined,
+        link.getAttribute("data-fp-frag") || undefined,
+      );
+      return;
+    }
+  }
+  if (event.target === ov) finalizeSession(state, "close");
+}
+
+function handleBackClick(state: FilePreviewState, backBtn: HTMLElement) {
+  const prevEntry = state.backStack.pop();
+  if (prevEntry === undefined) { backBtn.style.display = "none"; return; }
+  backBtn.style.display = state.backStack.length > 0 ? "" : "none";
+  openPreview(state, prevEntry.path, prevEntry.cwd, true, prevEntry);
+}
+
+function handleResolved(
+  state: FilePreviewState,
+  seq: number,
+  isBack: boolean,
+  backBtn: HTMLElement,
+  addDiffTab: () => void,
+  addUnavailableDiffTab: () => void,
+  abortSignal: AbortSignal
+) {
+  if (seq !== state.openSeq) return;
+  state.onResolved = undefined;
+
+  const pending = state.pendingBackEntry;
+  state.pendingBackEntry = undefined;
+  if (pending !== undefined) {
+    state.backStack.push(pending);
+    if (state.backStack.length > state.MAX_BACK) state.backStack.shift();
+    backBtn.style.display = "";
+  }
+
+  if (!isBack && state.currentGroup !== undefined &&
+      state.currentGroup.group !== renderGroupFor(state.entryPath).group &&
+      state.entryPath !== state.currentPath) {
+    openPreview(state, state.currentPath, state.currentCwd, false, undefined, state.pendingFrag);
+    return;
+  }
+
+  if (!isBack) {
+    probeDiff(state.currentPath, state.currentCwd, seq, addDiffTab, addUnavailableDiffTab, abortSignal, state);
+  }
+}
+
 /** 打开文件预览 Modal。 */
 export function openPreview(
   state: FilePreviewState,
@@ -290,12 +388,7 @@ export function openPreview(
     attrs: { "aria-label": t("navBackAria") },
   });
   backBtn.style.display = state.backStack.length > 0 ? "" : "none";
-  backBtn.addEventListener("click", () => {
-    const prevEntry = state.backStack.pop();
-    if (prevEntry === undefined) { backBtn.style.display = "none"; return; }
-    backBtn.style.display = state.backStack.length > 0 ? "" : "none";
-    openPreview(state, prevEntry.path, prevEntry.cwd, true, prevEntry);
-  });
+  backBtn.addEventListener("click", () => handleBackClick(state, backBtn));
 
   const copyBtn = el("button", { text: t("copyPath") });
   copyBtn.addEventListener("click", () => copyPathText(path, copyBtn));
@@ -340,13 +433,7 @@ export function openPreview(
   const addDiffTab = () => {
     if (diffTab !== undefined) return;
     diffTab = el("button", { class: "fwp-tab", text: "Diff", attrs: { "data-mode": "diff" } });
-    diffTab.addEventListener("click", () => {
-      // issue #507：从交互态切走（Diff tab）→ 释放交互 token（teardownInteractive）。
-      if (state.previewMode === "interactive") teardownInteractive(state);
-      state.previewMode = "diff";
-      syncTabActive();
-      renderTabBody(body, state);
-    });
+    diffTab.addEventListener("click", () => handleTabSwitch(state, "diff", syncTabActive, body));
     tabs.appendChild(diffTab);
     syncTabActive();
     // issue #344（评审 F3）：探测完成时若用户已在 diff 模式（返回恢复场景、大 diff
@@ -368,20 +455,7 @@ export function openPreview(
   };
   for (const def of tabDefs) {
     const b = el("button", { class: "fwp-tab", text: def.label, attrs: { "data-mode": def.mode } });
-    b.addEventListener("click", () => {
-      // issue #507：进入「交互」态 = 用户手势 opt-in 的信任决策——首次点击弹
-      // confirm（对齐 mcp-manager 先例），取消则停留原 tab（乐观置位须回滚）。
-      if (def.mode === "interactive" && state.previewMode !== "interactive") {
-        if (!window.confirm(t("interactiveConfirm"))) return;
-      }
-      // issue #507：从交互态切走（预览/原始）→ 释放交互 token + 清心跳。
-      if (state.previewMode === "interactive" && def.mode !== "interactive") {
-        teardownInteractive(state);
-      }
-      state.previewMode = def.mode;
-      syncTabActive();
-      renderTabBody(body, state);
-    });
+    b.addEventListener("click", () => handleTabSwitch(state, def.mode, syncTabActive, body));
     tabs.appendChild(b);
   }
   syncTabActive();
@@ -413,52 +487,7 @@ export function openPreview(
   );
   state.overlay = ov;
   ov.appendChild(card);
-  ov.addEventListener("click", (event: any) => {
-    // U8 v2（D1-b）：md 内相对链接 → Modal 内跳转预览（不新标签、不整页导航）。
-    const targetEl = event.target instanceof Element ? (event.target as Element) : null;
-    // issue #45：纯锚点（#section，rewriteAnchor 已标 data-fp-anchor）→ 拦截默认
-    // hash 导航（不改 location.hash、SPA 路由不受扰），在 Modal 正文内平滑滚动定位。
-    if (targetEl !== null) {
-      let anchorLink: Element | null = null;
-      try { anchorLink = targetEl.closest("a[data-fp-anchor]"); } catch { anchorLink = null; }
-      if (anchorLink !== null && anchorLink !== undefined) {
-        event.preventDefault();
-        event.stopPropagation();
-        scrollToFragment(state.overlay, anchorLink.getAttribute("data-fp-anchor") ?? "");
-        return;
-      }
-    }
-    // issue #479 P2：md 内目录引用（[diagrams/](diagrams/) 等，rewriteAnchor 已标
-    // data-fp-dir）→ 拦截默认导航，toast 提示（不新标签、不整页导航）。
-    if (targetEl !== null) {
-      let dirLink: Element | null = null;
-      try { dirLink = targetEl.closest("a[data-fp-dir]"); } catch { dirLink = null; }
-      if (dirLink !== null && dirLink !== undefined) {
-        event.preventDefault();
-        event.stopPropagation();
-        showToast(t("dirNoPreview"));
-        return;
-      }
-    }
-    const link = targetEl === null ? null : targetEl.closest?.("a[data-fp-ref]");
-    if (link !== null && link !== undefined) {
-      const target = link.getAttribute("data-fp-ref");
-      if (target !== null && target !== "") {
-        event.preventDefault();
-        event.stopPropagation();
-        openPreview(
-          state,
-          target,
-          link.getAttribute("data-fp-cwd") || state.currentCwd,
-          false,
-          undefined,
-          link.getAttribute("data-fp-frag") || undefined,
-        );
-        return;
-      }
-    }
-    if (event.target === ov) finalizeSession(state, "close");
-  });
+  ov.addEventListener("click", (event: any) => handleOverlayClick(event, state, ov));
   document.addEventListener("keydown", onKeyDown);
   document.body.appendChild(ov);
   // a11y：焦点进入 Modal（role="dialog" 容器）。
@@ -481,29 +510,7 @@ export function openPreview(
   // probeDiff（prev.hadDiff 语义已覆盖），仅 html/md 大 diff 重探按既有逻辑。
   const resolvedProbe = !isBack;
   const needReopenForGroup = !isBack;
-  state.onResolved = () => {
-    if (seq !== state.openSeq) return; // 代数守卫：已切走/关闭 → 本次作废
-    state.onResolved = undefined; // 幂等：只执行一次
-    // 1) 返回栈入栈
-    const pending = state.pendingBackEntry;
-    state.pendingBackEntry = undefined;
-    if (pending !== undefined) {
-      state.backStack.push(pending);
-      if (state.backStack.length > state.MAX_BACK) state.backStack.shift();
-      backBtn.style.display = "";
-    }
-    // 2) 分组变化 → 整体重建（fetchText 已把 groupChanged 场景的渲染延后到此处）
-    if (needReopenForGroup && state.currentGroup !== undefined &&
-        state.currentGroup.group !== renderGroupFor(state.entryPath).group &&
-        state.entryPath !== state.currentPath) {
-      openPreview(state, state.currentPath, state.currentCwd, false, undefined, state.pendingFrag);
-      return;
-    }
-    // 3) diff 探测（defer：path 现为 resolved 权威值）
-    if (resolvedProbe) {
-      probeDiff(state.currentPath, state.currentCwd, seq, addDiffTab, addUnavailableDiffTab, abort.signal, state);
-    }
-  };
+  state.onResolved = () => handleResolved(state, seq, isBack, backBtn, addDiffTab, addUnavailableDiffTab, abort.signal);
 
   if (group.group === "image") {
     renderImage(url, body, seq, abort.signal, state);
