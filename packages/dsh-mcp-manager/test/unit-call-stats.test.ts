@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { McpStatsCollector } from "../src/call-stats.ts";
+import { McpStatsCollector } from "../lib/index.js";
 
 test("McpStatsCollector: 默认关闭时完全无 I/O，不写盘", async () => {
   const dir = mkdtempSync(join(tmpdir(), "mcp-stats-test-"));
