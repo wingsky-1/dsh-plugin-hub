@@ -737,6 +737,18 @@ const GEN = (over = {}) => ({
   const hit = await readReportIndex(root);
   hit.length = 0;
   assert.equal((await readReportIndex(root)).length, before, "命中路径返回的投影不被调用方改写污染");
+  // miss 路径返回浅拷贝——与命中路径防御对称：首读（miss）返回值上就地突变不污染缓存
+  {
+    const missRoot = mkdtempSync(join(tmpdir(), "dou-report-cache-miss-"));
+    mkdirSync(join(missRoot, "reports"), { recursive: true });
+    writeFileSync(join(missRoot, "reports", "index.jsonl"), `${JSON.stringify(metaA)}\n`);
+    const missFirst = await readReportIndex(missRoot);
+    assert.equal(missFirst.length, 1, "miss 首读解析 1 条");
+    missFirst.push({ ...metaA, key: "MUTATED", generatedAt: 1 });
+    const missSecond = await readReportIndex(missRoot);
+    assert.equal(missSecond.length, 1, "miss 路径返回值就地 push 后，缓存不被污染");
+    assert.ok(!missSecond.some((m) => m.key === "MUTATED"), "后续读不含调用方注入的污染项");
+  }
   // root 隔离：不同 historyRoot 互不串缓存
   const otherRoot = mkdtempSync(join(tmpdir(), "dou-report-cache-other-"));
   assert.deepEqual(await readReportIndex(otherRoot), [], "另一 root（无 index）→ 空表，不命中前 root 缓存");
