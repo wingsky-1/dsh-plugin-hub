@@ -24,6 +24,7 @@ import {
   cleanRefChipPath, resolveAbsolutePath, splitReferenceFragment, serveTokenRoute, normalizeBasePath, rewriteTarget, dirResolvedPathOf,
   findUniqueByBasename, bareBasenameOf, resolveFile,
 } from "../lib/index.js";
+import { sniffKind, bomLabelOf, decodeWithBom, contentDispositionOf } from "../lib/index.js";
 import { build as esbuildBuild } from "esbuild";
 import { assertClientProductContract, assertClientSourceContract } from "../../../test/smoke-lib.ts";
 
@@ -162,6 +163,23 @@ assert.equal(previewKindOf("a.webp").contentType, "image/webp");
 assert.equal(previewKindOf("a.svg").contentType, "image/svg+xml");
 assert.equal(previewKindOf("a.avif").contentType, "image/avif");
 assert.equal(previewKindOf("dir/a.JPG").contentType, "image/jpeg", "大小写不敏感且走 mime 库");
+
+// ------------------------------------------------------------ 嗅探纯函数（issue #630）
+
+assert.equal(bomLabelOf(Buffer.from([0xef, 0xbb, 0xbf])), "utf-8", "UTF-8 BOM");
+assert.equal(bomLabelOf(Buffer.from([0xff, 0xfe])), "utf-16le", "UTF-16LE BOM");
+assert.equal(bomLabelOf(Buffer.from([0xfe, 0xff])), "utf-16be", "UTF-16BE BOM");
+assert.equal(bomLabelOf(Buffer.from([0xff, 0xfe, 0x00, 0x00])), "utf-32le", "UTF-32LE BOM 优先于 UTF-16LE 前缀");
+assert.equal(bomLabelOf(Buffer.from([0x00, 0x00, 0xfe, 0xff])), "utf-32be", "UTF-32BE BOM");
+assert.equal(bomLabelOf(Buffer.from("hello")), undefined, "无 BOM");
+assert.equal(bomLabelOf(Buffer.from([0xff])), undefined, "样本短于前缀不误判");
+assert.equal(decodeWithBom(Buffer.from([0xff, 0xfe, 0x2d, 0x00, 0x31, 0x00]), "utf-16le"), "-1", "UTF-16LE BOM 转码剥除");
+assert.equal(decodeWithBom(Buffer.from([0xef, 0xbb, 0xbf, 0x61, 0x62]), "utf-8"), "ab", "UTF-8 BOM 剥除");
+assert.equal(decodeWithBom(Buffer.from([0x00, 0x00, 0xfe, 0xff, 0x00, 0x00, 0x00, 0x61]), "utf-32be"), "a", "UTF-32BE 手写解码");
+assert.equal(decodeWithBom(Buffer.from("plain"), "unknown"), undefined, "未知标签回退 undefined");
+await assert.rejects(sniffKind(join(tmpdir(), "fwp-no-such-dir-630", "gone.xyz")), (e: NodeJS.ErrnoException) => e.code === "ENOENT", "嗅探目标不存在 → ENOENT（并入 readErrorCode 语义）");
+assert.equal(contentDispositionOf("中文 资源.zip"), `attachment; filename="__ __.zip"; filename*=UTF-8''${encodeURIComponent("中文 资源.zip")}`, "RFC 5987 编码 + ASCII 回退（空格属 ASCII 保留）");
+assert.ok(!contentDispositionOf('bad\r\nname.bin').includes("\r"), "CRLF 编码闭合头注入面");
 
 assert.equal(normalizeConfig(undefined).enabled, true, "默认启用");
 // issue #344 A2 [硬性]：默认上限硬编码断言 20M——现有 normalizeConfig(undefined) 断言是
@@ -364,11 +382,27 @@ try {
     await serveFileRoute(res, rawReqForFiles(), new URL(urlOf("nope.txt")), {});
     assert.equal(res._calls.status, 404);
   }
-  // 不可预览类型 → 415
+  // 不可预览类型 → 415 结构化占位（#630）：blob.xyz 内容是文本（"opaque"）→
+  // 嗅探放行 200 直出（业界漏斗第 1 层：白名单外文本不再死胡同）；真二进制
+  // fixture（含 NUL 字节）才 415 + binary/size/ext 结构化字段。
   {
-    const res = fakeRes();
-    await serveFileRoute(res, rawReqForFiles(), new URL(urlOf("blob.xyz")), {});
-    assert.equal(res._calls.status, 415);
+    const resText = fakeRes();
+    await serveFileRoute(resText, rawReqForFiles(), new URL(urlOf("blob.xyz")), {});
+    assert.equal(resText._calls.status, 200, "#630 白名单外文本（.xyz 文本内容）嗅探后 200 直出");
+    assert.equal(resText._calls.data, "opaque", "#630 .xyz 文本内容一致");
+    assert.equal(resText._calls.headers["content-type"], "text/plain; charset=utf-8", "#630 嗅探文本 Content-Type 按 text 组");
+    assert.equal(resText._calls.headers["x-content-type-options"], "nosniff", "#630 嗅探文本同样带 nosniff");
+    assert.ok(resText._calls.headers["etag"] !== undefined, "#630 嗅探文本走 text 组 ETag/413 全套逻辑");
+  }
+  {
+    writeFileSync(join(root, "blob.bin"), Buffer.from([0x4f, 0x70, 0x61, 0x71, 0x00, 0x75, 0x65, 0x8f]), "binary");
+    const resBin = fakeRes();
+    await serveFileRoute(resBin, rawReqForFiles(), new URL(urlOf("blob.bin")), {});
+    assert.equal(resBin._calls.status, 415, "#630 含 NUL 的二进制 → 415 结构化占位");
+    const binPayload = JSON.parse(resBin._calls.data);
+    assert.equal(binPayload.binary, true, "#630 415 body 带 binary:true");
+    assert.equal(binPayload.ext, "bin", "#630 415 body 带后缀");
+    assert.ok(typeof binPayload.size === "number" && binPayload.size > 0, "#630 415 body 带文件大小");
   }
   // 图片二进制直出
   {
@@ -568,12 +602,64 @@ try {
       const resDot = fakeRes();
       await serveFileRoute(resDot, rawReqForFiles(), new URL(fileUrl(gitRoot, "dotdir-file.txt")), {});
       assert.equal(resDot._calls.status, 404, "#486 dot 目录（.hiddendir）不进入遍历 → 404");
-      // .env 裸名：extOf 空 → 分组 other → 415（「找到但不可预览」），而非 404
-      //（「找不到」）——415 即证明 dot 文件被兜底命中（纯函数层 .env 命中断言
-      // 见 unit-basename-fallback）。
+      // .env 裸名：extOf 空 → 分组 other → 嗅探文本（#630 改动 B）→ 200 直出，
+      // 非 404（「找不到」）——即证明 dot 文件被兜底命中且嗅探放行（纯函数层
+      // .env 命中断言见 unit-basename-fallback）。
       const resEnv = fakeRes();
       await serveFileRoute(resEnv, rawReqForFiles(), new URL(fileUrl(gitRoot, ".env")), {});
-      assert.equal(resEnv._calls.status, 415, "#486 dot 文件（.env 裸名）兜底命中 → 415（找到但不可预览）");
+      assert.equal(resEnv._calls.status, 200, "#486 dot 文件（.env 裸名）兜底命中 → 200（#630 嗅探文本直出）");
+      assert.equal(resEnv._calls.data, "dotfile content", "#630 .env 内容按文本直出");
+    }
+    // —— issue #630 改动 B：嗅探兜底与 ?dl=1 下载出口 ——
+    // dl=1 对二进制文件 → attachment 下载（RFC 5987 filename* 编码中文/特殊字符）
+    {
+      const binName = "资源包.bin";
+      writeFileSync(join(gitRoot, binName), Buffer.from([0x00, 0x01, 0x02, 0x00]), "binary");
+      const resDl = fakeRes();
+      await serveFileRoute(resDl, rawReqForFiles(), new URL(fileUrl(gitRoot, binName) + "&dl=1"), {});
+      assert.equal(resDl._calls.status, 200, "#630 dl=1 二进制 → 200 下载");
+      assert.equal(resDl._calls.headers["content-type"], "application/octet-stream", "#630 下载 Content-Type octet-stream");
+      assert.equal(resDl._calls.headers["content-disposition"], `attachment; filename="___.bin"; filename*=UTF-8''${encodeURIComponent(binName)}`, "#630 RFC 5987 filename* + ASCII 回退（中文不炸头）");
+      assert.equal(resDl._calls.headers["x-content-type-options"], "nosniff", "#630 下载带 nosniff");
+      assert.ok(Buffer.isBuffer(resDl._calls.data) && resDl._calls.data.length === 4, "#630 下载内容完整直出");
+      // dl=1 对文本文件不生效（仅二进制分支响应）→ 正常文本直出
+      const resDlText = fakeRes();
+      await serveFileRoute(resDlText, rawReqForFiles(), new URL(fileUrl(gitRoot, ".env") + "&dl=1"), {});
+      assert.equal(resDlText._calls.status, 200, "#630 dl=1 对文本分支忽略 → 200 文本直出");
+      assert.equal(resDlText._calls.headers["content-disposition"], undefined, "#630 文本分支不带头 attachment");
+      // dl=1 对白名单内文件（md）同样忽略
+      const resDlMd = fakeRes();
+      await serveFileRoute(resDlMd, rawReqForFiles(), new URL(fileUrl(gitRoot, "direct.md") + "&dl=1"), {});
+      assert.equal(resDlMd._calls.status, 200, "#630 dl=1 对白名单内 md 忽略 → 200");
+      assert.equal(resDlMd._calls.headers["content-disposition"], undefined, "#630 白名单内不带头 attachment");
+    }
+    // UTF-16LE BOM 文本 → 嗅探判文本 + 转码直出（BOM 剥除，不乱码）
+    {
+      const u16 = Buffer.from([0xff, 0xfe, ...Buffer.from("# 标题\nline2", "utf16le")]);
+      writeFileSync(join(gitRoot, "u16.xyz"), u16, "binary");
+      const resU16 = fakeRes();
+      await serveFileRoute(resU16, rawReqForFiles(), new URL(fileUrl(gitRoot, "u16.xyz")), {});
+      assert.equal(resU16._calls.status, 200, "#630 UTF-16LE BOM 嗅探判文本");
+      assert.equal(resU16._calls.data, "# 标题\nline2", "#630 UTF-16 转码直出且 BOM 剥除");
+    }
+    // UTF-8 BOM 文本 → 嗅探判文本 + BOM 剥除直出
+    {
+      writeFileSync(join(gitRoot, "u8bom.xyz"), Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from("bom utf8", "utf8")]), "binary");
+      const resU8 = fakeRes();
+      await serveFileRoute(resU8, rawReqForFiles(), new URL(fileUrl(gitRoot, "u8bom.xyz")), {});
+      assert.equal(resU8._calls.status, 200, "#630 UTF-8 BOM 嗅探判文本");
+      assert.equal(resU8._calls.data, "bom utf8", "#630 UTF-8 BOM 剥除直出");
+    }
+    // 无 BOM 启发式 UTF-16（偶数位 NUL）→ isbinaryfile 判 binary → 保守 415 占位
+    {
+      const src = "utf16 nobom";
+      const nobom = Buffer.alloc(src.length * 2);
+      for (let i = 0; i < src.length; i++) nobom.writeUInt16LE(src.charCodeAt(i), i * 2);
+      writeFileSync(join(gitRoot, "u16n.xyz"), nobom, "binary");
+      const resN = fakeRes();
+      await serveFileRoute(resN, rawReqForFiles(), new URL(fileUrl(gitRoot, "u16n.xyz")), {});
+      assert.equal(resN._calls.status, 415, "#630 无 BOM 启发式 UTF-16 保守判二进制");
+      assert.equal(JSON.parse(resN._calls.data).binary, true, "#630 无 BOM UTF-16 占位带 binary:true");
     }
     // 用例 7 — 绝对 path 目录写错也进搜索（三级全开）：请求带 cwd（搜索根）+ 不存在
     // 的绝对 path → ③ 按 basename 在 cwd 内唯一搜索纠正（不带 cwd 则无搜索根，不触发）

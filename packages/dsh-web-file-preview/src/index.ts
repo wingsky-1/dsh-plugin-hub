@@ -102,4 +102,8 @@ export { resolveRelativePath, resolveAbsolutePath, splitReferenceFragment, norma
 export { basenameOf, decideGate, resolveFileLink } from "./client/link-resolver.ts";
 // 引用 → 预览目标重写决策纯逻辑（issue #45/#479 P2 目录语义；无 DOM 依赖，经此透出供单元测试）。
 export { rewriteTarget, dirResolvedPathOf } from "./client/rewrite-target.ts";
+// issue #630：内容嗅探（BOM 判定/转码/判定/下载头；宿主端能力——index 即宿主
+// bundle 入口，浏览器 bundle 走 client/index 不经过此处，无进包风险）。
+export { sniffKind, bomLabelOf, decodeWithBom, SNIFF_SAMPLE_BYTES, type SniffVerdict } from "./sniff.ts";
+export { contentDispositionOf } from "./routes.ts";
 
