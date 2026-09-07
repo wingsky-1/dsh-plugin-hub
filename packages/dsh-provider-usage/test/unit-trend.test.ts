@@ -1040,6 +1040,210 @@ function writeAggShardLine(row) {
   await tracker.dispose();
 }
 
+// ---------------------------------------------------------------- #633 A2 兼容割接：存量分片（无 cwd/dir 键）升级后首次启动重建
+
+// A2 前提（图纸第 1 步已验证）：isValidShardRow 按 kind 校验必填键，无键白名单遍历
+// ——未知键不拒绝；detail/counter 的 dir 为加性可选键（dir === undefined 放行）。
+// 本节全部离线 mkdtempSync：手工构造旧格式分片文件（无 dir 键），零 src 改动断言实际行为。
+
+/** 旧格式 detail 行（无 dir 键；含中文归属桶与中文目录语义无关的会话 id）。 */
+const A2_LEGACY_DETAIL = {
+  v: TREND_ROW_VERSION,
+  kind: "detail",
+  time: T0 - 24 * HOUR, // 2026-09-03 12:00（过去日）
+  day: "2026-09-03",
+  session: "旧会话-甲",
+  turn: 3,
+  step: 2,
+  retry: 1,
+  provider: "deepseek",
+  model: "deepseek-chat",
+  input: 1200,
+  output: 300,
+  cacheRead: 45,
+  cacheWrite: 6,
+  calls: 1,
+};
+/** 旧格式 counter 行（无 dir 键）。 */
+const A2_LEGACY_COUNTER = {
+  v: TREND_ROW_VERSION,
+  kind: "counter",
+  time: T0 - 24 * HOUR,
+  day: "2026-09-03",
+  session: "旧会话-甲",
+  provider: "deepseek",
+  model: "deepseek-chat",
+  turns: 1,
+  toolCalls: 1,
+};
+/** 旧格式聚合行（agg 行本就无 dir 键，升级前后形态一致）。 */
+const A2_LEGACY_AGG = {
+  v: TREND_ROW_VERSION,
+  kind: "agg",
+  day: "2026-09-03",
+  provider: "deepseek",
+  model: "deepseek-chat",
+  input: 5000,
+  output: 800,
+  cacheRead: 120,
+  cacheWrite: 10,
+  calls: 30,
+  turns: 12,
+  toolCalls: 40,
+};
+
+{
+  // A2(a)：旧格式 fixture 重建（真实升级场景）——过去日聚合分片（权威）+ 当日旧版
+  // 明细分片（无 dir 键的 detail/counter 行）：升级后首次启动不抛错；两日内存聚合
+  // 数值与写入值一致；当日旧 detail 分片逐字节不变（rebuild 不重写 = round-trip
+  // 结构性安全；dispose 最终刷盘同样不触碰 persisted 行）。过去日同日并存的残留
+  // 明细分片（聚合分片 + 残留明细）走聚合权威自愈删除，残留行不双算——一并覆盖。
+  const root = mkdtempSync(join(tmpdir(), "dou-trend-a2-rebuild-"));
+  const aggDir = join(root, "agg");
+  const detDir = join(root, "details");
+  mkdirSync(aggDir, { recursive: true });
+  mkdirSync(detDir, { recursive: true });
+  const today = dayKey(T0); // 2026-09-04
+  const detFile = join(detDir, `${today}.jsonl`);
+  const aggFile = join(aggDir, "2026-09-03.jsonl");
+  const todayDetail = { ...A2_LEGACY_DETAIL, time: T0 - HOUR, day: today };
+  const todayCounter = { ...A2_LEGACY_COUNTER, time: T0 - HOUR, day: today };
+  const legacyDetailBytes = `${JSON.stringify(todayDetail)}\n${JSON.stringify(todayCounter)}\n`;
+  writeFileSync(detFile, legacyDetailBytes);
+  writeFileSync(aggFile, `${JSON.stringify(A2_LEGACY_AGG)}\n`);
+  // 同日并存形态：过去日明细分片为压实残留（升级前崩溃于写聚合后、删明细前），
+  // 聚合权威 → start 自愈删除（残留明细不双算；残留行同样无 dir 键）
+  const residueFile = join(detDir, "2026-09-03.jsonl");
+  writeFileSync(residueFile, `${JSON.stringify(A2_LEGACY_DETAIL)}\n${JSON.stringify(A2_LEGACY_COUNTER)}\n`);
+
+  const warns = [];
+  const tracker = await TrendTracker.start({ root, now: () => T0, flushDebounceMs: 60000, warn: (m) => warns.push(m) });
+  const bPast = tracker.buckets().find((d) => d.day === "2026-09-03");
+  assert.ok(bPast, "旧格式聚合分片重建出过去日内存桶（启动不抛错）");
+  const cellPast = bPast.providers.find((p) => p.provider === "deepseek" && p.model === "deepseek-chat").cell;
+  assert.deepEqual(
+    { input: cellPast.input, output: cellPast.output, cacheRead: cellPast.cacheRead, cacheWrite: cellPast.cacheWrite, calls: cellPast.calls, turns: cellPast.turns, toolCalls: cellPast.toolCalls },
+    { input: 5000, output: 800, cacheRead: 120, cacheWrite: 10, calls: 30, turns: 12, toolCalls: 40 },
+    "过去日 agg 权威行数值与写入值一致",
+  );
+  const cellToday = tracker.buckets().find((d) => d.day === today).providers[0].cell;
+  assert.deepEqual(
+    { input: cellToday.input, output: cellToday.output, cacheRead: cellToday.cacheRead, cacheWrite: cellToday.cacheWrite, calls: cellToday.calls, turns: cellToday.turns, toolCalls: cellToday.toolCalls },
+    { input: 1200, output: 300, cacheRead: 45, cacheWrite: 6, calls: 1, turns: 1, toolCalls: 1 },
+    "当日旧格式明细/计数行重建数值与写入值一致",
+  );
+  assert.deepEqual(warns, [], "旧格式行（无 dir 键）全量通过校验，无坏行告警");
+  assert.equal(existsSync(residueFile), false, "过去日残留明细分片被聚合权威自愈删除（不双算）");
+  assert.equal(readFileSync(detFile, "utf8"), legacyDetailBytes, "当日旧 detail 分片文件逐字节不变（rebuild 不重写）");
+  assert.equal(readFileSync(aggFile, "utf8"), `${JSON.stringify(A2_LEGACY_AGG)}\n`, "旧 agg 分片文件不变（persisted 行 flush 不重写）");
+  await tracker.dispose();
+  assert.equal(readFileSync(detFile, "utf8"), legacyDetailBytes, "dispose 最终刷盘后旧 detail 分片仍逐字节不变");
+}
+
+{
+  // A2(b)：自愈压实路径——过去日明细无聚合分片（旧格式行无 dir 键）→ start 触发自愈，
+  // 新写聚合分片数值正确、明细分片已删（该路径本来就会重写，断言重写产物而非原文件保留）。
+  const root = mkdtempSync(join(tmpdir(), "dou-trend-a2-heal-"));
+  const aggDir = join(root, "agg");
+  const detDir = join(root, "details");
+  mkdirSync(detDir, { recursive: true });
+  writeFileSync(join(detDir, "2026-09-03.jsonl"), `${JSON.stringify(A2_LEGACY_DETAIL)}\n${JSON.stringify(A2_LEGACY_COUNTER)}\n`);
+  const warns = [];
+  const tracker = await TrendTracker.start({ root, now: () => T0, flushDebounceMs: 60000, warn: (m) => warns.push(m) });
+  const b = tracker.buckets().find((d) => d.day === "2026-09-03");
+  assert.ok(b, "旧格式明细重建进内存（不抛错）");
+  const cell = b.providers.find((p) => p.provider === "deepseek" && p.model === "deepseek-chat").cell;
+  assert.equal(cell.calls, 1, "明细权威：calls = 明细行数");
+  assert.equal(cell.turns, 1, "counter 行 turns 重建");
+  assert.equal(cell.toolCalls, 1, "counter 行 toolCalls 重建");
+  assert.equal(cell.input, 1200, "input 与明细值一致");
+  assert.equal(cell.output, 300, "output 与明细值一致");
+  assert.equal(cell.cacheRead, 45, "cacheRead 与明细值一致");
+  assert.equal(cell.cacheWrite, 6, "cacheWrite 与明细值一致");
+  assert.equal(existsSync(join(aggDir, "2026-09-03.jsonl")), true, "自愈压实写出聚合分片");
+  assert.equal(existsSync(join(detDir, "2026-09-03.jsonl")), false, "明细分片压实后删除");
+  const aggRows = (await new TrendStore({ root }).readAggShard("2026-09-03"));
+  assert.equal(aggRows.length, 1, "压实产物恰一行（同 provider+model 折叠）");
+  assert.deepEqual(
+    { input: aggRows[0].input, output: aggRows[0].output, cacheRead: aggRows[0].cacheRead, cacheWrite: aggRows[0].cacheWrite, calls: aggRows[0].calls, turns: aggRows[0].turns, toolCalls: aggRows[0].toolCalls },
+    { input: 1200, output: 300, cacheRead: 45, cacheWrite: 6, calls: 1, turns: 1, toolCalls: 1 },
+    "压实产物数值与明细写入值一致（自愈不丢数不补造）",
+  );
+  assert.deepEqual(warns, [], "旧格式行全量通过校验，无坏行告警");
+  await tracker.dispose();
+}
+
+{
+  // A2(c)：round-trip——旧格式行经 rebuild → flushNow → 重读分片：行数不增不减、
+  // 原字段值不变、detail/counter 行不被补造 dir 键（当日明细重建路径）。
+  const root = mkdtempSync(join(tmpdir(), "dou-trend-a2-roundtrip-"));
+  const detDir = join(root, "details");
+  mkdirSync(detDir, { recursive: true });
+  const detFile = join(detDir, `${dayKey(T0)}.jsonl`); // 当日明细（rebuild(true) 路径）
+  const legacyTodayDetail = { ...A2_LEGACY_DETAIL, time: T0 - HOUR, day: dayKey(T0) };
+  const legacyTodayCounter = { ...A2_LEGACY_COUNTER, time: T0 - HOUR, day: dayKey(T0) };
+  const legacyTodayDetail2 = { ...A2_LEGACY_DETAIL, time: T0 - 2 * HOUR, day: dayKey(T0), session: "旧会话-乙", turn: 1, step: 1, input: 50, output: 20, cacheRead: 3, cacheWrite: 4 };
+  const originalBytes = `${JSON.stringify(legacyTodayDetail)}\n${JSON.stringify(legacyTodayCounter)}\n${JSON.stringify(legacyTodayDetail2)}\n`;
+  writeFileSync(detFile, originalBytes);
+  const tracker = await TrendTracker.start({ root, now: () => T0, flushDebounceMs: 60000 });
+  const cell = tracker.buckets().find((d) => d.day === dayKey(T0)).providers[0].cell;
+  assert.equal(cell.calls, 2, "内存重建 calls = 旧明细行数");
+  assert.equal(cell.turns, 1, "内存重建 turns");
+  assert.equal(cell.toolCalls, 1, "内存重建 toolCalls");
+  assert.equal(cell.input, 1250, "内存重建 input 求和（1200+50）");
+  assert.equal(cell.output, 320, "内存重建 output 求和（300+20）");
+  await tracker.flushNow();
+  assert.equal(readFileSync(detFile, "utf8"), originalBytes, "flushNow 后分片逐字节不变（重建行 persisted=true 不二次落盘）");
+  const back = await new TrendStore({ root }).readDetailShard(dayKey(T0));
+  assert.equal(back.length, 3, "重读行数不增不减（3 行旧格式行全量读回）");
+  assert.deepEqual(
+    back.map((r) => ({ kind: r.kind, session: r.session, time: r.time, provider: r.provider, model: r.model, input: "input" in r ? r.input : undefined, turns: "turns" in r ? r.turns : undefined })),
+    [
+      { kind: "detail", session: "旧会话-甲", time: T0 - HOUR, provider: "deepseek", model: "deepseek-chat", input: 1200, turns: undefined },
+      { kind: "counter", session: "旧会话-甲", time: T0 - HOUR, provider: "deepseek", model: "deepseek-chat", input: undefined, turns: 1 },
+      { kind: "detail", session: "旧会话-乙", time: T0 - 2 * HOUR, provider: "deepseek", model: "deepseek-chat", input: 50, turns: undefined },
+    ],
+    "原字段值经读回不变（中文会话 id/数值逐字段一致）",
+  );
+  assert.ok(back.every((r) => !("dir" in r)), "旧格式行不被补造 dir 键（无 dir → 内存重建后落盘形态仍无 dir）");
+  await tracker.dispose();
+}
+
+{
+  // A2(d)：未知键容忍——detail 行附加未知字段 legacyFlag:"x" 不被拒绝、不抛错，
+  // 其余行正常重建（isValidShardRow 无键白名单遍历，未知键不参与校验 = 通过；
+  // 未知键随 JSON.parse 保留在行对象上，rebuild 只累加已知数值字段，无影响）。
+  const root = mkdtempSync(join(tmpdir(), "dou-trend-a2-unknown-"));
+  const detDir = join(root, "details");
+  mkdirSync(detDir, { recursive: true });
+  const withUnknown = { ...A2_LEGACY_DETAIL, legacyFlag: "x" };
+  writeFileSync(join(detDir, "2026-09-03.jsonl"), `${JSON.stringify(withUnknown)}\n${JSON.stringify(A2_LEGACY_COUNTER)}\n`);
+  const warns = [];
+  const tracker = await TrendTracker.start({ root, now: () => T0, flushDebounceMs: 60000, warn: (m) => warns.push(m) });
+  const cell = tracker.buckets().find((d) => d.day === "2026-09-03").providers[0].cell;
+  assert.equal(cell.calls, 1, "未知键行不拒绝：calls 正常重建");
+  assert.equal(cell.input, 1200, "未知键行数值正常重建");
+  assert.deepEqual(warns, [], "未知键行不触发坏行告警");
+  await tracker.dispose();
+}
+
+{
+  // A2 补充：dir 值域防御仍是有效防线（与「未知键容忍」正交）——dir 为空字符串/
+  // 非字符串时按坏行拒绝并告警，同分片合法行不受连坐（A1 校验语义不因 A2 放宽回退）。
+  const root = mkdtempSync(join(tmpdir(), "dou-trend-a2-dirguard-"));
+  const warns = [];
+  const store = new TrendStore({ root, warn: (m) => warns.push(m) });
+  mkdirSync(join(root, "details"), { recursive: true });
+  const good = { ...A2_LEGACY_DETAIL, dir: "proj" };
+  const badEmptyDir = { ...A2_LEGACY_DETAIL, session: "s-bad-1", dir: "" };
+  const badNumDir = { ...A2_LEGACY_DETAIL, session: "s-bad-2", dir: 7 };
+  writeFileSync(join(root, "details", "2026-09-03.jsonl"), [good, badEmptyDir, badNumDir].map((r) => JSON.stringify(r)).join("\n") + "\n");
+  const rows = await store.readDetailShard("2026-09-03");
+  assert.equal(rows.length, 1, "空串/非字符串 dir 按坏行拒绝（A1 值域防线不回退）");
+  assert.equal(rows[0].session, "旧会话-甲", "保留的是合法行");
+  assert.equal(warns.length, 2, "两个非法 dir 行均告警");
+}
+
 assert.equal(sumToken(null, 5), 5, "sumToken null+数字");
 assert.equal(sumToken(null, null), null, "sumToken null+null");
 console.log("unit-trend: all assertions passed");
