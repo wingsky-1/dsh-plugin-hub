@@ -306,7 +306,18 @@ export class TrendCollector {
     const tokens = parseTokens(d.chunk?.usage);
     let fold = state.folds.get(key);
     if (fold === undefined) {
-      fold = { retry: 1, finalized: false };
+      // #655：fold 可能已被 fold TTL 或 turn/end 清理，而定稿记忆 done 仍在（未被
+      // TREND_DONE_MAX 淘汰）。与 onMessage 的已定稿分支对称：无新 header = 同一调用的
+      // 重复/更新块 → 只校正 token、不重记调用；有新 header = 重试 → retry 从记忆值递增
+      // （不回落为 1 造成重号）。
+      const remembered = state.done.get(key);
+      if (remembered !== undefined && !state.headerSeen) {
+        if (tokens !== null) {
+          this.emit({ type: "correct", record: { session, turn, step, retry: remembered, tokens } });
+        }
+        return;
+      }
+      fold = { retry: remembered === undefined ? 1 : remembered + 1, finalized: false };
       state.folds.set(key, fold);
     } else if (fold.finalized) {
       if (!state.headerSeen) {

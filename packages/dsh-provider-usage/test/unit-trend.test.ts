@@ -1791,6 +1791,45 @@ const A2_LEGACY_AGG = {
   await tracker.dispose();
 }
 
+// ---------------------------------------------------------------- #655 fold 清理后重复记账
+
+{
+  // fold 被 fold TTL 清理后，同一 fold 键的迟到 usage 不得重复记账（与 onMessage 对称）。
+  // 真实数据形态：同一 (session,turn,step) 的 usage 间隔 13~19 分钟陆续到达，
+  // token 从 0/0 递增到真实值——修复前每次 fold 重建都多记一次 call。
+  let nowT = new Date(2026, 8, 8, 4, 22, 7).getTime();
+  const { emitted, send } = makeCollector(() => nowT);
+  const U = (input, output) => ev("assistant/chunk", { turn: 1, step: 9, chunk: { type: "usage", usage: { inputTokens: input, outputTokens: output } } }, nowT, 1);
+  send("s1", ev("request/header", HEADER("commandcode", "z-ai/glm-5.3-flash"), nowT, 0));
+  send("s1", U(0, 0));
+  nowT += 13 * 60_000; send("s1", U(0, 0));
+  nowT += 13 * 60_000; send("s1", U(0, 0));
+  nowT += 12 * 60_000; send("s1", U(118593, 41240));
+  assert.equal(callsOf(emitted).length, 1, "同一 fold 键只记一次调用（fold 被 TTL 清理后不重记）");
+  const corrects = correctsOf(emitted);
+  assert.equal(corrects.length, 3, "后续迟到 usage 走校正（不重记调用）");
+  assert.deepEqual(
+    corrects[2].tokens,
+    { input: 118593, output: 41240, cacheRead: null, cacheWrite: null },
+    "最后一次校正带真实 token（token 收敛到最新值）",
+  );
+}
+
+{
+  // 反例防线：fold 被清理后若出现新 header，同键 usage 仍按重试递增（不误判为重复块）。
+  let nowT = T0;
+  const { emitted, send } = makeCollector(() => nowT);
+  const U = (input, output) => ev("assistant/chunk", { turn: 1, step: 9, chunk: { type: "usage", usage: { inputTokens: input, outputTokens: output } } }, nowT, 1);
+  send("s1", ev("request/header", HEADER(), nowT, 0));
+  send("s1", U(10, 5));
+  nowT += 13 * 60_000;
+  send("s1", ev("request/header", HEADER(), nowT, 2)); // 重试边界：新 header
+  send("s1", U(20, 6));
+  const calls = callsOf(emitted);
+  assert.equal(calls.length, 2, "新 header 后的同键 usage 记为新一次调用（重试）");
+  assert.equal(calls[1].retry, 2, "retry 从定稿记忆递增为 2（不回落为 1 重号）");
+}
+
 assert.equal(sumToken(null, 5), 5, "sumToken null+数字");
 assert.equal(sumToken(null, null), null, "sumToken null+null");
 console.log("unit-trend: all assertions passed");
