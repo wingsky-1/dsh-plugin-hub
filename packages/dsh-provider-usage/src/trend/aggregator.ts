@@ -84,7 +84,7 @@ export class TrendAggregator {
   /**
    * #633 A3：day → dir → cell（目录维度日汇总内存态）。
    * 生命周期与 days 同步（复核 P1-1 统一口径）：apply 实时累加 → rebuild 的
-   * dir 汇总行与明细/计数行（有 dir 键者）双向读回 → dropPending 不删（与
+   * dir 汇总行与明细/计数行（有 dir 键者）双向读回 → 压实消费不删（与
    * cells 同策略，跨天后目录查询面历史柱不失——dirRows 纯内存无分片回读）
    * → prune 同步收缩（pruneDays 联动删除）。
    * 权威口径（复核 P1-1）：dirDays 是目录维度的唯一事实源——apply 平行累加 +
@@ -465,97 +465,98 @@ export class TrendAggregator {
   }
 
   /**
-   * 取走给定日的目录维度未压实行快照（#633 A4 压实素材，纯读不消费）。
-   * flush 压实两步式安全序：纯计算行 → IO → 成功后才 dropPending(day)（联动消费）。
-   * 同源折算：与 rollupRowsOf 遍历同一批 pending 行，按 row.dir 分桶；dir 键缺失的
-   * 行（旧格式/无归属）不产 dir 行——目录维度为加性可选键，缺键 = 无 dir 事实可
-   * 折叠（未识别桶由 collector 显式归桶产生，不在折算侧补造；旧格式日压实产物
-   * 与 #633 前形态一致，A2「旧格式零变化」口径）。
+   * 给定日的目录维度折算行（读侧投影；#633 A4）。
+   * 实现委托 {@link rollupSnapshot}——与压实路径共用同一份折算逻辑，保证「读侧
+   * 看到的行」与「压实写入的行」永远同源（单一事实源，防两套实现漂移）。
    */
   takeDirUnpersisted(day: string): TrendDirRow[] {
-    const byDir = new Map<string, TrendDirRow>();
-    for (const p of this.pending) {
-      if (p.row.day !== day) continue;
-      if (p.row.dir === undefined) continue;
-      const dir = p.row.dir;
-      let agg = byDir.get(dir);
-      if (agg === undefined) {
-        agg = { v: TREND_ROW_VERSION, kind: "dir", day, dir, input: null, output: null, cacheRead: null, cacheWrite: null, calls: 0, turns: 0, toolCalls: 0 };
-        byDir.set(dir, agg);
-      }
-      if (p.row.kind === "detail") {
-        agg.calls += 1;
-        agg.input = sumToken(agg.input, p.row.input);
-        agg.output = sumToken(agg.output, p.row.output);
-        agg.cacheRead = sumToken(agg.cacheRead, p.row.cacheRead);
-        agg.cacheWrite = sumToken(agg.cacheWrite, p.row.cacheWrite);
-      } else {
-        agg.turns += p.row.turns;
-        agg.toolCalls += p.row.toolCalls;
-      }
-    }
-    return [...byDir.values()];
+    return this.rollupSnapshot(day).dirRows;
   }
 
   /**
-   * 日切压实（纯计算）：把给定日的明细/计数行折叠为聚合行返回，**不从 pending 移除**。
-   * 供 flush 压实路径「先算 → IO → 成功后才消费」的安全序使用（IO 失败内存行保留）。
-   * cells 不动（apply 时已累加，压实只做落盘形态转换，绝不二次累加）。
+   * 压实快照（#654）：一次遍历同时产出「该日 pending 行的身份快照」与「同源折算的
+   * agg / dir 行」。
+   *
+   * 为什么必须同源：压实是「折算 → 落盘 → 消费」三段式，中间隔着若干 await。若消费
+   * 时按日键重新查询（旧 dropPending(day) 的实现），await 期间新到达的同日行既没被
+   * 折算、也没落盘，却会被连带删除（永久丢行 + 内存/磁盘漂移）。这里返回的 consumed
+   * 与 aggRows/dirRows 出自同一批行，调用方持久化成功后只消费 consumed——新到达的行
+   * 留待下一轮压实。
+   *
+   * 折算口径与 #633 A4 一致：dir 键缺失的行只进 agg 行（目录维度为加性可选键，
+   * 缺键 = 无 dir 事实可折叠，不在折算侧补造）。cells/dirDays 不动（apply 时已累加，
+   * 压实只做落盘形态转换，绝不二次累加）。
    */
-  rollupRowsOf(day: string): TrendAggRow[] {
-    const byKey = new Map<string, TrendAggRow>();
+  rollupSnapshot(day: string): { consumed: PendingEntry[]; aggRows: TrendAggRow[]; dirRows: TrendDirRow[] } {
+    const consumed: PendingEntry[] = [];
+    const aggByKey = new Map<string, TrendAggRow>();
+    const dirByKey = new Map<string, TrendDirRow>();
     for (const p of this.pending) {
       if (p.row.day !== day) continue;
+      consumed.push(p);
       const row = p.row;
-      const key = `${row.provider}\u0000${row.model ?? ""}`;
-      let agg = byKey.get(key);
+      const aggKey = `${row.provider}\u0000${row.model ?? ""}`;
+      let agg = aggByKey.get(aggKey);
       if (agg === undefined) {
-        agg = {
-          v: TREND_ROW_VERSION,
-          kind: "agg",
-          day,
-          provider: row.provider,
-          model: row.model,
-          input: null,
-          output: null,
-          cacheRead: null,
-          cacheWrite: null,
-          calls: 0,
-          turns: 0,
-          toolCalls: 0,
-        };
-        byKey.set(key, agg);
+        agg = emptyAggRow(day, row.provider, row.model);
+        aggByKey.set(aggKey, agg);
+      }
+      let dirAgg: TrendDirRow | undefined;
+      if (row.dir !== undefined) {
+        dirAgg = dirByKey.get(row.dir);
+        if (dirAgg === undefined) {
+          dirAgg = emptyDirRow(day, row.dir);
+          dirByKey.set(row.dir, dirAgg);
+        }
       }
       if (row.kind === "detail") {
-        agg.calls += 1;
-        agg.input = sumToken(agg.input, row.input);
-        agg.output = sumToken(agg.output, row.output);
-        agg.cacheRead = sumToken(agg.cacheRead, row.cacheRead);
-        agg.cacheWrite = sumToken(agg.cacheWrite, row.cacheWrite);
+        addDetailTo(agg, row);
+        if (dirAgg !== undefined) addDetailTo(dirAgg, row);
       } else {
-        agg.turns += row.turns;
-        agg.toolCalls += row.toolCalls;
+        addCounterTo(agg, row.turns, row.toolCalls);
+        if (dirAgg !== undefined) addCounterTo(dirAgg, row.turns, row.toolCalls);
       }
     }
-    return [...byKey.values()];
+    return { consumed, aggRows: [...aggByKey.values()], dirRows: [...dirByKey.values()] };
   }
 
   /**
-   * 消费给定日的 pending 行（压实 IO 全部成功后调用；cells 不动）。
-   * 复核 P1-1：dirDays 不再联动删除（含过去日）——目录查询面（dirRows 纯内存
-   * 快照）无分片回读，删桶 = 跨天历史柱全 null（常驻运行期实测 Day0 空柱）；
-   * 压实事实已固化在 dir 分片 + dirDays，pending 行删除只影响明细/计数素材，
-   * dir 维度不丢（与 cells 同策略：只随 pruneDays 收缩）。today 参数保留
-   * （调用方语义锚点 + 与 rollupDay 透传约定兼容；当前无消费逻辑）。
+   * 给定日的折算聚合行（读侧投影；纯读不消费）。
+   * 实现委托 {@link rollupSnapshot}——与压实路径共用同一份折算逻辑（单一事实源）。
+   */
+  rollupRowsOf(day: string): TrendAggRow[] {
+    return this.rollupSnapshot(day).aggRows;
+  }
+
+  /**
+   * 按身份消费 pending 行（压实 IO 全部成功后调用；#654）。
+   * 只删除传入快照（{@link rollupSnapshot} 的 consumed）内的 entry——await 期间新到达
+   * 的同日行不在快照内，保留到下一轮压实。空数组为 no-op，重复 entry 幂等。
+   *
+   * cells/dirDays 不动（压实只做落盘形态转换，绝不二次累加）。复核 P1-1：dirDays 亦
+   * 不随消费联动删除——目录查询面（dirRows 纯内存快照）无分片回读，删桶 = 跨天历史
+   * 柱全 null；压实事实已固化在 dir 分片 + dirDays，只随 pruneDays 收缩。
+   */
+  consume(entries: readonly PendingEntry[]): void {
+    if (entries.length === 0) return;
+    const doomed = new Set(entries);
+    this.pending = this.pending.filter((p) => !doomed.has(p));
+  }
+
+  /**
+   * 按日键消费 pending 行（兼容面）。
+   * @deprecated #654：按日键删除会在压实 await 窗口内连带删除新到达的同日行（丢行），
+   * 不再用于压实路径。新代码请用 {@link rollupSnapshot} + {@link consume}（按身份消费）；
+   * 本方法保留仅为不破坏已发布的公开面，实现已委托为「按日取快照后按身份消费」。
    */
   dropPending(day: string, today: string): void {
     void today;
-    this.pending = this.pending.filter((p) => p.row.day !== day);
+    this.consume(this.pending.filter((p) => p.row.day === day));
   }
 
   /**
    * 裁剪内存日桶（prune 同步收缩，长期运行不重启时 days 有界；cells 随桶整体丢弃）。
-   * #633 复核 M1：dirDays 联动删除（与 dropPending 对称，生命周期与 days 一致；
+   * #633 复核 M1：dirDays 联动删除（与压实消费对称，生命周期与 days 一致；
    * 独立遍历不依赖 days 键集，纯 dir 日桶（无 agg 行的防御形态）也能清）。
    */
   pruneDays(beforeDay: string): number {
@@ -574,17 +575,16 @@ export class TrendAggregator {
 
   /**
    * 日切压实（一步式）：折叠为聚合行返回并从 pending 移除。
-   * 仅供启动自愈等「无并发 IO 失败窗口」的同步场景使用；flush 压实路径
-   * 一律走 rollupRowsOf + dropPending 两步式（IO 失败内存行保留，防丢数）。
+   * 仅供启动自愈等「无并发 IO 失败窗口」的同步场景使用；flush 压实路径一律走
+   * rollupSnapshot + consume 两步式（IO 失败内存行保留，防丢数）。
    * #633 A4：返回混存行——agg 行在前、dir 行在后（writeAggDay 写入约定）。
-   * today 由调用方传入（与 TrendTracker.rebuildFromDisk 的注入时钟同源），
-   * 透传 dropPending（复核 P1-1 后不再影响 dirDays 生命周期，参数保留）。
+   * today 参数保留（与调用方注入时钟同源的语义锚点；消费已不依赖日键，见 consume）。
    */
   rollupDay(day: string, today: string): Array<TrendAggRow | TrendDirRow> {
-    const rows = this.rollupRowsOf(day);
-    const dirRows = this.takeDirUnpersisted(day);
-    this.dropPending(day, today);
-    return [...rows, ...dirRows];
+    void today;
+    const { consumed, aggRows, dirRows } = this.rollupSnapshot(day);
+    this.consume(consumed);
+    return [...aggRows, ...dirRows];
   }
 
   /** 从内存 pending 移除给定日已全部落盘的登记（重启自愈删除明细分片后同步内存视图）。 */
@@ -866,6 +866,56 @@ function firstDayKeyOf(days: Map<string, unknown>): string | null {
     if (first === null || day < first) first = day;
   }
   return first;
+}
+
+/** 空聚合行（压实折算起点；字段与 mergeCell 消费的 agg 行同构）。 */
+function emptyAggRow(day: string, provider: string, model: string | null): TrendAggRow {
+  return {
+    v: TREND_ROW_VERSION,
+    kind: "agg",
+    day,
+    provider,
+    model,
+    input: null,
+    output: null,
+    cacheRead: null,
+    cacheWrite: null,
+    calls: 0,
+    turns: 0,
+    toolCalls: 0,
+  };
+}
+
+/** 空目录汇总行（#633 A4；与 agg 行十数值字段同构，仅键换成 dir）。 */
+function emptyDirRow(day: string, dir: string): TrendDirRow {
+  return {
+    v: TREND_ROW_VERSION,
+    kind: "dir",
+    day,
+    dir,
+    input: null,
+    output: null,
+    cacheRead: null,
+    cacheWrite: null,
+    calls: 0,
+    turns: 0,
+    toolCalls: 0,
+  };
+}
+
+/** 明细行并入聚合/目录汇总行（两者字段同构，同函数复用；null-aware 求和）。 */
+function addDetailTo(agg: TrendAggRow | TrendDirRow, row: TrendDetailRow): void {
+  agg.calls += 1;
+  agg.input = sumToken(agg.input, row.input);
+  agg.output = sumToken(agg.output, row.output);
+  agg.cacheRead = sumToken(agg.cacheRead, row.cacheRead);
+  agg.cacheWrite = sumToken(agg.cacheWrite, row.cacheWrite);
+}
+
+/** 计数行并入聚合/目录汇总行（同上，同函数复用）。 */
+function addCounterTo(agg: TrendAggRow | TrendDirRow, turns: number, toolCalls: number): void {
+  agg.turns += turns;
+  agg.toolCalls += toolCalls;
 }
 
 /** 聚合行并入 cell（重建用；null-aware。agg 与 dir 汇总行十数值字段同构，同函数复用）。 */
