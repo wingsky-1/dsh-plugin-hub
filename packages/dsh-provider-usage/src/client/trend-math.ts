@@ -76,7 +76,8 @@ export function dirStackId(dir: unknown): string {
 export function dirDisplayLabel(dir: unknown): string {
   if (typeof dir !== "string" || dir.length === 0) return t("trendDirUnidentified");
   if (dir === DIR_UNIDENTIFIED) return t("trendDirUnidentified");
-  const cleaned = dir.replace(/[\u0000-\u001f\u007f]/g, "");
+  // 剥控制字符与宿主 sanitizeDirName 同口径（C0 + DEL + C1：0x00-1F / 0x7F / 0x80-9F）
+  const cleaned = dir.replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
   if (cleaned.length === 0 || cleaned.trim().length === 0) return t("trendDirUnidentified");
   return cleaned;
 }

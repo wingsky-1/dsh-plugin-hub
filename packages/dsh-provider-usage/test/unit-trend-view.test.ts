@@ -41,7 +41,13 @@ const {
   seriesColor,
   stackedBarsSvg,
   stackedAreasSvg,
+  dirStackId,
+  dirDisplayLabel,
+  dirNeedsScopeNote,
 } = math;
+
+// #633 分片 b2：i18n 未装配时 t() 回落 key 本体（shared/client/i18n.js 约定），
+// 本文件所有未识别展示断言均以 key 字面为预期值（运行时装配后即「未识别」译文）。
 
 test("fmtCompact：紧凑档位与零 usage null 语义", () => {
   assert.equal(fmtCompact(null), "-");
@@ -183,4 +189,49 @@ test("SVG 注入面：受信外文本不进 SVG（M2 的 <title> 注入面在 M2
   assert.ok(!svg.includes("onerror"), "事件属性 payload 不存在");
   const areaSvg = stackedAreasSvg({ bars, gran: "day", ticks: niceTicks(10).ticks, stackOrder: [evil] });
   assert.ok(!areaSvg.includes("<img") && !areaSvg.includes("onerror"), "面积图同构");
+});
+
+// ---------------------------------------------------------------- #633 分片 b2 B2/B3：目录维度客户端防御（dirStackId / dirDisplayLabel / dirNeedsScopeNote）
+
+test("#633 B3 dirStackId：异常目录值防御归未识别桶（不渲染空标签）", () => {
+  assert.equal(dirStackId("(unidentified)"), "(unidentified)", "未识别桶键原样");
+  assert.equal(dirStackId("dsh-plugin-hub"), "dsh-plugin-hub", "具名目录原样");
+  assert.equal(dirStackId(null), "(unidentified)", "null 归未识别");
+  assert.equal(dirStackId(undefined), "(unidentified)", "undefined 归未识别");
+  assert.equal(dirStackId(42), "(unidentified)", "非字符串归未识别");
+  assert.equal(dirStackId(""), "(unidentified)", "空串归未识别（杜绝空标签）");
+  assert.equal(dirStackId("   "), "   ", "纯空白串键保留（id 唯一性；展示层经 dirDisplayLabel 归未识别）");
+});
+
+test("#633 B3 dirDisplayLabel：控制字符剥除 + 空值回退未识别展示", () => {
+  assert.equal(dirDisplayLabel("proj"), "proj", "具名目录原样展示");
+  assert.equal(dirDisplayLabel("pro\u0007ject"), "project", "C0 控制字符剥除（DOM 不出现控制字符）");
+  assert.equal(dirDisplayLabel("pro\u009bject"), "project", "C1 控制字符剥除");
+  assert.equal(dirDisplayLabel("a\u001fb\u007fc"), "abc", "多控制字符混合剥除");
+  assert.equal(dirDisplayLabel(""), "trendDirUnidentified", "空串 → 未识别展示（不得渲染空标签）");
+  assert.equal(dirDisplayLabel("\u0007\u001f"), "trendDirUnidentified", "剥后为空 → 未识别展示");
+  assert.equal(dirDisplayLabel("   "), "trendDirUnidentified", "纯空白 → 未识别展示");
+  assert.equal(dirDisplayLabel(null), "trendDirUnidentified", "null → 未识别展示");
+  assert.equal(dirDisplayLabel(undefined), "trendDirUnidentified", "undefined → 未识别展示");
+});
+
+test("#633 B2 dirDisplayLabel：未识别桶恒有标签 + dirNeedsScopeNote 口径注明", () => {
+  assert.equal(dirDisplayLabel("(unidentified)"), "trendDirUnidentified", "未识别桶 → 「未识别」人话（恒出现为有标签条目，不空串不消失）");
+  assert.equal(dirNeedsScopeNote("(unidentified)"), true, "未识别桶注明口径（title=无目录信息的会话）");
+  assert.equal(dirNeedsScopeNote("dsh-plugin-hub"), false, "具名目录不带口径注释");
+  assert.equal(dirNeedsScopeNote(""), true, "异常空值同归未识别 → 注明口径");
+  assert.equal(dirNeedsScopeNote(null), true, "null 同上");
+});
+
+test("#633 B2/B3 展示语义与值语义分离：dirStackId 与 dirDisplayLabel 组合行为", () => {
+  // 筛选值/图例 id 用原始键（dirStackId）；展示文本用 dirDisplayLabel——
+  // 未识别桶筛选参数仍传 "(unidentified)"（宿主桶键），UI 呈现「未识别」。
+  const key = dirStackId(null);
+  assert.equal(key, "(unidentified)", "值语义：null 归未识别桶键（筛选参数可直达宿主）");
+  assert.equal(dirDisplayLabel(key), "trendDirUnidentified", "展示语义：同键呈现「未识别」");
+  // 超长目录名（B3 >80 字符）：展示层不截断（宿主出口已按 C2 口径 basename+截断；
+  // 客户端防御仅剥控制字符与空值回退——不截断不暗中合并目录桶，与宿主数据层一致）
+  const long = "d".repeat(120);
+  assert.equal(dirDisplayLabel(long), long, "超长键原样展示（不截断不合并，宿主出口负责口径）");
+  assert.equal(dirStackId(long), long, "超长键值语义原样（独立目录桶，不并入未识别）");
 });
