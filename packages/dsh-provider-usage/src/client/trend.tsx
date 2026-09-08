@@ -39,6 +39,9 @@ import {
   dirStackId,
   dirDisplayLabel,
   dirNeedsScopeNote,
+  trendRequestParams,
+  shouldShowDirSelect,
+  shouldShowByModel,
   type RenderBar,
   type TrendGran,
 } from "./trend-math.js";
@@ -182,14 +185,10 @@ export function TrendSection(): React.ReactElement {
     let alive = true;
     setFailed(false);
     setLoading(true);
-    const params = new URLSearchParams({ granularity: gran, metric, n: String(effectiveRange) });
-    // #633 分片 b2（B1）：目录筛选参数——选定目录 → dir=<键>（过滤面，宿主返回该
-    // 目录子集 + dirs 图例）；「全部目录」→ byDir=1（全目录拆段面，多目录可区分）。
-    // 未选目录且无 dir 面参数 = 现状行为零变化（不传任何目录参数）。
-    if (dirFilter !== "") params.set("dir", dirFilter);
-    else params.set("byDir", "1");
-    if (provider !== "") params.set("provider", provider);
-    if (byModel) params.set("byModel", "1");
+    // #633 复核闸 P0：参数构造封装为纯函数 trendRequestParams——目录过滤面
+    // （dir=<键>）、全目录拆段面（byDir=1）、纯 provider 面（零目录参数）三态互斥，
+    // 杜绝「provider × 目录」交叉面请求（目录面无 provider 数据，交叉必空）。
+    const params = trendRequestParams(gran, metric, effectiveRange, provider, byModel, dirFilter, effectiveRange);
     fetchTimeout(`${TREND_URL}?${params.toString()}`, { headers: { Accept: "application/json" }, cache: "no-store" })
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -212,8 +211,10 @@ export function TrendSection(): React.ReactElement {
   const hasData = data !== null && data.series.some((p) => p.total !== null);
   const summary = data?.summary ?? null;
 
-  // #633 分片 b2（B1）：目录维度生效判定——「全部目录」请求（byDir=1 回显）、
-  // 目录过滤请求（dirFilter 非空）或宿主目录面响应（dirs 图例非空）。
+  // #633 分片 b2（B1）：目录维度生效判定——目录过滤请求（dirFilter 非空）、宿主
+  // 目录面回显（byDir=1 / dirs 图例非空）。请求三态互斥（P0）后 provider 面响应
+  // 不再携带 byDir/dirs，dirMode 仅在目录维度真实生效时为真（viewSeries 归一、
+  // 汇总卡/图例/tooltip 的目录分支据此分面）。
   const dirMode = data !== null && (data.byDir === true || dirFilter !== "" || (data.dirs?.length ?? 0) > 0);
   // 目录面归一（B3 客户端防御）：parts[].provider（承载目录键）统一经 dirStackId
   // ——非字符串/空值归未识别桶，后续 stackOrder/renderBars/tooltip/图例零特殊分支，
@@ -347,6 +348,7 @@ export function TrendSection(): React.ReactElement {
           onChange={(e: unknown) => {
             const value = (e as { target: { value: string } }).target.value;
             setProvider(value);
+            setDirFilter(""); // 两维互斥联动（P0）：选适配器即退出目录面
             if (value === "") setByModel(false);
             setHidden(new Set());
             setTip(null);
@@ -360,15 +362,17 @@ export function TrendSection(): React.ReactElement {
         </select>
         {/* #633 分片 b2（B1）：目录筛选下拉——「全部目录」（byDir 全目录拆段面）+
             各目录 + 未识别桶（dirs 数据源；与既有 metric/adapter 控件同级同风格 select）。
-            目录面与 provider 面互斥（dir 行无 provider 关联）：目录生效时隐藏 provider
-            控件，防「目录 × provider」交叉出空面误读。 */}
-        {dirMode ? null : (
+            可见性 = shouldShowDirSelect（未选适配器恒可见；P0①修复：旧渲染条件 dirMode
+            恒真致下拉仅加载瞬间闪现不可达）。选目录即清适配器（两维互斥联动），
+            交叉面在请求参数层已被 trendRequestParams 杜绝。 */}
+        {shouldShowDirSelect(provider) ? (
           <select
             style={selectStyle}
             value={dirFilter}
             aria-label={t("trendDirLabel")}
             onChange={(e: unknown) => {
               setDirFilter((e as { target: { value: string } }).target.value);
+              setProvider(""); // 两维互斥联动（P0）：选目录即退回「全部适配器」
               setHidden(new Set());
               setTip(null);
             }}
@@ -380,8 +384,8 @@ export function TrendSection(): React.ReactElement {
               return <option key={key} value={key}>{dirDisplayLabel(key)}</option>;
             })}
           </select>
-        )}
-        {provider !== "" && !dirMode ? (
+        ) : null}
+        {shouldShowByModel(provider, dirFilter) ? (
           <label style={{ fontSize: 12, display: "inline-flex", alignItems: "center", gap: 4 }}>
             <input
               type="checkbox"

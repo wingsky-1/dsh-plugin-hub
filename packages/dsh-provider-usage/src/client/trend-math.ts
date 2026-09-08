@@ -90,6 +90,37 @@ export function dirNeedsScopeNote(dir: unknown): boolean {
   return dirDisplayLabel(dir) === t("trendDirUnidentified");
 }
 
+// ---------------------------------------------------------------- 目录/适配器两维互斥（#633 复核闸 P0）
+
+/**
+ * /trend 请求参数构造（从 trend.tsx useEffect 抽出的纯函数；含两维三态互斥）：
+ * - dirFilter 非空 → dir=<键>（目录过滤面，宿主返回该目录子集 + dirs 图例）；
+ * - 否则 provider 为空 → byDir=1（「全部目录」全目录拆段面，多目录可区分）；
+ * - 否则（adapter 过滤，含 byModel）→ 纯 provider 面请求，零目录参数。
+ * 两维数据面互斥：目录面无 provider 数据，provider=X × byDir=1 交叉必空——
+ * 参数层三态杜绝交叉面发出（渲染层控件隐藏只是第二道防线）。
+ * n 键写入值取 range（组件解析后的生效档位；现调用点 n 与 range 同源
+ * effectiveRange 恒等传入，签名保留「请求意图 / 生效档位」双分位）。
+ */
+export function trendRequestParams(gran: string, metric: string, n: number, provider: string, byModel: boolean, dirFilter: string, range: number): URLSearchParams {
+  const params = new URLSearchParams({ granularity: gran, metric, n: String(range) });
+  if (dirFilter !== "") params.set("dir", dirFilter);
+  else if (provider === "") params.set("byDir", "1");
+  if (provider !== "") params.set("provider", provider);
+  if (byModel) params.set("byModel", "1");
+  return params;
+}
+
+/** 目录下拉可见性：仅「全部适配器」时可见（adapter 过滤面隐藏——目录面无 provider 关联）。 */
+export function shouldShowDirSelect(provider: string): boolean {
+  return provider === "";
+}
+
+/** byModel checkbox 可见性：adapter 过滤且未选目录时可见（目录过滤面无 provider/model 细分）。 */
+export function shouldShowByModel(provider: string, dirFilter: string): boolean {
+  return provider !== "" && dirFilter === "";
+}
+
 /**
  * 范围档位（客户端与宿主 clamp 同一套口径；留存按「天」裁、桶数与天数是两种口径）：
  * cap = day→min(retention, 90)、week→⌈retention/7⌉、month→⌈retention/30⌉。

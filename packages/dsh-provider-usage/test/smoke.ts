@@ -2099,9 +2099,18 @@ console.log("[smoke] #503 trend 挂接 + /trend 集成断言全部通过 ✓");
   // B1：趋势面板目录筛选控件存在（select + dirs 数据源 + 全部目录/byDir 请求面）
   assert.ok(trendSource.includes('aria-label={t("trendDirLabel")}'), "趋势面板存在目录筛选下拉（aria-label 哨兵）");
   assert.ok(trendSource.includes("trendDirAll"), "目录下拉首项「全部目录」");
-  assert.ok(trendSource.includes('params.set("dir", dirFilter)'), "选定目录 → 请求带 dir 参数");
-  assert.ok(trendSource.includes('params.set("byDir", "1")'), "全部目录 → byDir=1 全目录拆段面");
   assert.ok(trendSource.includes("dirStackId"), "目录段 id 经 dirStackId 防御归一（异常值不进渲染面）");
+  // #633 复核闸 P0：请求参数三态互斥封装为 trend-math.trendRequestParams（断言锚随实现下沉）
+  assert.ok(mathSource.includes("export function trendRequestParams"), "/trend 请求参数构造为纯函数（P0 交叉面杜绝）");
+  assert.ok(mathSource.includes('params.set("dir", dirFilter)'), "选定目录 → 请求带 dir 参数");
+  assert.ok(mathSource.includes('else if (provider === "") params.set("byDir", "1")'), "全部目录 → byDir=1（三态互斥：adapter 过滤面零目录参数）");
+  // P0①目录下拉可达性：渲染条件改状态真值（shouldShowDirSelect，未选适配器恒可见）；
+  // 旧条件 dirMode 恒真致下拉仅加载瞬间闪现——负向断言防回归
+  assert.ok(trendSource.includes("shouldShowDirSelect(provider)"), "目录下拉可见性 = shouldShowDirSelect（未选适配器恒可见）");
+  assert.ok(trendSource.includes("shouldShowByModel(provider, dirFilter)"), "byModel checkbox 可见性 = shouldShowByModel（adapter 过滤且未选目录）");
+  assert.ok(!trendSource.includes("dirMode ? null"), "旧 dirMode 恒真渲染条件已移除（P0 回归护栏）");
+  assert.ok(trendSource.includes('setDirFilter("")'), "选适配器联动清目录（两维互斥：数据面切换）");
+  assert.ok(trendSource.includes('setProvider("")'), "选目录联动清适配器（两维互斥：数据面切换）");
   assert.ok(routesSource.includes('url.searchParams.get("byDir") === "1"'), "宿主 /trend 支持 byDir=1（客户端数据源契约）");
 
   // B2：未识别桶恒出现 + 口径注明
