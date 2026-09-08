@@ -328,7 +328,8 @@ export function normalizeReportDirectories(raw: unknown): string[] {
   const out = new Set<string>();
   for (const item of raw) {
     if (typeof item !== "string") continue;
-    const c = item.replace(/[\u0000-\u001f\u007f]/g, "");
+    // 剥 C0 + DEL + C1，与数据层 sanitizeDirName（trend/types.ts 权威定义）同口径（复核 P1-2）
+    const c = item.replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
     const cut = Math.max(c.lastIndexOf("/"), c.lastIndexOf("\\"));
     const base = cut >= 0 ? c.slice(cut + 1) : c;
     if (base.length === 0 || base === "all") continue;

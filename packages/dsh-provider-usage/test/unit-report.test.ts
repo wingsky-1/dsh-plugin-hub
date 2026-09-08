@@ -342,14 +342,15 @@ const GEN = (over = {}) => ({
     { day: "2026-02-01", providers: [{ provider: "p1", model: "m1", cell: cell(1, 20) }] },
   ], prevTotal: null });
   assert.equal(crossMonth.longestStreak, 2, "跨月 01-31→02-01 按日历日判定连续");
-  // provider/model 名防御：控制字符剥离 + 80 字符截断
+  // provider/model 名防御：控制字符剥离（C0 + DEL + C1）+ 80 字符截断
   const longName = "x".repeat(100);
   const hostile = buildStatsSnapshot({ period: "daily", startDay: "2026-09-02", endDay: "2026-09-02", buckets: [
-    { day: "2026-09-02", providers: [{ provider: `a\u0000b${longName}`, model: `m\nevil`, cell: cell(1, 10) }] },
+    { day: "2026-09-02", providers: [{ provider: `a\u0000b${longName}`, model: `m\nevil\u009b`, cell: cell(1, 10) }] },
   ], prevTotal: null });
   assert.ok(!hostile.byProvider[0].provider.includes("\u0000"), "provider 控制字符已剥离");
   assert.equal(hostile.byProvider[0].provider.length, 80, "provider 截断至 80 字符");
   assert.ok(!hostile.byProvider[0].model.includes("\n"), "model 控制字符已剥离");
+  assert.ok(!hostile.byProvider[0].model.includes("\u009b"), "model C1 控制字符已剥离（复核 P1-2）");
 }
 
 // ---------------------------------------------------------------- #532 per-period 提示词
@@ -1001,6 +1002,7 @@ const GEN = (over = {}) => ({
     { v: TREND_ROW_VERSION, kind: "dir", day: "2026-09-03", dir: "/home/alice/secret-project", input: 100, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
     { v: TREND_ROW_VERSION, kind: "dir", day: "2026-09-03", dir: "C:\\Users\\bob\\work\\repo", input: 50, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
     { v: TREND_ROW_VERSION, kind: "dir", day: "2026-09-03", dir: `x\n\t${"y".repeat(120)}`, input: 10, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
+    { v: TREND_ROW_VERSION, kind: "dir", day: "2026-09-03", dir: "pro\u009bj", input: 3, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
     { v: TREND_ROW_VERSION, kind: "dir", day: "2026-09-03", dir: TREND_UNIDENTIFIED, input: 5, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
   ];
   const snap = buildStatsSnapshot({
@@ -1016,11 +1018,12 @@ const GEN = (over = {}) => ({
   const injected = applyPromptTemplate("统计：{stats}", JSON.stringify(snap));
   for (const d of allDirs) {
     assert.ok(!d.includes("/") && !d.includes("\\"), `注入 JSON 目录键无路径分隔符：${JSON.stringify(d)}`);
-    assert.ok(!/[\u0000-\u001f\u007f]/.test(d), `注入 JSON 目录键无控制字符：${JSON.stringify(d)}`);
+    assert.ok(!/[\u0000-\u001f\u007f-\u009f]/.test(d), `注入 JSON 目录键无 C0+DEL+C1 控制字符：${JSON.stringify(d)}`);
     assert.ok(d.length <= 80, `注入 JSON 目录键 ≤80 字符（实际 ${d.length}）`);
   }
   assert.ok(allDirs.includes("secret-project"), "POSIX 绝对路径出口 = basename");
   assert.ok(allDirs.includes("repo"), "Windows 绝对路径出口 = basename");
+  assert.ok(allDirs.includes("proj"), "C1 形态（pro\\u009bj）剥除后 = proj（复核 P1-2）");
   const hostileDir = allDirs.find((d) => d.startsWith("x"));
   assert.ok(hostileDir !== undefined && hostileDir.length <= 80 && !/[\u0000-\u001f]/.test(hostileDir), "控制字符剥除 + 截断 80 形态（剥后残留字面字符保留）");
   assert.ok(!injected.includes("/home/alice"), "注入 JSON 全文不含原始绝对路径");
@@ -1148,6 +1151,7 @@ const GEN = (over = {}) => ({
   // 2) basename 归一（与 C2 出口同口径）：反斜杠/正斜杠路径取末段，控制字符剥除
   assert.deepEqual(normalizeReportConfig({ directories: ["/home/u/proj", "C:\\w\\repo"] }).directories, ["proj", "repo"], "目录范围项 basename 化（两系分隔符）");
   assert.deepEqual(normalizeReportConfig({ directories: ["a\nb"] }).directories, ["ab"], "目录范围项控制字符剥除");
+  assert.deepEqual(normalizeReportConfig({ directories: ["pro\u009bj", "x\u0080y"] }).directories, ["proj", "xy"], "目录范围项 C1 控制字符剥除（复核 P1-2）");
   // 3) 去重 + 上限 32（按归一化后的字面值去重；空白不 trim——basename 精确保留）
   assert.deepEqual(normalizeReportConfig({ directories: ["proj", "proj"] }).directories, ["proj"], "目录范围去重（归一化后字面一致）");
   assert.equal(normalizeReportConfig({ directories: Array.from({ length: 40 }, (_, i) => `d${i}`) }).directories.length, 32, "目录范围上限 32 项");

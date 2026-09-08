@@ -346,8 +346,9 @@ export function buildStatsSnapshot(input: {
   const safeName = (name: string): string =>
     name.length > 80 ? name.slice(0, 80) : name;
   for (const row of byProvider) {
-    row.provider = safeName(row.provider.replace(/[\u0000-\u001f\u007f]/g, ""));
-    if (row.model !== null) row.model = safeName(row.model.replace(/[\u0000-\u001f\u007f]/g, ""));
+    // 剥 C0 + DEL + C1（0x80–0x9F），与数据层 sanitizeDirName（trend/types.ts 权威定义）同口径
+    row.provider = safeName(row.provider.replace(/[\u0000-\u001f\u007f-\u009f]/g, ""));
+    if (row.model !== null) row.model = safeName(row.model.replace(/[\u0000-\u001f\u007f-\u009f]/g, ""));
   }
   // #633 分片 b C2：目录名出口统一 basename 化 + 剥控制字符 + 截断 80（沿用
   // provider/model 的 safeName 防御模式；collector.dirOf 落盘前已 sanitizeDirName，
@@ -355,7 +356,8 @@ export function buildStatsSnapshot(input: {
   // 锁死「无路径分隔符」承诺，与 C2 逐出口断言对齐）。剥/切后为空串的伪键
   // 归并进未识别桶键（防模板渲染空标签）。
   for (const row of byDirectory) {
-    const c = row.dir.replace(/[\u0000-\u001f\u007f]/g, "");
+    // 剥 C0 + DEL + C1，与数据层 sanitizeDirName 同口径（C1 段补齐，复核 P1-2）
+    const c = row.dir.replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
     const cut = Math.max(c.lastIndexOf("/"), c.lastIndexOf("\\"));
     const base = cut >= 0 ? c.slice(cut + 1) : c;
     row.dir = base.length === 0 ? TREND_UNIDENTIFIED : safeName(base);
