@@ -1907,6 +1907,60 @@ assert.equal(sumToken(null, null), null, "sumToken null+null");
       );
     }
   }
+
+  // (f) 同键唯一：该日 dirDays 已有 (unidentified) 桶 + 残差 > 0（混版日）→ 合并为一行
+  const f = mkAgg();
+  f.rebuild([
+    { v: TREND_ROW_VERSION, kind: "agg", day, provider: "deepseek", model: "deepseek-chat", input: 5000, output: 0, cacheRead: null, cacheWrite: null, calls: 30, turns: 0, toolCalls: 0 },
+    { v: TREND_ROW_VERSION, kind: "dir", day, dir: TREND_UNIDENTIFIED, input: 100, output: 0, cacheRead: null, cacheWrite: null, calls: 10, turns: 0, toolCalls: 0 },
+  ], false);
+  const fRows = f.dirRows();
+  assert.equal(fRows.length, 1, "同 (day, dir) 键唯一（残差并入既有未识别桶，不另起一行）");
+  assert.deepEqual(
+    [fRows[0].dir, fRows[0].input, fRows[0].calls],
+    [TREND_UNIDENTIFIED, 5000, 30],
+    "合并后数值 = 目录桶 + 残差（100+4900 / 10+20），无双行",
+  );
+
+  // (g) 负残差（目录面 > 聚合面，数据异常征兆）→ 不产行、不产生负值，恒等不成立
+  const g = mkAgg();
+  g.rebuild([
+    { v: TREND_ROW_VERSION, kind: "agg", day, provider: "deepseek", model: "deepseek-chat", input: 100, output: 0, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
+    { v: TREND_ROW_VERSION, kind: "dir", day, dir: "alpha", input: 300, output: 0, cacheRead: null, cacheWrite: null, calls: 3, turns: 0, toolCalls: 0 },
+  ], false);
+  assert.deepEqual(
+    g.dirRows().map((r) => [r.dir, r.input, r.calls]),
+    [["alpha", 300, 3]],
+    "负残差不补造行（按 0 处理）：目录面 300/3 > 聚合面 100/1，仅保留既有目录行",
+  );
+
+  // (h) 行序契约：时钟回拨把旧日事件落进过去日桶（cells 插入序乱）→ dirRows 仍按 day 升序
+  const h = mkAgg();
+  h.apply({ type: "call", record: { ...call("beta", 10, 0), time: new Date(2026, 8, 6, 12).getTime() } });
+  h.apply({ type: "call", record: { ...call("alpha", 10, 0), time: new Date(2026, 8, 8, 12).getTime() } });
+  h.apply({ type: "call", record: { ...call("gamma", 10, 0), time: new Date(2026, 8, 7, 12).getTime() } });
+  assert.deepEqual(
+    h.dirRows().map((r) => r.day),
+    ["2026-09-06", "2026-09-07", "2026-09-08"],
+    "行序契约：残差行按 day 升序（不依赖 cells 插入序）",
+  );
+
+  // (i) prune 后：被裁日的残差行同步消失（dirRows 不残留已裁剪日）
+  const i = mkAgg();
+  i.rebuild([
+    { v: TREND_ROW_VERSION, kind: "agg", day: "2026-09-01", provider: "deepseek", model: "m", input: 1, output: 0, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
+    { v: TREND_ROW_VERSION, kind: "agg", day: "2026-09-03", provider: "deepseek", model: "m", input: 2, output: 0, cacheRead: null, cacheWrite: null, calls: 2, turns: 0, toolCalls: 0 },
+  ], false);
+  assert.equal(i.dirRows().length, 2, "prune 前两日残差行都在");
+  i.pruneDays("2026-09-03");
+  assert.deepEqual(i.dirRows().map((r) => r.day), ["2026-09-03"], "prune 后被裁日的残差行同步消失（无残留）");
+
+  // (j) 校正后：旧格式（无 dir 键）明细行 correct → 残差吸收增量（dirRows 随之变化）
+  const j = mkAgg();
+  j.rebuild([{ v: TREND_ROW_VERSION, kind: "detail", time: T0 - 24 * HOUR, day, session: "s1", turn: 1, step: 1, retry: 1, provider: "deepseek", model: "deepseek-chat", input: 10, output: 0, cacheRead: null, cacheWrite: null, calls: 1 }], false);
+  assert.equal(j.dirRows()[0].input, 10, "无 dir 键明细行 → 残差 = 10");
+  j.apply({ type: "correct", record: { session: "s1", turn: 1, step: 1, retry: 1, tokens: { input: 50, output: 0, cacheRead: null, cacheWrite: null } } });
+  assert.equal(j.dirRows()[0].input, 50, "correct 校正后残差同步为 50（无 dir 键行不进 dirDays，经残差反映）");
 }
 
 {

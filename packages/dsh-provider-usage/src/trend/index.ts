@@ -116,7 +116,13 @@ export class TrendTracker {
           await this.store.deleteDetailShard(day);
           continue;
         }
-        if (rows.length === 0) continue;
+        if (rows.length === 0) {
+          // 白名单读（detail|counter）后为空 = 该明细分片只含非明细行（agg/dir 误落，
+          // 或全为坏行）。此类分片永无压实素材，`continue` 会让它每轮重建都被重扫
+          // 却永不清理——直接删除（无重建价值；坏行已由 readShard 告警留痕）。
+          await this.store.deleteDetailShard(day);
+          continue;
+        }
         // 崩溃于压实前：明细权威 → 重建进内存后立即压实（自愈）
         this.aggregator.rebuild(rows, true);
         const aggRows = this.aggregator.rollupDay(day, today);

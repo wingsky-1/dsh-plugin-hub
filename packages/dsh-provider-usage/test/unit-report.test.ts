@@ -987,8 +987,8 @@ const GEN = (over = {}) => ({
   const buckets = tracker.buckets();
   assert.equal(buckets.length, 2, "旧格式分片重建：过去日 agg 权威行 + 当日明细两日全量入内存（不抛错）");
   // 链路 3（报告生成）：窗口覆盖两日（weekly 形态）——历史输出不缺失
-  // dirRows 为升级后 A4 dir 行形态（store.readAggDayShard filter kind:"dir" 的输入面）：
-  // 未识别桶由 collector 显式归桶产生（升级后无 cwd 会话），旧格式日无 dir 事实不补造。
+  // 本节手搓 dirRows 只用于验证 buildStatsSnapshot 自身的窗口裁剪与聚合（窗口外
+  // dir 行不计）；真实链路的 dirRows 形态见紧随其后的残差投影端到端断言。
   const dirRows = [
     { v: TREND_ROW_VERSION, kind: "dir", day: today, dir: TREND_UNIDENTIFIED, input: 22, output: 11, cacheRead: null, cacheWrite: null, calls: 1, turns: 1, toolCalls: 0 },
     { v: TREND_ROW_VERSION, kind: "dir", day: "2026-09-10", dir: "窗口外", input: 999, output: 999, cacheRead: null, cacheWrite: null, calls: 9, turns: 9, toolCalls: 9 },
@@ -997,10 +997,25 @@ const GEN = (over = {}) => ({
   assert.deepEqual(
     s.byDirectory,
     [{ dir: TREND_UNIDENTIFIED, calls: 1, total: 33 }],
-    "byDirectory 未识别桶计入正确数值（窗口外 dir 行不计；旧格式日 09-03 无 dir 事实不补造）",
+    "byDirectory 未识别桶计入正确数值（窗口外 dir 行不计）",
   );
   assert.equal(s.totals.calls, 31, "历史输出不缺失：calls 与升级前一致（30+1）");
   assert.equal(s.totals.total, 7481, "历史 token 总量不缺失（5930+1551，四项 null-aware 之和）");
+  // 残差投影端到端（本次修复）：真实 tracker.dirRows() 喂入 buildStatsSnapshot——
+  // 旧格式日（09-03 只有 agg 行）经残差归未识别桶，byDirectory 与 totals 同口径
+  // （修复前此处为空数组：历史在报告里也消失）。手搓 dirRows 掩盖过这一差异。
+  const live = tracker.dirRows();
+  assert.deepEqual(
+    live.map((r) => [r.day, r.dir, r.calls]).sort(),
+    [["2026-09-03", TREND_UNIDENTIFIED, 30], [today, TREND_UNIDENTIFIED, 1]],
+    "真实 dirRows：旧 agg-only 日经残差补入未识别桶（当日明细行亦归未识别）",
+  );
+  const sLive = buildStatsSnapshot({ period: "weekly", startDay: "2026-09-03", endDay: today, buckets, dirRows: live, prevTotal: null });
+  assert.deepEqual(
+    sLive.byDirectory,
+    [{ dir: TREND_UNIDENTIFIED, calls: 31, total: 7481 }],
+    "报告链路端到端：byDirectory 覆盖全窗口（= totals 口径，历史不再从报告消失）",
+  );
   assert.deepEqual(
     s.byDay,
     [{ day: "2026-09-03", total: 5930 }, { day: today, total: 1551 }],
@@ -1199,7 +1214,11 @@ const GEN = (over = {}) => ({
   // 3) 去重 + 上限 32（按归一化后的字面值去重；空白不 trim——basename 精确保留）
   assert.deepEqual(normalizeReportConfig({ directories: ["proj", "proj"] }).directories, ["proj"], "目录范围去重（归一化后字面一致）");
   assert.equal(normalizeReportConfig({ directories: Array.from({ length: 40 }, (_, i) => `d${i}`) }).directories.length, 32, "目录范围上限 32 项");
-  assert.equal(normalizeReportConfig({ directories: [`x${"y".repeat(300)}`] }).directories[0].length, 256, "目录范围项截断 256（与 trend dir 键防御同口径）");
+  // 超长项跳过（而非截断）：与数据层 isValidDirKey/TREND_DIR_MAX 同口径——截断会造出
+  // 永远匹配不到任何分片行的键，目录范围过滤面静默变空（QA 复核 P1）
+  assert.deepEqual(normalizeReportConfig({ directories: [`x${"y".repeat(300)}`] }).directories, [], "超长目录项跳过（不截断造出无对应行的键）");
+  assert.deepEqual(normalizeReportConfig({ directories: ["ok", `x${"y".repeat(300)}`] }).directories, ["ok"], "超长项跳过、合法项保留");
+  assert.equal(normalizeReportConfig({ directories: ["x".repeat(256)] }).directories[0].length, 256, "上限内（256）的目录项保留");
   // 4) 持久化 round-trip（临时目录隔离）
   const rootDir = mkdtempSync(join(tmpdir(), "dou-report-b4-"));
   const saved = normalizeReportConfig({ directories: ["proj", "repo"], push: { enabled: false } });

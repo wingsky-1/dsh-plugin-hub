@@ -338,10 +338,31 @@ export class TrendAggregator {
    * （见 routes/ui.ts 的 dir/byDir 分流），无消费方需要该交叉维度。
    */
   dirRows(): TrendDirRow[] {
+    // 输出容器按 (day, dir) 唯一：dirDays 桶与残差行可能撞同一键（混版日已有
+    // (unidentified) 桶时），撞键即合并数值，绝不产出重复键行（公开面契约）。
+    // 保持 dirDays 分支的插入序（day 升序、day 内 dir 键插入序）——下游 dirTotals
+    // 用稳定排序，行序变化会改变「候选 calls 降序」的并列顺序。
     const out: TrendDirRow[] = [];
+    const byKey = new Map<string, TrendDirRow>();
+    const put = (row: TrendDirRow): void => {
+      const key = `${row.day}\u0000${row.dir}`;
+      const cur = byKey.get(key);
+      if (cur === undefined) {
+        byKey.set(key, row);
+        out.push(row);
+        return;
+      }
+      cur.input = sumToken(cur.input, row.input);
+      cur.output = sumToken(cur.output, row.output);
+      cur.cacheRead = sumToken(cur.cacheRead, row.cacheRead);
+      cur.cacheWrite = sumToken(cur.cacheWrite, row.cacheWrite);
+      cur.calls += row.calls;
+      cur.turns += row.turns;
+      cur.toolCalls += row.toolCalls;
+    };
     for (const day of [...this.dirDays.keys()].sort()) {
       for (const [dir, cell] of this.dirDays.get(day)!) {
-        out.push({ v: TREND_ROW_VERSION, kind: "dir", day, dir, input: cell.input, output: cell.output, cacheRead: cell.cacheRead, cacheWrite: cell.cacheWrite, calls: cell.calls, turns: cell.turns, toolCalls: cell.toolCalls });
+        put({ v: TREND_ROW_VERSION, kind: "dir", day, dir, input: cell.input, output: cell.output, cacheRead: cell.cacheRead, cacheWrite: cell.cacheWrite, calls: cell.calls, turns: cell.turns, toolCalls: cell.toolCalls });
       }
     }
     // 每日残差：聚合面（cells）− 目录面（dirDays）。cells 的键是 day → provider →
@@ -365,7 +386,10 @@ export class TrendAggregator {
         }
       }
     }
-    for (const [day, cell] of aggByDay) {
+    // 残差按 day 升序处理（cells 的 Map 键序是插入序，时钟回拨会让旧日新桶排在末尾；
+    // 公开方法契约声明 day 升序，故此处显式排序，不依赖插入序）。
+    for (const day of [...aggByDay.keys()].sort()) {
+      const cell = aggByDay.get(day)!;
       let dirInput: number | null = null;
       let dirOutput: number | null = null;
       let dirCacheRead: number | null = null;
@@ -393,17 +417,20 @@ export class TrendAggregator {
       const calls = cell.calls - dirCalls;
       const turns = cell.turns - dirTurns;
       const toolCalls = cell.toolCalls - dirToolCalls;
-      // 全部为 0/空 = 该日目录面已覆盖全量（新分片常态）→ 不补造行
+      // 全部为 0/空 = 该日目录面已覆盖全量（新分片常态）→ 不补造行。
+      // 负残差（目录面多于聚合面）同样走此分支（不产行）：属数据不一致征兆
+      // （例如明细目录误落 dir 行——已由 readDetailShard 白名单阻断），此时目录面
+      // 日合计会大于聚合面，README「总量守恒」节已注明该边界不保证恒等。
       const hasResidual =
         calls > 0 || turns > 0 || toolCalls > 0 || (input ?? 0) > 0 || (output ?? 0) > 0 || (cacheRead ?? 0) > 0 || (cacheWrite ?? 0) > 0;
       if (!hasResidual) continue;
-      out.push({
+      // 同键（该日已有 (unidentified) 桶，混版日常态）由 put 合并到既有行，
+      // 保证 (day, dir) 键唯一；负值按 0 处理（不产生负柱）。
+      put({
         v: TREND_ROW_VERSION,
         kind: "dir",
         day,
         dir: TREND_UNIDENTIFIED,
-        // 负值（目录面多于聚合面）按 0 处理：保持数值可解释，不产生负柱（不一致属数据
-        // 异常，由「日总量恒等」断言在测试面暴露，不在生产路径抛错连坐查询）。
         input: input !== null && input > 0 ? input : null,
         output: output !== null && output > 0 ? output : null,
         cacheRead: cacheRead !== null && cacheRead > 0 ? cacheRead : null,
@@ -413,12 +440,11 @@ export class TrendAggregator {
         toolCalls: toolCalls > 0 ? toolCalls : 0,
       });
     }
-    // 顺序契约：**不重排**——dirDays 分支已按 day 升序、day 内按 dir 键插入序输出，
-    // 残差行按 day 升序追加在尾段。曾试过全局 sort(day, dir)，但它会把残差行的
-    // 未识别键排到该日首位（"(" 的字典序最前），进而改变 dirTotals 的插入序；
-    // dirTotals 用稳定排序（同 calls 保持插入序），下游「候选 calls 降序」断言
-    // 因此被打破。行序是查询面契约的一部分（dirStacked 的图例并集、报告快照顺序），
-    // 保持现有顺序 = 对既有行为零扰动。
+    // 顺序契约：dirDays 分支按 day 升序、day 内按 dir 键插入序输出；残差行按 day
+    // 升序追加在尾段（已显式排序，不依赖 cells 插入序——时钟回拨会让旧日新桶排在
+    // 末尾）。**不做全局 sort(day, dir)**：它会把残差行的未识别键排到该日首位
+    // （"(" 字典序最前），改变 dirTotals 的插入序；dirTotals 用稳定排序（同 calls
+    // 保持插入序），下游「候选 calls 降序」并列顺序因此会被打破。
     return out;
   }
 
@@ -466,7 +492,8 @@ export class TrendAggregator {
   /**
    * 窗口摘要（目录维度；#633 分片 b B1 数据接口）。curRange/prevRange 语义与
    * windowSummary 完全同构：当前窗口总量/调用数/峰值桶/目录 top 段 + 上一窗口环比。
-   * prevComplete 语义对齐：prev 窗口起点早于目录数据起点（dirRows 最早日）→ 不可比。
+   * prevComplete 语义对齐：prev 窗口起点早于**目录面数据起点**（dirRows 最早日；
+   * 残差投影后该起点等于聚合面数据起点，故与 windowSummary 同值）→ 不可比。
    */
   dirWindowSummary(
     n: number,

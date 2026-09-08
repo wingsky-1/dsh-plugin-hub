@@ -247,11 +247,14 @@ unidentified bucket).
 - **Unidentified bucket** (`(unidentified)`): the session has no cwd, attribution failed,
   or **that day's data predates the directory dimension** (legacy shards carry no directory
   information). The bucket is never silently dropped — UI and reports render it as-is.
-- **Totals are conserved**: the per-day total of the directory face equals the provider
-  face. The directory face = recorded directory day-buckets + a **per-day residual**
-  (aggregate face − directory face, attributed to the unidentified bucket) — the residual
-  is "that day's data without directory information", so historical usage neither
-  disappears from the chart nor gets counted twice.
+- **Totals are conserved**: with healthy data, the per-day total of the directory face
+  equals the provider face. The directory face = recorded directory day-buckets + a
+  **per-day residual** (aggregate face − directory face, attributed to the unidentified
+  bucket) — the residual is "that day's data without directory information", so historical
+  usage neither disappears from the chart nor gets counted twice. A negative residual
+  (directory face larger than the aggregate face) indicates corrupted shard data: it is
+  clamped to 0 and the identity no longer holds (the main source is already blocked by the
+  detail-shard read whitelist).
 - **Read-side projection only**: the residual is computed at query time; shard files are
   never rewritten and existing data is never mutated.
 - **Irrecoverable boundary**: attribution is fixed when a session is first recorded and

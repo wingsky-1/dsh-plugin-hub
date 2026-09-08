@@ -201,7 +201,8 @@ export function safeId(v: unknown, maxLen = 256): string | null {
 // 分片行校验局部 helper（P2-4）：防 "x" 等垃圾值进 sumToken 拼接、垃圾日键进内存桶。
 /** day key 格式（YYYY-MM-DD；字典序即时间序的根基，垃圾日键会污染内存桶与 prune 判定）。 */
 const TREND_DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
-/** token 计量字段：有限数或 null（负数/NaN/字符串一律拒绝）。 */
+/** token 计量字段：有限数或 null（NaN/Infinity/字符串一律拒绝；负数由采集侧 safeToken
+ *  拦截，此处只做落盘行的结构性校验，不重复语义校验）。 */
 function isNumOrNull(v: unknown): boolean {
   return v === null || (typeof v === "number" && Number.isFinite(v));
 }

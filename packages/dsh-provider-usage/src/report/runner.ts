@@ -173,8 +173,10 @@ export async function runDueReport(params: {
   const { due, trend, ctx, reportCfg, historyRoot, sanitizeDiagnostic } = params;
   const buckets = trend.buckets();
   // #633 分片 b C1 接线：目录维度日汇总行进快照（trend.dirRows 含今日桶，口径见
-  // aggregator.dirRows）。无目录事实（旧数据无 dir 行）时 dirRows 为空数组，
-  // 快照 byDirectory 为空（加性维度不补造），报告链路照旧。
+  // aggregator.dirRows）。残差投影后（本次修复）旧数据（无 dir 行的分片）不再得到
+  // 空数组——其「无目录信息」的用量经残差归入 (unidentified) 桶，故 byDirectory 与
+  // totals 同口径（实测旧分片：byDirectory=[{unidentified,31,7481}] = totals）。
+  // 真正无任何用量时 dirRows 才为空数组（报告链路另有 totals.calls===0 的空窗口短路）。
   // #633 分片 b B4：报告配置目录范围非空时，byDirectory 只含所选目录（目录维度
   // 投影可精确过滤）；totals/byDay/byProvider 保持全量口径——压实后的 agg 行无
   // dir 键（明细行的 dir×provider 关联在日切压实即收敛为两个独立投影），provider/
