@@ -512,6 +512,19 @@
   background: var(--dsw-alias-bg-base, #fdfdfd);
   color: inherit;
 }
+/* #633 分片 b2 B4：报告目录范围多选（flex wrap 复选组，明暗双主题走既有 alias 变量） */
+.dou-reportDirList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding: 6px 8px;
+  border: 1px solid var(--dsw-alias-border-l1, #d7dae0);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-base, #fdfdfd);
+}
+.dou-reportDirItem {
+  max-width: 100%;
+}
 .dou-reportTextarea {
   width: 100%;
   min-width: 0;

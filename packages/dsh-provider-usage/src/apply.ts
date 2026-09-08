@@ -396,6 +396,9 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
         getReportCfg: () => reportCfg,
         setReportCfg: (c) => { reportCfg = c; },
         reportScheduler,
+        // #633 分片 b2 B4：报告目录范围多选的候选数据源（trend.dirTotals 全留存
+        // 窗口 calls 降序聚合，含未识别桶键；仅 basename 净化值出路由）。
+        listDirs: () => trend.dirTotals("0000-01-01", "9999-12-31"),
       },
     ),
   ];

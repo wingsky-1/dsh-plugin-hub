@@ -14,6 +14,7 @@
  */
 import * as React from "react";
 import { fetchTimeout, REPORT_GENERATE_STATUS_URL } from "./core.ts";
+import { dirDisplayLabel, dirNeedsScopeNote, dirStackId, DIR_UNIDENTIFIED } from "./trend-math.js";
 import { t } from "../../../../shared/client/i18n.js";
 
 /** 宿主端 ROUTES（构建期经 __DSH_ROUTES__ 注入；报告五路由 #503 M3 / #532 起进入路由表）。 */
@@ -68,6 +69,8 @@ export interface ReportConfigView {
   prompts: ReportPromptsView;
   sanitizePaths: boolean;
   push: { enabled: boolean };
+  /** #633 分片 b B4：报告目录范围（空数组 = 全部目录；basename 净化值或未识别桶键）。 */
+  directories: string[];
 }
 
 /** provider 候选（/report-config 响应 providers[]）。 */
@@ -171,6 +174,8 @@ export function ReportSection(): React.ReactElement {
   // 配置（编辑态 draft 与宿主归一化响应同构；载入前 null = 未就绪）
   const [draft, setDraft] = React.useState<ReportConfigView | null>(null);
   const [providers, setProviders] = React.useState<ReportProviderOption[]>([]);
+  // #633 分片 b2 B4：目录候选（GET /report-config dirs，含未识别桶；宿主 calls 降序）
+  const [dirOptions, setDirOptions] = React.useState<string[]>([]);
   const [configFailed, setConfigFailed] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [saveState, setSaveState] = React.useState<"idle" | "saved" | "fail">("idle");
@@ -200,12 +205,16 @@ export function ReportSection(): React.ReactElement {
     try {
       const res = await fetchTimeout(REPORT_CONFIG_URL, { headers: { Accept: "application/json" }, cache: "no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body = (await res.json()) as { ok?: boolean; config?: ReportConfigView; providers?: ReportProviderOption[]; promptDefaults?: ReportPromptsView };
+      const body = (await res.json()) as { ok?: boolean; config?: ReportConfigView; providers?: ReportProviderOption[]; dirs?: Array<{ dir?: string | null }>; promptDefaults?: ReportPromptsView };
       if (body.config !== undefined) {
         setDraft(body.config);
         setConfigFailed(false);
       }
       if (Array.isArray(body.providers)) setProviders(body.providers);
+      // #633 分片 b2 B4：目录候选（dirStackId 防御归一——异常值归未识别，杜绝空标签进多选）
+      if (Array.isArray(body.dirs)) {
+        setDirOptions([...new Set(body.dirs.map((d) => dirStackId(d.dir)))]);
+      }
       if (body.promptDefaults !== null && body.promptDefaults !== undefined) setPromptDefaults(body.promptDefaults);
     } catch {
       setConfigFailed(true);
@@ -515,6 +524,73 @@ export function ReportSection(): React.ReactElement {
             </label>
           </div>
           {models !== null && !haveModels ? <div className="dou-reportHint">{t("reportModelFallback")}</div> : null}
+          {/* #633 分片 b2 B4：目录范围多选（默认全部；空数组 = 全部目录语义）。
+              与 provider/model 范围控件同级同风格（dou-reportRow + dou-reportInline）；
+              候选 = GET dirs（含未识别桶，恒「未识别」有标签 + 口径注释）；已保存值
+              不在候选（目录数据已过留存期等）→ 兜底渲染旧值，绝不隐式改写用户配置。 */}
+          <div className="dou-reportCol">
+            <div className="dou-reportRow">
+              <span className="dou-reportLabel">{t("reportDirectories")}</span>
+              <label className="dou-reportInline">
+                <input
+                  type="checkbox"
+                  checked={draft.directories.length === 0}
+                  onChange={(e: unknown) => { patchTop({ directories: (e as { target: { checked: boolean } }).target.checked ? [] : draft.directories }); }}
+                />
+                {t("reportDirectoriesAll")}
+              </label>
+              {dirOptions.length > 0 ? (
+                <>
+                  <button
+                    type="button"
+                    className="dou-reportPromptReset"
+                    onClick={() => { patchTop({ directories: [...dirOptions] }); }}
+                  >
+                    {t("reportDirectoriesSelectAll")}
+                  </button>
+                  <button
+                    type="button"
+                    className="dou-reportPromptReset"
+                    onClick={() => { patchTop({ directories: [] }); }}
+                  >
+                    {t("reportDirectoriesClear")}
+                  </button>
+                </>
+              ) : null}
+            </div>
+            {dirOptions.length > 0 ? (
+              <div className="dou-reportDirList">
+                {(draft.directories.some((d) => !dirOptions.includes(d))
+                  ? [...dirOptions, ...draft.directories.filter((d) => !dirOptions.includes(d))]
+                  : dirOptions
+                ).map((dir) => {
+                  const checked = draft.directories.includes(dir);
+                  // 未识别桶恒「未识别」+ 口径注释（B2/B3）；异常值已由 dirStackId 归一
+                  const label = dirDisplayLabel(dir);
+                  const title = dirNeedsScopeNote(dir) ? t("trendDirUnidentifiedNote") : undefined;
+                  return (
+                    <label className="dou-reportInline dou-reportDirItem" key={dir} title={title}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e: unknown) => {
+                          const next = new Set(draft.directories);
+                          if ((e as { target: { checked: boolean } }).target.checked) next.add(dir);
+                          else next.delete(dir);
+                          patchTop({ directories: [...next] });
+                        }}
+                      />
+                      {label}
+                    </label>
+                  );
+                })}
+              </div>
+            ) : (
+              <span className="dou-reportHint">{t("reportDirectoriesEmpty")}</span>
+            )}
+            {/* 保存后影响报告口径的提示（沿用既有 dou-reportHint 提示模式） */}
+            <span className="dou-reportHint">{draft.directories.length === 0 ? t("reportDirectoriesHintAll") : t("reportDirectoriesHintScoped")}</span>
+          </div>
           {/* 提示词模板（#532：三周期各自独立模板 + 周期切换 tab + 恢复默认） */}
           <div className="dou-reportCol">
             <div className="dou-reportPromptTabs">
