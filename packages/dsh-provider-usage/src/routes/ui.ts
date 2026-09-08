@@ -8,6 +8,7 @@ import { guardLoopbackMethod, readJsonBody, writeJson } from "../../../../shared
 import { ADAPTER_CONTRACT_VERSION } from "../contracts.ts";
 import type { StatsService } from "../stats-service.ts";
 import type { TrendTracker } from "../trend/index.ts";
+import { TREND_DIR_MAX } from "../trend/types.ts";
 import { normalizeUiConfig, writeUiConfig, type UiPlacementConfig } from "../ui-config.ts";
 
 export interface UiRoutesContext {
@@ -75,12 +76,15 @@ export function handleTrend(
   const providerParam = url.searchParams.get("provider") ?? "";
   const provider = providerParam.length > 0 && providerParam.length <= 128 ? providerParam : undefined;
   // #633 分片 b B1：可选目录过滤（GET query，风格与 provider 参数一致）——
-  // 非空且 ≤128 字符按目录键过滤（basename 净化值或未识别桶键）；未传/非法
-  // （空串/超长）→ undefined = 全目录聚合，行为与现状完全一致（非法回退不 400）。
+  // 非空且不超数据层上限（TREND_DIR_MAX，与 isValidDirKey 同一事实源）按目录键过滤
+  // （basename 净化值或未识别桶键）；未传/非法（空串/超长）→ undefined = 全目录聚合，
+  // 行为与现状完全一致（非法回退不 400）。
+  // #633 修复：原硬编码 128 与数据层 256 不一致——129–256 字符的合法目录键会被静默
+  // 降级为「全目录聚合」（查询面悄然变形，且原 smoke 用例把这个错误行为锁死）。
   // dir 与 provider 面分流：传 dir → 目录维度查询面；未传 → provider 维度
   // 原查询面（provider/byModel 参数语义原样保留，响应形状零变化）。
   const dirParam = url.searchParams.get("dir") ?? "";
-  const dir = dirParam.length > 0 && dirParam.length <= 128 ? dirParam : undefined;
+  const dir = dirParam.length > 0 && dirParam.length <= TREND_DIR_MAX ? dirParam : undefined;
   // #633 分片 b2（B1 加性）：byDir=1 = 全目录拆段查询面（未传 dir 时按目录拆段 +
   // dirs 全集图例，支撑趋势面板「打开即见目录分布」与目录筛选下拉候选）；
   // 不带该参数时走 b1 既有两分支（现状响应形状零变化，b1 smoke 断言原样成立）。

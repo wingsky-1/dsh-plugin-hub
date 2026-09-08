@@ -134,9 +134,14 @@ export class TrendStore {
 
   // ---------------------------------------------------------------- 读取与重建
 
-  /** 读明细分片（坏行跳过并告警；文件不存在返回空）。 */
+  /**
+   * 读明细分片（坏行跳过并告警；文件不存在返回空）。
+   * 过滤取白名单（detail|counter）而非「非 agg」黑名单：明细分片按写入约定只含
+   * detail/counter，但黑名单会把误落入明细目录的 agg/dir 行当成 counter 重建进
+   * cells（kind 不符时走 else 分支按 turns/toolCalls 折算），静默污染聚合面。
+   */
   async readDetailShard(day: string): Promise<Array<TrendDetailRow | TrendCounterRow>> {
-    return this.readShard(this.detailsFile(day), (r): r is TrendDetailRow | TrendCounterRow => r.kind !== "agg");
+    return this.readShard(this.detailsFile(day), (r): r is TrendDetailRow | TrendCounterRow => r.kind === "detail" || r.kind === "counter");
   }
 
   /**

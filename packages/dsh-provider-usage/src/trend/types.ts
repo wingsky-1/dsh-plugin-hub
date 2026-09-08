@@ -46,8 +46,10 @@ export interface TrendTokens {
 
 /** 目录键防御校验上限（复核 L4：POSIX NAME_MAX=255 以字节计，JS 字符串按 UTF-16
  * 码元计长——255 字节至多 255 个字符（多字节字符只会更短），255 < 256，取 256 与
- * safeId 上限同口径留 1 字符安全余量；超长伪造行按坏行跳过）。 */
-const TREND_DIR_MAX = 256;
+ * safeId 上限同口径留 1 字符安全余量；超长伪造行按坏行跳过）。
+ * 导出供路由参数校验复用（#633 修复：routes/ui.ts 原先硬编码 128，致 129–256 字符
+ * 的合法目录键被静默降级为「全目录聚合」——校验口径必须与数据层同一事实源）。 */
+export const TREND_DIR_MAX = 256;
 
 /** 分片行 dir 键防御校验：非空字符串且不超上限（旧格式行无该键，天然通过）。 */
 function isValidDirKey(v: unknown): boolean {
