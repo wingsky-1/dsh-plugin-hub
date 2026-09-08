@@ -1645,7 +1645,13 @@ console.log("[smoke] #105① /history 渲染缓存断言全部通过 ✓");
       const unkPart = byDirAll.series.find((p) => p.key === today).parts.find((p) => p.provider === UNK);
       assert.ok(unkPart && unkPart.value === 165, "byDir 面按目录拆段：未识别桶段 = 165（本块两会话均无 cwd）");
       assert.ok(byDirAll.dirs.some((d) => d.dir === UNK), "byDir 面 dirs 图例含未识别桶（B2 不消失）");
-      assert.ok(byDirAll.providers.length === 0, "byDir 面无 providers 图例（目录维度拆段）");
+      // #633 复核 P1-5：byDir 默认面加性附 providers 候选——适配器下拉数据链路可达
+      assert.deepEqual(byDirAll.providers.map((p) => p.provider).sort(), ["deepseek", "openai"], "byDir 面 providers 候选 = 窗口内 distinct（修复前恒空，下拉不可达）");
+      // 适配器选择 → provider 面往返链路：候选项值可直接驱动 provider 过滤查询
+      const picked = byDirAll.providers.map((p) => p.provider).sort()[0];
+      const roundTrip = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?provider=${encodeURIComponent(picked)}` }));
+      assert.equal(roundTrip.providers.length, 1, "byDir 面候选 → provider 面往返：过滤查询生效");
+      assert.ok(roundTrip.series.some((p) => p.total !== null), "往返面序列非空（候选值与 provider 面数据自洽）");
       // 不带 byDir 的现状面与 byDir 面共存：b1「未传 dir 序列 = 基线」断言已锁定零回归
     } }
 

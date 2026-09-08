@@ -92,8 +92,15 @@ export function handleTrend(
   const byDir = dir !== undefined || byDirAll;
   // #633 分片 b B1：dir 面与 provider 面的 stack 形状归一（两分支字段并集）——
   // 未过滤分支响应含 providers 图例（现状形状零变化），过滤分支含 dirs 目录图例。
+  // #633 复核 P1-5（qa 实测）：byDir=1 全目录面加性附 providers 候选——P0 修复后
+  // 默认请求恒带 byDir=1，目录面 providers 恒空致适配器下拉无可选项（交互回归）；
+  // 候选与 provider 面图例同源（seriesStacked 窗口内 distinct），series 不受影响
+  // （dir 行无 provider 关联的既定数据边界不变，加性返回不破坏「未传参数零变化」）。
+  // dir 过滤面保持空 providers（既有形状，qa 未报且过滤面选中态下适配器已互斥清空）。
+  const dirStack = { ...trend.dirStacked(n, granularity, metric, dir), providers: [] as Array<{ provider: string; model: string | null }> };
+  if (byDirAll) dirStack.providers = trend.seriesStacked(n, granularity, metric, undefined, false).providers;
   const stack = byDir
-    ? { ...trend.dirStacked(n, granularity, metric, dir), providers: [] as Array<{ provider: string; model: string | null }> }
+    ? dirStack
     : { ...trend.seriesStacked(n, granularity, metric, provider, byModel), dirs: [] as Array<{ dir: string }> };
   const summary = byDir
     ? trend.dirWindowSummary(n, granularity, metric, dir, stack.series)
