@@ -312,10 +312,30 @@ export class TrendAggregator {
 
   /**
    * 全量目录日桶快照（day 升序；#633 分片 b 报告快照与统计目录分布数据源）。
-   * 权威口径（复核 P1-1）：dirDays 单源快照——apply 平行累加 + rebuild 双分支
-   * 读回已覆盖全部 dir 事实，不再折算 pending 行（旧折算侧与 dirDays 并存时
-   * 双算：同事实重建 → 2×；互补事实 → 按键去重丢数；实测同日重启续 apply
-   * input 17 → 7）。旧格式行（无 dir 键）无目录事实不补造。
+   *
+   * 权威口径（复核 P1-1）：dirDays 单源快照——apply 平行累加 + rebuild 双分支读回
+   * 已覆盖全部 dir 事实，不再折算 pending 行（旧折算侧与 dirDays 并存时双算：
+   * 同事实重建 → 2×；互补事实 → 按键去重丢数；实测同日重启续 apply input 17 → 7）。
+   *
+   * 残差投影（本次修复，取代「重建时补造」）：目录面 = dirDays 快照 + 每日残差。
+   * 残差(day) = 该日聚合面（cells，全量事实）− 该日 dirDays 合计（有目录归属的事实），
+   * 非零则投影为一条 `{day, dir: TREND_UNIDENTIFIED}` 行——语义即「该日无目录信息的
+   * 数据」。这样两个查询面的日总量恒等（目录面 = 聚合面），且**不会双算**：
+   *
+   * - 旧分片（#633 之前的 agg 行，无 kind:"dir" 行）：cells 有值、dirDays 空 → 残差
+   *   = 全量 → 历史柱恢复且不丢数（此前 dir 面历史全 null，实测差 20 倍）；
+   * - 新分片（agg + dir 并存，同一批事实的两个投影）：cells 含 agg 行、dirDays 含 dir 行
+   *   → 残差 ≈ 0（同一事实相减相消）→ 不补造、不双算；故**禁止**在 rebuild 里对
+   *   agg 行补造未识别桶（会与 dir 行双算，反例：9-05 的 rjk2 calls=22 会变 44）；
+   * - 混版日（升级当天：旧 agg 行 + 新 dir 行并存）：残差 = 旧 agg 部分 → 归未识别，
+   *   新 dir 行照常分目录，既不丢升级前的历史、也不把新数据算进未识别；
+   * - 当日未压实：apply 对 cells 与 dirDays 平行累加 → 残差 ≈ 0。
+   *
+   * 不变量：∀day 目录面日合计 == 聚合面日合计（残差为负即数据不一致——目录行多于聚合行，
+   * 属双算/漂移征兆，投影按 0 处理并保持数值可解释，不产生负柱）。
+   * 残留边界（文档化口径）：残差只有日粒度（dirDays 无 provider 维度），故「无目录信息的
+   * 数据」只能整体归未识别桶，无法细分到 provider/model——目录面与 provider 面本互斥
+   * （见 routes/ui.ts 的 dir/byDir 分流），无消费方需要该交叉维度。
    */
   dirRows(): TrendDirRow[] {
     const out: TrendDirRow[] = [];
@@ -324,6 +344,81 @@ export class TrendAggregator {
         out.push({ v: TREND_ROW_VERSION, kind: "dir", day, dir, input: cell.input, output: cell.output, cacheRead: cell.cacheRead, cacheWrite: cell.cacheWrite, calls: cell.calls, turns: cell.turns, toolCalls: cell.toolCalls });
       }
     }
+    // 每日残差：聚合面（cells）− 目录面（dirDays）。cells 的键是 day → provider →
+    // model，逐层求和得该日全量；dirDays 的键是 day → dir，同法求该日目录合计。
+    const aggByDay = new Map<string, TrendCell>();
+    for (const [day, providers] of this.days) {
+      let cell = aggByDay.get(day);
+      if (cell === undefined) {
+        cell = emptyCell();
+        aggByDay.set(day, cell);
+      }
+      for (const models of providers.values()) {
+        for (const c of models.values()) {
+          cell.input = sumToken(cell.input, c.input);
+          cell.output = sumToken(cell.output, c.output);
+          cell.cacheRead = sumToken(cell.cacheRead, c.cacheRead);
+          cell.cacheWrite = sumToken(cell.cacheWrite, c.cacheWrite);
+          cell.calls += c.calls;
+          cell.turns += c.turns;
+          cell.toolCalls += c.toolCalls;
+        }
+      }
+    }
+    for (const [day, cell] of aggByDay) {
+      let dirInput: number | null = null;
+      let dirOutput: number | null = null;
+      let dirCacheRead: number | null = null;
+      let dirCacheWrite: number | null = null;
+      let dirCalls = 0;
+      let dirTurns = 0;
+      let dirToolCalls = 0;
+      const dirs = this.dirDays.get(day);
+      if (dirs !== undefined) {
+        for (const c of dirs.values()) {
+          dirInput = sumToken(dirInput, c.input);
+          dirOutput = sumToken(dirOutput, c.output);
+          dirCacheRead = sumToken(dirCacheRead, c.cacheRead);
+          dirCacheWrite = sumToken(dirCacheWrite, c.cacheWrite);
+          dirCalls += c.calls;
+          dirTurns += c.turns;
+          dirToolCalls += c.toolCalls;
+        }
+      }
+      // 残差 = 聚合面 − 目录面（null-aware：双方皆 null → 0/无残差；单侧 null 按 0 计）
+      const input = diffToken(cell.input, dirInput);
+      const output = diffToken(cell.output, dirOutput);
+      const cacheRead = diffToken(cell.cacheRead, dirCacheRead);
+      const cacheWrite = diffToken(cell.cacheWrite, dirCacheWrite);
+      const calls = cell.calls - dirCalls;
+      const turns = cell.turns - dirTurns;
+      const toolCalls = cell.toolCalls - dirToolCalls;
+      // 全部为 0/空 = 该日目录面已覆盖全量（新分片常态）→ 不补造行
+      const hasResidual =
+        calls > 0 || turns > 0 || toolCalls > 0 || (input ?? 0) > 0 || (output ?? 0) > 0 || (cacheRead ?? 0) > 0 || (cacheWrite ?? 0) > 0;
+      if (!hasResidual) continue;
+      out.push({
+        v: TREND_ROW_VERSION,
+        kind: "dir",
+        day,
+        dir: TREND_UNIDENTIFIED,
+        // 负值（目录面多于聚合面）按 0 处理：保持数值可解释，不产生负柱（不一致属数据
+        // 异常，由「日总量恒等」断言在测试面暴露，不在生产路径抛错连坐查询）。
+        input: input !== null && input > 0 ? input : null,
+        output: output !== null && output > 0 ? output : null,
+        cacheRead: cacheRead !== null && cacheRead > 0 ? cacheRead : null,
+        cacheWrite: cacheWrite !== null && cacheWrite > 0 ? cacheWrite : null,
+        calls: calls > 0 ? calls : 0,
+        turns: turns > 0 ? turns : 0,
+        toolCalls: toolCalls > 0 ? toolCalls : 0,
+      });
+    }
+    // 顺序契约：**不重排**——dirDays 分支已按 day 升序、day 内按 dir 键插入序输出，
+    // 残差行按 day 升序追加在尾段。曾试过全局 sort(day, dir)，但它会把残差行的
+    // 未识别键排到该日首位（"(" 的字典序最前），进而改变 dirTotals 的插入序；
+    // dirTotals 用稳定排序（同 calls 保持插入序），下游「候选 calls 降序」断言
+    // 因此被打破。行序是查询面契约的一部分（dirStacked 的图例并集、报告快照顺序），
+    // 保持现有顺序 = 对既有行为零扰动。
     return out;
   }
 
@@ -857,6 +952,16 @@ function sub(oldV: number | null, newV: number | null): number | null {
   if (newV === null) return oldV === null ? null : -oldV;
   if (oldV === null) return newV;
   return newV - oldV;
+}
+
+/**
+ * 残差投影的 token 差（#633 修复）：聚合面 − 目录面，null-aware。
+ * 双方皆 null → null（无该维度事实）；单侧 null 按 0 参与（另一侧有值即有残差）；
+ * 负值保留给调用方判定（调用方按 0 处理并依赖「日总量恒等」断言暴露不一致）。
+ */
+function diffToken(aggV: number | null, dirV: number | null): number | null {
+  if (aggV === null && dirV === null) return null;
+  return (aggV ?? 0) - (dirV ?? 0);
 }
 
 /** 内存日桶的最早 day key（无数据返回 null；day key 字典序即时间序）。 */
