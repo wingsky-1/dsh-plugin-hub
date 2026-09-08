@@ -1635,7 +1635,19 @@ console.log("[smoke] #105① /history 渲染缓存断言全部通过 ✓");
     const badDir = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?dir=${encodeURIComponent(longDir)}` }));
     assert.deepEqual(badDir.series, payload.series, "非法 dir（超长）回退全目录聚合（行为与未传一致）");
     assert.equal(badDir.dir, null, "非法 dir 回显 null");
-  }
+
+    // ---------------------------------------------------------------- #633 分片 b2 D2/B1：byDir=1 全目录拆段面（加性，不影响 b1 断言）
+    {
+      const byDirAll = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?byDir=1` }));
+      assert.equal(byDirAll.byDir, true, "byDir=1 回显 byDir=true");
+      assert.equal(byDirAll.dir, null, "byDir 面未过滤 → dir 回显 null");
+      assert.equal(byDirAll.series.find((p) => p.key === today).total, 165, "byDir 面今日 total = 全目录聚合 165（过滤面同口径）");
+      const unkPart = byDirAll.series.find((p) => p.key === today).parts.find((p) => p.provider === UNK);
+      assert.ok(unkPart && unkPart.value === 165, "byDir 面按目录拆段：未识别桶段 = 165（本块两会话均无 cwd）");
+      assert.ok(byDirAll.dirs.some((d) => d.dir === UNK), "byDir 面 dirs 图例含未识别桶（B2 不消失）");
+      assert.ok(byDirAll.providers.length === 0, "byDir 面无 providers 图例（目录维度拆段）");
+      // 不带 byDir 的现状面与 byDir 面共存：b1「未传 dir 序列 = 基线」断言已锁定零回归
+    } }
 
   // ---------------------------------------------------------------- #503 M2.1：n 参数 + 按粒度×留存 clamp + 新响应字段
 
@@ -1974,6 +1986,133 @@ console.log("[smoke] #503 trend 挂接 + /trend 集成断言全部通过 ✓");
 
   await (effects.at(-1) as () => Promise<void>)(); // 卸载（async disposer：trend 刷盘 + scheduler 停 tick）
   console.log("[smoke] #503 M3 报告接线断言全部通过 ✓");
+}
+
+// ---------------------------------------------------------------- #633 分片 b2 D2：双目录全链路（cwd 接入 → 聚合/过滤/图例/目录范围候选）
+
+{
+  // 独立 historyDir：磁盘分片全隔离（前序块零混入）
+  const dir = mkdtempSync(join(tmpdir(), "dou-633-d2-"));
+  // fake sessions store：官方契约面 get(id)?.header.cwd（apply 的 resolveCwd 消费同款）
+  const cwdBySession = new Map<string, string | undefined>([
+    ["sess-d2-a", "/home/u/dsh-plugin-hub"],
+    ["sess-d2-b", "/home/u/xiaozhuge"],
+    // 无 cwd 会话：store 有行但 header.cwd 缺失 → 未识别桶（B2 数据面）
+    ["sess-d2-none", undefined],
+  ]);
+  const fakeSession = (id: string) => ({
+    get(sid: unknown) {
+      const key = String(sid);
+      if (!cwdBySession.has(key)) return undefined;
+      return { header: { cwd: cwdBySession.get(key) } };
+    },
+  });
+
+  const { ctx, routes, listeners, emitEvent } = makeFakeCtx();
+  // 挂 sessions store：resolveCwd → ctx.sessions.get(...)（分片 a A1 接线路径）
+  (ctx as Record<string, unknown>).sessions = fakeSession("store");
+  await apply(ctx, { ...ISOLATED_CONFIG, historyDir: join(dir, "hist") });
+  const trendRoute = routes.find((r) => r.path === ROUTES.trend);
+  const cfgRoute = routes.find((r) => r.path === ROUTES.reportConfig);
+  assert.ok(trendRoute !== undefined && cfgRoute !== undefined, "D2 块路由存在");
+
+  // 双目录 + 一个无 cwd 会话，各一次定稿调用（时间 = 今日，落当日明细分片）
+  const t = Date.now();
+  const today = dayKey(t);
+  const emitCall = (sessionId, seqBase, provider, model, input, output) => {
+    const s = { id: sessionId };
+    emitEvent("session/event", s, { type: "request/header", seq: seqBase, time: t, data: { header: { config: { provider, model } }, reason: "initial" } });
+    emitEvent("session/event", s, { type: "assistant/chunk", seq: seqBase + 1, time: t, data: { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: input, outputTokens: output } } } });
+  };
+  emitCall("sess-d2-a", 1, "deepseek", "deepseek-chat", 200, 100);   // dsh-plugin-hub 桶
+  emitCall("sess-d2-b", 11, "openai", "gpt-x", 20, 10);              // xiaozhuge 桶
+  emitCall("sess-d2-none", 21, "deepseek", "deepseek-chat", 5, 5);   // 未识别桶
+
+  // 官方排空点先行刷盘（事件 → 分片；路由读内存聚合，与 b1 块同序）
+  await listeners.get("session/flush")[0]();
+
+  const DIR_A = "dsh-plugin-hub";
+  const DIR_B = "xiaozhuge";
+  const UNK = "(unidentified)";
+
+  // 1. 双目录聚合数值：byDir=1 全目录面三桶各归各值（不合并不覆盖，B1 可区分性）
+  const allDirs = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?byDir=1` }));
+  const allToday = allDirs.series.find((p) => p.key === today);
+  assert.equal(allToday.total, 340, "双目录全量 = 200+100+20+10+5+5 = 340");
+  const partOf = (point, name) => point.parts.find((p) => p.provider === name)?.value ?? null;
+  assert.equal(partOf(allToday, DIR_A), 300, "目录 A 段 = 300（basename 桶归属）");
+  assert.equal(partOf(allToday, DIR_B), 30, "目录 B 段 = 30");
+  assert.equal(partOf(allToday, UNK), 10, "无 cwd 会话 = 10 入未识别桶（不消失不计入具名目录）");
+  assert.deepEqual(
+    allDirs.dirs.map((d) => d.dir).sort(),
+    [DIR_A, DIR_B, UNK].sort(),
+    "dirs 图例 = 双具名目录 + 未识别桶并集（多目录可区分）",
+  );
+
+  // 2. dir 过滤面：过滤后数值 = 该目录子集（A=300 / B=30 / 未识别=10，互不串桶）
+  const onlyA = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?dir=${encodeURIComponent(DIR_A)}` }));
+  assert.equal(onlyA.series.find((p) => p.key === today).total, 300, "dir=A 过滤 → total=300（子集口径）");
+  assert.equal(onlyA.summary.total, 300, "dir=A 汇总卡 = 300");
+  const onlyB = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?dir=${encodeURIComponent(DIR_B)}` }));
+  assert.equal(onlyB.series.find((p) => p.key === today).total, 30, "dir=B 过滤 → total=30");
+  const onlyUnk = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?dir=${encodeURIComponent(UNK)}` }));
+  assert.equal(onlyUnk.series.find((p) => p.key === today).total, 10, "dir=未识别桶 过滤 → total=10（桶键同为合法过滤值）");
+
+  // 3. provider 面零回归：cwd 接入不改既有 day×provider×model 聚合数值（A1 红线）
+  const providerFace = await callHandler(trendRoute, fakeReq({ url: ROUTES.trend }));
+  assert.equal(providerFace.series.find((p) => p.key === today).total, 340, "provider 面总量不变 = 340");
+  assert.deepEqual(providerFace.dirs, [], "provider 面 dirs 恒空数组（现状形状零变化）");
+  assert.equal(providerFace.dir, null, "provider 面 dir 回显 null");
+
+  // 4. report-config GET 附目录候选（B4 数据源）：双目录 + 未识别桶、calls 降序、basename 形态
+  const cfgBody = await callHandler(cfgRoute, fakeReq({ url: ROUTES.reportConfig }));
+  assert.ok(Array.isArray(cfgBody.dirs) && cfgBody.dirs.length === 3, "GET /report-config 附 dirs 候选（含未识别桶）");
+  const dirsSorted = cfgBody.dirs.map((d) => d.dir).sort();
+  assert.deepEqual(dirsSorted, [DIR_A, DIR_B, UNK].sort(), "候选含双具名目录 + 未识别桶");
+  for (const d of cfgBody.dirs) {
+    assert.ok(!d.dir.includes("/") && !d.dir.includes("\\"), `候选目录为 basename 形态（无路径分隔符：${d.dir}）`);
+    // eslint-disable-next-line no-control-regex
+    assert.ok(!/[\u0000-\u001f\u007f]/.test(d.dir), `候选目录无控制字符（${d.dir}）`);
+  }
+  const topByCalls = cfgBody.dirs[0];
+  assert.equal(topByCalls.dir, DIR_A, "候选 calls 降序：目录 A（3 calls）居首");
+
+  // 5. directories 配置 round-trip（路由侧四同步已在 b1 断言；此处验证候选与保存值同键域）
+  const scoped = await callHandler(
+    cfgRoute,
+    fakeReq({ method: "POST", body: JSON.stringify({ directories: [DIR_A, UNK], push: { enabled: false } }) }),
+  );
+  assert.deepEqual(scoped.config.directories, [DIR_A, UNK], "按候选键保存 round-trip（basename/未识别桶键直存）");
+
+  console.log("[smoke] #633 分片 b2 D2 双目录全链路断言全部通过 ✓");
+}
+
+// ---------------------------------------------------------------- #633 分片 b2 D2：客户端源码契约断言（目录控件存在性 + 未识别口径 + B4 多选）
+
+{
+  const pkgDir = join(here, "..");
+  const trendSource = readFileSync(join(pkgDir, "src/client/trend.tsx"), "utf8");
+  const reportSource = readFileSync(join(pkgDir, "src/client/report.tsx"), "utf8");
+  const mathSource = readFileSync(join(pkgDir, "src/client/trend-math.ts"), "utf8");
+  const routesSource = readFileSync(join(pkgDir, "src/routes/ui.ts"), "utf8");
+
+  // B1：趋势面板目录筛选控件存在（select + dirs 数据源 + 全部目录/byDir 请求面）
+  assert.ok(trendSource.includes('aria-label={t("trendDirLabel")}'), "趋势面板存在目录筛选下拉（aria-label 哨兵）");
+  assert.ok(trendSource.includes("trendDirAll"), "目录下拉首项「全部目录」");
+  assert.ok(trendSource.includes('params.set("dir", dirFilter)'), "选定目录 → 请求带 dir 参数");
+  assert.ok(trendSource.includes('params.set("byDir", "1")'), "全部目录 → byDir=1 全目录拆段面");
+  assert.ok(trendSource.includes("dirStackId"), "目录段 id 经 dirStackId 防御归一（异常值不进渲染面）");
+  assert.ok(routesSource.includes('url.searchParams.get("byDir") === "1"'), "宿主 /trend 支持 byDir=1（客户端数据源契约）");
+
+  // B2：未识别桶恒出现 + 口径注明
+  assert.ok(trendSource.includes("trendDirUnidentifiedNote"), "未识别桶图例/tooltip 注明口径");
+  assert.ok(mathSource.includes('export const DIR_UNIDENTIFIED = "(unidentified)"'), "客户端未识别桶键与宿主 TREND_UNIDENTIFIED 字面一致");
+
+  // B4：设置页报告目录范围多选（GET dirs 回填 + directories draft + 保存 round-trip 消费点）
+  assert.ok(reportSource.includes("reportDirectories"), "报告配置卡存在目录范围多选（i18n 哨兵）");
+  assert.ok(reportSource.includes("setDirOptions"), "目录候选经 GET dirs 回填");
+  assert.ok(reportSource.includes("directories:"), "多选结果写进 draft.directories（POST 保存体）");
+  assert.ok(reportSource.includes("reportDirectoriesHintScoped"), "保存后影响报告口径的提示文案存在");
 }
 
 // 恢复真实环境变量（测试收尾）
