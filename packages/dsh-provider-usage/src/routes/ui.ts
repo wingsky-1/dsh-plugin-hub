@@ -116,6 +116,9 @@ export function handleTrend(
     // #633 分片 b B1：目录过滤回显（null = 未过滤 = 现状形状）；dirs 由 stack
     // 归一形状携带（过滤分支 = 窗口内目录图例，含未识别桶；dir 落盘即 basename
     // 净化值，无路径分隔符）。#633 分片 b2 B1：byDir=1 全目录面回显 byDir=true。
+    // #633 P2：回显实际生效面——byDirAll 定义含 dir === undefined 守卫（dir 优先
+    // 于 byDir），同传 dir+byDir 时 byDir 回显 false、dir 回显生效键（客户端以
+    // 回显驱动控件选中态，虚假 true 会误导恢复逻辑；smoke 同传用例固化）。
     dir: dir ?? null,
     byDir: byDirAll,
     byModel,

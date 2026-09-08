@@ -420,12 +420,15 @@ export function TrendSection(): React.ReactElement {
           <SummaryCard label={t("trendCardAvg")} value={avg === null ? "-" : fmtCompact(avg)} hint={`${activeBuckets} ${granLabel(gran)}`} />
           <SummaryCard label={t("trendCardCalls")} value={fmtCompact(summary.calls)} hint={hiddenCount > 0 ? t("trendHiddenParts", { k: String(hiddenCount) }) : null} />
           <SummaryCard label={`${t("trendCardPeak")} · ${summary.peakKey === null ? "-" : fmtBucketHuman(summary.peakKey, gran)}`} value={peakVal === null ? "-" : fmtCompact(peakVal)} />
-          <SummaryCard label={t("trendCardTop")} value={summary.top === null ? "-" : dirMode ? dirDisplayLabel(summary.top.provider) : summary.top.provider} />
+          {/* P2：目录面 Top 汇总卡用目录面标签（trendCardTopDir），与 dirDisplayLabel
+              消费同面；adapter 面沿用「Top 适配器」不变 */}
+          <SummaryCard label={dirMode ? t("trendCardTopDir") : t("trendCardTop")} value={summary.top === null ? "-" : dirMode ? dirDisplayLabel(summary.top.provider) : summary.top.provider} />
         </div>
       ) : null}
       {/* 图例（窗口总量降序；点选显隐，M2.1）。#633 分片 b2：目录面图例条目经
           dirDisplayLabel——未识别桶恒为「未识别」并 title 注明口径（B2），异常值
-          不渲染空标签（B3）；具名目录 title 展示原键。 */}
+          不渲染空标签（B3）；具名目录 title 同源净化标签（P2：原键含控制字符
+          残留可能，可见文本与 title 统一走 dirDisplayLabel）。 */}
       {hasData && data !== null && stackOrder.length > 0 ? (
         <div
           className="dou-trend-legend"
@@ -435,8 +438,9 @@ export function TrendSection(): React.ReactElement {
             const off = hidden.has(id);
             // 目录面段 id = 目录键本身（dirStackId 归一后）；provider 面 id 原样展示
             const label = dirMode ? dirDisplayLabel(id) : id;
+            // P2：目录面 title 与可见文本同源净化（未识别=口径注释；具名=净化标签）
             const title = dirMode
-              ? dirNeedsScopeNote(id) ? t("trendDirUnidentifiedNote") : id
+              ? dirNeedsScopeNote(id) ? t("trendDirUnidentifiedNote") : dirDisplayLabel(id)
               : undefined;
             return (
               <span
@@ -584,7 +588,11 @@ function renderTip(bar: RenderBar, point: NonNullable<TrendResponse>["series"][n
             const off = hidden.has(id);
             // 目录面：未识别桶恒「未识别」+ 口径注释（B2）；异常值归未识别（B3）
             const label = dirMode ? dirDisplayLabel(p.provider) : id;
-            const title = dirMode && dirNeedsScopeNote(p.provider) ? t("trendDirUnidentifiedNote") : undefined;
+            // P2：目录面 title 同源净化（未识别=口径注释；具名=净化标签，省略号
+            // 截断时悬停可读全名）；provider 面不携带 title（原状）
+            const title = dirMode
+              ? dirNeedsScopeNote(p.provider) ? t("trendDirUnidentifiedNote") : dirDisplayLabel(p.provider)
+              : undefined;
             return (
               <div key={`${id}-${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 14, fontVariantNumeric: "tabular-nums", opacity: off ? 0.45 : 1 }}>
                 <span title={title} style={{ display: "inline-flex", alignItems: "center", gap: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>

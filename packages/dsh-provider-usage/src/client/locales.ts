@@ -132,6 +132,7 @@ export const zh = {
   trendCardCalls: "调用次数",
   trendCardPeak: "峰值桶",
   trendCardTop: "Top 适配器",
+  trendCardTopDir: "Top 目录", // #633 P2：目录面 Top 汇总卡标签（与 trendCardTop 同风格对称）
   trendFetchFail: "趋势数据获取失败",
   trendEmptyTitle: "暂无趋势数据",
   trendEmptyHint: "会话产生用量后，这里会展示近期的使用趋势。",
@@ -341,6 +342,7 @@ export const en: Record<ProviderUsageLocaleKey, string> = {
   trendCardCalls: "Calls",
   trendCardPeak: "Peak bucket",
   trendCardTop: "Top adapter",
+  trendCardTopDir: "Top directory", // #633 P2: directory-face top summary card label (mirrors trendCardTop)
   trendFetchFail: "Failed to load trend data",
   trendEmptyTitle: "No trend data yet",
   trendEmptyHint: "Trends for recent usage will appear here once sessions produce usage.",

@@ -1635,6 +1635,10 @@ console.log("[smoke] #105① /history 渲染缓存断言全部通过 ✓");
     const badDir = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?dir=${encodeURIComponent(longDir)}` }));
     assert.deepEqual(badDir.series, payload.series, "非法 dir（超长）回退全目录聚合（行为与未传一致）");
     assert.equal(badDir.dir, null, "非法 dir 回显 null");
+    // #633 P2：dir+byDir 同传 → 回显实际生效面（dir 过滤面生效，byDir 回显 false）
+    const bothParams = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?dir=${encodeURIComponent(UNK)}&byDir=1` }));
+    assert.equal(bothParams.dir, UNK, "dir+byDir 同传：dir 过滤面生效（回显 dir 键）");
+    assert.equal(bothParams.byDir, false, "dir+byDir 同传：byDir 回显 false（实际生效面，防虚假 true 误导客户端恢复逻辑）");
 
     // ---------------------------------------------------------------- #633 分片 b2 D2/B1：byDir=1 全目录拆段面（加性，不影响 b1 断言）
     {
@@ -2078,7 +2082,7 @@ console.log("[smoke] #503 trend 挂接 + /trend 集成断言全部通过 ✓");
   for (const d of cfgBody.dirs) {
     assert.ok(!d.dir.includes("/") && !d.dir.includes("\\"), `候选目录为 basename 形态（无路径分隔符：${d.dir}）`);
     // eslint-disable-next-line no-control-regex
-    assert.ok(!/[\u0000-\u001f\u007f]/.test(d.dir), `候选目录无控制字符（${d.dir}）`);
+    assert.ok(!/[\u0000-\u001f\u007f-\u009f]/.test(d.dir), `候选目录无 C0+DEL+C1 控制字符（${d.dir}；P2 listDirs 出口净化收口）`);
   }
   const topByCalls = cfgBody.dirs[0];
   assert.equal(topByCalls.dir, DIR_A, "候选 calls 降序：目录 A（3 calls）居首");
@@ -2122,6 +2126,14 @@ console.log("[smoke] #503 trend 挂接 + /trend 集成断言全部通过 ✓");
   // B2：未识别桶恒出现 + 口径注明
   assert.ok(trendSource.includes("trendDirUnidentifiedNote"), "未识别桶图例/tooltip 注明口径");
   assert.ok(mathSource.includes('export const DIR_UNIDENTIFIED = "(unidentified)"'), "客户端未识别桶键与宿主 TREND_UNIDENTIFIED 字面一致");
+
+  // #633 复核闸 P2：目录面文案/title/出口净化（顺带批锚点）
+  assert.ok(trendSource.includes('dirMode ? t("trendCardTopDir") : t("trendCardTop")'), "Top 汇总卡目录面用目录面标签（trendCardTopDir）");
+  assert.ok(trendSource.includes("dirNeedsScopeNote(id) ? t(\"trendDirUnidentifiedNote\") : dirDisplayLabel(id)"), "图例 title 与可见文本同源净化（不再直用原始键）");
+  assert.ok(readFileSync(join(pkgDir, "src/client/locales.ts"), "utf8").includes('trendCardTopDir: "Top 目录"'), "locales 中英对称新增目录面 Top 标签");
+  assert.ok(reportSource.includes("disabled={dirOptions.length === 0}"), "B4 空候选时「全部目录」checkbox 禁用（空=全部语义不变）");
+  const applySource = readFileSync(join(pkgDir, "src/apply.ts"), "utf8");
+  assert.ok(applySource.includes("sanitizeDirName(r.dir) ?? TREND_UNIDENTIFIED"), "listDirs 出口过 sanitizeDirName（旁路污染分片行防御收口）");
 
   // B4：设置页报告目录范围多选（GET dirs 回填 + directories draft + 保存 round-trip 消费点）
   assert.ok(reportSource.includes("reportDirectories"), "报告配置卡存在目录范围多选（i18n 哨兵）");

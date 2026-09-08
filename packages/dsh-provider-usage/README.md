@@ -218,7 +218,7 @@ dsh-mcp-manager 浮窗的默认位置（`top-right`、距顶 8px、高约 26px�
 | --- | --- |
 | `GET /api/dsh-provider-usage/stats?provider=X` | 用量统计 + `capsuleHtml`（胶囊内容）+ `status`/`adapterVersion` |
 | `GET /api/dsh-provider-usage/history?provider=X&days=N` | 历史查询 + `panelHtml`（面板内容）+ 查询 `range`（进程内渲染缓存，见下节） |
-| `GET /api/dsh-provider-usage/trend?granularity=day&metric=total&n=30&provider=X&byModel=1&dir=Y` | 会话用量趋势（#503 M2）；#633 起支持可选 `dir` 目录过滤（目录 basename 或 `(unidentified)`，非法值回退全目录聚合；传 `dir` 时响应按目录维度拆段并附 `dirs` 目录图例，未传时形状与 #633 前一致） |
+| `GET /api/dsh-provider-usage/trend?granularity=day&metric=total&n=30&provider=X&byModel=1&dir=Y&byDir=1` | 会话用量趋势（#503 M2）；#633 起支持可选 `dir` 目录过滤（目录 basename 或 `(unidentified)`，非法值回退全目录聚合；传 `dir` 时响应按目录维度拆段并附 `dirs` 目录图例，未传时形状与 #633 前一致）；#633 复核闸起支持 `byDir=1` 全目录拆段面（未传 `dir` 时按目录拆段 + `dirs` 全集图例，加性附 `providers` 适配器候选；`dir` 优先于 `byDir`，同传时按 `dir` 过滤面生效并回显） |
 | `GET /api/dsh-provider-usage/health` | 健康检查 + 适配器快照 + 错误登记 |
 | `GET /api/dsh-provider-usage/adapters.json` | 适配器候选元数据（设置页主列表同源，含 `modelProviders`） |
 | `POST /api/dsh-provider-usage/adapters/select` | 切换/清空启用适配器 |

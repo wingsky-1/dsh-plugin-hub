@@ -531,9 +531,12 @@ export function ReportSection(): React.ReactElement {
           <div className="dou-reportCol">
             <div className="dou-reportRow">
               <span className="dou-reportLabel">{t("reportDirectories")}</span>
-              <label className="dou-reportInline">
+              <label className="dou-reportInline" style={dirOptions.length === 0 ? { opacity: 0.55 } : undefined}>
+                {/* P2：候选空时禁用（无候选可取消全选，空 = 全部语义不变；视觉弱化
+                    提示不可交互，防点击无反馈） */}
                 <input
                   type="checkbox"
+                  disabled={dirOptions.length === 0}
                   checked={draft.directories.length === 0}
                   onChange={(e: unknown) => { patchTop({ directories: (e as { target: { checked: boolean } }).target.checked ? [] : draft.directories }); }}
                 />

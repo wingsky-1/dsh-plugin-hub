@@ -55,7 +55,11 @@ function isValidDirKey(v: unknown): boolean {
 }
 
 /**
- * cwd → 目录键归一化（#633 A1/C2 数据层约定：dir 字段落盘即存 basename 净化值）：
+ * cwd → 目录键归一化（#633 A1/C2 数据层约定：dir 字段落盘即存 basename 净化值）；
+ * **控制字符剥除口径的权威定义**（#633 P2 注释口径收口）：出口各处（generate.ts
+ * 注入面 / report/config.ts normalizeReportDirectories / apply.ts listDirs）与
+ * 客户端（trend-math.ts dirDisplayLabel）一律注明「与 sanitizeDirName 口径一致」，
+ * 口径变更须同步全部引用方并跑 C1/C2 断言。
  * 剥控制字符（C0/C1）→ basename（POSIX '/' 与 Windows '\' 分隔符同取——取两者
  * lastIndexOf 较大者切末段；尾斜杠取前段）。无效输入（非字符串/空白/根路径/
  * 剥后为空）返回 null → 归「未识别」桶。
