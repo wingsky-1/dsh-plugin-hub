@@ -41,6 +41,7 @@ import {
   TREND_UNIDENTIFIED,
   TREND_DONE_MAX,
   isValidShardRow,
+  sanitizeDirName,
   normalizeConfig,
   DEFAULT_CONFIG,
 } from "../lib/index.js";
@@ -994,25 +995,36 @@ function writeAggShardLine(row) {
 
 {
   // A1(c)：resolveCwd 返回含路径分隔符/尾斜杠的 cwd → 落盘为 sanitizeDirName
-  // 净化后的 basename（数据层即存净化值，B1 可区分性约定）
+  // 净化后的 basename（数据层即存净化值，B1 可区分性约定）；POSIX '/' 与
+  // Windows '\' 分隔符同取（复核闸 P1：反斜杠路径整串落盘即泄漏绝对路径）。
   const root = mkdtempSync(join(tmpdir(), "dou-trend-dir-sanitize-"));
+  let flip = 0;
   const tracker = await TrendTracker.start({
     root,
     now: () => T0,
     flushDebounceMs: 60000,
-    resolveCwd: () => "/home/u/my proj/v2/",
+    resolveCwd: () => ["/home/u/my proj/v2/", "C:\\Users\\alice\\repo", "D:\\work\\my app\\", "/mixed/slash\\back"][flip++ % 4],
   });
-  tracker.handleEvent({ id: "s1" }, ev("request/header", HEADER(), T0, 1));
-  tracker.handleEvent({ id: "s1" }, ev("assistant/chunk", USAGE(10, 5), T0, 2));
-  tracker.handleEvent({ id: "s1" }, ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T0, 3));
+  // 四个会话各一次定稿调用 + turn/end（覆盖 POSIX 尾斜杠 / Windows 反斜杠 / Windows 尾反斜杠 / 混合分隔符）
+  for (let s = 1; s <= 4; s += 1) {
+    tracker.handleEvent({ id: `s${s}` }, ev("request/header", HEADER(), T0, s * 3 - 2));
+    tracker.handleEvent({ id: `s${s}` }, ev("assistant/chunk", USAGE(10, 5), T0, s * 3 - 1));
+    tracker.handleEvent({ id: `s${s}` }, ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T0, s * 3));
+  }
   await tracker.flushNow();
   const rows = readFileSync(join(root, "details", `${dayKey(T0)}.jsonl`), "utf8").trimEnd().split("\n").map((l) => JSON.parse(l));
-  const detail = rows.find((r) => r.kind === "detail");
-  const counter = rows.find((r) => r.kind === "counter");
-  assert.equal(detail.dir, "v2", "detail 行 dir = basename 净化值（尾斜杠剥除取末段）");
-  assert.equal(counter.dir, "v2", "counter 行 dir 同口径");
-  assert.ok(!detail.dir.includes("/"), "落盘 dir 不含路径分隔符");
+  const dirOf = (sid) => rows.find((r) => r.kind === "detail" && r.session === sid).dir;
+  assert.equal(dirOf("s1"), "v2", "POSIX 尾斜杠 → basename（末段）");
+  assert.equal(dirOf("s2"), "repo", "Windows 反斜杠路径 → basename（复核闸 P1：整串落盘即绝对路径泄漏）");
+  assert.equal(dirOf("s3"), "my app", "Windows 尾反斜杠 → basename（前段）");
+  assert.equal(dirOf("s4"), "back", "混合分隔符取最深一段（lastIndexOf 两系较大者）");
+  const counters = rows.filter((r) => r.kind === "counter");
+  assert.ok(counters.length === 4 && counters.every((r) => !r.dir.includes("\\") && !r.dir.includes("/")), "counter 行 dir 同口径：四例全 basename 化，无任何分隔符残留");
   await tracker.dispose();
+  // 纯函数面直测（复核闸 P1 锁定 sanitizeDirName 本体语义）
+  assert.equal(sanitizeDirName("C:\\Users\\bob\\proj"), "proj", "sanitizeDirName: Windows 反斜杠 basename");
+  assert.equal(sanitizeDirName("C:\\"), null, "sanitizeDirName: 盘符根路径 → null（未识别）");
+  assert.equal(sanitizeDirName("\\\\server\\share\\notes"), "notes", "sanitizeDirName: UNC 形态取末段");
 }
 
 {
@@ -1534,7 +1546,8 @@ const A2_LEGACY_AGG = {
   // M1(b)：复核 M1 修复——自愈压实路径 dir 行为 + pruneDays 联动删除。
   // 自愈：过去日明细（含 dir）无聚合分片 → start 重建 + rollupDay 压实；dir 折算
   // 同源走 pending 行（takeDirUnpersisted 不过滤 persisted），重建行折算不丢——
-  // 维持「rebuild 明细/计数分支不进 dirDays」图纸口径即可（M1 处置方案留痕）。
+  // 与 src/retokenCell 注释口径统一：rebuild 明细/计数分支不进 dirDays（dir 内存桶
+  // 单向流入 = apply 累加 + dir 汇总行 rebuild 写入；权威数据只从 pending 行折算）。
   const root = mkdtempSync(join(tmpdir(), "dou-trend-m1-heal-"));
   const day1 = "2026-09-03";
   const detDir = join(root, "details");

@@ -15,13 +15,17 @@
  * 并丢弃明细。分片行一律自带 schema 版本 v 与 kind 判别字段（重启重建遇日切瞬间无歧义）。
  */
 
-/** 分片行 schema 版本：字段语义破坏性变更时递增（载入只认当前版本，其余跳过）。 */
-export const TREND_ROW_VERSION = 1;
 /**
- * #633 A1/A2：目录维度（cwd basename 净化值）为**加性可选键**，不递增版本——
- * 旧格式行（无 dir 键）必须原样读回（round-trip 不丢行、不因缺键拒绝），
- * 重建时目录维度归「未识别」桶（TREND_UNIDENTIFIED，不静默丢弃）。
+ * 分片行 schema 版本：字段语义破坏性变更时递增（载入只认当前版本，其余跳过）。
+ *
+ * #633 A1/A2：目录维度（sanitizeDirName 净化 basename 或 TREND_UNIDENTIFIED）为
+ * **加性可选键**，不递增版本——旧格式行（无 dir 键）原样读回（round-trip 不丢行、
+ * 不因缺键拒绝）。重建语义：旧格式行只进 cells，**不补造 dir 行**——「未识别」
+ * 目录桶仅由收集器路径产生（collector.dirOf 对 store 无 session / cwd 缺失 /
+ * 获取抛错的会话显式归桶），折算与重建路径均不补造；目录维度日汇总（kind:"dir"）
+ * 由 pending 行折算（A4），分片读回经 rebuild dir 分支进内存 dirDays（复核 M1）。
  */
+export const TREND_ROW_VERSION = 1;
 
 /** 未识别归属桶键（provider/model 缺失显式入此桶，不静默丢弃）。 */
 export const TREND_UNIDENTIFIED = "(unidentified)";
@@ -52,8 +56,9 @@ function isValidDirKey(v: unknown): boolean {
 
 /**
  * cwd → 目录键归一化（#633 A1/C2 数据层约定：dir 字段落盘即存 basename 净化值）：
- * 剥控制字符（C0/C1）→ POSIX basename（取最后一个 '/' 后段，尾斜杠取前段）。
- * 无效输入（非字符串/空白/根路径/剥后为空）返回 null → 归「未识别」桶。
+ * 剥控制字符（C0/C1）→ basename（POSIX '/' 与 Windows '\' 分隔符同取——取两者
+ * lastIndexOf 较大者切末段；尾斜杠取前段）。无效输入（非字符串/空白/根路径/
+ * 剥后为空）返回 null → 归「未识别」桶。
  * 注意：不在数据层截断长度——截断属展示出口（C2），数据层截断会把不同目录
  * 暗中合并为同桶（违反 B1 可区分性）。
  */
@@ -65,9 +70,12 @@ export function sanitizeDirName(cwd: unknown): string | null {
     if (c < 0x20 || (c >= 0x7f && c <= 0x9f)) continue; // C0 + DEL + C1 控制字符剥除
     cleaned += ch;
   }
-  if (cleaned.endsWith("/")) cleaned = cleaned.slice(0, -1);
-  const base = cleaned.slice(cleaned.lastIndexOf("/") + 1);
+  while (cleaned.endsWith("/") || cleaned.endsWith("\\")) cleaned = cleaned.slice(0, -1); // 尾部斜杠（两系）剥除
+  const cut = Math.max(cleaned.lastIndexOf("/"), cleaned.lastIndexOf("\\")); // POSIX/Windows 分隔符同取，切 basename
+  const base = cleaned.slice(cut + 1);
   if (base.length === 0 || base.trim().length === 0) return null; // 根路径/空段/纯空白 → 未识别
+  // 盘符根（如 C:\）剥尾斜杠后剩 "C:"，非目录名（Windows Path.GetFileName 语义同样为空）→ 未识别
+  if (/^[A-Za-z]:$/.test(base)) return null;
   return base;
 }
 
@@ -88,7 +96,7 @@ export interface TrendDetailRow {
   provider: string;
   /** 归属 model（缺失时 null；未识别桶 model 记 null）。 */
   model: string | null;
-  /** 目录归属（cwd basename 净化值；#633 新行必有，旧格式行无此键 → 重建归未识别）。 */
+  /** 目录归属（sanitizeDirName 净化 basename 或 TREND_UNIDENTIFIED；#633 新行必有，旧格式行无此键）。 */
   dir?: string;
   input: number | null;
   output: number | null;

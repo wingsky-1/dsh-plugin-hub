@@ -169,13 +169,12 @@ export class TrendAggregator {
 
   /**
    * 明细行 token 变更的 cell 增量修正。
-   * 注意：只修 cells、不同步 dirDays。行来源其实可区分（复核 L1 纠正旧论证）：
-   * pending 登记的 persisted 字段即判别——apply 产行（false）已由 applyCall/
-   * applyCounter 累加进 dirDays，重建产行（true）不进 dirDays（#633 图纸），
-   * 技术上可按 persisted 精确同步。裁定仍为不同步：dirDays 当前无查询面消费
-   * （分片 b 接线时再定同步策略），统一走「内存 dir 桶单向流入（apply 累加 /
-   * rebuild 读回写入，压实与 prune 删除）、权威数据只从 pending 行折算」的简单
-   * 口径；applyCorrect 已就地改 pending 行值（折算取新值），持久层 dir 行无漂移。
+   * 注意：只修 cells、不同步 dirDays（复核 L1 纠正旧论证，与 M1(b) 测试注释口径统一）：
+   * dir 内存桶单向流入——apply 累加、rebuild 的 dir 汇总行写入，压实与 prune 删除；
+   * rebuild 的明细/计数分支不进 dirDays。目录维度的权威数据只从 pending 行折算
+   * （takeDirUnpersisted 不过滤 persisted，重建行折算不丢），applyCorrect 已就地改
+   * pending 行值（折算取新值），持久层 dir 行无漂移；不按 persisted 判别行来源做
+   * dirDays 反向同步，维持单向流入的简单口径（目录查询面消费同走该口径）。
    */
   private retokenCell(row: TrendDetailRow, next: TrendTokens): void {
     const cell = this.cellOf(row.day, row.provider, row.model);

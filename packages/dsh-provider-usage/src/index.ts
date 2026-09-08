@@ -75,7 +75,7 @@ export { TrendAggregator, metricValue, weekStartKey, lastNWeekKeys, lastNMonthKe
 export type { TrendMetric, TrendGranularity, TrendStackPart, TrendStackPoint, TrendWindowSummary } from "./trend/aggregator.ts";
 export { TrendStore } from "./trend/store.ts";
 // isValidShardRow/safeToken/safeId：分片行校验与防御提取纯函数（单测从 lib/index.js 导入）
-export { TREND_ROW_VERSION, TREND_UNIDENTIFIED, sumToken, isValidShardRow, safeToken, safeId } from "./trend/types.ts";
+export { TREND_ROW_VERSION, TREND_UNIDENTIFIED, sumToken, isValidShardRow, safeToken, safeId, sanitizeDirName } from "./trend/types.ts";
 export type { TrendAttribution, TrendTokens, TrendDetailRow, TrendCounterRow, TrendAggRow, TrendDirRow, TrendCell } from "./trend/types.ts";
 // #503 会话用量报告（M3 接线）：report 模块公共面（测试/外部消费者从 lib/index.js 导入）
 export { candidateWindow, pendingReports, presetLastRunForNewlyEnabled, previousClosedWindow, deriveLastRun, isClosedWindowRecord, LAST_RUN_SCHEMA } from "./report/schedule.ts";

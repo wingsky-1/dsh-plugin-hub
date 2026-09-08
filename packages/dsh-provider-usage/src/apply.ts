@@ -289,8 +289,10 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     warn: (msg) => console.warn(`[dsh-provider-usage] trend: ${sanitizeDiagnostic(msg)}`),
     // #633 A1：目录归属主源 = 官方 store 的会话创建元数据（SessionHeader.cwd）。
     // SessionId 为官方品牌类型（string & BRAND），裸 string 经 get 参数位断言桥接
-    // （brandString 桥接需新增 @deepseek-ai/dsh-brand 依赖，不引入）；store 无该
-    // session / cwd 缺失 / 抛错 → undefined，collector 侧归未识别桶（不静默丢弃）。
+    // （官方品牌桥接须 import type @deepseek-ai/dsh-brand——catalog 已锁 0.1.2-rc.1，
+    // 但本包 package.json 未声明该 peer，pnpm 严格隔离下类型不可达；引入须先过
+    // 「新增依赖」红线评审，故此处维持参数位断言）；store 无该 session / cwd 缺失 /
+    // 抛错 → undefined，collector 侧归未识别桶（不静默丢弃）。
     resolveCwd: (session) => {
       try {
         return ctx.sessions.get(session as Parameters<typeof ctx.sessions.get>[0])?.header.cwd;
