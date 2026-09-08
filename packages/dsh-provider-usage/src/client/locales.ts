@@ -158,6 +158,11 @@ export const zh = {
   trendRetained: "留存 {days} 天",
   trendCardAvg: "日均",
   trendViewVisible: "可见段",
+  // 设置页：使用趋势目录维度（#633 分片 b2 B1/B2/B3）
+  trendDirLabel: "目录",
+  trendDirAll: "全部目录",
+  trendDirUnidentified: "未识别",
+  trendDirUnidentifiedNote: "无目录信息的会话",
   // 设置页：用量报告（#503 M3）
   reportTitle: "用量报告",
   reportPeriodDaily: "日报",
@@ -354,6 +359,11 @@ export const en: Record<ProviderUsageLocaleKey, string> = {
   trendRetained: "{days}-day retention",
   trendCardAvg: "Daily avg",
   trendViewVisible: "visible",
+  // Settings: usage trend — directory dimension (#633 shard b2 B1/B2/B3)
+  trendDirLabel: "Directory",
+  trendDirAll: "All directories",
+  trendDirUnidentified: "Unidentified",
+  trendDirUnidentifiedNote: "Sessions without directory info",
   // 设置页：用量报告（#503 M3）
   reportTitle: "Usage reports",
   reportPeriodDaily: "Daily",

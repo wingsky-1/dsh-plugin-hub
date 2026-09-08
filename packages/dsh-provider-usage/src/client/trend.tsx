@@ -36,6 +36,9 @@ import {
   seriesColor,
   stackedBarsSvg,
   stackedAreasSvg,
+  dirStackId,
+  dirDisplayLabel,
+  dirNeedsScopeNote,
   type RenderBar,
   type TrendGran,
 } from "./trend-math.js";
@@ -56,6 +59,10 @@ interface TrendResponse {
   retentionDays: number;
   series: Array<{ key: string; total: number | null; parts: Array<{ provider: string; model: string | null; value: number | null }> }>;
   providers: Array<{ provider: string; model: string | null }>;
+  /** 目录图例（#633 分片 b：目录面携带，含未识别桶；provider 面 = 空数组）。 */
+  dirs?: Array<{ dir?: string | null }>;
+  /** #633 分片 b2：byDir=1 全目录面回显（客户端哨兵：分布区/下拉数据源判定）。 */
+  byDir?: boolean;
   summary: {
     total: number | null;
     calls: number;
@@ -157,6 +164,9 @@ export function TrendSection(): React.ReactElement {
   const [metric, setMetric] = React.useState("total");
   const [provider, setProvider] = React.useState("");
   const [byModel, setByModel] = React.useState(false);
+  // #633 分片 b2（B1）：目录维度筛选（"" = 全部目录 → byDir=1 全目录拆段面；
+  // 具体目录键 → dir=<键> 过滤面；未识别桶键同为合法过滤值）。
+  const [dirFilter, setDirFilter] = React.useState("");
   const [hidden, setHidden] = React.useState<ReadonlySet<string>>(new Set());
   const [data, setData] = React.useState<TrendResponse | null>(null);
   const [failed, setFailed] = React.useState(false);
@@ -173,6 +183,11 @@ export function TrendSection(): React.ReactElement {
     setFailed(false);
     setLoading(true);
     const params = new URLSearchParams({ granularity: gran, metric, n: String(effectiveRange) });
+    // #633 分片 b2（B1）：目录筛选参数——选定目录 → dir=<键>（过滤面，宿主返回该
+    // 目录子集 + dirs 图例）；「全部目录」→ byDir=1（全目录拆段面，多目录可区分）。
+    // 未选目录且无 dir 面参数 = 现状行为零变化（不传任何目录参数）。
+    if (dirFilter !== "") params.set("dir", dirFilter);
+    else params.set("byDir", "1");
     if (provider !== "") params.set("provider", provider);
     if (byModel) params.set("byModel", "1");
     fetchTimeout(`${TREND_URL}?${params.toString()}`, { headers: { Accept: "application/json" }, cache: "no-store" })
@@ -192,50 +207,65 @@ export function TrendSection(): React.ReactElement {
     return () => {
       alive = false;
     };
-  }, [gran, metric, provider, byModel, effectiveRange]);
+  }, [gran, metric, provider, byModel, dirFilter, effectiveRange]);
 
   const hasData = data !== null && data.series.some((p) => p.total !== null);
   const summary = data?.summary ?? null;
 
+  // #633 分片 b2（B1）：目录维度生效判定——「全部目录」请求（byDir=1 回显）、
+  // 目录过滤请求（dirFilter 非空）或宿主目录面响应（dirs 图例非空）。
+  const dirMode = data !== null && (data.byDir === true || dirFilter !== "" || (data.dirs?.length ?? 0) > 0);
+  // 目录面归一（B3 客户端防御）：parts[].provider（承载目录键）统一经 dirStackId
+  // ——非字符串/空值归未识别桶，后续 stackOrder/renderBars/tooltip/图例零特殊分支，
+  // 异常值不进 id 集合（杜绝空标签与控制字符渲染）。
+  const viewSeries = React.useMemo(() => {
+    if (data === null || !dirMode) return data?.series ?? [];
+    return data.series.map((point) => ({
+      ...point,
+      parts: point.parts.map((p) => ({ ...p, provider: dirStackId(p.provider) })),
+    }));
+  }, [data, dirMode]);
+
   // 窗口内段并集（按窗口总量降序 → 堆叠大段在底、跨桶位置稳定）
   const stackOrder: string[] = React.useMemo(() => {
-    if (data === null) return [];
+    if (viewSeries.length === 0) return [];
     const totals = new Map<string, number>();
-    for (const point of data.series) {
+    for (const point of viewSeries) {
       for (const p of point.parts) {
         if (p.value === null) continue;
-        const id = partId(p.provider, p.model, data.byModel);
+        const id = partId(p.provider, p.model, data?.byModel ?? false);
         totals.set(id, (totals.get(id) ?? 0) + p.value);
       }
     }
     return [...totals.keys()].sort((a, b) => (totals.get(b) ?? 0) - (totals.get(a) ?? 0));
-  }, [data]);
+  }, [viewSeries, data?.byModel]);
 
   // 渲染桶：段滤隐藏/按 stackOrder 排序 + 部分桶/无数据标记（客户端判定契约见文件头）
   const renderBars: RenderBar[] = React.useMemo(() => {
-    if (data === null) return [];
+    if (viewSeries.length === 0) return [];
     // 留存下限（宿主按天裁剪，客户端同口径推边缘桶）
     const cutoffKey = dayKeyOf(Date.now() - retentionDays * 86400000);
-    const lo = data.firstDay !== null && data.firstDay > cutoffKey ? data.firstDay : cutoffKey;
-    return data.series.map((point, idx) => {
-      const byId = new Map(point.parts.map((p) => [partId(p.provider, p.model, data.byModel), p.value ?? 0] as const));
+    const lo = data?.firstDay !== null && data?.firstDay !== undefined && data.firstDay > cutoffKey ? data.firstDay : cutoffKey;
+    const byModel = data?.byModel ?? false;
+    return viewSeries.map((point, idx) => {
+      const byId = new Map(point.parts.map((p) => [partId(p.provider, p.model, byModel), p.value ?? 0] as const));
       const segs = stackOrder.filter((id) => !hidden.has(id) && byId.has(id)).map((id) => ({ id, value: byId.get(id)! }));
       const visibleTotal = segs.reduce((s, seg) => s + seg.value, 0);
       const none = point.total === null;
       const mark: RenderBar["mark"] = none
         ? null
-        : idx === data.series.length - 1 // 尾桶 = granKeys 契约恒含的当前桶（今天/本周/本月）
+        : idx === viewSeries.length - 1 // 尾桶 = granKeys 契约恒含的当前桶（今天/本周/本月）
           ? "ongoing"
-          : bucketStartKey(point.key, data.granularity as Gran) < lo
+          : bucketStartKey(point.key, data?.granularity as Gran) < lo
             ? "edge"
             : null;
       return { key: point.key, segs, visibleTotal: segs.length > 0 ? visibleTotal : null, none, mark };
     });
-  }, [data, hidden, stackOrder, retentionDays]);
+  }, [viewSeries, data, hidden, stackOrder, retentionDays]);
 
   // Y 域 = 每桶全量段合计 point.total（堆叠视觉高度的口径；hidden 不缩轴，与汇总卡
   // 「峰值」同源——评审 P1-5）。#589 修复：原按单段最大值推域，多段桶堆叠顶溢出轴顶。
-  const ticks = React.useMemo(() => trendYTicks(data?.series ?? []).ticks, [data]);
+  const ticks = React.useMemo(() => trendYTicks(viewSeries).ticks, [viewSeries]);
 
   // 图表事件委托：pointerdown 全输入（触屏可用），pointermove 仅鼠标（防触屏滑动误触发）。
   // 事件类型为最小结构面（shim 无 React 合成事件类型；运行时是原生 PointerEvent 透传）。
@@ -253,7 +283,7 @@ export function TrendSection(): React.ReactElement {
 
   const tipIdx = tip !== null && renderBars[tip.idx] !== undefined ? tip.idx : null;
   const tipBar = tipIdx !== null ? renderBars[tipIdx] : null;
-  const tipPoint = data !== null && tipIdx !== null ? data.series[tipIdx] : null;
+  const tipPoint = viewSeries.length > 0 && tipIdx !== null ? viewSeries[tipIdx] : null;
   const hiddenCount = hidden.size;
 
   // 汇总卡值（窗口摘要）
@@ -328,7 +358,30 @@ export function TrendSection(): React.ReactElement {
             <option key={p.provider + "/" + (p.model ?? "")} value={p.provider}>{p.provider}</option>
           ))}
         </select>
-        {provider !== "" ? (
+        {/* #633 分片 b2（B1）：目录筛选下拉——「全部目录」（byDir 全目录拆段面）+
+            各目录 + 未识别桶（dirs 数据源；与既有 metric/adapter 控件同级同风格 select）。
+            目录面与 provider 面互斥（dir 行无 provider 关联）：目录生效时隐藏 provider
+            控件，防「目录 × provider」交叉出空面误读。 */}
+        {dirMode ? null : (
+          <select
+            style={selectStyle}
+            value={dirFilter}
+            aria-label={t("trendDirLabel")}
+            onChange={(e: unknown) => {
+              setDirFilter((e as { target: { value: string } }).target.value);
+              setHidden(new Set());
+              setTip(null);
+            }}
+          >
+            <option value="">{t("trendDirAll")}</option>
+            {(data?.dirs ?? []).map((d) => {
+              const key = dirStackId(d.dir);
+              // 未识别桶恒为「未识别」有标签条目（B2）；异常空值归未识别不渲染空标签（B3）
+              return <option key={key} value={key}>{dirDisplayLabel(key)}</option>;
+            })}
+          </select>
+        )}
+        {provider !== "" && !dirMode ? (
           <label style={{ fontSize: 12, display: "inline-flex", alignItems: "center", gap: 4 }}>
             <input
               type="checkbox"
@@ -363,22 +416,30 @@ export function TrendSection(): React.ReactElement {
           <SummaryCard label={t("trendCardAvg")} value={avg === null ? "-" : fmtCompact(avg)} hint={`${activeBuckets} ${granLabel(gran)}`} />
           <SummaryCard label={t("trendCardCalls")} value={fmtCompact(summary.calls)} hint={hiddenCount > 0 ? t("trendHiddenParts", { k: String(hiddenCount) }) : null} />
           <SummaryCard label={`${t("trendCardPeak")} · ${summary.peakKey === null ? "-" : fmtBucketHuman(summary.peakKey, gran)}`} value={peakVal === null ? "-" : fmtCompact(peakVal)} />
-          <SummaryCard label={t("trendCardTop")} value={summary.top === null ? "-" : summary.top.provider} />
+          <SummaryCard label={t("trendCardTop")} value={summary.top === null ? "-" : dirMode ? dirDisplayLabel(summary.top.provider) : summary.top.provider} />
         </div>
       ) : null}
-      {/* 图例（窗口总量降序；点选显隐，M2.1） */}
-      {hasData && data !== null && data.providers.length > 0 ? (
+      {/* 图例（窗口总量降序；点选显隐，M2.1）。#633 分片 b2：目录面图例条目经
+          dirDisplayLabel——未识别桶恒为「未识别」并 title 注明口径（B2），异常值
+          不渲染空标签（B3）；具名目录 title 展示原键。 */}
+      {hasData && data !== null && stackOrder.length > 0 ? (
         <div
           className="dou-trend-legend"
           style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px", fontSize: 11, color: "var(--dsw-alias-label-tertiary,#9aa0ab)", marginBottom: 8 }}
         >
           {stackOrder.map((id) => {
             const off = hidden.has(id);
+            // 目录面段 id = 目录键本身（dirStackId 归一后）；provider 面 id 原样展示
+            const label = dirMode ? dirDisplayLabel(id) : id;
+            const title = dirMode
+              ? dirNeedsScopeNote(id) ? t("trendDirUnidentifiedNote") : id
+              : undefined;
             return (
               <span
                 key={id}
                 role="switch"
                 aria-checked={!off}
+                title={title}
                 style={{ display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer", borderRadius: 4, padding: "1px 4px", opacity: off ? 0.38 : 1, textDecoration: off ? "line-through" : "none" }}
                 onClick={() => {
                   setHidden((prev) => {
@@ -394,7 +455,7 @@ export function TrendSection(): React.ReactElement {
                   className="dou-trend-legendDot"
                   style={{ width: 8, height: 8, borderRadius: "50%", flex: "none", background: seriesColor(id) }}
                 />
-                {id}
+                {label}
               </span>
             );
           })}
@@ -425,7 +486,7 @@ export function TrendSection(): React.ReactElement {
             }}
           />
           {tipBar !== null && tipPoint !== null && tip !== null ? (
-            <div className="dou-trend-tip" style={tipStyle(tip.offsetX, chartRef.current?.clientWidth ?? 0)}>{renderTip(tipBar, tipPoint, gran, data.byModel, hidden)}</div>
+            <div className="dou-trend-tip" style={tipStyle(tip.offsetX, chartRef.current?.clientWidth ?? 0)}>{renderTip(tipBar, tipPoint, gran, data.byModel, hidden, dirMode)}</div>
           ) : null}
         </div>
       ) : (
@@ -489,8 +550,8 @@ function tipStyle(offsetX: number, containerWidth: number): Object {
   };
 }
 
-/** tooltip 内容（React 节点：provider 名经 React 文本节点自动转义，无注入面）。 */
-function renderTip(bar: RenderBar, point: NonNullable<TrendResponse>["series"][number], gran: Gran, byModel: boolean, hidden: ReadonlySet<string>): React.ReactElement {
+/** tooltip 内容（React 节点：provider/目录名经 React 文本节点自动转义，无注入面）。 */
+function renderTip(bar: RenderBar, point: NonNullable<TrendResponse>["series"][number], gran: Gran, byModel: boolean, hidden: ReadonlySet<string>, dirMode = false): React.ReactElement {
   const tagText = bar.mark === "ongoing" ? t("trendPartialOngoing") : bar.mark === "edge" ? t("trendPartialEdge") : bar.none ? t("trendNoData") : null;
   const rows = [...point.parts].sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
   const tagEl = tagText === null ? null : (
@@ -517,11 +578,14 @@ function renderTip(bar: RenderBar, point: NonNullable<TrendResponse>["series"][n
         : rows.map((p, i) => {
             const id = partId(p.provider, p.model, byModel);
             const off = hidden.has(id);
+            // 目录面：未识别桶恒「未识别」+ 口径注释（B2）；异常值归未识别（B3）
+            const label = dirMode ? dirDisplayLabel(p.provider) : id;
+            const title = dirMode && dirNeedsScopeNote(p.provider) ? t("trendDirUnidentifiedNote") : undefined;
             return (
               <div key={`${id}-${i}`} style={{ display: "flex", justifyContent: "space-between", gap: 14, fontVariantNumeric: "tabular-nums", opacity: off ? 0.45 : 1 }}>
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <span title={title} style={{ display: "inline-flex", alignItems: "center", gap: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   <span style={{ width: 8, height: 8, borderRadius: "50%", flex: "none", background: seriesColor(id), display: "inline-block" }} />
-                  {id}
+                  {label}
                 </span>
                 <span>{fmtCompact(p.value)}</span>
               </div>

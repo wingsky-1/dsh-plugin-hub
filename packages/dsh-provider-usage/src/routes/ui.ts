@@ -81,9 +81,15 @@ export function handleTrend(
   // 原查询面（provider/byModel 参数语义原样保留，响应形状零变化）。
   const dirParam = url.searchParams.get("dir") ?? "";
   const dir = dirParam.length > 0 && dirParam.length <= 128 ? dirParam : undefined;
+  // #633 分片 b2（B1 加性）：byDir=1 = 全目录拆段查询面（未传 dir 时按目录拆段 +
+  // dirs 全集图例，支撑趋势面板「打开即见目录分布」与目录筛选下拉候选）；
+  // 不带该参数时走 b1 既有两分支（现状响应形状零变化，b1 smoke 断言原样成立）。
+  // dir 过滤优先于 byDir（过滤面已隐含目录维度）；目录面与 provider 面互斥
+  // （dir 行无 provider 关联，分片 a 既定数据边界）。
+  const byDirAll = dir === undefined && url.searchParams.get("byDir") === "1";
   const byModel = url.searchParams.get("byModel") === "1";
   const n = clampTrendN(url.searchParams.get("n"), granularity, statsService.config.trendRetentionDays);
-  const byDir = dir !== undefined;
+  const byDir = dir !== undefined || byDirAll;
   // #633 分片 b B1：dir 面与 provider 面的 stack 形状归一（两分支字段并集）——
   // 未过滤分支响应含 providers 图例（现状形状零变化），过滤分支含 dirs 目录图例。
   const stack = byDir
@@ -102,8 +108,9 @@ export function handleTrend(
     provider: provider ?? null,
     // #633 分片 b B1：目录过滤回显（null = 未过滤 = 现状形状）；dirs 由 stack
     // 归一形状携带（过滤分支 = 窗口内目录图例，含未识别桶；dir 落盘即 basename
-    // 净化值，无路径分隔符）。
+    // 净化值，无路径分隔符）。#633 分片 b2 B1：byDir=1 全目录面回显 byDir=true。
     dir: dir ?? null,
+    byDir: byDirAll,
     byModel,
     n,
     retentionDays: statsService.config.trendRetentionDays,
