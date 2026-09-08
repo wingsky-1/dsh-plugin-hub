@@ -42,6 +42,9 @@ import {
   LEGACY_DAILY_PROMPT_V2,
   LEGACY_WEEKLY_PROMPT_V2,
   LEGACY_MONTHLY_PROMPT_V2,
+  LEGACY_DAILY_PROMPT_V3,
+  LEGACY_WEEKLY_PROMPT_V3,
+  LEGACY_MONTHLY_PROMPT_V3,
   promptFor,
   readReportConfig,
   writeReportConfig,
@@ -390,6 +393,47 @@ const GEN = (over = {}) => ({
   assert.equal(legacyV2.prompts.daily, DEFAULT_DAILY_PROMPT, "V2 单段日报模板自动升级为语义块");
   assert.equal(legacyV2.prompts.weekly, DEFAULT_WEEKLY_PROMPT, "V2 单段周报模板自动升级为语义块");
   assert.equal(legacyV2.prompts.monthly, DEFAULT_MONTHLY_PROMPT, "V2 单段月报模板自动升级为语义块");
+  // 存量老用户 V3 三周期模板（#633 分片 b 引入的旧默认：无目录观察句）自动升级为
+  // 含目录观察的新默认（复核 P1-4：V3 进 legacyTemplates 后零测试，盲区补齐）
+  const legacyV3 = normalizeReportConfig({
+    prompts: {
+      daily: LEGACY_DAILY_PROMPT_V3,
+      weekly: LEGACY_WEEKLY_PROMPT_V3,
+      monthly: LEGACY_MONTHLY_PROMPT_V3,
+    },
+  });
+  assert.equal(legacyV3.prompts.daily, DEFAULT_DAILY_PROMPT, "V3 无目录观察日报模板自动升级");
+  assert.equal(legacyV3.prompts.weekly, DEFAULT_WEEKLY_PROMPT, "V3 无目录观察周报模板自动升级");
+  assert.equal(legacyV3.prompts.monthly, DEFAULT_MONTHLY_PROMPT, "V3 无目录观察月报模板自动升级");
+  // V3 混合形态：单周期自定义保留、其余周期平滑升级（防整表覆盖回退）
+  const mixedV3 = normalizeReportConfig({
+    prompts: {
+      daily: LEGACY_DAILY_PROMPT_V3,
+      weekly: "我的周报模板 {stats}",
+      monthly: LEGACY_MONTHLY_PROMPT_V3,
+    },
+  });
+  assert.equal(mixedV3.prompts.daily, DEFAULT_DAILY_PROMPT, "V3 混合：未自定义日报仍升级");
+  assert.equal(mixedV3.prompts.weekly, "我的周报模板 {stats}", "V3 混合：自定义周报保留原样");
+  assert.equal(mixedV3.prompts.monthly, DEFAULT_MONTHLY_PROMPT, "V3 混合：未自定义月报仍升级");
+  // 三周期 V3→新默认 落盘 round-trip（存量用户磁盘形态：旧版本写下的 V3 文本，
+  // 绕过 writeReportConfig 的写侧归一化直接手写 JSON——读侧自动升级为新默认）
+  {
+    const v3Root = mkdtempSync(join(tmpdir(), "dou-report-v3-migrate-"));
+    const reportsDir = join(v3Root, "reports");
+    mkdirSync(reportsDir, { recursive: true });
+    writeFileSync(join(reportsDir, "config.json"), JSON.stringify({
+      daily: { enabled: true, time: "09:30" },
+      prompts: { daily: LEGACY_DAILY_PROMPT_V3, weekly: LEGACY_WEEKLY_PROMPT_V3, monthly: LEGACY_MONTHLY_PROMPT_V3 },
+      push: { enabled: false },
+    }));
+    const loaded = await readReportConfig(v3Root);
+    assert.equal(loaded.prompts.daily, DEFAULT_DAILY_PROMPT, "V3 落盘读回：日报自动升级新默认");
+    assert.equal(loaded.prompts.weekly, DEFAULT_WEEKLY_PROMPT, "V3 落盘读回：周报自动升级新默认");
+    assert.equal(loaded.prompts.monthly, DEFAULT_MONTHLY_PROMPT, "V3 落盘读回：月报自动升级新默认");
+    assert.equal(loaded.daily.time, "09:30", "V3 落盘读回：其余字段不受迁移影响");
+    rmSync(v3Root, { recursive: true, force: true });
+  }
   // 若老用户对日报有自定义修改，则保留自定义内容，不被覆写
   const userCustomPrompts = normalizeReportConfig({
     prompts: {
