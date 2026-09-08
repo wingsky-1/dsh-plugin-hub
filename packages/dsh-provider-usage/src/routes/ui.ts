@@ -74,10 +74,24 @@ export function handleTrend(
     : "total";
   const providerParam = url.searchParams.get("provider") ?? "";
   const provider = providerParam.length > 0 && providerParam.length <= 128 ? providerParam : undefined;
+  // #633 分片 b B1：可选目录过滤（GET query，风格与 provider 参数一致）——
+  // 非空且 ≤128 字符按目录键过滤（basename 净化值或未识别桶键）；未传/非法
+  // （空串/超长）→ undefined = 全目录聚合，行为与现状完全一致（非法回退不 400）。
+  // dir 与 provider 面分流：传 dir → 目录维度查询面；未传 → provider 维度
+  // 原查询面（provider/byModel 参数语义原样保留，响应形状零变化）。
+  const dirParam = url.searchParams.get("dir") ?? "";
+  const dir = dirParam.length > 0 && dirParam.length <= 128 ? dirParam : undefined;
   const byModel = url.searchParams.get("byModel") === "1";
   const n = clampTrendN(url.searchParams.get("n"), granularity, statsService.config.trendRetentionDays);
-  const stack = trend.seriesStacked(n, granularity, metric, provider, byModel);
-  const summary = trend.windowSummary(n, granularity, metric, provider, byModel ? undefined : stack.series);
+  const byDir = dir !== undefined;
+  // #633 分片 b B1：dir 面与 provider 面的 stack 形状归一（两分支字段并集）——
+  // 未过滤分支响应含 providers 图例（现状形状零变化），过滤分支含 dirs 目录图例。
+  const stack = byDir
+    ? { ...trend.dirStacked(n, granularity, metric, dir), providers: [] as Array<{ provider: string; model: string | null }> }
+    : { ...trend.seriesStacked(n, granularity, metric, provider, byModel), dirs: [] as Array<{ dir: string }> };
+  const summary = byDir
+    ? trend.dirWindowSummary(n, granularity, metric, dir, stack.series)
+    : trend.windowSummary(n, granularity, metric, provider, byModel ? undefined : stack.series);
 
   writeJson(res, 200, {
     ok: true,
@@ -86,6 +100,10 @@ export function handleTrend(
     granularity,
     metric,
     provider: provider ?? null,
+    // #633 分片 b B1：目录过滤回显（null = 未过滤 = 现状形状）；dirs 由 stack
+    // 归一形状携带（过滤分支 = 窗口内目录图例，含未识别桶；dir 落盘即 basename
+    // 净化值，无路径分隔符）。
+    dir: dir ?? null,
     byModel,
     n,
     retentionDays: statsService.config.trendRetentionDays,
