@@ -26,7 +26,7 @@ import type {
   TokenUsage,
 } from "@deepseek-ai/dsh-llm";
 import { metricValue } from "../trend/aggregator.ts";
-import { sumToken, type TrendCell, type TrendDirRow } from "../trend/types.ts";
+import { sumToken, TREND_UNIDENTIFIED, type TrendCell, type TrendDirRow } from "../trend/types.ts";
 import type { ReportPeriod } from "./config.ts";
 
 /** 报告生成所用 llm 服务面（LlmRuntime 最小结构面——只依赖实际用到的三个方法）。 */
@@ -107,7 +107,11 @@ export interface GenerateReportOptions {
   now?: () => number;
 }
 
-/** 报告统计快照（注入 {stats} 的 JSON 形状；方案 §2.3「当期聚合统计」）。 */
+/**
+ * 报告统计快照（注入 {stats} 的 JSON 形状；方案 §2.3「当期聚合统计」）。
+ * #633 分片 b C3：注入面 = 聚合数值 + 目录 basename（剥控制字符 + 截断），不含
+ * 会话明细与完整路径。
+ */
 export interface ReportStatsSnapshot {
   period: ReportPeriod;
   startDay: string;
@@ -131,7 +135,8 @@ export interface ReportStatsSnapshot {
   /** 上一同等长度窗口的指标总量（环比基准；接线层经 windowSummary 取得）。 */
   prevTotal: number | null;
   /** 按目录聚合（calls 降序，口径与 byProvider 一致；#633 分片 a 数据面——未识别桶
-   * dir=TREND_UNIDENTIFIED；dir 键为净化 basename 或未识别桶键，非完整路径；旧数据
+   * dir=TREND_UNIDENTIFIED；dir 键为脱敏出口形态的 basename 或未识别桶键（#633
+   * 分片 b C2：basename 化 + 剥控制字符 + 截断 80，无路径分隔符）；旧数据
    * 无 dir 事实 → 空数组，不补造）。 */
   byDirectory: Array<{ dir: string; calls: number; total: number | null }>;
   // ---------------------------------------------------------------- #532 年报派生维度
@@ -264,9 +269,9 @@ export async function generateReport(opts: GenerateReportOptions): Promise<Repor
 
 /**
  * 报告统计快照（纯计算）：从 tracker.buckets() 快照聚合窗口内数据。
- * 注入面收敛（方案 §八7）：只含聚合数值与目录 basename（#633 增量：dir 键为
- * 净化后 basename 或未识别桶键，非完整路径，进快照前剥控制字符 + 截断），
- * 不含会话明细与路径——sanitizePaths 配置约束未来注入面扩展。
+ * 注入面收敛（方案 §八7；#633 分片 b C3 口径）：只含聚合数值与目录 basename
+ * （剥控制字符 + 截断 80——byDirectory 出口 basename 化，无路径分隔符），
+ * 不含会话明细与完整路径——sanitizePaths 配置约束未来注入面扩展。
  */
 export function buildStatsSnapshot(input: {
   period: ReportPeriod;
@@ -344,9 +349,16 @@ export function buildStatsSnapshot(input: {
     row.provider = safeName(row.provider.replace(/[\u0000-\u001f\u007f]/g, ""));
     if (row.model !== null) row.model = safeName(row.model.replace(/[\u0000-\u001f\u007f]/g, ""));
   }
-  // dir 键同防（collector.dirOf 落盘前已净化，快照侧防御性复算同一口径）
+  // #633 分片 b C2：目录名出口统一 basename 化 + 剥控制字符 + 截断 80（沿用
+  // provider/model 的 safeName 防御模式；collector.dirOf 落盘前已 sanitizeDirName，
+  // 但伪造分片行的 dir 键不受信（isValidDirKey 只查长度）——出口处 basename 化
+  // 锁死「无路径分隔符」承诺，与 C2 逐出口断言对齐）。剥/切后为空串的伪键
+  // 归并进未识别桶键（防模板渲染空标签）。
   for (const row of byDirectory) {
-    row.dir = safeName(row.dir.replace(/[\u0000-\u001f\u007f]/g, ""));
+    const c = row.dir.replace(/[\u0000-\u001f\u007f]/g, "");
+    const cut = Math.max(c.lastIndexOf("/"), c.lastIndexOf("\\"));
+    const base = cut >= 0 ? c.slice(cut + 1) : c;
+    row.dir = base.length === 0 ? TREND_UNIDENTIFIED : safeName(base);
   }
   // 峰值日：byDay（升序）内 total 最大；并列取最早一天
   let peakDay: { day: string; total: number | null } | null = null;
