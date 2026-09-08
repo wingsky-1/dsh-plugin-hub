@@ -281,27 +281,21 @@ export class TrendAggregator {
 
   /**
    * 全量目录日桶快照（day 升序；#633 分片 b 报告快照与统计目录分布数据源）。
-   * 今日数据：dirDays 只在日切压实消费（dropPending 联动删除），而 apply 路径
-   * 每次调用都平行累加进 dirCells——故今日桶以 pending 明细/计数行的 dir 字段
-   * 同源折算补齐（与压实 takeDirUnpersisted 同一折算规则；dirDays 内该日已无桶，
-   * 不双算）。过去日经混存分片 rebuild 恢复在 dirDays；旧格式行（无 dir 键）
-   * 无目录事实不补造。
+   * 去重口径（防双算）：apply 路径每次调用已平行累加进 dirCells（未删的日桶
+   * 恒含全部 apply 事实），故 dirDays 为权威源；pending 行只补「重建行」
+   * （persisted=true——重启重建的明细/计数行不进 dirDays，是 dirDays 缺失的
+   * 事实），apply 产行（persisted=false）与 dirDays 必然重复，不参与折算。
+   * 旧格式行（无 dir 键）无目录事实不补造。
    */
   dirRows(): TrendDirRow[] {
-    const rows: TrendDirRow[] = [];
-    for (const day of [...this.dirDays.keys()].sort()) {
-      for (const [dir, cell] of this.dirDays.get(day)!) {
-        rows.push({ v: TREND_ROW_VERSION, kind: "dir", day, dir, input: cell.input, output: cell.output, cacheRead: cell.cacheRead, cacheWrite: cell.cacheWrite, calls: cell.calls, turns: cell.turns, toolCalls: cell.toolCalls });
-      }
-    }
-    // 今日（含一切尚在 pending 的日）按 pending 行同源折算补齐
-    const byKey = new Map<string, TrendDirRow>();
-    for (const { row } of this.pending) {
-      if (row.dir === undefined) continue;
-      let agg = byKey.get(`${row.day}\u0000${row.dir}`);
+    // 重建行折算（dirDays 缺失的事实；键去重后与 dirDays 合并）
+    const rebuilt = new Map<string, TrendDirRow>();
+    for (const { row, persisted } of this.pending) {
+      if (!persisted || row.dir === undefined) continue;
+      let agg = rebuilt.get(`${row.day}\u0000${row.dir}`);
       if (agg === undefined) {
         agg = { v: TREND_ROW_VERSION, kind: "dir", day: row.day, dir: row.dir, input: null, output: null, cacheRead: null, cacheWrite: null, calls: 0, turns: 0, toolCalls: 0 };
-        byKey.set(`${row.day}\u0000${row.dir}`, agg);
+        rebuilt.set(`${row.day}\u0000${row.dir}`, agg);
       }
       if (row.kind === "detail") {
         agg.calls += 1;
@@ -314,8 +308,21 @@ export class TrendAggregator {
         agg.toolCalls += row.toolCalls;
       }
     }
-    rows.push(...byKey.values());
-    return rows;
+    const out: TrendDirRow[] = [];
+    const seen = new Set<string>();
+    for (const day of [...this.dirDays.keys()].sort()) {
+      for (const [dir, cell] of this.dirDays.get(day)!) {
+        seen.add(`${day}\u0000${dir}`);
+        out.push({ v: TREND_ROW_VERSION, kind: "dir", day, dir, input: cell.input, output: cell.output, cacheRead: cell.cacheRead, cacheWrite: cell.cacheWrite, calls: cell.calls, turns: cell.turns, toolCalls: cell.toolCalls });
+      }
+    }
+    for (const row of rebuilt.values()) {
+      const key = `${row.day}\u0000${row.dir}`;
+      if (seen.has(key)) continue; // dirDays 已含（理论不可达，防御重复）
+      seen.add(key);
+      out.push(row);
+    }
+    return out;
   }
 
   /**
