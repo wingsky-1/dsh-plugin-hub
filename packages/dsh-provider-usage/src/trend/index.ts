@@ -194,8 +194,9 @@ export class TrendTracker {
       if (day >= today) continue;
       if (this.aggregator.hasUnpersisted(day)) continue; // 上一步失败：留到下轮
       try {
-        const pendingAgg = this.aggregator.rollupRowsOf(day);
-        const pendingDir = this.aggregator.takeDirUnpersisted(day); // #633 A4：dir 汇总行同源折算
+        // #654：折算与消费取同一份身份快照——下面三个 await 期间新到达的同日行既不入
+        // 本次折算、也不被消费，留待下一轮压实（旧实现按日键删除会连带丢掉这些行）。
+        const { consumed, aggRows: pendingAgg, dirRows: pendingDir } = this.aggregator.rollupSnapshot(day);
         // #633 A4：既有聚合分片全量取回（agg+dir 混存）——若仍走 readAggShard（只取
         // agg 行），整日原子重写会把分片内既有 dir 行抹掉；dir 行必须与 pendingDir
         // 合并后一起重写（迟到旧日行二次压实防丢防重）。
@@ -209,8 +210,12 @@ export class TrendTracker {
           pendingDir,
         );
         await this.store.writeAggDay(day, [...aggRows, ...dirRows]); // agg 行在前、dir 行在后（写入约定）
+        // #654：聚合事实落盘后立即按身份消费。若把消费放在 deleteDetailShard 之后，
+        // 删除失败时内存行保留，下一轮会拿「已含本轮值的聚合分片」再 merge 一次 →
+        // 磁盘双算（实测 agg 20/2 vs 内存 10/1）。消费后 pending 不再含该日，下轮不再
+        // 压实；残留的明细分片由重启时的「聚合权威」分支自愈删除。
+        this.aggregator.consume(consumed);
         await this.store.deleteDetailShard(day);
-        this.aggregator.dropPending(day, today);
       } catch (e: unknown) {
         this.warn(`压实失败（${day}）：${e instanceof Error ? e.message : String(e)}`);
       }

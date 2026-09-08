@@ -1685,6 +1685,112 @@ const A2_LEGACY_AGG = {
   );
 }
 
+// ---------------------------------------------------------------- #654 压实快照消费
+
+{
+  // 单元级：rollupSnapshot 的 consumed 与折算行严格同源；consume 只删快照内 entry。
+  const agg = new TrendAggregator();
+  const past = T0 - 24 * HOUR;
+  const pastDay = dayKey(past);
+  const call = (session, input, output) => ({
+    type: "call",
+    record: { time: past, session, turn: 1, step: 1, retry: 1, provider: "p", model: "m", dir: "d", tokens: { input, output, cacheRead: 0, cacheWrite: 0 } },
+  });
+  agg.apply(call("sA", 10, 5));
+  const snap = agg.rollupSnapshot(pastDay);
+  assert.equal(snap.consumed.length, 1, "快照含先到行");
+  assert.deepEqual(snap.aggRows.map((r) => ({ calls: r.calls, input: r.input })), [{ calls: 1, input: 10 }], "折算行只含先到行（同源）");
+  // 模拟压实 await 窗口内到达的同日行
+  agg.apply(call("sB", 7, 7));
+  agg.consume(snap.consumed);
+  assert.equal(agg.stats().pendingRows, 1, "consume 只消费快照内 entry，迟到行保留");
+  assert.equal(agg.stats().unpersistedRows, 1, "迟到行仍未落盘（留待下一轮）");
+  const snap2 = agg.rollupSnapshot(pastDay);
+  assert.equal(snap2.consumed.length, 1, "二次快照含迟到行");
+  assert.deepEqual(snap2.aggRows.map((r) => ({ calls: r.calls, input: r.input })), [{ calls: 1, input: 7 }], "二次折算只含迟到行（不重复折算已消费行）");
+  agg.consume(snap2.consumed);
+  assert.equal(agg.stats().pendingRows, 0, "二次消费后排空");
+  // 边界：空数组 no-op、重复 entry 幂等
+  agg.consume([]);
+  agg.consume([{ row: { kind: "detail" }, persisted: true }]);
+  assert.equal(agg.stats().pendingRows, 0, "空/异物 entry 消费安全（幂等 no-op）");
+}
+
+{
+  // 集成级（#654 竞态）：压实 await 窗口内到达的过去日行不得被连带消费。
+  // 用 gate 卡住 readAggDayShard 的返回，把「迟到行」精确插入 await 窗口内；
+  // 等待用 setImmediate 轮询（不是固定 sleep），符合防 flake 纪律。
+  const root = mkdtempSync(join(tmpdir(), "dou-trend-654-"));
+  const nowMs = T0; // 当日 09-04，迟到行落 09-03（时钟回拨形态）
+  const pastDay = dayKey(T0 - 24 * HOUR);
+  const tracker = await TrendTracker.start({ root, now: () => nowMs, flushDebounceMs: 60000, warn: () => {} });
+  const store = tracker.store;
+  const origReadAggDayShard = store.readAggDayShard.bind(store);
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  let gateHit = false;
+  store.readAggDayShard = async (day) => {
+    const rows = await origReadAggDayShard(day);
+    if (day === pastDay && !gateHit) {
+      gateHit = true;
+      await gate;
+    }
+    return rows;
+  };
+
+  tracker.handleEvent({ id: "sA" }, ev("request/header", HEADER(), T0 - 24 * HOUR, 1));
+  tracker.handleEvent({ id: "sA" }, ev("assistant/chunk", USAGE(10, 5), T0 - 24 * HOUR, 2));
+
+  const flushing = tracker.flushNow();
+  for (let i = 0; i < 2000 && !gateHit; i += 1) await new Promise((r) => setImmediate(r));
+  assert.equal(gateHit, true, "压实已进入 readAggDayShard await 窗口");
+
+  // await 窗口内到达的迟到行（同过去日、未落盘）
+  tracker.handleEvent({ id: "sB" }, ev("request/header", HEADER(), T0 - 24 * HOUR, 3));
+  tracker.handleEvent({ id: "sB" }, ev("assistant/chunk", USAGE(7, 7), T0 - 24 * HOUR, 4));
+  release();
+  await flushing;
+
+  assert.equal(tracker.stats().pendingRows, 1, "迟到行保留在 pending（修复前 dropPending 按日键连带删除 → 0）");
+
+  // 下一轮 flush：迟到行落盘 → 压实 → 两行都进 agg 分片（端到端无丢行）
+  await tracker.flushNow();
+  const aggRows = (await store.readAggDayShard(pastDay)).filter((r) => r.kind === "agg");
+  assert.equal(aggRows.length, 1, "同 (provider,model) 折叠为一行");
+  assert.deepEqual(
+    { calls: aggRows[0].calls, input: aggRows[0].input, output: aggRows[0].output },
+    { calls: 2, input: 17, output: 12 },
+    "先到行 + 迟到行都入账（calls=2 / input=17）",
+  );
+  assert.equal(tracker.stats().pendingRows, 0, "二次压实后 pending 排空");
+  await tracker.dispose();
+}
+
+{
+  // #654 同域：deleteDetailShard 失败不得导致下一轮磁盘双算。
+  // 消费提前到删除之前——聚合事实落盘即消费，残留明细分片留待重启的「聚合权威」自愈。
+  const root = mkdtempSync(join(tmpdir(), "dou-trend-654-del-"));
+  const nowMs = T0;
+  const pastDay = dayKey(T0 - 24 * HOUR);
+  const tracker = await TrendTracker.start({ root, now: () => nowMs, flushDebounceMs: 60000, warn: () => {} });
+  const store = tracker.store;
+  const origDelete = store.deleteDetailShard.bind(store);
+  tracker.handleEvent({ id: "sA" }, ev("request/header", HEADER(), T0 - 24 * HOUR, 1));
+  tracker.handleEvent({ id: "sA" }, ev("assistant/chunk", USAGE(10, 5), T0 - 24 * HOUR, 2));
+  store.deleteDetailShard = async () => { throw new Error("EACCES simulated"); }; // 删除失败，其余步骤成功
+  await tracker.flushNow();
+  assert.equal(tracker.stats().pendingRows, 0, "聚合事实落盘后即消费（不等待删除成功）");
+  store.deleteDetailShard = origDelete;
+  await tracker.flushNow();
+  const aggRows = (await store.readAggDayShard(pastDay)).filter((r) => r.kind === "agg");
+  assert.deepEqual(
+    aggRows.map((r) => ({ calls: r.calls, input: r.input })),
+    [{ calls: 1, input: 10 }],
+    "二次 flush 不双算（消费在删除之前 → 磁盘与内存一致）",
+  );
+  await tracker.dispose();
+}
+
 assert.equal(sumToken(null, 5), 5, "sumToken null+数字");
 assert.equal(sumToken(null, null), null, "sumToken null+null");
 console.log("unit-trend: all assertions passed");
