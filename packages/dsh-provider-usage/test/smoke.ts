@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import { assertClientProductContract, assertClientSourceContract, clientRouteLiterals } from "../../../test/smoke-lib.ts";
 import { tmpdir } from "node:os";
 import assert from "node:assert/strict";
-import { callHandler, pollUntil } from "./helpers.ts";
+import { callHandler, pollUntil, pollUntilJsonlReady } from "./helpers.ts";
 import { __clearReportIndexCacheForTests, __reportIndexCacheStatsForTests, readReportIndex } from "../lib/index.js";
 
 // 纯函数断言区先行执行（无 @ts-nocheck、强类型）
@@ -1131,10 +1131,13 @@ const disposeAll = (disposers) => {
     historyDir: join(dir, "hist"),
     cacheDurationMs: 5000, // stats 缓存 5s 到龄：让「重取→append→面板缓存全清」可在测试窗口触发
   });
-  // 启动预热完成（getStats fresh → append#0 → 清空缓存）：以历史 jsonl 落盘为就绪信号
-  await pollUntil(() => {
-    try { return readdirSync(join(dir, "hist", "cache-prov", "cache-spy-a")).some((f) => f.endsWith(".jsonl")); } catch { return false; }
-  }, 4000, 50);
+  // 启动预热完成（getStats fresh → append#0 → 清空缓存）：以「jsonl 首行可读」为
+  // 就绪信号（appendFile 内容已落盘）。禁用「文件存在」弱信号：append 在慢盘/
+  // 线程池抖动下 open（建空文件）与 write（写内容）之间有可见窗口，弱信号在
+  // 窗口内放行会让 h1 冷算读到空历史——CI run 34184469443 实证 `2 !== 1`
+  // （nBefore=0、h3=2 = append#0+#1 双入账，计数断言错位红）。超时硬失败，
+  // 预热链路病态时 fail-fast，不带病推进。
+  await pollUntilJsonlReady(join(dir, "hist", "cache-prov", "cache-spy-a"));
 
   const historyRoute = routes.find((r) => r.path === ROUTES.history);
   const statsRoute = routes.find((r) => r.path === ROUTES.stats);
@@ -1409,10 +1412,9 @@ export function formatPanel(input) {
     adapter: mutFile,
     historyDir: join(dir, "hist"),
   });
-  // 预热保证历史至少 1 条：以历史 jsonl 落盘为就绪信号
-  await pollUntil(() => {
-    try { return readdirSync(join(dir, "hist", "mut-prov", "mut-spy")).some((f) => f.endsWith(".jsonl")); } catch { return false; }
-  }, 4000, 50);
+  // 预热保证历史至少 1 条：以「jsonl 首行可读」为就绪信号（同 S1：文件存在
+  // 弱信号会放进 open/write 间隙，lenN>=1 断言在 CI 慢盘下读空历史必红）
+  await pollUntilJsonlReady(join(dir, "hist", "mut-prov", "mut-spy"));
 
   const historyRoute = routes.find((r) => r.path === ROUTES.history);
   const m1 = await getHistory(historyRoute, "mut-prov", 7);

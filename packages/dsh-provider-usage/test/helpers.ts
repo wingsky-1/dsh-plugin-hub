@@ -3,6 +3,8 @@
  * dsh-provider-usage — 单元测试共享辅助（纯函数断言用，不创建临时目录）。
  */
 import assert from "node:assert/strict";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 
 export { assert };
 
@@ -43,6 +45,35 @@ export function callHandler<T = unknown>(
     return (ret as Promise<unknown>).then(() => payload);
   }
   return payload; // 同步 handler：end 已同步触发
+}
+
+/**
+ * 预热就绪等待（jsonl「首行可读」强信号版，依赖预热 entry 内容的用例专用）。
+ *
+ * 信号语义 = 任一 *.jsonl 存在且内容非空（appendFile 已完成内容写入，磁盘上
+ * 可读出真实 entry）。禁止用「文件存在」弱信号替代：HistoryStore.append 在
+ * 慢盘/线程池抖动下 mkdir+open（建空文件落目录项）与 appendFile（写内容）
+ * 之间存在可见窗口，弱信号在窗口内放行会让后续 history.query 读到空历史
+ * （CI run 34184469443 S1 `2 !== 1` 实证：nBefore=0 而 h3=2，append#0+#1
+ * 双入账，计数断言错位红在远处）。
+ *
+ * 超时硬失败：预热链路（内存 spy fetchData + 本地盘 appendFile）在 deadline
+ * 内未落盘属环境病态，fail-fast 就地暴露，绝不带病推进让断言错位。
+ *
+ * @param dir 历史 jsonl 所在目录（historyDir/<provider>/<adapter>）
+ */
+export async function pollUntilJsonlReady(dir: string, deadlineMs = 4000, tickMs = 50): Promise<void> {
+  const ready = await pollUntil(() => {
+    try {
+      for (const f of readdirSync(dir)) {
+        if (f.endsWith(".jsonl") && readFileSync(join(dir, f), "utf8").trimEnd() !== "") return true;
+      }
+    } catch {
+      /* 目录未建：预热尚未开始，继续轮询 */
+    }
+    return false;
+  }, deadlineMs, tickMs);
+  assert.ok(ready === true, `预热 jsonl 首行未在 ${deadlineMs}ms 内落盘（append 落盘链路未就绪：${dir}）`);
 }
 
 /**
