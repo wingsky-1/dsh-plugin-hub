@@ -312,18 +312,139 @@ export class TrendAggregator {
 
   /**
    * 全量目录日桶快照（day 升序；#633 分片 b 报告快照与统计目录分布数据源）。
-   * 权威口径（复核 P1-1）：dirDays 单源快照——apply 平行累加 + rebuild 双分支
-   * 读回已覆盖全部 dir 事实，不再折算 pending 行（旧折算侧与 dirDays 并存时
-   * 双算：同事实重建 → 2×；互补事实 → 按键去重丢数；实测同日重启续 apply
-   * input 17 → 7）。旧格式行（无 dir 键）无目录事实不补造。
+   *
+   * 权威口径（复核 P1-1）：dirDays 单源快照——apply 平行累加 + rebuild 双分支读回
+   * 已覆盖全部 dir 事实，不再折算 pending 行（旧折算侧与 dirDays 并存时双算：
+   * 同事实重建 → 2×；互补事实 → 按键去重丢数；实测同日重启续 apply input 17 → 7）。
+   *
+   * 残差投影（本次修复，取代「重建时补造」）：目录面 = dirDays 快照 + 每日残差。
+   * 残差(day) = 该日聚合面（cells，全量事实）− 该日 dirDays 合计（有目录归属的事实），
+   * 非零则投影为一条 `{day, dir: TREND_UNIDENTIFIED}` 行——语义即「该日无目录信息的
+   * 数据」。这样两个查询面的日总量恒等（目录面 = 聚合面），且**不会双算**：
+   *
+   * - 旧分片（#633 之前的 agg 行，无 kind:"dir" 行）：cells 有值、dirDays 空 → 残差
+   *   = 全量 → 历史柱恢复且不丢数（此前 dir 面历史全 null，实测差 20 倍）；
+   * - 新分片（agg + dir 并存，同一批事实的两个投影）：cells 含 agg 行、dirDays 含 dir 行
+   *   → 残差 ≈ 0（同一事实相减相消）→ 不补造、不双算；故**禁止**在 rebuild 里对
+   *   agg 行补造未识别桶（会与 dir 行双算，反例：9-05 的 rjk2 calls=22 会变 44）；
+   * - 混版日（升级当天：旧 agg 行 + 新 dir 行并存）：残差 = 旧 agg 部分 → 归未识别，
+   *   新 dir 行照常分目录，既不丢升级前的历史、也不把新数据算进未识别；
+   * - 当日未压实：apply 对 cells 与 dirDays 平行累加 → 残差 ≈ 0。
+   *
+   * 不变量：∀day 目录面日合计 == 聚合面日合计（残差为负即数据不一致——目录行多于聚合行，
+   * 属双算/漂移征兆，投影按 0 处理并保持数值可解释，不产生负柱）。
+   * 残留边界（文档化口径）：残差只有日粒度（dirDays 无 provider 维度），故「无目录信息的
+   * 数据」只能整体归未识别桶，无法细分到 provider/model——目录面与 provider 面本互斥
+   * （见 routes/ui.ts 的 dir/byDir 分流），无消费方需要该交叉维度。
    */
   dirRows(): TrendDirRow[] {
+    // 输出容器按 (day, dir) 唯一：dirDays 桶与残差行可能撞同一键（混版日已有
+    // (unidentified) 桶时），撞键即合并数值，绝不产出重复键行（公开面契约）。
+    // 保持 dirDays 分支的插入序（day 升序、day 内 dir 键插入序）——下游 dirTotals
+    // 用稳定排序，行序变化会改变「候选 calls 降序」的并列顺序。
     const out: TrendDirRow[] = [];
+    const byKey = new Map<string, TrendDirRow>();
+    const put = (row: TrendDirRow): void => {
+      const key = `${row.day}\u0000${row.dir}`;
+      const cur = byKey.get(key);
+      if (cur === undefined) {
+        byKey.set(key, row);
+        out.push(row);
+        return;
+      }
+      cur.input = sumToken(cur.input, row.input);
+      cur.output = sumToken(cur.output, row.output);
+      cur.cacheRead = sumToken(cur.cacheRead, row.cacheRead);
+      cur.cacheWrite = sumToken(cur.cacheWrite, row.cacheWrite);
+      cur.calls += row.calls;
+      cur.turns += row.turns;
+      cur.toolCalls += row.toolCalls;
+    };
     for (const day of [...this.dirDays.keys()].sort()) {
       for (const [dir, cell] of this.dirDays.get(day)!) {
-        out.push({ v: TREND_ROW_VERSION, kind: "dir", day, dir, input: cell.input, output: cell.output, cacheRead: cell.cacheRead, cacheWrite: cell.cacheWrite, calls: cell.calls, turns: cell.turns, toolCalls: cell.toolCalls });
+        put({ v: TREND_ROW_VERSION, kind: "dir", day, dir, input: cell.input, output: cell.output, cacheRead: cell.cacheRead, cacheWrite: cell.cacheWrite, calls: cell.calls, turns: cell.turns, toolCalls: cell.toolCalls });
       }
     }
+    // 每日残差：聚合面（cells）− 目录面（dirDays）。cells 的键是 day → provider →
+    // model，逐层求和得该日全量；dirDays 的键是 day → dir，同法求该日目录合计。
+    const aggByDay = new Map<string, TrendCell>();
+    for (const [day, providers] of this.days) {
+      let cell = aggByDay.get(day);
+      if (cell === undefined) {
+        cell = emptyCell();
+        aggByDay.set(day, cell);
+      }
+      for (const models of providers.values()) {
+        for (const c of models.values()) {
+          cell.input = sumToken(cell.input, c.input);
+          cell.output = sumToken(cell.output, c.output);
+          cell.cacheRead = sumToken(cell.cacheRead, c.cacheRead);
+          cell.cacheWrite = sumToken(cell.cacheWrite, c.cacheWrite);
+          cell.calls += c.calls;
+          cell.turns += c.turns;
+          cell.toolCalls += c.toolCalls;
+        }
+      }
+    }
+    // 残差按 day 升序处理（cells 的 Map 键序是插入序，时钟回拨会让旧日新桶排在末尾；
+    // 公开方法契约声明 day 升序，故此处显式排序，不依赖插入序）。
+    for (const day of [...aggByDay.keys()].sort()) {
+      const cell = aggByDay.get(day)!;
+      let dirInput: number | null = null;
+      let dirOutput: number | null = null;
+      let dirCacheRead: number | null = null;
+      let dirCacheWrite: number | null = null;
+      let dirCalls = 0;
+      let dirTurns = 0;
+      let dirToolCalls = 0;
+      const dirs = this.dirDays.get(day);
+      if (dirs !== undefined) {
+        for (const c of dirs.values()) {
+          dirInput = sumToken(dirInput, c.input);
+          dirOutput = sumToken(dirOutput, c.output);
+          dirCacheRead = sumToken(dirCacheRead, c.cacheRead);
+          dirCacheWrite = sumToken(dirCacheWrite, c.cacheWrite);
+          dirCalls += c.calls;
+          dirTurns += c.turns;
+          dirToolCalls += c.toolCalls;
+        }
+      }
+      // 残差 = 聚合面 − 目录面（null-aware：双方皆 null → 0/无残差；单侧 null 按 0 计）
+      const input = diffToken(cell.input, dirInput);
+      const output = diffToken(cell.output, dirOutput);
+      const cacheRead = diffToken(cell.cacheRead, dirCacheRead);
+      const cacheWrite = diffToken(cell.cacheWrite, dirCacheWrite);
+      const calls = cell.calls - dirCalls;
+      const turns = cell.turns - dirTurns;
+      const toolCalls = cell.toolCalls - dirToolCalls;
+      // 全部为 0/空 = 该日目录面已覆盖全量（新分片常态）→ 不补造行。
+      // 负残差（目录面多于聚合面）同样走此分支（不产行）：属数据不一致征兆
+      // （例如明细目录误落 dir 行——已由 readDetailShard 白名单阻断），此时目录面
+      // 日合计会大于聚合面，README「总量守恒」节已注明该边界不保证恒等。
+      const hasResidual =
+        calls > 0 || turns > 0 || toolCalls > 0 || (input ?? 0) > 0 || (output ?? 0) > 0 || (cacheRead ?? 0) > 0 || (cacheWrite ?? 0) > 0;
+      if (!hasResidual) continue;
+      // 同键（该日已有 (unidentified) 桶，混版日常态）由 put 合并到既有行，
+      // 保证 (day, dir) 键唯一；负值按 0 处理（不产生负柱）。
+      put({
+        v: TREND_ROW_VERSION,
+        kind: "dir",
+        day,
+        dir: TREND_UNIDENTIFIED,
+        input: input !== null && input > 0 ? input : null,
+        output: output !== null && output > 0 ? output : null,
+        cacheRead: cacheRead !== null && cacheRead > 0 ? cacheRead : null,
+        cacheWrite: cacheWrite !== null && cacheWrite > 0 ? cacheWrite : null,
+        calls: calls > 0 ? calls : 0,
+        turns: turns > 0 ? turns : 0,
+        toolCalls: toolCalls > 0 ? toolCalls : 0,
+      });
+    }
+    // 顺序契约：dirDays 分支按 day 升序、day 内按 dir 键插入序输出；残差行按 day
+    // 升序追加在尾段（已显式排序，不依赖 cells 插入序——时钟回拨会让旧日新桶排在
+    // 末尾）。**不做全局 sort(day, dir)**：它会把残差行的未识别键排到该日首位
+    // （"(" 字典序最前），改变 dirTotals 的插入序；dirTotals 用稳定排序（同 calls
+    // 保持插入序），下游「候选 calls 降序」并列顺序因此会被打破。
     return out;
   }
 
@@ -371,7 +492,8 @@ export class TrendAggregator {
   /**
    * 窗口摘要（目录维度；#633 分片 b B1 数据接口）。curRange/prevRange 语义与
    * windowSummary 完全同构：当前窗口总量/调用数/峰值桶/目录 top 段 + 上一窗口环比。
-   * prevComplete 语义对齐：prev 窗口起点早于目录数据起点（dirRows 最早日）→ 不可比。
+   * prevComplete 语义对齐：prev 窗口起点早于**目录面数据起点**（dirRows 最早日；
+   * 残差投影后该起点等于聚合面数据起点，故与 windowSummary 同值）→ 不可比。
    */
   dirWindowSummary(
     n: number,
@@ -857,6 +979,16 @@ function sub(oldV: number | null, newV: number | null): number | null {
   if (newV === null) return oldV === null ? null : -oldV;
   if (oldV === null) return newV;
   return newV - oldV;
+}
+
+/**
+ * 残差投影的 token 差（#633 修复）：聚合面 − 目录面，null-aware。
+ * 双方皆 null → null（无该维度事实）；单侧 null 按 0 参与（另一侧有值即有残差）；
+ * 负值保留给调用方判定（调用方按 0 处理并依赖「日总量恒等」断言暴露不一致）。
+ */
+function diffToken(aggV: number | null, dirV: number | null): number | null {
+  if (aggV === null && dirV === null) return null;
+  return (aggV ?? 0) - (dirV ?? 0);
 }
 
 /** 内存日桶的最早 day key（无数据返回 null；day key 字典序即时间序）。 */

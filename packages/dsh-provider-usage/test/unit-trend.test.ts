@@ -1832,4 +1832,160 @@ const A2_LEGACY_AGG = {
 
 assert.equal(sumToken(null, 5), 5, "sumToken null+数字");
 assert.equal(sumToken(null, null), null, "sumToken null+null");
+
+// ---------------------------------------------------------------- #633 修复：目录面残差投影
+// 背景（实测）：分片 a/b 上线后目录维度全链路失效——(1) inject 缺 sessions 致
+// resolveCwd 恒 undefined，所有会话归未识别桶；(2) 旧 agg 分片（无 kind:"dir" 行）
+// 重建时目录面全空，历史柱消失（实测目录面/聚合面总量差 20 倍）。
+// 修法：目录面 = dirDays 快照 + 每日残差（聚合面 − 目录面），残差归未识别桶；
+// **禁止**在 rebuild 里对 agg 行补造（同一事实的 agg/dir 两个投影会双算）。
+
+{
+  // 残差投影纯函数面：cells（聚合面）与 dirDays（目录面）的关系决定是否补造。
+  const day = "2026-09-03";
+  const mkAgg = () => new TrendAggregator();
+  const call = (dir, input, output) => ({ time: T0 - 24 * HOUR, session: "s1", turn: 1, step: 1, retry: 1, provider: "deepseek", model: "deepseek-chat", dir, tokens: { input, output, cacheRead: null, cacheWrite: null } });
+  const counter = (dir) => ({ time: T0 - 24 * HOUR, session: "s1", provider: "deepseek", model: "deepseek-chat", dir, turns: 1, toolCalls: 1 });
+
+  // (a) 目录面已覆盖全量（apply 平行累加）→ 残差 0 → 不补造未识别行
+  const a = mkAgg();
+  a.apply({ type: "call", record: call("alpha", 100, 20) });
+  a.apply({ type: "counter", record: counter("alpha") });
+  assert.deepEqual(
+    a.dirRows().map((r) => r.dir),
+    ["alpha"],
+    "残差为 0（目录面已含全量）→ 不补造未识别桶（不双算）",
+  );
+
+  // (b) 只有聚合面事实（旧格式 agg 行重建）→ 残差 = 全量 → 补造一条未识别行
+  const b = mkAgg();
+  b.rebuild([{ v: TREND_ROW_VERSION, kind: "agg", day, provider: "deepseek", model: "deepseek-chat", input: 5000, output: 800, cacheRead: 120, cacheWrite: 10, calls: 30, turns: 12, toolCalls: 40 }], false);
+  const bRows = b.dirRows();
+  assert.equal(bRows.length, 1, "旧格式 agg-only 日 → 恰补造一条残差行（历史不再消失）");
+  assert.equal(bRows[0].dir, TREND_UNIDENTIFIED, "残差行归未识别桶（该日无目录信息）");
+  assert.deepEqual(
+    { input: bRows[0].input, output: bRows[0].output, cacheRead: bRows[0].cacheRead, cacheWrite: bRows[0].cacheWrite, calls: bRows[0].calls, turns: bRows[0].turns, toolCalls: bRows[0].toolCalls },
+    { input: 5000, output: 800, cacheRead: 120, cacheWrite: 10, calls: 30, turns: 12, toolCalls: 40 },
+    "残差数值 = 聚合面全量（逐字段）",
+  );
+
+  // (c) 混版日（旧 agg 行 + 新 dir 行并存）→ 残差 = 旧 agg 部分，新 dir 行照常分目录
+  const c = mkAgg();
+  c.rebuild([
+    { v: TREND_ROW_VERSION, kind: "agg", day, provider: "deepseek", model: "deepseek-chat", input: 5000, output: 800, cacheRead: 120, cacheWrite: 10, calls: 30, turns: 12, toolCalls: 40 },
+    { v: TREND_ROW_VERSION, kind: "dir", day, dir: "alpha", input: 2000, output: 300, cacheRead: 0, cacheWrite: 0, calls: 10, turns: 4, toolCalls: 12 },
+  ], false);
+  assert.deepEqual(
+    c.dirRows().map((r) => [r.dir, r.input, r.calls]).sort(),
+    [["(unidentified)", 3000, 20], ["alpha", 2000, 10]],
+    "混版日：残差 = agg − dir（归未识别），新 dir 行照常分目录，两者不重叠",
+  );
+
+  // (d) 只有目录面事实（无聚合面）→ 不补造（残差行只在聚合面 > 目录面时产生）
+  const d = mkAgg();
+  d.rebuild([{ v: TREND_ROW_VERSION, kind: "dir", day, dir: "alpha", input: 900, output: 90, cacheRead: 0, cacheWrite: 0, calls: 9, turns: 3, toolCalls: 9 }], false);
+  assert.deepEqual(d.dirRows().map((r) => r.dir), ["alpha"], "仅目录面事实原样输出，不补造未识别行");
+
+  // (e) 双面总量守恒（本修复的核心不变量）：∀day 目录面合计 == 聚合面合计
+  for (const agg of [a, b, c]) {
+    const byDay = new Map();
+    for (const r of agg.dirRows()) {
+      const cur = byDay.get(r.day) ?? { input: 0, calls: 0, turns: 0, toolCalls: 0 };
+      cur.input += r.input ?? 0; cur.calls += r.calls; cur.turns += r.turns; cur.toolCalls += r.toolCalls;
+      byDay.set(r.day, cur);
+    }
+    for (const bucket of agg.buckets()) {
+      let pInput = 0; let pCalls = 0; let pTurns = 0; let pTool = 0;
+      for (const p of bucket.providers) {
+        pInput += p.cell.input ?? 0; pCalls += p.cell.calls; pTurns += p.cell.turns; pTool += p.cell.toolCalls;
+      }
+      const dir = byDay.get(bucket.day) ?? { input: 0, calls: 0, turns: 0, toolCalls: 0 };
+      assert.deepEqual(
+        { input: dir.input, calls: dir.calls, turns: dir.turns, toolCalls: dir.toolCalls },
+        { input: pInput, calls: pCalls, turns: pTurns, toolCalls: pTool },
+        `日总量守恒（${bucket.day}）：目录面 == 聚合面`,
+      );
+    }
+  }
+
+  // (f) 同键唯一：该日 dirDays 已有 (unidentified) 桶 + 残差 > 0（混版日）→ 合并为一行
+  const f = mkAgg();
+  f.rebuild([
+    { v: TREND_ROW_VERSION, kind: "agg", day, provider: "deepseek", model: "deepseek-chat", input: 5000, output: 0, cacheRead: null, cacheWrite: null, calls: 30, turns: 0, toolCalls: 0 },
+    { v: TREND_ROW_VERSION, kind: "dir", day, dir: TREND_UNIDENTIFIED, input: 100, output: 0, cacheRead: null, cacheWrite: null, calls: 10, turns: 0, toolCalls: 0 },
+  ], false);
+  const fRows = f.dirRows();
+  assert.equal(fRows.length, 1, "同 (day, dir) 键唯一（残差并入既有未识别桶，不另起一行）");
+  assert.deepEqual(
+    [fRows[0].dir, fRows[0].input, fRows[0].calls],
+    [TREND_UNIDENTIFIED, 5000, 30],
+    "合并后数值 = 目录桶 + 残差（100+4900 / 10+20），无双行",
+  );
+
+  // (g) 负残差（目录面 > 聚合面，数据异常征兆）→ 不产行、不产生负值，恒等不成立
+  const g = mkAgg();
+  g.rebuild([
+    { v: TREND_ROW_VERSION, kind: "agg", day, provider: "deepseek", model: "deepseek-chat", input: 100, output: 0, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
+    { v: TREND_ROW_VERSION, kind: "dir", day, dir: "alpha", input: 300, output: 0, cacheRead: null, cacheWrite: null, calls: 3, turns: 0, toolCalls: 0 },
+  ], false);
+  assert.deepEqual(
+    g.dirRows().map((r) => [r.dir, r.input, r.calls]),
+    [["alpha", 300, 3]],
+    "负残差不补造行（按 0 处理）：目录面 300/3 > 聚合面 100/1，仅保留既有目录行",
+  );
+
+  // (h) 行序契约：时钟回拨把旧日事件落进过去日桶（cells 插入序乱）→ dirRows 仍按 day 升序
+  const h = mkAgg();
+  h.apply({ type: "call", record: { ...call("beta", 10, 0), time: new Date(2026, 8, 6, 12).getTime() } });
+  h.apply({ type: "call", record: { ...call("alpha", 10, 0), time: new Date(2026, 8, 8, 12).getTime() } });
+  h.apply({ type: "call", record: { ...call("gamma", 10, 0), time: new Date(2026, 8, 7, 12).getTime() } });
+  assert.deepEqual(
+    h.dirRows().map((r) => r.day),
+    ["2026-09-06", "2026-09-07", "2026-09-08"],
+    "行序契约：残差行按 day 升序（不依赖 cells 插入序）",
+  );
+
+  // (i) prune 后：被裁日的残差行同步消失（dirRows 不残留已裁剪日）
+  const i = mkAgg();
+  i.rebuild([
+    { v: TREND_ROW_VERSION, kind: "agg", day: "2026-09-01", provider: "deepseek", model: "m", input: 1, output: 0, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
+    { v: TREND_ROW_VERSION, kind: "agg", day: "2026-09-03", provider: "deepseek", model: "m", input: 2, output: 0, cacheRead: null, cacheWrite: null, calls: 2, turns: 0, toolCalls: 0 },
+  ], false);
+  assert.equal(i.dirRows().length, 2, "prune 前两日残差行都在");
+  i.pruneDays("2026-09-03");
+  assert.deepEqual(i.dirRows().map((r) => r.day), ["2026-09-03"], "prune 后被裁日的残差行同步消失（无残留）");
+
+  // (j) 校正后：旧格式（无 dir 键）明细行 correct → 残差吸收增量（dirRows 随之变化）
+  const j = mkAgg();
+  j.rebuild([{ v: TREND_ROW_VERSION, kind: "detail", time: T0 - 24 * HOUR, day, session: "s1", turn: 1, step: 1, retry: 1, provider: "deepseek", model: "deepseek-chat", input: 10, output: 0, cacheRead: null, cacheWrite: null, calls: 1 }], false);
+  assert.equal(j.dirRows()[0].input, 10, "无 dir 键明细行 → 残差 = 10");
+  j.apply({ type: "correct", record: { session: "s1", turn: 1, step: 1, retry: 1, tokens: { input: 50, output: 0, cacheRead: null, cacheWrite: null } } });
+  assert.equal(j.dirRows()[0].input, 50, "correct 校正后残差同步为 50（无 dir 键行不进 dirDays，经残差反映）");
+}
+
+{
+  // 真实升级场景端到端：旧 agg-only 过去日分片 → 重启后目录面恢复历史（此前全 null）。
+  const root = mkdtempSync(join(tmpdir(), "dou-trend-residual-"));
+  mkdirSync(join(root, "agg"), { recursive: true });
+  writeFileSync(join(root, "agg", "2026-09-03.jsonl"), `${JSON.stringify(A2_LEGACY_AGG)}\n`);
+  const tracker = await TrendTracker.start({ root, now: () => T0, flushDebounceMs: 60000, warn: () => {} });
+  const rows = tracker.dirRows();
+  assert.equal(rows.length, 1, "旧 agg-only 分片重启后目录面有行（不再全空）");
+  assert.equal(rows[0].day, "2026-09-03", "残差行落回历史日（不是今日）");
+  assert.equal(rows[0].dir, TREND_UNIDENTIFIED, "历史无目录信息 → 未识别桶");
+  assert.equal(rows[0].calls, 30, "历史调用数恢复（= agg 行 calls）");
+  // 分片不被改写（纯读侧投影，不落盘补造）
+  assert.equal(
+    readFileSync(join(root, "agg", "2026-09-03.jsonl"), "utf8"),
+    `${JSON.stringify(A2_LEGACY_AGG)}\n`,
+    "残差投影纯读侧：分片文件逐字节不变（不落盘补造、不改用户数据）",
+  );
+  // dirStacked（趋势面板数据源）历史柱不再为 null
+  const stacked = tracker.dirStacked(7, "day", "total");
+  const past = stacked.series.find((p) => p.key === "2026-09-03");
+  assert.ok(past !== undefined && past.total === 5930, "目录面历史柱有值（5000+800+120+10 = 5930）");
+  assert.deepEqual(stacked.dirs, [{ dir: TREND_UNIDENTIFIED }], "历史柱目录图例 = 未识别桶（无目录信息）");
+  await tracker.dispose();
+}
+
 console.log("unit-trend: all assertions passed");

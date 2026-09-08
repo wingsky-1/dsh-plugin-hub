@@ -39,6 +39,7 @@ import "./unit-report.test.ts";
 
 import {
   apply,
+  inject,
   ROUTES,
   candidateWindow,
   previousClosedWindow,
@@ -54,6 +55,7 @@ import {
   panelCacheKey,
   isPanelCacheStale,
   dayKey,
+  TREND_DIR_MAX,
 } from "../lib/index.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -663,6 +665,21 @@ export function formatPanel() { return "<p>x</p>"; }
   // 断言入参为包目录（helper 自行读 lib/client.js）
   assertClientSourceContract(pkgDir);
   assertClientProductContract(pkgDir);
+
+  // #633 修复：inject 契约断言——apply 的 resolveCwd 经 ctx.sessions.get(id)?.header.cwd
+  // 取会话工作目录，故 `sessions` 必须在插件 inject 声明中。cordis 4 对未声明服务的属性
+  // 直访抛错，而 resolveCwd 的 catch 会把它吞成 undefined → 目录维度静默全失效（实测：
+  // 2494 行全部落未识别桶、历史柱全空）。此断言锁定声明，防再次漏项。
+  {
+    assert.ok(Array.isArray(inject), "插件导出 inject 数组");
+    assert.ok(inject.includes("sessions"), "inject 必须声明 sessions（目录维度归属主源的访问前提）");
+    for (const required of ["webServer", "llm"]) {
+      assert.ok(inject.includes(required), `inject 保留既有声明 ${required}`);
+    }
+    // 产物面同源断言：lib 产物中的声明与源码导出一致（防构建链丢失）
+    const hostCode = readFileSync(join(pkgDir, "lib", "index.js"), "utf8");
+    assert.match(hostCode, /var inject = \[[^\]]*"sessions"[^\]]*\]/, "lib 产物 inject 声明含 sessions");
+  }
 
   // #524：客户端产物路由字面量与 ROUTES 全集严格一致断言（纵深防御 fallback 漂移）
   {
@@ -1632,11 +1649,20 @@ console.log("[smoke] #105① /history 渲染缓存断言全部通过 ✓");
     const ghost = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?dir=ghost-dir` }));
     assert.equal(ghost.series.find((p) => p.key === today).total, null, "不存在目录 → 过滤面空集（null 语义）");
     assert.ok(ghost.dirs.length === 0, "不存在目录 → dirs 图例为空");
-    // 非法 dir（超长 129 字符）→ 回退全目录（与未传同形状，不 400）
-    const longDir = "x".repeat(129);
+    // 非法 dir（超长 257 字符，超数据层 TREND_DIR_MAX=256）→ 回退全目录（与未传同形状，不 400）
+    // #633 修复：原用例写 129 字符——它把「路由硬编码 128、与数据层 256 不一致」的
+    // 错误行为锁死（129–256 的合法目录键被静默降级为全目录聚合）。上限改由
+    // TREND_DIR_MAX 单源导出，此处按数据层真上限 +1 构造超长值。
+    const longDir = "x".repeat(TREND_DIR_MAX + 1);
     const badDir = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?dir=${encodeURIComponent(longDir)}` }));
     assert.deepEqual(badDir.series, payload.series, "非法 dir（超长）回退全目录聚合（行为与未传一致）");
     assert.equal(badDir.dir, null, "非法 dir 回显 null");
+    // 边界内侧：恰为上限的目录键是合法过滤值（不再被静默降级——原 128 口径的回归防线）
+    const maxLenDir = "y".repeat(TREND_DIR_MAX);
+    const maxDir = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?dir=${encodeURIComponent(maxLenDir)}` }));
+    assert.equal(maxDir.dir, maxLenDir, `上限（${TREND_DIR_MAX}）内的目录键按过滤面生效（回显键，不降级为全目录）`);
+    assert.equal(maxDir.byDir, false, "上限内的目录键 → byDir 回显 false（过滤面优先）");
+    assert.equal(maxDir.series.find((p) => p.key === today).total, null, "不存在的上限长目录 → 过滤面空集（而非全目录 165）");
     // #633 P2：dir+byDir 同传 → 回显实际生效面（dir 过滤面生效，byDir 回显 false）
     const bothParams = await callHandler(trendRoute, fakeReq({ url: `${ROUTES.trend}?dir=${encodeURIComponent(UNK)}&byDir=1` }));
     assert.equal(bothParams.dir, UNK, "dir+byDir 同传：dir 过滤面生效（回显 dir 键）");

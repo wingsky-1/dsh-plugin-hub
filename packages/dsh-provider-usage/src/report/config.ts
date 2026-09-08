@@ -14,6 +14,7 @@
  * - 推送：可选经 dsh-notifier 渠道（kind 动态注册）。
  */
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
+import { TREND_DIR_MAX } from "../trend/types.ts";
 
 /** 报告周期类型。 */
 export type ReportPeriod = "daily" | "weekly" | "monthly";
@@ -319,7 +320,8 @@ export function parseHHMM(v: unknown): { h: number; m: number } | null {
  * 归一化报告目录范围（#633 分片 b B4，与 provider/model 范围字段同构）：
  * - 显式 all（"all" / ["all"]）= 全部目录 → 空数组；
  * - 字符串数组：逐项非空字符串、剥控制字符、basename 化（出口同 C2 脱敏口径）、
- *   截断 256（与 trend dir 键防御同口径）、去重、至多 32 项（防配置面滥用）；
+ *   超长项跳过（与数据层 isValidDirKey 的 TREND_DIR_MAX 同口径——截断会造出永远
+ *   匹配不到任何行的键，过滤面静默变空）、去重、至多 32 项（防配置面滥用）；
  * - 空数组/非数组/含非法项 → 空数组（全部目录，默认语义）。
  */
 export function normalizeReportDirectories(raw: unknown): string[] {
@@ -333,7 +335,8 @@ export function normalizeReportDirectories(raw: unknown): string[] {
     const cut = Math.max(c.lastIndexOf("/"), c.lastIndexOf("\\"));
     const base = cut >= 0 ? c.slice(cut + 1) : c;
     if (base.length === 0 || base === "all") continue;
-    out.add(base.length > 256 ? base.slice(0, 256) : base);
+    if (base.length > TREND_DIR_MAX) continue; // 与数据层同口径：超长键不可能有对应行
+    out.add(base);
     if (out.size >= 32) break;
   }
   return [...out];

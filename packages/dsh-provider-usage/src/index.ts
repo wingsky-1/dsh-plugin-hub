@@ -75,7 +75,7 @@ export { TrendAggregator, metricValue, weekStartKey, lastNWeekKeys, lastNMonthKe
 export type { TrendMetric, TrendGranularity, TrendStackPart, TrendStackPoint, TrendWindowSummary } from "./trend/aggregator.ts";
 export { TrendStore } from "./trend/store.ts";
 // isValidShardRow/safeToken/safeId：分片行校验与防御提取纯函数（单测从 lib/index.js 导入）
-export { TREND_ROW_VERSION, TREND_UNIDENTIFIED, sumToken, isValidShardRow, safeToken, safeId, sanitizeDirName } from "./trend/types.ts";
+export { TREND_ROW_VERSION, TREND_UNIDENTIFIED, TREND_DIR_MAX, sumToken, isValidShardRow, safeToken, safeId, sanitizeDirName } from "./trend/types.ts";
 export type { TrendAttribution, TrendTokens, TrendDetailRow, TrendCounterRow, TrendAggRow, TrendDirRow, TrendCell } from "./trend/types.ts";
 // #503 会话用量报告（M3 接线）：report 模块公共面（测试/外部消费者从 lib/index.js 导入）
 export { candidateWindow, pendingReports, presetLastRunForNewlyEnabled, previousClosedWindow, deriveLastRun, isClosedWindowRecord, LAST_RUN_SCHEMA } from "./report/schedule.ts";
@@ -102,7 +102,12 @@ export type { NormalizedConfig } from "./config.ts";
 // ------------------------------------------------------------------ 类型
 
 export const name = "provider-usage";
-export const inject: string[] = ["webServer", "llm"];
+// #633 修复：`sessions` 必须声明——apply 的 resolveCwd 经 ctx.sessions.get(id)?.header.cwd
+// 取会话工作目录（目录维度归属主源）。cordis 4 对未在 inject 声明的服务属性直访抛
+// 「cannot get property "sessions" without inject」；该异常会被 resolveCwd 的 catch 吞掉，
+// 于是每个会话恒归未识别桶、目录维度全链路失效（历史与当期数据双失）。缺声明是静默
+// 降级（无告警、无失败），故补源码契约断言锁定（unit-trend.test.ts「inject 契约」节）。
+export const inject: string[] = ["webServer", "llm", "sessions"];
 
 // 胶囊定位/层级/断点纯函数：实现在 placement-math.ts（零依赖单一事实源，
 // 客户端 bundle 与宿主端共用同一份），此处 re-export 保持导出面不变。

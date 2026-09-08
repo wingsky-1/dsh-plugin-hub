@@ -236,6 +236,31 @@ together) — so no algebraic cancellation is applied; intervals are classified 
 | `POST /api/dsh-provider-usage/adapters/inspect` | Preview an adapter file (echo exports, no registration) |
 | `POST /api/dsh-provider-usage/adapters/add` | Register a user adapter file (settings page flow) |
 
+## Trend directory dimension (data semantics)
+
+The directory dimension on the trend panel answers "which working directory did the usage
+go to". Attribution comes from the official `SessionHeader.cwd` creation metadata and is
+normalized to a **basename** by `sanitizeDirName` before it is stored (C0/C1 control
+characters stripped; POSIX `/` and Windows `\` separators both honored; root/empty →
+unidentified bucket).
+
+- **Unidentified bucket** (`(unidentified)`): the session has no cwd, attribution failed,
+  or **that day's data predates the directory dimension** (legacy shards carry no directory
+  information). The bucket is never silently dropped — UI and reports render it as-is.
+- **Totals are conserved**: with healthy data, the per-day total of the directory face
+  equals the provider face. The directory face = recorded directory day-buckets + a
+  **per-day residual** (aggregate face − directory face, attributed to the unidentified
+  bucket) — the residual is "that day's data without directory information", so historical
+  usage neither disappears from the chart nor gets counted twice. A negative residual
+  (directory face larger than the aggregate face) indicates corrupted shard data: it is
+  clamped to 0 and the identity no longer holds (the main source is already blocked by the
+  detail-shard read whitelist).
+- **Read-side projection only**: the residual is computed at query time; shard files are
+  never rewritten and existing data is never mutated.
+- **Irrecoverable boundary**: attribution is fixed when a session is first recorded and
+  cannot be reconstructed from legacy shards, so pre-upgrade data stays in the
+  unidentified bucket; only newly recorded usage can carry a real directory name.
+
 ## /history render cache
 
 `panelHtml` served by `/history` is cached in the host process (issue #105, sub-item 1);

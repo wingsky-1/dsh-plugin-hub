@@ -46,8 +46,10 @@ export interface TrendTokens {
 
 /** 目录键防御校验上限（复核 L4：POSIX NAME_MAX=255 以字节计，JS 字符串按 UTF-16
  * 码元计长——255 字节至多 255 个字符（多字节字符只会更短），255 < 256，取 256 与
- * safeId 上限同口径留 1 字符安全余量；超长伪造行按坏行跳过）。 */
-const TREND_DIR_MAX = 256;
+ * safeId 上限同口径留 1 字符安全余量；超长伪造行按坏行跳过）。
+ * 导出供路由参数校验复用（#633 修复：routes/ui.ts 原先硬编码 128，致 129–256 字符
+ * 的合法目录键被静默降级为「全目录聚合」——校验口径必须与数据层同一事实源）。 */
+export const TREND_DIR_MAX = 256;
 
 /** 分片行 dir 键防御校验：非空字符串且不超上限（旧格式行无该键，天然通过）。 */
 function isValidDirKey(v: unknown): boolean {
@@ -199,7 +201,8 @@ export function safeId(v: unknown, maxLen = 256): string | null {
 // 分片行校验局部 helper（P2-4）：防 "x" 等垃圾值进 sumToken 拼接、垃圾日键进内存桶。
 /** day key 格式（YYYY-MM-DD；字典序即时间序的根基，垃圾日键会污染内存桶与 prune 判定）。 */
 const TREND_DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
-/** token 计量字段：有限数或 null（负数/NaN/字符串一律拒绝）。 */
+/** token 计量字段：有限数或 null（NaN/Infinity/字符串一律拒绝；负数由采集侧 safeToken
+ *  拦截，此处只做落盘行的结构性校验，不重复语义校验）。 */
 function isNumOrNull(v: unknown): boolean {
   return v === null || (typeof v === "number" && Number.isFinite(v));
 }
