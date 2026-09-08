@@ -31,6 +31,12 @@ export interface ReportRoutesContext {
   getReportCfg: () => ReportConfig;
   setReportCfg: (cfg: ReportConfig) => void;
   reportScheduler: ReportScheduler;
+  /**
+   * 目录候选清单（#633 分片 b2 B4）：GET /report-config 附带 dirs（trend.dirTotals
+   * 全留存窗口聚合，含未识别桶），设置页目录范围多选的数据源。可选——测试/无趋势
+   * 数据场景缺省返回空数组（多选控件降级为「仅全部」+ 已保存值回显）。
+   */
+  listDirs?: () => Array<{ dir: string; calls: number; total: number | null }>;
 }
 
 const REPORT_KEY_RES: Record<ReportPeriod, RegExp> = {
@@ -64,7 +70,15 @@ export async function handleReportConfig(
     } catch {
       // 回落空数组
     }
-    return writeJson(res, 200, { ok: true, config, providers, promptDefaults: DEFAULT_PROMPTS });
+    // #633 分片 b2 B4：目录候选（calls 降序全留存聚合，含未识别桶键）；异常不连坐
+    // 配置读取（清单失败 → 空数组，多选控件降级，配置本身照常返回）。
+    let dirs: Array<{ dir: string }> = [];
+    try {
+      dirs = (context.listDirs?.() ?? []).map((r) => ({ dir: r.dir }));
+    } catch {
+      dirs = [];
+    }
+    return writeJson(res, 200, { ok: true, config, providers, dirs, promptDefaults: DEFAULT_PROMPTS });
   }
 
   let body: unknown;

@@ -41,7 +41,16 @@ const {
   seriesColor,
   stackedBarsSvg,
   stackedAreasSvg,
+  dirStackId,
+  dirDisplayLabel,
+  dirNeedsScopeNote,
+  trendRequestParams,
+  shouldShowDirSelect,
+  shouldShowByModel,
 } = math;
+
+// #633 分片 b2：i18n 未装配时 t() 回落 key 本体（shared/client/i18n.js 约定），
+// 本文件所有未识别展示断言均以 key 字面为预期值（运行时装配后即「未识别」译文）。
 
 test("fmtCompact：紧凑档位与零 usage null 语义", () => {
   assert.equal(fmtCompact(null), "-");
@@ -183,4 +192,97 @@ test("SVG 注入面：受信外文本不进 SVG（M2 的 <title> 注入面在 M2
   assert.ok(!svg.includes("onerror"), "事件属性 payload 不存在");
   const areaSvg = stackedAreasSvg({ bars, gran: "day", ticks: niceTicks(10).ticks, stackOrder: [evil] });
   assert.ok(!areaSvg.includes("<img") && !areaSvg.includes("onerror"), "面积图同构");
+});
+
+// ---------------------------------------------------------------- #633 分片 b2 B2/B3：目录维度客户端防御（dirStackId / dirDisplayLabel / dirNeedsScopeNote）
+
+test("#633 B3 dirStackId：异常目录值防御归未识别桶（不渲染空标签）", () => {
+  assert.equal(dirStackId("(unidentified)"), "(unidentified)", "未识别桶键原样");
+  assert.equal(dirStackId("dsh-plugin-hub"), "dsh-plugin-hub", "具名目录原样");
+  assert.equal(dirStackId(null), "(unidentified)", "null 归未识别");
+  assert.equal(dirStackId(undefined), "(unidentified)", "undefined 归未识别");
+  assert.equal(dirStackId(42), "(unidentified)", "非字符串归未识别");
+  assert.equal(dirStackId(""), "(unidentified)", "空串归未识别（杜绝空标签）");
+  assert.equal(dirStackId("   "), "   ", "纯空白串键保留（id 唯一性；展示层经 dirDisplayLabel 归未识别）");
+});
+
+test("#633 B3 dirDisplayLabel：控制字符剥除 + 空值回退未识别展示", () => {
+  assert.equal(dirDisplayLabel("proj"), "proj", "具名目录原样展示");
+  assert.equal(dirDisplayLabel("pro\u0007ject"), "project", "C0 控制字符剥除（DOM 不出现控制字符）");
+  assert.equal(dirDisplayLabel("pro\u009bject"), "project", "C1 控制字符剥除");
+  assert.equal(dirDisplayLabel("a\u001fb\u007fc"), "abc", "多控制字符混合剥除");
+  assert.equal(dirDisplayLabel(""), "trendDirUnidentified", "空串 → 未识别展示（不得渲染空标签）");
+  assert.equal(dirDisplayLabel("\u0007\u001f"), "trendDirUnidentified", "剥后为空 → 未识别展示");
+  assert.equal(dirDisplayLabel("   "), "trendDirUnidentified", "纯空白 → 未识别展示");
+  assert.equal(dirDisplayLabel(null), "trendDirUnidentified", "null → 未识别展示");
+  assert.equal(dirDisplayLabel(undefined), "trendDirUnidentified", "undefined → 未识别展示");
+});
+
+test("#633 B2 dirDisplayLabel：未识别桶恒有标签 + dirNeedsScopeNote 口径注明", () => {
+  assert.equal(dirDisplayLabel("(unidentified)"), "trendDirUnidentified", "未识别桶 → 「未识别」人话（恒出现为有标签条目，不空串不消失）");
+  assert.equal(dirNeedsScopeNote("(unidentified)"), true, "未识别桶注明口径（title=无目录信息的会话）");
+  assert.equal(dirNeedsScopeNote("dsh-plugin-hub"), false, "具名目录不带口径注释");
+  assert.equal(dirNeedsScopeNote(""), true, "异常空值同归未识别 → 注明口径");
+  assert.equal(dirNeedsScopeNote(null), true, "null 同上");
+});
+
+test("#633 B2/B3 展示语义与值语义分离：dirStackId 与 dirDisplayLabel 组合行为", () => {
+  // 筛选值/图例 id 用原始键（dirStackId）；展示文本用 dirDisplayLabel——
+  // 未识别桶筛选参数仍传 "(unidentified)"（宿主桶键），UI 呈现「未识别」。
+  const key = dirStackId(null);
+  assert.equal(key, "(unidentified)", "值语义：null 归未识别桶键（筛选参数可直达宿主）");
+  assert.equal(dirDisplayLabel(key), "trendDirUnidentified", "展示语义：同键呈现「未识别」");
+  // 超长目录名（B3 >80 字符）：展示层不截断（宿主出口已按 C2 口径 basename+截断；
+  // 客户端防御仅剥控制字符与空值回退——不截断不暗中合并目录桶，与宿主数据层一致）
+  const long = "d".repeat(120);
+  assert.equal(dirDisplayLabel(long), long, "超长键原样展示（不截断不合并，宿主出口负责口径）");
+  assert.equal(dirStackId(long), long, "超长键值语义原样（独立目录桶，不并入未识别）");
+});
+
+// ---------------------------------------------------------------- #633 复核闸 P0：请求参数三态互斥与两维控件可见性
+
+test("#633 P0 trendRequestParams：默认面 = byDir=1 且无 dir/provider（B1 入口可达）", () => {
+  const p = trendRequestParams("day", "total", 30, "", false, "", 30);
+  assert.equal(p.get("byDir"), "1", "默认（provider=\"\"、dirFilter=\"\"）→ byDir=1 全目录拆段面");
+  assert.equal(p.get("dir"), null, "默认面不带 dir");
+  assert.equal(p.get("provider"), null, "默认面不带 provider");
+  assert.equal(p.get("byModel"), null, "默认面不带 byModel");
+  assert.equal(p.get("granularity"), "day", "基础参数 granularity 原样");
+  assert.equal(p.get("metric"), "total", "基础参数 metric 原样");
+  assert.equal(p.get("n"), "30", "基础参数 n = 生效档位");
+});
+
+test("#633 P0 trendRequestParams：adapter 过滤面 = 纯 provider 参数（零目录参数）", () => {
+  const p = trendRequestParams("day", "total", 30, "p1", false, "", 30);
+  assert.equal(p.get("provider"), "p1", "provider=p1 请求带 provider");
+  assert.equal(p.get("byDir"), null, "adapter 面无 byDir（修复前恒带 byDir=1 交叉）");
+  assert.equal(p.get("dir"), null, "adapter 面无 dir（交叉面必空 → 参数层杜绝）");
+  // byModel 细分同属 adapter 面：同样零目录参数
+  const pm = trendRequestParams("week", "calls", 13, "p1", true, "", 13);
+  assert.equal(pm.get("byModel"), "1", "byModel 细分参数正常携带");
+  assert.equal(pm.get("provider"), "p1", "byModel 面带 provider");
+  assert.equal(pm.get("byDir"), null, "byModel 面（adapter 过滤）同样无 byDir");
+  assert.equal(pm.get("dir"), null, "byModel 面同样无 dir");
+});
+
+test("#633 P0 trendRequestParams：目录过滤面 = dir=<键>（无 byDir 无 provider）", () => {
+  const p = trendRequestParams("day", "total", 30, "", false, "proj", 30);
+  assert.equal(p.get("dir"), "proj", "dirFilter=proj → dir=proj 过滤面");
+  assert.equal(p.get("byDir"), null, "过滤面不再发 byDir=1（三态互斥）");
+  assert.equal(p.get("provider"), null, "目录面无 provider 参数（目录数据无 provider 维度）");
+});
+
+test("#633 P0 trendRequestParams：未识别桶键同为合法过滤值（B2 口径）", () => {
+  const p = trendRequestParams("day", "total", 30, "", false, "(unidentified)", 30);
+  assert.equal(p.get("dir"), "(unidentified)", "未识别桶键直传 dir（宿主桶键合法过滤值）");
+  assert.equal(p.get("byDir"), null, "过滤面无 byDir");
+});
+
+test("#633 P0 shouldShowDirSelect/shouldShowByModel：两维控件互斥（状态真值渲染）", () => {
+  assert.equal(shouldShowDirSelect(""), true, "默认面目录下拉恒可见（P0①：修复前 dirMode 恒真不可达）");
+  assert.equal(shouldShowDirSelect("p1"), false, "adapter 过滤面隐藏目录下拉");
+  assert.equal(shouldShowByModel("", ""), false, "默认面无 byModel checkbox");
+  assert.equal(shouldShowByModel("p1", ""), true, "adapter 过滤面 checkbox 可见（修复前被 dirMode 恒真压制）");
+  assert.equal(shouldShowByModel("", "proj"), false, "目录过滤面 checkbox 隐藏");
+  assert.equal(shouldShowByModel("p1", "proj"), false, "防御：异常组合同样隐藏（状态联动保证不可达）");
 });

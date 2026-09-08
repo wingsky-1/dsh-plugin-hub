@@ -41,6 +41,7 @@ import { readAdapterStateResult, readUserAdapters } from "./user-adapters.ts";
 import { loadUserAdapterChecked } from "./user-adapter-loader.ts";
 import { StatsService } from "./stats-service.ts";
 import { TrendTracker } from "./trend/index.ts";
+import { TREND_UNIDENTIFIED, sanitizeDirName } from "./trend/types.ts";
 import { readReportConfig, type ReportConfig } from "./report/config.ts";
 import { ReportScheduler, updateLastRun } from "./report/scheduler.ts";
 import { optionalNotifier, readReportIndex, runDueReport } from "./report/runner.ts";
@@ -289,8 +290,10 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     warn: (msg) => console.warn(`[dsh-provider-usage] trend: ${sanitizeDiagnostic(msg)}`),
     // #633 A1：目录归属主源 = 官方 store 的会话创建元数据（SessionHeader.cwd）。
     // SessionId 为官方品牌类型（string & BRAND），裸 string 经 get 参数位断言桥接
-    // （brandString 桥接需新增 @deepseek-ai/dsh-brand 依赖，不引入）；store 无该
-    // session / cwd 缺失 / 抛错 → undefined，collector 侧归未识别桶（不静默丢弃）。
+    // （官方品牌桥接须 import type @deepseek-ai/dsh-brand——catalog 已锁 0.1.2-rc.1，
+    // 但本包 package.json 未声明该 peer，pnpm 严格隔离下类型不可达；引入须先过
+    // 「新增依赖」红线评审，故此处维持参数位断言）；store 无该 session / cwd 缺失 /
+    // 抛错 → undefined，collector 侧归未识别桶（不静默丢弃）。
     resolveCwd: (session) => {
       try {
         return ctx.sessions.get(session as Parameters<typeof ctx.sessions.get>[0])?.header.cwd;
@@ -394,6 +397,17 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
         getReportCfg: () => reportCfg,
         setReportCfg: (c) => { reportCfg = c; },
         reportScheduler,
+        // #633 分片 b2 B4：报告目录范围多选的候选数据源（trend.dirTotals 全留存
+        // 窗口 calls 降序聚合，含未识别桶键；仅 basename 净化值出路由）。
+        // #633 P2（出口净化收口）：出口前过 sanitizeDirName（trend/types.ts 权威
+        // 定义，与 generate/config/客户端各出口同口径）——旁路污染分片行的 dir 键
+        // （伪造路径分隔符/控制字符）在数据出口层剥除归一，客户端 dirDisplayLabel
+        // 兜底保持为纵深第二道；剥后为空 → 归未识别桶键。
+        listDirs: () =>
+          trend.dirTotals("0000-01-01", "9999-12-31").map((r) => ({
+            ...r,
+            dir: sanitizeDirName(r.dir) ?? TREND_UNIDENTIFIED,
+          })),
       },
     ),
   ];

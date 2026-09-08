@@ -75,16 +75,16 @@ export { TrendAggregator, metricValue, weekStartKey, lastNWeekKeys, lastNMonthKe
 export type { TrendMetric, TrendGranularity, TrendStackPart, TrendStackPoint, TrendWindowSummary } from "./trend/aggregator.ts";
 export { TrendStore } from "./trend/store.ts";
 // isValidShardRow/safeToken/safeId：分片行校验与防御提取纯函数（单测从 lib/index.js 导入）
-export { TREND_ROW_VERSION, TREND_UNIDENTIFIED, sumToken, isValidShardRow, safeToken, safeId } from "./trend/types.ts";
+export { TREND_ROW_VERSION, TREND_UNIDENTIFIED, sumToken, isValidShardRow, safeToken, safeId, sanitizeDirName } from "./trend/types.ts";
 export type { TrendAttribution, TrendTokens, TrendDetailRow, TrendCounterRow, TrendAggRow, TrendDirRow, TrendCell } from "./trend/types.ts";
 // #503 会话用量报告（M3 接线）：report 模块公共面（测试/外部消费者从 lib/index.js 导入）
 export { candidateWindow, pendingReports, presetLastRunForNewlyEnabled, previousClosedWindow, deriveLastRun, isClosedWindowRecord, LAST_RUN_SCHEMA } from "./report/schedule.ts";
 export type { DueReport, LastRunRecord } from "./report/schedule.ts";
-export { parseHHMM, normalizeReportConfig, DEFAULT_REPORT_CONFIG, DEFAULT_PROMPT_TEMPLATE, readReportConfig, writeReportConfig, reportConfigFile } from "./report/config.ts";
+export { parseHHMM, normalizeReportConfig, normalizeReportDirectories, DEFAULT_REPORT_CONFIG, DEFAULT_PROMPT_TEMPLATE, readReportConfig, writeReportConfig, reportConfigFile } from "./report/config.ts";
 export type { ReportConfig, ReportPeriod, ReportPeriodConfig } from "./report/config.ts";
 export { generateReport, applyPromptTemplate, buildStatsSnapshot } from "./report/generate.ts";
 export { reportBodyToHtml } from "./report/format.ts";
-export { DEFAULT_DAILY_PROMPT, DEFAULT_WEEKLY_PROMPT, DEFAULT_MONTHLY_PROMPT, DEFAULT_PROMPTS, LEGACY_PROMPT_TEMPLATE, LEGACY_DAILY_PROMPT_V1, LEGACY_WEEKLY_PROMPT_V1, LEGACY_MONTHLY_PROMPT_V1, LEGACY_DAILY_PROMPT_V2, LEGACY_WEEKLY_PROMPT_V2, LEGACY_MONTHLY_PROMPT_V2, promptFor } from "./report/config.ts";
+export { DEFAULT_DAILY_PROMPT, DEFAULT_WEEKLY_PROMPT, DEFAULT_MONTHLY_PROMPT, DEFAULT_PROMPTS, LEGACY_PROMPT_TEMPLATE, LEGACY_DAILY_PROMPT_V1, LEGACY_WEEKLY_PROMPT_V1, LEGACY_MONTHLY_PROMPT_V1, LEGACY_DAILY_PROMPT_V2, LEGACY_WEEKLY_PROMPT_V2, LEGACY_MONTHLY_PROMPT_V2, LEGACY_DAILY_PROMPT_V3, LEGACY_WEEKLY_PROMPT_V3, LEGACY_MONTHLY_PROMPT_V3, promptFor } from "./report/config.ts";
 export type { ReportPrompts } from "./report/config.ts";
 export type { ReportMeta, ReportResult, ReportStatsSnapshot, ReportLlmService, ReportTokenUsage } from "./report/generate.ts";
 export { ReportScheduler, readLastRun, writeLastRun, updateLastRun, ensureLastRunMigrated, __lastRunChainForTests } from "./report/scheduler.ts";
@@ -92,7 +92,7 @@ export { ReportScheduler, readLastRun, writeLastRun, updateLastRun, ensureLastRu
 export { ReportTaskQueue } from "./report/tasks.ts";
 export type { ReportTask, ReportTaskInput, ReportTaskResult, ReportTaskStatus } from "./report/tasks.ts";
 // 读侧投影（#626：一行/窗口=最新版）与公共解析
-export { readReportIndex, parseReportIndexLines, __clearReportIndexCacheForTests, __reportIndexCacheStatsForTests } from "./report/runner.ts";
+export { readReportIndex, parseReportIndexLines, prevWindowTotal, runDueReport, persistReport, reportHtmlFile, reportMetaFile, notifyReport, __clearReportIndexCacheForTests, __reportIndexCacheStatsForTests } from "./report/runner.ts";
 // 路径解析纯函数透出（供测试与调用方复用同一展开/解析规则，无行为变更）
 export { resolvePath, pluginHome, expandHomePath } from "./path-resolve.ts";
 // 配置归一化（#276 方案 A 阶段 3 拆出：默认值 / schemastery schema / normalizeConfig）

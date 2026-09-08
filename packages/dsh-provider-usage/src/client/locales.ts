@@ -132,6 +132,7 @@ export const zh = {
   trendCardCalls: "调用次数",
   trendCardPeak: "峰值桶",
   trendCardTop: "Top 适配器",
+  trendCardTopDir: "Top 目录", // #633 P2：目录面 Top 汇总卡标签（与 trendCardTop 同风格对称）
   trendFetchFail: "趋势数据获取失败",
   trendEmptyTitle: "暂无趋势数据",
   trendEmptyHint: "会话产生用量后，这里会展示近期的使用趋势。",
@@ -158,6 +159,11 @@ export const zh = {
   trendRetained: "留存 {days} 天",
   trendCardAvg: "日均",
   trendViewVisible: "可见段",
+  // 设置页：使用趋势目录维度（#633 分片 b2 B1/B2/B3）
+  trendDirLabel: "目录",
+  trendDirAll: "全部目录",
+  trendDirUnidentified: "未识别",
+  trendDirUnidentifiedNote: "无目录信息的会话",
   // 设置页：用量报告（#503 M3）
   reportTitle: "用量报告",
   reportPeriodDaily: "日报",
@@ -176,6 +182,14 @@ export const zh = {
   reportModelDefault: "跟随默认（首个已注册模型）",
   reportModelKept: "{v}（当前配置值，不在列表中）",
   reportModelFallback: "模型列表拉取失败或为空，已降级为手动填写。",
+  // #633 分片 b2 B4：报告目录范围多选
+  reportDirectories: "目录范围",
+  reportDirectoriesAll: "全部目录",
+  reportDirectoriesSelectAll: "全选",
+  reportDirectoriesClear: "清空",
+  reportDirectoriesEmpty: "暂无目录数据——会话产生用量后，这里会列出可选目录。",
+  reportDirectoriesHintAll: "统计全部目录（默认口径）。",
+  reportDirectoriesHintScoped: "报告只统计所选目录的目录分布（其余维度保持全量）。",
   reportPromptReset: "恢复默认",
   reportPromptHint: "三周期各自独立模板；{stats} 注入对应周期聚合统计 JSON（含峰值日/活跃天数/环比等年报维度）",
   reportNoData: "当期无用量数据，未生成报告",
@@ -328,6 +342,7 @@ export const en: Record<ProviderUsageLocaleKey, string> = {
   trendCardCalls: "Calls",
   trendCardPeak: "Peak bucket",
   trendCardTop: "Top adapter",
+  trendCardTopDir: "Top directory", // #633 P2: directory-face top summary card label (mirrors trendCardTop)
   trendFetchFail: "Failed to load trend data",
   trendEmptyTitle: "No trend data yet",
   trendEmptyHint: "Trends for recent usage will appear here once sessions produce usage.",
@@ -354,6 +369,11 @@ export const en: Record<ProviderUsageLocaleKey, string> = {
   trendRetained: "{days}-day retention",
   trendCardAvg: "Daily avg",
   trendViewVisible: "visible",
+  // Settings: usage trend — directory dimension (#633 shard b2 B1/B2/B3)
+  trendDirLabel: "Directory",
+  trendDirAll: "All directories",
+  trendDirUnidentified: "Unidentified",
+  trendDirUnidentifiedNote: "Sessions without directory info",
   // 设置页：用量报告（#503 M3）
   reportTitle: "Usage reports",
   reportPeriodDaily: "Daily",
@@ -372,6 +392,14 @@ export const en: Record<ProviderUsageLocaleKey, string> = {
   reportModelDefault: "Follow default (first registered model)",
   reportModelKept: "{v} (current value, not in list)",
   reportModelFallback: "Model list unavailable or empty — falling back to manual input.",
+  // #633 shard b2 B4: report directory scope multi-select
+  reportDirectories: "Directory scope",
+  reportDirectoriesAll: "All directories",
+  reportDirectoriesSelectAll: "Select all",
+  reportDirectoriesClear: "Clear",
+  reportDirectoriesEmpty: "No directory data yet — directories appear here once sessions produce usage.",
+  reportDirectoriesHintAll: "All directories are included (default scope).",
+  reportDirectoriesHintScoped: "Reports include the directory breakdown of selected directories only (other dimensions stay full).",
   reportPromptReset: "Reset to default",
   reportPromptHint: "Per-period templates; {stats} injects that period's aggregate stats JSON (peak day / active days / WoW ratio and more)",
   reportNoData: "No usage in this period — nothing generated",

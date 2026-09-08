@@ -18,9 +18,10 @@
  *   报告链路不抛错；byDirectory 未识别桶数值正确；byProvider/byDay/派生维度与无 dir
  *   维度时完全一致（零回归）
  */
-import { mkdtempSync, existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync, renameSync, utimesSync } from "node:fs";
-import { join } from "node:path";
+import { mkdtempSync, existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync, renameSync, utimesSync, rmSync } from "node:fs";
+import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { assert, pollUntil, callHandler } from "./helpers.ts";
 import {
   candidateWindow,
@@ -41,7 +42,12 @@ import {
   LEGACY_DAILY_PROMPT_V2,
   LEGACY_WEEKLY_PROMPT_V2,
   LEGACY_MONTHLY_PROMPT_V2,
+  LEGACY_DAILY_PROMPT_V3,
+  LEGACY_WEEKLY_PROMPT_V3,
+  LEGACY_MONTHLY_PROMPT_V3,
   promptFor,
+  readReportConfig,
+  writeReportConfig,
   reportBodyToHtml,
   sanitizeHtml,
   generateReport,
@@ -66,6 +72,12 @@ import {
   dayKey,
   TREND_ROW_VERSION,
   TREND_UNIDENTIFIED,
+  persistReport,
+  reportHtmlFile,
+  reportMetaFile,
+  notifyReport,
+  runDueReport,
+  normalizeReportDirectories,
 } from "../lib/index.js";
 
 // ---------------------------------------------------------------- 工具
@@ -333,14 +345,15 @@ const GEN = (over = {}) => ({
     { day: "2026-02-01", providers: [{ provider: "p1", model: "m1", cell: cell(1, 20) }] },
   ], prevTotal: null });
   assert.equal(crossMonth.longestStreak, 2, "跨月 01-31→02-01 按日历日判定连续");
-  // provider/model 名防御：控制字符剥离 + 80 字符截断
+  // provider/model 名防御：控制字符剥离（C0 + DEL + C1）+ 80 字符截断
   const longName = "x".repeat(100);
   const hostile = buildStatsSnapshot({ period: "daily", startDay: "2026-09-02", endDay: "2026-09-02", buckets: [
-    { day: "2026-09-02", providers: [{ provider: `a\u0000b${longName}`, model: `m\nevil`, cell: cell(1, 10) }] },
+    { day: "2026-09-02", providers: [{ provider: `a\u0000b${longName}`, model: `m\nevil\u009b`, cell: cell(1, 10) }] },
   ], prevTotal: null });
   assert.ok(!hostile.byProvider[0].provider.includes("\u0000"), "provider 控制字符已剥离");
   assert.equal(hostile.byProvider[0].provider.length, 80, "provider 截断至 80 字符");
   assert.ok(!hostile.byProvider[0].model.includes("\n"), "model 控制字符已剥离");
+  assert.ok(!hostile.byProvider[0].model.includes("\u009b"), "model C1 控制字符已剥离（复核 P1-2）");
 }
 
 // ---------------------------------------------------------------- #532 per-period 提示词
@@ -380,6 +393,47 @@ const GEN = (over = {}) => ({
   assert.equal(legacyV2.prompts.daily, DEFAULT_DAILY_PROMPT, "V2 单段日报模板自动升级为语义块");
   assert.equal(legacyV2.prompts.weekly, DEFAULT_WEEKLY_PROMPT, "V2 单段周报模板自动升级为语义块");
   assert.equal(legacyV2.prompts.monthly, DEFAULT_MONTHLY_PROMPT, "V2 单段月报模板自动升级为语义块");
+  // 存量老用户 V3 三周期模板（#633 分片 b 引入的旧默认：无目录观察句）自动升级为
+  // 含目录观察的新默认（复核 P1-4：V3 进 legacyTemplates 后零测试，盲区补齐）
+  const legacyV3 = normalizeReportConfig({
+    prompts: {
+      daily: LEGACY_DAILY_PROMPT_V3,
+      weekly: LEGACY_WEEKLY_PROMPT_V3,
+      monthly: LEGACY_MONTHLY_PROMPT_V3,
+    },
+  });
+  assert.equal(legacyV3.prompts.daily, DEFAULT_DAILY_PROMPT, "V3 无目录观察日报模板自动升级");
+  assert.equal(legacyV3.prompts.weekly, DEFAULT_WEEKLY_PROMPT, "V3 无目录观察周报模板自动升级");
+  assert.equal(legacyV3.prompts.monthly, DEFAULT_MONTHLY_PROMPT, "V3 无目录观察月报模板自动升级");
+  // V3 混合形态：单周期自定义保留、其余周期平滑升级（防整表覆盖回退）
+  const mixedV3 = normalizeReportConfig({
+    prompts: {
+      daily: LEGACY_DAILY_PROMPT_V3,
+      weekly: "我的周报模板 {stats}",
+      monthly: LEGACY_MONTHLY_PROMPT_V3,
+    },
+  });
+  assert.equal(mixedV3.prompts.daily, DEFAULT_DAILY_PROMPT, "V3 混合：未自定义日报仍升级");
+  assert.equal(mixedV3.prompts.weekly, "我的周报模板 {stats}", "V3 混合：自定义周报保留原样");
+  assert.equal(mixedV3.prompts.monthly, DEFAULT_MONTHLY_PROMPT, "V3 混合：未自定义月报仍升级");
+  // 三周期 V3→新默认 落盘 round-trip（存量用户磁盘形态：旧版本写下的 V3 文本，
+  // 绕过 writeReportConfig 的写侧归一化直接手写 JSON——读侧自动升级为新默认）
+  {
+    const v3Root = mkdtempSync(join(tmpdir(), "dou-report-v3-migrate-"));
+    const reportsDir = join(v3Root, "reports");
+    mkdirSync(reportsDir, { recursive: true });
+    writeFileSync(join(reportsDir, "config.json"), JSON.stringify({
+      daily: { enabled: true, time: "09:30" },
+      prompts: { daily: LEGACY_DAILY_PROMPT_V3, weekly: LEGACY_WEEKLY_PROMPT_V3, monthly: LEGACY_MONTHLY_PROMPT_V3 },
+      push: { enabled: false },
+    }));
+    const loaded = await readReportConfig(v3Root);
+    assert.equal(loaded.prompts.daily, DEFAULT_DAILY_PROMPT, "V3 落盘读回：日报自动升级新默认");
+    assert.equal(loaded.prompts.weekly, DEFAULT_WEEKLY_PROMPT, "V3 落盘读回：周报自动升级新默认");
+    assert.equal(loaded.prompts.monthly, DEFAULT_MONTHLY_PROMPT, "V3 落盘读回：月报自动升级新默认");
+    assert.equal(loaded.daily.time, "09:30", "V3 落盘读回：其余字段不受迁移影响");
+    rmSync(v3Root, { recursive: true, force: true });
+  }
   // 若老用户对日报有自定义修改，则保留自定义内容，不被覆写
   const userCustomPrompts = normalizeReportConfig({
     prompts: {
@@ -978,6 +1032,216 @@ const GEN = (over = {}) => ({
   });
   assert.ok(!hostile.byDirectory[0].dir.includes("\n"), "dir 控制字符进快照前已剥离");
   assert.equal(hostile.byDirectory[0].dir.length, 80, "dir 截断至 80 字符（与 byProvider 同口径）");
+}
+
+// ---------------------------------------------------------------- #633 分片 b C2：脱敏出口逐条断言（basename 化 + 三出口）
+
+{
+  // C2 硬性：目录名进任何对外出口前统一 basename 化（禁完整绝对路径）→ 剥控制
+  // 字符 → 截断 80。三出口逐条断言：1) {stats} 注入 JSON；2) 报告产物正文；
+  // 3) notifier 推送摘要。
+  // 伪造含路径分隔符的 dir 键（isValidDirKey 只查长度，恶意分片行可携带）——
+  // 快照出口 basename 化必须锁死「无路径分隔符」承诺。
+  const maliciousRows = [
+    { v: TREND_ROW_VERSION, kind: "dir", day: "2026-09-03", dir: "/home/alice/secret-project", input: 100, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
+    { v: TREND_ROW_VERSION, kind: "dir", day: "2026-09-03", dir: "C:\\Users\\bob\\work\\repo", input: 50, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
+    { v: TREND_ROW_VERSION, kind: "dir", day: "2026-09-03", dir: `x\n\t${"y".repeat(120)}`, input: 10, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
+    { v: TREND_ROW_VERSION, kind: "dir", day: "2026-09-03", dir: "pro\u009bj", input: 3, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
+    { v: TREND_ROW_VERSION, kind: "dir", day: "2026-09-03", dir: TREND_UNIDENTIFIED, input: 5, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
+  ];
+  const snap = buildStatsSnapshot({
+    period: "daily",
+    startDay: "2026-09-03",
+    endDay: "2026-09-03",
+    buckets: [],
+    dirRows: maliciousRows,
+    prevTotal: null,
+  });
+  const allDirs = snap.byDirectory.map((r) => r.dir);
+  // 出口 1：{stats} 注入 JSON（快照即注入形态；applyPromptTemplate 全文断言）
+  const injected = applyPromptTemplate("统计：{stats}", JSON.stringify(snap));
+  for (const d of allDirs) {
+    assert.ok(!d.includes("/") && !d.includes("\\"), `注入 JSON 目录键无路径分隔符：${JSON.stringify(d)}`);
+    assert.ok(!/[\u0000-\u001f\u007f-\u009f]/.test(d), `注入 JSON 目录键无 C0+DEL+C1 控制字符：${JSON.stringify(d)}`);
+    assert.ok(d.length <= 80, `注入 JSON 目录键 ≤80 字符（实际 ${d.length}）`);
+  }
+  assert.ok(allDirs.includes("secret-project"), "POSIX 绝对路径出口 = basename");
+  assert.ok(allDirs.includes("repo"), "Windows 绝对路径出口 = basename");
+  assert.ok(allDirs.includes("proj"), "C1 形态（pro\\u009bj）剥除后 = proj（复核 P1-2）");
+  const hostileDir = allDirs.find((d) => d.startsWith("x"));
+  assert.ok(hostileDir !== undefined && hostileDir.length <= 80 && !/[\u0000-\u001f]/.test(hostileDir), "控制字符剥除 + 截断 80 形态（剥后残留字面字符保留）");
+  assert.ok(!injected.includes("/home/alice"), "注入 JSON 全文不含原始绝对路径");
+  assert.ok(!injected.includes("Users\\\\bob") && !injected.includes("Users\\bob"), "注入 JSON 全文不含 Windows 路径");
+  // 出口 1.5：无 dir 事实（dirRows 缺省）时 byDirectory 空数组、注入面无目录句
+  const noDirSnap = buildStatsSnapshot({ period: "daily", startDay: "2026-09-03", endDay: "2026-09-03", buckets: [], prevTotal: null });
+  assert.deepEqual(noDirSnap.byDirectory, [], "无目录事实 → byDirectory 空数组（不补造）");
+  // 出口 2：报告产物正文（fake llm 回显目录 basename 的叙事正文；正文为 LLM 叙事——
+  // 断言落盘链路 HTML 文档 + meta 不含路径形态，正文载体经 format 净化）
+  const { llm, seen } = fakeLlm([
+    { type: "text-delta", index: 0, text: "昨天用量集中在 secret-project 与 repo 两个目录。" },
+    { type: "usage", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } },
+    { type: "finish", reason: "stop" },
+  ]);
+  const r = await generateReport(GEN({ llm, statsJson: JSON.stringify(snap) }));
+  assert.equal(r.meta.ok, true, "带目录快照生成成功");
+  const promptText = seen.options.messages[0].content[0].text;
+  assert.ok(!promptText.includes("/home/alice") && !promptText.includes("Users\\bob"), "{stats} 注入 prompt 全文无绝对路径（出口 2 前置：模型只见 basename 形态）");
+  assert.ok(promptText.includes("secret-project") && promptText.includes("repo"), "prompt 含 basename 形态目录名（模型可见面）");
+  // 产物正文出口：persistReport 的 HTML 文档与 meta.json 落盘形态（临时目录隔离）
+  const rootDir = mkdtempSync(join(tmpdir(), "dou-report-c2-"));
+  await persistReport(rootDir, r.meta, r.body);
+  const htmlText = readFileSync(reportHtmlFile(rootDir, r.meta.period, r.meta.key), "utf8");
+  const metaText = readFileSync(reportMetaFile(rootDir, r.meta.period, r.meta.key), "utf8");
+  for (const artifact of [htmlText, metaText]) {
+    assert.ok(!artifact.includes("/home/alice") && !artifact.includes("Users\\bob"), "报告产物（HTML/meta）不含绝对路径");
+    // 目录键不携带的排版性换行/制表除外（meta.json 为缩进 2 pretty JSON），其余 C0 控制字符不得出现
+    assert.ok(!/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(artifact), "报告产物无原始控制字符（排版 \\n/\\t 除外）");
+  }
+  assert.ok(htmlText.includes("secret-project"), "产物正文含 basename 目录名（LLM 叙事引用）");
+  // 出口 3：notifier 推送摘要（notifyReport 捕获 send 请求体）
+  const sent = [];
+  const fakeCtx = {
+    get: () => ({ send: async (req) => { sent.push(req); } }),
+  };
+  notifyReport(fakeCtx, CFG({ push: { enabled: true } }), r.meta, snap, (s) => s);
+  assert.equal(sent.length, 1, "推送已发出");
+  const pushBody = `${sent[0].title} ${sent[0].body}`;
+  assert.ok(!pushBody.includes("/") && !pushBody.includes("\\"), "推送摘要不含任何路径分隔符（仅周期/窗口/数值）");
+  assert.ok(!/[\u0000-\u001f\u007f]/.test(pushBody), "推送摘要无控制字符");
+  assert.ok(pushBody.includes("daily"), "推送摘要含周期标识（数值型摘要形态）");
+  rmSync(rootDir, { recursive: true, force: true });
+}
+
+// ---------------------------------------------------------------- #633 分片 b C3：注入面声明与 README 收敛（源码字面断言，#383 先例风格）
+
+{
+  // C3 硬性：声明与实现一致——防「注释宣称无路径、实现泄漏路径」的声明回退。
+  // 1) generate.ts 注入面注释必须为准确口径（含「目录 basename」与「剥控制字符」）；
+  // 2) README 安全模型注入面句必须收敛为 basename 口径，且不得残留旧句
+  //    「注入面只含聚合数值（不含会话明细与路径」与裸「摘要不含项目路径；」。
+  const here = dirname(fileURLToPath(import.meta.url));
+  const pkgDir = join(here, "..");
+  const genSrc = readFileSync(join(pkgDir, "src/report/generate.ts"), "utf8");
+  assert.ok(genSrc.includes("只含聚合数值与目录 basename"), "generate.ts 注入面注释为准确口径（含目录 basename）");
+  assert.ok(genSrc.includes("剥控制字符 + 截断"), "generate.ts 注入面注释含剥控制字符 + 截断口径");
+  // 出口实现哨兵：byDirectory 出口必须含 basename 化（两系分隔符切分），不回退
+  assert.ok(genSrc.includes("lastIndexOf(\", c.lastIndexOf(\"\\\\\")") || /Math\.max\([^)]*lastIndexOf/.test(genSrc), "buildStatsSnapshot 出口 basename 化实现在场（lastIndexOf 切分）");
+  assert.ok(genSrc.includes("TREND_UNIDENTIFIED : safeName"), "剥/切后空串归并未识别桶键（防空标签）");
+  const readme = readFileSync(join(pkgDir, "README.md"), "utf8");
+  assert.ok(readme.includes("目录 basename"), "README 安全模型收敛为 basename 口径");
+  assert.ok(readme.includes("剥控制字符 + 截断 80"), "README 注入口径含剥控制字符 + 截断 80");
+  assert.ok(!readme.includes("注入面只含聚合数值（不含会话明细与路径）"), "README 旧句（无目录 basename）已收敛");
+  assert.ok(!readme.includes("摘要不含项目路径；"), "README 裸「摘要不含项目路径」句已收敛为准确口径");
+  // 模板目录硬规则哨兵（C1 模板升级防回退）
+  const cfgSrc = readFileSync(join(pkgDir, "src/report/config.ts"), "utf8");
+  for (const sentinel of ["byDirectory 第一位", "工作分散在 N 个目录", "目录版图", "绝不展开为路径、绝不推测目录内容"]) {
+    assert.ok(cfgSrc.includes(sentinel), `三周期模板目录硬规则哨兵在场：${sentinel}`);
+  }
+}
+
+// ---------------------------------------------------------------- #633 分片 b C1：三周期模板硬规则断言（fake llm 抓 prompt）
+
+{
+  // C1 硬性：模板输出经 fake llm 抓 prompt 断言目录句式与硬规则——三周期模板
+  // 均含目录观察句式与硬规则（目录名 basename 口径、占比分母口径、缺失跳过）。
+  const daily = promptFor(CFG(), "daily");
+  const weekly = promptFor(CFG(), "weekly");
+  const monthly = promptFor(CFG(), "monthly");
+  for (const [name, tpl] of [["daily", daily], ["weekly", weekly], ["monthly", monthly]] as const) {
+    assert.ok(tpl.includes("byDirectory"), `${name} 模板含 byDirectory 目录观察指引`);
+    assert.ok(tpl.includes("绝不展开为路径"), `${name} 模板含目录名 basename 硬规则（不展开为路径）`);
+    assert.ok(tpl.includes("totals.total > 0") || tpl.includes("分母大于 0"), `${name} 模板含占比分母硬规则`);
+    assert.ok(tpl.includes("绝不输出 null/0/NaN"), `${name} 模板保留 null 降级硬规则`);
+  }
+  // 周期特有句式：日报可点 top 目录占比；周报「本周」节目录分布观察含中性句；
+  // 月报含目录版图小节。
+  assert.ok(daily.includes("byDirectory 第一位（最活跃目录）"), "日报模板：可点 top 目录占比句式");
+  assert.ok(weekly.includes("工作分散在 N 个目录"), "周报模板：目录分散中性句");
+  assert.ok(monthly.includes("目录版图"), "月报模板：目录版图小节");
+  // 端到端：带目录快照 → 三周期模板 {stats} 注入 → prompt 落地断言（fake llm）
+  const dirSnap = buildStatsSnapshot({
+    period: "daily",
+    startDay: "2026-09-03",
+    endDay: "2026-09-03",
+    buckets: [{ day: "2026-09-03", providers: [{ provider: "p", model: "m", cell: { input: 300, output: null, cacheRead: null, cacheWrite: null, calls: 3, turns: 3, toolCalls: 0 } }] }],
+    dirRows: [
+      { v: TREND_ROW_VERSION, kind: "dir", day: "2026-09-03", dir: "alpha", input: 200, output: null, cacheRead: null, cacheWrite: null, calls: 2, turns: 0, toolCalls: 0 },
+      { v: TREND_ROW_VERSION, kind: "dir", day: "2026-09-03", dir: TREND_UNIDENTIFIED, input: 100, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
+    ],
+    prevTotal: null,
+  });
+  assert.deepEqual(dirSnap.byDirectory, [{ dir: "alpha", calls: 2, total: 200 }, { dir: TREND_UNIDENTIFIED, calls: 1, total: 100 }], "快照 byDirectory calls 降序（占比素材）");
+  for (const period of ["daily", "weekly", "monthly"] as const) {
+    const { llm, seen } = fakeLlm();
+    const r = await generateReport(GEN({ llm, period, key: "2026-09-03", startDay: "2026-09-03", endDay: "2026-09-03", promptTemplate: promptFor(CFG(), period), statsJson: JSON.stringify(dirSnap) }));
+    assert.equal(r.meta.ok, true, `${period} 生成成功`);
+    const text = seen.options.messages[0].content[0].text;
+    assert.ok(text.includes('"byDirectory"') && text.includes("alpha"), `${period} prompt 注入含目录维度的统计 JSON`);
+    assert.ok(text.includes("绝不展开为路径"), `${period} prompt 携带目录硬规则`);
+  }
+}
+
+// ---------------------------------------------------------------- #633 分片 b B4：目录范围配置归一化与 round-trip
+
+{
+  // B4 硬性：目录范围字段（默认「全部」= 空数组语义或显式 all）——归一化白名单 +
+  // 持久化 round-trip + 口径影响（runDueReport 级集成在 smoke 覆盖）。
+  // 1) 归一化：非法形态回退空数组（全部）
+  assert.deepEqual(normalizeReportConfig({}).directories, [], "缺省 directories → 空数组（全部）");
+  assert.deepEqual(normalizeReportConfig({ directories: "all" }).directories, [], "显式 all 字符串 → 空数组");
+  assert.deepEqual(normalizeReportConfig({ directories: ["all"] }).directories, [], "all 数组项过滤 → 空数组");
+  assert.deepEqual(normalizeReportConfig({ directories: "proj" }).directories, [], "非数组字符串 → 空数组（回退默认）");
+  assert.deepEqual(normalizeReportConfig({ directories: [42, null, ""] }).directories, [], "非字符串/空串项全滤 → 空数组");
+  // 2) basename 归一（与 C2 出口同口径）：反斜杠/正斜杠路径取末段，控制字符剥除
+  assert.deepEqual(normalizeReportConfig({ directories: ["/home/u/proj", "C:\\w\\repo"] }).directories, ["proj", "repo"], "目录范围项 basename 化（两系分隔符）");
+  assert.deepEqual(normalizeReportConfig({ directories: ["a\nb"] }).directories, ["ab"], "目录范围项控制字符剥除");
+  assert.deepEqual(normalizeReportConfig({ directories: ["pro\u009bj", "x\u0080y"] }).directories, ["proj", "xy"], "目录范围项 C1 控制字符剥除（复核 P1-2）");
+  // 3) 去重 + 上限 32（按归一化后的字面值去重；空白不 trim——basename 精确保留）
+  assert.deepEqual(normalizeReportConfig({ directories: ["proj", "proj"] }).directories, ["proj"], "目录范围去重（归一化后字面一致）");
+  assert.equal(normalizeReportConfig({ directories: Array.from({ length: 40 }, (_, i) => `d${i}`) }).directories.length, 32, "目录范围上限 32 项");
+  assert.equal(normalizeReportConfig({ directories: [`x${"y".repeat(300)}`] }).directories[0].length, 256, "目录范围项截断 256（与 trend dir 键防御同口径）");
+  // 4) 持久化 round-trip（临时目录隔离）
+  const rootDir = mkdtempSync(join(tmpdir(), "dou-report-b4-"));
+  const saved = normalizeReportConfig({ directories: ["proj", "repo"], push: { enabled: false } });
+  await writeReportConfig(rootDir, saved);
+  const loaded = await readReportConfig(rootDir);
+  assert.deepEqual(loaded.directories, ["proj", "repo"], "directories 持久化 round-trip 一致");
+  // 5) 未配置 directories 的存量配置文件读回 → 默认空数组（不缺键报错）
+  const cfgFile = join(rootDir, "reports", "config.json");
+  const legacyOnDisk = JSON.parse(readFileSync(cfgFile, "utf8"));
+  delete legacyOnDisk.directories;
+  writeFileSync(cfgFile, JSON.stringify(legacyOnDisk));
+  const reloaded = await readReportConfig(rootDir);
+  assert.deepEqual(reloaded.directories, [], "存量配置（无 directories 键）读回 → 默认空数组");
+  assert.ok(reloaded.provider !== undefined && typeof reloaded.prompts === "object", "存量配置其余字段不受影响");
+  rmSync(rootDir, { recursive: true, force: true });
+  // 6) 口径影响：reportCfg.directories 非空 → runDueReport 快照 byDirectory 只含所选目录
+  {
+    const root = mkdtempSync(join(tmpdir(), "dou-report-b4-scope-"));
+    let nowMs = T0;
+    const tracker = await TrendTracker.start({
+      root,
+      now: () => nowMs,
+      flushDebounceMs: 60000,
+      resolveCwd: (session) => (session === "s1" ? "/w/alpha" : "/w/beta"),
+    });
+    tracker.handleEvent({ id: "s1" }, { type: "request/header", seq: 1, time: T0, data: { header: { config: { provider: "p", model: "m" } } } });
+    tracker.handleEvent({ id: "s1" }, { type: "assistant/chunk", seq: 2, time: T0, data: { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: 100, outputTokens: 50 } } } });
+    tracker.handleEvent({ id: "s2" }, { type: "request/header", seq: 3, time: T0, data: { header: { config: { provider: "p", model: "m" } } } });
+    tracker.handleEvent({ id: "s2" }, { type: "assistant/chunk", seq: 4, time: T0, data: { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: 7, outputTokens: 3 } } } });
+    const fakeCtx = { llm: { stream: () => (async function* () { yield* CHUNKS; })(), listProviders: () => [{ id: "p" }], listModels: async () => [{ id: "m" }] } };
+    const due = { period: "daily", key: "2026-09-03", startDay: "2026-09-03", endDay: "2026-09-03", force: true };
+    // 全部（空数组）：两目录都在
+    const allSnapDirs = await runDueReport({ due, trend: tracker, ctx: fakeCtx, reportCfg: normalizeReportConfig({ push: { enabled: false }, directories: [] }), historyRoot: root, sanitizeDiagnostic: (s) => s });
+    assert.ok(allSnapDirs.ok === true, "目录范围=全部：生成成功");
+    // 限定单目录（persistReport 已落盘，用 trend.dirRows 直接断言过滤口径）：
+    const scoped = normalizeReportConfig({ directories: ["alpha"] }).directories;
+    const dirRows = tracker.dirRows().filter((r) => scoped.includes(r.dir));
+    assert.deepEqual(dirRows.map((r) => r.dir), ["alpha"], "目录范围激活：目录维度投影只含所选目录（runner 同口径）");
+    assert.equal(dirRows[0].input, 100, "所选目录数值为该目录子集（不被其他目录污染）");
+    await tracker.dispose();
+    rmSync(root, { recursive: true, force: true });
+  }
 }
 
 console.log("unit-report: all assertions passed");

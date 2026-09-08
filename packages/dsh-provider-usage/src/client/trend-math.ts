@@ -48,6 +48,80 @@ export function bucketStartKey(key: string, gran: TrendGran): string {
   return key; // day 与 week（week 键本身即周一首日）
 }
 
+// ---------------------------------------------------------------- 目录维度展示（#633 分片 b2 B1/B2/B3）
+
+/**
+ * 未识别目录桶键（与宿主 TREND_UNIDENTIFIED 字面一致；客户端不 import 宿主模块，
+ * 字面一致性由 smoke 源码契约断言锁定）。
+ */
+export const DIR_UNIDENTIFIED = "(unidentified)";
+
+/**
+ * 目录段堆叠 id（目录面段 id；与 provider 面 partId 同构——目录行 model 恒 null）。
+ * 宿主响应不受信：dir 非字符串（null/缺失）防御归未识别桶，防异常值进 stackOrder/
+ * hidden 集合与图例渲染（B3 客户端侧兜底）。
+ */
+export function dirStackId(dir: unknown): string {
+  return typeof dir === "string" && dir.length > 0 ? dir : DIR_UNIDENTIFIED;
+}
+
+/**
+ * 目录键 → 展示名（B2/B3）：
+ * - 未识别桶键 → i18n「未识别」人话（恒出现为有标签条目，不空串不消失）；
+ * - 空串/非字符串/剥控制字符后为空 → 归未识别展示（宿主 sanitize 后理论不可达，
+ *   客户端防御兜底，杜绝异常值渲染为空标签）；
+ * - 其余原样展示（宿主落盘即 basename 净化值，无路径分隔符无控制字符）。
+ * 纯展示转换：value 仍用原始键（筛选参数、图例 id），display 只进文本节点。
+ */
+export function dirDisplayLabel(dir: unknown): string {
+  if (typeof dir !== "string" || dir.length === 0) return t("trendDirUnidentified");
+  if (dir === DIR_UNIDENTIFIED) return t("trendDirUnidentified");
+  // 剥控制字符与宿主 sanitizeDirName 同口径（C0 + DEL + C1：0x00-1F / 0x7F /
+  // 0x80-9F；权威定义在 src/trend/types.ts，出口各处口径一致——#633 P2 注释收口）
+  const cleaned = dir.replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
+  if (cleaned.length === 0 || cleaned.trim().length === 0) return t("trendDirUnidentified");
+  return cleaned;
+}
+
+/**
+ * 目录图例/下拉条目是否携带口径注释（title）：未识别桶注明「无目录信息的会话」
+ * 口径（B2 UI 注明面）；具名目录不加注释（title 悬停内容与目录名重复无信息量）。
+ */
+export function dirNeedsScopeNote(dir: unknown): boolean {
+  return dirDisplayLabel(dir) === t("trendDirUnidentified");
+}
+
+// ---------------------------------------------------------------- 目录/适配器两维互斥（#633 复核闸 P0）
+
+/**
+ * /trend 请求参数构造（从 trend.tsx useEffect 抽出的纯函数；含两维三态互斥）：
+ * - dirFilter 非空 → dir=<键>（目录过滤面，宿主返回该目录子集 + dirs 图例）；
+ * - 否则 provider 为空 → byDir=1（「全部目录」全目录拆段面，多目录可区分）；
+ * - 否则（adapter 过滤，含 byModel）→ 纯 provider 面请求，零目录参数。
+ * 两维数据面互斥：目录面无 provider 数据，provider=X × byDir=1 交叉必空——
+ * 参数层三态杜绝交叉面发出（渲染层控件隐藏只是第二道防线）。
+ * n 键写入值取 range（组件解析后的生效档位；现调用点 n 与 range 同源
+ * effectiveRange 恒等传入，签名保留「请求意图 / 生效档位」双分位）。
+ */
+export function trendRequestParams(gran: string, metric: string, n: number, provider: string, byModel: boolean, dirFilter: string, range: number): URLSearchParams {
+  const params = new URLSearchParams({ granularity: gran, metric, n: String(range) });
+  if (dirFilter !== "") params.set("dir", dirFilter);
+  else if (provider === "") params.set("byDir", "1");
+  if (provider !== "") params.set("provider", provider);
+  if (byModel) params.set("byModel", "1");
+  return params;
+}
+
+/** 目录下拉可见性：仅「全部适配器」时可见（adapter 过滤面隐藏——目录面无 provider 关联）。 */
+export function shouldShowDirSelect(provider: string): boolean {
+  return provider === "";
+}
+
+/** byModel checkbox 可见性：adapter 过滤且未选目录时可见（目录过滤面无 provider/model 细分）。 */
+export function shouldShowByModel(provider: string, dirFilter: string): boolean {
+  return provider !== "" && dirFilter === "";
+}
+
 /**
  * 范围档位（客户端与宿主 clamp 同一套口径；留存按「天」裁、桶数与天数是两种口径）：
  * cap = day→min(retention, 90)、week→⌈retention/7⌉、month→⌈retention/30⌉。

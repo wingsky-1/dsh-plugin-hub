@@ -139,7 +139,12 @@ export class TrendStore {
     return this.readShard(this.detailsFile(day), (r): r is TrendDetailRow | TrendCounterRow => r.kind !== "agg");
   }
 
-  /** 读聚合分片（同上）。 */
+  /**
+   * 读聚合分片（只取 kind:"agg" 行；忽略混存分片内的 dir 行）。
+   * src 生产路径已无调用方（flush 压实与重启重建均走 readAggDayShard 全量取回，
+   * #633 A4/复核 M1）；保留为读侧投影（filter kind:"agg"）供测试断言载体与
+   * 「agg 行独立可读」的查询面，不删除。
+   */
   async readAggShard(day: string): Promise<TrendAggRow[]> {
     return this.readShard(this.aggFile(day), (r): r is TrendAggRow => r.kind === "agg");
   }

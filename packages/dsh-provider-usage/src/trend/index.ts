@@ -119,7 +119,7 @@ export class TrendTracker {
         if (rows.length === 0) continue;
         // 崩溃于压实前：明细权威 → 重建进内存后立即压实（自愈）
         this.aggregator.rebuild(rows, true);
-        const aggRows = this.aggregator.rollupDay(day);
+        const aggRows = this.aggregator.rollupDay(day, today);
         await this.store.writeAggDay(day, aggRows);
         await this.store.deleteDetailShard(day);
       } else {
@@ -210,7 +210,7 @@ export class TrendTracker {
         );
         await this.store.writeAggDay(day, [...aggRows, ...dirRows]); // agg 行在前、dir 行在后（写入约定）
         await this.store.deleteDetailShard(day);
-        this.aggregator.dropPending(day);
+        this.aggregator.dropPending(day, today);
       } catch (e: unknown) {
         this.warn(`压实失败（${day}）：${e instanceof Error ? e.message : String(e)}`);
       }
@@ -262,6 +262,40 @@ export class TrendTracker {
   /** 全量桶快照（堆叠柱状/Top 适配器数据源）。 */
   buckets(): ReturnType<TrendAggregator["buckets"]> {
     return this.aggregator.buckets();
+  }
+
+  /**
+   * 全量目录日桶快照（#633 分片 b：报告快照 dirRows 输入与统计目录分布数据源；
+   * 今日桶经 pending 同源折算补齐，见 aggregator.dirRows）。
+   */
+  dirRows(): ReturnType<TrendAggregator["dirRows"]> {
+    return this.aggregator.dirRows();
+  }
+
+  /** 堆叠柱序列（目录维度；/trend 路由 dir 过滤数据源，#633 分片 b B1）。 */
+  dirStacked(
+    n: number,
+    gran: TrendGranularity,
+    metric: TrendMetric,
+    dir?: string,
+  ): { series: TrendStackPoint[]; dirs: Array<{ dir: string }> } {
+    return this.aggregator.dirStacked(n, gran, metric, dir, this.now());
+  }
+
+  /** 窗口摘要（目录维度；/trend 路由 dir 过滤汇总卡数据源，#633 分片 b B1）。 */
+  dirWindowSummary(
+    n: number,
+    gran: TrendGranularity,
+    metric: TrendMetric,
+    dir?: string,
+    dirSeries?: TrendStackPoint[],
+  ): TrendWindowSummary {
+    return this.aggregator.dirWindowSummary(n, gran, metric, dir, this.now(), dirSeries);
+  }
+
+  /** 目录窗口总量表（报告快照目录范围过滤数据源，#633 分片 b B4）。 */
+  dirTotals(startDay: string, endDay: string, metric: TrendMetric = "total"): Array<{ dir: string; calls: number; total: number | null }> {
+    return this.aggregator.dirTotals(startDay, endDay, metric);
   }
 
   /** 堆叠柱序列（M2 /trend 路由数据源；n 由粒度决定：日 30 / 周 12 / 月 12）。 */

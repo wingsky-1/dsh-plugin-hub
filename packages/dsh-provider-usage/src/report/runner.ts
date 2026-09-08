@@ -172,11 +172,26 @@ export async function runDueReport(params: {
 }): Promise<ReportMeta> {
   const { due, trend, ctx, reportCfg, historyRoot, sanitizeDiagnostic } = params;
   const buckets = trend.buckets();
+  // #633 分片 b C1 接线：目录维度日汇总行进快照（trend.dirRows 含今日桶，口径见
+  // aggregator.dirRows）。无目录事实（旧数据无 dir 行）时 dirRows 为空数组，
+  // 快照 byDirectory 为空（加性维度不补造），报告链路照旧。
+  // #633 分片 b B4：报告配置目录范围非空时，byDirectory 只含所选目录（目录维度
+  // 投影可精确过滤）；totals/byDay/byProvider 保持全量口径——压实后的 agg 行无
+  // dir 键（明细行的 dir×provider 关联在日切压实即收敛为两个独立投影），provider/
+  // day 维度按目录精确归属在本数据面上不可行（分片 a 既定数据边界，非实现缺口）。
+  // 占比口径自洽：模板目录占比 = byDirectory[i].total ÷ totals.total，报告呈
+  // 「全量统计 + 所选目录分布」口径；缺省「全部」（空数组）零过滤。
+  const scopeDirs = reportCfg.directories ?? [];
+  const dirRows = trend.dirRows();
+  const scopedDirRows = scopeDirs.length === 0
+    ? dirRows
+    : dirRows.filter((r) => scopeDirs.includes(r.dir));
   const snapshot = buildStatsSnapshot({
     period: due.period,
     startDay: due.startDay,
     endDay: due.endDay,
     buckets,
+    dirRows: scopedDirRows,
     prevTotal: prevWindowTotal(buckets, due.startDay, due.endDay),
   });
   if (snapshot.totals.calls === 0) {

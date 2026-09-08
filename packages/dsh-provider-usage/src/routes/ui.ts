@@ -74,10 +74,37 @@ export function handleTrend(
     : "total";
   const providerParam = url.searchParams.get("provider") ?? "";
   const provider = providerParam.length > 0 && providerParam.length <= 128 ? providerParam : undefined;
+  // #633 分片 b B1：可选目录过滤（GET query，风格与 provider 参数一致）——
+  // 非空且 ≤128 字符按目录键过滤（basename 净化值或未识别桶键）；未传/非法
+  // （空串/超长）→ undefined = 全目录聚合，行为与现状完全一致（非法回退不 400）。
+  // dir 与 provider 面分流：传 dir → 目录维度查询面；未传 → provider 维度
+  // 原查询面（provider/byModel 参数语义原样保留，响应形状零变化）。
+  const dirParam = url.searchParams.get("dir") ?? "";
+  const dir = dirParam.length > 0 && dirParam.length <= 128 ? dirParam : undefined;
+  // #633 分片 b2（B1 加性）：byDir=1 = 全目录拆段查询面（未传 dir 时按目录拆段 +
+  // dirs 全集图例，支撑趋势面板「打开即见目录分布」与目录筛选下拉候选）；
+  // 不带该参数时走 b1 既有两分支（现状响应形状零变化，b1 smoke 断言原样成立）。
+  // dir 过滤优先于 byDir（过滤面已隐含目录维度）；目录面与 provider 面互斥
+  // （dir 行无 provider 关联，分片 a 既定数据边界）。
+  const byDirAll = dir === undefined && url.searchParams.get("byDir") === "1";
   const byModel = url.searchParams.get("byModel") === "1";
   const n = clampTrendN(url.searchParams.get("n"), granularity, statsService.config.trendRetentionDays);
-  const stack = trend.seriesStacked(n, granularity, metric, provider, byModel);
-  const summary = trend.windowSummary(n, granularity, metric, provider, byModel ? undefined : stack.series);
+  const byDir = dir !== undefined || byDirAll;
+  // #633 分片 b B1：dir 面与 provider 面的 stack 形状归一（两分支字段并集）——
+  // 未过滤分支响应含 providers 图例（现状形状零变化），过滤分支含 dirs 目录图例。
+  // #633 复核 P1-5（qa 实测）：byDir=1 全目录面加性附 providers 候选——P0 修复后
+  // 默认请求恒带 byDir=1，目录面 providers 恒空致适配器下拉无可选项（交互回归）；
+  // 候选与 provider 面图例同源（seriesStacked 窗口内 distinct），series 不受影响
+  // （dir 行无 provider 关联的既定数据边界不变，加性返回不破坏「未传参数零变化」）。
+  // dir 过滤面保持空 providers（既有形状，qa 未报且过滤面选中态下适配器已互斥清空）。
+  const dirStack = { ...trend.dirStacked(n, granularity, metric, dir), providers: [] as Array<{ provider: string; model: string | null }> };
+  if (byDirAll) dirStack.providers = trend.seriesStacked(n, granularity, metric, undefined, false).providers;
+  const stack = byDir
+    ? dirStack
+    : { ...trend.seriesStacked(n, granularity, metric, provider, byModel), dirs: [] as Array<{ dir: string }> };
+  const summary = byDir
+    ? trend.dirWindowSummary(n, granularity, metric, dir, stack.series)
+    : trend.windowSummary(n, granularity, metric, provider, byModel ? undefined : stack.series);
 
   writeJson(res, 200, {
     ok: true,
@@ -86,6 +113,14 @@ export function handleTrend(
     granularity,
     metric,
     provider: provider ?? null,
+    // #633 分片 b B1：目录过滤回显（null = 未过滤 = 现状形状）；dirs 由 stack
+    // 归一形状携带（过滤分支 = 窗口内目录图例，含未识别桶；dir 落盘即 basename
+    // 净化值，无路径分隔符）。#633 分片 b2 B1：byDir=1 全目录面回显 byDir=true。
+    // #633 P2：回显实际生效面——byDirAll 定义含 dir === undefined 守卫（dir 优先
+    // 于 byDir），同传 dir+byDir 时 byDir 回显 false、dir 回显生效键（客户端以
+    // 回显驱动控件选中态，虚假 true 会误导恢复逻辑；smoke 同传用例固化）。
+    dir: dir ?? null,
+    byDir: byDirAll,
     byModel,
     n,
     retentionDays: statsService.config.trendRetentionDays,
