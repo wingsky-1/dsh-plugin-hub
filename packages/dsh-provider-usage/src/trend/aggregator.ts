@@ -341,10 +341,14 @@ export class TrendAggregator {
   ): { series: TrendStackPoint[]; dirs: Array<{ dir: string }> } {
     const keys = this.granKeys(n, gran, now);
     const ranges = new Map(keys.map((k) => [k, this.granRange(k, gran)] as const));
+    // 复核 P1-3：行快照提出桶循环（原实现每桶 this.dirRows() 全量快照，O(桶×行)
+    // 单请求重复；对齐 seriesStacked 的 P1-2 先例——range 一次算全 + 快照单次
+    // 取用，桶循环内只做窗口过滤消费）。
+    const rows = this.dirRows();
     const series: TrendStackPoint[] = keys.map((key) => {
       const partsMap = new Map<string, TrendStackPart>();
       const range = ranges.get(key)!;
-      for (const row of this.dirRows()) {
+      for (const row of rows) {
         if (row.day < range.start || row.day > range.end) continue;
         if (dir !== undefined && row.dir !== dir) continue;
         const v = metricValue(row, metric);
@@ -409,21 +413,20 @@ export class TrendAggregator {
     }
     const rows = this.dirRows();
     let firstDirDay: string | null = null;
+    // 复核 P1-3：单遍遍历（原实现 3 次全量遍历 rows——最早日 + 当前窗口 + 上一
+    // 窗口各一遍；窗口区间互斥，同遍累加语义不变）。
     for (const row of rows) {
       if (firstDirDay === null || row.day < firstDirDay) firstDirDay = row.day;
-    }
-    for (const row of rows) {
-      if (row.day < curRange.start || row.day > curRange.end) continue;
-      if (dir !== undefined && row.dir !== dir) continue;
-      total = sumToken(total, metricValue(row, metric));
-      calls += row.calls;
-      turns += row.turns;
-      toolCalls += row.toolCalls;
-    }
-    for (const row of rows) {
-      if (row.day < prevRange.start || row.day > prevRange.end) continue;
-      if (dir !== undefined && row.dir !== dir) continue;
-      prevTotal = sumToken(prevTotal, metricValue(row, metric));
+      const inDir = dir === undefined || row.dir === dir;
+      if (inDir && row.day >= curRange.start && row.day <= curRange.end) {
+        total = sumToken(total, metricValue(row, metric));
+        calls += row.calls;
+        turns += row.turns;
+        toolCalls += row.toolCalls;
+      }
+      if (inDir && row.day >= prevRange.start && row.day <= prevRange.end) {
+        prevTotal = sumToken(prevTotal, metricValue(row, metric));
+      }
     }
     return {
       total,
