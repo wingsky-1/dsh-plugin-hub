@@ -103,6 +103,16 @@ npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-provider-usage
 | `maxSizeMB` | `20` | 历史大小上限（MB，超限从最旧日文件删） |
 | `trendRetentionDays` | `180` | 会话用量趋势聚合保留天数（#503；日切压实后按天留存，正整数上界 3650） |
 
+### 报告配置（historyDir/reports/config.json，设置页「报告」tab 承载）
+
+| 键 | 默认值 | 含义 |
+| --- | --- | --- |
+| `daily` / `weekly` / `monthly` | 全关 `08:00`/`09:00`/`09:00` | 三周期独立开关与触发时刻（weekly 另有 `weekStartsOn` 周一起点、monthly 另有 `dayOfMonth` 触发日） |
+| `provider` / `model` | `""`（跟随默认） | 报告生成所用模型路由（空串 = dsh 注册序首个） |
+| `prompts` | 三周期年报模板 | 三周期独立提示词（{stats} 占位；#633 起默认模板含目录观察——目录名 basename、占比分母 totals.total、只报数字不解读目录内容） |
+| `push.enabled` | `false` | 生成完成后经 dsh-notifier 推送摘要（摘要仅周期/窗口/总量/调用数数值，不含项目路径） |
+| `directories` | `[]`（全部） | #633 目录范围：非空数组（目录 basename 列表，`"all"` 显式全选语义，至多 32 项）= 报告统计只呈现所选目录的目录分布；空数组 = 全部目录。影响报告生成统计口径（byDirectory 维度按所选目录过滤） |
+
 ### 启用选择状态恢复
 
 `historyDir/adapter-state.json` 保存 provider → 启用适配器的映射。合法状态通过独占临时文件、
@@ -208,6 +218,7 @@ dsh-mcp-manager 浮窗的默认位置（`top-right`、距顶 8px、高约 26px�
 | --- | --- |
 | `GET /api/dsh-provider-usage/stats?provider=X` | 用量统计 + `capsuleHtml`（胶囊内容）+ `status`/`adapterVersion` |
 | `GET /api/dsh-provider-usage/history?provider=X&days=N` | 历史查询 + `panelHtml`（面板内容）+ 查询 `range`（进程内渲染缓存，见下节） |
+| `GET /api/dsh-provider-usage/trend?granularity=day&metric=total&n=30&provider=X&byModel=1&dir=Y` | 会话用量趋势（#503 M2）；#633 起支持可选 `dir` 目录过滤（目录 basename 或 `(unidentified)`，非法值回退全目录聚合；传 `dir` 时响应按目录维度拆段并附 `dirs` 目录图例，未传时形状与 #633 前一致） |
 | `GET /api/dsh-provider-usage/health` | 健康检查 + 适配器快照 + 错误登记 |
 | `GET /api/dsh-provider-usage/adapters.json` | 适配器候选元数据（设置页主列表同源，含 `modelProviders`） |
 | `POST /api/dsh-provider-usage/adapters/select` | 切换/清空启用适配器 |
@@ -333,15 +344,18 @@ plugins:
     调用方自带 `signal` 时不启用兜底（避免双取消竞争）。
   0 参声明的 fetchData 不读入参，完全兼容；取数锁为 per-provider 粒度，同 provider 并发请求
   排队并复用首次取数结果——任何情况下不阻塞页面其他请求
-- **报告生成（#503 M3；#532 年报化）**：零独立凭据、零新增网络出口——模型调用经宿主 llm 服务
+- **报告生成（#503 M3；#532 年报化；#633 目录维度）**：零独立凭据、零新增网络出口——模型调用经宿主 llm 服务
   （`ctx.llm.stream`），凭据由 dsh 既有 provider 配置持有，插件不接触；生成不产生
   session 事件、不入用量统计（消耗由报告元数据单独记录）；报告配置/产物/lastRun
   落盘 `historyRoot/reports/`（`0600`）；产物正文经 escape-then-transform 管线
   （先转义、后引入无属性 h3/strong/ul/li/p 白名单标签，第一层）+ `sanitizeHtml`
-  （第二层）双层净化后方可入 tab，统计 JSON 注入面只含聚合数值（不含会话明细与路径；
-  provider/model 名进快照前剥控制字符并截断）；三周期各自独立提示词模板
-  （prompts{daily,weekly,monthly}，旧单一模板读取时自动迁移）；空窗口（无任何用量）
-  不调模型；可选 notifier 推送默认关闭，摘要不含项目路径；
+  （第二层）双层净化后方可入 tab，统计 JSON 注入面只含聚合数值与目录 basename
+  （剥控制字符 + 截断 80，不含会话明细与完整路径；provider/model 名进快照前剥
+  控制字符并截断；目录名进快照前 basename 化——出口无路径分隔符）；三周期各自
+  独立提示词模板（prompts{daily,weekly,monthly}，旧单一模板读取时自动迁移；
+  #633 起模板含目录观察，目录名一律 basename、只报数字不解读目录内容）；空窗口
+  （无任何用量）不调模型；可选 notifier 推送默认关闭，摘要不含项目路径（仅周期、
+  窗口与总量/调用数数值）；
    手动生成异步任务化（#625）：POST 立即返回 202+taskId，客户端轮询状态，与 LLM
    耗时解耦（不再受 10s fetch 超时影响）；默认幂等——窗口已有成功报告则复用（#626），
    勾选「重新生成」强制覆盖；报告历史按窗口读侧投影去重（一行/窗口=最新版，index.jsonl

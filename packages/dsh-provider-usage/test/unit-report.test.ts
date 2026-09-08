@@ -18,9 +18,10 @@
  *   报告链路不抛错；byDirectory 未识别桶数值正确；byProvider/byDay/派生维度与无 dir
  *   维度时完全一致（零回归）
  */
-import { mkdtempSync, existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync, renameSync, utimesSync } from "node:fs";
-import { join } from "node:path";
+import { mkdtempSync, existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync, renameSync, utimesSync, rmSync } from "node:fs";
+import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { assert, pollUntil, callHandler } from "./helpers.ts";
 import {
   candidateWindow,
@@ -66,6 +67,10 @@ import {
   dayKey,
   TREND_ROW_VERSION,
   TREND_UNIDENTIFIED,
+  persistReport,
+  reportHtmlFile,
+  reportMetaFile,
+  notifyReport,
 } from "../lib/index.js";
 
 // ---------------------------------------------------------------- 工具
@@ -978,6 +983,109 @@ const GEN = (over = {}) => ({
   });
   assert.ok(!hostile.byDirectory[0].dir.includes("\n"), "dir 控制字符进快照前已剥离");
   assert.equal(hostile.byDirectory[0].dir.length, 80, "dir 截断至 80 字符（与 byProvider 同口径）");
+}
+
+// ---------------------------------------------------------------- #633 分片 b C2：脱敏出口逐条断言（basename 化 + 三出口）
+
+{
+  // C2 硬性：目录名进任何对外出口前统一 basename 化（禁完整绝对路径）→ 剥控制
+  // 字符 → 截断 80。三出口逐条断言：1) {stats} 注入 JSON；2) 报告产物正文；
+  // 3) notifier 推送摘要。
+  // 伪造含路径分隔符的 dir 键（isValidDirKey 只查长度，恶意分片行可携带）——
+  // 快照出口 basename 化必须锁死「无路径分隔符」承诺。
+  const maliciousRows = [
+    { v: TREND_ROW_VERSION, kind: "dir", day: "2026-09-03", dir: "/home/alice/secret-project", input: 100, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
+    { v: TREND_ROW_VERSION, kind: "dir", day: "2026-09-03", dir: "C:\\Users\\bob\\work\\repo", input: 50, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
+    { v: TREND_ROW_VERSION, kind: "dir", day: "2026-09-03", dir: `x\n\t${"y".repeat(120)}`, input: 10, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
+    { v: TREND_ROW_VERSION, kind: "dir", day: "2026-09-03", dir: TREND_UNIDENTIFIED, input: 5, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
+  ];
+  const snap = buildStatsSnapshot({
+    period: "daily",
+    startDay: "2026-09-03",
+    endDay: "2026-09-03",
+    buckets: [],
+    dirRows: maliciousRows,
+    prevTotal: null,
+  });
+  const allDirs = snap.byDirectory.map((r) => r.dir);
+  // 出口 1：{stats} 注入 JSON（快照即注入形态；applyPromptTemplate 全文断言）
+  const injected = applyPromptTemplate("统计：{stats}", JSON.stringify(snap));
+  for (const d of allDirs) {
+    assert.ok(!d.includes("/") && !d.includes("\\"), `注入 JSON 目录键无路径分隔符：${JSON.stringify(d)}`);
+    assert.ok(!/[\u0000-\u001f\u007f]/.test(d), `注入 JSON 目录键无控制字符：${JSON.stringify(d)}`);
+    assert.ok(d.length <= 80, `注入 JSON 目录键 ≤80 字符（实际 ${d.length}）`);
+  }
+  assert.ok(allDirs.includes("secret-project"), "POSIX 绝对路径出口 = basename");
+  assert.ok(allDirs.includes("repo"), "Windows 绝对路径出口 = basename");
+  const hostileDir = allDirs.find((d) => d.startsWith("x"));
+  assert.ok(hostileDir !== undefined && hostileDir.length <= 80 && !/[\u0000-\u001f]/.test(hostileDir), "控制字符剥除 + 截断 80 形态（剥后残留字面字符保留）");
+  assert.ok(!injected.includes("/home/alice"), "注入 JSON 全文不含原始绝对路径");
+  assert.ok(!injected.includes("Users\\\\bob") && !injected.includes("Users\\bob"), "注入 JSON 全文不含 Windows 路径");
+  // 出口 1.5：无 dir 事实（dirRows 缺省）时 byDirectory 空数组、注入面无目录句
+  const noDirSnap = buildStatsSnapshot({ period: "daily", startDay: "2026-09-03", endDay: "2026-09-03", buckets: [], prevTotal: null });
+  assert.deepEqual(noDirSnap.byDirectory, [], "无目录事实 → byDirectory 空数组（不补造）");
+  // 出口 2：报告产物正文（fake llm 回显目录 basename 的叙事正文；正文为 LLM 叙事——
+  // 断言落盘链路 HTML 文档 + meta 不含路径形态，正文载体经 format 净化）
+  const { llm, seen } = fakeLlm([
+    { type: "text-delta", index: 0, text: "昨天用量集中在 secret-project 与 repo 两个目录。" },
+    { type: "usage", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } },
+    { type: "finish", reason: "stop" },
+  ]);
+  const r = await generateReport(GEN({ llm, statsJson: JSON.stringify(snap) }));
+  assert.equal(r.meta.ok, true, "带目录快照生成成功");
+  const promptText = seen.options.messages[0].content[0].text;
+  assert.ok(!promptText.includes("/home/alice") && !promptText.includes("Users\\bob"), "{stats} 注入 prompt 全文无绝对路径（出口 2 前置：模型只见 basename 形态）");
+  assert.ok(promptText.includes("secret-project") && promptText.includes("repo"), "prompt 含 basename 形态目录名（模型可见面）");
+  // 产物正文出口：persistReport 的 HTML 文档与 meta.json 落盘形态（临时目录隔离）
+  const rootDir = mkdtempSync(join(tmpdir(), "dou-report-c2-"));
+  await persistReport(rootDir, r.meta, r.body);
+  const htmlText = readFileSync(reportHtmlFile(rootDir, r.meta.period, r.meta.key), "utf8");
+  const metaText = readFileSync(reportMetaFile(rootDir, r.meta.period, r.meta.key), "utf8");
+  for (const artifact of [htmlText, metaText]) {
+    assert.ok(!artifact.includes("/home/alice") && !artifact.includes("Users\\bob"), "报告产物（HTML/meta）不含绝对路径");
+    // 目录键不携带的排版性换行/制表除外（meta.json 为缩进 2 pretty JSON），其余 C0 控制字符不得出现
+    assert.ok(!/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(artifact), "报告产物无原始控制字符（排版 \\n/\\t 除外）");
+  }
+  assert.ok(htmlText.includes("secret-project"), "产物正文含 basename 目录名（LLM 叙事引用）");
+  // 出口 3：notifier 推送摘要（notifyReport 捕获 send 请求体）
+  const sent = [];
+  const fakeCtx = {
+    get: () => ({ send: async (req) => { sent.push(req); } }),
+  };
+  notifyReport(fakeCtx, CFG({ push: { enabled: true } }), r.meta, snap, (s) => s);
+  assert.equal(sent.length, 1, "推送已发出");
+  const pushBody = `${sent[0].title} ${sent[0].body}`;
+  assert.ok(!pushBody.includes("/") && !pushBody.includes("\\"), "推送摘要不含任何路径分隔符（仅周期/窗口/数值）");
+  assert.ok(!/[\u0000-\u001f\u007f]/.test(pushBody), "推送摘要无控制字符");
+  assert.ok(pushBody.includes("daily"), "推送摘要含周期标识（数值型摘要形态）");
+  rmSync(rootDir, { recursive: true, force: true });
+}
+
+// ---------------------------------------------------------------- #633 分片 b C3：注入面声明与 README 收敛（源码字面断言，#383 先例风格）
+
+{
+  // C3 硬性：声明与实现一致——防「注释宣称无路径、实现泄漏路径」的声明回退。
+  // 1) generate.ts 注入面注释必须为准确口径（含「目录 basename」与「剥控制字符」）；
+  // 2) README 安全模型注入面句必须收敛为 basename 口径，且不得残留旧句
+  //    「注入面只含聚合数值（不含会话明细与路径」与裸「摘要不含项目路径；」。
+  const here = dirname(fileURLToPath(import.meta.url));
+  const pkgDir = join(here, "..");
+  const genSrc = readFileSync(join(pkgDir, "src/report/generate.ts"), "utf8");
+  assert.ok(genSrc.includes("只含聚合数值与目录 basename"), "generate.ts 注入面注释为准确口径（含目录 basename）");
+  assert.ok(genSrc.includes("剥控制字符 + 截断"), "generate.ts 注入面注释含剥控制字符 + 截断口径");
+  // 出口实现哨兵：byDirectory 出口必须含 basename 化（两系分隔符切分），不回退
+  assert.ok(genSrc.includes("lastIndexOf(\", c.lastIndexOf(\"\\\\\")") || /Math\.max\([^)]*lastIndexOf/.test(genSrc), "buildStatsSnapshot 出口 basename 化实现在场（lastIndexOf 切分）");
+  assert.ok(genSrc.includes("TREND_UNIDENTIFIED : safeName"), "剥/切后空串归并未识别桶键（防空标签）");
+  const readme = readFileSync(join(pkgDir, "README.md"), "utf8");
+  assert.ok(readme.includes("目录 basename"), "README 安全模型收敛为 basename 口径");
+  assert.ok(readme.includes("剥控制字符 + 截断 80"), "README 注入口径含剥控制字符 + 截断 80");
+  assert.ok(!readme.includes("注入面只含聚合数值（不含会话明细与路径）"), "README 旧句（无目录 basename）已收敛");
+  assert.ok(!readme.includes("摘要不含项目路径；"), "README 裸「摘要不含项目路径」句已收敛为准确口径");
+  // 模板目录硬规则哨兵（C1 模板升级防回退）
+  const cfgSrc = readFileSync(join(pkgDir, "src/report/config.ts"), "utf8");
+  for (const sentinel of ["byDirectory 第一位", "工作分散在 N 个目录", "目录版图", "绝不展开为路径、绝不推测目录内容"]) {
+    assert.ok(cfgSrc.includes(sentinel), `三周期模板目录硬规则哨兵在场：${sentinel}`);
+  }
 }
 
 console.log("unit-report: all assertions passed");
