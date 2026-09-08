@@ -92,7 +92,7 @@ export { ReportScheduler, readLastRun, writeLastRun, updateLastRun, ensureLastRu
 export { ReportTaskQueue } from "./report/tasks.ts";
 export type { ReportTask, ReportTaskInput, ReportTaskResult, ReportTaskStatus } from "./report/tasks.ts";
 // 读侧投影（#626：一行/窗口=最新版）与公共解析
-export { readReportIndex, parseReportIndexLines, __clearReportIndexCacheForTests, __reportIndexCacheStatsForTests } from "./report/runner.ts";
+export { readReportIndex, parseReportIndexLines, prevWindowTotal, runDueReport, __clearReportIndexCacheForTests, __reportIndexCacheStatsForTests } from "./report/runner.ts";
 // 路径解析纯函数透出（供测试与调用方复用同一展开/解析规则，无行为变更）
 export { resolvePath, pluginHome, expandHomePath } from "./path-resolve.ts";
 // 配置归一化（#276 方案 A 阶段 3 拆出：默认值 / schemastery schema / normalizeConfig）

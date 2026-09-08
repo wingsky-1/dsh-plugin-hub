@@ -172,11 +172,15 @@ export async function runDueReport(params: {
 }): Promise<ReportMeta> {
   const { due, trend, ctx, reportCfg, historyRoot, sanitizeDiagnostic } = params;
   const buckets = trend.buckets();
+  // #633 分片 b C1 接线：目录维度日汇总行进快照（trend.dirRows 含今日桶，口径见
+  // aggregator.dirRows）。无目录事实（旧数据无 dir 行）时 dirRows 为空数组，
+  // 快照 byDirectory 为空（加性维度不补造），报告链路照旧。
   const snapshot = buildStatsSnapshot({
     period: due.period,
     startDay: due.startDay,
     endDay: due.endDay,
     buckets,
+    dirRows: trend.dirRows(),
     prevTotal: prevWindowTotal(buckets, due.startDay, due.endDay),
   });
   if (snapshot.totals.calls === 0) {

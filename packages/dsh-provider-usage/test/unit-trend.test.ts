@@ -312,7 +312,7 @@ function cellTotals(agg, day, provider = "deepseek") {
   agg.apply({ type: "call", record: { time: T0 + HOUR, session: "s2", turn: 1, step: 1, retry: 1, provider: "deepseek", model: "chat", tokens: { input: 20, output: 5, cacheRead: null, cacheWrite: null } } });
   agg.apply({ type: "counter", record: { time: T0, session: "s1", provider: "deepseek", model: "chat", turns: 1, toolCalls: 2 } });
   const before = JSON.stringify(agg.buckets());
-  const aggRows = agg.rollupDay(DAY0);
+  const aggRows = agg.rollupDay(DAY0, DAY0);
   assert.equal(JSON.stringify(agg.buckets()), before, "压实只转落盘形态，cells 不动（不双算）");
   assert.equal(agg.pendingDays().length, 0, "压实后 pending 清空");
   assert.equal(aggRows.length, 1, "同 (provider,model) 折叠为一行");
@@ -1338,7 +1338,7 @@ const A2_LEGACY_AGG = {
   agg.apply({ type: "call", record: { time: T0, session: "s1", turn: 1, step: 1, retry: 1, provider: "deepseek", model: "chat", dir: "proj", tokens: { input: 100, output: 50, cacheRead: 10, cacheWrite: 5 } } });
   agg.apply({ type: "counter", record: { time: T0, session: "s1", provider: "deepseek", model: "chat", dir: "proj", turns: 1, toolCalls: 2 } });
   agg.apply({ type: "call", record: { time: T0 + HOUR, session: "s2", turn: 1, step: 1, retry: 1, provider: "deepseek", model: "chat", dir: "proj", tokens: null } });
-  const rows = agg.rollupDay(DAY0);
+  const rows = agg.rollupDay(DAY0, DAY0);
   assert.deepEqual(
     rows,
     [
@@ -1347,7 +1347,7 @@ const A2_LEGACY_AGG = {
     ],
     "rollupDay 产物 agg+dir 行逐字段 deepEqual（null token 不污染、calls 独立累计）",
   );
-  assert.deepEqual(agg.rollupDay(DAY0), [], "消费后二次 rollup 不重复产出（pending/dir 素材同源消费）");
+  assert.deepEqual(agg.rollupDay(DAY0, DAY0), [], "消费后二次 rollup 不重复产出（pending/dir 素材同源消费）");
 }
 
 {

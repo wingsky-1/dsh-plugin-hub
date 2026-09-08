@@ -280,6 +280,179 @@ export class TrendAggregator {
   }
 
   /**
+   * 全量目录日桶快照（day 升序；#633 分片 b 报告快照与统计目录分布数据源）。
+   * 今日数据：dirDays 只在日切压实消费（dropPending 联动删除），而 apply 路径
+   * 每次调用都平行累加进 dirCells——故今日桶以 pending 明细/计数行的 dir 字段
+   * 同源折算补齐（与压实 takeDirUnpersisted 同一折算规则；dirDays 内该日已无桶，
+   * 不双算）。过去日经混存分片 rebuild 恢复在 dirDays；旧格式行（无 dir 键）
+   * 无目录事实不补造。
+   */
+  dirRows(): TrendDirRow[] {
+    const rows: TrendDirRow[] = [];
+    for (const day of [...this.dirDays.keys()].sort()) {
+      for (const [dir, cell] of this.dirDays.get(day)!) {
+        rows.push({ v: TREND_ROW_VERSION, kind: "dir", day, dir, input: cell.input, output: cell.output, cacheRead: cell.cacheRead, cacheWrite: cell.cacheWrite, calls: cell.calls, turns: cell.turns, toolCalls: cell.toolCalls });
+      }
+    }
+    // 今日（含一切尚在 pending 的日）按 pending 行同源折算补齐
+    const byKey = new Map<string, TrendDirRow>();
+    for (const { row } of this.pending) {
+      if (row.dir === undefined) continue;
+      let agg = byKey.get(`${row.day}\u0000${row.dir}`);
+      if (agg === undefined) {
+        agg = { v: TREND_ROW_VERSION, kind: "dir", day: row.day, dir: row.dir, input: null, output: null, cacheRead: null, cacheWrite: null, calls: 0, turns: 0, toolCalls: 0 };
+        byKey.set(`${row.day}\u0000${row.dir}`, agg);
+      }
+      if (row.kind === "detail") {
+        agg.calls += 1;
+        agg.input = sumToken(agg.input, row.input);
+        agg.output = sumToken(agg.output, row.output);
+        agg.cacheRead = sumToken(agg.cacheRead, row.cacheRead);
+        agg.cacheWrite = sumToken(agg.cacheWrite, row.cacheWrite);
+      } else {
+        agg.turns += row.turns;
+        agg.toolCalls += row.toolCalls;
+      }
+    }
+    rows.push(...byKey.values());
+    return rows;
+  }
+
+  /**
+   * 堆叠柱序列（目录维度；#633 分片 b B1 数据接口）。语义与 seriesStacked 同构：
+   * 每时间桶按目录拆段；dirs 为图例并集（窗口内出现过的目录段，含未识别桶）。
+   * dir 过滤可选（单目录形态——未识别桶键同为合法过滤值）。
+   */
+  dirStacked(
+    n: number,
+    gran: TrendGranularity,
+    metric: TrendMetric,
+    dir: string | undefined,
+    now: number,
+  ): { series: TrendStackPoint[]; dirs: Array<{ dir: string }> } {
+    const keys = this.granKeys(n, gran, now);
+    const ranges = new Map(keys.map((k) => [k, this.granRange(k, gran)] as const));
+    const series: TrendStackPoint[] = keys.map((key) => {
+      const partsMap = new Map<string, TrendStackPart>();
+      const range = ranges.get(key)!;
+      for (const row of this.dirRows()) {
+        if (row.day < range.start || row.day > range.end) continue;
+        if (dir !== undefined && row.dir !== dir) continue;
+        const v = metricValue(row, metric);
+        const cur = partsMap.get(row.dir);
+        if (cur !== undefined) cur.value = sumToken(cur.value, v);
+        else partsMap.set(row.dir, { provider: row.dir, model: null, value: v });
+      }
+      const parts = [...partsMap.values()];
+      let total: number | null = null;
+      for (const pt of parts) total = sumToken(total, pt.value);
+      return { key, parts, total };
+    });
+    const legend = new Set<string>();
+    for (const point of series) {
+      for (const pt of point.parts) legend.add(pt.provider);
+    }
+    return { series, dirs: [...legend].sort().map((d) => ({ dir: d })) };
+  }
+
+  /**
+   * 窗口摘要（目录维度；#633 分片 b B1 数据接口）。curRange/prevRange 语义与
+   * windowSummary 完全同构：当前窗口总量/调用数/峰值桶/目录 top 段 + 上一窗口环比。
+   * prevComplete 语义对齐：prev 窗口起点早于目录数据起点（dirRows 最早日）→ 不可比。
+   */
+  dirWindowSummary(
+    n: number,
+    gran: TrendGranularity,
+    metric: TrendMetric,
+    dir: string | undefined,
+    now: number,
+    dirSeries?: TrendStackPoint[],
+  ): TrendWindowSummary {
+    const keys = this.granKeys(n, gran, now);
+    const curRange = {
+      start: this.granRange(keys[0], gran).start,
+      end: this.granRange(keys[keys.length - 1], gran).end,
+    };
+    const prevKeys = this.granKeys(n, gran, this.prevWindowAnchor(now, n, gran));
+    const prevRange = {
+      start: this.granRange(prevKeys[0], gran).start,
+      end: this.granRange(prevKeys[prevKeys.length - 1], gran).end,
+    };
+    let total: number | null = null;
+    let calls = 0;
+    let turns = 0;
+    let toolCalls = 0;
+    let peakKey: string | null = null;
+    let peakVal = -1;
+    let top: { provider: string; model: string | null; value: number } | null = null;
+    const series = dirSeries ?? this.dirStacked(n, gran, metric, dir, now).series;
+    for (const point of series) {
+      if (point.total !== null && point.total > peakVal) {
+        peakVal = point.total;
+        peakKey = point.key;
+      }
+      for (const pt of point.parts) {
+        if (pt.value !== null && (top === null || pt.value > top.value)) {
+          top = { provider: pt.provider, model: pt.model, value: pt.value };
+        }
+      }
+    }
+    const rows = this.dirRows();
+    let firstDirDay: string | null = null;
+    for (const row of rows) {
+      if (firstDirDay === null || row.day < firstDirDay) firstDirDay = row.day;
+    }
+    for (const row of rows) {
+      if (row.day < curRange.start || row.day > curRange.end) continue;
+      if (dir !== undefined && row.dir !== dir) continue;
+      total = sumToken(total, metricValue(row, metric));
+      calls += row.calls;
+      turns += row.turns;
+      toolCalls += row.toolCalls;
+    }
+    let prevTotal: number | null = null;
+    for (const row of rows) {
+      if (row.day < prevRange.start || row.day > prevRange.end) continue;
+      if (dir !== undefined && row.dir !== dir) continue;
+      prevTotal = sumToken(prevTotal, metricValue(row, metric));
+    }
+    return {
+      total,
+      calls,
+      turns,
+      toolCalls,
+      peakKey,
+      top,
+      prevTotal,
+      // 与 windowSummary.prevComplete 同口径：prev 窗口起点早于目录数据起点 → 环比不可比
+      prevComplete: prevRange.start >= (firstDirDay ?? "9999-12-31"),
+    };
+  }
+
+  /**
+   * 目录窗口总量表（#633 分片 b B4 目录范围口径影响 + B1 目录分布数据源）：
+   * 给定日区间内按目录聚合 calls 与 metric 总量（calls 降序）。
+   */
+  dirTotals(
+    startDay: string,
+    endDay: string,
+    metric: TrendMetric = "total",
+  ): Array<{ dir: string; calls: number; total: number | null }> {
+    const byDir = new Map<string, { dir: string; calls: number; total: number | null }>();
+    for (const row of this.dirRows()) {
+      if (row.day < startDay || row.day > endDay) continue;
+      let cur = byDir.get(row.dir);
+      if (cur === undefined) {
+        cur = { dir: row.dir, calls: 0, total: null };
+        byDir.set(row.dir, cur);
+      }
+      cur.calls += row.calls;
+      cur.total = sumToken(cur.total, metricValue(row, metric));
+    }
+    return [...byDir.values()].sort((a, b) => b.calls - a.calls);
+  }
+
+  /**
    * 取走给定日的目录维度未压实行快照（#633 A4 压实素材，纯读不消费）。
    * flush 压实两步式安全序：纯计算行 → IO → 成功后才 dropPending(day)（联动消费）。
    * 同源折算：与 rollupRowsOf 遍历同一批 pending 行，按 row.dir 分桶；dir 键缺失的
@@ -355,10 +528,17 @@ export class TrendAggregator {
     return [...byKey.values()];
   }
 
-  /** 消费给定日的 pending 行（压实 IO 全部成功后调用；cells 不动）。 */
-  dropPending(day: string): void {
+  /**
+   * 消费给定日的 pending 行（压实 IO 全部成功后调用；cells 不动）。
+   * #633 分片 b：dirDays 只消费**过去日**（调用方传入 today 日界防御）——
+   * dir 维度无当日明细查询面（与 cells 不同），apply 路径每次调用平行累加
+   * dirCells，当日桶删除会让目录查询面（dirRows/dirStacked）缺「今日」数据；
+   * 过去日照旧联动删除（防 dir 内存桶无界增长）。两处调用（flush 压实、
+   * 启动自愈 rollupDay）的 day 恒 < today，行为对既有用例零变化。
+   */
+  dropPending(day: string, today: string): void {
     this.pending = this.pending.filter((p) => p.row.day !== day);
-    this.dirDays.delete(day); // #633 A4：dir 内存桶随 pending 同步消费（生命周期一致，防过期双算）
+    if (day < today) this.dirDays.delete(day); // #633 分片 b：当日桶保留（目录查询面需要）
   }
 
   /**
@@ -385,11 +565,13 @@ export class TrendAggregator {
    * 仅供启动自愈等「无并发 IO 失败窗口」的同步场景使用；flush 压实路径
    * 一律走 rollupRowsOf + dropPending 两步式（IO 失败内存行保留，防丢数）。
    * #633 A4：返回混存行——agg 行在前、dir 行在后（writeAggDay 写入约定）。
+   * today 由调用方传入（与 TrendTracker.rebuildFromDisk 的注入时钟同源），
+   * 透传 dropPending 的 dirDays 过去日守卫。
    */
-  rollupDay(day: string): Array<TrendAggRow | TrendDirRow> {
+  rollupDay(day: string, today: string): Array<TrendAggRow | TrendDirRow> {
     const rows = this.rollupRowsOf(day);
     const dirRows = this.takeDirUnpersisted(day);
-    this.dropPending(day);
+    this.dropPending(day, today);
     return [...rows, ...dirRows];
   }
 
