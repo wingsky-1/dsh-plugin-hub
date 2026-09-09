@@ -64,6 +64,9 @@ export function makeMiddlewareHotSwitch(
     // 单元（#382 F3）；off 语义停掉全部中间层接管条目。防同一 server 双进程。
     manager.reconcileServers();
     manager.logger.info(`dsh-mcp-manager: middleware mode=${next} (hot-switched)`);
+    // B20（C-EVT）：热切换后补 summary 帧——summary 帧源集合含热切换；现状
+    // 缺失致热切换后客户端无帧可回拉 GET /servers（与客户端 C10 同根）。
+    manager.emitStatus();
   };
 }
 

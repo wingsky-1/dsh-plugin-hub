@@ -58,6 +58,8 @@ export { panelAnchorForPosition } from "./placement-math.ts";
 // 插件契约转发（apply 主流程 + 宣告文本实现于 apply.ts）
 export { apply, MCP_GUIDANCE } from "./apply.ts";
 export { resolveDebugConfig, resolveMiddlewareMode } from "./apply-config.ts";
+// 运行期装配工厂（组合根）：热切换为 B20/C-EVT 契约测试面
+export { makeMiddlewareHotSwitch } from "./apply-runtime.ts";
 
 // 服务器配置归一化（纯函数单一事实源）
 export { SERVER_NAME_PATTERN, normalizeServer } from "./normalize.ts";
@@ -97,15 +99,15 @@ export type { CallResultTextHandlers, ProjectedCallResult } from "./pipeline/int
 // 连接监督器 / 工具定义（含命名、截断、schema 校验）
 export {
   DEFAULT_TOOL_CALL_TIMEOUT_MS,
-  RECONNECT_DEFAULTS,
   DEFAULT_RESULT_TRUNCATE_BYTES,
   publicToolName,
   truncateText,
   assertSupportedOutputSchema,
   buildToolDefinition,
   ConnectionSupervisor,
-  resolveReconnect,
 } from "./supervisor.ts";
+// 连接域（#664 阶段 3 收敛）：重连策略解析归 connection/runtime，经 connection/interface.ts 引用
+export { RECONNECT_DEFAULTS, resolveReconnect } from "./connection/interface.ts";
 // 能力目录 / 目录缓存
 export {
   DEFAULT_ANNOUNCE_CATALOG,

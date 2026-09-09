@@ -38,6 +38,7 @@ import {
 import type { MiddlewareMode, ProjectUnit, DisabledToolsMap } from "./middleware.ts";
 import { McpStatsCollector } from "./call-stats.ts";
 import { createRedactor } from "./pipeline/interface.ts";
+import { stripMcpPrefix } from "./connection/interface.ts";
 
 /** 中间层 all 模式的全局虚拟 root（全局服务器经中间层访问时的路由 key）。 */
 export const MIDDLEWARE_GLOBAL_ROOT = "@global";
@@ -47,21 +48,6 @@ export const MIDDLEWARE_GLOBAL_ROOT = "@global";
  *  用途服务。 */
 function dshHomePath() {
   return resolve(dshHome());
-}
-
-/**
- * 剥 mcp__<server>__ 前缀还原裸名（#382 F4 展示口径统一）。前缀不匹配（不可
- * 剥）原样返回；剥后为空或仍以 mcp__ 开头（跨 server 注册名）原样返回。超长
- * 哈希名剥出截断键——与 guard 层（tools/pre-execute 路径二按注册名反解）结果
- * 相同，禁用表键口径统一生效。
- */
-function stripMcpPrefix(registeredName: string, serverName: string): string {
-  const prefix = `mcp__${serverName}__`;
-  if (!registeredName.startsWith(prefix)) return registeredName;
-  let name = registeredName;
-  while (name.startsWith(prefix)) name = name.slice(prefix.length);
-  if (name === "" || name.startsWith("mcp__")) return registeredName;
-  return name;
 }
 
 /**
@@ -741,7 +727,11 @@ export class McpManager {
     if (existing !== undefined && existing.client !== undefined) {
       // 已连接：若现有 config 与直传 config 不同（runtime 注入覆盖 store），重建。
       if (directConfig !== undefined && existing.server !== directConfig) {
-        existing.disposed = true;
+        // B5/D2：替换分支复用 disconnect 语义（关闭旧 transport + 注销旧工具），
+        // 而非只置 disposed——旧代际残留泄漏 stdio 子进程/socket 与工具注册。
+        // start 保持同步：void disconnect() 的清理与新代际 syncTools 在各自
+        // syncChain 上先后落定（D2：旧清理先于新注册）。
+        void existing.disconnect();
         const supervisor = new ConnectionSupervisor(this, directConfig, scope);
         this.supervisors.set(name, supervisor);
         void supervisor.connect();
@@ -753,7 +743,8 @@ export class McpManager {
       this.logger.warn(`dsh-mcp-manager: server "${name}" already registered in scope "${existing.scope}" — skipping "${scope}"`);
       return;
     }
-    if (existing !== undefined) existing.disposed = true;
+    // B5：未连接旧代际同样走 disconnect 语义（清 reconnectTimer + 注销残留工具）。
+    if (existing !== undefined) void existing.disconnect();
     const supervisor = new ConnectionSupervisor(this, server, scope);
     this.supervisors.set(name, supervisor);
     void supervisor.connect();
@@ -1020,7 +1011,9 @@ export class McpManager {
     const existing = this.supervisors.get(name);
     if (existing !== undefined && existing.client !== undefined) return;
     if (existing !== undefined && existing.scope !== scope) throw new Error(`server "${name}" is registered in scope "${existing.scope}"`);
-    if (existing !== undefined) existing.disposed = true;
+    // B5：connect 替换分支复用 disconnect 语义（清 reconnectTimer + 注销残留工具），
+    // await 保证旧代际清理先于新代际建立（与 start 分支同口径）。
+    if (existing !== undefined) await existing.disconnect();
     const supervisor = new ConnectionSupervisor(this, server, scope);
     this.supervisors.set(name, supervisor);
     await supervisor.connect();
@@ -1160,8 +1153,14 @@ export class McpManager {
     // 查裸名，禁用静默无效）。超长哈希名剥出截断键，与 guard 路径二反解结果
     // 相同，禁用链路一致生效；前缀不匹配（不可剥）原样返回。
     const supervisorTools = (supervisor?.tools ?? []).map((tool) => stripMcpPrefix(tool, server.name));
-    const disabledForServer = this.disabledTools.get(MIDDLEWARE_GLOBAL_ROOT)?.get(server.name) ?? this.disabledTools.get(this.projectRoot ?? "")?.get(server.name);
-    const supervisorDisabled = disabledForServer !== undefined ? supervisorTools.filter((tool) => disabledForServer.has(tool)) : [];
+    // B19：禁用查询与中间层分支同口径——@global 与 projectRoot 禁用集**合并判定**
+    // （现状 ?? 二者只取其一，跨空间禁用漏算）。@global 跨工作空间共享、项目根
+    // 目录级追加，任一命中即禁用。
+    const globalDisabled = this.disabledTools.get(MIDDLEWARE_GLOBAL_ROOT)?.get(server.name);
+    const projectDisabled = this.projectRoot !== undefined ? this.disabledTools.get(this.projectRoot)?.get(server.name) : undefined;
+    const supervisorDisabled = supervisorTools.filter(
+      (tool) => (globalDisabled?.has(tool) ?? false) || (projectDisabled?.has(tool) ?? false),
+    );
     return {
       ...server,
       scope,

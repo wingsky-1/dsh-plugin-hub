@@ -162,6 +162,47 @@ const failServer = { name: "srv", transport: "stdio", command: "dsh-mcp-missing-
   if (sup.reconnectTimer !== undefined) clearTimeout(sup.reconnectTimer);
 }
 
+// ---- B1 红测：重连窗口内 connect() 保持 "reconnecting"（现状 connectedAt 已被
+// scheduleReconnect 置 undefined → setStatus 覆盖为 "connecting"）----
+
+{
+  const { manager } = makeManagerLog();
+  const sup = new ConnectionSupervisor(manager, { ...failServer, reconnect: { enabled: false } });
+  // 模拟重连中的代际：scheduleReconnect 后的形态——failedAttempts>0、无 client。
+  sup.failedAttempts = 2;
+  sup.client = undefined;
+  const p = sup.connect();
+  assert.equal(
+    sup.status,
+    "reconnecting",
+    "B1：failedAttempts>0 的重连窗口内 connect() 状态为 reconnecting（现状 connectedAt===undefined → connecting，红测）",
+  );
+  await p.catch(() => {});
+}
+
+// ---- B1 红测（续）：真实失败一次后，重连触发（第二次 connect）期间状态保持 ----
+
+{
+  const { manager } = makeManagerLog();
+  const sup = new ConnectionSupervisor(manager, {
+    ...failServer,
+    reconnect: { enabled: true, initialDelayMs: 60_000, maxDelayMs: 60_000, maxAttempts: 5 },
+  });
+  await sup.connect();
+  assert.equal(sup.status, "reconnecting", "第一次失败进入重连窗口");
+  assert.equal(sup.failedAttempts, 1);
+  // 手动模拟 scheduleReconnect 的 timer 回调（void this.connect()）触发的
+  // 第二次 connect：同步段即设置状态，await 前断言确定。
+  const p2 = sup.connect();
+  assert.equal(
+    sup.status,
+    "reconnecting",
+    "B1：重连触发（第二次 connect）期间状态保持 reconnecting（现状 connectedAt===undefined → connecting，红测）",
+  );
+  await p2.catch(() => {});
+  if (sup.reconnectTimer !== undefined) clearTimeout(sup.reconnectTimer);
+}
+
 // ---- closeHandler 代际守卫：旧代际关闭不误伤 ----
 
 {

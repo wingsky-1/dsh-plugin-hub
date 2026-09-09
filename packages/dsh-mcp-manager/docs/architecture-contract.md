@@ -92,7 +92,9 @@
 - **目标契约**：
   1. **summary 六态计数键集合** = {connected, connecting, reconnecting, disabled,
      stopped, failed}（`reconnecting` 由 D1 补入，service-contract 类型面已含；
-     **客户端未知状态策略 C13：阶段 3 与 B1/B4 单 PR 拍板，实现留阶段 7**）；
+     **客户端未知状态策略 C13 已拍板（阶段 3，与 B1/B4 同 PR）：未知状态按
+     `stopped` 投影、不丢卡**——servers 列表与 float 浮窗统一口径，消除
+     servers.ts 静默丢卡 vs float.ts 塞 stopped 的两处不一致；实现留阶段 7）；
   2. 客户端 API 封装**仅消费 JSON body**（204 追加处理备忘 C14，未来新增 204 路由时
      dom.ts api 不得静默 undefined）；
   3. **SSE 帧集合** = {summary, ui-config-changed, ping} + 客户端 60s watchdog 自愈三防线
@@ -173,7 +175,48 @@
 
 ---
 
-## 三、规格决策定稿表（D1–D9）
+## 三、测试分层（T1 / T2 / T3 + 变异分层）
+
+> 维护者决策（issue #664 评论 5602626656），阶段 3 起执行；本文档为裁决面。
+> 分层的动机：单测断言一律落「契约面」而非「实现细节」——重构（阶段 3/4/5/6）只
+> 搬文件不搬契约，测试不因纯移动而碎。
+
+### 3.1 三层定义与归属
+
+| 层 | 定义 | 断言面 | 现状归属（阶段 3 基线） | 示例 |
+|----|------|--------|------------------------|------|
+| **T1 层内单元** | 每目录内部逻辑自测，不跨目录直引 | 模块公开符号（经 lib/index.js re-export 或目录 interface.ts） | unit-* 各文件（normalize/store/transport/supervisor 内部逻辑、pipeline 纯函数族等） | resolveReconnect 全分支、truncateText 字节边界、withTimeout abort 竞态 |
+| **T2 interface 层间** | 经目录 interface.ts 的跨层契约 | 目录门面（类型 + 函数签名与行为契约）；verify-dir-imports 静态强制 + 本层动态契约 | 两路径同构契约（supervisor 直呼 vs ws_mcp_call 同构断言）为首例 | B18 两路径退避/超时口径、两路径差异面（timeout/redact/stale）显式排除 |
+| **T3 user-case 集成** | 按用户场景端到端 | HTTP 路由 + SSE 帧 + ctx 工具注册面（不 mock 宿主装配链） | routes/apply/SSE hub 用例、smoke SDK 端到端 | ws_mcp_call 全链路、SSE summary 推送、tool-disable 三入口一致、热切换补帧 |
+
+分层不设硬比例门槛：T1 密度最高（纯函数红利），T2/T3 按契约风险投放；任何一层
+不得因「已有低层测试」而省略其契约面断言。
+
+### 3.2 各层纪律
+
+- **T1**：不跨目录直引实现文件；断言只走目录 interface.ts 或 lib/index.js 的公共
+  re-export 面。重构搬移文件时 T1 断言零改动（import 面不变）。
+- **T2**：跨层契约经 interface.ts 落断言；静态（verify-dir-imports）与动态（行为
+  契约测试）双轨。两路径同构契约的差异面签名（timeout 来源 / redact / stale）为
+  显式排除项，不得移除差异面声明（C-ABT/D6）。
+- **T3**：防 flake 纪律（DEVELOPMENT.md §5）全量生效——mkdtempSync 隔离落盘、
+  pollUntil/assertNoGrowth 替代固定 sleep；SSE 帧断言按帧序轮询而非计时。
+- **新测试文件双登记**：新 test/*.test.ts 必须同时登记 smoke.ts import 聚合与
+  mutation-topology.json testFiles（防三通道不对称扩大，见
+  requirements-and-tdd-plan.md 8.3-P0④）。
+
+### 3.3 变异分层（阶段 6 重画 mutate 的依据）
+
+- 阶段 6 一次性重画六段 mutate 清单时按层标注：T1 覆盖目录内部逻辑段、
+  T2 覆盖 interface.ts 与跨层契约段、T3 覆盖装配/路由段；
+- **interface.ts 纳入 mutate**：删除任一 re-export → T2 契约测试必红
+  （门面即契约，门面断裂不得被变异存活掩盖）；
+- 阶段 1–5 新建目录的变异盲区维持 2.4 过渡态（明示接受，covered 不回落为守），
+  阶段 6 与 mutate 重画一并清零。
+
+---
+
+## 四、规格决策定稿表（D1–D9）
 
 > 详解（问题/选项/技术依据/影响面/验证）见 `refactor-phase0-spec.md` §A；本表为定稿决议。
 
@@ -192,7 +235,7 @@
 
 ---
 
-## 四、阶段 0 完成定义（验收标准）
+## 五、阶段 0 完成定义（验收标准）
 
 1. 本文档成文，且与 `refactor-phase0-spec.md` / `architecture-redesign.md`（v3）无矛盾
    （契约条款为裁决面，冲突以本文档为准并回改规格）；
