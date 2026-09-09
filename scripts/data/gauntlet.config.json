@@ -78,9 +78,9 @@
         "baselineDuration": "13m54s（阶段二重建：十一段基线 + report 两段含 D8 新文件）",
         "baselineScope": "src 级十段全量（#342 二期六段 + 阶段零四段，口径详见 scope 字段；旧 lib 行号区间口径见 git history 2026-08-25）",
         "config": "stryker.conf.d/dsh-provider-usage-{entry,apply,contracts,sanitize,registry,pipeline,trend-aggregate,trend-collect,report-schedule,report-execute,routes}.json（#342 二期六段 + 阶段零四段 + 阶段一 routes 段 + 阶段二 D8 归位）",
-        "hardeningNote": "#150 两阶段达标开启 strict；阶段零（#670）：补盲区四段 + testFiles；阶段一（#670）：routes 段开段；阶段二（#670）：D8 last-run/report-index/executor/list-dirs/report-config-service 新文件并入 report 段",
+        "hardeningNote": "#150 两阶段达标开启 strict；阶段零（#670）：补盲区四段 + testFiles；阶段一（#670）：routes 段开段；阶段二（#670）：D8 last-run/report-index/executor/list-dirs/report-config-service 新文件并入 report 段；阶段三（#670）：aggregator 拆分为 aggregate-rows/aggregate-query 两纯函数模块并入 trend-aggregate 段（baseline 数字待 observe 夜间重建，见报告）",
         "threshold": 60,
-        "scope": "src 级十一段（#342 二期六段 + 阶段零四段 + 阶段一 routes 段）：entry / apply / contracts / sanitize / registry registry+user-adapter-loader / pipeline history+v2+hotreload+placement-math+path-resolve+client-logic+provider-config+charts+stats-service / trend-aggregate aggregator+store+index / trend-collect collector+types / report-schedule config+schedule+scheduler+tasks+last-run+report-config-service（D8 归位）/ report-execute runner+generate+format+report-index+executor+list-dirs（D8 归位）/ routes stats+adapters+ui+reports；基线为 src 口径，由四班次 observe 重建"
+        "scope": "src 级十一段（#342 二期六段 + 阶段零四段 + 阶段一 routes 段）：entry / apply / contracts / sanitize / registry registry+user-adapter-loader / pipeline history+v2+hotreload+placement-math+path-resolve+client-logic+provider-config+charts+stats-service / trend-aggregate aggregator+aggregate-rows+aggregate-query+store+index（阶段三 D2 拆分并入 mutate 面） / trend-collect collector+types / report-schedule config+schedule+scheduler+tasks+last-run+report-config-service（D8 归位）/ report-execute runner+generate+format+report-index+executor+list-dirs（D8 归位）/ routes stats+adapters+ui+reports；基线为 src 口径，由四班次 observe 重建"
       },
       "dsh-lan-proxy": {
         "baselineScore": 52.43,
