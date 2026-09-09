@@ -52,6 +52,7 @@
       "packages/dsh-provider-usage/test/unit-signal-lock.test.ts",
       "packages/dsh-provider-usage/test/unit-v1.test.ts",
       "packages/dsh-provider-usage/test/unit-trend.test.ts",
+      "packages/dsh-provider-usage/test/unit-trend-ledger.test.ts",
       "packages/dsh-provider-usage/test/unit-trend-view.test.ts",
       "packages/dsh-provider-usage/test/unit-report.test.ts",
       "packages/dsh-provider-usage/test/unit-routes.test.ts",

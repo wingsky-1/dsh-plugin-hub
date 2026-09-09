@@ -34,6 +34,7 @@ import "./unit-refresh-revalidate.test.ts";
 import "./unit-deepseek-official.test.ts";
 import "./unit-fetch-timeout.test.ts";
 import "./unit-trend.test.ts";
+import "./unit-trend-ledger.test.ts";
 import "./unit-trend-view.test.ts";
 import "./unit-report.test.ts";
 import "./unit-stats-service.test.ts";
