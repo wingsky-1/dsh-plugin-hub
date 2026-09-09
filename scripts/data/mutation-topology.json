@@ -150,7 +150,6 @@
         },
         "runtime": {
           "mutate": [
-            "packages/dsh-mcp-manager/src/catalog.ts",
             "packages/dsh-mcp-manager/src/apply.ts",
             "packages/dsh-mcp-manager/src/transport.ts",
             "shared/placement-math.js",
@@ -163,7 +162,7 @@
             "!packages/dsh-mcp-manager/src/types.ts",
             "!packages/dsh-mcp-manager/src/service.ts"
           ],
-          "comment": "#342 二期：src 级文件组功能命名段（runtime）——catalog+apply+transport+shared/placement-math+config-schema+protocol+middleware-types（#378：placement 纯核心上移 shared，mutate 跟随；lib→src hook 对 shared 段返回 null 默认解析，测试经 lib/index.js→src re-export 链执行 shared 真源码）；types.ts / service.ts（type-only）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+          "comment": "#342 二期：src 级文件组功能命名段（runtime）——apply+transport+shared/placement-math+config-schema+protocol+middleware-types（#378：placement 纯核心上移 shared，mutate 跟随；lib→src hook 对 shared 段返回 null 默认解析，测试经 lib/index.js→src re-export 链执行 shared 真源码；#664 阶段5：catalog.ts 拆入 src/catalog/ 域，新文件阶段 1–5 不纳入 mutate 清单，C4 明示变异盲区；阶段 6 重画）；types.ts / service.ts（type-only）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
         },
         "supervisor": {
           "mutate": [

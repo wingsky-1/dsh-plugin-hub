@@ -111,7 +111,7 @@ export {
 } from "./supervisor.ts";
 // 连接域（#664 阶段 3 收敛）：重连策略解析归 connection/runtime，经 connection/interface.ts 引用
 export { RECONNECT_DEFAULTS, resolveReconnect } from "./connection/interface.ts";
-// 能力目录 / 目录缓存
+// 能力目录 / 目录缓存（#664 阶段 5：catalog 域成形，经 catalog/interface.ts 转发）
 export {
   DEFAULT_ANNOUNCE_CATALOG,
   DEFAULT_CATALOG_MAX_ENTRIES,
@@ -129,7 +129,7 @@ export {
   catalogHistory,
   renderMcpCatalogUpdate,
   resolveCatalogInjection,
-} from "./catalog.ts";
+} from "./catalog/interface.ts";
 // mcpServers JSON 导入
 export { fromClaudeEntry, parseClaudeJson } from "./import.ts";
 // 统计与 Debug

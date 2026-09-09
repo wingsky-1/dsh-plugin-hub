@@ -1,16 +1,14 @@
 /**
- * dsh-mcp-manager — L1 能力目录与目录缓存（独立模块）。
+ * dsh-mcp-manager — catalog/entries.ts：能力目录条目与渲染（#664 阶段 5）。
  *
- * 能力目录：向模型宣告已配置 MCP 服务器（数据源不依赖实时连接状态，
- * digest 只含服务器集合，history-based 去重防重复注入）。
- * 目录缓存：连接成功时把工具描述摘要持久化于磁盘，作为 digest 的稳定数据源。
- * 由 lib/index.js 组合根 re-export。
+ * 自 src/catalog.ts 拆出（目录条目域）：条目类型/摘要常量/摘要计算/条目组装/
+ * 消息渲染与转义/消息定位读取。digest 与 history 归同域兄弟文件；目录注入决策
+ * 归 injection.ts；注入端缓存视图归 cache-view.ts；检索族归 search.ts。
  */
 
-import { createHash, randomUUID } from "node:crypto";
-import { join } from "node:path";
-import { dshHome } from "../../../shared/dsh-home.js";
-import type { ServerConfig } from "./types.ts";
+import { randomUUID } from "node:crypto";
+import type { ServerConfig } from "../types.ts";
+import type { CatalogMessage } from "./injection.ts";
 
 /** 目录条目。 */
 export interface CatalogEntry {
@@ -30,47 +28,12 @@ export interface SupervisorLite {
 /** 目录缓存（连接成功时持久化的工具描述摘要）。 */
 export type CatalogCache = Map<string, { summary: string }>;
 
-/** 会话消息最小面（pre-step decision.messages / session.snapshotEvents()）。 */
-export interface CatalogMessage {
-  id?: unknown;
-  role?: string;
-  content?: Array<{ type?: string; text?: string }>;
-  source?: { kind?: string; form?: unknown; entries?: unknown };
-}
-
-/** pre-step 决策最小面。 */
-export interface CatalogDecision {
-  kind: string;
-  messages: CatalogMessage[];
-}
-
-/** 目录历史查询结果。 */
-export interface CatalogHistoryResult {
-  visibleDigest?: string;
-  published: boolean;
-}
-
-/** agent 最小面（session.snapshotEvents() 倒序找目录消息；0.1.2-rc.1 起 events getter 移除）。 */
-export interface CatalogAgent {
-  session?: {
-    surface?: { nodes?: unknown[] };
-    snapshotEvents?: () => ReadonlyArray<{ type?: string; seq?: unknown; data?: { source?: { kind?: string; entries?: unknown } } }>;
-  };
-}
-
 // ------------------------------------------------- 感知增强（对抗性评审 v2）
 
 /** 能力目录默认开启。 */
 export const DEFAULT_ANNOUNCE_CATALOG = true;
 /** 能力目录最大条目数（防上下文膨胀）。 */
 export const DEFAULT_CATALOG_MAX_ENTRIES = 6;
-
-// ------------------------------------------------- 目录缓存（L1 数据源）
-
-/** 目录缓存文件（连接成功时把工具描述摘要持久化于此；目录 digest 的稳定数据源）。 */
-export function catalogCacheFile() {
-  return join(dshHome(), "dsh-mcp-catalog.json");
-}
 
 /** 目录摘要总长上限（字符，含前缀与省略号）：目录注入 ≤6 条目，防远端工具描述
  * 堆叠稀释上下文；截断先于 escapeCatalogText 转义，防不可信输入注入超长文本。 */
@@ -199,21 +162,6 @@ export function composeCatalogEntries(supervisors: Map<string, SupervisorLite>, 
   return entries;
 }
 
-/**
- * 目录条目 digest（sha256）——**只含服务器集合（name），不含描述文本**。
- *
- * 为什么：MCP 服务器的工具描述集合不稳定（按需注册/动态描述，实测 code-graph
- * 等服务器不同时刻的摘要都不同）。若 digest 含描述文本，缓存摘要一更新就触发
- * 替换注入——永远追不上抖动。digest 只含 name 后：
- * - 服务器增删 → digest 变 → 原位替换（合理）
- * - 描述/缓存更新 → digest 不变 → 本会话目录保持快照（静态能力地图语义，
- *   与消息声明"仅描述能力、不代表当前连接状态"一致），跨会话才反映新缓存
- */
-export function digestCatalogEntries(entries: CatalogEntry[]): string {
-  const canonical = entries.map((entry) => entry.name).join("\n");
-  return createHash("sha256").update(canonical).digest("hex");
-}
-
 /** 渲染能力目录消息（source 标记供定位替换）。
  * 按条目 scope 区分调用引导（#228 双轨迁移）：
  * - 含 project 条目 → 引导经 ws_mcp_list/ws_mcp_search/ws_mcp_detail/ws_mcp_call
@@ -291,29 +239,6 @@ export function readCatalogEntries(source: { entries?: unknown } | undefined): C
   return readable;
 }
 
-/**
- * 从会话持久化日志（agent.session.snapshotEvents()）倒序找最后一条**可见**的
- * mcp-catalog 消息。**这是去重的权威来源**（与官方 dsh-tool-skill catalogHistory
- * 同构）：
- * - decision.messages 只含本轮新消息，历史目录消息不在其中——用它定位会导致每轮重复注入；
- * - 可见性（surface.nodes）过滤：compaction/resume 后旧目录不可见 → visibleDigest 为空 → 重新注入。
- */
-export function catalogHistory(agent: CatalogAgent | undefined): CatalogHistoryResult {
-  const visible = new Set(agent?.session?.surface?.nodes ?? []);
-  const events = agent?.session?.snapshotEvents?.() ?? [];
-  let published = false;
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const event = events[index];
-    if (event?.type !== "user/message") continue;
-    if (event?.data?.source?.kind !== "mcp-catalog") continue;
-    const entries = readCatalogEntries(event.data.source);
-    if (entries === undefined) continue;
-    published = true;
-    if (visible.has(event.seq)) return { visibleDigest: digestCatalogEntries(entries), published };
-  }
-  return { published };
-}
-
 /** 渲染"目录更新"消息（历史旧目录无法删除，新消息声明作废——与 tool-skill 同语义）。 */
 export function renderMcpCatalogUpdate(entries: CatalogEntry[], mode?: string): CatalogMessage {
   const body = renderMcpCatalogMessage(entries, mode);
@@ -326,58 +251,4 @@ export function renderMcpCatalogUpdate(entries: CatalogEntry[], mode?: string): 
     "</system-reminder>",
   ].join("\n");
   return { ...body, content: [{ type: "text", text }] };
-}
-
-/**
- * 目录注入决策（纯函数，pre-step 监听器薄调用，便于单测）。
- * 完全复刻官方 dsh-tool-skill 的 catalog 语义（根治重复注入）：
- * 1. 历史（session.snapshotEvents()）digest 相同 → 本轮不注入（撤销本轮已注入的）——**去重源是历史而非本轮消息**；
- * 2. 历史 digest 不同 → 注入"更新"消息（声明替换旧目录）；
- * 3. 从未发布且无服务器 → 不注入；
- * 4. compaction/resume 后旧目录不可见 → 重新注入（events-based 重建）。
- * @param decision next() 的决策。
- * @param messages 本轮输入消息（签名兼容）。
- * @param supervisors manager.supervisors。
- * @param maxEntries 目录条目上限。
- * @param cache 目录缓存。
- * @param agent pre-step 的 agent（session.snapshotEvents() 来源）。
- * @returns 新决策。
- */
-export function resolveCatalogInjection(
-  decision: CatalogDecision,
-  messages: CatalogMessage[],
-  supervisors: Map<string, SupervisorLite>,
-  maxEntries = DEFAULT_CATALOG_MAX_ENTRIES,
-  cache?: CatalogCache,
-  agent?: CatalogAgent,
-  mode?: string,
-): CatalogDecision {
-  if (decision.kind === "reject") return decision;
-  const entries = composeCatalogEntries(supervisors, maxEntries, cache);
-  const digest = digestCatalogEntries(entries);
-  const history = catalogHistory(agent);
-  const existing = findCatalogMessage(decision.messages);
-
-  if (history.visibleDigest === digest) {
-    // 历史已发布相同目录 → 本轮不注入；撤销本轮刚注入的（幂等）。
-    return existing === undefined ? decision : {
-      kind: "enter",
-      messages: decision.messages.filter((message) => message.id !== existing.id),
-    };
-  }
-  if (existing !== undefined) {
-    const existingEntries = readCatalogEntries(existing.source);
-    if (existingEntries !== undefined && digestCatalogEntries(existingEntries) === digest) return decision;
-  }
-  if (!history.published && entries.length === 0) {
-    return existing === undefined ? decision : {
-      kind: "enter",
-      messages: decision.messages.filter((message) => message.id !== existing.id),
-    };
-  }
-  const catalog = history.published ? renderMcpCatalogUpdate(entries, mode) : renderMcpCatalogMessage(entries, mode);
-  return {
-    kind: "enter",
-    messages: existing === undefined ? [...decision.messages, catalog] : decision.messages.map((message) => (message.id === existing.id ? catalog : message)),
-  };
 }
