@@ -1066,3 +1066,79 @@ function makeHost(serversByRoot = new Map()) {
     await mw.dispose();
   }
 }
+
+// ---- B4 红测：退避窗口内 entry.status 应为 "reconnecting"（现状保持 failed）----
+
+{
+  const servers = [{ name: "s1", transport: "stdio", command: "echo", enabled: true, reconnect: { enabled: true, initialDelayMs: 10_000 } }];
+  const { host } = makeHost(new Map([[ROOT, servers]]));
+  const mw = new McpMiddleware(host, {});
+  const unit = await mw.projectUnitFor(ROOT);
+  const entry = {
+    server: servers[0],
+    status: "failed",
+    failedAttempts: 1,
+    reconnectTimer: undefined,
+    disposed: false,
+  };
+  unit.connections.set("s1", entry);
+  mw.scheduleReconnect(ROOT, "s1");
+  try {
+    assert.ok(entry.reconnectTimer !== undefined, "预算内退避建 timer");
+    assert.equal(
+      entry.status,
+      "reconnecting",
+      "B4：退避窗口内 entry.status 为 reconnecting（现状 failed → 红测；summarize 投影/客户端 counts.reconnecting 依赖此态）",
+    );
+  } finally {
+    if (entry.reconnectTimer !== undefined) clearTimeout(entry.reconnectTimer);
+    await mw.dispose();
+  }
+}
+
+// ---- B4 红测（续）：预算耗尽 → failed（与 reconnecting 区分）----
+
+{
+  const servers = [{ name: "s1", transport: "stdio", command: "echo", enabled: true, reconnect: { enabled: true, initialDelayMs: 10_000, maxAttempts: 1 } }];
+  const { host } = makeHost(new Map([[ROOT, servers]]));
+  const mw = new McpMiddleware(host, {});
+  const unit = await mw.projectUnitFor(ROOT);
+  const entry = {
+    server: servers[0],
+    status: "failed",
+    failedAttempts: 2,
+    reconnectTimer: undefined,
+    disposed: false,
+  };
+  unit.connections.set("s1", entry);
+  mw.scheduleReconnect(ROOT, "s1");
+  assert.equal(entry.reconnectTimer, undefined, "预算耗尽不建 timer");
+  assert.equal(entry.status, "failed", "预算耗尽保持 failed（与退避窗口 reconnecting 区分）");
+  await mw.dispose();
+}
+
+// ---- B18 红测c：reconnect.enabled=false 时不安排后台重试（现状内联解析忽略
+// enabled 字段，与 supervisor resolveReconnect 口径分裂）----
+
+{
+  const servers = [{ name: "s1", transport: "stdio", command: "echo", enabled: true, reconnect: { enabled: false } }];
+  const { host } = makeHost(new Map([[ROOT, servers]]));
+  const mw = new McpMiddleware(host, {});
+  const unit = await mw.projectUnitFor(ROOT);
+  const entry = {
+    server: servers[0],
+    status: "failed",
+    failedAttempts: 1,
+    reconnectTimer: undefined,
+    disposed: false,
+  };
+  unit.connections.set("s1", entry);
+  mw.scheduleReconnect(ROOT, "s1");
+  assert.equal(
+    entry.reconnectTimer,
+    undefined,
+    "B18：reconnect.enabled=false 不安排后台重试（现状内联解析忽略 enabled → 红测；与 supervisor 同口径）",
+  );
+  assert.equal(entry.status, "failed", "B18：enabled=false 保持 failed（不进入退避窗口）");
+  await mw.dispose();
+}

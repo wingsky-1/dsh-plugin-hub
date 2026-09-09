@@ -272,3 +272,38 @@ import { join } from "node:path";
     rmSync(dir, { recursive: true, force: true });
   }
 }
+
+// ---- B20 红测：makeMiddlewareHotSwitch 热切换补 emitStatus（C-EVT 契约：summary
+// 帧源集合含热切换；现状热切换不 emitStatus → summary 帧缺失）----
+
+{
+  const { McpManager, McpStore, makeMiddlewareHotSwitch } = await import("../lib/index.js");
+  const { pollUntil } = await import("./helpers.ts");
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-b20-"));
+  try {
+    const manager = new McpManager(
+      { logger: { info: () => {}, warn: () => {}, error: () => {} } },
+      new McpStore(join(dir, "mcp.json")),
+    );
+    manager.ctx = { tools: { register: () => () => {} }, on: () => () => {} };
+    manager.middlewareMode = "off";
+    let emits = 0;
+    manager.onStatus(() => {
+      emits += 1;
+    });
+    const hotSwitch = makeMiddlewareHotSwitch(manager, {}, async () => undefined, { current: () => {} });
+    await hotSwitch("project");
+    await pollUntil("热切换 summary 帧（emitStatus coalesce 落定）", () => emits >= 1);
+    assert.ok(emits >= 1, "B20：热切换后 emitStatus 被触发（summary 帧源含热切换；现状缺失 → 红测）");
+
+    await hotSwitch("project");
+    await pollUntil("同模式短路无新广播", () => emits >= 1);
+    assert.equal(emits, 1, "同模式热切换短路，不重复广播");
+
+    await hotSwitch("off");
+    await pollUntil("切回 off 亦广播", () => emits >= 2);
+    assert.ok(emits >= 2, "B20：切回 off 同样补 summary 帧");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}

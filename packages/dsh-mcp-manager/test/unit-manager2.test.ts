@@ -1297,6 +1297,159 @@ function rmStatSafe(p) {
   }
 }
 
+// ---- B5 红测：start 替换已连接 supervisor → 旧实例 disconnect 被调（现状只置 disposed）----
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mgr2b5a-"));
+  try {
+    const { manager, store } = makeManager(dir);
+    const srv = normalizeServer(quietServer("s5"));
+    store.upsert(srv);
+    let oldDisconnected = 0;
+    const oldSupervisor = {
+      client: {}, // 已连接（替换分支判定入口）
+      server: srv,
+      scope: "global",
+      disposed: false,
+      disconnect: async () => {
+        oldDisconnected += 1;
+      },
+    };
+    manager.supervisors.set("s5", oldSupervisor);
+    // directConfig：与 store 版本不同引用（对象字面量）；enabled:false 防新代际真实 spawn。
+    manager.start("s5", "global", { ...srv, enabled: false });
+    assert.equal(
+      oldDisconnected,
+      1,
+      "B5：start 替换分支调用旧实例 disconnect（现状只置 disposed → 红测；旧 transport/工具注册残留）",
+    );
+    assert.equal(manager.supervisors.get("s5") === oldSupervisor, false, "新代际已替换");
+    assert.equal(oldSupervisor.disposed, true, "旧实例 disposed 置位");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---- B5 红测（续）：connect 替换未连接 supervisor → 清 timer + 注销残留工具 ----
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mgr2b5b-"));
+  try {
+    const { manager, store } = makeManager(dir);
+    const srv = normalizeServer(quietServer("s5"));
+    store.upsert(srv);
+    const disposedTools = [];
+    const oldTimer = setTimeout(() => {}, 60_000);
+    const oldSupervisor = {
+      client: undefined, // 未连接（connect 替换分支判定入口）
+      scope: "global",
+      server: srv,
+      disposed: false,
+      reconnectTimer: oldTimer,
+      toolDisposers: new Map([["mcp__s5__echo", () => disposedTools.push("mcp__s5__echo")]]),
+      disconnect: async function () {
+        this.disposed = true;
+        if (this.reconnectTimer !== undefined) {
+          clearTimeout(this.reconnectTimer);
+          this.reconnectTimer = undefined;
+        }
+        for (const dispose of this.toolDisposers.values()) dispose();
+        this.toolDisposers = new Map();
+      },
+    };
+    manager.supervisors.set("s5", oldSupervisor);
+    await manager.connect("s5", "global", { ...srv, enabled: false });
+    assert.deepEqual(
+      disposedTools,
+      ["mcp__s5__echo"],
+      "B5：connect 替换分支复用 disconnect 语义注销旧代际工具（现状只置 disposed → 红测）",
+    );
+    assert.equal(manager.supervisors.get("s5") === oldSupervisor, false, "新代际已替换");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---- B5 红测（续）：顺序不变式——旧代际工具先注销、新代际后注册（真实 stdio 连接）----
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mgr2b5c-"));
+  const serverScript = join(dir, "mini-mcp-server.mjs");
+  writeFileSync(
+    serverScript,
+    [
+      'import { createInterface } from "node:readline";',
+      'const send = (obj) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...obj }) + "\\n");',
+      'createInterface({ input: process.stdin }).on("line", (line) => {',
+      "  let msg; try { msg = JSON.parse(line); } catch { return; }",
+      '  if (msg.method === "initialize") send({ id: msg.id, result: { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "mini", version: "0.0.1" } } });',
+      '  else if (msg.method === "tools/list") send({ id: msg.id, result: { tools: [{ name: "echo", description: "echo back", inputSchema: { type: "object" } }] } });',
+      '  else if (msg.id !== undefined) send({ id: msg.id, error: { code: -32601, message: "method not found" } });',
+      "});",
+    ].join("\n"),
+  );
+  try {
+    const { manager, store } = makeManager(dir);
+    const events = [];
+    manager.ctx.tools = {
+      register: (def) => {
+        events.push(`register:${def.name}`);
+        return () => events.push(`dispose:${def.name}`);
+      },
+    };
+    const srv = normalizeServer({
+      name: "s5",
+      transport: "stdio",
+      command: process.execPath,
+      args: [serverScript],
+      reconnect: { enabled: false },
+    });
+    store.upsert(srv);
+    manager.start("s5", "global");
+    await pollUntil("旧代际工具已注册", () => events.includes("register:mcp__s5__echo"));
+    // directConfig：同内容新引用（模拟 registerServer 直传 config 覆盖 store）。
+    manager.start("s5", "global", { ...srv });
+    await pollUntil("旧代际工具已注销", () => events.includes("dispose:mcp__s5__echo"));
+    await pollUntil("新代际工具已注册", () => events.filter((e) => e === "register:mcp__s5__echo").length >= 2);
+    const firstReg = events.indexOf("register:mcp__s5__echo");
+    const disAt = events.indexOf("dispose:mcp__s5__echo");
+    const secondReg = events.lastIndexOf("register:mcp__s5__echo");
+    assert.ok(
+      firstReg >= 0 && disAt > firstReg && secondReg > disAt,
+      "B5：顺序不变式——旧代际注销先于新代际注册（现状只置 disposed、旧工具残留 → 红测）",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---- B19 红测：summarize supervisor 分支禁用查询合并判定（@global ∪ projectRoot）----
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mgr2b19-"));
+  try {
+    const { manager, store } = makeManager(dir);
+    const srv = normalizeServer(quietServer("g1"));
+    store.upsert(srv);
+    manager.projectRoot = join(dir, "proj");
+    manager.disabledTools.set("@global", new Map([["g1", new Set(["toolA"])]]));
+    manager.disabledTools.set(manager.projectRoot, new Map([["g1", new Set(["toolB"])]]));
+    manager.supervisors.set("g1", {
+      status: "connected",
+      error: undefined,
+      tools: ["mcp__g1__toolA", "mcp__g1__toolB"],
+    });
+    const s = manager.summarize(store.find("g1"), "global");
+    assert.deepEqual(
+      [...(s.disabledTools ?? [])].sort(),
+      ["toolA", "toolB"],
+      "B19：supervisor 分支合并 @global 与 projectRoot 禁用集（现状 ?? 只取其一 → 红测；与中间层分支口径一致）",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 // ---- apply：配置分支 ----
 
 {

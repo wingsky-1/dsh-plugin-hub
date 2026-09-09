@@ -58,6 +58,8 @@ export { panelAnchorForPosition } from "./placement-math.ts";
 // 插件契约转发（apply 主流程 + 宣告文本实现于 apply.ts）
 export { apply, MCP_GUIDANCE } from "./apply.ts";
 export { resolveDebugConfig, resolveMiddlewareMode } from "./apply-config.ts";
+// 运行期装配工厂（组合根）：热切换为 B20/C-EVT 契约测试面
+export { makeMiddlewareHotSwitch } from "./apply-runtime.ts";
 
 // 服务器配置归一化（纯函数单一事实源）
 export { SERVER_NAME_PATTERN, normalizeServer } from "./normalize.ts";
