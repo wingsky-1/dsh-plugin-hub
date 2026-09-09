@@ -1,6 +1,48 @@
-# dsh-mcp-manager 需求规格与 Bug 候选（宿主端初稿，待合并客户端/测试子代理报告）
+# dsh-mcp-manager 全量需求梳理、Bug 清单与 TDD 重构方案
 
-> 工作底稿：尚未定稿。来源 = 中文 README.md + src/*.ts 全量通读 + shared 共享层。
+> 来源：中文 README.md + src/*.ts（宿主端）全量通读 + src/client/* 客户端通读 + test/* 测试审计 + shared 共享层核验。
+
+## 〇、架构分层总览（7 + 4 + 1 层模型）
+
+> 用户给定 7 层（配置管理 / 连接管理 / 注入 dsh / 对外集成 / API / 设置页面 / 胶囊页面）；
+> 补 4 层（工具执行/投影、组合根装配、共享基础设施、统计观测）；客户端支撑层依归并口径（胶囊页面若不含支撑则再 +1）。
+
+### 0.1 分层表
+
+| 层 | 归口模块 | 职责 |
+|----|---------|------|
+| ① 配置管理层 | store.ts / normalize.ts / import.ts / middleware-state.ts / config-schema.ts / apply-config.ts | 全局+项目两级 ServerConfig 持久化（版本化 / mtime 热重载 / 0600 原子写）；normalizeServer 归一化；mcpServers JSON 导入；userDisabled / disabledTools / 目录 last-good 持久化；插件 Config 与 UI 配置 schema |
+| ② 连接管理层 | transport.ts / protocol.ts / supervisor.ts / middleware.ts / manager.ts / scope.ts | 传输（stdio/http + env 净化 + ${ENV} 展开）；SDK 适配；单服务器监督器（重连/工具同步/注册卸注册）；中间层连接池（工作空间单元 / in-flight / force / 退避 / LRU / 防双进程）；manager 双轨 reconcile 与生命周期 |
+| ③ 注入 dsh 层 | supervisor.syncTools / middleware-register.ts / catalog.ts / apply-guidance.ts / call-stats(埋点) | ctx.tools 注册（mcp__ 前缀 + ws_mcp_* 四原子）；pre-execute guard（工具级禁用三入口）；能力目录 <available_mcp_servers> 注入；systemPrompt section |
+| ④ 对外集成层 | apply-services.ts / service.ts / shared/mcp-manager-service.d.ts / settings-namespace / slots·sessions·locale | ctx.mcpManager 8 方法服务面（registerServer→runtimeRegistry 双轨）；其他插件注入/控制/查询；宿主插槽与命名空间接线 |
+| ⑤ API 层 | routes.ts / routes-controllers.ts / routes-helpers.ts / sse-hub | 9+ 控制器（servers/config/session/resume/connect/disconnect/reconnect/import/tool-disable/events/health）；loopback 围栏；SSE 状态推送（summary/ui-config-changed/ping/淘汰回收） |
+| ⑥ 设置页面层 | settings-card.tsx | 插件设置卡：锚点/偏移/zIndex/中间层模式热切换；POST /config |
+| ⑦ 胶囊页面层 | float.ts / panel.ts / servers.ts / quick-add.ts | 浮窗胶囊（锚点/偏移/层级/断点 480/834/触控）；下拉面板（分组/状态/工具 checkbox）；模态管理面板（CRUD/连接控制/JSON 导入） |
+| ⑧ 组合根装配层 | apply.ts / apply-config.ts / apply-runtime.ts / apply-services.ts / apply-guidance.ts | 启动顺序：读配置→建 manager→中间层 init→startAll→reconcile→catalog→路由→watchers→提示词→服务面；热切换闭包；卸载收口 |
+| ⑨ 工具执行/投影层 | call-result.ts / supervisor(buildToolDefinition) / middleware(callTool) / middleware-utils(withTimeout/redactor) | #512 单一事实源：CallToolResult 白名单投影（isError/content/structuredContent）；文本提取/8KB 截断；schema 子集校验；调用超时；执行侧脱敏 |
+| ⑩ 共享基础设施层 | shared/loopback / sse-hub / host-utils / settings-namespace / dsh-home / placement-math / mcp-manager-service / client ensure-style / i18n | 跨插件横向能力；本插件是消费者，非归属 |
+| ⑪ 统计观测层 | call-stats.ts / call-stats-types.ts | 默认关闭；调用指标 + 渐进式披露漏斗；1s 防抖原子写盘；Metadata-Only |
+
+### 0.2 依赖关系
+- 装配自上而下（⑧→①②③⑤④），调用自下而上。
+- ② 是中枢：受 ①（配置热加载 reconcile）、④（registerServer 双轨）、会话路由（cwd→root→连接池/目录）三方驱动。
+- ③ 与 ⑨ 是「注册面 vs 执行面」：登记能力（命名/禁用/目录）与执行调用（投影/截断/超时/脱敏）分离，两条执行路径（supervisor 直呼、ws_mcp_call）共用 ⑨。
+- ⑤ 是唯一对外边界（HTTP/SSE，loopback 围栏）；⑩ 被所有宿主层依赖；⑪ 横切观测。
+- 浏览器端 ⑥⑦ 经 ⑤ 消费宿主能力；客户端支撑（state/session/dom/i18n）是 ⑥⑦ 的底座。
+
+### 0.3 横切关注点（非独立层）
+安全（loopback/redactor/env 净化/${ENV} 不落盘/防提示注入）、会话路由（cwd/scope/@root/server 全名一致性）、跨包契约（placement 默认值、sse-hub 共享）、观测（call-stats）。
+
+### 0.4 遗漏层裁定（用户问「有没有漏的层」的结论）
+| 层 | 是否遗漏 | 理由 |
+|----|---------|------|
+| ⑨ 工具执行/投影层 | **漏** | call-result.ts 是 #512 单一事实源，supervisor 与 middleware 两条执行路径共用；不单列则截断/超时/脱敏散落两处，无法对「执行契约」统一约束 |
+| ⑧ 组合根装配层 | **漏** | apply 系列决定启动顺序与生命周期；「中间层未就绪窗口」「热切换闭包」都在这层，不单列时序不可见 |
+| ⑩ 共享基础设施层 | **漏** | loopback/sse-hub/host-utils/settings-namespace 等为跨插件共享，本插件只是消费者，不单列会误以为归属本插件 |
+| ⑪ 统计观测层 | 视口径 | 默认关闭、纯观测；可并入 ③ 的埋点，或独立小层（建议独立，与 Debug 配置耦合） |
+| 客户端支撑层 | 视口径 | state/session/dom/i18n 是 ⑥⑦ 的底座；若「胶囊页面」已含支撑则已覆盖，否则需 +1 |
+| 传输/协议层 | 已覆盖 | 归入 ② 连接管理（transport+protocol） |
+| 持久化层 | 已覆盖 | 归入 ① 配置管理（store + user-state + 目录缓存） |
 
 ## 一、功能特性全量清单（宿主端）
 
