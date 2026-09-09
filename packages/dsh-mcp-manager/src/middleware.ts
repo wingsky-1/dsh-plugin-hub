@@ -742,7 +742,7 @@ export {
 // 状态持久化
 export { userStateFile, loadUserState, saveUserState, catalogCacheFileFor, readCatalogServerFromDisk, loadDisabledTools, saveDisabledTools } from "./middleware-state.ts";
 // 工具注册
-export { registerMiddlewareTools } from "./middleware-register.ts";
+export { registerMiddlewareTools, registerDirectMcpGuard } from "./middleware-register.ts";
 // 类型
 export type {
   MiddlewareMode,
