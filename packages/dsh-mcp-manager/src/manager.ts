@@ -37,6 +37,7 @@ import {
 } from "./middleware.ts";
 import type { MiddlewareMode, ProjectUnit, DisabledToolsMap } from "./middleware.ts";
 import { McpStatsCollector } from "./call-stats.ts";
+import { createRedactor } from "./pipeline/interface.ts";
 
 /** 中间层 all 模式的全局虚拟 root（全局服务器经中间层访问时的路由 key）。 */
 export const MIDDLEWARE_GLOBAL_ROOT = "@global";
@@ -187,13 +188,21 @@ export class McpManager {
       await writeFile(tmp, JSON.stringify(payload, null, 2), "utf8");
       await rename(tmp, this.catalogCachePath);
     } catch (error) {
-      this.logger.warn(`dsh-mcp-manager: catalog cache write failed: ${String(error)}`);
+      this.logger.warn(`dsh-mcp-manager: catalog cache write failed: ${this.redactError(error)}`);
     }
   }
 
   onStatus(handler: () => void): () => void {
     this.listeners.add(handler);
     return () => this.listeners.delete(handler);
+  }
+
+  /** B8：错误日志脱敏（配置全集 + runtime 注入并集经 createRedactor）。
+   * 日志与 HTTP body 同口径（C-ERR 契约），error 可能含凭据明文。 */
+  private redactError(error: unknown): string {
+    const servers: ServerConfig[] = [...this.store.data.servers];
+    for (const server of this.runtimeRegistry.values()) servers.push(server);
+    return createRedactor(servers)(error);
   }
 
   /** coalesce 定时器（同一 tick 内多次状态变化合并为一次广播）。 */
@@ -372,7 +381,7 @@ export class McpManager {
       try {
         await store.reloadIfChanged();
       } catch (error) {
-        this.logger.warn(`dsh-mcp-manager: reload project config failed: ${String(error)}`);
+        this.logger.warn(`dsh-mcp-manager: reload project config failed: ${this.redactError(error)}`);
       }
     }
     return store;
@@ -532,7 +541,7 @@ export class McpManager {
     try {
       await this.store.reloadIfChanged();
     } catch (error) {
-      this.logger.warn(`dsh-mcp-manager: reload global config failed: ${String(error)}`);
+      this.logger.warn(`dsh-mcp-manager: reload global config failed: ${this.redactError(error)}`);
     }
     if (this.middlewareMode !== "off" && this.middleware !== undefined) {
       // 中间层：仅触达单元（fire-and-forget 惰性连接在 projectUnitFor 内）。
@@ -607,13 +616,13 @@ export class McpManager {
     try {
       configChanged = (await this.store.reloadIfChanged()) || configChanged;
     } catch (error) {
-      this.logger.warn(`dsh-mcp-manager: reload global config failed: ${String(error)}`);
+      this.logger.warn(`dsh-mcp-manager: reload global config failed: ${this.redactError(error)}`);
     }
     if (this.projectStore !== undefined) {
       try {
         configChanged = (await this.projectStore.reloadIfChanged()) || configChanged;
       } catch (error) {
-        this.logger.warn(`dsh-mcp-manager: reload project config failed: ${String(error)}`);
+        this.logger.warn(`dsh-mcp-manager: reload project config failed: ${this.redactError(error)}`);
       }
     }
     if (!configChanged) return;
@@ -778,7 +787,7 @@ export class McpManager {
       .catch((error: unknown) => {
         // #392 遗留⑥：不再静默吞错——projectUnitFor 失败时打 warn 日志，
         // 否则该服务器永不连接且无迹可查（ensureConnected 调用面仍会尝试）。
-        this.logger.warn(`dsh-mcp-manager: touchGlobalUnit(${name}) failed: ${String(error)}`);
+        this.logger.warn(`dsh-mcp-manager: touchGlobalUnit(${name}) failed: ${this.redactError(error)}`);
       });
   }
 
@@ -817,7 +826,7 @@ export class McpManager {
         await mw.ensureConnected(root, name);
       })
       .catch((error: unknown) => {
-        this.logger.warn(`dsh-mcp-manager: ensureMiddlewareServer(${name}) failed: ${String(error)}`);
+        this.logger.warn(`dsh-mcp-manager: ensureMiddlewareServer(${name}) failed: ${this.redactError(error)}`);
       });
   }
 

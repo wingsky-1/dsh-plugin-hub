@@ -175,10 +175,10 @@ async function executeSearch(
     const visibleUnit = visible === root ? unit : await toolCtx.mw.projectUnitFor(visible);
     if (visibleUnit !== undefined) await waitForDiscovery(visibleUnit);
   }
-  const { results, unavailable } = searchCatalogMulti(toolCtx.mw.units, roots, query, limit);
-  // truncated 基于过滤前结果判定（serverFilter 过滤后误报的修正，P2-3）：
-  // 过滤前已达 limit 上限即提示可能未列全。
-  const truncated = results.length >= limit;
+  const { results, unavailable, truncated } = searchCatalogMulti(toolCtx.mw.units, roots, query, limit);
+  // truncated 由检索函数返回截断事实（恰好命中 limit 不误报，B10 修正——
+  // 旧实现按过滤前 results.length >= limit 判定，恰恰等于 limit 也误报
+  // 「可能未列全」）；serverFilter 过滤在截断判定之后，纯展示层过滤。
   const filtered = serverFilter === undefined ? results : results.filter((hit) => hit.server === serverFilter);
   return { results: filtered, unavailable, truncated };
 }

@@ -176,10 +176,14 @@ function makeHost(serversByRoot = new Map()) {
   assert.deepEqual(bounded.get("a"), { description: "alpha", inputSchema: { type: "object" } });
   assert.deepEqual(bounded.get("b"), { description: "", inputSchema: {} }, "缺省描述/schema 补空");
   assert.deepEqual(bounded.get("42"), { description: "", inputSchema: {} }, "非字符串 name String 化、描述归空");
-  // 单描述超字节上限 → 按上限截断（原 discover 截断口径：字符数）
+  // 单描述超字节上限 → 按字节截断（B9：旧 slice(0,N) 按字符，多字节超限；
+  // 截断点落在字符边界，不产生替换符）
   const bigDescription = "字".repeat(MAX_BYTES_PER_TOOL);
   const truncated = boundCatalogTools([{ name: "big", description: bigDescription }]).get("big");
-  assert.equal(truncated.description.length, MAX_BYTES_PER_TOOL, "超限描述截断到 MAX_BYTES_PER_TOOL");
+  assert.ok(
+    Buffer.byteLength(truncated.description, "utf8") <= MAX_BYTES_PER_TOOL,
+    "B9：超限描述截断后字节数 ≤ MAX_BYTES_PER_TOOL",
+  );
   assert.ok(Buffer.byteLength(bigDescription, "utf8") > MAX_BYTES_PER_TOOL, "前提：原描述字节超限");
   // 总字节超限 → 立即停止装箱
   const fatSchema = { data: "x".repeat(200 * 1024) };

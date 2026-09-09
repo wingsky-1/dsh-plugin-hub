@@ -220,17 +220,20 @@ export function scoreTool(query: string, server: string, toolName: string, tool:
 }
 
 /** 检索目录：query 为空 → 能力摘要表（每服务器前 N 个工具）。
- * 单 root 实现（searchCatalogMulti 循环调用；兼容既有测试）。 */
+ * 单 root 实现（searchCatalogMulti 循环调用；兼容既有测试）。
+ * truncated：任一服务器存在被 limit 裁掉的结果即 true（B10 截断事实，
+ * 供调用方精确标注「是否因 limit 裁掉」——恰好命中 limit 不误报）。 */
 export function searchCatalog(
   units: Map<string, ProjectUnit>,
   root: string,
   query: string,
   limit: number,
-): { results: SearchHit[]; unavailable: Array<{ server: string; reason: string }> } {
+): { results: SearchHit[]; unavailable: Array<{ server: string; reason: string }>; truncated: boolean } {
   const unit = units.get(root);
-  if (unit === undefined) return { results: [], unavailable: [] };
+  if (unit === undefined) return { results: [], unavailable: [], truncated: false };
   const results: SearchHit[] = [];
   const unavailable: Array<{ server: string; reason: string }> = [];
+  let truncated = false;
   for (const [serverName, catalog] of unit.catalog) {
     if (catalog.unavailable !== undefined) {
       unavailable.push({ server: fullServerName(root, serverName), reason: catalog.unavailable });
@@ -244,6 +247,7 @@ export function searchCatalog(
       scored.push({ server: serverName, toolName, tool, score, matchedTerms });
     }
     scored.sort((a, b) => b.score - a.score || a.toolName.localeCompare(b.toolName));
+    if (scored.length > limit) truncated = true;
     for (const hit of scored.slice(0, limit)) {
       results.push({
         server: fullServerName(root, hit.server),
@@ -256,19 +260,19 @@ export function searchCatalog(
       });
     }
   }
-  return { results, unavailable };
+  return { results, unavailable, truncated };
 }
 
 /** 多单元合并检索（all 模式：项目 root 单元 + @global 单元合并查询）。
  * 与 searchCatalog 同语义，仅数据源扩展为多个 root；off/project 模式行为不变。
  * 单 root 直接委托 searchCatalog（保持原顺序，不引入跨单元排序变化）；
- * 多 root 合并后统一排序并按全局 limit 截断。 */
+ * 多 root 合并后统一排序并按全局 limit 截断（truncated=合并后曾有超限结果）。 */
 export function searchCatalogMulti(
   units: Map<string, ProjectUnit>,
   roots: readonly string[],
   query: string,
   limit: number,
-): { results: SearchHit[]; unavailable: Array<{ server: string; reason: string }> } {
+): { results: SearchHit[]; unavailable: Array<{ server: string; reason: string }>; truncated: boolean } {
   if (roots.length === 1) {
     return searchCatalog(units, roots[0] as string, query, limit);
   }
@@ -281,8 +285,9 @@ export function searchCatalogMulti(
   }
   // 跨单元排序（评分降序，工具名升序）——与单单元检索同序。
   results.sort((a, b) => b.score - a.score || a.tool.localeCompare(b.tool));
-  // 合并后统一截断（limit 为全局上限，而非每 root 上限）。
-  return { results: results.slice(0, limit), unavailable };
+  // 合并后统一截断（limit 为全局上限，而非每 root 上限）；截断事实供调用方标注。
+  const truncated = results.length > limit;
+  return { results: results.slice(0, limit), unavailable, truncated };
 }
 
 /**
@@ -463,16 +468,23 @@ export function boundCatalogTools(
     const name = String(tool.name ?? "");
     if (name === "") continue;
     const description = typeof tool.description === "string" ? tool.description : "";
-    const descriptionBytes = Buffer.byteLength(description, "utf8");
-    if (descriptionBytes > MAX_BYTES_PER_TOOL) {
-      bounded.set(name, {
-        description: description.slice(0, MAX_BYTES_PER_TOOL),
-        inputSchema: (tool.inputSchema ?? {}) as Record<string, unknown>,
-      });
-    } else {
-      bounded.set(name, { description, inputSchema: (tool.inputSchema ?? {}) as Record<string, unknown> });
+    // B9：描述按 UTF-8 字节截断（slice 按字符会让中文等多字节场景超上限）；
+    // 逐字符累加字节，保证截断点落在字符边界（不产生替换符）。
+    let desc = description;
+    if (Buffer.byteLength(desc, "utf8") > MAX_BYTES_PER_TOOL) {
+      let bytes = 0;
+      let cut = 0;
+      while (cut < desc.length && bytes + Buffer.byteLength(desc[cut], "utf8") <= MAX_BYTES_PER_TOOL) {
+        bytes += Buffer.byteLength(desc[cut], "utf8");
+        cut += 1;
+      }
+      desc = desc.slice(0, cut);
     }
-    totalBytes += descriptionBytes + JSON.stringify(bounded.get(name)?.inputSchema ?? {}).length;
+    bounded.set(name, { description: desc, inputSchema: (tool.inputSchema ?? {}) as Record<string, unknown> });
+    // B9：totalBytes 全字节口径（JSON.stringify().length 按码元计，低估字节数）
+    totalBytes +=
+      Buffer.byteLength(desc, "utf8") +
+      Buffer.byteLength(JSON.stringify(bounded.get(name)?.inputSchema ?? {}), "utf8");
     if (totalBytes > MAX_TOTAL_CATALOG_BYTES) break;
   }
   return bounded;

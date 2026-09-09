@@ -259,6 +259,9 @@ export class McpMiddleware {
       newEntry.status = "failed";
       newEntry.error = error;
       newEntry.connectedAt = undefined;
+      // B18：连上后断开同样计入 failedAttempts——否则退避恒 initialDelay（500ms
+      // 抖动），与「从未连上」的失败路径退避口径分裂。
+      newEntry.failedAttempts += 1;
       this.host.emitStatus();
       this.scheduleReconnect(root, serverName);
     };
@@ -293,12 +296,18 @@ export class McpMiddleware {
     const entry = unit.connections.get(serverName);
     if (entry === undefined || entry.disposed) return;
     if (entry.reconnectTimer !== undefined) return;
-    if (entry.failedAttempts > 10) {
+    // B18：退避读 server.reconnect 配置（supervisor resolveReconnect 同口径；
+    // 现状硬编码 500/30000/10 使同一配置在两路径行为不一致）。
+    const reconnect = entry.server?.reconnect ?? {};
+    const initialDelayMs = typeof reconnect.initialDelayMs === "number" ? reconnect.initialDelayMs : 500;
+    const maxDelayMs = typeof reconnect.maxDelayMs === "number" ? reconnect.maxDelayMs : 30_000;
+    const maxAttempts = typeof reconnect.maxAttempts === "number" ? reconnect.maxAttempts : 10;
+    if (entry.failedAttempts > maxAttempts) {
       // 预算耗尽：停止后台重试（保留 failed 状态；手动/调用触发可再试）。
-      this.host.logger.warn(`dsh-mcp-manager(${serverName}@${root}): reconnect gave up after 10 attempts`);
+      this.host.logger.warn(`dsh-mcp-manager(${serverName}@${root}): reconnect gave up after ${maxAttempts} attempts`);
       return;
     }
-    const delayMs = Math.min(30_000, 500 * 2 ** Math.min(entry.failedAttempts - 1, 6));
+    const delayMs = Math.min(maxDelayMs, initialDelayMs * 2 ** Math.min(entry.failedAttempts - 1, 6));
     entry.reconnectTimer = setTimeout(() => {
       entry.reconnectTimer = undefined;
       if (entry.disposed) return;
@@ -527,6 +536,10 @@ export class McpMiddleware {
       // stale：仍可调用（目录只是提示），但 schema 可能过期——在结果前置提示。
     }
     const args = normalizeArguments(rawArgs);
+    // B18/D6：调用预算读 server.toolCallTimeoutMs（缺省 CALL_TIMEOUT_MS），
+    // withTimeout 兜底统一 +2s——两路径（supervisor SDK timeoutMs 无兜底）预算
+    // 差异写入两路径契约测试的差异面签名。
+    const callBudgetMs = entry.server?.toolCallTimeoutMs ?? CALL_TIMEOUT_MS;
     // #413 封装直呼分支：runtime 注入的封装定义服务器（toolDefinitions）——
     // execute 为调用方 JS（不经远端 client.callTool）。禁用/策略已在上面统一
     // 裁决（isToolDenied），此处直接调调用方 execute；输出经封装 output.render
@@ -542,15 +555,15 @@ export class McpMiddleware {
         // 中间层只能提供最小面（agent 透传，session cwd 解析用）——经 unknown
         // 中转（消费方封装定义只读 exec.agent，契约面见 dsh-codegraph）。
         const execCtx = { agent } as unknown as Parameters<NonNullable<ToolDefinition["execute"]>>[1];
-        // #413 QA P2-2：封装 execute 补超时兜底（与远端分支同预算 CALL_TIMEOUT_MS，
+        // #413 QA P2-2：封装 execute 补超时兜底（与远端分支同预算 callBudgetMs，
         // 封装实现挂起时不无限等待）。
         const value = await withTimeout(
           def.execute(
             typeof args === "object" && args !== null ? args : {},
             execCtx,
           ),
-          CALL_TIMEOUT_MS + 2000,
-          `ws_mcp_call: 封装调用超时（${CALL_TIMEOUT_MS}ms），可重试；若反复超时请检查插件状态`,
+          callBudgetMs + 2000,
+          `ws_mcp_call: 封装调用超时（${callBudgetMs}ms），可重试；若反复超时请检查插件状态`,
           signal,
         );
         const content = typeof def.output?.render === "function"
@@ -574,10 +587,10 @@ export class McpMiddleware {
       const result = await withTimeout(
         entry.client.callTool(tool, typeof args === "object" && args !== null ? args : {}, {
           signal,
-          timeoutMs: CALL_TIMEOUT_MS,
+          timeoutMs: callBudgetMs,
         }),
-        CALL_TIMEOUT_MS + 2000,
-        `ws_mcp_call: 调用超时（${CALL_TIMEOUT_MS}ms），可重试；若反复超时请用 ws_mcp_detail 核对参数或检查服务器状态`,
+        callBudgetMs + 2000,
+        `ws_mcp_call: 调用超时（${callBudgetMs}ms），可重试；若反复超时请用 ws_mcp_detail 核对参数或检查服务器状态`,
         signal,
       );
       // #512：远端结果经 call-result.ts 统一投影收敛（isError 判定 + 白名单
