@@ -30,6 +30,8 @@ await import("./unit-text.test.ts");
 await import("./unit-sanitize.test.ts");
 // #515：共享 SSE 枢纽（shared/sse-hub.js 主动回收：stalled/maxAge/上限/观测）
 await import("./unit-sse-hub.test.ts");
+// PR0 红测先行 5：server.ts createSseHub 业务包装（seq/600 帧缓冲/framesSince）
+await import("./unit-server-sse-bus.test.ts");
 // #508 M2：webhook 频道（渲染/注入防护/认证头/掩码泛化/配置契约）
 await import("./unit-webhook.test.ts");
 
