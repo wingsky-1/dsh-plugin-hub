@@ -63,8 +63,9 @@ function formatEvidenceSource(pushed: unknown, snapshot: unknown, stale: boolean
 
 /**
  * 解析并裁决单次 idle 的 turn 证据（push 优先、快照兜底、stale 冻结）。
+ * 导出供直测（PR0 红测先行 4：判定矩阵基线；重构 adjudicate 拆分时的行为判别网）。
  */
-function resolveTurnEvidence(
+export function resolveTurnEvidence(
   agent: any,
   state: AgentState,
   eventStreamEnds: Map<string, { turn: number; kind: string }>,
