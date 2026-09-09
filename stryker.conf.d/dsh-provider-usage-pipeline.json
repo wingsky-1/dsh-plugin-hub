@@ -9,6 +9,7 @@
     "packages/dsh-provider-usage/src/client-logic.ts",
     "packages/dsh-provider-usage/src/provider-config.ts",
     "packages/dsh-provider-usage/src/charts.ts",
+    "packages/dsh-provider-usage/src/stats-service.ts",
     "!packages/dsh-provider-usage/src/client/**",
     "!packages/dsh-provider-usage/src/types.ts"
   ],
@@ -49,7 +50,10 @@
       "packages/dsh-provider-usage/test/unit-deepseek-official.test.ts",
       "packages/dsh-provider-usage/test/unit-history.test.ts",
       "packages/dsh-provider-usage/test/unit-signal-lock.test.ts",
-      "packages/dsh-provider-usage/test/unit-v1.test.ts"
+      "packages/dsh-provider-usage/test/unit-v1.test.ts",
+      "packages/dsh-provider-usage/test/unit-trend.test.ts",
+      "packages/dsh-provider-usage/test/unit-trend-view.test.ts",
+      "packages/dsh-provider-usage/test/unit-report.test.ts"
     ]
   },
   "jsonReporter": {
@@ -57,5 +61,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-provider-usage-pipeline.json",
-  "_comment": "#342 v4：src 级文件组分段（5）——history/v2/hotreload/placement-math/path-resolve/client-logic/provider-config/charts（历史/管线/热更/图表面；charts 纳入修复变异盲区）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+  "_comment": "#342 v4：src 级文件组分段（5）——history/v2/hotreload/placement-math/path-resolve/client-logic/provider-config/charts/stats-service（历史/管线/热更/图表/C3 服务面；charts 纳入修复变异盲区；阶段零补 stats-service 盲区）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
 }

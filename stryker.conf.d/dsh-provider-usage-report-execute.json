@@ -1,8 +1,9 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-provider-usage/src/contracts.ts",
-    "packages/dsh-provider-usage/src/core/guards.ts",
+    "packages/dsh-provider-usage/src/report/runner.ts",
+    "packages/dsh-provider-usage/src/report/generate.ts",
+    "packages/dsh-provider-usage/src/report/format.ts",
     "!packages/dsh-provider-usage/src/client/**",
     "!packages/dsh-provider-usage/src/types.ts"
   ],
@@ -50,9 +51,9 @@
     ]
   },
   "jsonReporter": {
-    "fileName": "coverage/mutation/dsh-provider-usage-contracts.json"
+    "fileName": "coverage/mutation/dsh-provider-usage-report-execute.json"
   },
   "incremental": true,
-  "incrementalFile": "coverage/mutation/incremental-provider-usage-contracts.json",
-  "_comment": "#342 v4：src 级文件组分段（3）——contracts+core/guards（契约面）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+  "incrementalFile": "coverage/mutation/incremental-provider-usage-report-execute.json",
+  "_comment": "阶段零新段（D17 分层变异）：E4 报告执行/产出面——runner+generate+format；testFiles 含 unit-report（杀灭面为该层测试）。"
 }
