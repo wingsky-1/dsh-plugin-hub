@@ -74,3 +74,49 @@ P2：B12/B19/B15/B16、哑断言清理、smoke sleep 改 pollUntil、C2/C6/C7、
 「对的方向 + 错的比例尺」：L06/L11/B 系列修复与 TDD 分阶段是对的；13 层、分布式物理迁移、
 「导出面保住一切静态契约」三个假设必须按 P0 修正后才可进入 issue 方案评审；
 建议先落「阶段 0 规格决策表 + 契约缺口清单 + 迁移门禁策略」三件文档再谈拆代码。
+
+---
+
+## 二轮评审（评审对象 v2，结论 78/100，可执行骨架仍有机制空洞）
+
+> 评审代理：14e24671。A 核验（v1 P0/P1/P2 落实）、B 新问题、C 复核 v1 断言。
+
+### 最关键 3 条
+1. **D2 是伪决策**：B5 最小修复只需替换分支补调 `void existing.disconnect()`——旧实例 disconnect await
+   syncChain（supervisor.ts L508-512）、新代际 syncTools 经 enqueueSync 排同一 syncChain（L323-327），
+   FIFO 天然保证旧清理先于新注册，start 无需变 async；「涟漪波及 routes×9」失实（routes-controllers.ts
+   零处直接调 manager.start/reconcileServers，真涟漪在 manager 内部 5 处 + apply.ts L148/L150）。
+2. **D7 已闭环**：mutation-gate.mjs 判 coveredScore < threshold（covered 口径）；gauntlet
+   dsh-mcp-manager baselineCovered=74.66≥60 已达标、strict=true——「迁移卡死」不成立。
+   D7 改写为「observe 回落判据（covered<baselineCovered-1pp，observe-check.mjs）+ incremental 缓存
+   重建豁免」二选一，而非「先澄清判分输入」。
+3. **阶段 2 与 §四3 矛盾**：阶段 2「execution/ 挂 stryker 段」vs §四3「六段清单阶段 6 同步」+
+   v1 P1「段管理集中迁移 PR」；防空段断言（workflow-assert L346-354）只查正向条目 glob 到现存文件、
+   不查 src 全覆盖 → 阶段 1–5 新文件属变异盲区。二选一必须拍死。
+
+### A 核验（v1 P0/P1/P2 → v2 落实）
+- P0-① ⚠️部分：静态面清单✓；但 apply-services.ts 阶段 1–5「禁止薄转发」不变式未写死（service-contract
+  L145 readFileSync + L150 marker 扫描落点，薄转发即红）。
+- P0-② ⚠️部分：HTTP 400 body 脱敏写了承诺没写机制（routes handleError 直写、routes 侧无 redactor 注入面）。
+- P0-③ ⚠️部分：B6 无修复落位（只有阶段 0 决策 D3）。
+- P0-④ ❌前提有误：D2 async 选项基于失实的 routes×9 涟漪。
+- P1 ⚠️：六态单 PR 中 C13 客户端改动与宿主端 B1/B4 同 PR 跨端。
+- P2 ⚠️：D7 未闭环。
+
+### B 新问题（11 项要点）
+- 目录图漏 middleware-const.ts（10+ 常量）与 middleware-types.ts（ProjectUnit/CatalogTool 等）落位；
+- msgOf 无归位；stryker exclude 只排 !src/types.ts 不排 src/types/**；
+- connection/execution 与 execution 双目录命名歧义；
+- config-schema.ts L10-11 跨域 import catalog/supervisor 常量未处理；
+- catalogViewFor 迁出需含私有 diskCatalogSummaryCache（mtime 缓存）；
+- getTools 同源后裸名/注册名键形态未决策；
+- D5「规格化不可逆」若改名会冲击官方 mcp__ 同名契约；
+- D8 off 模式 guard 无数据源（off 时 manager.middleware===undefined）；
+- B12/B19 行为修复在阶段 6 之后（迁移时未修完，可自洽但未显式化）；
+- 阶段 6「迁移专用验证」未定义机制。
+
+### C 复核（v1 断言）
+- 撤回：v1「PR 有 mutate-scope-guard」——已随 #276 退役，workflow-assert.test.ts L407-413 锁定不得再调用，
+  v2 沿用了过时事实，应从静态面清单删除。
+- 修正：「迁移 PR 互相卡死（58.74<60）」后果过强（判分输入是 covered 已达标）；「routes×9 涟漪」失实。
+- 维持：service-contract 必红、13 层过度设计、B10 归属、B9 方向说反、B20 热切换修正、unit-call-stats 孤儿。
