@@ -33,17 +33,21 @@ import { runConfigMatrix } from '../lib/config-matrix-gate.ts'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
-/** mkdtemp 副本仓库：复制两包 src/config.ts + src/client/index.tsx（仅矩阵输入面）。 */
+/** mkdtemp 副本仓库：复制两包矩阵输入面（lan-proxy 平铺 config.ts；notifier 配置域
+ *  拆三文件 config/config.ts + validators + normalize，随 #669 PR1 目录树同步）。 */
 function fakeRepo() {
   const root = mkdtempSync(join(tmpdir(), 'cfgmtx-'))
   try {
     for (const pkg of ['dsh-lan-proxy', 'dsh-notifier']) {
       mkdirSync(join(root, 'packages', pkg, 'src', 'client'), { recursive: true })
+      mkdirSync(join(root, 'packages', pkg, 'src', 'config'), { recursive: true })
     }
     const srcs = [
       ['dsh-lan-proxy', 'config.ts'],
       ['dsh-lan-proxy', 'client/index.ts'],
-      ['dsh-notifier', 'config.ts'],
+      ['dsh-notifier', 'config/config.ts'],
+      ['dsh-notifier', 'config/validators.ts'],
+      ['dsh-notifier', 'config/normalize.ts'],
       ['dsh-notifier', 'client/index.tsx'],
     ]
     for (const [pkg, rel] of srcs) {
@@ -126,26 +130,26 @@ test('lan-proxy: DEFAULTS 删非豁免可编辑键 → 红且报错含键名', (
 
 test('notifier: 删 DEFAULT_CONFIG 一键 → 红且报错含键名', () => {
   assertRed('notifier 删 DEFAULT_CONFIG.maxConnections', (root) => {
-    edit(root, 'dsh-notifier', 'config.ts', (s) => s.replace(/  maxConnections: 16,\n/, ''))
+    edit(root, 'dsh-notifier', 'config/config.ts', (s) => s.replace(/  maxConnections: 16,\n/, ''))
   }, 'maxConnections')
 })
 
 test('notifier: SETTING_HINTS 加假键 → 红且报错含键名', () => {
   assertRed('notifier SETTING_HINTS 加 bogusKey', (root) => {
-    edit(root, 'dsh-notifier', 'config.ts', (s) =>
+    edit(root, 'dsh-notifier', 'config/validators.ts', (s) =>
       s.replace('const SETTING_HINTS: Record<string, string> = {', 'const SETTING_HINTS: Record<string, string> = {\n  bogusKey: "x",'))
   }, 'bogusKey')
 })
 
 test('notifier: CONFIG_KEYS 漏布尔键 → 红且报错含键名', () => {
   assertRed('notifier CONFIG_KEYS 删 notifySound', (root) => {
-    edit(root, 'dsh-notifier', 'config.ts', (s) => s.replace(/"notifySound", /, ''))
+    edit(root, 'dsh-notifier', 'config/config.ts', (s) => s.replace(/"notifySound", /, ''))
   }, 'notifySound')
 })
 
 test('notifier: normalizeConfig 漏归一化分支 → 红且报错含键名', () => {
   assertRed('notifier normalize 漏 channels', (root) => {
-    edit(root, 'dsh-notifier', 'config.ts', (s) =>
+    edit(root, 'dsh-notifier', 'config/normalize.ts', (s) =>
       // #508：channels 归一化已按类型分派为 normalizeChannels（bark/webhook），
       // 注入目标随实现同步——负向测试锁定的是「漏归一化分支门禁必红」这一性质
       s.replace(/  if \(Array\.isArray\(src\.channels\)\) base\.channels = normalizeChannels\(src\.channels\);\n/, ''))
@@ -154,7 +158,7 @@ test('notifier: normalizeConfig 漏归一化分支 → 红且报错含键名', (
 
 test('notifier: normalizeConfig 漏安静时段内嵌子键分支 → 红', () => {
   assertRed('notifier normalize 漏 qh.start 子键', (root) => {
-    edit(root, 'dsh-notifier', 'config.ts', (s) => {
+    edit(root, 'dsh-notifier', 'config/normalize.ts', (s) => {
       // 整行删除：以 base.quietHours.start 赋值 + 前导行片段为锚
       const lines = s.split('\n')
       const idx = lines.findIndex((l) => l.includes('base.quietHours.start = qh.start'))
