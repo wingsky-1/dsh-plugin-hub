@@ -92,6 +92,8 @@ import "./unit-middleware.test.ts";
 // 缺失期间这两个文件的用例只在 mutation 跑——smoke 门禁从未执行它们）
 import "./unit-manager2.test.ts";
 import "./unit-routes-sse.test.ts";
+// call-stats 统计（#664 阶段 1 双登记接线：原 node:test 零执行孤儿，改造自执行后接入）
+import "./unit-call-stats.test.ts";
 
 const failures = [];
 const check = (label, fn) => {
@@ -1000,6 +1002,12 @@ const main = async () => {
   check("http 缺 url / 非法 url 被拒绝", () => {
     assert.throws(() => normalizeServer({ name: "a", transport: "streamable-http" }));
     assert.throws(() => normalizeServer({ name: "a", transport: "streamable-http", url: "not a url" }));
+  });
+  check("B13: http(s) 之外的协议被拒绝（ftp/file 非 streamable-http）", () => {
+    assert.throws(() => normalizeServer({ name: "a", transport: "streamable-http", url: "ftp://host/path" }), /protocol/, "B13：ftp 协议拒绝");
+    assert.throws(() => normalizeServer({ name: "a", transport: "streamable-http", url: "file:///etc/passwd" }), /protocol/, "B13：file 协议拒绝");
+    assert.doesNotThrow(() => normalizeServer({ name: "a", transport: "streamable-http", url: "https://host/path" }), "https 放行");
+    assert.doesNotThrow(() => normalizeServer({ name: "a", transport: "streamable-http", url: "http://host/path" }), "http 放行");
   });
   check("enabled: false 保留", () => {
     assert.equal(normalizeServer({ name: "a", transport: "stdio", command: "x", enabled: false }).enabled, false);
@@ -2442,16 +2450,6 @@ const main = async () => {
   // ---------- SDK 端到端（issue #11 PoC 契约不漂移证据：真实 stdio 连接 /
   // initialize 版本协商 / 工具注册 / callTool / 断线自动重连，全程无网络）。
 
-  /** 轮询等待条件成立（防 flake 纪律：轮询替代固定 sleep）。 */
-  async function waitFor(label, cond, timeoutMs = 10_000) {
-    const start = Date.now();
-    while (Date.now() - start < timeoutMs) {
-      if (cond()) return;
-      await new Promise((resolve) => setTimeout(resolve, 25));
-    }
-    throw new Error(`timeout waiting for ${label}`);
-  }
-
   console.log("SDK 端到端连接（连接/工具注册/callTool/断线重连）");
   {
     // 最小 stdio MCP server fixture：node 子进程，行分隔 JSON-RPC，
@@ -2517,12 +2515,13 @@ const main = async () => {
       assert.ok(oldPid > 0);
       process.kill(oldPid, "SIGTERM");
       // 新代际 transport 建立且恢复 connected（旧 pid 不复用即证明发生过重连）。
-      await waitFor("reconnected with new generation", () =>
+      await pollUntil("reconnected with new generation", () =>
         supervisor.status === "connected" &&
         supervisor.transport !== undefined &&
         supervisor.transport.sdk.pid !== undefined &&
         supervisor.transport.sdk.pid !== oldPid &&
         supervisor.tools.length === 1,
+        { timeoutMs: 10_000 },
       );
       assert.ok(registered.length >= 2, "重连后工具重新注册");
       const value = await registered.at(-1).execute({ text: "after reconnect" }, { signal: undefined });

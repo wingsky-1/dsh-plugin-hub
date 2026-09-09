@@ -24,6 +24,7 @@ const {
   parseFullServerName,
   normalizeToolName,
   normalizeArguments,
+  createRedactor,
   globMatch,
   policyAllows,
   policyDenialReason,
@@ -94,9 +95,13 @@ function makeHost(serversByRoot = new Map()) {
 {
   assert.deepEqual(normalizeArguments({ a: 1 }), { a: 1 });
   assert.deepEqual(normalizeArguments('{"a":1}'), { a: 1 });
-  assert.deepEqual(normalizeArguments('"[1,2]"'), [1, 2]);
   assert.equal(normalizeArguments("hello"), "hello"); // 标量保留
   assert.deepEqual(normalizeArguments(""), {}); // 空串 → 空对象
+  // B14 红测：arguments 按 MCP 规范应为 object，数组形态一律归一无害空态
+  // （原断言 `'"[1,2]"'` → `[1,2]` 即 B14 泄漏路径，改用拒绝语义）
+  assert.deepEqual(normalizeArguments("[1,2]"), {}, "B14：数组 JSON 不应作为 arguments");
+  assert.deepEqual(normalizeArguments('"[1,2]"'), {}, "B14：引号包裹的数组 JSON 同样拒绝");
+  assert.deepEqual(normalizeArguments([1, 2]), {}, "B14：数组入参拒绝");
 }
 
 // ---- globMatch / policy ----
@@ -917,4 +922,42 @@ function makeHost(serversByRoot = new Map()) {
     assert.equal(fallbackCalls, 0, "fallbackText 惰性：正常 content 路径不调用");
     assert.deepEqual(normal.content, [{ type: "text", text: "ok" }]);
   }
+}
+
+// ---- createRedactor 基线（issue #664 阶段 1：先锁现状整 URL 脱敏；B8 改「仅用户
+// 信息」口径在阶段 2，届时本基线按新契约修订）----
+
+{
+  const redact = createRedactor([
+    {
+      name: "http1",
+      transport: "streamable-http",
+      url: "https://user:pass@example.com/path?token=abc",
+      headers: { Authorization: "Bearer secret-token" },
+      enabled: true,
+    },
+    {
+      name: "stdio1",
+      transport: "stdio",
+      command: "echo",
+      env: { API_KEY: "k-123" },
+      args: ["--token", "tok-456"],
+      enabled: true,
+    },
+  ]);
+
+  const out = redact(
+    new Error("failed connect to https://user:pass@example.com/path?token=abc with Bearer secret-token k-123 tok-456"),
+  );
+
+  // 现状口径（middleware-utils.ts createRedactor L146）：http 分支把整 URL 加入
+  // secrets；env 全值、args 凭据形参、headers 全值同样脱敏。
+  assert.ok(!out.includes("user:pass"), "URL 用户信息脱敏");
+  assert.ok(!out.includes("token=abc"), "URL searchParams 脱敏");
+  assert.ok(!out.includes("secret-token"), "header 值脱敏");
+  assert.ok(!out.includes("k-123"), "env 全值脱敏");
+  assert.ok(!out.includes("tok-456"), "args 凭据形参值脱敏");
+  // 基线锚点：整 URL 全部 [REDACTED]（含无凭据的 host/path，可诊断性差的现状——
+  // B8 修复后此处应保留 host/path 可读，成为差异断言）。
+  assert.ok(!out.includes("example.com"), "基线：整 URL 均被脱敏（阶段 2 B8 改为仅用户信息）");
 }

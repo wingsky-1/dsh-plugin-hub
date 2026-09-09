@@ -1,12 +1,35 @@
-import { test } from "node:test";
+// @ts-nocheck
+/**
+ * dsh-mcp-manager — unit：McpStatsCollector 全形态 + 配置域接线。
+ *
+ * 本文件原为 node:test 零执行孤儿（unit-call-stats.test.ts 不在 smoke import、
+ * 不在任何 stryker testFiles、不在 mutation-topology.json——B2 未被发现的直接
+ * 原因之一）。issue #664 阶段 1 改造为与其余 unit 一致的顶层自执行 + node:assert
+ * 形态，并双登记接线（smoke.ts import + mutation-topology testFiles），
+ * 单份断言同时服务 smoke 与 stryker tap-runner。
+ *
+ * 覆盖：
+ * - 默认关闭：完全无 I/O、零写盘、快照零服务器
+ * - 开启：聚合（total/success/failed + 每工具指标）+ 渐进式披露漏斗 + 原子落盘
+ *   + 进程重启恢复（从已存在文件加载）
+ * - 配置守护：updateUiConfig 不抹除既有 debug 配置
+ * - B2（修复红测）：configure({enabled:false}) 关闭前最后一批脏数据必须刷盘
+ */
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { McpStatsCollector } from "../lib/index.js";
+import { join } from "node:path";
 
-test("McpStatsCollector: 默认关闭时完全无 I/O，不写盘", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "mcp-stats-test-"));
+const { McpStatsCollector } = await import("../lib/index.js");
+
+function tempDir() {
+  return mkdtempSync(join(tmpdir(), "mcp-stats-test-"));
+}
+
+// ---- 默认关闭时完全无 I/O，不写盘 ----
+
+{
+  const dir = tempDir();
   const statsFile = join(dir, "stats.json");
   try {
     const collector = new McpStatsCollector({ enabled: false, filePath: statsFile });
@@ -24,10 +47,12 @@ test("McpStatsCollector: 默认关闭时完全无 I/O，不写盘", async () => 
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-});
+}
 
-test("McpStatsCollector: 开启时正确聚合调用与渐进式披露指标并原子落盘", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "mcp-stats-test-"));
+// ---- 开启时正确聚合调用与渐进式披露指标并原子落盘 ----
+
+{
+  const dir = tempDir();
   const statsFile = join(dir, "stats.json");
   try {
     const collector = new McpStatsCollector({ enabled: true, filePath: statsFile });
@@ -88,11 +113,13 @@ test("McpStatsCollector: 开启时正确聚合调用与渐进式披露指标并�
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-});
+}
 
-test("McpManager & routes: 前端 POST /config 不会覆盖抹除已有的 debug 配置", async () => {
+// ---- McpManager & routes: 前端 POST /config 不会覆盖抹除已有的 debug 配置 ----
+
+{
   const { McpManager, McpStore, resolveDebugConfig } = await import("../lib/index.js");
-  const dir = mkdtempSync(join(tmpdir(), "mcp-config-guard-"));
+  const dir = tempDir();
   try {
     const store = new McpStore(join(dir, "mcp.json"));
     const manager = new McpManager({ logger: { info: () => {}, warn: () => {} } } as any, store);
@@ -123,5 +150,29 @@ test("McpManager & routes: 前端 POST /config 不会覆盖抹除已有的 debug
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-});
+}
 
+// ---- B2 红测：configure({enabled:false}) 关闭前最后一批脏数据必须刷盘 ----
+
+{
+  const dir = tempDir();
+  const statsFile = join(dir, "stats.json");
+  try {
+    const collector = new McpStatsCollector({ enabled: true, filePath: statsFile });
+    collector.recordCall("codegraph", "codegraph_search", 120, true); // 置脏（防抖 1s 未到）
+
+    // 关闭统计：注释承诺「关闭时 flush」，最后一批不得丢
+    collector.configure({ enabled: false });
+
+    assert.equal(collector.isEnabled(), false);
+    assert.equal(
+      existsSync(statsFile),
+      true,
+      "B2：configure 关闭前应刷盘最后一批脏数据（现状 flushSync 因 enabled=false 短路）",
+    );
+    const raw = JSON.parse(readFileSync(statsFile, "utf8"));
+    assert.equal(raw.servers.codegraph.totalCalls, 1, "B2：关闭时最后一批调用计入文件");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
