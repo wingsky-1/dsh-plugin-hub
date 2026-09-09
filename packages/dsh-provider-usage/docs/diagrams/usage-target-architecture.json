@@ -1,0 +1,574 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "dsh-provider-usage 目标架构（含外部边界）",
+    "quality_profile": "showcase",
+    "output": "usage-target-architecture.html",
+    "viewBox": [
+      2240,
+      1040
+    ],
+    "repository": {
+      "url": "https://github.com/wingsky-1/dsh-plugin-hub",
+      "revision": "9ed7e5f44473ac61df811f650f1963c7ee4d7b6b"
+    }
+  },
+  "components": [
+    {
+      "id": "client",
+      "type": "frontend",
+      "label": "浏览器客户端",
+      "sublabel": "跨进程 · 胶囊/设置/趋势/报告",
+      "pos": [
+        1860,
+        40
+      ],
+      "size": [
+        270,
+        84
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-provider-usage/src/client/index.tsx",
+          "line": 616
+        }
+      ]
+    },
+    {
+      "id": "ctx",
+      "type": "cloud",
+      "label": "dsh 宿主运行时",
+      "sublabel": "ctx: webServer · llm · sessions",
+      "pos": [
+        200,
+        40
+      ],
+      "size": [
+        300,
+        72
+      ]
+    },
+    {
+      "id": "ua",
+      "type": "external",
+      "label": "用户自定义适配器 .mjs",
+      "sublabel": "fetchData/formatCapsule/formatPanel",
+      "pos": [
+        30,
+        590
+      ],
+      "size": [
+        220,
+        84
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-provider-usage/docs/adapter-guide.md",
+          "line": 150
+        }
+      ]
+    },
+    {
+      "id": "api",
+      "type": "external",
+      "label": "远端用量 API",
+      "sublabel": "HTTPS · provider 官方接口",
+      "pos": [
+        30,
+        860
+      ],
+      "size": [
+        220,
+        84
+      ]
+    },
+    {
+      "id": "c1",
+      "type": "backend",
+      "label": "C1 契约/工具层",
+      "sublabel": "v2 契约 · esc/图表工具",
+      "pos": [
+        280,
+        260
+      ],
+      "size": [
+        220,
+        66
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-provider-usage/src/contracts.ts",
+          "line": 98
+        }
+      ]
+    },
+    {
+      "id": "c2",
+      "type": "backend",
+      "label": "C2 注册/加载层",
+      "sublabel": "registry · 热更 · 密钥链",
+      "pos": [
+        280,
+        420
+      ],
+      "size": [
+        220,
+        66
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-provider-usage/src/registry.ts",
+          "line": 63
+        }
+      ]
+    },
+    {
+      "id": "c4",
+      "type": "database",
+      "label": "C4 历史存储层",
+      "sublabel": "按天 JSONL · 0600",
+      "pos": [
+        280,
+        700
+      ],
+      "size": [
+        220,
+        66
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-provider-usage/src/core/history.ts",
+          "line": 30
+        }
+      ]
+    },
+    {
+      "id": "c6",
+      "type": "backend",
+      "label": "C6 路由层（宿主）",
+      "sublabel": "/stats /history /adapters*",
+      "pos": [
+        600,
+        260
+      ],
+      "size": [
+        250,
+        66
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-provider-usage/src/routes/stats.ts",
+          "line": 15
+        }
+      ]
+    },
+    {
+      "id": "c3",
+      "type": "backend",
+      "label": "C3 执行管道层",
+      "sublabel": "stats-service · pipeline · guards",
+      "pos": [
+        600,
+        490
+      ],
+      "size": [
+        250,
+        66
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-provider-usage/src/stats-service.ts",
+          "line": 139
+        }
+      ]
+    },
+    {
+      "id": "c5",
+      "type": "backend",
+      "label": "C5 内置适配器 ×3",
+      "sublabel": "DeepSeek · OpenCode Go · 智谱",
+      "pos": [
+        600,
+        720
+      ],
+      "size": [
+        250,
+        66
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-provider-usage/src/adapters/deepseek-official.mjs",
+          "line": 760
+        }
+      ]
+    },
+    {
+      "id": "e1",
+      "type": "backend",
+      "label": "E1 事件采集层",
+      "sublabel": "trend/collector 折叠状态机",
+      "pos": [
+        1330,
+        260
+      ],
+      "size": [
+        250,
+        66
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-provider-usage/src/trend/collector.ts",
+          "line": 227
+        }
+      ]
+    },
+    {
+      "id": "e2",
+      "type": "backend",
+      "label": "E2 聚合/压实层",
+      "sublabel": "aggregator · store",
+      "pos": [
+        1330,
+        490
+      ],
+      "size": [
+        250,
+        66
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-provider-usage/src/trend/aggregator.ts",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "backend",
+      "label": "E4 报告执行/产出层",
+      "sublabel": "runner · generate · format",
+      "pos": [
+        1330,
+        720
+      ],
+      "size": [
+        250,
+        66
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-provider-usage/src/report/runner.ts",
+          "line": 165
+        }
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "backend",
+      "label": "E5 路由层（宿主）",
+      "sublabel": "/trend /report-* /health",
+      "pos": [
+        1760,
+        260
+      ],
+      "size": [
+        250,
+        66
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-provider-usage/src/routes/ui.ts",
+          "line": 62
+        }
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "backend",
+      "label": "E3 报告调度层",
+      "sublabel": "config · schedule · tasks",
+      "pos": [
+        1760,
+        720
+      ],
+      "size": [
+        250,
+        66
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-provider-usage/src/report/config.ts",
+          "line": 382
+        }
+      ]
+    },
+    {
+      "id": "asm",
+      "type": "backend",
+      "label": "装配层 apply.ts",
+      "sublabel": "组合两域 · 路由注册 · 生命周期",
+      "pos": [
+        950,
+        940
+      ],
+      "size": [
+        280,
+        80
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-provider-usage/src/apply.ts",
+          "line": 208
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "域1 · 适配器取数与胶囊展示",
+      "wraps": [
+        "c1",
+        "c2",
+        "c3",
+        "c4",
+        "c5",
+        "c6"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "域2 · 事件监听 · 趋势与报告",
+      "wraps": [
+        "e1",
+        "e2",
+        "e3",
+        "e4",
+        "e5"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "dsh 宿主进程（Node）",
+      "wraps": [
+        "c1",
+        "c2",
+        "c3",
+        "c4",
+        "c5",
+        "c6",
+        "e1",
+        "e2",
+        "e3",
+        "e4",
+        "e5",
+        "asm"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "cl-e5",
+      "from": "client",
+      "to": "e5",
+      "label": "GET loopback",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "c1-c2",
+      "from": "c1",
+      "to": "c2",
+      "label": "契约校验",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 30
+    },
+    {
+      "id": "c2-c3",
+      "from": "c2",
+      "to": "c3",
+      "label": "getEntry/密钥",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "c3-c4",
+      "from": "c3",
+      "to": "c4",
+      "label": "append",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "right",
+      "labelDy": 30
+    },
+    {
+      "id": "c3-c5",
+      "from": "c3",
+      "to": "c5",
+      "label": "format 注入",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        768,
+        640
+      ]
+    },
+    {
+      "id": "c6-c3",
+      "from": "c6",
+      "to": "c3",
+      "label": "getStats",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 30
+    },
+    {
+      "id": "c3-ua",
+      "from": "c3",
+      "to": "ua",
+      "label": "动态 import+校验",
+      "variant": "emphasis",
+      "fromSide": "left",
+      "toSide": "right"
+    },
+    {
+      "id": "c5-api",
+      "from": "c5",
+      "to": "api",
+      "label": "HTTPS fetch",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "ua-api",
+      "from": "ua",
+      "to": "api",
+      "label": "HTTPS",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 46
+    },
+    {
+      "id": "e1-e2",
+      "from": "e1",
+      "to": "e2",
+      "label": "call/counter",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 30
+    },
+    {
+      "id": "e2-e4",
+      "from": "e2",
+      "to": "e4",
+      "label": "buckets",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 30
+    },
+    {
+      "id": "e5-e2",
+      "from": "e5",
+      "to": "e2",
+      "label": "/trend 查询",
+      "fromSide": "bottom",
+      "toSide": "right"
+    },
+    {
+      "id": "e5-e4",
+      "from": "e5",
+      "to": "e4",
+      "label": "reports",
+      "fromSide": "bottom",
+      "toSide": "right"
+    },
+    {
+      "id": "e3-e4",
+      "from": "e3",
+      "to": "e4",
+      "label": "due 提交",
+      "variant": "emphasis",
+      "fromSide": "left",
+      "toSide": "right"
+    },
+    {
+      "id": "e4-e3",
+      "from": "e4",
+      "to": "e3",
+      "label": "lastRun",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelDy": 20
+    },
+    {
+      "id": "asm-e3",
+      "from": "asm",
+      "to": "e3",
+      "label": "executor 注入",
+      "variant": "emphasis"
+    },
+    {
+      "id": "cl-c6",
+      "from": "client",
+      "to": "c6",
+      "label": "GET loopback",
+      "variant": "emphasis",
+      "toSide": "top"
+    },
+    {
+      "id": "ctx-c6",
+      "from": "ctx",
+      "to": "c6",
+      "label": "webServer 注册",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "外部边界",
+      "items": [
+        "浏览器客户端：HTTP 拉取 + 宿主 HTML 注入，不 import 宿主",
+        "用户自定义适配器：宿主全权限信任域，三函数 v2 契约",
+        "远端 API：仅经适配器 fetch，密钥不出宿主"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "宿主进程边界",
+      "items": [
+        "域1 + 域2 + 装配层，两域业务面零直接依赖",
+        "共享底座 charts/config/sanitize 被两域消费",
+        "16 路由 loopback 围栏（403/405）"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "修订落地 R1-R5",
+      "items": [
+        "R2：路由层与客户端进程分离建模",
+        "R4：路由直连服务对象（cache/registry）如实标注",
+        "R5：reportCfg 闭包双源 / 模块级缓存入模型"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "信任与安全",
+      "items": [
+        "用户适配器 = 宿主全权限（文档化信任域）",
+        "HTML 双层净化（esc + sanitize）",
+        "密钥仅宿主内存 · loopback-only"
+      ]
+    }
+  ]
+}
