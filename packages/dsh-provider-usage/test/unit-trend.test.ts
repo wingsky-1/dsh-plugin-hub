@@ -39,6 +39,7 @@ import {
   sumToken,
   mergeAggRows,
   mergeDirRows,
+  mergeHourRows,
   metricValue,
   TREND_ROW_VERSION,
   TREND_UNIDENTIFIED,
@@ -315,7 +316,8 @@ function cellTotals(agg, day, provider = "deepseek") {
   agg.apply({ type: "call", record: { time: T0 + HOUR, session: "s2", turn: 1, step: 1, retry: 1, provider: "deepseek", model: "chat", tokens: { input: 20, output: 5, cacheRead: null, cacheWrite: null } } });
   agg.apply({ type: "counter", record: { time: T0, session: "s1", provider: "deepseek", model: "chat", turns: 1, toolCalls: 2 } });
   const before = JSON.stringify(agg.buckets());
-  const aggRows = agg.rollupDay(DAY0, DAY0);
+  const rolled = agg.rollupDay(DAY0, DAY0);
+  const aggRows = rolled.filter((r) => r.kind === "agg");
   assert.equal(JSON.stringify(agg.buckets()), before, "压实只转落盘形态，cells 不动（不双算）");
   assert.equal(agg.pendingDays().length, 0, "压实后 pending 清空");
   assert.equal(aggRows.length, 1, "同 (provider,model) 折叠为一行");
@@ -325,6 +327,12 @@ function cellTotals(agg, day, provider = "deepseek") {
   assert.equal(row.toolCalls, 2, "聚合 toolCalls");
   assert.equal(row.input, 30, "聚合 input 求和");
   assert.equal(row.v, TREND_ROW_VERSION, "聚合行带 schema 版本");
+  // #662：rollupDay 同源产出 hour 行（T0=12:00 → hour12、T0+HOUR=13:00 → hour13）
+  const hourRows = rolled.filter((r) => r.kind === "hour");
+  assert.equal(hourRows.length, 2, "rollupDay 产出 hour 行（同源折算）");
+  assert.equal(hourRows[0].hour, 12, "hour12 档（T0 本地 12:00）");
+  assert.equal(hourRows[1].hour, 13, "hour13 档（T0+1h 本地 13:00）");
+  assert.equal(hourRows[0].calls, 1, "hour12 calls 独立");
 }
 
 {
@@ -652,9 +660,13 @@ function writeAggShardLine(row) {
   tracker.handleEvent({ id: "s2" }, ev("request/header", HEADER(), T0 + HOUR, 4)); // time 仍在 09-04
   tracker.handleEvent({ id: "s2" }, ev("assistant/chunk", { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: 7, outputTokens: 7 } } }, T0 + HOUR, 5));
   await tracker.flushNow();
-  const aggRows = JSON.parse(readFileSync(join(root, "agg", `${day0}.jsonl`), "utf8").trimEnd().split("\n").at(-1));
-  assert.equal(aggRows.calls, 2, "迟到旧日行合并进聚合分片（calls=1+1）");
-  assert.equal(aggRows.input, 107, "token 合并 100+7");
+  const aggRow = readFileSync(join(root, "agg", `${day0}.jsonl`), "utf8").trimEnd().split("\n").map((l) => JSON.parse(l)).filter((r) => r.kind === "agg").at(-1);
+  assert.equal(aggRow.calls, 2, "迟到旧日行合并进聚合分片（calls=1+1）");
+  assert.equal(aggRow.input, 107, "token 合并 100+7");
+  // #662：混存分片尾行是 hour 行（写入约定 agg→dir→hour），末行断言须按 kind 定位
+  const lastLine = JSON.parse(readFileSync(join(root, "agg", `${day0}.jsonl`), "utf8").trimEnd().split("\n").at(-1));
+  assert.equal(lastLine.kind, "hour", "聚合分片尾行 = hour 行（混存写入顺序约定）");
+  assert.equal(lastLine.calls, 1, "迟到行 hour13（T0+HOUR）独立档");
 
   // 重启重建：聚合权威载入，cells 与重启前一致
   const beforeBuckets = JSON.stringify(tracker.buckets());
@@ -1290,8 +1302,15 @@ const A2_LEGACY_AGG = {
   const shard = await new TrendStore({ root }).readAggDayShard(DAY0);
   assert.deepEqual(
     shard.map((r) => r.kind),
-    ["agg", "dir", "dir", "dir"],
-    "混存分片：agg 行在前、dir 行在后",
+    ["agg", "dir", "dir", "dir", "hour"],
+    "混存分片：agg 行在前、dir 行居中、hour 行在后（#662 写入顺序约定）",
+  );
+  assert.deepEqual(
+    shard.filter((r) => r.kind === "hour"),
+    [
+      { v: TREND_ROW_VERSION, kind: "hour", day: DAY0, hour: 12, input: 22, output: 17, cacheRead: 0, cacheWrite: 0, calls: 4, turns: 1, toolCalls: 0 },
+    ],
+    "混存分片 hour 行：同在 12:00 的 4 次调用折叠为 hour12（input 10+7+3+2）",
   );
   assert.deepEqual(
     shard.filter((r) => r.kind === "dir"),
@@ -1343,14 +1362,24 @@ const A2_LEGACY_AGG = {
   agg.apply({ type: "call", record: { time: T0 + HOUR, session: "s2", turn: 1, step: 1, retry: 1, provider: "deepseek", model: "chat", dir: "proj", tokens: null } });
   const rows = agg.rollupDay(DAY0, DAY0);
   assert.deepEqual(
-    rows,
+    rows.filter((r) => r.kind === "agg" || r.kind === "dir"),
     [
       { v: TREND_ROW_VERSION, kind: "agg", day: DAY0, provider: "deepseek", model: "chat", input: 100, output: 50, cacheRead: 10, cacheWrite: 5, calls: 2, turns: 1, toolCalls: 2 },
       { v: TREND_ROW_VERSION, kind: "dir", day: DAY0, dir: "proj", input: 100, output: 50, cacheRead: 10, cacheWrite: 5, calls: 2, turns: 1, toolCalls: 2 },
     ],
     "rollupDay 产物 agg+dir 行逐字段 deepEqual（null token 不污染、calls 独立累计）",
   );
-  assert.deepEqual(agg.rollupDay(DAY0, DAY0), [], "消费后二次 rollup 不重复产出（pending/dir 素材同源消费）");
+  // #662：同源 hour 行——T0(12:00)→hour12 合并两次调用（含 null token 行 calls 独立计数、
+  // token 记 null）；T0+HOUR(13:00)→hour13 单行
+  assert.deepEqual(
+    rows.filter((r) => r.kind === "hour"),
+    [
+      { v: TREND_ROW_VERSION, kind: "hour", day: DAY0, hour: 12, input: 100, output: 50, cacheRead: 10, cacheWrite: 5, calls: 1, turns: 1, toolCalls: 2 },
+      { v: TREND_ROW_VERSION, kind: "hour", day: DAY0, hour: 13, input: null, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
+    ],
+    "rollupDay 同源 hour 行（null token 行独立计入 calls、token 记 null）",
+  );
+  assert.deepEqual(agg.rollupDay(DAY0, DAY0), [], "消费后二次 rollup 不重复产出（pending/dir/hour 素材同源消费）");
 }
 
 {
@@ -1397,8 +1426,15 @@ const A2_LEGACY_AGG = {
   const round1 = await store.readAggDayShard(DAY0);
   assert.deepEqual(
     round1.map((r) => r.kind),
-    ["agg", "dir", "dir"],
-    "首次压实混存形态",
+    ["agg", "dir", "dir", "hour"],
+    "首次压实混存形态（agg→dir→hour）",
+  );
+  assert.deepEqual(
+    round1.filter((r) => r.kind === "hour"),
+    [
+      { v: TREND_ROW_VERSION, kind: "hour", day: DAY0, hour: 12, input: 17, output: 12, cacheRead: 0, cacheWrite: 0, calls: 2, turns: 1, toolCalls: 1 },
+    ],
+    "首次压实 hour 行：同在 12:00 的计数并入 hour12",
   );
   const dirRows1 = round1.filter((r) => r.kind === "dir");
   assert.equal(existsSync(join(root, "details", `${DAY0}.jsonl`)), false, "明细分片已删（压实收尾）");
@@ -1417,8 +1453,16 @@ const A2_LEGACY_AGG = {
   const round2 = await store.readAggDayShard(DAY0);
   assert.deepEqual(
     round2.map((r) => r.kind),
-    ["agg", "dir", "dir"],
-    "二次压实后行数不增（既有 dir 行未被整日重写抹掉）",
+    ["agg", "dir", "dir", "hour", "hour"],
+    "二次压实：既有 agg/dir/hour 行不抹掉，迟到行折出新 hour 档并入尾段",
+  );
+  assert.deepEqual(
+    round2.filter((r) => r.kind === "hour"),
+    [
+      { v: TREND_ROW_VERSION, kind: "hour", day: DAY0, hour: 12, input: 17, output: 12, cacheRead: 0, cacheWrite: 0, calls: 2, turns: 1, toolCalls: 1 },
+      { v: TREND_ROW_VERSION, kind: "hour", day: DAY0, hour: 13, input: 3, output: 3, cacheRead: 0, cacheWrite: 0, calls: 1, turns: 0, toolCalls: 0 },
+    ],
+    "迟到行（13:00）折为新 hour13 档（hour12 既有行不受连坐）",
   );
   assert.deepEqual(
     round2.filter((r) => r.kind === "dir"),
@@ -1434,7 +1478,7 @@ const A2_LEGACY_AGG = {
   assert.equal(cellR2.calls, 3, "再重启重建 calls=2+1（迟到行已并入 agg 行，不丢不重）");
   assert.deepEqual(
     (await store.readAggDayShard(DAY0)).map((r) => r.kind),
-    ["agg", "dir", "dir"],
+    ["agg", "dir", "dir", "hour", "hour"],
     "再重启后分片形态稳定（persisted 行 flush 不重写）",
   );
   await tracker.dispose();
@@ -1596,6 +1640,127 @@ const A2_LEGACY_AGG = {
   assert.equal(agg.days.has(day1), false, "pruneDays：cutoff 前 days 日桶删除");
   assert.equal(agg.dirDays.has(day1), false, "pruneDays：dirDays 联动删除（与 dropPending 对称）");
   assert.equal(agg.dirDays.get(DAY0)?.get("keep")?.input, 2, "cutoff 内 dirDays 日桶不受连坐");
+}
+
+// ---------------------------------------------------------------- #662 hour 维度（day×hour 聚合行数据链路）
+
+{
+  // #662(a)：apply 平行累加 hourDays（hourOfDay 本地时区现算）+ rollupDay 同源产出
+  // hour 行（与 agg/dir 同一批事实，天然不双算）
+  const agg = new TrendAggregator();
+  const t9 = new Date(2026, 8, 4, 9, 30, 0).getTime(); // 本地 09:30 → hour 9
+  const t21 = new Date(2026, 8, 4, 21, 0, 0).getTime(); // 本地 21:00 → hour 21
+  agg.apply({ type: "call", record: { time: t9, session: "s1", turn: 1, step: 1, retry: 1, provider: "p", model: "m", tokens: { input: 100, output: 50, cacheRead: null, cacheWrite: null } } });
+  agg.apply({ type: "call", record: { time: t9 + 60000, session: "s2", turn: 1, step: 1, retry: 1, provider: "p", model: "m", tokens: { input: 20, output: 10, cacheRead: null, cacheWrite: null } } });
+  agg.apply({ type: "call", record: { time: t21, session: "s3", turn: 1, step: 1, retry: 1, provider: "p", model: "m", tokens: { input: 5, output: 5, cacheRead: null, cacheWrite: null } } });
+  // 内存小时面（apply 平行累加，未压实亦可见）
+  const rows = agg.hourRows();
+  assert.equal(rows.length, 2, "hourRows 按 (day,hour) 折叠：9 点与 21 点两行");
+  const h9 = rows.find((r) => r.hour === 9);
+  assert.equal(h9.calls, 2, "hour9 calls 跨会话合并");
+  assert.equal(h9.input, 120, "hour9 input 合并（100+20）");
+  assert.equal(h9.output, 60, "hour9 output 合并（50+10）");
+  const h21 = rows.find((r) => r.hour === 21);
+  assert.equal(h21.input, 5, "hour21 input 独立");
+  // rollupDay 同源产出三组（agg + dir + hour），hour 行与内存 hourRows 同值
+  const rolled = agg.rollupDay(DAY0, DAY0);
+  const rolledHours = rolled.filter((r) => r.kind === "hour");
+  assert.equal(rolledHours.length, 2, "rollupDay 产出 hour 行（同源折算）");
+  assert.deepEqual(JSON.parse(JSON.stringify(rolledHours)), JSON.parse(JSON.stringify(rows)), "压实 hour 行 = 内存 hourRows（同源单源，无重无漏）");
+  assert.equal(agg.hourRows().length, 2, "压实消费不删 hourDays（与 dirDays 同生命周期，跨天历史保留）");
+}
+
+{
+  // #662(b)：rebuild 双分支——hour 行直接入桶（信落盘字段）；当日 detail/counter 行
+  // 折算入桶（hourOfDay 现算，与 apply 同源）
+  const agg = new TrendAggregator();
+  agg.rebuild(
+    [
+      { v: 1, kind: "hour", day: DAY0, hour: 9, input: 100, output: 50, cacheRead: null, cacheWrite: null, calls: 2, turns: 1, toolCalls: 0 },
+      { v: 1, kind: "detail", time: new Date(2026, 8, 4, 21, 0, 0).getTime(), day: DAY0, session: "s9", turn: 9, step: 1, retry: 1, provider: "p", model: "m", input: 7, output: 7, cacheRead: null, cacheWrite: null, calls: 1 },
+      { v: 1, kind: "counter", time: new Date(2026, 8, 4, 21, 0, 0).getTime(), day: DAY0, session: "s9", provider: "p", model: "m", turns: 1, toolCalls: 2 },
+    ],
+    true,
+  );
+  const rows = agg.hourRows();
+  const h9 = rows.find((r) => r.hour === 9);
+  assert.equal(h9.calls, 2, "hour 行 rebuild 直接入桶（信落盘 hour 字段，不重算）");
+  const h21 = rows.find((r) => r.hour === 21);
+  assert.equal(h21.calls, 1, "detail/counter 行 rebuild 折算进小时桶");
+  assert.equal(h21.input, 7, "detail 行 token 折算进小时桶");
+  assert.equal(h21.turns, 1, "counter 行 turns 折算进小时桶");
+  assert.equal(h21.toolCalls, 2, "counter 行 toolCalls 折算进小时桶");
+}
+
+{
+  // #662(c)：mergeHourRows 纯函数——同 hour 键累加（null-aware）、异 hour 独立、保序
+  const base = [
+    { v: 1, kind: "hour", day: DAY0, hour: 9, input: 100, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
+  ];
+  const add = [
+    { v: 1, kind: "hour", day: DAY0, hour: 9, input: 50, output: 20, cacheRead: null, cacheWrite: null, calls: 2, turns: 1, toolCalls: 1 },
+    { v: 1, kind: "hour", day: DAY0, hour: 21, input: 7, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
+  ];
+  const merged = mergeHourRows(base, add);
+  assert.equal(merged.length, 2, "同 hour 键合并、异 hour 独立");
+  const h9 = merged.find((r) => r.hour === 9);
+  assert.equal(h9.input, 150, "mergeHourRows 同键 input 累加（100+50）");
+  assert.equal(h9.output, 20, "null-aware：null 不污染数字");
+  assert.equal(h9.calls, 3, "同键 calls 累加");
+  assert.equal(merged[0].hour, 9, "保序：base 在前");
+}
+
+{
+  // #662(d)：applyCorrect 第三面——修正明细 token 同步回退/累加小时桶（防小时面漂移）
+  const agg = new TrendAggregator();
+  const t9 = new Date(2026, 8, 4, 9, 30, 0).getTime();
+  agg.apply({ type: "call", record: { time: t9, session: "s1", turn: 1, step: 1, retry: 1, provider: "p", model: "m", tokens: { input: 100, output: 50, cacheRead: null, cacheWrite: null } } });
+  agg.apply({ type: "correct", record: { time: t9 + 1000, session: "s1", turn: 1, step: 1, retry: 1, tokens: { input: 200, output: 50, cacheRead: null, cacheWrite: null } } });
+  const h9 = agg.hourRows().find((r) => r.hour === 9);
+  assert.equal(h9.input, 200, "applyCorrect 后小时桶同步为校正值（回退 100 → 累加 200）");
+  assert.equal(agg.buckets()[0].providers[0].cell.input, 200, "cells 同步校正（对照面）");
+}
+
+{
+  // #662(e)：pruneDays 联动删除 hourDays（与 days/dirDays 同生命周期）
+  const day1 = "2026-09-03";
+  const agg = new TrendAggregator();
+  agg.rebuild(
+    [
+      { v: 1, kind: "hour", day: day1, hour: 9, input: 1, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
+      { v: 1, kind: "hour", day: DAY0, hour: 9, input: 2, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
+    ],
+    false,
+  );
+  assert.equal(agg.hourRows().length, 2, "hourDays 重建后两日可见");
+  agg.pruneDays(DAY0);
+  const rows = agg.hourRows();
+  assert.equal(rows.length, 1, "pruneDays：cutoff 前 hourDays 联动删除");
+  assert.equal(rows[0].day, DAY0, "cutoff 内 hour 日桶不受连坐");
+}
+
+{
+  // #662(f)：store 白名单——聚合分片写读 hour 行 round-trip（readAggDayShard 白名单
+  // 漏加 hour → 重启重建后小时数据静默全丢，P0）+ isValidShardRow 校验
+  const root = mkdtempSync(join(tmpdir(), "dou-trend-hour-store-"));
+  const store = new TrendStore({ root });
+  const aggRow = { v: 1, kind: "agg", day: DAY0, provider: "p", model: "m", input: 100, output: null, cacheRead: null, cacheWrite: null, calls: 2, turns: 1, toolCalls: 0 };
+  const hourRow = { v: 1, kind: "hour", day: DAY0, hour: 9, input: 100, output: null, cacheRead: null, cacheWrite: null, calls: 2, turns: 1, toolCalls: 0 };
+  await store.writeAggDay(DAY0, [aggRow, hourRow]);
+  const back = await store.readAggDayShard(DAY0);
+  assert.equal(back.filter((r) => r.kind === "hour").length, 1, "readAggDayShard 白名单含 hour 行（漏改会静默丢）");
+  assert.equal(back.filter((r) => r.kind === "agg").length, 1, "agg 行照常");
+  assert.equal(isValidShardRow(aggRow), true, "isValidShardRow 认可 agg 行");
+  assert.equal(isValidShardRow(hourRow), true, "isValidShardRow 认可 hour 行");
+  assert.equal(isValidShardRow({ ...hourRow, hour: 24 }), false, "hour=24 越界拒绝");
+  assert.equal(isValidShardRow({ ...hourRow, hour: -1 }), false, "hour=-1 越界拒绝");
+  assert.equal(isValidShardRow({ ...hourRow, hour: 9.5 }), false, "hour 非整数拒绝");
+  // prune 语义：删除 cutoff 日（不含）之前的分片——day1(<DAY0) 整日删除、DAY0 保留
+  const day1 = "2026-09-03";
+  await store.writeAggDay(day1, [aggRow, hourRow]);
+  await store.prune(DAY0);
+  assert.equal((await store.readAggDayShard(day1)).length, 0, "prune 后 cutoff 前聚合分片（含 hour 行）删除");
+  assert.equal((await store.readAggDayShard(DAY0)).length, 2, "cutoff 当日分片（agg+hour）保留");
 }
 
 {

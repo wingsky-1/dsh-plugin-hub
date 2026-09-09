@@ -26,7 +26,7 @@ import type {
   TokenUsage,
 } from "@deepseek-ai/dsh-llm";
 import { metricValue } from "../trend/aggregator.ts";
-import { sumToken, TREND_UNIDENTIFIED, type TrendCell, type TrendDirRow } from "../trend/types.ts";
+import { sumToken, TREND_UNIDENTIFIED, type TrendCell, type TrendDirRow, type TrendHourRow } from "../trend/types.ts";
 import type { ReportPeriod } from "./config.ts";
 
 /** 报告生成所用 llm 服务面（LlmRuntime 最小结构面——只依赖实际用到的三个方法）。 */
@@ -139,6 +139,20 @@ export interface ReportStatsSnapshot {
    * 分片 b C2：basename 化 + 剥控制字符 + 截断 80，无路径分隔符）；旧数据
    * 无 dir 事实 → 空数组，不补造）。 */
   byDirectory: Array<{ dir: string; calls: number; total: number | null }>;
+  // ---------------------------------------------------------------- #662 时段维度
+  // 数据面 = day×hour 聚合行（hourRows，落盘即定型）；覆盖度守卫：coveredDays 为
+  // 窗口内有 hour 事实（calls>0）的天数，**coveredDays < windowDays 时三个时段字段
+  // 整体置 null**（升级期部分天缺小时事实时提示词整段降级，杜绝「1/7 天代表整周」）。
+  /** 窗口内按钟点聚合（24 项 hour 0..23 全量；无数据钟点 calls=0/total=null，
+   * 零 usage 语义——调用独立计数、token 记 null；覆盖不足时整体 null）。 */
+  byHour: Array<{ hour: number; calls: number; total: number | null }> | null;
+  /** 预分四时段（凌晨 0-5 / 上午 6-11 / 下午 12-17 / 晚间 18-23；#662 口径由代码
+   * 锁定，防弱模型自行归纳编造；无数据档 total=null；覆盖不足时整体 null）。 */
+  byPeriod: Array<{ period: string; calls: number; total: number | null }> | null;
+  /** 最活跃钟点（byHour 内 total 判峰、并列取最早；全 null → null；覆盖不足时 null）。 */
+  peakHour: { hour: number; calls: number; total: number | null } | null;
+  /** 窗口内有 hour 事实的天数（覆盖度守卫：< windowDays 时上三个字段整体 null）。 */
+  coveredDays: number;
   // ---------------------------------------------------------------- #532 年报派生维度
   // 全部为快照内单遍派生的聚合数值，注入面收敛承诺不变（仍无路径/会话明细）。
   /** 峰值日（byDay 内 total 最大的一天；空窗口 null）。 */
@@ -284,6 +298,11 @@ export function buildStatsSnapshot(input: {
    * 可选；缺省 = 旧数据无目录事实，不补造桶（A2「旧格式零变化」口径）。
    */
   dirRows?: TrendDirRow[];
+  /**
+   * 小时维度日汇总行快照（#662：trend.hourRows() 产物，可选；缺省/旧数据无 hour
+   * 事实 → byHour/byPeriod/peakHour 依覆盖度守卫整体置 null（coveredDays=0）。
+   */
+  hourRows?: TrendHourRow[];
   /** 上一同等长度窗口的指标总量（环比基准；接线层经 windowSummary 取得）。 */
   prevTotal: number | null;
 }): ReportStatsSnapshot {
@@ -395,6 +414,58 @@ export function buildStatsSnapshot(input: {
     const dow = new Date(`${d.day}T00:00:00Z`).getUTCDay(); // 0=周日
     byWeekday[dow === 0 ? 6 : dow - 1] += d.total ?? 0;
   }
+
+  // ---- #662 时段维度（hourRows → byHour[24]/byPeriod[4]/peakHour + coveredDays 守卫）----
+  // 窗口过滤与 buckets 同口径（day 字典序闭区间）；同钟点跨日 null-aware 累加（计数
+  // 独立，token 记 null——零 usage 语义）。覆盖度守卫：coveredDays = 窗口内有 hour
+  // 事实（calls/turns/toolCalls 任一 > 0）的天数；coveredDays < windowDays（升级期
+  // 部分天缺 hour 行）→ 三个时段字段整体置 null（提示词整段降级，杜绝「局部天代表
+  // 全窗口」的误导叙事；评审 P0-4）。
+  const hourCells = new Map<number, { calls: number; total: number | null }>();
+  const covered = new Set<string>();
+  for (const row of input.hourRows ?? []) {
+    if (row.day < input.startDay || row.day > input.endDay) continue;
+    if (row.calls > 0 || row.turns > 0 || row.toolCalls > 0) covered.add(row.day);
+    const cur = hourCells.get(row.hour);
+    const total = metricValue(row, "total");
+    if (cur === undefined) hourCells.set(row.hour, { calls: row.calls, total });
+    else {
+      cur.calls += row.calls;
+      cur.total = sumToken(cur.total, total);
+    }
+  }
+  const coveredDays = covered.size;
+  const hourCovered = (input.hourRows ?? []).length > 0 && coveredDays >= windowDays;
+  let byHour: ReportStatsSnapshot["byHour"] = null;
+  let byPeriod: ReportStatsSnapshot["byPeriod"] = null;
+  let peakHour: ReportStatsSnapshot["peakHour"] = null;
+  if (hourCovered) {
+    // 分支内 list 明确非 null（byHour 24 项全量：无数据钟点 calls=0/total=null）
+    const list: Array<{ hour: number; calls: number; total: number | null }> = Array.from({ length: 24 }, (_, hour) => {
+      const c = hourCells.get(hour);
+      return { hour, calls: c?.calls ?? 0, total: c?.total ?? null };
+    });
+    byHour = list;
+    byPeriod = PERIOD_BUCKETS.map((p) => {
+      let calls = 0;
+      let total: number | null = null;
+      for (let h = p.from; h <= p.to; h += 1) {
+        const c = hourCells.get(h);
+        if (c === undefined) continue;
+        calls += c.calls;
+        total = sumToken(total, c.total);
+      }
+      return { period: p.name, calls, total };
+    });
+    // peakHour：total 判峰、并列取最早（保持 byHour 升序遍历序）；全 null → null
+    let peak: { hour: number; calls: number; total: number | null } | null = null;
+    for (const item of list) {
+      if (item.total === null) continue;
+      if (peak === null || peak.total === null || item.total > peak.total) peak = item;
+    }
+    peakHour = peak;
+  }
+
   return {
     period: input.period,
     startDay: input.startDay,
@@ -411,6 +482,10 @@ export function buildStatsSnapshot(input: {
     longestStreak,
     wowRatio,
     byWeekday,
+    byHour,
+    byPeriod,
+    peakHour,
+    coveredDays,
   };
 }
 
@@ -418,3 +493,15 @@ export function buildStatsSnapshot(input: {
 function windowDayCount(startDay: string, endDay: string): number {
   return Math.round((Date.parse(endDay) - Date.parse(startDay)) / 86400000) + 1;
 }
+
+/**
+ * 预分四时段档位（#662：报告时段叙事口径由代码锁定，防弱模型自行归纳 24 档编造）。
+ * 边界闭区间（from..to 均含）：凌晨 0-5 / 上午 6-11 / 下午 12-17 / 晚间 18-23。
+ * 档名即为提示词可原样引用的 byPeriod.period 字段值（口径变更须同步提示词红线注释）。
+ */
+export const PERIOD_BUCKETS: ReadonlyArray<{ name: string; from: number; to: number }> = [
+  { name: "凌晨", from: 0, to: 5 },
+  { name: "上午", from: 6, to: 11 },
+  { name: "下午", from: 12, to: 17 },
+  { name: "晚间", from: 18, to: 23 },
+];

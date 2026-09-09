@@ -71,20 +71,20 @@ export { TrendTracker } from "./trend/index.ts";
 export type { TrendTrackerOptions } from "./trend/index.ts";
 export { TrendCollector, TREND_FOLD_TTL_MS, TREND_DONE_MAX } from "./trend/collector.ts";
 export type { TrendCallRecord, TrendCorrectRecord, TrendCounterRecord, TrendEmit } from "./trend/collector.ts";
-export { TrendAggregator, metricValue, weekStartKey, lastNWeekKeys, lastNMonthKeys, monthRange, weekRange, mergeAggRows, mergeDirRows } from "./trend/aggregator.ts";
+export { TrendAggregator, metricValue, weekStartKey, lastNWeekKeys, lastNMonthKeys, monthRange, weekRange, mergeAggRows, mergeDirRows, mergeHourRows } from "./trend/aggregator.ts";
 export type { TrendMetric, TrendGranularity, TrendStackPart, TrendStackPoint, TrendWindowSummary } from "./trend/aggregator.ts";
 export { TrendStore } from "./trend/store.ts";
 // isValidShardRow/safeToken/safeId：分片行校验与防御提取纯函数（单测从 lib/index.js 导入）
-export { TREND_ROW_VERSION, TREND_UNIDENTIFIED, TREND_DIR_MAX, sumToken, isValidShardRow, safeToken, safeId, sanitizeDirName } from "./trend/types.ts";
-export type { TrendAttribution, TrendTokens, TrendDetailRow, TrendCounterRow, TrendAggRow, TrendDirRow, TrendCell } from "./trend/types.ts";
+export { TREND_ROW_VERSION, TREND_UNIDENTIFIED, TREND_DIR_MAX, sumToken, isValidShardRow, safeToken, safeId, sanitizeDirName, hourOfDay } from "./trend/types.ts";
+export type { TrendAttribution, TrendTokens, TrendDetailRow, TrendCounterRow, TrendAggRow, TrendDirRow, TrendHourRow, TrendCell } from "./trend/types.ts";
 // #503 会话用量报告（M3 接线）：report 模块公共面（测试/外部消费者从 lib/index.js 导入）
 export { candidateWindow, pendingReports, presetLastRunForNewlyEnabled, previousClosedWindow, deriveLastRun, isClosedWindowRecord, LAST_RUN_SCHEMA } from "./report/schedule.ts";
 export type { DueReport, LastRunRecord } from "./report/schedule.ts";
 export { parseHHMM, normalizeReportConfig, normalizeReportDirectories, DEFAULT_REPORT_CONFIG, DEFAULT_PROMPT_TEMPLATE, readReportConfig, writeReportConfig, reportConfigFile } from "./report/config.ts";
 export type { ReportConfig, ReportPeriod, ReportPeriodConfig } from "./report/config.ts";
-export { generateReport, applyPromptTemplate, buildStatsSnapshot } from "./report/generate.ts";
+export { generateReport, applyPromptTemplate, buildStatsSnapshot, PERIOD_BUCKETS } from "./report/generate.ts";
 export { reportBodyToHtml } from "./report/format.ts";
-export { DEFAULT_DAILY_PROMPT, DEFAULT_WEEKLY_PROMPT, DEFAULT_MONTHLY_PROMPT, DEFAULT_PROMPTS, LEGACY_PROMPT_TEMPLATE, LEGACY_DAILY_PROMPT_V1, LEGACY_WEEKLY_PROMPT_V1, LEGACY_MONTHLY_PROMPT_V1, LEGACY_DAILY_PROMPT_V2, LEGACY_WEEKLY_PROMPT_V2, LEGACY_MONTHLY_PROMPT_V2, LEGACY_DAILY_PROMPT_V3, LEGACY_WEEKLY_PROMPT_V3, LEGACY_MONTHLY_PROMPT_V3, promptFor } from "./report/config.ts";
+export { DEFAULT_DAILY_PROMPT, DEFAULT_WEEKLY_PROMPT, DEFAULT_MONTHLY_PROMPT, DEFAULT_PROMPTS, LEGACY_PROMPT_TEMPLATE, LEGACY_DAILY_PROMPT_V1, LEGACY_WEEKLY_PROMPT_V1, LEGACY_MONTHLY_PROMPT_V1, LEGACY_DAILY_PROMPT_V2, LEGACY_WEEKLY_PROMPT_V2, LEGACY_MONTHLY_PROMPT_V2, LEGACY_DAILY_PROMPT_V3, LEGACY_WEEKLY_PROMPT_V3, LEGACY_MONTHLY_PROMPT_V3, LEGACY_DAILY_PROMPT_V4, LEGACY_WEEKLY_PROMPT_V4, LEGACY_MONTHLY_PROMPT_V4, promptFor } from "./report/config.ts";
 export type { ReportPrompts } from "./report/config.ts";
 export type { ReportMeta, ReportResult, ReportStatsSnapshot, ReportLlmService, ReportTokenUsage } from "./report/generate.ts";
 export { ReportScheduler, readLastRun, writeLastRun, updateLastRun, ensureLastRunMigrated, __lastRunChainForTests } from "./report/scheduler.ts";
