@@ -36,6 +36,8 @@ import "./unit-fetch-timeout.test.ts";
 import "./unit-trend.test.ts";
 import "./unit-trend-view.test.ts";
 import "./unit-report.test.ts";
+import "./unit-stats-service.test.ts";
+import "./unit-routes.test.ts";
 
 import {
   apply,
@@ -511,6 +513,12 @@ export function formatPanel() { return "<p>p2</p>"; }
     const adaptersRoute = routes.find((r) => r.path === ROUTES.adapters);
     const meta = await callHandler(adaptersRoute, fakeReq());
     assert.equal(meta.enabled[OPENCODE_GO_PROVIDER], undefined, "清空后无启用");
+
+    // D7 S1 扩展：清空 select 走 purgeAllCaches（generation 失效收口）→ 缓存归零。
+    // 必须在此断言——紧随的 /stats 请求会写 no-enabled-adapter 错误帧回缓存（既有设计）。
+    const healthRoute = routes.find((r) => r.path === ROUTES.health);
+    const h = await callHandler(healthRoute, fakeReq());
+    assert.equal(h.cacheSize, 0, "清空 select 后缓存归零（purgeAllCaches 收口）");
 
     // 清空后 /stats 返回 no-enabled-adapter（默认 provider 已被清空）
     const stats = routes.find((r) => r.path === ROUTES.stats);

@@ -254,7 +254,8 @@
         "packages/dsh-provider-usage/test/unit-v1.test.ts",
         "packages/dsh-provider-usage/test/unit-trend.test.ts",
         "packages/dsh-provider-usage/test/unit-trend-view.test.ts",
-        "packages/dsh-provider-usage/test/unit-report.test.ts"
+        "packages/dsh-provider-usage/test/unit-report.test.ts",
+        "packages/dsh-provider-usage/test/unit-routes.test.ts"
       ],
       "segments": {
         "apply": {
@@ -377,6 +378,19 @@
             "!packages/dsh-provider-usage/src/types.ts"
           ],
           "comment": "阶段零新段（D17 分层变异）：E4 报告执行/产出面——runner+generate+format；testFiles 含 unit-report（杀灭面为该层测试）。"
+        },
+        "routes": {
+          "mutate": [
+            "packages/dsh-provider-usage/src/routes/stats.ts",
+            "packages/dsh-provider-usage/src/routes/adapters.ts",
+            "packages/dsh-provider-usage/src/routes/ui.ts",
+            "packages/dsh-provider-usage/src/routes/reports.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-provider-usage/src/client/**",
+            "!packages/dsh-provider-usage/src/types.ts"
+          ],
+          "comment": "阶段一新段（评审 P1-5 前置）：E5/C6 路由面——stats+adapters+ui+reports；先抽纯函数（clampTrendN/isReportPeriodValid/isReportKeyValid/isTaskIdValid）补 unit-routes 再开段；testFiles 含 unit-routes/unit-report/unit-apply。"
         }
       }
     },

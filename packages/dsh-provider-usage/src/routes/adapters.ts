@@ -84,8 +84,7 @@ export async function handleSelect(
   const ok = statsService.registry.select(provider, clearing ? null : adapterName);
   if (!ok) return writeJson(res, 404, { error: "adapter not found" });
 
-  statsService.cache.clear();
-  statsService.panelCache.clear();
+  statsService.purgeAllCaches();
   if (!clearing) statsService.warmupProviders([provider]);
 
   if (clearing) statsService.scheduleWriteAdapterState({ [provider]: null });
@@ -174,8 +173,7 @@ export async function handleAdd(
   await statsService.persistUserAdapter(rec);
   await ensureHotReload(file);
 
-  statsService.cache.clear();
-  statsService.panelCache.clear();
+  statsService.purgeAllCaches();
   statsService.warmupProviders(adapter.providers);
   statsService.scheduleWriteAdapterState();
 
