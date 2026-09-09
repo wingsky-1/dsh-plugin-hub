@@ -15,6 +15,16 @@ import { createNotifierService, KIND_SEVERITY, BUILTIN_CHANNELS, createBarkChann
 
 // ---------------------------------------------------------------- fake deps
 
+/** 轮询直到谓词成立（替代固定 sleep：异步终态经 promise 微任务/定时器回调，轮询比等固定毫秒稳）。 */
+async function pollUntil(predicate, timeoutMs = 2000) {
+  const start = Date.now();
+  for (;;) {
+    if (predicate()) return true;
+    if (Date.now() - start > timeoutMs) return false;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
 /** fake SSE hub（记录 broadcast 帧）。 */
 function fakeSse() {
   const frames = [];
@@ -246,7 +256,7 @@ function makeService(cfgOverrides = {}, hooks = {}) {
   );
   const r = service.sendKind("test", {}, { bypassQuiet: true });
   assert.ok(r.some((x) => x.channelId === "system" && x.status === "ok"), "B4：受理仍 ok（铁律 1：受理与终态解耦）");
-  await new Promise((resolve) => setTimeout(resolve, 10));
+  await pollUntil(() => terminalStates.some((s) => s.channelId === "system"));
   const st = terminalStates.find((s) => s.channelId === "system");
   assert.ok(st && st.status === "failed", "B4：只响不弹自播失败 → status failed");
   const ev = sentEvents.find((e) => e.channelId === "system");
@@ -484,14 +494,14 @@ function fakeOutbound(id, mode = "sync") {
   const r = svc.service.sendKind("test", {}, { bypassQuiet: true, onlyChannel: "bark:phone" });
   assert.ok(r.some((x) => x.channelId === "bark:phone" && x.status === "ok"), "onlyChannel 命中单频道");
   assert.ok(!r.some((x) => x.channelId === "browser"), "per-channel 测试排除其他频道");
-  // fake 频道终态经 promise 微任务回调——先 flush 再断言 status/sent
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  // fake 频道终态经 promise 微任务回调——轮询到账再断言 status/sent
+  await pollUntil(() => svc.terminalStates.some((s) => s.channelId === "bark:phone"));
   assert.ok(svc.terminalStates.some((s) => s.channelId === "bark:phone" && s.status === "ok"), "投递成功落 status");
   assert.ok(svc.sentEvents.some((e) => e.channelId === "bark:phone" && e.status === "ok" && e.kind === "test"), "投递成功发 sent 事件");
   // 异步终态失败：promise reject → status failed + 事件带脱敏错误
   const r2 = await svc.service.send({ source: "t", kind: "error", severity: "failure", body: "x" });
   assert.ok(r2.some((x) => x.channelId === "bark:bad" && x.status === "ok"), "受理与终态解耦（铁律 1）");
-  await new Promise((resolve) => setTimeout(resolve, 10));
+  await pollUntil(() => svc.terminalStates.some((s) => s.channelId === "bark:bad"));
   const badState = svc.terminalStates.find((s) => s.channelId === "bark:bad");
   assert.ok(badState, "异步失败落 status");
   assert.equal(badState.status, "failed");

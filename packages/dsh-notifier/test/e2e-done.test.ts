@@ -33,7 +33,7 @@ try {
   // per-agent 状态机 + 错误通知/合并 + 完成风暴聚合（同一实例）
   {
     const infos = [];
-    const { listeners } = await makeNotifier(work, {}, loggingOverride(infos));
+    const { listeners } = await makeNotifier(work, { doneMergeWindowMs: 50 }, loggingOverride(infos));
     const status = listeners.get("agent/status")[0];
     const disposed = listeners.get("agent/disposed")[0];
     const error = listeners.get("agent/error")[0];
@@ -48,8 +48,8 @@ try {
     assert.match(infos[0], /任务「并行评审代码」已完成/, "完成通知带任务标题");
     assert.match(infos[0], /耗时：/, "完成通知带耗时");
     assert.ok(!infos[0].includes("session-"), "完成通知不暴露会话 id");
-    // 完成风暴聚合窗口（3s）：等上一处完成的窗口结束，保证同 agent 下一轮是独立窗口
-    await waitMergeWindow();
+    // 完成风暴聚合窗口（短窗 50ms）：等上一处完成的窗口结束，保证同 agent 下一轮是独立窗口
+    await waitMergeWindow(50);
     status({ agent: agentWithTitle("session-1", "优化 notifier 插件", { turnEnd: 1 }), status: "idle" });
     assert.equal(infos.length, 2, "session-1 完成独立通知");
     assert.match(infos[1], /任务「优化 notifier 插件」已完成/);
@@ -77,8 +77,8 @@ try {
     assert.equal(infos.length, 4, "不同会话独立合并窗口");
     assert.match(infos[3], /任务「并行评审代码」执行出错/);
 
-    // 完成风暴聚合：窗口内第二条完成不即时，3s 后补发聚合条（防并行收尾刷屏）
-    await waitMergeWindow(); // 窗口清零（error/turn 无完成窗口）
+    // 完成风暴聚合：窗口内第二条完成不即时，窗口到点后补发聚合条（防并行收尾刷屏）
+    await waitMergeWindow(50); // 窗口清零（error/turn 无完成窗口）
     const stormA = turnPair("storm-1", "并行任务A", {}, { turn: 1 });
     status({ agent: stormA.running, status: "running" });
     status({ agent: stormA.idle, status: "idle" });
@@ -87,7 +87,7 @@ try {
     status({ agent: stormB.running, status: "running" });
     status({ agent: stormB.idle, status: "idle" });
     assert.equal(infos.length, 5, "窗口内第二条挂起不即时发");
-    await waitMergeWindow();
+    await waitMergeWindow(50);
     assert.equal(infos.length, 6, "窗口到点补发聚合条");
     assert.match(infos[5], /另有 1 个任务已完成/, "聚合条文案带计数");
     assert.match(infos[5], /并行任务B/, "聚合条带最近标题");
@@ -257,7 +257,7 @@ try {
     // 开启 notifySubagentDone：子代理完成用独立事件类型 subagent-done（标题/耗时）
     {
             const infos = [];
-      const { listeners } = await makeNotifier(work, { notifySubagentDone: true }, loggingOverride(infos));
+      const { listeners } = await makeNotifier(work, { notifySubagentDone: true, doneMergeWindowMs: 50 }, loggingOverride(infos));
       const status = listeners.get("agent/status")[0];
       const subPair = turnPair("sub-2", "子任务B", { subagent: true }, { turn: 1 });
       status({ agent: subPair.running, status: "running" });
@@ -267,8 +267,8 @@ try {
       assert.match(infos[0], /子任务「子任务B」已完成/, "subagent-done 文案带任务标题");
       assert.match(infos[0], /耗时：/, "subagent-done 带耗时");
       assert.ok(!infos[0].includes("sub-2"), "子代理完成通知不暴露会话 id");
-      // 等 subagent-done 的 3s 聚合窗口结束（否则主任务完成会被聚合挂起）
-      await waitMergeWindow();
+      // 等 subagent-done 的聚合窗口（短窗 50ms）结束（否则主任务完成会被聚合挂起）
+      await waitMergeWindow(50);
       const mainPair = turnPair("main-2", "主任务2", {}, { turn: 1 });
       status({ agent: mainPair.running, status: "running" });
       status({ agent: mainPair.idle, status: "idle" });
@@ -521,8 +521,8 @@ try {
     status({ agent: pairB().running, status: "running" });
     status({ agent: pairB().idle, status: "idle" });
     assert.equal(doneCount(), 1, "B-4：窗口内首条即时、第二条挂起");
-    // 等窗口到点：flush 补发聚合条（正常路径）
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // 等窗口到点：flush 补发聚合条（正常路径；短窗 30ms 已注入）
+    await waitMergeWindow(30);
     assert.equal(doneCount(), 2, "B-4：flush 补发聚合条");
     assert.ok(infos.some((t) => /: done /.test(t) && t.includes("另有 1 个任务已完成")), "B-4：聚合条文案带计数");
     // 已提交 turn 不回退：flush 完成后再现 idle（无新 closure 形态）不重复

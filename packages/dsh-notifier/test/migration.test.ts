@@ -31,6 +31,21 @@ async function pollUntil(predicate, timeoutMs = 1000) {
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
 }
+
+/** 轮询「安静期」：谓词持续成立达 quietMs 视为确认——负向观察窗（验证「某事
+ *  不发生」）替代固定 sleep：谓词一旦被破坏立即失败（比等满固定毫秒更早暴露
+ *  回归），无破坏则确认安静期后通过（比固定 wait 更稳：不依赖单次时机命中）。 */
+async function pollUntilQuiet(predicate, quietMs = 80, timeoutMs = 1000) {
+  const start = Date.now();
+  let quiet = 0;
+  for (;;) {
+    if (!predicate()) return false;
+    quiet += 10;
+    if (quiet >= quietMs) return true;
+    if (Date.now() - start > timeoutMs) return false;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
 try {
   // E1：旧 json 存在 → 迁移 + 改名 .migrated.bak
   {
@@ -64,7 +79,9 @@ try {
     const ctx2 = makeFakeCtx({});
     ctx2.ctx.provide("settings", shared.service);
     apply(ctx2.ctx, { enabled: true, configFile: legacy, historyFile: join(work, "e2-hist.jsonl") });
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    // 负向观察窗：安静期内不得新增 update 调用（幂等跳过）；一旦误写立即失败
+    const quietOk = await pollUntilQuiet(() => shared.getUpdateCalls().length === callsAfterFirst, 80);
+    assert.ok(quietOk, "E2：二次启动幂等跳过（不重复写入 settings）");
     const callsAfterSecond = shared.getUpdateCalls().length;
     assert.equal(callsAfterSecond, callsAfterFirst, "E2：二次启动幂等跳过（不重复写入 settings）");
     assert.equal(shared.getUser().notifyAsk, false, "E2：user 层保留首次迁移结果");
@@ -85,7 +102,9 @@ try {
     const legacy = join(work, "e4-dsh-notifier.json");
     writeFileSync(legacy, "{ not json !!!");
     const { settings } = makeNotifier(work, { configFile: legacy });
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    // 负向观察窗：user 层必须保持空（损坏不写入）；一旦误写立即失败
+    const quietOk = await pollUntilQuiet(() => Object.keys(settings.getUser()).length === 0, 80);
+    assert.ok(quietOk, "E4：损坏 json 不写入 settings user 层");
     assert.deepEqual(settings.getUser(), {}, "E4：损坏 json 不写入 settings user 层");
     assert.ok(existsSync(legacy + ".corrupted.bak"), "E4：损坏 json 改名 .corrupted.bak 标记");
     assert.ok(!existsSync(legacy), "E4：损坏原文件已改名");
@@ -96,7 +115,8 @@ try {
     const legacy = join(work, "e4b-dsh-notifier.json");
     writeFileSync(legacy, "123");
     const { settings } = makeNotifier(work, { configFile: legacy });
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    const quietOk = await pollUntilQuiet(() => Object.keys(settings.getUser()).length === 0, 80);
+    assert.ok(quietOk, "E4b：非对象 json 不写入");
     assert.deepEqual(settings.getUser(), {}, "E4b：非对象 json 不写入");
     assert.ok(existsSync(legacy + ".corrupted.bak"), "E4b：非对象 json 改名 .corrupted.bak");
   }
@@ -138,7 +158,8 @@ try {
     };
     ctx.provide("settings", failingSettings);
     apply(ctx, { enabled: true, configFile: legacy, historyFile: join(work, "e6-hist.jsonl") });
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    // 迁移失败 warn 出现 = 异步迁移链走完（warn 在回滚改名之后输出）→ 事件驱动替代固定 sleep
+    await pollUntil(() => warns.length > 0);
     assert.ok(existsSync(legacy), "E6：写入失败回滚，原 json 还原");
     assert.ok(warns.some((w) => w.includes("迁移")), "E6：迁移失败输出 warn 日志");
     assert.ok(routes.length >= 5, "E6：迁移失败不阻塞路由注册");
