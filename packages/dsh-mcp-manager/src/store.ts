@@ -5,7 +5,7 @@
  * 由 lib/index.js 组合根 re-export。
  */
 
-import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { dshHome } from "../../../shared/dsh-home.js";
@@ -60,9 +60,19 @@ export class McpStore {
   async save() {
     const dir = dirname(this.path);
     if (!existsSync(dir)) await mkdir(dir, { recursive: true });
-    const tmp = `${this.path}.tmp`;
-    await writeFile(tmp, JSON.stringify(this.data, null, 2), { encoding: "utf8", mode: 0o600 });
-    await rename(tmp, this.path);
+    // B17：唯一 tmp 名（pid+时间戳）防并发写相互踩踏；失败时清理残留后上抛。
+    const tmp = `${this.path}.tmp.${process.pid}.${Date.now()}`;
+    try {
+      await writeFile(tmp, JSON.stringify(this.data, null, 2), { encoding: "utf8", mode: 0o600 });
+      await rename(tmp, this.path);
+    } catch (error) {
+      try {
+        await rm(tmp, { force: true });
+      } catch {
+        // 清理失败忽略：tmp 可能未创建，或权限问题，主错误优先上抛
+      }
+      throw error;
+    }
     try {
       this.mtimeMs = (await stat(this.path)).mtimeMs;
     } catch {
