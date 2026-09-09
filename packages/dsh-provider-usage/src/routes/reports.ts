@@ -48,6 +48,22 @@ const REPORT_PERIODS = new Set<ReportPeriod>(["daily", "weekly", "monthly"]);
 /** taskId 白名单（uuid v4）。 */
 const TASK_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
+/** 报告周期白名单（period 合法性独立校验，保持 invalid-period/invalid-key 双错误码语义）。 */
+export function isReportPeriodValid(period: string): boolean {
+  return REPORT_PERIODS.has(period as ReportPeriod);
+}
+
+/** 报告窗口键合法性（period+key 双白名单；抽离供路由与单测共用，变异段前置）。 */
+export function isReportKeyValid(period: string, key: string): boolean {
+  if (!REPORT_PERIODS.has(period as ReportPeriod)) return false;
+  return REPORT_KEY_RES[period as ReportPeriod].test(key);
+}
+
+/** 生成任务 taskId 合法性（uuid v4 白名单；抽离供路由与单测共用）。 */
+export function isTaskIdValid(taskId: string): boolean {
+  return TASK_ID_RE.test(taskId);
+}
+
 export async function handleReportConfig(
   req: IncomingMessage,
   res: ServerResponse,
@@ -166,10 +182,10 @@ export async function handleReportDetail(
   const url = new URL(req.url ?? "/", "http://localhost");
   const period = url.searchParams.get("period") ?? "";
   const key = url.searchParams.get("key") ?? "";
-  if (!REPORT_PERIODS.has(period as ReportPeriod)) {
+  if (!isReportPeriodValid(period)) {
     return writeJson(res, 400, { error: "invalid-period" });
   }
-  if (!REPORT_KEY_RES[period as ReportPeriod].test(key)) {
+  if (!isReportKeyValid(period, key)) {
     return writeJson(res, 400, { error: "invalid-key" });
   }
 
@@ -207,7 +223,7 @@ export async function handleReportGenerate(
   }
 
   const period = body.period;
-  if (typeof period !== "string" || !REPORT_PERIODS.has(period as ReportPeriod)) {
+  if (typeof period !== "string" || !isReportPeriodValid(period)) {
     return writeJson(res, 400, { error: "invalid-period" });
   }
   // #626：force 必须严格 === true 才生效（防御 "force":"false" 等字符串形态）
@@ -239,7 +255,7 @@ export async function handleReportStatus(
   const { reportQueue } = context;
   const url = new URL(req.url ?? "/", "http://localhost");
   const taskId = url.searchParams.get("taskId") ?? "";
-  if (!TASK_ID_RE.test(taskId)) return writeJson(res, 404, { error: "task-not-found" });
+  if (!isTaskIdValid(taskId)) return writeJson(res, 404, { error: "task-not-found" });
   const task = reportQueue.get(taskId);
   if (task === undefined) return writeJson(res, 404, { error: "task-not-found" });
   writeJson(res, 200, {

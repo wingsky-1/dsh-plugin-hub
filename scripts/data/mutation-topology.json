@@ -251,7 +251,11 @@
         "packages/dsh-provider-usage/test/unit-deepseek-official.test.ts",
         "packages/dsh-provider-usage/test/unit-history.test.ts",
         "packages/dsh-provider-usage/test/unit-signal-lock.test.ts",
-        "packages/dsh-provider-usage/test/unit-v1.test.ts"
+        "packages/dsh-provider-usage/test/unit-v1.test.ts",
+        "packages/dsh-provider-usage/test/unit-trend.test.ts",
+        "packages/dsh-provider-usage/test/unit-trend-view.test.ts",
+        "packages/dsh-provider-usage/test/unit-report.test.ts",
+        "packages/dsh-provider-usage/test/unit-routes.test.ts"
       ],
       "segments": {
         "apply": {
@@ -297,23 +301,25 @@
             "packages/dsh-provider-usage/src/path-resolve.ts",
             "packages/dsh-provider-usage/src/client-logic.ts",
             "packages/dsh-provider-usage/src/provider-config.ts",
-            "packages/dsh-provider-usage/src/charts.ts"
+            "packages/dsh-provider-usage/src/charts.ts",
+            "packages/dsh-provider-usage/src/stats-service.ts"
           ],
           "excludes": [
             "!packages/dsh-provider-usage/src/client/**",
             "!packages/dsh-provider-usage/src/types.ts"
           ],
-          "comment": "#342 v4：src 级文件组分段（5）——history/v2/hotreload/placement-math/path-resolve/client-logic/provider-config/charts（历史/管线/热更/图表面；charts 纳入修复变异盲区）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+          "comment": "#342 v4：src 级文件组分段（5）——history/v2/hotreload/placement-math/path-resolve/client-logic/provider-config/charts/stats-service（历史/管线/热更/图表/C3 服务面；charts 纳入修复变异盲区；阶段零补 stats-service 盲区）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
         },
         "registry": {
           "mutate": [
-            "packages/dsh-provider-usage/src/registry.ts"
+            "packages/dsh-provider-usage/src/registry.ts",
+            "packages/dsh-provider-usage/src/user-adapter-loader.ts"
           ],
           "excludes": [
             "!packages/dsh-provider-usage/src/client/**",
             "!packages/dsh-provider-usage/src/types.ts"
           ],
-          "comment": "#342 二期：功能命名段（registry）——registry（注册表域，25s）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+          "comment": "#342 二期：功能命名段（registry）——registry+user-adapter-loader（注册表域，25s；阶段零补 loader 盲区）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
         },
         "sanitize": {
           "mutate": [
@@ -324,6 +330,67 @@
             "!packages/dsh-provider-usage/src/types.ts"
           ],
           "comment": "#342 二期：功能命名段（sanitize）——sanitize（数据净化域，115s）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+        },
+        "trend-aggregate": {
+          "mutate": [
+            "packages/dsh-provider-usage/src/trend/aggregator.ts",
+            "packages/dsh-provider-usage/src/trend/store.ts",
+            "packages/dsh-provider-usage/src/trend/index.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-provider-usage/src/client/**",
+            "!packages/dsh-provider-usage/src/types.ts"
+          ],
+          "comment": "阶段零新段（D17 分层变异）：E2 聚合/压实/存储面——aggregator+store+index（目录维度与 provider 面查询）；testFiles 含 unit-trend/unit-trend-view（杀灭面为该层测试）；aggregator 单文件 5-8 分钟，独立段防超时。"
+        },
+        "trend-collect": {
+          "mutate": [
+            "packages/dsh-provider-usage/src/trend/collector.ts",
+            "packages/dsh-provider-usage/src/trend/types.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-provider-usage/src/client/**",
+            "!packages/dsh-provider-usage/src/types.ts"
+          ],
+          "comment": "阶段零新段（D17 分层变异）：E1 事件采集面——collector+types（折叠状态机/归属归一）；testFiles 含 unit-trend（杀灭面为该层测试）。"
+        },
+        "report-schedule": {
+          "mutate": [
+            "packages/dsh-provider-usage/src/report/config.ts",
+            "packages/dsh-provider-usage/src/report/schedule.ts",
+            "packages/dsh-provider-usage/src/report/scheduler.ts",
+            "packages/dsh-provider-usage/src/report/tasks.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-provider-usage/src/client/**",
+            "!packages/dsh-provider-usage/src/types.ts"
+          ],
+          "comment": "阶段零新段（D17 分层变异）：E3 报告配置/调度面——config+schedule+scheduler+tasks；testFiles 含 unit-report（杀灭面为该层测试）。"
+        },
+        "report-execute": {
+          "mutate": [
+            "packages/dsh-provider-usage/src/report/runner.ts",
+            "packages/dsh-provider-usage/src/report/generate.ts",
+            "packages/dsh-provider-usage/src/report/format.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-provider-usage/src/client/**",
+            "!packages/dsh-provider-usage/src/types.ts"
+          ],
+          "comment": "阶段零新段（D17 分层变异）：E4 报告执行/产出面——runner+generate+format；testFiles 含 unit-report（杀灭面为该层测试）。"
+        },
+        "routes": {
+          "mutate": [
+            "packages/dsh-provider-usage/src/routes/stats.ts",
+            "packages/dsh-provider-usage/src/routes/adapters.ts",
+            "packages/dsh-provider-usage/src/routes/ui.ts",
+            "packages/dsh-provider-usage/src/routes/reports.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-provider-usage/src/client/**",
+            "!packages/dsh-provider-usage/src/types.ts"
+          ],
+          "comment": "阶段一新段（评审 P1-5 前置）：E5/C6 路由面——stats+adapters+ui+reports；先抽纯函数（clampTrendN/isReportPeriodValid/isReportKeyValid/isTaskIdValid）补 unit-routes 再开段；testFiles 含 unit-routes/unit-report/unit-apply。"
         }
       }
     },

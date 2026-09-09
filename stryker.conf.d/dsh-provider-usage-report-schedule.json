@@ -1,15 +1,10 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-provider-usage/src/core/history.ts",
-    "packages/dsh-provider-usage/src/pipeline/v2.ts",
-    "packages/dsh-provider-usage/src/hotreload.ts",
-    "shared/placement-math.js",
-    "packages/dsh-provider-usage/src/path-resolve.ts",
-    "packages/dsh-provider-usage/src/client-logic.ts",
-    "packages/dsh-provider-usage/src/provider-config.ts",
-    "packages/dsh-provider-usage/src/charts.ts",
-    "packages/dsh-provider-usage/src/stats-service.ts",
+    "packages/dsh-provider-usage/src/report/config.ts",
+    "packages/dsh-provider-usage/src/report/schedule.ts",
+    "packages/dsh-provider-usage/src/report/scheduler.ts",
+    "packages/dsh-provider-usage/src/report/tasks.ts",
     "!packages/dsh-provider-usage/src/client/**",
     "!packages/dsh-provider-usage/src/types.ts"
   ],
@@ -58,9 +53,9 @@
     ]
   },
   "jsonReporter": {
-    "fileName": "coverage/mutation/dsh-provider-usage-pipeline.json"
+    "fileName": "coverage/mutation/dsh-provider-usage-report-schedule.json"
   },
   "incremental": true,
-  "incrementalFile": "coverage/mutation/incremental-provider-usage-pipeline.json",
-  "_comment": "#342 v4：src 级文件组分段（5）——history/v2/hotreload/placement-math/path-resolve/client-logic/provider-config/charts/stats-service（历史/管线/热更/图表/C3 服务面；charts 纳入修复变异盲区；阶段零补 stats-service 盲区）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+  "incrementalFile": "coverage/mutation/incremental-provider-usage-report-schedule.json",
+  "_comment": "阶段零新段（D17 分层变异）：E3 报告配置/调度面——config+schedule+scheduler+tasks；testFiles 含 unit-report（杀灭面为该层测试）。"
 }

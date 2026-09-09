@@ -5,7 +5,6 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import { guardLoopbackMethod, writeJson } from "../../../../shared/host-utils.js";
 import { ADAPTER_CONTRACT_VERSION } from "../contracts.ts";
-import { isPanelCacheStale, panelCacheKey, runV2PanelPipeline } from "../pipeline/v2.ts";
 import type { StatsService } from "../stats-service.ts";
 
 export interface StatsRoutesContext {
@@ -89,33 +88,9 @@ export async function handleHistory(
     ? end - Math.min(Math.round(days), statsService.config.maxAgeDays) * 86400000
     : end - 86400000;
 
-  const cacheKey = panelCacheKey(prov, entry.name, { start, end });
-  const hitEntry = statsService.panelCache.get(cacheKey);
-  if (hitEntry !== undefined && !isPanelCacheStale(hitEntry, Date.now())) {
-    return writeJson(res, 200, {
-      ok: hitEntry.error === undefined,
-      plugin: "dsh-provider-usage",
-      version: ADAPTER_CONTRACT_VERSION,
-      provider: prov,
-      adapterName: entry.name,
-      panelHtml: hitEntry.panelHtml,
-      error: hitEntry.error ?? null,
-      range: { start, end },
-    });
-  }
-
-  statsService.panelCache.delete(cacheKey);
-  const result = await runV2PanelPipeline({
-    adapter: entry.adapter,
-    provider: prov,
-    history: statsService.history,
-    range: { start, end },
-    timeoutMs: statsService.config.fetchTimeoutMs,
-  });
-
-  if (result.error === undefined) {
-    statsService.panelCache.set(cacheKey, { panelHtml: result.panelHtml, error: result.error, at: Date.now() });
-  }
+  // D7：面板渲染管道整体下沉 StatsService.getPanelResult（命中/miss/失败不写/并发单飞
+  // 均在服务方法内），路由不再直读写 panelCache 内部。
+  const result = await statsService.getPanelResult(prov, entry, { start, end });
 
   writeJson(res, 200, {
     ok: result.error === undefined,

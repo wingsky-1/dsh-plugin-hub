@@ -43,7 +43,7 @@ export function handleHealth(
     plugin: "dsh-provider-usage",
     version: ADAPTER_CONTRACT_VERSION,
     provider: statsService.config.provider,
-    cacheSize: statsService.cache.size,
+    cacheSize: statsService.cacheSize(),
     adapters: snap.infos.map((i) => ({
       name: i.name,
       label: i.label,
