@@ -32,6 +32,8 @@ await import("./unit-sanitize.test.ts");
 await import("./unit-sse-hub.test.ts");
 // PR0 红测先行 5：server.ts createSseHub 业务包装（seq/600 帧缓冲/framesSince）
 await import("./unit-server-sse-bus.test.ts");
+// PR0 红测先行 1：system-notifier spawn 注入直测（节流/杀进程/失败终态——T3-3 零断言闭合）
+await import("./unit-system-notifier.test.ts");
 // #508 M2：webhook 频道（渲染/注入防护/认证头/掩码泛化/配置契约）
 await import("./unit-webhook.test.ts");
 

@@ -142,12 +142,23 @@ let lastSystemOutcome = true;
  * 创建系统通知通道。
  * @param options.toastScript toast.ps1 路径。
  * @param options.warn 日志出口（ctx.logger.warn）。
+ * @param options.execFileImpl 探测实现注入（缺省 node:child_process execFile）——
+ *   测试注入 fake 消除真实 execFile（PR0 红测先行 1；行为无关，缺省语义不变）。
+ * @param options.spawnImpl spawn 实现注入（缺省 node:child_process spawn）——同上，
+ *   测试注入 fake 消除真实子进程 spawn 面（T3-3）。
+ * @param options.killTimeoutMs 子进程超时杀进程毫秒（缺省 8000；测试注入短值）。
  */
 export function createSystemNotifier(options: {
   toastScript: string;
   warn: (message: string) => void;
+  execFileImpl?: typeof execFile;
+  spawnImpl?: typeof spawn;
+  killTimeoutMs?: number;
 }): SystemNotifier {
   const { toastScript, warn } = options;
+  const exec = options.execFileImpl ?? execFile;
+  const runSpawn = options.spawnImpl ?? spawn;
+  const killTimeoutMs = options.killTimeoutMs ?? 8000;
 
   /** 系统通知节流间隔：防连发（生产密集事件/连点测试按钮）造成 spawn 风暴。 */
   const SYSTEM_NOTIFY_THROTTLE_MS = 1000;
@@ -157,7 +168,7 @@ export function createSystemNotifier(options: {
    *  不依赖此探测，故不在 macOS 上无谓尝试缺失的 notify-send）。异步，只探一次。 */
   let notifySendAvailable: boolean | undefined = undefined;
   if (process.platform === "linux") {
-    execFile("notify-send", ["--version"], { timeout: 3000 }, (error) => {
+    exec("notify-send", ["--version"], { timeout: 3000 }, (error) => {
       notifySendAvailable = error === null;
     });
   }
@@ -167,12 +178,12 @@ export function createSystemNotifier(options: {
   // 不可用，见 error handler；P1-2 修订）。异步只探一次。
   let selfPlayBin: string | undefined = undefined;
   if (process.platform === "linux") {
-    execFile("pw-play", ["--version"], { timeout: 3000 }, (err1) => {
+    exec("pw-play", ["--version"], { timeout: 3000 }, (err1) => {
       if (err1 === null) {
         selfPlayBin = "pw-play";
         return;
       }
-      execFile("paplay", ["--version"], { timeout: 3000 }, (err2) => {
+      exec("paplay", ["--version"], { timeout: 3000 }, (err2) => {
         if (err2 === null) selfPlayBin = "paplay";
       });
     });
@@ -190,7 +201,7 @@ export function createSystemNotifier(options: {
         // 关键：原生二进制缺失/不可执行（ENOENT 等）必须被下方 error 事件接住，
         // 绝不能冒泡成 unhandled 'error' 把宿主进程打挂——历史版本在 macOS 上因
         // 直接 spawn powershell 失败且未挂 error 监听而崩溃（见 issue #1）。
-        child = spawn(bin, argv, process.platform === "win32" ? { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] } : { stdio: "ignore" });
+        child = runSpawn(bin, argv, process.platform === "win32" ? { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] } : { stdio: "ignore" });
       } catch (error) {
         warn(`dsh-notifier: 命令启动失败（${bin}）: ${errorMessage(error)}`);
         return resolveResult(false);
@@ -210,7 +221,7 @@ export function createSystemNotifier(options: {
         } catch {
           // 忽略
         }
-      }, 8000);
+      }, killTimeoutMs);
       // 任何退出码都先清杀手定时器；非 0 且非被信号杀死（null）才记日志，
       // 避免把「我们主动 8s 超时杀掉子进程」也当成异常刷屏。
       let settled = false;
