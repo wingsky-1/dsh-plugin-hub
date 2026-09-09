@@ -6,7 +6,7 @@
  * 失败仅记 warn），read/clear 服务 /history 路由。
  */
 import { readFile, writeFile, rename } from "node:fs/promises";
-import { errorMessage } from "../../../shared/host-utils.js";
+import { errorMessage } from "../../../../shared/host-utils.js";
 
 /** 通知历史滚动上限（行数；超出后从尾部截断重写）。 */
 export const HISTORY_LIMIT = 200;

@@ -54,10 +54,10 @@ export const LAN_PROXY_UI_EXEMPT = {
 // 设置卡不直接渲染/编辑该顶层键（quietHours.allowKinds 子键在客户端免打扰块内
 // 编辑，属 quietHours 内部不作顶层断言）。唯一豁免，条数 ≤8 满足。
 export const NOTIFIER_UI_EXEMPT = {
-  allowKinds: 'packages/dsh-notifier/src/config.ts:157 服务端动态 kind 确认清单（POST /kinds 管理），客户端不直接渲染顶层键',
+  allowKinds: 'packages/dsh-notifier/src/config/config.ts:141 服务端动态 kind 确认清单（POST /kinds 管理），客户端不直接渲染顶层键',
   // #640/#641：notifySound 废弃只读兼容别名——UI 不再渲染/编辑（新键
   // browserSound/systemSound 取代；读取回落经 resolveSoundSetting，见 config.ts）。
-  notifySound: 'packages/dsh-notifier/src/config.ts:136 废弃只读兼容别名（每通道新键取代），客户端不再渲染',
+  notifySound: 'packages/dsh-notifier/src/config/config.ts:120 废弃只读兼容别名（每通道新键取代），客户端不再渲染',
 }
 
 /** 豁免白名单结构自检：≤8 键 + 每条原因注释（含「文件:行」+ 一句理由）。 */
@@ -176,12 +176,17 @@ function runLanProxy(root) {
 function runNotifier(root) {
   const problems = []
   const lines = []
-  const cfgPath = join(root, 'packages/dsh-notifier/src/config.ts')
+  // #669 PR1 目录树搬家：notifier 配置域拆三文件——DEFAULT_CONFIG/CONFIG_KEYS
+  // 在 config/config.ts、SETTING_VALIDATORS/SETTING_HINTS 在 config/validators.ts、
+  // normalizeConfig 在 config/normalize.ts（矩阵输入文件随事实源位置同步）。
+  const cfgPath = join(root, 'packages/dsh-notifier/src/config/config.ts')
+  const validatorsPath = join(root, 'packages/dsh-notifier/src/config/validators.ts')
+  const normalizePath = join(root, 'packages/dsh-notifier/src/config/normalize.ts')
   const clientPath = join(root, 'packages/dsh-notifier/src/client/index.tsx')
 
   const def = loadTable(cfgPath, 'DEFAULT_CONFIG', 'object')
-  const validators = loadTable(cfgPath, 'SETTING_VALIDATORS', 'object')
-  const hints = loadTable(cfgPath, 'SETTING_HINTS', 'object')
+  const validators = loadTable(validatorsPath, 'SETTING_VALIDATORS', 'object')
+  const hints = loadTable(validatorsPath, 'SETTING_HINTS', 'object')
   const configKeys = loadTable(cfgPath, 'CONFIG_KEYS', 'arrayStrings')
   const failed = [def, validators, hints, configKeys].filter((t) => t.err)
   if (failed.length > 0) {
@@ -210,10 +215,13 @@ function runNotifier(root) {
   for (const k of d2b.missing) problems.push(`notifier DEFAULT_CONFIG 布尔键未入 CONFIG_KEYS: ${k} @ ${cfgPath}:${def.line}`)
 
   // N3：normalizeConfig 分支目标键 ⊇ DEFAULT_CONFIG（CONFIG_KEYS ∪ 显式分支 ∪ M2）
-  const fnNode = findTopFn(def.ast, 'normalizeConfig')
-  const normalizeLine = sourceLineOf(def.text, 'normalizeConfig')
+  //（#669 PR1 后 normalizeConfig 在 config/normalize.ts，单独读文件解析）
+  let normalizeText = null
+  try { normalizeText = readFileSync(normalizePath, 'utf8') } catch { normalizeText = null }
+  const fnNode = (normalizeText === null) ? null : findTopFn(parseTs(normalizeText, 'ts'), 'normalizeConfig')
+  const normalizeLine = normalizeText === null ? null : sourceLineOf(normalizeText, 'normalizeConfig')
   if (!fnNode) {
-    problems.push(`notifier normalizeConfig 声明缺失 @ ${cfgPath}${normalizeLine ? `:${normalizeLine}` : ''}`)
+    problems.push(`notifier normalizeConfig 声明缺失 @ ${normalizePath}${normalizeLine ? `:${normalizeLine}` : ''}`)
   } else {
     const branch = collectNormalizeBranchKeys(fnNode)
     // 归一化「真实发生」的静态证据 = base.<key> 赋值键（显式分支把归一化结果写回
@@ -224,7 +232,7 @@ function runNotifier(root) {
     const target = new Set([...baseKeys, ...configKeys.keys])
     const d3 = diffKeys(base, [...target])
     for (const k of d3.missing) {
-      problems.push(`notifier normalizeConfig 漏分支键: ${k} @ ${cfgPath}:${normalizeLine ?? '?'}（base.<key> 归一化赋值 ∪ CONFIG_KEYS 未覆盖该键）`)
+      problems.push(`notifier normalizeConfig 漏分支键: ${k} @ ${normalizePath}:${normalizeLine ?? '?'}（base.<key> 归一化赋值 ∪ CONFIG_KEYS 未覆盖该键）`)
     }
     // 排除表孤儿键：=== "键" 判定列出的**配置键名**（∈ DEFAULT_CONFIG 全集，typeof
     // 类型串 object/boolean/string 天然不在键集内不参与）既不在 base 赋值也不在
@@ -233,13 +241,13 @@ function runNotifier(root) {
     for (const k of branch.eqLiterals) {
       if (!baseSet.has(k)) continue // 非配置键名的 === 字面量（typeof 判定等）忽略
       if (!baseKeys.has(k) && !configKeys.keys.includes(k)) {
-        problems.push(`notifier normalizeConfig 透传排除表孤儿键: ${k} @ ${cfgPath}:${normalizeLine ?? '?'}（排除表列了不再归一化的键）`)
+        problems.push(`notifier normalizeConfig 透传排除表孤儿键: ${k} @ ${normalizePath}:${normalizeLine ?? '?'}（排除表列了不再归一化的键）`)
       }
     }
     // quietHours 嵌套子键不变量（enabled/start/end/allowKinds 均须有 qh 分支目标）
     const qhMembers = branch.members.qh ?? []
     for (const q of ['enabled', 'start', 'end', 'allowKinds']) {
-      if (!qhMembers.includes(q)) problems.push(`notifier normalizeConfig quietHours 漏子键分支: ${q} @ ${cfgPath}:${normalizeLine ?? '?'}`)
+      if (!qhMembers.includes(q)) problems.push(`notifier normalizeConfig quietHours 漏子键分支: ${q} @ ${normalizePath}:${normalizeLine ?? '?'}`)
     }
   }
 

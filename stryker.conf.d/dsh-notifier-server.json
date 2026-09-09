@@ -2,9 +2,10 @@
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
     "packages/dsh-notifier/src/index.ts",
-    "packages/dsh-notifier/src/server.ts",
-    "!packages/dsh-notifier/src/client/**",
-    "!packages/dsh-notifier/src/types.ts"
+    "packages/dsh-notifier/src/server/routes.ts",
+    "packages/dsh-notifier/src/server/sse-bus.ts",
+    "packages/dsh-notifier/src/server/system-notifier.ts",
+    "!packages/dsh-notifier/src/client/**"
   ],
   "testRunner": "tap",
   "mutator": {
@@ -40,12 +41,19 @@
       "packages/dsh-notifier/test/e2e-approval.test.ts",
       "packages/dsh-notifier/test/e2e-done.test.ts",
       "packages/dsh-notifier/test/e2e-edge.test.ts",
+      "packages/dsh-notifier/test/e2e-interrupt.test.ts",
       "packages/dsh-notifier/test/e2e-question-turn.test.ts",
       "packages/dsh-notifier/test/migration.test.ts",
       "packages/dsh-notifier/test/routes.test.ts",
       "packages/dsh-notifier/test/unit-config.test.ts",
       "packages/dsh-notifier/test/unit-sanitize.test.ts",
-      "packages/dsh-notifier/test/unit-text.test.ts"
+      "packages/dsh-notifier/test/unit-text.test.ts",
+      "packages/dsh-notifier/test/unit-sse-hub.test.ts",
+      "packages/dsh-notifier/test/unit-webhook.test.ts",
+      "packages/dsh-notifier/test/real-context.test.ts",
+      "packages/dsh-notifier/test/service-contract.test.ts",
+      "packages/dsh-notifier/test/client-contract.test.ts",
+      "packages/dsh-notifier/test/client-style.test.ts"
     ]
   },
   "jsonReporter": {
@@ -53,5 +61,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-notifier-server.json",
-  "_comment": "#342 二期：功能命名段（server）——index+server（事件/连接域）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+  "_comment": "#669 PR1：index + server 域三文件（routes/sse-bus/system-notifier）路径随目录树搬家同步；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
 }

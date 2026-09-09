@@ -1,17 +1,16 @@
 /**
  * dsh-notifier — 审批/完成/错误事件通知（宿主端）。
  *
- * 本文件只做装配：apply + 事件订阅 + 生命周期清理。职责划分：
- * - config.ts          配置契约/默认值/validateSettings/sanitize*Settings/迁移源路径
- * - quiet-hours.ts     免打扰判定（parseHHMM / isInQuietHours）
- * - message.ts         通知文案单表/脱敏/格式化/agent 事件读取（纯函数）
- * - history.ts         通知历史 jsonl 存储（滚动/按天清理/原子写）
- * - settings.ts        官方 settings 命名空间接线（installNotifierSettings，issue #76）
- * - settings-bridge.ts settings 状态镜像维护、读写通道与存量迁移（#592）
- * - outbound.ts        出站频道解析与限流门管理（#592）
- * - event-handlers.ts  审批/完成/错误/会话事件处理与判定状态机（#592）
- * - migrate.ts         存量自建 json 一次性迁移（E1-E7/R1）
- * - server.ts          SSE 枢纽 + 系统通知通道 + HTTP 路由
+ * 本文件只做装配：apply + 事件订阅 + 生命周期清理；唯一允许 import 全部域
+ * interface.ts 的汇聚点（§3 门面纪律）。职责划分按目标目录树：
+ * - config/      配置契约/归一化/校验/脱敏/路径/免打扰/settings 接线/桥/迁移
+ * - text/        文案单表/脱敏/格式化/系统命令构造（纯函数）
+ * - channels/    内置与配置驱动频道（browser/system/bark/webhook/outbound）
+ * - server/      SSE 枢纽/系统通知通道/HTTP 路由
+ * - pipeline/    裁决与投递纯函数（PR1 机械提炼；PR2 行为重构）
+ * - sdk/         通知中心 service（对外 ABI 实现）
+ * - events/      事件处理器/完成聚合/会话读取
+ * - stores/      历史 jsonl / 投递状态存储
  */
 import type { Context } from "@deepseek-ai/cordis";
 import type {} from "@deepseek-ai/dsh-session/types";
@@ -21,32 +20,29 @@ import { errorMessage } from "../../../shared/host-utils.js";
 import {
   CONFIG_KEYS,
   DEFAULT_CONFIG,
+  SETTINGS_NS,
   configFile,
+  createSettingsBridge,
   historyFile,
-  statusFile,
+  installNotifierSettings,
+  isInQuietHours,
+  migrateLegacyConfig,
   normalizeConfig,
-  sanitizeSettings,
-  toastScriptPath,
   resolveSoundSetting,
-} from "./config.ts";
-import type { NotifierApplyConfig, NotifyConfig } from "./config.ts";
-import { isInQuietHours } from "./quiet-hours.ts";
-import { HISTORY_LIMIT, createHistoryStore } from "./history.ts";
-import { createDoneBatcher } from "./aggregate.ts";
-import type { DoneBatcher } from "./aggregate.ts";
-import { sanitizeErrorText, sessionTitleOf, isSubagentOf, lastTurnEndOf } from "./message.ts";
-import type { NotifyDetail, SubagentOwnership } from "./message.ts";
-import { SETTINGS_NS, installNotifierSettings } from "./settings.ts";
-import { migrateLegacyConfig } from "./migrate.ts";
-import { ROUTES, buildRoutes, createSseHub, createSystemNotifier } from "./server.ts";
-import { createNotifierService } from "./service.ts";
-import type { NotifierServiceInternal, NotifyChannel, NotifySentEvent } from "./service.ts";
-import { createStatusStore } from "./status.ts";
-import { createBarkChannel, createBarkGate } from "./channel-bark.ts";
-import { createWebhookChannel } from "./channel-webhook.ts";
-import { createSettingsBridge } from "./settings-bridge.ts";
-import { createOutboundChannelResolver } from "./outbound.ts";
-import { createEventHandlers } from "./event-handlers.ts";
+  sanitizeSettings,
+  statusFile,
+  toastScriptPath,
+} from "./config/interface.ts";
+import type { NotifierApplyConfig, NotifyConfig } from "./config/interface.ts";
+import { HISTORY_LIMIT, createHistoryStore, createStatusStore } from "./stores/interface.ts";
+import { createDoneBatcher, createEventHandlers } from "./events/interface.ts";
+import type { DoneBatcher, SubagentOwnership } from "./events/interface.ts";
+import { sanitizeErrorText } from "./text/interface.ts";
+import type { NotifyDetail } from "./text/interface.ts";
+import { ROUTES, buildRoutes, createSseHub, createSystemNotifier } from "./server/interface.ts";
+import { createNotifierService } from "./sdk/interface.ts";
+import type { NotifierServiceInternal, NotifySentEvent } from "./sdk/interface.ts";
+import { createBarkChannel, createBarkGate, createOutboundChannelResolver, createWebhookChannel } from "./channels/interface.ts";
 
 /** 稳定的 cordis 插件名。 */
 export const name = "notifier";
@@ -55,10 +51,11 @@ export const name = "notifier";
 export const inject = ["webServer"];
 
 // ---------------------------------------------------------------- 导出面
-// 公共符号定义在各职责模块，此处统一 re-export——包导出面与拆分前完全一致。
+// 公共符号定义在各域，此处统一 re-export（全部经域 interface.ts 收口）——
+// 包导出面与拆分前完全一致（导出面快照门禁零 diff）。
 
-export { QUIET_ALLOW_KINDS, isInQuietHours, parseHHMM } from "./quiet-hours.ts";
-export type { QuietHoursConfig } from "./quiet-hours.ts";
+export { QUIET_ALLOW_KINDS, isInQuietHours, parseHHMM } from "./config/interface.ts";
+export type { QuietHoursConfig } from "./config/interface.ts";
 export {
   CONFIG_KEYS,
   DEFAULT_CONFIG,
@@ -81,13 +78,13 @@ export {
   SOUND_IDS,
   isSoundSetting,
   resolveSoundSetting,
-} from "./config.ts";
-export type { NotifierApplyConfig, NotifyConfig, SettingInvalid, BarkChannelConfig, BarkLevel, SoundId, SoundSetting, SoundChannel } from "./config.ts";
-export { HISTORY_LIMIT } from "./history.ts";
-export { SETTINGS_NS, installNotifierSettings } from "./settings.ts";
-export { migrateLegacyConfig, MIGRATED_BAK_SUFFIX, CORRUPTED_BAK_SUFFIX } from "./migrate.ts";
-export { createStatusStore } from "./status.ts";
-export type { StatusStore, ChannelStatusEntry } from "./status.ts";
+} from "./config/interface.ts";
+export type { NotifierApplyConfig, NotifyConfig, SettingInvalid, BarkChannelConfig, BarkLevel, SoundId, SoundSetting, SoundChannel } from "./config/interface.ts";
+export { HISTORY_LIMIT } from "./stores/interface.ts";
+export { SETTINGS_NS, installNotifierSettings } from "./config/interface.ts";
+export { migrateLegacyConfig, MIGRATED_BAK_SUFFIX, CORRUPTED_BAK_SUFFIX } from "./config/interface.ts";
+export { createStatusStore } from "./stores/interface.ts";
+export type { StatusStore, ChannelStatusEntry } from "./stores/interface.ts";
 export {
   createBarkChannel,
   createBarkGate,
@@ -95,7 +92,7 @@ export {
   BARK_TIMEOUT_MS,
   BARK_RETRIES,
   BARK_MAX_INFLIGHT,
-} from "./channel-bark.ts";
+} from "./channels/interface.ts";
 export {
   createWebhookChannel,
   renderWebhookBody,
@@ -105,33 +102,31 @@ export {
   WEBHOOK_DEFAULT_TIMEOUT_SEC,
   WEBHOOK_MIN_TIMEOUT_SEC,
   WEBHOOK_MAX_TIMEOUT_SEC,
-} from "./channel-webhook.ts";
-export type { MigrationOutcome } from "./migrate.ts";
+} from "./channels/interface.ts";
+export type { MigrationOutcome } from "./config/interface.ts";
 export {
   buildSystemCommand,
   buildSoundCommand,
   formatDuration,
-  isSubagentOf,
-  lastTurnEndOf,
   prettyToolName,
   sanitizeErrorText,
-  sessionTitleOf,
   MAC_SOUND_NAMES,
   LINUX_TONE_FILES,
   LINUX_DEFAULT_TONE_FILE,
   WIN_TONE_FILES,
   TONE_BASE_DIRS,
   toneFileCandidates,
-} from "./message.ts";
-export type { NotifyDetail, SystemTone } from "./message.ts";
-export { ROUTES, applyConfigPatch } from "./server.ts";
-export type { PatchResult, RouteDeps } from "./server.ts";
+} from "./text/interface.ts";
+export type { NotifyDetail, SystemTone } from "./text/interface.ts";
+export { isSubagentOf, lastTurnEndOf, sessionTitleOf } from "./events/interface.ts";
+export { ROUTES, applyConfigPatch } from "./server/interface.ts";
+export type { PatchResult, RouteDeps } from "./server/interface.ts";
+export { KIND_SEVERITY } from "./text/interface.ts";
 export {
   BUILTIN_CHANNELS,
-  KIND_SEVERITY,
   createNotifierService,
   getNotifierService,
-} from "./service.ts";
+} from "./sdk/interface.ts";
 export type {
   ChannelCapabilities,
   KindRegistration,
@@ -142,12 +137,12 @@ export type {
   NotifierServiceDeps,
   NotifierServiceInternal,
   NotifySeverity,
-} from "./service.ts";
+} from "./sdk/interface.ts";
 
-export { createSettingsBridge } from "./settings-bridge.ts";
-export type { SettingsBridge } from "./settings-bridge.ts";
-export { createEventHandlers } from "./event-handlers.ts";
-export type { EventHandlers, EventHandlersDeps } from "./event-handlers.ts";
+export { createSettingsBridge } from "./config/interface.ts";
+export type { SettingsBridge } from "./config/interface.ts";
+export { createEventHandlers } from "./events/interface.ts";
+export type { EventHandlers, EventHandlersDeps } from "./events/interface.ts";
 
 // 辅助函数统一来自仓库共享层（loopback 围栏 / writeJson / readBody / errorMessage）。
 export { isLoopbackRequest } from "../../../shared/loopback.js";

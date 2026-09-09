@@ -13,7 +13,7 @@
  */
 import { EventEmitter } from "node:events";
 import assert from "node:assert/strict";
-import { createSystemNotifier } from "../src/server.ts";
+import { createSystemNotifier } from "../src/server/interface.ts";
 
 /** fake spawn：记录调用；child 挂起由测试手动 exit 决议；kill 触发微任务 exit(null)。 */
 function makeFakeSpawn() {

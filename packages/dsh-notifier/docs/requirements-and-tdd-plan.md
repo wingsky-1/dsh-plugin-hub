@@ -257,7 +257,7 @@
 
 - `scripts/data/mutation-topology.json` dsh-notifier 段 mutate 路径（config/migrate/settings/history/quiet-hours/message/index/server）随搬家全部更新；
 - 「message.ts 单文件 145s 物理极限维持」注释因 message 拆三文件失效——text/ 段边界重定（message/sanitize/system-commands）；
-- 新增文件（adjudicate/deliver/sanitize/sse-bus/system-notifier/browser/system + 各 interface.ts）入变异面决策：建议核心状态机 adjudicate/deliver/event-handlers 纳入，interface.ts 纯 re-export 不入；
+- 新增文件（adjudicate/deliver/sanitize/sse-bus/system-notifier/browser/system + 各 interface.ts）入变异面决策：建议核心状态机 adjudicate/deliver/event-handlers 纳入，interface.ts 纯 re-export 不入；**PR1 决策落地 = 暂不入面**（PR1 纯机械搬动零行为变更；PR2 按域重划段 S3-30/N-24 时纳入核心状态机，interface.ts 一律不入）；
 - `mutation-lib-to-src-loader.mjs` 已支持 `lib/sub/module.js → src/sub/module.ts` 子目录映射（已核实）——搬家后变异 hook 零改动；
 - 测试全量 import `../lib/index.js`（§3:196）——导出面不变时零改动；坏处是 9 个 interface.ts 无变异面（纯 re-export 合理）。
 
@@ -376,6 +376,22 @@
 | 红测先行 6/7/8 | 6=flake 已并入；7 类型面接线归 PR3；8 静态契约归 PR1/PR2（real-context/client 契约改 index.ts/client 前先跑） | 登记 |
 
 **残余登记（诚实）**：e2e 的 makeNotifier→apply 链仍真实触发 createSystemNotifier 探测 execFile（notify-send/pw-play 探测，CI ENOENT→warn 静默无害）与投递路径真 spawn（T3-3 残余）——消除需 apply 注入面改造（扩装配契约，风险扩散），本 PR0 不做；spawn 行为已由红测先行 1 注入直测闭合，残余面登记待 PR2 评估。contract 门禁首次在 worktree 全仓 FAIL 为「其他包缺 lib 产物」（worktree 未构建），`pnpm -r --if-present build` 后全绿。
+
+### 7.9 PR1 实施记录（机械搬家 + interface.ts + 变异更新 + 导出面快照；#669）
+
+| 项 | 产出 | 状态 |
+|---|---|---|
+| 目录树搬家 | 16 平铺 → 8 域 42 个宿主 TS（9 interface.ts）：config/10、text/4、channels/6、server/4、pipeline/3、sdk/2、events/4、stores/3 + 根 index.ts/service.d.ts | ✅ |
+| interface.ts 门面 | 每域 interface.ts 收口（类型 + 工厂 re-export）；verify-dir-imports PASS（42 文件/8 目录，跨目录引用全走 interface.ts；contract 接入 --package dsh-notifier） | ✅ |
+| 导出面快照 | scripts/gate/export-surface-snapshot.mjs（符号集 + 导出符号定义块双保险，路径/语句组织免疫）；基线 scripts/data/dsh-notifier-export-surface.json 由 git archive 重构前 src 生成；重构后零 diff | ✅ |
+| service 拆分 | sdk/service.ts 编排（≈330 行）+ pipeline/adjudicate.ts（isBuiltinKind/isKindConfirmed/resolveRoutes）+ pipeline/deliver.ts（truncateCodePoints/deliverToChannel）；函数体逐行等价，行为由全套测试锁定（≤400 行纪律达标） | ✅ |
+| 内置频道 | channels/browser.ts + channels/system.ts（M8 注入面 createBrowserChannel({sse,current})/createSystemChannel({system,current})；resolveSoundSetting 回落语义逐字保留）；sdk→channels 值边为 PR1 过渡（§4 图注），PR2 改注入消除 | ✅ |
+| mutation 更新 | mutate 路径全改新树；testFiles 9→16（补 e2e-interrupt/unit-sse-hub/unit-webhook/real-context/service-contract/client-contract/client-style，S3-31）；message 段 → text 三文件重定（S3-32）；gen-stryker-conf 26 份重生成 --check 过 | ✅ |
+| 新增文件入变异面决策 | 暂不入面（PR1 纯机械搬动零行为变更）；PR2 按域重划段（S3-30/N-24）纳入核心状态机 adjudicate/deliver/event-handlers；interface.ts 纯 re-export 一律不入 | 决策 |
+| L1 补测 N-4/N-5/N-6 | unit-stores（写队列原子写/滚动/按天/debounce/64 上限/冷启动）、unit-settings-bridge（attach/降级/CAS 冲突重试 ≤2/耗尽 reject）、unit-aggregate（首条即时/窗口聚合/kind 切换/dispose）；均直测 src 域 interface.ts（§11.2-1；Node24 strip-types） | ✅ |
+| 静态契约同步 | real-context/client-contract/client-style 不触达（apply 结构/client 目录未动）；config-matrix 提取器随 config.ts 拆三文件更新（config/validators/normalize + 豁免注解行号） | ✅ |
+| 门禁 | 包 build/test/typecheck + 全仓 build + 根 contract（verify-dir-imports/export-surface/config-matrix 全过）+ pack:check 全绿 | ✅ |
+| 测试改动 | 仅 3 个 PR0 红测测试的 src import 路径适配（resolveTurnEvidence/createSseHub/createSystemNotifier 不在包导出面，改指域 interface.ts）；lib/index.js 面测试零改动 | ✅ |
 
 ### 7.7 G3 决策记录（D16-D21）与隐患登记（R-x）
 

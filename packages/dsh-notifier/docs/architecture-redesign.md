@@ -101,6 +101,7 @@ src/
 
 ```
 text ────type──→ config                       # SoundId/SoundSetting
+text ────type──→ sdk                          # NotifySeverity（KIND_SEVERITY 同域展示映射，M1 后补边）
 server ──type+值→ config                       # sanitize/validate/redact/unmask + ConfigPort(type)
 server ────type─→ stores                       # HistoryStore
 server ──type+值→ text                         # buildSystemCommand/buildSoundCommand（SystemNotifier 用）
@@ -115,14 +116,14 @@ sdk ────type+值→ pipeline                       # createAdjudicator/c
 sdk ────type+值→ text                           # NOTIFY_KINDS / sanitizeNoticeContent（编排调用）
 sdk ────type─→ config                           # NotifyConfig（deps 面）
 events ──type─→ config                          # NotifyConfig
-events ──type+值→ text                          # sanitizeErrorText / sessionTitleOf / lastTurnEndOf / isSubagentOf
+events ──type+值→ text                          # sanitizeErrorText（sessionTitleOf/lastTurnEndOf/isSubagentOf 已归 events/agent-session，事件域内部）
 events ──type─→ stores                          # HistoryEntry（EventHandlersDeps.appendHistory）
 index ──→ 全部 interface                        # 装配 + re-export
 ```
 
 无环要点（M1/M3）：
 - **pipeline 对 sdk 仅 type**（isKindConfirmed 经 AdjudicateDeps 注入；KIND_SEVERITY 移 text/ 消除 severity 运行时环）；
-- **sdk 无 channels 边**（NotifyChannel 定义在 sdk/interface 自身；内置频道经 index.ts 注入 sdk/deliver）；
+- **sdk 无 channels 边**（NotifyChannel 定义在 sdk/interface 自身；内置频道经 index.ts 注入 sdk/deliver）——**终态目标**：PR1（机械搬家）为保持零行为变更，createNotifierService 暂经 sdk→channels 值边（createBrowserChannel/createSystemChannel 在 sdk/service 内组装），PR2 行为重构时改 index.ts 注入消除该边；
 - **events 落史经注入回调**（EventHandlersDeps.appendHistory，类型 import type HistoryEntry from stores/interface；merged 落史属事件源级轨道）。
 
 ## 5. 关键类型契约

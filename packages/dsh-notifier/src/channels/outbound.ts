@@ -1,7 +1,7 @@
-import type { NotifyChannel } from "./service.ts";
-import type { ChannelConfig } from "./config.ts";
-import { createBarkChannel, createBarkGate } from "./channel-bark.ts";
-import { createWebhookChannel } from "./channel-webhook.ts";
+import type { NotifyChannel } from "../sdk/interface.ts";
+import type { ChannelConfig } from "../config/interface.ts";
+import { createBarkChannel, createBarkGate } from "./bark.ts";
+import { createWebhookChannel } from "./webhook.ts";
 
 /**
  * 创建配置驱动的出站频道解析器（bark + webhook）。

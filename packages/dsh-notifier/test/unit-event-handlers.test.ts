@@ -8,7 +8,7 @@
  * 行为对等判别网。
  */
 import assert from "node:assert/strict";
-import { resolveTurnEvidence } from "../src/event-handlers.ts";
+import { resolveTurnEvidence } from "../src/events/interface.ts";
 import { agentWithTitle } from "./helpers.ts";
 
 function run(agent, state, streamEnds = new Map()) {

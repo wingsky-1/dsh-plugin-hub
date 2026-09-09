@@ -1,10 +1,9 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-notifier/src/history.ts",
-    "packages/dsh-notifier/src/quiet-hours.ts",
-    "!packages/dsh-notifier/src/client/**",
-    "!packages/dsh-notifier/src/types.ts"
+    "packages/dsh-notifier/src/stores/history.ts",
+    "packages/dsh-notifier/src/config/quiet-hours.ts",
+    "!packages/dsh-notifier/src/client/**"
   ],
   "testRunner": "tap",
   "mutator": {
@@ -40,12 +39,19 @@
       "packages/dsh-notifier/test/e2e-approval.test.ts",
       "packages/dsh-notifier/test/e2e-done.test.ts",
       "packages/dsh-notifier/test/e2e-edge.test.ts",
+      "packages/dsh-notifier/test/e2e-interrupt.test.ts",
       "packages/dsh-notifier/test/e2e-question-turn.test.ts",
       "packages/dsh-notifier/test/migration.test.ts",
       "packages/dsh-notifier/test/routes.test.ts",
       "packages/dsh-notifier/test/unit-config.test.ts",
       "packages/dsh-notifier/test/unit-sanitize.test.ts",
-      "packages/dsh-notifier/test/unit-text.test.ts"
+      "packages/dsh-notifier/test/unit-text.test.ts",
+      "packages/dsh-notifier/test/unit-sse-hub.test.ts",
+      "packages/dsh-notifier/test/unit-webhook.test.ts",
+      "packages/dsh-notifier/test/real-context.test.ts",
+      "packages/dsh-notifier/test/service-contract.test.ts",
+      "packages/dsh-notifier/test/client-contract.test.ts",
+      "packages/dsh-notifier/test/client-style.test.ts"
     ]
   },
   "jsonReporter": {
@@ -53,5 +59,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-notifier-history.json",
-  "_comment": "#342 二期：功能命名段（history）——history+quiet-hours（历史/静默时段域，21s）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+  "_comment": "#669 PR1：stores/history + config/quiet-hours（原 history/quiet-hours 段映射新路径）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
 }

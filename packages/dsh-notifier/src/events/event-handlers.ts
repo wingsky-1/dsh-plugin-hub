@@ -1,8 +1,10 @@
 import type { Agent } from "@deepseek-ai/dsh-agent";
-import { errorMessage } from "../../../shared/host-utils.js";
-import type { NotifyConfig } from "./config.ts";
-import { isSubagentOf, lastTurnEndOf, sanitizeErrorText, sessionTitleOf } from "./message.ts";
-import type { NotifyDetail, SubagentOwnership } from "./message.ts";
+import { errorMessage } from "../../../../shared/host-utils.js";
+import type { NotifyConfig } from "../config/interface.ts";
+import { sanitizeErrorText } from "../text/interface.ts";
+import type { NotifyDetail } from "../text/interface.ts";
+import { isSubagentOf, lastTurnEndOf, sessionTitleOf } from "./agent-session.ts";
+import type { SubagentOwnership } from "./agent-session.ts";
 import type { DoneBatcher } from "./aggregate.ts";
 
 export interface EventHandlersDeps {

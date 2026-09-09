@@ -14,7 +14,7 @@
 import assert from "node:assert/strict";
 // src 直连（与 unit-sse-hub 直连 shared/sse-hub.js 同姿态）：server.ts 业务包装
 // 内联进 lib/index.js 无独立产物，且包导出面不含 createSseHub——src 是唯一入口。
-import { createSseHub } from "../src/server.ts";
+import { createSseHub } from "../src/server/interface.ts";
 
 let pass = 0;
 let fail = 0;
