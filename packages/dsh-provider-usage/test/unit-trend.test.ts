@@ -90,6 +90,8 @@ const correctsOf = (emitted) => emitted.filter((e) => e.type === "correct").map(
 const countersOf = (emitted) => emitted.filter((e) => e.type === "counter").map((e) => e.record);
 
 // ---------------------------------------------------------------- collector：定稿主信号
+// 不变量1：身份快照（event 归属折叠正确）——request/header 折叠为 per-session 归属主源，
+// usage chunk 定稿按当前折叠归属出账（R8 四不变量归组，见 refactor-implementation-plan.md 阶段三）。
 
 {
   const { emitted, send } = makeCollector();
@@ -108,6 +110,7 @@ const countersOf = (emitted) => emitted.filter((e) => e.type === "counter").map(
 }
 
 // ---------------------------------------------------------------- collector：重复 usage 校正
+// 不变量2：防双计（同 fold 键不重复记账、压实不二次累加）——同调用重复 usage 只校正 token、不重计调用。
 
 {
   const { emitted, send } = makeCollector();
@@ -124,6 +127,7 @@ const countersOf = (emitted) => emitted.filter((e) => e.type === "counter").map(
 }
 
 // ---------------------------------------------------------------- collector：retry 逐次计
+// 不变量2：防双计——retry 复用同一 (turn,step)，新 header 边界后逐次独立入账（重试消耗不合并、不丢）。
 
 {
   const { emitted, send } = makeCollector();
@@ -141,6 +145,7 @@ const countersOf = (emitted) => emitted.filter((e) => e.type === "counter").map(
 }
 
 // ---------------------------------------------------------------- collector：message 补记/校正/interrupted
+// 不变量2：防双计——未定稿 message 补记、已定稿仅校正不重记；零 usage 调用照计（token 记 null 非 0）。
 
 {
   // 补记：usage chunk 缺失，message.usage 到达
@@ -186,6 +191,8 @@ const countersOf = (emitted) => emitted.filter((e) => e.type === "counter").map(
 }
 
 // ---------------------------------------------------------------- collector：归属
+// 不变量1+3：身份快照与残差归未识别——归属缺失显式入 TREND_UNIDENTIFIED 桶（不静默丢弃）；
+// message.source 副源仅缺失时补齐、不一致告警不覆盖主源（主源权威）。
 
 {
   // 归属缺失 → 未识别桶（不静默丢弃）
@@ -220,6 +227,8 @@ const countersOf = (emitted) => emitted.filter((e) => e.type === "counter").map(
 }
 
 // ---------------------------------------------------------------- collector：turn/end 与计数
+// 不变量2：防双计——turn/end 只丢未定稿缓冲，定稿记忆保留（同 turn 乱序迟到 message 不双算）；
+// turn/tool 计数独立 +1（与调用计数互不干扰）。
 
 {
   const { emitted, send } = makeCollector();
@@ -248,6 +257,7 @@ const countersOf = (emitted) => emitted.filter((e) => e.type === "counter").map(
 }
 
 // ---------------------------------------------------------------- collector：TTL 与销毁
+// 不变量2：防双计——fold/会话 TTL 回收后迟到 message 仍经 done 定稿记忆走校正路径（不双算）。
 
 {
   let nowMs = T0;
@@ -290,6 +300,8 @@ const countersOf = (emitted) => emitted.filter((e) => e.type === "counter").map(
 }
 
 // ---------------------------------------------------------------- aggregator
+// 不变量2：防双计——apply 实时累加 cells，压实只做「落盘形态转换」绝不二次累加；
+// 重建时 agg 分片权威 + 明细/计数行二选一来源（不双算）。null 语义：null 不参与求和。
 
 function cellTotals(agg, day, provider = "deepseek") {
   const b = agg.buckets().find((d) => d.day === day);
@@ -559,6 +571,7 @@ function cellTotals(agg, day, provider = "deepseek") {
 }
 
 // ---------------------------------------------------------------- tracker
+// 不变量2：防双计——启动重建（聚合权威）/ 当日明细防二次落盘 / 自愈压实 / 迟到旧日行合并防覆盖丢数。
 
 function writeAggShardLine(row) {
   return `${JSON.stringify(row)}\n`;
@@ -783,6 +796,7 @@ function writeAggShardLine(row) {
 }
 
 // ---------------------------------------------------------------- 评审修复：P2-2 补记定稿后 headerSeen 对称重置
+// 不变量2：防双计——message 补记定稿后对称重置 headerSeen（迟到 usage 不被误判为新调用双算）。
 
 {
   // P2-2 双算反例：header → message（带 usage）补记定稿 → 同 (turn,step) 迟到 usage chunk。
@@ -805,6 +819,7 @@ function writeAggShardLine(row) {
 }
 
 // ---------------------------------------------------------------- 评审修复：P2-3 done 定稿记忆 Map 化
+// 不变量2：防双计——done 定稿记忆（retry 记忆 + TREND_DONE_MAX 淘汰）防乱序迟到 message 双算。
 
 {
   // P2-3(a)：retry=2 定稿后 folds 被 TTL 清空 → 迟到 message 校正的 retry
@@ -880,6 +895,7 @@ function writeAggShardLine(row) {
 }
 
 // ---------------------------------------------------------------- 评审修复：P2-6 归属不一致告警
+// 不变量1：身份快照——主源在场且与副源不一致时仅告警不覆盖（主源 header 是记账归属权威）。
 
 {
   // P2-6：主源在场且 message.source 解析结果与之不一致 → onAnomaly 告警（带上下文）、
@@ -950,6 +966,8 @@ function writeAggShardLine(row) {
 }
 
 // ---------------------------------------------------------------- #633 A1 补全：dir 落盘映射与 resolveCwd 契约接线
+// 不变量1+3：身份快照 / 残差归未识别——dir 归属经 resolveCwd 惰性单查、sanitizeDirName 净化落盘；
+// store 无 session / cwd 缺失 / 抛错显式归 TREND_UNIDENTIFIED 桶（不静默丢弃、不重复查询）。
 
 {
   // A1(a)：per-session 惰性单查——同 session 多次 emit 事件（call 定稿/校正/counter/
@@ -1071,6 +1089,8 @@ function writeAggShardLine(row) {
 }
 
 // ---------------------------------------------------------------- #633 A2 兼容割接：存量分片（无 cwd/dir 键）升级后首次启动重建
+// 不变量3+4：残差归未识别 / 台账守恒边界——旧格式（无 dir 键）行只进 cells（agg 面）、
+// 不补造 dir 行；其目录事实由「每日残差归未识别」投影承担（目录面守恒以有 dir 事实为界）。
 
 // A2 前提（图纸第 1 步已验证）：isValidShardRow 按 kind 校验必填键，无键白名单遍历
 // ——未知键不拒绝；detail/counter 的 dir 为加性可选键（dir === undefined 放行）。
@@ -1275,6 +1295,8 @@ const A2_LEGACY_AGG = {
 }
 
 // ---------------------------------------------------------------- #633 A3/A4：dir 维度归并内存态与日汇总行生成
+// 不变量2：防双计——dir 维度平行累加（同 record 不二次 emit）；rebuild 时 dir 行只进
+// dirDays、不进 cells（防双计）、不进 pending（不二次落盘）。
 
 {
   // A3(a)：内存态归并（tracker 全链路）——apply 平行累加后压实产物 dir 行：
@@ -1643,6 +1665,7 @@ const A2_LEGACY_AGG = {
 }
 
 // ---------------------------------------------------------------- #662 hour 维度（day×hour 聚合行数据链路）
+// 不变量2：防双计——小时面与 agg/dir 同一批事实的第三个投影（同源折算，不二次累加）。
 
 {
   // #662(a)：apply 平行累加 hourDays（hourOfDay 本地时区现算）+ rollupDay 同源产出
@@ -1851,6 +1874,7 @@ const A2_LEGACY_AGG = {
 }
 
 // ---------------------------------------------------------------- #654 压实快照消费
+// 不变量2：防双计——折算与消费取同一份身份快照（await 间隙新到行不连带删除、不丢行不重算）。
 
 {
   // 单元级：rollupSnapshot 的 consumed 与折算行严格同源；consume 只删快照内 entry。
@@ -1957,6 +1981,7 @@ const A2_LEGACY_AGG = {
 }
 
 // ---------------------------------------------------------------- #655 fold 清理后重复记账
+// 不变量2：防双计——fold 被 TTL 清理后迟到 usage 只校正不重记（done 记忆取真实 retry）。
 
 {
   // fold 被 fold TTL 清理后，同一 fold 键的迟到 usage 不得重复记账（与 onMessage 对称）。
@@ -1999,6 +2024,8 @@ assert.equal(sumToken(null, 5), 5, "sumToken null+数字");
 assert.equal(sumToken(null, null), null, "sumToken null+null");
 
 // ---------------------------------------------------------------- #633 修复：目录面残差投影
+// 不变量3+4：残差归未识别 / 台账守恒——目录面 = dirDays 快照 + 每日残差（聚合面 − 目录面），
+// 残差归 TREND_UNIDENTIFIED 桶；∀day 目录面日合计 == 聚合面日合计（本段断言 (e) 即该恒等的纯函数面）。
 // 背景（实测）：分片 a/b 上线后目录维度全链路失效——(1) inject 缺 sessions 致
 // resolveCwd 恒 undefined，所有会话归未识别桶；(2) 旧 agg 分片（无 kind:"dir" 行）
 // 重建时目录面全空，历史柱消失（实测目录面/聚合面总量差 20 倍）。
