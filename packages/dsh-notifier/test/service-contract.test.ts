@@ -113,7 +113,7 @@ function makeService(cfgOverrides = {}, hooks = {}) {
   /** 确认写入收集（M2：confirmKind 走配置）。 */
   const confirmCalls = [];
   const service = createNotifierService({
-    current: () => cfg,
+    current: hooks.current ?? (() => cfg),
     enabled,
     sse,
     system,
@@ -231,6 +231,30 @@ function makeService(cfgOverrides = {}, hooks = {}) {
   assert.ok(!r2.some((x) => x.channelId === "browser" || x.channelId === "system"), "B6：弹窗+声音全关 → 频道不进投递集合");
   assert.equal(sse2.frames.length, 0, "B6：全关无 SSE 帧");
   console.log("B6 投递集合条件（弹窗||声音）+ 只响不弹: OK");
+}
+
+{
+  // B-2 基线（PR0 红测先行 2）：每次 sendKind 使用当时的 current() 配置——裁决
+  // 集合与分派参数同刻一致、热更即时生效（现状结构：单次 sendKind 内 current()
+  // 读取 ≥2 次——allChannels 集合判定 + dispatchBrowser/System 播放决议）。
+  // PR2 current() 单刻快照化后：读取次数断言将更新为「裁决时一次快照」，
+  // 分派参数断言保留（投递仍按快照决议）——本用例是行为判别基线。
+  let reads = 0;
+  let cfg = defaultCfg({ browserNotify: true, browserSound: true, systemNotify: true, systemSound: true });
+  const sys = fakeSystem();
+  const { service, sse } = makeService({}, { current: () => { reads += 1; return cfg; }, system: sys });
+  service.sendKind("test", {}, { bypassQuiet: true });
+  const firstReads = reads;
+  assert.ok(firstReads >= 2, "B-2 基线：单次 sendKind 内 current() 读取 ≥2 次（PR2 快照化后此断言更新）");
+  const frame1 = sse.frames[sse.frames.length - 1];
+  assert.equal(frame1.sound.mode, "system", "B-2：browserSound=true → system 模式帧（读当时配置）");
+  // 配置热更 → 下次 sendKind 必须用新版本（不缓存旧配置）
+  cfg = defaultCfg({ browserNotify: true, browserSound: false, systemNotify: true, systemSound: true });
+  service.sendKind("test", {}, { bypassQuiet: true });
+  const frame2 = sse.frames[sse.frames.length - 1];
+  assert.equal(frame2.sound.mode, "silent", "B-2：browserSound=false → silent 模式帧（热更即时生效）");
+  assert.ok(reads > firstReads, "B-2：第二次 sendKind 重新读取 current（不缓存）");
+  console.log("B-2 基线 裁决/分派同刻配置一致性: OK");
 }
 
 {
