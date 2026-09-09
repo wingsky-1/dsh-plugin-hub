@@ -11,7 +11,7 @@
  * 提示词模板明令 LLM 只用 ##/-/** 三种标记；其余 markdown（###/代码围栏/嵌套）
  * 一律字面显示（分类规则只认全行前缀，天然不误判）。
  */
-import { escHtml } from "../../shared/charts.ts";
+import { escHtml } from "../../shared/interface.ts";
 
 /** 行内强调：**x** → <strong>x</strong>（x 已转义；未闭合 ** 保持字面）。 */
 const BOLD_RE = /\*\*([^*\n]+)\*\*/g;

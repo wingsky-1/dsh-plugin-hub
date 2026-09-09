@@ -3,7 +3,7 @@
  *
  * 说明：内置适配器以 .mjs 为权威实现；本文件手写导出声明，与实现保持同步。
  */
-import type { UsageStatsAdapter, FetchContext, CapsuleInput, PanelInput } from "../../shared/contracts.ts";
+import type { UsageStatsAdapter, FetchContext, CapsuleInput, PanelInput } from "../../shared/interface.ts";
 
 /** 内置适配器认领的 provider 名（DSH 内置预设：智谱 Coding Plan (CN)）。 */
 export declare const ZAI_CODING_CN_PROVIDER: string;

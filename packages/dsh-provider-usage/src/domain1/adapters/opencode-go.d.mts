@@ -5,7 +5,7 @@
  * 本文件手写导出声明，与实现保持同步；经 index.ts re-export 后供 TS 消费
  * （lib/index.d.ts 的 `export * from "./adapters/opencode-go.js"` 指向本声明）。
  */
-import type { UsageStatsAdapter, FetchContext, CapsuleInput, PanelInput } from "../../shared/contracts.ts";
+import type { UsageStatsAdapter, FetchContext, CapsuleInput, PanelInput } from "../../shared/interface.ts";
 
 /** 内置适配器的 provider 名（如 "opencode-go"）。 */
 export declare const OPENCODE_GO_PROVIDER: string;

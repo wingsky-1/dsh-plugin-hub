@@ -9,7 +9,7 @@
  * - 已知边界（文档化口径）：kill -9 丢防抖窗口数据（事件路线无重扫兜底）；
  *   统计自挂载时点起算。
  */
-import { dayKey } from "../../shared/charts.ts";
+import { dayKey } from "../../shared/interface.ts";
 import {
   TrendAggregator,
   mergeAggRows,

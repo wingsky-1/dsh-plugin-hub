@@ -5,12 +5,12 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { basename } from "node:path";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import { guardLoopbackMethod, readJsonBody, writeJson } from "../../../../../shared/host-utils.js";
-import { ADAPTER_CONTRACT_VERSION } from "../../shared/contracts.ts";
+import { ADAPTER_CONTRACT_VERSION } from "../../shared/interface.ts";
 import type { LayerErrorSurface } from "../common/errsurf.ts";
-import type { StatsService } from "../../domain1/pipeline/stats-service.ts";
+import type { StatsService } from "../../domain1/pipeline/interface.ts";
 import type { TrendTracker } from "../aggregate/index.ts";
 import { TREND_DIR_MAX } from "../collect/types.ts";
-import { normalizeUiConfig, writeUiConfig, type UiPlacementConfig } from "../../shared/ui-config.ts";
+import { normalizeUiConfig, writeUiConfig, type UiPlacementConfig } from "../../shared/interface.ts";
 
 export interface UiRoutesContext {
   statsService: StatsService;

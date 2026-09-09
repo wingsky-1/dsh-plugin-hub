@@ -8,8 +8,8 @@
  *   区分 `no-adapter`（无候选）与 `no-enabled-adapter`（有候选但全禁用）
  */
 import { basename } from "node:path";
-import type { UsageStatsAdapter } from "../../shared/contracts.ts";
-import { isUsageStatsAdapter, describeUsageStatsAdapterShape } from "../../shared/contracts.ts";
+import type { UsageStatsAdapter } from "../../shared/interface.ts";
+import { isUsageStatsAdapter, describeUsageStatsAdapterShape } from "../../shared/interface.ts";
 
 /** 适配器来源。 */
 export type AdapterSource = "builtin" | "user-file";

@@ -10,12 +10,12 @@
  *
  * 纪律：所有用户函数调用经 safe* 包装，错误不外抛。
  */
-import type { UsageStatsAdapter, FetchContext } from "../../shared/contracts.ts";
-import { esc } from "../../shared/contracts.ts";
-import { ADAPTER_UTILS } from "../../shared/charts.ts";
-import type { HistoryStore } from "../history/history.ts";
+import type { UsageStatsAdapter, FetchContext } from "../../shared/interface.ts";
+import { esc } from "../../shared/interface.ts";
+import { ADAPTER_UTILS } from "../../shared/interface.ts";
+import type { HistoryStore } from "../history/interface.ts";
 import { safeFetchData, safeFormat } from "./guards.ts";
-import { sanitizeHtml } from "../../shared/sanitize.ts";
+import { sanitizeHtml } from "../../shared/interface.ts";
 
 /** v2 管道执行结果。 */
 export interface V2PipelineResult {
@@ -55,7 +55,7 @@ export interface V2PipelineContext {
    */
   history?: Pick<HistoryStore, "last">;
   /** 共享图表工具注入（缺省回退 ADAPTER_UTILS；#215 注入面）。 */
-  utils?: import("../../shared/charts.ts").AdapterUtils;
+  utils?: import("../../shared/interface.ts").AdapterUtils;
 }
 
 /**

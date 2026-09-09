@@ -18,7 +18,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { join } from "node:path";
-import { safeSegment } from "../../shared/contracts.ts";
+import { safeSegment } from "../../shared/interface.ts";
 
 /** 历史条目（JSONL 行）。 */
 export interface HistoryEntry {

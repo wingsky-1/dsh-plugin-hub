@@ -10,7 +10,7 @@
  *   更早窗口不追溯——文档化口径）；
  * - DST 安全：全部经本地 Date 逐字段构造与逐日回退，禁缓存时区偏移、禁毫秒减法。
  */
-import { dayKey } from "../../shared/charts.ts";
+import { dayKey } from "../../shared/interface.ts";
 import { parseHHMM, type ReportConfig, type ReportPeriod } from "./config.ts";
 
 /** 一个到期报告的描述。 */

@@ -12,7 +12,7 @@
  * 目录面——目录维度守恒以「有 dir 事实」为界。小时面（buildHourRows）不做残差投影
  * （detail/counter 行必有 time，旧分片缺小时是物理缺失，报告侧 coveredDays 守卫降级）。
  */
-import { dayKey, lastNDayKeys } from "../../shared/charts.ts";
+import { dayKey, lastNDayKeys } from "../../shared/interface.ts";
 import { emptyCell, diffToken } from "./aggregate-rows.ts";
 import {
   sumToken,

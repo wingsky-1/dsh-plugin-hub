@@ -9,8 +9,8 @@
  */
 import { stat } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
-import type { UsageStatsAdapter } from "../../shared/contracts.ts";
-import { isUsageStatsAdapter, describeUsageStatsAdapterShape } from "../../shared/contracts.ts";
+import type { UsageStatsAdapter } from "../../shared/interface.ts";
+import { isUsageStatsAdapter, describeUsageStatsAdapterShape } from "../../shared/interface.ts";
 
 /** 文件状态快照（mtimeMs + size）。 */
 export interface FileStamp {

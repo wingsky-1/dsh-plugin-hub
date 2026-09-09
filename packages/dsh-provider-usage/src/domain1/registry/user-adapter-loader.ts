@@ -3,8 +3,8 @@
  */
 import { basename } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { UsageStatsAdapter } from "../../shared/contracts.ts";
-import { describeUsageStatsAdapterShape } from "../../shared/contracts.ts";
+import type { UsageStatsAdapter } from "../../shared/interface.ts";
+import { describeUsageStatsAdapterShape } from "../../shared/interface.ts";
 import type { AdapterRegistry } from "./registry.ts";
 
 export async function loadUserHostAdapterFile(file: string): Promise<unknown> {

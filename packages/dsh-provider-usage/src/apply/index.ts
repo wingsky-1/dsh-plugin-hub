@@ -26,8 +26,46 @@
 // ------------------------------------------------------------------ 对外 re-export
 // 注意：bundle-host 会把 tsc 产物中的子模块全部内联进 lib/index.js 并清理游离 .js，
 // smoke/lint 只能从 lib/index.js 导入，故契约与核心模块一律在此 re-export。
-export * from "../shared/contracts.ts";
-export * from "../domain1/registry/registry.ts";
+export {
+  ADAPTER_CONTRACT_VERSION_V1,
+  ADAPTER_CONTRACT_VERSION,
+  ERROR_CODES,
+  esc,
+  isUsageStatsAdapter,
+  describeUsageStatsAdapterShape,
+  safeSegment,
+  USAGE_GLOBAL_KEY,
+  isHostProviderAdapter,
+  describeAdapterShape,
+  isClientProviderRenderer,
+  usageError,
+  usageOk,
+  summarizeTextFromWindows,
+  levelFromWindows,
+  defineUsageAdapter,
+} from "../shared/interface.ts";
+export type {
+  AdapterErrorCode,
+  FetchContext,
+  CapsuleInput,
+  PanelInput,
+  UsageStatsAdapter,
+  UsageWindow,
+  ProviderUsage,
+  SummaryLevel,
+  ProviderSummary,
+  SampleColumn,
+  FetchLike,
+  HostFetchContext,
+  SamplePointData,
+  HostProviderAdapter,
+  ClientProviderRenderer,
+  RenderContext,
+  DshUsageGlobal,
+  UsageAdapterSpec,
+} from "../shared/interface.ts";
+export { makeAdapterRegistry } from "../domain1/registry/interface.ts";
+export type { AdapterSource, AdapterErrorInfo, AdapterInfo, ReplaceFileResult, AdapterRegistry } from "../domain1/registry/interface.ts";
 // #215 共享图表工具库（AdapterUtils/ADAPTER_UTILS 等）——外部 TS 消费者可经 index 导入。
 // dayKey/lastNDayKeys 与 deepseek-official.mjs 文件级导出重名（测试导入面），
 // 此处显式排除，deepseek-official.mjs 的导出保留（同源副本，语义一致）。
@@ -49,23 +87,25 @@ export {
   axisLabelWidthPx,
   toEpochMs,
   ADAPTER_UTILS,
-} from "../shared/charts.ts";
-export type { AdapterUtils } from "../shared/charts.ts";
+} from "../shared/interface.ts";
+export type { AdapterUtils } from "../shared/interface.ts";
 // #215 内置适配器 mjs 化：.mjs 为权威实现，.d.mts 提供类型声明（bundle 后 index 内联
 // 保留具名导出面——unit-contract/unit-deepseek-official 等测试从 lib/index.js 导入不变）
-export * from "../domain1/adapters/opencode-go.mjs";
-export * from "../domain1/adapters/deepseek-official.mjs";
-export * from "../domain1/adapters/zai-coding-cn.mjs";
-export * from "../domain1/registry/provider-config.ts";
-export { HistoryStore, parseJsonl, startOfDay, migrateLegacyV3, legacySampleToData, listAdapters } from "../domain1/history/history.ts";
-export type { HistoryEntry } from "../domain1/history/history.ts";
-export { safeFetchData, safeFormat, fetchWithTimeout } from "../domain1/pipeline/guards.ts";
-export { sanitizeHtml } from "../shared/sanitize.ts";
+export { OPENCODE_GO_PROVIDER, OPENCODE_GO_ADAPTER_ID, DEFAULT_BASE_URL, OPENCODE_GO_WINDOWS, pickWindow, parseUsageResponse, fetchOpenCodeGoV2, miniChartSvgMarkup, openCodeGoAdapter } from "../domain1/adapters/interface.ts";
+export { DEEPSEEK_OFFICIAL_PROVIDER, DEEPSEEK_OFFICIAL_ADAPTER_ID, BASE_URL, parseAmount, resolveEndpoint, GAP_MS, TOL, ANOMALY_NEG, PEAK_WINDOWS_UTC, isPeakUtc, nextPeakTransition, peakBadgeHtml, fetchDeepSeekOfficialV2, formatCapsuleWithBadge, classifyIntervalDs, aggregateDaily, dailyBarTitle, niceCeil, dayKey, lastNDayKeys, deepSeekOfficialAdapter } from "../domain1/adapters/interface.ts";
+export type { SamplePoint, DayRecord } from "../domain1/adapters/interface.ts";
+export { ZAI_CODING_CN_PROVIDER, ZAI_CODING_CN_ADAPTER_ID, QUOTA_PATH, fetchData, zaiCodingCnAdapter } from "../domain1/adapters/interface.ts";
+export { credentialsFile, opencodeAuthFile, resolveProviderConfig } from "../domain1/registry/interface.ts";
+export type { ProviderConfigInput, ResolvedProviderConfig } from "../domain1/registry/interface.ts";
+export { HistoryStore, parseJsonl, startOfDay, migrateLegacyV3, legacySampleToData, listAdapters } from "../domain1/history/interface.ts";
+export type { HistoryEntry } from "../domain1/history/interface.ts";
+export { safeFetchData, safeFormat, fetchWithTimeout } from "../domain1/pipeline/interface.ts";
+export { sanitizeHtml } from "../shared/interface.ts";
 // 客户端行为纯函数（设置页列表拆分/徽标文案，经此透出供单元测试）。
-export { splitProviderList, providerBadgeText } from "../shared/client-logic.ts";
-export { runV2Pipeline, runV2PanelPipeline, capsuleHtmlFromHistory, panelCacheKey, normalizeRangeDay, isPanelCacheStale, PANEL_CACHE_TTL_MS } from "../domain1/pipeline/v2.ts";
-export type { PanelCacheEntry } from "../domain1/pipeline/v2.ts";
-export { HotReloadableAdapter, loadAndValidateAdapter, readStamp, stampEqual } from "../domain1/registry/hotreload.ts";
+export { splitProviderList, providerBadgeText } from "../shared/interface.ts";
+export { runV2Pipeline, runV2PanelPipeline, capsuleHtmlFromHistory, panelCacheKey, normalizeRangeDay, isPanelCacheStale, PANEL_CACHE_TTL_MS } from "../domain1/pipeline/interface.ts";
+export type { PanelCacheEntry } from "../domain1/pipeline/interface.ts";
+export { HotReloadableAdapter, loadAndValidateAdapter, readStamp, stampEqual } from "../domain1/registry/interface.ts";
 // #503 会话用量趋势（M1 数据层）：trend 模块公共面（测试/外部消费者从 lib/index.js 导入）
 export { TrendTracker } from "../domain2/aggregate/index.ts";
 export type { TrendTrackerOptions } from "../domain2/aggregate/index.ts";
@@ -101,10 +141,10 @@ export type { ReportTask, ReportTaskInput, ReportTaskResult, ReportTaskStatus } 
 export { readReportIndex, prevWindowTotal, runDueReport, persistReport, reportHtmlFile, reportMetaFile, notifyReport, __clearReportIndexCacheForTests, __reportIndexCacheStatsForTests } from "../domain2/execute/runner.ts";
 export { parseReportIndexLines } from "../domain2/common/report-index.ts";
 // 路径解析纯函数透出（供测试与调用方复用同一展开/解析规则，无行为变更）
-export { resolvePath, pluginHome, expandHomePath } from "../domain1/registry/path-resolve.ts";
+export { resolvePath, pluginHome, expandHomePath } from "../domain1/registry/interface.ts";
 // 配置归一化（#276 方案 A 阶段 3 拆出：默认值 / schemastery schema / normalizeConfig）
-export { DEFAULT_CONFIG, Config, normalizeConfig } from "../shared/config.ts";
-export type { NormalizedConfig } from "../shared/config.ts";
+export { DEFAULT_CONFIG, Config, normalizeConfig } from "../shared/interface.ts";
+export type { NormalizedConfig } from "../shared/interface.ts";
 
 // ------------------------------------------------------------------ 类型
 
@@ -131,18 +171,18 @@ export {
   composerDockedAtBottom,
   bottomAnchorEdge,
   panelZIndexFor,
-} from "../shared/placement-math.ts";
-export type { FloatBreakpoint, ViewportPoint, RectLike } from "../shared/placement-math.ts";
+} from "../shared/interface.ts";
+export type { FloatBreakpoint, ViewportPoint, RectLike } from "../shared/interface.ts";
 // 面板锚点判定同为纯函数，随定位数学一起从单一事实源 re-export。
-export { panelAnchorForPlacement } from "../shared/placement-math.ts";
+export { panelAnchorForPlacement } from "../shared/interface.ts";
 // 胶囊位置 UI 配置（#276 方案 A 阶段 3 拆出：纯函数 + 持久化读写）
-export { DEFAULT_UI_CONFIG, normalizeUiConfig, panelTopForAnchor, uiConfigFile, readUiConfig, writeUiConfig } from "../shared/ui-config.ts";
-export type { UiPlacementConfig } from "../shared/ui-config.ts";
+export { DEFAULT_UI_CONFIG, normalizeUiConfig, panelTopForAnchor, uiConfigFile, readUiConfig, writeUiConfig } from "../shared/interface.ts";
+export type { UiPlacementConfig } from "../shared/interface.ts";
 // sseData 已收敛 shared/host-utils.js（#472）：单独改指共享层，导出面保持不变
 export { sseData } from "../../../../shared/host-utils.js";
 // 用户适配器持久化（#276 方案 A 阶段 3 拆出：清单/启用状态读写 + add 文件校验）
-export { userAdaptersFile, adapterStateFile, parseUserAdapters, readUserAdapters, readAdapterState, resolveAddAdapterFile } from "../domain1/registry/user-adapters.ts";
-export type { UserAdapterRecord } from "../domain1/registry/user-adapters.ts";
+export { userAdaptersFile, adapterStateFile, parseUserAdapters, readUserAdapters, readAdapterState, resolveAddAdapterFile } from "../domain1/registry/interface.ts";
+export type { UserAdapterRecord } from "../domain1/registry/interface.ts";
 // 插件契约转发（apply 主流程 + 路由表实现于 apply.ts）
 export { apply, ROUTES } from "./apply.ts";
 // 路由 handler 直出（#629 P2：status 响应 reused 透传的单元断言面）

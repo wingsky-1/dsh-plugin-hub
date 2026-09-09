@@ -23,7 +23,7 @@ import { presetLastRunForNewlyEnabled, previousClosedWindow, type DueReport } fr
 import { readLastRun, updateLastRun } from "../common/last-run.ts";
 import type { ReportTaskQueue } from "../schedule/tasks.ts";
 import type { ReportConfigService } from "../../apply/report-config-service.ts";
-import { sanitizeHtml } from "../../shared/sanitize.ts";
+import { sanitizeHtml } from "../../shared/interface.ts";
 
 export interface ReportRoutesContext {
   ctx: Context;

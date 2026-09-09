@@ -5,19 +5,19 @@ import { rename, writeFile } from "node:fs/promises";
 import type { Context } from "@deepseek-ai/cordis";
 import { Mutex } from "async-mutex";
 import { errorMessage } from "../../../../../shared/host-utils.js";
-import type { NormalizedConfig } from "../../shared/config.ts";
-import type { HistoryStore } from "../history/history.ts";
+import type { NormalizedConfig } from "../../shared/interface.ts";
+import type { HistoryStore } from "../history/interface.ts";
 import { runV2Pipeline, runV2PanelPipeline, panelCacheKey, isPanelCacheStale, type PanelCacheEntry, type V2PipelineResult } from "./v2.ts";
-import { resolveProviderConfig } from "../registry/provider-config.ts";
-import type { AdapterRegistry } from "../registry/registry.ts";
-import type { UsageStatsAdapter } from "../../shared/contracts.ts";
+import { resolveProviderConfig } from "../registry/interface.ts";
+import type { AdapterRegistry } from "../registry/interface.ts";
+import type { UsageStatsAdapter } from "../../shared/interface.ts";
 import {
   readAdapterStateResult,
   readUserAdapters,
   userAdaptersFile,
   writeAdapterState,
   type UserAdapterRecord,
-} from "../registry/user-adapters.ts";
+} from "../registry/interface.ts";
 
 export interface StatsServiceOptions {
   ctx: Context;

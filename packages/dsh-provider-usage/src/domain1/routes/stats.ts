@@ -4,8 +4,8 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import { guardLoopbackMethod, writeJson } from "../../../../../shared/host-utils.js";
-import { ADAPTER_CONTRACT_VERSION } from "../../shared/contracts.ts";
-import type { StatsService } from "../pipeline/stats-service.ts";
+import { ADAPTER_CONTRACT_VERSION } from "../../shared/interface.ts";
+import type { StatsService } from "../pipeline/interface.ts";
 
 export interface StatsRoutesContext {
   statsService: StatsService;

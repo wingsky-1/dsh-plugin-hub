@@ -26,7 +26,7 @@
  * （二者均参数显式传入、不接触 this，防「拆文件 = 共享 this」坏味道；公开导出面
  * 经本文件尾部 re-export 保持可达，src/index.ts 与 src/report/*.ts 的 import 路径不变）。
  */
-import { dayKey, lastNDayKeys } from "../../shared/charts.ts";
+import { dayKey, lastNDayKeys } from "../../shared/interface.ts";
 import {
   sumToken,
   hourOfDay,

@@ -5,7 +5,7 @@ import { appendFile, mkdir, readFile, rename, stat, writeFile } from "node:fs/pr
 import { join } from "node:path";
 import type { Context } from "@deepseek-ai/cordis";
 import { errorMessage } from "../../../../../shared/host-utils.js";
-import { dayKey, escHtml } from "../../shared/charts.ts";
+import { dayKey, escHtml } from "../../shared/interface.ts";
 import { metricValue } from "../aggregate/aggregator.ts";
 import type { TrendTracker } from "../aggregate/index.ts";
 import { sumToken, type TrendCell } from "../collect/types.ts";
