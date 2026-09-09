@@ -320,3 +320,55 @@
 
 ### 7.4 质量基线（gauntlet.config.json）
 - 变异得分 58.74%（阈值 60，**当前不合格**）；covered 74.66%；killed 1141 / survived 389 / noCoverage 416 / total 1951；3m0s；stryker 6 段配置（manager/entry/supervisor/middleware/routes/runtime）。
+
+---
+
+## 八、对抗性评审纪要（子代理独立核验，结论：需修正后执行）
+
+> 评审方式：独立子代理逐行核实 src/test/shared 代码后输出；以下为纠偏后的定稿口径。
+
+### 8.1 Bug 清单纠偏表（B1–B20 / C1–C15）
+| 条目 | 裁定 | 修正说明 |
+|------|------|---------|
+| B1 重连状态覆盖 | ✅成立 | supervisor.ts L337+L399：scheduleReconnect 置 connectedAt=undefined → connect() 覆盖为 connecting |
+| B2 call-stats 关闭丢盘 | ✅成立 | call-stats.ts L62 先置 enabled=false，L228 flushSync 因 !enabled 短路 |
+| B3 resolveRoot 漏 runtime | ✅成立 | globalServers()=store.data.servers（manager.ts L274）不含 runtimeRegistry；修复改查 projectServersFor("@global") |
+| B4 中间层无 reconnecting | ✅成立 | 补状态机或规格化（决策点） |
+| B5 替换 supervisor 不清理 | ✅成立 | manager.ts L731–741 替换分支只置 disposed=true；**manager.connect L1011–1017 同病**；修复复用 disconnect 语义（async，依赖 syncChain） |
+| B6 getTools 查询面失效 | ✅成立 | 与 summary 同源或文档声明（决策点） |
+| B7 非法 middleware→off | ✅成立 | routes-controllers buildConfigRoute：非法值落盘 off |
+| B8 redactor 整 URL 脱敏 | ⚠️修正 | 现象成立（L146）；但「仅用户信息脱敏」必须同时注册 raw/decoded 双形态，否则 percent-encoding 绕过回归（L149–150 只存 decoded，错误消息中是 raw 形态，现状靠整 URL 兜住）；**另漏报：supervisor.ts L362 及 manager 各处 logger.warn(String(error)) 错误日志不脱敏**（安全语义变更须过红线流程） |
+| B9 boundCatalogTools 字节口径 | ⚠️修正 | L555 字符截断超字节上限成立；文档「totalBytes 用截断前字节→超上限」方向说反（截断前字节更早 break 属保守）；真正低估是 JSON.stringify(inputSchema).length 按码元计 |
+| B10 search truncated 误报 | ⚠️修正 | L181 `>=` 恰好 limit 误报成立，但 L179 注释表明是有意设计（P2-3）；精确修复需 searchCatalogMulti 改签名返回截断事实，属跨函数改动 |
+| B11 guard 双下划线反解错位 | ✅成立 | 根因是 publicToolName 无分隔符拼接的编码歧义，需映射表或规格化不可逆名 |
+| B12 sse-hub dispose 不 destroy | ✅成立 | 注释/实现不符 |
+| B13 URL 协议白名单 | ✅成立 | 决策点（拒绝 vs 规格化放行） |
+| B14 normalizeArguments 数组 | ✅成立 | 决策点 |
+| B15 middlewarePolicy 注释滞后 | ✅成立 | 文档同步到阶段 1 |
+| B16 publicToolName 文档口径 | ⚠️修正 | 「冲突时哈希后缀」表述不符成立；但示例 a-b/a_b 是误报（合法字符不归一化，含非法字符必走哈希） |
+| B17 store tmp 清理 | ✅成立 | 唯一 tmp 名 + 失败清理 |
+| B18 中间层退避/超时口径分裂 | ✅成立 | 中间层 scheduleReconnect 硬编码 500/30000/10 忽略 server.reconnect；CALL_TIMEOUT 固定 30s 不读 server.toolCallTimeoutMs（supervisor 15s）；**另漏报：middleware closeHandler 不递增 failedAttempts（连上断开抖动退避恒 500ms）** |
+| B19 禁用查询口径不一致 | ✅成立 | 合并口径 |
+| B20 coalesce 漏最终态 | ⚠️修正 | coalesce 不会漏最终态；真正缺口=makeMiddlewareHotSwitch 不 emitStatus（热切换缺 summary 帧，与 5.3 风险②、C10 同根） |
+| C1 编辑保存链路 | ✅成立·升格 | 实为「编辑保存整体坏死」：fillForm→resetForm 清空 editingName（quick-add L64-65）→ saveForm 恒走 POST → 宿主抛 already exists；比 enabled 回填严重得多；**先修链路再补 enabled 回填** |
+| C2 SSE 永久退役 | ✅成立 | 补轮询探测恢复 |
+| C3 超长名溢出 | ✅成立 | CSS overflow-wrap/ellipsis |
+| C4 keydown 泄漏 | ✅成立 | 配对 removeEventListener |
+| C5 setTimeout 无清理 | ✅成立 | useEffect 清理 |
+| C6 tool-disable @/name | ✅成立 | 防御性拼参 |
+| C7 float 不带 cwd | ✅成立·修正 | servers.ts L110 disconnect、L136 disable 同样缺 cwd（不止 float） |
+| C8 checkbox 折叠态丢失 | ✅成立 | 体验项 |
+| C9 SSE 65s 空窗 | ✅成立 | 设计内，文档化 |
+| C10 面板不主动刷新 | ✅成立 | showPanel 补 refresh |
+| C11 编辑改 scope | ❌误报 | PATCH 分支不可达（C1 升格后 saveForm 恒走 POST），删除或标记 |
+| C12–C15 | ✅成立 | 按原文 |
+
+### 8.2 测试审计补充（评审核实）
+- 执行矩阵第四条不对称：service-contract/unit-shared 只在 smoke、catalog/store/supervisor/transport 只在 stryker、**交集仅 6 文件**。
+- unit-middleware L718–726 封装超时用例真实等待 **32s（CALL_TIMEOUT_MS+2000，非文档所写 30s）**；smoke.ts L2450 第 4 处固定 sleep 25ms。
+- 质量基线：变异 58.74%（阈值 60）；「kill≥40 过 60%」经预算 **25 即够**（40 有安全余量）；「covered≥80%」非门禁（coverage 门禁是 selfWritten 60%），应注明「质量目标不卡 CI」。
+
+### 8.3 TDD 方案修正（评审 P0/P1/P2）
+- **P0**：① 先修 C1 编辑链路再补 enabled 回填；② B8 修复补 raw/decoded 双形态 + supervisor 日志脱敏 + 安全语义变更红线流程；③ 阶段 0 输出规格决策表清零 6.3 全部「或规格化声明」行（B4/B6/B13/B14）；④ 新测试文件双登记（smoke.ts import + mutation-topology.json testFiles，防三通道不对称扩大）。
+- **P1**：⑤ B10 修复需 searchCatalog 改签名；⑥ B5 修复复用 disconnect 语义（async 依赖 syncChain）；⑦ CALL_TIMEOUT_MS 注入化消 32s stryker 放大；⑧ B1 红测试改状态机断言点（勿整窗口轮询）+ _idleTimeout 改 resolveReconnect 纯函数断言；⑨ B18 扩为口径统一（closeHandler 计数 + toolCallTimeoutMs）；⑩ B17 唯一 tmp 名 + 失败清理。
+- **P2**：B19 合并口径、B12 dispose destroy、B20 热切换 emitStatus、B3 并入 runtime；哑断言清理（unit-apply/unit-hotspot/unit-manager2 L309/L323）；user-state 0600；客户端 C6/C7/C2/C8；B15/B16/README 文档同步提前到阶段 1。
