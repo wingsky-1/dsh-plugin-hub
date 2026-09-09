@@ -1,0 +1,61 @@
+{
+  "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "mutate": [
+    "packages/dsh-provider-usage/src/trend/aggregator.ts",
+    "packages/dsh-provider-usage/src/trend/store.ts",
+    "packages/dsh-provider-usage/src/trend/index.ts",
+    "!packages/dsh-provider-usage/src/client/**",
+    "!packages/dsh-provider-usage/src/types.ts"
+  ],
+  "testRunner": "tap",
+  "mutator": {
+    "excludedMutations": [
+      "StringLiteral",
+      "ArrayLiteral",
+      "ObjectLiteral",
+      "TemplateLiteral"
+    ]
+  },
+  "plugins": [
+    "@stryker-mutator/tap-runner"
+  ],
+  "concurrency": 16,
+  "timeoutMS": 60000,
+  "dryRunTimeoutMinutes": 5,
+  "reporters": [
+    "progress",
+    "clear-text",
+    "json"
+  ],
+  "coverageAnalysis": "perTest",
+  "tempDirName": ".stryker-tmp",
+  "cleanTempDir": true,
+  "tap": {
+    "nodeArgs": [
+      "-r",
+      "./scripts/test/mutation-tap-bridge.cjs",
+      "--import",
+      "./scripts/test/mutation-lib-to-src-hook.mjs"
+    ],
+    "testFiles": [
+      "packages/dsh-provider-usage/test/unit-apply.test.ts",
+      "packages/dsh-provider-usage/test/unit-config.test.ts",
+      "packages/dsh-provider-usage/test/unit-contract.test.ts",
+      "packages/dsh-provider-usage/test/unit-deepseek-official.test.ts",
+      "packages/dsh-provider-usage/test/unit-history.test.ts",
+      "packages/dsh-provider-usage/test/unit-signal-lock.test.ts",
+      "packages/dsh-provider-usage/test/unit-v1.test.ts",
+      "packages/dsh-provider-usage/test/unit-trend.test.ts",
+      "packages/dsh-provider-usage/test/unit-trend-view.test.ts",
+      "packages/dsh-provider-usage/test/unit-report.test.ts",
+      "packages/dsh-provider-usage/test/unit-routes.test.ts",
+      "packages/dsh-provider-usage/test/unit-report-executor.test.ts"
+    ]
+  },
+  "jsonReporter": {
+    "fileName": "coverage/mutation/dsh-provider-usage-trend-aggregate.json"
+  },
+  "incremental": true,
+  "incrementalFile": "coverage/mutation/incremental-provider-usage-trend-aggregate.json",
+  "_comment": "阶段零新段（D17 分层变异）：E2 聚合/压实/存储面——aggregator+store+index（目录维度与 provider 面查询）；testFiles 含 unit-trend/unit-trend-view（杀灭面为该层测试）；aggregator 单文件 5-8 分钟，独立段防超时。"
+}

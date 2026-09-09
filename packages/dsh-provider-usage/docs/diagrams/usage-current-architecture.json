@@ -1,0 +1,511 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "dsh-provider-usage 现状分层架构（两大功能域）",
+    "quality_profile": "showcase",
+    "output": "usage-current-architecture.html",
+    "viewBox": [
+      1960,
+      880
+    ],
+    "repository": {
+      "url": "https://github.com/wingsky-1/dsh-plugin-hub",
+      "revision": "9ed7e5f44473ac61df811f650f1963c7ee4d7b6b"
+    }
+  },
+  "components": [
+    {
+      "id": "c1",
+      "type": "backend",
+      "label": "C1 契约/工具层",
+      "sublabel": "v2 契约 · esc/图表 · 配置",
+      "pos": [
+        60,
+        90
+      ],
+      "size": [
+        230,
+        66
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-provider-usage/src/contracts.ts",
+          "line": 98
+        },
+        {
+          "path": "packages/dsh-provider-usage/src/charts.ts",
+          "line": 328
+        }
+      ]
+    },
+    {
+      "id": "c2",
+      "type": "backend",
+      "label": "C2 注册/加载层",
+      "sublabel": "注册表 · 持久化 · 热更新 · 密钥",
+      "pos": [
+        60,
+        300
+      ],
+      "size": [
+        230,
+        66
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-provider-usage/src/registry.ts",
+          "line": 63
+        },
+        {
+          "path": "packages/dsh-provider-usage/src/user-adapters.ts",
+          "line": 224
+        },
+        {
+          "path": "packages/dsh-provider-usage/src/provider-config.ts",
+          "line": 97
+        }
+      ]
+    },
+    {
+      "id": "c4",
+      "type": "database",
+      "label": "C4 历史存储层",
+      "sublabel": "按天分片 JSONL · v3 迁移 · 清理",
+      "pos": [
+        60,
+        510
+      ],
+      "size": [
+        230,
+        66
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-provider-usage/src/core/history.ts",
+          "line": 30
+        }
+      ]
+    },
+    {
+      "id": "c6",
+      "type": "frontend",
+      "label": "C6 路由与胶囊出口",
+      "sublabel": "/stats · /history · 客户端胶囊",
+      "pos": [
+        520,
+        90
+      ],
+      "size": [
+        250,
+        66
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-provider-usage/src/routes/stats.ts",
+          "line": 15
+        },
+        {
+          "path": "packages/dsh-provider-usage/src/client/index.tsx",
+          "line": 476
+        }
+      ]
+    },
+    {
+      "id": "c3",
+      "type": "backend",
+      "label": "C3 执行管道层",
+      "sublabel": "缓存+Mutex · v2 管道 · 安全执行",
+      "pos": [
+        520,
+        300
+      ],
+      "size": [
+        250,
+        66
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-provider-usage/src/stats-service.ts",
+          "line": 139
+        },
+        {
+          "path": "packages/dsh-provider-usage/src/pipeline/v2.ts",
+          "line": 65
+        },
+        {
+          "path": "packages/dsh-provider-usage/src/core/guards.ts",
+          "line": 24
+        }
+      ]
+    },
+    {
+      "id": "c5",
+      "type": "external",
+      "label": "C5 适配器实现层",
+      "sublabel": "DeepSeek · OpenCode Go · 智谱",
+      "pos": [
+        520,
+        510
+      ],
+      "size": [
+        250,
+        66
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-provider-usage/src/adapters/deepseek-official.mjs",
+          "line": 760
+        },
+        {
+          "path": "packages/dsh-provider-usage/src/adapters/opencode-go.mjs",
+          "line": 398
+        }
+      ]
+    },
+    {
+      "id": "e1",
+      "type": "backend",
+      "label": "E1 事件采集层",
+      "sublabel": "session/event 折叠状态机",
+      "pos": [
+        1150,
+        90
+      ],
+      "size": [
+        250,
+        66
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-provider-usage/src/trend/collector.ts",
+          "line": 227
+        },
+        {
+          "path": "packages/dsh-provider-usage/src/trend/types.ts",
+          "line": 71
+        }
+      ]
+    },
+    {
+      "id": "e2",
+      "type": "backend",
+      "label": "E2 聚合/压实/存储层",
+      "sublabel": "cells+dirDays · 日切压实 · 自愈",
+      "pos": [
+        1150,
+        300
+      ],
+      "size": [
+        250,
+        66
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-provider-usage/src/trend/aggregator.ts",
+          "line": 1
+        },
+        {
+          "path": "packages/dsh-provider-usage/src/trend/store.ts",
+          "line": 28
+        },
+        {
+          "path": "packages/dsh-provider-usage/src/trend/index.ts",
+          "line": 88
+        }
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "backend",
+      "label": "E4 报告执行/产出层",
+      "sublabel": "LLM 生成 · 脱敏 · 落盘/索引",
+      "pos": [
+        1150,
+        510
+      ],
+      "size": [
+        250,
+        66
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-provider-usage/src/report/runner.ts",
+          "line": 165
+        },
+        {
+          "path": "packages/dsh-provider-usage/src/report/generate.ts",
+          "line": 213
+        },
+        {
+          "path": "packages/dsh-provider-usage/src/report/format.ts",
+          "line": 32
+        }
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "frontend",
+      "label": "E5 路由与展示出口",
+      "sublabel": "/trend · /report·config · 图表",
+      "pos": [
+        1520,
+        300
+      ],
+      "size": [
+        230,
+        66
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-provider-usage/src/routes/ui.ts",
+          "line": 62
+        },
+        {
+          "path": "packages/dsh-provider-usage/src/routes/reports.ts",
+          "line": 51
+        },
+        {
+          "path": "packages/dsh-provider-usage/src/client/trend.tsx",
+          "line": 184
+        }
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "backend",
+      "label": "E3 报告配置/调度层",
+      "sublabel": "三周期窗口 · lastRun · 队列",
+      "pos": [
+        1530,
+        510
+      ],
+      "size": [
+        230,
+        66
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-provider-usage/src/report/config.ts",
+          "line": 382
+        },
+        {
+          "path": "packages/dsh-provider-usage/src/report/schedule.ts",
+          "line": 76
+        },
+        {
+          "path": "packages/dsh-provider-usage/src/report/tasks.ts",
+          "line": 91
+        }
+      ]
+    },
+    {
+      "id": "assembly",
+      "type": "backend",
+      "label": "装配层 apply.ts",
+      "sublabel": "组合两域 · 16 路由 · 生命周期",
+      "pos": [
+        850,
+        680
+      ],
+      "size": [
+        240,
+        66
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-provider-usage/src/apply.ts",
+          "line": 208
+        },
+        {
+          "path": "packages/dsh-provider-usage/src/index.ts",
+          "line": 110
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "域1 · 适配器取数与胶囊展示框架",
+      "wraps": [
+        "c1",
+        "c2",
+        "c3",
+        "c4",
+        "c5",
+        "c6"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "域2 · 事件监听 · 趋势与报告框架",
+      "wraps": [
+        "e1",
+        "e2",
+        "e3",
+        "e4",
+        "e5"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "c1-c2",
+      "from": "c1",
+      "to": "c2",
+      "label": "isUsageStatsAdapter",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 28
+    },
+    {
+      "id": "c1-c3",
+      "from": "c1",
+      "to": "c3",
+      "label": "FetchContext/esc",
+      "toSide": "left"
+    },
+    {
+      "id": "c2-c3",
+      "from": "c2",
+      "to": "c3",
+      "label": "getEntry/密钥注入",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        460,
+        306
+      ]
+    },
+    {
+      "id": "c3-c4",
+      "from": "c3",
+      "to": "c4",
+      "label": "append 落盘 0600",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "c3-c5",
+      "from": "c3",
+      "to": "c5",
+      "label": "fetchData/format 注入",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        712,
+        432
+      ]
+    },
+    {
+      "id": "c6-c3",
+      "from": "c6",
+      "to": "c3",
+      "label": "GET /stats·/history",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 28
+    },
+    {
+      "id": "e1-e2",
+      "from": "e1",
+      "to": "e2",
+      "label": "call/correct/counter",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 28
+    },
+    {
+      "id": "e2-e4",
+      "from": "e2",
+      "to": "e4",
+      "label": "buckets/dirRows 快照",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 28
+    },
+    {
+      "id": "e4-e3",
+      "from": "e4",
+      "to": "e3",
+      "label": "lastRun 推进",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelDx": 20,
+      "labelDy": 14
+    },
+    {
+      "id": "e3-e4",
+      "from": "e3",
+      "to": "e4",
+      "label": "due 提交/执行",
+      "fromSide": "left",
+      "toSide": "right",
+      "labelDx": -20
+    },
+    {
+      "id": "e5-e2",
+      "from": "e5",
+      "to": "e2",
+      "label": "GET /trend 查询",
+      "fromSide": "left",
+      "toSide": "right",
+      "labelDx": -20,
+      "labelDy": 14
+    },
+    {
+      "id": "e5-e4",
+      "from": "e5",
+      "to": "e4",
+      "label": "配置/详情/生成",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": -28
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "域1 · 主链路",
+      "items": [
+        "C6→C3→C5：取数 5s 超时 + 30s 缓存 + Mutex 排队",
+        "C3→C4：ok&&fresh 才 append；失败带值降级 stale 帧",
+        "缓存四失效挂点：落盘/select/add/热更新"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "域2 · 主链路",
+      "items": [
+        "E1 订阅 session/event → E2 双面记账 + 4s 防抖刷盘 + 日切压实",
+        "E3 60s tick + lastRun 幂等 → E4 LLM 生成零凭据 → 落盘",
+        "E5 查询面：/trend 目录双面 · 报告读侧投影"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "装配层组合",
+      "items": [
+        "apply 注册内置适配器(C2) · 预热接线(C3)",
+        "session/event 订阅(E1) · 调度接线(E3)",
+        "域1 ↔ 域2 零直接 import，共享 contracts/charts/config"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "风险",
+      "items": [
+        "变异盲区：trend/report/routes/stats-service 零变异覆盖（阶段零补强）",
+        "SSE /events 宿主残留、客户端零消费",
+        "aggregator 1177 行，缺陷修复密集（阶段三拆分）",
+        "重构实施跟踪：docs/refactor-implementation-plan.md"
+      ]
+    }
+  ]
+}

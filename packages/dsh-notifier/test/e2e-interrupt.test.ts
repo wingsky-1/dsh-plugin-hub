@@ -21,7 +21,7 @@ import { assert, makeNotifier, agentWithTitle, waitMergeWindow, turnPair } from 
 const work = mkdtempSync(join(tmpdir(), "dnotify-e2e-interrupt-"));
 try {
   const infos = [];
-  const { listeners } = await makeNotifier(work, {}, { logger: { warn: () => {}, info: (t) => infos.push(t) } });
+  const { listeners } = await makeNotifier(work, { doneMergeWindowMs: 50 }, { logger: { warn: () => {}, info: (t) => infos.push(t) } });
   const status = listeners.get("agent/status")[0];
 
   // 用户停止生成（turn/end aborted）：不通知完成（本轮 aborted closure 落盘，
@@ -51,8 +51,8 @@ try {
   assert.equal(infos.length, 1, "S1：无 turn/end 静默");
 
   // 中断后继续：新一轮 turn/end completed（turn 号递增）正常通知
-  // （先等 s1-1 场景的 3s 完成聚合窗口结束，避免本轮完成被并入旧窗口挂起）
-  await waitMergeWindow();
+  // （先等 s1-1 场景的完成聚合窗口（短窗 50ms）结束，避免本轮完成被并入旧窗口挂起）
+  await waitMergeWindow(50);
   const int2a = turnPair("int-2", "中断后继续", {}, { turn: 1, kind: "aborted" });
   status({ agent: int2a.running, status: "running" });
   status({ agent: int2a.idle, status: "idle" });
@@ -83,8 +83,8 @@ try {
   assert.equal(infos.length, 2, "阻塞（turn/end blocked）不通知完成");
 
   // 失败后继续：新一轮 turn/end completed（turn 号递增）正常通知
-  // （先等 int-2 完成聚合窗口结束，避免本轮完成被并入旧窗口挂起）
-  await waitMergeWindow();
+  // （先等 int-2 完成聚合窗口（短窗 50ms）结束，避免本轮完成被并入旧窗口挂起）
+  await waitMergeWindow(50);
   const err2a = turnPair("err-2", "失败后继续", {}, { turn: 1, kind: "error" });
   status({ agent: err2a.running, status: "running" });
   status({ agent: err2a.idle, status: "idle" });

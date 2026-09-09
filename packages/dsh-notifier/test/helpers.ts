@@ -369,9 +369,10 @@ export function quietWindowNow(halfSpanMinutes = 2) {
   return { enabled: true, start: hhmm(-halfSpanMinutes), end: hhmm(halfSpanMinutes) };
 }
 
-/** 等待聚合窗口（doneMergeWindowMs 默认 3s）过期。 */
-export async function waitMergeWindow() {
-  await new Promise((resolve) => setTimeout(resolve, 3200));
+/** 等待聚合窗口过期（默认 doneMergeWindowMs=3000）；windowMs 传实际窗口值
+ *  （测试注入短窗如 50ms，缩短套件等待：6 处调用 19.2s → ~1.8s）。 */
+export async function waitMergeWindow(windowMs = 3000) {
+  await new Promise((resolve) => setTimeout(resolve, windowMs + 250));
 }
 
 /**

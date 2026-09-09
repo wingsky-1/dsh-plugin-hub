@@ -36,6 +36,9 @@ import "./unit-fetch-timeout.test.ts";
 import "./unit-trend.test.ts";
 import "./unit-trend-view.test.ts";
 import "./unit-report.test.ts";
+import "./unit-stats-service.test.ts";
+import "./unit-routes.test.ts";
+import "./unit-report-executor.test.ts";
 
 import {
   apply,
@@ -511,6 +514,12 @@ export function formatPanel() { return "<p>p2</p>"; }
     const adaptersRoute = routes.find((r) => r.path === ROUTES.adapters);
     const meta = await callHandler(adaptersRoute, fakeReq());
     assert.equal(meta.enabled[OPENCODE_GO_PROVIDER], undefined, "清空后无启用");
+
+    // D7 S1 扩展：清空 select 走 purgeAllCaches（generation 失效收口）→ 缓存归零。
+    // 必须在此断言——紧随的 /stats 请求会写 no-enabled-adapter 错误帧回缓存（既有设计）。
+    const healthRoute = routes.find((r) => r.path === ROUTES.health);
+    const h = await callHandler(healthRoute, fakeReq());
+    assert.equal(h.cacheSize, 0, "清空 select 后缓存归零（purgeAllCaches 收口）");
 
     // 清空后 /stats 返回 no-enabled-adapter（默认 provider 已被清空）
     const stats = routes.find((r) => r.path === ROUTES.stats);
@@ -2160,8 +2169,9 @@ console.log("[smoke] #503 trend 挂接 + /trend 集成断言全部通过 ✓");
   assert.ok(trendSource.includes("dirNeedsScopeNote(id) ? t(\"trendDirUnidentifiedNote\") : dirDisplayLabel(id)"), "图例 title 与可见文本同源净化（不再直用原始键）");
   assert.ok(readFileSync(join(pkgDir, "src/client/locales.ts"), "utf8").includes('trendCardTopDir: "Top 目录"'), "locales 中英对称新增目录面 Top 标签");
   assert.ok(reportSource.includes("disabled={dirOptions.length === 0}"), "B4 空候选时「全部目录」checkbox 禁用（空=全部语义不变）");
-  const applySource = readFileSync(join(pkgDir, "src/apply.ts"), "utf8");
-  assert.ok(applySource.includes("sanitizeDirName(r.dir) ?? TREND_UNIDENTIFIED"), "listDirs 出口过 sanitizeDirName（旁路污染分片行防御收口）");
+  // D8：listDirs 出口净化从 apply 闭包移入 list-dirs.ts 工厂（装配层零隐藏可变状态）
+  const listDirsSource = readFileSync(join(pkgDir, "src/report/list-dirs.ts"), "utf8");
+  assert.ok(listDirsSource.includes("sanitizeDirName(r.dir) ?? TREND_UNIDENTIFIED"), "listDirs 出口过 sanitizeDirName（旁路污染分片行防御收口，D8 移入工厂）");
 
   // B4：设置页报告目录范围多选（GET dirs 回填 + directories draft + 保存 round-trip 消费点）
   assert.ok(reportSource.includes("reportDirectories"), "报告配置卡存在目录范围多选（i18n 哨兵）");

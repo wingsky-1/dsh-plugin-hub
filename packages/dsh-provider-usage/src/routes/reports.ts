@@ -20,17 +20,17 @@ import {
 } from "../report/config.ts";
 import { readReportIndex, reportHtmlFile, reportMetaFile } from "../report/runner.ts";
 import { presetLastRunForNewlyEnabled, previousClosedWindow, type DueReport } from "../report/schedule.ts";
-import { readLastRun, updateLastRun, type ReportScheduler } from "../report/scheduler.ts";
+import { readLastRun, updateLastRun } from "../report/last-run.ts";
 import type { ReportTaskQueue } from "../report/tasks.ts";
+import type { ReportConfigService } from "../report/report-config-service.ts";
 import { sanitizeHtml } from "../sanitize.ts";
 
 export interface ReportRoutesContext {
   ctx: Context;
   historyRoot: string;
   reportQueue: ReportTaskQueue;
-  getReportCfg: () => ReportConfig;
-  setReportCfg: (cfg: ReportConfig) => void;
-  reportScheduler: ReportScheduler;
+  /** D8：reportCfg 双源收口（get 读内存权威；update 串行写盘+内存+scheduler 热更）。 */
+  reportCfgService: ReportConfigService;
   /**
    * 目录候选清单（#633 分片 b2 B4）：GET /report-config 附带 dirs（trend.dirTotals
    * 全留存窗口聚合，含未识别桶），设置页目录范围多选的数据源。可选——测试/无趋势
@@ -48,13 +48,29 @@ const REPORT_PERIODS = new Set<ReportPeriod>(["daily", "weekly", "monthly"]);
 /** taskId 白名单（uuid v4）。 */
 const TASK_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
+/** 报告周期白名单（period 合法性独立校验，保持 invalid-period/invalid-key 双错误码语义）。 */
+export function isReportPeriodValid(period: string): boolean {
+  return REPORT_PERIODS.has(period as ReportPeriod);
+}
+
+/** 报告窗口键合法性（period+key 双白名单；抽离供路由与单测共用，变异段前置）。 */
+export function isReportKeyValid(period: string, key: string): boolean {
+  if (!REPORT_PERIODS.has(period as ReportPeriod)) return false;
+  return REPORT_KEY_RES[period as ReportPeriod].test(key);
+}
+
+/** 生成任务 taskId 合法性（uuid v4 白名单；抽离供路由与单测共用）。 */
+export function isTaskIdValid(taskId: string): boolean {
+  return TASK_ID_RE.test(taskId);
+}
+
 export async function handleReportConfig(
   req: IncomingMessage,
   res: ServerResponse,
   context: ReportRoutesContext,
 ): Promise<void> {
   if (!guardLoopbackMethod(req, res, ["GET", "POST"])) return;
-  const { ctx, historyRoot, getReportCfg, setReportCfg, reportScheduler } = context;
+  const { ctx, historyRoot } = context;
 
   if (req.method === "GET") {
     const config = await readReportConfig(historyRoot);
@@ -89,18 +105,17 @@ export async function handleReportConfig(
   }
 
   const normalized = normalizeReportConfig(body);
-  const currentCfg = getReportCfg();
+  const currentCfg = context.reportCfgService.get();
   // #629 P2：preset 写 lastRun 走单一临界区（写前重读），不与任务执行器推进互踩字段；
   // readLastRun 仅作 changed 预判（乐观跳过无变化时的写盘），真实快照在临界区内重读。
   const preset = presetLastRunForNewlyEnabled(currentCfg, normalized, Date.now(), await readLastRun(historyRoot));
   if (preset.changed) await updateLastRun(historyRoot, (cur) => presetLastRunForNewlyEnabled(currentCfg, normalized, Date.now(), cur).lastRun);
   try {
-    await writeReportConfig(historyRoot, normalized);
+    // D8：写盘 + 内存权威 + scheduler 热更由 ReportConfigService 串行收口（并发 POST 不交错）
+    await context.reportCfgService.update(normalized);
   } catch {
     return writeJson(res, 500, { error: "persist-failed" });
   }
-  setReportCfg(normalized);
-  reportScheduler.updateConfig(normalized);
   writeJson(res, 200, { ok: true, config: normalized });
 }
 
@@ -166,10 +181,10 @@ export async function handleReportDetail(
   const url = new URL(req.url ?? "/", "http://localhost");
   const period = url.searchParams.get("period") ?? "";
   const key = url.searchParams.get("key") ?? "";
-  if (!REPORT_PERIODS.has(period as ReportPeriod)) {
+  if (!isReportPeriodValid(period)) {
     return writeJson(res, 400, { error: "invalid-period" });
   }
-  if (!REPORT_KEY_RES[period as ReportPeriod].test(key)) {
+  if (!isReportKeyValid(period, key)) {
     return writeJson(res, 400, { error: "invalid-key" });
   }
 
@@ -195,7 +210,7 @@ export async function handleReportGenerate(
   context: ReportRoutesContext,
 ): Promise<void> {
   if (!guardLoopbackMethod(req, res, ["POST"])) return;
-  const { historyRoot, reportQueue, getReportCfg } = context;
+  const { historyRoot, reportQueue, reportCfgService } = context;
 
   let body: Record<string, unknown>;
   try {
@@ -207,14 +222,14 @@ export async function handleReportGenerate(
   }
 
   const period = body.period;
-  if (typeof period !== "string" || !REPORT_PERIODS.has(period as ReportPeriod)) {
+  if (typeof period !== "string" || !isReportPeriodValid(period)) {
     return writeJson(res, 400, { error: "invalid-period" });
   }
   // #626：force 必须严格 === true 才生效（防御 "force":"false" 等字符串形态）
   const force = body.force === true;
 
   // 手动生成恒定锚定已闭环的上一完整周期（日报=昨天全天，消灭凌晨漂移；不检查 enabled）
-  const due = previousClosedWindow(period as ReportPeriod, getReportCfg(), Date.now());
+  const due = previousClosedWindow(period as ReportPeriod, reportCfgService.get(), Date.now());
 
   // #626 幂等短路：窗口已有成功报告且非强制重生成 → 直接复用，不产生新任务
   if (!force) {
@@ -239,7 +254,7 @@ export async function handleReportStatus(
   const { reportQueue } = context;
   const url = new URL(req.url ?? "/", "http://localhost");
   const taskId = url.searchParams.get("taskId") ?? "";
-  if (!TASK_ID_RE.test(taskId)) return writeJson(res, 404, { error: "task-not-found" });
+  if (!isTaskIdValid(taskId)) return writeJson(res, 404, { error: "task-not-found" });
   const task = reportQueue.get(taskId);
   if (task === undefined) return writeJson(res, 404, { error: "task-not-found" });
   writeJson(res, 200, {
