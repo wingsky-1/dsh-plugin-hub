@@ -23,14 +23,12 @@ import {
   searchCatalogMulti,
   listCatalog,
   findToolDetail,
-  parseFullServerName,
-  fullServerName,
   policyAllows,
   policyDenialReason,
   isToolDenied,
   toolDisabledReason,
-  MIDDLEWARE_GLOBAL_ROOT,
 } from "./middleware-utils.ts";
+import { parseFullServerName, fullServerName, MIDDLEWARE_GLOBAL_ROOT } from "./workspace/interface.ts";
 import type { MiddlewareMode, DisabledToolsMap } from "./middleware-types.ts";
 import type { McpStatsCollector } from "./call-stats.ts";
 

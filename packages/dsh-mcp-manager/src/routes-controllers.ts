@@ -16,9 +16,14 @@
 
 import { writeJson, readJsonBody, guardLoopbackMethod } from "../../../shared/host-utils.js";
 import { parseClaudeJson } from "./import.ts";
-import { SCOPE_PROJECT, normalizeScope } from "./scope.ts";
-import { parseFullServerName, MIDDLEWARE_GLOBAL_ROOT, normalizeToolName } from "./middleware-utils.ts";
-import { normalizeMiddlewareMode } from "./middleware-const.ts";
+import {
+  SCOPE_PROJECT,
+  normalizeScope,
+  parseFullServerName,
+  normalizeToolName,
+  normalizeMiddlewareMode,
+  MIDDLEWARE_GLOBAL_ROOT,
+} from "./workspace/interface.ts";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { RoutesManager } from "./routes.ts";

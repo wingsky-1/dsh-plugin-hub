@@ -11,7 +11,7 @@ import { installSettingsNamespace } from "../../../shared/settings-namespace.js"
 import { DEFAULT_ANNOUNCE_CATALOG, DEFAULT_CATALOG_MAX_ENTRIES } from "./catalog.ts";
 import { Config, DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS } from "./config-schema.ts";
 import { DEFAULT_RESULT_TRUNCATE_BYTES } from "./supervisor.ts";
-import { normalizeMiddlewareMode } from "./middleware.ts";
+import { normalizeMiddlewareMode } from "./workspace/interface.ts";
 import type { McpManager } from "./manager.ts";
 import { uiConfigChangedFrame } from "./routes.ts";
 import { defaultStorePath } from "./store.ts";

@@ -1,8 +1,10 @@
 /**
- * dsh-mcp-manager — 中间层常量与模式归一化（单一事实源）。
+ * dsh-mcp-manager — 中间层常量（执行域语义，单一事实源）。
+ *
+ * normalizeMiddlewareMode 阶段 4 迁至 src/workspace/middleware-mode.ts
+ * （函数归工作空间路由域）；本文件保留 limits/超时/目录边界常量，
+ * 阶段 6 归 connection/runtime/limits.ts（v3 C-DIR）。
  */
-
-import type { MiddlewareMode } from "./middleware-types.ts";
 
 /** 连接超时（ms）。 */
 export const CONNECT_TIMEOUT_MS = 10_000;
@@ -24,8 +26,3 @@ export const MAX_TOTAL_CATALOG_BYTES = 256 * 1024;
 export const LIST_DEFAULT_TOOLS_PER_SERVER = 50;
 /** ws_mcp_list 每服务器工具条数硬上限（目录采集边界内）。 */
 export const LIST_MAX_TOOLS_PER_SERVER = 500;
-
-/** 归一化中间层模式（非法值回落 off）。 */
-export function normalizeMiddlewareMode(value: unknown): MiddlewareMode {
-  return value === "project" || value === "all" ? value : "off";
-}

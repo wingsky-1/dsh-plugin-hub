@@ -17,8 +17,9 @@
 import type { Context } from "@deepseek-ai/cordis";
 import { McpManager } from "./manager.ts";
 import { McpStore } from "./store.ts";
-import { normalizeMiddlewareMode, registerMiddlewareTools } from "./middleware.ts";
-import { makeMiddlewareHotSwitch, makeResolveRoot } from "./apply-runtime.ts";
+import { registerMiddlewareTools } from "./middleware.ts";
+import { makeMiddlewareHotSwitch } from "./apply-runtime.ts";
+import { normalizeMiddlewareMode, makeResolveRoot } from "./workspace/interface.ts";
 import { registerCatalogInjection, setupConfigWatchersAsync, setupRoutesAndBroadcast } from "./apply-runtime.ts";
 import { provideMcpManagerService } from "./apply-services.ts";
 import {
