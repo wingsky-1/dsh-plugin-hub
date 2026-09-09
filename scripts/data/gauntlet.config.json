@@ -66,21 +66,21 @@
         "scope": "src 级六段（#342 二期）：manager manager.ts / entry index+normalize+import / supervisor supervisor+middleware-state+store+scope / middleware middleware+middleware-utils+middleware-const / routes middleware-register+routes / runtime catalog+apply+transport+placement-math+config-schema+protocol+middleware-types；基线为 src 口径，由四班次 observe 重建"
       },
       "dsh-provider-usage": {
-        "baselineScore": 69.03,
-        "baselineCovered": 69.03,
-        "baselineKilled": 3423,
-        "baselineTimeout": 30,
-        "baselineSurvived": 1549,
-        "baselineTotal": 5002,
-        "baselineNoCoverage": 900,
+        "baselineScore": 71.41,
+        "baselineCovered": 71.41,
+        "baselineKilled": 3586,
+        "baselineTimeout": 34,
+        "baselineSurvived": 1449,
+        "baselineTotal": 6400,
+        "baselineNoCoverage": 1331,
         "baselineErrors": 0,
         "baselineDate": "2026-09-09",
-        "baselineDuration": "13m54s（阶段二重建：十一段基线 + report 两段含 D8 新文件）",
-        "baselineScope": "src 级十段全量（#342 二期六段 + 阶段零四段，口径详见 scope 字段；旧 lib 行号区间口径见 git history 2026-08-25）",
-        "config": "stryker.conf.d/dsh-provider-usage-{entry,apply,contracts,sanitize,registry,pipeline,trend-aggregate,trend-collect,report-schedule,report-execute,routes}.json（#342 二期六段 + 阶段零四段 + 阶段一 routes 段 + 阶段二 D8 归位）",
-        "hardeningNote": "#150 两阶段达标开启 strict；阶段零（#670）：补盲区四段 + testFiles；阶段一（#670）：routes 段开段；阶段二（#670）：D8 last-run/report-index/executor/list-dirs/report-config-service 新文件并入 report 段；阶段三（#670）：aggregator 拆分为 aggregate-rows/aggregate-query 两纯函数模块并入 trend-aggregate 段（baseline 数字待 observe 夜间重建，见报告）",
+        "baselineDuration": "约 21m（阶段三重建：十二段基线全包实测——含 errsurf 新段 + trend-aggregate 拆分面 aggregate-rows/aggregate-query）",
+        "baselineScope": "src 级十二段全量（#342 二期六段 + 阶段零四段 + 阶段一 routes 段 + 阶段三 errsurf 段，口径详见 scope 字段）",
+        "config": "stryker.conf.d/dsh-provider-usage-{entry,apply,contracts,sanitize,registry,pipeline,trend-aggregate,trend-collect,report-schedule,report-execute,routes,errsurf}.json（#342 二期六段 + 阶段零四段 + 阶段一 routes 段 + 阶段二 D8 归位 + 阶段三 errsurf 新段）",
+        "hardeningNote": "#150 两阶段达标开启 strict；阶段零（#670）：补盲区四段 + testFiles；阶段一（#670）：routes 段开段；阶段二（#670）：D8 last-run/report-index/executor/list-dirs/report-config-service 新文件并入 report 段；阶段三（#670）：aggregator 拆分为 aggregate-rows/aggregate-query 两纯函数模块并入 trend-aggregate 段 + R8 台账守恒断言（unit-trend-ledger）与 errsurf（unit-errsurf）入 testFiles + errsurf 新段；基线已全包 12 段实测重建 71.41%",
         "threshold": 60,
-        "scope": "src 级十一段（#342 二期六段 + 阶段零四段 + 阶段一 routes 段）：entry / apply / contracts / sanitize / registry registry+user-adapter-loader / pipeline history+v2+hotreload+placement-math+path-resolve+client-logic+provider-config+charts+stats-service / trend-aggregate aggregator+aggregate-rows+aggregate-query+store+index（阶段三 D2 拆分并入 mutate 面） / trend-collect collector+types / report-schedule config+schedule+scheduler+tasks+last-run+report-config-service（D8 归位）/ report-execute runner+generate+format+report-index+executor+list-dirs（D8 归位）/ routes stats+adapters+ui+reports；基线为 src 口径，由四班次 observe 重建"
+        "scope": "src 级十二段（#342 二期六段 + 阶段零四段 + 阶段一 routes 段 + 阶段三 errsurf 段）：entry / apply / contracts / sanitize / registry registry+user-adapter-loader / pipeline history+v2+hotreload+placement-math+path-resolve+client-logic+provider-config+charts+stats-service / trend-aggregate aggregator+aggregate-rows+aggregate-query+store+index（阶段三 D2 拆分并入 mutate 面） / trend-collect collector+types / report-schedule config+schedule+scheduler+tasks+last-run+report-config-service（D8 归位）/ report-execute runner+generate+format+report-index+executor+list-dirs（D8 归位）/ routes stats+adapters+ui+reports / errsurf errsurf.ts（阶段三 B）；基线为 src 口径，由四班次 observe 重建"
       },
       "dsh-lan-proxy": {
         "baselineScore": 52.43,
