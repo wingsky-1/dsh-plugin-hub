@@ -1,0 +1,454 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "dsh-mcp-manager 分层架构总览",
+    "output": "mcp-manager-archify-overview.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/wingsky-1/dsh-plugin-hub",
+      "revision": "58334fadd28c7cdb5f5ee69043a708db970e28b0"
+    },
+    "views": [
+      {
+        "id": "main-path",
+        "label": "主链路",
+        "focus": [
+          "browser",
+          "api",
+          "config",
+          "conn",
+          "inject",
+          "exec"
+        ],
+        "note": "配置 → 连接 → 注入 → 执行：从浏览器操作到模型可调用的核心主路径。"
+      },
+      {
+        "id": "integration",
+        "label": "集成与观测",
+        "focus": [
+          "integ",
+          "dsh",
+          "inject",
+          "conn"
+        ],
+        "note": "ctx.mcpManager 服务面与宿主注入点。"
+      },
+      {
+        "id": "compose",
+        "label": "装配与生命周期",
+        "focus": [
+          "compose",
+          "config",
+          "conn",
+          "inject",
+          "api",
+          "integ"
+        ],
+        "note": "apply 组合根自上而下的启动顺序与热切换闭包。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "browser",
+      "type": "frontend",
+      "label": "浏览器 UI",
+      "sublabel": "浮窗胶囊 · 模态面板 · 设置卡 · session/state 支撑",
+      "pos": [
+        40,
+        72
+      ],
+      "size": [
+        230,
+        76
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-mcp-manager/src/client/index.ts",
+          "label": "client 入口"
+        }
+      ]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "API 层",
+      "sublabel": "routes · controllers×9 · sse-hub · health",
+      "pos": [
+        460,
+        72
+      ],
+      "size": [
+        230,
+        76
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-mcp-manager/src/routes.ts",
+          "label": "路由装配"
+        }
+      ]
+    },
+    {
+      "id": "stats",
+      "type": "backend",
+      "label": "统计观测层",
+      "sublabel": "call-stats · 披露漏斗 · 1s 防抖落盘",
+      "pos": [
+        880,
+        72
+      ],
+      "size": [
+        220,
+        76
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-mcp-manager/src/call-stats.ts",
+          "label": "统计收集"
+        }
+      ]
+    },
+    {
+      "id": "integ",
+      "type": "backend",
+      "label": "对外集成层",
+      "sublabel": "ctx.mcpManager 服务面 · runtimeRegistry 双轨",
+      "pos": [
+        1200,
+        72
+      ],
+      "size": [
+        230,
+        76
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-mcp-manager/src/apply-services.ts",
+          "label": "服务面装配"
+        }
+      ]
+    },
+    {
+      "id": "config",
+      "type": "backend",
+      "label": "配置管理层",
+      "sublabel": "store · normalize · import · user-state · config-schema",
+      "pos": [
+        40,
+        288
+      ],
+      "size": [
+        230,
+        76
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-mcp-manager/src/store.ts",
+          "label": "持久化"
+        }
+      ]
+    },
+    {
+      "id": "conn",
+      "type": "backend",
+      "label": "连接管理层",
+      "sublabel": "manager · transport · supervisor · middleware 池",
+      "pos": [
+        460,
+        288
+      ],
+      "size": [
+        240,
+        76
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-mcp-manager/src/manager.ts",
+          "label": "调度中枢"
+        }
+      ]
+    },
+    {
+      "id": "inject",
+      "type": "backend",
+      "label": "注入 dsh 层",
+      "sublabel": "mcp__ 直呼 · ws_mcp_* · guard · 能力目录",
+      "pos": [
+        880,
+        288
+      ],
+      "size": [
+        230,
+        76
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-mcp-manager/src/middleware-register.ts",
+          "label": "工具注册"
+        }
+      ]
+    },
+    {
+      "id": "exec",
+      "type": "backend",
+      "label": "工具执行/投影层",
+      "sublabel": "call-result 白名单 · 8KB 截断 · 超时 · redactor",
+      "pos": [
+        1200,
+        288
+      ],
+      "size": [
+        230,
+        76
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-mcp-manager/src/call-result.ts",
+          "label": "投影单一事实源"
+        }
+      ]
+    },
+    {
+      "id": "compose",
+      "type": "backend",
+      "label": "组合根装配层",
+      "sublabel": "apply · watchers · 中间层热切换 · 卸载收口",
+      "pos": [
+        40,
+        504
+      ],
+      "size": [
+        230,
+        76
+      ],
+      "sources": [
+        {
+          "path": "packages/dsh-mcp-manager/src/apply.ts",
+          "label": "装配骨架"
+        }
+      ]
+    },
+    {
+      "id": "infra",
+      "type": "backend",
+      "label": "共享基础设施层",
+      "sublabel": "loopback · sse-hub · host-utils · placement · dsh-home",
+      "pos": [
+        720,
+        504
+      ],
+      "size": [
+        240,
+        76
+      ],
+      "sources": [
+        {
+          "path": "shared/sse-hub.js",
+          "label": "SSE 枢纽"
+        }
+      ]
+    },
+    {
+      "id": "dsh",
+      "type": "external",
+      "label": "DSH 宿主",
+      "sublabel": "tools · systemPrompt · settings · sessions · slots",
+      "pos": [
+        1500,
+        504
+      ],
+      "size": [
+        230,
+        76
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "浏览器端（client bundle）",
+      "wraps": [
+        "browser"
+      ],
+      "pad": 12
+    },
+    {
+      "kind": "region",
+      "label": "宿主插件进程（dsh-mcp-manager）",
+      "wraps": [
+        "api",
+        "config",
+        "conn",
+        "inject",
+        "exec",
+        "integ",
+        "stats",
+        "compose",
+        "infra"
+      ],
+      "pad": 12
+    }
+  ],
+  "connections": [
+    {
+      "id": "c-browser-api",
+      "from": "browser",
+      "to": "api",
+      "label": "HTTP · loopback",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [
+        294,
+        180
+      ]
+    },
+    {
+      "id": "c-api-sse",
+      "from": "api",
+      "to": "browser",
+      "label": "SSE summary/ui-config",
+      "variant": "dashed",
+      "fromSide": "left",
+      "toSide": "right",
+      "labelAt": [
+        436,
+        180
+      ]
+    },
+    {
+      "id": "c-api-config",
+      "from": "api",
+      "to": "config",
+      "label": "CRUD · 导入 · scope"
+    },
+    {
+      "id": "c-config-conn",
+      "from": "config",
+      "to": "conn",
+      "label": "配置热加载 reconcile",
+      "labelAt": [
+        294,
+        380
+      ]
+    },
+    {
+      "id": "c-api-conn",
+      "from": "api",
+      "to": "conn",
+      "label": "connect/disconnect/会话",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        568,
+        210
+      ]
+    },
+    {
+      "id": "c-conn-inject",
+      "from": "conn",
+      "to": "inject",
+      "label": "工具注册 · 目录交付"
+    },
+    {
+      "id": "c-inject-exec",
+      "from": "inject",
+      "to": "exec",
+      "label": "结果投影 · 截断 · 超时",
+      "labelAt": [
+        1100,
+        250
+      ]
+    },
+    {
+      "id": "c-dsh-inject",
+      "from": "dsh",
+      "to": "inject",
+      "label": "模型调用 mcp__/ws_mcp_*",
+      "variant": "emphasis",
+      "labelAt": [
+        1340,
+        470
+      ]
+    },
+    {
+      "id": "c-inject-dsh",
+      "from": "inject",
+      "to": "dsh",
+      "label": "注册工具 · 能力目录 · 提示词",
+      "labelAt": [
+        960,
+        392
+      ]
+    },
+    {
+      "id": "c-integ-conn",
+      "from": "integ",
+      "to": "conn",
+      "label": "registerServer 双轨注入",
+      "fromSide": "bottom",
+      "toSide": "right"
+    },
+    {
+      "id": "c-integ-dsh",
+      "from": "integ",
+      "to": "dsh",
+      "label": "服务面 ctx.mcpManager",
+      "labelAt": [
+        1470,
+        430
+      ]
+    },
+    {
+      "id": "c-compose-conn",
+      "from": "compose",
+      "to": "conn",
+      "label": "装配 · 热切换 · 卸载",
+      "variant": "dashed"
+    },
+    {
+      "id": "c-compose-config",
+      "from": "compose",
+      "to": "config",
+      "label": "读配置 · settings 接线",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "分层职责（7+4+1）",
+      "items": [
+        "用户给定 7 层：配置/连接/注入 dsh/对外集成/API/设置卡/胶囊页面",
+        "补充 4 层：组合根装配/工具执行投影/共享基础设施/统计观测"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "依赖规则",
+      "items": [
+        "组合根自上而下装配，调用自下而上",
+        "连接层为中枢：受配置热加载/注册双轨/会话路由三方驱动"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "横切安全",
+      "items": [
+        "loopback 围栏 + redactor 脱敏 + env 净化",
+        "${ENV} 引用不落盘明文，0600 原子写，防提示注入转义"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "重设计方向",
+      "items": [
+        "call-result 单一事实源收敛（supervisor/middleware 两路径）",
+        "执行超时/退避口径统一；服务面查询与 summary 同源"
+      ]
+    }
+  ]
+}
