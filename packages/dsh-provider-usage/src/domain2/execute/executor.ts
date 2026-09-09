@@ -8,11 +8,11 @@
  * 阶段四目录化后归 domain2/execute/；依赖域2公共层（last-run/report-index）。
  */
 import type { Context } from "@deepseek-ai/cordis";
-import type { ReportConfig } from "../schedule/config.ts";
+import type { ReportConfig } from "../schedule/interface.ts";
 import { readReportIndex, runDueReport } from "./runner.ts";
-import { updateLastRun } from "../common/last-run.ts";
-import type { ReportTaskInput, ReportTaskResult } from "../schedule/tasks.ts";
-import type { TrendTracker } from "../aggregate/index.ts";
+import { updateLastRun } from "../common/interface.ts";
+import type { ReportTaskInput, ReportTaskResult } from "../schedule/interface.ts";
+import type { TrendTracker } from "../aggregate/interface.ts";
 
 export interface DueExecutorDeps {
   trend: TrendTracker;

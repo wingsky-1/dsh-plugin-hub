@@ -6,13 +6,14 @@ import { basename } from "node:path";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import { guardLoopbackMethod, readJsonBody, writeJson } from "../../../../../shared/host-utils.js";
 import { ADAPTER_CONTRACT_VERSION } from "../../shared/interface.ts";
-import type { LayerErrorSurface } from "../common/errsurf.ts";
+import type { LayerErrorSurface } from "../common/interface.ts";
 import type { StatsService } from "../../domain1/pipeline/interface.ts";
-import type { TrendTracker } from "../aggregate/index.ts";
-import { TREND_DIR_MAX } from "../collect/types.ts";
+import type { TrendTracker } from "../aggregate/interface.ts";
+import { TREND_DIR_MAX } from "../collect/interface.ts";
 import { normalizeUiConfig, writeUiConfig, type UiPlacementConfig } from "../../shared/interface.ts";
 
-export interface UiRoutesContext {
+/** UiRoutesContext 依赖装配形状（路由 context 类的构造入口）。 */
+export interface UiRoutesContextOptions {
   statsService: StatsService;
   trend: TrendTracker;
   uiConfig: UiPlacementConfig;
@@ -20,6 +21,28 @@ export interface UiRoutesContext {
   broadcastUiConfigChanged: () => void;
   /** 域2每层错误面（phase3-B #670）：health 响应 per-layer 段数据源。 */
   layerErrors: LayerErrorSurface;
+}
+
+/**
+ * 路由 context 类（#670 D9 深封装）：把路由依赖收敛为类实例，目录外只经构造
+ * 入口装配后交给 createUiRoutes；字段保持只读、无行为逻辑（只做面）。
+ */
+export class UiRoutesContext {
+  readonly statsService: StatsService;
+  readonly trend: TrendTracker;
+  readonly uiConfig: UiPlacementConfig;
+  readonly sseClients: Set<ServerResponse>;
+  readonly broadcastUiConfigChanged: () => void;
+  readonly layerErrors: LayerErrorSurface;
+
+  constructor(opts: UiRoutesContextOptions) {
+    this.statsService = opts.statsService;
+    this.trend = opts.trend;
+    this.uiConfig = opts.uiConfig;
+    this.sseClients = opts.sseClients;
+    this.broadcastUiConfigChanged = opts.broadcastUiConfigChanged;
+    this.layerErrors = opts.layerErrors;
+  }
 }
 
 const TREND_WINDOW: Record<string, number> = { day: 30, week: 12, month: 12 };

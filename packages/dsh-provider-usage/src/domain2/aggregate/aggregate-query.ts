@@ -21,7 +21,7 @@ import {
   type TrendCell,
   type TrendDirRow,
   type TrendHourRow,
-} from "../collect/types.ts";
+} from "../collect/interface.ts";
 
 /** 聚合指标（序列查询的取值维度；total = 四项 token 之和）。 */
 export type TrendMetric = "total" | "input" | "output" | "cacheRead" | "cacheWrite" | "calls";

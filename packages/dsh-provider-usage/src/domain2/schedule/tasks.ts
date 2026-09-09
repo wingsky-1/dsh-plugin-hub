@@ -14,7 +14,7 @@
  */
 import { randomUUID } from "node:crypto";
 import type { ReportPeriod } from "./config.ts";
-import type { ReportMeta } from "../execute/generate.ts";
+import type { ReportMeta } from "../execute/interface.ts";
 
 export type ReportTaskStatus = "queued" | "running" | "done" | "failed";
 

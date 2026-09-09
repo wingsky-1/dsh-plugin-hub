@@ -22,7 +22,7 @@ import {
   type TrendDetailRow,
   type TrendDirRow,
   type TrendHourRow,
-} from "../collect/types.ts";
+} from "../collect/interface.ts";
 
 export type TrendShardRow = TrendDetailRow | TrendCounterRow | TrendAggRow | TrendDirRow | TrendHourRow;
 

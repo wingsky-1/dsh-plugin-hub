@@ -14,7 +14,7 @@
  * - 推送：可选经 dsh-notifier 渠道（kind 动态注册）。
  */
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
-import { TREND_DIR_MAX } from "../collect/types.ts";
+import { TREND_DIR_MAX } from "../collect/interface.ts";
 
 /** 报告周期类型。 */
 export type ReportPeriod = "daily" | "weekly" | "monthly";

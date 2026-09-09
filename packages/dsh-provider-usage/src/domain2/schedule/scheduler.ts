@@ -9,7 +9,7 @@
  */
 import type { ReportConfig } from "./config.ts";
 import { pendingReports, type DueReport } from "./schedule.ts";
-import { readLastRun, ensureLastRunMigrated } from "../common/last-run.ts";
+import { readLastRun, ensureLastRunMigrated } from "../common/interface.ts";
 
 export interface ReportSchedulerOptions {
   /** 存储根（historyRoot）。 */

@@ -17,11 +17,11 @@ import {
   writeReportConfig,
   type ReportConfig,
   type ReportPeriod,
-} from "../schedule/config.ts";
-import { readReportIndex, reportHtmlFile, reportMetaFile } from "../execute/runner.ts";
-import { presetLastRunForNewlyEnabled, previousClosedWindow, type DueReport } from "../schedule/schedule.ts";
-import { readLastRun, updateLastRun } from "../common/last-run.ts";
-import type { ReportTaskQueue } from "../schedule/tasks.ts";
+} from "../schedule/interface.ts";
+import { readReportIndex, reportHtmlFile, reportMetaFile } from "../execute/interface.ts";
+import { presetLastRunForNewlyEnabled, previousClosedWindow, type DueReport } from "../schedule/interface.ts";
+import { readLastRun, updateLastRun } from "../common/interface.ts";
+import type { ReportTaskQueue } from "../schedule/interface.ts";
 import type { ReportConfigService } from "../../apply/report-config-service.ts";
 import { sanitizeHtml } from "../../shared/interface.ts";
 

@@ -6,10 +6,10 @@ import { join } from "node:path";
 import type { Context } from "@deepseek-ai/cordis";
 import { errorMessage } from "../../../../../shared/host-utils.js";
 import { dayKey, escHtml } from "../../shared/interface.ts";
-import { metricValue } from "../aggregate/aggregator.ts";
-import type { TrendTracker } from "../aggregate/index.ts";
-import { sumToken, type TrendCell } from "../collect/types.ts";
-import { promptFor, type ReportConfig, type ReportPeriod } from "../schedule/config.ts";
+import { metricValue } from "../aggregate/interface.ts";
+import type { TrendTracker } from "../aggregate/interface.ts";
+import { sumToken, type TrendCell } from "../collect/interface.ts";
+import { promptFor, type ReportConfig, type ReportPeriod } from "../schedule/interface.ts";
 import { reportBodyToHtml } from "./format.ts";
 import {
   buildStatsSnapshot,
@@ -18,8 +18,8 @@ import {
   type ReportMetaSummary,
   type ReportStatsSnapshot,
 } from "./generate.ts";
-import type { DueReport } from "../schedule/schedule.ts";
-import { parseReportIndexLines } from "../common/report-index.ts";
+import type { DueReport } from "../schedule/interface.ts";
+import { parseReportIndexLines } from "../common/interface.ts";
 
 export function reportsDir(root: string): string {
   return join(root, "reports");

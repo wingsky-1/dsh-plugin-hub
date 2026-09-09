@@ -7,8 +7,8 @@
  */
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { ReportConfig, ReportPeriod } from "../schedule/config.ts";
-import { alignLastRun, deriveLastRun, LAST_RUN_SCHEMA, type LastRunRecord } from "../schedule/schedule.ts";
+import type { ReportConfig, ReportPeriod } from "../schedule/interface.ts";
+import { alignLastRun, deriveLastRun, LAST_RUN_SCHEMA, type LastRunRecord } from "../schedule/interface.ts";
 import { parseReportIndexLines } from "./report-index.ts";
 
 /** lastRun 持久化文件。 */

@@ -18,7 +18,7 @@ import {
   type TrendDetailRow,
   type TrendDirRow,
   type TrendHourRow,
-} from "../collect/types.ts";
+} from "../collect/interface.ts";
 
 /** token 差（cell 回退用）：有值→null 时增量为 -old（cell 同步扣减，保证内存聚合
  *  与校正后的落盘明细一致）；双方皆 null 增量 0（null-aware 无变化）。 */

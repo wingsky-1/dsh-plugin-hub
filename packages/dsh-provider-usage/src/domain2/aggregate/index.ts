@@ -20,10 +20,10 @@ import {
   type TrendStackPoint,
   type TrendWindowSummary,
 } from "./aggregator.ts";
-import { TrendCollector } from "../collect/collector.ts";
+import { TrendCollector } from "../collect/interface.ts";
 import { TrendStore } from "./store.ts";
-import type { TrendAggRow, TrendDirRow, TrendHourRow } from "../collect/types.ts";
-import { safeId } from "../collect/types.ts";
+import type { TrendAggRow, TrendDirRow, TrendHourRow } from "../collect/interface.ts";
+import { safeId } from "../collect/interface.ts";
 
 export interface TrendTrackerOptions {
   /** 存储根（<historyRoot>/trend）。 */

@@ -5,7 +5,7 @@
  * （indexCache 记忆化留在 runner 读侧，防双份缓存漂移——阶段四目录化后归
  * domain2/common/，是该目录「无状态无缓存」边界的组成部分）。
  */
-import type { ReportMeta } from "../execute/generate.ts";
+import type { ReportMeta } from "../execute/interface.ts";
 
 /**
  * 解析 index.jsonl 全文为记录数组（坏行跳过、字段白名单过滤）。

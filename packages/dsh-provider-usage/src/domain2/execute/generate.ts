@@ -25,9 +25,9 @@ import type {
   StreamChunk,
   TokenUsage,
 } from "@deepseek-ai/dsh-llm";
-import { metricValue } from "../aggregate/aggregator.ts";
-import { sumToken, TREND_UNIDENTIFIED, type TrendCell, type TrendDirRow, type TrendHourRow } from "../collect/types.ts";
-import type { ReportPeriod } from "../schedule/config.ts";
+import { metricValue } from "../aggregate/interface.ts";
+import { sumToken, TREND_UNIDENTIFIED, type TrendCell, type TrendDirRow, type TrendHourRow } from "../collect/interface.ts";
+import type { ReportPeriod } from "../schedule/interface.ts";
 
 /** 报告生成所用 llm 服务面（LlmRuntime 最小结构面——只依赖实际用到的三个方法）。 */
 export interface ReportLlmService {

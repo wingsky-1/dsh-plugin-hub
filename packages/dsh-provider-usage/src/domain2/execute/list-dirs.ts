@@ -5,8 +5,8 @@
  * 提取为注入式查询面，路由经 ReportRoutesContext.listDirs 消费。
  * 出口净化（sanitizeDirName）与未识别桶归位（TREND_UNIDENTIFIED）在此单一收敛。
  */
-import type { TrendTracker } from "../aggregate/index.ts";
-import { sanitizeDirName, TREND_UNIDENTIFIED } from "../collect/types.ts";
+import type { TrendTracker } from "../aggregate/interface.ts";
+import { sanitizeDirName, TREND_UNIDENTIFIED } from "../collect/interface.ts";
 
 export function makeListDirs(trend: TrendTracker): () => Array<{ dir: string; calls: number; total: number | null }> {
   return () =>

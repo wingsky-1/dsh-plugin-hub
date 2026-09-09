@@ -24,7 +24,7 @@
  * 需要访问状态的方法——apply/rebuild/rollupSnapshot/consume/prune 等 IO 与状态操作；
  * 压实转换纯函数迁至 aggregate-rows.ts，查询投影纯函数迁至 aggregate-query.ts
  * （二者均参数显式传入、不接触 this，防「拆文件 = 共享 this」坏味道；公开导出面
- * 经本文件尾部 re-export 保持可达，src/index.ts 与 src/report/*.ts 的 import 路径不变）。
+ * 经本文件尾部 re-export 保持可达，目录化后消费方走 aggregate/interface.ts）。
  */
 import { dayKey, lastNDayKeys } from "../../shared/interface.ts";
 import {
@@ -38,8 +38,8 @@ import {
   type TrendDirRow,
   type TrendHourRow,
   type TrendTokens,
-} from "../collect/types.ts";
-import type { TrendCallRecord, TrendCorrectRecord, TrendCounterRecord, TrendEmit } from "../collect/collector.ts";
+} from "../collect/interface.ts";
+import type { TrendCallRecord, TrendCorrectRecord, TrendCounterRecord, TrendEmit } from "../collect/interface.ts";
 import {
   emptyCell,
   emptyAggRow,
@@ -682,8 +682,8 @@ export class TrendAggregator {
 // ---------------------------------------------------------------- 纯函数 re-export（公开面兼容）
 
 // 以下符号原定义于本文件，D2 拆分迁至 aggregate-rows.ts / aggregate-query.ts 后经此处
-// re-export——src/index.ts、src/report/*.ts 与 lib 产物对 "trend/aggregator.ts" 的
-// import 路径保持不变（纯内部移动，公开导出面不破坏）。
+// re-export——保持 import "aggregator.ts" 的路径可达（目录化后目录外消费方走
+// aggregate/interface.ts，本 re-export 为既有路径兼容面，不重复导出）。
 export {
   metricValue,
   weekStartKey,
