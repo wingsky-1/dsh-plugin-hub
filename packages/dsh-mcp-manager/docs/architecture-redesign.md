@@ -64,12 +64,19 @@ src/client/
 - stryker exclude 同步补 `!src/types/**`（host-faces/middleware-types 不收变异）；
 - `config-schema.ts` 跨域常量（DEFAULT_ANNOUNCE_CATALOG/DEFAULT_RESULT_TRUNCATE_BYTES）改为从 catalog/
   supervisor 域类型化 import（保持单向 config→下游），机制写入契约。
+- **每目录 `interface.ts` 门面（D10）**：每个物理目录提供 `interface.ts`，re-export 目录对外
+  「类型 + 函数」作为该目录唯一对外引用面；跨目录引用只能 import 对方目录的 `interface.ts`，
+  禁直引目录内实现文件（同目录内自由引用）；跨目录共享 DTO 仍集中 `types/`；检查由
+  `scripts/gate/verify-dir-imports.mjs` 静态强制（已接入 `pnpm contract` 门禁）。阶段 2 起新建
+  目录即带 interface.ts，存量文件阶段 6 集中搬移时统一补齐。
 
 ---
 
 ## 三、每层职责与接口契约（7 逻辑层 + 组合根）
 
 > 契约口径：成功签名 + 错误契约 + 事件契约；只列「新增/缺口」项，现状稳定面引用代码。
+> **目录门面规则（D10）**：下述各域（物理目录）均以 `interface.ts` 为唯一对外引用面；
+> 跨域依赖的契约落在 interface.ts 上，实现文件不对外承诺任何引用面。
 
 ### ① 客户端层
 - 契约补齐：SSE 帧集合显式清单（summary/ui-config-changed/ping + 60s watchdog）；未知状态策略（C13 与 B1/B4 六态单 PR 同改）；204 备忘（C14）；tool-disable 全名形态与 projectRoot 缺失防御（C6/C7）；`src/client/index.ts` 保留 + style.css 相对引用路径。
@@ -161,6 +168,7 @@ src/client/
 | D7 | 门禁判分 | ~~先澄清判分输入~~（已闭环：covered 74.66≥60 达标）vs **observe 回落判据（covered<baseline-1pp）+ incremental 重建豁免** | **机制决策**：迁移 PR 走 observe 夜间重建豁免；日常守 covered≥baseline-1pp |
 | D8 | off 模式 guard | 补挂载（数据源 manager.disabledTools，独立注册路径）vs 文档化一入口 | **补挂载**（guard 与中间层实例解耦，三模式一致） |
 | D9 | getTools 键形态 | 注册名（mcp__ 前缀，与 ctx.tools 一致）vs 裸名（与 summary().tools 一致） | **注册名**（保持与现状 getTools 一致，文档化两套键口径） |
+| D10 | 目录解耦形态（维护者追加） | 每目录 interface.ts 门面 vs 维持类型集中 | **严格门面**：每物理目录一个 interface.ts（对外类型+函数唯一面）；跨目录引用只能走 interface.ts，禁直引实现文件；DTO 仍集中 types/；verify-dir-imports.mjs 静态强制接入 contract；阶段 2 起生效、阶段 6 存量补齐 |
 
 ---
 
