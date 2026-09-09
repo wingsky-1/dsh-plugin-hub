@@ -42,7 +42,7 @@ import {
   panelAnchorForPlacement,
   composerDockedAtBottom,
   bottomAnchorEdge,
-} from "../placement-math.ts";
+} from "../shared/placement-math.ts";
 // React externals 路径：运行时由 dsh web factory require("react") 注入
 import * as React from "react";
 import STYLE from "./style.css";

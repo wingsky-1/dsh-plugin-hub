@@ -38,6 +38,7 @@ const {
   BREAKPOINT_TABLET_MAX,
   breakpointForWidth,
   clampPointToViewport,
+  findProjectRoot,
 } = await import("../lib/index.js");
 
 // ---- normalizeServer ----
@@ -194,10 +195,10 @@ const {
     const dshProj = join(dir, "dsh-proj");
     mkdirSync(join(dshProj, ".dsh"), { recursive: true });
 
-    const manager = new McpManager({ logger: { warn: () => {} } }, new McpStore(join(dir, "m.json")));
-    assert.equal(await manager.findProjectRoot(gitProj), gitProj, ".git 标记命中");
-    assert.equal(await manager.findProjectRoot(mcpProj), mcpProj, ".mcp.json 标记命中");
-    assert.equal(await manager.findProjectRoot(dshProj), dshProj, ".dsh 非 home 标记命中");
+    // 阶段 4：findProjectRoot 迁入 workspace 域（root-resolution.ts），纯函数直测
+    assert.equal(await findProjectRoot(gitProj), gitProj, ".git 标记命中");
+    assert.equal(await findProjectRoot(mcpProj), mcpProj, ".mcp.json 标记命中");
+    assert.equal(await findProjectRoot(dshProj), dshProj, ".dsh 非 home 标记命中");
 
     // 全局家排除：模拟 ~ 下含 .dsh（= DSH_HOME），其子目录向上命中家级 .dsh 应跳过，
     // 继续向上命中顶棚 dir/.git（若误判家级 .dsh 为项目标记则返回 fake-user-home）。
@@ -207,22 +208,22 @@ const {
     process.env.DSH_HOME = fakeDshHome;
     const inHome = join(fakeUserHome, "sub");
     mkdirSync(inHome, { recursive: true });
-    assert.equal(await manager.findProjectRoot(inHome), dir, "全局家不算项目标记");
+    assert.equal(await findProjectRoot(inHome), dir, "全局家不算项目标记");
     // cwd 恰为家目录本身：家级 .dsh 不算自身标记 → 越过它命中顶棚。
-    assert.equal(await manager.findProjectRoot(fakeDshHome), dir, "家目录自身不算项目标记");
+    assert.equal(await findProjectRoot(fakeDshHome), dir, "家目录自身不算项目标记");
     // 恢复通用 home 供后续用例。
     process.env.DSH_HOME = fakeHome;
     // 无任何标记的普通目录 → 向上命中顶棚。
     const plain = join(dir, "plain");
     mkdirSync(plain, { recursive: true });
-    assert.equal(await manager.findProjectRoot(plain), dir);
+    assert.equal(await findProjectRoot(plain), dir);
     // 回落 cwd：输入嵌套 16 级，向上窗口（16 层）不出沙箱、够不到任何标记 → 原样返回。
     let deep = dir;
     for (let i = 0; i < 16; i += 1) deep = join(deep, `d${i}`);
     mkdirSync(deep, { recursive: true });
-    assert.equal(await manager.findProjectRoot(deep), deep, "16 级窗口内无标记 → 回落 cwd");
+    assert.equal(await findProjectRoot(deep), deep, "16 级窗口内无标记 → 回落 cwd");
     // undefined cwd → process.cwd() 兜底。
-    const fallback = await manager.findProjectRoot(undefined);
+    const fallback = await findProjectRoot(undefined);
     assert.equal(typeof fallback, "string");
   } finally {
     if (prevHome === undefined) delete process.env.DSH_HOME;
@@ -1292,6 +1293,164 @@ function rmStatSafe(p) {
     manager.supervisors.delete("g1");
     assert.equal(manager.summarize(store.find("g1"), "global").status, "stopped");
     await mw.dispose();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---- B5 红测：start 替换已连接 supervisor → 旧实例 disconnect 被调（现状只置 disposed）----
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mgr2b5a-"));
+  try {
+    const { manager, store } = makeManager(dir);
+    const srv = normalizeServer(quietServer("s5"));
+    store.upsert(srv);
+    let oldDisconnected = 0;
+    const oldSupervisor = {
+      client: {}, // 已连接（替换分支判定入口）
+      server: srv,
+      scope: "global",
+      disposed: false,
+      disconnect: async () => {
+        oldDisconnected += 1;
+        oldSupervisor.disposed = true; // 与真实 disconnect 语义一致
+      },
+    };
+    manager.supervisors.set("s5", oldSupervisor);
+    // directConfig：与 store 版本不同引用（对象字面量）；enabled:false 防新代际真实 spawn。
+    manager.start("s5", "global", { ...srv, enabled: false });
+    assert.equal(
+      oldDisconnected,
+      1,
+      "B5：start 替换分支调用旧实例 disconnect（现状只置 disposed → 红测；旧 transport/工具注册残留）",
+    );
+    assert.equal(manager.supervisors.get("s5") === oldSupervisor, false, "新代际已替换");
+    assert.equal(oldSupervisor.disposed, true, "旧实例 disposed 置位");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---- B5 红测（续）：connect 替换未连接 supervisor → 清 timer + 注销残留工具 ----
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mgr2b5b-"));
+  try {
+    const { manager, store } = makeManager(dir);
+    const srv = normalizeServer(quietServer("s5"));
+    store.upsert(srv);
+    const disposedTools = [];
+    const oldTimer = setTimeout(() => {}, 60_000);
+    const oldSupervisor = {
+      client: undefined, // 未连接（connect 替换分支判定入口）
+      scope: "global",
+      server: srv,
+      disposed: false,
+      reconnectTimer: oldTimer,
+      toolDisposers: new Map([["mcp__s5__echo", () => disposedTools.push("mcp__s5__echo")]]),
+      disconnect: async function () {
+        this.disposed = true;
+        if (this.reconnectTimer !== undefined) {
+          clearTimeout(this.reconnectTimer);
+          this.reconnectTimer = undefined;
+        }
+        for (const dispose of this.toolDisposers.values()) dispose();
+        this.toolDisposers = new Map();
+      },
+    };
+    manager.supervisors.set("s5", oldSupervisor);
+    await manager.connect("s5", "global", { ...srv, enabled: false });
+    assert.deepEqual(
+      disposedTools,
+      ["mcp__s5__echo"],
+      "B5：connect 替换分支复用 disconnect 语义注销旧代际工具（现状只置 disposed → 红测）",
+    );
+    assert.equal(manager.supervisors.get("s5") === oldSupervisor, false, "新代际已替换");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---- B5 红测（续）：顺序不变式——旧代际工具先注销、新代际后注册（真实 stdio 连接）----
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mgr2b5c-"));
+  const serverScript = join(dir, "mini-mcp-server.mjs");
+  writeFileSync(
+    serverScript,
+    [
+      'import { createInterface } from "node:readline";',
+      'const send = (obj) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...obj }) + "\\n");',
+      'createInterface({ input: process.stdin }).on("line", (line) => {',
+      "  let msg; try { msg = JSON.parse(line); } catch { return; }",
+      '  if (msg.method === "initialize") send({ id: msg.id, result: { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "mini", version: "0.0.1" } } });',
+      '  else if (msg.method === "tools/list") send({ id: msg.id, result: { tools: [{ name: "echo", description: "echo back", inputSchema: { type: "object" } }] } });',
+      '  else if (msg.id !== undefined) send({ id: msg.id, error: { code: -32601, message: "method not found" } });',
+      "});",
+    ].join("\n"),
+  );
+  try {
+    const { manager, store } = makeManager(dir);
+    const events = [];
+    manager.ctx.tools = {
+      register: (def) => {
+        events.push(`register:${def.name}`);
+        return () => events.push(`dispose:${def.name}`);
+      },
+    };
+    const srv = normalizeServer({
+      name: "s5",
+      transport: "stdio",
+      command: process.execPath,
+      args: [serverScript],
+      reconnect: { enabled: false },
+    });
+    store.upsert(srv);
+    manager.start("s5", "global");
+    await pollUntil("旧代际工具已注册", () => events.includes("register:mcp__s5__echo"));
+    // directConfig：同内容新引用（模拟 registerServer 直传 config 覆盖 store）。
+    manager.start("s5", "global", { ...srv });
+    await pollUntil("旧代际工具已注销", () => events.includes("dispose:mcp__s5__echo"));
+    await pollUntil("新代际工具已注册", () => events.filter((e) => e === "register:mcp__s5__echo").length >= 2);
+    const firstReg = events.indexOf("register:mcp__s5__echo");
+    const disAt = events.indexOf("dispose:mcp__s5__echo");
+    const secondReg = events.lastIndexOf("register:mcp__s5__echo");
+    assert.ok(
+      firstReg >= 0 && disAt > firstReg && secondReg > disAt,
+      "B5：顺序不变式——旧代际注销先于新代际注册（现状只置 disposed、旧工具残留 → 红测）",
+    );
+    // 清理：断开全部 supervisor（含新代际）关闭 stdio 子进程——manager.dispose()
+    // 不关 transport，残留子进程句柄会让本文件独立运行时事件循环挂死
+    // （CI mutation dry run 超时根因）。
+    for (const sup of manager.supervisors.values()) await sup.disconnect();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---- B19 红测：summarize supervisor 分支禁用查询合并判定（@global ∪ projectRoot）----
+
+{
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mgr2b19-"));
+  try {
+    const { manager, store } = makeManager(dir);
+    const srv = normalizeServer(quietServer("g1"));
+    store.upsert(srv);
+    manager.projectRoot = join(dir, "proj");
+    manager.disabledTools.set("@global", new Map([["g1", new Set(["toolA"])]]));
+    manager.disabledTools.set(manager.projectRoot, new Map([["g1", new Set(["toolB"])]]));
+    manager.supervisors.set("g1", {
+      status: "connected",
+      error: undefined,
+      tools: ["mcp__g1__toolA", "mcp__g1__toolB"],
+    });
+    const s = manager.summarize(store.find("g1"), "global");
+    assert.deepEqual(
+      [...(s.disabledTools ?? [])].sort(),
+      ["toolA", "toolB"],
+      "B19：supervisor 分支合并 @global 与 projectRoot 禁用集（现状 ?? 只取其一 → 红测；与中间层分支口径一致）",
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -11,22 +11,15 @@
 import { createHash } from "node:crypto";
 import { createTransport } from "./transport.ts";
 import type { StdioTransport, HttpTransport } from "./transport.ts";
-import { SCOPE_GLOBAL, SCOPE_PROJECT } from "./scope.ts";
+import { SCOPE_GLOBAL, SCOPE_PROJECT } from "./workspace/interface.ts";
 import { MCPClient } from "./protocol.ts";
 import { defaultCallResultFallbackText, projectCallToolResult, createRedactor, msgOf } from "./pipeline/interface.ts";
+import { RECONNECT_DEFAULTS, resolveReconnect, type ReconnectPolicy } from "./connection/interface.ts";
 import type { McpStatsCollector } from "./call-stats.ts";
 import type { ServerConfig } from "./types.ts";
 import type { Context, LoggerService } from "@deepseek-ai/cordis";
 // 官方工具定义类型（仅 import type，编译期擦除；contract-check 禁止运行时值导入）。
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
-
-/** 重连策略（解析后）。 */
-export interface ReconnectPolicy {
-  enabled: boolean;
-  initialDelayMs: number;
-  maxDelayMs: number;
-  maxAttempts: number;
-}
 
 /** McpManager 最小面（supervisor 使用；避免 index↔supervisor 循环 import）。
  * tools 面取官方 Context，register 入参为官方 ToolDefinition。 */
@@ -45,14 +38,6 @@ export interface ManagerLite {
 /** 默认单次工具调用超时（毫秒）。下探自 60s：死工具（服务器已断线但工具未注销）
  * 会让模型阻塞一整轮；15s 内快速失败并携带"服务器不可用"说明更划算。 */
 export const DEFAULT_TOOL_CALL_TIMEOUT_MS = 15_000;
-
-/** 重连默认策略（与官方 dsh-mcp-client 一致）。 */
-export const RECONNECT_DEFAULTS = Object.freeze({
-  enabled: true,
-  initialDelayMs: 500,
-  maxDelayMs: 30_000,
-  maxAttempts: 10,
-});
 
 /** 工具结果渲染截断上限（字节）。extractText 现状不截断，超长 JSON 全量进上下文。 */
 export const DEFAULT_RESULT_TRUNCATE_BYTES = 8192;
@@ -361,7 +346,9 @@ export class ConnectionSupervisor {
       this.setStatus("disabled");
       return;
     }
-    this.setStatus(this.connectedAt === undefined ? "connecting" : "reconnecting");
+    // B1：重连窗口判定用 failedAttempts>0——scheduleReconnect 已把 connectedAt 置
+    // undefined，用 connectedAt 判定会把重连误投影为 connecting（LED/浮窗分级错乱）。
+    this.setStatus(this.failedAttempts > 0 ? "reconnecting" : "connecting");
     const server = this.server;
     const transport = createTransport(server);
     const client = new MCPClient(transport);
@@ -543,14 +530,4 @@ export class ConnectionSupervisor {
     this.toolMeta = new Map();
     this.setStatus("stopped");
   }
-}
-
-/** 解析重连策略（含默认值）。 */
-export function resolveReconnect(config: Record<string, unknown> | undefined): ReconnectPolicy {
-  return {
-    enabled: (config?.enabled as boolean | undefined) ?? RECONNECT_DEFAULTS.enabled,
-    initialDelayMs: (config?.initialDelayMs as number | undefined) ?? RECONNECT_DEFAULTS.initialDelayMs,
-    maxDelayMs: (config?.maxDelayMs as number | undefined) ?? RECONNECT_DEFAULTS.maxDelayMs,
-    maxAttempts: (config?.maxAttempts as number | undefined) ?? RECONNECT_DEFAULTS.maxAttempts,
-  };
 }

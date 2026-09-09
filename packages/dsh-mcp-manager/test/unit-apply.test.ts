@@ -272,3 +272,84 @@ import { join } from "node:path";
     rmSync(dir, { recursive: true, force: true });
   }
 }
+
+// ---- B20 红测：makeMiddlewareHotSwitch 热切换补 emitStatus（C-EVT 契约：summary
+// 帧源集合含热切换；现状热切换不 emitStatus → summary 帧缺失）----
+
+{
+  const { McpManager, McpStore, makeMiddlewareHotSwitch } = await import("../lib/index.js");
+  const { pollUntil } = await import("./helpers.ts");
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-b20-"));
+  try {
+    const manager = new McpManager(
+      { logger: { info: () => {}, warn: () => {}, error: () => {} } },
+      new McpStore(join(dir, "mcp.json")),
+    );
+    manager.ctx = { tools: { register: () => () => {} }, on: () => () => {} };
+    manager.middlewareMode = "off";
+    let emits = 0;
+    manager.onStatus(() => {
+      emits += 1;
+    });
+    const hotSwitch = makeMiddlewareHotSwitch(manager, {}, async () => undefined, { current: () => {} });
+    await hotSwitch("project");
+    await pollUntil("热切换 summary 帧（emitStatus coalesce 落定）", () => emits >= 1);
+    assert.ok(emits >= 1, "B20：热切换后 emitStatus 被触发（summary 帧源含热切换；现状缺失 → 红测）");
+
+    await hotSwitch("project");
+    await pollUntil("同模式短路无新广播", () => emits >= 1);
+    assert.equal(emits, 1, "同模式热切换短路，不重复广播");
+
+    await hotSwitch("off");
+    await pollUntil("切回 off 亦广播", () => emits >= 2);
+    assert.ok(emits >= 2, "B20：切回 off 同样补 summary 帧");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---- D8 红测：off 模式 mcp__ 直呼命中禁用表 → deny ----
+// 现状：pre-execute guard 只在 registerMiddlewareTools 内注册（apply.ts
+// middlewareMode !== "off" 才调用）→ off 模式 mcp__ 直呼无禁用拦截（「工具级
+// 禁用三入口」实际一入口）；修复（spec D8）：guard 挂载与中间层实例解耦、数据源
+// 直查 manager.disabledTools、独立注册路径，三模式一致；off 模式不 initMiddleware
+// （无连接池副作用，guard 只读禁用表）。
+{
+  const { apply, saveDisabledTools } = await import("../lib/index.js");
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-d8-"));
+  const prevHome = process.env.DSH_HOME;
+  process.env.DSH_HOME = dir;
+  try {
+    const guards = new Map();
+    const ctx = {
+      logger: { warn: () => {}, info: () => {}, error: () => {} },
+      tools: { register: () => () => {} },
+      webServer: { register: () => () => {} },
+      systemPrompt: { section: () => () => {} },
+      inject: () => () => {},
+      on: (event, handler) => {
+        guards.set(event, handler);
+        return () => {};
+      },
+      effect: (fn) => {
+        const disposer = fn();
+        return () => {
+          disposer();
+        };
+      },
+    };
+    // 预置工具级禁用表（manager.userStatePath = DSH_HOME/dsh-mcp-user-state.json）。
+    const disabled = new Map([["@global", new Map([["svc", new Set(["use_t"])]])]]);
+    await saveDisabledTools(join(dir, "dsh-mcp-user-state.json"), disabled);
+    await apply(ctx, { enabled: true, middleware: "off", storePath: join(dir, "mcp.json") });
+
+    const guard = guards.get("tools/pre-execute");
+    assert.ok(typeof guard === "function", "D8：off 模式 pre-execute guard 已挂载（现状 off 不注册 → 红测）");
+    const decision = await guard({ name: "mcp__svc__use_t", agent: { session: { header: {} } } }, async () => ({ kind: "allow" }));
+    assert.equal(decision.kind, "deny", "D8：off 模式 mcp__ 直呼命中禁用表 → deny（现状放行 → 红测）");
+  } finally {
+    if (prevHome === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = prevHome;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}

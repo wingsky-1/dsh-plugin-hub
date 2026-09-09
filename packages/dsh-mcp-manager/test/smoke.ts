@@ -96,6 +96,8 @@ import "./unit-routes-sse.test.ts";
 import "./unit-call-stats.test.ts";
 // 执行管道域契约（#664 阶段 2：两路径同构 + stats 埋点红测）
 import "./unit-pipeline.test.ts";
+// 工作空间路由域（#664 阶段 4：makeResolveRoot 路由 + B3 红测）
+import "./unit-workspace.test.ts";
 
 const failures = [];
 const check = (label, fn) => {
@@ -1285,13 +1287,15 @@ const main = async () => {
       const prevDshHome = process.env.DSH_HOME;
       process.env.DSH_HOME = join(home, ".dsh");
       try {
+        // 阶段 4：findProjectRoot 迁入 workspace 域（root-resolution.ts），纯函数直测
+        const { findProjectRoot } = await import("../lib/index.js");
         const manager = new McpManager(
           { logger: { warn: () => {}, info: () => {}, error: () => {} } },
           new McpStore(join(base, "dsh-mcp.json")),
         );
 
         await checkAsync("home 下的空工作区不把 home 误判为项目根（回归：~/.dsh 串台）", async () => {
-          const root = await manager.findProjectRoot(leetcode);
+          const root = await findProjectRoot(leetcode);
           assert.equal(root, leetcode);
           await manager.setSession(leetcode);
           assert.equal(manager.projectRoot, leetcode);
@@ -1300,17 +1304,17 @@ const main = async () => {
         });
 
         await checkAsync("子目录向上命中项目 .dsh 标记", async () => {
-          const root = await manager.findProjectRoot(projSub);
+          const root = await findProjectRoot(projSub);
           assert.equal(root, proj);
         });
 
         await checkAsync("home 自身作为会话 cwd 时仍是合法项目根（fallback）", async () => {
-          const root = await manager.findProjectRoot(home);
+          const root = await findProjectRoot(home);
           assert.equal(root, home);
         });
 
         await checkAsync("无标记目录 → cwd 本身", async () => {
-          assert.equal(await manager.findProjectRoot(nomark), nomark);
+          assert.equal(await findProjectRoot(nomark), nomark);
         });
 
         await checkAsync("空 cwd 清空项目级会话且幂等", async () => {

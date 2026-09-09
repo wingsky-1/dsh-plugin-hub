@@ -1,0 +1,61 @@
+{
+  "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "mutate": [
+    "packages/dsh-provider-usage/src/domain2/common/errsurf.ts",
+    "!packages/dsh-provider-usage/src/client/**",
+    "!packages/dsh-provider-usage/src/types.ts"
+  ],
+  "testRunner": "tap",
+  "mutator": {
+    "excludedMutations": [
+      "StringLiteral",
+      "ArrayLiteral",
+      "ObjectLiteral",
+      "TemplateLiteral"
+    ]
+  },
+  "plugins": [
+    "@stryker-mutator/tap-runner"
+  ],
+  "concurrency": 16,
+  "timeoutMS": 60000,
+  "dryRunTimeoutMinutes": 5,
+  "reporters": [
+    "progress",
+    "clear-text",
+    "json"
+  ],
+  "coverageAnalysis": "perTest",
+  "tempDirName": ".stryker-tmp",
+  "cleanTempDir": true,
+  "tap": {
+    "nodeArgs": [
+      "-r",
+      "./scripts/test/mutation-tap-bridge.cjs",
+      "--import",
+      "./scripts/test/mutation-lib-to-src-hook.mjs"
+    ],
+    "testFiles": [
+      "packages/dsh-provider-usage/test/unit/apply/unit-apply.test.ts",
+      "packages/dsh-provider-usage/test/unit/shared/unit-config.test.ts",
+      "packages/dsh-provider-usage/test/unit/shared/unit-contract.test.ts",
+      "packages/dsh-provider-usage/test/unit/shared/unit-v1.test.ts",
+      "packages/dsh-provider-usage/test/unit/adapters/unit-deepseek-official.test.ts",
+      "packages/dsh-provider-usage/test/unit/history/unit-history.test.ts",
+      "packages/dsh-provider-usage/test/unit/pipeline/unit-signal-lock.test.ts",
+      "packages/dsh-provider-usage/test/unit/common/unit-errsurf.test.ts",
+      "packages/dsh-provider-usage/test/unit/trend/unit-trend.test.ts",
+      "packages/dsh-provider-usage/test/unit/trend/unit-trend-ledger.test.ts",
+      "packages/dsh-provider-usage/test/unit/trend/unit-trend-view.test.ts",
+      "packages/dsh-provider-usage/test/unit/report/unit-report.test.ts",
+      "packages/dsh-provider-usage/test/unit/report/unit-report-executor.test.ts",
+      "packages/dsh-provider-usage/test/unit/routes/unit-routes.test.ts"
+    ]
+  },
+  "jsonReporter": {
+    "fileName": "coverage/mutation/dsh-provider-usage-errsurf.json"
+  },
+  "incremental": true,
+  "incrementalFile": "coverage/mutation/incremental-provider-usage-errsurf.json",
+  "_comment": "#670 阶段三 B 新段：域2每层错误面——errsurf.ts（累计计数+最近 N 条环形缓冲+snapshot/noop）；testFiles 含 unit-errsurf（杀灭面）；apply 接线与 routes/ui health per-layer 段由既有 apply/routes 段覆盖（mutate 已含对应文件）。"
+}

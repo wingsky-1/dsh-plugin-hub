@@ -170,6 +170,21 @@ console.log(failed === 0 ? '客户端契约：全部通过' : `客户端契约�
     failed++
   }
 }
+// #670 C2（阶段四）：provider-usage 目录门面走 --soft——跨目录直引是过渡债
+// （软报告 review 用，不判红），但 interface.ts 符号存在性（防虚导出）在
+// soft/hard 两模式均硬执行，故虚导出会导致本段 status != 0 判红本门禁。
+{
+  const providerDirGate = spawnSync(
+    process.execPath,
+    [join(ROOT, 'scripts/gate/verify-dir-imports.mjs'), '--package', 'dsh-provider-usage', '--soft'],
+    { encoding: 'utf8' },
+  )
+  for (const line of (providerDirGate.stdout ?? '').split('\n')) if (line.trim() !== '') console.log(line)
+  if (providerDirGate.status !== 0) {
+    console.log(`verify-dir-imports(provider-usage) | FAIL exit=${providerDirGate.status}`)
+    failed++
+  }
+}
 // M6（#669 PR1）：包导出面快照——tsc --declaration 产物与入库基线零 diff
 // （符号集 + 导出符号定义块），重构期导出面漂移（增删改符号/定义改写）判红。
 // 基线变更须显式 --snapshot 更新并随 PR 提交（脚本同目录 verify-dir-imports）。

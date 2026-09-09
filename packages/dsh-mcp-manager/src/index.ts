@@ -58,6 +58,8 @@ export { panelAnchorForPosition } from "./placement-math.ts";
 // 插件契约转发（apply 主流程 + 宣告文本实现于 apply.ts）
 export { apply, MCP_GUIDANCE } from "./apply.ts";
 export { resolveDebugConfig, resolveMiddlewareMode } from "./apply-config.ts";
+// 运行期装配工厂（组合根）：热切换为 B20/C-EVT 契约测试面
+export { makeMiddlewareHotSwitch } from "./apply-runtime.ts";
 
 // 服务器配置归一化（纯函数单一事实源）
 export { SERVER_NAME_PATTERN, normalizeServer } from "./normalize.ts";
@@ -73,8 +75,11 @@ export {
 } from "./config-schema.ts";
 export type { UiPlacementConfig, ClientUiConfig } from "./types.ts";
 
-// 管理器 / 中间层全局虚拟 root
-export { McpManager, MIDDLEWARE_GLOBAL_ROOT } from "./manager.ts";
+// 管理器（MIDDLEWARE_GLOBAL_ROOT 单源在 workspace 域，阶段 4 收敛）
+export { McpManager } from "./manager.ts";
+export { MIDDLEWARE_GLOBAL_ROOT } from "./workspace/interface.ts";
+// 工作空间路由域（项目根发现 / 全名解析 / scope / 模式归一化；阶段 4 成形）
+export { findProjectRoot, normalizedProjectRoot, makeResolveRoot } from "./workspace/interface.ts";
 
 // 核心化 service（官方 storageDomain 模式）：ctx.mcpManager 类型面 + 声明合并。
 // 仅类型导出（无副作用导入）：消费方 import 类型时 tsc 会解析 service.d.ts，
@@ -97,15 +102,15 @@ export type { CallResultTextHandlers, ProjectedCallResult } from "./pipeline/int
 // 连接监督器 / 工具定义（含命名、截断、schema 校验）
 export {
   DEFAULT_TOOL_CALL_TIMEOUT_MS,
-  RECONNECT_DEFAULTS,
   DEFAULT_RESULT_TRUNCATE_BYTES,
   publicToolName,
   truncateText,
   assertSupportedOutputSchema,
   buildToolDefinition,
   ConnectionSupervisor,
-  resolveReconnect,
 } from "./supervisor.ts";
+// 连接域（#664 阶段 3 收敛）：重连策略解析归 connection/runtime，经 connection/interface.ts 引用
+export { RECONNECT_DEFAULTS, resolveReconnect } from "./connection/interface.ts";
 // 能力目录 / 目录缓存
 export {
   DEFAULT_ANNOUNCE_CATALOG,
@@ -194,7 +199,7 @@ export type {
 } from "./middleware.ts";
 // 路由
 export { ROUTES, makeRoutes, makeEventsRoute, makeHealthRoute, uiConfigChangedFrame, broadcastFrame, SSE_HEARTBEAT_MS, SSE_PING_FRAME } from "./routes.ts";
-export { SCOPE_GLOBAL, SCOPE_PROJECT, normalizeScope } from "./scope.ts";
+export { SCOPE_GLOBAL, SCOPE_PROJECT, normalizeScope } from "./workspace/interface.ts";
 // 仓库共享层（loopback 围栏 / writeJson / readJsonBody / sseData）
 export { isLoopbackRequest } from "../../../shared/loopback.js";
 export { writeJson, readJsonBody, sseData } from "../../../shared/host-utils.js";

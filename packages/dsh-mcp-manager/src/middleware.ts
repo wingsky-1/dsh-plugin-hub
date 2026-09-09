@@ -26,6 +26,7 @@ import type { ServerConfig } from "./types.ts";
 import type { ToolDefinition, ToolOutputDefinition } from "@deepseek-ai/dsh-tools";
 import { MCPClient } from "./protocol.ts";
 import { defaultCallResultFallbackText, projectCallToolResult, withTimeout, msgOf, createRedactor, normalizeArguments } from "./pipeline/interface.ts";
+import { resolveReconnect } from "./connection/interface.ts";
 import { createTransport } from "./transport.ts";
 import {
   CONNECT_TIMEOUT_MS,
@@ -36,14 +37,17 @@ import {
 import {
   parseFullServerName,
   normalizeToolName,
+  fullServerName,
+  bareServerName,
+  MIDDLEWARE_GLOBAL_ROOT,
+} from "./workspace/interface.ts";
+import {
   policyAllows,
   policyDenialReason,
-  fullServerName,
   isToolDenied,
   isCatalogFresh,
   boundCatalogTools,
   toolDisabledReason,
-  MIDDLEWARE_GLOBAL_ROOT,
 } from "./middleware-utils.ts";
 import type {
   MiddlewareHost,
@@ -256,13 +260,13 @@ export class McpMiddleware {
     const closeHandler = (error: Error) => {
       if (newEntry.disposed) return;
       if (unit.connections.get(serverName) !== newEntry) return;
-      newEntry.status = "failed";
+      // B4/B18：状态投影交给 scheduleReconnect 统一裁决（预算内 reconnecting /
+      // 耗尽 failed）——closeHandler 只记账（failedAttempts）与排重连。
       newEntry.error = error;
       newEntry.connectedAt = undefined;
       // B18：连上后断开同样计入 failedAttempts——否则退避恒 initialDelay（500ms
       // 抖动），与「从未连上」的失败路径退避口径分裂。
       newEntry.failedAttempts += 1;
-      this.host.emitStatus();
       this.scheduleReconnect(root, serverName);
     };
     if ("onClose" in transport && transport.onClose !== undefined) transport.onClose(closeHandler);
@@ -280,34 +284,47 @@ export class McpMiddleware {
     } catch (error) {
       if (newEntry.disposed || unit.connections.get(serverName) !== newEntry) return;
       this.host.logger.warn(`dsh-mcp-manager(${serverName}@${root}): connection attempt failed: ${this.redact(error)}`);
-      newEntry.status = "failed";
+      // B4/B18：状态投影交给 scheduleReconnect 统一裁决（预算内 reconnecting /
+      // 耗尽 failed）——catch 只记账（failedAttempts）与排重连。
       newEntry.error = error;
       newEntry.failedAttempts += 1;
-      this.host.emitStatus();
       this.scheduleReconnect(root, serverName);
     }
   }
 
-  /** 后台重连（有界指数退避：500ms 起、30s 上限、10 次后停止后台重试；
-   * 用户手动 connect 或 ws_mcp_call 触发时重新尝试——常驻语义）。 */
+  /**
+   * 后台重连（有界指数退避：initialDelay 起、maxDelay 上限、maxAttempts 次后停止
+   * 后台重试；用户手动 connect 或 ws_mcp_call 触发时重新尝试——常驻语义）。
+   * 退避/预算从 connection/runtime 单一解析函数取（与 supervisor resolveReconnect
+   * 同口径，B18）；状态投影：预算内 reconnecting（B4，客户端 counts.reconnecting /
+   * summarize 分级依赖此态）、预算耗尽或 reconnect.enabled=false → failed。
+   */
   private scheduleReconnect(root: string, serverName: string): void {
     const unit = this.units.get(root);
     if (unit === undefined) return;
     const entry = unit.connections.get(serverName);
     if (entry === undefined || entry.disposed) return;
     if (entry.reconnectTimer !== undefined) return;
-    // B18：退避读 server.reconnect 配置（supervisor resolveReconnect 同口径；
-    // 现状硬编码 500/30000/10 使同一配置在两路径行为不一致）。
-    const reconnect = entry.server?.reconnect ?? {};
-    const initialDelayMs = typeof reconnect.initialDelayMs === "number" ? reconnect.initialDelayMs : 500;
-    const maxDelayMs = typeof reconnect.maxDelayMs === "number" ? reconnect.maxDelayMs : 30_000;
-    const maxAttempts = typeof reconnect.maxAttempts === "number" ? reconnect.maxAttempts : 10;
-    if (entry.failedAttempts > maxAttempts) {
-      // 预算耗尽：停止后台重试（保留 failed 状态；手动/调用触发可再试）。
-      this.host.logger.warn(`dsh-mcp-manager(${serverName}@${root}): reconnect gave up after ${maxAttempts} attempts`);
+    // B18：解析走 connection/runtime 单一事实源（现状内联 500/30000/10 且忽略
+    // enabled 字段，与 supervisor resolveReconnect 口径分裂）。
+    const policy = resolveReconnect(entry.server?.reconnect);
+    if (!policy.enabled) {
+      // B18：reconnect.enabled=false → 不安排后台重试（保持 failed 状态）。
+      entry.status = "failed";
+      this.host.emitStatus();
       return;
     }
-    const delayMs = Math.min(maxDelayMs, initialDelayMs * 2 ** Math.min(entry.failedAttempts - 1, 6));
+    if (entry.failedAttempts > policy.maxAttempts) {
+      // 预算耗尽：停止后台重试（保持 failed 状态；手动/调用触发可再试）。
+      entry.status = "failed";
+      this.host.emitStatus();
+      this.host.logger.warn(`dsh-mcp-manager(${serverName}@${root}): reconnect gave up after ${policy.maxAttempts} attempts`);
+      return;
+    }
+    // B4：退避窗口内状态投影为 reconnecting（区别于预算耗尽的 failed）。
+    entry.status = "reconnecting";
+    this.host.emitStatus();
+    const delayMs = Math.min(policy.maxDelayMs, policy.initialDelayMs * 2 ** Math.min(entry.failedAttempts - 1, 6));
     entry.reconnectTimer = setTimeout(() => {
       entry.reconnectTimer = undefined;
       if (entry.disposed) return;
@@ -509,13 +526,19 @@ export class McpMiddleware {
       throw new Error(`ws_mcp_call: 工作空间 ${JSON.stringify(parsed.root)} 未激活；请先 ws_mcp_search 或 ws_mcp_list`);
     }
     const entry = unit.connections.get(parsed.server);
-    if (entry === undefined || entry.status === "failed") {
+    const entryStatus = entry?.status;
+    // B4 连带：六态状态机补 reconnecting 后，调用守卫须把「后台重连中」纳入未就绪
+    // 范畴——否则退避窗口内会落到下方 entry.client.callTool（client 未 initialize）。
+    if (entry === undefined || entryStatus === "failed" || entryStatus === "reconnecting" || entryStatus === "stopped" || entryStatus === "disabled") {
       if (unit.userDisabled.has(parsed.server)) {
         throw new Error(`ws_mcp_call: server ${JSON.stringify(fullName)} 已被用户禁用；可先在 GUI「MCP」浮窗中重新连接`);
       }
+      if (entryStatus === "reconnecting") {
+        throw new Error(`ws_mcp_call: server ${JSON.stringify(fullName)} 连接失败、正在后台重连；请稍后重试或重新连接`);
+      }
       throw new Error(`ws_mcp_call: server ${JSON.stringify(fullName)} 未连接或连接失败，请先 ws_mcp_search 或 ws_mcp_list 确认 server 已连接`);
     }
-    if (entry.status === "connecting") {
+    if (entryStatus === "connecting") {
       throw new Error(`ws_mcp_call: server ${JSON.stringify(fullName)} 连接仍在进行，请稍后重试；连接完成后再调用`);
     }
     const tool = normalizeToolName(parsed.server, toolRaw);
@@ -694,17 +717,16 @@ export {
   MAX_TOTAL_CATALOG_BYTES,
   LIST_DEFAULT_TOOLS_PER_SERVER,
   LIST_MAX_TOOLS_PER_SERVER,
-  normalizeMiddlewareMode,
 } from "./middleware-const.ts";
+// 模式归一化归 workspace 域（阶段 4 迁出，经 workspace/interface.ts）
+export { normalizeMiddlewareMode } from "./workspace/interface.ts";
 // 纯函数与目录检索（pipeline 域函数已迁 src/pipeline/，经 pipeline/interface.ts 转发；
-// 其余 workspace/catalog 域函数仍位于 middleware-utils.ts，阶段 4/5 陆续迁出）
+// workspace 域命名/全名类已迁 src/workspace/，经 workspace/interface.ts 转发；
+// 策略与目录检索域函数仍位于 middleware-utils.ts，阶段 5 catalog 域迁出）
 export { withTimeout, normalizeArguments, msgOf, createRedactor, globMatch } from "./pipeline/interface.ts";
+export { fullServerName, parseFullServerName, normalizeToolName, bareServerName, MIDDLEWARE_GLOBAL_ROOT } from "./workspace/interface.ts";
 export {
-  fullServerName,
-  parseFullServerName,
-  normalizeToolName,
   policyAllows,
-  bareServerName,
   policyDenialReason,
   isCatalogFresh,
   boundCatalogTools,
@@ -716,12 +738,11 @@ export {
   searchCatalogMulti,
   listCatalog,
   findToolDetail,
-  MIDDLEWARE_GLOBAL_ROOT,
 } from "./middleware-utils.ts";
 // 状态持久化
 export { userStateFile, loadUserState, saveUserState, catalogCacheFileFor, readCatalogServerFromDisk, loadDisabledTools, saveDisabledTools } from "./middleware-state.ts";
 // 工具注册
-export { registerMiddlewareTools } from "./middleware-register.ts";
+export { registerMiddlewareTools, registerDirectMcpGuard } from "./middleware-register.ts";
 // 类型
 export type {
   MiddlewareMode,
