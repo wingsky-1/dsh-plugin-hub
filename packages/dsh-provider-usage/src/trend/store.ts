@@ -21,9 +21,10 @@ import {
   type TrendCounterRow,
   type TrendDetailRow,
   type TrendDirRow,
+  type TrendHourRow,
 } from "./types.ts";
 
-export type TrendShardRow = TrendDetailRow | TrendCounterRow | TrendAggRow | TrendDirRow;
+export type TrendShardRow = TrendDetailRow | TrendCounterRow | TrendAggRow | TrendDirRow | TrendHourRow;
 
 export class TrendStore {
   private readonly root: string;
@@ -93,11 +94,10 @@ export class TrendStore {
   /**
    * 整日聚合分片原子重写（tmp+rename，0600）。空行数组 = 删除该日聚合分片（防御）。
    * 这是「聚合分片权威」约定的写入侧：成功返回后该日聚合事实已完整落盘。
-   * #633 A4：rows 为 agg+dir 混存行（调用方约定 agg 行在前、dir 行在后）——
-   * 分片行自带 kind 判别，读侧 readAggShard（filter kind:"agg"）与 readAggDayShard
-   * （agg+dir）各自取所需，互不干扰。
+   * #633 A4/#662：rows 为 agg+dir+hour 混存行（调用方约定 agg 在前、dir 居中、
+   * hour 在后）——分片行自带 kind 判别，读侧按需过滤，互不干扰。
    */
-  async writeAggDay(day: string, rows: Array<TrendAggRow | TrendDirRow>): Promise<void> {
+  async writeAggDay(day: string, rows: Array<TrendAggRow | TrendDirRow | TrendHourRow>): Promise<void> {
     await mkdir(this.aggDir(), { recursive: true });
     if (rows.length === 0) {
       await rm(this.aggFile(day), { force: true });
@@ -157,13 +157,18 @@ export class TrendStore {
   }
 
   /**
-   * 读聚合分片全量行（agg + dir 混存，#633 A4）：flush 压实的「既有聚合合并」
-   * 必须连 dir 行一起取回重写，否则二次压实会把混存分片里的 dir 行抹掉。
-   * #633 复核 M1：重启重建也走本方法——dir 行进 aggregator 的 dirDays 目录
-   * 内存桶（不进 cells），分片内 dir 权威行经 rebuild 读回内存视图。
+   * 读聚合分片全量行（agg + dir + hour 混存，#633 A4 / #662）：flush 压实的「既有
+   * 聚合合并」必须连 dir/hour 行一起取回重写，否则二次压实会把混存分片里的
+   * dir/hour 行抹掉。重启重建也走本方法——dir/hour 行进 aggregator 对应内存桶
+   * （不进 cells），分片内权威行经 rebuild 读回内存视图（白名单漏加 hour →
+   * rebuild 后小时数据静默全丢，P0）。
    */
-  async readAggDayShard(day: string): Promise<Array<TrendAggRow | TrendDirRow>> {
-    return this.readShard(this.aggFile(day), (r): r is TrendAggRow | TrendDirRow => r.kind === "agg" || r.kind === "dir");
+  async readAggDayShard(day: string): Promise<Array<TrendAggRow | TrendDirRow | TrendHourRow>> {
+    return this.readShard(
+      this.aggFile(day),
+      (r): r is TrendAggRow | TrendDirRow | TrendHourRow =>
+        r.kind === "agg" || r.kind === "dir" || r.kind === "hour",
+    );
   }
 
   private async readShard<T extends TrendShardRow>(file: string, filter: (r: TrendShardRow) => r is T): Promise<T[]> {

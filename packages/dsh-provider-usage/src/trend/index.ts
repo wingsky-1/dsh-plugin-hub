@@ -3,8 +3,8 @@
  *
  * collector（事件折叠）→ aggregator（内存聚合）→ store（按天分片 JSONL）的组合：
  * - 刷盘三挂点（方案定稿）：3~5s 防抖 + `session/flush` 官方排空点 + dispose await；
- * - 启动重建：聚合分片（权威，agg+dir 混存全量读回，dir 行进内存目录视图）+
- *   当日明细分片 → 内存聚合；过去日明细分片自愈压实；
+ * - 启动重建：聚合分片（权威，agg+dir+hour 混存全量读回，dir/hour 行进内存
+ *   目录/小时视图）＋ 当日明细分片 → 内存聚合；过去日明细分片自愈压实；
  * - 崩溃安全：压实先原子写聚合分片再删明细分片；同日并存时聚合权威（见 store）；
  * - 已知边界（文档化口径）：kill -9 丢防抖窗口数据（事件路线无重扫兜底）；
  *   统计自挂载时点起算。
@@ -14,6 +14,7 @@ import {
   TrendAggregator,
   mergeAggRows,
   mergeDirRows,
+  mergeHourRows,
   type TrendGranularity,
   type TrendMetric,
   type TrendStackPoint,
@@ -21,7 +22,7 @@ import {
 } from "./aggregator.ts";
 import { TrendCollector } from "./collector.ts";
 import { TrendStore } from "./store.ts";
-import type { TrendAggRow, TrendDirRow } from "./types.ts";
+import type { TrendAggRow, TrendDirRow, TrendHourRow } from "./types.ts";
 import { safeId } from "./types.ts";
 
 export interface TrendTrackerOptions {
@@ -202,10 +203,11 @@ export class TrendTracker {
       try {
         // #654：折算与消费取同一份身份快照——下面三个 await 期间新到达的同日行既不入
         // 本次折算、也不被消费，留待下一轮压实（旧实现按日键删除会连带丢掉这些行）。
-        const { consumed, aggRows: pendingAgg, dirRows: pendingDir } = this.aggregator.rollupSnapshot(day);
-        // #633 A4：既有聚合分片全量取回（agg+dir 混存）——若仍走 readAggShard（只取
-        // agg 行），整日原子重写会把分片内既有 dir 行抹掉；dir 行必须与 pendingDir
-        // 合并后一起重写（迟到旧日行二次压实防丢防重）。
+        const { consumed, aggRows: pendingAgg, dirRows: pendingDir, hourRows: pendingHour } = this.aggregator.rollupSnapshot(day);
+        // #633 A4/#662：既有聚合分片全量取回（agg+dir+hour 混存）——若仍走
+        // readAggShard（只取 agg 行），整日原子重写会把分片内既有 dir/hour 行抹掉；
+        // 三组必须各自与既有行合并后一起重写（迟到旧日行二次压实防丢防重——
+        // 漏合并 hour 行 → 分片内既有小时数据被抹，P0）。
         const existing = await this.store.readAggDayShard(day);
         const aggRows = mergeAggRows(
           existing.filter((r): r is TrendAggRow => r.kind === "agg"),
@@ -215,7 +217,11 @@ export class TrendTracker {
           existing.filter((r): r is TrendDirRow => r.kind === "dir"),
           pendingDir,
         );
-        await this.store.writeAggDay(day, [...aggRows, ...dirRows]); // agg 行在前、dir 行在后（写入约定）
+        const hourRows = mergeHourRows(
+          existing.filter((r): r is TrendHourRow => r.kind === "hour"),
+          pendingHour,
+        );
+        await this.store.writeAggDay(day, [...aggRows, ...dirRows, ...hourRows]); // agg 前、dir 中、hour 后（写入约定）
         // #654：聚合事实落盘后立即按身份消费。若把消费放在 deleteDetailShard 之后，
         // 删除失败时内存行保留，下一轮会拿「已含本轮值的聚合分片」再 merge 一次 →
         // 磁盘双算（实测 agg 20/2 vs 内存 10/1）。消费后 pending 不再含该日，下轮不再
@@ -307,6 +313,15 @@ export class TrendTracker {
   /** 目录窗口总量表（报告快照目录范围过滤数据源，#633 分片 b B4）。 */
   dirTotals(startDay: string, endDay: string, metric: TrendMetric = "total"): Array<{ dir: string; calls: number; total: number | null }> {
     return this.aggregator.dirTotals(startDay, endDay, metric);
+  }
+
+  /**
+   * 全量小时日桶快照（#662：报告快照 byHour/byPeriod/peakHour/coveredDays 数据源）。
+   * 内存 hourDays 单源快照（apply 平行累加 + rebuild 双分支读回，不折算 pending；
+   * 无残差投影——旧分片缺 hour 行是物理缺失，报告侧 coveredDays 守卫降级）。
+   */
+  hourRows(): ReturnType<TrendAggregator["hourRows"]> {
+    return this.aggregator.hourRows();
   }
 
   /** 堆叠柱序列（M2 /trend 路由数据源；n 由粒度决定：日 30 / 周 12 / 月 12）。 */

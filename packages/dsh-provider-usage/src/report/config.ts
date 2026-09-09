@@ -212,7 +212,17 @@ export const LEGACY_MONTHLY_PROMPT_V3 = [
 // 7) 统一“上一个周期”时间尺度：日报=昨天、周报=上周、月报=上个月。
 // #633 分片 b 追加纪律：目录红线——目录名只可原样引用 byDirectory 的 dir 字段
 //（项目名/basename 形态），绝不展开为路径、绝不解读目录内容；占比分母口径不变。
-export const DEFAULT_DAILY_PROMPT = [
+// #662 追加纪律（时段）：时段与钟点只可原样引用 byHour/byPeriod/peakHour 字段
+//（档名或 hour 数字）；绝不把时段与行为/场景/情绪关联（如「凌晨还在写代码」的
+//「写代码」不在 JSON，属编造）；绝不与 byDirectory 交叉关联（byPeriod 为全量口径、
+// byDirectory 可被目录范围过滤缩面，两口径不可混算占比）。
+
+/**
+ * #662：旧版（无时段观察）三周期默认模板——迁移判定基准，文本勿改动。
+ * 存量配置的 prompts 某键严格等于此文本（= 用户从未自定义该周期）→ 读时自动
+ * 升级为含时段观察的新默认；自定义文本（含自定义时段句）不丢不覆盖。
+ */
+export const LEGACY_DAILY_PROMPT_V4 = [
   "【任务目标】",
   "你是「AI 用量年报」主笔。请根据下方提供的统计数据，以第二人称写一段 80–150 字的中文日报（字数宁取中段，避免顶格）。",
   "风格类似音乐 App 年报里的「单日一页」：有画面、有温度，但每个数字都来自 JSON。字数宁取中段，避免顶格。",
@@ -234,7 +244,7 @@ export const DEFAULT_DAILY_PROMPT = [
   "- 事实基准：日期以 JSON 为准。时间尺度以「昨天」为准。",
 ].join("\n");
 
-export const DEFAULT_WEEKLY_PROMPT = [
+export const LEGACY_WEEKLY_PROMPT_V4 = [
   "【任务目标】",
   "你是「AI 用量年报」主笔。请根据下方提供的统计数据，以第二人称写一份 200–300 字的中文周报，像音乐 App 年报的「每周一页」：娓娓道来，每个数字都来自 JSON。全文只允许两个小标题，宁少勿多。",
   "",
@@ -256,7 +266,7 @@ export const DEFAULT_WEEKLY_PROMPT = [
   "- 事实基准：日期与星期一律以 JSON 为准，不要按本地时区推断或自行推日历。时间尺度以「上周」为准；数据稀疏时收窄叙事、平实收笔。",
 ].join("\n");
 
-export const DEFAULT_MONTHLY_PROMPT = [
+export const LEGACY_MONTHLY_PROMPT_V4 = [
   "【任务目标】",
   "你是「AI 用量年报」主笔。请根据下方提供的统计数据，以第二人称写一份 400–600 字的中文月报，像音乐 App 的年度听歌报告：有画面、有温度、有仪式感，每个数字都来自 JSON。小标题自拟（4–8 字，如「被省下的重复」「一直在线的那位」——仅示意结构，禁止照抄），全文四到五节。",
   "",
@@ -274,6 +284,78 @@ export const DEFAULT_MONTHLY_PROMPT = [
   "【硬性约束（违背将视为严重错误）】",
   "- 数据红线：只依据 JSON，除占比与倍数外不得推算任何数值；字段为 null 或缺失时跳过该项，绝不输出 null/0/NaN，也不要当 0 处理。仅一个模型时集中写它，不提「其他」；分母大于 0 且非 null 时方计算百分比。",
   "- 目录红线：目录名只可原样引用 byDirectory 里的 dir 字段（项目名形态），绝不展开为路径、绝不推测目录内容与项目性质。",
+  "- 排版白名单：标记仅可用 ##、-、**；禁止编号列表与代码围栏。超字数先删修饰句，不删数据句。",
+  "- 事实基准：日期与星期一律以 JSON 为准，不要按本地时区推断，也不要质疑 JSON 里的月份边界。时间尺度以「上个月」为准。数据稀疏的月份收窄叙事、平实收笔，不堆砌抒情。",
+].join("\n");
+
+export const DEFAULT_DAILY_PROMPT = [
+  "【任务目标】",
+  "你是「AI 用量年报」主笔。请根据下方提供的统计数据，以第二人称写一段 80–150 字的中文日报（字数宁取中段，避免顶格）。",
+  "风格类似音乐 App 年报里的「单日一页」：有画面、有温度，但每个数字都来自 JSON。字数宁取中段，避免顶格。",
+  "",
+  "【统计数据】",
+  "{stats}",
+  "",
+  "【撰写结构（按顺序）】",
+  "- 开场一句：把 totals.calls（对话次数）或 totals.total（总 token 数）放进一个生活化场景。某一项为 null 时改用另一项。",
+  "- 中间点一个最出画面的细节，只写一个：优先选能换算成时间或体量的数字——totals.cacheRead（缓存读取的 token 数，即「少打的字」）、totals.toolCalls（工具调用次数）、或最常用模型（byProvider 第一位，名称原样引用）。",
+  "- 目录一笔（可选）：byDirectory 第一位（最活跃目录）非空且其 total 与 totals.total 均非 null 且 totals.total > 0 时，写「XX% 的用量在目录 Y」（占比 = 第一位 total ÷ totals.total，百分比取整；目录名原样引用，不补全不解读）。byDirectory 为空、字段缺失或分母不可算时整句跳过。",
+  "- 时段一笔（可选）：byPeriod 与 peakHour 均非 null 时，写一句最常开工的钟点（peakHour.hour，如「21 点前后最常开工」）或最活跃时段档（byPeriod 中 total 最大的档名）；档占比可在 totals.total > 0 且该档 total 非 null 时给出（百分比取整）。byPeriod 或 peakHour 任一为 null/缺失时整句跳过。",
+  "- wowRatio 非 null 时，把升降翻成体感（约是上一期的 X 倍：大于 1 为增、小于 1 为减），可并入开场句；为 null 则完全不提对比。",
+  "- 收尾一句轻的寄语；字数已到上限时，寄语与目录句、时段句、对比句依次舍去（保开场与细节）。",
+  "",
+  "【硬性约束（违背将视为严重错误）】",
+  "- 数据红线：只依据 JSON，除占比与倍数外不得推算任何数值；字段为 null 或缺失时直接跳过该项，绝不输出 null/0/NaN，也不要当 0 处理。数据稀疏时用一句有动作感的轻句带过次数（手法示意，禁止编造），不堆砌抒情。",
+  "- 目录红线：目录名只可原样引用 byDirectory 里的 dir 字段（项目名形态），绝不展开为路径、绝不推测目录内容与项目性质。",
+  "- 时段红线：时段与钟点只可原样引用 byPeriod 的 period 档名、byHour 的 hour 数字或 peakHour.hour；绝不把时段与行为、场景、情绪关联（如「凌晨还在写代码」的「写代码」不在 JSON，属编造），绝不与 byDirectory 交叉关联（口径不同）。",
+  "- 排版白名单：标记仅可用 **加粗** 与 - 列表；禁止小标题、编号列表与代码围栏。",
+  "- 事实基准：日期以 JSON 为准。时间尺度以「昨天」为准。",
+].join("\n");
+
+export const DEFAULT_WEEKLY_PROMPT = [
+  "【任务目标】",
+  "你是「AI 用量年报」主笔。请根据下方提供的统计数据，以第二人称写一份 200–300 字的中文周报，像音乐 App 年报的「每周一页」：娓娓道来，每个数字都来自 JSON。全文只允许两个小标题，宁少勿多。",
+  "",
+  "【统计数据】",
+  "{stats}",
+  "",
+  "【撰写结构】",
+  "## 上周",
+  "一段金句开场加要点列表。开场按优先序挑一个最亮眼的事实落笔：wowRatio 明显偏离 1（为 null 则跳过此项）→ longestStreak 达到 4 天以上 → activeDays/windowDays 出勤率（可写成 5/7 形式）；三个都不亮眼时，用 activeDays 平实开场。",
+  "用 - 列表写一至两条高光（字数紧张就减到一条）：峰值日 peakDay（哪天、当日总量；为 null 则跳过此条）；最常用的模型（byProvider 第一位，名称原样引用，不翻译不补全）。占比仅在可计算时给出：第一位 total ÷ totals.total，两者均非 null 且分母大于 0，百分比取整；否则改用 calls 口径，再否则不提占比。",
+  "目录观察一笔（可选）：byDirectory 非空时，第一位目录 total 与 totals.total 均非 null 且 totals.total > 0 → 写「XX% 的用量在目录 Y」（占比取整，目录名原样引用）；第二位可给占比或并列一笔；byDirectory 有数据但占比不可算（分母 null 或 ≤0）→ 改用 calls 口径写第一二位；三名开外仍有实质数据 → 写「工作分散在 N 个目录」的中性句。byDirectory 为空或缺失则整句跳过。",
+  "时段观察一笔（可选）：byPeriod 与 peakHour 均非 null 时，写最常开工的钟点（peakHour.hour）或最活跃时段档（byPeriod 中 total 最大的档名），档占比可在 totals.total > 0 且该档 total 非 null 时给出（百分比取整）；分布均匀（前两档占比接近）时改写「全天节奏均匀」的中性观察。byPeriod 或 peakHour 任一为 null/缺失则整句跳过。",
+  "## 结语",
+  "一句对上周节奏的观察加一句寄语：byWeekday 最高与次高接近、或全周接近 0 时，改为一句中性的整体观察，不硬找「最勤的一天」。",
+  "",
+  "【硬性约束（违背将视为严重错误）】",
+  "- 数据红线：只依据 JSON，除占比与倍数外不得推算任何数值；字段为 null 或缺失时跳过该项，绝不输出 null/0/NaN，也不要当 0 处理。分母大于 0 且两者均非 null 时方可计算占比。",
+  "- 目录红线：目录名只可原样引用 byDirectory 里的 dir 字段（项目名形态），绝不展开为路径、绝不推测目录内容与项目性质。",
+  "- 时段红线：时段与钟点只可原样引用 byPeriod 的 period 档名、byHour 的 hour 数字或 peakHour.hour；绝不把时段与行为、场景、情绪关联，绝不与 byDirectory 交叉关联（口径不同）。",
+  "- 排版白名单：标记仅可用 ##、-、**；禁止编号列表与代码围栏。超字数先删修饰句，不删数据句。",
+  "- 事实基准：日期与星期一律以 JSON 为准，不要按本地时区推断或自行推日历。时间尺度以「上周」为准；数据稀疏时收窄叙事、平实收笔。",
+].join("\n");
+
+export const DEFAULT_MONTHLY_PROMPT = [
+  "【任务目标】",
+  "你是「AI 用量年报」主笔。请根据下方提供的统计数据，以第二人称写一份 400–600 字的中文月报，像音乐 App 的年度听歌报告：有画面、有温度、有仪式感，每个数字都来自 JSON。小标题自拟（4–8 字，如「被省下的重复」「一直在线的那位」——仅示意结构，禁止照抄），全文四到五节。",
+  "",
+  "【统计数据】",
+  "{stats}",
+  "",
+  "【撰写结构】",
+  "开场（无标题）：两句金句，从 activeDays/windowDays、longestStreak 与 wowRatio（非 null 时）中挑一两个最打动人的事实起笔。",
+  "高光时刻：peakDay 那天的故事——当日总量是多少；avgPerActiveDay 非 null 且大于 0 时给倍数（保留一位小数或「约 N 倍」），否则只报绝对值。peakDay 为 null 时整节收缩为一句活跃天数。",
+  "一直在线的那位：byProvider 拟人化——最依赖的模型是谁、承担的比例（分母口径与取整规则同下）；仅一个模型时集中写它，不提「其他」；名称原样引用，不翻译、不补全、不解读含义。",
+  "目录版图（可选一节）：byDirectory 非空时，按占比铺开本月的工作版图——第一位目录 total 与 totals.total 均非 null 且 totals.total > 0 时给「XX% 的用量在目录 Y」（占比取整，目录名原样引用），第二三位可各给一笔；目录多而散（前三合计占比不过半或条目多）→ 写「工作分散在 N 个目录」的中性观察；只有一个目录 → 集中写它，不提「其他」。byDirectory 为空或缺失则跳过本节（不占「四到五节」名额）。",
+  "时段版图（可选一节）：byPeriod 与 peakHour 均非 null 时，铺开本月的工作时段——最活跃档占比（分母 totals.total 同目录口径，百分比取整）与 peakHour 钟点一笔；分布均匀（各档占比接近）时写「全天节奏均匀」的中性观察。byPeriod 或 peakHour 任一为 null/缺失则跳过本节（不占「四到五节」名额）。",
+  "被省下的重复：totals.cacheRead 与 totals.total 均非 null 且分母大于 0 时，写缓存读取占比（百分比取整）背后的省力感；否则跳过本段，改写 totals.toolCalls 与 totals.turns 各一笔。",
+  "结语：两句寄语，至少复用开场的一个意象或一个数字；禁止「愿你我……」「致敬每一位……」式套话。",
+  "",
+  "【硬性约束（违背将视为严重错误）】",
+  "- 数据红线：只依据 JSON，除占比与倍数外不得推算任何数值；字段为 null 或缺失时跳过该项，绝不输出 null/0/NaN，也不要当 0 处理。仅一个模型时集中写它，不提「其他」；分母大于 0 且非 null 时方计算百分比。",
+  "- 目录红线：目录名只可原样引用 byDirectory 里的 dir 字段（项目名形态），绝不展开为路径、绝不推测目录内容与项目性质。",
+  "- 时段红线：时段与钟点只可原样引用 byPeriod 的 period 档名、byHour 的 hour 数字或 peakHour.hour；绝不把时段与行为、场景、情绪关联，绝不与 byDirectory 交叉关联（口径不同）。",
   "- 排版白名单：标记仅可用 ##、-、**；禁止编号列表与代码围栏。超字数先删修饰句，不删数据句。",
   "- 事实基准：日期与星期一律以 JSON 为准，不要按本地时区推断，也不要质疑 JSON 里的月份边界。时间尺度以「上个月」为准。数据稀疏的月份收窄叙事、平实收笔，不堆砌抒情。",
 ].join("\n");
@@ -392,9 +474,9 @@ export function normalizeReportConfig(raw: unknown): ReportConfig {
   const promptsSrc = (typeof src.prompts === "object" && src.prompts !== null ? src.prompts : null) as Record<string, unknown> | null;
   const prompts: ReportPrompts = promptsSrc !== null
     ? {
-        daily: normalizePrompt(promptsSrc.daily, d.prompts.daily, [LEGACY_DAILY_PROMPT_V1, LEGACY_DAILY_PROMPT_V2, LEGACY_DAILY_PROMPT_V3]),
-        weekly: normalizePrompt(promptsSrc.weekly, d.prompts.weekly, [LEGACY_WEEKLY_PROMPT_V1, LEGACY_WEEKLY_PROMPT_V2, LEGACY_WEEKLY_PROMPT_V3]),
-        monthly: normalizePrompt(promptsSrc.monthly, d.prompts.monthly, [LEGACY_MONTHLY_PROMPT_V1, LEGACY_MONTHLY_PROMPT_V2, LEGACY_MONTHLY_PROMPT_V3]),
+        daily: normalizePrompt(promptsSrc.daily, d.prompts.daily, [LEGACY_DAILY_PROMPT_V1, LEGACY_DAILY_PROMPT_V2, LEGACY_DAILY_PROMPT_V3, LEGACY_DAILY_PROMPT_V4]),
+        weekly: normalizePrompt(promptsSrc.weekly, d.prompts.weekly, [LEGACY_WEEKLY_PROMPT_V1, LEGACY_WEEKLY_PROMPT_V2, LEGACY_WEEKLY_PROMPT_V3, LEGACY_WEEKLY_PROMPT_V4]),
+        monthly: normalizePrompt(promptsSrc.monthly, d.prompts.monthly, [LEGACY_MONTHLY_PROMPT_V1, LEGACY_MONTHLY_PROMPT_V2, LEGACY_MONTHLY_PROMPT_V3, LEGACY_MONTHLY_PROMPT_V4]),
       }
     : migrateLegacyPrompt(legacyPromptOf(src) ?? LEGACY_PROMPT_TEMPLATE);
   return {

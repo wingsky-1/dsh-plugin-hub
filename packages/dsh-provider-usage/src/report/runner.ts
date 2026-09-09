@@ -194,6 +194,10 @@ export async function runDueReport(params: {
     endDay: due.endDay,
     buckets,
     dirRows: scopedDirRows,
+    // #662：小时维度日汇总行进快照（trend.hourRows 内存单源快照，含今日桶）。
+    // 覆盖度守卫在 buildStatsSnapshot 内完成：coveredDays < windowDays 时
+    // byHour/byPeriod/peakHour 整体置 null（升级期部分天缺 hour 事实 → 时段段降级）。
+    hourRows: trend.hourRows(),
     prevTotal: prevWindowTotal(buckets, due.startDay, due.endDay),
   });
   if (snapshot.totals.calls === 0) {

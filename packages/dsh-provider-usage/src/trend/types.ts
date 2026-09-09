@@ -13,6 +13,13 @@
  *
  * 存储（两级聚合）：当日保留 per-step 明细行；日切压实为 day×provider(×model) 聚合行
  * 并丢弃明细。分片行一律自带 schema 版本 v 与 kind 判别字段（重启重建遇日切瞬间无歧义）。
+ *
+ * #662：小时维度——日切压实在 agg/dir 之外**同源**产出 day×hour 聚合行（kind:"hour"，
+ * hour 为本地时区 0–23，与 dayKey 同源口径：同一事件的 day 与 hour 归属一致、DST
+ * 逐时回退安全）。「落盘即定型」约定：hour 值只在折算点（rollupSnapshot 折算 helper，
+ * 现算自 detail/counter 行的 time 字段）产生；rebuild/查询只信落盘字段、绝不重算
+ * （防时区配置变更导致旧行漂移）。旧分片（#662 前）无 hour 行——报告侧时段维度
+ * 物理缺失、由 coveredDays 守卫降级（不投影补造，见 generate.ts）。
  */
 
 /**
@@ -24,6 +31,11 @@
  * 目录桶仅由收集器路径产生（collector.dirOf 对 store 无 session / cwd 缺失 /
  * 获取抛错的会话显式归桶），折算与重建路径均不补造；目录维度日汇总（kind:"dir"）
  * 由 pending 行折算（A4），分片读回经 rebuild dir 分支进内存 dirDays（复核 M1）。
+ *
+ * #662：小时维度（kind:"hour"）同为**加性扩展**，不递增版本——旧行（无 hour 行）
+ * 原样读回；新 kind 行由 isValidShardRow 分支判别。注意代价：插件版本回退后旧版
+ * 压实会整日重写聚合分片（抹掉 hour 行），再升级 hour 行不可逆丢失——README
+ * 「趋势时段维度」节注明，报告侧由 coveredDays 覆盖度守卫降级兜底。
  */
 export const TREND_ROW_VERSION = 1;
 
@@ -83,6 +95,18 @@ export function sanitizeDirName(cwd: unknown): string | null {
   // 盘符根（如 C:\）剥尾斜杠后剩 "C:"，非目录名（Windows Path.GetFileName 语义同样为空）→ 未识别
   if (/^[A-Za-z]:$/.test(base)) return null;
   return base;
+}
+
+/**
+ * 本地时区小时（0–23；#662「落盘即定型」的唯一折算点）。
+ * 与 dayKey（charts.ts）同源口径：同一事件按同一本地时区归 day 与 hour——日界处
+ * 事件不会被劈到不同日（东八区 00:00–08:00 若用 UTC 会划入前一天，同 dayKey 注释）。
+ * DST 安全：逐事件现算，不缓存时区偏移（与「禁缓存时区偏移」纪律一致）。
+ * 注意：hour 值只在折算点（rollupSnapshot / 内存平行累加）由本函数产生；落盘为
+ * hour 行后 rebuild/查询只信 row.hour，绝不重算（防时区配置变更导致旧行漂移）。
+ */
+export function hourOfDay(t: number): number {
+  return new Date(t).getHours();
 }
 
 /** 当日 per-step 明细行（分片 kind:"detail"；每次定稿调用一行）。 */
@@ -166,7 +190,28 @@ export interface TrendDirRow {
   toolCalls: number;
 }
 
-export type TrendRow = TrendDetailRow | TrendCounterRow | TrendAggRow | TrendDirRow;
+/**
+ * 日级小时汇总行（分片 kind:"hour"；#662 与 agg/dir 同生命周期、整日原子重写）。
+ * 由日切压实折算 detail/counter 行产出（rollupSnapshot 同源——与 agg/dir 是同一
+ * 事实的第三个投影，天然不双算）；hour 为本地时区 0–23（hourOfDay，落盘即定型）。
+ * 旧分片无此 kind → 报告侧 coveredDays 守卫降级，不投影补造。
+ */
+export interface TrendHourRow {
+  v: number;
+  kind: "hour";
+  day: string;
+  /** 本地时区钟点（0–23；hourOfDay 折算，落盘后不再重算）。 */
+  hour: number;
+  input: number | null;
+  output: number | null;
+  cacheRead: number | null;
+  cacheWrite: number | null;
+  calls: number;
+  turns: number;
+  toolCalls: number;
+}
+
+export type TrendRow = TrendDetailRow | TrendCounterRow | TrendAggRow | TrendDirRow | TrendHourRow;
 
 /** 内存聚合桶（day×provider×model 单元）。null token 语义：桶内无任何有效数字则保持 null。 */
 export interface TrendCell {
@@ -211,11 +256,11 @@ function isStrOrNull(v: unknown): boolean {
   return v === null || typeof v === "string";
 }
 
-/** 判定明细/计数/聚合/目录汇总行是否完整可收（载入重建的防御校验；坏行跳过）。
+/** 判定明细/计数/聚合/目录汇总/小时汇总行是否完整可收（载入重建的防御校验；坏行跳过）。
  *  #633 A2：detail/counter 的 dir 为加性可选键——旧格式行（无 dir）不因缺键拒绝。 */
 export function isValidShardRow(
   row: unknown,
-): row is TrendDetailRow | TrendCounterRow | TrendAggRow | TrendDirRow {
+): row is TrendDetailRow | TrendCounterRow | TrendAggRow | TrendDirRow | TrendHourRow {
   if (typeof row !== "object" || row === null) return false;
   const r = row as Record<string, unknown>;
   if (r.v !== TREND_ROW_VERSION) return false;
@@ -271,6 +316,23 @@ export function isValidShardRow(
       typeof r.day === "string" &&
       TREND_DAY_RE.test(r.day) &&
       isValidDirKey(r.dir) &&
+      isNumOrNull(r.input) &&
+      isNumOrNull(r.output) &&
+      isNumOrNull(r.cacheRead) &&
+      isNumOrNull(r.cacheWrite) &&
+      typeof r.calls === "number" &&
+      typeof r.turns === "number" &&
+      typeof r.toolCalls === "number"
+    );
+  }
+  if (r.kind === "hour") {
+    return (
+      typeof r.day === "string" &&
+      TREND_DAY_RE.test(r.day) &&
+      typeof r.hour === "number" &&
+      Number.isInteger(r.hour) &&
+      r.hour >= 0 &&
+      r.hour <= 23 &&
       isNumOrNull(r.input) &&
       isNumOrNull(r.output) &&
       isNumOrNull(r.cacheRead) &&

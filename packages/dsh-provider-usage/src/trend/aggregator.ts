@@ -6,6 +6,13 @@
  * - pending：当日 per-step 明细/计数行（未压实窗口），支撑今日按小时/按会话细分
  *   与日切压实的落盘素材；日切时压实为 day×provider(×model) 聚合行并丢弃明细。
  *
+ * #662 小时维度（hourDays）：day→hour(0-23)→cell 桶，与 dirDays 同模式——apply
+ * 平行累加（hourOfDay 现算自事件 time）、rebuild 双分支读回（hour 行直接入桶 +
+ * 当日明细/计数行折算入桶）、retokenCell 第三面修正、pruneDays 联动删除；
+ * 不设残差投影（detail/counter 行必有 time、无缺键事实；旧分片缺小时是物理缺失，
+ * 投影救不回且会造伪事实）——「小时面=聚合面」守恒由 rollupSnapshot 同源折算
+ * （同一事实的第三个投影）+ 覆盖度守卫 + 测试断言共同保证。
+ *
  * 双算防线：明细/计数行在 apply 时已进 cells，压实只做「落盘形态转换」
  * （明细行 → 聚合行），绝不再次累加 cells；重启重建时聚合行与当日明细行
  * 二选一来源（agg 分片存在即权威，见 store 约定），同样不双算。
@@ -16,6 +23,7 @@
 import { dayKey, lastNDayKeys } from "../charts.ts";
 import {
   sumToken,
+  hourOfDay,
   TREND_ROW_VERSION,
   TREND_UNIDENTIFIED,
   type TrendAggRow,
@@ -23,6 +31,7 @@ import {
   type TrendCounterRow,
   type TrendDetailRow,
   type TrendDirRow,
+  type TrendHourRow,
   type TrendTokens,
 } from "./types.ts";
 import type { TrendCallRecord, TrendCorrectRecord, TrendCounterRecord, TrendEmit } from "./collector.ts";
@@ -92,6 +101,18 @@ export class TrendAggregator {
    * （单源无重无漏：同事实并存时折算会 2×，互补事实并存时按键去重会丢）。
    */
   private dirDays = new Map<string, Map<string, TrendCell>>();
+  /**
+   * #662：day → hour(0-23) → cell（小时维度日汇总内存态）。
+   * 生命周期与 days/dirDays 同步（复核 P1-1 统一口径）：apply 实时累加 → rebuild
+   * 双分支读回（hour 行 mergeCell + 当日明细/计数行折算）→ 压实消费不删（与
+   * cells/dirDays 同策略，跨天后小时面历史不丢——hourRows 纯内存无分片回读）
+   * → prune 同步收缩（pruneDays 联动删除）。
+   * 权威口径：hourDays 是小时维度的唯一事实源——apply 平行累加 + rebuild 双分支
+   * 读回已覆盖全部 hour 事实，hourRows() 只做快照（同 dirRows 单源无重无漏）。
+   * 不做残差投影（与 dir 本质差异见文件头注释）；「小时面=聚合面」守恒由
+   * rollupSnapshot 同源折算 + 报告侧 coveredDays 守卫 + 测试断言共同保证。
+   */
+  private hourDays = new Map<string, Map<number, TrendCell>>();
   /** 未压实明细/计数行（跨日可能：时钟回拨把旧日事件记进对应日分片）。 */
   private pending: PendingEntry[] = [];
 
@@ -127,6 +148,7 @@ export class TrendAggregator {
     const day = dayKey(r.time);
     this.addCall(this.cellOf(day, r.provider, r.model), r.tokens);
     this.addCall(this.dirCellOf(day, r.dir), r.tokens); // #633 A3：目录维度平行累加（同 record 不二次 emit）
+    this.addCall(this.hourCellOf(day, hourOfDay(r.time)), r.tokens); // #662：小时维度平行累加（hourOfDay 与 dayKey 同源，日界一致）
     const row: TrendDetailRow = {
       v: TREND_ROW_VERSION,
       kind: "detail",
@@ -197,6 +219,13 @@ export class TrendAggregator {
       dirCell.cacheRead = sumToken(dirCell.cacheRead, deltas.cacheRead);
       dirCell.cacheWrite = sumToken(dirCell.cacheWrite, deltas.cacheWrite);
     }
+    // #662：小时面第三面修正——applyCorrect 的行值变更必须同步回小时桶（dirDays
+    // 单源化后折算侧不再兜底；hourOfDay 与 apply 时同源现算，桶键一致）。
+    const hourCell = this.hourCellOf(row.day, hourOfDay(row.time));
+    hourCell.input = sumToken(hourCell.input, deltas.input);
+    hourCell.output = sumToken(hourCell.output, deltas.output);
+    hourCell.cacheRead = sumToken(hourCell.cacheRead, deltas.cacheRead);
+    hourCell.cacheWrite = sumToken(hourCell.cacheWrite, deltas.cacheWrite);
   }
 
   /** counter 量累加进 cell（applyCounter / rebuild 计数行共用）。 */
@@ -209,6 +238,7 @@ export class TrendAggregator {
     const day = dayKey(r.time);
     this.addCounter(this.cellOf(day, r.provider, r.model), r.turns, r.toolCalls);
     this.addCounter(this.dirCellOf(day, r.dir), r.turns, r.toolCalls); // #633 A3：目录维度平行累加
+    this.addCounter(this.hourCellOf(day, hourOfDay(r.time)), r.turns, r.toolCalls); // #662：小时维度平行累加
     const row: TrendCounterRow = {
       v: TREND_ROW_VERSION,
       kind: "counter",
@@ -231,7 +261,7 @@ export class TrendAggregator {
    * @param rows 校验过的分片行（agg 权威行 + 当日明细/计数行）
    * @param persistedRows 这些行是否已落盘（agg 行无意义；明细/计数行来自分片 = true）
    */
-  rebuild(rows: Array<TrendAggRow | TrendDetailRow | TrendCounterRow | TrendDirRow>, persistedRows: boolean): void {
+  rebuild(rows: Array<TrendAggRow | TrendDetailRow | TrendCounterRow | TrendDirRow | TrendHourRow>, persistedRows: boolean): void {
     for (const row of rows) {
       if (row.kind === "agg") {
         const cell = this.cellOf(row.day, row.provider, row.model);
@@ -242,6 +272,11 @@ export class TrendAggregator {
       // detail/counter 行重建，防双重计数）
       if (row.kind === "dir") {
         mergeCell(this.dirCellOf(row.day, row.dir), row);
+        continue;
+      }
+      // #662：hour 汇总行重建 → 只进小时维度桶（同 dir 行：防双重计数、不进 pending）
+      if (row.kind === "hour") {
+        mergeCell(this.hourCellOf(row.day, row.hour), row);
         continue;
       }
       if (row.kind === "detail") {
@@ -263,12 +298,23 @@ export class TrendAggregator {
             cacheWrite: row.cacheWrite,
           });
         }
+        // #662：明细行 rebuild 第三面入账——hourDays 是小时维度唯一事实源，
+        // 重建明细行的 hour 事实必须在此落桶（hourOfDay 与 apply 同源现算；
+        // 已落盘 hour 行由上方 hour 分支直接入桶，两条路径不重叠）。
+        this.addCall(this.hourCellOf(row.day, hourOfDay(row.time)), {
+          input: row.input,
+          output: row.output,
+          cacheRead: row.cacheRead,
+          cacheWrite: row.cacheWrite,
+        });
       } else {
         this.addCounter(this.cellOf(row.day, row.provider, row.model), row.turns, row.toolCalls);
         // 复核 P1-1：计数行 rebuild 同上（turns/toolCalls 平行落 dir 桶）。
         if (row.dir !== undefined) {
           this.addCounter(this.dirCellOf(row.day, row.dir), row.turns, row.toolCalls);
         }
+        // #662：计数行 rebuild 第三面入账（同 detail 行分支）。
+        this.addCounter(this.hourCellOf(row.day, hourOfDay(row.time)), row.turns, row.toolCalls);
       }
       this.pending.push({ row, persisted: persistedRows });
     }
@@ -449,6 +495,38 @@ export class TrendAggregator {
   }
 
   /**
+   * 全量小时日桶快照（day 升序、hour 升序；#662 报告快照 byHour/byPeriod/peakHour/
+   * coveredDays 数据源）。
+   * 权威口径（对齐 dirRows 单源约定）：hourDays 单源快照——apply 平行累加 + rebuild
+   * 双分支读回已覆盖全部 hour 事实，不折算 pending（防双算）；**不做残差投影**
+   * （detail/counter 必有 time、无缺键事实；旧分片缺 hour 行是物理缺失，报告侧
+   * coveredDays 守卫负责降级，不投影补造伪事实）。
+   */
+  hourRows(): TrendHourRow[] {
+    const out: TrendHourRow[] = [];
+    for (const day of [...this.hourDays.keys()].sort()) {
+      const byHour = this.hourDays.get(day)!;
+      for (const hour of [...byHour.keys()].sort((a, b) => a - b)) {
+        const cell = byHour.get(hour)!;
+        out.push({
+          v: TREND_ROW_VERSION,
+          kind: "hour",
+          day,
+          hour,
+          input: cell.input,
+          output: cell.output,
+          cacheRead: cell.cacheRead,
+          cacheWrite: cell.cacheWrite,
+          calls: cell.calls,
+          turns: cell.turns,
+          toolCalls: cell.toolCalls,
+        });
+      }
+    }
+    return out;
+  }
+
+  /**
    * 堆叠柱序列（目录维度；#633 分片 b B1 数据接口）。语义与 seriesStacked 同构：
    * 每时间桶按目录拆段；dirs 为图例并集（窗口内出现过的目录段，含未识别桶）。
    * dir 过滤可选（单目录形态——未识别桶键同为合法过滤值）。
@@ -609,10 +687,13 @@ export class TrendAggregator {
    * 缺键 = 无 dir 事实可折叠，不在折算侧补造）。cells/dirDays 不动（apply 时已累加，
    * 压实只做落盘形态转换，绝不二次累加）。
    */
-  rollupSnapshot(day: string): { consumed: PendingEntry[]; aggRows: TrendAggRow[]; dirRows: TrendDirRow[] } {
+  rollupSnapshot(day: string): { consumed: PendingEntry[]; aggRows: TrendAggRow[]; dirRows: TrendDirRow[]; hourRows: TrendHourRow[] } {
     const consumed: PendingEntry[] = [];
     const aggByKey = new Map<string, TrendAggRow>();
     const dirByKey = new Map<string, TrendDirRow>();
+    // #662：小时档同源折算——key 为本地时区钟点（hourOfDay 现算自行 time，与
+    // apply/rebuild 同源；「落盘即定型」的生成点唯一 helper）。
+    const hourByKey = new Map<number, TrendHourRow>();
     for (const p of this.pending) {
       if (p.row.day !== day) continue;
       consumed.push(p);
@@ -631,15 +712,26 @@ export class TrendAggregator {
           dirByKey.set(row.dir, dirAgg);
         }
       }
+      const h = hourOfDay(row.time);
+      const hourAgg = hourByKey.get(h);
+      let hour: TrendHourRow;
+      if (hourAgg === undefined) {
+        hour = emptyHourRow(day, h);
+        hourByKey.set(h, hour);
+      } else {
+        hour = hourAgg;
+      }
       if (row.kind === "detail") {
         addDetailTo(agg, row);
         if (dirAgg !== undefined) addDetailTo(dirAgg, row);
+        addDetailTo(hour, row);
       } else {
         addCounterTo(agg, row.turns, row.toolCalls);
         if (dirAgg !== undefined) addCounterTo(dirAgg, row.turns, row.toolCalls);
+        addCounterTo(hour, row.turns, row.toolCalls);
       }
     }
-    return { consumed, aggRows: [...aggByKey.values()], dirRows: [...dirByKey.values()] };
+    return { consumed, aggRows: [...aggByKey.values()], dirRows: [...dirByKey.values()], hourRows: [...hourByKey.values()] };
   }
 
   /**
@@ -692,6 +784,10 @@ export class TrendAggregator {
     for (const day of [...this.dirDays.keys()]) {
       if (day < beforeDay) this.dirDays.delete(day);
     }
+    // #662：hourDays 与 days/dirDays 生命周期同步（独立遍历，防纯 hour 日桶残留）
+    for (const day of [...this.hourDays.keys()]) {
+      if (day < beforeDay) this.hourDays.delete(day);
+    }
     return removed;
   }
 
@@ -702,11 +798,11 @@ export class TrendAggregator {
    * #633 A4：返回混存行——agg 行在前、dir 行在后（writeAggDay 写入约定）。
    * today 参数保留（与调用方注入时钟同源的语义锚点；消费已不依赖日键，见 consume）。
    */
-  rollupDay(day: string, today: string): Array<TrendAggRow | TrendDirRow> {
+  rollupDay(day: string, today: string): Array<TrendAggRow | TrendDirRow | TrendHourRow> {
     void today;
-    const { consumed, aggRows, dirRows } = this.rollupSnapshot(day);
+    const { consumed, aggRows, dirRows, hourRows } = this.rollupSnapshot(day);
     this.consume(consumed);
-    return [...aggRows, ...dirRows];
+    return [...aggRows, ...dirRows, ...hourRows];
   }
 
   /** 从内存 pending 移除给定日已全部落盘的登记（重启自愈删除明细分片后同步内存视图）。 */
@@ -969,6 +1065,21 @@ export class TrendAggregator {
     }
     return cell;
   }
+
+  /** hour 维度日桶定位（仿 cellOf/dirCellOf；day → hour(0-23) → cell，缺桶逐级补建；#662）。 */
+  private hourCellOf(day: string, hour: number): TrendCell {
+    let hours = this.hourDays.get(day);
+    if (hours === undefined) {
+      hours = new Map();
+      this.hourDays.set(day, hours);
+    }
+    let cell = hours.get(hour);
+    if (cell === undefined) {
+      cell = emptyCell();
+      hours.set(hour, cell);
+    }
+    return cell;
+  }
 }
 
 // ---------------------------------------------------------------- 纯函数
@@ -1035,8 +1146,25 @@ function emptyDirRow(day: string, dir: string): TrendDirRow {
   };
 }
 
-/** 明细行并入聚合/目录汇总行（两者字段同构，同函数复用；null-aware 求和）。 */
-function addDetailTo(agg: TrendAggRow | TrendDirRow, row: TrendDetailRow): void {
+/** 空小时汇总行（#662；与 agg/dir 行同构，键换成 hour；「落盘即定型」的产出起点）。 */
+function emptyHourRow(day: string, hour: number): TrendHourRow {
+  return {
+    v: TREND_ROW_VERSION,
+    kind: "hour",
+    day,
+    hour,
+    input: null,
+    output: null,
+    cacheRead: null,
+    cacheWrite: null,
+    calls: 0,
+    turns: 0,
+    toolCalls: 0,
+  };
+}
+
+/** 明细行并入聚合/目录/小时汇总行（三者字段同构，同函数复用；null-aware 求和）。 */
+function addDetailTo(agg: TrendAggRow | TrendDirRow | TrendHourRow, row: TrendDetailRow): void {
   agg.calls += 1;
   agg.input = sumToken(agg.input, row.input);
   agg.output = sumToken(agg.output, row.output);
@@ -1044,14 +1172,14 @@ function addDetailTo(agg: TrendAggRow | TrendDirRow, row: TrendDetailRow): void 
   agg.cacheWrite = sumToken(agg.cacheWrite, row.cacheWrite);
 }
 
-/** 计数行并入聚合/目录汇总行（同上，同函数复用）。 */
-function addCounterTo(agg: TrendAggRow | TrendDirRow, turns: number, toolCalls: number): void {
+/** 计数行并入聚合/目录/小时汇总行（同上，同函数复用）。 */
+function addCounterTo(agg: TrendAggRow | TrendDirRow | TrendHourRow, turns: number, toolCalls: number): void {
   agg.turns += turns;
   agg.toolCalls += toolCalls;
 }
 
-/** 聚合行并入 cell（重建用；null-aware。agg 与 dir 汇总行十数值字段同构，同函数复用）。 */
-function mergeCell(cell: TrendCell, row: TrendAggRow | TrendDirRow): void {
+/** 聚合行并入 cell（重建用；null-aware。agg/dir/hour 汇总行十数值字段同构，同函数复用）。 */
+function mergeCell(cell: TrendCell, row: TrendAggRow | TrendDirRow | TrendHourRow): void {
   cell.calls += row.calls;
   cell.turns += row.turns;
   cell.toolCalls += row.toolCalls;
@@ -1114,6 +1242,30 @@ export function mergeDirRows(base: TrendDirRow[], add: TrendDirRow[]): TrendDirR
     const cur = byKey.get(r.dir);
     if (cur === undefined) {
       byKey.set(r.dir, { ...r });
+      continue;
+    }
+    cur.calls += r.calls;
+    cur.turns += r.turns;
+    cur.toolCalls += r.toolCalls;
+    cur.input = sumToken(cur.input, r.input);
+    cur.output = sumToken(cur.output, r.output);
+    cur.cacheRead = sumToken(cur.cacheRead, r.cacheRead);
+    cur.cacheWrite = sumToken(cur.cacheWrite, r.cacheWrite);
+  }
+  return [...byKey.values()];
+}
+
+/**
+ * hour 汇总行合并（#662，flush 压实写盘前与既有聚合分片内的 hour 行合并——
+ * 迟到旧日行二次压实防丢防重；与 mergeDirRows 完全同构，同 hour 键累加，
+ * 输出保持输入相对顺序：base 在前（hour 行位于分片尾段））。
+ */
+export function mergeHourRows(base: TrendHourRow[], add: TrendHourRow[]): TrendHourRow[] {
+  const byKey = new Map<number, TrendHourRow>();
+  for (const r of [...base, ...add]) {
+    const cur = byKey.get(r.hour);
+    if (cur === undefined) {
+      byKey.set(r.hour, { ...r });
       continue;
     }
     cur.calls += r.calls;
