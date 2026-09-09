@@ -1,25 +1,14 @@
 /**
- * dsh-mcp-manager — CallToolResult 投影（单一事实源，#512）。
+ * dsh-mcp-manager — pipeline/project：CallToolResult 投影（单一事实源，#512，#664 阶段 2 迁入）。
  *
- * MCP 协议对 tools/call 成功应答是宽容的：content / structuredContent /
- * isError / _meta 均为 optional 字段，各语言 SDK 序列化习惯不一——如 Python
- * SDK 的 pydantic `exclude_none` 剔不掉合法值 `isError: False`，wire 上必带
- * （#512）；Node SDK 习惯不带。而 dsh 工具系统契约要求 execute 返回值精确
- * 匹配 output schema（additionalProperties: false，仅 content /
- * structuredContent），远端结果的任何多余字段都会让校验失败。
+ * 原自 call-result.ts（全量迁移，含类型面）。MCP 协议对 tools/call 成功应答宽容
+ * （content / structuredContent / isError / _meta 均 optional，各 SDK 序列化习惯
+ * 不一——Python pydantic exclude_none 剔不掉合法值 isError:false）；dsh 工具契约
+ * 要求 execute 返回精确匹配 output schema（additionalProperties:false），故在此
+ * 收敛白名单投影（对齐官方 dsh-mcp-client createExecutor）。
  *
- * 本模块承担「协议结果 → 工具契约」的收敛投影，架构对齐官方
- * @deepseek-ai/dsh-mcp-client createExecutor（协议层宽松拿 + 投影层白名单）：
- *  - isError === true → throw（ToolRuntime catch 路径产出 isError 结果）；
- *  - 白名单返回 { content, ...structuredContent 有值才带 } —— 其余字段
- *    （isError / _meta / 未来协议新增字段）一律丢弃，不外泄进工具契约；
- *  - content 缺失或非数组 → 兜底文本（toolResult 形态渲染 JSON，否则
- *    "(no output)"），防 required content 校验失败（#381 lossless 同源纪律：
- *    不产生 undefined 值键）。
- *
- * supervisor（mcp__ 直呼路径）与 middleware（ws_mcp_call 远端转发）共用，
- * 投影语义只此一份；调用方差异（文本截断/提取、错误文案风格）经
- * CallResultTextHandlers 注入。
+ * supervisor（mcp__ 直呼路径）与 middleware（ws_mcp_call 远端转发）共用；
+ * 调用方差异（文本截断/提取、错误文案风格）经 CallResultTextHandlers 注入。
  */
 
 /** 投影文本渲染回调（调用方差异面）。 */

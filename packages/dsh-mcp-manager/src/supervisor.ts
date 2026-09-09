@@ -13,7 +13,8 @@ import { createTransport } from "./transport.ts";
 import type { StdioTransport, HttpTransport } from "./transport.ts";
 import { SCOPE_GLOBAL, SCOPE_PROJECT } from "./scope.ts";
 import { MCPClient } from "./protocol.ts";
-import { defaultCallResultFallbackText, projectCallToolResult } from "./call-result.ts";
+import { defaultCallResultFallbackText, projectCallToolResult, createRedactor, msgOf } from "./pipeline/interface.ts";
+import type { McpStatsCollector } from "./call-stats.ts";
 import type { ServerConfig } from "./types.ts";
 import type { Context, LoggerService } from "@deepseek-ai/cordis";
 // 官方工具定义类型（仅 import type，编译期擦除；contract-check 禁止运行时值导入）。
@@ -35,6 +36,8 @@ export interface ManagerLite {
   enhancement: { enhanceEmptyDescriptions?: boolean; resultTruncateBytes?: number };
   emitStatus(): void;
   recordCatalogTools(serverName: string, toolMeta: Map<string, { description?: unknown }>): Promise<void>;
+  /** 行为扩展（#664 阶段 2）：调用统计最小面，supervisor 直呼路径埋点。 */
+  stats?: Pick<McpStatsCollector, "isEnabled" | "recordCall">;
 }
 
 // --------------------------------------------------------- 工具命名 / 截断
@@ -219,7 +222,17 @@ export function assertSupportedOutputSchema(schema: unknown): unknown {
 /** 构建 dsh 工具定义（契约与官方 dsh-mcp-client 一致）。
  * @param opts 感知增强选项：{enhanceEmptyDescriptions, resultTruncateBytes}。
  */
-export function buildToolDefinition(client: MCPClient, tool: Record<string, unknown>, server: ServerConfig, opts: { enhanceEmptyDescriptions?: boolean; resultTruncateBytes?: number } = {}): ToolDefinition {
+export function buildToolDefinition(
+  client: MCPClient,
+  tool: Record<string, unknown>,
+  server: ServerConfig,
+  opts: {
+    enhanceEmptyDescriptions?: boolean;
+    resultTruncateBytes?: number;
+    /** 行为扩展（#664 阶段 2）：supervisor 直呼路径 stats 埋点最小面。 */
+    stats?: Pick<McpStatsCollector, "isEnabled" | "recordCall">;
+  } = {},
+): ToolDefinition {
   const rawName = tool.name as string;
   const structuredSchema = assertSupportedOutputSchema(tool.outputSchema);
   const enhanceEmpty = opts.enhanceEmptyDescriptions !== false;
@@ -255,18 +268,32 @@ export function buildToolDefinition(client: MCPClient, tool: Record<string, unkn
     },
     async execute(args: unknown, exec: { signal?: AbortSignal }) {
       const timeoutMs = server.toolCallTimeoutMs ?? DEFAULT_TOOL_CALL_TIMEOUT_MS;
-      const result = await client.callTool(rawName, typeof args === "object" && args !== null ? args : {}, {
-        signal: exec.signal,
-        timeoutMs,
-      });
-      // #512：结果投影收敛到 call-result.ts 单一事实源（isError 判定 + 白名单
-      // 清洗 + 无 content 兜底），与 middleware（ws_mcp_call）/ 官方
-      // dsh-mcp-client createExecutor 同一契约；本侧差异面 = 文本截断与
-      // extractText 占位符渲染。
-      return projectCallToolResult(result, {
-        errorText: (content) => renderText(extractText(content, rawName)) as string,
-        fallbackText: (r) => renderText(defaultCallResultFallbackText(r)) as string,
-      });
+      // 行为扩展声明（#664 阶段 2）：supervisor 直呼路径 stats 埋点，与
+      // ws_mcp_call 路径的 recordCall 同口径（server/tool/duration/成功/错误）；
+      // stats 未启用（isEnabled false）时 recordCall 内部短路，零开销。
+      const startedAt = Date.now();
+      const record = (success: boolean, errorMsg?: string): void => {
+        opts.stats?.recordCall?.(server.name, rawName, Date.now() - startedAt, success, errorMsg);
+      };
+      try {
+        const result = await client.callTool(rawName, typeof args === "object" && args !== null ? args : {}, {
+          signal: exec.signal,
+          timeoutMs,
+        });
+        // #512：结果投影收敛到 pipeline/project.ts 单一事实源（isError 判定 + 白名单
+        // 清洗 + 无 content 兜底），与 middleware（ws_mcp_call）/ 官方
+        // dsh-mcp-client createExecutor 同一契约；本侧差异面 = 文本截断与
+        // extractText 占位符渲染。
+        const projected = projectCallToolResult(result, {
+          errorText: (content) => renderText(extractText(content, rawName)) as string,
+          fallbackText: (r) => renderText(defaultCallResultFallbackText(r)) as string,
+        });
+        record(true);
+        return projected;
+      } catch (error) {
+        record(false, msgOf(error));
+        throw error;
+      }
     },
   };
 }
@@ -359,7 +386,11 @@ export class ConnectionSupervisor {
       this.manager.logger.info(`dsh-mcp-manager(${server.name}): connected, ${this.tools.length} tool(s) registered`);
     } catch (error) {
       if (this.disposed || this.client !== client) return;
-      this.manager.logger.warn(`dsh-mcp-manager(${server.name}): connection attempt failed: ${String(error)}`);
+      // B8：连接失败日志脱敏（本 server 配置的凭据形状；错误消息可能含 URL 用户
+      // 信息/env 值等明文，supervisor 侧与 manager/API 同口径）。
+      this.manager.logger.warn(
+        `dsh-mcp-manager(${server.name}): connection attempt failed: ${createRedactor([this.server])(error)}`,
+      );
       this.teardownGeneration(error, true);
     }
   }
@@ -459,7 +490,7 @@ export class ConnectionSupervisor {
           if (definitions.has(publicName)) {
             throw new Error(`server "${this.server.name}" listed tool "${(tool as Record<string, unknown>).name}" more than once — invalid tool list`);
           }
-          definitions.set(publicName, buildToolDefinition(client, tool as Record<string, unknown>, this.server, this.manager.enhancement));
+          definitions.set(publicName, buildToolDefinition(client, tool as Record<string, unknown>, this.server, { ...this.manager.enhancement, stats: this.manager.stats }));
           // 工具描述元数据（保留供 GUI 展示；不再用于能力目录——目录是纯静态数据源，
           // 聚合连接后数据会让 digest 随连接状态抖动而反复注入）。
           toolMeta.set(publicName, { description: (tool as Record<string, unknown>).description ?? "" });

@@ -88,12 +88,12 @@ export { defaultStorePath, McpStore } from "./store.ts";
 export { expandEnv, HttpTransport, parseSsePayload, StdioTransport, createTransport } from "./transport.ts";
 // 协议
 export { MCPClient } from "./protocol.ts";
-// CallToolResult 投影（协议结果 → 工具契约收敛，#512 单一事实源）
+// CallToolResult 投影（协议结果 → 工具契约收敛，#512 单一事实源，归属 pipeline/project）
 export {
   defaultCallResultFallbackText,
   projectCallToolResult,
-} from "./call-result.ts";
-export type { CallResultTextHandlers, ProjectedCallResult } from "./call-result.ts";
+} from "./pipeline/interface.ts";
+export type { CallResultTextHandlers, ProjectedCallResult } from "./pipeline/interface.ts";
 // 连接监督器 / 工具定义（含命名、截断、schema 校验）
 export {
   DEFAULT_TOOL_CALL_TIMEOUT_MS,

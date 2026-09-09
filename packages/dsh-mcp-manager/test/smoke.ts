@@ -94,6 +94,8 @@ import "./unit-manager2.test.ts";
 import "./unit-routes-sse.test.ts";
 // call-stats 统计（#664 阶段 1 双登记接线：原 node:test 零执行孤儿，改造自执行后接入）
 import "./unit-call-stats.test.ts";
+// 执行管道域契约（#664 阶段 2：两路径同构 + stats 埋点红测）
+import "./unit-pipeline.test.ts";
 
 const failures = [];
 const check = (label, fn) => {
