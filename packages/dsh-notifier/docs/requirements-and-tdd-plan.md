@@ -260,3 +260,104 @@
 - 新增文件（adjudicate/deliver/sanitize/sse-bus/system-notifier/browser/system + 各 interface.ts）入变异面决策：建议核心状态机 adjudicate/deliver/event-handlers 纳入，interface.ts 纯 re-export 不入；
 - `mutation-lib-to-src-loader.mjs` 已支持 `lib/sub/module.js → src/sub/module.ts` 子目录映射（已核实）——搬家后变异 hook 零改动；
 - 测试全量 import `../lib/index.js`（§3:196）——导出面不变时零改动；坏处是 9 个 interface.ts 无变异面（纯 re-export 合理）。
+
+## 7. S3 缺陷总清单与测试分层映射（§3 交叉验证定稿）
+
+> 依据：双独立子代理交叉验证（测试套件审计 + 客户端弱项）+ 主会话抽查复核；本节约收所有缺陷/盲区/行为变更，作为 §5 TDD 方案与分阶段 PR 的输入。
+
+### 7.1 交叉验证修正记录（对 §3/§4 前序结论的修订）
+
+| 原结论 | 修订 | 证据 |
+|---|---|---|
+| §3 固定 sleep 7 处 | **修正为 16 处**（漏 unit-sse-hub×4、service-contract×3、e2e-edge:179 1100ms、e2e-done:525 100ms）；最紧 e2e-done:106 30ms vs 20ms margin 10ms 确认 | 子代理全量 grep + 主会话抽查 |
+| §3 stryker 清单外 6 个 | **修正为 7 个**（补 e2e-interrupt.test.ts） | mutation-topology:184-194 testFiles 9 个 vs smoke 16 个 |
+| §3 outbound 真 resolver 从未执行 | 修正：**空跑、有效分支从未执行**（enabled:true bark 实例化/gate 复用零覆盖） | routes.test.ts:506 等 PUT 全 disabled；service-contract 注入 fakeOutbound |
+| §3 类型面零编译校验 | **加重为双重空白**：test/tsconfig 无消费方（wiring 只接 mcp-manager/codegraph）+ 18 文件全 @ts-nocheck + 根 typecheck 不编译 test/ | service-contract-wiring.test.ts:35-46/:22 |
+| §4 P1-1 副标签去重 | **推翻（误报）**：claimMaster() 是 showNotification 统一前置（:572），banner/flashTitle/自播全在其后，副标签所有路径静默 | client index.tsx:569-596 + handleNotifyFrame:606-614 唯一入口 |
+| §4 P2-4 NaN→400 | 修正：type=number 下非法字符归一空串不可达；NaN 经 JSON 序列化为 null 走服务端**跳过语义**（config.ts:900）非 400；**maxConnections 清空→0→服务端 400（0 非法 config.ts:558）是真实 UX 缺陷** | index.tsx:2082-2120 onChange + config.ts:558/:792 |
+| §4 P2-5 playToneForce | 定性修正：函数虚构为**注释债务**（playPreview 不过 gate 与注释意图一致）；playChime 死函数 | index.tsx:434-435/:475-488 |
+
+### 7.2 S3 缺陷总清单（去重合并；落位 = PR1/PR2/PR3/基建/文档）
+
+| 编号 | 缺陷 | 证据 | 落位 |
+|---|---|---|---|
+| S3-1 | L8-1 ChannelCapabilities titleMaxLen<=0 注释 vs 实现（标题并入正文缺失） | service.ts:73 vs :282 | PR2（mergeTitleIntoBody） |
+| S3-2 | L8-2 confirmKind 双语义（fire-and-forget vs CAS 重试） | service.ts:155 / settings-bridge.ts:96-119 | PR2（ConfigPort.confirmKind） |
+| S3-3 | L8-3 NotifyRequest.data 字段悬空 | service.ts:46-48 | PR2 注明「MVP 未启用」或 v-next |
+| S3-4 | L8-4 registerChannel 悬空→**D11 已裁定配置层注册面** | service.ts:467-470 | 文档化（行为保持） |
+| S3-5 | L8-5 expectedRevision 非整数静默忽略 | server.ts:387-388 | PR2（显式拒 400 或文档化） |
+| S3-6 | L8-6 history DELETE / test 无错误映射 | server.ts:716-719 | PR2 |
+| S3-7 | P1-2 频道状态行无轮询（README:286「实时可见」口径弱于实现） | index.tsx:865-869/:900/:1131 | PR2 补轮询或改文档口径 |
+| S3-8 | P1-3 跨窗口无 storage/broadcast 同步（409 被动恢复） | index.tsx:985/:1025-1028 | PR2/PR3（中低） |
+| S3-9 | P1-4 + C3-1（高）补拉 600 帧窗口有限；**服务端重启 seq 归零→已打开页面永久静默** | server.ts:99-121 / index.tsx:674-677 | **PR2 必做**：seq 回退检测或服务端 baseSeq + TDD「重启后重连不丢帧」 |
+| S3-10 | P2-1 历史徽标缺 kind-pending/merged | index.tsx:2277-2279 | PR2/PR3 |
+| S3-11 | P2-2 locales 13 死键 + client-contract.test.ts:88 routePick 哨兵误锁 | locales.ts:143-162/:343-360 + :88 | PR3（同步改哨兵） |
+| S3-12 | P2-4 顶层 5 数值字段无钳制；maxConnections 清空→0→400 | index.tsx:2082-2120 + config.ts:558 | PR2（whTimeout 同款 clamp） |
+| S3-13 | P2-5 playToneForce 注释虚构 + playChime 死函数 | index.tsx:434-435/:486-488 | PR3 |
+| S3-14 | C3-2 放弃更改不清 409 横幅 | index.tsx:1117-1124 vs :2361-2374 | PR3 |
+| S3-15 | C3-3 routeStaleTitle「保存后清理」文案无实现（stale 永久残留） | locales.ts:184/:380 + index.tsx:1963-1971 | PR3（文档或实现二选一） |
+| S3-16 | C3-4 fetchStatus 失败清空已加载状态行 | index.tsx:732-737/:865-869 | PR2/PR3 |
+| S3-17 | C3-5 showBanner kind 未转义 CSS 选择器（异常 kind 致帧静默丢弃） | index.tsx:524 | PR2/PR3 |
+| S3-18 | C3-6 writable=false 保存按钮未禁用 | index.tsx:2385 | PR2/PR3 |
+| S3-19 | C3-7 saveFailConflict msg 空串 + 过时指引 | index.tsx:962 / locales.ts:57/:267 | PR3 |
+| S3-20 | T3-1 固定 sleep 16 处（含 migration 4×30ms 负向观察窗、e2e-done 30ms、waitMergeWindow 3.2s） | 全清单见 §7.1 | 基建（PR1/PR2 替换轮询/注入短窗） |
+| S3-21 | T3-3 投递路径真 spawn 零断言（e2e systemNotify=true → 真 runCommand；CI ENOENT→warn 静默） | service.ts:356-367 + server.ts:283-308/:186-235 | PR2 红测先行 1（spawn 注入 fake） |
+| S3-22 | T3-4 server.ts createSseHub 业务包装（seq/600 帧缓冲/framesSince）零直测；shared/sse-hub.js 无变异面 | server.ts:80-121 + unit-sse-hub.test.ts:17 | PR2 红测先行 5（+600 帧 shift 边界用例） |
+| S3-23 | T3-5 fetch mock 白名单外 fail-open 转真实网络 | unit-webhook.test.ts:105-106 / service-contract.test.ts:354/:415/:428 | PR2 加固（白名单外拒绝） |
+| S3-24 | T3-6 类型面双重空白（tsconfig 无消费方 + 全 @ts-nocheck + 根 typecheck 不编译 test/） | service-contract-wiring.test.ts:35-46 | PR3 红测先行 7（去 @ts-nocheck + wiring 接线） |
+| S3-25 | T3-7 real-context.test.ts:57-73 读 src/index.ts 静态正则（onCalls>=7/inject 形态/prepend）——重构触达即误红 | real-context.test.ts:57-73 | PR1/PR2 同步维护清单 |
+| S3-26 | T3-8 client-contract banned/kept 符号表 + client-style dataset.version "640-1" 硬编码 | client-contract.test.ts:37-50 / client-style.test.ts:104 | PR2/PR3 同步维护 |
+| S3-27 | T3-9 outbound 有效分支零覆盖（enabled:true bark 全链投递/gate 复用无基线） | outbound.ts:13-29 | PR2 红测先行 3 |
+| S3-28 | T3-10 waitMergeWindow 3.2s×6≈19.2s 固定等待 | helpers.ts:374 | 基建（PR1/PR2 短窗注入） |
+| S3-29 | 工厂级直测缺失：history/status/settings-bridge/outbound/aggregate/event-handlers 零直测 | §3 审计 + 子代理 grep | L1 补测（PR1/PR2） |
+| S3-30 | 核心状态机无变异面（service/event-handlers/aggregate/channel-*/outbound/settings-bridge/status 不在 mutate 4 段） | mutation-topology:196-238 | PR2 变异分段 |
+| S3-31 | stryker testFiles 9 清单缺口（7 文件不在：含 e2e-interrupt/unit-sse-hub/unit-webhook 等） | mutation-topology:184-194 | PR1 变异配置更新 |
+| S3-32 | message.ts 单文件变异段 145s「物理极限」（拆三文件后失效） | mutation-topology:219-227 | PR1 段边界重定 |
+
+### 7.3 测试分层映射（与 architecture-redesign.md §11 对应）
+
+| 层 | 现有测试归位 | 新增测试（编号 N-x，落位 PR） |
+|---|---|---|
+| L0 静态契约 | （无） | N-1 import 门禁脚本测试（PR1）；N-2 导出面快照 diff 测试（PR1）；N-3 wiring 接线 dsh-notifier/test/tsconfig.json（PR3） |
+| L1 层内单元 | unit-config / unit-text / unit-sanitize / unit-sse-hub（shared 层）/ unit-webhook（渲染+scrub 面） | N-4 stores 直测（history/status 写队列原子写，PR1）；N-5 settings-bridge CAS 直测（PR1）；N-6 aggregate 直测（PR1）；N-7 event-handlers 判定直测（adjudicate 拆分时导出核心函数，PR2）；N-8 pipeline/adjudicate 裁决矩阵直测（PR2）；N-9 pipeline/deliver 截断·重试门·fail-soft 直测（deps fake，PR2）；N-10 outbound 装配直测（PR2）；N-11 server/system-notifier spawn 注入直测（节流/8s 杀进程/失败终态，PR2）；N-12 server/sse-bus 600 帧边界直测（PR2）；N-13 channels/bark 单次投递+retryable 标记直测（PR2） |
+| L2 interface 契约 | service-contract（ABI 面）/ unit-webhook（SPI 面）/ client-contract（两端契约） | N-14 AdjudicateDeps 注入面契约（PR2）；N-15 DeliverDeps 注入面契约（PR2）；N-16 ConfigPort 降级语义契约（readUser 未 attach/writable=false，PR2） |
+| L3 集成（user case） | e2e-approval / e2e-done / e2e-interrupt / e2e-question-turn / e2e-edge / routes / migration / real-context / client-style | N-17 B-1 脱敏全链路（suppressed/merged 落史也脱敏，PR2）；N-18 B-2 投递决议快照化（裁决→投递间改配置，PR2）；N-19 B-3 重试/门框架化全链（enabled:true bark，PR2）；N-20 B-4 sanitizeContent 开关链路（默认 true 脱敏 + false 明文，PR2）；N-21 B-5 disabled 不落史保持（PR2）；N-22 C3-1 seq 回退恢复（PR2）；N-23 S3-12 maxConnections 清空守卫（PR2） |
+| 变异分层 | 4 段→按域重划（配置/text/pipeline/events/channels/stores/server/sdk） | N-24 pipeline/events 段纳入变异面（PR2）；message 段重定（PR1）；testFiles 补 7 文件（PR1） |
+
+### 7.4 user case 集成场景矩阵（骨架；F 编号 → 场景 → 现有 → 新增）
+
+| 场景（user case） | F/规则矩阵 | 现有覆盖 | 新增 |
+|---|---|---|---|
+| 审批通知（含免打扰豁免/askRemind 二次提醒） | C1/D5 | e2e-approval | B-1 脱敏断言 |
+| 提问通知（userQuestions 包装/热重载） | C2 | e2e-question-turn | — |
+| 完成状态机（running→idle 证据链/子代理分流/快照冻结） | C3 | e2e-done（强） | — |
+| 错误合并滚动窗口（suppressed:merged 落史） | C4 | e2e-done/e2e-edge | B-1 落史脱敏断言 |
+| 完成风暴聚合（首条即时+窗口补发） | C7 | e2e-done | — |
+| 动态 kind 注册/确认/防冒认 | D4/D6 | service-contract | B-6 配置层注册面文档化 |
+| 免打扰（跨午夜/allowKinds） | D5 | unit-config | — |
+| 路由/onlyChannel/稀疏命中/stale | D6 | service-contract | N-19 全链 |
+| fail-soft 逐频道 + 受理/终态解耦 | D7 | service-contract | N-9 |
+| 渠道投递（bark 双查/重试/webhook 模板/scrub） | G | unit-webhook | N-13/N-19/N-20 |
+| SSE 帧契约（sound.mode/tone/playOnly/seq 补拉） | D9 | client-contract/routes | N-22（seq 回退） |
+| 系统通知（toast/自播/节流/超时杀进程） | F | **零断言** | N-11（spawn fake） |
+| 配置 CRUD（掩码/CAS/迁移/409/503） | A/E | routes/migration/unit-config | N-16 |
+| 客户端半区（可见性/多标签/降级/音频） | H/I | client-contract/style | dsh-verify-isolated 实测盲区 |
+
+### 7.5 分阶段缺陷落位（PR1/PR2/PR3）
+
+| 阶段 | 任务 | 缺陷/盲区落位 | 门禁 |
+|---|---|---|---|
+| **PR1 机械搬家+门面+测试基建** | 16 平铺→目录树；interface.ts 落地；导出面快照；stryker/mutation 路径更新（S3-31/S3-32）；测试基建修复（S3-20/S3-28 轮询/短窗注入）；L1 补测 N-4/N-5/N-6；real-context/client 静态契约同步（S3-25/S3-26） | S3-20/25/26/28/29(部分)/31/32 | 零行为变更；导出面快照 diff = 基线；build/test/contract/typecheck/pack:check 全绿 |
+| **PR2 行为重构** | adjudicate/deliver 拆分 + current() 快照 + 播放决议快照化（B-2）；重试/门上移（B-3）；脱敏统一时点 + sanitizeContent（B-1/B-4）；ConfigPort/RouteDeps（S3-2/5/6）；SPI mergeTitleIntoBody（S3-1）；客户端 P1-2/P2-4/C3-1（S3-7/9/12）；spawn 注入直测（S3-21）；sse-bus 600 帧（S3-22）；outbound 全链（S3-27）；变异分段（S3-30）；L1/L2 新增 N-7~N-16、L3 N-17~N-23 | S3-1/2/5/6/7/9/12/16/17/18/21/22/23/27/30 | 每步对齐规则矩阵；行为变更用例红测先行；全门禁全绿 |
+| **PR3 注释清理+门禁+类型面** | 失真注释清单（§9）；locales 13 死键（S3-11）；C3-2/3/7 + P2-5（S3-13/14/15/19）；类型面接线（S3-24）；import 门禁+环路检测脚本（N-1）；消费方类型编译用例 | S3-11/13/14/15/19/24 | lint 落地；wiring 接线后类型编译全绿 |
+
+### 7.6 红测先行基线（PR2 动工前必须补的测试基线）
+
+1. 系统通知 spawn 链直测（fake exec/spawn）：1s 节流（server.ts:323-331）/8s 杀进程（:207-213）/toast 失败不翻转终态（:278-294）/只响不弹自播失败→failed（:262-263/:295-308）/探测不可用→argv null（message.ts:270）——现状零断言（S3-21）。
+2. 投递决议快照化基线（B-2）：裁决时读配置→投递前改配置→本次投递仍按裁决快照（现为零，§6.2 点名）。
+3. outbound 真 resolver 基线：enabled:true bark 经 apply 全链投递（fetch mock）+ gate 限流门跨配置复用（S3-27/B-3）。
+4. event-handlers 核心判定导出+直测（resolveTurnEvidence 等，event-handlers.ts:67-87 未导出，现只能黑盒）。
+5. server.ts createSseHub 业务包装直测 + RECENT_LIMIT=600 帧 shift 边界（S3-22）。
+6. 测试基建修复：migration 4×30ms 负向观察窗改事件驱动/小窗轮询；waitMergeWindow 改注入短窗（S3-20/S3-28）。
+7. 类型面接线：dsh-notifier/test 去 @ts-nocheck 并接入 wiring（S3-24）。
+8. 静态契约同步维护清单：real-context onCalls>=7 与 ctx.on 形态正则、client-contract banned/kept 符号表、client-style CSS_VERSION "640-1"（S3-25/S3-26）。

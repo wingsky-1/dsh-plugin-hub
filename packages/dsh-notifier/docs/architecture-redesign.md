@@ -233,7 +233,29 @@ P2 采纳项（不阻塞定稿，随 PR 消化）：sanitize 单实现双导出 
 - **PR3 注释清理 + 门禁 lint 落地**：§9 注释清单；interface import 检查 + 环路检测脚本；消费方类型编译用例。
 - 隔离纪律：全部在 worktree 进行；浏览器实测走 dsh-verify-isolated。
 
-## 11. 关联文档
+## 11. 测试分层策略（用户追加纪律：单元 / interface 契约 / 集成 / 变异四层）
+
+> 目标：层内稳定（实现直测）、层间稳定（interface 门面契约测试）、整体正确（user case 集成）、变异分层（按域分段）。
+
+### 11.1 四层定义与归位
+
+| 层 | 目的 | 内容 | 现有测试归位 | 新增测试 |
+|---|---|---|---|---|
+| **L0 静态契约层** | interface 门面/依赖方向/导出面机器校验 | ①跨域 import 门禁（只走 interface.ts）+ 环路检测脚本；②导出面快照 diff（域 interface re-export 并集 == 包导出面 index.ts:60-154，含 shared 4 个）；③类型编译面：service-contract-wiring 接入 dsh-notifier/test/tsconfig.json（修「类型面零编译校验」盲区） | （无） | import 门禁脚本测试、导出面快照测试、wiring 接线 |
+| **L1 层内单元测试** | 每域实现文件行为直测（纯函数/状态机），不跨域 | config/（normalize/validators/redact/paths/quiet-hours/settings-bridge CAS/migrate）；text/（message/sanitize/system-commands）；pipeline/（adjudicate 裁决矩阵 / deliver 截断·重试门·fail-soft·终态上报——deps 注入 fake）；channels/（bark 单次投递+retryable 标记 / webhook 渲染+scrub / outbound 装配）；events/（event-handlers 状态机 / aggregate / agent-session）；stores/（history/status 写队列原子写）；server/（routes 路由表 / sse-bus 滚动缓冲 / system-notifier 命令构造——spawn 用 fake 或平台条件跳过）；sdk/（注册表/防冒认/listKinds/形状守卫） | unit-config / unit-text / unit-sanitize / unit-sse-hub / unit-webhook（部分） | **补工厂级直测**：history / status / settings-bridge / outbound / aggregate / event-handlers / pipeline（adjudicate/deliver）——对应 §3 审计「工厂级直测缺失」盲区 |
+| **L2 interface 契约测试** | 层间稳定性：域间经 interface.ts 的交互契约（deps 注入面 + 数据结构契约） | ①注入面契约：AdjudicateDeps（isKindConfirmed/enabled/current 单刻快照）、DeliverDeps（recordStatus/emitSent/appendHistory）——fake 注入断言调用序列/参数；②数据结构契约：AdjudicatedNotice→deliver 传递、AdjudicateResult 分叉形态、ConfigPort 实现（settings-bridge）对 routes/adjudicate 的承诺（降级语义 readUser/writable）；③对外 ABI 契约：service-contract（NotifySeverity 映射/send 受理/动态 kind/防冒认/fail-soft） | service-contract（部分）；unit-webhook（SPI 面）；client-contract（两端契约，兼 L3） | 注入面契约测试（adjudicate/deliver deps）；ConfigPort 降级语义契约测试 |
+| **L3 集成测试** | 整体功能正确：user case 场景矩阵 | 按 user case 组织：审批（C1）/提问（C2）/完成状态机（C3）/错误合并（C4）/轮次完成（C5）/风暴聚合（C7）/免打扰（D5）/动态 kind（D4/D6）/路由（D6）/fail-soft（D7）/渠道（G）/SSE 帧契约（D9）/系统通知（F）/配置 CRUD（A/E）/客户端半区（H/I） | e2e-approval / e2e-done / e2e-interrupt / e2e-question-turn / e2e-edge / routes / migration / real-context / client-style / client-contract（部分） | 行为变更用例 B-1~B-8（脱敏全链路/单刻快照/重试门/sanitizeContent/disabled 不落史） |
+| **变异分层** | 变异按域分段，层内变异 + 集成杀跨层接线 | L1 层内变异：按域 mutate 段（config/text/pipeline/events/channels/stores/server/sdk）；L2/L3 变异：e2e+契约测试作为跨层接线的变异 carrier；interface.ts 纯 re-export 不入变异面 | 现状 4 段（config/history/message/server）→ **重划为按域 7-8 段**；testFiles 9 个保留并补充新集成测试 | message.ts 拆三文件后段边界重定；pipeline/events 新增段 |
+
+### 11.2 测试分层纪律（写入 TDD 方案）
+
+1. **层内单测不跨域**：L1 测试只 import 本域 interface.ts + deps fake，不 import 其他域实现——层内直测失败定位即域内。
+2. **层间契约经 interface 测试**：跨域行为一律经注入面契约测试锁定（L2），不靠 e2e 兜底——重构 PR2 行为变更（B-1~B-8）以 L2 用例为红测先行。
+3. **集成按 user case 组织**：L3 场景矩阵以 F 编号/规则矩阵为单一事实源，新增用例必须挂 user case（如「免打扰期间审批被叫醒」「动态 kind 待确认 suppressed 落史」）。
+4. **变异分层门禁**：每域 mutate 段对应 L1 直测 + 相关集成；核心状态机（pipeline/events）纳入变异面（修「核心状态机无变异面」盲区）；新增文件是否入变异面按价值决策，interface.ts 纯 re-export 一律不入。
+5. **测试纪律不破**：mkdtemp 隔离、轮询替代固定 sleep（修 §3 flake 清单）、零网络零真实凭据、spawn 链 fake/条件跳过、测试产物零污染（#218）。
+
+## 12. 关联文档
 
 - 规格与 TDD 计划：docs/requirements-and-tdd-plan.md（缺陷/行为变更/迁移登记见 §6）
 - 目标架构图：docs/diagrams/current-architecture.{html,json}（层口径 v1；v2 目录结构以本文档为准）
