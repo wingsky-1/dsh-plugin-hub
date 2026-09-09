@@ -347,7 +347,7 @@
 
 | 阶段 | 任务 | 缺陷/盲区落位 | 门禁 |
 |---|---|---|---|
-| **PR0 测试基建 + 红测先行**（D17） | flake 修复（16 处固定 sleep → 轮询/短窗注入，含 migration 4×30ms 负向观察窗、waitMergeWindow 3.2s→注入短窗，S3-20/S3-28）；红测基线 8 条在现状代码建立（S3-21/22/27 + B-2 快照化基线 + event-handlers 判定直测 + sse-bus 600 帧 + 类型面接线前置 + 静态契约同步 S3-25/S3-26）；fetch mock 白名单外拒绝加固（S3-23） | S3-20/21/22/23/25/26/27/28 | 纯测试基建 + 轻微行为无关注入改造（spawn 依赖注入，理由在 PR 描述）；全门禁全绿；每 makeNotifier 不再触发真实 execFile |
+| **PR0 测试基建 + 红测先行**（D17） | flake 修复（16 处固定 sleep → 轮询/短窗注入，含 migration 4×30ms 负向观察窗、waitMergeWindow 3.2s→注入短窗，S3-20/S3-28）；红测基线 8 条在现状代码建立（S3-21/22/27 + B-2 快照化基线 + event-handlers 判定直测 + sse-bus 600 帧 + 类型面接线前置 + 静态契约同步 S3-25/S3-26）；fetch mock 白名单外拒绝加固（S3-23） | S3-20/21/22/23/25/26/27/28 | 纯测试基建 + 轻微行为无关注入改造（spawn 依赖注入，理由在 PR 描述）；全门禁全绿；spawn 行为可注入直测（§7.8 实施记录） |
 | **PR1 机械搬家+门面+变异更新** | 16 平铺→目录树；interface.ts 落地；导出面快照；stryker/mutation 路径更新 + testFiles 补 7 文件 + message 段重定（S3-31/S3-32）；L1 补测 N-4/N-5/N-6（stores/settings-bridge/aggregate 直测） | S3-29(部分)/31/32 | 零行为变更；导出面快照 diff = 基线；变异配置随行（D16）；build/test/contract/typecheck/pack:check 全绿 |
 | **PR2 行为重构** | adjudicate/deliver 拆分 + current() 快照 + 播放决议快照化（B-2）；重试/门上移（B-3）；脱敏统一时点 + sanitizeContent（B-1/B-4）；ConfigPort/RouteDeps（S3-2/5/6）；SPI mergeTitleIntoBody（S3-1）；客户端 P1-2/P2-4/C3-1（S3-7/9/12）；变异分段（S3-30）；L1/L2 新增 N-7~N-16、L3 N-17~N-23 | S3-1/2/5/6/7/9/12/16/17/18/30 | 每步对齐规则矩阵；行为变更用例红测先行；全门禁全绿 |
 | **PR3 注释清理+门禁+类型面** | 失真注释清单（§9/S3-13）；locales 13 死键（S3-11）；C3-2/C3-3/C3-7（S3-14/15/19，D21）；类型面接线最终化（S3-24）；import 门禁+环路检测脚本（N-1）；消费方类型编译用例；stale 文案口径修正（D20） | S3-11/13/14/15/19/24 | lint 落地；wiring 接线后类型编译全绿 |
@@ -362,6 +362,20 @@
 6. 测试基建修复：migration 4×30ms 负向观察窗改事件驱动/小窗轮询；waitMergeWindow 改注入短窗（S3-20/S3-28）。
 7. 类型面接线：dsh-notifier/test 去 @ts-nocheck 并接入 wiring（S3-24）。
 8. 静态契约同步维护清单：real-context onCalls>=7 与 ctx.on 形态正则、client-contract banned/kept 符号表、client-style CSS_VERSION "640-1"（S3-25/S3-26）。
+
+### 7.8 PR0 实施记录（task/notifier-spec 分支）
+
+| 项 | 产出 | 状态 |
+|---|---|---|
+| flake 修复 | waitMergeWindow 参数化（短窗 50ms）+ pollUntilQuiet（负向观察窗）+ migration/e2e-edge/routes/service-contract/unit-sse-hub 轮询化；套件 8.5s（原 ≥20s 等待 + 130-200 次 execFile） | ✅ |
+| 红测先行 1 | unit-system-notifier.test.ts：createSystemNotifier 注入面（execFileImpl/spawnImpl/killTimeoutMs，行为无关）+ 节流/超时杀进程/toast 失败静默/只响不弹自播失败→failed/探测不可用静默 五用例 | ✅ |
+| 红测先行 2 | service-contract B-2 快照化基线（current() 读取次数 ≥2 现状结构断言 + 热更即时生效；PR2 后更新为单刻快照） | ✅ |
+| 红测先行 3 | e2e-outbound.test.ts：bark enabled:true 经 apply 全链投递（2xx 双查 + 4xx 不重试/终态 failed/脱敏）；fetch 白名单外拒绝（S3-23 加固） | ✅ |
+| 红测先行 4 | unit-event-handlers.test.ts：resolveTurnEvidence 导出（行为无关）+ push/快照/stale/记忆/无证据五路矩阵 | ✅ |
+| 红测先行 5 | unit-server-sse-bus.test.ts：createSseHub 业务包装（seq/600 帧 shift/framesSince/转发面） | ✅ |
+| 红测先行 6/7/8 | 6=flake 已并入；7 类型面接线归 PR3；8 静态契约归 PR1/PR2（real-context/client 契约改 index.ts/client 前先跑） | 登记 |
+
+**残余登记（诚实）**：e2e 的 makeNotifier→apply 链仍真实触发 createSystemNotifier 探测 execFile（notify-send/pw-play 探测，CI ENOENT→warn 静默无害）与投递路径真 spawn（T3-3 残余）——消除需 apply 注入面改造（扩装配契约，风险扩散），本 PR0 不做；spawn 行为已由红测先行 1 注入直测闭合，残余面登记待 PR2 评估。contract 门禁首次在 worktree 全仓 FAIL 为「其他包缺 lib 产物」（worktree 未构建），`pnpm -r --if-present build` 后全绿。
 
 ### 7.7 G3 决策记录（D16-D21）与隐患登记（R-x）
 
