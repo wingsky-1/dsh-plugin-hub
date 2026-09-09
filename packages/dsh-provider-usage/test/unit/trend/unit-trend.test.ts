@@ -91,7 +91,7 @@ const countersOf = (emitted) => emitted.filter((e) => e.type === "counter").map(
 
 // ---------------------------------------------------------------- collector：定稿主信号
 // 不变量1：身份快照（event 归属折叠正确）——request/header 折叠为 per-session 归属主源，
-// usage chunk 定稿按当前折叠归属出账（R8 四不变量归组，见 refactor-implementation-plan.md 阶段三）。
+// usage chunk 定稿按当前折叠归属出账（R8 四不变量归组；台账守恒见 layer-architecture.md §2 E2）。
 
 {
   const { emitted, send } = makeCollector();

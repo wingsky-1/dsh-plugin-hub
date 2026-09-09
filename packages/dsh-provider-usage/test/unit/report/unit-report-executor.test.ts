@@ -1,8 +1,8 @@
 // @ts-nocheck
 /**
- * dsh-provider-usage — unit：D8 报告面组合收敛（阶段二）
+ * dsh-provider-usage — unit：D8 报告面组合收敛
  *
- * L2 契约（refactor-implementation-plan.md §2.1）：
+ * L2 契约（refactor-implementation-plan.md §2）：
  * - makeDueReportExecutor：幂等短路（index 已有成功记录且非 force → 复用，不推进
  *   lastRun）；失败/脱敏路径由 unit-apply 集成（HTTP 手动生成）覆盖
  * - ReportConfigService：内存权威 + 串行写链（并发 update 不交错）、onUpdate 回调

@@ -1,8 +1,8 @@
 // @ts-nocheck
 /**
- * dsh-provider-usage — unit：StatsService 缓存面（D7 阶段一）
+ * dsh-provider-usage — unit：StatsService 缓存面（D7）
  *
- * L1 层内 + L2 契约（refactor-implementation-plan.md §2.1）：
+ * L1 层内 + L2 契约（refactor-implementation-plan.md §2）：
  * - getPanelResult 四段语义：key 归一（panelCacheKey）→ isPanelCacheStale 命中判定
  *   → miss 删除 → runV2PanelPipeline → 失败不写缓存
  * - per-key 单飞：同 key 并发 miss 共享 in-flight，不双跑 formatPanel
