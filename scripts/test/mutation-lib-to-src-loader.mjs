@@ -30,6 +30,7 @@
  * 无隐式环境依赖；specifier 解析是 candidateFrom(specifier, parentURL)；
  * resolve 的端到端行为由子进程测试（mutation-lib-to-src-loader.test.ts）验证。
  */
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, posix as posixPath, resolve as pathResolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -179,6 +180,58 @@ export function canRedirectLibToSrc(filePath, options = {}) {
 }
 
 /**
+ * 转发跟随：canRedirectLibToSrc 的目标在 src 侧不存在时，若原 lib 文件是
+ * 薄转发（内容只有 `export * from "X"`，如阶段四 prepare-lib-entry 生成的
+ * lib/index.js → "./apply/index.js"），则沿转发链继续映射到真实 src 目标。
+ *
+ * 输入 hitTarget = canRedirectLibToSrc 的输出（<root>/packages/<pkg>/src/<rel>.ts）。
+ * 返回真实 src 目标绝对路径；无需转发 / 转发链不可解析时返回 null（调用方
+ * 维持原 hitTarget 行为——Node 加载时报错与修复前一致，fail 可见）。
+ *
+ * 为什么需要（阶段四 #670）：迁移后组合根移入 src/apply/，lib/index.js 变为
+ * 指向 ./apply/index.js 的转发文件，而 canRedirectLibToSrc 机械映射
+ * lib/index.js → src/index.ts（不存在）。测试 import "../lib/index.js" 在变异
+ * 宿主内必须解析到 src/apply/index.ts，否则 dryRun 整体失败。
+ */
+export function resolveForwardedLibTarget(hitTarget, options = {}) {
+  const root = options.root ?? currentRoot();
+  if (typeof hitTarget !== "string" || existsSync(hitTarget)) return null;
+  const rootPosix = normalizePosix(toPosix(root));
+  const hitPosix = normalizePosix(toPosix(hitTarget));
+  if (!rootPosix || !hitPosix || !hitPosix.startsWith(`${rootPosix}/packages/`)) return null;
+
+  // hitTarget = <root>/packages/<pkg>/src/<rel>.ts → 原 lib 文件 = <root>/packages/<pkg>/lib/<rel>.js
+  const srcMarker = `${rootPosix}/packages/`;
+  const afterPkg = hitPosix.slice(srcMarker.length).split("/");
+  const pkg = afterPkg[0];
+  const srcIdx = afterPkg.indexOf("src");
+  if (!pkg || srcIdx < 0) return null;
+  const rel = afterPkg.slice(srcIdx + 1).join("/");
+  if (!rel.endsWith(".ts")) return null;
+  const libFile = `${rootPosix}/packages/${pkg}/lib/${rel.slice(0, -3)}.js`;
+  if (!existsSync(libFile)) return null;
+
+  // 提取转发目标（export * from "./apply/index.js" 等；仅相对 specifier 有意义）
+  const text = readFileSync(libFile, "utf8");
+  const m = /(?:export|import)\s[^'"]*?\bfrom\s*['"]([^'"]+)['"]/.exec(text);
+  if (m && m[1].startsWith(".")) {
+    const forwardAbs = pathResolve(dirname(libFile), m[1]);
+    const forwardHit = canRedirectLibToSrc(forwardAbs, { root });
+    if (forwardHit && existsSync(forwardHit.filePath)) return forwardHit.filePath;
+  }
+
+  // 组合根入口探测（阶段四 #670 约定）：prepare-lib-entry 生成的薄转发
+  // lib/index.js 会被 bundle-host 递归内联成完整 bundle（转发语义消失，上面
+  // 的 from 提取落空）；而 sandbox 里的 src/index.ts 因组合根迁入 src/apply/
+  // 已不存在。此时按目录化约定探测 src/apply/index.ts 作为真实源码入口。
+  if (rel === "index.ts") {
+    const applyEntry = `${rootPosix}/packages/${pkg}/src/apply/index.ts`;
+    if (existsSync(applyEntry)) return applyEntry;
+  }
+  return null;
+}
+
+/**
  * 从 specifier + parentURL 得到绝对候选文件路径。
  * 仅相对 `./` `../` 与 `file:` URL；其余返回 null（交给 nextResolve）。
  * file: URL 经 fileURLToPath 解码（百分号编码 / Windows 盘符）。
@@ -209,7 +262,8 @@ export async function resolve(specifier, context, nextResolve) {
   if (candidate) {
     const hit = canRedirectLibToSrc(candidate);
     if (hit && parentPkg !== null && pkgOfUrl(candidate, currentRoot()) === parentPkg) {
-      return { url: pathToFileURL(hit.filePath).href, shortCircuit: true };
+      const target = resolveForwardedLibTarget(hit.filePath, { root: currentRoot() }) ?? hit.filePath;
+      return { url: pathToFileURL(target).href, shortCircuit: true };
     }
   }
 
@@ -219,7 +273,8 @@ export async function resolve(specifier, context, nextResolve) {
     try {
       const hit = canRedirectLibToSrc(fileURLToPath(resolved.url));
       if (hit && parentPkg !== null && pkgOfUrl(resolved.url, currentRoot()) === parentPkg) {
-        return { url: pathToFileURL(hit.filePath).href, shortCircuit: true };
+        const target = resolveForwardedLibTarget(hit.filePath, { root: currentRoot() }) ?? hit.filePath;
+        return { url: pathToFileURL(target).href, shortCircuit: true };
       }
     } catch {
       // 非 file 路径：原样返回
