@@ -6,6 +6,7 @@ import { basename } from "node:path";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import { guardLoopbackMethod, readJsonBody, writeJson } from "../../../../shared/host-utils.js";
 import { ADAPTER_CONTRACT_VERSION } from "../contracts.ts";
+import type { LayerErrorSurface } from "../errsurf.ts";
 import type { StatsService } from "../stats-service.ts";
 import type { TrendTracker } from "../trend/index.ts";
 import { TREND_DIR_MAX } from "../trend/types.ts";
@@ -17,6 +18,8 @@ export interface UiRoutesContext {
   uiConfig: UiPlacementConfig;
   sseClients: Set<ServerResponse>;
   broadcastUiConfigChanged: () => void;
+  /** 域2每层错误面（phase3-B #670）：health 响应 per-layer 段数据源。 */
+  layerErrors: LayerErrorSurface;
 }
 
 const TREND_WINDOW: Record<string, number> = { day: 30, week: 12, month: 12 };
@@ -55,6 +58,9 @@ export function handleHealth(
     enabled: snap.enabled,
     errors: snap.errors,
     historyDir: statsService.historyRoot,
+    // 域2每层错误面（#670 phase3-B）：aggregate/schedule/execute 三层计数 + 最近 N 条；
+    // 与 errors（域1 适配器最近一次登记）并列，字段风格一致（camelCase 平铺）。
+    layerErrors: context.layerErrors.snapshot(),
     trend: trend.stats(),
   });
 }
