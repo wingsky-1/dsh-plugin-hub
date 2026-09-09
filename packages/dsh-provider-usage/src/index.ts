@@ -87,12 +87,19 @@ export { reportBodyToHtml } from "./report/format.ts";
 export { DEFAULT_DAILY_PROMPT, DEFAULT_WEEKLY_PROMPT, DEFAULT_MONTHLY_PROMPT, DEFAULT_PROMPTS, LEGACY_PROMPT_TEMPLATE, LEGACY_DAILY_PROMPT_V1, LEGACY_WEEKLY_PROMPT_V1, LEGACY_MONTHLY_PROMPT_V1, LEGACY_DAILY_PROMPT_V2, LEGACY_WEEKLY_PROMPT_V2, LEGACY_MONTHLY_PROMPT_V2, LEGACY_DAILY_PROMPT_V3, LEGACY_WEEKLY_PROMPT_V3, LEGACY_MONTHLY_PROMPT_V3, LEGACY_DAILY_PROMPT_V4, LEGACY_WEEKLY_PROMPT_V4, LEGACY_MONTHLY_PROMPT_V4, promptFor } from "./report/config.ts";
 export type { ReportPrompts } from "./report/config.ts";
 export type { ReportMeta, ReportResult, ReportStatsSnapshot, ReportLlmService, ReportTokenUsage } from "./report/generate.ts";
-export { ReportScheduler, readLastRun, writeLastRun, updateLastRun, ensureLastRunMigrated, __lastRunChainForTests } from "./report/scheduler.ts";
+export { ReportScheduler } from "./report/scheduler.ts";
+export { readLastRun, writeLastRun, updateLastRun, ensureLastRunMigrated, __lastRunChainForTests } from "./report/last-run.ts";
+// D8 阶段二：执行器工厂与报告配置服务（E4/装配面公共符号，测试/外部消费者从 lib 导入）
+export { makeDueReportExecutor } from "./report/executor.ts";
+export type { DueExecutorDeps } from "./report/executor.ts";
+export { ReportConfigService } from "./report/report-config-service.ts";
+export type { ReportConfigServiceOptions } from "./report/report-config-service.ts";
 // #625/#626 任务队列（手动生成与定时共用执行入口）
 export { ReportTaskQueue } from "./report/tasks.ts";
 export type { ReportTask, ReportTaskInput, ReportTaskResult, ReportTaskStatus } from "./report/tasks.ts";
-// 读侧投影（#626：一行/窗口=最新版）与公共解析
-export { readReportIndex, parseReportIndexLines, prevWindowTotal, runDueReport, persistReport, reportHtmlFile, reportMetaFile, notifyReport, __clearReportIndexCacheForTests, __reportIndexCacheStatsForTests } from "./report/runner.ts";
+// 读侧投影（#626：一行/窗口=最新版）与公共解析（解析原语在 report-index.ts，D8 归位）
+export { readReportIndex, prevWindowTotal, runDueReport, persistReport, reportHtmlFile, reportMetaFile, notifyReport, __clearReportIndexCacheForTests, __reportIndexCacheStatsForTests } from "./report/runner.ts";
+export { parseReportIndexLines } from "./report/report-index.ts";
 // 路径解析纯函数透出（供测试与调用方复用同一展开/解析规则，无行为变更）
 export { resolvePath, pluginHome, expandHomePath } from "./path-resolve.ts";
 // 配置归一化（#276 方案 A 阶段 3 拆出：默认值 / schemastery schema / normalizeConfig）

@@ -38,6 +38,7 @@ import "./unit-trend-view.test.ts";
 import "./unit-report.test.ts";
 import "./unit-stats-service.test.ts";
 import "./unit-routes.test.ts";
+import "./unit-report-executor.test.ts";
 
 import {
   apply,
@@ -2168,8 +2169,9 @@ console.log("[smoke] #503 trend 挂接 + /trend 集成断言全部通过 ✓");
   assert.ok(trendSource.includes("dirNeedsScopeNote(id) ? t(\"trendDirUnidentifiedNote\") : dirDisplayLabel(id)"), "图例 title 与可见文本同源净化（不再直用原始键）");
   assert.ok(readFileSync(join(pkgDir, "src/client/locales.ts"), "utf8").includes('trendCardTopDir: "Top 目录"'), "locales 中英对称新增目录面 Top 标签");
   assert.ok(reportSource.includes("disabled={dirOptions.length === 0}"), "B4 空候选时「全部目录」checkbox 禁用（空=全部语义不变）");
-  const applySource = readFileSync(join(pkgDir, "src/apply.ts"), "utf8");
-  assert.ok(applySource.includes("sanitizeDirName(r.dir) ?? TREND_UNIDENTIFIED"), "listDirs 出口过 sanitizeDirName（旁路污染分片行防御收口）");
+  // D8：listDirs 出口净化从 apply 闭包移入 list-dirs.ts 工厂（装配层零隐藏可变状态）
+  const listDirsSource = readFileSync(join(pkgDir, "src/report/list-dirs.ts"), "utf8");
+  assert.ok(listDirsSource.includes("sanitizeDirName(r.dir) ?? TREND_UNIDENTIFIED"), "listDirs 出口过 sanitizeDirName（旁路污染分片行防御收口，D8 移入工厂）");
 
   // B4：设置页报告目录范围多选（GET dirs 回填 + directories draft + 保存 round-trip 消费点）
   assert.ok(reportSource.includes("reportDirectories"), "报告配置卡存在目录范围多选（i18n 哨兵）");
