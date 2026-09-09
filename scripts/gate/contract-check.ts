@@ -15,6 +15,7 @@
  * exports["./client"] 存在；src/client.ts ⇒ lib/client.js 产物存在）与报告汇总。
  */
 import { readFileSync, existsSync, readdirSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assertClientContract } from '../lib/client-contract-lib.ts'
@@ -156,5 +157,16 @@ console.log(failed === 0 ? '客户端契约：全部通过' : `客户端契约�
   const matrixFailed = matrix.problems.length > 0
   if (matrixFailed) failed++ // 仅用于 exit code（汇总行文案在矩阵段前已打印，不受影响）
   console.log(matrixFailed ? `config-matrix | ${matrix.problems.length} 个失败` : 'config-matrix | PASS')
+}
+// D10（issue #664）：目录 interface.ts 门面静态检查——跨目录引用只能走目标目录
+// interface.ts；适用包白名单缺省 dsh-mcp-manager（#664 重构包），client/ 豁免
+// （index.ts 契约锚点）。独立脚本可单独跑；接入本门禁防约束漂移。
+{
+  const dirGate = spawnSync(process.execPath, [join(ROOT, 'scripts/gate/verify-dir-imports.mjs')], { encoding: 'utf8' })
+  for (const line of (dirGate.stdout ?? '').split('\n')) if (line.trim() !== '') console.log(line)
+  if (dirGate.status !== 0) {
+    console.log(`verify-dir-imports | FAIL exit=${dirGate.status}`)
+    failed++
+  }
 }
 process.exit(failed === 0 ? 0 : 1)
