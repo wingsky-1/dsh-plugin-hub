@@ -104,8 +104,6 @@ export interface UsageStatsAdapter {
   label?: string;
   /** 认领的 provider 列表。 */
   providers: string[];
-  /** 可选：数据留存策略。 */
-  retention?: { maxAge?: number; maxSize?: number };
   /** 获取原始数据（宿主端执行）。 */
   fetchData(ctx: FetchContext): Promise<Record<string, unknown>>;
   /** 格式化胶囊展示内容（宿主端执行，返回 HTML）。 */

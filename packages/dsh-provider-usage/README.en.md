@@ -301,7 +301,6 @@ export const version = 2;                    // required: contract version (fixe
 export const name = "my-stats";              // required: unique name (^[A-Za-z0-9_-]{2,64}$)
 export const label = "My Stats";             // optional: display name
 export const providers = ["my-relay"];       // required: claimed providers
-export const retention = { maxAgeDays: 30 }; // optional: retention policy
 
 /** Required: fetch raw data (runs on the host; args injected by the plugin) */
 export async function fetchData({ apiEndpoint, staticPath, apiKey, signal, timeoutMs }) {

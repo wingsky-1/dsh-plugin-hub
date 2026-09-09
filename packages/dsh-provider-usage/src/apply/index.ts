@@ -103,7 +103,7 @@ export { safeFetchData, safeFormat, fetchWithTimeout } from "../domain1/pipeline
 export { sanitizeHtml } from "../shared/interface.ts";
 // 客户端行为纯函数（设置页列表拆分/徽标文案，经此透出供单元测试）。
 export { splitProviderList, providerBadgeText } from "../shared/interface.ts";
-export { runV2Pipeline, runV2PanelPipeline, capsuleHtmlFromHistory, panelCacheKey, normalizeRangeDay, isPanelCacheStale, PANEL_CACHE_TTL_MS } from "../domain1/pipeline/interface.ts";
+export { runV2Pipeline, runV2PanelPipeline, panelCacheKey, normalizeRangeDay, isPanelCacheStale, PANEL_CACHE_TTL_MS } from "../domain1/pipeline/interface.ts";
 export type { PanelCacheEntry } from "../domain1/pipeline/interface.ts";
 export { HotReloadableAdapter, loadAndValidateAdapter, readStamp, stampEqual } from "../domain1/registry/interface.ts";
 // #503 会话用量趋势（M1 数据层）：trend 模块公共面（测试/外部消费者从 lib/index.js 导入）
