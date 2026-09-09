@@ -6,6 +6,7 @@
  * - normalizeMiddlewareMode 归一化（off/project/all/非法）
  * - fullServerName / parseFullServerName（含非法形态）
  * - normalizeToolName（mcp__ 前缀剥离 / 跨 server 拒绝）
+ * - B11 红测：server 名含连续双下划线 → guard 按未知 server 处理（不禁用不误禁）
  * - normalizeArguments（JSON 字符串参数解析 / 标量保留）
  * - globMatch / policyAllows / policyDenialReason（deny 优先）
  * - scoreTool / searchCatalog（跨字段打分 / unavailable 段 / 空查询摘要）
@@ -38,6 +39,8 @@ const {
   MAX_BYTES_PER_TOOL,
   MAX_TOTAL_CATALOG_BYTES,
   McpMiddleware,
+  registerMiddlewareTools,
+  parseDisabledTools,
   projectCallToolResult,
   CATALOG_TTL_MS,
   LIST_DEFAULT_TOOLS_PER_SERVER,
@@ -1141,4 +1144,57 @@ function makeHost(serversByRoot = new Map()) {
   );
   assert.equal(entry.status, "failed", "B18：enabled=false 保持 failed（不进入退避窗口）");
   await mw.dispose();
+}
+
+// ---- B11 红测：server 名含连续双下划线 → guard 按未知 server 处理（不禁用不误禁） ----
+// D5 定稿：规格化不可逆——含连续双下划线的 server/tool 名无法从注册全名唯一
+// 反解（mcp__my__sv__t 既可能是 server="my"+tool="sv__t"，也可能是
+// server="my__sv"+tool="t"），guard 按未知 server 处理（放行 next()，不禁用
+// 不误禁）；不改 publicToolName/INVALID_NAME_CHARS（防冲击官方 mcp__ 契约）。
+// 现状 handleDirectMcpGuard 用第一个 __ 分割（middleware-register.ts L604-608）
+// → 错位反解（server="my", tool="sv__t"），禁用表若恰有错位形态记录会**误禁**
+// （情形 B）；真实形态记录（@global/my__sv → t）则**查错漏禁**（情形 A）。
+{
+  const guards = new Map();
+  const ctx = {
+    tools: { register: () => () => {} },
+    on: (event, handler) => {
+      guards.set(event, handler);
+      return () => {};
+    },
+  };
+  const host = {
+    ctx,
+    logger: { info: () => {}, warn: () => {}, error: () => {} },
+    projectServersFor: async () => [],
+    globalServers: () => [],
+    normalizedProjectRoot: async (cwd) => (cwd === "/proj" ? "/proj" : undefined),
+    saveUserState: async () => {},
+    emitStatus: () => {},
+    catalogCachePath: () => "/tmp/cache.json",
+    isGlobalServer: () => false,
+  };
+  const resolveRoot = async (agent) => (agent?.session?.header?.cwd === "/proj" ? "/proj" : undefined);
+
+  // 情形 B（红）：禁用表只有「错位形态」记录（@global/my → sv__t，恰好是第一个
+  // __ 分割的产物）→ 含 __ 名按未知处理应放行（现状误禁 → 断言红）。
+  const mw = new McpMiddleware(host, {});
+  const mapB = parseDisabledTools({ "@global": { my: ["sv__t"] } });
+  const disposeB = registerMiddlewareTools(ctx, mw, resolveRoot, "project", { disabledTools: mapB });
+  const guard = guards.get("tools/pre-execute");
+  assert.ok(typeof guard === "function", "pre-execute guard 已注册");
+  const decisionB = await guard({ name: "mcp__my__sv__t", agent: { session: { header: { cwd: "/proj" } } } }, async () => ({ kind: "allow" }));
+  assert.equal(decisionB.kind, "allow", "B11：含连续双下划线名按未知 server 处理，不误禁（现状错位反解会误禁 → 红测）");
+
+  // 情形 A（防回归）：禁用表只有「真实形态」记录（@global/my__sv → t）→ 同样
+  // 不可逆 → 放行（不禁用；现状查错漏禁，修复后保持不误禁不误杀）。
+  const mw2 = new McpMiddleware(host, {});
+  const mapA = parseDisabledTools({ "@global": { "my__sv": ["t"] } });
+  const disposeA = registerMiddlewareTools(ctx, mw2, resolveRoot, "project", { disabledTools: mapA });
+  const guard2 = guards.get("tools/pre-execute");
+  const decisionA = await guard2({ name: "mcp__my__sv__t", agent: { session: { header: { cwd: "/proj" } } } }, async () => ({ kind: "allow" }));
+  assert.equal(decisionA.kind, "allow", "B11：真实形态记录同样不命中（不可逆按未知 server 处理）");
+
+  disposeB();
+  disposeA();
 }

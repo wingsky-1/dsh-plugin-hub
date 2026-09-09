@@ -96,6 +96,8 @@ import "./unit-routes-sse.test.ts";
 import "./unit-call-stats.test.ts";
 // 执行管道域契约（#664 阶段 2：两路径同构 + stats 埋点红测）
 import "./unit-pipeline.test.ts";
+// 工作空间路由域（#664 阶段 4：makeResolveRoot 路由 + B3 红测）
+import "./unit-workspace.test.ts";
 
 const failures = [];
 const check = (label, fn) => {
