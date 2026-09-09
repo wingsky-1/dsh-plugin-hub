@@ -6,7 +6,7 @@
  * 宿主聚合数据（provider 名/键）不受信，凡进 SVG 文本一律 escHtml；
  * tooltip 走 React 文本节点（trend.ts 内），不经本模块。
  */
-import { escHtml } from "../charts.ts";
+import { escHtml } from "../shared/charts.ts";
 import { t } from "../../../../shared/client/i18n.js";
 
 /** 趋势粒度。 */

@@ -6,8 +6,8 @@
  */
 import * as React from "react";
 import { fetchTimeout, SELECT_URL, INSPECT_URL, ADD_URL } from "../core.ts";
-import { splitProviderList, providerBadgeText } from "../../client-logic.ts";
-import type { ProviderListItem } from "../../client-logic.ts";
+import { splitProviderList, providerBadgeText } from "../../shared/client-logic.ts";
+import type { ProviderListItem } from "../../shared/client-logic.ts";
 import { t } from "../../../../../shared/client/i18n.js";
 import { copyText, sectionStyle, titleStyle } from "./shared.ts";
 

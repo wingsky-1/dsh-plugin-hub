@@ -49,11 +49,14 @@ const ROOT = join(import.meta.dirname, "../..");
 const WHITELIST_V = 1;
 const WHITELIST = new Map([
   // #525/#517：opencode 外部凭据路径——DSH_HOME 域之外的第三方工具自身写面
-  ["packages/dsh-provider-usage/src/provider-config.ts", "#525 opencode 外部凭据"],
+  // （阶段四 #670 目录化：src/provider-config.ts → src/domain1/registry/provider-config.ts）
+  ["packages/dsh-provider-usage/src/domain1/registry/provider-config.ts", "#525 opencode 外部凭据"],
   // #517：展示层脱敏（诊断文本把 home 前缀折叠为 ~），不产生读写面
-  ["packages/dsh-provider-usage/src/apply.ts", "#517 展示层脱敏"],
+  // （阶段四 #670 目录化：src/apply.ts → src/apply/apply.ts）
+  ["packages/dsh-provider-usage/src/apply/apply.ts", "#517 展示层脱敏"],
   // #87：用户输入 `~` 前缀展开（untildify 业界标准实现），目标由用户指定
-  ["packages/dsh-provider-usage/src/path-resolve.ts", "#87 用户路径 ~ 展开"],
+  // （阶段四 #670 目录化：src/path-resolve.ts → src/domain1/registry/path-resolve.ts）
+  ["packages/dsh-provider-usage/src/domain1/registry/path-resolve.ts", "#87 用户路径 ~ 展开"],
   ["packages/dsh-web-file-preview/src/git.ts", "#87 用户路径 ~ 展开"],
   ["packages/dsh-web-file-preview/src/routes.ts", "#87 用户路径 ~ 展开"],
 ]);

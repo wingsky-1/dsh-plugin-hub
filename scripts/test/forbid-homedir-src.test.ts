@@ -154,8 +154,8 @@ test('F1：字符串字面量里的伪豁免注释不生效（真实注释词法
 test('F2：WHITELIST 条目文件存在但本次零命中 → 报已腐烂（非死代码）', () => {
   // 构造与真实 WHITELIST 相对路径同形的文件，但内容无任何 HOME API 命中
   const dir = mkdtempSync(join(tmpdir(), 'forbid-homedir-rot-'))
-  mkdirSync(join(dir, 'packages/dsh-provider-usage/src'), { recursive: true })
-  writeFileSync(join(dir, 'packages/dsh-provider-usage/src/apply.ts'),
+  mkdirSync(join(dir, 'packages/dsh-provider-usage/src/apply'), { recursive: true })
+  writeFileSync(join(dir, 'packages/dsh-provider-usage/src/apply/apply.ts'),
     'export const clean = 1\n') // WHITELIST 含此文件，但零命中
   try {
     const r = spawnSync(process.execPath, [SCRIPT, '--root', dir], { encoding: 'utf8' })
@@ -214,9 +214,9 @@ test('本仓真实快照：7 处合法豁免全部识别 → exit 0 且台账一
   assert.equal(r.status, 0, r.stderr)
   assert.match(r.stdout, /合法豁免 7 处/)
   for (const f of [
-    'packages/dsh-provider-usage/src/apply.ts',
-    'packages/dsh-provider-usage/src/path-resolve.ts',
-    'packages/dsh-provider-usage/src/provider-config.ts',
+    'packages/dsh-provider-usage/src/apply/apply.ts',
+    'packages/dsh-provider-usage/src/domain1/registry/path-resolve.ts',
+    'packages/dsh-provider-usage/src/domain1/registry/provider-config.ts',
     'packages/dsh-web-file-preview/src/git.ts',
     'packages/dsh-web-file-preview/src/routes.ts',
   ]) assert.ok(r.stdout.includes(f), `${f} 应在合法豁免台账中`)

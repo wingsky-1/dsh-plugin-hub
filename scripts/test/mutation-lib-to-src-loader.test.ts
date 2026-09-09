@@ -27,6 +27,7 @@ import {
   canRedirectLibToSrc,
   candidateFrom,
   resolve,
+  resolveForwardedLibTarget,
   toPosix,
 } from "./mutation-lib-to-src-loader.mjs";
 
@@ -282,6 +283,66 @@ test("pkgRootFromParent: 仅识别 packages/<pkg>/ 下的父文件（candidateFr
     // 非 ./ ../ 形态：candidateFrom 返回 null（交给 nextResolve）
     assert.equal(candidateFrom("bare-pkg", "file:///whatever"), null);
   } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("resolveForwardedLibTarget: src 目标不存在时解析到组合根真实实现（阶段四 #670）", () => {
+  withRepo(({ root, pkg }) => {
+    // 场景：组合根移入子目录——sandbox 里 src/index.ts 不存在、src/apply/index.ts
+    // 存在；lib/index.js 可能为 prepare-lib-entry 薄转发（bundle-host 前）或
+    // 已内联的完整 bundle（bundle-host 后，无转发语义）——两种形态都要落到
+    // src/apply/index.ts。
+    mkdirSync(src(root, pkg, "apply"), { recursive: true });
+    writeFileSync(src(root, pkg, "apply/index.ts"), "export const apply = () => {};\n", "utf8");
+
+    // 形态一：薄转发（export * from "./apply/index.js"）→ 沿链解析
+    writeFileSync(lib(root, pkg, "index.js"), 'export * from "./apply/index.js";\n', "utf8");
+    const hit = canRedirectLibToSrc(lib(root, pkg, "index.js"), { root });
+    assert.equal(toPosix(hit.filePath), toPosix(src(root, pkg, "index.ts")));
+    const forwarded = resolveForwardedLibTarget(hit.filePath, { root });
+    assert.equal(toPosix(forwarded), toPosix(src(root, pkg, "apply/index.ts")), "薄转发形态应解析到 src/apply/index.ts");
+
+    // 形态二：bundle-host 内联后的完整 bundle（无相对 from）→ 组合根入口探测
+    writeFileSync(lib(root, pkg, "index.js"), "// @ts-nocheck\nvar __create = Object.create;\n", "utf8");
+    const bundleHit = canRedirectLibToSrc(lib(root, pkg, "index.js"), { root });
+    const bundleFwd = resolveForwardedLibTarget(bundleHit.filePath, { root });
+    assert.equal(toPosix(bundleFwd), toPosix(src(root, pkg, "apply/index.ts")), "内联 bundle 形态应经组合根探测落到 src/apply/index.ts");
+
+    // 目标存在时不做转发（普通子模块路径不受影响）
+    writeFileSync(src(root, pkg, "routes.ts"), "export const x = 1;\n", "utf8");
+    writeFileSync(lib(root, pkg, "routes.js"), "export const x = 1;\n", "utf8");
+    const plainHit = canRedirectLibToSrc(lib(root, pkg, "routes.js"), { root });
+    assert.equal(resolveForwardedLibTarget(plainHit.filePath, { root }), null, "src 目标存在时应返回 null");
+
+    // 非 index 且转发悬空 → null（fail 可见，不静默吞）
+    writeFileSync(lib(root, pkg, "ghost.js"), 'export * from "./missing/index.js";\n', "utf8");
+    const ghostHit = canRedirectLibToSrc(lib(root, pkg, "ghost.js"), { root });
+    assert.equal(resolveForwardedLibTarget(ghostHit.filePath, { root }), null, "悬空转发应返回 null");
+  });
+});
+
+test("resolve: lib/index.js 转发入口在变异宿主内解析到 src/apply/index.ts（端到端）", async () => {
+  const root = mkdtempSync(join(tmpdir(), "lib2src-fwd-"));
+  const prevRoot = process.env.DSH_MUTATION_LIB2SRC_ROOT;
+  process.env.DSH_MUTATION_LIB2SRC_ROOT = root;
+  try {
+    const pkg = "dsh-x";
+    fakeRepo(root, pkg);
+    mkdirSync(src(root, pkg, "apply"), { recursive: true });
+    writeFileSync(lib(root, pkg, "index.js"), 'export * from "./apply/index.js";\n', "utf8");
+    writeFileSync(src(root, pkg, "apply/index.ts"), "export const apply = () => {};\n", "utf8");
+    const parent = pathToFileURL(join(root, "packages", pkg, "test", "entry.mjs")).href;
+    const spec = pathToFileURL(lib(root, pkg, "index.js")).href;
+    const out = await resolve(spec, { parentURL: parent }, async () => ({ url: spec }));
+    assert.equal(
+      toPosix(fileURLToPath(out.url)),
+      toPosix(src(root, pkg, "apply/index.ts")),
+      "resolve 应把转发入口重定向到 src/apply/index.ts",
+    );
+  } finally {
+    if (prevRoot === undefined) delete process.env.DSH_MUTATION_LIB2SRC_ROOT;
+    else process.env.DSH_MUTATION_LIB2SRC_ROOT = prevRoot;
     rmSync(root, { recursive: true, force: true });
   }
 });
