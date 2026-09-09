@@ -44,6 +44,9 @@ await import("./e2e-question-turn.test.ts");
 // e2e：边缘路径与生命周期清理（#82 批次 4 热点补强）
 await import("./e2e-edge.test.ts");
 
+// PR0 红测先行 3：outbound 真 resolver 全链投递基线（bark enabled:true + fetch 白名单加固）
+await import("./e2e-outbound.test.ts");
+
 // e2e：真实 cordis Context 形态（#290 C/D/E：未注入访问/事件可达契约/静态契约）
 await import("./real-context.test.ts");
 
