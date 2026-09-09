@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { assert } from "./helpers.ts";
 import { makeDueReportExecutor, ReportConfigService, readReportConfig, DEFAULT_REPORT_CONFIG, readLastRun } from "../lib/index.js";
-import { makeListDirs } from "../src/report/list-dirs.ts";
+import { makeListDirs } from "../src/domain2/execute/list-dirs.ts";
 
 // ---- ReportConfigService：串行写链 / 内存权威 / 回调顺序 / 磁盘 roundtrip
 {

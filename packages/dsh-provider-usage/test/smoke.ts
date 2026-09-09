@@ -2143,7 +2143,7 @@ console.log("[smoke] #503 trend 挂接 + /trend 集成断言全部通过 ✓");
   const trendSource = readFileSync(join(pkgDir, "src/client/trend.tsx"), "utf8");
   const reportSource = readFileSync(join(pkgDir, "src/client/report.tsx"), "utf8");
   const mathSource = readFileSync(join(pkgDir, "src/client/trend-math.ts"), "utf8");
-  const routesSource = readFileSync(join(pkgDir, "src/routes/ui.ts"), "utf8");
+  const routesSource = readFileSync(join(pkgDir, "src/domain2/routes/ui.ts"), "utf8");
 
   // B1：趋势面板目录筛选控件存在（select + dirs 数据源 + 全部目录/byDir 请求面）
   assert.ok(trendSource.includes('aria-label={t("trendDirLabel")}'), "趋势面板存在目录筛选下拉（aria-label 哨兵）");
@@ -2172,7 +2172,7 @@ console.log("[smoke] #503 trend 挂接 + /trend 集成断言全部通过 ✓");
   assert.ok(readFileSync(join(pkgDir, "src/client/locales.ts"), "utf8").includes('trendCardTopDir: "Top 目录"'), "locales 中英对称新增目录面 Top 标签");
   assert.ok(reportSource.includes("disabled={dirOptions.length === 0}"), "B4 空候选时「全部目录」checkbox 禁用（空=全部语义不变）");
   // D8：listDirs 出口净化从 apply 闭包移入 list-dirs.ts 工厂（装配层零隐藏可变状态）
-  const listDirsSource = readFileSync(join(pkgDir, "src/report/list-dirs.ts"), "utf8");
+  const listDirsSource = readFileSync(join(pkgDir, "src/domain2/execute/list-dirs.ts"), "utf8");
   assert.ok(listDirsSource.includes("sanitizeDirName(r.dir) ?? TREND_UNIDENTIFIED"), "listDirs 出口过 sanitizeDirName（旁路污染分片行防御收口，D8 移入工厂）");
 
   // B4：设置页报告目录范围多选（GET dirs 回填 + directories draft + 保存 round-trip 消费点）

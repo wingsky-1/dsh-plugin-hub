@@ -504,7 +504,7 @@ assert.equal(parseAmount("Infinity"), null, "Infinity 非有限数 → null");
 {
   // G1 常量存在 + 源码注释附官方定价 URL 与核实日期
   assert.deepEqual(PEAK_WINDOWS_UTC.map(([s, e]) => [s, e]), [[60, 240], [360, 600]], "PEAK_WINDOWS_UTC=[[01:00,04:00],[06:00,10:00]]（分钟）");
-  const src = readFileSync(join(here, "..", "src", "adapters", "deepseek-official.mjs"), "utf8");
+  const src = readFileSync(join(here, "..", "src", "domain1", "adapters", "deepseek-official.mjs"), "utf8");
   assert.ok(src.includes("https://api-docs.deepseek.com/quick_start/pricing"), "注释附官方定价 URL");
   assert.ok(src.includes("2026-08-26"), "注释附核实日期");
 }

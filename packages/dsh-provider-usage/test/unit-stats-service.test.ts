@@ -14,11 +14,11 @@ import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { assert, pollUntil } from "./helpers.ts";
-import { normalizeConfig } from "../src/config.ts";
-import { makeAdapterRegistry } from "../src/registry.ts";
-import { HistoryStore } from "../src/core/history.ts";
-import { panelCacheKey } from "../src/pipeline/v2.ts";
-import { StatsService } from "../src/stats-service.ts";
+import { normalizeConfig } from "../src/shared/config.ts";
+import { makeAdapterRegistry } from "../src/domain1/registry/registry.ts";
+import { HistoryStore } from "../src/domain1/history/history.ts";
+import { panelCacheKey } from "../src/domain1/pipeline/v2.ts";
+import { StatsService } from "../src/domain1/pipeline/stats-service.ts";
 
 function makeService(overrides = {}) {
   const dir = mkdtempSync(join(tmpdir(), "u-usage-stats-"));

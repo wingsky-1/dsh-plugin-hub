@@ -1231,7 +1231,7 @@ const GEN = (over = {}) => ({
   //    「注入面只含聚合数值（不含会话明细与路径」与裸「摘要不含项目路径；」。
   const here = dirname(fileURLToPath(import.meta.url));
   const pkgDir = join(here, "..");
-  const genSrc = readFileSync(join(pkgDir, "src/report/generate.ts"), "utf8");
+  const genSrc = readFileSync(join(pkgDir, "src/domain2/execute/generate.ts"), "utf8");
   assert.ok(genSrc.includes("只含聚合数值与目录 basename"), "generate.ts 注入面注释为准确口径（含目录 basename）");
   assert.ok(genSrc.includes("剥控制字符 + 截断"), "generate.ts 注入面注释含剥控制字符 + 截断口径");
   // 出口实现哨兵：byDirectory 出口必须含 basename 化（两系分隔符切分），不回退
@@ -1243,7 +1243,7 @@ const GEN = (over = {}) => ({
   assert.ok(!readme.includes("注入面只含聚合数值（不含会话明细与路径）"), "README 旧句（无目录 basename）已收敛");
   assert.ok(!readme.includes("摘要不含项目路径；"), "README 裸「摘要不含项目路径」句已收敛为准确口径");
   // 模板目录硬规则哨兵（C1 模板升级防回退）
-  const cfgSrc = readFileSync(join(pkgDir, "src/report/config.ts"), "utf8");
+  const cfgSrc = readFileSync(join(pkgDir, "src/domain2/schedule/config.ts"), "utf8");
   for (const sentinel of ["byDirectory 第一位", "工作分散在 N 个目录", "目录版图", "绝不展开为路径、绝不推测目录内容"]) {
     assert.ok(cfgSrc.includes(sentinel), `三周期模板目录硬规则哨兵在场：${sentinel}`);
   }

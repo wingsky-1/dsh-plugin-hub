@@ -13,8 +13,8 @@
  */
 import * as React from "react";
 import { STATS_URL, ADAPTERS_URL, SELECT_URL, INSPECT_URL, ADD_URL, fetchTimeout } from "../core.ts";
-import { splitProviderList } from "../../client-logic.ts";
-import type { ProviderListItem } from "../../client-logic.ts";
+import { splitProviderList } from "../../shared/client-logic.ts";
+import type { ProviderListItem } from "../../shared/client-logic.ts";
 import { t } from "../../../../../shared/client/i18n.js";
 // #503：设置页顶部「使用趋势」区块（三维切换 + 堆叠柱状 + 汇总卡）
 import { TrendSection } from "../trend.tsx";
