@@ -94,3 +94,65 @@ export async function assertNoGrowth(label, measure, baseline, { windowMs = 120,
     await new Promise((r) => setTimeout(r, tickMs));
   }
 }
+
+/**
+ * 伪造 MCP 传输面（统一 mock 面，防各测试自造桩漂移：issue #664 阶段 1 基建）。
+ *
+ * 形态贴合 supervisor/protocol 对 transport 的消费面：
+ * - `sdk`：SDK Client.connect 的连接对象（protocol initialize 透传 `transport.sdk`）；
+ * - `stderrTail`：stdio 启动失败诊断尾巴（protocol initialize 读取）；
+ * - `close()`：fire-and-forget 异步关闭，closeCalls 计数供轮询断言，
+ *   onClose 回调列表随 onClose 触发（supervisor teardownGeneration 语义）。
+ */
+export function fakeTransport(overrides = {}) {
+  const transport = {
+    sdk: {},
+    stderrTail: undefined,
+    closeCalls: 0,
+    onClose: [],
+    async close() {
+      transport.closeCalls += 1;
+      transport.onClose.forEach((cb) => {
+        try {
+          cb();
+        } catch {
+          // 回调抛错与 close 自身抛错语义一致：吞掉不炸 teardown
+        }
+      });
+    },
+  };
+  return Object.assign(transport, overrides);
+}
+
+/**
+ * 伪造 MCPClient（连接监督器的最小执行面）。
+ *
+ * 消费面（supervisor.ts）：initialize() / listTools(cursor?) / callTool(name, args, opts)；
+ * script 可注入各方法返回值（Promise 或同步均可）；`calls` 记录每次调用参数，供
+ * 「调用顺序/参数面」断言（如 B5 代际清理顺序、B18 退避口径）。未注入的默认值：
+ * initialize 返回版本协商素对象、listTools 返回空工具集、callTool 返回文本 content。
+ */
+export function fakeMCPClient(script = {}) {
+  const transport = fakeTransport();
+  const calls = [];
+  const client = {
+    transport,
+    calls,
+    async initialize() {
+      calls.push(["initialize"]);
+      if (script.initialize) return script.initialize();
+      return { protocolVersion: "2024-11-05" };
+    },
+    async listTools(cursor) {
+      calls.push(["listTools", cursor]);
+      if (script.listTools) return script.listTools(cursor);
+      return { tools: [] };
+    },
+    async callTool(name, args, opts) {
+      calls.push(["callTool", name, args, opts]);
+      if (script.callTool) return script.callTool(name, args, opts);
+      return { content: [{ type: "text", text: "ok" }] };
+    },
+  };
+  return client;
+}

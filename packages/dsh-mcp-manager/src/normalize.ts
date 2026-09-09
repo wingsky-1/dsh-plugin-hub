@@ -30,10 +30,16 @@ export function normalizeServer(input: unknown): ServerConfig {
     if (typeof src.url !== "string" || (src.url as string).trim() === "") {
       throw new Error("streamable-http server requires a url");
     }
+    let parsed: URL;
     try {
-      new URL(src.url as string);
+      parsed = new URL(src.url as string);
     } catch {
       throw new Error(`invalid url: ${src.url}`);
+    }
+    // B13：streamable-http 仅接受 http(s)；ftp/file 等协议可解析但语义不符
+    // （README 口径「streamable-http(远程)」），显式白名单拒绝。
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new Error(`unsupported protocol: ${parsed.protocol}//`);
     }
   }
   const server: ServerConfig = {

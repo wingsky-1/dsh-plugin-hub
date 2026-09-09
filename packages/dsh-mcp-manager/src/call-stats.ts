@@ -59,14 +59,20 @@ export class McpStatsCollector {
   /** 更新运行配置（热重载 / 设置同步）。 */
   configure(options: { enabled?: boolean; filePath?: string; logger?: { info?: (msg: string) => void } }): void {
     const prevEnabled = this.enabled;
-    if (options.enabled !== undefined) this.enabled = options.enabled;
+    const nextEnabled = options.enabled ?? prevEnabled;
     if (options.filePath) this.filePath = resolve(options.filePath);
     if (options.logger) this.logger = options.logger;
 
-    if (!prevEnabled && this.enabled) {
-      this.loadExisting();
-    } else if (prevEnabled && !this.enabled) {
+    if (prevEnabled && !nextEnabled) {
+      // B2：关闭前先刷盘——flushSync 以 enabled 为闸，先置 false 会把最后一批
+      // 脏数据短路丢弃（flushSync 内部同样以 isDirty 兜底，无脏数据不写盘）。
       this.flushSync();
+      this.enabled = false;
+    } else {
+      this.enabled = nextEnabled;
+      if (nextEnabled && !prevEnabled) {
+        this.loadExisting();
+      }
     }
   }
 

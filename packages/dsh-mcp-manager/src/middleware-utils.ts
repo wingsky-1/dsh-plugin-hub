@@ -88,6 +88,9 @@ export function normalizeToolName(serverName: string, toolName: string, caller =
 /** 归一化 ws_mcp_call 的 arguments 参数（模型可能把参数字典填成 JSON 字符串）。 */
 export function normalizeArguments(raw: unknown): unknown {
   let value: unknown = raw ?? {};
+  // B14：arguments 按 MCP 规范应为 object，数组形态归一无害空态
+  // （含顶层数组入参与 JSON 解包解出数组两种路径）。
+  if (Array.isArray(value)) return {};
   let depth = 0;
   while (typeof value === "string" && depth < 4) {
     const trimmed = value.trim();
@@ -102,7 +105,10 @@ export function normalizeArguments(raw: unknown): unknown {
     } catch {
       break;
     }
-    if (parsed !== null && typeof parsed === "object") return parsed;
+    if (parsed !== null && typeof parsed === "object") {
+      if (Array.isArray(parsed)) return {}; // B14：解包出数组同样拒绝
+      return parsed;
+    }
     const inner = typeof parsed === "string" ? parsed.trim() : "";
     const innerLooksContainer = inner.startsWith("{") || inner.startsWith("[");
     if (!isQuotedJson || !innerLooksContainer) break;

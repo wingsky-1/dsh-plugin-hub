@@ -18,7 +18,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { pollUntil } from "./helpers.ts";
+import { pollUntil, assertNoGrowth } from "./helpers.ts";
 
 const {
   apply,
@@ -724,7 +724,12 @@ function rmStatSafe(p) {
     fakeMw.units.get(projRoot).userDisabled.add("p2");
     manager.start("p2", "project");
     await pollUntil("projectUnitFor 触达完成", () => calls614.some((c) => c[0] === "projectUnitFor" && c[1] === projRoot));
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    // 反向验证：userDisabled 命中后稳定不连接（观察窗口内持续断言，替代固定 sleep）
+    await assertNoGrowth(
+      "userDisabled命中不连接",
+      () => calls614.filter((c) => c[0] === "ensureConnected" && c[2] === "p2").length,
+      0,
+    );
     assert.ok(!calls614.some((c) => c[0] === "ensureConnected" && c[2] === "p2"), "userDisabled 命中不连接");
     fakeMw.units.get(projRoot).userDisabled.delete("p2");
   } finally {

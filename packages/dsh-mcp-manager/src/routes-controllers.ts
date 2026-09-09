@@ -81,6 +81,12 @@ export function buildConfigRoute(manager: RoutesManager, helpers: RouteHelpers):
         try {
           const rec = body as Record<string, unknown>;
           if (typeof rec.middleware === "string") {
+            // B7：非法 middleware 显式 400 拒绝——不得静默回落 off 并热切换+落盘
+            // （合法集合与 config-schema z.union 同源，勿只依赖 normalize 兜底）。
+            if (rec.middleware !== "off" && rec.middleware !== "project" && rec.middleware !== "all") {
+              writeJson(res, 400, { error: `invalid middleware mode: ${rec.middleware}` });
+              return;
+            }
             // 中间层模式热切换：先热生效（当前进程立即切换），再落盘（重启保留）。
             if (typeof manager.setMiddlewareMode === "function") {
               await manager.setMiddlewareMode(rec.middleware);

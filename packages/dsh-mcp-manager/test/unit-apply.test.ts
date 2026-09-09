@@ -245,3 +245,30 @@ import { join } from "node:path";
     rmSync(dir, { recursive: true, force: true });
   }
 }
+// ---- resolveMiddlewareMode 三态（issue #664 阶段 1：配置域逻辑归位，C-CFG 契约）----
+
+{
+  const { McpManager, McpStore, resolveMiddlewareMode } = await import("../lib/index.js");
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-mode-"));
+  try {
+    const store = new McpStore(join(dir, "mcp.json"));
+    const manager = new McpManager({ logger: { info: () => {}, warn: () => {} } } as any, store);
+
+    // 态 1：settings 持久化值 = 运行权威（覆盖 schema 默认）
+    manager.uiConfigSource = () => ({ middleware: "all" });
+    assert.equal(resolveMiddlewareMode(manager, "project"), "all", "settings 有值优先于 fallback");
+
+    // 态 2：settings 无值 → fallbackRaw（resolve 侧显式传值）
+    manager.uiConfigSource = () => ({});
+    assert.equal(resolveMiddlewareMode(manager, "off"), "off", "settings 无值回落 fallback");
+    // 态 2b：settings 无值且无 fallback → schema 默认 project（第一启动形态）
+    manager.uiConfigSource = () => ({});
+    assert.equal(resolveMiddlewareMode(manager, undefined), "project", "无 fallback 回落 schema 默认 project");
+
+    // 态 3：settings 非法值 → normalize 回落 off（读取兼容、不迁移写回）
+    manager.uiConfigSource = () => ({ middleware: "bogus" });
+    assert.equal(resolveMiddlewareMode(manager, "project"), "off", "settings 非法值回落 off");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}

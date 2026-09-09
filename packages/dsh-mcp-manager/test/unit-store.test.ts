@@ -226,4 +226,23 @@ function tempDir() {
   assert.throws(() => parseClaudeJson("{oops"), SyntaxError);
 }
 
+// ---- B17：save 失败时 tmp 残留必须清理（唯一 tmp 名 + 失败清理） ----
+
+{
+  const dir = tempDir();
+  try {
+    // rename 目标为已存在目录 → EISDIR，注入写入失败路径
+    const victimPath = join(dir, "victim");
+    mkdirSync(victimPath);
+    const store = new McpStore(victimPath);
+    store.data = { version: 1, servers: [{ name: "s1", transport: "stdio", command: "echo", enabled: true }] };
+
+    await assert.rejects(() => store.save(), /EISDIR|ENOTEMPTY|EEXIST|EPERM|ENOTDIR/, "save 失败应上抛");
+    assert.equal(existsSync(`${victimPath}.tmp`), false, "B17：save 失败后 tmp 残留应清理（现状固定名 tmp 残留）");
+    assert.equal(existsSync(`${victimPath}.tmp.`), false, "B17：pid 后缀残留同样不应存在");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 console.log("  ok   unit-store: McpStore 全分支 + import 映射");

@@ -386,4 +386,28 @@ const countPing = (res) => (res.state.body.match(/data: \{"type":"ping"\}/g) ?? 
   }
 }
 
+// ---- B7：POST /config 非法 middleware → 400 拒绝（不热切换、不落盘） ----
+
+{
+  const { dir, manager } = setup();
+  try {
+    const uiUpdates: string[] = [];
+    manager.uiUpdate = async (patch: Record<string, unknown>) => {
+      // 记录落盘意图：非法值不得触达（现状会落盘 {middleware:"off"}）
+      uiUpdates.push(String(patch.middleware));
+    };
+    const routes = makeRoutes(manager);
+    const configRoute = routes.find((r) => r.path === ROUTES.config);
+    assert.ok(configRoute, "config 路由存在");
+
+    const res = await callHandler(configRoute, fakeReq("POST", ROUTES.config, { middleware: "bogus" }));
+    assert.equal(res.status, 400, "B7：非法 middleware 应 400 拒绝（现状静默回落 off 并落盘）");
+    assert.match(res.payload.error, /middleware/, "错误文案指明 middleware 非法");
+    assert.equal(manager.middlewareMode, "off", "非法值不改写运行模式");
+    assert.equal(uiUpdates.length, 0, "非法值不触达 uiUpdate（不落盘）");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 console.log("  ok   unit-routes-sse: SSE 帧/健康检查/路由边界");
