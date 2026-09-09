@@ -25,7 +25,7 @@ import { dirname } from "node:path";
 import type { ServerConfig } from "./types.ts";
 import type { ToolDefinition, ToolOutputDefinition } from "@deepseek-ai/dsh-tools";
 import { MCPClient } from "./protocol.ts";
-import { defaultCallResultFallbackText, projectCallToolResult } from "./call-result.ts";
+import { defaultCallResultFallbackText, projectCallToolResult, withTimeout, msgOf, createRedactor, normalizeArguments } from "./pipeline/interface.ts";
 import { createTransport } from "./transport.ts";
 import {
   CONNECT_TIMEOUT_MS,
@@ -34,12 +34,8 @@ import {
   CATALOG_TTL_MS,
 } from "./middleware-const.ts";
 import {
-  withTimeout,
-  msgOf,
-  createRedactor,
   parseFullServerName,
   normalizeToolName,
-  normalizeArguments,
   policyAllows,
   policyDenialReason,
   fullServerName,
@@ -687,16 +683,13 @@ export {
   LIST_MAX_TOOLS_PER_SERVER,
   normalizeMiddlewareMode,
 } from "./middleware-const.ts";
-// 纯函数与目录检索
+// 纯函数与目录检索（pipeline 域函数已迁 src/pipeline/，经 pipeline/interface.ts 转发；
+// 其余 workspace/catalog 域函数仍位于 middleware-utils.ts，阶段 4/5 陆续迁出）
+export { withTimeout, normalizeArguments, msgOf, createRedactor, globMatch } from "./pipeline/interface.ts";
 export {
-  withTimeout,
   fullServerName,
   parseFullServerName,
   normalizeToolName,
-  normalizeArguments,
-  msgOf,
-  createRedactor,
-  globMatch,
   policyAllows,
   bareServerName,
   policyDenialReason,

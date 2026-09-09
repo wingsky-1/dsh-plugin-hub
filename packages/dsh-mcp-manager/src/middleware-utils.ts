@@ -1,10 +1,14 @@
 /**
- * dsh-mcp-manager — 中间层纯函数（命名 / 容错 / 脱敏 / 策略 / 目录检索）。
+ * dsh-mcp-manager — 中间层纯函数（命名 / 策略 / 目录检索）。
  *
- * 全部为无副作用纯函数（withTimeout 亦不依赖连接池），类型自 middleware-types.
- * ts 取；被连接池类、工具注册与 manager 共享。
+ * 无副作用纯函数，类型自 middleware-types.ts 取；被连接池类、工具注册与
+ * manager 共享。#664 阶段 2 起执行管道纯函数（args/msg/redact/timeout/
+ * project/authorize）迁至 src/pipeline/，本文件保留 workspace（命名/全名）与
+ * catalog（检索）域函数，阶段 4/5 陆续迁出；globMatch 经 pipeline/interface.ts
+ * 跨目录引用（D10 门面规则）。
  */
 
+import { globMatch } from "./pipeline/interface.ts";
 import {
   CATALOG_TTL_MS,
   LIST_DEFAULT_TOOLS_PER_SERVER,
@@ -85,103 +89,7 @@ export function normalizeToolName(serverName: string, toolName: string, caller =
   return name;
 }
 
-/** 归一化 ws_mcp_call 的 arguments 参数（模型可能把参数字典填成 JSON 字符串）。 */
-export function normalizeArguments(raw: unknown): unknown {
-  let value: unknown = raw ?? {};
-  // B14：arguments 按 MCP 规范应为 object，数组形态归一无害空态
-  // （含顶层数组入参与 JSON 解包解出数组两种路径）。
-  if (Array.isArray(value)) return {};
-  let depth = 0;
-  while (typeof value === "string" && depth < 4) {
-    const trimmed = value.trim();
-    if (trimmed.length === 0) return {};
-    const head = trimmed.charCodeAt(0);
-    const isContainerJson = head === 123 /* { */ || head === 91 /* [ */;
-    const isQuotedJson = head === 34 /* " */;
-    if (!isContainerJson && !isQuotedJson) break;
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(trimmed);
-    } catch {
-      break;
-    }
-    if (parsed !== null && typeof parsed === "object") {
-      if (Array.isArray(parsed)) return {}; // B14：解包出数组同样拒绝
-      return parsed;
-    }
-    const inner = typeof parsed === "string" ? parsed.trim() : "";
-    const innerLooksContainer = inner.startsWith("{") || inner.startsWith("[");
-    if (!isQuotedJson || !innerLooksContainer) break;
-    value = parsed;
-    depth += 1;
-  }
-  return value;
-}
-
-/** 统一错误提取（Error/string/object 三态）。 */
-export function msgOf(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "string") return error;
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return String(error);
-  }
-}
-
-/** 凭据脱敏器：从服务器配置收集 secret 值，替换错误消息中的出现。 */
-export function createRedactor(servers: readonly ServerConfig[]): (error: unknown) => string {
-  const secrets = new Set<string>();
-  for (const server of servers) {
-    if (server.transport === "stdio") {
-      for (const value of Object.values(server.env ?? {})) if (value.length > 0) secrets.add(value);
-      const args = server.args ?? [];
-      for (let index = 0; index < args.length; index += 1) {
-        const argument = args[index] ?? "";
-        const equals = argument.indexOf("=");
-        const flag = equals < 0 ? argument : argument.slice(0, equals);
-        if (!/(?:token|secret|pass|key|auth|cookie|credential)/i.test(flag)) continue;
-        const value = equals < 0 ? args[index + 1] : argument.slice(equals + 1);
-        if (value !== undefined && value.length > 0) secrets.add(value);
-      }
-      continue;
-    }
-    for (const value of Object.values(server.headers ?? {})) if (value.length > 0) secrets.add(value);
-    const url = server.url;
-    if (typeof url === "string" && url !== "") {
-      secrets.add(url);
-      try {
-        const parsed = new URL(url);
-        if (parsed.username.length > 0) secrets.add(parsed.username);
-        if (parsed.password.length > 0) secrets.add(parsed.password);
-        for (const value of parsed.searchParams.values()) if (value.length > 0) secrets.add(value);
-      } catch {
-        // 非法 URL 忽略
-      }
-    }
-  }
-  const ordered = [...secrets].sort((left, right) => right.length - left.length);
-  return (error: unknown): string => {
-    let text: string;
-    try {
-      text = error instanceof Error ? error.message : String(error);
-    } catch {
-      text = "<unprintable error>";
-    }
-    for (const secret of ordered) text = text.split(secret).join("[REDACTED]");
-    return text;
-  };
-}
-
 // ------------------------------------------------------------ 策略
-
-/** 工具名匹配 glob（* 通配）。 */
-export function globMatch(pattern: string, name: string): boolean {
-  if (pattern === "*") return true;
-  if (!pattern.includes("*")) return pattern === name;
-  const escaped = pattern.split("*").map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*");
-  return new RegExp(`^${escaped}$`).test(name);
-}
 
 /** 策略裁决：deny 优先。serverKey 支持全名（@root/server）或裸名——全名优先匹配（工作空间隔离），未命中回落裸名。返回 true = 允许。 */
 export function policyAllows(policy: MiddlewarePolicy | undefined, serverKey: string, tool: string): boolean {
@@ -568,34 +476,4 @@ export function boundCatalogTools(
     if (totalBytes > MAX_TOTAL_CATALOG_BYTES) break;
   }
   return bounded;
-}
-
-/** 等待带超时（race 兜底）。 */
-export function withTimeout<T>(promise: Promise<T>, ms: number, message: string, signal?: AbortSignal): Promise<T> {
-  if (signal?.aborted === true) return Promise.reject(signal.reason ?? new Error("aborted"));
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error(message));
-    }, ms);
-    const onAbort = () => {
-      cleanup();
-      reject(signal?.reason ?? new Error("aborted"));
-    };
-    const cleanup = () => {
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", onAbort);
-    };
-    signal?.addEventListener("abort", onAbort, { once: true });
-    void promise.then(
-      (value) => {
-        cleanup();
-        resolve(value);
-      },
-      (error) => {
-        cleanup();
-        reject(error);
-      },
-    );
-  });
 }

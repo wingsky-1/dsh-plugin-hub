@@ -18,8 +18,8 @@ import {
   LIST_DEFAULT_TOOLS_PER_SERVER,
   LIST_MAX_TOOLS_PER_SERVER,
 } from "./middleware-const.ts";
+import { withTimeout } from "./pipeline/interface.ts";
 import {
-  withTimeout,
   searchCatalogMulti,
   listCatalog,
   findToolDetail,

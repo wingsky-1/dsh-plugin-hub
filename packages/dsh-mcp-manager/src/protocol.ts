@@ -23,7 +23,7 @@ import type { StdioTransport, HttpTransport } from "./transport.ts";
  *    自写版"结果原样投影给 dsh 工具系统（未知 content 类型降级占位符）"
  *    的行为语义；
  *  - callTool 显式传宽松 ResultSchema：结果 JSON 原样透传（#512 起 isError /
- *    structuredContent 判定与白名单收敛统一由 call-result.ts
+ *    structuredContent 判定与白名单收敛统一由 pipeline/project.ts
  *    projectCallToolResult 承担，supervisor / middleware 两路径共用，
  *    架构对齐官方 dsh-mcp-client createExecutor）。
  */
@@ -67,7 +67,7 @@ export class MCPClient {
 
   /** tools/call（signal/timeoutMs 透传为 SDK RequestOptions）。
    * 走 Protocol.request + 宽松 ResultSchema：结果 JSON 原样透传给调用方
-   * （isError / structuredContent 判定统一由 call-result.ts
+   * （isError / structuredContent 判定统一由 pipeline/project.ts
    * projectCallToolResult 收敛（#512），不用 Client.callTool 以避开其
    * outputSchema 运行时强校验与 task-required 门禁带来的行为漂移）。 */
   async callTool(rawName: string, args?: unknown, opts?: { signal?: AbortSignal; timeoutMs?: number }) {
