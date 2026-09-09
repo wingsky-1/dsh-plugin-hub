@@ -170,7 +170,6 @@ export function formatPanel({ entries, range, truncated, esc }) {
 
 ```js
 export const label = "我的统计";                      // 展示名
-export const retention = { maxAgeDays: 30, maxSizeMB: 20 };  // 留存策略
 ```
 
 ### 3.3 注入的共享图表工具（`utils`，#215）

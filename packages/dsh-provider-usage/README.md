@@ -297,7 +297,6 @@ export const version = 2;                    // 必填：契约版本（固定 2
 export const name = "my-stats";              // 必填：唯一名（^[A-Za-z0-9_-]{2,64}$）
 export const label = "我的统计";              // 可选：展示名
 export const providers = ["my-relay"];       // 必填：认领的 provider 列表
-export const retention = { maxAgeDays: 30 }; // 可选：留存策略
 
 /** 必填：获取原始数据（宿主端执行；入参由插件注入） */
 export async function fetchData({ apiEndpoint, staticPath, apiKey, signal, timeoutMs }) {
