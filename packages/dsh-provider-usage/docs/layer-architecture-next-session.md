@@ -1,47 +1,32 @@
-# 下会话 prompt：dsh-provider-usage 分层架构重构讨论（交接物）
+# 下会话 prompt：dsh-provider-usage 分层重构实施（交接物 v2）
 
 > 使用：把下面「交接 prompt」整段贴给新会话（或让新 agent 读取本文档 + 归档），
-> 从**讨论方案**开始，未经确认不写代码。
+> 从**实施阶段零**开始；实施纪律：worktree 内改代码/跑门禁、方案已获用户认可、阶段 PR 关联跟踪 issue。
 
 ---
 
 ## 交接 prompt
 
 ```
-背景：上一会话完成了 dsh-provider-usage（packages/dsh-provider-usage/）两大功能域的
-分层职责与上下游接口契约梳理，并经独立对抗评审（62 分）修订。全部成果已归档在
-worktree 分支 task/usage-layer-arch（commit b86f159），主 checkout 干净未动。
+背景：dsh-provider-usage（packages/dsh-provider-usage/）分层重构方案已定稿：
+- 契约基线 v4：docs/layer-architecture.md（决策表 D1-D16 全部拍板，契约表符号锚化）
+- 实施方案唯一事实源：docs/refactor-implementation-plan.md（阶段零→收尾、目录树、文件映射表）
+- 归档分支：task/usage-layer-arch（commit b86f159 + 86831a8 + 审定稿归档提交）
+- 跟踪 issue：#<issue 编号>
 
-本会话目标：**讨论并敲定「如何从现状架构重构为目标架构」的实施方案**，输出：
-1) 每层职责与上下游契约的最终裁定（作为实施契约基线）；
-2) 分阶段重构方案（含每阶段改动面、依赖、验证方式、门禁）；
-3) 决策表 D1-D8 全部拍板。只讨论不改代码。
+本会话目标：**按 refactor-implementation-plan.md 从阶段零开始实施**。
+阶段序列：零（变异网前置）→ 一（D7 面板缓存整体下沉）→ 二（D8 executor + 报告面收敛）
+→ 三（R8 断言 + aggregator 拆分）→ 四（目录化）→ 收尾（死面清理）。每阶段独立 PR 关联跟踪 issue。
 
-必读归档（worktree：/home/tangyi/dev/learn/dsh-plugin/github/dsh-hub-task-usage-layer）：
-- packages/dsh-provider-usage/docs/layer-architecture.md —— 分层模型 + 接口契约（修订 R1-R5）
-  + 隐藏共享 + 决策表。这是本会话的主输入。
-- packages/dsh-provider-usage/docs/diagrams/usage-current-architecture.html —— 现状分层图
-- packages/dsh-provider-usage/docs/diagrams/usage-target-architecture.html —— 目标架构图
-  （含外部边界：浏览器客户端 / 用户自定义适配器 / 远端 API / dsh 宿主运行时）
-- packages/dsh-provider-usage/docs/diagrams/*.json —— archify 规格快照（可改后重渲染）
-
-讨论议程（每项结论进决策表，注明证据文件:行号）：
-1. 【契约基线裁定】逐层确认 layer-architecture.md §2 的上下游契约是否作为实施基线；
-   重点裁定评审遗留项：R4 StatsService 是否补「面板缓存 get/set/全清」方法以消除路由穿透
-   （D7）？R9 executor 是否收敛 E4（D8）？C1 是否拆纯工具散层（R6）？
-2. 【目标架构落地路径】从现状到目标，哪些是「代码重构」（需 TDD + 门禁）、哪些是
-   「文档/建模修正」（R1-R3/R5 大部分是表述修正，只改文档）？分别列清单。
-3. 【重构范围裁定】用户点名两大域分层——是否以「消除路由层直连服务对象内部
-   （cache/panelCache/registry）」为首个重构切片？还是先做低风险文档/契约收敛？
-   逐项给 S/M/L 工时与依赖。
-4. 【外部边界契约】浏览器客户端/自定义适配器/远端 API/dsh 宿主 4 外部角色与宿主的
-   接口契约是否需要在代码层固化（如客户端消费字段类型、适配器 v2 契约已固化）？
-5. 【演进护栏】aggregator 四不变量（身份快照/防双计/聚合权威/残差归未识别）是否
-   本轮固化为文档化断言？变异盲区 22 文件（trend/report/routes 零变异覆盖）是否
-   纳入本轮门禁补强？
-
-红线提醒：只在 worktree 内改代码/跑门禁；本会话只讨论不实施；全中文；方案经用户
-认可后才动代码（方案优先于实现）。
+硬性纪律：
+- 只在 worktree（/home/tangyi/dev/learn/dsh-plugin/github/dsh-hub-task-usage-layer）内改代码/跑门禁；主 checkout 不动
+- 门禁：pnpm build && pnpm test && pnpm contract && pnpm pack:check && pnpm typecheck + smoke
+- 变异实现：阶段零先改 scripts/data/mutation-topology.json（补 testFiles：unit-trend/unit-report/unit-trend-view）+ 增段，
+  再 node scripts/gate/gen-stryker-conf.mjs 生成 + --check（唯一事实源为 mutation-topology.json）
+- D7 关键点：getPanelResult 整体下沉四段语义 + generation 失效（防在途旧结果污染）+ per-key 单飞；
+  smoke 面板缓存专项（S1 扩展）为验收门；死面清理不在本阶段
+- 注释只写 why；设计决策进提交信息（Suggested Commit Message 三部分）
+- 主 checkout 禁改：/home/tangyi/dev/learn/dsh-plugin/github/dsh-plugin-hub
 ```
 
 ---
@@ -50,6 +35,9 @@ worktree 分支 task/usage-layer-arch（commit b86f159），主 checkout 干净�
 
 - 主 checkout：/home/tangyi/dev/learn/dsh-plugin/github/dsh-plugin-hub（main，勿改）
 - 归档 worktree：/home/tangyi/dev/learn/dsh-plugin/github/dsh-hub-task-usage-layer（分支 task/usage-layer-arch）
-- 包内关键行号锚点：见 layer-architecture.md 各契约表
-- 架构图重渲染：archify skill（node bin/archify.mjs validate/deliver …）
+- 方案唯一事实源：packages/dsh-provider-usage/docs/refactor-implementation-plan.md
+- 契约基线：packages/dsh-provider-usage/docs/layer-architecture.md（§2 符号锚契约表 + §4 决策表 D1-D16）
+- 变异拓扑唯一事实源：scripts/data/mutation-topology.json（provider-usage 段 testFiles 现缺
+  unit-trend/unit-report/unit-trend-view——阶段零第一刀）
+- 架构图重渲染：archify skill（node <archify-bin>/bin/archify.mjs validate/deliver/visual-check）
 - 门禁：pnpm build && pnpm test && pnpm contract && pnpm pack:check && pnpm typecheck

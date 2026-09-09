@@ -501,9 +501,10 @@
       "dot": "rose",
       "title": "风险",
       "items": [
-        "变异盲区 22 文件：trend/report/routes 零变异覆盖",
+        "变异盲区：trend/report/routes/stats-service 零变异覆盖（阶段零补强）",
         "SSE /events 宿主残留、客户端零消费",
-        "aggregator 1177 行，缺陷修复密集"
+        "aggregator 1177 行，缺陷修复密集（阶段三拆分）",
+        "重构实施跟踪：docs/refactor-implementation-plan.md"
       ]
     }
   ]

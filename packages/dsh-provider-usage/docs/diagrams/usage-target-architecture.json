@@ -87,7 +87,7 @@
       "id": "c1",
       "type": "backend",
       "label": "C1 契约/工具层",
-      "sublabel": "v2 契约 · esc/图表工具",
+      "sublabel": "shared/ · v2契约 · esc/图表/配置/净化",
       "pos": [
         280,
         260
@@ -512,7 +512,7 @@
       "id": "asm-e3",
       "from": "asm",
       "to": "e3",
-      "label": "executor 注入",
+      "label": "executor工厂注入（自 E4）",
       "variant": "emphasis"
     },
     {
