@@ -45,6 +45,18 @@
 - 每阶段门禁：`pnpm build && pnpm test && pnpm contract && pnpm pack:check && pnpm typecheck` + smoke；
   变异夜间硬校验（阶段零后全面生效）。
 
+### 2.1 测试分层策略（D17，四层）
+
+| 层 | 形态 | 目标 | 组织 |
+|---|---|---|---|
+| **L1 层内单元测试** | 单层内部文件/类/函数 | 层内逻辑正确（状态机/纯函数/IO 隔离） | 测试目录与源码目录**镜像 1:1**：`test/unit/<layer>/` 对齐 `src/<domain>/<layer>/`；每阶段随源码触碰同步迁移/补齐 |
+| **L2 interface 测试（层间契约）** | 每目录 `interface.ts` ↔ 对应 `interface.test.ts` | **层间稳定性**：导出符号清单稳定性（显式清单断言，防意外增删）+ 关键契约行为（StatsService.getPanelResult 命中/miss/失败不写；executor 工厂幂等/脱敏；scheduler tick；TrendTracker 查询面） | `test/interface/<layer>.test.ts`；import 边界断言并入 verify-docs（符号存在性硬校验 + 跨目录直引软报告） |
+| **L3 集成测试（user case）** | 基于真实用户场景的端到端断言（复用 smoke 拉起机制 helpers.ts） | 整体功能正确（UC 全链路） | `test/integration/uc-<n>-<name>.test.ts`，按 UC 分组：UC1 适配器管理（候选/切换/清空/添加/热更）· UC2 拉取+胶囊（fresh/cached/stale 降级+注入）· UC3 历史面板（查询/缓存命中/append 全清）· UC4 趋势视图（事件→聚合→目录面/提供者面）· UC5 报告闭环（配置/调度/手动生成/幂等/失败不推进 lastRun/状态轮询）· UC6 系统面（health/ui-config/loopback 403/405/生命周期清理） |
+| **L4 变异测试分层** | Stryker 段定义与**层对齐**（mutation-topology.json segments 随目录化演进） | 每层杀灭面 = 该层 unit + interface 测试；threshold 60 per 段 | 阶段零：按现有文件组 + 新段（trend/report/routes/stats-service）分层；阶段四目录化后 segments 与目录对齐（gen-stryker-conf 由 SSOT 生成） |
+
+- 测试纪律保持：smoke 全部离线无网络；临时 DSH_HOME 隔离；落盘 mkdtemp；smoke 仍为全链路冒烟壳。
+- 阶段交付约定：**每个阶段 = 源码改动 + L1/L2 同步交付 + L3 关联 UC 补强 + L4 段更新**，缺一不可入 PR。
+
 ---
 
 ## 3. 决策表（D1-D16 最终裁定）
@@ -67,6 +79,7 @@
 | D-14 | 契约表符号锚 | **做**（行号降为基线证据注释） |
 | D-15 | 客户端拆分范围 | 本轮不做（backlog） |
 | D-16 | 对外估算 | 8-12 天，内部 1.5-2× |
+| D-17 | **测试分层** | **做**：L1 层内单元 + L2 interface 契约（层间稳定性）+ L3 user-case 集成（UC1-UC6 全链路）+ L4 变异按层分段（per-layer testFiles，threshold 60） |
 
 ---
 
@@ -147,9 +160,11 @@ src/
 ## 8. 验收与门禁汇总
 
 - 每阶段：`pnpm build && pnpm test && pnpm contract && pnpm pack:check && pnpm typecheck` + smoke
-- 阶段一验收门：smoke 面板缓存专项（S1 扩展：失败不写 / purge 后 miss / select×在途交错）
-- 阶段四验收门：产物等价性 diff（重构前后 lib/index.js 仅 import 路径差异）+ AI 可导航性前后对比
-- 变异：夜间 observe 硬校验（阶段零重建基线后全面生效）
+- **每阶段测试交付（D17）**：L1 层内单元 + L2 interface 契约 + L3 关联 UC 集成补强 + L4 变异段更新，缺一不可入 PR
+- 阶段一验收门：smoke 面板缓存专项（S1 扩展：失败不写 / purge 后 miss / select×在途交错）+ L2 `pipeline.interface.test.ts`（getPanelResult 四段语义契约）
+- 阶段二验收门：L2 `execute.interface.test.ts`（executor 工厂幂等/脱敏契约）+ L3 UC5 报告闭环
+- 阶段四验收门：产物等价性 diff（重构前后 lib/index.js 仅 import 路径差异）+ AI 可导航性前后对比 + L1/L2 测试目录镜像迁移完成
+- 变异：夜间 observe 硬校验（阶段零重建基线后全面生效，per-layer 段 threshold 60）
 - 注释清理随触碰面（D11）；测试落盘 mkdtemp 隔离；主 checkout 不触碰
 
 ---

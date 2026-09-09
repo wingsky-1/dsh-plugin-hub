@@ -35,8 +35,11 @@
 
 - 主 checkout：/home/tangyi/dev/learn/dsh-plugin/github/dsh-plugin-hub（main，勿改）
 - 归档 worktree：/home/tangyi/dev/learn/dsh-plugin/github/dsh-hub-task-usage-layer（分支 task/usage-layer-arch）
-- 方案唯一事实源：packages/dsh-provider-usage/docs/refactor-implementation-plan.md
-- 契约基线：packages/dsh-provider-usage/docs/layer-architecture.md（§2 符号锚契约表 + §4 决策表 D1-D16）
+- 方案唯一事实源：packages/dsh-provider-usage/docs/refactor-implementation-plan.md（含 §2.1 测试分层 D17）
+- 契约基线：packages/dsh-provider-usage/docs/layer-architecture.md（§2 符号锚契约表 + §4 决策表 D1-D17）
+- **测试分层（D17）**：L1 层内单元（test/unit 镜像源码目录）+ L2 interface 契约（每目录 interface.test.ts，
+  层间稳定性）+ L3 user-case 集成（test/integration/uc-1..6，全链路）+ L4 变异按层分段（per-layer testFiles，
+  threshold 60）；每阶段 = 源码 + L1/L2 + L3 关联 UC + L4 段更新，缺一不可入 PR
 - 变异拓扑唯一事实源：scripts/data/mutation-topology.json（provider-usage 段 testFiles 现缺
   unit-trend/unit-report/unit-trend-view——阶段零第一刀）
 - 架构图重渲染：archify skill（node <archify-bin>/bin/archify.mjs validate/deliver/visual-check）
