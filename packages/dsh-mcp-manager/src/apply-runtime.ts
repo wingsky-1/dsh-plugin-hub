@@ -14,8 +14,8 @@
 import { dirname } from "node:path";
 import type { Context } from "@deepseek-ai/cordis";
 import type { PreStepDecision } from "@deepseek-ai/dsh-agent";
-import type { CatalogCache, CatalogDecision, CatalogMessage, SupervisorLite, CatalogAgent } from "./catalog.ts";
-import { resolveCatalogInjection } from "./catalog.ts";
+import type { CatalogCache, CatalogDecision, CatalogMessage, SupervisorLite, CatalogAgent } from "./catalog/interface.ts";
+import { resolveCatalogInjection } from "./catalog/interface.ts";
 import { normalizeMiddlewareMode } from "./workspace/interface.ts";
 import type { McpManager } from "./manager.ts";
 import { registerMiddlewareTools, registerDirectMcpGuard } from "./middleware.ts";

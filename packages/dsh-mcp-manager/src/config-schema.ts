@@ -7,7 +7,7 @@
 
 import z from "schemastery";
 import { clampZIndexBase, DEFAULT_Z_INDEX_BASE } from "./placement-math.ts";
-import { DEFAULT_ANNOUNCE_CATALOG, DEFAULT_CATALOG_MAX_ENTRIES } from "./catalog.ts";
+import { DEFAULT_ANNOUNCE_CATALOG, DEFAULT_CATALOG_MAX_ENTRIES } from "./catalog/interface.ts";
 import { DEFAULT_RESULT_TRUNCATE_BYTES } from "./supervisor.ts";
 import type { ClientUiConfig, UiPlacementConfig } from "./types.ts";
 

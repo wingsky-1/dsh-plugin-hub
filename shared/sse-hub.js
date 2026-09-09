@@ -66,7 +66,7 @@ export function createSseHub(options) {
   /** 连接表：Map<响应, 状态>。Map 迭代序 = 插入序，超限淘汰时第一项即最老。 */
   const conns = new Map();
   /** evict 原因计数（health 观测）。 */
-  const evictStats = { close: 0, error: 0, limit: 0, stalled: 0, maxage: 0, destroyed: 0 };
+  const evictStats = { close: 0, error: 0, limit: 0, stalled: 0, maxage: 0, destroyed: 0, dispose: 0 };
   /** 心跳定时器（unref：不阻止进程退出）。 */
   let heartbeatTimer;
 
@@ -209,10 +209,12 @@ export function createSseHub(options) {
     return out;
   }
 
-  /** 停止心跳定时器。 */
+  /** 停止心跳定时器 + destroy 全部连接（#515 注释承诺：dispose 统一停心跳 +
+   * destroy——现状只停心跳，连接句柄残留 → B12 修复；close 回调再次 evict 幂等）。 */
   function dispose() {
     if (heartbeatTimer !== undefined) clearInterval(heartbeatTimer);
     heartbeatTimer = undefined;
+    for (const [res] of [...conns]) evict(res, "dispose");
   }
 
   /**

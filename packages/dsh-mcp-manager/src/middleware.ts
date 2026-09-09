@@ -45,10 +45,9 @@ import {
   policyAllows,
   policyDenialReason,
   isToolDenied,
-  isCatalogFresh,
-  boundCatalogTools,
   toolDisabledReason,
 } from "./middleware-utils.ts";
+import { isCatalogFresh, boundCatalogTools } from "./catalog/interface.ts";
 import type {
   MiddlewareHost,
   ProjectUnit,
@@ -720,24 +719,27 @@ export {
 } from "./middleware-const.ts";
 // 模式归一化归 workspace 域（阶段 4 迁出，经 workspace/interface.ts）
 export { normalizeMiddlewareMode } from "./workspace/interface.ts";
-// 纯函数与目录检索（pipeline 域函数已迁 src/pipeline/，经 pipeline/interface.ts 转发；
-// workspace 域命名/全名类已迁 src/workspace/，经 workspace/interface.ts 转发；
-// 策略与目录检索域函数仍位于 middleware-utils.ts，阶段 5 catalog 域迁出）
+// 纯函数与目录检索（pipeline 域函数经 pipeline/interface.ts 转发；
+// workspace 域命名/全名类经 workspace/interface.ts 转发；
+// catalog 域检索族自 middleware-utils.ts 迁出经 catalog/interface.ts 转发；
+// 策略裁决与禁用表解析留在 middleware-utils.ts）
 export { withTimeout, normalizeArguments, msgOf, createRedactor, globMatch } from "./pipeline/interface.ts";
 export { fullServerName, parseFullServerName, normalizeToolName, bareServerName, MIDDLEWARE_GLOBAL_ROOT } from "./workspace/interface.ts";
 export {
-  policyAllows,
-  policyDenialReason,
   isCatalogFresh,
   boundCatalogTools,
-  isToolDenied,
-  toolDisabledReason,
-  parseDisabledTools,
   scoreTool,
   searchCatalog,
   searchCatalogMulti,
   listCatalog,
   findToolDetail,
+} from "./catalog/interface.ts";
+export {
+  policyAllows,
+  policyDenialReason,
+  isToolDenied,
+  toolDisabledReason,
+  parseDisabledTools,
 } from "./middleware-utils.ts";
 // 状态持久化
 export { userStateFile, loadUserState, saveUserState, catalogCacheFileFor, readCatalogServerFromDisk, loadDisabledTools, saveDisabledTools } from "./middleware-state.ts";

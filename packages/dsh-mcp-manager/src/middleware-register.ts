@@ -20,14 +20,12 @@ import {
 } from "./middleware-const.ts";
 import { withTimeout } from "./pipeline/interface.ts";
 import {
-  searchCatalogMulti,
-  listCatalog,
-  findToolDetail,
   policyAllows,
   policyDenialReason,
   isToolDenied,
   toolDisabledReason,
 } from "./middleware-utils.ts";
+import { searchCatalogMulti, listCatalog, findToolDetail } from "./catalog/interface.ts";
 import { parseFullServerName, fullServerName, MIDDLEWARE_GLOBAL_ROOT } from "./workspace/interface.ts";
 import type { MiddlewareMode, DisabledToolsMap } from "./middleware-types.ts";
 import type { McpStatsCollector } from "./call-stats.ts";
