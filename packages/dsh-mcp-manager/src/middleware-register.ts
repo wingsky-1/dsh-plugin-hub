@@ -27,7 +27,7 @@ import {
 } from "./middleware-utils.ts";
 import { searchCatalogMulti, listCatalog, findToolDetail } from "./catalog/interface.ts";
 import { parseFullServerName, fullServerName, MIDDLEWARE_GLOBAL_ROOT } from "./workspace/interface.ts";
-import type { MiddlewareMode, DisabledToolsMap } from "./middleware-types.ts";
+import type { MiddlewareMode, DisabledToolsMap } from "./types/interface.ts";
 import type { McpStatsCollector } from "./call-stats.ts";
 
 /** 工具执行与组装上下文。 */

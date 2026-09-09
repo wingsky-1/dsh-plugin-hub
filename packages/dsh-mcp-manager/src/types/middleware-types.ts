@@ -6,9 +6,9 @@
  */
 
 import type { Context, LoggerService } from "@deepseek-ai/cordis";
-import type { MCPClient } from "./protocol.ts";
-import type { StdioTransport, HttpTransport } from "./transport.ts";
-import type { ServerConfig } from "./types.ts";
+import type { MCPClient } from "../protocol.ts";
+import type { StdioTransport, HttpTransport } from "../transport.ts";
+import type { ServerConfig } from "./server.ts";
 /** 中间层模式：off = 直呼（默认兼容）；project = 项目级走中间层；all = 全部走中间层。 */
 export type MiddlewareMode = "off" | "project" | "all";
 

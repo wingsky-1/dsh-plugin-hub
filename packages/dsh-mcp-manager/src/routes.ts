@@ -17,7 +17,7 @@
 import { writeJson, sseData, guardLoopbackMethod } from "../../../shared/host-utils.js";
 import { createSseHub } from "../../../shared/sse-hub.js";
 import type { SseHub } from "../../../shared/sse-hub.js";
-import type { ServerConfig, ClientUiConfig } from "./types.ts";
+import type { ServerConfig, ClientUiConfig } from "./types/interface.ts";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { ServerResponse } from "node:http";
 import type { McpStore } from "./store.ts";

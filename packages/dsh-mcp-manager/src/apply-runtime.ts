@@ -19,7 +19,7 @@ import { resolveCatalogInjection } from "./catalog/interface.ts";
 import { normalizeMiddlewareMode } from "./workspace/interface.ts";
 import type { McpManager } from "./manager.ts";
 import { registerMiddlewareTools, registerDirectMcpGuard } from "./middleware.ts";
-import type { MiddlewareMode } from "./middleware-types.ts";
+import type { MiddlewareMode } from "./types/interface.ts";
 import { makeRoutes, makeEventsRoute, makeHealthRoute } from "./routes.ts";
 import { sseData } from "../../../shared/host-utils.js";
 

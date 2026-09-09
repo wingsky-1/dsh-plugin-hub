@@ -73,7 +73,7 @@ export {
   panelTopForAnchor,
   Config,
 } from "./config-schema.ts";
-export type { UiPlacementConfig, ClientUiConfig } from "./types.ts";
+export type { UiPlacementConfig, ClientUiConfig } from "./types/interface.ts";
 
 // 管理器（MIDDLEWARE_GLOBAL_ROOT 单源在 workspace 域，阶段 4 收敛）
 export { McpManager } from "./manager.ts";

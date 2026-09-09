@@ -7,7 +7,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { ServerConfig } from "../types.ts";
+import type { ServerConfig } from "../types/interface.ts";
 import type { CatalogMessage } from "./injection.ts";
 
 /** 目录条目。 */

@@ -14,7 +14,7 @@ import { dirname, join } from "node:path";
 import type { ServerResponse } from "node:http";
 import type { SseHub } from "../../../shared/sse-hub.js";
 import type { Context, LoggerService } from "@deepseek-ai/cordis";
-import type { ServerConfig, ClientUiConfig } from "./types.ts";
+import type { ServerConfig, ClientUiConfig } from "./types/interface.ts";
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
 import type { CatalogCache } from "./catalog/interface.ts";
 import { normalizeServer } from "./normalize.ts";

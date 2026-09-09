@@ -25,7 +25,7 @@ import type {
   SearchHit,
   ToolDetail,
   DisabledToolsMap,
-} from "../middleware-types.ts";
+} from "../types/interface.ts";
 
 /** 简单分词（英文小写 + 中文保留）。 */
 function tokenize(text: string): string[] {

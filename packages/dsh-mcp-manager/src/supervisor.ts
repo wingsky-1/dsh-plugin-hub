@@ -16,7 +16,7 @@ import { MCPClient } from "./protocol.ts";
 import { defaultCallResultFallbackText, projectCallToolResult, createRedactor, msgOf } from "./pipeline/interface.ts";
 import { RECONNECT_DEFAULTS, resolveReconnect, type ReconnectPolicy } from "./connection/interface.ts";
 import type { McpStatsCollector } from "./call-stats.ts";
-import type { ServerConfig } from "./types.ts";
+import type { ServerConfig } from "./types/interface.ts";
 import type { Context, LoggerService } from "@deepseek-ai/cordis";
 // 官方工具定义类型（仅 import type，编译期擦除；contract-check 禁止运行时值导入）。
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";

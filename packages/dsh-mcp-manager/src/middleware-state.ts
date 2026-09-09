@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { ProjectUnit, DisabledToolsMap } from "./middleware-types.ts";
+import type { ProjectUnit, DisabledToolsMap } from "./types/interface.ts";
 import { parseDisabledTools } from "./middleware-utils.ts";
 import { dshHome } from "../../../shared/dsh-home.js";
 

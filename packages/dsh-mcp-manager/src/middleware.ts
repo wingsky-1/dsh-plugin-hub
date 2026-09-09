@@ -22,7 +22,7 @@
 import { mkdir, readFile, rename, writeFile, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
-import type { ServerConfig } from "./types.ts";
+import type { ServerConfig } from "./types/interface.ts";
 import type { ToolDefinition, ToolOutputDefinition } from "@deepseek-ai/dsh-tools";
 import { MCPClient } from "./protocol.ts";
 import { defaultCallResultFallbackText, projectCallToolResult, withTimeout, msgOf, createRedactor, normalizeArguments } from "./pipeline/interface.ts";
@@ -55,7 +55,7 @@ import type {
   ConnectionEntry,
   CatalogTool,
   DisabledToolsMap,
-} from "./middleware-types.ts";
+} from "./types/interface.ts";
 
 
 
@@ -760,5 +760,5 @@ export type {
   ToolDetail,
   MiddlewareHost,
   DisabledToolsMap,
-} from "./middleware-types.ts";
+} from "./types/interface.ts";
 

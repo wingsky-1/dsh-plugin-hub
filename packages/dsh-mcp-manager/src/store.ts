@@ -9,7 +9,7 @@ import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { dshHome } from "../../../shared/dsh-home.js";
-import type { ServerConfig } from "./types.ts";
+import type { ServerConfig } from "./types/interface.ts";
 
 // ------------------------------------------------------------------ 存储
 

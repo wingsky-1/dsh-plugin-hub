@@ -6,7 +6,7 @@
  * 服务器名命名空间约束（与官方 dsh-mcp-client 一致）。
  */
 
-import type { ServerConfig } from "./types.ts";
+import type { ServerConfig } from "./types/interface.ts";
 import { DEFAULT_TOOL_CALL_TIMEOUT_MS } from "./supervisor.ts";
 
 /** MCP 服务器名命名空间约束（与官方 dsh-mcp-client 一致）。 */

@@ -12,7 +12,7 @@
 
 import { globMatch } from "./pipeline/interface.ts";
 import { fullServerName, parseFullServerName, bareServerName, MIDDLEWARE_GLOBAL_ROOT } from "./workspace/interface.ts";
-import type { MiddlewarePolicy, DisabledToolsMap } from "./middleware-types.ts";
+import type { MiddlewarePolicy, DisabledToolsMap } from "./types/interface.ts";
 
 // ------------------------------------------------------------ 禁用表容错
 
