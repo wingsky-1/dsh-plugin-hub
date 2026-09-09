@@ -12,7 +12,7 @@
 - 契约基线 v4：docs/layer-architecture.md（决策表 D1-D16 全部拍板，契约表符号锚化）
 - 实施方案唯一事实源：docs/refactor-implementation-plan.md（阶段零→收尾、目录树、文件映射表）
 - 归档分支：task/usage-layer-arch（commit b86f159 + 86831a8 + 审定稿归档提交）
-- 跟踪 issue：#<issue 编号>
+- 跟踪 issue：#670
 
 本会话目标：**按 refactor-implementation-plan.md 从阶段零开始实施**。
 阶段序列：零（变异网前置）→ 一（D7 面板缓存整体下沉）→ 二（D8 executor + 报告面收敛）
