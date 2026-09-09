@@ -15,7 +15,7 @@
  */
 
 import { writeJson, readJsonBody, guardLoopbackMethod } from "../../../shared/host-utils.js";
-import { parseClaudeJson } from "./import.ts";
+import { parseClaudeJson } from "./config/model/interface.ts";
 import {
   SCOPE_PROJECT,
   normalizeScope,

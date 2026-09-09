@@ -62,7 +62,7 @@ export { resolveDebugConfig, resolveMiddlewareMode } from "./apply-config.ts";
 export { makeMiddlewareHotSwitch } from "./apply-runtime.ts";
 
 // 服务器配置归一化（纯函数单一事实源）
-export { SERVER_NAME_PATTERN, normalizeServer } from "./normalize.ts";
+export { SERVER_NAME_PATTERN, normalizeServer } from "./config/model/interface.ts";
 
 // 插件 Config schema 与配置归一化（类型自 types.ts 取）
 export {
@@ -72,7 +72,7 @@ export {
   buildConfigUiPatch,
   panelTopForAnchor,
   Config,
-} from "./config-schema.ts";
+} from "./config/model/interface.ts";
 export type { UiPlacementConfig, ClientUiConfig } from "./types/interface.ts";
 
 // 管理器（MIDDLEWARE_GLOBAL_ROOT 单源在 workspace 域，阶段 4 收敛）
@@ -85,10 +85,10 @@ export { findProjectRoot, normalizedProjectRoot, makeResolveRoot } from "./works
 // 仅类型导出（无副作用导入）：消费方 import 类型时 tsc 会解析 service.d.ts，
 // 其内的 declare module 合并自动生效；副作用导入会让 stryker sandbox 解析
 // src/service.js 失败（sandbox 只有 .ts），也避免 .d.ts 里残留 .ts 引用。
-export type { McpManagerServerInput, McpManagerService } from "./service.ts";
+export type { McpManagerServerInput, McpManagerService } from "./integration/interface.ts";
 
 // 存储
-export { defaultStorePath, McpStore } from "./store.ts";
+export { defaultStorePath, McpStore } from "./config/store/interface.ts";
 // 传输
 export { expandEnv, HttpTransport, parseSsePayload, StdioTransport, createTransport } from "./transport.ts";
 // 协议
@@ -131,16 +131,16 @@ export {
   resolveCatalogInjection,
 } from "./catalog/interface.ts";
 // mcpServers JSON 导入
-export { fromClaudeEntry, parseClaudeJson } from "./import.ts";
+export { fromClaudeEntry, parseClaudeJson } from "./config/model/interface.ts";
 // 统计与 Debug
-export { McpStatsCollector, defaultStatsPath } from "./call-stats.ts";
+export { McpStatsCollector, defaultStatsPath } from "./stats/interface.ts";
 export type {
   McpStatsSnapshot,
   ServerStats,
   ToolCallMetric,
   ProgressiveDisclosureStats,
   DebugConfig,
-} from "./call-stats-types.ts";
+} from "./stats/interface.ts";
 
 // 中间层（工作空间 MCP 路由：连接池 / 目录 / ws_mcp_search / ws_mcp_call /
 // ws_mcp_list / ws_mcp_detail）

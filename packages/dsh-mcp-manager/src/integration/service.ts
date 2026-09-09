@@ -19,11 +19,11 @@ export type {
   McpServerStatus,
   McpServerSummary,
   McpToolInfo,
-} from "../../../shared/mcp-manager-service.js";
+} from "../../../../shared/mcp-manager-service.js";
 
 declare module "@deepseek-ai/cordis" {
   interface Context {
     /** mcp-manager 核心服务：其他插件运行时注入/控制/查询 MCP 服务器（官方 storageDomain 模式）。 */
-    mcpManager: import("../../../shared/mcp-manager-service.js").McpManagerService;
+    mcpManager: import("../../../../shared/mcp-manager-service.js").McpManagerService;
   }
 }

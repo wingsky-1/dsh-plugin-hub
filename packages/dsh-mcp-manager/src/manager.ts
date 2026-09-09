@@ -17,9 +17,9 @@ import type { Context, LoggerService } from "@deepseek-ai/cordis";
 import type { ServerConfig, ClientUiConfig } from "./types/interface.ts";
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
 import type { CatalogCache } from "./catalog/interface.ts";
-import { normalizeServer } from "./normalize.ts";
-import { normalizeUiConfig, buildConfigUiPatch } from "./config-schema.ts";
-import { McpStore } from "./store.ts";
+import { normalizeServer } from "./config/model/interface.ts";
+import { normalizeUiConfig, buildConfigUiPatch } from "./config/model/interface.ts";
+import { McpStore } from "./config/store/interface.ts";
 import { ConnectionSupervisor } from "./supervisor.ts";
 import {
   SCOPE_GLOBAL,
@@ -42,7 +42,7 @@ import {
   saveDisabledTools,
 } from "./middleware.ts";
 import type { MiddlewareMode, ProjectUnit, DisabledToolsMap } from "./middleware.ts";
-import { McpStatsCollector } from "./call-stats.ts";
+import { McpStatsCollector } from "./stats/interface.ts";
 import { createRedactor } from "./pipeline/interface.ts";
 import { stripMcpPrefix } from "./connection/interface.ts";
 

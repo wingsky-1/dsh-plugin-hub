@@ -6,10 +6,10 @@
  */
 
 import z from "schemastery";
-import { clampZIndexBase, DEFAULT_Z_INDEX_BASE } from "./placement-math.ts";
-import { DEFAULT_ANNOUNCE_CATALOG, DEFAULT_CATALOG_MAX_ENTRIES } from "./catalog/interface.ts";
-import { DEFAULT_RESULT_TRUNCATE_BYTES } from "./supervisor.ts";
-import type { ClientUiConfig, UiPlacementConfig } from "./types/interface.ts";
+import { clampZIndexBase, DEFAULT_Z_INDEX_BASE } from "../../placement-math.ts";
+import { DEFAULT_ANNOUNCE_CATALOG, DEFAULT_CATALOG_MAX_ENTRIES } from "../../catalog/interface.ts";
+import { DEFAULT_RESULT_TRUNCATE_BYTES } from "../../supervisor.ts";
+import type { ClientUiConfig, UiPlacementConfig } from "../../types/interface.ts";
 
 /** 空 description 工具的条件拼接默认开启。 */
 export const DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS = true;
@@ -85,7 +85,7 @@ export function buildConfigUiPatch(raw: unknown): UiPlacementConfig {
 /** 面板垂直定位纯函数（供 smoke 断言翻转分支；clamp 到视口内，不溢出）。
  *  #378 抽取：实现上移 shared/placement-math.js，此处 re-export 保持 index.ts
  *  导出链不变（实现见 shared 模块与两包 placement-math 薄 facade）。 */
-export { panelTopForAnchor } from "../../../shared/placement-math.js";
+export { panelTopForAnchor } from "../../../../../shared/placement-math.js";
 
 /**
  * 插件 Config schema（标准 cordis 配置注入入口；含 `ui` 子对象）。

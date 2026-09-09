@@ -6,9 +6,9 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { ProjectUnit, DisabledToolsMap } from "./types/interface.ts";
-import { parseDisabledTools } from "./middleware-utils.ts";
-import { dshHome } from "../../../shared/dsh-home.js";
+import type { ProjectUnit, DisabledToolsMap } from "../../types/interface.ts";
+import { parseDisabledTools } from "../../middleware-utils.ts";
+import { dshHome } from "../../../../../shared/dsh-home.js";
 
 /** userDisabled 持久化文件路径。 */
 export function userStateFile() {

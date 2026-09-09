@@ -9,13 +9,13 @@
 import type { Context } from "@deepseek-ai/cordis";
 import { installSettingsNamespace } from "../../../shared/settings-namespace.js";
 import { DEFAULT_ANNOUNCE_CATALOG, DEFAULT_CATALOG_MAX_ENTRIES } from "./catalog/interface.ts";
-import { Config, DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS } from "./config-schema.ts";
+import { Config, DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS } from "./config/model/interface.ts";
 import { DEFAULT_RESULT_TRUNCATE_BYTES } from "./supervisor.ts";
 import { normalizeMiddlewareMode } from "./workspace/interface.ts";
 import type { McpManager } from "./manager.ts";
 import { uiConfigChangedFrame } from "./routes.ts";
-import { defaultStorePath } from "./store.ts";
-import type { DebugConfig } from "./call-stats-types.ts";
+import { defaultStorePath } from "./config/store/interface.ts";
+import type { DebugConfig } from "./stats/interface.ts";
 
 /** apply 顶层解析后的增强/开关配置集合。 */
 export interface ApplyOptions {

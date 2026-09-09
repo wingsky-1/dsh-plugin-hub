@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { dshHome } from "../../../../shared/dsh-home.js";
 import type { McpMiddleware } from "../middleware.ts";
 import type { ServerConfig } from "../types/interface.ts";
-import { readCatalogServerFromDisk } from "../middleware-state.ts";
+import { readCatalogServerFromDisk } from "../config/store/interface.ts";
 import { normalizedProjectRoot, SCOPE_PROJECT, MIDDLEWARE_GLOBAL_ROOT } from "../workspace/interface.ts";
 import { summarizeToolDescriptions } from "./entries.ts";
 import type { CatalogCache } from "./entries.ts";
