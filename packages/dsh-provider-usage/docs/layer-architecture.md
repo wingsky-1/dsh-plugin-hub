@@ -3,7 +3,7 @@
 > 状态：**契约基线 v4 已定稿**（G2 + 对抗评审 62 分 → 修订 v2 → 双专家评审合并 → 决策表 D1-D16 全部拍板）。
 > 用途：分层模型与契约基线；**重构实施方案唯一事实源见 `docs/refactor-implementation-plan.md`**（阶段零→收尾、目录树、文件映射表）。
 > 配套图：`docs/diagrams/usage-current-architecture.html`（现状分层）、`docs/diagrams/usage-target-architecture.html`（目标含外部边界），JSON 快照与 visual-check 截图同目录。
-> 证据（D14 符号锚约定）：契约引用一律以「文件 · 符号」为准；行号仅为本基线快照 `86831a8` 的证据注释，重构后必然漂移、不再具约束力。
+> 证据（D14 符号锚约定）：契约引用一律以「文件 · 符号」为准；行号仅为本基线快照 `e64f859` 的证据注释，重构后必然漂移、不再具约束力。
 
 ---
 
@@ -127,5 +127,5 @@ C2-C5/E1-E2 层定义准确、C3 三层并一与 E1 纯状态机判断成立、S
 ## 5. 现状 vs 目标（图索引）
 - 现状分层：`docs/diagrams/usage-current-architecture.html`（域1 七层 + 域2 六层 + 装配）
 - 目标（含外部边界）：`docs/diagrams/usage-target-architecture.html`（+ 浏览器客户端/用户自定义适配器/远端 API/dsh 宿主运行时 四外部角色）
-- 两图均 validate 9/9、deliver 冻结、visual-check 四视口无溢出（基线 86831a8 快照）
+- 两图均 validate 9/9、deliver 冻结、visual-check 四视口无溢出（基线 e64f859 快照）
 - **重构实施方案**：`docs/refactor-implementation-plan.md`（阶段零→收尾、目录树、文件映射表、跟踪 issue）

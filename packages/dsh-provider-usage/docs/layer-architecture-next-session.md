@@ -11,7 +11,7 @@
 背景：dsh-provider-usage（packages/dsh-provider-usage/）分层重构方案已定稿：
 - 契约基线 v4：docs/layer-architecture.md（决策表 D1-D16 全部拍板，契约表符号锚化）
 - 实施方案唯一事实源：docs/refactor-implementation-plan.md（阶段零→收尾、目录树、文件映射表）
-- 归档分支：task/usage-layer-arch（commit b86f159 + 86831a8 + 审定稿归档提交）
+- 归档分支：task/usage-layer-arch（commit 4a729d4 + e64f859 + 审定稿归档提交）
 - 跟踪 issue：#670
 
 本会话目标：**按 refactor-implementation-plan.md 从阶段零开始实施**。
