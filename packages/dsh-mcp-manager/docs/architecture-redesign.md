@@ -1,253 +1,173 @@
-# dsh-mcp-manager 分层架构重构方案（微服务分层设计思路）
+# dsh-mcp-manager 分层架构重构方案（v2，吸收对抗性评审修正）
 
-> 依据：架构图 `docs/diagrams/mcp-manager-archify-overview.html`（7+4+1 层模型）+ 对抗性评审纪要（第八章）。
-> 思路：把插件代码当作一个「单进程内的领域微服务集合」——每层是一个有**明确接口契约（上游暴露面 / 下游依赖面）**、**单向依赖**、**可独立替换与测试**的模块；物理目录按域聚合，逻辑边界 13 层，物理目录 9 个。
-
----
-
-## 一、层合理性评估：现状 7+4+1 的裁定
-
-| 层 | 裁定 | 依据 |
-|----|------|------|
-| ① 配置管理层 | **需拆为两域**：配置模型与校验（pure）/ 配置存储（io） | 现文件混合纯函数（normalize/import/config-schema）与 IO（store/middleware-state 落盘）；拆分后 pure 侧可无 fs 全量单测 |
-| ② 连接管理层 | **必须拆为两域**：连接编排（manager 仲裁/双轨 reconcile）/ 连接执行（supervisor 单代际 + 中间层连接池） | manager.ts 单文件 134s mutation 极限（全仓第一）；B5（编排替换执行不清理）、B18（编排与执行口径分裂：重连参数/超时/closeHandler 计数）都源于「编排与执行职责混在同一层」 |
-| ③ 注入 dsh 层 | **拆为两域**：模型面适配（工具注册/guard/系统提示词）/ 能力目录（L1 感知增强） | 能力目录独立子系统（last-good 磁盘缓存 + history 去重 + 注入决策），与工具注册的职责/生命周期完全不同 |
-| ④ 对外集成层 | 维持 | 服务面 8 方法边界清晰 |
-| ⑤ API 层 | 维持（内部可细分子模块） | routes/controllers/events/dto 已在 routes*.ts 分离，无需再拆目录 |
-| ⑥ 设置页面层 | 维持 | 单一 React 组件 + POST /config |
-| ⑦ 胶囊页面层 | 维持（内部按 panel/float/servers/quick-add 已分离） | — |
-| ⑧ 组合根装配层 | 维持 | 装配骨架职责单一 |
-| ⑨ 工具执行/投影层 | **扩展为「工具执行管道」**：前置授权裁决 → 调用 → 后置投影/截断/脱敏/超时/统计埋点 | call-result 已是两路径共用单一事实源；把策略/禁用裁决（isToolDenied/policyAllows）、redactor、withTimeout、统计埋点全部收进同一条执行管道，消除「裁决散在 guard/callTool」的现状 |
-| ⑩ 共享基础设施层 | 维持（标注「跨包消费者」） | loopback/sse-hub/host-utils 等归属 other 包，本插件只消费 |
-| ⑪ 统计观测层 | 维持 | 默认关闭纯观测 |
-
-### 可新增的独立边界层（2 个，现状横切散落）
-| 新增层 | 理由 | 证据 |
-|--------|------|------|
-| **工作空间路由层**（cwd → 归一化项目 root / scope / @root/server 全名解析） | 被 6+ 处消费（manager/setSession、middleware/resolveRoot、checkMiddlewareRoot、tool-disable 路由、catalogServersFor、catalogViewFor），且 B3（resolveRoot 漏 runtime）正是该层缺口；独立后成为「路由单一事实源」 | makeResolveRoot / findProjectRoot / normalizedProjectRoot / parseFullServerName / normalizeScope / fullServerName |
-| **状态事件层**（内部状态变化 → coalesce → SSE 帧协议） | 现状 emitStatus 散在 manager/supervisor/middleware/热切换，SSE 帧构造在 routes/apply-config；B20（热切换缺 summary 帧）即无统一事件源的后果 | manager.emitStatus / sseHub.broadcast(summary|ui-config-changed) / SSE_HEARTBEAT |
-
-### 维持合并（不建议再拆）
-- 传输/协议（transport+protocol+SDK）留在「连接执行」内不独立：与 SDK 耦合强，独立价值低。
-- 客户端 DOM 支撑（state/session/dom/i18n）作为「客户端支撑层」固定，不再细分。
-
-**结论**：逻辑边界从 11 层扩为 **13 层**（拆 2、扩 1、新增 2），物理目录从平铺 29 文件聚合为 **9 个域目录**。不引入新运行时依赖、不改变导出面（index.ts 聚合 re-export 保持 smoke/契约门禁不变）。
+> v1（253 行）经微服务专家对抗性评审 62/100「需重大修正」；本版为修正稿。
+> 评审全文见 `docs/architecture-redesign-review.md`。
+> 修正主线：13 层→**7 逻辑层 + 9 物理目录**；分布式物理迁移→**单一集中式纯搬移 PR**；
+> 「导出面保住静态契约」承诺修正为**静态面清单化同步**；拆分归属/B 系列映射补齐。
 
 ---
 
-## 二、目标分层模型（13 层）
+## 一、分层裁定（7 逻辑层 + 组合根 + 共享）
+
+> 「层」= 有独立生命周期/可独立替换的边界；子目录归属不升格为层（避免文档主义）。
+
+| 逻辑层 | 包含（物理目录） | 裁定依据 |
+|--------|-----------------|---------|
+| ① 客户端层 | `src/client/{core, float, settings}`（L00–L02） | 浏览器端底座+UI，独立生命周期；**保留 src/client/index.ts 入口**（build-client 契约锚点），style.css 引用路径随之确定 |
+| ② API 层 | `src/api/`（L03） | routes/controllers/sse-exit/health；错误契约（HTTP body 与日志双轨脱敏）入契约 |
+| ③ 配置域 | `src/config/{model, store}`（L04+L05） | normalize/import/config-schema 与 store/user-state/目录缓存已文件分离（#592 已做），**不升双逻辑层**；normalizeScope 移归 ⑤ 路由域 |
+| ④ 连接域 | `src/connection/{orchestrator, execution}`（L07+L08） | **唯一真实拆分收益**：manager.ts 1184 行 + 双常量证明路由域名需收敛；orchestrator=仲裁/双轨/生命周期，execution=supervisor 代际/中间层池/transport/protocol；**状态事件层并入本域**（两帧触发源契约先定） |
+| ⑤ 模型面+目录域 | `src/inject/` + `src/catalog/`（L09+L10） | 工具注册/guard/提示词 与 能力目录/检索分目录；**目录检索函数族**（searchCatalogMulti/listCatalog/findToolDetail/boundCatalogTools/scoreTool/isCatalogFresh）落位 `catalog/search.ts`；normalizeScope/MIDDLEWARE_GLOBAL_ROOT 收敛于 ⑥ |
+| ⑥ 执行管道域 | `src/execution/`（L11） | 纯函数族 + 薄适配（**不建 executeTool 大组合器**）；授权裁决/调用/投影/截断/脱敏/超时/埋点；两路径同构由**契约测试**强制 |
+| ⑦ 服务/统计域 | `src/integration/` + `src/stats/`（L12+L13） | ctx.mcpManager 8 方法 + call-stats；B6/B2 契约入 |
+| 组合根 | `src/bootstrap/` | apply 系列（装配/热切换/卸载）；**apply-services.ts 落位与 service-contract 静态扫描路径同步**（P0） |
+| 共享 | `shared/`（跨包，消费者） | loopback/sse-hub/host-utils/settings-namespace/dsh-home/placement |
+
+**拆得不够的点（评审指出，纳入本版）**：`middleware.ts` 的 `callTool()`（L491–614）是「池方法 + 管道」混层最典型样本——路由/unit 查找留 ④，裁决/禁用/stale/withTimeout/redact/project/封装直呼归 ⑥。
+
+---
+
+## 二、目标目录结构（9 域 + 客户端 3 子目录）
 
 ```
-L00 客户端支撑层    state/session/dom/i18n/constants（浏览器端底座）
-L01 胶囊页面层      float/panel/servers/quick-add（用户操作面）
-L02 设置页面层      settings-card（插件设置卡）
-────────────────────────── HTTP/SSE 边界（loopback 围栏）──────────────────────────
-L03 API/传输层      路由装配 · 控制器×9 · SSE 出口 · DTO 校验
-L04 配置模型与校验  normalize · import · config-schema · user-state 解析（pure，无 IO）
-L05 配置存储        store（全局/项目）· user-state 落盘 · 目录 last-good 落盘（IO）
-L06 工作空间路由层  findProjectRoot · resolveRoot · parseFullServerName · normalizeScope（新）
-L07 连接编排层      manager：双轨 reconcile · 生命周期仲裁 · 同名声控 · summary
-L08 连接执行层      supervisor（单代际）· middleware 连接池 · transport/protocol（SDK）
-L09 模型面适配层    mcp__ 注册 · ws_mcp_* 四原子 · pre-execute guard · 系统提示词
-L10 能力目录层      <available_mcp_servers> · last-good 缓存 · history 去重 · 注入决策
-L11 工具执行管道层  [授权裁决] → [调用] → [投影/截断/脱敏/超时/统计埋点]（扩展⑨）
-L12 对外集成层      ctx.mcpManager 服务面 · runtimeRegistry（双轨）
-L13 统计观测层      call-stats · 披露漏斗 · 防抖落盘
-+   组合根装配层    apply 系列：读配置 → 装各层 → 生命周期/热切换/卸载收口
-+   共享基础设施层  （跨包：loopback/sse-hub/host-utils/settings-namespace/placement/dsh-home）
+src/
+  index.ts                 组合根 re-export（唯一汇聚转发点；middleware.ts 停止 re-export）
+  bootstrap/               apply.ts apply-config.ts apply-runtime.ts apply-services.ts apply-guidance.ts
+  api/                     routes.ts routes-controllers.ts routes-helpers.ts sse-exit.ts health.ts
+  config/
+    model/                 normalize.ts import.ts config-schema.ts user-state-model.ts
+    store/                 store.ts middleware-state.ts catalog-cache-io.ts
+  workspace/               root-resolution.ts full-name.ts scope.ts middleware-mode.ts（含 MIDDLEWARE_GLOBAL_ROOT 单源）
+  connection/
+    orchestrator/          manager.ts（L07：仲裁/双轨/summary/事件出口）
+    execution/             supervisor.ts middleware.ts transport.ts protocol.ts（L08 + callTool 管道段切割）
+  inject/                  register.ts middleware-register.ts tool-definition.ts guard.ts prompt.ts
+  catalog/                 entries.ts digest.ts history.ts injection.ts cache-view.ts search.ts（检索函数族）
+  execution/               authorize.ts call.ts project.ts redact.ts timeout.ts args.ts stats-hook.ts
+  integration/             service.ts
+  stats/                   collector.ts types.ts
+  types/                   server.ts status.ts ui.ts host-faces.ts（ManagerLite/RoutesManager/MiddlewareHost/SupervisorLite 收敛）
+src/client/
+  index.ts                 （入口不动，仅 re-export + apply/inject 契约）
+  core/                    state.ts session.ts dom.ts api.ts i18n.ts constants.ts
+  float/                   float.ts panel.ts servers.ts quick-add.ts
+  settings/                settings-card.tsx
+  style.css locales.ts css.d.ts react-shim.d.ts
 ```
+
+破环与收敛清单（评审 3.x）：
+- middleware.ts 的六段 re-export 块整体删除，汇聚只留 `src/index.ts`；
+- `routes.ts:21` 的 `import type { ClientUiConfig } from "./index.ts"` 改从 `types/ui.ts` 取（消组合根类型环）；
+- `MIDDLEWARE_GLOBAL_ROOT` 收敛为 `workspace/` 单源；`normalizeScope` 归 workspace；
+- 四个最小面接口（ManagerLite/RoutesManager/MiddlewareHost/SupervisorLite）并入 `types/host-faces.ts`。
 
 ---
 
-## 三、每层职责精梳 + 上下游接口契约
+## 三、每层职责与接口契约（7 逻辑层）
 
-> 记号：`输入 → 处理 → 输出`；「上游」= 消费本层能力的层，「下游」= 本层依赖的层。契约以 TypeScript 类型/签名表述（现状已具备，重设计仅对齐与收口）。
+> 契约口径：**成功签名 + 错误契约 + 事件契约**；只列「新增/缺口」项，现状稳定面引用代码。
 
-### L03 API/传输层
-- 职责：接收浏览器 HTTP/SSE，参数/DTO 校验，调编排层动作，返回统一 JSON；SSE 状态帧出口。
-- 上游：L00/L01/L02（浏览器）；下游：L06（cwd→看门）、L07（action/summary）、L04（配置读写）。
+### ① 客户端层
+- 职责：L00 core（state/session/dom/api/i18n）；L01 float（胶囊/面板/列表/表单）；L02 settings（设置卡）。
+- 契约补齐：SSE 帧集合显式清单（summary/ui-config-changed/ping + 60s watchdog）；未知状态策略（C13：统一丢卡 or 塞 stopped，二选一）；204 备忘（C14）；tool-disable 全名形态与 projectRoot 缺失防御（C6/C7）。
+- 落位：`src/client/index.ts` 保留（build-client 入口）；style.css 引用改「子目录 → 根」。
+
+### ② API 层
+- 职责：9+ 控制器、loopback 围栏、SSE/health 出口、DTO 校验。
+- 契约补齐：**错误契约**——HTTP 400 body 写入前必须经脱敏（与日志同口径，B8 P0-②），声明「无业务错误码，文案即契约」；`GET /servers` 零副作用语义显式化；makeEventsRoute/makeHealthRoute 落位 sse-exit.ts/health.ts。
+
+### ③ 配置域
+- model：`normalizeServer → ServerConfig | throw`；`parseClaudeJson`；`normalizeUiConfig`（三形态兼容=读取兼容不迁移写回）；Config schema 默认（middleware: project）vs 运行时默认（off）的演进规则显式化；B15 描述修正。
+- store：`McpStore.{load,save,reloadIfChanged,find,upsert,remove}`（0600 + tmp+rename + DSH_HOME）；`projectStores` 缓存语义（缓存命中仍 reloadIfChanged）；user-state/disabledTools 合并式写盘 + IO 损坏容错契约（现状吞错，写明）；目录 last-good「摘要实质变化才写盘」；B17（唯一 tmp 名 + 失败清理）。
+- 存储 IO 错误处理契约：损坏文件不抛、基线推进（现状语义固化）。
+
+### ④ 连接域
+- orchestrator（L07）：双轨 reconcile、生命周期仲裁（add/update/remove/connect/disconnect/reconnect/registerServer/unregisterServer）、summary 投影、会话切换、resumeReconnect（目标集=配置全集，#412 语义）、setToolDisabled（B19 口径统一：supervisor 分支与中间层分支同一查询函数）。
+- execution（L08）：supervisor 单代际（connect/initialize/syncTools/退避/清理）、中间层池（in-flight/force/LRU/防双进程）、transport/protocol。
+- **契约关键面**：
+  - 状态事件契约：emitStatus 无参 + listeners Set + coalesce（同 tick 合并）；**两帧触发源**——summary 帧来自 emitStatus；ui-config-changed 帧来自 settings onChange（现状不经 emitStatus 不 coalesce，保持两链，写清各自语义）；B20 修复=热切换补 emitStatus。
+  - **B5 契约**：L08 提供 teardown 接口，**L07 有显式调用义务**（替换/remove/update/unregister 必须调用）；start() 同步→异步决策（P0 拍板，波及 routes×9+apply+测试）。
+  - AbortSignal 面：`callTool(tool, args, {signal, timeoutMs})` 选项面；withTimeout 兜底裕量（30s+2s）语义显式化。
+  - 退避/超时口径：先收敛为 L08 单一解析函数（消费 `server.reconnect`/`server.toolCallTimeoutMs`）再供 supervisor/池两实例（B18）。
+  - `middleware.callTool` 管道段切割线：路由/unit 查找留本层；裁决/禁用/stale/withTimeout/redact/project/封装直呼归 ⑥。
+
+### ⑤ 模型面+目录域
+- inject（L09）：mcp__ 注册、ws_mcp_* 四原子、pre-execute guard、系统提示词；**guard 覆盖语义**：现状仅 mode≠off 挂载（apply.ts:139）→「工具级禁用三入口」off 模式实际一入口，显式化或补挂载（规格决策）；B11 反解（双下划线）决策入规格表。
+- catalog（L10）：entries/digest（只含 name 稳定性契约）/history 去重/injection 决策/`catalogViewFor`（宿主面设计：从 manager.ts:443 迁出需最小面 host）/`catalog/search.ts` 检索函数族（B10 修复落点）。
+- 接线契约：`registerCatalogInjection`（apply-runtime.ts:74）挂载在 bootstrap、决策在 catalog——写清跨域接线与数据源组装接口。
+
+### ⑥ 执行管道域
+- 职责：一次工具调用的完整管道（纯函数族 + 薄适配，不建大组合器）：授权裁决（isToolDenied/policyAllows/glob）→ 调用（远端 client / 封装 execute）→ 投影/截断/脱敏/超时/stale 提示 → 统计埋点。
 - 契约：
-  - `GET /servers → { servers[], counts, middlewareMode }`（= L07.summary()）
-  - `POST /servers {ServerConfigInput, scope?} → 201 {server, summary}`
-  - `PATCH|DELETE /servers?name=&scope=`（= L07.update/remove）
-  - `POST /session {cwd}` / `POST /resume`（= L07.setSession/resumeReconnect）
-  - `POST /servers/connect|disconnect|reconnect?name=&scope=`（= L07.*）
-  - `POST /import/json {json, scope?, overwrite?}`（= L04.import 模型 → L07.add/update）
-  - `PATCH /tool-disable {server, tool, disabled}`（路由一致性 → L07.setToolDisabled）
-  - `GET /config → ClientUiConfig & middleware`；`POST /config`（= L04 归一化 → settings）
-  - `GET /events → SSE`（= 状态事件层帧协议）；`GET /health`
-- 围栏契约：loopback 403 / 方法 405 / config GET 豁免。
+  - 两路径（supervisor 直呼 / ws_mcp_call）差异面签名：handlers（CallResultTextHandlers）、timeout 来源（toolCallTimeoutMs vs CALL_TIMEOUT+2s）、redact（有/无）、stale 提示（有/无）；
+  - **两路径同构由契约测试强制**（同一输入分别喂两路径断言输出一致）；
+  - 日志脱敏覆盖点清单（supervisor.ts:362、manager 各处 logger.warn——B8 P0-②）；
+  - supervisor 路径新增 stats 埋点 = **行为扩展声明**（非纯重构）；
+  - redactor 支持 raw/decoded 双形态（percent-encoding 防绕过）。
 
-### L04 配置模型与校验（新拆，pure）
-- 职责：ServerConfig 归一化、mcpServers 导入映射、插件 Config/UI 配置 schema、user-state/disabledTools 载荷解析。
-- 上游：L03/L07/L10；下游：无（不 import IO 层）。
-- 契约：`normalizeServer(input) → ServerConfig | throw`；`parseClaudeJson(text) → ServerConfig[]`；`normalizeUiConfig(raw) → ClientUiConfig`；`buildConfigUiPatch`；`parseDisabledTools(raw) → DisabledToolsMap`；`normalizeScope`、`normalizeMiddlewareMode`。
-
-### L05 配置存储（新拆，io）
-- 职责：配置/用户状态/目录缓存的读改写与原子落盘；mtime 热重载检测。
-- 上游：L07（编排）；下游：无业务依赖。
-- 契约：`McpStore.{load, save, reloadIfChanged, changedOnDisk, find, upsert, remove}`（0600 + tmp+rename + DSH_HOME 感知）；`loadUserState/saveUserState/loadDisabledTools/saveDisabledTools`（合并式写盘）；`readCatalogServerFromDisk`。
-
-### L06 工作空间路由层（新）
-- 职责：cwd → 归一化项目 root；@root/server 全名解析/构造；scope 归一化；**含 runtimeRegistry 参与的项目/全局归属判定**（B3 修复点）。
-- 上游：L03（tool-disable 一致性）、L07（setSession/connect/disconnect）、L09（resolveRoot）、L10（catalogServersFor/catalogViewFor）。
-- 契约：`resolveRoot(cwd, mode, globalServers) → root|undefined`；`normalizedProjectRoot(cwd)`；`parseFullServerName(name) → {root,server}|undefined`；`fullServerName(root, server)`；`isGlobalServer(name)`（store+runtime 双源）。
-
-### L07 连接编排层
-- 职责：双轨 reconcile（store+runtime）、生命周期仲裁（start/stop/add/update/remove/connect/disconnect/reconnect）、同名声控（runtime 优先）、summary 投影、会话切换驱动。
-- 上游：L03/L08/L09/L10/L12；下游：L05（存储）、L06（路由）、L08（执行）、L11（执行管道统计）。
-- 契约（现状已稳定，重设计只收敛）：
-  - `add/update/remove(name?, ServerConfigInput, scope) → ServerConfig`
-  - `start(name, scope, directConfig?)` / `stop(name)` / `connect|disconnect|reconnect(name, scope)`
-  - `registerServer(input) → {name, existing}` / `unregisterServer(name)`
-  - `setSession(cwd)` / `resumeReconnect()` / `refreshFromDisk()`
-  - `summary() → {servers[], counts, middlewareMode}`
-  - `setToolDisabled(root, server, tool, disabled)`
-- 事件：任何集合/状态变化 → `emitStatus()`（状态事件层）。
-
-### L08 连接执行层
-- 职责：单服务器代际生命周期（connect/initialize/syncTools/断开清理/有界指数退避）；中间层 per-root 连接池（in-flight 去重/force 重建/LRU 淘汰/防双进程探测）；传输/协议适配。
-- 上游：L07（编排调用）、L09（工具注册回调）；下游：L04?不——执行层产物 ServerConfig/ServerStatus；SDK 内联。
-- 契约：
-  - `ConnectionSupervisor.{connect, disconnect, status, tools, toolDisposers, syncChain, teardownGeneration}`
-  - `McpMiddleware.{projectUnitFor, ensureConnected, callTool(编解码), discover, persistCatalog, evictIfNeeded, teardownUnit}`
-  - `createTransport(server) → StdioTransport|HttpTransport`（env 净化/${ENV} 展开）
-  - `MCPClient.{initialize, listTools, callTool}`（SDK 薄适配）
-- **职责边界硬化（评审 P1-⑥/⑨）**：退避参数/调用超时策略统一由本层解析 `server.reconnect` / `server.toolCallTimeoutMs`，编排层不再自造口径；替换/拆除代际时由本层保证 transport.close + toolDisposers 全部释放（修 B5）。
-
-### L09 模型面适配层
-- 职责：把 L08 的连接结果注册成模型可用工具（mcp__ 前缀 / ws_mcp_* 四原子）；pre-execute guard 挂载；系统提示词 section。
-- 上游：L07（触发）、模型（宿主 ctx）；下游：L06（路由）、L11（执行管道裁决调用）、L13（埋点）。
-- 契约：`registerMiddlewareTools(ctx, mw, resolveRoot, mode, {disabledTools, stats}) → dispose`；`buildToolDefinition`（publicToolName/truncate/schema/output 定义）；guard `ctx.on("tools/pre-execute")`。
-- 边界：工具**定义**在本层，工具**执行**一律委托 L11（经 L08 的 client）。
-
-### L10 能力目录层
-- 职责：目录条目合成（用户描述>目录缓存摘要>名）、digest（只含服务器集合）、history 去重注入决策、last-good 缓存读改写、注入端视图（B 缓存 + 中间层 per-root 覆盖 + 磁盘兜底）。
-- 上游：L09（宣称协议相同）；下游：L06（cwd 解析）、L05（缓存 IO）。
-- 契约：`catalogServersFor(cwd)`、`catalogViewFor(cwd, servers)`、`resolveCatalogInjection(decision, messages, supervisors, maxEntries, cache, agent, mode)`、`summarizeToolDescriptions`、`digestCatalogEntries`、`composeCatalogEntries`。
-
-### L11 工具执行管道层（扩展⑨）
-- 职责：一次工具调用的完整管道：
-  `authorize(禁止表+策略 rule) → route(全名+会话) → call(远端 client / 封装 execute) → project(白名单/截断/脱敏/超时/stale 提示) → 埋点(stats)`
-- 上游：L09（execute 入口）、L07（setToolDisabled 写禁用表）；下游：L08（client）、L04（策略模型）、L13（埋点）。
-- 契约（单一事实源，修复 B8/B9/B10/B14/B18）：
-  - `isToolDenied(disabledTools, policy, serverKey, tool)` / `policyAllows` / `toolDisabledReason`
-  - `projectCallToolResult(result, handlers)` / `truncateText` / `extractText`
-  - `createRedactor(servers)`（执行侧错误脱敏；含 raw/decoded 双形态，修 B8）
-  - `withTimeout(p, ms, msg, signal)`
-  - `normalizeArguments` / `batch` 一致化
-- 埋点契约：`recordCall/server/tool/durationMs/success/errorMsg`（Metadata-Only）。
-
-### L12 对外集成层
-- 职责：ctx.mcpManager 服务面（注入/控制/查询 8 方法）；runtimeRegistry 双轨归口。
-- 上游：其他插件（消费方）；下游：L07、L11。
-- 契约：`registerServer/unregisterServer/connect/disconnect/reconnect/getStatus/getTools/list`（类型面 shared/mcp-manager-service.d.ts）。
-
-### L13 统计观测层
-- 职责：聚合指标 + 披露漏斗 + 防抖落盘（1000ms）+ 关闭时 flush（修 B2）+ 键截断。
-- 上游：L09/L11 埋点；下游：无。
-- 契约：`recordCall/recordSearch/recordList/recordDetail/snapshot/flushSync/configure/dispose`。
-
-### L00–L02 客户端
-- L00 支撑：`createState/session 订阅/rebindSession/api/dom/ensure-style/i18n`。
-- L01 胶囊：`float/panel/servers/quick-add`（操作统一带 cwd，修 C6/C7；checkbox 后保折叠态，修 C8）。
-- L02 设置：`settings-card`（保存后清理 timer，修 C5）。
-- 契约：与 L03 的 HTTP/SSE 帧协议、config 扁平形状、summary 六态计数、tool-disable 全名形态。
-
-### 状态事件层（横切，宜并入 L07 侧或独立小模块）
-- 契约：`emitStatus()` →（coalesce 同 tick）→ `sseHub.broadcast(summaryFrame | uiConfigChangedFrame)`；热切换（L07.setMiddlewareMode）必须 emit（修 B20）。
+### ⑦ 服务/统计域
+- integration（L12）：8 方法；registerServer 串行队列语义；B6（getTools 查询面）决策入规格表。
+- stats（L13）：isEnabled/loadExisting（重启恢复）；B2 修复语义（configure 关闭先刷 or flushSync 不以 enabled 短路）；**前置：unit-call-stats.test.ts 双登记接线**（现状三处均不执行）。
 
 ---
 
-## 四、目标目录结构（物理 9 域）
+## 四、迁移策略（逻辑收敛 → 单一集中式纯搬移 PR）
 
-```
-packages/dsh-mcp-manager/
-  src/
-    index.ts                组合根 re-export（导出面不变，smoke/契约门禁零感知）
-    bootstrap/              L：组合根装配
-      apply.ts apply-config.ts apply-runtime.ts apply-services.ts apply-guidance.ts
-    api/                    L03 API/传输
-      routes.ts routes-controllers.ts routes-helpers.ts sse-exit.ts（SSE 帧协议）
-    config/                 L04+L05 配置域
-      model/（pure）normalize.ts import.ts config-schema.ts user-state-model.ts
-      store/（io）store.ts middleware-state.ts catalog-cache-io.ts
-    workspace/              L06 路由域（新）
-      root-resolution.ts full-name.ts scope.ts middleware-mode.ts
-    connection/             L07+L08 连接域
-      orchestrator/ manager.ts
-      execution/ supervisor.ts middleware.ts transport.ts protocol.ts
-    inject/                 L09 模型面
-      register.ts middleware-register.ts tool-definition.ts guard.ts prompt.ts
-    catalog/                L10 能力目录
-      entries.ts digest.ts history.ts injection.ts cache-view.ts
-    execution/              L11 工具执行管道
-      authorize.ts call.ts project.ts redact.ts timeout.ts args.ts
-    integration/            L12 对外集成
-      service.ts service-contract.ts
-    stats/                  L13 统计观测
-      collector.ts types.ts
-    types/                  共享类型单一事实源
-      server.ts status.ts ui.ts
-  src/client/
-    core/                   L00 支撑（state/session/dom/api/i18n/constants）
-    float/                  L01 胶囊（float.ts panel.ts servers.ts quick-add.ts）
-    settings/               L02 设置（settings-card.tsx）
-    style.css locales.ts css.d.ts react-shim.d.ts
-  共享层（跨包，非本包）：
-    shared/loopback sse-hub host-utils settings-namespace dsh-home placement-math mcp-manager-service
-```
-
-迁移原则：
-- `git mv` 纯搬移零行为变化；index.ts 聚合 re-export 保持导出面（smoke/service-contract 静态扫描不断）。
-- 每域 `index.ts` 出口 = 该层契约面（types 精简为仅导出契约）。
-- 依赖方向强制：`bootstrap → {api, config, workspace, connection, inject, catalog, execution, integration, stats}`；被依赖层之间只允许「上层依赖下层」，禁止反向（现状已有的 ManagerLite/MiddlewareHost 最小面接口保留并推广到每层）。
+1. **先逻辑收敛**（阶段 1–5）：文件内重组职责（类/函数归位、新目录建新文件、旧文件薄转发保名），**不做 git mv**；行为修复与逻辑收敛分 commit。
+2. **集中式纯搬移 PR**（阶段 6）：一次 git mv 到位 + 全静态面同步 + 全量门禁 + 迁移专用验证（迁移 PR 不夹带任何 bug 修复/行为变更，回归可归因）。
+3. **静态面清单**（该 PR 必须同步，否则必红）：
+   - `test/service-contract.test.ts:145` 扫描路径（`src/apply-services.ts` → 新位置）；
+   - `stryker.conf.d/dsh-mcp-manager-{manager,entry,supervisor,middleware,routes,runtime}.json` 六段 mutate 清单 + `scripts/data/mutation-topology.json` + workflow-assert（三方一致）+ mutate-scope-guard；
+   - observe 夜间基线（src 口径四班次重建）策略与 incremental 缓存作废处理；
+   - `bundle-host.ts` client 入口发现（src/client/index.ts 保留即无感）；
+   - smoke/unit 全部只 import `../lib/index.js`（✓ 不受迁移影响）。
+4. **门禁策略决策**（进 issue 方案，维护者批准）：迁移 PR 的变异门禁 =「先提分过线再迁移」or「迁移 PR 走 observe 夜间重建豁免」——取决于 §六 门禁判分口径澄清。
 
 ---
 
-## 五、按微服务思路的分阶段重构方案（TDD 驱动）
+## 五、分阶段 TDD 计划（阶段 0–7，含 B 系列全量落位）
 
-> 每阶段：独立 worktree PR；先契约测试（层间 mock 边界）→ 红测已证实 bug → 绿修 → 门禁。阶段顺序按「风险从小到大、修复与拆分互相成就」。
+| 阶段 | 内容 | Bug 落位 |
+|------|------|---------|
+| 0 规格决策表 | 拍板 §六 全部决策项 + 契约缺口清单 + 迁移门禁策略三件文档 | B4/B6/B11/B13/B14/B18 超时口径/B8 双形态/门禁判分 |
+| 1 测试基建 + 配置域 | fakeTransport/fakeMCPClient 桩进 helpers.ts；**unit-call-stats 双登记接线**；createRedactor 基线测试（现状零测试）；B7 直测；配置 model/store 逻辑归位 | **B2**、B7、B13、B14、B17 |
+| 2 执行管道成形 | 纯函数族 + 薄适配；两路径契约测试；supervisor 埋点（行为扩展声明）；execution/ 文件挂 stryker 段 | B8、B9、B10（检索面同步改）、B18、B14 |
+| 3 连接域逻辑收敛 | orchestrator/execution 文件内重组；状态事件契约先定；B5 契约决策先行；六态一致单 PR（B1+B4+C13） | B1、B4、B5、B18、B19、B20 |
+| 4 工作空间路由层 | workspace/ 新文件 + 旧函数薄转发 + 调用点全切；双常量收敛 | **B3（提前）**、B11 规格落地 |
+| 5 目录域 | catalog/search.ts 检索族落位；catalogViewFor 宿主面；registerCatalogInjection 接线显式化 | B10（若阶段 2 未完成）、B12 |
+| 6 集中式纯搬移 PR | git mv + 静态面全同步 + 门禁兜底（见 §四） | 无行为变更 |
+| 7 客户端分层 + 收口 | core/float/settings；C1（P1 编辑链路优先）+C2/C3/C4/C5/C6/C7/C8/C10 隔离浏览器实测；哑断言清理；文档同步 | C1–C15、B15、B16、B12、B19 |
+| 8 质量收口 | 变异得分（判分口径澄清后校准）；4 个仅 stryker 面文件按断言价值选择性纳入 smoke | — |
 
-### 阶段 0：契约冻结（规格层）
-- 输出「层接口契约清单」（上文第三部分落成 `docs/architecture-contract.md`）；把 6.3 全部「或规格化声明」行拍板（B4/B6/B13/B14）。
-- 门禁：现有 smoke/contract 全绿（零代码改动）。
-
-### 阶段 1：配置域拆分（纯搬移 + pure 测试补全）
-- `config/model` 与 `config/store` 物理分离；normalize/import/config-schema/user-state 解析补边界测试（超长 name、enabled 非布尔、Infinity timeout、URL 协议、数组参数）。
-- 红测先行：B13/B14/B17 的测试先红后绿。
-
-### 阶段 2：执行管道成形（L11）——评审 P1 核心
-- 把 guard 裁决、callTool、projectCallToolResult、redactor、withTimeout、埋点收进 `execution/` 管道的多条纯函数 + 组合器；supervisor/middleware 两条调用路径改为消费同一管道。
-- 红测：B8（raw/decoded 双形态 + supervisor 日志脱敏）、B9（字节口径）、B10（truncated 事实返回）、B18（口径统一：closeHandler 计数 + toolCallTimeoutMs 生效）、B14（参数形态）。
-- 门禁：mutation 该域 0 新增存活。
-
-### 阶段 3：连接域拆分（L07/L08）——评审 P1/P2 核心
-- `connection/orchestrator` 与 `connection/execution` 分离；`execution` 独占代际清理（修 B5）、退避/超时口径（修 B18 另一半）、重连状态机（修 B1/B4）。
-- 红测：B1（状态机断言点）、B4（reconnecting 分级）、B5（替换清理）、B18（supervisor vs 池参数同源）。
-- CALL_TIMEOUT_MS 注入化（修 stryker 32s 放大）。
-
-### 阶段 4：工作空间路由层（L06）
-- 从 manager/middleware 抽出 root 解析/全名/归属；补 runtimeRegistry 参与（修 B3）。
-- 红测：B3（all 模式空 cwd + 仅 runtime → @global 回落）。
-
-### 阶段 5：能力目录层（L10）与状态事件层
-- catalog 域独立（entries/digest/history/injection/cache-view）；事件源统一（热切换 emitStatus 修 B20）。
-- 红测：B20（热切换发 summary 帧）；目录注入决策补 compaction/resume 用例。
-
-### 阶段 6：客户端分层（core/float/settings）
-- 支撑层独立；浮窗操作带 cwd（C6/C7）；SSE 恢复探测（C2）；设置卡 timer 清理（C5）；面板刷新与折叠态（C8/C10）；keydown 清理（C4）；超长名 CSS（C3）。
-- 隔离浏览器实测（dsh-verify-isolated）：C1 编辑链路（P1）优先 + UI 回归截图归档。
-
-### 阶段 7：质量收口
-- 变异得分 ≥60（预算：优先清 416 个 NoCoverage 与 supervisor/manager/middleware 存活变异）；哑断言清零；`unit-call-stats` 接线（smoke + mutation-topology 双登记）；4 个仅 stryker 面文件纳入 smoke import；README/文档同步（B15/B16/C9 等声明项）；release-notes。
+红测前置条件表（评审 5 表格）：
+- B8：createRedactor 基线测试先行（现状零测试）；
+- B5：fakeTransport 桩 + start 同步→异步契约先决（弱断言先行：替换后旧实例 disposed + 新代际建立）；
+- B2：接线先行（三处登记）；
+- B11：规格决策先行（映射表 or 规格化不可逆名）；
+- B1：改状态机断言点（`failedAttempts>0` 分支断言），勿整窗口轮询；`_idleTimeout` 私有字段改 resolveReconnect 纯函数断言。
 
 ---
 
-## 六、风险与决策点（需用户/维护者拍板）
+## 六、规格决策表（阶段 0 拍板）
 
-1. **物理迁移 vs 逻辑收敛**：阶段 1/3 的纯搬移会带来大 diff（import 路径全变），stryker 配置与 smoke 断言路径需同步 —— 是否接受「先逻辑收敛（不改物理路径、只在文件内重组职责）再二期物理迁移」的两步走？
-2. **L11 执行管道**的粒度：组合器（一条 `executeTool(pipe, ctx)` 管道函数）vs 保持模块级函数散调——推荐组合器（单一执行入口，便于中间件式扩展与测试）。
-3. **B1/B4 重连状态口径**：补 supervisor/中间层 `reconnecting` 状态（改面较大）vs 规格化声明——推荐补状态机（六态一致）。
-4. **新增层落地位置**：workspace/、execution/ 等新目录以「新文件先行 + 旧文件薄转发」渐进式（避免一次性大爆炸迁移）。
-5. 本方案为**重设计蓝图**，实施仍需按仓库红线：建 issue → worktree → 方案评审 → 分阶段 PR。
+| # | 决策项 | 选项 | 推荐 |
+|---|--------|------|------|
+| D1 | B1/B4 重连状态 | 补 `reconnecting` 状态机（supervisor+池+summarize+counts+客户端 C13 同步）vs 文档化回避 | 补状态机（六态一致，单 PR） |
+| D2 | B5 start() 契约 | 同步 fire-and-forget + syncChain 收口 vs 变 async（涟漪 routes×9+apply+测试） | 若涟漪可控选 async；否则 fire-and-forget + 显式 teardown 义务（P0 评估） |
+| D3 | B6 getTools 查询面 | 与 summary 同源（中间层也返回）vs 文档声明仅 supervisor 路径 | 与 summary 同源（查询面一致） |
+| D4 | B8 脱敏口径 | 整 URL（现状安全激进）vs 仅用户信息（raw/decoded 双形态，诊断性好） | 仅用户信息 + 双形态 + 日志脱敏全覆盖（走安全语义红线流程） |
+| D5 | B11 双下划线反解 | publicToolName 加分隔符转义（映射表）vs 规格化「含 `__` 名不可逆不禁用」 | 规格化不可逆（改动面小）；映射表列入后续增强 |
+| D6 | B18 超时口径 | toolCallTimeoutMs 生效 + 保留 CALL_TIMEOUT+2s 兜底 vs 照 supervisor 抄（无兜底） | 保留兜底（防半开双保险） |
+| D7 | 门禁判分口径 | covered（74.66% 已过 60）vs 总得分（58.74% 未过） | **先澄清 mutation-gate.mjs 判分输入**再定「先提分后迁移」or「迁移走夜间重建豁免」 |
+| D8 | off 模式 guard | 补挂载（off 模式 mcp__ 直呼也拦截）vs 文档化「off 仅一入口」 | 补挂载（工具级禁用语义完整） |
+
+---
+
+## 七、风险清单（按阶段，评审 10 表格收敛）
+
+- 阶段 1：纯搬移收益近零但门禁成本全量 → 本阶段不做 git mv，修复与迁移分 commit。
+- 阶段 3：门禁重灾区（manager/middleware 迁移 → 六段清单≥3 段失效）→ 逻辑收敛先行，物理迁移延后集中 PR；B5 契约决策先行。
+- 阶段 4：双份实现窗口（新文件+旧函数残留）→ 薄转发 + 调用点全切后再删旧。
+- 阶段 5：catalogViewFor 宿主面设计成本未披露 → 先薄桥接留在 manager 或造最小面 host。
+- 阶段 6（客户端）：index.ts 缺失会构建/契约双崩 → 入口保留、CSS 引用路径先行验证。
+- 阶段 8：smoke import 拓展膨胀测试时长 → 按断言价值裁剪，stryker 侧耗时预算。
