@@ -343,15 +343,16 @@
 | 配置 CRUD（掩码/CAS/迁移/409/503） | A/E | routes/migration/unit-config | N-16 |
 | 客户端半区（可见性/多标签/降级/音频） | H/I | client-contract/style | dsh-verify-isolated 实测盲区 |
 
-### 7.5 分阶段缺陷落位（PR1/PR2/PR3）
+### 7.5 分阶段缺陷落位（路线 C 四 PR：PR0 测试先行 → PR1 搬家 → PR2 行为重构 → PR3 收尾）
 
 | 阶段 | 任务 | 缺陷/盲区落位 | 门禁 |
 |---|---|---|---|
-| **PR1 机械搬家+门面+测试基建** | 16 平铺→目录树；interface.ts 落地；导出面快照；stryker/mutation 路径更新（S3-31/S3-32）；测试基建修复（S3-20/S3-28 轮询/短窗注入）；L1 补测 N-4/N-5/N-6；real-context/client 静态契约同步（S3-25/S3-26） | S3-20/25/26/28/29(部分)/31/32 | 零行为变更；导出面快照 diff = 基线；build/test/contract/typecheck/pack:check 全绿 |
-| **PR2 行为重构** | adjudicate/deliver 拆分 + current() 快照 + 播放决议快照化（B-2）；重试/门上移（B-3）；脱敏统一时点 + sanitizeContent（B-1/B-4）；ConfigPort/RouteDeps（S3-2/5/6）；SPI mergeTitleIntoBody（S3-1）；客户端 P1-2/P2-4/C3-1（S3-7/9/12）；spawn 注入直测（S3-21）；sse-bus 600 帧（S3-22）；outbound 全链（S3-27）；变异分段（S3-30）；L1/L2 新增 N-7~N-16、L3 N-17~N-23 | S3-1/2/5/6/7/9/12/16/17/18/21/22/23/27/30 | 每步对齐规则矩阵；行为变更用例红测先行；全门禁全绿 |
-| **PR3 注释清理+门禁+类型面** | 失真注释清单（§9）；locales 13 死键（S3-11）；C3-2/3/7 + P2-5（S3-13/14/15/19）；类型面接线（S3-24）；import 门禁+环路检测脚本（N-1）；消费方类型编译用例 | S3-11/13/14/15/19/24 | lint 落地；wiring 接线后类型编译全绿 |
+| **PR0 测试基建 + 红测先行**（D17） | flake 修复（16 处固定 sleep → 轮询/短窗注入，含 migration 4×30ms 负向观察窗、waitMergeWindow 3.2s→注入短窗，S3-20/S3-28）；红测基线 8 条在现状代码建立（S3-21/22/27 + B-2 快照化基线 + event-handlers 判定直测 + sse-bus 600 帧 + 类型面接线前置 + 静态契约同步 S3-25/S3-26）；fetch mock 白名单外拒绝加固（S3-23） | S3-20/21/22/23/25/26/27/28 | 纯测试基建 + 轻微行为无关注入改造（spawn 依赖注入，理由在 PR 描述）；全门禁全绿；每 makeNotifier 不再触发真实 execFile |
+| **PR1 机械搬家+门面+变异更新** | 16 平铺→目录树；interface.ts 落地；导出面快照；stryker/mutation 路径更新 + testFiles 补 7 文件 + message 段重定（S3-31/S3-32）；L1 补测 N-4/N-5/N-6（stores/settings-bridge/aggregate 直测） | S3-29(部分)/31/32 | 零行为变更；导出面快照 diff = 基线；变异配置随行（D16）；build/test/contract/typecheck/pack:check 全绿 |
+| **PR2 行为重构** | adjudicate/deliver 拆分 + current() 快照 + 播放决议快照化（B-2）；重试/门上移（B-3）；脱敏统一时点 + sanitizeContent（B-1/B-4）；ConfigPort/RouteDeps（S3-2/5/6）；SPI mergeTitleIntoBody（S3-1）；客户端 P1-2/P2-4/C3-1（S3-7/9/12）；变异分段（S3-30）；L1/L2 新增 N-7~N-16、L3 N-17~N-23 | S3-1/2/5/6/7/9/12/16/17/18/30 | 每步对齐规则矩阵；行为变更用例红测先行；全门禁全绿 |
+| **PR3 注释清理+门禁+类型面** | 失真注释清单（§9/S3-13）；locales 13 死键（S3-11）；C3-2/C3-3/C3-7（S3-14/15/19，D21）；类型面接线最终化（S3-24）；import 门禁+环路检测脚本（N-1）；消费方类型编译用例；stale 文案口径修正（D20） | S3-11/13/14/15/19/24 | lint 落地；wiring 接线后类型编译全绿 |
 
-### 7.6 红测先行基线（PR2 动工前必须补的测试基线）
+### 7.6 红测先行基线（PR0 主体，PR2 动工前必须补的测试基线）
 
 1. 系统通知 spawn 链直测（fake exec/spawn）：1s 节流（server.ts:323-331）/8s 杀进程（:207-213）/toast 失败不翻转终态（:278-294）/只响不弹自播失败→failed（:262-263/:295-308）/探测不可用→argv null（message.ts:270）——现状零断言（S3-21）。
 2. 投递决议快照化基线（B-2）：裁决时读配置→投递前改配置→本次投递仍按裁决快照（现为零，§6.2 点名）。
@@ -361,3 +362,30 @@
 6. 测试基建修复：migration 4×30ms 负向观察窗改事件驱动/小窗轮询；waitMergeWindow 改注入短窗（S3-20/S3-28）。
 7. 类型面接线：dsh-notifier/test 去 @ts-nocheck 并接入 wiring（S3-24）。
 8. 静态契约同步维护清单：real-context onCalls>=7 与 ctx.on 形态正则、client-contract banned/kept 符号表、client-style CSS_VERSION "640-1"（S3-25/S3-26）。
+
+### 7.7 G3 决策记录（D16-D21）与隐患登记（R-x）
+
+**决策**（用户 2026 拍板：路线 C + 子决策按推荐）：
+
+- **D16**：变异配置随 PR1 搬家同步更新（testFiles 补 7 文件、message 段重定），不滞后。
+- **D17**：采用路线 C 四 PR——PR0 测试基建+红测先行 → PR1 搬家 → PR2 行为重构 → PR3 收尾；红测基线与 flake 修复在现状代码上先建立。
+- **D18**：L8-3 NotifyRequest.data 保留声明、注明「MVP 未启用」（ABI 零破坏）。
+- **D19**：L8-5 expectedRevision 非整数显式拒绝（400），消除静默忽略（客户端现状不传非整数，实际零影响，登记行为变更）。
+- **D20**：客户端口径诚实化——S3-7 频道状态行改 README 口径（「加载/测试后刷新」）；S3-15 stale 路由文案改「stale 已跳过」；均不做功能增强。
+- **D21**：客户端低优先级修复取舍——PR3 只做 C3-2（409 横幅残留）与 C3-7（错误文案）；C3-3/4/5/6 登记 backlog 延迟。
+
+**隐患登记表（R-x，重构全过程风险与缓解）**：
+
+| 编号 | 隐患 | 影响 | 缓解 |
+|---|---|---|---|
+| R-1 | 重构期间变异面过期（PR1 前 stryker 段指向旧文件路径） | observe 夜检变异得分误报 | D16：PR1 随搬家同步更新；PR0 结束检查 mutation-topology 一致性 |
+| R-2 | real-context 静态正则（onCalls>=7/ctx.on 形态/prepend）与 client 契约哨兵在 PR1/PR2 误红 | PR 门禁干扰红绿判断 | S3-25/S3-26 同步维护清单进 PR0 基建；PR1/PR2 改 index.ts/client 前先跑该用例 |
+| R-3 | PR2 行为重构回归（8 项行为变更叠加） | 行为漂移难定位 | 红测先行基线（PR0）+ 每步对齐规则矩阵（B-G/C-G/D6/D7）；变更分 commit |
+| R-4 | 类型面零校验期间导出面漂移无编译期捕获 | 消费方静默断裂 | PR0 接线前置 + PR3 去 @ts-nocheck 最终化；PR1 导出面快照 diff 兜底 |
+| R-5 | 测试套件不自足（worktree 无 lib/，须先 pnpm build） | CI/本地跑测失败误判 | 每 PR 门禁首步 build；PR0 起在 worktree 常态构建 |
+| R-6 | C3-1 seq 归零修复的两个实现（服务端 baseSeq vs 客户端回退检测）各有副作用 | 选型不当引入新问题 | PR2 动工前出 mini 决策（服务端 baseSeq 需持久化/重启延续；客户端回退检测要处理合法回退边界），TDD 用例锁定 |
+| R-7 | PR0 的 spawn 依赖注入改造属「为重构而做」的 src 改动 | 违背「PR0 纯测试」表述 | PR0 PR 描述明示理由 + 行为不变断言（现状行为逐项锁定） |
+| R-8 | interface.ts 门面纪律腐化（域内互引/绕过门面） | 依赖图失真、重构目标落空 | PR3 落地 import 门禁脚本 + 环路检测；文档纪律 §3 |
+| R-9 | fetch mock 白名单外 fail-open（T3-5） | 测试假网络面 | PR0/PR2 白名单外拒绝加固（S3-23） |
+| R-10 | 客户端浏览器实测盲区（音频解锁/多标签租约竞争/横幅视觉/600 帧丢弃频率） | 静态梳理不可达的行为缺陷 | 重构完成后 dsh-verify-isolated 隔离实测一轮（并入「整体重构后审视」清单，用户 G 指令） |
+| R-11 | issue #669 方案评审未加 approved 即动工 | 红线流程风险 | 本方案经用户在环批准实施；issue 评论更新状态邀请维护者评审（needs-proposal-review） |

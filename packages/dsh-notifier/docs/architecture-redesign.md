@@ -226,12 +226,16 @@ P2 采纳项（不阻塞定稿，随 PR 消化）：sanitize 单实现双导出 
 - 已知失真注释清单（随 PR3 修）：service.ts:73 vs :282（titleMaxLen<=0 语义）；service.ts:12-13 vs bark 内部重试（「框架统一重试」）；service.ts:44「调用方负责脱敏」→ 改「中心兜底：sanitizeContent 开关」。
 - 单文件 ≤400 行；超限必须拆（同目录互引不受门面限制）；声明型文件（校验器/规则表）同样拆文件，不豁免。
 
-## 10. 迁移策略（三 PR，含门禁）
+## 10. 迁移策略（路线 C 四 PR：PR0 测试先行 → PR1 搬家 → PR2 行为重构 → PR3 收尾）
 
-- **PR1 机械搬家 + interface.ts 落地 + stryker 路径更新**（零行为变更）：16 平铺 → 目录树；各域 interface.ts 二合一；**导出面快照**（重构前 tsc --declaration 基线 diff 重构后导出符号集合，含 shared 4 个 re-export）；stryker/mutation-topology dsh-notifier 段 mutate 路径全部更新（message 拆三文件后段边界重定，新增文件是否入变异面决策）；全门禁（build/test/contract/pack:check/typecheck）。
-- **PR2 行为重构**（逐步对齐规则矩阵，每步可测）：adjudicate/deliver 拆分 + current() 单刻快照 + 播放决议快照化；重试/并发门上移框架（bark/webhook 行为对等清单）；脱敏统一时点 + sanitizeContent 开关；ConfigPort/RouteDeps 契约落地；行为变更登记用例（requirements §6.2）。
-- **PR3 注释清理 + 门禁 lint 落地**：§9 注释清单；interface import 检查 + 环路检测脚本；消费方类型编译用例。
+- **PR0 测试基建 + 红测先行**（用户 D17 拍板）：flake 修复（16 处固定 sleep → 轮询/短窗注入，S3-20/S3-28）；红测基线 8 条在现状代码建立（spawn 链直测、快照化基线、outbound 全链、event-handlers 判定直测、sse-bus 600 帧、类型面接线前置、静态契约同步）；fetch mock 白名单外拒绝加固（S3-23）。门禁：全门禁全绿；每 makeNotifier 不再触发真实 execFile。**说明**：其中 system-notifier spawn 依赖注入属「为重构而做的轻微行为无关 src 改动」，PR 描述明示理由 + 行为不变断言（R-7）。
+- **PR1 机械搬家 + interface.ts 落地 + 变异更新**（零行为变更）：16 平铺 → 目录树；各域 interface.ts 二合一；**导出面快照**（重构前 tsc --declaration 基线 diff 重构后导出符号集合，含 shared 4 个 re-export）；stryker/mutation-topology dsh-notifier 段 mutate 路径全部更新（D16：testFiles 补 7 文件；message 拆三文件后段边界重定）；L1 补测 N-4/N-5/N-6；全门禁（build/test/contract/pack:check/typecheck）。
+- **PR2 行为重构**（逐步对齐规则矩阵，每步可测）：adjudicate/deliver 拆分 + current() 单刻快照 + 播放决议快照化；重试/并发门上移框架（bark/webhook 行为对等清单）；脱敏统一时点 + sanitizeContent 开关；ConfigPort/RouteDeps 契约（L8-2/5/6 修复，D19）；SPI mergeTitleIntoBody（L8-1）；客户端 P1-2/P2-4/C3-1（D20 口径修正 + S3-12 clamp + S3-9 seq 修复，R-6 mini 决策）；变异分段（S3-30）；行为变更登记用例（requirements §6.2）。
+- **PR3 注释清理 + 门禁 lint + 类型面**：§9 注释清单；locales 13 死键（S3-11）；C3-2/C3-7（D21）；interface import 检查 + 环路检测脚本；消费方类型编译用例；wiring 接线 dsh-notifier/test（S3-24 去 @ts-nocheck 最终化）。
 - 隔离纪律：全部在 worktree 进行；浏览器实测走 dsh-verify-isolated。
+- **重构完成后整体审视**（用户指令）：四 PR 合并后对目标架构做一轮完整审视（含 R-10 客户端浏览器实测盲区、变异得分对照、导出面/契约回归对照），产出审视报告挂 issue #669。
+
+决策与隐患：G3 决策 D16-D21 与风险登记 R-1~R-11 见 requirements-and-tdd-plan.md §7.7（单一事实源）。
 
 ## 11. 测试分层策略（用户追加纪律：单元 / interface 契约 / 集成 / 变异四层）
 
