@@ -8,7 +8,7 @@
  * isUsageStatsAdapter / describeUsageStatsAdapterShape（v2 契约校验全分支，
  * #150 变异驱动加固）。
  */
-import { assert } from "./helpers.ts";
+import { assert } from "../../helpers.ts";
 console.error("EVAL-ORDER-TAG: CONTRACT");
 import {
   safeSegment,
@@ -21,7 +21,7 @@ import {
   describeUsageStatsAdapterShape,
   ADAPTER_CONTRACT_VERSION,
   ERROR_CODES,
-} from "../lib/index.js";
+} from "../../../lib/index.js";
 
 // ---------------------------------------------------------------- safeSegment
 
@@ -43,7 +43,7 @@ assert.equal(sseData(null), "data: null\n\n", "null SSE 序列化");
 // #472 收敛锚定：lib/index.js 的 sseData（re-export 自 shared/host-utils.js）
 // 输出与 shared 单一事实源一致（防 re-export 链被误删/改指后导出面漂移）。
 {
-  const { sseData: sharedSseData } = await import("../../../shared/host-utils.js");
+  const { sseData: sharedSseData } = await import("../../../../../shared/host-utils.js");
   assert.equal(typeof sseData, "function", "lib/index.js 可 import sseData");
   assert.equal(sseData({ type: "ui-config-changed" }), sharedSseData({ type: "ui-config-changed" }), "lib 导出与 shared 输出一致");
 }
@@ -331,7 +331,7 @@ import { tmpdir } from "node:os";
 import { makeAdapterRegistry, sanitizeHtml, safeFetchData, safeFormat,
   runV2Pipeline, runV2PanelPipeline, capsuleHtmlFromHistory, HistoryStore,
   HotReloadableAdapter, readStamp, stampEqual, miniChartSvgMarkup,
-  OPENCODE_GO_PROVIDER } from "../lib/index.js";
+  OPENCODE_GO_PROVIDER } from "../../../lib/index.js";
 
 /** 构造合法 v2 适配器（可覆写字段）。 */
 function mkAdapter(over: Record<string, unknown> = {}): Record<string, unknown> {

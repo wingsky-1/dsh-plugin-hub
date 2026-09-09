@@ -14,11 +14,11 @@
  */
 console.error("EVAL-ORDER-TAG: SIGNAL-LOCK");
 import { getEventListeners } from "node:events";
-import { assert } from "./helpers.ts";
+import { assert } from "../../helpers.ts";
 import {
   runV2Pipeline,
   safeFetchData,
-} from "../lib/index.js";
+} from "../../../lib/index.js";
 
 /** 构造满足 v2 契约的最小适配器（format 函数恒返回占位）。 */
 function mkAdapter(name, provider, fetchData) {

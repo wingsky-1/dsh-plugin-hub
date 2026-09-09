@@ -16,7 +16,7 @@ import { build as esbuildBuild } from "esbuild";
 import assert from "node:assert/strict";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const pkgDir = join(here, "..");
+const pkgDir = join(here, "..", "..", "..");
 
 // ---- 即时打包 src/client/trend-math.ts（真实源码直测；无 __DSH_ROUTES__ 消费面）----
 const mathBundle = await esbuildBuild({

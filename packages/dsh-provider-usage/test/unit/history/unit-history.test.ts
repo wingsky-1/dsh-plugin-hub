@@ -10,14 +10,14 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 console.error("EVAL-ORDER-TAG: HISTORY");
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { assert } from "./helpers.ts";
+import { assert } from "../../helpers.ts";
 import {
   parseJsonl,
   startOfDay,
   legacySampleToData,
   pickWindow,
   HistoryStore,
-} from "../lib/index.js";
+} from "../../../lib/index.js";
 
 // ---------------------------------------------------------------- parseJsonl
 
@@ -156,7 +156,7 @@ assert.equal(pickWindow({ percent: 5, resetsAt: 123 }, "r", "n", 10)?.resetsAt, 
 
 import { readdirSync, existsSync } from "node:fs";
 import { rename as renameAsync } from "node:fs/promises";
-import { listAdapters, migrateLegacyV3 } from "../lib/index.js";
+import { listAdapters, migrateLegacyV3 } from "../../../lib/index.js";
 
 // ---------------------------------------------------------------- 构造缺省值
 

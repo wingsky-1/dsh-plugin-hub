@@ -6,9 +6,9 @@
  * isTaskIdValid（报告路由双白名单校验）。薄 handler 的其余行为经 unit-report/
  * unit-apply/smoke 端到端覆盖。
  */
-import { assert } from "./helpers.ts";
-import { clampTrendN } from "../src/domain2/routes/ui.ts";
-import { isReportPeriodValid, isReportKeyValid, isTaskIdValid } from "../src/domain2/routes/reports.ts";
+import { assert } from "../../helpers.ts";
+import { clampTrendN } from "../../../src/domain2/routes/ui.ts";
+import { isReportPeriodValid, isReportKeyValid, isTaskIdValid } from "../../../src/domain2/routes/reports.ts";
 
 // ---- clampTrendN：默认窗口 / 封顶 / 非法回退（ui.ts:22-30）
 {

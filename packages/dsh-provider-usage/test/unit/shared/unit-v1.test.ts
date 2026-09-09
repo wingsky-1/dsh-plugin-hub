@@ -21,7 +21,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { assert, judgeContained as pipeContained, judgePad as pad, injectGlobalFetch } from "./helpers.ts";
+import { assert, judgeContained as pipeContained, judgePad as pad, injectGlobalFetch } from "../../helpers.ts";
 console.error("EVAL-ORDER-TAG: V1");
 import {
   ADAPTER_CONTRACT_VERSION_V1,
@@ -44,7 +44,7 @@ import {
   HistoryStore,
   runV2Pipeline,
   runV2PanelPipeline,
-} from "../lib/index.js";
+} from "../../../lib/index.js";
 
 // ---------------------------------------------------------------- isHostProviderAdapter
 

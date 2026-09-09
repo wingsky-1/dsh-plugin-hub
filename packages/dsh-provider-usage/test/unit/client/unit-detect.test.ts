@@ -20,10 +20,10 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build as esbuildBuild } from "esbuild";
-import { assert, pollUntil } from "./helpers.ts";
+import { assert, pollUntil } from "../../helpers.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const pkgDir = join(here, "..");
+const pkgDir = join(here, "..", "..", "..");
 
 // ---- 即时打包 src/client/core.ts（真实源码直测）----
 // __DSH_ROUTES__ 为宿主构建期 define 注入：测试环境定义为 undefined，
@@ -198,7 +198,7 @@ function makeRemote(providerByDefault) {
 {
   // 客户端源码契约：title 标注接线真实存在（unknown 态追加「提供商未识别」；
   // issue #348 i18n 后标注经字典 t("providerUnknown")，常量本体留 core 供语义引用）
-  const src = readFileSync(join(here, "..", "src", "client", "index.tsx"), "utf8");
+  const src = readFileSync(join(here, "..", "..", "..", "src", "client", "index.tsx"), "utf8");
   assert.ok(src.includes('t("providerUnknown")'), "index.tsx 应经 i18n 字典标注未识别");
   assert.ok(src.includes("if (providerUnknown)"), "胶囊 title 渲染应按 providerUnknown 追加标注");
   assert.ok(src.includes("decideProviderAfterDetect"), "detect() 应经纯函数决策兜底");

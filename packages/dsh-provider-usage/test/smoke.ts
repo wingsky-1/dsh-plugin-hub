@@ -22,25 +22,26 @@ import { __clearReportIndexCacheForTests, __reportIndexCacheStatsForTests, readR
 // 纯函数断言区先行执行（无 @ts-nocheck、强类型）
 import "./smoke-pure.ts";
 
-// 结构化单元测试（#83 阶段一：对齐 notifier 的 unit-*.test.ts 样板）
-import "./unit-contract.test.ts";
-import "./unit-config.test.ts";
-import "./unit-history.test.ts";
-import "./unit-v1.test.ts";
-import "./unit-signal-lock.test.ts";
-import "./unit-apply.test.ts";
-import "./unit-detect.test.ts";
-import "./unit-errsurf.test.ts";
-import "./unit-refresh-revalidate.test.ts";
-import "./unit-deepseek-official.test.ts";
-import "./unit-fetch-timeout.test.ts";
-import "./unit-trend.test.ts";
-import "./unit-trend-ledger.test.ts";
-import "./unit-trend-view.test.ts";
-import "./unit-report.test.ts";
-import "./unit-stats-service.test.ts";
-import "./unit-routes.test.ts";
-import "./unit-report-executor.test.ts";
+// 结构化单元测试（#83 阶段一：对齐 notifier 的 unit-*.test.ts 样板；#670 阶段四：
+// 目录镜像到 test/unit/<层>/，import 随迁移同步）
+import "./unit/shared/unit-contract.test.ts";
+import "./unit/shared/unit-config.test.ts";
+import "./unit/history/unit-history.test.ts";
+import "./unit/shared/unit-v1.test.ts";
+import "./unit/pipeline/unit-signal-lock.test.ts";
+import "./unit/apply/unit-apply.test.ts";
+import "./unit/client/unit-detect.test.ts";
+import "./unit/common/unit-errsurf.test.ts";
+import "./unit/client/unit-refresh-revalidate.test.ts";
+import "./unit/adapters/unit-deepseek-official.test.ts";
+import "./unit/client/unit-fetch-timeout.test.ts";
+import "./unit/trend/unit-trend.test.ts";
+import "./unit/trend/unit-trend-ledger.test.ts";
+import "./unit/trend/unit-trend-view.test.ts";
+import "./unit/report/unit-report.test.ts";
+import "./unit/pipeline/unit-stats-service.test.ts";
+import "./unit/routes/unit-routes.test.ts";
+import "./unit/report/unit-report-executor.test.ts";
 
 import {
   apply,

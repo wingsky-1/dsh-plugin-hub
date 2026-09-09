@@ -16,7 +16,7 @@ import { mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from
 console.error("EVAL-ORDER-TAG: CONFIG");
 import { join } from "node:path";
 import { tmpdir, homedir } from "node:os";
-import { assert } from "./helpers.ts";
+import { assert } from "../../helpers.ts";
 import {
   normalizeConfig,
   DEFAULT_CONFIG,
@@ -38,7 +38,7 @@ import {
   resolveAddAdapterFile,
   expandHomePath,
   resolveProviderConfig,
-} from "../lib/index.js";
+} from "../../../lib/index.js";
 
 // ================================================================ #150 二阶段：resolveAddAdapterFile 路径校验矩阵
 // 注意位置：本块必须位于本模块求值的最前部（同步段）。resolveAddAdapterFile/

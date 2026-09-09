@@ -32,8 +32,8 @@
  * 归属缺失（provider/model 缺失 → TREND_UNIDENTIFIED）、#633 目录归属两条线
  * （合法 dir 经 resolveCwd 净化、缺失归 TREND_UNIDENTIFIED）、跨天（DAY0/DAY1 逐日对账）。
  */
-import { assert } from "./helpers.ts";
-import { TrendCollector, TrendAggregator, dayKey, sumToken, TREND_UNIDENTIFIED } from "../lib/index.js";
+import { assert } from "../../helpers.ts";
+import { TrendCollector, TrendAggregator, dayKey, sumToken, TREND_UNIDENTIFIED } from "../../../lib/index.js";
 
 // ---------------------------------------------------------------- 工具（与 unit-trend.test.ts 同口径）
 

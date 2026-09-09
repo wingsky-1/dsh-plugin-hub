@@ -28,7 +28,7 @@
 import { mkdtempSync, existsSync, readFileSync, writeFileSync, mkdirSync, utimesSync, rmdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { assert } from "./helpers.ts";
+import { assert } from "../../helpers.ts";
 import {
   TrendCollector,
   TrendAggregator,
@@ -48,7 +48,7 @@ import {
   sanitizeDirName,
   normalizeConfig,
   DEFAULT_CONFIG,
-} from "../lib/index.js";
+} from "../../../lib/index.js";
 
 // ---------------------------------------------------------------- 工具
 

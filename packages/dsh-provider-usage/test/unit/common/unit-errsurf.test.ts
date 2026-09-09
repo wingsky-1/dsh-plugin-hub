@@ -18,12 +18,12 @@
 import { mkdtempSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { assert, pollUntil } from "./helpers.ts";
-import { makeLayerErrorSurface, makeNoopLayerErrorSurface, LAYER_ERROR_KEYS } from "../src/domain2/common/errsurf.ts";
-import { handleHealth } from "../src/domain2/routes/ui.ts";
-import { ReportTaskQueue } from "../src/domain2/schedule/tasks.ts";
-import { ReportScheduler } from "../src/domain2/schedule/scheduler.ts";
-import { normalizeReportConfig } from "../src/domain2/schedule/config.ts";
+import { assert, pollUntil } from "../../helpers.ts";
+import { makeLayerErrorSurface, makeNoopLayerErrorSurface, LAYER_ERROR_KEYS } from "../../../src/domain2/common/errsurf.ts";
+import { handleHealth } from "../../../src/domain2/routes/ui.ts";
+import { ReportTaskQueue } from "../../../src/domain2/schedule/tasks.ts";
+import { ReportScheduler } from "../../../src/domain2/schedule/scheduler.ts";
+import { normalizeReportConfig } from "../../../src/domain2/schedule/config.ts";
 
 function fakeReq(overrides = {}) {
   return {
@@ -205,7 +205,7 @@ function healthContext(layerErrors) {
   const historyDir = join(dir, "history");
   mkdirSync(historyDir, { recursive: true });
   try {
-    const { apply, ROUTES } = await import("../lib/index.js");
+    const { apply, ROUTES } = await import("../../../lib/index.js");
     const routes = [];
     const disposers = [];
     const ctx = {

@@ -19,7 +19,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { mkdtempSync } from "node:fs";
-import { assert } from "./helpers.ts";
+import { assert } from "../../helpers.ts";
 import {
   esc,
   sanitizeHtml,
@@ -46,7 +46,7 @@ import {
   TOL,
   ANOMALY_NEG,
   dailyBarTitle,
-} from "../lib/index.js";
+} from "../../../lib/index.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -504,7 +504,7 @@ assert.equal(parseAmount("Infinity"), null, "Infinity 非有限数 → null");
 {
   // G1 常量存在 + 源码注释附官方定价 URL 与核实日期
   assert.deepEqual(PEAK_WINDOWS_UTC.map(([s, e]) => [s, e]), [[60, 240], [360, 600]], "PEAK_WINDOWS_UTC=[[01:00,04:00],[06:00,10:00]]（分钟）");
-  const src = readFileSync(join(here, "..", "src", "domain1", "adapters", "deepseek-official.mjs"), "utf8");
+  const src = readFileSync(join(here, "..", "..", "..", "src", "domain1", "adapters", "deepseek-official.mjs"), "utf8");
   assert.ok(src.includes("https://api-docs.deepseek.com/quick_start/pricing"), "注释附官方定价 URL");
   assert.ok(src.includes("2026-08-26"), "注释附核实日期");
 }
@@ -620,7 +620,7 @@ assert.equal(parseAmount("Infinity"), null, "Infinity 非有限数 → null");
 
   // K13/G10 徽标加入后胶囊文案不回归 + CSS 截断规则存在
   assert.ok(empty.includes("dou-peak"), "stale 帧徽标仍渲染");
-  const css = readFileSync(join(here, "..", "src", "client", "style.css"), "utf8");
+  const css = readFileSync(join(here, "..", "..", "..", "src", "client", "style.css"), "utf8");
   assert.ok(css.includes(".dou-peak"), "style.css 含 .dou-peak 规则");
   assert.ok(css.includes("@media (max-width: 380px)") && css.includes("text-overflow: ellipsis"), "窄断点截断防溢出规则存在");
 }

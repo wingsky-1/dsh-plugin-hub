@@ -22,7 +22,7 @@ import { mkdtempSync, existsSync, readFileSync, writeFileSync, mkdirSync, append
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { assert, pollUntil, callHandler } from "./helpers.ts";
+import { assert, pollUntil, callHandler } from "../../helpers.ts";
 import {
   candidateWindow,
   previousClosedWindow,
@@ -81,7 +81,7 @@ import {
   notifyReport,
   runDueReport,
   normalizeReportDirectories,
-} from "../lib/index.js";
+} from "../../../lib/index.js";
 
 // ---------------------------------------------------------------- 工具
 
@@ -1230,7 +1230,7 @@ const GEN = (over = {}) => ({
   // 2) README 安全模型注入面句必须收敛为 basename 口径，且不得残留旧句
   //    「注入面只含聚合数值（不含会话明细与路径」与裸「摘要不含项目路径；」。
   const here = dirname(fileURLToPath(import.meta.url));
-  const pkgDir = join(here, "..");
+  const pkgDir = join(here, "..", "..", "..");
   const genSrc = readFileSync(join(pkgDir, "src/domain2/execute/generate.ts"), "utf8");
   assert.ok(genSrc.includes("只含聚合数值与目录 basename"), "generate.ts 注入面注释为准确口径（含目录 basename）");
   assert.ok(genSrc.includes("剥控制字符 + 截断"), "generate.ts 注入面注释含剥控制字符 + 截断口径");

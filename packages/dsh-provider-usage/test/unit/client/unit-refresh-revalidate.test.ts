@@ -12,10 +12,10 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
-import { assert } from "./helpers.ts";
+import { assert } from "../../helpers.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const pkgDir = join(here, "..");
+const pkgDir = join(here, "..", "..", "..");
 
 // ---------------------------------------------------------------- 源码契约：A1 接线存在
 

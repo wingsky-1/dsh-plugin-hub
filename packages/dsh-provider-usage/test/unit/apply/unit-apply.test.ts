@@ -14,7 +14,7 @@ console.error("EVAL-ORDER-TAG: APPLY");
 import { join, dirname } from "node:path";
 import { tmpdir, homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { assert, injectGlobalFetch } from "./helpers.ts";
+import { assert, injectGlobalFetch } from "../../helpers.ts";
 import {
   apply,
   ROUTES,
@@ -24,7 +24,7 @@ import {
   fetchWithTimeout,
   userAdaptersFile,
   adapterStateFile,
-} from "../lib/index.js";
+} from "../../../lib/index.js";
 
 // ---------------------------------------------------------------- 工具：fakeReqs
 
