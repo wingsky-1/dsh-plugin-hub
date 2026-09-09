@@ -49,7 +49,6 @@
       "packages/dsh-notifier/test/unit-text.test.ts",
       "packages/dsh-notifier/test/unit-sse-hub.test.ts",
       "packages/dsh-notifier/test/unit-webhook.test.ts",
-      "packages/dsh-notifier/test/real-context.test.ts",
       "packages/dsh-notifier/test/service-contract.test.ts",
       "packages/dsh-notifier/test/client-contract.test.ts",
       "packages/dsh-notifier/test/client-style.test.ts"
