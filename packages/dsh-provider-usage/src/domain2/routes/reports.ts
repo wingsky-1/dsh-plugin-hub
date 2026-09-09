@@ -22,7 +22,7 @@ import { readReportIndex, reportHtmlFile, reportMetaFile } from "../execute/inte
 import { presetLastRunForNewlyEnabled, previousClosedWindow, type DueReport } from "../schedule/interface.ts";
 import { readLastRun, updateLastRun } from "../common/interface.ts";
 import type { ReportTaskQueue } from "../schedule/interface.ts";
-import type { ReportConfigService } from "../../apply/report-config-service.ts";
+import type { ReportConfigService } from "../../apply/interface.ts";
 import { sanitizeHtml } from "../../shared/interface.ts";
 
 export interface ReportRoutesContext {

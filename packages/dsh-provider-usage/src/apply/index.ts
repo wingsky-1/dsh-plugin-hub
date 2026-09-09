@@ -107,39 +107,39 @@ export { runV2Pipeline, runV2PanelPipeline, capsuleHtmlFromHistory, panelCacheKe
 export type { PanelCacheEntry } from "../domain1/pipeline/interface.ts";
 export { HotReloadableAdapter, loadAndValidateAdapter, readStamp, stampEqual } from "../domain1/registry/interface.ts";
 // #503 会话用量趋势（M1 数据层）：trend 模块公共面（测试/外部消费者从 lib/index.js 导入）
-export { TrendTracker } from "../domain2/aggregate/index.ts";
-export type { TrendTrackerOptions } from "../domain2/aggregate/index.ts";
-export { TrendCollector, TREND_FOLD_TTL_MS, TREND_DONE_MAX } from "../domain2/collect/collector.ts";
-export type { TrendCallRecord, TrendCorrectRecord, TrendCounterRecord, TrendEmit } from "../domain2/collect/collector.ts";
-export { TrendAggregator, metricValue, weekStartKey, lastNWeekKeys, lastNMonthKeys, monthRange, weekRange, mergeAggRows, mergeDirRows, mergeHourRows } from "../domain2/aggregate/aggregator.ts";
-export type { TrendMetric, TrendGranularity, TrendStackPart, TrendStackPoint, TrendWindowSummary } from "../domain2/aggregate/aggregator.ts";
-export { TrendStore } from "../domain2/aggregate/store.ts";
+export { TrendTracker } from "../domain2/aggregate/interface.ts";
+export type { TrendTrackerOptions } from "../domain2/aggregate/interface.ts";
+export { TrendCollector, TREND_FOLD_TTL_MS, TREND_DONE_MAX } from "../domain2/collect/interface.ts";
+export type { TrendCallRecord, TrendCorrectRecord, TrendCounterRecord, TrendEmit } from "../domain2/collect/interface.ts";
+export { TrendAggregator, metricValue, weekStartKey, lastNWeekKeys, lastNMonthKeys, monthRange, weekRange, mergeAggRows, mergeDirRows, mergeHourRows } from "../domain2/aggregate/interface.ts";
+export type { TrendMetric, TrendGranularity, TrendStackPart, TrendStackPoint, TrendWindowSummary } from "../domain2/aggregate/interface.ts";
+export { TrendStore } from "../domain2/aggregate/interface.ts";
 // isValidShardRow/safeToken/safeId：分片行校验与防御提取纯函数（单测从 lib/index.js 导入）
-export { TREND_ROW_VERSION, TREND_UNIDENTIFIED, TREND_DIR_MAX, sumToken, isValidShardRow, safeToken, safeId, sanitizeDirName, hourOfDay } from "../domain2/collect/types.ts";
-export type { TrendAttribution, TrendTokens, TrendDetailRow, TrendCounterRow, TrendAggRow, TrendDirRow, TrendHourRow, TrendCell } from "../domain2/collect/types.ts";
+export { TREND_ROW_VERSION, TREND_UNIDENTIFIED, TREND_DIR_MAX, sumToken, isValidShardRow, safeToken, safeId, sanitizeDirName, hourOfDay } from "../domain2/collect/interface.ts";
+export type { TrendAttribution, TrendTokens, TrendDetailRow, TrendCounterRow, TrendAggRow, TrendDirRow, TrendHourRow, TrendCell } from "../domain2/collect/interface.ts";
 // #503 会话用量报告（M3 接线）：report 模块公共面（测试/外部消费者从 lib/index.js 导入）
-export { candidateWindow, pendingReports, presetLastRunForNewlyEnabled, previousClosedWindow, deriveLastRun, isClosedWindowRecord, LAST_RUN_SCHEMA } from "../domain2/schedule/schedule.ts";
-export type { DueReport, LastRunRecord } from "../domain2/schedule/schedule.ts";
-export { parseHHMM, normalizeReportConfig, normalizeReportDirectories, DEFAULT_REPORT_CONFIG, DEFAULT_PROMPT_TEMPLATE, readReportConfig, writeReportConfig, reportConfigFile } from "../domain2/schedule/config.ts";
-export type { ReportConfig, ReportPeriod, ReportPeriodConfig } from "../domain2/schedule/config.ts";
-export { generateReport, applyPromptTemplate, buildStatsSnapshot, PERIOD_BUCKETS } from "../domain2/execute/generate.ts";
-export { reportBodyToHtml } from "../domain2/execute/format.ts";
-export { DEFAULT_DAILY_PROMPT, DEFAULT_WEEKLY_PROMPT, DEFAULT_MONTHLY_PROMPT, DEFAULT_PROMPTS, LEGACY_PROMPT_TEMPLATE, LEGACY_DAILY_PROMPT_V1, LEGACY_WEEKLY_PROMPT_V1, LEGACY_MONTHLY_PROMPT_V1, LEGACY_DAILY_PROMPT_V2, LEGACY_WEEKLY_PROMPT_V2, LEGACY_MONTHLY_PROMPT_V2, LEGACY_DAILY_PROMPT_V3, LEGACY_WEEKLY_PROMPT_V3, LEGACY_MONTHLY_PROMPT_V3, LEGACY_DAILY_PROMPT_V4, LEGACY_WEEKLY_PROMPT_V4, LEGACY_MONTHLY_PROMPT_V4, promptFor } from "../domain2/schedule/config.ts";
-export type { ReportPrompts } from "../domain2/schedule/config.ts";
-export type { ReportMeta, ReportResult, ReportStatsSnapshot, ReportLlmService, ReportTokenUsage } from "../domain2/execute/generate.ts";
-export { ReportScheduler } from "../domain2/schedule/scheduler.ts";
-export { readLastRun, writeLastRun, updateLastRun, ensureLastRunMigrated, __lastRunChainForTests } from "../domain2/common/last-run.ts";
+export { candidateWindow, pendingReports, presetLastRunForNewlyEnabled, previousClosedWindow, deriveLastRun, isClosedWindowRecord, LAST_RUN_SCHEMA } from "../domain2/schedule/interface.ts";
+export type { DueReport, LastRunRecord } from "../domain2/schedule/interface.ts";
+export { parseHHMM, normalizeReportConfig, normalizeReportDirectories, DEFAULT_REPORT_CONFIG, DEFAULT_PROMPT_TEMPLATE, readReportConfig, writeReportConfig, reportConfigFile } from "../domain2/schedule/interface.ts";
+export type { ReportConfig, ReportPeriod, ReportPeriodConfig } from "../domain2/schedule/interface.ts";
+export { generateReport, applyPromptTemplate, buildStatsSnapshot, PERIOD_BUCKETS } from "../domain2/execute/interface.ts";
+export { reportBodyToHtml } from "../domain2/execute/interface.ts";
+export { DEFAULT_DAILY_PROMPT, DEFAULT_WEEKLY_PROMPT, DEFAULT_MONTHLY_PROMPT, DEFAULT_PROMPTS, LEGACY_PROMPT_TEMPLATE, LEGACY_DAILY_PROMPT_V1, LEGACY_WEEKLY_PROMPT_V1, LEGACY_MONTHLY_PROMPT_V1, LEGACY_DAILY_PROMPT_V2, LEGACY_WEEKLY_PROMPT_V2, LEGACY_MONTHLY_PROMPT_V2, LEGACY_DAILY_PROMPT_V3, LEGACY_WEEKLY_PROMPT_V3, LEGACY_MONTHLY_PROMPT_V3, LEGACY_DAILY_PROMPT_V4, LEGACY_WEEKLY_PROMPT_V4, LEGACY_MONTHLY_PROMPT_V4, promptFor } from "../domain2/schedule/interface.ts";
+export type { ReportPrompts } from "../domain2/schedule/interface.ts";
+export type { ReportMeta, ReportResult, ReportStatsSnapshot, ReportLlmService, ReportTokenUsage } from "../domain2/execute/interface.ts";
+export { ReportScheduler } from "../domain2/schedule/interface.ts";
+export { readLastRun, writeLastRun, updateLastRun, ensureLastRunMigrated, __lastRunChainForTests } from "../domain2/common/interface.ts";
 // D8 阶段二：执行器工厂与报告配置服务（E4/装配面公共符号，测试/外部消费者从 lib 导入）
-export { makeDueReportExecutor } from "../domain2/execute/executor.ts";
-export type { DueExecutorDeps } from "../domain2/execute/executor.ts";
+export { makeDueReportExecutor } from "../domain2/execute/interface.ts";
+export type { DueExecutorDeps } from "../domain2/execute/interface.ts";
 export { ReportConfigService } from "./report-config-service.ts";
 export type { ReportConfigServiceOptions } from "./report-config-service.ts";
 // #625/#626 任务队列（手动生成与定时共用执行入口）
-export { ReportTaskQueue } from "../domain2/schedule/tasks.ts";
-export type { ReportTask, ReportTaskInput, ReportTaskResult, ReportTaskStatus } from "../domain2/schedule/tasks.ts";
+export { ReportTaskQueue } from "../domain2/schedule/interface.ts";
+export type { ReportTask, ReportTaskInput, ReportTaskResult, ReportTaskStatus } from "../domain2/schedule/interface.ts";
 // 读侧投影（#626：一行/窗口=最新版）与公共解析（解析原语在 report-index.ts，D8 归位）
-export { readReportIndex, prevWindowTotal, runDueReport, persistReport, reportHtmlFile, reportMetaFile, notifyReport, __clearReportIndexCacheForTests, __reportIndexCacheStatsForTests } from "../domain2/execute/runner.ts";
-export { parseReportIndexLines } from "../domain2/common/report-index.ts";
+export { readReportIndex, prevWindowTotal, runDueReport, persistReport, reportHtmlFile, reportMetaFile, notifyReport, __clearReportIndexCacheForTests, __reportIndexCacheStatsForTests } from "../domain2/execute/interface.ts";
+export { parseReportIndexLines } from "../domain2/common/interface.ts";
 // 路径解析纯函数透出（供测试与调用方复用同一展开/解析规则，无行为变更）
 export { resolvePath, pluginHome, expandHomePath } from "../domain1/registry/interface.ts";
 // 配置归一化（#276 方案 A 阶段 3 拆出：默认值 / schemastery schema / normalizeConfig）
@@ -186,4 +186,4 @@ export type { UserAdapterRecord } from "../domain1/registry/interface.ts";
 // 插件契约转发（apply 主流程 + 路由表实现于 apply.ts）
 export { apply, ROUTES } from "./apply.ts";
 // 路由 handler 直出（#629 P2：status 响应 reused 透传的单元断言面）
-export { handleReportStatus } from "../domain2/routes/reports.ts";
+export { handleReportStatus } from "../domain2/routes/interface.ts";
