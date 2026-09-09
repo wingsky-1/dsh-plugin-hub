@@ -249,6 +249,7 @@
         "packages/dsh-provider-usage/test/unit-config.test.ts",
         "packages/dsh-provider-usage/test/unit-contract.test.ts",
         "packages/dsh-provider-usage/test/unit-deepseek-official.test.ts",
+        "packages/dsh-provider-usage/test/unit-errsurf.test.ts",
         "packages/dsh-provider-usage/test/unit-history.test.ts",
         "packages/dsh-provider-usage/test/unit-signal-lock.test.ts",
         "packages/dsh-provider-usage/test/unit-v1.test.ts",
@@ -269,6 +270,16 @@
             "!packages/dsh-provider-usage/src/types.ts"
           ],
           "comment": "#342 v4：src 级文件组分段（2）——apply 单列（#316 拆分后最重文件独立成段）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+        },
+        "errsurf": {
+          "mutate": [
+            "packages/dsh-provider-usage/src/errsurf.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-provider-usage/src/client/**",
+            "!packages/dsh-provider-usage/src/types.ts"
+          ],
+          "comment": "#670 阶段三 B 新段：域2每层错误面——errsurf.ts（累计计数+最近 N 条环形缓冲+snapshot/noop）；testFiles 含 unit-errsurf（杀灭面）；apply 接线与 routes/ui health per-layer 段由既有 apply/routes 段覆盖（mutate 已含对应文件）。"
         },
         "contracts": {
           "mutate": [

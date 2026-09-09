@@ -1,10 +1,7 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-provider-usage/src/routes/stats.ts",
-    "packages/dsh-provider-usage/src/routes/adapters.ts",
-    "packages/dsh-provider-usage/src/routes/ui.ts",
-    "packages/dsh-provider-usage/src/routes/reports.ts",
+    "packages/dsh-provider-usage/src/errsurf.ts",
     "!packages/dsh-provider-usage/src/client/**",
     "!packages/dsh-provider-usage/src/types.ts"
   ],
@@ -56,9 +53,9 @@
     ]
   },
   "jsonReporter": {
-    "fileName": "coverage/mutation/dsh-provider-usage-routes.json"
+    "fileName": "coverage/mutation/dsh-provider-usage-errsurf.json"
   },
   "incremental": true,
-  "incrementalFile": "coverage/mutation/incremental-provider-usage-routes.json",
-  "_comment": "阶段一新段（评审 P1-5 前置）：E5/C6 路由面——stats+adapters+ui+reports；先抽纯函数（clampTrendN/isReportPeriodValid/isReportKeyValid/isTaskIdValid）补 unit-routes 再开段；testFiles 含 unit-routes/unit-report/unit-apply。"
+  "incrementalFile": "coverage/mutation/incremental-provider-usage-errsurf.json",
+  "_comment": "#670 阶段三 B 新段：域2每层错误面——errsurf.ts（累计计数+最近 N 条环形缓冲+snapshot/noop）；testFiles 含 unit-errsurf（杀灭面）；apply 接线与 routes/ui health per-layer 段由既有 apply/routes 段覆盖（mutate 已含对应文件）。"
 }

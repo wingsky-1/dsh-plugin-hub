@@ -37,6 +37,7 @@ import { HotReloadableAdapter } from "./hotreload.ts";
 import { resolvePath } from "./path-resolve.ts";
 import { Config, normalizeConfig, type NormalizedConfig } from "./config.ts";
 import { readUiConfig } from "./ui-config.ts";
+import { makeLayerErrorSurface } from "./errsurf.ts";
 import { readAdapterStateResult, readUserAdapters } from "./user-adapters.ts";
 import { loadUserAdapterChecked } from "./user-adapter-loader.ts";
 import { StatsService } from "./stats-service.ts";
@@ -214,6 +215,11 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     // dsh-gate:allow-homedir #517 展示层脱敏：把诊断文本中的 home 前缀折叠为 ~，不产生读写面
     s.split(dshHome()).join("~/.dsh").split(homedir()).join("~");
 
+  // #670 阶段三 B：域2每层错误面（aggregate/schedule/execute）——装配层组合根创建，
+  // 经各对象既有 warn 诊断出口接线（层代码零改动，避免与 aggregator 拆分任务 A 冲突）；
+  // health per-layer 段经 UiRoutesContext 注入 routes/ui.ts 读取。
+  const layerErrors = makeLayerErrorSurface();
+
   const registry = makeAdapterRegistry({
     sanitizePath: sanitizeDiagnostic,
   });
@@ -289,7 +295,13 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   const trend = await TrendTracker.start({
     root: join(historyRoot, "trend"),
     retentionDays: config.trendRetentionDays,
-    warn: (msg) => console.warn(`[dsh-provider-usage] trend: ${sanitizeDiagnostic(msg)}`),
+    // #670 阶段三 B：aggregate 层错误面接线——压实失败/刷盘失败/归属异常等
+    // 趋势层运行时错误全部汇聚到 TrendTracker 的 warn 诊断出口，此处同时上报。
+    warn: (msg) => {
+      const safe = sanitizeDiagnostic(msg);
+      layerErrors.record("aggregate", safe);
+      console.warn(`[dsh-provider-usage] trend: ${safe}`);
+    },
     // #633 A1：目录归属主源 = 官方 store 的会话创建元数据（SessionHeader.cwd）。
     // SessionId 为官方品牌类型（string & BRAND），裸 string 经 get 参数位断言桥接
     // （官方品牌桥接须 import type @deepseek-ai/dsh-brand——catalog 已锁 0.1.2-rc.1，
@@ -328,7 +340,13 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       historyRoot,
       sanitizeDiagnostic,
     }),
-    warn: (msg) => console.warn(`[dsh-provider-usage] report: ${sanitizeDiagnostic(msg)}`),
+    // #670 阶段三 B：execute 层错误面接线——任务执行失败（含 executor 脱敏后错误）
+    // 经队列 warn 出口汇聚于此。
+    warn: (msg) => {
+      const safe = sanitizeDiagnostic(msg);
+      layerErrors.record("execute", safe);
+      console.warn(`[dsh-provider-usage] report: ${safe}`);
+    },
   });
 
   const reportScheduler = ReportScheduler.start({
@@ -339,7 +357,13 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       reportQueue.submit(due);
       return Promise.resolve();
     },
-    warn: (msg) => console.warn(`[dsh-provider-usage] report: ${sanitizeDiagnostic(msg)}`),
+    // #670 阶段三 B：schedule 层错误面接线——tick 异常/提交失败经调度器
+    // warn 出口汇聚于此。
+    warn: (msg) => {
+      const safe = sanitizeDiagnostic(msg);
+      layerErrors.record("schedule", safe);
+      console.warn(`[dsh-provider-usage] report: ${safe}`);
+    },
   });
 
   function ensureReportKind(): void {
@@ -376,7 +400,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     ),
     ...createUiRoutes(
       { health: ROUTES.health, trend: ROUTES.trend, uiConfig: ROUTES.uiConfig, events: ROUTES.events },
-      { statsService, trend, uiConfig, sseClients, broadcastUiConfigChanged },
+      { statsService, trend, uiConfig, sseClients, broadcastUiConfigChanged, layerErrors },
     ),
     ...createReportRoutes(
       {
