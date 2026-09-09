@@ -45,6 +45,9 @@ import {
   LEGACY_DAILY_PROMPT_V3,
   LEGACY_WEEKLY_PROMPT_V3,
   LEGACY_MONTHLY_PROMPT_V3,
+  LEGACY_DAILY_PROMPT_V4,
+  LEGACY_WEEKLY_PROMPT_V4,
+  LEGACY_MONTHLY_PROMPT_V4,
   promptFor,
   readReportConfig,
   writeReportConfig,
@@ -356,6 +359,76 @@ const GEN = (over = {}) => ({
   assert.ok(!hostile.byProvider[0].model.includes("\u009b"), "model C1 控制字符已剥离（复核 P1-2）");
 }
 
+// ---------------------------------------------------------------- #662 时段维度（byHour/byPeriod/peakHour + coveredDays 守卫）
+
+{
+  const hourRow = (day, hour, calls, input, output = null) => ({
+    v: TREND_ROW_VERSION,
+    kind: "hour",
+    day,
+    hour,
+    input,
+    output,
+    cacheRead: null,
+    cacheWrite: null,
+    calls,
+    turns: calls,
+    toolCalls: 0,
+  });
+  // 全量覆盖：窗口 2 天均有 hour 事实 → 时段字段注入（窗口外行不计）
+  const full = buildStatsSnapshot({
+    period: "daily",
+    startDay: "2026-09-02",
+    endDay: "2026-09-03",
+    buckets: [],
+    hourRows: [
+      hourRow("2026-09-02", 9, 2, 100),
+      hourRow("2026-09-02", 21, 1, 80),
+      hourRow("2026-09-03", 9, 3, 60),
+      hourRow("2026-09-10", 9, 9, 999), // 窗口外
+    ],
+    prevTotal: null,
+  });
+  assert.equal(full.coveredDays, 2, "coveredDays=窗口内有 hour 事实的天数（窗口外不计）");
+  assert.notEqual(full.byHour, null, "覆盖充足 → byHour 注入");
+  assert.equal(full.byHour.length, 24, "byHour 24 项全量（hour 0..23）");
+  assert.equal(full.byHour[9].calls, 5, "byHour 同钟点跨日合并 calls（2+3）");
+  assert.equal(full.byHour[9].total, 160, "byHour 同钟点跨日合并 total（100+60）");
+  assert.equal(full.byHour[21].calls, 1, "晚间钟点 calls 独立");
+  assert.equal(full.byHour[0].calls, 0, "无数据钟点 calls=0（零 usage 语义）");
+  assert.equal(full.byHour[0].total, null, "无数据钟点 total=null");
+  assert.deepEqual(
+    full.byPeriod,
+    [
+      { period: "凌晨", calls: 0, total: null },
+      { period: "上午", calls: 5, total: 160 },
+      { period: "下午", calls: 0, total: null },
+      { period: "晚间", calls: 1, total: 80 },
+    ],
+    "byPeriod 四档（凌晨0-5/上午6-11/下午12-17/晚间18-23）",
+  );
+  assert.deepEqual(full.peakHour, { hour: 9, calls: 5, total: 160 }, "peakHour=total 判峰（并列取最早）");
+  // 覆盖不足：窗口 7 天仅 1 天有 hour 事实 → 整段降级 null（防「1/7 天代表整周」误导叙事）
+  const partial = buildStatsSnapshot({
+    period: "weekly",
+    startDay: "2026-09-01",
+    endDay: "2026-09-07",
+    buckets: [],
+    hourRows: [hourRow("2026-09-01", 9, 2, 100)],
+    prevTotal: null,
+  });
+  assert.equal(partial.coveredDays, 1, "部分覆盖 coveredDays=1");
+  assert.equal(partial.byHour, null, "coveredDays < windowDays → byHour 整体 null");
+  assert.equal(partial.byPeriod, null, "coveredDays < windowDays → byPeriod 整体 null");
+  assert.equal(partial.peakHour, null, "coveredDays < windowDays → peakHour 整体 null");
+  // 无 hour 事实（旧数据物理缺失）：全 null、coveredDays=0
+  const none = buildStatsSnapshot({ period: "daily", startDay: "2026-09-02", endDay: "2026-09-02", buckets: [], prevTotal: null });
+  assert.equal(none.coveredDays, 0, "无 hourRows → coveredDays=0");
+  assert.equal(none.byHour, null, "无 hour 事实 → byHour null");
+  assert.equal(none.byPeriod, null, "无 hour 事实 → byPeriod null");
+  assert.equal(none.peakHour, null, "无 hour 事实 → peakHour null");
+}
+
 // ---------------------------------------------------------------- #532 per-period 提示词
 
 {
@@ -434,6 +507,28 @@ const GEN = (over = {}) => ({
     assert.equal(loaded.daily.time, "09:30", "V3 落盘读回：其余字段不受迁移影响");
     rmSync(v3Root, { recursive: true, force: true });
   }
+  // #662：存量 V4 三周期模板（当前默认的无时段观察版）自动升级为含时段观察的新默认
+  const legacyV4 = normalizeReportConfig({
+    prompts: {
+      daily: LEGACY_DAILY_PROMPT_V4,
+      weekly: LEGACY_WEEKLY_PROMPT_V4,
+      monthly: LEGACY_MONTHLY_PROMPT_V4,
+    },
+  });
+  assert.equal(legacyV4.prompts.daily, DEFAULT_DAILY_PROMPT, "V4 无时段观察日报模板自动升级");
+  assert.equal(legacyV4.prompts.weekly, DEFAULT_WEEKLY_PROMPT, "V4 无时段观察周报模板自动升级");
+  assert.equal(legacyV4.prompts.monthly, DEFAULT_MONTHLY_PROMPT, "V4 无时段观察月报模板自动升级");
+  // V4 混合形态：单周期自定义保留、其余周期平滑升级（防整表覆盖回退）
+  const mixedV4 = normalizeReportConfig({
+    prompts: {
+      daily: LEGACY_DAILY_PROMPT_V4,
+      weekly: "我的周报模板 {stats}",
+      monthly: LEGACY_MONTHLY_PROMPT_V4,
+    },
+  });
+  assert.equal(mixedV4.prompts.daily, DEFAULT_DAILY_PROMPT, "V4 混合：未自定义日报仍升级");
+  assert.equal(mixedV4.prompts.weekly, "我的周报模板 {stats}", "V4 混合：自定义周报保留原样");
+  assert.equal(mixedV4.prompts.monthly, DEFAULT_MONTHLY_PROMPT, "V4 混合：未自定义月报仍升级");
   // 若老用户对日报有自定义修改，则保留自定义内容，不被覆写
   const userCustomPrompts = normalizeReportConfig({
     prompts: {
@@ -1152,6 +1247,10 @@ const GEN = (over = {}) => ({
   for (const sentinel of ["byDirectory 第一位", "工作分散在 N 个目录", "目录版图", "绝不展开为路径、绝不推测目录内容"]) {
     assert.ok(cfgSrc.includes(sentinel), `三周期模板目录硬规则哨兵在场：${sentinel}`);
   }
+  // #662 时段硬规则哨兵（C1 模板升级防回退：时段红线 + 时段句式在场）
+  for (const sentinel of ["时段一笔（可选）", "时段观察一笔（可选）", "时段版图（可选一节）", "绝不把时段与行为、场景、情绪关联", "绝不与 byDirectory 交叉关联"]) {
+    assert.ok(cfgSrc.includes(sentinel), `三周期模板时段硬规则哨兵在场：${sentinel}`);
+  }
 }
 
 // ---------------------------------------------------------------- #633 分片 b C1：三周期模板硬规则断言（fake llm 抓 prompt）
@@ -1167,12 +1266,20 @@ const GEN = (over = {}) => ({
     assert.ok(tpl.includes("绝不展开为路径"), `${name} 模板含目录名 basename 硬规则（不展开为路径）`);
     assert.ok(tpl.includes("totals.total > 0") || tpl.includes("分母大于 0"), `${name} 模板含占比分母硬规则`);
     assert.ok(tpl.includes("绝不输出 null/0/NaN"), `${name} 模板保留 null 降级硬规则`);
+    // #662：时段观察指引 + 时段红线（原样引用字段、禁行为脑补、禁跨口径关联）
+    assert.ok(tpl.includes("peakHour") || tpl.includes("byPeriod"), `${name} 模板含时段观察指引（peakHour/byPeriod）`);
+    assert.ok(tpl.includes("绝不把时段与行为、场景、情绪关联"), `${name} 模板含时段红线（禁行为脑补）`);
+    assert.ok(tpl.includes("绝不与 byDirectory 交叉关联"), `${name} 模板含时段红线（禁跨口径关联）`);
   }
   // 周期特有句式：日报可点 top 目录占比；周报「本周」节目录分布观察含中性句；
   // 月报含目录版图小节。
   assert.ok(daily.includes("byDirectory 第一位（最活跃目录）"), "日报模板：可点 top 目录占比句式");
   assert.ok(weekly.includes("工作分散在 N 个目录"), "周报模板：目录分散中性句");
   assert.ok(monthly.includes("目录版图"), "月报模板：目录版图小节");
+  // #662 周期特有句式：日报时段一笔 / 周报时段观察一笔 / 月报时段版图
+  assert.ok(daily.includes("时段一笔（可选）"), "日报模板：时段一笔（可选）句式");
+  assert.ok(weekly.includes("时段观察一笔（可选）"), "周报模板：时段观察一笔（可选）句式");
+  assert.ok(monthly.includes("时段版图（可选一节）"), "月报模板：时段版图（可选一节）句式");
   // 端到端：带目录快照 → 三周期模板 {stats} 注入 → prompt 落地断言（fake llm）
   const dirSnap = buildStatsSnapshot({
     period: "daily",
