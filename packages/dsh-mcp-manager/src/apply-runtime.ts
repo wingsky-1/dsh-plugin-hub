@@ -16,8 +16,9 @@ import type { Context } from "@deepseek-ai/cordis";
 import type { PreStepDecision } from "@deepseek-ai/dsh-agent";
 import type { CatalogCache, CatalogDecision, CatalogMessage, SupervisorLite, CatalogAgent } from "./catalog.ts";
 import { resolveCatalogInjection } from "./catalog.ts";
-import { MIDDLEWARE_GLOBAL_ROOT, type McpManager } from "./manager.ts";
-import { normalizeMiddlewareMode, registerMiddlewareTools } from "./middleware.ts";
+import { normalizeMiddlewareMode } from "./workspace/interface.ts";
+import type { McpManager } from "./manager.ts";
+import { registerMiddlewareTools, registerDirectMcpGuard } from "./middleware.ts";
 import type { MiddlewareMode } from "./middleware-types.ts";
 import { makeRoutes, makeEventsRoute, makeHealthRoute } from "./routes.ts";
 import { sseData } from "../../../shared/host-utils.js";
@@ -58,6 +59,10 @@ export function makeMiddlewareHotSwitch(
         disabledTools: manager.disabledTools,
         stats: manager.stats,
       });
+    } else {
+      // D8：off 模式无中间层实例，独立注册 mcp__ 直呼守卫（数据源直查禁用表）。
+      const guardDispose = registerDirectMcpGuard(manager.ctx, manager.disabledTools, resolveRoot);
+      if (guardDispose !== undefined) dispose.current = guardDispose;
     }
     // off ↔ project/all：重注册/卸载中间层工具后 reconcile——all 模式下全局
     // supervisor 由 reconcile 停掉、新全局条目经 start 内部接管触达 @global
@@ -202,20 +207,4 @@ export async function setupConfigWatchersAsync(manager: McpManager): Promise<() 
   }
 }
 
-/** resolveRoot 路由：exec.agent → 归一化项目根（agent-less → undefined）。 */
-export function makeResolveRoot(manager: McpManager): (agent: unknown) => Promise<string | undefined> {
-  // 路由输入：exec.agent 当前 cwd = agent.session.header.cwd（实证已闭合）。
-  // all 模式：cwd 无项目（或无项目配置）时 fallback 到全局虚拟 root @global。
-  return async (agent: unknown): Promise<string | undefined> => {
-    if (typeof agent !== "object" || agent === null) return undefined;
-    const session = (agent as { session?: { header?: { cwd?: unknown } } }).session;
-    const cwd = session?.header?.cwd;
-    const root = await manager.normalizedProjectRoot(typeof cwd === "string" ? cwd : undefined);
-    if (root !== undefined) return root;
-    if (manager.middlewareMode === "all") {
-      const globalServers = manager.globalServers().filter((server) => server.enabled !== false);
-      if (globalServers.length > 0) return MIDDLEWARE_GLOBAL_ROOT;
-    }
-    return undefined;
-  };
-}
+

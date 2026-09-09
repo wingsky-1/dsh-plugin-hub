@@ -10,10 +10,9 @@
 
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { existsSync, statSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import type { ServerResponse } from "node:http";
 import type { SseHub } from "../../../shared/sse-hub.js";
-import { dshHome } from "../../../shared/dsh-home.js";
 import type { Context, LoggerService } from "@deepseek-ai/cordis";
 import type { ServerConfig, ClientUiConfig } from "./types.ts";
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
@@ -22,7 +21,14 @@ import { normalizeServer } from "./normalize.ts";
 import { normalizeUiConfig, buildConfigUiPatch } from "./config-schema.ts";
 import { McpStore } from "./store.ts";
 import { ConnectionSupervisor } from "./supervisor.ts";
-import { SCOPE_GLOBAL, SCOPE_PROJECT, normalizeScope } from "./scope.ts";
+import {
+  SCOPE_GLOBAL,
+  SCOPE_PROJECT,
+  normalizeScope,
+  MIDDLEWARE_GLOBAL_ROOT,
+  findProjectRoot,
+  normalizedProjectRoot,
+} from "./workspace/interface.ts";
 import { catalogCacheFile, summarizeToolDescriptions } from "./catalog.ts";
 import {
   McpMiddleware,
@@ -39,16 +45,6 @@ import type { MiddlewareMode, ProjectUnit, DisabledToolsMap } from "./middleware
 import { McpStatsCollector } from "./call-stats.ts";
 import { createRedactor } from "./pipeline/interface.ts";
 import { stripMcpPrefix } from "./connection/interface.ts";
-
-/** 中间层 all 模式的全局虚拟 root（全局服务器经中间层访问时的路由 key）。 */
-export const MIDDLEWARE_GLOBAL_ROOT = "@global";
-
-/** DSH 全局家目录（shared/dsh-home.js 语义：DSH_HOME 非空白原样采用、空白
- *  视同未设置回落 ~/.dsh；#517 收敛）。resolve 为本处 .dsh 标记排除的对比
- *  用途服务。 */
-function dshHomePath() {
-  return resolve(dshHome());
-}
 
 /**
  * 管理器：持有全局存储 + 当前会话项目的项目级存储、每个服务器的监督器
@@ -204,39 +200,12 @@ export class McpManager {
     this.statusTimer.unref?.();
   }
 
-  /** 项目根发现：从 cwd 向上找 .git / .dsh / .mcp.json 标记，找不到用 cwd 本身。
-   *  .dsh 标记须排除 DSH 全局家目录（默认 ~/.dsh，尊重 DSH_HOME）——否则 home
-   *  下任何无标记目录（如 ~/dev/leetcode）向上都会命中 ~/.dsh，把 home 误判为
-   *  项目根并加载 ~/.dsh/mcp.json，导致别的会话串入不属于它的项目级 MCP。 */
-  async findProjectRoot(cwd: string | undefined): Promise<string> {
-    const dshHome = dshHomePath();
-    let current = resolve(cwd ?? process.cwd());
-    for (let depth = 0; depth < 16; depth += 1) {
-      const dotDsh = join(current, ".dsh");
-      // .dsh 目录存在且不是 DSH 全局家目录才算项目标记。
-      const hasProjectDsh = existsSync(dotDsh) && resolve(dotDsh) !== dshHome;
-      if (existsSync(join(current, ".git")) || hasProjectDsh || existsSync(join(current, ".mcp.json"))) {
-        return current;
-      }
-      const parent = dirname(current);
-      if (parent === current) break;
-      current = parent;
-    }
-    return resolve(cwd ?? process.cwd());
-  }
-
   /** 当前会话的项目级存储（无活动项目时抛错）。 */
   async projectStoreOrThrow(): Promise<McpStore> {
     if (this.projectStore === undefined) {
       throw new Error("no active project session (call session with a cwd first)");
     }
     return this.projectStore;
-  }
-
-  /** 归一化项目根（realpath；失败回退 resolve）。中间层路由使用。 */
-  async normalizedProjectRoot(cwd: string | undefined): Promise<string | undefined> {
-    if (cwd === undefined || cwd === null || cwd === "") return undefined;
-    return this.findProjectRoot(cwd);
   }
 
   /**
@@ -290,7 +259,7 @@ export class McpManager {
         logger: this.logger,
         projectServersFor: (root) => this.projectServersFor(root),
         globalServers: () => this.globalServers(),
-        normalizedProjectRoot: (cwd) => this.normalizedProjectRoot(cwd),
+        normalizedProjectRoot: (cwd) => normalizedProjectRoot(cwd),
         saveUserState: (units) => this.saveUserState(units),
         emitStatus: () => this.emitStatus(),
         catalogCachePath: (root) => this.catalogCachePathFor(root),
@@ -396,7 +365,7 @@ export class McpManager {
       if (server.enabled === false) continue;
       servers.set(name, { server, scope: SCOPE_GLOBAL });
     }
-    const root = cwd === undefined || cwd === null || cwd === "" ? undefined : await this.findProjectRoot(cwd);
+    const root = cwd === undefined || cwd === null || cwd === "" ? undefined : await findProjectRoot(cwd);
     const store = root === undefined ? undefined : await this.projectStoreFor(root);
     if (store !== undefined) {
       for (const server of store.data.servers) {
@@ -444,7 +413,7 @@ export class McpManager {
     const mw = this.middleware;
     if (mw === undefined || this.middlewareMode === "off") return view;
     // 项目 root 只解析一次（所有 project scope 服务器共用；空 cwd → 无项目单元）。
-    const cwdRoot = cwd === undefined || cwd === null || cwd === "" ? undefined : await this.normalizedProjectRoot(cwd);
+    const cwdRoot = cwd === undefined || cwd === null || cwd === "" ? undefined : await normalizedProjectRoot(cwd);
     for (const [name, { scope }] of servers) {
       if (name === "") continue;
       // root 解析：project scope → 项目 root；global scope → @global（all 权威，
@@ -503,7 +472,7 @@ export class McpManager {
    * middleware=project/all 时项目级连接由中间层池常驻，切走不断开。
    */
   async setSession(cwd: string | undefined): Promise<void> {
-    const root = cwd === undefined || cwd === null || cwd === "" ? undefined : await this.findProjectRoot(cwd);
+    const root = cwd === undefined || cwd === null || cwd === "" ? undefined : await findProjectRoot(cwd);
     if (root === this.projectRoot && this.projectStore !== undefined) return;
     // 本就没有活动项目且新会话同样无项目（空 cwd）：保持幂等，避免反复
     // emitStatus → SSE → 客户端 refresh 的广播循环。

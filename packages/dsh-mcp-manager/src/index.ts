@@ -75,8 +75,11 @@ export {
 } from "./config-schema.ts";
 export type { UiPlacementConfig, ClientUiConfig } from "./types.ts";
 
-// 管理器 / 中间层全局虚拟 root
-export { McpManager, MIDDLEWARE_GLOBAL_ROOT } from "./manager.ts";
+// 管理器（MIDDLEWARE_GLOBAL_ROOT 单源在 workspace 域，阶段 4 收敛）
+export { McpManager } from "./manager.ts";
+export { MIDDLEWARE_GLOBAL_ROOT } from "./workspace/interface.ts";
+// 工作空间路由域（项目根发现 / 全名解析 / scope / 模式归一化；阶段 4 成形）
+export { findProjectRoot, normalizedProjectRoot, makeResolveRoot } from "./workspace/interface.ts";
 
 // 核心化 service（官方 storageDomain 模式）：ctx.mcpManager 类型面 + 声明合并。
 // 仅类型导出（无副作用导入）：消费方 import 类型时 tsc 会解析 service.d.ts，
@@ -196,7 +199,7 @@ export type {
 } from "./middleware.ts";
 // 路由
 export { ROUTES, makeRoutes, makeEventsRoute, makeHealthRoute, uiConfigChangedFrame, broadcastFrame, SSE_HEARTBEAT_MS, SSE_PING_FRAME } from "./routes.ts";
-export { SCOPE_GLOBAL, SCOPE_PROJECT, normalizeScope } from "./scope.ts";
+export { SCOPE_GLOBAL, SCOPE_PROJECT, normalizeScope } from "./workspace/interface.ts";
 // 仓库共享层（loopback 围栏 / writeJson / readJsonBody / sseData）
 export { isLoopbackRequest } from "../../../shared/loopback.js";
 export { writeJson, readJsonBody, sseData } from "../../../shared/host-utils.js";

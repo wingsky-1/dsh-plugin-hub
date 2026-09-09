@@ -37,14 +37,17 @@ import {
 import {
   parseFullServerName,
   normalizeToolName,
+  fullServerName,
+  bareServerName,
+  MIDDLEWARE_GLOBAL_ROOT,
+} from "./workspace/interface.ts";
+import {
   policyAllows,
   policyDenialReason,
-  fullServerName,
   isToolDenied,
   isCatalogFresh,
   boundCatalogTools,
   toolDisabledReason,
-  MIDDLEWARE_GLOBAL_ROOT,
 } from "./middleware-utils.ts";
 import type {
   MiddlewareHost,
@@ -714,17 +717,16 @@ export {
   MAX_TOTAL_CATALOG_BYTES,
   LIST_DEFAULT_TOOLS_PER_SERVER,
   LIST_MAX_TOOLS_PER_SERVER,
-  normalizeMiddlewareMode,
 } from "./middleware-const.ts";
+// 模式归一化归 workspace 域（阶段 4 迁出，经 workspace/interface.ts）
+export { normalizeMiddlewareMode } from "./workspace/interface.ts";
 // 纯函数与目录检索（pipeline 域函数已迁 src/pipeline/，经 pipeline/interface.ts 转发；
-// 其余 workspace/catalog 域函数仍位于 middleware-utils.ts，阶段 4/5 陆续迁出）
+// workspace 域命名/全名类已迁 src/workspace/，经 workspace/interface.ts 转发；
+// 策略与目录检索域函数仍位于 middleware-utils.ts，阶段 5 catalog 域迁出）
 export { withTimeout, normalizeArguments, msgOf, createRedactor, globMatch } from "./pipeline/interface.ts";
+export { fullServerName, parseFullServerName, normalizeToolName, bareServerName, MIDDLEWARE_GLOBAL_ROOT } from "./workspace/interface.ts";
 export {
-  fullServerName,
-  parseFullServerName,
-  normalizeToolName,
   policyAllows,
-  bareServerName,
   policyDenialReason,
   isCatalogFresh,
   boundCatalogTools,
@@ -736,12 +738,11 @@ export {
   searchCatalogMulti,
   listCatalog,
   findToolDetail,
-  MIDDLEWARE_GLOBAL_ROOT,
 } from "./middleware-utils.ts";
 // 状态持久化
 export { userStateFile, loadUserState, saveUserState, catalogCacheFileFor, readCatalogServerFromDisk, loadDisabledTools, saveDisabledTools } from "./middleware-state.ts";
 // 工具注册
-export { registerMiddlewareTools } from "./middleware-register.ts";
+export { registerMiddlewareTools, registerDirectMcpGuard } from "./middleware-register.ts";
 // 类型
 export type {
   MiddlewareMode,

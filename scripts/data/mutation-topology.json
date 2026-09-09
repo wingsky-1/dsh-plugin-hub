@@ -95,7 +95,8 @@
         "packages/dsh-mcp-manager/test/unit-supervisor.test.ts",
         "packages/dsh-mcp-manager/test/unit-transport.test.ts",
         "packages/dsh-mcp-manager/test/unit-call-stats.test.ts",
-        "packages/dsh-mcp-manager/test/unit-pipeline.test.ts"
+        "packages/dsh-mcp-manager/test/unit-pipeline.test.ts",
+        "packages/dsh-mcp-manager/test/unit-workspace.test.ts"
       ],
       "segments": {
         "entry": {
@@ -168,15 +169,14 @@
           "mutate": [
             "packages/dsh-mcp-manager/src/supervisor.ts",
             "packages/dsh-mcp-manager/src/middleware-state.ts",
-            "packages/dsh-mcp-manager/src/store.ts",
-            "packages/dsh-mcp-manager/src/scope.ts"
+            "packages/dsh-mcp-manager/src/store.ts"
           ],
           "excludes": [
             "!packages/dsh-mcp-manager/src/client/**",
             "!packages/dsh-mcp-manager/src/types.ts",
             "!packages/dsh-mcp-manager/src/service.ts"
           ],
-          "comment": "#342 二期：src 级文件组功能命名段（supervisor）——supervisor+middleware-state+store+scope；types.ts / service.ts（type-only）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+          "comment": "#342 二期：src 级文件组功能命名段（supervisor）——supervisor+middleware-state+store（#664 阶段4：scope.ts 迁入 src/workspace/ 域，新文件阶段 1–5 不纳入 mutate 清单，C4 明示变异盲区；阶段 6 迁移时重画）；types.ts / service.ts（type-only）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
         }
       }
     },

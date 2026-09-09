@@ -38,6 +38,7 @@ const {
   BREAKPOINT_TABLET_MAX,
   breakpointForWidth,
   clampPointToViewport,
+  findProjectRoot,
 } = await import("../lib/index.js");
 
 // ---- normalizeServer ----
@@ -194,10 +195,10 @@ const {
     const dshProj = join(dir, "dsh-proj");
     mkdirSync(join(dshProj, ".dsh"), { recursive: true });
 
-    const manager = new McpManager({ logger: { warn: () => {} } }, new McpStore(join(dir, "m.json")));
-    assert.equal(await manager.findProjectRoot(gitProj), gitProj, ".git 标记命中");
-    assert.equal(await manager.findProjectRoot(mcpProj), mcpProj, ".mcp.json 标记命中");
-    assert.equal(await manager.findProjectRoot(dshProj), dshProj, ".dsh 非 home 标记命中");
+    // 阶段 4：findProjectRoot 迁入 workspace 域（root-resolution.ts），纯函数直测
+    assert.equal(await findProjectRoot(gitProj), gitProj, ".git 标记命中");
+    assert.equal(await findProjectRoot(mcpProj), mcpProj, ".mcp.json 标记命中");
+    assert.equal(await findProjectRoot(dshProj), dshProj, ".dsh 非 home 标记命中");
 
     // 全局家排除：模拟 ~ 下含 .dsh（= DSH_HOME），其子目录向上命中家级 .dsh 应跳过，
     // 继续向上命中顶棚 dir/.git（若误判家级 .dsh 为项目标记则返回 fake-user-home）。
@@ -207,22 +208,22 @@ const {
     process.env.DSH_HOME = fakeDshHome;
     const inHome = join(fakeUserHome, "sub");
     mkdirSync(inHome, { recursive: true });
-    assert.equal(await manager.findProjectRoot(inHome), dir, "全局家不算项目标记");
+    assert.equal(await findProjectRoot(inHome), dir, "全局家不算项目标记");
     // cwd 恰为家目录本身：家级 .dsh 不算自身标记 → 越过它命中顶棚。
-    assert.equal(await manager.findProjectRoot(fakeDshHome), dir, "家目录自身不算项目标记");
+    assert.equal(await findProjectRoot(fakeDshHome), dir, "家目录自身不算项目标记");
     // 恢复通用 home 供后续用例。
     process.env.DSH_HOME = fakeHome;
     // 无任何标记的普通目录 → 向上命中顶棚。
     const plain = join(dir, "plain");
     mkdirSync(plain, { recursive: true });
-    assert.equal(await manager.findProjectRoot(plain), dir);
+    assert.equal(await findProjectRoot(plain), dir);
     // 回落 cwd：输入嵌套 16 级，向上窗口（16 层）不出沙箱、够不到任何标记 → 原样返回。
     let deep = dir;
     for (let i = 0; i < 16; i += 1) deep = join(deep, `d${i}`);
     mkdirSync(deep, { recursive: true });
-    assert.equal(await manager.findProjectRoot(deep), deep, "16 级窗口内无标记 → 回落 cwd");
+    assert.equal(await findProjectRoot(deep), deep, "16 级窗口内无标记 → 回落 cwd");
     // undefined cwd → process.cwd() 兜底。
-    const fallback = await manager.findProjectRoot(undefined);
+    const fallback = await findProjectRoot(undefined);
     assert.equal(typeof fallback, "string");
   } finally {
     if (prevHome === undefined) delete process.env.DSH_HOME;

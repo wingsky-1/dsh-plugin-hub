@@ -17,8 +17,9 @@
 import type { Context } from "@deepseek-ai/cordis";
 import { McpManager } from "./manager.ts";
 import { McpStore } from "./store.ts";
-import { normalizeMiddlewareMode, registerMiddlewareTools } from "./middleware.ts";
-import { makeMiddlewareHotSwitch, makeResolveRoot } from "./apply-runtime.ts";
+import { registerMiddlewareTools, registerDirectMcpGuard, loadDisabledTools } from "./middleware.ts";
+import { makeMiddlewareHotSwitch } from "./apply-runtime.ts";
+import { normalizeMiddlewareMode, makeResolveRoot } from "./workspace/interface.ts";
 import { registerCatalogInjection, setupConfigWatchersAsync, setupRoutesAndBroadcast } from "./apply-runtime.ts";
 import { provideMcpManagerService } from "./apply-services.ts";
 import {
@@ -136,12 +137,19 @@ async function assembleEnabledRuntime(
       currentMiddlewareDispose = fn;
     },
   };
+  // D8：guard 数据源直查禁用表（只读），加载独立于 initMiddleware——off 模式
+  // 不 initMiddleware 也必须先载入禁用表，guard 才能三模式一致拦截 mcp__ 直呼。
+  manager.disabledTools = await loadDisabledTools(manager.userStatePath);
   if (middlewareMode !== "off") {
     const mw = await manager.initMiddleware(middlewareMode, options.middlewarePolicy);
     currentMiddlewareDispose = registerMiddlewareTools(ctx, mw, resolveRoot, middlewareMode, {
       disabledTools: manager.disabledTools,
       stats: manager.stats,
     });
+  } else {
+    // D8：off 模式无中间层实例（无连接池副作用）——独立注册 mcp__ 直呼守卫。
+    const guardDispose = registerDirectMcpGuard(ctx, manager.disabledTools, resolveRoot);
+    if (guardDispose !== undefined) currentMiddlewareDispose = guardDispose;
   }
   manager.setMiddlewareMode = makeMiddlewareHotSwitch(manager, options.middlewarePolicy, resolveRoot, middlewareDisposer);
 

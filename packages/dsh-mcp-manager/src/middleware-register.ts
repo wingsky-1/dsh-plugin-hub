@@ -23,14 +23,12 @@ import {
   searchCatalogMulti,
   listCatalog,
   findToolDetail,
-  parseFullServerName,
-  fullServerName,
   policyAllows,
   policyDenialReason,
   isToolDenied,
   toolDisabledReason,
-  MIDDLEWARE_GLOBAL_ROOT,
 } from "./middleware-utils.ts";
+import { parseFullServerName, fullServerName, MIDDLEWARE_GLOBAL_ROOT } from "./workspace/interface.ts";
 import type { MiddlewareMode, DisabledToolsMap } from "./middleware-types.ts";
 import type { McpStatsCollector } from "./call-stats.ts";
 
@@ -598,7 +596,7 @@ function handleCallGuard(args: unknown, mw: McpMiddleware): PreToolDecision | un
 async function handleDirectMcpGuard(
   name: string,
   agent: unknown,
-  mw: McpMiddleware,
+  disabledTools: DisabledToolsMap | undefined,
   resolveRoot: (agent: unknown) => Promise<string | undefined>,
 ): Promise<PreToolDecision | undefined> {
   const rest = name.slice("mcp__".length);
@@ -607,16 +605,22 @@ async function handleDirectMcpGuard(
   const server = rest.slice(0, separator);
   const tool = rest.slice(separator + 2);
   if (tool === "") return undefined;
+  // B11（D5 定稿，规格化不可逆）：server/tool 名含连续双下划线时，第一个 `__`
+  // 分割无法唯一还原 (server, tool)（mcp__my__sv__t 既可能是 server="my"+
+  // tool="sv__t"，也可能是 server="my__sv"+tool="t"）——tool 段仍含 `__` 即
+  // 存在歧义，按未知 server 处理（不禁用不误禁，放行 next()）。映射表列入
+  // 后续增强；不改 publicToolName/INVALID_NAME_CHARS（防冲击官方 mcp__ 契约）。
+  if (tool.includes("__")) return undefined;
   const root = await resolveRoot(agent);
   if (root === undefined) {
     // 无法解析会话 root：按最宽可见范围放行（仅 @global 共享记录生效）。
-    if (mw.disabledTools?.get(MIDDLEWARE_GLOBAL_ROOT)?.get(server)?.has(tool) === true) {
+    if (disabledTools?.get(MIDDLEWARE_GLOBAL_ROOT)?.get(server)?.has(tool) === true) {
       return { kind: "deny", reason: toolDisabledReason(`@${MIDDLEWARE_GLOBAL_ROOT}/${server}`, tool) };
     }
     return undefined;
   }
   const serverKey = fullServerName(root, server);
-  if (isToolDenied(mw.disabledTools, undefined, serverKey, tool)) {
+  if (isToolDenied(disabledTools, undefined, serverKey, tool)) {
     return { kind: "deny", reason: toolDisabledReason(serverKey, tool) };
   }
   return undefined;
@@ -642,10 +646,41 @@ function registerPreExecuteGuard(
         return next();
       }
       if (name.startsWith("mcp__")) {
-        const decision = await handleDirectMcpGuard(name, exec.agent, mw, resolveRoot);
+        const decision = await handleDirectMcpGuard(name, exec.agent, mw.disabledTools, resolveRoot);
         if (decision !== undefined) return decision;
         return next();
       }
+      return next();
+    },
+  );
+}
+
+/**
+ * D8：独立 mcp__ 直呼守卫（guard 挂载与中间层实例解耦）。
+ *
+ * off 模式不 initMiddleware（无连接池副作用），pre-execute guard 现状只在
+ * registerMiddlewareTools 内注册 → mcp__ 直呼无禁用拦截（「工具级禁用三入口」
+ * 实际一入口）。本守卫数据源直查禁用表（只读），独立注册路径，三模式一致；
+ * ws_mcp_call 守卫依赖策略/中间层实例，仅 project/all 经 registerMiddlewareTools
+ * 注册。B11 反解规格化逻辑与 registerMiddlewareTools 内 guard 同源
+ * （handleDirectMcpGuard）。
+ */
+export function registerDirectMcpGuard(
+  ctx: Context,
+  disabledTools: DisabledToolsMap | undefined,
+  resolveRoot: (agent: unknown) => Promise<string | undefined>,
+): (() => void) | undefined {
+  if (typeof ctx.on !== "function") return undefined;
+  return ctx.on(
+    "tools/pre-execute",
+    async (
+      exec: { name?: string; agent?: unknown },
+      next: () => Promise<PreToolDecision>,
+    ): Promise<PreToolDecision> => {
+      const name = exec?.name;
+      if (typeof name !== "string" || name === "" || !name.startsWith("mcp__")) return next();
+      const decision = await handleDirectMcpGuard(name, exec.agent, disabledTools, resolveRoot);
+      if (decision !== undefined) return decision;
       return next();
     },
   );

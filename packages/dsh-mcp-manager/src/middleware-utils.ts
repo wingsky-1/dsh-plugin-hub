@@ -1,11 +1,13 @@
 /**
- * dsh-mcp-manager — 中间层纯函数（命名 / 策略 / 目录检索）。
+ * dsh-mcp-manager — 中间层纯函数（策略 / 目录检索）。
  *
  * 无副作用纯函数，类型自 middleware-types.ts 取；被连接池类、工具注册与
  * manager 共享。#664 阶段 2 起执行管道纯函数（args/msg/redact/timeout/
- * project/authorize）迁至 src/pipeline/，本文件保留 workspace（命名/全名）与
- * catalog（检索）域函数，阶段 4/5 陆续迁出；globMatch 经 pipeline/interface.ts
- * 跨目录引用（D10 门面规则）。
+ * project/authorize）迁至 src/pipeline/，阶段 4 命名/全名类（fullServerName/
+ * parseFullServerName/bareServerName/normalizeToolName）与全局虚拟 root 常量
+ * 迁至 src/workspace/（经 workspace/interface.ts 引用）；本文件保留策略与
+ * 目录（检索）域函数，阶段 5 目录检索族随 catalog 域迁出。globMatch 经
+ * pipeline/interface.ts 跨目录引用（D10 门面规则）。
  */
 
 import { globMatch } from "./pipeline/interface.ts";
@@ -16,6 +18,7 @@ import {
   MAX_TOOLS_PER_SERVER,
   MAX_TOTAL_CATALOG_BYTES,
 } from "./middleware-const.ts";
+import { fullServerName, parseFullServerName, bareServerName, normalizeToolName, MIDDLEWARE_GLOBAL_ROOT } from "./workspace/interface.ts";
 import type {
   CatalogServer,
   CatalogTool,
@@ -30,15 +33,7 @@ import type {
 } from "./middleware-types.ts";
 import type { ServerConfig } from "./types.ts";
 
-// ------------------------------------------------------------ 命名与容错
-
-/** server 全局唯一名：@<root>/<server>。 */
-export function fullServerName(root: string, server: string): string {
-  return `@${root}/${server}`;
-}
-
-/** 中间层全局虚拟 root（全局服务器经中间层访问时的路由 key；与 manager 常量同值）。 */
-export const MIDDLEWARE_GLOBAL_ROOT = "@global";
+// ------------------------------------------------------------ 禁用表容错
 
 /** 从持久化载荷解析 disabledTools 三层结构（损坏/缺失 → 空；容错不抛）。 */
 export function parseDisabledTools(raw: unknown): DisabledToolsMap {
@@ -57,38 +52,6 @@ export function parseDisabledTools(raw: unknown): DisabledToolsMap {
   return out;
 }
 
-/** 解析 @<root>/<server> 全名 → { root, server }；非法返回 undefined。
- * root 是绝对路径（以 / 开头），故从最后一个 `/` 分割（server 名不含 `/`）。
- * 特殊形态兼容：`@global/<server>`（单 @，人类/文档/A2 指引形态）归一化为
- * root=`@global`（MIDDLEWARE_GLOBAL_ROOT）；`@@global/<server>`（双 @，内部
- * fullServerName 产物）同样归一化为 `@global`——两种输入等价，杜绝「单 @ 被
- * 路由拒绝、双 @ 放行」的语义分裂（隔离验证 P0 发现，smoke 双 @ 掩盖单 @ 被拒）。 */
-export function parseFullServerName(name: string): { root: string; server: string } | undefined {
-  if (!name.startsWith("@")) return undefined;
-  const slash = name.lastIndexOf("/");
-  if (slash <= 1 || slash === name.length - 1) return undefined;
-  const rawRoot = name.slice(1, slash);
-  // @global/<s> → rawRoot="global"；@@global/<s> → rawRoot="@global"。
-  const root = rawRoot === "global" || rawRoot === "@global" ? MIDDLEWARE_GLOBAL_ROOT : rawRoot;
-  return { root, server: name.slice(slash + 1) };
-}
-
-/** 归一化中间层工具的 tool 参数（模型可能传 mcp__<server>__<tool> 全名）。
- * @param caller 调用方工具名（错误文案前缀；ws_mcp_call / ws_mcp_detail 复用）。 */
-export function normalizeToolName(serverName: string, toolName: string, caller = "ws_mcp_call"): string {
-  const prefix = `mcp__${serverName}__`;
-  let name = toolName;
-  if (name.startsWith("mcp__")) {
-    while (name.startsWith(prefix)) name = name.slice(prefix.length);
-    if (name.startsWith("mcp__")) {
-      throw new Error(
-        `${caller}: tool 参数疑似其他 MCP server 的注册全名（${JSON.stringify(toolName)}，server="${serverName}"）；请传该 server 上的裸名`,
-      );
-    }
-  }
-  return name;
-}
-
 // ------------------------------------------------------------ 策略
 
 /** 策略裁决：deny 优先。serverKey 支持全名（@root/server）或裸名——全名优先匹配（工作空间隔离），未命中回落裸名。返回 true = 允许。 */
@@ -105,12 +68,6 @@ export function policyAllows(policy: MiddlewarePolicy | undefined, serverKey: st
   const allow = policy.allowTools?.[bareServerName(serverKey)];
   if (allow === undefined || allow.length === 0) return true;
   return allow.some((pattern) => globMatch(pattern, tool));
-}
-
-/** 提取裸名（@root/server → server；无前缀原样返回）。 */
-export function bareServerName(name: string): string {
-  const parsed = parseFullServerName(name);
-  return parsed?.server ?? name;
 }
 
 /**
