@@ -1313,6 +1313,7 @@ function rmStatSafe(p) {
       disposed: false,
       disconnect: async () => {
         oldDisconnected += 1;
+        oldSupervisor.disposed = true; // 与真实 disconnect 语义一致
       },
     };
     manager.supervisors.set("s5", oldSupervisor);

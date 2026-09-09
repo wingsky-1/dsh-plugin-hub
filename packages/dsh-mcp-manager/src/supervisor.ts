@@ -346,7 +346,9 @@ export class ConnectionSupervisor {
       this.setStatus("disabled");
       return;
     }
-    this.setStatus(this.connectedAt === undefined ? "connecting" : "reconnecting");
+    // B1：重连窗口判定用 failedAttempts>0——scheduleReconnect 已把 connectedAt 置
+    // undefined，用 connectedAt 判定会把重连误投影为 connecting（LED/浮窗分级错乱）。
+    this.setStatus(this.failedAttempts > 0 ? "reconnecting" : "connecting");
     const server = this.server;
     const transport = createTransport(server);
     const client = new MCPClient(transport);
