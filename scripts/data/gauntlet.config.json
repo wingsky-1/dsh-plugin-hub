@@ -66,21 +66,21 @@
         "scope": "src 级六段（#342 二期）：manager manager.ts / entry index+normalize+import / supervisor supervisor+middleware-state+store+scope / middleware middleware+middleware-utils+middleware-const / routes middleware-register+routes / runtime catalog+apply+transport+placement-math+config-schema+protocol+middleware-types；基线为 src 口径，由四班次 observe 重建"
       },
       "dsh-provider-usage": {
-        "baselineScore": 68.91,
-        "baselineCovered": 68.91,
-        "baselineKilled": 3342,
-        "baselineTimeout": 29,
-        "baselineSurvived": 1521,
-        "baselineTotal": 4892,
-        "baselineNoCoverage": 891,
+        "baselineScore": 69.03,
+        "baselineCovered": 69.03,
+        "baselineKilled": 3423,
+        "baselineTimeout": 30,
+        "baselineSurvived": 1549,
+        "baselineTotal": 5002,
+        "baselineNoCoverage": 900,
         "baselineErrors": 0,
         "baselineDate": "2026-09-09",
-        "baselineDuration": "11m56s（阶段零重建：六段 4m30s 历史 + 新五段 7m26s 实测）",
+        "baselineDuration": "13m54s（阶段二重建：十一段基线 + report 两段含 D8 新文件）",
         "baselineScope": "src 级十段全量（#342 二期六段 + 阶段零四段，口径详见 scope 字段；旧 lib 行号区间口径见 git history 2026-08-25）",
-        "config": "stryker.conf.d/dsh-provider-usage-{entry,apply,contracts,sanitize,registry,pipeline,trend-aggregate,trend-collect,report-schedule,report-execute,routes}.json（#342 二期六段功能命名 + 阶段零分层四段 + 阶段一 routes 段 D17）",
-        "hardeningNote": "#150 变异加固轮一阶段（PR #169）：covered 由 31.80% 提升至 52.87%；二阶段（PR #183）：提升至 67.28% ≥60 达标，全局 strict 随之开启；阶段零（#670）：补趋势/报告/路由盲区四段，testFiles 增 unit-trend/unit-report/unit-trend-view",
+        "config": "stryker.conf.d/dsh-provider-usage-{entry,apply,contracts,sanitize,registry,pipeline,trend-aggregate,trend-collect,report-schedule,report-execute,routes}.json（#342 二期六段 + 阶段零四段 + 阶段一 routes 段 + 阶段二 D8 归位）",
+        "hardeningNote": "#150 两阶段达标开启 strict；阶段零（#670）：补盲区四段 + testFiles；阶段一（#670）：routes 段开段；阶段二（#670）：D8 last-run/report-index/executor/list-dirs/report-config-service 新文件并入 report 段",
         "threshold": 60,
-        "scope": "src 级十一段（#342 二期六段 + 阶段零四段 + 阶段一 routes 段）：entry / apply / contracts / sanitize / registry registry+user-adapter-loader / pipeline history+v2+hotreload+placement-math+path-resolve+client-logic+provider-config+charts+stats-service / trend-aggregate aggregator+store+index / trend-collect collector+types / report-schedule config+schedule+scheduler+tasks / report-execute runner+generate+format / routes stats+adapters+ui+reports；基线为 src 口径，由四班次 observe 重建"
+        "scope": "src 级十一段（#342 二期六段 + 阶段零四段 + 阶段一 routes 段）：entry / apply / contracts / sanitize / registry registry+user-adapter-loader / pipeline history+v2+hotreload+placement-math+path-resolve+client-logic+provider-config+charts+stats-service / trend-aggregate aggregator+store+index / trend-collect collector+types / report-schedule config+schedule+scheduler+tasks+last-run+report-config-service（D8 归位）/ report-execute runner+generate+format+report-index+executor+list-dirs（D8 归位）/ routes stats+adapters+ui+reports；基线为 src 口径，由四班次 observe 重建"
       },
       "dsh-lan-proxy": {
         "baselineScore": 52.43,

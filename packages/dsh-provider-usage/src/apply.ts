@@ -41,10 +41,12 @@ import { readAdapterStateResult, readUserAdapters } from "./user-adapters.ts";
 import { loadUserAdapterChecked } from "./user-adapter-loader.ts";
 import { StatsService } from "./stats-service.ts";
 import { TrendTracker } from "./trend/index.ts";
-import { TREND_UNIDENTIFIED, sanitizeDirName } from "./trend/types.ts";
 import { readReportConfig, type ReportConfig } from "./report/config.ts";
-import { ReportScheduler, updateLastRun } from "./report/scheduler.ts";
-import { optionalNotifier, readReportIndex, runDueReport } from "./report/runner.ts";
+import { ReportScheduler } from "./report/scheduler.ts";
+import { optionalNotifier } from "./report/runner.ts";
+import { ReportConfigService } from "./report/report-config-service.ts";
+import { makeDueReportExecutor } from "./report/executor.ts";
+import { makeListDirs } from "./report/list-dirs.ts";
 import { ReportTaskQueue } from "./report/tasks.ts";
 import { createStatsRoutes } from "./routes/stats.ts";
 import { createAdapterRoutes } from "./routes/adapters.ts";
@@ -307,36 +309,31 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   trendDisposers.push(ctx.on("session/flush", () => trend.flushNow()));
   trendDisposers.push(ctx.on("session/disposed", (session) => trend.handleDisposed(session)));
 
-  let reportCfg: ReportConfig = await readReportConfig(historyRoot);
+  // D8 阶段二：reportCfg 双源收口为 ReportConfigService（内存权威 + 串行写链，
+  // 并发 POST 不交错 lost-update）；执行器移入 E4 工厂（executor.ts），装配只留接线。
+  const reportCfgService = new ReportConfigService({
+    root: historyRoot,
+    initial: await readReportConfig(historyRoot),
+    onUpdate: (cfg) => reportScheduler.updateConfig(cfg),
+  });
 
   // #625/#626：任务队列 = 定时 tick 与手动「立即生成」的单一执行入口。
-  // 执行器职责：幂等下沉（执行前重查 index，已有成功记录且非 force → 复用，不调 LLM）、
-  // 生成、lastRun 推进——全部在队列临界区内（串行单飞天然临界，修复原 routes 侧
-  // lastRun 读改写位于 mutex 外的竞态）；失败不推进 lastRun（下轮按幂等重试/补跑）。
+  // 执行器职责（幂等下沉/生成/lastRun 推进/失败不推进/脱敏）在 E4 工厂契约内固化，
+  // 队列只负责串行单飞与去重（tasks.ts）。
   const reportQueue = new ReportTaskQueue({
-    executor: async (input) => {
-      try {
-        if (input.force !== true) {
-          const existing = (await readReportIndex(historyRoot)).find(
-            (m) => m.period === input.period && m.key === input.key && m.ok === true,
-          );
-          if (existing !== undefined) return { meta: existing, reused: true };
-        }
-        const meta = await runDueReport({ due: input, trend, ctx, reportCfg, historyRoot, sanitizeDiagnostic });
-        // #629 P2：lastRun 推进走单一临界区（写前重读），不与保存配置路径互踩字段
-        await updateLastRun(historyRoot, (cur) => ({ ...cur, [meta.period]: meta.key }));
-        return { meta };
-      } catch (e: unknown) {
-        // 任务 failed 的 error 会经 status 路由回客户端：脱敏后再抛，防本地路径泄露
-        throw new Error(sanitizeDiagnostic(e instanceof Error ? e.message : String(e)));
-      }
-    },
+    executor: makeDueReportExecutor({
+      trend,
+      ctx,
+      getReportCfg: () => reportCfgService.get(),
+      historyRoot,
+      sanitizeDiagnostic,
+    }),
     warn: (msg) => console.warn(`[dsh-provider-usage] report: ${sanitizeDiagnostic(msg)}`),
   });
 
   const reportScheduler = ReportScheduler.start({
     root: historyRoot,
-    config: reportCfg,
+    config: reportCfgService.get(),
     // #625：tick 只提交任务（非阻塞，队列去重吸收同窗口堆积），不再等待生成
     onDue: (due) => {
       reportQueue.submit(due);
@@ -394,20 +391,9 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
         ctx,
         historyRoot,
         reportQueue,
-        getReportCfg: () => reportCfg,
-        setReportCfg: (c) => { reportCfg = c; },
-        reportScheduler,
-        // #633 分片 b2 B4：报告目录范围多选的候选数据源（trend.dirTotals 全留存
-        // 窗口 calls 降序聚合，含未识别桶键；仅 basename 净化值出路由）。
-        // #633 P2（出口净化收口）：出口前过 sanitizeDirName（trend/types.ts 权威
-        // 定义，与 generate/config/客户端各出口同口径）——旁路污染分片行的 dir 键
-        // （伪造路径分隔符/控制字符）在数据出口层剥除归一，客户端 dirDisplayLabel
-        // 兜底保持为纵深第二道；剥后为空 → 归未识别桶键。
-        listDirs: () =>
-          trend.dirTotals("0000-01-01", "9999-12-31").map((r) => ({
-            ...r,
-            dir: sanitizeDirName(r.dir) ?? TREND_UNIDENTIFIED,
-          })),
+        reportCfgService,
+        // D8：目录候选清单收敛为注入查询面（makeListDirs 工厂，apply 零隐藏可变状态）
+        listDirs: makeListDirs(trend),
       },
     ),
   ];

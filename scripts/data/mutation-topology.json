@@ -255,7 +255,8 @@
         "packages/dsh-provider-usage/test/unit-trend.test.ts",
         "packages/dsh-provider-usage/test/unit-trend-view.test.ts",
         "packages/dsh-provider-usage/test/unit-report.test.ts",
-        "packages/dsh-provider-usage/test/unit-routes.test.ts"
+        "packages/dsh-provider-usage/test/unit-routes.test.ts",
+        "packages/dsh-provider-usage/test/unit-report-executor.test.ts"
       ],
       "segments": {
         "apply": {
@@ -359,25 +360,30 @@
             "packages/dsh-provider-usage/src/report/config.ts",
             "packages/dsh-provider-usage/src/report/schedule.ts",
             "packages/dsh-provider-usage/src/report/scheduler.ts",
-            "packages/dsh-provider-usage/src/report/tasks.ts"
+            "packages/dsh-provider-usage/src/report/tasks.ts",
+            "packages/dsh-provider-usage/src/report/last-run.ts",
+            "packages/dsh-provider-usage/src/report/report-config-service.ts"
           ],
           "excludes": [
             "!packages/dsh-provider-usage/src/client/**",
             "!packages/dsh-provider-usage/src/types.ts"
           ],
-          "comment": "阶段零新段（D17 分层变异）：E3 报告配置/调度面——config+schedule+scheduler+tasks；testFiles 含 unit-report（杀灭面为该层测试）。"
+          "comment": "阶段零新段（D17 分层变异）：E3 报告配置/调度面——config+schedule+scheduler+tasks；阶段二（D8）并入 last-run.ts（公共原语）与 report-config-service.ts（配置服务）；testFiles 含 unit-report/unit-report-executor。"
         },
         "report-execute": {
           "mutate": [
             "packages/dsh-provider-usage/src/report/runner.ts",
             "packages/dsh-provider-usage/src/report/generate.ts",
-            "packages/dsh-provider-usage/src/report/format.ts"
+            "packages/dsh-provider-usage/src/report/format.ts",
+            "packages/dsh-provider-usage/src/report/report-index.ts",
+            "packages/dsh-provider-usage/src/report/executor.ts",
+            "packages/dsh-provider-usage/src/report/list-dirs.ts"
           ],
           "excludes": [
             "!packages/dsh-provider-usage/src/client/**",
             "!packages/dsh-provider-usage/src/types.ts"
           ],
-          "comment": "阶段零新段（D17 分层变异）：E4 报告执行/产出面——runner+generate+format；testFiles 含 unit-report（杀灭面为该层测试）。"
+          "comment": "阶段零新段（D17 分层变异）：E4 报告执行/产出面——runner+generate+format；阶段二（D8）并入 report-index.ts（公共解析）/executor.ts（执行器工厂）/list-dirs.ts（目录候选工厂）；testFiles 含 unit-report/unit-report-executor。"
         },
         "routes": {
           "mutate": [

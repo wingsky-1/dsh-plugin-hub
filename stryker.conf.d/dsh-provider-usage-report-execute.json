@@ -4,6 +4,9 @@
     "packages/dsh-provider-usage/src/report/runner.ts",
     "packages/dsh-provider-usage/src/report/generate.ts",
     "packages/dsh-provider-usage/src/report/format.ts",
+    "packages/dsh-provider-usage/src/report/report-index.ts",
+    "packages/dsh-provider-usage/src/report/executor.ts",
+    "packages/dsh-provider-usage/src/report/list-dirs.ts",
     "!packages/dsh-provider-usage/src/client/**",
     "!packages/dsh-provider-usage/src/types.ts"
   ],
@@ -48,7 +51,8 @@
       "packages/dsh-provider-usage/test/unit-trend.test.ts",
       "packages/dsh-provider-usage/test/unit-trend-view.test.ts",
       "packages/dsh-provider-usage/test/unit-report.test.ts",
-      "packages/dsh-provider-usage/test/unit-routes.test.ts"
+      "packages/dsh-provider-usage/test/unit-routes.test.ts",
+      "packages/dsh-provider-usage/test/unit-report-executor.test.ts"
     ]
   },
   "jsonReporter": {
@@ -56,5 +60,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-provider-usage-report-execute.json",
-  "_comment": "阶段零新段（D17 分层变异）：E4 报告执行/产出面——runner+generate+format；testFiles 含 unit-report（杀灭面为该层测试）。"
+  "_comment": "阶段零新段（D17 分层变异）：E4 报告执行/产出面——runner+generate+format；阶段二（D8）并入 report-index.ts（公共解析）/executor.ts（执行器工厂）/list-dirs.ts（目录候选工厂）；testFiles 含 unit-report/unit-report-executor。"
 }
