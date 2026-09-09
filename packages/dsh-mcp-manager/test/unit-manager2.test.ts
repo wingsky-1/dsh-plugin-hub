@@ -1419,6 +1419,10 @@ function rmStatSafe(p) {
       firstReg >= 0 && disAt > firstReg && secondReg > disAt,
       "B5：顺序不变式——旧代际注销先于新代际注册（现状只置 disposed、旧工具残留 → 红测）",
     );
+    // 清理：断开全部 supervisor（含新代际）关闭 stdio 子进程——manager.dispose()
+    // 不关 transport，残留子进程句柄会让本文件独立运行时事件循环挂死
+    // （CI mutation dry run 超时根因）。
+    for (const sup of manager.supervisors.values()) await sup.disconnect();
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
