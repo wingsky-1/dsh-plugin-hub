@@ -103,8 +103,8 @@ src/client/
 
 ### ⑦ 执行管道域（pipeline/）
 - 纯函数族 + 薄适配：authorize → call → project/truncate/redact/timeout/stale → 埋点；msg/redact/timeout 归属本域。
-- 契约：两路径差异面签名（handlers/timeout 来源/redact/stale）；两路径同构由契约测试强制；日志脱敏覆盖点清单（supervisor.ts:362、manager 各处 logger.warn）；supervisor 路径新增 stats 埋点=行为扩展声明；redactor raw/decoded 双形态。
-- **stryker 归属（二轮关键 3 拍死）**：本域新文件**阶段 2 就地挂入现有 middleware 段**并同步 mutate 清单（防空段断言只查正向条目，不查 src 全覆盖——不挂=变异盲区）；阶段 6 集中迁移时再全量重构六段清单。二选一，取「就地挂段」。
+- 契约：两路径差异面签名（handlers/timeout 来源/redact/stale）；**两路径同构由契约测试强制——同构断言范围显式排除 timeout/redact/stale 三项差异面**（其余环节输入同、输出同）；日志脱敏覆盖点清单（supervisor.ts:362 及 manager 十余处 logger.warn，实施时列全量行号）；supervisor 路径新增 stats 埋点=行为扩展声明；redactor raw/decoded 双形态。
+- **stryker 归属（二轮关键 3 拍死，取方案 b）**：阶段 1–5 新建文件（pipeline/*、catalog/search.ts、workspace/* 等）**一律不纳入既有六段 mutate 清单**（防空段断言只查正向条目、不查 src 全覆盖 → 该阶段属**明示接受的变异盲区**，门禁以 covered 不回落为守）；阶段 6 集中迁移时一次性重画六段清单 + topology 三方一致。方案 a（逐阶段挂段）违背「静态面集中到迁移 PR」，弃。
 
 ### ⑧ 服务/统计域
 - integration：8 方法；registerServer 串行队列；**B6 修复落位（二轮 A 补）**：getTools 与 summary 同源（中间层接管的服务器也返回工具），键形态决策见 D9。
@@ -137,11 +137,11 @@ src/client/
 | 0 规格决策表 | 拍板 §六 全部决策 + 契约缺口清单 + 迁移门禁策略三件文档 | B4/B6/B11/B13/B14/B18/B8/D9 |
 | 1 测试基建 + 配置域 | fakeTransport/fakeMCPClient 桩进 helpers.ts；unit-call-stats 双登记；createRedactor 基线测试；B7 直测；config model/store 逻辑归位（不动文件） | B2、B7、B13、B14、B17 |
 | 2 执行管道成形 | pipeline/ 纯函数族+薄适配（**就地挂 middleware 段**）；两路径契约测试；supervisor 埋点声明 | B8、B9、B10（catalog/search 同步改）、B18、B14 |
-| 3 连接域逻辑收敛 | orchestrator/runtime 文件内重组；事件契约先定；B5 补调 disconnect（start 保持同步）；六态单 PR（B1+B4+客户端 C13 跨端同 PR） | B1、B4、B5、B18、B19、B20 |
+| 3 连接域逻辑收敛 | orchestrator/runtime 文件内重组；事件契约先定；B5 补调 disconnect（start 保持同步）；六态单 PR（B1+B4 宿主端 + **C13 仅拍板客户端未知状态策略，实现留阶段 7**） | B1、B4、B5、B18、B19、B20 |
 | 4 工作空间路由域 | workspace/ 新文件+薄转发+调用点全切；双常量收敛 | B3（提前）、B11 规格落地 |
 | 5 目录域 | catalog/search.ts 检索族落位；catalogViewFor（含 diskCatalogSummaryCache）迁出；B12 修复 | B10（若未完成）、B12 |
 | 6 集中式纯搬移 PR | git mv + 静态面全同步 + 迁移验证三件套（零行为变更） | — |
-| 7 客户端分层 + 收口 | core/float/settings；C1（P1 优先）+C2/C3/C4/C5/C6/C7/C8/C10 隔离浏览器实测；哑断言清理；文档同步 | C1–C15、B15、B16、B19 |
+| 7 客户端分层 + 收口 | core/float/settings（**附旧文件→新文件映射表**，core/api.ts、core/i18n.ts 标注「拆出自 dom.ts/locales.ts」；shared/client/* 相对路径加深一级计入工作量）；C1（P1 优先）+C2/C3/C4/C5/C6/C7/C8/C10+C13 实现，隔离浏览器实测；哑断言清理；文档同步（C11 依赖 C1 修复后 PATCH 分支可达，时序标注） | C1–C15、B15、B16、B19 |
 | 8 质量收口 | 变异得分（covered 口径已达标，守 observe 回落判据）；4 个仅 stryker 面文件按断言价值选择性纳入 smoke | — |
 
 **顺序显式化**：B12/B19 行为修复在阶段 3/5 完成（先于阶段 6 迁移），迁移 PR 零行为变更成立。
