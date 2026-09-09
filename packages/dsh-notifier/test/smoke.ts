@@ -28,8 +28,14 @@
 await import("./unit-config.test.ts");
 await import("./unit-text.test.ts");
 await import("./unit-sanitize.test.ts");
+// PR0 红测先行 4：event-handlers 核心判定直测（resolveTurnEvidence 矩阵）
+await import("./unit-event-handlers.test.ts");
 // #515：共享 SSE 枢纽（shared/sse-hub.js 主动回收：stalled/maxAge/上限/观测）
 await import("./unit-sse-hub.test.ts");
+// PR0 红测先行 5：server.ts createSseHub 业务包装（seq/600 帧缓冲/framesSince）
+await import("./unit-server-sse-bus.test.ts");
+// PR0 红测先行 1：system-notifier spawn 注入直测（节流/杀进程/失败终态——T3-3 零断言闭合）
+await import("./unit-system-notifier.test.ts");
 // #508 M2：webhook 频道（渲染/注入防护/认证头/掩码泛化/配置契约）
 await import("./unit-webhook.test.ts");
 
@@ -41,6 +47,9 @@ await import("./e2e-question-turn.test.ts");
 
 // e2e：边缘路径与生命周期清理（#82 批次 4 热点补强）
 await import("./e2e-edge.test.ts");
+
+// PR0 红测先行 3：outbound 真 resolver 全链投递基线（bark enabled:true + fetch 白名单加固）
+await import("./e2e-outbound.test.ts");
 
 // e2e：真实 cordis Context 形态（#290 C/D/E：未注入访问/事件可达契约/静态契约）
 await import("./real-context.test.ts");

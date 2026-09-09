@@ -62,6 +62,29 @@ function sseRes(opts = {}) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** 轮询直到谓词成立（替代固定 sleep：心跳 evict 是异步回调，轮询比等固定毫秒稳）。 */
+async function pollUntil(predicate, timeoutMs = 2000) {
+  const start = Date.now();
+  for (;;) {
+    if (predicate()) return true;
+    if (Date.now() - start > timeoutMs) return false;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+/** 轮询「安静期」：谓词持续成立达 quietMs 视为确认（负向断言——验证某事不发生）。 */
+async function pollUntilQuiet(predicate, quietMs, timeoutMs = 2000) {
+  const start = Date.now();
+  let quiet = 0;
+  for (;;) {
+    if (!predicate()) return false;
+    quiet += 10;
+    if (quiet >= quietMs) return true;
+    if (Date.now() - start > timeoutMs) return false;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 // ---- (a) 上限淘汰最老（对齐 #330 既有语义，抽取零漂移） ----
 {
   const hub = createSseHub({ getMaxConnections: () => 2, heartbeatMs: 60_000 });
@@ -120,7 +143,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     hub.register(r);
     hub.broadcast("data: x\n\n"); // write false → 置 stalledAt
     ok(hub.size() === 1, "背压后仍在表（未超窗）");
-    await sleep(120); // 跨多心跳，超 stalledTimeoutMs
+    await pollUntil(() => hub.size() === 0); // 心跳 evict 异步触发，轮询等回收
     ok(hub.size() === 0, "stalled 超窗被心跳 evict");
     ok(r.state.destroyed === true, "stalled 连接被 destroy");
     const stats = hub.evictStats();
@@ -153,7 +176,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   try {
     const r = sseRes();
     hub.register(r);
-    await sleep(120); // 跨多心跳，超 maxAgeMs
+    await pollUntil(() => hub.size() === 0); // maxAge 心跳轮换异步触发
     ok(hub.size() === 0, "maxAge 超限且空闲被轮换 evict");
     ok(r.state.destroyed === true, "maxAge 轮换 destroy");
     const stats = hub.evictStats();
@@ -169,10 +192,9 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   try {
     const r = sseRes();
     hub.register(r);
-    for (let i = 0; i < 8; i += 1) {
-      hub.broadcast("data: x\n\n");
-      await sleep(15);
-    }
+    for (let i = 0; i < 8; i += 1) hub.broadcast("data: x\n\n");
+    // 负向断言：活跃连接不得被 maxAge 轮换（lastWriteAt 刷新）——安静期确认
+    await pollUntilQuiet(() => hub.size() === 1, 130);
     ok(hub.size() === 1, "活跃连接不被 maxAge 轮换（lastWriteAt 刷新）");
   } finally {
     hub.dispose();
@@ -187,7 +209,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     hub.register(r);
     // 不 broadcast，仅靠心跳写（activity=false，不刷 lastWriteAt）：
     // 若心跳被误算为活动，lastWriteAt 恒新鲜 → 永不轮换（bug）。
-    await sleep(200); // 跨多心跳 + 超 maxAgeMs(60) + 超 idleTimeoutMs(30)
+    await pollUntil(() => hub.size() === 0); // 静默连接超 maxAge+idle 被轮换
     ok(hub.size() === 0, "仅心跳写的静默连接超 maxAge 被轮换（心跳不算活动）");
     ok(r.state.destroyed === true, "假活动陷阱连接被 destroy");
     const stats = hub.evictStats();

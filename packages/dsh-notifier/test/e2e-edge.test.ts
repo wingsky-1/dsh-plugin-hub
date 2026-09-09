@@ -166,7 +166,7 @@ try {
   // ── 6. error 合并窗口 ≥3 条 shift（lastMessages 收尾 2 条）──
   {
     const infos = [];
-    const { listeners } = await makeNotifier(work, { errorMergeWindowMs: 1000, historyFile: join(work, "merge-shift-hist.jsonl") }, {
+    const { listeners } = await makeNotifier(work, { errorMergeWindowMs: 100, historyFile: join(work, "merge-shift-hist.jsonl") }, {
       logger: { warn: () => {}, info: (t) => infos.push(t) },
     });
     const error = listeners.get("agent/error")[0];
@@ -176,7 +176,7 @@ try {
     error({ agent: { id: "shift-1" }, turn: 1, error: new Error("e3") });
     error({ agent: { id: "shift-1" }, turn: 1, error: new Error("e4") });
     assert.equal(infos.filter((t) => /error/.test(t)).length, 1, "4 条错误只通知 1 条（窗口内合并）");
-    await new Promise((resolve) => setTimeout(resolve, 1100)); // 等窗口过期
+    await new Promise((resolve) => setTimeout(resolve, 350)); // 等窗口（100ms）过期 + 余量
     error({ agent: { id: "shift-1" }, turn: 1, error: new Error("e5") });
     // 窗口过期后通知应携带 mergedCount=3（e2-4 被合并）+ mergedErrors 为 [e3, e4]（shift 后收尾 2 条）
     const mergedInfo = infos.filter((t) => /error/.test(t) && t.includes("同类错误"))[0];

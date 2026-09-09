@@ -1247,10 +1247,8 @@ try {
     writeFileSync(hfile, JSON.stringify({ ts: Date.now() - 10 * 86400000, kind: "done", title: "旧记录", message: "10 天前" }) + "\n");
     // 触发一条新通知（test 路由 → 落盘；写时会按 7 天 cutoff 剔除旧行）
     await t.handler(fakeReq({ method: "POST" }), makeRes().res);
-    await new Promise((resolve) => setTimeout(resolve, 80)); // 等写队列排空
-    const { rec: recGet, res: resGet } = makeRes();
-    await h.handler(fakeReq({}), resGet);
-    const records = JSON.parse(recGet.text).records;
+    // 轮询历史直到新记录落盘（写队列异步排空；替代固定 sleep 等写队列）
+    const records = await waitForHistory(h, (recs) => recs.length === 1 && recs[0]?.kind === "test");
     assert.equal(records.length, 1, "historyMaxAgeDays=7：10 天前旧记录被清理，只留新记录");
     assert.equal(records[0].kind, "test", "保留的是新记录");
     // DELETE 清空
