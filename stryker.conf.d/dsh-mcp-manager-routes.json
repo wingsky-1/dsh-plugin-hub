@@ -48,7 +48,8 @@
       "packages/dsh-mcp-manager/test/unit-store.test.ts",
       "packages/dsh-mcp-manager/test/unit-supervisor.test.ts",
       "packages/dsh-mcp-manager/test/unit-transport.test.ts",
-      "packages/dsh-mcp-manager/test/unit-call-stats.test.ts"
+      "packages/dsh-mcp-manager/test/unit-call-stats.test.ts",
+      "packages/dsh-mcp-manager/test/unit-pipeline.test.ts"
     ]
   },
   "jsonReporter": {

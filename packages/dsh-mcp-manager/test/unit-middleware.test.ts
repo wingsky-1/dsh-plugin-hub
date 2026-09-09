@@ -957,7 +957,108 @@ function makeHost(serversByRoot = new Map()) {
   assert.ok(!out.includes("secret-token"), "header 值脱敏");
   assert.ok(!out.includes("k-123"), "env 全值脱敏");
   assert.ok(!out.includes("tok-456"), "args 凭据形参值脱敏");
-  // 基线锚点：整 URL 全部 [REDACTED]（含无凭据的 host/path，可诊断性差的现状——
-  // B8 修复后此处应保留 host/path 可读，成为差异断言）。
-  assert.ok(!out.includes("example.com"), "基线：整 URL 均被脱敏（阶段 2 B8 改为仅用户信息）");
+  // B8 红测（D4 决策：仅用户信息脱敏）：host/path 无凭据应保留可读——
+  // 现状整 URL 全部 [REDACTED]，本断言红；commit3 改口径后绿。
+  assert.ok(out.includes("example.com"), "B8：host 应保留（仅用户信息脱敏；现状整 URL 脱敏）");
+  assert.ok(out.includes("/path"), "B8：path 应保留");
+}
+
+// ---- B8 红测（续）：percent-encoding raw 形态脱敏对照 ----
+
+{
+  // URL 用户信息带 percent-encoding：URL parse 得 decoded 形态，raw 形态
+  // （错误消息中实际出现的字节串）必须同被脱敏——现状仅存 decoded，红测。
+  const redactEnc = createRedactor([
+    {
+      name: "enc",
+      transport: "streamable-http",
+      url: "https://user%3Apass@example.com/p?token=abc123",
+      headers: {},
+      enabled: true,
+    },
+  ]);
+  const outEnc = redactEnc(new Error("failed connect to user%3Apass@example.com abc123"));
+  assert.ok(!outEnc.includes("user%3Apass"), "B8：percent-encoded 用户信息 raw 形态脱敏（现状仅存 decoded → 红测）");
+  assert.ok(!outEnc.includes("abc123"), "searchParams 值脱敏");
+}
+
+// ---- B9 红测：boundCatalogTools 描述截断按字节（UTF-8 中文多字节）----
+
+{
+  // "字" 每字符 3 字节：2000 字 = 6000 字节 > MAX_BYTES_PER_TOOL(4096)
+  const bigDesc = "字".repeat(2000);
+  const bounded = boundCatalogTools([{ name: "t1", description: bigDesc, inputSchema: {} }]);
+  const desc = bounded.get("t1").description;
+  assert.ok(Buffer.byteLength(desc, "utf8") <= MAX_BYTES_PER_TOOL, "B9：截断后描述字节数 ≤ MAX_BYTES_PER_TOOL（现状 slice 按字符 → 超限，红测）");
+}
+
+// ---- B10 红测：searchCatalogMulti 恰好 limit 命中不误报 truncated ----
+
+{
+  const cata = new Map([
+    ["s1", {
+      server: "s1",
+      tools: new Map([
+        ["alpha", { name: "alpha", description: "alpha tool", inputSchema: {} }],
+        ["beta", { name: "beta", description: "beta tool", inputSchema: {} }],
+      ]),
+    }],
+  ]);
+  const fakeUnit = { connections: new Map(), catalog: cata, userDisabled: new Set(), inFlight: new Map(), lastTouchedAt: Date.now() };
+  const units = new Map([[ROOT, fakeUnit]]);
+  // 恰好 limit=1 条命中（alpha）
+  const r = searchCatalogMulti(units, [ROOT], "alpha", 1);
+  assert.equal(r.results.length, 1);
+  assert.equal(r.truncated, false, "B10：恰好 limit 命中不应标 truncated（现状无 truncated 字段/按 >=limit 误报，红测）");
+}
+
+// ---- B18 红测a：callTool 应用 server.toolCallTimeoutMs（现状固定 CALL_TIMEOUT_MS）----
+
+{
+  const servers = [{ name: "s1", transport: "stdio", command: "echo", enabled: true, toolCallTimeoutMs: 5000 }];
+  const { host } = makeHost(new Map([[ROOT, servers]]));
+  const mw = new McpMiddleware(host, {});
+  const unit = await mw.projectUnitFor(ROOT);
+  const calls = [];
+  unit.connections.set("s1", {
+    server: { name: "s1", transport: "stdio", command: "echo", enabled: true, toolCallTimeoutMs: 5000 },
+    status: "connected",
+    connectedAt: Date.now(),
+    catalog: new Map(),
+    client: {
+      callTool: async (tool, args, opts) => {
+        calls.push({ tool, args, opts });
+        return { content: [{ type: "text", text: "ok" }] };
+      },
+    },
+  });
+  const res = await mw.callTool(fullServerName(ROOT, "s1"), "t1", '{"a":1}', undefined);
+  assert.equal(res.content[0].text, "ok", "callTool 正常");
+  assert.equal(calls[0].opts.timeoutMs, 5000, "B18：callTool 用 server.toolCallTimeoutMs（现状固定 30000 → 红测）");
+  await mw.dispose();
+}
+
+// ---- B18 红测b：scheduleReconnect 退避读 server.reconnect（现状硬编码 500 系列）----
+
+{
+  const servers = [{ name: "s1", transport: "stdio", command: "echo", enabled: true, reconnect: { initialDelayMs: 2000 } }];
+  const { host } = makeHost(new Map([[ROOT, servers]]));
+  const mw = new McpMiddleware(host, {});
+  const unit = await mw.projectUnitFor(ROOT);
+  const entry = {
+    server: { name: "s1", transport: "stdio", command: "echo", enabled: true, reconnect: { initialDelayMs: 2000 } },
+    status: "failed",
+    failedAttempts: 1,
+    reconnectTimer: undefined,
+    disposed: false,
+  };
+  unit.connections.set("s1", entry);
+  mw.scheduleReconnect(ROOT, "s1");
+  try {
+    assert.ok(entry.reconnectTimer !== undefined, "scheduleReconnect 建 timer");
+    assert.equal(entry.reconnectTimer._idleTimeout, 2000, "B18：退避读 server.reconnect.initialDelayMs（现状 500 → 红测）");
+  } finally {
+    if (entry.reconnectTimer !== undefined) clearTimeout(entry.reconnectTimer);
+    await mw.dispose();
+  }
 }
