@@ -1,0 +1,381 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "dsh-notifier 目标架构（SDK 契约 · API 层 · 后端主链）",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1620,
+      1020
+    ]
+  },
+  "components": [
+    {
+      "id": "msg-reg",
+      "type": "external",
+      "label": "消息注册插件",
+      "sublabel": "其他插件 · 注册类型/推送",
+      "pos": [
+        220,
+        40
+      ],
+      "size": [
+        150,
+        80
+      ]
+    },
+    {
+      "id": "sdk-layer",
+      "type": "backend",
+      "label": "SDK 契约层",
+      "sublabel": "registerKind/confirmKind · send",
+      "pos": [
+        440,
+        40
+      ],
+      "size": [
+        190,
+        90
+      ]
+    },
+    {
+      "id": "api-layer",
+      "type": "backend",
+      "label": "API 层",
+      "sublabel": "REST/SSE（配置·历史·测试）",
+      "pos": [
+        980,
+        40
+      ],
+      "size": [
+        190,
+        90
+      ]
+    },
+    {
+      "id": "frontend",
+      "type": "frontend",
+      "label": "前端",
+      "sublabel": "设置卡 · 通知半区",
+      "pos": [
+        1260,
+        40
+      ],
+      "size": [
+        200,
+        90
+      ]
+    },
+    {
+      "id": "dsh-host",
+      "type": "cloud",
+      "label": "宿主 dsh（依赖方）",
+      "sublabel": "ctx.on/provide/effect",
+      "pos": [
+        20,
+        400
+      ],
+      "size": [
+        160,
+        90
+      ]
+    },
+    {
+      "id": "evt-listen",
+      "type": "backend",
+      "label": "① 事件监听层",
+      "sublabel": "宿主事件订阅 · 详情提取",
+      "pos": [
+        260,
+        400
+      ],
+      "size": [
+        200,
+        100
+      ]
+    },
+    {
+      "id": "judge",
+      "type": "backend",
+      "label": "② 推送判定层",
+      "sublabel": "开关 · 免打扰 · 合并/去重 · kind 确认",
+      "pos": [
+        560,
+        400
+      ],
+      "size": [
+        300,
+        110
+      ]
+    },
+    {
+      "id": "exec",
+      "type": "backend",
+      "label": "③ 推送执行层（含归档）",
+      "sublabel": "投递 · history/status 落盘 · 脱敏",
+      "pos": [
+        1260,
+        400
+      ],
+      "size": [
+        220,
+        100
+      ]
+    },
+    {
+      "id": "adapter",
+      "type": "backend",
+      "label": "④ 渠道适配层",
+      "sublabel": "browser(SSE) · system · bark · webhook",
+      "pos": [
+        700,
+        660
+      ],
+      "size": [
+        240,
+        90
+      ]
+    },
+    {
+      "id": "cfg",
+      "type": "backend",
+      "label": "配置存储层",
+      "sublabel": "kindRoutes/allowKinds/开关 · 依赖 settings.yaml",
+      "pos": [
+        700,
+        40
+      ],
+      "size": [
+        190,
+        90
+      ]
+    },
+    {
+      "id": "os-native",
+      "type": "external",
+      "label": "OS 原生通知",
+      "sublabel": "系统 toast/声音",
+      "pos": [
+        700,
+        850
+      ],
+      "size": [
+        180,
+        80
+      ]
+    },
+    {
+      "id": "push-remote",
+      "type": "external",
+      "label": "远程推送",
+      "sublabel": "Bark / ntfy / Gotify",
+      "pos": [
+        1000,
+        850
+      ],
+      "size": [
+        180,
+        80
+      ]
+    },
+    {
+      "id": "sanitize",
+      "type": "backend",
+      "label": "脱敏模块",
+      "sublabel": "判定通过才脱敏 · 开关控制",
+      "pos": [
+        980,
+        400
+      ],
+      "size": [
+        200,
+        100
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "后端（宿主进程）",
+      "wraps": [
+        "sdk-layer",
+        "api-layer",
+        "evt-listen",
+        "judge",
+        "exec",
+        "adapter",
+        "cfg"
+      ],
+      "pad": 40
+    },
+    {
+      "kind": "security-group",
+      "label": "loopback 围栏 + 出站授权",
+      "wraps": [
+        "api-layer",
+        "exec",
+        "adapter"
+      ],
+      "pad": 25
+    }
+  ],
+  "connections": [
+    {
+      "id": "host-listen",
+      "from": "dsh-host",
+      "to": "evt-listen",
+      "label": "事件注入",
+      "fromSide": "right",
+      "toSide": "left",
+      "variant": "dashed",
+      "labelDy": 68
+    },
+    {
+      "id": "listen-judge",
+      "from": "evt-listen",
+      "to": "judge",
+      "label": "事件+详情",
+      "fromSide": "right",
+      "toSide": "left",
+      "variant": "emphasis",
+      "labelDy": 63
+    },
+    {
+      "id": "judge-sanitize",
+      "from": "judge",
+      "to": "sanitize",
+      "label": "需要推送",
+      "fromSide": "right",
+      "toSide": "left",
+      "variant": "emphasis"
+    },
+    {
+      "id": "sanitize-exec",
+      "from": "sanitize",
+      "to": "exec",
+      "label": "脱敏后投递",
+      "fromSide": "right",
+      "toSide": "left",
+      "variant": "emphasis"
+    },
+    {
+      "id": "exec-adapter",
+      "from": "exec",
+      "to": "adapter",
+      "label": "投递",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "variant": "emphasis"
+    },
+    {
+      "id": "adapter-os",
+      "from": "adapter",
+      "to": "os-native",
+      "label": "spawn",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "variant": "security"
+    },
+    {
+      "id": "adapter-push",
+      "from": "adapter",
+      "to": "push-remote",
+      "label": "POST",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "variant": "security"
+    },
+    {
+      "id": "msg-sdk",
+      "from": "msg-reg",
+      "to": "sdk-layer",
+      "label": "SDK 调用",
+      "fromSide": "right",
+      "toSide": "left",
+      "variant": "emphasis"
+    },
+    {
+      "id": "sdk-cfg",
+      "from": "sdk-layer",
+      "to": "cfg",
+      "label": "注册扩展可用范围",
+      "fromSide": "right",
+      "toSide": "left",
+      "variant": "dashed",
+      "labelAt": [
+        660,
+        144
+      ]
+    },
+    {
+      "id": "sdk-judge",
+      "from": "sdk-layer",
+      "to": "judge",
+      "label": "注册/推送",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "variant": "dashed"
+    },
+    {
+      "id": "cfg-judge",
+      "from": "cfg",
+      "to": "judge",
+      "label": "经接口读取",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "cfg-sanitize",
+      "from": "cfg",
+      "to": "sanitize",
+      "label": "脱敏开关",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "variant": "dashed"
+    },
+    {
+      "id": "api-exec",
+      "from": "api-layer",
+      "to": "exec",
+      "label": "测试触发",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "variant": "dashed"
+    },
+    {
+      "id": "api-front",
+      "from": "api-layer",
+      "to": "frontend",
+      "label": "REST/SSE",
+      "fromSide": "right",
+      "toSide": "left",
+      "variant": "emphasis"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "对外接口与配置",
+      "items": [
+        "SDK：注册/推送 → 裁决（扩展可用范围）",
+        "API：经接口读配置 · 测试触发执行"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "脱敏模块（判定后·可开关）",
+      "items": [
+        "判定确认需要推送后才做脱敏",
+        "开关由配置层控制 · 出口脱敏固定在各出口"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "后端主链",
+      "items": [
+        "监听→裁决→(需推送)脱敏→投递编排→渠道适配",
+        "归档经两 store 依赖本地文件"
+      ]
+    }
+  ]
+}
