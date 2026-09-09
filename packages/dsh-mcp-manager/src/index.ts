@@ -97,15 +97,15 @@ export type { CallResultTextHandlers, ProjectedCallResult } from "./pipeline/int
 // 连接监督器 / 工具定义（含命名、截断、schema 校验）
 export {
   DEFAULT_TOOL_CALL_TIMEOUT_MS,
-  RECONNECT_DEFAULTS,
   DEFAULT_RESULT_TRUNCATE_BYTES,
   publicToolName,
   truncateText,
   assertSupportedOutputSchema,
   buildToolDefinition,
   ConnectionSupervisor,
-  resolveReconnect,
 } from "./supervisor.ts";
+// 连接域（#664 阶段 3 收敛）：重连策略解析归 connection/runtime，经 connection/interface.ts 引用
+export { RECONNECT_DEFAULTS, resolveReconnect } from "./connection/interface.ts";
 // 能力目录 / 目录缓存
 export {
   DEFAULT_ANNOUNCE_CATALOG,

@@ -38,6 +38,7 @@ import {
 import type { MiddlewareMode, ProjectUnit, DisabledToolsMap } from "./middleware.ts";
 import { McpStatsCollector } from "./call-stats.ts";
 import { createRedactor } from "./pipeline/interface.ts";
+import { stripMcpPrefix } from "./connection/interface.ts";
 
 /** 中间层 all 模式的全局虚拟 root（全局服务器经中间层访问时的路由 key）。 */
 export const MIDDLEWARE_GLOBAL_ROOT = "@global";
@@ -47,21 +48,6 @@ export const MIDDLEWARE_GLOBAL_ROOT = "@global";
  *  用途服务。 */
 function dshHomePath() {
   return resolve(dshHome());
-}
-
-/**
- * 剥 mcp__<server>__ 前缀还原裸名（#382 F4 展示口径统一）。前缀不匹配（不可
- * 剥）原样返回；剥后为空或仍以 mcp__ 开头（跨 server 注册名）原样返回。超长
- * 哈希名剥出截断键——与 guard 层（tools/pre-execute 路径二按注册名反解）结果
- * 相同，禁用表键口径统一生效。
- */
-function stripMcpPrefix(registeredName: string, serverName: string): string {
-  const prefix = `mcp__${serverName}__`;
-  if (!registeredName.startsWith(prefix)) return registeredName;
-  let name = registeredName;
-  while (name.startsWith(prefix)) name = name.slice(prefix.length);
-  if (name === "" || name.startsWith("mcp__")) return registeredName;
-  return name;
 }
 
 /**
