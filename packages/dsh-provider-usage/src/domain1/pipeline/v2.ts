@@ -168,22 +168,6 @@ export async function runV2Pipeline(ctx: V2PipelineContext): Promise<V2PipelineR
   };
 }
 
-/**
- * 从历史缓存路径返回胶囊内容（不重新拉取）。
- * 用于锁忙/降级场景。
- */
-export async function capsuleHtmlFromHistory(
-  history: HistoryStore,
-  provider: string,
-  adapterName: string,
-  fallbackText: string,
-): Promise<string | undefined> {
-  const last = await history.last(provider, adapterName);
-  if (last === null) return undefined;
-  // 无 formatCapsule 时返回简单文本 HTML
-  return `<span>${esc(fallbackText)}</span>`;
-}
-
 /** v2 面板管道：查询历史（全量）→ formatPanel → HTML。 */
 export async function runV2PanelPipeline(opts: {
   adapter: UsageStatsAdapter;

@@ -43,7 +43,6 @@ export { StatsService as StatsServiceCtor } from "./stats-service.ts";
 export {
   runV2Pipeline,
   runV2PanelPipeline,
-  capsuleHtmlFromHistory,
   panelCacheKey,
   normalizeRangeDay,
   isPanelCacheStale,

@@ -329,7 +329,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { makeAdapterRegistry, sanitizeHtml, safeFetchData, safeFormat,
-  runV2Pipeline, runV2PanelPipeline, capsuleHtmlFromHistory, HistoryStore,
+  runV2Pipeline, runV2PanelPipeline, HistoryStore,
   HotReloadableAdapter, readStamp, stampEqual, miniChartSvgMarkup,
   OPENCODE_GO_PROVIDER } from "../../../lib/index.js";
 
@@ -699,12 +699,6 @@ function mkV2Adapter(over: Record<string, unknown> = {}): Record<string, unknown
     range: { start: day - 1000, end: day + 1000 },
   });
   assert.equal(emptyP.panelHtml, "n=0", "空历史 entries 为 0");
-
-  // capsuleHtmlFromHistory：有历史回退文本、无历史 undefined
-  const capOk = await capsuleHtmlFromHistory(store, "pv", "pipe-a", "fallback-text");
-  assert.equal(capOk, "<span>fallback-text</span>", "历史回退胶囊文本");
-  const capMiss = await capsuleHtmlFromHistory(store, "ghost", "none", "fb");
-  assert.equal(capMiss, undefined, "无历史返回 undefined");
 }
 
 // ================================================================ #150 二阶段：hotreload 纯函数与轮询
