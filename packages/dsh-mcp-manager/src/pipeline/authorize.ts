@@ -41,11 +41,11 @@ export function policyAllows(policy: MiddlewarePolicy | undefined, serverKey: st
  * 单一裁决：工具是否被用户禁用（工具级禁用，独立于服务器级 enabled）。
  *
  * 三入口统一调用（P0-1）：ws_mcp_call（callTool，先查禁用再查策略）、
- * pre-execute guard（mcp__ 前缀工具）、纪律裸名（dsh-codegraph 侧声明语义）。
+ * pre-execute guard（mcp__ 前缀工具）、插件侧自行声明的纪律裸名。
  *
  * 语义（P0-2 方案 A，零耦合）：禁用**只作用于 mcp-manager 管辖的 mcp__ 前缀
- * 工具**；纪律裸名（如 codegraph_explore）不受影响，由 dsh-codegraph 侧（#363）
- * 自行声明。禁用原因文案与浮窗 UI 均需同步声明该语义。
+ * 工具**；插件侧声明的纪律裸名工具不受影响，由插件自行声明。
+ * 禁用原因文案与浮窗 UI 均需同步声明该语义。
  *
  * 判定（P1 三层结构 + P2 超长名）：
  * 1. 目标 root 直接命中 → 查该 root 记录（project 模式按会话 root 隔离）；

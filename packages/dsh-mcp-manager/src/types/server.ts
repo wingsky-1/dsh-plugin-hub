@@ -20,7 +20,7 @@ export interface ServerConfig {
   /** 能力目录的自定义描述（用户手写）。 */
   description?: string;
   /**
-   * 调用方封装工具定义（registerServer 运行时注入面专用，如 dsh-codegraph）：
+   * 调用方封装工具定义（registerServer 运行时注入面专用）：
    * 提供时该服务器工具**全部用封装定义注册**（execute 来自调用方，跳过远端
    * schema 投影与通用 callTool）；缺省走现状（远端 schema + 通用 callTool）。
    * 工具名为裸名；模型可见名仍由 publicToolName（mcp__ 前缀）决定。

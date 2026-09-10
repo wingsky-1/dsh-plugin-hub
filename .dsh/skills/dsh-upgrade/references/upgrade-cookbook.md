@@ -69,7 +69,7 @@ git log --oneline dsh-v0.1.0-rc.7..dsh-v0.1.0-rc.8 | grep -iE "breaking|migrat" 
 ```bash
 cd <dsh-plugin-hub clone>
 # 每个插件的 client.inject 注入项
-for p in dsh-lan-proxy dsh-mcp-manager dsh-notifier dsh-provider-usage dsh-verify-isolated dsh-web-file-preview dsh-codegraph; do
+for p in dsh-lan-proxy dsh-mcp-manager dsh-notifier dsh-provider-usage dsh-verify-isolated dsh-web-file-preview; do
   echo "--- $p ---"
   node -e "const p=require('./packages/$p/package.json');console.log(JSON.stringify(p.dsh&&p.dsh.client&&p.dsh.client.inject||[]))"
 done

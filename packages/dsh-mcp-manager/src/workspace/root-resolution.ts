@@ -60,7 +60,7 @@ export function makeResolveRoot(manager: McpManager): (agent: unknown) => Promis
     if (manager.middlewareMode === "all") {
       // B3（requirements 8.1 纠偏）：回落查 projectServersFor("@global")（含
       // runtime 注入并集，#413）而非 globalServers()（仅 store.data.servers）——
-      // 否则仅 runtime 注入服务器（codegraph 等）时回落失败「无法确定工作空间」。
+      // 否则仅 runtime 注入服务器时回落失败「无法确定工作空间」。
       const globalServers = ((await manager.projectServersFor(MIDDLEWARE_GLOBAL_ROOT)) ?? []).filter(
         (server) => server.enabled !== false,
       );

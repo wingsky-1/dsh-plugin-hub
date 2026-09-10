@@ -744,8 +744,8 @@ test('#306+#586: 全量列表动态化——fallback/GLOBAL_HIT 从 manifest 派
 })
 
 test('#306+#586: 切片面真静默防回归——每个 active/standalone 包都有切片消费路径', () => {
-  // #586：修复漏检 dsh-codegraph 与 dsh-mem0。paths-filter 必须覆盖全量插件包，
-  // ci-matrix 动态遍历全量包集，保证每个 active 与 standalone 包在改动时均能命中切片。
+  // #586：paths-filter 必须覆盖全量插件包（active ∪ standalone）；
+  // ci-matrix 动态遍历全量包集，保证每个包在改动时均能命中切片。
   const filtersBlock = CI.slice(CI.indexOf('filters: |'), CI.indexOf('- name: Compute hit packages'))
   for (const pkg of [...MANIFEST.active, ...(MANIFEST.standalone ?? [])]) {
     assert.ok(new RegExp(`^\\s*${pkg}:`, 'm').test(filtersBlock),

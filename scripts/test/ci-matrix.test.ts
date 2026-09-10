@@ -53,25 +53,17 @@ test('ci-matrix: 场景 a - 正常命中单一 active 包 (via BASE_SET 空格�
   );
 });
 
-test('ci-matrix: 场景 b - 命中 standalone 包 (dsh-codegraph 与 dsh-mem0)', () => {
-  const res = computeCiMatrix({
-    env: {
-      GLOBAL_HIT: 'false',
-      FILTER_OUTCOME: 'success',
-      BASE_SET: 'origin/main',
-      FILTER_OUTPUTS: JSON.stringify({
-        'dsh-codegraph': 'true',
-        'dsh-mem0': true,
-      }),
-    },
-    rootDir: ROOT,
-  });
-
-  assert.deepEqual(res.hitPackages, ['dsh-codegraph', 'dsh-mem0']);
-  // 由于无 stryker 配置，mutationPackages 为空，hasMutations 为 'false'，mutationCombos 为空
-  assert.deepEqual(res.mutationPackages, []);
-  assert.equal(res.hasMutations, 'false');
-  assert.deepEqual(res.mutationCombos, []);
+test('ci-matrix: 场景 b - 退役的 standalone 包不再进入全量清单', () => {
+  // dsh-codegraph / dsh-mem0 退役后 standalone 清空（#691）；断言两条不被静默遗忘：
+  // 既不在 CI 全量清单里，也必须在 manifest.retired 留痕。
+  assert.deepEqual(MANIFEST.standalone, [], 'standalone 应为空（两项均已退役）');
+  for (const pkg of ['dsh-codegraph', 'dsh-mem0']) {
+    assert.ok(!EXPECTED_ALL.includes(pkg), `${pkg} 已退役，不得再进入 CI 全量清单`);
+    assert.ok(
+      MANIFEST.retired.some((r) => r.name === pkg),
+      `${pkg} 必须在 manifest.retired 登记`
+    );
+  }
 });
 
 test('ci-matrix: 场景 b - 命中无变异配置的 active 包 (dsh-verify-isolated)', () => {

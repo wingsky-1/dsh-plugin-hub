@@ -10,7 +10,6 @@ A collection of plugins for the **DSH (DeepSeek Harness)** web GUI, distributed 
 install them all at once as a single bundle, or pick individual plugins as needed.
 
 - **Bundle package**: `@wingsky-1/dsh-plugins-all` — install everything in one shot
-  (`dsh-codegraph` is published standalone and not in the bundle; see plugin list below)
 - **Individual plugins**: `@wingsky-1/dsh-*` — install only what you need
 
 ## Core advantages
@@ -58,11 +57,6 @@ This plugin set only adapts to **rc (release-candidate) releases of DeepSeek Har
 | `@wingsky-1/dsh-mcp-manager` | MCP server manager (stdio / streamable-http): per-working-directory project/global config tiers; project-level MCP collapsed into 4 atomic tools via middleware by default (`middleware: all` folds in global servers, hot-switchable in the settings page); workspace isolation prevents cross-project interference; configs store `${ENV}` references only — no plaintext secrets on disk; runtime registration API for other plugins to inject MCP servers | [README](packages/dsh-mcp-manager/README.md) · [Architecture](docs/architecture/dsh-mcp-manager.md) | Published |
 | `@wingsky-1/dsh-web-file-preview` | Web-side preview for conversation file links: images (lightbox zoom) / Markdown (with Mermaid diagram rendering) / code (25+ languages highlighted) / text / git Diff / sandboxed HTML preview (iframe sandbox, no script execution); @-mention recognition + path fallback search (unique basename match inside the workspace when the referenced path is wrong) | [README](packages/dsh-web-file-preview/README.md) · [Architecture](docs/architecture/dsh-web-file-preview.md) | Published |
 | `@wingsky-1/dsh-verify-isolated` | Isolated-environment browser verification skill for DSH plugin development: temp DSH_HOME + independent profile + independent port + independent browser instance (four-way isolation), one-command launch with automatic cleanup; bundled zero-dependency raw-CDP browser driver (snapshot / click / screenshot / eval), optional isolation audit | [README](packages/dsh-verify-isolated/README.md) · [Architecture](docs/architecture/dsh-verify-isolated.md) | Published |
-| `@wingsky-1/dsh-codegraph` | codegraph local code-graph MCP + worktree development discipline: 8 wrapper tools (impact / call chains / symbol search / file structure, etc.); queries force a sync first to guarantee index freshness and auto-complete projectPath; registered at runtime via mcp-manager | [README](packages/dsh-codegraph/README.md) · [Architecture](docs/architecture/dsh-codegraph.md) | Published (standalone, not in the bundle) |
-
-> **Standalone note**: `@wingsky-1/dsh-codegraph` is published **standalone** and is **not
-> included in `dsh-plugins-all`**; install it separately (it registers the codegraph MCP at
-> runtime via mcp-manager, so install `dsh-mcp-manager` or the bundle first).
 
 <details>
 <summary><b>Historical maintenance & migration</b> — discontinued packages and legacy-package migration (expand if you installed the old/retired packages)</summary>
@@ -81,6 +75,12 @@ This plugin set only adapts to **rc (release-candidate) releases of DeepSeek Har
   reasoning effort) is discontinued because official dsh-subagent 0.1.2-alpha.2 natively
   implements `resolveChildAgentOptions` (child agents inherit the parent session's model /
   reasoning effort / output-token limit).
+- `@wingsky-1/dsh-codegraph` (codegraph local code-graph MCP + worktree development
+  discipline) is discontinued: the wrapper tools are tightly coupled to the codegraph CLI
+  version, so the maintenance cost exceeds the benefit.
+- `@wingsky-1/dsh-mem0` (mem0 long-term memory system) is discontinued: environment-isolation
+  and related defects were never resolved (#644 / #612), so it no longer meets the bar for
+  continued maintenance.
 
 Uninstall these packages if you installed them before:
 
@@ -88,6 +88,8 @@ Uninstall these packages if you installed them before:
 dsh plugin --profile web remove @wingsky-1/dsh-skill-explorer
 dsh plugin --profile web remove @wingsky-1/dsh-idle-archive
 dsh plugin --profile web remove @wingsky-1/dsh-subagent-model-inherit
+dsh plugin --profile web remove @wingsky-1/dsh-codegraph
+dsh plugin --profile web remove @wingsky-1/dsh-mem0
 ```
 
 > dsh-memory (project long-term memory) is not included yet; it is planned.

@@ -8,7 +8,7 @@
 
 DSH（DeepSeek Harness）Web GUI 插件集，npm 分发：一键装全家桶，或按需单装。
 
-- 聚合包：`@wingsky-1/dsh-plugins-all`（一键装齐全部插件；`dsh-codegraph` 独立发包、不在聚合包内，见下文插件列表）
+- 聚合包：`@wingsky-1/dsh-plugins-all`（一键装齐全部插件）
 - 单插件：`@wingsky-1/dsh-*`（按需安装）
 
 ## 核心优势
@@ -46,11 +46,6 @@ DSH（DeepSeek Harness）Web GUI 插件集，npm 分发：一键装全家桶，�
 | `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理器（stdio / streamable-http）：项目级/全局两级配置分工作目录维护；项目级 MCP 默认经中间层收敛为 4 个原子工具（`middleware: all` 全量收敛、设置页热切换）；工作空间隔离防串台；配置只存 `${ENV}` 引用不落盘密钥；提供运行时注册接口供其他插件注入 MCP | [README](packages/dsh-mcp-manager/README.md) · [架构图解](docs/architecture/dsh-mcp-manager.md) | 已发布 |
 | `@wingsky-1/dsh-web-file-preview` | 对话文件链接 web 端预览：图片（灯箱缩放）/ Markdown（含 Mermaid 图表渲染）/ 代码（25+ 语言高亮）/ 文本 / git Diff / HTML 沙箱预览（iframe sandbox 不执行脚本）；@ 引用识别 + 路径兜底搜索（引用路径写错时按 basename 在工作区内唯一匹配） | [README](packages/dsh-web-file-preview/README.md) · [架构图解](docs/architecture/dsh-web-file-preview.md) | 已发布 |
 | `@wingsky-1/dsh-verify-isolated` | DSH 插件开发的隔离环境浏览器验证 skill：临时 DSH_HOME + 独立 profile + 独立端口 + 独立浏览器实例四重隔离，一键拉起、退出自动清理；自带 raw CDP 零依赖浏览器驱动（快照/点击/截图/求值），可选隔离审计 | [README](packages/dsh-verify-isolated/README.md) · [架构图解](docs/architecture/dsh-verify-isolated.md) | 已发布 |
-| `@wingsky-1/dsh-codegraph` | codegraph 本地代码图谱 MCP + worktree 开发纪律：8 个封装工具（影响面/调用链/符号搜索/文件结构等），查询前强制 sync 保证索引新鲜、projectPath 自动补全；经 mcp-manager 运行时注册 | [README](packages/dsh-codegraph/README.md) · [架构图解](docs/architecture/dsh-codegraph.md) | 已发布（独立发包，暂不进聚合包） |
-
-> **独立发包说明**：`@wingsky-1/dsh-codegraph` 为**独立发包**、**未包含在
-> `dsh-plugins-all` 聚合包中**，需单独安装（它经 mcp-manager 运行时注册 codegraph MCP，
-> 请先装 `dsh-mcp-manager` 或聚合包再配合使用）。
 
 <details>
 <summary><b>历史维护与迁移</b>——已停止维护的包、旧包迁移指引（装过旧包/退役包的用户请展开）</summary>
@@ -66,6 +61,10 @@ DSH（DeepSeek Harness）Web GUI 插件集，npm 分发：一键装全家桶，�
 - `@wingsky-1/dsh-subagent-model-inherit`（子 Agent 自动继承父会话模型与思考等级）已不再维护：
   官方 dsh-subagent 0.1.2-alpha.2 已原生实现 `resolveChildAgentOptions`（子 Agent 继承父会话
   模型/思考等级/输出上限）。
+- `@wingsky-1/dsh-codegraph`（codegraph 本地代码图谱 MCP + worktree 开发纪律）已不再维护：
+  封装工具与 codegraph CLI 版本强耦合，维护成本高于收益。
+- `@wingsky-1/dsh-mem0`（mem0 长期记忆系统）已不再维护：环境隔离等缺陷未收敛
+  （#644 / #612），质量未达继续维护标准。
 
 此前安装过上述退役包的用户请卸载：
 
@@ -73,6 +72,8 @@ DSH（DeepSeek Harness）Web GUI 插件集，npm 分发：一键装全家桶，�
 dsh plugin --profile web remove @wingsky-1/dsh-skill-explorer
 dsh plugin --profile web remove @wingsky-1/dsh-idle-archive
 dsh plugin --profile web remove @wingsky-1/dsh-subagent-model-inherit
+dsh plugin --profile web remove @wingsky-1/dsh-codegraph
+dsh plugin --profile web remove @wingsky-1/dsh-mem0
 ```
 
 > dsh-memory（项目长期记忆）暂未包含，规划中。

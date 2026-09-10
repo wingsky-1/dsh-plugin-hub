@@ -239,7 +239,7 @@ export class McpManager {
   }
 
   /** 中间层宿主：该 server 是否全局级（双源：store + runtimeRegistry）。
-   * codegraph 等 runtime 注册的服务器不落 store，单源会误判「非全局」——P1 修正。 */
+   * runtime 注册的服务器不落 store，单源会误判「非全局」——P1 修正。 */
   isGlobalServer(name: string): boolean {
     return this.store.data.servers.some((server) => server.name === name) || this.runtimeRegistry.has(name);
   }
@@ -360,7 +360,7 @@ export class McpManager {
    * 工作区 MCP 没变化 → digest 不变 → 不重新注入。
    *
    * 运行时注入（registerServer 的 runtimeRegistry，内存态）同样并入目录数据源
-   * （#359）：dsh-codegraph 等插件经运行时注入注册的服务器，连接成功、工具可用，
+   * （#359）：插件经运行时注入注册的服务器，连接成功、工具可用，
    * 但此前不在目录里——模型看不到能力，只能自己翻 CLI。同名 runtime 优先
    * （与 reconcile 双轨一致）。
    */
@@ -599,7 +599,7 @@ export class McpManager {
       server = store.find(name);
       // F2（#382）：runtime 注入条目不落 store——global scope 查不到时回退
       // runtimeRegistry（双轨合并，与 summary/catalogServersFor 同口径），修
-      // codegraph 等动态注册服务器「浮窗重连断开后连不回」。仅限 global：
+      // 修 runtime 注册服务器「浮窗重连断开后连不回」。仅限 global：
       // project 回退会把 runtime 条目挂错 scope，被下次 reconcile 无声停掉。
       if (server === undefined && scope === SCOPE_GLOBAL) {
         const runtime = this.runtimeRegistry.get(name);
@@ -887,7 +887,7 @@ export class McpManager {
       const store = scope === SCOPE_PROJECT ? await this.projectStoreOrThrow() : this.store;
       server = store.find(name);
       // F2（#382）：与 start 同款回退——runtime 注入条目不落 store，global
-      // scope 查不到时回退 runtimeRegistry，修 codegraph 浮窗重连必失败。
+      // scope 查不到时回退 runtimeRegistry，修 runtime 注册服务器浮窗重连必失败。
       if (server === undefined && scope === SCOPE_GLOBAL) {
         const runtime = this.runtimeRegistry.get(name);
         if (runtime !== undefined) {

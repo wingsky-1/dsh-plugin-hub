@@ -8,7 +8,7 @@ MCP 协议客户端基于 `node:child_process` 与全局 `fetch` 直接实现，
 
 三档中间层模式（`middleware`）：`off`——全部服务器直呼 `mcp__<server>__<tool>`（旧行为）；
 `project`（**默认**）——项目级走中间层、全局仍直呼；`all`——全局也走中间层
-（含运行时注入的封装定义服务器如 codegraph），cwd 无项目时回落全局虚拟 root
+（含运行时注入的封装定义服务器），cwd 无项目时回落全局虚拟 root
 `@global`，模型面完全收敛为四个原子工具
 （`ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call`）。
 `middleware` / `middlewarePolicy` 可在设置页热切换（保存即生效并持久化），
@@ -83,7 +83,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
 | 服务器管理 | 增删改查（可选项目级/全局）、连接 / 断开 / 重连；配置版本化 JSON，原子写入 |
 | 两种传输 | stdio（本地子进程，env 支持 `${ENV}` 引用）与 streamable-http（远程，header 支持 `${ENV}` 引用，自动回传 `Mcp-Session-Id`） |
 | JSON 导入 | 粘贴 mcpServers JSON 文本导入（仅 JSON 格式；不扫描任何应用配置文件） |
-| 模型工具 | 全局服务器工具以 `mcp__<server>__<tool>` 注册（64 字符、`[A-Za-z0-9_-]`、冲突时哈希后缀）；项目级服务器默认经中间层 `ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call` 访问（`middleware: project`，推荐），不同工作空间互不冲突；`middleware: all` 时全局与运行时注入服务器（如 codegraph）也统一经中间层访问，不注册 `mcp__` 前缀 |
+| 模型工具 | 全局服务器工具以 `mcp__<server>__<tool>` 注册（64 字符、`[A-Za-z0-9_-]`、冲突时哈希后缀）；项目级服务器默认经中间层 `ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call` 访问（`middleware: project`，推荐），不同工作空间互不冲突；`middleware: all` 时全局与运行时注入服务器也统一经中间层访问，不注册 `mcp__` 前缀 |
 | 工作空间隔离 | 中间层按调用方会话当前 cwd 路由到对应工作空间的连接池；server 全名 `@<root>/<server>` 一致性校验防跨空间串台 |
 | 断线重连 | 有界指数退避（500ms 起、30s 上限、10 次后停止后台重试；用户手动连接或 ws_mcp_call 触发可再试） |
 | 结果截断 | 工具结果按 8KB 截断并标注（防超长 JSON 全量进上下文） |
@@ -137,8 +137,8 @@ limit 截断）/ `ws_mcp_call`（按 `@<root>/<server>` 全名调用，参数 sc
 连接池，不同工作空间注入不同 MCP、无命名冲突；全局服务器仍直呼
 `mcp__<server>__<tool>`（project 模式 detail/call 传全局级服务器会给出直呼引导）。
 切换 `middleware: off` 回到旧行为（项目级也直接注册
-`mcp__` 工具）；`middleware: all` 则全局服务器（含运行时注入的封装定义服务器，
-如 dsh-codegraph 的 toolDefinitions）也走中间层（cwd 无项目时回落全局
+`mcp__` 工具）；`middleware: all` 则全局服务器（含运行时注入的封装定义服务器）
+也走中间层（cwd 无项目时回落全局
 虚拟 root `@global`），模型面完全收敛为四个原子工具——此时 list/search/detail
 合并查询「项目 root 单元 + `@global` 单元」，call 放行 `@global` root（全局配置
 跨工作空间共享，语义成立）。注：all 模式全局服务器增删改后需重启或触发会话
@@ -158,11 +158,11 @@ limit 截断）/ `ws_mcp_call`（按 `@<root>/<server>` 全名调用，参数 sc
   经 `PATCH /api/dsh-mcp/tool-disable` 持久化（落盘 `<DSH_HOME>/dsh-mcp-user-state.json`
   的 `disabledTools`，合并写盘、重启保留）；
 - 语义：**project 模式只能禁用项目级服务器经中间层的工具；all 模式可禁用全局
-  服务器（含 runtime 注入如 codegraph）经中间层的工具**；默认全部启用；
+  服务器（含 runtime 注入的服务器）经中间层的工具**；默认全部启用；
 - 工具级禁用**独立于服务器级 enabled 开关**（服务器级复活不清工具级状态）；
 - **作用于 mcp-manager 管辖的全部 MCP 工具**（mcp__ 前缀直呼与中间层 ws_mcp_*
-  一致生效，all 模式 runtime 封装工具同样受控）；纪律裸名（dsh-codegraph 的
-  `codegraph_explore` 等裸名直呼形态）不受影响（dsh-codegraph 侧由 #363 声明）；
+  一致生效，all 模式 runtime 封装工具同样受控）；插件侧自行声明的纪律裸名工具
+  不受影响；
 - 超长工具名（>64 字符哈希后缀）不可逆 → 按未知 server 处理，不禁用/不误禁；
 - project 模式浮窗显示全局服务器但无工具开关（全局工具此时经 supervisor 直呼，
   不经中间层），提示「切 all 模式可管理全局工具」；
@@ -184,10 +184,10 @@ limit 截断）/ `ws_mcp_call`（按 `@<root>/<server>` 全名调用，参数 sc
 
 其他插件可经 `ctx.mcpManager.registerServer` 运行时注册 MCP 服务器（内存态不落盘，
 同名幂等）。注册入参支持可选 `toolDefinitions`（调用方封装工具定义，`ToolDefinition[]`，
-工具名用**裸名**，如 dsh-codegraph 的 `codegraph_explore`）：
+工具名用**裸名**）：
 
 - **有 `toolDefinitions`**：该服务器工具**全部用封装定义注册**——execute 来自调用方
-  （如 dsh-codegraph 先 `codegraph sync` 再内部转发底层 CLI），跳过远端 schema 投影与
+  （调用方可先做预处理再内部转发底层命令），跳过远端 schema 投影与
   通用 callTool，底层真实实现不外泄；
 - **没有**：维持现状（远端 schema + 通用 callTool），其他服务器零影响；
 - **命名仍由 manager 现有机制决定**：模型可见名为 `mcp__<server>__<tool>`（`publicToolName`，
@@ -198,17 +198,17 @@ limit 截断）/ `ws_mcp_call`（按 `@<root>/<server>` 全名调用，参数 sc
 
 ```ts
 await ctx.mcpManager.registerServer({
-  name: "codegraph",
+  name: "my-mcp",
   transport: "stdio",
-  command: "codegraph",
+  command: "my-mcp-server",
   args: ["serve", "--mcp"],
   toolDefinitions: [
     {
-      name: "codegraph_explore",          // 裸名
-      description: "查询 codegraph 代码图谱（先 sync 再查）",
+      name: "my_tool",                    // 裸名
+      description: "调用方自定义的封装工具",
       parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
       output: { schema: { ... }, render(args, value) { ... } },
-      execute: async (args) => { await sync(); return forwarded; }, // 内部转发，不外泄
+      execute: async (args) => { await prepare(); return forwarded; }, // 内部转发，不外泄
     },
   ],
 });
@@ -234,7 +234,7 @@ await ctx.mcpManager.registerServer({
   「显式 + 下一步」规范给出（确认 server 连接 / 用 `ws_mcp_detail` 核对参数 /
   检查策略配置）
 - **工具级禁用（三入口一致）**：`ws_mcp_call`（callTool 先查禁用表再查策略）、
-  pre-execute guard（`mcp__` 前缀直呼工具）、纪律裸名（dsh-codegraph 侧 #363）
+  pre-execute guard（`mcp__` 前缀直呼工具）、插件侧声明的纪律裸名工具
   统一走 `isToolDenied` 裁决；禁用只作用于 `mcp__` 前缀工具，拒绝原因附语义声明；
   禁用记录 `<DSH_HOME>/dsh-mcp-user-state.json` 的 `disabledTools`（`@global` key
   跨工作空间共享，合并写盘不整表覆盖）

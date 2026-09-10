@@ -2,7 +2,7 @@
  * mcp-manager 核心化 service 类型（官方 storageDomain 模式）。
  *
  * 类型面唯一事实源在 shared/mcp-manager-service.d.ts（本包 re-export 之）；
- * 本文件只做类型 re-export + cordis Context 声明合并。消费方（如 dsh-codegraph）
+ * 本文件只做类型 re-export + cordis Context 声明合并。消费方插件
  * **从本包引类型**（`import type { McpManagerService } from "@wingsky-1/dsh-mcp-manager"`），
  * 依赖经 package.json workspace:* 声明 + inject。
  *

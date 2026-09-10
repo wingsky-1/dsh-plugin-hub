@@ -22,7 +22,6 @@
 | `@wingsky-1/dsh-notifier` | 审批/完成/错误事件通知：浏览器 Notification + 系统 toast + Bark | [dsh-notifier.md](dsh-notifier.md) |
 | `@wingsky-1/dsh-provider-usage` | 多 provider 用量统计：v2 适配器契约 + 宿主端渲染 + 历史落盘 | [dsh-provider-usage.md](dsh-provider-usage.md) |
 | `@wingsky-1/dsh-web-file-preview` | 点击对话文件链接在 web 端预览：图片/文本/Markdown/代码/Diff/HTML | [dsh-web-file-preview.md](dsh-web-file-preview.md) |
-| `@wingsky-1/dsh-codegraph` | codegraph MCP + worktree 开发纪律（依赖 mcp-manager 运行时注册） | [dsh-codegraph.md](dsh-codegraph.md) |
 | `@wingsky-1/dsh-verify-isolated` | 插件开发隔离浏览器验证 skill（临时 DSH_HOME + 独立 profile） | [dsh-verify-isolated.md](dsh-verify-isolated.md) |
 | `@wingsky-1/dsh-plugins-all` | 全家桶聚合包（一键装齐 + 聚合 cordis patch） | [dsh-plugins-all.md](dsh-plugins-all.md) |
 
@@ -38,8 +37,7 @@ flowchart LR
         P3["dsh-notifier"]
         P4["dsh-provider-usage"]
         P5["dsh-web-file-preview"]
-        P6["dsh-codegraph"]
-        P7["dsh-verify-isolated"]
+        P6["dsh-verify-isolated"]
     end
 
     subgraph profile["dsh web profile（cordis 运行时）"]
@@ -58,10 +56,6 @@ flowchart LR
     P4 --> CORDIS
     P5 --> CORDIS
     P6 --> CORDIS
-    P7 --> CORDIS
-
-    P6 -. "inject 强依赖 ctx.mcpManager" .-> P2
-    P2 -. "提供 ctx.mcpManager service" .-> P6
 ```
 
 要点：
@@ -72,8 +66,8 @@ flowchart LR
   `webServer` / `tools` / `settings` / `connection` 等官方服务，注册路由与事件监听；
 - **客户端**（`exports "./client"` → `lib/client.js`）：干净模块（`apply(ctx)` +
   `inject`），构建期内联样式与依赖，通过 `__DSH_ROUTES__` 拿到真实路由表；
-- **依赖关系**：`dsh-codegraph` 经 `inject: ["mcpManager"]` 强依赖
-  `dsh-mcp-manager`（未启用时 cordis 内核自动停用）；其余插件彼此独立；
+- **依赖关系**：各插件彼此独立（`dsh-mcp-manager` 提供的 `ctx.mcpManager` 为可选消费面，
+  无插件对其强依赖）；
 - `dsh-plugins-all` 是聚合包：dependencies 拉齐全部子包 + 聚合 cordis patch
   （`scripts/aggregate.ts` 自动生成，禁止手改）。
 
@@ -101,7 +95,6 @@ flowchart LR
 | [dsh-notifier.md](dsh-notifier.md) | 通知管线图 | `diagrams/notifier-architecture.html` |
 | [dsh-provider-usage.md](dsh-provider-usage.md) | 宿主端渲染架构图 | `diagrams/provider-usage-architecture.html` |
 | [dsh-web-file-preview.md](dsh-web-file-preview.md) | 拦截与预览链路图 | `diagrams/web-file-preview-architecture.html` |
-| [dsh-codegraph.md](dsh-codegraph.md) | 注册与纪律注入图 | `diagrams/codegraph-architecture.html` |
 
 > 调整方法：用浏览器打开源 HTML → 修改 SVG 内容 → 重新导出 SVG
 > （`python3 scripts/lib/export-diagram-svg.py <源.html>`）替换文档中的引用。

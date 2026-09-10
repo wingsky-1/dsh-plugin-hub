@@ -98,10 +98,6 @@ jobs:
             dsh-lan-proxy:
               - 'packages/dsh-lan-proxy/**'
               - 'stryker.conf.d/dsh-lan-proxy-*.json'
-            dsh-codegraph:
-              - 'packages/dsh-codegraph/**'
-            dsh-mem0:
-              - 'packages/dsh-mem0/**'
             dsh-verify-isolated:
               - 'packages/dsh-verify-isolated/**'
             dsh-plugins-all:
@@ -134,8 +130,6 @@ jobs:
           - dsh-mcp-manager
           - dsh-provider-usage
           - dsh-lan-proxy
-          - dsh-codegraph
-          - dsh-mem0
           - dsh-verify-isolated
           - dsh-plugins-all
     runs-on: ubuntu-latest
@@ -157,10 +151,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Build package：名称选择器 + ... 后缀按 workspace 拓扑先构建依赖（如
-      # dsh-codegraph 依赖 dsh-mcp-manager 的 lib 类型；目录选择器 + ... 在 pnpm 11
-      # 不展开依赖，评审实测须用 @scope/name... 形态）。无条件：repo-gate 全局门禁
-      # 依赖全量 lib 产物。
+      # Build package：名称选择器 + ... 后缀按 workspace 拓扑先构建依赖（目录选择器
+      # + ... 在 pnpm 11 不展开依赖，评审实测须用 @scope/name... 形态）。无条件：
+      # repo-gate 全局门禁依赖全量 lib 产物。
       - name: Build package（无条件：repo-gate 全局门禁依赖全量 lib 产物）
         run: pnpm --filter "@wingsky-1/${{ matrix.package }}"... build
 

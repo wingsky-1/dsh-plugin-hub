@@ -7,10 +7,7 @@
     "dsh-verify-isolated",
     "dsh-web-file-preview"
   ],
-  "standalone": [
-    "dsh-codegraph",
-    "dsh-mem0"
-  ],
+  "standalone": [],
   "retired": [
     {
       "name": "dsh-gzip",
@@ -35,6 +32,16 @@
     {
       "name": "dsh-subagent-model-inherit",
       "reason": "停止维护；官方 dsh-subagent 0.1.2-alpha.2 已原生实现 resolveChildAgentOptions（子 Agent 继承父会话模型/思考等级/输出上限），本包功能被官方覆盖",
+      "successor": ""
+    },
+    {
+      "name": "dsh-codegraph",
+      "reason": "停止维护；维护者评定质量未达标——封装工具与 codegraph CLI 版本强耦合，维护成本高于收益，本包不再维护",
+      "successor": ""
+    },
+    {
+      "name": "dsh-mem0",
+      "reason": "停止维护；维护者评定质量未达标——环境隔离等缺陷未收敛（#644/#612），本包不再维护",
       "successor": ""
     }
   ]

@@ -83,7 +83,7 @@ export interface MiddlewareHost {
   emitStatus(): void;
   /** 目录缓存文件路径（last-good 持久化）。 */
   catalogCachePath(root: string): string;
-  /** 该 server 是否全局级（双源：store.data.servers + runtimeRegistry；codegraph 为 runtime 注册）。 */
+  /** 该 server 是否全局级（双源：store.data.servers + runtimeRegistry；runtime 注册的服务器不落 store）。 */
   isGlobalServer(name: string): boolean;
   /** 该 server 是否 runtime 注入（registerServer 内存态；目录不写盘判定，#413）。 */
   isRuntimeServer(name: string): boolean;

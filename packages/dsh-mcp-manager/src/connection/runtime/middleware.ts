@@ -162,7 +162,7 @@ export class McpMiddleware {
     const servers = await this.host.projectServersFor(root);
     const server = servers?.find((entry) => entry.name === serverName);
     if (server === undefined || server.enabled === false) return;
-    // #413：封装定义服务器（runtime 注入 toolDefinitions，如 codegraph）——
+    // #413：封装定义服务器（runtime 注入 toolDefinitions）——
     // execute 为调用方 JS 直呼 CLI，不经远端 MCP callTool，**不 spawn transport**。
     // 中间层以「虚拟连接」（无 client/transport，status=connected）+ 目录从
     // toolDefinitions 投影存在；执行走 callTool 的封装直呼分支。
@@ -567,7 +567,7 @@ export class McpMiddleware {
       try {
         // 封装定义契约：execute(args, exec) 的 exec 为完整 ToolRunContext，但
         // 中间层只能提供最小面（agent 透传，session cwd 解析用）——经 unknown
-        // 中转（消费方封装定义只读 exec.agent，契约面见 dsh-codegraph）。
+        // 中转（消费方封装定义只读 exec.agent）。
         const execCtx = { agent } as unknown as Parameters<NonNullable<ToolDefinition["execute"]>>[1];
         // #413 QA P2-2：封装 execute 补超时兜底（与远端分支同预算 callBudgetMs，
         // 封装实现挂起时不无限等待）。

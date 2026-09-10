@@ -58,10 +58,9 @@ flowchart TD
 | 配置 | 各插件 schema 默认值生效 | 同 |
 | 适用 | 全家桶尝鲜 / 完整环境 | 按需 / 故障隔离排查 |
 
-> **不包含**（聚合边界）：`@wingsky-1/dsh-codegraph` 为独立发包（暂不进聚合包，需先装
-> mcp-manager 或聚合包后单独安装）；`dsh-memory`（项目长期记忆）未包含；
+> **不包含**（聚合边界）：`dsh-memory`（项目长期记忆）未包含；
 > 已退役 `dsh-gzip`（压缩合并进 lan-proxy）、`dsh-idle-archive`、
-> `dsh-subagent-model-inherit` 不再分发（见 README 退役说明）。
+> `dsh-subagent-model-inherit`、`dsh-codegraph`、`dsh-mem0` 不再分发（见 README 退役说明）。
 
 ---
 
