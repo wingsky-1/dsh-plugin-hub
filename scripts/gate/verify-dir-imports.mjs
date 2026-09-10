@@ -15,6 +15,11 @@
  *      具名导出符号，必须沿其 re-export 链可解析到真实实现（链终点可为目录内
  *      实现文件或同包根文件——子目录 import 根文件本规则放行；悬空符号即
  *      interface.ts 虚导出）。两模式（soft/hard）均硬执行（exit != 0）。
+ *   5. 域级值依赖图无环：跨目录的**值** import/re-export 构成的有向图不得成环。
+ *      `import type` / `export type` 边编译期擦除，允许成环（如 sdk ⇄ pipeline
+ *      的 type 边是刻意的：pipeline 只把 sdk 当类型面）；值边成环会带来 ESM
+ *      初始化顺序耦合（TDZ 风险）并破坏「域依赖单向」目标，故机械判红。
+ *      根文件（src/index.ts 等）是装配层，不入图。两模式均硬执行（exit != 0）。
  *
  * 豁免：
  *   - `src/client/`（index.ts 为 build-client 契约锚点，D10 只约束逻辑目录；
@@ -41,7 +46,9 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
+// 仓库根；测试可用 VERIFY_DIR_IMPORTS_ROOT 注入临时 fixture 根，避免在仓库内
+// 造包目录（产物零污染纪律）。
+const ROOT = process.env.VERIFY_DIR_IMPORTS_ROOT ?? join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const VERBOSE = process.argv.includes('--verbose')
 const SOFT = process.argv.includes('--soft')
 // 适用包白名单：显式 --package 累加；缺省仅 #664 重构包
@@ -181,6 +188,7 @@ for (const pkgName of applyPackages) {
 
   const importedDirs = new Set()
   const referencedInterfaces = new Set() // 被跨目录 import 解析到的 interface.ts（任意层，符号存在性检查对象）
+  const valueEdges = new Map() // 域级「值」依赖边：fromDirName → Set<toDirName>（type-only 边不入图）
   for (const [fromFile, fromDir] of fileToDir) {
     // from 侧豁免：src/client/** 的 import 不检查（#670 主控裁决——client 走
     // shared/interface.ts 会炸 browser bundle；client 目录整体豁免 from 侧）。
@@ -202,6 +210,13 @@ for (const pkgName of applyPackages) {
       importedDirs.add(targetDir)
       if (targetDir === absDir) continue // 同目录相对 import 放行
       const dirName = relative(srcDir, targetDir).split(sep)[0]
+      // 规则 5 边收集：type-only 子句编译期擦除，不入值依赖图；根文件是装配层，
+      // 只作为边起点会被跳过（fromDir === null → fromName 为空）。
+      const fromName = fromDir === null ? '' : relative(srcDir, fromDir).split(sep)[0]
+      if (fromName !== '' && fromName !== dirName && !/^(?:import|export)\s+type\b/.test(m[0])) {
+        if (!valueEdges.has(fromName)) valueEdges.set(fromName, new Set())
+        valueEdges.get(fromName).add(dirName)
+      }
       if (targetFile !== 'interface.ts') {
         const violation = `[${pkgName}] ${rel(fromFile)} → import "${spec}"（${dirName}/${targetFile}）：跨目录引用必须走 ${dirName}/interface.ts`
         if (SOFT) softViolations.push(violation)
@@ -231,6 +246,37 @@ for (const pkgName of applyPackages) {
         )
       }
     }
+  }
+  // 规则 5：域级值依赖图无环（三色 DFS；type 边不入图故允许成环）
+  {
+    const WHITE = 0
+    const GRAY = 1
+    const BLACK = 2
+    const color = new Map()
+    const stack = []
+    const cycles = new Set()
+    const visit = (node) => {
+      color.set(node, GRAY)
+      stack.push(node)
+      for (const next of valueEdges.get(node) ?? []) {
+        const state = color.get(next) ?? WHITE
+        if (state === GRAY) {
+          const cycle = [...stack.slice(stack.indexOf(next)), next]
+          // 同一环可能从不同入口重复发现，按去重后的节点集合归并
+          cycles.add([...new Set(cycle)].sort().join('|'))
+          failures.push(
+            `[${pkgName}] 域级值依赖环：${cycle.join(' → ')}（type-only 边允许成环；值边应改走 deps 注入或下沉到更低层域）`,
+          )
+        } else if (state === WHITE) {
+          visit(next)
+        }
+      }
+      stack.pop()
+      color.set(node, BLACK)
+    }
+    for (const node of valueEdges.keys()) if ((color.get(node) ?? WHITE) === WHITE) visit(node)
+    const edgeCount = [...valueEdges.values()].reduce((n, s) => n + s.size, 0)
+    summary.push(`${pkgName}: 域级值依赖边 ${edgeCount} 条、环 ${cycles.size} 个`)
   }
   summary.push(
     `${pkgName}: ${fileToDir.size} 个 src TS 文件、${dirSet.size} 个目录、${referencedInterfaces.size} 个 interface.ts 符号面`,

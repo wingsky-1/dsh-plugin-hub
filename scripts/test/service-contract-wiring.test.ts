@@ -16,9 +16,10 @@
  * tsc 非 0 → 本测试红。随 `pnpm test:scripts`（repo-gate 无条件步骤）执行，
  * CI/本地对「shared 类型面 ↔ 契约测试清单」漂移零成本判红。
  *
- * 接线对象：packages/dsh-mcp-manager/test/tsconfig.json（既有文件，此前零引用）。
- * 消费方套件（dsh-codegraph）随该包退役移除（#691）；未来新增消费方时按同构
- * tsconfig 重新接线。测试文件均无 @ts-nocheck，类型断言真实参与检查。
+ * 接线对象：packages/dsh-mcp-manager/test/tsconfig.json 与
+ * packages/dsh-notifier/test/tsconfig.json（均 noEmit，include 全量测试 ts）。
+ * 两个包的 e2e/集成面文件保留文件级 @ts-nocheck（桩对象密集，类型化成本高于
+ * 收益）；契约与单元测试文件无 @ts-nocheck，类型断言真实参与检查。
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -36,6 +37,11 @@ const SUITES = [
     name: 'dsh-mcp-manager（提供方契约 + apply provide 方法面）',
     tsconfig: join(ROOT, 'packages', 'dsh-mcp-manager', 'test', 'tsconfig.json'),
     expectFiles: ['service-contract.test.ts'],
+  },
+  {
+    name: 'dsh-notifier（SDK 契约 + L1/L2 直测 + 消费方类型编译用例）',
+    tsconfig: join(ROOT, 'packages', 'dsh-notifier', 'test', 'tsconfig.json'),
+    expectFiles: ['service-contract.test.ts', 'consumer-types.test.ts'],
   },
 ]
 
