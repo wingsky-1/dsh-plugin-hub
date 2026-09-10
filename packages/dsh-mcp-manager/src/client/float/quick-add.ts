@@ -5,9 +5,10 @@
  * actions 注入，不直接引用 panel 模块，避免循环依赖。
  */
 
-import { el, api } from "./dom.ts";
-import { t } from "../../../../shared/client/i18n.js";
-import type { McpState, UiActions } from "./state.ts";
+import { el } from "../core/dom.ts";
+import { api } from "../core/api.ts";
+import { t } from "../../../../../shared/client/i18n.js";
+import type { McpState, UiActions } from "../core/state.ts";
 
 /** 解析 "KEY: VALUE" / "KEY=VALUE" 多行文本为对象。 */
 export function parseKV(text: any): Record<string, string> {

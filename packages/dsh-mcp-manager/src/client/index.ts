@@ -21,13 +21,13 @@ import STYLE from "./style.css";
 import { ensureStyle } from "../../../../shared/client/ensure-style.js";
 import * as React from "react";
 
-import { createState, type McpState, type UiActions } from "./state.ts";
-import { api } from "./dom.ts";
-import { refresh, switchTab, close, showPanel } from "./panel.ts";
-import { resetForm, beginEdit } from "./quick-add.ts";
-import { toggleFloat, mountFloat, renderFloatPanel } from "./float.ts";
-import { bindSession, rebindSession } from "./session.ts";
-import { SettingsCard } from "./settings-card.tsx";
+import { createState, type McpState, type UiActions } from "./core/state.ts";
+import { api } from "./core/api.ts";
+import { refresh, switchTab, close, showPanel } from "./float/panel.ts";
+import { resetForm, beginEdit } from "./float/quick-add.ts";
+import { toggleFloat, mountFloat, renderFloatPanel } from "./float/float.ts";
+import { bindSession, rebindSession } from "./core/session.ts";
+import { SettingsCard } from "./settings/settings-card.tsx";
 import { bindLocale } from "../../../../shared/client/i18n.js";
 import { zh, en, type McpLocaleKey } from "./locales.ts";
 // 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物

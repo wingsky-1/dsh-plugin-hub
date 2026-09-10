@@ -7,9 +7,10 @@
  * panel → servers / quick-add / float。
  */
 
-import { el, api } from "./dom.ts";
-import { t } from "../../../../shared/client/i18n.js";
-import type { McpState, UiActions } from "./state.ts";
+import { el } from "../core/dom.ts";
+import { api } from "../core/api.ts";
+import { t } from "../../../../../shared/client/i18n.js";
+import type { McpState, UiActions } from "../core/state.ts";
 import { renderServers } from "./servers.ts";
 import { buildQuickAdd } from "./quick-add.ts";
 import { renderPill, renderFloatPanel } from "./float.ts";

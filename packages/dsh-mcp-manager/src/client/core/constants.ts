@@ -6,7 +6,7 @@
  * （模块加载时 t 尚未装配，不能固化文案字符串）。
  */
 
-import type { McpLocaleKey } from "./locales.ts";
+import type { McpLocaleKey } from "../locales.ts";
 
 /** 与宿主端 ROUTES 一致的路径。 */
 export const API = {

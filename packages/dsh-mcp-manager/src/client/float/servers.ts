@@ -6,10 +6,11 @@
  * panel/quick-add 模块，避免循环依赖。
  */
 
-import { el, api } from "./dom.ts";
-import { STATUS_ORDER, STATUS_TEXT } from "./constants.ts";
-import { t } from "../../../../shared/client/i18n.js";
-import type { McpState, UiActions } from "./state.ts";
+import { el } from "../core/dom.ts";
+import { api } from "../core/api.ts";
+import { STATUS_ORDER, STATUS_TEXT } from "../core/constants.ts";
+import { t } from "../../../../../shared/client/i18n.js";
+import type { McpState, UiActions } from "../core/state.ts";
 
 /** 服务器端点摘要：streamable-http 显示 URL，stdio 显示 command + args。 */
 export function endpointOf(server: any): string {

@@ -70,6 +70,35 @@ src/client/
   `scripts/gate/verify-dir-imports.mjs` 静态强制（已接入 `pnpm contract` 门禁）。阶段 2 起新建
   目录即带 interface.ts，存量文件阶段 6 集中搬移时统一补齐。
 
+### 阶段 7 客户端分层落地映射表（旧文件 → 新文件）
+
+> 客户端目录不受 D10 门面约束（`src/client/` 从 verify-dir-imports from 侧整体豁免，
+> index.ts 为 build-client 契约锚点，见 scripts/gate/verify-dir-imports.mjs #670 裁决）；
+> 分层为纯搬移 + 拆分，零行为变更，C 类修复另行 commit。
+
+| 旧（src/client/） | 新 | 说明 |
+|---|---|---|
+| index.ts | index.ts（不变） | 入口不动，仅 re-export + apply/inject 契约；import 路径随分层同步 |
+| constants.ts | core/constants.ts | 纯移动 |
+| dom.ts | core/dom.ts + core/api.ts | 拆出：dom.ts 保留 `el`（DOM 元素创建）；api.ts 收 `api()`（HTTP 请求，**拆出自 dom.ts**），C14 204 备忘注释随迁 |
+| locales.ts | locales.ts（根保留）+ core/i18n.ts | 字典数据与 `McpLocaleKey` 类型留根（LocaleNamespaceMap 声明合并锚点）；i18n.ts 收渲染期文案求值辅助 `tStatus`（**拆出自 locales.ts**） |
+| state.ts | core/state.ts | 纯移动 |
+| session.ts | core/session.ts | 纯移动 |
+| float.ts | float/float.ts | 纯移动 |
+| panel.ts | float/panel.ts | 纯移动 |
+| servers.ts | float/servers.ts | 纯移动 |
+| quick-add.ts | float/quick-add.ts | 纯移动 |
+| settings-card.tsx | settings/settings-card.tsx | 纯移动 |
+| style.css / css.d.ts / react-shim.d.ts | 根保留 | 构建契约锚点文件不动 |
+| shared/client/* 相对路径 | 一级文件 4 层 `../../../../shared/...`；二级文件（core/float/settings）5 层 `../../../../../shared/...` | 加深一级计入工作量；packages/ 下 bundle-host X1 的包内 shared/ 产物会掩盖深度错误（本地验证前先 `rm -rf packages/<pkg>/shared`） |
+
+### 客户端目录不变式（阶段 7 后生效）
+
+- `src/client/index.ts` 是 build-client 契约锚点与唯一汇聚入口，位置永不移动；
+- 客户端内部按 core（支撑）/ float（胶囊与面板）/ settings（设置卡）分层，feature 模块
+  间不互相 import，跨模块动作经 index.ts 装配的 UiActions 回调注入；
+- 跨包共享一律走 `shared/client/*`（i18n/ensure-style），相对路径深度按文件层级数。 
+
 ---
 
 ## 三、每层职责与接口契约（7 逻辑层 + 组合根）
