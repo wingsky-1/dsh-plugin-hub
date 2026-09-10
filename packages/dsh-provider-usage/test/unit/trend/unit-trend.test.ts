@@ -57,7 +57,30 @@ const T0 = new Date(2026, 8, 4, 12, 0, 0).getTime();
 const DAY0 = dayKey(T0); // 2026-09-04
 const HOUR = 3600_000;
 
+/**
+ * 事件工厂。0.1.5 迁移适配：旧用例以 `assistant/chunk` + 内嵌 usage 表达「一次
+ * usage 到达」，而官方已移除该事件、usage 改由结算事件承载——这里把 usage chunk
+ * 形态映射为 assistant/message 结算形态（token 与时间语义不变），使下方用例的
+ * 断言继续在**原口径**上成立。非 usage 的 chunk（text-delta 等）在新形态下不构成
+ * 调用证据，映射为空 stream 的 assistant/attempt（collector 对无 usage attempt 不入账）。
+ */
 function ev(type, data, time, seq = 1) {
+  if (type === "assistant/chunk") {
+    if (data?.chunk?.type !== "usage") {
+      return { type: "assistant/attempt", seq, time, data: { turn: data?.turn, step: data?.step, stream: [] } };
+    }
+    return {
+      type: "assistant/message",
+      seq,
+      time,
+      data: {
+        turn: data.turn,
+        step: data.step,
+        usage: data.chunk.usage,
+        stream: [{ type: "chunk", time, chunk: data.chunk }],
+      },
+    };
+  }
   return { type, seq, time, data };
 }
 const HEADER = (provider = "deepseek", model = "deepseek-chat") => ({
@@ -109,33 +132,40 @@ const countersOf = (emitted) => emitted.filter((e) => e.type === "counter").map(
   assert.equal(emitted.filter((e) => e.type === "correct").length, 0, "text-delta 与首定稿不产生校正");
 }
 
-// ---------------------------------------------------------------- collector：重复 usage 校正
-// 不变量2：防双计（同 fold 键不重复记账、压实不二次累加）——同调用重复 usage 只校正 token、不重计调用。
+// ---------------------------------------------------------------- collector：结算事件防双计
+// 不变量2：防双计——(a) message 顶层 usage 与内嵌 stream usage 恒等，只取一处（P0 陷阱）；
+//          (b) 同 (turn,step) 多次结算按重试逐次入账（结算事件本身即一次尝试；0.1.2 的
+//              「重复 usage 走校正」路径随 assistant/chunk 移除而退役）。
 
 {
+  // (a) 两处 usage 同时在场 → 只记一份
   const { emitted, send } = makeCollector();
   const s = { id: "s1" };
+  const tokens = { inputTokens: 100, outputTokens: 50, cacheReadTokens: 0, cacheWriteTokens: 0 };
   send(s, ev("request/header", HEADER(), T0, 1));
-  send(s, ev("assistant/chunk", USAGE(100, 50), T0, 2));
-  send(s, ev("assistant/chunk", USAGE(200, 60), T0 + 10, 3));
+  send(s, ev("assistant/message", {
+    turn: 1,
+    step: 1,
+    message: { role: "assistant", source: { kind: "model", provider: "deepseek", model: "deepseek-chat" } },
+    usage: tokens,
+    stream: [{ type: "chunk", time: T0, chunk: { type: "usage", usage: tokens } }],
+  }, T0, 2));
   const calls = callsOf(emitted);
-  assert.equal(calls.length, 1, "同调用重复 usage 不重计调用");
-  const corr = correctsOf(emitted);
-  assert.equal(corr.length, 1, "重复 usage 产生校正");
-  assert.deepEqual(corr[0].tokens, { input: 200, output: 60, cacheRead: 0, cacheWrite: 0 }, "校正取后值");
-  assert.equal(corr[0].retry, 1, "校正命中同 fold 键");
+  assert.equal(calls.length, 1, "两处 usage 只记一次调用");
+  assert.deepEqual(calls[0].tokens, { input: 100, output: 50, cacheRead: 0, cacheWrite: 0 }, "token 不翻倍（须 ?? 二选一）");
 }
 
 // ---------------------------------------------------------------- collector：retry 逐次计
-// 不变量2：防双计——retry 复用同一 (turn,step)，新 header 边界后逐次独立入账（重试消耗不合并、不丢）。
+// 不变量2：重试复用同一 (turn,step)，retry = 该键结算序数（内生于结算事件，不依赖
+// request/header 边界，也不依赖可选重试插件的事件）。
 
 {
   const { emitted, send } = makeCollector();
   const s = { id: "s1" };
   send(s, ev("request/header", HEADER(), T0, 1));
   send(s, ev("assistant/chunk", USAGE(100, 50), T0, 2));
-  // retry：复用同一 (turn,step)，新 request/header 后再 usage
-  send(s, ev("request/header", HEADER(), T0 + 5000, 3));
+  // 中间夹一次无 usage 的失败 attempt：不构成调用证据，也不影响序数连续性
+  send(s, ev("assistant/attempt", { turn: 1, step: 1, stream: [] }, T0 + 3000, 3));
   send(s, ev("assistant/chunk", USAGE(70, 30), T0 + 6000, 4));
   const calls = callsOf(emitted);
   assert.equal(calls.length, 2, "重试消耗逐次独立入账");
@@ -180,14 +210,41 @@ const countersOf = (emitted) => emitted.filter((e) => e.type === "counter").map(
 }
 
 {
-  // 校正：已定稿后 message 到达仅校正不重记
+  // 同键「usage 结算 + message 结算」= 两次尝试；0.1.5 起结算自带完整 token，无校正路径
   const { emitted, send } = makeCollector();
   const s = { id: "s1" };
   send(s, ev("request/header", HEADER(), T0, 1));
   send(s, ev("assistant/chunk", USAGE(100, 50), T0, 2));
   send(s, ev("assistant/message", MESSAGE({ inputTokens: 120, outputTokens: 60 }), T0 + 50, 3));
-  assert.equal(callsOf(emitted).length, 1, "已定稿后 message 不重计");
-  assert.equal(correctsOf(emitted).length, 1, "message 校正产生");
+  const calls = callsOf(emitted);
+  assert.equal(calls.length, 2, "同键两次结算各自入账");
+  assert.equal(calls[1].retry, 2, "第二次结算 retry=2");
+  assert.equal(correctsOf(emitted).length, 0, "结算自带完整 token，无校正路径");
+}
+
+// ---------------------------------------------------------------- collector：attempt 口径（Q1/Q2）
+// Q1：有 usage 的失败/重试 attempt 计入（0.1.2 本来就计入，丢弃即丢真实计费 token）；
+// Q2：无 usage 的 attempt 不计（无调用证据，避免 calls 虚高）。
+
+{
+  // Q1：attempt 的 usage 只在 stream 里（无顶层 usage 字段）
+  const { emitted, send } = makeCollector();
+  const s = { id: "s1" };
+  send(s, ev("request/header", HEADER(), T0, 1));
+  const usage = { inputTokens: 12, outputTokens: 3 };
+  send(s, ev("assistant/attempt", { turn: 1, step: 1, stream: [{ type: "chunk", time: T0, chunk: { type: "usage", usage } }] }, T0, 2));
+  const calls = callsOf(emitted);
+  assert.equal(calls.length, 1, "有 usage 的 attempt 计入调用");
+  assert.deepEqual(calls[0].tokens, { input: 12, output: 3, cacheRead: null, cacheWrite: null }, "token 取自 stream 内裸 usage chunk");
+}
+
+{
+  // Q2：无 usage 的 attempt 不入账（packed run 形态也不承载 usage）
+  const { emitted, send } = makeCollector();
+  const s = { id: "s1" };
+  send(s, ev("request/header", HEADER(), T0, 1));
+  send(s, ev("assistant/attempt", { turn: 1, step: 1, stream: [{ type: "text-chunks", time0: T0, index: 0, dt: [], texts: ["hi"] }] }, T0, 2));
+  assert.equal(callsOf(emitted).length, 0, "无 usage 的 attempt 无调用证据");
 }
 
 // ---------------------------------------------------------------- collector：归属
@@ -245,47 +302,53 @@ const countersOf = (emitted) => emitted.filter((e) => e.type === "counter").map(
 }
 
 {
-  // turn/end 丢弃未定稿缓冲；定稿记忆保留——同 turn 乱序迟到 message 不双算
+  // turn/end 后同键迟到结算：仍是真实尝试 → 入账且序数连续
+  // （0.1.5 起无 fold 缓冲——结算事件自带完整证据，turn/end 不再需要「丢弃未定稿」）
   const { emitted, send } = makeCollector();
   const s = { id: "s1" };
   send(s, ev("request/header", HEADER(), T0, 1));
-  send(s, ev("assistant/chunk", USAGE(100, 50), T0, 2)); // 已定稿 → done 记忆
+  send(s, ev("assistant/chunk", USAGE(100, 50), T0, 2));
   send(s, ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T0 + 1000, 3));
-  send(s, ev("assistant/message", MESSAGE({ inputTokens: 999, outputTokens: 999 }), T0 + 2000, 4)); // 乱序迟到
-  assert.equal(callsOf(emitted).length, 1, "turn/end 后迟到 message 不补记（防双算）");
-  assert.equal(correctsOf(emitted).length, 1, "迟到 message 走校正路径");
+  send(s, ev("assistant/message", MESSAGE({ inputTokens: 999, outputTokens: 999 }), T0 + 2000, 4));
+  const calls = callsOf(emitted);
+  assert.equal(calls.length, 2, "turn/end 后同键迟到结算仍入账");
+  assert.equal(calls[1].retry, 2, "序数记忆不按 turn 清，retry 连续");
+  assert.equal(countersOf(emitted).filter((c) => c.turns === 1).length, 1, "turn 计数独立不受影响");
 }
 
 // ---------------------------------------------------------------- collector：TTL 与销毁
-// 不变量2：防双计——fold/会话 TTL 回收后迟到 message 仍经 done 定稿记忆走校正路径（不双算）。
+// 不变量2：会话状态 TTL 回收前后，结算序数记忆决定 retry 连续性；回收后视为全新会话。
 
 {
+  // 会话状态未到龄：序数记忆保留 → retry 连续
   let nowMs = T0;
   const { emitted, send } = makeCollector(() => nowMs);
   const s = { id: "s1" };
   send(s, ev("request/header", HEADER(), T0, 1));
   send(s, ev("assistant/chunk", USAGE(100, 50), T0, 2));
-  nowMs = T0 + 11 * 60 * 1000; // 推进 11min：fold 缓冲 TTL 到龄（定稿记忆保留）
+  nowMs = T0 + 11 * 60 * 1000;
   send(s, ev("assistant/message", MESSAGE({ inputTokens: 42, outputTokens: 42 }), nowMs, 3));
-  assert.equal(callsOf(emitted).length, 1, "fold TTL 后迟到 message 仍不双算（done 记忆在会话级保留）");
-  assert.equal(correctsOf(emitted).length, 1, "走校正");
+  const calls = callsOf(emitted);
+  assert.equal(calls.length, 2, "TTL 内迟到结算照常入账");
+  assert.equal(calls[1].retry, 2, "retry 取序数记忆（连续）");
 }
 
 {
+  // 会话状态被清扫回收：序数记忆一并丢弃 → 同键结算视为全新会话，retry 重启
   let nowMs = T0;
   const { emitted, send } = makeCollector(() => nowMs);
   const s1 = { id: "s1" };
   send(s1, ev("request/header", HEADER(), T0, 1));
   send(s1, ev("assistant/chunk", USAGE(100, 50), T0, 2));
-  nowMs = T0 + 61 * 60 * 1000; // 会话级 TTL（60min）到龄
-  send(s1, ev("assistant/message", MESSAGE({ inputTokens: 7, outputTokens: 7 }), nowMs, 3));
-  assert.equal(callsOf(emitted).length, 1, "闲置 61min 后首条迟到 message 仍走校正（不双算优先）");
-  assert.equal(correctsOf(emitted).length, 1, "校正路径");
-  // 其他会话的事件触发全局清扫 → s1（真闲置 61min）被回收
-  send({ id: "s2" }, ev("assistant/chunk", USAGE(1, 1), nowMs, 4));
-  // s1 回收后的迟到 message：全新会话态补记（60min 窗口外不追溯，口径文档化）
-  send(s1, ev("assistant/message", MESSAGE({ inputTokens: 7, outputTokens: 7 }), nowMs, 5));
-  assert.equal(callsOf(emitted).length, 2, "状态回收后的迟到 message 视为全新会话补记");
+  assert.equal(callsOf(emitted).length, 1, "首条入账");
+  // 闲置 61min 后由**别的**会话触发全局清扫 → s1 被回收
+  nowMs = T0 + 61 * 60 * 1000;
+  send({ id: "s2" }, ev("assistant/chunk", USAGE(1, 1), nowMs, 3));
+  assert.equal(callsOf(emitted).length, 2, "s2 入账");
+  send(s1, ev("assistant/message", MESSAGE({ inputTokens: 7, outputTokens: 7 }), nowMs + 1000, 4));
+  const calls = callsOf(emitted);
+  assert.equal(calls.length, 3, "回收后的 s1 结算照常入账");
+  assert.equal(calls.at(-1).retry, 1, "回收后 retry 从 1 重启（60min 窗口外不追溯，口径文档化）");
 }
 
 {
@@ -795,54 +858,52 @@ function writeAggShardLine(row) {
   await tracker.dispose();
 }
 
-// ---------------------------------------------------------------- 评审修复：P2-2 补记定稿后 headerSeen 对称重置
-// 不变量2：防双计——message 补记定稿后对称重置 headerSeen（迟到 usage 不被误判为新调用双算）。
+// ---------------------------------------------------------------- 0.1.5 迁移：校正路径退役
+// 不变量2：0.1.2 的「补记定稿后迟到 usage 走校正」随 assistant/chunk 移除而退役——
+// 0.1.5 下同键两次结算即两次尝试，各自独立 token，双算由结算事件唯一性保证。
 
 {
-  // P2-2 双算反例：header → message（带 usage）补记定稿 → 同 (turn,step) 迟到 usage chunk。
-  // 修复前：补记定稿不重置 headerSeen → 迟到 usage 被误判为新调用（retry+1）重记 → 双算。
+  // message 结算 + 同键后续结算 = 两次尝试（token 不互相覆盖）
   const { emitted, send } = makeCollector();
   const agg = new TrendAggregator();
   const s = { id: "s1" };
   send(s, ev("request/header", HEADER(), T0, 1));
-  send(s, ev("assistant/message", MESSAGE({ inputTokens: 30, outputTokens: 20 }), T0 + 100, 2)); // 补记定稿
-  send(s, ev("assistant/chunk", USAGE(300, 150), T0 + 200, 3)); // 迟到 usage chunk
-  assert.equal(callsOf(emitted).length, 1, "补记定稿后迟到 usage 不重记（防双算）");
-  const corr = correctsOf(emitted);
-  assert.equal(corr.length, 1, "迟到 usage 走校正");
-  assert.deepEqual(corr[0].tokens, { input: 300, output: 150, cacheRead: 0, cacheWrite: 0 }, "token 为校正值");
-  // aggregator 端到端：correct 覆盖补记行 token，calls 仍 1
+  send(s, ev("assistant/message", MESSAGE({ inputTokens: 30, outputTokens: 20 }), T0 + 100, 2));
+  send(s, ev("assistant/chunk", USAGE(300, 150), T0 + 200, 3));
+  const calls = callsOf(emitted);
+  assert.equal(calls.length, 2, "同键两次结算各自入账");
+  assert.deepEqual(calls.map((c) => c.retry), [1, 2], "retry = 结算序数");
+  assert.deepEqual(calls.map((c) => c.tokens.input), [30, 300], "两次 token 各自保留");
+  assert.equal(correctsOf(emitted).length, 0, "结算自带完整 token，无校正事件");
   for (const e of emitted) agg.apply(e);
   const cell = agg.buckets().find((d) => d.day === DAY0).providers[0].cell;
-  assert.equal(cell.calls, 1, "aggregator calls=1（补记 1 + 校正不重计）");
-  assert.equal(cell.input, 300, "aggregator token 被校正覆盖");
+  assert.equal(cell.calls, 2, "aggregator calls=2（两次尝试累加）");
+  assert.equal(cell.input, 330, "aggregator token 求和");
 }
 
-// ---------------------------------------------------------------- 评审修复：P2-3 done 定稿记忆 Map 化
-// 不变量2：防双计——done 定稿记忆（retry 记忆 + TREND_DONE_MAX 淘汰）防乱序迟到 message 双算。
+// ---------------------------------------------------------------- done 记忆语义：结算序数
+// 不变量2：done 从「定稿记忆（防双算校正）」变为「结算序数记忆（retry 连续性）」；
+// 序数内生于结算事件，不依赖 request/header 边界。
 
 {
-  // P2-3(a)：retry=2 定稿后 folds 被 TTL 清空 → 迟到 message 校正的 retry
-  // 从 done 记忆取真实值 2（修复前兜底 1，会错改 retry=1 行的归属）。
+  // 序数记忆跨 header 与宽松 TTL 保持连续：三次同键结算 → retry 1/2/3
   let nowMs = T0;
   const { emitted, send } = makeCollector(() => nowMs);
   const s = { id: "s1" };
   send(s, ev("request/header", HEADER(), T0, 1));
-  send(s, ev("assistant/chunk", USAGE(100, 50), T0, 2)); // retry=1 定稿 → done["1:1"]=1
-  send(s, ev("request/header", HEADER(), T0 + 5000, 3)); // 重试边界
-  send(s, ev("assistant/chunk", USAGE(70, 30), T0 + 6000, 4)); // retry=2 定稿 → done["1:1"]=2
-  nowMs = T0 + 11 * 60 * 1000; // fold TTL 到龄：sweep 清 folds（done 记忆保留）
-  send(s, ev("tool/call", { turn: 1, step: 1, callId: "c", name: "bash", arguments: "{}" }, nowMs, 5)); // 触发 sweep
-  send(s, ev("assistant/message", MESSAGE({ inputTokens: 88, outputTokens: 66 }), nowMs, 6)); // 迟到校正
-  const corr = correctsOf(emitted);
-  assert.equal(corr.length, 1, "folds 清空后迟到 message 仍走校正（不双算）");
-  assert.equal(corr[0].retry, 2, "retry 从 done 记忆取真实值 2（非兜底 1）");
+  send(s, ev("assistant/chunk", USAGE(100, 50), T0, 2));
+  send(s, ev("assistant/chunk", USAGE(70, 30), T0 + 6000, 3));
+  nowMs = T0 + 11 * 60 * 1000;
+  send(s, ev("tool/call", { turn: 1, step: 1, callId: "c", name: "bash", arguments: "{}" }, nowMs, 4));
+  send(s, ev("assistant/message", MESSAGE({ inputTokens: 88, outputTokens: 66 }), nowMs, 5));
+  const calls = callsOf(emitted);
+  assert.equal(calls.length, 3, "三次同键结算各自入账");
+  assert.deepEqual(calls.map((c) => c.retry), [1, 2, 3], "retry 序数连续，不因 header/时间回落");
 }
 
 {
-  // P2-3(b)：done 超 TREND_DONE_MAX 按插入序淘汰最旧键（长命会话防无界增长）。
-  // 行为观测：每 turn 定稿 1 键 + turn/end 清 folds → done 累积 MAX+1 键 →
-  // 最旧键（turn=1）被淘汰（迟到 message 补记），最新键仍在（迟到 message 校正）。
+  // done 超 TREND_DONE_MAX 按插入序淘汰最旧键（长命会话防无界增长）。
+  // 序数语义下的可观测行为：被淘汰键的后续结算 retry 从 1 重启，未淘汰键继续递增。
   assert.equal(TREND_DONE_MAX, 200, "done 记忆上限常量");
   const { emitted, send } = makeCollector();
   const s = { id: "s1" };
@@ -851,13 +912,16 @@ function writeAggShardLine(row) {
     send(s, ev("assistant/chunk", usageAt(turn), T0, turn));
     send(s, ev("turn/end", { turn, reason: { kind: "completed" } }, T0, turn));
   }
-  send(s, ev("assistant/message", MESSAGE({ inputTokens: 9, outputTokens: 9 }), T0, 999)); // turn=1 step=1（被淘汰键）
-  assert.equal(callsOf(emitted).length, TREND_DONE_MAX + 2, "被淘汰键的迟到 message 走补记（无记忆可校正）");
+  const settled = callsOf(emitted).length;
+  assert.equal(settled, TREND_DONE_MAX + 1, "每 turn 一条结算");
+  // 被淘汰键（turn=1）再次结算 → 无记忆 → retry 重启为 1
+  send(s, ev("assistant/message", MESSAGE({ inputTokens: 9, outputTokens: 9 }), T0, 999));
+  assert.equal(callsOf(emitted).length, settled + 1, "被淘汰键的结算照常入账");
+  assert.equal(callsOf(emitted).at(-1).retry, 1, "被淘汰键 retry 重启为 1");
+  // 未淘汰键（turn=MAX+1）再次结算 → 序数递增为 2
   const late = { ...MESSAGE({ inputTokens: 8, outputTokens: 8 }), turn: TREND_DONE_MAX + 1 };
-  send(s, ev("assistant/message", late, T0, 1000)); // turn=MAX+1（最新键仍在记忆）
-  const corr = correctsOf(emitted);
-  assert.equal(corr.length, 1, "未淘汰键的迟到 message 走校正");
-  assert.equal(corr[0].turn, TREND_DONE_MAX + 1, "校正命中最新键");
+  send(s, ev("assistant/message", late, T0, 1000));
+  assert.equal(callsOf(emitted).at(-1).retry, 2, "未淘汰键 retry 递增");
 }
 
 // ---------------------------------------------------------------- 评审修复：P2-4 分片行校验补强
@@ -1980,13 +2044,12 @@ const A2_LEGACY_AGG = {
   await tracker.dispose();
 }
 
-// ---------------------------------------------------------------- #655 fold 清理后重复记账
-// 不变量2：防双计——fold 被 TTL 清理后迟到 usage 只校正不重记（done 记忆取真实 retry）。
+// ---------------------------------------------------------------- #655 口径变更（0.1.5）
+// 0.1.2 的「fold 被 TTL 清理后迟到 usage 只校正不重记」随 assistant/chunk 移除而退役：
+// 0.1.5 下同键多次结算按序数逐次入账（每次尝试一条结算事件，token 各自独立）。
 
 {
-  // fold 被 fold TTL 清理后，同一 fold 键的迟到 usage 不得重复记账（与 onMessage 对称）。
-  // 真实数据形态：同一 (session,turn,step) 的 usage 间隔 13~19 分钟陆续到达，
-  // token 从 0/0 递增到真实值——修复前每次 fold 重建都多记一次 call。
+  // 真实数据形态：同一 (session,turn,step) 的多次尝试陆续结算，token 各自入账
   let nowT = new Date(2026, 8, 8, 4, 22, 7).getTime();
   const { emitted, send } = makeCollector(() => nowT);
   const U = (input, output) => ev("assistant/chunk", { turn: 1, step: 9, chunk: { type: "usage", usage: { inputTokens: input, outputTokens: output } } }, nowT, 1);
@@ -1995,29 +2058,26 @@ const A2_LEGACY_AGG = {
   nowT += 13 * 60_000; send("s1", U(0, 0));
   nowT += 13 * 60_000; send("s1", U(0, 0));
   nowT += 12 * 60_000; send("s1", U(118593, 41240));
-  assert.equal(callsOf(emitted).length, 1, "同一 fold 键只记一次调用（fold 被 TTL 清理后不重记）");
-  const corrects = correctsOf(emitted);
-  assert.equal(corrects.length, 3, "后续迟到 usage 走校正（不重记调用）");
-  assert.deepEqual(
-    corrects[2].tokens,
-    { input: 118593, output: 41240, cacheRead: null, cacheWrite: null },
-    "最后一次校正带真实 token（token 收敛到最新值）",
-  );
+  const calls = callsOf(emitted);
+  assert.equal(calls.length, 4, "同键四次结算逐次入账（每次尝试独立）");
+  assert.deepEqual(calls.map((c) => c.retry), [1, 2, 3, 4], "retry = 结算序数，跨时间连续");
+  assert.deepEqual(calls.at(-1).tokens, { input: 118593, output: 41240, cacheRead: null, cacheWrite: null }, "末次 token 为真实值");
+  assert.equal(correctsOf(emitted).length, 0, "无校正路径");
 }
 
 {
-  // 反例防线：fold 被清理后若出现新 header，同键 usage 仍按重试递增（不误判为重复块）。
+  // 同键结算中途出现新 header：仍按结算序数递增（header 只影响归属，不影响序数）
   let nowT = T0;
   const { emitted, send } = makeCollector(() => nowT);
   const U = (input, output) => ev("assistant/chunk", { turn: 1, step: 9, chunk: { type: "usage", usage: { inputTokens: input, outputTokens: output } } }, nowT, 1);
   send("s1", ev("request/header", HEADER(), nowT, 0));
   send("s1", U(10, 5));
   nowT += 13 * 60_000;
-  send("s1", ev("request/header", HEADER(), nowT, 2)); // 重试边界：新 header
+  send("s1", ev("request/header", HEADER(), nowT, 2));
   send("s1", U(20, 6));
   const calls = callsOf(emitted);
-  assert.equal(calls.length, 2, "新 header 后的同键 usage 记为新一次调用（重试）");
-  assert.equal(calls[1].retry, 2, "retry 从定稿记忆递增为 2（不回落为 1 重号）");
+  assert.equal(calls.length, 2, "同键两次结算 = 两次尝试");
+  assert.equal(calls[1].retry, 2, "retry 取序数记忆递增（不回落为 1 重号）");
 }
 
 assert.equal(sumToken(null, 5), 5, "sumToken null+数字");

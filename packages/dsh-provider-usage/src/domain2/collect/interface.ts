@@ -11,7 +11,7 @@
 
 // ------------------------------------------------------------------ 事件折叠状态机（collector.ts）
 
-export { TrendCollector, TREND_FOLD_TTL_MS, TREND_DONE_MAX } from "./collector.ts";
+export { TrendCollector, TREND_DONE_MAX } from "./collector.ts";
 export type {
   TrendCallRecord,
   TrendCorrectRecord,

@@ -40,6 +40,7 @@ import {
   fromClaudeEntry,
   expandEnv,
   inject,
+  MCP_SECTION_ORDER,
   makeEventsRoute,
   makeHealthRoute,
   makeRoutes,
@@ -2000,6 +2001,14 @@ const main = async () => {
       assert.equal(ctx.sections.length, 1);
       assert.equal(ctx.sections[0].name, "plugin:dsh-mcp-manager");
       assert.match(ctx.sections[0].text, /dsh-mcp-manager/);
+      // 分节顺序契约：官方 SECTION_ORDERS 在 0.1.2→0.1.5 期间重排（HARNESS_SOURCE/
+      // WEB_SURFACE 从 -900/-800 移到 10000/10100）；本段落定位为「部署 persona 之后的
+      // 补充说明」，该相对位置不变——此断言防未来官方再重排后本段落静默贬值。
+      assert.equal(ctx.sections[0].order, MCP_SECTION_ORDER, "分节 order 取具名常量（防裸数字漂移）");
+      assert.ok(
+        ctx.sections[0].order > 0 && ctx.sections[0].order < 500,
+        "分节位置落在官方 DEPLOYMENT_PERSONA_PREFIX(0) 与 PLAN_POLICY(500) 之间",
+      );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

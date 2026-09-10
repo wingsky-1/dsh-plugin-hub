@@ -44,7 +44,29 @@ const DAY0 = dayKey(T0);
 const DAY1 = dayKey(T1);
 const HOUR = 3600_000;
 
+/**
+ * 事件工厂。0.1.5 迁移适配（与 unit-trend.test.ts 同口径）：旧用例以
+ * `assistant/chunk` + 内嵌 usage 表达一次 usage 到达，官方已移除该事件、usage 改由
+ * 结算事件承载——这里把 usage chunk 形态映射为 assistant/message 结算形态；
+ * 非 usage chunk 映射为空 stream 的 assistant/attempt（不构成调用证据）。
+ */
 function ev(type, data, time, seq = 1) {
+  if (type === "assistant/chunk") {
+    if (data?.chunk?.type !== "usage") {
+      return { type: "assistant/attempt", seq, time, data: { turn: data?.turn, step: data?.step, stream: [] } };
+    }
+    return {
+      type: "assistant/message",
+      seq,
+      time,
+      data: {
+        turn: data.turn,
+        step: data.step,
+        usage: data.chunk.usage,
+        stream: [{ type: "chunk", time, chunk: data.chunk }],
+      },
+    };
+  }
   return { type, seq, time, data };
 }
 const HEADER = (provider, model) => ({ header: { config: { provider, model } }, reason: "initial" });
@@ -102,21 +124,21 @@ send("s3", ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T1 + 3000,
 send("s4", ev("request/header", HEADER("opencode", "glm-4"), T1 + 3100, 18));
 send("s4", ev("assistant/chunk", USAGE(1, 1, 8, 4, 1, 0), T1 + 4000, 19)); // call（dir=unidentified）
 
-// emitted 结构 sanity（correct 不新增调用计数；counter 独立）
+// emitted 结构 sanity（0.1.5：一次结算一条 call；counter 独立；无校正事件）
 const calls = emitted.filter((e) => e.type === "call").map((e) => e.record);
 const corrects = emitted.filter((e) => e.type === "correct").map((e) => e.record);
 const counters = emitted.filter((e) => e.type === "counter").map((e) => e.record);
-assert.equal(calls.length, 7, "Σ事件：call 事件数 = 7（correct 不新增调用计数）");
-assert.equal(corrects.length, 2, "同调用重复 usage + 已定稿 message 各产生一次校正");
+assert.equal(calls.length, 9, "Σ事件：call 事件数 = 9（每次结算一条）");
+assert.equal(corrects.length, 0, "0.1.5 结算自带完整 token，无校正事件");
 assert.equal(counters.length, 6, "turn/end×3 + tool/call×3 = 6 个 counter 事件");
 assert.equal(calls[0].provider, "deepseek", "归属折叠正确（s1 header 主源）");
-assert.equal(calls[2].interrupted, true, "s2 补记带 interrupted 标记");
-assert.equal(calls[2].provider, TREND_UNIDENTIFIED, "归属缺失 → TREND_UNIDENTIFIED 桶");
-assert.equal(calls[2].model, null, "未识别桶 model=null");
-assert.equal(calls[5].tokens, null, "零 usage 补记（s3 第二条 call）token 为 null");
+assert.equal(calls[4].interrupted, true, "s2 结算带 interrupted 标记");
+assert.equal(calls[4].provider, TREND_UNIDENTIFIED, "归属缺失 → TREND_UNIDENTIFIED 桶");
+assert.equal(calls[4].model, null, "未识别桶 model=null");
+assert.equal(calls[7].tokens, null, "零 usage 的 message 结算 token 为 null");
 assert.deepEqual(
   calls.map((c) => c.dir).sort(),
-  [TREND_UNIDENTIFIED, TREND_UNIDENTIFIED, TREND_UNIDENTIFIED, "proj-a", "proj-a", "proj-b", "proj-b"],
+  [TREND_UNIDENTIFIED, TREND_UNIDENTIFIED, TREND_UNIDENTIFIED, "proj-a", "proj-a", "proj-a", "proj-a", "proj-b", "proj-b"],
   "#633 目录归属两条线：合法 basename 与缺失归未识别均落盘",
 );
 

@@ -38,7 +38,7 @@ install them all at once as a single bundle, or pick individual plugins as neede
 
 This plugin set only adapts to **rc (release-candidate) releases of DeepSeek Harness — alpha versions are not supported**.
 
-- All plugins are currently pinned to `dsh 0.1.2-rc.1` (the official type-layer catalog and
+- All plugins are currently pinned to `dsh 0.1.5-rc.1` (the official type-layer catalog and
   every package's peerDependencies are locked in lockstep)
 - npm/pnpm will surface a peer mismatch if your dsh version does not match — upgrade the
   dsh CLI to the corresponding rc release first

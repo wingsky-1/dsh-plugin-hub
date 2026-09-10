@@ -1352,9 +1352,9 @@ const GEN = (over = {}) => ({
       resolveCwd: (session) => (session === "s1" ? "/w/alpha" : "/w/beta"),
     });
     tracker.handleEvent({ id: "s1" }, { type: "request/header", seq: 1, time: T0, data: { header: { config: { provider: "p", model: "m" } } } });
-    tracker.handleEvent({ id: "s1" }, { type: "assistant/chunk", seq: 2, time: T0, data: { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: 100, outputTokens: 50 } } } });
+    tracker.handleEvent({ id: "s1" }, { type: "assistant/message", seq: 2, time: T0, data: { turn: 1, step: 1, usage: { inputTokens: 100, outputTokens: 50 } } });
     tracker.handleEvent({ id: "s2" }, { type: "request/header", seq: 3, time: T0, data: { header: { config: { provider: "p", model: "m" } } } });
-    tracker.handleEvent({ id: "s2" }, { type: "assistant/chunk", seq: 4, time: T0, data: { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: 7, outputTokens: 3 } } } });
+    tracker.handleEvent({ id: "s2" }, { type: "assistant/message", seq: 4, time: T0, data: { turn: 1, step: 1, usage: { inputTokens: 7, outputTokens: 3 } } });
     const fakeCtx = { llm: { stream: () => (async function* () { yield* CHUNKS; })(), listProviders: () => [{ id: "p" }], listModels: async () => [{ id: "m" }] } };
     const due = { period: "daily", key: "2026-09-03", startDay: "2026-09-03", endDay: "2026-09-03", force: true };
     // 全部（空数组）：两目录都在

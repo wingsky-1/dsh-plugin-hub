@@ -1,23 +1,25 @@
 /**
  * dsh-provider-usage/trend — 事件折叠状态机。
  *
- * 纯逻辑模块：吃官方 SessionEvent 流，产出定稿记录（call/correct/counter），
- * 不碰 IO、不持时钟（now 可注入）。热路径纪律：handler 顶部先按 event.type /
- * chunk.type 廉价过滤，再做防御性深检查（payload 跨宿主边界不受信）。
+ * 纯逻辑模块：吃官方 SessionEvent 流，产出定稿记录（call/counter），不碰 IO、
+ * 不持时钟（now 可注入）。热路径纪律：handler 顶部先按 event.type 廉价过滤，
+ * 再做防御性深检查（payload 跨宿主边界不受信）。
  *
- * 记账口径（方案定稿 v1.2，证据 = @deepseek-ai/dsh-session 官方类型层）：
- * - usage chunk 到达即定稿（主信号）：fold 键 (session, turn, step, retry)；
- * - retry 判定：同一 (turn,step) 自上次定稿后出现新的 request/header（重试复用
- *   同一 (turn,step)，retrySeq 递增）→ 下一个 usage 定稿为新的一次调用；
- *   未出现新 header 的后续 usage chunk 视为同一调用的重复/更新块 → 校正不重记；
- * - assistant/message：已定稿 → 校正（token 覆盖，不重计调用）；未定稿/缺失 →
- *   补记（usage 缺失时调用照计、token 记 null——零 usage 语义）；interrupted 同口径；
+ * 记账口径（0.1.5-rc.1 起；证据 = @deepseek-ai/dsh-session 官方类型层）：
+ * - 0.1.2 的 `assistant/chunk`（逐 chunk firehose）已被官方移除，usage 改由**结算
+ *   事件**承载：`assistant/message` 带顶层 `usage` 且内嵌压缩 `stream`；
+ *   `assistant/attempt`（失败/中止且未提交消息的尝试）只带 `stream`。
+ * - 一次结算 = 一次尝试入账（call）；retry 取该 (session, turn, step) 内的结算序数，
+ *   同键多次结算即重试逐次计——与 0.1.2「每次尝试一条 usage chunk」同构。
+ * - token 取值顺序 = 顶层 `usage` ?? stream 内最后一条裸 usage chunk，**二选一**：
+ *   真实会话中 message 的两处 usage 恒等（实测 871/871），两处都取会翻倍。
+ * - 无 usage 的 `assistant/attempt` 不入账（0.1.2 无 usage chunk 即无调用证据）；
+ *   无 usage 的 `assistant/message` 仍入账、token 记 null（沿用零 usage 语义）。
  * - request/header 折叠为 per-session 归属主源（EpochHeader.config.provider/model）；
- *   message.source（kind:"model"）为副源（仅归属缺失时补）；两者皆缺 → 未识别桶；
- * - turn/end：该 turn 全部 fold 状态强制丢弃（已定稿的已入账，无证据的不入账）；
- *   turn 计数独立 +1（轮次指标）；tool/call 计数独立 +1；
- * - 缓冲 GC 三重保险之一：TTL 扫描（默认 10min 无活动整会话状态丢弃；
- *   下次活动必伴随新 request/header，归属随后自愈）。
+ *   message.source（kind:"model"）为副源（仅归属缺失时补）；两者皆缺 → 未识别桶。
+ * - turn/end 轮次计数独立 +1；tool/call 计数独立 +1。
+ * - 会话状态 TTL：默认 60min 无活动整会话丢弃（下次活动必伴随新 request/header，
+ *   归属随后自愈）。
  */
 import type { SessionEvent } from "@deepseek-ai/dsh-session/types";
 import {
@@ -29,13 +31,11 @@ import {
   type TrendTokens,
 } from "./types.ts";
 
-/** fold 缓冲 TTL（方案定稿：约 10min 强制兜底）。 */
-export const TREND_FOLD_TTL_MS = 10 * 60 * 1000;
-/** 会话状态（定稿记忆/归属）整体 TTL（长于 fold TTL，防乱序迟到 message 双算）。 */
+/** 会话状态（归属/目录/结算序数记忆）整体 TTL。 */
 export const TREND_SESSION_TTL_MS = 60 * 60 * 1000;
 /**
- * done 定稿记忆上限（键数）：超过后按 Map 插入序淘汰最旧键。
- * done 不按 turn 清（保留定稿记忆防乱序迟到 message 双算），本上限是唯一收缩路径，
+ * 结算序数记忆上限（键数）：超过后按 Map 插入序淘汰最旧键。
+ * 记忆不按 turn 清（保留跨 turn 的序数连续性），本上限是唯一收缩路径，
  * 防长命会话无界增长。
  */
 export const TREND_DONE_MAX = 200;
@@ -57,12 +57,16 @@ export interface TrendCallRecord {
    * 不静默丢弃，沿用 provider 维度未识别桶约定）。
    */
   dir: string;
-  /** token 计量（补记且 usage 缺失时 null——调用照计）。 */
+  /** token 计量（无 usage 的成功结算为 null——调用照计）。 */
   tokens: TrendTokens | null;
   interrupted?: true;
 }
 
-/** 校正记录：覆盖同 fold 键已定稿明细的 token 值（不重计调用）。 */
+/**
+ * 校正记录：覆盖同 fold 键已定稿明细的 token 值（不重计调用）。
+ * 0.1.5 起结算事件自带完整 token，collector 不再产出 correct；类型保留供
+ * 聚合层既有消费面（applyCorrect）与外部消费者使用。
+ */
 export interface TrendCorrectRecord {
   session: string;
   turn: number;
@@ -98,24 +102,14 @@ interface SessionFoldState {
    * 同 session 生命周期内至多发起一次 store.get（TTL 回收随会话状态）。
    */
   dir: string | null | undefined;
-  /** 进行中 fold 缓冲，key = `${turn}:${step}`。 */
-  folds: Map<string, { retry: number; finalized: boolean }>;
   /**
-   * 重试边界标记（会话级）：request/header 不携带 turn/step（官方类型只有
-   * header/reason/startsSeries），而会话内请求串行——「上次定稿后见过新 header」
-   * 即判定下一个 usage 为新一次调用（retry），未见 header 的 usage 为同调用重复块。
-   */
-  headerSeen: boolean;
-  /**
-   * 已定稿 fold 记忆（turn/end 丢弃的是未定稿缓冲，不是定稿记忆；防乱序迟到 message 双算）。
-   * 值 = 该键最后一次定稿的 retry（fold 被 TTL 清后，迟到校正据此取真实 retry）；
+   * (turn, step) → 该键已结算次数。下一次同键结算即 retry = 记忆值 + 1，
+   * 使重试逐次独立入账（结算序数内生于主事件，不依赖可选插件的重试事件）。
    * 上限 TREND_DONE_MAX 按插入序淘汰最旧键（长命会话防无界增长）。
    */
   done: Map<string, number>;
   /** 最近一次事件触达（墙钟，注入时钟）；会话级 TTL 依据。 */
   lastTouch: number;
-  /** 最近一次 fold 活动；fold 级 TTL 依据。 */
-  lastFoldTouch: number;
 }
 
 export interface TrendCollectorOptions {
@@ -134,9 +128,8 @@ export interface TrendCollectorOptions {
 }
 
 /**
- * done 定稿记忆写入：超上限按 Map 插入序淘汰最旧键（done.set 对已存键
- * 不重置插入序，淘汰目标恒为最早写入且未被复写的键）。失败路径不写 done——
- * 只有真实定稿才进记忆。
+ * 结算序数记忆写入：超上限按 Map 插入序淘汰最旧键（done.set 对已存键
+ * 不重置插入序，淘汰目标恒为最早写入且未被复写的键）。
  */
 function rememberDone(done: Map<string, number>, key: string, retry: number): void {
   done.set(key, retry);
@@ -168,6 +161,23 @@ function parseTokens(v: unknown): TrendTokens | null {
   return { input, output, cacheRead, cacheWrite };
 }
 
+/**
+ * 取压缩 stream 里最后一条**裸** usage chunk 的 usage（倒序扫，命中即返回）。
+ *
+ * 只需认 `{type:'chunk', chunk}` 一种记录形态：usage 属 RawStreamChunkType，
+ * 官方 accumulator 从不把非 delta chunk 打包成 text/reasoning/tool-call-chunks
+ * run，故 packed 形态结构上不可能承载 usage（无需展开 time0+dt 重建时间戳——
+ * 调用时刻统一取事件自身的 `time`）。
+ */
+function lastUsageFromStream(stream: unknown): unknown {
+  if (!Array.isArray(stream)) return undefined;
+  for (let i = stream.length - 1; i >= 0; i -= 1) {
+    const rec = stream[i] as { type?: unknown; chunk?: { type?: unknown; usage?: unknown } } | undefined;
+    if (rec?.type === "chunk" && rec.chunk?.type === "usage") return rec.chunk.usage;
+  }
+  return undefined;
+}
+
 export class TrendCollector {
   private readonly sessions = new Map<string, SessionFoldState>();
   private readonly now: () => number;
@@ -187,7 +197,7 @@ export class TrendCollector {
   private stateOf(session: string): SessionFoldState {
     let s = this.sessions.get(session);
     if (s === undefined) {
-      s = { attribution: null, dir: undefined, folds: new Map(), headerSeen: false, done: new Map<string, number>(), lastTouch: this.now(), lastFoldTouch: this.now() };
+      s = { attribution: null, dir: undefined, done: new Map<string, number>(), lastTouch: this.now() };
       this.sessions.set(session, s);
     }
     return s;
@@ -233,15 +243,13 @@ export class TrendCollector {
       state.lastTouch = nowMs;
       switch (event.type) {
         case "request/header":
-          this.onHeader(state, session, event);
-          return;
-        case "assistant/chunk":
-          // 热路径：先按 chunk.type 廉价过滤（token 级 firehose 的绝大多数 chunk 在此返回）
-          if ((event.data as { chunk?: { type?: unknown } } | undefined)?.chunk?.type !== "usage") return;
-          this.onUsageChunk(state, session, event, nowMs);
+          this.onHeader(state, event);
           return;
         case "assistant/message":
-          this.onMessage(state, session, event);
+          this.onSettled(state, session, event, "message");
+          return;
+        case "assistant/attempt":
+          this.onSettled(state, session, event, "attempt");
           return;
         case "turn/end":
           this.onTurnEnd(state, session, event);
@@ -268,87 +276,40 @@ export class TrendCollector {
     }
   }
 
-  /** TTL 兜底扫描（60s 惰性节流）：fold 缓冲 10min、会话状态 60min 分级回收。 */
+  /** TTL 兜底扫描（60s 惰性节流）：会话状态整体回收。 */
   private lazySweep(nowMs: number): void {
     if (nowMs - this.lastSweep < 60_000) return;
     this.lastSweep = nowMs;
     for (const [id, s] of this.sessions) {
-      if (nowMs - s.lastTouch > TREND_SESSION_TTL_MS) {
-        this.sessions.delete(id);
-        continue;
-      }
-      if (nowMs - s.lastFoldTouch > TREND_FOLD_TTL_MS && s.folds.size > 0) s.folds.clear();
+      if (nowMs - s.lastTouch > TREND_SESSION_TTL_MS) this.sessions.delete(id);
     }
   }
 
-  private onHeader(state: SessionFoldState, session: string, event: SessionEvent & { type: "request/header" }): void {
-    void session;
+  private onHeader(state: SessionFoldState, event: SessionEvent & { type: "request/header" }): void {
     // 归属主源：逐会话折叠最新 header（含 mid-session 切换的 series 语义——取最新即可）
     const config = (event.data as { header?: { config?: unknown } } | undefined)?.header?.config;
     const next = parseAttribution(config);
     if (next !== null) state.attribution = next;
-    // 重试边界标记（会话级）：已定稿调用之后的新 header → 下一个 usage 是新一次调用
-    state.headerSeen = true;
   }
 
-  private onUsageChunk(
+  /**
+   * 一次模型尝试的结算入账（0.1.5 的 usage 承载点）。
+   *
+   * kind 区分两类结算：`message` = 提交了消息（带顶层 usage，可能被中断），
+   * `attempt` = 失败/中止且未提交消息（usage 只可能在内嵌 stream 里）。
+   */
+  private onSettled(
     state: SessionFoldState,
     session: string,
-    event: SessionEvent & { type: "assistant/chunk" },
-    nowMs: number,
+    event: SessionEvent & { type: "assistant/message" | "assistant/attempt" },
+    kind: "message" | "attempt",
   ): void {
-    const d = event.data as { turn?: unknown; step?: unknown; chunk?: { usage?: unknown } };
-    const turn = typeof d.turn === "number" && Number.isFinite(d.turn) ? d.turn : null;
-    const step = typeof d.step === "number" && Number.isFinite(d.step) ? d.step : null;
-    if (turn === null || step === null) return;
-    const key = this.foldKey(turn, step);
-    const time = typeof event.time === "number" && Number.isFinite(event.time) ? event.time : nowMs;
-    const tokens = parseTokens(d.chunk?.usage);
-    let fold = state.folds.get(key);
-    if (fold === undefined) {
-      // fold 可能已被 fold TTL 或 turn/end 清理，而定稿记忆 done 仍在（未被
-      // TREND_DONE_MAX 淘汰）。与 onMessage 的已定稿分支对称：无新 header = 同一调用的
-      // 重复/更新块 → 只校正 token、不重记调用；有新 header = 重试 → retry 从记忆值递增
-      // （不回落为 1 造成重号）。
-      const remembered = state.done.get(key);
-      if (remembered !== undefined && !state.headerSeen) {
-        if (tokens !== null) {
-          this.emit({ type: "correct", record: { session, turn, step, retry: remembered, tokens } });
-        }
-        return;
-      }
-      fold = { retry: remembered === undefined ? 1 : remembered + 1, finalized: false };
-      state.folds.set(key, fold);
-    } else if (fold.finalized) {
-      if (!state.headerSeen) {
-        // 同一调用的重复/更新 usage 块 → 校正已定稿记录，不重计调用
-        if (tokens !== null) {
-          this.emit({ type: "correct", record: { session, turn, step, retry: fold.retry, tokens } });
-        }
-        return;
-      }
-      // 新 header 后的 usage → 重试：逐次独立入账
-      fold.retry += 1;
-      fold.finalized = false;
-    }
-    fold.finalized = true;
-    state.headerSeen = false;
-    state.lastFoldTouch = nowMs;
-    rememberDone(state.done, key, fold.retry);
-    const { provider, model } = this.providerOf(state);
-    const dir = this.dirOf(state, session);
-    this.emit({
-      type: "call",
-      record: { time, session, turn, step, retry: fold.retry, provider, model, dir, tokens },
-    });
-  }
-
-  private onMessage(state: SessionFoldState, session: string, event: SessionEvent & { type: "assistant/message" }): void {
     const d = event.data as {
       turn?: unknown;
       step?: unknown;
       usage?: unknown;
       interrupted?: unknown;
+      stream?: unknown;
       message?: { source?: unknown };
     };
     const turn = typeof d.turn === "number" && Number.isFinite(d.turn) ? d.turn : null;
@@ -357,43 +318,35 @@ export class TrendCollector {
     // 副源归属：归属缺失时用 message.source（kind:"model"）补齐；主源在场
     // 但与副源解析结果不一致（provider 或 model 不同）时仅告警不覆盖——主源 header
     // 是记账归属的权威，message.source 仅为缺失时的补齐副源。
-    const src = d.message?.source as Record<string, unknown> | undefined;
-    if (src !== undefined && src.kind === "model") {
-      const alt = parseAttribution(src);
-      if (alt !== null) {
-        if (state.attribution === null) {
-          state.attribution = alt;
-        } else if (state.attribution.provider !== alt.provider || state.attribution.model !== alt.model) {
-          this.onAnomaly?.(
-            `归属不一致（session=${session} turn=${turn} step=${step}）：主源 ${state.attribution.provider}/${state.attribution.model ?? "null"} 与 message.source ${alt.provider}/${alt.model} 不同，保留主源`,
-          );
+    if (kind === "message") {
+      const src = d.message?.source as Record<string, unknown> | undefined;
+      if (src !== undefined && src.kind === "model") {
+        const alt = parseAttribution(src);
+        if (alt !== null) {
+          if (state.attribution === null) {
+            state.attribution = alt;
+          } else if (state.attribution.provider !== alt.provider || state.attribution.model !== alt.model) {
+            this.onAnomaly?.(
+              `归属不一致（session=${session} turn=${turn} step=${step}）：主源 ${state.attribution.provider}/${state.attribution.model ?? "null"} 与 message.source ${alt.provider}/${alt.model} 不同，保留主源`,
+            );
+          }
         }
       }
     }
+    // token 二选一：顶层 usage 优先，回落 stream 内最后一条裸 usage chunk。
+    // message 与 attempt 的 stream 都可能带 usage，但 message 自带顶层 field，
+    // 二者恒等（实测），绝不可相加。
+    const tokens =
+      kind === "message"
+        ? (parseTokens(d.usage) ?? parseTokens(lastUsageFromStream(d.stream)))
+        : parseTokens(lastUsageFromStream(d.stream));
+    // 无 usage 的失败尝试无调用证据（0.1.2 同边界：无 usage chunk 即不入账）；
+    // 而提交了消息的结算即便无 usage 也要入账、token 记 null（零 usage 语义）。
+    if (kind === "attempt" && tokens === null) return;
+
     const key = this.foldKey(turn, step);
-    const fold = state.folds.get(key);
-    const tokens = parseTokens(d.usage);
-    if ((fold !== undefined && fold.finalized) || state.done.has(key)) {
-      // 已定稿（fold 在场或已成记忆）→ 仅校正不重记。
-      // retry 取值：fold 在场取 fold.retry；fold 被 TTL 清后从 done 记忆取
-      // 真实 retry（防迟到校正错改 retry=1 行）；两者皆缺兜底 1。
-      if (tokens !== null) {
-        const retry = fold?.retry ?? state.done.get(key) ?? 1;
-        this.emit({ type: "correct", record: { session, turn, step, retry, tokens } });
-      }
-      return;
-    }
-    // 未定稿/缺失 → 补记（usage 缺失：调用照计、token 记 null）；时间取事件 time（非单调容忍）
-    // headerSeen 对称重置：与 usage 定稿路径对称——header 后 message 补记定稿
-    // 若仍留 headerSeen=true，同 fold 键迟到 usage chunk 会被误判为新调用（retry+1 重记）双算。
-    const retry = fold !== undefined ? fold.retry : 1;
-    if (fold !== undefined) {
-      fold.finalized = true;
-    } else {
-      state.folds.set(key, { retry: 1, finalized: true });
-    }
-    state.lastFoldTouch = this.now();
-    state.headerSeen = false;
+    const settled = state.done.get(key);
+    const retry = settled === undefined ? 1 : settled + 1;
     rememberDone(state.done, key, retry);
     const time = typeof event.time === "number" && Number.isFinite(event.time) ? event.time : this.now();
     const { provider, model } = this.providerOf(state);
@@ -410,20 +363,13 @@ export class TrendCollector {
         model,
         dir,
         tokens,
-        ...(d.interrupted === true ? { interrupted: true as const } : {}),
+        ...(kind === "message" && d.interrupted === true ? { interrupted: true as const } : {}),
       },
     });
   }
 
   private onTurnEnd(state: SessionFoldState, session: string, event: SessionEvent & { type: "turn/end" }): void {
-    const turn = (event.data as { turn?: unknown }).turn;
-    if (typeof turn === "number" && Number.isFinite(turn)) {
-      // 强制收尾：该 turn 全部 fold 状态丢弃（已定稿已入账；无证据的不入账）
-      const prefix = `${turn}:`;
-      for (const key of state.folds.keys()) {
-        if (key.startsWith(prefix)) state.folds.delete(key);
-      }
-    }
+    void state;
     // counter 记账时间取事件 time（防时钟回拨时 counter 落错日桶），非有限数回落 now
     const time = typeof event.time === "number" && Number.isFinite(event.time) ? event.time : this.now();
     const { provider, model } = this.providerOf(state);
@@ -432,7 +378,7 @@ export class TrendCollector {
   }
 
   private onToolCall(state: SessionFoldState, session: string, event: SessionEvent & { type: "tool/call" }): void {
-    // 同 onTurnEnd：counter 记账时间取事件 time，非有限数回落 now（口径与 onMessage 一致）
+    // 同 onTurnEnd：counter 记账时间取事件 time，非有限数回落 now（口径与 onSettled 一致）
     const time = typeof event.time === "number" && Number.isFinite(event.time) ? event.time : this.now();
     const { provider, model } = this.providerOf(state);
     const dir = this.dirOf(state, session);
