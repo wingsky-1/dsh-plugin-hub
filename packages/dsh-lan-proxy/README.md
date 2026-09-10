@@ -70,8 +70,8 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-lan-proxy
 | `wsCompressEnabled` | `true` | 是否对命中 `wsCompressPaths` 的 WebSocket 做压缩桥接（仅控制压缩，不影响桥接保活） |
 | `wsCompressPaths` | `/api/remote.mux` | 参与 WebSocket 压缩的路径白名单（清空 = 桥接不压缩，保活不受影响） |
 | `wsDeflatePolicy` | `{browser:true, uaDeny:[iPhone…]}` | WS 压缩协商策略：`browser` 为 false 全局关压缩；`uaDeny` 为不协商压缩的 UA 片段列表（iOS Safari 默认拦截，见「WebSocket 压缩」节） |
-| `httpCompressEnabled` | `true` | HTTP 响应压缩总开关（Brotli/gzip 自适应协商，合并自 dsh-gzip） |
-| `httpCompressLevel` | `1` | 压缩档位预设 0..3：`0` 默认 / `1` 低（gzip 1 / br 2，最快）· `2` 中（gzip 5 / br 5，均衡）/ `3` 高（gzip 9 / br 9，最高压缩比），对 gzip 与 Brotli **同时生效**；旧配置整数 4..9 自动迁移为 3 |
+| `httpCompressEnabled` | `true` | HTTP 响应压缩总开关（转发层对可压缩响应协商 gzip/Brotli；Brotli 生效条件见「HTTP 响应压缩」节，合并自 dsh-gzip） |
+| `httpCompressLevel` | `1` | 压缩档位预设 0..3：`0` 默认 / `1` 低（gzip 1 / br 2，最快）· `2` 中（gzip 5 / br 5，均衡）/ `3` 高（gzip 9 / br 9，最高压缩比），gzip 与 Brotli 两侧参数同时按下发；旧配置整数 4..9 自动迁移为 3 |
 | `injectToken` | `true` | 自动注入启动令牌（issue #380）：LAN 设备首次访问 `GET /` 由转发层自动补当前 token 铸造会话 cookie，固定设备免手工拿 token；带失效 cookie 的请求在上游 401 后自动重放自愈。安全语义见「安全模型」 |
 
 GUI 设置入口：设置 → 插件 → 「局域网访问」卡片（保存即热更新）。
@@ -124,14 +124,28 @@ GUI 设置入口：设置 → 插件 → 「局域网访问」卡片（保存即
   在**转发层**实现（成熟开源库 [compression](https://www.npmjs.com/package/compression)
   中间件，构建期内联进产物）：经本插件访问时，对 `/api`（RPC）、
   `/plugins`（客户端 bundle）与静态资源/index.html 等可压缩响应（JSON / 文本）
-  自动协商压缩——客户端 Accept-Encoding 含 br 时优先 Brotli，否则回退 gzip；SSE（text/event-stream）、zip 导出、已编码响应、HEAD、
+  自动协商压缩；SSE（text/event-stream）、zip 导出、已编码响应、HEAD、
   带 Range 的请求、小于 1KB 的响应原样透传。
+- **Brotli 的实际生效条件（实测口径）**：dsh 自身的 web 服务器自带 gzip 压缩
+  （`compression: gzip`），且只协商 gzip。因此这条链路上有两种情形：
+
+  | 客户端声明 `Accept-Encoding` | 上游行为 | 经本插件最终返回 |
+  |---|---|---|
+  | `br, gzip`（主流浏览器） | gzip | gzip（响应已编码，本层让位不重压） |
+  | `gzip` | gzip | gzip（同上） |
+  | `br`（仅声明 br） | 原文 | **br** |
+
+  即：只有当上游未压缩且客户端只声明 br 时，本层的 Brotli 才真正生效。主流浏览器
+  都同时声明 gzip，故这条链路上拿到的是上游 gzip、**拿不到 Brotli 的额外压缩率**；
+  该情形仍远优于不压缩（同一响应实测 322900 → 5065 字节）。两层不会重复压缩。
 - 收益：会话历史等大 JSON 响应（4~13MB 未压缩）经远程/慢链路访问时常触发
   浏览器 RPC 30s 超时「历史加载失败」；压缩后约 ~1.2MB，隔离环境实测由
   ~36s 降到 ~3s。
 - 实现位置在转发器自己的监听链上，不修改 dsh web 与任何其他插件的运行时行为；
-  `httpCompressEnabled: false` 一键关闭。注意：直连回环 web（本机浏览器访问
-  `127.0.0.1:3080`，不经本插件）的流量不在压缩面内——回环链路无需压缩。
+  `httpCompressEnabled: false` 关闭本层压缩（当客户端同时接受 gzip 时，上游自带
+  gzip 仍会压缩响应，故该开关不改变这类响应的线上体积）。注意：直连回环 web
+  （本机浏览器访问 `127.0.0.1:3080`，不经本插件）的流量不在压缩面内——回环链路
+  无需压缩。
 - **从 dsh-gzip 迁移**：升级本插件并确认压缩生效后，卸载独立 gzip 包：
 
   ```sh
