@@ -1,6 +1,6 @@
-// @ts-nocheck
+// @ts-nocheck（e2e/集成面类型化技术债：桩对象密集，暂不参与 test/tsconfig 编译）
 /**
- * dsh-notifier — e2e：边缘路径与清理生命周期（#82 批次 4 热点补强）。
+ * dsh-notifier — e2e：边缘路径与清理生命周期（热点补强）。
  *
  * 覆盖：生命周期 disposer 清理、readBody async-iterator 分支、审批超时提醒、
  * 通知失败容错（catch 不崩）、完成聚合类型切换、错误合并 ≥3 条 shift、
@@ -236,7 +236,7 @@ try {
   }
 // ── 10. 免打扰拦截 + 勾选 error 豁免 → 窗口内再报错必须通知 ──
   {
-    // #181 动态窗口：写死 "00:00"/"23:59" 在半开区间镜下 23:59 这一分钟不命中
+    // 动态窗口：写死 "00:00"/"23:59" 在半开区间镜下 23:59 这一分钟不命中
     // （UTC 边缘必炸，run 33282203798 根因）；围绕当前时间 ±2 分钟恒命中。
     const qhAll = quietWindowNow();
     // 免打扰开启，allowKinds 不含 error
@@ -257,7 +257,7 @@ try {
     const hist1 = await waitForHistory(historyRoute, (r) => r.some((e) => e.kind === "error" && e.suppressed === "quiet"));
     assert.ok(hist1.some((e) => e.kind === "error" && e.suppressed === "quiet"), "被拦截的错误落 suppressed:quiet 历史");
 
-    // 保存配置，开启 error 豁免（通过 PUT /config 模拟面板操作；issue #76 新契约 {patch}）
+    // 保存配置，开启 error 豁免（通过 PUT /config 模拟面板操作；{patch} 契约）
     const { rec: putRec, res: putRes } = makeRes();
     const newBody = Buffer.from(JSON.stringify({ patch: { quietHours: { ...qhAll, allowKinds: ["ask", "error"] } } }));
     await configRoute.handler({
@@ -302,7 +302,7 @@ try {
 
   // ── 12. 多个错误持续到达时窗口不无限顺延（免打扰拦截不开窗 → 每次独立落 quiet 历史） ──
   {
-    // #181 动态窗口：写死 "00:00"/"23:59" 在半开区间镜下 23:59 这一分钟不命中
+    // 动态窗口：写死 "00:00"/"23:59" 在半开区间镜下 23:59 这一分钟不命中
     // （UTC 边缘必炸，run 33282203798 根因）；围绕当前时间 ±2 分钟恒命中。
     const qhAll = quietWindowNow();
     const infos = [];
@@ -323,14 +323,14 @@ try {
     assert.equal(suppressedLogs.length, 3, "每条错误都记录被拦截日志（窗口不无限顺延导致丢失）");
   }
 
-  // ── 13. #510 DSH_HOME 感知：apply 默认路径（不传覆盖）读写面落隔离 home ──
+  // ── 13. DSH_HOME 感知：apply 默认路径（不传覆盖）读写面落隔离 home ──
   {
     const isoHome = mkdtempSync(join(tmpdir(), "dnotify-e2e-dsh-home-"));
     const prevDshHome = process.env.DSH_HOME;
     process.env.DSH_HOME = isoHome;
     try {
       // 不传 historyFile/statusFile 覆盖（显式 undefined 抹掉 makeNotifier 默认），
-      // 走 config.ts 默认路径解析——#510 修复后应全部落 DSH_HOME，而非真实 ~/.dsh。
+      // 走 config.ts 默认路径解析——应全部落 DSH_HOME，而非真实 ~/.dsh。
       const infos = [];
       const { listeners, routes, dispose } = await makeNotifier(isoHome, { doneMergeWindowMs: 0, historyFile: undefined, statusFile: undefined, configFile: undefined }, {
         logger: { warn: () => {}, info: (t) => infos.push(t) },
@@ -362,7 +362,7 @@ try {
     }
   }
 
-  // ── 14. N-17（B-1）：suppressed 落史（quiet / kind-pending）也脱敏 ──
+  // ── 14. suppressed 落史（quiet / kind-pending）也脱敏 ──
   {
     // 内置 kind：免打扰拦截 → suppressed:quiet 历史，message 为已脱敏文本
     const qhAll = quietWindowNow();
@@ -376,7 +376,7 @@ try {
     });
     const error = listeners.get("agent/error")[0];
     const historyRoute = routes.find((r) => r.path === ROUTES.history);
-    // 样本避免「占位符落截断窗口」形态（P2-7）：敏感特征短、位于正文中部
+    // 样本避免「占位符落截断窗口」形态：敏感特征短、位于正文中部
     const sensitive = "postgres://admin:s3cret@db.local down 联系 admin@corp.example.com";
     error({ agent: { id: "n17-q1" }, turn: 1, error: new Error(sensitive) });
     const quietHist = await waitForHistory(historyRoute, (r) => r.some((e) => e.kind === "error" && e.suppressed === "quiet"));
@@ -387,7 +387,7 @@ try {
     assert.ok(!quietRecord.message.includes("admin@"), "quiet 落史邮箱脱敏（<email>）");
 
     // 动态 kind（注册未确认）：send 直通 → suppressed:kind-pending 历史也脱敏
-    // （P2-5：动态 kind 判据为 kind-pending，与内置 kind 的 quiet 区分）
+    // （动态 kind 判据为 kind-pending，与内置 kind 的 quiet 区分）
     const { routes: routesDyn, ctx: ctxDyn } = await makeNotifier(work, { historyFile: join(work, "n17-pending-hist.jsonl") }, {
       logger: { warn: () => {}, info: () => {} },
     });
@@ -427,7 +427,7 @@ try {
     assert.ok(merged.message.includes("<email>"), "merged 摘要为打码形态");
   }
 
-  // ── 15. N-20（B-4）：sanitizeContent 开关链路——默认 true 脱敏 / false 明文 ──
+  // ── 15. sanitizeContent 开关链路——默认 true 脱敏 / false 明文 ──
   {
     // 默认 true（两入口：事件层 error + send 动态 kind 直通）
     const infos = [];
@@ -448,7 +448,7 @@ try {
     const errInfo = infos.filter((t) => /error/.test(t) && !t.includes("被免打扰拦截"))[0];
     assert.ok(errInfo.includes("postgres://<redacted>@db.local"), "默认 true：事件层 error 通知脱敏");
     assert.ok(!errInfo.includes("s3cret"), "默认 true：事件层 error 不残留明文凭据");
-    // 入口二：send 动态 kind 直通 → 中心兜底脱敏（B-4）
+    // 入口二：send 动态 kind 直通 → 中心兜底脱敏
     const dynBody = "任务 token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 end";
     await notifier.send({ source: "e2e", kind: "y:task", severity: "info", body: dynBody });
     const dynInfo = infos.filter((t) => /y:task/.test(t))[0];

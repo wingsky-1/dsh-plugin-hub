@@ -1,15 +1,16 @@
-// @ts-nocheck
+// @ts-nocheck（e2e/集成面类型化技术债：桩对象密集，暂不参与 test/tsconfig 编译）
 /**
  * dsh-notifier — smoke 测试共享辅助（fake ctx / fake req/res / fake settings / 轮询）。
  *
- * issue #76 后配置走官方 settings 命名空间：makeNotifier 注入 fake settings 服务
+ * 配置走官方 settings 命名空间：makeNotifier 注入 fake settings 服务
  * （register/describe/update），apply 的组合层配置经 sanitizeSettings 过滤后作为
  * 命名空间 base 层；user 层可由测试经 ctxOverrides.settings 预置或 PUT 写入断言。
  *
  * 无副作用模块：不创建临时目录、不触发 apply；work 目录由各测试文件
- * 自建自清（隔离文件路径，防 flake——见 docs/DEVELOPMENT.md §5）。
+ * 自建自清（隔离文件路径，防 flake 纪律见 docs/DEVELOPMENT.md）。
  */
 import { join } from "node:path";
+import type { Context } from "@deepseek-ai/cordis";
 import assert from "node:assert/strict";
 import { apply } from "../lib/index.js";
 import { normalizeConfig, sanitizeSettings, SETTINGS_NS } from "../lib/index.js";
@@ -126,7 +127,7 @@ export function makeFakeSettings(options = {}) {
  * 执行，返回值收集为 disposer）+ get/provide（服务读取面）+ inject（服务注入面，
  * 供 installNotifierSettings 挂 settings）。
  *
- * 未注入访问抛错镜像（issue #290 C-2）：Proxy 对未注入属性（如 ctx.agents）
+ * 未注入访问抛错镜像：Proxy 对未注入属性（如 ctx.agents）
  * 抛与真实 cordis 同构的错误 `cannot get property "<name>" without inject`
  * ——修复前形态（ctx.agents 直读）在 fake ctx 下同样红，杜绝根因 A 穿透
  * 门禁的测试盲区。`ctx.get(name, false)` 缺位安全返回 undefined（镜像
@@ -138,7 +139,7 @@ export function makeFakeCtx(overrides = {}) {
   const listeners = new Map();
   /** 服务读取面：provide 注册 + override 直接注入的服务属性。 */
   const services = new Map();
-  /** effect 收集的 disposer（卸载面：sse.dispose / 定时器清理等，P2-5 用）。 */
+  /** effect 收集的 disposer（卸载面：sse.dispose / 定时器清理等，dispose 逐项执行）。 */
   const effects = [];
   const base = {
     logger: { warn: () => {}, info: () => {} },
@@ -198,7 +199,7 @@ export function makeFakeCtx(overrides = {}) {
     has(target, prop) {
       return Reflect.has(target, prop);
     },
-  });
+  }) as unknown as Context;
   return { ctx, routes, listeners, effects };
 }
 
@@ -212,7 +213,7 @@ export function makeLoggingCtx() {
 }
 
 /**
- * apply 一份 notifier。issue #76 后配置走 fake settings 命名空间：
+ * apply 一份 notifier。配置走 fake settings 命名空间：
  * @param workDir 该测试文件的临时目录。
  * @param config apply 配置覆盖（通知字段作为组合层 entry/base；enabled /
  *   configFile/toastScript/historyFile 为装配覆盖）。
@@ -239,7 +240,7 @@ export function makeNotifier(workDir, config = {}, ctxOverrides = {}) {
   return {
     ctx, routes, listeners, settings: fakeSettings,
     /** 卸载面：执行全部 effect disposer（sse.dispose / 定时器清理）。
-     *  每个测试场景结束后调用，避免 30s unref 心跳在进程存活期内残留（P2-5）。 */
+     *  每个测试场景结束后调用，避免 30s unref 心跳在进程存活期内残留。 */
     dispose: () => {
       for (const d of effects) {
         try { d(); } catch { /* 忽略 */ }
@@ -273,9 +274,9 @@ export async function waitForHistory(historyRoute, predicate, timeoutMs = 2000) 
  * opts.turnEndKind：reason.kind（默认 completed，aborted 模拟用户中断）；
  * opts.subagent：true 模拟子代理（写入 origin:'subagent'，与 DSH childSessionMeta 一致）；
  * opts.parentSession：模拟 fork/派生会话（只写 parentSession、不带 origin；
- *   是否委派 worker 由运行时归属面 fakeAgents 决定——issue #49）；
+ *   是否委派 worker 由运行时归属面 fakeAgents 决定）；
  * opts.seedLength：header.seedLength（fork 型委派持久化形态含该字段，
- *   完成判定不含它——仅用于构造注释宣称的完整 header 形态，issue #199 P2-5）；
+ *   完成判定不含它——仅用于构造注释宣称的完整 header 形态）；
  * opts.depth：header.delegationDepth（仅作附加，不作子代理判据）；
  * opts.cwd：header.cwd（模拟 headless CLI 会话「header 仅 {cwd}」形态）。
  * 0.1.2-rc.1 起 session.events getter 移除：fake 暴露 snapshotEvents()（无参语义
@@ -303,7 +304,7 @@ export function agentWithTitle(id, title, opts = {}) {
 }
 
 /**
- * 完成轮两态时序构造（阶段二单源 push + 快照兜底收敛后必需，issue #290）：
+ * 完成轮两态时序构造（单源 push + 快照兜底收敛后必需）：
  * 真实宿主中 agent/status running 派发于本轮 turn 开始——本轮 turn/end 尚未
  * post-commit 落盘，session.snapshotEvents() 最新条目为上一轮（或空）；idle 派发于本轮
  * turn/end 落盘之后。单源收敛的 runningBaseline 冻结判据（idle 快照 ≤ running
@@ -334,7 +335,7 @@ export function turnPair(id, title, headerOpts = {}, thisTurn, prevTurn) {
 }
 
 /**
- * 运行时归属模拟面（issue #49）：ctx.agents 判定所需最小实现。
+ * 运行时归属模拟面：ctx.agents 判定所需最小实现。
  * @param liveIds live registry 中存在的父/子 agent id 数组。
  * @param ownedPairs 归属关系对 [childId, ownerId]：isOwnedBy(childId, owner)
  *   仅当 owner 在 live 且存在对应关系对时返回 true。
@@ -353,7 +354,7 @@ export function fakeAgents(liveIds = [], ownedPairs = []) {
 }
 
 /**
- * 免打扰窗口动态构造（#181 既定模式）：写死 "00:00"/"23:59" 假设全天覆盖，
+ * 免打扰窗口动态构造：写死 "00:00"/"23:59" 假设全天覆盖，
  * 但 isInQuietHours 是半开区间 [start, end)，23:59 这一分钟（minutes=1439）
  * 恒不命中——CI（UTC 时区）在 23:58 开跑的慢 runner 恰好把断言推进到 23:59
  * 这一分钟时，quietHours 判定失效、通知未被拦截（run 33282203798 根因）。
@@ -376,7 +377,7 @@ export async function waitMergeWindow(windowMs = 3000) {
 }
 
 /**
- * session/event 回调的 turn/end 载荷构造（issue #272 双源测试用）。
+ * session/event 回调的 turn/end 载荷构造（双源测试用）。
  * 形态对齐官方 SessionEvent 信封的最小判定子集：{ type, data: { turn, reason } }。
  */
 export function turnEndEvent(turn, kind = "completed") {

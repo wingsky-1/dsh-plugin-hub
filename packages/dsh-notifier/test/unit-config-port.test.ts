@@ -1,32 +1,35 @@
-// @ts-nocheck
 /**
  * dsh-notifier — L2 interface 契约：ConfigPort 降级语义 + 路由错误映射直测
- * （N-16 / D19/L8-5 / L8-6；PR2 T2-4）。
+ * （契约面直测；工厂与路由 handler 均经 fake deps 驱动）。
  *
- * N-16（requirements §7.3）：ConfigPort 契约经 settings-bridge 实现面直测——
+ * ConfigPort 契约经 settings-bridge 实现面直测——
  * 未 attach 降级（readUser→{user:{},revision:undefined}、writable→false、
  * update/confirmKind→reject SETTINGS_UNAVAILABLE）；resolve 是 getCurrent 别名；
  * confirmKind CAS 重试 ≤2（SETTINGS_CONFLICT 回读重试、耗尽 reject，行为复用
  * 现状 confirmKindToConfig 实现）。
- * D19/L8-5：applyConfigPatch 纯函数直测（deps fake）——expectedRevision 非
+ * applyConfigPatch 纯函数直测（deps fake）——expectedRevision 非
  * 「非负整数或省略」→ 400 显式拒；省略/null → undefined 透传。
- * L8-6：buildRoutes fake deps 直测 handler——history.clear() 抛错 → 500 固定
+ * buildRoutes fake deps 直测 handler——history.clear() 抛错 → 500 固定
  * 文案（不再恒 200）；成功仍 200 {ok:true, removed}。
  *
  * 标准红测判别：ConfigPort 类型 / 400 分支 / 500 分支落地前，本文件对应断言红
- * （改前红），T2-4 落地后全绿（改后绿）。按 §11.2-1 直测 src 域 interface.ts。
+ * （改前红），实现落地后全绿（改后绿）。直测 src 域 interface.ts。
  */
 import assert from "node:assert/strict";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import { applyConfigPatch, buildRoutes, ROUTES } from "../src/server/interface.ts";
+import type { RouteDeps } from "../src/server/interface.ts";
 import { createSettingsBridge } from "../src/config/interface.ts";
+import type { NotifyConfig } from "../src/config/interface.ts";
 import { fakeReq, makeFakeCtx, makeFakeSettings, makeRes } from "./helpers.ts";
 
 const work = mkdtempSync(join(tmpdir(), "dnotify-unit-config-port-"));
 try {
-  // ── N-16a：ConfigPort 降级语义（未 attach settings）──
+  // ── ConfigPort 降级语义（未 attach settings）──
   {
     const { ctx } = makeFakeCtx({}); // 未 provide settings
     const bridge = createSettingsBridge(ctx, { configFile: join(work, "a.json") });
@@ -42,14 +45,14 @@ try {
       } catch (err) {
         rejected = err;
       }
-      assert.ok(rejected && rejected.code === "SETTINGS_UNAVAILABLE", "未 attach update/confirmKind 直拒 SETTINGS_UNAVAILABLE");
+      assert.ok(rejected && (rejected as { code?: string }).code === "SETTINGS_UNAVAILABLE", "未 attach update/confirmKind 直拒 SETTINGS_UNAVAILABLE");
     }
   }
 
-  // ── N-16b：attach 态 ConfigPort 面（resolve 别名 / readUser / writable / update / confirmKind）──
+  // ── attach 态 ConfigPort 面（resolve 别名 / readUser / writable / update / confirmKind）──
   {
     // fake settings 的 register 忽略 opts.base：attach 后 source 取 makeFakeSettings
-    // 的 base（组合层 entry 的等价注入位——routes.test.ts P2-4 同构写法）。
+    // 的 base（组合层 entry 的等价注入位——routes.test.ts 同构写法）。
     const fakeSettings = makeFakeSettings({ base: { maxConnections: 42 } });
     const { ctx } = makeFakeCtx({});
     ctx.provide("settings", fakeSettings.service);
@@ -65,7 +68,7 @@ try {
     assert.ok(!fakeSettings.getUser().allowKinds.includes("ext:beta"), "confirmKind 撤销从 allowKinds 删除");
   }
 
-  // ── N-16c：confirmKind CAS 冲突重试 ≤2——首次冲突回读重试成功 ──
+  // ── confirmKind CAS 冲突重试 ≤2——首次冲突回读重试成功 ──
   {
     const fakeSettings = makeFakeSettings({ base: {} });
     const { ctx } = makeFakeCtx({});
@@ -84,10 +87,10 @@ try {
     };
     await bridge.confirmKind("ext:gamma", true);
     assert.equal(conflictCalls, 1, "第一次 update 触发 SETTINGS_CONFLICT");
-    assert.ok(bridge.readUser().user.allowKinds.includes("ext:gamma"), "冲突回读重试后确认态落盘");
+    assert.ok((bridge.readUser().user.allowKinds as string[]).includes("ext:gamma"), "冲突回读重试后确认态落盘");
   }
 
-  // ── N-16d：confirmKind CAS 耗尽（恒冲突）→ 尝试 = 首次 + 重试 ≤2 = 3 次 reject ──
+  // ── confirmKind CAS 耗尽（恒冲突）→ 尝试 = 首次 + 重试 ≤2 = 3 次 reject ──
   {
     const fakeSettings = makeFakeSettings({ base: {} });
     const { ctx } = makeFakeCtx({});
@@ -104,18 +107,18 @@ try {
     } catch (err) {
       rejected = err;
     }
-    assert.ok(rejected && rejected.code === "SETTINGS_CONFLICT", "冲突耗尽后 reject SETTINGS_CONFLICT");
+    assert.ok(rejected && (rejected as { code?: string }).code === "SETTINGS_CONFLICT", "冲突耗尽后 reject SETTINGS_CONFLICT");
     assert.equal(conflictCalls, 3, "CAS 尝试 = 首次 + 重试 ≤2 = 3 次后放弃");
   }
 
-  // ── D19/L8-5：expectedRevision 非非负整数 → 400（applyConfigPatch 纯函数直测）──
+  // ── expectedRevision 非非负整数 → 400（applyConfigPatch 纯函数直测）──
   {
-    function makeDeps() {
-      const updates = [];
+    function makeDeps(): { updates: Array<{ patch: object; expectedRevision?: number }>; deps: RouteDeps } {
+      const updates: Array<{ patch: object; expectedRevision?: number }> = [];
       return {
         updates,
         deps: {
-          resolve: () => ({}),
+          resolve: () => ({}) as unknown as NotifyConfig,
           readUser: () => ({ user: {}, revision: 0 }),
           writable: () => true,
           update(patch, expectedRevision) {
@@ -124,9 +127,9 @@ try {
           },
           confirmKind: () => Promise.resolve(),
           logger: { warn: () => {}, info: () => {} },
-          sse: {},
-          system: {},
-          history: {},
+          sse: {} as unknown as RouteDeps["sse"],
+          system: {} as unknown as RouteDeps["system"],
+          history: {} as unknown as RouteDeps["history"],
           sendTest: () => [],
           statusReader: async () => ({}),
           listKinds: () => [],
@@ -158,26 +161,26 @@ try {
     assert.equal(updatesOk[0].expectedRevision, 7, "合法 expectedRevision 原样传给 update");
   }
 
-  // ── L8-6：history DELETE 失败 → 500 固定文案（buildRoutes fake deps 直测 handler）──
+  // ── history DELETE 失败 → 500 固定文案（buildRoutes fake deps 直测 handler）──
   {
-    function makeHistoryDeps(clearImpl) {
-      const warns = [];
-      const deps = {
-        resolve: () => ({}),
+    function makeHistoryDeps(clearImpl: () => Promise<number>): { route: WebRoute; warns: string[] } {
+      const warns: string[] = [];
+      const deps: RouteDeps = {
+        resolve: () => ({}) as unknown as NotifyConfig,
         readUser: () => ({ user: {}, revision: 0 }),
         writable: () => true,
         update: () => Promise.resolve(),
         confirmKind: () => Promise.resolve(),
         logger: { warn: (m) => warns.push(m), info: () => {} },
-        sse: {},
-        system: {},
-        history: { read: async () => [], clear: clearImpl },
+        sse: {} as unknown as RouteDeps["sse"],
+        system: {} as unknown as RouteDeps["system"],
+        history: { read: async () => [], clear: clearImpl } as unknown as RouteDeps["history"],
         sendTest: () => [],
         statusReader: async () => ({}),
         listKinds: () => [],
       };
       const routes = buildRoutes(deps);
-      return { route: routes.find((r) => r.path === ROUTES.history), warns };
+      return { route: routes.find((r) => r.path === ROUTES.history) as WebRoute, warns };
     }
     // 失败路径：500 固定文案，异常原文只进服务端日志
     {
@@ -185,7 +188,7 @@ try {
         throw new Error("secret-lib-path /var/boom");
       });
       const { rec, res } = makeRes();
-      await route.handler(fakeReq({ method: "DELETE" }), res);
+      await route.handler(fakeReq({ method: "DELETE" }) as unknown as IncomingMessage, res as unknown as ServerResponse);
       assert.equal(rec.status, 500, "clear 失败 → 500（不再恒 200）");
       const body = JSON.parse(rec.text);
       assert.equal(body.ok, false);
@@ -197,7 +200,7 @@ try {
     {
       const { route } = makeHistoryDeps(async () => 3);
       const { rec, res } = makeRes();
-      await route.handler(fakeReq({ method: "DELETE" }), res);
+      await route.handler(fakeReq({ method: "DELETE" }) as unknown as IncomingMessage, res as unknown as ServerResponse);
       assert.equal(rec.status, 200, "clear 成功仍 200");
       assert.deepEqual(JSON.parse(rec.text), { ok: true, removed: 3 }, "成功响应 {ok:true, removed}");
     }

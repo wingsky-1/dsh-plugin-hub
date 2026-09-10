@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @ts-nocheck（e2e/集成面类型化技术债：桩对象密集，暂不参与 test/tsconfig 编译）
 /**
  * dsh-notifier — e2e：用户提问通知（userQuestions 包装）与轮结束通知。
  *

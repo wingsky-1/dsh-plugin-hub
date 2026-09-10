@@ -1,15 +1,15 @@
-// @ts-nocheck
+// @ts-nocheck（e2e/集成面类型化技术债：桩对象密集，暂不参与 test/tsconfig 编译）
 /**
  * dsh-notifier — e2e：任务完成状态机 / 错误通知与合并 / 子代理分流。
  *
  * 覆盖：agent/status per-agent 状态机（多会话互不误报、连续 idle 不重复、
  * disposed 清理）；完成风暴聚合（首条即时 + 窗口补发聚合条）；agent/error
- * 通知与滚动窗口合并（含窗口过期计数、0=关闭）；子代理完成场景（issue #49：
+ * 通知与滚动窗口合并（含窗口过期计数、0=关闭）；子代理完成场景（
  * fork 型委派按运行时归属拆分——归属成立默认静默/开关联动 subagent-done、
- * 归属不成立保护用户 fork 主线走 done；spawn 型 origin 用例与 S2 开关组合）；
- * issue #290 阶段二单源收敛（session/event push 为主证据 + lastTurnEndOf
+ * 归属不成立保护用户 fork 主线走 done；spawn 型 origin 用例与开关组合）；
+ * 单源收敛（session/event push 为主证据 + lastTurnEndOf
  * 快照仅 push 缺失兜底 + runningBaseline 冻结 abort-early 陈旧快照）与
- * 跳过路径 warn（证据源字段）；D-1/D-2 重载窗口后首轮 live turn 仍通知、
+ * 跳过路径 warn（证据源字段）；重载窗口后首轮 live turn 仍通知、
  * 重载不引入假阳性。
  *
  * 时序约定（helpers.turnPair / agentWithTitle 联用）：所有「本轮完成」用例
@@ -135,13 +135,13 @@ try {
   {
     const subCfg = join(work, "subagent.json");
 
-    // ── issue #49：fork 型委派子代理完成不再误报主任务 kind=done ──
+        // ── fork 型委派子代理完成不再误报主任务 kind=done ──
     // fork 型委派（parentSession + seedLength、无 origin、depth=0）与用户 fork
     // 主线在持久化 header 上不可区分，判定补运行时归属（ctx.agents.get /
     // isOwnedBy）。原反例 1「仅 parentSession 无 origin 必须 walk done」与新
     // 验收冲突，已按归属成立/不成立拆分改写（旧语义不保留）：
 
-    // A1：归属成立（父 live 且 isOwnedBy true）+ notifySubagentDone 默认关 →
+        // 归属成立（父 live 且 isOwnedBy true）+ notifySubagentDone 默认关 →
     //     该轮完全静默，通知历史无新增任何记录（尤其无 done）。
     {
       const agents = fakeAgents(["main-parent", "fork-worker"], [["fork-worker", "main-parent"]]);
@@ -152,7 +152,7 @@ try {
         { agents, ...loggingOverride(infos) }
       );
       const status = listeners.get("agent/status")[0];
-      // fork 型委派完整持久化 header 形态：parentSession + seedLength、无 origin、depth=0（#199 P2-5 对齐）
+            // fork 型委派完整持久化 header 形态：parentSession + seedLength、无 origin、depth=0
       // 本轮完成时序：running 态无 closure（首轮）、idle 态 turn=1 completed（helpers.turnPair）
       const forkPair = () => turnPair("fork-worker", "fork 委派子任务", { parentSession: "main-parent", seedLength: 3, depth: 0 }, { turn: 1 });
       status({ agent: forkPair().running, status: "running" });
@@ -166,14 +166,14 @@ try {
       assert.equal(records.length, 0, "A1：通知历史无新增 done 记录");
     }
 
-    // A2：同一场景开启 notifySubagentDone=true → 恰一条 subagent-done（文案含
+        // 同一场景开启 notifySubagentDone=true → 恰一条 subagent-done（文案含
     //     任务标题与耗时），且不得同时出现 kind=done。
     {
             const agents = fakeAgents(["main-parent2", "fork-worker2"], [["fork-worker2", "main-parent2"]]);
       const infos = [];
       const { listeners } = await makeNotifier(work, { notifySubagentDone: true }, { agents, ...loggingOverride(infos) });
       const status = listeners.get("agent/status")[0];
-      // 同 A1：完整持久化 header 形态含 seedLength（#199 P2-5 对齐）+ 本轮完成时序
+            // 同上：完整持久化 header 形态含 seedLength + 本轮完成时序
       const forkPair = () => turnPair("fork-worker2", "fork 委派子任务B", { parentSession: "main-parent2", seedLength: 3, depth: 0 }, { turn: 1 });
       status({ agent: forkPair().running, status: "running" });
       status({ agent: forkPair().idle, status: "idle" });
@@ -184,7 +184,7 @@ try {
       assert.ok(!infos.some((t) => /dsh-notifier: done /.test(t)), "A2：不得同时出现 kind=done");
     }
 
-    // B1 支 1：header 含 parentSession 但父 id 不在 live registry（父已销毁/
+        // 分支 1：header 含 parentSession 但父 id 不在 live registry（父已销毁/
     // 冷 resume 脱离）→ 归属不成立，必须走主任务分支 kind=done（保护用户
     // fork 主线，#7 语义不回归），不得被静默或误报 subagent-done。
     {
@@ -199,7 +199,7 @@ try {
       assert.match(infos[0], /dsh-notifier: done /, "B1：发 kind=done 而非 subagent-done");
     }
 
-    // B1 支 2：父 id live 但运行时不持有该 agent（isOwnedBy false，如无关
+        // 分支 2：父 id live 但运行时不持有该 agent（isOwnedBy false，如无关
     // provider 复用 id）→ 归属不成立，同样走主任务分支 kind=done。
     {
       const agents = fakeAgents(["unrelated-parent", "fork-x"], []); // 无 (fork-x, unrelated-parent) 归属对
@@ -213,7 +213,7 @@ try {
       assert.match(infos[0], /dsh-notifier: done /, "B1：发 kind=done 而非 subagent-done");
     }
 
-    // D1：headless CLI 会话（header 仅 {cwd}，无 origin 无 parentSession）两信号
+        // headless CLI 会话（header 仅 {cwd}，无 origin 无 parentSession）两信号
     //     皆否，保持现状按主任务分支处理（本 issue 不改变其分类）。
     {
       const infos = [];
@@ -276,7 +276,7 @@ try {
       assert.match(infos[1], /done/);
     }
 
-    // S2 回归：notifyTaskDone=false + notifySubagentDone=true 时子代理完成仍通知
+        // 回归：notifyTaskDone=false + notifySubagentDone=true 时子代理完成仍通知
     {
             const infos = [];
       const { listeners } = await makeNotifier(work, { notifyTaskDone: false, notifySubagentDone: true }, loggingOverride(infos));
@@ -297,7 +297,7 @@ try {
     }
   }
 
-  // ── issue #290 阶段二：证据面单源收敛（session/event push 主源 + lastTurnEndOf
+    // ── 证据面单源收敛（session/event push 主源 + lastTurnEndOf
   //    快照仅 push 缺失兜底 + runningBaseline 冻结）+ 跳过路径 warn 兜底 ──
   {
     const infos = [];
@@ -314,7 +314,7 @@ try {
     const disposed = listeners.get("agent/disposed")[0];
     const countDone = () => infos.filter((t) => /dsh-notifier: done /.test(t)).length;
 
-    // (a) push 恒定新鲜为主证据（#272 报告场景反证，阶段二 A-2）：agent.session
+        // (a) push 恒定新鲜为主证据（报告场景反证）：agent.session
     //     .events 冻结在 turn=1（快照一次性读滞后被 lastEndedTurn 固化的形态——
     //     running/idle 同构造恰模拟 events 停滞），session/event 推送流正常逐轮
     //     派发。单源收敛后判定只采信 push（不读快照）→ 逐轮通知 4 条，不再
@@ -326,7 +326,7 @@ try {
     }
     assert.equal(countDone(), 4, "(a) events 停滞形态下 push 主证据逐轮通知（快照冻结不影响）");
 
-    // (b) 同 turn 去重（A-3）：push 与快照指向同一 append-only 日志的同一事件，
+        // (b) 同 turn 去重：push 与快照指向同一 append-only 日志的同一事件，
     //     turn 相同即同一证据——采信 push 后合并为单次通知；已记忆 turn 的重复
     //     派发不重复通知。
     status({ agent: agentWithTitle("dedup-1", "去重会话", { turnEnd: 2 }), status: "running" });
@@ -338,7 +338,7 @@ try {
     status({ agent: agentWithTitle("dedup-1", "去重会话", { turnEnd: 2 }), status: "idle" });
     assert.equal(countDone(), 5, "(b) 已记忆 turn 的重复到达不重复通知");
 
-    // (c) 跳过路径 warn 兜底（E-1）：无新证据的 idle 判定跳过必须可观测，且
+        // (c) 跳过路径 warn 兜底：无新证据的 idle 判定跳过必须可观测，且
     //     warn 字段标识证据来源（单源语义：证据源=push / 快照兜底 / 快照冻结）。
     //     首轮为真实完成时序（running 无 closure → idle turn=1 completed 通知），
     //     第二轮 events 仍停 turn=1（abort-early 形态）→ 快照 ≤ running 基线
@@ -373,7 +373,7 @@ try {
     status({ agent: agentWithTitle("gc-1", "清理会话", { turnEnd: 3 }), status: "idle" }); // 状态机+辅源已清零：不通知
     assert.equal(countDone(), beforeWarn, "disposed 清理后辅源残留不误报");
 
-    // (d) 畸形载荷不毒化记忆（#284 复核闸 P1，B-2）：turn 非数字的推送 turn/end
+        // (d) 畸形载荷不毒化记忆：turn 非数字的推送 turn/end
     //     直接 skip 不落记忆——任何畸形证据既不能成 best、也不能推进记忆。
     status({ agent: agentWithTitle("mal-1", "畸形会话"), status: "running" }); // 无快照 turn/end（pushed/快照均缺失形态）
     sessionEvent({ id: "mal-1" }, { type: "turn/end", data: { turn: "x", reason: { kind: "completed" } } });
@@ -404,9 +404,9 @@ try {
     assert.equal(lastTurnEndOf({ id: "mal-3", session: { header: undefined, snapshotEvents: () => [{ type: "turn/end", data: { turn: null, reason: { kind: "completed" } } }] } }), undefined, "(d) 仅畸形条目时返回 undefined");
   }
 
-  // ── issue #290：根因 A 安全化与提交后置三态化（A-2/A-3/B-1/B-2/B-4）──
+    // ── 根因 A 安全化与提交后置三态化 ──
 
-  // A-2：未提供 agents 时 completed 仍走 done 主分支且不抛（logger 无「处理失败」warn）
+    // 未提供 agents 时 completed 仍走 done 主分支且不抛（logger 无「处理失败」warn）
   {
     const infos = [];
     const warns = [];
@@ -423,7 +423,7 @@ try {
     assert.ok(!warns.some((t) => t.includes("agent/status 处理失败")), "A-2：无 'agent/status 处理失败' warn");
   }
 
-  // A-3：agents 缺位时 fork 型（parentSession 无 origin、seedLength>0）保守走
+    // agents 缺位时 fork 型（parentSession 无 origin、seedLength>0）保守走
   //     主任务 done（即使 notifySubagentDone=true 也不误判 subagent-done）；
   //     spawn 型（origin=subagent）仍按 origin 信号走 subagent 分支。
   {
@@ -443,7 +443,7 @@ try {
     assert.equal(infos.filter((t) => /: subagent-done /.test(t)).length, 1, "A-3：spawn 型 origin 信号仍走 subagent 分支");
   }
 
-  // B-1：开关禁用三态提交——notifyTaskDone=false 时 completed idle 不通知，
+    // 开关禁用三态提交——notifyTaskDone=false 时 completed idle 不通知，
   //     但 lastEndedTurn 照常提交，同 turn 再现 idle 不重复处理。
   {
     const infos = [];
@@ -462,11 +462,11 @@ try {
     assert.ok(warns.some((t) => t.includes("b1-1") && /完成判定跳过/.test(t)), "B-1：再现 idle 走跳过路径 warn 留痕");
   }
 
-  // B-2：免打扰拦截后同 turn 再现 idle 不重复——quietHours 命中且 done 不在
+    // 免打扰拦截后同 turn 再现 idle 不重复——quietHours 命中且 done 不在
   //     allowKinds 时，idle completed → 仅一条 suppressed 历史、无系统通知；
   //     同 turn 再现 idle → 不重复通知、不新增记录。
   {
-    // #181 动态窗口：写死 "00:00"/"23:59" 在半开区间镜下 23:59 这一分钟不命中
+        // 动态窗口：写死 "00:00"/"23:59" 在半开区间镜下 23:59 这一分钟不命中
     // （UTC 边缘必炸，run 33282203798 根因）；围绕当前时间 ±2 分钟恒命中。
     const qhAll = quietWindowNow();
     const infos = [];
@@ -487,7 +487,7 @@ try {
     assert.equal(after.length, records.length, "B-2：同 turn 再现 idle 不新增历史记录");
   }
 
-  // B-4：批次按「入队成功」提交、与聚合 flush 成败解耦——doneMergeWindowMs>0
+    // 批次按「入队成功」提交、与聚合 flush 成败解耦——doneMergeWindowMs>0
   //     时首条完成入队即推进 lastEndedTurn（窗口内同 turn 再现不重复）。
   {
     const infos = [];
@@ -503,11 +503,11 @@ try {
     assert.equal(infos.filter((t) => /: done /.test(t)).length, 1, "B-4：窗口内同 turn 再现 idle 不重复（入队即提交）");
   }
 
-  // B-4 flush 时序：首条入队即提交（不依赖 flush 结果）——窗口到点正常 flush
+    // flush 时序：首条入队即提交（不依赖 flush 结果）——窗口到点正常 flush
   //     补发聚合条后，已提交 turn 不回退（再现 idle 不重复）。
   //     （「flush 阶段 notify 抛错」路径为产品 setTimeout 异步回调的既有行为，
   //     触发会 uncaught、与 Stryker tap-bridge 冲突，故以「提交点先于 flush」
-  //     的时序验证覆盖——见 PR 断言表 B-4 漂移说明。）
+    //     的时序验证覆盖。）
   {
     const infos = [];
     const { listeners } = await makeNotifier(work, { doneMergeWindowMs: 30 }, loggingOverride(infos));
@@ -533,11 +533,11 @@ try {
     assert.equal(doneCount(), 2, "B-4：flush 后已提交 turn 不回退重发");
   }
 
-  // ── issue #290 阶段二：重载窗口后首轮 live turn 仍通知（D-1）与
-  //    重载不引入假阳性（D-2）——独立实例模拟插件重载（新 fiber 的
+    // ── 重载窗口后首轮 live turn 仍通知与
+    //    重载不引入假阳性——独立实例模拟插件重载（新 fiber 的
   //    agentStates / eventStreamEnds 记忆为空）──
   {
-    // D-1：重载窗口后首轮 live turn 仍通知（快照兜底补证）。
+        // 重载窗口后首轮 live turn 仍通知（快照兜底补证）。
     // 构造：上一轮 turn=1 已落盘（重载前已派发、新 fiber 未记忆，push 缺失），
     // 本轮 live turn=2 completed 落盘后 running→idle——快照较 running 基线推进，
     // 走快照兜底补证 → 恰一条 done，不因记忆重置静默。
@@ -557,7 +557,7 @@ try {
     assert.equal(infos1.filter((t) => /: done /.test(t)).length, 1, "D-1：重载后首轮 live turn 经快照兜底通知（恰一条）");
     assert.ok(!warns1.some((t) => t.includes("d1-1")), "D-1：重载后首轮 live turn 不走跳过路径（无 warn）");
 
-    // D-2：重载后 abort-early（本轮无新 closure）idle 仍静默——running 基线
+        // 重载后 abort-early（本轮无新 closure）idle 仍静默——running 基线
     //     捕获上一轮 turn=1 completed，idle 时快照仍 turn=1（≤ 基线）→ 冻结，
     //     不因记忆重置把旧证据当新轮完成。
     const d2Cfg = join(work, "d2-reload-abort.json");

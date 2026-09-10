@@ -1,12 +1,11 @@
-// @ts-nocheck
 /**
- * dsh-notifier — unit：server.ts createSseHub 业务包装直测（PR0 红测先行 5）。
+ * dsh-notifier — unit：server.ts createSseHub 业务包装直测（红测先行）。
  *
  * 与 unit-sse-hub.test.ts 的分工：后者直测 shared/sse-hub.js（连接表/心跳/
  * stalled/maxAge 回收——共享层）；本文件直测 notifier 业务包装（server.ts:80-121）：
  * seq 递增、600 帧 RECENT_LIMIT 滚动缓冲 shift、framesSince 补拉——这三者是
- * 共享层之外的 notifier 专属行为（#515 方案 P0 拆分后业务面），现状零直测
- * （T3-4），本文件锁定基线供 PR2 快照化重构判别。
+ * 共享层之外的 notifier 专属行为（共享 hub 拆分后的业务面），现状零直测
+ * 本文件锁定基线供快照化重构判别。
  *
  * 缓冲与 /history 的独立性：滚动缓冲（600 帧）独立于 history jsonl（200 条
  * 截断）——本文件只测缓冲本身；跨存储独立性由 routes ?since 用例覆盖。
@@ -18,7 +17,7 @@ import { createSseHub } from "../src/server/interface.ts";
 
 let pass = 0;
 let fail = 0;
-function ok(cond, name) {
+function ok(cond: boolean, name: string) {
   if (cond) {
     pass += 1;
   } else {
@@ -28,7 +27,7 @@ function ok(cond, name) {
 }
 
 /** 轮询直到谓词成立（替代固定 sleep：防抖落盘是定时器驱动的异步终态）。 */
-async function pollUntil(predicate, timeoutMs = 1000) {
+async function pollUntil(predicate: () => boolean, timeoutMs = 1000) {
   const start = Date.now();
   for (;;) {
     if (predicate()) return true;
@@ -87,7 +86,7 @@ async function pollUntil(predicate, timeoutMs = 1000) {
   }
 }
 
-// ---- (d) R-6/D22 选项 A ①：构造时 loadSeq 续计数（缺省内存模式行为不变） ----
+// ---- (d) 构造时 loadSeq 续计数（缺省内存模式行为不变） ----
 {
   const hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000, loadSeq: () => 5, saveSeq: () => {}, seqFlushMs: 60_000 });
   try {
@@ -105,10 +104,10 @@ async function pollUntil(predicate, timeoutMs = 1000) {
   }
 }
 
-// ---- (e) R-6/D22 选项 A ②：broadcast 防抖落盘 + dispose 同步落盘（正常停止零丢失） ----
+// ---- (e) broadcast 防抖落盘 + dispose 同步落盘（正常停止零丢失） ----
 {
   // 防抖合并：注入短窗（20ms），窗口内多次广播不立即写，到点只写最新 seq
-  const saves = [];
+  const saves: number[] = [];
   const hub = createSseHub({
     getMaxConnections: () => 4, heartbeatMs: 60_000, saveSeq: (s) => saves.push(s), seqFlushMs: 20,
   });
@@ -120,7 +119,7 @@ async function pollUntil(predicate, timeoutMs = 1000) {
   ok(saves.length === 1 && saves[0] === 3, "防抖合并：窗口内多次广播只写一次最新 seq（3）");
   hub.dispose();
   // 长窗（60s）+ 立即 dispose：防抖窗口内未落盘值同步补写（正常停止零丢失）
-  const saves2 = [];
+  const saves2: number[] = [];
   const hub2 = createSseHub({
     getMaxConnections: () => 4, heartbeatMs: 60_000, saveSeq: (s) => saves2.push(s), seqFlushMs: 60_000,
   });
@@ -134,9 +133,9 @@ async function pollUntil(predicate, timeoutMs = 1000) {
   ok(true, "内存模式 broadcast+dispose 无 saveSeq 路径正常");
 }
 
-// ---- (f) R-6/D22 选项 A ③：重启仿真 hub1→dispose→hub2(loadSeq 续计数) framesSince 返回 seq6 ----
+// ---- (f) 重启仿真 hub1→dispose→hub2(loadSeq 续计数) framesSince 返回 seq6 ----
 {
-  const saved = [];
+  const saved: number[] = [];
   const hub1 = createSseHub({
     getMaxConnections: () => 4, heartbeatMs: 60_000, loadSeq: () => 0, saveSeq: (s) => saved.push(s), seqFlushMs: 60_000,
   });
@@ -159,7 +158,7 @@ async function pollUntil(predicate, timeoutMs = 1000) {
   }
 }
 
-// ---- (g) R-6/D22 选项 A ④：loadSeq 非法值（损坏/越界/非整数）→ 回退 0 ----
+// ---- (g) loadSeq 非法值（损坏/越界/非整数）→ 回退 0 ----
 {
   for (const bad of [NaN, -5, 1.9, Infinity]) {
     const hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000, loadSeq: () => bad, saveSeq: () => {}, seqFlushMs: 60_000 });

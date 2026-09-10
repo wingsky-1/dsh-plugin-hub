@@ -1,11 +1,10 @@
-// @ts-nocheck
 /**
- * dsh-notifier — unit：存储域工厂直测（L1 层内，S3-29 补盲）。
+ * dsh-notifier — unit：存储域工厂直测（L1 层内直测补盲）。
  *
- * 覆盖 N-4（requirements §7.3）：history 写队列串行化/原子写（tmp+rename）/
+ * 覆盖存储域工厂直测：history 写队列串行化/原子写（tmp+rename）/
  * 滚动上限/按天清理/失败 warn；status 内存镜像/failStreak/64 条上限/debounce
  * 落盘/冷启动懒加载/错误摘要截断。工厂不在包导出面（导出面零 diff 约束），
- * 按 §11.2-1 纪律直测本域 interface.ts（Node strip-types 原生执行）。
+ * 直测本域 interface.ts（Node strip-types 原生执行）。
  */
 import { readFileSync, mkdtempSync, rmSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,7 +13,7 @@ import { assert } from "./helpers.ts";
 import { createHistoryStore, createStatusStore, HISTORY_LIMIT } from "../src/stores/interface.ts";
 
 /** 轮询文件直到谓词成立或超时（写队列 fire-and-forget，固定 sleep 会 flake）。 */
-async function pollFile(file, predicate, timeoutMs = 2000) {
+async function pollFile(file: string, predicate: (text: string) => boolean, timeoutMs = 2000) {
   const start = Date.now();
   for (;;) {
     try {
@@ -33,7 +32,7 @@ async function pollFile(file, predicate, timeoutMs = 2000) {
 
 const work = mkdtempSync(join(tmpdir(), "dnotify-unit-stores-"));
 try {
-  // ── N-4a：history 写队列串行化 + 原子写（并发 append 不丢记录、无 tmp 残留）──
+  // ── history 写队列串行化 + 原子写（并发 append 不丢记录、无 tmp 残留）──
   {
     const file = join(work, "hist-1.jsonl");
     const warns = [];
@@ -48,7 +47,7 @@ try {
     assert.equal(leftovers.length, 0, "tmp+rename 原子写无残留临时文件");
   }
 
-  // ── N-4b：滚动上限（写超 HISTORY_LIMIT 后 read 只回最近上限）──
+  // ── 滚动上限（写超 HISTORY_LIMIT 后 read 只回最近上限）──
   {
     const file = join(work, "hist-2.jsonl");
     const store = createHistoryStore({ file, maxAgeDays: () => 0, warn: () => {} });
@@ -59,7 +58,7 @@ try {
     assert.equal(records[records.length - 1].message, `m${HISTORY_LIMIT + 49}`, "保留的是最新记录");
   }
 
-  // ── N-4c：按天自动清理（maxAgeDays 实时读取器）──
+  // ── 按天自动清理（maxAgeDays 实时读取器）──
   {
     const file = join(work, "hist-3.jsonl");
     let keepDays = 0;
@@ -82,10 +81,10 @@ try {
     assert.ok(records.every((r) => r.message !== "超期"), "30 天前记录已剔除");
   }
 
-  // ── N-4d：写入失败 → warn 不抛（fire-and-forget 铁律）──
+  // ── 写入失败 → warn 不抛（fire-and-forget 铁律）──
   {
     const file = join(work, "hist-4", "nested", "hist.jsonl"); // 父目录不存在 → 写入必失败
-    const warns = [];
+    const warns: string[] = [];
     const store = createHistoryStore({ file, maxAgeDays: () => 0, warn: (m) => warns.push(m) });
     store.append({ ts: 1, kind: "done", title: "t", message: "m" });
     await new Promise((resolve) => setTimeout(resolve, 80));
@@ -93,7 +92,7 @@ try {
     assert.ok(warns[0].includes("历史记录写入失败"), "warn 带失败上下文");
   }
 
-  // ── N-4e：status 内存镜像 / failStreak / 错误摘要截断 / 64 条上限 / debounce 落盘 ──
+  // ── status 内存镜像 / failStreak / 错误摘要截断 / 64 条上限 / debounce 落盘 ──
   {
     const file = join(work, "status-1.json");
     const store = createStatusStore({ file, warn: () => {} });

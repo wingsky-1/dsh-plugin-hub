@@ -1,8 +1,8 @@
-// @ts-nocheck
+// @ts-nocheck（e2e/集成面类型化技术债：桩对象密集，暂不参与 test/tsconfig 编译）
 /**
- * dsh-notifier — 客户端样式注入行为哨兵（issue #477 验收 3/8）。
+ * dsh-notifier — 客户端样式注入行为哨兵。
  *
- * vm 沙箱执行真实 lib/client.js（#469 先例形态），documentStub 行为计数断言：
+ * vm 沙箱执行真实 lib/client.js（既有沙箱先例形态），documentStub 行为计数断言：
  * - 按 id 注入（dsh-notifier-style + dataset.version）；
  * - 幂等（重复 apply 仅 1 个 <style>）；
  * - disposer 卸载 remove 该 style；
@@ -66,7 +66,7 @@ import { assert } from "./helpers.ts";
   };
   const styleNodes = () => headNodes.filter((n) => n.id === "dsh-notifier-style").length;
 
-  // ---- 沙箱（#469 同款骨架精简：本段只驱动 apply/disposer 样式路径） ----
+  // ---- 沙箱（先例骨架精简：本段只驱动 apply/disposer 样式路径） ----
   let loadedFactory = null;
   const sandbox = {
     console: { ...console, warn: () => {} },

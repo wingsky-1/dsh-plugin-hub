@@ -1,6 +1,5 @@
-// @ts-nocheck
 /**
- * dsh-notifier — unit：webhook 频道（#508 M2）。
+ * dsh-notifier — unit：webhook 频道。
  *
  * 覆盖：
  * - renderWebhookBody JSON-aware 两步法：映射表（ntfy/gotify/custom）、默认模板、
@@ -11,9 +10,11 @@
  * - config 契约：webhook 实例 normalize（URL 姿态/auth 枚举/timeoutSec clamp/
  *   保留键剔除/preset 收列）、validateSettings 混合 channels、掩码泛化
  *   （redactConfigView / unmaskChannels 按 CHANNEL_SECRET_FIELDS）。
- * 无网络：fetch 整体替换 + URL 前缀过滤（service-contract §⑥ 同款手法，finally 恢复）。
+ * 无网络：fetch 整体替换 + URL 前缀过滤（与 service-contract 同款手法，finally 恢复）。
  */
 import { assert } from "./helpers.ts";
+import type { WebhookChannelConfig } from "../src/config/interface.ts";
+import type { NotifySeverity } from "../src/sdk/interface.ts";
 import {
   normalizeConfig,
   validateSettings,
@@ -30,13 +31,13 @@ import {
   WEBHOOK_DEFAULT_TIMEOUT_SEC,
 } from "../lib/index.js";
 
-// ---- ① {{priority}} 频道感知映射表（拍板 ④；契约锁定） ----
+// ---- ① {{priority}} 频道感知映射表（契约锁定） ----
 {
-  for (const [sev, ntfy] of [["failure", "urgent"], ["warning", "high"], ["success", "low"], ["info", "default"]]) {
+  for (const [sev, ntfy] of [["failure", "urgent"], ["warning", "high"], ["success", "low"], ["info", "default"]] as Array<[NotifySeverity, string]>) {
     assert.equal(SEVERITY_NTFY_PRIORITY[sev], ntfy, `ntfy 映射 ${sev}→${ntfy}`);
     assert.equal(priorityFor("ntfy", sev), ntfy, `priorityFor ntfy ${sev}`);
   }
-  for (const [sev, gotify] of [["failure", "9"], ["warning", "7"], ["success", "3"], ["info", "3"]]) {
+  for (const [sev, gotify] of [["failure", "9"], ["warning", "7"], ["success", "3"], ["info", "3"]] as Array<[NotifySeverity, string]>) {
     assert.equal(String(SEVERITY_GOTIFY_PRIORITY[sev]), gotify, `gotify 映射 ${sev}→${gotify}`);
     assert.equal(priorityFor("gotify", sev), gotify, `priorityFor gotify ${sev}`);
   }
@@ -69,7 +70,7 @@ import {
   assert.equal(JSON.parse(body4).m, "M", "{{ message }} 空白容差");
 }
 
-// ---- ③ renderWebhookBody：JSON 注入防护（评审 P0） ----
+// ---- ③ renderWebhookBody：JSON 注入防护（评审加固） ----
 {
   const evil = 'M", "injected": true, "x": "';
   const body = renderWebhookBody('{"title": "{{title}}", "message": "{{message}}"}', "ntfy", { title: "T", message: evil, kind: "k", severity: "info", ts: 1 });
@@ -97,19 +98,25 @@ import {
   assert.ok(threw, "非法 JSON 模板抛错");
 }
 
+/** fetch 桩调用记录：断言面只读 headers/body，RequestInit 的宽类型无法直接索引。 */
+interface FetchCall {
+  url: string;
+  init: { headers: Record<string, string>; body: string };
+}
+
 // ---- ④ createWebhookChannel + fetch mock：认证头 / 失败脱敏 / 渲染失败转投递失败 ----
 {
   const origFetch = globalThis.fetch;
-  const calls = [];
+  const calls: FetchCall[] = [];
   try {
-    globalThis.fetch = async (url, init) => {
+    globalThis.fetch = async (url, init): Promise<Response> => {
       if (!String(url).startsWith("http://127.0.0.1:40281/")) return origFetch(url, init);
-      calls.push({ url: String(url), init });
+      calls.push({ url: String(url), init: init as unknown as FetchCall["init"] });
       // 第 4 次调用（ch4 的 4xx 用例）：响应体回显 token，验证脱敏
-      if (calls.length === 4) return { ok: false, status: 401, json: async () => ({}), text: async () => `bad token ${"tk-secret-1"}` };
-      return { ok: true, status: 200, json: async () => ({}), text: async () => "" };
+      if (calls.length === 4) return { ok: false, status: 401, json: async () => ({}), text: async () => `bad token ${"tk-secret-1"}` } as unknown as Response;
+      return { ok: true, status: 200, json: async () => ({}), text: async () => "" } as unknown as Response;
     };
-    const base = { id: "webhook-1", type: "webhook", url: "http://127.0.0.1:40281/hook", enabled: true };
+    const base: Omit<WebhookChannelConfig, "auth"> = { id: "webhook-1", type: "webhook", url: "http://127.0.0.1:40281/hook", enabled: true };
 
     // bearer
     const ch = createWebhookChannel({ ...base, auth: "bearer", token: "tk-secret-1", template: '{"title": "{{title}}"}' });
@@ -130,8 +137,8 @@ import {
 
     // 4xx：失败终态 + 凭据脱敏（token 字面不出现在错误信息）
     const ch4 = createWebhookChannel({ ...base, auth: "bearer", token: "tk-secret-1", template: '{"title": "{{title}}"}' });
-    let err = null;
-    await ch4.send({ title: "T", body: "B", kind: "k", ts: 4, severity: "info" }).catch((e) => { err = e; });
+    let err: unknown = null;
+    await (ch4.send({ title: "T", body: "B", kind: "k", ts: 4, severity: "info" }) as Promise<void>).catch((e) => { err = e; });
     assert.ok(err instanceof Error, "4xx → reject 失败终态");
     assert.ok(String(err.message).includes("401"), "4xx 错误含状态码");
     assert.ok(!String(err.message).includes("tk-secret-1"), "错误信息不含 token 原文（脱敏）");
@@ -139,11 +146,11 @@ import {
     // 渲染失败 → 投递失败终态（不抛同步错）
     const ch5 = createWebhookChannel({ ...base, auth: "none", template: "{not-json}" });
     err = null;
-    await ch5.send({ title: "T", body: "B", kind: "k", ts: 5, severity: "info" }).catch((e) => { err = e; });
+    await (ch5.send({ title: "T", body: "B", kind: "k", ts: 5, severity: "info" }) as Promise<void>).catch((e) => { err = e; });
     assert.ok(err instanceof Error && String(err.message).includes("合法 JSON"), "非法模板 → 失败终态（错误含渲染原因）");
     assert.equal(calls.length, 4, "渲染失败不发起网络请求");
 
-    // 默认超时秒（拍板 ②：缺省 10；clamp 语义由 normalize 权威，此处仅锁常量）
+    // 默认超时秒（缺省 10；clamp 语义由 normalize 权威，此处仅锁常量）
     assert.equal(WEBHOOK_DEFAULT_TIMEOUT_SEC, 10, "默认超时 10s");
   } finally {
     globalThis.fetch = origFetch;
@@ -166,11 +173,11 @@ import {
   assert.equal(wh.auth, "bearer");
   assert.equal(wh.timeoutSec, 60, "timeoutSec 权威 clamp 至上限 60");
   assert.equal(wh.preset, "gotify");
-  const low = normalizeConfig({ channels: [{ id: "webhook-2", type: "webhook", url: "https://x.example.com", enabled: true, timeoutSec: 0.4 }] }).channels[0];
+  const low = normalizeConfig({ channels: [{ id: "webhook-2", type: "webhook", url: "https://x.example.com", enabled: true, timeoutSec: 0.4 }] }).channels[0] as WebhookChannelConfig;
   assert.equal(low.timeoutSec, 1, "timeoutSec 下限 clamp 至 1");
   assert.equal(low.auth, "none", "auth 缺省 none");
   // 保留键剔除 + 未知 string/number 透传
-  const pv = normalizeConfig({ channels: [{ id: "webhook-3", type: "webhook", url: "https://x.example.com", enabled: true, auth_token: "smuggle", custom_arg: "v1" }] }).channels[0];
+  const pv = normalizeConfig({ channels: [{ id: "webhook-3", type: "webhook", url: "https://x.example.com", enabled: true, auth_token: "smuggle", custom_arg: "v1" }] }).channels[0] as WebhookChannelConfig & { custom_arg?: string };
   assert.equal("auth_token" in pv, false, "webhook 保留键（凭据别名）剔除");
   assert.equal(pv.custom_arg, "v1", "未知 string 键透传");
   // 非法 URL → 丢弃
@@ -209,10 +216,11 @@ import {
     [{ id: "webhook-1", type: "webhook", url: "https://x", enabled: true, auth: "basic", username: "u1", password: "pw-orig", token: "tk-orig", headerValue: "hv-orig" }],
   );
   assert.ok(back.ok, "掩码回填受理");
-  assert.equal(back.channels[0].password, "pw-orig", "password 回填原值");
-  assert.equal(back.channels[0].token, "tk-orig", "token 回填原值");
-  assert.equal(back.channels[0].headerValue, "hv-orig", "headerValue 回填原值");
-  assert.equal(back.channels[0].username, "u2", "非 secret 字段不回填（保留提交值）");
+  const backCh = back.channels[0] as WebhookChannelConfig;
+  assert.equal(backCh.password, "pw-orig", "password 回填原值");
+  assert.equal(backCh.token, "tk-orig", "token 回填原值");
+  assert.equal(backCh.headerValue, "hv-orig", "headerValue 回填原值");
+  assert.equal(backCh.username, "u2", "非 secret 字段不回填（保留提交值）");
   const missing = unmaskChannels(
     [{ id: "webhook-new", type: "webhook", url: "https://x", enabled: true, token: SECRET_MASK }],
     [],

@@ -1,24 +1,24 @@
-// @ts-nocheck
+// @ts-nocheck（e2e/集成面类型化技术债：桩对象密集，暂不参与 test/tsconfig 编译）
 /**
  * dsh-notifier — 宿主端冒烟测试入口（fake ctx，无网络）。
  *
- * 测试按功能域拆分（#18 方案C），本文件只做顺序聚合——用 await import()
+ * 测试按功能域拆分，本文件只做顺序聚合——用 await import()
  * 逐个串行求值，单文件职责见各文件头注释：
  *
- * 【为何不能静态 import（#508 回归教训）】静态 import 的「按声明序求值」只保证
+ * 【为何不能静态 import（回归教训）】静态 import 的「按声明序求值」只保证
  * 求值*启动*顺序：各用例文件大量使用顶层 await（TLA），ESM 规范下无依赖的
- * 兄弟模块在 TLA 挂起时会并发交错求值。两个文件（unit-webhook §④ 与
- * service-contract §⑥）各自替换 globalThis.fetch + finally 恢复，窗口一旦
- * 重叠，先完成者的 finally 会用它捕获的 origFetch 覆盖后装者的 mock——§⑥
- * 的请求遂直打本机真实 bark-server。await import() 强制前一文件完整跑完
- * （含 finally）才轮到下一个，mock 生命周期互不重叠。
+ * 兄弟模块在 TLA 挂起时会并发交错求值。unit-webhook 与 service-contract 两个
+ * 文件各自替换 globalThis.fetch + finally 恢复，窗口一旦重叠，先完成者的
+ * finally 会用它捕获的 origFetch 覆盖后装者的 mock——后者的请求遂直打本机
+ * 真实 bark-server。await import() 强制前一文件完整跑完（含 finally）才轮到
+ * 下一个，mock 生命周期互不重叠。
  *
  * - unit-config.test.ts     配置归一化 / 免打扰判定（parseHHMM、isInQuietHours）
  * - unit-text.test.ts       文案格式化 / 工具名美化 / 系统命令构造 / loopback 判定
  * - unit-sanitize.test.ts   错误文本脱敏（含性能护栏与 FP 证伪回归）
  * - e2e-approval.test.ts    审批请求通知（waterfall 不短路 / allowKinds 例外）
  * - e2e-done.test.ts        完成状态机 / 错误合并 / 子代理分流 / 风暴聚合
- * - e2e-interrupt.test.ts   中断抑制 S1/S2 与完成判定白名单
+ * - e2e-interrupt.test.ts   中断抑制与完成判定白名单
  * - e2e-question-turn.test.ts 提问通知（userQuestions 包装）与轮结束通知
  * - routes.test.ts          HTTP 路由（config/events/health/test/history 全套）
  * - client-contract.test.ts 客户端契约与两端路由一致性
@@ -28,26 +28,26 @@
 await import("./unit-config.test.ts");
 await import("./unit-text.test.ts");
 await import("./unit-sanitize.test.ts");
-// PR0 红测先行 4：event-handlers 核心判定直测（resolveTurnEvidence 矩阵）
+// event-handlers 核心判定直测（resolveTurnEvidence 矩阵）
 await import("./unit-event-handlers.test.ts");
-// #515：共享 SSE 枢纽（shared/sse-hub.js 主动回收：stalled/maxAge/上限/观测）
+// 共享 SSE 枢纽（shared/sse-hub.js 主动回收：stalled/maxAge/上限/观测）
 await import("./unit-sse-hub.test.ts");
-// PR0 红测先行 5：server.ts createSseHub 业务包装（seq/600 帧缓冲/framesSince）
+// server.ts createSseHub 业务包装（seq/600 帧缓冲/framesSince）
 await import("./unit-server-sse-bus.test.ts");
-// PR0 红测先行 1：system-notifier spawn 注入直测（节流/杀进程/失败终态——T3-3 零断言闭合）
+// system-notifier spawn 注入直测（节流/杀进程/失败终态——零断言闭合）
 await import("./unit-system-notifier.test.ts");
-// #508 M2：webhook 频道（渲染/注入防护/认证头/掩码泛化/配置契约）
+// webhook 频道（渲染/注入防护/认证头/掩码泛化/配置契约）
 await import("./unit-webhook.test.ts");
-// PR1 L1 补测（S3-29 工厂级直测盲区）：存储域（history/status 写队列原子写）
+// 存储域：history/status 写队列原子写（工厂级直测）
 await import("./unit-stores.test.ts");
-// PR1 L1 补测：settings-bridge CAS 直测（attach/降级/冲突重试 ≤2）
+// settings-bridge CAS 直测（attach/降级/冲突重试 ≤2）
 await import("./unit-settings-bridge.test.ts");
-// PR2 T2-4（N-16/D19/L8-6）：ConfigPort 降级语义契约 + 路由错误映射直测
+// ConfigPort 降级语义契约 + 路由错误映射直测
 await import("./unit-config-port.test.ts");
-// PR1 L1 补测：完成风暴聚合直测（首条即时/窗口聚合/kind 切换/dispose）
+// 完成风暴聚合直测（首条即时/窗口聚合/kind 切换/dispose）
 await import("./unit-aggregate.test.ts");
 
-// PR2 L2 契约（N-14/N-15）：pipeline 注入面（AdjudicateDeps 单刻快照 / DeliverDeps 调用序列）
+// pipeline 注入面契约（AdjudicateDeps 单刻快照 / DeliverDeps 调用序列）
 await import("./unit-pipeline-contract.test.ts");
 
 // e2e：fake ctx + apply
@@ -56,13 +56,13 @@ await import("./e2e-done.test.ts");
 await import("./e2e-interrupt.test.ts");
 await import("./e2e-question-turn.test.ts");
 
-// e2e：边缘路径与生命周期清理（#82 批次 4 热点补强）
+// e2e：边缘路径与生命周期清理（热点补强）
 await import("./e2e-edge.test.ts");
 
-// PR0 红测先行 3：outbound 真 resolver 全链投递基线（bark enabled:true + fetch 白名单加固）
+// outbound 真 resolver 全链投递基线（bark enabled:true + fetch 白名单加固）
 await import("./e2e-outbound.test.ts");
 
-// e2e：真实 cordis Context 形态（#290 C/D/E：未注入访问/事件可达契约/静态契约）
+// e2e：真实 cordis Context 形态（未注入访问/事件可达契约/静态契约）
 await import("./real-context.test.ts");
 
 // e2e：HTTP 路由 + 两端契约
@@ -71,7 +71,10 @@ await import("./migration.test.ts");
 await import("./client-contract.test.ts");
 await import("./client-style.test.ts");
 
-// M1：通知中心 service 契约（severity 映射 / send 受理 / 动态 kind 待确认 / 防冒认 / fail-soft）
+// 通知中心 service 契约（severity 映射 / send 受理 / 动态 kind 待确认 / 防冒认 / fail-soft）
 await import("./service-contract.test.ts");
+
+// 包导出面消费方类型编译用例（判据在编译期，随 wiring 接线由 tsc 执行）
+await import("./consumer-types.test.ts");
 
 console.log("dsh-notifier smoke: OK");
