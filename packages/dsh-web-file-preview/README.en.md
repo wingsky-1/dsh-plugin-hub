@@ -2,70 +2,66 @@
 [![npm](https://img.shields.io/npm/v/@wingsky-1/dsh-web-file-preview)](https://www.npmjs.com/package/@wingsky-1/dsh-web-file-preview)
 [![GitHub Releases](https://img.shields.io/github/v/release/wingsky-1/dsh-plugin-hub)](https://github.com/wingsky-1/dsh-plugin-hub/releases)
 
-Click a file link in the conversation to preview file contents right in the **web client** (**image / text / Markdown / code / git Diff**).
+Turns "open with the default application" file requests inside the conversation into the **built-in right-Sidebar preview**, so file viewing finishes inside dsh.
 
-DSH's built-in "clickable file reference" uses the desktop native opener when you click a produced-file chip / inline file reference — fine on desktop, but there is **no web-side preview** under a pure web deployment (LAN browser / iPad / iPhone, or `nativeOpen:false`). This plugin fills that gap: clicking a clickable file link in the conversation opens a **preview Modal inside the chat box** instead — images render directly via `<img>`, text via a monospace `<pre>`, and it adapts to light/dark themes.
+## What it does
 
-## Capabilities
+Since dsh 0.1.5, almost every file click in a conversation already opens the built-in right-Sidebar preview; only one path still hands a file to an **external application**: `POST /api/present.open` (the Host's `sessionController.openWorkspacePath`). It has two browser-side entry points:
 
-- **Image preview**: `png / jpg / jpeg / gif / webp / svg / avif / bmp`; click to enter a lightbox for zoom/pan (scroll-wheel zoom + drag).
-- **Markdown preview**: `.md / .markdown` rendered by default (marked + common GFM features), switchable to "Raw".
-- **Code syntax highlighting**: 25+ languages (`js/ts/py/java/…`, a highlight.js subset) highlighted, switchable to "Raw".
-- **Text preview**: `txt / log / csv / conf …` shown monospace.
-- **Diff view (git)**: for `.md/code/text` files inside a git repo with uncommitted changes, a 3rd **Diff** tab appears in the top bar, showing `git diff HEAD -- <file>` in red/green (untracked new files get a hint).
-- **HTML preview (issue #73 / #507)**: `.html/.htm` rendered via the virtual serve route inside a sandboxed iframe (no `allow-scripts` by default — scripts do not run); relative-path css/js/img subresources load normally (opaque-origin requests are served via the issue #549 cross-site no-cors carve-out). An **Interactive** tab (issue #507, opt-in via user confirmation) rebuilds the iframe with `allow-scripts` (never `allow-same-origin`) so in-file scripts run in the sandbox (theme switching / tabs / pure front-end mocks), with a "Scripts enabled" badge and highlighted frame; switching back to Preview/Raw or closing releases the short-lived interactive token. Switchable to "Raw".
-- In-Modal actions: **Preview / Raw / Diff**, **Copy path**, **Open in new tab**, **Close** (Esc / click the overlay).
-- **`@`-mention adaptation (dsh rc8)**: conversation-bubble `@` references rendered as `data-ref-chip` (file/folder/session) are uniformly recognized — file references `@path` / `@"…"` click the chip to open the preview Modal with the **clean path** (stripped of leading `@` and quotes); folder references `@path/` show a lightweight notice (no directory browsing, no Modal); session references are explicitly ignored (orthogonal to file preview).
-- **Load error state**: fine-grained error breakdown + "Open in new tab" fallback.
-- **Caching**: no JS in-memory cache (files change often, permanent caching would show stale content); instead uses browser HTTP caching + host weak ETag (`Cache-Control: no-cache` + `If-None-Match`) for automatic negotiation — unchanged returns 304 instantly, changed fetches the latest automatically.
+- the `present` deliverable card menu item "open with the default application";
+- clicking a **mention** of a presented file in the assistant's final response (inline-code reference).
 
-## Implementation
+This plugin takes over that request in the browser: when it matches an "open with the default application" call it sends nothing over the network, asks `ctx.sidebarRight.openResource` to open the right-Sidebar preview using the official address grammar (`dsh-resource://file/session/<id>/<path>`), and synthesizes the success response the official caller understands.
 
-- **Host side**: `GET /api/dsh-file-preview/file?cwd=&path=` (absolute path may omit cwd; loopback fence — non-loopback → 403 / non-GET method → 405), located via `resolve(cwd, path)` (`~`/`~/` prefix expanded to the user home via `untildify`); suffix grouping: image/text/Markdown/code served directly; **whitelist-external files (issue #630) go through content sniffing first** (`isbinaryfile` reads the first 512B + BOM detection, the industry-standard approach per git's `buffer_is_binary`) — text is served as plain text (UTF-16/32 BOMs are transcoded), binaries return a structured `415` placeholder (`binary`/`size`/`ext`) and `&dl=1` serves an attachment download (RFC 5987 `filename*` encoding); text larger than `maxTextBytes` returns `413` + `truncated` (stat the size first, never read the whole file). `GET /api/dsh-file-preview/diff?cwd=&path=` (async execFile to compute the git diff) and `GET /api/dsh-file-preview/health` health check. File responses uniformly carry `X-Content-Type-Options: nosniff`; SVG additionally carries `Content-Security-Policy: sandbox`.
-- **Client side**: dual interception mechanism (`workspaces.openPath` call-site hook + document-level static interception) + grouped rendering (`renderGroupFor`) + three tabs (Preview / Raw / Diff; Diff shows only when git has changes). Markdown uses `marked`, code uses a `highlight.js` subset, Diff uses `diff2html`.
-- **Single source of truth for suffix grouping**: `src/grouping.ts` is shared by the host `mime.ts` and the client `renderer.ts`/`client.ts`, eliminating drift from two independently maintained suffix tables; `cleanRefChipPath` (the `@`-mention chip → clean path pure function) lives in the same file, serving as the inverse of DSH's `formatFileMention`.
-- **Cross-package contract assumption (`@`-mention)**: recognition relies on the `data-ref-chip` attribute + `title="@…"` shape as produced by DSH `ui-conversation`. If DSH changes this shape in the future, a failed `data-ref-chip` gate means file chips silently fall back to "no response on click" (not a 404, acceptable degradation). If DSH later provides a clean-path attribute (e.g. `data-ref-path`), it will be adopted with priority.
-- **Dependencies**: `marked` / `highlight.js` / `diff2html` / `untildify` are build-time bundled dependencies (inlined into `lib/index.js` and `lib/client.js` on the host/client respectively); Content-Type uses a built-in small mapping (no need for the large mime-db table, avoiding ESM/CJS compatibility issues from inlining host third-party dependencies).
-- **Build size**: client esbuild `--minify`, `client.js` ~226KB minified (gzip ~68KB).
+Paths that are deliberately **not** taken over (maintainer decision: shrink the feature surface):
 
-## Installation
+- `reveal` ("show in file manager") passes through untouched — it does not open file contents, and dsh has no equivalent;
+- `open-in-app` in the session header (open the workspace directory in an external editor);
+- every other file click inside the conversation (the official client already opens the right-Sidebar preview for those).
 
-Prerequisite: DeepSeek Harness installed and `dsh web` running normally (for running dsh
-without a global install, see "Without a global dsh install" below).
+The plugin does **not** register the official `documentPreviews` / `sidebarRightTabs` extension points, and does not modify official DOM or styles.
 
-### Install plugins (add)
+## Capability change (repositioning)
+
+Earlier versions shipped their own previewer (Modal + image lightbox + Markdown/Mermaid + code highlighting + git Diff + virtual HTML serving + binary download card + path fallback search + self-hosted Host routes) plus a conversation click interceptor. Since dsh 0.1.5 the built-in preview covers the main capabilities, so the plugin shrank to the single forwarding duty described above; that code, its dependencies and the Host routes have all been removed.
+
+**Upgrade note**: after upgrading, clicking a `present` card or a mention opens the right-Sidebar preview instead of launching a desktop application; the previous Modal-only capabilities (Diff, Mermaid, multi-file HTML assets) are no longer provided — the built-in preview renderers own them. The plugin has no user-facing options any more; uninstalling is the off switch.
+
+## Install
+
+Prerequisite: DeepSeek Harness is installed and `dsh web` starts (see "dsh not installed globally" below otherwise).
+
+### Install the plugin (add)
 
 ```sh
 dsh plugin --profile web add @wingsky-1/dsh-web-file-preview
 ```
 
-### Uninstall plugins (remove)
+### Remove the plugin (remove)
 
 ```sh
 dsh plugin --profile web remove @wingsky-1/dsh-web-file-preview
 ```
 
-### Update plugins (update)
+### Update the plugin (update)
 
 ```sh
 dsh plugin --profile web update @wingsky-1/dsh-web-file-preview
 ```
 
-> After install / uninstall / update, **restart `dsh web` once** (bundle layers are only
-> composed at startup) for changes to take effect.
+> Installing / removing / updating all require **one restart** of `dsh web` (the bundle layer is composed at startup only).
 
 ### Pin a version (@version)
 
-Omitting `@version` installs the default latest (recommended). Only when the registry has not synced the latest yet, or the latest has issues in your environment, append `@version` to the package name:
+Omitting `@version` installs the latest release (recommended). Append `@version` only when the registry has not caught up or the latest release misbehaves in your environment:
 
 ```sh
 dsh plugin --profile web add @wingsky-1/dsh-web-file-preview@<version>
 ```
 
-### Without a global dsh install
+### dsh not installed globally
 
-If there is no global `dsh` command on the machine, use `npx` to run it on the fly (`dsh plugin`
-calls `pnpm` under the hood, so `pnpm` and `Node.js` must still be installed locally):
+If there is no global `dsh` command, use `npx` (it still calls `pnpm`, so `pnpm` and `Node.js` must be present):
 
 ```sh
 npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-web-file-preview
@@ -73,37 +69,44 @@ npx @deepseek-ai/dsh plugin --profile web remove @wingsky-1/dsh-web-file-preview
 npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-web-file-preview
 ```
 
-## Configuration
-
-| Key | Default | Description |
-|---|---|---|
-| `enabled` | `true` | When off, no routes are registered |
-| `maxTextBytes` | `20971520` (20MB) | Max bytes for text-like (text/markdown/code/html) previews; exceeding it returns `413` + `truncated` marker (`Cache-Control: no-store`), and the client prompts "file too large" and can open the original in a new tab (issue #344: default raised 512KB→20MB; the client degrades oversized text >1M chars (UTF-16 code units) to a plain truncated `<pre>` to avoid blocking the main thread) |
-| `maxAssetBytes` | `20971520` (20MB) | Max bytes per single asset (html/css/js/img of HTML previews) served by the virtual serve route; exceeding it returns `413` + `truncated` + `no-store` (symmetric with `maxTextBytes`, issue #73 + #344); SVG carries `Content-Security-Policy: sandbox` like `/file` |
-
 ## Verification
 
+Unit tests live only in `test/*.test.ts` (`import "../lib/index.js"` tests the artifact); stryker reuses the same assertions through the lib-to-src hook.
+
 ```sh
-pnpm build && pnpm test                 # repo: build + smoke
-curl http://127.0.0.1:3080/api/dsh-file-preview/health
+pnpm build && pnpm test                 # in the repo: build + smoke (address golden table + fetch interlock fixture)
 ```
 
-## Security Model
+The address builder is kept in lockstep with the official `fileAddressFor` from `@deepseek-ai/dsh-util-workspace-path`: the right Sidebar keys tabs by the address itself, so any drift would open the same file as two tabs.
 
-- **⚠️ High-risk alert for LAN deployment (must read)**: When this plugin is exposed externally via `dsh-lan-proxy` (or any proxy that forwards external traffic to 127.0.0.1), the **loopback fence can be pierced because the proxy rewrites Host/Origin** — at that point **any device on the LAN** (without any dsh credentials/session) can directly access `/api/dsh-file-preview/file?path=…` to preview files on this machine: **since issue #630 the exposure surface is "whitelisted files + whitelist-external files whose sniffed content is text (including extension-less text such as `.env`, `id_rsa`)"**, and `?dl=1` offers an attachment download for sniffed-binary files, **including credential/config files such as `~/.dsh/.credentials.yaml`, `~/.dsh/*.json`** (`path` supports `~` expansion and absolute paths, `stat` follows symlinks, and no escape interception is performed). **Interactive preview (issue #507) escalates this to an "execution entry" when pierced**: a peer that obtains an interactive token (sniffable over plain HTTP) can run arbitrary file scripts in the sandbox (opaque origin + `connect-src 'none'` limit outbound capability, but rendering/phishing surface exists). Please deploy on a **trusted LAN** (do not expose to public WiFi/the internet), or configure **session auth / API-prefix allowlist** at the network layer before exposing it. The consequences after being pierced are borne by the deployer — per the "no redundant fallback" clause below, this plugin does not provide plugin-layer access control.
-- **Content-sniffing exposure semantics (issue #630)**: whitelist misses no longer uniformly return 415 — a 512B header sniff (`isbinaryfile` + BOM detection) classifying the file as text serves it directly. This **widens access capability** (text files previously rejected with 415 are now readable), but does **not** add any file enumeration or traversal surface: sniffing happens only after a path has been located via the three-tier resolution, on a single known file; the loopback fence, three-tier resolution semantics and the `maxTextBytes` cap are unchanged. Worst case on a sniffing mistake is "binary shown as garbled text" or "text shown as a binary placeholder card" — both keep the download exit and never bypass the fence.
-- **Keep the loopback fence**: all `/api` routes strictly verify a loopback source (cross-site / DNS-rebinding protection), consistent with the platform's existing convention; `/file`, `/diff` (other than `health`) also allow GET only (wrong method → 405). **The serve route has one deliberate exception (issue #549)**: it also accepts `sec-fetch-site: cross-site` requests **when `sec-fetch-mode: no-cors` is explicitly set** — sandboxed iframes (opaque origin) tag every request it initiates as cross-site, including relative-path css/js/img subresources, so the default fence would 403 all subresources of multi-file HTML previews; cors (in-page fetch/XHR), navigate (top-level navigation) and missing-mode headers (fail-closed) stay denied, and alloc/release//file keep the strict default. This fence is effective for **local/loopback direct connections**; whether it works against proxy-forwarded LAN access depends on whether the proxy rewrites Host/Origin (see the previous point).
-- **No redundant fallback**: the semantics of this plugin are "being able to open the dsh web page already means holding high privilege", therefore it does **not** perform arbitrary-file-access strong validation, session auth, or sensitive-name interception — access control is the platform/user's responsibility, and this plugin does not re-implement each of those layers.
-- **Path resolution**: `/file` locates directly via `resolve(cwd, path)` without "escape cwd" interception (arbitrary file access is the platform/user's responsibility). `~`/`~/` prefix expands to the user home.
-- **Rendering safety**: file responses always carry `X-Content-Type-Options: nosniff`; SVG additionally carries `Content-Security-Policy: sandbox` (no inlined script execution on top-level navigation). Markdown / code rendering output is an HTML presentation layer; `marked` / `highlight.js` escape the body. This plugin does not promise XSS sanitization of rendered output — the previewed content comes from files already seen in the session, and the security boundary is the same as "being able to open dsh web means high privilege".
-- **Interactive preview (issue #507, new script-execution surface)**: `alloc?mode=interactive` mints a **separate short-TTL token** (idle 10min, cap 16, independent of the static bucket's 30min/64) → the iframe is rebuilt with `sandbox="allow-scripts"` (**never `allow-same-origin`** — J9 red line; opaque origin: `top` cannot read the host page, `localStorage` throws, `window.open` returns null without `allow-popups` — browser-verified). **Server-side CSP enforced as backstop**: every serve text/html response carries CSP — static `sandbox` (top-level pasted URL also becomes opaque and script-less), interactive `sandbox allow-scripts` + `connect-src 'none'` (in-page fetch/XHR/beacon/WebSocket/EventSource blocked at the browser, never reaching the host or the network) + `form-action/base-uri/object-src/frame-src 'none'`. **Honest residual risk**: `img-src *`/`style-src *`/`font-src *` allow resource-type loads, so a script can exfiltrate the token via URL (e.g. `new Image().src=...`), and iframe self-navigation (`location.href`) cannot be CSP-blocked (`navigate-to` is deprecated) — CSP cannot zero exfiltration; mitigation relies on **short-TTL interactive tokens + immediate release on exit + no-cors-only probing after leak (no ACAO, content unreadable)**. Matches html-preview-sandbox's conclusion: pure-web hosts cannot fully stop window.location navigation. A parent-page heartbeat (2min GET with If-None-Match) keeps the idle timer alive; cleaned up on exit.
-- **`@`-mention adds no new security surface**: `data-ref-chip`/`title` are read via `getAttribute` only and used as path strings in `URLSearchParams` — never rendered via `innerHTML`. Cleaned paths still go through the `/file` route's existing loopback/cwd fence (relative paths force cwd, absolute paths follow the existing process-readable scope), consistent with the same security model as "deliverable chip preview".
+## Compatibility (read-only coupling)
 
-## Known Limitations
+The plugin does not modify official sources and does not register official extension points, but it **reads** the following official contracts; they are the only failure surface when dsh changes:
 
-- HTML preview (issue #73/#507): in-iframe `fetch`/XHR are blocked by the serve fence (cross-site cors) and unreadable without ACAO — expected, **only affects in-page dynamic data fetching, not tag-type subresources** (css/js/img load via the #549 carve-out; interactive in-page fetch is additionally blocked at the browser by CSP `connect-src 'none'`). **ES module scripts** (`<script type=module>`, cors mode) are blocked inside the sandbox. **Root-absolute paths** (`<script src="/assets/app.js">`) are unsupported — the browser resolves them against the dsh web origin, not the token virtual root (support would require injecting `<base>`, i.e. rewriting HTML — a higher-risk option, decided separately). In-iframe navigation (SPA routes / page jumps) does not enter the Modal back stack; **long-idle previews may expire** (idle TTL: static 30min / interactive 10min + parent heartbeat; closing the Modal releases explicitly); **interactive state is not restored on tab switch or back navigation** (interactive mode is excluded from back-stack snapshots by design — re-enter via the Interactive tab; an intentional opt-in trade-off); **preview breaks if the root directory is moved/deleted while open** (read-only in-memory serving — reopen needed).
-- Text-like content exceeding `maxTextBytes` (default 20MB) returns 413 + truncation marker and no longer reads the whole file (streaming/virtual-scroll for large files is not implemented, see the W10 initiative); the client degrades >1MB oversized text to a plain truncated `<pre>` (the Raw tab / opening the original in a new tab shows the full content).
-- The clickable scope is rather broad (any path title / local href / inline path text may enter preview); the `data-ref-chip` authoritative branch takes priority over generic sniffing to prevent false triggers from `@`-mentions.
-- Folder `@`-references do not open a preview (only a notice); directory browsing is outside this plugin's scope.
-- The client bundle includes `marked` + a `highlight.js` subset + `diff2html`, ~226KB minified (gzip ~68KB).
-- Multi-session switching uses the cwd of the currently active session.
+- the `/api/present.open` path, its `POST` method and its `action` query parameter (`reveal` relies on `action=reveal` to stay distinguishable);
+- the `[data-presented-file]` marker on presented cards plus the `title` attribute on the card's overlay button and on inline mentions (the path source); official CSS Modules class names are build-time hashes and must not be relied on;
+- the `dsh-resource://file/session/<id>/<path>` address grammar and `fileAddressFor`'s cwd-folding semantics.
+
+When any of them changes the behavior is a **graceful pass-through**: the takeover stops applying and the click falls back to the official native open (observable, never silent data corruption).
+
+## Security model
+
+- **No self-hosted routes any more**: the earlier `/api/dsh-file-preview/*` surface (raw file serving, virtual HTML serving, token store) was removed with the repositioning. The plugin no longer exposes any file-reading surface to the browser and no longer needs loopback fences, serve tokens or CSP fallbacks — **the earlier LAN warning ("exposed through a proxy, local files become previewable") is gone with it**.
+- **Read-only coupling**: the plugin only reads (never writes) request URLs and the `title` attribute of official card DOM; the collected path is used solely to build an official address string.
+- **No network egress**: on a match the plugin sends no request at all and calls the official Sidebar navigation directly; on a miss or any failure it replays the official request unchanged.
+- **Least privilege**: the browser half injects only `sessions` (session cwd, for address folding) and `sidebarRight` (official Sidebar navigation); the Host half no longer needs `webServer`, the filesystem or any official service.
+
+## Known limitations
+
+- **Depends on official DOM markers**: path collection relies on `[data-presented-file]` and `title`. If a future dsh release changes those markers, the takeover degrades to a pass-through (see "Compatibility").
+- **Pending window**: the path is collected when the card or mention is clicked and consumed by the following "open with the default application". Rare flows (keyboard-invoked menu, or clicking long after the menu opened) may collect nothing, which also degrades to a pass-through.
+- **One restart per install**: as with every dsh browser plugin, the artifact is composed when `dsh web` starts.
+
+## Retirement criteria
+
+The plugin can be retired as soon as either holds:
+
+- the official client also opens presented card menus and mentions through the right-Sidebar preview (or offers a web fallback branch for `openWorkspacePath`);
+- an equivalent "open-behavior redirection" extension point becomes available.
+
+Tracking issue: [#698](https://github.com/wingsky-1/dsh-plugin-hub/issues/698).

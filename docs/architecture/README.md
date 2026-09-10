@@ -21,7 +21,7 @@
 | `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理：stdio/HTTP 传输、工具注册、三档中间层收敛 | [dsh-mcp-manager.md](dsh-mcp-manager.md) |
 | `@wingsky-1/dsh-notifier` | 审批/完成/错误事件通知：浏览器 Notification + 系统 toast + Bark | [dsh-notifier.md](dsh-notifier.md) |
 | `@wingsky-1/dsh-provider-usage` | 多 provider 用量统计：v2 适配器契约 + 宿主端渲染 + 历史落盘 | [dsh-provider-usage.md](dsh-provider-usage.md) |
-| `@wingsky-1/dsh-web-file-preview` | 点击对话文件链接在 web 端预览：图片/文本/Markdown/代码/Diff/HTML | [dsh-web-file-preview.md](dsh-web-file-preview.md) |
+| `@wingsky-1/dsh-web-file-preview` | 把对话内「用默认应用打开」改写成官方右侧栏预览 | [dsh-web-file-preview.md](dsh-web-file-preview.md) |
 | `@wingsky-1/dsh-verify-isolated` | 插件开发隔离浏览器验证 skill（临时 DSH_HOME + 独立 profile） | [dsh-verify-isolated.md](dsh-verify-isolated.md) |
 | `@wingsky-1/dsh-plugins-all` | 全家桶聚合包（一键装齐 + 聚合 cordis patch） | [dsh-plugins-all.md](dsh-plugins-all.md) |
 
@@ -95,7 +95,6 @@ flowchart LR
 | [dsh-mcp-manager.md](dsh-mcp-manager.md) | 双轨架构图 | `diagrams/mcp-manager-architecture.html` |
 | [dsh-notifier.md](dsh-notifier.md) | 通知管线图 | `diagrams/notifier-architecture.html` |
 | [dsh-provider-usage.md](dsh-provider-usage.md) | 宿主端渲染架构图 | `diagrams/provider-usage-architecture.html` |
-| [dsh-web-file-preview.md](dsh-web-file-preview.md) | 拦截与预览链路图 | `diagrams/web-file-preview-architecture.html` |
 
 > 调整方法：用浏览器打开源 HTML → 修改 SVG 内容 → 重新导出 SVG
 > （`python3 scripts/lib/export-diagram-svg.py <源.html>`）替换文档中的引用。
