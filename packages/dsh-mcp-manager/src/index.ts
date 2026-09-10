@@ -73,7 +73,8 @@ export {
 export type { UiPlacementConfig, ClientUiConfig } from "./types/interface.ts";
 
 // 管理器 / 连接域（orchestrator+runtime：#664 阶段 6 集中搬移完成）
-export { McpManager, ConnectionSupervisor, McpMiddleware, expandEnv, HttpTransport, parseSsePayload, StdioTransport, createTransport, MCPClient } from "./connection/interface.ts";
+export { McpManager } from "./connection/orchestrator/interface.ts";
+export { ConnectionSupervisor, McpMiddleware, expandEnv, HttpTransport, parseSsePayload, StdioTransport, createTransport, MCPClient } from "./connection/interface.ts";
 export {
   DEFAULT_TOOL_CALL_TIMEOUT_MS,
   DEFAULT_RESULT_TRUNCATE_BYTES,

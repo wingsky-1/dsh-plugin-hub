@@ -15,7 +15,7 @@
  */
 
 import type { Context } from "@deepseek-ai/cordis";
-import { McpManager } from "../connection/interface.ts";
+import { McpManager } from "../connection/orchestrator/interface.ts";
 import { McpStore } from "../config/store/interface.ts";
 import { registerMiddlewareTools, registerDirectMcpGuard } from "../inject/interface.ts";
 import { loadDisabledTools } from "../config/store/interface.ts";
