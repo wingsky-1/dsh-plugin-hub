@@ -35,7 +35,7 @@ export { isWebhookHeaderName, normalizeBarkBaseUrl, normalizeBarkLevels, normali
 export { sanitizePatchSettings, sanitizeSettings, validateSettings } from "./validators.ts";
 export type { SettingInvalid } from "./validators.ts";
 export { CHANNEL_SECRET_FIELDS, SECRET_MASK, redactConfigView, unmaskChannels } from "./redact.ts";
-export { configFile, historyFile, statusFile, toastScriptPath } from "./paths.ts";
+export { configFile, historyFile, seqFile, statusFile, toastScriptPath } from "./paths.ts";
 export { QUIET_ALLOW_KINDS, isInQuietHours, parseHHMM } from "./quiet-hours.ts";
 export type { QuietHoursConfig } from "./quiet-hours.ts";
 export { SETTINGS_NS, installNotifierSettings, warnLog } from "./settings.ts";

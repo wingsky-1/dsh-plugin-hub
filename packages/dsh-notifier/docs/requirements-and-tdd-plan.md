@@ -288,7 +288,7 @@
 | S3-4 | L8-4 registerChannel 悬空→**D11 已裁定配置层注册面** | service.ts:467-470 | 文档化（行为保持） |
 | S3-5 | L8-5 expectedRevision 非整数静默忽略 | server.ts:387-388 | PR2（显式拒 400 或文档化） |
 | S3-6 | L8-6 history DELETE / test 无错误映射 | server.ts:716-719 | PR2 |
-| S3-7 | P1-2 频道状态行无轮询（README:286「实时可见」口径弱于实现） | index.tsx:865-869/:900/:1131 | PR2 补轮询或改文档口径 |
+| S3-7 | P1-2 频道状态行无轮询（README:286「实时可见」口径弱于实现） | index.tsx:865-869/:900/:1131 | PR2（D20 已定改 README 口径，T2-6 落地） |
 | S3-8 | P1-3 跨窗口无 storage/broadcast 同步（409 被动恢复） | index.tsx:985/:1025-1028 | PR2/PR3（中低） |
 | S3-9 | P1-4 + C3-1（高）补拉 600 帧窗口有限；**服务端重启 seq 归零→已打开页面永久静默** | server.ts:99-121 / index.tsx:674-677 | **PR2 必做**：seq 回退检测或服务端 baseSeq + TDD「重启后重连不丢帧」 |
 | S3-10 | P2-1 历史徽标缺 kind-pending/merged | index.tsx:2277-2279 | PR2/PR3 |
@@ -296,9 +296,9 @@
 | S3-12 | P2-4 顶层 5 数值字段无钳制；maxConnections 清空→0→400 | index.tsx:2082-2120 + config.ts:558 | PR2（whTimeout 同款 clamp） |
 | S3-13 | P2-5 playToneForce 注释虚构 + playChime 死函数 | index.tsx:434-435/:486-488 | PR3 |
 | S3-14 | C3-2 放弃更改不清 409 横幅 | index.tsx:1117-1124 vs :2361-2374 | PR3 |
-| S3-15 | C3-3 routeStaleTitle「保存后清理」文案无实现（stale 永久残留） | locales.ts:184/:380 + index.tsx:1963-1971 | PR3（文档或实现二选一） |
-| S3-16 | C3-4 fetchStatus 失败清空已加载状态行 | index.tsx:732-737/:865-869 | PR2/PR3 |
-| S3-17 | C3-5 showBanner kind 未转义 CSS 选择器（异常 kind 致帧静默丢弃） | index.tsx:524 | PR2/PR3 |
+| S3-15 | C3-3 routeStaleTitle「保存后清理」文案无实现（stale 永久残留） | locales.ts:184/:380 + index.tsx:1963-1971 | PR3（D20 已定：改文案口径「stale 已跳过」，C3-3 归位改口径） |
+| S3-16 | C3-4 fetchStatus 失败清空已加载状态行 | index.tsx:732-737/:865-869 | PR2（T2-6 顺手落地：拉取失败保留旧态） |
+| S3-17 | C3-5 showBanner kind 未转义 CSS 选择器（异常 kind 致帧静默丢弃） | index.tsx:524 | PR2（T2-6 顺手落地：遍历比对 dataset，不构造选择器） |
 | S3-18 | C3-6 writable=false 保存按钮未禁用 | index.tsx:2385 | PR2/PR3 |
 | S3-19 | C3-7 saveFailConflict msg 空串 + 过时指引 | index.tsx:962 / locales.ts:57/:267 | PR3 |
 | S3-20 | T3-1 固定 sleep 16 处（含 migration 4×30ms 负向观察窗、e2e-done 30ms、waitMergeWindow 3.2s） | 全清单见 §7.1 | 基建（PR1/PR2 替换轮询/注入短窗） |
@@ -351,7 +351,7 @@
 | **PR0 测试基建 + 红测先行**（D17） | flake 修复（16 处固定 sleep → 轮询/短窗注入，含 migration 4×30ms 负向观察窗、waitMergeWindow 3.2s→注入短窗，S3-20/S3-28）；红测基线 8 条在现状代码建立（S3-21/22/27 + B-2 快照化基线 + event-handlers 判定直测 + sse-bus 600 帧 + 类型面接线前置 + 静态契约同步 S3-25/S3-26）；fetch mock 白名单外拒绝加固（S3-23） | S3-20/21/22/23/25/26/27/28 | 纯测试基建 + 轻微行为无关注入改造（spawn 依赖注入，理由在 PR 描述）；全门禁全绿；spawn 行为可注入直测（§7.8 实施记录） |
 | **PR1 机械搬家+门面+变异更新** | 16 平铺→目录树；interface.ts 落地；导出面快照；stryker/mutation 路径更新 + testFiles 补 7 文件 + message 段重定（S3-31/S3-32）；L1 补测 N-4/N-5/N-6（stores/settings-bridge/aggregate 直测） | S3-29(部分)/31/32 | 零行为变更；导出面快照 diff = 基线；变异配置随行（D16）；build/test/contract/typecheck/pack:check 全绿 |
 | **PR2 行为重构** | adjudicate/deliver 拆分 + current() 快照 + 播放决议快照化（B-2）；重试/门上移（B-3）；脱敏统一时点 + sanitizeContent（B-1/B-4）；ConfigPort/RouteDeps（S3-2/5/6）；SPI mergeTitleIntoBody（S3-1）；客户端 P1-2/P2-4/C3-1（S3-7/9/12）；变异分段（S3-30）；L1/L2 新增 N-7~N-16、L3 N-17~N-23 | S3-1/2/5/6/7/9/12/16/17/18/30 | 每步对齐规则矩阵；行为变更用例红测先行；全门禁全绿 |
-| **PR3 注释清理+门禁+类型面** | 失真注释清单（§9/S3-13）；locales 13 死键（S3-11）；C3-2/C3-3/C3-7（S3-14/15/19，D21）；类型面接线最终化（S3-24）；import 门禁+环路检测脚本（N-1）；消费方类型编译用例；stale 文案口径修正（D20） | S3-11/13/14/15/19/24 | lint 落地；wiring 接线后类型编译全绿 |
+| **PR3 注释清理+门禁+类型面** | 失真注释清单（§9/S3-13）；locales 13 死键（S3-11）；C3-2/C3-7（S3-14/19，D21）+ C3-3 改口径（D20）；类型面接线最终化（S3-24）；import 门禁+环路检测脚本（N-1）；消费方类型编译用例；stale 文案口径修正（D20） | S3-11/13/14/15/19/24 | lint 落地；wiring 接线后类型编译全绿 |
 
 ### 7.6 红测先行基线（PR0 主体，PR2 动工前必须补的测试基线）
 
@@ -403,7 +403,7 @@
 - **D18**：L8-3 NotifyRequest.data 保留声明、注明「MVP 未启用」（ABI 零破坏）。
 - **D19**：L8-5 expectedRevision 非整数显式拒绝（400），消除静默忽略（客户端现状不传非整数，实际零影响，登记行为变更）。
 - **D20**：客户端口径诚实化——S3-7 频道状态行改 README 口径（「加载/测试后刷新」）；S3-15 stale 路由文案改「stale 已跳过」；均不做功能增强。
-- **D21**：客户端低优先级修复取舍——PR3 只做 C3-2（409 横幅残留）与 C3-7（错误文案）；C3-3/4/5/6 登记 backlog 延迟。
+- **D21**：客户端低优先级修复取舍——PR3 只做 C3-2（409 横幅残留）与 C3-7（错误文案）；C3-3/4/5/6 登记 backlog 延迟。（**PR2 T2-6 复核**：C3-4（S3-16 fetchStatus 失败清空状态行）与 C3-5（S3-17 showBanner kind 未转义选择器）成本极低（≤5 行），随 T2-6 顺手落地——不推翻 D21 的 backlog 决定，属「有余量顺手做」；C3-3 由 D20 裁定改口径；C3-6（S3-18 writable=false 保存按钮未禁用）保持 backlog。）
 - **D22（PR2 动工前，R-6 mini 决策，用户拍板）**：S3-9 seq 归零修复选**选项 A 服务端持久化**——seq 计数器持久化（复用 stores/status.ts 写队列+tmp+rename 原子写范式，500ms 防抖 + dispose 同步落盘）；客户端零改动、D9 帧契约/客户端 ABI 零破坏、旧客户端免升级同步受益。选项 B（客户端回退检测）结构性否决：重启后 k>lastSeq 时数值比较检测不到（情形 2）+ 多标签页丢帧不一致。备选 A'（epoch 广播）不采纳（需客户端+服务端同步升级）。TDD 5 用例 + N-22 锁定（见评审记录）。
 - **D23（PR2 动工前，T2-1 播放决议消费链路，用户拍板）**：采纳**DeliverDeps 增 play(target, payload) 注入**（index.ts 装配：browser→sse.broadcast(buildBrowserFrame(payload,spec))、system→system.notify(spec.pop,spec.sound,…)）——spec 值传递、共享实例零状态、并发安全、ABI/导出面不动；内置频道工厂签名收敛为 createBrowserChannel({sse})/createSystemChannel({system})（去 current，消除 sdk→channels 值边）。
 - **D24（PR2 动工前，T2-1 send 动态 kind 统一，用户拍板）**：send() 动态 kind 路径与 sendKind 统一过裁决（enabled→免打扰→路由），登记行为变更 **B-9**；现状绕过 enabled/免打扰的行为（sdk/service.ts:165-197）先红测锁定再改。
@@ -417,7 +417,7 @@
 | R-3 | PR2 行为重构回归（8 项行为变更叠加） | 行为漂移难定位 | 红测先行基线（PR0）+ 每步对齐规则矩阵（B-G/C-G/D6/D7）；变更分 commit |
 | R-4 | 类型面零校验期间导出面漂移无编译期捕获 | 消费方静默断裂 | PR0 接线前置 + PR3 去 @ts-nocheck 最终化；PR1 导出面快照 diff 兜底 |
 | R-5 | 测试套件不自足（worktree 无 lib/，须先 pnpm build） | CI/本地跑测失败误判 | 每 PR 门禁首步 build；PR0 起在 worktree 常态构建 |
-| R-6 | C3-1 seq 归零修复选型（服务端 baseSeq vs 客户端回退检测） | 选型不当引入新问题 | **D22 已拍板选项 A（服务端持久化）**；TDD 5 用例 + N-22 锁定；600 帧窗口 shift 静默丢失不在 R-6 覆盖（PR2 内点名/登记 backlog，防误判 S3-9 全修复） |
+| R-6 | C3-1 seq 归零修复选型（服务端 baseSeq vs 客户端回退检测） | 选型不当引入新问题 | **D22 已拍板选项 A（服务端持久化）**；TDD 5 用例 + N-22 锁定（PR2 T2-6 落地全绿）；崩溃窗口锁定：kill -9 最多丢最近 **≤500ms 防抖窗口**内广播的帧（dispose 同步落盘，正常停止零丢失）；**600 帧窗口 shift 静默丢失**（不重启、离线超 600 帧才发生）**不在 R-6 覆盖**——PR2 内点名登记 backlog，防误判 S3-9 全修复 |
 | R-7 | PR0 的 spawn 依赖注入改造属「为重构而做」的 src 改动 | 违背「PR0 纯测试」表述 | PR0 PR 描述明示理由 + 行为不变断言（现状行为逐项锁定） |
 | R-8 | interface.ts 门面纪律腐化（域内互引/绕过门面） | 依赖图失真、重构目标落空 | PR3 落地 import 门禁脚本 + 环路检测；文档纪律 §3 |
 | R-9 | fetch mock 白名单外 fail-open（T3-5） | 测试假网络面 | PR0/PR2 白名单外拒绝加固（S3-23） |

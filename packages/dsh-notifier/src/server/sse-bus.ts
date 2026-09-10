@@ -43,6 +43,11 @@ export interface SseHub {
  * @param options.stalledTimeoutMs stalled 回收窗口（默认 90s；测试注入短值）。
  * @param options.maxAgeMs maxAge 轮换上限（默认 120min；0 = 关闭轮换）。
  * @param options.idleTimeoutMs maxAge 轮换空闲门槛（默认 15min）。
+ * @param options.loadSeq seq 续计数注入面（R-6/D22 选项 A；缺省 = 内存模式，
+ *   重启归零——旧行为；装配层传入持久化读取）。
+ * @param options.saveSeq seq 落盘注入面（R-6/D22 选项 A；broadcast 后防抖调用，
+ *   dispose 同步落盘；缺省 = 不持久化）。
+ * @param options.seqFlushMs seq 落盘防抖窗口（默认 500ms；测试注入短窗防固定 sleep）。
  */
 export function createSseHub(options: {
   getMaxConnections: () => number;
@@ -50,6 +55,9 @@ export function createSseHub(options: {
   stalledTimeoutMs?: number;
   maxAgeMs?: number;
   idleTimeoutMs?: number;
+  loadSeq?: () => number;
+  saveSeq?: (seq: number) => void;
+  seqFlushMs?: number;
 }): SseHub {
   const { getMaxConnections } = options;
   // 共享 hub：连接表 + 心跳 + 上限淘汰 + stalled/maxAge 主动回收（单一实现）。
@@ -64,13 +72,33 @@ export function createSseHub(options: {
   /** SSE 已派发帧的滚动缓冲（断线回补用；上限 RECENT_LIMIT，独立于 /history 的
    *  200 条截断，避免补拉时尾部事件被截掉）。 */
   const RECENT_LIMIT = 600;
-  let notifySeq = 0;
+  // R-6/D22 选项 A：启动时从注入面续计数（seq 单调性不变量：≥0 整数，非法回退 0）。
+  const loadedSeq = options.loadSeq === undefined ? 0 : options.loadSeq();
+  let notifySeq = Number.isFinite(loadedSeq) && Number.isInteger(loadedSeq) && loadedSeq >= 0 ? loadedSeq : 0;
   const recentFrames: Array<Record<string, unknown> & { seq: number }> = [];
+
+  /** seq 落盘防抖窗口（默认 500ms）：窗口内多次广播合并为一次写；崩溃（kill -9）
+   *  最多丢失最近一个防抖窗口内广播的帧。 */
+  const SEQ_FLUSH_MS = options.seqFlushMs ?? 500;
+  /** 是否有尚未落盘的 seq 变更（dispose 时据此同步补写，正常停止零丢失）。 */
+  let seqDirty = false;
+  let seqTimer: NodeJS.Timeout | null = null;
+
+  function scheduleSeqFlush(): void {
+    if (options.saveSeq === undefined) return; // 内存模式：不落盘
+    seqDirty = true;
+    if (seqTimer !== null) return; // 已有待写定时器
+    seqTimer = setTimeout(() => {
+      seqTimer = null;
+      seqDirty = false;
+      options.saveSeq?.(notifySeq);
+    }, SEQ_FLUSH_MS);
+    seqTimer.unref?.();
+  }
 
   return {
     register: hub.register,
     size: hub.size,
-    dispose: hub.dispose,
     evictStats: hub.evictStats,
     connHealth: hub.connHealth,
     /** 业务广播：附加 seq → 入滚动缓冲 → 经共享 hub 写全部连接（判死收口在 hub）。 */
@@ -78,11 +106,25 @@ export function createSseHub(options: {
       const frame: Record<string, unknown> & { seq: number } = Object.assign({}, payload, { seq: ++notifySeq });
       recentFrames.push(frame);
       if (recentFrames.length > RECENT_LIMIT) recentFrames.shift();
+      scheduleSeqFlush();
       hub.broadcast(sseData(frame));
     },
     /** 断线补拉：滚动缓冲中 seq 更大的帧（?since 语义不变）。 */
     framesSince(since: number) {
       return recentFrames.filter((frame) => frame.seq > since);
+    },
+    /** 停止心跳定时器 + 同步补写防抖窗口内未落盘的 seq（正常停止零丢失；
+     *  崩溃窗口即 ≤防抖窗口，需求 §7.7 R-6 登记）。 */
+    dispose: () => {
+      hub.dispose();
+      if (seqTimer !== null) {
+        clearTimeout(seqTimer);
+        seqTimer = null;
+      }
+      if (seqDirty && options.saveSeq !== undefined) {
+        options.saveSeq(notifySeq);
+        seqDirty = false;
+      }
     },
   };
 }

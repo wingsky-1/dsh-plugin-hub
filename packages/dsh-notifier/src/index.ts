@@ -16,6 +16,8 @@ import type { Context } from "@deepseek-ai/cordis";
 import type {} from "@deepseek-ai/dsh-session/types";
 import type {} from "@deepseek-ai/dsh-session-title";
 import type {} from "@deepseek-ai/dsh-user-approval";
+import { readFileSync, renameSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { errorMessage } from "../../../shared/host-utils.js";
 import {
   CONFIG_KEYS,
@@ -30,6 +32,7 @@ import {
   normalizeConfig,
   resolveSoundSetting,
   sanitizeSettings,
+  seqFile,
   statusFile,
   toastScriptPath,
 } from "./config/interface.ts";
@@ -40,9 +43,10 @@ import type { DoneBatcher, SubagentOwnership } from "./events/interface.ts";
 import { sanitizeErrorText } from "./text/interface.ts";
 import type { NotifyDetail } from "./text/interface.ts";
 import { ROUTES, buildRoutes, createSseHub, createSystemNotifier } from "./server/interface.ts";
-import { createNotifierService } from "./sdk/interface.ts";
+import { BUILTIN_CHANNELS, createNotifierService } from "./sdk/interface.ts";
 import type { NotifierServiceInternal, NotifySentEvent } from "./sdk/interface.ts";
-import { createBarkChannel, createBarkGate, createOutboundChannelResolver, createWebhookChannel } from "./channels/interface.ts";
+import type { BrowserDispatchSpec, DeliverPayload, ResolvedTarget, SystemDispatchSpec } from "./pipeline/interface.ts";
+import { buildBrowserFrame, createBarkChannel, createBarkGate, createBrowserChannel, createOutboundChannelResolver, createSystemChannel, createWebhookChannel } from "./channels/interface.ts";
 
 /** 稳定的 cordis 插件名。 */
 export const name = "notifier";
@@ -103,6 +107,8 @@ export {
   WEBHOOK_MIN_TIMEOUT_SEC,
   WEBHOOK_MAX_TIMEOUT_SEC,
 } from "./channels/interface.ts";
+// PR2（D23）：浏览器通知帧纯构造（播放层经 DeliverDeps.play 消费；有意新增导出）
+export { buildBrowserFrame } from "./channels/interface.ts";
 export type { MigrationOutcome } from "./config/interface.ts";
 export {
   buildSystemCommand,
@@ -149,10 +155,15 @@ export { isLoopbackRequest } from "../../../shared/loopback.js";
 export { writeJson, readBody, errorMessage } from "../../../shared/host-utils.js";
 
 function resolveStorePaths(config: NotifierApplyConfig) {
+  const statusPath = typeof config.statusFile === "string" ? config.statusFile : statusFile();
+  // R-6/D22 选项 A：seq 计数器随 status 文件同目录（statusFile 覆盖时测试经
+  // mkdtemp 隔离；未覆盖时 dirname(statusPath)=DSH_HOME，本公式即 seqFile()）。
+  const seqPath = join(dirname(statusPath), basename(seqFile()));
   return {
     toastScript: typeof config.toastScript === "string" ? config.toastScript : toastScriptPath(),
     historyPath: typeof config.historyFile === "string" ? config.historyFile : historyFile(),
-    statusPath: typeof config.statusFile === "string" ? config.statusFile : statusFile(),
+    statusPath,
+    seqPath,
   };
 }
 
@@ -185,9 +196,39 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
   const settingsBridge = createSettingsBridge(ctx, config);
   const currentConfig = settingsBridge.getCurrent;
 
-  const { toastScript, historyPath, statusPath } = resolveStorePaths(config);
+  const { toastScript, historyPath, statusPath, seqPath } = resolveStorePaths(config);
 
-  const sse = createSseHub({ getMaxConnections: () => currentConfig().maxConnections });
+  // R-6/D22 选项 A：seq 计数器持久化注入（服务端重启续计数，客户端零改动）。
+  // 缺文件 = 首启静默回退 0；损坏 = warn + 回退 0（宁可归零不可卡死续计数面）。
+  // 写面为同步 tmp+rename 原子写——createSseHub 的 dispose 同步落盘依赖此同步性
+  // （正常停止零丢失；kill -9 崩溃窗口 ≤ 500ms 防抖窗口，R-6 已登记）。
+  function loadSeq(): number {
+    try {
+      const parsed = JSON.parse(readFileSync(seqPath, "utf8")) as unknown;
+      if (typeof parsed === "number" && Number.isFinite(parsed) && parsed >= 0 && Number.isInteger(parsed)) return parsed;
+      ctx.logger.warn(`dsh-notifier: seq 计数文件损坏，回退 0：${seqPath}`);
+      return 0;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException | undefined)?.code;
+      if (code !== "ENOENT") ctx.logger.warn(`dsh-notifier: seq 计数文件读取失败，回退 0：${errorMessage(error)}`);
+      return 0;
+    }
+  }
+  function saveSeq(seq: number): void {
+    try {
+      const tmp = `${seqPath}.${process.pid}.${Date.now().toString(36)}.tmp`;
+      writeFileSync(tmp, String(seq), "utf8");
+      renameSync(tmp, seqPath);
+    } catch (error) {
+      ctx.logger.warn(`dsh-notifier: seq 计数写入失败: ${errorMessage(error)}`);
+    }
+  }
+
+  const sse = createSseHub({
+    getMaxConnections: () => currentConfig().maxConnections,
+    loadSeq,
+    saveSeq,
+  });
   const system = createSystemNotifier({
     toastScript,
     warn: (message) => ctx.logger.warn(message),
@@ -205,19 +246,38 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
   const outboundChannels = createOutboundChannelResolver(() => currentConfig().channels);
   const emitSent = createSentEmitter(ctx);
 
+  // PR2（D23）：内置频道实例经装配层创建（实例只承载 id+capabilities 入投递池），
+  // 播放决议随裁决快照解析并经 DeliverDeps.play 值传递——browser→SSE 帧、
+  // system→system.notify（spec.pop/spec.sound；notify resolve false → throw →
+  // 终态 failed，对照落位前的 dispatchSystem 语义，B4）。
+  const browserChannel = createBrowserChannel({ sse });
+  const systemChannel = createSystemChannel({ system });
+
   const notifierService: NotifierServiceInternal = createNotifierService({
     current: currentConfig,
     enabled: () => config.enabled !== false,
-    sse,
-    system,
     history: historyStore,
     logger: ctx.logger,
     outboundChannels,
+    builtinChannels: [
+      { id: BUILTIN_CHANNELS.browser, channel: browserChannel },
+      { id: BUILTIN_CHANNELS.system, channel: systemChannel },
+    ],
     recordStatus: (channelId, status, error) => statusStore.record(channelId, status, error),
     emitSent,
     setConfirm: (kind, confirmed) => {
       settingsBridge.confirmKindToConfig(kind, confirmed).catch((err) => {
         ctx.logger.warn(`dsh-notifier: kind 确认写入失败 — ${errorMessage(err)}`);
+      });
+    },
+    play: (target: ResolvedTarget, payload: DeliverPayload) => {
+      if (target.id === BUILTIN_CHANNELS.browser) {
+        sse.broadcast(buildBrowserFrame(payload, target.dispatch as BrowserDispatchSpec));
+        return undefined;
+      }
+      const spec = target.dispatch as SystemDispatchSpec;
+      return system.notify(spec.pop, spec.sound, payload.title, payload.body).then((ok) => {
+        if (!ok) throw new Error("system notification failed (self-play or command error)");
       });
     },
   });

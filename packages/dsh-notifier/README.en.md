@@ -102,8 +102,9 @@ renamed `.corrupted.bak` without being written). The self-maintained read/write 
 is retired.
 
 > The storage/read paths of the notification history jsonl, the per-channel delivery
-> status json (`dsh-notifier-status.json`), and the legacy migration source json all
-> respect `DSH_HOME` (#510): they resolve to `~/.dsh` when the variable is unset and
+> status json (`dsh-notifier-status.json`), the SSE seq counter file
+> (`notifier-seq.json`), and the legacy migration source json all respect `DSH_HOME`
+> (#510): they resolve to `~/.dsh` when the variable is unset and
 > follow the isolated home when set — isolated environments (multi-instance / test
 > sandboxes / dsh-verify-isolated) never touch the real `~/.dsh`.
 

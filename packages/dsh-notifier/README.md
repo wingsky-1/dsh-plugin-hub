@@ -283,11 +283,13 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
 （内置频道不受限）；成功判定双查 HTTP 2xx + 响应体 `code===200`。
 投递终态（成功/失败 + 脱敏错误摘要）落盘 DSH_HOME 下的 `dsh-notifier-status.json`
 （默认 `~/.dsh`）并经
-`wingsky-notify/sent` 事件广播（cordis Events），设置页频道卡状态行实时可见。
+`wingsky-notify/sent` 事件广播（cordis Events），设置页频道卡状态行在卡片加载
+与发送测试后刷新（无轮询，D20 口径）。
 
-> 通知历史 jsonl、频道投递状态 json 与旧版迁移源 json 的落盘/读取路径均感知
-> `DSH_HOME`（#510）：未设置时为 `~/.dsh`，设置后随隔离 home 走——隔离环境
-> （多实例 / 测试沙箱 / dsh-verify-isolated）读写面不触碰真实 `~/.dsh`。
+> 通知历史 jsonl、频道投递状态 json、SSE seq 计数文件（`notifier-seq.json`）与
+> 旧版迁移源 json 的落盘/读取路径均感知 `DSH_HOME`（#510）：未设置时为 `~/.dsh`，
+> 设置后随隔离 home 走——隔离环境（多实例 / 测试沙箱 / dsh-verify-isolated）
+> 读写面不触碰真实 `~/.dsh`。
 
 `kindRoutes`：kind → channelId[] 稀疏路由（如 `{ "error": ["browser", "system", "bark:phone"] }`）；
 未声明条目的 kind 广播全部启用频道；设置页事件区可双向编辑（与频道卡共享同一份配置）。

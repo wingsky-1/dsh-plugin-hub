@@ -27,6 +27,16 @@ function ok(cond, name) {
   }
 }
 
+/** 轮询直到谓词成立（替代固定 sleep：防抖落盘是定时器驱动的异步终态）。 */
+async function pollUntil(predicate, timeoutMs = 1000) {
+  const start = Date.now();
+  for (;;) {
+    if (predicate()) return true;
+    if (Date.now() - start > timeoutMs) return false;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 // ---- (a) seq 递增 + framesSince 补拉 ----
 {
   const hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000 });
@@ -74,6 +84,91 @@ function ok(cond, name) {
     ok(typeof hub.dispose === "function", "dispose 转发");
   } finally {
     hub.dispose();
+  }
+}
+
+// ---- (d) R-6/D22 选项 A ①：构造时 loadSeq 续计数（缺省内存模式行为不变） ----
+{
+  const hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000, loadSeq: () => 5, saveSeq: () => {}, seqFlushMs: 60_000 });
+  try {
+    hub.broadcast({ type: "notify", kind: "done", title: "t", message: "m", ts: 1 });
+    ok(hub.framesSince(0)[0].seq === 6, "loadSeq=5 续计数：首帧 seq=6");
+  } finally {
+    hub.dispose();
+  }
+  const hub0 = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000 });
+  try {
+    hub0.broadcast({ type: "notify", kind: "done", title: "t", message: "m", ts: 1 });
+    ok(hub0.framesSince(0)[0].seq === 1, "缺省 loadSeq=0：首帧 seq=1（内存模式行为不变）");
+  } finally {
+    hub0.dispose();
+  }
+}
+
+// ---- (e) R-6/D22 选项 A ②：broadcast 防抖落盘 + dispose 同步落盘（正常停止零丢失） ----
+{
+  // 防抖合并：注入短窗（20ms），窗口内多次广播不立即写，到点只写最新 seq
+  const saves = [];
+  const hub = createSseHub({
+    getMaxConnections: () => 4, heartbeatMs: 60_000, saveSeq: (s) => saves.push(s), seqFlushMs: 20,
+  });
+  hub.broadcast({ type: "notify", kind: "done", title: "t1", message: "m", ts: 1 });
+  hub.broadcast({ type: "notify", kind: "done", title: "t2", message: "m", ts: 2 });
+  hub.broadcast({ type: "notify", kind: "done", title: "t3", message: "m", ts: 3 });
+  ok(saves.length === 0, "防抖窗口内不立即落盘");
+  await pollUntil(() => saves.length >= 1);
+  ok(saves.length === 1 && saves[0] === 3, "防抖合并：窗口内多次广播只写一次最新 seq（3）");
+  hub.dispose();
+  // 长窗（60s）+ 立即 dispose：防抖窗口内未落盘值同步补写（正常停止零丢失）
+  const saves2 = [];
+  const hub2 = createSseHub({
+    getMaxConnections: () => 4, heartbeatMs: 60_000, saveSeq: (s) => saves2.push(s), seqFlushMs: 60_000,
+  });
+  hub2.broadcast({ type: "notify", kind: "done", title: "t", message: "m", ts: 1 });
+  hub2.dispose();
+  ok(saves2.length === 1 && saves2[0] === 1, "dispose 同步落盘：防抖窗口内未落盘的 seq 补写（零丢失）");
+  // 无 saveSeq（内存模式）：broadcast + dispose 不落盘不炸
+  const hub3 = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000 });
+  hub3.broadcast({ type: "notify", kind: "done", title: "t", message: "m", ts: 1 });
+  hub3.dispose();
+  ok(true, "内存模式 broadcast+dispose 无 saveSeq 路径正常");
+}
+
+// ---- (f) R-6/D22 选项 A ③：重启仿真 hub1→dispose→hub2(loadSeq 续计数) framesSince 返回 seq6 ----
+{
+  const saved = [];
+  const hub1 = createSseHub({
+    getMaxConnections: () => 4, heartbeatMs: 60_000, loadSeq: () => 0, saveSeq: (s) => saved.push(s), seqFlushMs: 60_000,
+  });
+  for (let i = 0; i < 5; i += 1) {
+    hub1.broadcast({ type: "notify", kind: "done", title: `t${i}`, message: "m", ts: i });
+  }
+  hub1.dispose();
+  ok(saved.length === 1 && saved[0] === 5, "hub1 dispose 落盘 seq=5");
+  const hub2 = createSseHub({
+    getMaxConnections: () => 4, heartbeatMs: 60_000,
+    loadSeq: () => (saved.length > 0 ? saved[saved.length - 1] : 0),
+    saveSeq: () => {}, seqFlushMs: 60_000,
+  });
+  try {
+    hub2.broadcast({ type: "notify", kind: "done", title: "t2", message: "m", ts: 99 });
+    const frames = hub2.framesSince(5);
+    ok(frames.length === 1 && frames[0].seq === 6, "重启后续计数：hub2 首帧 seq=6（客户端 lastSeq=5 重连不丢帧）");
+  } finally {
+    hub2.dispose();
+  }
+}
+
+// ---- (g) R-6/D22 选项 A ④：loadSeq 非法值（损坏/越界/非整数）→ 回退 0 ----
+{
+  for (const bad of [NaN, -5, 1.9, Infinity]) {
+    const hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000, loadSeq: () => bad, saveSeq: () => {}, seqFlushMs: 60_000 });
+    try {
+      hub.broadcast({ type: "notify", kind: "done", title: "t", message: "m", ts: 1 });
+      ok(hub.framesSince(0)[0].seq === 1, `loadSeq 返回 ${bad} → 回退 0（首帧 seq=1）`);
+    } finally {
+      hub.dispose();
+    }
   }
 }
 
