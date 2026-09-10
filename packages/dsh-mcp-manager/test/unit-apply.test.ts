@@ -113,13 +113,10 @@ import { join } from "node:path";
 
     await apply(ctx, { enabled: true, storePath: join(dir, "mcp.json") });
 
-    // 触发 emitStatus → SSE 写 summary 帧
-    // 等待事件循环处理
-    await new Promise((r) => setImmediate(r));
-
-    // 验证 route disposer → 清理时 destroy 连接
-    // 通过 dispose 触发（apply 的 cleanup 函数）
-    // 不需要额外断言，只需确认不抛
+    // 哑断言清理（#664 阶段 8）：补真实装配断言——events SSE 路由已注册，
+    // 连接可被 hub 接受（apply 广播面接线成立）；dispose 由 effect 收口不在此造。
+    assert.ok(sseConns.size >= 1, "events SSE 路由已注册（apply 广播面装配）");
+    assert.ok(destroyed.length === 0, "未 dispose 前连接不被销毁");
 
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -135,6 +132,7 @@ import { join } from "node:path";
     let updateCalled = false;
     let updateNs = null;
     let updatePatch = null;
+    let registerCalled = false;
 
     const ctx = {
       logger: { warn: () => {}, info: () => {}, error: () => {} },
@@ -151,10 +149,13 @@ import { join } from "node:path";
                 updatePatch = patch;
                 return Promise.resolve();
               },
-              register: () => ({
-                get: () => ({ ui: { position: "top-right", offset: { x: 8, y: 8, blankY: 40 } } }),
-                watch: () => {},
-              }),
+              register: () => {
+                registerCalled = true;
+                return {
+                  get: () => ({ ui: { position: "top-right", offset: { x: 8, y: 8, blankY: 40 } } }),
+                  watch: () => {},
+                };
+              },
             },
             effect: () => () => {},
           });
@@ -169,8 +170,11 @@ import { join } from "node:path";
     };
 
     await apply(ctx, { enabled: true, storePath: join(dir, "mcp.json") });
-    // 验证未立即调用（uiUpdate 是懒写入，路由调了才触发）
-    // 此处仅验证 apply 正常完成
+    // 哑断言清理（#664 阶段 8）：补真实装配断言——settings 命名空间已注册
+    // （installSettingsNamespace 经 inject(["settings"]) 调 register）；
+    // uiUpdate 是懒写入（路由调了才触发），此处不期望 update 被调。
+    assert.ok(registerCalled, "settings 命名空间注册（inject settings 装配面）");
+    assert.equal(updateCalled, false, "uiUpdate 懒写入：apply 时不触发");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -213,6 +217,7 @@ import { join } from "node:path";
   const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-rd-"));
   try {
     let disposeRoutes = null;
+    let eventsRouteRegistered = false;
     const sseDestroyed = [];
 
     const ctx = {
@@ -221,7 +226,7 @@ import { join } from "node:path";
       webServer: {
         register: (route) => {
           if (route.path === "/api/dsh-mcp/events") {
-            // 返回 disposer
+            eventsRouteRegistered = true;
           }
           return () => {};
         },
@@ -240,7 +245,12 @@ import { join } from "node:path";
     };
 
     await apply(ctx, { enabled: true, storePath: join(dir, "mcp.json") });
-    // 验证 apply 完成
+    // 哑断言清理（#664 阶段 8）：补真实装配断言——events 路由注册 + 卸载
+    // disposer 不抛（apply 路由收口面成立）。
+    assert.ok(eventsRouteRegistered, "events 路由已注册");
+    assert.equal(sseDestroyed.length, 0, "disposer 触发前无销毁记录");
+    disposeRoutes();
+    assert.ok(true, "卸载 disposer 执行不抛");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
