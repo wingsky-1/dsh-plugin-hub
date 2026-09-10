@@ -1,13 +1,16 @@
 /**
  * dsh-provider-usage/trend — 会话用量趋势数据类型。
  *
- * 数据源与记账口径（方案定稿 v1.2，唯一事实源 = ctx.on("session/event") 官方契约）：
- * - 主信号：assistant/chunk 中 chunk.type==="usage" 到达即定稿（一次 LLM 调用）；
- * - 副源：assistant/message（含 interrupted）未定稿时补记、已定稿时仅校正不重记；
- * - fold 键 (session, turn, step, retrySeq)：retry 复用同一 (turn,step)，重试消耗逐次入账；
+ * 数据源与记账口径（0.1.5-rc.1 起，唯一事实源 = ctx.on("session/event") 官方契约）：
+ * - 主信号：**结算事件**到达即定稿一次尝试——assistant/message（顶层 usage，缺失时
+ *   回落内嵌 stream 的 usage）与 assistant/attempt（失败/中止且未提交消息，只在
+ *   stream 里可能带 usage）。0.1.2 的逐 chunk 事件 assistant/chunk 已被官方移除。
+ * - 副源：assistant/message.message.source（kind:"model"）仅在归属缺失时补齐；
+ * - retry = 同 (session, turn, step) 内的结算序数，重试消耗逐次入账；
  * - 归属主源 = 逐会话折叠 request/header（EpochHeader.config 的 provider/model），
- *   assistant/message.source（kind:"model"）为副源；归属缺失显式入「未识别」桶；
- * - 零 usage 语义：调用次数独立计数，token 记 null 而非 0；
+ *   归属缺失显式入「未识别」桶；
+ * - 零 usage 语义：提交了消息的结算即便无 usage 也计调用次数、token 记 null 而非 0；
+ *   未提交消息且无 usage 的 attempt 不计（无调用证据）；
  * - 时间与日界：event.time 非单调（seq 才单调）——按事件本地日 dayKey 落桶，
  *   时钟回拨时旧日事件追加进对应日分片（append-only，查询容忍）；禁缓存时区偏移（DST 安全）。
  *

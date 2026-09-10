@@ -5,6 +5,6 @@
  * apply-guidance）。目录外模块**只能**从这里引用（verify-dir-imports
  * 静态强制）；service-contract 静态扫描路径指向 apply-services.ts（源码级）。
  */
-export { apply, MCP_GUIDANCE } from "./apply.ts";
+export { apply, MCP_GUIDANCE, MCP_SECTION_ORDER } from "./apply.ts";
 export { resolveDebugConfig, resolveMiddlewareMode } from "./apply-config.ts";
 export { makeMiddlewareHotSwitch } from "./apply-runtime.ts";

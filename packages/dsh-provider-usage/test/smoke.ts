@@ -1512,7 +1512,7 @@ console.log("[smoke] #105① /history 渲染缓存断言全部通过 ✓");
   const t = Date.now();
   const session = { id: "sess-trend" };
   emitEvent("session/event", session, { type: "request/header", seq: 1, time: t, data: { header: { config: { provider: "deepseek", model: "deepseek-chat" } }, reason: "initial" } });
-  emitEvent("session/event", session, { type: "assistant/chunk", seq: 2, time: t, data: { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: 100, outputTokens: 50 } } } });
+  emitEvent("session/event", session, { type: "assistant/message", seq: 2, time: t, data: { turn: 1, step: 1, usage: { inputTokens: 100, outputTokens: 50 } } });
 
   // /health 观测面
   const healthRes = [];
@@ -1535,14 +1535,14 @@ console.log("[smoke] #105① /history 渲染缓存断言全部通过 ✓");
   const inst1 = makeFakeCtx();
   await apply(inst1.ctx, { ...ISOLATED_CONFIG });
   const t = Date.now();
-  inst1.emitEvent("session/event", { id: "s-hot" }, { type: "assistant/chunk", seq: 1, time: t, data: { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: 25, outputTokens: 25 } } } });
+  inst1.emitEvent("session/event", { id: "s-hot" }, { type: "assistant/message", seq: 1, time: t, data: { turn: 1, step: 1, usage: { inputTokens: 25, outputTokens: 25 } } });
   await inst1.effects.at(-1)(); // 卸载（async disposer：含 trend dispose await 刷盘）
 
-  inst1.emitEvent("session/event", { id: "s-hot" }, { type: "assistant/chunk", seq: 2, time: t + 10, data: { turn: 1, step: 2, chunk: { type: "usage", usage: { inputTokens: 100, outputTokens: 100 } } } }); // 卸载后事件
+  inst1.emitEvent("session/event", { id: "s-hot" }, { type: "assistant/message", seq: 2, time: t + 10, data: { turn: 1, step: 2, usage: { inputTokens: 100, outputTokens: 100 } } }); // 卸载后事件
 
   const inst2 = makeFakeCtx();
   await apply(inst2.ctx, { ...ISOLATED_CONFIG });
-  inst2.emitEvent("session/event", { id: "s-hot" }, { type: "assistant/chunk", seq: 3, time: t + 20, data: { turn: 1, step: 3, chunk: { type: "usage", usage: { inputTokens: 7, outputTokens: 7 } } } });
+  inst2.emitEvent("session/event", { id: "s-hot" }, { type: "assistant/message", seq: 3, time: t + 20, data: { turn: 1, step: 3, usage: { inputTokens: 7, outputTokens: 7 } } });
   await inst2.effects.at(-1)(); // 卸载即排空
 
   const day = dayKey(t);
@@ -1567,7 +1567,7 @@ console.log("[smoke] #105① /history 渲染缓存断言全部通过 ✓");
   const emitCall = (sessionId, seqBase, provider, model, input, output) => {
     const s = { id: sessionId };
     emitEvent("session/event", s, { type: "request/header", seq: seqBase, time: t, data: { header: { config: { provider, model } }, reason: "initial" } });
-    emitEvent("session/event", s, { type: "assistant/chunk", seq: seqBase + 1, time: t, data: { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: input, outputTokens: output } } } });
+    emitEvent("session/event", s, { type: "assistant/message", seq: seqBase + 1, time: t, data: { turn: 1, step: 1, usage: { inputTokens: input, outputTokens: output } } });
   };
   emitCall("sess-trend-api-a", 1, "deepseek", "deepseek-chat", 100, 50);
   emitCall("sess-trend-api-b", 1, "openai", "gpt-x", 10, 5);
@@ -1794,7 +1794,7 @@ console.log("[smoke] #503 trend 挂接 + /trend 集成断言全部通过 ✓");
   const t = new Date(wy, wm - 1, wd, 12, 0, 0).getTime();
   const sess = { id: "sess-report" };
   emitEvent("session/event", sess, { type: "request/header", seq: 1, time: t, data: { header: { config: { provider: "deepseek", model: "deepseek-chat" } }, reason: "initial" } });
-  emitEvent("session/event", sess, { type: "assistant/chunk", seq: 2, time: t, data: { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: 80, outputTokens: 40 } } } });
+  emitEvent("session/event", sess, { type: "assistant/message", seq: 2, time: t, data: { turn: 1, step: 1, usage: { inputTokens: 80, outputTokens: 40 } } });
   await listeners.get("session/flush")[0](); // 官方排空点先行刷盘
   const trendBefore = await callHandler(trendRoute, fakeReq({ url: ROUTES.trend }));
 
@@ -1860,7 +1860,7 @@ console.log("[smoke] #503 trend 挂接 + /trend 集成断言全部通过 ✓");
       const xt = new Date(xy, xm - 1, xd, 12, 0, 0).getTime();
       const xssSess = { id: "sess-xss" };
       xssCtx.emitEvent("session/event", xssSess, { type: "request/header", seq: 1, time: xt, data: { header: { config: { provider: "deepseek", model: "deepseek-chat" } }, reason: "initial" } });
-      xssCtx.emitEvent("session/event", xssSess, { type: "assistant/chunk", seq: 2, time: xt, data: { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: 80, outputTokens: 40 } } } });
+      xssCtx.emitEvent("session/event", xssSess, { type: "assistant/message", seq: 2, time: xt, data: { turn: 1, step: 1, usage: { inputTokens: 80, outputTokens: 40 } } });
       await xssCtx.listeners.get("session/flush")[0]();
     }
     const xssGenRoute = xssCtx.routes.find((r) => r.path === ROUTES.reportGenerate);
@@ -2072,7 +2072,7 @@ console.log("[smoke] #503 trend 挂接 + /trend 集成断言全部通过 ✓");
   const emitCall = (sessionId, seqBase, provider, model, input, output) => {
     const s = { id: sessionId };
     emitEvent("session/event", s, { type: "request/header", seq: seqBase, time: t, data: { header: { config: { provider, model } }, reason: "initial" } });
-    emitEvent("session/event", s, { type: "assistant/chunk", seq: seqBase + 1, time: t, data: { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: input, outputTokens: output } } } });
+    emitEvent("session/event", s, { type: "assistant/message", seq: seqBase + 1, time: t, data: { turn: 1, step: 1, usage: { inputTokens: input, outputTokens: output } } });
   };
   emitCall("sess-d2-a", 1, "deepseek", "deepseek-chat", 200, 100);   // dsh-plugin-hub 桶
   emitCall("sess-d2-b", 11, "openai", "gpt-x", 20, 10);              // xiaozhuge 桶

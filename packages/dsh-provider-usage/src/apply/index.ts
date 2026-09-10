@@ -109,7 +109,7 @@ export { HotReloadableAdapter, loadAndValidateAdapter, readStamp, stampEqual } f
 // 会话用量趋势：trend 模块公共面（测试/外部消费者从 lib/index.js 导入）
 export { TrendTracker } from "../domain2/aggregate/interface.ts";
 export type { TrendTrackerOptions } from "../domain2/aggregate/interface.ts";
-export { TrendCollector, TREND_FOLD_TTL_MS, TREND_DONE_MAX } from "../domain2/collect/interface.ts";
+export { TrendCollector, TREND_DONE_MAX } from "../domain2/collect/interface.ts";
 export type { TrendCallRecord, TrendCorrectRecord, TrendCounterRecord, TrendEmit } from "../domain2/collect/interface.ts";
 export { TrendAggregator, metricValue, weekStartKey, lastNWeekKeys, lastNMonthKeys, monthRange, weekRange, mergeAggRows, mergeDirRows, mergeHourRows } from "../domain2/aggregate/interface.ts";
 export type { TrendMetric, TrendGranularity, TrendStackPart, TrendStackPoint, TrendWindowSummary } from "../domain2/aggregate/interface.ts";

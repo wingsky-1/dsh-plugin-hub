@@ -35,6 +35,16 @@ import { MCP_GUIDANCE } from "./apply-guidance.ts";
 // 导出面兼容：index.ts 仍从 apply.ts re-export MCP_GUIDANCE（组合根单一来源不变）。
 export { MCP_GUIDANCE };
 
+/**
+ * MCP 能力宣告在系统提示中的排序位置：紧随部署 persona 之后、计划策略之前
+ * （官方 SECTION_ORDERS 里 DEPLOYMENT_PERSONA_PREFIX=0 与 PLAN_POLICY=500 之间）。
+ *
+ * 不写成 getSectionOrder() 派生：0.1.5 把 HARNESS_SOURCE/WEB_SURFACE 从 -900/-800
+ * 移到 10000/10100（官方对提示词整体重排），本段落与相邻段的相对位置不受影响，
+ * 派生只多一层运行时依赖与失败面；改由 smoke 的分节顺序断言锁定区间。
+ */
+export const MCP_SECTION_ORDER = 160;
+
 /** enabled 分支装配产物（disposer 集合，顶层 effect 统一收口）。 */
 interface EnabledRuntimeDisposers {
   disposeRoutes: () => void;
@@ -176,7 +186,7 @@ async function assembleEnabledRuntime(
     // 经 unknown 中转以维持局部最小面写法。
     disposeSection = (ctx.systemPrompt as unknown as { section(opts: Record<string, unknown>): () => void }).section({
       name: "plugin:dsh-mcp-manager",
-      order: 160,
+      order: MCP_SECTION_ORDER,
       text: MCP_GUIDANCE,
     });
   }
