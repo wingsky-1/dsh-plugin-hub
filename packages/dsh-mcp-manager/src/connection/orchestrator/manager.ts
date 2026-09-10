@@ -12,15 +12,15 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { ServerResponse } from "node:http";
-import type { SseHub } from "../../../shared/sse-hub.js";
+import type { SseHub } from "../../../../../shared/sse-hub.js";
 import type { Context, LoggerService } from "@deepseek-ai/cordis";
-import type { ServerConfig, ClientUiConfig } from "./types.ts";
+import type { ServerConfig, ClientUiConfig } from "../../types/interface.ts";
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
-import type { CatalogCache } from "./catalog/interface.ts";
-import { normalizeServer } from "./normalize.ts";
-import { normalizeUiConfig, buildConfigUiPatch } from "./config-schema.ts";
-import { McpStore } from "./store.ts";
-import { ConnectionSupervisor } from "./supervisor.ts";
+import type { CatalogCache } from "../../catalog/interface.ts";
+import { normalizeServer } from "../../config/model/interface.ts";
+import { normalizeUiConfig, buildConfigUiPatch } from "../../config/model/interface.ts";
+import { McpStore } from "../../config/store/interface.ts";
+import { ConnectionSupervisor } from "../runtime/interface.ts";
 import {
   SCOPE_GLOBAL,
   SCOPE_PROJECT,
@@ -28,23 +28,23 @@ import {
   MIDDLEWARE_GLOBAL_ROOT,
   findProjectRoot,
   normalizedProjectRoot,
-} from "./workspace/interface.ts";
-import { catalogCacheFile, summarizeToolDescriptions, makeCatalogViewFor } from "./catalog/interface.ts";
-import type { CatalogViewResolver } from "./catalog/interface.ts";
+} from "../../workspace/interface.ts";
+import { catalogCacheFile, summarizeToolDescriptions, makeCatalogViewFor } from "../../catalog/interface.ts";
+import type { CatalogViewResolver } from "../../catalog/interface.ts";
+import { McpMiddleware } from "../runtime/interface.ts";
+import { msgOf } from "../../pipeline/interface.ts";
 import {
-  McpMiddleware,
-  msgOf,
   userStateFile,
   loadUserState,
   saveUserState,
   catalogCacheFileFor,
   loadDisabledTools,
   saveDisabledTools,
-} from "./middleware.ts";
-import type { MiddlewareMode, ProjectUnit, DisabledToolsMap } from "./middleware.ts";
-import { McpStatsCollector } from "./call-stats.ts";
-import { createRedactor } from "./pipeline/interface.ts";
-import { stripMcpPrefix } from "./connection/interface.ts";
+} from "../../config/store/interface.ts";
+import type { MiddlewareMode, ProjectUnit, DisabledToolsMap } from "../../types/interface.ts";
+import { McpStatsCollector } from "../../stats/interface.ts";
+import { createRedactor } from "../../pipeline/interface.ts";
+import { stripMcpPrefix } from "./interface.ts";
 
 /**
  * 管理器：持有全局存储 + 当前会话项目的项目级存储、每个服务器的监督器

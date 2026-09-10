@@ -13,7 +13,7 @@ import {
   MAX_BYTES_PER_TOOL,
   MAX_TOOLS_PER_SERVER,
   MAX_TOTAL_CATALOG_BYTES,
-} from "../middleware-const.ts";
+} from "../connection/interface.ts";
 import { fullServerName, parseFullServerName, bareServerName, MIDDLEWARE_GLOBAL_ROOT, normalizeToolName } from "../workspace/interface.ts";
 import type {
   CatalogServer,
@@ -25,7 +25,7 @@ import type {
   SearchHit,
   ToolDetail,
   DisabledToolsMap,
-} from "../middleware-types.ts";
+} from "../types/interface.ts";
 
 /** 简单分词（英文小写 + 中文保留）。 */
 function tokenize(text: string): string[] {

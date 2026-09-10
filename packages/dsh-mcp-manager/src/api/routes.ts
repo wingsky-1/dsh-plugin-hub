@@ -14,13 +14,13 @@
  */
 
 // 辅助函数统一来自仓库共享层（loopback 围栏 / writeJson / readJsonBody / sseData）。
-import { writeJson, sseData, guardLoopbackMethod } from "../../../shared/host-utils.js";
-import { createSseHub } from "../../../shared/sse-hub.js";
-import type { SseHub } from "../../../shared/sse-hub.js";
-import type { ServerConfig, ClientUiConfig } from "./types.ts";
+import { writeJson, sseData, guardLoopbackMethod } from "../../../../shared/host-utils.js";
+import { createSseHub } from "../../../../shared/sse-hub.js";
+import type { SseHub } from "../../../../shared/sse-hub.js";
+import type { ServerConfig, ClientUiConfig, RoutesManager } from "../types/interface.ts";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { ServerResponse } from "node:http";
-import type { McpStore } from "./store.ts";
+import type { McpStore } from "../config/store/interface.ts";
 import {
   buildConfigRoute,
   buildServersRoute,
@@ -35,45 +35,7 @@ import {
 } from "./routes-controllers.ts";
 import { queryParam } from "./routes-helpers.ts";
 
-/** routes 使用的 McpManager 最小面（避免 index↔routes 循环 import）。 */
-export interface RoutesManager {
-  setSession(cwd: string | undefined): Promise<void>;
-  refreshFromDisk(): Promise<void>;
-  uiConfig(): ClientUiConfig;
-  updateUiConfig(raw: unknown): Promise<ClientUiConfig>;
-  summary(): Record<string, unknown>;
-  add(server: Record<string, unknown>, scope?: string): Promise<ServerConfig>;
-  update(name: string, patch: Record<string, unknown>, scope?: string): Promise<ServerConfig>;
-  remove(name: string, scope?: string): Promise<void>;
-  connect(name: string, scope?: string): Promise<void>;
-  disconnect(name: string, scope?: string): Promise<void>;
-  reconnect(name: string, scope?: string): Promise<void>;
-  /** 设置/解除单个工具禁用（工具级，独立于服务器级 enabled）。 */
-  setToolDisabled?(root: string, server: string, tool: string, disabled: boolean): Promise<void>;
-  /** 中间层模式热切换（apply 注入；缺省不可用）。 */
-  setMiddlewareMode?(mode: string): Promise<void>;
-  /** 切回前台受控重建当前工作空间连接（apply 注入；缺省不可用）。 */
-  resumeReconnect?(): Promise<void>;
-  projectStoreOrThrow(): Promise<McpStore>;
-  store: McpStore;
-  /** 当前会话项目根（tool-disable 路由一致性校验用）。 */
-  projectRoot?: string;
-  /** 设置命名空间写入 sink（apply 注入；config 写路由落盘用）。 */
-  uiUpdate?: (patch: Record<string, unknown>) => Promise<unknown>;
-  /**
-   * SSE 连接枢纽（共享 shared/sse-hub，#515）：makeEventsRoute 惰性创建，
-   * apply/广播/卸载 disposer 收口到 hub（连接表 + 心跳 + 上限淘汰 +
-   * stalled/maxAge 主动回收）。取代旧 sseConnections Set + per-connection
-   * 心跳（#268），消除与 dsh-notifier 的不对称。
-   */
-  sseHub?: SseHub;
-  supervisors: Map<string, { status: string; tools: string[] }>;
-  catalogCache: Map<string, unknown>;
-  /** 中间层模式（off/project/all；health 计数展示用，缺省 off）。 */
-  middlewareMode?: string;
-  /** 中间层连接池（health 补中间层计数；结构面与 McpMiddleware.units 兼容）。 */
-  middleware?: { units: Map<string, { connections: Map<string, { status: string }> }> } | undefined;
-}
+
 
 // ------------------------------------------------------------ HTTP 路由
 

@@ -6,9 +6,9 @@
  */
 
 import type { Context, LoggerService } from "@deepseek-ai/cordis";
-import type { MCPClient } from "./protocol.ts";
-import type { StdioTransport, HttpTransport } from "./transport.ts";
-import type { ServerConfig } from "./types.ts";
+import type { MCPClient } from "../connection/interface.ts";
+import type { StdioTransport, HttpTransport } from "../connection/interface.ts";
+import type { ServerConfig } from "./server.ts";
 /** 中间层模式：off = 直呼（默认兼容）；project = 项目级走中间层；all = 全部走中间层。 */
 export type MiddlewareMode = "off" | "project" | "all";
 
@@ -135,23 +135,4 @@ export interface ListCatalogResult {
 }
 
 /** 中间层最小面（manager 提供）。 */
-export interface MiddlewareHost {
-  ctx: Pick<Context, "tools">;
-  logger: LoggerService;
-  /** 按 root 读取项目级服务器配置（惰性；root 无标记 → undefined）。 */
-  projectServersFor(root: string): Promise<ServerConfig[] | undefined>;
-  /** 全局服务器配置（走中间层 all 模式时使用）。 */
-  globalServers(): ServerConfig[];
-  /** 路由解析：cwd → 归一化项目根。 */
-  normalizedProjectRoot(cwd: string | undefined): Promise<string | undefined>;
-  /** 持久化 userDisabled。 */
-  saveUserState(units: Map<string, ProjectUnit>): Promise<void>;
-  /** 状态变化通知（SSE 标脏）。 */
-  emitStatus(): void;
-  /** 目录缓存文件路径（last-good 持久化）。 */
-  catalogCachePath(root: string): string;
-  /** 该 server 是否全局级（双源：store.data.servers + runtimeRegistry；codegraph 为 runtime 注册）。 */
-  isGlobalServer(name: string): boolean;
-  /** 该 server 是否 runtime 注入（registerServer 内存态；目录不写盘判定，#413）。 */
-  isRuntimeServer(name: string): boolean;
-}
+

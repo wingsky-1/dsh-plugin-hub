@@ -14,8 +14,8 @@
  *   兼容导出，历史上为显式上限占位）。
  */
 
-import { writeJson, readJsonBody, guardLoopbackMethod } from "../../../shared/host-utils.js";
-import { parseClaudeJson } from "./import.ts";
+import { writeJson, readJsonBody, guardLoopbackMethod } from "../../../../shared/host-utils.js";
+import { parseClaudeJson } from "../config/model/interface.ts";
 import {
   SCOPE_PROJECT,
   normalizeScope,
@@ -23,10 +23,10 @@ import {
   normalizeToolName,
   normalizeMiddlewareMode,
   MIDDLEWARE_GLOBAL_ROOT,
-} from "./workspace/interface.ts";
+} from "../workspace/interface.ts";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { RoutesManager } from "./routes.ts";
+import type { RoutesManager } from "../types/interface.ts";
 import { queryParam } from "./routes-helpers.ts";
 
 /** 控制器共享 helpers（原 makeRoutes 闭包三件套，提升为显式参数）。 */

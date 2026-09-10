@@ -10,25 +10,20 @@
 
 import type { Context } from "@deepseek-ai/cordis";
 import type { ToolDefinition, PreToolDecision } from "@deepseek-ai/dsh-tools";
-import type { McpMiddleware } from "./middleware.ts";
+import type { McpMiddleware } from "../connection/runtime/interface.ts";
 import {
   CONNECT_TIMEOUT_MS,
   DISCOVERY_TIMEOUT_MS,
   CALL_TIMEOUT_MS,
   LIST_DEFAULT_TOOLS_PER_SERVER,
   LIST_MAX_TOOLS_PER_SERVER,
-} from "./middleware-const.ts";
-import { withTimeout } from "./pipeline/interface.ts";
-import {
-  policyAllows,
-  policyDenialReason,
-  isToolDenied,
-  toolDisabledReason,
-} from "./middleware-utils.ts";
-import { searchCatalogMulti, listCatalog, findToolDetail } from "./catalog/interface.ts";
-import { parseFullServerName, fullServerName, MIDDLEWARE_GLOBAL_ROOT } from "./workspace/interface.ts";
-import type { MiddlewareMode, DisabledToolsMap } from "./middleware-types.ts";
-import type { McpStatsCollector } from "./call-stats.ts";
+} from "../connection/runtime/interface.ts";
+import { withTimeout } from "../pipeline/interface.ts";
+import { policyAllows, policyDenialReason, isToolDenied, toolDisabledReason } from "../pipeline/interface.ts";
+import { searchCatalogMulti, listCatalog, findToolDetail } from "../catalog/interface.ts";
+import { parseFullServerName, fullServerName, MIDDLEWARE_GLOBAL_ROOT } from "../workspace/interface.ts";
+import type { MiddlewareMode, DisabledToolsMap } from "../types/interface.ts";
+import type { McpStatsCollector } from "../stats/interface.ts";
 
 /** 工具执行与组装上下文。 */
 interface MiddlewareToolContext {

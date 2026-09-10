@@ -6,7 +6,7 @@
  * 归工作空间路由域；引用面经 workspace/interface.ts。
  */
 
-import type { MiddlewareMode } from "../middleware-types.ts";
+import type { MiddlewareMode } from "../types/interface.ts";
 
 /** 归一化中间层模式（非法值回落 off）。 */
 export function normalizeMiddlewareMode(value: unknown): MiddlewareMode {

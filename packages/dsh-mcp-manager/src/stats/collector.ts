@@ -11,13 +11,13 @@
 
 import { mkdirSync, writeFileSync, renameSync, existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { dshHome } from "../../../shared/dsh-home.js";
+import { dshHome } from "../../../../shared/dsh-home.js";
 import type {
   McpStatsSnapshot,
   ServerStats,
   ToolCallMetric,
   ProgressiveDisclosureStats,
-} from "./call-stats-types.ts";
+} from "./types.ts";
 
 export function defaultStatsPath(): string {
   return resolve(dshHome(), "mcp-stats.json");

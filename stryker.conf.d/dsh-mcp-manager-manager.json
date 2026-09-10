@@ -1,10 +1,11 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-mcp-manager/src/manager.ts",
+    "packages/dsh-mcp-manager/src/connection/orchestrator/**/*.ts",
     "!packages/dsh-mcp-manager/src/client/**",
-    "!packages/dsh-mcp-manager/src/types.ts",
-    "!packages/dsh-mcp-manager/src/service.ts"
+    "!packages/dsh-mcp-manager/src/types/**",
+    "!packages/dsh-mcp-manager/src/integration/**",
+    "!packages/dsh-mcp-manager/src/placement-math.ts"
   ],
   "testRunner": "tap",
   "mutator": {
@@ -57,5 +58,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-mcp-manager-manager.json",
-  "_comment": "#342 二期：功能命名段（manager）——manager.ts 单文件（742 行，134s 全量，per-mutant 成本主导的物理极限，维持现状）；types.ts / service.ts（type-only）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+  "_comment": "#664 阶段6重画：manager——connection/orchestrator（McpManager 类主体+展示投影 tool-names，原 manager.ts 迁入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建（D7 迁移豁免）。"
 }

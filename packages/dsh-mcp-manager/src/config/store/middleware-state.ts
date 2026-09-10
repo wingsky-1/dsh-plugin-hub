@@ -6,9 +6,8 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { ProjectUnit, DisabledToolsMap } from "./middleware-types.ts";
-import { parseDisabledTools } from "./middleware-utils.ts";
-import { dshHome } from "../../../shared/dsh-home.js";
+import type { ProjectUnit, DisabledToolsMap } from "../../types/interface.ts";
+import { dshHome } from "../../../../../shared/dsh-home.js";
 
 /** userDisabled 持久化文件路径。 */
 export function userStateFile() {
@@ -98,6 +97,24 @@ export async function readCatalogServerFromDisk(file: string, serverName: string
     // 损坏缓存忽略
     return undefined;
   }
+}
+
+/** 从持久化载荷解析 disabledTools 三层结构（损坏/缺失 → 空；容错不抛）。
+ *  阶段 6 自 middleware-utils.ts 并入（状态域归属；loadDisabledTools 同文件引用）。 */
+export function parseDisabledTools(raw: unknown): DisabledToolsMap {
+  const out: DisabledToolsMap = new Map();
+  if (typeof raw !== "object" || raw === null) return out;
+  for (const [root, servers] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof servers !== "object" || servers === null) continue;
+    const serverMap = new Map<string, Set<string>>();
+    for (const [server, tools] of Object.entries(servers as Record<string, unknown>)) {
+      if (!Array.isArray(tools)) continue;
+      const set = new Set<string>(tools.filter((tool): tool is string => typeof tool === "string" && tool !== ""));
+      if (set.size > 0) serverMap.set(server, set);
+    }
+    if (serverMap.size > 0) out.set(root, serverMap);
+  }
+  return out;
 }
 
 /** 加载工具级禁用（disabledTools 三段：root → server → tool[]；损坏/缺失 → 空）。 */

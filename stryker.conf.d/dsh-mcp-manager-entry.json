@@ -2,11 +2,12 @@
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
     "packages/dsh-mcp-manager/src/index.ts",
-    "packages/dsh-mcp-manager/src/normalize.ts",
-    "packages/dsh-mcp-manager/src/import.ts",
+    "packages/dsh-mcp-manager/src/workspace/**/*.ts",
+    "packages/dsh-mcp-manager/src/config/model/**/*.ts",
     "!packages/dsh-mcp-manager/src/client/**",
-    "!packages/dsh-mcp-manager/src/types.ts",
-    "!packages/dsh-mcp-manager/src/service.ts"
+    "!packages/dsh-mcp-manager/src/types/**",
+    "!packages/dsh-mcp-manager/src/integration/**",
+    "!packages/dsh-mcp-manager/src/placement-math.ts"
   ],
   "testRunner": "tap",
   "mutator": {
@@ -59,5 +60,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-mcp-manager-entry.json",
-  "_comment": "#342 二期：功能命名段（entry）——index+normalize+import（入口/归一化/导入域，28s）；types.ts / service.ts（type-only）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+  "_comment": "#664 阶段6重画：entry——index+workspace（工作空间路由域）+config/model（归一化/导入/schema）；阶段1–5变异盲区（workspace/新文件）在本阶段随集中搬移一并纳入重画（v3 C4/C-DIR）；types/integration（type-only）与 placement-math.ts（shared 薄转发）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建（D7 迁移豁免）。"
 }
