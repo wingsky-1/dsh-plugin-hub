@@ -45,6 +45,9 @@ await import("./unit-settings-bridge.test.ts");
 // PR1 L1 补测：完成风暴聚合直测（首条即时/窗口聚合/kind 切换/dispose）
 await import("./unit-aggregate.test.ts");
 
+// PR2 L2 契约（N-14/N-15）：pipeline 注入面（AdjudicateDeps 单刻快照 / DeliverDeps 调用序列）
+await import("./unit-pipeline-contract.test.ts");
+
 // e2e：fake ctx + apply
 await import("./e2e-approval.test.ts");
 await import("./e2e-done.test.ts");

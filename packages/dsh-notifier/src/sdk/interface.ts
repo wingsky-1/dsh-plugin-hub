@@ -9,7 +9,7 @@
  * 静态强制）。
  */
 import type { NotifyConfig } from "../config/interface.ts";
-import type { SseHub, SystemNotifier } from "../server/interface.ts";
+import type { DeliverPayload, ResolvedTarget } from "../pipeline/interface.ts";
 import type { HistoryStore } from "../stores/interface.ts";
 import type { NotifyDetail } from "../text/interface.ts";
 
@@ -102,26 +102,27 @@ export interface NotifierServiceInternal extends NotifierService {
 
 /** createNotifierService 的注入面（全部由 index.ts 装配层提供）。 */
 export interface NotifierServiceDeps {
-  /** 当前生效配置（settings 解析值；dispatch 时实时读取）。 */
+  /** 当前生效配置（settings 解析值；裁决时单刻快照——每次通知恰好读取 1 次，B-2）。 */
   current(): NotifyConfig;
   /** 总开关（组合层 enabled；false 时 send 一律 skipped）。 */
   enabled(): boolean;
-  /** SSE 推送枢纽（browser 频道）。 */
-  sse: SseHub;
-  /** 系统通知通道。 */
-  system: SystemNotifier;
   /** 历史存储（落盘 fire-and-forget）。 */
   history: HistoryStore;
   /** 日志出口。 */
   logger: { warn: (m: string) => void; info: (m: string) => void };
-  /** 配置驱动的出站频道（M2：bark 实例；enabled 过滤后返回，每次 dispatch 现取）。 */
+  /** 配置驱动的出站频道（M2：bark 实例；enabled 过滤后返回，随裁决快照同步并入池）。 */
   outboundChannels(): Array<{ id: string; channel: NotifyChannel }>;
+  /** 内置频道实例（browser/system；id + capabilities 入投递池，播放经 play 注入——D23）。 */
+  builtinChannels: Array<{ id: string; channel: NotifyChannel }>;
   /** 频道投递终态落盘（status 文件；错误文本已由调用方脱敏）。 */
   recordStatus(channelId: string, status: "ok" | "failed", error?: string): void;
   /** 投递终态事件（'wingsky-notify/sent'；装配层 try/catch 包裹，缺服务静默跳过）。 */
   emitSent(payload: NotifySentEvent): void;
   /** 动态 kind 确认写入（持久化到配置 allowKinds；fire-and-forget）。 */
   setConfirm(kind: string, confirmed: boolean): void;
+  /** 内置频道播放执行（裁决时快照解析的 spec 随 target 值传递——browser→
+   *  sse.broadcast(buildBrowserFrame(...))、system→system.notify(...)；D23）。 */
+  play(target: ResolvedTarget, payload: DeliverPayload): void | Promise<void>;
 }
 
 /** 投递终态事件负载（'wingsky-notify/sent'；旁观插件订阅面，铁律 1 的事件半边）。 */

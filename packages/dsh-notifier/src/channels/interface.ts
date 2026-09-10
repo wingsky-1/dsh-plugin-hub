@@ -24,6 +24,6 @@ export {
   priorityFor,
   renderWebhookBody,
 } from "./webhook.ts";
-export { createBrowserChannel } from "./browser.ts";
+export { buildBrowserFrame, createBrowserChannel } from "./browser.ts";
 export { createSystemChannel } from "./system.ts";
 export { createOutboundChannelResolver } from "./outbound.ts";

@@ -1,19 +1,20 @@
 /**
  * dsh-notifier — SDK 契约域：通知中心核心服务实现（'wingsky.notifier'）。
  *
- * 定位：把 dsh-notifier 升级为 hub 内通知中心——**仅单向通知**，标准接口供
- * 其他插件调用。本模块是提供方实现（createNotifierService + ctx.provide），
- * 类型面供消费方经包导出 import（cordis Context 声明合并见 service.d.ts）。
- * 判定/投递纯函数自旧单文件机械提炼至 pipeline 域（行为等价，PR1 零行为变更；
- * PR2 在此上移 current() 单刻快照与重试/并发门）。
+ * PR2（T2-1）：判定/投递上移至 pipeline 工厂——createAdjudicator 单刻快照
+ * （B-2：每次通知 current() 恰好 1 次，裁决/播放决议同快照）、createDeliverer
+ * fail-soft 投递（DeliverDeps 注入，终态/落史/play 全经 deps）；内置频道经
+ * index.ts 注入（builtinChannels + play，sdk→channels 值边消除——D23）；
+ * send() 动态 kind 与 sendKind 统一过裁决全链（enabled→确认→免打扰→路由，
+ * B-9/D24）。
  *
  * 兼容红线（§8）：SSE 帧契约、历史 jsonl、免打扰/suppressed/多标签租约
  * 全部保持——本模块只做管线收敛，不改出口语义。
  */
-import { createBrowserChannel, createSystemChannel } from "../channels/interface.ts";
-import { isInQuietHours, resolveSoundSetting } from "../config/interface.ts";
-import type { NotifyConfig } from "../config/interface.ts";
-import { deliverToChannel, isBuiltinKind, isKindConfirmed, resolveRoutes } from "../pipeline/interface.ts";
+import { resolveSoundSetting } from "../config/interface.ts";
+import type { NotifyConfig, SoundId } from "../config/interface.ts";
+import { createAdjudicator, createDeliverer, isBuiltinKind, isKindConfirmed } from "../pipeline/interface.ts";
+import type { AdjudicateResult, ChannelPoolEntry } from "../pipeline/interface.ts";
 import { KIND_SEVERITY, NOTIFY_KINDS } from "../text/interface.ts";
 import type { NotifyDetail } from "../text/interface.ts";
 import { BUILTIN_CHANNELS } from "./interface.ts";
@@ -29,18 +30,28 @@ import type {
 
 // ---------------------------------------------------------------- 实现
 
+/** browser 帧级 sound 编码（BrowserDispatchSpec.sound；与 SSE 帧契约同源：
+ *  false → silent；pop=true：true → system、SoundId → selfplay+tone；pop=false
+ *  （只响不弹）：无 OS 通知实体可发声，true 也编码 selfplay（客户端默认旋律，
+ *  P1-1 复核——编码需随 pop 决议，否则 system 模式会让客户端既不弹也不播）。 */
+function encodeBrowserSound(sound: NotifyConfig["browserSound"], pop: boolean): { mode: "silent" | "system" | "selfplay"; tone?: SoundId } {
+  if (sound === false) return { mode: "silent", tone: undefined };
+  if (sound === true) return pop ? { mode: "system", tone: undefined } : { mode: "selfplay", tone: undefined };
+  return { mode: "selfplay", tone: sound };
+}
+
 /**
  * 创建通知中心服务实现。
  *
- * 管线（与搬移前的 notify 行为完全一致）：
+ * 管线（与搬移前的 notify 行为一致，判定/投递经工厂收敛）：
  *   enabled 判定 → kind 动态未确认 → suppressed 落史 → 免打扰检查（被拦截
  *   也落 suppressed 历史）→ 逐频道 fail-soft 投递 → 历史落盘 → 返回受理结果。
  *
- * 内置频道走 SPI：browser 包 sse.broadcast（SSE 帧契约不变），system 包
- * system.notify（自带 1s 节流与 30s 超时杀进程，语义不变）——工厂见 channels 域。
+ * 内置频道经 index.ts 装配：实例入投递池（builtinChannels），播放决议随裁决
+ * 快照解析并经 play 值传递（browser→SSE 帧 / system→notify，D23）。
  */
 export function createNotifierService(deps: NotifierServiceDeps): NotifierServiceInternal {
-  const { current, enabled, sse, system, history, logger, outboundChannels, recordStatus, emitSent, setConfirm } = deps;
+  const { current, enabled, history, logger, outboundChannels, builtinChannels, recordStatus, emitSent, setConfirm, play } = deps;
 
   /** 动态 kind 注册表（id → label；确认态持久化在配置 allowKinds——M2 修复 M1 内存态重启丢失）。 */
   const kindRegistry = new Map<string, { label: string }>();
@@ -56,21 +67,25 @@ export function createNotifierService(deps: NotifierServiceDeps): NotifierServic
     }
   }
 
-  /** 内置频道实例（注入面 sse/system 经 channels 域工厂包装为 NotifyChannel；
-   *  #640/#641：声音/弹窗策略在投递时刻实时读取——dispatch 侧 current()）。 */
-  const browserChannel = createBrowserChannel({ sse, current });
-  const systemChannel = createSystemChannel({ system, current });
-
-  /** 全部可投递频道：内置（按「弹窗开关 || 声音非静音」进入）+ 配置驱动实例
-   *  （enabled 过滤由装配层保证）。#640/#641：弹窗关 + 声音开 → 只响不弹投递
-   *  （B6：投递集合条件 = 弹窗 || 声音非静音）。 */
-  function allChannels(): Array<{ id: string; channel: NotifyChannel }> {
-    const cfg = current();
-    const out: Array<{ id: string; channel: NotifyChannel }> = [];
-    const browserSound = resolveSoundSetting(cfg, "browser");
-    if (cfg.browserNotify || browserSound !== false) out.push({ id: BUILTIN_CHANNELS.browser, channel: browserChannel });
-    const systemSound = resolveSoundSetting(cfg, "system");
-    if (cfg.systemNotify || systemSound !== false) out.push({ id: BUILTIN_CHANNELS.system, channel: systemChannel });
+  /**
+   * 投递池解析（裁决时随快照调用——B-2 单刻语义：启用条件与播放决议全部基于
+   * 传入快照，派生闭包不得自行读 current）。内置频道按「弹窗开关 || 声音非静音」
+   * 进入（#640/#641：弹窗关 + 声音开 → 只响不弹投递）；出站频道 enabled 过滤
+   * 由装配层保证。
+   */
+  function allChannels(snapshot: NotifyConfig): ChannelPoolEntry[] {
+    const out: ChannelPoolEntry[] = [];
+    const browser = builtinChannels.find((c) => c.id === BUILTIN_CHANNELS.browser);
+    const browserSound = resolveSoundSetting(snapshot, "browser");
+    if (browser && (snapshot.browserNotify || browserSound !== false)) {
+      const pop = snapshot.browserNotify === true;
+      out.push({ ...browser, dispatch: { pop, sound: encodeBrowserSound(browserSound, pop) } });
+    }
+    const system = builtinChannels.find((c) => c.id === BUILTIN_CHANNELS.system);
+    const systemSound = resolveSoundSetting(snapshot, "system");
+    if (system && (snapshot.systemNotify || systemSound !== false)) {
+      out.push({ ...system, dispatch: { pop: snapshot.systemNotify === true, sound: systemSound } });
+    }
     try {
       out.push(...outboundChannels());
     } catch (error) {
@@ -79,55 +94,65 @@ export function createNotifierService(deps: NotifierServiceDeps): NotifierServic
     return out;
   }
 
+  const adjudicate = createAdjudicator({
+    current,
+    enabled,
+    isKindConfirmed: (kind, snapshot) => isKindConfirmed(kind, kindRegistry, snapshot),
+    allChannels,
+  });
+
+  const deliver = createDeliverer({
+    recordStatus,
+    emitSent,
+    appendHistory,
+    play,
+  });
+
+  /**
+   * 裁决结果 → 受理结果（suppressed：disabled 不落史（D15）/kind-pending、quiet
+   * 落史 + skipped；deliver：stale warn + 全链投递 + 落史）。
+   */
+  function handleDecision(decision: AdjudicateResult, renderedMessage: string): NotifyResult[] {
+    if (decision.decision === "suppressed") {
+      const { kind, title, body, ts, reason } = decision;
+      if (reason === "disabled") {
+        return [{ channelId: "*", status: "skipped", error: "enabled=false" }];
+      }
+      if (reason === "quiet") {
+        logger.info(`dsh-notifier: ${kind} 被免打扰拦截（未发出）：${renderedMessage.replace(/\n/g, " / ")}`);
+      }
+      appendHistory({ ts, kind, title, message: body, suppressed: reason });
+      return [{ channelId: "*", status: "skipped", error: reason }];
+    }
+    const notice = decision.notice;
+    for (const id of notice.stale) {
+      logger.warn(`dsh-notifier: kindRoutes[${notice.kind}] 指向已删除频道 ${id}，记 skipped`);
+    }
+    const results = deliver(notice);
+    logger.info(`dsh-notifier: ${notice.kind} ${notice.body.replace(/\n/g, " / ")}`);
+    return results;
+  }
+
   /**
    * 统一通知管线（kind 形态，等价搬移前的 notify）。外部 send() 与内置事件源
-   * 都经它收敛（评审 #1）。对内置 kind 用 NOTIFY_KINDS 文案模板；动态 kind 由
-   * send() 在调用前完成确认检查后直接投递 body（不经模板）。
+   * 都经它收敛（评审 #1）——send() 动态 kind 自 B-9 起同样过裁决全链。
    * @returns 受理结果数组（投递终态经历史落盘与 wingsky-notify/sent 事件可见）。
    */
   function sendKind(kind: string, detail: NotifyDetail = {}, opts?: { bypassQuiet?: boolean; onlyChannel?: string }): NotifyResult[] {
-    if (enabled() === false) {
-      return [{ channelId: "*", status: "skipped", error: "enabled=false" }];
-    }
     const spec = NOTIFY_KINDS[kind];
     const ts = Date.now();
     const title = spec?.title ?? "DSH 通知";
     const message = spec?.message({ ...detail, ts }) ?? detail.message ?? "";
-    const results: NotifyResult[] = [];
-
-    // 动态 kind 未确认 → suppressed 落史，不触达任何频道（复用免打扰路径语义）
-    if (!isKindConfirmed(kind, kindRegistry, current)) {
-      appendHistory({ ts, kind, title, message, suppressed: "kind-pending" });
-      results.push({ channelId: "*", status: "skipped", error: "kind-pending" });
-      return results;
-    }
-
-    // 免打扰拦截（被拦截也记录「未发出」历史）
-    const suppressedByQuiet = (() => {
-      if (opts?.bypassQuiet) return false;
-      if (!isInQuietHours(new Date(), current().quietHours)) return false;
-      const allows = current().quietHours.allowKinds ?? [];
-      return !allows.includes(kind);
-    })();
-    if (suppressedByQuiet) {
-      logger.info(`dsh-notifier: ${kind} 被免打扰拦截（未发出）：${message.replace(/\n/g, " / ")}`);
-      appendHistory({ ts, kind, title, message, suppressed: "quiet" });
-      return [{ channelId: "*", status: "skipped", error: "quiet" }];
-    }
-
-    // 路由解析 + 逐频道投递（受理同步返回；终态经 deliver 异步落盘/事件）
-    const { targets, stale } = resolveRoutes({ kind, onlyChannel: opts?.onlyChannel, allChannels, current });
-    for (const id of stale) {
-      logger.warn(`dsh-notifier: kindRoutes[${kind}] 指向已删除频道 ${id}，记 skipped`);
-      results.push({ channelId: id, status: "skipped", error: "stale-route" });
-    }
-    const severity = KIND_SEVERITY[kind];
-    for (const target of targets) {
-      results.push(deliverToChannel({ kind, title, message, ts, severity, target, recordStatus, emitSent }));
-    }
-    logger.info(`dsh-notifier: ${kind} ${message.replace(/\n/g, " / ")}`);
-    appendHistory({ ts, kind, title, message });
-    return results;
+    const decision = adjudicate({
+      kind,
+      title,
+      body: message,
+      severity: KIND_SEVERITY[kind],
+      ts,
+      bypassQuiet: opts?.bypassQuiet,
+      onlyChannel: opts?.onlyChannel,
+    });
+    return handleDecision(decision, message);
   }
 
   const service: NotifierServiceInternal = {
@@ -175,25 +200,13 @@ export function createNotifierService(deps: NotifierServiceDeps): NotifierServic
       if (isBuiltinKind(kind)) {
         return sendKind(kind, { message: req.body });
       }
+      // 动态 kind：与 sendKind 统一过裁决全链（B-9/D24——enabled/免打扰不再绕过；
+      // title/body 直通不经 NOTIFY_KINDS 文案模板，severity 直通）
       const ts = Date.now();
       const title = req.title ?? "DSH 通知";
       const body = String(req.body ?? "");
-      if (!isKindConfirmed(kind, kindRegistry, current)) {
-        appendHistory({ ts, kind, title, message: body, suppressed: "kind-pending" });
-        return [{ channelId: "*", status: "skipped", error: "kind-pending" }];
-      }
-      // 动态 kind：不经过 NOTIFY_KINDS 文案模板，title/body 直通；severity 直通
-      const { targets, stale } = resolveRoutes({ kind, allChannels, current });
-      const results: NotifyResult[] = [];
-      for (const id of stale) {
-        logger.warn(`dsh-notifier: kindRoutes[${kind}] 指向已删除频道 ${id}，记 skipped`);
-        results.push({ channelId: id, status: "skipped", error: "stale-route" });
-      }
-      for (const target of targets) {
-        results.push(deliverToChannel({ kind, title, message: body, ts, severity: req.severity, target, recordStatus, emitSent }));
-      }
-      appendHistory({ ts, kind, title, message: body });
-      return results;
+      const decision = adjudicate({ kind, title, body, severity: req.severity, ts });
+      return handleDecision(decision, body);
     },
   };
 

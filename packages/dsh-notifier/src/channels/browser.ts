@@ -1,66 +1,47 @@
 /**
- * dsh-notifier — 内置 browser 频道（包一层 SSE 枢纽，M8 注入面）。
+ * dsh-notifier — 内置 browser 频道（D23：帧构造纯函数 + 投递池实例）。
  *
- * 职责：把 sse.broadcast 适配为 NotifyChannel（帧契约 {type,kind,title,message,
- * ts,seq} 不变，只加 sound/playOnly 字段——向后兼容，旧客户端无 sound 帧回落
- * 快照兜底）。注入面显式化为 {sse, current}：声音策略在投递时刻实时读取
- * （#640/#641：弹窗与声音组合分派——弹 toast / 只响不弹 / 静默）。
- * 对 server 域只 import type SseHub（值不跨域：sse 实例由装配层注入）。
+ * PR2 播放决议从「投递时刻实时读 current」上移至裁决时快照解析（B-2）：本文件
+ * 只保留两件事——纯帧构造 buildBrowserFrame(payload, spec)（index.ts 装配的
+ * DeliverDeps.play 调用）与可入投递池的 NotifyChannel 实例（id + capabilities；
+ * send 已退役——播放经 play 值传递，误触即响亮失败暴露接线缺陷而非静默丢通知）。
+ * 对 server 域只 import type SseHub（值不跨域：实例由装配层注入）。
  */
-import { resolveSoundSetting } from "../config/interface.ts";
-import type { NotifyConfig } from "../config/interface.ts";
 import type { SseHub } from "../server/interface.ts";
+import type { BrowserDispatchSpec } from "../pipeline/interface.ts";
 import { BUILTIN_CHANNELS } from "../sdk/interface.ts";
 import type { NotifyChannel, NotifySeverity } from "../sdk/interface.ts";
 
 /**
- * 创建内置 browser 频道。
- * @param options.sse 装配层注入的 SSE 推送枢纽（值依赖经注入面，不跨域 import）。
- * @param options.current 当前生效配置实时读取器（声音/弹窗开关在投递时刻取值）。
+ * 浏览器通知帧（SSE 帧契约 {type,kind,title,message,ts} 不变，只加 sound/
+ * playOnly 字段——向后兼容，旧客户端无 sound 帧回落快照兜底）。
+ * playOnly = 只响不弹（pop=false）：客户端自播不弹实体。
  */
-export function createBrowserChannel(options: { sse: SseHub; current: () => NotifyConfig }): NotifyChannel {
-  const { sse, current } = options;
+export function buildBrowserFrame(payload: { title: string; body: string; kind: string; ts: number; severity?: NotifySeverity }, spec: BrowserDispatchSpec): Record<string, unknown> {
+  const frame: Record<string, unknown> = {
+    type: "notify",
+    kind: payload.kind,
+    title: payload.title,
+    message: payload.body,
+    ts: payload.ts,
+    sound: spec.sound,
+  };
+  if (!spec.pop) frame.playOnly = true;
+  return frame;
+}
 
-  /** browser 频道分派（帧级 sound，P0-1）：
-   *  弹窗开 → SSE notify 帧（附服务端解析的 sound 策略，客户端帧级权威）；
-   *  弹窗关 + 声音开（只响不弹）→ SSE 只响不弹帧（play-only 标记），客户端
-   *  自播不弹实体；两者皆关 → 频道根本不进投递集合（allChannels 已过滤）。 */
-  function dispatchBrowser(payload: { title: string; body: string; kind: string; ts: number; severity?: NotifySeverity }): void {
-    const cfg = current();
-    const pop = cfg.browserNotify === true;
-    const sound = resolveSoundSetting(cfg, "browser");
-    if (pop) {
-      sse.broadcast({
-        type: "notify",
-        kind: payload.kind,
-        title: payload.title,
-        message: payload.body,
-        ts: payload.ts,
-        sound: { mode: sound === false ? "silent" : sound === true ? "system" : "selfplay", tone: typeof sound === "string" ? sound : undefined },
-      });
-      return;
-    }
-    // 只响不弹：声音非静音才会进投递集合；发 play-only 帧（客户端不弹实体）。
-    // true（跟随系统默认）在此场景没有可依赖的「OS 弹窗发声」——弹窗关 = 无
-    // 通知实体 = OS 不会发声，故编码为 selfplay + tone:undefined（客户端默认
-    // 旋律），与 system 通道 pop=false + true 的「默认事件音自播」语义对齐
-    // （复核 P1-1：原 mode:"system" 会让客户端既不弹也不播 → 纯静默误导）。
-    sse.broadcast({
-      type: "notify",
-      kind: payload.kind,
-      title: payload.title,
-      message: payload.body,
-      ts: payload.ts,
-      playOnly: true,
-      sound: { mode: "selfplay", tone: typeof sound === "string" ? sound : undefined },
-    });
-  }
-
+/**
+ * 创建内置 browser 频道实例（仅供投递池：id + capabilities；播放经 play 注入）。
+ * @param options.sse 装配层注入的 SSE 推送枢纽（值依赖经注入面，不跨域 import）。
+ */
+export function createBrowserChannel(options: { sse: SseHub }): NotifyChannel {
   return {
     name: BUILTIN_CHANNELS.browser,
     capabilities: { titleMaxLen: 64, maxBodyLen: 2048 },
-    send(payload) {
-      dispatchBrowser(payload);
+    send() {
+      // 播放决议在裁决时快照化并经 DeliverDeps.play 值传递——本实例 send 不可达；
+      // 响亮失败暴露错误接线（静默 no-op 会丢通知）
+      throw new Error(`dsh-notifier: ${BUILTIN_CHANNELS.browser} 频道投递必须经 DeliverDeps.play（send 已随 D23 退役）`);
     },
   };
 }
