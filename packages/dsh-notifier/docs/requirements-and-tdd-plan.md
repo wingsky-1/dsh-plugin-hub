@@ -246,6 +246,7 @@
 | B-6 | registerChannel 定位文档化：配置层注册面 | 保持 ABI | D11：行为不变（仍不接线投递），语义从「注册频道待启用」改述为「配置层注册面」 |
 | B-7 | KIND_SEVERITY 移 text/ 域 | 无运行时变化 | 导出面 re-export 保持（index.ts:131），仅文件归属迁移 |
 | B-8 | 单刻快照行为（B2）的事件源级补充：错误合并窗口/聚合窗口不受快照影响 | 保持 | 事件层状态机（errorMerge/agentStates/batch）沿用现状语义，不随重构改动 |
+| B-9 | send() 动态 kind 与 sendKind 统一过裁决（enabled→免打扰→路由） | 行为变更（D24） | 现状动态 kind 路径绕过 enabled/免打扰（sdk/service.ts:165-197）；统一后 enabled=false/免打扰期间动态 kind 从「照常投递」变「skipped」——先红测锁定现状再改，登记用例 N-25 |
 
 ### 6.3 迁移计划（三 PR，见 architecture-redesign.md §10）
 
@@ -403,6 +404,9 @@
 - **D19**：L8-5 expectedRevision 非整数显式拒绝（400），消除静默忽略（客户端现状不传非整数，实际零影响，登记行为变更）。
 - **D20**：客户端口径诚实化——S3-7 频道状态行改 README 口径（「加载/测试后刷新」）；S3-15 stale 路由文案改「stale 已跳过」；均不做功能增强。
 - **D21**：客户端低优先级修复取舍——PR3 只做 C3-2（409 横幅残留）与 C3-7（错误文案）；C3-3/4/5/6 登记 backlog 延迟。
+- **D22（PR2 动工前，R-6 mini 决策，用户拍板）**：S3-9 seq 归零修复选**选项 A 服务端持久化**——seq 计数器持久化（复用 stores/status.ts 写队列+tmp+rename 原子写范式，500ms 防抖 + dispose 同步落盘）；客户端零改动、D9 帧契约/客户端 ABI 零破坏、旧客户端免升级同步受益。选项 B（客户端回退检测）结构性否决：重启后 k>lastSeq 时数值比较检测不到（情形 2）+ 多标签页丢帧不一致。备选 A'（epoch 广播）不采纳（需客户端+服务端同步升级）。TDD 5 用例 + N-22 锁定（见评审记录）。
+- **D23（PR2 动工前，T2-1 播放决议消费链路，用户拍板）**：采纳**DeliverDeps 增 play(target, payload) 注入**（index.ts 装配：browser→sse.broadcast(buildBrowserFrame(payload,spec))、system→system.notify(spec.pop,spec.sound,…)）——spec 值传递、共享实例零状态、并发安全、ABI/导出面不动；内置频道工厂签名收敛为 createBrowserChannel({sse})/createSystemChannel({system})（去 current，消除 sdk→channels 值边）。
+- **D24（PR2 动工前，T2-1 send 动态 kind 统一，用户拍板）**：send() 动态 kind 路径与 sendKind 统一过裁决（enabled→免打扰→路由），登记行为变更 **B-9**；现状绕过 enabled/免打扰的行为（sdk/service.ts:165-197）先红测锁定再改。
 
 **隐患登记表（R-x，重构全过程风险与缓解）**：
 
@@ -413,7 +417,7 @@
 | R-3 | PR2 行为重构回归（8 项行为变更叠加） | 行为漂移难定位 | 红测先行基线（PR0）+ 每步对齐规则矩阵（B-G/C-G/D6/D7）；变更分 commit |
 | R-4 | 类型面零校验期间导出面漂移无编译期捕获 | 消费方静默断裂 | PR0 接线前置 + PR3 去 @ts-nocheck 最终化；PR1 导出面快照 diff 兜底 |
 | R-5 | 测试套件不自足（worktree 无 lib/，须先 pnpm build） | CI/本地跑测失败误判 | 每 PR 门禁首步 build；PR0 起在 worktree 常态构建 |
-| R-6 | C3-1 seq 归零修复的两个实现（服务端 baseSeq vs 客户端回退检测）各有副作用 | 选型不当引入新问题 | PR2 动工前出 mini 决策（服务端 baseSeq 需持久化/重启延续；客户端回退检测要处理合法回退边界），TDD 用例锁定 |
+| R-6 | C3-1 seq 归零修复选型（服务端 baseSeq vs 客户端回退检测） | 选型不当引入新问题 | **D22 已拍板选项 A（服务端持久化）**；TDD 5 用例 + N-22 锁定；600 帧窗口 shift 静默丢失不在 R-6 覆盖（PR2 内点名/登记 backlog，防误判 S3-9 全修复） |
 | R-7 | PR0 的 spawn 依赖注入改造属「为重构而做」的 src 改动 | 违背「PR0 纯测试」表述 | PR0 PR 描述明示理由 + 行为不变断言（现状行为逐项锁定） |
 | R-8 | interface.ts 门面纪律腐化（域内互引/绕过门面） | 依赖图失真、重构目标落空 | PR3 落地 import 门禁脚本 + 环路检测；文档纪律 §3 |
 | R-9 | fetch mock 白名单外 fail-open（T3-5） | 测试假网络面 | PR0/PR2 白名单外拒绝加固（S3-23） |
