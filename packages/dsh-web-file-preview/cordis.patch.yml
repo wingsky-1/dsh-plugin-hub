@@ -1,6 +1,4 @@
-# dsh-web-file-preview bundle patch：插入宿主端文件预览服务路由 + 客户端预览 Modal。
+# dsh-web-file-preview bundle patch：仅客户端半边——把对话内「用默认应用打开」改写成官方右侧栏预览。
 - insert:
     - id: ui-dsh-web-file-preview
       name: '@wingsky-1/dsh-web-file-preview'
-      config:
-        enabled: true

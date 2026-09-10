@@ -99,6 +99,73 @@ try { execFileSync(process.execPath, [driverFile], { encoding: "utf8" }); }
 catch { noArgExitsNonZero = true; }
 assert.ok(noArgExitsNonZero, "browser-driver 无参数应非零退出（用法提示，不误启动浏览器）");
 
+// ---- 5b. 设备模拟（视口）：纯函数行为 + 参数错误退出码（离线，不启动浏览器） ----
+{
+  assert.ok(help.includes("--width") && help.includes("--height"), "browser-driver --help 声明视口尺寸 flag");
+  assert.ok(help.includes("--dpr"), "browser-driver --help 声明 --dpr");
+  assert.ok(help.includes("--mobile"), "browser-driver --help 声明 --mobile");
+  const emulationFile = join(SCRIPTS_DIR, "lib", "emulation.mjs");
+  assert.ok(existsSync(emulationFile), "设备模拟纯函数 lib/emulation.mjs 随 skill 分发");
+
+  const emu = await import(pathToFileURL(emulationFile).href);
+  const get = (obj: Record<string, string>) => (n: string) => obj[n];
+  assert.equal(emu.parseEmulationFlags(get({})).active, false,
+    "无设备 flag 不启用模拟（页面命令走零开销路径）");
+  assert.deepEqual(
+    emu.parseEmulationFlags(get({ width: "375", height: "667", dpr: "2", mobile: "true" })),
+    { active: true, width: 375, height: 667, deviceScaleFactor: 2, mobile: true },
+    "四个设备 flag 全部解析");
+  const widthOnly = emu.parseEmulationFlags(get({ width: "375" }));
+  assert.deepEqual(widthOnly, { active: true, width: 375, height: undefined, deviceScaleFactor: 1, mobile: false },
+    "只给 --width：height 留空待补齐、dpr 默认 1");
+  assert.deepEqual(emu.buildDeviceMetrics(widthOnly, { width: 800, height: 600 }),
+    { width: 375, height: 600, deviceScaleFactor: 1, mobile: false },
+    "缺省维度按页面当前视口补齐（不把 undefined 传给 CDP）");
+  // 非法值必须抛错：否则 NaN/undefined 直达 CDP，用户只会看到难懂的协议报错
+  for (const bad of [{ width: "0" }, { width: "abc" }, { height: "10001" }, { dpr: "0" }, { dpr: "abc" }, { dpr: "9" }]) {
+    assert.throws(() => emu.parseEmulationFlags(get(bad)), /错误: --(width|height|dpr)/,
+      `非法参数应抛可操作错误: ${JSON.stringify(bad)}`);
+  }
+
+  // 参数校验先于连浏览器：state 指向不存在的实例时也应报参数错误而非环境错误
+  let badCode = 0; let badOut = "";
+  try {
+    badOut = execFileSync(process.execPath, [
+      driverFile, "eval", "--state", join(tmpdir(), "nonexistent-browser.state"),
+      "--width", "0", "--expression", "1",
+    ], { encoding: "utf8" });
+  } catch (e) { badCode = e.status ?? -1; badOut = e.stdout ?? ""; }
+  assert.equal(badCode, 1, `视口参数非法应退出 1，实际 ${badCode}`);
+  assert.equal(JSON.parse(badOut.trim()).ok, false, "视口参数非法输出错误 JSON");
+  assert.ok(badOut.includes("--width"), "错误文案点名非法参数 --width");
+
+  // --mobile 取值语义：「出现即启用」会让 `--mobile=false` 得到与字面相反的结果
+  assert.equal(emu.parseEmulationFlags(get({ mobile: "true" })).mobile, true, "--mobile（省略值）启用移动语义");
+  assert.equal(emu.parseEmulationFlags(get({ mobile: "false" })).active, false, "--mobile=false 不启用模拟");
+  assert.equal(emu.parseEmulationFlags(get({ width: "375", mobile: "false" })).mobile, false,
+    "--mobile=false 不打开移动语义");
+  assert.throws(() => emu.parseEmulationFlags(get({ mobile: "maybe" })), /错误: --mobile/,
+    "--mobile 取值非法应报错（不猜测）");
+
+  // 逐命令 help 是实际查参入口：设备 flag 只在全局 help 可见即等于该入口失效
+  const evalHelp = execFileSync(process.execPath, [driverFile, "--help", "eval"], { encoding: "utf8" });
+  assert.ok(evalHelp.includes("--expression"), "逐命令 help 含该命令自身参数");
+  assert.ok(evalHelp.includes("--width") && evalHelp.includes("--dpr"), "逐命令 help 含设备模拟 flag");
+
+  // 七条页面命令都必须走设备模拟路径：任何一条改回直连 connectPage，都会让
+  // --width 等 flag 在该命令上静默失效（单命令回退的回归盲区）
+  const driverSrc = readFileSync(driverFile, "utf8");
+  for (const cmd of ["cmdSnapshot", "cmdClick", "cmdEval", "cmdFill", "cmdWait", "cmdScreenshot", "cmdConsole"]) {
+    const body = driverSrc.split(`async function ${cmd}(`)[1]?.split("\nasync function ")[0] ?? "";
+    assert.ok(body.includes("withPageEmulation("), `${cmd} 接入设备模拟（页面命令不得绕过 wrapper 直连）`);
+  }
+  assert.equal((driverSrc.match(/await connectPage\(/g) || []).length, 1,
+    "connectPage 只被 withPageEmulation 调用（设备模拟单点接入）");
+  // 清理静默失败会把视口残留给后续命令，两条告警路径都必须留在代码里
+  assert.ok(driverSrc.includes("设备模拟清理失败"), "清理抛错路径有可见警告");
+  assert.ok(driverSrc.includes("设备模拟清理后视口未复原"), "清理后回读核对是否复原");
+}
+
 // ---- 6. verify-isolated.mjs：lib import 行为断言 + 关键契约文本锚定 + 退出码实测 ----
 {
   // 6a. lib/verify-core.mjs import 行为断言（弃纯文本 grep 锁脚本细节）
@@ -289,6 +356,18 @@ assert.ok(raw.includes("--dsh"), "SKILL.md 含 --dsh 版本锚定用法");
 assert.ok(raw.includes("DSH_HOME 感知"), "SKILL.md 自检清单含插件 DSH_HOME 感知项（#510 盲区）");
 assert.ok(raw.includes("DSH_TELEMETRY_DISABLED=1"), "SKILL.md 含遥测禁用原则");
 assert.ok(raw.includes("--host 127.0.0.1"), "SKILL.md 含显式回环原则");
+// 视口验证能力：替代 resizeTo（高度不生效，实测无效）+ 防回退锁
+assert.ok(raw.includes("--width"), "SKILL.md 含视口档位 flag 用法");
+assert.ok(raw.includes("设备视口与几何验证"), "SKILL.md 含设备视口与几何验证章节");
+assert.ok(raw.includes("基线档"), "SKILL.md 含不带 flag 的基线档与残留回读方法");
+assert.ok(raw.includes("不要用 `window.resizeTo`"), "SKILL.md 明确标注 resizeTo 不可用（高度不生效）");
+// 防回退锁：resizeTo 只允许作为反例出现在正文，不得再出现在示例代码块里（否则会被照抄）
+const bashBlocks = raw.split("```bash").slice(1).map((b) => b.split("```")[0]);
+assert.ok(bashBlocks.length > 0, "SKILL.md 含 bash 示例块");
+assert.ok(bashBlocks.every((b) => !b.includes("resizeTo")), "SKILL.md 示例代码块不再出现 resizeTo");
+assert.ok(raw.includes("ontouchstart"), "SKILL.md 声明触控模拟能力边界（不越界承诺真机行为）");
+// 访问形态边界（隔离语义，与视口能力无关）：脚本默认只覆盖回环形态
+assert.ok(raw.includes("--trusted-host"), "SKILL.md 声明非回环访问形态的边界与官方选项");
 
 // ---- 8. README 同步新能力 ----
 const readme = readFileSync(join(PKG_ROOT, "README.md"), "utf8");
@@ -296,6 +375,8 @@ assert.ok(readme.includes("browser-driver.mjs"), "README 同步 browser-driver")
 assert.ok(readme.includes("--browser"), "README 同步 --browser 用法");
 assert.ok(readme.includes("四重隔离"), "README 同步四重隔离说明");
 assert.ok(readme.includes("verify-isolated.mjs"), "README 同步 node 版脚本名（升级路径）");
+assert.ok(readme.includes("emulation.mjs"), "README 同步设备模拟纯函数模块");
+assert.ok(readme.includes("--width"), "README 同步视口档位用法");
 assert.ok(!readme.includes("scripts/verify-isolated.sh"), "README 不再以旧 bash 脚本路径作为当前用法（升级路径说明除外）");
 
 // ---- 9. B4 隔离审计：lib/audit.mjs 纯函数行为断言 + 脚本契约锚定 + 退出码实测 ----

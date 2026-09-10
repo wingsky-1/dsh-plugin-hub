@@ -18,12 +18,16 @@ issue #110 起不再使用自建 config.json）。
   disposer；所有清理统一写在 `ctx.effect` 返回的 disposer 里）
 - `src/proxy.ts` — 转发器核心 `createLanProxy`（HTTP/HTTPS/WebSocket 桥接、
   Host 重写、DNS 重绑定防护、wss 压缩桥接）；业务逻辑导出纯函数可单测。
-  HTTP 响应压缩（原独立包 dsh-gzip 已退役并入；compression@1.8+ 按 Accept-Encoding 协商，br 优先、gzip 回退；档位预设经 resolveCompressionOptions 映射，对双算法生效）也在此层：经成熟开源库
+  HTTP 响应压缩（原独立包 dsh-gzip 已退役并入；compression@1.8+ 按 Accept-Encoding 协商；档位预设经 resolveCompressionOptions 映射，gzip 与 Brotli 两侧参数同时下发）也在此层：经成熟开源库
   `compression` 中间件挂在转发器自己的 `createServer` 处理链上（构建期 esbuild
   内联进产物），自定义 filter 复用 `isCompressible`（SSE 豁免）；
   协商 / Vary / Content-Length 删除 / Range·204·304 豁免全部由库承担。
-  上游已带 content-encoding 时本层自动让位（与宿主端任意压缩实现共存只压一次，
-  smoke 有专项用例锁定）。
+  上游已带 content-encoding 时本层自动让位（由库的 already encoded 分支判定；
+  与宿主端任意压缩实现共存只压一次，smoke 有专项用例锁定）。
+  **Brotli 生效条件不得写成「br 优先」**：dsh 自身 webServer 自带 gzip 且只协商 gzip，
+  实测（见 [`docs/official-lan-access-overlap-assessment.md`](./docs/official-lan-access-overlap-assessment.md) §4.1）只有客户端仅声明 br
+  且上游未压缩时本层才产出 br；主流浏览器同时声明 br 与 gzip，实际拿到上游 gzip。
+  该情形仍远优于不压缩（322900 → 5065 字节），且两层不会重复压缩。
   **禁止**在 webServer 宿主端 patch handler 实现压缩（非官方 API 挂载面，
   曾引出包装/卸载/幂等一整类缺陷）；**禁止**手写响应流 gzip 接线（一律走
   compression 中间件）

@@ -2,34 +2,30 @@
 [![npm](https://img.shields.io/npm/v/@wingsky-1/dsh-web-file-preview)](https://www.npmjs.com/package/@wingsky-1/dsh-web-file-preview)
 [![GitHub Releases](https://img.shields.io/github/v/release/wingsky-1/dsh-plugin-hub)](https://github.com/wingsky-1/dsh-plugin-hub/releases)
 
-点击对话中的文件链接，在 **web 端**直接预览文件内容（**图片 / 文本 / Markdown / 代码 / git Diff**）。
+把对话内「用默认应用打开」的文件请求，改写成**官方右侧栏预览**——让文件查看留在 dsh 里完成。
 
-DSH 自带的“可点击文件引用”在点击产出文件 chip / 行内文件引用时走的是桌面原生打开器——桌面可用，但**纯 Web（局域网浏览器 / iPad / iPhone，或 `nativeOpen:false` 部署）没有 Web 端预览**。本插件补上这一环：点击对话中可点击的文件链接，改为在**对话框内弹出预览 Modal**，图片直接 `<img>` 显示、文本以等宽 `<pre>` 渲染，明暗主题自适应。
+## 它做什么
 
-## 能力
+dsh 0.1.5 起，对话内绝大多数文件点击已经是官方右侧栏预览；仍会把文件交给**外部应用**的只剩一条链路：`POST /api/present.open`（宿主 `sessionController.openWorkspacePath`），它有两个客户端入口：
 
-- **图片预览**：`png / jpg / jpeg / gif / webp / svg / avif / bmp`；点击进入灯箱放大/平移（滚轮缩放 + 拖拽）。
-- **Markdown 预览**：`.md / .markdown` 默认渲染预览（marked + GFM 常用能力），可切「原始」；文内 ` ```mermaid ` 代码块渲染为图（首次出现时才懒加载 mermaid 引擎，普通预览首屏零额外开销），语法错误自动回退为代码块并提示。
-- **代码语法高亮**：`js/ts/py/java/…` 等 25+ 语言（highlight.js 子集）高亮，可切「原始」。
-- **HTML 预览（issue #73 / #507）**：`.html / .htm` 走「serve 路由 + `<iframe sandbox>`」静态伺服——HTML 与相对路径的 css/js/img 资源按浏览器原生解析正常加载渲染（root = HTML 文件所在目录，root 内任意深度相对引用含 `../` 均可达；根 HTML 引用 root 外资源因 token 前缀语义不可达，属安全边界）；**默认不执行 `<script>`**（sandbox 无 `allow-scripts`，首版边界）；**交互式预览（issue #507，opt-in）**：顶栏「交互」tab 经用户手势确认后重建 iframe 加 `allow-scripts`（**保持无 `allow-same-origin`**），文件内脚本在沙箱中执行（主题切换 / tab / 纯前端 mock 可交互），带「脚本已启用」徽标与外框高亮；切回预览/原始或关闭即恢复无脚本形态并释放交互 token。可切「原始」tab 查看源码。**子资源加载依赖 serve 路由的跨站 no-cors 放行（issue #549）**——sandbox iframe 为 opaque origin，其相对路径子资源请求在 Fetch Metadata 下呈 `cross-site`，serve 路由独有放行标签型（no-cors）加载，`fetch`/XHR（cors）与顶层导航（navigate）仍拒绝（详见安全模型）。
-- **文本预览**：`txt / log / csv / conf …` 等宽展示。
-- **Diff 视图（git）**：`.md/代码/文本/HTML` 若在 git 仓库且有未提交变更，顶栏多出第 3 个 **Diff** tab，红/绿展示 `git diff HEAD -- <file>`（未跟踪新文件给提示）。
-- Modal 内动作：**预览/原始/Diff**、**复制路径**、**在新标签打开**、**关闭**（Esc / 点遮罩）。
-- **`@` 引用适配（适配 dsh 官方 `@` 引用渲染）**：对话气泡里 `@` 引用渲染的 `data-ref-chip`（文件/文件夹/会话）统一识别——文件引用 `@path` / `@"…"` 点 chip 用**干净路径**（去前导 `@` 与引号）直接打开预览 Modal；文件夹引用 `@path/` 点 chip 弹轻量提示（无目录浏览能力，不开 Modal）；会话引用显式忽略（与文件预览正交）。
-- **加载错误态**：错误细分 + 「在新标签打开」兜底。
-- **路径兜底搜索（issue #486）**：文件引用目录写错/缺前缀（如 `diagrams/x.html` 实际在 `docs/architecture/diagrams/`）或纯裸文件名时，宿主按 basename 在会话工作区内**唯一搜索**真实文件打开（绝对/相对 resolve 失败均触发；唯一命中才采信，歧义/触顶/超时维持 404 不猜）。
-- **缓存**：不设 JS 内存缓存（文件常被修改，永久缓存会显示陈旧内容）；改用浏览器 HTTP 缓存 + 宿主弱 ETag（`Cache-Control: no-cache` + `If-None-Match`）自动协商——未变 304 秒回、已变自动拿最新。
+- `present` 交付物卡片菜单的「用默认应用打开」；
+- 助手最终回复里对 presented 文件的**提及点击**（inline code 引用）。
 
-## 实现
+本插件在客户端把这条请求收口：拦到「用默认应用打开」后不再出网，改为用官方地址语法（`dsh-resource://file/session/<id>/<path>`）请 `ctx.sidebarRight.openResource` 打开右侧栏预览，并合成官方调用方读得懂的成功响应。
 
-- **宿主端**：`GET /api/dsh-file-preview/file?cwd=&path=`（绝对路径可省 cwd；loopback 围栏，非回环 403 / 方法非 GET 405），**三级定位**（issue #486）：① 绝对 `resolve(path)` → ② 相对 `resolve(cwd, path)` → ③ resolve 失败且带 cwd 时按 **basename 在 cwd 内唯一搜索**（fdir 通用文件系统遍历，非 git——任意工作区可用，含非 git 目录与被 `.gitignore` 忽略的真实文件；`~`/`~/` 前缀经 `untildify` 展开）；唯一命中且 stat 通过才采信，0 命中 / ≥2 歧义 / 触顶 / 超时 → 维持 404（绝不猜）；**成功响应回传真实路径 `X-File-Path` 头**（200/304 同值，超长省略）供客户端作权威 currentPath。后缀分组（按真实落盘文件扩展名）：图片/文本/Markdown/代码/HTML 直出；**白名单外（issue #630）先做内容嗅探**（`isbinaryfile` 读头部 512B + BOM 判定，业界同款：git `buffer_is_binary`）——文本按纯文本直出（UTF-16/32 BOM 自动转码），二进制返回 `415` 结构化占位（`binary`/`size`/`ext`），`&dl=1` 走 attachment 下载出口（RFC 5987 filename\* 编码）；文本超过 `maxTextBytes` 返回 `413`+`truncated`（先 `stat` 判大小、不整读）。`GET /api/dsh-file-preview/diff?cwd=&path=`（异步 execFile 计算 git diff）与 `GET /api/dsh-file-preview/health` 健康检查。文件响应统一 `X-Content-Type-Options: nosniff`，SVG 额外 `Content-Security-Policy: sandbox`。
-- **HTML serve 虚拟伺服（issue #73）**：`GET /api/dsh-file-preview/alloc?cwd=&path=`（同样三级定位）把「HTML 文件所在目录」登记为只读 root 并返回随机 token（128-bit，进程级单例映射，内存态不落盘）+ `path` 字段（真实 resolved 绝对路径）+ `rest` + `mode`（`static`/`interactive`）；`GET /api/dsh-file-preview/serve/<token>/<rest>`（prefix 路由，loopback 围栏 + GET-only）按 token → root 伺服任意子路径资源，`realpath` 双向校验闭合符号链接逃逸、root 越界 / 目录请求 / 编码攻击面一律 404；`GET /api/dsh-file-preview/release?token=` 显式释放（幂等，静态/交互双桶同放）。HTML 返回 `text/html`，其余按 `mime` 库判定；流式 `createReadStream` 直出（`Content-Length` 来自 `stat`）；单资源超过 `maxAssetBytes` 返回 `413`+`truncated`+`no-store`；静态桶 idle TTL 30min + LRU 上限 64（不淘汰活跃预览）兜底回收。**交互桶（issue #507）**：`alloc?mode=interactive` 分配独立短 TTL token（idle 10min、上限 16），父页心跳每 2min 续命，退出交互态即 release——把「脚本可读 location 外泄 token」窗口压缩到交互会话期。
-- **客户端**：双机制拦截（`openWorkspacePath` 调用点收口 + document 捕获静态拦截）+ 分组渲染（`renderGroupFor`）+ 四 tab（预览/交互/原始/Diff，交互仅 HTML 组；Diff 仅 git 有变更才显示）。**零路径预处理**（issue #486）：相对引用原样携带 cwd 发给宿主，不做客户端预归一；首响应拿到宿主回传的 resolved（`X-File-Path` / alloc `path`）后才设权威 `currentPath`（md basePath / 展示 / 返回栈均以此为准），返回栈条目恒为 resolved 绝对路径。md 用 `marked`、代码用 `highlight.js` 子集、Diff 用 `diff2html`；HTML 预览 tab 渲染 `<iframe sandbox>`（无 `allow-scripts` / 无 `allow-same-origin`），`src = /serve/<token>/<encodeURI(rest)>`，关闭 Modal 时上报 release；交互 tab（issue #507）首点弹确认、确认后重建 `sandbox="allow-scripts"` iframe（独立交互 token），带徽标与外框高亮，退出即 `teardownInteractive`（release + 清心跳）。
-- **后缀分组单一事实源**：`src/grouping.ts` 供宿主 `mime.ts` 与客户端 `renderer.ts`/`client.ts` 共用，杜绝双端各写一份后缀表导致漂移；`.html/.htm` 自 issue #73 起为独立 **html 渲染组**（宿主产出 `renderedHtml` kind，双端一致）；`cleanRefChipPath`（@-mention chip 标签 → 干净路径的纯函数）同处，与 DSH 的 `formatFileMention` 互逆。
-- **跨包契约假设（`@` 引用）**：按 `data-ref-chip` 属性 + `title="@…"` 形态（由 DSH `ui-conversation` 产出）识别。若未来 DSH 调整该形态，`data-ref-chip` 门失效时 file chip 静默退回「点击无反应」（不会 404，属可接受降级）；若 DSH 提供干净路径属性（如 `data-ref-path`）则优先采用。
-- **依赖**：`marked` / `highlight.js` / `diff2html` / `untildify` / `mime` / `fdir` 为构建期打包依赖（宿主/客户端分别内联进 `lib/index.js` 与 `lib/client.js`），**运行时零 npm 依赖**；图片与 serve 子资源 Content-Type 由 `mime` 库提供（mime-db 全表，issue #12/#47 approved，构建期内联，消除自写映射表漂移）；basename 兜底搜索遍历由 `fdir`（零依赖通用遍历器）提供（issue #486 approved，见「路径定位」安全节）。
-- **Mermaid 懒加载 chunk（issue #104）**：`mermaid` 整库内联为独立产物 `lib/client-mermaid.js`（ESM，minify），与 `client.js` 物理分离；宿主经 `GET /api/dsh-file-preview/mermaid`（loopback 围栏 + 弱 ETag 协商缓存）伺服。客户端仅在 md 渲染出 mermaid 代码块后才以运行时变量 URL 动态 import 拉取——普通 md / 文本 / 图片预览从不触发加载。minified 产物的 esbuild 路径注释会被移除，故构建期由 metafile 生成内联清单 sidecar `lib/client-mermaid.deps.json` 随包发布，作为 license 归集与 pack 断言的唯一证据源。
-- **构建体积**：客户端 esbuild `--minify`，`client.js` 约 550KB（gzip ~120KB）；`client-mermaid.js` 全量约 **3.29MB（gzip ~940KB）**——复核口径基线（验收不设体积硬阈值；仅首次遇到 mermaid 块时下载一次，浏览器模块缓存 + 304 协商后续零成本）。
+**不接管**的路径（按「减少功能面」的维护者决策）：
+
+- `reveal`（「在文件管理器中显示」）原样放行——它不打开文件内容，dsh 内也没有等价物；
+- 会话头部的 `open-in-app`（在外部编辑器中打开工作区目录）；
+- 对话内其它文件点击（官方本来就打开右侧栏预览，本插件不碰）。
+
+插件**不注册**官方 `documentPreviews` / `sidebarRightTabs` 扩展点，也不修改官方 DOM 或样式。
+
+## 能力变更（重定位说明）
+
+本插件早期版本自带预览器（Modal + 图片灯箱 + Markdown/Mermaid + 代码高亮 + git Diff + HTML 虚拟伺服 + 二进制下载卡 + 路径兜底搜索 + 自建宿主路由）与对话内点击拦截。官方预览自 dsh 0.1.5 起覆盖了主干能力，插件因此收缩为上面的单一转发职责，相关代码、依赖与宿主路由已全部移除。
+
+**升级须知**：升级后行为变化是——`present` 交付物卡片与回复提及的点击，从「拉起桌面应用」变为「打开右侧栏预览」；原 Modal 内的 Diff / Mermaid / HTML 多文件资源等能力不再提供（交给官方预览渲染器）。插件不再有用户可配置项，关闭方式即卸载。
 
 ## 安装
 
@@ -73,60 +69,45 @@ npx @deepseek-ai/dsh plugin --profile web remove @wingsky-1/dsh-web-file-preview
 npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-web-file-preview
 ```
 
-## 配置
-
-| Key | 默认 | 说明 |
-|---|---|---|
-| `enabled` | `true` | 关闭则不注册任何路由 |
-| `maxTextBytes` | `20971520` (20MB) | 文本类（text/markdown/code/html 源码）预览最大字节数；超限返回 `413` + `truncated` 标记（`Cache-Control: no-store`），客户端提示「文件过大」，可在新标签打开原文（issue #344：默认 512KB→20M；客户端对超大文本 >1M 字符（UTF-16 码元）降级为纯 `<pre>` 截断渲染，防主线程阻塞） |
-| `maxAssetBytes` | `20971520` (20MB) | serve 单资源（HTML 预览的 html/css/js/img 等）最大字节数；超限返回 `413` + `truncated` 标记（`Cache-Control: no-store`），客户端提示（与 `maxTextBytes` 对称，issue #73 PR 声明 + #344 同步提升）；SVG 与 /file 一致补 `Content-Security-Policy: sandbox` |
-
 ## 验证
 
-测试单份维护、变异自动覆盖：单元测试只维护 `test/*.test.ts`（`import "../lib/index.js"` 测产物）；stryker 经 lib→src hook 复用同一份断言，无需手工同步副本。
+单元测试只维护 `test/*.test.ts`（`import "../lib/index.js"` 测产物）；stryker 经 lib→src hook 复用同一份断言。
 
 ```sh
-pnpm build && pnpm test                 # 仓库内：构建 + smoke
-curl http://127.0.0.1:3080/api/dsh-file-preview/health
+pnpm build && pnpm test                 # 仓库内：构建 + smoke（含地址构造 golden 表与 fetch 收口夹具）
 ```
 
-## 兼容性（issue #37 起）
+地址构造与官方 `@deepseek-ai/dsh-util-workspace-path` 的 `fileAddressFor` 逐条对拍维护：官方右侧栏 tab 以地址本身作 contentId 去重，任一条漂移都会让同一文件出现两个 tab。
 
-静态点击拦截的生效范围与让权约定如下：
+## 兼容性（只读耦合点）
 
-- **作用域圈定**：document 捕获拦截仅在**宿主对话流子树**内生效——判定锚点为祖先链上存在 `[data-chat-flow]` 或 `[data-chat-anchor-key]`（DSH ChatView 官方自用的滚动锚点属性，见 `src/client/link-resolver.ts` 的 `SCOPE_SELECTORS`，追加式数组）。**对话流之外的任何元素一律放行**（下条豁免属性除外，其跨区域优先）：第三方插件 UI（文件树、浮层、面板等）不再被全局路径嗅探劫持。这是行为变更：旧版对全 document 生效的宽松拦截自本版起收敛到对话流内。
-- **解析优先级**：元素显式声明的路径凭证（`data-ref-chip` / `title` / `<a href>`）永远优先于"文本像路径"的启发式嗅探；凭证与本轮文本命中 basename 一致时采信凭证完整路径，不一致则跳过该凭证不猜（与 DSH `producedFileMentions` 的保守原则同源）。第三方文件树常见的 `<div title="完整路径"><span>裸文件名</span></div>` 行结构因此能解析出完整路径。
-- **分级接管（issue #630）**：权威凭证走 `shouldIntercept` 宽松语义——白名单外路径也接管开预览（宿主嗅探兜底：文本直出 / 二进制占位卡 + 下载，均非死胡同）；**非权威文本嗅探**（CODE/SPAN 兜底）保持严格后缀判定不变——防止聊天页任意无空白单词被误判为路径（每次误判会弹 Modal 并触发 basename 兜底搜索）。
-- **逃生门属性**：任何元素子树标注 `data-dsh-no-preview` 即对本插件豁免（跨区域生效，优先级高于作用域圈定）。第三方插件在自有可点击 UI 上加此属性即可确保零干扰。
-- **适配点**：若未来 DSH 改版调整了对话流 DOM 标识，更新 `src/client/link-resolver.ts` 中 `SCOPE_SELECTORS` 常量即可（追加新锚点，无需改动算法）。
+插件不改官方源码、不注册官方扩展点，但**读取**以下官方契约；官方改版时这些点是唯一的失效面：
+
+- `/api/present.open` 的路径、`POST` 方法与 `action` 查询参数（`reveal` 依赖 `action=reveal` 区分）；
+- presented 卡片的 `[data-presented-file]` 标记与其内 `button[title]`（卡片路径来源）、助手回复正文里的 `code > button[title]` 提及；官方 CSS Modules 类名是构建期哈希，不可依赖（官方该按钮的 `fileMention` 类名即哈希形态，不能作选择器）；
+- `dsh-resource://file/session/<id>/<path>` 地址语法与 `fileAddressFor` 的 cwd 折叠语义。
+
+任一点失效时的行为是**降级放行**：收口不生效，点击退回官方原生打开（可感知，不会静默损坏数据）。
 
 ## 安全模型
 
-- **⚠️ 局域网部署高危告警（务必阅读）**：本插件经 `dsh-lan-proxy`（或任何把外部流量转发到 127.0.0.1 的代理）对外暴露时，**loopback 围栏会被代理重写 Host/Origin 而穿透**——此时**局域网内任意设备**（无需任何 dsh 凭据/登录态）可直接访问 `/api/dsh-file-preview/file?path=…` 预览本机文件：**issue #630 起暴露面为「白名单内文件 + 内容嗅探判文本的白名单外文件（含 `.env`、`id_rsa` 等无后缀/dotfile 文本）」**，`?dl=1` 对嗅探判二进制的文件提供 attachment 下载，**包括 `~/.dsh/.credentials.yaml`、`~/.dsh/*.json` 等凭据/配置文件**（`path` 支持 `~` 展开与绝对路径，`stat` 跟随符号链接，不做逃出拦截）。**交互式预览（issue #507）在穿透场景下进一步升级为「执行入口」**：同网段设备拿到交互 token（明文 HTTP 下可被嗅探）后可于沙箱内执行任意文件脚本（opaque origin + `connect-src 'none'` 限制其外向能力，但页面渲染 / 钓鱼面存在）。请在**可信局域网**部署（勿暴露到公共 WiFi/互联网），或自行在网络层配置**会话鉴权 / API 前缀白名单**后再对外。被穿透后的后果由部署方承担——本插件按下方"不做重复兜底"条款不提供插件层访问控制。
-- **内容嗅探的暴露面语义（issue #630）**：白名单未命中不再一律 415——头部 512B 内容嗅探（`isbinaryfile` + BOM 判定）判文本即直出。这是**访问能力的放宽**（原本 415 拒绝的文本类文件现在可读），但不**新增**文件枚举/穿越面：嗅探只发生在「路径已被三级定位命中」之后，判定对象是单一已知文件；loopback 围栏、三级定位语义、`maxTextBytes` 上限均不变。嗅探误判的最坏后果是「二进制被当文本显示乱码」（有占位卡下载出口）或「文本被判二进制给占位卡」（有下载出口），均不绕过围栏。
-- **保留 loopback 围栏**：所有 `/api` 路由强制校验回环来源（跨站 / DNS 重绑定防护），与平台既有约定一致；`health` 之外的 /file、/diff 也仅允许 GET（方法不符 405）。该围栏对**本机/回环直连**有效；对经代理的局域网访问生效与否取决于代理是否重写 Host/Origin（见上一条）。
-- **不做重复兜底**：本插件的语义是“能打开 dsh web 页面即已持有高权限”，因此**不做**任意文件访问强校验、会话鉴权、敏感名拦截——访问控制由平台/用户负责，本插件不重复实现每一套。
-- **路径定位（三级）**：`/file`/`/alloc` 按 ① 绝对 `resolve(path)` → ② 相对 `resolve(cwd, path)` → ③ resolve 失败且带 cwd 时按 **basename 在 cwd 内唯一搜索** 定位。不做“逃出 cwd”拦截（任意文件访问由平台/用户负责）。`~`/`~/` 前缀展开为用户主目录。
-- **兜底搜索语义（issue #486）**：③ 级遍历**不遵循 `.gitignore`**——物理存在 + 唯一即暴露（与 `/file` 任意读模型一致：被 gitignore 的文件本就经 `/file` 直读可达，搜索暴露它**不新增访问面**）；dot **目录**跳过（索引质量/成本控制）但 dot **文件**（`.env`/`.gitignore` 裸名）可命中；**唯一命中且 stat 通过才采信**，0 命中 / ≥2 歧义 / 触顶（20000 文件）/ 超时（1500ms）→ 维持 404 绝不猜；不跟随符号链接。搜索不缓存正结果；「确认不存在」短 TTL（1s）负缓存 + 同 key 并发 in-flight 合并防重复全量遍历（不引入陈旧暴露面——文件新建后 1s 内可被搜索到属可接受窗口）。
-- **渲染安全**：文件响应一律带 `X-Content-Type-Options: nosniff`；SVG 额外带 `Content-Security-Policy: sandbox`（顶层导航时不执行内嵌脚本）。Markdown / 代码渲染输出为 HTML 呈现层，`marked` / `highlight.js` 对正文做转义；本插件不承诺对渲染结果做 XSS 消毒——预览内容来自会话已见的文件，安全边界同“能打开 dsh web 即高权限”。
-- **Mermaid 图表（issue #104，新增用户可影响渲染面）**：md 文件内的 ` ```mermaid ` 块由 mermaid 引擎渲染。默认 `securityLevel: "strict"`（文本转义、禁用 click 交互回调）+ `htmlLabels: false`（标签走纯 SVG text）+ `startOnLoad: false`（仅手动按块渲染）；渲染产物 SVG 在插入 DOM 前再经 DOMPurify（svg profile）二次消毒——`foreignObject` 默认剔除、不开放 `securityLevel`/主题等配置项。主题仅随系统 `prefers-color-scheme` 在 default/dark 间自适应，不接受文档内容控制。与上条边界一致：图源来自会话已见文件，strict + 双层消毒是纵深而非安全承诺。
-- **`@` 引用不新增安全面**：`data-ref-chip`/`title` 仅经 `getAttribute` 读取并作为路径字符串拼 `URLSearchParams`，从不 `innerHTML` 渲染；清洗后的文件路径仍走 `/file` 既有 loopback/cwd 围栏（相对路径强制 cwd、绝对路径沿用既有进程可读范围），与「deliverable chip 预览」同一安全模型。
-- **HTML serve 路由（issue #73，新增「目录→web root」映射）**：`/serve/<token>/<rest>` 把 token 登记的目录映射为可访问 web root，是安全模型变更点，**刻意与 `/file` 相反**做严格防护：
-  - **`realpath` 双向根越界校验**：token 分配时 `root = fs.realpath(dir)`；请求时对目标再次 `realpath` 后判定仍落在 root 内——**闭合符号链接逃逸**（`root/link -> /etc`）一律 404；`..`/`.` 段、`%2e%2e`/`%2f` 编码、NUL、交替分隔符（`\`）、绝对路径等编码攻击面一律 404（不越界、不 5xx）；
-  - **目录请求 404**，不做目录列表（不泄露目录内容）；root 越界 404；
-  - **只读伺服、不落盘不拷贝**：token 映射为内存态，进程崩溃即消失；`release` 显式释放 + idle TTL（默认 30min）+ LRU 上限（默认 64，不淘汰活跃预览）三重回收；
-  - **iframe sandbox 无脚本**：客户端以 `<iframe sandbox>`（**无 `allow-scripts`、无 `allow-same-origin`**——两者同开隔离失效，禁止）渲染，HTML 内 `<script>` 不执行（默认边界）；iframe `referrerpolicy="no-referrer"` 防外部资源收到含 token 的 Referer；
-  - **交互式预览（issue #507，新增脚本执行面）**：`alloc?mode=interactive` 分配**独立短 TTL token**（idle 10min、上限 16，独立于静态桶的 30min/64）→ iframe 重建为 `sandbox="allow-scripts"`（**永不 `allow-same-origin`**，J9 红线；opaque origin 下 `top` 读不到宿主页面、localStorage 抛 SecurityError、`window.open` 无 allow-popups 被浏览器阻断——实测背书）。**服务端强制 CSP 兜底**：serve 的 text/html 响应一律带 CSP——static `sandbox`（顶层粘贴 URL 打开也是 opaque 无脚本）、interactive `sandbox allow-scripts` + `connect-src 'none'`（页内 fetch/XHR/beacon/WebSocket/EventSource 在浏览器端被拦截，请求不发往宿主或外网）+ `form-action/base-uri/object-src/frame-src 'none'`。**残余风险诚实声明**：`img-src *`/`style-src *`/`font-src *` 允许资源型加载，脚本可把 token 塞进 URL 外传（`new Image().src=...`）；iframe 自身导航（`location.href`）封不住（`navigate-to` 指令已废弃）——CSP 无法清零外传，缓解靠**交互 token 短 TTL + 退出交互态即 release + 泄露后仅 no-cors 探测（无 ACAO 读不到内容）**。与 html-preview-sandbox 项目结论一致：纯 Web 宿主无法完全阻止 window.location 导航。父页心跳（2min GET serve URL 带 If-None-Match）用 idle 续命防误杀，退出清理。
-  - **`/file` 对 `.html/.htm` 保持 `text/plain`**：若改为 `text/html`，新标签/顶层直接访问 `file?path=foo.html` 会成为同源顶层脚本执行通道——serve 的 `text/html` 只作用于 `/serve` 沙箱路径；
-  - **loopback 围栏——serve 独有跨站 no-cors 放行（issue #549）**：serve/alloc/release 与 `/file` 默认同围栏（非回环 403 / 非 GET 405）；**serve 路由唯一例外**：放行「`sec-fetch-site: cross-site` 且 `sec-fetch-mode: no-cors`」的标签型子资源请求——sandbox iframe（opaque origin）内相对路径 css/js/img 加载必需（浏览器对 opaque origin 发起的一切请求标记为 cross-site，默认围栏会 403 全部子资源，多文件工程预览失效）。cors（页内 fetch/XHR）、navigate（顶层导航）、缺 mode 头（fail-closed）仍拒绝；alloc/release/`/file` 不放开跨站。LAN / 移动端 HTML 预览经 `dsh-lan-proxy` 现状穿透，风险沿用上方局域网部署高危告警，插件层不为 HTML 放开非 serve 路由围栏；
-  - 响应统一 `X-Content-Type-Options: nosniff` + `Referrer-Policy: no-referrer`；不设 `Access-Control-Allow-Origin`（压抑 iframe 内 fetch 数据外联）。
+- **不再有自建路由**：早期版本的 `/api/dsh-file-preview/*`（文件直出、HTML 虚拟伺服、token 体系）已随重定位移除。插件不再向浏览器暴露任何文件读取面，也不再需要 loopback 围栏、serve token 与 CSP 兜底——**早期 README 中「经代理暴露可预览本机文件」的局域网高危告警随之消失**。
+- **只读耦合**：插件只读取（不写入）请求 URL 与官方卡片 DOM 的 `title` 属性；采集到的路径仅用于拼接官方地址字符串。
+- **不出网**：命中收口时插件不发任何网络请求，直接调用官方右侧栏导航；未命中或异常时原样重放官方请求。
+- **最小权限**：客户端只注入 `sessions`（取会话 cwd 用于地址折叠）与 `sidebarRight`（官方右侧栏导航）；宿主端不再需要 `webServer`、文件系统或任何官方服务。
 
 ## 已知限制
 
-- 文本类超过 `maxTextBytes`（默认 20MB）返回 413+截断标记，不再整读全文（大文件流式/虚拟滚动未实现，见 W10 专项）；客户端对 >1MB 的超大文本降级为纯 `<pre>` 截断渲染（原始 tab / 新标签可看全文）。
-- HTML 预览（issue #73）已知限制：iframe 内 `fetch`/XHR 在 opaque origin 下被 serve 围栏 403（跨站 cors）且无 ACAO（CORS 读取阻断）——双重重叠阻断属预期，**仅影响页内脚本动态取数，不影响标签型子资源**（css/js/img 经 #549 跨站 no-cors 放行正常加载；交互态脚本 fetch 同受 `connect-src 'none'` CSP 浏览器端拦截）；**ES module 脚本**（`<script type=module>` 是 cors mode）在沙箱内被围栏 403、也读不到响应，不可用（README 明确）**；根绝对路径**（`<script src="/assets/app.js">`）不支持——浏览器按服务器 origin 解析会请求 dsh web 根，与 token 虚拟伺服不一致（支持需注入 `<base>` = 改写 HTML，属更高风险选项，另行决策）；iframe 内导航（SPA 路由 / 页面跳转）不进 Modal 返回栈；**预览长期不交互可能失效**（serve token idle TTL 兜底回收，静态 30min / 交互 10min + 父页心跳续命，关闭 Modal 会显式释放）；**交互态切换/返回丢失页内状态**（切回静态或走返回栈后交互态不还原——交互态不进返回栈快照，需重新点「交互」；属 opt-in 信任决策的刻意取舍）；**预览期间 root 目录被移动/删除后预览失效**（只读伺服不落盘语义，需重新打开）。
-- 可点击范围较宽（凡路径 title / 本地 href / 内联路径文本都可能进预览），`data-ref-chip` 权威分支优先于通用嗅探，避免 `@` 引用误触发。
-- 文件夹 `@` 引用不开预览（仅提示），目录浏览能力不在本插件范畴。
-- client bundle 含 `marked` + `highlight.js` 子集 + `diff2html`，min 后约 550KB（gzip ~120KB）。
-- Mermaid 懒加载 chunk 全量约 3.29MB min / ~940KB gzip（整库内联、不做按图类型裁剪——与业界惯例一致，见 issue #104 复核结论；首次渲染 mermaid 块时一次性拉取，低带宽首图延迟明显）。
-- 多会话切换以当前活跃会话 cwd 为准。
+- **依赖官方 DOM 标记**：路径采集依赖 `[data-presented-file]` 与 `title`。官方改版后若标记变化，收口会降级为放行原生打开（见「兼容性」）。
+- **pending 窗口**：路径在「点击卡片/提及」时采集，随后该次「用默认应用打开」使用它。极少见的情形（如键盘直接唤起菜单、或长时间停留后点击）可能采集不到，此时同样降级放行。
+- **路径形态过滤**：采集只接受「含路径分隔符」或「带扩展名的裸文件名」两种形态；无扩展名的裸名（如仓库根的 `Makefile`）不采集，该次点击按未采集处理（降级放行原生）。
+- **安装 / 升级后需重启一次**：插件产物只在 `dsh web` 启动时组合；运行期每次「打开」点击即时生效，无需重启。
+
+## 落幕判据
+
+以下任一条件满足时，本插件即可退役：
+
+- 官方把 `presented` 的卡片菜单与提及点击也改为右侧栏预览（或提供 `openWorkspacePath` 的 Web 兜底分支）；
+- 官方提供等价的「打开行为重定向」扩展点。
+
+相关跟踪：[issue #698](https://github.com/wingsky-1/dsh-plugin-hub/issues/698)。

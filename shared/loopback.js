@@ -19,8 +19,8 @@
  * 一律呈 cross-site，serve 虚拟伺服需放行 no-cors 标签型加载，但 cors
  * fetch/XHR 与 navigate 仍拒绝）。
  *
- * 跨站放行是安全语义变更点，**只允许 serve 类资源伺服路由使用**（见
- * dsh-web-file-preview serve 路由）；普通 /api 路由必须保持默认拒绝。
+ * 跨站放行是安全语义变更点，**只允许 serve 类资源伺服路由使用**；
+ * 普通 /api 路由必须保持默认拒绝。
  *
  * @param {import("node:http").IncomingMessage} request - Node http 请求对象。
  * @param {{ allowCrossSiteNoCors?: boolean }} [options] - 可选判定参数。

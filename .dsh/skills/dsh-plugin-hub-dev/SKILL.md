@@ -47,7 +47,7 @@ IIFE 工厂、Symbol.toStringTag 装配、**load id === 包名** define 注入�
 |---|---|---|
 | 零依赖 wrapper | 干净模块、无 bare import | esbuild iife + 生成外壳 |
 | React externals | `import * as React from "react"` | 干净模块 cjs 内联进 factory，React 由 loader `require("react")` 注入（无全局 React）；需 `react-shim.d.ts` + peer react optional |
-| 第三方内联 | `dsh.client.inlineBareImports: true` | bare import（dompurify/diff2html/marked/highlight…）由 esbuild 内联进 client.js，仍自包含零依赖；web-file-preview 走这条 |
+| 第三方内联 | `dsh.client.inlineBareImports: true` | bare import（dompurify/glob/marked…）由 esbuild 内联进 client.js，仍自包含零依赖；dsh-mcp-manager 走这条 |
 
 ⚠️ 默认「bare import = 宿主注入 external（React）」与 `inlineBareImports` 互斥，按包
 二选一。
@@ -75,7 +75,7 @@ IIFE 工厂、Symbol.toStringTag 装配、**load id === 包名** define 注入�
 
 - 客户端专属模块（md/code/renderer 等）、`style.css`、`react-shim.d.ts`、`css.d.ts`
   归位 `src/client/`；宿主模块留 `src/` 根。
-- **宿主与客户端共享**的模块（如 web-file-preview 的 `grouping.ts`）留 `src/` 根，
+- **宿主与客户端共享**的模块（如双端共用的后缀表 / 契约常量）留 `src/` 根，
   客户端经 `../grouping.js` 引用——不要把共享模块搬进 src/client/。
 
 ## 5. 门禁与阶段提交（改动提交前全跑，在仓库根执行）
@@ -111,7 +111,9 @@ pnpm build && pnpm test && pnpm contract && pnpm pack:check && pnpm typecheck
   临时目录，不纳入发布包，**用完即弃**）。涉及界面行为的改动实测后将截图归档至
   `packages/dsh-<name>/docs/archive/<issue号>-<行为描述>.png`（headless element
   screenshot 只截插件 UI 本身、不带浏览器整窗；各包 files 白名单不含 `docs/`，
-  截图不入发布物 tarball），并在 PR 正文贴图引用该路径、issue 评论回链 PR。
+  截图不入发布物 tarball），并在 PR 正文贴图引用该路径、issue 评论回链 PR。正文嵌图
+  手段（`gh --attach` / commit-pin raw URL / 网页拖拽）与破图陷阱见
+  [dsh-plugin-hub-pr-review/references/pr-images.md](../dsh-plugin-hub-pr-review/references/pr-images.md)。
 - P0/P1 断言必须实测并标证据类型（curl / playwright / smoke）；检核表见
   [dsh-plugin-review/references/verify-checklist.md](../dsh-plugin-review/references/verify-checklist.md)。
 - 新配置键**四同步**：normalize 白名单 / 透传排除表 + 客户端渲染 + smoke 断言 +

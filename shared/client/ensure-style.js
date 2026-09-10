@@ -1,7 +1,7 @@
 // dsh 插件家族共享层 — 客户端样式注入（issue #477 收敛，单一事实源）。
 //
 // 历史：dsh-notifier / dsh-lan-proxy 各持一份 id+dataset.version 幂等注入实现，
-// dsh-web-file-preview / dsh-provider-usage / dsh-mcp-manager 各持一份
+// dsh-provider-usage / dsh-mcp-manager 各持一份
 // data-attr 查询标记实现，行为同构、实现漂移；统一由本模块参数化承载。
 // 调用方只补 { id, cssText, version? } 实参，不再各自持有注入代码。
 //

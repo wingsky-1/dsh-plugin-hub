@@ -44,7 +44,7 @@ DSH（DeepSeek Harness）Web GUI 插件集，npm 分发：一键装全家桶，�
 | `@wingsky-1/dsh-provider-usage` | 多 provider 用量统计框架（v2 适配器契约）：常驻胶囊 + 详情面板；内置 DeepSeek 官方（区间记账法推算每日用量 + 峰谷倒计时徽标，官方无用量接口也能算）与 OpenCode Go 开箱即用；自写一个 mjs 即可接入任意数据源、设置页热插拔；日/周/月用量报告（经宿主 llm 生成）；密钥只在宿主端不进浏览器 | [README](packages/dsh-provider-usage/README.md) · [适配器开发指南](packages/dsh-provider-usage/docs/adapter-guide.md) · [架构图解](docs/architecture/dsh-provider-usage.md) | 已发布 |
 | `@wingsky-1/dsh-lan-proxy` | 局域网访问 dsh web UI：HTTP/HTTPS/WS 转发 + TLS（自签名/自定义证书）；HTTP（Brotli/gzip 自适应）与 WebSocket（permessage-deflate）双压缩；WS 半开探活，移动端切后台不僵死；启动令牌自动注入，LAN 设备免手工拿 token；DNS 重绑定防护 + 回环目标白名单 | [README](packages/dsh-lan-proxy/README.md) · [架构图解](docs/architecture/dsh-lan-proxy.md) | 已发布 |
 | `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理器（stdio / streamable-http）：项目级/全局两级配置分工作目录维护；项目级 MCP 默认经中间层收敛为 4 个原子工具（`middleware: all` 全量收敛、设置页热切换）；工作空间隔离防串台；配置只存 `${ENV}` 引用不落盘密钥；提供运行时注册接口供其他插件注入 MCP | [README](packages/dsh-mcp-manager/README.md) · [架构图解](docs/architecture/dsh-mcp-manager.md) | 已发布 |
-| `@wingsky-1/dsh-web-file-preview` | 对话文件链接 web 端预览：图片（灯箱缩放）/ Markdown（含 Mermaid 图表渲染）/ 代码（25+ 语言高亮）/ 文本 / git Diff / HTML 沙箱预览（iframe sandbox 不执行脚本）；@ 引用识别 + 路径兜底搜索（引用路径写错时按 basename 在工作区内唯一匹配） | [README](packages/dsh-web-file-preview/README.md) · [架构图解](docs/architecture/dsh-web-file-preview.md) | 已发布 |
+| `@wingsky-1/dsh-web-file-preview` | 把对话内「用默认应用打开」的文件请求改写成官方右侧栏预览（拦截 `POST /api/present.open` 转 `ctx.sidebarRight.openResource`），不注册官方扩展点、不修改官方源码 | [README](packages/dsh-web-file-preview/README.md) · [架构图解](docs/architecture/dsh-web-file-preview.md) | 已发布 |
 | `@wingsky-1/dsh-verify-isolated` | DSH 插件开发的隔离环境浏览器验证 skill：临时 DSH_HOME + 独立 profile + 独立端口 + 独立浏览器实例四重隔离，一键拉起、退出自动清理；自带 raw CDP 零依赖浏览器驱动（快照/点击/截图/求值），可选隔离审计 | [README](packages/dsh-verify-isolated/README.md) · [架构图解](docs/architecture/dsh-verify-isolated.md) | 已发布 |
 
 <details>
@@ -188,7 +188,6 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
 
 - `dsh-lan-proxy` 装完即在 `0.0.0.0` 开放 HTTP/HTTPS 端口，**局域网所有设备可访问你的 dsh**——不需要时请卸载
 - `dsh-lan-proxy` 的启动令牌自动注入（`injectToken`）**默认开启**：局域网内任何能访问该端口的设备免 token 获得完整 dsh 控制权（等效信任整个局域网，bash 直通宿主机）——仅在可信内网开启，不可信网段务必在设置卡片关闭
-- `dsh-web-file-preview` 经 `dsh-lan-proxy` 等代理对外暴露时 loopback 围栏会被代理穿透：**局域网设备无需任何凭据即可预览本机文件（含 `~/.dsh` 下的凭据/配置文件）**——请在可信局域网使用，勿暴露到公共网络
 - `dsh-mcp-manager` 的 stdio 子进程继承宿主权限，只配置可信的 MCP 服务器
 - 各插件全部路由均 loopback 围栏（非回环 403 / 方法错 405）
 
