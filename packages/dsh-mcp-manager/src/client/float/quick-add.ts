@@ -111,7 +111,20 @@ export async function saveForm(state: McpState, actions: UiActions): Promise<voi
   const server = readForm(state);
   try {
     const payload = { ...server, scope: formScopeValue(state), ...currentCwdBody(state) };
-    if (state.editingName !== undefined) {
+    const editing = state.editingName !== undefined;
+    // C11 迁移式保存：宿主 PATCH 按 (scope,name) 定位且强制沿用定位名——
+    // 编辑改名/改归属会 404 not found 无引导。先 POST 新条目再 DELETE 旧条目，
+    // 任何失败即中止（保留原条目，alert 提示），避免半迁移脏数据。
+    const migrated = editing && (state.editingName !== server.name
+      || (state.editing?.scope !== undefined && state.editing.scope !== payload.scope));
+    if (migrated) {
+      await api(state.API.servers, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      await api(`${state.API.servers}?name=${encodeURIComponent(state.editingName)}&scope=${state.editing.scope}`, { method: "DELETE" });
+    } else if (editing) {
       await api(`${state.API.servers}?name=${encodeURIComponent(state.editingName)}&scope=${formScopeValue(state)}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
