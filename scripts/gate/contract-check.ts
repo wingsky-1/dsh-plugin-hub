@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url'
 import { assertClientContract } from '../lib/client-contract-lib.ts'
 import { filterOutRetiredDirs, listPluginDirs, loadManifest } from '../lib/plugins-manifest-lib.ts'
 import { runConfigMatrix } from '../lib/config-matrix-gate.ts'
+import { checkCatalogPeers } from '../lib/catalog-peers-lib.ts'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const packagesDir = join(ROOT, 'packages')
@@ -157,6 +158,19 @@ console.log(failed === 0 ? '客户端契约：全部通过' : `客户端契约�
   const matrixFailed = matrix.problems.length > 0
   if (matrixFailed) failed++ // 仅用于 exit code（汇总行文案在矩阵段前已打印，不受影响）
   console.log(matrixFailed ? `config-matrix | ${matrix.problems.length} 个失败` : 'config-matrix | PASS')
+}
+// #695：catalog ↔ peer/devDeps 一致性——官方类型层版本事实源收敛到 catalog 一处后，
+// 本段防「peer 写回字面量 / catalog: 引用无条目 / 供应链豁免清单漂移」。
+{
+  const peers = checkCatalogPeers(ROOT)
+  console.log('\ncatalog-peers:')
+  for (const line of peers.lines) console.log(`  ${line}`)
+  for (const problem of peers.problems) console.log(`FAIL catalog-peers | ${problem}`)
+  if (peers.problems.length > 0) {
+    console.log('hint catalog-peers | 官方依赖请只改 pnpm-workspace.yaml catalog（并同步 minimumReleaseAgeExclude），package.json 一律写 catalog:；补齐后重跑 pnpm contract')
+    failed++
+  }
+  console.log(peers.problems.length > 0 ? `catalog-peers | ${peers.problems.length} 个失败` : 'catalog-peers | PASS')
 }
 // D10（issue #664）：目录 interface.ts 门面静态检查——跨目录引用只能走目标目录
 // interface.ts；适用包白名单缺省 dsh-mcp-manager（#664 重构包），client/ 豁免
