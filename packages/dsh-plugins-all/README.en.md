@@ -76,12 +76,15 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
 > `resolveChildAgentOptions`. Users who installed them should run
 > `dsh plugin --profile web remove <package>` to uninstall.
 >
-> dsh-memory (project long-term memory) is not included in this aggregate package.
+> `@wingsky-1/dsh-codegraph` (codegraph MCP + worktree development discipline) and
+> `@wingsky-1/dsh-mem0` (mem0 long-term memory system) have both been **retired** and no
+> longer ship with the bundle: the former because its wrapper tools are tightly coupled to
+> the codegraph CLI version so the maintenance cost exceeds the benefit, the latter
+> because environment-isolation and related defects were never resolved (#644 / #612).
+> Users who installed them should run
+> `dsh plugin --profile web remove <package>` to uninstall.
 >
-> `@wingsky-1/dsh-codegraph` (codegraph MCP + worktree development discipline) is
-> **packaged separately** and is not included in this aggregate package for now; to use
-> it, install this aggregate package or `dsh-mcp-manager` first, then install
-> `dsh-codegraph` on its own.
+> dsh-memory (project long-term memory) is not included in this aggregate package.
 
 ## Install individually
 

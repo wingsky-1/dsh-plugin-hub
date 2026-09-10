@@ -98,7 +98,7 @@ sequenceDiagram
   优先）+ runtimeRegistry（同名 runtime 优先），变化才动作；
 - **runtime 注入**：其他插件可经 `ctx.mcpManager.registerServer({...toolDefinitions})`
   运行时注册（内存态不落盘，同名幂等）；带 `toolDefinitions` 时 execute 来自调用方封装
-  （如 dsh-codegraph 先 sync 再内部转发 CLI），底层实现不外泄。
+  （调用方可先做预处理再内部转发底层命令），底层实现不外泄。
 
 ### 3.2 断线重连（有界指数退避）
 

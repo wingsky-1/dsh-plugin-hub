@@ -2,7 +2,7 @@
  * mcp-manager 核心服务类型面（单一事实源）。
  *
  * 供 mcp-manager 提供方（src/service.ts re-export + declare module 合并）
- * 与消费方插件（如 dsh-codegraph）引用——消费方**从 mcp-manager 包引类型**
+ * 与消费方插件引用——消费方**从 mcp-manager 包引类型**
  * （`import type { McpManagerService } from "@wingsky-1/dsh-mcp-manager"`），
  * 本文件是类型定义的唯一事实源，mcp-manager 包 re-export 之。纯类型，
  * esbuild 构建期内联、随包复制（d.ts X1）。
@@ -64,7 +64,7 @@ export interface McpManagerServerInput {
   reconnect?: Record<string, unknown>;
   description?: string;
   /**
-   * 可选：调用方封装工具定义（裸名；如 dsh-codegraph 的 codegraph_explore）。
+   * 可选：调用方封装工具定义（裸名）。
    * 提供时该服务器工具全部用封装定义注册（execute 来自调用方，跳过远端
    * schema 与通用 callTool）；缺省维持现状（远端 schema + mcp__ 前缀 +
    * 通用 callTool）。模型可见名仍由 manager 命名机制决定（mcp__ 前缀）；

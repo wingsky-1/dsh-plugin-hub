@@ -116,13 +116,13 @@ assert.deepEqual(splitReferenceFragment("./f.md#g"), { ref: "./f.md", fragment: 
 // 相对 basePath 直接喂 rewriteTarget 全 NULL（P1 根因），归一为绝对后与绝对场景一致。
 {
   const CWD = "/home/u/proj";
-  const relBase = "docs/architecture/dsh-codegraph.md";
+  const relBase = "docs/architecture/dsh-notifier.md";
   const absBase = normalizeBasePath(relBase, CWD);
-  assert.equal(absBase, "/home/u/proj/docs/architecture/dsh-codegraph.md", "#479 相对 basePath 归一为绝对");
-  const relImg = rewriteTarget("diagrams/codegraph-architecture.svg", { cwd: CWD, basePath: relBase });
-  const absImg = rewriteTarget("diagrams/codegraph-architecture.svg", { cwd: CWD, basePath: absBase });
+  assert.equal(absBase, "/home/u/proj/docs/architecture/dsh-notifier.md", "#479 相对 basePath 归一为绝对");
+  const relImg = rewriteTarget("diagrams/notifier-architecture.svg", { cwd: CWD, basePath: relBase });
+  const absImg = rewriteTarget("diagrams/notifier-architecture.svg", { cwd: CWD, basePath: absBase });
   assert.equal(relImg, null, "#479 修复前（相对 basePath）：文内相对图片不重写（P1 根因已固化）");
-  assert.ok(absImg !== null && absImg.path === "/home/u/proj/docs/architecture/diagrams/codegraph-architecture.svg", "#479 归一经 rewriteTarget 重写为预览目标");
+  assert.ok(absImg !== null && absImg.path === "/home/u/proj/docs/architecture/diagrams/notifier-architecture.svg", "#479 归一经 rewriteTarget 重写为预览目标");
 }
 
 // issue #479 P2：目录引用（[diagrams/](diagrams/) 等）——rewriteTarget 保持 null
@@ -130,7 +130,7 @@ assert.deepEqual(splitReferenceFragment("./f.md#g"), { ref: "./f.md", fragment: 
 // data-fp-dir → toast 提示，而非 target=_blank 新标签打开错误 URL）。
 {
   const CWD = "/home/u/proj";
-  const base = "/home/u/proj/docs/architecture/dsh-codegraph.md";
+  const base = "/home/u/proj/docs/architecture/dsh-notifier.md";
   const opts = { cwd: CWD, basePath: base };
   assert.equal(rewriteTarget("diagrams/", opts), null, "#479 P2 目录引用不可预览 → rewriteTarget null");
   assert.equal(dirResolvedPathOf("diagrams/", opts), "/home/u/proj/docs/architecture/diagrams/", "#479 P2 目录语义判定返回绝对目录路径");

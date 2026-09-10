@@ -58,7 +58,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
 | `@wingsky-1/dsh-verify-isolated` | 插件开发隔离验证 skill（DSH_HOME / profile / 端口 / 浏览器实例四重隔离 + 自带浏览器驱动） |
 
 <details>
-<summary><b>历史退役说明</b>——dsh-gzip / dsh-idle-archive / dsh-subagent-model-inherit（已退役）</summary>
+<summary><b>历史退役说明</b>——dsh-gzip / dsh-idle-archive / dsh-subagent-model-inherit / dsh-codegraph / dsh-mem0（已退役）</summary>
 
 `@wingsky-1/dsh-gzip` 已退役：HTTP 响应压缩合并进 dsh-lan-proxy，不再随全家桶
 分发。此前单独安装过 dsh-gzip 的用户升级后请执行
@@ -70,13 +70,15 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
 dsh-subagent 0.1.2-alpha.2 已原生实现 `resolveChildAgentOptions`。此前安装过的用户
 请执行 `dsh plugin --profile web remove <包名>` 卸载。
 
+`@wingsky-1/dsh-codegraph`（codegraph MCP + worktree 开发纪律）与
+`@wingsky-1/dsh-mem0`（mem0 长期记忆系统）均已**退役**，不再随全家桶分发：前者
+封装工具与 codegraph CLI 版本强耦合、维护成本高于收益，后者环境隔离等缺陷未收敛
+（#644 / #612）。此前安装过的用户请执行
+`dsh plugin --profile web remove <包名>` 卸载。
+
 </details>
 
 > dsh-memory（项目长期记忆）未包含在本聚合包内。
->
-> `@wingsky-1/dsh-codegraph`（codegraph MCP + worktree 开发纪律）为**独立发包**，
-> 暂不包含在本聚合包内；如需使用请先安装本聚合包或 `dsh-mcp-manager` 后单独安装
-> `dsh-codegraph`。
 
 ## 单独安装
 
