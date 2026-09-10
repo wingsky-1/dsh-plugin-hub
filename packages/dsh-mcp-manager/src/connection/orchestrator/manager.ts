@@ -12,7 +12,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { ServerResponse } from "node:http";
-import type { SseHub } from "../../../shared/sse-hub.js";
+import type { SseHub } from "../../../../../shared/sse-hub.js";
 import type { Context, LoggerService } from "@deepseek-ai/cordis";
 import type { ServerConfig, ClientUiConfig } from "../../types/interface.ts";
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
