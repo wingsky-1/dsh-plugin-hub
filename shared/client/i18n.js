@@ -1,6 +1,6 @@
 // dsh 插件家族共享层 — 客户端共享 t 活绑定（issue #348 引入，issue #378 抽取）。
 //
-// 历史：dsh-mcp-manager / dsh-provider-usage / dsh-web-file-preview 三包各持一份
+// 历史：dsh-mcp-manager / dsh-provider-usage 两包各持一份
 // 逐字节同构的 src/client/i18n.ts（仅头注释包名不同），统一由本模块提供。
 // 各包 client 是多文件模块，翻译函数须跨文件共享且在语言切换时整体重绑：
 // `export let t` 为 ESM 活绑定（esbuild 同 bundle 内联为直接变量引用，

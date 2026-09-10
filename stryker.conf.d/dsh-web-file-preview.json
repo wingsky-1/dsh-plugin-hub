@@ -36,12 +36,7 @@
       "./scripts/test/mutation-lib-to-src-hook.mjs"
     ],
     "testFiles": [
-      "packages/dsh-web-file-preview/test/unit-grouping.test.ts",
-      "packages/dsh-web-file-preview/test/unit-relpath.test.ts",
-      "packages/dsh-web-file-preview/test/unit-routes.test.ts",
-      "packages/dsh-web-file-preview/test/unit-serve-tokens.test.ts",
-      "packages/dsh-web-file-preview/test/unit-basename-fallback.test.ts",
-      "packages/dsh-web-file-preview/test/unit-git.test.ts"
+      "packages/dsh-web-file-preview/test/unit-present-open.test.ts"
     ]
   },
   "jsonReporter": {

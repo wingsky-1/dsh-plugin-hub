@@ -185,7 +185,7 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
   define 注入给客户端（客户端不引用则零影响）。
 - **依赖纪律**：只 import `../../shared/*`（loopback / host-utils / frontmatter，构建期
   内联）与 Node 内置模块；**任何第三方运行时依赖一律由 esbuild `--bundle` 内联**
-  （如 web-file-preview 宿主用的 `untildify`/`marked`），发布物不以运行时 npm 依赖形式发布。
+  （如 mcp-manager 宿主用的 `fast-glob`），发布物不以运行时 npm 依赖形式发布。
 - **安全**：全部路由强制 loopback 围栏（非回环 403、方法错 405），`/health` 必项；
   RPC/端点做参数校验；密钥/凭据不入包。
 - **挂载**：`cordis.patch.yml`，patch **id 用 `ui-<name>`**；声明 `dsh.client` 时必须有
@@ -293,7 +293,7 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
 - 客户端入口统一 `src/client/index.ts`（`src/client.ts` 已停用）。
 - **拆 CSS 或带多模块/React shim 的包**：客户端专属模块（`md/code/renderer` 等）、
   `style.css`、`react-shim.d.ts`、`css.d.ts` 都归位 `src/client/`；宿主模块留 `src/` 根。
-- **宿主 & 客户端共享**的模块（如 web-file-preview 的 `grouping.ts`）留 `src/` 根，
+- **宿主 & 客户端共享**的模块（如双端共用的后缀表 / 契约常量）留 `src/` 根，
   客户端经 `../grouping.js` 引用——不要为"客户端专用"而把共享模块搬走。
 
 ### 2.3 客户端其它要点

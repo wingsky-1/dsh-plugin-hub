@@ -136,3 +136,14 @@ assert.equal(
 );
 assert.equal(usablePending({ path: "打开", at: NOW }, NOW), null, "#698 非路径 title 不采信");
 assert.equal(usablePending({ path: "src/a.ts", at: Number.NaN }, NOW), null, "#698 非法时间戳");
+// 边界：TTL 恰好到期仍可用（判据是「超过」而非「达到」）。
+assert.equal(
+  usablePending({ path: "src/a.ts", at: NOW - PENDING_TTL_MS }, NOW),
+  "src/a.ts",
+  "#698 TTL 边界（恰好等于有效期）仍采信",
+);
+
+// 裸文件名形态的边界：正则两端都要求锚定（结尾非扩展名字符 / 缺扩展名主体 / 超长扩展名）。
+assert.equal(looksLikeFilePath("a.md!"), false, "#698 结尾非扩展名字符不采信");
+assert.equal(looksLikeFilePath("a."), false, "#698 缺扩展名主体不采信");
+assert.equal(looksLikeFilePath(`a.${"x".repeat(17)}`), false, "#698 扩展名超长不采信");

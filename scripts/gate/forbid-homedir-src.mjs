@@ -57,8 +57,6 @@ const WHITELIST = new Map([
   // #87：用户输入 `~` 前缀展开（untildify 业界标准实现），目标由用户指定
   // （阶段四 #670 目录化：src/path-resolve.ts → src/domain1/registry/path-resolve.ts）
   ["packages/dsh-provider-usage/src/domain1/registry/path-resolve.ts", "#87 用户路径 ~ 展开"],
-  ["packages/dsh-web-file-preview/src/git.ts", "#87 用户路径 ~ 展开"],
-  ["packages/dsh-web-file-preview/src/routes.ts", "#87 用户路径 ~ 展开"],
 ]);
 
 const EXEMPT_MARK = "dsh-gate:allow-homedir";
