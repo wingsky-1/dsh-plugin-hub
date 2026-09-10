@@ -15,12 +15,12 @@
  */
 
 import type { Context } from "@deepseek-ai/cordis";
-import { McpManager } from "./connection/interface.ts";
-import { McpStore } from "./config/store/interface.ts";
-import { registerMiddlewareTools, registerDirectMcpGuard } from "./inject/interface.ts";
-import { loadDisabledTools } from "./config/store/interface.ts";
+import { McpManager } from "../connection/interface.ts";
+import { McpStore } from "../config/store/interface.ts";
+import { registerMiddlewareTools, registerDirectMcpGuard } from "../inject/interface.ts";
+import { loadDisabledTools } from "../config/store/interface.ts";
 import { makeMiddlewareHotSwitch } from "./apply-runtime.ts";
-import { normalizeMiddlewareMode, makeResolveRoot } from "./workspace/interface.ts";
+import { normalizeMiddlewareMode, makeResolveRoot } from "../workspace/interface.ts";
 import { registerCatalogInjection, setupConfigWatchersAsync, setupRoutesAndBroadcast } from "./apply-runtime.ts";
 import { provideMcpManagerService } from "./apply-services.ts";
 import {
@@ -192,7 +192,7 @@ async function assembleEnabledRuntime(
 
 // 具名常量（增强配置默认值）：DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS 从 config-schema
 // re-export（拆分前 apply.ts 直接 import；此处保持同值语义）。
-import { DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS } from "./config/model/interface.ts";
-import { DEFAULT_RESULT_TRUNCATE_BYTES } from "./connection/interface.ts";
+import { DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS } from "../config/model/interface.ts";
+import { DEFAULT_RESULT_TRUNCATE_BYTES } from "../connection/interface.ts";
 const DEFAULT_ENHANCE_EMPTY = DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS;
 const DEFAULT_TRUNCATE = DEFAULT_RESULT_TRUNCATE_BYTES;

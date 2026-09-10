@@ -14,14 +14,14 @@
 import { dirname } from "node:path";
 import type { Context } from "@deepseek-ai/cordis";
 import type { PreStepDecision } from "@deepseek-ai/dsh-agent";
-import type { CatalogCache, CatalogDecision, CatalogMessage, SupervisorLite, CatalogAgent } from "./catalog/interface.ts";
-import { resolveCatalogInjection } from "./catalog/interface.ts";
-import { normalizeMiddlewareMode } from "./workspace/interface.ts";
-import type { McpManager } from "./connection/interface.ts";
-import { registerMiddlewareTools, registerDirectMcpGuard } from "./inject/interface.ts";
-import type { MiddlewareMode } from "./types/interface.ts";
-import { makeRoutes, makeEventsRoute, makeHealthRoute } from "./routes.ts";
-import { sseData } from "../../../shared/host-utils.js";
+import type { CatalogCache, CatalogDecision, CatalogMessage, SupervisorLite, CatalogAgent } from "../catalog/interface.ts";
+import { resolveCatalogInjection } from "../catalog/interface.ts";
+import { normalizeMiddlewareMode } from "../workspace/interface.ts";
+import type { McpManager } from "../connection/interface.ts";
+import { registerMiddlewareTools, registerDirectMcpGuard } from "../inject/interface.ts";
+import type { MiddlewareMode } from "../types/interface.ts";
+import { makeRoutes, makeEventsRoute, makeHealthRoute } from "../api/interface.ts";
+import { sseData } from "../../../../shared/host-utils.js";
 
 /** apply 运行期装配产物的 disposer 集合（顶层 effect 统一收口）。 */
 export interface ApplyDisposers {

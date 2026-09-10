@@ -12,8 +12,8 @@
  */
 
 import type { Context } from "@deepseek-ai/cordis";
-import type { McpManager } from "./connection/interface.ts";
-import type { McpServerSummary } from "../../../shared/mcp-manager-service.js";
+import type { McpManager } from "../connection/interface.ts";
+import type { McpServerSummary } from "../../../../shared/mcp-manager-service.js";
 
 /**
  * 向宿主容器提供核心化服务 `ctx.mcpManager`（供其他插件运行时注入/控制/查询

@@ -14,13 +14,13 @@
  */
 
 // 辅助函数统一来自仓库共享层（loopback 围栏 / writeJson / readJsonBody / sseData）。
-import { writeJson, sseData, guardLoopbackMethod } from "../../../shared/host-utils.js";
-import { createSseHub } from "../../../shared/sse-hub.js";
-import type { SseHub } from "../../../shared/sse-hub.js";
-import type { ServerConfig, ClientUiConfig, RoutesManager } from "./types/interface.ts";
+import { writeJson, sseData, guardLoopbackMethod } from "../../../../shared/host-utils.js";
+import { createSseHub } from "../../../../shared/sse-hub.js";
+import type { SseHub } from "../../../../shared/sse-hub.js";
+import type { ServerConfig, ClientUiConfig, RoutesManager } from "../types/interface.ts";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { ServerResponse } from "node:http";
-import type { McpStore } from "./config/store/interface.ts";
+import type { McpStore } from "../config/store/interface.ts";
 import {
   buildConfigRoute,
   buildServersRoute,

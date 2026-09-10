@@ -56,10 +56,10 @@ export { panelAnchorForPosition } from "./placement-math.ts";
 // 导出面与拆分前 lib/index.js 完全一致（smoke 验收契约）。
 
 // 插件契约转发（apply 主流程 + 宣告文本实现于 apply.ts）
-export { apply, MCP_GUIDANCE } from "./apply.ts";
-export { resolveDebugConfig, resolveMiddlewareMode } from "./apply-config.ts";
+export { apply, MCP_GUIDANCE } from "./bootstrap/interface.ts";
+export { resolveDebugConfig, resolveMiddlewareMode } from "./bootstrap/interface.ts";
 // 运行期装配工厂（组合根）：热切换为 B20/C-EVT 契约测试面
-export { makeMiddlewareHotSwitch } from "./apply-runtime.ts";
+export { makeMiddlewareHotSwitch } from "./bootstrap/interface.ts";
 
 // 插件 Config schema 与配置归一化（类型自 types.ts 取）
 export {
@@ -191,7 +191,7 @@ export type {
 } from "./types/interface.ts";
 
 // 路由
-export { ROUTES, makeRoutes, makeEventsRoute, makeHealthRoute, uiConfigChangedFrame, broadcastFrame, SSE_HEARTBEAT_MS, SSE_PING_FRAME } from "./routes.ts";
+export { ROUTES, makeRoutes, makeEventsRoute, makeHealthRoute, uiConfigChangedFrame, broadcastFrame, SSE_HEARTBEAT_MS, SSE_PING_FRAME } from "./api/interface.ts";
 export { SCOPE_GLOBAL, SCOPE_PROJECT, normalizeScope } from "./workspace/interface.ts";
 // 仓库共享层（loopback 围栏 / writeJson / readJsonBody / sseData）
 export { isLoopbackRequest } from "../../../shared/loopback.js";
