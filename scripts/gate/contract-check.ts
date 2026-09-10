@@ -172,9 +172,14 @@ console.log(failed === 0 ? '客户端契约：全部通过' : `客户端契约�
   }
   console.log(peers.problems.length > 0 ? `catalog-peers | ${peers.problems.length} 个失败` : 'catalog-peers | PASS')
 }
-// D10（issue #664）：目录 interface.ts 门面静态检查——跨目录引用只能走目标目录
-// interface.ts；适用包白名单缺省 dsh-mcp-manager（#664 重构包），client/ 豁免
-// （index.ts 契约锚点）。PR1（#669）起显式纳入 dsh-notifier（目录树重构包）。
+// D10（issue #664）：目录 interface.ts 门面静态检查——跨模块引用只能走目标模块
+// interface.ts（入口）或 deps.ts（出口）；适用包白名单缺省 dsh-mcp-manager
+// （#664 重构包），client/ 豁免（index.ts 契约锚点）。PR1（#669）起显式纳入
+// dsh-notifier（目录树重构包）。
+// S0（#690）：模块改**叶子粒度**（递归含 interface.ts 的目录，分组层透明），并新增
+// 单调基线（scripts/data/dir-imports-baseline.json，每包每类计数只许降不许升）、
+// 源码全覆盖断言（src ⊆ ∪mutate ∪ ∪excludes）。执法点仍在本 contract 段，不新增
+// workflow；--zones / --graph 是纯报告开关（不进 CI，避免长输出）。
 // 独立脚本可单独跑；接入本门禁防约束漂移。
 {
   const dirGate = spawnSync(process.execPath, [join(ROOT, 'scripts/gate/verify-dir-imports.mjs'), '--package', 'dsh-mcp-manager', '--package', 'dsh-notifier'], { encoding: 'utf8' })
@@ -184,9 +189,11 @@ console.log(failed === 0 ? '客户端契约：全部通过' : `客户端契约�
     failed++
   }
 }
-// #670 C2（阶段四）：provider-usage 目录门面走 --soft——跨目录直引是过渡债
+// #670 C2（阶段四）：provider-usage 目录门面走 --soft——跨模块直引是过渡债
 // （软报告 review 用，不判红），但 interface.ts 符号存在性（防虚导出）在
 // soft/hard 两模式均硬执行，故虚导出会导致本段 status != 0 判红本门禁。
+// S0（#690）起：--soft 只影响直引明细的打印标签，单调基线与全覆盖断言一视同仁
+// （存量登记在基线里，上升仍判红）。
 {
   const providerDirGate = spawnSync(
     process.execPath,
