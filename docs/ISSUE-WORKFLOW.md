@@ -53,7 +53,10 @@
    `packages/dsh-<name>/docs/archive/<issue号>-<行为描述>.png`（如
    `37-basename-fallback-overlay.png`）；截图只截插件 UI 本身（headless element
    screenshot），不带浏览器整窗，避免泄露本机环境。归档后双向引用：PR 正文贴图并
-   引用文件路径，issue 评论回链 PR。发布边界已核实安全：各包 files 白名单不含
+   引用文件路径，issue 评论回链 PR；正文嵌图手段（`gh --attach` / commit-pin raw
+   URL / 网页拖拽）与破图陷阱见
+   [.dsh/skills/dsh-plugin-hub-pr-review/references/pr-images.md](../.dsh/skills/dsh-plugin-hub-pr-review/references/pr-images.md)。
+   发布边界已核实安全：各包 files 白名单不含
    `docs/`，截图不入 tarball，不破坏「发布物不含内部文档」约定。PR 模板已内置
    客户端截图证据清单，见 `.github/PULL_REQUEST_TEMPLATE.md`。纯宿主端 /
    文档改动可跳过本步。
