@@ -1,7 +1,8 @@
 /**
- * dsh-mcp-manager — 客户端 DOM 工具函数。
+ * dsh-mcp-manager — 客户端 DOM 工具函数（core 层）。
  *
- * DOM 元素创建、HTTP API 请求等纯工具函数。
+ * 阶段 7 分层：HTTP API 请求已拆出至 ./api.ts（拆出自原 dom.ts——dom.ts
+ * 保留 DOM 元素创建职责，api.ts 收 HTTP 请求职责）。
  * 仅 export 纯函数，不依赖任何状态。
  */
 
@@ -26,33 +27,4 @@ export function el(tag: any, attrs: any = {}, children?: any): any {
     node.appendChild(typeof child === "string" ? document.createTextNode(child) : child);
   }
   return node;
-}
-
-/**
- * HTTP API 请求。
- * 返回 JSON 解析后的 body；非 2xx 抛 Error。
- * 带默认超时（10s，AbortSignal），防挂起请求占用连接（#111 变更点驱动）。
- * 调用方自带 signal 时：超时兜底不启用（调用方 signal 优先，避免双取消竞争）。
- */
-export async function api(path: any, options: any = {}): Promise<any> {
-  const timeoutMs = options.timeoutMs ?? 10_000;
-  const hasCallerSignal = options.signal !== undefined;
-  const controller = new AbortController();
-  const timer = hasCallerSignal ? undefined : setTimeout(() => controller.abort(new Error(`request timed out (${timeoutMs}ms)`)), timeoutMs);
-  const merged = { ...options, signal: options.signal ?? controller.signal };
-  try {
-    const response = await fetch(path, merged);
-    let body: any;
-    try {
-      body = await response.json();
-    } catch {
-      body = undefined;
-    }
-    if (!response.ok) {
-      throw new Error(body?.error ?? `HTTP ${response.status}`);
-    }
-    return body;
-  } finally {
-    if (timer !== undefined) clearTimeout(timer);
-  }
 }

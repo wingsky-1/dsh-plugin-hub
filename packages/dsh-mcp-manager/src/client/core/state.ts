@@ -6,7 +6,7 @@
  */
 
 import { API } from "./constants.ts";
-import { DEFAULT_Z_INDEX_BASE } from "../placement-math.ts";
+import { DEFAULT_Z_INDEX_BASE } from "../../placement-math.ts";
 
 /** 单台 MCP 服务器面向 UI 的摘要形态。 */
 export interface McpServerSummary {

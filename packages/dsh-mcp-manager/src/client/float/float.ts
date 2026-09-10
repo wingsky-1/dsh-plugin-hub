@@ -6,10 +6,12 @@
  * 跨模块动作（showPanel / refresh）经 actions 注入，不直接引用 panel 模块。
  */
 
-import { el, api } from "./dom.ts";
-import { STATUS_ORDER, STATUS_TEXT, statusDot } from "./constants.ts";
-import { t } from "../../../../shared/client/i18n.js";
-import type { McpState, UiActions } from "./state.ts";
+import { el } from "../core/dom.ts";
+import { api, toolDisableServerKey, cwdQueryOf } from "../core/api.ts";
+import { STATUS_ORDER, statusDot } from "../core/constants.ts";
+import { tStatus } from "../core/i18n.ts";
+import { t } from "../../../../../shared/client/i18n.js";
+import type { McpState, UiActions } from "../core/state.ts";
 import {
   DEFAULT_Z_INDEX_BASE,
   breakpointForWidth,
@@ -18,7 +20,7 @@ import {
   panelAnchorForPosition,
   composerDockedAtBottom,
   bottomAnchorEdge,
-} from "../placement-math.ts";
+} from "../../placement-math.ts";
 
 /** 渲染浮窗胶囊（状态点 + 摘要计数）。 */
 export function renderPill(state: McpState): void {
@@ -48,11 +50,19 @@ function toolCheckbox(server: any, tool: string, disabled: boolean, state: McpSt
     dataset: { dshMcpTool: tool },
   });
   input.addEventListener("change", () => {
+    // C6：全名形态经 toolDisableServerKey 归一（@@global/<name> 或 @<绝对路径>/<name>），
+    // projectRoot 缺失时跳过提交（防御非法 @/name）。
+    const serverKey = toolDisableServerKey(server, state);
+    if (serverKey === undefined) {
+      input.checked = !input.checked;
+      console.warn("[dsh-mcp-manager] projectRoot 缺失，跳过 tool-disable（非法 @/name 防御）");
+      return;
+    }
     void api(state.API.toolDisable, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        server: `@${server.scope === "global" ? "@global" : state.projectRoot ?? ""}/${server.name}`,
+        server: serverKey,
         tool,
         disabled: input.checked,
       }),
@@ -67,11 +77,13 @@ function toolCheckbox(server: any, tool: string, disabled: boolean, state: McpSt
   return label;
 }
 
-/** 折叠式工具清单（方案 2b）：summary 显示「工具（N）」，展开后 checkbox 列表。 */
-function renderFloatTools(server: any, state: McpState, actions: UiActions): any {
+/** 折叠式工具清单（方案 2b）：summary 显示「工具（N）」，展开后 checkbox 列表。
+ * openTools：C8 折叠态恢复集合（渲染前由 renderFloatPanel 收集，按 server 名）。 */
+function renderFloatTools(server: any, state: McpState, actions: UiActions, openTools: Set<string>): any {
   const tools = Array.isArray(server.tools) ? server.tools : [];
   const disabledSet = new Set(Array.isArray(server.disabledTools) ? server.disabledTools : []);
-  const details = el("details", { class: "dm-float-tools" });
+  const details = el("details", { class: "dm-float-tools", dataset: { dmServer: server.name } });
+  if (openTools.has(server.name)) details.open = true;
   details.appendChild(el("summary", { text: t("toolsCount", { n: tools.length }) }));
   const list = el("div", { class: "dm-float-tool-list" });
   for (const tool of tools) {
@@ -82,25 +94,28 @@ function renderFloatTools(server: any, state: McpState, actions: UiActions): any
 }
 
 /** 浮窗面板里的一行服务器。 */
-function renderFloatRow(server: any, state: McpState, actions: UiActions, opts: { tools: boolean } = { tools: true }): any {
+function renderFloatRow(server: any, state: McpState, actions: UiActions, opts: { tools: boolean; openTools?: Set<string> } = { tools: true }): any {
   const row = el("div", { class: "dm-float-row" });
   row.appendChild(el("span", { class: "dm-dot", style: `background:${statusDot(server.status)}` }));
   row.appendChild(el("span", { class: "dm-float-name", text: server.name, title: server.name }));
   const tools = Array.isArray(server.tools) ? server.tools.length : 0;
-  row.appendChild(el("span", { class: "dm-float-meta", text: t("serverMeta", { status: STATUS_TEXT[server.status] !== undefined ? t(STATUS_TEXT[server.status]) : server.status, tools }) }));
+  row.appendChild(el("span", { class: "dm-float-meta", text: t("serverMeta", { status: tStatus(server.status), tools }) }));
   const actionsEl = el("div", { class: "dm-float-actions" });
   const action = el("button", { class: "dm-float-action" });
+  // C7：浮窗操作带 cwd（与 servers.ts 对齐，#412 宿主重启场景自愈）——
+  // disconnect/enable/connect/disable 四操作统一携带当前会话 cwd。
+  const cwdQuery = cwdQueryOf(state);
   if (server.status === "connected") {
     action.textContent = t("disconnect");
     action.addEventListener("click", () => {
-      void api(`${state.API.disconnect}?name=${encodeURIComponent(server.name)}&scope=${server.scope}`, { method: "POST" })
+      void api(`${state.API.disconnect}?name=${encodeURIComponent(server.name)}&scope=${server.scope}${cwdQuery}`, { method: "POST" })
         .then(() => actions.refresh())
         .catch((error: any) => console.warn("[dsh-mcp-manager] disconnect failed:", error));
     });
   } else if (server.status === "disabled") {
     action.textContent = t("enable");
     action.addEventListener("click", () => {
-      void api(`${state.API.servers}?name=${encodeURIComponent(server.name)}&scope=${server.scope}`, {
+      void api(`${state.API.servers}?name=${encodeURIComponent(server.name)}&scope=${server.scope}${cwdQuery}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ enabled: true }),
@@ -110,7 +125,7 @@ function renderFloatRow(server: any, state: McpState, actions: UiActions, opts: 
   } else {
     action.textContent = t("connect");
     action.addEventListener("click", () => {
-      void api(`${state.API.connect}?name=${encodeURIComponent(server.name)}&scope=${server.scope}`, { method: "POST" })
+      void api(`${state.API.connect}?name=${encodeURIComponent(server.name)}&scope=${server.scope}${cwdQuery}`, { method: "POST" })
         .then(() => actions.refresh())
         .catch((error: any) => console.warn("[dsh-mcp-manager] connect failed:", error));
     });
@@ -132,7 +147,7 @@ function renderFloatRow(server: any, state: McpState, actions: UiActions, opts: 
   }
   row.appendChild(actionsEl);
   // 工具清单：project 模式全局组只读提示（切 all 可管理全局工具）。
-  if (opts.tools) row.appendChild(renderFloatTools(server, state, actions));
+  if (opts.tools) row.appendChild(renderFloatTools(server, state, actions, opts.openTools ?? new Set()));
   return row;
 }
 
@@ -140,6 +155,11 @@ function renderFloatRow(server: any, state: McpState, actions: UiActions, opts: 
  * project 模式：显示全局服务器但不显示工具开关，提示「切 all 模式可管理全局工具」。 */
 export function renderFloatPanel(state: McpState, actions: UiActions): void {
   if (state.floatPanel === undefined) return;
+  // C8：同 servers.ts——渲染前收集展开的工具组（按 server 名），重建后恢复。
+  const openTools = new Set<string>();
+  for (const d of state.floatPanel.querySelectorAll("details.dm-float-tools")) {
+    if (d.open && d.dataset.dmServer !== undefined) openTools.add(d.dataset.dmServer);
+  }
   state.floatPanel.textContent = "";
   const head = el("div", { class: "dm-float-head" });
   const projectName = typeof state.projectRoot === "string" && state.projectRoot !== ""
@@ -173,7 +193,7 @@ export function renderFloatPanel(state: McpState, actions: UiActions): void {
       const bucket = byStatus.get(group.key) ?? [];
       if (bucket.length === 0) continue;
       for (const server of [...bucket].sort((a: any, b: any) => a.name.localeCompare(b.name))) {
-        section.appendChild(renderFloatRow(server, state, actions, { tools: toolsEnabled(scope) }));
+        section.appendChild(renderFloatRow(server, state, actions, { tools: toolsEnabled(scope), openTools }));
       }
     }
     if (scope === "global" && !isAll) {

@@ -5,9 +5,10 @@
  * actions 注入，不直接引用 panel 模块，避免循环依赖。
  */
 
-import { el, api } from "./dom.ts";
-import { t } from "../../../../shared/client/i18n.js";
-import type { McpState, UiActions } from "./state.ts";
+import { el } from "../core/dom.ts";
+import { api } from "../core/api.ts";
+import { t } from "../../../../../shared/client/i18n.js";
+import type { McpState, UiActions } from "../core/state.ts";
 
 /** 解析 "KEY: VALUE" / "KEY=VALUE" 多行文本为对象。 */
 export function parseKV(text: any): Record<string, string> {
@@ -83,7 +84,10 @@ export function resetForm(state: McpState): void {
 
 /** 用服务器数据填充表单（编辑模式）。 */
 export function fillForm(state: McpState, fill: any): void {
-  resetForm(state);
+  // C1 链路修复：不再调 resetForm()——resetForm 会清空 editingName，导致
+  // beginEdit 设置的编辑态丢失、saveForm 恒走 POST → 宿主抛 already exists
+  // （编辑保存整体坏死）。表单元素由 buildQuickAdd 按 state.editing 构建，
+  // 此处仅覆盖字段值，编辑态（editingName）保持 beginEdit 设定。
   if (fill.name !== undefined) state.formName.value = fill.name;
   state.formTransport.value = fill.transport ?? "stdio";
   if (fill.command !== undefined) state.formCommand.value = fill.command;
@@ -96,6 +100,9 @@ export function fillForm(state: McpState, fill: any): void {
   if (fill.headers !== undefined) {
     state.formHeaders.value = Object.entries(fill.headers).map(([key, value]) => `${key}: ${value}`).join("\n");
   }
+  // C1 enabled 回填：resetForm 强制 checked=true，编辑 enabled:false 的服务器
+  // 必须回填，否则保存时被静默重新启用并自动连接（宿主 update 分支）。
+  if (state.formEnabled !== undefined) state.formEnabled.checked = fill.enabled !== false;
   state.formTransport.dispatchEvent(new Event("change"));
 }
 

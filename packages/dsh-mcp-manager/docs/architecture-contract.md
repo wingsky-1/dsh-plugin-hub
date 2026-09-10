@@ -89,6 +89,11 @@
 - **缺口**：未知状态策略（C13）；204 状态码备忘（C14）；SSE 帧集合显式清单；
   tool-disable 全名形态与 projectRoot 缺失防御（C6/C7）；`src/client/index.ts` 保留 +
   style.css 相对引用。
+- **实现回改（阶段 7 落地）**：C13 未知状态按 stopped 投影已实现（servers 列表与
+  float 浮窗统一，见 src/client/float/servers.ts renderServers）；C6/C7
+  toolDisableServerKey/cwdQueryOf helper 已实现（src/client/core/api.ts）；C14 204
+  备忘注释随 core/api.ts；C2 轮询探测恢复已实现（startPolling 每 5 周期
+  tryResumeEvents，README「状态推送自愈」同步）；C-DTO-1/2/3/4 与实现无差异。
 - **目标契约**：
   1. **summary 六态计数键集合** = {connected, connecting, reconnecting, disabled,
      stopped, failed}（`reconnecting` 由 D1 补入，service-contract 类型面已含；
@@ -98,7 +103,9 @@
   2. 客户端 API 封装**仅消费 JSON body**（204 追加处理备忘 C14，未来新增 204 路由时
      dom.ts api 不得静默 undefined）；
   3. **SSE 帧集合** = {summary, ui-config-changed, ping} + 客户端 60s watchdog 自愈三防线
-     （语义见 requirements-and-tdd-plan.md F4-3）；
+     （语义见 requirements-and-tdd-plan.md F4-3）；**C2 增强（阶段 7）：SSE 降级
+     10s 轮询不是永久退役，每 5 个轮询周期（50s）探测重建 EventSource，成功即
+     退出轮询——页面失联自愈**；
   4. tool-disable 全名形态 = `@@global/<name>` 或 `@<绝对路径>/<name>`，与宿主
      `parseFullServerName` 归一化一致；**projectRoot 缺失时防御性不提交非法 `@/name`**
      （C6），浮窗 connect/enable/disable 操作带 cwd（C7，与 servers.ts 对齐）；
