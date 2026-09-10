@@ -259,8 +259,9 @@
 
 - `scripts/data/mutation-topology.json` dsh-notifier 段 mutate 路径（config/migrate/settings/history/quiet-hours/message/index/server）随搬家全部更新；
 - 「message.ts 单文件 145s 物理极限维持」注释因 message 拆三文件失效——text/ 段边界重定（message/sanitize/system-commands）；
-- 新增文件（adjudicate/deliver/sanitize/sse-bus/system-notifier/browser/system + 各 interface.ts）入变异面决策：建议核心状态机 adjudicate/deliver/event-handlers 纳入，interface.ts 纯 re-export 不入；**PR1 决策落地 = 暂不入面**（PR1 纯机械搬动零行为变更；PR2 按域重划段 S3-30/N-24 时纳入核心状态机，interface.ts 一律不入）；
+- 新增文件（adjudicate/deliver/sanitize/sse-bus/system-notifier/browser/system + 各 interface.ts）入变异面决策：建议核心状态机 adjudicate/deliver/event-handlers 纳入，interface.ts 纯 re-export 不入；**PR1 决策落地 = 暂不入面**（PR1 纯机械搬动零行为变更）；**PR2 T2-7 决策落地 = 按域重划段（S3-30/N-24）时纳入核心状态机**——8 域段全量实现入面（config/text/pipeline/events/channels/stores/server/sdk + 根 index.ts 并入 sdk），interface.ts 一律不入；
 - `mutation-lib-to-src-loader.mjs` 已支持 `lib/sub/module.js → src/sub/module.ts` 子目录映射（已核实）——搬家后变异 hook 零改动；
+- **PR2 T2-7 变异分段重划（S3-30/N-24 落地）**：dsh-notifier mutate 4 段（config/history/message/server）→ 8 域段（config/text/pipeline/events/channels/stores/server/sdk）；核心状态机 pipeline（adjudicate/deliver）+ events（event-handlers/aggregate/agent-session）入面，settings-bridge/quiet-hours/status/outbound 等 PR1 盲区全部入面；index.ts 装配层并入 sdk 段（独立 assembly 段单文件且 re-export 过半可杀性低，并入均衡段规模）；excludes 统一 `!src/**/interface.ts` + `!src/client/**`；testFiles 15 → 24（补 e2e-outbound/unit-aggregate/unit-config-port/unit-event-handlers/unit-pipeline-contract/unit-server-sse-bus/unit-settings-bridge/unit-stores/unit-system-notifier，real-context 保持剔除）；
 - 测试全量 import `../lib/index.js`（§3:196）——导出面不变时零改动；坏处是 9 个 interface.ts 无变异面（纯 re-export 合理）。
 
 ## 7. S3 缺陷总清单与测试分层映射（§3 交叉验证定稿）
@@ -312,7 +313,7 @@
 | S3-27 | T3-9 outbound 有效分支零覆盖（enabled:true bark 全链投递/gate 复用无基线） | outbound.ts:13-29 | PR2 红测先行 3 |
 | S3-28 | T3-10 waitMergeWindow 3.2s×6≈19.2s 固定等待 | helpers.ts:374 | 基建（PR1/PR2 短窗注入） |
 | S3-29 | 工厂级直测缺失：history/status/settings-bridge/outbound/aggregate/event-handlers 零直测 | §3 审计 + 子代理 grep | L1 补测（PR1/PR2） |
-| S3-30 | 核心状态机无变异面（service/event-handlers/aggregate/channel-*/outbound/settings-bridge/status 不在 mutate 4 段） | mutation-topology:196-238 | PR2 变异分段 |
+| S3-30 | 核心状态机无变异面（service/event-handlers/aggregate/channel-*/outbound/settings-bridge/status 不在 mutate 4 段） | mutation-topology:196-238 | ✅ 已修（PR2 T2-7 按域重划 8 段，核心状态机 pipeline/events 全量入面，盲区文件并入对应域段） |
 | S3-31 | stryker testFiles 9 清单缺口（7 文件不在：含 e2e-interrupt/unit-sse-hub/unit-webhook 等） | mutation-topology:184-194 | PR1 变异配置更新 |
 | S3-32 | message.ts 单文件变异段 145s「物理极限」（拆三文件后失效） | mutation-topology:219-227 | PR1 段边界重定 |
 
@@ -324,7 +325,7 @@
 | L1 层内单元 | unit-config / unit-text / unit-sanitize / unit-sse-hub（shared 层）/ unit-webhook（渲染+scrub 面） | N-4 stores 直测（history/status 写队列原子写，PR1）；N-5 settings-bridge CAS 直测（PR1）；N-6 aggregate 直测（PR1）；N-7 event-handlers 判定直测（adjudicate 拆分时导出核心函数，PR2）；N-8 pipeline/adjudicate 裁决矩阵直测（PR2）；N-9 pipeline/deliver 截断·重试门·fail-soft 直测（deps fake，PR2）；N-10 outbound 装配直测（PR2）；N-11 server/system-notifier spawn 注入直测（节流/8s 杀进程/失败终态，PR2）；N-12 server/sse-bus 600 帧边界直测（PR2）；N-13 channels/bark 单次投递+retryable 标记直测（PR2） |
 | L2 interface 契约 | service-contract（ABI 面）/ unit-webhook（SPI 面）/ client-contract（两端契约） | N-14 AdjudicateDeps 注入面契约（PR2）；N-15 DeliverDeps 注入面契约（PR2）；N-16 ConfigPort 降级语义契约（readUser 未 attach/writable=false，PR2） |
 | L3 集成（user case） | e2e-approval / e2e-done / e2e-interrupt / e2e-question-turn / e2e-edge / routes / migration / real-context / client-style | N-17 B-1 脱敏全链路（suppressed/merged 落史也脱敏，PR2）；N-18 B-2 投递决议快照化（裁决→投递间改配置，PR2）；N-19 B-3 重试/门框架化全链（enabled:true bark，PR2）；N-20 B-4 sanitizeContent 开关链路（默认 true 脱敏 + false 明文，PR2）；N-21 B-5 disabled 不落史保持（PR2）；N-22 C3-1 seq 回退恢复（PR2）；N-23 S3-12 maxConnections 清空守卫（PR2） |
-| 变异分层 | 4 段→按域重划（配置/text/pipeline/events/channels/stores/server/sdk） | N-24 pipeline/events 段纳入变异面（PR2）；message 段重定（PR1）；testFiles 补 7 文件（PR1） |
+| 变异分层 | 8 域段已落地（配置/text/pipeline/events/channels/stores/server/sdk；PR2 T2-7） | N-24 pipeline/events 段纳入变异面 ✅ 已落地（PR2 T2-7）；message 段重定（PR1）；testFiles 补 7 文件（PR1）+ 再补 9 文件（PR2 T2-7，15→24） |
 
 ### 7.4 user case 集成场景矩阵（骨架；F 编号 → 场景 → 现有 → 新增）
 

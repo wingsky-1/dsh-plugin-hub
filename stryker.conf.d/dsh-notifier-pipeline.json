@@ -1,8 +1,9 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-notifier/src/stores/history.ts",
-    "packages/dsh-notifier/src/config/quiet-hours.ts",
+    "packages/dsh-notifier/src/pipeline/adjudicate.ts",
+    "packages/dsh-notifier/src/pipeline/deliver.ts",
+    "!packages/dsh-notifier/src/**/interface.ts",
     "!packages/dsh-notifier/src/client/**"
   ],
   "testRunner": "tap",
@@ -40,13 +41,22 @@
       "packages/dsh-notifier/test/e2e-done.test.ts",
       "packages/dsh-notifier/test/e2e-edge.test.ts",
       "packages/dsh-notifier/test/e2e-interrupt.test.ts",
+      "packages/dsh-notifier/test/e2e-outbound.test.ts",
       "packages/dsh-notifier/test/e2e-question-turn.test.ts",
       "packages/dsh-notifier/test/migration.test.ts",
       "packages/dsh-notifier/test/routes.test.ts",
+      "packages/dsh-notifier/test/unit-aggregate.test.ts",
+      "packages/dsh-notifier/test/unit-config-port.test.ts",
       "packages/dsh-notifier/test/unit-config.test.ts",
+      "packages/dsh-notifier/test/unit-event-handlers.test.ts",
+      "packages/dsh-notifier/test/unit-pipeline-contract.test.ts",
       "packages/dsh-notifier/test/unit-sanitize.test.ts",
-      "packages/dsh-notifier/test/unit-text.test.ts",
+      "packages/dsh-notifier/test/unit-server-sse-bus.test.ts",
+      "packages/dsh-notifier/test/unit-settings-bridge.test.ts",
       "packages/dsh-notifier/test/unit-sse-hub.test.ts",
+      "packages/dsh-notifier/test/unit-stores.test.ts",
+      "packages/dsh-notifier/test/unit-system-notifier.test.ts",
+      "packages/dsh-notifier/test/unit-text.test.ts",
       "packages/dsh-notifier/test/unit-webhook.test.ts",
       "packages/dsh-notifier/test/service-contract.test.ts",
       "packages/dsh-notifier/test/client-contract.test.ts",
@@ -54,9 +64,9 @@
     ]
   },
   "jsonReporter": {
-    "fileName": "coverage/mutation/dsh-notifier-history.json"
+    "fileName": "coverage/mutation/dsh-notifier-pipeline.json"
   },
   "incremental": true,
-  "incrementalFile": "coverage/mutation/incremental-notifier-history.json",
-  "_comment": "#669 PR1：stores/history + config/quiet-hours（原 history/quiet-hours 段映射新路径）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+  "incrementalFile": "coverage/mutation/incremental-notifier-pipeline.json",
+  "_comment": "#669 PR2 T2-7 按域重划：pipeline——核心状态机裁决/投递（adjudicate/deliver，T2-1 工厂化后入面，N-24 落地）；testFiles 含 unit-pipeline-contract（N-14/N-15 注入面契约杀灭面）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
 }
