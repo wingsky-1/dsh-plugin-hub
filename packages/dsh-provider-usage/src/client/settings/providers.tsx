@@ -1,5 +1,5 @@
 /**
- * dsh-provider-usage — 设置页「适配器」分区（#532 拆分自 settings.ts，行为不变）。
+ * dsh-provider-usage — 设置页「适配器」分区（拆分自 settings.ts，行为不变）。
  *
  * 提供商手风琴列表（主列表对齐模型配置页 + 自定义 provider 独立分组）：
  * 候选开关 + 内嵌添加表单 + 检测卡片 + 引导指令复制。

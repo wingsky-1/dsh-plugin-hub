@@ -1,9 +1,9 @@
 /**
- * dsh-provider-usage/report — lastRun 持久化原语（阶段二 D8：自 scheduler 移出）。
+ * dsh-provider-usage/report — lastRun 持久化原语。
  *
- * per-root 临界区链（#629 P2）唯一实现：读-改-写按 root 串行 + 写前重读全量快照，
- * 防多写方（保存配置 preset / 任务执行器推进）交错 lost-update。E3 调度与 E4 执行
- * 共同依赖本原语（阶段四目录化后归 domain2/common/，无状态无缓存）。
+ * per-root 临界区链唯一实现：读-改-写按 root 串行 + 写前重读全量快照，
+ * 防多写方（保存配置 preset / 任务执行器推进）交错 lost-update。调度与执行
+ * 共同依赖本原语（无状态无缓存）。
  */
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -16,7 +16,7 @@ function lastRunFile(root: string): string {
   return join(root, "reports", "last-run.json");
 }
 
-/** 读 lastRun（缺失/损坏返回空表）。#503 M3 接线：导出供手动生成路由读改写复用。 */
+/** 读 lastRun（缺失/损坏返回空表）。导出供手动生成路由读改写复用。 */
 export async function readLastRun(root: string): Promise<Partial<Record<ReportPeriod, string>>> {
   try {
     const raw = await readFile(lastRunFile(root), "utf8");
@@ -41,7 +41,7 @@ export async function writeLastRun(root: string, state: Partial<Record<ReportPer
 }
 
 /**
- * #629 P2 lastRun 单一临界区：读-改-写按 root 串行（per-root promise 链）+ 写前重读。
+ * lastRun 单一临界区：读-改-写按 root 串行（per-root promise 链）+ 写前重读。
  * 所有 lastRun 的 read-modify-write 统一收敛到本函数——patch 只在临界区内、基于
  * 链上最新文件快照计算；同一 root 的更新按提交序串行落盘。
  */
@@ -85,7 +85,7 @@ export function __lastRunChainForTests(root: string): Promise<void> | undefined 
 }
 
 /**
- * 启动时 lastRun 一致性保证（#624）：schema 旧 → 全量重算（deriveLastRun）；
+ * 启动时 lastRun 一致性保证：schema 旧 → 全量重算（deriveLastRun）；
  * schema 新 → 温和对齐（alignLastRun）；无 index 视作无事实，不动 lastRun。
  */
 export async function ensureLastRunMigrated(

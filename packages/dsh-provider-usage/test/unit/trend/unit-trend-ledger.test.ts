@@ -1,8 +1,8 @@
 // @ts-nocheck
 /**
- * dsh-provider-usage — unit：R8 台账守恒（不变量4）事件回放式端到端对账（阶段三 #670）。
+ * dsh-provider-usage — unit：R8 台账守恒（不变量4）事件回放式端到端对账（#670）。
  *
- * 为什么要端到端回放（真缺口定位，layer-architecture.md §3 R8）：不变量 1/2/3（身份快照 /
+ * 为什么要端到端回放（真缺口定位，layer-architecture.md §2 E2）：不变量 1/2/3（身份快照 /
  * 防双计 / 残差归未识别）已被 unit-trend.test.ts 分段覆盖；唯「台账守恒」从未被断言——
  * Σ事件 == buckets == agg == dirRows + unidentified 是 D2 aggregator 拆分的前置安全网
  * （拆分后若压实/折算逻辑漂移，本文件应第一时间红）。

@@ -1,5 +1,5 @@
 /**
- * dsh-provider-usage — 设置面板「用量报告」区块（#503 M3）。
+ * dsh-provider-usage — 设置面板「用量报告」区块。
  *
  * SettingsPage 子区块形态（与 TrendSection 同层挂接，从简不另开顶层 tab）：
  * - 配置卡片：日/周/月各独立开关与触发时刻 + 周起点/月内日 + provider/model 路由 +
@@ -17,7 +17,7 @@ import { fetchTimeout, REPORT_GENERATE_STATUS_URL } from "./core.ts";
 import { dirDisplayLabel, dirNeedsScopeNote, dirStackId, DIR_UNIDENTIFIED } from "./trend-math.js";
 import { t } from "../../../../shared/client/i18n.js";
 
-/** 宿主端 ROUTES（构建期经 __DSH_ROUTES__ 注入；报告五路由 #503 M3 / #532 起进入路由表）。 */
+/** 宿主端 ROUTES（构建期经 __DSH_ROUTES__ 注入；报告五路由进入路由表）。 */
 declare const __DSH_ROUTES__: Record<string, string> | undefined;
 const REPORT_CONFIG_URL = __DSH_ROUTES__?.reportConfig ?? "/api/dsh-provider-usage/report-config";
 const REPORT_MODELS_URL = __DSH_ROUTES__?.reportModels ?? "/api/dsh-provider-usage/report-models";
@@ -25,14 +25,14 @@ const REPORTS_URL = __DSH_ROUTES__?.reports ?? "/api/dsh-provider-usage/reports"
 const REPORT_DETAIL_URL = __DSH_ROUTES__?.reportDetail ?? "/api/dsh-provider-usage/reports/detail";
 const REPORT_GENERATE_URL = __DSH_ROUTES__?.reportGenerate ?? "/api/dsh-provider-usage/reports/generate";
 
-/** 轮询退避：1s → 2s → 4s 封顶 5s；上限约 2 分钟（#625）。 */
+/** 轮询退避：1s → 2s → 4s 封顶 5s；上限约 2 分钟。 */
 const POLL_INITIAL_DELAY_MS = 1_000;
 const POLL_MAX_DELAY_MS = 5_000;
 const POLL_MAX_ROUNDS = 25;
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-/** 轮询超时哨兵：#625 语义——超时≠失败（后端可能仍在生成），转「仍在生成」正向提示。 */
+/** 轮询超时哨兵：超时≠失败（后端可能仍在生成），转「仍在生成」正向提示。 */
 class PollInProgressError extends Error {
   constructor() {
     super("poll-timeout");
@@ -50,7 +50,7 @@ export interface ReportPeriodConfigView {
   time: string;
 }
 
-/** 单周期提示词模板表（#532，与宿主端 ReportPrompts 同构）。 */
+/** 单周期提示词模板表（与宿主端 ReportPrompts 同构）。 */
 export interface ReportPromptsView {
   daily: string;
   weekly: string;
@@ -65,11 +65,11 @@ export interface ReportConfigView {
   provider: string;
   model: string;
   promptTemplate: string;
-  /** 三周期独立模板（#532；旧配置经宿主 normalize 迁移后始终存在）。 */
+  /** 三周期独立模板（旧配置经宿主 normalize 迁移后始终存在）。 */
   prompts: ReportPromptsView;
   sanitizePaths: boolean;
   push: { enabled: boolean };
-  /** #633 分片 b B4：报告目录范围（空数组 = 全部目录；basename 净化值或未识别桶键）。 */
+  /** 报告目录范围（空数组 = 全部目录；basename 净化值或未识别桶键）。 */
   directories: string[];
 }
 
@@ -79,7 +79,7 @@ export interface ReportProviderOption {
   name?: string;
 }
 
-/** 模型候选（/report-models 响应 models[]，#532）。 */
+/** 模型候选（/report-models 响应 models[]）。 */
 export interface ReportModelOption {
   id: string;
   name?: string;
@@ -104,9 +104,9 @@ export interface ReportMetaView {
     cacheReadTokens: number | null;
     cacheWriteTokens: number | null;
   };
-  /** #532：空窗口标记（当期无任何用量，未调模型未落盘）。 */
+  /** 空窗口标记（当期无任何用量，未调模型未落盘）。 */
   noData?: boolean;
-  /** #532：hero 摘要（成功生成时落盘；旧报告无此字段不渲染 hero）。 */
+  /** hero 摘要（成功生成时落盘；旧报告无此字段不渲染 hero）。 */
   summary?: {
     total: number | null;
     calls: number;
@@ -118,7 +118,7 @@ export interface ReportMetaView {
   };
 }
 
-/** #532：环比箭头胶囊（null = 上一窗口无数据，不做对比）。 */
+/** 环比箭头胶囊（null = 上一窗口无数据，不做对比）。 */
 function ratioBadge(ratio: number | null): React.ReactElement {
   if (ratio === null) return <span className="dou-heroRatio">—</span>;
   const up = ratio >= 1;
@@ -132,7 +132,7 @@ function ratioBadge(ratio: number | null): React.ReactElement {
   );
 }
 
-/** #532：详情页年报 hero 区（海报式渐变不随主题反转，文字恒浅色）。 */
+/** 详情页年报 hero 区（海报式渐变不随主题反转，文字恒浅色）。 */
 function reportHero(s: NonNullable<ReportMetaView["summary"]>): React.ReactElement {
   const stats: Array<[string, string]> = [
     [t("reportHeroCalls"), `${s.calls.toLocaleString("en-US")}`],
@@ -174,7 +174,7 @@ export function ReportSection(): React.ReactElement {
   // 配置（编辑态 draft 与宿主归一化响应同构；载入前 null = 未就绪）
   const [draft, setDraft] = React.useState<ReportConfigView | null>(null);
   const [providers, setProviders] = React.useState<ReportProviderOption[]>([]);
-  // #633 分片 b2 B4：目录候选（GET /report-config dirs，含未识别桶；宿主 calls 降序）
+  // 目录候选（GET /report-config dirs，含未识别桶；宿主 calls 降序）
   const [dirOptions, setDirOptions] = React.useState<string[]>([]);
   const [configFailed, setConfigFailed] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
@@ -183,21 +183,21 @@ export function ReportSection(): React.ReactElement {
   const [genPeriod, setGenPeriod] = React.useState<ReportPeriodView>("daily");
   const [generating, setGenerating] = React.useState(false);
   const [genError, setGenError] = React.useState<string | null>(null);
-  // #626 强制重新生成（默认幂等：窗口已有成功报告则复用，勾选后强制覆盖）
+  // 强制重新生成（默认幂等：窗口已有成功报告则复用，勾选后强制覆盖）
   const [genForce, setGenForce] = React.useState(false);
-  // #625 轮询卸载保护：组件卸载后停止轮询，不再 setState
+  // 轮询卸载保护：组件卸载后停止轮询，不再 setState
   const disposedRef = React.useRef(false);
   React.useEffect(() => () => { disposedRef.current = true; }, []);
   const [list, setList] = React.useState<ReportMetaView[] | null>(null);
   const [listFailed, setListFailed] = React.useState(false);
   const [openId, setOpenId] = React.useState<string | null>(null);
   const [detail, setDetail] = React.useState<{ id: string; html: string; meta: ReportMetaView } | null>(null);
-  // #532 模型候选：按 provider 缓存（null = 已请求且失败/为空 → 降级手填；undefined = 未请求）
+  // 模型候选：按 provider 缓存（null = 已请求且失败/为空 → 降级手填；undefined = 未请求）
   const [modelsCache, setModelsCache] = React.useState<Record<string, ReportModelOption[] | null>>({});
-  // #532 三周期提示词：当前编辑的周期 tab + 宿主默认模板（「恢复默认」数据源）
+  // 三周期提示词：当前编辑的周期 tab + 宿主默认模板（「恢复默认」数据源）
   const [promptTab, setPromptTab] = React.useState<ReportPeriodView>("daily");
   const [promptDefaults, setPromptDefaults] = React.useState<ReportPromptsView | null>(null);
-  // #532 手动生成的空窗口提示（区别于错误）
+  // 手动生成的空窗口提示（区别于错误）
   const [genNotice, setGenNotice] = React.useState<string | null>(null);
 
   /** 读配置与 provider 候选（失败展示错误行，不阻塞历史列表）。 */
@@ -211,7 +211,7 @@ export function ReportSection(): React.ReactElement {
         setConfigFailed(false);
       }
       if (Array.isArray(body.providers)) setProviders(body.providers);
-      // #633 分片 b2 B4：目录候选（dirStackId 防御归一——异常值归未识别，杜绝空标签进多选）
+      // 目录候选（dirStackId 防御归一——异常值归未识别，杜绝空标签进多选）
       if (Array.isArray(body.dirs)) {
         setDirOptions([...new Set(body.dirs.map((d) => dirStackId(d.dir)))]);
       }
@@ -239,7 +239,7 @@ export function ReportSection(): React.ReactElement {
     void loadReports();
   }, [loadConfig, loadReports]);
 
-  // #532 模型候选：provider 空串（跟随默认）按注册序首个解析（与宿主 resolveRoute 同序同源）；
+  // 模型候选：provider 空串（跟随默认）按注册序首个解析（与宿主 resolveRoute 同序同源）；
   // 按需拉取 + 组件生命周期内 memo（每 provider 至多一次）；live 标志丢弃过期响应防竞态。
   const providerKey = draft?.provider ?? "";
   const effectiveProvider = providerKey === "" ? (providers[0]?.id ?? "") : providerKey;
@@ -298,12 +298,12 @@ export function ReportSection(): React.ReactElement {
   };
 
   /**
-   * 轮询生成任务状态（#625）：退避 1s→5s，上限约 2 分钟。
+   * 轮询生成任务状态：退避 1s→5s，上限约 2 分钟。
    * done → 返回 { meta, reused }；failed → 抛错；超时/status 404（任务已被 TTL 修剪，报告
    * 大概率已生成）→ 抛 PollInProgressError（调用方转「仍在生成」正向提示，
    * 绝不误报失败）。
    * 组件卸载（disposedRef）后立即中止。
-   * #629 P2：reused 透传——executor 侧幂等短路复用与 200 直接复用路径提示对称。
+   * reused 透传——executor 侧幂等短路复用与 200 直接复用路径提示对称。
    */
   const pollReportTask = async (taskId: string): Promise<{ meta: ReportMetaView; reused: boolean }> => {
     let delay = POLL_INITIAL_DELAY_MS;
@@ -327,7 +327,7 @@ export function ReportSection(): React.ReactElement {
     throw new PollInProgressError();
   };
 
-  /** 手动生成（#625 异步任务化）：POST → 幂等复用(200+meta) 或 202+taskId 轮询 → 刷新列表并展开。 */
+  /** 手动生成（异步任务化）：POST → 幂等复用(200+meta) 或 202+taskId 轮询 → 刷新列表并展开。 */
   const onGenerate = async (): Promise<void> => {
     if (generating) return;
     setGenerating(true);
@@ -353,7 +353,7 @@ export function ReportSection(): React.ReactElement {
         // 终态：幂等复用（窗口已有成功报告，未勾选强制重生成）
         if (disposedRef.current) return;
         if (body.meta.noData === true) {
-          // #532：空窗口不调模型不落盘——正向提示，不进错误分支、不展开详情
+          // 空窗口不调模型不落盘——正向提示，不进错误分支、不展开详情
           setGenNotice(t("reportNoData"));
           return;
         }
@@ -374,7 +374,7 @@ export function ReportSection(): React.ReactElement {
       } catch (e) {
         if (e instanceof PollInProgressError) {
           if (disposedRef.current) return;
-          // 超时：后端可能仍在生成——正向提示，不报失败（#625 防误报回归）
+          // 超时：后端可能仍在生成——正向提示，不报失败
           setGenNotice(t("reportStillGenerating"));
           await loadReports();
           return;
@@ -386,7 +386,7 @@ export function ReportSection(): React.ReactElement {
         setGenNotice(t("reportNoData"));
         return;
       }
-      // #629 P2：executor 侧幂等短路复用 → 与 200 直接复用路径对称提示「已复用」
+      // executor 侧幂等短路复用 → 与 200 直接复用路径对称提示「已复用」
       setGenNotice(polledReused ? t("reportReused") : null);
       await loadReports();
       if (disposedRef.current) return;
@@ -496,7 +496,7 @@ export function ReportSection(): React.ReactElement {
             </label>
             <label className="dou-reportInline">
               {t("reportModel")}
-              {/* #532：模型候选已加载 → 下拉（首项「跟随默认」=空串语义=注册序首个）；
+              {/* 模型候选已加载 → 下拉（首项「跟随默认」=空串语义=注册序首个）；
                   当前配置值不在列表 → 兜底项渲染旧值，绝不隐式改写；未加载/失败 → 降级手填。 */}
               {haveModels ? (
                 <select
@@ -524,7 +524,7 @@ export function ReportSection(): React.ReactElement {
             </label>
           </div>
           {models !== null && !haveModels ? <div className="dou-reportHint">{t("reportModelFallback")}</div> : null}
-          {/* #633 分片 b2 B4：目录范围多选（默认全部；空数组 = 全部目录语义）。
+          {/* 目录范围多选（默认全部；空数组 = 全部目录语义）。
               与 provider/model 范围控件同级同风格（dou-reportRow + dou-reportInline）；
               候选 = GET dirs（含未识别桶，恒「未识别」有标签 + 口径注释）；已保存值
               不在候选（目录数据已过留存期等）→ 兜底渲染旧值，绝不隐式改写用户配置。 */}
@@ -532,7 +532,7 @@ export function ReportSection(): React.ReactElement {
             <div className="dou-reportRow">
               <span className="dou-reportLabel">{t("reportDirectories")}</span>
               <label className="dou-reportInline" style={dirOptions.length === 0 ? { opacity: 0.55 } : undefined}>
-                {/* P2：候选空时禁用（无候选可取消全选，空 = 全部语义不变；视觉弱化
+                {/* 候选空时禁用（无候选可取消全选，空 = 全部语义不变；视觉弱化
                     提示不可交互，防点击无反馈） */}
                 <input
                   type="checkbox"
@@ -568,7 +568,7 @@ export function ReportSection(): React.ReactElement {
                   : dirOptions
                 ).map((dir) => {
                   const checked = draft.directories.includes(dir);
-                  // 未识别桶恒「未识别」+ 口径注释（B2/B3）；异常值已由 dirStackId 归一
+                  // 未识别桶恒「未识别」+ 口径注释；异常值已由 dirStackId 归一
                   const label = dirDisplayLabel(dir);
                   const title = dirNeedsScopeNote(dir) ? t("trendDirUnidentifiedNote") : undefined;
                   return (
@@ -594,7 +594,7 @@ export function ReportSection(): React.ReactElement {
             {/* 保存后影响报告口径的提示（沿用既有 dou-reportHint 提示模式） */}
             <span className="dou-reportHint">{draft.directories.length === 0 ? t("reportDirectoriesHintAll") : t("reportDirectoriesHintScoped")}</span>
           </div>
-          {/* 提示词模板（#532：三周期各自独立模板 + 周期切换 tab + 恢复默认） */}
+          {/* 提示词模板（三周期各自独立模板 + 周期切换 tab + 恢复默认） */}
           <div className="dou-reportCol">
             <div className="dou-reportPromptTabs">
               <span className="dou-reportLabel">{t("reportPrompt")}</span>
@@ -708,7 +708,7 @@ export function ReportSection(): React.ReactElement {
                         </div>,
                       );
                     }
-                    // #532 年报 hero：meta.summary 存在时渲染大数字 + 环比 + 活跃统计
+                    // 年报 hero：meta.summary 存在时渲染大数字 + 环比 + 活跃统计
                     const summary = detail.meta.summary;
                     if (summary !== null && summary !== undefined) {
                       parts.push(reportHero(summary));
@@ -719,7 +719,7 @@ export function ReportSection(): React.ReactElement {
                       parts.push(
                         detail.html.length > 0 ? (
                           // 数据源为本插件宿主端产物：落盘 escape-then-transform 白名单标签
-                          // 第一层 + 读侧 sanitizeHtml 第二层（#532 管线）
+                          // 第一层 + 读侧 sanitizeHtml 第二层
                           <div
                             className="dou-reportDetailBody"
                             key="body"

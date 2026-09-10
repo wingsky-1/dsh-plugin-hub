@@ -24,7 +24,7 @@ import {
 import type { SessionsServiceLike, RemoteLike, StatsResponseV2, HistoryResponseV2, UiPlacementConfig } from "./core.ts";
 import { SettingsPage } from "./settings/index.tsx";
 import { t, bindLocale } from "../../../../shared/client/i18n.js";
-// 样式注入收敛 shared/client/ensure-style.js（issue #477）：head 缺失由 shared
+// 样式注入收敛 shared/client/ensure-style.js：head 缺失由 shared
 // 静默 no-op 兜底（旧 DOMContentLoaded 兜底属理论不可达防御，随迁移删除）。
 import { ensureStyle } from "../../../../shared/client/ensure-style.js";
 import { zh, en, type ProviderUsageLocaleKey } from "./locales.ts";
@@ -47,7 +47,7 @@ import {
 import * as React from "react";
 import STYLE from "./style.css";
 
-// i18n（issue #348）：字典命名空间 + LocaleNamespaceMap 声明合并（官方 ui-jobs 同款）。
+// i18n：字典命名空间 + LocaleNamespaceMap 声明合并（官方 ui-jobs 同款）。
 const NS = "providerUsage";
 
 declare module "@deepseek-ai/dsh-client-ui-slots" {
@@ -59,7 +59,7 @@ declare module "@deepseek-ai/dsh-client-ui-slots" {
 
 const REFRESH_MS = 60000; // 轮询间隔
 const PILL_PREFIX = "dou-"; // 样式类名前缀
-const STYLE_ID = "dsh-provider-usage-style"; // <style> 幂等键（dsh-<pkg>-style 命名，#477）
+const STYLE_ID = "dsh-provider-usage-style"; // <style> 幂等键（dsh-<pkg>-style 命名）
 const MAX_HISTORY_DAYS = 30; // 历史请求天数
 
 // ------------------------------------------------------------------ 工具
@@ -107,14 +107,14 @@ let remote: RemoteLike | undefined;
 
 /** 当前生效 provider。 */
 let currentProvider: string = FALLBACK_PROVIDER;
-/** 最近一次成功检测的 provider（issue #69 方案 B：全链失败时的保持值；undefined = 从未成功）。 */
+/** 最近一次成功检测的 provider（全链失败时的保持值；undefined = 从未成功）。 */
 let detectedProvider: string | undefined;
 /** true = 有会话但 provider 未能确认（胶囊 title 标注「提供商未识别」）。 */
 let providerUnknown = false;
-/** #419：上次 detect 时的快照 current id——区分「切换会话」与「投影/运行态噪声帧」，
- *  仅前者触发立即补刷 stats（维护者需求 #71），后者只刷胶囊 title。 */
+/** 上次 detect 时的快照 current id——区分「切换会话」与「投影/运行态噪声帧」，
+ *  仅前者触发立即补刷 stats，后者只刷胶囊 title。 */
 let lastDetectCurrent: string | undefined;
-/** #419：全局目录 default.provider 兜底缓存（官方 catalog 同款：ready 命中 +
+/** 全局目录 default.provider 兜底缓存（官方 catalog 同款：ready 命中 +
  *  inflight 共享 + TTL 失效），避免全链投影缺失时跟随快照帧频率裸打 modelCatalog RPC。 */
 const catalogCache = makeCatalogCache();
 /** 最近一次 /stats 响应。 */
@@ -142,7 +142,7 @@ function repositionPill(pill: HTMLElement, target: HTMLElement): void {
   if (pill.dataset.douBp !== bp) pill.dataset.douBp = bp;
   if (floatPanel !== undefined && floatPanel.dataset.douBp !== bp) floatPanel.dataset.douBp = bp;
   // 层级：胶囊与点击后弹出的主面板 computed z-index 一律取配置基准（clamp 1-9000），
-  // 不再派生 +30（维护者 2026-08-28 要求 #128，B2）；面板内子浮层可派生见 panelZIndexFor。
+  // 不再派生 +30；面板内子浮层可派生见 panelZIndexFor。
   const zBase = clampZIndexBase(uiConfig.zIndexBase, DEFAULT_Z_INDEX_BASE);
   pill.style.zIndex = String(zBase);
   if (floatPanel !== undefined) floatPanel.style.zIndex = String(zBase);
@@ -155,7 +155,7 @@ function repositionPill(pill: HTMLElement, target: HTMLElement): void {
     ? Math.max(0, rect.left + uiConfig.offsetX)
     : Math.max(0, rect.right - pill.offsetWidth - uiConfig.offsetX);
   // 垂直：bottom 锚点 → 容器底 - 高 - offsetY（clamp 到视口上缘防溢出）；top 锚点 → 容器顶 + offsetY。
-  // #128 重开回归修复：bottom-* 在断点非 wide 且 composer seat 贴底时，把下边界换成
+  // bottom-* 在断点非 wide 且 composer seat 贴底时，把下边界换成
   // seat.top（胶囊上移到输入区上方，避免遮挡输入卡片）；否则维持 container.bottom（桌面零回归）。
   let bottomEdge = rect.bottom;
   if (isBottom && bp !== "wide") {
@@ -230,7 +230,7 @@ function renderPill(): void {
     } else {
       title = `${stats.adapterName} · ${stats.status === "stale" ? t("pillStale") : stats.status === "cached" ? t("pillCached") : t("pillFresh")} · ${t("pillUpdatedAt", { t: fmtAge(stats.fetchedAt) })}`;
     }
-    // issue #69 方案 B：有会话但 provider 未确认 → title 显式标注（不再静默展示可能不对的数据）
+    // 有会话但 provider 未确认 → title 显式标注（不再静默展示可能不对的数据）
     if (providerUnknown) title += ` · ${t("providerUnknown")}`;
     floatPill.title = title;
   }
@@ -245,8 +245,8 @@ function renderPill(): void {
 // ------------------------------------------------------------------ 数据拉取
 
 /**
- * A1（issue #71）：从会话现场复检 provider——detect 与 refreshStats 共用的检测半区。
- * 解析当前会话实际 provider/model（沿祖先链，#69 语义不变），与 currentProvider 不同则
+ * 从会话现场复检 provider——detect 与 refreshStats 共用的检测半区。
+ * 解析当前会话实际 provider/model（沿祖先链，语义与旧按会话查询等价），与 currentProvider 不同则
  * 就地切换并重置渲染状态（代 token 前进防旧响应回写），返回是否发生变化。
  * 不主动拉数（由调用方决定），避免 refreshStats 内部递归。
  */
@@ -275,7 +275,7 @@ async function revalidateProvider(): Promise<boolean> {
 async function refreshStats(): Promise<void> {
   let gen = renderGeneration;
   try {
-    // A1（issue #71）：取数前先复检会话当前 provider/model——60s 轮询、可见性恢复、
+    // 取数前先复检会话当前 provider/model——60s 轮询、可见性恢复、
     // 手动刷新均在此自愈；会话内切模型虽无宿主信号触发 detect()，最长一个轮询周期内跟随
     if (await revalidateProvider()) {
       if (floatPill !== undefined) renderPill();
@@ -415,7 +415,7 @@ function renderPanel(): void {
     ]),
   );
 
-  // qa F1（#128 实测）：bottom-* 锚点下面板高度增长不会自动改写 top——打开瞬间以
+  // bottom-* 锚点下面板高度增长不会自动改写 top——打开瞬间以
   // 「加载中」小高度定位，异步数据撑高面板后若无重排路径则稳定向下溢出视口。
   // 内容更新完成即同步重定位（DOM 已构建，offsetHeight 即时正确；数据到达为低频
   // 路径，无需 rAF 合并），clampPointToViewport 继续兜底钳回视口内。
@@ -491,7 +491,7 @@ function mountFloat(): () => void {
   let host: HTMLElement | null;
   const listeners: Array<() => void> = [];
 
-  /** rAF 合并调度：同帧多次 scroll/resize/vv-resize/orientationchange 只重算一次（#128）。 */
+  /** rAF 合并调度：同帧多次 scroll/resize/vv-resize/orientationchange 只重算一次。 */
   let placeRafId = 0;
   const scheduleReposition = (): void => {
     if (placeRafId !== 0) return;
@@ -502,7 +502,7 @@ function mountFloat(): () => void {
       if (floatOpen) placePanel();
     });
   };
-  // orientationchange 后延迟一帧重算：横竖屏切换瞬间 rect 尚未更新（规格 #128 第 2 条）。
+  // orientationchange 后延迟一帧重算：横竖屏切换瞬间 rect 尚未更新。
   const onOrientationChange = (): void => { scheduleReposition(); };
   // 软键盘弹出/收起：visualViewport resize 监听（iOS 13+ 全支持），fixed 元素跟随视口。
   const onVisualViewportResize = (): void => { scheduleReposition(); };
@@ -537,7 +537,7 @@ function mountFloat(): () => void {
     return true;
   };
 
-  // MutationObserver 去抖：宿主 DOM 批量变更合并到一帧处理（#128 第 7 条）。
+  // MutationObserver 去抖：宿主 DOM 批量变更合并到一帧处理。
   let observerRafId = 0;
   const schedulePlace = (): void => {
     if (observerRafId !== 0) return;
@@ -562,11 +562,11 @@ function mountFloat(): () => void {
   renderPill();
   void refreshStats();
 
-  // #308：胶囊位置配置改为「启动拉取一次 + 60s 轮询 + 回前台即时拉取」，
+  // 胶囊位置配置改为「启动拉取一次 + 60s 轮询 + 回前台即时拉取」，
   // 移除常驻 SSE（/api/dsh-provider-usage/events）。动机：SSE 是 EventSource
   // 长连接，移动端切后台系统冻结 JS 并静默掐断 TCP 后形成半开连接——浏览器侧
   // 不触发 error/close，连接持续占用同源 6 连接池，回前台后新请求全部 stalled
-  // 超时（与 mcp-manager 的 #268 同根因，此处直接不再持有长连接，从源头消除）。
+  // 超时（与 mcp-manager 同根因，此处直接不再持有长连接，从源头消除）。
   // ui-config 变更的即时性由「设置页保存后跨端同步」降级为≤60s 收敛，UI 可接受；
   // 拉取本身经 fetchTimeout 10s 兜底，半开时不悬挂。
   const syncUiConfig = (): void => {
@@ -618,14 +618,14 @@ export function apply(ctx: any): void {
     ensureStyle({ id: STYLE_ID, cssText: STYLE });
     if (document.body === null) return;
 
-    // #383 根因修复：客户端插件服务须经 inject 数组声明（"sessions"/"remote"/
+    // 客户端插件服务须经 inject 数组声明（"sessions"/"remote"/
     // "remote.session"/"slots"）且经 ctx 直接属性访问——官方 dsh-client-ui-chat /
     // model-selection 同款 ctx.sessions / ctx.remote。此前 inject 仅 locale 且误用
     // 宿主风格 ctx.get 取服务，sessions/remote 未注入导致检测恒空（胶囊不跟随会话）。
     sessions = ctx.sessions as SessionsServiceLike | undefined;
     remote = ctx.remote as RemoteLike | undefined;
 
-    // i18n（issue #348）：注册本插件字典；t 经共享 i18n.ts 活绑定（多文件 client 共用），
+    // i18n：注册本插件字典；t 经共享 i18n.ts 活绑定（多文件 client 共用），
     // 语言切换 subscribe 重绑（胶囊/面板/设置 tab 下次渲染即生效）。
     let unsubLocale: (() => void) | undefined;
     const locale: any = ctx.locale;
@@ -652,7 +652,7 @@ export function apply(ctx: any): void {
         const injected: unknown = slots.inject("settings.section", function () {
           return slots.register(
             // label 传 thunk（SlotLabel = string | (() => string)）：宿主 nav rows 每次读取经
-            // resolveSlotLabel 求值 + shell 订阅 locale 重渲染，切语言即跟随（#402 第 5 条；
+            // resolveSlotLabel 求值 + shell 订阅 locale 重渲染，切语言即跟随；
             // 注册期求值字符串快照是旧行为）。thunk 保持最小 t(key) 形态，不包任何可能抛错的逻辑。
             { name: "settings.section", id: "dsh-provider-usage", order: 90, label: () => t("settingsTab"), locale: NS },
             function () {
@@ -669,19 +669,19 @@ export function apply(ctx: any): void {
     const disposeFloat = mountFloat();
 
     // provider 检测：会话变化 → 重新解析 provider → 重渲染
-    // （issue #69：子代理会话 models() 必拒（agent-busy），检测沿 parentId 上溯父会话；
+    // （子代理会话 models() 必拒（agent-busy），检测沿 parentId 上溯父会话；
     //   全链失败保持上次检测结果并标注未识别，仅「从未成功」才回落默认——不再无条件回落）
-    // 检测半区已抽为 revalidateProvider（A1，issue #71）：与 refreshStats 取数前复检共用。
+    // 检测半区已抽为 revalidateProvider：与 refreshStats 取数前复检共用。
     //
-    // #419 diff 语义（对齐官方 dsh-client-ui-session 的 publishCurrent）：sessions.list
+    // diff 语义（对齐官方 dsh-client-ui-session 的 publishCurrent）：sessions.list
     // 快照在会话运行期间高频更新（running bit / projection 逐条写入 / 子代理地址等），
-    // 订阅回调只响应「current 会话切换」类结构性变化——立即补刷 stats（维护者需求
-    // #71）；其余噪声帧仅重渲染胶囊 title（unknown 标注等），数据刷新交给 60s 轮询，
+    // 订阅回调只响应「current 会话切换」类结构性变化——立即补刷 stats；
+    // 其余噪声帧仅重渲染胶囊 title（unknown 标注等），数据刷新交给 60s 轮询，
     // 消除 agent 活跃期间的 /stats 高频调用。
     let unsubSessions: (() => void) | undefined;
     const detect = (): void => {
       void (async () => {
-        // #419：先取快照 current（结构性判定基准），await 前读取防竞态
+        // 先取快照 current（结构性判定基准），await 前读取防竞态
         const cur = currentSessionId(sessions);
         const changed = await revalidateProvider();
         if (changed) {
@@ -690,9 +690,9 @@ export function apply(ctx: any): void {
           return;
         }
         renderPill(); // provider 未变但未知标注可能变化 → 刷胶囊 title
-        // #419：仅在 current 会话切换（含空 ↔ 有值）时立即补刷；投影/运行态噪声
+        // 仅在 current 会话切换（含空 ↔ 有值）时立即补刷；投影/运行态噪声
         // 帧（current 不变）不打断轮询节奏——宿主 30s 缓存命中时请求本身仍照发，
-        // 逐帧补刷会放大为高频 HTTP（本 issue 根因）。
+        // 逐帧补刷会放大为高频 HTTP（高频轮询的根因）。
         if (cur !== lastDetectCurrent) {
           lastDetectCurrent = cur;
           if (floatPill !== undefined) void refreshStats();
@@ -718,7 +718,7 @@ export function apply(ctx: any): void {
       detectedProvider = undefined;
       providerUnknown = false;
       lastDetectCurrent = undefined;
-      catalogCache.reset(); // 失效目录缓存：热卸载/重挂载后兜底目录重拉（#419）
+      catalogCache.reset(); // 失效目录缓存：热卸载/重挂载后兜底目录重拉
       sessions = undefined;
       remote = undefined;
     }, "dsh-provider-usage: float");
@@ -728,7 +728,7 @@ export function apply(ctx: any): void {
 }
 
 // ---- 客户端契约：apply/inject 由 build-client 经 factory 装配（干净模块）----
-// #383 根因修复：inject 声明 apply 消费的 ctx 服务（加载顺序 + 服务可用性）——
+// inject 声明 apply 消费的 ctx 服务（加载顺序 + 服务可用性）——
 // 此前只声明 locale，sessions/remote/remote.session/slots 未注入导致检测恒空、
 // 设置面板注册抛「cannot get property ... without inject」。对齐官方
 // dsh-client-ui-model-selection 的 inject 面（sessions/remote/remote.session/slots）。

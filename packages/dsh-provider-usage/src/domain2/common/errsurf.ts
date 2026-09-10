@@ -1,5 +1,5 @@
 /**
- * dsh-provider-usage — 域2每层错误面（阶段三 B，#670）。
+ * dsh-provider-usage — 域2每层错误面。
  *
  * 背景：域2（trend/report）三层运行时错误原本只经 console.warn 诊断出口消散——
  * 无计数、无最近记录，/health 不可观测。本模块为「aggregate（趋势聚合/压实）、
@@ -10,13 +10,12 @@
  * 既有模式欠缺的两层语义：累计计数与最近 N 条环形缓冲——单 key 覆盖式 lastErrors
  * 只能回答「最近一次」，撑不起层健康观测。
  *
- * 接入策略（阶段三约束）：aggregator.ts 正被并行任务 A 拆分，本模块不直接触碰
- * src/trend/* 与 src/report/* 业务代码；三层上报经装配层 apply.ts 复用各对象既有
- * warn 诊断出口接线（组合根特权）：
+ * 接入策略：本模块不直接触碰 trend/report 业务代码；三层上报经装配层 apply.ts
+ * 复用各对象既有 warn 诊断出口接线（组合根特权）：
  * - aggregate：TrendTracker 的 warn（压实失败/刷盘失败/归属异常汇聚于此）
  * - schedule：ReportScheduler 的 warn（tick 异常/提交失败）
  * - execute：ReportTaskQueue 的 warn（任务执行失败，消息已脱敏）
- * A 拆分完成后若需在 aggregator 内部记账/rollup 出错点直连上报，可注入本模块
+ * 若需在 aggregator 内部记账/rollup 出错点直连上报，可注入本模块
  * 同形 record（空参 no-op 实现同签名，见 makeNoopLayerErrorSurface）。
  */
 export type LayerErrorKey = "aggregate" | "schedule" | "execute";

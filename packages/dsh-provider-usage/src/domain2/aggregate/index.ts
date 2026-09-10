@@ -1,5 +1,5 @@
 /**
- * dsh-provider-usage/trend — TrendTracker 组合根（#503 M1）。
+ * dsh-provider-usage/trend — TrendTracker 组合根。
  *
  * collector（事件折叠）→ aggregator（内存聚合）→ store（按天分片 JSONL）的组合：
  * - 刷盘三挂点（方案定稿）：3~5s 防抖 + `session/flush` 官方排空点 + dispose await；
@@ -37,7 +37,7 @@ export interface TrendTrackerOptions {
   /** 诊断出口（默认 console.warn）。 */
   warn?: (msg: string) => void;
   /**
-   * 目录归属解析器（#633 A1 官方契约接入，可选）：输入 session id，返回 cwd 原始值
+   * 目录归属解析器（可选）：输入 session id，返回 cwd 原始值
    * 或 undefined（store 无该 session / header.cwd 缺失）。抛错由 collector 捕获归
    * 未识别桶；缺省 = 不接 store（纯离线/测试），目录恒归未识别桶。
    */
@@ -75,12 +75,12 @@ export class TrendTracker {
     this.aggregator = new TrendAggregator();
     this.collector = new TrendCollector({
       now: resolved.now,
-      resolveCwd: resolved.resolveCwd, // #633 A1：目录归属透传（collector 侧 per-session 惰性单查）
+      resolveCwd: resolved.resolveCwd, // 目录归属透传（collector 侧 per-session 惰性单查）
       emit: (e) => {
         this.aggregator.apply(e);
         this.markDirty();
       },
-      // P2-6：归属异常（主源与 message.source 副源不一致等）经统一诊断出口告警
+      // 归属异常（主源与 message.source 副源不一致等）经统一诊断出口告警
       onAnomaly: (msg) => resolved.warn(`归属异常：${msg}`),
     });
   }
@@ -103,7 +103,7 @@ export class TrendTracker {
   private async rebuildFromDisk(): Promise<void> {
     const today = dayKey(this.now());
     for (const day of await this.store.listAggDays()) {
-      // #633 复核 M1：混存分片全量读回（agg+dir）——dir 行经 rebuild 的 dir 分支
+      // 混存分片全量读回（agg+dir）——dir 行经 rebuild 的 dir 分支
       // mergeCell 进 dirDays（重启后内存目录视图恢复，分片 b 视图假设成立）；
       // agg 行照旧进 cells。dir 行不进 cells/pending（rebuild 内 continue），
       // 防双计语义与读回前一致。
@@ -201,10 +201,10 @@ export class TrendTracker {
       if (day >= today) continue;
       if (this.aggregator.hasUnpersisted(day)) continue; // 上一步失败：留到下轮
       try {
-        // #654：折算与消费取同一份身份快照——下面三个 await 期间新到达的同日行既不入
+        // 折算与消费取同一份身份快照——下面三个 await 期间新到达的同日行既不入
         // 本次折算、也不被消费，留待下一轮压实（旧实现按日键删除会连带丢掉这些行）。
         const { consumed, aggRows: pendingAgg, dirRows: pendingDir, hourRows: pendingHour } = this.aggregator.rollupSnapshot(day);
-        // #633 A4/#662：既有聚合分片全量取回（agg+dir+hour 混存）——若仍走
+        // 既有聚合分片全量取回（agg+dir+hour 混存）——若仍走
         // readAggShard（只取 agg 行），整日原子重写会把分片内既有 dir/hour 行抹掉；
         // 三组必须各自与既有行合并后一起重写（迟到旧日行二次压实防丢防重——
         // 漏合并 hour 行 → 分片内既有小时数据被抹，P0）。
@@ -222,7 +222,7 @@ export class TrendTracker {
           pendingHour,
         );
         await this.store.writeAggDay(day, [...aggRows, ...dirRows, ...hourRows]); // agg 前、dir 中、hour 后（写入约定）
-        // #654：聚合事实落盘后立即按身份消费。若把消费放在 deleteDetailShard 之后，
+        // 聚合事实落盘后立即按身份消费。若把消费放在 deleteDetailShard 之后，
         // 删除失败时内存行保留，下一轮会拿「已含本轮值的聚合分片」再 merge 一次 →
         // 磁盘双算（实测 agg 20/2 vs 内存 10/1）。消费后 pending 不再含该日，下轮不再
         // 压实；残留的明细分片由重启时的「聚合权威」分支自愈删除。
@@ -243,7 +243,7 @@ export class TrendTracker {
     }
     this.disposed = true;
     try {
-      // 与进行中的 flushNow 串行（评审 P1-2：并发压实的迟写覆盖丢数窗口）
+      // 与进行中的 flushNow 串行（并发压实的迟写覆盖丢数窗口）
       await this.flushChain.catch(() => {});
       await this.flushInner();
     } catch (e: unknown) {
@@ -259,7 +259,7 @@ export class TrendTracker {
     return removed;
   }
 
-  // ---------------------------------------------------------------- 查询（M2 路由消费）
+  // ---------------------------------------------------------------- 查询
 
   /** 日序列（近 n 日）。 */
   seriesDays(n: number, metric: TrendMetric, provider?: string): Array<{ day: string; value: number | null }> {
@@ -282,14 +282,14 @@ export class TrendTracker {
   }
 
   /**
-   * 全量目录日桶快照（#633 分片 b：报告快照 dirRows 输入与统计目录分布数据源；
+   * 全量目录日桶快照（报告快照 dirRows 输入与统计目录分布数据源；
    * 今日桶经 pending 同源折算补齐，见 aggregator.dirRows）。
    */
   dirRows(): ReturnType<TrendAggregator["dirRows"]> {
     return this.aggregator.dirRows();
   }
 
-  /** 堆叠柱序列（目录维度；/trend 路由 dir 过滤数据源，#633 分片 b B1）。 */
+  /** 堆叠柱序列（目录维度；/trend 路由 dir 过滤数据源）。 */
   dirStacked(
     n: number,
     gran: TrendGranularity,
@@ -299,7 +299,7 @@ export class TrendTracker {
     return this.aggregator.dirStacked(n, gran, metric, dir, this.now());
   }
 
-  /** 窗口摘要（目录维度；/trend 路由 dir 过滤汇总卡数据源，#633 分片 b B1）。 */
+  /** 窗口摘要（目录维度；/trend 路由 dir 过滤汇总卡数据源）。 */
   dirWindowSummary(
     n: number,
     gran: TrendGranularity,
@@ -310,13 +310,13 @@ export class TrendTracker {
     return this.aggregator.dirWindowSummary(n, gran, metric, dir, this.now(), dirSeries);
   }
 
-  /** 目录窗口总量表（报告快照目录范围过滤数据源，#633 分片 b B4）。 */
+  /** 目录窗口总量表（报告快照目录范围过滤数据源）。 */
   dirTotals(startDay: string, endDay: string, metric: TrendMetric = "total"): Array<{ dir: string; calls: number; total: number | null }> {
     return this.aggregator.dirTotals(startDay, endDay, metric);
   }
 
   /**
-   * 全量小时日桶快照（#662：报告快照 byHour/byPeriod/peakHour/coveredDays 数据源）。
+   * 全量小时日桶快照（报告快照 byHour/byPeriod/peakHour/coveredDays 数据源）。
    * 内存 hourDays 单源快照（apply 平行累加 + rebuild 双分支读回，不折算 pending；
    * 无残差投影——旧分片缺 hour 行是物理缺失，报告侧 coveredDays 守卫降级）。
    */
@@ -324,7 +324,7 @@ export class TrendTracker {
     return this.aggregator.hourRows();
   }
 
-  /** 堆叠柱序列（M2 /trend 路由数据源；n 由粒度决定：日 30 / 周 12 / 月 12）。 */
+  /** 堆叠柱序列（/trend 路由数据源；n 由粒度决定：日 30 / 周 12 / 月 12）。 */
   seriesStacked(
     n: number,
     gran: TrendGranularity,

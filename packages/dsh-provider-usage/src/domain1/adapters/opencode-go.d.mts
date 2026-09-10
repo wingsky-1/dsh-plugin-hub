@@ -45,9 +45,9 @@ export declare function fetchOpenCodeGoV2(
 ): Promise<Record<string, unknown>>;
 
 /**
- * miniChartSvgMarkup 兼容导出（#150 测试导入面保留）：等同于注入 utils 的
+ * miniChartSvgMarkup 兼容导出（测试导入面保留）：等同于注入 utils 的
  * miniAreaSvg（resetsAt 支持 ISO 字符串 / epochMs）。新代码请使用注入的
- * `input.utils.miniAreaSvg`（#215）。
+ * `input.utils.miniAreaSvg`。
  */
 export declare function miniChartSvgMarkup(opts: {
   samples: Array<{ x: number; y: number }>;

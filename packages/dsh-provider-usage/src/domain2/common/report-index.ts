@@ -1,15 +1,15 @@
 /**
- * dsh-provider-usage/report — report index.jsonl 格式解析（阶段二 D8：自 runner 移出）。
+ * dsh-provider-usage/report — report index.jsonl 格式解析。
  *
- * E3（lastRun 推导）与 E4（读侧投影）共同依赖的**纯解析**原语；本文件无状态无缓存
- * （indexCache 记忆化留在 runner 读侧，防双份缓存漂移——阶段四目录化后归
- * domain2/common/，是该目录「无状态无缓存」边界的组成部分）。
+ * lastRun 推导与读侧投影共同依赖的**纯解析**原语；本文件无状态无缓存
+ * （indexCache 记忆化留在 runner 读侧，防双份缓存漂移——该目录
+ * 「无状态无缓存」边界的组成部分）。
  */
 import type { ReportMeta } from "../execute/interface.ts";
 
 /**
  * 解析 index.jsonl 全文为记录数组（坏行跳过、字段白名单过滤）。
- * 公共解析：readReportIndex（读侧投影）与 lastRun 推导（#624）共用，
+ * 公共解析：readReportIndex（读侧投影）与 lastRun 推导共用，
  * 防止两处解析漂移。
  */
 export function parseReportIndexLines(raw: string): ReportMeta[] {

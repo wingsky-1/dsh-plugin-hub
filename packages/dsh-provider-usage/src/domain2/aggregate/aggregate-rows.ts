@@ -1,7 +1,7 @@
 /**
- * dsh-provider-usage/trend — 压实转换纯函数（D2 aggregator 拆分的纯函数层之一，#670 阶段三）。
+ * dsh-provider-usage/trend — 压实转换纯函数。
  *
- * 为什么独立成模块：TrendAggregator（src/trend/aggregator.ts）原 1300+ 行混合「状态容器 +
+ * 为什么独立成模块：TrendAggregator 原 1300+ 行混合「状态容器 +
  * IO 方法」与纯函数转换；拆分后本模块只含行形态转换——明细/计数行并入聚合/目录/小时行、
  * 汇总行合并（merge*）、null-aware token 差（sub/diffToken）与空行构造。全部参数显式传入、
  * 不接触 this：防「拆文件 = 共享 this」坏味道（layer-architecture.md §4 D-2 前置约定，
@@ -29,7 +29,7 @@ export function sub(oldV: number | null, newV: number | null): number | null {
 }
 
 /**
- * 残差投影的 token 差（#633 修复）：聚合面 − 目录面，null-aware。
+ * 残差投影的 token 差：聚合面 − 目录面，null-aware。
  * 双方皆 null → null（无该维度事实）；单侧 null 按 0 参与（另一侧有值即有残差）；
  * 负值保留给调用方判定（调用方按 0 处理并依赖「日总量恒等」断言暴露不一致）。
  */
@@ -61,7 +61,7 @@ export function emptyAggRow(day: string, provider: string, model: string | null)
   };
 }
 
-/** 空目录汇总行（#633 A4；与 agg 行十数值字段同构，仅键换成 dir）。 */
+/** 空目录汇总行（与 agg 行十数值字段同构，仅键换成 dir）。 */
 export function emptyDirRow(day: string, dir: string): TrendDirRow {
   return {
     v: TREND_ROW_VERSION,
@@ -78,7 +78,7 @@ export function emptyDirRow(day: string, dir: string): TrendDirRow {
   };
 }
 
-/** 空小时汇总行（#662；与 agg/dir 行同构，键换成 hour；「落盘即定型」的产出起点）。 */
+/** 空小时汇总行（与 agg/dir 行同构，键换成 hour；「落盘即定型」的产出起点）。 */
 export function emptyHourRow(day: string, hour: number): TrendHourRow {
   return {
     v: TREND_ROW_VERSION,
@@ -146,7 +146,7 @@ export function mergeAggRows(base: TrendAggRow[], add: TrendAggRow[]): TrendAggR
 }
 
 /**
- * dir 汇总行合并（#633 A4 flush 压实写盘前与既有聚合分片内的 dir 行合并——
+ * dir 汇总行合并（flush 压实写盘前与既有聚合分片内的 dir 行合并——
  * 迟到旧日行场景防覆盖丢数；十数值字段与 mergeAggRows 完全同构，null-aware
  * 求和，同 dir 键累加。输出保持输入相对顺序：base 在前（dir 行位于分片尾段））。
  */
@@ -170,7 +170,7 @@ export function mergeDirRows(base: TrendDirRow[], add: TrendDirRow[]): TrendDirR
 }
 
 /**
- * hour 汇总行合并（#662，flush 压实写盘前与既有聚合分片内的 hour 行合并——
+ * hour 汇总行合并（flush 压实写盘前与既有聚合分片内的 hour 行合并——
  * 迟到旧日行二次压实防丢防重；与 mergeDirRows 完全同构，同 hour 键累加，
  * 输出保持输入相对顺序：base 在前（hour 行位于分片尾段））。
  */

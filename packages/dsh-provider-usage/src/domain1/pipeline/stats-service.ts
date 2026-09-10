@@ -42,10 +42,10 @@ export class StatsService {
   readonly panelCache = new Map<string, PanelCacheEntry>();
   readonly providerLocks = new Map<string, Mutex>();
 
-  // D7 阶段一（评审 M1）：缓存纪元——任何「清理缓存」入口递增 generation，
+  // 缓存纪元——任何「清理缓存」入口递增 generation，
   // 在途 getStats 完成后校验纪元未变才 set，防「选择切换×在途取数」交错污染新缓存。
   private cacheGeneration = 0;
-  /** 面板管道 in-flight 去重（同 key 并发 miss 共享一次执行，评审 M2）。 */
+  /** 面板管道 in-flight 去重（同 key 并发 miss 共享一次执行）。 */
   private readonly panelInFlight = new Map<string, Promise<{ panelHtml?: string; error?: string }>>();
 
   private stateChain: Promise<void> = Promise.resolve();

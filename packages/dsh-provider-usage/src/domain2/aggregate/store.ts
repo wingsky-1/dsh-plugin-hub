@@ -1,5 +1,5 @@
 /**
- * dsh-provider-usage/trend — 按天分片 JSONL 存储（#503 M1）。
+ * dsh-provider-usage/trend — 按天分片 JSONL 存储。
  *
  * 目录（复用 HistoryStore 的「按天分片 + prune」模式，trend 以 day 为主键另建目录，
  * 不套 HistoryStore 的 provider/name 目录结构）：
@@ -94,7 +94,7 @@ export class TrendStore {
   /**
    * 整日聚合分片原子重写（tmp+rename，0600）。空行数组 = 删除该日聚合分片（防御）。
    * 这是「聚合分片权威」约定的写入侧：成功返回后该日聚合事实已完整落盘。
-   * #633 A4/#662：rows 为 agg+dir+hour 混存行（调用方约定 agg 在前、dir 居中、
+   * rows 为 agg+dir+hour 混存行（调用方约定 agg 在前、dir 居中、
    * hour 在后）——分片行自带 kind 判别，读侧按需过滤，互不干扰。
    */
   async writeAggDay(day: string, rows: Array<TrendAggRow | TrendDirRow | TrendHourRow>): Promise<void> {
@@ -103,7 +103,7 @@ export class TrendStore {
       await rm(this.aggFile(day), { force: true });
       return;
     }
-    // P2-7：写 tmp 前清理同日 rename 前崩溃残留的 tmp（文件名前缀 `${day}.jsonl.` 且
+    // 写 tmp 前清理同日 rename 前崩溃残留的 tmp（文件名前缀 `${day}.jsonl.` 且
     // 后缀 `.tmp`）。尽力而为：清理失败不影响主流程（仅告警，下轮重写时再清）。
     try {
       const files = await readdir(this.aggDir());
@@ -148,8 +148,8 @@ export class TrendStore {
 
   /**
    * 读聚合分片（只取 kind:"agg" 行；忽略混存分片内的 dir 行）。
-   * src 生产路径已无调用方（flush 压实与重启重建均走 readAggDayShard 全量取回，
-   * #633 A4/复核 M1）；保留为读侧投影（filter kind:"agg"）供测试断言载体与
+   * src 生产路径已无调用方（flush 压实与重启重建均走 readAggDayShard 全量取回）；
+   * 保留为读侧投影（filter kind:"agg"）供测试断言载体与
    * 「agg 行独立可读」的查询面，不删除。
    */
   async readAggShard(day: string): Promise<TrendAggRow[]> {
@@ -157,7 +157,7 @@ export class TrendStore {
   }
 
   /**
-   * 读聚合分片全量行（agg + dir + hour 混存，#633 A4 / #662）：flush 压实的「既有
+   * 读聚合分片全量行（agg + dir + hour 混存）：flush 压实的「既有
    * 聚合合并」必须连 dir/hour 行一起取回重写，否则二次压实会把混存分片里的
    * dir/hour 行抹掉。重启重建也走本方法——dir/hour 行进 aggregator 对应内存桶
    * （不进 cells），分片内权威行经 rebuild 读回内存视图（白名单漏加 hour →

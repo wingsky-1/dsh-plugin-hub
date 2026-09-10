@@ -5,7 +5,7 @@
  * 外部 API 数据不可信。本模块在宿主端渲染前做白名单式净化，作为结构性兜底
  * （用户 format 函数还应使用 esc() 助手进行自家数据的转义）。
  *
- * #105③ 实体感知双层净化：
+ * 实体感知双层净化：
  * - 第一层：既有明文形态黑名单（行为不变）；
  * - 第二层：对第一层输出做**一轮** HTML 实体解码得到「检测副本」，协议类
  *   模式再经 WHATWG URL 语义剥除 \t\n\r 得二级视图，在视图上定位危险载体
@@ -16,7 +16,7 @@
  *      因此 `&amp;#106;avascript:` / `&lt;script&gt;` 等本已安全的实体文本
  *      不可能被"误解码"升级为危险明文；
  *   2. 第二层迭代每轮要么无匹配终止、要么长度严格递减必终止；设宽松轮数
- *      上限（64，远超正常收敛所需）防最坏 O(n²) CPU 消耗（复核 P1-3），
+ *      上限（64，远超正常收敛所需）防最坏 O(n²) CPU 消耗，
  *      触底 fail-closed 丢弃输出返回 ''——f('')==='' 使幂等硬闸
  *      `sanitizeHtml(sanitizeHtml(x)) === sanitizeHtml(x)` 在任意分支构造
  *      成立，终态恒满足「解码 + URL 剥除后不含危险载体」。
@@ -66,8 +66,7 @@ const DECODED_DANGER_RES: RegExp[] = [
 /**
  * 协议类模式：WHATWG URL basic parser 在解析入口剥除输入中全部 ASCII
  * tab/newline/CR，故 `jav&#9;ascript:` 解码一轮得 `jav\tascript:` 后 scheme
- * 仍还原为 javascript:——此类载体必须在「解码 + 剥除」二级视图上定位
- * （PR#196 复核 P1-1）。
+ * 仍还原为 javascript:——此类载体必须在「解码 + 剥除」二级视图上定位。
  */
 const URL_PROTOCOL_RES: RegExp[] = [JAVASCRIPT_URI_RE, DATA_TEXT_HTML_RE];
 
@@ -222,8 +221,8 @@ function mergeRanges(ranges: Array<[number, number]>): Array<[number, number]> {
 
 /**
  * 单轮实体感知封闭：解码副本上收集全部危险 match，映射回原文一次性删除。
- * 协议类模式在「解码 + 剥除 \t\n\r」二级视图上定位（WHATWG URL 语义，
- * P1-1），match 区间经剥除下标 → 解码下标两跳映射回原文区间。
+ * 协议类模式在「解码 + 剥除 \t\n\r」二级视图上定位（WHATWG URL 语义），
+ * match 区间经剥除下标 → 解码下标两跳映射回原文区间。
  */
 function stripDecodedDanger(html: string): string {
   const view = decodeEntitiesOnce(html);
@@ -295,11 +294,11 @@ export function sanitizeHtml(html: string): string {
     .replace(JAVASCRIPT_URI_RE, '')
     .replace(DATA_TEXT_HTML_RE, '')
     .replace(STYLE_ON_SCRIPT_RE, '');
-  // 4. 实体编码变体封闭（#105③）：迭代至收敛，设宽松轮数上限 + 触底 fail-closed。
+  // 4. 实体编码变体封闭：迭代至收敛，设宽松轮数上限 + 触底 fail-closed。
   //    收敛性论证：stripDecodedDanger 要么无匹配原样返回（终止），要么至少
   //    删除一个非空 match 区间使长度严格递减——正常内容 1-3 轮收敛，
   //    深嵌套攻击构造（pad(25)）实测 ≤19 轮，上限 64 远超实际所需。
-  //    上限的必要性（复核 P1-3）：无上限时「删除拼接出新匹配」类深嵌套
+  //    上限的必要性：无上限时「删除拼接出新匹配」类深嵌套
   //    构造最坏 O(n²)，60KB 输入实测冻结宿主事件循环 ~30s，且数据落盘
   //    history 后每次 /history 重复触发＝持续 DoS。
   //    触底 fail-closed：超限丢弃输出返回 ''。幂等与终态谓词同时保持——

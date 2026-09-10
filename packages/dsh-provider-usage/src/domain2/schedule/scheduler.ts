@@ -1,11 +1,11 @@
 /**
- * dsh-provider-usage/report — 极简调度器（#503 M3，方案 §2.3：官方无 cron 的先行版）。
+ * dsh-provider-usage/report — 极简调度器（官方无 cron 的先行版）。
  *
- * 形态（方案定稿，不引入 croner）：60s tick + 候选窗口对齐 + lastRun 幂等标记 +
+ * 形态（不引入 croner）：60s tick + 候选窗口对齐 + lastRun 幂等标记 +
  * 启动补跑（首轮 tick 即检查）。单飞互斥：生成超过 tick 间隔时后续 tick 跳过
  * （busy 标志），生成失败不推进 lastRun（下轮重试同一窗口，幂等不重复扣期）。
- * lastRun 持久化原语（读/写/临界区/迁移校准）见 last-run.ts——阶段二 D8 移出，
- * E3 调度与 E4 执行共同依赖该公共原语（阶段四目录化后归 domain2/common/）。
+ * lastRun 持久化原语（读/写/临界区/迁移校准）见 last-run.ts——调度与执行
+ * 共同依赖该公共原语。
  */
 import type { ReportConfig } from "./config.ts";
 import { pendingReports, type DueReport } from "./schedule.ts";
@@ -16,7 +16,7 @@ export interface ReportSchedulerOptions {
   root: string;
   /** 当前配置（updateConfig 热更新）。 */
   config: ReportConfig;
-  /** 到期回调（#625：提交到任务队列，非阻塞；队列负责执行、幂等与 lastRun 推进）。 */
+  /** 到期回调（提交到任务队列，非阻塞；队列负责执行、幂等与 lastRun 推进）。 */
   onDue: (due: DueReport) => Promise<void>;
   /** 注入时钟（测试）。 */
   now?: () => number;
@@ -46,7 +46,7 @@ export class ReportScheduler {
   }
 
   /**
-   * 启动：先做 lastRun 一致性校准（#624，async，失败不影响调度），
+   * 启动：先做 lastRun 一致性校准（async，失败不影响调度），
    * 完成后立即跑首轮（启动补跑语义），随后固定间隔 tick。
    */
   static start(opts: ReportSchedulerOptions): ReportScheduler {
@@ -63,7 +63,7 @@ export class ReportScheduler {
   }
 
   /**
-   * 一轮检查：读 lastRun → 计算到期集合 → 逐个提交到任务队列（#625：提交非阻塞，
+   * 一轮检查：读 lastRun → 计算到期集合 → 逐个提交到任务队列（提交非阻塞，
    * 队列负责串行执行、幂等下沉与 lastRun 推进；同窗口已在队列中由队列去重吸收）。
    */
   async tick(): Promise<void> {

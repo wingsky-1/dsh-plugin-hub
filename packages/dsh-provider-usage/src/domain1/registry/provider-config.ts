@@ -67,7 +67,7 @@ function opencodeKeyFromAuth(text: string | undefined): string | undefined {
 }
 
 /** .credentials.yaml 文件路径（DSH 官方凭据文档，dsh-credentials-local 同源：
- *  base 语义由 shared/dsh-home.js 承载，#517 收敛）。 */
+ *  base 语义由 shared/dsh-home.js 承载）。 */
 export function credentialsFile(dshHome?: string): string {
   return join(dshHome ?? dshHomeShared(), ".credentials.yaml");
 }

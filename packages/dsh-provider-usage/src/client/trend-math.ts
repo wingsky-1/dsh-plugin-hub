@@ -1,5 +1,5 @@
 /**
- * dsh-provider-usage — 使用趋势纯函数层（#503 M2.1）。
+ * dsh-provider-usage — 使用趋势纯函数层。
  *
  * 从 trend.tsx 拆出的零 React 依赖模块：格式化 / 档位生成 / 桶键语义 / SVG 生成器。
  * 单测可直接 node 加载（trend.tsx 顶部 import react，node 测试环境不可用）。
@@ -48,7 +48,7 @@ export function bucketStartKey(key: string, gran: TrendGran): string {
   return key; // day 与 week（week 键本身即周一首日）
 }
 
-// ---------------------------------------------------------------- 目录维度展示（#633 分片 b2 B1/B2/B3）
+// ---------------------------------------------------------------- 目录维度展示
 
 /**
  * 未识别目录桶键（与宿主 TREND_UNIDENTIFIED 字面一致；客户端不 import 宿主模块，
@@ -77,7 +77,7 @@ export function dirDisplayLabel(dir: unknown): string {
   if (typeof dir !== "string" || dir.length === 0) return t("trendDirUnidentified");
   if (dir === DIR_UNIDENTIFIED) return t("trendDirUnidentified");
   // 剥控制字符与宿主 sanitizeDirName 同口径（C0 + DEL + C1：0x00-1F / 0x7F /
-  // 0x80-9F；权威定义在 src/trend/types.ts，出口各处口径一致——#633 P2 注释收口）
+  // 0x80-9F；权威定义在 collect/types.ts，出口各处口径一致）
   const cleaned = dir.replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
   if (cleaned.length === 0 || cleaned.trim().length === 0) return t("trendDirUnidentified");
   return cleaned;
@@ -91,7 +91,7 @@ export function dirNeedsScopeNote(dir: unknown): boolean {
   return dirDisplayLabel(dir) === t("trendDirUnidentified");
 }
 
-// ---------------------------------------------------------------- 目录/适配器两维互斥（#633 复核闸 P0）
+// ---------------------------------------------------------------- 目录/适配器两维互斥
 
 /**
  * /trend 请求参数构造（从 trend.tsx useEffect 抽出的纯函数；含两维三态互斥）：
@@ -125,7 +125,7 @@ export function shouldShowByModel(provider: string, dirFilter: string): boolean 
 /**
  * 范围档位（客户端与宿主 clamp 同一套口径；留存按「天」裁、桶数与天数是两种口径）：
  * cap = day→min(retention, 90)、week→⌈retention/7⌉、month→⌈retention/30⌉。
- * 日档封顶 90（>90 桶在设置面板绘图区糊成一面墙，更长跨度由周/月承担——评审 P1-3）。
+ * 日档封顶 90（>90 桶在设置面板绘图区糊成一面墙，更长跨度由周/月承担）。
  */
 export function trendRangeOptions(gran: TrendGran, retentionDays: number): number[] {
   const retention = Math.max(1, Math.floor(retentionDays));
@@ -143,7 +143,7 @@ export function trendDefaultRange(gran: TrendGran, retentionDays: number): numbe
 }
 
 /**
- * 动态 nice 刻度（#503 M2.1 后续）：按数据最大值自动推导步长与刻度序列——
+ * 动态 nice 刻度：按数据最大值自动推导步长与刻度序列——
  * 步长取 1/2/2.5/5×10^k（目标 ~5 段），顶格 = ceil(max/step)×step（贴合数据，
  * 不再是固定 0/½/max 三档）。ticks 含 0 与顶格，刻度线数 5~7 条随数据浮动；
  * 浮点用 i×step 索引式累积防误差。
@@ -162,10 +162,10 @@ export function niceTicks(maxV: number): { ticks: number[]; top: number } {
 }
 
 /**
- * Y 域刻度（#589）：口径 = 每桶全量段合计 point.total（与汇总卡「峰值」同源）——
+ * Y 域刻度：口径 = 每桶全量段合计 point.total（与汇总卡「峰值」同源）——
  * 堆叠图每桶的视觉高度是段之和，按单段最大值推域时多段桶的堆叠顶必然溢出轴顶
- * （#571 遗留：刻度算法已动态化，喂入的最大值仍是 M2 起的单段口径）。
- * total 含隐藏段 → hidden 不缩轴（兑现评审 P1-5「与汇总卡全段口径一致」）。
+ * （遗留：刻度算法已动态化，喂入的最大值仍是单段口径）。
+ * total 含隐藏段 → hidden 不缩轴（与汇总卡全段口径一致）。
  */
 export function trendYTicks(series: Array<{ total: number | null }>): { ticks: number[]; top: number } {
   let maxV = 0;

@@ -29,7 +29,7 @@ export function reportIndexFile(root: string): string {
   return join(root, "reports", "index.jsonl");
 }
 
-// #629 P1 解析记忆化缓存（readReportIndex 专用；键=historyRoot，值=stat 失效键+投影）。
+// 解析记忆化缓存（readReportIndex 专用；键=historyRoot，值=stat 失效键+投影）。
 interface IndexCacheEntry {
   stamp: string;
   value: ReportMeta[];
@@ -46,7 +46,7 @@ export function __clearReportIndexCacheForTests(): void {
   indexCacheMisses = 0;
 }
 
-/** 测试观测钩子：缓存命中/未命中计数（#629 P1 验收「可测」：连续读 hits 只增 1 次 miss）。 */
+/** 测试观测钩子：缓存命中/未命中计数（连续读 hits 只增 1 次 miss）。 */
 export function __reportIndexCacheStatsForTests(): { hits: number; misses: number } {
   return { hits: indexCacheHits, misses: indexCacheMisses };
 }
@@ -173,15 +173,15 @@ export async function runDueReport(params: {
 }): Promise<ReportMeta> {
   const { due, trend, ctx, reportCfg, historyRoot, sanitizeDiagnostic } = params;
   const buckets = trend.buckets();
-  // #633 分片 b C1 接线：目录维度日汇总行进快照（trend.dirRows 含今日桶，口径见
-  // aggregator.dirRows）。残差投影后（本次修复）旧数据（无 dir 行的分片）不再得到
+  // 目录维度日汇总行进快照（trend.dirRows 含今日桶，口径见
+  // aggregator.dirRows）。残差投影后旧数据（无 dir 行的分片）不再得到
   // 空数组——其「无目录信息」的用量经残差归入 (unidentified) 桶，故 byDirectory 与
   // totals 同口径（实测旧分片：byDirectory=[{unidentified,31,7481}] = totals）。
   // 真正无任何用量时 dirRows 才为空数组（报告链路另有 totals.calls===0 的空窗口短路）。
-  // #633 分片 b B4：报告配置目录范围非空时，byDirectory 只含所选目录（目录维度
+  // 报告配置目录范围非空时，byDirectory 只含所选目录（目录维度
   // 投影可精确过滤）；totals/byDay/byProvider 保持全量口径——压实后的 agg 行无
   // dir 键（明细行的 dir×provider 关联在日切压实即收敛为两个独立投影），provider/
-  // day 维度按目录精确归属在本数据面上不可行（分片 a 既定数据边界，非实现缺口）。
+  // day 维度按目录精确归属在本数据面上不可行（既定数据边界，非实现缺口）。
   // 占比口径自洽：模板目录占比 = byDirectory[i].total ÷ totals.total，报告呈
   // 「全量统计 + 所选目录分布」口径；缺省「全部」（空数组）零过滤。
   const scopeDirs = reportCfg.directories ?? [];
@@ -195,7 +195,7 @@ export async function runDueReport(params: {
     endDay: due.endDay,
     buckets,
     dirRows: scopedDirRows,
-    // #662：小时维度日汇总行进快照（trend.hourRows 内存单源快照，含今日桶）。
+    // 小时维度日汇总行进快照（trend.hourRows 内存单源快照，含今日桶）。
     // 覆盖度守卫在 buildStatsSnapshot 内完成：coveredDays < windowDays 时
     // byHour/byPeriod/peakHour 整体置 null（升级期部分天缺 hour 事实 → 时段段降级）。
     hourRows: trend.hourRows(),
@@ -234,11 +234,11 @@ export async function runDueReport(params: {
 }
 
 /**
- * 读报告历史索引（#626 读侧投影：按 (period,key) 去重，保留 generatedAt 最新一条
+ * 读报告历史索引（读侧投影：按 (period,key) 去重，保留 generatedAt 最新一条
  * ——「一行/窗口=最新版」；index.jsonl 保持 append-only 不改写）。
  * 返回按时间倒序（最新在前），与既有消费方语义一致。
  *
- * #629 P1 解析记忆化：index.jsonl 为 append-only 单写者（本进程 persistReport），
+ * 解析记忆化：index.jsonl 为 append-only 单写者（本进程 persistReport），
  * 同版本文件的解析结果必然一致，故按 stat 失效键（size + mtimeMs）缓存「原始全文
  * → 解析+去重+排序投影」。任务执行/手动生成路由每轮复用缓存，不再随 index 行数
  * 线性重解析（文件未变时 O(1)；文件变化只重解析一次并刷新缓存，仍优于逐调用全量）。

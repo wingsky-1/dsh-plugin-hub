@@ -1,7 +1,7 @@
 /**
  * dsh-provider-usage — 用户适配器持久化（设置页 add/select 承载，免手改配置）。
  *
- * #276 方案 A 阶段 3 拆分：自 index.ts 抽离，导出面由 index.ts 转发 re-export
+ * 自 index.ts 抽离，导出面由 index.ts 转发 re-export
  * 保持不变（外部消费者仍从 lib/index.js 导入）。
  */
 
@@ -252,7 +252,7 @@ export async function readAdapterStateResult(
     );
   }
 
-  // #184：顶层必须是 plain object——null / 数组 / 字符串等类数组输入一律拒绝，
+  // 顶层必须是 plain object——null / 数组 / 字符串等类数组输入一律拒绝，
   // 并隔离原文留证，避免后续状态写把现场直接覆盖掉。
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
     const actual = parsed === null ? "null" : Array.isArray(parsed) ? "array" : typeof parsed;
